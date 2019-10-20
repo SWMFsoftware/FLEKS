@@ -1,9 +1,11 @@
 include Makefile.conf
 
+EXE = ${INSTALL_DIR}/bin/mypic.exe
+
 default: main.exe
 
 main.exe: main.o 
-	$(CXX) -o $@ $(CXXFLAGS) $^ $(LDFLAGS) $(LIBRARIES)
+	$(CXX) -o ${EXE} $(CXXFLAGS) $^ $(LDFLAGS) $(LIBRARIES)
 
 # main.o: main.cpp MyParams.H
 # 	$(CXX) -o $@ -c $(CXXFLAGS) $(CPPFLAGS) $<
@@ -19,5 +21,5 @@ main.exe: main.o
 clean:
 	$(RM) *.o
 
-realclean: clean
-	$(RM) main.exe
+distclean: clean
+	$(RM) ${EXE}
