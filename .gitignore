@@ -7,7 +7,6 @@
 *.out
 *~
 run*/
-Makefile.conf
 Makefile.def
 Makefile.RULES
 Makefile.DEPEND
