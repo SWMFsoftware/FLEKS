@@ -4,6 +4,8 @@
 #include <AMReX_Print.H>
 #include <AMReX_REAL.H>
 
+#include "Domain.h"
+
 int main(int argc, char* argv[]) {
   amrex::Initialize(argc, argv);
 

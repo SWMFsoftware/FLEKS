@@ -1,25 +1,26 @@
 include Makefile.conf
+include Makefile.depend
 
 EXE = ${INSTALL_DIR}/bin/mypic.exe
 
-default: main.exe
+default: $(EXE)
 
-main.exe: main.o 
+
+$(EXE): $(OBJS)
 	$(CXX) -o ${EXE} $(CXXFLAGS) $^ $(LDFLAGS) $(LIBRARIES)
 
-# main.o: main.cpp MyParams.H
-# 	$(CXX) -o $@ -c $(CXXFLAGS) $(CPPFLAGS) $<
+%.o: %.cpp
+%.o: %.cpp $(DEPDIR)/%.d
+	$(CXX) -o $@ -c ${DEPFLAGS} $(FLAG_CXX) $<
 
-# test_parameters.o: test_parameters.cpp MyParams.H
-# 	$(CXX) -o $@ -c $(CXXFLAGS) $(CPPFLAGS) $<
-
-# my_func.o: my_func.f90
-# 	$(FC) -o $@ -c $(FFLAGS) $(CPPFLAGS) $<
-
-.PHONY: clean realclean
-
+.PHONY: clean distclean
 clean:
-	$(RM) *.o
+	$(RM) *.o *.d
+	$(RM) -rf .o .d
 
 distclean: clean
 	$(RM) ${EXE}
+
+
+
+
