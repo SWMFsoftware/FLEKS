@@ -1,6 +1,8 @@
 #ifndef _DOMAIN_H_
 #define _DOMAIN_H_
 
+#include <iostream>
+
 #include <AMReX_Box.H>
 #include <AMReX_BoxArray.H>
 #include <AMReX_DistributionMapping.H>
@@ -11,8 +13,10 @@
 #include <AMReX_REAL.H>
 #include <AMReX_RealBox.H>
 #include <AMReX_Vector.H>
+#include <AMReX_IndexType.H>
 
 #include "Constants.h"
+#include "Particles.h"
 
 using namespace amrex;
 
@@ -21,35 +25,47 @@ class Domain {
 public:
   // private variables
 private:
+  int iProc; 
+
   int nGst;
 
   IntVect nCell;
+  IntVect nNode; 
   int nCellBlockMax;
   int periodicity[nDim];
-  IntVect domainLo;
-  IntVect domainHi;
-  RealBox domainRange;
-  Box domainBox;
+  IntVect centerBoxLo;
+  IntVect centerBoxHi;
+  Box centerBox;
+  RealBox boxRange;
 
   int coord;
   Geometry geom;
 
-  BoxArray ba;
+  BoxArray centerBA;
+  BoxArray nodeBA; 
 
   DistributionMapping dm;
 
-  MultiFab E;
-  MultiFab B;
+  MultiFab nodeE;
+  MultiFab nodeB;
+  MultiFab centerB; 
+  MultiFab nodeMMatrix; 
+  
 
   int nSpecies;
-  Vector<MultiFab> plasma;
+  Vector<MultiFab> nodePlasma;
 
+  Vector<Particles> partVect;
   // public methods
 public:
   Domain(){};
   ~Domain(){};
   void init();
-  // private methods
+  void define_domain();
+  void init_field();
+  void init_particles();
+  
+  //private methods
 private:
 };
 
