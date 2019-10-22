@@ -1,26 +1,58 @@
-include Makefile.conf
 include Makefile.depend
+include ../Makefile.def
 
-EXE = ${INSTALL_DIR}/bin/mypic.exe
+OBJECTS = ${OBJS}
+
+OBJECTS_EXE = \
+	main.o
+
+EXE = ${BINDIR}/mypic.exe
+
+AMREX_INSTALL_DIR = ${HOME}/lib/amrex
+
+SEARCH_C = -Iinclude -I$(AMREX_INSTALL_DIR)/include -I${SHAREDIR} 
+
+FLAGC_EXTRA = ${FLAGC_LOCAL} 
+
+LDFLAGS = -L$(AMREX_INSTALL_DIR)/lib
+LIBRARIES = -lamrex  -lgfortran
+
+include ../Makefile.conf
+
 
 default: $(EXE)
 
 
-$(EXE): $(OBJS)
-	$(CXX) -o ${EXE} $(CXXFLAGS) $^ $(LDFLAGS) $(LIBRARIES)
+$(EXE):
+	$(MAKE) LIB
+	$(MAKE) ${OBJECTS_EXE}
+	${COMPILE.mpicxx} -o ${EXE} ${MY_LIB} ${OBJECTS_EXE} \
+	-L../libIPIC3D/ -lIPIC3D ${CPPLIB} ${MPILIB} \
+	$(LDFLAGS) $(LIBRARIES)
+
+
+#
 
 %.o: %.cpp
 %.o: %.cpp $(DEPDIR)/%.d
-	$(CXX) -o $@ -c ${DEPFLAGS} $(FLAG_CXX) $<
+	${COMPILE.mpicxx} -o $@ -c ${DEPFLAGS} $(FLAGCC) $<
 
-.PHONY: clean distclean
+DEPEND:
+
+
+MY_LIB  = ../libIPIC3D/libIPIC3D.a
+
+LIB:    
+	$(MAKE) ${MY_LIB}
+	@echo
+	@echo ${MY_LIB} has been brought up to date.
+	@echo
+
+${MY_LIB}: ${OBJECTS} 
+	${AR} ${MY_LIB} ${OBJECTS}
+
 clean:
-	$(RM) *.o *.d
-	$(RM) -rf .o .d
+	rm -f ${OBJECTS} ${OBJECTS_EXE} ${MY_LIB}
 
 distclean: clean
-	$(RM) ${EXE}
-
-
-
-
+	rm -f Makefile.DEPEND Makefile.local Makefile.RULES

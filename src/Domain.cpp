@@ -72,7 +72,7 @@ void Domain::define_domain() {
     nodeMMatrix.define(nodeBA, dm, 27 * 9, 1);
     nodeMMatrix.setVal(0.0);
 
-    partVect.resize(nSpecies);
+    //partVect.resize(nSpecies);
 
   }
 
@@ -171,7 +171,7 @@ void Domain::init_field() {
 
 void Domain::init_particles() {
 
-for(auto& parts: partVect){
+  //for(auto& parts: partVect){
   //parts.ini
-}
+  //}
 }

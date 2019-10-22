@@ -1,6 +1,5 @@
 # source files
 SRCS := \
-	main.cpp \
 	Domain.cpp \
 	Particles.cpp
 

@@ -55,7 +55,7 @@ private:
   int nSpecies;
   Vector<MultiFab> nodePlasma;
 
-  Vector<Particles> partVect;
+  //Vector<MParticles> partVect;
   // public methods
 public:
   Domain(){};
