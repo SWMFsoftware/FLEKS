@@ -8,8 +8,6 @@ OBJECTS_EXE = \
 
 EXE = ${BINDIR}/mypic.exe
 
-AMREX_INSTALL_DIR = ${HOME}/lib/amrex
-
 SEARCH_C = -Iinclude -I$(AMREX_INSTALL_DIR)/include -I${SHAREDIR} 
 
 FLAGC_EXTRA = ${FLAGC_LOCAL} 
@@ -53,6 +51,7 @@ ${MY_LIB}: ${OBJECTS}
 
 clean:
 	rm -f ${OBJECTS} ${OBJECTS_EXE} ${MY_LIB}
+	rm -rf .d
 
 distclean: clean
 	rm -f Makefile.DEPEND Makefile.local Makefile.RULES

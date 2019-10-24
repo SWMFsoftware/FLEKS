@@ -1,8 +1,12 @@
 #ifndef MULTI_IPIC3D_DOMAIN_H
 #define MULTI_IPIC3D_DOMAIN_H
 
-//#include "iPic3D.h"
 #include <mpi.h>
+#include <AMReX_Vector.H>
+
+#include "Domain.h"
+
+extern Vector<std::unique_ptr<Domain>> MPICs; 
 
 //using namespace iPic3D;
 

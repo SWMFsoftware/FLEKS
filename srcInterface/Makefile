@@ -7,7 +7,7 @@ include ../Makefile.def
 
 SEARCHDIR = -I${SHAREDIR} -I${LIBRARYDIR} -I${COUPLERDIR} 
 
-SEARCH_C = -I../src/include -I${SHAREDIR} -I./
+SEARCH_C = -I../src/include -I${SHAREDIR} -I$(AMREX_INSTALL_DIR)/include -I./
 
 FLAGC_EXTRA = -DBATSRUS
 

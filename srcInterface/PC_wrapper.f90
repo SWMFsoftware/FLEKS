@@ -271,6 +271,8 @@ contains
     ! Finish the initialization after the first coupling
     logical:: IsFirstTime = .true.
 
+    integer:: i
+    
     logical:: DoTest, DoTestMe
     character(len=*), parameter :: NameSub='PC_put_from_gm'
     !--------------------------------------------------------------------------
@@ -284,6 +286,7 @@ contains
        allocate(Pos_DI(nDim,nPoint))
 
        call ipic3d_get_grid(Pos_DI,nDim*nPoint)
+              
        RETURN
     end if
 
