@@ -25,11 +25,7 @@ public:
                           const FluidPicInterface& fluidInterface, int iBlock,
                           int i, int j, int k, int loi, int loj, int lok);
 
-  void sum_moments(const amrex::MultiFab& Ex, const amrex::MultiFab& Ey,
-                   const amrex::MultiFab& Ez, const amrex::MultiFab& Bx,
-                   const amrex::MultiFab& By, const amrex::MultiFab& Bz,
-                   amrex::MultiFab& jx, amrex::MultiFab& jy,
-                   amrex::MultiFab& jz, amrex::Real dt);
+  void sum_moments(amrex::MultiFab& momentsMF, amrex::Real dt);
 
   void mover(const amrex::MultiFab& Ex, const amrex::MultiFab& Ey,
              const amrex::MultiFab& Ez, const amrex::MultiFab& Bx,

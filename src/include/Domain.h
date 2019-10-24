@@ -58,6 +58,7 @@ private:
   MultiFab nodeMMatrix;
 
   int nSpecies;
+  int iTot;
   Vector<MultiFab> nodePlasma;
 
   Vector<std::unique_ptr<Particles>> parts;
@@ -80,6 +81,7 @@ public:
   void set_ic();
   void init_field();
   void init_particles();
+  void sum_moments();
   void update();
 
   void set_dtSI(double dtIn) {

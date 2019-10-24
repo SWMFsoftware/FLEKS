@@ -1,4 +1,5 @@
 #include "Particles.h"
+#include "Utility.h"
 
 using namespace amrex;
 
@@ -99,8 +100,9 @@ void Particles::add_particles_cell(const MFIter& mfi,
           particles.push_back(p);
 
           Print() << " i = " << i << " j = " << j << " k = " << k
-                  << " x = " << p.pos(ix_) << " y = " << p.pos(iy_)  << " z = " << p.pos(iz_) 
-                  << " q = " << p.rdata(iqp_) << " u = " << p.rdata(iup_) << " v = " << p.rdata(ivp_)
+                  << " x = " << p.pos(ix_) << " y = " << p.pos(iy_)
+                  << " z = " << p.pos(iz_) << " q = " << p.rdata(iqp_)
+                  << " u = " << p.rdata(iup_) << " v = " << p.rdata(ivp_)
                   << " w = " << p.rdata(iwp_) << " charge = " << charge
                   << " mass = " << mass << std::endl;
 
@@ -143,11 +145,80 @@ void Particles::add_particles_domain(const FluidPicInterface& fluidInterface) {
           << " plo[2] = " << plo[2] << std::endl;
 }
 
-void Particles::sum_moments(const MultiFab& Ex, const MultiFab& Ey,
-                            const MultiFab& Ez, const MultiFab& Bx,
-                            const MultiFab& By, const MultiFab& Bz,
-                            MultiFab& jx, MultiFab& jy, MultiFab& jz, Real dt) {
+void Particles::sum_moments(MultiFab& momentsMF, Real dt) {
   BL_PROFILE("Particles::sum_moments");
+  const auto& plo = Geom(0).ProbLo();
+  const auto& invDx = Geom(0).InvCellSize();
+
+  momentsMF.setVal(0.0);
+
+  const int lev = 0;
+  for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
+    FArrayBox& momentsFab = momentsMF[pti];
+    Array4<Real> momentsArr = momentsFab.array();
+
+    // Particle container is defined based on a center box.
+    // So Convert it into a node box here.
+    const Box& box = convert(pti.validbox(), { 1, 1, 1 });
+    Print() << " box = " << box << std::endl;
+    // box.loVect;
+
+    const auto& particles = pti.GetArrayOfStructs();
+    for (const auto& p : particles) {
+      Print() << "p = " << p << std::endl;
+
+      Real pMoments[10];
+      {
+        const Real up = p.rdata(iup_);
+        const Real vp = p.rdata(ivp_);
+        const Real wp = p.rdata(iwp_);
+        const Real qp = p.rdata(iqp_);
+
+        pMoments[iRho_] = qp;
+
+        pMoments[iMx_] = qp * up;
+        pMoments[iMy_] = qp * vp;
+        pMoments[iMz_] = qp * wp;
+
+        pMoments[iPxx_] = qp * up * up;
+        pMoments[iPyy_] = qp * vp * vp;
+        pMoments[iPzz_] = qp * wp * wp;
+
+        pMoments[iPxy_] = qp * up * vp;
+        pMoments[iPxz_] = qp * up * wp;
+        pMoments[iPyz_] = qp * vp * wp;
+      }
+
+      int loIdx[3];
+      Real dShift[3];
+      for (int i = 0; i < 3; i++) {
+        dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
+        loIdx[i] = floor(dShift[i]);
+        dShift[i] = dShift[i] - loIdx[i];
+      }
+
+      Real coef[2][2][2];
+      part_grid_interpolation_coef(dShift, coef);
+
+      for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+          for (int kk = 0; kk < 2; kk++)
+            for (int iVar = 0; iVar < nMoments; iVar++) {
+              momentsArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
+                         iVar) = coef[ii][jj][kk] * pMoments[iVar];
+            }
+
+    } // for p
+
+    //    const FArrayBox& ezfab = Ex[pti];
+  }
+
+  momentsMF.SumBoundary(Geom(0).periodicity());
+
+  //Print()<<momentsMF<<std::endl;
+
+  // FillBoundary seems unnecessary. --Yuxi
+  momentsMF.FillBoundary(Geom(0).periodicity());
 }
 
 void Particles::mover(const MultiFab& Ex, const MultiFab& Ey,

@@ -99,7 +99,6 @@ void Domain::define_domain() {
     dm.define(centerBA);
 
     nodeBA = convert(centerBA, IntVect{ AMREX_D_DECL(1, 1, 1) });
-
   }
 
   {
@@ -116,7 +115,9 @@ void Domain::define_domain() {
   {
     // Plasma
     // nSpecies = 2;
-    nodePlasma.resize(nSpecies);
+    iTot = nSpecies;
+    // The last one is the sum of all species.
+    nodePlasma.resize(nSpecies + 1);
     for (auto& pl : nodePlasma) {
       pl.define(nodeBA, dm, nMoments, nGst);
       pl.setVal(0.0);
@@ -225,25 +226,55 @@ void Domain::init_field() {
 
 void Domain::init_particles() {
   for (int i = 0; i < nSpecies; i++) {
-    IntVect nPartPerCell={npcelx[i], npcely[i], npcelz[i]};
-    auto ptr = std::make_unique<Particles>(geom, dm, centerBA, i, fluidInterface.getQiSpecies(i),
-                       fluidInterface.getMiSpecies(i), nPartPerCell);
-    parts.push_back(std::move(ptr));    
+    IntVect nPartPerCell = { npcelx[i], npcely[i], npcelz[i] };
+    auto ptr = std::make_unique<Particles>(
+        geom, dm, centerBA, i, fluidInterface.getQiSpecies(i),
+        fluidInterface.getMiSpecies(i), nPartPerCell);
+    parts.push_back(std::move(ptr));
   }
 
-  for(auto& pts: parts){
+  for (auto& pts : parts) {
     pts->add_particles_domain(fluidInterface);
   }
 
-  Print()<<" parts size = "<<parts.size()<<std::endl;
-
-
-
-
+  sum_moments();
+  Print() << " parts size = " << parts.size() << std::endl;
 
   // for(auto& parts: partVect){
   // parts.ini
   //}
+}
+
+void Domain::sum_moments() {
+  nodePlasma[nSpecies].setVal(0.0);
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->sum_moments(nodePlasma[i], dt);
+    MultiFab::Add(nodePlasma[nSpecies], nodePlasma[i], 0, 0, nMoments, 0);
+  }
+
+    for (MFIter mfi(nodePlasma[0]); mfi.isValid(); ++mfi) // Loop over grids
+  {
+    FArrayBox& fab = nodePlasma[0][mfi];
+  
+
+    const Box& box = mfi.validbox();
+    const Array4<Real>& data = fab.array();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) 
+        for(int iVar = 0; iVar<fab.nComp(); iVar++)
+        {
+          Print()<<" i = "<<i<<" j = "<<j<<" k = "<<k
+          <<" iVar = "<<iVar<<" val = "<<data(i,j,k,iVar)<<std::endl;
+
+        }
+  }
+
+  // sum to total here
 }
 
 void Domain::update() {
@@ -268,7 +299,7 @@ void Domain::set_state_var(double* data, int* index) {
 
     const Real* dx = geom.CellSize();
 
-    Print()<<" 1dxz = "<<dx[iz_]<<std::endl;
+    Print() << " 1dxz = " << dx[iz_] << std::endl;
     int iBlock = 0;
     for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
