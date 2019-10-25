@@ -1,7 +1,9 @@
 # source files
 SRCS := \
 	Domain.cpp \
-	Particles.cpp
+	Particles.cpp \
+	LinearSolver.cpp \
+	Utility.cpp
 
 # intermediate directory for generated dependency files
 DEPDIR := .d

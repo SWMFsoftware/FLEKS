@@ -2,6 +2,7 @@
 #define _UTILITY_H_
 
 #include <AMReX_REAL.H>
+#include <AMReX_MultiFab.H>
 
 inline void part_grid_interpolation_coef(amrex::Real (&dx)[3],
                                          amrex::Real (&coef)[2][2][2]) {
@@ -25,5 +26,7 @@ inline void part_grid_interpolation_coef(amrex::Real (&dx)[3],
   coef[1][1][0] = xi[0] * eta[0] * zeta[1];
   coef[1][1][1] = xi[0] * eta[0] * zeta[0];
 }
+
+void curl_center_to_node(const amrex::MultiFab& centerMF, amrex::MultiFab& nodeMF, const amrex::Real* invDx);
 
 #endif

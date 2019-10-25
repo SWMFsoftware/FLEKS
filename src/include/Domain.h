@@ -104,6 +104,11 @@ public:
   void read_param();
   //------------Coupler related end--------------
 
+  void update_E();
+  void update_E_rhs(double *);
+  void update_E_matvec(double *vecIn, double *vecOut);
+
+
   // private methods
 private:
 };

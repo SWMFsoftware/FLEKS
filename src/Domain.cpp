@@ -1,6 +1,8 @@
 #include <AMReX_MultiFabUtil.H>
 
 #include "Domain.h"
+#include "LinearSolver.h"
+#include "Utility.h"
 
 void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
                   double* gridDim, double* paramReal, int iDomain) {
@@ -306,6 +308,7 @@ void Domain::sum_moments() {
 void Domain::update() {
   timeNow += dt;
   timeNowSI += dtSI;
+  update_E();
 }
 
 void Domain::set_state_var(double* data, int* index) {
@@ -401,4 +404,26 @@ void Domain::get_grid(double* pos_DI) {
         }
   }
   Print() << nameFunc << " end" << std::endl;
+}
+
+
+void Domain::update_E_matvec(double *vecIn, double *vecOut){
+
+}
+
+
+void Domain::update_E(){
+linear_solver_matvec_c = pic_matvec;
+
+double* bkrylov; 
+update_E_rhs(bkrylov);
+}
+
+void Domain::update_E_rhs(double *bkrylov){
+  MultiFab tempNode(nodeBA, dm, 3, nGst);
+  tempNode.setVal(0.0);
+
+  const Real* invDx = geom.InvCellSize();
+  curl_center_to_node(centerB, tempNode, invDx);
+
 }
