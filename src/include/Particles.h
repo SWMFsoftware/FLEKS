@@ -25,7 +25,8 @@ public:
                           const FluidPicInterface& fluidInterface, int iBlock,
                           int i, int j, int k, int loi, int loj, int lok);
 
-  void sum_moments(amrex::MultiFab& momentsMF, amrex::Real dt);
+  void sum_moments(amrex::MultiFab& momentsMF, amrex::MultiFab& matrixMF,
+                   amrex::MultiFab& nodeBMF, amrex::Real dt);
 
   void mover(const amrex::MultiFab& Ex, const amrex::MultiFab& Ey,
              const amrex::MultiFab& Ez, const amrex::MultiFab& Bx,
@@ -33,10 +34,10 @@ public:
              amrex::Real dt);
 
 protected:
-  static const int iup_=0;
-  static const int ivp_=1;
-  static const int iwp_=2;
-  static const int iqp_=3; 
+  static const int iup_ = 0;
+  static const int ivp_ = 1;
+  static const int iwp_ = 2;
+  static const int iqp_ = 3;
 
   int speciesID;
   RandNum randNum;

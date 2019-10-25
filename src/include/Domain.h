@@ -59,7 +59,7 @@ private:
 
   int nSpecies;
   int iTot;
-  Vector<MultiFab> nodePlasma;
+  Vector<MultiFab> nodePlasma;  
 
   Vector<std::unique_ptr<Particles>> parts;
   int *npcelx, *npcely, *npcelz;

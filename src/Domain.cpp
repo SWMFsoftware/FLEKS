@@ -172,7 +172,7 @@ void Domain::init_field() {
   {
     FArrayBox& fab = nodeB[mfi];
 
-    const Box& box = mfi.validbox();
+    const Box& box = mfi.fabbox();
     const Array4<Real>& B = fab.array();
 
     const auto lo = lbound(box);
@@ -216,10 +216,10 @@ void Domain::init_field() {
         }
   };
 
-  for (MFIter mfi(centerB); mfi.isValid(); ++mfi) // Loop over grids
+  for (MFIter mfi(nodeB); mfi.isValid(); ++mfi) // Loop over grids
   {
-    FArrayBox& fab = centerB[mfi];
-    print_B(mfi.fabbox(), fab.array());
+    FArrayBox& fab = nodeB[mfi];
+    print_B(mfi.validbox(), fab.array());
   }
 }
 //---------------------------------------------------------
@@ -247,15 +247,42 @@ void Domain::init_particles() {
 
 void Domain::sum_moments() {
   nodePlasma[nSpecies].setVal(0.0);
+  nodeMMatrix.setVal(0.0);
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->sum_moments(nodePlasma[i], dt);
+    parts[i]->sum_moments(nodePlasma[i], nodeMMatrix, nodeB, dt);
     MultiFab::Add(nodePlasma[nSpecies], nodePlasma[i], 0, 0, nMoments, 0);
   }
 
-    for (MFIter mfi(nodePlasma[0]); mfi.isValid(); ++mfi) // Loop over grids
+  nodeMMatrix.SumBoundary(geom.periodicity());
+  nodeMMatrix.FillBoundary(geom.periodicity());
+
+
+  {
+    Print() << "after" << std::endl;
+    MultiFab& data = nodeMMatrix;
+    for (MFIter mfi(data); mfi.isValid(); ++mfi) {
+      FArrayBox& fab = data[mfi];
+      const Box& box = mfi.validbox();
+      Array4<Real> const& data = fab.array();
+
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+
+      for (int i = lo.x; i <= hi.x; ++i)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int k = lo.z; k <= hi.z; ++k)
+            for (int iVar = 0; iVar < data.nComp(); iVar++) {
+              AllPrint() << " i = " << i << " j = " << j << " k = " << k
+                         << " iVar = " << iVar
+                         << " data = " << data(i, j, k, iVar) << std::endl;
+            }
+    }
+  }
+
+
+  for (MFIter mfi(nodePlasma[0]); mfi.isValid(); ++mfi) // Loop over grids
   {
     FArrayBox& fab = nodePlasma[0][mfi];
-  
 
     const Box& box = mfi.validbox();
     const Array4<Real>& data = fab.array();
@@ -265,13 +292,12 @@ void Domain::sum_moments() {
 
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) 
-        for(int iVar = 0; iVar<fab.nComp(); iVar++)
-        {
-          Print()<<" i = "<<i<<" j = "<<j<<" k = "<<k
-          <<" iVar = "<<iVar<<" val = "<<data(i,j,k,iVar)<<std::endl;
-
-        }
+        for (int i = lo.x; i <= hi.x; ++i)
+          for (int iVar = 0; iVar < fab.nComp(); iVar++) {
+            Print() << " i = " << i << " j = " << j << " k = " << k
+                    << " iVar = " << iVar << " val = " << data(i, j, k, iVar)
+                    << std::endl;
+          }
   }
 
   // sum to total here
