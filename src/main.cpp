@@ -13,7 +13,7 @@ int main(int argc, char* argv[]) {
   {
     Domain domain;
 
-    domain.init();
+    //domain.init();
   }
 
   amrex::Finalize();

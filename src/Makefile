@@ -17,9 +17,9 @@ LIBRARIES = -lamrex  -lgfortran
 
 include ../Makefile.conf
 
+exe: $(EXE)
 
 default: $(EXE)
-
 
 $(EXE):
 	$(MAKE) LIB

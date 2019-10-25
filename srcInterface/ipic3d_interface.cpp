@@ -314,6 +314,7 @@ int ipic3d_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
   std::string nameFunc = "PC: IPIC3D_get_state_var";
   amrex::Print() << nameFunc << std::endl;
 
+  amrex::Abort();
   // timing_start(nameFunc);
 
   // for (int i = 0; i < nIPIC; i++) {
@@ -326,6 +327,7 @@ int ipic3d_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
 int ipic3d_find_points_(int *nPoint, double *Xyz_I, int *iProc_I) {
   std::string nameFunc = "PC: ipic3d_find_points_";
   amrex::Print() << nameFunc << " begin" << std::endl;
+  amrex::Abort();
   // timing_start(nameFunc);
 
   // for (int i = 0; i < nIPIC; i++) {

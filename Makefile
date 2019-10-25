@@ -17,7 +17,7 @@ help:
 
 
 mypic:
-	cd src; make
+	cd src; make exe
 
 INSTALLFILES =  src/Makefile.DEPEND \
 		srcInterface/Makefile.DEPEND

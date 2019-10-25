@@ -36,10 +36,10 @@ void Particles::add_particles_cell(const MFIter& mfi,
       (speciesID + 3) * nRandom * npcel *
       (nxcg * nycg * nzcg * iCycle + nycg * nzcg * ig + nzcg * jg + kg);
   randNum.set_seed(seed);
-  Print() << " ns = " << speciesID << " iCycle = " << iCycle
-          << " npcel = " << npcel << " nxcg =" << nxcg << " nycg = " << nycg
-          << " nzcg = " << nzcg << " i = " << i << "  j = " << j << " k = " << k
-          << " seed = " << seed << std::endl;
+  // Print() << " ns = " << speciesID << " iCycle = " << iCycle
+  //         << " npcel = " << npcel << " nxcg =" << nxcg << " nycg = " << nycg
+  //         << " nzcg = " << nzcg << " i = " << i << "  j = " << j << " k = " << k
+  //         << " seed = " << seed << std::endl;
 
   double x, y, z; // Particle location.
 
@@ -48,7 +48,7 @@ void Particles::add_particles_cell(const MFIter& mfi,
 
   const Real invVol = 1.0 / dx[ix_] / dx[iy_] / dx[iz_];
 
-  Print() << "dxz = " << dx[iz_] << std::endl;
+  //Print() << "dxz = " << dx[iz_] << std::endl;
 
   const int lev = 0;
   auto& particles =
@@ -67,6 +67,9 @@ void Particles::add_particles_cell(const MFIter& mfi,
             (charge / mass / fabs(charge / mass)) *
             (fluidInterface.getPICRhoNum(iBlock, x, y, z, speciesID) / npcel) *
             invVol;
+
+	Print()<<" x = "<<x<<" y = "<<y<<" z = "<<z<<" fluidRho = "<<fluidInterface.getPICRhoNum(iBlock, x, y, z, speciesID)<<std::endl;
+	
         if (q != 0) {
           double rand;
           double u, v, w;
@@ -165,7 +168,7 @@ void Particles::sum_moments(MultiFab& momentsMF, Real dt) {
 
     const auto& particles = pti.GetArrayOfStructs();
     for (const auto& p : particles) {
-      Print() << "p = " << p << std::endl;
+      //Print() << "p = " << p << std::endl;
 
       Real pMoments[10];
       {
@@ -205,14 +208,31 @@ void Particles::sum_moments(MultiFab& momentsMF, Real dt) {
           for (int kk = 0; kk < 2; kk++)
             for (int iVar = 0; iVar < nMoments; iVar++) {
               momentsArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
-                         iVar) = coef[ii][jj][kk] * pMoments[iVar];
+                         iVar) += coef[ii][jj][kk] * pMoments[iVar];	      
             }
+
+      if( speciesID==0){
+        Print() << " p = "<<p
+		<<" coef = "<<coef[0][0][0]
+		<<" pMoment = "<<pMoments[0]
+		<< momentsArr(0, 0,
+			      0, 0)<<std::endl;
+              }
+
 
     } // for p
 
     //    const FArrayBox& ezfab = Ex[pti];
   }
 
+
+  // if( speciesID==0){
+  //   Print() 
+  // 	    << momentsArr(0, 0,
+  // 			  0, 0)<<std::endl;
+  // }
+
+  
   momentsMF.SumBoundary(Geom(0).periodicity());
 
   //Print()<<momentsMF<<std::endl;

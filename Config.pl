@@ -66,33 +66,33 @@ sub get_settings{
     $mypseudorand = "false";
 
     # Read size of the grid from topology file
-    open(FILE, $makefilelocal) or die "$ERROR could not open $makefilelocal\n";
-    while(<FILE>){
-	next if /^\s*!/; # skip commented out lines
-	$mypseudorand="true" if/^.*-DPSEUDRAND\b/i;
-	$myng=$1 if/^.*-DNG_P=(\d+)/i;
-	$myBATSRUS="true" if/^.*-DBATSRUS\b/i;
-    }
-    close $makefilelocal;
+    # open(FILE, $makefilelocal) or die "$ERROR could not open $makefilelocal\n";
+    # while(<FILE>){
+    # 	next if /^\s*!/; # skip commented out lines
+    # 	$mypseudorand="true" if/^.*-DPSEUDRAND\b/i;
+    # 	$myng=$1 if/^.*-DNG_P=(\d+)/i;
+    # 	$myBATSRUS="true" if/^.*-DBATSRUS\b/i;
+    # }
+    # close $makefilelocal;
 }
 
 ################################################################################
 sub set_cpp_options{
 
-    die "$ERROR File $makefilelocal does not exist!\n" unless -f $makefilelocal;
+    # die "$ERROR File $makefilelocal does not exist!\n" unless -f $makefilelocal;
 
-    @ARGV = ($makefilelocal);
-    while(<>){
-	if($ng        ne "")     {s/DNG_P=[0-9*]/DNG_P=$ng/;};
-	if($pseudrand ne "")     {s/\-DPSEUDRAND($|\s)//g;}; # remove if -pseudrand=* is set
-	if($pseudrand eq "true") {s/FLAGC_LOCAL=/FLAGC_LOCAL=-DPSEUDRAND /;};
-	if($BATSRUS   ne "")     {s/-DBATSRUS($|\s)//g;}; # remove if -BATSRUS=* is set
-	if($BATSRUS   eq "true") {s/FLAGC_LOCAL=/FLAGC_LOCAL=-DBATSRUS /;};
-	# $Hdf5 is inherited from share/Scripts/Config.pl and it is always set to "yes" or "no"
-	s/-DHDF5($|\s)//g;
-	if($Hdf5       eq "yes")  {s/FLAGC_LOCAL=/FLAGC_LOCAL=-DHDF5 /};
-	print;
-    }
+    # @ARGV = ($makefilelocal);
+    # while(<>){
+    # 	if($ng        ne "")     {s/DNG_P=[0-9*]/DNG_P=$ng/;};
+    # 	if($pseudrand ne "")     {s/\-DPSEUDRAND($|\s)//g;}; # remove if -pseudrand=* is set
+    # 	if($pseudrand eq "true") {s/FLAGC_LOCAL=/FLAGC_LOCAL=-DPSEUDRAND /;};
+    # 	if($BATSRUS   ne "")     {s/-DBATSRUS($|\s)//g;}; # remove if -BATSRUS=* is set
+    # 	if($BATSRUS   eq "true") {s/FLAGC_LOCAL=/FLAGC_LOCAL=-DBATSRUS /;};
+    # 	# $Hdf5 is inherited from share/Scripts/Config.pl and it is always set to "yes" or "no"
+    # 	s/-DHDF5($|\s)//g;
+    # 	if($Hdf5       eq "yes")  {s/FLAGC_LOCAL=/FLAGC_LOCAL=-DHDF5 /};
+    # 	print;
+    # }
 }
 
 ################################################################################
