@@ -66,6 +66,7 @@ private:
   double *qom;  
 
 
+  Real theta; 
   Real dtSI, dt;
   Real timeNow, timeNowSI;
 
@@ -105,7 +106,7 @@ public:
   //------------Coupler related end--------------
 
   void update_E();
-  void update_E_rhs(double *);
+  void update_E_rhs(double *rhos);
   void update_E_matvec(double *vecIn, double *vecOut);
 
 

@@ -100,7 +100,7 @@ int ipic3d_read_param_(char *paramIn, int *nlines, int *ncharline, int *iProc) {
   // // convert character array to string stream object
   // myProc = *iProc;
 
-  char_to_string(paramString, paramIn, (*nlines) * (*ncharline), *ncharline);
+  paramString = char_to_string(paramIn, (*nlines) * (*ncharline), *ncharline);
 
   // std::cout<<"paramString = "<<paramString<<std::endl;
 

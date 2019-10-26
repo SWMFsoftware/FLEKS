@@ -1,8 +1,40 @@
 #ifndef _UTILITY_H_
 #define _UTILITY_H_
 
-#include <AMReX_REAL.H>
 #include <AMReX_MultiFab.H>
+#include <AMReX_REAL.H>
+
+#include "Constants.h"
+
+void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
+                      amrex::Geometry& geom);
+
+void convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
+                      amrex::Geometry& geom);
+
+void curl_center_to_node(const amrex::MultiFab& centerMF,
+                         amrex::MultiFab& nodeMF, const amrex::Real* invDx);
+
+void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
+                      const amrex::DistributionMapping dm,
+                      const amrex::Geometry& geom);
+
+void grad_node_to_center(const amrex::MultiFab& nodeMF,
+                         amrex::MultiFab& centerMF, const amrex::Real* invDx);
+
+void div_center_to_node(const amrex::MultiFab& centerMF,
+                        amrex::MultiFab& nodeMF, const amrex::Real* invDx);
+
+void print_MultiFab(amrex::MultiFab& data, std::string tag);
+
+inline int get_fab_grid_points_number(const amrex::MultiFab& MF) {
+  amrex::MFIter mfi(MF);
+  const amrex::Box& box = mfi.validbox();
+  const auto lo = lbound(box);
+  const auto hi = ubound(box);
+
+  return (hi.x - lo.x + 1) * (hi.y - lo.y + 1) * (hi.z - lo.z + 1);
+}
 
 inline void part_grid_interpolation_coef(amrex::Real (&dx)[3],
                                          amrex::Real (&coef)[2][2][2]) {
@@ -16,7 +48,7 @@ inline void part_grid_interpolation_coef(amrex::Real (&dx)[3],
   xi[1] = 1 - xi[0];
   eta[1] = 1 - eta[0];
   zeta[1] = 1 - zeta[0];
-  
+
   coef[0][0][0] = xi[1] * eta[1] * zeta[1];
   coef[0][0][1] = xi[1] * eta[1] * zeta[0];
   coef[0][1][0] = xi[1] * eta[0] * zeta[1];
@@ -26,7 +58,5 @@ inline void part_grid_interpolation_coef(amrex::Real (&dx)[3],
   coef[1][1][0] = xi[0] * eta[0] * zeta[1];
   coef[1][1][1] = xi[0] * eta[0] * zeta[0];
 }
-
-void curl_center_to_node(const amrex::MultiFab& centerMF, amrex::MultiFab& nodeMF, const amrex::Real* invDx);
 
 #endif

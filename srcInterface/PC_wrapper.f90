@@ -68,7 +68,7 @@ contains
     case('READ')
 
        ! get section of PARAM.in that contains the PC module
-       allocate(StringLineF_I(i_line_read()+1:n_line_read()))
+       allocate(StringLineF_I(i_line_read():n_line_read()))
        call read_text(StringLineF_I)
 
        if(n_line_read()-i_line_read()+1 > 0) then
