@@ -12,9 +12,7 @@ void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
   fluidInterface.set_nProcs(ParallelDescriptor::NProcs());
 
   std::stringstream* ss = nullptr;
-  Print() << "dosplit = " << (fluidInterface.get_doSplitSpecies() ? 'T' : 'F')
-          << std::endl;
-
+  
   fluidInterface.ReadFromGMinit(paramInt, gridDim, paramReal, ss);
 
   fluidInterface.readParam = paramString;
@@ -32,8 +30,6 @@ void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
   fluidInterface.PrintFluidPicInterface();
 
   define_domain();
-
-  Print() << "Domain::init() end" << std::endl;
 }
 //---------------------------------------------------------
 
@@ -144,16 +140,10 @@ void Domain::define_domain() {
     nodeMMatrix.define(nodeBA, dm, 27 * 9, 1);
     nodeMMatrix.setVal(0.0);
 
-    // partVect.resize(nSpecies);
   }
 
   Print() << " centerBox = " << centerBox << " boxRange = " << boxRange
           << std::endl;
-
-  //   AllPrint() << "iproc =  " << ParallelDescriptor::MyProc()
-  //              << " local fab size = " << nodeE.local_size() << " dm = " <<
-  //              dm
-  //              << "\n";
 }
 //---------------------------------------------------------
 
@@ -218,26 +208,6 @@ void Domain::init_field() {
   for (auto& pl : nodePlasma) {
     pl.FillBoundary(geom.periodicity());
   }
-
-  auto print_B = [&dx](const Box& box, Array4<Real> const& B) {
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
-
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          AllPrint() << " i = " << i << " j = " << j << " k = " << k
-                     << " Bx = " << B(i, j, k, ix_)
-                     << " By = " << B(i, j, k, iy_)
-                     << " Bz = " << B(i, j, k, iz_) << std::endl;
-        }
-  };
-
-  for (MFIter mfi(nodeB); mfi.isValid(); ++mfi) // Loop over grids
-  {
-    FArrayBox& fab = nodeB[mfi];
-    print_B(mfi.validbox(), fab.array());
-  }
 }
 //---------------------------------------------------------
 
@@ -254,12 +224,7 @@ void Domain::init_particles() {
     pts->add_particles_domain(fluidInterface);
   }
 
-  sum_moments();
-  Print() << " parts size = " << parts.size() << std::endl;
-
-  // for(auto& parts: partVect){
-  // parts.ini
-  //}
+  sum_moments();  
 }
 
 void Domain::particle_mover() {
@@ -278,8 +243,6 @@ void Domain::sum_moments() {
 
   nodeMMatrix.SumBoundary(geom.periodicity());
   nodeMMatrix.FillBoundary(geom.periodicity());
-
-  // sum to total here
 }
 
 void Domain::update() {
@@ -290,8 +253,6 @@ void Domain::update() {
   timeNowSI += dtSI;
   update_E();
 
-  //print_MultiFab(nodeE, "nodeE");
-
   particle_mover();
   update_B();
   sum_moments();
@@ -300,7 +261,6 @@ void Domain::update() {
 
 void Domain::set_state_var(double* data, int* index) {
   std::string nameFunc = "Domain::set_state_var";
-  Print() << nameFunc << " begin" << std::endl;
 
   int nBlockLocal = nodeE.local_size();
   fluidInterface.BlockMin_BD.clear();
@@ -315,7 +275,6 @@ void Domain::set_state_var(double* data, int* index) {
 
     const Real* dx = geom.CellSize();
 
-    Print() << " 1dxz = " << dx[iz_] << std::endl;
     int iBlock = 0;
     for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
@@ -343,7 +302,6 @@ void Domain::set_state_var(double* data, int* index) {
     fluidInterface.set_State_BGV(nBlockLocal, hi.x - lo.x + 1, hi.y - lo.y + 1,
                                  hi.z - lo.z + 1, data, index);
   }
-  Print() << nameFunc << " end" << std::endl;
 }
 
 int Domain::get_grid_nodes_number() {
@@ -367,7 +325,7 @@ int Domain::get_grid_nodes_number() {
 
 void Domain::get_grid(double* pos_DI) {
   std::string nameFunc = "Domain::get_grid";
-  Print() << nameFunc << " begin" << std::endl;
+
   const Real* dx = geom.CellSize();
   int iBlock = 0;
   int nCount = 0;
@@ -390,12 +348,9 @@ void Domain::get_grid(double* pos_DI) {
             pos_DI[nCount++] = k * dx[iz_] + boxRange.lo(iz_);
         }
   }
-  Print() << nameFunc << " end" << std::endl;
 }
 
 void Domain::update_E() {
-  // Print()<<" n grid = "<<get_fab_grid_points_number(nodeE)<<std::endl;
-
   const int nNode = get_fab_grid_points_number(nodeE) * nodeE.local_size();
   nSolve = 3 * nNode;
   double* rhs = new double[nSolve];
@@ -454,14 +409,10 @@ void Domain::update_E() {
   nodeEth.SumBoundary(geom.periodicity());
   nodeEth.FillBoundary(geom.periodicity());
 
-
   MultiFab::Add(nodeEth, nodeE, 0, 0, nodeEth.nComp(), nGst);
 
   MultiFab::LinComb(nodeE, -(1.0 - theta) / theta, nodeE, 0, 1. / theta,
                     nodeEth, 0, 0, nodeE.nComp(), nGst);
-
-  print_MultiFab(nodeEth, "nodeEth");
-  print_MultiFab(nodeE, "nodeE");
 
   delete[] rhs;
   delete[] xLeft;
@@ -494,14 +445,10 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
     div_node_to_center(vecMF, centerDivE, geom.InvCellSize());
     centerDivE.FillBoundary(geom.periodicity());
 
-    // print_MultiFab(centerDivE, "centerDivE");
-
     grad_center_to_node(centerDivE, tempNode3, geom.InvCellSize());
 
     tempNode3.mult(delt2);
     MultiFab::Add(imageMF, tempNode3, 0, 0, imageMF.nComp(), 0);
-
-    // print_MultiFab(imageMF, "imageMF");
   }
 
   update_E_M_dot_E(vecMF, tempNode3);
@@ -510,8 +457,6 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
   MultiFab::Add(imageMF, vecMF, 0, 0, imageMF.nComp(), 0);
 
   imageMF.FillBoundary(geom.periodicity());
-
-  // print_MultiFab(imageMF, "final imageMF");
 
   convert_3d_to_1d(imageMF, vecOut, geom);
 }
@@ -566,7 +511,6 @@ void Domain::update_E_rhs(double* rhs) {
   const Real* invDx = geom.InvCellSize();
   curl_center_to_node(centerB, tempNode, invDx);
 
-  // temp2Node += -fourPI*nodePlasma[iTot]
   MultiFab::Saxpy(temp2Node, -fourPI, nodePlasma[iTot], iJhx_, 0,
                   temp2Node.nComp(), 0);
 
@@ -574,9 +518,6 @@ void Domain::update_E_rhs(double* rhs) {
   temp2Node.mult(theta * dt);
 
   MultiFab::Add(temp2Node, nodeE, 0, 0, nodeE.nComp(), 0);
-
-  // print_MultiFab(nodeE, "nodeE");
-  // print_MultiFab(temp2Node,"rhs");
 
   convert_3d_to_1d(temp2Node, rhs, geom);
 }
@@ -591,6 +532,4 @@ void Domain::update_B() {
 
   average_center_to_node(centerB, nodeB);
   nodeB.FillBoundary(geom.periodicity());
-
-  print_MultiFab(nodeB, "nodeB");
 }

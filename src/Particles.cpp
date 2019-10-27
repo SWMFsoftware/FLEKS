@@ -36,11 +36,6 @@ void Particles::add_particles_cell(const MFIter& mfi,
       (speciesID + 3) * nRandom * npcel *
       (nxcg * nycg * nzcg * iCycle + nycg * nzcg * ig + nzcg * jg + kg);
   randNum.set_seed(seed);
-  // Print() << " ns = " << speciesID << " iCycle = " << iCycle
-  //         << " npcel = " << npcel << " nxcg =" << nxcg << " nycg = " << nycg
-  //         << " nzcg = " << nzcg << " i = " << i << "  j = " << j << " k = "
-  //         << k
-  //         << " seed = " << seed << std::endl;
 
   double x, y, z; // Particle location.
 
@@ -48,8 +43,6 @@ void Particles::add_particles_cell(const MFIter& mfi,
   auto plo = Geom(0).ProbLo();
 
   const Real vol = dx[ix_] * dx[iy_] * dx[iz_];
-
-  // Print() << "dxz = " << dx[iz_] << std::endl;
 
   const int lev = 0;
   auto& particles =
@@ -68,11 +61,6 @@ void Particles::add_particles_cell(const MFIter& mfi,
             (charge / mass / fabs(charge / mass)) *
             (fluidInterface.getPICRhoNum(iBlock, x, y, z, speciesID) / npcel) *
             vol;
-
-        // Print() << " x = " << x << " y = " << y << " z = " << z
-        //         << " fluidRho = "
-        //         << fluidInterface.getPICRhoNum(iBlock, x, y, z, speciesID)
-        //         << std::endl;
 
         if (q != 0) {
           double rand;
@@ -105,16 +93,6 @@ void Particles::add_particles_cell(const MFIter& mfi,
           p.rdata(iwp_) = w;
           p.rdata(iqp_) = q;
           particles.push_back(p);
-
-          // Print() << " i = " << i << " j = " << j << " k = " << k
-          //         << " x = " << p.pos(ix_) << " y = " << p.pos(iy_)
-          //         << " z = " << p.pos(iz_) << " q = " << p.rdata(iqp_)
-          //         << " u = " << p.rdata(iup_) << " v = " << p.rdata(ivp_)
-          //         << " w = " << p.rdata(iwp_) << " charge = " << charge
-          //         << " mass = " << mass << std::endl;
-
-          // Set particle velocity
-          // MaxwellianVelocityFromFluidCell(x, y, z, &u, &v, &w);
         }
       }
 }
@@ -139,17 +117,8 @@ void Particles::add_particles_domain(const FluidPicInterface& fluidInterface) {
                              lo.z);
         }
 
-    // Print() << " lo.x = " << lo.x << " lo.y = " << lo.y << " lo.z = " << lo.z
-    //         << " hi.x = " << hi.x << " hi.y = " << hi.y << " hi.z = " << hi.z
-    //         << std::endl;
-
     iBlock++;
   }
-
-  Print() << " speciesID = " << speciesID << "dx[0] = " << dx[0]
-          << "dx[1] = " << dx[1] << "dx[2] = " << dx[2]
-          << " plo[0] = " << plo[0] << " plo[1] = " << plo[1]
-          << " plo[2] = " << plo[2] << std::endl;
 }
 
 void Particles::sum_moments(MultiFab& momentsMF, MultiFab& matrixMF,
@@ -163,7 +132,6 @@ void Particles::sum_moments(MultiFab& momentsMF, MultiFab& matrixMF,
 
   const auto& invDx = Geom(0).InvCellSize();
   const Real invVol = invDx[ix_] * invDx[iy_] * invDx[iz_];
-  Print() << " invVol = " << invVol << std::endl;
 
   const int lev = 0;
   for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
@@ -394,8 +362,6 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
 
     auto& particles = pti.GetArrayOfStructs();
     for (auto& p : particles) {
-      Print() << "before move = " << p << std::endl;
-
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
       const Real wp = p.rdata(iwp_);
@@ -431,12 +397,6 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
             Bzl += nodeBArr(iNodeX, iNodeY, iNodeZ, iz_) * c0;
 
             Exl += nodeEArr(iNodeX, iNodeY, iNodeZ, ix_) * c0;
-            Print() << " co = " << c0
-                    << " field = " << nodeBArr(iNodeX, iNodeY, iNodeZ, ix_)
-                    << " iNodeX = " <<iNodeX
-                    << " iNodeY = " <<iNodeY
-                    << " iNodeZ = " <<iNodeZ
-                    << std::endl;
             Eyl += nodeEArr(iNodeX, iNodeY, iNodeZ, iy_) * c0;
             Ezl += nodeEArr(iNodeX, iNodeY, iNodeZ, iz_) * c0;
           }
@@ -471,7 +431,6 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
       p.pos(iy_) = yp + vnp1 * dtLoc;
       p.pos(iz_) = zp + wnp1 * dtLoc;
 
-      Print() << "after move = " << p << std::endl;
     } // for p
   }   // for pti
 
