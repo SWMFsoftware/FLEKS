@@ -56,6 +56,9 @@ private:
   MultiFab nodeB;
   MultiFab centerB;
   MultiFab nodeMMatrix;
+  MultiFab centerDivE; 
+  MultiFab tempNode3; 
+  int nSolve; 
 
   int nSpecies;
   int iTot;
@@ -106,8 +109,9 @@ public:
   //------------Coupler related end--------------
 
   void update_E();
-  void update_E_rhs(double *rhos);
-  void update_E_matvec(double *vecIn, double *vecOut);
+  void update_E_rhs(double *rhos);  
+  void update_E_matvec(const double *vecIn, double *vecOut);
+  void update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF ); 
 
 
   // private methods

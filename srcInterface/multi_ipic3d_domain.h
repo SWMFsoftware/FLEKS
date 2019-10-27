@@ -6,7 +6,7 @@
 
 #include "Domain.h"
 
-extern Vector<std::unique_ptr<Domain>> MPICs; 
+extern Vector<Domain*> MPICs; 
 
 //using namespace iPic3D;
 

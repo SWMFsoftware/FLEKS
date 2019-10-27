@@ -22,8 +22,14 @@ void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
 void grad_node_to_center(const amrex::MultiFab& nodeMF,
                          amrex::MultiFab& centerMF, const amrex::Real* invDx);
 
+void grad_center_to_node(const amrex::MultiFab& centerMF,
+                         amrex::MultiFab& nodeMF, const amrex::Real* invDx);
+
 void div_center_to_node(const amrex::MultiFab& centerMF,
                         amrex::MultiFab& nodeMF, const amrex::Real* invDx);
+
+void div_node_to_center(const amrex::MultiFab& nodeMF,
+                        amrex::MultiFab& centerMF, const amrex::Real* invDx);
 
 void print_MultiFab(amrex::MultiFab& data, std::string tag);
 
@@ -34,6 +40,11 @@ inline int get_fab_grid_points_number(const amrex::MultiFab& MF) {
   const auto hi = ubound(box);
 
   return (hi.x - lo.x + 1) * (hi.y - lo.y + 1) * (hi.z - lo.z + 1);
+}
+
+template <class T> inline void zero_array(T* arr, int nSize) {
+  for (int i = 0; i < nSize; i++)
+    arr[i] = 0;
 }
 
 inline void part_grid_interpolation_coef(amrex::Real (&dx)[3],

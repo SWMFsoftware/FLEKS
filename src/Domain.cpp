@@ -13,7 +13,7 @@ void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
   std::stringstream* ss = nullptr;
   Print() << "dosplit = " << (fluidInterface.get_doSplitSpecies() ? 'T' : 'F')
           << std::endl;
-  ;
+
   fluidInterface.ReadFromGMinit(paramInt, gridDim, paramReal, ss);
 
   fluidInterface.readParam = paramString;
@@ -117,6 +117,12 @@ void Domain::define_domain() {
 
     centerB.define(centerBA, dm, 3, nGst);
     centerB.setVal(0.0);
+
+    centerDivE.define(centerBA, dm, 1, nGst);
+    centerDivE.setVal(0.0);
+
+    tempNode3.define(nodeBA, dm, 3, nGst);
+    tempNode3.setVal(0.0);
   }
 
   {
@@ -367,43 +373,19 @@ void Domain::get_grid(double* pos_DI) {
   Print() << nameFunc << " end" << std::endl;
 }
 
-void Domain::update_E_matvec(double* vecIn, double* vecOut) {
-
-MultiFab vecMF(nodeBA, dm, 3, nGst);
-vecMF.setVal(0.0);
-
-MultiFab imageMF(nodeBA, dm, 3, nGst);
-imageMF.setVal(0.0);
-
-convert_1d_to_3d(vecIn, vecMF, geom); 
-
-// The right side edges should be filled in. 
-vecMF.SumBoundary(geom.periodicity());
-
-
-lap_node_to_node(vecMF, imageMF, dm, geom);
-
-Real delt2 = pow(theta*dt, 2); 
-imageMF.mult(-delt2);
-print_MultiFab(vecMF, "vecMF");
-print_MultiFab(imageMF, "imageMF");
-
-
-}
-
 void Domain::update_E() {
-  linear_solver_matvec_c = pic_matvec;
-
   // Print()<<" n grid = "<<get_fab_grid_points_number(nodeE)<<std::endl;
 
   const int nNode = get_fab_grid_points_number(nodeE) * nodeE.local_size();
-  double* rhs = new double[3 * nNode];
-  double* xLeft = new double[3 * nNode];
-  double* matvec = new double[3 * nNode];
+  nSolve = 3 * nNode;
+  double* rhs = new double[nSolve];
+  double* xLeft = new double[nSolve];
+  double* matvec = new double[nSolve];
 
-  for (int i = 0; i < 3 * nNode; i++){
+  for (int i = 0; i < nSolve; i++) {
     rhs[i] = 0;
-    xLeft[i] = 0; 
+    xLeft[i] = 0;
+    matvec[i] = 0; 
   }
 
   update_E_rhs(rhs);
@@ -411,6 +393,62 @@ void Domain::update_E() {
   convert_3d_to_1d(nodeE, xLeft, geom);
 
   update_E_matvec(xLeft, matvec);
+
+{
+  Real sum=0; 
+  for (int i = 0; i < nSolve; i++) {
+    sum += matvec[i]; 
+  }
+  Print()<<"matvec sum = "<<sum<<std::endl;
+}
+
+
+
+  for (int i = 0; i < nSolve; i++) {
+    rhs[i] -= matvec[i];
+    xLeft[i] = 0;
+  }
+
+
+{
+  Real sum=0; 
+  for (int i = 0; i < nSolve; i++) {
+    sum += rhs[i]; 
+  }
+  Print()<<"rhs sum = "<<sum<<std::endl;
+}
+
+
+
+  {
+    linear_solver_matvec_c = pic_matvec;
+
+    int nVarSolve = 3;
+    int nIter = 200; 
+    double EFieldTol = 1e-6; 
+    int nDimIn = 3;
+
+    MFIter mfi(nodeE); 
+    auto lo = lbound( mfi.validbox()); 
+    auto hi = ubound( mfi.validbox()); 
+
+    int nI = hi.x - lo.x + 1; 
+    int nJ = hi.y - lo.y + 1; 
+    int nK = hi.z - lo.z + 1; 
+    int nBlock = nodeE.local_size();
+    MPI_Fint iComm = MPI_Comm_c2f(ParallelDescriptor::Communicator());
+    double precond_matrix_II[1][1];
+    precond_matrix_II[0][0] = 0;
+    // parameter to choose preconditioner types
+    // 0:No precondition; 1: BILU; 2:DILU;
+    //[-1,0): MBILU;
+    double PrecondParam = 0;
+    int lTest = ParallelDescriptor::MyProc()==0;
+
+    linear_solver_wrapper("GMRES", &EFieldTol, &nIter, &nVarSolve, &nDimIn, &nI,
+                          &nJ, &nK, &nBlock, &iComm, rhs, xLeft,
+                          &PrecondParam, precond_matrix_II[0], &lTest);
+  }
 
   // {
   //   double sum = 0;
@@ -420,7 +458,96 @@ void Domain::update_E() {
   // }
 
   delete[] rhs;
-  delete [] xLeft; 
+  delete[] xLeft;
+}
+
+void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
+  zero_array(vecOut, nSolve);
+
+  MultiFab vecMF(nodeBA, dm, 3, nGst);
+  vecMF.setVal(0.0);
+
+  MultiFab imageMF(nodeBA, dm, 3, nGst);
+  imageMF.setVal(0.0);
+
+  convert_1d_to_3d(vecIn, vecMF, geom);
+
+  // The right side edges should be filled in.
+  vecMF.SumBoundary(geom.periodicity());
+
+  // M*E needs ghost cell information.
+  vecMF.FillBoundary(geom.periodicity());
+
+  lap_node_to_node(vecMF, imageMF, dm, geom);
+
+  Real delt2 = pow(theta * dt, 2);
+  imageMF.mult(-delt2);
+
+  {
+    div_node_to_center(vecMF, centerDivE, geom.InvCellSize());
+    centerDivE.FillBoundary(geom.periodicity());
+
+    // print_MultiFab(centerDivE, "centerDivE");
+
+    grad_center_to_node(centerDivE, tempNode3, geom.InvCellSize());
+
+    tempNode3.mult(delt2);
+    MultiFab::Add(imageMF, tempNode3, 0, 0, imageMF.nComp(), 0);
+
+    // print_MultiFab(imageMF, "imageMF");
+  }
+
+  update_E_M_dot_E(vecMF, tempNode3);
+  MultiFab::Add(imageMF, tempNode3, 0, 0, imageMF.nComp(), 0);
+
+  MultiFab::Add(imageMF, vecMF, 0, 0, imageMF.nComp(), 0);
+
+  imageMF.FillBoundary(geom.periodicity());
+
+  print_MultiFab(imageMF, "final imageMF");
+
+  convert_3d_to_1d(imageMF, vecOut, geom);
+}
+
+void Domain::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
+
+  outMF.setVal(0.0);
+  Real c0 = fourPI * theta * dt;
+  for (amrex::MFIter mfi(outMF); mfi.isValid(); ++mfi) {
+    const amrex::Box& box = mfi.validbox();
+    const auto lo = amrex::lbound(box);
+    const auto hi = amrex::ubound(box);
+
+    const amrex::Array4<amrex::Real const>& inArr = inMF[mfi].array();
+    const amrex::Array4<amrex::Real>& ourArr = outMF[mfi].array();
+    const amrex::Array4<amrex::Real>& mmArr = nodeMMatrix[mfi].array();
+
+    for (int i = lo.x; i <= hi.x; ++i)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int i2 = i - 1; i2 <= i + 1; i2++)
+            for (int j2 = j - 1; j2 <= j + 1; j2++)
+              for (int k2 = k - 1; k2 <= k + 1; k2++) {
+                const int gp = (i2 - i + 1) * 9 + (j2 - j + 1) * 3 + k2 - k + 1;
+                const int idx0 = gp * 9;
+
+                double M_I[9];
+                for (int ii = 0; ii < 9; ii++) {
+                  M_I[ii] = mmArr(i, j, k, idx0 + ii);
+                }
+
+                const double& vctX =
+                    inArr(i2, j2, k2, ix_); // vectX[i2][j2][k2];
+                const double& vctY = inArr(i2, j2, k2, iy_);
+                const double& vctZ = inArr(i2, j2, k2, iz_);
+                ourArr(i, j, k, ix_) +=
+                    (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
+                ourArr(i, j, k, iy_) +=
+                    (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
+                ourArr(i, j, k, iz_) +=
+                    (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
+              }
+  }
 }
 
 void Domain::update_E_rhs(double* rhs) {

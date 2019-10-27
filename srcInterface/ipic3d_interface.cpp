@@ -16,7 +16,7 @@
 // using namespace iPic3D;
 using namespace std;
 
-Vector<std::unique_ptr<Domain> > MPICs;
+Vector<Domain*> MPICs;
 
 // int nIPIC;
 // int iIPIC;
@@ -128,8 +128,8 @@ int ipic3d_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
   // firstIPIC = 0;
   const int nDomain = paramint[1];
   for (int i = 0; i < nDomain; i++) {
-    auto ptr = std::make_unique<Domain>();
-    MPICs.push_back(std::move(ptr));
+    Domain* ptr = new Domain();
+    MPICs.push_back(ptr);
   }
 
   int nParamRegion = 21;
@@ -392,7 +392,7 @@ int ipic3d_end_() {
 
   {
     for (int i = 0; i < MPICs.size(); i++)
-      MPICs[i].reset(nullptr);
+      delete MPICs[i];
   }
 
   amrex::Finalize();

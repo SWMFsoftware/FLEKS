@@ -28,10 +28,6 @@ void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
 void grad_node_to_center(const amrex::MultiFab& nodeMF,
                          amrex::MultiFab& centerMF, const amrex::Real* invDx) {
 
-  Real invdx = invDx[ix_];
-  Real invdy = invDx[iy_];
-  Real invdz = invDx[iz_];
-
   for (amrex::MFIter mfi(centerMF); mfi.isValid(); ++mfi) {
     const amrex::Box& box = mfi.validbox();
     const auto lo = amrex::lbound(box);
@@ -44,30 +40,62 @@ void grad_node_to_center(const amrex::MultiFab& nodeMF,
       for (int j = lo.y; j <= hi.y; ++j)
         for (int k = lo.z; k <= hi.z; ++k) {
           center(i, j, k, ix_) =
-              .25 * (node(i + 1, j, k) - node(i, j, k)) * invdx +
-              .25 * (node(i + 1, j, k + 1) - node(i, j, k + 1)) * invdx +
-              .25 * (node(i + 1, j + 1, k) - node(i, j + 1, k)) * invdx +
-              .25 * (node(i + 1, j + 1, k + 1) - node(i, j + 1, k + 1)) * invdx;
+              0.25 * invDx[ix_] *
+              (node(i + 1, j, k) - node(i, j, k) + node(i + 1, j, k + 1) -
+               node(i, j, k + 1) + node(i + 1, j + 1, k) - node(i, j + 1, k) +
+               node(i + 1, j + 1, k + 1) - node(i, j + 1, k + 1));
           center(i, j, k, iy_) =
-              .25 * (node(i, j + 1, k) - node(i, j, k)) * invdy +
-              .25 * (node(i, j + 1, k + 1) - node(i, j, k + 1)) * invdy +
-              .25 * (node(i + 1, j + 1, k) - node(i + 1, j, k)) * invdy +
-              .25 * (node(i + 1, j + 1, k + 1) - node(i + 1, j, k + 1)) * invdy;
+              0.25 * invDx[iy_] *
+              (node(i, j + 1, k) - node(i, j, k) + node(i, j + 1, k + 1) -
+               node(i, j, k + 1) + node(i + 1, j + 1, k) - node(i + 1, j, k) +
+               node(i + 1, j + 1, k + 1) - node(i + 1, j, k + 1));
           center(i, j, k, iz_) =
-              .25 * (node(i, j, k + 1) - node(i, j, k)) * invdz +
-              .25 * (node(i + 1, j, k + 1) - node(i + 1, j, k)) * invdz +
-              .25 * (node(i, j + 1, k + 1) - node(i, j + 1, k)) * invdz +
-              .25 * (node(i + 1, j + 1, k + 1) - node(i + 1, j + 1, k)) * invdz;
+              0.25 * invDx[iz_] *
+              (node(i, j, k + 1) - node(i, j, k) + node(i + 1, j, k + 1) -
+               node(i + 1, j, k) + node(i, j + 1, k + 1) - node(i, j + 1, k) +
+               node(i + 1, j + 1, k + 1) - node(i + 1, j + 1, k));
+        }
+  }
+}
+
+void grad_center_to_node(const amrex::MultiFab& centerMF,
+                         amrex::MultiFab& nodeMF, const amrex::Real* invDx) {
+
+  for (amrex::MFIter mfi(nodeMF); mfi.isValid(); ++mfi) {
+    const amrex::Box& box = mfi.validbox();
+    const auto lo = amrex::lbound(box);
+    const auto hi = amrex::ubound(box);
+
+    const amrex::Array4<amrex::Real>& node = nodeMF[mfi].array();
+    const amrex::Array4<amrex::Real const>& center = centerMF[mfi].array();
+
+    for (int i = lo.x; i <= hi.x; ++i)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int k = lo.z; k <= hi.z; ++k) {
+          node(i, j, k, ix_) =
+              0.25 * invDx[ix_] *
+              (center(i, j, k) - center(i - 1, j, k) + center(i, j, k - 1) -
+               center(i - 1, j, k - 1) + center(i, j - 1, k) -
+               center(i - 1, j - 1, k) + center(i, j - 1, k - 1) -
+               center(i - 1, j - 1, k - 1));
+          node(i, j, k, iy_) =
+              0.25 * invDx[iy_] *
+              (center(i, j, k) - center(i, j - 1, k) + center(i, j, k - 1) -
+               center(i, j - 1, k - 1) + center(i - 1, j, k) -
+               center(i - 1, j - 1, k) + center(i - 1, j, k - 1) -
+               center(i - 1, j - 1, k - 1));
+          node(i, j, k, iz_) =
+              0.25 * invDx[iz_] *
+              (center(i, j, k) - center(i, j, k - 1) + center(i - 1, j, k) -
+               center(i - 1, j, k - 1) + center(i, j - 1, k) -
+               center(i, j - 1, k - 1) + center(i - 1, j - 1, k) -
+               center(i - 1, j - 1, k - 1));
         }
   }
 }
 
 void div_center_to_node(const amrex::MultiFab& centerMF,
                         amrex::MultiFab& nodeMF, const amrex::Real* invDx) {
-
-  Real invdx = invDx[ix_];
-  Real invdy = invDx[iy_];
-  Real invdz = invDx[iz_];
 
   for (amrex::MFIter mfi(nodeMF); mfi.isValid(); ++mfi) {
     const amrex::Box& box = mfi.validbox();
@@ -82,36 +110,74 @@ void div_center_to_node(const amrex::MultiFab& centerMF,
         for (int k = lo.z; k <= hi.z; ++k) {
 
           const Real compX =
-              .25 * (center(i, j, k, ix_) - center(i - 1, j, k, ix_)) * invdx +
-              .25 * (center(i, j, k - 1, ix_) - center(i - 1, j, k - 1, ix_)) *
-                  invdx +
-              .25 * (center(i, j - 1, k, ix_) - center(i - 1, j - 1, k, ix_)) *
-                  invdx +
-              .25 *
-                  (center(i, j - 1, k - 1, ix_) -
-                   center(i - 1, j - 1, k - 1, ix_)) *
-                  invdx;
+              0.25 * invDx[ix_] *
+              (center(i, j, k, ix_) - center(i - 1, j, k, ix_) +
+               center(i, j, k - 1, ix_) - center(i - 1, j, k - 1, ix_) +
+               center(i, j - 1, k, ix_) - center(i - 1, j - 1, k, ix_) +
+               center(i, j - 1, k - 1, ix_) - center(i - 1, j - 1, k - 1, ix_));
+
           const Real compY =
-              .25 * (center(i, j, k, iy_) - center(i, j - 1, k, iy_)) * invdy +
-              .25 * (center(i, j, k - 1, iy_) - center(i, j - 1, k - 1, iy_)) *
-                  invdy +
-              .25 * (center(i - 1, j, k, iy_) - center(i - 1, j - 1, k, iy_)) *
-                  invdy +
-              .25 *
-                  (center(i - 1, j, k - 1, iy_) -
-                   center(i - 1, j - 1, k - 1, iy_)) *
-                  invdy;
+              0.25 * invDx[iy_] *
+              (center(i, j, k, iy_) - center(i, j - 1, k, iy_) +
+               center(i, j, k - 1, iy_) - center(i, j - 1, k - 1, iy_) +
+               center(i - 1, j, k, iy_) - center(i - 1, j - 1, k, iy_) +
+               center(i - 1, j, k - 1, iy_) - center(i - 1, j - 1, k - 1, iy_));
+
           const Real compZ =
-              .25 * (center(i, j, k, iz_) - center(i, j, k - 1, iz_)) * invdz +
-              .25 * (center(i - 1, j, k, iz_) - center(i - 1, j, k - 1, iz_)) *
-                  invdz +
-              .25 * (center(i, j - 1, k, iz_) - center(i, j - 1, k - 1, iz_)) *
-                  invdz +
-              .25 *
-                  (center(i - 1, j - 1, k, iz_) -
-                   center(i - 1, j - 1, k - 1, iz_)) *
-                  invdz;
+              0.25 * invDx[iz_] *
+              (center(i, j, k, iz_) - center(i, j, k - 1, iz_) +
+               center(i - 1, j, k, iz_) - center(i - 1, j, k - 1, iz_) +
+               center(i, j - 1, k, iz_) - center(i, j - 1, k - 1, iz_) +
+               center(i - 1, j - 1, k, iz_) - center(i - 1, j - 1, k - 1, iz_));
           node(i, j, k) = compX + compY + compZ;
+        }
+  }
+}
+
+void div_node_to_center(const amrex::MultiFab& nodeMF,
+                        amrex::MultiFab& centerMF, const amrex::Real* invDx) {
+
+  for (amrex::MFIter mfi(centerMF); mfi.isValid(); ++mfi) {
+    const amrex::Box& box = mfi.validbox();
+    const auto lo = amrex::lbound(box);
+    const auto hi = amrex::ubound(box);
+
+    const amrex::Array4<amrex::Real const>& node = nodeMF[mfi].array();
+    const amrex::Array4<amrex::Real>& center = centerMF[mfi].array();
+
+    for (int i = lo.x; i <= hi.x; ++i)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int k = lo.z; k <= hi.z; ++k) {
+
+          const Real compX =
+              0.25 * invDx[ix_] *
+              (node(i + 1, j, k, ix_) - node(i, j, k, ix_) +
+               node(i + 1, j, k + 1, ix_) - node(i, j, k + 1, ix_) +
+               node(i + 1, j + 1, k, ix_) - node(i, j + 1, k, ix_) +
+               node(i + 1, j + 1, k + 1, ix_) - node(i, j + 1, k + 1, ix_));
+
+
+          const Real compY =
+              0.25 * invDx[iy_] *
+              (node(i, j + 1, k, iy_) - node(i, j, k, iy_) +
+               node(i, j + 1, k + 1, iy_) - node(i, j, k + 1, iy_) +
+               node(i + 1, j + 1, k, iy_) - node(i + 1, j, k, iy_) +
+               node(i + 1, j + 1, k + 1, iy_) - node(i + 1, j, k + 1, iy_));
+
+          const Real compZ =
+              0.25 * invDx[iz_] *
+              (node(i, j, k + 1, iz_) - node(i, j, k, iz_) +
+               node(i + 1, j, k + 1, iz_) - node(i + 1, j, k, iz_) +
+               node(i, j + 1, k + 1, iz_) - node(i, j + 1, k, iz_) +
+               node(i + 1, j + 1, k + 1, iz_) - node(i + 1, j + 1, k, iz_));
+          center(i, j, k) = compX + compY + compZ;
+          Print() << " i = " << i << " j = " << j << " k = " << k
+                  << " compx = " << compX << " compy = " << compY
+                  << " compz = " << compZ << " nodex = " << node(i, j, k, ix_)
+                  << " nodey = " << node(i, j, k, iy_)
+                  << " nodez = " << node(i, j, k, iz_)
+                  <<" invdx = "<<invDx[ix_]
+                   << std::endl;
         }
   }
 }
@@ -193,7 +259,8 @@ void print_MultiFab(amrex::MultiFab& data, std::string tag) {
             sum += data(i, j, k, iVar);
           }
   }
-  AllPrint()<<"sum = "<<sum<<" on proc = "<<ParallelDescriptor::MyProc()<<std::endl;
+  AllPrint() << "sum = " << sum << " on proc = " << ParallelDescriptor::MyProc()
+             << std::endl;
   AllPrint() << "-----" << tag << " end-----" << std::endl;
 }
 
