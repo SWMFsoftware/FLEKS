@@ -36,9 +36,9 @@ void grad_node_to_center(const amrex::MultiFab& nodeMF,
     const amrex::Array4<amrex::Real>& center = centerMF[mfi].array();
     const amrex::Array4<amrex::Real const>& node = nodeMF[mfi].array();
 
-    for (int i = lo.x; i <= hi.x; ++i)
+    for (int k = lo.z; k <= hi.z; ++k) 
       for (int j = lo.y; j <= hi.y; ++j)
-        for (int k = lo.z; k <= hi.z; ++k) {
+	for (int i = lo.x; i <= hi.x; ++i){
           center(i, j, k, ix_) =
               0.25 * invDx[ix_] *
               (node(i + 1, j, k) - node(i, j, k) + node(i + 1, j, k + 1) -
@@ -69,9 +69,11 @@ void grad_center_to_node(const amrex::MultiFab& centerMF,
     const amrex::Array4<amrex::Real>& node = nodeMF[mfi].array();
     const amrex::Array4<amrex::Real const>& center = centerMF[mfi].array();
 
-    for (int i = lo.x; i <= hi.x; ++i)
+
+    for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
-        for (int k = lo.z; k <= hi.z; ++k) {
+	for (int i = lo.x; i <= hi.x; ++i){
+	  
           node(i, j, k, ix_) =
               0.25 * invDx[ix_] *
               (center(i, j, k) - center(i - 1, j, k) + center(i, j, k - 1) -
@@ -105,9 +107,9 @@ void div_center_to_node(const amrex::MultiFab& centerMF,
     const amrex::Array4<amrex::Real const>& center = centerMF[mfi].array();
     const amrex::Array4<amrex::Real>& node = nodeMF[mfi].array();
 
-    for (int i = lo.x; i <= hi.x; ++i)
+    for (int k = lo.z; k <= hi.z; ++k)    
       for (int j = lo.y; j <= hi.y; ++j)
-        for (int k = lo.z; k <= hi.z; ++k) {
+	for (int i = lo.x; i <= hi.x; ++i){
 
           const Real compX =
               0.25 * invDx[ix_] *
@@ -145,9 +147,9 @@ void div_node_to_center(const amrex::MultiFab& nodeMF,
     const amrex::Array4<amrex::Real const>& node = nodeMF[mfi].array();
     const amrex::Array4<amrex::Real>& center = centerMF[mfi].array();
 
-    for (int i = lo.x; i <= hi.x; ++i)
+    for (int k = lo.z; k <= hi.z; ++k)     
       for (int j = lo.y; j <= hi.y; ++j)
-        for (int k = lo.z; k <= hi.z; ++k) {
+	for (int i = lo.x; i <= hi.x; ++i){
 
           const Real compX =
               0.25 * invDx[ix_] *
@@ -193,10 +195,10 @@ void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
     if ((!geom.isPeriodic(iz_)) && box.bigEnd(iz_) == hi.z)
       kMax++;
 
-    for (int i = lo.x; i <= iMax; ++i)
-      for (int j = lo.y; j <= jMax; ++j)
-        for (int k = lo.z; k <= kMax; ++k)
-          for (int iVar = 0; iVar < MF.nComp(); iVar++) {
+    for (int iVar = 0; iVar < MF.nComp(); iVar++) 
+      for (int k = lo.z; k <= kMax; ++k)	
+	for (int j = lo.y; j <= jMax; ++j)
+	  for (int i = lo.x; i <= iMax; ++i){	    
             arr(i, j, k, iVar) = p[iCount++];
           }
   }
@@ -221,10 +223,10 @@ void convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
     if ((!geom.isPeriodic(iz_)) && box.bigEnd(iz_) == hi.z)
       kMax++;
 
-    for (int i = lo.x; i <= iMax; ++i)
-      for (int j = lo.y; j <= jMax; ++j)
-        for (int k = lo.z; k <= kMax; ++k)
-          for (int iVar = 0; iVar < MF.nComp(); iVar++) {
+    for (int iVar = 0; iVar < MF.nComp(); iVar++) 
+      for (int k = lo.z; k <= kMax; ++k)
+	for (int j = lo.y; j <= jMax; ++j)
+	  for (int i = lo.x; i <= iMax; ++i){
             p[iCount++] = arr(i, j, k, iVar);
           }
   }
@@ -274,7 +276,6 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
-          // Needs to be improved. --Yuxi
           cZDY =
               0.25 * invDx[iy_] *
               (centerArr(i, j, k, iz_) - centerArr(i, j - 1, k, iz_) +
@@ -408,10 +409,10 @@ void average_center_to_node(const amrex::MultiFab& centerMF,
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i)
-          for (int iVar = 0; iVar < centerMF.nComp(); iVar++) {
+    for (int iVar = 0; iVar < centerMF.nComp(); iVar++)
+      for (int i = lo.x; i <= hi.x; ++i)
+	for (int j = lo.y; j <= hi.y; ++j)
+	  for (int k = lo.z; k <= hi.z; ++k){	         
             nodeArr(i, j, k, iVar) =
                 0.125 *
                 (centerArr(i - 1, j - 1, k - 1, iVar) + centerArr(i - 1, j - 1, k, iVar) +

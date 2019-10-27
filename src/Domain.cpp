@@ -228,12 +228,21 @@ void Domain::init_particles() {
 }
 
 void Domain::particle_mover() {
+  std::string nameFunc = "Domain::mover";
+  timing_start(nameFunc);
+
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->mover(nodeEth, nodeB, dt);
   }
+  
+  timing_stop(nameFunc);
 }
 
 void Domain::sum_moments() {
+  std::string nameFunc = "Domain::sum_moments";
+  timing_start(nameFunc);
+
+  
   nodePlasma[nSpecies].setVal(0.0);
   nodeMMatrix.setVal(0.0);
   for (int i = 0; i < nSpecies; i++) {
@@ -243,6 +252,8 @@ void Domain::sum_moments() {
 
   nodeMMatrix.SumBoundary(geom.periodicity());
   nodeMMatrix.FillBoundary(geom.periodicity());
+
+  timing_stop(nameFunc);
 }
 
 void Domain::update() {
@@ -251,6 +262,7 @@ void Domain::update() {
 
   timeNow += dt;
   timeNowSI += dtSI;
+
   update_E();
 
   particle_mover();
@@ -351,6 +363,9 @@ void Domain::get_grid(double* pos_DI) {
 }
 
 void Domain::update_E() {
+  std::string nameFunc = "Domain::update_E";
+  timing_start(nameFunc);
+
   const int nNode = get_fab_grid_points_number(nodeE) * nodeE.local_size();
   nSolve = 3 * nNode;
   double* rhs = new double[nSolve];
@@ -417,6 +432,8 @@ void Domain::update_E() {
   delete[] rhs;
   delete[] xLeft;
   delete[] matvec;
+
+  timing_stop(nameFunc);
 }
 
 void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
@@ -474,12 +491,13 @@ void Domain::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
     const amrex::Array4<amrex::Real>& ourArr = outMF[mfi].array();
     const amrex::Array4<amrex::Real>& mmArr = nodeMMatrix[mfi].array();
 
-    for (int i = lo.x; i <= hi.x; ++i)
+    for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int i2 = i - 1; i2 <= i + 1; i2++)
+	for (int i = lo.x; i <= hi.x; ++i)
+	  for (int k2 = k - 1; k2 <= k + 1; k2++) 	    
             for (int j2 = j - 1; j2 <= j + 1; j2++)
-              for (int k2 = k - 1; k2 <= k + 1; k2++) {
+	      for (int i2 = i - 1; i2 <= i + 1; i2++){
+		
                 const int gp = (i2 - i + 1) * 9 + (j2 - j + 1) * 3 + k2 - k + 1;
                 const int idx0 = gp * 9;
 
@@ -523,6 +541,9 @@ void Domain::update_E_rhs(double* rhs) {
 }
 
 void Domain::update_B() {
+  std::string nameFunc = "Domain::update_B";
+  timing_start(nameFunc);
+  
   MultiFab dB(centerBA, dm, 3, nGst);
 
   curl_node_to_center(nodeEth, dB, geom.InvCellSize());
@@ -532,4 +553,6 @@ void Domain::update_B() {
 
   average_center_to_node(centerB, nodeB);
   nodeB.FillBoundary(geom.periodicity());
+
+  timing_stop(nameFunc);
 }
