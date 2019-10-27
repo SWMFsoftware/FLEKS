@@ -3,5 +3,5 @@
 #include "../../srcInterface/multi_ipic3d_domain.h"
 
 void pic_matvec(double *vecIn, double *vecOut, int n) {
-  MPICs[0]->update_E_matvec(vecIn, vecOut);
+  MPICs->update_E_matvec(vecIn, vecOut);
 }

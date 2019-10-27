@@ -171,13 +171,6 @@ void div_node_to_center(const amrex::MultiFab& nodeMF,
                node(i, j + 1, k + 1, iz_) - node(i, j + 1, k, iz_) +
                node(i + 1, j + 1, k + 1, iz_) - node(i + 1, j + 1, k, iz_));
           center(i, j, k) = compX + compY + compZ;
-          Print() << " i = " << i << " j = " << j << " k = " << k
-                  << " compx = " << compX << " compy = " << compY
-                  << " compz = " << compZ << " nodex = " << node(i, j, k, ix_)
-                  << " nodey = " << node(i, j, k, iy_)
-                  << " nodez = " << node(i, j, k, iz_)
-                  <<" invdx = "<<invDx[ix_]
-                   << std::endl;
         }
   }
 }
@@ -380,11 +373,6 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
           nodeArr(i, j, k, ix_) = compZDY - compYDZ;
           nodeArr(i, j, k, iy_) = compXDZ - compZDX;
           nodeArr(i, j, k, iz_) = compYDX - compXDY;
-
-          Print() << " i = " << i << " j = " << j << " k = " << k
-                  << " nodeX = " << nodeArr(i, j, k, ix_)
-                  << " nodeY = " << nodeArr(i, j, k, iy_)
-                  << " nodeZ = " << nodeArr(i, j, k, iz_) << std::endl;
         }
   }
 }

@@ -53,6 +53,7 @@ private:
   DistributionMapping dm;
 
   MultiFab nodeE;
+  MultiFab nodeEth; 
   MultiFab nodeB;
   MultiFab centerB;
   MultiFab nodeMMatrix;
@@ -77,8 +78,18 @@ private:
 
   // public methods
 public:
-  Domain(){};
-  ~Domain(){};
+  Domain(){
+    qom = nullptr; 
+    npcelx = nullptr; 
+    npcely = nullptr; 
+    npcelz = nullptr;     
+  };
+  ~Domain(){
+    delete [] qom; 
+    delete [] npcelx; 
+    delete [] npcely; 
+    delete [] npcelz; 
+  };
   void init(Real timeIn, const std::string &paramString, int *paramInt,
             double *gridDim, double *paramReal, int iDomain = 1);
   void define_domain();

@@ -112,6 +112,9 @@ void Domain::define_domain() {
     // EM field
     nodeE.define(nodeBA, dm, 3, nGst);
     nodeE.setVal(0.0);
+    nodeEth.define(nodeBA, dm, 3, nGst);
+    nodeEth.setVal(0.0);
+
     nodeB.define(nodeBA, dm, 3, nGst);
     nodeB.setVal(0.0);
 
@@ -385,7 +388,7 @@ void Domain::update_E() {
   for (int i = 0; i < nSolve; i++) {
     rhs[i] = 0;
     xLeft[i] = 0;
-    matvec[i] = 0; 
+    matvec[i] = 0;
   }
 
   update_E_rhs(rhs);
@@ -394,47 +397,26 @@ void Domain::update_E() {
 
   update_E_matvec(xLeft, matvec);
 
-{
-  Real sum=0; 
-  for (int i = 0; i < nSolve; i++) {
-    sum += matvec[i]; 
-  }
-  Print()<<"matvec sum = "<<sum<<std::endl;
-}
-
-
-
   for (int i = 0; i < nSolve; i++) {
     rhs[i] -= matvec[i];
     xLeft[i] = 0;
   }
 
-
-{
-  Real sum=0; 
-  for (int i = 0; i < nSolve; i++) {
-    sum += rhs[i]; 
-  }
-  Print()<<"rhs sum = "<<sum<<std::endl;
-}
-
-
-
   {
     linear_solver_matvec_c = pic_matvec;
 
     int nVarSolve = 3;
-    int nIter = 200; 
-    double EFieldTol = 1e-6; 
+    int nIter = 200;
+    double EFieldTol = 1e-6;
     int nDimIn = 3;
 
-    MFIter mfi(nodeE); 
-    auto lo = lbound( mfi.validbox()); 
-    auto hi = ubound( mfi.validbox()); 
+    MFIter mfi(nodeE);
+    auto lo = lbound(mfi.validbox());
+    auto hi = ubound(mfi.validbox());
 
-    int nI = hi.x - lo.x + 1; 
-    int nJ = hi.y - lo.y + 1; 
-    int nK = hi.z - lo.z + 1; 
+    int nI = hi.x - lo.x + 1;
+    int nJ = hi.y - lo.y + 1;
+    int nK = hi.z - lo.z + 1;
     int nBlock = nodeE.local_size();
     MPI_Fint iComm = MPI_Comm_c2f(ParallelDescriptor::Communicator());
     double precond_matrix_II[1][1];
@@ -443,22 +425,21 @@ void Domain::update_E() {
     // 0:No precondition; 1: BILU; 2:DILU;
     //[-1,0): MBILU;
     double PrecondParam = 0;
-    int lTest = ParallelDescriptor::MyProc()==0;
+    int lTest = ParallelDescriptor::MyProc() == 0;
 
     linear_solver_wrapper("GMRES", &EFieldTol, &nIter, &nVarSolve, &nDimIn, &nI,
-                          &nJ, &nK, &nBlock, &iComm, rhs, xLeft,
-                          &PrecondParam, precond_matrix_II[0], &lTest);
+                          &nJ, &nK, &nBlock, &iComm, rhs, xLeft, &PrecondParam,
+                          precond_matrix_II[0], &lTest);
   }
 
-  // {
-  //   double sum = 0;
-  //   for (int i = 0; i < 3 * nNode; i++)
-  //     sum += rhs[i];
-  //     Print()<<"sum = "<<sum<<std::endl;
-  // }
+  convert_1d_to_3d(xLeft, nodeEth, geom);
+  nodeEth.FillBoundary(geom.periodicity());
 
+  MultiFab::LinComb(nodeE, -(1.0 - theta) / theta, nodeE, 0, 1. / theta,
+                    nodeEth, 0, 0, nodeE.nComp(), nGst);
   delete[] rhs;
   delete[] xLeft;
+  delete [] matvec;
 }
 
 void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
@@ -504,7 +485,7 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
 
   imageMF.FillBoundary(geom.periodicity());
 
-  print_MultiFab(imageMF, "final imageMF");
+  // print_MultiFab(imageMF, "final imageMF");
 
   convert_3d_to_1d(imageMF, vecOut, geom);
 }

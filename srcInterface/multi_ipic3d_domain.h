@@ -6,7 +6,9 @@
 
 #include "Domain.h"
 
-extern Vector<Domain*> MPICs; 
+//extern Vector<Domain*> MPICs;
+
+extern Domain* MPICs;
 
 //using namespace iPic3D;
 
