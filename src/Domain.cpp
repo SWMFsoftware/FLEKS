@@ -2,6 +2,7 @@
 
 #include "Domain.h"
 #include "LinearSolver.h"
+#include "Timing_c.h"
 #include "Utility.h"
 
 void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
@@ -261,6 +262,12 @@ void Domain::init_particles() {
   //}
 }
 
+void Domain::particle_mover() {
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->mover(nodeEth, nodeB, dt);
+  }
+}
+
 void Domain::sum_moments() {
   nodePlasma[nSpecies].setVal(0.0);
   nodeMMatrix.setVal(0.0);
@@ -276,9 +283,19 @@ void Domain::sum_moments() {
 }
 
 void Domain::update() {
+  std::string nameFunc = "Domain::update";
+  timing_start(nameFunc);
+
   timeNow += dt;
   timeNowSI += dtSI;
   update_E();
+
+  //print_MultiFab(nodeE, "nodeE");
+
+  particle_mover();
+  update_B();
+  sum_moments();
+  timing_stop(nameFunc);
 }
 
 void Domain::set_state_var(double* data, int* index) {
@@ -432,14 +449,23 @@ void Domain::update_E() {
                           precond_matrix_II[0], &lTest);
   }
 
+  nodeEth.setVal(0.0);
   convert_1d_to_3d(xLeft, nodeEth, geom);
+  nodeEth.SumBoundary(geom.periodicity());
   nodeEth.FillBoundary(geom.periodicity());
+
+
+  MultiFab::Add(nodeEth, nodeE, 0, 0, nodeEth.nComp(), nGst);
 
   MultiFab::LinComb(nodeE, -(1.0 - theta) / theta, nodeE, 0, 1. / theta,
                     nodeEth, 0, 0, nodeE.nComp(), nGst);
+
+  print_MultiFab(nodeEth, "nodeEth");
+  print_MultiFab(nodeE, "nodeE");
+
   delete[] rhs;
   delete[] xLeft;
-  delete [] matvec;
+  delete[] matvec;
 }
 
 void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
@@ -540,6 +566,7 @@ void Domain::update_E_rhs(double* rhs) {
   const Real* invDx = geom.InvCellSize();
   curl_center_to_node(centerB, tempNode, invDx);
 
+  // temp2Node += -fourPI*nodePlasma[iTot]
   MultiFab::Saxpy(temp2Node, -fourPI, nodePlasma[iTot], iJhx_, 0,
                   temp2Node.nComp(), 0);
 
@@ -552,4 +579,18 @@ void Domain::update_E_rhs(double* rhs) {
   // print_MultiFab(temp2Node,"rhs");
 
   convert_3d_to_1d(temp2Node, rhs, geom);
+}
+
+void Domain::update_B() {
+  MultiFab dB(centerBA, dm, 3, nGst);
+
+  curl_node_to_center(nodeEth, dB, geom.InvCellSize());
+
+  MultiFab::Saxpy(centerB, -dt, dB, 0, 0, centerB.nComp(), 0);
+  centerB.FillBoundary(geom.periodicity());
+
+  average_center_to_node(centerB, nodeB);
+  nodeB.FillBoundary(geom.periodicity());
+
+  print_MultiFab(nodeB, "nodeB");
 }

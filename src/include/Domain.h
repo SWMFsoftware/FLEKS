@@ -99,6 +99,8 @@ public:
   void sum_moments();
   void update();
 
+  void particle_mover();
+
   void set_dtSI(double dtIn) {
     dtSI = dtIn;
     dt = dtSI;
@@ -123,6 +125,8 @@ public:
   void update_E_rhs(double *rhos);  
   void update_E_matvec(const double *vecIn, double *vecOut);
   void update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF ); 
+
+  void update_B();
 
 
   // private methods

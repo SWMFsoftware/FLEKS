@@ -28,9 +28,7 @@ public:
   void sum_moments(amrex::MultiFab& momentsMF, amrex::MultiFab& matrixMF,
                    amrex::MultiFab& nodeBMF, amrex::Real dt);
 
-  void mover(const amrex::MultiFab& Ex, const amrex::MultiFab& Ey,
-             const amrex::MultiFab& Ez, const amrex::MultiFab& Bx,
-             const amrex::MultiFab& By, const amrex::MultiFab& Bz,
+  void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
              amrex::Real dt);
 
 protected:

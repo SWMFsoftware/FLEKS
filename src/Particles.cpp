@@ -178,7 +178,7 @@ void Particles::sum_moments(MultiFab& momentsMF, MultiFab& matrixMF,
 
     const auto& particles = pti.GetArrayOfStructs();
     for (const auto& p : particles) {
-      Print() << "particle = " << p << std::endl;
+      //Print() << "particle = " << p << std::endl;
 
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
@@ -280,11 +280,6 @@ void Particles::sum_moments(MultiFab& momentsMF, MultiFab& matrixMF,
                     matrixArr(i1, j1, k1, gp * 9 + 8) +=
                         alpha_DD[2][2] * weight;
 
-                    if (i1 == 0 && j1 == 0 && k1 == 0 && gp == 13) {
-                      Print() << "mat1 = " << matrixArr(i1, j1, k1, 117)
-                              << std::endl;
-                    }
-
                   } // k2
                 }   // j2
               }     // if (ip > 0)
@@ -364,17 +359,7 @@ void Particles::sum_moments(MultiFab& momentsMF, MultiFab& matrixMF,
             }
           }
     }
-    //    const FArrayBox& ezfab = Ex[pti];
   }
-
-  // if( speciesID==0){
-  //   Print()
-  // 	    << momentsArr(0, 0,
-  // 			  0, 0)<<std::endl;
-  // }
-
-  // {
-  //   Print() << "before" << std::endl;
 
   momentsMF.mult(invVol);
   momentsMF.SumBoundary(Geom(0).periodicity());
@@ -382,29 +367,113 @@ void Particles::sum_moments(MultiFab& momentsMF, MultiFab& matrixMF,
 
   // FillBoundary seems unnecessary. --Yuxi
   momentsMF.FillBoundary(Geom(0).periodicity());
-
-  MultiFab& data = momentsMF;
-  for (MFIter mfi(data); mfi.isValid(); ++mfi) {
-    FArrayBox& fab = data[mfi];
-    const Box& box = mfi.validbox();
-    Array4<Real> const& data = fab.array();
-
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
-
-    for (int i = lo.x; i <= hi.x; ++i)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int iVar = 0; iVar < data.nComp(); iVar++) {
-            AllPrint() << " i = " << i << " j = " << j << " k = " << k
-                       << " iVar = " << iVar
-                       << " data = " << data(i, j, k, iVar) << std::endl;
-          }
-  }
 }
 
-void Particles::mover(const MultiFab& Ex, const MultiFab& Ey,
-                      const MultiFab& Ez, const MultiFab& Bx,
-                      const MultiFab& By, const MultiFab& Bz, Real dt) {
+void Particles::mover(const amrex::MultiFab& nodeEMF,
+                      const amrex::MultiFab& nodeBMF, amrex::Real dt) {
   BL_PROFILE("Particles::mover");
+
+  const auto& plo = Geom(0).ProbLo();
+
+  const Real dtLoc = dt;
+  const Real qdto2mc = charge / mass * 0.5 * dt;
+
+  const auto& invDx = Geom(0).InvCellSize();
+  // const Real invVol = invDx[ix_] * invDx[iy_] * invDx[iz_];
+  // Print() << " invVol = " << invVol << std::endl;
+
+  const int lev = 0;
+  for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
+    const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
+    const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
+
+    // Particle container is defined based on a center box.
+    // So Convert it into a node box here.
+    const Box& box = convert(pti.validbox(), { 1, 1, 1 });
+    // Print() << " box = " << box << std::endl;
+
+    auto& particles = pti.GetArrayOfStructs();
+    for (auto& p : particles) {
+      Print() << "before move = " << p << std::endl;
+
+      const Real up = p.rdata(iup_);
+      const Real vp = p.rdata(ivp_);
+      const Real wp = p.rdata(iwp_);
+      const Real qp = p.rdata(iqp_);
+      const Real xp = p.pos(ix_);
+      const Real yp = p.pos(iy_);
+      const Real zp = p.pos(iz_);
+
+      //-----calculate interpolate coef begin-------------
+      int loIdx[3];
+      Real dShift[3];
+      for (int i = 0; i < 3; i++) {
+        dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
+        loIdx[i] = floor(dShift[i]);
+        dShift[i] = dShift[i] - loIdx[i];
+      }
+
+      Real coef[2][2][2];
+      part_grid_interpolation_coef(dShift, coef);
+      //-----calculate interpolate coef end-------------
+
+      Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];
+      Real Exl = 0, Eyl = 0, Ezl = 0;
+      for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+          for (int kk = 0; kk < 2; kk++) {
+            const int iNodeX = loIdx[ix_] + ii;
+            const int iNodeY = loIdx[iy_] + jj;
+            const int iNodeZ = loIdx[iz_] + kk;
+            const Real& c0 = coef[ii][jj][kk];
+            Bxl += nodeBArr(iNodeX, iNodeY, iNodeZ, ix_) * c0;
+            Byl += nodeBArr(iNodeX, iNodeY, iNodeZ, iy_) * c0;
+            Bzl += nodeBArr(iNodeX, iNodeY, iNodeZ, iz_) * c0;
+
+            Exl += nodeEArr(iNodeX, iNodeY, iNodeZ, ix_) * c0;
+            Print() << " co = " << c0
+                    << " field = " << nodeBArr(iNodeX, iNodeY, iNodeZ, ix_)
+                    << " iNodeX = " <<iNodeX
+                    << " iNodeY = " <<iNodeY
+                    << " iNodeZ = " <<iNodeZ
+                    << std::endl;
+            Eyl += nodeEArr(iNodeX, iNodeY, iNodeZ, iy_) * c0;
+            Ezl += nodeEArr(iNodeX, iNodeY, iNodeZ, iz_) * c0;
+          }
+
+      const double Omx = qdto2mc * Bxl;
+      const double Omy = qdto2mc * Byl;
+      const double Omz = qdto2mc * Bzl;
+
+      // end interpolation
+      const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
+      const Real denom = 1.0 / (1.0 + omsq);
+      // solve the position equation
+      const Real ut = up + qdto2mc * Exl;
+      const Real vt = vp + qdto2mc * Eyl;
+      const Real wt = wp + qdto2mc * Ezl;
+      // const pfloat udotb = ut * Bxl + vt * Byl + wt * Bzl;
+      const Real udotOm = ut * Omx + vt * Omy + wt * Omz;
+      // solve the velocity equation
+      const Real uavg = (ut + (vt * Omz - wt * Omy + udotOm * Omx)) * denom;
+      const Real vavg = (vt + (wt * Omx - ut * Omz + udotOm * Omy)) * denom;
+      const Real wavg = (wt + (ut * Omy - vt * Omx + udotOm * Omz)) * denom;
+
+      const double unp1 = 2.0 * uavg - up;
+      const double vnp1 = 2.0 * vavg - vp;
+      const double wnp1 = 2.0 * wavg - wp;
+
+      p.rdata(ix_) = unp1;
+      p.rdata(iy_) = vnp1;
+      p.rdata(iz_) = wnp1;
+
+      p.pos(ix_) = xp + unp1 * dtLoc;
+      p.pos(iy_) = yp + vnp1 * dtLoc;
+      p.pos(iz_) = zp + wnp1 * dtLoc;
+
+      Print() << "after move = " << p << std::endl;
+    } // for p
+  }   // for pti
+
+  this->Redistribute();
 }

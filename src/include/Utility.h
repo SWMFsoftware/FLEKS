@@ -15,6 +15,9 @@ void convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
 void curl_center_to_node(const amrex::MultiFab& centerMF,
                          amrex::MultiFab& nodeMF, const amrex::Real* invDx);
 
+void curl_node_to_center(const amrex::MultiFab& nodeMF,
+                         amrex::MultiFab& centerMF, const amrex::Real* invDx);
+
 void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
                       const amrex::DistributionMapping dm,
                       const amrex::Geometry& geom);
@@ -30,6 +33,9 @@ void div_center_to_node(const amrex::MultiFab& centerMF,
 
 void div_node_to_center(const amrex::MultiFab& nodeMF,
                         amrex::MultiFab& centerMF, const amrex::Real* invDx);
+
+void average_center_to_node(const amrex::MultiFab& centerMF,
+                            amrex::MultiFab& nodeMF);
 
 void print_MultiFab(amrex::MultiFab& data, std::string tag);
 

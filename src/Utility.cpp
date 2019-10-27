@@ -156,7 +156,6 @@ void div_node_to_center(const amrex::MultiFab& nodeMF,
                node(i + 1, j + 1, k, ix_) - node(i, j + 1, k, ix_) +
                node(i + 1, j + 1, k + 1, ix_) - node(i, j + 1, k + 1, ix_));
 
-
           const Real compY =
               0.25 * invDx[iy_] *
               (node(i, j + 1, k, iy_) - node(i, j, k, iy_) +
@@ -259,13 +258,12 @@ void print_MultiFab(amrex::MultiFab& data, std::string tag) {
 
 void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
                          const Real* invDx) {
-  Real compZDY, compYDZ;
+  Real cZDY, cYDZ;
 
-  Real compXDZ, compZDX;
-  Real compYDX, compXDY;
+  Real cXDZ, cZDX;
+  Real cYDX, cXDY;
 
-  for (MFIter mfi(nodeMF); mfi.isValid(); ++mfi) // Loop over grids
-  {
+  for (MFIter mfi(nodeMF); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& nodeArr = nodeMF[mfi].array();
     const Array4<Real const>& centerArr = centerMF[mfi].array();
@@ -277,102 +275,149 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
           // Needs to be improved. --Yuxi
-          compZDY =
-              .25 * (centerArr(i, j, k, iz_) - centerArr(i, j - 1, k, iz_)) *
-                  invDx[iy_] +
-              .25 *
-                  (centerArr(i, j, k - 1, iz_) -
-                   centerArr(i, j - 1, k - 1, iz_)) *
-                  invDx[iy_] +
-              .25 *
-                  (centerArr(i - 1, j, k, iz_) -
-                   centerArr(i - 1, j - 1, k, iz_)) *
-                  invDx[iy_] +
-              .25 *
-                  (centerArr(i - 1, j, k - 1, iz_) -
-                   centerArr(i - 1, j - 1, k - 1, iz_)) *
-                  invDx[iy_];
-          compYDZ =
-              .25 * (centerArr(i, j, k, iy_) - centerArr(i, j, k - 1, iy_)) *
-                  invDx[iz_] +
-              .25 *
-                  (centerArr(i - 1, j, k, iy_) -
-                   centerArr(i - 1, j, k - 1, iy_)) *
-                  invDx[iz_] +
-              .25 *
-                  (centerArr(i, j - 1, k, iy_) -
-                   centerArr(i, j - 1, k - 1, iy_)) *
-                  invDx[iz_] +
-              .25 *
-                  (centerArr(i - 1, j - 1, k, iy_) -
-                   centerArr(i - 1, j - 1, k - 1, iy_)) *
-                  invDx[iz_];
+          cZDY =
+              0.25 * invDx[iy_] *
+              (centerArr(i, j, k, iz_) - centerArr(i, j - 1, k, iz_) +
+               centerArr(i, j, k - 1, iz_) - centerArr(i, j - 1, k - 1, iz_) +
+               centerArr(i - 1, j, k, iz_) - centerArr(i - 1, j - 1, k, iz_) +
+               centerArr(i - 1, j, k - 1, iz_) -
+               centerArr(i - 1, j - 1, k - 1, iz_));
+          cYDZ =
+              0.25 * invDx[iz_] *
+              (centerArr(i, j, k, iy_) - centerArr(i, j, k - 1, iy_) +
+               centerArr(i - 1, j, k, iy_) - centerArr(i - 1, j, k - 1, iy_) +
+               centerArr(i, j - 1, k, iy_) - centerArr(i, j - 1, k - 1, iy_) +
+               centerArr(i - 1, j - 1, k, iy_) -
+               centerArr(i - 1, j - 1, k - 1, iy_));
           // curl - Y
-          compXDZ =
-              .25 * (centerArr(i, j, k, ix_) - centerArr(i, j, k - 1, ix_)) *
-                  invDx[iz_] +
-              .25 *
-                  (centerArr(i - 1, j, k, ix_) -
-                   centerArr(i - 1, j, k - 1, ix_)) *
-                  invDx[iz_] +
-              .25 *
-                  (centerArr(i, j - 1, k, ix_) -
-                   centerArr(i, j - 1, k - 1, ix_)) *
-                  invDx[iz_] +
-              .25 *
-                  (centerArr(i - 1, j - 1, k, ix_) -
-                   centerArr(i - 1, j - 1, k - 1, ix_)) *
-                  invDx[iz_];
-          compZDX =
-              .25 * (centerArr(i, j, k, iz_) - centerArr(i - 1, j, k, iz_)) *
-                  invDx[ix_] +
-              .25 *
-                  (centerArr(i, j, k - 1, iz_) -
-                   centerArr(i - 1, j, k - 1, iz_)) *
-                  invDx[ix_] +
-              .25 *
-                  (centerArr(i, j - 1, k, iz_) -
-                   centerArr(i - 1, j - 1, k, iz_)) *
-                  invDx[ix_] +
-              .25 *
-                  (centerArr(i, j - 1, k - 1, iz_) -
-                   centerArr(i - 1, j - 1, k - 1, iz_)) *
-                  invDx[ix_];
-          // curl - Z
-          compYDX =
-              .25 * (centerArr(i, j, k, iy_) - centerArr(i - 1, j, k, iy_)) *
-                  invDx[ix_] +
-              .25 *
-                  (centerArr(i, j, k - 1, iy_) -
-                   centerArr(i - 1, j, k - 1, iy_)) *
-                  invDx[ix_] +
-              .25 *
-                  (centerArr(i, j - 1, k, iy_) -
-                   centerArr(i - 1, j - 1, k, iy_)) *
-                  invDx[ix_] +
-              .25 *
-                  (centerArr(i, j - 1, k - 1, iy_) -
-                   centerArr(i - 1, j - 1, k - 1, iy_)) *
-                  invDx[ix_];
-          compXDY =
-              .25 * (centerArr(i, j, k, ix_) - centerArr(i, j - 1, k, ix_)) *
-                  invDx[iy_] +
-              .25 *
-                  (centerArr(i, j, k - 1, ix_) -
-                   centerArr(i, j - 1, k - 1, ix_)) *
-                  invDx[iy_] +
-              .25 *
-                  (centerArr(i - 1, j, k, ix_) -
-                   centerArr(i - 1, j - 1, k, ix_)) *
-                  invDx[iy_] +
-              .25 *
-                  (centerArr(i - 1, j, k - 1, ix_) -
-                   centerArr(i - 1, j - 1, k - 1, ix_)) *
-                  invDx[iy_];
+          cXDZ =
+              0.25 * invDx[iz_] *
+              (centerArr(i, j, k, ix_) - centerArr(i, j, k - 1, ix_) +
+               centerArr(i - 1, j, k, ix_) - centerArr(i - 1, j, k - 1, ix_) +
+               centerArr(i, j - 1, k, ix_) - centerArr(i, j - 1, k - 1, ix_) +
+               centerArr(i - 1, j - 1, k, ix_) -
+               centerArr(i - 1, j - 1, k - 1, ix_));
 
-          nodeArr(i, j, k, ix_) = compZDY - compYDZ;
-          nodeArr(i, j, k, iy_) = compXDZ - compZDX;
-          nodeArr(i, j, k, iz_) = compYDX - compXDY;
+          cZDX =
+              0.25 * invDx[ix_] *
+              (centerArr(i, j, k, iz_) - centerArr(i - 1, j, k, iz_) +
+               centerArr(i, j, k - 1, iz_) - centerArr(i - 1, j, k - 1, iz_) +
+               centerArr(i, j - 1, k, iz_) - centerArr(i - 1, j - 1, k, iz_) +
+               centerArr(i, j - 1, k - 1, iz_) -
+               centerArr(i - 1, j - 1, k - 1, iz_));
+
+          // curl - Z
+          cYDX =
+              0.25 * invDx[ix_] *
+              (centerArr(i, j, k, iy_) - centerArr(i - 1, j, k, iy_) +
+               centerArr(i, j, k - 1, iy_) - centerArr(i - 1, j, k - 1, iy_) +
+               centerArr(i, j - 1, k, iy_) - centerArr(i - 1, j - 1, k, iy_) +
+               centerArr(i, j - 1, k - 1, iy_) -
+               centerArr(i - 1, j - 1, k - 1, iy_));
+
+          cXDY =
+              0.25 * invDx[iy_] *
+              (centerArr(i, j, k, ix_) - centerArr(i, j - 1, k, ix_) +
+               centerArr(i, j, k - 1, ix_) - centerArr(i, j - 1, k - 1, ix_) +
+               centerArr(i - 1, j, k, ix_) - centerArr(i - 1, j - 1, k, ix_) +
+               centerArr(i - 1, j, k - 1, ix_) -
+               centerArr(i - 1, j - 1, k - 1, ix_));
+
+          nodeArr(i, j, k, ix_) = cZDY - cYDZ;
+          nodeArr(i, j, k, iy_) = cXDZ - cZDX;
+          nodeArr(i, j, k, iz_) = cYDX - cXDY;
         }
+  }
+}
+
+void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
+                         const Real* invDx) {
+  Real cZDY, cYDZ;
+
+  Real cXDZ, cZDX;
+  Real cYDX, cXDY;
+
+  for (MFIter mfi(centerMF); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& centerArr = centerMF[mfi].array();
+    const Array4<Real const>& nodeArr = nodeMF[mfi].array();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          // Needs to be improved. --Yuxi
+          cZDY = 0.25 * invDx[iy_] *
+                 (nodeArr(i, j + 1, k, iz_) - nodeArr(i, j, k, iz_) +
+                  nodeArr(i, j + 1, k + 1, iz_) - nodeArr(i, j, k + 1, iz_) +
+                  nodeArr(i + 1, j + 1, k, iz_) - nodeArr(i + 1, j, k, iz_) +
+                  nodeArr(i + 1, j + 1, k + 1, iz_) -
+                  nodeArr(i + 1, j, k + 1, iz_));
+          cYDZ = 0.25 * invDx[iz_] *
+                 (nodeArr(i, j, k + 1, iy_) - nodeArr(i, j, k, iy_) +
+                  nodeArr(i + 1, j, k + 1, iy_) - nodeArr(i + 1, j, k, iy_) +
+                  nodeArr(i, j + 1, k + 1, iy_) - nodeArr(i, j + 1, k, iy_) +
+                  nodeArr(i + 1, j + 1, k + 1, iy_) -
+                  nodeArr(i + 1, j + 1, k, iy_));
+          // curl - Y
+          cXDZ = 0.25 * invDx[iz_] *
+                 (nodeArr(i, j, k + 1, ix_) - nodeArr(i, j, k, ix_) +
+                  nodeArr(i + 1, j, k + 1, ix_) - nodeArr(i + 1, j, k, ix_) +
+                  nodeArr(i, j + 1, k + 1, ix_) - nodeArr(i, j + 1, k, ix_) +
+                  nodeArr(i + 1, j + 1, k + 1, ix_) -
+                  nodeArr(i + 1, j + 1, k, ix_));
+
+          cZDX = 0.25 * invDx[ix_] *
+                 (nodeArr(i + 1, j, k, iz_) - nodeArr(i, j, k, iz_) +
+                  nodeArr(i + 1, j, k + 1, iz_) - nodeArr(i, j, k + 1, iz_) +
+                  nodeArr(i + 1, j + 1, k, iz_) - nodeArr(i, j + 1, k, iz_) +
+                  nodeArr(i + 1, j + 1, k + 1, iz_) -
+                  nodeArr(i, j + 1, k + 1, iz_));
+
+          // curl - Z
+          cYDX = 0.25 * invDx[ix_] *
+                 (nodeArr(i + 1, j, k, iy_) - nodeArr(i, j, k, iy_) +
+                  nodeArr(i + 1, j, k + 1, iy_) - nodeArr(i, j, k + 1, iy_) +
+                  nodeArr(i + 1, j + 1, k, iy_) - nodeArr(i, j + 1, k, iy_) +
+                  nodeArr(i + 1, j + 1, k + 1, iy_) -
+                  nodeArr(i, j + 1, k + 1, iy_));
+
+          cXDY = 0.25 * invDx[iy_] *
+                 (nodeArr(i, j + 1, k, ix_) - nodeArr(i, j, k, ix_) +
+                  nodeArr(i, j + 1, k + 1, ix_) - nodeArr(i, j, k + 1, ix_) +
+                  nodeArr(i + 1, j + 1, k, ix_) - nodeArr(i + 1, j, k, ix_) +
+                  nodeArr(i + 1, j + 1, k + 1, ix_) -
+                  nodeArr(i + 1, j, k + 1, ix_));
+
+          centerArr(i, j, k, ix_) = cZDY - cYDZ;
+          centerArr(i, j, k, iy_) = cXDZ - cZDX;
+          centerArr(i, j, k, iz_) = cYDX - cXDY;
+        }
+  }
+}
+
+void average_center_to_node(const amrex::MultiFab& centerMF,
+                            amrex::MultiFab& nodeMF) {
+  for (MFIter mfi(nodeMF); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& nodeArr = nodeMF[mfi].array();
+    const Array4<Real const>& centerArr = centerMF[mfi].array();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i)
+          for (int iVar = 0; iVar < centerMF.nComp(); iVar++) {
+            nodeArr(i, j, k, iVar) =
+                0.125 *
+                (centerArr(i - 1, j - 1, k - 1, iVar) + centerArr(i - 1, j - 1, k, iVar) +
+                 centerArr(i - 1, j, k - 1, iVar) + centerArr(i - 1, j, k, iVar) +
+                 centerArr(i, j-1, k-1, iVar) + centerArr(i, j - 1, k, iVar) +
+                 centerArr(i, j, k - 1, iVar) + centerArr(i, j, k, iVar));
+          }
   }
 }
