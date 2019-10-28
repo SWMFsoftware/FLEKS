@@ -68,12 +68,12 @@ contains
     case('READ')
 
        ! get section of PARAM.in that contains the PC module
-       allocate(StringLineF_I(i_line_read():n_line_read()))
+       allocate(StringLineF_I(i_line_read()+1:n_line_read()))
        call read_text(StringLineF_I)
 
-       if(n_line_read()-i_line_read()+1 > 0) then
+       if(n_line_read()-i_line_read() > 0) then
           call ipic3d_read_param(StringLineF_I, &
-               n_line_read()-i_line_read()+1, lStringLine,iProc)
+               n_line_read()-i_line_read(), lStringLine,iProc)
        end if
     case('CHECK')
        
