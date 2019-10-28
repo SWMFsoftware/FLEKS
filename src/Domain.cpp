@@ -14,8 +14,10 @@ void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
   std::stringstream* ss = nullptr;
   
   fluidInterface.ReadFromGMinit(paramInt, gridDim, paramReal, ss);
-
   fluidInterface.readParam = paramString;
+
+  int iCycle = 0;
+  fluidInterface.setCycle(iCycle);
 
   timeNowSI = timeIn;
   timeNow = timeIn * fluidInterface.getSi2NoT();

@@ -303,7 +303,7 @@ void Particles::sum_moments(MultiFab& momentsMF, MultiFab& matrixMF,
       const auto lo = lbound(box);
       const auto hi = ubound(box);
 
-      Array4<Real> const& matrixArr = matrixMF[pti].array();
+      Array4<Real> const& matrixArr = matrixMF[mfi].array();
 
       int gps, gpr;                         // gp_send, gp_receive
       for (int i1 = lo.x; i1 <= hi.x; i1++) // Change the order here!!!!--Yuxi
@@ -321,7 +321,7 @@ void Particles::sum_moments(MultiFab& momentsMF, MultiFab& matrixMF,
                 gps = 18 + jp * 3 + kp; // gps = ip*9+jp*3+kp
                 for (int idx = 0; idx < 9; idx++) {
                   matrixArr(ir, jr, kr, gpr * 9 + idx) =
-                      matrixArr(i1, j1, k1, gps * 9 + idx);
+		    matrixArr(i1, j1, k1, gps * 9 + idx);
                 }
               }
             }
