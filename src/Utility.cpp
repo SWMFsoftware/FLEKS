@@ -28,17 +28,17 @@ void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
 void grad_node_to_center(const amrex::MultiFab& nodeMF,
                          amrex::MultiFab& centerMF, const amrex::Real* invDx) {
 
-  for (amrex::MFIter mfi(centerMF); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.validbox();
+  for (amrex::MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
+    const amrex::Box& box = mfi.tilebox();
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
     const amrex::Array4<amrex::Real>& center = centerMF[mfi].array();
     const amrex::Array4<amrex::Real const>& node = nodeMF[mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k) 
+    for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
-	for (int i = lo.x; i <= hi.x; ++i){
+        for (int i = lo.x; i <= hi.x; ++i) {
           center(i, j, k, ix_) =
               0.25 * invDx[ix_] *
               (node(i + 1, j, k) - node(i, j, k) + node(i + 1, j, k + 1) -
@@ -61,19 +61,18 @@ void grad_node_to_center(const amrex::MultiFab& nodeMF,
 void grad_center_to_node(const amrex::MultiFab& centerMF,
                          amrex::MultiFab& nodeMF, const amrex::Real* invDx) {
 
-  for (amrex::MFIter mfi(nodeMF); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.validbox();
+  for (amrex::MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
+    const amrex::Box& box = mfi.tilebox();
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
     const amrex::Array4<amrex::Real>& node = nodeMF[mfi].array();
     const amrex::Array4<amrex::Real const>& center = centerMF[mfi].array();
 
-
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
-	for (int i = lo.x; i <= hi.x; ++i){
-	  
+        for (int i = lo.x; i <= hi.x; ++i) {
+
           node(i, j, k, ix_) =
               0.25 * invDx[ix_] *
               (center(i, j, k) - center(i - 1, j, k) + center(i, j, k - 1) -
@@ -99,17 +98,17 @@ void grad_center_to_node(const amrex::MultiFab& centerMF,
 void div_center_to_node(const amrex::MultiFab& centerMF,
                         amrex::MultiFab& nodeMF, const amrex::Real* invDx) {
 
-  for (amrex::MFIter mfi(nodeMF); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.validbox();
+  for (amrex::MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
+    const amrex::Box& box = mfi.tilebox();
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
     const amrex::Array4<amrex::Real const>& center = centerMF[mfi].array();
     const amrex::Array4<amrex::Real>& node = nodeMF[mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k)    
+    for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
-	for (int i = lo.x; i <= hi.x; ++i){
+        for (int i = lo.x; i <= hi.x; ++i) {
 
           const Real compX =
               0.25 * invDx[ix_] *
@@ -139,17 +138,17 @@ void div_center_to_node(const amrex::MultiFab& centerMF,
 void div_node_to_center(const amrex::MultiFab& nodeMF,
                         amrex::MultiFab& centerMF, const amrex::Real* invDx) {
 
-  for (amrex::MFIter mfi(centerMF); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.validbox();
+  for (amrex::MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
+    const amrex::Box& box = mfi.tilebox();
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
     const amrex::Array4<amrex::Real const>& node = nodeMF[mfi].array();
     const amrex::Array4<amrex::Real>& center = centerMF[mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k)     
+    for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
-	for (int i = lo.x; i <= hi.x; ++i){
+        for (int i = lo.x; i <= hi.x; ++i) {
 
           const Real compX =
               0.25 * invDx[ix_] *
@@ -179,8 +178,8 @@ void div_node_to_center(const amrex::MultiFab& nodeMF,
 void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
                       amrex::Geometry& geom) {
   int iCount = 0;
-  for (amrex::MFIter mfi(MF); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.validbox();
+  for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
+    const amrex::Box& box = mfi.tilebox();
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
     const amrex::Array4<amrex::Real>& arr = MF[mfi].array();
@@ -195,10 +194,10 @@ void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
     if ((!geom.isPeriodic(iz_)) && box.bigEnd(iz_) == hi.z)
       kMax++;
 
-    for (int iVar = 0; iVar < MF.nComp(); iVar++) 
-      for (int k = lo.z; k <= kMax; ++k)	
-	for (int j = lo.y; j <= jMax; ++j)
-	  for (int i = lo.x; i <= iMax; ++i){	    
+    for (int iVar = 0; iVar < MF.nComp(); iVar++)
+      for (int k = lo.z; k <= kMax; ++k)
+        for (int j = lo.y; j <= jMax; ++j)
+          for (int i = lo.x; i <= iMax; ++i) {
             arr(i, j, k, iVar) = p[iCount++];
           }
   }
@@ -207,8 +206,8 @@ void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
 void convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
                       amrex::Geometry& geom) {
   int iCount = 0;
-  for (amrex::MFIter mfi(MF); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.validbox();
+  for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
+    const amrex::Box& box = mfi.tilebox();
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
     const amrex::Array4<amrex::Real const>& arr = MF[mfi].array();
@@ -223,10 +222,10 @@ void convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
     if ((!geom.isPeriodic(iz_)) && box.bigEnd(iz_) == hi.z)
       kMax++;
 
-    for (int iVar = 0; iVar < MF.nComp(); iVar++) 
+    for (int iVar = 0; iVar < MF.nComp(); iVar++)
       for (int k = lo.z; k <= kMax; ++k)
-	for (int j = lo.y; j <= jMax; ++j)
-	  for (int i = lo.x; i <= iMax; ++i){
+        for (int j = lo.y; j <= jMax; ++j)
+          for (int i = lo.x; i <= iMax; ++i) {
             p[iCount++] = arr(i, j, k, iVar);
           }
   }
@@ -265,8 +264,8 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
   Real cXDZ, cZDX;
   Real cYDX, cXDY;
 
-  for (MFIter mfi(nodeMF); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
+  for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.tilebox();
     const Array4<Real>& nodeArr = nodeMF[mfi].array();
     const Array4<Real const>& centerArr = centerMF[mfi].array();
 
@@ -338,8 +337,8 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
   Real cXDZ, cZDX;
   Real cYDX, cXDY;
 
-  for (MFIter mfi(centerMF); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
+  for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.tilebox();
     const Array4<Real>& centerArr = centerMF[mfi].array();
     const Array4<Real const>& nodeArr = nodeMF[mfi].array();
 
@@ -401,8 +400,8 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
 
 void average_center_to_node(const amrex::MultiFab& centerMF,
                             amrex::MultiFab& nodeMF) {
-  for (MFIter mfi(nodeMF); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
+  for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.tilebox();
     const Array4<Real>& nodeArr = nodeMF[mfi].array();
     const Array4<Real const>& centerArr = centerMF[mfi].array();
 
@@ -411,14 +410,17 @@ void average_center_to_node(const amrex::MultiFab& centerMF,
 
     for (int iVar = 0; iVar < centerMF.nComp(); iVar++)
       for (int i = lo.x; i <= hi.x; ++i)
-	for (int j = lo.y; j <= hi.y; ++j)
-	  for (int k = lo.z; k <= hi.z; ++k){	         
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int k = lo.z; k <= hi.z; ++k) {
             nodeArr(i, j, k, iVar) =
                 0.125 *
-                (centerArr(i - 1, j - 1, k - 1, iVar) + centerArr(i - 1, j - 1, k, iVar) +
-                 centerArr(i - 1, j, k - 1, iVar) + centerArr(i - 1, j, k, iVar) +
-                 centerArr(i, j-1, k-1, iVar) + centerArr(i, j - 1, k, iVar) +
-                 centerArr(i, j, k - 1, iVar) + centerArr(i, j, k, iVar));
+                (centerArr(i - 1, j - 1, k - 1, iVar) +
+                 centerArr(i - 1, j - 1, k, iVar) +
+                 centerArr(i - 1, j, k - 1, iVar) +
+                 centerArr(i - 1, j, k, iVar) +
+                 centerArr(i, j - 1, k - 1, iVar) +
+                 centerArr(i, j - 1, k, iVar) + centerArr(i, j, k - 1, iVar) +
+                 centerArr(i, j, k, iVar));
           }
   }
 }
