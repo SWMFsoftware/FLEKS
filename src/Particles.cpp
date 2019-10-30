@@ -121,7 +121,7 @@ void Particles::add_particles_domain(const FluidPicInterface& fluidInterface) {
   }
 }
 
-void Particles::sum_moments(MultiFab& momentsMF, MultiFab& matrixMF,
+void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
                             MultiFab& nodeBMF, Real dt) {
   BL_PROFILE("Particles::sum_moments");
   const auto& plo = Geom(0).ProbLo();
@@ -136,8 +136,8 @@ void Particles::sum_moments(MultiFab& momentsMF, MultiFab& matrixMF,
   const int lev = 0;
   for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
     Array4<Real> const& momentsArr = momentsMF[pti].array();
-    Array4<Real> const& matrixArr = matrixMF[pti].array();
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
+    Array4<RealMM> const& mmArr = nodeMM[pti].array();
 
     // Particle container is defined based on a center box.
     // So Convert it into a node box here.
@@ -146,7 +146,7 @@ void Particles::sum_moments(MultiFab& momentsMF, MultiFab& matrixMF,
 
     const auto& particles = pti.GetArrayOfStructs();
     for (const auto& p : particles) {
-      //Print() << "particle = " << p << std::endl;
+      // Print() << "particle = " << p << std::endl;
 
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
@@ -192,16 +192,16 @@ void Particles::sum_moments(MultiFab& momentsMF, MultiFab& matrixMF,
       const Real udotOm = up * Omx + vp * Omy + wp * Omz;
 
       const Real c0 = denom * invVol * qp * qdto2mc;
-      Real alpha_DD[3][3];
-      alpha_DD[ix_][ix_] = (1 + Omx * Omx) * c0;
-      alpha_DD[ix_][iy_] = (Omz + Omx * Omy) * c0;
-      alpha_DD[ix_][iz_] = (-Omy + Omx * Omz) * c0;
-      alpha_DD[iy_][ix_] = (-Omz + Omx * Omy) * c0;
-      alpha_DD[iy_][iy_] = (1 + Omy * Omy) * c0;
-      alpha_DD[iy_][iz_] = (Omx + Omy * Omz) * c0;
-      alpha_DD[iz_][ix_] = (Omy + Omx * Omz) * c0;
-      alpha_DD[iz_][iy_] = (-Omx + Omy * Omz) * c0;
-      alpha_DD[iz_][iz_] = (1 + Omz * Omz) * c0;
+      Real alpha[9];
+      alpha[0] = (1 + Omx * Omx) * c0;
+      alpha[1] = (Omz + Omx * Omy) * c0;
+      alpha[2] = (-Omy + Omx * Omz) * c0;
+      alpha[3] = (-Omz + Omx * Omy) * c0;
+      alpha[4] = (1 + Omy * Omy) * c0;
+      alpha[5] = (Omx + Omy * Omz) * c0;
+      alpha[6] = (Omy + Omx * Omz) * c0;
+      alpha[7] = (-Omx + Omy * Omz) * c0;
+      alpha[8] = (1 + Omz * Omz) * c0;
 
       int count = 0;
       int ip, jp, kp;         // Indexes for g'
@@ -228,26 +228,10 @@ void Particles::sum_moments(MultiFab& momentsMF, MultiFab& matrixMF,
                     kp = k2 - k1 + 1;
                     weight = wg * coef[i2 - iMin][j2 - jMin][k2 - kMin];
                     gp = ip * 9 + jp * 3 + kp;
-
-                    matrixArr(i1, j1, k1, gp * 9 + 0) +=
-                        alpha_DD[0][0] * weight;
-                    matrixArr(i1, j1, k1, gp * 9 + 1) +=
-                        alpha_DD[0][1] * weight;
-                    matrixArr(i1, j1, k1, gp * 9 + 2) +=
-                        alpha_DD[0][2] * weight;
-                    matrixArr(i1, j1, k1, gp * 9 + 3) +=
-                        alpha_DD[1][0] * weight;
-                    matrixArr(i1, j1, k1, gp * 9 + 4) +=
-                        alpha_DD[1][1] * weight;
-                    matrixArr(i1, j1, k1, gp * 9 + 5) +=
-                        alpha_DD[1][2] * weight;
-                    matrixArr(i1, j1, k1, gp * 9 + 6) +=
-                        alpha_DD[2][0] * weight;
-                    matrixArr(i1, j1, k1, gp * 9 + 7) +=
-                        alpha_DD[2][1] * weight;
-                    matrixArr(i1, j1, k1, gp * 9 + 8) +=
-                        alpha_DD[2][2] * weight;
-
+                    const int idx0 = gp * 9;
+                    for (int idx = 0; idx < 9; idx++) {
+                      mmArr(i1, j1, k1).data[idx0 + idx] += alpha[idx] * weight;
+                    }
                   } // k2
                 }   // j2
               }     // if (ip > 0)
@@ -297,13 +281,13 @@ void Particles::sum_moments(MultiFab& momentsMF, MultiFab& matrixMF,
 
     } // for p
 
-    for (MFIter mfi(matrixMF); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(nodeMM); mfi.isValid(); ++mfi) {
       // Finalize the mass matrix calculation.
       const Box& box = mfi.validbox();
       const auto lo = lbound(box);
       const auto hi = ubound(box);
 
-      Array4<Real> const& matrixArr = matrixMF[mfi].array();
+      Array4<RealMM> const& mmArr = nodeMM[mfi].array();
 
       int gps, gpr;                         // gp_send, gp_receive
       for (int i1 = lo.x; i1 <= hi.x; i1++) // Change the order here!!!!--Yuxi
@@ -319,13 +303,15 @@ void Particles::sum_moments(MultiFab& momentsMF, MultiFab& matrixMF,
                 const int kpr = 2 - kp;
                 gpr = jpr * 3 + kpr;    // gpr = ipr*9 + jpr*3 + kpr
                 gps = 18 + jp * 3 + kp; // gps = ip*9+jp*3+kp
+
                 for (int idx = 0; idx < 9; idx++) {
-                  matrixArr(ir, jr, kr, gpr * 9 + idx) =
-		    matrixArr(i1, j1, k1, gps * 9 + idx);
-                }
-              }
-            }
-          }
+                  mmArr(ir, jr, kr).data[gpr * 9 + idx] =
+                      mmArr(i1, j1, k1).data[gps * 9 + idx];
+                } // idx
+              }   // kp
+            }     // jp
+          }       // k1
+
     }
   }
 

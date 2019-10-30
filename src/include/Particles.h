@@ -6,6 +6,8 @@
 #include "Constants.h"
 #include "FluidPicInterface.h"
 #include "RandNum.h"
+#include "Array1D.h"
+#include "UMultiFab.h"
 
 class ParticlesIter : public amrex::ParIter<4, 0, 0, 0> {
 public:
@@ -25,7 +27,7 @@ public:
                           const FluidPicInterface& fluidInterface, int iBlock,
                           int i, int j, int k, int loi, int loj, int lok);
 
-  void sum_moments(amrex::MultiFab& momentsMF, amrex::MultiFab& matrixMF,
+  void sum_moments(amrex::MultiFab& momentsMF, amrex::UMultiFab<RealMM>& nodeMM,
                    amrex::MultiFab& nodeBMF, amrex::Real dt);
 
   void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,

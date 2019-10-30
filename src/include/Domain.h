@@ -18,6 +18,8 @@
 #include "Constants.h"
 #include "Particles.h"
 #include "FluidPicInterface.h"
+#include "Array1D.h"
+#include "UMultiFab.h"
 
 using namespace amrex;
 
@@ -56,7 +58,8 @@ private:
   MultiFab nodeEth; 
   MultiFab nodeB;
   MultiFab centerB;
-  MultiFab nodeMMatrix;
+  UMultiFab<RealMM> nodeMM; 
+
   MultiFab centerDivE; 
   MultiFab tempNode3; 
   int nSolve; 

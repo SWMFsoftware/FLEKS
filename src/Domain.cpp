@@ -1,3 +1,5 @@
+#include <math.h>
+
 #include <AMReX_MultiFabUtil.H>
 
 #include "Domain.h"
@@ -12,7 +14,7 @@ void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
   fluidInterface.set_nProcs(ParallelDescriptor::NProcs());
 
   std::stringstream* ss = nullptr;
-  
+
   fluidInterface.ReadFromGMinit(paramInt, gridDim, paramReal, ss);
   fluidInterface.readParam = paramString;
 
@@ -139,9 +141,9 @@ void Domain::define_domain() {
     }
 
     // Only 1 ghost cell layer is needed!
-    nodeMMatrix.define(nodeBA, dm, 27 * 9, 1);
-    nodeMMatrix.setVal(0.0);
-
+    nodeMM.define(nodeBA, dm, 1, 1);
+    const RealMM mm0(0.0);
+    nodeMM.setVal(mm0);
   }
 
   Print() << " centerBox = " << centerBox << " boxRange = " << boxRange
@@ -226,7 +228,7 @@ void Domain::init_particles() {
     pts->add_particles_domain(fluidInterface);
   }
 
-  sum_moments();  
+  sum_moments();
 }
 
 void Domain::particle_mover() {
@@ -236,7 +238,7 @@ void Domain::particle_mover() {
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->mover(nodeEth, nodeB, dt);
   }
-  
+
   timing_stop(nameFunc);
 }
 
@@ -244,16 +246,17 @@ void Domain::sum_moments() {
   std::string nameFunc = "Domain::sum_moments";
   timing_start(nameFunc);
 
-  
   nodePlasma[nSpecies].setVal(0.0);
-  nodeMMatrix.setVal(0.0);
+  const RealMM mm0(0.0);
+  nodeMM.setVal(mm0);
+
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->sum_moments(nodePlasma[i], nodeMMatrix, nodeB, dt);
+    parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, dt);
     MultiFab::Add(nodePlasma[nSpecies], nodePlasma[i], 0, 0, nMoments, 0);
   }
 
-  nodeMMatrix.SumBoundary(geom.periodicity());
-  nodeMMatrix.FillBoundary(geom.periodicity());
+  nodeMM.SumBoundary(geom.periodicity());
+  nodeMM.FillBoundary(geom.periodicity());
 
   timing_stop(nameFunc);
 }
@@ -491,21 +494,21 @@ void Domain::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
 
     const amrex::Array4<amrex::Real const>& inArr = inMF[mfi].array();
     const amrex::Array4<amrex::Real>& ourArr = outMF[mfi].array();
-    const amrex::Array4<amrex::Real>& mmArr = nodeMMatrix[mfi].array();
+    const amrex::Array4<RealMM>& mmArr = nodeMM[mfi].array();
 
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
-	for (int i = lo.x; i <= hi.x; ++i)
-	  for (int k2 = k - 1; k2 <= k + 1; k2++) 	    
+        for (int i = lo.x; i <= hi.x; ++i)
+          for (int k2 = k - 1; k2 <= k + 1; k2++)
             for (int j2 = j - 1; j2 <= j + 1; j2++)
-	      for (int i2 = i - 1; i2 <= i + 1; i2++){
-		
+              for (int i2 = i - 1; i2 <= i + 1; i2++) {
+
                 const int gp = (i2 - i + 1) * 9 + (j2 - j + 1) * 3 + k2 - k + 1;
                 const int idx0 = gp * 9;
 
                 double M_I[9];
                 for (int ii = 0; ii < 9; ii++) {
-                  M_I[ii] = mmArr(i, j, k, idx0 + ii);
+                  M_I[ii] = mmArr(i, j, k).data[idx0 + ii];
                 }
 
                 const double& vctX =
@@ -545,7 +548,7 @@ void Domain::update_E_rhs(double* rhs) {
 void Domain::update_B() {
   std::string nameFunc = "Domain::update_B";
   timing_start(nameFunc);
-  
+
   MultiFab dB(centerBA, dm, 3, nGst);
 
   curl_node_to_center(nodeEth, dB, geom.InvCellSize());
