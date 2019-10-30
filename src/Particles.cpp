@@ -220,17 +220,15 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
         for (int j1 = jMin; j1 < jMax; j1++)
           for (int i1 = iMin; i1 < iMax; i1++) {
             wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
-            for (int i2 = iMin; i2 < iMax; i2++) {
-              // The loop order here is not optimized. But It may doese not
-              // matter.
-              ip = i2 - i1 + 1;
-              if (ip > 0) {
+            for (int k2 = kMin; k2 < kMax; k2++) {
+              kp = k2 - k1 + 1;
+              if (kp > 0) {
                 for (int j2 = jMin; j2 < jMax; j2++) {
                   jp = j2 - j1 + 1;
-                  for (int k2 = kMin; k2 < kMax; k2++) {
-                    kp = k2 - k1 + 1;
+                  for (int i2 = iMin; i2 < iMax; i2++) {
+                    ip = i2 - i1 + 1;
                     weight = wg * coef[i2 - iMin][j2 - jMin][k2 - kMin];
-                    gp = ip * 9 + jp * 3 + kp;
+                    gp = kp * 9 + jp * 3 + ip;
                     const int idx0 = gp * 9;
                     for (int idx = 0; idx < 9; idx++) {
                       mmArr(i1, j1, k1).data[idx0 + idx] += alpha[idx] * weight;
@@ -296,17 +294,16 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
       for (int k1 = lo.z; k1 <= hi.z; k1++)
         for (int j1 = lo.y; j1 <= hi.y; j1++)
           for (int i1 = lo.x; i1 <= hi.x; i1++) {
-            const int ip = 2, ipr = 0;
-            const int ir = i1 + ip - 1;
+            const int kp = 2, kpr = 0;
+            const int kr = k1 + kp - 1;
             for (int jp = 0; jp < 3; jp++) {
               const int jr = j1 + jp - 1;
               const int jpr = 2 - jp;
-              for (int kp = 0; kp < 3; kp++) {
-                const int kr = k1 + kp - 1;
-                const int kpr = 2 - kp;
-                gpr = jpr * 3 + kpr;    // gpr = ipr*9 + jpr*3 + kpr
-                gps = 18 + jp * 3 + kp; // gps = ip*9+jp*3+kp
-
+              for (int ip = 0; ip < 3; ip++) {
+                const int ir = i1 + ip - 1;
+                const int ipr = 2 - ip;
+                gpr = jpr * 3 + ipr;    
+                gps = 18 + jp * 3 + ip; // gps = kp*9+jp*3+kp
                 for (int idx = 0; idx < 9; idx++) {
                   mmArr(ir, jr, kr).data[gpr * 9 + idx] =
                       mmArr(i1, j1, k1).data[gps * 9 + idx];

@@ -503,10 +503,10 @@ void Domain::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
             for (int j2 = j - 1; j2 <= j + 1; j2++)
               for (int i2 = i - 1; i2 <= i + 1; i2++) {
 
-                const int gp = (i2 - i + 1) * 9 + (j2 - j + 1) * 3 + k2 - k + 1;
+                const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
                 const int idx0 = gp * 9;
 
-                double M_I[9];
+                Real M_I[9];
                 for (int ii = 0; ii < 9; ii++) {
                   M_I[ii] = mmArr(i, j, k).data[idx0 + ii];
                 }
