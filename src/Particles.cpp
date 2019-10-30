@@ -168,9 +168,10 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
 
       //----- Mass matrix calculation begin--------------
       Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];
-      for (int ii = 0; ii < 2; ii++)
+
+      for (int kk = 0; kk < 2; kk++)
         for (int jj = 0; jj < 2; jj++)
-          for (int kk = 0; kk < 2; kk++) {
+          for (int ii = 0; ii < 2; ii++) {
             Bxl += nodeBArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
                             ix_) *
                    coef[ii][jj][kk];
@@ -215,11 +216,13 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
       const int kMax = kMin + 2;
 
       int gp = -1;
-      for (int i1 = iMin; i1 < iMax; i1++)
+      for (int k1 = kMin; k1 < kMax; k1++)
         for (int j1 = jMin; j1 < jMax; j1++)
-          for (int k1 = kMin; k1 < kMax; k1++) {
+          for (int i1 = iMin; i1 < iMax; i1++) {
             wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
             for (int i2 = iMin; i2 < iMax; i2++) {
+              // The loop order here is not optimized. But It may doese not
+              // matter.
               ip = i2 - i1 + 1;
               if (ip > 0) {
                 for (int j2 = jMin; j2 < jMax; j2++) {
@@ -269,9 +272,9 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
         pMoments[iJhz_] = (wp + (up * Omy - vp * Omx + udotOm * Omz)) * coef1;
       }
 
-      for (int ii = 0; ii < 2; ii++)
+      for (int kk = 0; kk < 2; kk++)
         for (int jj = 0; jj < 2; jj++)
-          for (int kk = 0; kk < 2; kk++)
+          for (int ii = 0; ii < 2; ii++)
             for (int iVar = 0; iVar < nMoments; iVar++) {
               momentsArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
                          iVar) += coef[ii][jj][kk] * pMoments[iVar];
@@ -289,10 +292,10 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
 
       Array4<RealMM> const& mmArr = nodeMM[mfi].array();
 
-      int gps, gpr;                         // gp_send, gp_receive
-      for (int i1 = lo.x; i1 <= hi.x; i1++) // Change the order here!!!!--Yuxi
+      int gps, gpr; // gp_send, gp_receive
+      for (int k1 = lo.z; k1 <= hi.z; k1++)
         for (int j1 = lo.y; j1 <= hi.y; j1++)
-          for (int k1 = lo.z; k1 <= hi.z; k1++) {
+          for (int i1 = lo.x; i1 <= hi.x; i1++) {
             const int ip = 2, ipr = 0;
             const int ir = i1 + ip - 1;
             for (int jp = 0; jp < 3; jp++) {
@@ -311,7 +314,6 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
               }   // kp
             }     // jp
           }       // k1
-
     }
   }
 
