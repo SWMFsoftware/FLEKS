@@ -25,8 +25,6 @@ void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
   timeNow = timeIn * fluidInterface.getSi2NoT();
 
   theta = 0.5;
-  dt = 1;
-  dtSI = dt * fluidInterface.getNo2SiT();
 
   iProc = ParallelDescriptor::MyProc();
   read_param();
@@ -38,15 +36,25 @@ void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
 //---------------------------------------------------------
 
 void Domain::read_param() {
+
+  nCellBlockMax = 8;
+
   qom = new double[1];
   qom[0] = -777;
+
+  dtSI = 1;
+  dt = dtSI * fluidInterface.getSi2NoT();
 
   std::string command;
   ReadParam& readParam = fluidInterface.readParam;
   readParam.set_verbose(iProc == 0);
   while (readParam.get_next_command(command)) {
-    if (command == "#NSYNC") {
-
+    if (command == "#MAXBLOCKSIZE") {
+      // The block size in each direction can not larger than nCellBlockMax.
+      readParam.read_var("nCellBlockMax", nCellBlockMax);
+    } else if (command == "#TIMECONTROL") {
+      readParam.read_var("dtSI", dtSI);
+      dt = dtSI * fluidInterface.getSi2NoT();
     } else if (command == "#PARTICLES") {
       npcelx = new int[1];
       npcely = new int[1];
@@ -55,7 +63,6 @@ void Domain::read_param() {
       readParam.read_var("npcely", npcely[0]);
       readParam.read_var("npcelz", npcelz[0]);
     } else if (command == "#ELECTRON") {
-      // iones info comes from BATSRUS
       readParam.read_var("qom", qom[0]);
     }
   }
@@ -63,8 +70,6 @@ void Domain::read_param() {
   // Passing qom npcelx... into this function and re-allocating memory
   // for them is extremely ugly!! --Yuxi
   fluidInterface.fixPARAM(qom, npcelx, npcely, npcelz, &nSpecies);
-
-  // Print()<<" nSpecies = "<<nSpecies<<std::endl;
 }
 
 void Domain::set_ic() {
@@ -80,8 +85,6 @@ void Domain::define_domain() {
     nCell[ix_] = fluidInterface.getFluidNxc();
     nCell[iy_] = fluidInterface.getFluidNyc();
     nCell[iz_] = fluidInterface.getFluidNzc();
-
-    nCellBlockMax = 8;
 
     for (auto& x : periodicity)
       x = 1;
@@ -146,8 +149,8 @@ void Domain::define_domain() {
     nodeMM.setVal(mm0);
   }
 
-  Print() << " centerBox = " << centerBox << " boxRange = " << boxRange
-          << std::endl;
+  Print() << "Domain:: Domain range = " << boxRange << std::endl;
+  Print() << "Domain:: Total block #  = " << nodeBA.size() << std::endl;
 }
 //---------------------------------------------------------
 
