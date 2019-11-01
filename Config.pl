@@ -31,30 +31,21 @@ our $NewGridSize;
 our $ShowGridSize;
 our $Hdf5;
 
-my $mypseudorand;
-my $myng;
-my $myBATSRUS;
-my $ng;
-my $pseudrand;
-my $BATSRUS;
+my $compiler;
+my $debug;
 
-my $makefilelocal = "src/Makefile.local";
 
-#print "IPIC3D argv = @Arguments \n";
+my $makefileamrex = "share/amrex/GNUmakefile";
 
 foreach (@Arguments){
     if(/^-s$/)                 {$Show=1;  next};
-    if(/^-ng=(.*)/i)           {$ng="$1";  next};
-    if(/^-pseudrand=(.*)/i)    {$pseudrand="$1";  next};
-    if(/^-BATSRUS=(.*)/i)      {$BATSRUS="$1";  next};
-    if(/^-sethdf5/)            {next};
+    if(/^-compiler=(.*)/i)     {$compiler="$1";  next};
+    if(/^-debug=(.*)/i)        {$debug=uc("$1");  next};
     warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
 }
 
-&get_settings;
 
-# set local Makefile options
-&set_cpp_options;
+&set_options;
 
 &print_help if $Help;
 &show_settings if $Show;
@@ -63,71 +54,41 @@ exit 0;
 #############################################################################
 
 sub get_settings{
-    $mypseudorand = "false";
-
-    # Read size of the grid from topology file
-    # open(FILE, $makefilelocal) or die "$ERROR could not open $makefilelocal\n";
-    # while(<FILE>){
-    # 	next if /^\s*!/; # skip commented out lines
-    # 	$mypseudorand="true" if/^.*-DPSEUDRAND\b/i;
-    # 	$myng=$1 if/^.*-DNG_P=(\d+)/i;
-    # 	$myBATSRUS="true" if/^.*-DBATSRUS\b/i;
-    # }
-    # close $makefilelocal;
+     open(FILE, $makefileamrex) or die "$ERROR could not open $makefileamrex\n";
+      while(<FILE>){
+      	next if /^\s*!/; # skip commented out lines
+      	$compiler = $1 if/^COMP = (\S*)/i;
+	$debug = $1 if/^DEBUG = (\S*)/i; 
+      }
+      close $makefileamrex;
 }
 
 ################################################################################
-sub set_cpp_options{
+sub set_options{
 
-    # die "$ERROR File $makefilelocal does not exist!\n" unless -f $makefilelocal;
+    die "$ERROR File $makefileamrex does not exist!\n" unless -f $makefileamrex;
 
-    # @ARGV = ($makefilelocal);
-    # while(<>){
-    # 	if($ng        ne "")     {s/DNG_P=[0-9*]/DNG_P=$ng/;};
-    # 	if($pseudrand ne "")     {s/\-DPSEUDRAND($|\s)//g;}; # remove if -pseudrand=* is set
-    # 	if($pseudrand eq "true") {s/FLAGC_LOCAL=/FLAGC_LOCAL=-DPSEUDRAND /;};
-    # 	if($BATSRUS   ne "")     {s/-DBATSRUS($|\s)//g;}; # remove if -BATSRUS=* is set
-    # 	if($BATSRUS   eq "true") {s/FLAGC_LOCAL=/FLAGC_LOCAL=-DBATSRUS /;};
-    # 	# $Hdf5 is inherited from share/Scripts/Config.pl and it is always set to "yes" or "no"
-    # 	s/-DHDF5($|\s)//g;
-    # 	if($Hdf5       eq "yes")  {s/FLAGC_LOCAL=/FLAGC_LOCAL=-DHDF5 /};
-    # 	print;
-    # }
+     @ARGV = ($makefileamrex);
+    while(<>){
+	if($compiler  ne "")     {s/^COMP =.*/COMP = $compiler/;};
+	if($debug     ne "")     {s/^DEBUG =.*/DEBUG = $debug/;};
+    	print;
+    }    
 }
 
 ################################################################################
 sub show_settings{
-    print "Number of ghost cell layers for the particles: $myng\n";
-    print "Use pseudo-random numbers instead of rand()  : $mypseudorand\n";
-    print "Couple with BATSRUS                          : $myBATSRUS\n";
+    &get_settings;
+    
+    print "Compiler = $compiler\n";
+    print "Debug    = $debug\n";
 }
 ################################################################################
 
 sub print_help{
 
     print "
-Additional options for IPIC3D/Config.pl:
-
--ng=NG               Use NG ghost cell layers for particles. Default is 3.
-
--pseudrand=BOOLEAN   Use pseudo-random numbers or the built-in random numbers.
-                     BOOLEAN value is true or false. Default is true.
-
--BATSRUS=BOOLEAN     Couple iPIC3D with BATSRUS or not. 
-                     BOOLEAN value is true or false. Default is true.
-
-
--s                   Show IPIC3D settings
-
-Examples:
-
-Set number of ghostcells to 1 and switch on pseudo-random numbers:
-
-   Config.pl -ng=1 -pseudorand=true
-
-Show settings:
-
-   Config.pl -s
+N/A
 
 ";
     exit -0;

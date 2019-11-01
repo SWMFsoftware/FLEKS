@@ -3,6 +3,8 @@ default: mypic
 include Makefile.conf
 include Makefile.def
 
+include share/amrex/GNUmakefile
+
 help:
 	@echo Makefile targets:
 	@echo
@@ -27,7 +29,6 @@ bin:
 
 libIPIC3D:
 	mkdir libIPIC3D
-
 
 install: bin libIPIC3D
 	touch ${INSTALLFILES}
