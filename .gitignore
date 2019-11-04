@@ -16,4 +16,5 @@ Makefile.local
 Tmp_*
 util/
 data
+share/amrex
 
