@@ -4,10 +4,11 @@
 SHELL =/bin/sh
 
 include ../Makefile.def
+include ../Makefile.def.local
 
 SEARCHDIR = -I${SHAREDIR} -I${LIBRARYDIR} -I${COUPLERDIR} 
 
-SEARCH_C = -I../src/include -I${SHAREDIR} -I$(AMREX_INSTALL_DIR)/include -I./
+SEARCH_C = -I../src/include -I${SHAREDIR} -I$(MYDIR)/$(AMREX_INSTALL_DIR)/include -I./
 
 FLAGC_EXTRA = -DBATSRUS
 

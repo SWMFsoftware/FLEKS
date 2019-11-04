@@ -3,8 +3,6 @@ default: mypic
 include Makefile.conf
 include Makefile.def
 
-include share/amrex/GNUmakefile
-
 help:
 	@echo Makefile targets:
 	@echo
@@ -19,6 +17,7 @@ help:
 
 
 mypic:
+	cd share; make libamrex
 	cd src; make exe
 
 INSTALLFILES =  src/Makefile.DEPEND \
@@ -30,12 +29,17 @@ bin:
 libIPIC3D:
 	mkdir libIPIC3D
 
-install: bin libIPIC3D
+installamrex:
+	cd share/amrex; ./configure
+
+
+install: bin libIPIC3D installamrex
 	touch ${INSTALLFILES}
 
 # Switch to "coupled" mode
-LIB:
+LIB: 
 	touch ${INSTALLFILES}
+	cd share; $(MAKE) libamrex
 	cd src; $(MAKE) LIB
 	cd srcInterface; $(MAKE) LIB
 
@@ -43,6 +47,7 @@ LIB:
 clean:
 	cd src; $(MAKE) clean
 	cd srcInterface; $(MAKE) clean
+	cd share; $(MAKE) clean
 
 distclean:
 	-@(./Config.pl -uninstall)
@@ -52,3 +57,4 @@ allclean:
 	-@(cd srcInterface; $(MAKE) distclean)
 	-@(rm -rf Makefile.local *~ ./bin libIPIC3D ${TESTDIR})
 	-@(rm test*diff )
+

@@ -15,6 +15,5 @@ Makefile.DEPEND
 Makefile.local
 Tmp_*
 util/
-share/
 data
 

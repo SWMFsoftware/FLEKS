@@ -1,5 +1,6 @@
 include Makefile.depend
 include ../Makefile.def
+include ../Makefile.def.local
 
 OBJECTS = ${OBJS}
 
@@ -8,11 +9,11 @@ OBJECTS_EXE = \
 
 EXE = ${BINDIR}/mypic.exe
 
-SEARCH_C = -Iinclude -I$(AMREX_INSTALL_DIR)/include -I${SHAREDIR} 
+SEARCH_C = -Iinclude -I$(MYDIR)/${AMREX_INSTALL_DIR}/include -I${SHAREDIR} 
 
 FLAGC_EXTRA = ${FLAGC_LOCAL} 
 
-LDFLAGS = -L$(AMREX_INSTALL_DIR)/lib
+LDFLAGS = -L$(MYDIR)/${AMREX_INSTALL_DIR}/lib
 LIBRARIES = -lamrex  -lgfortran
 
 include ../Makefile.conf
@@ -50,8 +51,8 @@ ${MY_LIB}: ${OBJECTS}
 	${AR} ${MY_LIB} ${OBJECTS}
 
 clean:
-	rm -f ${OBJECTS} ${OBJECTS_EXE} ${MY_LIB}
-	rm -rf .d
+	-@(rm -f ${OBJECTS} ${OBJECTS_EXE} ${MY_LIB})
+	-@(rm -rf .d)
 
 distclean: clean
-	rm -f Makefile.DEPEND Makefile.local Makefile.RULES
+	-@(rm -f Makefile.DEPEND Makefile.local Makefile.RULES)
