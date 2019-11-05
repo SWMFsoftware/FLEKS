@@ -175,8 +175,54 @@ void div_node_to_center(const amrex::MultiFab& nodeMF,
   }
 }
 
+void div_center_to_center(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
+                          const amrex::Real* invDx) {
+
+  for (amrex::MFIter mfi(dstMF, doTiling); mfi.isValid(); ++mfi) {
+    const amrex::Box& box = mfi.tilebox();
+    const auto lo = amrex::lbound(box);
+    const auto hi = amrex::ubound(box);
+
+    const amrex::Array4<amrex::Real const>& srcArr = srcMF[mfi].array();
+    const amrex::Array4<amrex::Real>& dstArr = dstMF[mfi].array();
+
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          Real compX = 0;
+          for (int jj = -1; jj < 2; jj++)
+            for (int kk = -1; kk < 2; kk++) {
+              compX += srcArr(i + 1, j + jj, k + kk, ix_) -
+                       srcArr(i - 1, j + jj, k + kk, ix_);
+            }
+          compX *= 0.5 * invDx[ix_];
+
+          Real compY = 0;
+          for (int ii = -1; ii < 2; ii++)
+            for (int kk = -1; kk < 2; kk++) {
+              compY += srcArr(i + ii, j + 1, k + kk, iy_) -
+                       srcArr(i + ii, j - 1, k + kk, iy_);
+            }
+          compY *= 0.5 * invDx[iy_];
+
+          Real compZ = 0;
+          for (int ii = -1; ii < 2; ii++)
+            for (int jj = -1; jj < 2; jj++) {
+              compZ += srcArr(i + ii, j + jj, k + 1, iz_) -
+                       srcArr(i + ii, j + jj, k - 1, iz_);
+            }
+          compZ *= 0.5 * invDx[iz_];
+
+          dstArr(i, j, k) = (compX + compY + compZ) / 9;
+        }
+  }
+}
+
 void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
                       amrex::Geometry& geom) {
+  bool isCenter = MF.ixType().cellCentered();
+  bool isNode = !isCenter;
+
   int iCount = 0;
   for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
     const amrex::Box& box = mfi.tilebox();
@@ -184,15 +230,21 @@ void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
     const auto hi = amrex::ubound(box);
     const amrex::Array4<amrex::Real>& arr = MF[mfi].array();
 
-    // Avoid double counting the share edges.
-    int iMax = hi.x - 1, jMax = hi.y - 1, kMax = hi.z - 1;
+    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
 
-    if ((!geom.isPeriodic(ix_)) && box.bigEnd(ix_) == hi.x)
-      iMax++;
-    if ((!geom.isPeriodic(iy_)) && box.bigEnd(iy_) == hi.y)
-      jMax++;
-    if ((!geom.isPeriodic(iz_)) && box.bigEnd(iz_) == hi.z)
-      kMax++;
+    if (isNode) {
+      // Avoid double counting the shared edges.
+      iMax--;
+      jMax--;
+      kMax--;
+
+      if ((!geom.isPeriodic(ix_)) && box.bigEnd(ix_) == hi.x)
+        iMax++;
+      if ((!geom.isPeriodic(iy_)) && box.bigEnd(iy_) == hi.y)
+        jMax++;
+      if ((!geom.isPeriodic(iz_)) && box.bigEnd(iz_) == hi.z)
+        kMax++;
+    }
 
     for (int iVar = 0; iVar < MF.nComp(); iVar++)
       for (int k = lo.z; k <= kMax; ++k)
@@ -205,6 +257,10 @@ void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
 
 void convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
                       amrex::Geometry& geom) {
+
+  bool isCenter = MF.ixType().cellCentered();
+  bool isNode = !isCenter;
+
   int iCount = 0;
   for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
     const amrex::Box& box = mfi.tilebox();
@@ -213,14 +269,21 @@ void convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
     const amrex::Array4<amrex::Real const>& arr = MF[mfi].array();
 
     // Avoid double counting the share edges.
-    int iMax = hi.x - 1, jMax = hi.y - 1, kMax = hi.z - 1;
+    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
 
-    if ((!geom.isPeriodic(ix_)) && box.bigEnd(ix_) == hi.x)
-      iMax++;
-    if ((!geom.isPeriodic(iy_)) && box.bigEnd(iy_) == hi.y)
-      jMax++;
-    if ((!geom.isPeriodic(iz_)) && box.bigEnd(iz_) == hi.z)
-      kMax++;
+    if (isNode) {
+      // Avoid double counting the shared edges.
+      iMax--;
+      jMax--;
+      kMax--;
+
+      if ((!geom.isPeriodic(ix_)) && box.bigEnd(ix_) == hi.x)
+        iMax++;
+      if ((!geom.isPeriodic(iy_)) && box.bigEnd(iy_) == hi.y)
+        jMax++;
+      if ((!geom.isPeriodic(iz_)) && box.bigEnd(iz_) == hi.z)
+        kMax++;
+    }
 
     for (int iVar = 0; iVar < MF.nComp(); iVar++)
       for (int k = lo.z; k <= kMax; ++k)

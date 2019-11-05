@@ -34,6 +34,9 @@ void div_center_to_node(const amrex::MultiFab& centerMF,
 void div_node_to_center(const amrex::MultiFab& nodeMF,
                         amrex::MultiFab& centerMF, const amrex::Real* invDx);
 
+void div_center_to_center(const amrex::MultiFab& srcMF,
+                        amrex::MultiFab& dstMF, const amrex::Real* invDx);
+
 void average_center_to_node(const amrex::MultiFab& centerMF,
                             amrex::MultiFab& nodeMF);
 

@@ -121,6 +121,139 @@ void Particles::add_particles_domain(const FluidPicInterface& fluidInterface) {
   }
 }
 
+void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
+                              amrex::UMultiFab<RealCMM>& centerMM,
+                              bool doNetChargeOnly) {
+  BL_PROFILE("Particles::sum_to_center");
+
+  const auto& plo = Geom(0).ProbLo();
+
+  const auto& dx = Geom(0).CellSize();
+  const auto& invDx = Geom(0).InvCellSize();
+  const Real invVol = invDx[ix_] * invDx[iy_] * invDx[iz_];
+
+  const int lev = 0;
+  for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
+    Array4<Real> const& chargeArr = netChargeMF[pti].array();
+    Array4<RealCMM> const& mmArr = centerMM[pti].array();
+
+    const auto& particles = pti.GetArrayOfStructs();
+
+    for (const auto& p : particles) {
+      // Print() << "particle = " << p << std::endl;
+
+      const Real qp = p.rdata(iqp_);
+
+      //-----calculate interpolate coef begin-------------
+      int loIdx[3];
+      Real dShift[3];
+      for (int i = 0; i < 3; i++) {
+        // plo is the corner location => -0.5
+        dShift[i] = (p.pos(i) - plo[i]) * invDx[i] - 0.5;
+        loIdx[i] = floor(dShift[i]);
+        dShift[i] = dShift[i] - loIdx[i];
+      }
+      Real coef[2][2][2];
+      part_grid_interpolation_coef(dShift, coef);
+      //-----calculate interpolate coef end-------------
+
+      for (int kk = 0; kk < 2; kk++)
+        for (int jj = 0; jj < 2; jj++)
+          for (int ii = 0; ii < 2; ii++) {
+            chargeArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) +=
+                coef[ii][jj][kk] * qp * invVol;
+          }
+      if (!doNetChargeOnly) {
+        Real weights_IIID[2][2][2][3];
+        //----- Mass matrix calculation begin--------------
+        const Real xi0 = dShift[ix_] * dx[ix_];
+        const Real eta0 = dShift[iy_] * dx[iy_];
+        const Real zeta0 = dShift[iz_] * dx[iz_];
+        const Real xi1 = dx[ix_] - xi0;
+        const Real eta1 = dx[iy_] - eta0;
+        const Real zeta1 = dx[iz_] - zeta0;
+
+        weights_IIID[1][1][1][ix_] = eta0 * zeta0 * invVol;
+        weights_IIID[1][1][1][iy_] = xi0 * zeta0 * invVol;
+        weights_IIID[1][1][1][iz_] = xi0 * eta0 * invVol;
+
+        // xi0*eta0*zeta1*invVOL;
+        weights_IIID[1][1][0][ix_] = eta0 * zeta1 * invVol;
+        weights_IIID[1][1][0][iy_] = xi0 * zeta1 * invVol;
+        weights_IIID[1][1][0][iz_] = -xi0 * eta0 * invVol;
+
+        // xi0*eta1*zeta0*invVOL;
+        weights_IIID[1][0][1][ix_] = eta1 * zeta0 * invVol;
+        weights_IIID[1][0][1][iy_] = -xi0 * zeta0 * invVol;
+        weights_IIID[1][0][1][iz_] = xi0 * eta1 * invVol;
+
+        // xi0*eta1*zeta1*invVOL;
+        weights_IIID[1][0][0][ix_] = eta1 * zeta1 * invVol;
+        weights_IIID[1][0][0][iy_] = -xi0 * zeta1 * invVol;
+        weights_IIID[1][0][0][iz_] = -xi0 * eta1 * invVol;
+
+        // xi1*eta0*zeta0*invVOL;
+        weights_IIID[0][1][1][ix_] = -eta0 * zeta0 * invVol;
+        weights_IIID[0][1][1][iy_] = xi1 * zeta0 * invVol;
+        weights_IIID[0][1][1][iz_] = xi1 * eta0 * invVol;
+
+        // xi1*eta0*zeta1*invVOL;
+        weights_IIID[0][1][0][ix_] = -eta0 * zeta1 * invVol;
+        weights_IIID[0][1][0][iy_] = xi1 * zeta1 * invVol;
+        weights_IIID[0][1][0][iz_] = -xi1 * eta0 * invVol;
+
+        // xi1*eta1*zeta0*invVOL;
+        weights_IIID[0][0][1][ix_] = -eta1 * zeta0 * invVol;
+        weights_IIID[0][0][1][iy_] = -xi1 * zeta0 * invVol;
+        weights_IIID[0][0][1][iz_] = xi1 * eta1 * invVol;
+
+        // xi1*eta1*zeta1*invVOL;
+        weights_IIID[0][0][0][ix_] = -eta1 * zeta1 * invVol;
+        weights_IIID[0][0][0][iy_] = -xi1 * zeta1 * invVol;
+        weights_IIID[0][0][0][iz_] = -xi1 * eta1 * invVol;
+
+        const int iMin = loIdx[ix_];
+        const int jMin = loIdx[iy_];
+        const int kMin = loIdx[iz_];
+        const int iMax = iMin + 1;
+        const int jMax = jMin + 1;
+        const int kMax = kMin + 1;
+
+        Real wg_D[3];
+        for (int i1 = iMin; i1 <= iMax; i1++)
+          for (int j1 = jMin; j1 <= jMax; j1++)
+            for (int k1 = kMin; k1 <= kMax; k1++) {
+
+              for (int iDim = 0; iDim < 3; iDim++) {
+                wg_D[iDim] =
+                    invVol *
+                    weights_IIID[i1 - iMin][j1 - jMin][k1 - kMin][iDim];
+              }
+
+              for (int i2 = iMin; i2 <= iMax; i2++)
+                for (int j2 = jMin; j2 <= jMax; j2++)
+                  for (int k2 = kMin; k2 <= kMax; k2++) {
+
+                    Real weight = 0;
+                    for (int iDim = 0; iDim < 3; iDim++) {
+                      weight +=
+                          wg_D[iDim] *
+                          weights_IIID[i2 - iMin][j2 - jMin][k2 - kMin][iDim];
+                    }
+
+                    const int ip = i2 - i1 + 1;
+                    const int jp = j2 - j1 + 1;
+                    const int kp = k2 - k1 + 1;
+                    const int gp = ip * 9 + jp * 3 + kp;
+                    mmArr(i1, j1, k1).data[gp] += weight * fabs(qp);
+                  }
+            }
+      } // if doChargeOnly
+
+    } // for p
+  }
+}
+
 void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
                             MultiFab& nodeBMF, Real dt) {
   BL_PROFILE("Particles::sum_moments");
@@ -302,7 +435,7 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
               for (int ip = 0; ip < 3; ip++) {
                 const int ir = i1 + ip - 1;
                 const int ipr = 2 - ip;
-                gpr = jpr * 3 + ipr;    
+                gpr = jpr * 3 + ipr;
                 gps = 18 + jp * 3 + ip; // gps = kp*9+jp*3+kp
                 for (int idx = 0; idx < 9; idx++) {
                   mmArr(ir, jr, kr).data[gpr * 9 + idx] =

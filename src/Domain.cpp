@@ -24,8 +24,6 @@ void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
   timeNowSI = timeIn;
   timeNow = timeIn * fluidInterface.getSi2NoT();
 
-  theta = 0.5;
-
   iProc = ParallelDescriptor::MyProc();
   read_param();
 
@@ -64,6 +62,9 @@ void Domain::read_param() {
       readParam.read_var("npcelz", npcelz[0]);
     } else if (command == "#ELECTRON") {
       readParam.read_var("qom", qom[0]);
+    } else if (command == "#DISCRETIZE") {
+      readParam.read_var("theta", fsolver.theta);
+      readParam.read_var("coefDiff", fsolver.coefDiff);
     }
   }
 
@@ -130,6 +131,15 @@ void Domain::define_domain() {
 
     tempNode3.define(nodeBA, dm, 3, nGst);
     tempNode3.setVal(0.0);
+
+    tempCenter3.define(centerBA, dm, 3, nGst);
+    tempCenter3.setVal(0.0);
+
+    tempCenter1.define(centerBA, dm, 1, nGst);
+    tempCenter1.setVal(0.0);
+
+    tempCenter1_1.define(centerBA, dm, 1, nGst);
+    tempCenter1_1.setVal(0.0);
   }
 
   {
@@ -147,6 +157,18 @@ void Domain::define_domain() {
     nodeMM.define(nodeBA, dm, 1, 1);
     const RealMM mm0(0.0);
     nodeMM.setVal(mm0);
+
+    //-------divE correction----------------
+    centerNetChargeOld.define(centerBA, dm, 1, 1);
+    centerNetChargeOld.setVal(0.0);
+    centerNetChargeN.define(centerBA, dm, 1, 1);
+    centerNetChargeN.setVal(0.0);
+    centerNetChargeNew.define(centerBA, dm, 1, 1);
+    centerNetChargeNew.setVal(0.0);
+
+    centerMM.define(centerBA, dm, 1, 1);
+    centerMM.setVal(0.0);
+    //--------------------------------------
   }
 
   Print() << "Domain:: Domain range = " << boxRange << std::endl;
@@ -232,6 +254,7 @@ void Domain::init_particles() {
   }
 
   sum_moments();
+  sum_to_center(false);
 }
 
 void Domain::particle_mover() {
@@ -264,6 +287,158 @@ void Domain::sum_moments() {
   timing_stop(nameFunc);
 }
 
+void Domain::divE_correction() {
+  nSolveCenter =
+      get_fab_grid_points_number(centerDivE) * centerDivE.local_size();
+
+  sum_to_center(true);
+
+  Print() << "============ div(E) correction =========" << std::endl;
+  calculate_phi(matvec_divE_accurate);
+  Print() << "============================================" << std::endl;
+
+  // DO CORRECTION
+  sum_to_center(false);
+}
+
+void Domain::calculate_phi(MATVEC fMatvec, Real tol, int nIter) {
+  double x[nSolveCenter];
+  double b[nSolveCenter];
+
+  for (int i = 0; i < nSolveCenter; i++) {
+    x[i] = 0;
+  }
+
+  div_node_to_center(nodeE, tempCenter1, geom.InvCellSize());
+
+  // lap(phi) = (divE - rhoc*(4pi))/rhoTheta, where,
+  // rhoc = (1-rhoTheta)*rhoc(n+1/2) + rhoTheta*rhoc(n+3/2)
+  // The correction density Delt_rhoc(n+3/2) = 4*pi*lap(phi)
+
+  MultiFab::LinComb(tempCenter1, 1.0 / rhoTheta, tempCenter1, 0,
+                    -fourPI / rhoTheta, centerNetChargeN, 0, 0,
+                    tempCenter1.nComp(), 0);
+
+  tempCenter1.FillBoundary(geom.periodicity());
+
+  convert_3d_to_1d(tempCenter1, b, geom);
+
+  {
+    linear_solver_matvec_c = fMatvec;
+
+    int nVarSolve = 1;
+    int nDimIn = 3;
+
+    MFIter mfi(tempCenter1);
+    auto lo = lbound(mfi.validbox());
+    auto hi = ubound(mfi.validbox());
+
+    int nI = hi.x - lo.x + 1;
+    int nJ = hi.y - lo.y + 1;
+    int nK = hi.z - lo.z + 1;
+    int nBlock = tempCenter1.local_size();
+    MPI_Fint iComm = MPI_Comm_c2f(ParallelDescriptor::Communicator());
+    double precond_matrix_II[1][1];
+    precond_matrix_II[0][0] = 0;
+    // parameter to choose preconditioner types
+    // 0:No precondition; 1: BILU; 2:DILU;
+    //[-1,0): MBILU;
+    double PrecondParam = 0;
+    int lTest = ParallelDescriptor::MyProc() == 0;
+
+    linear_solver_wrapper("GMRES", &tol, &nIter, &nVarSolve, &nDimIn, &nI, &nJ,
+                          &nK, &nBlock, &iComm, b, x, &PrecondParam,
+                          precond_matrix_II[0], &lTest);
+  }
+}
+
+void Domain::divE_accurate_matvec(double* vecIn, double* vecOut) {
+
+  convert_1d_to_3d(vecIn, tempCenter1, geom);
+  tempCenter1.FillBoundary(geom.periodicity());
+
+  for (amrex::MFIter mfi(tempCenter1); mfi.isValid(); ++mfi) {
+    const amrex::Box& box = mfi.validbox();
+    const auto lo = amrex::lbound(box);
+    const auto hi = amrex::ubound(box);
+
+    const amrex::Array4<amrex::Real>& lArr = tempCenter1_1[mfi].array();
+    const amrex::Array4<amrex::Real const>& rArr = tempCenter1[mfi].array();
+    const amrex::Array4<RealCMM>& mmArr = centerMM[mfi].array();
+
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i)
+
+          for (int i2 = i - 1; i2 <= i + 1; i2++)
+            for (int j2 = j - 1; j2 <= j + 1; j2++)
+              for (int k2 = k - 1; k2 <= k + 1; k2++) {
+                const int gp = (i2 - i + 1) * 9 + (j2 - j + 1) * 3 + k2 - k + 1;
+                lArr(i, j, k) +=
+                    rArr(i2, j2, k2) * mmArr(i, j, k).data[gp];
+              }
+  }
+  tempCenter1_1.mult(fourPI*fourPI);
+  convert_3d_to_1d(tempCenter1_1, vecOut, geom);
+}
+
+void Domain::sum_to_center(bool isBeforeCorrection) {
+  centerNetChargeNew.setVal(0.0);
+
+  const RealCMM mm0(0.0);
+  centerMM.setVal(mm0);
+
+  bool doNetChargeOnly = !isBeforeCorrection;
+
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->sum_to_center(centerNetChargeNew, centerMM, doNetChargeOnly);
+  }
+
+  if (!doNetChargeOnly) {
+    centerMM.SumBoundary(geom.periodicity());
+    centerMM.FillBoundary(geom.periodicity());
+  }
+
+  centerNetChargeNew.SumBoundary(geom.periodicity());
+  centerNetChargeNew.FillBoundary(geom.periodicity());
+
+  MultiFab::LinComb(centerNetChargeN, 1 - rhoTheta, centerNetChargeOld, 0,
+                    rhoTheta, centerNetChargeNew, 0, 0,
+                    centerNetChargeN.nComp(), centerNetChargeN.nGrow());
+
+  print_MultiFab(centerNetChargeOld, "centerNetChargeOld");
+  print_MultiFab(centerNetChargeNew, "centerNetChargeNew");
+  print_MultiFab(centerNetChargeN, "centerNetChargeN");
+
+  if (!isBeforeCorrection) {
+    MultiFab::Copy(centerNetChargeOld, centerNetChargeNew, 0, 0,
+                   centerNetChargeOld.nComp(), centerNetChargeOld.nGrow());
+  }
+
+  // centerNetCharge.SumBoundary(geom.periodicity());
+  // centerNetCharge.FillBoundary(geom.periodicity());
+
+  // for (MFIter mfi(centerMM); mfi.isValid(); ++mfi) {
+  //   const Box& box = mfi.validbox();
+  //   auto const& data = centerMM[mfi].array();
+
+  //   const auto lo = lbound(box);
+  //   const auto hi = ubound(box);
+
+  //   Real sum=0;
+  //   for (int i = lo.x; i <= hi.x; ++i)
+  //     for (int j = lo.y; j <= hi.y; ++j)
+  //       for (int k = lo.z; k <= hi.z; ++k) {
+  //         AllPrint() << " i = " << i << " j = " << j << " k = " << k
+  //                    << " centerMM = " << data(i, j, k) << std::endl;
+  //                    sum += data(i,j,k).data[0];
+  //       }
+  //       Print()<<" sum = "<<sum<<std::endl;
+  // }
+
+  // centerNetCharge.FillBoundary
+}
+
 void Domain::update() {
   std::string nameFunc = "Domain::update";
   timing_start(nameFunc);
@@ -275,6 +450,8 @@ void Domain::update() {
 
   particle_mover();
   update_B();
+
+  divE_correction();
   sum_moments();
   timing_stop(nameFunc);
 }
@@ -375,12 +552,12 @@ void Domain::update_E() {
   timing_start(nameFunc);
 
   const int nNode = get_fab_grid_points_number(nodeE) * nodeE.local_size();
-  nSolve = 3 * nNode;
-  double* rhs = new double[nSolve];
-  double* xLeft = new double[nSolve];
-  double* matvec = new double[nSolve];
+  nSolveNode = 3 * nNode;
+  double* rhs = new double[nSolveNode];
+  double* xLeft = new double[nSolveNode];
+  double* matvec = new double[nSolveNode];
 
-  for (int i = 0; i < nSolve; i++) {
+  for (int i = 0; i < nSolveNode; i++) {
     rhs[i] = 0;
     xLeft[i] = 0;
     matvec[i] = 0;
@@ -392,13 +569,13 @@ void Domain::update_E() {
 
   update_E_matvec(xLeft, matvec);
 
-  for (int i = 0; i < nSolve; i++) {
+  for (int i = 0; i < nSolveNode; i++) {
     rhs[i] -= matvec[i];
     xLeft[i] = 0;
   }
 
   {
-    linear_solver_matvec_c = pic_matvec;
+    linear_solver_matvec_c = matvec_E_solver;
 
     int nVarSolve = 3;
     int nIter = 200;
@@ -422,9 +599,11 @@ void Domain::update_E() {
     double PrecondParam = 0;
     int lTest = ParallelDescriptor::MyProc() == 0;
 
+    Print() << "============ Electric field solver =========" << std::endl;
     linear_solver_wrapper("GMRES", &EFieldTol, &nIter, &nVarSolve, &nDimIn, &nI,
                           &nJ, &nK, &nBlock, &iComm, rhs, xLeft, &PrecondParam,
                           precond_matrix_II[0], &lTest);
+    Print() << "============================================" << std::endl;
   }
 
   nodeEth.setVal(0.0);
@@ -434,8 +613,8 @@ void Domain::update_E() {
 
   MultiFab::Add(nodeEth, nodeE, 0, 0, nodeEth.nComp(), nGst);
 
-  MultiFab::LinComb(nodeE, -(1.0 - theta) / theta, nodeE, 0, 1. / theta,
-                    nodeEth, 0, 0, nodeE.nComp(), nGst);
+  MultiFab::LinComb(nodeE, -(1.0 - fsolver.theta) / fsolver.theta, nodeE, 0,
+                    1. / fsolver.theta, nodeEth, 0, 0, nodeE.nComp(), nGst);
 
   delete[] rhs;
   delete[] xLeft;
@@ -445,7 +624,7 @@ void Domain::update_E() {
 }
 
 void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
-  zero_array(vecOut, nSolve);
+  zero_array(vecOut, nSolveNode);
 
   MultiFab vecMF(nodeBA, dm, 3, nGst);
   vecMF.setVal(0.0);
@@ -463,11 +642,20 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
 
   lap_node_to_node(vecMF, imageMF, dm, geom);
 
-  Real delt2 = pow(theta * dt, 2);
+  Real delt2 = pow(fsolver.theta * dt, 2);
   imageMF.mult(-delt2);
 
-  {
+  { // grad(divE)
     div_node_to_center(vecMF, centerDivE, geom.InvCellSize());
+    if (fsolver.coefDiff > 0) {
+      // Calculate cell center E for center-to-center divE.
+      average_node_to_cellcenter(tempCenter3, 0, vecMF, 0, 3);
+      tempCenter3.FillBoundary(geom.periodicity());
+      div_center_to_center(tempCenter3, tempCenter1, geom.InvCellSize());
+
+      MultiFab::LinComb(centerDivE, 1 - fsolver.coefDiff, centerDivE, 0,
+                        fsolver.coefDiff, tempCenter1, 0, 0, 1, 0);
+    }
     centerDivE.FillBoundary(geom.periodicity());
 
     grad_center_to_node(centerDivE, tempNode3, geom.InvCellSize());
@@ -489,7 +677,7 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
 void Domain::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
 
   outMF.setVal(0.0);
-  Real c0 = fourPI * theta * dt;
+  Real c0 = fourPI * fsolver.theta * dt;
   for (amrex::MFIter mfi(outMF); mfi.isValid(); ++mfi) {
     const amrex::Box& box = mfi.validbox();
     const auto lo = amrex::lbound(box);
@@ -541,7 +729,7 @@ void Domain::update_E_rhs(double* rhs) {
                   temp2Node.nComp(), 0);
 
   MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), 0);
-  temp2Node.mult(theta * dt);
+  temp2Node.mult(fsolver.theta * dt);
 
   MultiFab::Add(temp2Node, nodeE, 0, 0, nodeE.nComp(), 0);
 

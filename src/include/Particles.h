@@ -3,10 +3,10 @@
 
 #include <AMReX_Particles.H>
 
+#include "Array1D.h"
 #include "Constants.h"
 #include "FluidPicInterface.h"
 #include "RandNum.h"
-#include "Array1D.h"
 #include "UMultiFab.h"
 
 class ParticlesIter : public amrex::ParIter<4, 0, 0, 0> {
@@ -29,6 +29,9 @@ public:
 
   void sum_moments(amrex::MultiFab& momentsMF, amrex::UMultiFab<RealMM>& nodeMM,
                    amrex::MultiFab& nodeBMF, amrex::Real dt);
+
+  void sum_to_center(amrex::MultiFab& netChargeMF,
+                     amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly);
 
   void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
              amrex::Real dt);

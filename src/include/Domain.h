@@ -15,17 +15,28 @@
 #include <AMReX_RealBox.H>
 #include <AMReX_Vector.H>
 
-#include "Constants.h"
-#include "Particles.h"
-#include "FluidPicInterface.h"
 #include "Array1D.h"
+#include "Constants.h"
+#include "FluidPicInterface.h"
+#include "Particles.h"
 #include "UMultiFab.h"
+#include "LinearSolver.h"
 
 using namespace amrex;
 
-struct Tag{
-  int index; 
-  bool b1; 
+struct Tag {
+  int index;
+  bool b1;
+};
+
+class FieldSolver {
+public:
+  Real theta;
+  Real coefDiff;
+  FieldSolver() {
+    theta = 0.5;
+    coefDiff = 0;
+  }
 };
 
 class Domain {
@@ -55,25 +66,40 @@ private:
   DistributionMapping dm;
 
   MultiFab nodeE;
-  MultiFab nodeEth; 
+  MultiFab nodeEth;
   MultiFab nodeB;
   MultiFab centerB;
-  UMultiFab<RealMM> nodeMM; 
 
-  MultiFab centerDivE; 
-  MultiFab tempNode3; 
-  int nSolve; 
+  UMultiFab<RealMM> nodeMM;
+
+  // ------divE correction--------------
+  // Old @ t=t_{n-1/2}; N @ t=t_n; New @ t=t_{n+1/2}
+  MultiFab centerNetChargeOld, centerNetChargeN, centerNetChargeNew;
+  MultiFab centerDivE;
+  UMultiFab<RealCMM> centerMM;
+  const Real rhoTheta = 0.51; 
+  //--------------------------------------
+
+  int nSolveNode;
+  int nSolveCenter; 
+
+  //------Temporary variables for field---
+  MultiFab tempNode3;
+  MultiFab tempCenter3;
+  MultiFab tempCenter1;
+  MultiFab tempCenter1_1;  
+  //--------------------------------------
 
   int nSpecies;
   int iTot;
-  Vector<MultiFab> nodePlasma;  
+  Vector<MultiFab> nodePlasma;
 
-  Vector<std::unique_ptr<Particles>> parts;
+  Vector<std::unique_ptr<Particles> > parts;
   int *npcelx, *npcely, *npcelz;
-  double *qom;  
+  double *qom;
 
+  FieldSolver fsolver;
 
-  Real theta; 
   Real dtSI, dt;
   Real timeNow, timeNowSI;
 
@@ -81,17 +107,17 @@ private:
 
   // public methods
 public:
-  Domain(){
-    qom = nullptr; 
-    npcelx = nullptr; 
-    npcely = nullptr; 
-    npcelz = nullptr;     
+  Domain() {
+    qom = nullptr;
+    npcelx = nullptr;
+    npcely = nullptr;
+    npcelz = nullptr;
   };
-  ~Domain(){
-    delete [] qom; 
-    delete [] npcelx; 
-    delete [] npcely; 
-    delete [] npcelz; 
+  ~Domain() {
+    delete[] qom;
+    delete[] npcelx;
+    delete[] npcely;
+    delete[] npcelz;
   };
   void init(Real timeIn, const std::string &paramString, int *paramInt,
             double *gridDim, double *paramReal, int iDomain = 1);
@@ -100,6 +126,12 @@ public:
   void init_field();
   void init_particles();
   void sum_moments();
+
+  void divE_correction();
+  void divE_accurate_matvec(double *vecIn, double *vecOut);
+  void sum_to_center(bool isBeforeCorrection);
+  void calculate_phi(MATVEC fMatvec, Real tol=1e-2, int nIter=20);
+
   void update();
 
   void particle_mover();
@@ -115,7 +147,6 @@ public:
     return timeNowSI;
   }
 
-
   //------------Coupler related begin--------------
   void set_state_var(double *data, int *index);
   int get_grid_nodes_number();
@@ -125,12 +156,11 @@ public:
   //------------Coupler related end--------------
 
   void update_E();
-  void update_E_rhs(double *rhos);  
+  void update_E_rhs(double *rhos);
   void update_E_matvec(const double *vecIn, double *vecOut);
-  void update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF ); 
+  void update_E_M_dot_E(const MultiFab &inMF, MultiFab &outMF);
 
   void update_B();
-
 
   // private methods
 private:
