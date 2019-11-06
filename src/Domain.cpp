@@ -21,8 +21,7 @@ void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
   int iCycle = 0;
   fluidInterface.setCycle(iCycle);
 
-  timeNowSI = timeIn;
-  timeNow = timeIn * fluidInterface.getSi2NoT();
+  tc.set_si2no(fluidInterface.getSi2NoT());
 
   iProc = ParallelDescriptor::MyProc();
   read_param();
@@ -40,8 +39,7 @@ void Domain::read_param() {
   qom = new double[1];
   qom[0] = -777;
 
-  dtSI = 1;
-  dt = dtSI * fluidInterface.getSi2NoT();
+  tc.set_dt(1);
 
   std::string command;
   ReadParam& readParam = fluidInterface.readParam;
@@ -51,8 +49,9 @@ void Domain::read_param() {
       // The block size in each direction can not larger than nCellBlockMax.
       readParam.read_var("nCellBlockMax", nCellBlockMax);
     } else if (command == "#TIMECONTROL") {
+      Real dtSI; 
       readParam.read_var("dtSI", dtSI);
-      dt = dtSI * fluidInterface.getSi2NoT();
+      tc.set_dt_si(dtSI);
     } else if (command == "#PARTICLES") {
       npcelx = new int[1];
       npcely = new int[1];
@@ -265,7 +264,7 @@ void Domain::particle_mover() {
   timing_start(nameFunc);
 
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->mover(nodeEth, nodeB, dt);
+    parts[i]->mover(nodeEth, nodeB, tc.get_dt());
   }
 
   timing_stop(nameFunc);
@@ -280,7 +279,7 @@ void Domain::sum_moments() {
   nodeMM.setVal(mm0);
 
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, dt);
+    parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, tc.get_dt());
     MultiFab::Add(nodePlasma[nSpecies], nodePlasma[i], 0, 0, nMoments, 0);
   }
 
@@ -459,9 +458,6 @@ void Domain::update() {
   std::string nameFunc = "Domain::update";
   timing_start(nameFunc);
 
-  timeNow += dt;
-  timeNowSI += dtSI;
-
   update_E();
 
   particle_mover();
@@ -469,6 +465,10 @@ void Domain::update() {
 
   divE_correction();
   sum_moments();
+
+
+  tc.update();
+
   timing_stop(nameFunc);
 }
 
@@ -569,9 +569,10 @@ void Domain::update_E() {
 
   const int nNode = get_fab_grid_points_number(nodeE) * nodeE.local_size();
   nSolveNode = 3 * nNode;
-  double* rhs = new double[nSolveNode];
-  double* xLeft = new double[nSolveNode];
-  double* matvec = new double[nSolveNode];
+
+  double rhs[nSolveNode];
+  double xLeft[nSolveNode];
+  double matvec[nSolveNode];
 
   for (int i = 0; i < nSolveNode; i++) {
     rhs[i] = 0;
@@ -632,10 +633,6 @@ void Domain::update_E() {
   MultiFab::LinComb(nodeE, -(1.0 - fsolver.theta) / fsolver.theta, nodeE, 0,
                     1. / fsolver.theta, nodeEth, 0, 0, nodeE.nComp(), nGst);
 
-  delete[] rhs;
-  delete[] xLeft;
-  delete[] matvec;
-
   timing_stop(nameFunc);
 }
 
@@ -658,7 +655,7 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
 
   lap_node_to_node(vecMF, imageMF, dm, geom);
 
-  Real delt2 = pow(fsolver.theta * dt, 2);
+  Real delt2 = pow(fsolver.theta * tc.get_dt(), 2);
   imageMF.mult(-delt2);
 
   { // grad(divE)
@@ -693,7 +690,7 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
 void Domain::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
 
   outMF.setVal(0.0);
-  Real c0 = fourPI * fsolver.theta * dt;
+  Real c0 = fourPI * fsolver.theta * tc.get_dt();
   for (amrex::MFIter mfi(outMF); mfi.isValid(); ++mfi) {
     const amrex::Box& box = mfi.validbox();
     const auto lo = amrex::lbound(box);
@@ -745,7 +742,7 @@ void Domain::update_E_rhs(double* rhs) {
                   temp2Node.nComp(), 0);
 
   MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), 0);
-  temp2Node.mult(fsolver.theta * dt);
+  temp2Node.mult(fsolver.theta * tc.get_dt());
 
   MultiFab::Add(temp2Node, nodeE, 0, 0, nodeE.nComp(), 0);
 
@@ -760,7 +757,7 @@ void Domain::update_B() {
 
   curl_node_to_center(nodeEth, dB, geom.InvCellSize());
 
-  MultiFab::Saxpy(centerB, -dt, dB, 0, 0, centerB.nComp(), 0);
+  MultiFab::Saxpy(centerB, -tc.get_dt(), dB, 0, 0, centerB.nComp(), 0);
   centerB.FillBoundary(geom.periodicity());
 
   average_center_to_node(centerB, nodeB);

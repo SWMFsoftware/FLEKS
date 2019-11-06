@@ -256,7 +256,7 @@ int ipic3d_run_(double *time) {
 
   // // All simulations are in the same time zone
   MPICs->update();
-  *time = (double)(MPICs->get_timeSI());
+  *time = (double)(MPICs->tc.get_time_si());
   // timing_stop(nameFunc);
   return (0);
 }
@@ -352,7 +352,8 @@ int ipic3d_set_dt_(double *DtSi) {
   std::string nameFunc = "PC: IPIC3D_set_dt";
   amrex::Print() << nameFunc << std::endl;
 
-  MPICs->set_dtSI(*DtSi);
+  MPICs->tc.set_dt_si(*DtSi);
+  
   return (0);
 }
 
@@ -371,7 +372,7 @@ int ipic3d_cal_dt_(double *dtOut) {
   std::string nameFunc = "PC: IPIC3D_cal_dt";
   amrex::Print() << nameFunc << std::endl;
 
-  *dtOut = MPICs->get_dtSI();
+  *dtOut = MPICs->tc.get_dt_si();
   return (0);
 }
 
