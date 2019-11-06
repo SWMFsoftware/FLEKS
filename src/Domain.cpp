@@ -7,6 +7,8 @@
 #include "Timing_c.h"
 #include "Utility.h"
 
+using namespace amrex; 
+
 void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
                   double* gridDim, double* paramReal, int iDomain) {
 
