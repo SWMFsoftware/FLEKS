@@ -129,6 +129,9 @@ void Domain::define_domain() {
     centerDivE.define(centerBA, dm, 1, nGst);
     centerDivE.setVal(0.0);
 
+    centerPhi.define(centerBA, dm, 1, nGst);
+    centerPhi.setVal(0.0);
+
     tempNode3.define(nodeBA, dm, 3, nGst);
     tempNode3.setVal(0.0);
 
@@ -288,25 +291,39 @@ void Domain::sum_moments() {
 }
 
 void Domain::divE_correction() {
+  std::string nameFunc = "Domain::divE_correction";
+  timing_start(nameFunc);
+
   nSolveCenter =
       get_fab_grid_points_number(centerDivE) * centerDivE.local_size();
 
-  sum_to_center(true);
+  for (int iIter = 0; iIter < 3; iIter++) {
+    sum_to_center(true);
 
-  Print() << "============ div(E) correction =========" << std::endl;
-  calculate_phi(matvec_divE_accurate);
-  Print() << "============================================" << std::endl;
+    Print() << "============ div(E) correction =========" << std::endl;
+    calculate_phi(matvec_divE_accurate);
+    Print() << "========================================" << std::endl;
 
+    divE_correct_particle_position();
+  }
   // DO CORRECTION
   sum_to_center(false);
+  timing_stop(nameFunc);
+}
+
+void Domain::divE_correct_particle_position() {
+
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->divE_correct_position(centerPhi);
+  }
 }
 
 void Domain::calculate_phi(MATVEC fMatvec, Real tol, int nIter) {
-  double x[nSolveCenter];
+  double xLeft[nSolveCenter];
   double b[nSolveCenter];
 
   for (int i = 0; i < nSolveCenter; i++) {
-    x[i] = 0;
+    xLeft[i] = 0;
   }
 
   div_node_to_center(nodeE, tempCenter1, geom.InvCellSize());
@@ -347,9 +364,12 @@ void Domain::calculate_phi(MATVEC fMatvec, Real tol, int nIter) {
     int lTest = ParallelDescriptor::MyProc() == 0;
 
     linear_solver_wrapper("GMRES", &tol, &nIter, &nVarSolve, &nDimIn, &nI, &nJ,
-                          &nK, &nBlock, &iComm, b, x, &PrecondParam,
+                          &nK, &nBlock, &iComm, b, xLeft, &PrecondParam,
                           precond_matrix_II[0], &lTest);
   }
+
+  convert_1d_to_3d(xLeft, centerPhi, geom);
+  centerPhi.FillBoundary(geom.periodicity());
 }
 
 void Domain::divE_accurate_matvec(double* vecIn, double* vecOut) {
@@ -357,6 +377,7 @@ void Domain::divE_accurate_matvec(double* vecIn, double* vecOut) {
   convert_1d_to_3d(vecIn, tempCenter1, geom);
   tempCenter1.FillBoundary(geom.periodicity());
 
+  tempCenter1_1.setVal(0.0);
   for (amrex::MFIter mfi(tempCenter1); mfi.isValid(); ++mfi) {
     const amrex::Box& box = mfi.validbox();
     const auto lo = amrex::lbound(box);
@@ -374,11 +395,10 @@ void Domain::divE_accurate_matvec(double* vecIn, double* vecOut) {
             for (int j2 = j - 1; j2 <= j + 1; j2++)
               for (int k2 = k - 1; k2 <= k + 1; k2++) {
                 const int gp = (i2 - i + 1) * 9 + (j2 - j + 1) * 3 + k2 - k + 1;
-                lArr(i, j, k) +=
-                    rArr(i2, j2, k2) * mmArr(i, j, k).data[gp];
+                lArr(i, j, k) += rArr(i2, j2, k2) * mmArr(i, j, k).data[gp];
               }
   }
-  tempCenter1_1.mult(fourPI*fourPI);
+  tempCenter1_1.mult(fourPI * fourPI);
   convert_3d_to_1d(tempCenter1_1, vecOut, geom);
 }
 
@@ -405,10 +425,6 @@ void Domain::sum_to_center(bool isBeforeCorrection) {
   MultiFab::LinComb(centerNetChargeN, 1 - rhoTheta, centerNetChargeOld, 0,
                     rhoTheta, centerNetChargeNew, 0, 0,
                     centerNetChargeN.nComp(), centerNetChargeN.nGrow());
-
-  print_MultiFab(centerNetChargeOld, "centerNetChargeOld");
-  print_MultiFab(centerNetChargeNew, "centerNetChargeNew");
-  print_MultiFab(centerNetChargeN, "centerNetChargeN");
 
   if (!isBeforeCorrection) {
     MultiFab::Copy(centerNetChargeOld, centerNetChargeNew, 0, 0,

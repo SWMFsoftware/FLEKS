@@ -36,6 +36,8 @@ public:
   void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
              amrex::Real dt);
 
+  void divE_correct_position(const amrex::MultiFab& phiMF);
+
 protected:
   static const int iup_ = 0;
   static const int ivp_ = 1;

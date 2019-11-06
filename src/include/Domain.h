@@ -75,7 +75,7 @@ private:
   // ------divE correction--------------
   // Old @ t=t_{n-1/2}; N @ t=t_n; New @ t=t_{n+1/2}
   MultiFab centerNetChargeOld, centerNetChargeN, centerNetChargeNew;
-  MultiFab centerDivE;
+  MultiFab centerDivE, centerPhi;
   UMultiFab<RealCMM> centerMM;
   const Real rhoTheta = 0.51; 
   //--------------------------------------
@@ -129,6 +129,7 @@ public:
 
   void divE_correction();
   void divE_accurate_matvec(double *vecIn, double *vecOut);
+  void divE_correct_particle_position();
   void sum_to_center(bool isBeforeCorrection);
   void calculate_phi(MATVEC fMatvec, Real tol=1e-2, int nIter=20);
 
