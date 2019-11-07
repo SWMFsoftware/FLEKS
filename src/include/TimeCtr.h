@@ -2,6 +2,7 @@
 #define _TIMECTR_H_
 
 #include <math.h>
+#include <string>
 
 #include <AMReX.H>
 #include <AMReX_REAL.H>
@@ -61,6 +62,16 @@ public:
     return doReach;
   }
 };
+
+class PlotCtr: public EventCtr{
+public:
+  PlotCtr(TimeCtr *tcIn):EventCtr(tcIn){}
+
+private:
+  std::string varStr; 
+  
+}
+
 
 class TimeCtr {
 private:
