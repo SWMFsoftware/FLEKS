@@ -6,6 +6,7 @@
 
 #include <AMReX.H>
 #include <AMReX_REAL.H>
+#include <AMReX_Vector.H>
 
 class TimeCtr;
 
@@ -70,7 +71,7 @@ public:
 private:
   std::string varStr; 
   
-}
+};
 
 
 class TimeCtr {
@@ -83,11 +84,11 @@ private:
 
   // public member variables.
 public:
-  EventCtr output;
+  amrex::Vector<PlotCtr> plots;
   
   // public methods
 public:
-  TimeCtr() : output(this), timeNow(0), dt(0), si2no(1), no2si(1), cycle(0) {}
+  TimeCtr() : timeNow(0), dt(0), si2no(1), no2si(1), cycle(0) {}
 
   void set_si2no(const amrex::Real si2noIn) {
     si2no = si2noIn;

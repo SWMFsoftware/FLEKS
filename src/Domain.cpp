@@ -7,7 +7,7 @@
 #include "Timing_c.h"
 #include "Utility.h"
 
-using namespace amrex; 
+using namespace amrex;
 
 void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
                   double* gridDim, double* paramReal, int iDomain) {
@@ -51,7 +51,7 @@ void Domain::read_param() {
       // The block size in each direction can not larger than nCellBlockMax.
       readParam.read_var("nCellBlockMax", nCellBlockMax);
     } else if (command == "#TIMECONTROL") {
-      Real dtSI; 
+      Real dtSI;
       readParam.read_var("dtSI", dtSI);
       tc.set_dt_si(dtSI);
     } else if (command == "#PARTICLES") {
@@ -66,6 +66,33 @@ void Domain::read_param() {
     } else if (command == "#DISCRETIZE") {
       readParam.read_var("theta", fsolver.theta);
       readParam.read_var("coefDiff", fsolver.coefDiff);
+    } else if (command == "#SAVEPLOT") {
+      int nPlot;
+      readParam.read_var("nPlotFile", nPlot);
+
+      for (int iPlot = 0; iPlot < nPlot; iPlot++) {
+        std::string plotString;
+        readParam.read_var("plotString", plotString);
+        {
+          std::string::size_type pos = plotString.find_first_not_of(' ');
+          if (pos != std::string::npos)
+            plotString.erase(0, pos);
+        }
+
+        int dnSave;
+        readParam.read_var("dnSavePlot", dnSave);
+
+        Real dtSave;
+        readParam.read_var("dtSavePlot", dtSave);
+
+        Real dxSave;
+        readParam.read_var("dxSavePlot", dxSave);
+
+        std::string plotVar; 
+        if( plotString.find("var") != std::string::npos){
+          readParam.read_var("plotVar", plotVar);
+        }
+      }
     }
   }
 
@@ -467,7 +494,6 @@ void Domain::update() {
 
   divE_correction();
   sum_moments();
-
 
   tc.update();
 
