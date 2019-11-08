@@ -153,6 +153,7 @@ public:
   void calculate_phi(MATVEC fMatvec, amrex::Real tol = 1e-2, int nIter = 20);
   //-------------div(E) correction end----------------
 
+  //--------------- IO begin--------------------------------
   void find_output_list(const PlotWriter &writerIn, long int &nPointAllProc,
                         PlotWriter::VectorPointList &pointList_II,
                         std::array<double, nDimMax> &xMin_D,
@@ -162,12 +163,12 @@ public:
                      const std::vector<std::string> &sVar_I,
                      MDArray<double> &var_II);
   double get_var(std::string var, const int ix, const int iy, const int iz,
-		 const amrex::MFIter &mfi);
+                 const amrex::MFIter &mfi);
+  //--------------- IO end--------------------------------
 
   // private methods
 private:
 };
-
 
 void find_output_list_caller(const PlotWriter &writerIn,
                              long int &nPointAllProc,

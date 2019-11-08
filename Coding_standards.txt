@@ -12,11 +12,12 @@
 
  3) Never put 'using namespace xxx' into a header. 
 
- 4) The order of headers: std headers -> AMReX headers -> user headers
+ 4) For beauty, the order of headers: std headers -> AMReX headers -> user headers. 
+    The correctness of the code shoud NOT depend on the order of headers.      
 
  5) Use 'nullptr' instead of NULL for pointer. 
 
- 6) Always use 'const' as possible. 
+ 6) Always use 'const' if possible. 
 
  7) Lambda is useful, but a regular function is better if it is universal or it is long. 
 
