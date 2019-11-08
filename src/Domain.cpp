@@ -2,6 +2,7 @@
 
 #include <AMReX_MultiFabUtil.H>
 
+#include "../../srcInterface/multi_ipic3d_domain.h"
 #include "Domain.h"
 #include "LinearSolver.h"
 #include "Timing_c.h"
@@ -31,8 +32,6 @@ void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
   define_domain();
 
   init_time_ctr();
-
-  tc.write_plots(true);
 }
 //---------------------------------------------------------
 
@@ -166,6 +165,9 @@ void Domain::read_param() {
 void Domain::set_ic() {
   init_field();
   init_particles();
+
+
+  tc.write_plots(true);
 }
 
 void Domain::define_domain() {
@@ -558,7 +560,7 @@ void Domain::update() {
   sum_moments();
 
   tc.update();
-  tc.write_plots(false);
+  tc.write_plots();
 
   timing_stop(nameFunc);
 }
@@ -905,7 +907,6 @@ void Domain::find_output_list(const PlotWriter& writerIn,
           if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
             pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
                                      zp, (double)iBlock });
-
             if (xp < xMinL_D[ix_])
               xMinL_D[ix_] = xp;
             if (yp < xMinL_D[iy_])
@@ -923,6 +924,7 @@ void Domain::find_output_list(const PlotWriter& writerIn,
         }
       }
     }
+    iBlock++;
   }
 
   long nPoint = pointList_II.size();
@@ -1057,4 +1059,19 @@ double Domain::get_var(std::string var, const int ix, const int iy,
   }
 
   return value;
+}
+
+void find_output_list_caller(const PlotWriter& writerIn,
+                             long int& nPointAllProc,
+                             PlotWriter::VectorPointList& pointList_II,
+                             std::array<double, nDimMax>& xMin_D,
+                             std::array<double, nDimMax>& xMax_D) {
+  MPICs->find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
+                          xMax_D);
+}
+
+void get_field_var_caller(const VectorPointList& pointList_II,
+                          const std::vector<std::string>& sVar_I,
+                          MDArray<double>& var_II) {
+  MPICs->get_field_var(pointList_II, sVar_I, var_II);
 }

@@ -162,10 +162,21 @@ public:
                      const std::vector<std::string> &sVar_I,
                      MDArray<double> &var_II);
   double get_var(std::string var, const int ix, const int iy, const int iz,
-               const MFIter &mfi);
+		 const amrex::MFIter &mfi);
 
   // private methods
 private:
 };
+
+
+void find_output_list_caller(const PlotWriter &writerIn,
+                             long int &nPointAllProc,
+                             PlotWriter::VectorPointList &pointList_II,
+                             std::array<double, nDimMax> &xMin_D,
+                             std::array<double, nDimMax> &xMax_D);
+
+void get_field_var_caller(const VectorPointList &pointList_II,
+                          const std::vector<std::string> &sVar_I,
+                          MDArray<double> &var_II);
 
 #endif

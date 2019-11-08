@@ -19,11 +19,13 @@ private:
 
   // In SI unit
   amrex::Real dtEvent;
+  amrex::Real lastTime; 
   amrex::Real nextTime;
   bool useDt;
   int nCount;
 
   int dnEvent;
+  int nLast; 
   int nNext;
   bool useDn;
 
@@ -32,7 +34,7 @@ public:
 
   void init(const amrex::Real dtIn, const int dnIn = -1);
 
-  bool is_time_to();
+  bool is_time_to(bool doForce=false);
 };
 
 class PlotCtr : public EventCtr {
@@ -94,19 +96,7 @@ public:
     cycle++;
   }
 
-  void write_plots(bool doForceWrite,
-                   PlotWriter::FuncFindPointList find_output_list = nullptr,
-                   PlotWriter::FuncGetField get_var = nullptr) {
-    for (auto &plot : plots) {
-      bool doWrite = plot.is_time_to() || doForceWrite;
-      if (doWrite) {
-        amrex::Print() << " writing at time (s) = " << get_time_si()
-                       << std::endl;
-        plot.writer.write(get_time_si(), get_cycle(), find_output_list,
-                          get_var);
-      }
-    }
-  }
+  void write_plots(bool doForceWrite=false);
 };
 
 #endif

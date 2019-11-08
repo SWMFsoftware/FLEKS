@@ -353,7 +353,7 @@ int ipic3d_set_dt_(double *DtSi) {
   amrex::Print() << nameFunc << std::endl;
 
   MPICs->tc.set_dt_si(*DtSi);
-  
+
   return (0);
 }
 
@@ -376,28 +376,11 @@ int ipic3d_cal_dt_(double *dtOut) {
   return (0);
 }
 
-int ipic3d_end_() {
-  // try {
-  //   for (int i = 0; i < nIPIC; i++) {
-  //     // SimRun[i]->Finalize();
-  //     SimRun[i]->WriteOutput(iSimCycle[i], true);
-  //     delete SimRun[i];
-  //   }
-  //   delete[] SimRun;
-  //   delete[] iSimCycle;
-  // }
-  // catch (int e) {
-  //   cout << " IPIC3D have not a clean dealocation, this is a error chatch : "
-  //        << e << endl;
-  //   cout.flush();
-  // }
-
-  // {
-  //   for (int i = 0; i < MPICs->size(); i++)
-  //     delete MPICs[i];
-  // }
-
-  { delete MPICs; }
+int ipic3d_end_() {  
+  { // Saving plots before exiting.
+    MPICs->tc.write_plots(true);
+    delete MPICs;
+  }
 
   amrex::Print() << "finalize_amrex is called!" << std::endl;
   amrex::Finalize();
