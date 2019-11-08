@@ -20,8 +20,8 @@
 #include "FluidPicInterface.h"
 #include "LinearSolver.h"
 #include "Particles.h"
-#include "UMultiFab.h"
 #include "TimeCtr.h"
+#include "UMultiFab.h"
 
 class FieldSolver {
 public:
@@ -33,12 +33,12 @@ public:
   }
 };
 
-
 class Domain {
   // public variables
 public:
   // private variables
-    TimeCtr tc; 
+  TimeCtr tc;
+
 private:
   int iProc;
 
@@ -122,6 +122,7 @@ public:
   void set_ic();
   void init_field();
   void init_particles();
+  void init_time_ctr();
   //----------------Initialization end-------------------------------
 
   void sum_moments();
@@ -151,6 +152,15 @@ public:
   void sum_to_center(bool isBeforeCorrection);
   void calculate_phi(MATVEC fMatvec, amrex::Real tol = 1e-2, int nIter = 20);
   //-------------div(E) correction end----------------
+
+  void find_output_list(const PlotWriter &writerIn, long int &nPointAllProc,
+                        PlotWriter::VectorPointList &pointList_II,
+                        std::array<double, nDimMax> &xMin_D,
+                        std::array<double, nDimMax> &xMax_D);
+
+  void get_field_var(const VectorPointList &pointList_II,
+                     const std::vector<std::string> &sVar_I,
+                     MDArray<double> &var_II);
 
   // private methods
 private:

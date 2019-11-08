@@ -23,15 +23,73 @@ void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
   int iCycle = 0;
   fluidInterface.setCycle(iCycle);
 
-  tc.set_si2no(fluidInterface.getSi2NoT());
-
   iProc = ParallelDescriptor::MyProc();
   read_param();
 
   fluidInterface.PrintFluidPicInterface();
 
   define_domain();
+
+  init_time_ctr();
+
+  tc.write_plots(true);
 }
+//---------------------------------------------------------
+
+void Domain::init_time_ctr() {
+  tc.set_si2no(fluidInterface.getSi2NoT());
+
+  { //----------Init plot data------------------------
+
+    //------ Scalar parameters.----------
+    std::vector<std::string> scalarName_I;
+    std::vector<double> scalarVar_I;
+    std::string ms = "mS", qs = "qS";
+    const int nS = fluidInterface.get_nS();
+    for (int i = 0; i < nS; ++i) {
+      scalarName_I.push_back(ms + std::to_string(i));
+      scalarName_I.push_back(qs + std::to_string(i));
+      scalarVar_I.push_back(fluidInterface.getMiSpecies(i));
+      scalarVar_I.push_back(fluidInterface.getQiSpecies(i));
+    }
+    scalarName_I.push_back("cLight");
+    scalarVar_I.push_back(fluidInterface.getcLightSI());
+    scalarName_I.push_back("rPlanet");
+    scalarVar_I.push_back(fluidInterface.getrPlanet());
+    //-------------------------------------
+
+    for (auto& plot : tc.plots) {
+      auto& writer = plot.writer;
+
+      // Pass information to writers.
+      writer.set_rank(ParallelDescriptor::MyProc());
+      writer.set_nProcs(ParallelDescriptor::NProcs());
+      writer.set_nDim(fluidInterface.getnDim());
+      writer.set_iRegion(0);
+      writer.set_domainMin_D(
+          { { boxRange.lo(ix_), boxRange.lo(iy_), boxRange.lo(iz_) } });
+
+      writer.set_domainMax_D(
+          { { boxRange.hi(ix_), boxRange.hi(iy_), boxRange.hi(iz_) } });
+
+      const Real* dx = geom.CellSize();
+      writer.set_dx_D({ { dx[ix_], dx[iy_], dx[iz_] } });
+
+      writer.set_axisOrigin_D({ { 0, 0, 0 } });
+      writer.set_nSpecies(nS);
+      writer.set_units(fluidInterface.getNo2SiL(), fluidInterface.getNo2SiV(),
+                       fluidInterface.getNo2SiB(), fluidInterface.getNo2SiRho(),
+                       fluidInterface.getNo2SiP(), fluidInterface.getNo2SiJ(),
+                       fluidInterface.getrPlanet());
+      writer.set_scalarValue_I(scalarVar_I);
+      writer.set_scalarName_I(scalarName_I);
+      //--------------------------------------------------
+      writer.init();
+      writer.print();
+    }
+  }
+}
+
 //---------------------------------------------------------
 
 void Domain::read_param() {
@@ -71,6 +129,7 @@ void Domain::read_param() {
       readParam.read_var("nPlotFile", nPlot);
 
       for (int iPlot = 0; iPlot < nPlot; iPlot++) {
+
         std::string plotString;
         readParam.read_var("plotString", plotString);
         {
@@ -85,13 +144,16 @@ void Domain::read_param() {
         Real dtSave;
         readParam.read_var("dtSavePlot", dtSave);
 
-        Real dxSave;
+        int dxSave;
         readParam.read_var("dxSavePlot", dxSave);
 
-        std::string plotVar; 
-        if( plotString.find("var") != std::string::npos){
+        std::string plotVar;
+        if (plotString.find("var") != std::string::npos) {
           readParam.read_var("plotVar", plotVar);
         }
+
+        PlotCtr pcTmp(&tc, iPlot, dtSave, dnSave, plotString, dxSave, plotVar);
+        tc.plots.push_back(pcTmp);
       }
     }
   }
@@ -496,6 +558,7 @@ void Domain::update() {
   sum_moments();
 
   tc.update();
+  tc.write_plots(false);
 
   timing_stop(nameFunc);
 }
@@ -792,4 +855,117 @@ void Domain::update_B() {
   nodeB.FillBoundary(geom.periodicity());
 
   timing_stop(nameFunc);
+}
+
+void Domain::find_output_list(const PlotWriter& writerIn,
+                              long int& nPointAllProc,
+                              PlotWriter::VectorPointList& pointList_II,
+                              std::array<double, nDimMax>& xMin_D,
+                              std::array<double, nDimMax>& xMax_D) {
+  const auto plo = geom.ProbLo();
+  const auto plh = geom.ProbHi();
+
+  Real xMinL_D[nDimMax] = { plh[ix_], plh[iy_], plh[iz_] };
+  Real xMaxL_D[nDimMax] = { plo[ix_], plo[iy_], plo[iz_] };
+
+  const auto dx = geom.CellSize();
+
+  int iBlock = 0;
+  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
+    FArrayBox& fab = nodeE[mfi];
+    const Box& box = mfi.validbox();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
+
+    const bool isNode = true;
+    if (isNode) {
+      // Avoid double counting the shared edges.
+      iMax--;
+      jMax--;
+      kMax--;
+
+      if ((!geom.isPeriodic(ix_)) && box.bigEnd(ix_) == hi.x)
+        iMax++;
+      if ((!geom.isPeriodic(iy_)) && box.bigEnd(iy_) == hi.y)
+        jMax++;
+      if ((!geom.isPeriodic(iz_)) && box.bigEnd(iz_) == hi.z)
+        kMax++;
+    }
+
+    for (int k = lo.z; k <= kMax; ++k) {
+      const double zp = k * dx[iz_] + plo[iz_];
+      for (int j = lo.y; j <= jMax; ++j) {
+        const double yp = j * dx[iy_] + plo[iy_];
+        for (int i = lo.x; i <= iMax; ++i) {
+          const double xp = i * dx[ix_] + plo[ix_];
+
+          if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
+            pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
+                                     zp, (double)iBlock });
+
+            if (xp < xMinL_D[ix_])
+              xMinL_D[ix_] = xp;
+            if (yp < xMinL_D[iy_])
+              xMinL_D[iy_] = yp;
+            if (zp < xMinL_D[iz_])
+              xMinL_D[iz_] = zp;
+
+            if (xp > xMaxL_D[ix_])
+              xMaxL_D[ix_] = xp;
+            if (yp > xMaxL_D[iy_])
+              xMaxL_D[iy_] = yp;
+            if (zp > xMaxL_D[iz_])
+              xMaxL_D[iz_] = zp;
+          }
+        }
+      }
+    }
+  }
+
+  long nPoint = pointList_II.size();
+  ParallelDescriptor::ReduceLongSum(nPoint);
+
+  ParallelDescriptor::ReduceRealMin(xMinL_D, nDimMax);
+  ParallelDescriptor::ReduceRealMax(xMaxL_D, nDimMax);
+
+  for (int iDim = 0; iDim < nDimMax; ++iDim) {
+    xMin_D[iDim] = xMinL_D[iDim];
+    xMax_D[iDim] = xMaxL_D[iDim];
+  }
+}
+
+void Domain::get_field_var(const VectorPointList& pointList_II,
+                             const std::vector<std::string>& sVar_I,
+                             MDArray<double>& var_II) {
+  bool isCoord = false;
+  const int iBlk_=6;
+  
+  int ix, iy, iz;
+  long nPoint = pointList_II.size();
+  int nVar = sVar_I.size();
+
+
+
+  int iBlock = 0;
+  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
+    FArrayBox& fab = nodeE[mfi];
+    const Box& box = mfi.validbox();
+  
+
+  for (long iPoint = 0; iPoint < nPoint; ++iPoint) {
+    const int ix = pointList_II[iPoint][ix_];
+    const int iy = pointList_II[iPoint][iy_];
+    const int iz = pointList_II[iPoint][iz_];
+
+    for (int iVar = 0; iVar < nVar; ++iVar) {
+      var_II(iPoint, iVar) = EMf->getVar(sVar_I[iVar], ix, iy, iz, isCoord);
+    }
+  }
+
+iBlock++; 
+}
+
 }

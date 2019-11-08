@@ -3,7 +3,9 @@ SRCS := \
 	Domain.cpp \
 	Particles.cpp \
 	LinearSolver.cpp \
-	Utility.cpp
+	Utility.cpp \
+	PlotWriter.cpp \
+	TimeCtr.cpp
 
 # intermediate directory for generated dependency files
 DEPDIR := .d
