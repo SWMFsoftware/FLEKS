@@ -164,6 +164,9 @@ public:
                      MDArray<double> &var_II);
   double get_var(std::string var, const int ix, const int iy, const int iz,
                  const amrex::MFIter &mfi);
+
+  void save_restart();
+  void read_restart();
   //--------------- IO end--------------------------------
 
   // private methods

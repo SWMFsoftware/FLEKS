@@ -205,6 +205,44 @@ double Domain::get_var(std::string var, const int ix, const int iy,
   return value;
 }
 
+void Domain::save_restart() {
+
+  // Write header
+  if (ParallelDescriptor::IOProcessor()) {
+
+    VisMF::IO_Buffer ioBuffer(VisMF::IO_Buffer_Size);
+
+    std::ofstream headerFile;
+
+    headerFile.rdbuf()->pubsetbuf(ioBuffer.dataPtr(), ioBuffer.size());
+
+    std::string headerFileName("PC/restartOUT/restart.H");
+
+    HeaderFile.open(headerFileName.c_str(),
+                    std::ofstream::out | std::ofstream::trunc);
+
+    if (!headerFile.good()) {
+      amrex::FileOpenFailed(headerFileName);
+    }
+
+    headerFile.precision(17);
+
+
+    headerFile << "Restart header\n";
+ha
+ha
+    headerFile << "#NSTEP\n";
+    headerFile << tc.ge << "\t nStep\n";
+    headerFile << "\n";
+
+    headerFile << "#TIMESIMULATION\n";
+    headerFile << getSItime() << "\t TimeSimulation\n";
+    headerFile << "\n";
+  }
+}
+
+void Domain::read_restart() {}
+
 void find_output_list_caller(const PlotWriter& writerIn,
                              long int& nPointAllProc,
                              PlotWriter::VectorPointList& pointList_II,
