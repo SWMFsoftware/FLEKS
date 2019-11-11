@@ -98,6 +98,8 @@ private:
 
   FluidPicInterface fluidInterface;
 
+  bool doRestart; 
+
   // public methods
 public:
   Domain() {
@@ -105,6 +107,10 @@ public:
     npcelx = nullptr;
     npcely = nullptr;
     npcelz = nullptr;
+
+    doRestart = false; 
+
+    nCellBlockMax = 8; 
   };
   ~Domain() {
     delete[] qom;
@@ -166,6 +172,8 @@ public:
                  const amrex::MFIter &mfi);
 
   void save_restart();
+  void save_restart_header();
+  void save_restart_data();
   void read_restart();
   //--------------- IO end--------------------------------
 

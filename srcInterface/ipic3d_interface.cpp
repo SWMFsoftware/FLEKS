@@ -262,13 +262,8 @@ int ipic3d_run_(double *time) {
 }
 
 int ipic3d_save_restart_() {
-  // string nameFunc = "PC: ipic3d_save_restart";
-  // timing_start(nameFunc);
+  MPICs->save_restart();
 
-  // for (int i = 0; i < nIPIC; i++)
-  //   SimRun[i]->WriteRestart(iSimCycle[i] - 1);
-
-  // timing_stop(nameFunc);
   return (0);
 }
 

@@ -12,19 +12,23 @@ using namespace amrex;
 
 void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
                   double* gridDim, double* paramReal, int iDomain) {
-
-  fluidInterface.set_myrank(ParallelDescriptor::MyProc());
-  fluidInterface.set_nProcs(ParallelDescriptor::NProcs());
-
-  std::stringstream* ss = nullptr;
-
-  fluidInterface.ReadFromGMinit(paramInt, gridDim, paramReal, ss);
-  fluidInterface.readParam = paramString;
-
-  int iCycle = 0;
-  fluidInterface.setCycle(iCycle);
-
   iProc = ParallelDescriptor::MyProc();
+
+  {
+    // Init fluidInterface, and init from fluidInterface
+    fluidInterface.set_myrank(ParallelDescriptor::MyProc());
+    fluidInterface.set_nProcs(ParallelDescriptor::NProcs());
+
+    std::stringstream* ss = nullptr;
+
+    fluidInterface.ReadFromGMinit(paramInt, gridDim, paramReal, ss);
+    fluidInterface.readParam = paramString;
+
+    int iCycle = 0;
+    fluidInterface.setCycle(iCycle);
+  }
+
+  // Read from PARAM.in
   read_param();
 
   fluidInterface.PrintFluidPicInterface();
@@ -92,13 +96,10 @@ void Domain::init_time_ctr() {
 //---------------------------------------------------------
 
 void Domain::read_param() {
-
-  nCellBlockMax = 8;
+  // The default values shoudl be set in the constructor.
 
   qom = new double[1];
   qom[0] = -777;
-
-  tc.set_dt(1);
 
   std::string command;
   ReadParam& readParam = fluidInterface.readParam;
@@ -123,6 +124,12 @@ void Domain::read_param() {
     } else if (command == "#DISCRETIZE") {
       readParam.read_var("theta", fsolver.theta);
       readParam.read_var("coefDiff", fsolver.coefDiff);
+    } else if (command == "#PERIODICITY") {
+      for (int i = 0; i < nDimMax; i++) {
+        bool isPeriodic;
+        readParam.read_var("isPeriodic", isPeriodic);
+        periodicity[i] = (isPeriodic ? 1 : 0);
+      }
     } else if (command == "#SAVEPLOT") {
       int nPlot;
       readParam.read_var("nPlotFile", nPlot);
@@ -154,7 +161,34 @@ void Domain::read_param() {
         PlotCtr pcTmp(&tc, iPlot, dtSave, dnSave, plotString, dxSave, plotVar);
         tc.plots.push_back(pcTmp);
       }
+
+      //--------- The commands below exist in restart.H only --------
+    } else if (command == "#RESTART") {
+      readParam.read_var("doRestart", doRestart);
+    } else if (command == "#NSTEP") {
+      int nStep;
+      readParam.read_var("nStep", nStep);
+      tc.set_cycle(nStep);
+    } else if (command == "#TIMESIMULATION") {
+      Real time;
+      readParam.read_var("time", time);
+      tc.set_time_si(time);
+    } else if (command == "#GEOMETRY") {
+      for (int i = 0; i < nDimMax; ++i) {
+        Real lo, hi;
+        readParam.read_var("min", lo);
+        readParam.read_var("max", hi);
+        boxRange.setLo(i, lo);
+        boxRange.setHi(i, hi);
+      }
+    } else if (command == "#NCELL") {
+      for (int i = 0; i < nDimMax; ++i) {
+        int n;
+        readParam.read_var("nCell", n);
+        nCell[i] = n;
+      }
     }
+    //--------- The commands above exist in restart.H only --------
   }
 
   // Passing qom npcelx... into this function and re-allocating memory
@@ -163,8 +197,12 @@ void Domain::read_param() {
 }
 
 void Domain::set_ic() {
-  init_field();
-  init_particles();
+  if (doRestart) {
+    read_restart();
+  } else {
+    init_field();
+    init_particles();
+  }
 
   tc.write_plots(true);
 }
@@ -174,19 +212,21 @@ void Domain::define_domain() {
     //---- Geometry initialization -------
     nGst = 1;
 
-    nCell[ix_] = fluidInterface.getFluidNxc();
-    nCell[iy_] = fluidInterface.getFluidNyc();
-    nCell[iz_] = fluidInterface.getFluidNzc();
+    if (!doRestart) {
+      // If restart, these variables read from restart.H
+      nCell[ix_] = fluidInterface.getFluidNxc();
+      nCell[iy_] = fluidInterface.getFluidNyc();
+      nCell[iz_] = fluidInterface.getFluidNzc();
 
-    for (auto& x : periodicity)
-      x = 1;
+      for (int i = 0; i < nDim; i++) {
+        boxRange.setLo(i, fluidInterface.getphyMin(i));
+        boxRange.setHi(i, fluidInterface.getphyMax(i));
+      }
+    }
 
     for (int i = 0; i < nDim; i++) {
       centerBoxLo[i] = 0;
       centerBoxHi[i] = nCell[i] - 1;
-
-      boxRange.setLo(i, fluidInterface.getphyMin(i));
-      boxRange.setHi(i, fluidInterface.getphyMax(i));
     }
 
     centerBox.setSmall(centerBoxLo);
@@ -245,6 +285,15 @@ void Domain::define_domain() {
     for (auto& pl : nodePlasma) {
       pl.define(nodeBA, dm, nMoments, nGst);
       pl.setVal(0.0);
+    }
+
+    // Create particle containers.
+    for (int i = 0; i < nSpecies; i++) {
+      IntVect nPartPerCell = { npcelx[i], npcely[i], npcelz[i] };
+      auto ptr = std::make_unique<Particles>(
+          geom, dm, centerBA, i, fluidInterface.getQiSpecies(i),
+          fluidInterface.getMiSpecies(i), nPartPerCell);
+      parts.push_back(std::move(ptr));
     }
 
     // Only 1 ghost cell layer is needed!
@@ -328,21 +377,14 @@ void Domain::init_field() {
   nodeE.FillBoundary(geom.periodicity());
   nodeB.FillBoundary(geom.periodicity());
   centerB.FillBoundary(geom.periodicity());
-  for (auto& pl : nodePlasma) {
-    pl.FillBoundary(geom.periodicity());
-  }
+
+  // for (auto& pl : nodePlasma) {
+  //   pl.FillBoundary(geom.periodicity());
+  // }
 }
 //---------------------------------------------------------
 
 void Domain::init_particles() {
-  for (int i = 0; i < nSpecies; i++) {
-    IntVect nPartPerCell = { npcelx[i], npcely[i], npcelz[i] };
-    auto ptr = std::make_unique<Particles>(
-        geom, dm, centerBA, i, fluidInterface.getQiSpecies(i),
-        fluidInterface.getMiSpecies(i), nPartPerCell);
-    parts.push_back(std::move(ptr));
-  }
-
   for (auto& pts : parts) {
     pts->add_particles_domain(fluidInterface);
   }
@@ -710,10 +752,11 @@ void Domain::update_E() {
     double PrecondParam = 0;
     int lTest = ParallelDescriptor::MyProc() == 0;
 
-    Print() << "-------------- Electric field solver ---------------" << std::endl;
+    Print() << "-------------- Electric field solver ---------------"
+            << std::endl;
     linear_solver_wrapper("GMRES", &EFieldTol, &nIter, &nVarSolve, &nDimIn, &nI,
                           &nJ, &nK, &nBlock, &iComm, rhs, xLeft, &PrecondParam,
-                          precond_matrix_II[0], &lTest);    
+                          precond_matrix_II[0], &lTest);
   }
 
   nodeEth.setVal(0.0);
@@ -858,5 +901,3 @@ void Domain::update_B() {
 
   timing_stop(nameFunc);
 }
-
-

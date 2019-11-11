@@ -67,7 +67,7 @@ public:
 
   // public methods
 public:
-  TimeCtr() : timeNowSI(0), dtSI(0), si2no(1), no2si(1), cycle(0) {}
+  TimeCtr() : timeNowSI(0), dtSI(1), si2no(1), no2si(1), cycle(0) {}
 
   void set_si2no(const amrex::Real si2noIn) {
     si2no = si2noIn;

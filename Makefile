@@ -44,6 +44,14 @@ LIB:
 	cd srcInterface; $(MAKE) LIB
 
 
+rundir:
+	mkdir -p ${RUNDIR}/PC
+	cd ${RUNDIR}/PC; \
+		mkdir restartIN restartOUT plots;\
+		ln -s ${BINDIR}/PostIDL.exe .; \
+		cp    ${SCRIPTDIR}/pIDL .
+
+
 clean:
 	cd src; $(MAKE) clean
 	cd srcInterface; $(MAKE) clean

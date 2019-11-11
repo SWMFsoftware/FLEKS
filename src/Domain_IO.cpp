@@ -206,9 +206,27 @@ double Domain::get_var(std::string var, const int ix, const int iy,
 }
 
 void Domain::save_restart() {
+  save_restart_header();
+  save_restart_data();
+}
 
-  // Write header
+void Domain::save_restart_data() {
+  VisMF::SetNOutFiles(64);
+
+  std::string restartDir = "PC/restartOUT/";
+  VisMF::Write(nodeE, restartDir + "nodeE");
+  VisMF::Write(nodeB, restartDir + "nodeB");
+  VisMF::Write(centerB, restartDir + "centerB");
+
+  for (int iPart = 0; iPart < parts.size(); iPart++) {
+    parts[iPart]->Checkpoint(restartDir, "particles" + std::to_string(iPart));
+  }
+}
+
+void Domain::save_restart_header() {
   if (ParallelDescriptor::IOProcessor()) {
+    Print() << "Saving restart file at time = " << tc.get_time_si() << " (s)"
+            << std::endl;
 
     VisMF::IO_Buffer ioBuffer(VisMF::IO_Buffer_Size);
 
@@ -218,7 +236,7 @@ void Domain::save_restart() {
 
     std::string headerFileName("PC/restartOUT/restart.H");
 
-    HeaderFile.open(headerFileName.c_str(),
+    headerFile.open(headerFileName.c_str(),
                     std::ofstream::out | std::ofstream::trunc);
 
     if (!headerFile.good()) {
@@ -227,21 +245,55 @@ void Domain::save_restart() {
 
     headerFile.precision(17);
 
+    headerFile << "Restart header \n\n";
 
-    headerFile << "Restart header\n";
-ha
-ha
+    headerFile << "#RESTART\n";
+    headerFile << "T"
+               << "\t doRestart\n";
+    headerFile << "\n";
+
     headerFile << "#NSTEP\n";
-    headerFile << tc.ge << "\t nStep\n";
+    headerFile << tc.get_cycle() << "\t nStep\n";
     headerFile << "\n";
 
     headerFile << "#TIMESIMULATION\n";
-    headerFile << getSItime() << "\t TimeSimulation\n";
+    headerFile << tc.get_time_si() << "\t TimeSimulation\n";
+    headerFile << "\n";
+
+    // Geometry
+    headerFile << "#GEOMETRY\n";
+    for (int i = 0; i < nDimMax; ++i) {
+      headerFile << boxRange.lo(i) << "\t min\n";
+      headerFile << boxRange.hi(i) << "\t max\n";
+    }
+    headerFile << "\n";
+
+    // Cell
+    headerFile << "#NCELL\n";
+    for (int i = 0; i < nDimMax; ++i) {
+      headerFile << nCell[i] << "\n";
+    }
     headerFile << "\n";
   }
 }
 
-void Domain::read_restart() {}
+void Domain::read_restart() {
+
+  std::string restartDir = "PC/restartIN/";
+  VisMF::Read(nodeE, restartDir + "nodeE");
+  VisMF::Read(nodeB, restartDir + "nodeB");
+  VisMF::Read(centerB, restartDir + "centerB");
+
+  nodeE.FillBoundary(geom.periodicity());
+  nodeB.FillBoundary(geom.periodicity());
+  centerB.FillBoundary(geom.periodicity());
+
+  for (int iPart = 0; iPart < parts.size(); iPart++) {
+    parts[iPart]->Restart(restartDir, "particles" + std::to_string(iPart));
+  }
+  sum_moments();
+  sum_to_center(false);
+}
 
 void find_output_list_caller(const PlotWriter& writerIn,
                              long int& nPointAllProc,
