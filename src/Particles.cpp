@@ -554,7 +554,9 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
     } // for p
   }   // for pti
 
-  this->Redistribute();
+  // This function distributes particles to proper processors and apply periodic
+  // boundary conditions if needed.
+  Redistribute();
 }
 
 void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
