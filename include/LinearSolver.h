@@ -7,7 +7,6 @@ typedef void (*MATVEC)(double *vecIn, double *vecOut, int n);
 
 void matvec_E_solver(double *vecIn, double *vecOut, int n);
 void matvec_divE_accurate(double *vecIn, double *vecOut, int n);
-// void iPIC3D_PoissonImage(double *vecIn, double *vecOut, int n);
-// void iPIC3D_matvec_particle_correction(double *vecIn, double *vecOut, int n);
+
 
 #endif

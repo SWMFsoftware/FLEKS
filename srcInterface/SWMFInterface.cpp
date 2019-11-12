@@ -40,7 +40,7 @@ double timenow = 0;
 // int nGridPntSim[nmaxIPIC]; // number of grid pints *ndim used for each sim
 // box int nShiftGridPntSim[nmaxIPIC]; // fist index for each sims grid ponts
 
-int ipic3d_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc) {
+int pic_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc) {
   // fortran communicator tranlated to C comunicator
   MPI_Comm c_iComm = MPI_Comm_f2c(*iComm);
 
@@ -51,7 +51,7 @@ int ipic3d_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc) {
   // so we only do steping internaly iSimCycle
 
   // if (MPI_SUCCESS != MPI_Comm_dup(c_iComm, &ipic3dComm)) {
-  //   cout << "IPIC3D_init_mpi :: Can not copy  MPI comunicator, arborting!"
+  //   cout << "PIC_init_mpi :: Can not copy  MPI comunicator, arborting!"
   //        << endl;
   //   cout.flush();
   //   abort();
@@ -77,7 +77,7 @@ int ipic3d_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc) {
   return (0);
 }
 
-int ipic3d_init_(double *inittime) {
+int pic_init_(double *inittime) {
   //  Called by  PC_init_session
   //  Not used as this time as
   //  most of the grid are set up when
@@ -88,11 +88,11 @@ int ipic3d_init_(double *inittime) {
   return (0);
 }
 
-int ipic3d_read_param_(char *paramIn, int *nlines, int *ncharline, int *iProc) {
+int pic_read_param_(char *paramIn, int *nlines, int *ncharline, int *iProc) {
   // So far, iPIC3D does not support multi sessions.
   if (!isFirstSession)
     return 0;
-  std::string nameFunc = "ipic3d_read_param";
+  std::string nameFunc = "pic_read_param";
   amrex::Print() << nameFunc << std::endl;
   // // convert character array to string stream object
   // myProc = *iProc;
@@ -105,7 +105,7 @@ int ipic3d_read_param_(char *paramIn, int *nlines, int *ncharline, int *iProc) {
   return (0);
 }
 
-int ipic3d_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
+int pic_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
   std::cout << "isInitialized = " << (isInitialized ? 'T' : 'F') << std::endl;
   if (isInitialized)
     return 0;
@@ -114,7 +114,7 @@ int ipic3d_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
   (*ss) << NameVar;
 
   // int firstIPIC;
-  std::string nameFunc = "ipic3d_read_param";
+  std::string nameFunc = "pic_read_param";
   amrex::Print() << nameFunc << std::endl;
 
   // timing_start(nameFunc);
@@ -157,8 +157,8 @@ int ipic3d_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
   return (0);
 }
 
-int ipic3d_finalize_init_() {
-  std::string nameFunc = "ipic3d_finalize_init";
+int pic_finalize_init_() {
+  std::string nameFunc = "pic_finalize_init";
   amrex::Print() << nameFunc << std::endl;
 
   MPICs->set_ic();
@@ -167,7 +167,7 @@ int ipic3d_finalize_init_() {
   // it want to couple from GM -> PC. At this point we should have all
   // information to finnish the initialization of SimRun[i]
 
-  // string nameFunc = "PC: ipic3d_finalize_init_";
+  // string nameFunc = "PC: pic_finalize_init_";
   // timing_start(nameFunc);
 
   // string tmp;
@@ -185,14 +185,14 @@ int ipic3d_finalize_init_() {
   return (0);
 }
 
-int ipic3d_run_(double *time) {
+int pic_run_(double *time) {
   // bool b_err = false;
 
-  std::string nameFunc = "ipic3d_run";
+  std::string nameFunc = "pic_run";
   amrex::Print() << nameFunc << std::endl;
 
   double timenow = *time;
-  // string nameFunc = "PC: IPIC3D_run";
+  // string nameFunc = "PC: PIC_run";
   // timing_start(nameFunc);
 
   // for (int i = 0; i < nIPIC; i++) {
@@ -258,13 +258,13 @@ int ipic3d_run_(double *time) {
   return (0);
 }
 
-int ipic3d_save_restart_() {
+int pic_save_restart_() {
   MPICs->save_restart();
 
   return (0);
 }
 
-int ipic3d_get_ngridpoints_(int *nPoint) {
+int pic_get_ngridpoints_(int *nPoint) {
 
   // *nPoint = 0;
   // for (int i = 0; i < nIPIC; i++) {
@@ -278,7 +278,7 @@ int ipic3d_get_ngridpoints_(int *nPoint) {
   return (0);
 }
 
-int ipic3d_get_grid_(double *Pos_DI, int *n) {
+int pic_get_grid_(double *Pos_DI, int *n) {
   // for (int i = 0; i < nIPIC; i++)
   //   SimRun[i]->GetGridPnt(&Pos_DI[nShiftGridPntSim[i]]);
   MPICs->get_grid(Pos_DI);
@@ -286,8 +286,8 @@ int ipic3d_get_grid_(double *Pos_DI, int *n) {
   return (0);
 }
 
-int ipic3d_set_state_var_(double *Data_VI, int *iPoint_I) {
-  std::string nameFunc = "PC: ipic3d_set_state_var_";
+int pic_set_state_var_(double *Data_VI, int *iPoint_I) {
+  std::string nameFunc = "PC: pic_set_state_var_";
   amrex::Print() << nameFunc << std::endl;
 
   // timing_start(nameFunc);
@@ -302,9 +302,9 @@ int ipic3d_set_state_var_(double *Data_VI, int *iPoint_I) {
   return (0);
 }
 
-int ipic3d_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
+int pic_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
                           int *nVar) {
-  std::string nameFunc = "PC: IPIC3D_get_state_var";
+  std::string nameFunc = "PC: PIC_get_state_var";
   amrex::Print() << nameFunc << std::endl;
 
   for (int i = 0; i < (*nPoint) * (*nVar); i++) {
@@ -321,8 +321,8 @@ int ipic3d_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
   return (0);
 }
 
-int ipic3d_find_points_(int *nPoint, double *Xyz_I, int *iProc_I) {
-  std::string nameFunc = "PC: ipic3d_find_points_";
+int pic_find_points_(int *nPoint, double *Xyz_I, int *iProc_I) {
+  std::string nameFunc = "PC: pic_find_points_";
   amrex::Print() << nameFunc << " begin" << std::endl;
 
   for (int i = 0; i < (*nPoint); i++) {
@@ -339,9 +339,9 @@ int ipic3d_find_points_(int *nPoint, double *Xyz_I, int *iProc_I) {
   return (0);
 }
 
-int ipic3d_set_dt_(double *DtSi) {
+int pic_set_dt_(double *DtSi) {
   //  for (int i = 0; i < nIPIC; i++)
-  std::string nameFunc = "PC: IPIC3D_set_dt";
+  std::string nameFunc = "PC: PIC_set_dt";
   amrex::Print() << nameFunc << std::endl;
 
   MPICs->tc.set_dt_si(*DtSi);
@@ -349,7 +349,7 @@ int ipic3d_set_dt_(double *DtSi) {
   return (0);
 }
 
-int ipic3d_cal_dt_(double *dtOut) {
+int pic_cal_dt_(double *dtOut) {
   // Each PIC domain should be treated seperately in the future. Now, all the
   // domains use the same time step.
 
@@ -361,14 +361,14 @@ int ipic3d_cal_dt_(double *dtOut) {
   //     dt = dt0;
   // }
 
-  std::string nameFunc = "PC: IPIC3D_cal_dt";
+  std::string nameFunc = "PC: PIC_cal_dt";
   amrex::Print() << nameFunc << std::endl;
 
   *dtOut = MPICs->tc.get_dt_si();
   return (0);
 }
 
-int ipic3d_end_() {  
+int pic_end_() {  
   { // Saving plots before exiting.
     MPICs->tc.write_plots(true);
     delete MPICs;

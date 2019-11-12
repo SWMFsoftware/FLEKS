@@ -1,5 +1,5 @@
-#ifndef MULTI_IPIC3D_DOMAIN_H
-#define MULTI_IPIC3D_DOMAIN_H
+#ifndef _SWMFDOMAINS_H_
+#define _SWMFDOMAINS_H_
 
 #include <mpi.h>
 #include <AMReX_Vector.H>
