@@ -1,6 +1,6 @@
-## 1. Visit the God of C++: https://isocpp.org/wiki/faq
+1. ## Visit the God of C++: https://isocpp.org/wiki/faq
 
-## 1. Avoid using raw pointer and 'new' to allocate memory unless there is a good reason. 
+1. ## Avoid using raw pointer and 'new' to allocate memory unless there is a good reason. 
  Try to use shared_ptr or unique_ptr to manage resources. For arrays, using an 
  object to manage resources is a good choice. 
 
