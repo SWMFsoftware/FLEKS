@@ -1,11 +1,12 @@
 #ifndef _PLOTWRITER_H_
 #define _PLOTWRITER_H_
 
-#include "MDArray.h"
 #include <array>
 #include <iostream>
 #include <string>
 #include <vector>
+
+#include "MDArray.h"
 
 class PlotWriter; // Forward declaration
 
@@ -202,8 +203,15 @@ public:
    1) this method calls the function find_output_list to find the ouput point
       list,
    2) and writes the header (write_header) and data (write_field). */
+  void write_idl(double const timeNow, int const iCycle,
+                 FuncFindPointList find_output_list, FuncGetField get_var);
+
+  // Write file in the native amrex format. 
+  void write_amrex(double const timeNow, int const iCycle);             
+
   void write(double const timeNow, int const iCycle,
              FuncFindPointList find_output_list, FuncGetField get_var);
+
   void write_header(double const timeNow, int const iCycle);
 
   /*Based on the point list, this function calls function get_var to collect

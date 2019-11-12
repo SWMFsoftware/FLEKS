@@ -1,8 +1,9 @@
-#include "PlotWriter.h"
 #include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+
+#include "PlotWriter.h"
 
 bool PlotWriter::doSaveBinary = true;
 
@@ -102,6 +103,8 @@ void PlotWriter::init() {
     outputFormat = "real4";
   } else if (plotString.find("real8") != std::string::npos) {
     outputFormat = "real8";
+  } else if (plotString.find("amrex") != std::string::npos) {
+    outputFormat = "amrex";
   } else {
     if (isVerbose)
       std::cout << "Unknown plot output format!! plotString = " << plotString
@@ -190,7 +193,7 @@ std::ostream& operator<<(std::ostream& coutIn, PlotWriter const& outputIn) {
          << "ID        : " << outputIn.ID << " \n"
          << "plotString: " << outputIn.plotString << " \n"
          << "plotVar   : " << outputIn.plotVar << " \n"
-         << "namePrefix: " << outputIn.namePrefix << " \n"         
+         << "namePrefix: " << outputIn.namePrefix << " \n"
          << "plotDx    : " << outputIn.plotDx << " \n"
          << "No2OutL   : " << outputIn.No2OutL << " \n"
          << "nSpecies  : " << outputIn.nSpecies << " \n"
@@ -259,7 +262,36 @@ bool PlotWriter::is_inside_plot_region(int const ix, int const iy, int const iz,
 void PlotWriter::write(double const timeNow, int const iCycle,
                        FuncFindPointList find_output_list,
                        FuncGetField get_var) {
+  if (outputFormat == "amrex") {
+    write_amrex(timeNow, iCycle);
+  } else {
+    write_idl(timeNow, iCycle, find_output_list, get_var);
+  }
+}
 
+void PlotWriter::write_amrex(double const timeNow, int const iCycle){
+
+  std::string filename;
+  std::stringstream ss;
+  int nLength;
+  if (nProcs > 10000) {
+    nLength = 5;
+  } else if (nProcs > 100000) {
+    nLength = 5;
+  } else {
+    nLength = 4;
+  }
+  ss << "_region" << iRegion << "_" << ID << "_t" << std::setfill('0')
+     << std::setw(8) << second_to_clock_time(timeNow) << "_n"
+     << std::setfill('0') << std::setw(8) << iCycle;
+  filename = namePrefix + ss.str();
+
+
+}
+
+void PlotWriter::write_idl(double const timeNow, int const iCycle,
+                           FuncFindPointList find_output_list,
+                           FuncGetField get_var) {
   long int nPoint;
   VectorPointList pointList_II;
 

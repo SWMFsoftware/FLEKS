@@ -35,6 +35,7 @@ public:
 };
 
 class Domain {
+  friend PlotWriter;
   // public variables
 public:
   // private variables
