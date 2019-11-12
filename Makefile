@@ -20,9 +20,6 @@ mypic:
 	cd share; make libamrex
 	cd src; make exe
 
-INSTALLFILES =  src/Makefile.DEPEND \
-		srcInterface/Makefile.DEPEND
-
 bin:
 	mkdir bin
 
@@ -30,15 +27,12 @@ libIPIC3D:
 	mkdir libIPIC3D
 
 installamrex:
-	cd share/amrex; ./configure
+	cd share/amrex; ./configure; make install_headers
 
 
 install: bin libIPIC3D installamrex
-	touch ${INSTALLFILES}
 
-# Switch to "coupled" mode
 LIB: 
-	touch ${INSTALLFILES}
 	cd share; $(MAKE) libamrex
 	cd src; $(MAKE) LIB
 	cd srcInterface; $(MAKE) LIB

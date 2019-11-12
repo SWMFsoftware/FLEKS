@@ -1,4 +1,4 @@
-#include "../../srcInterface/multi_ipic3d_domain.h"
+#include "SWMFDomains.h"
 #include "Domain.h"
 
 using namespace amrex;

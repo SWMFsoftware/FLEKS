@@ -2,7 +2,7 @@
 
 #include <AMReX_MultiFabUtil.H>
 
-#include "../../srcInterface/multi_ipic3d_domain.h"
+#include "SWMFDomains.h"
 #include "Domain.h"
 #include "LinearSolver.h"
 #include "Timing_c.h"

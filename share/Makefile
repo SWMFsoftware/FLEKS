@@ -5,8 +5,8 @@ include ../Makefile.def.local
 
 libdir = ${LIBDIR}
 
-libamrex:
-	cd $(MYDIR)/$(amrexdir); make all; make install; \
+libamrex: 
+	cd $(MYDIR)/$(amrexdir); make all; make install_lib; \
 	cp -f $(MYDIR)/$(AMREX_INSTALL_DIR)/lib/libamrex.a $(libdir)	 
 
 clean:

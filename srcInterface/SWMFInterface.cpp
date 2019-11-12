@@ -6,14 +6,11 @@
 #include <AMReX.H>
 #include <AMReX_Print.H>
 
-#include "ipic3d_interface.h"
-#include "multi_ipic3d_domain.h"
+#include "SWMFInterface.h"
+#include "SWMFDomains.h"
 
-// Files in SWMF/share/Library/src/
-//#include "Timing_c.h"
 #include "ReadParam.h"
 
-// using namespace iPic3D;
 using namespace std;
 
 Domain *MPICs;

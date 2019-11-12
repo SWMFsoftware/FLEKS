@@ -4,8 +4,6 @@
 #include <sstream>
 #include <mpi.h>
 
-int myProc;
-
 extern "C" {
 int ipic3d_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc);
 int ipic3d_init_(double *inittime);

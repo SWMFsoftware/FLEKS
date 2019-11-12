@@ -8,29 +8,26 @@ include ../Makefile.def.local
 
 SEARCHDIR = -I${SHAREDIR} -I${LIBRARYDIR} -I${COUPLERDIR} 
 
-SEARCH_C = -I../src/include -I${SHAREDIR} -I$(MYDIR)/$(AMREX_INSTALL_DIR)/include -I./
+SEARCH_C = -I../include -I${SHAREDIR} -I$(MYDIR)/$(AMREX_INSTALL_DIR)/include
 
-FLAGC_EXTRA = -DBATSRUS
+#FLAGC_EXTRA = -DBATSRUS
 
 include ../Makefile.conf
+include Makefile.depend
 
 # OBJECT FILE FOR THE WRAPPER
 
-OBJECTS = \
-	PC_wrapper.o \
-	ipic3d_interface.o
+OBJECTS = ${OBJS} PC_wrapper.o
 
-DEPEND:
-	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJECTS} ${FLAGC_EXTRA}
-
+PC_wrapper.o: ../include/SWMFInterface.h \
+	SWMFInterface.cpp \
+	${LIBRARYDIR}/CON_comp_info.o
 
 LIBIPIC3D = ../libIPIC3D/libIPIC3D.a
 
-#	Making library
-#
 MY_LIB    = ${LIBDIR}/libPC.a
 
-LIB:    DEPEND ${LIBIPIC3D} 
+LIB:    ${LIBIPIC3D} 
 	make ${MY_LIB}
 	@echo
 	@echo ${MY_LIB} has been brought up to date.
@@ -40,13 +37,15 @@ ${MY_LIB}: ${OBJECTS} ${LIBIPIC3D}
 	cp -f ${LIBIPIC3D} ${MY_LIB}
 	${AR} ${MY_LIB} ${OBJECTS}
 
-PC_wrapper.o: ${LIBRARYDIR}/CON_comp_info.o
 
-#
-#	cleaning
-#
+%.o: %.cpp
+%.o: %.cpp $(DEPDIR)/%.d
+	${COMPILE.mpicxx} -o $@ -c ${DEPFLAGS} $(FLAGCC) $<
 
-clean: cleanfiles
+
+clean:
+	-@(rm -f ${OBJECTS} ${MY_LIB})
+	-@(rm -rf .d)
+
 
 distclean: clean
-	rm -f Makefile.DEPEND Makefile.RULES

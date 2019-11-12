@@ -9,7 +9,7 @@ OBJECTS_EXE = \
 
 EXE = ${BINDIR}/mypic.exe
 
-SEARCH_C = -Iinclude -I$(MYDIR)/${AMREX_INSTALL_DIR}/include -I${SHAREDIR} 
+SEARCH_C = -I../include -I$(MYDIR)/${AMREX_INSTALL_DIR}/include -I${SHAREDIR} 
 
 FLAGC_EXTRA = ${FLAGC_LOCAL} 
 
