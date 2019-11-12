@@ -20,7 +20,7 @@ DEPS := $(patsubst %, $(DEPDIR)/%.d,$(basename $(SRCS)))
 $(shell mkdir -p $(dir $(OBJS)) >/dev/null)
 $(shell mkdir -p $(dir $(DEPS)) >/dev/null)
 
-DEPFLAGS = -MT $@ -MD -MP -MF $(DEPDIR)/$*.Td
+DEPFLAGS = -MT $@ -MD -MP -MF $(DEPDIR)/$*.d
 
 .PRECIOUS: $(DEPDIR)/%.d
 $(DEPDIR)/%.d: ;
