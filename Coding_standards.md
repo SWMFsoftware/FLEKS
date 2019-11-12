@@ -1,14 +1,14 @@
-0) Visit the God of C++: https://isocpp.org/wiki/faq
+# Visit the God of C++: https://isocpp.org/wiki/faq
 
-1) Avoid using raw pointer and 'new' to allocate memory unless there is a good reason. 
+# Avoid using raw pointer and 'new' to allocate memory unless there is a good reason. 
  Try to use shared_ptr or unique_ptr to manage resources. For arrays, using an 
  object to manage resources is a good choice. 
 
- 2) Naming standards:
- a) File name: FileName.cpp, HeaderName.h
- b) Class/structure name: ClassName
- c) Variable name: variableName
- d) Function/method name: this_is_a_function_name
+ # Naming standards:
+ ## File name: FileName.cpp, HeaderName.h
+ ## Class/structure name: ClassName
+ ## Variable name: variableName
+ ## Function/method name: this_is_a_function_name
 
  3) Never put 'using namespace xxx' into a header. 
 
