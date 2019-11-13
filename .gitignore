@@ -13,6 +13,7 @@ Makefile.def
 Makefile.RULES
 Makefile.DEPEND
 Makefile.local
+Makefile.conf
 Tmp_*
 util/
 data
