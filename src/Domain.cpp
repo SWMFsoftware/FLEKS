@@ -2,9 +2,9 @@
 
 #include <AMReX_MultiFabUtil.H>
 
-#include "SWMFDomains.h"
 #include "Domain.h"
 #include "LinearSolver.h"
+#include "SWMFDomains.h"
 #include "Timing_c.h"
 #include "Utility.h"
 
@@ -688,13 +688,14 @@ void Domain::get_grid(double* pos_DI) {
       kMin = lo.z;
       kMax = hi.z;
     }
+    const double no2siL = fluidInterface.getNo2SiL();
     for (int i = lo.x; i <= hi.x; ++i)
       for (int j = lo.y; j <= hi.y; ++j)
         for (int k = kMin; k <= kMax; ++k) {
-          pos_DI[nCount++] = i * dx[ix_] + boxRange.lo(ix_);
-          pos_DI[nCount++] = j * dx[iy_] + boxRange.lo(iy_);
+          pos_DI[nCount++] = (i * dx[ix_] + boxRange.lo(ix_)) * no2siL;
+          pos_DI[nCount++] = (j * dx[iy_] + boxRange.lo(iy_)) * no2siL;
           if (fluidInterface.getnDim() > 2)
-            pos_DI[nCount++] = k * dx[iz_] + boxRange.lo(iz_);
+            pos_DI[nCount++] = (k * dx[iz_] + boxRange.lo(iz_)) * no2siL;
         }
   }
 }

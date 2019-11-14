@@ -17,12 +17,11 @@
 
 #include "Array1D.h"
 #include "Constants.h"
-#include "FluidPicInterface.h"
+#include "FluidInterface.h"
 #include "LinearSolver.h"
 #include "Particles.h"
 #include "TimeCtr.h"
 #include "UMultiFab.h"
-
 
 class FieldSolver {
 public:
@@ -98,9 +97,9 @@ private:
 
   FieldSolver fsolver;
 
-  FluidPicInterface fluidInterface;
+  FluidInterface fluidInterface;
 
-  bool doRestart; 
+  bool doRestart;
 
   // public methods
 public:
@@ -110,9 +109,9 @@ public:
     npcely = nullptr;
     npcelz = nullptr;
 
-    doRestart = false; 
+    doRestart = false;
 
-    nCellBlockMax = 8; 
+    nCellBlockMax = 8;
   };
   ~Domain() {
     delete[] qom;

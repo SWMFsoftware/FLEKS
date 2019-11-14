@@ -1,8 +1,8 @@
 #ifndef _SWMFINTERFACE_H_
 #define _SWMFINTERFACE_H_
 
-#include <sstream>
 #include <mpi.h>
+#include <sstream>
 
 extern "C" {
 int pic_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc);
@@ -20,6 +20,6 @@ int pic_set_dt_(double *DtSi);
 int pic_cal_dt_(double *dt);
 int pic_find_points_(int *nPoint, double *Xyz_DI, int *iProc_I);
 int pic_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
-                          int *nVar);
+                       int *nVar);
 }
 #endif
