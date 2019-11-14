@@ -19,9 +19,7 @@ void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
     fluidInterface.set_myrank(ParallelDescriptor::MyProc());
     fluidInterface.set_nProcs(ParallelDescriptor::NProcs());
 
-    std::stringstream* ss = nullptr;
-
-    fluidInterface.ReadFromGMinit(paramInt, gridDim, paramReal, ss);
+    fluidInterface.receive_info_from_gm(paramInt, gridDim, paramReal);
     fluidInterface.readParam = paramString;
 
     int iCycle = 0;
@@ -34,6 +32,9 @@ void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
   fluidInterface.PrintFluidPicInterface();
 
   define_domain();
+
+
+
 
   init_time_ctr();
 }
@@ -327,7 +328,7 @@ void Domain::init_field() {
   {
     FArrayBox& fab = nodeE[mfi];
     const Box& box = mfi.fabbox();
-    const Array4<Real>& E = fab.array();
+    const Array4<Real>& arrE = fab.array();
 
     const auto lo = lbound(box);
     const auto hi = ubound(box);
@@ -335,11 +336,11 @@ void Domain::init_field() {
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
-          E(i, j, k, ix_) =
+          arrE(i, j, k, ix_) =
               fluidInterface.getEx(iBlock, i - lo.x, j - lo.y, k - lo.z);
-          E(i, j, k, iy_) =
+          arrE(i, j, k, iy_) =
               fluidInterface.getEy(iBlock, i - lo.x, j - lo.y, k - lo.z);
-          E(i, j, k, iz_) =
+          arrE(i, j, k, iz_) =
               fluidInterface.getEz(iBlock, i - lo.x, j - lo.y, k - lo.z);
         }
 
@@ -352,7 +353,7 @@ void Domain::init_field() {
     FArrayBox& fab = nodeB[mfi];
 
     const Box& box = mfi.fabbox();
-    const Array4<Real>& B = fab.array();
+    const Array4<Real>& arrB = fab.array();
 
     const auto lo = lbound(box);
     const auto hi = ubound(box);
@@ -360,11 +361,11 @@ void Domain::init_field() {
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
-          B(i, j, k, ix_) =
+          arrB(i, j, k, ix_) =
               fluidInterface.getBx(iBlock, i - lo.x, j - lo.y, k - lo.z);
-          B(i, j, k, iy_) =
+          arrB(i, j, k, iy_) =
               fluidInterface.getBy(iBlock, i - lo.x, j - lo.y, k - lo.z);
-          B(i, j, k, iz_) =
+          arrB(i, j, k, iz_) =
               fluidInterface.getBz(iBlock, i - lo.x, j - lo.y, k - lo.z);
         }
 

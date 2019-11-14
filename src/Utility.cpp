@@ -13,6 +13,7 @@ void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
 
   // Need and just need 1 ghost cell layer.
   MultiFab centerMF(centerBA, dm, 3, 1);
+  centerMF.setVal(0.0);
 
   for (int i = 0; i < srcMF.nComp(); i++) {
     MultiFab srcAliasMF(srcMF, amrex::make_alias, i, 1);
@@ -223,6 +224,8 @@ void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
   bool isCenter = MF.ixType().cellCentered();
   bool isNode = !isCenter;
 
+  MF.setVal(0.0); 
+
   int iCount = 0;
   for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
     const amrex::Box& box = mfi.tilebox();
@@ -231,6 +234,7 @@ void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
     const amrex::Array4<amrex::Real>& arr = MF[mfi].array();
 
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
+    int iMin = lo.x, jMin = lo.y, kMin = lo.z;
 
     if (isNode) {
       // Avoid double counting the shared edges.
@@ -246,10 +250,39 @@ void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
         kMax++;
     }
 
+
+
+
+    if (!geom.isPeriodic(ix_) && box.bigEnd(ix_) == hi.x) {
+      iMax -= nVirGst;
+    }
+
+    if (!geom.isPeriodic(iy_) && box.bigEnd(iy_) == hi.y) {
+      jMax -= nVirGst;
+    }
+
+    if (!geom.isPeriodic(iz_) && box.bigEnd(iz_) == hi.z) {
+      kMax -= nVirGst;
+    }
+
+    if (!geom.isPeriodic(ix_) && box.smallEnd(ix_) == lo.x) {
+      iMin += nVirGst;
+    }
+
+    if (!geom.isPeriodic(iy_) && box.smallEnd(iy_) == lo.y) {
+      jMin += nVirGst;
+    }
+
+    if (!geom.isPeriodic(iz_) && box.smallEnd(iz_) == lo.z) {
+      kMin += nVirGst;
+    }
+
+
+
     for (int iVar = 0; iVar < MF.nComp(); iVar++)
-      for (int k = lo.z; k <= kMax; ++k)
-        for (int j = lo.y; j <= jMax; ++j)
-          for (int i = lo.x; i <= iMax; ++i) {
+      for (int k = kMin; k <= kMax; ++k)
+        for (int j = jMin; j <= jMax; ++j)
+          for (int i = iMin; i <= iMax; ++i) {
             arr(i, j, k, iVar) = p[iCount++];
           }
   }
@@ -270,6 +303,7 @@ void convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
 
     // Avoid double counting the share edges.
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
+    int iMin = lo.x, jMin = lo.y, kMin = lo.z;
 
     if (isNode) {
       // Avoid double counting the shared edges.
@@ -285,10 +319,34 @@ void convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
         kMax++;
     }
 
+    if (!geom.isPeriodic(ix_) && box.bigEnd(ix_) == hi.x) {
+      iMax -= nVirGst;
+    }
+
+    if (!geom.isPeriodic(iy_) && box.bigEnd(iy_) == hi.y) {
+      jMax -= nVirGst;
+    }
+
+    if (!geom.isPeriodic(iz_) && box.bigEnd(iz_) == hi.z) {
+      kMax -= nVirGst;
+    }
+
+    if (!geom.isPeriodic(ix_) && box.smallEnd(ix_) == lo.x) {
+      iMin += nVirGst;
+    }
+
+    if (!geom.isPeriodic(iy_) && box.smallEnd(iy_) == lo.y) {
+      jMin += nVirGst;
+    }
+
+    if (!geom.isPeriodic(iz_) && box.smallEnd(iz_) == lo.z) {
+      kMin += nVirGst;
+    }
+
     for (int iVar = 0; iVar < MF.nComp(); iVar++)
-      for (int k = lo.z; k <= kMax; ++k)
-        for (int j = lo.y; j <= jMax; ++j)
-          for (int i = lo.x; i <= iMax; ++i) {
+      for (int k = kMin; k <= kMax; ++k)
+        for (int j = jMin; j <= jMax; ++j)
+          for (int i = iMin; i <= iMax; ++i) {
             p[iCount++] = arr(i, j, k, iVar);
           }
   }

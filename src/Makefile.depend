@@ -6,7 +6,9 @@ SRCS := \
 	Utility.cpp \
 	PlotWriter.cpp \
 	TimeCtr.cpp \
-	Domain_IO.cpp
+	Domain_IO.cpp \
+	BC.cpp \
+	FluidInterface.cpp
 
 # intermediate directory for generated dependency files
 DEPDIR := .d
