@@ -22,6 +22,7 @@ public:
   }
 };
 
+// The grid is defined in DomaiGrid. This class contains the data on the grid.
 class Domain : public DomainGrid {
   friend PlotWriter;
   // public variables
@@ -77,7 +78,7 @@ public:
     npcely = nullptr;
     npcelz = nullptr;
 
-    doRestart = false;    
+    doRestart = false;
   };
   ~Domain() {
     delete[] qom;
@@ -90,13 +91,13 @@ public:
 
   //--------------Initialization begin-------------------------------
   void init(amrex::Real timeIn, const std::string &paramString, int *paramInt,
-            double *gridDim, double *paramReal, int iDomain = 1);  
+            double *gridDim, double *paramReal, int iDomain = 1);
   void make_grid();
-  
+
   void make_data();
   void set_ic();
-  void init_field();
-  void init_particles();
+  void set_ic_field();
+  void set_ic_particles();
   void init_time_ctr();
   //----------------Initialization end-------------------------------
 

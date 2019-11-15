@@ -15,9 +15,9 @@
 
 #include "Constants.h"
 
+// This class define the grid information, but NOT the data on the grid.
 class DomainGrid {
-  // This class define the grid information, but NOT the data on the grid.
-
+  
 protected:
   int nGst;
 

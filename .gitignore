@@ -7,7 +7,6 @@
 *.out
 *~
 *.d
-*.vscode
 run*/
 Makefile.def
 Makefile.RULES

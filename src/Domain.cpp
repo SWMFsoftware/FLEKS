@@ -201,8 +201,8 @@ void Domain::set_ic() {
   if (doRestart) {
     read_restart();
   } else {
-    init_field();
-    init_particles();
+    set_ic_field();
+    set_ic_particles();
   }
 
   tc.write_plots(true);
@@ -308,7 +308,7 @@ void Domain::make_data() {
 }
 //---------------------------------------------------------
 
-void Domain::init_field() {
+void Domain::set_ic_field() {
   const Real* dx = geom.CellSize();
 
   int iBlock = 0;
@@ -373,7 +373,7 @@ void Domain::init_field() {
 }
 //---------------------------------------------------------
 
-void Domain::init_particles() {
+void Domain::set_ic_particles() {
   for (auto& pts : parts) {
     pts->add_particles_domain(fluidInterface);
   }
