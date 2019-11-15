@@ -3,20 +3,9 @@
 
 #include <iostream>
 
-#include <AMReX_Box.H>
-#include <AMReX_BoxArray.H>
-#include <AMReX_DistributionMapping.H>
-#include <AMReX_Geometry.H>
-#include <AMReX_IndexType.H>
-#include <AMReX_IntVect.H>
-#include <AMReX_MultiFab.H>
-#include <AMReX_Print.H>
-#include <AMReX_REAL.H>
-#include <AMReX_RealBox.H>
-#include <AMReX_Vector.H>
-
 #include "Array1D.h"
 #include "Constants.h"
+#include "DomainGrid.h"
 #include "FluidInterface.h"
 #include "LinearSolver.h"
 #include "Particles.h"
@@ -33,7 +22,7 @@ public:
   }
 };
 
-class Domain {
+class Domain : public DomainGrid {
   friend PlotWriter;
   // public variables
 public:
@@ -41,27 +30,6 @@ public:
   TimeCtr tc;
 
 private:
-  int iProc;
-
-  int nGst;
-
-  amrex::IntVect nCell;
-  amrex::IntVect nNode;
-  int nCellBlockMax;
-  int periodicity[nDim];
-  amrex::IntVect centerBoxLo;
-  amrex::IntVect centerBoxHi;
-  amrex::Box centerBox;
-  amrex::RealBox boxRange;
-
-  int coord;
-  amrex::Geometry geom;
-
-  amrex::BoxArray centerBA;
-  amrex::BoxArray nodeBA;
-
-  amrex::DistributionMapping dm;
-
   amrex::MultiFab nodeE;
   amrex::MultiFab nodeEth;
   amrex::MultiFab nodeB;
@@ -109,9 +77,7 @@ public:
     npcely = nullptr;
     npcelz = nullptr;
 
-    doRestart = false;
-
-    nCellBlockMax = 8;
+    doRestart = false;    
   };
   ~Domain() {
     delete[] qom;
@@ -124,8 +90,10 @@ public:
 
   //--------------Initialization begin-------------------------------
   void init(amrex::Real timeIn, const std::string &paramString, int *paramInt,
-            double *gridDim, double *paramReal, int iDomain = 1);
-  void define_domain();
+            double *gridDim, double *paramReal, int iDomain = 1);  
+  void make_grid();
+  
+  void make_data();
   void set_ic();
   void init_field();
   void init_particles();

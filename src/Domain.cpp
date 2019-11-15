@@ -12,8 +12,6 @@ using namespace amrex;
 
 void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
                   double* gridDim, double* paramReal, int iDomain) {
-  iProc = ParallelDescriptor::MyProc();
-
   {
     // Init fluidInterface, and init from fluidInterface
     fluidInterface.set_myrank(ParallelDescriptor::MyProc());
@@ -31,10 +29,8 @@ void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
 
   fluidInterface.PrintFluidPicInterface();
 
-  define_domain();
-
-
-
+  make_grid();
+  make_data();
 
   init_time_ctr();
 }
@@ -104,11 +100,13 @@ void Domain::read_param() {
 
   std::string command;
   ReadParam& readParam = fluidInterface.readParam;
-  readParam.set_verbose(iProc == 0);
+  readParam.set_verbose(ParallelDescriptor::MyProc() == 0);
   while (readParam.get_next_command(command)) {
     if (command == "#MAXBLOCKSIZE") {
-      // The block size in each direction can not larger than nCellBlockMax.
-      readParam.read_var("nCellBlockMax", nCellBlockMax);
+      // The block size in each direction can not larger than maxBlockSize.
+      int tmp;
+      readParam.read_var("maxBlockSize", tmp);
+      set_maxBlockSize(tmp);
     } else if (command == "#TIMECONTROL") {
       Real dtSI;
       readParam.read_var("dtSI", dtSI);
@@ -129,7 +127,7 @@ void Domain::read_param() {
       for (int i = 0; i < nDimMax; i++) {
         bool isPeriodic;
         readParam.read_var("isPeriodic", isPeriodic);
-        periodicity[i] = (isPeriodic ? 1 : 0);
+        set_periodicity(i, isPeriodic);
       }
     } else if (command == "#SAVEPLOT") {
       int nPlot;
@@ -175,19 +173,21 @@ void Domain::read_param() {
       readParam.read_var("time", time);
       tc.set_time_si(time);
     } else if (command == "#GEOMETRY") {
+      RealBox bxTmp;
       for (int i = 0; i < nDimMax; ++i) {
         Real lo, hi;
         readParam.read_var("min", lo);
         readParam.read_var("max", hi);
-        boxRange.setLo(i, lo);
-        boxRange.setHi(i, hi);
+        bxTmp.setLo(i, lo);
+        bxTmp.setHi(i, hi);
       }
+      set_boxRange(bxTmp);
     } else if (command == "#NCELL") {
+      IntVect tmp;
       for (int i = 0; i < nDimMax; ++i) {
-        int n;
-        readParam.read_var("nCell", n);
-        nCell[i] = n;
+        readParam.read_var("nCell", tmp[i]);
       }
+      set_nCell(tmp);
     }
     //--------- The commands above exist in restart.H only --------
   }
@@ -208,42 +208,33 @@ void Domain::set_ic() {
   tc.write_plots(true);
 }
 
-void Domain::define_domain() {
+void Domain::make_grid() {
   {
     //---- Geometry initialization -------
-    nGst = 1;
+    set_nGst(1);
 
     if (!doRestart) {
+      IntVect nCellTmp;
+      RealBox boxRangeTmp;
+
       // If restart, these variables read from restart.H
-      nCell[ix_] = fluidInterface.getFluidNxc();
-      nCell[iy_] = fluidInterface.getFluidNyc();
-      nCell[iz_] = fluidInterface.getFluidNzc();
+      nCellTmp[ix_] = fluidInterface.getFluidNxc();
+      nCellTmp[iy_] = fluidInterface.getFluidNyc();
+      nCellTmp[iz_] = fluidInterface.getFluidNzc();
 
       for (int i = 0; i < nDim; i++) {
-        boxRange.setLo(i, fluidInterface.getphyMin(i));
-        boxRange.setHi(i, fluidInterface.getphyMax(i));
+        boxRangeTmp.setLo(i, fluidInterface.getphyMin(i));
+        boxRangeTmp.setHi(i, fluidInterface.getphyMax(i));
       }
+      set_nCell(nCellTmp);
+      set_boxRange(boxRangeTmp);
     }
 
-    for (int i = 0; i < nDim; i++) {
-      centerBoxLo[i] = 0;
-      centerBoxHi[i] = nCell[i] - 1;
-    }
-
-    centerBox.setSmall(centerBoxLo);
-    centerBox.setBig(centerBoxHi);
-
-    coord = 0; // Cartesian
-
-    geom.define(centerBox, &boxRange, coord, periodicity);
-
-    centerBA.define(centerBox);
-    centerBA.maxSize(nCellBlockMax);
-
-    dm.define(centerBA);
-
-    nodeBA = convert(centerBA, IntVect{ AMREX_D_DECL(1, 1, 1) });
+    DomainGrid::init();
   }
+}
+
+void Domain::make_data() {
 
   {
     // EM field
@@ -314,9 +305,6 @@ void Domain::define_domain() {
     centerMM.setVal(0.0);
     //--------------------------------------
   }
-
-  Print() << "Domain:: Domain range = " << boxRange << std::endl;
-  Print() << "Domain:: Total block #  = " << nodeBA.size() << std::endl;
 }
 //---------------------------------------------------------
 
