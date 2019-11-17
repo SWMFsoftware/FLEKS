@@ -14,7 +14,7 @@ Particles::Particles(const Geometry& geom, const DistributionMapping& dm,
       nPartPerCell(nPartPerCellIn) {}
 
 void Particles::add_particles_cell(const MFIter& mfi,
-                                   const FluidPicInterface& fluidInterface,
+                                   const FluidInterface& fluidInterface,
                                    int iBlock, int i, int j, int k, int loi,
                                    int loj, int lok) {
   int ig, jg, kg, nxcg, nycg, nzcg, iCycle, npcel, nRandom = 7;
@@ -37,7 +37,7 @@ void Particles::add_particles_cell(const MFIter& mfi,
       (nxcg * nycg * nzcg * iCycle + nycg * nzcg * ig + nzcg * jg + kg);
   randNum.set_seed(seed);
 
-  double x, y, z; // Particle location.
+  Real x, y, z; // Particle location.
 
   auto dx = Geom(0).CellSize();
   auto plo = Geom(0).ProbLo();
@@ -53,18 +53,21 @@ void Particles::add_particles_cell(const MFIter& mfi,
     for (int jj = 0; jj < nPartPerCell[iy_]; jj++)
       for (int kk = 0; kk < nPartPerCell[iz_]; kk++) {
 
-        x = (ii + randNum()) * (dx[ix_] / nPartPerCell[ix_]) + i * dx[ix_];
-        y = (jj + randNum()) * (dx[iy_] / nPartPerCell[iy_]) + j * dx[iy_];
-        z = (kk + randNum()) * (dx[iz_] / nPartPerCell[iz_]) + k * dx[iz_];
+        x = (ii + randNum()) * (dx[ix_] / nPartPerCell[ix_]) + i * dx[ix_] +
+            plo[ix_];
+        y = (jj + randNum()) * (dx[iy_] / nPartPerCell[iy_]) + j * dx[iy_] +
+            plo[iy_];
+        z = (kk + randNum()) * (dx[iz_] / nPartPerCell[iz_]) + k * dx[iz_] +
+            plo[iz_];
 
-        double q =
-            (charge / mass / fabs(charge / mass)) *
-            (fluidInterface.getPICRhoNum(iBlock, x, y, z, speciesID) / npcel) *
-            vol;
+        double q = (charge / mass / fabs(charge / mass)) *
+                   (fluidInterface.get_number_density(mfi, x, y, z, speciesID) /
+                    npcel) *
+                   vol;
 
         if (q != 0) {
           double rand;
-          double u, v, w;
+          Real u, v, w;
           double rand1 = randNum();
           double rand2 = randNum();
           double rand3 = randNum();
@@ -72,32 +75,35 @@ void Particles::add_particles_cell(const MFIter& mfi,
 
           if (fluidInterface.getUseAnisoP() &&
               (speciesID > 0 || fluidInterface.get_useElectronFluid())) {
-            fluidInterface.setPICAnisoUth(iBlock, x, y, z, &u, &v, &w, rand1,
-                                          rand2, rand3, rand4, speciesID);
+            fluidInterface.set_particle_uth_aniso(mfi, x, y, z, &u, &v, &w,
+                                                  rand1, rand2, rand3, rand4,
+                                                  speciesID);
           } else {
-            fluidInterface.setPICIsoUth(iBlock, x, y, z, &u, &v, &w, rand1,
-                                        rand2, rand3, rand4, speciesID);
+            fluidInterface.set_particle_uth_iso(mfi, x, y, z, &u, &v, &w,
+                                                  rand1, rand2, rand3, rand4,
+                                                  speciesID);
           }
-          u += fluidInterface.getPICUx(iBlock, x, y, z, speciesID);
-          v += fluidInterface.getPICUy(iBlock, x, y, z, speciesID);
-          w += fluidInterface.getPICUz(iBlock, x, y, z, speciesID);
+          u += fluidInterface.get_ux(mfi, x, y, z, speciesID);
+          v += fluidInterface.get_uy(mfi, x, y, z, speciesID);
+          w += fluidInterface.get_uz(mfi, x, y, z, speciesID);
 
           ParticleType p;
           p.id() = ParticleType::NextID();
           p.cpu() = ParallelDescriptor::MyProc();
-          p.pos(ix_) = x + plo[ix_];
-          p.pos(iy_) = y + plo[iy_];
-          p.pos(iz_) = z + plo[iz_];
+          p.pos(ix_) = x; // + plo[ix_];
+          p.pos(iy_) = y; // + plo[iy_];
+          p.pos(iz_) = z; // + plo[iz_];
           p.rdata(iup_) = u;
           p.rdata(ivp_) = v;
           p.rdata(iwp_) = w;
           p.rdata(iqp_) = q;
           particles.push_back(p);
+          Print() << "p = " << p << std::endl;
         }
       }
 }
 
-void Particles::add_particles_domain(const FluidPicInterface& fluidInterface) {
+void Particles::add_particles_domain(const FluidInterface& fluidInterface) {
   BL_PROFILE("Particles::add_particles");
 
   const int lev = 0;

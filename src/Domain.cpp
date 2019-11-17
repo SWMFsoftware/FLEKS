@@ -12,17 +12,10 @@ using namespace amrex;
 
 void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
                   double* gridDim, double* paramReal, int iDomain) {
-  {
-    // Init fluidInterface, and init from fluidInterface
-    fluidInterface.set_myrank(ParallelDescriptor::MyProc());
-    fluidInterface.set_nProcs(ParallelDescriptor::NProcs());
 
-    fluidInterface.receive_info_from_gm(paramInt, gridDim, paramReal);
-    fluidInterface.readParam = paramString;
-
-    int iCycle = 0;
-    fluidInterface.setCycle(iCycle);
-  }
+  fluidInterface.init();
+  fluidInterface.receive_info_from_gm(paramInt, gridDim, paramReal,
+                                      paramString);
 
   // Read from PARAM.in
   read_param();
@@ -198,6 +191,7 @@ void Domain::read_param() {
 }
 
 void Domain::set_ic() {
+
   if (doRestart) {
     read_restart();
   } else {
@@ -209,29 +203,29 @@ void Domain::set_ic() {
 }
 
 void Domain::make_grid() {
-  {
-    //---- Geometry initialization -------
-    set_nGst(1);
+  set_nGst(1);
 
-    if (!doRestart) {
-      IntVect nCellTmp;
-      RealBox boxRangeTmp;
+  if (!doRestart) {
+    IntVect nCellTmp;
+    RealBox boxRangeTmp;
 
-      // If restart, these variables read from restart.H
-      nCellTmp[ix_] = fluidInterface.getFluidNxc();
-      nCellTmp[iy_] = fluidInterface.getFluidNyc();
-      nCellTmp[iz_] = fluidInterface.getFluidNzc();
+    // If restart, these variables read from restart.H
+    nCellTmp[ix_] = fluidInterface.getFluidNxc();
+    nCellTmp[iy_] = fluidInterface.getFluidNyc();
+    nCellTmp[iz_] = fluidInterface.getFluidNzc();
 
-      for (int i = 0; i < nDim; i++) {
-        boxRangeTmp.setLo(i, fluidInterface.getphyMin(i));
-        boxRangeTmp.setHi(i, fluidInterface.getphyMax(i));
-      }
-      set_nCell(nCellTmp);
-      set_boxRange(boxRangeTmp);
+    for (int i = 0; i < nDim; i++) {
+      boxRangeTmp.setLo(i, fluidInterface.getphyMin(i));
+      boxRangeTmp.setHi(i, fluidInterface.getphyMax(i));
     }
-
-    DomainGrid::init();
+    set_nCell(nCellTmp);
+    set_boxRange(boxRangeTmp);
   }
+
+  DomainGrid::init();
+
+  // Also make grid for the fluid interface.
+  fluidInterface.make_grid(dm, geom, centerBA, nodeBA, nGst);
 }
 
 void Domain::make_data() {
@@ -311,12 +305,43 @@ void Domain::make_data() {
 void Domain::set_ic_field() {
   const Real* dx = geom.CellSize();
 
-  int iBlock = 0;
   for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) // Loop over grids
   {
+
+    for (int i = 0; i < nSpecies; i++) {
+      Real x = -0.77, y = 0.23, z = 0.07;
+
+      double u, v, w;
+      double rand1 = 0.1, rand2 = 0.2, rand3 = 0.3, rand4 = 0.4;
+      fluidInterface.set_particle_uth_aniso(mfi, x, y, z, &u, &v, &w, rand1, rand2,
+                                    rand3, rand4, i);
+
+      Print() << "i = " << i << "\nnumber_density = "
+              << fluidInterface.get_number_density(mfi, x, y, z, i)
+              << "\nux = " << fluidInterface.get_ux(mfi, x, y, z, i)
+              << "\nuy = " << fluidInterface.get_uy(mfi, x, y, z, i)
+              << "\nuz = " << fluidInterface.get_uz(mfi, x, y, z, i)
+              << "\npxx = " << fluidInterface.get_pxx(mfi, x, y, z, i)
+              << "\npyy = " << fluidInterface.get_pyy(mfi, x, y, z, i)
+              << "\npzz = " << fluidInterface.get_pzz(mfi, x, y, z, i)
+              << "\npxy = " << fluidInterface.get_pxy(mfi, x, y, z, i)
+              << "\npxz = " << fluidInterface.get_pxz(mfi, x, y, z, i)
+              << "\npyz = " << fluidInterface.get_pyz(mfi, x, y, z, i)
+              << "\nuth = " << fluidInterface.get_uth_iso(mfi, x, y, z, i)
+              << "\nbx = " << fluidInterface.get_bx(mfi, x, y, z)
+              << "\nby = " << fluidInterface.get_by(mfi, x, y, z)
+              << "\nbz = " << fluidInterface.get_bz(mfi, x, y, z)
+              << "\nex = " << fluidInterface.get_ex(mfi, x, y, z)
+              << "\ney = " << fluidInterface.get_ey(mfi, x, y, z)
+              << "\nez = " << fluidInterface.get_ez(mfi, x, y, z)
+              << "\nuthx = " << u << "\nvthx = " << v << "\nwthx = " << w
+              << std::endl;
+    }
+
     FArrayBox& fab = nodeE[mfi];
     const Box& box = mfi.fabbox();
     const Array4<Real>& arrE = fab.array();
+    const Array4<Real>& arrB = nodeB[mfi].array();
 
     const auto lo = lbound(box);
     const auto hi = ubound(box);
@@ -324,41 +349,19 @@ void Domain::set_ic_field() {
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
-          arrE(i, j, k, ix_) =
-              fluidInterface.getEx(iBlock, i - lo.x, j - lo.y, k - lo.z);
-          arrE(i, j, k, iy_) =
-              fluidInterface.getEy(iBlock, i - lo.x, j - lo.y, k - lo.z);
-          arrE(i, j, k, iz_) =
-              fluidInterface.getEz(iBlock, i - lo.x, j - lo.y, k - lo.z);
-        }
+          arrE(i, j, k, ix_) = fluidInterface.get_ex(mfi, i, j, k);
+          arrE(i, j, k, iy_) = fluidInterface.get_ey(mfi, i, j, k);
+          arrE(i, j, k, iz_) = fluidInterface.get_ez(mfi, i, j, k);
 
-    iBlock++;
+          arrB(i, j, k, ix_) = fluidInterface.get_bx(mfi, i, j, k);
+          arrB(i, j, k, iy_) = fluidInterface.get_by(mfi, i, j, k);
+          arrB(i, j, k, iz_) = fluidInterface.get_bz(mfi, i, j, k);
+        }
   }
 
-  iBlock = 0;
-  for (MFIter mfi(nodeB); mfi.isValid(); ++mfi) // Loop over grids
-  {
-    FArrayBox& fab = nodeB[mfi];
-
-    const Box& box = mfi.fabbox();
-    const Array4<Real>& arrB = fab.array();
-
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
-
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          arrB(i, j, k, ix_) =
-              fluidInterface.getBx(iBlock, i - lo.x, j - lo.y, k - lo.z);
-          arrB(i, j, k, iy_) =
-              fluidInterface.getBy(iBlock, i - lo.x, j - lo.y, k - lo.z);
-          arrB(i, j, k, iz_) =
-              fluidInterface.getBz(iBlock, i - lo.x, j - lo.y, k - lo.z);
-        }
-
-    iBlock++;
-  }
+  // MultiFab::Copy(nodeB, fluidInterface.get_nodeFluid(), fluidInterface.iBx,
+  // 0,
+  //                nodeB.nComp(), nodeB.nGrow());
 
   // Interpolate from node to cell center.
   average_node_to_cellcenter(centerB, 0, nodeB, 0, 3);
@@ -600,6 +603,9 @@ void Domain::update() {
 void Domain::set_state_var(double* data, int* index) {
   std::string nameFunc = "Domain::set_state_var";
 
+  fluidInterface.set_couple_node_value(data, index);
+  return;
+
   int nBlockLocal = nodeE.local_size();
   fluidInterface.BlockMin_BD.clear();
   fluidInterface.BlockMax_BD.clear();
@@ -658,11 +664,17 @@ int Domain::get_grid_nodes_number() {
       nPoint *= (hi.z - lo.z + 1);
   }
   nPoint *= nBlock;
+
+  nPoint = fluidInterface.count_couple_node_number();
+
   return nPoint;
 }
 
 void Domain::get_grid(double* pos_DI) {
   std::string nameFunc = "Domain::get_grid";
+
+  fluidInterface.get_couple_node_loc(pos_DI);
+  return;
 
   const Real* dx = geom.CellSize();
   int iBlock = 0;

@@ -6,6 +6,8 @@
 #include "BC.h"
 
 using namespace amrex;
+
+// Use FabArray.setDomainBoundary()!!!!!!!!!!!!!!!!!!!
 void zero_boundary_cpu(amrex::Box const& bx,
                        amrex::Array4<amrex::Real> const& arr, const int iStart,
                        const int nComp, amrex::GeometryData const& geom,

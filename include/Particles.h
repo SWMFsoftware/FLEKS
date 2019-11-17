@@ -5,7 +5,7 @@
 
 #include "Array1D.h"
 #include "Constants.h"
-#include "FluidPicInterface.h"
+#include "FluidInterface.h"
 #include "RandNum.h"
 #include "UMultiFab.h"
 
@@ -22,9 +22,9 @@ public:
             const amrex::Real charge, const amrex::Real mass,
             const amrex::IntVect& nPartPerCellIn);
 
-  void add_particles_domain(const FluidPicInterface& fluidInterface);
+  void add_particles_domain(const FluidInterface& fluidInterface);
   void add_particles_cell(const amrex::MFIter& mfi,
-                          const FluidPicInterface& fluidInterface, int iBlock,
+                          const FluidInterface& fluidInterface, int iBlock,
                           int i, int j, int k, int loi, int loj, int lok);
 
   void sum_moments(amrex::MultiFab& momentsMF, amrex::UMultiFab<RealMM>& nodeMM,

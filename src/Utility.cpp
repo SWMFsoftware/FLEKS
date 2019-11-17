@@ -442,7 +442,7 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
                centerArr(i, j, k - 1, ix_) - centerArr(i, j - 1, k - 1, ix_) +
                centerArr(i - 1, j, k, ix_) - centerArr(i - 1, j - 1, k, ix_) +
                centerArr(i - 1, j, k - 1, ix_) -
-               centerArr(i - 1, j - 1, k - 1, ix_));
+               centerArr(i - 1, j - 1, k - 1, ix_));      
 
           nodeArr(i, j, k, ix_) = cZDY - cYDZ;
           nodeArr(i, j, k, iy_) = cXDZ - cZDX;
