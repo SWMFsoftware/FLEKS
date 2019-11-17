@@ -46,8 +46,8 @@ private:
   const amrex::Real rhoTheta = 0.51;
   //--------------------------------------
 
-  int nSolveNode;
-  int nSolveCenter;
+  LinearSolver eSolver; 
+  LinearSolver divESolver; 
 
   //------Temporary variables for field---
   amrex::MultiFab tempNode3;
@@ -126,7 +126,7 @@ public:
   void divE_accurate_matvec(double *vecIn, double *vecOut);
   void divE_correct_particle_position();
   void sum_to_center(bool isBeforeCorrection);
-  void calculate_phi(MATVEC fMatvec, amrex::Real tol = 1e-2, int nIter = 20);
+  void calculate_phi(LinearSolver& solver);
   //-------------div(E) correction end----------------
 
   //--------------- IO begin--------------------------------

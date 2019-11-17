@@ -34,21 +34,24 @@ void div_center_to_node(const amrex::MultiFab& centerMF,
 void div_node_to_center(const amrex::MultiFab& nodeMF,
                         amrex::MultiFab& centerMF, const amrex::Real* invDx);
 
-void div_center_to_center(const amrex::MultiFab& srcMF,
-                        amrex::MultiFab& dstMF, const amrex::Real* invDx);
+void div_center_to_center(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
+                          const amrex::Real* invDx);
 
 void average_center_to_node(const amrex::MultiFab& centerMF,
                             amrex::MultiFab& nodeMF);
 
 void print_MultiFab(amrex::MultiFab& data, std::string tag);
 
-inline int get_fab_grid_points_number(const amrex::MultiFab& MF) {
-  amrex::MFIter mfi(MF);
-  const amrex::Box& box = mfi.validbox();
-  const auto lo = lbound(box);
-  const auto hi = ubound(box);
+inline int get_local_node_or_cell_number(const amrex::MultiFab& MF) {
 
-  return (hi.x - lo.x + 1) * (hi.y - lo.y + 1) * (hi.z - lo.z + 1);
+  int nTotal = 0;
+  for (amrex::MFIter mfi(MF); mfi.isValid(); ++mfi) {
+    const amrex::Box& box = mfi.validbox();
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+    nTotal += (hi.x - lo.x + 1) * (hi.y - lo.y + 1) * (hi.z - lo.z + 1);
+  }
+  return nTotal;
 }
 
 template <class T> inline void zero_array(T* arr, int nSize) {

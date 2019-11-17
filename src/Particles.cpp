@@ -98,7 +98,6 @@ void Particles::add_particles_cell(const MFIter& mfi,
           p.rdata(iwp_) = w;
           p.rdata(iqp_) = q;
           particles.push_back(p);
-          Print() << "p = " << p << std::endl;
         }
       }
 }

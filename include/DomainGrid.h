@@ -66,8 +66,9 @@ public:
 
     nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
 
-    amrex::Print() << "Domain:: Domain range = " << boxRange << std::endl;
-    amrex::Print() << "Domain:: Total block #  = " << nodeBA.size() << std::endl;
+    amrex::Print() << "DomainGrid:: Domain range = " << boxRange << std::endl;
+    amrex::Print() << "DomainGrid:: Total block #  = " << nodeBA.size() << std::endl;
+    amrex::Print() << "DomainGrid:: centerBA = "<<centerBA<<std::endl;
   }
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }
