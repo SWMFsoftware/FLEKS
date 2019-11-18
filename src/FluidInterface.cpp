@@ -122,6 +122,10 @@ void FluidInterface::set_couple_node_value(const double* const data,
   calc_current();
   normalize_nodeFluid();
   convert_moment_to_velocity();
+
+
+  MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
+  print_MultiFab(currentMF, "currentMF");
 }
 
 void FluidInterface::calc_current() {
@@ -137,16 +141,14 @@ void FluidInterface::calc_current() {
 
   // The current in the ghost cells can not be calculated from the nodeB. So
   // fill in the ghost cell current with float boundary condition.
-  apply_float_boundary(currentMF, geom);
+  apply_float_boundary(currentMF, geom, 0, currentMF.nComp());
 
-
-  print_MultiFab(currentMF, "currentMF");
 }
 
 void FluidInterface::normalize_nodeFluid() {
   for (int i = 0; i < nodeFluid.nComp(); ++i) {
     MultiFab tmpMF(nodeFluid, make_alias, i, 1);
-    tmpMF.mult(Si2No_V[i]);
+    tmpMF.mult(Si2No_V[i], tmpMF.nGrow());
   }
 }
 

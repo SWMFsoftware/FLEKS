@@ -12,18 +12,29 @@ using namespace amrex;
 
 void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
                   double* gridDim, double* paramReal, int iDomain) {
+  iProc = ParallelDescriptor::MyProc();
 
-  fluidInterface.init();
-  fluidInterface.receive_info_from_gm(paramInt, gridDim, paramReal,
-                                      paramString);
+  {
+    // Init fluidInterface, and init from fluidInterface
+    fluidInterface.set_myrank(ParallelDescriptor::MyProc());
+    fluidInterface.set_nProcs(ParallelDescriptor::NProcs());
+
+    fluidInterface.receive_info_from_gm(paramInt, gridDim, paramReal);
+    fluidInterface.readParam = paramString;
+
+    int iCycle = 0;
+    fluidInterface.setCycle(iCycle);
+  }
 
   // Read from PARAM.in
   read_param();
 
   fluidInterface.PrintFluidPicInterface();
 
-  make_grid();
-  make_data();
+  define_domain();
+
+
+
 
   init_time_ctr();
 }
@@ -93,13 +104,11 @@ void Domain::read_param() {
 
   std::string command;
   ReadParam& readParam = fluidInterface.readParam;
-  readParam.set_verbose(ParallelDescriptor::MyProc() == 0);
+  readParam.set_verbose(iProc == 0);
   while (readParam.get_next_command(command)) {
     if (command == "#MAXBLOCKSIZE") {
-      // The block size in each direction can not larger than maxBlockSize.
-      int tmp;
-      readParam.read_var("maxBlockSize", tmp);
-      set_maxBlockSize(tmp);
+      // The block size in each direction can not larger than nCellBlockMax.
+      readParam.read_var("nCellBlockMax", nCellBlockMax);
     } else if (command == "#TIMECONTROL") {
       Real dtSI;
       readParam.read_var("dtSI", dtSI);
@@ -120,7 +129,7 @@ void Domain::read_param() {
       for (int i = 0; i < nDimMax; i++) {
         bool isPeriodic;
         readParam.read_var("isPeriodic", isPeriodic);
-        set_periodicity(i, isPeriodic);
+        periodicity[i] = (isPeriodic ? 1 : 0);
       }
     } else if (command == "#SAVEPLOT") {
       int nPlot;
@@ -166,21 +175,19 @@ void Domain::read_param() {
       readParam.read_var("time", time);
       tc.set_time_si(time);
     } else if (command == "#GEOMETRY") {
-      RealBox bxTmp;
       for (int i = 0; i < nDimMax; ++i) {
         Real lo, hi;
         readParam.read_var("min", lo);
         readParam.read_var("max", hi);
-        bxTmp.setLo(i, lo);
-        bxTmp.setHi(i, hi);
+        boxRange.setLo(i, lo);
+        boxRange.setHi(i, hi);
       }
-      set_boxRange(bxTmp);
     } else if (command == "#NCELL") {
-      IntVect tmp;
       for (int i = 0; i < nDimMax; ++i) {
-        readParam.read_var("nCell", tmp[i]);
+        int n;
+        readParam.read_var("nCell", n);
+        nCell[i] = n;
       }
-      set_nCell(tmp);
     }
     //--------- The commands above exist in restart.H only --------
   }
@@ -191,44 +198,52 @@ void Domain::read_param() {
 }
 
 void Domain::set_ic() {
-
   if (doRestart) {
     read_restart();
   } else {
-    set_ic_field();
-    set_ic_particles();
+    init_field();
+    init_particles();
   }
 
   tc.write_plots(true);
 }
 
-void Domain::make_grid() {
-  set_nGst(1);
+void Domain::define_domain() {
+  {
+    //---- Geometry initialization -------
+    nGst = 1;
 
-  if (!doRestart) {
-    IntVect nCellTmp;
-    RealBox boxRangeTmp;
+    if (!doRestart) {
+      // If restart, these variables read from restart.H
+      nCell[ix_] = fluidInterface.getFluidNxc();
+      nCell[iy_] = fluidInterface.getFluidNyc();
+      nCell[iz_] = fluidInterface.getFluidNzc();
 
-    // If restart, these variables read from restart.H
-    nCellTmp[ix_] = fluidInterface.getFluidNxc();
-    nCellTmp[iy_] = fluidInterface.getFluidNyc();
-    nCellTmp[iz_] = fluidInterface.getFluidNzc();
+      for (int i = 0; i < nDim; i++) {
+        boxRange.setLo(i, fluidInterface.getphyMin(i));
+        boxRange.setHi(i, fluidInterface.getphyMax(i));
+      }
+    }
 
     for (int i = 0; i < nDim; i++) {
-      boxRangeTmp.setLo(i, fluidInterface.getphyMin(i));
-      boxRangeTmp.setHi(i, fluidInterface.getphyMax(i));
+      centerBoxLo[i] = 0;
+      centerBoxHi[i] = nCell[i] - 1;
     }
-    set_nCell(nCellTmp);
-    set_boxRange(boxRangeTmp);
+
+    centerBox.setSmall(centerBoxLo);
+    centerBox.setBig(centerBoxHi);
+
+    coord = 0; // Cartesian
+
+    geom.define(centerBox, &boxRange, coord, periodicity);
+
+    centerBA.define(centerBox);
+    centerBA.maxSize(nCellBlockMax);
+
+    dm.define(centerBA);
+
+    nodeBA = convert(centerBA, IntVect{ AMREX_D_DECL(1, 1, 1) });
   }
-
-  DomainGrid::init();
-
-  // Also make grid for the fluid interface.
-  fluidInterface.make_grid(dm, geom, centerBA, nodeBA, nGst);
-}
-
-void Domain::make_data() {
 
   {
     // EM field
@@ -300,65 +315,82 @@ void Domain::make_data() {
     //--------------------------------------
   }
 
-  {
-
-    int nGrid = get_local_node_or_cell_number(nodeE);
-    double tol = 1e-6;
-    int nIter = 200;
-    eSolver.init(nGrid, nDimMax, nDimMax, tol, nIter, matvec_E_solver);
-  }
-
-  {
-    int nGrid = get_local_node_or_cell_number(centerDivE);
-    double tol = 1e-2;
-    int nIter = 20;
-    divESolver.init(nGrid, 1, nDimMax, tol, nIter, matvec_divE_accurate);
-  }
+  Print() << "Domain:: Domain range = " << boxRange << std::endl;
+  Print() << "Domain:: Total block #  = " << nodeBA.size() << std::endl;
 }
 //---------------------------------------------------------
 
-void Domain::set_ic_field() {
+void Domain::init_field() {
   const Real* dx = geom.CellSize();
 
+  int iBlock = 0;
   for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) // Loop over grids
   {
 
-    for (int i = 0; i < nSpecies; i++) {
-      // Real x = -0.77, y = 0.23, z = 0.07;
 
-      int x = 19, y = 9, z = 2;
-
-      double u, v, w;
-      double rand1 = 0.1, rand2 = 0.2, rand3 = 0.3, rand4 = 0.4;
-      fluidInterface.set_particle_uth_aniso(mfi, x, y, z, &u, &v, &w, rand1,
-                                            rand2, rand3, rand4, i);
-
-      Print() << "i = " << i << "\nnumber_density = "
-              << fluidInterface.get_number_density(mfi, x, y, z, i)
-              << "\nux = " << fluidInterface.get_ux(mfi, x, y, z, i)
-              << "\nuy = " << fluidInterface.get_uy(mfi, x, y, z, i)
-              << "\nuz = " << fluidInterface.get_uz(mfi, x, y, z, i)
-              << "\npxx = " << fluidInterface.get_pxx(mfi, x, y, z, i)
-              << "\npyy = " << fluidInterface.get_pyy(mfi, x, y, z, i)
-              << "\npzz = " << fluidInterface.get_pzz(mfi, x, y, z, i)
-              << "\npxy = " << fluidInterface.get_pxy(mfi, x, y, z, i)
-              << "\npxz = " << fluidInterface.get_pxz(mfi, x, y, z, i)
-              << "\npyz = " << fluidInterface.get_pyz(mfi, x, y, z, i)
-              << "\nuth = " << fluidInterface.get_uth_iso(mfi, x, y, z, i)
-              << "\nbx = " << fluidInterface.get_bx(mfi, x, y, z)
-              << "\nby = " << fluidInterface.get_by(mfi, x, y, z)
-              << "\nbz = " << fluidInterface.get_bz(mfi, x, y, z)
-              << "\nex = " << fluidInterface.get_ex(mfi, x, y, z)
-              << "\ney = " << fluidInterface.get_ey(mfi, x, y, z)
-              << "\nez = " << fluidInterface.get_ez(mfi, x, y, z)
-              << "\nuthx = " << u << "\nvthx = " << v << "\nwthx = " << w
-              << std::endl;
-    }
-
+    
+    
     FArrayBox& fab = nodeE[mfi];
     const Box& box = mfi.fabbox();
     const Array4<Real>& arrE = fab.array();
-    const Array4<Real>& arrB = nodeB[mfi].array();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    const auto plo = geom.ProbLo();
+    Real x = -0.77 - plo[ix_], y = 0.23 - plo[iy_], z = 0.07 - plo[iz_]; 
+    for (int i = 0; i < nSpecies; i++) {
+      //Real x = -0.77, y = 0.23, z = 0.07;
+      double u, v, w;
+      double rand1 = 0.1, rand2 = 0.2, rand3 = 0.3, rand4 = 0.4; 
+      fluidInterface.setPICAnisoUth(iBlock, x, y, z, &u, &v, &w, rand1,
+				    rand2, rand3, rand4, i);
+
+      Print() << "i = " << i << "\nnumber_density = "
+	      << fluidInterface.getFluidRhoNum(iBlock, x, y, z, i)
+	      << "\nux = "<<fluidInterface.getFluidUx(iBlock, x, y, z, i)
+	      << "\nuy = "<<fluidInterface.getFluidUy(iBlock, x, y, z, i)
+	      << "\nuz = "<<fluidInterface.getFluidUz(iBlock, x, y, z, i)
+	      << "\npxx = "<<fluidInterface.getFluidPxx(iBlock, x, y, z, i)
+	      << "\npyy = "<<fluidInterface.getFluidPyy(iBlock, x, y, z, i)
+	      << "\npzz = "<<fluidInterface.getFluidPzz(iBlock, x, y, z, i)
+	      << "\npxy = "<<fluidInterface.getFluidPxy(iBlock, x, y, z, i)
+	      << "\npxz = "<<fluidInterface.getFluidPxz(iBlock, x, y, z, i)
+	      << "\npyz = "<<fluidInterface.getFluidPyz(iBlock, x, y, z, i)
+	      << "\nuth = "<<fluidInterface.getFluidUth(iBlock, x, y, z, i)
+	      << "\nbx = "<<fluidInterface.getBx(iBlock, x, y, z)
+	      << "\nby = "<<fluidInterface.getBy(iBlock, x, y, z)
+	      << "\nbz = "<<fluidInterface.getBz(iBlock, x, y, z)
+	      << "\nex = "<<fluidInterface.getEx(iBlock, x, y, z)
+	      << "\ney = "<<fluidInterface.getEy(iBlock, x, y, z)
+	      << "\nez = "<<fluidInterface.getEz(iBlock, x, y, z)
+	      << "\nuthx = "<<u
+	      << "\nvthx = "<<v
+	      << "\nwthx = "<<w
+	      << std::endl;
+      }   
+    
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          arrE(i, j, k, ix_) =
+              fluidInterface.getEx(iBlock, i - lo.x, j - lo.y, k - lo.z);
+          arrE(i, j, k, iy_) =
+              fluidInterface.getEy(iBlock, i - lo.x, j - lo.y, k - lo.z);
+          arrE(i, j, k, iz_) =
+              fluidInterface.getEz(iBlock, i - lo.x, j - lo.y, k - lo.z);
+        }
+
+    iBlock++;
+  }
+
+  iBlock = 0;
+  for (MFIter mfi(nodeB); mfi.isValid(); ++mfi) // Loop over grids
+  {
+    FArrayBox& fab = nodeB[mfi];
+
+    const Box& box = mfi.fabbox();
+    const Array4<Real>& arrB = fab.array();
 
     const auto lo = lbound(box);
     const auto hi = ubound(box);
@@ -366,35 +398,31 @@ void Domain::set_ic_field() {
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
-          arrE(i, j, k, ix_) = fluidInterface.get_ex(mfi, i, j, k);
-
-          Print() << "init i = " << i << " j = " << j << " k = " << k
-                  << " Ex = " << arrE(i, j, k, ix_) << std::endl;
-
-          arrE(i, j, k, iy_) = fluidInterface.get_ey(mfi, i, j, k);
-          arrE(i, j, k, iz_) = fluidInterface.get_ez(mfi, i, j, k);
-
-          arrB(i, j, k, ix_) = fluidInterface.get_bx(mfi, i, j, k);
-          arrB(i, j, k, iy_) = fluidInterface.get_by(mfi, i, j, k);
-          arrB(i, j, k, iz_) = fluidInterface.get_bz(mfi, i, j, k);
+          arrB(i, j, k, ix_) =
+              fluidInterface.getBx(iBlock, i - lo.x, j - lo.y, k - lo.z);
+          arrB(i, j, k, iy_) =
+              fluidInterface.getBy(iBlock, i - lo.x, j - lo.y, k - lo.z);
+          arrB(i, j, k, iz_) =
+              fluidInterface.getBz(iBlock, i - lo.x, j - lo.y, k - lo.z);
         }
+
+    iBlock++;
   }
 
-  // MultiFab::Copy(nodeB, fluidInterface.get_nodeFluid(), fluidInterface.iBx,
-  // 0,
-  //                nodeB.nComp(), nodeB.nGrow());
-
   // Interpolate from node to cell center.
-  average_node_to_cellcenter(centerB, 0, nodeB, 0, centerB.nComp(),
-                             centerB.nGrow());
+  average_node_to_cellcenter(centerB, 0, nodeB, 0, 3);
 
   nodeE.FillBoundary(geom.periodicity());
   nodeB.FillBoundary(geom.periodicity());
   centerB.FillBoundary(geom.periodicity());
+
+  // for (auto& pl : nodePlasma) {
+  //   pl.FillBoundary(geom.periodicity());
+  // }
 }
 //---------------------------------------------------------
 
-void Domain::set_ic_particles() {
+void Domain::init_particles() {
   for (auto& pts : parts) {
     pts->add_particles_domain(fluidInterface);
   }
@@ -437,11 +465,14 @@ void Domain::divE_correction() {
   std::string nameFunc = "Domain::divE_correction";
   timing_start(nameFunc);
 
+  nSolveCenter =
+      get_fab_grid_points_number(centerDivE) * centerDivE.local_size();
+
   for (int iIter = 0; iIter < 3; iIter++) {
     sum_to_center(true);
 
     Print() << "----------- div(E) correction ----------" << std::endl;
-    calculate_phi(divESolver);
+    calculate_phi(matvec_divE_accurate);
 
     divE_correct_particle_position();
   }
@@ -457,10 +488,19 @@ void Domain::divE_correct_particle_position() {
   }
 }
 
-void Domain::calculate_phi(LinearSolver& solver) {
-  solver.reset(get_local_node_or_cell_number(centerDivE));
+void Domain::calculate_phi(MATVEC fMatvec, Real tol, int nIter) {
+  double xLeft[nSolveCenter];
+  double b[nSolveCenter];
+
+  for (int i = 0; i < nSolveCenter; i++) {
+    xLeft[i] = 0;
+  }
 
   div_node_to_center(nodeE, tempCenter1, geom.InvCellSize());
+
+  // lap(phi) = (divE - rhoc*(4pi))/rhoTheta, where,
+  // rhoc = (1-rhoTheta)*rhoc(n+1/2) + rhoTheta*rhoc(n+3/2)
+  // The correction density Delt_rhoc(n+3/2) = 4*pi*lap(phi)
 
   MultiFab::LinComb(tempCenter1, 1.0 / rhoTheta, tempCenter1, 0,
                     -fourPI / rhoTheta, centerNetChargeN, 0, 0,
@@ -468,11 +508,37 @@ void Domain::calculate_phi(LinearSolver& solver) {
 
   tempCenter1.FillBoundary(geom.periodicity());
 
-  convert_3d_to_1d(tempCenter1, solver.rhs, geom);
+  convert_3d_to_1d(tempCenter1, b, geom);
 
-  solver.solve();
+  {
+    linear_solver_matvec_c = fMatvec;
 
-  convert_1d_to_3d(solver.xLeft, centerPhi, geom);
+    int nVarSolve = 1;
+    int nDimIn = 3;
+
+    MFIter mfi(tempCenter1);
+    auto lo = lbound(mfi.validbox());
+    auto hi = ubound(mfi.validbox());
+
+    int nI = hi.x - lo.x + 1;
+    int nJ = hi.y - lo.y + 1;
+    int nK = hi.z - lo.z + 1;
+    int nBlock = tempCenter1.local_size();
+    MPI_Fint iComm = MPI_Comm_c2f(ParallelDescriptor::Communicator());
+    double precond_matrix_II[1][1];
+    precond_matrix_II[0][0] = 0;
+    // parameter to choose preconditioner types
+    // 0:No precondition; 1: BILU; 2:DILU;
+    //[-1,0): MBILU;
+    double PrecondParam = 0;
+    int lTest = ParallelDescriptor::MyProc() == 0;
+
+    linear_solver_wrapper("GMRES", &tol, &nIter, &nVarSolve, &nDimIn, &nI, &nJ,
+                          &nK, &nBlock, &iComm, b, xLeft, &PrecondParam,
+                          precond_matrix_II[0], &lTest);
+  }
+
+  convert_1d_to_3d(xLeft, centerPhi, geom);
   centerPhi.FillBoundary(geom.periodicity());
 }
 
@@ -534,6 +600,29 @@ void Domain::sum_to_center(bool isBeforeCorrection) {
     MultiFab::Copy(centerNetChargeOld, centerNetChargeNew, 0, 0,
                    centerNetChargeOld.nComp(), centerNetChargeOld.nGrow());
   }
+
+  // centerNetCharge.SumBoundary(geom.periodicity());
+  // centerNetCharge.FillBoundary(geom.periodicity());
+
+  // for (MFIter mfi(centerMM); mfi.isValid(); ++mfi) {
+  //   const Box& box = mfi.validbox();
+  //   auto const& data = centerMM[mfi].array();
+
+  //   const auto lo = lbound(box);
+  //   const auto hi = ubound(box);
+
+  //   Real sum=0;
+  //   for (int i = lo.x; i <= hi.x; ++i)
+  //     for (int j = lo.y; j <= hi.y; ++j)
+  //       for (int k = lo.z; k <= hi.z; ++k) {
+  //         AllPrint() << " i = " << i << " j = " << j << " k = " << k
+  //                    << " centerMM = " << data(i, j, k) << std::endl;
+  //                    sum += data(i,j,k).data[0];
+  //       }
+  //       Print()<<" sum = "<<sum<<std::endl;
+  // }
+
+  // centerNetCharge.FillBoundary
 }
 
 void Domain::update() {
@@ -559,67 +648,158 @@ void Domain::update() {
 
 void Domain::set_state_var(double* data, int* index) {
   std::string nameFunc = "Domain::set_state_var";
-  fluidInterface.set_couple_node_value(data, index);
-  return;
+
+  int nBlockLocal = nodeE.local_size();
+  fluidInterface.BlockMin_BD.clear();
+  fluidInterface.BlockMax_BD.clear();
+  fluidInterface.CellSize_BD.clear();
+
+  if (nBlockLocal > 0) {
+    const int nDimMax = 3;
+    fluidInterface.BlockMin_BD.init(nBlockLocal, nDimMax);
+    fluidInterface.BlockMax_BD.init(nBlockLocal, nDimMax);
+    fluidInterface.CellSize_BD.init(nBlockLocal, nDimMax);
+
+    const Real* dx = geom.CellSize();
+
+    int iBlock = 0;
+    for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+
+      double xMin[3] = { lo.x * dx[ix_], lo.y * dx[iy_], lo.z * dx[iz_] };
+      double xMax[3] = { hi.x * dx[ix_], hi.y * dx[iy_], hi.z * dx[iz_] };
+
+      for (int iDim = 0; iDim < nDimMax; iDim++) {
+        fluidInterface.BlockMin_BD(iBlock, iDim) = xMin[iDim];
+        fluidInterface.BlockMax_BD(iBlock, iDim) = xMax[iDim];
+        fluidInterface.CellSize_BD(iBlock, iDim) = dx[iDim];
+
+        fluidInterface.nG_D[iDim] = nGst;
+      }
+      iBlock++;
+    }
+
+    MFIter mfi(nodeE);
+    const Box& box = mfi.fabbox();
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    fluidInterface.set_State_BGV(nBlockLocal, hi.x - lo.x + 1, hi.y - lo.y + 1,
+                                 hi.z - lo.z + 1, data, index);
+  }
 }
 
 int Domain::get_grid_nodes_number() {
-  return fluidInterface.count_couple_node_number();
-  ;
+
+  int nPoint = 0;
+  int nBlock = nodeE.local_size();
+  if (nBlock > 0) {
+    MFIter mfi(nodeE);
+    BL_ASSERT(mfi.isValid());
+    const auto lo = lbound(mfi.fabbox());
+    const auto hi = ubound(mfi.fabbox());
+
+    nPoint = (hi.x - lo.x + 1) * (hi.y - lo.y + 1);
+
+    if (fluidInterface.getnDim() > 2)
+      nPoint *= (hi.z - lo.z + 1);
+  }
+  nPoint *= nBlock;
+  return nPoint;
 }
 
 void Domain::get_grid(double* pos_DI) {
   std::string nameFunc = "Domain::get_grid";
-  fluidInterface.get_couple_node_loc(pos_DI);
-  return;
+
+  const Real* dx = geom.CellSize();
+  int iBlock = 0;
+  int nCount = 0;
+  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.fabbox();
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    int kMin = 0, kMax = 0;
+    if (fluidInterface.getnDim() > 2) {
+      kMin = lo.z;
+      kMax = hi.z;
+    }
+    const double no2siL = fluidInterface.getNo2SiL();
+    for (int i = lo.x; i <= hi.x; ++i)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int k = kMin; k <= kMax; ++k) {
+          pos_DI[nCount++] = (i * dx[ix_] + boxRange.lo(ix_)) * no2siL;
+          pos_DI[nCount++] = (j * dx[iy_] + boxRange.lo(iy_)) * no2siL;
+          if (fluidInterface.getnDim() > 2)
+            pos_DI[nCount++] = (k * dx[iz_] + boxRange.lo(iz_)) * no2siL;
+        }
+  }
 }
 
 void Domain::update_E() {
   std::string nameFunc = "Domain::update_E";
   timing_start(nameFunc);
 
-  eSolver.reset(get_local_node_or_cell_number(nodeE));
+  const int nNode = get_fab_grid_points_number(nodeE) * nodeE.local_size();
+  nSolveNode = 3 * nNode;
 
-  update_E_rhs(eSolver.rhs);
+  double rhs[nSolveNode];
+  double xLeft[nSolveNode];
+  double matvec[nSolveNode];
+
+  for (int i = 0; i < nSolveNode; i++) {
+    rhs[i] = 0;
+    xLeft[i] = 0;
+    matvec[i] = 0;
+  }
+
+  update_E_rhs(rhs);
+
+  convert_3d_to_1d(nodeE, xLeft, geom);
+
+  update_E_matvec(xLeft, matvec);
+
+  for (int i = 0; i < nSolveNode; i++) {
+    rhs[i] -= matvec[i];
+    xLeft[i] = 0;
+  }
 
   {
-    double sum = 0;
-    for (int i = 0; i < eSolver.get_nSolve(); i++) {
-      sum += eSolver.rhs[i];
-    }
-    Print() << "sum(rhs) = " << sum << std::endl;
+    linear_solver_matvec_c = matvec_E_solver;
+
+    int nVarSolve = 3;
+    int nIter = 200;
+    double EFieldTol = 1e-6;
+    int nDimIn = 3;
+
+    MFIter mfi(nodeE);
+    auto lo = lbound(mfi.validbox());
+    auto hi = ubound(mfi.validbox());
+
+    int nI = hi.x - lo.x + 1;
+    int nJ = hi.y - lo.y + 1;
+    int nK = hi.z - lo.z + 1;
+    int nBlock = nodeE.local_size();
+    MPI_Fint iComm = MPI_Comm_c2f(ParallelDescriptor::Communicator());
+    double precond_matrix_II[1][1];
+    precond_matrix_II[0][0] = 0;
+    // parameter to choose preconditioner types
+    // 0:No precondition; 1: BILU; 2:DILU;
+    //[-1,0): MBILU;
+    double PrecondParam = 0;
+    int lTest = ParallelDescriptor::MyProc() == 0;
+
+    Print() << "-------------- Electric field solver ---------------"
+            << std::endl;
+    linear_solver_wrapper("GMRES", &EFieldTol, &nIter, &nVarSolve, &nDimIn, &nI,
+                          &nJ, &nK, &nBlock, &iComm, rhs, xLeft, &PrecondParam,
+                          precond_matrix_II[0], &lTest);
   }
-
-  convert_3d_to_1d(nodeE, eSolver.xLeft, geom);
-
-  {
-    double sum = 0;
-    for (int i = 0; i < eSolver.get_nSolve(); i++) {
-      sum += eSolver.xLeft[i];
-    }
-    Print() << "sum(xLeft) = " << sum << std::endl;
-  }
-
-  update_E_matvec(eSolver.xLeft, eSolver.matvec);
-
-  {
-    double sum = 0;
-    for (int i = 0; i < eSolver.get_nSolve(); i++) {
-      sum += eSolver.matvec[i];
-    }
-    Print() << "sum(matvec) = " << sum << std::endl;
-  }
-
-  for (int i = 0; i < eSolver.get_nSolve(); i++) {
-    eSolver.rhs[i] -= eSolver.matvec[i];
-    eSolver.xLeft[i] = 0;
-  }
-
-  Print() << "----------- E solver ------------------" << std::endl;
-  eSolver.solve();
 
   nodeEth.setVal(0.0);
-  convert_1d_to_3d(eSolver.xLeft, nodeEth, geom);
+  convert_1d_to_3d(xLeft, nodeEth, geom);
   nodeEth.SumBoundary(geom.periodicity());
   nodeEth.FillBoundary(geom.periodicity());
 
@@ -632,7 +812,7 @@ void Domain::update_E() {
 }
 
 void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
-  zero_array(vecOut, eSolver.get_nSolve());
+  zero_array(vecOut, nSolveNode);
 
   MultiFab vecMF(nodeBA, dm, 3, nGst);
   vecMF.setVal(0.0);
@@ -648,8 +828,6 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
   // M*E needs ghost cell information.
   vecMF.FillBoundary(geom.periodicity());
 
-  apply_external_BC(vecMF, 0, nDimMax, &Domain::get_node_E);
-
   lap_node_to_node(vecMF, imageMF, dm, geom);
 
   Real delt2 = pow(fsolver.theta * tc.get_dt(), 2);
@@ -659,17 +837,13 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
     div_node_to_center(vecMF, centerDivE, geom.InvCellSize());
     if (fsolver.coefDiff > 0) {
       // Calculate cell center E for center-to-center divE.
-      average_node_to_cellcenter(tempCenter3, 0, vecMF, 0, 3,
-                                 tempCenter3.nGrow());
-      apply_float_boundary(tempCenter3, geom, 0, tempCenter3.nComp());
-
+      average_node_to_cellcenter(tempCenter3, 0, vecMF, 0, 3);
       tempCenter3.FillBoundary(geom.periodicity());
       div_center_to_center(tempCenter3, tempCenter1, geom.InvCellSize());
 
       MultiFab::LinComb(centerDivE, 1 - fsolver.coefDiff, centerDivE, 0,
                         fsolver.coefDiff, tempCenter1, 0, 0, 1, 0);
     }
-
     centerDivE.FillBoundary(geom.periodicity());
 
     grad_center_to_node(centerDivE, tempNode3, geom.InvCellSize());
@@ -678,7 +852,6 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
     MultiFab::Add(imageMF, tempNode3, 0, 0, imageMF.nComp(), 0);
   }
 
-  tempNode3.setVal(0);
   update_E_M_dot_E(vecMF, tempNode3);
   MultiFab::Add(imageMF, tempNode3, 0, 0, imageMF.nComp(), 0);
 
@@ -766,138 +939,4 @@ void Domain::update_B() {
   nodeB.FillBoundary(geom.periodicity());
 
   timing_stop(nameFunc);
-}
-
-void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
-                               const int nComp, GETVALUE func) {
-  if (geom.isAllPeriodic())
-    return;
-  if (mf.nGrow() == 0)
-    return;
-
-  //! create a grown domain box containing valid + periodic cells
-  const Box& domain = geom.Domain();
-  Box gdomain = amrex::convert(domain, mf.boxArray().ixType());
-  const IntVect& ngrow = mf.nGrowVect();
-  for (int i = 0; i < nDimMax; ++i) {
-    if (geom.isPeriodic(i)) {
-      gdomain.grow(i, ngrow[i]);
-    }
-  }
-
-  {
-
-    Vector<BCRec> bcDomain(1);
-    for (int idim = 0; idim < nDimMax; ++idim) {
-      bcDomain[0].setLo(idim, BCType::ext_dir);
-      bcDomain[0].setHi(idim, BCType::ext_dir);
-    }
-
-    //"g" means "global".
-    const Box& gbx = convert(geom.Domain(), mf.boxArray().ixType());
-    const auto glo = gbx.loVect(); // Do not include ghost cells.
-    const auto ghi = gbx.hiVect();
-
-    int igMin = glo[ix_], igMax = ghi[ix_];
-    int jgMin = glo[iy_], jgMax = ghi[iy_];
-    int kgMin = glo[iz_], kgMax = ghi[iz_];
-
-    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
-      const Box& bx = mfi.fabbox();
-
-      //! if there are cells not in the valid + periodic grown box
-      //! we need to fill them here
-      //!
-      if (!gdomain.contains(bx)) {
-        //! Based on bcDomain for the domain, we need to make bcr for this Box
-        Vector<BCRec> bcr(1);
-        amrex::setBC(bx, domain, 0, 0, 1, bcDomain, bcr);
-
-        amrex::Array4<amrex::Real> const& arr = mf[mfi].array();
-
-        // Include ghost cells.
-        const auto lo = bx.loVect();
-        const auto hi = bx.hiVect();
-
-        int iMin = lo[ix_], iMax = hi[ix_];
-        int jMin = lo[iy_], jMax = hi[iy_];
-        int kMin = lo[iz_], kMax = hi[iz_];
-
-        // x left
-        if (bcr[0].lo(ix_) == BCType::ext_dir) {
-          for (int i = iMin; i <= igMin - 1 + nVirGst; i++)
-            for (int j = jMin; j <= jMax; j++)
-              for (int k = kMin; k <= kMax; k++)
-                for (int iVar = iStart; iVar < nComp; iVar++)
-
-                {
-                  Print() << "1 i = " << i << " j = " << j << " k = " << k
-                          << " ivar = " << iVar
-                          << " val = " << arr(i, j, k, iVar) << std::endl;
-
-                  arr(i, j, k, iVar) =
-                      (this->*func)(mfi, i, j, k, iVar - iStart);
-                  Print() << "2 i = " << i << " j = " << j << " k = " << k
-                          << " ivar = " << iVar
-                          << " val = " << arr(i, j, k, iVar) << std::endl;
-                }
-        }
-
-        // x right
-        if (bcr[0].hi(ix_) == BCType::ext_dir) {
-          for (int iVar = iStart; iVar < nComp; iVar++)
-            for (int k = kMin; k <= kMax; k++)
-              for (int j = jMin; j <= jMax; j++)
-                for (int i = igMax + 1 - nVirGst; i <= iMax; i++) {
-                  arr(i, j, k, iVar) =
-                      (this->*func)(mfi, i, j, k, iVar - iStart);
-                }
-        }
-
-        // y left
-        if (bcr[0].lo(iy_) == BCType::ext_dir) {
-          for (int iVar = iStart; iVar < nComp; iVar++)
-            for (int k = kMin; k <= kMax; k++)
-              for (int j = jMin; j <= jgMin - 1 + nVirGst; j++)
-                for (int i = iMin; i <= iMax; i++) {
-                  arr(i, j, k, iVar) =
-                      (this->*func)(mfi, i, j, k, iVar - iStart);
-                }
-        }
-
-        // y right
-        if (bcr[0].lo(iy_) == BCType::ext_dir) {
-          for (int iVar = iStart; iVar < nComp; iVar++)
-            for (int k = kMin; k <= kMax; k++)
-              for (int j = jgMax + 1 - nVirGst; j <= jMax; j++)
-                for (int i = iMin; i <= iMax; i++) {
-                  arr(i, j, k, iVar) =
-                      (this->*func)(mfi, i, j, k, iVar - iStart);
-                }
-        }
-
-        // z left
-        if (bcr[0].lo(iz_) == BCType::ext_dir) {
-          for (int iVar = iStart; iVar < nComp; iVar++)
-            for (int k = kMin; k <= kgMin - 1 + nVirGst; k++)
-              for (int j = jMin; j <= jMax; j++)
-                for (int i = iMin; i <= iMax; i++) {
-                  arr(i, j, k, iVar) =
-                      (this->*func)(mfi, i, j, k, iVar - iStart);
-                }
-        }
-
-        // z right
-        if (bcr[0].hi(iz_) == BCType::ext_dir) {
-          for (int iVar = iStart; iVar < nComp; iVar++)
-            for (int k = kgMax + 1 - nVirGst; k <= kMax; k++)
-              for (int j = jMin; j <= jMax; j++)
-                for (int i = iMin; i <= iMax; i++) {
-                  arr(i, j, k, iVar) =
-                      (this->*func)(mfi, i, j, k, iVar - iStart);
-                }
-        }
-      }
-    }
-  }
 }

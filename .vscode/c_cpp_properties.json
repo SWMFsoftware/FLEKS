@@ -5,10 +5,11 @@
             "includePath": [
                 "${workspaceFolder}/include/",
                 "${workspaceFolder}/share/amrex/tmp_install_dir/include/",
-                "${workspaceFolder}/../../share/Library/src/"
+                "${workspaceFolder}/../../share/Library/src/",
+                "/usr/include/openmpi-x86_64/"
             ],
             "defines": [],
-            "compilerPath": "/usr/bin/clang",
+            "compilerPath": "/opt/rh/devtoolset-8/root/usr/bin/gcc",
             "cStandard": "c11",
             "cppStandard": "c++17",
             "intelliSenseMode": "clang-x64"

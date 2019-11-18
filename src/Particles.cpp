@@ -79,9 +79,8 @@ void Particles::add_particles_cell(const MFIter& mfi,
                                                   rand1, rand2, rand3, rand4,
                                                   speciesID);
           } else {
-            fluidInterface.set_particle_uth_iso(mfi, x, y, z, &u, &v, &w,
-                                                  rand1, rand2, rand3, rand4,
-                                                  speciesID);
+            fluidInterface.set_particle_uth_iso(mfi, x, y, z, &u, &v, &w, rand1,
+                                                rand2, rand3, rand4, speciesID);
           }
           u += fluidInterface.get_ux(mfi, x, y, z, speciesID);
           v += fluidInterface.get_uy(mfi, x, y, z, speciesID);
@@ -286,7 +285,7 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
 
     const auto& particles = pti.GetArrayOfStructs();
     for (const auto& p : particles) {
-      // Print() << "particle = " << p << std::endl;
+      Print() << "particle = " << p << std::endl;
 
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);

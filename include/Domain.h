@@ -168,7 +168,7 @@ public:
     if (iVar == iz_)
       e = fluidInterface.get_ez(mfi, i, j, k);
 
-      return e; 
+    return e;
   }
 
   //--------------- Boundary end ------------------------
