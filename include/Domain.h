@@ -12,6 +12,8 @@
 #include "TimeCtr.h"
 #include "UMultiFab.h"
 
+class Domain;
+
 class FieldSolver {
 public:
   amrex::Real theta;
@@ -21,6 +23,9 @@ public:
     coefDiff = 0;
   }
 };
+
+typedef amrex::Real (Domain::*GETVALUE)(amrex::MFIter &mfi, int i, int j, int k,
+                                        int iVar);
 
 // The grid is defined in DomaiGrid. This class contains the data on the grid.
 class Domain : public DomainGrid {
@@ -46,8 +51,8 @@ private:
   const amrex::Real rhoTheta = 0.51;
   //--------------------------------------
 
-  LinearSolver eSolver; 
-  LinearSolver divESolver; 
+  LinearSolver eSolver;
+  LinearSolver divESolver;
 
   //------Temporary variables for field---
   amrex::MultiFab tempNode3;
@@ -126,7 +131,7 @@ public:
   void divE_accurate_matvec(double *vecIn, double *vecOut);
   void divE_correct_particle_position();
   void sum_to_center(bool isBeforeCorrection);
-  void calculate_phi(LinearSolver& solver);
+  void calculate_phi(LinearSolver &solver);
   //-------------div(E) correction end----------------
 
   //--------------- IO begin--------------------------------
@@ -146,6 +151,27 @@ public:
   void save_restart_data();
   void read_restart();
   //--------------- IO end--------------------------------
+
+  //--------------- Boundary begin ------------------------
+  void apply_external_BC(amrex::MultiFab &mf, const int iStart, const int nComp,
+                         GETVALUE func);
+  amrex::Real get_zero(amrex::MFIter &mfi, int i, int j, int k, int iVar) {
+    return 0.0;
+  }
+
+  amrex::Real get_node_E(amrex::MFIter &mfi, int i, int j, int k, int iVar) {
+    amrex::Real e;
+    if (iVar == ix_)
+      e = fluidInterface.get_ex(mfi, i, j, k);
+    if (iVar == iy_)
+      e = fluidInterface.get_ey(mfi, i, j, k);
+    if (iVar == iz_)
+      e = fluidInterface.get_ez(mfi, i, j, k);
+
+      return e; 
+  }
+
+  //--------------- Boundary end ------------------------
 
   // private methods
 private:

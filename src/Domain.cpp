@@ -344,6 +344,10 @@ void Domain::set_ic_field() {
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
           arrE(i, j, k, ix_) = fluidInterface.get_ex(mfi, i, j, k);
+
+          Print() << "init i = " << i << " j = " << j << " k = " << k
+                  << " Ex = " << arrE(i, j, k, ix_) << std::endl;
+
           arrE(i, j, k, iy_) = fluidInterface.get_ey(mfi, i, j, k);
           arrE(i, j, k, iz_) = fluidInterface.get_ez(mfi, i, j, k);
 
@@ -363,7 +367,6 @@ void Domain::set_ic_field() {
   nodeE.FillBoundary(geom.periodicity());
   nodeB.FillBoundary(geom.periodicity());
   centerB.FillBoundary(geom.periodicity());
-
 }
 //---------------------------------------------------------
 
@@ -555,9 +558,33 @@ void Domain::update_E() {
 
   update_E_rhs(eSolver.rhs);
 
+  {
+    double sum = 0;
+    for (int i = 0; i < eSolver.get_nSolve(); i++) {
+      sum += eSolver.rhs[i];
+    }
+    Print() << "sum(rhs) = " << sum << std::endl;
+  }
+
   convert_3d_to_1d(nodeE, eSolver.xLeft, geom);
 
+  {
+    double sum = 0;
+    for (int i = 0; i < eSolver.get_nSolve(); i++) {
+      sum += eSolver.xLeft[i];
+    }
+    Print() << "sum(xLeft) = " << sum << std::endl;
+  }
+
   update_E_matvec(eSolver.xLeft, eSolver.matvec);
+
+  {
+    double sum = 0;
+    for (int i = 0; i < eSolver.get_nSolve(); i++) {
+      sum += eSolver.matvec[i];
+    }
+    Print() << "sum(matvec) = " << sum << std::endl;
+  }
 
   for (int i = 0; i < eSolver.get_nSolve(); i++) {
     eSolver.rhs[i] -= eSolver.matvec[i];
@@ -596,6 +623,8 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
 
   // M*E needs ghost cell information.
   vecMF.FillBoundary(geom.periodicity());
+
+  apply_external_BC(vecMF, 0, nDimMax, &Domain::get_node_E);
 
   lap_node_to_node(vecMF, imageMF, dm, geom);
 
@@ -708,4 +737,138 @@ void Domain::update_B() {
   nodeB.FillBoundary(geom.periodicity());
 
   timing_stop(nameFunc);
+}
+
+void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
+                               const int nComp, GETVALUE func) {
+  if (geom.isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  //! create a grown domain box containing valid + periodic cells
+  const Box& domain = geom.Domain();
+  Box gdomain = amrex::convert(domain, mf.boxArray().ixType());
+  const IntVect& ngrow = mf.nGrowVect();
+  for (int i = 0; i < nDimMax; ++i) {
+    if (geom.isPeriodic(i)) {
+      gdomain.grow(i, ngrow[i]);
+    }
+  }
+
+  {
+
+    Vector<BCRec> bcDomain(1);
+    for (int idim = 0; idim < nDimMax; ++idim) {
+      bcDomain[0].setLo(idim, BCType::ext_dir);
+      bcDomain[0].setHi(idim, BCType::ext_dir);
+    }
+
+    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.fabbox();
+
+      //! if there are cells not in the valid + periodic grown box
+      //! we need to fill them here
+      //!
+      if (!gdomain.contains(bx)) {
+        //! Based on bcDomain for the domain, we need to make bcr for this Box
+        Vector<BCRec> bcr(1);
+        amrex::setBC(bx, domain, 0, 0, 1, bcDomain, bcr);
+
+        amrex::Array4<amrex::Real> const& arr = mf[mfi].array();
+
+        //"g" means "global".
+        const Box& gbx = geom.Domain();
+        const auto glo = gbx.loVect(); // Do not include ghost cells.
+        const auto ghi = gbx.hiVect();
+
+        int igMin = glo[ix_], igMax = ghi[ix_];
+        int jgMin = glo[iy_], jgMax = ghi[iy_];
+        int kgMin = glo[iz_], kgMax = ghi[iz_];
+
+        // Include ghost cells.
+        const auto lo = bx.loVect();
+        const auto hi = bx.hiVect();
+
+        int iMin = lo[ix_], iMax = hi[ix_];
+        int jMin = lo[iy_], jMax = hi[iy_];
+        int kMin = lo[iz_], kMax = hi[iz_];
+
+        // x left
+        if (bcr[0].lo(ix_) == BCType::ext_dir) {
+          for (int i = iMin; i <= igMin - 1 + nVirGst; i++)
+            for (int j = jMin; j <= jMax; j++)
+              for (int k = kMin; k <= kMax; k++)
+                for (int iVar = iStart; iVar < nComp; iVar++)
+
+                {
+                  Print() << "1 i = " << i << " j = " << j << " k = " << k
+                          << " ivar = " << iVar
+                          << " val = " << arr(i, j, k, iVar) << std::endl;
+
+                  arr(i, j, k, iVar) =
+                      (this->*func)(mfi, i, j, k, iVar - iStart);
+                  Print() << "2 i = " << i << " j = " << j << " k = " << k
+                          << " ivar = " << iVar
+                          << " val = " << arr(i, j, k, iVar) << std::endl;
+                }
+        }
+
+        // x right
+        if (bcr[0].hi(ix_) == BCType::ext_dir) {
+          for (int iVar = iStart; iVar < nComp; iVar++)
+            for (int k = kMin; k <= kMax; k++)
+              for (int j = jMin; j <= jMax; j++)
+                for (int i = igMax + 1 - nVirGst; i <= iMax; i++) {
+                  arr(i, j, k, iVar) =
+                      (this->*func)(mfi, i, j, k, iVar - iStart);
+                }
+        }
+
+        // y left
+        if (bcr[0].lo(iy_) == BCType::ext_dir) {
+          for (int iVar = iStart; iVar < nComp; iVar++)
+            for (int k = kMin; k <= kMax; k++)
+              for (int j = jMin; j <= jgMin - 1 + nVirGst; j++)
+                for (int i = iMin; i <= iMax; i++) {
+                  arr(i, j, k, iVar) =
+                      (this->*func)(mfi, i, j, k, iVar - iStart);
+                }
+        }
+
+        // y right
+        if (bcr[0].lo(iy_) == BCType::ext_dir) {
+          for (int iVar = iStart; iVar < nComp; iVar++)
+            for (int k = kMin; k <= kMax; k++)
+              for (int j = jgMax + 1 - nVirGst; j <= jMax; j++)
+                for (int i = iMin; i <= iMax; i++) {
+                  arr(i, j, k, iVar) =
+                      (this->*func)(mfi, i, j, k, iVar - iStart);
+                }
+        }
+
+        // z left
+        if (bcr[0].lo(iz_) == BCType::ext_dir) {
+          for (int iVar = iStart; iVar < nComp; iVar++)
+            for (int k = kMin; k <= kgMin - 1 + nVirGst; k++)
+              for (int j = jMin; j <= jMax; j++)
+                for (int i = iMin; i <= iMax; i++) {
+                  arr(i, j, k, iVar) =
+                      (this->*func)(mfi, i, j, k, iVar - iStart);
+                }
+        }
+
+        // z right
+        if (bcr[0].hi(iz_) == BCType::ext_dir) {
+          for (int iVar = iStart; iVar < nComp; iVar++)
+            for (int k = kgMax + 1 - nVirGst; k <= kMax; k++)
+              for (int j = jMin; j <= jMax; j++)
+                for (int i = iMin; i <= iMax; i++) {
+                  arr(i, j, k, iVar) =
+                      (this->*func)(mfi, i, j, k, iVar - iStart);
+                }
+        }
+      }
+    }
+  }
 }

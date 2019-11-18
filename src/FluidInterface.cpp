@@ -134,6 +134,13 @@ void FluidInterface::calc_current() {
   curl_center_to_node(centerB, currentMF, geom.InvCellSize());
   currentMF.mult(1.0 / (getNo2SiL() * fourPI * 1e-7), currentMF.nGrow());
   currentMF.FillBoundary();
+
+  // The current in the ghost cells can not be calculated from the nodeB. So
+  // fill in the ghost cell current with float boundary condition.
+  apply_float_boundary(currentMF, geom);
+
+
+  print_MultiFab(currentMF, "currentMF");
 }
 
 void FluidInterface::normalize_nodeFluid() {

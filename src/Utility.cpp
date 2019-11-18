@@ -226,6 +226,8 @@ void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
 
   MF.setVal(0.0); 
 
+  const Box& gbx = geom.Domain();
+
   int iCount = 0;
   for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
     const amrex::Box& box = mfi.tilebox();
@@ -242,38 +244,38 @@ void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
       jMax--;
       kMax--;
 
-      if ((!geom.isPeriodic(ix_)) && box.bigEnd(ix_) == hi.x)
+      if ((!geom.isPeriodic(ix_)) && gbx.bigEnd(ix_) == hi.x)
         iMax++;
-      if ((!geom.isPeriodic(iy_)) && box.bigEnd(iy_) == hi.y)
+      if ((!geom.isPeriodic(iy_)) && gbx.bigEnd(iy_) == hi.y)
         jMax++;
-      if ((!geom.isPeriodic(iz_)) && box.bigEnd(iz_) == hi.z)
+      if ((!geom.isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z)
         kMax++;
     }
 
 
 
 
-    if (!geom.isPeriodic(ix_) && box.bigEnd(ix_) == hi.x) {
+    if (!geom.isPeriodic(ix_) && gbx.bigEnd(ix_) == hi.x) {
       iMax -= nVirGst;
     }
 
-    if (!geom.isPeriodic(iy_) && box.bigEnd(iy_) == hi.y) {
+    if (!geom.isPeriodic(iy_) && gbx.bigEnd(iy_) == hi.y) {
       jMax -= nVirGst;
     }
 
-    if (!geom.isPeriodic(iz_) && box.bigEnd(iz_) == hi.z) {
+    if (!geom.isPeriodic(iz_) && gbx.bigEnd(iz_) == hi.z) {
       kMax -= nVirGst;
     }
 
-    if (!geom.isPeriodic(ix_) && box.smallEnd(ix_) == lo.x) {
+    if (!geom.isPeriodic(ix_) && gbx.smallEnd(ix_) == lo.x) {
       iMin += nVirGst;
     }
 
-    if (!geom.isPeriodic(iy_) && box.smallEnd(iy_) == lo.y) {
+    if (!geom.isPeriodic(iy_) && gbx.smallEnd(iy_) == lo.y) {
       jMin += nVirGst;
     }
 
-    if (!geom.isPeriodic(iz_) && box.smallEnd(iz_) == lo.z) {
+    if (!geom.isPeriodic(iz_) && gbx.smallEnd(iz_) == lo.z) {
       kMin += nVirGst;
     }
 
@@ -294,6 +296,8 @@ void convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
   bool isCenter = MF.ixType().cellCentered();
   bool isNode = !isCenter;
 
+  const Box& gbx = geom.Domain();
+
   int iCount = 0;
   for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
     const amrex::Box& box = mfi.tilebox();
@@ -311,35 +315,35 @@ void convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
       jMax--;
       kMax--;
 
-      if ((!geom.isPeriodic(ix_)) && box.bigEnd(ix_) == hi.x)
+      if ((!geom.isPeriodic(ix_)) && gbx.bigEnd(ix_) == hi.x)
         iMax++;
-      if ((!geom.isPeriodic(iy_)) && box.bigEnd(iy_) == hi.y)
+      if ((!geom.isPeriodic(iy_)) && gbx.bigEnd(iy_) == hi.y)
         jMax++;
-      if ((!geom.isPeriodic(iz_)) && box.bigEnd(iz_) == hi.z)
+      if ((!geom.isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z)
         kMax++;
     }
 
-    if (!geom.isPeriodic(ix_) && box.bigEnd(ix_) == hi.x) {
+    if (!geom.isPeriodic(ix_) && gbx.bigEnd(ix_) == hi.x) {
       iMax -= nVirGst;
     }
 
-    if (!geom.isPeriodic(iy_) && box.bigEnd(iy_) == hi.y) {
+    if (!geom.isPeriodic(iy_) && gbx.bigEnd(iy_) == hi.y) {
       jMax -= nVirGst;
     }
 
-    if (!geom.isPeriodic(iz_) && box.bigEnd(iz_) == hi.z) {
+    if (!geom.isPeriodic(iz_) && gbx.bigEnd(iz_) == hi.z) {
       kMax -= nVirGst;
     }
 
-    if (!geom.isPeriodic(ix_) && box.smallEnd(ix_) == lo.x) {
+    if (!geom.isPeriodic(ix_) && gbx.smallEnd(ix_) == lo.x) {
       iMin += nVirGst;
     }
 
-    if (!geom.isPeriodic(iy_) && box.smallEnd(iy_) == lo.y) {
+    if (!geom.isPeriodic(iy_) && gbx.smallEnd(iy_) == lo.y) {
       jMin += nVirGst;
     }
 
-    if (!geom.isPeriodic(iz_) && box.smallEnd(iz_) == lo.z) {
+    if (!geom.isPeriodic(iz_) && gbx.smallEnd(iz_) == lo.z) {
       kMin += nVirGst;
     }
 
@@ -357,7 +361,7 @@ void print_MultiFab(amrex::MultiFab& data, std::string tag) {
   Real sum = 0;
   for (MFIter mfi(data); mfi.isValid(); ++mfi) {
     FArrayBox& fab = data[mfi];
-    const Box& box = mfi.validbox();
+    const Box& box = mfi.fabbox();
     Array4<Real> const& data = fab.array();
 
     const auto lo = lbound(box);

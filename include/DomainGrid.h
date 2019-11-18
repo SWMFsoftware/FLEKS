@@ -12,6 +12,7 @@
 #include <AMReX_REAL.H>
 #include <AMReX_RealBox.H>
 #include <AMReX_Vector.H>
+#include <AMReX_BCRec.H>
 
 #include "Constants.h"
 

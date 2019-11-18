@@ -16,6 +16,7 @@
 #include "Constants.h"
 #include "FluidPicInterface.h"
 #include "Utility.h"
+#include "BC.h"
 
 class FluidInterface : public FluidPicInterface {
 
