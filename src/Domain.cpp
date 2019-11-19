@@ -326,7 +326,7 @@ void Domain::set_ic_field() {
     for (int i = 0; i < nSpecies; i++) {
       // Real x = -0.77, y = 0.23, z = 0.07;
 
-      int x = 19, y = 9, z = 2;
+      int x = -1, y = -1, z = -1;
 
       double u, v, w;
       double rand1 = 0.1, rand2 = 0.2, rand3 = 0.3, rand4 = 0.4;
@@ -581,7 +581,6 @@ void Domain::update_E() {
   eSolver.reset(get_local_node_or_cell_number(nodeE));
 
   update_E_rhs(eSolver.rhs);
-
   {
     double sum = 0;
     for (int i = 0; i < eSolver.get_nSolve(); i++) {
@@ -600,15 +599,7 @@ void Domain::update_E() {
     Print() << "sum(xLeft) = " << sum << std::endl;
   }
 
-  update_E_matvec(eSolver.xLeft, eSolver.matvec);
-
-  {
-    double sum = 0;
-    for (int i = 0; i < eSolver.get_nSolve(); i++) {
-      sum += eSolver.matvec[i];
-    }
-    Print() << "sum(matvec) = " << sum << std::endl;
-  }
+  update_E_matvec(eSolver.xLeft, eSolver.matvec, false);
 
   for (int i = 0; i < eSolver.get_nSolve(); i++) {
     eSolver.rhs[i] -= eSolver.matvec[i];
@@ -628,10 +619,25 @@ void Domain::update_E() {
   MultiFab::LinComb(nodeE, -(1.0 - fsolver.theta) / fsolver.theta, nodeE, 0,
                     1. / fsolver.theta, nodeEth, 0, 0, nodeE.nComp(), nGst);
 
+  apply_external_BC(nodeE, 0, nDimMax, &Domain::get_node_E);
+  apply_external_BC(nodeEth, 0, nDimMax, &Domain::get_node_E);
+
+
+  // Apply float BC in order to compare with iPIC3D. It is not right to apply
+  // float BC here!!!!!!!--Yuxi
+  apply_float_boundary(nodeE, geom, 0, nodeE.nComp());
+  apply_float_boundary(nodeEth, geom, 0, nodeEth.nComp());
+
+
+  print_MultiFab(nodeE, "nodeE");
+  print_MultiFab(nodeEth, "nodeEth");
+
+
   timing_stop(nameFunc);
 }
 
-void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
+void Domain::update_E_matvec(const double* vecIn, double* vecOut,
+                             const bool useZeroBC) {
   zero_array(vecOut, eSolver.get_nSolve());
 
   MultiFab vecMF(nodeBA, dm, 3, nGst);
@@ -648,7 +654,12 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
   // M*E needs ghost cell information.
   vecMF.FillBoundary(geom.periodicity());
 
-  apply_external_BC(vecMF, 0, nDimMax, &Domain::get_node_E);
+  if (useZeroBC) {
+    // The boundary nodes would not be filled in by convert_1d_3d. So, there is
+    // not need to apply zero boundary conditions again here.
+  } else {
+    apply_external_BC(vecMF, 0, nDimMax, &Domain::get_node_E);
+  }
 
   lap_node_to_node(vecMF, imageMF, dm, geom);
 
@@ -661,9 +672,10 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
       // Calculate cell center E for center-to-center divE.
       average_node_to_cellcenter(tempCenter3, 0, vecMF, 0, 3,
                                  tempCenter3.nGrow());
-      apply_float_boundary(tempCenter3, geom, 0, tempCenter3.nComp());
 
       tempCenter3.FillBoundary(geom.periodicity());
+      apply_float_boundary(tempCenter3, geom, 0, tempCenter3.nComp());
+
       div_center_to_center(tempCenter3, tempCenter1, geom.InvCellSize());
 
       MultiFab::LinComb(centerDivE, 1 - fsolver.coefDiff, centerDivE, 0,
@@ -687,6 +699,14 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut) {
   imageMF.FillBoundary(geom.periodicity());
 
   convert_3d_to_1d(imageMF, vecOut, geom);
+
+  {
+    double sum = 0;
+    for (int i = 0; i < eSolver.get_nSolve(); i++) {
+      sum += vecOut[i];
+    }
+    Print() << "sum(matvec) = " << sum << std::endl;
+  }
 }
 
 void Domain::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
@@ -786,11 +806,15 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
   }
 
   {
-
     Vector<BCRec> bcDomain(1);
     for (int idim = 0; idim < nDimMax; ++idim) {
-      bcDomain[0].setLo(idim, BCType::ext_dir);
-      bcDomain[0].setHi(idim, BCType::ext_dir);
+      if (geom.isPeriodic(idim)) {
+        bcDomain[0].setLo(idim, BCType::int_dir);
+        bcDomain[0].setHi(idim, BCType::int_dir);
+      } else {
+        bcDomain[0].setLo(idim, BCType::ext_dir);
+        bcDomain[0].setHi(idim, BCType::ext_dir);
+      }
     }
 
     //"g" means "global".
@@ -831,14 +855,10 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
                 for (int iVar = iStart; iVar < nComp; iVar++)
 
                 {
-                  Print() << "1 i = " << i << " j = " << j << " k = " << k
-                          << " ivar = " << iVar
-                          << " val = " << arr(i, j, k, iVar) << std::endl;
-
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
-                  Print() << "2 i = " << i << " j = " << j << " k = " << k
-                          << " ivar = " << iVar
+                  Print() << "extern x-left i = " << i << " j = " << j
+                          << " k = " << k << " ivar = " << iVar
                           << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
@@ -851,6 +871,9 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
                 for (int i = igMax + 1 - nVirGst; i <= iMax; i++) {
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
+                  Print() << "extern x-right i = " << i << " j = " << j
+                          << " k = " << k << " ivar = " << iVar
+                          << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
 
@@ -862,6 +885,9 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
                 for (int i = iMin; i <= iMax; i++) {
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
+                  Print() << "extern y-left i = " << i << " j = " << j
+                          << " k = " << k << " ivar = " << iVar
+                          << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
 
@@ -873,6 +899,9 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
                 for (int i = iMin; i <= iMax; i++) {
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
+                  Print() << "extern y-right i = " << i << " j = " << j
+                          << " k = " << k << " ivar = " << iVar
+                          << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
 
@@ -884,6 +913,9 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
                 for (int i = iMin; i <= iMax; i++) {
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
+                  Print() << "extern z-left i = " << i << " j = " << j
+                          << " k = " << k << " ivar = " << iVar
+                          << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
 
@@ -895,6 +927,9 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
                 for (int i = iMin; i <= iMax; i++) {
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
+                  Print() << "extern z-right i = " << i << " j = " << j
+                          << " k = " << k << " ivar = " << iVar
+                          << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
       }

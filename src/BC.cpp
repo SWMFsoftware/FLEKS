@@ -157,15 +157,16 @@ void apply_float_boundary(MultiFab& mf, const Geometry& geom, const int iStart,
                 for (int iVar = iStart; iVar < nComp; iVar++)
 
                 {
-                  Print() << "1 i = " << i << " j = " << j << " k = " << k
-                          << " ivar = " << iVar
-                          << " val = " << arr(i, j, k, iVar) << std::endl;
+                  // Print() << "1 i = " << i << " j = " << j << " k = " << k
+                  //         << " ivar = " << iVar
+                  //         << " val = " << arr(i, j, k, iVar) << std::endl;
 
                   arr(i, j, k, iVar) = arr(igMin + nshift, j, k, iVar);
 
-                  Print() << "x-left i = " << i << " j = " << j << " k = " << k
-                          << " ivar = " << iVar
-                          << " val = " << arr(i, j, k, iVar) << std::endl;
+                  // Print() << "x-left i = " << i << " j = " << j << " k = " <<
+                  // k
+                  //         << " ivar = " << iVar
+                  //         << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
 
@@ -177,9 +178,10 @@ void apply_float_boundary(MultiFab& mf, const Geometry& geom, const int iStart,
                 for (int i = igMax + 1 - nshift; i <= iMax; i++) {
                   arr(i, j, k, iVar) = arr(igMax - nshift, j, k, iVar);
 
-                  Print() << "x-right i = " << i << " j = " << j << " k = " << k
-                          << " ivar = " << iVar
-                          << " val = " << arr(i, j, k, iVar) << std::endl;
+                  // Print() << "x-right i = " << i << " j = " << j << " k = "
+                  // << k
+                  //         << " ivar = " << iVar
+                  //         << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
 
@@ -190,9 +192,10 @@ void apply_float_boundary(MultiFab& mf, const Geometry& geom, const int iStart,
               for (int j = jMin; j <= jgMin - 1 + nshift; j++)
                 for (int i = iMin; i <= iMax; i++) {
                   arr(i, j, k, iVar) = arr(i, jgMin + nshift, k, iVar);
-                  Print() << "y-left i = " << i << " j = " << j << " k = " << k
-                          << " ivar = " << iVar
-                          << " val = " << arr(i, j, k, iVar) << std::endl;
+                  // Print() << "y-left i = " << i << " j = " << j << " k = " <<
+                  // k
+                  //         << " ivar = " << iVar
+                  //         << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
 
@@ -204,9 +207,10 @@ void apply_float_boundary(MultiFab& mf, const Geometry& geom, const int iStart,
                 for (int i = iMin; i <= iMax; i++) {
                   arr(i, j, k, iVar) = arr(i, jgMax - nshift, k, iVar);
 
-                  Print() << "y-right i = " << i << " j = " << j << " k = " << k
-                          << " ivar = " << iVar
-                          << " val = " << arr(i, j, k, iVar) << std::endl;
+                  // Print() << "y-right i = " << i << " j = " << j << " k = "
+                  // << k
+                  //         << " ivar = " << iVar
+                  //         << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
 
@@ -217,9 +221,10 @@ void apply_float_boundary(MultiFab& mf, const Geometry& geom, const int iStart,
               for (int j = jMin; j <= jMax; j++)
                 for (int i = iMin; i <= iMax; i++) {
                   arr(i, j, k, iVar) = arr(i, j, kgMin + nshift, iVar);
-                  Print() << "z-left i = " << i << " j = " << j << " k = " << k
-                          << " ivar = " << iVar
-                          << " val = " << arr(i, j, k, iVar) << std::endl;
+                  // Print() << "z-left i = " << i << " j = " << j << " k = " <<
+                  // k
+                  //         << " ivar = " << iVar
+                  //         << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
 
@@ -230,9 +235,10 @@ void apply_float_boundary(MultiFab& mf, const Geometry& geom, const int iStart,
               for (int j = jMin; j <= jMax; j++)
                 for (int i = iMin; i <= iMax; i++) {
                   arr(i, j, k, iVar) = arr(i, j, kgMax - nshift, iVar);
-                  Print() << "z-right i = " << i << " j = " << j << " k = " << k
-                          << " ivar = " << iVar
-                          << " val = " << arr(i, j, k, iVar) << std::endl;
+                  // Print() << "z-right i = " << i << " j = " << j << " k = "
+                  // << k
+                  //         << " ivar = " << iVar
+                  //         << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
       }

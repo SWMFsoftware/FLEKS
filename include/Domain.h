@@ -120,7 +120,8 @@ public:
   //-------------Electric field solver begin-------------
   void update_E();
   void update_E_rhs(double *rhos);
-  void update_E_matvec(const double *vecIn, double *vecOut);
+  void update_E_matvec(const double *vecIn, double *vecOut,
+                       const bool useZeroBC = true);
   void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF);
   //-------------Electric field solver end-------------
 

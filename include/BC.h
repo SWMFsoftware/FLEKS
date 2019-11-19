@@ -7,7 +7,8 @@
 #include <AMReX_PhysBCFunct.H>
 
 void apply_float_boundary(amrex::MultiFab& mf, const amrex::Geometry& geom,
-                          const int iStart, const int nComp, const int nshift=0);
+                          const int iStart, const int nComp,                          
+                          const int nshift = 0);
 
 // typedef amrex::Real (Domain::*GETVALUE)(amrex::MFIter& mfi, int i, int j, int
 // k,
