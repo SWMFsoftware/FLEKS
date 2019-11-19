@@ -622,16 +622,13 @@ void Domain::update_E() {
   apply_external_BC(nodeE, 0, nDimMax, &Domain::get_node_E);
   apply_external_BC(nodeEth, 0, nDimMax, &Domain::get_node_E);
 
-
   // Apply float BC in order to compare with iPIC3D. It is not right to apply
   // float BC here!!!!!!!--Yuxi
   apply_float_boundary(nodeE, geom, 0, nodeE.nComp());
   apply_float_boundary(nodeEth, geom, 0, nodeEth.nComp());
 
-
   print_MultiFab(nodeE, "nodeE");
   print_MultiFab(nodeEth, "nodeEth");
-
 
   timing_stop(nameFunc);
 }
@@ -782,8 +779,15 @@ void Domain::update_B() {
   MultiFab::Saxpy(centerB, -tc.get_dt(), dB, 0, 0, centerB.nComp(), 0);
   centerB.FillBoundary(geom.periodicity());
 
+  apply_external_BC(centerB, 0, centerB.nComp(), &Domain::get_center_B);
+
   average_center_to_node(centerB, nodeB);
   nodeB.FillBoundary(geom.periodicity());
+
+  apply_external_BC(nodeB, 0, nodeB.nComp(), &Domain::get_node_B);
+
+  print_MultiFab(centerB, "centerB");
+  print_MultiFab(nodeB, "nodeB");
 
   timing_stop(nameFunc);
 }

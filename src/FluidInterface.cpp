@@ -34,6 +34,9 @@ void FluidInterface::make_grid(const amrex::DistributionMapping& dmIn,
   nodeFluid.define(nodeBA, dm, nVarCoupling, nGst);
   nodeFluid.setVal(0);
 
+  centerB.define(centerBA, dm, nDimMax, nGst);
+  centerB.setVal(0);
+
   Array<int, 3> period;
 
   for (int i = 0; i < nDimMax; i++) {
@@ -120,18 +123,17 @@ void FluidInterface::set_couple_node_value(const double* const data,
   int tmp = loop_through_node("fill", nullptr, data, index);
 
   calc_current();
-  normalize_nodeFluid();
+  normalize_fluid_variables();
   convert_moment_to_velocity();
-
 
   MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
   print_MultiFab(currentMF, "currentMF");
 }
 
 void FluidInterface::calc_current() {
-  MultiFab centerB(centerBA, dm, nDimMax, nGst);
   average_node_to_cellcenter(centerB, 0, nodeFluid, iBx, centerB.nComp(),
                              centerB.nGrow());
+
   // currentMF is just an alias of current components of nodeFluid.
   MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
 
@@ -142,14 +144,15 @@ void FluidInterface::calc_current() {
   // The current in the ghost cells can not be calculated from the nodeB. So
   // fill in the ghost cell current with float boundary condition.
   apply_float_boundary(currentMF, geom, 0, currentMF.nComp());
-
 }
 
-void FluidInterface::normalize_nodeFluid() {
+void FluidInterface::normalize_fluid_variables() {
   for (int i = 0; i < nodeFluid.nComp(); ++i) {
     MultiFab tmpMF(nodeFluid, make_alias, i, 1);
     tmpMF.mult(Si2No_V[i], tmpMF.nGrow());
   }
+
+  centerB.mult(Si2NoB, centerB.nGrow());
 }
 
 void FluidInterface::convert_moment_to_velocity() {

@@ -13,10 +13,10 @@
 #include <AMReX_RealBox.H>
 #include <AMReX_Vector.H>
 
+#include "BC.h"
 #include "Constants.h"
 #include "FluidPicInterface.h"
 #include "Utility.h"
-#include "BC.h"
 
 class FluidInterface : public FluidPicInterface {
 
@@ -29,6 +29,7 @@ private:
   //------------------------
 
   amrex::MultiFab nodeFluid;
+  amrex::MultiFab centerB;
 
   int nGst;
 
@@ -56,11 +57,17 @@ public:
 
   void calc_current();
 
-  void normalize_nodeFluid();
+  void normalize_fluid_variables();
 
   void convert_moment_to_velocity();
 
   const amrex::MultiFab& get_nodeFluid() const { return nodeFluid; }
+
+  amrex::Real get_center_b(const amrex::MFIter& mfi, const int i, const int j,
+                           const int k, const int iDir) const {
+    const auto& arr = centerB[mfi].array();
+    return arr(i, j, k, iDir);
+  }
 
   amrex::Real get_value(const amrex::MFIter& mfi, const int i, const int j,
                         const int k, const int iVar) const {
@@ -576,7 +583,5 @@ public:
     }
     return Ez;
   }
-
-  
 };
 #endif
