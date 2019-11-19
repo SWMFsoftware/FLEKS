@@ -24,8 +24,9 @@ public:
 
   void add_particles_domain(const FluidInterface& fluidInterface);
   void add_particles_cell(const amrex::MFIter& mfi,
-                          const FluidInterface& fluidInterface, int iBlock,
-                          int i, int j, int k, int loi, int loj, int lok);
+                          const FluidInterface& fluidInterface, int i, int j,
+                          int k);
+  void inject_particles_at_boundary(const FluidInterface& fluidInterface);
 
   void sum_moments(amrex::MultiFab& momentsMF, amrex::UMultiFab<RealMM>& nodeMM,
                    amrex::MultiFab& nodeBMF, amrex::Real dt);
@@ -35,6 +36,23 @@ public:
 
   void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
              amrex::Real dt);
+
+  inline bool is_outside(const ParticleType& p) {
+    const auto& plo = Geom(0).ProbLo();
+    const auto& phi = Geom(0).ProbHi();
+    const auto& dx = Geom(0).CellSize();
+
+    for (int iDim = 0; iDim < nDimMax; iDim++) {
+      if (!Geom(0).isPeriodic(iDim)) {
+        if (p.pos(iDim) > phi[iDim] - nVirGst * dx[iDim] ||
+            p.pos(iDim) < plo[iDim] + nVirGst * dx[iDim]) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
 
   void divE_correct_position(const amrex::MultiFab& phiMF);
 

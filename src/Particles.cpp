@@ -14,9 +14,8 @@ Particles::Particles(const Geometry& geom, const DistributionMapping& dm,
       nPartPerCell(nPartPerCellIn) {}
 
 void Particles::add_particles_cell(const MFIter& mfi,
-                                   const FluidInterface& fluidInterface,
-                                   int iBlock, int i, int j, int k, int loi,
-                                   int loj, int lok) {
+                                   const FluidInterface& fluidInterface, int i,
+                                   int j, int k) {
   int ig, jg, kg, nxcg, nycg, nzcg, iCycle, npcel, nRandom = 7;
   // Why +1? for comparison with iPIC3D.-----
   ig = i + 1;
@@ -97,6 +96,8 @@ void Particles::add_particles_cell(const MFIter& mfi,
           p.rdata(iwp_) = w;
           p.rdata(iqp_) = q;
           particles.push_back(p);
+          Print() << "i = " << i << " j = " << j << " k = " << k << p
+                  << std::endl;
         }
       }
 }
@@ -105,10 +106,6 @@ void Particles::add_particles_domain(const FluidInterface& fluidInterface) {
   BL_PROFILE("Particles::add_particles");
 
   const int lev = 0;
-  const auto dx = Geom(lev).CellSizeArray();
-  const auto plo = Geom(lev).ProbLoArray();
-
-  int iBlock = 0;
   for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
     const Box& tile_box = mfi.validbox();
     const auto lo = amrex::lbound(tile_box);
@@ -117,12 +114,115 @@ void Particles::add_particles_domain(const FluidInterface& fluidInterface) {
     for (int i = lo.x; i <= hi.x; ++i)
       for (int j = lo.y; j <= hi.y; ++j)
         for (int k = lo.z; k <= hi.z; ++k) {
-          add_particles_cell(mfi, fluidInterface, iBlock, i, j, k, lo.x, lo.y,
-                             lo.z);
+          add_particles_cell(mfi, fluidInterface, i, j, k);
         }
-
-    iBlock++;
   }
+}
+
+void Particles::inject_particles_at_boundary(
+    const FluidInterface& fluidInterface) {
+
+  if (nVirGst != 1)
+    Abort("The function assumes nVirGst==1!!");
+
+  const int lev = 0;
+
+  const Box& gbx = Geom(0).Domain();
+
+  for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
+    // Since nVirGst==1, fill in the cells in the 'validbox'.
+    const Box& tile_box = mfi.validbox();
+    const auto lo = amrex::lbound(tile_box);
+    const auto hi = amrex::ubound(tile_box);
+
+    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
+    int iMin = lo.x, jMin = lo.y, kMin = lo.z;
+
+    bool doFillLeftX = false, doFillLeftY = false, doFillLeftZ = false;
+    bool doFillRightX = false, doFillRightY = false, doFillRightZ = false;
+
+    if (!(Geom(0).isPeriodic(ix_)) && gbx.bigEnd(ix_) == hi.x) {
+      doFillRightX = true;
+    }
+    if ((!Geom(0).isPeriodic(iy_)) && gbx.bigEnd(iy_) == hi.y) {
+      doFillRightY = true;
+    }
+    if ((!Geom(0).isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z) {
+      doFillRightZ = true;
+    }
+
+    if (!Geom(0).isPeriodic(ix_) && gbx.smallEnd(ix_) == lo.x) {
+      doFillLeftX = true;
+    }
+    if (!Geom(0).isPeriodic(iy_) && gbx.smallEnd(iy_) == lo.y) {
+      doFillLeftY = true;
+    }
+    if (!Geom(0).isPeriodic(iz_) && gbx.smallEnd(iz_) == lo.z) {
+      doFillLeftZ = true;
+    }
+
+    if (doFillLeftX) {
+      for (int i = iMin; i <= iMin - 1 + nVirGst; ++i)
+        for (int j = jMin; j <= jMax; ++j)
+          for (int k = kMin; k <= kMax; ++k) {
+
+            add_particles_cell(mfi, fluidInterface, i, j, k);
+          }
+      iMin += nVirGst;
+    }
+
+    if (doFillRightX) {
+      for (int i = iMax + 1 - nVirGst; i <= iMax; ++i)
+        for (int j = jMin; j <= jMax; ++j)
+          for (int k = kMin; k <= kMax; ++k) {
+
+            add_particles_cell(mfi, fluidInterface, i, j, k);
+          }
+      iMax -= nVirGst;
+    }
+
+    if (doFillLeftY) {
+      for (int i = iMin; i <= iMax; ++i)
+        for (int j = jMin; j <= jMin - 1 + nVirGst; ++j)
+          for (int k = kMin; k <= kMax; ++k) {
+
+            add_particles_cell(mfi, fluidInterface, i, j, k);
+          }
+      jMin += nVirGst;
+    }
+
+    if (doFillRightY) {
+      for (int i = iMin; i <= iMax; ++i)
+        for (int j = jMax + 1 - nVirGst; j <= jMax; ++j)
+          for (int k = kMin; k <= kMax; ++k) {
+
+            add_particles_cell(mfi, fluidInterface, i, j, k);
+          }
+      jMax -= nVirGst;
+    }
+
+    if (doFillLeftZ) {
+      for (int i = iMin; i <= iMax; ++i)
+        for (int j = jMin; j <= jMax; ++j)
+          for (int k = kMin; k <= kMin - 1 + nVirGst; ++k) {
+            add_particles_cell(mfi, fluidInterface, i, j, k);
+          }
+      kMin += nVirGst;
+    }
+
+    if (doFillRightZ) {
+      for (int i = iMin; i <= iMax; ++i)
+        for (int j = jMin; j <= jMax; ++j)
+          for (int k = kMax + 1 - nVirGst; k <= kMax; ++k) {
+
+            add_particles_cell(mfi, fluidInterface, i, j, k);
+          }
+      kMax -= nVirGst;
+    }
+  }
+
+  Print() << " i = " << speciesID << " number of particles after injection = "
+          << TotalNumberOfParticles(false) << std::endl;
 }
 
 void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
@@ -555,12 +655,23 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
       p.pos(iy_) = yp + vnp1 * dtLoc;
       p.pos(iz_) = zp + wnp1 * dtLoc;
 
+      // Mark for deletion
+      if (is_outside(p)) {
+        p.id() = -1;
+      }
+
     } // for p
   }   // for pti
 
-  // This function distributes particles to proper processors and apply periodic
-  // boundary conditions if needed.
+  Print() << " i = " << speciesID << " number of particles before deletion = "
+          << TotalNumberOfParticles(false) << std::endl;
+
+  // This function distributes particles to proper processors and apply
+  // periodic boundary conditions if needed.
   Redistribute();
+
+  Print() << " i = " << speciesID << " number of particles after deletion = "
+          << TotalNumberOfParticles(false) << std::endl;
 }
 
 void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
@@ -664,8 +775,8 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
             fabs(eps_D[iy_] * invDx[iy_]) > epsLimit ||
             fabs(eps_D[iz_] * invDx[iz_]) > epsLimit) {
           // If eps_D is too large, the underlying assumption of the particle
-          // correction method will be not valid. Comparing each exp_D component
-          // instead of the length dl saves the computational time.
+          // correction method will be not valid. Comparing each exp_D
+          // component instead of the length dl saves the computational time.
           const Real dl = sqrt(pow(eps_D[ix_], 2) + pow(eps_D[iy_], 2) +
                                pow(eps_D[iz_], 2));
           const Real ratio = epsLimit * dx[ix_] / dl;

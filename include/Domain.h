@@ -74,6 +74,7 @@ private:
   FluidInterface fluidInterface;
 
   bool doRestart;
+  bool doCorrectDivE; 
 
   // public methods
 public:
@@ -84,6 +85,7 @@ public:
     npcelz = nullptr;
 
     doRestart = false;
+    doCorrectDivE = true; 
   };
   ~Domain() {
     delete[] qom;

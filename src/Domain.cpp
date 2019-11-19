@@ -104,6 +104,8 @@ void Domain::read_param() {
       Real dtSI;
       readParam.read_var("dtSI", dtSI);
       tc.set_dt_si(dtSI);
+    } else if (command == "#DIVE") {
+      readParam.read_var("doCorrectDivE", doCorrectDivE);
     } else if (command == "#PARTICLES") {
       npcelx = new int[1];
       npcely = new int[1];
@@ -409,6 +411,7 @@ void Domain::particle_mover() {
 
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->mover(nodeEth, nodeB, tc.get_dt());
+    parts[i]->inject_particles_at_boundary(fluidInterface);
   }
 
   timing_stop(nameFunc);
@@ -481,6 +484,8 @@ void Domain::divE_accurate_matvec(double* vecIn, double* vecOut) {
   convert_1d_to_3d(vecIn, tempCenter1, geom);
   tempCenter1.FillBoundary(geom.periodicity());
 
+  apply_float_boundary(tempCenter1, geom, 0, tempCenter1.nComp());
+
   tempCenter1_1.setVal(0.0);
   for (amrex::MFIter mfi(tempCenter1); mfi.isValid(); ++mfi) {
     const amrex::Box& box = mfi.validbox();
@@ -526,6 +531,9 @@ void Domain::sum_to_center(bool isBeforeCorrection) {
   centerNetChargeNew.SumBoundary(geom.periodicity());
   centerNetChargeNew.FillBoundary(geom.periodicity());
 
+  apply_external_BC(centerNetChargeNew, 0, centerNetChargeNew.nComp(),
+                    &Domain::get_zero);
+
   MultiFab::LinComb(centerNetChargeN, 1 - rhoTheta, centerNetChargeOld, 0,
                     rhoTheta, centerNetChargeNew, 0, 0,
                     centerNetChargeN.nComp(), centerNetChargeN.nGrow());
@@ -548,7 +556,10 @@ void Domain::update() {
   particle_mover();
   update_B();
 
-  divE_correction();
+  if (doCorrectDivE) {
+    divE_correction();
+  }
+
   sum_moments();
 
   tc.update();
@@ -754,6 +765,13 @@ void Domain::update_E_rhs(double* rhs) {
   MultiFab temp2Node(nodeBA, dm, 3, nGst);
   temp2Node.setVal(0.0);
 
+  print_MultiFab(centerB, "centerB before BC");
+
+  apply_external_BC(centerB, 0, centerB.nComp(), &Domain::get_center_B);
+  apply_external_BC(nodeB, 0, nodeB.nComp(), &Domain::get_node_B);
+
+  print_MultiFab(centerB, "centerB after BC");
+
   const Real* invDx = geom.InvCellSize();
   curl_center_to_node(centerB, tempNode, invDx);
 
@@ -761,6 +779,7 @@ void Domain::update_E_rhs(double* rhs) {
                   temp2Node.nComp(), 0);
 
   MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), 0);
+
   temp2Node.mult(fsolver.theta * tc.get_dt());
 
   MultiFab::Add(temp2Node, nodeE, 0, 0, nodeE.nComp(), 0);
