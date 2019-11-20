@@ -1,6 +1,7 @@
 #ifndef _DOMAINGRID_H_
 #define _DOMAINGRID_H_
 
+#include <AMReX_BCRec.H>
 #include <AMReX_Box.H>
 #include <AMReX_BoxArray.H>
 #include <AMReX_DistributionMapping.H>
@@ -12,13 +13,12 @@
 #include <AMReX_REAL.H>
 #include <AMReX_RealBox.H>
 #include <AMReX_Vector.H>
-#include <AMReX_BCRec.H>
 
 #include "Constants.h"
 
 // This class define the grid information, but NOT the data on the grid.
 class DomainGrid {
-  
+
 protected:
   int nGst;
 
@@ -68,8 +68,9 @@ public:
     nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
 
     amrex::Print() << "DomainGrid:: Domain range = " << boxRange << std::endl;
-    amrex::Print() << "DomainGrid:: Total block #  = " << nodeBA.size() << std::endl;
-    amrex::Print() << "DomainGrid:: centerBA = "<<centerBA<<std::endl;
+    amrex::Print() << "DomainGrid:: Total block #  = " << nodeBA.size()
+                   << std::endl;
+    amrex::Print() << "DomainGrid:: centerBA = " << centerBA << std::endl;
   }
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }
@@ -78,6 +79,26 @@ public:
   void set_boxRange(const amrex::RealBox& in) { boxRange = in; }
   void set_periodicity(const int iDir, const bool isPeriodic) {
     periodicity[iDir] = (isPeriodic ? 1 : 0);
+  }
+
+  inline int find_mpi_rank_from_coord(amrex::Real const x, amrex::Real const y,
+                                      amrex::Real const z) const {
+    amrex::Real loc[3] = { x, y, z };
+    auto idx = geom.CellIndex(loc);
+    return find_mpi_rank_from_cell_index(idx[ix_], idx[iy_], idx[iz_]);
+  }
+
+  inline int find_mpi_rank_from_cell_index(int const i, int const j,
+                                           int const k) const {
+    amrex::IntVect idx = { i, j, k };
+    for (int ii = 0, n = centerBA.size(); ii < n; ii++) {
+      const amrex::Box& bx = centerBA[ii];
+      if (bx.contains(idx))
+        return dm[ii];
+    }
+
+    amrex::Abort("Error: can not find this cell!");
+    return -1; // To suppress compiler warnings.
   }
 };
 

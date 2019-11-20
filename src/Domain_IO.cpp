@@ -1,7 +1,65 @@
-#include "SWMFDomains.h"
 #include "Domain.h"
+#include "SWMFDomains.h"
 
 using namespace amrex;
+
+void Domain::set_state_var(double* data, int* index) {
+  std::string nameFunc = "Domain::set_state_var";
+  fluidInterface.set_couple_node_value(data, index);
+  return;
+}
+
+int Domain::get_grid_nodes_number() {
+  return fluidInterface.count_couple_node_number();
+  ;
+}
+
+void Domain::get_grid(double* pos_DI) {
+  std::string nameFunc = "Domain::get_grid";
+  fluidInterface.get_couple_node_loc(pos_DI);
+  return;
+}
+
+void Domain::find_mpi_rank_for_points(const int nPoint,
+                                      const double* const xyz_I,
+                                      int* const rank_I) {
+  int nDimGM = fluidInterface.getnDim();
+  amrex::Real si2nol = fluidInterface.getSi2NoL();
+  for (int i = 0; i < nPoint; i++) {
+    amrex::Real x = xyz_I[i * nDimGM + ix_] * si2nol;
+    amrex::Real y = xyz_I[i * nDimGM + iy_] * si2nol;
+    amrex::Real z = 0;
+    if (nDimGM > 2)
+      z = xyz_I[i * nDimGM + iz_] * si2nol;
+    rank_I[i] = find_mpi_rank_from_coord(x, y, z);
+    amrex::AllPrint() << "myrank = " << amrex::ParallelDescriptor::MyProc()
+                      << " x = " << x << " y = " << y << " z = " << z
+                      << " rank = " << rank_I[i] << std::endl;
+  }
+}
+
+void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
+                                        const double* const Xyz_I,
+                                        double* const data_I, const int nVar) {
+  const int nS = nSpecies;
+  // (rho + 3*Moment + 6*p)*ns + 3*E + 3*B;
+  const int nVarPerSpecies = 10;
+  int nVarPIC = nS * nVarPerSpecies + 6;
+  double dataPIC_C[nVarPIC];
+
+  for (int iPoint = 0; iPoint < nPoint; iPoint++) {
+    double mhd_D[3] = { 0 }, pic_D[3] = { 0 };
+    for (int iDim = 0; iDim < nDim; iDim++) {
+      mhd_D[iDim] = Xyz_I[iPoint * nDim + iDim] * fluidInterface.getSi2NoL();
+    }
+
+    const Real xp = pic_D[0];
+    const Real yp = (nDim > 1) ? pic_D[1] : 0.0;
+    const Real zp = (nDim > 2) ? pic_D[2] : 0.0;
+
+
+  }
+}
 
 void Domain::find_output_list(const PlotWriter& writerIn,
                               long int& nPointAllProc,

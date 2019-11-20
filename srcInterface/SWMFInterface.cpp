@@ -6,8 +6,8 @@
 #include <AMReX.H>
 #include <AMReX_Print.H>
 
-#include "SWMFInterface.h"
 #include "SWMFDomains.h"
+#include "SWMFInterface.h"
 
 #include "ReadParam.h"
 
@@ -303,39 +303,21 @@ int pic_set_state_var_(double *Data_VI, int *iPoint_I) {
 }
 
 int pic_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
-                          int *nVar) {
+                       int *nVar) {
   std::string nameFunc = "PC: PIC_get_state_var";
   amrex::Print() << nameFunc << std::endl;
 
-  for (int i = 0; i < (*nPoint) * (*nVar); i++) {
-    data_I[i] = -1;
-  }
+  MPICs->get_fluid_state_for_points(*nDim, *nPoint, Xyz_I, data_I, *nVar);
 
-  // amrex::Abort();
-  // timing_start(nameFunc);
-
-  // for (int i = 0; i < nIPIC; i++) {
-  //   SimRun[i]->getStateVar(*nDim, *nPoint, Xyz_I, data_I, *nVar);
-  // }
-  // timing_stop(nameFunc);
-  return (0);
+  return 0;
 }
 
 int pic_find_points_(int *nPoint, double *Xyz_I, int *iProc_I) {
   std::string nameFunc = "PC: pic_find_points_";
   amrex::Print() << nameFunc << " begin" << std::endl;
 
-  for (int i = 0; i < (*nPoint); i++) {
-    iProc_I[i] = 0;
-  }
+  MPICs->find_mpi_rank_for_points(*nPoint, Xyz_I, iProc_I);
 
-  // amrex::Abort();
-  // timing_start(nameFunc);
-
-  // for (int i = 0; i < nIPIC; i++) {
-  //   SimRun[i]->findProcForPoint(*nPoint, Xyz_I, iProc_I);
-  // }
-  // timing_stop(nameFunc);
   return (0);
 }
 
@@ -368,7 +350,7 @@ int pic_cal_dt_(double *dtOut) {
   return (0);
 }
 
-int pic_end_() {  
+int pic_end_() {
   { // Saving plots before exiting.
     MPICs->tc.write_plots(true);
     delete MPICs;

@@ -74,7 +74,7 @@ private:
   FluidInterface fluidInterface;
 
   bool doRestart;
-  bool doCorrectDivE; 
+  bool doCorrectDivE;
 
   // public methods
 public:
@@ -85,7 +85,7 @@ public:
     npcelz = nullptr;
 
     doRestart = false;
-    doCorrectDivE = true; 
+    doCorrectDivE = true;
   };
   ~Domain() {
     delete[] qom;
@@ -116,6 +116,11 @@ public:
   void set_state_var(double *data, int *index);
   int get_grid_nodes_number();
   void get_grid(double *pos_DI);
+  void find_mpi_rank_for_points(const int nPoint, const double *const xyz_I,
+                                int *const rank_I);
+  void get_fluid_state_for_points(const int nDim, const int nPoint,
+                                  const double *const xyz_I,
+                                  double *const data_I, const int nVar);
   void read_param();
   //------------Coupler related end--------------
 

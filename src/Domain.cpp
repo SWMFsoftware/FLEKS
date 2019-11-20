@@ -570,23 +570,6 @@ void Domain::update() {
   timing_stop(nameFunc);
 }
 
-void Domain::set_state_var(double* data, int* index) {
-  std::string nameFunc = "Domain::set_state_var";
-  fluidInterface.set_couple_node_value(data, index);
-  return;
-}
-
-int Domain::get_grid_nodes_number() {
-  return fluidInterface.count_couple_node_number();
-  ;
-}
-
-void Domain::get_grid(double* pos_DI) {
-  std::string nameFunc = "Domain::get_grid";
-  fluidInterface.get_couple_node_loc(pos_DI);
-  return;
-}
-
 void Domain::update_E() {
   std::string nameFunc = "Domain::update_E";
   timing_start(nameFunc);
