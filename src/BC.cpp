@@ -200,7 +200,7 @@ void apply_float_boundary(MultiFab& mf, const Geometry& geom, const int iStart,
         }
 
         // y right
-        if (bcr[0].lo(iy_) == BCType::foextrap) {
+        if (bcr[0].hi(iy_) == BCType::foextrap) {
           for (int iVar = iStart; iVar < nComp; iVar++)
             for (int k = kMin; k <= kMax; k++)
               for (int j = jgMax + 1 - nshift; j <= jMax; j++)

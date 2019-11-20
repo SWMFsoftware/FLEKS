@@ -324,39 +324,6 @@ void Domain::set_ic_field() {
 
   for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) // Loop over grids
   {
-
-    for (int i = 0; i < nSpecies; i++) {
-      // Real x = -0.77, y = 0.23, z = 0.07;
-
-      int x = -1, y = -1, z = -1;
-
-      double u, v, w;
-      double rand1 = 0.1, rand2 = 0.2, rand3 = 0.3, rand4 = 0.4;
-      fluidInterface.set_particle_uth_aniso(mfi, x, y, z, &u, &v, &w, rand1,
-                                            rand2, rand3, rand4, i);
-
-      Print() << "i = " << i << "\nnumber_density = "
-              << fluidInterface.get_number_density(mfi, x, y, z, i)
-              << "\nux = " << fluidInterface.get_ux(mfi, x, y, z, i)
-              << "\nuy = " << fluidInterface.get_uy(mfi, x, y, z, i)
-              << "\nuz = " << fluidInterface.get_uz(mfi, x, y, z, i)
-              << "\npxx = " << fluidInterface.get_pxx(mfi, x, y, z, i)
-              << "\npyy = " << fluidInterface.get_pyy(mfi, x, y, z, i)
-              << "\npzz = " << fluidInterface.get_pzz(mfi, x, y, z, i)
-              << "\npxy = " << fluidInterface.get_pxy(mfi, x, y, z, i)
-              << "\npxz = " << fluidInterface.get_pxz(mfi, x, y, z, i)
-              << "\npyz = " << fluidInterface.get_pyz(mfi, x, y, z, i)
-              << "\nuth = " << fluidInterface.get_uth_iso(mfi, x, y, z, i)
-              << "\nbx = " << fluidInterface.get_bx(mfi, x, y, z)
-              << "\nby = " << fluidInterface.get_by(mfi, x, y, z)
-              << "\nbz = " << fluidInterface.get_bz(mfi, x, y, z)
-              << "\nex = " << fluidInterface.get_ex(mfi, x, y, z)
-              << "\ney = " << fluidInterface.get_ey(mfi, x, y, z)
-              << "\nez = " << fluidInterface.get_ez(mfi, x, y, z)
-              << "\nuthx = " << u << "\nvthx = " << v << "\nwthx = " << w
-              << std::endl;
-    }
-
     FArrayBox& fab = nodeE[mfi];
     const Box& box = mfi.fabbox();
     const Array4<Real>& arrE = fab.array();
@@ -369,6 +336,41 @@ void Domain::set_ic_field() {
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
           arrE(i, j, k, ix_) = fluidInterface.get_ex(mfi, i, j, k);
+
+          // test only
+          if (i == -1 && j == -1 && k == -1)
+            for (int i = 0; i < nSpecies; i++) {
+              // Real x = -0.77, y = 0.23, z = 0.07;
+
+              int x = -1, y = -1, z = -1;
+
+              double u, v, w;
+              double rand1 = 0.1, rand2 = 0.2, rand3 = 0.3, rand4 = 0.4;
+              fluidInterface.set_particle_uth_aniso(
+                  mfi, x, y, z, &u, &v, &w, rand1, rand2, rand3, rand4, i);
+
+              Print() << "i = " << i << "\nnumber_density = "
+                      << fluidInterface.get_number_density(mfi, x, y, z, i)
+                      << "\nux = " << fluidInterface.get_ux(mfi, x, y, z, i)
+                      << "\nuy = " << fluidInterface.get_uy(mfi, x, y, z, i)
+                      << "\nuz = " << fluidInterface.get_uz(mfi, x, y, z, i)
+                      << "\npxx = " << fluidInterface.get_pxx(mfi, x, y, z, i)
+                      << "\npyy = " << fluidInterface.get_pyy(mfi, x, y, z, i)
+                      << "\npzz = " << fluidInterface.get_pzz(mfi, x, y, z, i)
+                      << "\npxy = " << fluidInterface.get_pxy(mfi, x, y, z, i)
+                      << "\npxz = " << fluidInterface.get_pxz(mfi, x, y, z, i)
+                      << "\npyz = " << fluidInterface.get_pyz(mfi, x, y, z, i)
+                      << "\nuth = "
+                      << fluidInterface.get_uth_iso(mfi, x, y, z, i)
+                      << "\nbx = " << fluidInterface.get_bx(mfi, x, y, z)
+                      << "\nby = " << fluidInterface.get_by(mfi, x, y, z)
+                      << "\nbz = " << fluidInterface.get_bz(mfi, x, y, z)
+                      << "\nex = " << fluidInterface.get_ex(mfi, x, y, z)
+                      << "\ney = " << fluidInterface.get_ey(mfi, x, y, z)
+                      << "\nez = " << fluidInterface.get_ez(mfi, x, y, z)
+                      << "\nuthx = " << u << "\nvthx = " << v
+                      << "\nwthx = " << w << std::endl;
+            }
 
           Print() << "init i = " << i << " j = " << j << " k = " << k
                   << " Ex = " << arrE(i, j, k, ix_) << std::endl;
@@ -682,6 +684,8 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut,
                                  tempCenter3.nGrow());
 
       tempCenter3.FillBoundary(geom.periodicity());
+
+      // It seems not necessary, nor a good idea to apply float BC here. --Yuxi
       apply_float_boundary(tempCenter3, geom, 0, tempCenter3.nComp());
 
       div_center_to_center(tempCenter3, tempCenter1, geom.InvCellSize());
@@ -915,7 +919,7 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
         }
 
         // y right
-        if (bcr[0].lo(iy_) == BCType::ext_dir) {
+        if (bcr[0].hi(iy_) == BCType::ext_dir) {
           for (int iVar = iStart; iVar < nComp; iVar++)
             for (int k = kMin; k <= kMax; k++)
               for (int j = jgMax + 1 - nVirGst; j <= jMax; j++)
