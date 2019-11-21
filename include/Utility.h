@@ -59,7 +59,7 @@ template <class T> inline void zero_array(T* arr, int nSize) {
     arr[i] = 0;
 }
 
-inline void part_grid_interpolation_coef(amrex::Real (&dx)[3],
+inline void linear_interpolation_coef(amrex::Real (&dx)[3],
                                          amrex::Real (&coef)[2][2][2]) {
 
   amrex::Real xi[2];
@@ -110,7 +110,7 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
 
   amrex::Real coef[2][2][2];
   // Not a good name.
-  part_grid_interpolation_coef(dShift, coef);
+  linear_interpolation_coef(dShift, coef);
 
   amrex::Real val = 0;
   for (int kk = 0; kk < 2; kk++)

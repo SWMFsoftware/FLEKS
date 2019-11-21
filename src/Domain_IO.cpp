@@ -35,28 +35,27 @@ void Domain::find_mpi_rank_for_points(const int nPoint,
 }
 
 void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
-                                        const double* const Xyz_I,
+                                        const double* const xyz_I,
                                         double* const data_I, const int nVar) {
-  const int nS = nSpecies;
-  // (rho + 3*Moment + 6*p)*ns + 3*E + 3*B;
+  // (rho + 3*Moment + 6*p)*nSpecies+ 3*E + 3*B;
   const int nVarPerSpecies = 10;
-  int nVarPIC = nS * nVarPerSpecies + 6;
+  int nVarPIC = nSpecies* nVarPerSpecies + 6;
   double dataPIC_I[nVarPIC];
 
-  const int iBx_ = nS * nVarPerSpecies, iBy_ = iBx_ + 1, iBz_ = iBy_ + 1;
+  const int iBx_ = nSpecies* nVarPerSpecies, iBy_ = iBx_ + 1, iBz_ = iBy_ + 1;
   const int iEx_ = iBz_ + 1, iEy_ = iEx_ + 1, iEz_ = iEy_ + 1;
 
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     double pic_D[3] = { 0 };
     for (int iDim = 0; iDim < nDim; iDim++) {
-      pic_D[iDim] = Xyz_I[iPoint * nDim + iDim] * fluidInterface.getSi2NoL();
+      pic_D[iDim] = xyz_I[iPoint * nDim + iDim] * fluidInterface.getSi2NoL();
     }
 
     const Real xp = pic_D[0];
     const Real yp = (nDim > 1) ? pic_D[1] : 0.0;
     const Real zp = (nDim > 2) ? pic_D[2] : 0.0;
 
-    for (int iSpecies = 0; iSpecies < nS; iSpecies++)
+    for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++)
       for (int iVar = iRho_; iVar <= iPyz_; iVar++) {
         const int iStart = iSpecies * nVarPerSpecies;
         dataPIC_I[iStart + iVar] =

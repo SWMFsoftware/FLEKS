@@ -254,7 +254,7 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
         dShift[i] = dShift[i] - loIdx[i];
       }
       Real coef[2][2][2];
-      part_grid_interpolation_coef(dShift, coef);
+      linear_interpolation_coef(dShift, coef);
       //-----calculate interpolate coef end-------------
 
       const Real cTmp = qp * invVol;
@@ -395,7 +395,7 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
       }
 
       Real coef[2][2][2];
-      part_grid_interpolation_coef(dShift, coef);
+      linear_interpolation_coef(dShift, coef);
       //-----calculate interpolate coef end-------------
 
       //----- Mass matrix calculation begin--------------
@@ -628,7 +628,7 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
       }
 
       Real coef[2][2][2];
-      part_grid_interpolation_coef(dShift, coef);
+      linear_interpolation_coef(dShift, coef);
       //-----calculate interpolate coef end-------------
 
       Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];

@@ -320,14 +320,11 @@ void Domain::make_data() {
 //---------------------------------------------------------
 
 void Domain::set_ic_field() {
-  const Real* dx = geom.CellSize();
-
   for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) // Loop over grids
   {
     FArrayBox& fab = nodeE[mfi];
     const Box& box = mfi.fabbox();
     const Array4<Real>& arrE = fab.array();
-    const Array4<Real>& arrB = nodeB[mfi].array();
 
     const auto lo = lbound(box);
     const auto hi = ubound(box);
@@ -338,24 +335,15 @@ void Domain::set_ic_field() {
           arrE(i, j, k, ix_) = fluidInterface.get_ex(mfi, i, j, k);
           arrE(i, j, k, iy_) = fluidInterface.get_ey(mfi, i, j, k);
           arrE(i, j, k, iz_) = fluidInterface.get_ez(mfi, i, j, k);
-
-          arrB(i, j, k, ix_) = fluidInterface.get_bx(mfi, i, j, k);
-          arrB(i, j, k, iy_) = fluidInterface.get_by(mfi, i, j, k);
-          arrB(i, j, k, iz_) = fluidInterface.get_bz(mfi, i, j, k);
         }
   }
 
-  // MultiFab::Copy(nodeB, fluidInterface.get_nodeFluid(), fluidInterface.iBx,
-  // 0,
-  //                nodeB.nComp(), nodeB.nGrow());
+  MultiFab::Copy(nodeB, fluidInterface.get_nodeFluid(), fluidInterface.iBx, 0,
+                 nodeB.nComp(), nodeB.nGrow());
 
   // Interpolate from node to cell center.
   average_node_to_cellcenter(centerB, 0, nodeB, 0, centerB.nComp(),
                              centerB.nGrow());
-
-  nodeE.FillBoundary(geom.periodicity());
-  nodeB.FillBoundary(geom.periodicity());
-  centerB.FillBoundary(geom.periodicity());
 }
 //---------------------------------------------------------
 
@@ -581,8 +569,8 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut,
   MultiFab vecMF(nodeBA, dm, 3, nGst);
   vecMF.setVal(0.0);
 
-  MultiFab imageMF(nodeBA, dm, 3, nGst);
-  imageMF.setVal(0.0);
+  MultiFab matvecMF(nodeBA, dm, 3, nGst);
+  matvecMF.setVal(0.0);
 
   convert_1d_to_3d(vecIn, vecMF, geom);
 
@@ -599,10 +587,10 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut,
     apply_external_BC(vecMF, 0, nDimMax, &Domain::get_node_E);
   }
 
-  lap_node_to_node(vecMF, imageMF, dm, geom);
+  lap_node_to_node(vecMF, matvecMF, dm, geom);
 
   Real delt2 = pow(fsolver.theta * tc.get_dt(), 2);
-  imageMF.mult(-delt2);
+  matvecMF.mult(-delt2);
 
   { // grad(divE)
     div_node_to_center(vecMF, centerDivE, geom.InvCellSize());
@@ -627,18 +615,16 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut,
     grad_center_to_node(centerDivE, tempNode3, geom.InvCellSize());
 
     tempNode3.mult(delt2);
-    MultiFab::Add(imageMF, tempNode3, 0, 0, imageMF.nComp(), 0);
+    MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
   }
 
   tempNode3.setVal(0);
   update_E_M_dot_E(vecMF, tempNode3);
-  MultiFab::Add(imageMF, tempNode3, 0, 0, imageMF.nComp(), 0);
+  MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
 
-  MultiFab::Add(imageMF, vecMF, 0, 0, imageMF.nComp(), 0);
+  MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
 
-  imageMF.FillBoundary(geom.periodicity());
-
-  convert_3d_to_1d(imageMF, vecOut, geom);
+  convert_3d_to_1d(matvecMF, vecOut, geom);
 }
 
 void Domain::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
