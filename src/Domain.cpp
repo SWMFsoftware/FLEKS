@@ -336,45 +336,6 @@ void Domain::set_ic_field() {
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
           arrE(i, j, k, ix_) = fluidInterface.get_ex(mfi, i, j, k);
-
-          // test only
-          if (i == -1 && j == -1 && k == -1)
-            for (int i = 0; i < nSpecies; i++) {
-              // Real x = -0.77, y = 0.23, z = 0.07;
-
-              int x = -1, y = -1, z = -1;
-
-              double u, v, w;
-              double rand1 = 0.1, rand2 = 0.2, rand3 = 0.3, rand4 = 0.4;
-              fluidInterface.set_particle_uth_aniso(
-                  mfi, x, y, z, &u, &v, &w, rand1, rand2, rand3, rand4, i);
-
-              Print() << "i = " << i << "\nnumber_density = "
-                      << fluidInterface.get_number_density(mfi, x, y, z, i)
-                      << "\nux = " << fluidInterface.get_ux(mfi, x, y, z, i)
-                      << "\nuy = " << fluidInterface.get_uy(mfi, x, y, z, i)
-                      << "\nuz = " << fluidInterface.get_uz(mfi, x, y, z, i)
-                      << "\npxx = " << fluidInterface.get_pxx(mfi, x, y, z, i)
-                      << "\npyy = " << fluidInterface.get_pyy(mfi, x, y, z, i)
-                      << "\npzz = " << fluidInterface.get_pzz(mfi, x, y, z, i)
-                      << "\npxy = " << fluidInterface.get_pxy(mfi, x, y, z, i)
-                      << "\npxz = " << fluidInterface.get_pxz(mfi, x, y, z, i)
-                      << "\npyz = " << fluidInterface.get_pyz(mfi, x, y, z, i)
-                      << "\nuth = "
-                      << fluidInterface.get_uth_iso(mfi, x, y, z, i)
-                      << "\nbx = " << fluidInterface.get_bx(mfi, x, y, z)
-                      << "\nby = " << fluidInterface.get_by(mfi, x, y, z)
-                      << "\nbz = " << fluidInterface.get_bz(mfi, x, y, z)
-                      << "\nex = " << fluidInterface.get_ex(mfi, x, y, z)
-                      << "\ney = " << fluidInterface.get_ey(mfi, x, y, z)
-                      << "\nez = " << fluidInterface.get_ez(mfi, x, y, z)
-                      << "\nuthx = " << u << "\nvthx = " << v
-                      << "\nwthx = " << w << std::endl;
-            }
-
-          Print() << "init i = " << i << " j = " << j << " k = " << k
-                  << " Ex = " << arrE(i, j, k, ix_) << std::endl;
-
           arrE(i, j, k, iy_) = fluidInterface.get_ey(mfi, i, j, k);
           arrE(i, j, k, iz_) = fluidInterface.get_ez(mfi, i, j, k);
 
@@ -445,7 +406,8 @@ void Domain::divE_correction() {
   for (int iIter = 0; iIter < 3; iIter++) {
     sum_to_center(true);
 
-    Print() << "----------- div(E) correction ----------" << std::endl;
+    Print() << "\n----------- div(E) correction at iter " << iIter << "----------"
+            << std::endl;
     calculate_phi(divESolver);
 
     divE_correct_particle_position();
@@ -551,7 +513,7 @@ void Domain::update() {
   std::string nameFunc = "Domain::update";
   timing_start(nameFunc);
 
-  Print() << "================ Begin cycle = " << tc.get_cycle()
+  Print() << "\n================ Begin cycle = " << tc.get_cycle()
           << " at time = " << tc.get_time_si()
           << " (s) ======================" << std::endl;
   update_E();
@@ -578,23 +540,8 @@ void Domain::update_E() {
   eSolver.reset(get_local_node_or_cell_number(nodeE));
 
   update_E_rhs(eSolver.rhs);
-  {
-    double sum = 0;
-    for (int i = 0; i < eSolver.get_nSolve(); i++) {
-      sum += eSolver.rhs[i];
-    }
-    Print() << "sum(rhs) = " << sum << std::endl;
-  }
 
   convert_3d_to_1d(nodeE, eSolver.xLeft, geom);
-
-  {
-    double sum = 0;
-    for (int i = 0; i < eSolver.get_nSolve(); i++) {
-      sum += eSolver.xLeft[i];
-    }
-    Print() << "sum(xLeft) = " << sum << std::endl;
-  }
 
   update_E_matvec(eSolver.xLeft, eSolver.matvec, false);
 
@@ -603,7 +550,7 @@ void Domain::update_E() {
     eSolver.xLeft[i] = 0;
   }
 
-  Print() << "----------- E solver ------------------" << std::endl;
+  Print() << "\n----------- E solver ------------------" << std::endl;
   eSolver.solve();
 
   nodeEth.setVal(0.0);
@@ -623,9 +570,6 @@ void Domain::update_E() {
   // float BC here!!!!!!!--Yuxi
   apply_float_boundary(nodeE, geom, 0, nodeE.nComp());
   apply_float_boundary(nodeEth, geom, 0, nodeEth.nComp());
-
-  print_MultiFab(nodeE, "nodeE");
-  print_MultiFab(nodeEth, "nodeEth");
 
   timing_stop(nameFunc);
 }
@@ -695,14 +639,6 @@ void Domain::update_E_matvec(const double* vecIn, double* vecOut,
   imageMF.FillBoundary(geom.periodicity());
 
   convert_3d_to_1d(imageMF, vecOut, geom);
-
-  {
-    double sum = 0;
-    for (int i = 0; i < eSolver.get_nSolve(); i++) {
-      sum += vecOut[i];
-    }
-    Print() << "sum(matvec) = " << sum << std::endl;
-  }
 }
 
 void Domain::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
@@ -753,20 +689,14 @@ void Domain::update_E_rhs(double* rhs) {
   MultiFab temp2Node(nodeBA, dm, 3, nGst);
   temp2Node.setVal(0.0);
 
-  print_MultiFab(centerB, "centerB before BC");
-
   apply_external_BC(centerB, 0, centerB.nComp(), &Domain::get_center_B);
   apply_external_BC(nodeB, 0, nodeB.nComp(), &Domain::get_node_B);
-
-  print_MultiFab(centerB, "centerB after BC");
 
   const Real* invDx = geom.InvCellSize();
   curl_center_to_node(centerB, tempNode, invDx);
 
   MultiFab::Saxpy(temp2Node, -fourPI, nodePlasma[iTot], iJhx_, 0,
                   temp2Node.nComp(), 0);
-
-  print_MultiFab(temp2Node, "temp2Node");
 
   MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), 0);
 
@@ -794,9 +724,6 @@ void Domain::update_B() {
   nodeB.FillBoundary(geom.periodicity());
 
   apply_external_BC(nodeB, 0, nodeB.nComp(), &Domain::get_node_B);
-
-  print_MultiFab(centerB, "centerB");
-  print_MultiFab(nodeB, "nodeB");
 
   timing_stop(nameFunc);
 }
@@ -865,14 +792,9 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
           for (int i = iMin; i <= igMin - 1 + nVirGst; i++)
             for (int j = jMin; j <= jMax; j++)
               for (int k = kMin; k <= kMax; k++)
-                for (int iVar = iStart; iVar < nComp; iVar++)
-
-                {
+                for (int iVar = iStart; iVar < nComp; iVar++) {
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
-                  Print() << "extern x-left i = " << i << " j = " << j
-                          << " k = " << k << " ivar = " << iVar
-                          << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
 
@@ -884,9 +806,6 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
                 for (int i = igMax + 1 - nVirGst; i <= iMax; i++) {
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
-                  Print() << "extern x-right i = " << i << " j = " << j
-                          << " k = " << k << " ivar = " << iVar
-                          << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
 
@@ -898,9 +817,6 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
                 for (int i = iMin; i <= iMax; i++) {
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
-                  Print() << "extern y-left i = " << i << " j = " << j
-                          << " k = " << k << " ivar = " << iVar
-                          << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
 
@@ -912,9 +828,6 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
                 for (int i = iMin; i <= iMax; i++) {
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
-                  Print() << "extern y-right i = " << i << " j = " << j
-                          << " k = " << k << " ivar = " << iVar
-                          << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
 
@@ -926,9 +839,6 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
                 for (int i = iMin; i <= iMax; i++) {
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
-                  Print() << "extern z-left i = " << i << " j = " << j
-                          << " k = " << k << " ivar = " << iVar
-                          << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
 
@@ -940,9 +850,6 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
                 for (int i = iMin; i <= iMax; i++) {
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
-                  Print() << "extern z-right i = " << i << " j = " << j
-                          << " k = " << k << " ivar = " << iVar
-                          << " val = " << arr(i, j, k, iVar) << std::endl;
                 }
         }
       }

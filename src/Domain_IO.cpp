@@ -32,9 +32,6 @@ void Domain::find_mpi_rank_for_points(const int nPoint,
     if (nDimGM > 2)
       z = xyz_I[i * nDimGM + iz_] * si2nol;
     rank_I[i] = find_mpi_rank_from_coord(x, y, z);
-    amrex::AllPrint() << "myrank = " << amrex::ParallelDescriptor::MyProc()
-                      << " x = " << x << " y = " << y << " z = " << z
-                      << " rank = " << rank_I[i] << std::endl;
   }
 }
 
@@ -77,16 +74,6 @@ void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
 
     // Combine PIC plasma data into MHD fluid data.
     fluidInterface.CalcFluidState(dataPIC_I, &data_I[iPoint * nVar]);
-
-    std::cout << "iPoint = " << iPoint << std::endl;
-    for (int i = 0; i < nVarPIC; i++) {
-      std::cout << "dataPIC i = " << i << " data = " << dataPIC_I[i]
-                << std::endl;
-    }
-    for (int i = 0; i < nVar; i++) {
-      std::cout << "data_I i = " << i << " data = " << data_I[iPoint * nVar + i]
-                << std::endl;
-    }
   }
 }
 

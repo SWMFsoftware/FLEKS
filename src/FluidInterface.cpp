@@ -85,8 +85,6 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
     for (int i = lo.x; i <= hi.x; ++i)
       for (int j = lo.y; j <= hi.y; ++j)
         for (int k = lo.z; k <= hi.z; ++k) {
-          Print() << "i = " << i << " j = " << j << " k = " << k << std::endl;
-
           if (doCount) {
             nCount++;
           } else if (doGetLoc) {
@@ -106,7 +104,6 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
         } // for k
   }
 
-  Print() << " nCount = " << nCount << std::endl;
   return nCount;
 }
 
@@ -127,7 +124,6 @@ void FluidInterface::set_couple_node_value(const double* const data,
   convert_moment_to_velocity();
 
   MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
-  print_MultiFab(currentMF, "currentMF");
 }
 
 void FluidInterface::calc_current() {

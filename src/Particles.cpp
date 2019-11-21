@@ -97,8 +97,6 @@ void Particles::add_particles_cell(const MFIter& mfi,
           p.rdata(iwp_) = w;
           p.rdata(iqp_) = q;
           particles.push_back(p);
-          Print() << "i = " << i << " j = " << j << " k = " << k << p
-                  << std::endl;
         }
       }
 }
@@ -221,9 +219,6 @@ void Particles::inject_particles_at_boundary(
       kMax -= nVirGst;
     }
   }
-
-  Print() << " i = " << speciesID << " number of particles after injection = "
-          << TotalNumberOfParticles(false) << std::endl;
 }
 
 void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
@@ -382,12 +377,9 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
     // Particle container is defined based on a center box.
     // So Convert it into a node box here.
     const Box& box = convert(pti.validbox(), { 1, 1, 1 });
-    // Print() << " box = " << box << std::endl;
 
     const auto& particles = pti.GetArrayOfStructs();
     for (const auto& p : particles) {
-      Print() << "particle = " << p << std::endl;
-
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
       const Real wp = p.rdata(iwp_);
@@ -557,7 +549,6 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
   momentsMF.mult(invVol);
 
   momentsMF.SumBoundary(Geom(0).periodicity());
-  // Print()<<momentsMF<<std::endl;
 
   // FillBoundary seems unnecessary. --Yuxi
   momentsMF.FillBoundary(Geom(0).periodicity());
@@ -607,8 +598,6 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
   const Real qdto2mc = charge / mass * 0.5 * dt;
 
   const auto& invDx = Geom(0).InvCellSize();
-  // const Real invVol = invDx[ix_] * invDx[iy_] * invDx[iz_];
-  // Print() << " invVol = " << invVol << std::endl;
 
   const int lev = 0;
   for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
@@ -618,7 +607,6 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
     // Particle container is defined based on a center box.
     // So Convert it into a node box here.
     const Box& box = convert(pti.validbox(), { 1, 1, 1 });
-    // Print() << " box = " << box << std::endl;
 
     auto& particles = pti.GetArrayOfStructs();
     for (auto& p : particles) {
@@ -699,15 +687,9 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
     } // for p
   }   // for pti
 
-  Print() << " i = " << speciesID << " number of particles before deletion = "
-          << TotalNumberOfParticles(false) << std::endl;
-
   // This function distributes particles to proper processors and apply
   // periodic boundary conditions if needed.
   Redistribute();
-
-  Print() << " i = " << speciesID << " number of particles after deletion = "
-          << TotalNumberOfParticles(false) << std::endl;
 }
 
 void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
