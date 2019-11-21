@@ -4,10 +4,11 @@
 using namespace amrex;
 
 Particles::Particles(const Geometry& geom, const DistributionMapping& dm,
-                     const BoxArray& ba, const int speciesIDIn,
-                     const Real chargeIn, const Real massIn,
-                     const IntVect& nPartPerCellIn)
+                     const BoxArray& ba, TimeCtr* const tcIn,
+                     const int speciesIDIn, const Real chargeIn,
+                     const Real massIn, const IntVect& nPartPerCellIn)
     : ParticleContainer<4, 0, 0, 0>(geom, dm, ba),
+      tc(tcIn),
       speciesID(speciesIDIn),
       charge(chargeIn),
       mass(massIn),
@@ -28,7 +29,7 @@ void Particles::add_particles_cell(const MFIter& mfi,
   nxcg = fluidInterface.getFluidNxc();
   nycg = fluidInterface.getFluidNyc();
   nzcg = fluidInterface.getFluidNzc();
-  iCycle = fluidInterface.getCycle();
+  iCycle = tc->get_cycle();
   npcel = nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_];
   // What if the seed overflow?
   const long seed =

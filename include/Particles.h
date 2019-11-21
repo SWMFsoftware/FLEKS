@@ -8,6 +8,7 @@
 #include "FluidInterface.h"
 #include "RandNum.h"
 #include "UMultiFab.h"
+#include "TimeCtr.h"
 
 class ParticlesIter : public amrex::ParIter<4, 0, 0, 0> {
 public:
@@ -18,7 +19,7 @@ class Particles : public amrex::ParticleContainer<4, 0, 0, 0> {
 
 public:
   Particles(const amrex::Geometry& geom, const amrex::DistributionMapping& dm,
-            const amrex::BoxArray& ba, const int speciesID,
+            const amrex::BoxArray& ba, TimeCtr *const tcIn, const int speciesID,
             const amrex::Real charge, const amrex::Real mass,
             const amrex::IntVect& nPartPerCellIn);
 
@@ -74,6 +75,9 @@ protected:
   amrex::Real mass;
 
   amrex::IntVect nPartPerCell;
+
+  TimeCtr* tc; 
+
 };
 
 #endif

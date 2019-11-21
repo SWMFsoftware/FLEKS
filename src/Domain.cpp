@@ -279,7 +279,7 @@ void Domain::make_data() {
     for (int i = 0; i < nSpecies; i++) {
       IntVect nPartPerCell = { npcelx[i], npcely[i], npcelz[i] };
       auto ptr = std::make_unique<Particles>(
-          geom, dm, centerBA, i, fluidInterface.getQiSpecies(i),
+          geom, dm, centerBA, &tc, i, fluidInterface.getQiSpecies(i),
           fluidInterface.getMiSpecies(i), nPartPerCell);
       parts.push_back(std::move(ptr));
     }
@@ -482,6 +482,7 @@ void Domain::calculate_phi(LinearSolver& solver) {
 }
 
 void Domain::divE_accurate_matvec(double* vecIn, double* vecOut) {
+  zero_array(vecOut, divESolver.get_nSolve());
 
   convert_1d_to_3d(vecIn, tempCenter1, geom);
   tempCenter1.FillBoundary(geom.periodicity());
@@ -764,6 +765,8 @@ void Domain::update_E_rhs(double* rhs) {
 
   MultiFab::Saxpy(temp2Node, -fourPI, nodePlasma[iTot], iJhx_, 0,
                   temp2Node.nComp(), 0);
+
+  print_MultiFab(temp2Node, "temp2Node");
 
   MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), 0);
 
