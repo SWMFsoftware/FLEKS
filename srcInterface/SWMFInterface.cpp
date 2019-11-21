@@ -309,6 +309,10 @@ int pic_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
 
   MPICs->get_fluid_state_for_points(*nDim, *nPoint, Xyz_I, data_I, *nVar);
 
+  // for(int i=0; i<(*nPoint)*(*nVar); i++){
+  //   data_I[i] = 0;
+  // }
+
   return 0;
 }
 
@@ -317,6 +321,10 @@ int pic_find_points_(int *nPoint, double *Xyz_I, int *iProc_I) {
   amrex::Print() << nameFunc << " begin" << std::endl;
 
   MPICs->find_mpi_rank_for_points(*nPoint, Xyz_I, iProc_I);
+
+  // for(int i=0; i<(*nPoint); i++){
+  //   iProc_I[i] = 0;
+  // }
 
   return (0);
 }

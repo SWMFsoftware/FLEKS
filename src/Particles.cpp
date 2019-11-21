@@ -554,11 +554,46 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
   }
 
   momentsMF.mult(invVol);
+
   momentsMF.SumBoundary(Geom(0).periodicity());
   // Print()<<momentsMF<<std::endl;
 
   // FillBoundary seems unnecessary. --Yuxi
   momentsMF.FillBoundary(Geom(0).periodicity());
+
+  convert_to_fluid_moments(momentsMF);
+}
+
+void Particles::convert_to_fluid_moments(MultiFab& momentsMF) {
+  MultiFab tmpMF(momentsMF, make_alias, iRho_, iPyz_ - iRho_ + 1);
+  tmpMF.mult(1.0 / get_qom(), tmpMF.nGrow());
+
+  for (MFIter mfi(momentsMF); mfi.isValid(); ++mfi) {
+    FArrayBox& fab = momentsMF[mfi];
+    const Box& box = mfi.fabbox();
+    const Array4<Real>& arr = fab.array();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          const Real rho = arr(i, j, k, iRho_);
+          if (rho > 1e-99) {
+            const Real ux = arr(i, j, k, iUx_) / rho;
+            const Real uy = arr(i, j, k, iUy_) / rho;
+            const Real uz = arr(i, j, k, iUz_) / rho;
+            arr(i, j, k, iPxx_) = arr(i, j, k, iPxx_) - rho * ux * ux;
+            arr(i, j, k, iPyy_) = arr(i, j, k, iPyy_) - rho * uy * uy;
+            arr(i, j, k, iPzz_) = arr(i, j, k, iPzz_) - rho * uz * uz;
+
+            arr(i, j, k, iPxy_) = arr(i, j, k, iPxy_) - rho * ux * uy;
+            arr(i, j, k, iPxz_) = arr(i, j, k, iPxz_) - rho * ux * uz;
+            arr(i, j, k, iPyz_) = arr(i, j, k, iPyz_) - rho * uy * uz;
+          }
+        }
+  }
 }
 
 void Particles::mover(const amrex::MultiFab& nodeEMF,

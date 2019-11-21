@@ -45,19 +45,48 @@ void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
   // (rho + 3*Moment + 6*p)*ns + 3*E + 3*B;
   const int nVarPerSpecies = 10;
   int nVarPIC = nS * nVarPerSpecies + 6;
-  double dataPIC_C[nVarPIC];
+  double dataPIC_I[nVarPIC];
+
+  const int iBx_ = nS * nVarPerSpecies, iBy_ = iBx_ + 1, iBz_ = iBy_ + 1;
+  const int iEx_ = iBz_ + 1, iEy_ = iEx_ + 1, iEz_ = iEy_ + 1;
 
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
-    double mhd_D[3] = { 0 }, pic_D[3] = { 0 };
+    double pic_D[3] = { 0 };
     for (int iDim = 0; iDim < nDim; iDim++) {
-      mhd_D[iDim] = Xyz_I[iPoint * nDim + iDim] * fluidInterface.getSi2NoL();
+      pic_D[iDim] = Xyz_I[iPoint * nDim + iDim] * fluidInterface.getSi2NoL();
     }
 
     const Real xp = pic_D[0];
     const Real yp = (nDim > 1) ? pic_D[1] : 0.0;
     const Real zp = (nDim > 2) ? pic_D[2] : 0.0;
 
+    for (int iSpecies = 0; iSpecies < nS; iSpecies++)
+      for (int iVar = iRho_; iVar <= iPyz_; iVar++) {
+        const int iStart = iSpecies * nVarPerSpecies;
+        dataPIC_I[iStart + iVar] =
+            get_value_at_loc(nodePlasma[iSpecies], geom, xp, yp, zp, iVar);
+      }
 
+    for (int iDir = ix_; iDir <= iz_; iDir++) {
+      dataPIC_I[iBx_ + iDir] = get_value_at_loc(nodeB, geom, xp, yp, zp, iDir);
+    }
+
+    for (int iDir = ix_; iDir <= iz_; iDir++) {
+      dataPIC_I[iEx_ + iDir] = get_value_at_loc(nodeE, geom, xp, yp, zp, iDir);
+    }
+
+    // Combine PIC plasma data into MHD fluid data.
+    fluidInterface.CalcFluidState(dataPIC_I, &data_I[iPoint * nVar]);
+
+    std::cout << "iPoint = " << iPoint << std::endl;
+    for (int i = 0; i < nVarPIC; i++) {
+      std::cout << "dataPIC i = " << i << " data = " << dataPIC_I[i]
+                << std::endl;
+    }
+    for (int i = 0; i < nVar; i++) {
+      std::cout << "data_I i = " << i << " data = " << data_I[iPoint * nVar + i]
+                << std::endl;
+    }
   }
 }
 

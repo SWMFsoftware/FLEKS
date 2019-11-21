@@ -78,32 +78,7 @@ public:
   amrex::Real get_value(const amrex::MFIter& mfi, const amrex::Real x,
                         const amrex::Real y, const amrex::Real z,
                         const int iVar) const {
-    const auto plo = geom.ProbLo();
-    const amrex::Real loc[nDimMax] = { x, y, z };
-
-    const auto invDx = geom.InvCellSize();
-
-    int loIdx[3];
-    amrex::Real dShift[3];
-    for (int i = 0; i < 3; i++) {
-      dShift[i] = (loc[i] - plo[i]) * invDx[i];
-      loIdx[i] = floor(dShift[i]);
-      dShift[i] = dShift[i] - loIdx[i];
-    }
-
-    amrex::Real coef[2][2][2];
-    // Not a good name.
-    part_grid_interpolation_coef(dShift, coef);
-
-    amrex::Real val = 0;
-    for (int kk = 0; kk < 2; kk++)
-      for (int jj = 0; jj < 2; jj++)
-        for (int ii = 0; ii < 2; ii++) {
-          val += get_value(mfi, loIdx[ix_] + ii, loIdx[iy_] + jj,
-                           loIdx[iz_] + kk, iVar) *
-                 coef[ii][jj][kk];
-        }
-    return val;
+    return get_value_at_loc(nodeFluid, mfi, geom, x, y, z, iVar);
   }
 
   template <typename T>

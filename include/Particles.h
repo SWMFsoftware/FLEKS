@@ -37,6 +37,8 @@ public:
   void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
              amrex::Real dt);
 
+  void convert_to_fluid_moments(amrex::MultiFab& momentsMF);
+
   inline bool is_outside(const ParticleType& p) {
     const auto& plo = Geom(0).ProbLo();
     const auto& phi = Geom(0).ProbHi();
@@ -56,6 +58,9 @@ public:
 
   void divE_correct_position(const amrex::MultiFab& phiMF);
 
+  amrex::Real get_qom(){
+    return charge/mass;
+  }
 protected:
   static const int iup_ = 0;
   static const int ivp_ = 1;

@@ -82,4 +82,62 @@ inline void part_grid_interpolation_coef(amrex::Real (&dx)[3],
   coef[1][1][1] = xi[0] * eta[0] * zeta[0];
 }
 
+inline amrex::Real get_value_at_node(const amrex::MultiFab& mf,
+                                     const amrex::MFIter& mfi, const int i,
+                                     const int j, const int k, const int iVar) {
+  const auto& arr = mf[mfi].array();
+  return arr(i, j, k, iVar);
+}
+
+inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
+                                    const amrex::MFIter& mfi,
+                                    const amrex::Geometry& geom,
+                                    const amrex::Real x, const amrex::Real y,
+                                    const amrex::Real z, const int iVar) {
+
+  const auto plo = geom.ProbLo();
+  const amrex::Real loc[nDimMax] = { x, y, z };
+
+  const auto invDx = geom.InvCellSize();
+
+  int loIdx[3];
+  amrex::Real dShift[3];
+  for (int i = 0; i < 3; i++) {
+    dShift[i] = (loc[i] - plo[i]) * invDx[i];
+    loIdx[i] = floor(dShift[i]);
+    dShift[i] = dShift[i] - loIdx[i];
+  }
+
+  amrex::Real coef[2][2][2];
+  // Not a good name.
+  part_grid_interpolation_coef(dShift, coef);
+
+  amrex::Real val = 0;
+  for (int kk = 0; kk < 2; kk++)
+    for (int jj = 0; jj < 2; jj++)
+      for (int ii = 0; ii < 2; ii++) {
+        val += get_value_at_node(mf, mfi, loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                 loIdx[iz_] + kk, iVar) *
+               coef[ii][jj][kk];
+      }
+  return val;
+}
+
+inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
+                                    const amrex::Geometry& geom,
+                                    const amrex::Real x, const amrex::Real y,
+                                    const amrex::Real z, const int iVar) {
+  amrex::Real loc[3] = { x, y, z };
+  auto idx = geom.CellIndex(loc);
+
+  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const amrex::Box& bx = mfi.validbox();
+    if (bx.contains(idx))
+      return get_value_at_loc(mf, mfi, geom, x, y, z, iVar);
+  }
+
+    amrex::Abort("Error: can not find this point!");
+    return -1; // To suppress compiler warnings.
+}
+
 #endif
