@@ -11,7 +11,6 @@ void Domain::set_state_var(double* data, int* index) {
 
 int Domain::get_grid_nodes_number() {
   return fluidInterface.count_couple_node_number();
-  ;
 }
 
 void Domain::get_grid(double* pos_DI) {
