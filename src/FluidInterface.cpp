@@ -82,9 +82,9 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
 
     const Array4<Real>& arr = nodeFluid[mfi].array();
 
-    for (int i = lo.x; i <= hi.x; ++i)
+    for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
-        for (int k = lo.z; k <= hi.z; ++k) {
+        for (int i = lo.x; i <= hi.x; ++i) {
           if (doCount) {
             nCount++;
           } else if (doGetLoc) {
@@ -160,9 +160,9 @@ void FluidInterface::convert_moment_to_velocity() {
 
     const Array4<Real>& arr = nodeFluid[mfi].array();
 
-    for (int i = lo.x; i <= hi.x; ++i)
+    for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
-        for (int k = lo.z; k <= hi.z; ++k) {
+        for (int i = lo.x; i <= hi.x; ++i) {
 
           if (useMultiSpecies) {
             double Rhot = 0;

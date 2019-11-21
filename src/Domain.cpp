@@ -406,8 +406,8 @@ void Domain::divE_correction() {
   for (int iIter = 0; iIter < 3; iIter++) {
     sum_to_center(true);
 
-    Print() << "\n----------- div(E) correction at iter " << iIter << "----------"
-            << std::endl;
+    Print() << "\n----------- div(E) correction at iter " << iIter
+            << "----------" << std::endl;
     calculate_phi(divESolver);
 
     divE_correct_particle_position();
@@ -788,18 +788,17 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
         int kMin = lo[iz_], kMax = hi[iz_];
 
         // x left
-        if (bcr[0].lo(ix_) == BCType::ext_dir) {
-          for (int i = iMin; i <= igMin - 1 + nVirGst; i++)
-            for (int j = jMin; j <= jMax; j++)
-              for (int k = kMin; k <= kMax; k++)
-                for (int iVar = iStart; iVar < nComp; iVar++) {
+        if (bcr[0].lo(ix_) == BCType::ext_dir)
+          for (int iVar = iStart; iVar < nComp; iVar++)
+            for (int k = kMin; k <= kMax; k++)
+              for (int j = jMin; j <= jMax; j++)
+                for (int i = iMin; i <= igMin - 1 + nVirGst; i++) {
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
                 }
-        }
 
         // x right
-        if (bcr[0].hi(ix_) == BCType::ext_dir) {
+        if (bcr[0].hi(ix_) == BCType::ext_dir)
           for (int iVar = iStart; iVar < nComp; iVar++)
             for (int k = kMin; k <= kMax; k++)
               for (int j = jMin; j <= jMax; j++)
@@ -807,10 +806,9 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
                 }
-        }
 
         // y left
-        if (bcr[0].lo(iy_) == BCType::ext_dir) {
+        if (bcr[0].lo(iy_) == BCType::ext_dir)
           for (int iVar = iStart; iVar < nComp; iVar++)
             for (int k = kMin; k <= kMax; k++)
               for (int j = jMin; j <= jgMin - 1 + nVirGst; j++)
@@ -818,10 +816,9 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
                 }
-        }
 
         // y right
-        if (bcr[0].hi(iy_) == BCType::ext_dir) {
+        if (bcr[0].hi(iy_) == BCType::ext_dir)
           for (int iVar = iStart; iVar < nComp; iVar++)
             for (int k = kMin; k <= kMax; k++)
               for (int j = jgMax + 1 - nVirGst; j <= jMax; j++)
@@ -829,10 +826,9 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
                 }
-        }
 
         // z left
-        if (bcr[0].lo(iz_) == BCType::ext_dir) {
+        if (bcr[0].lo(iz_) == BCType::ext_dir)
           for (int iVar = iStart; iVar < nComp; iVar++)
             for (int k = kMin; k <= kgMin - 1 + nVirGst; k++)
               for (int j = jMin; j <= jMax; j++)
@@ -840,10 +836,9 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
                 }
-        }
 
         // z right
-        if (bcr[0].hi(iz_) == BCType::ext_dir) {
+        if (bcr[0].hi(iz_) == BCType::ext_dir)
           for (int iVar = iStart; iVar < nComp; iVar++)
             for (int k = kgMax + 1 - nVirGst; k <= kMax; k++)
               for (int j = jMin; j <= jMax; j++)
@@ -851,7 +846,6 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart);
                 }
-        }
       }
     }
   }
