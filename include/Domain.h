@@ -167,7 +167,7 @@ public:
     return 0.0;
   }
 
-  amrex::Real get_node_E(amrex::MFIter &mfi, int i, int j, int k, int iVar) {
+  inline amrex::Real get_node_E(amrex::MFIter &mfi, int i, int j, int k, int iVar) {
     amrex::Real e;
     if (iVar == ix_)
       e = fluidInterface.get_ex(mfi, i, j, k);
@@ -179,7 +179,7 @@ public:
     return e;
   }
 
-  amrex::Real get_node_B(amrex::MFIter &mfi, int i, int j, int k, int iVar) {
+  inline amrex::Real get_node_B(amrex::MFIter &mfi, int i, int j, int k, int iVar) {
     amrex::Real b;
     if (iVar == ix_)
       b = fluidInterface.get_bx(mfi, i, j, k);
@@ -191,7 +191,7 @@ public:
     return b;
   }
 
-  amrex::Real get_center_B(amrex::MFIter &mfi, int i, int j, int k, int iVar) {
+  inline amrex::Real get_center_B(amrex::MFIter &mfi, int i, int j, int k, int iVar) {
     return fluidInterface.get_center_b(mfi, i, j, k, iVar);
   }
 

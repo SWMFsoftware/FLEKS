@@ -31,8 +31,6 @@ private:
   amrex::MultiFab nodeFluid;
   amrex::MultiFab centerB;
 
-  int nGst;
-
 public:
   void init();
   void receive_info_from_gm(const int* const paramInt,
@@ -43,7 +41,7 @@ public:
   void make_grid(const amrex::DistributionMapping& dmIn,
                  const amrex::Geometry& geomIn,
                  const amrex::BoxArray& centerBAIn,
-                 const amrex::BoxArray& nodeBAIn, const int nGstIn);
+                 const amrex::BoxArray& nodeBAIn, const int nGst);
 
   int count_couple_node_number();
 
@@ -61,6 +59,8 @@ public:
 
   void convert_moment_to_velocity();
 
+
+  // ---------Functions to read/interpolate value from nodeFluid. Begin------------
   const amrex::MultiFab& get_nodeFluid() const { return nodeFluid; }
 
   amrex::Real get_center_b(const amrex::MFIter& mfi, const int i, const int j,
@@ -558,5 +558,7 @@ public:
     }
     return Ez;
   }
+// ---------Functions to read/interpolate value from nodeFluid. End------------
+
 };
 #endif

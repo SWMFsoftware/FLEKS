@@ -25,12 +25,12 @@ void FluidInterface::make_grid(const amrex::DistributionMapping& dmIn,
                                const amrex::Geometry& geomIn,
                                const amrex::BoxArray& centerBAIn,
                                const amrex::BoxArray& nodeBAIn,
-                               const int nGstIn) {
+                               const int nGst) {
   dm = dmIn;
   geom = geomIn;
   centerBA = centerBAIn;
   nodeBA = nodeBAIn;
-  nGst = nGstIn;
+
   nodeFluid.define(nodeBA, dm, nVarCoupling, nGst);
   nodeFluid.setVal(0);
 
@@ -39,6 +39,7 @@ void FluidInterface::make_grid(const amrex::DistributionMapping& dmIn,
 
   Array<int, 3> period;
 
+  // As a interface between PC and MHD. It can not be periodic unless MHD is 2D.
   for (int i = 0; i < nDimMax; i++) {
     if (i < getnDim()) {
       period[i] = 0;
