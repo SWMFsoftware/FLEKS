@@ -24,7 +24,7 @@ protected:
 
   amrex::IntVect nCell;
   amrex::IntVect nNode;
-  int maxBlockSize;
+  amrex::IntVect maxBlockSize;
   int periodicity[nDim];
   amrex::IntVect centerBoxLo;
   amrex::IntVect centerBoxHi;
@@ -41,9 +41,9 @@ protected:
 
 public:
   DomainGrid() {
-    maxBlockSize = 8;
     for (int i = 0; i < nDim; i++) {
       periodicity[i] = 0;
+      maxBlockSize[i] = 8;
     }
   }
 
@@ -74,7 +74,7 @@ public:
   }
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }
-  void set_maxBlockSize(const int in) { maxBlockSize = in; }
+  void set_maxBlockSize(int iDir, const int in) { maxBlockSize[iDir] = in; }
   void set_nCell(const amrex::IntVect& in) { nCell = in; }
   void set_boxRange(const amrex::RealBox& in) { boxRange = in; }
   void set_periodicity(const int iDir, const bool isPeriodic) {

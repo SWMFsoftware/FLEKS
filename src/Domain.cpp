@@ -98,8 +98,10 @@ void Domain::read_param() {
     if (command == "#MAXBLOCKSIZE") {
       // The block size in each direction can not larger than maxBlockSize.
       int tmp;
-      readParam.read_var("maxBlockSize", tmp);
-      set_maxBlockSize(tmp);
+      for (int i = 0; i < nDimMax; i++) {
+        readParam.read_var("maxBlockSize", tmp);
+        set_maxBlockSize(i, tmp);
+      }
     } else if (command == "#TIMECONTROL") {
       Real dtSI;
       readParam.read_var("dtSI", dtSI);
