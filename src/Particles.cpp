@@ -321,8 +321,8 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
         const int jMax = jMin + 1;
         const int kMax = kMin + 1;
 
+        const Real absqp = fabs(qp);
         Real wg_D[3];
-
         for (int k1 = kMin; k1 <= kMax; k1++)
           for (int j1 = jMin; j1 <= jMax; j1++)
             for (int i1 = iMin; i1 <= iMax; i1++) {
@@ -336,18 +336,20 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
               for (int j2 = jMin; j2 <= jMax; j2++)
                 for (int i2 = iMin; i2 <= iMax; i2++)
                   for (int k2 = kMin; k2 <= kMax; k2++) {
-                    Real weight = 0;
+                    Real weights[nDimMax] = { 0 };
                     for (int iDim = 0; iDim < 3; iDim++) {
-                      weight +=
+                      weights[iDim] +=
                           wg_D[iDim] *
                           weights_IIID[i2 - iMin][j2 - jMin][k2 - kMin][iDim];
                     }
+                    const Real weight =
+                        weights[ix_] + weights[iy_] + weights[iz_];
 
                     const int ip = i2 - i1 + 1;
                     const int jp = j2 - j1 + 1;
                     const int kp = k2 - k1 + 1;
                     const int gp = ip * 9 + jp * 3 + kp;
-                    mmArr(i1, j1, k1).data[gp] += weight * fabs(qp);
+                    mmArr(i1, j1, k1).data[gp] += weight * absqp;
                   }
             }
       } // if doChargeOnly
