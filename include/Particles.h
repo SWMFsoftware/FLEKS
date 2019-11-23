@@ -57,6 +57,9 @@ public:
     return false;
   }
 
+  void split_particles(amrex::Real limit);  
+  void combine_particles(amrex::Real limit);
+
   void divE_correct_position(const amrex::MultiFab& phiMF);
 
   amrex::Real get_qom(){

@@ -140,4 +140,11 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
     return -1; // To suppress compiler warnings.
 }
 
+template <typename T >
+inline T bound(const T &val, const T &xmin, const T &xmax){      
+  if(val < xmin) return xmin;                                                        
+  if(val > xmax) return xmax;                                                        
+  return val;                                                                        
+} 
+
 #endif

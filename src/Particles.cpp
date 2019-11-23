@@ -12,7 +12,12 @@ Particles::Particles(const Geometry& geom, const DistributionMapping& dm,
       speciesID(speciesIDIn),
       charge(chargeIn),
       mass(massIn),
-      nPartPerCell(nPartPerCellIn) {}
+      nPartPerCell(nPartPerCellIn) {
+  do_tiling = true;
+
+  for (int i = 0; i < nDimMax; i++)
+    tile_size[i] = 1;
+}
 
 void Particles::add_particles_cell(const MFIter& mfi,
                                    const FluidInterface& fluidInterface, int i,
@@ -376,11 +381,10 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
     Array4<RealMM> const& mmArr = nodeMM[pti].array();
 
-    // Particle container is defined based on a center box.
-    // So Convert it into a node box here.
-    const Box& box = convert(pti.validbox(), { 1, 1, 1 });
-
     const auto& particles = pti.GetArrayOfStructs();
+
+    Print() << pti.tilebox() << " summoment part# " << particles.size() << std::endl;
+
     for (const auto& p : particles) {
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
@@ -515,37 +519,37 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
       //-------Moments end---------
 
     } // for p
+  }
 
-    for (MFIter mfi(nodeMM); mfi.isValid(); ++mfi) {
-      // Finalize the mass matrix calculation.
-      const Box& box = mfi.validbox();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
+  for (MFIter mfi(nodeMM); mfi.isValid(); ++mfi) {
+    // Finalize the mass matrix calculation.
+    const Box box = mfi.tilebox();
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
 
-      Array4<RealMM> const& mmArr = nodeMM[mfi].array();
+    Array4<RealMM> const& mmArr = nodeMM[mfi].array();
 
-      int gps, gpr; // gp_send, gp_receive
-      for (int k1 = lo.z; k1 <= hi.z; k1++)
-        for (int j1 = lo.y; j1 <= hi.y; j1++)
-          for (int i1 = lo.x; i1 <= hi.x; i1++) {
-            const int kp = 2, kpr = 0;
-            const int kr = k1 + kp - 1;
-            for (int jp = 0; jp < 3; jp++) {
-              const int jr = j1 + jp - 1;
-              const int jpr = 2 - jp;
-              for (int ip = 0; ip < 3; ip++) {
-                const int ir = i1 + ip - 1;
-                const int ipr = 2 - ip;
-                gpr = jpr * 3 + ipr;
-                gps = 18 + jp * 3 + ip; // gps = kp*9+jp*3+kp
-                for (int idx = 0; idx < 9; idx++) {
-                  mmArr(ir, jr, kr).data[gpr * 9 + idx] =
-                      mmArr(i1, j1, k1).data[gps * 9 + idx];
-                } // idx
-              }   // kp
-            }     // jp
-          }       // k1
-    }
+    int gps, gpr; // gp_send, gp_receive
+    for (int k1 = lo.z; k1 <= hi.z; k1++)
+      for (int j1 = lo.y; j1 <= hi.y; j1++)
+        for (int i1 = lo.x; i1 <= hi.x; i1++) {
+          const int kp = 2, kpr = 0;
+          const int kr = k1 + kp - 1;
+          for (int jp = 0; jp < 3; jp++) {
+            const int jr = j1 + jp - 1;
+            const int jpr = 2 - jp;
+            for (int ip = 0; ip < 3; ip++) {
+              const int ir = i1 + ip - 1;
+              const int ipr = 2 - ip;
+              gpr = jpr * 3 + ipr;
+              gps = 18 + jp * 3 + ip; // gps = kp*9+jp*3+kp
+              for (int idx = 0; idx < 9; idx++) {
+                mmArr(ir, jr, kr).data[gpr * 9 + idx] =
+                    mmArr(i1, j1, k1).data[gps * 9 + idx];
+              } // idx
+            }   // kp
+          }     // jp
+        }       // k1
   }
 
   momentsMF.mult(invVol);
@@ -605,10 +609,6 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
   for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
     const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
     const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
-
-    // Particle container is defined based on a center box.
-    // So Convert it into a node box here.
-    const Box& box = convert(pti.validbox(), { 1, 1, 1 });
 
     auto& particles = pti.GetArrayOfStructs();
     for (auto& p : particles) {
@@ -823,4 +823,406 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
           << " for species " << speciesID << std::endl;
 
   Redistribute();
+}
+
+void Particles::split_particles(Real limit) {
+
+  const int nPartGoal =
+      nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_] * limit;
+
+  IntVect iv = { 1, 1, 1 };
+  if (!(do_tiling && tile_size == iv))
+    return;
+
+  const int lev = 0;
+  Real dl = 0.5 * Geom(0).CellSize()[ix_] / nPartPerCell.max();
+
+  for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
+
+    auto& particles = pti.GetArrayOfStructs();
+
+    const int nPartOrig = particles.size();
+
+    const double rSplit = 1.0 - double(nPartOrig) / nPartGoal;
+    if (rSplit <= 0)
+      return;
+
+    Print() << pti.tilebox() << " part# before split" << particles.size()
+            << std::endl;
+
+    const auto lo = lbound(pti.tilebox());
+    const auto hi = ubound(pti.tilebox());
+
+    const Real xMin = Geom(0).LoEdge(lo.x, ix_),
+               xMax = Geom(0).HiEdge(hi.x, ix_);
+
+    const Real yMin = Geom(0).LoEdge(lo.y, iy_),
+               yMax = Geom(0).HiEdge(hi.y, iy_);
+
+    const Real zMin = Geom(0).LoEdge(lo.z, iz_),
+               zMax = Geom(0).HiEdge(hi.z, iz_);
+
+    const double interval = 1. / rSplit;
+
+    Real dCounter = 0;
+
+    while (floor(dCounter) < nPartOrig) {
+      const int idxSplit = floor(dCounter);
+
+      auto& p = particles[idxSplit];
+      Real up1 = p.rdata(iup_);
+      Real vp1 = p.rdata(ivp_);
+      Real wp1 = p.rdata(iwp_);
+      Real qp1 = p.rdata(iqp_);
+      Real xp1 = p.pos(ix_);
+      Real yp1 = p.pos(iy_);
+      Real zp1 = p.pos(iz_);
+
+      const Real coef = dl / sqrt(up1 * up1 + vp1 * vp1 + wp1 * wp1);
+      const Real dpx = coef * up1;
+      const Real dpy = coef * vp1;
+      const Real dpz = coef * wp1;
+
+      Real xp2 = xp1 + dpx;
+      Real yp2 = yp1 + dpy;
+      Real zp2 = zp1 + dpz;
+
+      xp1 -= dpx;
+      yp1 -= dpy;
+      zp1 -= dpz;
+
+      xp1 = bound(xp1, xMin, xMax);
+      yp1 = bound(yp1, yMin, yMax);
+      zp1 = bound(zp1, zMin, zMax);
+
+      xp2 = bound(xp2, xMin, xMax);
+      yp2 = bound(yp2, yMin, yMax);
+      zp2 = bound(zp2, zMin, zMax);
+
+      Print() << "befor spliting p    = " << p << std::endl;
+      p.rdata(iqp_) = (qp1 / 2);
+      p.pos(ix_) = xp1;
+      p.pos(iy_) = yp1;
+      p.pos(iz_) = zp1;
+
+      ParticleType pnew;
+      pnew.id() = ParticleType::NextID();
+      pnew.cpu() = ParallelDescriptor::MyProc();
+      pnew.pos(ix_) = xp2;
+      pnew.pos(iy_) = yp2;
+      pnew.pos(iz_) = zp2;
+      pnew.rdata(iup_) = up1;
+      pnew.rdata(ivp_) = vp1;
+      pnew.rdata(iwp_) = wp1;
+      pnew.rdata(iqp_) = qp1 / 2;
+      particles.push_back(pnew);
+
+      Print() << "after spliting p    = " << p << std::endl;
+      Print() << "after spliting pnew = " << pnew << std::endl;
+      dCounter += interval;
+    }
+
+    Print() << pti.tilebox() << " part# after split" << particles.size()
+            << std::endl;
+
+
+  }
+}
+
+
+void Particles::combine_particles(Real limit){
+  IntVect iv = { 1, 1, 1 };
+  if (!(do_tiling && tile_size == iv))
+    return;
+
+
+  const int nPartGoal =
+      nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_] * limit;
+
+
+  const int lev = 0;
+
+  for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
+
+    auto& particles = pti.GetArrayOfStructs();
+
+  
+  const int nPartOrig = particles.size();                                                                                                                                          
+                                                                                                                                                                              
+  if (nPartOrig <= nPartGoal)                                                                                                                                                 
+    return;                                                                                                                                                                   
+  const int nCombineGoal = nPartOrig - nPartGoal;                                                                                                                             
+                                                                                                                                                                              
+  // Phase space cell number in one direction.                                                                                                                                
+  // The const 0.8 is choosen by experience.                                                                                                                                  
+  const int nDim = 3;                                                                                                                                                         
+  const int nCell = 0.8 * pow(nPartGoal, 1. / nDim);                                                                                                                          
+  if (nCell < 1)                                                                                                                                                              
+    return;                                                                                                                                                                   
+                                                                                                                                                                              
+  //----------------------------------------------------------------                                                                                                          
+  // Estimate the bulk velocity and thermal velocity.                                                                                                                         
+  double uAv = 0, vAv = 0, wAv = 0;                                                                                                                                           
+  for (int pid = 0; pid < nPartOrig; pid++) {                                                                                                                                 
+    SpeciesParticle& pcl = pcls[pid];                                                                                                                                         
+    uAv += pcl.get_u();                                                                                                                                                       
+    vAv += pcl.get_v();                                                                                                                                                       
+    wAv += pcl.get_w();                                                                                                                                                       
+  }                                                                                                                                                                           
+  uAv /= nPartOrig;                                                                                                                                                           
+  vAv /= nPartOrig;                                                                                                                                                           
+  wAv /= nPartOrig;                                                                                                                                                           
+                                                                                                                                                                              
+  double thVel = 0, thVel2=0;                                                                                                                                                 
+  for (int pid = 0; pid < nPartOrig; pid++) {                                                                                                                                 
+    SpeciesParticle& pcl = pcls[pid];                                                                                                                                         
+    thVel2 += pow(pcl.get_u() - uAv, 2) + pow(pcl.get_v() - vAv, 2) +                                                                                                         
+             pow(pcl.get_w() - wAv, 2);                                                                                                                                       
+  }                                                                                                                                                                           
+                                                                                                                                                                              
+  thVel2 /= nPartOrig;                                                                                                                                                        
+  thVel = sqrt(thVel2);                                                                                                                                                       
+                                                                                                                                                                              
+  //---------------------------------------------------------------- 
+
+ // Storing the particle indices in the corresponding phase space cell.           
+  MDArray<vector_int> phasePartIdx_III(nCell, nCell, nCell);                       
+  const int u_ = 0, v_ = 1, w_ = 2;                                                
+  double velMin_D[nDim], velMax_D[nDim], inv_dVel_D[nDim];                         
+  const double r0 = 1.0;                                                           
+  velMin_D[u_] = -r0 * thVel + uAv;                                                
+  velMax_D[u_] = r0 * thVel + uAv;                                                 
+  velMin_D[v_] = -r0 * thVel + vAv;                                                
+  velMax_D[v_] = r0 * thVel + vAv;                                                 
+  velMin_D[w_] = -r0 * thVel + wAv;                                                
+  velMax_D[w_] = r0 * thVel + wAv;                                                 
+  for (int iDim = 0; iDim < nDim; iDim++) {                                        
+    inv_dVel_D[iDim] = nCell / (velMax_D[iDim] - velMin_D[iDim]);                  
+  }                                                                                
+                                                                                   
+  double vel_D[nDim];                                                              
+  int iCell_D[nDim];                                                               
+  for (int pid = 0; pid < nPartOrig; pid++) {                                      
+    SpeciesParticle& pcl = pcls[pid];                                              
+    vel_D[u_] = pcl.get_u();                                                       
+    vel_D[v_] = pcl.get_v();                                                       
+    vel_D[w_] = pcl.get_w();                                                       
+                                                                                   
+    bool isOutside = false;                                                        
+    for (int iDim = 0; iDim < nDim; iDim++) {                                      
+      if (vel_D[iDim] < velMin_D[iDim] || vel_D[iDim] > velMax_D[iDim])            
+        isOutside = true;                                                          
+    }                                                                              
+    if (isOutside)                                                                 
+      continue;                                                                    
+                                                                                   
+    for (int iDim = 0; iDim < nDim; iDim++) {                                      
+      iCell_D[iDim] = floor((vel_D[iDim] - velMin_D[iDim]) * inv_dVel_D[iDim]);    
+    }                                                                              
+                                                                                   
+    phasePartIdx_III(iCell_D[u_], iCell_D[v_], iCell_D[w_]).push_back(pid);        
+  }                                                                                
+                                                                                   
+  const int nPartCombine = 6;                                                      
+  int iCount = 0;                                                                  
+  int nAvailableCombine = 0;                                                       
+  for (int iu = 0; iu < nCell; iu++)                                               
+    for (int iv = 0; iv < nCell; iv++)                                             
+      for (int iw = 0; iw < nCell; iw++) {                                         
+        iCount += phasePartIdx_III(iu, iv, iw).size();                             
+        nAvailableCombine +=                                                       
+            floor(phasePartIdx_III(iu, iv, iw).size() / nPartCombine);             
+      }                                    
+
+  double ratioCombine;                                                             
+  if (nAvailableCombine < nCombineGoal) {                                          
+    ratioCombine = 1;                                                              
+  } else {                                                                         
+    ratioCombine = double(nCombineGoal) / nAvailableCombine;                       
+  }                                                                                
+                                                                                   
+  const double xMinProc = xstart, xMaxProc = xMinProc + dx * (nxc - 2);            
+  const double yMinProc = ystart, yMaxProc = yMinProc + dy * (nyc - 2);            
+  const double zMinProc = zstart, zMaxProc = zMinProc + dz * (nzc - 2);            
+                                                                                   
+  const double invdl2 = 1.0/(dx*dx + dy*dy + dz*dz);                               
+  const double invthVel2 = 1.0/thVel2;                                             
+  for (int iu = 0; iu < nCell; iu++)                                               
+    for (int iv = 0; iv < nCell; iv++)                                             
+      for (int iw = 0; iw < nCell; iw++) {                                         
+        int nCombineCell = floor(                                                  
+            ratioCombine * phasePartIdx_III(iu, iv, iw).size() / nPartCombine);    
+        for (int iCombine = 0; iCombine < nCombineCell; iCombine++) {              
+          /*                                                                       
+              Delete 1 particle out of 6 particles:                                
+              1) Choose two particles that are closest to each other.              
+              2) Delete the lighter one.                                           
+              3) Distribute its weights to another 5 particles to conserve         
+                 mass, momentum and energy.                                        
+              4) Adjust the location of the particles to conserve                  
+                 mass center (optional. Turned off by default.)                    
+           */                                                                      
+                                                                                   
+          int idx_I[nPartCombine];                                                 
+          for (int ip = 0; ip < nPartCombine; ip++) {                              
+            // Pop three particle indices.                                         
+            idx_I[ip] = phasePartIdx_III(iu, iv, iw).back();                       
+            phasePartIdx_III(iu, iv, iw).pop_back();                               
+          }     
+
+                      // Find the pairs close to each other in phase space.                    
+          int pair1=0, pair2=0;                                                    
+          double dis2Min = 2;                                                      
+          for (int ip1 = 0; ip1 < nPartCombine-1; ip1++)                           
+            for (int ip2 = ip1+1; ip2 < nPartCombine; ip2++){                      
+              const double dup = pcls[idx_I[ip1]].get_u() - pcls[idx_I[ip2]].get_u\
+();                                                                                
+              const double dvp = pcls[idx_I[ip1]].get_v() - pcls[idx_I[ip2]].get_v\
+();                                                                                
+              const double dwp = pcls[idx_I[ip1]].get_w() - pcls[idx_I[ip2]].get_w\
+();                                                                                
+              const double dxp = pcls[idx_I[ip1]].get_x() - pcls[idx_I[ip2]].get_x\
+();                                                                                
+              const double dyp = pcls[idx_I[ip1]].get_y() - pcls[idx_I[ip2]].get_y\
+();                                                                                
+              const double dzp = pcls[idx_I[ip1]].get_z() - pcls[idx_I[ip2]].get_z\
+();                                                                                
+                                                                                   
+              const double dis2 = (dup*dup + dvp*dvp + dwp*dwp)*invthVel2 +        
+                (dxp*dxp + dyp*dyp + dzp*dzp)*invdl2;                              
+                                                                                   
+              if(dis2 < dis2Min){                                                  
+                dis2Min = dis2;                                                    
+                pair1 = ip1;                                                       
+                pair2 = ip2;                                                       
+              }                                                                    
+          }                                                                        
+                                                                                   
+          // Delete the lighter one.                                               
+          int iPartDel = pair1, iPartKeep = pair2;                                 
+          if(fabs(pcls[idx_I[pair1]].get_q()) >                                    
+             fabs(pcls[idx_I[pair2]].get_q()) ){                                   
+            iPartDel = pair2;                                                      
+            iPartKeep = pair1;                                                     
+          }                                                                        
+                                                                                   
+          if(iPartDel != nPartCombine-1){                                          
+            const int idxTmp = idx_I[iPartDel];                                    
+            idx_I[iPartDel] = idx_I[nPartCombine-1];                               
+            idx_I[nPartCombine-1] = idxTmp;                                        
+          }                                                                        
+                                         
+          //---------------Solve the new particle weights---------------------     
+          const int nVar = 5;                                                      
+          const int iq_ = 0, iu_ = 1, iv_ = 2, iw_ = 3, ie_ = 4;                   
+          array2_double a(nVar, nVar + 1);                                         
+          array1_double x(nVar);                                                   
+          for (int i = 0; i < nVar; i++) {                                         
+            x[i] = 0;                                                              
+            for (int j = 0; j < nVar + 1; j++) {                                   
+              a[i][j] = 0;                                                         
+            }                                                                      
+          }                                                                        
+                                                                                   
+          for (int ip = 0; ip < nPartCombine; ip++) {                              
+            const double qp = pcls[idx_I[ip]].get_q();                             
+            const double up = pcls[idx_I[ip]].get_u();                             
+            const double vp = pcls[idx_I[ip]].get_v();                             
+            const double wp = pcls[idx_I[ip]].get_w();                             
+            const double v2 = (pow(up, 2) + pow(vp, 2) + pow(wp, 2));              
+                                                                                   
+            if (ip < nVar) {                                                       
+              a[iq_][ip] = 1;                                                      
+              a[iu_][ip] = up;                                                     
+              a[iv_][ip] = vp;                                                     
+              a[iw_][ip] = wp;                                                     
+              a[ie_][ip] = v2;                                                     
+            }                                                                      
+                                                                                   
+            a[iq_][nVar] += qp;                                                    
+            a[iu_][nVar] += qp * up;                                               
+            a[iv_][nVar] += qp * vp;                                               
+            a[iw_][nVar] += qp * wp;                                               
+            a[ie_][nVar] += qp * v2;                                               
+          }                                                                        
+                                                                                   
+          bool isSolved = linear_solver_Gauss_Elimination(a, x, nVar);             
+          if (isSolved) {                                                          
+            // All the particle weights should have the same sign.                 
+            double qt = a[iq_][nVar];                                              
+            for (int ip = 0; ip < nPartCombine - 1; ip++) {                        
+              if (qt * x[ip] < 0) {                                                
+                isSolved = false;                                                  
+                break;                                                             
+              }                                                                    
+            }                                                                      
+          }                                                                        
+          if (!isSolved)                                                           
+            continue;                                                              
+          //---------------------------------------------- 
+
+         //----------------------------------------------                         
+                                                                                   
+          // 1) Adjust the location to conserve the mass center.                   
+          // 2) Adjust the weight to conserve mass and energy.                     
+          const bool doConserveMassCenter = false;                                 
+          if(doConserveMassCenter){                                                
+            double centerxOld = 0, centeryOld = 0, centerzOld = 0;                 
+            for (int ip = 0; ip < nPartCombine; ip++) {                            
+              centerxOld += pcls[idx_I[ip]].get_q()*pcls[idx_I[ip]].get_x();       
+              centeryOld += pcls[idx_I[ip]].get_q()*pcls[idx_I[ip]].get_y();       
+              centerzOld += pcls[idx_I[ip]].get_q()*pcls[idx_I[ip]].get_z();       
+            }                                                                      
+                                                                                   
+            double centerxNew = 0, centeryNew = 0, centerzNew = 0;                 
+            double qtotal = 0;                                                     
+            for (int ip = 0; ip < nPartCombine-1; ip++) {                          
+              centerxNew += x[ip]*pcls[idx_I[ip]].get_x();                         
+              centeryNew += x[ip]*pcls[idx_I[ip]].get_y();                         
+              centerzNew += x[ip]*pcls[idx_I[ip]].get_z();                         
+              qtotal += x[ip];                                                     
+            }                                                                      
+                                                                                   
+            const double invQtotal = 1./qtotal;                                    
+            const double dPartX = (centerxOld - centerxNew)*invQtotal;             
+            const double dPartY = (centeryOld - centeryNew)*invQtotal;             
+            const double dPartZ = (centerzOld - centerzNew)*invQtotal;             
+                                                                                   
+            for (int ip = 0; ip < nPartCombine - 1; ip++) {                        
+              double xpNew = pcls[idx_I[ip]].get_x() + dPartX;                     
+              double ypNew = pcls[idx_I[ip]].get_y() + dPartY;                     
+              double zpNew = pcls[idx_I[ip]].get_z() + dPartZ;                     
+                                                                                   
+              xpNew = bound(xpNew, xMinProc, xMaxProc);                            
+              ypNew = bound(ypNew, xMinProc, xMaxProc);                            
+              zpNew = bound(zpNew, xMinProc, xMaxProc);                            
+                                                                                   
+              pcls[idx_I[ip]].set_x(xpNew);                                        
+              pcls[idx_I[ip]].set_y(ypNew);                                        
+              pcls[idx_I[ip]].set_z(zpNew);                                        
+            }                                                                      
+          } // if doConserveMassCenter                                             
+                                                                                   
+          // Adjust weight.                                                        
+          for (int ip = 0; ip < nPartCombine - 1; ip++) {                          
+            pcls[idx_I[ip]].set_q(x[ip]);                                          
+          }                                                                        
+          pcls[idx_I[nPartCombine - 1]].set_q(0.0);                                
+                                                                                   
+        }           
+
+      }                                                                            
+                                                                                   
+  int pid = 0;                                                                     
+  while (pid < pcls.size()) {                                                      
+    if (pcls[pid].get_q() == 0) {                                                  
+      // 'Delete' particles.                                                       
+      pcls[pid] = pcls.back();                                                     
+      pcls.pop_back();                                                             
+    } else {                                                                       
+      pid++;                                                                       
+    }                                                                              
+  }  
+  }
+
 }
