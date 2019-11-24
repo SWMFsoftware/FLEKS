@@ -270,6 +270,9 @@ void Domain::make_data() {
     // Plasma
     // nSpecies = 2;
     iTot = nSpecies;
+
+    plasmaEnergy.resize(nSpecies + 1);
+
     // The last one is the sum of all species.
     nodePlasma.resize(nSpecies + 1);
     for (auto& pl : nodePlasma) {
@@ -362,12 +365,17 @@ void Domain::particle_mover() {
   std::string nameFunc = "Domain::mover";
   timing_start(nameFunc);
 
+  plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->mover(nodeEth, nodeB, tc.get_dt());
-    //parts[i]->split_particles(1.5);
+    plasmaEnergy[i] = parts[i]->mover(nodeEth, nodeB, tc.get_dt());
+    plasmaEnergy[iTot] +=plasmaEnergy[i]; 
+
+    parts[i]->split_particles(1.5);
     parts[i]->combine_particles(0.6);
     parts[i]->inject_particles_at_boundary(fluidInterface);
   }
+
+  Print()<<"total plasma energy = "<<plasmaEnergy[iTot]<<std::endl;
 
   timing_stop(nameFunc);
 }

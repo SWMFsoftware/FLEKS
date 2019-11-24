@@ -64,6 +64,7 @@ private:
   int nSpecies;
   int iTot;
   amrex::Vector<amrex::MultiFab> nodePlasma;
+  amrex::Vector<amrex::Real> plasmaEnergy;
 
   amrex::Vector<std::unique_ptr<Particles> > parts;
   int *npcelx, *npcely, *npcelz;

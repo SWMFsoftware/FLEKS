@@ -35,7 +35,7 @@ public:
   void sum_to_center(amrex::MultiFab& netChargeMF,
                      amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly);
 
-  void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
+  amrex::Real mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
              amrex::Real dt);
 
   void convert_to_fluid_moments(amrex::MultiFab& momentsMF);

@@ -383,9 +383,6 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
 
     const auto& particles = pti.GetArrayOfStructs();
 
-    Print() << pti.tilebox() << " summoment part# " << particles.size()
-            << std::endl;
-
     for (const auto& p : particles) {
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
@@ -595,7 +592,7 @@ void Particles::convert_to_fluid_moments(MultiFab& momentsMF) {
   }
 }
 
-void Particles::mover(const amrex::MultiFab& nodeEMF,
+Real Particles::mover(const amrex::MultiFab& nodeEMF,
                       const amrex::MultiFab& nodeBMF, amrex::Real dt) {
   BL_PROFILE("Particles::mover");
 
@@ -607,6 +604,7 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
   const auto& invDx = Geom(0).InvCellSize();
 
   const int lev = 0;
+  Real energy = 0; 
   for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
     const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
     const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
@@ -685,6 +683,8 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
       // Mark for deletion
       if (is_outside(p)) {
         p.id() = -1;
+      }else{
+        energy += qp*(unp1*unp1 + vnp1*vnp1 + wnp1*wnp1);
       }
 
     } // for p
@@ -693,6 +693,13 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
   // This function distributes particles to proper processors and apply
   // periodic boundary conditions if needed.
   Redistribute();
+
+  energy *= 1./get_qom();
+  ParallelDescriptor::ReduceRealSum(energy,
+                                    ParallelDescriptor::IOProcessorNumber());
+
+  if(!ParallelDescriptor::IOProcessor()) energy = 0; 
+  return energy;
 }
 
 void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
@@ -848,9 +855,6 @@ void Particles::split_particles(Real limit) {
     if (rSplit <= 0)
       return;
 
-    Print() << pti.tilebox() << " part# before split" << particles.size()
-            << std::endl;
-
     const auto lo = lbound(pti.tilebox());
     const auto hi = ubound(pti.tilebox());
 
@@ -900,7 +904,6 @@ void Particles::split_particles(Real limit) {
       yp2 = bound(yp2, yMin, yMax);
       zp2 = bound(zp2, zMin, zMax);
 
-      Print() << "befor spliting p    = " << p << std::endl;
       p.rdata(iqp_) = (qp1 / 2);
       p.pos(ix_) = xp1;
       p.pos(iy_) = yp1;
@@ -918,13 +921,9 @@ void Particles::split_particles(Real limit) {
       pnew.rdata(iqp_) = qp1 / 2;
       particles.push_back(pnew);
 
-      Print() << "after spliting p    = " << p << std::endl;
-      Print() << "after spliting pnew = " << pnew << std::endl;
       dCounter += interval;
     }
 
-    Print() << pti.tilebox() << " part# after split" << particles.size()
-            << std::endl;
   }
 }
 
@@ -981,7 +980,9 @@ void Particles::combine_particles(Real limit) {
     //----------------------------------------------------------------
 
     // Storing the particle indices in the corresponding phase space cell.
-    MDArray<Vector<int> > phasePartIdx_III(nCell, nCell, nCell);
+    //MDArray<Vector<int> > phasePartIdx_III(nCell, nCell, nCell);
+    Vector<int> phasePartIdx_III[nCell][nCell][nCell];
+
     const int u_ = 0, v_ = 1, w_ = 2;
     Real velMin_D[nDim], velMax_D[nDim], inv_dVel_D[nDim];
     const Real r0 = 1.0;
@@ -1016,7 +1017,7 @@ void Particles::combine_particles(Real limit) {
             floor((vel_D[iDim] - velMin_D[iDim]) * inv_dVel_D[iDim]);
       }
 
-      phasePartIdx_III(iCell_D[u_], iCell_D[v_], iCell_D[w_]).push_back(pid);
+      phasePartIdx_III[iCell_D[u_]][iCell_D[v_]][iCell_D[w_]].push_back(pid);
     }
 
     const int nPartCombine = 6;
@@ -1025,9 +1026,9 @@ void Particles::combine_particles(Real limit) {
     for (int iu = 0; iu < nCell; iu++)
       for (int iv = 0; iv < nCell; iv++)
         for (int iw = 0; iw < nCell; iw++) {
-          iCount += phasePartIdx_III(iu, iv, iw).size();
+          iCount += phasePartIdx_III[iu][iv][iw].size();
           nAvailableCombine +=
-              floor(phasePartIdx_III(iu, iv, iw).size() / nPartCombine);
+              floor(phasePartIdx_III[iu][iv][iw].size() / nPartCombine);
         }
 
     Real ratioCombine;
@@ -1059,7 +1060,7 @@ void Particles::combine_particles(Real limit) {
       for (int iv = 0; iv < nCell; iv++)
         for (int iw = 0; iw < nCell; iw++) {
           int nCombineCell =
-              floor(ratioCombine * phasePartIdx_III(iu, iv, iw).size() /
+              floor(ratioCombine * phasePartIdx_III[iu][iv][iw].size() /
                     nPartCombine);
           for (int iCombine = 0; iCombine < nCombineCell; iCombine++) {
             /*
@@ -1075,8 +1076,8 @@ void Particles::combine_particles(Real limit) {
             int idx_I[nPartCombine];
             for (int ip = 0; ip < nPartCombine; ip++) {
               // Pop three particle indices.
-              idx_I[ip] = phasePartIdx_III(iu, iv, iw).back();
-              phasePartIdx_III(iu, iv, iw).pop_back();
+              idx_I[ip] = phasePartIdx_III[iu][iv][iw].back();
+              phasePartIdx_III[iu][iv][iw].pop_back();
             }
 
             // Find the pairs close to each other in phase space.
@@ -1246,52 +1247,12 @@ void Particles::combine_particles(Real limit) {
             } // if doConserveMassCenter
 
             // Adjust weight.
-            Real e0 = 0, e1 = 0, mx0 = 0, mx1 = 0, my0 = 0, my1 = 0, mz0 = 0,
-                 mz1 = 0, q0 = 0, q1 = 0;
-            for (int ip = 0; ip < nPartCombine; ip++) {
-              auto& p = particles[idx_I[ip]];
-              const Real up = p.rdata(iup_);
-              const Real vp = p.rdata(ivp_);
-              const Real wp = p.rdata(iwp_);
-              const Real qp = p.rdata(iqp_);
-
-              q0 += qp;
-              e0 += qp * (up * up + vp * vp + wp * wp);
-              mx0 += qp * up;
-              my0 += qp * vp;
-              mz0 += qp * wp;
-            }
-
             for (int ip = 0; ip < nPartCombine - 1; ip++) {
               auto& p = particles[idx_I[ip]];
-              Print() << "before combine " << p << std::endl;
-              p.rdata(iqp_) = x[ip];
-              Print() << "after combine " << p << std::endl;
+              p.rdata(iqp_) = x[ip];              
             }
-
-            Print() << "deleted part " << particles[idx_I[nPartCombine - 1]]
-                    << std::endl;
             // Mark for deletion
             particles[idx_I[nPartCombine - 1]].id() = -1;
-
-            for (int ip = 0; ip < nPartCombine - 1; ip++) {
-              auto& p = particles[idx_I[ip]];
-              const Real up = p.rdata(iup_);
-              const Real vp = p.rdata(ivp_);
-              const Real wp = p.rdata(iwp_);
-              const Real qp = p.rdata(iqp_);
-
-              q1 += qp;
-              e1 += qp * (up * up + vp * vp + wp * wp);
-              mx1 += qp * up;
-              my1 += qp * vp;
-              mz1 += qp * wp;
-            }
-            Print() << "q0 = " << q0 << " e0 = " << e0 << " mx0 = " << mx0
-                    << " my0 = " << my0 << " mz0 = " << mz0 << std::endl;
-
-            Print() << "q1 = " << q1 << " e1 = " << e1 << " mx1 = " << mx1
-                    << " my1 = " << my1 << " mz1 = " << mz1 << std::endl;
           }
         }
   }
