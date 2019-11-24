@@ -364,8 +364,8 @@ void Domain::particle_mover() {
 
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->mover(nodeEth, nodeB, tc.get_dt());
-    parts[i]->split_particles(1.5);
-
+    //parts[i]->split_particles(1.5);
+    parts[i]->combine_particles(0.6);
     parts[i]->inject_particles_at_boundary(fluidInterface);
   }
 

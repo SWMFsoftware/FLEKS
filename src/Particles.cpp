@@ -383,7 +383,8 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
 
     const auto& particles = pti.GetArrayOfStructs();
 
-    Print() << pti.tilebox() << " summoment part# " << particles.size() << std::endl;
+    Print() << pti.tilebox() << " summoment part# " << particles.size()
+            << std::endl;
 
     for (const auto& p : particles) {
       const Real up = p.rdata(iup_);
@@ -924,21 +925,16 @@ void Particles::split_particles(Real limit) {
 
     Print() << pti.tilebox() << " part# after split" << particles.size()
             << std::endl;
-
-
   }
 }
 
-
-void Particles::combine_particles(Real limit){
+void Particles::combine_particles(Real limit) {
   IntVect iv = { 1, 1, 1 };
   if (!(do_tiling && tile_size == iv))
     return;
 
-
   const int nPartGoal =
       nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_] * limit;
-
 
   const int lev = 0;
 
@@ -946,283 +942,357 @@ void Particles::combine_particles(Real limit){
 
     auto& particles = pti.GetArrayOfStructs();
 
-  
-  const int nPartOrig = particles.size();                                                                                                                                          
-                                                                                                                                                                              
-  if (nPartOrig <= nPartGoal)                                                                                                                                                 
-    return;                                                                                                                                                                   
-  const int nCombineGoal = nPartOrig - nPartGoal;                                                                                                                             
-                                                                                                                                                                              
-  // Phase space cell number in one direction.                                                                                                                                
-  // The const 0.8 is choosen by experience.                                                                                                                                  
-  const int nDim = 3;                                                                                                                                                         
-  const int nCell = 0.8 * pow(nPartGoal, 1. / nDim);                                                                                                                          
-  if (nCell < 1)                                                                                                                                                              
-    return;                                                                                                                                                                   
-                                                                                                                                                                              
-  //----------------------------------------------------------------                                                                                                          
-  // Estimate the bulk velocity and thermal velocity.                                                                                                                         
-  double uAv = 0, vAv = 0, wAv = 0;                                                                                                                                           
-  for (int pid = 0; pid < nPartOrig; pid++) {                                                                                                                                 
-    SpeciesParticle& pcl = pcls[pid];                                                                                                                                         
-    uAv += pcl.get_u();                                                                                                                                                       
-    vAv += pcl.get_v();                                                                                                                                                       
-    wAv += pcl.get_w();                                                                                                                                                       
-  }                                                                                                                                                                           
-  uAv /= nPartOrig;                                                                                                                                                           
-  vAv /= nPartOrig;                                                                                                                                                           
-  wAv /= nPartOrig;                                                                                                                                                           
-                                                                                                                                                                              
-  double thVel = 0, thVel2=0;                                                                                                                                                 
-  for (int pid = 0; pid < nPartOrig; pid++) {                                                                                                                                 
-    SpeciesParticle& pcl = pcls[pid];                                                                                                                                         
-    thVel2 += pow(pcl.get_u() - uAv, 2) + pow(pcl.get_v() - vAv, 2) +                                                                                                         
-             pow(pcl.get_w() - wAv, 2);                                                                                                                                       
-  }                                                                                                                                                                           
-                                                                                                                                                                              
-  thVel2 /= nPartOrig;                                                                                                                                                        
-  thVel = sqrt(thVel2);                                                                                                                                                       
-                                                                                                                                                                              
-  //---------------------------------------------------------------- 
+    const int nPartOrig = particles.size();
 
- // Storing the particle indices in the corresponding phase space cell.           
-  MDArray<vector_int> phasePartIdx_III(nCell, nCell, nCell);                       
-  const int u_ = 0, v_ = 1, w_ = 2;                                                
-  double velMin_D[nDim], velMax_D[nDim], inv_dVel_D[nDim];                         
-  const double r0 = 1.0;                                                           
-  velMin_D[u_] = -r0 * thVel + uAv;                                                
-  velMax_D[u_] = r0 * thVel + uAv;                                                 
-  velMin_D[v_] = -r0 * thVel + vAv;                                                
-  velMax_D[v_] = r0 * thVel + vAv;                                                 
-  velMin_D[w_] = -r0 * thVel + wAv;                                                
-  velMax_D[w_] = r0 * thVel + wAv;                                                 
-  for (int iDim = 0; iDim < nDim; iDim++) {                                        
-    inv_dVel_D[iDim] = nCell / (velMax_D[iDim] - velMin_D[iDim]);                  
-  }                                                                                
-                                                                                   
-  double vel_D[nDim];                                                              
-  int iCell_D[nDim];                                                               
-  for (int pid = 0; pid < nPartOrig; pid++) {                                      
-    SpeciesParticle& pcl = pcls[pid];                                              
-    vel_D[u_] = pcl.get_u();                                                       
-    vel_D[v_] = pcl.get_v();                                                       
-    vel_D[w_] = pcl.get_w();                                                       
-                                                                                   
-    bool isOutside = false;                                                        
-    for (int iDim = 0; iDim < nDim; iDim++) {                                      
-      if (vel_D[iDim] < velMin_D[iDim] || vel_D[iDim] > velMax_D[iDim])            
-        isOutside = true;                                                          
-    }                                                                              
-    if (isOutside)                                                                 
-      continue;                                                                    
-                                                                                   
-    for (int iDim = 0; iDim < nDim; iDim++) {                                      
-      iCell_D[iDim] = floor((vel_D[iDim] - velMin_D[iDim]) * inv_dVel_D[iDim]);    
-    }                                                                              
-                                                                                   
-    phasePartIdx_III(iCell_D[u_], iCell_D[v_], iCell_D[w_]).push_back(pid);        
-  }                                                                                
-                                                                                   
-  const int nPartCombine = 6;                                                      
-  int iCount = 0;                                                                  
-  int nAvailableCombine = 0;                                                       
-  for (int iu = 0; iu < nCell; iu++)                                               
-    for (int iv = 0; iv < nCell; iv++)                                             
-      for (int iw = 0; iw < nCell; iw++) {                                         
-        iCount += phasePartIdx_III(iu, iv, iw).size();                             
-        nAvailableCombine +=                                                       
-            floor(phasePartIdx_III(iu, iv, iw).size() / nPartCombine);             
-      }                                    
+    if (nPartOrig <= nPartGoal)
+      return;
+    const int nCombineGoal = nPartOrig - nPartGoal;
 
-  double ratioCombine;                                                             
-  if (nAvailableCombine < nCombineGoal) {                                          
-    ratioCombine = 1;                                                              
-  } else {                                                                         
-    ratioCombine = double(nCombineGoal) / nAvailableCombine;                       
-  }                                                                                
-                                                                                   
-  const double xMinProc = xstart, xMaxProc = xMinProc + dx * (nxc - 2);            
-  const double yMinProc = ystart, yMaxProc = yMinProc + dy * (nyc - 2);            
-  const double zMinProc = zstart, zMaxProc = zMinProc + dz * (nzc - 2);            
-                                                                                   
-  const double invdl2 = 1.0/(dx*dx + dy*dy + dz*dz);                               
-  const double invthVel2 = 1.0/thVel2;                                             
-  for (int iu = 0; iu < nCell; iu++)                                               
-    for (int iv = 0; iv < nCell; iv++)                                             
-      for (int iw = 0; iw < nCell; iw++) {                                         
-        int nCombineCell = floor(                                                  
-            ratioCombine * phasePartIdx_III(iu, iv, iw).size() / nPartCombine);    
-        for (int iCombine = 0; iCombine < nCombineCell; iCombine++) {              
-          /*                                                                       
-              Delete 1 particle out of 6 particles:                                
-              1) Choose two particles that are closest to each other.              
-              2) Delete the lighter one.                                           
-              3) Distribute its weights to another 5 particles to conserve         
-                 mass, momentum and energy.                                        
-              4) Adjust the location of the particles to conserve                  
-                 mass center (optional. Turned off by default.)                    
-           */                                                                      
-                                                                                   
-          int idx_I[nPartCombine];                                                 
-          for (int ip = 0; ip < nPartCombine; ip++) {                              
-            // Pop three particle indices.                                         
-            idx_I[ip] = phasePartIdx_III(iu, iv, iw).back();                       
-            phasePartIdx_III(iu, iv, iw).pop_back();                               
-          }     
+    // Phase space cell number in one direction.
+    // The const 0.8 is choosen by experience.
+    const int nDim = 3;
+    const int nCell = 0.8 * pow(nPartGoal, 1. / nDim);
+    if (nCell < 1)
+      return;
 
-                      // Find the pairs close to each other in phase space.                    
-          int pair1=0, pair2=0;                                                    
-          double dis2Min = 2;                                                      
-          for (int ip1 = 0; ip1 < nPartCombine-1; ip1++)                           
-            for (int ip2 = ip1+1; ip2 < nPartCombine; ip2++){                      
-              const double dup = pcls[idx_I[ip1]].get_u() - pcls[idx_I[ip2]].get_u\
-();                                                                                
-              const double dvp = pcls[idx_I[ip1]].get_v() - pcls[idx_I[ip2]].get_v\
-();                                                                                
-              const double dwp = pcls[idx_I[ip1]].get_w() - pcls[idx_I[ip2]].get_w\
-();                                                                                
-              const double dxp = pcls[idx_I[ip1]].get_x() - pcls[idx_I[ip2]].get_x\
-();                                                                                
-              const double dyp = pcls[idx_I[ip1]].get_y() - pcls[idx_I[ip2]].get_y\
-();                                                                                
-              const double dzp = pcls[idx_I[ip1]].get_z() - pcls[idx_I[ip2]].get_z\
-();                                                                                
-                                                                                   
-              const double dis2 = (dup*dup + dvp*dvp + dwp*dwp)*invthVel2 +        
-                (dxp*dxp + dyp*dyp + dzp*dzp)*invdl2;                              
-                                                                                   
-              if(dis2 < dis2Min){                                                  
-                dis2Min = dis2;                                                    
-                pair1 = ip1;                                                       
-                pair2 = ip2;                                                       
-              }                                                                    
-          }                                                                        
-                                                                                   
-          // Delete the lighter one.                                               
-          int iPartDel = pair1, iPartKeep = pair2;                                 
-          if(fabs(pcls[idx_I[pair1]].get_q()) >                                    
-             fabs(pcls[idx_I[pair2]].get_q()) ){                                   
-            iPartDel = pair2;                                                      
-            iPartKeep = pair1;                                                     
-          }                                                                        
-                                                                                   
-          if(iPartDel != nPartCombine-1){                                          
-            const int idxTmp = idx_I[iPartDel];                                    
-            idx_I[iPartDel] = idx_I[nPartCombine-1];                               
-            idx_I[nPartCombine-1] = idxTmp;                                        
-          }                                                                        
-                                         
-          //---------------Solve the new particle weights---------------------     
-          const int nVar = 5;                                                      
-          const int iq_ = 0, iu_ = 1, iv_ = 2, iw_ = 3, ie_ = 4;                   
-          array2_double a(nVar, nVar + 1);                                         
-          array1_double x(nVar);                                                   
-          for (int i = 0; i < nVar; i++) {                                         
-            x[i] = 0;                                                              
-            for (int j = 0; j < nVar + 1; j++) {                                   
-              a[i][j] = 0;                                                         
-            }                                                                      
-          }                                                                        
-                                                                                   
-          for (int ip = 0; ip < nPartCombine; ip++) {                              
-            const double qp = pcls[idx_I[ip]].get_q();                             
-            const double up = pcls[idx_I[ip]].get_u();                             
-            const double vp = pcls[idx_I[ip]].get_v();                             
-            const double wp = pcls[idx_I[ip]].get_w();                             
-            const double v2 = (pow(up, 2) + pow(vp, 2) + pow(wp, 2));              
-                                                                                   
-            if (ip < nVar) {                                                       
-              a[iq_][ip] = 1;                                                      
-              a[iu_][ip] = up;                                                     
-              a[iv_][ip] = vp;                                                     
-              a[iw_][ip] = wp;                                                     
-              a[ie_][ip] = v2;                                                     
-            }                                                                      
-                                                                                   
-            a[iq_][nVar] += qp;                                                    
-            a[iu_][nVar] += qp * up;                                               
-            a[iv_][nVar] += qp * vp;                                               
-            a[iw_][nVar] += qp * wp;                                               
-            a[ie_][nVar] += qp * v2;                                               
-          }                                                                        
-                                                                                   
-          bool isSolved = linear_solver_Gauss_Elimination(a, x, nVar);             
-          if (isSolved) {                                                          
-            // All the particle weights should have the same sign.                 
-            double qt = a[iq_][nVar];                                              
-            for (int ip = 0; ip < nPartCombine - 1; ip++) {                        
-              if (qt * x[ip] < 0) {                                                
-                isSolved = false;                                                  
-                break;                                                             
-              }                                                                    
-            }                                                                      
-          }                                                                        
-          if (!isSolved)                                                           
-            continue;                                                              
-          //---------------------------------------------- 
+    //----------------------------------------------------------------
+    // Estimate the bulk velocity and thermal velocity.
+    Real uAv = 0, vAv = 0, wAv = 0;
+    for (int pid = 0; pid < nPartOrig; pid++) {
+      auto& pcl = particles[pid];
+      uAv += pcl.rdata(ix_);
+      vAv += pcl.rdata(iy_);
+      wAv += pcl.rdata(iz_);
+    }
+    uAv /= nPartOrig;
+    vAv /= nPartOrig;
+    wAv /= nPartOrig;
 
-         //----------------------------------------------                         
-                                                                                   
-          // 1) Adjust the location to conserve the mass center.                   
-          // 2) Adjust the weight to conserve mass and energy.                     
-          const bool doConserveMassCenter = false;                                 
-          if(doConserveMassCenter){                                                
-            double centerxOld = 0, centeryOld = 0, centerzOld = 0;                 
-            for (int ip = 0; ip < nPartCombine; ip++) {                            
-              centerxOld += pcls[idx_I[ip]].get_q()*pcls[idx_I[ip]].get_x();       
-              centeryOld += pcls[idx_I[ip]].get_q()*pcls[idx_I[ip]].get_y();       
-              centerzOld += pcls[idx_I[ip]].get_q()*pcls[idx_I[ip]].get_z();       
-            }                                                                      
-                                                                                   
-            double centerxNew = 0, centeryNew = 0, centerzNew = 0;                 
-            double qtotal = 0;                                                     
-            for (int ip = 0; ip < nPartCombine-1; ip++) {                          
-              centerxNew += x[ip]*pcls[idx_I[ip]].get_x();                         
-              centeryNew += x[ip]*pcls[idx_I[ip]].get_y();                         
-              centerzNew += x[ip]*pcls[idx_I[ip]].get_z();                         
-              qtotal += x[ip];                                                     
-            }                                                                      
-                                                                                   
-            const double invQtotal = 1./qtotal;                                    
-            const double dPartX = (centerxOld - centerxNew)*invQtotal;             
-            const double dPartY = (centeryOld - centeryNew)*invQtotal;             
-            const double dPartZ = (centerzOld - centerzNew)*invQtotal;             
-                                                                                   
-            for (int ip = 0; ip < nPartCombine - 1; ip++) {                        
-              double xpNew = pcls[idx_I[ip]].get_x() + dPartX;                     
-              double ypNew = pcls[idx_I[ip]].get_y() + dPartY;                     
-              double zpNew = pcls[idx_I[ip]].get_z() + dPartZ;                     
-                                                                                   
-              xpNew = bound(xpNew, xMinProc, xMaxProc);                            
-              ypNew = bound(ypNew, xMinProc, xMaxProc);                            
-              zpNew = bound(zpNew, xMinProc, xMaxProc);                            
-                                                                                   
-              pcls[idx_I[ip]].set_x(xpNew);                                        
-              pcls[idx_I[ip]].set_y(ypNew);                                        
-              pcls[idx_I[ip]].set_z(zpNew);                                        
-            }                                                                      
-          } // if doConserveMassCenter                                             
-                                                                                   
-          // Adjust weight.                                                        
-          for (int ip = 0; ip < nPartCombine - 1; ip++) {                          
-            pcls[idx_I[ip]].set_q(x[ip]);                                          
-          }                                                                        
-          pcls[idx_I[nPartCombine - 1]].set_q(0.0);                                
-                                                                                   
-        }           
+    Real thVel = 0, thVel2 = 0;
+    for (int pid = 0; pid < nPartOrig; pid++) {
+      auto& pcl = particles[pid];
+      thVel2 += pow(pcl.rdata(ix_) - uAv, 2) + pow(pcl.rdata(iy_) - vAv, 2) +
+                pow(pcl.rdata(iz_) - wAv, 2);
+    }
 
-      }                                                                            
-                                                                                   
-  int pid = 0;                                                                     
-  while (pid < pcls.size()) {                                                      
-    if (pcls[pid].get_q() == 0) {                                                  
-      // 'Delete' particles.                                                       
-      pcls[pid] = pcls.back();                                                     
-      pcls.pop_back();                                                             
-    } else {                                                                       
-      pid++;                                                                       
-    }                                                                              
-  }  
+    thVel2 /= nPartOrig;
+    thVel = sqrt(thVel2);
+
+    //----------------------------------------------------------------
+
+    // Storing the particle indices in the corresponding phase space cell.
+    MDArray<Vector<int> > phasePartIdx_III(nCell, nCell, nCell);
+    const int u_ = 0, v_ = 1, w_ = 2;
+    Real velMin_D[nDim], velMax_D[nDim], inv_dVel_D[nDim];
+    const Real r0 = 1.0;
+    velMin_D[u_] = -r0 * thVel + uAv;
+    velMax_D[u_] = r0 * thVel + uAv;
+    velMin_D[v_] = -r0 * thVel + vAv;
+    velMax_D[v_] = r0 * thVel + vAv;
+    velMin_D[w_] = -r0 * thVel + wAv;
+    velMax_D[w_] = r0 * thVel + wAv;
+    for (int iDim = 0; iDim < nDim; iDim++) {
+      inv_dVel_D[iDim] = nCell / (velMax_D[iDim] - velMin_D[iDim]);
+    }
+
+    Real vel_D[nDim];
+    int iCell_D[nDim];
+    for (int pid = 0; pid < nPartOrig; pid++) {
+      auto& pcl = particles[pid];
+      vel_D[u_] = pcl.rdata(ix_);
+      vel_D[v_] = pcl.rdata(iy_);
+      vel_D[w_] = pcl.rdata(iz_);
+
+      bool isOutside = false;
+      for (int iDim = 0; iDim < nDim; iDim++) {
+        if (vel_D[iDim] < velMin_D[iDim] || vel_D[iDim] > velMax_D[iDim])
+          isOutside = true;
+      }
+      if (isOutside)
+        continue;
+
+      for (int iDim = 0; iDim < nDim; iDim++) {
+        iCell_D[iDim] =
+            floor((vel_D[iDim] - velMin_D[iDim]) * inv_dVel_D[iDim]);
+      }
+
+      phasePartIdx_III(iCell_D[u_], iCell_D[v_], iCell_D[w_]).push_back(pid);
+    }
+
+    const int nPartCombine = 6;
+    int iCount = 0;
+    int nAvailableCombine = 0;
+    for (int iu = 0; iu < nCell; iu++)
+      for (int iv = 0; iv < nCell; iv++)
+        for (int iw = 0; iw < nCell; iw++) {
+          iCount += phasePartIdx_III(iu, iv, iw).size();
+          nAvailableCombine +=
+              floor(phasePartIdx_III(iu, iv, iw).size() / nPartCombine);
+        }
+
+    Real ratioCombine;
+    if (nAvailableCombine < nCombineGoal) {
+      ratioCombine = 1;
+    } else {
+      ratioCombine = Real(nCombineGoal) / nAvailableCombine;
+    }
+
+    const auto lo = lbound(pti.tilebox());
+    const auto hi = ubound(pti.tilebox());
+
+    const Real xMin = Geom(0).LoEdge(lo.x, ix_),
+               xMax = Geom(0).HiEdge(hi.x, ix_);
+
+    const Real yMin = Geom(0).LoEdge(lo.y, iy_),
+               yMax = Geom(0).HiEdge(hi.y, iy_);
+
+    const Real zMin = Geom(0).LoEdge(lo.z, iz_),
+               zMax = Geom(0).HiEdge(hi.z, iz_);
+
+    const Real dx = Geom(0).CellSize(ix_);
+    const Real dy = Geom(0).CellSize(iy_);
+    const Real dz = Geom(0).CellSize(iz_);
+
+    const Real invdl2 = 1.0 / (dx * dx + dy * dy + dz * dz);
+    const Real invthVel2 = 1.0 / thVel2;
+    for (int iu = 0; iu < nCell; iu++)
+      for (int iv = 0; iv < nCell; iv++)
+        for (int iw = 0; iw < nCell; iw++) {
+          int nCombineCell =
+              floor(ratioCombine * phasePartIdx_III(iu, iv, iw).size() /
+                    nPartCombine);
+          for (int iCombine = 0; iCombine < nCombineCell; iCombine++) {
+            /*
+                Delete 1 particle out of 6 particles:
+                1) Choose two particles that are closest to each other.
+                2) Delete the lighter one.
+                3) Distribute its weights to another 5 particles to conserve
+                   mass, momentum and energy.
+                4) Adjust the location of the particles to conserve
+                   mass center (optional. Turned off by default.)
+             */
+
+            int idx_I[nPartCombine];
+            for (int ip = 0; ip < nPartCombine; ip++) {
+              // Pop three particle indices.
+              idx_I[ip] = phasePartIdx_III(iu, iv, iw).back();
+              phasePartIdx_III(iu, iv, iw).pop_back();
+            }
+
+            // Find the pairs close to each other in phase space.
+            int pair1 = 0, pair2 = 0;
+            Real dis2Min = 2;
+            for (int ip1 = 0; ip1 < nPartCombine - 1; ip1++)
+              for (int ip2 = ip1 + 1; ip2 < nPartCombine; ip2++) {
+                const Real dup = particles[idx_I[ip1]].rdata(ix_) -
+                                 particles[idx_I[ip2]].rdata(ix_);
+                const Real dvp = particles[idx_I[ip1]].rdata(iy_) -
+                                 particles[idx_I[ip2]].rdata(iy_);
+                const Real dwp = particles[idx_I[ip1]].rdata(iz_) -
+                                 particles[idx_I[ip2]].rdata(iz_);
+                const Real dxp = particles[idx_I[ip1]].pos(ix_) -
+                                 particles[idx_I[ip2]].pos(ix_);
+                const Real dyp = particles[idx_I[ip1]].pos(iy_) -
+                                 particles[idx_I[ip2]].pos(iy_);
+                const Real dzp = particles[idx_I[ip1]].pos(iz_) -
+                                 particles[idx_I[ip2]].pos(iz_);
+
+                const Real dis2 =
+                    (dup * dup + dvp * dvp + dwp * dwp) * invthVel2 +
+                    (dxp * dxp + dyp * dyp + dzp * dzp) * invdl2;
+
+                if (dis2 < dis2Min) {
+                  dis2Min = dis2;
+                  pair1 = ip1;
+                  pair2 = ip2;
+                }
+              }
+
+            // Delete the lighter one.
+            int iPartDel = pair1, iPartKeep = pair2;
+            if (fabs(particles[idx_I[pair1]].rdata(iqp_)) >
+                fabs(particles[idx_I[pair2]].rdata(iqp_))) {
+              iPartDel = pair2;
+              iPartKeep = pair1;
+            }
+
+            if (iPartDel != nPartCombine - 1) {
+              const int idxTmp = idx_I[iPartDel];
+              idx_I[iPartDel] = idx_I[nPartCombine - 1];
+              idx_I[nPartCombine - 1] = idxTmp;
+            }
+
+            //---------------Solve the new particle weights---------------------
+            const int nVar = 5;
+            const int iq_ = 0, iu_ = 1, iv_ = 2, iw_ = 3, ie_ = 4;
+            Real a[nVar][nVar + 1];
+            Real x[nVar];
+            for (int i = 0; i < nVar; i++) {
+              x[i] = 0;
+              for (int j = 0; j < nVar + 1; j++) {
+                a[i][j] = 0;
+              }
+            }
+
+            for (int ip = 0; ip < nPartCombine; ip++) {
+              const Real qp = particles[idx_I[ip]].rdata(iqp_);
+              const Real up = particles[idx_I[ip]].rdata(ix_);
+              const Real vp = particles[idx_I[ip]].rdata(iy_);
+              const Real wp = particles[idx_I[ip]].rdata(iz_);
+              const Real v2 = (pow(up, 2) + pow(vp, 2) + pow(wp, 2));
+
+              if (ip < nVar) {
+                a[iq_][ip] = 1;
+                a[iu_][ip] = up;
+                a[iv_][ip] = vp;
+                a[iw_][ip] = wp;
+                a[ie_][ip] = v2;
+              }
+
+              a[iq_][nVar] += qp;
+              a[iu_][nVar] += qp * up;
+              a[iv_][nVar] += qp * vp;
+              a[iw_][nVar] += qp * wp;
+              a[ie_][nVar] += qp * v2;
+            }
+
+            auto linear_solver_Gauss_Elimination = [&a, &x, &nVar]() {
+              for (int i = 0; i < nVar - 1; i++) {
+                if (a[i][i] == 0)
+                  return false;
+                for (int k = i + 1; k < nVar; k++) {
+
+                  Real t = a[k][i] / a[i][i];
+                  for (int j = 0; j <= nVar; j++)
+                    a[k][j] = a[k][j] - t * a[i][j];
+                }
+              }
+
+              for (int i = nVar - 1; i >= 0; i--) {
+                x[i] = a[i][nVar];
+                for (int j = i + 1; j < nVar; j++) {
+                  if (j != i)
+                    x[i] = x[i] - a[i][j] * x[j];
+                }
+                if (a[i][i] == 0) {
+                  return false;
+                } else {
+                  x[i] = x[i] / a[i][i];
+                }
+              }
+
+              return true;
+            };
+
+            bool isSolved = linear_solver_Gauss_Elimination();
+
+            if (isSolved) {
+              // All the particle weights should have the same sign.
+              Real qt = a[iq_][nVar];
+              for (int ip = 0; ip < nPartCombine - 1; ip++) {
+                if (qt * x[ip] < 0) {
+                  isSolved = false;
+                  break;
+                }
+              }
+            }
+            if (!isSolved)
+              continue;
+            //----------------------------------------------
+
+            //----------------------------------------------
+
+            // 1) Adjust the location to conserve the mass center.
+            // 2) Adjust the weight to conserve mass and energy.
+            const bool doConserveMassCenter = false;
+            if (doConserveMassCenter) {
+              Real centerxOld = 0, centeryOld = 0, centerzOld = 0;
+              for (int ip = 0; ip < nPartCombine; ip++) {
+                centerxOld += particles[idx_I[ip]].rdata(iqp_) *
+                              particles[idx_I[ip]].pos(ix_);
+                centeryOld += particles[idx_I[ip]].rdata(iqp_) *
+                              particles[idx_I[ip]].pos(iy_);
+                centerzOld += particles[idx_I[ip]].rdata(iqp_) *
+                              particles[idx_I[ip]].pos(iz_);
+              }
+
+              Real centerxNew = 0, centeryNew = 0, centerzNew = 0;
+              Real qtotal = 0;
+              for (int ip = 0; ip < nPartCombine - 1; ip++) {
+                centerxNew += x[ip] * particles[idx_I[ip]].pos(ix_);
+                centeryNew += x[ip] * particles[idx_I[ip]].pos(iy_);
+                centerzNew += x[ip] * particles[idx_I[ip]].pos(iz_);
+                qtotal += x[ip];
+              }
+
+              const Real invQtotal = 1. / qtotal;
+              const Real dPartX = (centerxOld - centerxNew) * invQtotal;
+              const Real dPartY = (centeryOld - centeryNew) * invQtotal;
+              const Real dPartZ = (centerzOld - centerzNew) * invQtotal;
+
+              for (int ip = 0; ip < nPartCombine - 1; ip++) {
+                Real xpNew = particles[idx_I[ip]].pos(ix_) + dPartX;
+                Real ypNew = particles[idx_I[ip]].pos(iy_) + dPartY;
+                Real zpNew = particles[idx_I[ip]].pos(iz_) + dPartZ;
+
+                xpNew = bound(xpNew, xMin, xMax);
+                ypNew = bound(ypNew, xMin, xMax);
+                zpNew = bound(zpNew, xMin, xMax);
+
+                particles[idx_I[ip]].pos(ix_) = xpNew;
+                particles[idx_I[ip]].pos(iy_) = ypNew;
+                particles[idx_I[ip]].pos(iz_) = zpNew;
+              }
+            } // if doConserveMassCenter
+
+            // Adjust weight.
+            Real e0 = 0, e1 = 0, mx0 = 0, mx1 = 0, my0 = 0, my1 = 0, mz0 = 0,
+                 mz1 = 0, q0 = 0, q1 = 0;
+            for (int ip = 0; ip < nPartCombine; ip++) {
+              auto& p = particles[idx_I[ip]];
+              const Real up = p.rdata(iup_);
+              const Real vp = p.rdata(ivp_);
+              const Real wp = p.rdata(iwp_);
+              const Real qp = p.rdata(iqp_);
+
+              q0 += qp;
+              e0 += qp * (up * up + vp * vp + wp * wp);
+              mx0 += qp * up;
+              my0 += qp * vp;
+              mz0 += qp * wp;
+            }
+
+            for (int ip = 0; ip < nPartCombine - 1; ip++) {
+              auto& p = particles[idx_I[ip]];
+              Print() << "before combine " << p << std::endl;
+              p.rdata(iqp_) = x[ip];
+              Print() << "after combine " << p << std::endl;
+            }
+
+            Print() << "deleted part " << particles[idx_I[nPartCombine - 1]]
+                    << std::endl;
+            // Mark for deletion
+            particles[idx_I[nPartCombine - 1]].id() = -1;
+
+            for (int ip = 0; ip < nPartCombine - 1; ip++) {
+              auto& p = particles[idx_I[ip]];
+              const Real up = p.rdata(iup_);
+              const Real vp = p.rdata(ivp_);
+              const Real wp = p.rdata(iwp_);
+              const Real qp = p.rdata(iqp_);
+
+              q1 += qp;
+              e1 += qp * (up * up + vp * vp + wp * wp);
+              mx1 += qp * up;
+              my1 += qp * vp;
+              mz1 += qp * wp;
+            }
+            Print() << "q0 = " << q0 << " e0 = " << e0 << " mx0 = " << mx0
+                    << " my0 = " << my0 << " mz0 = " << mz0 << std::endl;
+
+            Print() << "q1 = " << q1 << " e1 = " << e1 << " mx1 = " << mx1
+                    << " my1 = " << my1 << " mz1 = " << mz1 << std::endl;
+          }
+        }
   }
-
 }
