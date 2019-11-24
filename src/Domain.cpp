@@ -349,6 +349,11 @@ void Domain::set_ic_field() {
   // Interpolate from node to cell center.
   average_node_to_cellcenter(centerB, 0, nodeB, 0, centerB.nComp(),
                              centerB.nGrow());
+
+  nodeE.FillBoundary(geom.periodicity());
+  nodeB.FillBoundary(geom.periodicity());
+  centerB.FillBoundary(geom.periodicity());
+
 }
 //---------------------------------------------------------
 
@@ -368,14 +373,14 @@ void Domain::particle_mover() {
   plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; i++) {
     plasmaEnergy[i] = parts[i]->mover(nodeEth, nodeB, tc.get_dt());
-    plasmaEnergy[iTot] +=plasmaEnergy[i]; 
+    plasmaEnergy[iTot] += plasmaEnergy[i];
 
-    parts[i]->split_particles(1.5);
-    parts[i]->combine_particles(0.6);
+    // parts[i]->split_particles(1.5);
+    // parts[i]->combine_particles(0.6);
     parts[i]->inject_particles_at_boundary(fluidInterface);
   }
 
-  Print()<<"total plasma energy = "<<plasmaEnergy[iTot]<<std::endl;
+  Print() << "total plasma energy = " << plasmaEnergy[iTot] << std::endl;
 
   timing_stop(nameFunc);
 }
