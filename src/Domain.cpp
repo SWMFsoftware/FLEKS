@@ -126,6 +126,10 @@ void Domain::read_param() {
         readParam.read_var("isPeriodic", isPeriodic);
         set_periodicity(i, isPeriodic);
       }
+    } else if (command == "#RESAMPLING") {
+      readParam.read_var("doReSampling", doReSampling);
+      readParam.read_var("reSamplingLowLimit", reSamplingLowLimit);
+      readParam.read_var("reSamplingHighLimit", reSamplingHighLimit);
     } else if (command == "#SAVEPLOT") {
       int nPlot;
       readParam.read_var("nPlotFile", nPlot);
@@ -353,7 +357,6 @@ void Domain::set_ic_field() {
   nodeE.FillBoundary(geom.periodicity());
   nodeB.FillBoundary(geom.periodicity());
   centerB.FillBoundary(geom.periodicity());
-
 }
 //---------------------------------------------------------
 
@@ -375,8 +378,11 @@ void Domain::particle_mover() {
     plasmaEnergy[i] = parts[i]->mover(nodeEth, nodeB, tc.get_dt());
     plasmaEnergy[iTot] += plasmaEnergy[i];
 
-    // parts[i]->split_particles(1.5);
-    // parts[i]->combine_particles(0.6);
+    if (doReSampling) {
+      parts[i]->split_particles(reSamplingLowLimit);
+      parts[i]->combine_particles(reSamplingHighLimit);
+    }
+
     parts[i]->inject_particles_at_boundary(fluidInterface);
   }
 

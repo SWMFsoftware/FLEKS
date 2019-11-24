@@ -694,7 +694,7 @@ Real Particles::mover(const amrex::MultiFab& nodeEMF,
   // periodic boundary conditions if needed.
   Redistribute();
 
-  energy *= 1./get_qom();
+  energy *= 0.5/get_qom();
   ParallelDescriptor::ReduceRealSum(energy,
                                     ParallelDescriptor::IOProcessorNumber());
 

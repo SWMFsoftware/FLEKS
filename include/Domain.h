@@ -77,6 +77,9 @@ private:
   bool doRestart;
   bool doCorrectDivE;
 
+  bool doReSampling; 
+  amrex::Real reSamplingLowLimit; 
+  amrex::Real reSamplingHighLimit; 
   // public methods
 public:
   Domain() {
@@ -87,6 +90,8 @@ public:
 
     doRestart = false;
     doCorrectDivE = true;
+
+    doReSampling = false; 
   };
   ~Domain() {
     delete[] qom;
