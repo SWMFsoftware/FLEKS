@@ -39,10 +39,10 @@ void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
                                         double* const data_I, const int nVar) {
   // (rho + 3*Moment + 6*p)*nSpecies+ 3*E + 3*B;
   const int nVarPerSpecies = 10;
-  int nVarPIC = nSpecies* nVarPerSpecies + 6;
+  int nVarPIC = nSpecies * nVarPerSpecies + 6;
   double dataPIC_I[nVarPIC];
 
-  const int iBx_ = nSpecies* nVarPerSpecies, iBy_ = iBx_ + 1, iBz_ = iBy_ + 1;
+  const int iBx_ = nSpecies * nVarPerSpecies, iBy_ = iBx_ + 1, iBz_ = iBy_ + 1;
   const int iEx_ = iBz_ + 1, iEy_ = iEx_ + 1, iEz_ = iEy_ + 1;
 
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
@@ -365,6 +365,37 @@ void Domain::read_restart() {
   }
   sum_moments();
   sum_to_center(false);
+}
+
+void Domain::write_log(bool doForce, bool doCreateFile) {
+  if (doCreateFile && ParallelDescriptor::IOProcessor()) {
+    std::stringstream ss;
+    int time = tc.get_time_si(); // double to int.
+    ss << "PC/plots/log_n" << std::setfill('0') << std::setw(8)
+       << tc.get_cycle() << ".log";
+    logFile = ss.str();
+    std::ofstream of(logFile.c_str());
+    of << "time nStep Etot Ee Eb Epart ";
+    for (int i = 0; i < nSpecies; i++)
+      of << " Epart" << i << std::endl;
+    of.close();
+  }
+
+  if (tc.log.is_time_to(doForce)) {
+    Real eEnergy = calc_E_field_energy();
+    Real bEnergy = calc_B_field_energy();
+    if (ParallelDescriptor::IOProcessor()) {
+      std::ofstream of(logFile.c_str(), std::fstream::app);
+      of.precision(12);
+      of << tc.get_time_si() << "\t" << tc.get_cycle() << "\t"
+         << "\t" << (eEnergy + bEnergy + plasmaEnergy[iTot]) << "\t" << eEnergy
+         << "\t" << bEnergy << "\t" << plasmaEnergy[iTot];
+      for (int i = 0; i < nSpecies; i++)
+        of << "\t" << plasmaEnergy[i];
+      of << std::endl;
+      of.close();
+    }
+  }
 }
 
 void find_output_list_caller(const PlotWriter& writerIn,

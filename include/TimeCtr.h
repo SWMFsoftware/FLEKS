@@ -19,13 +19,13 @@ private:
 
   // In SI unit
   amrex::Real dtEvent;
-  amrex::Real lastTime; 
+  amrex::Real lastTime;
   amrex::Real nextTime;
   bool useDt;
   int nCount;
 
   int dnEvent;
-  int nLast; 
+  int nLast;
   int nNext;
   bool useDn;
 
@@ -34,7 +34,7 @@ public:
 
   void init(const amrex::Real dtIn, const int dnIn = -1);
 
-  bool is_time_to(bool doForce=false);
+  bool is_time_to(bool doForce = false);
 };
 
 class PlotCtr : public EventCtr {
@@ -65,9 +65,12 @@ private:
 public:
   amrex::Vector<PlotCtr> plots;
 
+  EventCtr log;
+
   // public methods
 public:
-  TimeCtr() : timeNowSI(0), dtSI(1), si2no(1), no2si(1), cycle(0) {}
+  TimeCtr()
+      : timeNowSI(0), dtSI(1), si2no(1), no2si(1), cycle(0), log(this, -1, 1) {}
 
   void set_si2no(const amrex::Real si2noIn) {
     si2no = si2noIn;
@@ -96,7 +99,7 @@ public:
     cycle++;
   }
 
-  void write_plots(bool doForceWrite=false);
+  void write_plots(bool doForceWrite = false);
 };
 
 #endif

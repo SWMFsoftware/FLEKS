@@ -130,6 +130,10 @@ void Domain::read_param() {
       readParam.read_var("doReSampling", doReSampling);
       readParam.read_var("reSamplingLowLimit", reSamplingLowLimit);
       readParam.read_var("reSamplingHighLimit", reSamplingHighLimit);
+    } else if (command == "#SAVELOG") {
+      int dn;
+      readParam.read_var("dnSave", dn);
+      tc.log.init(-1, dn);
     } else if (command == "#SAVEPLOT") {
       int nPlot;
       readParam.read_var("nPlotFile", nPlot);
@@ -208,6 +212,8 @@ void Domain::set_ic() {
   }
 
   tc.write_plots(true);
+
+  write_log(true, true);
 }
 
 void Domain::make_grid() {
@@ -373,11 +379,9 @@ void Domain::particle_mover() {
   std::string nameFunc = "Domain::mover";
   timing_start(nameFunc);
 
-  plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; i++) {
-    plasmaEnergy[i] = parts[i]->mover(nodeEth, nodeB, tc.get_dt());
-    plasmaEnergy[iTot] += plasmaEnergy[i];
-
+    parts[i]->mover(nodeEth, nodeB, tc.get_dt());
+  
     if (doReSampling) {
       parts[i]->split_particles(reSamplingLowLimit);
       parts[i]->combine_particles(reSamplingHighLimit);
@@ -385,8 +389,6 @@ void Domain::particle_mover() {
 
     parts[i]->inject_particles_at_boundary(fluidInterface);
   }
-
-  Print() << "total plasma energy = " << plasmaEnergy[iTot] << std::endl;
 
   timing_stop(nameFunc);
 }
@@ -399,8 +401,10 @@ void Domain::sum_moments() {
   const RealMM mm0(0.0);
   nodeMM.setVal(mm0);
 
+  plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, tc.get_dt());
+    plasmaEnergy[i] = parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, tc.get_dt());
+    plasmaEnergy[iTot] += plasmaEnergy[i];
     MultiFab::Add(nodePlasma[nSpecies], nodePlasma[i], 0, 0, nMoments, 0);
   }
 
@@ -538,8 +542,11 @@ void Domain::update() {
 
   sum_moments();
 
+  // update time, step number.
   tc.update();
+
   tc.write_plots();
+  write_log();
 
   timing_stop(nameFunc);
 }
@@ -858,4 +865,67 @@ void Domain::apply_external_BC(amrex::MultiFab& mf, const int iStart,
       }
     }
   }
+}
+
+Real Domain::calc_E_field_energy() {
+  Real sum = 0;
+  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
+    FArrayBox& fab = nodeE[mfi];
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arr = fab.array();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    // Do not count the right edges.
+    Real sumLoc = 0;
+    for (int k = lo.z; k <= hi.z - 1; ++k)
+      for (int j = lo.y; j <= hi.y - 1; ++j)
+        for (int i = lo.x; i <= hi.x - 1; ++i) {
+          sumLoc += pow(arr(i, j, k, ix_), 2) + pow(arr(i, j, k, iy_), 2) +
+                    pow(arr(i, j, k, iz_), 2);
+        }
+
+    const auto& dx = geom.CellSize();
+    const Real coef = 0.5 * dx[ix_] * dx[iy_] * dx[iz_] / fourPI;
+    sum += sumLoc * coef;
+  }
+  ParallelDescriptor::ReduceRealSum(sum,
+                                    ParallelDescriptor::IOProcessorNumber());
+
+  if (!ParallelDescriptor::IOProcessor())
+    sum = 0;
+
+  return sum;
+}
+
+Real Domain::calc_B_field_energy() {
+  Real sum = 0;
+  for (MFIter mfi(centerB); mfi.isValid(); ++mfi) {
+    FArrayBox& fab = centerB[mfi];
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arr = fab.array();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    Real sumLoc = 0;
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          sumLoc += pow(arr(i, j, k, ix_), 2) + pow(arr(i, j, k, iy_), 2) +
+                    pow(arr(i, j, k, iz_), 2);
+        }
+
+    const auto& dx = geom.CellSize();
+    const Real coef = 0.5 * dx[ix_] * dx[iy_] * dx[iz_] / fourPI;
+    sum += sumLoc * coef;
+  }
+  ParallelDescriptor::ReduceRealSum(sum,
+                                    ParallelDescriptor::IOProcessorNumber());
+
+  if (!ParallelDescriptor::IOProcessor())
+    sum = 0;
+
+  return sum;
 }

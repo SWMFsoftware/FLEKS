@@ -363,8 +363,9 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
   }
 }
 
-void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
-                            MultiFab& nodeBMF, Real dt) {
+amrex::Real Particles::sum_moments(MultiFab& momentsMF,
+                                   UMultiFab<RealMM>& nodeMM, MultiFab& nodeBMF,
+                                   Real dt) {
   BL_PROFILE("Particles::sum_moments");
   const auto& plo = Geom(0).ProbLo();
 
@@ -375,6 +376,7 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
   const auto& invDx = Geom(0).InvCellSize();
   const Real invVol = invDx[ix_] * invDx[iy_] * invDx[iz_];
 
+  Real energy = 0;
   const int lev = 0;
   for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
     Array4<Real> const& momentsArr = momentsMF[pti].array();
@@ -516,6 +518,7 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
 
       //-------Moments end---------
 
+      energy += qp * (up * up + vp * vp + wp * wp);
     } // for p
   }
 
@@ -558,6 +561,13 @@ void Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
   momentsMF.FillBoundary(Geom(0).periodicity());
 
   convert_to_fluid_moments(momentsMF);
+
+  energy *= 0.5 / get_qom();
+  ParallelDescriptor::ReduceRealSum(energy,
+                                    ParallelDescriptor::IOProcessorNumber());
+  if (!ParallelDescriptor::IOProcessor())
+    energy = 0;
+  return energy;
 }
 
 void Particles::convert_to_fluid_moments(MultiFab& momentsMF) {
@@ -592,7 +602,7 @@ void Particles::convert_to_fluid_moments(MultiFab& momentsMF) {
   }
 }
 
-Real Particles::mover(const amrex::MultiFab& nodeEMF,
+void Particles::mover(const amrex::MultiFab& nodeEMF,
                       const amrex::MultiFab& nodeBMF, amrex::Real dt) {
   BL_PROFILE("Particles::mover");
 
@@ -604,7 +614,6 @@ Real Particles::mover(const amrex::MultiFab& nodeEMF,
   const auto& invDx = Geom(0).InvCellSize();
 
   const int lev = 0;
-  Real energy = 0; 
   for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
     const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
     const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
@@ -683,23 +692,13 @@ Real Particles::mover(const amrex::MultiFab& nodeEMF,
       // Mark for deletion
       if (is_outside(p)) {
         p.id() = -1;
-      }else{
-        energy += qp*(unp1*unp1 + vnp1*vnp1 + wnp1*wnp1);
       }
-
     } // for p
   }   // for pti
 
   // This function distributes particles to proper processors and apply
   // periodic boundary conditions if needed.
   Redistribute();
-
-  energy *= 0.5/get_qom();
-  ParallelDescriptor::ReduceRealSum(energy,
-                                    ParallelDescriptor::IOProcessorNumber());
-
-  if(!ParallelDescriptor::IOProcessor()) energy = 0; 
-  return energy;
 }
 
 void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
@@ -923,7 +922,6 @@ void Particles::split_particles(Real limit) {
 
       dCounter += interval;
     }
-
   }
 }
 
@@ -980,7 +978,7 @@ void Particles::combine_particles(Real limit) {
     //----------------------------------------------------------------
 
     // Storing the particle indices in the corresponding phase space cell.
-    //MDArray<Vector<int> > phasePartIdx_III(nCell, nCell, nCell);
+    // MDArray<Vector<int> > phasePartIdx_III(nCell, nCell, nCell);
     Vector<int> phasePartIdx_III[nCell][nCell][nCell];
 
     const int u_ = 0, v_ = 1, w_ = 2;
@@ -1249,7 +1247,7 @@ void Particles::combine_particles(Real limit) {
             // Adjust weight.
             for (int ip = 0; ip < nPartCombine - 1; ip++) {
               auto& p = particles[idx_I[ip]];
-              p.rdata(iqp_) = x[ip];              
+              p.rdata(iqp_) = x[ip];
             }
             // Mark for deletion
             particles[idx_I[nPartCombine - 1]].id() = -1;

@@ -7,8 +7,8 @@
 #include "Constants.h"
 #include "FluidInterface.h"
 #include "RandNum.h"
-#include "UMultiFab.h"
 #include "TimeCtr.h"
+#include "UMultiFab.h"
 
 class ParticlesIter : public amrex::ParIter<4, 0, 0, 0> {
 public:
@@ -19,7 +19,7 @@ class Particles : public amrex::ParticleContainer<4, 0, 0, 0> {
 
 public:
   Particles(const amrex::Geometry& geom, const amrex::DistributionMapping& dm,
-            const amrex::BoxArray& ba, TimeCtr *const tcIn, const int speciesID,
+            const amrex::BoxArray& ba, TimeCtr* const tcIn, const int speciesID,
             const amrex::Real charge, const amrex::Real mass,
             const amrex::IntVect& nPartPerCellIn);
 
@@ -29,13 +29,14 @@ public:
                           int k);
   void inject_particles_at_boundary(const FluidInterface& fluidInterface);
 
-  void sum_moments(amrex::MultiFab& momentsMF, amrex::UMultiFab<RealMM>& nodeMM,
-                   amrex::MultiFab& nodeBMF, amrex::Real dt);
+  amrex::Real sum_moments(amrex::MultiFab& momentsMF,
+                          amrex::UMultiFab<RealMM>& nodeMM,
+                          amrex::MultiFab& nodeBMF, amrex::Real dt);
 
   void sum_to_center(amrex::MultiFab& netChargeMF,
                      amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly);
 
-  amrex::Real mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
+  void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
              amrex::Real dt);
 
   void convert_to_fluid_moments(amrex::MultiFab& momentsMF);
@@ -57,14 +58,13 @@ public:
     return false;
   }
 
-  void split_particles(amrex::Real limit);  
+  void split_particles(amrex::Real limit);
   void combine_particles(amrex::Real limit);
 
   void divE_correct_position(const amrex::MultiFab& phiMF);
 
-  amrex::Real get_qom(){
-    return charge/mass;
-  }
+  amrex::Real get_qom() { return charge / mass; }
+
 protected:
   static const int iup_ = 0;
   static const int ivp_ = 1;
@@ -79,8 +79,7 @@ protected:
 
   amrex::IntVect nPartPerCell;
 
-  TimeCtr* tc; 
-
+  TimeCtr* tc;
 };
 
 #endif

@@ -164,6 +164,8 @@ public:
   void save_restart_header();
   void save_restart_data();
   void read_restart();
+  std::string logFile; 
+  void write_log(bool doForce = false, bool doCreateFile=false);
   //--------------- IO end--------------------------------
 
   //--------------- Boundary begin ------------------------
@@ -205,6 +207,10 @@ public:
 
   // private methods
 private:
+  amrex::Real calc_E_field_energy();
+  amrex::Real calc_B_field_energy();
+
+
 };
 
 void find_output_list_caller(const PlotWriter &writerIn,
