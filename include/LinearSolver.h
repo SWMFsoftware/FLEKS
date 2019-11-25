@@ -15,9 +15,9 @@ void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
                          MATVEC fMatvec);
 
 class LinearSolver {
-  int nGrid;  
+  int nGrid;
   int nVar;
-  int nSolve; 
+  int nSolve;
   int nDim;
   double tol;
   int nIter;
@@ -66,12 +66,12 @@ public:
     }
   }
 
-  void init(int nGridIn, int nVarIn, int nDimIn, double tolIn, int nIterIn,
-            MATVEC fIn) {
+  void set_tol(amrex::Real in) { tol = in; }
+  void set_nIter(int in) { nIter = in; }
+
+  void init(int nGridIn, int nVarIn, int nDimIn, MATVEC fIn) {
     nVar = nVarIn;
     nDim = nDimIn;
-    tol = tolIn;
-    nIter = nIterIn;
     fMatvec = fIn;
     reset(nGridIn);
   }
@@ -80,9 +80,7 @@ public:
     linear_solver_gmres(tol, nIter, nVar, nDim, nGrid, rhs, xLeft, fMatvec);
   }
 
-  int get_nSolve()const{
-      return nSolve; 
-  }
+  int get_nSolve() const { return nSolve; }
 };
 
 #endif

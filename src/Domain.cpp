@@ -108,6 +108,13 @@ void Domain::read_param() {
       tc.set_dt_si(dtSI);
     } else if (command == "#DIVE") {
       readParam.read_var("doCorrectDivE", doCorrectDivE);
+    } else if (command == "#EFIELDSOLVER") {
+      Real tol; 
+      int nIter; 
+      readParam.read_var("tol", tol);
+      readParam.read_var("nIter", nIter);
+      eSolver.set_tol(tol);
+      eSolver.set_nIter(nIter);
     } else if (command == "#PARTICLES") {
       npcelx = new int[1];
       npcely = new int[1];
@@ -318,18 +325,13 @@ void Domain::make_data() {
   }
 
   {
-
     int nGrid = get_local_node_or_cell_number(nodeE);
-    double tol = 1e-6;
-    int nIter = 200;
-    eSolver.init(nGrid, nDimMax, nDimMax, tol, nIter, matvec_E_solver);
+    eSolver.init(nGrid, nDimMax, nDimMax, matvec_E_solver);
   }
 
   {
     int nGrid = get_local_node_or_cell_number(centerDivE);
-    double tol = 1e-2;
-    int nIter = 20;
-    divESolver.init(nGrid, 1, nDimMax, tol, nIter, matvec_divE_accurate);
+    divESolver.init(nGrid, 1, nDimMax, matvec_divE_accurate);
   }
 }
 //---------------------------------------------------------
@@ -381,7 +383,7 @@ void Domain::particle_mover() {
 
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->mover(nodeEth, nodeB, tc.get_dt());
-  
+
     if (doReSampling) {
       parts[i]->split_particles(reSamplingLowLimit);
       parts[i]->combine_particles(reSamplingHighLimit);
@@ -403,7 +405,8 @@ void Domain::sum_moments() {
 
   plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; i++) {
-    plasmaEnergy[i] = parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, tc.get_dt());
+    plasmaEnergy[i] =
+        parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, tc.get_dt());
     plasmaEnergy[iTot] += plasmaEnergy[i];
     MultiFab::Add(nodePlasma[nSpecies], nodePlasma[i], 0, 0, nMoments, 0);
   }

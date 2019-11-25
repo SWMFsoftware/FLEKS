@@ -92,6 +92,12 @@ public:
     doCorrectDivE = true;
 
     doReSampling = false; 
+
+    eSolver.set_tol(1e-6);
+    eSolver.set_nIter(200);
+
+    divESolver.set_tol(0.01);
+    divESolver.set_nIter(20);
   };
   ~Domain() {
     delete[] qom;
