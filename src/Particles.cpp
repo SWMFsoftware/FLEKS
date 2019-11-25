@@ -482,6 +482,7 @@ amrex::Real Particles::sum_moments(MultiFab& momentsMF,
       //-------Moments begin---------
       Real pMoments[nMoments];
 
+      pMoments[iNum_] = 1;
       pMoments[iRho_] = qp;
 
       {
@@ -553,7 +554,9 @@ amrex::Real Particles::sum_moments(MultiFab& momentsMF,
         }       // k1
   }
 
-  momentsMF.mult(invVol);
+
+  // Exclude the number density. 
+  momentsMF.mult(invVol, 0, nMoments - 1);
 
   momentsMF.SumBoundary(Geom(0).periodicity());
 

@@ -238,8 +238,10 @@ double Domain::get_var(std::string var, const int ix, const int iy,
              var.substr(0, 3) == "uyS" || var.substr(0, 3) == "uzS" ||
              var.substr(0, 4) == "pXXS" || var.substr(0, 4) == "pYYS" ||
              var.substr(0, 4) == "pZZS" || var.substr(0, 4) == "pXYS" ||
-             var.substr(0, 4) == "pXZS" || var.substr(0, 4) == "pYZS") {
+             var.substr(0, 4) == "pXZS" || var.substr(0, 4) == "pYZS" ||
+             var.substr(0, 4) == "numS") {
     int iVar;
+
     if (var.substr(0, 4) == "rhoS")
       iVar = iRho_;
     if (var.substr(0, 3) == "uxS")
@@ -260,6 +262,8 @@ double Domain::get_var(std::string var, const int ix, const int iy,
       iVar = iPxz_;
     if (var.substr(0, 4) == "pYZS")
       iVar = iPyz_;
+    if (var.substr(0, 4) == "numS")
+      iVar = iNum_;
 
     const amrex::Array4<amrex::Real const>& arr =
         nodePlasma[get_is()][mfi].array();

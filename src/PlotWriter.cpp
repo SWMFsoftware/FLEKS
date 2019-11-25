@@ -519,7 +519,7 @@ double PlotWriter::No2OutTable(std::string const& var) {
     // Location
     value = No2OutL;
   } else {
-    value = 0;
+    value = 1;
   }
 
   return value;
