@@ -187,3 +187,41 @@ void FluidInterface::convert_moment_to_velocity() {
         }
   }
 }
+
+void FluidInterface::set_plasma_charge_and_mass(amrex::Real qomEl) {
+
+  if (!useElectronFluid) {
+    MoMi_S[0] = QoQi_S[0] / qomEl;
+  }
+
+  SumMass = 0.0;
+  for (int is = 0; is < nSIn; is++)
+    SumMass += MoMi_S[is];
+
+  // Fix the values of MoMi_S and QoQi_S;
+  MoMi0_S = new double[nSIn];
+  QoQi0_S = new double[nSIn];
+  for (int i = 0; i < nSIn; i++) {
+    MoMi0_S[i] = MoMi_S[i];
+    QoQi0_S[i] = QoQi_S[i];
+  }
+
+  if (doSplitSpecies) {
+    int idx;
+    for (int i = 0; i < nS; i++) {
+      idx = iSPic2Mhd_I[i];
+      QoQi_S[i] = QoQi0_S[idx];
+      MoMi_S[i] = MoMi0_S[idx];
+    }
+  }
+
+  Print() << "=========== Plasma species ============" << std::endl;
+  for (int is = 0; is < nS; is++) {
+    Print() << "Q/Qi[" << is << "] = " << QoQi_S[is] << std::endl;
+
+    Print() << "M/Mi[" << is << "] = " << MoMi_S[is] << std::endl;
+  }
+  if (!useMhdPe && !useElectronFluid)
+    Print() << "Pe/Ptotal = " << PeRatio << std::endl;
+  Print() << "===================================" << std::endl;
+}

@@ -143,8 +143,9 @@ void Domain::find_output_list(const PlotWriter& writerIn,
     iBlock++;
   }
 
-  long nPoint = pointList_II.size();
-  ParallelDescriptor::ReduceLongSum(nPoint);
+  nPointAllProc = pointList_II.size();
+  ParallelDescriptor::ReduceLongSum(nPointAllProc);
+  
 
   ParallelDescriptor::ReduceRealMin(xMinL_D, nDimMax);
   ParallelDescriptor::ReduceRealMax(xMaxL_D, nDimMax);
@@ -336,6 +337,10 @@ void Domain::save_restart_header() {
     headerFile << tc.get_time_si() << "\t TimeSimulation\n";
     headerFile << "\n";
 
+    headerFile << "#TIMESTEP\n";
+    headerFile << tc.get_dt_si() << "\t dt\n";
+    headerFile << "\n";
+
     // Geometry
     headerFile << "#GEOMETRY\n";
     for (int i = 0; i < nDimMax; ++i) {
@@ -350,6 +355,18 @@ void Domain::save_restart_header() {
       headerFile << nCell[i] << "\n";
     }
     headerFile << "\n";
+
+
+    headerFile << "#ELECTRON\n";
+    headerFile << qomEl << "\t qomEl\n";
+    headerFile << "\n";
+
+    headerFile << "#PARTICLES\n";
+    for (int i = 0; i < nDimMax; ++i) {
+      headerFile << nPartPerCell[i] << "\n";
+    }
+    headerFile << "\n";
+
   }
 }
 

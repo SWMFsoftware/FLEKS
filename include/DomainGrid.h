@@ -70,7 +70,7 @@ public:
     amrex::Print() << "DomainGrid:: Domain range = " << boxRange << std::endl;
     amrex::Print() << "DomainGrid:: Total block #  = " << nodeBA.size()
                    << std::endl;
-    amrex::Print() << "DomainGrid:: centerBA = " << centerBA << std::endl;
+    //amrex::Print() << "DomainGrid:: centerBA = " << centerBA << std::endl;
   }
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }

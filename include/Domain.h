@@ -19,8 +19,8 @@ public:
   amrex::Real theta;
   amrex::Real coefDiff;
   FieldSolver() {
-    theta = 0.5;
-    coefDiff = 0;
+    theta = 0.51;
+    coefDiff = 0.1;
   }
 };
 
@@ -67,8 +67,9 @@ private:
   amrex::Vector<amrex::Real> plasmaEnergy;
 
   amrex::Vector<std::unique_ptr<Particles> > parts;
-  int *npcelx, *npcely, *npcelz;
-  double *qom;
+
+  amrex::IntVect nPartPerCell; 
+  amrex::Real qomEl;
 
   FieldSolver fsolver;
 
@@ -77,21 +78,18 @@ private:
   bool doRestart;
   bool doCorrectDivE;
 
-  bool doReSampling; 
-  amrex::Real reSamplingLowLimit; 
-  amrex::Real reSamplingHighLimit; 
+  bool doReSampling;
+  amrex::Real reSamplingLowLimit;
+  amrex::Real reSamplingHighLimit;
   // public methods
 public:
   Domain() {
-    qom = nullptr;
-    npcelx = nullptr;
-    npcely = nullptr;
-    npcelz = nullptr;
+    qomEl = -100;
 
     doRestart = false;
     doCorrectDivE = true;
 
-    doReSampling = false; 
+    doReSampling = false;
 
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
@@ -99,12 +97,7 @@ public:
     divESolver.set_tol(0.01);
     divESolver.set_nIter(20);
   };
-  ~Domain() {
-    delete[] qom;
-    delete[] npcelx;
-    delete[] npcely;
-    delete[] npcelz;
-  };
+  ~Domain(){};
 
   void update();
 
@@ -170,8 +163,8 @@ public:
   void save_restart_header();
   void save_restart_data();
   void read_restart();
-  std::string logFile; 
-  void write_log(bool doForce = false, bool doCreateFile=false);
+  std::string logFile;
+  void write_log(bool doForce = false, bool doCreateFile = false);
   //--------------- IO end--------------------------------
 
   //--------------- Boundary begin ------------------------
@@ -181,7 +174,8 @@ public:
     return 0.0;
   }
 
-  inline amrex::Real get_node_E(amrex::MFIter &mfi, int i, int j, int k, int iVar) {
+  inline amrex::Real get_node_E(amrex::MFIter &mfi, int i, int j, int k,
+                                int iVar) {
     amrex::Real e;
     if (iVar == ix_)
       e = fluidInterface.get_ex(mfi, i, j, k);
@@ -193,7 +187,8 @@ public:
     return e;
   }
 
-  inline amrex::Real get_node_B(amrex::MFIter &mfi, int i, int j, int k, int iVar) {
+  inline amrex::Real get_node_B(amrex::MFIter &mfi, int i, int j, int k,
+                                int iVar) {
     amrex::Real b;
     if (iVar == ix_)
       b = fluidInterface.get_bx(mfi, i, j, k);
@@ -205,7 +200,8 @@ public:
     return b;
   }
 
-  inline amrex::Real get_center_B(amrex::MFIter &mfi, int i, int j, int k, int iVar) {
+  inline amrex::Real get_center_B(amrex::MFIter &mfi, int i, int j, int k,
+                                  int iVar) {
     return fluidInterface.get_center_b(mfi, i, j, k, iVar);
   }
 
@@ -215,8 +211,6 @@ public:
 private:
   amrex::Real calc_E_field_energy();
   amrex::Real calc_B_field_energy();
-
-
 };
 
 void find_output_list_caller(const PlotWriter &writerIn,

@@ -59,6 +59,7 @@ public:
 
   void convert_moment_to_velocity();
 
+  void set_plasma_charge_and_mass(amrex::Real qomEl);
 
   // ---------Functions to read/interpolate value from nodeFluid. Begin------------
   const amrex::MultiFab& get_nodeFluid() const { return nodeFluid; }

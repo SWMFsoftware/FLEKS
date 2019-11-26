@@ -78,7 +78,7 @@ void Domain::init_time_ctr() {
       writer.set_scalarName_I(scalarName_I);
       //--------------------------------------------------
       writer.init();
-      writer.print();
+      //writer.print();
     }
   }
 }
@@ -87,9 +87,6 @@ void Domain::init_time_ctr() {
 
 void Domain::read_param() {
   // The default values shoudl be set in the constructor.
-
-  qom = new double[1];
-  qom[0] = -777;
 
   std::string command;
   ReadParam& readParam = fluidInterface.readParam;
@@ -102,7 +99,7 @@ void Domain::read_param() {
         readParam.read_var("maxBlockSize", tmp);
         set_maxBlockSize(i, tmp);
       }
-    } else if (command == "#TIMECONTROL") {
+    } else if (command == "#TIMESTEP") {
       Real dtSI;
       readParam.read_var("dtSI", dtSI);
       tc.set_dt_si(dtSI);
@@ -116,14 +113,11 @@ void Domain::read_param() {
       eSolver.set_tol(tol);
       eSolver.set_nIter(nIter);
     } else if (command == "#PARTICLES") {
-      npcelx = new int[1];
-      npcely = new int[1];
-      npcelz = new int[1];
-      readParam.read_var("npcelx", npcelx[0]);
-      readParam.read_var("npcely", npcely[0]);
-      readParam.read_var("npcelz", npcelz[0]);
+      readParam.read_var("npcelx", nPartPerCell[ix_]);
+      readParam.read_var("npcely", nPartPerCell[iy_]);
+      readParam.read_var("npcelz", nPartPerCell[iz_]);
     } else if (command == "#ELECTRON") {
-      readParam.read_var("qom", qom[0]);
+      readParam.read_var("qom", qomEl);
     } else if (command == "#DISCRETIZE") {
       readParam.read_var("theta", fsolver.theta);
       readParam.read_var("coefDiff", fsolver.coefDiff);
@@ -204,9 +198,8 @@ void Domain::read_param() {
     //--------- The commands above exist in restart.H only --------
   }
 
-  // Passing qom npcelx... into this function and re-allocating memory
-  // for them is extremely ugly!! --Yuxi
-  fluidInterface.fixPARAM(qom, npcelx, npcely, npcelz, &nSpecies);
+  fluidInterface.set_plasma_charge_and_mass(qomEl); 
+  nSpecies = fluidInterface.get_nS();  
 }
 
 void Domain::set_ic() {
@@ -303,7 +296,6 @@ void Domain::make_data() {
 
     // Create particle containers.
     for (int i = 0; i < nSpecies; i++) {
-      IntVect nPartPerCell = { npcelx[i], npcely[i], npcelz[i] };
       auto ptr = std::make_unique<Particles>(
           geom, dm, centerBA, &tc, i, fluidInterface.getQiSpecies(i),
           fluidInterface.getMiSpecies(i), nPartPerCell);
