@@ -10,6 +10,13 @@
 #include "TimeCtr.h"
 #include "UMultiFab.h"
 
+class PartInfo {
+public:
+  amrex::Real energy;
+  amrex::Real uMax;
+  PartInfo() : energy(0), uMax(0) {}
+};
+
 class ParticlesIter : public amrex::ParIter<4, 0, 0, 0> {
 public:
   using amrex::ParIter<4, 0, 0, 0>::ParIter;
@@ -29,9 +36,12 @@ public:
                           int k);
   void inject_particles_at_boundary(const FluidInterface& fluidInterface);
 
-  amrex::Real sum_moments(amrex::MultiFab& momentsMF,
-                          amrex::UMultiFab<RealMM>& nodeMM,
-                          amrex::MultiFab& nodeBMF, amrex::Real dt);
+  PartInfo sum_moments(amrex::MultiFab& momentsMF,
+                       amrex::UMultiFab<RealMM>& nodeMM,
+                       amrex::MultiFab& nodeBMF, amrex::Real dt);
+
+  // It is real 'thermal velocity'. It is sqrt(sum(q*v2)/sum(q)).
+  amrex::Real calc_max_thermal_velocity(amrex::MultiFab& momentsMF);
 
   void sum_to_center(amrex::MultiFab& netChargeMF,
                      amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly);

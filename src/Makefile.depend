@@ -6,7 +6,7 @@ SRCS := \
 	Utility.cpp \
 	PlotWriter.cpp \
 	TimeCtr.cpp \
-	Domain_IO.cpp \
+	DomainIO.cpp \
 	BC.cpp \
 	FluidInterface.cpp
 

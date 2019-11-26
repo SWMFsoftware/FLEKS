@@ -109,8 +109,8 @@ void Domain::read_param() {
     } else if (command == "#DIVE") {
       readParam.read_var("doCorrectDivE", doCorrectDivE);
     } else if (command == "#EFIELDSOLVER") {
-      Real tol; 
-      int nIter; 
+      Real tol;
+      int nIter;
       readParam.read_var("tol", tol);
       readParam.read_var("nIter", nIter);
       eSolver.set_tol(tol);
@@ -225,6 +225,10 @@ void Domain::set_ic() {
 
 void Domain::make_grid() {
   set_nGst(1);
+
+  // If MHD is 2D, PIC has to be periodic in the z-direction.
+  for (int iDim = fluidInterface.getnDim(); iDim < nDimMax; iDim++)
+    set_periodicity(iDim, true);
 
   if (!doRestart) {
     IntVect nCellTmp;
@@ -403,10 +407,17 @@ void Domain::sum_moments() {
   const RealMM mm0(0.0);
   nodeMM.setVal(mm0);
 
+  const Real dt = tc.get_dt();
+  const auto& invDx = geom.InvCellSize();
   plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; i++) {
-    plasmaEnergy[i] =
-        parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, tc.get_dt());
+    PartInfo pinfo = parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, dt);
+    plasmaEnergy[i] = pinfo.energy;
+    Print() << std::setprecision(5) << "Species " << i
+            << ": max(uth) = " << pinfo.uMax
+            << ", CFL_x = " << pinfo.uMax * dt * invDx[ix_]
+            << ", CFL_y = " << pinfo.uMax * dt * invDx[iy_]
+            << ", CFL_z = " << pinfo.uMax * dt * invDx[iz_] << std::endl;
     plasmaEnergy[iTot] += plasmaEnergy[i];
     MultiFab::Add(nodePlasma[nSpecies], nodePlasma[i], 0, 0, nMoments, 0);
   }

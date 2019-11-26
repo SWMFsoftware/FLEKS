@@ -363,9 +363,8 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
   }
 }
 
-amrex::Real Particles::sum_moments(MultiFab& momentsMF,
-                                   UMultiFab<RealMM>& nodeMM, MultiFab& nodeBMF,
-                                   Real dt) {
+PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
+                                MultiFab& nodeBMF, Real dt) {
   BL_PROFILE("Particles::sum_moments");
   const auto& plo = Geom(0).ProbLo();
 
@@ -376,7 +375,7 @@ amrex::Real Particles::sum_moments(MultiFab& momentsMF,
   const auto& invDx = Geom(0).InvCellSize();
   const Real invVol = invDx[ix_] * invDx[iy_] * invDx[iz_];
 
-  Real energy = 0;
+  PartInfo pinfo;
   const int lev = 0;
   for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
     Array4<Real> const& momentsArr = momentsMF[pti].array();
@@ -519,7 +518,7 @@ amrex::Real Particles::sum_moments(MultiFab& momentsMF,
 
       //-------Moments end---------
 
-      energy += qp * (up * up + vp * vp + wp * wp);
+      pinfo.energy += qp * (up * up + vp * vp + wp * wp);
     } // for p
   }
 
@@ -554,8 +553,7 @@ amrex::Real Particles::sum_moments(MultiFab& momentsMF,
         }       // k1
   }
 
-
-  // Exclude the number density. 
+  // Exclude the number density.
   momentsMF.mult(invVol, 0, nMoments - 1);
 
   momentsMF.SumBoundary(Geom(0).periodicity());
@@ -563,14 +561,59 @@ amrex::Real Particles::sum_moments(MultiFab& momentsMF,
   // FillBoundary seems unnecessary. --Yuxi
   momentsMF.FillBoundary(Geom(0).periodicity());
 
+  // This function should be called before 'convert_to_fluid_moments'
+  pinfo.uMax = calc_max_thermal_velocity(momentsMF);
+
   convert_to_fluid_moments(momentsMF);
 
-  energy *= 0.5 / get_qom();
-  ParallelDescriptor::ReduceRealSum(energy,
+  // Calculate the total particle energy--------------
+  pinfo.energy *= 0.5 / get_qom();
+  ParallelDescriptor::ReduceRealSum(pinfo.energy,
                                     ParallelDescriptor::IOProcessorNumber());
   if (!ParallelDescriptor::IOProcessor())
-    energy = 0;
-  return energy;
+    pinfo.energy = 0;
+  //------------------------------------------------------
+
+  return pinfo;
+}
+
+Real Particles::calc_max_thermal_velocity(MultiFab& momentsMF) {
+
+  Real uthMax = 0;
+  const Real c1over3 = 1. / 3;
+  for (MFIter mfi(momentsMF); mfi.isValid(); ++mfi) {
+    FArrayBox& fab = momentsMF[mfi];
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arr = fab.array();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    // Do not calculate for edges twice.
+    for (int k = lo.z; k <= hi.z - 1; ++k)
+      for (int j = lo.y; j <= hi.y - 1; ++j)
+        for (int i = lo.x; i <= hi.x - 1; ++i) {
+          Real rho = arr(i, j, k, iRho_);
+          if (rho == 0)
+            continue;
+
+          Real p = (arr(i, j, k, iPxx_) + arr(i, j, k, iPyy_) +
+                    arr(i, j, k, iPzz_)) *
+                   c1over3;
+
+          Real uth = sqrt(p / rho);
+          if (uth > uthMax)
+            uthMax = uth;
+        }
+  }
+
+  ParallelDescriptor::ReduceRealMax(uthMax,
+                                    ParallelDescriptor::IOProcessorNumber());
+
+  if (!ParallelDescriptor::IOProcessor())
+    uthMax = 0;
+
+  return uthMax;
 }
 
 void Particles::convert_to_fluid_moments(MultiFab& momentsMF) {
@@ -828,7 +871,6 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
   ParallelDescriptor::ReduceRealMax(epsMax,
                                     ParallelDescriptor::IOProcessorNumber());
 
-  // A reduction is required here...
   Print() << "Particle position correction: epsMax = " << epsMax
           << " for species " << speciesID << std::endl;
 
