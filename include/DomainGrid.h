@@ -39,13 +39,23 @@ protected:
 
   amrex::DistributionMapping dm;
 
+  amrex::MultiFab costMF;
+
+  int iGrid;
+  int iDecomp;
+
 public:
   DomainGrid() {
+    iGrid = 1;
+    iDecomp = 1;
     for (int i = 0; i < nDim; i++) {
       periodicity[i] = 0;
       maxBlockSize[i] = 8;
     }
   }
+
+  int get_iGrid() const { return iGrid; }
+  int get_iDecomp() const { return iDecomp; }
 
   void init() {
     // nCell and boxRange should have been set before calling this function.
@@ -67,10 +77,13 @@ public:
 
     nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
 
+    costMF.define(centerBA, dm, 1, 0);
+    costMF.setVal(0);
+
     amrex::Print() << "DomainGrid:: Domain range = " << boxRange << std::endl;
     amrex::Print() << "DomainGrid:: Total block #  = " << nodeBA.size()
                    << std::endl;
-    //amrex::Print() << "DomainGrid:: centerBA = " << centerBA << std::endl;
+    // amrex::Print() << "DomainGrid:: centerBA = " << centerBA << std::endl;
   }
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }

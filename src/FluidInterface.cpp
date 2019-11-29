@@ -2,6 +2,7 @@
 
 #include "FluidInterface.h"
 #include "Utility.h"
+#include "GridUtility.h"
 
 using namespace amrex;
 
@@ -224,4 +225,12 @@ void FluidInterface::set_plasma_charge_and_mass(amrex::Real qomEl) {
   if (!useMhdPe && !useElectronFluid)
     Print() << "Pe/Ptotal = " << PeRatio << std::endl;
   Print() << "===================================" << std::endl;
+}
+
+
+void FluidInterface::load_balance(const DistributionMapping& dmIn){
+  dm = dmIn; 
+
+  redistribute_FabArray(nodeFluid, dm); //false?
+  redistribute_FabArray(centerB, dm); //false?
 }

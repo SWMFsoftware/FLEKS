@@ -186,16 +186,19 @@ contains
 
     character(len=*), parameter :: NameSub = 'PC_get_grid_info'
     !--------------------------------------------------------------------------
+   nDimOut    = nDim
+   call pic_get_grid_info(iGridOut, iDecompOut); 
+
     ! Report back GM's nDim to the point coupler
-    nDimOut    = nDim
-    if(IsFirstTime)then
-       iGridOut   = 1
-       iDecompOut = 1
-    else
-       iGridOut   = 2
-       iDecompOut = 2
-    end if
-    IsFirstTime = .false.
+
+   !  if(IsFirstTime)then
+   !     iGridOut   = 1
+   !     iDecompOut = 1
+   !  else
+   !     iGridOut   = 2
+   !     iDecompOut = 2
+   !  end if
+   !  IsFirstTime = .false.
 
   end subroutine PC_get_grid_info
   !============================================================================

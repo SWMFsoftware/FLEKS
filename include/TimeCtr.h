@@ -67,10 +67,18 @@ public:
 
   EventCtr log;
 
+  EventCtr loadBalance;
+
   // public methods
 public:
   TimeCtr()
-      : timeNowSI(0), dtSI(1), si2no(1), no2si(1), cycle(0), log(this, -1, 1) {}
+      : timeNowSI(0),
+        dtSI(1),
+        si2no(1),
+        no2si(1),
+        cycle(0),
+        log(this, -1, 1),
+        loadBalance(this, -1, -1) {}
 
   void set_si2no(const amrex::Real si2noIn) {
     si2no = si2noIn;

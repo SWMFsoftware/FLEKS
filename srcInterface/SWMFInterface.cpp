@@ -125,6 +125,12 @@ int pic_cal_dt_(double *dtOut) {
   return 0;
 }
 
+int pic_get_grid_info_(int *iGrid, int *iDecomp){
+  (*iGrid) = MPICs->get_iGrid(); 
+  (*iDecomp) = MPICs->get_iDecomp(); 
+  return 0; 
+}
+
 int pic_end_() {
   {
     // Saving plots before exiting.

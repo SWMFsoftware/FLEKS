@@ -147,6 +147,12 @@ public:
   void calculate_phi(LinearSolver &solver);
   //-------------div(E) correction end----------------
 
+
+  //---------------load balance begin-------------------
+  void compute_cost();
+  void load_balance();
+  //---------------load balance end---------------------
+
   //--------------- IO begin--------------------------------
   void find_output_list(const PlotWriter &writerIn, long int &nPointAllProc,
                         PlotWriter::VectorPointList &pointList_II,

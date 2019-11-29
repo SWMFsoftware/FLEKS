@@ -3,6 +3,7 @@
 #include <AMReX_MultiFabUtil.H>
 
 #include "Domain.h"
+#include "GridUtility.h"
 #include "LinearSolver.h"
 #include "SWMFDomains.h"
 #include "Timing_c.h"
@@ -78,7 +79,7 @@ void Domain::init_time_ctr() {
       writer.set_scalarName_I(scalarName_I);
       //--------------------------------------------------
       writer.init();
-      //writer.print();
+      // writer.print();
     }
   }
 }
@@ -135,6 +136,12 @@ void Domain::read_param() {
       int dn;
       readParam.read_var("dnSave", dn);
       tc.log.init(-1, dn);
+    } else if (command == "#LOADBALANCE") {
+      int dn;
+      readParam.read_var("dn", dn);
+      Real dt;
+      readParam.read_var("dt", dt);
+      tc.loadBalance.init(dt, dn);
     } else if (command == "#SAVEPLOT") {
       int nPlot;
       readParam.read_var("nPlotFile", nPlot);
@@ -198,8 +205,8 @@ void Domain::read_param() {
     //--------- The commands above exist in restart.H only --------
   }
 
-  fluidInterface.set_plasma_charge_and_mass(qomEl); 
-  nSpecies = fluidInterface.get_nS();  
+  fluidInterface.set_plasma_charge_and_mass(qomEl);
+  nSpecies = fluidInterface.get_nS();
 }
 
 void Domain::set_ic() {
@@ -546,10 +553,14 @@ void Domain::update() {
     divE_correction();
   }
 
-  sum_moments();
-
   // update time, step number.
   tc.update();
+
+  // Apply load balance before sum_moments so that the moments and mass matrix
+  // on the gird do NOT require MPI communication.
+  load_balance();
+
+  sum_moments();
 
   tc.write_plots();
   write_log();
@@ -934,4 +945,65 @@ Real Domain::calc_B_field_energy() {
     sum = 0;
 
   return sum;
+}
+
+void Domain::compute_cost() {
+  average_node_to_cellcenter(costMF, 0, nodePlasma[iTot], iNum_, 1);
+}
+
+void Domain::load_balance() {
+  if (ParallelDescriptor::NProcs() == 1)
+    return;
+
+  if (!tc.loadBalance.is_time_to())
+    return;
+
+  std::string nameFunc = "Domain::load_balance";
+  timing_start(nameFunc);
+
+  Print() << "--------- Load balancing ------------" << std::endl;
+
+  iDecomp++;
+  Print() << "before dm = " << dm << std::endl;
+  compute_cost();  
+  dm = DistributionMapping::makeSFC(costMF);
+  Print() << "after dm = " << dm << std::endl;
+
+  redistribute_FabArray(nodeE, dm);
+  redistribute_FabArray(nodeEth, dm);
+  redistribute_FabArray(nodeB, dm);
+  redistribute_FabArray(centerB, dm);
+
+  redistribute_FabArray(centerNetChargeOld, dm);
+  redistribute_FabArray(centerNetChargeN, dm);   // false??
+  redistribute_FabArray(centerNetChargeNew, dm); // false??
+
+  redistribute_FabArray(centerDivE, dm);
+  redistribute_FabArray(centerPhi, dm);
+
+  {
+    bool doMoveData = false;
+
+    for (auto& pl : nodePlasma) {
+      redistribute_FabArray(pl, dm, doMoveData);
+    }
+
+    redistribute_FabArray(nodeMM, dm, doMoveData);
+    redistribute_FabArray(costMF, dm, doMoveData);
+    redistribute_FabArray(centerMM, dm, doMoveData);
+
+    redistribute_FabArray(tempNode3, dm, doMoveData);
+    redistribute_FabArray(tempCenter3, dm, doMoveData);
+    redistribute_FabArray(tempCenter1, dm, doMoveData);
+    redistribute_FabArray(tempCenter1_1, dm, doMoveData);
+  }
+  // Load balance particles.
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->SetParticleDistributionMap(0, dm);
+    parts[i]->Redistribute();
+  }
+
+  fluidInterface.load_balance(dm);
+
+  timing_stop(nameFunc);
 }

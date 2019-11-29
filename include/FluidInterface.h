@@ -61,6 +61,8 @@ public:
 
   void set_plasma_charge_and_mass(amrex::Real qomEl);
 
+  void load_balance(const amrex::DistributionMapping& dmIn);
+
   // ---------Functions to read/interpolate value from nodeFluid. Begin------------
   const amrex::MultiFab& get_nodeFluid() const { return nodeFluid; }
 

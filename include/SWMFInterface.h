@@ -21,5 +21,6 @@ int pic_cal_dt_(double *dt);
 int pic_find_points_(int *nPoint, double *Xyz_DI, int *iProc_I);
 int pic_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
                        int *nVar);
+int pic_get_grid_info_(int *iGrid, int *iDecomp);
 }
 #endif
