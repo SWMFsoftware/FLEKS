@@ -255,7 +255,7 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
       for (int i = 0; i < 3; i++) {
         // plo is the corner location => -0.5
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i] - 0.5;
-        loIdx[i] = floor(dShift[i]);
+        loIdx[i] = myfloor(dShift[i]); // floor() is slow.
         dShift[i] = dShift[i] - loIdx[i];
       }
       Real coef[2][2][2];
@@ -338,24 +338,29 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
                     weights_IIID[i1 - iMin][j1 - jMin][k1 - kMin][iDim];
               }
 
-              for (int j2 = jMin; j2 <= jMax; j2++)
-                for (int i2 = iMin; i2 <= iMax; i2++)
+              Real* const data = mmArr(i1, j1, k1).data;
+              // Real weights[27] = { 0 };
+              for (int i2 = iMin; i2 <= iMax; i2++) {
+                int ip = i2 - i1 + 1;
+                const int gp0 = ip * 9;
+                for (int j2 = jMin; j2 <= jMax; j2++) {
+                  int jp = j2 - j1 + 1;
+                  const int gp1 = gp0 + jp * 3;
                   for (int k2 = kMin; k2 <= kMax; k2++) {
-                    Real weights[nDimMax] = { 0 };
-                    for (int iDim = 0; iDim < 3; iDim++) {
-                      weights[iDim] +=
-                          wg_D[iDim] *
-                          weights_IIID[i2 - iMin][j2 - jMin][k2 - kMin][iDim];
-                    }
-                    const Real weight =
-                        weights[ix_] + weights[iy_] + weights[iz_];
+                    const Real(&wg1_D)[3] =
+                        weights_IIID[i2 - iMin][j2 - jMin][k2 - kMin];
 
-                    const int ip = i2 - i1 + 1;
-                    const int jp = j2 - j1 + 1;
-                    const int kp = k2 - k1 + 1;
-                    const int gp = ip * 9 + jp * 3 + kp;
-                    mmArr(i1, j1, k1).data[gp] += weight * absqp;
+                    // const int kp = k2 - k1 + 1;
+                    const int gp = gp1 + k2 - k1 + 1;
+
+                    const Real tmp = wg_D[ix_] * wg1_D[ix_] +
+                                     wg_D[iy_] * wg1_D[iy_] +
+                                     wg_D[iz_] * wg1_D[iz_];
+
+                    data[gp] += absqp * tmp;
                   }
+                }
+              }
             }
       } // if doChargeOnly
 
@@ -395,7 +400,7 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
       Real dShift[3];
       for (int i = 0; i < 3; i++) {
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
-        loIdx[i] = floor(dShift[i]);
+        loIdx[i] = myfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
       }
 
@@ -441,9 +446,9 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
       alpha[7] = (-Omx + Omy * Omz) * c0;
       alpha[8] = (1 + Omz * Omz) * c0;
 
-      int count = 0;
-      int ip, jp, kp;         // Indexes for g'
-      double wg, wgp, weight; // W_pg, W_pg'
+      // int count = 0;
+      // int ip, jp, kp;         // Indexes for g'
+      // double wg, wgp, weight; // W_pg, W_pg'
 
       const int iMin = loIdx[ix_];
       const int jMin = loIdx[iy_];
@@ -452,29 +457,37 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
       const int jMax = jMin + 2;
       const int kMax = kMin + 2;
 
-      int gp = -1;
       for (int k1 = kMin; k1 < kMax; k1++)
         for (int j1 = jMin; j1 < jMax; j1++)
           for (int i1 = iMin; i1 < iMax; i1++) {
-            wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
+            const Real wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
+
+            Real* const data0 = mmArr(i1, j1, k1).data;
             for (int k2 = kMin; k2 < kMax; k2++) {
-              kp = k2 - k1 + 1;
+              const int kp = k2 - k1 + 1;
               if (kp > 0) {
                 for (int j2 = jMin; j2 < jMax; j2++) {
-                  jp = j2 - j1 + 1;
+                  const int jp = j2 - j1 + 1;
+
                   for (int i2 = iMin; i2 < iMax; i2++) {
-                    ip = i2 - i1 + 1;
-                    weight = wg * coef[i2 - iMin][j2 - jMin][k2 - kMin];
-                    gp = kp * 9 + jp * 3 + ip;
-                    const int idx0 = gp * 9;
+
+                    const Real weight =
+                        wg * coef[i2 - iMin][j2 - jMin][k2 - kMin];
+                    // const int ip = i2 - i1 + 1;
+                    // const int gp = kp * 9 + jp * 3 + ip;
+                    // const int idx0 = gp * 9;
+                    const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
+
+                    Real* const data = &(data0[idx0]);
                     for (int idx = 0; idx < 9; idx++) {
-                      mmArr(i1, j1, k1).data[idx0 + idx] += alpha[idx] * weight;
+                      data[idx] += alpha[idx] * weight;
                     }
                   } // k2
-                }   // j2
-              }     // if (ip > 0)
-            }       // i2
-          }         // k1
+
+                } // j2
+              }   // if (ip > 0)
+            }     // i2
+          }       // k1
 
       //----- Mass matrix calculation end--------------
 
@@ -508,10 +521,10 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
         pMoments[iJhz_] = (wp + (up * Omy - vp * Omx + udotOm * Omz)) * coef1;
       }
 
-      for (int kk = 0; kk < 2; kk++)
-        for (int jj = 0; jj < 2; jj++)
-          for (int ii = 0; ii < 2; ii++)
-            for (int iVar = 0; iVar < nMoments; iVar++) {
+      for (int iVar = 0; iVar < nMoments; iVar++)
+        for (int kk = 0; kk < 2; kk++)
+          for (int jj = 0; jj < 2; jj++)
+            for (int ii = 0; ii < 2; ii++) {
               momentsArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
                          iVar) += coef[ii][jj][kk] * pMoments[iVar];
             }
@@ -536,6 +549,7 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
         for (int i1 = lo.x; i1 <= hi.x; i1++) {
           const int kp = 2, kpr = 0;
           const int kr = k1 + kp - 1;
+          const Real* const datas0 = mmArr(i1, j1, k1).data;
           for (int jp = 0; jp < 3; jp++) {
             const int jr = j1 + jp - 1;
             const int jpr = 2 - jp;
@@ -544,9 +558,11 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
               const int ipr = 2 - ip;
               gpr = jpr * 3 + ipr;
               gps = 18 + jp * 3 + ip; // gps = kp*9+jp*3+kp
+
+              Real* const datar = &(mmArr(ir, jr, kr).data[gpr * 9]);
+              const Real* const datas = &(datas0[gps * 9]);
               for (int idx = 0; idx < 9; idx++) {
-                mmArr(ir, jr, kr).data[gpr * 9 + idx] =
-                    mmArr(i1, j1, k1).data[gps * 9 + idx];
+                datar[idx] = datas[idx];
               } // idx
             }   // kp
           }     // jp
@@ -679,7 +695,7 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
       Real dShift[3];
       for (int i = 0; i < 3; i++) {
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
-        loIdx[i] = floor(dShift[i]);
+        loIdx[i] = myfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
       }
 
@@ -774,7 +790,7 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
       for (int i = 0; i < 3; i++) {
         // plo is the corner location => -0.5
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i] - 0.5;
-        loIdx[i] = floor(dShift[i]);
+        loIdx[i] = myfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
       }
 
@@ -835,11 +851,12 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
 
         for (int k = 0; k < 2; k++)
           for (int j = 0; j < 2; j++)
-            for (int i = 0; i < 2; i++)
+            for (int i = 0; i < 2; i++) {
+              const Real coef = fourPI * phiArr(iMin + i, jMin + j, kMin + k);
               for (int iDim = 0; iDim < 3; iDim++) {
-                eps_D[iDim] += fourPI * phiArr(iMin + i, jMin + j, kMin + k) *
-                               weights_IIID[i][j][k][iDim];
+                eps_D[iDim] += coef * weights_IIID[i][j][k][iDim];
               }
+            }
 
         for (int iDim = 0; iDim < 3; iDim++)
           eps_D[iDim] *= coef;
@@ -915,8 +932,8 @@ void Particles::split_particles(Real limit) {
 
     Real dCounter = 0;
 
-    while (floor(dCounter) < nPartOrig) {
-      const int idxSplit = floor(dCounter);
+    while (myfloor(dCounter) < nPartOrig) {
+      const int idxSplit = myfloor(dCounter);
 
       auto& p = particles[idxSplit];
       Real up1 = p.rdata(iup_);
@@ -1057,7 +1074,7 @@ void Particles::combine_particles(Real limit) {
 
       for (int iDim = 0; iDim < nDim; iDim++) {
         iCell_D[iDim] =
-            floor((vel_D[iDim] - velMin_D[iDim]) * inv_dVel_D[iDim]);
+            myfloor((vel_D[iDim] - velMin_D[iDim]) * inv_dVel_D[iDim]);
       }
 
       phasePartIdx_III[iCell_D[u_]][iCell_D[v_]][iCell_D[w_]].push_back(pid);
@@ -1071,7 +1088,7 @@ void Particles::combine_particles(Real limit) {
         for (int iw = 0; iw < nCell; iw++) {
           iCount += phasePartIdx_III[iu][iv][iw].size();
           nAvailableCombine +=
-              floor(phasePartIdx_III[iu][iv][iw].size() / nPartCombine);
+              myfloor(phasePartIdx_III[iu][iv][iw].size() / nPartCombine);
         }
 
     Real ratioCombine;
@@ -1103,7 +1120,7 @@ void Particles::combine_particles(Real limit) {
       for (int iv = 0; iv < nCell; iv++)
         for (int iw = 0; iw < nCell; iw++) {
           int nCombineCell =
-              floor(ratioCombine * phasePartIdx_III[iu][iv][iw].size() /
+              myfloor(ratioCombine * phasePartIdx_III[iu][iv][iw].size() /
                     nPartCombine);
           for (int iCombine = 0; iCombine < nCombineCell; iCombine++) {
             /*

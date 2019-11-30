@@ -703,7 +703,8 @@ void Domain::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
 
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          Real* const data0 = mmArr(i, j, k).data;
           for (int k2 = k - 1; k2 <= k + 1; k2++)
             for (int j2 = j - 1; j2 <= j + 1; j2++)
               for (int i2 = i - 1; i2 <= i + 1; i2++) {
@@ -711,10 +712,12 @@ void Domain::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
                 const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
                 const int idx0 = gp * 9;
 
-                Real M_I[9];
-                for (int ii = 0; ii < 9; ii++) {
-                  M_I[ii] = mmArr(i, j, k).data[idx0 + ii];
-                }
+                //Real* const data = 
+                Real*const M_I = &(data0[idx0]);
+                //memccpy(M_I, &(data0[idx0]), sizeof(Real)*9);
+                // for (int ii = 0; ii < 9; ii++) {
+                //   M_I[ii] = data[ii];
+                // }
 
                 const double& vctX =
                     inArr(i2, j2, k2, ix_); // vectX[i2][j2][k2];
@@ -727,6 +730,7 @@ void Domain::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
                 ourArr(i, j, k, iz_) +=
                     (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
               }
+        }
   }
 }
 

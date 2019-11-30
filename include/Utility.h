@@ -6,6 +6,8 @@
 
 #include "Constants.h"
 
+inline int myfloor(amrex::Real x) { return (int)x - (x < (int)x); }
+
 void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
                       amrex::Geometry& geom);
 
@@ -60,7 +62,7 @@ template <class T> inline void zero_array(T* arr, int nSize) {
 }
 
 inline void linear_interpolation_coef(amrex::Real (&dx)[3],
-                                         amrex::Real (&coef)[2][2][2]) {
+                                      amrex::Real (&coef)[2][2][2]) {
 
   amrex::Real xi[2];
   amrex::Real eta[2];
@@ -104,7 +106,7 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
   amrex::Real dShift[3];
   for (int i = 0; i < 3; i++) {
     dShift[i] = (loc[i] - plo[i]) * invDx[i];
-    loIdx[i] = floor(dShift[i]);
+    loIdx[i] = myfloor(dShift[i]);
     dShift[i] = dShift[i] - loIdx[i];
   }
 
@@ -136,15 +138,17 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
       return get_value_at_loc(mf, mfi, geom, x, y, z, iVar);
   }
 
-    amrex::Abort("Error: can not find this point!");
-    return -1; // To suppress compiler warnings.
+  amrex::Abort("Error: can not find this point!");
+  return -1; // To suppress compiler warnings.
 }
 
-template <typename T >
-inline T bound(const T &val, const T &xmin, const T &xmax){      
-  if(val < xmin) return xmin;                                                        
-  if(val > xmax) return xmax;                                                        
-  return val;                                                                        
-} 
+template <typename T>
+inline T bound(const T& val, const T& xmin, const T& xmax) {
+  if (val < xmin)
+    return xmin;
+  if (val > xmax)
+    return xmax;
+  return val;
+}
 
 #endif
