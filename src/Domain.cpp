@@ -440,6 +440,11 @@ void Domain::divE_correction() {
 
     divE_correct_particle_position();
   }
+
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->Redistribute();
+  }
+
   // DO CORRECTION
   sum_to_center(false);
   timing_stop(nameFunc);
@@ -712,9 +717,9 @@ void Domain::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
                 const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
                 const int idx0 = gp * 9;
 
-                //Real* const data = 
-                Real*const M_I = &(data0[idx0]);
-                //memccpy(M_I, &(data0[idx0]), sizeof(Real)*9);
+                // Real* const data =
+                Real* const M_I = &(data0[idx0]);
+                // memccpy(M_I, &(data0[idx0]), sizeof(Real)*9);
                 // for (int ii = 0; ii < 9; ii++) {
                 //   M_I[ii] = data[ii];
                 // }

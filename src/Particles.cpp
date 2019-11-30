@@ -885,13 +885,13 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
     } // for p
   }
 
-  ParallelDescriptor::ReduceRealMax(epsMax,
-                                    ParallelDescriptor::IOProcessorNumber());
+  // ParallelDescriptor::ReduceRealMax(epsMax,
+  //                                   ParallelDescriptor::IOProcessorNumber());
 
-  Print() << "Particle position correction: epsMax = " << epsMax
-          << " for species " << speciesID << std::endl;
+  // Print() << "Particle position correction: epsMax = " << epsMax
+  //         << " for species " << speciesID << std::endl;
 
-  Redistribute();
+  //Redistribute();
 }
 
 void Particles::split_particles(Real limit) {
