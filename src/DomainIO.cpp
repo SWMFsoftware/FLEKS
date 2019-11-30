@@ -145,7 +145,6 @@ void Domain::find_output_list(const PlotWriter& writerIn,
 
   nPointAllProc = pointList_II.size();
   ParallelDescriptor::ReduceLongSum(nPointAllProc);
-  
 
   ParallelDescriptor::ReduceRealMin(xMinL_D, nDimMax);
   ParallelDescriptor::ReduceRealMax(xMaxL_D, nDimMax);
@@ -275,6 +274,8 @@ double Domain::get_var(std::string var, const int ix, const int iy,
     value = (arr(ix, iy, iz, iPxx_) + arr(ix, iy, iz, iPyy_) +
              arr(ix, iy, iz, iPzz_)) /
             3.0;
+  } else if (var.substr(0, 4) == "proc") {
+    value = ParallelDescriptor::MyProc();
   } else {
     value = 0;
   }
@@ -356,7 +357,6 @@ void Domain::save_restart_header() {
     }
     headerFile << "\n";
 
-
     headerFile << "#ELECTRON\n";
     headerFile << qomEl << "\t qomEl\n";
     headerFile << "\n";
@@ -366,7 +366,6 @@ void Domain::save_restart_header() {
       headerFile << nPartPerCell[i] << "\n";
     }
     headerFile << "\n";
-
   }
 }
 

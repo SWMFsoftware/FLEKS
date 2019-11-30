@@ -966,7 +966,8 @@ void Domain::load_balance() {
   iDecomp++;
   Print() << "before dm = " << dm << std::endl;
   compute_cost();  
-  dm = DistributionMapping::makeSFC(costMF);
+  //dm = DistributionMapping::makeSFC(costMF);
+  dm = DistributionMapping::makeKnapSack(costMF);
   Print() << "after dm = " << dm << std::endl;
 
   redistribute_FabArray(nodeE, dm);
