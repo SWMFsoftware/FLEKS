@@ -446,13 +446,20 @@ void Domain::divE_correction() {
 }
 
 void Domain::divE_correct_particle_position() {
+  std::string nameFunc = "Domain::correct_position";
+  timing_start(nameFunc);
 
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->divE_correct_position(centerPhi);
   }
+
+  timing_stop(nameFunc);
 }
 
 void Domain::calculate_phi(LinearSolver& solver) {
+  std::string nameFunc = "Domain::calculate_phi";
+  timing_start(nameFunc);
+
   solver.reset(get_local_node_or_cell_number(centerDivE));
 
   div_node_to_center(nodeE, tempCenter1, geom.InvCellSize());
@@ -469,6 +476,8 @@ void Domain::calculate_phi(LinearSolver& solver) {
 
   convert_1d_to_3d(solver.xLeft, centerPhi, geom);
   centerPhi.FillBoundary(geom.periodicity());
+
+  timing_stop(nameFunc);
 }
 
 void Domain::divE_accurate_matvec(double* vecIn, double* vecOut) {
@@ -505,6 +514,9 @@ void Domain::divE_accurate_matvec(double* vecIn, double* vecOut) {
 }
 
 void Domain::sum_to_center(bool isBeforeCorrection) {
+  std::string nameFunc = "Domain::sum_to_center";
+  timing_start(nameFunc);
+
   centerNetChargeNew.setVal(0.0);
 
   const RealCMM mm0(0.0);
@@ -535,6 +547,8 @@ void Domain::sum_to_center(bool isBeforeCorrection) {
     MultiFab::Copy(centerNetChargeOld, centerNetChargeNew, 0, 0,
                    centerNetChargeOld.nComp(), centerNetChargeOld.nGrow());
   }
+
+  timing_stop(nameFunc);
 }
 
 void Domain::update() {
@@ -965,9 +979,8 @@ void Domain::load_balance() {
 
   iDecomp++;
   Print() << "before dm = " << dm << std::endl;
-  compute_cost();  
-  //dm = DistributionMapping::makeSFC(costMF);
-  dm = DistributionMapping::makeKnapSack(costMF);
+  compute_cost();
+  dm = DistributionMapping::makeSFC(costMF, false);
   Print() << "after dm = " << dm << std::endl;
 
   redistribute_FabArray(nodeE, dm);
