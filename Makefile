@@ -6,34 +6,25 @@ include Makefile.def
 help:
 	@echo Makefile targets:
 	@echo
-	@echo 'make                        - compile IPIC3D.exe'
 	@echo 'make LIB                    - compile libPW.a for SWMF'
-	@echo 'make PIDL                   - compile PostIDL.exe for post processing'
-	@echo 'make run                    - create run directory'
-	@echo 'make test                   - test IPIC3D in stand alone mode'
 	@echo 'make clean                  - remove object files'
 	@echo 'make distclean              - remove all files not part of CVS'
 	@echo
 
 
 mypic:
-	cd share; make libamrex
 	cd src; make exe
 
 bin:
 	mkdir bin
 
-libIPIC3D:
-	mkdir libIPIC3D
-
-installamrex:
-	cd share/amrex; ./configure; make install_headers
+libFLEKS:
+	mkdir libFLEKS
 
 
-install: bin libIPIC3D installamrex
+install: bin libFLEKS
 
 LIB: 
-	cd share; $(MAKE) libamrex
 	cd src; $(MAKE) LIB
 	cd srcInterface; $(MAKE) LIB
 
@@ -49,7 +40,6 @@ rundir:
 clean:
 	cd src; $(MAKE) clean
 	cd srcInterface; $(MAKE) clean
-	cd share; $(MAKE) clean
 
 distclean:
 	-@(./Config.pl -uninstall)
@@ -57,6 +47,6 @@ distclean:
 allclean:
 	-@(cd src; $(MAKE) distclean)
 	-@(cd srcInterface; $(MAKE) distclean)
-	-@(rm -rf Makefile.local *~ ./bin libIPIC3D ${TESTDIR})
+	-@(rm -rf Makefile.local *~ ./bin libFLEKS ${TESTDIR})
 	-@(rm test*diff )
 

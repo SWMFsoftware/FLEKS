@@ -1,6 +1,5 @@
 include Makefile.depend
 include ../Makefile.def
-include ../Makefile.def.local
 
 OBJECTS = ${OBJS}
 
@@ -9,12 +8,12 @@ OBJECTS_EXE = \
 
 EXE = ${BINDIR}/mypic.exe
 
-SEARCH_C = -I../include -I$(MYDIR)/${AMREX_INSTALL_DIR}/include -I${SHAREDIR} 
+SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 
 FLAGC_EXTRA = ${FLAGC_LOCAL} 
 
-LDFLAGS = -L$(MYDIR)/${AMREX_INSTALL_DIR}/lib
-LIBRARIES = -lamrex  -lgfortran
+# LDFLAGS = -L$(MYDIR)/${AMREX_INSTALL_DIR}/lib
+# LIBRARIES = -lamrex  -lgfortran
 
 include ../Makefile.conf
 
@@ -23,11 +22,11 @@ exe: $(EXE)
 default: $(EXE)
 
 $(EXE):
-	$(MAKE) LIB
-	$(MAKE) ${OBJECTS_EXE}
-	${COMPILE.mpicxx} -o ${EXE} ${MY_LIB} ${OBJECTS_EXE} \
-	-L../libIPIC3D/ -lIPIC3D ${CPPLIB} ${MPILIB} \
-	$(LDFLAGS) $(LIBRARIES)
+	# $(MAKE) LIB
+	# $(MAKE) ${OBJECTS_EXE}
+	# ${COMPILE.mpicxx} -o ${EXE} ${MY_LIB} ${OBJECTS_EXE} \
+	# -L../libFLEKS/ -lFLEKS ${CPPLIB} ${MPILIB} \
+	# $(LDFLAGS) $(LIBRARIES)
 
 
 #
@@ -39,7 +38,7 @@ $(EXE):
 DEPEND:
 
 
-MY_LIB  = ../libIPIC3D/libIPIC3D.a
+MY_LIB  = ../libFLEKS/libFLEKS.a
 
 LIB:    
 	$(MAKE) ${MY_LIB}

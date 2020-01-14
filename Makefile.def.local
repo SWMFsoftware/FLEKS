@@ -1,2 +1,0 @@
-amrexdir = share/amrex
-AMREX_INSTALL_DIR = ${amrexdir}/tmp_install_dir

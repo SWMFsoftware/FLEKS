@@ -35,14 +35,14 @@ my $compiler;
 my $debug;
 
 
-my $makefileamrex = "share/amrex/GNUmakefile";
+# my $makefileamrex = "share/amrex/GNUmakefile";
 
-foreach (@Arguments){
-    if(/^-s$/)                 {$Show=1;  next};
-    if(/^-compiler=(.*)/i)     {$compiler="$1";  next};
-    if(/^-debug=(.*)/i)        {$debug=uc("$1");  next};
-    warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
-}
+# foreach (@Arguments){
+#     if(/^-s$/)                 {$Show=1;  next};
+#     if(/^-compiler=(.*)/i)     {$compiler="$1";  next};
+#     if(/^-debug=(.*)/i)        {$debug=uc("$1");  next};
+#     warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
+# }
 
 
 &set_options;
@@ -54,34 +54,34 @@ exit 0;
 #############################################################################
 
 sub get_settings{
-     open(FILE, $makefileamrex) or die "$ERROR could not open $makefileamrex\n";
-      while(<FILE>){
-      	next if /^\s*!/; # skip commented out lines
-      	$compiler = $1 if/^COMP = (\S*)/i;
-	$debug = $1 if/^DEBUG = (\S*)/i; 
-      }
-      close $makefileamrex;
+     # open(FILE, $makefileamrex) or die "$ERROR could not open $makefileamrex\n";
+     #  while(<FILE>){
+     #  	next if /^\s*!/; # skip commented out lines
+     #  	$compiler = $1 if/^COMP = (\S*)/i;
+     # 	$debug = $1 if/^DEBUG = (\S*)/i; 
+     #  }
+     #  close $makefileamrex;
 }
 
 ################################################################################
 sub set_options{
 
-    die "$ERROR File $makefileamrex does not exist!\n" unless -f $makefileamrex;
+    # die "$ERROR File $makefileamrex does not exist!\n" unless -f $makefileamrex;
 
-     @ARGV = ($makefileamrex);
-    while(<>){
-	if($compiler  ne "")     {s/^COMP =.*/COMP = $compiler/;};
-	if($debug     ne "")     {s/^DEBUG =.*/DEBUG = $debug/;};
-    	print;
-    }    
+    #  @ARGV = ($makefileamrex);
+    # while(<>){
+    # 	if($compiler  ne "")     {s/^COMP =.*/COMP = $compiler/;};
+    # 	if($debug     ne "")     {s/^DEBUG =.*/DEBUG = $debug/;};
+    # 	print;
+    # }    
 }
 
 ################################################################################
 sub show_settings{
     &get_settings;
     
-    print "Compiler = $compiler\n";
-    print "Debug    = $debug\n";
+    # print "Compiler = $compiler\n";
+    # print "Debug    = $debug\n";
 }
 ################################################################################
 

@@ -4,11 +4,10 @@
 SHELL =/bin/sh
 
 include ../Makefile.def
-include ../Makefile.def.local
 
 SEARCHDIR = -I${SHAREDIR} -I${LIBRARYDIR} -I${COUPLERDIR} 
 
-SEARCH_C = -I../include -I${SHAREDIR} -I$(MYDIR)/$(AMREX_INSTALL_DIR)/include
+SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 
 #FLAGC_EXTRA = -DBATSRUS
 
@@ -23,18 +22,18 @@ PC_wrapper.o: ../include/SWMFInterface.h \
 	SWMFInterface.cpp \
 	${LIBRARYDIR}/CON_comp_info.o
 
-LIBIPIC3D = ../libIPIC3D/libIPIC3D.a
+LIBFLEKS = ../libFLEKS/libFLEKS.a
 
 MY_LIB    = ${LIBDIR}/libPC.a
 
-LIB:    ${LIBIPIC3D} 
+LIB:    ${LIBFLEKS} 
 	make ${MY_LIB}
 	@echo
 	@echo ${MY_LIB} has been brought up to date.
 	@echo
 
-${MY_LIB}: ${OBJECTS} ${LIBIPIC3D}
-	cp -f ${LIBIPIC3D} ${MY_LIB}
+${MY_LIB}: ${OBJECTS} ${LIBFLEKS}
+	cp -f ${LIBFLEKS} ${MY_LIB}
 	${AR} ${MY_LIB} ${OBJECTS}
 
 
