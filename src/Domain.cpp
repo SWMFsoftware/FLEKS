@@ -13,6 +13,7 @@ using namespace amrex;
 
 void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
                   double* gridDim, double* paramReal, int iDomain) {
+  tc.set_time_si(timeIn);
 
   fluidInterface.init();
   fluidInterface.receive_info_from_gm(paramInt, gridDim, paramReal,
