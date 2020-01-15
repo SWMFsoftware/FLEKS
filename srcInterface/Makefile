@@ -12,7 +12,7 @@ SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 #FLAGC_EXTRA = -DBATSRUS
 
 include ../Makefile.conf
-include Makefile.depend
+include Makefile.DEPEND
 
 # OBJECT FILE FOR THE WRAPPER
 

@@ -1,4 +1,4 @@
-include Makefile.depend
+include Makefile.DEPEND
 include ../Makefile.def
 
 OBJECTS = ${OBJS}
