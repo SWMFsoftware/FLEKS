@@ -211,6 +211,9 @@ void Domain::read_param() {
 }
 
 void Domain::set_ic() {
+  std::string nameFunc = "Domain::set_ic";
+
+  Print() << nameFunc << " begin" << std::endl;
 
   if (doRestart) {
     read_restart();
@@ -222,6 +225,8 @@ void Domain::set_ic() {
   tc.write_plots(true);
 
   write_log(true, true);
+
+  Print() << nameFunc << " end" << std::endl;
 }
 
 void Domain::make_grid() {

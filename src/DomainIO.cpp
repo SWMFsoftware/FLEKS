@@ -5,7 +5,9 @@ using namespace amrex;
 
 void Domain::set_state_var(double* data, int* index) {
   std::string nameFunc = "Domain::set_state_var";
+  Print() << nameFunc << " begin" << std::endl;
   fluidInterface.set_couple_node_value(data, index);
+  Print() << nameFunc << " end" << std::endl;
   return;
 }
 
@@ -37,6 +39,9 @@ void Domain::find_mpi_rank_for_points(const int nPoint,
 void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
                                         const double* const xyz_I,
                                         double* const data_I, const int nVar) {
+  std::string nameFunc = "Domain::get_fluid_state_for_points";
+  Print() << nameFunc << " begin" << std::endl;
+
   // (rho + 3*Moment + 6*p)*nSpecies+ 3*E + 3*B;
   const int nVarPerSpecies = 10;
   int nVarPIC = nSpecies * nVarPerSpecies + 6;
@@ -73,6 +78,7 @@ void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
     // Combine PIC plasma data into MHD fluid data.
     fluidInterface.CalcFluidState(dataPIC_I, &data_I[iPoint * nVar]);
   }
+  Print() << nameFunc << " end" << std::endl;
 }
 
 void Domain::find_output_list(const PlotWriter& writerIn,
