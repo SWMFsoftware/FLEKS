@@ -1,4 +1,16 @@
-include Makefile.DEPEND
+# source files
+SRCS := \
+	Domain.cpp \
+	Particles.cpp \
+	LinearSolver.cpp \
+	Utility.cpp \
+	PlotWriter.cpp \
+	TimeCtr.cpp \
+	DomainIO.cpp \
+	BC.cpp \
+	FluidInterface.cpp
+
+include ../Makefile.conf.local
 include ../Makefile.def
 
 OBJECTS = ${OBJS}

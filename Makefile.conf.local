@@ -1,15 +1,3 @@
-# source files
-SRCS := \
-	Domain.cpp \
-	Particles.cpp \
-	LinearSolver.cpp \
-	Utility.cpp \
-	PlotWriter.cpp \
-	TimeCtr.cpp \
-	DomainIO.cpp \
-	BC.cpp \
-	FluidInterface.cpp
-
 # intermediate directory for generated dependency files
 DEPDIR := .d
 

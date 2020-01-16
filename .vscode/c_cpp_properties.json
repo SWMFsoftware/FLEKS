@@ -4,7 +4,7 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/include/",
-                "${workspaceFolder}/share/amrex/tmp_install_dir/include/",
+                "${workspaceFolder}/../../util/AMREX/InstallDir/include/",
                 "${workspaceFolder}/../../share/Library/src/",
                 "/usr/include/openmpi-x86_64/"
             ],

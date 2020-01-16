@@ -11,8 +11,12 @@ SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 
 #FLAGC_EXTRA = -DBATSRUS
 
+# source files
+SRCS := \
+	SWMFInterface.cpp
+
 include ../Makefile.conf
-include Makefile.DEPEND
+include ../Makefile.conf.local
 
 # OBJECT FILE FOR THE WRAPPER
 
