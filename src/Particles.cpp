@@ -91,8 +91,14 @@ void Particles::add_particles_cell(const MFIter& mfi,
           v += fluidInterface.get_uy(mfi, x, y, z, speciesID);
           w += fluidInterface.get_uz(mfi, x, y, z, speciesID);
 
-          ParticleType p;
-          p.id() = ParticleType::NextID();
+          ParticleType p;          
+	  if(ParticleType::the_next_id >= amrex::LastParticleID){
+	    // id should not larger than LastParticleID. This is a bad solution,
+	    // since the ID becomes nonunique. --Yuxi
+	    p.id() = amrex::LastParticleID;  
+	  }else {
+	    p.id() = ParticleType::NextID();
+	  }
           p.cpu() = ParallelDescriptor::MyProc();
           p.pos(ix_) = x; // + plo[ix_];
           p.pos(iy_) = y; // + plo[iy_];
@@ -968,7 +974,13 @@ void Particles::split_particles(Real limit) {
       p.pos(iz_) = zp1;
 
       ParticleType pnew;
-      pnew.id() = ParticleType::NextID();
+      if(ParticleType::the_next_id >= amrex::LastParticleID){
+	// id should not larger than LastParticleID. This is a bad solution,
+	// since the ID becomes nonunique. --Yuxi
+	pnew.id() = amrex::LastParticleID;  
+      }else {
+	pnew.id() = ParticleType::NextID();
+      }      
       pnew.cpu() = ParallelDescriptor::MyProc();
       pnew.pos(ix_) = xp2;
       pnew.pos(iy_) = yp2;
