@@ -111,11 +111,12 @@ void Domain::find_output_list(const PlotWriter& writerIn,
       jMax--;
       kMax--;
 
-      if ((!geom.isPeriodic(ix_)) && box.bigEnd(ix_) == hi.x)
+      const Box& gbx = amrex::convert(geom.Domain(), box.type());
+      if ((!geom.isPeriodic(ix_)) && gbx.bigEnd(ix_) == hi.x)
         iMax++;
-      if ((!geom.isPeriodic(iy_)) && box.bigEnd(iy_) == hi.y)
+      if ((!geom.isPeriodic(iy_)) && gbx.bigEnd(iy_) == hi.y)
         jMax++;
-      if ((!geom.isPeriodic(iz_)) && box.bigEnd(iz_) == hi.z)
+      if ((!geom.isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z)
         kMax++;
     }
 
@@ -127,6 +128,7 @@ void Domain::find_output_list(const PlotWriter& writerIn,
           const double xp = i * dx[ix_] + plo[ix_];
 
           if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
+
             pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
                                      zp, (double)iBlock });
             if (xp < xMinL_D[ix_])

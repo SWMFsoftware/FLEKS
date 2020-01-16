@@ -425,6 +425,11 @@ void Domain::sum_moments() {
             << ", CFL_z = " << pinfo.uMax * dt * invDx[iz_] << std::endl;
     plasmaEnergy[iTot] += plasmaEnergy[i];
     MultiFab::Add(nodePlasma[nSpecies], nodePlasma[i], 0, 0, nMoments, 0);
+
+    // Applying float boundary so that the plasma variables look right in the
+    // output. It should have no influenece on the simulation results.
+    apply_float_boundary(nodePlasma[i], geom, 0, nodePlasma[i].nComp(),
+                         nVirGst);
   }
 
   nodeMM.SumBoundary(geom.periodicity());
