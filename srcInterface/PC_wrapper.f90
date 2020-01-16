@@ -157,10 +157,12 @@ contains
     call pic_cal_dt(DtSi)
     
     !! Sync timestep with the wrapper
-    Dt = TimeSimulationLimit - TimeSimulation
-    if(DtSi > Dt .and. Dt >= 0.0 ) then 
-        DtSi =  Dt 
-     end if
+
+    ! Dt = TimeSimulationLimit - TimeSimulation
+    ! if(DtSi > Dt .and. Dt >= 0.0 ) then 
+    !     DtSi =  Dt 
+    !  end if
+
      ! set the right time step
      call pic_set_dt(DtSi)
      
