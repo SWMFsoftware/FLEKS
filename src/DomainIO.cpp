@@ -276,6 +276,12 @@ double Domain::get_var(std::string var, const int ix, const int iy,
     const amrex::Array4<amrex::Real const>& arr =
         nodePlasma[get_is()][mfi].array();
     value = arr(ix, iy, iz, iVar);
+
+    if(var.substr(0, 1) == "u"){
+      double rho = arr(ix, iy, iz, iRho_);
+      if(rho!=0) value /= rho; 
+    }
+    
   } else if (var.substr(0, 2) == "pS") {
     const amrex::Array4<amrex::Real const>& arr =
         nodePlasma[get_is()][mfi].array();
