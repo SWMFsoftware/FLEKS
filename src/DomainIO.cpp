@@ -411,7 +411,8 @@ void Domain::write_log(bool doForce, bool doCreateFile) {
     std::ofstream of(logFile.c_str());
     of << "time nStep Etot Ee Eb Epart ";
     for (int i = 0; i < nSpecies; i++)
-      of << " Epart" << i << std::endl;
+      of << " Epart" << i;
+    of << std::endl;
     of.close();
   }
 

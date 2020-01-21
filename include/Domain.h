@@ -91,6 +91,9 @@ public:
 
     doReSampling = false;
 
+    for(int iDim = 0; iDim < nDim; iDim++)
+      nPartPerCell[iDim] = 6; 
+    
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 

@@ -101,7 +101,7 @@ void Domain::read_param() {
         readParam.read_var("maxBlockSize", tmp);
         set_maxBlockSize(i, tmp);
       }
-    } else if (command == "#TIMESTEP") {
+    } else if (command == "#TIMESTEP" || command == "#TIMESTEPPING") {
       Real dtSI;
       readParam.read_var("dtSI", dtSI);
       tc.set_dt_si(dtSI);
@@ -120,7 +120,7 @@ void Domain::read_param() {
       readParam.read_var("npcelz", nPartPerCell[iz_]);
     } else if (command == "#ELECTRON") {
       readParam.read_var("qom", qomEl);
-    } else if (command == "#DISCRETIZE") {
+    } else if (command == "#DISCRETIZE" || command == "#DISCRETIZATION") {
       readParam.read_var("theta", fsolver.theta);
       readParam.read_var("coefDiff", fsolver.coefDiff);
     } else if (command == "#PERIODICITY") {
@@ -143,7 +143,7 @@ void Domain::read_param() {
       Real dt;
       readParam.read_var("dt", dt);
       tc.loadBalance.init(dt, dn);
-    } else if (command == "#SAVEPLOT") {
+    } else if (command == "#SAVEPLOT" || command == "#SAVEIDL") {
       int nPlot;
       readParam.read_var("nPlotFile", nPlot);
 
