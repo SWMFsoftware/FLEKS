@@ -1,6 +1,5 @@
 #include <math.h>
 
-
 #include <AMReX_MultiFabUtil.H>
 
 #include "Domain.h"
