@@ -47,6 +47,6 @@ distclean:
 allclean:
 	-@(cd src; $(MAKE) distclean)
 	-@(cd srcInterface; $(MAKE) distclean)
-	-@(rm -rf Makefile.local *~ ./bin libFLEKS ${TESTDIR})
-	-@(rm test*diff )
+	-@(rm -rf *~ ./bin libFLEKS ${TESTDIR})
+	-@(rm -f test*.diff)
 
