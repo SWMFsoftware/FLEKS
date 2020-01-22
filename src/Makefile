@@ -66,4 +66,3 @@ clean:
 	-@(rm -rf .d)
 
 distclean: clean
-	-@(rm -f Makefile.DEPEND Makefile.local Makefile.RULES)
