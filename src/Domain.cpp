@@ -19,7 +19,6 @@ void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
   fluidInterface.receive_info_from_gm(paramInt, gridDim, paramReal,
                                       paramString);
 
-
   // Read from PARAM.in
   read_param();
 
