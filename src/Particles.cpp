@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include "Particles.h"
 #include "Utility.h"
 
@@ -898,7 +900,6 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
 }
 
 void Particles::split_particles(Real limit) {
-
   const int nPartGoal =
       nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_] * limit;
 
@@ -915,9 +916,26 @@ void Particles::split_particles(Real limit) {
 
     const int nPartOrig = particles.size();
 
-    const double rSplit = 1.0 - double(nPartOrig) / nPartGoal;
-    if (rSplit <= 0)
-      return;
+    const int nNew =
+        nPartGoal - nPartOrig > nPartOrig ? nPartOrig : nPartGoal - nPartOrig;
+
+    if (nNew <= 0)
+      continue;
+
+    // Find the 'heaviest' nNew particles by sorting the weight (charge).-----
+
+    // Sort the particles by x first to make sure the results are the same for
+    // different number of processors
+    std::sort(particles.begin(), particles.end(),
+              [ix_ = ix_](const auto & pl, const auto & pr) {
+      return pl.rdata(ix_) > pr.rdata(ix_);
+    });
+
+    std::sort(particles.begin(), particles.end(),
+              [ix_ = ix_](const auto & pl, const auto & pr) {
+      return fabs(pl.rdata(iqp_)) > fabs(pr.rdata(iqp_));
+    });
+    //----------------------------------------------------------------
 
     const auto lo = lbound(pti.tilebox());
     const auto hi = ubound(pti.tilebox());
@@ -931,21 +949,15 @@ void Particles::split_particles(Real limit) {
     const Real zMin = Geom(0).LoEdge(lo.z, iz_),
                zMax = Geom(0).HiEdge(hi.z, iz_);
 
-    const double interval = 1. / rSplit;
-
-    Real dCounter = 0;
-
-    while (myfloor(dCounter) < nPartOrig) {
-      const int idxSplit = myfloor(dCounter);
-
-      auto& p = particles[idxSplit];
-      Real up1 = p.rdata(iup_);
-      Real vp1 = p.rdata(ivp_);
-      Real wp1 = p.rdata(iwp_);
+    for (int ip = 0; ip < nNew; ip++) {
+      auto& p = particles[ip];
       Real qp1 = p.rdata(iqp_);
       Real xp1 = p.pos(ix_);
       Real yp1 = p.pos(iy_);
       Real zp1 = p.pos(iz_);
+      Real up1 = p.rdata(iup_);
+      Real vp1 = p.rdata(ivp_);
+      Real wp1 = p.rdata(iwp_);
 
       const Real coef = dl / sqrt(up1 * up1 + vp1 * vp1 + wp1 * wp1);
       const Real dpx = coef * up1;
@@ -981,6 +993,7 @@ void Particles::split_particles(Real limit) {
       } else {
         pnew.id() = ParticleType::NextID();
       }
+
       pnew.cpu() = ParallelDescriptor::MyProc();
       pnew.pos(ix_) = xp2;
       pnew.pos(iy_) = yp2;
@@ -990,8 +1003,6 @@ void Particles::split_particles(Real limit) {
       pnew.rdata(iwp_) = wp1;
       pnew.rdata(iqp_) = qp1 / 2;
       particles.push_back(pnew);
-
-      dCounter += interval;
     }
   }
 }
@@ -1013,7 +1024,7 @@ void Particles::combine_particles(Real limit) {
     const int nPartOrig = particles.size();
 
     if (nPartOrig <= nPartGoal)
-      return;
+      continue;
     const int nCombineGoal = nPartOrig - nPartGoal;
 
     // Phase space cell number in one direction.
@@ -1021,7 +1032,7 @@ void Particles::combine_particles(Real limit) {
     const int nDim = 3;
     const int nCell = 0.8 * pow(nPartGoal, 1. / nDim);
     if (nCell < 1)
-      return;
+      continue;
 
     //----------------------------------------------------------------
     // Estimate the bulk velocity and thermal velocity.
@@ -1049,7 +1060,6 @@ void Particles::combine_particles(Real limit) {
     //----------------------------------------------------------------
 
     // Storing the particle indices in the corresponding phase space cell.
-    // MDArray<Vector<int> > phasePartIdx_III(nCell, nCell, nCell);
     Vector<int> phasePartIdx_III[nCell][nCell][nCell];
 
     const int u_ = 0, v_ = 1, w_ = 2;
@@ -1088,6 +1098,19 @@ void Particles::combine_particles(Real limit) {
 
       phasePartIdx_III[iCell_D[u_]][iCell_D[v_]][iCell_D[w_]].push_back(pid);
     }
+
+    // Sorting the particles indexes so that the results change with different
+    // number of processors.
+    for (int iCell = 0; iCell < nCell; iCell++)
+      for (int jCell = 0; jCell < nCell; jCell++)
+        for (int kCell = 0; kCell < nCell; kCell++) {
+          std::sort(phasePartIdx_III[iCell][jCell][kCell].begin(),
+                    phasePartIdx_III[iCell][jCell][kCell].end(),
+                    [&particles = particles, ix_ = ix_ ](const int & idl,
+                                                         const int & idr) {
+            return particles[idl].rdata(ix_) > particles[idr].rdata(ix_);
+          });
+        }
 
     const int nPartCombine = 6;
     int iCount = 0;
