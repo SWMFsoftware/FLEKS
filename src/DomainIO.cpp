@@ -129,8 +129,8 @@ void Domain::find_output_list(const PlotWriter& writerIn,
 
           if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
 
-            pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
-                                     zp, (double)iBlock });
+            pointList_II.push_back(
+                {(double)i, (double)j, (double)k, xp, yp, zp, (double)iBlock });
             if (xp < xMinL_D[ix_])
               xMinL_D[ix_] = xp;
             if (yp < xMinL_D[iy_])
@@ -277,11 +277,12 @@ double Domain::get_var(std::string var, const int ix, const int iy,
         nodePlasma[get_is()][mfi].array();
     value = arr(ix, iy, iz, iVar);
 
-    if(var.substr(0, 1) == "u"){
+    if (var.substr(0, 1) == "u") {
       double rho = arr(ix, iy, iz, iRho_);
-      if(rho!=0) value /= rho; 
+      if (rho != 0)
+        value /= rho;
     }
-    
+
   } else if (var.substr(0, 2) == "pS") {
     const amrex::Array4<amrex::Real const>& arr =
         nodePlasma[get_is()][mfi].array();
@@ -421,7 +422,8 @@ void Domain::write_log(bool doForce, bool doCreateFile) {
     Real bEnergy = calc_B_field_energy();
     if (ParallelDescriptor::IOProcessor()) {
       std::ofstream of(logFile.c_str(), std::fstream::app);
-      of.precision(12);
+      of.precision(15);
+      of << std::scientific;
       of << tc.get_time_si() << "\t" << tc.get_cycle() << "\t"
          << "\t" << (eEnergy + bEnergy + plasmaEnergy[iTot]) << "\t" << eEnergy
          << "\t" << bEnergy << "\t" << plasmaEnergy[iTot];

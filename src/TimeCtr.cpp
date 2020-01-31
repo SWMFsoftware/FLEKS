@@ -23,7 +23,7 @@ void EventCtr::init(const amrex::Real dtIn, const int dnIn) {
   }
 
   if (useDn) {
-    dnEvent = dnIn;    nNext = (floor((amrex::Real)(tc->get_cycle()) / dnEvent) + 1) * dnEvent;
+    dnEvent = dnIn;    nNext = (floor((amrex::Real)(tc->get_cycle()) / dnEvent)) * dnEvent;
     nLast = nNext - dnEvent;
   }
 }
