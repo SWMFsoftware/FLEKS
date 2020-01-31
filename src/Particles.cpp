@@ -133,6 +133,7 @@ void Particles::add_particles_domain(const FluidInterface& fluidInterface) {
 
 void Particles::inject_particles_at_boundary(
     const FluidInterface& fluidInterface) {
+  BL_PROFILE("Particles::inject_particles_at_boundary");
 
   if (nVirGst != 1)
     Abort("The function assumes nVirGst==1!!");
@@ -769,6 +770,7 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
 }
 
 void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
+  BL_PROFILE("Particles::divE_correct_position");
 
   const auto& plo = Geom(0).ProbLo();
 
@@ -900,6 +902,7 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
 }
 
 void Particles::split_particles(Real limit) {
+  BL_PROFILE("Particles::split_particles");
   const int nPartGoal =
       nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_] * limit;
 
@@ -1008,6 +1011,7 @@ void Particles::split_particles(Real limit) {
 }
 
 void Particles::combine_particles(Real limit) {
+  BL_PROFILE("Particles::combine_particles");
   IntVect iv = { 1, 1, 1 };
   if (!(do_tiling && tile_size == iv))
     return;

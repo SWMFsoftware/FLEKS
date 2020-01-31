@@ -13,6 +13,9 @@ using namespace amrex;
 
 void Domain::init(Real timeIn, const std::string& paramString, int* paramInt,
                   double* gridDim, double* paramReal, int iDomain) {
+  std::string nameFunc = "Domain::init";
+  BL_PROFILE(nameFunc);
+
   tc.set_time_si(timeIn);
 
   fluidInterface.init();
@@ -388,6 +391,8 @@ void Domain::set_ic_particles() {
 
 void Domain::particle_mover() {
   std::string nameFunc = "Domain::mover";
+  BL_PROFILE(nameFunc);
+
   timing_start(nameFunc);
 
   for (int i = 0; i < nSpecies; i++) {
@@ -406,6 +411,8 @@ void Domain::particle_mover() {
 
 void Domain::sum_moments() {
   std::string nameFunc = "Domain::sum_moments";
+  BL_PROFILE(nameFunc);
+
   timing_start(nameFunc);
 
   nodePlasma[nSpecies].setVal(0.0);
@@ -440,6 +447,7 @@ void Domain::sum_moments() {
 
 void Domain::divE_correction() {
   std::string nameFunc = "Domain::divE_correction";
+  BL_PROFILE(nameFunc);
   timing_start(nameFunc);
 
   for (int iIter = 0; iIter < 3; iIter++) {
@@ -463,6 +471,7 @@ void Domain::divE_correction() {
 
 void Domain::divE_correct_particle_position() {
   std::string nameFunc = "Domain::correct_position";
+  BL_PROFILE(nameFunc);
   timing_start(nameFunc);
 
   for (int i = 0; i < nSpecies; i++) {
@@ -474,6 +483,7 @@ void Domain::divE_correct_particle_position() {
 
 void Domain::calculate_phi(LinearSolver& solver) {
   std::string nameFunc = "Domain::calculate_phi";
+  BL_PROFILE(nameFunc);
   timing_start(nameFunc);
 
   solver.reset(get_local_node_or_cell_number(centerDivE));
@@ -497,6 +507,9 @@ void Domain::calculate_phi(LinearSolver& solver) {
 }
 
 void Domain::divE_accurate_matvec(double* vecIn, double* vecOut) {
+  std::string nameFunc = "Domain::divE_matvec";
+  BL_PROFILE(nameFunc);
+
   zero_array(vecOut, divESolver.get_nSolve());
 
   convert_1d_to_3d(vecIn, tempCenter1, geom);
@@ -531,6 +544,7 @@ void Domain::divE_accurate_matvec(double* vecIn, double* vecOut) {
 
 void Domain::sum_to_center(bool isBeforeCorrection) {
   std::string nameFunc = "Domain::sum_to_center";
+  BL_PROFILE(nameFunc);
   timing_start(nameFunc);
 
   centerNetChargeNew.setVal(0.0);
@@ -569,6 +583,7 @@ void Domain::sum_to_center(bool isBeforeCorrection) {
 
 void Domain::update() {
   std::string nameFunc = "Domain::update";
+  BL_PROFILE(nameFunc);
   timing_start(nameFunc);
 
   Print() << "\n================ Begin cycle = " << tc.get_cycle()
@@ -600,6 +615,7 @@ void Domain::update() {
 
 void Domain::update_E() {
   std::string nameFunc = "Domain::update_E";
+  BL_PROFILE(nameFunc);
   timing_start(nameFunc);
 
   eSolver.reset(get_local_node_or_cell_number(nodeE));
@@ -641,6 +657,8 @@ void Domain::update_E() {
 
 void Domain::update_E_matvec(const double* vecIn, double* vecOut,
                              const bool useZeroBC) {
+  std::string nameFunc = "Domain::E_matvec";
+  BL_PROFILE(nameFunc);
   zero_array(vecOut, eSolver.get_nSolve());
 
   MultiFab vecMF(nodeBA, dm, 3, nGst);

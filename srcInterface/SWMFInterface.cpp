@@ -27,7 +27,7 @@ int pic_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc) {
   // fortran communicator tranlated to C comunicator
   MPI_Comm c_iComm = MPI_Comm_f2c(*iComm);
 
-  amrex::Initialize(c_iComm);
+  amrex::Initialize(c_iComm);  
 
   return 0;
 }
@@ -75,6 +75,8 @@ int pic_finalize_init_() {
 }
 
 int pic_run_(double *time) {
+  BL_PROFILE("pic_run");
+
   double timenow = *time;
 
   MPICs->update();
@@ -125,10 +127,10 @@ int pic_cal_dt_(double *dtOut) {
   return 0;
 }
 
-int pic_get_grid_info_(int *iGrid, int *iDecomp){
-  (*iGrid) = MPICs->get_iGrid(); 
-  (*iDecomp) = MPICs->get_iDecomp(); 
-  return 0; 
+int pic_get_grid_info_(int *iGrid, int *iDecomp) {
+  (*iGrid) = MPICs->get_iGrid();
+  (*iDecomp) = MPICs->get_iDecomp();
+  return 0;
 }
 
 int pic_end_() {
@@ -137,6 +139,7 @@ int pic_end_() {
     MPICs->tc.write_plots(true);
     delete MPICs;
 
+    //BL_PROFILE_VAR_STOP(pmain);
     // The curly bracket here is necessary!!! It ensures the destructor is
     // called and finished before the amrex::Finalize().
   }
