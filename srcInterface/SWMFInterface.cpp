@@ -81,7 +81,7 @@ int pic_run_(double *time) {
 
   MPICs->update();
 
-  *time = (double)(MPICs->tc.get_time_si());
+  *time = (double)(MPICs->tc->get_time_si());
 
   return 0;
 }
@@ -118,25 +118,25 @@ int pic_find_points_(int *nPoint, double *Xyz_I, int *iProc_I) {
 }
 
 int pic_set_dt_(double *DtSi) {
-  MPICs->tc.set_dt_si(*DtSi);
+  MPICs->tc->set_dt_si(*DtSi);
   return 0;
 }
 
 int pic_cal_dt_(double *dtOut) {
-  *dtOut = MPICs->tc.get_dt_si();
+  *dtOut = MPICs->tc->get_dt_si();
   return 0;
 }
 
 int pic_get_grid_info_(int *iGrid, int *iDecomp) {
-  (*iGrid) = MPICs->get_iGrid();
-  (*iDecomp) = MPICs->get_iDecomp();
+  (*iGrid) = MPICs->pic.get_iGrid();
+  (*iDecomp) = MPICs->pic.get_iDecomp();
   return 0;
 }
 
 int pic_end_() {
   {
     // Saving plots before exiting.
-    MPICs->tc.write_plots(true);
+    MPICs->tc->write_plots(true);
     delete MPICs;
 
     //BL_PROFILE_VAR_STOP(pmain);

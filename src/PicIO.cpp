@@ -1,31 +1,31 @@
-#include "Domain.h"
+#include "Pic.h"
 #include "SWMFDomains.h"
 
 using namespace amrex;
 
-void Domain::set_state_var(double* data, int* index) {
-  std::string nameFunc = "Domain::set_state_var";
+void Pic::set_state_var(double* data, int* index) {
+  std::string nameFunc = "Pic::set_state_var";
   Print() << nameFunc << " begin" << std::endl;
-  fluidInterface.set_couple_node_value(data, index);
+  fluidInterface->set_couple_node_value(data, index);
   Print() << nameFunc << " end" << std::endl;
   return;
 }
 
-int Domain::get_grid_nodes_number() {
-  return fluidInterface.count_couple_node_number();
+int Pic::get_grid_nodes_number() {
+  return fluidInterface->count_couple_node_number();
 }
 
-void Domain::get_grid(double* pos_DI) {
-  std::string nameFunc = "Domain::get_grid";
-  fluidInterface.get_couple_node_loc(pos_DI);
+void Pic::get_grid(double* pos_DI) {
+  std::string nameFunc = "Pic::get_grid";
+  fluidInterface->get_couple_node_loc(pos_DI);
   return;
 }
 
-void Domain::find_mpi_rank_for_points(const int nPoint,
+void Pic::find_mpi_rank_for_points(const int nPoint,
                                       const double* const xyz_I,
                                       int* const rank_I) {
-  int nDimGM = fluidInterface.getnDim();
-  amrex::Real si2nol = fluidInterface.getSi2NoL();
+  int nDimGM = fluidInterface->getnDim();
+  amrex::Real si2nol = fluidInterface->getSi2NoL();
   for (int i = 0; i < nPoint; i++) {
     amrex::Real x = xyz_I[i * nDimGM + ix_] * si2nol;
     amrex::Real y = xyz_I[i * nDimGM + iy_] * si2nol;
@@ -36,10 +36,10 @@ void Domain::find_mpi_rank_for_points(const int nPoint,
   }
 }
 
-void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
+void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
                                         const double* const xyz_I,
                                         double* const data_I, const int nVar) {
-  std::string nameFunc = "Domain::get_fluid_state_for_points";
+  std::string nameFunc = "Pic::get_fluid_state_for_points";
   Print() << nameFunc << " begin" << std::endl;
 
   // (rho + 3*Moment + 6*p)*nSpecies+ 3*E + 3*B;
@@ -53,7 +53,7 @@ void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     double pic_D[3] = { 0 };
     for (int iDim = 0; iDim < nDim; iDim++) {
-      pic_D[iDim] = xyz_I[iPoint * nDim + iDim] * fluidInterface.getSi2NoL();
+      pic_D[iDim] = xyz_I[iPoint * nDim + iDim] * fluidInterface->getSi2NoL();
     }
 
     const Real xp = pic_D[0];
@@ -76,12 +76,12 @@ void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
     }
 
     // Combine PIC plasma data into MHD fluid data.
-    fluidInterface.CalcFluidState(dataPIC_I, &data_I[iPoint * nVar]);
+    fluidInterface->CalcFluidState(dataPIC_I, &data_I[iPoint * nVar]);
   }
   Print() << nameFunc << " end" << std::endl;
 }
 
-void Domain::find_output_list(const PlotWriter& writerIn,
+void Pic::find_output_list(const PlotWriter& writerIn,
                               long int& nPointAllProc,
                               PlotWriter::VectorPointList& pointList_II,
                               std::array<double, nDimMax>& xMin_D,
@@ -163,7 +163,7 @@ void Domain::find_output_list(const PlotWriter& writerIn,
   }
 }
 
-void Domain::get_field_var(const VectorPointList& pointList_II,
+void Pic::get_field_var(const VectorPointList& pointList_II,
                            const std::vector<std::string>& sVar_I,
                            MDArray<double>& var_II) {
   const int iBlk_ = 6;
@@ -198,7 +198,7 @@ void Domain::get_field_var(const VectorPointList& pointList_II,
   }
 }
 
-double Domain::get_var(std::string var, const int ix, const int iy,
+double Pic::get_var(std::string var, const int ix, const int iy,
                        const int iz, const MFIter& mfi) {
 
   auto get_is = [var]() {
@@ -298,12 +298,12 @@ double Domain::get_var(std::string var, const int ix, const int iy,
   return value;
 }
 
-void Domain::save_restart() {
+void Pic::save_restart() {
   save_restart_header();
   save_restart_data();
 }
 
-void Domain::save_restart_data() {
+void Pic::save_restart_data() {
   VisMF::SetNOutFiles(64);
 
   std::string restartDir = "PC/restartOUT/";
@@ -316,9 +316,9 @@ void Domain::save_restart_data() {
   }
 }
 
-void Domain::save_restart_header() {
+void Pic::save_restart_header() {
   if (ParallelDescriptor::IOProcessor()) {
-    Print() << "Saving restart file at time = " << tc.get_time_si() << " (s)"
+    Print() << "Saving restart file at time = " << tc->get_time_si() << " (s)"
             << std::endl;
 
     VisMF::IO_Buffer ioBuffer(VisMF::IO_Buffer_Size);
@@ -346,15 +346,15 @@ void Domain::save_restart_header() {
     headerFile << "\n";
 
     headerFile << "#NSTEP\n";
-    headerFile << tc.get_cycle() << "\t nStep\n";
+    headerFile << tc->get_cycle() << "\t nStep\n";
     headerFile << "\n";
 
     headerFile << "#TIMESIMULATION\n";
-    headerFile << tc.get_time_si() << "\t TimeSimulation\n";
+    headerFile << tc->get_time_si() << "\t TimeSimulation\n";
     headerFile << "\n";
 
     headerFile << "#TIMESTEP\n";
-    headerFile << tc.get_dt_si() << "\t dt\n";
+    headerFile << tc->get_dt_si() << "\t dt\n";
     headerFile << "\n";
 
     // Geometry
@@ -384,7 +384,7 @@ void Domain::save_restart_header() {
   }
 }
 
-void Domain::read_restart() {
+void Pic::read_restart() {
 
   std::string restartDir = "PC/restartIN/";
   VisMF::Read(nodeE, restartDir + "nodeE");
@@ -402,12 +402,12 @@ void Domain::read_restart() {
   sum_to_center(false);
 }
 
-void Domain::write_log(bool doForce, bool doCreateFile) {
+void Pic::write_log(bool doForce, bool doCreateFile) {
   if (doCreateFile && ParallelDescriptor::IOProcessor()) {
     std::stringstream ss;
-    int time = tc.get_time_si(); // double to int.
+    int time = tc->get_time_si(); // double to int.
     ss << "PC/plots/log_n" << std::setfill('0') << std::setw(8)
-       << tc.get_cycle() << ".log";
+       << tc->get_cycle() << ".log";
     logFile = ss.str();
     std::ofstream of(logFile.c_str());
     of << "time nStep Etot Ee Eb Epart ";
@@ -417,14 +417,14 @@ void Domain::write_log(bool doForce, bool doCreateFile) {
     of.close();
   }
 
-  if (tc.log.is_time_to(doForce)) {
+  if (tc->log.is_time_to(doForce)) {
     Real eEnergy = calc_E_field_energy();
     Real bEnergy = calc_B_field_energy();
     if (ParallelDescriptor::IOProcessor()) {
       std::ofstream of(logFile.c_str(), std::fstream::app);
       of.precision(15);
       of << std::scientific;
-      of << tc.get_time_si() << "\t" << tc.get_cycle() << "\t"
+      of << tc->get_time_si() << "\t" << tc->get_cycle() << "\t"
          << "\t" << (eEnergy + bEnergy + plasmaEnergy[iTot]) << "\t" << eEnergy
          << "\t" << bEnergy << "\t" << plasmaEnergy[iTot];
       for (int i = 0; i < nSpecies; i++)
@@ -440,12 +440,12 @@ void find_output_list_caller(const PlotWriter& writerIn,
                              PlotWriter::VectorPointList& pointList_II,
                              std::array<double, nDimMax>& xMin_D,
                              std::array<double, nDimMax>& xMax_D) {
-  MPICs->find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
+  MPICs->pic.find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
                           xMax_D);
 }
 
 void get_field_var_caller(const VectorPointList& pointList_II,
                           const std::vector<std::string>& sVar_I,
                           MDArray<double>& var_II) {
-  MPICs->get_field_var(pointList_II, sVar_I, var_II);
+  MPICs->pic.get_field_var(pointList_II, sVar_I, var_II);
 }

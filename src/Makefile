@@ -6,9 +6,10 @@ SRCS := \
 	Utility.cpp \
 	PlotWriter.cpp \
 	TimeCtr.cpp \
-	DomainIO.cpp \
 	BC.cpp \
-	FluidInterface.cpp
+	FluidInterface.cpp \
+	Pic.cpp \
+	PicIO.cpp
 
 include ../Makefile.conf.local
 include ../Makefile.def

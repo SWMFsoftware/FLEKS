@@ -1,5 +1,5 @@
-#ifndef _DOMAINGRID_H_
-#define _DOMAINGRID_H_
+#ifndef _PICGRID_H_
+#define _PICGRID_H_
 
 #include <AMReX_BCRec.H>
 #include <AMReX_Box.H>
@@ -16,8 +16,8 @@
 
 #include "Constants.h"
 
-
-class DomainGrid{
+// This class define the grid information, but NOT the data on the grid.
+class PicGrid {
 
 protected:
   int nGst;
@@ -45,7 +45,7 @@ protected:
   int iDecomp;
 
 public:
-  DomainGrid() {
+  PicGrid() {
     iGrid = 1;
     iDecomp = 1;
     for (int i = 0; i < nDim; i++) {
@@ -80,10 +80,10 @@ public:
     costMF.define(centerBA, dm, 1, 0);
     costMF.setVal(0);
 
-    amrex::Print() << "DomainGrid:: Domain range = " << boxRange << std::endl;
-    amrex::Print() << "DomainGrid:: Total block #  = " << nodeBA.size()
+    amrex::Print() << "PicGrid:: Pic range = " << boxRange << std::endl;
+    amrex::Print() << "PicGrid:: Total block #  = " << nodeBA.size()
                    << std::endl;
-    // amrex::Print() << "DomainGrid:: centerBA = " << centerBA << std::endl;
+    // amrex::Print() << "PicGrid:: centerBA = " << centerBA << std::endl;
   }
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }
@@ -113,7 +113,6 @@ public:
     amrex::Abort("Error: can not find this cell!");
     return -1; // To suppress compiler warnings.
   }
-
 };
 
 #endif

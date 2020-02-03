@@ -1,6 +1,8 @@
 #ifndef _PARTICLES_H_
 #define _PARTICLES_H_
 
+#include <memory>
+
 #include <AMReX_Particles.H>
 
 #include "Array1D.h"
