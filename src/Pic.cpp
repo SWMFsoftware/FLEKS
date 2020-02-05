@@ -422,9 +422,6 @@ void Pic::update() {
 
   sum_moments();
 
-  tc->write_plots();
-  write_log();
-
   timing_stop(nameFunc);
 }
 

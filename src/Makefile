@@ -9,7 +9,8 @@ SRCS := \
 	BC.cpp \
 	FluidInterface.cpp \
 	Pic.cpp \
-	PicIO.cpp
+	PicIO.cpp \
+	DomainGrid.cpp 
 
 include ../Makefile.conf.local
 include ../Makefile.def

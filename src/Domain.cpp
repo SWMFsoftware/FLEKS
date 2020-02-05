@@ -5,6 +5,9 @@ using namespace amrex;
 //------------------------------------------------------------------------
 void Domain::update() {
   pic.update();
+
+  tc->write_plots();
+  pic.write_log();
 };
 
 //------------------------------------------------------------------------
@@ -62,7 +65,6 @@ void Domain::make_grid() {
 
   // Also make grid for the fluid interface.
   fluidInterface->make_grid(dm, geom, centerBA, nodeBA, nGst);
-
 
   amrex::Print() << "Domain::          range = " << boxRange << std::endl;
   amrex::Print() << "Domain:: Total block #  = " << nodeBA.size() << std::endl;

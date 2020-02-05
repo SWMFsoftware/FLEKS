@@ -16,8 +16,7 @@
 
 #include "Constants.h"
 
-
-class DomainGrid{
+class DomainGrid {
 
 protected:
   int nGst;
@@ -53,38 +52,12 @@ public:
       maxBlockSize[i] = 8;
     }
   }
+  ~DomainGrid() = default;
+
+  void init();
 
   int get_iGrid() const { return iGrid; }
   int get_iDecomp() const { return iDecomp; }
-
-  void init() {
-    // nCell and boxRange should have been set before calling this function.
-
-    for (int i = 0; i < nDim; i++) {
-      centerBoxLo[i] = 0;
-      centerBoxHi[i] = nCell[i] - 1;
-    }
-
-    centerBox.setSmall(centerBoxLo);
-    centerBox.setBig(centerBoxHi);
-
-    geom.define(centerBox, &boxRange, coord, periodicity);
-
-    centerBA.define(centerBox);
-    centerBA.maxSize(maxBlockSize);
-
-    dm.define(centerBA);
-
-    nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
-
-    costMF.define(centerBA, dm, 1, 0);
-    costMF.setVal(0);
-
-    amrex::Print() << "DomainGrid:: Domain range = " << boxRange << std::endl;
-    amrex::Print() << "DomainGrid:: Total block #  = " << nodeBA.size()
-                   << std::endl;
-    // amrex::Print() << "DomainGrid:: centerBA = " << centerBA << std::endl;
-  }
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }
   void set_maxBlockSize(int iDir, const int in) { maxBlockSize[iDir] = in; }
@@ -93,6 +66,8 @@ public:
   void set_periodicity(const int iDir, const bool isPeriodic) {
     periodicity[iDir] = (isPeriodic ? 1 : 0);
   }
+
+  void resize_pic();
 
   inline int find_mpi_rank_from_coord(amrex::Real const x, amrex::Real const y,
                                       amrex::Real const z) const {
@@ -113,7 +88,6 @@ public:
     amrex::Abort("Error: can not find this cell!");
     return -1; // To suppress compiler warnings.
   }
-
 };
 
 #endif
