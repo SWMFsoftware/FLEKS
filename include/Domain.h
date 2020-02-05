@@ -5,6 +5,9 @@
 #include "Pic.h"
 
 class Domain : public DomainGrid {
+private:
+  bool doRestart;
+
 public:
   Pic pic;
 
@@ -16,6 +19,7 @@ public:
   Domain() {
     fluidInterface = std::make_shared<FluidInterface>();
     tc = std::make_unique<TimeCtr>();
+    doRestart = false; 
   }
 
   ~Domain() = default;
@@ -44,8 +48,16 @@ public:
   //------------Coupler related end--------------
 
   //--------------- IO begin--------------------------------
+  void read_param();
   void save_restart();
+  void save_restart_header();
+  void save_restart_data();
+  void read_restart();
   //--------------- IO end----------------------------------
+
+  void make_grid();
+  void make_data();
+  void init_time_ctr();
 };
 
 #endif

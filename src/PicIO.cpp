@@ -298,11 +298,6 @@ double Pic::get_var(std::string var, const int ix, const int iy,
   return value;
 }
 
-void Pic::save_restart() {
-  save_restart_header();
-  save_restart_data();
-}
-
 void Pic::save_restart_data() {
   VisMF::SetNOutFiles(64);
 
@@ -316,62 +311,8 @@ void Pic::save_restart_data() {
   }
 }
 
-void Pic::save_restart_header() {
-  if (ParallelDescriptor::IOProcessor()) {
-    Print() << "Saving restart file at time = " << tc->get_time_si() << " (s)"
-            << std::endl;
-
-    VisMF::IO_Buffer ioBuffer(VisMF::IO_Buffer_Size);
-
-    std::ofstream headerFile;
-
-    headerFile.rdbuf()->pubsetbuf(ioBuffer.dataPtr(), ioBuffer.size());
-
-    std::string headerFileName("PC/restartOUT/restart.H");
-
-    headerFile.open(headerFileName.c_str(),
-                    std::ofstream::out | std::ofstream::trunc);
-
-    if (!headerFile.good()) {
-      amrex::FileOpenFailed(headerFileName);
-    }
-
-    headerFile.precision(17);
-
-    headerFile << "Restart header \n\n";
-
-    headerFile << "#RESTART\n";
-    headerFile << "T"
-               << "\t doRestart\n";
-    headerFile << "\n";
-
-    headerFile << "#NSTEP\n";
-    headerFile << tc->get_cycle() << "\t nStep\n";
-    headerFile << "\n";
-
-    headerFile << "#TIMESIMULATION\n";
-    headerFile << tc->get_time_si() << "\t TimeSimulation\n";
-    headerFile << "\n";
-
-    headerFile << "#TIMESTEP\n";
-    headerFile << tc->get_dt_si() << "\t dt\n";
-    headerFile << "\n";
-
-    // Geometry
-    headerFile << "#GEOMETRY\n";
-    for (int i = 0; i < nDimMax; ++i) {
-      headerFile << boxRange.lo(i) << "\t min\n";
-      headerFile << boxRange.hi(i) << "\t max\n";
-    }
-    headerFile << "\n";
-
-    // Cell
-    headerFile << "#NCELL\n";
-    for (int i = 0; i < nDimMax; ++i) {
-      headerFile << nCell[i] << "\n";
-    }
-    headerFile << "\n";
-
+void Pic::save_restart_header(std::ofstream &headerFile) {
+  if (ParallelDescriptor::IOProcessor()) {    
     headerFile << "#ELECTRON\n";
     headerFile << qomEl << "\t qomEl\n";
     headerFile << "\n";

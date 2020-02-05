@@ -109,13 +109,14 @@ public:
             double *gridDim, double *paramReal,
             std::shared_ptr<FluidInterface> &fluidIn,
             std::shared_ptr<TimeCtr> &tcIn);
-  void make_grid();
+
+  void make_grid(int nGstIn, const amrex::BoxArray &centerBAIn,
+                 const amrex::Geometry &geomIn);
 
   void make_data();
   void set_ic();
   void set_ic_field();
   void set_ic_particles();
-  void init_time_ctr();
   //----------------Initialization end-------------------------------
 
   void sum_moments();
@@ -131,7 +132,7 @@ public:
   void get_fluid_state_for_points(const int nDim, const int nPoint,
                                   const double *const xyz_I,
                                   double *const data_I, const int nVar);
-  void read_param();
+  void read_param(const std::string& command, ReadParam& readParam);
   //------------Coupler related end--------------
 
   //-------------Electric field solver begin-------------
@@ -168,9 +169,8 @@ public:
                      MDArray<double> &var_II);
   double get_var(std::string var, const int ix, const int iy, const int iz,
                  const amrex::MFIter &mfi);
-
-  void save_restart();
-  void save_restart_header();
+  
+  void save_restart_header(std::ofstream &headerFile);
   void save_restart_data();
   void read_restart();
   std::string logFile;

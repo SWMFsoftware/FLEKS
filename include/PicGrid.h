@@ -22,16 +22,9 @@ class PicGrid {
 protected:
   int nGst;
 
-  amrex::IntVect nCell;
-  amrex::IntVect nNode;
-  amrex::IntVect maxBlockSize;
-  int periodicity[nDim];
-  amrex::IntVect centerBoxLo;
-  amrex::IntVect centerBoxHi;
   amrex::Box centerBox;
-  amrex::RealBox boxRange;
 
-  const int coord = 0; // Cartesian grid
+  // const int coord = 0; // Cartesian grid
   amrex::Geometry geom;
 
   amrex::BoxArray centerBA;
@@ -41,58 +34,11 @@ protected:
 
   amrex::MultiFab costMF;
 
-  int iGrid;
-  int iDecomp;
-
 public:
-  PicGrid() {
-    iGrid = 1;
-    iDecomp = 1;
-    for (int i = 0; i < nDim; i++) {
-      periodicity[i] = 0;
-      maxBlockSize[i] = 8;
-    }
-  }
-
-  int get_iGrid() const { return iGrid; }
-  int get_iDecomp() const { return iDecomp; }
-
-  void init() {
-    // nCell and boxRange should have been set before calling this function.
-
-    for (int i = 0; i < nDim; i++) {
-      centerBoxLo[i] = 0;
-      centerBoxHi[i] = nCell[i] - 1;
-    }
-
-    centerBox.setSmall(centerBoxLo);
-    centerBox.setBig(centerBoxHi);
-
-    geom.define(centerBox, &boxRange, coord, periodicity);
-
-    centerBA.define(centerBox);
-    centerBA.maxSize(maxBlockSize);
-
-    dm.define(centerBA);
-
-    nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
-
-    costMF.define(centerBA, dm, 1, 0);
-    costMF.setVal(0);
-
-    amrex::Print() << "PicGrid:: Pic range = " << boxRange << std::endl;
-    amrex::Print() << "PicGrid:: Total block #  = " << nodeBA.size()
-                   << std::endl;
-    // amrex::Print() << "PicGrid:: centerBA = " << centerBA << std::endl;
-  }
+  PicGrid() = default;
+  ~PicGrid() = default;
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }
-  void set_maxBlockSize(int iDir, const int in) { maxBlockSize[iDir] = in; }
-  void set_nCell(const amrex::IntVect& in) { nCell = in; }
-  void set_boxRange(const amrex::RealBox& in) { boxRange = in; }
-  void set_periodicity(const int iDir, const bool isPeriodic) {
-    periodicity[iDir] = (isPeriodic ? 1 : 0);
-  }
 
   inline int find_mpi_rank_from_coord(amrex::Real const x, amrex::Real const y,
                                       amrex::Real const z) const {

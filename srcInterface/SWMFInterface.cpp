@@ -128,8 +128,8 @@ int pic_cal_dt_(double *dtOut) {
 }
 
 int pic_get_grid_info_(int *iGrid, int *iDecomp) {
-  (*iGrid) = MPICs->pic.get_iGrid();
-  (*iDecomp) = MPICs->pic.get_iDecomp();
+  (*iGrid) = MPICs->get_iGrid();
+  (*iDecomp) = MPICs->get_iDecomp();
   return 0;
 }
 
