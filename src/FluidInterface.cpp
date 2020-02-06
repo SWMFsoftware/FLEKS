@@ -22,15 +22,14 @@ void FluidInterface::receive_info_from_gm(const int* const paramInt,
   readParam = paramString;
 }
 
-void FluidInterface::make_grid(const amrex::DistributionMapping& dmIn,
-                               const amrex::Geometry& geomIn,
+void FluidInterface::make_grid(const int nGst,
                                const amrex::BoxArray& centerBAIn,
-                               const amrex::BoxArray& nodeBAIn,
-                               const int nGst) {
-  dm = dmIn;
+                               const amrex::Geometry& geomIn) {
   geom = geomIn;
   centerBA = centerBAIn;
-  nodeBA = nodeBAIn;
+  nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
+
+  dm.define(centerBA);
 
   nodeFluid.define(nodeBA, dm, nVarCoupling, nGst);
   nodeFluid.setVal(0);
@@ -139,9 +138,11 @@ void FluidInterface::calc_current() {
   currentMF.mult(1.0 / (getNo2SiL() * fourPI * 1e-7), currentMF.nGrow());
   currentMF.FillBoundary();
 
-  // The current in the ghost cells can not be calculated from the nodeB. So
-  // fill in the ghost cell current with float boundary condition.
-  apply_float_boundary(currentMF, geom, 0, currentMF.nComp());
+  // The current in the ghost cells can not be calculated from the centerB. So
+  // fill in the ghost cell current with float boundary condition. The current
+  // in the inner most layer of ghost cells can be calculated from centerB, just
+  // need to fill in the rest. That is why we use '-1' below. 
+  apply_float_boundary(currentMF, geom, 0, currentMF.nComp(), -1);
 }
 
 void FluidInterface::normalize_fluid_variables() {
@@ -227,10 +228,9 @@ void FluidInterface::set_plasma_charge_and_mass(amrex::Real qomEl) {
   Print() << "===================================" << std::endl;
 }
 
+void FluidInterface::load_balance(const DistributionMapping& dmIn) {
+  dm = dmIn;
 
-void FluidInterface::load_balance(const DistributionMapping& dmIn){
-  dm = dmIn; 
-
-  redistribute_FabArray(nodeFluid, dm); //false?
-  redistribute_FabArray(centerB, dm); //false?
+  redistribute_FabArray(nodeFluid, dm); // false?
+  redistribute_FabArray(centerB, dm);   // false?
 }

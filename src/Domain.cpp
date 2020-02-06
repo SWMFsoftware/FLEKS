@@ -3,7 +3,7 @@
 using namespace amrex;
 
 //------------------------------------------------------------------------
-void Domain::update() {
+void Domain::update() {  
   pic.update();
 
   tc->write_plots();
@@ -36,7 +36,7 @@ void Domain::init(amrex::Real timeIn, const std::string &paramString,
 
 //------------------------------------------------------------------------
 void Domain::make_grid() {
-  set_nGst(1);
+  set_nGst(2);
 
   // If MHD is 2D, PIC has to be periodic in the z-direction.
   for (int iDim = fluidInterface->getnDim(); iDim < nDimMax; iDim++)
@@ -61,10 +61,10 @@ void Domain::make_grid() {
 
   DomainGrid::init();
 
-  pic.make_grid(nGst, centerBA, geom);
 
-  // Also make grid for the fluid interface.
-  fluidInterface->make_grid(dm, geom, centerBA, nodeBA, nGst);
+  BoxArray baPic = resize_pic_ba();
+  pic.make_grid(nGst, baPic, geom);
+  fluidInterface->make_grid(nGst, baPic, geom);
 
   amrex::Print() << "Domain::          range = " << boxRange << std::endl;
   amrex::Print() << "Domain:: Total block #  = " << nodeBA.size() << std::endl;

@@ -133,20 +133,19 @@ void Pic::make_data() {
       parts.push_back(std::move(ptr));
     }
 
-    // Only 1 ghost cell layer is needed!
-    nodeMM.define(nodeBA, dm, 1, 1);
+    nodeMM.define(nodeBA, dm, 1, nGst);
     const RealMM mm0(0.0);
     nodeMM.setVal(mm0);
 
     //-------divE correction----------------
-    centerNetChargeOld.define(centerBA, dm, 1, 1);
+    centerNetChargeOld.define(centerBA, dm, 1, nGst);
     centerNetChargeOld.setVal(0.0);
-    centerNetChargeN.define(centerBA, dm, 1, 1);
+    centerNetChargeN.define(centerBA, dm, 1, nGst);
     centerNetChargeN.setVal(0.0);
-    centerNetChargeNew.define(centerBA, dm, 1, 1);
+    centerNetChargeNew.define(centerBA, dm, 1, nGst);
     centerNetChargeNew.setVal(0.0);
 
-    centerMM.define(centerBA, dm, 1, 1);
+    centerMM.define(centerBA, dm, 1, nGst);
     centerMM.setVal(0.0);
     //--------------------------------------
   }
@@ -494,10 +493,14 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
     apply_external_BC(vecMF, 0, nDimMax, &Pic::get_node_E);
   }
 
+  print_MultiFab(vecMF, "vecMF");
+
   lap_node_to_node(vecMF, matvecMF, dm, geom);
 
   Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
   matvecMF.mult(-delt2);
+
+  print_MultiFab(matvecMF, "matvecMF1");
 
   { // grad(divE)
     div_node_to_center(vecMF, centerDivE, geom.InvCellSize());
@@ -506,10 +509,14 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
       average_node_to_cellcenter(tempCenter3, 0, vecMF, 0, 3,
                                  tempCenter3.nGrow());
 
+      print_MultiFab(tempCenter3, "tempcenter3_1");
+
       tempCenter3.FillBoundary(geom.periodicity());
 
       // It seems not necessary, nor a good idea to apply float BC here. --Yuxi
-      apply_float_boundary(tempCenter3, geom, 0, tempCenter3.nComp());
+      apply_float_boundary(tempCenter3, geom, 0, tempCenter3.nComp(), -1);
+
+      print_MultiFab(tempCenter3, "tempcenter3_2");
 
       div_center_to_center(tempCenter3, tempCenter1, geom.InvCellSize());
 
@@ -523,13 +530,19 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
 
     tempNode3.mult(delt2);
     MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
+    print_MultiFab(matvecMF, "matvecMF2");
   }
 
   tempNode3.setVal(0);
   update_E_M_dot_E(vecMF, tempNode3);
+
+  print_MultiFab(tempNode3, "tempnode3");
+
   MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
 
   MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
+
+  print_MultiFab(matvecMF, "matvecMF4");
 
   convert_3d_to_1d(matvecMF, vecOut, geom);
 }
@@ -554,7 +567,6 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
           for (int k2 = k - 1; k2 <= k + 1; k2++)
             for (int j2 = j - 1; j2 <= j + 1; j2++)
               for (int i2 = i - 1; i2 <= i + 1; i2++) {
-
                 const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
                 const int idx0 = gp * 9;
 

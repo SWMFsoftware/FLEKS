@@ -26,16 +26,20 @@ void Particles::add_particles_cell(const MFIter& mfi,
                                    int j, int k) {
   int ig, jg, kg, nxcg, nycg, nzcg, iCycle, npcel, nRandom = 7;
   // Why +1? for comparison with iPIC3D.-----
-  ig = i + 1;
-  jg = j + 1;
+
+  ig = i + 2;
+  jg = j + 2;
   kg = k;
   if (fluidInterface.getnDim() > 2)
-    kg++; // just for comparison with iPIC3D;
+    kg = kg + 2; // just for comparison with iPIC3D;
   //----------------------------------------
 
-  nxcg = fluidInterface.getFluidNxc();
-  nycg = fluidInterface.getFluidNyc();
+  nxcg = fluidInterface.getFluidNxc() + 2;
+  nycg = fluidInterface.getFluidNyc() + 2;
   nzcg = fluidInterface.getFluidNzc();
+  if (fluidInterface.getnDim() > 2)
+    nzcg += 2;
+
   iCycle = tc->get_cycle();
   npcel = nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_];
   // What if the seed overflow?
@@ -110,6 +114,7 @@ void Particles::add_particles_cell(const MFIter& mfi,
           p.rdata(iwp_) = w;
           p.rdata(iqp_) = q;
           particles.push_back(p);
+          // Print() << p << std::endl;
         }
       }
 }
@@ -117,15 +122,41 @@ void Particles::add_particles_cell(const MFIter& mfi,
 void Particles::add_particles_domain(const FluidInterface& fluidInterface) {
   BL_PROFILE("Particles::add_particles");
 
+  // Global cell box
+  const Box& gbx = Geom(0).Domain();
+
   const int lev = 0;
   for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
     const Box& tile_box = mfi.validbox();
     const auto lo = amrex::lbound(tile_box);
     const auto hi = amrex::ubound(tile_box);
 
-    for (int i = lo.x; i <= hi.x; ++i)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int k = lo.z; k <= hi.z; ++k) {
+    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
+    int iMin = lo.x, jMin = lo.y, kMin = lo.z;
+
+    if (!(Geom(0).isPeriodic(ix_)) && gbx.bigEnd(ix_) == hi.x) {
+      iMax++;
+    }
+    if ((!Geom(0).isPeriodic(iy_)) && gbx.bigEnd(iy_) == hi.y) {
+      jMax++;
+    }
+    if ((!Geom(0).isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z) {
+      kMax++;
+    }
+
+    if (!Geom(0).isPeriodic(ix_) && gbx.smallEnd(ix_) == lo.x) {
+      iMin--;
+    }
+    if (!Geom(0).isPeriodic(iy_) && gbx.smallEnd(iy_) == lo.y) {
+      jMin--;
+    }
+    if (!Geom(0).isPeriodic(iz_) && gbx.smallEnd(iz_) == lo.z) {
+      kMin--;
+    }
+
+    for (int i = iMin; i <= iMax; ++i)
+      for (int j = jMin; j <= jMax; ++j)
+        for (int k = kMin; k <= kMax; ++k) {
           add_particles_cell(mfi, fluidInterface, i, j, k);
         }
   }
@@ -264,13 +295,14 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
       for (int i = 0; i < 3; i++) {
         // plo is the corner location => -0.5
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i] - 0.5;
-        loIdx[i] = myfloor(dShift[i]); // floor() is slow.
+        loIdx[i] = myfloor(dShift[i] + 10) - 10; // floor() is slow.
         dShift[i] = dShift[i] - loIdx[i];
       }
       Real coef[2][2][2];
       linear_interpolation_coef(dShift, coef);
       //-----calculate interpolate coef end-------------
 
+      Print() << "p = " << p << std::endl;
       const Real cTmp = qp * invVol;
       for (int kk = 0; kk < 2; kk++)
         for (int jj = 0; jj < 2; jj++)
@@ -487,6 +519,16 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
                     Real* const data = &(data0[idx0]);
                     for (int idx = 0; idx < 9; idx++) {
                       data[idx] += alpha[idx] * weight;
+
+                      if (i1 == 0 && j1 == 0 && k1 == 0) {
+                        Print() << "----------------------------------"
+                                << std::endl;
+                        Print() << p;
+                        Print() << "idx = " << idx << " alpha = " << alpha[idx]
+                                << " weight = " << weight << std::endl;
+                        Print() << "----------------------------------"
+                                << std::endl;
+                      }
                     }
                   } // k2
 

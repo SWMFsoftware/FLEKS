@@ -38,10 +38,8 @@ public:
                             const double* const paramDouble,
                             const std::string& paramString);
 
-  void make_grid(const amrex::DistributionMapping& dmIn,
-                 const amrex::Geometry& geomIn,
-                 const amrex::BoxArray& centerBAIn,
-                 const amrex::BoxArray& nodeBAIn, const int nGst);
+  void make_grid(const int nGst, const amrex::BoxArray& centerBAIn,
+                 const amrex::Geometry& geomIn);
 
   int count_couple_node_number();
 
@@ -63,7 +61,8 @@ public:
 
   void load_balance(const amrex::DistributionMapping& dmIn);
 
-  // ---------Functions to read/interpolate value from nodeFluid. Begin------------
+  // ---------Functions to read/interpolate value from nodeFluid.
+  // Begin------------
   const amrex::MultiFab& get_nodeFluid() const { return nodeFluid; }
 
   amrex::Real get_center_b(const amrex::MFIter& mfi, const int i, const int j,
@@ -202,8 +201,7 @@ public:
     amrex::Real P;
     if (useMultiSpecies || useMultiFluid || doSplitSpecies) {
       std::cout << " getFluidPpar has not implemented for "
-                   "multifluid/multispecies/doSplitSpecies!!"
-                << std::endl;
+                   "multifluid/multispecies/doSplitSpecies!!" << std::endl;
       abort();
     }
 
@@ -458,8 +456,7 @@ public:
 
     if (useMultiFluid || useMultiSpecies || doSplitSpecies) {
       std::cout << " setFluidanisoUth has not implemented for "
-                   "multifluid/multispecies/doSplitSpecies!!!"
-                << std::endl;
+                   "multifluid/multispecies/doSplitSpecies!!!" << std::endl;
       abort();
     }
 
@@ -561,7 +558,7 @@ public:
     }
     return Ez;
   }
-// ---------Functions to read/interpolate value from nodeFluid. End------------
-
+  // ---------Functions to read/interpolate value from nodeFluid.
+  // End------------
 };
 #endif

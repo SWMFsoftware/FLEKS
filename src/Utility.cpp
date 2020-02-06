@@ -12,7 +12,7 @@ void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
       convert(srcMF.boxArray(), IntVect{ AMREX_D_DECL(0, 0, 0) });
 
   // Need and just need 1 ghost cell layer.
-  MultiFab centerMF(centerBA, dm, 3, 1);
+  MultiFab centerMF(centerBA, dm, 3, dstMF.nGrow());
   centerMF.setVal(0.0);
 
   for (int i = 0; i < srcMF.nComp(); i++) {
@@ -21,8 +21,11 @@ void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
 
     centerMF.FillBoundary(geom.periodicity());
 
+    print_MultiFab(centerMF, "centerMF");
+
     MultiFab dstAliasMF(dstMF, amrex::make_alias, i, 1);
     div_center_to_node(centerMF, dstAliasMF, invDx);
+    print_MultiFab(dstAliasMF, "dstAliasMF");
   }
 }
 
@@ -30,7 +33,7 @@ void grad_node_to_center(const amrex::MultiFab& nodeMF,
                          amrex::MultiFab& centerMF, const amrex::Real* invDx) {
 
   for (amrex::MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.tilebox();
+    const amrex::Box& box = mfi.fabbox();
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
@@ -63,16 +66,16 @@ void grad_center_to_node(const amrex::MultiFab& centerMF,
                          amrex::MultiFab& nodeMF, const amrex::Real* invDx) {
 
   for (amrex::MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.tilebox();
+    const amrex::Box& box = mfi.fabbox();
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
     const amrex::Array4<amrex::Real>& node = nodeMF[mfi].array();
     const amrex::Array4<amrex::Real const>& center = centerMF[mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
+    for (int k = lo.z + 1; k <= hi.z - 1; ++k)
+      for (int j = lo.y + 1; j <= hi.y - 1; ++j)
+        for (int i = lo.x + 1; i <= hi.x - 1; ++i) {
 
           node(i, j, k, ix_) =
               0.25 * invDx[ix_] *
@@ -100,7 +103,7 @@ void div_center_to_node(const amrex::MultiFab& centerMF,
                         amrex::MultiFab& nodeMF, const amrex::Real* invDx) {
 
   for (amrex::MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.tilebox();
+    const amrex::Box& box = mfi.validbox();
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
@@ -140,7 +143,7 @@ void div_node_to_center(const amrex::MultiFab& nodeMF,
                         amrex::MultiFab& centerMF, const amrex::Real* invDx) {
 
   for (amrex::MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.tilebox();
+    const amrex::Box& box = mfi.fabbox();
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
@@ -180,16 +183,16 @@ void div_center_to_center(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
                           const amrex::Real* invDx) {
 
   for (amrex::MFIter mfi(dstMF, doTiling); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.tilebox();
+    const amrex::Box& box = mfi.validbox();
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
     const amrex::Array4<amrex::Real const>& srcArr = srcMF[mfi].array();
     const amrex::Array4<amrex::Real>& dstArr = dstMF[mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
+    for (int k = lo.z - 1; k <= hi.z + 1; ++k)
+      for (int j = lo.y - 1; j <= hi.y + 1; ++j)
+        for (int i = lo.x - 1; i <= hi.x + 1; ++i) {
           Real compX = 0;
           for (int jj = -1; jj < 2; jj++)
             for (int kk = -1; kk < 2; kk++) {
@@ -224,9 +227,9 @@ void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
   bool isCenter = MF.ixType().cellCentered();
   bool isNode = !isCenter;
 
-  MF.setVal(0.0); 
+  MF.setVal(0.0);
 
-  const Box& gbx = geom.Domain();
+  const Box& gbx = convert(geom.Domain(), MF.boxArray().ixType());
 
   int iCount = 0;
   for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
@@ -252,9 +255,6 @@ void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
         kMax++;
     }
 
-
-
-
     if (!geom.isPeriodic(ix_) && gbx.bigEnd(ix_) == hi.x) {
       iMax -= nVirGst;
     }
@@ -279,8 +279,6 @@ void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
       kMin += nVirGst;
     }
 
-
-
     for (int iVar = 0; iVar < MF.nComp(); iVar++)
       for (int k = kMin; k <= kMax; ++k)
         for (int j = jMin; j <= jMax; ++j)
@@ -296,7 +294,7 @@ void convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
   bool isCenter = MF.ixType().cellCentered();
   bool isNode = !isCenter;
 
-  const Box& gbx = geom.Domain();
+  const Box& gbx = convert(geom.Domain(), MF.boxArray().ixType());
 
   int iCount = 0;
   for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
@@ -359,20 +357,21 @@ void convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
 void print_MultiFab(amrex::MultiFab& data, std::string tag) {
   AllPrint() << "-----" << tag << " begin-----" << std::endl;
   Real sum = 0;
+  int nshift = 2; 
   for (MFIter mfi(data); mfi.isValid(); ++mfi) {
     FArrayBox& fab = data[mfi];
-    const Box& box = mfi.fabbox();
+    const Box& box = mfi.validbox();
     Array4<Real> const& data = fab.array();
 
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
-    for (int i = lo.x; i <= hi.x; ++i)
-      for (int j = lo.y; j <= hi.y; ++j)
+    for (int i = lo.x - nshift; i <= hi.x + nshift; ++i)
+      for (int j = lo.y - nshift; j <= hi.y + nshift; ++j)
         for (int k = lo.z; k <= hi.z; ++k)
           for (int iVar = 0; iVar < data.nComp(); iVar++) {
-            AllPrint() << " i = " << i << " j = " << j << " k = " << k
-                       << " iVar = " << iVar
+            AllPrint() << " i = " << i + 1 << " j = " << j + 1
+                       << " k = " << k + 1 << " iVar = " << iVar
                        << " data = " << data(i, j, k, iVar) << std::endl;
             sum += data(i, j, k, iVar);
           }
@@ -390,16 +389,16 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
   Real cYDX, cXDY;
 
   for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.tilebox();
+    const Box& box = mfi.fabbox();
     const Array4<Real>& nodeArr = nodeMF[mfi].array();
     const Array4<Real const>& centerArr = centerMF[mfi].array();
 
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
+    for (int k = lo.z + 1; k <= hi.z - 1; ++k)
+      for (int j = lo.y + 1; j <= hi.y - 1; ++j)
+        for (int i = lo.x + 1; i <= hi.x - 1; ++i) {
           cZDY =
               0.25 * invDx[iy_] *
               (centerArr(i, j, k, iz_) - centerArr(i, j - 1, k, iz_) +
@@ -446,7 +445,7 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
                centerArr(i, j, k - 1, ix_) - centerArr(i, j - 1, k - 1, ix_) +
                centerArr(i - 1, j, k, ix_) - centerArr(i - 1, j - 1, k, ix_) +
                centerArr(i - 1, j, k - 1, ix_) -
-               centerArr(i - 1, j - 1, k - 1, ix_));      
+               centerArr(i - 1, j - 1, k - 1, ix_));
 
           nodeArr(i, j, k, ix_) = cZDY - cYDZ;
           nodeArr(i, j, k, iy_) = cXDZ - cZDX;
@@ -463,7 +462,7 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
   Real cYDX, cXDY;
 
   for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.tilebox();
+    const Box& box = mfi.fabbox();
     const Array4<Real>& centerArr = centerMF[mfi].array();
     const Array4<Real const>& nodeArr = nodeMF[mfi].array();
 
@@ -526,7 +525,7 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
 void average_center_to_node(const amrex::MultiFab& centerMF,
                             amrex::MultiFab& nodeMF) {
   for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.tilebox();
+    const Box& box = mfi.fabbox();
     const Array4<Real>& nodeArr = nodeMF[mfi].array();
     const Array4<Real const>& centerArr = centerMF[mfi].array();
 
@@ -534,9 +533,9 @@ void average_center_to_node(const amrex::MultiFab& centerMF,
     const auto hi = ubound(box);
 
     for (int iVar = 0; iVar < centerMF.nComp(); iVar++)
-      for (int i = lo.x; i <= hi.x; ++i)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int k = lo.z; k <= hi.z; ++k) {
+      for (int i = lo.x + 1; i <= hi.x - 1; ++i)
+        for (int j = lo.y + 1; j <= hi.y - 1; ++j)
+          for (int k = lo.z + 1; k <= hi.z - 1; ++k) {
             nodeArr(i, j, k, iVar) =
                 0.125 *
                 (centerArr(i - 1, j - 1, k - 1, iVar) +

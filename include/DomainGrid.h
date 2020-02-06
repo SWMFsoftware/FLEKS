@@ -67,7 +67,7 @@ public:
     periodicity[iDir] = (isPeriodic ? 1 : 0);
   }
 
-  void resize_pic();
+  amrex::BoxArray resize_pic_ba();
 
   inline int find_mpi_rank_from_coord(amrex::Real const x, amrex::Real const y,
                                       amrex::Real const z) const {
