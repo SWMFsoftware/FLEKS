@@ -252,9 +252,23 @@ void Pic::sum_moments() {
     apply_float_boundary(nodePlasma[i], geom, 0, nodePlasma[i].nComp(),
                          nVirGst);
   }
+  Print() << "nodeMM 1 = " << nodeMM[0].array()(0, 0, 0).data[0] << std::endl;
+
+  for (int i = 0 - 1; i <= 2 - 1; i++)
+    for (int j = 0 - 1; j <= 2 - 1; j++)
+      for (int k = -1; k <= 1; k++) {
+
+        Print() << "i = " << i << " j = " << j << " k = " << k
+                << "nodeMM = " << nodeMM[0].array()(i, j, k).data[0]
+                << std::endl;
+      }
 
   nodeMM.SumBoundary(geom.periodicity());
+
+  Print() << "nodeMM 2 = " << nodeMM[0].array()(0, 0, 0).data[0] << std::endl;
   nodeMM.FillBoundary(geom.periodicity());
+
+  Print() << "nodeMM 3 = " << nodeMM[0].array()(0, 0, 0).data[0] << std::endl;
 
   timing_stop(nameFunc);
 }
@@ -437,9 +451,14 @@ void Pic::update_E() {
 
   update_E_matvec(eSolver.xLeft, eSolver.matvec, false);
 
+  Real sum = 0;
   for (int i = 0; i < eSolver.get_nSolve(); i++) {
     eSolver.rhs[i] -= eSolver.matvec[i];
     eSolver.xLeft[i] = 0;
+    sum += pow(eSolver.rhs[i], 2);
+    Print() << "i = " << i << " rhs = " << eSolver.rhs[i]
+            << " matvec = " << eSolver.matvec[i] << " sum = " << sqrt(sum)
+            << std::endl;
   }
 
   Print() << "\n----------- E solver ------------------" << std::endl;
@@ -520,13 +539,20 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
 
       div_center_to_center(tempCenter3, tempCenter1, geom.InvCellSize());
 
+      print_MultiFab(tempCenter1, "tempcenter1");
+
       MultiFab::LinComb(centerDivE, 1 - fsolver.coefDiff, centerDivE, 0,
-                        fsolver.coefDiff, tempCenter1, 0, 0, 1, 0);
+                        fsolver.coefDiff, tempCenter1, 0, 0, 1,
+                        centerDivE.nGrow());
     }
 
     centerDivE.FillBoundary(geom.periodicity());
 
+    print_MultiFab(centerDivE, "centerDivE");
+
     grad_center_to_node(centerDivE, tempNode3, geom.InvCellSize());
+
+    print_MultiFab(tempNode3, "tempnode3_1");
 
     tempNode3.mult(delt2);
     MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
@@ -549,6 +575,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
 
 void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
 
+  Print() << "nodeMM 4 = " << nodeMM[0].array()(0, 0, 0).data[0] << std::endl;
   outMF.setVal(0.0);
   Real c0 = fourPI * fsolver.theta * tc->get_dt();
   for (amrex::MFIter mfi(outMF); mfi.isValid(); ++mfi) {
@@ -583,6 +610,21 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
                 const double& vctZ = inArr(i2, j2, k2, iz_);
                 ourArr(i, j, k, ix_) +=
                     (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
+
+                if (i == 0 && j == 0 && k == 0) {
+                  Print() << "----------------------------------" << std::endl;
+                  Print() << "i2 = " << i2 << " j2 = " << j2 << " k2 = " << k2
+                          << " vctX = " << vctX << " vctY = " << vctY
+                          << " vctZ = " << vctZ << " M0 = " << M_I[0]
+                          << " M1 = " << M_I[1] << " M2 = " << M_I[2]
+                          << " idx0 " << idx0 << " data = "
+                          << (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) *
+                                 c0 << " outArr = " << ourArr(i, j, k, ix_)
+                          << std::endl;
+
+                  Print() << "----------------------------------" << std::endl;
+                }
+
                 ourArr(i, j, k, iy_) +=
                     (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
                 ourArr(i, j, k, iz_) +=

@@ -519,23 +519,32 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
                     Real* const data = &(data0[idx0]);
                     for (int idx = 0; idx < 9; idx++) {
                       data[idx] += alpha[idx] * weight;
-
-                      if (i1 == 0 && j1 == 0 && k1 == 0) {
-                        Print() << "----------------------------------"
-                                << std::endl;
-                        Print() << p;
-                        Print() << "idx = " << idx << " alpha = " << alpha[idx]
-                                << " weight = " << weight << std::endl;
-                        Print() << "----------------------------------"
-                                << std::endl;
-                      }
                     }
+
+                    if (p.id() == 6401 && idx0 == 0) {
+                      Print() << "hi" << std::endl;
+                    }
+
                   } // k2
 
                 } // j2
               }   // if (ip > 0)
             }     // i2
-          }       // k1
+
+            if (i1 == -1 && j1 == -1 && k1 == 0) {
+              Print() << "----------------------------------" << std::endl;
+              Print() << p << std::endl;
+              Real sum = 0;
+              for (int i = 0; i < 243; i++) {
+                Print() << "i = " << i
+                        << " data = " << mmArr(i1, j1, k1).data[i] << std::endl;
+                sum += mmArr(i1, j1, k1).data[i];
+              }
+              Print() << " sum = " << sum << std::endl;
+              Print() << "----------------------------------" << std::endl;
+            }
+
+          } // k1
 
       //----- Mass matrix calculation end--------------
 
@@ -591,10 +600,16 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
 
     Array4<RealMM> const& mmArr = nodeMM[mfi].array();
 
+    // We only need the mass matrix on the physical nodes. But the first layer
+    // of the ghost nodes may contributes to the physical nodes below. So, we
+    // need the '-1' and '+1' staff.
+    const int iMin = lo.x - 1, jMin = lo.y - 1, kMin = lo.z - 1;
+    const int iMax = hi.x + 1, jMax = hi.y + 1, kMax = hi.z + 1;
+
     int gps, gpr; // gp_send, gp_receive
-    for (int k1 = lo.z; k1 <= hi.z; k1++)
-      for (int j1 = lo.y; j1 <= hi.y; j1++)
-        for (int i1 = lo.x; i1 <= hi.x; i1++) {
+    for (int k1 = kMin; k1 <= kMax; k1++)
+      for (int j1 = jMin; j1 <= jMax; j1++)
+        for (int i1 = iMin; i1 <= iMax; i1++) {
           const int kp = 2, kpr = 0;
           const int kr = k1 + kp - 1;
           const Real* const datas0 = mmArr(i1, j1, k1).data;
@@ -615,6 +630,20 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
             }   // kp
           }     // jp
         }       // k1
+
+    {
+      int i1 = 0, j1 = 0, k1 = 1;
+      Print() << "1----------------------------------" << std::endl;
+      Real sum = 0;
+      for (int i = 0; i < 243; i++) {
+        Print() << "i = " << i << " data = " << mmArr(i1, j1, k1).data[i]
+                << std::endl;
+        sum += mmArr(i1, j1, k1).data[i];
+      }
+      Print() << " sum = " << sum << std::endl;
+
+      Print() << "1----------------------------------" << std::endl;
+    }
   }
 
   // Exclude the number density.

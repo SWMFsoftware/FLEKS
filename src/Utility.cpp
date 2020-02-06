@@ -357,7 +357,8 @@ void convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
 void print_MultiFab(amrex::MultiFab& data, std::string tag) {
   AllPrint() << "-----" << tag << " begin-----" << std::endl;
   Real sum = 0;
-  int nshift = 2; 
+  Real sum2 = 0;
+  int nshift = 1;
   for (MFIter mfi(data); mfi.isValid(); ++mfi) {
     FArrayBox& fab = data[mfi];
     const Box& box = mfi.validbox();
@@ -374,10 +375,11 @@ void print_MultiFab(amrex::MultiFab& data, std::string tag) {
                        << " k = " << k + 1 << " iVar = " << iVar
                        << " data = " << data(i, j, k, iVar) << std::endl;
             sum += data(i, j, k, iVar);
+            sum2 += pow(data(i, j, k, iVar), 2);
           }
   }
-  AllPrint() << "sum = " << sum << " on proc = " << ParallelDescriptor::MyProc()
-             << std::endl;
+  AllPrint() << "sum = " << sum << " sum2 = " << sqrt(sum2)
+             << " on proc = " << ParallelDescriptor::MyProc() << std::endl;
   AllPrint() << "-----" << tag << " end-----" << std::endl;
 }
 
