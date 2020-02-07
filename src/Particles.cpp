@@ -166,15 +166,14 @@ void Particles::inject_particles_at_boundary(
     const FluidInterface& fluidInterface) {
   BL_PROFILE("Particles::inject_particles_at_boundary");
 
-  if (nVirGst != 1)
-    Abort("The function assumes nVirGst==1!!");
+  // Only inject nGstInject layers.
+  int nGstInject = 1;
 
   const int lev = 0;
 
   const Box& gbx = Geom(0).Domain();
 
   for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
-    // Since nVirGst==1, fill in the cells in the 'validbox'.
     const Box& tile_box = mfi.validbox();
     const auto lo = amrex::lbound(tile_box);
     const auto hi = amrex::ubound(tile_box);
@@ -206,62 +205,61 @@ void Particles::inject_particles_at_boundary(
     }
 
     if (doFillLeftX) {
-      for (int i = iMin; i <= iMin - 1 + nVirGst; ++i)
+      for (int i = iMin - nGstInject; i <= iMin - 1 + nVirGst; ++i)
         for (int j = jMin; j <= jMax; ++j)
           for (int k = kMin; k <= kMax; ++k) {
 
             add_particles_cell(mfi, fluidInterface, i, j, k);
           }
-      iMin += nVirGst;
+      iMin += nGstInject;
     }
 
     if (doFillRightX) {
-      for (int i = iMax + 1 - nVirGst; i <= iMax; ++i)
+      for (int i = iMax + 1 - nVirGst; i <= iMax + nGstInject; ++i)
         for (int j = jMin; j <= jMax; ++j)
           for (int k = kMin; k <= kMax; ++k) {
 
             add_particles_cell(mfi, fluidInterface, i, j, k);
           }
-      iMax -= nVirGst;
+      iMax -= nGstInject;
     }
 
     if (doFillLeftY) {
       for (int i = iMin; i <= iMax; ++i)
-        for (int j = jMin; j <= jMin - 1 + nVirGst; ++j)
+        for (int j = jMin - nGstInject; j <= jMin - 1 + nVirGst; ++j)
           for (int k = kMin; k <= kMax; ++k) {
 
             add_particles_cell(mfi, fluidInterface, i, j, k);
           }
-      jMin += nVirGst;
+      jMin += nGstInject;
     }
 
     if (doFillRightY) {
       for (int i = iMin; i <= iMax; ++i)
-        for (int j = jMax + 1 - nVirGst; j <= jMax; ++j)
+        for (int j = jMax + 1 - nVirGst; j <= jMax + nGstInject; ++j)
           for (int k = kMin; k <= kMax; ++k) {
 
             add_particles_cell(mfi, fluidInterface, i, j, k);
           }
-      jMax -= nVirGst;
+      jMax -= nGstInject;
     }
 
     if (doFillLeftZ) {
       for (int i = iMin; i <= iMax; ++i)
         for (int j = jMin; j <= jMax; ++j)
-          for (int k = kMin; k <= kMin - 1 + nVirGst; ++k) {
+          for (int k = kMin - nGstInject; k <= kMin - 1 + nVirGst; ++k) {
             add_particles_cell(mfi, fluidInterface, i, j, k);
           }
-      kMin += nVirGst;
+      kMin += nGstInject;
     }
 
     if (doFillRightZ) {
       for (int i = iMin; i <= iMax; ++i)
         for (int j = jMin; j <= jMax; ++j)
-          for (int k = kMax + 1 - nVirGst; k <= kMax; ++k) {
-
+          for (int k = kMax + 1 - nVirGst; k <= kMax + nGstInject; ++k) {
             add_particles_cell(mfi, fluidInterface, i, j, k);
           }
-      kMax -= nVirGst;
+      kMax -= nGstInject;
     }
   }
 }
@@ -301,8 +299,7 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
       Real coef[2][2][2];
       linear_interpolation_coef(dShift, coef);
       //-----calculate interpolate coef end-------------
-
-      Print() << "p = " << p << std::endl;
+      
       const Real cTmp = qp * invVol;
       for (int kk = 0; kk < 2; kk++)
         for (int jj = 0; jj < 2; jj++)
@@ -530,20 +527,6 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
                 } // j2
               }   // if (ip > 0)
             }     // i2
-
-            if (i1 == -1 && j1 == -1 && k1 == 0) {
-              Print() << "----------------------------------" << std::endl;
-              Print() << p << std::endl;
-              Real sum = 0;
-              for (int i = 0; i < 243; i++) {
-                Print() << "i = " << i
-                        << " data = " << mmArr(i1, j1, k1).data[i] << std::endl;
-                sum += mmArr(i1, j1, k1).data[i];
-              }
-              Print() << " sum = " << sum << std::endl;
-              Print() << "----------------------------------" << std::endl;
-            }
-
           } // k1
 
       //----- Mass matrix calculation end--------------
@@ -630,20 +613,6 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
             }   // kp
           }     // jp
         }       // k1
-
-    {
-      int i1 = 0, j1 = 0, k1 = 1;
-      Print() << "1----------------------------------" << std::endl;
-      Real sum = 0;
-      for (int i = 0; i < 243; i++) {
-        Print() << "i = " << i << " data = " << mmArr(i1, j1, k1).data[i]
-                << std::endl;
-        sum += mmArr(i1, j1, k1).data[i];
-      }
-      Print() << " sum = " << sum << std::endl;
-
-      Print() << "1----------------------------------" << std::endl;
-    }
   }
 
   // Exclude the number density.

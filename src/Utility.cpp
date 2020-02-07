@@ -18,14 +18,9 @@ void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
   for (int i = 0; i < srcMF.nComp(); i++) {
     MultiFab srcAliasMF(srcMF, amrex::make_alias, i, 1);
     grad_node_to_center(srcAliasMF, centerMF, invDx);
-
-    centerMF.FillBoundary(geom.periodicity());
-
-    print_MultiFab(centerMF, "centerMF");
-
+    centerMF.FillBoundary(geom.periodicity());    
     MultiFab dstAliasMF(dstMF, amrex::make_alias, i, 1);
-    div_center_to_node(centerMF, dstAliasMF, invDx);
-    print_MultiFab(dstAliasMF, "dstAliasMF");
+    div_center_to_node(centerMF, dstAliasMF, invDx);    
   }
 }
 
