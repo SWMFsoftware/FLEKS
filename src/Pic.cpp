@@ -252,23 +252,14 @@ void Pic::sum_moments() {
     apply_float_boundary(nodePlasma[i], geom, 0, nodePlasma[i].nComp(),
                          nVirGst);
   }
-  Print() << "nodeMM 1 = " << nodeMM[0].array()(0, 0, 0).data[0] << std::endl;
-
-  for (int i = 0 - 1; i <= 2 - 1; i++)
-    for (int j = 0 - 1; j <= 2 - 1; j++)
-      for (int k = -1; k <= 1; k++) {
-
-        Print() << "i = " << i << " j = " << j << " k = " << k
-                << "nodeMM = " << nodeMM[0].array()(i, j, k).data[0]
-                << std::endl;
-      }
+  //Print() << "nodeMM 1 = " << nodeMM[0].array()(0, 0, 0).data[0] << std::endl;
 
   nodeMM.SumBoundary(geom.periodicity());
 
-  Print() << "nodeMM 2 = " << nodeMM[0].array()(0, 0, 0).data[0] << std::endl;
+  //Print() << "nodeMM 2 = " << nodeMM[0].array()(0, 0, 0).data[0] << std::endl;
   nodeMM.FillBoundary(geom.periodicity());
 
-  Print() << "nodeMM 3 = " << nodeMM[0].array()(0, 0, 0).data[0] << std::endl;
+  //Print() << "nodeMM 3 = " << nodeMM[0].array()(0, 0, 0).data[0] << std::endl;
 
   timing_stop(nameFunc);
 }
@@ -289,7 +280,11 @@ void Pic::divE_correction() {
   }
 
   for (int i = 0; i < nSpecies; i++) {
+    // The particles outside the simulation domain is marked for deletion inside
+    // divE_correct_particle_position(). Redistribute() deletes these particles.
+    // In order to get correct moments, re-inject particles in the ghost cells.
     parts[i]->Redistribute();
+    parts[i]->inject_particles_at_boundary(*fluidInterface);
   }
 
   // DO CORRECTION
@@ -320,7 +315,7 @@ void Pic::calculate_phi(LinearSolver& solver) {
 
   MultiFab::LinComb(tempCenter1, 1.0 / rhoTheta, tempCenter1, 0,
                     -fourPI / rhoTheta, centerNetChargeN, 0, 0,
-                    tempCenter1.nComp(), 0);
+                    tempCenter1.nComp(), tempCenter1.nGrow());
 
   tempCenter1.FillBoundary(geom.periodicity());
 
@@ -343,7 +338,7 @@ void Pic::divE_accurate_matvec(double* vecIn, double* vecOut) {
   convert_1d_to_3d(vecIn, tempCenter1, geom);
   tempCenter1.FillBoundary(geom.periodicity());
 
-  apply_float_boundary(tempCenter1, geom, 0, tempCenter1.nComp());
+  apply_float_boundary(tempCenter1, geom, 0, tempCenter1.nComp(), -1);
 
   tempCenter1_1.setVal(0.0);
   for (amrex::MFIter mfi(tempCenter1); mfi.isValid(); ++mfi) {
@@ -479,8 +474,9 @@ void Pic::update_E() {
 
   // Apply float BC in order to compare with iPIC3D. It is not right to apply
   // float BC here!!!!!!!--Yuxi
-  apply_float_boundary(nodeE, geom, 0, nodeE.nComp());
-  apply_float_boundary(nodeEth, geom, 0, nodeEth.nComp());
+  // Use '-1' in order to comapre with old FLEKS.
+  apply_float_boundary(nodeE, geom, 0, nodeE.nComp(), -1);
+  apply_float_boundary(nodeEth, geom, 0, nodeEth.nComp(), -1);
 
   timing_stop(nameFunc);
 }
@@ -499,12 +495,6 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
 
   convert_1d_to_3d(vecIn, vecMF, geom);
 
-  // The right side edges should be filled in.
-  vecMF.SumBoundary(geom.periodicity());
-
-  // M*E needs ghost cell information.
-  vecMF.FillBoundary(geom.periodicity());
-
   if (useZeroBC) {
     // The boundary nodes would not be filled in by convert_1d_3d. So, there is
     // not need to apply zero boundary conditions again here.
@@ -512,28 +502,37 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
     apply_external_BC(vecMF, 0, nDimMax, &Pic::get_node_E);
   }
 
+  // The right side edges should be filled in.
+  vecMF.SumBoundary(geom.periodicity());
+
+  // M*E needs ghost cell information.
+  vecMF.FillBoundary(geom.periodicity());
+
   lap_node_to_node(vecMF, matvecMF, dm, geom);
+
+  print_MultiFab(matvecMF, "matvecMF1", geom);
 
   Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
   matvecMF.mult(-delt2);
 
   { // grad(divE)
     div_node_to_center(vecMF, centerDivE, geom.InvCellSize());
+
     if (fsolver.coefDiff > 0) {
       // Calculate cell center E for center-to-center divE.
       average_node_to_cellcenter(tempCenter3, 0, vecMF, 0, 3,
                                  tempCenter3.nGrow());
 
-      tempCenter3.FillBoundary(geom.periodicity());
-
       // It seems not necessary, nor a good idea to apply float BC here. --Yuxi
       apply_float_boundary(tempCenter3, geom, 0, tempCenter3.nComp(), -1);
 
+      tempCenter3.FillBoundary(geom.periodicity());
+
       div_center_to_center(tempCenter3, tempCenter1, geom.InvCellSize());
+      //tempCenter1.FillBoundary(geom.periodicity());
 
       MultiFab::LinComb(centerDivE, 1 - fsolver.coefDiff, centerDivE, 0,
-                        fsolver.coefDiff, tempCenter1, 0, 0, 1,
-                        centerDivE.nGrow());
+                        fsolver.coefDiff, tempCenter1, 0, 0, 1, 0);
     }
 
     centerDivE.FillBoundary(geom.periodicity());
@@ -541,17 +540,26 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
     grad_center_to_node(centerDivE, tempNode3, geom.InvCellSize());
 
     tempNode3.mult(delt2);
-    MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
+    MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(),
+                  matvecMF.nGrow());
   }
+
+  print_MultiFab(matvecMF, "matvecMF2", geom);
 
   tempNode3.setVal(0);
   update_E_M_dot_E(vecMF, tempNode3);
 
   MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
 
+  print_MultiFab(matvecMF, "matvecMF3", geom);
+
   MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
 
+  print_MultiFab(matvecMF, "matvecMF4", geom);
+
   convert_3d_to_1d(matvecMF, vecOut, geom);
+
+  print_MultiFab(matvecMF, "matvecMF5", geom);
 }
 
 void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
@@ -604,22 +612,31 @@ void Pic::update_E_rhs(double* rhs) {
   MultiFab temp2Node(nodeBA, dm, 3, nGst);
   temp2Node.setVal(0.0);
 
+  print_MultiFab(nodeB, "nodeB_1", geom, 2);
+  print_MultiFab(centerB, "centerB_1", geom, 1);
+
   apply_external_BC(centerB, 0, centerB.nComp(), &Pic::get_center_B);
   apply_external_BC(nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
+
+  print_MultiFab(nodeB, "nodeB_2", geom, 2);
+  print_MultiFab(centerB, "centerB_2", geom, 1);
 
   const Real* invDx = geom.InvCellSize();
   curl_center_to_node(centerB, tempNode, invDx);
 
-  MultiFab::Saxpy(temp2Node, -fourPI, nodePlasma[iTot], iJhx_, 0,
-                  temp2Node.nComp(), 0);
+  print_MultiFab(tempNode, "tempNode", geom);
 
-  MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), 0);
+  MultiFab::Saxpy(temp2Node, -fourPI, nodePlasma[iTot], iJhx_, 0,
+                  temp2Node.nComp(), temp2Node.nGrow());
+
+  MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), temp2Node.nGrow());
 
   temp2Node.mult(fsolver.theta * tc->get_dt());
 
-  MultiFab::Add(temp2Node, nodeE, 0, 0, nodeE.nComp(), 0);
+  MultiFab::Add(temp2Node, nodeE, 0, 0, nodeE.nComp(), temp2Node.nGrow());
 
   convert_3d_to_1d(temp2Node, rhs, geom);
+  print_MultiFab(temp2Node, "temp2node", geom);
 }
 
 void Pic::update_B() {
@@ -630,7 +647,8 @@ void Pic::update_B() {
 
   curl_node_to_center(nodeEth, dB, geom.InvCellSize());
 
-  MultiFab::Saxpy(centerB, -tc->get_dt(), dB, 0, 0, centerB.nComp(), 0);
+  MultiFab::Saxpy(centerB, -tc->get_dt(), dB, 0, 0, centerB.nComp(),
+                  centerB.nGrow());
   centerB.FillBoundary(geom.periodicity());
 
   apply_external_BC(centerB, 0, centerB.nComp(), &Pic::get_center_B);

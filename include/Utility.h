@@ -42,7 +42,9 @@ void div_center_to_center(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
 void average_center_to_node(const amrex::MultiFab& centerMF,
                             amrex::MultiFab& nodeMF);
 
-void print_MultiFab(amrex::MultiFab& data, std::string tag);
+void print_MultiFab(amrex::MultiFab& data, std::string tag, int nshift=0);
+
+void print_MultiFab(amrex::MultiFab& data, std::string tag, amrex::Geometry& geom, int nshift=0);                    
 
 inline int get_local_node_or_cell_number(const amrex::MultiFab& MF) {
 

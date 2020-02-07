@@ -18,9 +18,9 @@ void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
   for (int i = 0; i < srcMF.nComp(); i++) {
     MultiFab srcAliasMF(srcMF, amrex::make_alias, i, 1);
     grad_node_to_center(srcAliasMF, centerMF, invDx);
-    centerMF.FillBoundary(geom.periodicity());    
+    centerMF.FillBoundary(geom.periodicity());
     MultiFab dstAliasMF(dstMF, amrex::make_alias, i, 1);
-    div_center_to_node(centerMF, dstAliasMF, invDx);    
+    div_center_to_node(centerMF, dstAliasMF, invDx);
   }
 }
 
@@ -349,11 +349,88 @@ void convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
   }
 }
 
-void print_MultiFab(amrex::MultiFab& data, std::string tag) {
+void print_MultiFab(amrex::MultiFab& data, std::string tag, Geometry& geom,
+                    int nshift) {
   AllPrint() << "-----" << tag << " begin-----" << std::endl;
   Real sum = 0;
   Real sum2 = 0;
-  int nshift = 1;
+
+  bool isCenter = data.ixType().cellCentered();
+  bool isNode = !isCenter;
+
+  const Box& gbx = convert(geom.Domain(), data.boxArray().ixType());
+
+  for (MFIter mfi(data); mfi.isValid(); ++mfi) {
+    FArrayBox& fab = data[mfi];
+    const Box& box = mfi.validbox();
+    Array4<Real> const& data = fab.array();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    // Avoid double counting the share edges.
+    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
+    int iMin = lo.x, jMin = lo.y, kMin = lo.z;
+
+    if (isNode) {
+      // Avoid double counting the shared edges.
+      iMax--;
+      jMax--;
+      kMax--;
+
+      if ((!geom.isPeriodic(ix_)) && gbx.bigEnd(ix_) == hi.x)
+        iMax++;
+      if ((!geom.isPeriodic(iy_)) && gbx.bigEnd(iy_) == hi.y)
+        jMax++;
+      if ((!geom.isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z)
+        kMax++;
+    }
+
+    if (!geom.isPeriodic(ix_) && gbx.bigEnd(ix_) == hi.x) {
+      iMax += nshift;
+    }
+
+    if (!geom.isPeriodic(iy_) && gbx.bigEnd(iy_) == hi.y) {
+      jMax += nshift;
+    }
+
+    if (!geom.isPeriodic(iz_) && gbx.bigEnd(iz_) == hi.z) {
+      kMax += nshift;
+    }
+
+    if (!geom.isPeriodic(ix_) && gbx.smallEnd(ix_) == lo.x) {
+      iMin -= nshift;
+    }
+
+    if (!geom.isPeriodic(iy_) && gbx.smallEnd(iy_) == lo.y) {
+      jMin -= nshift;
+    }
+
+    if (!geom.isPeriodic(iz_) && gbx.smallEnd(iz_) == lo.z) {
+      kMin -= nshift;
+    }
+
+    for (int i = iMin; i <= iMax; ++i)
+      for (int j = jMin; j <= jMax; ++j)
+        for (int k = kMin; k <= kMax; ++k)
+          for (int iVar = 0; iVar < data.nComp(); iVar++) {
+            AllPrint() << " i = " << i + 1 << " j = " << j + 1
+                       << " k = " << k + 1 << " iVar = " << iVar
+                       << " data = " << data(i, j, k, iVar) << std::endl;
+            sum += data(i, j, k, iVar);
+            sum2 += pow(data(i, j, k, iVar), 2);
+          }
+  }
+  AllPrint() << "sum = " << sum << " sum2 = " << sqrt(sum2)
+             << " on proc = " << ParallelDescriptor::MyProc() << std::endl;
+  AllPrint() << "-----" << tag << " end-----" << std::endl;
+}
+
+void print_MultiFab(amrex::MultiFab& data, std::string tag, int nshift) {
+  AllPrint() << "-----" << tag << " begin-----" << std::endl;
+  Real sum = 0;
+  Real sum2 = 0;
+
   for (MFIter mfi(data); mfi.isValid(); ++mfi) {
     FArrayBox& fab = data[mfi];
     const Box& box = mfi.validbox();

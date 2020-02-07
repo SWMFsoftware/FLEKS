@@ -125,6 +125,9 @@ void FluidInterface::set_couple_node_value(const double* const data,
   convert_moment_to_velocity();
 
   MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
+
+  print_MultiFab(nodeFluid, "nodefluid", 2);
+
 }
 
 void FluidInterface::calc_current() {

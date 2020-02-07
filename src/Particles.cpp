@@ -186,26 +186,32 @@ void Particles::inject_particles_at_boundary(
 
     if (!(Geom(0).isPeriodic(ix_)) && gbx.bigEnd(ix_) == hi.x) {
       doFillRightX = true;
+      iMax += nGstInject;
     }
     if ((!Geom(0).isPeriodic(iy_)) && gbx.bigEnd(iy_) == hi.y) {
       doFillRightY = true;
+      jMax += nGstInject;
     }
     if ((!Geom(0).isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z) {
       doFillRightZ = true;
+      kMax += nGstInject;
     }
 
     if (!Geom(0).isPeriodic(ix_) && gbx.smallEnd(ix_) == lo.x) {
       doFillLeftX = true;
+      iMin -= nGstInject;
     }
     if (!Geom(0).isPeriodic(iy_) && gbx.smallEnd(iy_) == lo.y) {
       doFillLeftY = true;
+      jMin -= nGstInject;
     }
     if (!Geom(0).isPeriodic(iz_) && gbx.smallEnd(iz_) == lo.z) {
       doFillLeftZ = true;
+      kMin -= nGstInject;
     }
 
     if (doFillLeftX) {
-      for (int i = iMin - nGstInject; i <= iMin - 1 + nVirGst; ++i)
+      for (int i = iMin; i <= iMin - 1 + nGstInject; ++i)
         for (int j = jMin; j <= jMax; ++j)
           for (int k = kMin; k <= kMax; ++k) {
 
@@ -215,7 +221,7 @@ void Particles::inject_particles_at_boundary(
     }
 
     if (doFillRightX) {
-      for (int i = iMax + 1 - nVirGst; i <= iMax + nGstInject; ++i)
+      for (int i = iMax + 1 - nGstInject; i <= iMax; ++i)
         for (int j = jMin; j <= jMax; ++j)
           for (int k = kMin; k <= kMax; ++k) {
 
@@ -226,7 +232,7 @@ void Particles::inject_particles_at_boundary(
 
     if (doFillLeftY) {
       for (int i = iMin; i <= iMax; ++i)
-        for (int j = jMin - nGstInject; j <= jMin - 1 + nVirGst; ++j)
+        for (int j = jMin; j <= jMin - 1 + nGstInject; ++j)
           for (int k = kMin; k <= kMax; ++k) {
 
             add_particles_cell(mfi, fluidInterface, i, j, k);
@@ -236,7 +242,7 @@ void Particles::inject_particles_at_boundary(
 
     if (doFillRightY) {
       for (int i = iMin; i <= iMax; ++i)
-        for (int j = jMax + 1 - nVirGst; j <= jMax + nGstInject; ++j)
+        for (int j = jMax + 1 - nGstInject; j <= jMax; ++j)
           for (int k = kMin; k <= kMax; ++k) {
 
             add_particles_cell(mfi, fluidInterface, i, j, k);
@@ -247,7 +253,7 @@ void Particles::inject_particles_at_boundary(
     if (doFillLeftZ) {
       for (int i = iMin; i <= iMax; ++i)
         for (int j = jMin; j <= jMax; ++j)
-          for (int k = kMin - nGstInject; k <= kMin - 1 + nVirGst; ++k) {
+          for (int k = kMin; k <= kMin - 1 + nGstInject; ++k) {
             add_particles_cell(mfi, fluidInterface, i, j, k);
           }
       kMin += nGstInject;
@@ -256,7 +262,7 @@ void Particles::inject_particles_at_boundary(
     if (doFillRightZ) {
       for (int i = iMin; i <= iMax; ++i)
         for (int j = jMin; j <= jMax; ++j)
-          for (int k = kMax + 1 - nVirGst; k <= kMax + nGstInject; ++k) {
+          for (int k = kMax + 1 - nGstInject; k <= kMax; ++k) {
             add_particles_cell(mfi, fluidInterface, i, j, k);
           }
       kMax -= nGstInject;
@@ -299,7 +305,7 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
       Real coef[2][2][2];
       linear_interpolation_coef(dShift, coef);
       //-----calculate interpolate coef end-------------
-      
+
       const Real cTmp = qp * invVol;
       for (int kk = 0; kk < 2; kk++)
         for (int jj = 0; jj < 2; jj++)
@@ -527,7 +533,7 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
                 } // j2
               }   // if (ip > 0)
             }     // i2
-          } // k1
+          }       // k1
 
       //----- Mass matrix calculation end--------------
 
@@ -800,6 +806,8 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
       // Mark for deletion
       if (is_outside(p)) {
         p.id() = -1;
+      } else {
+        Print() << "p = " << p << std::endl;
       }
     } // for p
   }   // for pti
@@ -926,6 +934,10 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
             epsMax = fabs(eps_D[iDim] * invDx[iDim]);
 
           p.pos(iDim) += eps_D[iDim];
+
+          if (is_outside(p)) {
+            p.id() = -1;
+          }
         }
       }
 
