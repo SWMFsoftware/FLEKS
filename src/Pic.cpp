@@ -252,14 +252,17 @@ void Pic::sum_moments() {
     apply_float_boundary(nodePlasma[i], geom, 0, nodePlasma[i].nComp(),
                          nVirGst);
   }
-  //Print() << "nodeMM 1 = " << nodeMM[0].array()(0, 0, 0).data[0] << std::endl;
+  // Print() << "nodeMM 1 = " << nodeMM[0].array()(0, 0, 0).data[0] <<
+  // std::endl;
 
   nodeMM.SumBoundary(geom.periodicity());
 
-  //Print() << "nodeMM 2 = " << nodeMM[0].array()(0, 0, 0).data[0] << std::endl;
+  // Print() << "nodeMM 2 = " << nodeMM[0].array()(0, 0, 0).data[0] <<
+  // std::endl;
   nodeMM.FillBoundary(geom.periodicity());
 
-  //Print() << "nodeMM 3 = " << nodeMM[0].array()(0, 0, 0).data[0] << std::endl;
+  // Print() << "nodeMM 3 = " << nodeMM[0].array()(0, 0, 0).data[0] <<
+  // std::endl;
 
   timing_stop(nameFunc);
 }
@@ -495,6 +498,18 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
 
   convert_1d_to_3d(vecIn, vecMF, geom);
 
+  print_MultiFab(vecMF, "vecMF1", 2);
+
+  // The right side edges should be filled in.
+  vecMF.SumBoundary(geom.periodicity());
+
+  print_MultiFab(vecMF, "vecMF2", 2);
+
+  // M*E needs ghost cell information.
+  vecMF.FillBoundary(geom.periodicity());
+
+  print_MultiFab(vecMF, "vecMF3", 2);
+
   if (useZeroBC) {
     // The boundary nodes would not be filled in by convert_1d_3d. So, there is
     // not need to apply zero boundary conditions again here.
@@ -502,11 +517,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
     apply_external_BC(vecMF, 0, nDimMax, &Pic::get_node_E);
   }
 
-  // The right side edges should be filled in.
-  vecMF.SumBoundary(geom.periodicity());
-
-  // M*E needs ghost cell information.
-  vecMF.FillBoundary(geom.periodicity());
+  print_MultiFab(vecMF, "vecMF5", 2);
 
   lap_node_to_node(vecMF, matvecMF, dm, geom);
 
@@ -523,19 +534,26 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
       average_node_to_cellcenter(tempCenter3, 0, vecMF, 0, 3,
                                  tempCenter3.nGrow());
 
-      // It seems not necessary, nor a good idea to apply float BC here. --Yuxi
-      apply_float_boundary(tempCenter3, geom, 0, tempCenter3.nComp(), -1);
+      //tempCenter3.FillBoundary(geom.periodicity());
 
-      tempCenter3.FillBoundary(geom.periodicity());
+      // It seems not necessary, nor a good idea to apply float BC here. --Yuxi
+      apply_float_boundary(tempCenter3, geom, 0, tempCenter3.nComp());
+
+      print_MultiFab(tempCenter3, "tempcenter2", 2);
 
       div_center_to_center(tempCenter3, tempCenter1, geom.InvCellSize());
       //tempCenter1.FillBoundary(geom.periodicity());
 
+      print_MultiFab(tempCenter1, "tempcenter1", 1);
+
       MultiFab::LinComb(centerDivE, 1 - fsolver.coefDiff, centerDivE, 0,
-                        fsolver.coefDiff, tempCenter1, 0, 0, 1, 0);
+                        fsolver.coefDiff, tempCenter1, 0, 0, 1,
+                        centerDivE.nGrow());
+
+      print_MultiFab(centerDivE, "centerDivE", 1);
     }
 
-    centerDivE.FillBoundary(geom.periodicity());
+    //centerDivE.FillBoundary(geom.periodicity());
 
     grad_center_to_node(centerDivE, tempNode3, geom.InvCellSize());
 

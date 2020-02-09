@@ -414,8 +414,8 @@ void print_MultiFab(amrex::MultiFab& data, std::string tag, Geometry& geom,
       for (int j = jMin; j <= jMax; ++j)
         for (int k = kMin; k <= kMax; ++k)
           for (int iVar = 0; iVar < data.nComp(); iVar++) {
-            AllPrint() << " i = " << i + 1 << " j = " << j + 1
-                       << " k = " << k + 1 << " iVar = " << iVar
+            AllPrint() << " i = " << i << " j = " << j << " k = " << k
+                       << " iVar = " << iVar
                        << " data = " << data(i, j, k, iVar) << std::endl;
             sum += data(i, j, k, iVar);
             sum2 += pow(data(i, j, k, iVar), 2);
@@ -443,8 +443,8 @@ void print_MultiFab(amrex::MultiFab& data, std::string tag, int nshift) {
       for (int j = lo.y - nshift; j <= hi.y + nshift; ++j)
         for (int k = lo.z; k <= hi.z; ++k)
           for (int iVar = 0; iVar < data.nComp(); iVar++) {
-            AllPrint() << " i = " << i + 1 << " j = " << j + 1
-                       << " k = " << k + 1 << " iVar = " << iVar
+            AllPrint() << " i = " << i << " j = " << j << " k = " << k
+                       << " iVar = " << iVar
                        << " data = " << data(i, j, k, iVar) << std::endl;
             sum += data(i, j, k, iVar);
             sum2 += pow(data(i, j, k, iVar), 2);

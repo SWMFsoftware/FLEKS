@@ -125,9 +125,6 @@ void FluidInterface::set_couple_node_value(const double* const data,
   convert_moment_to_velocity();
 
   MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
-
-  print_MultiFab(nodeFluid, "nodefluid", 2);
-
 }
 
 void FluidInterface::calc_current() {
@@ -139,13 +136,16 @@ void FluidInterface::calc_current() {
 
   curl_center_to_node(centerB, currentMF, geom.InvCellSize());
   currentMF.mult(1.0 / (getNo2SiL() * fourPI * 1e-7), currentMF.nGrow());
-  currentMF.FillBoundary();
+
+  
+  currentMF.FillBoundary(geom.periodicity(), true);
 
   // The current in the ghost cells can not be calculated from the centerB. So
   // fill in the ghost cell current with float boundary condition. The current
-  // in the inner most layer of ghost cells can be calculated from centerB, just
   // need to fill in the rest. That is why we use '-1' below. 
   apply_float_boundary(currentMF, geom, 0, currentMF.nComp(), -1);
+
+  print_MultiFab(currentMF, "currentMF3",2);
 }
 
 void FluidInterface::normalize_fluid_variables() {
