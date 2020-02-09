@@ -39,7 +39,8 @@ public:
                             const std::string& paramString);
 
   void make_grid(const int nGst, const amrex::BoxArray& centerBAIn,
-                 const amrex::Geometry& geomIn);
+                 const amrex::Geometry& geomIn,
+                 const amrex::DistributionMapping& dmIn);
 
   int count_couple_node_number();
 

@@ -24,12 +24,13 @@ void FluidInterface::receive_info_from_gm(const int* const paramInt,
 
 void FluidInterface::make_grid(const int nGst,
                                const amrex::BoxArray& centerBAIn,
-                               const amrex::Geometry& geomIn) {
+                               const amrex::Geometry& geomIn,
+                               const amrex::DistributionMapping& dmIn) {
   geom = geomIn;
   centerBA = centerBAIn;
   nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
 
-  dm.define(centerBA);
+  dm = dmIn;
 
   nodeFluid.define(nodeBA, dm, nVarCoupling, nGst);
   nodeFluid.setVal(0);
@@ -137,15 +138,14 @@ void FluidInterface::calc_current() {
   curl_center_to_node(centerB, currentMF, geom.InvCellSize());
   currentMF.mult(1.0 / (getNo2SiL() * fourPI * 1e-7), currentMF.nGrow());
 
-  
   currentMF.FillBoundary(geom.periodicity(), true);
 
   // The current in the ghost cells can not be calculated from the centerB. So
   // fill in the ghost cell current with float boundary condition. The current
-  // need to fill in the rest. That is why we use '-1' below. 
+  // need to fill in the rest. That is why we use '-1' below.
   apply_float_boundary(currentMF, geom, 0, currentMF.nComp(), -1);
 
-  print_MultiFab(currentMF, "currentMF3",2);
+  print_MultiFab(currentMF, "currentMF3", 2);
 }
 
 void FluidInterface::normalize_fluid_variables() {

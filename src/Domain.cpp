@@ -63,8 +63,9 @@ void Domain::make_grid() {
 
 
   BoxArray baPic = resize_pic_ba();
-  pic.make_grid(nGst, baPic, geom);
-  fluidInterface->make_grid(nGst, baPic, geom);
+  DistributionMapping dmPic(baPic);
+  pic.make_grid(nGst, baPic, geom, dm);
+  fluidInterface->make_grid(nGst, baPic, geom, dm);
 
   amrex::Print() << "Domain::          range = " << boxRange << std::endl;
   amrex::Print() << "Domain:: Total block #  = " << nodeBA.size() << std::endl;

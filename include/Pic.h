@@ -111,7 +111,8 @@ public:
             std::shared_ptr<TimeCtr> &tcIn);
 
   void make_grid(int nGstIn, const amrex::BoxArray &centerBAIn,
-                 const amrex::Geometry &geomIn);
+                 const amrex::Geometry &geomIn,
+                 const amrex::DistributionMapping& dmIn);
 
   void make_data();
   void set_ic();

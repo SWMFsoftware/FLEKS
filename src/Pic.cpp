@@ -63,7 +63,8 @@ void Pic::set_ic() {
 }
 
 void Pic::make_grid(int nGstIn, const BoxArray& centerBAIn,
-                    const Geometry& geomIn) {
+                    const Geometry& geomIn,
+                    const amrex::DistributionMapping& dmIn) {
   set_nGst(nGstIn);
 
   centerBA = centerBAIn;
@@ -72,7 +73,7 @@ void Pic::make_grid(int nGstIn, const BoxArray& centerBAIn,
 
   nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
 
-  dm.define(centerBA);
+  dm = dmIn;
   costMF.define(centerBA, dm, 1, 0);
   costMF.setVal(0);
 }
@@ -498,17 +499,17 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
 
   convert_1d_to_3d(vecIn, vecMF, geom);
 
-  print_MultiFab(vecMF, "vecMF1", 2);
+  print_MultiFab(vecMF, "vecMF1", 0);
 
   // The right side edges should be filled in.
   vecMF.SumBoundary(geom.periodicity());
 
-  print_MultiFab(vecMF, "vecMF2", 2);
+  print_MultiFab(vecMF, "vecMF2", 0);
 
   // M*E needs ghost cell information.
   vecMF.FillBoundary(geom.periodicity());
 
-  print_MultiFab(vecMF, "vecMF3", 2);
+  print_MultiFab(vecMF, "vecMF3", 0);
 
   if (useZeroBC) {
     // The boundary nodes would not be filled in by convert_1d_3d. So, there is
@@ -517,11 +518,11 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
     apply_external_BC(vecMF, 0, nDimMax, &Pic::get_node_E);
   }
 
-  print_MultiFab(vecMF, "vecMF5", 2);
+  print_MultiFab(vecMF, "vecMF5", 0);
 
   lap_node_to_node(vecMF, matvecMF, dm, geom);
 
-  print_MultiFab(matvecMF, "matvecMF1", geom);
+  print_MultiFab(matvecMF, "matvecMF1", 0);
 
   Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
   matvecMF.mult(-delt2);
@@ -562,22 +563,22 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
                   matvecMF.nGrow());
   }
 
-  print_MultiFab(matvecMF, "matvecMF2", geom);
+  print_MultiFab(matvecMF, "matvecMF2", 0);
 
   tempNode3.setVal(0);
   update_E_M_dot_E(vecMF, tempNode3);
 
   MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
 
-  print_MultiFab(matvecMF, "matvecMF3", geom);
+  print_MultiFab(matvecMF, "matvecMF3", 0);
 
   MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
 
-  print_MultiFab(matvecMF, "matvecMF4", geom);
+  print_MultiFab(matvecMF, "matvecMF4", 0);
 
   convert_3d_to_1d(matvecMF, vecOut, geom);
 
-  print_MultiFab(matvecMF, "matvecMF5", geom);
+  print_MultiFab(matvecMF, "matvecMF5", 0);
 }
 
 void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
@@ -628,10 +629,7 @@ void Pic::update_E_rhs(double* rhs) {
   MultiFab tempNode(nodeBA, dm, 3, nGst);
   tempNode.setVal(0.0);
   MultiFab temp2Node(nodeBA, dm, 3, nGst);
-  temp2Node.setVal(0.0);
-
-  print_MultiFab(nodeB, "nodeB_1", geom, 2);
-  print_MultiFab(centerB, "centerB_1", geom, 1);
+  temp2Node.setVal(0.0);  
 
   apply_external_BC(centerB, 0, centerB.nComp(), &Pic::get_center_B);
   apply_external_BC(nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
@@ -642,7 +640,7 @@ void Pic::update_E_rhs(double* rhs) {
   const Real* invDx = geom.InvCellSize();
   curl_center_to_node(centerB, tempNode, invDx);
 
-  print_MultiFab(tempNode, "tempNode", geom);
+  print_MultiFab(tempNode, "tempNode",0);
 
   MultiFab::Saxpy(temp2Node, -fourPI, nodePlasma[iTot], iJhx_, 0,
                   temp2Node.nComp(), temp2Node.nGrow());
@@ -654,7 +652,7 @@ void Pic::update_E_rhs(double* rhs) {
   MultiFab::Add(temp2Node, nodeE, 0, 0, nodeE.nComp(), temp2Node.nGrow());
 
   convert_3d_to_1d(temp2Node, rhs, geom);
-  print_MultiFab(temp2Node, "temp2node", geom);
+  print_MultiFab(temp2Node, "temp2node", 0);
 }
 
 void Pic::update_B() {
