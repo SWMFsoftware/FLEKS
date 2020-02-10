@@ -806,8 +806,6 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
       // Mark for deletion
       if (is_outside(p)) {
         p.id() = -1;
-      } else {
-        Print() << "p = " << p << std::endl;
       }
     } // for p
   }   // for pti

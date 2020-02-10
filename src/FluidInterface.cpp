@@ -129,23 +129,38 @@ void FluidInterface::set_couple_node_value(const double* const data,
 }
 
 void FluidInterface::calc_current() {
+  // All centerB, including all ghost cells are accurate.
   average_node_to_cellcenter(centerB, 0, nodeFluid, iBx, centerB.nComp(),
                              centerB.nGrow());
 
   // currentMF is just an alias of current components of nodeFluid.
   MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
 
+  // The outmost layer of currentMF can not be calculated from centerB
   curl_center_to_node(centerB, currentMF, geom.InvCellSize());
   currentMF.mult(1.0 / (getNo2SiL() * fourPI * 1e-7), currentMF.nGrow());
 
-  currentMF.FillBoundary(geom.periodicity(), true);
+  currentMF.FillBoundary(geom.periodicity());
 
-  // The current in the ghost cells can not be calculated from the centerB. So
-  // fill in the ghost cell current with float boundary condition. The current
-  // need to fill in the rest. That is why we use '-1' below.
-  apply_float_boundary(currentMF, geom, 0, currentMF.nComp(), -1);
+  /*
+  Q: The outmost layer of currentMF is not accurate. Why not use
+  apply_float_boundary to fill in first-order estimation?
 
-  print_MultiFab(currentMF, "currentMF3", 2);
+  A: If the whole domain is just ONE block, it will work. Otherwise, it will
+  not. For example, For a 2D simulation domain of 6x3 with 2 blocks. In the
+  x-direction, block-1 convers cell 0 (c+0) to cell 2 (c+2), and block-2 covers
+  c+3 to c+5. The node (n+5, n-1) is the corner ghost node for the block-1, and
+  it is the face ghost node for the block-2. On block-2, this node can be
+  calculated from curl_center_to_node(centerB, currentMF....). However, block-1
+  does not know how to calculate it, and FillBoundary will also NOT copy this
+  node from block-2 to block-1, because this node is a boundary node and it is
+  not covered by any physical node.
+
+  So, we should keep in mind, the variables that are directly received from the
+  MHD side, such as the magnetic fields, are accurate on all ghost nodes, but
+  the current releated variables (current, plasma velocities, and electric
+  field) are unknown at the outmost boundary node layer.
+  */
 }
 
 void FluidInterface::normalize_fluid_variables() {
