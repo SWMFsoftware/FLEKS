@@ -4,6 +4,7 @@
 #include <sstream>
 
 #include "PlotWriter.h"
+#include "Pic.h"
 
 bool PlotWriter::doSaveBinary = true;
 
@@ -263,13 +264,14 @@ void PlotWriter::write(double const timeNow, int const iCycle,
                        FuncFindPointList find_output_list,
                        FuncGetField get_var) {
   if (outputFormat == "amrex") {
-    write_amrex(timeNow, iCycle);
+    std::cout << "Warning: amrex format files should be saved from Pic class!!!"
+              << std::endl;
   } else {
     write_idl(timeNow, iCycle, find_output_list, get_var);
   }
 }
 
-void PlotWriter::write_amrex(double const timeNow, int const iCycle){
+void PlotWriter::write_amrex(double const timeNow, int const iCycle) {
 
   std::string filename;
   std::stringstream ss;
@@ -285,8 +287,25 @@ void PlotWriter::write_amrex(double const timeNow, int const iCycle){
      << std::setw(8) << second_to_clock_time(timeNow) << "_n"
      << std::setfill('0') << std::setw(8) << iCycle;
   filename = namePrefix + ss.str();
+}
 
-
+std::string PlotWriter::get_amrex_filename(double const timeNow,
+                                           int const iCycle) const {
+  std::string filename;
+  std::stringstream ss;
+  int nLength;
+  if (nProcs > 10000) {
+    nLength = 5;
+  } else if (nProcs > 100000) {
+    nLength = 5;
+  } else {
+    nLength = 4;
+  }
+  ss << "_region" << iRegion << "_" << ID << "_t" << std::setfill('0')
+     << std::setw(8) << second_to_clock_time(timeNow) << "_n"
+     << std::setfill('0') << std::setw(8) << iCycle << "_amrex";
+  filename = namePrefix + ss.str();
+  return filename;
 }
 
 void PlotWriter::write_idl(double const timeNow, int const iCycle,
@@ -394,9 +413,9 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
   // if (doOutputParticles_I[iPlot])
   //   plotDx = 1;
   outFile << "#CELLSIZE\n";
-  outFile << plotDx * dx_D[x_] * No2OutL << "\t dx\n";
-  outFile << plotDx * dx_D[y_] * No2OutL << "\t dy\n";
-  outFile << plotDx * dx_D[z_] * No2OutL << "\t dz\n";
+  outFile << plotDx* dx_D[x_] * No2OutL << "\t dx\n";
+  outFile << plotDx* dx_D[y_] * No2OutL << "\t dy\n";
+  outFile << plotDx* dx_D[z_] * No2OutL << "\t dz\n";
   outFile << "\n";
 
   outFile << "#NCELL\n";

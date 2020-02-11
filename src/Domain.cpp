@@ -3,10 +3,11 @@
 using namespace amrex;
 
 //------------------------------------------------------------------------
-void Domain::update() {  
+void Domain::update() {
   pic.update();
 
-  tc->write_plots();
+  write_plots();
+
   pic.write_log();
 };
 
@@ -61,7 +62,6 @@ void Domain::make_grid() {
 
   DomainGrid::init();
 
-
   BoxArray baPic = resize_pic_ba();
   DistributionMapping dmPic(baPic);
   pic.make_grid(nGst, baPic, geom, dm);
@@ -81,7 +81,7 @@ void Domain::set_ic() {
     pic.set_ic();
   }
 
-  tc->write_plots(true);
+  write_plots(true);
   pic.write_log(true, true);
 }
 
@@ -343,3 +343,5 @@ void Domain::read_param() {
     //--------- The commands above exist in restart.H only --------
   }
 }
+
+void Domain::write_plots(bool doForce) { pic.write_plots(doForce); }

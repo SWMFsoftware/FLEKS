@@ -136,7 +136,7 @@ int pic_get_grid_info_(int *iGrid, int *iDecomp) {
 int pic_end_() {
   {
     // Saving plots before exiting.
-    MPICs->tc->write_plots(true);
+    MPICs->write_plots(true);
     delete MPICs;
 
     //BL_PROFILE_VAR_STOP(pmain);

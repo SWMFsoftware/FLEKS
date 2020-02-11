@@ -19,7 +19,7 @@ public:
   Domain() {
     fluidInterface = std::make_shared<FluidInterface>();
     tc = std::make_unique<TimeCtr>();
-    doRestart = false; 
+    doRestart = false;
   }
 
   ~Domain() = default;
@@ -53,6 +53,7 @@ public:
   void save_restart_header();
   void save_restart_data();
   void read_restart();
+  void write_plots(bool doForce = false);
   //--------------- IO end----------------------------------
 
   void make_grid();

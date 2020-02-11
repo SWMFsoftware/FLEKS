@@ -1,3 +1,5 @@
+#include <AMReX_PlotFileUtil.H>
+
 #include "Pic.h"
 #include "SWMFDomains.h"
 
@@ -21,9 +23,8 @@ void Pic::get_grid(double* pos_DI) {
   return;
 }
 
-void Pic::find_mpi_rank_for_points(const int nPoint,
-                                      const double* const xyz_I,
-                                      int* const rank_I) {
+void Pic::find_mpi_rank_for_points(const int nPoint, const double* const xyz_I,
+                                   int* const rank_I) {
   int nDimGM = fluidInterface->getnDim();
   amrex::Real si2nol = fluidInterface->getSi2NoL();
   for (int i = 0; i < nPoint; i++) {
@@ -37,8 +38,8 @@ void Pic::find_mpi_rank_for_points(const int nPoint,
 }
 
 void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
-                                        const double* const xyz_I,
-                                        double* const data_I, const int nVar) {
+                                     const double* const xyz_I,
+                                     double* const data_I, const int nVar) {
   std::string nameFunc = "Pic::get_fluid_state_for_points";
   Print() << nameFunc << " begin" << std::endl;
 
@@ -81,11 +82,10 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
   Print() << nameFunc << " end" << std::endl;
 }
 
-void Pic::find_output_list(const PlotWriter& writerIn,
-                              long int& nPointAllProc,
-                              PlotWriter::VectorPointList& pointList_II,
-                              std::array<double, nDimMax>& xMin_D,
-                              std::array<double, nDimMax>& xMax_D) {
+void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
+                           PlotWriter::VectorPointList& pointList_II,
+                           std::array<double, nDimMax>& xMin_D,
+                           std::array<double, nDimMax>& xMax_D) {
   const auto plo = geom.ProbLo();
   const auto plh = geom.ProbHi();
 
@@ -164,8 +164,8 @@ void Pic::find_output_list(const PlotWriter& writerIn,
 }
 
 void Pic::get_field_var(const VectorPointList& pointList_II,
-                           const std::vector<std::string>& sVar_I,
-                           MDArray<double>& var_II) {
+                        const std::vector<std::string>& sVar_I,
+                        MDArray<double>& var_II) {
   const int iBlk_ = 6;
 
   long nPoint = pointList_II.size();
@@ -198,8 +198,8 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
   }
 }
 
-double Pic::get_var(std::string var, const int ix, const int iy,
-                       const int iz, const MFIter& mfi) {
+double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
+                    const MFIter& mfi) {
 
   auto get_is = [var]() {
     std::string::size_type pos;
@@ -311,8 +311,8 @@ void Pic::save_restart_data() {
   }
 }
 
-void Pic::save_restart_header(std::ofstream &headerFile) {
-  if (ParallelDescriptor::IOProcessor()) {    
+void Pic::save_restart_header(std::ofstream& headerFile) {
+  if (ParallelDescriptor::IOProcessor()) {
     headerFile << "#ELECTRON\n";
     headerFile << qomEl << "\t qomEl\n";
     headerFile << "\n";
@@ -376,13 +376,53 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
   }
 }
 
+void Pic::write_plots(bool doForce) {
+  for (auto& plot : tc->plots) {
+    if (plot.is_time_to(doForce)) {
+      amrex::Print() << "Saving plot at time = " << tc->get_time_si()
+                     << " (s) for " << plot.writer.get_plotString()
+                     << std::endl;
+      if (plot.writer.is_amrex_format()) {
+        write_amrex(plot.writer, tc->get_time_si(), tc->get_cycle());
+      } else {
+        plot.writer.write(tc->get_time_si(), tc->get_cycle(),
+                          find_output_list_caller, get_field_var_caller);
+      }
+    }
+  }
+}
+
+void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
+                      int const iCycle) {
+  Print() << "amrex::" << pw.get_amrex_filename(timeNow, iCycle) << std::endl;
+
+{
+  Vector<std::string> varNames = { "Ex", "Ey", "Ez" };
+  WriteSingleLevelPlotfile(pw.get_amrex_filename(timeNow, iCycle)+"_E", nodeE,
+                           varNames, geom, timeNow, iCycle);
+}
+
+{
+  Vector<std::string> varNames = { "Bcx", "Bcy", "Bcz" };
+  WriteSingleLevelPlotfile(pw.get_amrex_filename(timeNow, iCycle)+"_Bc", centerB,
+                           varNames, geom, timeNow, iCycle);
+}
+
+{
+  Vector<std::string> varNames = { "Bx", "By", "Bz" };
+  WriteSingleLevelPlotfile(pw.get_amrex_filename(timeNow, iCycle)+"_B", nodeB,
+                           varNames, geom, timeNow, iCycle);
+}
+
+}
+
 void find_output_list_caller(const PlotWriter& writerIn,
                              long int& nPointAllProc,
                              PlotWriter::VectorPointList& pointList_II,
                              std::array<double, nDimMax>& xMin_D,
                              std::array<double, nDimMax>& xMax_D) {
   MPICs->pic.find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
-                          xMax_D);
+                              xMax_D);
 }
 
 void get_field_var_caller(const VectorPointList& pointList_II,

@@ -27,6 +27,9 @@ public:
 typedef amrex::Real (Pic::*GETVALUE)(amrex::MFIter &mfi, int i, int j, int k,
                                      int iVar);
 
+typedef void (Pic::*PicWriteAmrex)(const std::string &filename,
+                                   const std::string varName);
+
 // The grid is defined in DomaiGrid. This class contains the data on the grid.
 class Pic : public PicGrid {
   friend PlotWriter;
@@ -112,7 +115,7 @@ public:
 
   void make_grid(int nGstIn, const amrex::BoxArray &centerBAIn,
                  const amrex::Geometry &geomIn,
-                 const amrex::DistributionMapping& dmIn);
+                 const amrex::DistributionMapping &dmIn);
 
   void make_data();
   void set_ic();
@@ -133,7 +136,7 @@ public:
   void get_fluid_state_for_points(const int nDim, const int nPoint,
                                   const double *const xyz_I,
                                   double *const data_I, const int nVar);
-  void read_param(const std::string& command, ReadParam& readParam);
+  void read_param(const std::string &command, ReadParam &readParam);
   //------------Coupler related end--------------
 
   //-------------Electric field solver begin-------------
@@ -170,12 +173,15 @@ public:
                      MDArray<double> &var_II);
   double get_var(std::string var, const int ix, const int iy, const int iz,
                  const amrex::MFIter &mfi);
-  
+
   void save_restart_header(std::ofstream &headerFile);
   void save_restart_data();
   void read_restart();
   std::string logFile;
   void write_log(bool doForce = false, bool doCreateFile = false);
+  void write_plots(bool doForce = false);
+  void write_amrex(const PlotWriter &pw, double const timeNow,
+                   int const iCycle);
   //--------------- IO end--------------------------------
 
   //--------------- Boundary begin ------------------------

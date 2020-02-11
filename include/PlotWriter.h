@@ -206,8 +206,8 @@ public:
   void write_idl(double const timeNow, int const iCycle,
                  FuncFindPointList find_output_list, FuncGetField get_var);
 
-  // Write file in the native amrex format. 
-  void write_amrex(double const timeNow, int const iCycle);             
+  // Write file in the native amrex format.
+  void write_amrex(double const timeNow, int const iCycle);
 
   void write(double const timeNow, int const iCycle,
              FuncFindPointList find_output_list, FuncGetField get_var);
@@ -228,6 +228,9 @@ public:
   bool is_inside_plot_region(int const ix, int const iy, int const iz,
                              double const x, double const y,
                              double const z) const;
+
+  bool is_amrex_format() const { return outputFormat == "amrex"; }
+  std::string get_amrex_filename(double const timeNow, int const iCycle) const;
 
   std::string expand_variables(std::string inVars) const;
   std::string add_plasma_variables(std::string varString, int is) const;
