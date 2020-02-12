@@ -17,6 +17,7 @@
 
 #include "Constants.h"
 
+
 // This class define the grid information, but NOT the data on the grid.
 class PicGrid {
 
@@ -30,7 +31,7 @@ protected:
 
   amrex::BoxArray centerBAOld;
   amrex::BoxArray centerBA;
-  
+
   amrex::BoxArray nodeBA;
 
   amrex::DistributionMapping dm;

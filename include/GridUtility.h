@@ -25,7 +25,6 @@ void redistribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
                            const amrex::DistributionMapping& dm,
                            bool doRedistribute = true) {
   // Assume 'dm' is the new dm.
-
   amrex::FabArray<FAB> tmp;
   tmp.define(baNew, dm, fa.nComp(), fa.nGrow());
   if (doRedistribute) {

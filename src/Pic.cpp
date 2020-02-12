@@ -8,8 +8,11 @@
 #include "SWMFDomains.h"
 #include "Timing_c.h"
 #include "Utility.h"
+#include "GridInfo.h"
 
 using namespace amrex;
+
+int* _GRID_INFO_ = nullptr;
 
 void Pic::init(Real timeIn, const std::string& paramString, int* paramInt,
                double* gridDim, double* paramReal,
@@ -75,8 +78,8 @@ void Pic::make_grid(int nGstIn, const BoxArray& centerBAIn,
 
   dm = dmIn;
 
-  cellStatus.define(centerBA, dm, 1, nGst); 
-  
+  cellStatus.define(centerBA, dm, 1, nGst);
+
   costMF.define(centerBA, dm, 1, 0);
   costMF.setVal(0);
 }
@@ -125,8 +128,7 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
   }
   //===========Move data around end====================
 
-  {
-    //===========Label cellStatus ========================
+  { //===========Label cellStatus ========================
     redistribute_FabArray(cellStatus, centerBA, dm, false);
     cellStatus.setVal(iBoundary_);
     cellStatus.setVal(iOnNew_, 0);
@@ -145,7 +147,6 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
           }
     }
   }
-
 }
 
 void Pic::make_data() {

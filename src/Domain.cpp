@@ -1,9 +1,13 @@
 #include "Domain.h"
+#include "GridInfo.h"
 
 using namespace amrex;
 
 //------------------------------------------------------------------------
 void Domain::update() {
+  init_grid_info(2, 10, 10, 10); 
+  set_point_status(2,3,4, 1);
+
   pic.update();
 
   write_plots();
