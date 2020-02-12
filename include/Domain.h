@@ -56,7 +56,13 @@ public:
   void write_plots(bool doForce = false);
   //--------------- IO end----------------------------------
 
-  void make_grid();
+  //-------------- grid begin-------------------------------
+  void make_grid();  
+  void regrid();  
+  //-------------- grid end---------------------------------
+
+
+
   void make_data();
   void init_time_ctr();
 };

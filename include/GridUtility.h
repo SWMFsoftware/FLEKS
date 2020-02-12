@@ -14,7 +14,24 @@ void redistribute_FabArray(amrex::FabArray<FAB>& fa,
   tmp.define(fa.boxArray(), dm, fa.nComp(), fa.nGrow());
   if (doRedistribute) {
     tmp.Redistribute(fa, 0, 0, tmp.nComp(), tmp.nGrowVect());
-  }else{
+  } else {
+    tmp.setVal(0);
+  }
+  fa = std::move(tmp);
+}
+
+template <class FAB>
+void redistribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
+                           const amrex::DistributionMapping& dm,
+                           bool doRedistribute = true) {
+  // Assume 'dm' is the new dm.
+
+  amrex::FabArray<FAB> tmp;
+  tmp.define(baNew, dm, fa.nComp(), fa.nGrow());
+  if (doRedistribute) {
+    tmp.ParallelCopy(fa, 0, 0, fa.nComp(),fa.nGrow(), fa.nGrow());
+    // tmp.Redistribute(fa, 0, 0, tmp.nComp(), tmp.nGrowVect());
+  } else {
     tmp.setVal(0);
   }
   fa = std::move(tmp);

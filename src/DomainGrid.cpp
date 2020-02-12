@@ -26,11 +26,11 @@ void DomainGrid::init() {
   costMF.setVal(0);
 
   Print() << "DomainGrid:: Domain range = " << boxRange << std::endl;
-  Print() << "DomainGrid:: Total block #  = " << nodeBA.size() << std::endl;
+  Print() << "DomaxinGrid:: Total block #  = " << nodeBA.size() << std::endl;
   // amrex::Print() << "DomainGrid:: centerBA = " << centerBA << std::endl;
 }
 
-BoxArray DomainGrid::resize_pic_ba() {
+BoxArray DomainGrid::resize_pic_ba(int iCycle) {
   IntVect quarterCell;
   for (int i = 0; i < nDim; ++i) {
     quarterCell[i] = (centerBoxHi[i] - centerBoxLo[i] + 1) / 4;
@@ -43,7 +43,10 @@ BoxArray DomainGrid::resize_pic_ba() {
   BoxArray baPic(bxPic);
   baPic.maxSize(maxBlockSize);
 
-  baPic = centerBA;
+  if (iCycle == 0) {
+    baPic = centerBA;
+  } else {
+  }
 
   Print() << "baPic = " << baPic << std::endl;
 

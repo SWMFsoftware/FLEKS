@@ -78,6 +78,47 @@ void Pic::make_grid(int nGstIn, const BoxArray& centerBAIn,
   costMF.setVal(0);
 }
 
+void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
+  centerBA = centerBAIn;
+  nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
+  dm = dmIn;
+
+  redistribute_FabArray(nodeE, nodeBA, dm);
+  redistribute_FabArray(nodeEth, nodeBA, dm);
+  redistribute_FabArray(nodeB, nodeBA, dm);
+  redistribute_FabArray(centerB, centerBA, dm);
+
+  redistribute_FabArray(centerNetChargeOld, centerBA, dm);
+  redistribute_FabArray(centerNetChargeN, centerBA, dm);   // false??
+  redistribute_FabArray(centerNetChargeNew, centerBA, dm); // false??
+
+  redistribute_FabArray(centerDivE, centerBA, dm);
+  redistribute_FabArray(centerPhi, centerBA, dm);
+
+  {
+    bool doMoveData = false;
+
+    for (auto& pl : nodePlasma) {
+      redistribute_FabArray(pl, nodeBA, dm, doMoveData);
+    }
+
+    redistribute_FabArray(nodeMM, nodeBA, dm, doMoveData);
+    redistribute_FabArray(costMF, centerBA, dm, doMoveData);
+    redistribute_FabArray(centerMM, centerBA, dm, doMoveData);
+
+    redistribute_FabArray(tempNode3, nodeBA, dm, doMoveData);
+    redistribute_FabArray(tempCenter3, centerBA, dm, doMoveData);
+    redistribute_FabArray(tempCenter1, centerBA, dm, doMoveData);
+    redistribute_FabArray(tempCenter1_1, centerBA,  dm, doMoveData);
+  }
+  
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->SetParticleBoxArray(0, centerBA);
+    parts[i]->SetParticleDistributionMap(0, dm);
+    //parts[i]->Redistribute();
+  }
+}
+
 void Pic::make_data() {
 
   {
@@ -342,6 +383,7 @@ void Pic::divE_accurate_matvec(double* vecIn, double* vecOut) {
   convert_1d_to_3d(vecIn, tempCenter1, geom);
   tempCenter1.FillBoundary(geom.periodicity());
 
+  // Is this necessary?? --Yuxi
   apply_float_boundary(tempCenter1, geom, 0, tempCenter1.nComp(), -1);
 
   tempCenter1_1.setVal(0.0);

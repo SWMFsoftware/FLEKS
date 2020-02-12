@@ -4,6 +4,19 @@ using namespace amrex;
 
 //------------------------------------------------------------------------
 void Domain::update() {
+
+  if (tc->get_cycle() > 0) {
+    Print() << "\n==================regriding begin======================="
+            << std::endl;
+    regrid();
+
+    tc->update();
+    write_plots(true);
+    Abort("finished here");
+    Print() << "\n==================regriding end======================="
+            << std::endl;
+  }
+
   pic.update();
 
   write_plots();
@@ -64,14 +77,20 @@ void Domain::make_grid() {
 
   BoxArray baPic = resize_pic_ba();
   DistributionMapping dmPic(baPic);
-  pic.make_grid(nGst, baPic, geom, dm);
-  fluidInterface->make_grid(nGst, baPic, geom, dm);
+  pic.make_grid(nGst, baPic, geom, dmPic);
+  fluidInterface->make_grid(nGst, baPic, geom, dmPic);
 
   amrex::Print() << "Domain::          range = " << boxRange << std::endl;
   amrex::Print() << "Domain:: Total block #  = " << nodeBA.size() << std::endl;
 }
 //------------------------------------------------------------------------
 void Domain::make_data() { pic.make_data(); }
+
+void Domain::regrid() {
+  BoxArray baPic = resize_pic_ba(tc->get_cycle());
+  DistributionMapping dmPic(baPic);
+  pic.regrid(baPic, dmPic);
+}
 
 //------------------------------------------------------------------------
 void Domain::set_ic() {
