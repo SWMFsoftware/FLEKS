@@ -9,6 +9,7 @@
 #include <AMReX_IndexType.H>
 #include <AMReX_IntVect.H>
 #include <AMReX_MultiFab.H>
+#include <AMReX_iMultiFab.H>
 #include <AMReX_Print.H>
 #include <AMReX_REAL.H>
 #include <AMReX_RealBox.H>
@@ -27,12 +28,16 @@ protected:
   // const int coord = 0; // Cartesian grid
   amrex::Geometry geom;
 
+  amrex::BoxArray centerBAOld;
   amrex::BoxArray centerBA;
+  
   amrex::BoxArray nodeBA;
 
   amrex::DistributionMapping dm;
 
   amrex::MultiFab costMF;
+
+  amrex::iMultiFab cellStatus;
 
 public:
   PicGrid() = default;
@@ -56,7 +61,6 @@ public:
         return dm[ii];
     }
 
-    
     amrex::Abort("Error: can not find this cell!");
     return -1; // To suppress compiler warnings.
   }

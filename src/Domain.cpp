@@ -4,22 +4,24 @@ using namespace amrex;
 
 //------------------------------------------------------------------------
 void Domain::update() {
-
-  if (tc->get_cycle() > 0) {
-    Print() << "\n==================regriding begin======================="
-            << std::endl;
-    regrid();
-
-    tc->update();
-    write_plots(true);
-    Abort("finished here");
-    Print() << "\n==================regriding end======================="
-            << std::endl;
-  }
-
   pic.update();
 
   write_plots();
+
+  int ic=0;
+  while (ic<4) {
+    ic++;
+    Print() << "\n==================regriding begin======================="
+            << std::endl;
+    regrid();
+    tc->update();
+    write_plots(true);
+
+    
+    Print() << "\n==================regriding end======================="
+            << std::endl;
+  }
+  Abort("finished here");
 
   pic.write_log();
 };

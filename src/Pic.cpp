@@ -74,15 +74,20 @@ void Pic::make_grid(int nGstIn, const BoxArray& centerBAIn,
   nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
 
   dm = dmIn;
+
+  cellStatus.define(centerBA, dm, 1, nGst); 
+  
   costMF.define(centerBA, dm, 1, 0);
   costMF.setVal(0);
 }
 
 void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
+  centerBAOld = centerBA;
   centerBA = centerBAIn;
   nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
   dm = dmIn;
 
+  //===========Move data around begin====================
   redistribute_FabArray(nodeE, nodeBA, dm);
   redistribute_FabArray(nodeEth, nodeBA, dm);
   redistribute_FabArray(nodeB, nodeBA, dm);
@@ -109,14 +114,38 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
     redistribute_FabArray(tempNode3, nodeBA, dm, doMoveData);
     redistribute_FabArray(tempCenter3, centerBA, dm, doMoveData);
     redistribute_FabArray(tempCenter1, centerBA, dm, doMoveData);
-    redistribute_FabArray(tempCenter1_1, centerBA,  dm, doMoveData);
+    redistribute_FabArray(tempCenter1_1, centerBA, dm, doMoveData);
   }
-  
+
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->SetParticleBoxArray(0, centerBA);
     parts[i]->SetParticleDistributionMap(0, dm);
-    //parts[i]->Redistribute();
+    parts[i]->label_particles_outside_ba();
+    parts[i]->Redistribute();
   }
+  //===========Move data around end====================
+
+  {
+    //===========Label cellStatus ========================
+    redistribute_FabArray(cellStatus, centerBA, dm, false);
+    cellStatus.setVal(iBoundary_);
+    cellStatus.setVal(iOnNew_, 0);
+    for (MFIter mfi(cellStatus); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<int>& cellArr = cellStatus[mfi].array();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (centerBAOld.contains({ i, j, k })) {
+              cellArr(i, j, k) = iOnOld_;
+            }
+          }
+    }
+  }
+
 }
 
 void Pic::make_data() {

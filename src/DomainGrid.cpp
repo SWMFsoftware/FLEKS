@@ -31,21 +31,28 @@ void DomainGrid::init() {
 }
 
 BoxArray DomainGrid::resize_pic_ba(int iCycle) {
-  IntVect quarterCell;
-  for (int i = 0; i < nDim; ++i) {
-    quarterCell[i] = (centerBoxHi[i] - centerBoxLo[i] + 1) / 4;
-  }
-
-  Box bxPic;
-  bxPic.setSmall(quarterCell);
-  bxPic.setBig(centerBoxHi - quarterCell);
-
-  BoxArray baPic(bxPic);
-  baPic.maxSize(maxBlockSize);
+  BoxArray baPic;
 
   if (iCycle == 0) {
     baPic = centerBA;
   } else {
+
+    IntVect quarterCell;
+    for (int i = 0; i < nDim; ++i) {
+      quarterCell[i] = (centerBoxHi[i] - centerBoxLo[i] + 1) / 4;
+    }
+
+    Box bxPic;
+    if (iCycle % 2 == 0) {
+      bxPic.setSmall(quarterCell / 2);
+      bxPic.setBig(centerBoxHi - quarterCell / 2);
+    } else {
+      bxPic.setSmall(quarterCell);
+      bxPic.setBig(centerBoxHi - quarterCell);
+    }
+
+    baPic.define(bxPic);
+    baPic.maxSize(maxBlockSize);
   }
 
   Print() << "baPic = " << baPic << std::endl;

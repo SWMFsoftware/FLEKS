@@ -29,7 +29,7 @@ void redistribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
   amrex::FabArray<FAB> tmp;
   tmp.define(baNew, dm, fa.nComp(), fa.nGrow());
   if (doRedistribute) {
-    tmp.ParallelCopy(fa, 0, 0, fa.nComp(),fa.nGrow(), fa.nGrow());
+    tmp.ParallelCopy(fa, 0, 0, fa.nComp(),0, 0);
     // tmp.Redistribute(fa, 0, 0, tmp.nComp(), tmp.nGrowVect());
   } else {
     tmp.setVal(0);

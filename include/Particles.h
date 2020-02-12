@@ -3,6 +3,7 @@
 
 #include <memory>
 
+#include <AMReX_CoordSys.H>
 #include <AMReX_Particles.H>
 
 #include "Array1D.h"
@@ -68,6 +69,28 @@ public:
     }
 
     return false;
+  }
+
+  inline bool is_outside_ba(const ParticleType& p) {
+    amrex::Real loc[3] = { 0, 0, 0 };
+    for (int iDim = 0; iDim < 3; iDim++) {
+      loc[iDim] = p.pos(iDim);
+    }
+    amrex::IntVect cellIdx = Geom(0).CellIndex(loc);
+    return !ParticleBoxArray(0).contains(cellIdx);
+  }
+
+  void label_particles_outside_ba() {
+    const int lev = 0;
+    for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
+      auto& particles = pti.GetArrayOfStructs();
+      for (auto& p : particles) {
+        if (is_outside_ba(p)) {
+          p.id() = -1;
+          amrex::Print()<<"p = "<<p<<std::endl;
+        }
+      }
+    }
   }
 
   void split_particles(amrex::Real limit);
