@@ -15,6 +15,7 @@
 #include <AMReX_Vector.H>
 
 #include "Constants.h"
+#include "GridInfo.h"
 
 class DomainGrid {
 
@@ -39,6 +40,11 @@ protected:
   amrex::DistributionMapping dm;
 
   amrex::MultiFab costMF;
+
+  GridInfo gridInfo;
+
+
+  amrex::BoxArray baPicOld; 
 
   int iGrid;
   int iDecomp;
@@ -67,7 +73,7 @@ public:
     periodicity[iDir] = (isPeriodic ? 1 : 0);
   }
 
-  amrex::BoxArray resize_pic_ba(int iCycle =0);
+  amrex::BoxArray resize_pic_ba(int iCycle = 0);
 
   inline int find_mpi_rank_from_coord(amrex::Real const x, amrex::Real const y,
                                       amrex::Real const z) const {
@@ -89,5 +95,4 @@ public:
     return -1; // To suppress compiler warnings.
   }
 };
-
 #endif

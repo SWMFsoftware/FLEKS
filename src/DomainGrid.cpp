@@ -1,4 +1,5 @@
 #include "DomainGrid.h"
+#include "GridUtility.h"
 
 using namespace amrex;
 
@@ -31,31 +32,55 @@ void DomainGrid::init() {
 }
 
 BoxArray DomainGrid::resize_pic_ba(int iCycle) {
-  BoxArray baPic;
+  std::string nameFunc = "Pic::resize_pic_ba";
+  Print() << nameFunc << " is runing..." << std::endl;
 
-  if (iCycle == 0) {
-    baPic = centerBA;
-  } else {
+  Vector<IntVect> tagVec;
 
-    IntVect quarterCell;
-    for (int i = 0; i < nDim; ++i) {
-      quarterCell[i] = (centerBoxHi[i] - centerBoxLo[i] + 1) / 4;
-    }
+  // Loop through the cells in the whole FLEKS domain on each processor.
+  for (int i = centerBoxLo[ix_]; i <= centerBoxHi[ix_]; i++)
+    for (int j = centerBoxLo[iy_]; j <= centerBoxHi[iy_]; j++)
+      for (int k = centerBoxLo[iz_]; k <= centerBoxHi[iz_]; k++) {
+        if (gridInfo.get_status(i, j, k) == GridInfo::iPicOn_) {
+          tagVec.push_back({ i, j, k });
+          Print()<<"tagVec: i = "<<i<<" j = "<<j<<" k = "<<k<<std::endl;
+        }
+      }
 
-    Box bxPic;
-    if (iCycle % 2 == 0) {
-      bxPic.setSmall(quarterCell / 2);
-      bxPic.setBig(centerBoxHi - quarterCell / 2);
-    } else {
-      bxPic.setSmall(quarterCell);
-      bxPic.setBig(centerBoxHi - quarterCell);
-    }
+  BoxArray baNew; 
+  Print()<<"baPicOld = "<<baPicOld<<std::endl;
+  add_cells_to_BoxArray(baNew, tagVec); 
+  baNew.maxSize(maxBlockSize); 
+  Print()<<"baNew = "<<baNew<<std::endl;
+  baPicOld = baNew; 
 
-    baPic.define(bxPic);
-    baPic.maxSize(maxBlockSize);
-  }
+  return baNew; 
 
-  Print() << "baPic = " << baPic << std::endl;
+  // BoxArray baPic;
 
-  return baPic;
+  // if (true || iCycle == 0) {
+  //   baPic = centerBA;
+  // } else {
+
+  //   IntVect quarterCell;
+  //   for (int i = 0; i < nDim; ++i) {
+  //     quarterCell[i] = (centerBoxHi[i] - centerBoxLo[i] + 1) / 4;
+  //   }
+
+  //   Box bxPic;
+  //   if (iCycle % 2 == 0) {
+  //     bxPic.setSmall(quarterCell / 2);
+  //     bxPic.setBig(centerBoxHi - quarterCell / 2);
+  //   } else {
+  //     bxPic.setSmall(quarterCell);
+  //     bxPic.setBig(centerBoxHi - quarterCell);
+  //   }
+
+  //   baPic.define(bxPic);
+  //   baPic.maxSize(maxBlockSize);
+  // }
+
+  // Print() << "baPic = " << baPic << std::endl;
+
+  // return baPic;
 }

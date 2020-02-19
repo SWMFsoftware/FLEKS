@@ -2,6 +2,7 @@
 #define _UTILITY_H_
 
 #include <AMReX_MultiFab.H>
+#include <AMReX_iMultiFab.H>
 #include <AMReX_REAL.H>
 
 #include "Constants.h"
@@ -42,9 +43,12 @@ void div_center_to_center(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
 void average_center_to_node(const amrex::MultiFab& centerMF,
                             amrex::MultiFab& nodeMF);
 
-void print_MultiFab(amrex::MultiFab& data, std::string tag, int nshift=0);
+void print_MultiFab(amrex::iMultiFab& data, std::string tag, int nshift = 0);
 
-void print_MultiFab(amrex::MultiFab& data, std::string tag, amrex::Geometry& geom, int nshift=0);                    
+void print_MultiFab(amrex::MultiFab& data, std::string tag, int nshift = 0);
+
+void print_MultiFab(amrex::MultiFab& data, std::string tag,
+                    amrex::Geometry& geom, int nshift = 0);
 
 inline int get_local_node_or_cell_number(const amrex::MultiFab& MF) {
 
@@ -139,6 +143,9 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
     if (bx.contains(idx))
       return get_value_at_loc(mf, mfi, geom, x, y, z, iVar);
   }
+
+  amrex::AllPrint() << "loc = " << loc[ix_] << " " << loc[iy_] << " "
+                    << loc[iz_] << " idx = " << idx << std::endl;
 
   amrex::Abort("Error: can not find this point!");
   return -1; // To suppress compiler warnings.

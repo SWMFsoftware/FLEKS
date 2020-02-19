@@ -237,6 +237,9 @@ contains
     integer, intent(in)         :: nInt 
     integer, intent(in)         :: Int_I(nInt)  
 
+
+    write(*,*)"pc_put Int = ", Int_I
+    call pic_set_grid_info(nInt, Int_I)
   end subroutine PC_put_from_gm_grid_info
   !============================================================================
   subroutine PC_put_from_gm_init(nParamInt, nParamReal, iParam_I, Param_I, &

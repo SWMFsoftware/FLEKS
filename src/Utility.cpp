@@ -455,6 +455,37 @@ void print_MultiFab(amrex::MultiFab& data, std::string tag, int nshift) {
   AllPrint() << "-----" << tag << " end-----" << std::endl;
 }
 
+
+void print_MultiFab(amrex::iMultiFab& data, std::string tag, int nshift) {
+  AllPrint() << "-----" << tag << " begin-----" << std::endl;
+  Real sum = 0;
+  Real sum2 = 0;
+
+  for (MFIter mfi(data); mfi.isValid(); ++mfi) {
+    IArrayBox& fab = data[mfi];
+    const Box& box = mfi.validbox();
+    Array4<int> const& data = fab.array();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    for (int i = lo.x - nshift; i <= hi.x + nshift; ++i)
+      for (int j = lo.y - nshift; j <= hi.y + nshift; ++j)
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int iVar = 0; iVar < data.nComp(); iVar++) {
+            AllPrint() << " i = " << i << " j = " << j << " k = " << k
+                       << " iVar = " << iVar
+                       << " data = " << data(i, j, k, iVar) << std::endl;
+            sum += data(i, j, k, iVar);
+            sum2 += pow(data(i, j, k, iVar), 2);
+          }
+  }
+  AllPrint() << "sum = " << sum << " sum2 = " << sqrt(sum2)
+             << " on proc = " << ParallelDescriptor::MyProc() << std::endl;
+  AllPrint() << "-----" << tag << " end-----" << std::endl;
+}
+
+
 void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
                          const Real* invDx) {
   Real cZDY, cYDZ;

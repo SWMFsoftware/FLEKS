@@ -31,6 +31,8 @@ private:
   amrex::MultiFab nodeFluid;
   amrex::MultiFab centerB;
 
+  int nGst; 
+
 public:
   void init();
   void receive_info_from_gm(const int* const paramInt,
@@ -38,9 +40,10 @@ public:
                             const double* const paramDouble,
                             const std::string& paramString);
 
-  void make_grid(const int nGst, const amrex::BoxArray& centerBAIn,
-                 const amrex::Geometry& geomIn,
-                 const amrex::DistributionMapping& dmIn);
+  void set_geom(const int nGstIn, const amrex::Geometry& geomIn);
+
+  void regrid(const amrex::BoxArray& centerBAIn,
+              const amrex::DistributionMapping& dmIn);
 
   int count_couple_node_number();
 

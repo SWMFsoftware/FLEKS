@@ -54,7 +54,7 @@ public:
 
   void convert_to_fluid_moments(amrex::MultiFab& momentsMF);
 
-  inline bool is_outside(const ParticleType& p) {
+  inline bool is_outside_domain(const ParticleType& p) {
     const auto& plo = Geom(0).ProbLo();
     const auto& phi = Geom(0).ProbHi();
     const auto& dx = Geom(0).CellSize();
@@ -72,11 +72,26 @@ public:
   }
 
   inline bool is_outside_ba(const ParticleType& p) {
+    if (is_outside_domain(p))
+      return true;
+
+    const auto& plo = Geom(0).ProbLo();
+    const auto& phi = Geom(0).ProbHi();
     amrex::Real loc[3] = { 0, 0, 0 };
     for (int iDim = 0; iDim < 3; iDim++) {
       loc[iDim] = p.pos(iDim);
+      if (Geom(0).isPeriodic(iDim)) {
+        //Fix index/loc for periodic BC. 
+        if (loc[iDim] > phi[iDim])
+          loc[iDim] -= phi[iDim] - plo[iDim];
+        if (loc[iDim] < plo[iDim])
+          loc[iDim] += phi[iDim] - plo[iDim];
+
+      }
     }
-    amrex::IntVect cellIdx = Geom(0).CellIndex(loc);
+    // If the particle is outside the domain, the index return by CellIndex is
+    // not right! So we still need to call is_outside first. --Yuxi
+    amrex::IntVect cellIdx = Geom(0).CellIndex(loc);    
     return !ParticleBoxArray(0).contains(cellIdx);
   }
 
@@ -87,7 +102,7 @@ public:
       for (auto& p : particles) {
         if (is_outside_ba(p)) {
           p.id() = -1;
-          amrex::Print()<<"p = "<<p<<std::endl;
+          // amrex::Print()<<"particle outside ba = "<<p<<std::endl;
         }
       }
     }

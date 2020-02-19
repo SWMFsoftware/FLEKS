@@ -804,7 +804,7 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
       p.pos(iz_) = zp + wnp1 * dtLoc;
 
       // Mark for deletion
-      if (is_outside(p)) {
+      if (is_outside_ba(p)) {
         p.id() = -1;
       }
     } // for p
@@ -933,7 +933,7 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
 
           p.pos(iDim) += eps_D[iDim];
 
-          if (is_outside(p)) {
+          if (is_outside_ba(p)) {
             p.id() = -1;
           }
         }

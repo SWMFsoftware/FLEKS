@@ -12,8 +12,6 @@
 
 using namespace amrex;
 
-int* _GRID_INFO_ = nullptr;
-
 void Pic::init(Real timeIn, const std::string& paramString, int* paramInt,
                double* gridDim, double* paramReal,
                std::shared_ptr<FluidInterface>& fluidIn,
@@ -65,71 +63,97 @@ void Pic::set_ic() {
   Print() << nameFunc << " end" << std::endl;
 }
 
-void Pic::make_grid(int nGstIn, const BoxArray& centerBAIn,
-                    const Geometry& geomIn,
-                    const amrex::DistributionMapping& dmIn) {
+void Pic::set_geom(int nGstIn, const Geometry& geomIn) {
   set_nGst(nGstIn);
-
-  centerBA = centerBAIn;
 
   geom = geomIn;
 
-  nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
+  // centerBA = centerBAIn;
+  // nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
+  // dm = dmIn;
 
-  dm = dmIn;
+  // cellStatus.define(centerBA, dm, 1, nGst);
 
-  cellStatus.define(centerBA, dm, 1, nGst);
-
-  costMF.define(centerBA, dm, 1, 0);
-  costMF.setVal(0);
+  // costMF.define(centerBA, dm, 1, 0);
+  // costMF.setVal(0);
 }
 
 void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
+  std::string nameFunc = "Pic::regrid";
+  Print() << nameFunc << " is runing..." << std::endl;
+
+  if (centerBAIn == centerBA)
+    return;
+
   centerBAOld = centerBA;
   centerBA = centerBAIn;
+
   nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
   dm = dmIn;
 
   //===========Move data around begin====================
-  redistribute_FabArray(nodeE, nodeBA, dm);
-  redistribute_FabArray(nodeEth, nodeBA, dm);
-  redistribute_FabArray(nodeB, nodeBA, dm);
-  redistribute_FabArray(centerB, centerBA, dm);
+  distribute_FabArray(nodeE, nodeBA, dm, 3, nGst);
+  distribute_FabArray(nodeEth, nodeBA, dm, 3, nGst);
+  distribute_FabArray(nodeB, nodeBA, dm, 3, nGst);
+  distribute_FabArray(centerB, centerBA, dm, 3, nGst);
 
-  redistribute_FabArray(centerNetChargeOld, centerBA, dm);
-  redistribute_FabArray(centerNetChargeN, centerBA, dm);   // false??
-  redistribute_FabArray(centerNetChargeNew, centerBA, dm); // false??
+  distribute_FabArray(centerNetChargeOld, centerBA, dm, 1, nGst);
+  distribute_FabArray(centerNetChargeN, centerBA, dm, 1, nGst);   // false??
+  distribute_FabArray(centerNetChargeNew, centerBA, dm, 1, nGst); // false??
 
-  redistribute_FabArray(centerDivE, centerBA, dm);
-  redistribute_FabArray(centerPhi, centerBA, dm);
+  distribute_FabArray(centerDivE, centerBA, dm, 1, nGst);
+  distribute_FabArray(centerPhi, centerBA, dm, 1, nGst);
 
   {
     bool doMoveData = false;
 
-    for (auto& pl : nodePlasma) {
-      redistribute_FabArray(pl, nodeBA, dm, doMoveData);
+    iTot = nSpecies;
+    if (plasmaEnergy.empty()) {
+      plasmaEnergy.resize(nSpecies + 1);
     }
 
-    redistribute_FabArray(nodeMM, nodeBA, dm, doMoveData);
-    redistribute_FabArray(costMF, centerBA, dm, doMoveData);
-    redistribute_FabArray(centerMM, centerBA, dm, doMoveData);
+    if (nodePlasma.empty()) {
+      // The last one is the sum of all species.
+      nodePlasma.resize(nSpecies + 1);
+      for (auto& pl : nodePlasma) {
+        pl.define(nodeBA, dm, nMoments, nGst);
+        pl.setVal(0.0);
+      }
+    } else {
+      for (auto& pl : nodePlasma) {
+        distribute_FabArray(pl, nodeBA, dm, nMoments, nGst, doMoveData);
+      }
+    }
 
-    redistribute_FabArray(tempNode3, nodeBA, dm, doMoveData);
-    redistribute_FabArray(tempCenter3, centerBA, dm, doMoveData);
-    redistribute_FabArray(tempCenter1, centerBA, dm, doMoveData);
-    redistribute_FabArray(tempCenter1_1, centerBA, dm, doMoveData);
+    distribute_FabArray(nodeMM, nodeBA, dm, 1, nGst, doMoveData);
+    distribute_FabArray(costMF, centerBA, dm, 1, nGst, doMoveData);
+    distribute_FabArray(centerMM, centerBA, dm, 1, nGst, doMoveData);
+
+    distribute_FabArray(tempNode3, nodeBA, dm, 3, nGst, doMoveData);
+    distribute_FabArray(tempCenter3, centerBA, dm, 3, nGst, doMoveData);
+    distribute_FabArray(tempCenter1, centerBA, dm, 1, nGst, doMoveData);
+    distribute_FabArray(tempCenter1_1, centerBA, dm, 1, nGst, doMoveData);
   }
 
-  for (int i = 0; i < nSpecies; i++) {
-    parts[i]->SetParticleBoxArray(0, centerBA);
-    parts[i]->SetParticleDistributionMap(0, dm);
-    parts[i]->label_particles_outside_ba();
-    parts[i]->Redistribute();
+  if (parts.empty()) {
+    for (int i = 0; i < nSpecies; i++) {
+      auto ptr = std::make_unique<Particles>(
+          geom, dm, centerBA, tc.get(), i, fluidInterface->getQiSpecies(i),
+          fluidInterface->getMiSpecies(i), nPartPerCell);
+      parts.push_back(std::move(ptr));
+    }
+  } else {
+    for (int i = 0; i < nSpecies; i++) {
+      parts[i]->SetParticleBoxArray(0, centerBA);
+      parts[i]->SetParticleDistributionMap(0, dm);
+      parts[i]->label_particles_outside_ba();
+      parts[i]->Redistribute();
+    }
   }
   //===========Move data around end====================
 
   { //===========Label cellStatus ========================
-    redistribute_FabArray(cellStatus, centerBA, dm, false);
+    distribute_FabArray(cellStatus, centerBA, dm, 1, nGst, false);
     cellStatus.setVal(iBoundary_);
     cellStatus.setVal(iOnNew_, 0);
     for (MFIter mfi(cellStatus); mfi.isValid(); ++mfi) {
@@ -146,80 +170,10 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
             }
           }
     }
-  }
-}
 
-void Pic::make_data() {
+    cellStatus.FillBoundary(geom.periodicity()); 
 
-  {
-    // EM field
-    nodeE.define(nodeBA, dm, 3, nGst);
-    nodeE.setVal(0.0);
-    nodeEth.define(nodeBA, dm, 3, nGst);
-    nodeEth.setVal(0.0);
-
-    nodeB.define(nodeBA, dm, 3, nGst);
-    nodeB.setVal(0.0);
-
-    centerB.define(centerBA, dm, 3, nGst);
-    centerB.setVal(0.0);
-
-    centerDivE.define(centerBA, dm, 1, nGst);
-    centerDivE.setVal(0.0);
-
-    centerPhi.define(centerBA, dm, 1, nGst);
-    centerPhi.setVal(0.0);
-
-    tempNode3.define(nodeBA, dm, 3, nGst);
-    tempNode3.setVal(0.0);
-
-    tempCenter3.define(centerBA, dm, 3, nGst);
-    tempCenter3.setVal(0.0);
-
-    tempCenter1.define(centerBA, dm, 1, nGst);
-    tempCenter1.setVal(0.0);
-
-    tempCenter1_1.define(centerBA, dm, 1, nGst);
-    tempCenter1_1.setVal(0.0);
-  }
-
-  {
-    // Plasma
-    // nSpecies = 2;
-    iTot = nSpecies;
-
-    plasmaEnergy.resize(nSpecies + 1);
-
-    // The last one is the sum of all species.
-    nodePlasma.resize(nSpecies + 1);
-    for (auto& pl : nodePlasma) {
-      pl.define(nodeBA, dm, nMoments, nGst);
-      pl.setVal(0.0);
-    }
-
-    // Create particle containers.
-    for (int i = 0; i < nSpecies; i++) {
-      auto ptr = std::make_unique<Particles>(
-          geom, dm, centerBA, tc.get(), i, fluidInterface->getQiSpecies(i),
-          fluidInterface->getMiSpecies(i), nPartPerCell);
-      parts.push_back(std::move(ptr));
-    }
-
-    nodeMM.define(nodeBA, dm, 1, nGst);
-    const RealMM mm0(0.0);
-    nodeMM.setVal(mm0);
-
-    //-------divE correction----------------
-    centerNetChargeOld.define(centerBA, dm, 1, nGst);
-    centerNetChargeOld.setVal(0.0);
-    centerNetChargeN.define(centerBA, dm, 1, nGst);
-    centerNetChargeN.setVal(0.0);
-    centerNetChargeNew.define(centerBA, dm, 1, nGst);
-    centerNetChargeNew.setVal(0.0);
-
-    centerMM.define(centerBA, dm, 1, nGst);
-    centerMM.setVal(0.0);
-    //--------------------------------------
+    print_MultiFab(cellStatus, "cellStatus", nGst);
   }
 
   {
@@ -232,6 +186,90 @@ void Pic::make_data() {
     divESolver.init(nGrid, 1, nDimMax, matvec_divE_accurate);
   }
 }
+
+// void Pic::make_data() {
+
+//   {
+//     // EM field
+//     nodeE.define(nodeBA, dm, 3, nGst);
+//     nodeE.setVal(0.0);
+//     nodeEth.define(nodeBA, dm, 3, nGst);
+//     nodeEth.setVal(0.0);
+
+//     nodeB.define(nodeBA, dm, 3, nGst);
+//     nodeB.setVal(0.0);
+
+//     centerB.define(centerBA, dm, 3, nGst);
+//     centerB.setVal(0.0);
+
+//     centerDivE.define(centerBA, dm, 1, nGst);
+//     centerDivE.setVal(0.0);
+
+//     centerPhi.define(centerBA, dm, 1, nGst);
+//     centerPhi.setVal(0.0);
+
+//     tempNode3.define(nodeBA, dm, 3, nGst);
+//     tempNode3.setVal(0.0);
+
+//     tempCenter3.define(centerBA, dm, 3, nGst);
+//     tempCenter3.setVal(0.0);
+
+//     tempCenter1.define(centerBA, dm, 1, nGst);
+//     tempCenter1.setVal(0.0);
+
+//     tempCenter1_1.define(centerBA, dm, 1, nGst);
+//     tempCenter1_1.setVal(0.0);
+//   }
+
+//   {
+//     // Plasma
+//     // nSpecies = 2;
+//     iTot = nSpecies;
+
+//     plasmaEnergy.resize(nSpecies + 1);
+
+//     // The last one is the sum of all species.
+//     nodePlasma.resize(nSpecies + 1);
+//     for (auto& pl : nodePlasma) {
+//       pl.define(nodeBA, dm, nMoments, nGst);
+//       pl.setVal(0.0);
+//     }
+
+//     // Create particle containers.
+//     for (int i = 0; i < nSpecies; i++) {
+//       auto ptr = std::make_unique<Particles>(
+//           geom, dm, centerBA, tc.get(), i, fluidInterface->getQiSpecies(i),
+//           fluidInterface->getMiSpecies(i), nPartPerCell);
+//       parts.push_back(std::move(ptr));
+//     }
+
+//     nodeMM.define(nodeBA, dm, 1, nGst);
+//     const RealMM mm0(0.0);
+//     nodeMM.setVal(mm0);
+
+//     //-------divE correction----------------
+//     centerNetChargeOld.define(centerBA, dm, 1, nGst);
+//     centerNetChargeOld.setVal(0.0);
+//     centerNetChargeN.define(centerBA, dm, 1, nGst);
+//     centerNetChargeN.setVal(0.0);
+//     centerNetChargeNew.define(centerBA, dm, 1, nGst);
+//     centerNetChargeNew.setVal(0.0);
+
+//     centerMM.define(centerBA, dm, 1, nGst);
+//     centerMM.setVal(0.0);
+//     //--------------------------------------
+//   }
+
+//   {
+//     int nGrid = get_local_node_or_cell_number(nodeE);
+//     eSolver.init(nGrid, nDimMax, nDimMax, matvec_E_solver);
+//   }
+
+//   {
+//     int nGrid = get_local_node_or_cell_number(centerDivE);
+//     divESolver.init(nGrid, 1, nDimMax, matvec_divE_accurate);
+//   }
+// }
 //---------------------------------------------------------
 
 void Pic::set_ic_field() {

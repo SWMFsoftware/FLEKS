@@ -14,7 +14,7 @@ public:
   std::shared_ptr<FluidInterface> fluidInterface;
 
   std::shared_ptr<TimeCtr> tc;
-
+  
 public:
   Domain() {
     fluidInterface = std::make_shared<FluidInterface>();
@@ -58,12 +58,11 @@ public:
 
   //-------------- grid begin-------------------------------
   void make_grid();  
-  void regrid();  
+  void regrid();
+  void receive_grid_info(int *status);  
   //-------------- grid end---------------------------------
 
-
-
-  void make_data();
+  //void make_data();
   void init_time_ctr();
 };
 

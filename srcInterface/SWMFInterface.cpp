@@ -148,3 +148,14 @@ int pic_end_() {
 
   return 0;
 }
+
+
+int pic_set_grid_info_(int *nInt, int *status){
+  for(int i = 0; i<(*nInt); i++){
+    std::cout<<"status = "<<status[i]<<std::endl;
+  }
+  MPICs->receive_grid_info(status);
+  MPICs->regrid();
+
+  return 0; 
+}

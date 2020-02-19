@@ -22,21 +22,34 @@ void FluidInterface::receive_info_from_gm(const int* const paramInt,
   readParam = paramString;
 }
 
-void FluidInterface::make_grid(const int nGst,
-                               const amrex::BoxArray& centerBAIn,
-                               const amrex::Geometry& geomIn,
-                               const amrex::DistributionMapping& dmIn) {
-  geom = geomIn;
+void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
+                            const amrex::DistributionMapping& dmIn) {
+  std::string nameFunc = "FluidInterface::regrid";
+  Print() << nameFunc << " is runing..." << std::endl;
+
+  if (centerBAIn == centerBA)
+    return;
+
   centerBA = centerBAIn;
   nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
-
   dm = dmIn;
 
-  nodeFluid.define(nodeBA, dm, nVarCoupling, nGst);
-  nodeFluid.setVal(0);
+  Print() << "FluidInterface::centerBA = " << centerBA << std::endl;
 
-  centerB.define(centerBA, dm, nDimMax, nGst);
-  centerB.setVal(0);
+  const bool doCopy = true;
+  distribute_FabArray(nodeFluid, nodeBA, dm, nVarCoupling, nGst, doCopy);
+  distribute_FabArray(centerB, centerBA, dm, nDimMax, nGst, doCopy);
+
+  // nodeFluid.define(nodeBA, dm, nVarCoupling, nGst);
+  // nodeFluid.setVal(0);
+  // centerB.define(centerBA, dm, nDimMax, nGst);
+  // centerB.setVal(0);
+}
+
+void FluidInterface::set_geom(const int nGstIn, const amrex::Geometry& geomIn) {
+  nGst = nGstIn;
+
+  geom = geomIn;
 
   Array<int, 3> period;
 
@@ -77,7 +90,9 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
 
   int nIdxCount = 0;
   int nCount = 0;
+  int ifab = 0;
   for (MFIter mfi(nodeFluid); mfi.isValid(); ++mfi) {
+    ifab++;
     const Box& box = mfi.fabbox();
     const auto lo = lbound(box);
     const auto hi = ubound(box);
@@ -106,6 +121,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
         } // for k
   }
 
+  Print() << "action = " << action << " nCount = " << nCount << std::endl;
   return nCount;
 }
 

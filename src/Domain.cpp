@@ -5,27 +5,23 @@ using namespace amrex;
 
 //------------------------------------------------------------------------
 void Domain::update() {
-  init_grid_info(2, 10, 10, 10); 
-  set_point_status(2,3,4, 1);
-
   pic.update();
 
   write_plots();
 
-  int ic=0;
-  while (ic<4) {
-    ic++;
-    Print() << "\n==================regriding begin======================="
-            << std::endl;
-    regrid();
-    tc->update();
-    write_plots(true);
+  // int ic = 0;
+  // while (ic < 4) {
+  //   ic++;
+  //   Print() << "\n==================regriding begin======================="
+  //           << std::endl;
+  //   regrid();
+  //   tc->update();
+  //   write_plots(true);
 
-    
-    Print() << "\n==================regriding end======================="
-            << std::endl;
-  }
-  Abort("finished here");
+  //   Print() << "\n==================regriding end======================="
+  //           << std::endl;
+  // }
+  // Abort("finished here");
 
   pic.write_log();
 };
@@ -49,7 +45,7 @@ void Domain::init(amrex::Real timeIn, const std::string &paramString,
   fluidInterface->PrintFluidPicInterface();
 
   make_grid();
-  make_data();
+  //make_data();
 
   init_time_ctr();
 };
@@ -79,23 +75,44 @@ void Domain::make_grid() {
     set_boxRange(boxRangeTmp);
   }
 
+  const int nCellPerPatch = fluidInterface->get_nCellPerPatch();
+  gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], nCellPerPatch);
+
   DomainGrid::init();
 
-  BoxArray baPic = resize_pic_ba();
-  DistributionMapping dmPic(baPic);
-  pic.make_grid(nGst, baPic, geom, dmPic);
-  fluidInterface->make_grid(nGst, baPic, geom, dmPic);
+  pic.set_geom(nGst, geom);
+  fluidInterface->set_geom(nGst, geom);
 
-  amrex::Print() << "Domain::          range = " << boxRange << std::endl;
-  amrex::Print() << "Domain:: Total block #  = " << nodeBA.size() << std::endl;
+  // amrex::Print() << "Domain::          range = " << boxRange << std::endl;
+  // amrex::Print() << "Domain:: Total block #  = " << nodeBA.size() <<
+  // std::endl;
 }
 //------------------------------------------------------------------------
-void Domain::make_data() { pic.make_data(); }
+//void Domain::make_data() { pic.make_data(); }
 
 void Domain::regrid() {
+
+  std::string nameFunc = "Domain::regrid"; 
+  Print()<<nameFunc<<" is runing..."<<std::endl;
+
+  iGrid++; 
+  iDecomp++;
   BoxArray baPic = resize_pic_ba(tc->get_cycle());
   DistributionMapping dmPic(baPic);
   pic.regrid(baPic, dmPic);
+  fluidInterface->regrid(baPic, dmPic); 
+}
+
+void Domain::receive_grid_info(int *status) {
+  gridInfo.set_status(status);
+
+  for (int i = 0; i < nCell[ix_]; i++)
+    for (int j = 0; j < nCell[iy_]; j++)
+      for (int k = 0; k < nCell[iz_]; k++) {
+        Print() << "Domain:: i = " << i << " j = " << j << " k = " << k
+                << " status = " << (gridInfo.get_status(i, j, k) ? "T" : "F")
+                << std::endl;
+      }
 }
 
 //------------------------------------------------------------------------
