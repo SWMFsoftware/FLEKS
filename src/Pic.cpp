@@ -171,7 +171,7 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
           }
     }
 
-    cellStatus.FillBoundary(geom.periodicity()); 
+    cellStatus.FillBoundary(geom.periodicity());
 
     print_MultiFab(cellStatus, "cellStatus", nGst);
   }
@@ -799,118 +799,99 @@ void Pic::apply_external_BC(amrex::MultiFab& mf, const int iStart,
   if (mf.nGrow() == 0)
     return;
 
-  //! create a grown domain box containing valid + periodic cells
-  const Box& domain = geom.Domain();
-  Box gdomain = amrex::convert(domain, mf.boxArray().ixType());
+  BoxArray ba = mf.boxArray();
+
   const IntVect& ngrow = mf.nGrowVect();
   for (int i = 0; i < nDimMax; ++i) {
     if (geom.isPeriodic(i)) {
-      gdomain.grow(i, ngrow[i]);
+      ba.grow(i, ngrow[i]);
     }
   }
 
-  {
-    Vector<BCRec> bcDomain(1);
-    for (int idim = 0; idim < nDimMax; ++idim) {
-      if (geom.isPeriodic(idim)) {
-        bcDomain[0].setLo(idim, BCType::int_dir);
-        bcDomain[0].setHi(idim, BCType::int_dir);
-      } else {
-        bcDomain[0].setLo(idim, BCType::ext_dir);
-        bcDomain[0].setHi(idim, BCType::ext_dir);
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bx = mfi.fabbox();
+
+    //! if there are cells not in the valid + periodic grown box
+    //! we need to fill them here
+    if (!ba.contains(bx)) {
+      amrex::Array4<amrex::Real> const& arr = mf[mfi].array();
+
+      const auto lo = IntVect(bx.loVect());
+      const auto hi = IntVect(bx.hiVect());
+
+      IntVect mid = (lo + hi) / 2;
+
+      Vector<BCRec> bcr(1);
+      for (int iDim = 0; iDim < nDimMax; iDim++) {
+        auto idxLo = mid;
+        idxLo[iDim] = lo[iDim];
+        bcr[0].setLo(iDim,
+                     ba.contains(idxLo) ? BCType::int_dir : BCType::ext_dir);
+
+        auto idxHi = mid;
+        idxHi[iDim] = hi[iDim];
+        bcr[0].setHi(iDim,
+                     ba.contains(idxHi) ? BCType::int_dir : BCType::ext_dir);
       }
-    }
 
-    //"g" means "global".
-    const Box& gbx = convert(geom.Domain(), mf.boxArray().ixType());
-    const auto glo = gbx.loVect(); // Do not include ghost cells.
-    const auto ghi = gbx.hiVect();
+      IntVect nGst = mf.nGrowVect();
+      int iMin = lo[ix_], iMax = hi[ix_];
+      int jMin = lo[iy_], jMax = hi[iy_];
+      int kMin = lo[iz_], kMax = hi[iz_];
 
-    int igMin = glo[ix_], igMax = ghi[ix_];
-    int jgMin = glo[iy_], jgMax = ghi[iy_];
-    int kgMin = glo[iz_], kgMax = ghi[iz_];
+      // x left
+      if (bcr[0].lo(ix_) == BCType::ext_dir)
+        for (int iVar = iStart; iVar < nComp; iVar++)
+          for (int k = kMin; k <= kMax; k++)
+            for (int j = jMin; j <= jMax; j++)
+              for (int i = iMin; i <= iMin + nGst[ix_] - 1 + nVirGst; i++) {
+                arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+              }
 
-    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
-      const Box& bx = mfi.fabbox();
+      // x right
+      if (bcr[0].hi(ix_) == BCType::ext_dir)
+        for (int iVar = iStart; iVar < nComp; iVar++)
+          for (int k = kMin; k <= kMax; k++)
+            for (int j = jMin; j <= jMax; j++)
+              for (int i = iMax - nGst[ix_] + 1 - nVirGst; i <= iMax; i++) {
+                arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+              }
 
-      //! if there are cells not in the valid + periodic grown box
-      //! we need to fill them here
-      //!
-      if (!gdomain.contains(bx)) {
-        //! Based on bcDomain for the domain, we need to make bcr for this Box
-        Vector<BCRec> bcr(1);
-        amrex::setBC(bx, domain, 0, 0, 1, bcDomain, bcr);
+      // y left
+      if (bcr[0].lo(iy_) == BCType::ext_dir)
+        for (int iVar = iStart; iVar < nComp; iVar++)
+          for (int k = kMin; k <= kMax; k++)
+            for (int j = jMin; j <= jMin + nGst[iy_] - 1 + nVirGst; j++)
+              for (int i = iMin; i <= iMax; i++) {
+                arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+              }
 
-        amrex::Array4<amrex::Real> const& arr = mf[mfi].array();
+      // y right
+      if (bcr[0].hi(iy_) == BCType::ext_dir)
+        for (int iVar = iStart; iVar < nComp; iVar++)
+          for (int k = kMin; k <= kMax; k++)
+            for (int j = jMax - nGst[iy_] + 1 - nVirGst; j <= jMax; j++)
+              for (int i = iMin; i <= iMax; i++) {
+                arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+              }
 
-        // Include ghost cells.
-        const auto lo = bx.loVect();
-        const auto hi = bx.hiVect();
+      // z left
+      if (bcr[0].lo(iz_) == BCType::ext_dir)
+        for (int iVar = iStart; iVar < nComp; iVar++)
+          for (int k = kMin; k <= kMin + nGst[iz_] - 1 + nVirGst; k++)
+            for (int j = jMin; j <= jMax; j++)
+              for (int i = iMin; i <= iMax; i++) {
+                arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+              }
 
-        int iMin = lo[ix_], iMax = hi[ix_];
-        int jMin = lo[iy_], jMax = hi[iy_];
-        int kMin = lo[iz_], kMax = hi[iz_];
-
-        // x left
-        if (bcr[0].lo(ix_) == BCType::ext_dir)
-          for (int iVar = iStart; iVar < nComp; iVar++)
-            for (int k = kMin; k <= kMax; k++)
-              for (int j = jMin; j <= jMax; j++)
-                for (int i = iMin; i <= igMin - 1 + nVirGst; i++) {
-                  arr(i, j, k, iVar) =
-                      (this->*func)(mfi, i, j, k, iVar - iStart);
-                }
-
-        // x right
-        if (bcr[0].hi(ix_) == BCType::ext_dir)
-          for (int iVar = iStart; iVar < nComp; iVar++)
-            for (int k = kMin; k <= kMax; k++)
-              for (int j = jMin; j <= jMax; j++)
-                for (int i = igMax + 1 - nVirGst; i <= iMax; i++) {
-                  arr(i, j, k, iVar) =
-                      (this->*func)(mfi, i, j, k, iVar - iStart);
-                }
-
-        // y left
-        if (bcr[0].lo(iy_) == BCType::ext_dir)
-          for (int iVar = iStart; iVar < nComp; iVar++)
-            for (int k = kMin; k <= kMax; k++)
-              for (int j = jMin; j <= jgMin - 1 + nVirGst; j++)
-                for (int i = iMin; i <= iMax; i++) {
-                  arr(i, j, k, iVar) =
-                      (this->*func)(mfi, i, j, k, iVar - iStart);
-                }
-
-        // y right
-        if (bcr[0].hi(iy_) == BCType::ext_dir)
-          for (int iVar = iStart; iVar < nComp; iVar++)
-            for (int k = kMin; k <= kMax; k++)
-              for (int j = jgMax + 1 - nVirGst; j <= jMax; j++)
-                for (int i = iMin; i <= iMax; i++) {
-                  arr(i, j, k, iVar) =
-                      (this->*func)(mfi, i, j, k, iVar - iStart);
-                }
-
-        // z left
-        if (bcr[0].lo(iz_) == BCType::ext_dir)
-          for (int iVar = iStart; iVar < nComp; iVar++)
-            for (int k = kMin; k <= kgMin - 1 + nVirGst; k++)
-              for (int j = jMin; j <= jMax; j++)
-                for (int i = iMin; i <= iMax; i++) {
-                  arr(i, j, k, iVar) =
-                      (this->*func)(mfi, i, j, k, iVar - iStart);
-                }
-
-        // z right
-        if (bcr[0].hi(iz_) == BCType::ext_dir)
-          for (int iVar = iStart; iVar < nComp; iVar++)
-            for (int k = kgMax + 1 - nVirGst; k <= kMax; k++)
-              for (int j = jMin; j <= jMax; j++)
-                for (int i = iMin; i <= iMax; i++) {
-                  arr(i, j, k, iVar) =
-                      (this->*func)(mfi, i, j, k, iVar - iStart);
-                }
-      }
+      // z right
+      if (bcr[0].hi(iz_) == BCType::ext_dir)
+        for (int iVar = iStart; iVar < nComp; iVar++)
+          for (int k = kMax - nGst[iz_] + 1 - nVirGst; k <= kMax; k++)
+            for (int j = jMin; j <= jMax; j++)
+              for (int i = iMin; i <= iMax; i++) {
+                arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+              }
     }
   }
 }
