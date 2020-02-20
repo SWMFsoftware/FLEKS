@@ -993,14 +993,20 @@ void Particles::split_particles(Real limit) {
     const auto lo = lbound(pti.tilebox());
     const auto hi = ubound(pti.tilebox());
 
-    const Real xMin = Geom(0).LoEdge(lo.x, ix_),
-               xMax = Geom(0).HiEdge(hi.x, ix_);
+    const Real xMin =
+                   Geom(0).LoEdge(lo.x, ix_) + Geom(0).CellSize()[ix_] * 1e-10,
+               xMax =
+                   Geom(0).HiEdge(hi.x, ix_) - Geom(0).CellSize()[ix_] * 1e-10;
 
-    const Real yMin = Geom(0).LoEdge(lo.y, iy_),
-               yMax = Geom(0).HiEdge(hi.y, iy_);
+    const Real yMin =
+                   Geom(0).LoEdge(lo.y, iy_) + Geom(0).CellSize()[iy_] * 1e-10,
+               yMax =
+                   Geom(0).HiEdge(hi.y, iy_) - Geom(0).CellSize()[iy_] * 1e-10;
 
-    const Real zMin = Geom(0).LoEdge(lo.z, iz_),
-               zMax = Geom(0).HiEdge(hi.z, iz_);
+    const Real zMin =
+                   Geom(0).LoEdge(lo.z, iz_) + Geom(0).CellSize()[iz_] * 1e-10,
+               zMax =
+                   Geom(0).HiEdge(hi.z, iz_) - Geom(0).CellSize()[iz_] * 1e-10;
 
     for (int ip = 0; ip < nNew; ip++) {
       auto& p = particles[ip];

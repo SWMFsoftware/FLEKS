@@ -35,26 +35,31 @@ BoxArray DomainGrid::resize_pic_ba(int iCycle) {
   std::string nameFunc = "Pic::resize_pic_ba";
   Print() << nameFunc << " is runing..." << std::endl;
 
-  Vector<IntVect> tagVec;
+  Vector<Box> vecBox;
+
+  const int di = gridInfo.get_patch_size(ix_);
+  const int dj = gridInfo.get_patch_size(iy_);
+  const int dk = gridInfo.get_patch_size(iz_);
 
   // Loop through the cells in the whole FLEKS domain on each processor.
-  for (int i = centerBoxLo[ix_]; i <= centerBoxHi[ix_]; i++)
-    for (int j = centerBoxLo[iy_]; j <= centerBoxHi[iy_]; j++)
-      for (int k = centerBoxLo[iz_]; k <= centerBoxHi[iz_]; k++) {
+  for (int i = centerBoxLo[ix_]; i <= centerBoxHi[ix_]; i += di)
+    for (int j = centerBoxLo[iy_]; j <= centerBoxHi[iy_]; j += dj)
+      for (int k = centerBoxLo[iz_]; k <= centerBoxHi[iz_]; k += dk) {
         if (gridInfo.get_status(i, j, k) == GridInfo::iPicOn_) {
-          tagVec.push_back({ i, j, k });
-          Print()<<"tagVec: i = "<<i<<" j = "<<j<<" k = "<<k<<std::endl;
+
+          IntVect hi = { i - 1 + di, j - 1 + dj, k - 1 + dk };
+          vecBox.push_back(amrex::Box({ i, j, k }, hi, { 0, 0, 0 }));
         }
       }
 
-  BoxArray baNew; 
-  Print()<<"baPicOld = "<<baPicOld<<std::endl;
-  add_cells_to_BoxArray(baNew, tagVec); 
-  baNew.maxSize(maxBlockSize); 
-  Print()<<"baNew = "<<baNew<<std::endl;
-  baPicOld = baNew; 
+  BoxArray baNew;
+  Print() << "baPicOld = " << baPicOld << std::endl;
+  add_boxes_to_BoxArray(baNew, vecBox);
+  baNew.maxSize(maxBlockSize);
+  Print() << "baNew = " << baNew << std::endl;
+  baPicOld = baNew;
 
-  return baNew; 
+  return baNew;
 
   // BoxArray baPic;
 

@@ -67,6 +67,19 @@ inline void add_cells_to_BoxArray(amrex::BoxArray& ba,
   }
   bl.simplify();
   bl.simplify();
+  bl.simplify();
+  ba.define(bl);
+}
+
+inline void add_boxes_to_BoxArray(amrex::BoxArray& ba,
+                                  const amrex::Vector<amrex::Box>& boxes) {
+  amrex::BoxList bl(ba);
+  for (const amrex::Box& bx : boxes) {
+    bl.push_back(bx);
+  }
+  bl.simplify();
+  bl.simplify();
+  bl.simplify();
   ba.define(bl);
 }
 
