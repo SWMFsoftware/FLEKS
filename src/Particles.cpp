@@ -122,9 +122,6 @@ void Particles::add_particles_cell(const MFIter& mfi,
 void Particles::add_particles_domain(const FluidInterface& fluidInterface) {
   BL_PROFILE("Particles::add_particles");
 
-  // Global cell box
-  const Box& gbx = Geom(0).Domain();
-
   const int lev = 0;
   for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
     const Box& tile_box = mfi.validbox();
@@ -133,26 +130,6 @@ void Particles::add_particles_domain(const FluidInterface& fluidInterface) {
 
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
     int iMin = lo.x, jMin = lo.y, kMin = lo.z;
-
-    if (!(Geom(0).isPeriodic(ix_)) && gbx.bigEnd(ix_) == hi.x) {
-      iMax++;
-    }
-    if ((!Geom(0).isPeriodic(iy_)) && gbx.bigEnd(iy_) == hi.y) {
-      jMax++;
-    }
-    if ((!Geom(0).isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z) {
-      kMax++;
-    }
-
-    if (!Geom(0).isPeriodic(ix_) && gbx.smallEnd(ix_) == lo.x) {
-      iMin--;
-    }
-    if (!Geom(0).isPeriodic(iy_) && gbx.smallEnd(iy_) == lo.y) {
-      jMin--;
-    }
-    if (!Geom(0).isPeriodic(iz_) && gbx.smallEnd(iz_) == lo.z) {
-      kMin--;
-    }
 
     for (int i = iMin; i <= iMax; ++i)
       for (int j = jMin; j <= jMax; ++j)
@@ -163,110 +140,48 @@ void Particles::add_particles_domain(const FluidInterface& fluidInterface) {
 }
 
 void Particles::inject_particles_at_boundary(
-    const FluidInterface& fluidInterface) {
+    const FluidInterface& fluidInterface, const iMultiFab& cellStatus) {
   BL_PROFILE("Particles::inject_particles_at_boundary");
 
   // Only inject nGstInject layers.
-  int nGstInject = 1;
+  const int nGstInject = 1;
 
   const int lev = 0;
 
-  const Box& gbx = Geom(0).Domain();
-
   for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
-    const Box& tile_box = mfi.validbox();
-    const auto lo = amrex::lbound(tile_box);
-    const auto hi = amrex::ubound(tile_box);
+    const auto& status = cellStatus[mfi].array();
+    const Box& bx = mfi.validbox();
+    const IntVect lo = IntVect(bx.loVect());
+    const IntVect hi = IntVect(bx.hiVect());
+    IntVect mid = (lo + hi) / 2;
 
-    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
-    int iMin = lo.x, jMin = lo.y, kMin = lo.z;
+    IntVect idxMin = lo, idxMax = hi;
+    
+    for (int iDim = 0; iDim < 3; iDim++) {
+      if (!Geom(0).isPeriodic(iDim)) {
+        IntVect vecLeft = mid, vecRight = mid;
+        vecLeft[iDim] = lo[iDim] - 1;
+        vecRight[iDim] = hi[iDim] + 1;
 
-    bool doFillLeftX = false, doFillLeftY = false, doFillLeftZ = false;
-    bool doFillRightX = false, doFillRightY = false, doFillRightZ = false;
+        if (status(vecLeft) == iBoundary_) {
+          idxMin[iDim] -= nGstInject;
+        }
 
-    if (!(Geom(0).isPeriodic(ix_)) && gbx.bigEnd(ix_) == hi.x) {
-      doFillRightX = true;
-      iMax += nGstInject;
-    }
-    if ((!Geom(0).isPeriodic(iy_)) && gbx.bigEnd(iy_) == hi.y) {
-      doFillRightY = true;
-      jMax += nGstInject;
-    }
-    if ((!Geom(0).isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z) {
-      doFillRightZ = true;
-      kMax += nGstInject;
-    }
-
-    if (!Geom(0).isPeriodic(ix_) && gbx.smallEnd(ix_) == lo.x) {
-      doFillLeftX = true;
-      iMin -= nGstInject;
-    }
-    if (!Geom(0).isPeriodic(iy_) && gbx.smallEnd(iy_) == lo.y) {
-      doFillLeftY = true;
-      jMin -= nGstInject;
-    }
-    if (!Geom(0).isPeriodic(iz_) && gbx.smallEnd(iz_) == lo.z) {
-      doFillLeftZ = true;
-      kMin -= nGstInject;
+        if (status(vecRight) == iBoundary_) {
+          idxMax[iDim] += nGstInject;
+        }
+      }
     }
 
-    if (doFillLeftX) {
-      for (int i = iMin; i <= iMin - 1 + nGstInject; ++i)
-        for (int j = jMin; j <= jMax; ++j)
-          for (int k = kMin; k <= kMax; ++k) {
-
+    for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)
+      for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
+        for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
+          if (status(i, j, k) == iBoundary_) {
+            Print() << "inject_bc: i = " << i << " j = " << j << " k = " << k
+                    << std::endl;
             add_particles_cell(mfi, fluidInterface, i, j, k);
           }
-      iMin += nGstInject;
-    }
-
-    if (doFillRightX) {
-      for (int i = iMax + 1 - nGstInject; i <= iMax; ++i)
-        for (int j = jMin; j <= jMax; ++j)
-          for (int k = kMin; k <= kMax; ++k) {
-
-            add_particles_cell(mfi, fluidInterface, i, j, k);
-          }
-      iMax -= nGstInject;
-    }
-
-    if (doFillLeftY) {
-      for (int i = iMin; i <= iMax; ++i)
-        for (int j = jMin; j <= jMin - 1 + nGstInject; ++j)
-          for (int k = kMin; k <= kMax; ++k) {
-
-            add_particles_cell(mfi, fluidInterface, i, j, k);
-          }
-      jMin += nGstInject;
-    }
-
-    if (doFillRightY) {
-      for (int i = iMin; i <= iMax; ++i)
-        for (int j = jMax + 1 - nGstInject; j <= jMax; ++j)
-          for (int k = kMin; k <= kMax; ++k) {
-
-            add_particles_cell(mfi, fluidInterface, i, j, k);
-          }
-      jMax -= nGstInject;
-    }
-
-    if (doFillLeftZ) {
-      for (int i = iMin; i <= iMax; ++i)
-        for (int j = jMin; j <= jMax; ++j)
-          for (int k = kMin; k <= kMin - 1 + nGstInject; ++k) {
-            add_particles_cell(mfi, fluidInterface, i, j, k);
-          }
-      kMin += nGstInject;
-    }
-
-    if (doFillRightZ) {
-      for (int i = iMin; i <= iMax; ++i)
-        for (int j = jMin; j <= jMax; ++j)
-          for (int k = kMax + 1 - nGstInject; k <= kMax; ++k) {
-            add_particles_cell(mfi, fluidInterface, i, j, k);
-          }
-      kMax -= nGstInject;
-    }
+        }
   }
 }
 

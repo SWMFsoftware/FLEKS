@@ -173,7 +173,7 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
 
     cellStatus.FillBoundary(geom.periodicity());
 
-    print_MultiFab(cellStatus, "cellStatus", nGst);
+    print_MultiFab(cellStatus, "cellStatus",1);
   }
 
   {
@@ -307,6 +307,7 @@ void Pic::set_ic_field() {
 void Pic::set_ic_particles() {
   for (auto& pts : parts) {
     pts->add_particles_domain(*fluidInterface);
+    pts->inject_particles_at_boundary(*fluidInterface, cellStatus); 
   }
 
   sum_moments();
@@ -327,7 +328,7 @@ void Pic::particle_mover() {
       parts[i]->combine_particles(reSamplingHighLimit);
     }
 
-    parts[i]->inject_particles_at_boundary(*fluidInterface);
+    parts[i]->inject_particles_at_boundary(*fluidInterface, cellStatus);
   }
 
   timing_stop(nameFunc);
@@ -397,7 +398,7 @@ void Pic::divE_correction() {
     // divE_correct_particle_position(). Redistribute() deletes these particles.
     // In order to get correct moments, re-inject particles in the ghost cells.
     parts[i]->Redistribute();
-    parts[i]->inject_particles_at_boundary(*fluidInterface);
+    parts[i]->inject_particles_at_boundary(*fluidInterface, cellStatus);
   }
 
   // DO CORRECTION

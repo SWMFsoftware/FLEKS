@@ -455,7 +455,6 @@ void print_MultiFab(amrex::MultiFab& data, std::string tag, int nshift) {
   AllPrint() << "-----" << tag << " end-----" << std::endl;
 }
 
-
 void print_MultiFab(amrex::iMultiFab& data, std::string tag, int nshift) {
   AllPrint() << "-----" << tag << " begin-----" << std::endl;
   Real sum = 0;
@@ -471,7 +470,7 @@ void print_MultiFab(amrex::iMultiFab& data, std::string tag, int nshift) {
 
     for (int i = lo.x - nshift; i <= hi.x + nshift; ++i)
       for (int j = lo.y - nshift; j <= hi.y + nshift; ++j)
-        for (int k = lo.z; k <= hi.z; ++k)
+        for (int k = lo.z - nshift; k <= hi.z + nshift; ++k)
           for (int iVar = 0; iVar < data.nComp(); iVar++) {
             AllPrint() << " i = " << i << " j = " << j << " k = " << k
                        << " iVar = " << iVar
@@ -484,7 +483,6 @@ void print_MultiFab(amrex::iMultiFab& data, std::string tag, int nshift) {
              << " on proc = " << ParallelDescriptor::MyProc() << std::endl;
   AllPrint() << "-----" << tag << " end-----" << std::endl;
 }
-
 
 void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
                          const Real* invDx) {

@@ -37,7 +37,8 @@ public:
   void add_particles_cell(const amrex::MFIter& mfi,
                           const FluidInterface& fluidInterface, int i, int j,
                           int k);
-  void inject_particles_at_boundary(const FluidInterface& fluidInterface);
+  void inject_particles_at_boundary(const FluidInterface& fluidInterface,
+                                    const amrex::iMultiFab& cellStatus);
 
   PartInfo sum_moments(amrex::MultiFab& momentsMF,
                        amrex::UMultiFab<RealMM>& nodeMM,
@@ -81,17 +82,16 @@ public:
     for (int iDim = 0; iDim < 3; iDim++) {
       loc[iDim] = p.pos(iDim);
       if (Geom(0).isPeriodic(iDim)) {
-        //Fix index/loc for periodic BC. 
+        // Fix index/loc for periodic BC.
         if (loc[iDim] > phi[iDim])
           loc[iDim] -= phi[iDim] - plo[iDim];
         if (loc[iDim] < plo[iDim])
           loc[iDim] += phi[iDim] - plo[iDim];
-
       }
     }
     // If the particle is outside the domain, the index return by CellIndex is
     // not right! So we still need to call is_outside first. --Yuxi
-    amrex::IntVect cellIdx = Geom(0).CellIndex(loc);    
+    amrex::IntVect cellIdx = Geom(0).CellIndex(loc);
     return !ParticleBoxArray(0).contains(cellIdx);
   }
 
