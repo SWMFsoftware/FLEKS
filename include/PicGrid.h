@@ -69,6 +69,7 @@ public:
         return dm[ii];
     }
 
+    amrex::AllPrint()<<"idx = "<<idx<<std::endl;
     amrex::Abort("Error: can not find this cell!");
     return -1; // To suppress compiler warnings.
   }
