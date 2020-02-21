@@ -4,7 +4,7 @@
 using namespace amrex;
 
 //------------------------------------------------------------------------
-void Domain::update() {
+void Domain::update() {  
   pic.update();
 
   write_plots();

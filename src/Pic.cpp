@@ -52,14 +52,21 @@ void Pic::read_param(const std::string& command, ReadParam& readParam) {
   nSpecies = fluidInterface->get_nS();
 }
 
-void Pic::set_ic() {
-  std::string nameFunc = "Pic::set_ic";
+
+
+void Pic::fill_new_cells() {
+  std::string nameFunc = "Pic::fill_new_cells";
 
   Print() << nameFunc << " begin" << std::endl;
 
-  set_ic_field();
-  set_ic_particles();
+  fill_E_B_fields();
+  fill_particles();
 
+  sum_moments();
+  sum_to_center(false);
+
+  doNeedFillNewCell = false; 
+  
   Print() << nameFunc << " end" << std::endl;
 }
 
@@ -85,9 +92,12 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
   if (centerBAIn == centerBA)
     return;
 
-  centerBAOld = centerBA;
-  centerBA = centerBAIn;
+  doNeedFillNewCell = true; 
 
+  centerBAOld = centerBA;
+  nodeBAOld = convert(centerBAOld, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
+
+  centerBA = centerBAIn;
   nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
   dm = dmIn;
 
@@ -152,7 +162,7 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
   }
   //===========Move data around end====================
 
-  { //===========Label cellStatus ========================
+  { //===========Label cellStatus/nodeStatus ==========
     distribute_FabArray(cellStatus, centerBA, dm, 1, nGst, false);
     cellStatus.setVal(iBoundary_);
     cellStatus.setVal(iOnNew_, 0);
@@ -173,7 +183,26 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
 
     cellStatus.FillBoundary(geom.periodicity());
 
-    print_MultiFab(cellStatus, "cellStatus",1);
+    print_MultiFab(cellStatus, "cellStatus", 1);
+
+    distribute_FabArray(nodeStatus, nodeBA, dm, 1, nGst, false);
+    nodeStatus.setVal(iBoundary_);
+    nodeStatus.setVal(iOnNew_, 0);
+    for (MFIter mfi(nodeStatus); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const auto& nodeArr = nodeStatus[mfi].array();
+
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (nodeBAOld.contains({ i, j, k })) {
+              nodeArr(i, j, k) = iOnOld_;
+            }
+          }
+    }
   }
 
   {
@@ -272,46 +301,74 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
 // }
 //---------------------------------------------------------
 
-void Pic::set_ic_field() {
-  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) // Loop over grids
-  {
+void Pic::fill_new_node_E() {
+
+  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
     FArrayBox& fab = nodeE[mfi];
-    const Box& box = mfi.fabbox();
+    const Box& box = mfi.validbox();
     const Array4<Real>& arrE = fab.array();
 
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
+    const auto& status = nodeStatus[mfi].array();
+
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
-          arrE(i, j, k, ix_) = fluidInterface->get_ex(mfi, i, j, k);
-          arrE(i, j, k, iy_) = fluidInterface->get_ey(mfi, i, j, k);
-          arrE(i, j, k, iz_) = fluidInterface->get_ez(mfi, i, j, k);
+          if (status(i, j, k) == iOnNew_) {
+            arrE(i, j, k, ix_) = fluidInterface->get_ex(mfi, i, j, k);
+            arrE(i, j, k, iy_) = fluidInterface->get_ey(mfi, i, j, k);
+            arrE(i, j, k, iz_) = fluidInterface->get_ez(mfi, i, j, k);
+          }
         }
   }
+}
 
-  MultiFab::Copy(nodeB, fluidInterface->get_nodeFluid(), fluidInterface->iBx, 0,
-                 nodeB.nComp(), nodeB.nGrow());
+void Pic::fill_new_node_B() {
+  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrB = nodeB[mfi].array();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    const auto& status = nodeStatus[mfi].array();
+
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          if (status(i, j, k) == iOnNew_) {
+            arrB(i, j, k, ix_) = fluidInterface->get_bx(mfi, i, j, k);
+            arrB(i, j, k, iy_) = fluidInterface->get_by(mfi, i, j, k);
+            arrB(i, j, k, iz_) = fluidInterface->get_bz(mfi, i, j, k);
+          }
+        }
+  }
+}
+
+void Pic::fill_E_B_fields() {
+
+  fill_new_node_E();
+  fill_new_node_B();
+
+  nodeE.FillBoundary(geom.periodicity());
+  nodeB.FillBoundary(geom.periodicity());
+
+  apply_external_BC(nodeE, 0, nDimMax, &Pic::get_node_E);
+  apply_external_BC(nodeB, 0, nDimMax, &Pic::get_node_B);
 
   // Interpolate from node to cell center.
   average_node_to_cellcenter(centerB, 0, nodeB, 0, centerB.nComp(),
                              centerB.nGrow());
 
-  nodeE.FillBoundary(geom.periodicity());
-  nodeB.FillBoundary(geom.periodicity());
   centerB.FillBoundary(geom.periodicity());
 }
 //---------------------------------------------------------
 
-void Pic::set_ic_particles() {
-  for (auto& pts : parts) {
-    pts->add_particles_domain(*fluidInterface);
-    pts->inject_particles_at_boundary(*fluidInterface, cellStatus); 
-  }
-
-  sum_moments();
-  sum_to_center(false);
+void Pic::fill_particles() {
+  inject_particles_for_new_cells();
+  inject_particles_for_boundary_cells();
 }
 
 void Pic::particle_mover() {
@@ -327,9 +384,9 @@ void Pic::particle_mover() {
       parts[i]->split_particles(reSamplingLowLimit);
       parts[i]->combine_particles(reSamplingHighLimit);
     }
-
-    parts[i]->inject_particles_at_boundary(*fluidInterface, cellStatus);
   }
+
+  inject_particles_for_boundary_cells();
 
   timing_stop(nameFunc);
 }
@@ -398,8 +455,8 @@ void Pic::divE_correction() {
     // divE_correct_particle_position(). Redistribute() deletes these particles.
     // In order to get correct moments, re-inject particles in the ghost cells.
     parts[i]->Redistribute();
-    parts[i]->inject_particles_at_boundary(*fluidInterface, cellStatus);
   }
+  inject_particles_for_boundary_cells();
 
   // DO CORRECTION
   sum_to_center(false);
@@ -523,6 +580,8 @@ void Pic::update() {
   std::string nameFunc = "Pic::update";
   BL_PROFILE(nameFunc);
   timing_start(nameFunc);
+
+  if(doNeedFillNewCell) fill_new_cells(); 
 
   Print() << "\n================ Begin cycle = " << tc->get_cycle()
           << " at time = " << tc->get_time_si()

@@ -33,6 +33,7 @@ protected:
   amrex::BoxArray centerBA;
 
   amrex::BoxArray nodeBA;
+  amrex::BoxArray nodeBAOld; 
 
   amrex::DistributionMapping dm;
 
@@ -40,8 +41,14 @@ protected:
 
   amrex::iMultiFab cellStatus;
 
+  amrex::iMultiFab nodeStatus; 
+
+  bool doNeedFillNewCell; 
+
 public:
-  PicGrid() = default;
+  PicGrid(){
+    doNeedFillNewCell = true; 
+  };
   ~PicGrid() = default;
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }

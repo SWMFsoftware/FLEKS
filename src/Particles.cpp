@@ -119,11 +119,13 @@ void Particles::add_particles_cell(const MFIter& mfi,
       }
 }
 
-void Particles::add_particles_domain(const FluidInterface& fluidInterface) {
+void Particles::add_particles_domain(const FluidInterface& fluidInterface,
+                                     const iMultiFab& cellStatus) {
   BL_PROFILE("Particles::add_particles");
 
   const int lev = 0;
   for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
+    const auto& status = cellStatus[mfi].array();
     const Box& tile_box = mfi.validbox();
     const auto lo = amrex::lbound(tile_box);
     const auto hi = amrex::ubound(tile_box);
@@ -134,7 +136,9 @@ void Particles::add_particles_domain(const FluidInterface& fluidInterface) {
     for (int i = iMin; i <= iMax; ++i)
       for (int j = jMin; j <= jMax; ++j)
         for (int k = kMin; k <= kMax; ++k) {
-          add_particles_cell(mfi, fluidInterface, i, j, k);
+          if (status(i, j, k) == iOnNew_) {
+            add_particles_cell(mfi, fluidInterface, i, j, k);
+          }
         }
   }
 }
@@ -156,7 +160,7 @@ void Particles::inject_particles_at_boundary(
     IntVect mid = (lo + hi) / 2;
 
     IntVect idxMin = lo, idxMax = hi;
-    
+
     for (int iDim = 0; iDim < 3; iDim++) {
       if (!Geom(0).isPeriodic(iDim)) {
         IntVect vecLeft = mid, vecRight = mid;

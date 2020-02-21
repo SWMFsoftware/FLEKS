@@ -33,7 +33,8 @@ public:
             const amrex::Real charge, const amrex::Real mass,
             const amrex::IntVect& nPartPerCellIn);
 
-  void add_particles_domain(const FluidInterface& fluidInterface);
+  void add_particles_domain(const FluidInterface& fluidInterface,
+                            const amrex::iMultiFab& cellStatus);
   void add_particles_cell(const amrex::MFIter& mfi,
                           const FluidInterface& fluidInterface, int i, int j,
                           int k);

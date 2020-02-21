@@ -118,15 +118,35 @@ public:
   void regrid(const amrex::BoxArray &centerBAIn,
               const amrex::DistributionMapping &dmIn);
 
-  //void make_data();
-  void set_ic();
-  void set_ic_field();
-  void set_ic_particles();
+  // void make_data();
+  void set_ic() {
+    fill_new_cells();
+  };
+  void fill_new_cells();
+  void fill_E_B_fields();
+
+  void fill_new_node_E();
+
+  void fill_new_node_B();
+
+  void fill_particles();
   //----------------Initialization end-------------------------------
 
   void sum_moments();
 
   void particle_mover();
+
+  void inject_particles_for_new_cells() {
+    for (auto &pts : parts) {
+      pts->add_particles_domain(*fluidInterface, cellStatus);
+    }
+  }
+
+  void inject_particles_for_boundary_cells() {
+    for (auto &pts : parts) {
+      pts->inject_particles_at_boundary(*fluidInterface, cellStatus);
+    }
+  }
 
   //------------Coupler related begin--------------
   void set_state_var(double *data, int *index);
