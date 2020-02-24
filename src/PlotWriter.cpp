@@ -402,21 +402,21 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
     //   if (i == 2)
     //     x0 = col->getFluidStartZ();
     // }
-    outFile << (plotMinCorrected_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord" << i
-            << "Min\n";
-    outFile << (plotMaxCorrected_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord" << i
-            << "Max\n";
+    outFile << (plotMinCorrected_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord"
+            << i << "Min\n";
+    outFile << (plotMaxCorrected_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord"
+            << i << "Max\n";
   }
   outFile << "\n";
 
-  // int plotDx = col->getplotDx(iPlot);
-  // if (doOutputParticles_I[iPlot])
-  //   plotDx = 1;
-  outFile << "#CELLSIZE\n";
-  outFile << plotDx* dx_D[x_] * No2OutL << "\t dx\n";
-  outFile << plotDx* dx_D[y_] * No2OutL << "\t dy\n";
-  outFile << plotDx* dx_D[z_] * No2OutL << "\t dz\n";
-  outFile << "\n";
+  {
+    int nCell = plotDx > 0 ? plotDx : 1;
+    outFile << "#CELLSIZE\n";
+    outFile << nCell* dx_D[x_] * No2OutL << "\t dx\n";
+    outFile << nCell* dx_D[y_] * No2OutL << "\t dy\n";
+    outFile << nCell* dx_D[z_] * No2OutL << "\t dz\n";
+    outFile << "\n";
+  }
 
   outFile << "#NCELL\n";
   outFile << nCellAllProc << "\t nCell\n";
@@ -427,7 +427,7 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
     //   if (doOutputParticles_I[iPlot] || isSat_I[iPlot]) {
     //     outFile << (-1) << "\t plotDx\n"; // Save partices as unstructured.
     //   } else {
-    outFile << 0 << "\t plotDx\n";
+    outFile << plotDx << "\t plotDx\n";
   }
   // }
   outFile << "\n";

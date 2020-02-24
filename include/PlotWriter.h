@@ -42,8 +42,6 @@ private:
   std::array<double, nDimMax> plotMin_D, plotMinCorrected_D;
   std::array<double, nDimMax> plotMax_D, plotMaxCorrected_D;
 
-
-
   // Global simulation domain in PIC unit
   std::array<double, nDimMax> domainMin_D;
   std::array<double, nDimMax> domainMax_D;
@@ -106,7 +104,7 @@ public:
              const int nSpeciesIn = 2)
       : ID(idIn),
         plotString(plotStringIN),
-        plotDx(dxIn > 0 ? dxIn : 1),
+        plotDx(dxIn == 0 ? 1 : dxIn),
         plotVar(plotVarIn),
         plotMin_D(plotMinIn_D),
         plotMax_D(plotMaxIn_D),
