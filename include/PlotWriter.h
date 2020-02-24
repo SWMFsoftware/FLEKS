@@ -39,8 +39,10 @@ private:
   double plotDx;
 
   // Global plot domain in PIC unit
-  std::array<double, nDimMax> plotMin_D;
-  std::array<double, nDimMax> plotMax_D;
+  std::array<double, nDimMax> plotMin_D, plotMinCorrected_D;
+  std::array<double, nDimMax> plotMax_D, plotMaxCorrected_D;
+
+
 
   // Global simulation domain in PIC unit
   std::array<double, nDimMax> domainMin_D;

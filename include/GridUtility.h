@@ -77,9 +77,12 @@ inline void add_boxes_to_BoxArray(amrex::BoxArray& ba,
   for (const amrex::Box& bx : boxes) {
     bl.push_back(bx);
   }
-  bl.simplify();
-  bl.simplify();
-  bl.simplify();
+
+  // nSimplify is chosen based on tests. It seems 3 is a reasonable choice.
+  const int nSimplify = 3;
+  for (int i = 0; i < nSimplify; i++)
+    bl.simplify();
+
   ba.define(bl);
 }
 

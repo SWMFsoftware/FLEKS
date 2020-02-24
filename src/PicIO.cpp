@@ -127,6 +127,11 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         for (int i = lo.x; i <= iMax; ++i) {
           const double xp = i * dx[ix_] + plo[ix_];
 
+          Print() << "output_list i = " << i << " j = " << j << " k = " << k
+                  << " xp = " << xp << " yp = " << yp << " zp = " << zp
+                  << " is_inside = "
+                  << writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)
+                  << std::endl;
           if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
 
             pointList_II.push_back(
@@ -396,24 +401,23 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
                       int const iCycle) {
   Print() << "amrex::" << pw.get_amrex_filename(timeNow, iCycle) << std::endl;
 
-{
-  Vector<std::string> varNames = { "Ex", "Ey", "Ez" };
-  WriteSingleLevelPlotfile(pw.get_amrex_filename(timeNow, iCycle)+"_E", nodeE,
-                           varNames, geom, timeNow, iCycle);
-}
+  {
+    Vector<std::string> varNames = { "Ex", "Ey", "Ez" };
+    WriteSingleLevelPlotfile(pw.get_amrex_filename(timeNow, iCycle) + "_E",
+                             nodeE, varNames, geom, timeNow, iCycle);
+  }
 
-{
-  Vector<std::string> varNames = { "Bcx", "Bcy", "Bcz" };
-  WriteSingleLevelPlotfile(pw.get_amrex_filename(timeNow, iCycle)+"_Bc", centerB,
-                           varNames, geom, timeNow, iCycle);
-}
+  {
+    Vector<std::string> varNames = { "Bcx", "Bcy", "Bcz" };
+    WriteSingleLevelPlotfile(pw.get_amrex_filename(timeNow, iCycle) + "_Bc",
+                             centerB, varNames, geom, timeNow, iCycle);
+  }
 
-{
-  Vector<std::string> varNames = { "Bx", "By", "Bz" };
-  WriteSingleLevelPlotfile(pw.get_amrex_filename(timeNow, iCycle)+"_B", nodeB,
-                           varNames, geom, timeNow, iCycle);
-}
-
+  {
+    Vector<std::string> varNames = { "Bx", "By", "Bz" };
+    WriteSingleLevelPlotfile(pw.get_amrex_filename(timeNow, iCycle) + "_B",
+                             nodeB, varNames, geom, timeNow, iCycle);
+  }
 }
 
 void find_output_list_caller(const PlotWriter& writerIn,

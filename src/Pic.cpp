@@ -154,8 +154,11 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
     }
   } else {
     for (int i = 0; i < nSpecies; i++) {
+      // Label the particles outside the OLD PIC region. 
+      parts[i]->label_particles_outside_ba();
       parts[i]->SetParticleBoxArray(0, centerBA);
       parts[i]->SetParticleDistributionMap(0, dm);
+      // Label the particles outside the NEW PIC region. 
       parts[i]->label_particles_outside_ba();
       parts[i]->Redistribute();
     }

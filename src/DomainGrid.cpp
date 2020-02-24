@@ -55,8 +55,9 @@ BoxArray DomainGrid::resize_pic_ba(int iCycle) {
   BoxArray baNew;
   Print() << "baPicOld = " << baPicOld << std::endl;
   add_boxes_to_BoxArray(baNew, vecBox);
+  Print() << "baNew 1 = " << baNew << std::endl;
   baNew.maxSize(maxBlockSize);
-  Print() << "baNew = " << baNew << std::endl;
+  Print() << "baNew 2 = " << baNew << std::endl;
   baPicOld = baNew;
 
   return baNew;

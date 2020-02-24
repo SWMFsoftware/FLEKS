@@ -330,8 +330,8 @@ void PlotWriter::write_idl(double const timeNow, int const iCycle,
 
   // Correct plot range.
   for (int iDim = 0; iDim < nDim; ++iDim) {
-    plotMin_D[iDim] = xMin_D[iDim] - 0.4 * dx_D[iDim] * plotDx;
-    plotMax_D[iDim] = xMax_D[iDim] + 0.4 * dx_D[iDim] * plotDx;
+    plotMinCorrected_D[iDim] = xMin_D[iDim] - 0.4 * dx_D[iDim] * plotDx;
+    plotMaxCorrected_D[iDim] = xMax_D[iDim] + 0.4 * dx_D[iDim] * plotDx;
   }
 
   if (doWriteHeader)
@@ -402,9 +402,9 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
     //   if (i == 2)
     //     x0 = col->getFluidStartZ();
     // }
-    outFile << (plotMin_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord" << i
+    outFile << (plotMinCorrected_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord" << i
             << "Min\n";
-    outFile << (plotMax_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord" << i
+    outFile << (plotMaxCorrected_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord" << i
             << "Max\n";
   }
   outFile << "\n";
