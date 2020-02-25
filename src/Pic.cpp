@@ -52,8 +52,6 @@ void Pic::read_param(const std::string& command, ReadParam& readParam) {
   nSpecies = fluidInterface->get_nS();
 }
 
-
-
 void Pic::fill_new_cells() {
   std::string nameFunc = "Pic::fill_new_cells";
 
@@ -65,8 +63,8 @@ void Pic::fill_new_cells() {
   sum_moments();
   sum_to_center(false);
 
-  doNeedFillNewCell = false; 
-  
+  doNeedFillNewCell = false;
+
   Print() << nameFunc << " end" << std::endl;
 }
 
@@ -92,7 +90,7 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
   if (centerBAIn == centerBA)
     return;
 
-  doNeedFillNewCell = true; 
+  doNeedFillNewCell = true;
 
   centerBAOld = centerBA;
   nodeBAOld = convert(centerBAOld, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
@@ -154,11 +152,11 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
     }
   } else {
     for (int i = 0; i < nSpecies; i++) {
-      // Label the particles outside the OLD PIC region. 
+      // Label the particles outside the OLD PIC region.
       parts[i]->label_particles_outside_ba();
       parts[i]->SetParticleBoxArray(0, centerBA);
       parts[i]->SetParticleDistributionMap(0, dm);
-      // Label the particles outside the NEW PIC region. 
+      // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_ba();
       parts[i]->Redistribute();
     }
@@ -166,7 +164,11 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
   //===========Move data around end====================
 
   { //===========Label cellStatus/nodeStatus ==========
-    distribute_FabArray(cellStatus, centerBA, dm, 1, nGst, false);
+
+    // The algorithm decides inject particles or not needs at least 2 ghost cell
+    // layers.
+    distribute_FabArray(cellStatus, centerBA, dm, 1, nGst >= 2 ? nGst : 2,
+                        false);
     cellStatus.setVal(iBoundary_);
     cellStatus.setVal(iOnNew_, 0);
     for (MFIter mfi(cellStatus); mfi.isValid(); ++mfi) {
@@ -584,7 +586,8 @@ void Pic::update() {
   BL_PROFILE(nameFunc);
   timing_start(nameFunc);
 
-  if(doNeedFillNewCell) fill_new_cells(); 
+  if (doNeedFillNewCell)
+    fill_new_cells();
 
   Print() << "\n================ Begin cycle = " << tc->get_cycle()
           << " at time = " << tc->get_time_si()

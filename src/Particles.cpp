@@ -157,30 +157,37 @@ void Particles::inject_particles_at_boundary(
     const Box& bx = mfi.validbox();
     const IntVect lo = IntVect(bx.loVect());
     const IntVect hi = IntVect(bx.hiVect());
-    IntVect mid = (lo + hi) / 2;
+    // IntVect mid = (lo + hi) / 2;
 
     IntVect idxMin = lo, idxMax = hi;
 
     for (int iDim = 0; iDim < 3; iDim++) {
       if (!Geom(0).isPeriodic(iDim)) {
-        IntVect vecLeft = mid, vecRight = mid;
-        vecLeft[iDim] = lo[iDim] - 1;
-        vecRight[iDim] = hi[iDim] + 1;
-
-        if (status(vecLeft) == iBoundary_) {
-          idxMin[iDim] -= nGstInject;
-        }
-
-        if (status(vecRight) == iBoundary_) {
-          idxMax[iDim] += nGstInject;
-        }
+        idxMin[iDim] -= nGstInject;
+        idxMax[iDim] += nGstInject;
       }
     }
+
+    // for (int iDim = 0; iDim < 3; iDim++) {
+    //   if (!Geom(0).isPeriodic(iDim)) {
+    //     IntVect vecLeft = mid, vecRight = mid;
+    //     vecLeft[iDim] = lo[iDim] - 1;
+    //     vecRight[iDim] = hi[iDim] + 1;
+
+    //     if (status(vecLeft) == iBoundary_) {
+    //       idxMin[iDim] -= nGstInject;
+    //     }
+
+    //     if (status(vecRight) == iBoundary_) {
+    //       idxMax[iDim] += nGstInject;
+    //     }
+    //   }
+    // }
 
     for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
-          if (status(i, j, k) == iBoundary_) {
+          if (do_inject_particles_for_this_cell(bx, status, i, j, k)) {
             Print() << "inject_bc: i = " << i << " j = " << j << " k = " << k
                     << std::endl;
             add_particles_cell(mfi, fluidInterface, i, j, k);
@@ -1327,4 +1334,38 @@ void Particles::combine_particles(Real limit) {
           }
         }
   }
+}
+
+bool Particles::do_inject_particles_for_this_cell(
+    const amrex::Box& bx, const amrex::Array4<const int>& status, const int i,
+    const int j, const int k) {
+
+  // This cell should be a boundary cell at least.
+  if (status(i, j, k) != iBoundary_)
+    return false;
+
+  for (int iloop = 1; iloop <= 3; iloop++) {
+    // iloop==1: loop through faces;
+    // iloop==2: loop through edges;
+    // iloop==3: loop through corners;
+
+    for (int di = -1; di <= 1; di++)
+      for (int dj = -1; dj <= 1; dj++)
+        for (int dk = -1; dk <= 1; dk++) {
+          const int sum = abs(di) + abs(dj) + abs(dk);
+          if (iloop != sum)
+            continue;
+
+          if (status(i + di, j + dj, k + dk) != iBoundary_) {
+            // The first neighbor cell that is NOT a boundary cell.
+            if (bx.contains({ i + di, j + dj, k + dk })) {
+              return true;
+            } else {
+              return false;
+            }
+          }
+        }
+  }
+  Abort("do_inject_particles_for_this_cell:something is wrong!");
+  return false; // to suppress compilation warning. 
 }

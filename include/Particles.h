@@ -41,6 +41,14 @@ public:
   void inject_particles_at_boundary(const FluidInterface& fluidInterface,
                                     const amrex::iMultiFab& cellStatus);
 
+  // 1) Only inject particles ONCE for one ghost cells. This function decides which
+  // block injects particles.
+  // 2) bx should be a valid box
+  // 3) The cell (i,j,k) can NOT be the outmost ghost cell layer!!!!
+  bool do_inject_particles_for_this_cell(const amrex::Box& bx,
+                                         const amrex::Array4<const int>& status,
+                                         const int i, const int j, const int k);
+
   PartInfo sum_moments(amrex::MultiFab& momentsMF,
                        amrex::UMultiFab<RealMM>& nodeMM,
                        amrex::MultiFab& nodeBMF, amrex::Real dt);
