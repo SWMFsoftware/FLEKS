@@ -106,13 +106,13 @@ void Domain::regrid() {
 void Domain::receive_grid_info(int *status) {
   gridInfo.set_status(status);
 
-  for (int i = 0; i < nCell[ix_]; i++)
-    for (int j = 0; j < nCell[iy_]; j++)
-      for (int k = 0; k < nCell[iz_]; k++) {
-        Print() << "Domain:: i = " << i << " j = " << j << " k = " << k
-                << " status = " << (gridInfo.get_status(i, j, k) ? "T" : "F")
-                << std::endl;
-      }
+  // for (int i = 0; i < nCell[ix_]; i++)
+  //   for (int j = 0; j < nCell[iy_]; j++)
+  //     for (int k = 0; k < nCell[iz_]; k++) {
+  //       Print() << "Domain:: i = " << i << " j = " << j << " k = " << k
+  //               << " status = " << (gridInfo.get_status(i, j, k) ? "T" : "F")
+  //               << std::endl;
+  //     }
 }
 
 //------------------------------------------------------------------------

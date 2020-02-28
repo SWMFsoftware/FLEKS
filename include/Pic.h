@@ -120,7 +120,7 @@ public:
 
   // void make_data();
   void set_ic() {
-    fill_new_cells();
+   if(doNeedFillNewCell) fill_new_cells();
   };
   void fill_new_cells();
   void fill_E_B_fields();
@@ -206,8 +206,9 @@ public:
   //--------------- IO end--------------------------------
 
   //--------------- Boundary begin ------------------------
-  void apply_external_BC(amrex::MultiFab &mf, const int iStart, const int nComp,
-                         GETVALUE func);
+  void apply_external_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,
+                         const int iStart, const int nComp, GETVALUE func);
+
   amrex::Real get_zero(amrex::MFIter &mfi, int i, int j, int k, int iVar) {
     return 0.0;
   }

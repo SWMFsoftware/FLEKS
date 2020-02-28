@@ -188,7 +188,7 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
 
     cellStatus.FillBoundary(geom.periodicity());
 
-    print_MultiFab(cellStatus, "cellStatus", 1);
+    //print_MultiFab(cellStatus, "cellStatus", 1);
 
     distribute_FabArray(nodeStatus, nodeBA, dm, 1, nGst, false);
     nodeStatus.setVal(iBoundary_);
@@ -208,6 +208,8 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
             }
           }
     }
+
+    nodeStatus.FillBoundary(geom.periodicity()); 
   }
 
   {
@@ -360,8 +362,8 @@ void Pic::fill_E_B_fields() {
   nodeE.FillBoundary(geom.periodicity());
   nodeB.FillBoundary(geom.periodicity());
 
-  apply_external_BC(nodeE, 0, nDimMax, &Pic::get_node_E);
-  apply_external_BC(nodeB, 0, nDimMax, &Pic::get_node_B);
+  apply_external_BC(nodeStatus, nodeE, 0, nDimMax, &Pic::get_node_E);
+  apply_external_BC(nodeStatus, nodeB, 0, nDimMax, &Pic::get_node_B);
 
   // Interpolate from node to cell center.
   average_node_to_cellcenter(centerB, 0, nodeB, 0, centerB.nComp(),
@@ -422,8 +424,8 @@ void Pic::sum_moments() {
 
     // Applying float boundary so that the plasma variables look right in the
     // output. It should have no influenece on the simulation results.
-    apply_float_boundary(nodePlasma[i], geom, 0, nodePlasma[i].nComp(),
-                         nVirGst);
+    //apply_float_boundary(nodeStatus, nodePlasma[i], geom, 0,
+    //                     nodePlasma[i].nComp(), nVirGst);
   }
   // Print() << "nodeMM 1 = " << nodeMM[0].array()(0, 0, 0).data[0] <<
   // std::endl;
@@ -514,8 +516,7 @@ void Pic::divE_accurate_matvec(double* vecIn, double* vecOut) {
   convert_1d_to_3d(vecIn, tempCenter1, geom);
   tempCenter1.FillBoundary(geom.periodicity());
 
-  // Is this necessary?? --Yuxi
-  apply_float_boundary(tempCenter1, geom, 0, tempCenter1.nComp(), -1);
+  //apply_float_boundary(cellStatus, tempCenter1, geom, 0, tempCenter1.nComp());
 
   tempCenter1_1.setVal(0.0);
   for (amrex::MFIter mfi(tempCenter1); mfi.isValid(); ++mfi) {
@@ -566,8 +567,8 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
   centerNetChargeNew.SumBoundary(geom.periodicity());
   centerNetChargeNew.FillBoundary(geom.periodicity());
 
-  apply_external_BC(centerNetChargeNew, 0, centerNetChargeNew.nComp(),
-                    &Pic::get_zero);
+  apply_external_BC(cellStatus, centerNetChargeNew, 0,
+                    centerNetChargeNew.nComp(), &Pic::get_zero);
 
   MultiFab::LinComb(centerNetChargeN, 1 - rhoTheta, centerNetChargeOld, 0,
                     rhoTheta, centerNetChargeNew, 0, 0,
@@ -585,9 +586,6 @@ void Pic::update() {
   std::string nameFunc = "Pic::update";
   BL_PROFILE(nameFunc);
   timing_start(nameFunc);
-
-  if (doNeedFillNewCell)
-    fill_new_cells();
 
   Print() << "\n================ Begin cycle = " << tc->get_cycle()
           << " at time = " << tc->get_time_si()
@@ -649,14 +647,14 @@ void Pic::update_E() {
   MultiFab::LinComb(nodeE, -(1.0 - fsolver.theta) / fsolver.theta, nodeE, 0,
                     1. / fsolver.theta, nodeEth, 0, 0, nodeE.nComp(), nGst);
 
-  apply_external_BC(nodeE, 0, nDimMax, &Pic::get_node_E);
-  apply_external_BC(nodeEth, 0, nDimMax, &Pic::get_node_E);
+  apply_external_BC(nodeStatus, nodeE, 0, nDimMax, &Pic::get_node_E);
+  apply_external_BC(nodeStatus, nodeEth, 0, nDimMax, &Pic::get_node_E);
 
   // Apply float BC in order to compare with iPIC3D. It is not right to apply
   // float BC here!!!!!!!--Yuxi
   // Use '-1' in order to comapre with old FLEKS.
-  apply_float_boundary(nodeE, geom, 0, nodeE.nComp(), -1);
-  apply_float_boundary(nodeEth, geom, 0, nodeEth.nComp(), -1);
+  //apply_float_boundary(nodeStatus, nodeE, geom, 0, nodeE.nComp(), -1);
+  //apply_float_boundary(nodeStatus, nodeEth, geom, 0, nodeEth.nComp(), -1);
 
   timing_stop(nameFunc);
 }
@@ -693,7 +691,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
   } else {
     // Even after apply_external_BC(), the outmost layer node E is still unknow.
     // See FluidInterface::calc_current for detailed explaniation.
-    apply_external_BC(vecMF, 0, nDimMax, &Pic::get_node_E);
+    apply_external_BC(nodeStatus, vecMF, 0, nDimMax, &Pic::get_node_E);
   }
 
   // print_MultiFab(vecMF, "vecMF5", 0);
@@ -720,7 +718,8 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
       // (c+4, c-1) of tempCenter3-block1 is not accurate, so the values at
       // (c+4, c-2)
       // will be wrong if we only apply float BC for the outmost layer.
-      apply_float_boundary(tempCenter3, geom, 0, tempCenter3.nComp());
+      apply_float_boundary(cellStatus, tempCenter3, geom, 0,
+                           tempCenter3.nComp());
 
       // print_MultiFab(tempCenter3, "tempcenter2", 2);
 
@@ -812,8 +811,9 @@ void Pic::update_E_rhs(double* rhs) {
   MultiFab temp2Node(nodeBA, dm, 3, nGst);
   temp2Node.setVal(0.0);
 
-  apply_external_BC(centerB, 0, centerB.nComp(), &Pic::get_center_B);
-  apply_external_BC(nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
+  apply_external_BC(cellStatus, centerB, 0, centerB.nComp(),
+                    &Pic::get_center_B);
+  apply_external_BC(nodeStatus, nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
 
   // print_MultiFab(nodeB, "nodeB_2", geom, 2);
   // print_MultiFab(centerB, "centerB_2", geom, 1);
@@ -848,18 +848,20 @@ void Pic::update_B() {
                   centerB.nGrow());
   centerB.FillBoundary(geom.periodicity());
 
-  apply_external_BC(centerB, 0, centerB.nComp(), &Pic::get_center_B);
+  apply_external_BC(cellStatus, centerB, 0, centerB.nComp(),
+                    &Pic::get_center_B);
 
   average_center_to_node(centerB, nodeB);
   nodeB.FillBoundary(geom.periodicity());
 
-  apply_external_BC(nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
+  apply_external_BC(nodeStatus, nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
 
   timing_stop(nameFunc);
 }
 
-void Pic::apply_external_BC(amrex::MultiFab& mf, const int iStart,
-                            const int nComp, GETVALUE func) {
+void Pic::apply_external_BC(const iMultiFab& status, MultiFab& mf,
+                            const int iStart, const int nComp, GETVALUE func) {
+
   if (geom.isAllPeriodic())
     return;
   if (mf.nGrow() == 0)
@@ -882,82 +884,94 @@ void Pic::apply_external_BC(amrex::MultiFab& mf, const int iStart,
     if (!ba.contains(bx)) {
       amrex::Array4<amrex::Real> const& arr = mf[mfi].array();
 
+      const Array4<const int>& statusArr = status[mfi].array();
+
       const auto lo = IntVect(bx.loVect());
       const auto hi = IntVect(bx.hiVect());
 
-      IntVect mid = (lo + hi) / 2;
-
-      Vector<BCRec> bcr(1);
-      for (int iDim = 0; iDim < nDimMax; iDim++) {
-        auto idxLo = mid;
-        idxLo[iDim] = lo[iDim];
-        bcr[0].setLo(iDim,
-                     ba.contains(idxLo) ? BCType::int_dir : BCType::ext_dir);
-
-        auto idxHi = mid;
-        idxHi[iDim] = hi[iDim];
-        bcr[0].setHi(iDim,
-                     ba.contains(idxHi) ? BCType::int_dir : BCType::ext_dir);
-      }
-
-      IntVect nGst = mf.nGrowVect();
-      int iMin = lo[ix_], iMax = hi[ix_];
-      int jMin = lo[iy_], jMax = hi[iy_];
-      int kMin = lo[iz_], kMax = hi[iz_];
-
-      // x left
-      if (bcr[0].lo(ix_) == BCType::ext_dir)
-        for (int iVar = iStart; iVar < nComp; iVar++)
-          for (int k = kMin; k <= kMax; k++)
-            for (int j = jMin; j <= jMax; j++)
-              for (int i = iMin; i <= iMin + nGst[ix_] - 1 + nVirGst; i++) {
+      for (int iVar = iStart; iVar < nComp; iVar++)
+        for (int k = lo[iz_] + 1; k <= hi[iz_] - 1; k++)
+          for (int j = lo[iy_]; j <= hi[iy_]; j++)
+            for (int i = lo[ix_]; i <= hi[ix_]; i++)
+              if (statusArr(i, j, k, 0) == iBoundary_) {
                 arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
               }
 
-      // x right
-      if (bcr[0].hi(ix_) == BCType::ext_dir)
-        for (int iVar = iStart; iVar < nComp; iVar++)
-          for (int k = kMin; k <= kMax; k++)
-            for (int j = jMin; j <= jMax; j++)
-              for (int i = iMax - nGst[ix_] + 1 - nVirGst; i <= iMax; i++) {
-                arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
-              }
+      continue;
 
-      // y left
-      if (bcr[0].lo(iy_) == BCType::ext_dir)
-        for (int iVar = iStart; iVar < nComp; iVar++)
-          for (int k = kMin; k <= kMax; k++)
-            for (int j = jMin; j <= jMin + nGst[iy_] - 1 + nVirGst; j++)
-              for (int i = iMin; i <= iMax; i++) {
-                arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
-              }
+      // IntVect mid = (lo + hi) / 2;
 
-      // y right
-      if (bcr[0].hi(iy_) == BCType::ext_dir)
-        for (int iVar = iStart; iVar < nComp; iVar++)
-          for (int k = kMin; k <= kMax; k++)
-            for (int j = jMax - nGst[iy_] + 1 - nVirGst; j <= jMax; j++)
-              for (int i = iMin; i <= iMax; i++) {
-                arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
-              }
+      // Vector<BCRec> bcr(1);
+      // for (int iDim = 0; iDim < nDimMax; iDim++) {
+      //   auto idxLo = mid;
+      //   idxLo[iDim] = lo[iDim];
+      //   bcr[0].setLo(iDim,
+      //                ba.contains(idxLo) ? BCType::int_dir : BCType::ext_dir);
 
-      // z left
-      if (bcr[0].lo(iz_) == BCType::ext_dir)
-        for (int iVar = iStart; iVar < nComp; iVar++)
-          for (int k = kMin; k <= kMin + nGst[iz_] - 1 + nVirGst; k++)
-            for (int j = jMin; j <= jMax; j++)
-              for (int i = iMin; i <= iMax; i++) {
-                arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
-              }
+      //   auto idxHi = mid;
+      //   idxHi[iDim] = hi[iDim];
+      //   bcr[0].setHi(iDim,
+      //                ba.contains(idxHi) ? BCType::int_dir : BCType::ext_dir);
+      // }
 
-      // z right
-      if (bcr[0].hi(iz_) == BCType::ext_dir)
-        for (int iVar = iStart; iVar < nComp; iVar++)
-          for (int k = kMax - nGst[iz_] + 1 - nVirGst; k <= kMax; k++)
-            for (int j = jMin; j <= jMax; j++)
-              for (int i = iMin; i <= iMax; i++) {
-                arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
-              }
+      // IntVect nGst = mf.nGrowVect();
+      // int iMin = lo[ix_], iMax = hi[ix_];
+      // int jMin = lo[iy_], jMax = hi[iy_];
+      // int kMin = lo[iz_], kMax = hi[iz_];
+
+      // // x left
+      // if (bcr[0].lo(ix_) == BCType::ext_dir)
+      //   for (int iVar = iStart; iVar < nComp; iVar++)
+      //     for (int k = kMin; k <= kMax; k++)
+      //       for (int j = jMin; j <= jMax; j++)
+      //         for (int i = iMin; i <= iMin + nGst[ix_] - 1 + nVirGst; i++) {
+      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+      //         }
+
+      // // x right
+      // if (bcr[0].hi(ix_) == BCType::ext_dir)
+      //   for (int iVar = iStart; iVar < nComp; iVar++)
+      //     for (int k = kMin; k <= kMax; k++)
+      //       for (int j = jMin; j <= jMax; j++)
+      //         for (int i = iMax - nGst[ix_] + 1 - nVirGst; i <= iMax; i++) {
+      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+      //         }
+
+      // // y left
+      // if (bcr[0].lo(iy_) == BCType::ext_dir)
+      //   for (int iVar = iStart; iVar < nComp; iVar++)
+      //     for (int k = kMin; k <= kMax; k++)
+      //       for (int j = jMin; j <= jMin + nGst[iy_] - 1 + nVirGst; j++)
+      //         for (int i = iMin; i <= iMax; i++) {
+      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+      //         }
+
+      // // y right
+      // if (bcr[0].hi(iy_) == BCType::ext_dir)
+      //   for (int iVar = iStart; iVar < nComp; iVar++)
+      //     for (int k = kMin; k <= kMax; k++)
+      //       for (int j = jMax - nGst[iy_] + 1 - nVirGst; j <= jMax; j++)
+      //         for (int i = iMin; i <= iMax; i++) {
+      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+      //         }
+
+      // // z left
+      // if (bcr[0].lo(iz_) == BCType::ext_dir)
+      //   for (int iVar = iStart; iVar < nComp; iVar++)
+      //     for (int k = kMin; k <= kMin + nGst[iz_] - 1 + nVirGst; k++)
+      //       for (int j = jMin; j <= jMax; j++)
+      //         for (int i = iMin; i <= iMax; i++) {
+      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+      //         }
+
+      // // z right
+      // if (bcr[0].hi(iz_) == BCType::ext_dir)
+      //   for (int iVar = iStart; iVar < nComp; iVar++)
+      //     for (int k = kMax - nGst[iz_] + 1 - nVirGst; k <= kMax; k++)
+      //       for (int j = jMin; j <= jMax; j++)
+      //         for (int i = iMin; i <= iMax; i++) {
+      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+      //         }
     }
   }
 }

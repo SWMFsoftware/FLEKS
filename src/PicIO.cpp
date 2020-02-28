@@ -9,6 +9,10 @@ void Pic::set_state_var(double* data, int* index) {
   std::string nameFunc = "Pic::set_state_var";
   Print() << nameFunc << " begin" << std::endl;
   fluidInterface->set_couple_node_value(data, index);
+
+  if (doNeedFillNewCell)
+    fill_new_cells();
+
   Print() << nameFunc << " end" << std::endl;
   return;
 }
@@ -125,13 +129,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
       for (int j = lo.y; j <= jMax; ++j) {
         const double yp = j * dx[iy_] + plo[iy_];
         for (int i = lo.x; i <= iMax; ++i) {
-          const double xp = i * dx[ix_] + plo[ix_];
-
-          Print() << "output_list i = " << i << " j = " << j << " k = " << k
-                  << " xp = " << xp << " yp = " << yp << " zp = " << zp
-                  << " is_inside = "
-                  << writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)
-                  << std::endl;
+          const double xp = i * dx[ix_] + plo[ix_];                  
           if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
 
             pointList_II.push_back(

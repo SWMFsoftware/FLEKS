@@ -188,8 +188,6 @@ void Particles::inject_particles_at_boundary(
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
           if (do_inject_particles_for_this_cell(bx, status, i, j, k)) {
-            Print() << "inject_bc: i = " << i << " j = " << j << " k = " << k
-                    << std::endl;
             add_particles_cell(mfi, fluidInterface, i, j, k);
           }
         }
