@@ -92,9 +92,9 @@ public:
       loc[iDim] = p.pos(iDim);
       if (Geom(0).isPeriodic(iDim)) {
         // Fix index/loc for periodic BC.
-        if (loc[iDim] > phi[iDim])
+        while (loc[iDim] > phi[iDim])
           loc[iDim] -= phi[iDim] - plo[iDim];
-        if (loc[iDim] < plo[iDim])
+        while (loc[iDim] < plo[iDim])
           loc[iDim] += phi[iDim] - plo[iDim];
       }
     }
