@@ -21,4 +21,6 @@ constexpr static double fourPI = 3.14159265359 * 4;
 
 // Integers to label the the status of a cell. 
 constexpr static int iBoundary_ = 0, iOnNew_ = 1, iOnOld_ = 2;
+
+constexpr static int iHandle_=1, iNotHandle_=0; 
 #endif

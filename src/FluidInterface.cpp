@@ -34,16 +34,9 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
   nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
   dm = dmIn;
 
-  Print() << "FluidInterface::centerBA = " << centerBA << std::endl;
-
   const bool doCopy = true;
   distribute_FabArray(nodeFluid, nodeBA, dm, nVarCoupling, nGst, doCopy);
   distribute_FabArray(centerB, centerBA, dm, nDimMax, nGst, doCopy);
-
-  // nodeFluid.define(nodeBA, dm, nVarCoupling, nGst);
-  // nodeFluid.setVal(0);
-  // centerB.define(centerBA, dm, nDimMax, nGst);
-  // centerB.setVal(0);
 }
 
 void FluidInterface::set_geom(const int nGstIn, const amrex::Geometry& geomIn) {

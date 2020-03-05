@@ -26,67 +26,77 @@ void DomainGrid::init() {
   costMF.define(centerBA, dm, 1, 0);
   costMF.setVal(0);
 
-  Print() << "DomainGrid:: Domain range = " << boxRange << std::endl;
-  Print() << "DomaxinGrid:: Total block #  = " << nodeBA.size() << std::endl;
-  // amrex::Print() << "DomainGrid:: centerBA = " << centerBA << std::endl;
+  Print() << "Domain range = " << boxRange << std::endl;
 }
 
 BoxArray DomainGrid::resize_pic_ba(int iCycle) {
   std::string nameFunc = "Pic::resize_pic_ba";
   Print() << nameFunc << " is runing..." << std::endl;
 
-  Vector<Box> vecBox;
+  // BoxList blInActive;
 
-  const int di = gridInfo.get_patch_size(ix_);
-  const int dj = gridInfo.get_patch_size(iy_);
-  const int dk = gridInfo.get_patch_size(iz_);
+  // const int di = gridInfo.get_patch_size(ix_);
+  // const int dj = gridInfo.get_patch_size(iy_);
+  // const int dk = gridInfo.get_patch_size(iz_);
 
-  // Loop through the cells in the whole FLEKS domain on each processor.
-  for (int i = centerBoxLo[ix_]; i <= centerBoxHi[ix_]; i += di)
-    for (int j = centerBoxLo[iy_]; j <= centerBoxHi[iy_]; j += dj)
-      for (int k = centerBoxLo[iz_]; k <= centerBoxHi[iz_]; k += dk) {
-        if (gridInfo.get_status(i, j, k) == GridInfo::iPicOn_) {
+  // IntVect minBoxLo = centerBoxHi, minBoxHi = centerBoxLo;
 
-          IntVect hi = { i - 1 + di, j - 1 + dj, k - 1 + dk };
-          vecBox.push_back(amrex::Box({ i, j, k }, hi, { 0, 0, 0 }));
-        }
-      }
+  // // Loop through the cells in the whole FLEKS domain on each processor.
+  // for (int i = centerBoxLo[ix_]; i <= centerBoxHi[ix_]; i += di)
+  //   for (int j = centerBoxLo[iy_]; j <= centerBoxHi[iy_]; j += dj)
+  //     for (int k = centerBoxLo[iz_]; k <= centerBoxHi[iz_]; k += dk) {
+  //       if (gridInfo.get_status(i, j, k) == GridInfo::iPicOn_) {
 
-  BoxArray baNew;
-  Print() << "baPicOld = " << baPicOld << std::endl;
-  add_boxes_to_BoxArray(baNew, vecBox);
-  Print() << "baNew 1 = " << baNew << std::endl;
+  //         if (i < minBoxLo[ix_])
+  //           minBoxLo[ix_] = i;
+  //         if (j < minBoxLo[iy_])
+  //           minBoxLo[iy_] = j;
+  //         if (k < minBoxLo[iz_])
+  //           minBoxLo[iz_] = k;
+
+  //         if (i + di - 1 > minBoxHi[ix_])
+  //           minBoxHi[ix_] = i + di - 1;
+  //         if (j + dj - 1 > minBoxHi[iy_])
+  //           minBoxHi[iy_] = j + dj - 1;
+  //         if (k + dk - 1 > minBoxHi[iz_])
+  //           minBoxHi[iz_] = k + dk - 1;
+
+  //       }
+  //     }
+
+  BoxList bl;
+  get_boxlist_from_region(bl, gridInfo, centerBoxLo, centerBoxHi);
+  // get_boxlist_from_region(blInActive, gridInfo, centerBoxLo, centerBoxHi);
+
+  // BoxArray batmp(bl);
+  // Print() << "batmp = " << batmp << std::endl;
+
+  // BoxList blActive;
+  // BoxArray ba1(blInActive);
+  // blActive = ba1.complementIn(centerBox);
+  // for (int i = 0; i < 10; i++) {
+  //   blActive.simplify();
+  // }
+  // Print() << "blActive" << blActive << std::endl;
+
+  for (int i = 0; i < 3; i++) {
+    bl.simplify();
+  }
+  BoxArray batmp(bl); 
+  batmp.maxSize(maxBlockSize); 
+  bl.clear(); 
+  bl = BoxList(batmp); 
+  for (int i = 0; i < 3; i++) {
+    bl.simplify();
+  }
+  
+
+
+  BoxArray baNew(bl);
+  // add_boxes_to_BoxArray(baNew, vecBox);
   baNew.maxSize(maxBlockSize);
-  Print() << "baNew 2 = " << baNew << std::endl;
+  Print() << "New PIC range = " << baNew << std::endl;
   baPicOld = baNew;
 
   return baNew;
-
-  // BoxArray baPic;
-
-  // if (true || iCycle == 0) {
-  //   baPic = centerBA;
-  // } else {
-
-  //   IntVect quarterCell;
-  //   for (int i = 0; i < nDim; ++i) {
-  //     quarterCell[i] = (centerBoxHi[i] - centerBoxLo[i] + 1) / 4;
-  //   }
-
-  //   Box bxPic;
-  //   if (iCycle % 2 == 0) {
-  //     bxPic.setSmall(quarterCell / 2);
-  //     bxPic.setBig(centerBoxHi - quarterCell / 2);
-  //   } else {
-  //     bxPic.setSmall(quarterCell);
-  //     bxPic.setBig(centerBoxHi - quarterCell);
-  //   }
-
-  //   baPic.define(bxPic);
-  //   baPic.maxSize(maxBlockSize);
-  // }
-
-  // Print() << "baPic = " << baPic << std::endl;
-
-  // return baPic;
 }

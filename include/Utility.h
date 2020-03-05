@@ -9,12 +9,6 @@
 
 inline int myfloor(amrex::Real x) { return (int)x - (x < (int)x); }
 
-void convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
-                      amrex::Geometry& geom);
-
-void convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
-                      amrex::Geometry& geom);
-
 void curl_center_to_node(const amrex::MultiFab& centerMF,
                          amrex::MultiFab& nodeMF, const amrex::Real* invDx);
 

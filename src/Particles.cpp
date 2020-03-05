@@ -355,6 +355,8 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
     const auto& particles = pti.GetArrayOfStructs();
 
     for (const auto& p : particles) {
+
+      // Print()<<"p = "<<p<<std::endl;
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
       const Real wp = p.rdata(iwp_);
@@ -546,7 +548,7 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
   }
 
   // Exclude the number density.
-  momentsMF.mult(invVol, 0, nMoments - 1);
+  momentsMF.mult(invVol, 0, nMoments - 1, momentsMF.nGrow());
 
   momentsMF.SumBoundary(Geom(0).periodicity());
 
@@ -1365,5 +1367,5 @@ bool Particles::do_inject_particles_for_this_cell(
         }
   }
   Abort("do_inject_particles_for_this_cell:something is wrong!");
-  return false; // to suppress compilation warning. 
+  return false; // to suppress compilation warning.
 }

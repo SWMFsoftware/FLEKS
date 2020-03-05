@@ -99,7 +99,7 @@ public:
       }
     }
     // If the particle is outside the domain, the index return by CellIndex is
-    // not right! So we still need to call is_outside first. --Yuxi
+    // not right! So we still need to call is_outside_domain first. --Yuxi
     amrex::IntVect cellIdx = Geom(0).CellIndex(loc);
     return !ParticleBoxArray(0).contains(cellIdx);
   }
@@ -110,7 +110,7 @@ public:
       auto& particles = pti.GetArrayOfStructs();
       for (auto& p : particles) {
         if (is_outside_ba(p)) {
-          p.id() = -1;
+          p.id() = -1;          
           // amrex::Print()<<"particle outside ba = "<<p<<std::endl;
         }
       }

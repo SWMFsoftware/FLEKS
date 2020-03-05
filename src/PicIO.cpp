@@ -103,34 +103,37 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
     FArrayBox& fab = nodeE[mfi];
     const Box& box = mfi.validbox();
 
+    const auto& typeArr = nodeType[mfi].array();
+
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
 
-    const bool isNode = true;
-    if (isNode) {
-      // Avoid double counting the shared edges.
-      iMax--;
-      jMax--;
-      kMax--;
+    // const bool isNode = true;
+    // if (isNode) {
+    //   // Avoid double counting the shared edges.
+    //   iMax--;
+    //   jMax--;
+    //   kMax--;
 
-      const Box& gbx = amrex::convert(geom.Domain(), box.type());
-      if ((!geom.isPeriodic(ix_)) && gbx.bigEnd(ix_) == hi.x)
-        iMax++;
-      if ((!geom.isPeriodic(iy_)) && gbx.bigEnd(iy_) == hi.y)
-        jMax++;
-      if ((!geom.isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z)
-        kMax++;
-    }
+    //   const Box& gbx = amrex::convert(geom.Domain(), box.type());
+    //   if ((!geom.isPeriodic(ix_)))// && gbx.bigEnd(ix_) == hi.x)
+    //     iMax++;
+    //   if ((!geom.isPeriodic(iy_)))// && gbx.bigEnd(iy_) == hi.y)
+    //     jMax++;
+    //   if ((!geom.isPeriodic(iz_)))// && gbx.bigEnd(iz_) == hi.z)
+    //     kMax++;
+    // }
 
     for (int k = lo.z; k <= kMax; ++k) {
       const double zp = k * dx[iz_] + plo[iz_];
       for (int j = lo.y; j <= jMax; ++j) {
         const double yp = j * dx[iy_] + plo[iy_];
         for (int i = lo.x; i <= iMax; ++i) {
-          const double xp = i * dx[ix_] + plo[ix_];                  
-          if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
+          const double xp = i * dx[ix_] + plo[ix_];
+          if (typeArr(i, j, k) == iHandle_ &&
+              writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
 
             pointList_II.push_back(
                 {(double)i, (double)j, (double)k, xp, yp, zp, (double)iBlock });
@@ -294,6 +297,8 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
             3.0;
   } else if (var.substr(0, 4) == "proc") {
     value = ParallelDescriptor::MyProc();
+  } else if (var.substr(0, 5) == "block") {
+    value = mfi.index();
   } else {
     value = 0;
   }

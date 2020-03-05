@@ -103,7 +103,7 @@ public:
     divESolver.set_tol(0.01);
     divESolver.set_nIter(20);
   };
-  ~Pic() {};
+  ~Pic(){};
 
   void update();
 
@@ -120,7 +120,8 @@ public:
 
   // void make_data();
   void set_ic() {
-   if(doNeedFillNewCell) fill_new_cells();
+    if (doNeedFillNewCell)
+      fill_new_cells();
   };
   void fill_new_cells();
   void fill_E_B_fields();
@@ -182,6 +183,14 @@ public:
   void compute_cost();
   void load_balance();
   //---------------load balance end---------------------
+
+  void set_nodeType();
+
+  void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF,
+                        amrex::Geometry &geom);
+
+  void convert_3d_to_1d(const amrex::MultiFab &MF, double *const p,
+                        amrex::Geometry &geom);
 
   //--------------- IO begin--------------------------------
   void find_output_list(const PlotWriter &writerIn, long int &nPointAllProc,

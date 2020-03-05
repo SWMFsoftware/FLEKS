@@ -57,6 +57,9 @@ void Pic::fill_new_cells() {
 
   Print() << nameFunc << " begin" << std::endl;
 
+  BL_PROFILE(nameFunc);
+  timing_start(nameFunc);
+
   fill_E_B_fields();
   fill_particles();
 
@@ -66,6 +69,8 @@ void Pic::fill_new_cells() {
   doNeedFillNewCell = false;
 
   Print() << nameFunc << " end" << std::endl;
+
+  timing_stop(nameFunc);
 }
 
 void Pic::set_geom(int nGstIn, const Geometry& geomIn) {
@@ -86,6 +91,10 @@ void Pic::set_geom(int nGstIn, const Geometry& geomIn) {
 void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
   std::string nameFunc = "Pic::regrid";
   Print() << nameFunc << " is runing..." << std::endl;
+
+  BL_PROFILE(nameFunc);
+
+  timing_start(nameFunc);
 
   if (centerBAIn == centerBA)
     return;
@@ -180,7 +189,8 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            if (centerBAOld.contains({ i, j, k })) {
+            if (cellArr(i, j, k) == iOnNew_ &&
+                centerBAOld.contains({ i, j, k })) {
               cellArr(i, j, k) = iOnOld_;
             }
           }
@@ -188,11 +198,12 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
 
     cellStatus.FillBoundary(geom.periodicity());
 
-    //print_MultiFab(cellStatus, "cellStatus", 1);
+    // print_MultiFab(cellStatus, "cellStatus", 1);
 
     distribute_FabArray(nodeStatus, nodeBA, dm, 1, nGst, false);
     nodeStatus.setVal(iBoundary_);
     nodeStatus.setVal(iOnNew_, 0);
+
     for (MFIter mfi(nodeStatus); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const auto& nodeArr = nodeStatus[mfi].array();
@@ -203,13 +214,19 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            if (nodeBAOld.contains({ i, j, k })) {
+            if (nodeArr(i, j, k) == iOnNew_ &&
+                nodeBAOld.contains({ i, j, k })) {
               nodeArr(i, j, k) = iOnOld_;
             }
           }
     }
 
-    nodeStatus.FillBoundary(geom.periodicity()); 
+    nodeStatus.FillBoundary(geom.periodicity());
+
+    distribute_FabArray(nodeType, nodeBA, dm, 1, 0, false);
+    set_nodeType();
+
+    // print_MultiFab(nodeType, "nodeType");
   }
 
   {
@@ -220,6 +237,83 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
   {
     int nGrid = get_local_node_or_cell_number(centerDivE);
     divESolver.init(nGrid, 1, nDimMax, matvec_divE_accurate);
+  }
+
+  timing_stop(nameFunc);
+}
+
+void Pic::set_nodeType() {
+  nodeType.setVal(iNotHandle_);
+  const Box& gbx = convert(geom.Domain(), { 0, 0, 0 });
+
+  for (MFIter mfi(nodeType); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+
+    const Box& cellBox = convert(box, { 0, 0, 0 });
+
+    const auto& typeArr = nodeType[mfi].array();
+    const auto& statusArr = cellStatus[mfi].array();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    bool is2D = false;
+    if (geom.isPeriodic(iz_) && (gbx.bigEnd(iz_) == gbx.smallEnd(iz_)))
+      is2D = true;
+
+    int iMin = lo.x + 1, iMax = hi.x - 1;
+    int jMin = lo.y + 1, jMax = hi.y - 1;
+    int kMin = lo.z + 1, kMax = hi.z - 1;
+    if (is2D) {
+      kMin = lo.z;
+      kMax = lo.z;
+    }
+
+    int diMax = 0, diMin = -1;
+    int djMax = 0, djMin = -1;
+    int dkMax = 0, dkMin = -1;
+    if (is2D) {
+      dkMin = 0;
+    }
+
+    auto fHandle = [&](int i, int j, int k) {
+      for (int dk = dkMax; dk >= dkMin; dk--)
+        for (int dj = djMax; dj >= djMin; dj--)
+          for (int di = diMax; di >= diMin; di--) {
+            if (statusArr(i + di, j + dj, k + dk) != iBoundary_) {
+              // Find the first CELL that shares this node.
+              if (cellBox.contains({ i + di, j + dj, k + dk })) {
+                return true;
+              } else {
+                return false;
+              }
+            }
+          }
+      Abort("Error: something is wrong here!");
+      return false;
+    };
+
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          if (!is2D || k == lo.z) {
+            // for 2D (1 cell in the z-direction), only handle the layer of
+            // k=0
+            if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
+                (!is2D && (k == lo.z || k == hi.z))) {
+              // Block boundary nodes.
+
+              // Check if this block boundary node needs to be handled by this
+              // block.
+
+              if (fHandle(i, j, k)) {
+                typeArr(i, j, k) = iHandle_;
+              }
+            } else {
+              typeArr(i, j, k) = iHandle_;
+            }
+          }
+        }
   }
 }
 
@@ -424,7 +518,7 @@ void Pic::sum_moments() {
 
     // Applying float boundary so that the plasma variables look right in the
     // output. It should have no influenece on the simulation results.
-    //apply_float_boundary(nodeStatus, nodePlasma[i], geom, 0,
+    // apply_float_boundary(nodeStatus, nodePlasma[i], geom, 0,
     //                     nodePlasma[i].nComp(), nVirGst);
   }
   // Print() << "nodeMM 1 = " << nodeMM[0].array()(0, 0, 0).data[0] <<
@@ -516,7 +610,8 @@ void Pic::divE_accurate_matvec(double* vecIn, double* vecOut) {
   convert_1d_to_3d(vecIn, tempCenter1, geom);
   tempCenter1.FillBoundary(geom.periodicity());
 
-  //apply_float_boundary(cellStatus, tempCenter1, geom, 0, tempCenter1.nComp());
+  // apply_float_boundary(cellStatus, tempCenter1, geom, 0,
+  // tempCenter1.nComp());
 
   tempCenter1_1.setVal(0.0);
   for (amrex::MFIter mfi(tempCenter1); mfi.isValid(); ++mfi) {
@@ -653,8 +748,8 @@ void Pic::update_E() {
   // Apply float BC in order to compare with iPIC3D. It is not right to apply
   // float BC here!!!!!!!--Yuxi
   // Use '-1' in order to comapre with old FLEKS.
-  //apply_float_boundary(nodeStatus, nodeE, geom, 0, nodeE.nComp(), -1);
-  //apply_float_boundary(nodeStatus, nodeEth, geom, 0, nodeEth.nComp(), -1);
+  // apply_float_boundary(nodeStatus, nodeE, geom, 0, nodeE.nComp());
+  // apply_float_boundary(nodeStatus, nodeEth, geom, 0, nodeEth.nComp());
 
   timing_stop(nameFunc);
 }
@@ -841,8 +936,16 @@ void Pic::update_B() {
   timing_start(nameFunc);
 
   MultiFab dB(centerBA, dm, 3, nGst);
+  // dB.setVal(0);
 
+  apply_float_boundary(nodeStatus, nodeEth, geom, 0, nodeEth.nComp());
   curl_node_to_center(nodeEth, dB, geom.InvCellSize());
+
+  // if (tc->get_cycle() >= 40) {
+  //   print_MultiFab(nodeStatus, "nodeStatus", 1);
+  //   print_MultiFab(dB, "dB", 1);
+  //   print_MultiFab(nodeEth, "nodeEth", 1);
+  // }
 
   MultiFab::Saxpy(centerB, -tc->get_dt(), dB, 0, 0, centerB.nComp(),
                   centerB.nGrow());
@@ -853,6 +956,11 @@ void Pic::update_B() {
 
   average_center_to_node(centerB, nodeB);
   nodeB.FillBoundary(geom.periodicity());
+
+  // if (tc->get_cycle() >= 40) {
+  //   print_MultiFab(centerB, "centerB", 1);
+  //   print_MultiFab(nodeB, "nodeB", 1);
+  // }
 
   apply_external_BC(nodeStatus, nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
 
@@ -925,7 +1033,8 @@ void Pic::apply_external_BC(const iMultiFab& status, MultiFab& mf,
       //     for (int k = kMin; k <= kMax; k++)
       //       for (int j = jMin; j <= jMax; j++)
       //         for (int i = iMin; i <= iMin + nGst[ix_] - 1 + nVirGst; i++) {
-      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar -
+      // iStart);
       //         }
 
       // // x right
@@ -934,7 +1043,8 @@ void Pic::apply_external_BC(const iMultiFab& status, MultiFab& mf,
       //     for (int k = kMin; k <= kMax; k++)
       //       for (int j = jMin; j <= jMax; j++)
       //         for (int i = iMax - nGst[ix_] + 1 - nVirGst; i <= iMax; i++) {
-      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar -
+      // iStart);
       //         }
 
       // // y left
@@ -943,7 +1053,8 @@ void Pic::apply_external_BC(const iMultiFab& status, MultiFab& mf,
       //     for (int k = kMin; k <= kMax; k++)
       //       for (int j = jMin; j <= jMin + nGst[iy_] - 1 + nVirGst; j++)
       //         for (int i = iMin; i <= iMax; i++) {
-      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar -
+      // iStart);
       //         }
 
       // // y right
@@ -952,7 +1063,8 @@ void Pic::apply_external_BC(const iMultiFab& status, MultiFab& mf,
       //     for (int k = kMin; k <= kMax; k++)
       //       for (int j = jMax - nGst[iy_] + 1 - nVirGst; j <= jMax; j++)
       //         for (int i = iMin; i <= iMax; i++) {
-      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar -
+      // iStart);
       //         }
 
       // // z left
@@ -961,7 +1073,8 @@ void Pic::apply_external_BC(const iMultiFab& status, MultiFab& mf,
       //     for (int k = kMin; k <= kMin + nGst[iz_] - 1 + nVirGst; k++)
       //       for (int j = jMin; j <= jMax; j++)
       //         for (int i = iMin; i <= iMax; i++) {
-      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar -
+      // iStart);
       //         }
 
       // // z right
@@ -970,7 +1083,8 @@ void Pic::apply_external_BC(const iMultiFab& status, MultiFab& mf,
       //     for (int k = kMax - nGst[iz_] + 1 - nVirGst; k <= kMax; k++)
       //       for (int j = jMin; j <= jMax; j++)
       //         for (int i = iMin; i <= iMax; i++) {
-      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
+      //           arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar -
+      // iStart);
       //         }
     }
   }
@@ -1098,4 +1212,91 @@ void Pic::load_balance() {
   fluidInterface->load_balance(dm);
 
   timing_stop(nameFunc);
+}
+
+void Pic::convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
+                           amrex::Geometry& geom) {
+  bool isCenter = MF.ixType().cellCentered();
+  bool isNode = !isCenter;
+
+  MF.setVal(0.0);
+
+  const Box& gbx = convert(geom.Domain(), MF.boxArray().ixType());
+
+  int iCount = 0;
+  for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
+    const amrex::Box& box = mfi.tilebox();
+    const auto lo = amrex::lbound(box);
+    const auto hi = amrex::ubound(box);
+    const amrex::Array4<amrex::Real>& arr = MF[mfi].array();
+
+    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
+    int iMin = lo.x, jMin = lo.y, kMin = lo.z;
+
+    // if (isNode) {
+    //   // Avoid double counting the shared edges.
+    //   iMax--;
+    //   jMax--;
+    //   kMax--;
+
+    //   if ((!geom.isPeriodic(ix_)) && gbx.bigEnd(ix_) == hi.x)
+    //     iMax++;
+    //   if ((!geom.isPeriodic(iy_)) && gbx.bigEnd(iy_) == hi.y)
+    //     jMax++;
+    //   if ((!geom.isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z)
+    //     kMax++;
+    // }
+
+    const auto& nodeArr = nodeType[mfi].array();
+    for (int iVar = 0; iVar < MF.nComp(); iVar++)
+      for (int k = kMin; k <= kMax; ++k)
+        for (int j = jMin; j <= jMax; ++j)
+          for (int i = iMin; i <= iMax; ++i)
+            if (isCenter || nodeArr(i, j, k) == iHandle_) {
+              arr(i, j, k, iVar) = p[iCount++];
+            }
+  }
+}
+
+void Pic::convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
+                           amrex::Geometry& geom) {
+
+  bool isCenter = MF.ixType().cellCentered();
+  bool isNode = !isCenter;
+
+  const Box& gbx = convert(geom.Domain(), MF.boxArray().ixType());
+
+  int iCount = 0;
+  for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
+    const amrex::Box& box = mfi.tilebox();
+    const auto lo = amrex::lbound(box);
+    const auto hi = amrex::ubound(box);
+    const amrex::Array4<amrex::Real const>& arr = MF[mfi].array();
+
+    // Avoid double counting the share edges.
+    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
+    int iMin = lo.x, jMin = lo.y, kMin = lo.z;
+
+    // if (isNode) {
+    //   // Avoid double counting the shared edges.
+    //   iMax--;
+    //   jMax--;
+    //   kMax--;
+
+    //   if ((!geom.isPeriodic(ix_)) && gbx.bigEnd(ix_) == hi.x)
+    //     iMax++;
+    //   if ((!geom.isPeriodic(iy_)) && gbx.bigEnd(iy_) == hi.y)
+    //     jMax++;
+    //   if ((!geom.isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z)
+    //     kMax++;
+    // }
+    const auto& nodeArr = nodeType[mfi].array();
+    for (int iVar = 0; iVar < MF.nComp(); iVar++)
+      for (int k = kMin; k <= kMax; ++k)
+        for (int j = jMin; j <= jMax; ++j)
+          for (int i = iMin; i <= iMax; ++i)
+            if (isCenter || nodeArr(i, j, k) == iHandle_) {
+              p[iCount++] = arr(i, j, k, iVar);
+            }
+  }
 }
