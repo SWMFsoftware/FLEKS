@@ -448,6 +448,35 @@ void Pic::fill_new_node_B() {
   }
 }
 
+void Pic::fill_new_center_B() {
+
+  for (MFIter mfi(centerB); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& centerArr = centerB[mfi].array();
+    const auto& nodeArr = nodeB[mfi].array();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    const auto& status = cellStatus[mfi].array();
+
+    for (int iVar = 0; iVar < centerB.nComp(); iVar++)
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (status(i, j, k) != iOnOld_) {
+              centerArr(i, j, k, iVar) = 0;
+              for (int di = 0; di <= 1; di++)
+                for (int dj = 0; dj <= 1; dj++)
+                  for (int dk = 0; dk <= 1; dk++) {
+                    centerArr(i, j, k, iVar) +=
+                        0.125 * nodeArr(i + di, j + dj, k + dk, iVar);
+                  }
+            }
+          }
+  }
+}
+
 void Pic::fill_E_B_fields() {
 
   fill_new_node_E();
@@ -459,11 +488,13 @@ void Pic::fill_E_B_fields() {
   apply_external_BC(nodeStatus, nodeE, 0, nDimMax, &Pic::get_node_E);
   apply_external_BC(nodeStatus, nodeB, 0, nDimMax, &Pic::get_node_B);
 
-  // Interpolate from node to cell center.
-  average_node_to_cellcenter(centerB, 0, nodeB, 0, centerB.nComp(),
-                             centerB.nGrow());
 
+  fill_new_center_B(); 
   centerB.FillBoundary(geom.periodicity());
+  
+  apply_external_BC(cellStatus, centerB, 0, centerB.nComp(),
+                    &Pic::get_center_B);
+
 }
 //---------------------------------------------------------
 

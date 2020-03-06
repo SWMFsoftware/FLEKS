@@ -129,6 +129,7 @@ public:
   void fill_new_node_E();
 
   void fill_new_node_B();
+  void fill_new_center_B(); 
 
   void fill_particles();
   //----------------Initialization end-------------------------------
