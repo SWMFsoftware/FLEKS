@@ -59,6 +59,24 @@ void Particles::add_particles_cell(const MFIter& mfi,
   auto& particles =
       GetParticles(lev)[std::make_pair(mfi.index(), mfi.LocalTileIndex())];
 
+  //----------------------------------------------------------
+  // Calculate the coefficient to correct the thermal velocity so that the
+  // variation of the velocity space distribution is unbiased.
+  int nPartEffective;
+  {
+    const Box& gbx = convert(Geom(0).Domain(), { 0, 0, 0 });
+    const bool is2D = gbx.bigEnd(iz_) == gbx.smallEnd(iz_);
+    int nCellContribute = is2D ? 4 : 8;
+    const int nx = nPartPerCell[ix_];
+    const int ny = nPartPerCell[iy_];
+    const int nz = nPartPerCell[iz_];
+    const Real coefCorrection = 27. / 8 * (nx + 1) * (ny + 1) * (nz + 1) /
+                                ((2 * nx + 1) * (2 * ny + 1) * (2 * nz + 1));
+    nPartEffective = nCellContribute * npcel * coefCorrection;
+  }
+  const Real coefSD = sqrt(Real(nPartEffective) / (nPartEffective - 1));
+  //-----------------------------------------------------------
+
   // loop over particles inside grid cell i, j, k
   for (int ii = 0; ii < nPartPerCell[ix_]; ii++)
     for (int jj = 0; jj < nPartPerCell[iy_]; jj++)
@@ -93,6 +111,13 @@ void Particles::add_particles_cell(const MFIter& mfi,
             fluidInterface.set_particle_uth_iso(mfi, x, y, z, &u, &v, &w, rand1,
                                                 rand2, rand3, rand4, speciesID);
           }
+
+          // Increase the thermal velocity a little so that the variation of the
+          // velocity space distribution is unbiased.
+          u *= coefSD;
+          v *= coefSD;
+          w *= coefSD;
+
           u += fluidInterface.get_ux(mfi, x, y, z, speciesID);
           v += fluidInterface.get_uy(mfi, x, y, z, speciesID);
           w += fluidInterface.get_uz(mfi, x, y, z, speciesID);
@@ -906,14 +931,14 @@ void Particles::split_particles(Real limit) {
     // Sort the particles by x first to make sure the results are the same for
     // different number of processors
     std::sort(particles.begin(), particles.end(),
-              [ix_ = ix_](const auto & pl, const auto & pr) {
-      return pl.rdata(ix_) > pr.rdata(ix_);
-    });
+              [ix_ = ix_](const auto& pl, const auto& pr) {
+                return pl.rdata(ix_) > pr.rdata(ix_);
+              });
 
     std::sort(particles.begin(), particles.end(),
-              [ix_ = ix_](const auto & pl, const auto & pr) {
-      return fabs(pl.rdata(iqp_)) > fabs(pr.rdata(iqp_));
-    });
+              [ix_ = ix_](const auto& pl, const auto& pr) {
+                return fabs(pl.rdata(iqp_)) > fabs(pr.rdata(iqp_));
+              });
     //----------------------------------------------------------------
 
     const auto lo = lbound(pti.tilebox());
@@ -1092,10 +1117,11 @@ void Particles::combine_particles(Real limit) {
         for (int kCell = 0; kCell < nCell; kCell++) {
           std::sort(phasePartIdx_III[iCell][jCell][kCell].begin(),
                     phasePartIdx_III[iCell][jCell][kCell].end(),
-                    [&particles = particles, ix_ = ix_ ](const int & idl,
-                                                         const int & idr) {
-            return particles[idl].rdata(ix_) > particles[idr].rdata(ix_);
-          });
+                    [& particles = particles, ix_ = ix_](const int& idl,
+                                                         const int& idr) {
+                      return particles[idl].rdata(ix_) >
+                             particles[idr].rdata(ix_);
+                    });
         }
 
     const int nPartCombine = 6;
