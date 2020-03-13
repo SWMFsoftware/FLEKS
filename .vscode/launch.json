@@ -14,7 +14,14 @@
             "cwd": "${workspaceFolder}/../../run/",
             "environment": [],
             "externalConsole": false,
-            "MIMode": "gdb",
+            "linux": {
+                "MIMode": "gdb",
+                "miDebuggerPath": "/usr/bin/gdb"
+              },
+              "osx": {
+                "MIMode": "lldb",
+                "miDebuggerPath": "/Applications/Xcode.app/Contents/Developer/usr/bin/lldb-mi"
+              },
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",
@@ -22,8 +29,7 @@
                     "ignoreFailures": true
                 }
             ],
-            "preLaunchTask": "cpp build active file",
-            "miDebuggerPath": "/usr/bin/gdb"
+            "preLaunchTask": "cpp build active file"
         }
     ]
 }
