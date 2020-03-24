@@ -203,7 +203,7 @@ public:
                      const std::vector<std::string> &sVar_I,
                      MDArray<double> &var_II);
   double get_var(std::string var, const int ix, const int iy, const int iz,
-                 const amrex::MFIter &mfi);
+                 const amrex::MFIter &mfi, bool isValidMFI = true);
 
   void save_restart_header(std::ofstream &headerFile);
   void save_restart_data();

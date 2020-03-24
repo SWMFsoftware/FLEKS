@@ -98,6 +98,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 
   const auto dx = geom.CellSize();
 
+  int icount = 0;
   int iBlock = 0;
   for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
     FArrayBox& fab = nodeE[mfi];
@@ -108,35 +109,17 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
-    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
-
-    // const bool isNode = true;
-    // if (isNode) {
-    //   // Avoid double counting the shared edges.
-    //   iMax--;
-    //   jMax--;
-    //   kMax--;
-
-    //   const Box& gbx = amrex::convert(geom.Domain(), box.type());
-    //   if ((!geom.isPeriodic(ix_)))// && gbx.bigEnd(ix_) == hi.x)
-    //     iMax++;
-    //   if ((!geom.isPeriodic(iy_)))// && gbx.bigEnd(iy_) == hi.y)
-    //     jMax++;
-    //   if ((!geom.isPeriodic(iz_)))// && gbx.bigEnd(iz_) == hi.z)
-    //     kMax++;
-    // }
-
-    for (int k = lo.z; k <= kMax; ++k) {
+    for (int k = lo.z; k <= hi.z; ++k) {
       const double zp = k * dx[iz_] + plo[iz_];
-      for (int j = lo.y; j <= jMax; ++j) {
+      for (int j = lo.y; j <= hi.y; ++j) {
         const double yp = j * dx[iy_] + plo[iy_];
-        for (int i = lo.x; i <= iMax; ++i) {
+        for (int i = lo.x; i <= hi.x; ++i) {
           const double xp = i * dx[ix_] + plo[ix_];
           if (typeArr(i, j, k) == iHandle_ &&
               writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
 
-            pointList_II.push_back(
-                {(double)i, (double)j, (double)k, xp, yp, zp, (double)iBlock });
+            pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
+                                     zp, (double)iBlock });
             if (xp < xMinL_D[ix_])
               xMinL_D[ix_] = xp;
             if (yp < xMinL_D[iy_])
@@ -155,6 +138,51 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
       }
     }
     iBlock++;
+  }
+
+  if (ParallelDescriptor::MyProc() == 0 && writerIn.get_plotDx() >= 0) {
+    // Processor-0 output the inactive PIC nodes for structured output.
+    Box gbx = convert(geom.Domain(), { 1, 1, 1 });
+
+    if (writerIn.is_compact())
+      gbx = convert(nodeBA.minimalBox(), { 1, 1, 1 });
+
+    const auto lo = lbound(gbx);
+    const auto hi = ubound(gbx);
+
+    int kMax = hi.z;
+    const bool is2D = geom.Domain().bigEnd(iz_) == geom.Domain().smallEnd(iz_);
+    if (is2D)
+      kMax = lo.z;
+
+    for (int k = lo.z; k <= kMax; ++k) {
+      const double zp = k * dx[iz_] + plo[iz_];
+      for (int j = lo.y; j <= hi.y; ++j) {
+        const double yp = j * dx[iy_] + plo[iy_];
+        for (int i = lo.x; i <= hi.x; ++i) {
+          const double xp = i * dx[ix_] + plo[ix_];
+          if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp) &&
+              !nodeBA.contains({ i, j, k })) {
+            const int iBlock = -1;
+            pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
+                                     zp, (double)iBlock });
+            if (xp < xMinL_D[ix_])
+              xMinL_D[ix_] = xp;
+            if (yp < xMinL_D[iy_])
+              xMinL_D[iy_] = yp;
+            if (zp < xMinL_D[iz_])
+              xMinL_D[iz_] = zp;
+
+            if (xp > xMaxL_D[ix_])
+              xMaxL_D[ix_] = xp;
+            if (yp > xMaxL_D[iy_])
+              xMaxL_D[iy_] = yp;
+            if (zp > xMaxL_D[iz_])
+              xMaxL_D[iz_] = zp;
+          }
+        }
+      }
+    }
   }
 
   nPointAllProc = pointList_II.size();
@@ -189,8 +217,13 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
       const int iz = pointList_II[iPoint][iz_];
       const int iBlock = pointList_II[iPoint][iBlk_];
 
-      if (iBlock == iBlockCount) {
-
+      if (ParallelDescriptor::MyProc() == 0 && iBlock == -1) {
+        // Processor-0 output the inactive PIC nodes for structured output.
+        for (int iVar = 0; iVar < nVar; ++iVar) {
+          var_II(iPoint, iVar) = get_var(sVar_I[iVar], ix, iy, iz, mfi, false);
+        }
+        iPoint++;
+      } else if (iBlock == iBlockCount) {
         for (int iVar = 0; iVar < nVar; ++iVar) {
           var_II(iPoint, iVar) = get_var(sVar_I[iVar], ix, iy, iz, mfi);
         }
@@ -205,7 +238,7 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
 }
 
 double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
-                    const MFIter& mfi) {
+                    const MFIter& mfi, bool isValidMFI) {
 
   auto get_is = [var]() {
     std::string::size_type pos;
@@ -217,90 +250,95 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
     return is;
   };
 
-  double value;
-  if (var.substr(0, 1) == "X") {
-    const auto plo = geom.ProbLo();
-    const auto dx = geom.CellSize();
-    value = ix * dx[ix_] + plo[ix_];
-  } else if (var.substr(0, 1) == "Y") {
-    const auto plo = geom.ProbLo();
-    const auto dx = geom.CellSize();
-    value = iy * dx[iy_] + plo[iy_];
-  } else if (var.substr(0, 1) == "Z") {
-    const auto plo = geom.ProbLo();
-    const auto dx = geom.CellSize();
-    value = iz * dx[iz_] + plo[iz_];
-  } else if (var.substr(0, 2) == "Ex") {
-    const amrex::Array4<amrex::Real const>& arr = nodeE[mfi].array();
-    value = arr(ix, iy, iz, ix_);
-  } else if (var.substr(0, 2) == "Ey") {
-    const amrex::Array4<amrex::Real const>& arr = nodeE[mfi].array();
-    value = arr(ix, iy, iz, iy_);
-  } else if (var.substr(0, 2) == "Ez") {
-    const amrex::Array4<amrex::Real const>& arr = nodeE[mfi].array();
-    value = arr(ix, iy, iz, iz_);
-  } else if (var.substr(0, 2) == "Bx") {
-    const amrex::Array4<amrex::Real const>& arr = nodeB[mfi].array();
-    value = arr(ix, iy, iz, ix_);
-  } else if (var.substr(0, 2) == "By") {
-    const amrex::Array4<amrex::Real const>& arr = nodeB[mfi].array();
-    value = arr(ix, iy, iz, iy_);
-  } else if (var.substr(0, 2) == "Bz") {
-    const amrex::Array4<amrex::Real const>& arr = nodeB[mfi].array();
-    value = arr(ix, iy, iz, iz_);
-  } else if (var.substr(0, 4) == "rhoS" || var.substr(0, 3) == "uxS" ||
-             var.substr(0, 3) == "uyS" || var.substr(0, 3) == "uzS" ||
-             var.substr(0, 4) == "pXXS" || var.substr(0, 4) == "pYYS" ||
-             var.substr(0, 4) == "pZZS" || var.substr(0, 4) == "pXYS" ||
-             var.substr(0, 4) == "pXZS" || var.substr(0, 4) == "pYZS" ||
-             var.substr(0, 4) == "numS") {
-    int iVar;
+  double value = 0;
+  if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
+      var.substr(0, 1) == "Z") {
+    // If not isValidMFI, then it is not possible to output variables other than
+    // 'X', 'Y', 'Z'
+    if (var.substr(0, 1) == "X") {
+      const auto plo = geom.ProbLo();
+      const auto dx = geom.CellSize();
+      value = ix * dx[ix_] + plo[ix_];
+    } else if (var.substr(0, 1) == "Y") {
+      const auto plo = geom.ProbLo();
+      const auto dx = geom.CellSize();
+      value = iy * dx[iy_] + plo[iy_];
+    } else if (var.substr(0, 1) == "Z") {
+      const auto plo = geom.ProbLo();
+      const auto dx = geom.CellSize();
+      value = iz * dx[iz_] + plo[iz_];
+    } else if (var.substr(0, 2) == "Ex") {
+      const amrex::Array4<amrex::Real const>& arr = nodeE[mfi].array();
+      value = arr(ix, iy, iz, ix_);
+    } else if (var.substr(0, 2) == "Ey") {
+      const amrex::Array4<amrex::Real const>& arr = nodeE[mfi].array();
+      value = arr(ix, iy, iz, iy_);
+    } else if (var.substr(0, 2) == "Ez") {
+      const amrex::Array4<amrex::Real const>& arr = nodeE[mfi].array();
+      value = arr(ix, iy, iz, iz_);
+    } else if (var.substr(0, 2) == "Bx") {
+      const amrex::Array4<amrex::Real const>& arr = nodeB[mfi].array();
+      value = arr(ix, iy, iz, ix_);
+    } else if (var.substr(0, 2) == "By") {
+      const amrex::Array4<amrex::Real const>& arr = nodeB[mfi].array();
+      value = arr(ix, iy, iz, iy_);
+    } else if (var.substr(0, 2) == "Bz") {
+      const amrex::Array4<amrex::Real const>& arr = nodeB[mfi].array();
+      value = arr(ix, iy, iz, iz_);
+    } else if (var.substr(0, 4) == "rhoS" || var.substr(0, 3) == "uxS" ||
+               var.substr(0, 3) == "uyS" || var.substr(0, 3) == "uzS" ||
+               var.substr(0, 4) == "pXXS" || var.substr(0, 4) == "pYYS" ||
+               var.substr(0, 4) == "pZZS" || var.substr(0, 4) == "pXYS" ||
+               var.substr(0, 4) == "pXZS" || var.substr(0, 4) == "pYZS" ||
+               var.substr(0, 4) == "numS") {
+      int iVar;
 
-    if (var.substr(0, 4) == "rhoS")
-      iVar = iRho_;
-    if (var.substr(0, 3) == "uxS")
-      iVar = iUx_;
-    if (var.substr(0, 3) == "uyS")
-      iVar = iUy_;
-    if (var.substr(0, 3) == "uzS")
-      iVar = iUz_;
-    if (var.substr(0, 4) == "pXXS")
-      iVar = iPxx_;
-    if (var.substr(0, 4) == "pYYS")
-      iVar = iPyy_;
-    if (var.substr(0, 4) == "pZZS")
-      iVar = iPzz_;
-    if (var.substr(0, 4) == "pXYS")
-      iVar = iPxy_;
-    if (var.substr(0, 4) == "pXZS")
-      iVar = iPxz_;
-    if (var.substr(0, 4) == "pYZS")
-      iVar = iPyz_;
-    if (var.substr(0, 4) == "numS")
-      iVar = iNum_;
+      if (var.substr(0, 4) == "rhoS")
+        iVar = iRho_;
+      if (var.substr(0, 3) == "uxS")
+        iVar = iUx_;
+      if (var.substr(0, 3) == "uyS")
+        iVar = iUy_;
+      if (var.substr(0, 3) == "uzS")
+        iVar = iUz_;
+      if (var.substr(0, 4) == "pXXS")
+        iVar = iPxx_;
+      if (var.substr(0, 4) == "pYYS")
+        iVar = iPyy_;
+      if (var.substr(0, 4) == "pZZS")
+        iVar = iPzz_;
+      if (var.substr(0, 4) == "pXYS")
+        iVar = iPxy_;
+      if (var.substr(0, 4) == "pXZS")
+        iVar = iPxz_;
+      if (var.substr(0, 4) == "pYZS")
+        iVar = iPyz_;
+      if (var.substr(0, 4) == "numS")
+        iVar = iNum_;
 
-    const amrex::Array4<amrex::Real const>& arr =
-        nodePlasma[get_is()][mfi].array();
-    value = arr(ix, iy, iz, iVar);
+      const amrex::Array4<amrex::Real const>& arr =
+          nodePlasma[get_is()][mfi].array();
+      value = arr(ix, iy, iz, iVar);
 
-    if (var.substr(0, 1) == "u") {
-      double rho = arr(ix, iy, iz, iRho_);
-      if (rho != 0)
-        value /= rho;
+      if (var.substr(0, 1) == "u") {
+        double rho = arr(ix, iy, iz, iRho_);
+        if (rho != 0)
+          value /= rho;
+      }
+
+    } else if (var.substr(0, 2) == "pS") {
+      const amrex::Array4<amrex::Real const>& arr =
+          nodePlasma[get_is()][mfi].array();
+      value = (arr(ix, iy, iz, iPxx_) + arr(ix, iy, iz, iPyy_) +
+               arr(ix, iy, iz, iPzz_)) /
+              3.0;
+    } else if (var.substr(0, 4) == "proc") {
+      value = ParallelDescriptor::MyProc();
+    } else if (var.substr(0, 5) == "block") {
+      value = mfi.index();
+    } else {
+      value = 0;
     }
-
-  } else if (var.substr(0, 2) == "pS") {
-    const amrex::Array4<amrex::Real const>& arr =
-        nodePlasma[get_is()][mfi].array();
-    value = (arr(ix, iy, iz, iPxx_) + arr(ix, iy, iz, iPyy_) +
-             arr(ix, iy, iz, iPzz_)) /
-            3.0;
-  } else if (var.substr(0, 4) == "proc") {
-    value = ParallelDescriptor::MyProc();
-  } else if (var.substr(0, 5) == "block") {
-    value = mfi.index();
-  } else {
-    value = 0;
   }
 
   return value;

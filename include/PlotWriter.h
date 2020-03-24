@@ -145,6 +145,9 @@ public:
   /*----Get class member value begin--------------------*/
   double get_plotDx() const { return plotDx; }
   std::string get_plotString() const { return plotString; }
+  bool is_compact() const {    
+    return plotString.find("compact") != std::string::npos;
+  }
   /*----Get class member value end--------------------*/
 
   /*----Set class member value begin--------------------*/

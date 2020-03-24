@@ -3,10 +3,10 @@
 #include <iomanip>
 #include <sstream>
 
-#include "PlotWriter.h"
 #include "Pic.h"
+#include "PlotWriter.h"
 
-bool PlotWriter::doSaveBinary = true;
+bool PlotWriter::doSaveBinary = false;
 
 void PlotWriter::init() {
   isVerbose = rank == 0;
@@ -376,8 +376,8 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
   outFile << "#GRIDGEOMETRYLIMIT\n";
   outFile << "cartesian\n";
   for (int i = 0; i < nDim; ++i) {
-    outFile << domainMin_D[i] << "\t XyzMin" << i << "\n";
-    outFile << domainMax_D[i] << "\t XyzMax" << i << "\n";
+    outFile << domainMin_D[i] * No2OutL << "\t XyzMin" << i << "\n";
+    outFile << domainMax_D[i] * No2OutL << "\t XyzMax" << i << "\n";
   }
   outFile << "\n";
 
@@ -391,17 +391,6 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
 
   outFile << "#PLOTRANGE\n";
   for (int i = 0; i < nDim; i++) {
-    //  if ((doOutputParticles_I[iPlot] || isSat_I[iPlot]) &&
-    //      !col->getdoRotate()) {
-    //    // For field output, plotMin_ID is already in MHD coordinates.
-
-    //   if (i == 0)
-    //     x0 = col->getFluidStartX();
-    //   if (i == 1)
-    //     x0 = col->getFluidStartY();
-    //   if (i == 2)
-    //     x0 = col->getFluidStartZ();
-    // }
     outFile << (plotMinCorrected_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord"
             << i << "Min\n";
     outFile << (plotMaxCorrected_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord"
@@ -412,9 +401,9 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
   {
     int nCell = plotDx > 0 ? plotDx : 1;
     outFile << "#CELLSIZE\n";
-    outFile << nCell* dx_D[x_] * No2OutL << "\t dx\n";
-    outFile << nCell* dx_D[y_] * No2OutL << "\t dy\n";
-    outFile << nCell* dx_D[z_] * No2OutL << "\t dz\n";
+    outFile << nCell * dx_D[x_] * No2OutL << "\t dx\n";
+    outFile << nCell * dx_D[y_] * No2OutL << "\t dy\n";
+    outFile << nCell * dx_D[z_] * No2OutL << "\t dz\n";
     outFile << "\n";
   }
 
@@ -424,10 +413,11 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
 
   outFile << "#PLOTRESOLUTION\n";
   for (int i = 0; i < nDim; i++) {
-    //   if (doOutputParticles_I[iPlot] || isSat_I[iPlot]) {
-    //     outFile << (-1) << "\t plotDx\n"; // Save partices as unstructured.
-    //   } else {
-    outFile << plotDx << "\t plotDx\n";
+    if(plotDx>=0){
+    outFile << plotDx * dx_D[i] * No2OutL << "\t plotDx\n";
+    }else{
+outFile << plotDx << "\t plotDx\n";
+    }
   }
   // }
   outFile << "\n";
