@@ -491,7 +491,7 @@ void PlotWriter::set_output_unit() {
   }
 }
 
-double PlotWriter::No2OutTable(std::string const& var) {
+double PlotWriter::No2OutTable(std::string const& var) const {
   double value = 0;
 
   if (var.substr(0, 1) == "q") {

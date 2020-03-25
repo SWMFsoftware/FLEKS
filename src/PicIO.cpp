@@ -442,22 +442,69 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
                       int const iCycle) {
   Print() << "amrex::" << pw.get_amrex_filename(timeNow, iCycle) << std::endl;
 
-  {
+  //-----lambda to write MultiFab in output units---------------
+  auto write_single_level = [&](MultiFab& mf, std::string& filename,
+                                Vector<std::string>& varNames) {
+    // Convert to output unit.
+    for (int i = 0; i < mf.nComp(); i++) {
+      Real no2out = pw.No2OutTable(varNames[i]);
+      mf.mult(no2out, i, 1);
+    }
+
+    WriteSingleLevelPlotfile(filename, mf, varNames, geom, timeNow, iCycle);
+
+    // Convert back to normalized unit.
+    for (int i = 0; i < mf.nComp(); i++) {
+      Real out2no = 1. / pw.No2OutTable(varNames[i]);
+      mf.mult(out2no, i, 1);
+    }
+  };
+  //----------lambda end------------------------------------------
+
+  { //------------nodeE-----------------
     Vector<std::string> varNames = { "Ex", "Ey", "Ez" };
-    WriteSingleLevelPlotfile(pw.get_amrex_filename(timeNow, iCycle) + "_E",
-                             nodeE, varNames, geom, timeNow, iCycle);
+    std::string filename = pw.get_amrex_filename(timeNow, iCycle) + "_E";
+    write_single_level(nodeE, filename, varNames);
   }
 
-  {
-    Vector<std::string> varNames = { "Bcx", "Bcy", "Bcz" };
-    WriteSingleLevelPlotfile(pw.get_amrex_filename(timeNow, iCycle) + "_Bc",
-                             centerB, varNames, geom, timeNow, iCycle);
-  }
-
-  {
+  { //------------nodeB------------------------
     Vector<std::string> varNames = { "Bx", "By", "Bz" };
-    WriteSingleLevelPlotfile(pw.get_amrex_filename(timeNow, iCycle) + "_B",
-                             nodeB, varNames, geom, timeNow, iCycle);
+    std::string filename = pw.get_amrex_filename(timeNow, iCycle) + "_B";
+    write_single_level(nodeB, filename, varNames);
+  }
+
+  { //-------------plasma---------------------
+
+    // The order of the varname should be consistent with nodePlasma.
+    Vector<std::string> varNames = { "rho", "ux",  "uy",  "uz",  "pxx",
+                                     "pyy", "pzz", "pxy", "pxz", "pyz" };
+
+    for (int i = 0; i < nSpecies; i++) {
+      std::string filename = pw.get_amrex_filename(timeNow, iCycle) +
+                             "_plasma" + std::to_string(i);
+
+      MultiFab rho(nodePlasma[i], make_alias, iRho_, 1);
+      if (rho.min(0) == 0)
+        Abort("Error: density is zero!");
+
+      // Get momentums
+      MultiFab ux(nodePlasma[i], make_alias, iMx_, 1);
+      MultiFab uy(nodePlasma[i], make_alias, iMy_, 1);
+      MultiFab uz(nodePlasma[i], make_alias, iMz_, 1);
+
+      // Convert momentum to velocity;
+      MultiFab::Divide(ux, rho, 0, 0, 1, 0);
+      MultiFab::Divide(uy, rho, 0, 0, 1, 0);
+      MultiFab::Divide(uz, rho, 0, 0, 1, 0);
+
+      MultiFab pl(nodePlasma[i], make_alias, iRho_, iPyz_ - iRho_ + 1);
+      write_single_level(pl, filename, varNames);
+
+      // Convert velocity to momentum
+      MultiFab::Multiply(ux, rho, 0, 0, 1, 0);
+      MultiFab::Multiply(uy, rho, 0, 0, 1, 0);
+      MultiFab::Multiply(uz, rho, 0, 0, 1, 0);
+    }
   }
 }
 

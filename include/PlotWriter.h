@@ -224,7 +224,7 @@ public:
 
   /* Calculate the unit conversion coef for var_I. */
   void set_output_unit();
-  double No2OutTable(std::string const& var);
+  double No2OutTable(std::string const& var) const;
 
   /* Decide if the input point should be saved or not based on plotMin_D,
      plotMax_D and plotDx. ix, iy and iz are global indices.*/
