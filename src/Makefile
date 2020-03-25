@@ -18,7 +18,7 @@ OBJECTS = ${OBJS}
 OBJECTS_EXE = \
 	main.o
 
-EXE = ${BINDIR}/mypic.exe
+EXE = ${BINDIR}/FLEKS.exe
 
 SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 
@@ -29,16 +29,16 @@ FLAGC_EXTRA = ${FLAGC_LOCAL}
 
 include ../Makefile.conf
 
-exe: $(EXE)
+EXE: $(EXE)
 
 default: $(EXE)
 
 $(EXE):
-	# $(MAKE) LIB
-	# $(MAKE) ${OBJECTS_EXE}
-	# ${COMPILE.mpicxx} -o ${EXE} ${MY_LIB} ${OBJECTS_EXE} \
-	# -L../libFLEKS/ -lFLEKS ${CPPLIB} ${MPILIB} \
-	# $(LDFLAGS) $(LIBRARIES)
+	$(MAKE) LIB
+	$(MAKE) ${OBJECTS_EXE}
+	${COMPILE.mpicxx} -o ${EXE} ${MY_LIB} ${OBJECTS_EXE} \
+		-L../libFLEKS/ -lFLEKS ${CPPLIB} ${MPILIB} \
+		$(LDFLAGS) $(LIBRARIES)
 
 
 #
