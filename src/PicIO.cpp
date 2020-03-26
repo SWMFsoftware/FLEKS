@@ -456,53 +456,65 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
     geomOut.define(geom.Domain(), boxRangeOut, geom.Coord(), periodicity);
   }
 
-  //-----lambda to write MultiFab in output units---------------
-  auto write_single_level = [&](MultiFab& mf, std::string& filename,
-                                Vector<std::string>& varNames) {
-    // Save cell-centered, instead of the nodal, values, because the AMReX
-    // document says some virtualiazaion tools assumes the AMReX format outputs
-    // are cell-centered. 
-    MultiFab centerMF;
-    centerMF.define(centerBA, dm, mf.nComp(), 0);
-    if (mf.is_nodal()) {
-      average_node_to_cellcenter(centerMF, 0, mf, 0, mf.nComp(), 0);
-    } else {
-      MultiFab::Copy(centerMF, mf, 0, 0, centerMF.nComp(), 0);
+  // Save cell-centered, instead of the nodal, values, because the AMReX
+  // document says some virtualiazaion tools assumes the AMReX format outputs
+  // are cell-centered.
+  int nVarOut = 3 + 3 + 3 + 10 * nSpecies;
+  MultiFab centerMF;
+  centerMF.define(centerBA, dm, nVarOut, 0);
+
+  Vector<std::string> varNames = { "X", "Y", "Z" };
+  int iStart = 0;
+  { //--------------Coordinates-------------------------
+    MultiFab xyz(centerMF, make_alias, 0, 3);
+
+    for (MFIter mfi(xyz); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const auto& cellArr = xyz[mfi].array();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+
+      for (int k = lo.z; k <= hi.z; ++k) {
+        // Use the value returned from geom instead of geomOut, and it will be
+        // converted to output unit just as other variables.
+        const Real z0 = geom.CellCenter(k, iz_);
+        for (int j = lo.y; j <= hi.y; ++j) {
+          const Real y0 = geom.CellCenter(j, iy_);
+          for (int i = lo.x; i <= hi.x; ++i) {
+            const Real x0 = geom.CellCenter(i, ix_);
+            cellArr(i, j, k, ix_) = x0;
+            cellArr(i, j, k, iy_) = y0;
+            cellArr(i, j, k, iz_) = z0;
+          }
+        }
+      }
     }
-
-    // Convert to output unit.
-    for (int i = 0; i < centerMF.nComp(); i++) {
-      Real no2out = pw.No2OutTable(varNames[i]);
-      centerMF.mult(no2out, i, 1);
-    }
-
-    WriteSingleLevelPlotfile(filename, centerMF, varNames, geomOut, timeNow,
-                             iCycle);
-  };
-  //----------lambda end------------------------------------------
-
-  { //------------nodeE-----------------
-    Vector<std::string> varNames = { "Ex", "Ey", "Ez" };
-    std::string filename = pw.get_amrex_filename(timeNow, iCycle) + "_E";
-    write_single_level(nodeE, filename, varNames);
+    iStart += 3;
   }
 
-  { //------------centerB------------------------
-    Vector<std::string> varNames = { "Bx", "By", "Bz" };
-    std::string filename = pw.get_amrex_filename(timeNow, iCycle) + "_B";
-    write_single_level(centerB, filename, varNames);
+  { //------------------B---------------
+    MultiFab::Copy(centerMF, centerB, 0, iStart, nodeB.nComp(), 0);
+    iStart += nodeB.nComp();
+    varNames.push_back("Bx");
+    varNames.push_back("By");
+    varNames.push_back("Bz");
+  }
+
+  { //-----------------E-----------------------------
+    average_node_to_cellcenter(centerMF, iStart, nodeE, 0, nodeE.nComp(), 0);
+    iStart += nodeE.nComp();
+    varNames.push_back("Ex");
+    varNames.push_back("Ey");
+    varNames.push_back("Ez");
   }
 
   { //-------------plasma---------------------
 
     // The order of the varname should be consistent with nodePlasma.
-    Vector<std::string> varNames = { "rho", "ux",  "uy",  "uz",  "pxx",
-                                     "pyy", "pzz", "pxy", "pxz", "pyz" };
+    Vector<std::string> plasmaNames = { "rho", "ux",  "uy",  "uz",  "pxx",
+                                        "pyy", "pzz", "pxy", "pxz", "pyz" };
 
     for (int i = 0; i < nSpecies; i++) {
-      std::string filename = pw.get_amrex_filename(timeNow, iCycle) +
-                             "_plasma" + std::to_string(i);
-
       MultiFab rho(nodePlasma[i], make_alias, iRho_, 1);
       if (rho.min(0) == 0)
         Abort("Error: density is zero!");
@@ -518,7 +530,11 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
       MultiFab::Divide(uz, rho, 0, 0, 1, 0);
 
       MultiFab pl(nodePlasma[i], make_alias, iRho_, iPyz_ - iRho_ + 1);
-      write_single_level(pl, filename, varNames);
+      average_node_to_cellcenter(centerMF, iStart, pl, 0, pl.nComp(), 0);
+      iStart += pl.nComp();
+      for (auto& var : plasmaNames) {
+        varNames.push_back(var + "s" + std::to_string(i));
+      }
 
       // Convert velocity to momentum
       MultiFab::Multiply(ux, rho, 0, 0, 1, 0);
@@ -526,6 +542,15 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
       MultiFab::Multiply(uz, rho, 0, 0, 1, 0);
     }
   }
+
+  for (int i = 0; i < centerMF.nComp(); i++) {
+    Real no2out = pw.No2OutTable(varNames[i]);
+    centerMF.mult(no2out, i, 1);
+  }
+
+  std::string filename = pw.get_amrex_filename(timeNow, iCycle);
+  WriteSingleLevelPlotfile(filename, centerMF, varNames, geomOut, timeNow,
+                           iCycle);
 }
 
 void find_output_list_caller(const PlotWriter& writerIn,
