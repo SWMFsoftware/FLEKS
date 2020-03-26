@@ -442,22 +442,42 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
                       int const iCycle) {
   Print() << "amrex::" << pw.get_amrex_filename(timeNow, iCycle) << std::endl;
 
+  Geometry geomOut;
+  { // Creating geomOut, which uses output length unit, for amrex format output.
+    RealBox boxRangeOut;
+    Real no2outL = pw.No2OutTable("X");
+    for (int i = 0; i < nDimMax; i++) {
+      boxRangeOut.setLo(i, geom.ProbLo(i) * no2outL);
+      boxRangeOut.setHi(i, geom.ProbHi(i) * no2outL);
+    }
+    Array<int, nDim> periodicity;
+    for (int i = 0; i < nDimMax; i++)
+      periodicity[i] = geom.isPeriodic(i);
+    geomOut.define(geom.Domain(), boxRangeOut, geom.Coord(), periodicity);
+  }
+
   //-----lambda to write MultiFab in output units---------------
   auto write_single_level = [&](MultiFab& mf, std::string& filename,
                                 Vector<std::string>& varNames) {
+    // Save cell-centered, instead of the nodal, values, because the AMReX
+    // document says some virtualiazaion tools assumes the AMReX format outputs
+    // are cell-centered. 
+    MultiFab centerMF;
+    centerMF.define(centerBA, dm, mf.nComp(), 0);
+    if (mf.is_nodal()) {
+      average_node_to_cellcenter(centerMF, 0, mf, 0, mf.nComp(), 0);
+    } else {
+      MultiFab::Copy(centerMF, mf, 0, 0, centerMF.nComp(), 0);
+    }
+
     // Convert to output unit.
-    for (int i = 0; i < mf.nComp(); i++) {
+    for (int i = 0; i < centerMF.nComp(); i++) {
       Real no2out = pw.No2OutTable(varNames[i]);
-      mf.mult(no2out, i, 1);
+      centerMF.mult(no2out, i, 1);
     }
 
-    WriteSingleLevelPlotfile(filename, mf, varNames, geom, timeNow, iCycle);
-
-    // Convert back to normalized unit.
-    for (int i = 0; i < mf.nComp(); i++) {
-      Real out2no = 1. / pw.No2OutTable(varNames[i]);
-      mf.mult(out2no, i, 1);
-    }
+    WriteSingleLevelPlotfile(filename, centerMF, varNames, geomOut, timeNow,
+                             iCycle);
   };
   //----------lambda end------------------------------------------
 
@@ -467,10 +487,10 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
     write_single_level(nodeE, filename, varNames);
   }
 
-  { //------------nodeB------------------------
+  { //------------centerB------------------------
     Vector<std::string> varNames = { "Bx", "By", "Bz" };
     std::string filename = pw.get_amrex_filename(timeNow, iCycle) + "_B";
-    write_single_level(nodeB, filename, varNames);
+    write_single_level(centerB, filename, varNames);
   }
 
   { //-------------plasma---------------------
