@@ -946,13 +946,13 @@ void Pic::update_E_rhs(double* rhs) {
                     &Pic::get_center_B);
   apply_external_BC(nodeStatus, nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
 
-  print_MultiFab(nodeB, "nodeB_2", geom, 2);
-  print_MultiFab(centerB, "centerB_2", geom, 1);
+  //  print_MultiFab(nodeB, "nodeB_2", geom, 2);
+  // print_MultiFab(centerB, "centerB_2", geom, 1);
 
   const Real* invDx = geom.InvCellSize();
   curl_center_to_node(centerB, tempNode, invDx);
 
-  print_MultiFab(tempNode, "tempNode", 0);
+  // print_MultiFab(tempNode, "tempNode", 0);
 
   MultiFab::Saxpy(temp2Node, -fourPI, nodePlasma[iTot], iJhx_, 0,
                   temp2Node.nComp(), temp2Node.nGrow());
@@ -964,7 +964,7 @@ void Pic::update_E_rhs(double* rhs) {
   MultiFab::Add(temp2Node, nodeE, 0, 0, nodeE.nComp(), temp2Node.nGrow());
 
   convert_3d_to_1d(temp2Node, rhs, geom);
-  print_MultiFab(temp2Node, "temp2node", 0);
+  // print_MultiFab(temp2Node, "temp2node", 0);
 }
 
 void Pic::update_B() {
