@@ -12,6 +12,7 @@
 #include <AMReX_REAL.H>
 #include <AMReX_RealBox.H>
 #include <AMReX_Vector.H>
+#include <AMReX_VisMF.H>
 
 #include "BC.h"
 #include "Constants.h"
@@ -31,7 +32,7 @@ private:
   amrex::MultiFab nodeFluid;
   amrex::MultiFab centerB;
 
-  int nGst; 
+  int nGst;
 
 public:
   void init();
@@ -64,6 +65,18 @@ public:
   void set_plasma_charge_and_mass(amrex::Real qomEl);
 
   void load_balance(const amrex::DistributionMapping& dmIn);
+
+  void save_restart_data() {
+    std::string restartDir = "PC/restartOUT/";
+    amrex::VisMF::Write(nodeFluid, restartDir + "Interface_nodeFluid");
+    amrex::VisMF::Write(centerB, restartDir + "Interface_centerB");
+  };
+
+  void read_restart() {
+    std::string restartDir = "PC/restartIN/";
+    amrex::VisMF::Read(nodeFluid, restartDir + "Interface_nodeFluid");
+    amrex::VisMF::Read(centerB, restartDir + "Interface_centerB");
+  }
 
   // ---------Functions to read/interpolate value from nodeFluid.
   // Begin------------
@@ -205,7 +218,8 @@ public:
     amrex::Real P;
     if (useMultiSpecies || useMultiFluid || doSplitSpecies) {
       std::cout << " getFluidPpar has not implemented for "
-                   "multifluid/multispecies/doSplitSpecies!!" << std::endl;
+                   "multifluid/multispecies/doSplitSpecies!!"
+                << std::endl;
       abort();
     }
 
@@ -460,7 +474,8 @@ public:
 
     if (useMultiFluid || useMultiSpecies || doSplitSpecies) {
       std::cout << " setFluidanisoUth has not implemented for "
-                   "multifluid/multispecies/doSplitSpecies!!!" << std::endl;
+                   "multifluid/multispecies/doSplitSpecies!!!"
+                << std::endl;
       abort();
     }
 

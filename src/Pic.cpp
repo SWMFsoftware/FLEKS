@@ -2,13 +2,13 @@
 
 #include <AMReX_MultiFabUtil.H>
 
-#include "Pic.h"
+#include "GridInfo.h"
 #include "GridUtility.h"
 #include "LinearSolver.h"
+#include "Pic.h"
 #include "SWMFDomains.h"
 #include "Timing_c.h"
 #include "Utility.h"
-#include "GridInfo.h"
 
 using namespace amrex;
 
@@ -54,6 +54,9 @@ void Pic::read_param(const std::string& command, ReadParam& readParam) {
 
 void Pic::fill_new_cells() {
   std::string nameFunc = "Pic::fill_new_cells";
+
+  if (!doNeedFillNewCell)
+    return;
 
   Print() << nameFunc << " begin" << std::endl;
 
@@ -488,13 +491,11 @@ void Pic::fill_E_B_fields() {
   apply_external_BC(nodeStatus, nodeE, 0, nDimMax, &Pic::get_node_E);
   apply_external_BC(nodeStatus, nodeB, 0, nDimMax, &Pic::get_node_B);
 
-
-  fill_new_center_B(); 
+  fill_new_center_B();
   centerB.FillBoundary(geom.periodicity());
-  
+
   apply_external_BC(cellStatus, centerB, 0, centerB.nComp(),
                     &Pic::get_center_B);
-
 }
 //---------------------------------------------------------
 
@@ -713,9 +714,16 @@ void Pic::update() {
   BL_PROFILE(nameFunc);
   timing_start(nameFunc);
 
-  Print() << "\n================ Begin cycle = " << tc->get_cycle()
-          << " at time = " << tc->get_time_si()
-          << " (s) ======================" << std::endl;
+  {
+    const Real t0 = tc->get_time_si();
+    // update time, step number.
+    tc->update();
+    const Real t1 = tc->get_time_si();
+    Print() << "\n================ Begin cycle = " << tc->get_cycle()
+            << " from t = " << t0 << " (s) to t = " << t1
+            << " (s) ======================" << std::endl;
+  }
+
   update_E();
 
   particle_mover();
@@ -724,9 +732,6 @@ void Pic::update() {
   if (doCorrectDivE) {
     divE_correction();
   }
-
-  // update time, step number.
-  tc->update();
 
   // Apply load balance before sum_moments so that the moments and mass matrix
   // on the gird do NOT require MPI communication.
@@ -941,13 +946,13 @@ void Pic::update_E_rhs(double* rhs) {
                     &Pic::get_center_B);
   apply_external_BC(nodeStatus, nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
 
-  // print_MultiFab(nodeB, "nodeB_2", geom, 2);
-  // print_MultiFab(centerB, "centerB_2", geom, 1);
+  print_MultiFab(nodeB, "nodeB_2", geom, 2);
+  print_MultiFab(centerB, "centerB_2", geom, 1);
 
   const Real* invDx = geom.InvCellSize();
   curl_center_to_node(centerB, tempNode, invDx);
 
-  // print_MultiFab(tempNode, "tempNode",0);
+  print_MultiFab(tempNode, "tempNode", 0);
 
   MultiFab::Saxpy(temp2Node, -fourPI, nodePlasma[iTot], iJhx_, 0,
                   temp2Node.nComp(), temp2Node.nGrow());
@@ -959,7 +964,7 @@ void Pic::update_E_rhs(double* rhs) {
   MultiFab::Add(temp2Node, nodeE, 0, 0, nodeE.nComp(), temp2Node.nGrow());
 
   convert_3d_to_1d(temp2Node, rhs, geom);
-  // print_MultiFab(temp2Node, "temp2node", 0);
+  print_MultiFab(temp2Node, "temp2node", 0);
 }
 
 void Pic::update_B() {

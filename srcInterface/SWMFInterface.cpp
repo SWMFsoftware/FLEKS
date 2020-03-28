@@ -70,7 +70,7 @@ int pic_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
 }
 
 int pic_finalize_init_() {
-  MPICs->set_ic();
+  MPICs->set_ic();  
   return 0;
 }
 

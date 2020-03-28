@@ -5,6 +5,7 @@
 #include <AMReX_FabArray.H>
 
 #include "GridInfo.h"
+#include "Constants.h"
 
 template <class FAB>
 void redistribute_FabArray(amrex::FabArray<FAB>& fa,

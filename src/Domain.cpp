@@ -4,7 +4,7 @@
 using namespace amrex;
 
 //------------------------------------------------------------------------
-void Domain::update() {  
+void Domain::update() {
   pic.update();
 
   write_plots();
@@ -45,7 +45,7 @@ void Domain::init(amrex::Real timeIn, const std::string &paramString,
   fluidInterface->PrintFluidPicInterface();
 
   make_grid();
-  //make_data();
+  // make_data();
 
   init_time_ctr();
 };
@@ -88,19 +88,27 @@ void Domain::make_grid() {
   // std::endl;
 }
 //------------------------------------------------------------------------
-//void Domain::make_data() { pic.make_data(); }
+// void Domain::make_data() { pic.make_data(); }
 
 void Domain::regrid() {
 
-  std::string nameFunc = "Domain::regrid"; 
-  Print()<<nameFunc<<" is runing..."<<std::endl;
+  std::string nameFunc = "Domain::regrid";
+  Print() << nameFunc << " is runing..." << std::endl;
 
-  iGrid++; 
+  iGrid++;
   iDecomp++;
   BoxArray baPic = resize_pic_ba(tc->get_cycle());
   DistributionMapping dmPic(baPic);
   pic.regrid(baPic, dmPic);
-  fluidInterface->regrid(baPic, dmPic); 
+  fluidInterface->regrid(baPic, dmPic);
+
+  if (doRestart && isInitializing) {
+    // Restoring the restart data immediately after creating the data
+    // structures, and injecting particles at boundaries. The field boundary
+    // nodes will be overwritten later when GM pass information to PC.
+    read_restart();
+    isInitializing = false;
+  }
 }
 
 void Domain::receive_grid_info(int *status) {
@@ -117,14 +125,17 @@ void Domain::receive_grid_info(int *status) {
 
 //------------------------------------------------------------------------
 void Domain::set_ic() {
-  if (doRestart) {
-    read_restart();
-  } else {
-    pic.set_ic();
-  }
 
+  // If it is restart, the values should be read in immediately after creating
+  // the data objects. See Domain::regrid().
+  if (doRestart)
+    return;
+
+  pic.fill_new_cells();
   write_plots(true);
   pic.write_log(true, true);
+
+  isInitializing = false;
 }
 
 //------------------------------------------------------------------------
@@ -152,7 +163,13 @@ void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
   pic.get_fluid_state_for_points(nDim, nPoint, xyz_I, data_I, nVar);
 }
 
-void Domain::read_restart() { pic.read_restart(); }
+void Domain::read_restart() {
+  fluidInterface->read_restart();
+  pic.read_restart();
+
+  write_plots(true);
+  pic.write_log(true, true);
+}
 
 //------------------------------------------------------------------------
 void Domain::save_restart() {
@@ -160,7 +177,11 @@ void Domain::save_restart() {
   save_restart_data();
 }
 
-void Domain::save_restart_data() { pic.save_restart_data(); }
+void Domain::save_restart_data() {
+  VisMF::SetNOutFiles(64);
+  fluidInterface->save_restart_data();
+  pic.save_restart_data();
+}
 
 void Domain::save_restart_header() {
   if (ParallelDescriptor::IOProcessor()) {
@@ -296,6 +317,7 @@ void Domain::read_param() {
       pic.read_param(command, readParam);
     } else if (command == "#RESTART") {
       readParam.read_var("doRestart", doRestart);
+      pic.set_doRestart(doRestart);
     } else if (command == "#MAXBLOCKSIZE") {
       // The block size in each direction can not larger than maxBlockSize.
       int tmp;

@@ -345,16 +345,17 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
 }
 
 void Pic::save_restart_data() {
-  VisMF::SetNOutFiles(64);
-
   std::string restartDir = "PC/restartOUT/";
   VisMF::Write(nodeE, restartDir + "nodeE");
   VisMF::Write(nodeB, restartDir + "nodeB");
   VisMF::Write(centerB, restartDir + "centerB");
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
+    parts[iPart]->label_particles_outside_ba();
+    parts[iPart]->Redistribute();
     parts[iPart]->Checkpoint(restartDir, "particles" + std::to_string(iPart));
   }
+  inject_particles_for_boundary_cells();
 }
 
 void Pic::save_restart_header(std::ofstream& headerFile) {
@@ -372,21 +373,26 @@ void Pic::save_restart_header(std::ofstream& headerFile) {
 }
 
 void Pic::read_restart() {
+  Print()<<"Pic::read_restart() start....."<<std::endl;
 
   std::string restartDir = "PC/restartIN/";
   VisMF::Read(nodeE, restartDir + "nodeE");
   VisMF::Read(nodeB, restartDir + "nodeB");
   VisMF::Read(centerB, restartDir + "centerB");
 
-  nodeE.FillBoundary(geom.periodicity());
-  nodeB.FillBoundary(geom.periodicity());
-  centerB.FillBoundary(geom.periodicity());
+  // nodeE.FillBoundary(geom.periodicity());
+  // nodeB.FillBoundary(geom.periodicity());
+  // centerB.FillBoundary(geom.periodicity());
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     parts[iPart]->Restart(restartDir, "particles" + std::to_string(iPart));
   }
+  inject_particles_for_boundary_cells();
+
   sum_moments();
   sum_to_center(false);
+
+  doNeedFillNewCell = false; 
 }
 
 void Pic::write_log(bool doForce, bool doCreateFile) {

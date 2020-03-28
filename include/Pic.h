@@ -79,7 +79,7 @@ private:
   FieldSolver fsolver;
 
   bool doRestart;
-  bool doCorrectDivE;
+  bool doCorrectDivE;  
 
   bool doReSampling;
   amrex::Real reSamplingLowLimit;
@@ -107,6 +107,8 @@ public:
 
   void update();
 
+  void set_doRestart(bool in) {doRestart = in; }  
+
   //--------------Initialization begin-------------------------------
   void init(amrex::Real timeIn, const std::string &paramString, int *paramInt,
             double *gridDim, double *paramReal,
@@ -118,11 +120,6 @@ public:
   void regrid(const amrex::BoxArray &centerBAIn,
               const amrex::DistributionMapping &dmIn);
 
-  // void make_data();
-  void set_ic() {
-    if (doNeedFillNewCell)
-      fill_new_cells();
-  };
   void fill_new_cells();
   void fill_E_B_fields();
 
