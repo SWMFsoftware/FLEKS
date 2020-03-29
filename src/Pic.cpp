@@ -7,7 +7,7 @@
 #include "LinearSolver.h"
 #include "Pic.h"
 #include "SWMFDomains.h"
-#include "Timing_c.h"
+#include "Timer.h"
 #include "Utility.h"
 
 using namespace amrex;
@@ -62,8 +62,7 @@ void Pic::fill_new_cells() {
 
   Print() << nameFunc << " begin" << std::endl;
 
-  BL_PROFILE(nameFunc);
-  timing_start(nameFunc);
+  Timer funcTimer(nameFunc);
 
   fill_E_B_fields();
   fill_particles();
@@ -74,8 +73,6 @@ void Pic::fill_new_cells() {
   doNeedFillNewCell = false;
 
   Print() << nameFunc << " end" << std::endl;
-
-  timing_stop(nameFunc);
 }
 
 //==========================================================
@@ -89,9 +86,7 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
   std::string nameFunc = "Pic::regrid";
   Print() << nameFunc << " is runing..." << std::endl;
 
-  BL_PROFILE(nameFunc);
-
-  timing_start(nameFunc);
+  Timer funcTimer(nameFunc);
 
   if (centerBAIn == centerBA)
     return;
@@ -235,8 +230,6 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
     int nGrid = get_local_node_or_cell_number(centerDivE);
     divESolver.init(nGrid, 1, nDimMax, matvec_divE_accurate);
   }
-
-  timing_stop(nameFunc);
 }
 
 //==========================================================
@@ -420,9 +413,8 @@ void Pic::fill_particles() {
 //==========================================================
 void Pic::particle_mover() {
   std::string nameFunc = "Pic::mover";
-  BL_PROFILE(nameFunc);
 
-  timing_start(nameFunc);
+  Timer funcTimer(nameFunc);
 
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->mover(nodeEth, nodeB, tc->get_dt());
@@ -434,16 +426,13 @@ void Pic::particle_mover() {
   }
 
   inject_particles_for_boundary_cells();
-
-  timing_stop(nameFunc);
 }
 
 //==========================================================
 void Pic::sum_moments() {
   std::string nameFunc = "Pic::sum_moments";
-  BL_PROFILE(nameFunc);
 
-  timing_start(nameFunc);
+  Timer funcTimer(nameFunc);
 
   nodePlasma[nSpecies].setVal(0.0);
   const RealMM mm0(0.0);
@@ -467,15 +456,13 @@ void Pic::sum_moments() {
   nodeMM.SumBoundary(geom.periodicity());
 
   nodeMM.FillBoundary(geom.periodicity());
-
-  timing_stop(nameFunc);
 }
 
 //==========================================================
 void Pic::divE_correction() {
   std::string nameFunc = "Pic::divE_correction";
-  BL_PROFILE(nameFunc);
-  timing_start(nameFunc);
+
+  Timer funcTimer(nameFunc);
 
   for (int iIter = 0; iIter < 3; iIter++) {
     sum_to_center(true);
@@ -496,27 +483,24 @@ void Pic::divE_correction() {
   inject_particles_for_boundary_cells();
 
   sum_to_center(false);
-  timing_stop(nameFunc);
 }
 
 //==========================================================
 void Pic::divE_correct_particle_position() {
   std::string nameFunc = "Pic::correct_position";
-  BL_PROFILE(nameFunc);
-  timing_start(nameFunc);
+
+  Timer funcTimer(nameFunc);
 
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->divE_correct_position(centerPhi);
   }
-
-  timing_stop(nameFunc);
 }
 
 //==========================================================
 void Pic::calculate_phi(LinearSolver& solver) {
   std::string nameFunc = "Pic::calculate_phi";
-  BL_PROFILE(nameFunc);
-  timing_start(nameFunc);
+
+  Timer funcTimer(nameFunc);
 
   solver.reset(get_local_node_or_cell_number(centerDivE));
 
@@ -534,14 +518,11 @@ void Pic::calculate_phi(LinearSolver& solver) {
 
   convert_1d_to_3d(solver.xLeft, centerPhi, geom);
   centerPhi.FillBoundary(geom.periodicity());
-
-  timing_stop(nameFunc);
 }
 
 //==========================================================
 void Pic::divE_accurate_matvec(double* vecIn, double* vecOut) {
   std::string nameFunc = "Pic::divE_matvec";
-  BL_PROFILE(nameFunc);
 
   zero_array(vecOut, divESolver.get_nSolve());
 
@@ -576,8 +557,8 @@ void Pic::divE_accurate_matvec(double* vecIn, double* vecOut) {
 //==========================================================
 void Pic::sum_to_center(bool isBeforeCorrection) {
   std::string nameFunc = "Pic::sum_to_center";
-  BL_PROFILE(nameFunc);
-  timing_start(nameFunc);
+
+  Timer funcTimer(nameFunc);
 
   centerNetChargeNew.setVal(0.0);
 
@@ -609,15 +590,13 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
     MultiFab::Copy(centerNetChargeOld, centerNetChargeNew, 0, 0,
                    centerNetChargeOld.nComp(), centerNetChargeOld.nGrow());
   }
-
-  timing_stop(nameFunc);
 }
 
 //==========================================================
 void Pic::update() {
   std::string nameFunc = "Pic::update";
-  BL_PROFILE(nameFunc);
-  timing_start(nameFunc);
+
+  Timer funcTimer(nameFunc);
 
   {
     const Real t0 = tc->get_time_si();
@@ -643,15 +622,13 @@ void Pic::update() {
   load_balance();
 
   sum_moments();
-
-  timing_stop(nameFunc);
 }
 
 //==========================================================
 void Pic::update_E() {
   std::string nameFunc = "Pic::update_E";
-  BL_PROFILE(nameFunc);
-  timing_start(nameFunc);
+
+  Timer funcTimer(nameFunc);
 
   eSolver.reset(get_local_node_or_cell_number(nodeE));
 
@@ -686,15 +663,13 @@ void Pic::update_E() {
 
   apply_external_BC(nodeStatus, nodeE, 0, nDimMax, &Pic::get_node_E);
   apply_external_BC(nodeStatus, nodeEth, 0, nDimMax, &Pic::get_node_E);
-
-  timing_stop(nameFunc);
 }
 
 //==========================================================
 void Pic::update_E_matvec(const double* vecIn, double* vecOut,
                           const bool useZeroBC) {
   std::string nameFunc = "Pic::E_matvec";
-  BL_PROFILE(nameFunc);
+
   zero_array(vecOut, eSolver.get_nSolve());
 
   MultiFab vecMF(nodeBA, dm, 3, nGst);
@@ -706,11 +681,11 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
   convert_1d_to_3d(vecIn, vecMF, geom);
 
   // The right side edges should be filled in.
-  vecMF.SumBoundary(geom.periodicity());  
+  vecMF.SumBoundary(geom.periodicity());
 
   // M*E needs ghost cell information.
   vecMF.FillBoundary(geom.periodicity());
-  
+
   if (useZeroBC) {
     // The boundary nodes would not be filled in by convert_1d_3d. So, there is
     // not need to apply zero boundary conditions again here.
@@ -720,7 +695,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
     apply_external_BC(nodeStatus, vecMF, 0, nDimMax, &Pic::get_node_E);
   }
 
-  lap_node_to_node(vecMF, matvecMF, dm, geom);  
+  lap_node_to_node(vecMF, matvecMF, dm, geom);
 
   Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
   matvecMF.mult(-delt2);
@@ -747,21 +722,21 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
 
       MultiFab::LinComb(centerDivE, 1 - fsolver.coefDiff, centerDivE, 0,
                         fsolver.coefDiff, tempCenter1, 0, 0, 1, 1);
-    }    
+    }
 
     grad_center_to_node(centerDivE, tempNode3, geom.InvCellSize());
 
     tempNode3.mult(delt2);
     MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(),
                   matvecMF.nGrow());
-  }  
+  }
 
   tempNode3.setVal(0);
   update_E_M_dot_E(vecMF, tempNode3);
 
   MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
 
-  MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);  
+  MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
 
   convert_3d_to_1d(matvecMF, vecOut, geom);
 }
@@ -835,7 +810,7 @@ void Pic::update_E_rhs(double* rhs) {
 //==========================================================
 void Pic::update_B() {
   std::string nameFunc = "Pic::update_B";
-  timing_start(nameFunc);
+  Timer funcTimer(nameFunc);
 
   MultiFab dB(centerBA, dm, 3, nGst);
 
@@ -853,8 +828,6 @@ void Pic::update_B() {
   nodeB.FillBoundary(geom.periodicity());
 
   apply_external_BC(nodeStatus, nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
-
-  timing_stop(nameFunc);
 }
 
 //==========================================================
@@ -980,7 +953,7 @@ void Pic::load_balance() {
     return;
 
   std::string nameFunc = "Pic::load_balance";
-  timing_start(nameFunc);
+  Timer funcTimer(nameFunc);
 
   Print() << "--------- Load balancing ------------" << std::endl;
 
@@ -1025,8 +998,6 @@ void Pic::load_balance() {
   }
 
   fluidInterface->load_balance(dm);
-
-  timing_stop(nameFunc);
 }
 
 //==========================================================

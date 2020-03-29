@@ -75,8 +75,6 @@ int pic_finalize_init_() {
 }
 
 int pic_run_(double *time) {
-  BL_PROFILE("pic_run");
-
   double timenow = *time;
 
   MPICs->update();
