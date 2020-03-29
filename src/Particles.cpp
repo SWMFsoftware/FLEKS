@@ -5,6 +5,7 @@
 
 using namespace amrex;
 
+//==========================================================
 Particles::Particles(const Geometry& geom, const DistributionMapping& dm,
                      const BoxArray& ba, TimeCtr* const tcIn,
                      const int speciesIDIn, const Real chargeIn,
@@ -21,6 +22,7 @@ Particles::Particles(const Geometry& geom, const DistributionMapping& dm,
     tile_size[i] = 1;
 }
 
+//==========================================================
 void Particles::add_particles_cell(const MFIter& mfi,
                                    const FluidInterface& fluidInterface, int i,
                                    int j, int k) {
@@ -144,6 +146,7 @@ void Particles::add_particles_cell(const MFIter& mfi,
       }
 }
 
+//==========================================================
 void Particles::add_particles_domain(const FluidInterface& fluidInterface,
                                      const iMultiFab& cellStatus) {
   BL_PROFILE("Particles::add_particles");
@@ -168,6 +171,7 @@ void Particles::add_particles_domain(const FluidInterface& fluidInterface,
   }
 }
 
+//==========================================================
 void Particles::inject_particles_at_boundary(
     const FluidInterface& fluidInterface, const iMultiFab& cellStatus) {
   BL_PROFILE("Particles::inject_particles_at_boundary");
@@ -193,22 +197,6 @@ void Particles::inject_particles_at_boundary(
       }
     }
 
-    // for (int iDim = 0; iDim < 3; iDim++) {
-    //   if (!Geom(0).isPeriodic(iDim)) {
-    //     IntVect vecLeft = mid, vecRight = mid;
-    //     vecLeft[iDim] = lo[iDim] - 1;
-    //     vecRight[iDim] = hi[iDim] + 1;
-
-    //     if (status(vecLeft) == iBoundary_) {
-    //       idxMin[iDim] -= nGstInject;
-    //     }
-
-    //     if (status(vecRight) == iBoundary_) {
-    //       idxMax[iDim] += nGstInject;
-    //     }
-    //   }
-    // }
-
     for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
@@ -219,6 +207,7 @@ void Particles::inject_particles_at_boundary(
   }
 }
 
+//==========================================================
 void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
                               amrex::UMultiFab<RealCMM>& centerMM,
                               bool doNetChargeOnly) {
@@ -358,6 +347,7 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
   }
 }
 
+//==========================================================
 PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
                                 MultiFab& nodeBMF, Real dt) {
   BL_PROFILE("Particles::sum_moments");
@@ -596,6 +586,7 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
   return pinfo;
 }
 
+//==========================================================
 Real Particles::calc_max_thermal_velocity(MultiFab& momentsMF) {
 
   Real uthMax = 0;
@@ -635,6 +626,7 @@ Real Particles::calc_max_thermal_velocity(MultiFab& momentsMF) {
   return uthMax;
 }
 
+//==========================================================
 void Particles::convert_to_fluid_moments(MultiFab& momentsMF) {
   MultiFab tmpMF(momentsMF, make_alias, iRho_, iPyz_ - iRho_ + 1);
   tmpMF.mult(1.0 / get_qom(), tmpMF.nGrow());
@@ -667,6 +659,7 @@ void Particles::convert_to_fluid_moments(MultiFab& momentsMF) {
   }
 }
 
+//==========================================================
 void Particles::mover(const amrex::MultiFab& nodeEMF,
                       const amrex::MultiFab& nodeBMF, amrex::Real dt) {
   BL_PROFILE("Particles::mover");
@@ -766,6 +759,7 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
   Redistribute();
 }
 
+//==========================================================
 void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
   BL_PROFILE("Particles::divE_correct_position");
 
@@ -892,16 +886,9 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
 
     } // for p
   }
-
-  // ParallelDescriptor::ReduceRealMax(epsMax,
-  //                                   ParallelDescriptor::IOProcessorNumber());
-
-  // Print() << "Particle position correction: epsMax = " << epsMax
-  //         << " for species " << speciesID << std::endl;
-
-  // Redistribute();
 }
 
+//==========================================================
 void Particles::split_particles(Real limit) {
   BL_PROFILE("Particles::split_particles");
   const int nPartGoal =
@@ -1017,6 +1004,7 @@ void Particles::split_particles(Real limit) {
   }
 }
 
+//==========================================================
 void Particles::combine_particles(Real limit) {
   BL_PROFILE("Particles::combine_particles");
   IntVect iv = { 1, 1, 1 };
@@ -1362,6 +1350,7 @@ void Particles::combine_particles(Real limit) {
   }
 }
 
+//==========================================================
 bool Particles::do_inject_particles_for_this_cell(
     const amrex::Box& bx, const amrex::Array4<const int>& status, const int i,
     const int j, const int k) {

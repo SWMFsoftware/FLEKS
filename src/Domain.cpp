@@ -3,30 +3,16 @@
 
 using namespace amrex;
 
-//------------------------------------------------------------------------
+//========================================================
 void Domain::update() {
   pic.update();
 
   write_plots();
 
-  // int ic = 0;
-  // while (ic < 4) {
-  //   ic++;
-  //   Print() << "\n==================regriding begin======================="
-  //           << std::endl;
-  //   regrid();
-  //   tc->update();
-  //   write_plots(true);
-
-  //   Print() << "\n==================regriding end======================="
-  //           << std::endl;
-  // }
-  // Abort("finished here");
-
   pic.write_log();
 };
 
-//------------------------------------------------------------------------
+//========================================================
 void Domain::init(amrex::Real timeIn, const std::string &paramString,
                   int *paramInt, double *gridDim, double *paramReal,
                   int iDomain) {
@@ -44,13 +30,12 @@ void Domain::init(amrex::Real timeIn, const std::string &paramString,
 
   fluidInterface->PrintFluidPicInterface();
 
-  make_grid();
-  // make_data();
+  make_grid();  
 
   init_time_ctr();
 };
 
-//------------------------------------------------------------------------
+//========================================================
 void Domain::make_grid() {
   set_nGst(2);
 
@@ -82,14 +67,9 @@ void Domain::make_grid() {
 
   pic.set_geom(nGst, geom);
   fluidInterface->set_geom(nGst, geom);
-
-  // amrex::Print() << "Domain::          range = " << boxRange << std::endl;
-  // amrex::Print() << "Domain:: Total block #  = " << nodeBA.size() <<
-  // std::endl;
 }
-//------------------------------------------------------------------------
-// void Domain::make_data() { pic.make_data(); }
 
+//========================================================
 void Domain::regrid() {
 
   std::string nameFunc = "Domain::regrid";
@@ -111,19 +91,12 @@ void Domain::regrid() {
   }
 }
 
+//========================================================
 void Domain::receive_grid_info(int *status) {
   gridInfo.set_status(status);
-
-  // for (int i = 0; i < nCell[ix_]; i++)
-  //   for (int j = 0; j < nCell[iy_]; j++)
-  //     for (int k = 0; k < nCell[iz_]; k++) {
-  //       Print() << "Domain:: i = " << i << " j = " << j << " k = " << k
-  //               << " status = " << (gridInfo.get_status(i, j, k) ? "T" : "F")
-  //               << std::endl;
-  //     }
 }
 
-//------------------------------------------------------------------------
+//========================================================
 void Domain::set_ic() {
 
   // If it is restart, the values should be read in immediately after creating
@@ -138,31 +111,32 @@ void Domain::set_ic() {
   isInitializing = false;
 }
 
-//------------------------------------------------------------------------
+//========================================================
 void Domain::set_state_var(double *data, int *index) {
   pic.set_state_var(data, index);
 }
 
-//------------------------------------------------------------------------
+//========================================================
 int Domain::get_grid_nodes_number() { return pic.get_grid_nodes_number(); }
 
-//------------------------------------------------------------------------
+//========================================================
 void Domain::get_grid(double *pos_DI) { pic.get_grid(pos_DI); }
 
-//------------------------------------------------------------------------
+//========================================================
 void Domain::find_mpi_rank_for_points(const int nPoint,
                                       const double *const xyz_I,
                                       int *const rank_I) {
   pic.find_mpi_rank_for_points(nPoint, xyz_I, rank_I);
 }
 
-//------------------------------------------------------------------------
+//========================================================
 void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
                                         const double *const xyz_I,
                                         double *const data_I, const int nVar) {
   pic.get_fluid_state_for_points(nDim, nPoint, xyz_I, data_I, nVar);
 }
 
+//========================================================
 void Domain::read_restart() {
   fluidInterface->read_restart();
   pic.read_restart();
@@ -171,18 +145,20 @@ void Domain::read_restart() {
   pic.write_log(true, true);
 }
 
-//------------------------------------------------------------------------
+//========================================================
 void Domain::save_restart() {
   save_restart_header();
   save_restart_data();
 }
 
+//========================================================
 void Domain::save_restart_data() {
   VisMF::SetNOutFiles(64);
   fluidInterface->save_restart_data();
   pic.save_restart_data();
 }
 
+//========================================================
 void Domain::save_restart_header() {
   if (ParallelDescriptor::IOProcessor()) {
     Print() << "Saving restart file at time = " << tc->get_time_si() << " (s)"
@@ -245,6 +221,7 @@ void Domain::save_restart_header() {
   }
 }
 
+//========================================================
 void Domain::init_time_ctr() {
   tc->set_si2no(fluidInterface->getSi2NoT());
 
@@ -300,8 +277,7 @@ void Domain::init_time_ctr() {
   }
 }
 
-//---------------------------------------------------------
-
+//========================================================
 void Domain::read_param() {
   // The default values shoudl be set in the constructor.
 
@@ -408,4 +384,5 @@ void Domain::read_param() {
   }
 }
 
+//========================================================
 void Domain::write_plots(bool doForce) { pic.write_plots(doForce); }

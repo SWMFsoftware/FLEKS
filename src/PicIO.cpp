@@ -5,6 +5,7 @@
 
 using namespace amrex;
 
+//==========================================================
 void Pic::set_state_var(double* data, int* index) {
   std::string nameFunc = "Pic::set_state_var";
   Print() << nameFunc << " begin" << std::endl;
@@ -17,16 +18,19 @@ void Pic::set_state_var(double* data, int* index) {
   return;
 }
 
+//==========================================================
 int Pic::get_grid_nodes_number() {
   return fluidInterface->count_couple_node_number();
 }
 
+//==========================================================
 void Pic::get_grid(double* pos_DI) {
   std::string nameFunc = "Pic::get_grid";
   fluidInterface->get_couple_node_loc(pos_DI);
   return;
 }
 
+//==========================================================
 void Pic::find_mpi_rank_for_points(const int nPoint, const double* const xyz_I,
                                    int* const rank_I) {
   int nDimGM = fluidInterface->getnDim();
@@ -41,6 +45,7 @@ void Pic::find_mpi_rank_for_points(const int nPoint, const double* const xyz_I,
   }
 }
 
+//==========================================================
 void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
                                      const double* const xyz_I,
                                      double* const data_I, const int nVar) {
@@ -86,6 +91,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
   Print() << nameFunc << " end" << std::endl;
 }
 
+//==========================================================
 void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
                            PlotWriter::VectorPointList& pointList_II,
                            std::array<double, nDimMax>& xMin_D,
@@ -197,6 +203,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
   }
 }
 
+//==========================================================
 void Pic::get_field_var(const VectorPointList& pointList_II,
                         const std::vector<std::string>& sVar_I,
                         MDArray<double>& var_II) {
@@ -237,6 +244,7 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
   }
 }
 
+//==========================================================
 double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
                     const MFIter& mfi, bool isValidMFI) {
 
@@ -344,6 +352,7 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
   return value;
 }
 
+//==========================================================
 void Pic::save_restart_data() {
   std::string restartDir = "PC/restartOUT/";
   VisMF::Write(nodeE, restartDir + "nodeE");
@@ -358,6 +367,7 @@ void Pic::save_restart_data() {
   inject_particles_for_boundary_cells();
 }
 
+//==========================================================
 void Pic::save_restart_header(std::ofstream& headerFile) {
   if (ParallelDescriptor::IOProcessor()) {
     headerFile << "#ELECTRON\n";
@@ -372,6 +382,7 @@ void Pic::save_restart_header(std::ofstream& headerFile) {
   }
 }
 
+//==========================================================
 void Pic::read_restart() {
   Print()<<"Pic::read_restart() start....."<<std::endl;
 
@@ -395,6 +406,7 @@ void Pic::read_restart() {
   doNeedFillNewCell = false; 
 }
 
+//==========================================================
 void Pic::write_log(bool doForce, bool doCreateFile) {
   if (doCreateFile && ParallelDescriptor::IOProcessor()) {
     std::stringstream ss;
@@ -428,6 +440,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
   }
 }
 
+//==========================================================
 void Pic::write_plots(bool doForce) {
   for (auto& plot : tc->plots) {
     if (plot.is_time_to(doForce)) {
@@ -444,6 +457,7 @@ void Pic::write_plots(bool doForce) {
   }
 }
 
+//==========================================================
 void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
                       int const iCycle) {
   Print() << "amrex::" << pw.get_amrex_filename(timeNow, iCycle) << std::endl;
@@ -559,6 +573,7 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
                            iCycle);
 }
 
+//==========================================================
 void find_output_list_caller(const PlotWriter& writerIn,
                              long int& nPointAllProc,
                              PlotWriter::VectorPointList& pointList_II,
@@ -568,6 +583,7 @@ void find_output_list_caller(const PlotWriter& writerIn,
                               xMax_D);
 }
 
+//==========================================================
 void get_field_var_caller(const VectorPointList& pointList_II,
                           const std::vector<std::string>& sVar_I,
                           MDArray<double>& var_II) {

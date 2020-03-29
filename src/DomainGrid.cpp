@@ -3,6 +3,7 @@
 
 using namespace amrex;
 
+//=====================================================
 void DomainGrid::init() {
   // nCell and boxRange should have been set before calling this function.
 
