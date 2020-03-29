@@ -1,0 +1,33 @@
+#ifndef _TIMER_H_
+#define _TIMER_H_
+
+#include <string>
+
+#include <AMReX_BLProfiler.H>
+
+#include "Timing_c.h"
+
+class Timer {
+private:
+  std::string name;
+  bool isTiming;
+
+public:
+  Timer(std::string nameIn) {
+    name = nameIn;
+    BL_PROFILE(name);
+    timing_start(name);
+
+    isTiming = true;
+  }
+
+  ~Timer() { stop(); }
+
+  void stop() {
+    if (isTiming)
+      timing_stop(name);
+    isTiming = false;
+  }
+};
+
+#endif
