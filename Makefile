@@ -1,4 +1,4 @@
-default: mypic
+default: FLEKS
 
 include Makefile.conf
 include Makefile.def
@@ -6,14 +6,18 @@ include Makefile.def
 help:
 	@echo Makefile targets:
 	@echo
+	#@echo 'make FLEKS                  - compile standalone executable'
 	@echo 'make LIB                    - compile libPW.a for SWMF'
 	@echo 'make clean                  - remove object files'
 	@echo 'make distclean              - remove all files not part of CVS'
 	@echo
 
 
-mypic:
-	cd src; make exe
+GITINFO:
+	${SCRIPTDIR}/gitall -r=c > src/show_git_info.h
+
+FLEKS: GITINFO
+	cd src; ${MAKE} EXE
 
 bin:
 	mkdir bin
