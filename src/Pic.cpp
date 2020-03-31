@@ -709,22 +709,36 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
       average_node_to_cellcenter(tempCenter3, 0, vecMF, 0, 3,
                                  tempCenter3.nGrow());
 
+      //----The following comments are left here for reference------
       // Q: Why apply float BC for all boundary ghost nodes, instead of just the
       // outmost layer?
       // A: For the example described in FluidInterface::calc_current, cell
       // (c+4, c-1) of tempCenter3-block1 is not accurate, so the values at
       // (c+4, c-2)
       // will be wrong if we only apply float BC for the outmost layer.
-      apply_float_boundary(cellStatus, tempCenter3, geom, 0,
-                           tempCenter3.nComp());
+      // apply_float_boundary(cellStatus, tempCenter3, geom, 0,
+      //                           tempCenter3.nComp());
+      //------------------------------------------------------------
 
       div_center_to_center(tempCenter3, tempCenter1, geom.InvCellSize());
+
+      tempCenter1.FillBoundary(geom.periodicity()); 
+
+      // 1) The outmost boundary layer of tempCenter3 is not accurate.
+      // 2) The 2 outmost boundary layers (all ghosts if there are 2 ghost
+      // cells) of tempCenter1 are not accurate
+      apply_external_BC(cellStatus, tempCenter1, 0, tempCenter1.nComp(),
+                        &Pic::get_zero);
+
+     // print_MultiFab(tempCenter1, "tempCenter1", 1);
 
       MultiFab::LinComb(centerDivE, 1 - fsolver.coefDiff, centerDivE, 0,
                         fsolver.coefDiff, tempCenter1, 0, 0, 1, 1);
     }
 
+    //print_MultiFab(centerDivE, "centerDivE", 1);
     grad_center_to_node(centerDivE, tempNode3, geom.InvCellSize());
+    //print_MultiFab(tempNode3, "tempnode3", geom, 0);
 
     tempNode3.mult(delt2);
     MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(),
@@ -814,7 +828,6 @@ void Pic::update_B() {
 
   MultiFab dB(centerBA, dm, 3, nGst);
 
-  apply_float_boundary(nodeStatus, nodeEth, geom, 0, nodeEth.nComp());
   curl_node_to_center(nodeEth, dB, geom.InvCellSize());
 
   MultiFab::Saxpy(centerB, -tc->get_dt(), dB, 0, 0, centerB.nComp(),
