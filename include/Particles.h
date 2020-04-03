@@ -154,6 +154,9 @@ protected:
   amrex::Real charge;
   amrex::Real mass;
 
+  amrex::Real qom; 
+  int qomSign; 
+
   amrex::IntVect nPartPerCell;
 
   TimeCtr* tc;

@@ -1,8 +1,8 @@
 #include <algorithm>
 
 #include "Particles.h"
-#include "Utility.h"
 #include "Timer.h"
+#include "Utility.h"
 
 using namespace amrex;
 
@@ -18,6 +18,9 @@ Particles::Particles(const Geometry& geom, const DistributionMapping& dm,
       mass(massIn),
       nPartPerCell(nPartPerCellIn) {
   do_tiling = true;
+
+  qom = charge / mass;
+  qomSign = qom > 0 ? 1 : -1;
 
   for (int i = 0; i < nDimMax; i++)
     tile_size[i] = 1;
@@ -45,6 +48,7 @@ void Particles::add_particles_cell(const MFIter& mfi,
 
   iCycle = tc->get_cycle();
   npcel = nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_];
+
   // What if the seed overflow?
   const long seed =
       (speciesID + 3) * nRandom * npcel *
@@ -57,6 +61,7 @@ void Particles::add_particles_cell(const MFIter& mfi,
   auto plo = Geom(0).ProbLo();
 
   const Real vol = dx[ix_] * dx[iy_] * dx[iz_];
+  const Real vol2Npcel = qomSign * vol / npcel;
 
   const int lev = 0;
   auto& particles =
@@ -92,11 +97,8 @@ void Particles::add_particles_cell(const MFIter& mfi,
         z = (kk + randNum()) * (dx[iz_] / nPartPerCell[iz_]) + k * dx[iz_] +
             plo[iz_];
 
-        double q = (charge / mass / fabs(charge / mass)) *
-                   (fluidInterface.get_number_density(mfi, x, y, z, speciesID) /
-                    npcel) *
-                   vol;
-
+        double q = vol2Npcel *
+                   fluidInterface.get_number_density(mfi, x, y, z, speciesID);
         if (q != 0) {
           double rand;
           Real u, v, w;

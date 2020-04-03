@@ -8,7 +8,7 @@
 #include "Constants.h"
 #include "Timer.h"
 
-inline int myfloor(amrex::Real x) { return (int)x - (x < (int)x); }
+inline int myfloor(amrex::Real x) { return (int)(x+8)-8; }
 
 void curl_center_to_node(const amrex::MultiFab& centerMF,
                          amrex::MultiFab& nodeMF, const amrex::Real* invDx);
@@ -79,14 +79,20 @@ inline void linear_interpolation_coef(amrex::Real (&dx)[3],
   eta[1] = 1 - eta[0];
   zeta[1] = 1 - zeta[0];
 
-  coef[0][0][0] = xi[1] * eta[1] * zeta[1];
-  coef[0][0][1] = xi[1] * eta[1] * zeta[0];
-  coef[0][1][0] = xi[1] * eta[0] * zeta[1];
-  coef[0][1][1] = xi[1] * eta[0] * zeta[0];
-  coef[1][0][0] = xi[0] * eta[1] * zeta[1];
-  coef[1][0][1] = xi[0] * eta[1] * zeta[0];
-  coef[1][1][0] = xi[0] * eta[0] * zeta[1];
-  coef[1][1][1] = xi[0] * eta[0] * zeta[0];
+  amrex::Real multi[2][2]; 
+  multi[0][0] = xi[0]*eta[0];
+  multi[0][1] = xi[0]*eta[1];
+  multi[1][0] = xi[1]*eta[0];
+  multi[1][1] = xi[1]*eta[1];
+
+  coef[0][0][0] = multi[1][1] * zeta[1];
+  coef[0][0][1] = multi[1][1] * zeta[0];
+  coef[0][1][0] = multi[1][0] * zeta[1];
+  coef[0][1][1] = multi[1][0] * zeta[0];
+  coef[1][0][0] = multi[0][1] * zeta[1];
+  coef[1][0][1] = multi[0][1] * zeta[0];
+  coef[1][1][0] = multi[0][0] * zeta[1];
+  coef[1][1][1] = multi[0][0] * zeta[0];
 }
 
 inline amrex::Real get_value_at_node(const amrex::MultiFab& mf,
