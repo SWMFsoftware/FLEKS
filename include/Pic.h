@@ -5,10 +5,10 @@
 
 #include "Array1D.h"
 #include "Constants.h"
-#include "PicGrid.h"
 #include "FluidInterface.h"
 #include "LinearSolver.h"
 #include "Particles.h"
+#include "PicGrid.h"
 #include "TimeCtr.h"
 #include "UMultiFab.h"
 
@@ -79,7 +79,7 @@ private:
   FieldSolver fsolver;
 
   bool doRestart;
-  bool doCorrectDivE;  
+  bool doCorrectDivE;
 
   bool doReSampling;
   amrex::Real reSamplingLowLimit;
@@ -107,7 +107,7 @@ public:
 
   void update();
 
-  void set_doRestart(bool in) {doRestart = in; }  
+  void set_doRestart(bool in) { doRestart = in; }
 
   //--------------Initialization begin-------------------------------
   void init(amrex::Real timeIn, const std::string &paramString, int *paramInt,
@@ -117,7 +117,8 @@ public:
 
   void set_geom(int nGstIn, const amrex::Geometry &geomIn);
 
-  void regrid(const amrex::BoxArray &centerBAIn,
+  void regrid(const amrex::BoxArray &picRegionBAIn,
+              const amrex::BoxArray &centerBAIn,
               const amrex::DistributionMapping &dmIn);
 
   void fill_new_cells();
@@ -126,7 +127,7 @@ public:
   void fill_new_node_E();
 
   void fill_new_node_B();
-  void fill_new_center_B(); 
+  void fill_new_center_B();
 
   void fill_particles();
   //----------------Initialization end-------------------------------

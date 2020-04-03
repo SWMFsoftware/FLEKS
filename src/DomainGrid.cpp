@@ -1,5 +1,6 @@
 #include "DomainGrid.h"
 #include "GridUtility.h"
+#include "Timer.h"
 
 using namespace amrex;
 
@@ -30,8 +31,9 @@ void DomainGrid::init() {
   Print() << "Domain range = " << boxRange << std::endl;
 }
 
-BoxArray DomainGrid::resize_pic_ba(int iCycle) {
+BoxArray DomainGrid::resize_pic_ba(int iCycle) {  
   std::string nameFunc = "Pic::resize_pic_ba";
+  Timer funcTimer(nameFunc); 
   Print() << nameFunc << " is runing..." << std::endl;
 
   // BoxList blInActive;
@@ -80,23 +82,23 @@ BoxArray DomainGrid::resize_pic_ba(int iCycle) {
   // }
   // Print() << "blActive" << blActive << std::endl;
 
-  for (int i = 0; i < 3; i++) {
-    bl.simplify();
-  }
-  BoxArray batmp(bl); 
-  batmp.maxSize(maxBlockSize); 
-  bl.clear(); 
-  bl = BoxList(batmp); 
-  for (int i = 0; i < 3; i++) {
-    bl.simplify();
-  }
+  // for (int i = 0; i < 3; i++) {
+  //   bl.simplify();
+  // }
+  // BoxArray batmp(bl); 
+  // batmp.maxSize(maxBlockSize); 
+  // bl.clear(); 
+  // bl = BoxList(batmp); 
+  // for (int i = 0; i < 3; i++) {
+  //   bl.simplify();
+  // }
   
 
 
   BoxArray baNew(bl);
   // add_boxes_to_BoxArray(baNew, vecBox);
   baNew.maxSize(maxBlockSize);
-  Print() << "New PIC range = " << baNew << std::endl;
+  Print() << "Total box # = " << baNew.size() << std::endl;
   baPicOld = baNew;
 
   return baNew;

@@ -231,6 +231,8 @@ void FluidInterface::set_plasma_charge_and_mass(amrex::Real qomEl) {
   for (int is = 0; is < nSIn; is++)
     SumMass += MoMi_S[is];
 
+  invSumMass = 1./SumMass; 
+
   // Fix the values of MoMi_S and QoQi_S;
   MoMi0_S = new double[nSIn];
   QoQi0_S = new double[nSIn];

@@ -9,14 +9,13 @@
 #include <AMReX_IndexType.H>
 #include <AMReX_IntVect.H>
 #include <AMReX_MultiFab.H>
-#include <AMReX_iMultiFab.H>
 #include <AMReX_Print.H>
 #include <AMReX_REAL.H>
 #include <AMReX_RealBox.H>
 #include <AMReX_Vector.H>
+#include <AMReX_iMultiFab.H>
 
 #include "Constants.h"
-
 
 // This class define the grid information, but NOT the data on the grid.
 class PicGrid {
@@ -29,11 +28,13 @@ protected:
   // const int coord = 0; // Cartesian grid
   amrex::Geometry geom;
 
+  amrex::BoxArray picRegionBA;
+
   amrex::BoxArray centerBAOld;
   amrex::BoxArray centerBA;
 
   amrex::BoxArray nodeBA;
-  amrex::BoxArray nodeBAOld; 
+  amrex::BoxArray nodeBAOld;
 
   amrex::DistributionMapping dm;
 
@@ -41,16 +42,14 @@ protected:
 
   amrex::iMultiFab cellStatus;
 
-  amrex::iMultiFab nodeStatus; 
+  amrex::iMultiFab nodeStatus;
 
-  amrex::iMultiFab nodeType; 
+  amrex::iMultiFab nodeType;
 
-  bool doNeedFillNewCell; 
+  bool doNeedFillNewCell;
 
 public:
-  PicGrid(){
-    doNeedFillNewCell = true; 
-  };
+  PicGrid() { doNeedFillNewCell = true; };
   ~PicGrid() = default;
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }
@@ -71,11 +70,10 @@ public:
         return dm[ii];
     }
 
-    amrex::AllPrint()<<"idx = "<<idx<<std::endl;
+    amrex::AllPrint() << "idx = " << idx << std::endl;
     amrex::Abort("Error: can not find this cell!");
     return -1; // To suppress compiler warnings.
-  }  
-
+  }
 };
 
 #endif

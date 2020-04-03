@@ -2,10 +2,11 @@
 #define _UTILITY_H_
 
 #include <AMReX_MultiFab.H>
-#include <AMReX_iMultiFab.H>
 #include <AMReX_REAL.H>
+#include <AMReX_iMultiFab.H>
 
 #include "Constants.h"
+#include "Timer.h"
 
 inline int myfloor(amrex::Real x) { return (int)x - (x < (int)x); }
 
@@ -17,10 +18,12 @@ void curl_node_to_center(const amrex::MultiFab& nodeMF,
 
 void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
                       const amrex::DistributionMapping dm,
-                      const amrex::Geometry& geom);
+                      const amrex::Geometry& geom,
+                      const amrex::iMultiFab& status);
 
 void grad_node_to_center(const amrex::MultiFab& nodeMF,
-                         amrex::MultiFab& centerMF, const amrex::Real* invDx);
+                         amrex::MultiFab& centerMF, const amrex::Real* invDx,
+                         const amrex::iMultiFab& status);
 
 void grad_center_to_node(const amrex::MultiFab& centerMF,
                          amrex::MultiFab& nodeMF, const amrex::Real* invDx);
@@ -37,9 +40,11 @@ void div_center_to_center(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
 void average_center_to_node(const amrex::MultiFab& centerMF,
                             amrex::MultiFab& nodeMF);
 
-void print_MultiFab(const amrex::iMultiFab& data, std::string tag, int nshift = 0);
+void print_MultiFab(const amrex::iMultiFab& data, std::string tag,
+                    int nshift = 0);
 
-void print_MultiFab(const amrex::MultiFab& data, std::string tag, int nshift = 0);
+void print_MultiFab(const amrex::MultiFab& data, std::string tag,
+                    int nshift = 0);
 
 void print_MultiFab(const amrex::MultiFab& data, std::string tag,
                     amrex::Geometry& geom, int nshift = 0);
@@ -96,7 +101,6 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
                                     const amrex::Geometry& geom,
                                     const amrex::Real x, const amrex::Real y,
                                     const amrex::Real z, const int iVar) {
-
   const auto plo = geom.ProbLo();
   const amrex::Real loc[nDimMax] = { x, y, z };
 

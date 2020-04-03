@@ -32,6 +32,8 @@ private:
   amrex::MultiFab nodeFluid;
   amrex::MultiFab centerB;
 
+  double invSumMass; 
+
   int nGst;
 
 public:
@@ -107,6 +109,7 @@ public:
 
     if (useElectronFluid) {
       Rho = get_value(mfi, x, y, z, iRho_I[is]);
+      //TODO: change division to multiplication.
       NumDens = Rho / MoMi0_S[is];
     } else if (useMultiFluid || useMultiSpecies) {
       if (is == 0) {
@@ -114,17 +117,19 @@ public:
         NumDens = 0;
         for (int iIon = 0; iIon < nIon; ++iIon) {
           Rho = get_value(mfi, x, y, z, iRho_I[iIon]);
+          //TODO: change division to multiplication.
           NumDens += Rho / MoMi0_S[iIon + 1];
         }
       } else {
         // Ion
         Rho = get_value(mfi, x, y, z, iRho_I[is - 1]);
+        //TODO: change division to multiplication.
         NumDens = Rho / MoMi0_S[is];
       }
     } else {
       // Electrons and iones have same density, ignoring is
       Rho = get_value(mfi, x, y, z, iRho_I[0]);
-      NumDens = Rho / SumMass;
+      NumDens = Rho *invSumMass;
     }
     return (NumDens);
   }

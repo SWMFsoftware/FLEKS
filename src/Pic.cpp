@@ -82,7 +82,8 @@ void Pic::set_geom(int nGstIn, const Geometry& geomIn) {
 }
 
 //==========================================================
-void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
+void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
+                 const DistributionMapping& dmIn) {
   std::string nameFunc = "Pic::regrid";
   Print() << nameFunc << " is runing..." << std::endl;
 
@@ -92,6 +93,8 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
     return;
 
   doNeedFillNewCell = true;
+
+  picRegionBA = picRegionIn;
 
   centerBAOld = centerBA;
   nodeBAOld = convert(centerBAOld, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
@@ -149,6 +152,8 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
       auto ptr = std::make_unique<Particles>(
           geom, dm, centerBA, tc.get(), i, fluidInterface->getQiSpecies(i),
           fluidInterface->getMiSpecies(i), nPartPerCell);
+      // TODO: Combine the following function with the constructor.
+      ptr->set_region_ba(picRegionBA);
       parts.push_back(std::move(ptr));
     }
   } else {
@@ -156,6 +161,7 @@ void Pic::regrid(const BoxArray& centerBAIn, const DistributionMapping& dmIn) {
       // Label the particles outside the OLD PIC region.
       parts[i]->label_particles_outside_ba();
       parts[i]->SetParticleBoxArray(0, centerBA);
+      parts[i]->set_region_ba(picRegionBA);
       parts[i]->SetParticleDistributionMap(0, dm);
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_ba();
@@ -663,12 +669,14 @@ void Pic::update_E() {
 
   apply_external_BC(nodeStatus, nodeE, 0, nDimMax, &Pic::get_node_E);
   apply_external_BC(nodeStatus, nodeEth, 0, nDimMax, &Pic::get_node_E);
+
 }
 
 //==========================================================
 void Pic::update_E_matvec(const double* vecIn, double* vecOut,
                           const bool useZeroBC) {
   std::string nameFunc = "Pic::E_matvec";
+  Timer funcTimer(nameFunc);  
 
   zero_array(vecOut, eSolver.get_nSolve());
 
@@ -695,7 +703,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
     apply_external_BC(nodeStatus, vecMF, 0, nDimMax, &Pic::get_node_E);
   }
 
-  lap_node_to_node(vecMF, matvecMF, dm, geom);
+  lap_node_to_node(vecMF, matvecMF, dm, geom, cellStatus);
 
   Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
   matvecMF.mult(-delt2);
@@ -722,7 +730,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
 
       div_center_to_center(tempCenter3, tempCenter1, geom.InvCellSize());
 
-      tempCenter1.FillBoundary(geom.periodicity()); 
+      tempCenter1.FillBoundary(geom.periodicity());
 
       // 1) The outmost boundary layer of tempCenter3 is not accurate.
       // 2) The 2 outmost boundary layers (all ghosts if there are 2 ghost
@@ -730,15 +738,15 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
       apply_external_BC(cellStatus, tempCenter1, 0, tempCenter1.nComp(),
                         &Pic::get_zero);
 
-     // print_MultiFab(tempCenter1, "tempCenter1", 1);
+      // print_MultiFab(tempCenter1, "tempCenter1", 1);
 
       MultiFab::LinComb(centerDivE, 1 - fsolver.coefDiff, centerDivE, 0,
                         fsolver.coefDiff, tempCenter1, 0, 0, 1, 1);
     }
 
-    //print_MultiFab(centerDivE, "centerDivE", 1);
+    // print_MultiFab(centerDivE, "centerDivE", 1);
     grad_center_to_node(centerDivE, tempNode3, geom.InvCellSize());
-    //print_MultiFab(tempNode3, "tempnode3", geom, 0);
+    // print_MultiFab(tempNode3, "tempnode3", geom, 0);
 
     tempNode3.mult(delt2);
     MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(),
@@ -753,6 +761,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
   MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
 
   convert_3d_to_1d(matvecMF, vecOut, geom);
+  
 }
 
 //==========================================================

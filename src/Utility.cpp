@@ -1,11 +1,12 @@
 #include "Utility.h"
 #include "Constants.h"
-
+#include "Timer.h"
 using namespace amrex;
 
 void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
                       const amrex::DistributionMapping dm,
-                      const amrex::Geometry& geom) {
+                      const amrex::Geometry& geom,
+                      const amrex::iMultiFab& status) {
   const amrex::Real* invDx = geom.InvCellSize();
 
   BoxArray centerBA =
@@ -17,7 +18,7 @@ void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
 
   for (int i = 0; i < srcMF.nComp(); i++) {
     MultiFab srcAliasMF(srcMF, amrex::make_alias, i, 1);
-    grad_node_to_center(srcAliasMF, centerMF, invDx);
+    grad_node_to_center(srcAliasMF, centerMF, invDx, status);
     centerMF.FillBoundary(geom.periodicity());
     MultiFab dstAliasMF(dstMF, amrex::make_alias, i, 1);
     div_center_to_node(centerMF, dstAliasMF, invDx);
@@ -25,19 +26,25 @@ void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
 }
 
 void grad_node_to_center(const amrex::MultiFab& nodeMF,
-                         amrex::MultiFab& centerMF, const amrex::Real* invDx) {
+                         amrex::MultiFab& centerMF, const amrex::Real* invDx,
+                         const amrex::iMultiFab& status) {
+  Timer funcTimer("grad_node_to_center");
 
   for (amrex::MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.fabbox();
+    const amrex::Box& box = mfi.validbox();
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
+    int imin = lo.x - 1, jmin = lo.y - 1, kmin = lo.z - 1;
+    int imax = hi.x + 1, jmax = hi.y + 1, kmax = hi.z + 1;
+
+    const auto& cellStatus = status[mfi].array();
     const amrex::Array4<amrex::Real>& center = centerMF[mfi].array();
     const amrex::Array4<amrex::Real const>& node = nodeMF[mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
+    for (int k = kmin; k <= kmax; ++k)
+      for (int j = jmin; j <= jmax; ++j)
+        for (int i = imin; i <= imax; ++i) {
           center(i, j, k, ix_) =
               0.25 * invDx[ix_] *
               (node(i + 1, j, k) - node(i, j, k) + node(i + 1, j, k + 1) -
@@ -61,16 +68,16 @@ void grad_center_to_node(const amrex::MultiFab& centerMF,
                          amrex::MultiFab& nodeMF, const amrex::Real* invDx) {
 
   for (amrex::MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.fabbox();
+    const amrex::Box& box = mfi.validbox();
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
     const amrex::Array4<amrex::Real>& node = nodeMF[mfi].array();
     const amrex::Array4<amrex::Real const>& center = centerMF[mfi].array();
 
-    for (int k = lo.z + 1; k <= hi.z - 1; ++k)
-      for (int j = lo.y + 1; j <= hi.y - 1; ++j)
-        for (int i = lo.x + 1; i <= hi.x - 1; ++i) {
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
 
           node(i, j, k, ix_) =
               0.25 * invDx[ix_] *
@@ -307,7 +314,7 @@ void print_MultiFab(const amrex::MultiFab& data, std::string tag, int nshift) {
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
-  AllPrint()<<"--------------------------------"<<std::endl;
+    AllPrint() << "--------------------------------" << std::endl;
     for (int i = lo.x - nshift; i <= hi.x + nshift; ++i)
       for (int j = lo.y - nshift; j <= hi.y + nshift; ++j)
         for (int k = lo.z; k <= hi.z; ++k)

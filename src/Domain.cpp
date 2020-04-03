@@ -1,5 +1,6 @@
 #include "Domain.h"
 #include "GridInfo.h"
+#include "GridUtility.h"
 
 using namespace amrex;
 
@@ -30,7 +31,7 @@ void Domain::init(amrex::Real timeIn, const std::string &paramString,
 
   fluidInterface->PrintFluidPicInterface();
 
-  make_grid();  
+  make_grid();
 
   init_time_ctr();
 };
@@ -77,9 +78,18 @@ void Domain::regrid() {
 
   iGrid++;
   iDecomp++;
-  BoxArray baPic = resize_pic_ba(tc->get_cycle());
+
+  BoxList bl;
+  get_boxlist_from_region(bl, gridInfo, centerBoxLo, centerBoxHi);
+  BoxArray picRegionBA(bl);
+
+  BoxArray baPic(picRegionBA); //= resize_pic_ba(tc->get_cycle());
+  baPic.maxSize(maxBlockSize);
+  Print() << "Box # to describe PIC region = " << picRegionBA.size() << "\n"
+          << "Total PIC box # = " << baPic.size() << std::endl;
+
   DistributionMapping dmPic(baPic);
-  pic.regrid(baPic, dmPic);
+  pic.regrid(picRegionBA, baPic, dmPic);
   fluidInterface->regrid(baPic, dmPic);
 
   if (doRestart && isInitializing) {
@@ -92,9 +102,7 @@ void Domain::regrid() {
 }
 
 //========================================================
-void Domain::receive_grid_info(int *status) {
-  gridInfo.set_status(status);
-}
+void Domain::receive_grid_info(int *status) { gridInfo.set_status(status); }
 
 //========================================================
 void Domain::set_ic() {

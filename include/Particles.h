@@ -26,12 +26,29 @@ public:
 };
 
 class Particles : public amrex::ParticleContainer<4, 0, 0, 0> {
+private:
+  amrex::BoxArray regionBA;
+
+  amrex::Vector<amrex::RealBox> boxRange_I;
 
 public:
   Particles(const amrex::Geometry& geom, const amrex::DistributionMapping& dm,
             const amrex::BoxArray& ba, TimeCtr* const tcIn, const int speciesID,
             const amrex::Real charge, const amrex::Real mass,
             const amrex::IntVect& nPartPerCellIn);
+
+  void set_region_ba(const amrex::BoxArray& in) {
+    regionBA = in;
+    boxRange_I.clear();
+    for (int iBox = 0; iBox < regionBA.size(); iBox++) {
+      amrex::RealBox rb(regionBA[iBox], Geom(0).CellSize(), Geom(0).Offset());
+      boxRange_I.push_back(rb);
+    }
+
+    // for(auto&rb:boxRange_I){
+    //   amrex::Print()<<"rb = "<<rb<<std::endl;
+    // }
+  }
 
   void add_particles_domain(const FluidInterface& fluidInterface,
                             const amrex::iMultiFab& cellStatus);
@@ -41,10 +58,9 @@ public:
   void inject_particles_at_boundary(const FluidInterface& fluidInterface,
                                     const amrex::iMultiFab& cellStatus);
 
-  // 1) Only inject particles ONCE for one ghost cells. This function decides which
-  // block injects particles.
-  // 2) bx should be a valid box
-  // 3) The cell (i,j,k) can NOT be the outmost ghost cell layer!!!!
+  // 1) Only inject particles ONCE for one ghost cells. This function decides
+  // which block injects particles. 2) bx should be a valid box 3) The cell
+  // (i,j,k) can NOT be the outmost ghost cell layer!!!!
   bool do_inject_particles_for_this_cell(const amrex::Box& bx,
                                          const amrex::Array4<const int>& status,
                                          const int i, const int j, const int k);
@@ -71,8 +87,7 @@ public:
 
     for (int iDim = 0; iDim < nDimMax; iDim++) {
       if (!Geom(0).isPeriodic(iDim)) {
-        if (p.pos(iDim) > phi[iDim] - nVirGst * dx[iDim] ||
-            p.pos(iDim) < plo[iDim] + nVirGst * dx[iDim]) {
+        if (p.pos(iDim) > phi[iDim] || p.pos(iDim) < plo[iDim]) {
           return true;
         }
       }
@@ -98,10 +113,13 @@ public:
           loc[iDim] += phi[iDim] - plo[iDim];
       }
     }
-    // If the particle is outside the domain, the index return by CellIndex is
-    // not right! So we still need to call is_outside_domain first. --Yuxi
-    amrex::IntVect cellIdx = Geom(0).CellIndex(loc);
-    return !ParticleBoxArray(0).contains(cellIdx);
+
+    for (const auto& rb : boxRange_I) {
+      if (rb.contains(loc))
+        return false;
+    }
+
+    return true;
   }
 
   void label_particles_outside_ba() {
@@ -110,7 +128,7 @@ public:
       auto& particles = pti.GetArrayOfStructs();
       for (auto& p : particles) {
         if (is_outside_ba(p)) {
-          p.id() = -1;          
+          p.id() = -1;
           // amrex::Print()<<"particle outside ba = "<<p<<std::endl;
         }
       }
