@@ -240,7 +240,7 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
       for (int i = 0; i < 3; i++) {
         // plo is the corner location => -0.5
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i] - 0.5;
-        loIdx[i] = myfloor(dShift[i] + 10) - 10; // floor() is slow.
+        loIdx[i] = fastfloor(dShift[i] + 10) - 10; // floor() is slow.
         dShift[i] = dShift[i] - loIdx[i];
       }
       Real coef[2][2][2];
@@ -385,7 +385,7 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
       Real dShift[3];
       for (int i = 0; i < 3; i++) {
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
-        loIdx[i] = myfloor(dShift[i]);
+        loIdx[i] = fastfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
       }
 
@@ -683,7 +683,7 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
       Real dShift[3];
       for (int i = 0; i < 3; i++) {
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
-        loIdx[i] = myfloor(dShift[i]);
+        loIdx[i] = fastfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
       }
 
@@ -780,7 +780,7 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
       for (int i = 0; i < 3; i++) {
         // plo is the corner location => -0.5
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i] - 0.5;
-        loIdx[i] = myfloor(dShift[i]);
+        loIdx[i] = fastfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
       }
 
@@ -1089,7 +1089,7 @@ void Particles::combine_particles(Real limit) {
 
       for (int iDim = 0; iDim < nDim; iDim++) {
         iCell_D[iDim] =
-            myfloor((vel_D[iDim] - velMin_D[iDim]) * inv_dVel_D[iDim]);
+            fastfloor((vel_D[iDim] - velMin_D[iDim]) * inv_dVel_D[iDim]);
       }
 
       phasePartIdx_III[iCell_D[u_]][iCell_D[v_]][iCell_D[w_]].push_back(pid);
@@ -1117,7 +1117,7 @@ void Particles::combine_particles(Real limit) {
         for (int iw = 0; iw < nCell; iw++) {
           iCount += phasePartIdx_III[iu][iv][iw].size();
           nAvailableCombine +=
-              myfloor(phasePartIdx_III[iu][iv][iw].size() / nPartCombine);
+              fastfloor(phasePartIdx_III[iu][iv][iw].size() / nPartCombine);
         }
 
     Real ratioCombine;
@@ -1149,7 +1149,7 @@ void Particles::combine_particles(Real limit) {
       for (int iv = 0; iv < nCell; iv++)
         for (int iw = 0; iw < nCell; iw++) {
           int nCombineCell =
-              myfloor(ratioCombine * phasePartIdx_III[iu][iv][iw].size() /
+              fastfloor(ratioCombine * phasePartIdx_III[iu][iv][iw].size() /
                       nPartCombine);
           for (int iCombine = 0; iCombine < nCombineCell; iCombine++) {
             /*

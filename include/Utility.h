@@ -8,7 +8,8 @@
 #include "Constants.h"
 #include "Timer.h"
 
-inline int myfloor(amrex::Real x) { return (int)(x + 8) - 8; }
+// Only works for x>-8;
+inline int fastfloor(amrex::Real x) { return (int)(x + 8) - 8; }
 
 void curl_center_to_node(const amrex::MultiFab& centerMF,
                          amrex::MultiFab& nodeMF, const amrex::Real* invDx);
@@ -116,7 +117,7 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
   amrex::Real dx[3];
   for (int i = 0; i < 3; i++) {
     dx[i] = (loc[i] - plo[i]) * invDx[i];
-    loIdx[i] = myfloor(dx[i]);
+    loIdx[i] = fastfloor(dx[i]);
     dx[i] = dx[i] - loIdx[i];
   }
 
