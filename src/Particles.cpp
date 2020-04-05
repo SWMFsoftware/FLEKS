@@ -446,32 +446,21 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
         for (int j1 = jMin; j1 < jMax; j1++)
           for (int i1 = iMin; i1 < iMax; i1++) {
             const Real wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
-
             Real* const data0 = mmArr(i1, j1, k1).data;
             for (int k2 = kMin; k2 < kMax; k2++) {
               const int kp = k2 - k1 + 1;
               if (kp > 0) {
                 for (int j2 = jMin; j2 < jMax; j2++) {
                   const int jp = j2 - j1 + 1;
-
                   for (int i2 = iMin; i2 < iMax; i2++) {
-
                     const Real weight =
                         wg * coef[i2 - iMin][j2 - jMin][k2 - kMin];
-                    // const int ip = i2 - i1 + 1;
-                    // const int gp = kp * 9 + jp * 3 + ip;
-                    // const int idx0 = gp * 9;
                     const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
 
                     Real* const data = &(data0[idx0]);
                     for (int idx = 0; idx < 9; idx++) {
                       data[idx] += alpha[idx] * weight;
                     }
-
-                    if (p.id() == 6401 && idx0 == 0) {
-                      Print() << "hi" << std::endl;
-                    }
-
                   } // k2
 
                 } // j2
@@ -527,15 +516,15 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
 
   for (MFIter mfi(nodeMM); mfi.isValid(); ++mfi) {
     // Finalize the mass matrix calculation.
-    const Box box = mfi.tilebox();
+    const Box box = mfi.validbox();
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
     Array4<RealMM> const& mmArr = nodeMM[mfi].array();
 
     // We only need the mass matrix on the physical nodes. But the first layer
-    // of the ghost nodes may contributes to the physical nodes below. So, we
-    // need the '-1' and '+1' staff.
+    // of the ghost nodes may contributes to the physical nodes below (ghost
+    // node constributes as a sender). So, we need the '-1' and '+1' staff.
     const int iMin = lo.x - 1, jMin = lo.y - 1, kMin = lo.z - 1;
     const int iMax = hi.x + 1, jMax = hi.y + 1, kMax = hi.z + 1;
 
@@ -805,44 +794,49 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
         const Real eta1 = dx[iy_] - eta0;
         const Real zeta1 = dx[iz_] - zeta0;
 
-        weights_IIID[1][1][1][ix_] = eta0 * zeta0 * invVol;
-        weights_IIID[1][1][1][iy_] = xi0 * zeta0 * invVol;
-        weights_IIID[1][1][1][iz_] = xi0 * eta0 * invVol;
+        const Real zeta02Vol = zeta0 * invVol;
+        const Real zeta12Vol = zeta1 * invVol;
+        const Real eta02Vol = eta0 * invVol;
+        const Real eta12Vol = eta1 * invVol;
+
+        weights_IIID[1][1][1][ix_] = eta0 * zeta02Vol;
+        weights_IIID[1][1][1][iy_] = xi0 * zeta02Vol;
+        weights_IIID[1][1][1][iz_] = xi0 * eta02Vol;
 
         // xi0*eta0*zeta1*invVOL;
-        weights_IIID[1][1][0][ix_] = eta0 * zeta1 * invVol;
-        weights_IIID[1][1][0][iy_] = xi0 * zeta1 * invVol;
-        weights_IIID[1][1][0][iz_] = -xi0 * eta0 * invVol;
+        weights_IIID[1][1][0][ix_] = eta0 * zeta12Vol;
+        weights_IIID[1][1][0][iy_] = xi0 * zeta12Vol;
+        weights_IIID[1][1][0][iz_] = -xi0 * eta02Vol;
 
         // xi0*eta1*zeta0*invVOL;
-        weights_IIID[1][0][1][ix_] = eta1 * zeta0 * invVol;
-        weights_IIID[1][0][1][iy_] = -xi0 * zeta0 * invVol;
-        weights_IIID[1][0][1][iz_] = xi0 * eta1 * invVol;
+        weights_IIID[1][0][1][ix_] = eta1 * zeta02Vol;
+        weights_IIID[1][0][1][iy_] = -xi0 * zeta02Vol;
+        weights_IIID[1][0][1][iz_] = xi0 * eta12Vol;
 
         // xi0*eta1*zeta1*invVOL;
-        weights_IIID[1][0][0][ix_] = eta1 * zeta1 * invVol;
-        weights_IIID[1][0][0][iy_] = -xi0 * zeta1 * invVol;
-        weights_IIID[1][0][0][iz_] = -xi0 * eta1 * invVol;
+        weights_IIID[1][0][0][ix_] = eta1 * zeta12Vol;
+        weights_IIID[1][0][0][iy_] = -xi0 * zeta12Vol;
+        weights_IIID[1][0][0][iz_] = -xi0 * eta12Vol;
 
         // xi1*eta0*zeta0*invVOL;
-        weights_IIID[0][1][1][ix_] = -eta0 * zeta0 * invVol;
-        weights_IIID[0][1][1][iy_] = xi1 * zeta0 * invVol;
-        weights_IIID[0][1][1][iz_] = xi1 * eta0 * invVol;
+        weights_IIID[0][1][1][ix_] = -eta0 * zeta02Vol;
+        weights_IIID[0][1][1][iy_] = xi1 * zeta02Vol;
+        weights_IIID[0][1][1][iz_] = xi1 * eta02Vol;
 
         // xi1*eta0*zeta1*invVOL;
-        weights_IIID[0][1][0][ix_] = -eta0 * zeta1 * invVol;
-        weights_IIID[0][1][0][iy_] = xi1 * zeta1 * invVol;
-        weights_IIID[0][1][0][iz_] = -xi1 * eta0 * invVol;
+        weights_IIID[0][1][0][ix_] = -eta0 * zeta12Vol;
+        weights_IIID[0][1][0][iy_] = xi1 * zeta12Vol;
+        weights_IIID[0][1][0][iz_] = -xi1 * eta02Vol;
 
         // xi1*eta1*zeta0*invVOL;
-        weights_IIID[0][0][1][ix_] = -eta1 * zeta0 * invVol;
-        weights_IIID[0][0][1][iy_] = -xi1 * zeta0 * invVol;
-        weights_IIID[0][0][1][iz_] = xi1 * eta1 * invVol;
+        weights_IIID[0][0][1][ix_] = -eta1 * zeta02Vol;
+        weights_IIID[0][0][1][iy_] = -xi1 * zeta02Vol;
+        weights_IIID[0][0][1][iz_] = xi1 * eta12Vol;
 
         // xi1*eta1*zeta1*invVOL;
-        weights_IIID[0][0][0][ix_] = -eta1 * zeta1 * invVol;
-        weights_IIID[0][0][0][iy_] = -xi1 * zeta1 * invVol;
-        weights_IIID[0][0][0][iz_] = -xi1 * eta1 * invVol;
+        weights_IIID[0][0][0][ix_] = -eta1 * zeta12Vol;
+        weights_IIID[0][0][0][iy_] = -xi1 * zeta12Vol;
+        weights_IIID[0][0][0][iz_] = -xi1 * eta12Vol;
 
         const int iMin = loIdx[ix_];
         const int jMin = loIdx[iy_];
@@ -853,14 +847,14 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
         for (int k = 0; k < 2; k++)
           for (int j = 0; j < 2; j++)
             for (int i = 0; i < 2; i++) {
-              const Real coef = fourPI * phiArr(iMin + i, jMin + j, kMin + k);
+              const Real coef = phiArr(iMin + i, jMin + j, kMin + k);
               for (int iDim = 0; iDim < 3; iDim++) {
                 eps_D[iDim] += coef * weights_IIID[i][j][k][iDim];
               }
             }
 
         for (int iDim = 0; iDim < 3; iDim++)
-          eps_D[iDim] *= coef;
+          eps_D[iDim] *= coef * fourPI;
 
         if (fabs(eps_D[ix_] * invDx[ix_]) > epsLimit ||
             fabs(eps_D[iy_] * invDx[iy_]) > epsLimit ||

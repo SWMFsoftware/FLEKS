@@ -8,7 +8,7 @@
 #include "Constants.h"
 #include "Timer.h"
 
-inline int myfloor(amrex::Real x) { return (int)(x+8)-8; }
+inline int myfloor(amrex::Real x) { return (int)(x + 8) - 8; }
 
 void curl_center_to_node(const amrex::MultiFab& centerMF,
                          amrex::MultiFab& nodeMF, const amrex::Real* invDx);
@@ -79,11 +79,11 @@ inline void linear_interpolation_coef(amrex::Real (&dx)[3],
   eta[1] = 1 - eta[0];
   zeta[1] = 1 - zeta[0];
 
-  amrex::Real multi[2][2]; 
-  multi[0][0] = xi[0]*eta[0];
-  multi[0][1] = xi[0]*eta[1];
-  multi[1][0] = xi[1]*eta[0];
-  multi[1][1] = xi[1]*eta[1];
+  amrex::Real multi[2][2];
+  multi[0][0] = xi[0] * eta[0];
+  multi[0][1] = xi[0] * eta[1];
+  multi[1][0] = xi[1] * eta[0];
+  multi[1][1] = xi[1] * eta[1];
 
   coef[0][0][0] = multi[1][1] * zeta[1];
   coef[0][0][1] = multi[1][1] * zeta[0];
@@ -113,25 +113,54 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
   const auto invDx = geom.InvCellSize();
 
   int loIdx[3];
-  amrex::Real dShift[3];
+  amrex::Real dx[3];
   for (int i = 0; i < 3; i++) {
-    dShift[i] = (loc[i] - plo[i]) * invDx[i];
-    loIdx[i] = myfloor(dShift[i]);
-    dShift[i] = dShift[i] - loIdx[i];
+    dx[i] = (loc[i] - plo[i]) * invDx[i];
+    loIdx[i] = myfloor(dx[i]);
+    dx[i] = dx[i] - loIdx[i];
   }
 
   amrex::Real coef[2][2][2];
-  // Not a good name.
-  linear_interpolation_coef(dShift, coef);
+  {
+    amrex::Real xi[2];
+    amrex::Real eta[2];
+    amrex::Real zeta[2];
+    xi[0] = dx[0];
+    eta[0] = dx[1];
+    zeta[0] = dx[2];
+    xi[1] = 1 - xi[0];
+    eta[1] = 1 - eta[0];
+    zeta[1] = 1 - zeta[0];
 
+    amrex::Real multi[2][2];
+    multi[0][0] = xi[0] * eta[0];
+    multi[0][1] = xi[0] * eta[1];
+    multi[1][0] = xi[1] * eta[0];
+    multi[1][1] = xi[1] * eta[1];
+
+    // coef[k][j][i]
+    coef[0][0][0] = multi[1][1] * zeta[1];
+    coef[1][0][0] = multi[1][1] * zeta[0];
+    coef[0][1][0] = multi[1][0] * zeta[1];
+    coef[1][1][0] = multi[1][0] * zeta[0];
+    coef[0][0][1] = multi[0][1] * zeta[1];
+    coef[1][0][1] = multi[0][1] * zeta[0];
+    coef[0][1][1] = multi[0][0] * zeta[1];
+    coef[1][1][1] = multi[0][0] * zeta[0];
+  }
+
+  const auto& arr = mf[mfi].array();
   amrex::Real val = 0;
-  for (int kk = 0; kk < 2; kk++)
-    for (int jj = 0; jj < 2; jj++)
+  for (int kk = 0; kk < 2; kk++) {
+    const int kIdx = loIdx[iz_] + kk;
+    for (int jj = 0; jj < 2; jj++) {
+      const int jIdx = loIdx[iy_] + jj;
       for (int ii = 0; ii < 2; ii++) {
-        val += get_value_at_node(mf, mfi, loIdx[ix_] + ii, loIdx[iy_] + jj,
-                                 loIdx[iz_] + kk, iVar) *
-               coef[ii][jj][kk];
+        val += arr(loIdx[ix_] + ii, jIdx, kIdx, iVar) * coef[kk][jj][ii];
       }
+    }
+  }
+
   return val;
 }
 

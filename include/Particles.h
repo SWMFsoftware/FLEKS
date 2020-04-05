@@ -99,7 +99,7 @@ public:
   inline bool is_outside_ba(const ParticleType& p) {
     if (is_outside_domain(p))
       return true;
-
+      
     const auto& plo = Geom(0).ProbLo();
     const auto& phi = Geom(0).ProbHi();
     amrex::Real loc[3] = { 0, 0, 0 };
