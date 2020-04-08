@@ -152,7 +152,7 @@ void Particles::add_particles_cell(const MFIter& mfi,
 //==========================================================
 void Particles::add_particles_domain(const FluidInterface& fluidInterface,
                                      const iMultiFab& cellStatus) {
-  Timer funcTimer("Particles::add_particles");
+  timing_func("Particles::add_particles");
 
   const int lev = 0;
   for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
@@ -177,7 +177,7 @@ void Particles::add_particles_domain(const FluidInterface& fluidInterface,
 //==========================================================
 void Particles::inject_particles_at_boundary(
     const FluidInterface& fluidInterface, const iMultiFab& cellStatus) {
-  Timer funcTimer("Particles::inject_particles_at_boundary");
+  timing_func("Particles::inject_particles_at_boundary");
 
   // Only inject nGstInject layers.
   const int nGstInject = 1;
@@ -214,7 +214,7 @@ void Particles::inject_particles_at_boundary(
 void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
                               amrex::UMultiFab<RealCMM>& centerMM,
                               bool doNetChargeOnly) {
-  Timer funcTimer("Particles::sum_to_center");
+  timing_func("Particles::sum_to_center");
 
   const auto& plo = Geom(0).ProbLo();
 
@@ -353,7 +353,7 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
 //==========================================================
 PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
                                 MultiFab& nodeBMF, Real dt) {
-  Timer funcTimer("Particles::sum_moments");
+  timing_func("Particles::sum_moments");
   const auto& plo = Geom(0).ProbLo();
 
   momentsMF.setVal(0.0);
@@ -654,7 +654,7 @@ void Particles::convert_to_fluid_moments(MultiFab& momentsMF) {
 //==========================================================
 void Particles::mover(const amrex::MultiFab& nodeEMF,
                       const amrex::MultiFab& nodeBMF, amrex::Real dt) {
-  Timer funcTimer("Particles::mover");
+  timing_func("Particles::mover");
 
   const auto& plo = Geom(0).ProbLo();
 
@@ -753,7 +753,7 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
 
 //==========================================================
 void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
-  Timer funcTimer("Particles::divE_correct_position");
+  timing_func("Particles::divE_correct_position");
 
   const auto& plo = Geom(0).ProbLo();
 
@@ -887,7 +887,7 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
 
 //==========================================================
 void Particles::split_particles(Real limit) {
-  Timer funcTimer("Particles::split_particles");
+  timing_func("Particles::split_particles");
   const int nPartGoal =
       nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_] * limit;
 
@@ -1003,7 +1003,7 @@ void Particles::split_particles(Real limit) {
 
 //==========================================================
 void Particles::combine_particles(Real limit) {
-  Timer funcTimer("Particles::combine_particles");
+  timing_func("Particles::combine_particles");
   IntVect iv = { 1, 1, 1 };
   if (!(do_tiling && tile_size == iv))
     return;

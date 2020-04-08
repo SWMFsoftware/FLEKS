@@ -33,7 +33,7 @@ void DomainGrid::init() {
 
 BoxArray DomainGrid::resize_pic_ba(int iCycle) {  
   std::string nameFunc = "Pic::resize_pic_ba";
-  Timer funcTimer(nameFunc); 
+  timing_func(nameFunc); 
   Print() << nameFunc << " is runing..." << std::endl;
 
   // BoxList blInActive;

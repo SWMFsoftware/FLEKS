@@ -28,7 +28,7 @@ void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
 void grad_node_to_center(const amrex::MultiFab& nodeMF,
                          amrex::MultiFab& centerMF, const amrex::Real* invDx,
                          const amrex::iMultiFab& status) {
-  Timer funcTimer("grad_node_to_center");
+  timing_func("grad_node_to_center");
 
   for (amrex::MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
     const amrex::Box& box = mfi.validbox();

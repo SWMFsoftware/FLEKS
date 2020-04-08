@@ -62,7 +62,7 @@ void Pic::fill_new_cells() {
 
   Print() << nameFunc << " begin" << std::endl;
 
-  Timer funcTimer(nameFunc);
+  timing_func(nameFunc);
 
   fill_E_B_fields();
   fill_particles();
@@ -87,7 +87,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   std::string nameFunc = "Pic::regrid";
   Print() << nameFunc << " is runing..." << std::endl;
 
-  Timer funcTimer(nameFunc);
+  timing_func(nameFunc);
 
   if (centerBAIn == centerBA)
     return;
@@ -420,7 +420,7 @@ void Pic::fill_particles() {
 void Pic::particle_mover() {
   std::string nameFunc = "Pic::mover";
 
-  Timer funcTimer(nameFunc);
+  timing_func(nameFunc);
 
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->mover(nodeEth, nodeB, tc->get_dt());
@@ -438,7 +438,7 @@ void Pic::particle_mover() {
 void Pic::sum_moments() {
   std::string nameFunc = "Pic::sum_moments";
 
-  Timer funcTimer(nameFunc);
+  timing_func(nameFunc);
 
   nodePlasma[nSpecies].setVal(0.0);
   const RealMM mm0(0.0);
@@ -468,7 +468,7 @@ void Pic::sum_moments() {
 void Pic::divE_correction() {
   std::string nameFunc = "Pic::divE_correction";
 
-  Timer funcTimer(nameFunc);
+  timing_func(nameFunc);
 
   for (int iIter = 0; iIter < 3; iIter++) {
     sum_to_center(true);
@@ -495,7 +495,7 @@ void Pic::divE_correction() {
 void Pic::divE_correct_particle_position() {
   std::string nameFunc = "Pic::correct_position";
 
-  Timer funcTimer(nameFunc);
+  timing_func(nameFunc);
 
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->divE_correct_position(centerPhi);
@@ -506,7 +506,7 @@ void Pic::divE_correct_particle_position() {
 void Pic::calculate_phi(LinearSolver& solver) {
   std::string nameFunc = "Pic::calculate_phi";
 
-  Timer funcTimer(nameFunc);
+  timing_func(nameFunc);
 
   solver.reset(get_local_node_or_cell_number(centerDivE));
 
@@ -564,7 +564,7 @@ void Pic::divE_accurate_matvec(double* vecIn, double* vecOut) {
 void Pic::sum_to_center(bool isBeforeCorrection) {
   std::string nameFunc = "Pic::sum_to_center";
 
-  Timer funcTimer(nameFunc);
+  timing_func(nameFunc);
 
   centerNetChargeNew.setVal(0.0);
 
@@ -602,7 +602,7 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
 void Pic::update() {
   std::string nameFunc = "Pic::update";
 
-  Timer funcTimer(nameFunc);
+  timing_func(nameFunc);
 
   {
     const Real t0 = tc->get_time_si();
@@ -634,7 +634,7 @@ void Pic::update() {
 void Pic::update_E() {
   std::string nameFunc = "Pic::update_E";
 
-  Timer funcTimer(nameFunc);
+  timing_func(nameFunc);
 
   eSolver.reset(get_local_node_or_cell_number(nodeE));
 
@@ -676,7 +676,7 @@ void Pic::update_E() {
 void Pic::update_E_matvec(const double* vecIn, double* vecOut,
                           const bool useZeroBC) {
   std::string nameFunc = "Pic::E_matvec";
-  Timer funcTimer(nameFunc);  
+  timing_func(nameFunc);  
 
   zero_array(vecOut, eSolver.get_nSolve());
 
@@ -833,7 +833,7 @@ void Pic::update_E_rhs(double* rhs) {
 //==========================================================
 void Pic::update_B() {
   std::string nameFunc = "Pic::update_B";
-  Timer funcTimer(nameFunc);
+  timing_func(nameFunc);
 
   MultiFab dB(centerBA, dm, 3, nGst);
 
@@ -975,7 +975,7 @@ void Pic::load_balance() {
     return;
 
   std::string nameFunc = "Pic::load_balance";
-  Timer funcTimer(nameFunc);
+  timing_func(nameFunc);
 
   Print() << "--------- Load balancing ------------" << std::endl;
 

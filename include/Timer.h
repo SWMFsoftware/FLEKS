@@ -14,8 +14,7 @@ private:
 
 public:
   Timer(std::string nameIn) {
-    name = nameIn;
-    BL_PROFILE(name);
+    name = nameIn;    
     timing_start(name);
 
     isTiming = true;
@@ -29,5 +28,7 @@ public:
     isTiming = false;
   }
 };
+
+#define timing_func(name) Timer funcTimer(name); BL_PROFILE(name);
 
 #endif
