@@ -76,8 +76,7 @@ void Domain::regrid() {
   std::string nameFunc = "Domain::regrid";
   Print() << nameFunc << " is runing..." << std::endl;
 
-  iGrid++;
-  iDecomp++;
+  timing_func(nameFunc);
 
   BoxList bl;
   get_boxlist_from_region(bl, gridInfo, centerBoxLo, centerBoxHi);
@@ -87,7 +86,7 @@ void Domain::regrid() {
 
   if(baPic == baPicOld) return; 
   baPicOld = baPic; 
-  
+
   baPic.maxSize(maxBlockSize);
   Print() << "Box # to describe PIC region = " << picRegionBA.size() << "\n"
           << "Total PIC box # = " << baPic.size() << std::endl;
@@ -95,6 +94,10 @@ void Domain::regrid() {
   DistributionMapping dmPic(baPic);
   pic.regrid(picRegionBA, baPic, dmPic);
   fluidInterface->regrid(baPic, dmPic);
+
+  iGrid++; 
+  iDecomp++;
+
 
   if (doRestart && isInitializing) {
     // Restoring the restart data immediately after creating the data

@@ -85,13 +85,13 @@ void Pic::set_geom(int nGstIn, const Geometry& geomIn) {
 void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
                  const DistributionMapping& dmIn) {
   std::string nameFunc = "Pic::regrid";
-  Print() << nameFunc << " is runing..." << std::endl;
 
   timing_func(nameFunc);
 
   if (centerBAIn == centerBA)
     return;
 
+  Print() << nameFunc << " is runing..." << std::endl;
   doNeedFillNewCell = true;
 
   picRegionBA = picRegionIn;
@@ -139,7 +139,6 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
     distribute_FabArray(nodeMM, nodeBA, dm, 1, 1, doMoveData);
     distribute_FabArray(costMF, centerBA, dm, 1, nGst, doMoveData);
-
     distribute_FabArray(centerMM, centerBA, dm, 1, nGst, doMoveData);
 
     distribute_FabArray(tempNode3, nodeBA, dm, 3, nGst, doMoveData);
@@ -511,7 +510,9 @@ void Pic::calculate_phi(LinearSolver& solver) {
 
   solver.reset(get_local_node_or_cell_number(centerDivE));
 
+  BL_PROFILE_VAR("Pic::calculate_phi1", div1);  
   div_node_to_center(nodeE, tempCenter1, geom.InvCellSize());
+  BL_PROFILE_VAR_STOP(div1);
 
   MultiFab::LinComb(tempCenter1, 1.0 / rhoTheta, tempCenter1, 0,
                     -fourPI / rhoTheta, centerNetChargeN, 0, 0,
@@ -519,7 +520,9 @@ void Pic::calculate_phi(LinearSolver& solver) {
 
   convert_3d_to_1d(tempCenter1, solver.rhs, geom);
 
+  BL_PROFILE_VAR("Pic::calculate_phi2", solve);  
   solver.solve();
+  BL_PROFILE_VAR_STOP(solve);
 
   convert_1d_to_3d(solver.xLeft, centerPhi, geom);
   centerPhi.FillBoundary(geom.periodicity());
@@ -528,6 +531,7 @@ void Pic::calculate_phi(LinearSolver& solver) {
 //==========================================================
 void Pic::divE_accurate_matvec(double* vecIn, double* vecOut) {
   std::string nameFunc = "Pic::divE_matvec";
+  timing_func(nameFunc);
 
   zero_array(vecOut, divESolver.get_nSolve());
 
@@ -652,7 +656,9 @@ void Pic::update_E() {
   }
 
   Print() << "\n----------- E solver ------------------" << std::endl;
+  BL_PROFILE_VAR("Pic::eSolver", eSolver);  
   eSolver.solve();
+  BL_PROFILE_VAR_STOP(eSolver);  
 
   nodeEth.setVal(0.0);
   convert_1d_to_3d(eSolver.xLeft, nodeEth, geom);
@@ -763,6 +769,9 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
 
 //==========================================================
 void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
+  std::string nameFunc = "Pic::update_E_M_dot_E";
+  timing_func(nameFunc);
+
   outMF.setVal(0.0);
   Real c0 = fourPI * fsolver.theta * tc->get_dt();
   for (amrex::MFIter mfi(outMF); mfi.isValid(); ++mfi) {
@@ -803,6 +812,9 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
 
 //==========================================================
 void Pic::update_E_rhs(double* rhs) {
+  std::string nameFunc = "Pic::update_E_rhs";
+  timing_func(nameFunc);
+
   MultiFab tempNode(nodeBA, dm, 3, nGst);
   tempNode.setVal(0.0);
   MultiFab temp2Node(nodeBA, dm, 3, nGst);
@@ -852,12 +864,15 @@ void Pic::update_B() {
 //==========================================================
 void Pic::apply_external_BC(const iMultiFab& status, MultiFab& mf,
                             const int iStart, const int nComp, GETVALUE func) {
+  std::string nameFunc = "Pic::apply_external_BC";
+  timing_func(nameFunc);
 
   if (geom.isAllPeriodic())
     return;
   if (mf.nGrow() == 0)
     return;
 
+  //BoxArray ba = mf.boxArray();
   BoxArray ba = convert(picRegionBA, mf.boxArray().ixType()); 
 
   const IntVect& ngrow = mf.nGrowVect();
@@ -1022,6 +1037,9 @@ void Pic::load_balance() {
 //==========================================================
 void Pic::convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
                            amrex::Geometry& geom) {
+  std::string nameFunc = "Pic::convert_1d_to_3d";
+  timing_func(nameFunc);
+
   bool isCenter = MF.ixType().cellCentered();
   bool isNode = !isCenter;
 
@@ -1053,6 +1071,8 @@ void Pic::convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
 //==========================================================
 void Pic::convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
                            amrex::Geometry& geom) {
+  std::string nameFunc = "Pic::convert_3d_to_1d";
+  timing_func(nameFunc);
 
   bool isCenter = MF.ixType().cellCentered();
   bool isNode = !isCenter;
