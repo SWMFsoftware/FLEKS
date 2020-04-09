@@ -243,9 +243,6 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
         loIdx[i] = fastfloor(dShift[i]); // floor() is slow.
         dShift[i] = dShift[i] - loIdx[i];
       }
-
-
-
       Real coef[2][2][2];
       linear_interpolation_coef(dShift, coef);
       //-----calculate interpolate coef end-------------
@@ -319,6 +316,7 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
         for (int k1 = kMin; k1 <= kMax; k1++)
           for (int j1 = jMin; j1 <= jMax; j1++)
             for (int i1 = iMin; i1 <= iMax; i1++) {
+
               for (int iDim = 0; iDim < 3; iDim++) {
                 wg_D[iDim] =
                     coef * weights_IIID[i1 - iMin][j1 - jMin][k1 - kMin][iDim];
@@ -780,7 +778,10 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
     auto& particles = pti.GetArrayOfStructs();
 
     for (auto& p : particles) {
-
+      if (p.id() == -1 || is_outside_ba(p)) {
+        p.id() = -1;
+        continue;
+      }
       const Real qp = p.rdata(iqp_);
 
       int loIdx[3];
@@ -882,10 +883,16 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
             epsMax = fabs(eps_D[iDim] * invDx[iDim]);
 
           p.pos(iDim) += eps_D[iDim];
+        }
 
-          if (is_outside_ba(p)) {
-            p.id() = -1;
+        if (is_outside_ba(p)) {
+          // Do not allow moving particles from physical cells to ghost cells
+          // during divE correction.
+          for (int iDim = 0; iDim < 3; iDim++) {
+            p.pos(iDim) -= eps_D[iDim];
           }
+
+          // p.id() = -1;
         }
       }
 
