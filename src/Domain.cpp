@@ -83,7 +83,11 @@ void Domain::regrid() {
   get_boxlist_from_region(bl, gridInfo, centerBoxLo, centerBoxHi);
   BoxArray picRegionBA(bl);
 
-  BoxArray baPic(picRegionBA); //= resize_pic_ba(tc->get_cycle());
+  BoxArray baPic(picRegionBA);
+
+  if(baPic == baPicOld) return; 
+  baPicOld = baPic; 
+  
   baPic.maxSize(maxBlockSize);
   Print() << "Box # to describe PIC region = " << picRegionBA.size() << "\n"
           << "Total PIC box # = " << baPic.size() << std::endl;

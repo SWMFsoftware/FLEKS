@@ -240,9 +240,12 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
       for (int i = 0; i < 3; i++) {
         // plo is the corner location => -0.5
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i] - 0.5;
-        loIdx[i] = fastfloor(dShift[i] + 10) - 10; // floor() is slow.
+        loIdx[i] = fastfloor(dShift[i]); // floor() is slow.
         dShift[i] = dShift[i] - loIdx[i];
       }
+
+
+
       Real coef[2][2][2];
       linear_interpolation_coef(dShift, coef);
       //-----calculate interpolate coef end-------------
@@ -316,7 +319,6 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
         for (int k1 = kMin; k1 <= kMax; k1++)
           for (int j1 = jMin; j1 <= jMax; j1++)
             for (int i1 = iMin; i1 <= iMax; i1++) {
-
               for (int iDim = 0; iDim < 3; iDim++) {
                 wg_D[iDim] =
                     coef * weights_IIID[i1 - iMin][j1 - jMin][k1 - kMin][iDim];
@@ -534,12 +536,18 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
         for (int i1 = iMin; i1 <= iMax; i1++) {
           const int kp = 2, kpr = 0;
           const int kr = k1 + kp - 1;
+          if (kr > kMax || kr < kMin)
+            continue;
           const Real* const datas0 = mmArr(i1, j1, k1).data;
           for (int jp = 0; jp < 3; jp++) {
             const int jr = j1 + jp - 1;
+            if (jr > jMax || jr < jMin)
+              continue;
             const int jpr = 2 - jp;
             for (int ip = 0; ip < 3; ip++) {
               const int ir = i1 + ip - 1;
+              if (ir > iMax || ir < iMin)
+                continue;
               const int ipr = 2 - ip;
               gpr = jpr * 3 + ipr;
               gps = 18 + jp * 3 + ip; // gps = kp*9+jp*3+kp
@@ -1150,7 +1158,7 @@ void Particles::combine_particles(Real limit) {
         for (int iw = 0; iw < nCell; iw++) {
           int nCombineCell =
               fastfloor(ratioCombine * phasePartIdx_III[iu][iv][iw].size() /
-                      nPartCombine);
+                        nPartCombine);
           for (int iCombine = 0; iCombine < nCombineCell; iCombine++) {
             /*
                 Delete 1 particle out of 6 particles:

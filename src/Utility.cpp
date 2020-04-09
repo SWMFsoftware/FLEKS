@@ -13,13 +13,14 @@ void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
       convert(srcMF.boxArray(), IntVect{ AMREX_D_DECL(0, 0, 0) });
 
   // Need and just need 1 ghost cell layer.
-  MultiFab centerMF(centerBA, dm, 3, dstMF.nGrow());
+  MultiFab centerMF(centerBA, dm, 3, 1);
   centerMF.setVal(0.0);
 
   for (int i = 0; i < srcMF.nComp(); i++) {
     MultiFab srcAliasMF(srcMF, amrex::make_alias, i, 1);
     grad_node_to_center(srcAliasMF, centerMF, invDx, status);
-    centerMF.FillBoundary(geom.periodicity());
+
+    //centerMF.FillBoundary(geom.periodicity());
     MultiFab dstAliasMF(dstMF, amrex::make_alias, i, 1);
     div_center_to_node(centerMF, dstAliasMF, invDx);
   }

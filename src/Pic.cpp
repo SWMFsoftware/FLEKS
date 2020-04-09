@@ -137,8 +137,9 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
       }
     }
 
-    distribute_FabArray(nodeMM, nodeBA, dm, 1, nGst, doMoveData);
+    distribute_FabArray(nodeMM, nodeBA, dm, 1, 1, doMoveData);
     distribute_FabArray(costMF, centerBA, dm, 1, nGst, doMoveData);
+
     distribute_FabArray(centerMM, centerBA, dm, 1, nGst, doMoveData);
 
     distribute_FabArray(tempNode3, nodeBA, dm, 3, nGst, doMoveData);
@@ -516,8 +517,6 @@ void Pic::calculate_phi(LinearSolver& solver) {
                     -fourPI / rhoTheta, centerNetChargeN, 0, 0,
                     tempCenter1.nComp(), tempCenter1.nGrow());
 
-  tempCenter1.FillBoundary(geom.periodicity());
-
   convert_3d_to_1d(tempCenter1, solver.rhs, geom);
 
   solver.solve();
@@ -533,7 +532,7 @@ void Pic::divE_accurate_matvec(double* vecIn, double* vecOut) {
   zero_array(vecOut, divESolver.get_nSolve());
 
   convert_1d_to_3d(vecIn, tempCenter1, geom);
-  tempCenter1.FillBoundary(geom.periodicity());
+  tempCenter1.FillBoundary(0, 1, IntVect(1), geom.periodicity());  
 
   tempCenter1_1.setVal(0.0);
   for (amrex::MFIter mfi(tempCenter1); mfi.isValid(); ++mfi) {
@@ -579,11 +578,9 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
 
   if (!doNetChargeOnly) {
     centerMM.SumBoundary(geom.periodicity());
-    centerMM.FillBoundary(geom.periodicity());
   }
 
   centerNetChargeNew.SumBoundary(geom.periodicity());
-  centerNetChargeNew.FillBoundary(geom.periodicity());
 
   apply_external_BC(cellStatus, centerNetChargeNew, 0,
                     centerNetChargeNew.nComp(), &Pic::get_zero);
@@ -683,7 +680,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
   MultiFab vecMF(nodeBA, dm, 3, nGst);
   vecMF.setVal(0.0);
 
-  MultiFab matvecMF(nodeBA, dm, 3, nGst);
+  MultiFab matvecMF(nodeBA, dm, 3, 1);
   matvecMF.setVal(0.0);
 
   convert_1d_to_3d(vecIn, vecMF, geom);
@@ -730,7 +727,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
 
       div_center_to_center(tempCenter3, tempCenter1, geom.InvCellSize());
 
-      tempCenter1.FillBoundary(geom.periodicity());
+      tempCenter1.FillBoundary(0, 1, IntVect(1), geom.periodicity());
 
       // 1) The outmost boundary layer of tempCenter3 is not accurate.
       // 2) The 2 outmost boundary layers (all ghosts if there are 2 ghost
@@ -861,7 +858,7 @@ void Pic::apply_external_BC(const iMultiFab& status, MultiFab& mf,
   if (mf.nGrow() == 0)
     return;
 
-  BoxArray ba = mf.boxArray();
+  BoxArray ba = convert(picRegionBA, mf.boxArray().ixType()); 
 
   const IntVect& ngrow = mf.nGrowVect();
   for (int i = 0; i < nDimMax; ++i) {
