@@ -74,6 +74,10 @@ void Domain::make_grid() {
 void Domain::regrid() {
 
   std::string nameFunc = "Domain::regrid";
+
+  if (!gridInfo.is_grid_new())
+    return;
+
   Print() << nameFunc << " is runing..." << std::endl;
 
   timing_func(nameFunc);
@@ -84,9 +88,6 @@ void Domain::regrid() {
 
   BoxArray baPic(picRegionBA);
 
-  if(baPic == baPicOld) return; 
-  baPicOld = baPic; 
-
   baPic.maxSize(maxBlockSize);
   Print() << "Box # to describe PIC region = " << picRegionBA.size() << "\n"
           << "Total PIC box # = " << baPic.size() << std::endl;
@@ -95,9 +96,8 @@ void Domain::regrid() {
   pic.regrid(picRegionBA, baPic, dmPic);
   fluidInterface->regrid(baPic, dmPic);
 
-  iGrid++; 
+  iGrid++;
   iDecomp++;
-
 
   if (doRestart && isInitializing) {
     // Restoring the restart data immediately after creating the data

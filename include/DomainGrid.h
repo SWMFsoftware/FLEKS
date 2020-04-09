@@ -43,9 +43,6 @@ protected:
 
   GridInfo gridInfo;
 
-
-  amrex::BoxArray baPicOld; 
-
   int iGrid;
   int iDecomp;
 
