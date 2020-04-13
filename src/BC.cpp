@@ -32,7 +32,7 @@ void apply_float_boundary(const iMultiFab& status, MultiFab& mf,
   //     IntVect mid = (lo + hi) / 2;
 
   //     Vector<BCRec> bcr(1);
-  //     for (int iDim = 0; iDim < nDimMax; iDim++) {
+  //     for (int iDim = 0; iDim < nDim; iDim++) {
   //       auto idxLo = mid;
   //       idxLo[iDim] = lo[iDim];
   //       bcr[0].setLo(iDim,

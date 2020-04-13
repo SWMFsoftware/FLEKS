@@ -183,7 +183,7 @@ public:
   void load_balance();
   //---------------load balance end---------------------
 
-  void set_nodeType();
+  void set_nodeAssignment();
 
   void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF,
                         amrex::Geometry &geom);
@@ -194,8 +194,8 @@ public:
   //--------------- IO begin--------------------------------
   void find_output_list(const PlotWriter &writerIn, long int &nPointAllProc,
                         PlotWriter::VectorPointList &pointList_II,
-                        std::array<double, nDimMax> &xMin_D,
-                        std::array<double, nDimMax> &xMax_D);
+                        std::array<double, nDim> &xMin_D,
+                        std::array<double, nDim> &xMax_D);
 
   void get_field_var(const VectorPointList &pointList_II,
                      const std::vector<std::string> &sVar_I,
@@ -263,8 +263,8 @@ private:
 void find_output_list_caller(const PlotWriter &writerIn,
                              long int &nPointAllProc,
                              PlotWriter::VectorPointList &pointList_II,
-                             std::array<double, nDimMax> &xMin_D,
-                             std::array<double, nDimMax> &xMax_D);
+                             std::array<double, nDim> &xMin_D,
+                             std::array<double, nDim> &xMax_D);
 
 void get_field_var_caller(const VectorPointList &pointList_II,
                           const std::vector<std::string> &sVar_I,

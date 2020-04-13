@@ -150,10 +150,9 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::make_unique<Particles>(
-          geom, dm, centerBA, tc.get(), i, fluidInterface->getQiSpecies(i),
-          fluidInterface->getMiSpecies(i), nPartPerCell);
-      // TODO: Combine the following function with the constructor.
-      ptr->set_region_ba(picRegionBA);
+          picRegionBA, geom, dm, centerBA, tc.get(), i,
+          fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i),
+          nPartPerCell);
       parts.push_back(std::move(ptr));
     }
   } else {
@@ -221,34 +220,34 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
     nodeStatus.FillBoundary(geom.periodicity());
 
-    distribute_FabArray(nodeType, nodeBA, dm, 1, 0, false);
-    set_nodeType();
+    distribute_FabArray(nodeAssignment, nodeBA, dm, 1, 0, false);
+    set_nodeAssignment();
 
-    // print_MultiFab(nodeType, "nodeType");
+    // print_MultiFab(nodeAssignment, "nodeAssignment");
   }
 
   {
     int nGrid = get_local_node_or_cell_number(nodeE);
-    eSolver.init(nGrid, nDimMax, nDimMax, matvec_E_solver);
+    eSolver.init(nGrid, nDim, nDim, matvec_E_solver);
   }
 
   {
     int nGrid = get_local_node_or_cell_number(centerDivE);
-    divESolver.init(nGrid, 1, nDimMax, matvec_divE_accurate);
+    divESolver.init(nGrid, 1, nDim, matvec_divE_accurate);
   }
 }
 
 //==========================================================
-void Pic::set_nodeType() {
-  nodeType.setVal(iNotHandle_);
+void Pic::set_nodeAssignment() {
+  nodeAssignment.setVal(iNotAssign_);
   const Box& gbx = convert(geom.Domain(), { 0, 0, 0 });
 
-  for (MFIter mfi(nodeType); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodeAssignment); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
     const Box& cellBox = convert(box, { 0, 0, 0 });
 
-    const auto& typeArr = nodeType[mfi].array();
+    const auto& typeArr = nodeAssignment[mfi].array();
     const auto& statusArr = cellStatus[mfi].array();
 
     const auto lo = lbound(box);
@@ -304,10 +303,10 @@ void Pic::set_nodeType() {
               // block.
 
               if (fHandle(i, j, k)) {
-                typeArr(i, j, k) = iHandle_;
+                typeArr(i, j, k) = iAssign_;
               }
             } else {
-              typeArr(i, j, k) = iHandle_;
+              typeArr(i, j, k) = iAssign_;
             }
           }
         }
@@ -400,8 +399,8 @@ void Pic::fill_E_B_fields() {
   nodeE.FillBoundary(geom.periodicity());
   nodeB.FillBoundary(geom.periodicity());
 
-  apply_external_BC(nodeStatus, nodeE, 0, nDimMax, &Pic::get_node_E);
-  apply_external_BC(nodeStatus, nodeB, 0, nDimMax, &Pic::get_node_B);
+  apply_external_BC(nodeStatus, nodeE, 0, nDim, &Pic::get_node_E);
+  apply_external_BC(nodeStatus, nodeB, 0, nDim, &Pic::get_node_B);
 
   fill_new_center_B();
   centerB.FillBoundary(geom.periodicity());
@@ -510,7 +509,7 @@ void Pic::calculate_phi(LinearSolver& solver) {
 
   solver.reset(get_local_node_or_cell_number(centerDivE));
 
-  BL_PROFILE_VAR("Pic::calculate_phi1", div1);  
+  BL_PROFILE_VAR("Pic::calculate_phi1", div1);
   div_node_to_center(nodeE, tempCenter1, geom.InvCellSize());
   BL_PROFILE_VAR_STOP(div1);
 
@@ -520,7 +519,7 @@ void Pic::calculate_phi(LinearSolver& solver) {
 
   convert_3d_to_1d(tempCenter1, solver.rhs, geom);
 
-  BL_PROFILE_VAR("Pic::calculate_phi2", solve);  
+  BL_PROFILE_VAR("Pic::calculate_phi2", solve);
   solver.solve();
   BL_PROFILE_VAR_STOP(solve);
 
@@ -536,7 +535,7 @@ void Pic::divE_accurate_matvec(double* vecIn, double* vecOut) {
   zero_array(vecOut, divESolver.get_nSolve());
 
   convert_1d_to_3d(vecIn, tempCenter1, geom);
-  tempCenter1.FillBoundary(0, 1, IntVect(1), geom.periodicity());  
+  tempCenter1.FillBoundary(0, 1, IntVect(1), geom.periodicity());
 
   tempCenter1_1.setVal(0.0);
   for (amrex::MFIter mfi(tempCenter1); mfi.isValid(); ++mfi) {
@@ -656,9 +655,9 @@ void Pic::update_E() {
   }
 
   Print() << "\n----------- E solver ------------------" << std::endl;
-  BL_PROFILE_VAR("Pic::eSolver", eSolver);  
+  BL_PROFILE_VAR("Pic::eSolver", eSolver);
   eSolver.solve();
-  BL_PROFILE_VAR_STOP(eSolver);  
+  BL_PROFILE_VAR_STOP(eSolver);
 
   nodeEth.setVal(0.0);
   convert_1d_to_3d(eSolver.xLeft, nodeEth, geom);
@@ -670,16 +669,15 @@ void Pic::update_E() {
   MultiFab::LinComb(nodeE, -(1.0 - fsolver.theta) / fsolver.theta, nodeE, 0,
                     1. / fsolver.theta, nodeEth, 0, 0, nodeE.nComp(), nGst);
 
-  apply_external_BC(nodeStatus, nodeE, 0, nDimMax, &Pic::get_node_E);
-  apply_external_BC(nodeStatus, nodeEth, 0, nDimMax, &Pic::get_node_E);
-
+  apply_external_BC(nodeStatus, nodeE, 0, nDim, &Pic::get_node_E);
+  apply_external_BC(nodeStatus, nodeEth, 0, nDim, &Pic::get_node_E);
 }
 
 //==========================================================
 void Pic::update_E_matvec(const double* vecIn, double* vecOut,
                           const bool useZeroBC) {
   std::string nameFunc = "Pic::E_matvec";
-  timing_func(nameFunc);  
+  timing_func(nameFunc);
 
   zero_array(vecOut, eSolver.get_nSolve());
 
@@ -703,7 +701,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
   } else {
     // Even after apply_external_BC(), the outmost layer node E is still unknow.
     // See FluidInterface::calc_current for detailed explaniation.
-    apply_external_BC(nodeStatus, vecMF, 0, nDimMax, &Pic::get_node_E);
+    apply_external_BC(nodeStatus, vecMF, 0, nDim, &Pic::get_node_E);
   }
 
   lap_node_to_node(vecMF, matvecMF, dm, geom, cellStatus);
@@ -764,7 +762,6 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
   MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
 
   convert_3d_to_1d(matvecMF, vecOut, geom);
-  
 }
 
 //==========================================================
@@ -872,11 +869,11 @@ void Pic::apply_external_BC(const iMultiFab& status, MultiFab& mf,
   if (mf.nGrow() == 0)
     return;
 
-  //BoxArray ba = mf.boxArray();
-  BoxArray ba = convert(picRegionBA, mf.boxArray().ixType()); 
+  // BoxArray ba = mf.boxArray();
+  BoxArray ba = convert(picRegionBA, mf.boxArray().ixType());
 
   const IntVect& ngrow = mf.nGrowVect();
-  for (int i = 0; i < nDimMax; ++i) {
+  for (int i = 0; i < nDim; ++i) {
     if (geom.isPeriodic(i)) {
       ba.grow(i, ngrow[i]);
     }
@@ -1057,12 +1054,12 @@ void Pic::convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
     int iMin = lo.x, jMin = lo.y, kMin = lo.z;
 
-    const auto& nodeArr = nodeType[mfi].array();
+    const auto& nodeArr = nodeAssignment[mfi].array();
     for (int iVar = 0; iVar < MF.nComp(); iVar++)
       for (int k = kMin; k <= kMax; ++k)
         for (int j = jMin; j <= jMax; ++j)
           for (int i = iMin; i <= iMax; ++i)
-            if (isCenter || nodeArr(i, j, k) == iHandle_) {
+            if (isCenter || nodeArr(i, j, k) == iAssign_) {
               arr(i, j, k, iVar) = p[iCount++];
             }
   }
@@ -1090,12 +1087,12 @@ void Pic::convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
     int iMin = lo.x, jMin = lo.y, kMin = lo.z;
 
-    const auto& nodeArr = nodeType[mfi].array();
+    const auto& nodeArr = nodeAssignment[mfi].array();
     for (int iVar = 0; iVar < MF.nComp(); iVar++)
       for (int k = kMin; k <= kMax; ++k)
         for (int j = jMin; j <= jMax; ++j)
           for (int i = iMin; i <= iMax; ++i)
-            if (isCenter || nodeArr(i, j, k) == iHandle_) {
+            if (isCenter || nodeArr(i, j, k) == iAssign_) {
               p[iCount++] = arr(i, j, k, iVar);
             }
   }

@@ -5,7 +5,8 @@
 
 const int nVirGst = 0;
 
-constexpr static int nDim = AMREX_SPACEDIM, nDimMax = 3;
+// FLEKS is always 3D. But it can be fake 2D with one cell in the z-direction.
+constexpr static int nDim = 3;
 constexpr static int ix_ = 0, iy_ = 1, iz_ = 2;
 
 constexpr static int nMoments = 14;
@@ -21,6 +22,4 @@ constexpr static double fourPI = 3.14159265359 * 4;
 
 // Integers to label the the status of a cell.
 constexpr static int iBoundary_ = 0, iOnNew_ = 1, iOnOld_ = 2;
-
-constexpr static int iHandle_ = 1, iNotHandle_ = 0;
 #endif

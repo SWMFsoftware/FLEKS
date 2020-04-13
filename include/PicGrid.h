@@ -23,11 +23,12 @@ class PicGrid {
 protected:
   int nGst;
 
-  amrex::Box centerBox;
-
   // const int coord = 0; // Cartesian grid
   amrex::Geometry geom;
 
+  // A collection of boxes to describe the PIC domain. The boxes have been
+  // combined if possible. It covers the same region as centerBA, but usually
+  // contains less boxes.
   amrex::BoxArray picRegionBA;
 
   amrex::BoxArray centerBAOld;
@@ -40,11 +41,19 @@ protected:
 
   amrex::MultiFab costMF;
 
+  // The status of a cell could be: iBoundary_, iOnNew_, or iOnOld_. 
   amrex::iMultiFab cellStatus;
 
+  // The status of a Node could be: iBoundary_, iOnNew_, or iOnOld_. 
   amrex::iMultiFab nodeStatus;
 
-  amrex::iMultiFab nodeType;
+  // A node may be shared by a few blocks/boxes. Sometimes (such as the E field
+  // solver) only one of the boexes needs to take care such nodes. The following
+  // multifab is usually used for this purpose: if one node of one box is
+  // 'iAssign_', this box needs to take care of this node (this node must be
+  // 'iNotAssign_' on other boxes).
+  amrex::iMultiFab nodeAssignment;
+  constexpr static int iAssign_ = 1, iNotAssign_ = 0;
 
   bool doNeedFillNewCell;
 

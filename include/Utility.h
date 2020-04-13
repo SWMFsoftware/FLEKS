@@ -109,7 +109,7 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
                                     const amrex::Real x, const amrex::Real y,
                                     const amrex::Real z, const int iVar) {
   const auto plo = geom.ProbLo();
-  const amrex::Real loc[nDimMax] = { x, y, z };
+  const amrex::Real loc[nDim] = { x, y, z };
 
   const auto invDx = geom.InvCellSize();
 

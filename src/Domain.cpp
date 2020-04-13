@@ -17,6 +17,8 @@ void Domain::update() {
 void Domain::init(amrex::Real timeIn, const std::string &paramString,
                   int *paramInt, double *gridDim, double *paramReal,
                   int iDomain) {
+  if (AMREX_SPACEDIM != 3)
+    Abort("Error: AMReX should be compiled with 3D configuration!!");
 
   tc->set_time_si(timeIn);
 
@@ -41,7 +43,7 @@ void Domain::make_grid() {
   set_nGst(2);
 
   // If MHD is 2D, PIC has to be periodic in the z-direction.
-  for (int iDim = fluidInterface->getnDim(); iDim < nDimMax; iDim++)
+  for (int iDim = fluidInterface->getnDim(); iDim < nDim; iDim++)
     set_periodicity(iDim, true);
 
   if (!doRestart) {
@@ -217,7 +219,7 @@ void Domain::save_restart_header() {
 
     // Geometry
     headerFile << "#GEOMETRY\n";
-    for (int i = 0; i < nDimMax; ++i) {
+    for (int i = 0; i < nDim; ++i) {
       headerFile << boxRange.lo(i) << "\t min\n";
       headerFile << boxRange.hi(i) << "\t max\n";
     }
@@ -225,7 +227,7 @@ void Domain::save_restart_header() {
 
     // Cell
     headerFile << "#NCELL\n";
-    for (int i = 0; i < nDimMax; ++i) {
+    for (int i = 0; i < nDim; ++i) {
       headerFile << nCell[i] << "\n";
     }
     headerFile << "\n";
@@ -312,7 +314,7 @@ void Domain::read_param() {
     } else if (command == "#MAXBLOCKSIZE") {
       // The block size in each direction can not larger than maxBlockSize.
       int tmp;
-      for (int i = 0; i < nDimMax; i++) {
+      for (int i = 0; i < nDim; i++) {
         readParam.read_var("maxBlockSize", tmp);
         set_maxBlockSize(i, tmp);
       }
@@ -321,7 +323,7 @@ void Domain::read_param() {
       readParam.read_var("dtSI", dtSI);
       tc->set_dt_si(dtSI);
     } else if (command == "#PERIODICITY") {
-      for (int i = 0; i < nDimMax; i++) {
+      for (int i = 0; i < nDim; i++) {
         bool isPeriodic;
         readParam.read_var("isPeriodic", isPeriodic);
         set_periodicity(i, isPeriodic);
@@ -380,7 +382,7 @@ void Domain::read_param() {
       tc->set_time_si(time);
     } else if (command == "#GEOMETRY") {
       RealBox bxTmp;
-      for (int i = 0; i < nDimMax; ++i) {
+      for (int i = 0; i < nDim; ++i) {
         Real lo, hi;
         readParam.read_var("min", lo);
         readParam.read_var("max", hi);
@@ -390,7 +392,7 @@ void Domain::read_param() {
       set_boxRange(bxTmp);
     } else if (command == "#NCELL") {
       IntVect tmp;
-      for (int i = 0; i < nDimMax; ++i) {
+      for (int i = 0; i < nDim; ++i) {
         readParam.read_var("nCell", tmp[i]);
       }
       set_nCell(tmp);

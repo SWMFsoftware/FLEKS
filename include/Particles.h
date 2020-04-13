@@ -32,10 +32,10 @@ private:
   amrex::Vector<amrex::RealBox> boxRange_I;
 
 public:
-  Particles(const amrex::Geometry& geom, const amrex::DistributionMapping& dm,
-            const amrex::BoxArray& ba, TimeCtr* const tcIn, const int speciesID,
-            const amrex::Real charge, const amrex::Real mass,
-            const amrex::IntVect& nPartPerCellIn);
+  Particles(const amrex::BoxArray& regionBAIn, const amrex::Geometry& geom,
+            const amrex::DistributionMapping& dm, const amrex::BoxArray& ba,
+            TimeCtr* const tcIn, const int speciesID, const amrex::Real charge,
+            const amrex::Real mass, const amrex::IntVect& nPartPerCellIn);
 
   void set_region_ba(const amrex::BoxArray& in) {
     regionBA = in;
@@ -85,7 +85,7 @@ public:
     const auto& phi = Geom(0).ProbHi();
     const auto& dx = Geom(0).CellSize();
 
-    for (int iDim = 0; iDim < nDimMax; iDim++) {
+    for (int iDim = 0; iDim < nDim; iDim++) {
       if (!Geom(0).isPeriodic(iDim)) {
         if (p.pos(iDim) > phi[iDim] || p.pos(iDim) < plo[iDim]) {
           return true;
@@ -99,7 +99,7 @@ public:
   inline bool is_outside_ba(const ParticleType& p) {
     if (is_outside_domain(p))
       return true;
-      
+
     const auto& plo = Geom(0).ProbLo();
     const auto& phi = Geom(0).ProbHi();
     amrex::Real loc[3] = { 0, 0, 0 };
@@ -154,8 +154,8 @@ protected:
   amrex::Real charge;
   amrex::Real mass;
 
-  amrex::Real qom; 
-  int qomSign; 
+  amrex::Real qom;
+  int qomSign;
 
   amrex::IntVect nPartPerCell;
 

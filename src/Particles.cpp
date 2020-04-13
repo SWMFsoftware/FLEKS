@@ -7,10 +7,11 @@
 using namespace amrex;
 
 //==========================================================
-Particles::Particles(const Geometry& geom, const DistributionMapping& dm,
-                     const BoxArray& ba, TimeCtr* const tcIn,
-                     const int speciesIDIn, const Real chargeIn,
-                     const Real massIn, const IntVect& nPartPerCellIn)
+Particles::Particles(const amrex::BoxArray& regionBAIn, const Geometry& geom,
+                     const DistributionMapping& dm, const BoxArray& ba,
+                     TimeCtr* const tcIn, const int speciesIDIn,
+                     const Real chargeIn, const Real massIn,
+                     const IntVect& nPartPerCellIn)
     : ParticleContainer<4, 0, 0, 0>(geom, dm, ba),
       tc(tcIn),
       speciesID(speciesIDIn),
@@ -22,8 +23,10 @@ Particles::Particles(const Geometry& geom, const DistributionMapping& dm,
   qom = charge / mass;
   qomSign = qom > 0 ? 1 : -1;
 
-  for (int i = 0; i < nDimMax; i++)
+  for (int i = 0; i < nDim; i++)
     tile_size[i] = 1;
+
+  set_region_ba(regionBAIn);
 }
 
 //==========================================================

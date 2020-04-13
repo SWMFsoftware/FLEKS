@@ -94,13 +94,13 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
 //==========================================================
 void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
                            PlotWriter::VectorPointList& pointList_II,
-                           std::array<double, nDimMax>& xMin_D,
-                           std::array<double, nDimMax>& xMax_D) {
+                           std::array<double, nDim>& xMin_D,
+                           std::array<double, nDim>& xMax_D) {
   const auto plo = geom.ProbLo();
   const auto plh = geom.ProbHi();
 
-  Real xMinL_D[nDimMax] = { plh[ix_], plh[iy_], plh[iz_] };
-  Real xMaxL_D[nDimMax] = { plo[ix_], plo[iy_], plo[iz_] };
+  Real xMinL_D[nDim] = { plh[ix_], plh[iy_], plh[iz_] };
+  Real xMaxL_D[nDim] = { plo[ix_], plo[iy_], plo[iz_] };
 
   const auto dx = geom.CellSize();
 
@@ -110,7 +110,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
     FArrayBox& fab = nodeE[mfi];
     const Box& box = mfi.validbox();
 
-    const auto& typeArr = nodeType[mfi].array();
+    const auto& typeArr = nodeAssignment[mfi].array();
 
     const auto lo = lbound(box);
     const auto hi = ubound(box);
@@ -121,7 +121,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         const double yp = j * dx[iy_] + plo[iy_];
         for (int i = lo.x; i <= hi.x; ++i) {
           const double xp = i * dx[ix_] + plo[ix_];
-          if (typeArr(i, j, k) == iHandle_ &&
+          if (typeArr(i, j, k) == iAssign_ &&
               writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
 
             pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
@@ -194,10 +194,10 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
   nPointAllProc = pointList_II.size();
   ParallelDescriptor::ReduceLongSum(nPointAllProc);
 
-  ParallelDescriptor::ReduceRealMin(xMinL_D, nDimMax);
-  ParallelDescriptor::ReduceRealMax(xMaxL_D, nDimMax);
+  ParallelDescriptor::ReduceRealMin(xMinL_D, nDim);
+  ParallelDescriptor::ReduceRealMax(xMaxL_D, nDim);
 
-  for (int iDim = 0; iDim < nDimMax; ++iDim) {
+  for (int iDim = 0; iDim < nDim; ++iDim) {
     xMin_D[iDim] = xMinL_D[iDim];
     xMax_D[iDim] = xMaxL_D[iDim];
   }
@@ -375,7 +375,7 @@ void Pic::save_restart_header(std::ofstream& headerFile) {
     headerFile << "\n";
 
     headerFile << "#PARTICLES\n";
-    for (int i = 0; i < nDimMax; ++i) {
+    for (int i = 0; i < nDim; ++i) {
       headerFile << nPartPerCell[i] << "\n";
     }
     headerFile << "\n";
@@ -466,12 +466,12 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
   { // Creating geomOut, which uses output length unit, for amrex format output.
     RealBox boxRangeOut;
     Real no2outL = pw.No2OutTable("X");
-    for (int i = 0; i < nDimMax; i++) {
+    for (int i = 0; i < nDim; i++) {
       boxRangeOut.setLo(i, geom.ProbLo(i) * no2outL);
       boxRangeOut.setHi(i, geom.ProbHi(i) * no2outL);
     }
     Array<int, nDim> periodicity;
-    for (int i = 0; i < nDimMax; i++)
+    for (int i = 0; i < nDim; i++)
       periodicity[i] = geom.isPeriodic(i);
     geomOut.define(geom.Domain(), boxRangeOut, geom.Coord(), periodicity);
   }
@@ -577,8 +577,8 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
 void find_output_list_caller(const PlotWriter& writerIn,
                              long int& nPointAllProc,
                              PlotWriter::VectorPointList& pointList_II,
-                             std::array<double, nDimMax>& xMin_D,
-                             std::array<double, nDimMax>& xMax_D) {
+                             std::array<double, nDim>& xMin_D,
+                             std::array<double, nDim>& xMax_D) {
   MPICs->pic.find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
                               xMax_D);
 }
