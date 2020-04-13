@@ -40,33 +40,38 @@ void Domain::init(amrex::Real timeIn, const std::string &paramString,
 
 //========================================================
 void Domain::make_grid() {
-  set_nGst(2);
+  nGst = 2;
 
   // If MHD is 2D, PIC has to be periodic in the z-direction.
   for (int iDim = fluidInterface->getnDim(); iDim < nDim; iDim++)
     set_periodicity(iDim, true);
 
   if (!doRestart) {
-    IntVect nCellTmp;
-    RealBox boxRangeTmp;
-
     // If restart, these variables read from restart.H
-    nCellTmp[ix_] = fluidInterface->getFluidNxc();
-    nCellTmp[iy_] = fluidInterface->getFluidNyc();
-    nCellTmp[iz_] = fluidInterface->getFluidNzc();
+    nCell[ix_] = fluidInterface->getFluidNxc();
+    nCell[iy_] = fluidInterface->getFluidNyc();
+    nCell[iz_] = fluidInterface->getFluidNzc();
 
     for (int i = 0; i < nDim; i++) {
-      boxRangeTmp.setLo(i, fluidInterface->getphyMin(i));
-      boxRangeTmp.setHi(i, fluidInterface->getphyMax(i));
+      domainRange.setLo(i, fluidInterface->getphyMin(i));
+      domainRange.setHi(i, fluidInterface->getphyMax(i));
     }
-    set_nCell(nCellTmp);
-    set_boxRange(boxRangeTmp);
   }
 
   const int nCellPerPatch = fluidInterface->get_nCellPerPatch();
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], nCellPerPatch);
 
-  DomainGrid::init();
+  for (int i = 0; i < nDim; i++) {
+    centerBoxLo[i] = 0;
+    centerBoxHi[i] = nCell[i] - 1;
+  }
+
+  centerBox.setSmall(centerBoxLo);
+  centerBox.setBig(centerBoxHi);
+
+  geom.define(centerBox, &domainRange, coord, periodicity);
+
+  Print() << "Domain range = " << domainRange << std::endl;
 
   pic.set_geom(nGst, geom);
   fluidInterface->set_geom(nGst, geom);
@@ -220,8 +225,8 @@ void Domain::save_restart_header() {
     // Geometry
     headerFile << "#GEOMETRY\n";
     for (int i = 0; i < nDim; ++i) {
-      headerFile << boxRange.lo(i) << "\t min\n";
-      headerFile << boxRange.hi(i) << "\t max\n";
+      headerFile << domainRange.lo(i) << "\t min\n";
+      headerFile << domainRange.hi(i) << "\t max\n";
     }
     headerFile << "\n";
 
@@ -269,11 +274,11 @@ void Domain::init_time_ctr() {
       writer.set_nProcs(ParallelDescriptor::NProcs());
       writer.set_nDim(fluidInterface->getnDim());
       writer.set_iRegion(0);
-      writer.set_domainMin_D(
-          { { boxRange.lo(ix_), boxRange.lo(iy_), boxRange.lo(iz_) } });
+      writer.set_domainMin_D({ { domainRange.lo(ix_), domainRange.lo(iy_),
+                                 domainRange.lo(iz_) } });
 
-      writer.set_domainMax_D(
-          { { boxRange.hi(ix_), boxRange.hi(iy_), boxRange.hi(iz_) } });
+      writer.set_domainMax_D({ { domainRange.hi(ix_), domainRange.hi(iy_),
+                                 domainRange.hi(iz_) } });
 
       const Real *dx = geom.CellSize();
       writer.set_dx_D({ { dx[ix_], dx[iy_], dx[iz_] } });
@@ -316,7 +321,7 @@ void Domain::read_param() {
       int tmp;
       for (int i = 0; i < nDim; i++) {
         readParam.read_var("maxBlockSize", tmp);
-        set_maxBlockSize(i, tmp);
+        maxBlockSize[i] = tmp;
       }
     } else if (command == "#TIMESTEP" || command == "#TIMESTEPPING") {
       Real dtSI;
@@ -381,21 +386,17 @@ void Domain::read_param() {
       readParam.read_var("time", time);
       tc->set_time_si(time);
     } else if (command == "#GEOMETRY") {
-      RealBox bxTmp;
       for (int i = 0; i < nDim; ++i) {
         Real lo, hi;
         readParam.read_var("min", lo);
         readParam.read_var("max", hi);
-        bxTmp.setLo(i, lo);
-        bxTmp.setHi(i, hi);
+        domainRange.setLo(i, lo);
+        domainRange.setHi(i, hi);
       }
-      set_boxRange(bxTmp);
     } else if (command == "#NCELL") {
-      IntVect tmp;
       for (int i = 0; i < nDim; ++i) {
-        readParam.read_var("nCell", tmp[i]);
+        readParam.read_var("nCell", nCell[i]);
       }
-      set_nCell(tmp);
     }
     //--------- The commands above exist in restart.H only --------
   }
