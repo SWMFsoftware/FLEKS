@@ -7,21 +7,22 @@
 class Domain : public DomainGrid {
 private:
   bool doRestart;
-  bool isInitializing; 
+  bool isInitializing;
 
 public:
   Pic pic;
 
+  //  Conceptually, both the Domain class and the Pic class may use the
+  //  following classes, so they are handled by shared ponters. 
   std::shared_ptr<FluidInterface> fluidInterface;
-
   std::shared_ptr<TimeCtr> tc;
-  
+
 public:
   Domain() {
     fluidInterface = std::make_shared<FluidInterface>();
-    tc = std::make_unique<TimeCtr>();
+    tc = std::make_shared<TimeCtr>();
     doRestart = false;
-    isInitializing = true; 
+    isInitializing = true;
   }
 
   ~Domain() = default;
@@ -59,12 +60,12 @@ public:
   //--------------- IO end----------------------------------
 
   //-------------- grid begin-------------------------------
-  void make_grid();  
+  void make_grid();
   void regrid();
-  void receive_grid_info(int *status);  
+  void receive_grid_info(int *status);
   //-------------- grid end---------------------------------
 
-  //void make_data();
+  // void make_data();
   void init_time_ctr();
 };
 
