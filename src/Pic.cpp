@@ -18,8 +18,7 @@ void Pic::init(Real timeIn, const std::string& paramString, int* paramInt,
                std::shared_ptr<FluidInterface>& fluidIn,
                std::shared_ptr<TimeCtr>& tcIn) {
   tc = tcIn;
-  fluidInterface = fluidIn;
-  // read_param();
+  fluidInterface = fluidIn;  
 }
 
 //==========================================================
@@ -60,8 +59,6 @@ void Pic::fill_new_cells() {
   if (!doNeedFillNewCell)
     return;
 
-  Print() << nameFunc << " begin" << std::endl;
-
   timing_func(nameFunc);
 
   fill_E_B_fields();
@@ -71,8 +68,6 @@ void Pic::fill_new_cells() {
   sum_to_center(false);
 
   doNeedFillNewCell = false;
-
-  Print() << nameFunc << " end" << std::endl;
 }
 
 //==========================================================
@@ -195,8 +190,6 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
     cellStatus.FillBoundary(geom.periodicity());
 
-    // print_MultiFab(cellStatus, "cellStatus", 1);
-
     distribute_FabArray(nodeStatus, nodeBA, dm, 1, nGst, false);
     nodeStatus.setVal(iBoundary_);
     nodeStatus.setVal(iOnNew_, 0);
@@ -222,8 +215,6 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
     distribute_FabArray(nodeAssignment, nodeBA, dm, 1, 0, false);
     set_nodeAssignment();
-
-    // print_MultiFab(nodeAssignment, "nodeAssignment");
   }
 
   {
@@ -509,9 +500,7 @@ void Pic::calculate_phi(LinearSolver& solver) {
 
   solver.reset(get_local_node_or_cell_number(centerDivE));
 
-  BL_PROFILE_VAR("Pic::calculate_phi1", div1);
   div_node_to_center(nodeE, tempCenter1, geom.InvCellSize());
-  BL_PROFILE_VAR_STOP(div1);
 
   MultiFab::LinComb(tempCenter1, 1.0 / rhoTheta, tempCenter1, 0,
                     -fourPI / rhoTheta, centerNetChargeN, 0, 0,
@@ -519,7 +508,7 @@ void Pic::calculate_phi(LinearSolver& solver) {
 
   convert_3d_to_1d(tempCenter1, solver.rhs, geom);
 
-  BL_PROFILE_VAR("Pic::calculate_phi2", solve);
+  BL_PROFILE_VAR("Pic::phi_iterate", solve);
   solver.solve();
   BL_PROFILE_VAR_STOP(solve);
 
@@ -644,18 +633,13 @@ void Pic::update_E() {
 
   update_E_matvec(eSolver.xLeft, eSolver.matvec, false);
 
-  // Real sum = 0;
   for (int i = 0; i < eSolver.get_nSolve(); i++) {
     eSolver.rhs[i] -= eSolver.matvec[i];
     eSolver.xLeft[i] = 0;
-    // sum += pow(eSolver.rhs[i], 2);
-    // Print() << "i = " << i << " rhs = " << eSolver.rhs[i]
-    //         << " matvec = " << eSolver.matvec[i] << " sum = " << sqrt(sum)
-    //         << std::endl;
   }
 
   Print() << "\n----------- E solver ------------------" << std::endl;
-  BL_PROFILE_VAR("Pic::eSolver", eSolver);
+  BL_PROFILE_VAR("Pic::E_iterate", eSolver);
   eSolver.solve();
   BL_PROFILE_VAR_STOP(eSolver);
 
@@ -739,15 +723,11 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
       apply_external_BC(cellStatus, tempCenter1, 0, tempCenter1.nComp(),
                         &Pic::get_zero);
 
-      // print_MultiFab(tempCenter1, "tempCenter1", 1);
-
       MultiFab::LinComb(centerDivE, 1 - fsolver.coefDiff, centerDivE, 0,
                         fsolver.coefDiff, tempCenter1, 0, 0, 1, 1);
     }
 
-    // print_MultiFab(centerDivE, "centerDivE", 1);
     grad_center_to_node(centerDivE, tempNode3, geom.InvCellSize());
-    // print_MultiFab(tempNode3, "tempnode3", geom, 0);
 
     tempNode3.mult(delt2);
     MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(),

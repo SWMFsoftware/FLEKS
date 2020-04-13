@@ -82,6 +82,7 @@ void Domain::regrid() {
 
   std::string nameFunc = "Domain::regrid";
 
+  //If the PIC grid does not change, then return. 
   if (!gridInfo.is_grid_new())
     return;
 
