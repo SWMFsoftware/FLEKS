@@ -106,8 +106,6 @@ public:
     timeNowSI += dtSI;
     cycle++;
   }
-
-  void write_plots(bool doForceWrite = false);
 };
 
 #endif

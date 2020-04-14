@@ -1,14 +1,17 @@
 #include <algorithm>
 
 #include "Particles.h"
+#include "Timer.h"
 #include "Utility.h"
 
 using namespace amrex;
 
-Particles::Particles(const Geometry& geom, const DistributionMapping& dm,
-                     const BoxArray& ba, TimeCtr* const tcIn,
-                     const int speciesIDIn, const Real chargeIn,
-                     const Real massIn, const IntVect& nPartPerCellIn)
+//==========================================================
+Particles::Particles(const amrex::BoxArray& regionBAIn, const Geometry& geom,
+                     const DistributionMapping& dm, const BoxArray& ba,
+                     TimeCtr* const tcIn, const int speciesIDIn,
+                     const Real chargeIn, const Real massIn,
+                     const IntVect& nPartPerCellIn)
     : ParticleContainer<4, 0, 0, 0>(geom, dm, ba),
       tc(tcIn),
       speciesID(speciesIDIn),
@@ -17,27 +20,38 @@ Particles::Particles(const Geometry& geom, const DistributionMapping& dm,
       nPartPerCell(nPartPerCellIn) {
   do_tiling = true;
 
-  for (int i = 0; i < nDimMax; i++)
+  qom = charge / mass;
+  qomSign = qom > 0 ? 1 : -1;
+
+  for (int i = 0; i < nDim; i++)
     tile_size[i] = 1;
+
+  set_region_ba(regionBAIn);
 }
 
+//==========================================================
 void Particles::add_particles_cell(const MFIter& mfi,
                                    const FluidInterface& fluidInterface, int i,
                                    int j, int k) {
   int ig, jg, kg, nxcg, nycg, nzcg, iCycle, npcel, nRandom = 7;
   // Why +1? for comparison with iPIC3D.-----
-  ig = i + 1;
-  jg = j + 1;
+
+  ig = i + 2;
+  jg = j + 2;
   kg = k;
   if (fluidInterface.getnDim() > 2)
-    kg++; // just for comparison with iPIC3D;
+    kg = kg + 2; // just for comparison with iPIC3D;
   //----------------------------------------
 
-  nxcg = fluidInterface.getFluidNxc();
-  nycg = fluidInterface.getFluidNyc();
+  nxcg = fluidInterface.getFluidNxc() + 2;
+  nycg = fluidInterface.getFluidNyc() + 2;
   nzcg = fluidInterface.getFluidNzc();
+  if (fluidInterface.getnDim() > 2)
+    nzcg += 2;
+
   iCycle = tc->get_cycle();
   npcel = nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_];
+
   // What if the seed overflow?
   const long seed =
       (speciesID + 3) * nRandom * npcel *
@@ -50,10 +64,29 @@ void Particles::add_particles_cell(const MFIter& mfi,
   auto plo = Geom(0).ProbLo();
 
   const Real vol = dx[ix_] * dx[iy_] * dx[iz_];
+  const Real vol2Npcel = qomSign * vol / npcel;
 
   const int lev = 0;
   auto& particles =
       GetParticles(lev)[std::make_pair(mfi.index(), mfi.LocalTileIndex())];
+
+  //----------------------------------------------------------
+  // Calculate the coefficient to correct the thermal velocity so that the
+  // variation of the velocity space distribution is unbiased.
+  int nPartEffective;
+  {
+    const Box& gbx = convert(Geom(0).Domain(), { 0, 0, 0 });
+    const bool is2D = gbx.bigEnd(iz_) == gbx.smallEnd(iz_);
+    int nCellContribute = is2D ? 4 : 8;
+    const int nx = nPartPerCell[ix_];
+    const int ny = nPartPerCell[iy_];
+    const int nz = nPartPerCell[iz_];
+    const Real coefCorrection = 27. / 8 * (nx + 1) * (ny + 1) * (nz + 1) /
+                                ((2 * nx + 1) * (2 * ny + 1) * (2 * nz + 1));
+    nPartEffective = nCellContribute * npcel * coefCorrection;
+  }
+  const Real coefSD = sqrt(Real(nPartEffective) / (nPartEffective - 1));
+  //-----------------------------------------------------------
 
   // loop over particles inside grid cell i, j, k
   for (int ii = 0; ii < nPartPerCell[ix_]; ii++)
@@ -67,11 +100,8 @@ void Particles::add_particles_cell(const MFIter& mfi,
         z = (kk + randNum()) * (dx[iz_] / nPartPerCell[iz_]) + k * dx[iz_] +
             plo[iz_];
 
-        double q = (charge / mass / fabs(charge / mass)) *
-                   (fluidInterface.get_number_density(mfi, x, y, z, speciesID) /
-                    npcel) *
-                   vol;
-
+        double q = vol2Npcel *
+                   fluidInterface.get_number_density(mfi, x, y, z, speciesID);
         if (q != 0) {
           double rand;
           Real u, v, w;
@@ -89,6 +119,13 @@ void Particles::add_particles_cell(const MFIter& mfi,
             fluidInterface.set_particle_uth_iso(mfi, x, y, z, &u, &v, &w, rand1,
                                                 rand2, rand3, rand4, speciesID);
           }
+
+          // Increase the thermal velocity a little so that the variation of the
+          // velocity space distribution is unbiased.
+          u *= coefSD;
+          v *= coefSD;
+          w *= coefSD;
+
           u += fluidInterface.get_ux(mfi, x, y, z, speciesID);
           v += fluidInterface.get_uy(mfi, x, y, z, speciesID);
           w += fluidInterface.get_uz(mfi, x, y, z, speciesID);
@@ -110,39 +147,19 @@ void Particles::add_particles_cell(const MFIter& mfi,
           p.rdata(iwp_) = w;
           p.rdata(iqp_) = q;
           particles.push_back(p);
+          // Print() << p << std::endl;
         }
       }
 }
 
-void Particles::add_particles_domain(const FluidInterface& fluidInterface) {
-  BL_PROFILE("Particles::add_particles");
+//==========================================================
+void Particles::add_particles_domain(const FluidInterface& fluidInterface,
+                                     const iMultiFab& cellStatus) {
+  timing_func("Particles::add_particles");
 
   const int lev = 0;
   for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
-    const Box& tile_box = mfi.validbox();
-    const auto lo = amrex::lbound(tile_box);
-    const auto hi = amrex::ubound(tile_box);
-
-    for (int i = lo.x; i <= hi.x; ++i)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int k = lo.z; k <= hi.z; ++k) {
-          add_particles_cell(mfi, fluidInterface, i, j, k);
-        }
-  }
-}
-
-void Particles::inject_particles_at_boundary(
-    const FluidInterface& fluidInterface) {
-
-  if (nVirGst != 1)
-    Abort("The function assumes nVirGst==1!!");
-
-  const int lev = 0;
-
-  const Box& gbx = Geom(0).Domain();
-
-  for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
-    // Since nVirGst==1, fill in the cells in the 'validbox'.
+    const auto& status = cellStatus[mfi].array();
     const Box& tile_box = mfi.validbox();
     const auto lo = amrex::lbound(tile_box);
     const auto hi = amrex::ubound(tile_box);
@@ -150,94 +167,57 @@ void Particles::inject_particles_at_boundary(
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
     int iMin = lo.x, jMin = lo.y, kMin = lo.z;
 
-    bool doFillLeftX = false, doFillLeftY = false, doFillLeftZ = false;
-    bool doFillRightX = false, doFillRightY = false, doFillRightZ = false;
-
-    if (!(Geom(0).isPeriodic(ix_)) && gbx.bigEnd(ix_) == hi.x) {
-      doFillRightX = true;
-    }
-    if ((!Geom(0).isPeriodic(iy_)) && gbx.bigEnd(iy_) == hi.y) {
-      doFillRightY = true;
-    }
-    if ((!Geom(0).isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z) {
-      doFillRightZ = true;
-    }
-
-    if (!Geom(0).isPeriodic(ix_) && gbx.smallEnd(ix_) == lo.x) {
-      doFillLeftX = true;
-    }
-    if (!Geom(0).isPeriodic(iy_) && gbx.smallEnd(iy_) == lo.y) {
-      doFillLeftY = true;
-    }
-    if (!Geom(0).isPeriodic(iz_) && gbx.smallEnd(iz_) == lo.z) {
-      doFillLeftZ = true;
-    }
-
-    if (doFillLeftX) {
-      for (int i = iMin; i <= iMin - 1 + nVirGst; ++i)
-        for (int j = jMin; j <= jMax; ++j)
-          for (int k = kMin; k <= kMax; ++k) {
-
+    for (int i = iMin; i <= iMax; ++i)
+      for (int j = jMin; j <= jMax; ++j)
+        for (int k = kMin; k <= kMax; ++k) {
+          if (status(i, j, k) == iOnNew_) {
             add_particles_cell(mfi, fluidInterface, i, j, k);
           }
-      iMin += nVirGst;
-    }
-
-    if (doFillRightX) {
-      for (int i = iMax + 1 - nVirGst; i <= iMax; ++i)
-        for (int j = jMin; j <= jMax; ++j)
-          for (int k = kMin; k <= kMax; ++k) {
-
-            add_particles_cell(mfi, fluidInterface, i, j, k);
-          }
-      iMax -= nVirGst;
-    }
-
-    if (doFillLeftY) {
-      for (int i = iMin; i <= iMax; ++i)
-        for (int j = jMin; j <= jMin - 1 + nVirGst; ++j)
-          for (int k = kMin; k <= kMax; ++k) {
-
-            add_particles_cell(mfi, fluidInterface, i, j, k);
-          }
-      jMin += nVirGst;
-    }
-
-    if (doFillRightY) {
-      for (int i = iMin; i <= iMax; ++i)
-        for (int j = jMax + 1 - nVirGst; j <= jMax; ++j)
-          for (int k = kMin; k <= kMax; ++k) {
-
-            add_particles_cell(mfi, fluidInterface, i, j, k);
-          }
-      jMax -= nVirGst;
-    }
-
-    if (doFillLeftZ) {
-      for (int i = iMin; i <= iMax; ++i)
-        for (int j = jMin; j <= jMax; ++j)
-          for (int k = kMin; k <= kMin - 1 + nVirGst; ++k) {
-            add_particles_cell(mfi, fluidInterface, i, j, k);
-          }
-      kMin += nVirGst;
-    }
-
-    if (doFillRightZ) {
-      for (int i = iMin; i <= iMax; ++i)
-        for (int j = jMin; j <= jMax; ++j)
-          for (int k = kMax + 1 - nVirGst; k <= kMax; ++k) {
-
-            add_particles_cell(mfi, fluidInterface, i, j, k);
-          }
-      kMax -= nVirGst;
-    }
+        }
   }
 }
 
+//==========================================================
+void Particles::inject_particles_at_boundary(
+    const FluidInterface& fluidInterface, const iMultiFab& cellStatus) {
+  timing_func("Particles::inject_particles_at_boundary");
+
+  // Only inject nGstInject layers.
+  const int nGstInject = 1;
+
+  const int lev = 0;
+
+  for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
+    const auto& status = cellStatus[mfi].array();
+    const Box& bx = mfi.validbox();
+    const IntVect lo = IntVect(bx.loVect());
+    const IntVect hi = IntVect(bx.hiVect());
+    // IntVect mid = (lo + hi) / 2;
+
+    IntVect idxMin = lo, idxMax = hi;
+
+    for (int iDim = 0; iDim < 3; iDim++) {
+      if (!Geom(0).isPeriodic(iDim)) {
+        idxMin[iDim] -= nGstInject;
+        idxMax[iDim] += nGstInject;
+      }
+    }
+
+    for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)
+      for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
+        for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
+          if (do_inject_particles_for_this_cell(bx, status, i, j, k)) {
+            add_particles_cell(mfi, fluidInterface, i, j, k);
+          }
+        }
+  }
+}
+
+//==========================================================
 void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
                               amrex::UMultiFab<RealCMM>& centerMM,
                               bool doNetChargeOnly) {
-  BL_PROFILE("Particles::sum_to_center");
+  timing_func("Particles::sum_to_center");
 
   const auto& plo = Geom(0).ProbLo();
 
@@ -263,7 +243,7 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
       for (int i = 0; i < 3; i++) {
         // plo is the corner location => -0.5
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i] - 0.5;
-        loIdx[i] = myfloor(dShift[i]); // floor() is slow.
+        loIdx[i] = fastfloor(dShift[i]); // floor() is slow.
         dShift[i] = dShift[i] - loIdx[i];
       }
       Real coef[2][2][2];
@@ -373,9 +353,10 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
   }
 }
 
+//==========================================================
 PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
                                 MultiFab& nodeBMF, Real dt) {
-  BL_PROFILE("Particles::sum_moments");
+  timing_func("Particles::sum_moments");
   const auto& plo = Geom(0).ProbLo();
 
   momentsMF.setVal(0.0);
@@ -395,6 +376,8 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
     const auto& particles = pti.GetArrayOfStructs();
 
     for (const auto& p : particles) {
+
+      // Print()<<"p = "<<p<<std::endl;
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
       const Real wp = p.rdata(iwp_);
@@ -405,7 +388,7 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
       Real dShift[3];
       for (int i = 0; i < 3; i++) {
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
-        loIdx[i] = myfloor(dShift[i]);
+        loIdx[i] = fastfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
       }
 
@@ -466,21 +449,15 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
         for (int j1 = jMin; j1 < jMax; j1++)
           for (int i1 = iMin; i1 < iMax; i1++) {
             const Real wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
-
             Real* const data0 = mmArr(i1, j1, k1).data;
             for (int k2 = kMin; k2 < kMax; k2++) {
               const int kp = k2 - k1 + 1;
               if (kp > 0) {
                 for (int j2 = jMin; j2 < jMax; j2++) {
                   const int jp = j2 - j1 + 1;
-
                   for (int i2 = iMin; i2 < iMax; i2++) {
-
                     const Real weight =
                         wg * coef[i2 - iMin][j2 - jMin][k2 - kMin];
-                    // const int ip = i2 - i1 + 1;
-                    // const int gp = kp * 9 + jp * 3 + ip;
-                    // const int idx0 = gp * 9;
                     const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
 
                     Real* const data = &(data0[idx0]);
@@ -542,24 +519,36 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
 
   for (MFIter mfi(nodeMM); mfi.isValid(); ++mfi) {
     // Finalize the mass matrix calculation.
-    const Box box = mfi.tilebox();
+    const Box box = mfi.validbox();
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
     Array4<RealMM> const& mmArr = nodeMM[mfi].array();
 
+    // We only need the mass matrix on the physical nodes. But the first layer
+    // of the ghost nodes may contributes to the physical nodes below (ghost
+    // node constributes as a sender). So, we need the '-1' and '+1' staff.
+    const int iMin = lo.x - 1, jMin = lo.y - 1, kMin = lo.z - 1;
+    const int iMax = hi.x + 1, jMax = hi.y + 1, kMax = hi.z + 1;
+
     int gps, gpr; // gp_send, gp_receive
-    for (int k1 = lo.z; k1 <= hi.z; k1++)
-      for (int j1 = lo.y; j1 <= hi.y; j1++)
-        for (int i1 = lo.x; i1 <= hi.x; i1++) {
+    for (int k1 = kMin; k1 <= kMax; k1++)
+      for (int j1 = jMin; j1 <= jMax; j1++)
+        for (int i1 = iMin; i1 <= iMax; i1++) {
           const int kp = 2, kpr = 0;
           const int kr = k1 + kp - 1;
+          if (kr > kMax || kr < kMin)
+            continue;
           const Real* const datas0 = mmArr(i1, j1, k1).data;
           for (int jp = 0; jp < 3; jp++) {
             const int jr = j1 + jp - 1;
+            if (jr > jMax || jr < jMin)
+              continue;
             const int jpr = 2 - jp;
             for (int ip = 0; ip < 3; ip++) {
               const int ir = i1 + ip - 1;
+              if (ir > iMax || ir < iMin)
+                continue;
               const int ipr = 2 - ip;
               gpr = jpr * 3 + ipr;
               gps = 18 + jp * 3 + ip; // gps = kp*9+jp*3+kp
@@ -575,7 +564,7 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
   }
 
   // Exclude the number density.
-  momentsMF.mult(invVol, 0, nMoments - 1);
+  momentsMF.mult(invVol, 0, nMoments - 1, momentsMF.nGrow());
 
   momentsMF.SumBoundary(Geom(0).periodicity());
 
@@ -598,6 +587,7 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
   return pinfo;
 }
 
+//==========================================================
 Real Particles::calc_max_thermal_velocity(MultiFab& momentsMF) {
 
   Real uthMax = 0;
@@ -637,6 +627,7 @@ Real Particles::calc_max_thermal_velocity(MultiFab& momentsMF) {
   return uthMax;
 }
 
+//==========================================================
 void Particles::convert_to_fluid_moments(MultiFab& momentsMF) {
   MultiFab tmpMF(momentsMF, make_alias, iRho_, iPyz_ - iRho_ + 1);
   tmpMF.mult(1.0 / get_qom(), tmpMF.nGrow());
@@ -669,9 +660,10 @@ void Particles::convert_to_fluid_moments(MultiFab& momentsMF) {
   }
 }
 
+//==========================================================
 void Particles::mover(const amrex::MultiFab& nodeEMF,
                       const amrex::MultiFab& nodeBMF, amrex::Real dt) {
-  BL_PROFILE("Particles::mover");
+  timing_func("Particles::mover");
 
   const auto& plo = Geom(0).ProbLo();
 
@@ -700,7 +692,7 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
       Real dShift[3];
       for (int i = 0; i < 3; i++) {
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
-        loIdx[i] = myfloor(dShift[i]);
+        loIdx[i] = fastfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
       }
 
@@ -757,7 +749,7 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
       p.pos(iz_) = zp + wnp1 * dtLoc;
 
       // Mark for deletion
-      if (is_outside(p)) {
+      if (is_outside_ba(p)) {
         p.id() = -1;
       }
     } // for p
@@ -768,7 +760,9 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
   Redistribute();
 }
 
+//==========================================================
 void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
+  timing_func("Particles::divE_correct_position");
 
   const auto& plo = Geom(0).ProbLo();
 
@@ -787,7 +781,10 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
     auto& particles = pti.GetArrayOfStructs();
 
     for (auto& p : particles) {
-
+      if (p.id() == -1 || is_outside_ba(p)) {
+        p.id() = -1;
+        continue;
+      }
       const Real qp = p.rdata(iqp_);
 
       int loIdx[3];
@@ -795,7 +792,7 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
       for (int i = 0; i < 3; i++) {
         // plo is the corner location => -0.5
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i] - 0.5;
-        loIdx[i] = myfloor(dShift[i]);
+        loIdx[i] = fastfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
       }
 
@@ -809,44 +806,49 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
         const Real eta1 = dx[iy_] - eta0;
         const Real zeta1 = dx[iz_] - zeta0;
 
-        weights_IIID[1][1][1][ix_] = eta0 * zeta0 * invVol;
-        weights_IIID[1][1][1][iy_] = xi0 * zeta0 * invVol;
-        weights_IIID[1][1][1][iz_] = xi0 * eta0 * invVol;
+        const Real zeta02Vol = zeta0 * invVol;
+        const Real zeta12Vol = zeta1 * invVol;
+        const Real eta02Vol = eta0 * invVol;
+        const Real eta12Vol = eta1 * invVol;
+
+        weights_IIID[1][1][1][ix_] = eta0 * zeta02Vol;
+        weights_IIID[1][1][1][iy_] = xi0 * zeta02Vol;
+        weights_IIID[1][1][1][iz_] = xi0 * eta02Vol;
 
         // xi0*eta0*zeta1*invVOL;
-        weights_IIID[1][1][0][ix_] = eta0 * zeta1 * invVol;
-        weights_IIID[1][1][0][iy_] = xi0 * zeta1 * invVol;
-        weights_IIID[1][1][0][iz_] = -xi0 * eta0 * invVol;
+        weights_IIID[1][1][0][ix_] = eta0 * zeta12Vol;
+        weights_IIID[1][1][0][iy_] = xi0 * zeta12Vol;
+        weights_IIID[1][1][0][iz_] = -xi0 * eta02Vol;
 
         // xi0*eta1*zeta0*invVOL;
-        weights_IIID[1][0][1][ix_] = eta1 * zeta0 * invVol;
-        weights_IIID[1][0][1][iy_] = -xi0 * zeta0 * invVol;
-        weights_IIID[1][0][1][iz_] = xi0 * eta1 * invVol;
+        weights_IIID[1][0][1][ix_] = eta1 * zeta02Vol;
+        weights_IIID[1][0][1][iy_] = -xi0 * zeta02Vol;
+        weights_IIID[1][0][1][iz_] = xi0 * eta12Vol;
 
         // xi0*eta1*zeta1*invVOL;
-        weights_IIID[1][0][0][ix_] = eta1 * zeta1 * invVol;
-        weights_IIID[1][0][0][iy_] = -xi0 * zeta1 * invVol;
-        weights_IIID[1][0][0][iz_] = -xi0 * eta1 * invVol;
+        weights_IIID[1][0][0][ix_] = eta1 * zeta12Vol;
+        weights_IIID[1][0][0][iy_] = -xi0 * zeta12Vol;
+        weights_IIID[1][0][0][iz_] = -xi0 * eta12Vol;
 
         // xi1*eta0*zeta0*invVOL;
-        weights_IIID[0][1][1][ix_] = -eta0 * zeta0 * invVol;
-        weights_IIID[0][1][1][iy_] = xi1 * zeta0 * invVol;
-        weights_IIID[0][1][1][iz_] = xi1 * eta0 * invVol;
+        weights_IIID[0][1][1][ix_] = -eta0 * zeta02Vol;
+        weights_IIID[0][1][1][iy_] = xi1 * zeta02Vol;
+        weights_IIID[0][1][1][iz_] = xi1 * eta02Vol;
 
         // xi1*eta0*zeta1*invVOL;
-        weights_IIID[0][1][0][ix_] = -eta0 * zeta1 * invVol;
-        weights_IIID[0][1][0][iy_] = xi1 * zeta1 * invVol;
-        weights_IIID[0][1][0][iz_] = -xi1 * eta0 * invVol;
+        weights_IIID[0][1][0][ix_] = -eta0 * zeta12Vol;
+        weights_IIID[0][1][0][iy_] = xi1 * zeta12Vol;
+        weights_IIID[0][1][0][iz_] = -xi1 * eta02Vol;
 
         // xi1*eta1*zeta0*invVOL;
-        weights_IIID[0][0][1][ix_] = -eta1 * zeta0 * invVol;
-        weights_IIID[0][0][1][iy_] = -xi1 * zeta0 * invVol;
-        weights_IIID[0][0][1][iz_] = xi1 * eta1 * invVol;
+        weights_IIID[0][0][1][ix_] = -eta1 * zeta02Vol;
+        weights_IIID[0][0][1][iy_] = -xi1 * zeta02Vol;
+        weights_IIID[0][0][1][iz_] = xi1 * eta12Vol;
 
         // xi1*eta1*zeta1*invVOL;
-        weights_IIID[0][0][0][ix_] = -eta1 * zeta1 * invVol;
-        weights_IIID[0][0][0][iy_] = -xi1 * zeta1 * invVol;
-        weights_IIID[0][0][0][iz_] = -xi1 * eta1 * invVol;
+        weights_IIID[0][0][0][ix_] = -eta1 * zeta12Vol;
+        weights_IIID[0][0][0][iy_] = -xi1 * zeta12Vol;
+        weights_IIID[0][0][0][iz_] = -xi1 * eta12Vol;
 
         const int iMin = loIdx[ix_];
         const int jMin = loIdx[iy_];
@@ -857,14 +859,14 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
         for (int k = 0; k < 2; k++)
           for (int j = 0; j < 2; j++)
             for (int i = 0; i < 2; i++) {
-              const Real coef = fourPI * phiArr(iMin + i, jMin + j, kMin + k);
+              const Real coef = phiArr(iMin + i, jMin + j, kMin + k);
               for (int iDim = 0; iDim < 3; iDim++) {
                 eps_D[iDim] += coef * weights_IIID[i][j][k][iDim];
               }
             }
 
         for (int iDim = 0; iDim < 3; iDim++)
-          eps_D[iDim] *= coef;
+          eps_D[iDim] *= coef * fourPI;
 
         if (fabs(eps_D[ix_] * invDx[ix_]) > epsLimit ||
             fabs(eps_D[iy_] * invDx[iy_]) > epsLimit ||
@@ -885,21 +887,25 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
 
           p.pos(iDim) += eps_D[iDim];
         }
+
+        if (is_outside_ba(p)) {
+          // Do not allow moving particles from physical cells to ghost cells
+          // during divE correction.
+          for (int iDim = 0; iDim < 3; iDim++) {
+            p.pos(iDim) -= eps_D[iDim];
+          }
+
+          // p.id() = -1;
+        }
       }
 
     } // for p
   }
-
-  // ParallelDescriptor::ReduceRealMax(epsMax,
-  //                                   ParallelDescriptor::IOProcessorNumber());
-
-  // Print() << "Particle position correction: epsMax = " << epsMax
-  //         << " for species " << speciesID << std::endl;
-
-  // Redistribute();
 }
 
+//==========================================================
 void Particles::split_particles(Real limit) {
+  timing_func("Particles::split_particles");
   const int nPartGoal =
       nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_] * limit;
 
@@ -927,27 +933,33 @@ void Particles::split_particles(Real limit) {
     // Sort the particles by x first to make sure the results are the same for
     // different number of processors
     std::sort(particles.begin(), particles.end(),
-              [ix_ = ix_](const auto & pl, const auto & pr) {
-      return pl.rdata(ix_) > pr.rdata(ix_);
-    });
+              [ix_ = ix_](const auto& pl, const auto& pr) {
+                return pl.rdata(ix_) > pr.rdata(ix_);
+              });
 
     std::sort(particles.begin(), particles.end(),
-              [ix_ = ix_](const auto & pl, const auto & pr) {
-      return fabs(pl.rdata(iqp_)) > fabs(pr.rdata(iqp_));
-    });
+              [ix_ = ix_](const auto& pl, const auto& pr) {
+                return fabs(pl.rdata(iqp_)) > fabs(pr.rdata(iqp_));
+              });
     //----------------------------------------------------------------
 
     const auto lo = lbound(pti.tilebox());
     const auto hi = ubound(pti.tilebox());
 
-    const Real xMin = Geom(0).LoEdge(lo.x, ix_),
-               xMax = Geom(0).HiEdge(hi.x, ix_);
+    const Real xMin =
+                   Geom(0).LoEdge(lo.x, ix_) + Geom(0).CellSize()[ix_] * 1e-10,
+               xMax =
+                   Geom(0).HiEdge(hi.x, ix_) - Geom(0).CellSize()[ix_] * 1e-10;
 
-    const Real yMin = Geom(0).LoEdge(lo.y, iy_),
-               yMax = Geom(0).HiEdge(hi.y, iy_);
+    const Real yMin =
+                   Geom(0).LoEdge(lo.y, iy_) + Geom(0).CellSize()[iy_] * 1e-10,
+               yMax =
+                   Geom(0).HiEdge(hi.y, iy_) - Geom(0).CellSize()[iy_] * 1e-10;
 
-    const Real zMin = Geom(0).LoEdge(lo.z, iz_),
-               zMax = Geom(0).HiEdge(hi.z, iz_);
+    const Real zMin =
+                   Geom(0).LoEdge(lo.z, iz_) + Geom(0).CellSize()[iz_] * 1e-10,
+               zMax =
+                   Geom(0).HiEdge(hi.z, iz_) - Geom(0).CellSize()[iz_] * 1e-10;
 
     for (int ip = 0; ip < nNew; ip++) {
       auto& p = particles[ip];
@@ -1007,7 +1019,9 @@ void Particles::split_particles(Real limit) {
   }
 }
 
+//==========================================================
 void Particles::combine_particles(Real limit) {
+  timing_func("Particles::combine_particles");
   IntVect iv = { 1, 1, 1 };
   if (!(do_tiling && tile_size == iv))
     return;
@@ -1093,7 +1107,7 @@ void Particles::combine_particles(Real limit) {
 
       for (int iDim = 0; iDim < nDim; iDim++) {
         iCell_D[iDim] =
-            myfloor((vel_D[iDim] - velMin_D[iDim]) * inv_dVel_D[iDim]);
+            fastfloor((vel_D[iDim] - velMin_D[iDim]) * inv_dVel_D[iDim]);
       }
 
       phasePartIdx_III[iCell_D[u_]][iCell_D[v_]][iCell_D[w_]].push_back(pid);
@@ -1106,10 +1120,11 @@ void Particles::combine_particles(Real limit) {
         for (int kCell = 0; kCell < nCell; kCell++) {
           std::sort(phasePartIdx_III[iCell][jCell][kCell].begin(),
                     phasePartIdx_III[iCell][jCell][kCell].end(),
-                    [&particles = particles, ix_ = ix_ ](const int & idl,
-                                                         const int & idr) {
-            return particles[idl].rdata(ix_) > particles[idr].rdata(ix_);
-          });
+                    [& particles = particles, ix_ = ix_](const int& idl,
+                                                         const int& idr) {
+                      return particles[idl].rdata(ix_) >
+                             particles[idr].rdata(ix_);
+                    });
         }
 
     const int nPartCombine = 6;
@@ -1120,7 +1135,7 @@ void Particles::combine_particles(Real limit) {
         for (int iw = 0; iw < nCell; iw++) {
           iCount += phasePartIdx_III[iu][iv][iw].size();
           nAvailableCombine +=
-              myfloor(phasePartIdx_III[iu][iv][iw].size() / nPartCombine);
+              fastfloor(phasePartIdx_III[iu][iv][iw].size() / nPartCombine);
         }
 
     Real ratioCombine;
@@ -1152,8 +1167,8 @@ void Particles::combine_particles(Real limit) {
       for (int iv = 0; iv < nCell; iv++)
         for (int iw = 0; iw < nCell; iw++) {
           int nCombineCell =
-              myfloor(ratioCombine * phasePartIdx_III[iu][iv][iw].size() /
-                      nPartCombine);
+              fastfloor(ratioCombine * phasePartIdx_III[iu][iv][iw].size() /
+                        nPartCombine);
           for (int iCombine = 0; iCombine < nCombineCell; iCombine++) {
             /*
                 Delete 1 particle out of 6 particles:
@@ -1348,4 +1363,39 @@ void Particles::combine_particles(Real limit) {
           }
         }
   }
+}
+
+//==========================================================
+bool Particles::do_inject_particles_for_this_cell(
+    const amrex::Box& bx, const amrex::Array4<const int>& status, const int i,
+    const int j, const int k) {
+
+  // This cell should be a boundary cell at least.
+  if (status(i, j, k) != iBoundary_)
+    return false;
+
+  for (int iloop = 1; iloop <= 3; iloop++) {
+    // iloop==1: loop through faces;
+    // iloop==2: loop through edges;
+    // iloop==3: loop through corners;
+
+    for (int di = -1; di <= 1; di++)
+      for (int dj = -1; dj <= 1; dj++)
+        for (int dk = -1; dk <= 1; dk++) {
+          const int sum = abs(di) + abs(dj) + abs(dk);
+          if (iloop != sum)
+            continue;
+
+          if (status(i + di, j + dj, k + dk) != iBoundary_) {
+            // The first neighbor cell that is NOT a boundary cell.
+            if (bx.contains({ i + di, j + dj, k + dk })) {
+              return true;
+            } else {
+              return false;
+            }
+          }
+        }
+  }
+  Abort("do_inject_particles_for_this_cell:something is wrong!");
+  return false; // to suppress compilation warning.
 }

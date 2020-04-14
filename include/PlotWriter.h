@@ -39,8 +39,8 @@ private:
   double plotDx;
 
   // Global plot domain in PIC unit
-  std::array<double, nDimMax> plotMin_D;
-  std::array<double, nDimMax> plotMax_D;
+  std::array<double, nDimMax> plotMin_D, plotMinCorrected_D;
+  std::array<double, nDimMax> plotMax_D, plotMaxCorrected_D;
 
   // Global simulation domain in PIC unit
   std::array<double, nDimMax> domainMin_D;
@@ -104,7 +104,7 @@ public:
              const int nSpeciesIn = 2)
       : ID(idIn),
         plotString(plotStringIN),
-        plotDx(dxIn > 0 ? dxIn : 1),
+        plotDx(dxIn == 0 ? 1 : dxIn),
         plotVar(plotVarIn),
         plotMin_D(plotMinIn_D),
         plotMax_D(plotMaxIn_D),
@@ -145,6 +145,9 @@ public:
   /*----Get class member value begin--------------------*/
   double get_plotDx() const { return plotDx; }
   std::string get_plotString() const { return plotString; }
+  bool is_compact() const {    
+    return plotString.find("compact") != std::string::npos;
+  }
   /*----Get class member value end--------------------*/
 
   /*----Set class member value begin--------------------*/
@@ -206,8 +209,8 @@ public:
   void write_idl(double const timeNow, int const iCycle,
                  FuncFindPointList find_output_list, FuncGetField get_var);
 
-  // Write file in the native amrex format. 
-  void write_amrex(double const timeNow, int const iCycle);             
+  // Write file in the native amrex format.
+  void write_amrex(double const timeNow, int const iCycle);
 
   void write(double const timeNow, int const iCycle,
              FuncFindPointList find_output_list, FuncGetField get_var);
@@ -221,13 +224,16 @@ public:
 
   /* Calculate the unit conversion coef for var_I. */
   void set_output_unit();
-  double No2OutTable(std::string const& var);
+  double No2OutTable(std::string const& var) const;
 
   /* Decide if the input point should be saved or not based on plotMin_D,
      plotMax_D and plotDx. ix, iy and iz are global indices.*/
   bool is_inside_plot_region(int const ix, int const iy, int const iz,
                              double const x, double const y,
                              double const z) const;
+
+  bool is_amrex_format() const { return outputFormat == "amrex"; }
+  std::string get_amrex_filename(double const timeNow, int const iCycle) const;
 
   std::string expand_variables(std::string inVars) const;
   std::string add_plasma_variables(std::string varString, int is) const;

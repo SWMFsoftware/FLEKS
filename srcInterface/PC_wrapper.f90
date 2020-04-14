@@ -25,6 +25,7 @@ module PC_wrapper
   ! GM coupler
   public:: PC_put_from_gm_dt
   public:: PC_put_from_gm_init
+  public:: PC_put_from_gm_grid_info
   public:: PC_put_from_gm
   public:: PC_get_for_gm
 
@@ -229,6 +230,15 @@ contains
     ! call pic_set_swmf_dt(DtSi)
 
   end subroutine PC_put_from_gm_dt
+    !============================================================================
+  subroutine PC_put_from_gm_grid_info(nInt, Int_I)
+
+
+    integer, intent(in)         :: nInt 
+    integer, intent(in)         :: Int_I(nInt)  
+    
+    call pic_set_grid_info(nInt, Int_I)
+  end subroutine PC_put_from_gm_grid_info
   !============================================================================
   subroutine PC_put_from_gm_init(nParamInt, nParamReal, iParam_I, Param_I, &
        NameVar)

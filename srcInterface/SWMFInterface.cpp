@@ -27,7 +27,7 @@ int pic_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc) {
   // fortran communicator tranlated to C comunicator
   MPI_Comm c_iComm = MPI_Comm_f2c(*iComm);
 
-  amrex::Initialize(c_iComm);
+  amrex::Initialize(c_iComm);  
 
   return 0;
 }
@@ -70,7 +70,7 @@ int pic_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
 }
 
 int pic_finalize_init_() {
-  MPICs->set_ic();
+  MPICs->set_ic();  
   return 0;
 }
 
@@ -79,7 +79,7 @@ int pic_run_(double *time) {
 
   MPICs->update();
 
-  *time = (double)(MPICs->tc.get_time_si());
+  *time = (double)(MPICs->tc->get_time_si());
 
   return 0;
 }
@@ -116,27 +116,28 @@ int pic_find_points_(int *nPoint, double *Xyz_I, int *iProc_I) {
 }
 
 int pic_set_dt_(double *DtSi) {
-  MPICs->tc.set_dt_si(*DtSi);
+  MPICs->tc->set_dt_si(*DtSi);
   return 0;
 }
 
 int pic_cal_dt_(double *dtOut) {
-  *dtOut = MPICs->tc.get_dt_si();
+  *dtOut = MPICs->tc->get_dt_si();
   return 0;
 }
 
-int pic_get_grid_info_(int *iGrid, int *iDecomp){
-  (*iGrid) = MPICs->get_iGrid(); 
-  (*iDecomp) = MPICs->get_iDecomp(); 
-  return 0; 
+int pic_get_grid_info_(int *iGrid, int *iDecomp) {
+  (*iGrid) = MPICs->get_iGrid();
+  (*iDecomp) = MPICs->get_iDecomp();
+  return 0;
 }
 
 int pic_end_() {
   {
     // Saving plots before exiting.
-    MPICs->tc.write_plots(true);
+    MPICs->write_plots(true);
     delete MPICs;
 
+    //BL_PROFILE_VAR_STOP(pmain);
     // The curly bracket here is necessary!!! It ensures the destructor is
     // called and finished before the amrex::Finalize().
   }
@@ -144,4 +145,12 @@ int pic_end_() {
   amrex::Finalize();
 
   return 0;
+}
+
+
+int pic_set_grid_info_(int *nInt, int *status){
+  MPICs->receive_grid_info(status);
+  MPICs->regrid();
+
+  return 0; 
 }

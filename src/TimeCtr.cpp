@@ -23,7 +23,7 @@ void EventCtr::init(const amrex::Real dtIn, const int dnIn) {
   }
 
   if (useDn) {
-    dnEvent = dnIn;    nNext = (floor((amrex::Real)(tc->get_cycle()) / dnEvent) + 1) * dnEvent;
+    dnEvent = dnIn;    nNext = (floor((amrex::Real)(tc->get_cycle()) / dnEvent)) * dnEvent;
     nLast = nNext - dnEvent;
   }
 }
@@ -64,15 +64,4 @@ bool EventCtr::is_time_to(bool doForce) {
   } // doForce
 
   return isTime;
-}
-
-void TimeCtr::write_plots(bool doForceWrite) {
-  for (auto &plot : plots) {
-    if (plot.is_time_to(doForceWrite)) {
-      amrex::Print() << "Saving plot at time = " << get_time_si() << " (s) for "
-                     << plot.writer.get_plotString() << std::endl;
-      plot.writer.write(get_time_si(), get_cycle(), find_output_list_caller,
-                        get_field_var_caller);
-    }
-  }
 }

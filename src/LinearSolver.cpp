@@ -3,11 +3,11 @@
 #include "linear_solver_wrapper_c.h"
 
 void matvec_E_solver(double *vecIn, double *vecOut, int n) {
-  MPICs->update_E_matvec(vecIn, vecOut);
+  MPICs->pic.update_E_matvec(vecIn, vecOut);
 }
 
 void matvec_divE_accurate(double *vecIn, double *vecOut, int n) {
-  MPICs->divE_accurate_matvec(vecIn, vecOut);
+  MPICs->pic.divE_accurate_matvec(vecIn, vecOut);
 }
 
 void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,

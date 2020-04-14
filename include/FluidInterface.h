@@ -12,6 +12,7 @@
 #include <AMReX_REAL.H>
 #include <AMReX_RealBox.H>
 #include <AMReX_Vector.H>
+#include <AMReX_VisMF.H>
 
 #include "BC.h"
 #include "Constants.h"
@@ -31,6 +32,10 @@ private:
   amrex::MultiFab nodeFluid;
   amrex::MultiFab centerB;
 
+  double invSumMass; 
+
+  int nGst;
+
 public:
   void init();
   void receive_info_from_gm(const int* const paramInt,
@@ -38,10 +43,10 @@ public:
                             const double* const paramDouble,
                             const std::string& paramString);
 
-  void make_grid(const amrex::DistributionMapping& dmIn,
-                 const amrex::Geometry& geomIn,
-                 const amrex::BoxArray& centerBAIn,
-                 const amrex::BoxArray& nodeBAIn, const int nGst);
+  void set_geom(const int nGstIn, const amrex::Geometry& geomIn);
+
+  void regrid(const amrex::BoxArray& centerBAIn,
+              const amrex::DistributionMapping& dmIn);
 
   int count_couple_node_number();
 
@@ -63,7 +68,20 @@ public:
 
   void load_balance(const amrex::DistributionMapping& dmIn);
 
-  // ---------Functions to read/interpolate value from nodeFluid. Begin------------
+  void save_restart_data() {
+    std::string restartDir = "PC/restartOUT/";
+    amrex::VisMF::Write(nodeFluid, restartDir + "Interface_nodeFluid");
+    amrex::VisMF::Write(centerB, restartDir + "Interface_centerB");
+  };
+
+  void read_restart() {
+    std::string restartDir = "PC/restartIN/";
+    amrex::VisMF::Read(nodeFluid, restartDir + "Interface_nodeFluid");
+    amrex::VisMF::Read(centerB, restartDir + "Interface_centerB");
+  }
+
+  // ---------Functions to read/interpolate value from nodeFluid.
+  // Begin------------
   const amrex::MultiFab& get_nodeFluid() const { return nodeFluid; }
 
   amrex::Real get_center_b(const amrex::MFIter& mfi, const int i, const int j,
@@ -91,6 +109,7 @@ public:
 
     if (useElectronFluid) {
       Rho = get_value(mfi, x, y, z, iRho_I[is]);
+      //TODO: change division to multiplication.
       NumDens = Rho / MoMi0_S[is];
     } else if (useMultiFluid || useMultiSpecies) {
       if (is == 0) {
@@ -98,17 +117,19 @@ public:
         NumDens = 0;
         for (int iIon = 0; iIon < nIon; ++iIon) {
           Rho = get_value(mfi, x, y, z, iRho_I[iIon]);
+          //TODO: change division to multiplication.
           NumDens += Rho / MoMi0_S[iIon + 1];
         }
       } else {
         // Ion
         Rho = get_value(mfi, x, y, z, iRho_I[is - 1]);
+        //TODO: change division to multiplication.
         NumDens = Rho / MoMi0_S[is];
       }
     } else {
       // Electrons and iones have same density, ignoring is
       Rho = get_value(mfi, x, y, z, iRho_I[0]);
-      NumDens = Rho / SumMass;
+      NumDens = Rho *invSumMass;
     }
     return (NumDens);
   }
@@ -561,7 +582,7 @@ public:
     }
     return Ez;
   }
-// ---------Functions to read/interpolate value from nodeFluid. End------------
-
+  // ---------Functions to read/interpolate value from nodeFluid.
+  // End------------
 };
 #endif

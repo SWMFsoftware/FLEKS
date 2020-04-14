@@ -3,9 +3,10 @@
 #include <iomanip>
 #include <sstream>
 
+#include "Pic.h"
 #include "PlotWriter.h"
 
-bool PlotWriter::doSaveBinary = true;
+bool PlotWriter::doSaveBinary = false;
 
 void PlotWriter::init() {
   isVerbose = rank == 0;
@@ -263,13 +264,14 @@ void PlotWriter::write(double const timeNow, int const iCycle,
                        FuncFindPointList find_output_list,
                        FuncGetField get_var) {
   if (outputFormat == "amrex") {
-    write_amrex(timeNow, iCycle);
+    std::cout << "Warning: amrex format files should be saved from Pic class!!!"
+              << std::endl;
   } else {
     write_idl(timeNow, iCycle, find_output_list, get_var);
   }
 }
 
-void PlotWriter::write_amrex(double const timeNow, int const iCycle){
+void PlotWriter::write_amrex(double const timeNow, int const iCycle) {
 
   std::string filename;
   std::stringstream ss;
@@ -285,8 +287,25 @@ void PlotWriter::write_amrex(double const timeNow, int const iCycle){
      << std::setw(8) << second_to_clock_time(timeNow) << "_n"
      << std::setfill('0') << std::setw(8) << iCycle;
   filename = namePrefix + ss.str();
+}
 
-
+std::string PlotWriter::get_amrex_filename(double const timeNow,
+                                           int const iCycle) const {
+  std::string filename;
+  std::stringstream ss;
+  int nLength;
+  if (nProcs > 10000) {
+    nLength = 5;
+  } else if (nProcs > 100000) {
+    nLength = 5;
+  } else {
+    nLength = 4;
+  }
+  ss << "_region" << iRegion << "_" << ID << "_t" << std::setfill('0')
+     << std::setw(8) << second_to_clock_time(timeNow) << "_n"
+     << std::setfill('0') << std::setw(8) << iCycle << "_amrex";
+  filename = namePrefix + ss.str();
+  return filename;
 }
 
 void PlotWriter::write_idl(double const timeNow, int const iCycle,
@@ -311,8 +330,8 @@ void PlotWriter::write_idl(double const timeNow, int const iCycle,
 
   // Correct plot range.
   for (int iDim = 0; iDim < nDim; ++iDim) {
-    plotMin_D[iDim] = xMin_D[iDim] - 0.4 * dx_D[iDim] * plotDx;
-    plotMax_D[iDim] = xMax_D[iDim] + 0.4 * dx_D[iDim] * plotDx;
+    plotMinCorrected_D[iDim] = xMin_D[iDim] - 0.4 * dx_D[iDim] * plotDx;
+    plotMaxCorrected_D[iDim] = xMax_D[iDim] + 0.4 * dx_D[iDim] * plotDx;
   }
 
   if (doWriteHeader)
@@ -357,8 +376,8 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
   outFile << "#GRIDGEOMETRYLIMIT\n";
   outFile << "cartesian\n";
   for (int i = 0; i < nDim; ++i) {
-    outFile << domainMin_D[i] << "\t XyzMin" << i << "\n";
-    outFile << domainMax_D[i] << "\t XyzMax" << i << "\n";
+    outFile << domainMin_D[i] * No2OutL << "\t XyzMin" << i << "\n";
+    outFile << domainMax_D[i] * No2OutL << "\t XyzMax" << i << "\n";
   }
   outFile << "\n";
 
@@ -372,32 +391,21 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
 
   outFile << "#PLOTRANGE\n";
   for (int i = 0; i < nDim; i++) {
-    //  if ((doOutputParticles_I[iPlot] || isSat_I[iPlot]) &&
-    //      !col->getdoRotate()) {
-    //    // For field output, plotMin_ID is already in MHD coordinates.
-
-    //   if (i == 0)
-    //     x0 = col->getFluidStartX();
-    //   if (i == 1)
-    //     x0 = col->getFluidStartY();
-    //   if (i == 2)
-    //     x0 = col->getFluidStartZ();
-    // }
-    outFile << (plotMin_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord" << i
-            << "Min\n";
-    outFile << (plotMax_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord" << i
-            << "Max\n";
+    outFile << (plotMinCorrected_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord"
+            << i << "Min\n";
+    outFile << (plotMaxCorrected_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord"
+            << i << "Max\n";
   }
   outFile << "\n";
 
-  // int plotDx = col->getplotDx(iPlot);
-  // if (doOutputParticles_I[iPlot])
-  //   plotDx = 1;
-  outFile << "#CELLSIZE\n";
-  outFile << plotDx * dx_D[x_] * No2OutL << "\t dx\n";
-  outFile << plotDx * dx_D[y_] * No2OutL << "\t dy\n";
-  outFile << plotDx * dx_D[z_] * No2OutL << "\t dz\n";
-  outFile << "\n";
+  {
+    int nCell = plotDx > 0 ? plotDx : 1;
+    outFile << "#CELLSIZE\n";
+    outFile << nCell * dx_D[x_] * No2OutL << "\t dx\n";
+    outFile << nCell * dx_D[y_] * No2OutL << "\t dy\n";
+    outFile << nCell * dx_D[z_] * No2OutL << "\t dz\n";
+    outFile << "\n";
+  }
 
   outFile << "#NCELL\n";
   outFile << nCellAllProc << "\t nCell\n";
@@ -405,10 +413,11 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
 
   outFile << "#PLOTRESOLUTION\n";
   for (int i = 0; i < nDim; i++) {
-    //   if (doOutputParticles_I[iPlot] || isSat_I[iPlot]) {
-    //     outFile << (-1) << "\t plotDx\n"; // Save partices as unstructured.
-    //   } else {
-    outFile << 0 << "\t plotDx\n";
+    if(plotDx>=0){
+    outFile << plotDx * dx_D[i] * No2OutL << "\t plotDx\n";
+    }else{
+outFile << plotDx << "\t plotDx\n";
+    }
   }
   // }
   outFile << "\n";
@@ -482,7 +491,7 @@ void PlotWriter::set_output_unit() {
   }
 }
 
-double PlotWriter::No2OutTable(std::string const& var) {
+double PlotWriter::No2OutTable(std::string const& var) const {
   double value = 0;
 
   if (var.substr(0, 1) == "q") {
@@ -506,8 +515,6 @@ double PlotWriter::No2OutTable(std::string const& var) {
   } else if (var.substr(0, 5) == "divEc") {
     // div(E)
     value = No2OutV * No2OutB / No2OutL;
-  } else if (var.substr(0, 3) == "phi") {
-    value = 1;
   } else if (var.substr(0, 1) == "E") {
     // E field
     value = No2OutV * No2OutB;

@@ -22,21 +22,30 @@ void FluidInterface::receive_info_from_gm(const int* const paramInt,
   readParam = paramString;
 }
 
-void FluidInterface::make_grid(const amrex::DistributionMapping& dmIn,
-                               const amrex::Geometry& geomIn,
-                               const amrex::BoxArray& centerBAIn,
-                               const amrex::BoxArray& nodeBAIn,
-                               const int nGst) {
-  dm = dmIn;
-  geom = geomIn;
+void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
+                            const amrex::DistributionMapping& dmIn) {
+  std::string nameFunc = "FluidInterface::regrid";
+  Print() << nameFunc << " is runing..." << std::endl;
+
+  
+  if (centerBAIn == centerBA){
+    // The interface grid does not change. 
+    return;
+  }
+
   centerBA = centerBAIn;
-  nodeBA = nodeBAIn;
+  nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
+  dm = dmIn;
 
-  nodeFluid.define(nodeBA, dm, nVarCoupling, nGst);
-  nodeFluid.setVal(0);
+  const bool doCopy = true;
+  distribute_FabArray(nodeFluid, nodeBA, dm, nVarCoupling, nGst, doCopy);
+  distribute_FabArray(centerB, centerBA, dm, nDimMax, nGst, doCopy);
+}
 
-  centerB.define(centerBA, dm, nDimMax, nGst);
-  centerB.setVal(0);
+void FluidInterface::set_geom(const int nGstIn, const amrex::Geometry& geomIn) {
+  nGst = nGstIn;
+
+  geom = geomIn;
 
   Array<int, 3> period;
 
@@ -77,7 +86,10 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
 
   int nIdxCount = 0;
   int nCount = 0;
+  int ifab = 0;
   for (MFIter mfi(nodeFluid); mfi.isValid(); ++mfi) {
+    ifab++;
+    // For each block, looping through all nodes, including ghost nodes. 
     const Box& box = mfi.fabbox();
     const auto lo = lbound(box);
     const auto hi = ubound(box);
@@ -106,6 +118,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
         } // for k
   }
 
+  //Print() << "action = " << action << " nCount = " << nCount << std::endl;
   return nCount;
 }
 
@@ -129,19 +142,38 @@ void FluidInterface::set_couple_node_value(const double* const data,
 }
 
 void FluidInterface::calc_current() {
+  // All centerB, including all ghost cells are accurate.
   average_node_to_cellcenter(centerB, 0, nodeFluid, iBx, centerB.nComp(),
                              centerB.nGrow());
 
   // currentMF is just an alias of current components of nodeFluid.
   MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
 
+  // The outmost layer of currentMF can not be calculated from centerB
   curl_center_to_node(centerB, currentMF, geom.InvCellSize());
   currentMF.mult(1.0 / (getNo2SiL() * fourPI * 1e-7), currentMF.nGrow());
-  currentMF.FillBoundary();
 
-  // The current in the ghost cells can not be calculated from the nodeB. So
-  // fill in the ghost cell current with float boundary condition.
-  apply_float_boundary(currentMF, geom, 0, currentMF.nComp());
+  currentMF.FillBoundary(geom.periodicity());
+
+  /*
+  Q: The outmost layer of currentMF is not accurate. Why not use
+  apply_float_boundary to fill in first-order estimation?
+
+  A: If the whole domain is just ONE block, it will work. Otherwise, it will
+  not. For example, For a 2D simulation domain of 6x3 with 2 blocks. In the
+  x-direction, block-1 convers cell 0 (c+0) to cell 2 (c+2), and block-2 covers
+  c+3 to c+5. The node (n+5, n-1) is the corner ghost node for the block-1, and
+  it is the face ghost node for the block-2. On block-2, this node can be
+  calculated from curl_center_to_node(centerB, currentMF....). However, block-1
+  does not know how to calculate it, and FillBoundary will also NOT copy this
+  node from block-2 to block-1, because this node is a boundary node and it is
+  not covered by any physical node.
+
+  So, we should keep in mind, the variables that are directly received from the
+  MHD side, such as the magnetic fields, are accurate on all ghost nodes, but
+  the current releated variables (current, plasma velocities, and electric
+  field) are unknown at the outmost boundary node layer.
+  */
 }
 
 void FluidInterface::normalize_fluid_variables() {
@@ -199,6 +231,8 @@ void FluidInterface::set_plasma_charge_and_mass(amrex::Real qomEl) {
   for (int is = 0; is < nSIn; is++)
     SumMass += MoMi_S[is];
 
+  invSumMass = 1./SumMass; 
+
   // Fix the values of MoMi_S and QoQi_S;
   MoMi0_S = new double[nSIn];
   QoQi0_S = new double[nSIn];
@@ -227,10 +261,9 @@ void FluidInterface::set_plasma_charge_and_mass(amrex::Real qomEl) {
   Print() << "===================================" << std::endl;
 }
 
+void FluidInterface::load_balance(const DistributionMapping& dmIn) {
+  dm = dmIn;
 
-void FluidInterface::load_balance(const DistributionMapping& dmIn){
-  dm = dmIn; 
-
-  redistribute_FabArray(nodeFluid, dm); //false?
-  redistribute_FabArray(centerB, dm); //false?
+  redistribute_FabArray(nodeFluid, dm); // false?
+  redistribute_FabArray(centerB, dm);   // false?
 }
