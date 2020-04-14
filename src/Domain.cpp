@@ -36,6 +36,12 @@ void Domain::init(amrex::Real timeIn, const std::string &paramString,
   make_grid();
 
   init_time_ctr();
+
+  if (doRestart) {
+    // Restoring the restart data before coupling with GM, because the PIC grid
+    // may change again during coupling.
+    read_restart();
+  }
 };
 
 //========================================================
@@ -82,7 +88,7 @@ void Domain::regrid() {
 
   std::string nameFunc = "Domain::regrid";
 
-  //If the PIC grid does not change, then return. 
+  // If the PIC grid does not change, then return.
   if (!gridInfo.is_grid_new())
     return;
 
@@ -94,11 +100,23 @@ void Domain::regrid() {
   get_boxlist_from_region(bl, gridInfo, centerBoxLo, centerBoxHi);
   BoxArray picRegionBA(bl);
 
+  long nCellPic = 0;
+  for (const auto &bx : bl) {
+    nCellPic += bx.numPts();
+  }
+
   BoxArray baPic(picRegionBA);
 
   baPic.maxSize(maxBlockSize);
-  Print() << "Box # to describe PIC region = " << picRegionBA.size() << "\n"
-          << "Total PIC box # = " << baPic.size() << std::endl;
+  Print() << "=========Grid Information summary================="
+          << "\n Number of Boxes to describe PIC = " << picRegionBA.size()
+          << "\n Number of PIC boxes             = " << baPic.size()
+          << "\n Number of PIC cells             = " << nCellPic
+          << "\n Number of domain cells          = " << centerBox.numPts()
+          << "\n Ratio: (PIC cell)/(Domain cell) = "
+          << nCellPic / centerBox.d_numPts()
+          << "\n===================================================="
+          << std::endl;
 
   DistributionMapping dmPic(baPic);
   pic.regrid(picRegionBA, baPic, dmPic);
@@ -106,14 +124,6 @@ void Domain::regrid() {
 
   iGrid++;
   iDecomp++;
-
-  if (doRestart && isInitializing) {
-    // Restoring the restart data immediately after creating the data
-    // structures, and injecting particles at boundaries. The field boundary
-    // nodes will be overwritten later when GM pass information to PC.
-    read_restart();
-    isInitializing = false;
-  }
 }
 
 //========================================================
@@ -122,16 +132,14 @@ void Domain::receive_grid_info(int *status) { gridInfo.set_status(status); }
 //========================================================
 void Domain::set_ic() {
 
-  // If it is restart, the values should be read in immediately after creating
-  // the data objects. See Domain::regrid().
+  // If it is restart, the values should have been restored before coupling with
+  // GM. See Domain::init().
   if (doRestart)
     return;
 
   pic.fill_new_cells();
   write_plots(true);
   pic.write_log(true, true);
-
-  isInitializing = false;
 }
 
 //========================================================
@@ -161,6 +169,16 @@ void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
 
 //========================================================
 void Domain::read_restart() {
+  std::string restartDir = "PC/restartIN/";
+
+  MultiFab tmp;
+  VisMF::Read(tmp, restartDir + "centerB");
+  BoxArray baPic = tmp.boxArray();
+  DistributionMapping dmPic = tmp.DistributionMap();
+
+  pic.regrid(baPic, baPic, dmPic);
+  fluidInterface->regrid(baPic, dmPic);
+
   fluidInterface->read_restart();
   pic.read_restart();
 

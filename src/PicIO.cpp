@@ -8,13 +8,14 @@ using namespace amrex;
 //==========================================================
 void Pic::set_state_var(double* data, int* index) {
   std::string nameFunc = "Pic::set_state_var";
-  Print() << nameFunc << " begin" << std::endl;
+
+  Print() << nameFunc << std::endl;
+
   fluidInterface->set_couple_node_value(data, index);
 
   if (doNeedFillNewCell)
     fill_new_cells();
 
-  Print() << nameFunc << " end" << std::endl;
   return;
 }
 
@@ -50,7 +51,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
                                      const double* const xyz_I,
                                      double* const data_I, const int nVar) {
   std::string nameFunc = "Pic::get_fluid_state_for_points";
-  Print() << nameFunc << " begin" << std::endl;
+  Print() << nameFunc << std::endl;
 
   // (rho + 3*Moment + 6*p)*nSpecies+ 3*E + 3*B;
   const int nVarPerSpecies = 10;
@@ -88,7 +89,6 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     // Combine PIC plasma data into MHD fluid data.
     fluidInterface->CalcFluidState(dataPIC_I, &data_I[iPoint * nVar]);
   }
-  Print() << nameFunc << " end" << std::endl;
 }
 
 //==========================================================
@@ -384,16 +384,12 @@ void Pic::save_restart_header(std::ofstream& headerFile) {
 
 //==========================================================
 void Pic::read_restart() {
-  Print()<<"Pic::read_restart() start....."<<std::endl;
+  Print() << "Pic::read_restart() start....." << std::endl;
 
   std::string restartDir = "PC/restartIN/";
   VisMF::Read(nodeE, restartDir + "nodeE");
   VisMF::Read(nodeB, restartDir + "nodeB");
   VisMF::Read(centerB, restartDir + "centerB");
-
-  // nodeE.FillBoundary(geom.periodicity());
-  // nodeB.FillBoundary(geom.periodicity());
-  // centerB.FillBoundary(geom.periodicity());
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     parts[iPart]->Restart(restartDir, "particles" + std::to_string(iPart));
@@ -403,7 +399,9 @@ void Pic::read_restart() {
   sum_moments();
   sum_to_center(false);
 
-  doNeedFillNewCell = false; 
+  // The default of doNeedFillNewCell is true. The PIC cells have been filled in
+  // here, so turn it of
+  doNeedFillNewCell = false;
 }
 
 //==========================================================

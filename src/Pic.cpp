@@ -18,7 +18,7 @@ void Pic::init(Real timeIn, const std::string& paramString, int* paramInt,
                std::shared_ptr<FluidInterface>& fluidIn,
                std::shared_ptr<TimeCtr>& tcIn) {
   tc = tcIn;
-  fluidInterface = fluidIn;  
+  fluidInterface = fluidIn;
 }
 
 //==========================================================
@@ -60,6 +60,8 @@ void Pic::fill_new_cells() {
     return;
 
   timing_func(nameFunc);
+
+  Print() << nameFunc << std::endl;
 
   fill_E_B_fields();
   fill_particles();
@@ -593,6 +595,8 @@ void Pic::update() {
 
   timing_func(nameFunc);
 
+  Real tStart = second();
+
   {
     const Real t0 = tc->get_time_si();
     // update time, step number.
@@ -617,6 +621,20 @@ void Pic::update() {
   load_balance();
 
   sum_moments();
+
+  {
+    Real tEnd = second();
+    Real nPoint = picRegionBA.d_numPts();
+    int nProc = amrex::ParallelDescriptor::NProcs();
+    // The unit of the speed is (cell per processor per second)
+    Real speed = nPoint / nProc / (tEnd - tStart);
+
+    // speedNorm is a value obtained from tests.
+    Real speedNorm = 1000;
+    Print() << "Normalized PIC speed = " << speed / speedNorm
+            << " (performance is good if the value >> 1 and bad if <<1 )"
+            << std::endl;
+  }
 }
 
 //==========================================================

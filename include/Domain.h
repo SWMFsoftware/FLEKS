@@ -6,8 +6,7 @@
 
 class Domain : public DomainGrid {
 private:
-  bool doRestart;
-  bool isInitializing;
+  bool doRestart;  
 
 public:
   Pic pic;
@@ -21,8 +20,7 @@ public:
   Domain() {
     fluidInterface = std::make_shared<FluidInterface>();
     tc = std::make_shared<TimeCtr>();
-    doRestart = false;
-    isInitializing = true;
+    doRestart = false;    
   }
 
   ~Domain() = default;

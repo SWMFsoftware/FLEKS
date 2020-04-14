@@ -345,6 +345,8 @@ void print_MultiFab(const amrex::iMultiFab& data, std::string tag, int nshift) {
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
+    AllPrint()<<"box = "<<box<<std::endl;
+
     for (int i = lo.x - nshift; i <= hi.x + nshift; ++i)
       for (int j = lo.y - nshift; j <= hi.y + nshift; ++j)
         for (int k = lo.z - nshift; k <= hi.z + nshift; ++k)
