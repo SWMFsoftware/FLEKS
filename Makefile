@@ -14,7 +14,7 @@ help:
 
 
 GITINFO:
-	${SCRIPTDIR}/gitall -r=c > src/show_git_info.h
+	${SCRIPTDIR}/gitall -r=c > include/show_git_info.h
 
 FLEKS: GITINFO
 	cd src; ${MAKE} EXE

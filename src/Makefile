@@ -19,7 +19,7 @@ OBJECTS = ${OBJS}
 OBJECTS_EXE = \
 	main.o
 
-EXE = ${BINDIR}/FLEKS.exe
+FLEKSEXE = ${BINDIR}/FLEKS.exe
 
 SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 
@@ -27,17 +27,13 @@ FLAGC_EXTRA = ${FLAGC_LOCAL}
 
 include ../Makefile.conf
 
-EXE: $(EXE)
+default: EXE
 
-default: $(EXE)
-
-$(EXE):
+EXE:
 	$(MAKE) LIB
 	$(MAKE) ${OBJECTS_EXE}
-	${LINK.f90} -o ${EXE} ${OBJECTS_EXE} \
+	${LINK.f90} -o ${FLEKSEXE} ${OBJECTS_EXE} \
 		-L../lib/ -lFLEKS ${Lflag}
-
-#
 
 %.o: %.cpp
 %.o: %.cpp $(DEPDIR)/%.d

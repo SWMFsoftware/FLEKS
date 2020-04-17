@@ -17,5 +17,5 @@ Tmp_*
 util/
 data
 share
-src/show_git_info.h
+include/show_git_info.h
 gitinfo.txt
