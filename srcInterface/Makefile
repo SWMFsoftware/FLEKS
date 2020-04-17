@@ -28,17 +28,17 @@ PC_wrapper.o: ../include/SWMFInterface.h \
 
 LIBFLEKS = ../libFLEKS/libFLEKS.a
 
-MY_LIB    = ${LIBDIR}/libPC.a
+LIBPC    = ${LIBDIR}/libPC.a
 
 LIB:    ${LIBFLEKS} 
-	make ${MY_LIB}
+	make ${LIBPC}
 	@echo
-	@echo ${MY_LIB} has been brought up to date.
+	@echo ${LIBPC} has been brought up to date.
 	@echo
 
-${MY_LIB}: ${OBJECTS} ${LIBFLEKS}
-	cp -f ${LIBFLEKS} ${MY_LIB}
-	${AR} ${MY_LIB} ${OBJECTS}
+${LIBPC}: ${OBJECTS} ${LIBFLEKS}
+	cp -f ${LIBFLEKS} ${LIBPC}
+	${AR} ${LIBPC} ${OBJECTS}
 
 
 %.o: %.cpp
@@ -47,7 +47,7 @@ ${MY_LIB}: ${OBJECTS} ${LIBFLEKS}
 
 
 clean:
-	-@(rm -f ${OBJECTS} ${MY_LIB})
+	-@(rm -f ${OBJECTS} ${LIBPC})
 	-@(rm -rf .d)
 
 

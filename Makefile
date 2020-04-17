@@ -22,11 +22,11 @@ FLEKS: GITINFO
 bin:
 	mkdir bin
 
-libFLEKS:
-	mkdir libFLEKS
+lib:
+	mkdir lib
 
 
-install: bin libFLEKS
+install: bin lib
 
 LIB: 
 	cd src; $(MAKE) LIB
@@ -44,6 +44,7 @@ rundir:
 clean:
 	cd src; $(MAKE) clean
 	cd srcInterface; $(MAKE) clean
+	rm -rf bin/*
 
 distclean:
 	-@(./Config.pl -uninstall)
@@ -51,6 +52,6 @@ distclean:
 allclean:
 	-@(cd src; $(MAKE) distclean)
 	-@(cd srcInterface; $(MAKE) distclean)
-	-@(rm -rf *~ ./bin libFLEKS ${TESTDIR})
+	-@(rm -rf *~ ./bin lib ${TESTDIR})
 	-@(rm -f test*.diff)
 

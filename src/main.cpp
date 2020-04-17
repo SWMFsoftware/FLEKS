@@ -11,7 +11,7 @@ int main(int argc, char* argv[]) {
   amrex::Initialize(argc, argv);
 
   {
-    Domain domain;
+    //Domain domain;
 
     //domain.init();
   }

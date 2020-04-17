@@ -1,0 +1,5 @@
+RUNDIR = ${MYDIR}/run
+BINDIR = ${MYDIR}/bin
+SCRIPTDIR = ${MYDIR}/share/Scripts
+SHAREDIR  = ${MYDIR}/share/Library/src
+UTILDIR   = ${MYDIR}/util

@@ -16,5 +16,6 @@ Makefile.conf
 Tmp_*
 util/
 data
-share/amrex
+share
 src/show_git_info.h
+gitinfo.txt

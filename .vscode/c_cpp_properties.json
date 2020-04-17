@@ -4,6 +4,8 @@
             "name": "FLEKS",
             "includePath": [
                 "${workspaceFolder}/include/",
+                "${workspaceFolder}/util/AMREX/InstallDir/include/",
+                "${workspaceFolder}/share/Library/src/",
                 "${workspaceFolder}/../../util/AMREX/InstallDir/include/",
                 "${workspaceFolder}/../../share/Library/src/",
                 "${default}"
