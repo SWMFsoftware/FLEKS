@@ -17,6 +17,8 @@ if (not -f $config and not -f "../../$config"){
 }
 
 if(-f $config){
+    #Stand-alone FLEKS. Turn on amrex automatically. 
+    push @Arguments, "-amrex";
     require $config;
 }else{
     require "../../$config";
@@ -26,7 +28,7 @@ my $AmrexDir = "util/AMREX";
 if(not -d $AmrexDir){
     $AmrexDir = "../../util/AMREX"; 
     if(not -d $AmrexDir) {
-        die "Error: AMReX has not been installed!";
+        die "Error: AMReX doest not exist!";
         }
 }
 
