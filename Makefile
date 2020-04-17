@@ -39,6 +39,8 @@ rundir:
 		mkdir restartIN restartOUT plots;\
 		ln -s ${BINDIR}/PostIDL.exe .; \
 		cp    ${SCRIPTDIR}/pIDL .
+	cd ${RUNDIR}; \
+		(if [ -f ${BINDIR}/FLEKS.exe ]; then ln -s ${BINDIR}/FLEKS.exe .; fi)
 
 
 clean:
