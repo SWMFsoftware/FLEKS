@@ -1,5 +1,6 @@
 #!/usr/bin/perl -i
-#  Copyright (C) 2002 Regents of the University of Michigan, portions used with permission 
+#  Copyright (C) 2002 Regents of the University of Michigan, 
+#  portions used with permission 
 #  For more information, see http://csem.engin.umich.edu/tools/swmf
 use strict;
 
@@ -16,21 +17,17 @@ if (not -f $config and not -f "../../$config"){
     `$GITCLONE $GITDIR/share; $GITCLONE $GITDIR/util`;    
 }
 
+my $AmrexDir = "util/AMREX";
 if(-f $config){
     #Stand-alone FLEKS. Turn on amrex automatically. 
     push @Arguments, "-amrex";
     require $config;
+    die "Error: AMReX doest not exist!\n" unless -d $AmrexDir;
 }else{
     require "../../$config";
+    $AmrexDir = "../../util/AMREX"; 
 }
 
-my $AmrexDir = "util/AMREX";
-if(not -d $AmrexDir){
-    $AmrexDir = "../../util/AMREX"; 
-    if(not -d $AmrexDir) {
-        die "Error: AMReX doest not exist!";
-        }
-}
 
 # These are inherited from $config
 our %Remaining;   # Arguments not handled by share/Scripts/Config.pl
