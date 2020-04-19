@@ -64,9 +64,7 @@ exit 0;
 #############################################################################
 
 sub get_settings{
-    print "get_settings\n";
     my $AmrexMakefile = "${AmrexDir}/GNUmakefile";
-    print $AmrexMakefile;
      open(FILE, $AmrexMakefile) or die "$ERROR could not open $AmrexMakefile \n";
        while(<FILE>){
        	next if /^\s*!/; # skip commented out lines
