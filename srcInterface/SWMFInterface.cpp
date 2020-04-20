@@ -13,7 +13,7 @@
 
 using namespace std;
 
-Domain *MPICs;
+Domain *FLEKSs;
 
 // // The string contains the param.in
 std::string paramString;
@@ -56,11 +56,11 @@ int pic_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
 
   const int nDomain = paramint[1];
 
-  MPICs = new Domain();
+  FLEKSs = new Domain();
 
   int nParamRegion = 21;
   for (int i = 0; i < nDomain; i++) {
-    MPICs->init(timenow, paramString, paramint, &paramreal[i * nParamRegion],
+    FLEKSs->init(timenow, paramString, paramint, &paramreal[i * nParamRegion],
                 &paramreal[nDomain * nParamRegion], i);
   }
 
@@ -70,72 +70,72 @@ int pic_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
 }
 
 int pic_finalize_init_() {
-  MPICs->set_ic();  
+  FLEKSs->set_ic();  
   return 0;
 }
 
 int pic_run_(double *time) {
   double timenow = *time;
 
-  MPICs->update();
+  FLEKSs->update();
 
-  *time = (double)(MPICs->tc->get_time_si());
+  *time = (double)(FLEKSs->tc->get_time_si());
 
   return 0;
 }
 
 int pic_save_restart_() {
-  MPICs->save_restart();
+  FLEKSs->save_restart();
   return 0;
 }
 
 int pic_get_ngridpoints_(int *nPoint) {
-  *nPoint = MPICs->get_grid_nodes_number();
+  *nPoint = FLEKSs->get_grid_nodes_number();
   return 0;
 }
 
 int pic_get_grid_(double *Pos_DI, int *n) {
-  MPICs->get_grid(Pos_DI);
+  FLEKSs->get_grid(Pos_DI);
   return 0;
 }
 
 int pic_set_state_var_(double *Data_VI, int *iPoint_I) {
-  MPICs->set_state_var(Data_VI, iPoint_I);
+  FLEKSs->set_state_var(Data_VI, iPoint_I);
   return 0;
 }
 
 int pic_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
                        int *nVar) {
-  MPICs->get_fluid_state_for_points(*nDim, *nPoint, Xyz_I, data_I, *nVar);
+  FLEKSs->get_fluid_state_for_points(*nDim, *nPoint, Xyz_I, data_I, *nVar);
   return 0;
 }
 
 int pic_find_points_(int *nPoint, double *Xyz_I, int *iProc_I) {
-  MPICs->find_mpi_rank_for_points(*nPoint, Xyz_I, iProc_I);
+  FLEKSs->find_mpi_rank_for_points(*nPoint, Xyz_I, iProc_I);
   return 0;
 }
 
 int pic_set_dt_(double *DtSi) {
-  MPICs->tc->set_dt_si(*DtSi);
+  FLEKSs->tc->set_dt_si(*DtSi);
   return 0;
 }
 
 int pic_cal_dt_(double *dtOut) {
-  *dtOut = MPICs->tc->get_dt_si();
+  *dtOut = FLEKSs->tc->get_dt_si();
   return 0;
 }
 
 int pic_get_grid_info_(int *iGrid, int *iDecomp) {
-  (*iGrid) = MPICs->get_iGrid();
-  (*iDecomp) = MPICs->get_iDecomp();
+  (*iGrid) = FLEKSs->get_iGrid();
+  (*iDecomp) = FLEKSs->get_iDecomp();
   return 0;
 }
 
 int pic_end_() {
   {
     // Saving plots before exiting.
-    MPICs->write_plots(true);
-    delete MPICs;
+    FLEKSs->write_plots(true);
+    delete FLEKSs;
 
     //BL_PROFILE_VAR_STOP(pmain);
     // The curly bracket here is necessary!!! It ensures the destructor is
@@ -149,8 +149,8 @@ int pic_end_() {
 
 
 int pic_set_grid_info_(int *nInt, int *status){
-  MPICs->receive_grid_info(status);
-  MPICs->regrid();
+  FLEKSs->receive_grid_info(status);
+  FLEKSs->regrid();
 
   return 0; 
 }

@@ -6,6 +6,6 @@
 
 #include "Domain.h"
 
-extern Domain* MPICs;
+extern Domain* FLEKSs;
 
 #endif
