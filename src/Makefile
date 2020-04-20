@@ -33,7 +33,7 @@ EXE:
 	$(MAKE) LIB
 	$(MAKE) ${OBJECTS_EXE}
 	${LINK.f90} -o ${FLEKSEXE} ${OBJECTS_EXE} \
-		-L../lib/ -lFLEKS ${Lflag}
+		-L -lFLEKS ${Lflag}
 
 %.o: %.cpp
 %.o: %.cpp $(DEPDIR)/%.d
@@ -42,7 +42,7 @@ EXE:
 DEPEND:
 
 
-LIBFLEKS  = ../lib/libFLEKS.a
+LIBFLEKS  = libFLEKS.a
 
 LIB:    
 	$(MAKE) ${LIBFLEKS}

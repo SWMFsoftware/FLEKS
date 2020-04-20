@@ -26,7 +26,7 @@ PC_wrapper.o: ../include/SWMFInterface.h \
 	SWMFInterface.cpp \
 	${LIBRARYDIR}/CON_comp_info.o
 
-LIBFLEKS = ../lib/libFLEKS.a
+LIBFLEKS = ../src/libFLEKS.a
 
 LIBPC    = ${LIBDIR}/libPC.a
 

@@ -22,11 +22,7 @@ FLEKS: GITINFO
 bin:
 	mkdir bin
 
-lib:
-	mkdir lib
-
-
-install: bin lib
+install: bin
 
 LIB: 
 	cd src; $(MAKE) LIB
