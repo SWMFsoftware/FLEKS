@@ -577,7 +577,7 @@ void find_output_list_caller(const PlotWriter& writerIn,
                              PlotWriter::VectorPointList& pointList_II,
                              std::array<double, nDim>& xMin_D,
                              std::array<double, nDim>& xMax_D) {
-  FLEKSs->pic.find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
+  FLEKSs[0]->pic.find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
                               xMax_D);
 }
 
@@ -585,5 +585,5 @@ void find_output_list_caller(const PlotWriter& writerIn,
 void get_field_var_caller(const VectorPointList& pointList_II,
                           const std::vector<std::string>& sVar_I,
                           MDArray<double>& var_II) {
-  FLEKSs->pic.get_field_var(pointList_II, sVar_I, var_II);
+  FLEKSs[0]->pic.get_field_var(pointList_II, sVar_I, var_II);
 }
