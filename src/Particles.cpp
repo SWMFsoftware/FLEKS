@@ -23,8 +23,12 @@ Particles::Particles(const amrex::BoxArray& regionBAIn, const Geometry& geom,
   qom = charge / mass;
   qomSign = qom > 0 ? 1 : -1;
 
-  for (int i = 0; i < nDim; i++)
+  for (int i = 0; i < nDim; i++) {
     tile_size[i] = 1;
+    plo[i] = Geom(0).ProbLo(i);
+    phi[i] = Geom(0).ProbHi(i);
+    isPeriodic[i] = Geom(0).isPeriodic(i); 
+  }
 
   set_region_ba(regionBAIn);
 }

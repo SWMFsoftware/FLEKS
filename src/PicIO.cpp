@@ -340,7 +340,7 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
       value = (arr(ix, iy, iz, iPxx_) + arr(ix, iy, iz, iPyy_) +
                arr(ix, iy, iz, iPzz_)) /
               3.0;
-    } else if (var.substr(0, 4) == "proc") {
+    } else if (var.substr(0, 4) == "rank") {
       value = ParallelDescriptor::MyProc();
     } else if (var.substr(0, 5) == "block") {
       value = mfi.index();
