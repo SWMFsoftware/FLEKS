@@ -1,8 +1,10 @@
 <commandList name="FLEKS">
 
-<command name="SAVEIDL">
+<command name="SAVEPLOT">
 
-#SAVEIDL
+The description for this comand is not accurate. 
+
+#SAVEPLOT
 4                       nPlotFile
 sat_sat01.sat  var ascii si        StringPlot
 -1                      DnOutput
@@ -105,66 +107,6 @@ Note:
 
 </command>
 
-<command name="SATELLITERADIUS">
-  <parameter name="SatRadius" type="integer" default="2">
-#SATELLITERADIUS
-2                 SatRadius
-
-If the distance between a particle and the satellite trajectory is less than
-SatRadius*dx, where dx is the cell size in x direction, this particle will be
-saved in the output file. 
-</command>
-
-<command name="SMOOTH">
-	 <parameter name="DoSmoothAll" type="logical" default="T"/>
-	 <parameter name="nSmooth" type="integer" minimum="0" default="0"/>
-	 <parameter name="InnerSmoothFactor" type="real" minimum="0" maximum="1" default="1.0"/>
-         <parameter name="BoundarySmoothFactor" type="real" minimum="0" default="1.0"/>
-	 <parameter name="nBoundarySmooth" type="integer" minimum="0" default="1"/>
-
-#SMOOTH
-T                     DoSmoothAll
-4                     nSmooth
-0.5                   InnerSmoothFactor
-1.0                   BoundarySmoothFactor
-5                     nBoundarySmooth
-
-These parameters determine how to smooth electric field and optionally the
-cell centered total current and total charge density (hat functions).
-
-If DoSmoothAll is true, all three quantities are smoothed.
-If DoSmoothAll is false, only the electric field will be smoothed.
-
-The algorithm for smoothing is:
-
-E`_ijk = smooth*(E_ijk) + (1-smooth)/6 * sum(six neighbors of E_ijk).
-
-This process will repeat nSmooth times. The coefficient 'smooth' is calculated
-based on innerSmoothFactor, boundarySmoothFactor and nBoundarySmooth and the 
-distance of the cell from the boundary. 
-Define iCell as the distance from a node to the PIC boundary (node index 1 NOT 0).
-If iCell > nBoundarySmooth, then smooth = innerSmoothFactor, otherwise the
-coefficient 'smooth' will be linearly interpolated from innerSmoothFactor and
-boundarySmoothFactor.
-
-The value of 'smooth' calculated from innerSmoothFactor and boundarySmoothFactor
-is limited to be smaller than 1 and larger than 0.
-
-Default is nSmooth=0, so no smoothing is done.
-</command>
-
-<command name="SUBCYCLING">
-  <parameter name="doSubCycling" type="logical" default="F" />
-  
-#SUBCYCLING
-T               doSubCycling
-
-If doSubCycling is true, the time step for the update of each particle will
-be reset to make sure: dt <= T/8, where T is the gyroperiod with local magnetic
-field strength. 
-
-</command>
-
 <command name="PERIODICITY">
   <parameter name="isPeriodicX" type="logical" default="F" />
   <parameter name="isPeriodicY" type="logical" default="F" />
@@ -182,66 +124,6 @@ in this direction and the parameter above will be ignored.
 
 </command>
 
-<command name="EMWAVE">
-	 <parameter name="doTestEMWave" type="logical" default="F"/>
-	 <parameter name="Lx" type="real" />
-	 <parameter name="Ly" type="real" />
-	 <parameter name="Lz" type="real" />
-	 <parameter name="Phase" type="real"/>
-	 <parameter name="AmplEx" type="real" />
-	 <parameter name="AmplEy" type="real" />
-	 <parameter name="AmplEz" type="real" />
-
-#EMWAVE
-T                     doTestEMWave
-1.0                   Lx
-1e99                  Ly
-2.0                   Lz
-30                    Phase
-2.0                   AmplEx
-1.0                   AmplEy
-0                     AmplEz
-
-If doTestEMWave is true, a EM field will be initialized as a pure EM wave, and 
-the feed back from particles will be ignored. The E field lengths Lx, Ly and Lz
-are in SI unit. The wave vector (for example, 2*pi/Lx) will be set to 0
-if the corresponding wave length is larger than 1e10. The unit of the
-initial phase 'Phase' is 'degree'. The E fields are initialized as:
-
-E = (AmplEx, AmplEy, AmplEz)*sin(k*x + Phase*deg2rad)
-
-The magnetic field is set from B = k/|k| x E.
-
-</command>
-
-<command name="SOLVER">
-  <parameter name="GMREStol" type="real"  default="1e-8"/>
-  <parameter name="nGMRESRestart" type="integer"  default="100"/>
-  <parameter name="NiterMover" type="integer"  default="3"/>
-  
-#SOLVER
-1e-8                   GMREStol
-100                    nGMRESRestart
-3                      NiterMover
-
-Warning: this command is obsolete because the linear solver in SWMF
-is used by default, and the related parameters are set by command
-#EFIELDSOLVER and #POISSON
-
-These parameters control the field solver and the particle mover. 'GMREStol' is
-the tolerance of the GMRES E field solver, which will restart every
-'nGMRESRestart' cycles. The maximum iteration number of the implicit particle
-mover is 'NiterMover'.
-
-Note:
-1) The tolerance for the CG iteration used to be included in this command. It
-is removed because CG is not used anymore.
-2) The tolerance of the Poisson solver is hard coded so far. It's default value
-is 0.1.
-
-</command>
-
-
 <command name="EFIELDSOLVER">
   <parameter name="EFieldTol"  type="real"    default="1e-6"/>
   <parameter name="EFieldIter" type="integer" default="200"/>
@@ -255,212 +137,53 @@ GMRES solver. The default values are shown above.
 
 </command>
 
-<command name="POISSON">
-  <parameter name="DoPoissonCorrection"  type="logical"  default="F"/>
-  <parameter name="PoissonCorrectionCycle"  type="integer" />
-  <parameter name="PoissonTol"  type="real"    />
-  <parameter name="PoissonIter" type="integer" />
-
-  
-#POISSON
-T                         DoCorrection
-1                         PoissonCorrectionCycle
-0.1                       PoissonTol
-20                        PoissonIter
-
-This command is off by default. 
-
-</command>
-
-
-<command name="ENERGYCONSERVING">
-  <parameter name="useECSIM" type="logical" default="T"/>
-  
-#ENERGYCONSERVING
-T                        useECSIM
-
-If useECSIM is true, then the Energy Conserving Semi-Implicit Method (ECSIM)
-(Lapenta, JCP, 2016) will be used. The default is True. 
-
-</command>
-
 <command name="DISCRETIZATION">
-  <parameter name="theta" type="real" />
-  <parameter name="gradRhoRatio" type="real" default="0" />
-  <parameter name="cDiff" type="real" default="0" />
-  <parameter name="DISCRETIZATION" type="real" default="0" />
+  <parameter name="theta" type="real" default="0.51"/>
+  <parameter name="ratioDivC2C" type="real" default="0.1" />
 
 #DISCRETIZATION
-1.0                        theta
-1.0                        gradRhoRatio
-0.0                        cDiff
-0.0                        ratioDivC2C
+0.51                        theta
+0.1                         ratioDivC2C
 
-The values above are the default for iPIC3D. For ECSIM, the default values are:
-
-#DISCRETIZATION
-0.6                        theta
-0.0                        gradRhoRatio
-0.0                        cDiff
-0.1                        ratioDivC2C .
-
-This command should be used after #ENERGYCONSERVING. For ECSIM, theta=0.5 is
-required to achieve the exact energy conserving. In practice, theta=0.51~0.6
-has good energy conserving property and can also help to supress numerical
-noise and instabilities. For iPIC3D, theta=1 is the default.
-
-'gradRhoRatio' is the coefficient of a term used to supress the (div(E)-charge)
-error. It is between 0 and 1. 'cDiff' is a positive coefficient of the numerical
-diffusion that is used to smooth the electric field. cDiff=1 is a reasonable
-choice. 
+The electric field is calculated at the time t_{n+theta}. When theta 
+is 0.5, the total enregy is conserved if ratioDivC2C is 0. However, 
+the exact energy conservation may produce artifical oscillations. 
+0.51-0.6 are typical values of theta.  
 
 'ratioDivC2C' is the ratio of div(E) calculated from extended stencil
-discretization. It helps to suppress short-wavelength oscillations. 
-
-See iPIC3D-ECSIM_Algorithm.tex for more details. 
+discretization. It helps to suppress short-wavelength oscillations.  
 
 </command>
-
 
 <command name="DIVE">
-  <parameter name="divECleanType" type="string"/>
-  <parameter name="nPower" type="integer" minimum="0" maximum="2"/>
-  <parameter name="divECleanTol" type="real"/>
-  <parameter name="divECleanIter" type="integer"/>
-  <parameter name="nIterNonLinear" type="integer"/>
-
+  <parameter name="doCorrectDivE" type="logical" default="T"/>
   
 #DIVE
-weight_estimate 
-	    
-#DIVE
-weight          divECleanType
-1               nPower
-1e-8            divECleanTol
-50              divECleanIter
+T                         doCorrectDivE
 
-#DIVE
-position_light  divECleanType
-1               nPower
-1e-8            divECleanTol
-50              divECleanIter
-3               nIterNonLinear	    	 	   
-
-#DIVE
-position_all    divECleanType
-1               nPower
-1e-8            divECleanTol
-50              divECleanIter
-3               nIterNonLinear	    	 	   
-
-#DIVE
-F                      divECleanType
-	    
-#DIVE
-position_estimate_phi  divECleanType
-1                      nPower
-1e-2                   divECleanTol
-20                     divECleanIter
-
-The values just above are the default. 
-
-This command can change the particle postions by a small displacement dx, or the
-weights by multiplying the weight by a vaule rp close to 1, to satisfy 
-the Gaussi's law: div(E)=net charge. The correction can be done by estimating 
-the changes (weight_estimate, position_estimate_phi) or calculating the
-changes accurately (weight, position_light, position_all). The accurate 
-corrections need to solve an linear equation system, so the tolerance and 
-the maximum iteration number should be specified. For the position 
-corrections, the equation system is non-linear, and the non-linear iteration
-number nIterNonLinear should be set. 
-
-For the accurate corrections, $sum(dx^2*qp^nPower)$ or $sum((rp-1)^2*qp^nPower)$
-are minimized for position or weight correction, respectively. nPower=1 is 
-the optimized choice. 
-
-'position_light' or 'weight' only correct the lightest species, which is 
-usually the electron,  and 'position_all' corrects all species. 
+Turning on/off the accurate div(E) cleaning, which corrects the particle
+locations to satisfy Gauss's law: div(E) = net_charge. 
 
 </command>
-
-<command name="CELLCENTERDENSITY">
-  <parameter name="doCalcRhocDirectly" type="logical" default="F"/>
-  
-#CELLCENTERDENSITY
-F                        doCalcRhocDirectly
-
-Calculating cell center densities by particle-cell center interpolation,
-or interpolations from node densities. 
-
-Default is false, but it is turn on if #DIVE is used.  
-</command>
-
-<command name="RHOTHETA">
-  <parameter name="rhoTheta" type="real" default="0.51"/>
-  
-#RHOTHETA
-0.51                        rhoTheta
-
-divE correction is done based on the net charge at n+1/2+rhoTheta stage. 
-rhoTheta=0.5 may cause instability issue, and the default is rhoTheta=0.51.
-</command>
-
-<command name="CORRECTIONRATIO">
-  <parameter name="correctionRatio" type="real"/>
-  
-#CORRECTIONRATIO
-0.9                        correctionRatio
-
-The correction ratio for the approximae local/global divE correction. 
-The default value is 0.5/0.9 for the local/global correction method. 
-</command>
-
 
 <command name="TIMESTEPPING">
-  <parameter name="useSWMFDt" type="logical" default="T"/>
-  <parameter name="useFixedDt" type="logical" default="F"/>
-  <parameter name="CFL/dt" type="real" >
-    
-#TIMESTEPPING
-T                useSWMFDt
+  <parameter name="dt" type="real"/>
 
 #TIMESTEPPING
-F                useSWMFDt
-F                useFixedDt
-0.4              CFL
+0.1                dt
 
-#TIMESTEPPING
-F                useSWMFDt
-T                useFixedDt
-0.4              dt (SI unit)
-
-The three possible ways to use this command is listed above. If useSWMFDt is ture,
-the PIC code will use the the timestep obtained from SWMF, which is the coupling
-period. When useSWMFDt is false, the third command sets a fixed
-time step or a CFL number if useFixedDt is true or false, respectively.    
+So far, only fixed time step is supported. 
 
 </command>
 
 <command name="ELECTRON">
-  <parameter name="qom" type="real" >
+  <parameter name="qom" type="real" default='-100'>
 
 #ELECTRON
 -100                     ElectronChargePerMass
 
 This command sets the charge per mass in normalized unit for electrons.
 It will be ignored when PIC is coupled with five-moment or six-moment MHD.
-    
-</command>
-
-<command name="CHECKSTOP">
-  <parameter name="uthLimit" type="real" default="2" >
-
-#CHECKSTOP
-2                  uthLimit
-
-If the maximum thermal velocity of any species exceeds uthLimit, which is in
-normalized PIC unit and has default value 2, then the code will save the
-output data and stop running. 
     
 </command>
 
