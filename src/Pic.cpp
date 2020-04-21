@@ -100,7 +100,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
   dm = dmIn;
 
-  //===========Move data around begin====================
+  //===========Move field data around begin====================
   distribute_FabArray(nodeE, nodeBA, dm, 3, nGst);
   distribute_FabArray(nodeEth, nodeBA, dm, 3, nGst);
   distribute_FabArray(nodeB, nodeBA, dm, 3, nGst);
@@ -143,28 +143,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     distribute_FabArray(tempCenter1, centerBA, dm, 1, nGst, doMoveData);
     distribute_FabArray(tempCenter1_1, centerBA, dm, 1, nGst, doMoveData);
   }
-
-  if (parts.empty()) {
-    for (int i = 0; i < nSpecies; i++) {
-      auto ptr = std::make_unique<Particles>(
-          picRegionBA, geom, dm, centerBA, tc.get(), i,
-          fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i),
-          nPartPerCell);
-      parts.push_back(std::move(ptr));
-    }
-  } else {
-    for (int i = 0; i < nSpecies; i++) {
-      // Label the particles outside the OLD PIC region.
-      parts[i]->label_particles_outside_ba();
-      parts[i]->SetParticleBoxArray(0, centerBA);
-      parts[i]->set_region_ba(picRegionBA);
-      parts[i]->SetParticleDistributionMap(0, dm);
-      // Label the particles outside the NEW PIC region.
-      parts[i]->label_particles_outside_ba();
-      parts[i]->Redistribute();
-    }
-  }
-  //===========Move data around end====================
+  //===========Move field data around end====================
 
   { //===========Label cellStatus/nodeStatus ==========
 
@@ -218,6 +197,38 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     distribute_FabArray(nodeAssignment, nodeBA, dm, 1, 0, false);
     set_nodeAssignment();
   }
+
+  //--------------particles-----------------------------------
+  if (parts.empty()) {
+    for (int i = 0; i < nSpecies; i++) {
+      auto ptr = std::make_unique<Particles>(
+          picRegionBA, geom, dm, centerBA, tc.get(), i,
+          fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i),
+          nPartPerCell);
+      parts.push_back(std::move(ptr));
+    }
+  } else {
+    for (int i = 0; i < nSpecies; i++) {
+      // Label the particles outside the OLD PIC region.
+      parts[i]->label_particles_outside_ba();
+      parts[i]->SetParticleBoxArray(0, centerBA);
+      parts[i]->set_region_ba(picRegionBA);
+      parts[i]->SetParticleDistributionMap(0, dm);
+      // Label the particles outside the NEW PIC region.
+      parts[i]->label_particles_outside_ba_general();
+      parts[i]->Redistribute();
+    }
+  }
+
+  { // Copy cell Status to Particles objects.
+    for (int i = 0; i < nSpecies; i++) {
+      distribute_FabArray(parts[i]->cellStatus, centerBA, dm, 1,
+                          nGst >= 2 ? nGst : 2, false);
+      iMultiFab::Copy(parts[i]->cellStatus, cellStatus, 0, 0,
+                      cellStatus.nComp(), cellStatus.nGrow());
+    }
+  }
+  //--------------particles-----------------------------------
 
   {
     int nGrid = get_local_node_or_cell_number(nodeE);
@@ -414,6 +425,10 @@ void Pic::particle_mover() {
 
   timing_func(nameFunc);
 
+  AllPrint() << "On proc = " << ParallelDescriptor::MyProc()
+             << ", particle number of species 0 = "
+             << parts[0]->TotalNumberOfParticles(false, true) << "\n";
+
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->mover(nodeEth, nodeB, tc->get_dt());
 
@@ -473,9 +488,10 @@ void Pic::divE_correction() {
   }
 
   for (int i = 0; i < nSpecies; i++) {
-    // The particles outside the simulation domain is marked for deletion inside
-    // divE_correct_particle_position(). Redistribute() deletes these particles.
-    // In order to get correct moments, re-inject particles in the ghost cells.
+    // The particles outside the simulation domain is marked for deletion
+    // inside divE_correct_particle_position(). Redistribute() deletes these
+    // particles. In order to get correct moments, re-inject particles in the
+    // ghost cells.
     parts[i]->Redistribute();
   }
   inject_particles_for_boundary_cells();
@@ -698,11 +714,11 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
   vecMF.FillBoundary(geom.periodicity());
 
   if (useZeroBC) {
-    // The boundary nodes would not be filled in by convert_1d_3d. So, there is
-    // not need to apply zero boundary conditions again here.
+    // The boundary nodes would not be filled in by convert_1d_3d. So, there
+    // is not need to apply zero boundary conditions again here.
   } else {
-    // Even after apply_external_BC(), the outmost layer node E is still unknow.
-    // See FluidInterface::calc_current for detailed explaniation.
+    // Even after apply_external_BC(), the outmost layer node E is still
+    // unknow. See FluidInterface::calc_current for detailed explaniation.
     apply_external_BC(nodeStatus, vecMF, 0, nDim, &Pic::get_node_E);
   }
 
@@ -721,12 +737,11 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
                                  tempCenter3.nGrow());
 
       //----The following comments are left here for reference------
-      // Q: Why apply float BC for all boundary ghost nodes, instead of just the
-      // outmost layer?
-      // A: For the example described in FluidInterface::calc_current, cell
-      // (c+4, c-1) of tempCenter3-block1 is not accurate, so the values at
-      // (c+4, c-2)
-      // will be wrong if we only apply float BC for the outmost layer.
+      // Q: Why apply float BC for all boundary ghost nodes, instead of just
+      // the outmost layer? A: For the example described in
+      // FluidInterface::calc_current, cell (c+4, c-1) of tempCenter3-block1
+      // is not accurate, so the values at (c+4, c-2) will be wrong if we only
+      // apply float BC for the outmost layer.
       // apply_float_boundary(cellStatus, tempCenter3, geom, 0,
       //                           tempCenter3.nComp());
       //------------------------------------------------------------

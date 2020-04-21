@@ -31,10 +31,12 @@ private:
 
   amrex::Vector<amrex::RealBox> boxRange_I;
 
-  amrex::Real plo[nDim], phi[nDim];
+  amrex::Real plo[nDim], phi[nDim], dx[nDim], invDx[nDim];
   bool isPeriodic[nDim];
 
 public:
+  amrex::iMultiFab cellStatus;
+
   Particles(const amrex::BoxArray& regionBAIn, const amrex::Geometry& geom,
             const amrex::DistributionMapping& dm, const amrex::BoxArray& ba,
             TimeCtr* const tcIn, const int speciesID, const amrex::Real charge,
@@ -104,7 +106,49 @@ public:
     return true;
   }
 
+  inline bool is_outside_ba(const ParticleType& p,
+                            amrex::Array4<int const> const& status,
+                            const amrex::IntVect& low,
+                            const amrex::IntVect& high) {
+
+    // Contains ghost cells.
+    bool isInsideBox = true;
+    int cellIdx[3];
+    amrex::Real dShift[3];
+    for (int i = 0; i < 3; i++) {
+      dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
+      cellIdx[i] = fastfloor(dShift[i]);
+      if (cellIdx[i] > high[i] || cellIdx[i] < low[i]) {
+        isInsideBox = false;
+        break;
+      }
+    }
+
+    if (isInsideBox) {
+      return status(cellIdx[ix_], cellIdx[iy_], cellIdx[iz_]) == iBoundary_;
+    } else {
+      return is_outside_ba(p);
+    }
+  }
+
   void label_particles_outside_ba() {
+    const int lev = 0;
+    for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
+      auto& particles = pti.GetArrayOfStructs();
+      const amrex::Array4<int const>& status = cellStatus[pti].array();
+      const amrex::Box& bx = cellStatus[pti].box();
+      const amrex::IntVect lowCorner = bx.smallEnd() - cellStatus.nGrowVect();
+      const amrex::IntVect highCorner = bx.bigEnd() + cellStatus.nGrowVect();
+      for (auto& p : particles) {
+        if (is_outside_ba(p, status, lowCorner, highCorner)) {
+          p.id() = -1;
+          // amrex::Print()<<"particle outside ba = "<<p<<std::endl;
+        }
+      }
+    }
+  }
+
+  void label_particles_outside_ba_general() {
     const int lev = 0;
     for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
       auto& particles = pti.GetArrayOfStructs();

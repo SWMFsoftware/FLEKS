@@ -27,7 +27,9 @@ Particles::Particles(const amrex::BoxArray& regionBAIn, const Geometry& geom,
     tile_size[i] = 1;
     plo[i] = Geom(0).ProbLo(i);
     phi[i] = Geom(0).ProbHi(i);
-    isPeriodic[i] = Geom(0).isPeriodic(i); 
+    isPeriodic[i] = Geom(0).isPeriodic(i);
+    dx[i] = Geom(0).CellSize(i);
+    invDx[i] = Geom(0).InvCellSize(i);
   }
 
   set_region_ba(regionBAIn);
@@ -63,9 +65,6 @@ void Particles::add_particles_cell(const MFIter& mfi,
   randNum.set_seed(seed);
 
   Real x, y, z; // Particle location.
-
-  auto dx = Geom(0).CellSize();
-  auto plo = Geom(0).ProbLo();
 
   const Real vol = dx[ix_] * dx[iy_] * dx[iz_];
   const Real vol2Npcel = qomSign * vol / npcel;
@@ -223,10 +222,6 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
                               bool doNetChargeOnly) {
   timing_func("Particles::sum_to_center");
 
-  const auto& plo = Geom(0).ProbLo();
-
-  const auto& dx = Geom(0).CellSize();
-  const auto& invDx = Geom(0).InvCellSize();
   const Real invVol = invDx[ix_] * invDx[iy_] * invDx[iz_];
 
   const int lev = 0;
@@ -367,7 +362,6 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
 
   Real qdto2mc = charge / mass * 0.5 * dt;
 
-  const auto& invDx = Geom(0).InvCellSize();
   const Real invVol = invDx[ix_] * invDx[iy_] * invDx[iz_];
 
   PartInfo pinfo;
@@ -674,12 +668,15 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
   const Real dtLoc = dt;
   const Real qdto2mc = charge / mass * 0.5 * dt;
 
-  const auto& invDx = Geom(0).InvCellSize();
-
   const int lev = 0;
   for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
     const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
     const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
+
+    const Array4<int const>& status = cellStatus[pti].array();
+    const Box& bx = cellStatus[pti].box();
+    const IntVect lowCorner = bx.smallEnd() - cellStatus.nGrowVect();
+    const IntVect highCorner = bx.bigEnd() + cellStatus.nGrowVect();
 
     auto& particles = pti.GetArrayOfStructs();
     for (auto& p : particles) {
@@ -753,7 +750,7 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
       p.pos(iz_) = zp + wnp1 * dtLoc;
 
       // Mark for deletion
-      if (is_outside_ba(p)) {
+      if (is_outside_ba(p, status, lowCorner, highCorner)) {
         p.id() = -1;
       }
     } // for p
@@ -770,8 +767,6 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
 
   const auto& plo = Geom(0).ProbLo();
 
-  const auto& dx = Geom(0).CellSize();
-  const auto& invDx = Geom(0).InvCellSize();
   const Real invVol = invDx[ix_] * invDx[iy_] * invDx[iz_];
 
   const Real coef = charge / fabs(charge);
@@ -782,10 +777,15 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
   for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
     Array4<Real const> const& phiArr = phiMF[pti].array();
 
+    const Array4<int const>& status = cellStatus[pti].array();
+    const Box& bx = cellStatus[pti].box();
+    const IntVect lowCorner = bx.smallEnd() - cellStatus.nGrowVect();
+    const IntVect highCorner = bx.bigEnd() + cellStatus.nGrowVect();
+
     auto& particles = pti.GetArrayOfStructs();
 
     for (auto& p : particles) {
-      if (p.id() == -1 || is_outside_ba(p)) {
+      if (p.id() == -1 || is_outside_ba(p, status, lowCorner, highCorner)) {
         p.id() = -1;
         continue;
       }
@@ -892,7 +892,7 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
           p.pos(iDim) += eps_D[iDim];
         }
 
-        if (is_outside_ba(p)) {
+        if (is_outside_ba(p, status, lowCorner, highCorner)) {
           // Do not allow moving particles from physical cells to ghost cells
           // during divE correction.
           for (int iDim = 0; iDim < 3; iDim++) {
@@ -1161,6 +1161,7 @@ void Particles::combine_particles(Real limit) {
     const Real zMin = Geom(0).LoEdge(lo.z, iz_),
                zMax = Geom(0).HiEdge(hi.z, iz_);
 
+    // TODO: use array dx
     const Real dx = Geom(0).CellSize(ix_);
     const Real dy = Geom(0).CellSize(iy_);
     const Real dz = Geom(0).CellSize(iz_);
