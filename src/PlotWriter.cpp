@@ -31,7 +31,7 @@ void PlotWriter::init() {
   // than the simulation domain on this processor.
   std::stringstream ss;
   if (subString.substr(0, 2) == "x=" || subString.substr(0, 2) == "y=" ||
-      subString.substr(0, 2) == "z=" || subString.substr(0, 2) == "3d") {
+      subString.substr(0, 2) == "z=") {
     int idx = -1;
     if (subString.substr(0, 2) == "x=")
       idx = x_;
@@ -40,14 +40,11 @@ void PlotWriter::init() {
     if (subString.substr(0, 2) == "z=")
       idx = z_;
 
-    if (idx != -1) {
-      // Not '3d'.
-      subString.erase(0, 2);
-      ss << subString;
-      ss >> plotMin_D[idx];
-      plotMin_D[idx] = plotMin_D[idx] * No2NoL - axisOrigin_D[idx];
-      plotMax_D[idx] = plotMin_D[idx] + 1e-10;
-    }
+    subString.erase(0, 2);
+    ss << subString;
+    ss >> plotMin_D[idx];
+    plotMin_D[idx] = plotMin_D[idx] * No2NoL - axisOrigin_D[idx];
+    plotMax_D[idx] = plotMin_D[idx] + 1e-10;
 
     for (int iDim = 0; iDim < nDimMax; ++iDim) {
       if (iDim != idx) {
@@ -56,6 +53,17 @@ void PlotWriter::init() {
       }
     }
 
+  } else if (subString.substr(0, 2) == "3d") {
+    for (int iDim = 0; iDim < nDimMax; ++iDim) {
+      plotMin_D[iDim] = domainMin_D[iDim];
+      plotMax_D[iDim] = domainMax_D[iDim];
+    }
+
+  } else if (subString.substr(0, 3) == "cut") {
+    for (int iDim = 0; iDim < nDimMax; ++iDim) {
+      plotMin_D[iDim] = plotMin_D[iDim]*No2NoL - axisOrigin_D[iDim] ;
+      plotMax_D[iDim] = plotMax_D[iDim]*No2NoL - axisOrigin_D[iDim] ;
+    }
   } else {
     if (isVerbose)
       std::cout << "Unknown plot range!! plotString = " << plotString
@@ -413,10 +421,10 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
 
   outFile << "#PLOTRESOLUTION\n";
   for (int i = 0; i < nDim; i++) {
-    if(plotDx>=0){
-    outFile << plotDx * dx_D[i] * No2OutL << "\t plotDx\n";
-    }else{
-outFile << plotDx << "\t plotDx\n";
+    if (plotDx >= 0) {
+      outFile << plotDx * dx_D[i] * No2OutL << "\t plotDx\n";
+    } else {
+      outFile << plotDx << "\t plotDx\n";
     }
   }
   // }

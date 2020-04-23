@@ -99,8 +99,8 @@ private:
 public:
   PlotWriter(const int idIn = 0, const std::string plotStringIN = "",
              const double dxIn = 1, const std::string plotVarIn = "",
-             const std::array<double, nDimMax> plotMinIn_D = { { 1, 1, 1 } },
-             const std::array<double, nDimMax> plotMaxIn_D = { { -1, -1, -1 } },
+             const std::array<double, nDimMax>& plotMinIn_D = { { 1, 1, 1 } },
+             const std::array<double, nDimMax>& plotMaxIn_D = { { -1, -1, -1 } },
              const int nSpeciesIn = 2)
       : ID(idIn),
         plotString(plotStringIN),
@@ -159,18 +159,18 @@ public:
   void set_rank(const int in) { rank = in; }
   void set_nDim(const int in) { nDim = in; }
   void set_iRegion(const int in) { iRegion = in; }
-  void set_plotMin_D(const std::array<double, nDimMax> in) { plotMin_D = in; }
-  void set_plotMax_D(const std::array<double, nDimMax> in) { plotMax_D = in; }
-  void set_domainMin_D(const std::array<double, nDimMax> in) {
+  void set_plotMin_D(const std::array<double, nDimMax>& in) { plotMin_D = in; }
+  void set_plotMax_D(const std::array<double, nDimMax>& in) { plotMax_D = in; }
+  void set_domainMin_D(const std::array<double, nDimMax>& in) {
     domainMin_D = in;
   }
-  void set_domainMax_D(const std::array<double, nDimMax> in) {
+  void set_domainMax_D(const std::array<double, nDimMax>& in) {
     domainMax_D = in;
   }
-  void set_axisOrigin_D(const std::array<double, nDimMax> in) {
+  void set_axisOrigin_D(const std::array<double, nDimMax>& in) {
     axisOrigin_D = in;
   }
-  void set_dx_D(const std::array<double, nDimMax> in) { dx_D = in; }
+  void set_dx_D(const std::array<double, nDimMax>& in) { dx_D = in; }
   void set_units(const double No2SiLIn, const double No2SiVIn,
                  const double No2SiBIn, const double No2SiRhoIn,
                  const double No2SiPIn, const double No2SiJIn,
@@ -185,8 +185,8 @@ public:
     rPlanet = rPlanetIn;
   }
 
-  void set_scalarValue_I(std::vector<double> const in) { scalarValue_I = in; }
-  void set_scalarName_I(std::vector<std::string> const in) {
+  void set_scalarValue_I(const std::vector<double>& in) { scalarValue_I = in; }
+  void set_scalarName_I(const std::vector<std::string>& in) {
     scalarName_I = in;
   }
 

@@ -383,6 +383,16 @@ void Domain::read_param() {
         Real dtSave;
         readParam.read_var("dtSavePlot", dtSave);
 
+        std::array<double, nDim> plotMin_D = { 1, 1, 1 },
+                                 plotMax_D = { -1, 1 - 1 };
+        if (plotString.find("cut") != std::string::npos) {
+          // Output range is 'cut' type.
+          for (int iDim = 0; iDim < nDim; iDim++) {
+            readParam.read_var("plotMin", plotMin_D[iDim]);
+            readParam.read_var("plotMax", plotMax_D[iDim]);
+          }
+        }
+
         int dxSave;
         readParam.read_var("dxSavePlot", dxSave);
 
@@ -392,7 +402,7 @@ void Domain::read_param() {
         }
 
         PlotCtr pcTmp(tc.get(), iPlot, dtSave, dnSave, plotString, dxSave,
-                      plotVar);
+                      plotVar, plotMin_D, plotMax_D);
         tc->plots.push_back(pcTmp);
       }
       //--------- The commands below exist in restart.H only --------
