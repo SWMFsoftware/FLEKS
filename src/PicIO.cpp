@@ -458,32 +458,98 @@ void Pic::write_plots(bool doForce) {
 //==========================================================
 void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
                       int const iCycle) {
+
+  if (pw.is_particle()) {
+    write_amrex_particle(pw, timeNow, iCycle);
+  } else {
+    write_amrex_field(pw, timeNow, iCycle);
+  }
+}
+
+//==========================================================
+void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
+                               int const iCycle) {
+  const int nReal = 4;
+  int iSpecies = pw.get_particleSpecies();
+
+  std::string dirName = pw.get_amrex_filename(timeNow, iCycle);
+
+  // Saving field/coordinates information. It is required by yt, but I do not
+  // know whether it is necessary at this point. --Yuxi
+  write_amrex_field(pw, timeNow, iCycle, std::string(), dirName);
+
+  if (pw.get_plotString().find("3d") != std::string::npos) {
+    // Save all particles in the domain.
+
+    Vector<int> writeRealComp;
+    for (int i = 0; i < nReal; ++i) {
+      writeRealComp.push_back(1);
+    }
+
+    Vector<std::string> realCompNames;
+    realCompNames.resize(nReal);
+    realCompNames[Particles::iup_] = "velocity_x";
+    realCompNames[Particles::ivp_] = "velocity_y";
+    realCompNames[Particles::iwp_] = "velocity_z";
+    realCompNames[Particles::iqp_] = "weight";
+
+    Vector<int> writeIntComp;
+    Vector<std::string> intCompNames;
+
+    parts[iSpecies]->WritePlotFile(dirName, "particle", writeRealComp,
+                                   writeIntComp, realCompNames, intCompNames);
+  }
+}
+
+void Pic::set_IO_geom(amrex::Geometry& geomIO, const PlotWriter& pw) {
+  // Creating geomIO, which uses output length unit, for amrex format output.
+  RealBox boxRangeOut;
+  Real no2outL = pw.No2OutTable("X");
+  for (int i = 0; i < nDim; i++) {
+    boxRangeOut.setLo(i, geom.ProbLo(i) * no2outL);
+    boxRangeOut.setHi(i, geom.ProbHi(i) * no2outL);
+  }
+  Array<int, nDim> periodicity;
+  for (int i = 0; i < nDim; i++)
+    periodicity[i] = geom.isPeriodic(i);
+  geomIO.define(geom.Domain(), boxRangeOut, geom.Coord(), periodicity);
+}
+
+//==========================================================
+void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
+                            int const iCycle, const std::string plotVars,
+                            const std::string filenameIn) {
   Print() << "amrex::" << pw.get_amrex_filename(timeNow, iCycle) << std::endl;
 
   Geometry geomOut;
-  { // Creating geomOut, which uses output length unit, for amrex format output.
-    RealBox boxRangeOut;
-    Real no2outL = pw.No2OutTable("X");
-    for (int i = 0; i < nDim; i++) {
-      boxRangeOut.setLo(i, geom.ProbLo(i) * no2outL);
-      boxRangeOut.setHi(i, geom.ProbHi(i) * no2outL);
-    }
-    Array<int, nDim> periodicity;
-    for (int i = 0; i < nDim; i++)
-      periodicity[i] = geom.isPeriodic(i);
-    geomOut.define(geom.Domain(), boxRangeOut, geom.Coord(), periodicity);
-  }
+  set_IO_geom(geomOut, pw);  
+
+  int nVarOut = 0;
+
+  if (plotVars.find("X") != std::string::npos)
+    nVarOut += 3;
+
+  if (plotVars.find("B") != std::string::npos)
+    nVarOut += 3;
+
+  if (plotVars.find("E") != std::string::npos)
+    nVarOut += 3;
+
+  if (plotVars.find("plasma") != std::string::npos)
+    nVarOut += 10 * nSpecies;
 
   // Save cell-centered, instead of the nodal, values, because the AMReX
   // document says some virtualiazaion tools assumes the AMReX format outputs
   // are cell-centered.
-  int nVarOut = 3 + 3 + 3 + 10 * nSpecies;
+
   MultiFab centerMF;
   centerMF.define(centerBA, dm, nVarOut, 0);
 
-  Vector<std::string> varNames = { "X", "Y", "Z" };
+  Vector<std::string> varNames;
   int iStart = 0;
-  { //--------------Coordinates-------------------------
+
+  if (plotVars.find("X") != std::string::npos) {
+    //--------------Coordinates-------------------------
     MultiFab xyz(centerMF, make_alias, 0, 3);
 
     for (MFIter mfi(xyz); mfi.isValid(); ++mfi) {
@@ -508,9 +574,13 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
       }
     }
     iStart += 3;
+    varNames.push_back("X");
+    varNames.push_back("Y");
+    varNames.push_back("Z");
   }
 
-  { //------------------B---------------
+  if (plotVars.find("B") != std::string::npos) {
+    //------------------B---------------
     MultiFab::Copy(centerMF, centerB, 0, iStart, nodeB.nComp(), 0);
     iStart += nodeB.nComp();
     varNames.push_back("Bx");
@@ -518,7 +588,8 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
     varNames.push_back("Bz");
   }
 
-  { //-----------------E-----------------------------
+  if (plotVars.find("E") != std::string::npos) {
+    //-----------------E-----------------------------
     average_node_to_cellcenter(centerMF, iStart, nodeE, 0, nodeE.nComp(), 0);
     iStart += nodeE.nComp();
     varNames.push_back("Ex");
@@ -526,7 +597,8 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
     varNames.push_back("Ez");
   }
 
-  { //-------------plasma---------------------
+  if (plotVars.find("plasma") != std::string::npos) {
+    //-------------plasma---------------------
 
     // The order of the varname should be consistent with nodePlasma.
     Vector<std::string> plasmaNames = { "rho", "ux",  "uy",  "uz",  "pxx",
@@ -567,6 +639,10 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
   }
 
   std::string filename = pw.get_amrex_filename(timeNow, iCycle);
+  if (!filenameIn.empty()) {
+    filename = filenameIn;
+  }
+
   WriteSingleLevelPlotfile(filename, centerMF, varNames, geomOut, timeNow,
                            iCycle);
 }
@@ -578,7 +654,7 @@ void find_output_list_caller(const PlotWriter& writerIn,
                              std::array<double, nDim>& xMin_D,
                              std::array<double, nDim>& xMax_D) {
   FLEKSs[0]->pic.find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
-                              xMax_D);
+                                  xMax_D);
 }
 
 //==========================================================

@@ -35,6 +35,11 @@ private:
   bool isPeriodic[nDim];
 
 public:
+  static const int iup_ = 0;
+  static const int ivp_ = 1;
+  static const int iwp_ = 2;
+  static const int iqp_ = 3;
+
   amrex::iMultiFab cellStatus;
 
   Particles(const amrex::BoxArray& regionBAIn, const amrex::Geometry& geom,
@@ -169,11 +174,6 @@ public:
   amrex::Real get_qom() { return charge / mass; }
 
 protected:
-  static const int iup_ = 0;
-  static const int ivp_ = 1;
-  static const int iwp_ = 2;
-  static const int iqp_ = 3;
-
   int speciesID;
   RandNum randNum;
 

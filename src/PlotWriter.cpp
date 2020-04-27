@@ -1,3 +1,4 @@
+#include <cctype>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -11,6 +12,8 @@ bool PlotWriter::doSaveBinary = false;
 void PlotWriter::init() {
   isVerbose = rank == 0;
   doWriteHeader = rank == 0;
+
+  std::string errorPrefix = "Error in #SAVEPLOT command: ";
 
   std::string subString;
   std::string::size_type pos;
@@ -29,9 +32,10 @@ void PlotWriter::init() {
   // plotMin_ID is the range of the whole plot domain, it can
   // be larger
   // than the simulation domain on this processor.
-  std::stringstream ss;
   if (subString.substr(0, 2) == "x=" || subString.substr(0, 2) == "y=" ||
       subString.substr(0, 2) == "z=") {
+    std::stringstream ss;
+
     int idx = -1;
     if (subString.substr(0, 2) == "x=")
       idx = x_;
@@ -61,12 +65,13 @@ void PlotWriter::init() {
 
   } else if (subString.substr(0, 3) == "cut") {
     for (int iDim = 0; iDim < nDimMax; ++iDim) {
-      plotMin_D[iDim] = plotMin_D[iDim]*No2NoL - axisOrigin_D[iDim] ;
-      plotMax_D[iDim] = plotMax_D[iDim]*No2NoL - axisOrigin_D[iDim] ;
+      plotMin_D[iDim] = plotMin_D[iDim] * No2NoL - axisOrigin_D[iDim];
+      plotMax_D[iDim] = plotMax_D[iDim] * No2NoL - axisOrigin_D[iDim];
     }
   } else {
     if (isVerbose)
-      std::cout << "Unknown plot range!! plotString = " << plotString
+      std::cout << errorPrefix
+                << "Unknown plot range!! plotString = " << plotString
                 << std::endl;
     abort();
   }
@@ -83,9 +88,26 @@ void PlotWriter::init() {
     plotVar = expand_variables("{fluid}");
     namePrefix += "_fluid";
 
+  } else if (plotString.find("particles") != std::string::npos) {
+    namePrefix += "_particle";
+
+    std::string::size_type pos = plotString.find("particles");
+    std::string speciesString = plotString.substr(pos + 9, 1);
+
+    if (!isdigit(speciesString.c_str()[0])) {
+      std::cout << errorPrefix
+                << "the species number should be follow after 'particles'!"
+                << std::endl;
+      abort();
+    }
+
+    std::stringstream ss;
+    ss << speciesString;
+    ss >> particleSpecies;
   } else {
     if (isVerbose)
-      std::cout << "Unknown plot variables!! plotString = " << plotString
+      std::cout << errorPrefix
+                << "Unknown plot variables!! plotString = " << plotString
                 << std::endl;
     abort();
   }
@@ -116,7 +138,8 @@ void PlotWriter::init() {
     outputFormat = "amrex";
   } else {
     if (isVerbose)
-      std::cout << "Unknown plot output format!! plotString = " << plotString
+      std::cout << errorPrefix
+                << "Unknown plot output format!! plotString = " << plotString
                 << std::endl;
     abort();
   }
@@ -133,9 +156,39 @@ void PlotWriter::init() {
     outputUnit = "PLANETARY";
   } else {
     if (isVerbose)
-      std::cout << "Unknown plot output unit!! plotString = " << plotString
+      std::cout << errorPrefix
+                << "Unknown plot output unit!! plotString = " << plotString
                 << std::endl;
     abort();
+  }
+
+  { //--------------------- Check parameters----------------------
+    if (!is_particle() && outputFormat == "amrex" &&
+        plotString.find("3d") == std::string::npos) {
+      std::cout << errorPrefix
+                << "for grid data, 'amrex' format output only support "
+                   "'3d' plot range!"
+                << std::endl;
+      abort();
+    }
+
+    if (is_particle()) {
+      if (outputFormat != "amrex") {
+        std::cout << errorPrefix
+                  << "particles can only be saved in 'amrex' format! "
+                  << std::endl;
+        abort();
+      }
+
+      if (plotString.find("3d") == std::string::npos &&
+          plotString.find("cut") == std::string::npos) {
+        std::cout << errorPrefix
+                  << "particles can only be saved with either '3d' or "
+                     "'cut' plot range! "
+                  << std::endl;
+        abort();
+      }
+    }
   }
 
   set_output_unit();
@@ -277,24 +330,6 @@ void PlotWriter::write(double const timeNow, int const iCycle,
   } else {
     write_idl(timeNow, iCycle, find_output_list, get_var);
   }
-}
-
-void PlotWriter::write_amrex(double const timeNow, int const iCycle) {
-
-  std::string filename;
-  std::stringstream ss;
-  int nLength;
-  if (nProcs > 10000) {
-    nLength = 5;
-  } else if (nProcs > 100000) {
-    nLength = 5;
-  } else {
-    nLength = 4;
-  }
-  ss << "_region" << iRegion << "_" << ID << "_t" << std::setfill('0')
-     << std::setw(8) << second_to_clock_time(timeNow) << "_n"
-     << std::setfill('0') << std::setw(8) << iCycle;
-  filename = namePrefix + ss.str();
 }
 
 std::string PlotWriter::get_amrex_filename(double const timeNow,

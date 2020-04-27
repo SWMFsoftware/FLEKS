@@ -94,13 +94,16 @@ private:
   std::vector<double> scalarValue_I;
   std::vector<std::string> scalarName_I;
 
+
+  int particleSpecies; 
   //-----------------------------------------------------------------
 
 public:
   PlotWriter(const int idIn = 0, const std::string plotStringIN = "",
              const double dxIn = 1, const std::string plotVarIn = "",
              const std::array<double, nDimMax>& plotMinIn_D = { { 1, 1, 1 } },
-             const std::array<double, nDimMax>& plotMaxIn_D = { { -1, -1, -1 } },
+             const std::array<double, nDimMax>& plotMaxIn_D = { { -1, -1,
+                                                                  -1 } },
              const int nSpeciesIn = 2)
       : ID(idIn),
         plotString(plotStringIN),
@@ -134,7 +137,8 @@ public:
         nextWriteTime(0),
         nextWriteCycle(0),
         lastWriteTime(-1),
-        lastWriteCycle(-1) {}
+        lastWriteCycle(-1),
+        particleSpecies(-1) {}
 
   // Disabled the assignment operator to avoid potential mistake.
   PlotWriter& operator=(const PlotWriter&) = delete;
@@ -145,8 +149,14 @@ public:
   /*----Get class member value begin--------------------*/
   double get_plotDx() const { return plotDx; }
   std::string get_plotString() const { return plotString; }
-  bool is_compact() const {    
+  bool is_compact() const {
     return plotString.find("compact") != std::string::npos;
+  }
+  bool is_particle() const {
+    return plotString.find("particles") != std::string::npos;
+  }
+  int get_particleSpecies()const{
+    return particleSpecies; 
   }
   /*----Get class member value end--------------------*/
 
@@ -208,9 +218,6 @@ public:
    2) and writes the header (write_header) and data (write_field). */
   void write_idl(double const timeNow, int const iCycle,
                  FuncFindPointList find_output_list, FuncGetField get_var);
-
-  // Write file in the native amrex format.
-  void write_amrex(double const timeNow, int const iCycle);
 
   void write(double const timeNow, int const iCycle,
              FuncFindPointList find_output_list, FuncGetField get_var);
