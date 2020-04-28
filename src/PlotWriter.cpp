@@ -27,8 +27,6 @@ void PlotWriter::init() {
   }
   namePrefix = SaveDirName + "/" + subString;
 
-  double No2NoL = 1;
-
   // plotMin_ID is the range of the whole plot domain, it can
   // be larger
   // than the simulation domain on this processor.
@@ -47,7 +45,10 @@ void PlotWriter::init() {
     subString.erase(0, 2);
     ss << subString;
     ss >> plotMin_D[idx];
-    plotMin_D[idx] = plotMin_D[idx] * No2NoL - axisOrigin_D[idx];
+
+    // The plotMin_D/plotMax_D values read from the #SAVEPLOT command is in
+    // BATSRUS/SWMF IO unit.
+    plotMin_D[idx] = plotMin_D[idx] * No2NoL;
     plotMax_D[idx] = plotMin_D[idx] + 1e-10;
 
     for (int iDim = 0; iDim < nDimMax; ++iDim) {
@@ -65,8 +66,8 @@ void PlotWriter::init() {
 
   } else if (subString.substr(0, 3) == "cut") {
     for (int iDim = 0; iDim < nDimMax; ++iDim) {
-      plotMin_D[iDim] = plotMin_D[iDim] * No2NoL - axisOrigin_D[iDim];
-      plotMax_D[iDim] = plotMax_D[iDim] * No2NoL - axisOrigin_D[iDim];
+      plotMin_D[iDim] = plotMin_D[iDim] * No2NoL;
+      plotMax_D[iDim] = plotMax_D[iDim] * No2NoL;
     }
   } else {
     if (isVerbose)
@@ -273,10 +274,7 @@ std::ostream& operator<<(std::ostream& coutIn, PlotWriter const& outputIn) {
          << outputIn.domainMax_D[outputIn.z_] << " \n"
          << "dx_D : " << outputIn.dx_D[outputIn.x_] << " "
          << outputIn.dx_D[outputIn.y_] << " " << outputIn.dx_D[outputIn.z_]
-         << " \n"
-         << "axisOrigin_D : " << outputIn.axisOrigin_D[outputIn.x_] << " "
-         << outputIn.axisOrigin_D[outputIn.y_] << " "
-         << outputIn.axisOrigin_D[outputIn.z_] << " \n";
+         << " \n";
   coutIn << "Variables : \n";
   for (std::string const& sTmp : outputIn.var_I)
     coutIn << sTmp << " \n";
@@ -434,10 +432,8 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
 
   outFile << "#PLOTRANGE\n";
   for (int i = 0; i < nDim; i++) {
-    outFile << (plotMinCorrected_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord"
-            << i << "Min\n";
-    outFile << (plotMaxCorrected_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord"
-            << i << "Max\n";
+    outFile << plotMinCorrected_D[i] * No2OutL << "\t coord" << i << "Min\n";
+    outFile << plotMaxCorrected_D[i] * No2OutL << "\t coord" << i << "Max\n";
   }
   outFile << "\n";
 
@@ -543,6 +539,9 @@ double PlotWriter::No2OutTable(std::string const& var) const {
   } else if (var.substr(0, 3) == "rho") {
     // density
     value = No2OutRho;
+  } else if (var.substr(0, 4) == "mass") {
+    // mass
+    value = No2OutRho * pow(No2OutL, 3);
   } else if (var.substr(0, 3) == "rgS") {
     // gyro-radius
     value = No2OutL;

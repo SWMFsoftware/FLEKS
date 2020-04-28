@@ -47,6 +47,8 @@ public:
             TimeCtr* const tcIn, const int speciesID, const amrex::Real charge,
             const amrex::Real mass, const amrex::IntVect& nPartPerCellIn);
 
+  amrex::BoxArray get_region_ba() const { return regionBA; }
+
   void set_region_ba(const amrex::BoxArray& in) {
     regionBA = in;
     boxRange_I.clear();
@@ -173,6 +175,10 @@ public:
 
   amrex::Real get_qom() { return charge / mass; }
 
+  int get_speciesID() const { return speciesID; }
+  amrex::Real get_charge() const { return charge; }
+  amrex::Real get_mass() const { return mass; }
+
 protected:
   int speciesID;
   RandNum randNum;
@@ -186,6 +192,16 @@ protected:
   amrex::IntVect nPartPerCell;
 
   TimeCtr* tc;
+};
+
+class IOParticles : public Particles {
+public:
+  IOParticles() = delete;
+
+  IOParticles(Particles& other, amrex::Geometry geomIO, amrex::Real no2outL = 1,
+              amrex::Real no2outV = 1, amrex::Real no2OutM = 1,
+              amrex::RealBox IORange = amrex::RealBox());
+  ~IOParticles() = default;
 };
 
 #endif

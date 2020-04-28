@@ -478,26 +478,51 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
   // know whether it is necessary at this point. --Yuxi
   write_amrex_field(pw, timeNow, iCycle, std::string(), dirName);
 
-  if (pw.get_plotString().find("3d") != std::string::npos) {
-    // Save all particles in the domain.
+  Vector<int> writeRealComp;
+  for (int i = 0; i < nReal; ++i) {
+    writeRealComp.push_back(1);
+  }
 
-    Vector<int> writeRealComp;
-    for (int i = 0; i < nReal; ++i) {
-      writeRealComp.push_back(1);
+  Vector<std::string> realCompNames;
+  realCompNames.resize(nReal);
+  realCompNames[Particles::iup_] = "velocity_x";
+  realCompNames[Particles::ivp_] = "velocity_y";
+  realCompNames[Particles::iwp_] = "velocity_z";
+  realCompNames[Particles::iqp_] = "weight";
+
+  Vector<int> writeIntComp;
+  Vector<std::string> intCompNames;
+
+  Geometry geomOut;
+  set_IO_geom(geomOut, pw);
+  Real no2outL = pw.No2OutTable("X");
+  Real no2outV = pw.No2OutTable("u");
+  Real no2outM = pw.No2OutTable("mass");
+
+  RealBox outRange;
+
+  if (pw.get_plotString().find("cut") != std::string::npos)
+    for (int iDim = 0; iDim < nDim; iDim++) {
+      outRange.setLo(iDim, pw.get_plotMin_D(iDim));
+      outRange.setHi(iDim, pw.get_plotMax_D(iDim));
     }
 
-    Vector<std::string> realCompNames;
-    realCompNames.resize(nReal);
-    realCompNames[Particles::iup_] = "velocity_x";
-    realCompNames[Particles::ivp_] = "velocity_y";
-    realCompNames[Particles::iwp_] = "velocity_z";
-    realCompNames[Particles::iqp_] = "weight";
+  IOParticles particlesOut(*parts[iSpecies].get(), geomOut, no2outL, no2outV,
+                           no2outM, outRange);
 
-    Vector<int> writeIntComp;
-    Vector<std::string> intCompNames;
+  particlesOut.WritePlotFile(dirName, "particle", writeRealComp, writeIntComp,
+                             realCompNames, intCompNames);
 
-    parts[iSpecies]->WritePlotFile(dirName, "particle", writeRealComp,
-                                   writeIntComp, realCompNames, intCompNames);
+  if (ParallelDescriptor::IOProcessor()) {
+    // Write FLEKS header
+    const std::string headerName = dirName + "/FLEKSHeader";
+    std::ofstream headerFile;
+    headerFile.open(headerName.c_str(), std::ios::out | std::ios::trunc);
+
+    if (!headerFile.good())
+      amrex::FileOpenFailed(headerName);
+
+    headerFile << pw.get_plotString() << "\n";
   }
 }
 
@@ -522,7 +547,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   Print() << "amrex::" << pw.get_amrex_filename(timeNow, iCycle) << std::endl;
 
   Geometry geomOut;
-  set_IO_geom(geomOut, pw);  
+  set_IO_geom(geomOut, pw);
 
   int nVarOut = 0;
 

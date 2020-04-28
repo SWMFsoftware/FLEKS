@@ -301,14 +301,14 @@ void Domain::init_time_ctr() {
 
       const Real *dx = geom.CellSize();
       writer.set_dx_D({ { dx[ix_], dx[iy_], dx[iz_] } });
-
-      writer.set_axisOrigin_D({ { 0, 0, 0 } });
       writer.set_nSpecies(nS);
       writer.set_units(fluidInterface->getNo2SiL(), fluidInterface->getNo2SiV(),
                        fluidInterface->getNo2SiB(),
                        fluidInterface->getNo2SiRho(),
                        fluidInterface->getNo2SiP(), fluidInterface->getNo2SiJ(),
                        fluidInterface->getrPlanet());
+      writer.set_No2NoL(fluidInterface->getMhdNo2NoL());
+
       writer.set_scalarValue_I(scalarVar_I);
       writer.set_scalarName_I(scalarName_I);
       //--------------------------------------------------

@@ -46,12 +46,6 @@ private:
   std::array<double, nDimMax> domainMin_D;
   std::array<double, nDimMax> domainMax_D;
 
-  // The MHD coordinates of the PIC origin in PIC units.
-  // Example: Assume (x0, y0, z0) is a point in PIC coordinates and PIC unit,
-  // then [(x0,y0,z0) + axisOrigin_D] * convert_to_MHD_unit is the location
-  // in MHD coordinates and MHD unit.
-  std::array<double, nDimMax> axisOrigin_D;
-
   // Cell size in PIC unit.
   std::array<double, nDimMax> dx_D;
 
@@ -87,6 +81,9 @@ private:
   double No2SiL, No2SiV, No2SiB, No2SiRho, No2SiP, No2SiJ;
   double rPlanet; // In SI unit.
 
+  // MHD NO -> PIC NO
+  double No2NoL;
+
   // The conversion for each var_I.
   std::vector<double> No2Out_I;
 
@@ -94,8 +91,7 @@ private:
   std::vector<double> scalarValue_I;
   std::vector<std::string> scalarName_I;
 
-
-  int particleSpecies; 
+  int particleSpecies;
   //-----------------------------------------------------------------
 
 public:
@@ -114,7 +110,6 @@ public:
         nSpecies(nSpeciesIn),
         domainMin_D({ { 1, 1, 1 } }),
         domainMax_D({ { -1, -1, -1 } }),
-        axisOrigin_D({ { 0, 0, 0 } }),
         dx_D({ { 0, 0, 0 } }),
         rank(0),
         nProcs(0),
@@ -134,6 +129,7 @@ public:
         No2SiP(1),
         No2SiJ(1),
         rPlanet(1),
+        No2NoL(1),
         nextWriteTime(0),
         nextWriteCycle(0),
         lastWriteTime(-1),
@@ -155,9 +151,9 @@ public:
   bool is_particle() const {
     return plotString.find("particles") != std::string::npos;
   }
-  int get_particleSpecies()const{
-    return particleSpecies; 
-  }
+  int get_particleSpecies() const { return particleSpecies; }
+  double get_plotMin_D(int iDim) const { return plotMin_D[iDim]; }
+  double get_plotMax_D(int iDim) const { return plotMax_D[iDim]; }
   /*----Get class member value end--------------------*/
 
   /*----Set class member value begin--------------------*/
@@ -169,6 +165,7 @@ public:
   void set_rank(const int in) { rank = in; }
   void set_nDim(const int in) { nDim = in; }
   void set_iRegion(const int in) { iRegion = in; }
+  void set_No2NoL(const double& in) { No2NoL = in; }
   void set_plotMin_D(const std::array<double, nDimMax>& in) { plotMin_D = in; }
   void set_plotMax_D(const std::array<double, nDimMax>& in) { plotMax_D = in; }
   void set_domainMin_D(const std::array<double, nDimMax>& in) {
@@ -176,9 +173,6 @@ public:
   }
   void set_domainMax_D(const std::array<double, nDimMax>& in) {
     domainMax_D = in;
-  }
-  void set_axisOrigin_D(const std::array<double, nDimMax>& in) {
-    axisOrigin_D = in;
   }
   void set_dx_D(const std::array<double, nDimMax>& in) { dx_D = in; }
   void set_units(const double No2SiLIn, const double No2SiVIn,

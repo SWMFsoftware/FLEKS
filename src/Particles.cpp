@@ -1404,3 +1404,44 @@ bool Particles::do_inject_particles_for_this_cell(
   Abort("do_inject_particles_for_this_cell:something is wrong!");
   return false; // to suppress compilation warning.
 }
+
+IOParticles::IOParticles(Particles& other, Geometry geomIO, Real no2outL,
+                         Real no2outV, Real no2outM, RealBox IORange)
+    : Particles(other.get_region_ba(), geomIO, other.ParticleDistributionMap(0),
+                other.ParticleBoxArray(0), nullptr, other.get_speciesID(),
+                other.get_charge(), other.get_mass(),
+                amrex::IntVect(-1, -1, -1)) {
+  const int lev = 0;
+
+  no2outM /= get_qom();
+
+  const bool doLimit = IORange.ok();  
+  const auto& plevelOther = other.GetParticles(lev);
+  auto& plevel = GetParticles(lev);
+  for (MFIter mfi = other.MakeMFIter(lev); mfi.isValid(); ++mfi) {
+    auto index = std::make_pair(mfi.index(), mfi.LocalTileIndex());
+
+    if (plevelOther.find(index) == plevelOther.end())
+      continue;
+
+    const auto& tileOther = plevelOther.at(index);
+
+    if (tileOther.numParticles() == 0)
+      continue;
+
+    const auto& aosOther = tileOther.GetArrayOfStructs();
+
+    for (auto p : aosOther) {
+      if (doLimit &&
+          !IORange.contains(RealVect(p.pos(ix_), p.pos(iy_), p.pos(iz_))))
+        continue;
+
+      for (int iDim = 0; iDim < nDim; iDim++) {
+        p.pos(ix_ + iDim) = no2outL * p.pos(ix_ + iDim);
+        p.rdata(iup_ + iDim) = no2outV * p.rdata(iup_ + iDim);
+      }      
+      p.rdata(iqp_) = no2outM * p.rdata(iqp_);
+      plevel[index].push_back(p);
+    }
+  }
+}
