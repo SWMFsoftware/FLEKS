@@ -674,9 +674,11 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
     const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
 
     const Array4<int const>& status = cellStatus[pti].array();
+    // cellStatus[pti] is a FAB, and the box returned from the box() method
+    // already contains the ghost cells.
     const Box& bx = cellStatus[pti].box();
-    const IntVect lowCorner = bx.smallEnd() - cellStatus.nGrowVect();
-    const IntVect highCorner = bx.bigEnd() + cellStatus.nGrowVect();
+    const IntVect lowCorner = bx.smallEnd();
+    const IntVect highCorner = bx.bigEnd();
 
     auto& particles = pti.GetArrayOfStructs();
     for (auto& p : particles) {
@@ -779,8 +781,8 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
 
     const Array4<int const>& status = cellStatus[pti].array();
     const Box& bx = cellStatus[pti].box();
-    const IntVect lowCorner = bx.smallEnd() - cellStatus.nGrowVect();
-    const IntVect highCorner = bx.bigEnd() + cellStatus.nGrowVect();
+    const IntVect lowCorner = bx.smallEnd();
+    const IntVect highCorner = bx.bigEnd();
 
     auto& particles = pti.GetArrayOfStructs();
 
@@ -1124,8 +1126,8 @@ void Particles::combine_particles(Real limit) {
         for (int kCell = 0; kCell < nCell; kCell++) {
           std::sort(phasePartIdx_III[iCell][jCell][kCell].begin(),
                     phasePartIdx_III[iCell][jCell][kCell].end(),
-                    [& particles = particles, ix_ = ix_](const int& idl,
-                                                         const int& idr) {
+                    [&particles = particles, ix_ = ix_](const int& idl,
+                                                        const int& idr) {
                       return particles[idl].rdata(ix_) >
                              particles[idr].rdata(ix_);
                     });
@@ -1415,7 +1417,7 @@ IOParticles::IOParticles(Particles& other, Geometry geomIO, Real no2outL,
 
   no2outM /= get_qom();
 
-  const bool doLimit = IORange.ok();  
+  const bool doLimit = IORange.ok();
   const auto& plevelOther = other.GetParticles(lev);
   auto& plevel = GetParticles(lev);
   for (MFIter mfi = other.MakeMFIter(lev); mfi.isValid(); ++mfi) {
@@ -1439,7 +1441,7 @@ IOParticles::IOParticles(Particles& other, Geometry geomIO, Real no2outL,
       for (int iDim = 0; iDim < nDim; iDim++) {
         p.pos(ix_ + iDim) = no2outL * p.pos(ix_ + iDim);
         p.rdata(iup_ + iDim) = no2outV * p.rdata(iup_ + iDim);
-      }      
+      }
       p.rdata(iqp_) = no2outM * p.rdata(iqp_);
       plevel[index].push_back(p);
     }

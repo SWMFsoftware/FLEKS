@@ -144,8 +144,8 @@ public:
       auto& particles = pti.GetArrayOfStructs();
       const amrex::Array4<int const>& status = cellStatus[pti].array();
       const amrex::Box& bx = cellStatus[pti].box();
-      const amrex::IntVect lowCorner = bx.smallEnd() - cellStatus.nGrowVect();
-      const amrex::IntVect highCorner = bx.bigEnd() + cellStatus.nGrowVect();
+      const amrex::IntVect lowCorner = bx.smallEnd();
+      const amrex::IntVect highCorner = bx.bigEnd();
       for (auto& p : particles) {
         if (is_outside_ba(p, status, lowCorner, highCorner)) {
           p.id() = -1;
