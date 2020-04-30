@@ -512,18 +512,6 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
 
   particlesOut.WritePlotFile(dirName, "particle", writeRealComp, writeIntComp,
                              realCompNames, intCompNames);
-
-  if (ParallelDescriptor::IOProcessor()) {
-    // Write FLEKS header
-    const std::string headerName = dirName + "/FLEKSHeader";
-    std::ofstream headerFile;
-    headerFile.open(headerName.c_str(), std::ios::out | std::ios::trunc);
-
-    if (!headerFile.good())
-      amrex::FileOpenFailed(headerName);
-
-    headerFile << pw.get_plotString() << "\n";
-  }
 }
 
 void Pic::set_IO_geom(amrex::Geometry& geomIO, const PlotWriter& pw) {
@@ -670,6 +658,19 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
   WriteSingleLevelPlotfile(filename, centerMF, varNames, geomOut, timeNow,
                            iCycle);
+
+  if (ParallelDescriptor::IOProcessor()) {
+    // Write FLEKS header
+    const std::string headerName = filename + "/FLEKSHeader";
+    std::ofstream headerFile;
+    headerFile.open(headerName.c_str(), std::ios::out | std::ios::trunc);
+
+    if (!headerFile.good())
+      amrex::FileOpenFailed(headerName);
+
+    headerFile << pw.get_plotString() << "\n";
+    headerFile << fluidInterface->getrPlanet() << "\n";
+  }
 }
 
 //==========================================================
