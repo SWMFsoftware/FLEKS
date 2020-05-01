@@ -15,8 +15,53 @@ e_units = "code_magnetic * code_velocity"
 rho_units = "code_density"
 mass_units = "code_mass"
 
-class FLEKSFieldInfo(FieldInfoContainer):
+plot_unit_planet = {
+    "rho": "amu/cm**3",
+    "ux": "km/s",
+    "uy": "km/s",
+    "uz": "km/s",
+    "pxx": "nPa",
+    "pxy": "nPa",
+    "pxz": "nPa",
+    "pyy": "nPa",
+    "pyz": "nPa",
+    "pzz": "nPa",
+    "Bx": "nT",
+    "By": "nT",
+    "Bz": "nT",
+    "Ex": "nT*km/s",
+    "Ey": "nT*km/s",
+    "Ez": "nT*km/s",
+    "X": "Radius",
+    "Y": "Radius",
+    "Z": "Radius"
+}
 
+plot_unit_si = {
+    "rho": "kg/m**3",
+    "ux": "m/s",
+    "uy": "m/s",
+    "uz": "m/s",
+    "pxx": "Pa",
+    "pxy": "Pa",
+    "pxz": "Pa",
+    "pyy": "Pa",
+    "pyz": "Pa",
+    "pzz": "Pa",
+    "Bx": "T",
+    "By": "T",
+    "Bz": "T",
+    "Ex": "T*m/s",
+    "Ey": "T*m/s",
+    "Ez": "T*m/s",
+    "X": "m",
+    "Y": "m",
+    "Z": "m",
+}
+
+
+class FLEKSFieldInfo(FieldInfoContainer):
+    # TODO: find a way to avoid repeating s0, s1...
     known_other_fields = (
         ("Bx", (b_units,   [], None)),
         ("By", (b_units,   [], None)),
@@ -43,7 +88,7 @@ class FLEKSFieldInfo(FieldInfoContainer):
         ("pzzs1", (p_units, [], r"P_{zz}")),
         ("pxys1", (p_units, [], r"P_{xy}")),
         ("pxzs1", (p_units, [], r"P_{xz}")),
-        ("pyzs1", (p_units, [], r"P_{yz}")),    
+        ("pyzs1", (p_units, [], r"P_{yz}")),            
     )
 
     known_particle_fields = (
@@ -149,27 +194,15 @@ class FLEKSDataset(BoxlibDataset):
         fleks_header = os.path.join(self.output_dir, "FLEKSHeader")
         with open(fleks_header, "r") as f:
             plot_string = f.readline().lower()
-            self.radius = float(f.readline())
-
-        self.code_length = 1 # m
-        self.code_velocity = 1 # m/s
-        self.code_mass = 1 # kg 
-        self.code_density = 1 # kg/m^3 
-        self.code_magnetic = 1 # T
-        #self.code_electric = 1 # v/m 
-        self.code_pressure = 1 # Pa
+            self.radius = float(f.readline()) # should be in unit [m]
+        
+        # It seems the second argument should be in the unit of cm. 
+        self.unit_registry.add('Radius', 100*self.radius,yt.units.dimensions.length) 
 
         if plot_string.find("si") != -1:
             self.parameters["fleks_unit"] = "si"
         elif plot_string.find("planet") != -1:
-            self.parameters["fleks_unit"] = "planet"
-            self.code_length = self.radius
-            self.code_velocity = 1e3 # km/s
-            self.code_mass =  1.66054e-27 # amu
-            self.code_density = 1.66054e-21 # amu/cc 
-            self.code_magnetic = 1e-9 # nT
-            #self.code_electric = self.code_magnetic * self.code_velocity # v/m  
-            self.code_pressure = 1e-9 # nPa           
+            self.parameters["fleks_unit"] = "planet"      
         elif plot_string.find("pic") != -1:
             self.parameters["fleks_unit"] = "pic"
         else:
@@ -185,25 +218,77 @@ class FLEKSDataset(BoxlibDataset):
             self.particle_types = ()
             self.particle_types_raw = ()
 
-    def _set_code_unit_attributes(self):
-        setdefaultattr(self, 'length_unit', self.quan(self.code_length, "m"))
-        setdefaultattr(self, 'mass_unit', self.quan(self.code_mass, "kg"))
-        setdefaultattr(self, 'time_unit', self.quan(1, "s"))
-        setdefaultattr(self, 'velocity_unit', self.quan(self.code_velocity, "m/s"))
-        setdefaultattr(self, 'magnetic_unit', self.quan(self.code_magnetic, "T"))
-        setdefaultattr(self, 'density_unit', self.quan(self.code_density, "kg/m**3"))
-        setdefaultattr(self, 'pressure_unit', self.quan(self.code_pressure, "Pa"))
+    def _set_code_unit_attributes(self): 
+        # TODO: just need to change the unit of each variables for 
+        # different unit_system, and the code will be shorter. 
+        if self.parameters["fleks_unit"] == "planet":
+            setdefaultattr(self, 'time_unit', self.quan(1, "s"))
+            setdefaultattr(self, 'length_unit', self.quan(1, "Radius"))
+            setdefaultattr(self, 'mass_unit', self.quan(1, "amu"))        
+            setdefaultattr(self, 'velocity_unit', self.quan(1, "km/s"))
+            setdefaultattr(self, 'magnetic_unit', self.quan(1, "nT"))
+            setdefaultattr(self, 'density_unit', self.quan(1, "amu/cm**3"))
+            setdefaultattr(self, 'pressure_unit', self.quan(1, "nPa"))
+        elif self.parameters["fleks_unit"] == "si":
+            setdefaultattr(self, 'time_unit', self.quan(1, "s"))
+            setdefaultattr(self, 'length_unit', self.quan(1, "m"))
+            setdefaultattr(self, 'mass_unit', self.quan(1, "kg"))        
+            setdefaultattr(self, 'velocity_unit', self.quan(1, "m/s"))
+            setdefaultattr(self, 'magnetic_unit', self.quan(1, "T"))
+            setdefaultattr(self, 'density_unit', self.quan(1, "kg/m**3"))
+            setdefaultattr(self, 'pressure_unit', self.quan(1, "Pa"))
+        else: 
+            setdefaultattr(self, 'time_unit', self.quan(1, "unitary"))
+            setdefaultattr(self, 'length_unit', self.quan(1, "unitary"))
+            setdefaultattr(self, 'mass_unit', self.quan(1, "unitary"))        
+            setdefaultattr(self, 'velocity_unit', self.quan(1, "unitary"))
+            setdefaultattr(self, 'magnetic_unit', self.quan(1, "unitary"))
+            setdefaultattr(self, 'density_unit', self.quan(1, "unitary"))
+            setdefaultattr(self, 'pressure_unit', self.quan(1, "unitary"))
 
-ds = FLEKSDataset("res/run4/PC/3d_fluid*0_amrex")
-print("bx_min = ", ds.r['Bx'].v.min())
-print("bx_max = ", ds.r['Bx'].v.max())
-splt=yt.SlicePlot(ds,"z","pxxs0")   
-splt.set_log("pxxs0", False)
-splt.set_unit('pxxs0', 'nPa')
-splt.set_axes_unit("code_length")
-splt.set_xlabel("X")
-# splt.set_zlim("pxxs0", 7e-5, 9e-5)
-splt.save()
+
+
+    def get_plot_unit(self, var, unit_type="planet"):
+        if var[-1].isdigit():
+            # Example: pxxs0 -> pxx
+            var = var[0:-2]
+
+        if unit_type=="planet":
+            return plot_unit_planet[var]
+        else:
+            return plot_unit_si[var]
+
+    def plot_slice(self, norm, cut_loc, vars, unit_type="planet", *args, **kwargs):
+        r"""Plot 2D slice
+
+        Parameters
+        ----------
+        norm : string, one of 'x', 'y' or 'z'. Norm direction of the slice. 
+
+        cut_loc : float. The location of the slice. 
+
+        vars : a list of plotting variables. Example: ["Bx", "rhos0"]
+
+        unit_type : The unit system of the plots. "planet" or "si". 
+        """
+
+        center = self.domain_center 
+        idir = "xyz".find(norm.lower())
+        center[idir] = cut_loc 
+        splt=yt.SlicePlot(self, norm, fields=vars, center=center, *args, **kwargs)   
+        for var in vars:
+            splt.set_log(var, False)
+            splt.set_unit(var, self.get_plot_unit(var, unit_type))
+
+        splt.set_axes_unit(self.get_plot_unit("X", unit_type))
+        splt.save()
+
+
+ds = FLEKSDataset("3d_var_region0_2_t00010019_n00000500_amrex")
+vars=["rhos0","uzs0", "Bz", "pxxs1", "Ex"]
+ds.plot_slice("z", -3.0, vars)
+#print(var+"_min = ", ds.r[var].v.min())
+#print(var+"_max = ", ds.r[var].v.max())
 
 if False:
     filename = glob.glob('PC/plots/3d_particle_*0000_amrex')[0]
