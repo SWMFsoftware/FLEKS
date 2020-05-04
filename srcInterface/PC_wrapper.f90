@@ -31,8 +31,7 @@ module PC_wrapper
 
   ! Local variables
   integer:: nDim
-  integer:: iProc
-  real   :: DtSi
+  integer:: iProc  
 
 contains
 
@@ -100,9 +99,7 @@ contains
     real,     intent(in) :: TimeSimulation   ! seconds from start time
 
     character(len=*), parameter :: NameSub='PC_init_session'
-    !--------------------------------------------------------------------------
-
-    call pic_init(TimeSimulation)
+    !--------------------------------------------------------------------------    
 
   end subroutine PC_init_session
 
@@ -144,36 +141,26 @@ contains
     !INPUT ARGUMENTS:
     real, intent(in):: TimeSimulationLimit ! simulation time not to be exceeded
 
-    real:: Dt, Time
+    real:: Dt, PicTime
 
     logical:: DoTest, DoTestMe
     character(len=*), parameter :: NameSub='PC_run'
     !--------------------------------------------------------------------------
     call CON_set_do_test(NameSub, DoTest, DoTestMe)
 
+    DoTestMe = .true.
     if(DoTestMe)write(*,*) NameSub, &
          ' starting with TimeSimulation, TimeSimulationLimit=', &
          TimeSimulation, TimeSimulationLimit
 
-    call pic_cal_dt(DtSi)
-    
-    !! Sync timestep with the wrapper
+     call pic_run(PicTime)
 
-    ! Dt = TimeSimulationLimit - TimeSimulation
-    ! if(DtSi > Dt .and. Dt >= 0.0 ) then 
-    !     DtSi =  Dt 
-    !  end if
+    TimeSimulation = PicTime
 
-     ! set the right time step
-     !call pic_set_dt(DtSi)
-     
-     if(DtSi>0) call pic_run(Time)
-
-    TimeSimulation = TimeSimulation + DtSi    
 
     if(DoTestMe)write(*,*) NameSub, &
-         ' finishing with TimeSimulation, DtSi=', &
-         TimeSimulation, DtSi
+         ' finishing with TimeSimulation =', &
+         TimeSimulation
 
   end subroutine PC_run
 
@@ -191,18 +178,6 @@ contains
     !--------------------------------------------------------------------------
    nDimOut    = nDim
    call pic_get_grid_info(iGridOut, iDecompOut); 
-
-    ! Report back GM's nDim to the point coupler
-
-   !  if(IsFirstTime)then
-   !     iGridOut   = 1
-   !     iDecompOut = 1
-   !  else
-   !     iGridOut   = 2
-   !     iDecompOut = 2
-   !  end if
-   !  IsFirstTime = .false.
-
   end subroutine PC_get_grid_info
   !============================================================================
   subroutine PC_put_from_gm_dt(DtSiIn)
@@ -211,24 +186,6 @@ contains
 
     character(len=*), parameter :: NameSub = 'PC_put_from_gm_dt'
     !--------------------------------------------------------------------------
-
-    ! How the IPIC3D time step is determined?
-    ! 1) PC_put_from_gm_dt calls pic_set_swmf_dt to send the dt (SWMFDt),
-    !    which is decided by SWMF coupling frequency, to IPIC3D.
-    ! 2) PC_run calls pic_cal_dt, which calculate dt (PICDt) based on PC command
-    !    #TIMESTEPPING. If useSWMFDt (see InterfaceFluid.h) is true, PICDt equals to
-    !    SWMFDt.
-    ! 3) Inside PC_run, correct PICDt to satisfy the time limit. Call
-    !    pic_set_dt to set the corrected dt for PIC. 
-
-    ! Store the time step, set it when we do PC_run
-
-
-
-    ! DtSi = DtSiIn
-
-    ! call pic_set_swmf_dt(DtSi)
-
   end subroutine PC_put_from_gm_dt
     !============================================================================
   subroutine PC_put_from_gm_grid_info(nInt, Int_I)

@@ -13,9 +13,7 @@
 using namespace amrex;
 
 //==========================================================
-void Pic::init(Real timeIn, const std::string& paramString, int* paramInt,
-               double* gridDim, double* paramReal,
-               std::shared_ptr<FluidInterface>& fluidIn,
+void Pic::init(std::shared_ptr<FluidInterface>& fluidIn,
                std::shared_ptr<TimeCtr>& tcIn) {
   tc = tcIn;
   fluidInterface = fluidIn;

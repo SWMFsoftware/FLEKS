@@ -14,20 +14,16 @@ void Domain::update() {
 };
 
 //========================================================
-void Domain::init(amrex::Real timeIn, const std::string &paramString,
-                  int *paramInt, double *gridDim, double *paramReal,
-                  int iDomain) {
+void Domain::init(const std::string &paramString, int *paramInt,
+                  double *gridDim, double *paramReal, int iDomain) {
   if (AMREX_SPACEDIM != 3)
     Abort("Error: AMReX should be compiled with 3D configuration!!");
-
-  tc->set_time_si(timeIn);
 
   fluidInterface->init();
   fluidInterface->receive_info_from_gm(paramInt, gridDim, paramReal,
                                        paramString);
 
-  pic.init(timeIn, paramString, paramInt, gridDim, paramReal, fluidInterface,
-           tc);
+  pic.init(fluidInterface, tc);
 
   read_param();
 

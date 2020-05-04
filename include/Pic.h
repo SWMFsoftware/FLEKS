@@ -110,9 +110,7 @@ public:
   void set_doRestart(bool in) { doRestart = in; }
 
   //--------------Initialization begin-------------------------------
-  void init(amrex::Real timeIn, const std::string &paramString, int *paramInt,
-            double *gridDim, double *paramReal,
-            std::shared_ptr<FluidInterface> &fluidIn,
+  void init(std::shared_ptr<FluidInterface> &fluidIn,
             std::shared_ptr<TimeCtr> &tcIn);
 
   void set_geom(int nGstIn, const amrex::Geometry &geomIn);

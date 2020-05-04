@@ -19,19 +19,12 @@ std::string paramString;
 bool isFirstSession = true;
 bool isInitialized = false;
 
-double timenow = 0;
-
 int pic_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc) {
   // fortran communicator tranlated to C comunicator
   MPI_Comm c_iComm = MPI_Comm_f2c(*iComm);
 
   amrex::Initialize(c_iComm);
 
-  return 0;
-}
-
-int pic_init_(double *inittime) {
-  timenow = *inittime;
   return 0;
 }
 
@@ -58,7 +51,7 @@ int pic_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
 
   int nParamRegion = 21;
   for (int i = 0; i < FLEKSs.size(); i++) {
-    FLEKSs(i).init(timenow, paramString, paramint, &paramreal[i * nParamRegion],
+    FLEKSs(i).init(paramString, paramint, &paramreal[i * nParamRegion],
                    &paramreal[nDomain * nParamRegion], i);
   }
 
@@ -74,10 +67,9 @@ int pic_finalize_init_() {
 }
 
 int pic_run_(double *time) {
-  double timenow = *time;
 
   for (int i = 0; i < FLEKSs.size(); i++) {
-    FLEKSs.select(i); 
+    FLEKSs.select(i);
     FLEKSs(i).update();
     *time = (double)(FLEKSs(i).tc->get_time_si());
   }
