@@ -165,7 +165,7 @@ contains
     !  end if
 
      ! set the right time step
-     call pic_set_dt(DtSi)
+     !call pic_set_dt(DtSi)
      
      if(DtSi>0) call pic_run(Time)
 

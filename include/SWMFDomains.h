@@ -1,12 +1,12 @@
 #ifndef _SWMFDOMAINS_H_
 #define _SWMFDOMAINS_H_
 
-#include <vector>
-#include <mpi.h>
 #include <AMReX_Vector.H>
+#include <mpi.h>
+#include <vector>
 
-#include "Domain.h"
+#include "Domains.h"
 
-extern std::vector<Domain*> FLEKSs;
+extern Domains FLEKSs;
 
 #endif

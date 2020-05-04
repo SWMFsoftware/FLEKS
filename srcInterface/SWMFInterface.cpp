@@ -11,8 +11,7 @@
 
 #include "ReadParam.h"
 
-std::vector<Domain *> FLEKSs;
-// Domain *FLEKSs;
+Domains FLEKSs;
 
 // // The string contains the param.in
 std::string paramString;
@@ -54,15 +53,13 @@ int pic_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
   int nDim = paramint[0];
 
   const int nDomain = paramint[1];
-
-  Domain *tmp = new Domain();
-  FLEKSs.push_back(tmp);
+  for (int iDomain = 0; iDomain < nDomain; iDomain++)
+    FLEKSs.add_new_domain();
 
   int nParamRegion = 21;
-  for (int i = 0; i < nDomain; i++) {
-    FLEKSs[0]->init(timenow, paramString, paramint,
-                    &paramreal[i * nParamRegion],
-                    &paramreal[nDomain * nParamRegion], i);
+  for (int i = 0; i < FLEKSs.size(); i++) {
+    FLEKSs(i).init(timenow, paramString, paramint, &paramreal[i * nParamRegion],
+                   &paramreal[nDomain * nParamRegion], i);
   }
 
   isInitialized = true;
@@ -71,75 +68,88 @@ int pic_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
 }
 
 int pic_finalize_init_() {
-  FLEKSs[0]->set_ic();
+  for (int i = 0; i < FLEKSs.size(); i++)
+    FLEKSs(i).set_ic();
   return 0;
 }
 
 int pic_run_(double *time) {
   double timenow = *time;
 
-  FLEKSs[0]->update();
-
-  *time = (double)(FLEKSs[0]->tc->get_time_si());
+  for (int i = 0; i < FLEKSs.size(); i++) {
+    FLEKSs.select(i); 
+    FLEKSs(i).update();
+    *time = (double)(FLEKSs(i).tc->get_time_si());
+  }
 
   return 0;
 }
 
 int pic_save_restart_() {
-  FLEKSs[0]->save_restart();
+  for (int i = 0; i < FLEKSs.size(); i++)
+    FLEKSs(i).save_restart();
   return 0;
 }
 
 int pic_get_ngridpoints_(int *nPoint) {
-  *nPoint = FLEKSs[0]->get_grid_nodes_number();
+  for (int i = 0; i < FLEKSs.size(); i++)
+    *nPoint = FLEKSs(i).get_grid_nodes_number();
   return 0;
 }
 
 int pic_get_grid_(double *Pos_DI, int *n) {
-  FLEKSs[0]->get_grid(Pos_DI);
+  for (int i = 0; i < FLEKSs.size(); i++)
+    FLEKSs(i).get_grid(Pos_DI);
   return 0;
 }
 
 int pic_set_state_var_(double *Data_VI, int *iPoint_I) {
-  FLEKSs[0]->set_state_var(Data_VI, iPoint_I);
+  for (int i = 0; i < FLEKSs.size(); i++)
+    FLEKSs(i).set_state_var(Data_VI, iPoint_I);
   return 0;
 }
 
 int pic_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
                        int *nVar) {
-  FLEKSs[0]->get_fluid_state_for_points(*nDim, *nPoint, Xyz_I, data_I, *nVar);
+  for (int i = 0; i < FLEKSs.size(); i++)
+    FLEKSs(i).get_fluid_state_for_points(*nDim, *nPoint, Xyz_I, data_I, *nVar);
   return 0;
 }
 
 int pic_find_points_(int *nPoint, double *Xyz_I, int *iProc_I) {
-  FLEKSs[0]->find_mpi_rank_for_points(*nPoint, Xyz_I, iProc_I);
+  for (int i = 0; i < FLEKSs.size(); i++)
+    FLEKSs(i).find_mpi_rank_for_points(*nPoint, Xyz_I, iProc_I);
   return 0;
 }
 
 int pic_set_dt_(double *DtSi) {
-  FLEKSs[0]->tc->set_dt_si(*DtSi);
+  for (int i = 0; i < FLEKSs.size(); i++)
+    FLEKSs(i).tc->set_dt_si(*DtSi);
   return 0;
 }
 
 int pic_cal_dt_(double *dtOut) {
-  *dtOut = FLEKSs[0]->tc->get_dt_si();
+  for (int i = 0; i < FLEKSs.size(); i++)
+    *dtOut = FLEKSs(i).tc->get_dt_si();
   return 0;
 }
 
 int pic_get_grid_info_(int *iGrid, int *iDecomp) {
-  (*iGrid) = FLEKSs[0]->get_iGrid();
-  (*iDecomp) = FLEKSs[0]->get_iDecomp();
+  (*iGrid) = 0;
+  (*iDecomp) = 0;
+  for (int i = 0; i < FLEKSs.size(); i++) {
+    (*iGrid) += FLEKSs(i).get_iGrid();
+    (*iDecomp) += FLEKSs(i).get_iDecomp();
+  }
   return 0;
 }
 
 int pic_end_() {
   {
     // Saving plots before exiting.
-    FLEKSs[0]->write_plots(true);
+    for (int i = 0; i < FLEKSs.size(); i++)
+      FLEKSs(i).write_plots(true);
 
-    for (auto& FLEKS : FLEKSs) {
-      delete FLEKS;
-    }
     FLEKSs.clear();
 
     // BL_PROFILE_VAR_STOP(pmain);
@@ -153,8 +163,10 @@ int pic_end_() {
 }
 
 int pic_set_grid_info_(int *nInt, int *status) {
-  FLEKSs[0]->receive_grid_info(status);
-  FLEKSs[0]->regrid();
+  for (int i = 0; i < FLEKSs.size(); i++) {
+    FLEKSs(i).receive_grid_info(status);
+    FLEKSs(i).regrid();
+  }
 
   return 0;
 }
