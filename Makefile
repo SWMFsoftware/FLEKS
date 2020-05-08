@@ -12,11 +12,13 @@ help:
 	@echo 'make distclean              - remove all files not part of CVS'
 	@echo
 
+include/show_git_info.h: include/show_git_info.h.orig
+	cp -f include/show_git_info.h.orig include/show_git_info.h
 
-GITINFO:
+GITINFO: include/show_git_info.h
 	${SCRIPTDIR}/gitall -r=c > include/show_git_info.h
 
-FLEKS: GITINFO
+FLEKS: GITINFO 
 	cd src; ${MAKE} EXE
 
 bin:
