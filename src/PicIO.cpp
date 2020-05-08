@@ -364,26 +364,29 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
 //==========================================================
 void Pic::save_restart_data() {
   std::string restartDir = "PC/restartOUT/";
-  VisMF::Write(nodeE, restartDir + "nodeE");
-  VisMF::Write(nodeB, restartDir + "nodeB");
-  VisMF::Write(centerB, restartDir + "centerB");
+  VisMF::Write(nodeE, restartDir + domainName + "_nodeE");
+  VisMF::Write(nodeB, restartDir + domainName + "_nodeB");
+  VisMF::Write(centerB, restartDir + domainName + "_centerB");
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     parts[iPart]->label_particles_outside_ba();
     parts[iPart]->Redistribute();
-    parts[iPart]->Checkpoint(restartDir, "particles" + std::to_string(iPart));
+    parts[iPart]->Checkpoint(restartDir,
+                             domainName + "_particles" + std::to_string(iPart));
   }
   inject_particles_for_boundary_cells();
 }
 
 //==========================================================
 void Pic::save_restart_header(std::ofstream& headerFile) {
+  std::string command_suffix = "_" + domainName + "\n";
+
   if (ParallelDescriptor::IOProcessor()) {
-    headerFile << "#ELECTRON\n";
+    headerFile << "#ELECTRON"+command_suffix;
     headerFile << qomEl << "\t qomEl\n";
     headerFile << "\n";
 
-    headerFile << "#PARTICLES\n";
+    headerFile << "#PARTICLES"+command_suffix;
     for (int i = 0; i < nDim; ++i) {
       headerFile << nPartPerCell[i] << "\n";
     }
@@ -396,12 +399,13 @@ void Pic::read_restart() {
   Print() << "Pic::read_restart() start....." << std::endl;
 
   std::string restartDir = "PC/restartIN/";
-  VisMF::Read(nodeE, restartDir + "nodeE");
-  VisMF::Read(nodeB, restartDir + "nodeB");
-  VisMF::Read(centerB, restartDir + "centerB");
+  VisMF::Read(nodeE, restartDir + domainName + "_nodeE");
+  VisMF::Read(nodeB, restartDir + domainName + "_nodeB");
+  VisMF::Read(centerB, restartDir + domainName + "_centerB");
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
-    parts[iPart]->Restart(restartDir, "particles" + std::to_string(iPart));
+    parts[iPart]->Restart(restartDir,
+                          domainName + "_particles" + std::to_string(iPart));
   }
   inject_particles_for_boundary_cells();
 

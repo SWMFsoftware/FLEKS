@@ -22,15 +22,16 @@ void Domain::init(const std::string &paramString, int *paramInt,
   domainID = iDomain;
   {
     std::stringstream ss;
-    ss << "FLEKS " << domainID << ": ";
-    printPrefix = ss.str();
+    ss << "FLEKS" << domainID;
+    domainName = ss.str();
+    printPrefix = domainName + ": ";
   }
 
-  fluidInterface->init();
+  fluidInterface->init(domainID);
   fluidInterface->receive_info_from_gm(paramInt, gridDim, paramReal,
                                        paramString);
 
-  pic.init(fluidInterface, tc, printPrefix);
+  pic.init(fluidInterface, tc, domainID);
 
   read_param();
 
@@ -178,7 +179,7 @@ void Domain::read_restart() {
   std::string restartDir = "PC/restartIN/";
 
   MultiFab tmp;
-  VisMF::Read(tmp, restartDir + "centerB");
+  VisMF::Read(tmp, restartDir + domainName + "_centerB");
   BoxArray baPic = tmp.boxArray();
   DistributionMapping dmPic = tmp.DistributionMap();
 
@@ -218,7 +219,7 @@ void Domain::save_restart_header() {
 
     headerFile.rdbuf()->pubsetbuf(ioBuffer.dataPtr(), ioBuffer.size());
 
-    std::string headerFileName("PC/restartOUT/restart.H");
+    std::string headerFileName("PC/restartOUT/" + domainName + "_restart.H");
 
     headerFile.open(headerFileName.c_str(),
                     std::ofstream::out | std::ofstream::trunc);
@@ -230,26 +231,28 @@ void Domain::save_restart_header() {
     headerFile.precision(17);
 
     headerFile << "Restart header \n\n";
+    
+    std::string command_suffix = "_"+domainName+"\n"; 
 
-    headerFile << "#RESTART\n";
+    headerFile << "#RESTART"+command_suffix;
     headerFile << "T"
                << "\t doRestart\n";
     headerFile << "\n";
 
-    headerFile << "#NSTEP\n";
+    headerFile << "#NSTEP"+command_suffix;
     headerFile << tc->get_cycle() << "\t nStep\n";
     headerFile << "\n";
 
-    headerFile << "#TIMESIMULATION\n";
+    headerFile << "#TIMESIMULATION"+command_suffix;
     headerFile << tc->get_time_si() << "\t TimeSimulation\n";
     headerFile << "\n";
 
-    headerFile << "#TIMESTEP\n";
+    headerFile << "#TIMESTEP"+command_suffix;
     headerFile << tc->get_dt_si() << "\t dt\n";
     headerFile << "\n";
 
     // Geometry
-    headerFile << "#GEOMETRY\n";
+    headerFile << "#GEOMETRY"+command_suffix;
     for (int i = 0; i < nDim; ++i) {
       headerFile << domainRange.lo(i) << "\t min\n";
       headerFile << domainRange.hi(i) << "\t max\n";
@@ -257,7 +260,7 @@ void Domain::save_restart_header() {
     headerFile << "\n";
 
     // Cell
-    headerFile << "#NCELL\n";
+    headerFile << "#NCELL"+command_suffix;
     for (int i = 0; i < nDim; ++i) {
       headerFile << nCell[i] << "\n";
     }
@@ -333,12 +336,7 @@ void Domain::read_param() {
   ReadParam &readParam = fluidInterface->readParam;
   readParam.set_verbose(ParallelDescriptor::MyProc() == 0);
 
-  {
-    std::stringstream ss; 
-    ss<<"GRID"<<domainID; 
-    std::string suffix = ss.str();     
-    readParam.set_command_suffix(suffix); 
-  }
+  readParam.set_command_suffix(domainName);  
 
   while (readParam.get_next_command(command)) {
 

@@ -40,8 +40,8 @@ protected:
   int iDecomp;
 
   int domainID; 
-
   std::string printPrefix; 
+  std::string domainName; 
 
 public:
   DomainGrid() {

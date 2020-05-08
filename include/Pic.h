@@ -86,6 +86,8 @@ private:
   amrex::Real reSamplingHighLimit;
 
   std::string printPrefix;
+  std::string domainName;
+  int domainID;
 
   // public methods
 public:
@@ -114,8 +116,7 @@ public:
 
   //--------------Initialization begin-------------------------------
   void init(std::shared_ptr<FluidInterface> &fluidIn,
-            std::shared_ptr<TimeCtr> &tcIn,
-            const std::string &prefix = std::string());
+            std::shared_ptr<TimeCtr> &tcIn, int domainIDIn = 0);
 
   void set_geom(int nGstIn, const amrex::Geometry &geomIn);
 

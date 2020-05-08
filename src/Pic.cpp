@@ -14,10 +14,18 @@ using namespace amrex;
 
 //==========================================================
 void Pic::init(std::shared_ptr<FluidInterface>& fluidIn,
-               std::shared_ptr<TimeCtr>& tcIn, const std::string& prefix) {
+               std::shared_ptr<TimeCtr>& tcIn, int domainIDIn) {
   tc = tcIn;
   fluidInterface = fluidIn;
-  printPrefix = prefix;
+
+  domainID = domainIDIn;
+
+  {
+    std::stringstream ss;
+    ss << "FLEKS" << domainID;
+    domainName = ss.str();
+    printPrefix = domainName+": "; 
+  }
 }
 
 //==========================================================
