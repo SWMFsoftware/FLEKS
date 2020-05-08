@@ -332,6 +332,14 @@ void Domain::read_param() {
   std::string command;
   ReadParam &readParam = fluidInterface->readParam;
   readParam.set_verbose(ParallelDescriptor::MyProc() == 0);
+
+  {
+    std::stringstream ss; 
+    ss<<"GRID"<<domainID; 
+    std::string suffix = ss.str();     
+    readParam.set_command_suffix(suffix); 
+  }
+
   while (readParam.get_next_command(command)) {
 
     if (command == "#DIVE" || command == "#EFIELDSOLVER" ||
