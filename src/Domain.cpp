@@ -20,12 +20,17 @@ void Domain::init(const std::string &paramString, int *paramInt,
     Abort("Error: AMReX should be compiled with 3D configuration!!");
 
   domainID = iDomain;
+  {
+    std::stringstream ss;
+    ss << "FLEKS " << domainID << ": ";
+    printPrefix = ss.str();
+  }
 
   fluidInterface->init();
   fluidInterface->receive_info_from_gm(paramInt, gridDim, paramReal,
                                        paramString);
 
-  pic.init(fluidInterface, tc);
+  pic.init(fluidInterface, tc, printPrefix);
 
   read_param();
 
@@ -75,7 +80,7 @@ void Domain::make_grid() {
 
   geom.define(centerBox, &domainRange, coord, periodicity);
 
-  Print() << "Domain range = " << domainRange << std::endl;
+  Print() << printPrefix << "Domain range = " << domainRange << std::endl;
 
   pic.set_geom(nGst, geom);
   fluidInterface->set_geom(nGst, geom);
@@ -90,7 +95,7 @@ void Domain::regrid() {
   if (!gridInfo.is_grid_new())
     return;
 
-  Print() << nameFunc << " is runing..." << std::endl;
+  Print() << printPrefix << nameFunc << " is runing..." << std::endl;
 
   timing_func(nameFunc);
 
@@ -106,7 +111,7 @@ void Domain::regrid() {
   BoxArray baPic(picRegionBA);
 
   baPic.maxSize(maxBlockSize);
-  Print() << "=========Grid Information summary================="
+  Print() << "=====" << printPrefix << " Grid Information summary========="
           << "\n Number of Boxes to describe PIC = " << picRegionBA.size()
           << "\n Number of PIC boxes             = " << baPic.size()
           << "\n Number of PIC cells             = " << nCellPic
@@ -115,6 +120,9 @@ void Domain::regrid() {
           << nCellPic / centerBox.d_numPts()
           << "\n===================================================="
           << std::endl;
+  if (baPic.size() < ParallelDescriptor::NProcs()) {
+    Abort("Error: there are less blocks than the number of processors!");
+  }
 
   DistributionMapping dmPic(baPic);
   pic.regrid(picRegionBA, baPic, dmPic);
@@ -200,7 +208,8 @@ void Domain::save_restart_data() {
 //========================================================
 void Domain::save_restart_header() {
   if (ParallelDescriptor::IOProcessor()) {
-    Print() << "Saving restart file at time = " << tc->get_time_si() << " (s)"
+    Print() << printPrefix
+            << "Saving restart file at time = " << tc->get_time_si() << " (s)"
             << std::endl;
 
     VisMF::IO_Buffer ioBuffer(VisMF::IO_Buffer_Size);
@@ -311,7 +320,7 @@ void Domain::init_time_ctr() {
       writer.set_scalarName_I(scalarName_I);
       //--------------------------------------------------
       writer.init();
-      writer.print();
+      // writer.print();
     }
   }
 }

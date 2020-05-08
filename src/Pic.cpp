@@ -14,9 +14,10 @@ using namespace amrex;
 
 //==========================================================
 void Pic::init(std::shared_ptr<FluidInterface>& fluidIn,
-               std::shared_ptr<TimeCtr>& tcIn) {
+               std::shared_ptr<TimeCtr>& tcIn, const std::string& prefix) {
   tc = tcIn;
   fluidInterface = fluidIn;
+  printPrefix = prefix;
 }
 
 //==========================================================
@@ -59,7 +60,7 @@ void Pic::fill_new_cells() {
 
   timing_func(nameFunc);
 
-  Print() << nameFunc << std::endl;
+  Print() << printPrefix << nameFunc << std::endl;
 
   fill_E_B_fields();
   fill_particles();
@@ -86,7 +87,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   if (centerBAIn == centerBA)
     return;
 
-  Print() << nameFunc << " is runing..." << std::endl;
+  Print() << printPrefix << nameFunc << " is runing..." << std::endl;
   doNeedFillNewCell = true;
 
   picRegionBA = picRegionIn;
@@ -423,7 +424,7 @@ void Pic::particle_mover() {
 
   timing_func(nameFunc);
 
-  AllPrint() << "On proc = " << ParallelDescriptor::MyProc()
+  AllPrint() << printPrefix << "On proc = " << ParallelDescriptor::MyProc()
              << ", particle number of species 0 = "
              << parts[0]->TotalNumberOfParticles(false, true) << "\n";
 
@@ -455,7 +456,7 @@ void Pic::sum_moments() {
   for (int i = 0; i < nSpecies; i++) {
     PartInfo pinfo = parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, dt);
     plasmaEnergy[i] = pinfo.energy;
-    Print() << std::setprecision(5) << "Species " << i
+    Print() << printPrefix << std::setprecision(5) << "Species " << i
             << ": max(uth) = " << pinfo.uMax
             << ", CFL_x = " << pinfo.uMax * dt * invDx[ix_]
             << ", CFL_y = " << pinfo.uMax * dt * invDx[iy_]
@@ -478,8 +479,8 @@ void Pic::divE_correction() {
   for (int iIter = 0; iIter < 3; iIter++) {
     sum_to_center(true);
 
-    Print() << "\n----------- div(E) correction at iter " << iIter
-            << "----------" << std::endl;
+    Print() << "\n-----" << printPrefix << " div(E) correction at iter "
+            << iIter << "----------" << std::endl;
     calculate_phi(divESolver);
 
     divE_correct_particle_position();
@@ -616,9 +617,9 @@ void Pic::update() {
     // update time, step number.
     tc->update();
     const Real t1 = tc->get_time_si();
-    Print() << "\n================ Begin cycle = " << tc->get_cycle()
-            << " from t = " << t0 << " (s) to t = " << t1
-            << " (s) ======================" << std::endl;
+    Print() << "\n====== " << printPrefix
+            << " Begin cycle = " << tc->get_cycle() << " from t = " << t0
+            << " (s) to t = " << t1 << " (s) ========" << std::endl;
   }
 
   update_E();
@@ -645,7 +646,7 @@ void Pic::update() {
 
     // speedNorm is a value obtained from tests.
     Real speedNorm = 1000;
-    Print() << "Normalized PIC speed = " << speed / speedNorm
+    Print() << printPrefix << "Normalized PIC speed = " << speed / speedNorm
             << " (performance is good if the value >> 1 and bad if <<1 )"
             << std::endl;
   }
@@ -670,7 +671,8 @@ void Pic::update_E() {
     eSolver.xLeft[i] = 0;
   }
 
-  Print() << "\n----------- E solver ------------------" << std::endl;
+  Print() << "\n-------" << printPrefix << " E solver ------------------"
+          << std::endl;
   BL_PROFILE_VAR("Pic::E_iterate", eSolver);
   eSolver.solve();
   BL_PROFILE_VAR_STOP(eSolver);
@@ -997,13 +999,14 @@ void Pic::load_balance() {
   std::string nameFunc = "Pic::load_balance";
   timing_func(nameFunc);
 
-  Print() << "--------- Load balancing ------------" << std::endl;
+  Print() << printPrefix << "--------- Load balancing ------------"
+          << std::endl;
 
   // iDecomp++;
-  Print() << "before dm = " << dm << std::endl;
+  Print() << printPrefix << "before dm = " << dm << std::endl;
   compute_cost();
   dm = DistributionMapping::makeSFC(costMF, false);
-  Print() << "after dm = " << dm << std::endl;
+  Print() << printPrefix << "after dm = " << dm << std::endl;
 
   redistribute_FabArray(nodeE, dm);
   redistribute_FabArray(nodeEth, dm);

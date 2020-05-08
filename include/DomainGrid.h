@@ -41,6 +41,8 @@ protected:
 
   int domainID; 
 
+  std::string printPrefix; 
+
 public:
   DomainGrid() {
     iGrid = 1;

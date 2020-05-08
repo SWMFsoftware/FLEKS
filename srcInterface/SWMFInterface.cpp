@@ -170,7 +170,6 @@ int pic_set_grid_info_(int *nInt, int *accumulatedSize, int *status) {
     int idxStart = 0;
     if (i > 0)
       idxStart = accumulatedSize[i-1];
-    printf("pic_set_grid_info i = %d\n",i);
     FLEKSs(i).receive_grid_info(&status[idxStart]);
     FLEKSs(i).regrid();
   }

@@ -84,6 +84,9 @@ private:
   bool doReSampling;
   amrex::Real reSamplingLowLimit;
   amrex::Real reSamplingHighLimit;
+
+  std::string printPrefix;
+
   // public methods
 public:
   Pic() {
@@ -111,7 +114,8 @@ public:
 
   //--------------Initialization begin-------------------------------
   void init(std::shared_ptr<FluidInterface> &fluidIn,
-            std::shared_ptr<TimeCtr> &tcIn);
+            std::shared_ptr<TimeCtr> &tcIn,
+            const std::string &prefix = std::string());
 
   void set_geom(int nGstIn, const amrex::Geometry &geomIn);
 
