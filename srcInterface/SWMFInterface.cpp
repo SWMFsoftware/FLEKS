@@ -61,21 +61,58 @@ int pic_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
 }
 
 int pic_finalize_init_() {
-  for (int i = 0; i < FLEKSs.size(); i++){
-    FLEKSs.select(i); 
+  for (int i = 0; i < FLEKSs.size(); i++) {
+    FLEKSs.select(i);
     FLEKSs(i).set_ic();
   }
   return 0;
 }
 
 int pic_run_(double *time) {
+  // For multiple FLEKS domains/grids, some domains may need to run a few steps
+  // to make sure the time difference among the domains is within one step.
 
-  for (int i = 0; i < FLEKSs.size(); i++) {
-    FLEKSs.select(i);
-    FLEKSs(i).update();
-    *time = (double)(FLEKSs(i).tc->get_time_si());
+  bool needCheck = true;
+  double tMax = 0;
+
+  int iLoop = 0;
+
+  while (needCheck) {
+    for (int i = 0; i < FLEKSs.size(); i++) {
+      double domainTime = (double)(FLEKSs(i).tc->get_time_si());
+      double domainDt = (double)(FLEKSs(i).tc->get_dt_si());
+
+      needCheck = false;
+      if (iLoop == 0 || domainTime + domainDt <= tMax + 1e-10 * domainDt) {
+        // Update at least once, and a domain should be updated to a time that
+        // is close to but smaller or equal to tMax.
+        FLEKSs.select(i);
+        FLEKSs(i).update();
+        needCheck = true;
+      }
+
+      // Exit the for loop
+      if (!needCheck)
+        exit;
+
+      domainTime = (double)(FLEKSs(i).tc->get_time_si());
+
+      if (iLoop == 0) {
+        // Find out tMax for the first while loop.
+        if (i == 0) {
+          tMax = domainTime;
+        } else {
+          if (tMax < domainTime)
+            tMax = (domainTime);
+        }
+      }
+    }
+    iLoop++;
   }
 
+  // Not all domains have reached tMax, but the difference should be within one
+  // step.
+  (*time) = tMax;
   return 0;
 }
 
@@ -86,24 +123,24 @@ int pic_save_restart_() {
 }
 
 int pic_get_ngridpoints_(int *nPoint) {
-  *nPoint = 0; 
-  for (int i = 0; i < FLEKSs.size(); i++){
-    FLEKSs(i).couplerMarker = (*nPoint); 
+  *nPoint = 0;
+  for (int i = 0; i < FLEKSs.size(); i++) {
+    FLEKSs(i).couplerMarker = (*nPoint);
     *nPoint += FLEKSs(i).get_grid_nodes_number();
   }
   return 0;
 }
 
 int pic_get_grid_(double *Pos_DI, int *n) {
-  for (int i = 0; i < FLEKSs.size(); i++){
-    int idx = FLEKSs(i).couplerMarker*FLEKSs(i).fluidInterface->getnDim();
+  for (int i = 0; i < FLEKSs.size(); i++) {
+    int idx = FLEKSs(i).couplerMarker * FLEKSs(i).fluidInterface->getnDim();
     FLEKSs(i).get_grid(&Pos_DI[idx]);
   }
   return 0;
 }
 
 int pic_set_state_var_(double *Data_VI, int *iPoint_I) {
-  for (int i = 0; i < FLEKSs.size(); i++){
+  for (int i = 0; i < FLEKSs.size(); i++) {
     int idx = FLEKSs(i).couplerMarker;
     FLEKSs(i).set_state_var(Data_VI, &iPoint_I[idx]);
   }
@@ -148,8 +185,8 @@ int pic_get_grid_info_(int *iGrid, int *iDecomp) {
 int pic_end_() {
   {
     // Saving plots before exiting.
-    for (int i = 0; i < FLEKSs.size(); i++){      
-      FLEKSs.select(i); 
+    for (int i = 0; i < FLEKSs.size(); i++) {
+      FLEKSs.select(i);
       FLEKSs(i).write_plots(true);
     }
 
@@ -169,7 +206,7 @@ int pic_set_grid_info_(int *nInt, int *accumulatedSize, int *status) {
   for (int i = 0; i < FLEKSs.size(); i++) {
     int idxStart = 0;
     if (i > 0)
-      idxStart = accumulatedSize[i-1];
+      idxStart = accumulatedSize[i - 1];
     FLEKSs(i).receive_grid_info(&status[idxStart]);
     FLEKSs(i).regrid();
   }
