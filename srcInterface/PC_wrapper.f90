@@ -188,13 +188,11 @@ contains
     !--------------------------------------------------------------------------
   end subroutine PC_put_from_gm_dt
     !============================================================================
-  subroutine PC_put_from_gm_grid_info(nInt, Int_I)
-
-
-    integer, intent(in)         :: nInt 
-    integer, intent(in)         :: Int_I(nInt)  
+  subroutine PC_put_from_gm_grid_info(nInt, nPicGrid, AccumulatedSize_I, Int_I)
+    integer, intent(in)         :: nInt, nPicGrid
+    integer, intent(in)         :: Int_I(nInt), AccumulatedSize_I(nPicGrid)
     
-    call pic_set_grid_info(nInt, Int_I)
+    call pic_set_grid_info(nInt, AccumulatedSize_I, Int_I)
   end subroutine PC_put_from_gm_grid_info
   !============================================================================
   subroutine PC_put_from_gm_init(nParamInt, nParamReal, iParam_I, Param_I, &

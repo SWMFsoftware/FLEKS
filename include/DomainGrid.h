@@ -39,6 +39,8 @@ protected:
   int iGrid;
   int iDecomp;
 
+  int domainID; 
+
 public:
   DomainGrid() {
     iGrid = 1;

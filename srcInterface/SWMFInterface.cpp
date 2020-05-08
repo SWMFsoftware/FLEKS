@@ -61,8 +61,10 @@ int pic_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
 }
 
 int pic_finalize_init_() {
-  for (int i = 0; i < FLEKSs.size(); i++)
+  for (int i = 0; i < FLEKSs.size(); i++){
+    FLEKSs.select(i); 
     FLEKSs(i).set_ic();
+  }
   return 0;
 }
 
@@ -84,20 +86,27 @@ int pic_save_restart_() {
 }
 
 int pic_get_ngridpoints_(int *nPoint) {
-  for (int i = 0; i < FLEKSs.size(); i++)
-    *nPoint = FLEKSs(i).get_grid_nodes_number();
+  *nPoint = 0; 
+  for (int i = 0; i < FLEKSs.size(); i++){
+    FLEKSs(i).couplerMarker = (*nPoint); 
+    *nPoint += FLEKSs(i).get_grid_nodes_number();
+  }
   return 0;
 }
 
 int pic_get_grid_(double *Pos_DI, int *n) {
-  for (int i = 0; i < FLEKSs.size(); i++)
-    FLEKSs(i).get_grid(Pos_DI);
+  for (int i = 0; i < FLEKSs.size(); i++){
+    int idx = FLEKSs(i).couplerMarker*FLEKSs(i).fluidInterface->getnDim();
+    FLEKSs(i).get_grid(&Pos_DI[idx]);
+  }
   return 0;
 }
 
 int pic_set_state_var_(double *Data_VI, int *iPoint_I) {
-  for (int i = 0; i < FLEKSs.size(); i++)
-    FLEKSs(i).set_state_var(Data_VI, iPoint_I);
+  for (int i = 0; i < FLEKSs.size(); i++){
+    int idx = FLEKSs(i).couplerMarker;
+    FLEKSs(i).set_state_var(Data_VI, &iPoint_I[idx]);
+  }
   return 0;
 }
 
@@ -139,8 +148,10 @@ int pic_get_grid_info_(int *iGrid, int *iDecomp) {
 int pic_end_() {
   {
     // Saving plots before exiting.
-    for (int i = 0; i < FLEKSs.size(); i++)
+    for (int i = 0; i < FLEKSs.size(); i++){      
+      FLEKSs.select(i); 
       FLEKSs(i).write_plots(true);
+    }
 
     FLEKSs.clear();
 
@@ -154,9 +165,13 @@ int pic_end_() {
   return 0;
 }
 
-int pic_set_grid_info_(int *nInt, int *status) {
+int pic_set_grid_info_(int *nInt, int *accumulatedSize, int *status) {
   for (int i = 0; i < FLEKSs.size(); i++) {
-    FLEKSs(i).receive_grid_info(status);
+    int idxStart = 0;
+    if (i > 0)
+      idxStart = accumulatedSize[i-1];
+    printf("pic_set_grid_info i = %d\n",i);
+    FLEKSs(i).receive_grid_info(&status[idxStart]);
     FLEKSs(i).regrid();
   }
 

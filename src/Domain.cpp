@@ -19,6 +19,8 @@ void Domain::init(const std::string &paramString, int *paramInt,
   if (AMREX_SPACEDIM != 3)
     Abort("Error: AMReX should be compiled with 3D configuration!!");
 
+  domainID = iDomain;
+
   fluidInterface->init();
   fluidInterface->receive_info_from_gm(paramInt, gridDim, paramReal,
                                        paramString);
@@ -288,7 +290,7 @@ void Domain::init_time_ctr() {
       writer.set_rank(ParallelDescriptor::MyProc());
       writer.set_nProcs(ParallelDescriptor::NProcs());
       writer.set_nDim(fluidInterface->getnDim());
-      writer.set_iRegion(0);
+      writer.set_iRegion(domainID);
       writer.set_domainMin_D({ { domainRange.lo(ix_), domainRange.lo(iy_),
                                  domainRange.lo(iz_) } });
 
@@ -309,7 +311,7 @@ void Domain::init_time_ctr() {
       writer.set_scalarName_I(scalarName_I);
       //--------------------------------------------------
       writer.init();
-      // writer.print();
+      writer.print();
     }
   }
 }

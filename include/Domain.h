@@ -16,6 +16,8 @@ public:
   std::shared_ptr<FluidInterface> fluidInterface;
   std::shared_ptr<TimeCtr> tc;
 
+  int couplerMarker; 
+
 public:
   Domain() {
     fluidInterface = std::make_shared<FluidInterface>();

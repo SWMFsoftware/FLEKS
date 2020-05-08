@@ -1,4 +1,5 @@
 #include <AMReX_PlotFileUtil.H>
+#include <AMReX_RealVect.H>
 
 #include "Pic.h"
 #include "SWMFDomains.h"
@@ -36,13 +37,16 @@ void Pic::find_mpi_rank_for_points(const int nPoint, const double* const xyz_I,
                                    int* const rank_I) {
   int nDimGM = fluidInterface->getnDim();
   amrex::Real si2nol = fluidInterface->getSi2NoL();
+  const RealBox& range = geom.ProbDomain();
   for (int i = 0; i < nPoint; i++) {
     amrex::Real x = xyz_I[i * nDimGM + ix_] * si2nol;
     amrex::Real y = xyz_I[i * nDimGM + iy_] * si2nol;
     amrex::Real z = 0;
     if (nDimGM > 2)
       z = xyz_I[i * nDimGM + iz_] * si2nol;
-    rank_I[i] = find_mpi_rank_from_coord(x, y, z);
+    // Check if this point is inside this FLEKS domain.
+    if (range.contains(RealVect(x, y, z), 1e-10))
+      rank_I[i] = find_mpi_rank_from_coord(x, y, z);
   }
 }
 
@@ -61,6 +65,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
   const int iBx_ = nSpecies * nVarPerSpecies, iBy_ = iBx_ + 1, iBz_ = iBy_ + 1;
   const int iEx_ = iBz_ + 1, iEy_ = iEx_ + 1, iEz_ = iEy_ + 1;
 
+  const RealBox& range = geom.ProbDomain();
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     double pic_D[3] = { 0 };
     for (int iDim = 0; iDim < nDim; iDim++) {
@@ -70,6 +75,10 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     const Real xp = pic_D[0];
     const Real yp = (nDim > 1) ? pic_D[1] : 0.0;
     const Real zp = (nDim > 2) ? pic_D[2] : 0.0;
+
+    // Check if this point is inside this FLEKS domain.
+    if (!range.contains(RealVect(xp, yp, zp), 1e-10))
+      continue;
 
     for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++)
       for (int iVar = iRho_; iVar <= iPyz_; iVar++) {
@@ -679,8 +688,9 @@ void find_output_list_caller(const PlotWriter& writerIn,
                              PlotWriter::VectorPointList& pointList_II,
                              std::array<double, nDim>& xMin_D,
                              std::array<double, nDim>& xMax_D) {
-  FLEKSs(FLEKSs.selected()).pic.find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
-                                  xMax_D);
+  FLEKSs(FLEKSs.selected())
+      .pic.find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
+                            xMax_D);
 }
 
 //==========================================================
