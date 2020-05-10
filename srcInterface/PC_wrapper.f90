@@ -148,7 +148,6 @@ contains
     !--------------------------------------------------------------------------
     call CON_set_do_test(NameSub, DoTest, DoTestMe)
 
-    DoTestMe = .true.
     if(DoTestMe)write(*,*) NameSub, &
          ' starting with TimeSimulation, TimeSimulationLimit=', &
          TimeSimulation, TimeSimulationLimit
