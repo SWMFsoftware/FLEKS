@@ -24,7 +24,7 @@ void Pic::init(std::shared_ptr<FluidInterface>& fluidIn,
     std::stringstream ss;
     ss << "FLEKS" << domainID;
     domainName = ss.str();
-    printPrefix = domainName+": "; 
+    printPrefix = domainName + ": ";
   }
 }
 
@@ -432,10 +432,6 @@ void Pic::particle_mover() {
 
   timing_func(nameFunc);
 
-  AllPrint() << printPrefix << "On proc = " << ParallelDescriptor::MyProc()
-             << ", particle number of species 0 = "
-             << parts[0]->TotalNumberOfParticles(false, true) << "\n";
-
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->mover(nodeEth, nodeB, tc->get_dt());
 
@@ -658,6 +654,9 @@ void Pic::update() {
             << " (performance is good if the value >> 1 and bad if <<1 )"
             << std::endl;
   }
+
+  if (tc->monitor.is_time_to())
+    monitor();
 }
 
 //==========================================================
@@ -1117,5 +1116,99 @@ void Pic::convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
             if (isCenter || nodeArr(i, j, k) == iAssign_) {
               p[iCount++] = arr(i, j, k, iVar);
             }
+  }
+}
+
+//==========================================================
+void Pic::monitor() {
+  // This function report the min, max, and average of the local memory usage,
+  // blocks, cells and particles among all the MPIs.
+
+  std::string nameFunc = "Pic::monitor";
+  timing_func(nameFunc);
+
+  const int iMem_ = 0, iNCell_ = 1, iNBlk_ = 2, iNParts_ = 3, nLocal = 4;
+  float localInfo[nLocal];
+
+  int nProc = ParallelDescriptor::NProcs(), root = 0;
+  float* globalInfo;
+  if (ParallelDescriptor::MyProc() == root) {
+    globalInfo = new float[nLocal * nProc];
+  }
+
+  std::vector<int> rc(nProc, nLocal), disp(nProc, 0);
+  for (int i = 0; i < nProc; i++) {
+    disp[i] = i * nLocal;
+  }
+
+  localInfo[iMem_] = (float)read_mem_usage();
+  localInfo[iNBlk_] = (float)centerB.local_size();
+  localInfo[iNCell_] = (float)get_local_node_or_cell_number(centerB);
+
+  {
+    long npart = 0;
+    for (auto& part : parts) {
+      npart += part->TotalNumberOfParticles(false, true);
+    }
+    localInfo[iNParts_] = (float)npart;
+  }
+
+  ParallelDescriptor::Gatherv(localInfo, nLocal, globalInfo, rc, disp, root);
+
+  if (ParallelDescriptor::MyProc() == root) {
+    float maxVal[nLocal] = { 0 };
+    float minVal[nLocal] = { 1e10, 1e10, 1e10, 1e10 };
+    float avgVal[nLocal] = { 0 };
+    int maxLoc[nLocal] = { 0 };
+    for (int iProc = 0; iProc < nProc; iProc++)
+      for (int iType = 0; iType < nLocal; iType++) {
+        const float val = globalInfo[disp[iProc] + iType];
+        if (val > maxVal[iType]) {
+          maxVal[iType] = val;
+          maxLoc[iType] = iProc;
+        }
+
+        if (val < minVal[iType])
+          minVal[iType] = val;
+
+        avgVal[iType] += val;
+      }
+
+    for (int iType = 0; iType < nLocal; iType++) {
+      avgVal[iType] /= nProc;
+    }
+
+    const int nw = 9;
+    AllPrint()
+        << "==============" << printPrefix
+        << "Load balance report==================\n"
+        << "|    Value     |    Min   |   Avg    |    Max   |where(max)|\n"
+
+        << "| Memory(MB)   |" << std::setw(nw) << (int)minVal[iMem_] << " |"
+        << std::setw(nw) << (int)avgVal[iMem_] << " |" << std::setw(nw)
+        << (int)maxVal[iMem_] << " |" << std::setw(nw) << maxLoc[iMem_]
+        << " |\n"
+
+        << "|# of Blocks   |" << std::setw(nw) << (int)minVal[iNBlk_] << " |"
+        << std::setw(nw) << (int)avgVal[iNBlk_] << " |" << std::setw(nw)
+        << (int)maxVal[iNBlk_] << " |" << std::setw(nw) << maxLoc[iNBlk_]
+        << " |\n"
+
+        << "|# of Cells    |" << std::setw(nw) << (int)minVal[iNCell_] << " |"
+        << std::setw(nw) << (int)avgVal[iNCell_] << " |" << std::setw(nw)
+        << (int)maxVal[iNCell_] << " |" << std::setw(nw) << maxLoc[iNCell_]
+        << " |\n"
+
+        << "|# of particles|" << std::setw(nw) << minVal[iNParts_] << " |"
+        << std::setw(nw) << avgVal[iNParts_] << " |" << std::setw(nw)
+        << maxVal[iNParts_] << " |" << std::setw(nw) << maxLoc[iNParts_]
+        << " |\n"
+
+        << "============================================================"
+        << std::endl;
+  }
+
+  if (ParallelDescriptor::MyProc() == root) {
+    delete[] globalInfo;
   }
 }

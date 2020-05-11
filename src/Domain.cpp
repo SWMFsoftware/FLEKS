@@ -231,28 +231,28 @@ void Domain::save_restart_header() {
     headerFile.precision(17);
 
     headerFile << "Restart header \n\n";
-    
-    std::string command_suffix = "_"+domainName+"\n"; 
 
-    headerFile << "#RESTART"+command_suffix;
+    std::string command_suffix = "_" + domainName + "\n";
+
+    headerFile << "#RESTART" + command_suffix;
     headerFile << "T"
                << "\t doRestart\n";
     headerFile << "\n";
 
-    headerFile << "#NSTEP"+command_suffix;
+    headerFile << "#NSTEP" + command_suffix;
     headerFile << tc->get_cycle() << "\t nStep\n";
     headerFile << "\n";
 
-    headerFile << "#TIMESIMULATION"+command_suffix;
+    headerFile << "#TIMESIMULATION" + command_suffix;
     headerFile << tc->get_time_si() << "\t TimeSimulation\n";
     headerFile << "\n";
 
-    headerFile << "#TIMESTEP"+command_suffix;
+    headerFile << "#TIMESTEP" + command_suffix;
     headerFile << tc->get_dt_si() << "\t dt\n";
     headerFile << "\n";
 
     // Geometry
-    headerFile << "#GEOMETRY"+command_suffix;
+    headerFile << "#GEOMETRY" + command_suffix;
     for (int i = 0; i < nDim; ++i) {
       headerFile << domainRange.lo(i) << "\t min\n";
       headerFile << domainRange.hi(i) << "\t max\n";
@@ -260,7 +260,7 @@ void Domain::save_restart_header() {
     headerFile << "\n";
 
     // Cell
-    headerFile << "#NCELL"+command_suffix;
+    headerFile << "#NCELL" + command_suffix;
     for (int i = 0; i < nDim; ++i) {
       headerFile << nCell[i] << "\n";
     }
@@ -336,7 +336,7 @@ void Domain::read_param() {
   ReadParam &readParam = fluidInterface->readParam;
   readParam.set_verbose(ParallelDescriptor::MyProc() == 0);
 
-  readParam.set_command_suffix(domainName);  
+  readParam.set_command_suffix(domainName);
 
   while (readParam.get_next_command(command)) {
 
@@ -370,6 +370,10 @@ void Domain::read_param() {
       int dn;
       readParam.read_var("dnSave", dn);
       tc->log.init(-1, dn);
+    } else if (command == "#MONITOR") {
+      int dn;
+      readParam.read_var("dnReport", dn);
+      tc->monitor.init(-1, dn);
     } else if (command == "#LOADBALANCE") {
       int dn;
       readParam.read_var("dn", dn);

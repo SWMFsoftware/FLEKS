@@ -194,4 +194,5 @@ inline T bound(const T& val, const T& xmin, const T& xmax) {
   return val;
 }
 
+double read_mem_usage();
 #endif

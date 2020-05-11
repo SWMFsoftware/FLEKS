@@ -186,6 +186,8 @@ public:
   void load_balance();
   //---------------load balance end---------------------
 
+  void monitor();
+
   void set_nodeAssignment();
 
   void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF,
