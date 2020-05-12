@@ -51,6 +51,7 @@ int pic_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
 
   int nParamRegion = 21;
   for (int i = 0; i < FLEKSs.size(); i++) {
+    FLEKSs.select(i);
     FLEKSs(i).init(paramString, paramint, &paramreal[i * nParamRegion],
                    &paramreal[nDomain * nParamRegion], i);
   }
