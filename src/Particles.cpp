@@ -33,6 +33,10 @@ Particles::Particles(const amrex::BoxArray& regionBAIn, const Geometry& geom,
   }
 
   set_region_ba(regionBAIn);
+
+  // The following line is used to avoid an MPI bug (feature?) on Frontera. It
+  // should be removed after the bug being fixed. 
+  SetUseUnlink(false);
 }
 
 //==========================================================
@@ -1126,8 +1130,8 @@ void Particles::combine_particles(Real limit) {
         for (int kCell = 0; kCell < nCell; kCell++) {
           std::sort(phasePartIdx_III[iCell][jCell][kCell].begin(),
                     phasePartIdx_III[iCell][jCell][kCell].end(),
-                    [&particles = particles, ix_ = ix_](const int& idl,
-                                                        const int& idr) {
+                    [& particles = particles, ix_ = ix_](const int& idl,
+                                                         const int& idr) {
                       return particles[idl].rdata(ix_) >
                              particles[idr].rdata(ix_);
                     });
