@@ -1,4 +1,5 @@
 #include <AMReX_PlotFileUtil.H>
+#include <AMReX_RealVect.H>
 
 #include "Pic.h"
 #include "SWMFDomains.h"
@@ -36,13 +37,16 @@ void Pic::find_mpi_rank_for_points(const int nPoint, const double* const xyz_I,
                                    int* const rank_I) {
   int nDimGM = fluidInterface->getnDim();
   amrex::Real si2nol = fluidInterface->getSi2NoL();
+  const RealBox& range = geom.ProbDomain();
   for (int i = 0; i < nPoint; i++) {
     amrex::Real x = xyz_I[i * nDimGM + ix_] * si2nol;
     amrex::Real y = xyz_I[i * nDimGM + iy_] * si2nol;
     amrex::Real z = 0;
     if (nDimGM > 2)
       z = xyz_I[i * nDimGM + iz_] * si2nol;
-    rank_I[i] = find_mpi_rank_from_coord(x, y, z);
+    // Check if this point is inside this FLEKS domain.
+    if (range.contains(RealVect(x, y, z), 1e-10))
+      rank_I[i] = find_mpi_rank_from_coord(x, y, z);
   }
 }
 
@@ -61,6 +65,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
   const int iBx_ = nSpecies * nVarPerSpecies, iBy_ = iBx_ + 1, iBz_ = iBy_ + 1;
   const int iEx_ = iBz_ + 1, iEy_ = iEx_ + 1, iEz_ = iEy_ + 1;
 
+  const RealBox& range = geom.ProbDomain();
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     double pic_D[3] = { 0 };
     for (int iDim = 0; iDim < nDim; iDim++) {
@@ -70,6 +75,10 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     const Real xp = pic_D[0];
     const Real yp = (nDim > 1) ? pic_D[1] : 0.0;
     const Real zp = (nDim > 2) ? pic_D[2] : 0.0;
+
+    // Check if this point is inside this FLEKS domain.
+    if (!range.contains(RealVect(xp, yp, zp), 1e-10))
+      continue;
 
     for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++)
       for (int iVar = iRho_; iVar <= iPyz_; iVar++) {
@@ -340,7 +349,7 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
       value = (arr(ix, iy, iz, iPxx_) + arr(ix, iy, iz, iPyy_) +
                arr(ix, iy, iz, iPzz_)) /
               3.0;
-    } else if (var.substr(0, 4) == "proc") {
+    } else if (var.substr(0, 4) == "rank") {
       value = ParallelDescriptor::MyProc();
     } else if (var.substr(0, 5) == "block") {
       value = mfi.index();
@@ -355,26 +364,29 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
 //==========================================================
 void Pic::save_restart_data() {
   std::string restartDir = "PC/restartOUT/";
-  VisMF::Write(nodeE, restartDir + "nodeE");
-  VisMF::Write(nodeB, restartDir + "nodeB");
-  VisMF::Write(centerB, restartDir + "centerB");
+  VisMF::Write(nodeE, restartDir + domainName + "_nodeE");
+  VisMF::Write(nodeB, restartDir + domainName + "_nodeB");
+  VisMF::Write(centerB, restartDir + domainName + "_centerB");
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     parts[iPart]->label_particles_outside_ba();
     parts[iPart]->Redistribute();
-    parts[iPart]->Checkpoint(restartDir, "particles" + std::to_string(iPart));
+    parts[iPart]->Checkpoint(restartDir,
+                             domainName + "_particles" + std::to_string(iPart));
   }
   inject_particles_for_boundary_cells();
 }
 
 //==========================================================
 void Pic::save_restart_header(std::ofstream& headerFile) {
+  std::string command_suffix = "_" + domainName + "\n";
+
   if (ParallelDescriptor::IOProcessor()) {
-    headerFile << "#ELECTRON\n";
+    headerFile << "#ELECTRON"+command_suffix;
     headerFile << qomEl << "\t qomEl\n";
     headerFile << "\n";
 
-    headerFile << "#PARTICLES\n";
+    headerFile << "#PARTICLES"+command_suffix;
     for (int i = 0; i < nDim; ++i) {
       headerFile << nPartPerCell[i] << "\n";
     }
@@ -387,12 +399,13 @@ void Pic::read_restart() {
   Print() << "Pic::read_restart() start....." << std::endl;
 
   std::string restartDir = "PC/restartIN/";
-  VisMF::Read(nodeE, restartDir + "nodeE");
-  VisMF::Read(nodeB, restartDir + "nodeB");
-  VisMF::Read(centerB, restartDir + "centerB");
+  VisMF::Read(nodeE, restartDir + domainName + "_nodeE");
+  VisMF::Read(nodeB, restartDir + domainName + "_nodeB");
+  VisMF::Read(centerB, restartDir + domainName + "_centerB");
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
-    parts[iPart]->Restart(restartDir, "particles" + std::to_string(iPart));
+    parts[iPart]->Restart(restartDir,
+                          domainName + "_particles" + std::to_string(iPart));
   }
   inject_particles_for_boundary_cells();
 
@@ -458,32 +471,111 @@ void Pic::write_plots(bool doForce) {
 //==========================================================
 void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
                       int const iCycle) {
+
+  if (pw.is_particle()) {
+    write_amrex_particle(pw, timeNow, iCycle);
+  } else {
+    write_amrex_field(pw, timeNow, iCycle);
+  }
+}
+
+//==========================================================
+void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
+                               int const iCycle) {
+  const int nReal = 4;
+  int iSpecies = pw.get_particleSpecies();
+
+  std::string dirName = pw.get_amrex_filename(timeNow, iCycle);
+
+  // Saving field/coordinates information. It is required by yt, but I do not
+  // know whether it is necessary at this point. --Yuxi
+  write_amrex_field(pw, timeNow, iCycle, std::string(), dirName);
+
+  Vector<int> writeRealComp;
+  for (int i = 0; i < nReal; ++i) {
+    writeRealComp.push_back(1);
+  }
+
+  Vector<std::string> realCompNames;
+  realCompNames.resize(nReal);
+  realCompNames[Particles::iup_] = "velocity_x";
+  realCompNames[Particles::ivp_] = "velocity_y";
+  realCompNames[Particles::iwp_] = "velocity_z";
+  realCompNames[Particles::iqp_] = "weight";
+
+  Vector<int> writeIntComp;
+  Vector<std::string> intCompNames;
+
+  Geometry geomOut;
+  set_IO_geom(geomOut, pw);
+  Real no2outL = pw.No2OutTable("X");
+  Real no2outV = pw.No2OutTable("u");
+  Real no2outM = pw.No2OutTable("mass");
+
+  RealBox outRange;
+
+  if (pw.get_plotString().find("cut") != std::string::npos)
+    for (int iDim = 0; iDim < nDim; iDim++) {
+      outRange.setLo(iDim, pw.get_plotMin_D(iDim));
+      outRange.setHi(iDim, pw.get_plotMax_D(iDim));
+    }
+
+  IOParticles particlesOut(*parts[iSpecies].get(), geomOut, no2outL, no2outV,
+                           no2outM, outRange);
+
+  particlesOut.WritePlotFile(dirName, "particle", writeRealComp, writeIntComp,
+                             realCompNames, intCompNames);
+}
+
+void Pic::set_IO_geom(amrex::Geometry& geomIO, const PlotWriter& pw) {
+  // Creating geomIO, which uses output length unit, for amrex format output.
+  RealBox boxRangeOut;
+  Real no2outL = pw.No2OutTable("X");
+  for (int i = 0; i < nDim; i++) {
+    boxRangeOut.setLo(i, geom.ProbLo(i) * no2outL);
+    boxRangeOut.setHi(i, geom.ProbHi(i) * no2outL);
+  }
+  Array<int, nDim> periodicity;
+  for (int i = 0; i < nDim; i++)
+    periodicity[i] = geom.isPeriodic(i);
+  geomIO.define(geom.Domain(), boxRangeOut, geom.Coord(), periodicity);
+}
+
+//==========================================================
+void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
+                            int const iCycle, const std::string plotVars,
+                            const std::string filenameIn) {
   Print() << "amrex::" << pw.get_amrex_filename(timeNow, iCycle) << std::endl;
 
   Geometry geomOut;
-  { // Creating geomOut, which uses output length unit, for amrex format output.
-    RealBox boxRangeOut;
-    Real no2outL = pw.No2OutTable("X");
-    for (int i = 0; i < nDim; i++) {
-      boxRangeOut.setLo(i, geom.ProbLo(i) * no2outL);
-      boxRangeOut.setHi(i, geom.ProbHi(i) * no2outL);
-    }
-    Array<int, nDim> periodicity;
-    for (int i = 0; i < nDim; i++)
-      periodicity[i] = geom.isPeriodic(i);
-    geomOut.define(geom.Domain(), boxRangeOut, geom.Coord(), periodicity);
-  }
+  set_IO_geom(geomOut, pw);
+
+  int nVarOut = 0;
+
+  if (plotVars.find("X") != std::string::npos)
+    nVarOut += 3;
+
+  if (plotVars.find("B") != std::string::npos)
+    nVarOut += 3;
+
+  if (plotVars.find("E") != std::string::npos)
+    nVarOut += 3;
+
+  if (plotVars.find("plasma") != std::string::npos)
+    nVarOut += 10 * nSpecies;
 
   // Save cell-centered, instead of the nodal, values, because the AMReX
   // document says some virtualiazaion tools assumes the AMReX format outputs
   // are cell-centered.
-  int nVarOut = 3 + 3 + 3 + 10 * nSpecies;
+
   MultiFab centerMF;
   centerMF.define(centerBA, dm, nVarOut, 0);
 
-  Vector<std::string> varNames = { "X", "Y", "Z" };
+  Vector<std::string> varNames;
   int iStart = 0;
-  { //--------------Coordinates-------------------------
+
+  if (plotVars.find("X") != std::string::npos) {
+    //--------------Coordinates-------------------------
     MultiFab xyz(centerMF, make_alias, 0, 3);
 
     for (MFIter mfi(xyz); mfi.isValid(); ++mfi) {
@@ -508,9 +600,13 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
       }
     }
     iStart += 3;
+    varNames.push_back("X");
+    varNames.push_back("Y");
+    varNames.push_back("Z");
   }
 
-  { //------------------B---------------
+  if (plotVars.find("B") != std::string::npos) {
+    //------------------B---------------
     MultiFab::Copy(centerMF, centerB, 0, iStart, nodeB.nComp(), 0);
     iStart += nodeB.nComp();
     varNames.push_back("Bx");
@@ -518,7 +614,8 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
     varNames.push_back("Bz");
   }
 
-  { //-----------------E-----------------------------
+  if (plotVars.find("E") != std::string::npos) {
+    //-----------------E-----------------------------
     average_node_to_cellcenter(centerMF, iStart, nodeE, 0, nodeE.nComp(), 0);
     iStart += nodeE.nComp();
     varNames.push_back("Ex");
@@ -526,7 +623,8 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
     varNames.push_back("Ez");
   }
 
-  { //-------------plasma---------------------
+  if (plotVars.find("plasma") != std::string::npos) {
+    //-------------plasma---------------------
 
     // The order of the varname should be consistent with nodePlasma.
     Vector<std::string> plasmaNames = { "rho", "ux",  "uy",  "uz",  "pxx",
@@ -567,8 +665,25 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
   }
 
   std::string filename = pw.get_amrex_filename(timeNow, iCycle);
+  if (!filenameIn.empty()) {
+    filename = filenameIn;
+  }
+
   WriteSingleLevelPlotfile(filename, centerMF, varNames, geomOut, timeNow,
                            iCycle);
+
+  if (ParallelDescriptor::IOProcessor()) {
+    // Write FLEKS header
+    const std::string headerName = filename + "/FLEKSHeader";
+    std::ofstream headerFile;
+    headerFile.open(headerName.c_str(), std::ios::out | std::ios::trunc);
+
+    if (!headerFile.good())
+      amrex::FileOpenFailed(headerName);
+
+    headerFile << pw.get_plotString() << "\n";
+    headerFile << fluidInterface->getrPlanet() << "\n";
+  }
 }
 
 //==========================================================
@@ -577,13 +692,14 @@ void find_output_list_caller(const PlotWriter& writerIn,
                              PlotWriter::VectorPointList& pointList_II,
                              std::array<double, nDim>& xMin_D,
                              std::array<double, nDim>& xMax_D) {
-  MPICs->pic.find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
-                              xMax_D);
+  FLEKSs(FLEKSs.selected())
+      .pic.find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
+                            xMax_D);
 }
 
 //==========================================================
 void get_field_var_caller(const VectorPointList& pointList_II,
                           const std::vector<std::string>& sVar_I,
                           MDArray<double>& var_II) {
-  MPICs->pic.get_field_var(pointList_II, sVar_I, var_II);
+  FLEKSs(FLEKSs.selected()).pic.get_field_var(pointList_II, sVar_I, var_II);
 }

@@ -13,12 +13,19 @@
 using namespace amrex;
 
 //==========================================================
-void Pic::init(Real timeIn, const std::string& paramString, int* paramInt,
-               double* gridDim, double* paramReal,
-               std::shared_ptr<FluidInterface>& fluidIn,
-               std::shared_ptr<TimeCtr>& tcIn) {
+void Pic::init(std::shared_ptr<FluidInterface>& fluidIn,
+               std::shared_ptr<TimeCtr>& tcIn, int domainIDIn) {
   tc = tcIn;
   fluidInterface = fluidIn;
+
+  domainID = domainIDIn;
+
+  {
+    std::stringstream ss;
+    ss << "FLEKS" << domainID;
+    domainName = ss.str();
+    printPrefix = domainName + ": ";
+  }
 }
 
 //==========================================================
@@ -61,7 +68,7 @@ void Pic::fill_new_cells() {
 
   timing_func(nameFunc);
 
-  Print() << nameFunc << std::endl;
+  Print() << printPrefix << nameFunc << std::endl;
 
   fill_E_B_fields();
   fill_particles();
@@ -88,7 +95,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   if (centerBAIn == centerBA)
     return;
 
-  Print() << nameFunc << " is runing..." << std::endl;
+  Print() << printPrefix << nameFunc << " is runing..." << std::endl;
   doNeedFillNewCell = true;
 
   picRegionBA = picRegionIn;
@@ -100,7 +107,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
   dm = dmIn;
 
-  //===========Move data around begin====================
+  //===========Move field data around begin====================
   distribute_FabArray(nodeE, nodeBA, dm, 3, nGst);
   distribute_FabArray(nodeEth, nodeBA, dm, 3, nGst);
   distribute_FabArray(nodeB, nodeBA, dm, 3, nGst);
@@ -143,28 +150,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     distribute_FabArray(tempCenter1, centerBA, dm, 1, nGst, doMoveData);
     distribute_FabArray(tempCenter1_1, centerBA, dm, 1, nGst, doMoveData);
   }
-
-  if (parts.empty()) {
-    for (int i = 0; i < nSpecies; i++) {
-      auto ptr = std::make_unique<Particles>(
-          picRegionBA, geom, dm, centerBA, tc.get(), i,
-          fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i),
-          nPartPerCell);
-      parts.push_back(std::move(ptr));
-    }
-  } else {
-    for (int i = 0; i < nSpecies; i++) {
-      // Label the particles outside the OLD PIC region.
-      parts[i]->label_particles_outside_ba();
-      parts[i]->SetParticleBoxArray(0, centerBA);
-      parts[i]->set_region_ba(picRegionBA);
-      parts[i]->SetParticleDistributionMap(0, dm);
-      // Label the particles outside the NEW PIC region.
-      parts[i]->label_particles_outside_ba();
-      parts[i]->Redistribute();
-    }
-  }
-  //===========Move data around end====================
+  //===========Move field data around end====================
 
   { //===========Label cellStatus/nodeStatus ==========
 
@@ -218,6 +204,38 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     distribute_FabArray(nodeAssignment, nodeBA, dm, 1, 0, false);
     set_nodeAssignment();
   }
+
+  //--------------particles-----------------------------------
+  if (parts.empty()) {
+    for (int i = 0; i < nSpecies; i++) {
+      auto ptr = std::make_unique<Particles>(
+          picRegionBA, geom, dm, centerBA, tc.get(), i,
+          fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i),
+          nPartPerCell);
+      parts.push_back(std::move(ptr));
+    }
+  } else {
+    for (int i = 0; i < nSpecies; i++) {
+      // Label the particles outside the OLD PIC region.
+      parts[i]->label_particles_outside_ba();
+      parts[i]->SetParticleBoxArray(0, centerBA);
+      parts[i]->set_region_ba(picRegionBA);
+      parts[i]->SetParticleDistributionMap(0, dm);
+      // Label the particles outside the NEW PIC region.
+      parts[i]->label_particles_outside_ba_general();
+      parts[i]->Redistribute();
+    }
+  }
+
+  { // Copy cell Status to Particles objects.
+    for (int i = 0; i < nSpecies; i++) {
+      distribute_FabArray(parts[i]->cellStatus, centerBA, dm, 1,
+                          nGst >= 2 ? nGst : 2, false);
+      iMultiFab::Copy(parts[i]->cellStatus, cellStatus, 0, 0,
+                      cellStatus.nComp(), cellStatus.nGrow());
+    }
+  }
+  //--------------particles-----------------------------------
 
   {
     int nGrid = get_local_node_or_cell_number(nodeE);
@@ -442,7 +460,7 @@ void Pic::sum_moments() {
   for (int i = 0; i < nSpecies; i++) {
     PartInfo pinfo = parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, dt);
     plasmaEnergy[i] = pinfo.energy;
-    Print() << std::setprecision(5) << "Species " << i
+    Print() << printPrefix << std::setprecision(5) << "Species " << i
             << ": max(uth) = " << pinfo.uMax
             << ", CFL_x = " << pinfo.uMax * dt * invDx[ix_]
             << ", CFL_y = " << pinfo.uMax * dt * invDx[iy_]
@@ -465,17 +483,18 @@ void Pic::divE_correction() {
   for (int iIter = 0; iIter < 3; iIter++) {
     sum_to_center(true);
 
-    Print() << "\n----------- div(E) correction at iter " << iIter
-            << "----------" << std::endl;
+    Print() << "\n-----" << printPrefix << " div(E) correction at iter "
+            << iIter << "----------" << std::endl;
     calculate_phi(divESolver);
 
     divE_correct_particle_position();
   }
 
   for (int i = 0; i < nSpecies; i++) {
-    // The particles outside the simulation domain is marked for deletion inside
-    // divE_correct_particle_position(). Redistribute() deletes these particles.
-    // In order to get correct moments, re-inject particles in the ghost cells.
+    // The particles outside the simulation domain is marked for deletion
+    // inside divE_correct_particle_position(). Redistribute() deletes these
+    // particles. In order to get correct moments, re-inject particles in the
+    // ghost cells.
     parts[i]->Redistribute();
   }
   inject_particles_for_boundary_cells();
@@ -602,9 +621,9 @@ void Pic::update() {
     // update time, step number.
     tc->update();
     const Real t1 = tc->get_time_si();
-    Print() << "\n================ Begin cycle = " << tc->get_cycle()
-            << " from t = " << t0 << " (s) to t = " << t1
-            << " (s) ======================" << std::endl;
+    Print() << "\n====== " << printPrefix
+            << " Begin cycle = " << tc->get_cycle() << " from t = " << t0
+            << " (s) to t = " << t1 << " (s) ========" << std::endl;
   }
 
   update_E();
@@ -631,10 +650,13 @@ void Pic::update() {
 
     // speedNorm is a value obtained from tests.
     Real speedNorm = 1000;
-    Print() << "Normalized PIC speed = " << speed / speedNorm
+    Print() << printPrefix << "Normalized PIC speed = " << speed / speedNorm
             << " (performance is good if the value >> 1 and bad if <<1 )"
             << std::endl;
   }
+
+  if (tc->monitor.is_time_to())
+    monitor();
 }
 
 //==========================================================
@@ -656,7 +678,8 @@ void Pic::update_E() {
     eSolver.xLeft[i] = 0;
   }
 
-  Print() << "\n----------- E solver ------------------" << std::endl;
+  Print() << "\n-------" << printPrefix << " E solver ------------------"
+          << std::endl;
   BL_PROFILE_VAR("Pic::E_iterate", eSolver);
   eSolver.solve();
   BL_PROFILE_VAR_STOP(eSolver);
@@ -698,11 +721,11 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
   vecMF.FillBoundary(geom.periodicity());
 
   if (useZeroBC) {
-    // The boundary nodes would not be filled in by convert_1d_3d. So, there is
-    // not need to apply zero boundary conditions again here.
+    // The boundary nodes would not be filled in by convert_1d_3d. So, there
+    // is not need to apply zero boundary conditions again here.
   } else {
-    // Even after apply_external_BC(), the outmost layer node E is still unknow.
-    // See FluidInterface::calc_current for detailed explaniation.
+    // Even after apply_external_BC(), the outmost layer node E is still
+    // unknow. See FluidInterface::calc_current for detailed explaniation.
     apply_external_BC(nodeStatus, vecMF, 0, nDim, &Pic::get_node_E);
   }
 
@@ -721,12 +744,11 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
                                  tempCenter3.nGrow());
 
       //----The following comments are left here for reference------
-      // Q: Why apply float BC for all boundary ghost nodes, instead of just the
-      // outmost layer?
-      // A: For the example described in FluidInterface::calc_current, cell
-      // (c+4, c-1) of tempCenter3-block1 is not accurate, so the values at
-      // (c+4, c-2)
-      // will be wrong if we only apply float BC for the outmost layer.
+      // Q: Why apply float BC for all boundary ghost nodes, instead of just
+      // the outmost layer? A: For the example described in
+      // FluidInterface::calc_current, cell (c+4, c-1) of tempCenter3-block1
+      // is not accurate, so the values at (c+4, c-2) will be wrong if we only
+      // apply float BC for the outmost layer.
       // apply_float_boundary(cellStatus, tempCenter3, geom, 0,
       //                           tempCenter3.nComp());
       //------------------------------------------------------------
@@ -984,13 +1006,14 @@ void Pic::load_balance() {
   std::string nameFunc = "Pic::load_balance";
   timing_func(nameFunc);
 
-  Print() << "--------- Load balancing ------------" << std::endl;
+  Print() << printPrefix << "--------- Load balancing ------------"
+          << std::endl;
 
   // iDecomp++;
-  Print() << "before dm = " << dm << std::endl;
+  Print() << printPrefix << "before dm = " << dm << std::endl;
   compute_cost();
   dm = DistributionMapping::makeSFC(costMF, false);
-  Print() << "after dm = " << dm << std::endl;
+  Print() << printPrefix << "after dm = " << dm << std::endl;
 
   redistribute_FabArray(nodeE, dm);
   redistribute_FabArray(nodeEth, dm);
@@ -1093,5 +1116,99 @@ void Pic::convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
             if (isCenter || nodeArr(i, j, k) == iAssign_) {
               p[iCount++] = arr(i, j, k, iVar);
             }
+  }
+}
+
+//==========================================================
+void Pic::monitor() {
+  // This function report the min, max, and average of the local memory usage,
+  // blocks, cells and particles among all the MPIs.
+
+  std::string nameFunc = "Pic::monitor";
+  timing_func(nameFunc);
+
+  const int iMem_ = 0, iNCell_ = 1, iNBlk_ = 2, iNParts_ = 3, nLocal = 4;
+  float localInfo[nLocal];
+
+  int nProc = ParallelDescriptor::NProcs(), root = 0;
+  float* globalInfo;
+  if (ParallelDescriptor::MyProc() == root) {
+    globalInfo = new float[nLocal * nProc];
+  }
+
+  std::vector<int> rc(nProc, nLocal), disp(nProc, 0);
+  for (int i = 0; i < nProc; i++) {
+    disp[i] = i * nLocal;
+  }
+
+  localInfo[iMem_] = (float)read_mem_usage();
+  localInfo[iNBlk_] = (float)centerB.local_size();
+  localInfo[iNCell_] = (float)get_local_node_or_cell_number(centerB);
+
+  {
+    long npart = 0;
+    for (auto& part : parts) {
+      npart += part->TotalNumberOfParticles(false, true);
+    }
+    localInfo[iNParts_] = (float)npart;
+  }
+
+  ParallelDescriptor::Gatherv(localInfo, nLocal, globalInfo, rc, disp, root);
+
+  if (ParallelDescriptor::MyProc() == root) {
+    float maxVal[nLocal] = { 0 };
+    float minVal[nLocal] = { 1e10, 1e10, 1e10, 1e10 };
+    float avgVal[nLocal] = { 0 };
+    int maxLoc[nLocal] = { 0 };
+    for (int iProc = 0; iProc < nProc; iProc++)
+      for (int iType = 0; iType < nLocal; iType++) {
+        const float val = globalInfo[disp[iProc] + iType];
+        if (val > maxVal[iType]) {
+          maxVal[iType] = val;
+          maxLoc[iType] = iProc;
+        }
+
+        if (val < minVal[iType])
+          minVal[iType] = val;
+
+        avgVal[iType] += val;
+      }
+
+    for (int iType = 0; iType < nLocal; iType++) {
+      avgVal[iType] /= nProc;
+    }
+
+    const int nw = 9;
+    AllPrint()
+        << "==============" << printPrefix
+        << "Load balance report==================\n"
+        << "|    Value     |    Min   |   Avg    |    Max   |where(max)|\n"
+
+        << "| Memory(MB)   |" << std::setw(nw) << (int)minVal[iMem_] << " |"
+        << std::setw(nw) << (int)avgVal[iMem_] << " |" << std::setw(nw)
+        << (int)maxVal[iMem_] << " |" << std::setw(nw) << maxLoc[iMem_]
+        << " |\n"
+
+        << "|# of Blocks   |" << std::setw(nw) << (int)minVal[iNBlk_] << " |"
+        << std::setw(nw) << (int)avgVal[iNBlk_] << " |" << std::setw(nw)
+        << (int)maxVal[iNBlk_] << " |" << std::setw(nw) << maxLoc[iNBlk_]
+        << " |\n"
+
+        << "|# of Cells    |" << std::setw(nw) << (int)minVal[iNCell_] << " |"
+        << std::setw(nw) << (int)avgVal[iNCell_] << " |" << std::setw(nw)
+        << (int)maxVal[iNCell_] << " |" << std::setw(nw) << maxLoc[iNCell_]
+        << " |\n"
+
+        << "|# of particles|" << std::setw(nw) << minVal[iNParts_] << " |"
+        << std::setw(nw) << avgVal[iNParts_] << " |" << std::setw(nw)
+        << maxVal[iNParts_] << " |" << std::setw(nw) << maxLoc[iNParts_]
+        << " |\n"
+
+        << "============================================================"
+        << std::endl;
+  }
+
+  if (ParallelDescriptor::MyProc() == root) {
+    delete[] globalInfo;
   }
 }

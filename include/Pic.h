@@ -84,6 +84,11 @@ private:
   bool doReSampling;
   amrex::Real reSamplingLowLimit;
   amrex::Real reSamplingHighLimit;
+
+  std::string printPrefix;
+  std::string domainName;
+  int domainID;
+
   // public methods
 public:
   Pic() {
@@ -110,10 +115,8 @@ public:
   void set_doRestart(bool in) { doRestart = in; }
 
   //--------------Initialization begin-------------------------------
-  void init(amrex::Real timeIn, const std::string &paramString, int *paramInt,
-            double *gridDim, double *paramReal,
-            std::shared_ptr<FluidInterface> &fluidIn,
-            std::shared_ptr<TimeCtr> &tcIn);
+  void init(std::shared_ptr<FluidInterface> &fluidIn,
+            std::shared_ptr<TimeCtr> &tcIn, int domainIDIn = 0);
 
   void set_geom(int nGstIn, const amrex::Geometry &geomIn);
 
@@ -183,6 +186,8 @@ public:
   void load_balance();
   //---------------load balance end---------------------
 
+  void monitor();
+
   void set_nodeAssignment();
 
   void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF,
@@ -202,7 +207,6 @@ public:
                      MDArray<double> &var_II);
   double get_var(std::string var, const int ix, const int iy, const int iz,
                  const amrex::MFIter &mfi, bool isValidMFI = true);
-
   void save_restart_header(std::ofstream &headerFile);
   void save_restart_data();
   void read_restart();
@@ -211,6 +215,14 @@ public:
   void write_plots(bool doForce = false);
   void write_amrex(const PlotWriter &pw, double const timeNow,
                    int const iCycle);
+  void write_amrex_field(const PlotWriter &pw, double const timeNow,
+                         int const iCycle,
+                         const std::string plotVars = "X E B plasma",
+                         const std::string filenameIn = std::string());
+  void write_amrex_particle(const PlotWriter &pw, double const timeNow,
+                            int const iCycle);
+
+  void set_IO_geom(amrex::Geometry &geomIO, const PlotWriter &pw);
   //--------------- IO end--------------------------------
 
   //--------------- Boundary begin ------------------------

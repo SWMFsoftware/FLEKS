@@ -1,17 +1,16 @@
-default:libamrex
-
 include ../Makefile.def
-include ../Makefile.def.local
 
-libdir = ${LIBDIR}
-
-libamrex: 
-	cd $(MYDIR)/$(amrexdir); make all; make install_lib; \
-	cp -f $(MYDIR)/$(AMREX_INSTALL_DIR)/lib/libamrex.a $(libdir)	 
+install:
 
 clean:
-	cd $(MYDIR)/$(amrexdir); make clean
+	cd Library/src; make clean
+	cd Library/test;make clean
+	cd Prologs;     make clean
+	rm -f include/*.mod
 
-distclean:
-	cd $(MYDIR)/$(amrexdir); make distclean 
+distclean: clean
+	cd Library/src; make distclean
+	cd Library/test;make distclean
+	cd Prologs;     make distclean
+	rm -f Library/src/mpif*.h *~ */*~
 

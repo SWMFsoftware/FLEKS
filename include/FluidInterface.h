@@ -32,12 +32,16 @@ private:
   amrex::MultiFab nodeFluid;
   amrex::MultiFab centerB;
 
-  double invSumMass; 
+  double invSumMass;
 
   int nGst;
 
+  int domainID;
+  std::string domainName;
+  std::string printPrefix;
+
 public:
-  void init();
+  void init(int domainIDIn);
   void receive_info_from_gm(const int* const paramInt,
                             const double* const gridDim,
                             const double* const paramDouble,
@@ -70,14 +74,17 @@ public:
 
   void save_restart_data() {
     std::string restartDir = "PC/restartOUT/";
-    amrex::VisMF::Write(nodeFluid, restartDir + "Interface_nodeFluid");
-    amrex::VisMF::Write(centerB, restartDir + "Interface_centerB");
+    amrex::VisMF::Write(nodeFluid,
+                        restartDir + domainName + "_Interface_nodeFluid");
+    amrex::VisMF::Write(centerB,
+                        restartDir + domainName + "_Interface_centerB");
   };
 
   void read_restart() {
     std::string restartDir = "PC/restartIN/";
-    amrex::VisMF::Read(nodeFluid, restartDir + "Interface_nodeFluid");
-    amrex::VisMF::Read(centerB, restartDir + "Interface_centerB");
+    amrex::VisMF::Read(nodeFluid,
+                       restartDir + domainName + "_Interface_nodeFluid");
+    amrex::VisMF::Read(centerB, restartDir + domainName + "_Interface_centerB");
   }
 
   // ---------Functions to read/interpolate value from nodeFluid.
@@ -109,7 +116,7 @@ public:
 
     if (useElectronFluid) {
       Rho = get_value(mfi, x, y, z, iRho_I[is]);
-      //TODO: change division to multiplication.
+      // TODO: change division to multiplication.
       NumDens = Rho / MoMi0_S[is];
     } else if (useMultiFluid || useMultiSpecies) {
       if (is == 0) {
@@ -117,19 +124,19 @@ public:
         NumDens = 0;
         for (int iIon = 0; iIon < nIon; ++iIon) {
           Rho = get_value(mfi, x, y, z, iRho_I[iIon]);
-          //TODO: change division to multiplication.
+          // TODO: change division to multiplication.
           NumDens += Rho / MoMi0_S[iIon + 1];
         }
       } else {
         // Ion
         Rho = get_value(mfi, x, y, z, iRho_I[is - 1]);
-        //TODO: change division to multiplication.
+        // TODO: change division to multiplication.
         NumDens = Rho / MoMi0_S[is];
       }
     } else {
       // Electrons and iones have same density, ignoring is
       Rho = get_value(mfi, x, y, z, iRho_I[0]);
-      NumDens = Rho *invSumMass;
+      NumDens = Rho * invSumMass;
     }
     return (NumDens);
   }

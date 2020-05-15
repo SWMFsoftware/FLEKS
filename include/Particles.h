@@ -31,11 +31,23 @@ private:
 
   amrex::Vector<amrex::RealBox> boxRange_I;
 
+  amrex::Real plo[nDim], phi[nDim], dx[nDim], invDx[nDim];
+  bool isPeriodic[nDim];
+
 public:
+  static const int iup_ = 0;
+  static const int ivp_ = 1;
+  static const int iwp_ = 2;
+  static const int iqp_ = 3;
+
+  amrex::iMultiFab cellStatus;
+
   Particles(const amrex::BoxArray& regionBAIn, const amrex::Geometry& geom,
             const amrex::DistributionMapping& dm, const amrex::BoxArray& ba,
             TimeCtr* const tcIn, const int speciesID, const amrex::Real charge,
             const amrex::Real mass, const amrex::IntVect& nPartPerCellIn);
+
+  amrex::BoxArray get_region_ba() const { return regionBA; }
 
   void set_region_ba(const amrex::BoxArray& in) {
     regionBA = in;
@@ -80,32 +92,11 @@ public:
 
   void convert_to_fluid_moments(amrex::MultiFab& momentsMF);
 
-  inline bool is_outside_domain(const ParticleType& p) {
-    const auto& plo = Geom(0).ProbLo();
-    const auto& phi = Geom(0).ProbHi();
-    const auto& dx = Geom(0).CellSize();
-
-    for (int iDim = 0; iDim < nDim; iDim++) {
-      if (!Geom(0).isPeriodic(iDim)) {
-        if (p.pos(iDim) > phi[iDim] || p.pos(iDim) < plo[iDim]) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }
-
   inline bool is_outside_ba(const ParticleType& p) {
-    if (is_outside_domain(p))
-      return true;
-
-    const auto& plo = Geom(0).ProbLo();
-    const auto& phi = Geom(0).ProbHi();
     amrex::Real loc[3] = { 0, 0, 0 };
     for (int iDim = 0; iDim < 3; iDim++) {
       loc[iDim] = p.pos(iDim);
-      if (Geom(0).isPeriodic(iDim)) {
+      if (isPeriodic[iDim]) {
         // Fix index/loc for periodic BC.
         while (loc[iDim] > phi[iDim])
           loc[iDim] -= phi[iDim] - plo[iDim];
@@ -122,7 +113,49 @@ public:
     return true;
   }
 
+  inline bool is_outside_ba(const ParticleType& p,
+                            amrex::Array4<int const> const& status,
+                            const amrex::IntVect& low,
+                            const amrex::IntVect& high) {
+
+    // Contains ghost cells.
+    bool isInsideBox = true;
+    int cellIdx[3];
+    amrex::Real dShift[3];
+    for (int i = 0; i < 3; i++) {
+      dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
+      cellIdx[i] = fastfloor(dShift[i]);
+      if (cellIdx[i] > high[i] || cellIdx[i] < low[i]) {
+        isInsideBox = false;
+        break;
+      }
+    }
+
+    if (isInsideBox) {
+      return status(cellIdx[ix_], cellIdx[iy_], cellIdx[iz_]) == iBoundary_;
+    } else {
+      return is_outside_ba(p);
+    }
+  }
+
   void label_particles_outside_ba() {
+    const int lev = 0;
+    for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
+      auto& particles = pti.GetArrayOfStructs();
+      const amrex::Array4<int const>& status = cellStatus[pti].array();
+      const amrex::Box& bx = cellStatus[pti].box();
+      const amrex::IntVect lowCorner = bx.smallEnd();
+      const amrex::IntVect highCorner = bx.bigEnd();
+      for (auto& p : particles) {
+        if (is_outside_ba(p, status, lowCorner, highCorner)) {
+          p.id() = -1;
+          // amrex::Print()<<"particle outside ba = "<<p<<std::endl;
+        }
+      }
+    }
+  }
+
+  void label_particles_outside_ba_general() {
     const int lev = 0;
     for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
       auto& particles = pti.GetArrayOfStructs();
@@ -142,12 +175,11 @@ public:
 
   amrex::Real get_qom() { return charge / mass; }
 
-protected:
-  static const int iup_ = 0;
-  static const int ivp_ = 1;
-  static const int iwp_ = 2;
-  static const int iqp_ = 3;
+  int get_speciesID() const { return speciesID; }
+  amrex::Real get_charge() const { return charge; }
+  amrex::Real get_mass() const { return mass; }
 
+protected:
   int speciesID;
   RandNum randNum;
 
@@ -160,6 +192,16 @@ protected:
   amrex::IntVect nPartPerCell;
 
   TimeCtr* tc;
+};
+
+class IOParticles : public Particles {
+public:
+  IOParticles() = delete;
+
+  IOParticles(Particles& other, amrex::Geometry geomIO, amrex::Real no2outL = 1,
+              amrex::Real no2outV = 1, amrex::Real no2OutM = 1,
+              amrex::RealBox IORange = amrex::RealBox());
+  ~IOParticles() = default;
 };
 
 #endif

@@ -6,21 +6,23 @@
 
 class Domain : public DomainGrid {
 private:
-  bool doRestart;  
+  bool doRestart;
 
 public:
   Pic pic;
 
   //  Conceptually, both the Domain class and the Pic class may use the
-  //  following classes, so they are handled by shared ponters. 
+  //  following classes, so they are handled by shared ponters.
   std::shared_ptr<FluidInterface> fluidInterface;
   std::shared_ptr<TimeCtr> tc;
+
+  int couplerMarker; 
 
 public:
   Domain() {
     fluidInterface = std::make_shared<FluidInterface>();
     tc = std::make_shared<TimeCtr>();
-    doRestart = false;    
+    doRestart = false;
   }
 
   ~Domain() = default;
@@ -28,8 +30,8 @@ public:
   void update();
 
   //--------------Initialization begin-------------------------------
-  void init(amrex::Real timeIn, const std::string &paramString, int *paramInt,
-            double *gridDim, double *paramReal, int iDomain = 1);
+  void init(const std::string &paramString, int *paramInt, double *gridDim,
+            double *paramReal, int iDomain = 1);
   void set_ic();
   //----------------Initialization end-------------------------------
 

@@ -14,20 +14,24 @@ void Domain::update() {
 };
 
 //========================================================
-void Domain::init(amrex::Real timeIn, const std::string &paramString,
-                  int *paramInt, double *gridDim, double *paramReal,
-                  int iDomain) {
+void Domain::init(const std::string &paramString, int *paramInt,
+                  double *gridDim, double *paramReal, int iDomain) {
   if (AMREX_SPACEDIM != 3)
     Abort("Error: AMReX should be compiled with 3D configuration!!");
 
-  tc->set_time_si(timeIn);
+  domainID = iDomain;
+  {
+    std::stringstream ss;
+    ss << "FLEKS" << domainID;
+    domainName = ss.str();
+    printPrefix = domainName + ": ";
+  }
 
-  fluidInterface->init();
+  fluidInterface->init(domainID);
   fluidInterface->receive_info_from_gm(paramInt, gridDim, paramReal,
                                        paramString);
 
-  pic.init(timeIn, paramString, paramInt, gridDim, paramReal, fluidInterface,
-           tc);
+  pic.init(fluidInterface, tc, domainID);
 
   read_param();
 
@@ -77,7 +81,7 @@ void Domain::make_grid() {
 
   geom.define(centerBox, &domainRange, coord, periodicity);
 
-  Print() << "Domain range = " << domainRange << std::endl;
+  Print() << printPrefix << "Domain range = " << domainRange << std::endl;
 
   pic.set_geom(nGst, geom);
   fluidInterface->set_geom(nGst, geom);
@@ -92,7 +96,7 @@ void Domain::regrid() {
   if (!gridInfo.is_grid_new())
     return;
 
-  Print() << nameFunc << " is runing..." << std::endl;
+  Print() << printPrefix << nameFunc << " is runing..." << std::endl;
 
   timing_func(nameFunc);
 
@@ -108,7 +112,7 @@ void Domain::regrid() {
   BoxArray baPic(picRegionBA);
 
   baPic.maxSize(maxBlockSize);
-  Print() << "=========Grid Information summary================="
+  Print() << "=====" << printPrefix << " Grid Information summary========="
           << "\n Number of Boxes to describe PIC = " << picRegionBA.size()
           << "\n Number of PIC boxes             = " << baPic.size()
           << "\n Number of PIC cells             = " << nCellPic
@@ -117,6 +121,9 @@ void Domain::regrid() {
           << nCellPic / centerBox.d_numPts()
           << "\n===================================================="
           << std::endl;
+  if (baPic.size() < ParallelDescriptor::NProcs()) {
+    Abort("Error: there are less blocks than the number of processors!");
+  }
 
   DistributionMapping dmPic(baPic);
   pic.regrid(picRegionBA, baPic, dmPic);
@@ -172,7 +179,7 @@ void Domain::read_restart() {
   std::string restartDir = "PC/restartIN/";
 
   MultiFab tmp;
-  VisMF::Read(tmp, restartDir + "centerB");
+  VisMF::Read(tmp, restartDir + domainName + "_centerB");
   BoxArray baPic = tmp.boxArray();
   DistributionMapping dmPic = tmp.DistributionMap();
 
@@ -202,7 +209,8 @@ void Domain::save_restart_data() {
 //========================================================
 void Domain::save_restart_header() {
   if (ParallelDescriptor::IOProcessor()) {
-    Print() << "Saving restart file at time = " << tc->get_time_si() << " (s)"
+    Print() << printPrefix
+            << "Saving restart file at time = " << tc->get_time_si() << " (s)"
             << std::endl;
 
     VisMF::IO_Buffer ioBuffer(VisMF::IO_Buffer_Size);
@@ -211,7 +219,7 @@ void Domain::save_restart_header() {
 
     headerFile.rdbuf()->pubsetbuf(ioBuffer.dataPtr(), ioBuffer.size());
 
-    std::string headerFileName("PC/restartOUT/restart.H");
+    std::string headerFileName("PC/restartOUT/" + domainName + "_restart.H");
 
     headerFile.open(headerFileName.c_str(),
                     std::ofstream::out | std::ofstream::trunc);
@@ -224,25 +232,27 @@ void Domain::save_restart_header() {
 
     headerFile << "Restart header \n\n";
 
-    headerFile << "#RESTART\n";
+    std::string command_suffix = "_" + domainName + "\n";
+
+    headerFile << "#RESTART" + command_suffix;
     headerFile << "T"
                << "\t doRestart\n";
     headerFile << "\n";
 
-    headerFile << "#NSTEP\n";
+    headerFile << "#NSTEP" + command_suffix;
     headerFile << tc->get_cycle() << "\t nStep\n";
     headerFile << "\n";
 
-    headerFile << "#TIMESIMULATION\n";
+    headerFile << "#TIMESIMULATION" + command_suffix;
     headerFile << tc->get_time_si() << "\t TimeSimulation\n";
     headerFile << "\n";
 
-    headerFile << "#TIMESTEP\n";
+    headerFile << "#TIMESTEP" + command_suffix;
     headerFile << tc->get_dt_si() << "\t dt\n";
     headerFile << "\n";
 
     // Geometry
-    headerFile << "#GEOMETRY\n";
+    headerFile << "#GEOMETRY" + command_suffix;
     for (int i = 0; i < nDim; ++i) {
       headerFile << domainRange.lo(i) << "\t min\n";
       headerFile << domainRange.hi(i) << "\t max\n";
@@ -250,7 +260,7 @@ void Domain::save_restart_header() {
     headerFile << "\n";
 
     // Cell
-    headerFile << "#NCELL\n";
+    headerFile << "#NCELL" + command_suffix;
     for (int i = 0; i < nDim; ++i) {
       headerFile << nCell[i] << "\n";
     }
@@ -292,7 +302,7 @@ void Domain::init_time_ctr() {
       writer.set_rank(ParallelDescriptor::MyProc());
       writer.set_nProcs(ParallelDescriptor::NProcs());
       writer.set_nDim(fluidInterface->getnDim());
-      writer.set_iRegion(0);
+      writer.set_iRegion(domainID);
       writer.set_domainMin_D({ { domainRange.lo(ix_), domainRange.lo(iy_),
                                  domainRange.lo(iz_) } });
 
@@ -301,14 +311,14 @@ void Domain::init_time_ctr() {
 
       const Real *dx = geom.CellSize();
       writer.set_dx_D({ { dx[ix_], dx[iy_], dx[iz_] } });
-
-      writer.set_axisOrigin_D({ { 0, 0, 0 } });
       writer.set_nSpecies(nS);
       writer.set_units(fluidInterface->getNo2SiL(), fluidInterface->getNo2SiV(),
                        fluidInterface->getNo2SiB(),
                        fluidInterface->getNo2SiRho(),
                        fluidInterface->getNo2SiP(), fluidInterface->getNo2SiJ(),
                        fluidInterface->getrPlanet());
+      writer.set_No2NoL(fluidInterface->getMhdNo2NoL());
+
       writer.set_scalarValue_I(scalarVar_I);
       writer.set_scalarName_I(scalarName_I);
       //--------------------------------------------------
@@ -325,6 +335,9 @@ void Domain::read_param() {
   std::string command;
   ReadParam &readParam = fluidInterface->readParam;
   readParam.set_verbose(ParallelDescriptor::MyProc() == 0);
+
+  readParam.set_command_suffix(domainName);
+
   while (readParam.get_next_command(command)) {
 
     if (command == "#DIVE" || command == "#EFIELDSOLVER" ||
@@ -357,6 +370,10 @@ void Domain::read_param() {
       int dn;
       readParam.read_var("dnSave", dn);
       tc->log.init(-1, dn);
+    } else if (command == "#MONITOR") {
+      int dn;
+      readParam.read_var("dnReport", dn);
+      tc->monitor.init(-1, dn);
     } else if (command == "#LOADBALANCE") {
       int dn;
       readParam.read_var("dn", dn);
@@ -383,6 +400,16 @@ void Domain::read_param() {
         Real dtSave;
         readParam.read_var("dtSavePlot", dtSave);
 
+        std::array<double, nDim> plotMin_D = { 1, 1, 1 },
+                                 plotMax_D = { -1, 1 - 1 };
+        if (plotString.find("cut") != std::string::npos) {
+          // Output range is 'cut' type.
+          for (int iDim = 0; iDim < nDim; iDim++) {
+            readParam.read_var("plotMin", plotMin_D[iDim]);
+            readParam.read_var("plotMax", plotMax_D[iDim]);
+          }
+        }
+
         int dxSave;
         readParam.read_var("dxSavePlot", dxSave);
 
@@ -392,7 +419,7 @@ void Domain::read_param() {
         }
 
         PlotCtr pcTmp(tc.get(), iPlot, dtSave, dnSave, plotString, dxSave,
-                      plotVar);
+                      plotVar, plotMin_D, plotMax_D);
         tc->plots.push_back(pcTmp);
       }
       //--------- The commands below exist in restart.H only --------

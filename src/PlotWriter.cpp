@@ -1,3 +1,4 @@
+#include <cctype>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -12,6 +13,8 @@ void PlotWriter::init() {
   isVerbose = rank == 0;
   doWriteHeader = rank == 0;
 
+  std::string errorPrefix = "Error in #SAVEPLOT command: ";
+
   std::string subString;
   std::string::size_type pos;
 
@@ -24,14 +27,13 @@ void PlotWriter::init() {
   }
   namePrefix = SaveDirName + "/" + subString;
 
-  double No2NoL = 1;
-
   // plotMin_ID is the range of the whole plot domain, it can
   // be larger
   // than the simulation domain on this processor.
-  std::stringstream ss;
   if (subString.substr(0, 2) == "x=" || subString.substr(0, 2) == "y=" ||
-      subString.substr(0, 2) == "z=" || subString.substr(0, 2) == "3d") {
+      subString.substr(0, 2) == "z=") {
+    std::stringstream ss;
+
     int idx = -1;
     if (subString.substr(0, 2) == "x=")
       idx = x_;
@@ -40,14 +42,14 @@ void PlotWriter::init() {
     if (subString.substr(0, 2) == "z=")
       idx = z_;
 
-    if (idx != -1) {
-      // Not '3d'.
-      subString.erase(0, 2);
-      ss << subString;
-      ss >> plotMin_D[idx];
-      plotMin_D[idx] = plotMin_D[idx] * No2NoL - axisOrigin_D[idx];
-      plotMax_D[idx] = plotMin_D[idx] + 1e-10;
-    }
+    subString.erase(0, 2);
+    ss << subString;
+    ss >> plotMin_D[idx];
+
+    // The plotMin_D/plotMax_D values read from the #SAVEPLOT command is in
+    // BATSRUS/SWMF IO unit.
+    plotMin_D[idx] = plotMin_D[idx] * No2NoL;
+    plotMax_D[idx] = plotMin_D[idx] + 1e-10;
 
     for (int iDim = 0; iDim < nDimMax; ++iDim) {
       if (iDim != idx) {
@@ -56,9 +58,21 @@ void PlotWriter::init() {
       }
     }
 
+  } else if (subString.substr(0, 2) == "3d") {
+    for (int iDim = 0; iDim < nDimMax; ++iDim) {
+      plotMin_D[iDim] = domainMin_D[iDim];
+      plotMax_D[iDim] = domainMax_D[iDim];
+    }
+
+  } else if (subString.substr(0, 3) == "cut") {
+    for (int iDim = 0; iDim < nDimMax; ++iDim) {
+      plotMin_D[iDim] = plotMin_D[iDim] * No2NoL;
+      plotMax_D[iDim] = plotMax_D[iDim] * No2NoL;
+    }
   } else {
     if (isVerbose)
-      std::cout << "Unknown plot range!! plotString = " << plotString
+      std::cout << errorPrefix
+                << "Unknown plot range!! plotString = " << plotString
                 << std::endl;
     abort();
   }
@@ -75,9 +89,26 @@ void PlotWriter::init() {
     plotVar = expand_variables("{fluid}");
     namePrefix += "_fluid";
 
+  } else if (plotString.find("particles") != std::string::npos) {
+    namePrefix += "_particle";
+
+    std::string::size_type pos = plotString.find("particles");
+    std::string speciesString = plotString.substr(pos + 9, 1);
+
+    if (!isdigit(speciesString.c_str()[0])) {
+      std::cout << errorPrefix
+                << "the species number should be follow after 'particles'!"
+                << std::endl;
+      abort();
+    }
+
+    std::stringstream ss;
+    ss << speciesString;
+    ss >> particleSpecies;
   } else {
     if (isVerbose)
-      std::cout << "Unknown plot variables!! plotString = " << plotString
+      std::cout << errorPrefix
+                << "Unknown plot variables!! plotString = " << plotString
                 << std::endl;
     abort();
   }
@@ -108,7 +139,8 @@ void PlotWriter::init() {
     outputFormat = "amrex";
   } else {
     if (isVerbose)
-      std::cout << "Unknown plot output format!! plotString = " << plotString
+      std::cout << errorPrefix
+                << "Unknown plot output format!! plotString = " << plotString
                 << std::endl;
     abort();
   }
@@ -125,9 +157,39 @@ void PlotWriter::init() {
     outputUnit = "PLANETARY";
   } else {
     if (isVerbose)
-      std::cout << "Unknown plot output unit!! plotString = " << plotString
+      std::cout << errorPrefix
+                << "Unknown plot output unit!! plotString = " << plotString
                 << std::endl;
     abort();
+  }
+
+  { //--------------------- Check parameters----------------------
+    if (!is_particle() && outputFormat == "amrex" &&
+        plotString.find("3d") == std::string::npos) {
+      std::cout << errorPrefix
+                << "for grid data, 'amrex' format output only support "
+                   "'3d' plot range!"
+                << std::endl;
+      abort();
+    }
+
+    if (is_particle()) {
+      if (outputFormat != "amrex") {
+        std::cout << errorPrefix
+                  << "particles can only be saved in 'amrex' format! "
+                  << std::endl;
+        abort();
+      }
+
+      if (plotString.find("3d") == std::string::npos &&
+          plotString.find("cut") == std::string::npos) {
+        std::cout << errorPrefix
+                  << "particles can only be saved with either '3d' or "
+                     "'cut' plot range! "
+                  << std::endl;
+        abort();
+      }
+    }
   }
 
   set_output_unit();
@@ -212,10 +274,7 @@ std::ostream& operator<<(std::ostream& coutIn, PlotWriter const& outputIn) {
          << outputIn.domainMax_D[outputIn.z_] << " \n"
          << "dx_D : " << outputIn.dx_D[outputIn.x_] << " "
          << outputIn.dx_D[outputIn.y_] << " " << outputIn.dx_D[outputIn.z_]
-         << " \n"
-         << "axisOrigin_D : " << outputIn.axisOrigin_D[outputIn.x_] << " "
-         << outputIn.axisOrigin_D[outputIn.y_] << " "
-         << outputIn.axisOrigin_D[outputIn.z_] << " \n";
+         << " \n";
   coutIn << "Variables : \n";
   for (std::string const& sTmp : outputIn.var_I)
     coutIn << sTmp << " \n";
@@ -269,24 +328,6 @@ void PlotWriter::write(double const timeNow, int const iCycle,
   } else {
     write_idl(timeNow, iCycle, find_output_list, get_var);
   }
-}
-
-void PlotWriter::write_amrex(double const timeNow, int const iCycle) {
-
-  std::string filename;
-  std::stringstream ss;
-  int nLength;
-  if (nProcs > 10000) {
-    nLength = 5;
-  } else if (nProcs > 100000) {
-    nLength = 5;
-  } else {
-    nLength = 4;
-  }
-  ss << "_region" << iRegion << "_" << ID << "_t" << std::setfill('0')
-     << std::setw(8) << second_to_clock_time(timeNow) << "_n"
-     << std::setfill('0') << std::setw(8) << iCycle;
-  filename = namePrefix + ss.str();
 }
 
 std::string PlotWriter::get_amrex_filename(double const timeNow,
@@ -391,10 +432,8 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
 
   outFile << "#PLOTRANGE\n";
   for (int i = 0; i < nDim; i++) {
-    outFile << (plotMinCorrected_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord"
-            << i << "Min\n";
-    outFile << (plotMaxCorrected_D[i] + axisOrigin_D[i]) * No2OutL << "\t coord"
-            << i << "Max\n";
+    outFile << plotMinCorrected_D[i] * No2OutL << "\t coord" << i << "Min\n";
+    outFile << plotMaxCorrected_D[i] * No2OutL << "\t coord" << i << "Max\n";
   }
   outFile << "\n";
 
@@ -413,10 +452,10 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
 
   outFile << "#PLOTRESOLUTION\n";
   for (int i = 0; i < nDim; i++) {
-    if(plotDx>=0){
-    outFile << plotDx * dx_D[i] * No2OutL << "\t plotDx\n";
-    }else{
-outFile << plotDx << "\t plotDx\n";
+    if (plotDx >= 0) {
+      outFile << plotDx * dx_D[i] * No2OutL << "\t plotDx\n";
+    } else {
+      outFile << plotDx << "\t plotDx\n";
     }
   }
   // }
@@ -500,6 +539,9 @@ double PlotWriter::No2OutTable(std::string const& var) const {
   } else if (var.substr(0, 3) == "rho") {
     // density
     value = No2OutRho;
+  } else if (var.substr(0, 4) == "mass") {
+    // mass
+    value = No2OutRho * pow(No2OutL, 3);
   } else if (var.substr(0, 3) == "rgS") {
     // gyro-radius
     value = No2OutL;

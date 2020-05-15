@@ -16,5 +16,7 @@ Makefile.conf
 Tmp_*
 util/
 data
-share/amrex
-src/show_git_info.h
+share
+include/show_git_info.h
+gitinfo.txt
+*__pycache__

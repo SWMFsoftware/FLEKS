@@ -39,6 +39,10 @@ protected:
   int iGrid;
   int iDecomp;
 
+  int domainID; 
+  std::string printPrefix; 
+  std::string domainName; 
+
 public:
   DomainGrid() {
     iGrid = 1;

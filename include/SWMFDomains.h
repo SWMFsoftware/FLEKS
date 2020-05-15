@@ -1,11 +1,12 @@
 #ifndef _SWMFDOMAINS_H_
 #define _SWMFDOMAINS_H_
 
-#include <mpi.h>
 #include <AMReX_Vector.H>
+#include <mpi.h>
+#include <vector>
 
-#include "Domain.h"
+#include "Domains.h"
 
-extern Domain* MPICs;
+extern Domains FLEKSs;
 
 #endif

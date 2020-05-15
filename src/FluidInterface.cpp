@@ -1,16 +1,24 @@
 #include <AMReX_MultiFabUtil.H>
 
 #include "FluidInterface.h"
-#include "Utility.h"
 #include "GridUtility.h"
+#include "Utility.h"
 
 using namespace amrex;
 
-void FluidInterface::init() {
+void FluidInterface::init(int domainIDIn) {
   set_myrank(ParallelDescriptor::MyProc());
   set_nProcs(ParallelDescriptor::NProcs());
   int iCycle = 0;
   setCycle(iCycle);
+  
+  domainID = domainIDIn; 
+  {
+    std::stringstream ss;
+    ss << "FLEKS" << domainID;
+    domainName = ss.str();
+    printPrefix = domainName + ": ";
+  }
 }
 
 void FluidInterface::receive_info_from_gm(const int* const paramInt,
@@ -27,9 +35,8 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
   std::string nameFunc = "FluidInterface::regrid";
   Print() << nameFunc << " is runing..." << std::endl;
 
-  
-  if (centerBAIn == centerBA){
-    // The interface grid does not change. 
+  if (centerBAIn == centerBA) {
+    // The interface grid does not change.
     return;
   }
 
@@ -89,7 +96,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
   int ifab = 0;
   for (MFIter mfi(nodeFluid); mfi.isValid(); ++mfi) {
     ifab++;
-    // For each block, looping through all nodes, including ghost nodes. 
+    // For each block, looping through all nodes, including ghost nodes.
     const Box& box = mfi.fabbox();
     const auto lo = lbound(box);
     const auto hi = ubound(box);
@@ -118,7 +125,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
         } // for k
   }
 
-  //Print() << "action = " << action << " nCount = " << nCount << std::endl;
+  // Print() << "action = " << action << " nCount = " << nCount << std::endl;
   return nCount;
 }
 
@@ -231,7 +238,7 @@ void FluidInterface::set_plasma_charge_and_mass(amrex::Real qomEl) {
   for (int is = 0; is < nSIn; is++)
     SumMass += MoMi_S[is];
 
-  invSumMass = 1./SumMass; 
+  invSumMass = 1. / SumMass;
 
   // Fix the values of MoMi_S and QoQi_S;
   MoMi0_S = new double[nSIn];

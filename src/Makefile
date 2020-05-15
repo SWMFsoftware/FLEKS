@@ -19,30 +19,21 @@ OBJECTS = ${OBJS}
 OBJECTS_EXE = \
 	main.o
 
-EXE = ${BINDIR}/FLEKS.exe
+FLEKSEXE = ${BINDIR}/FLEKS.exe
 
 SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 
 FLAGC_EXTRA = ${FLAGC_LOCAL} 
 
-# LDFLAGS = -L$(MYDIR)/${AMREX_INSTALL_DIR}/lib
-# LIBRARIES = -lamrex  -lgfortran
-
 include ../Makefile.conf
 
-EXE: $(EXE)
+default: EXE
 
-default: $(EXE)
-
-$(EXE):
+EXE:
 	$(MAKE) LIB
 	$(MAKE) ${OBJECTS_EXE}
-	${COMPILE.mpicxx} -o ${EXE} ${MY_LIB} ${OBJECTS_EXE} \
-		-L../libFLEKS/ -lFLEKS ${CPPLIB} ${MPILIB} \
-		$(LDFLAGS) $(LIBRARIES)
-
-
-#
+	${LINK.f90} -o ${FLEKSEXE} ${OBJECTS_EXE} \
+		-L -lFLEKS ${Lflag}
 
 %.o: %.cpp
 %.o: %.cpp $(DEPDIR)/%.d
@@ -51,19 +42,19 @@ $(EXE):
 DEPEND:
 
 
-MY_LIB  = ../libFLEKS/libFLEKS.a
+LIBFLEKS  = libFLEKS.a
 
 LIB:    
-	$(MAKE) ${MY_LIB}
+	$(MAKE) ${LIBFLEKS}
 	@echo
-	@echo ${MY_LIB} has been brought up to date.
+	@echo ${LIBFLEKS} has been brought up to date.
 	@echo
 
-${MY_LIB}: ${OBJECTS} 
-	${AR} ${MY_LIB} ${OBJECTS}
+${LIBFLEKS}: ${OBJECTS} 
+	${AR} ${LIBFLEKS} ${OBJECTS}
 
 clean:
-	-@(rm -f ${OBJECTS} ${OBJECTS_EXE} ${MY_LIB})
+	-@(rm -f ${OBJECTS} ${OBJECTS_EXE} ${LIBFLEKS})
 	-@(rm -rf .d)
 
 distclean: clean

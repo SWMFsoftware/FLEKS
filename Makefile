@@ -12,21 +12,19 @@ help:
 	@echo 'make distclean              - remove all files not part of CVS'
 	@echo
 
+include/show_git_info.h: include/show_git_info.h.orig
+	cp -f include/show_git_info.h.orig include/show_git_info.h
 
-GITINFO:
-	${SCRIPTDIR}/gitall -r=c > src/show_git_info.h
+GITINFO: include/show_git_info.h
+	${SCRIPTDIR}/gitall -r=c > include/show_git_info.h
 
-FLEKS: GITINFO
+FLEKS: GITINFO 
 	cd src; ${MAKE} EXE
 
 bin:
 	mkdir bin
 
-libFLEKS:
-	mkdir libFLEKS
-
-
-install: bin libFLEKS
+install: bin
 
 LIB: 
 	cd src; $(MAKE) LIB
@@ -39,11 +37,14 @@ rundir:
 		mkdir restartIN restartOUT plots;\
 		ln -s ${BINDIR}/PostIDL.exe .; \
 		cp    ${SCRIPTDIR}/pIDL .
+	cd ${RUNDIR}; \
+		(if [ -f ${BINDIR}/FLEKS.exe ]; then ln -s ${BINDIR}/FLEKS.exe .; fi)
 
 
 clean:
 	cd src; $(MAKE) clean
 	cd srcInterface; $(MAKE) clean
+	rm -rf bin/*
 
 distclean:
 	-@(./Config.pl -uninstall)
@@ -51,6 +52,6 @@ distclean:
 allclean:
 	-@(cd src; $(MAKE) distclean)
 	-@(cd srcInterface; $(MAKE) distclean)
-	-@(rm -rf *~ ./bin libFLEKS ${TESTDIR})
+	-@(rm -rf *~ ./bin lib ${TESTDIR})
 	-@(rm -f test*.diff)
 
