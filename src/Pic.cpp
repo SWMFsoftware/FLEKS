@@ -178,6 +178,25 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
     cellStatus.FillBoundary(geom.periodicity());
 
+    const bool is2D = geom.Domain().bigEnd(iz_) == geom.Domain().smallEnd(iz_);
+    if (is2D) {
+      // For the fake 2D cases, in the z-direction, only the first layer ghost
+      // cells are filled in correctly by the method FillBoundary.
+      for (MFIter mfi(cellStatus); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.fabbox();
+        const Array4<int>& cellArr = cellStatus[mfi].array();
+        const auto lo = lbound(box);
+        const auto hi = ubound(box);
+
+        for (int k = lo.z; k <= hi.z; ++k)
+          if (k < -1 || k > 1)
+            for (int j = lo.y; j <= hi.y; ++j)
+              for (int i = lo.x; i <= hi.x; ++i) {
+                cellArr(i, j, k) = cellArr(i, j, 0);
+              }
+      }
+    }    
+
     distribute_FabArray(nodeStatus, nodeBA, dm, 1, nGst, false);
     nodeStatus.setVal(iBoundary_);
     nodeStatus.setVal(iOnNew_, 0);
