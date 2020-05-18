@@ -57,9 +57,12 @@ class TimeCtr {
 private:
   amrex::Real timeNowSI;
   amrex::Real dtSI;
+  amrex::Real nextDtSI;
   amrex::Real si2no;
   amrex::Real no2si;
   long int cycle;
+
+  amrex::Real cfl;
 
   // public member variables.
 public:
@@ -75,7 +78,9 @@ public:
 public:
   TimeCtr()
       : timeNowSI(0),
-        dtSI(1),
+        dtSI(-1),
+        nextDtSI(-1),
+        cfl(0.2),
         si2no(1),
         no2si(1),
         cycle(0),
@@ -104,6 +109,13 @@ public:
   void set_dt_si(const amrex::Real dtIn) { dtSI = dtIn; }
   amrex::Real get_dt() const { return dtSI * si2no; }
   amrex::Real get_dt_si() const { return dtSI; }
+
+  void set_next_dt(amrex::Real in) { nextDtSI = in * no2si; }
+  void set_next_dt_si(amrex::Real in) { nextDtSI = in; }
+  amrex::Real get_next_dt() { return nextDtSI * si2no; }
+
+  void set_cfl(amrex::Real in) { cfl = in; }
+  amrex::Real get_cfl() { return cfl; }
 
   void update() {
     timeNowSI += dtSI;

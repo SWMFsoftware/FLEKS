@@ -356,9 +356,19 @@ void Domain::read_param() {
         maxBlockSize[i] = tmp;
       }
     } else if (command == "#TIMESTEP" || command == "#TIMESTEPPING") {
-      Real dtSI;
-      readParam.read_var("dtSI", dtSI);
-      tc->set_dt_si(dtSI);
+      bool useFixedDt;
+      readParam.read_var("useFixedDt", useFixedDt);
+      if (useFixedDt) {
+        Real dtSI;
+        readParam.read_var("dtSI", dtSI);
+        tc->set_dt_si(dtSI);
+        tc->set_next_dt_si(dtSI);
+        tc->set_cfl(-1);
+      } else {
+        Real cfl;
+        readParam.read_var("cfl", cfl);
+        tc->set_cfl(cfl);
+      }
     } else if (command == "#PERIODICITY") {
       for (int i = 0; i < nDim; i++) {
         bool isPeriodic;

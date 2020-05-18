@@ -88,7 +88,7 @@ public:
                      amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly);
 
   void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
-             amrex::Real dt);
+             amrex::Real dt, amrex::Real dtLoc);
 
   void convert_to_fluid_moments(amrex::MultiFab& momentsMF);
 

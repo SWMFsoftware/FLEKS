@@ -135,7 +135,7 @@ public:
   void fill_particles();
   //----------------Initialization end-------------------------------
 
-  void sum_moments();
+  void sum_moments(bool updateDt = false);
 
   void particle_mover();
 

@@ -73,7 +73,7 @@ void Pic::fill_new_cells() {
   fill_E_B_fields();
   fill_particles();
 
-  sum_moments();
+  sum_moments(true);
   sum_to_center(false);
 
   doNeedFillNewCell = false;
@@ -195,7 +195,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
                 cellArr(i, j, k) = cellArr(i, j, 0);
               }
       }
-    }    
+    }
 
     distribute_FabArray(nodeStatus, nodeBA, dm, 1, nGst, false);
     nodeStatus.setVal(iBoundary_);
@@ -452,7 +452,7 @@ void Pic::particle_mover() {
   timing_func(nameFunc);
 
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->mover(nodeEth, nodeB, tc->get_dt());
+    parts[i]->mover(nodeEth, nodeB, tc->get_dt(), tc->get_next_dt());
 
     if (doReSampling) {
       parts[i]->split_particles(reSamplingLowLimit);
@@ -464,29 +464,56 @@ void Pic::particle_mover() {
 }
 
 //==========================================================
-void Pic::sum_moments() {
+void Pic::sum_moments(bool updateDt) {
   std::string nameFunc = "Pic::sum_moments";
 
   timing_func(nameFunc);
 
-  nodePlasma[nSpecies].setVal(0.0);
-  const RealMM mm0(0.0);
-  nodeMM.setVal(mm0);
-
-  const Real dt = tc->get_dt();
-  const auto& invDx = geom.InvCellSize();
-  plasmaEnergy[iTot] = 0;
-  for (int i = 0; i < nSpecies; i++) {
-    PartInfo pinfo = parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, dt);
-    plasmaEnergy[i] = pinfo.energy;
-    Print() << printPrefix << std::setprecision(5) << "Species " << i
-            << ": max(uth) = " << pinfo.uMax
-            << ", CFL_x = " << pinfo.uMax * dt * invDx[ix_]
-            << ", CFL_y = " << pinfo.uMax * dt * invDx[iy_]
-            << ", CFL_z = " << pinfo.uMax * dt * invDx[iz_] << std::endl;
-    plasmaEnergy[iTot] += plasmaEnergy[i];
-    MultiFab::Add(nodePlasma[nSpecies], nodePlasma[i], 0, 0, nMoments, 0);
+  const auto& dx = geom.CellSize();
+  Real minDx = 1e99;
+  for (int iDim = 0; iDim < nDim; iDim++) {
+    if (minDx > dx[iDim])
+      minDx = dx[iDim];
   }
+
+  Real umax = -1;
+  int nLoop = tc->get_dt() < 0 && updateDt ? 2 : 1;
+  for (int iLoop = 0; iLoop < nLoop; iLoop++) {
+    // If this is called during initialization, dt may not known and the
+    // following code should be looped twice: 1) call sum_moments to find umax
+    // and then calculate dt; 2) call sum_moments to calculate mass matrix with
+    // proper dt;
+
+    nodePlasma[nSpecies].setVal(0.0);
+    const RealMM mm0(0.0);
+    nodeMM.setVal(mm0);
+
+    plasmaEnergy[iTot] = 0;
+    for (int i = 0; i < nSpecies; i++) {
+      PartInfo pinfo =
+          parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, tc->get_dt());
+      plasmaEnergy[i] = pinfo.energy;
+      Print() << printPrefix << std::setprecision(5) << "Species " << i
+              << ": max(uth) = " << pinfo.uMax << std::endl;
+      if (pinfo.uMax > umax)
+        umax = pinfo.uMax;
+      plasmaEnergy[iTot] += plasmaEnergy[i];
+      MultiFab::Add(nodePlasma[nSpecies], nodePlasma[i], 0, 0, nMoments, 0);
+    }
+
+    if (updateDt && tc->get_cfl() > 0) {
+      Real dtNext = tc->get_cfl() * minDx / umax;
+      tc->set_next_dt(dtNext);
+
+      if (tc->get_dt() < 0) {
+        tc->set_dt(dtNext);
+      }
+    }
+  }
+
+  Print() << printPrefix << std::setprecision(5) << "dt = " << tc->get_dt()
+          << " dtNext = " << tc->get_next_dt()
+          << " CFL(dtNext) = " << tc->get_next_dt() * umax / minDx << std::endl;
 
   nodeMM.SumBoundary(geom.periodicity());
 
@@ -658,7 +685,9 @@ void Pic::update() {
   // on the gird do NOT require MPI communication.
   load_balance();
 
-  sum_moments();
+  tc->set_dt(tc->get_next_dt());
+
+  sum_moments(true);
 
   {
     Real tEnd = second();

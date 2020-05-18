@@ -623,8 +623,7 @@ Real Particles::calc_max_thermal_velocity(MultiFab& momentsMF) {
   ParallelDescriptor::ReduceRealMax(uthMax,
                                     ParallelDescriptor::IOProcessorNumber());
 
-  if (!ParallelDescriptor::IOProcessor())
-    uthMax = 0;
+  ParallelDescriptor::Bcast(&uthMax, 1, ParallelDescriptor::IOProcessorNumber()); 
 
   return uthMax;
 }
@@ -664,12 +663,11 @@ void Particles::convert_to_fluid_moments(MultiFab& momentsMF) {
 
 //==========================================================
 void Particles::mover(const amrex::MultiFab& nodeEMF,
-                      const amrex::MultiFab& nodeBMF, amrex::Real dt) {
+                      const amrex::MultiFab& nodeBMF, amrex::Real dt, amrex::Real dtLoc) {
   timing_func("Particles::mover");
 
   const auto& plo = Geom(0).ProbLo();
-
-  const Real dtLoc = dt;
+  
   const Real qdto2mc = charge / mass * 0.5 * dt;
 
   const int lev = 0;
