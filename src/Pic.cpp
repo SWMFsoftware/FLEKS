@@ -513,8 +513,8 @@ void Pic::sum_moments(bool updateDt) {
     }
   }
 
-  Print() << printPrefix << std::setprecision(5) << "dt = " << tc->get_dt()
-          << " dtNext = " << tc->get_next_dt()
+  Print() << printPrefix << std::setprecision(5) << "dt = " << tc->get_dt_si()
+          << " dtNext = " << tc->get_next_dt_si()
           << " CFL(dtNext) = " << tc->get_next_dt() * umax / minDx << std::endl;
 
   nodeMM.SumBoundary(geom.periodicity());
