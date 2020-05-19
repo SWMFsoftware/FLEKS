@@ -113,6 +113,7 @@ public:
   void set_next_dt(amrex::Real in) { nextDtSI = in * no2si; }
   void set_next_dt_si(amrex::Real in) { nextDtSI = in; }
   amrex::Real get_next_dt() { return nextDtSI * si2no; }
+  amrex::Real get_next_dt_si() { return nextDtSI; }
 
   void set_cfl(amrex::Real in) { cfl = in; }
   amrex::Real get_cfl() { return cfl; }

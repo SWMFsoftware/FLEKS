@@ -248,7 +248,20 @@ void Domain::save_restart_header() {
     headerFile << "\n";
 
     headerFile << "#TIMESTEP" + command_suffix;
-    headerFile << tc->get_dt_si() << "\t dt\n";
+    bool useFixedDt = tc->get_cfl() <= 0;
+    headerFile << (useFixedDt ? "T" : "F") << "\t useFixedDt\n";
+    if (useFixedDt) {
+      headerFile << tc->get_dt_si() << "\t dt\n";
+    } else {
+      headerFile << tc->get_cfl() << "\t cfl\n";
+    }
+
+    if (!useFixedDt) {
+      headerFile << "#DT" + command_suffix;
+      headerFile << tc->get_dt_si() << "\t dtSI\n";
+      headerFile << tc->get_next_dt_si() << "\t dtNextSI\n";
+    }
+
     headerFile << "\n";
 
     // Geometry
@@ -441,6 +454,13 @@ void Domain::read_param() {
       Real time;
       readParam.read_var("time", time);
       tc->set_time_si(time);
+    } else if (command == "#DT") {
+      // NOTE: this command is useful only for CFL based time stepping.
+      Real dtSI, dtNextSI;
+      readParam.read_var("dtSI", dtSI);
+      readParam.read_var("dtNextSI", dtNextSI);
+      tc->set_dt_si(dtSI);
+      tc->set_next_dt_si(dtNextSI);
     } else if (command == "#GEOMETRY") {
       for (int i = 0; i < nDim; ++i) {
         Real lo, hi;

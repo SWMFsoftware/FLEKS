@@ -667,9 +667,11 @@ void Pic::update() {
     // update time, step number.
     tc->update();
     const Real t1 = tc->get_time_si();
-    Print() << "\n====== " << printPrefix
-            << " Begin cycle = " << tc->get_cycle() << " from t = " << t0
-            << " (s) to t = " << t1 << " (s) ========" << std::endl;
+    Print() << "\n==== " << printPrefix << " Cycle " << tc->get_cycle()
+            << " from t = " << std::setprecision(6) << t0
+            << " (s) to t = " << std::setprecision(6) << t1
+            << " (s) with dt = " << std::setprecision(6) << tc->get_dt_si()
+            <<" (s) ===="<< std::endl;
   }
 
   update_E();
