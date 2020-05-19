@@ -11,8 +11,8 @@ void FluidInterface::init(int domainIDIn) {
   set_nProcs(ParallelDescriptor::NProcs());
   int iCycle = 0;
   setCycle(iCycle);
-  
-  domainID = domainIDIn; 
+
+  domainID = domainIDIn;
   {
     std::stringstream ss;
     ss << "FLEKS" << domainID;
@@ -32,8 +32,7 @@ void FluidInterface::receive_info_from_gm(const int* const paramInt,
 
 void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
                             const amrex::DistributionMapping& dmIn) {
-  std::string nameFunc = "FluidInterface::regrid";
-  Print() << nameFunc << " is runing..." << std::endl;
+  std::string nameFunc = "FluidInterface::regrid";  
 
   if (centerBAIn == centerBA) {
     // The interface grid does not change.
@@ -256,16 +255,6 @@ void FluidInterface::set_plasma_charge_and_mass(amrex::Real qomEl) {
       MoMi_S[i] = MoMi0_S[idx];
     }
   }
-
-  Print() << "=========== Plasma species ============" << std::endl;
-  for (int is = 0; is < nS; is++) {
-    Print() << "Q/Qi[" << is << "] = " << QoQi_S[is] << std::endl;
-
-    Print() << "M/Mi[" << is << "] = " << MoMi_S[is] << std::endl;
-  }
-  if (!useMhdPe && !useElectronFluid)
-    Print() << "Pe/Ptotal = " << PeRatio << std::endl;
-  Print() << "===================================" << std::endl;
 }
 
 void FluidInterface::load_balance(const DistributionMapping& dmIn) {

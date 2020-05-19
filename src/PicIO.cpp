@@ -10,7 +10,7 @@ using namespace amrex;
 void Pic::set_state_var(double* data, int* index) {
   std::string nameFunc = "Pic::set_state_var";
 
-  Print() << nameFunc << std::endl;
+  Print() << printPrefix << nameFunc << " is called" << std::endl;
 
   fluidInterface->set_couple_node_value(data, index);
 
@@ -55,7 +55,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
                                      const double* const xyz_I,
                                      double* const data_I, const int nVar) {
   std::string nameFunc = "Pic::get_fluid_state_for_points";
-  Print() << nameFunc << std::endl;
+  Print() << printPrefix << nameFunc << " is called" << std::endl;
 
   // (rho + 3*Moment + 6*p)*nSpecies+ 3*E + 3*B;
   const int nVarPerSpecies = 10;
@@ -382,11 +382,11 @@ void Pic::save_restart_header(std::ofstream& headerFile) {
   std::string command_suffix = "_" + domainName + "\n";
 
   if (ParallelDescriptor::IOProcessor()) {
-    headerFile << "#ELECTRON"+command_suffix;
+    headerFile << "#ELECTRON" + command_suffix;
     headerFile << qomEl << "\t qomEl\n";
     headerFile << "\n";
 
-    headerFile << "#PARTICLES"+command_suffix;
+    headerFile << "#PARTICLES" + command_suffix;
     for (int i = 0; i < nDim; ++i) {
       headerFile << nPartPerCell[i] << "\n";
     }

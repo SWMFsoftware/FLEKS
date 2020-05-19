@@ -54,7 +54,10 @@ void Pic::read_param(const std::string& command, ReadParam& readParam) {
     readParam.read_var("reSamplingLowLimit", reSamplingLowLimit);
     readParam.read_var("reSamplingHighLimit", reSamplingHighLimit);
   }
+}
 
+//==========================================================
+void Pic::post_process_param() {
   fluidInterface->set_plasma_charge_and_mass(qomEl);
   nSpecies = fluidInterface->get_nS();
 }
@@ -68,7 +71,7 @@ void Pic::fill_new_cells() {
 
   timing_func(nameFunc);
 
-  Print() << printPrefix << nameFunc << std::endl;
+  Print() << printPrefix << nameFunc << " is called" << std::endl;
 
   fill_E_B_fields();
   fill_particles();
@@ -95,7 +98,6 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   if (centerBAIn == centerBA)
     return;
 
-  Print() << printPrefix << nameFunc << " is runing..." << std::endl;
   doNeedFillNewCell = true;
 
   picRegionBA = picRegionIn;
@@ -671,7 +673,7 @@ void Pic::update() {
             << " from t = " << std::setprecision(6) << t0
             << " (s) to t = " << std::setprecision(6) << t1
             << " (s) with dt = " << std::setprecision(6) << tc->get_dt_si()
-            <<" (s) ===="<< std::endl;
+            << " (s) ====" << std::endl;
   }
 
   update_E();
@@ -1250,7 +1252,7 @@ void Pic::monitor() {
         << " |\n"
 
         << "|# of particles|" << std::setw(nw) << minVal[iNParts_] << " |"
-        << std::setw(nw) << avgVal[iNParts_] << " |" << std::setw(nw)
+        << std::setw(nw) << (int)avgVal[iNParts_] << " |" << std::setw(nw)
         << maxVal[iNParts_] << " |" << std::setw(nw) << maxLoc[iNParts_]
         << " |\n"
 

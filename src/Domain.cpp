@@ -96,7 +96,7 @@ void Domain::regrid() {
   if (!gridInfo.is_grid_new())
     return;
 
-  Print() << printPrefix << nameFunc << " is runing..." << std::endl;
+  Print() << printPrefix << nameFunc << " is called" << std::endl;
 
   timing_func(nameFunc);
 
@@ -476,6 +476,9 @@ void Domain::read_param() {
     }
     //--------- The commands above exist in restart.H only --------
   }
+
+  pic.post_process_param();
+
 }
 
 //========================================================

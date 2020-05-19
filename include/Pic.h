@@ -161,6 +161,7 @@ public:
                                   const double *const xyz_I,
                                   double *const data_I, const int nVar);
   void read_param(const std::string &command, ReadParam &readParam);
+  void post_process_param();
   //------------Coupler related end--------------
 
   //-------------Electric field solver begin-------------
