@@ -349,6 +349,12 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
       value = (arr(ix, iy, iz, iPxx_) + arr(ix, iy, iz, iPyy_) +
                arr(ix, iy, iz, iPzz_)) /
               3.0;
+    } else if (var.substr(0, 2) == "qc") {
+      const amrex::Array4<amrex::Real const>& arr = centerNetChargeN[mfi].array();
+      value = arr(ix, iy, iz);
+    } else if (var.substr(0, 5) == "divEc") {
+      const amrex::Array4<amrex::Real const>& arr = centerDivE[mfi].array();
+      value = arr(ix, iy, iz);
     } else if (var.substr(0, 4) == "rank") {
       value = ParallelDescriptor::MyProc();
     } else if (var.substr(0, 5) == "block") {

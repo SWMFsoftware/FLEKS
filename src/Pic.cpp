@@ -748,6 +748,8 @@ void Pic::update_E() {
 
   apply_external_BC(nodeStatus, nodeE, 0, nDim, &Pic::get_node_E);
   apply_external_BC(nodeStatus, nodeEth, 0, nDim, &Pic::get_node_E);
+
+  div_node_to_center(nodeE, centerDivE, geom.InvCellSize());
 }
 
 //==========================================================
