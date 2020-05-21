@@ -623,6 +623,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
     varNames.push_back("Ez");
   }
 
+  bool isDensityZero = false;
   if (plotVars.find("plasma") != std::string::npos) {
     //-------------plasma---------------------
 
@@ -632,18 +633,36 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
     for (int i = 0; i < nSpecies; i++) {
       MultiFab rho(nodePlasma[i], make_alias, iRho_, 1);
-      if (rho.min(0) == 0)
-        Abort("Error: density is zero!");
 
       // Get momentums
       MultiFab ux(nodePlasma[i], make_alias, iMx_, 1);
       MultiFab uy(nodePlasma[i], make_alias, iMy_, 1);
       MultiFab uz(nodePlasma[i], make_alias, iMz_, 1);
 
-      // Convert momentum to velocity;
-      MultiFab::Divide(ux, rho, 0, 0, 1, 0);
-      MultiFab::Divide(uy, rho, 0, 0, 1, 0);
-      MultiFab::Divide(uz, rho, 0, 0, 1, 0);
+      for (MFIter mfi(nodePlasma[i]); mfi.isValid(); ++mfi) {
+        // Convert momentum to velocity;
+        const Box& box = mfi.fabbox();
+        const Array4<Real>& plasmaArr = nodePlasma[i][mfi].array();
+        const Array4<Real>& uxArr = ux[mfi].array();
+        const Array4<Real>& uyArr = uy[mfi].array();
+        const Array4<Real>& uzArr = uz[mfi].array();
+
+        const auto lo = lbound(box);
+        const auto hi = ubound(box);
+
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i) {
+              const Real rho = plasmaArr(i, j, k, iRho_);
+              if (rho > 1e-99) {
+                uxArr(i, j, k) = plasmaArr(i, j, k, iUx_) / rho;
+                uyArr(i, j, k) = plasmaArr(i, j, k, iUy_) / rho;
+                uzArr(i, j, k) = plasmaArr(i, j, k, iUz_) / rho;
+              } else {
+                isDensityZero = true;
+              }
+            }
+      }
 
       MultiFab pl(nodePlasma[i], make_alias, iRho_, iPyz_ - iRho_ + 1);
       average_node_to_cellcenter(centerMF, iStart, pl, 0, pl.nComp(), 0);
@@ -683,6 +702,19 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
     headerFile << pw.get_plotString() << "\n";
     headerFile << fluidInterface->getrPlanet() << "\n";
+  }
+
+  if (isDensityZero) {
+    Print()
+        << printPrefix << " Error:"
+        << " density is zero somewhere! Check the file " << filename
+        << " to see what is going on. \n"
+        << "Suggestions:\n"
+        << "1) Use the #RESAMPLING command to control the particle number.\n"
+        << "2) If 1) does not help, it likely something is wrong at the PIC "
+           "boundary."
+        << std::endl;
+    Abort();
   }
 }
 
