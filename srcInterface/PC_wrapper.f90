@@ -100,6 +100,8 @@ contains
 
     character(len=*), parameter :: NameSub='PC_init_session'
     !--------------------------------------------------------------------------    
+    
+    call pic_init(TimeSimulation)
 
   end subroutine PC_init_session
 
@@ -147,7 +149,7 @@ contains
     character(len=*), parameter :: NameSub='PC_run'
     !--------------------------------------------------------------------------
     call CON_set_do_test(NameSub, DoTest, DoTestMe)
-
+    
     if(DoTestMe)write(*,*) NameSub, &
          ' starting with TimeSimulation, TimeSimulationLimit=', &
          TimeSimulation, TimeSimulationLimit

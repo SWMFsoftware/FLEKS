@@ -6,6 +6,7 @@
 
 extern "C" {
 int pic_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc);
+int pic_init_(double *timeNow); 
 int pic_finalize_init_();
 int pic_run_(double *time);
 int pic_save_restart_();

@@ -30,7 +30,7 @@ public:
   void update();
 
   //--------------Initialization begin-------------------------------
-  void init(const std::string &paramString, int *paramInt, double *gridDim,
+  void init(double time, const std::string &paramString, int *paramInt, double *gridDim,
             double *paramReal, int iDomain = 1);
   void set_ic();
   //----------------Initialization end-------------------------------

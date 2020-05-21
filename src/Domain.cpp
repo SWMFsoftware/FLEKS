@@ -14,11 +14,13 @@ void Domain::update() {
 };
 
 //========================================================
-void Domain::init(const std::string &paramString, int *paramInt,
+void Domain::init(double time, const std::string &paramString, int *paramInt,
                   double *gridDim, double *paramReal, int iDomain) {
   if (AMREX_SPACEDIM != 3)
     Abort("Error: AMReX should be compiled with 3D configuration!!");
 
+  tc->set_time_si(time); 
+  
   domainID = iDomain;
   {
     std::stringstream ss;
