@@ -630,6 +630,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   }
 
   bool isDensityZero = false;
+  int zeroI, zeroJ, zeroK; 
   if (plotVars.find("plasma") != std::string::npos) {
     //-------------plasma---------------------
 
@@ -647,7 +648,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
       for (MFIter mfi(nodePlasma[i]); mfi.isValid(); ++mfi) {
         // Convert momentum to velocity;
-        const Box& box = mfi.fabbox();
+        const Box& box = mfi.validbox();
         const Array4<Real>& plasmaArr = nodePlasma[i][mfi].array();
         const Array4<Real>& uxArr = ux[mfi].array();
         const Array4<Real>& uyArr = uy[mfi].array();
@@ -666,6 +667,9 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
                 uzArr(i, j, k) = plasmaArr(i, j, k, iUz_) / rho;
               } else {
                 isDensityZero = true;
+		zeroI = i; 
+		zeroJ = j; 
+		zeroK = k; 
               }
             }
       }
@@ -711,14 +715,16 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   }
 
   if (isDensityZero) {
-    Print()
-        << printPrefix << " Error:"
-        << " density is zero somewhere! Check the file " << filename
+    AllPrint()
+	      <<"\n\n\n=========="<< printPrefix << " Error ===========================\n"
+	      << "Density is zero at i = "<<zeroI<<" j = "<<zeroJ<<" k = "<<zeroK<<".\n"
+	<< "Check the file " << filename
         << " to see what is going on. \n"
         << "Suggestions:\n"
         << "1) Use the #RESAMPLING command to control the particle number.\n"
-        << "2) If 1) does not help, it likely something is wrong at the PIC "
-           "boundary."
+        << "2) If 1) does not help, it is likely something is wrong at the PIC "
+      "boundary."
+	      <<"\n========================================================\n\n\n"
         << std::endl;
     Abort();
   }
