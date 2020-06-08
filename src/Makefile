@@ -1,7 +1,9 @@
 # source files
 SRCS := \
 	Domain.cpp \
+	ParticleTracker.cpp \
 	Particles.cpp \
+	TestParticles.cpp \
 	LinearSolver.cpp \
 	Utility.cpp \
 	PlotWriter.cpp \
@@ -9,7 +11,7 @@ SRCS := \
 	BC.cpp \
 	FluidInterface.cpp \
 	Pic.cpp \
-	PicIO.cpp
+	PicIO.cpp	
 
 include ../Makefile.conf.local
 include ../Makefile.def

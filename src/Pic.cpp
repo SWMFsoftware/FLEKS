@@ -229,7 +229,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   //--------------particles-----------------------------------
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
-      auto ptr = std::make_unique<Particles>(
+      auto ptr = std::make_unique<Particles<>>(
           picRegionBA, geom, dm, centerBA, tc.get(), i,
           fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i),
           nPartPerCell);

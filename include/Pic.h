@@ -12,6 +12,7 @@
 #include "TimeCtr.h"
 #include "UMultiFab.h"
 
+class ParticleTracker; 
 class Pic;
 
 class FieldSolver {
@@ -33,6 +34,7 @@ typedef void (Pic::*PicWriteAmrex)(const std::string &filename,
 // The grid is defined in DomaiGrid. This class contains the data on the grid.
 class Pic : public PicGrid {
   friend PlotWriter;
+  friend ParticleTracker; 
   // public variables
 public:
   // private variables
@@ -71,7 +73,7 @@ private:
   amrex::Vector<amrex::MultiFab> nodePlasma;
   amrex::Vector<amrex::Real> plasmaEnergy;
 
-  amrex::Vector<std::unique_ptr<Particles> > parts;
+  amrex::Vector<std::unique_ptr<Particles<>> > parts;
 
   amrex::IntVect nPartPerCell;
   amrex::Real qomEl;

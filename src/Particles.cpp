@@ -7,12 +7,13 @@
 using namespace amrex;
 
 //==========================================================
-Particles::Particles(const amrex::BoxArray& regionBAIn, const Geometry& geom,
-                     const DistributionMapping& dm, const BoxArray& ba,
-                     TimeCtr* const tcIn, const int speciesIDIn,
-                     const Real chargeIn, const Real massIn,
-                     const IntVect& nPartPerCellIn)
-    : ParticleContainer<4, 0, 0, 0>(geom, dm, ba),
+template <int NStructReal, int NStructInt>
+Particles<NStructReal, NStructInt>::Particles(
+    const amrex::BoxArray& regionBAIn, const Geometry& geom,
+    const DistributionMapping& dm, const BoxArray& ba, TimeCtr* const tcIn,
+    const int speciesIDIn, const Real chargeIn, const Real massIn,
+    const IntVect& nPartPerCellIn)
+    : ParticleContainer<NStructReal, NStructInt>(geom, dm, ba),
       tc(tcIn),
       speciesID(speciesIDIn),
       charge(chargeIn),
@@ -35,14 +36,15 @@ Particles::Particles(const amrex::BoxArray& regionBAIn, const Geometry& geom,
   set_region_ba(regionBAIn);
 
   // The following line is used to avoid an MPI bug (feature?) on Frontera. It
-  // should be removed after the bug being fixed. 
+  // should be removed after the bug being fixed.
   SetUseUnlink(false);
 }
 
 //==========================================================
-void Particles::add_particles_cell(const MFIter& mfi,
-                                   const FluidInterface& fluidInterface, int i,
-                                   int j, int k) {
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::add_particles_cell(
+    const MFIter& mfi, const FluidInterface& fluidInterface, int i, int j,
+    int k) {
   int ig, jg, kg, nxcg, nycg, nzcg, iCycle, npcel, nRandom = 7;
   // Why +1? for comparison with iPIC3D.-----
 
@@ -153,6 +155,12 @@ void Particles::add_particles_cell(const MFIter& mfi,
           p.rdata(ivp_) = v;
           p.rdata(iwp_) = w;
           p.rdata(iqp_) = q;
+
+          if (NStructInt > 0) {
+            // For test particle only.
+            p.idata(iRecordCount_) = 0;
+          }
+
           particles.push_back(p);
           // Print() << p << std::endl;
         }
@@ -160,8 +168,9 @@ void Particles::add_particles_cell(const MFIter& mfi,
 }
 
 //==========================================================
-void Particles::add_particles_domain(const FluidInterface& fluidInterface,
-                                     const iMultiFab& cellStatus) {
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::add_particles_domain(
+    const FluidInterface& fluidInterface, const iMultiFab& cellStatus) {
   timing_func("Particles::add_particles");
 
   const int lev = 0;
@@ -185,7 +194,8 @@ void Particles::add_particles_domain(const FluidInterface& fluidInterface,
 }
 
 //==========================================================
-void Particles::inject_particles_at_boundary(
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
     const FluidInterface& fluidInterface, const iMultiFab& cellStatus) {
   timing_func("Particles::inject_particles_at_boundary");
 
@@ -221,15 +231,17 @@ void Particles::inject_particles_at_boundary(
 }
 
 //==========================================================
-void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
-                              amrex::UMultiFab<RealCMM>& centerMM,
-                              bool doNetChargeOnly) {
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::sum_to_center(
+    amrex::MultiFab& netChargeMF, amrex::UMultiFab<RealCMM>& centerMM,
+    bool doNetChargeOnly) {
   timing_func("Particles::sum_to_center");
 
   const Real invVol = invDx[ix_] * invDx[iy_] * invDx[iz_];
 
   const int lev = 0;
-  for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+       ++pti) {
     Array4<Real> const& chargeArr = netChargeMF[pti].array();
     Array4<RealCMM> const& mmArr = centerMM[pti].array();
 
@@ -357,8 +369,10 @@ void Particles::sum_to_center(amrex::MultiFab& netChargeMF,
 }
 
 //==========================================================
-PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
-                                MultiFab& nodeBMF, Real dt) {
+template <int NStructReal, int NStructInt>
+PartInfo Particles<NStructReal, NStructInt>::sum_moments(
+    MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM, MultiFab& nodeBMF,
+    Real dt) {
   timing_func("Particles::sum_moments");
   const auto& plo = Geom(0).ProbLo();
 
@@ -370,7 +384,8 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
 
   PartInfo pinfo;
   const int lev = 0;
-  for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+       ++pti) {
     Array4<Real> const& momentsArr = momentsMF[pti].array();
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
     Array4<RealMM> const& mmArr = nodeMM[pti].array();
@@ -590,7 +605,9 @@ PartInfo Particles::sum_moments(MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM,
 }
 
 //==========================================================
-Real Particles::calc_max_thermal_velocity(MultiFab& momentsMF) {
+template <int NStructReal, int NStructInt>
+Real Particles<NStructReal, NStructInt>::calc_max_thermal_velocity(
+    MultiFab& momentsMF) {
 
   Real uthMax = 0;
   const Real c1over3 = 1. / 3;
@@ -623,13 +640,16 @@ Real Particles::calc_max_thermal_velocity(MultiFab& momentsMF) {
   ParallelDescriptor::ReduceRealMax(uthMax,
                                     ParallelDescriptor::IOProcessorNumber());
 
-  ParallelDescriptor::Bcast(&uthMax, 1, ParallelDescriptor::IOProcessorNumber()); 
+  ParallelDescriptor::Bcast(&uthMax, 1,
+                            ParallelDescriptor::IOProcessorNumber());
 
   return uthMax;
 }
 
 //==========================================================
-void Particles::convert_to_fluid_moments(MultiFab& momentsMF) {
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::convert_to_fluid_moments(
+    MultiFab& momentsMF) {
   MultiFab tmpMF(momentsMF, make_alias, iRho_, iPyz_ - iRho_ + 1);
   tmpMF.mult(1.0 / get_qom(), tmpMF.nGrow());
 
@@ -662,16 +682,21 @@ void Particles::convert_to_fluid_moments(MultiFab& momentsMF) {
 }
 
 //==========================================================
-void Particles::mover(const amrex::MultiFab& nodeEMF,
-                      const amrex::MultiFab& nodeBMF, amrex::Real dt, amrex::Real dtLoc) {
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::mover(const amrex::MultiFab& nodeEMF,
+                                               const amrex::MultiFab& nodeBMF,
+                                               amrex::Real dt,
+                                               amrex::Real dtNext) {
   timing_func("Particles::mover");
 
   const auto& plo = Geom(0).ProbLo();
-  
+
   const Real qdto2mc = charge / mass * 0.5 * dt;
+  Real dtLoc = 0.5 * (dt + dtNext);
 
   const int lev = 0;
-  for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+       ++pti) {
     const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
     const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
 
@@ -766,7 +791,9 @@ void Particles::mover(const amrex::MultiFab& nodeEMF,
 }
 
 //==========================================================
-void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::divE_correct_position(
+    const amrex::MultiFab& phiMF) {
   timing_func("Particles::divE_correct_position");
 
   const auto& plo = Geom(0).ProbLo();
@@ -778,7 +805,8 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
   Real epsMax = 0;
 
   const int lev = 0;
-  for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+       ++pti) {
     Array4<Real const> const& phiArr = phiMF[pti].array();
 
     const Array4<int const>& status = cellStatus[pti].array();
@@ -912,7 +940,8 @@ void Particles::divE_correct_position(const amrex::MultiFab& phiMF) {
 }
 
 //==========================================================
-void Particles::split_particles(Real limit) {
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
   timing_func("Particles::split_particles");
   const int nPartGoal =
       nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_] * limit;
@@ -924,7 +953,8 @@ void Particles::split_particles(Real limit) {
   const int lev = 0;
   Real dl = 0.5 * Geom(0).CellSize()[ix_] / nPartPerCell.max();
 
-  for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+       ++pti) {
 
     auto& particles = pti.GetArrayOfStructs();
 
@@ -1028,7 +1058,8 @@ void Particles::split_particles(Real limit) {
 }
 
 //==========================================================
-void Particles::combine_particles(Real limit) {
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
   timing_func("Particles::combine_particles");
   IntVect iv = { 1, 1, 1 };
   if (!(do_tiling && tile_size == iv))
@@ -1039,7 +1070,8 @@ void Particles::combine_particles(Real limit) {
 
   const int lev = 0;
 
-  for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+       ++pti) {
 
     auto& particles = pti.GetArrayOfStructs();
 
@@ -1128,8 +1160,8 @@ void Particles::combine_particles(Real limit) {
         for (int kCell = 0; kCell < nCell; kCell++) {
           std::sort(phasePartIdx_III[iCell][jCell][kCell].begin(),
                     phasePartIdx_III[iCell][jCell][kCell].end(),
-                    [& particles = particles, ix_ = ix_](const int& idl,
-                                                         const int& idr) {
+                    [&particles = particles, ix_ = ix_](const int& idl,
+                                                        const int& idr) {
                       return particles[idl].rdata(ix_) >
                              particles[idr].rdata(ix_);
                     });
@@ -1375,7 +1407,8 @@ void Particles::combine_particles(Real limit) {
 }
 
 //==========================================================
-bool Particles::do_inject_particles_for_this_cell(
+template <int NStructReal, int NStructInt>
+bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
     const amrex::Box& bx, const amrex::Array4<const int>& status, const int i,
     const int j, const int k) {
 
@@ -1449,3 +1482,8 @@ IOParticles::IOParticles(Particles& other, Geometry geomIO, Real no2outL,
     }
   }
 }
+
+// Since Particles is a template, it is necessary to explicitly instantiate with
+// template arguments.
+template class Particles<nPicPartReal>;
+template class Particles<nPTPartReal, nPTPartInt>;

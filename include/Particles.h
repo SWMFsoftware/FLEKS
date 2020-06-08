@@ -20,13 +20,27 @@ public:
   PartInfo() : energy(0), uMax(0) {}
 };
 
-class ParticlesIter : public amrex::ParIter<4, 0, 0, 0> {
+template <int NStructReal = nPicPartReal, int NStructInt = 0>
+class ParticlesIter : public amrex::ParIter<NStructReal, NStructInt> {
 public:
-  using amrex::ParIter<4, 0, 0, 0>::ParIter;
+  using amrex::ParIter<NStructReal, NStructInt>::ParIter;
 };
 
-class Particles : public amrex::ParticleContainer<4, 0, 0, 0> {
-private:
+template <int NStructReal = nPicPartReal, int NStructInt = 0>
+class Particles : public amrex::ParticleContainer<NStructReal, NStructInt> {
+public:
+  // Since this is a template, the compiler will not search names in the base
+  // class by default, and the following 'using ' statements are required.
+  using ParticleType = amrex::Particle<NStructReal, NStructInt>;
+  using amrex::ParticleContainer<NStructReal, NStructInt>::Geom;
+  using amrex::ParticleContainer<NStructReal, NStructInt>::do_tiling;
+  using amrex::ParticleContainer<NStructReal, NStructInt>::tile_size;
+  using amrex::ParticleContainer<NStructReal, NStructInt>::SetUseUnlink;
+  using amrex::ParticleContainer<NStructReal, NStructInt>::GetParticles;
+  using amrex::ParticleContainer<NStructReal, NStructInt>::MakeMFIter;
+  using amrex::ParticleContainer<NStructReal, NStructInt>::Redistribute;
+
+protected:
   amrex::BoxArray regionBA;
 
   amrex::Vector<amrex::RealBox> boxRange_I;
@@ -40,12 +54,16 @@ public:
   static const int iwp_ = 2;
   static const int iqp_ = 3;
 
+  // Index of the integer data.
+  static const int iRecordCount_ = 0;
+
   amrex::iMultiFab cellStatus;
 
   Particles(const amrex::BoxArray& regionBAIn, const amrex::Geometry& geom,
             const amrex::DistributionMapping& dm, const amrex::BoxArray& ba,
-            TimeCtr* const tcIn, const int speciesID, const amrex::Real charge,
-            const amrex::Real mass, const amrex::IntVect& nPartPerCellIn);
+            TimeCtr* const tcIn, const int speciesIDIn,
+            const amrex::Real chargeIn, const amrex::Real massIn,
+            const amrex::IntVect& nPartPerCellIn);
 
   amrex::BoxArray get_region_ba() const { return regionBA; }
 
@@ -88,7 +106,11 @@ public:
                      amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly);
 
   void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
-             amrex::Real dt, amrex::Real dtLoc);
+             amrex::Real dt, amrex::Real dtNext);
+
+  void mover_boris(const amrex::MultiFab& nodeEMF,
+                   const amrex::MultiFab& nodeBMF, amrex::Real dt,
+                   amrex::Real dtLoc);
 
   void convert_to_fluid_moments(amrex::MultiFab& momentsMF);
 
@@ -140,7 +162,7 @@ public:
 
   void label_particles_outside_ba() {
     const int lev = 0;
-    for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
+    for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid(); ++pti) {
       auto& particles = pti.GetArrayOfStructs();
       const amrex::Array4<int const>& status = cellStatus[pti].array();
       const amrex::Box& bx = cellStatus[pti].box();
@@ -157,7 +179,7 @@ public:
 
   void label_particles_outside_ba_general() {
     const int lev = 0;
-    for (ParticlesIter pti(*this, lev); pti.isValid(); ++pti) {
+    for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid(); ++pti) {
       auto& particles = pti.GetArrayOfStructs();
       for (auto& p : particles) {
         if (is_outside_ba(p)) {
@@ -194,12 +216,13 @@ protected:
   TimeCtr* tc;
 };
 
-class IOParticles : public Particles {
+class IOParticles : public Particles<nPicPartReal> {
 public:
   IOParticles() = delete;
 
-  IOParticles(Particles& other, amrex::Geometry geomIO, amrex::Real no2outL = 1,
-              amrex::Real no2outV = 1, amrex::Real no2OutM = 1,
+  IOParticles(Particles<>& other, amrex::Geometry geomIO,
+              amrex::Real no2outL = 1, amrex::Real no2outV = 1,
+              amrex::Real no2OutM = 1,
               amrex::RealBox IORange = amrex::RealBox());
   ~IOParticles() = default;
 };

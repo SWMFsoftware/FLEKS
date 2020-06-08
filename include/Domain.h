@@ -3,6 +3,7 @@
 
 #include "DomainGrid.h"
 #include "Pic.h"
+#include "ParticleTracker.h"
 
 class Domain : public DomainGrid {
 private:
@@ -10,6 +11,7 @@ private:
 
 public:
   Pic pic;
+  ParticleTracker pt; 
 
   //  Conceptually, both the Domain class and the Pic class may use the
   //  following classes, so they are handled by shared ponters.

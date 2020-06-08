@@ -19,5 +19,11 @@ constexpr static bool doTiling = false;
 constexpr static double fourPI = 3.14159265359 * 4;
 
 // Integers to label the the status of a cell.
-constexpr static int iBoundary_ = 0, iOnNew_ = 1, iOnOld_ = 2;
+constexpr static int iBoundary_ = 0, iOnNew_ = 1, iOnOld_ = 2, iAddPTParticle_ = 3;
+
+constexpr static int nPicPartReal = 4;
+
+constexpr static int nPTRecord = 100;
+constexpr static int ptRecordSize = 7;
+constexpr static int nPTPartReal = nPicPartReal + ptRecordSize * nPTRecord, nPTPartInt = 1; 
 #endif

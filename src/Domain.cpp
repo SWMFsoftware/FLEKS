@@ -11,6 +11,8 @@ void Domain::update() {
   write_plots();
 
   pic.write_log();
+
+  pt.update(pic);
 };
 
 //========================================================
@@ -19,8 +21,8 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
   if (AMREX_SPACEDIM != 3)
     Abort("Error: AMReX should be compiled with 3D configuration!!");
 
-  tc->set_time_si(time); 
-  
+  tc->set_time_si(time);
+
   domainID = iDomain;
   {
     std::stringstream ss;
@@ -34,6 +36,8 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
                                        paramString);
 
   pic.init(fluidInterface, tc, domainID);
+
+  pt.init(fluidInterface, tc, domainID);
 
   read_param();
 
@@ -87,6 +91,8 @@ void Domain::make_grid() {
 
   pic.set_geom(nGst, geom);
   fluidInterface->set_geom(nGst, geom);
+
+  pt.set_geom(nGst, geom);
 }
 
 //========================================================
@@ -131,6 +137,8 @@ void Domain::regrid() {
   pic.regrid(picRegionBA, baPic, dmPic);
   fluidInterface->regrid(baPic, dmPic);
 
+  pt.regrid(picRegionBA, baPic, dmPic, pic);
+
   iGrid++;
   iDecomp++;
 }
@@ -149,6 +157,8 @@ void Domain::set_ic() {
   pic.fill_new_cells();
   write_plots(true);
   pic.write_log(true, true);
+
+  pt.set_ic(pic);
 }
 
 //========================================================
@@ -187,9 +197,13 @@ void Domain::read_restart() {
 
   pic.regrid(baPic, baPic, dmPic);
   fluidInterface->regrid(baPic, dmPic);
+  
+  //Assume dmPT == dmPIC so far. 
+  pt.regrid(baPic, baPic, dmPic, pic); 
 
   fluidInterface->read_restart();
   pic.read_restart();
+  pt.read_restart(); 
 
   write_plots(true);
   pic.write_log(true, true);
@@ -206,6 +220,7 @@ void Domain::save_restart_data() {
   VisMF::SetNOutFiles(64);
   fluidInterface->save_restart_data();
   pic.save_restart_data();
+  pt.save_restart_data(); 
 }
 
 //========================================================
@@ -480,7 +495,6 @@ void Domain::read_param() {
   }
 
   pic.post_process_param();
-
 }
 
 //========================================================

@@ -50,6 +50,16 @@ void print_MultiFab(const amrex::MultiFab& data, std::string tag,
 void print_MultiFab(const amrex::MultiFab& data, std::string tag,
                     amrex::Geometry& geom, int nshift = 0);
 
+template <class T> inline void a_cross_b(T (&a)[3], T (&b)[3], T (&c)[3]) {
+  // c = a x b
+
+  c[0] = a[1] * b[2] - a[2] * b[1];
+  c[1] = a[2] * b[0] - a[0] * b[2];
+  c[2] = a[0] * b[1] - a[1] * b[0];
+
+  return;
+}
+
 inline int get_local_node_or_cell_number(const amrex::MultiFab& MF) {
 
   int nTotal = 0;

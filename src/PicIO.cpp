@@ -488,7 +488,6 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
 //==========================================================
 void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
                                int const iCycle) {
-  const int nReal = 4;
   int iSpecies = pw.get_particleSpecies();
 
   std::string dirName = pw.get_amrex_filename(timeNow, iCycle);
@@ -498,16 +497,16 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
   write_amrex_field(pw, timeNow, iCycle, std::string(), dirName);
 
   Vector<int> writeRealComp;
-  for (int i = 0; i < nReal; ++i) {
+  for (int i = 0; i < nPicPartReal; ++i) {
     writeRealComp.push_back(1);
   }
 
   Vector<std::string> realCompNames;
-  realCompNames.resize(nReal);
-  realCompNames[Particles::iup_] = "velocity_x";
-  realCompNames[Particles::ivp_] = "velocity_y";
-  realCompNames[Particles::iwp_] = "velocity_z";
-  realCompNames[Particles::iqp_] = "weight";
+  realCompNames.resize(nPicPartReal);
+  realCompNames[Particles<>::iup_] = "velocity_x";
+  realCompNames[Particles<>::ivp_] = "velocity_y";
+  realCompNames[Particles<>::iwp_] = "velocity_z";
+  realCompNames[Particles<>::iqp_] = "weight";
 
   Vector<int> writeIntComp;
   Vector<std::string> intCompNames;
