@@ -120,7 +120,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::make_unique<TestParticles>(
           ptRegionBA, geom, dm, centerBA, tc.get(), i,
-          fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i), i);
+          fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i), domainID);
       parts.push_back(std::move(ptr));
     }
   } else {
