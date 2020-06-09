@@ -187,12 +187,13 @@ void TestParticles::write_particles(bool forceOutput) {
 
   const int nProc = ParallelDescriptor::NProcs();
   int nPartLoc = TotalNumberOfParticles(false, true);
-  int nPartAhead;
-  gather_accumulate_and_scatter(nPartLoc, nPartAhead, "# of particles");
+  int nPartAhead = 0;
+
+  gather_accumulate_and_scatter(nPartLoc, nPartAhead);
 
   unsigned long long int nByteLoc = loop_particles("count_record_size");
-  unsigned long long int nByteAhead;
-  gather_accumulate_and_scatter(nByteLoc, nByteAhead, "# of record");
+  unsigned long long int nByteAhead = 0;
+  gather_accumulate_and_scatter(nByteLoc, nByteAhead);
 
   Vector<char> dataBuffer;
   dataBuffer.resize(nByteLoc);

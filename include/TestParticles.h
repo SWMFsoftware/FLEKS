@@ -48,18 +48,17 @@ public:
     no2outM = no2outMIn;
   }
 
-  template <typename T>
-  void gather_accumulate_and_scatter(T& local, T& ahead,
-                                     std::string mesg = std::string()) {
+  template <typename T> void gather_accumulate_and_scatter(T& local, T& ahead) {
     using namespace amrex;
 
     int nProc = ParallelDescriptor::NProcs();
 
+    // The following two vectors are only useful on the root processor. They are
+    // allocated on all processors to avoid memory leak since they are passed to
+    // functions like Gather()
     Vector<T> perProc, accumulated;
-    if (ParallelDescriptor::IOProcessor()) {
-      perProc.resize(nProc, 0);
-      accumulated.resize(nProc, 0);
-    }
+    perProc.resize(nProc, 0);
+    accumulated.resize(nProc, 0);
 
     ParallelDescriptor::Gather(&local, 1, &perProc[0], 1,
                                ParallelDescriptor::IOProcessorNumber());
@@ -72,9 +71,6 @@ public:
 
     ParallelDescriptor::Scatter(&ahead, 1, &accumulated[0], 1,
                                 ParallelDescriptor::IOProcessorNumber());
-
-    AllPrint() << mesg << " iproc = " << ParallelDescriptor::MyProc()
-               << " local = " << local << " ahead = " << ahead << std::endl;
   }
 
 private:
