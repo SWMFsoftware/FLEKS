@@ -101,7 +101,7 @@ void Domain::regrid() {
   std::string nameFunc = "Domain::regrid";
 
   // If the PIC grid does not change, then return.
-  if (!gridInfo.is_grid_new())
+  if (!gridInfo.is_grid_new() && gridInfo.is_initialized())
     return;
 
   Print() << printPrefix << nameFunc << " is called" << std::endl;
@@ -129,9 +129,12 @@ void Domain::regrid() {
           << nCellPic / centerBox.d_numPts()
           << "\n===================================================="
           << std::endl;
-  if (baPic.size() < ParallelDescriptor::NProcs()) {
-    Abort("Error: there are less blocks than the number of processors!");
-  }
+
+  // if (baPic.size() < ParallelDescriptor::NProcs()) {
+  //   Abort("Error: there are less blocks than the number of processors!");
+  // }
+
+  
 
   DistributionMapping dmPic(baPic);
   pic.regrid(picRegionBA, baPic, dmPic);
@@ -141,6 +144,8 @@ void Domain::regrid() {
 
   iGrid++;
   iDecomp++;
+
+  gridInfo.is_initialized(true); 
 }
 
 //========================================================
