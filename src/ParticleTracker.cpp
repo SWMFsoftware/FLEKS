@@ -104,6 +104,9 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
 
   timing_func(nameFunc);
 
+  if (centerBAIn == centerBA)
+    return;
+
   ptRegionBA = ptRegionIn;
   centerBA = centerBAIn;
   nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
@@ -120,7 +123,8 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::make_unique<TestParticles>(
           ptRegionBA, geom, dm, centerBA, tc.get(), i,
-          fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i), domainID);
+          fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i),
+          domainID);
       parts.push_back(std::move(ptr));
     }
   } else {
