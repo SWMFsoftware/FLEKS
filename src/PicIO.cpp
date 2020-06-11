@@ -10,6 +10,9 @@ using namespace amrex;
 void Pic::set_state_var(double* data, int* index) {
   std::string nameFunc = "Pic::set_state_var";
 
+  if (isGridEmpty)
+    return;
+
   Print() << printPrefix << nameFunc << " is called" << std::endl;
 
   fluidInterface->set_couple_node_value(data, index);
@@ -55,6 +58,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
                                      const double* const xyz_I,
                                      double* const data_I, const int nVar) {
   std::string nameFunc = "Pic::get_fluid_state_for_points";
+
   Print() << printPrefix << nameFunc << " is called" << std::endl;
 
   // (rho + 3*Moment + 6*p)*nSpecies+ 3*E + 3*B;
@@ -105,6 +109,9 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
                            PlotWriter::VectorPointList& pointList_II,
                            std::array<double, nDim>& xMin_D,
                            std::array<double, nDim>& xMax_D) {
+  if (isGridEmpty)
+    return;
+
   const auto plo = geom.ProbLo();
   const auto plh = geom.ProbHi();
 
@@ -350,7 +357,8 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
                arr(ix, iy, iz, iPzz_)) /
               3.0;
     } else if (var.substr(0, 2) == "qc") {
-      const amrex::Array4<amrex::Real const>& arr = centerNetChargeN[mfi].array();
+      const amrex::Array4<amrex::Real const>& arr =
+          centerNetChargeN[mfi].array();
       value = arr(ix, iy, iz);
     } else if (var.substr(0, 5) == "divEc") {
       const amrex::Array4<amrex::Real const>& arr = centerDivE[mfi].array();
@@ -369,6 +377,9 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
 
 //==========================================================
 void Pic::save_restart_data() {
+  if (isGridEmpty)
+    return;
+
   std::string restartDir = "PC/restartOUT/";
   VisMF::Write(nodeE, restartDir + domainName + "_nodeE");
   VisMF::Write(nodeB, restartDir + domainName + "_nodeB");
@@ -425,6 +436,9 @@ void Pic::read_restart() {
 
 //==========================================================
 void Pic::write_log(bool doForce, bool doCreateFile) {
+  if (isGridEmpty)
+    return;
+
   if (doCreateFile && ParallelDescriptor::IOProcessor()) {
     std::stringstream ss;
     int time = tc->get_time_si(); // double to int.
@@ -459,6 +473,8 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
 
 //==========================================================
 void Pic::write_plots(bool doForce) {
+  if (isGridEmpty)
+    return;
   for (auto& plot : tc->plots) {
     if (plot.is_time_to(doForce)) {
       amrex::Print() << "Saving plot at time = " << tc->get_time_si()
@@ -629,7 +645,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   }
 
   bool isDensityZero = false;
-  int zeroI, zeroJ, zeroK; 
+  int zeroI, zeroJ, zeroK;
   if (plotVars.find("plasma") != std::string::npos) {
     //-------------plasma---------------------
 
@@ -666,9 +682,9 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
                 uzArr(i, j, k) = plasmaArr(i, j, k, iUz_) / rho;
               } else {
                 isDensityZero = true;
-		zeroI = i; 
-		zeroJ = j; 
-		zeroK = k; 
+                zeroI = i;
+                zeroJ = j;
+                zeroK = k;
               }
             }
       }
@@ -715,15 +731,16 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
   if (isDensityZero) {
     AllPrint()
-	      <<"\n\n\n=========="<< printPrefix << " Error ===========================\n"
-	      << "Density is zero at i = "<<zeroI<<" j = "<<zeroJ<<" k = "<<zeroK<<".\n"
-	<< "Check the file " << filename
-        << " to see what is going on. \n"
+        << "\n\n\n==========" << printPrefix
+        << " Error ===========================\n"
+        << "Density is zero at i = " << zeroI << " j = " << zeroJ
+        << " k = " << zeroK << ".\n"
+        << "Check the file " << filename << " to see what is going on. \n"
         << "Suggestions:\n"
         << "1) Use the #RESAMPLING command to control the particle number.\n"
         << "2) If 1) does not help, it is likely something is wrong at the PIC "
-      "boundary."
-	      <<"\n========================================================\n\n\n"
+           "boundary."
+        << "\n========================================================\n\n\n"
         << std::endl;
     Abort();
   }

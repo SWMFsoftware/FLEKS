@@ -41,10 +41,10 @@ protected:
 
   amrex::MultiFab costMF;
 
-  // The status of a cell could be: iBoundary_, iOnNew_, or iOnOld_. 
+  // The status of a cell could be: iBoundary_, iOnNew_, or iOnOld_.
   amrex::iMultiFab cellStatus;
 
-  // The status of a Node could be: iBoundary_, iOnNew_, or iOnOld_. 
+  // The status of a Node could be: iBoundary_, iOnNew_, or iOnOld_.
   amrex::iMultiFab nodeStatus;
 
   // A node may be shared by a few blocks/boxes. Sometimes (such as the E field
@@ -57,11 +57,21 @@ protected:
 
   bool doNeedFillNewCell;
 
+  bool isGridInitialized;
+
+  bool isGridEmpty;
+
 public:
-  PicGrid() { doNeedFillNewCell = true; };
+  PicGrid() {
+    doNeedFillNewCell = true;
+    isGridInitialized = false;
+    isGridEmpty = false;
+  };
   ~PicGrid() = default;
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }
+
+  bool is_grid_empty() const { return isGridEmpty; }
 
   inline int find_mpi_rank_from_coord(amrex::Real const x, amrex::Real const y,
                                       amrex::Real const z) const {

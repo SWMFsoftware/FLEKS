@@ -32,12 +32,17 @@ void FluidInterface::receive_info_from_gm(const int* const paramInt,
 
 void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
                             const amrex::DistributionMapping& dmIn) {
-  std::string nameFunc = "FluidInterface::regrid";  
+  std::string nameFunc = "FluidInterface::regrid";
 
-  if (centerBAIn == centerBA) {
+  // Why need 'isGridInitialized'? See the explaination in Domain::regrid().
+  if (centerBAIn == centerBA && isGridInitialized) {
     // The interface grid does not change.
     return;
   }
+
+  isGridEmpty = centerBAIn.empty(); 
+
+  Print() << nameFunc << std::endl;
 
   centerBA = centerBAIn;
   nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
@@ -46,6 +51,8 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
   const bool doCopy = true;
   distribute_FabArray(nodeFluid, nodeBA, dm, nVarCoupling, nGst, doCopy);
   distribute_FabArray(centerB, centerBA, dm, nDimMax, nGst, doCopy);
+
+  isGridInitialized = true;
 }
 
 void FluidInterface::set_geom(const int nGstIn, const amrex::Geometry& geomIn) {
@@ -93,36 +100,37 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
   int nIdxCount = 0;
   int nCount = 0;
   int ifab = 0;
-  for (MFIter mfi(nodeFluid); mfi.isValid(); ++mfi) {
-    ifab++;
-    // For each block, looping through all nodes, including ghost nodes.
-    const Box& box = mfi.fabbox();
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+  if (!nodeFluid.empty())
+    for (MFIter mfi(nodeFluid); mfi.isValid(); ++mfi) {
+      ifab++;
+      // For each block, looping through all nodes, including ghost nodes.
+      const Box& box = mfi.fabbox();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
 
-    const Array4<Real>& arr = nodeFluid[mfi].array();
+      const Array4<Real>& arr = nodeFluid[mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          if (doCount) {
-            nCount++;
-          } else if (doGetLoc) {
-            pos_DI[nCount++] = (i * dx[ix_] + plo[ix_]) * no2siL;
-            pos_DI[nCount++] = (j * dx[iy_] + plo[iy_]) * no2siL;
-            if (getnDim() > 2)
-              pos_DI[nCount++] = (k * dx[iz_] + plo[iz_]) * no2siL;
-          } else if (doFill) {
-            for (int iVar = 0; iVar < nVarFluid; iVar++) {
-              int idx;
-              idx = iVar + nVarFluid * (index[nIdxCount] - 1);
-              arr(i, j, k, iVar) = data[idx];
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (doCount) {
+              nCount++;
+            } else if (doGetLoc) {
+              pos_DI[nCount++] = (i * dx[ix_] + plo[ix_]) * no2siL;
+              pos_DI[nCount++] = (j * dx[iy_] + plo[iy_]) * no2siL;
+              if (getnDim() > 2)
+                pos_DI[nCount++] = (k * dx[iz_] + plo[iz_]) * no2siL;
+            } else if (doFill) {
+              for (int iVar = 0; iVar < nVarFluid; iVar++) {
+                int idx;
+                idx = iVar + nVarFluid * (index[nIdxCount] - 1);
+                arr(i, j, k, iVar) = data[idx];
+              }
+              nIdxCount++;
             }
-            nIdxCount++;
-          }
 
-        } // for k
-  }
+          } // for k
+    }
 
   // Print() << "action = " << action << " nCount = " << nCount << std::endl;
   return nCount;
@@ -148,6 +156,9 @@ void FluidInterface::set_couple_node_value(const double* const data,
 }
 
 void FluidInterface::calc_current() {
+  if (nodeFluid.empty())
+    return;
+
   // All centerB, including all ghost cells are accurate.
   average_node_to_cellcenter(centerB, 0, nodeFluid, iBx, centerB.nComp(),
                              centerB.nGrow());

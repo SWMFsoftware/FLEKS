@@ -43,6 +43,8 @@ protected:
   std::string printPrefix; 
   std::string domainName; 
 
+  bool isGridInitialized; 
+
 public:
   DomainGrid() {
     iGrid = 1;
@@ -51,6 +53,7 @@ public:
       periodicity[i] = 0;
       maxBlockSize[i] = 8;
     }
+    isGridInitialized = false;
   }
   ~DomainGrid() = default;
 

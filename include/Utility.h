@@ -63,12 +63,13 @@ template <class T> inline void a_cross_b(T (&a)[3], T (&b)[3], T (&c)[3]) {
 inline int get_local_node_or_cell_number(const amrex::MultiFab& MF) {
 
   int nTotal = 0;
-  for (amrex::MFIter mfi(MF); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.validbox();
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
-    nTotal += (hi.x - lo.x + 1) * (hi.y - lo.y + 1) * (hi.z - lo.z + 1);
-  }
+  if (!MF.empty())
+    for (amrex::MFIter mfi(MF); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.validbox();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+      nTotal += (hi.x - lo.x + 1) * (hi.y - lo.y + 1) * (hi.z - lo.z + 1);
+    }
   return nTotal;
 }
 

@@ -9,7 +9,10 @@
 class ParticleTracker {
 public:
   // Make up a plot string to initialize pw, but the unit should be 'planet'.
-  ParticleTracker() : pw(domainID, "3d fluid test_particle real4 planet"){};
+  ParticleTracker() : pw(domainID, "3d fluid test_particle real4 planet") {
+    isGridInitialized = false;
+    isGridEmpty = false;
+  };
   ~ParticleTracker() = default;
 
   void init(std::shared_ptr<FluidInterface> &fluidIn,
@@ -20,6 +23,8 @@ public:
   void regrid(const amrex::BoxArray &ptRegionBAIn,
               const amrex::BoxArray &centerBAIn,
               const amrex::DistributionMapping &dmIn, Pic &pic);
+
+  bool is_grid_empty() const { return isGridEmpty; }
 
   void update_field(Pic &pic);
   void update_cell_status(Pic &pic);
@@ -54,6 +59,10 @@ private:
   amrex::iMultiFab cellStatus;
 
   PlotWriter pw;
+
+  bool isGridInitialized;
+
+  bool isGridEmpty;
 };
 
 #endif

@@ -101,7 +101,10 @@ void Domain::regrid() {
   std::string nameFunc = "Domain::regrid";
 
   // If the PIC grid does not change, then return.
-  if (!gridInfo.is_grid_new())
+  // If the PIC grid is empty at the beginning, gridInfo.is_grid_new() is false,
+  // but it is still required to run the rest of the function to initialize
+  // variables. That's why we need isGridInitialized here.
+  if (!gridInfo.is_grid_new() && isGridInitialized)
     return;
 
   Print() << printPrefix << nameFunc << " is called" << std::endl;
@@ -129,11 +132,11 @@ void Domain::regrid() {
           << nCellPic / centerBox.d_numPts()
           << "\n===================================================="
           << std::endl;
-  if (baPic.size() < ParallelDescriptor::NProcs()) {
-    Abort("Error: there are less blocks than the number of processors!");
-  }
 
-  DistributionMapping dmPic(baPic);
+  DistributionMapping dmPic;
+  if (!baPic.empty())
+    dmPic.define(baPic);
+
   pic.regrid(picRegionBA, baPic, dmPic);
   fluidInterface->regrid(baPic, dmPic);
 
@@ -141,6 +144,8 @@ void Domain::regrid() {
 
   iGrid++;
   iDecomp++;
+
+  isGridInitialized = true;
 }
 
 //========================================================
@@ -197,13 +202,13 @@ void Domain::read_restart() {
 
   pic.regrid(baPic, baPic, dmPic);
   fluidInterface->regrid(baPic, dmPic);
-  
-  //Assume dmPT == dmPIC so far. 
-  pt.regrid(baPic, baPic, dmPic, pic); 
+
+  // Assume dmPT == dmPIC so far.
+  pt.regrid(baPic, baPic, dmPic, pic);
 
   fluidInterface->read_restart();
   pic.read_restart();
-  pt.read_restart(); 
+  pt.read_restart();
 
   write_plots(true);
   pic.write_log(true, true);
@@ -220,11 +225,12 @@ void Domain::save_restart_data() {
   VisMF::SetNOutFiles(64);
   fluidInterface->save_restart_data();
   pic.save_restart_data();
-  pt.save_restart_data(); 
+  pt.save_restart_data();
 }
 
 //========================================================
 void Domain::save_restart_header() {
+
   if (ParallelDescriptor::IOProcessor()) {
     Print() << printPrefix
             << "Saving restart file at time = " << tc->get_time_si() << " (s)"
@@ -252,8 +258,7 @@ void Domain::save_restart_header() {
     std::string command_suffix = "_" + domainName + "\n";
 
     headerFile << "#RESTART" + command_suffix;
-    headerFile << "T"
-               << "\t doRestart\n";
+    headerFile << (pic.is_grid_empty() ? "F" : "T") << "\t doRestart\n";
     headerFile << "\n";
 
     headerFile << "#NSTEP" + command_suffix;

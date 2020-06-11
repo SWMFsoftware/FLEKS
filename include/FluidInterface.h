@@ -40,7 +40,15 @@ private:
   std::string domainName;
   std::string printPrefix;
 
+  bool isGridInitialized;
+  bool isGridEmpty;
+
 public:
+  FluidInterface() {
+    isGridInitialized = false;
+    isGridEmpty = false;
+  }
+  ~FluidInterface() = default;
   void init(int domainIDIn);
   void receive_info_from_gm(const int* const paramInt,
                             const double* const gridDim,
@@ -73,6 +81,9 @@ public:
   void load_balance(const amrex::DistributionMapping& dmIn);
 
   void save_restart_data() {
+    if (isGridEmpty)
+      return;
+
     std::string restartDir = "PC/restartOUT/";
     amrex::VisMF::Write(nodeFluid,
                         restartDir + domainName + "_Interface_nodeFluid");

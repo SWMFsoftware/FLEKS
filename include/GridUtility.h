@@ -4,8 +4,8 @@
 #include <AMReX_DistributionMapping.H>
 #include <AMReX_FabArray.H>
 
-#include "GridInfo.h"
 #include "Constants.h"
+#include "GridInfo.h"
 
 template <class FAB>
 void redistribute_FabArray(amrex::FabArray<FAB>& fa,
@@ -30,17 +30,18 @@ void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
   // Assume 'dm' is the new dm.
   amrex::FabArray<FAB> tmp;
 
-  tmp.define(baNew, dm, nComp, nGst);
-  tmp.setVal(-7777);
-  if (doCopy && !fa.empty()) {
-    tmp.ParallelCopy(fa, 0, 0, fa.nComp(), nGst, nGst);
-    // tmp.Redistribute(fa, 0, 0, tmp.nComp(), tmp.nGrowVect());
-  } else {
-    tmp.setVal(0);
+  if (!dm.empty()) {
+    tmp.define(baNew, dm, nComp, nGst);
+    tmp.setVal(-7777);
+    if (doCopy && !fa.empty()) {
+      tmp.ParallelCopy(fa, 0, 0, fa.nComp(), nGst, nGst);
+      // tmp.Redistribute(fa, 0, 0, tmp.nComp(), tmp.nGrowVect());
+    } else {
+      tmp.setVal(0);
+    }
   }
-  fa = std::move(tmp);
 
-  // fa.FillBoundary();
+  fa = std::move(tmp);
 }
 
 template <class FAB>
@@ -131,8 +132,6 @@ inline void get_boxlist_from_region(amrex::BoxList& bl, GridInfo& gridInfo,
 
   for (int i = 0; i < 3; i++)
     bl.simplify();
-
-
 }
 
 #endif

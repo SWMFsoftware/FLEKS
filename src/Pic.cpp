@@ -66,6 +66,9 @@ void Pic::post_process_param() {
 void Pic::fill_new_cells() {
   std::string nameFunc = "Pic::fill_new_cells";
 
+  if (isGridEmpty)
+    return;
+
   if (!doNeedFillNewCell)
     return;
 
@@ -95,8 +98,13 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   timing_func(nameFunc);
 
-  if (centerBAIn == centerBA)
+  // Why need 'isGridInitialized'? See the explaination in Domain::regrid().
+  if (centerBAIn == centerBA && isGridInitialized)
     return;
+
+  isGridEmpty = picRegionIn.empty();
+
+  Print() << nameFunc << std::endl;
 
   doNeedFillNewCell = true;
 
@@ -160,22 +168,24 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     // layers.
     distribute_FabArray(cellStatus, centerBA, dm, 1, nGst >= 2 ? nGst : 2,
                         false);
-    cellStatus.setVal(iBoundary_);
-    cellStatus.setVal(iOnNew_, 0);
-    for (MFIter mfi(cellStatus); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.validbox();
-      const Array4<int>& cellArr = cellStatus[mfi].array();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
+    if (!cellStatus.empty()) {
+      cellStatus.setVal(iBoundary_);
+      cellStatus.setVal(iOnNew_, 0);
+      for (MFIter mfi(cellStatus); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<int>& cellArr = cellStatus[mfi].array();
+        const auto lo = lbound(box);
+        const auto hi = ubound(box);
 
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (cellArr(i, j, k) == iOnNew_ &&
-                centerBAOld.contains({ i, j, k })) {
-              cellArr(i, j, k) = iOnOld_;
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i) {
+              if (cellArr(i, j, k) == iOnNew_ &&
+                  centerBAOld.contains({ i, j, k })) {
+                cellArr(i, j, k) = iOnOld_;
+              }
             }
-          }
+      }
     }
 
     cellStatus.FillBoundary(geom.periodicity());
@@ -184,40 +194,43 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     if (is2D) {
       // For the fake 2D cases, in the z-direction, only the first layer ghost
       // cells are filled in correctly by the method FillBoundary.
-      for (MFIter mfi(cellStatus); mfi.isValid(); ++mfi) {
-        const Box& box = mfi.fabbox();
-        const Array4<int>& cellArr = cellStatus[mfi].array();
+      if (!cellStatus.empty())
+        for (MFIter mfi(cellStatus); mfi.isValid(); ++mfi) {
+          const Box& box = mfi.fabbox();
+          const Array4<int>& cellArr = cellStatus[mfi].array();
+          const auto lo = lbound(box);
+          const auto hi = ubound(box);
+
+          for (int k = lo.z; k <= hi.z; ++k)
+            if (k < -1 || k > 1)
+              for (int j = lo.y; j <= hi.y; ++j)
+                for (int i = lo.x; i <= hi.x; ++i) {
+                  cellArr(i, j, k) = cellArr(i, j, 0);
+                }
+        }
+    }
+
+    distribute_FabArray(nodeStatus, nodeBA, dm, 1, nGst, false);
+    if (!nodeStatus.empty()) {
+      nodeStatus.setVal(iBoundary_);
+      nodeStatus.setVal(iOnNew_, 0);
+
+      for (MFIter mfi(nodeStatus); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const auto& nodeArr = nodeStatus[mfi].array();
+
         const auto lo = lbound(box);
         const auto hi = ubound(box);
 
         for (int k = lo.z; k <= hi.z; ++k)
-          if (k < -1 || k > 1)
-            for (int j = lo.y; j <= hi.y; ++j)
-              for (int i = lo.x; i <= hi.x; ++i) {
-                cellArr(i, j, k) = cellArr(i, j, 0);
+          for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i) {
+              if (nodeArr(i, j, k) == iOnNew_ &&
+                  nodeBAOld.contains({ i, j, k })) {
+                nodeArr(i, j, k) = iOnOld_;
               }
-      }
-    }
-
-    distribute_FabArray(nodeStatus, nodeBA, dm, 1, nGst, false);
-    nodeStatus.setVal(iBoundary_);
-    nodeStatus.setVal(iOnNew_, 0);
-
-    for (MFIter mfi(nodeStatus); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.validbox();
-      const auto& nodeArr = nodeStatus[mfi].array();
-
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (nodeArr(i, j, k) == iOnNew_ &&
-                nodeBAOld.contains({ i, j, k })) {
-              nodeArr(i, j, k) = iOnOld_;
             }
-          }
+      }
     }
 
     nodeStatus.FillBoundary(geom.periodicity());
@@ -229,7 +242,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   //--------------particles-----------------------------------
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
-      auto ptr = std::make_unique<Particles<>>(
+      auto ptr = std::make_unique<Particles<> >(
           picRegionBA, geom, dm, centerBA, tc.get(), i,
           fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i),
           nPartPerCell);
@@ -252,8 +265,11 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     for (int i = 0; i < nSpecies; i++) {
       distribute_FabArray(parts[i]->cellStatus, centerBA, dm, 1,
                           nGst >= 2 ? nGst : 2, false);
-      iMultiFab::Copy(parts[i]->cellStatus, cellStatus, 0, 0,
-                      cellStatus.nComp(), cellStatus.nGrow());
+
+      if (!cellStatus.empty()) {
+        iMultiFab::Copy(parts[i]->cellStatus, cellStatus, 0, 0,
+                        cellStatus.nComp(), cellStatus.nGrow());
+      }
     }
   }
   //--------------particles-----------------------------------
@@ -267,82 +283,87 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     int nGrid = get_local_node_or_cell_number(centerDivE);
     divESolver.init(nGrid, 1, nDim, matvec_divE_accurate);
   }
+
+  isGridInitialized = true;
 }
 
 //==========================================================
 void Pic::set_nodeAssignment() {
-  nodeAssignment.setVal(iNotAssign_);
+  if (!nodeAssignment.empty())
+    nodeAssignment.setVal(iNotAssign_);
+
   const Box& gbx = convert(geom.Domain(), { 0, 0, 0 });
 
-  for (MFIter mfi(nodeAssignment); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
+  if (!nodeAssignment.empty())
+    for (MFIter mfi(nodeAssignment); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
 
-    const Box& cellBox = convert(box, { 0, 0, 0 });
+      const Box& cellBox = convert(box, { 0, 0, 0 });
 
-    const auto& typeArr = nodeAssignment[mfi].array();
-    const auto& statusArr = cellStatus[mfi].array();
+      const auto& typeArr = nodeAssignment[mfi].array();
+      const auto& statusArr = cellStatus[mfi].array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
 
-    bool is2D = false;
-    if (geom.isPeriodic(iz_) && (gbx.bigEnd(iz_) == gbx.smallEnd(iz_)))
-      is2D = true;
+      bool is2D = false;
+      if (geom.isPeriodic(iz_) && (gbx.bigEnd(iz_) == gbx.smallEnd(iz_)))
+        is2D = true;
 
-    int iMin = lo.x + 1, iMax = hi.x - 1;
-    int jMin = lo.y + 1, jMax = hi.y - 1;
-    int kMin = lo.z + 1, kMax = hi.z - 1;
-    if (is2D) {
-      kMin = lo.z;
-      kMax = lo.z;
-    }
+      int iMin = lo.x + 1, iMax = hi.x - 1;
+      int jMin = lo.y + 1, jMax = hi.y - 1;
+      int kMin = lo.z + 1, kMax = hi.z - 1;
+      if (is2D) {
+        kMin = lo.z;
+        kMax = lo.z;
+      }
 
-    int diMax = 0, diMin = -1;
-    int djMax = 0, djMin = -1;
-    int dkMax = 0, dkMin = -1;
-    if (is2D) {
-      dkMin = 0;
-    }
+      int diMax = 0, diMin = -1;
+      int djMax = 0, djMin = -1;
+      int dkMax = 0, dkMin = -1;
+      if (is2D) {
+        dkMin = 0;
+      }
 
-    auto fHandle = [&](int i, int j, int k) {
-      for (int dk = dkMax; dk >= dkMin; dk--)
-        for (int dj = djMax; dj >= djMin; dj--)
-          for (int di = diMax; di >= diMin; di--) {
-            if (statusArr(i + di, j + dj, k + dk) != iBoundary_) {
-              // Find the first CELL that shares this node.
-              if (cellBox.contains({ i + di, j + dj, k + dk })) {
-                return true;
-              } else {
-                return false;
+      auto fHandle = [&](int i, int j, int k) {
+        for (int dk = dkMax; dk >= dkMin; dk--)
+          for (int dj = djMax; dj >= djMin; dj--)
+            for (int di = diMax; di >= diMin; di--) {
+              if (statusArr(i + di, j + dj, k + dk) != iBoundary_) {
+                // Find the first CELL that shares this node.
+                if (cellBox.contains({ i + di, j + dj, k + dk })) {
+                  return true;
+                } else {
+                  return false;
+                }
               }
             }
-          }
-      Abort("Error: something is wrong here!");
-      return false;
-    };
+        Abort("Error: something is wrong here!");
+        return false;
+      };
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          if (!is2D || k == lo.z) {
-            // for 2D (1 cell in the z-direction), only handle the layer of
-            // k=0
-            if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
-                (!is2D && (k == lo.z || k == hi.z))) {
-              // Block boundary nodes.
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (!is2D || k == lo.z) {
+              // for 2D (1 cell in the z-direction), only handle the layer of
+              // k=0
+              if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
+                  (!is2D && (k == lo.z || k == hi.z))) {
+                // Block boundary nodes.
 
-              // Check if this block boundary node needs to be handled by this
-              // block.
+                // Check if this block boundary node needs to be handled by this
+                // block.
 
-              if (fHandle(i, j, k)) {
+                if (fHandle(i, j, k)) {
+                  typeArr(i, j, k) = iAssign_;
+                }
+              } else {
                 typeArr(i, j, k) = iAssign_;
               }
-            } else {
-              typeArr(i, j, k) = iAssign_;
             }
           }
-        }
-  }
+    }
 }
 
 //==========================================================
@@ -468,6 +489,9 @@ void Pic::particle_mover() {
 //==========================================================
 void Pic::sum_moments(bool updateDt) {
   std::string nameFunc = "Pic::sum_moments";
+
+  if (isGridEmpty)
+    return;
 
   timing_func(nameFunc);
 
@@ -660,6 +684,12 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
 void Pic::update() {
   std::string nameFunc = "Pic::update";
 
+  if (isGridEmpty) {
+    if (tc->get_dt_si() <= 0) {
+      tc->set_dt_si(tc->get_dummy_dt_si());
+    }
+  }
+
   timing_func(nameFunc);
 
   Real tStart = second();
@@ -674,6 +704,10 @@ void Pic::update() {
             << " (s) to t = " << std::setprecision(6) << t1
             << " (s) with dt = " << std::setprecision(6) << tc->get_dt_si()
             << " (s) ====" << std::endl;
+
+    if (isGridEmpty) {
+      return;
+    }
   }
 
   update_E();

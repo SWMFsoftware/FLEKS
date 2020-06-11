@@ -4,6 +4,9 @@
 using namespace amrex;
 
 void ParticleTracker::set_ic(Pic& pic) {
+  if (isGridEmpty)
+    return;
+
   update_field(pic);
   for (auto& tps : parts) {
     tps->add_test_particles(*fluidInterface, cellStatus);
@@ -14,6 +17,9 @@ void ParticleTracker::set_ic(Pic& pic) {
 }
 
 void ParticleTracker::update(Pic& pic) {
+  if (isGridEmpty)
+    return;
+
   update_field(pic);
   for (auto& tps : parts) {
     tps->move_and_save_particles(nodeE, nodeB, tc->get_dt(), tc->get_next_dt(),
@@ -28,6 +34,9 @@ void ParticleTracker::update_field(Pic& pic) {
 }
 
 void ParticleTracker::update_cell_status(Pic& pic) {
+
+  if (cellStatus.empty())
+    return;
 
   iMultiFab::Copy(cellStatus, pic.cellStatus, 0, 0, cellStatus.nComp(),
                   cellStatus.nGrow());
@@ -104,8 +113,11 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
 
   timing_func(nameFunc);
 
-  if (centerBAIn == centerBA)
+  // Why need 'isGridInitialized'? See the explaination in Domain::regrid().
+  if (centerBAIn == centerBA && isGridInitialized)
     return;
+
+  isGridEmpty = ptRegionIn.empty();
 
   ptRegionBA = ptRegionIn;
   centerBA = centerBAIn;
@@ -143,14 +155,22 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
   { // Copy cell Status to Particles objects.
     for (int i = 0; i < nSpecies; i++) {
       distribute_FabArray(parts[i]->cellStatus, centerBA, dm, 1, nGst, false);
-      iMultiFab::Copy(parts[i]->cellStatus, cellStatus, 0, 0,
-                      cellStatus.nComp(), cellStatus.nGrow());
+
+      if (!cellStatus.empty()) {
+        iMultiFab::Copy(parts[i]->cellStatus, cellStatus, 0, 0,
+                        cellStatus.nComp(), cellStatus.nGrow());
+      }
     }
   }
   //--------------test particles-----------------------------------
+
+  isGridInitialized = true;
 }
 
 void ParticleTracker::save_restart_data() {
+  if (isGridEmpty)
+    return;
+    
   std::string restartDir = "PC/restartOUT/";
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
