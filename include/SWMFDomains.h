@@ -7,6 +7,6 @@
 
 #include "Domains.h"
 
-extern Domains FLEKSs;
+extern Domains fleksDomains;
 
 #endif

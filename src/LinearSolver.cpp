@@ -3,11 +3,11 @@
 #include "linear_solver_wrapper_c.h"
 
 void matvec_E_solver(double *vecIn, double *vecOut, int n) {
-  FLEKSs(FLEKSs.selected()).pic.update_E_matvec(vecIn, vecOut);
+  fleksDomains(fleksDomains.selected()).pic.update_E_matvec(vecIn, vecOut);
 }
 
 void matvec_divE_accurate(double *vecIn, double *vecOut, int n) {
-  FLEKSs(FLEKSs.selected()).pic.divE_accurate_matvec(vecIn, vecOut);
+  fleksDomains(fleksDomains.selected()).pic.divE_accurate_matvec(vecIn, vecOut);
 }
 
 void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
