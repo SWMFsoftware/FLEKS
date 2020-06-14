@@ -24,6 +24,7 @@ Particles<NStructReal, NStructInt>::Particles(
   qom = charge / mass;
   qomSign = qom > 0 ? 1 : -1;
 
+  invVol = 1;
   for (int i = 0; i < nDim; i++) {
     tile_size[i] = 1;
     plo[i] = Geom(0).ProbLo(i);
@@ -31,6 +32,7 @@ Particles<NStructReal, NStructInt>::Particles(
     isPeriodic[i] = Geom(0).isPeriodic(i);
     dx[i] = Geom(0).CellSize(i);
     invDx[i] = Geom(0).InvCellSize(i);
+    invVol *= invDx[i];
   }
 
   set_region_ba(regionBAIn);
@@ -148,9 +150,9 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
             p.id() = ParticleType::NextID();
           }
           p.cpu() = ParallelDescriptor::MyProc();
-          p.pos(ix_) = x; // + plo[ix_];
-          p.pos(iy_) = y; // + plo[iy_];
-          p.pos(iz_) = z; // + plo[iz_];
+          p.pos(ix_) = x;
+          p.pos(iy_) = y;
+          p.pos(iz_) = z;
           p.rdata(iup_) = u;
           p.rdata(ivp_) = v;
           p.rdata(iwp_) = w;
@@ -213,7 +215,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
 
     IntVect idxMin = lo, idxMax = hi;
 
-    for (int iDim = 0; iDim < 3; iDim++) {
+    for (int iDim = 0; iDim < nDim; iDim++) {
       if (!Geom(0).isPeriodic(iDim)) {
         idxMin[iDim] -= nGstInject;
         idxMax[iDim] += nGstInject;
@@ -235,9 +237,7 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::sum_to_center(
     amrex::MultiFab& netChargeMF, amrex::UMultiFab<RealCMM>& centerMM,
     bool doNetChargeOnly) {
-  timing_func("Particles::sum_to_center");
-
-  const Real invVol = invDx[ix_] * invDx[iy_] * invDx[iz_];
+  timing_func("Particles::sum_to_center");  
 
   const int lev = 0;
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
@@ -253,9 +253,9 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
       const Real qp = p.rdata(iqp_);
 
       //-----calculate interpolate coef begin-------------
-      int loIdx[3];
-      Real dShift[3];
-      for (int i = 0; i < 3; i++) {
+      int loIdx[nDim];
+      Real dShift[nDim];
+      for (int i = 0; i < nDim; i++) {
         // plo is the corner location => -0.5
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i] - 0.5;
         loIdx[i] = fastfloor(dShift[i]); // floor() is slow.
@@ -274,7 +274,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
           }
 
       if (!doNetChargeOnly) {
-        Real weights_IIID[2][2][2][3];
+        Real weights_IIID[2][2][2][nDim];
         //----- Mass matrix calculation begin--------------
         const Real xi0 = dShift[ix_] * dx[ix_];
         const Real eta0 = dShift[iy_] * dx[iy_];
@@ -330,12 +330,12 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
         const int kMax = kMin + 1;
 
         const Real coef = fabs(qp) * invVol;
-        Real wg_D[3];
+        Real wg_D[nDim];
         for (int k1 = kMin; k1 <= kMax; k1++)
           for (int j1 = jMin; j1 <= jMax; j1++)
             for (int i1 = iMin; i1 <= iMax; i1++) {
 
-              for (int iDim = 0; iDim < 3; iDim++) {
+              for (int iDim = 0; iDim < nDim; iDim++) {
                 wg_D[iDim] =
                     coef * weights_IIID[i1 - iMin][j1 - jMin][k1 - kMin][iDim];
               }
@@ -347,9 +347,9 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
                 const int gp0 = ip * 9;
                 for (int j2 = jMin; j2 <= jMax; j2++) {
                   int jp = j2 - j1 + 1;
-                  const int gp1 = gp0 + jp * 3;
+                  const int gp1 = gp0 + jp * nDim;
                   for (int k2 = kMin; k2 <= kMax; k2++) {
-                    const Real(&wg1_D)[3] =
+                    const Real(&wg1_D)[nDim] =
                         weights_IIID[i2 - iMin][j2 - jMin][k2 - kMin];
 
                     // const int kp = k2 - k1 + 1;
@@ -374,13 +374,10 @@ PartInfo Particles<NStructReal, NStructInt>::sum_moments(
     MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM, MultiFab& nodeBMF,
     Real dt) {
   timing_func("Particles::sum_moments");
-  const auto& plo = Geom(0).ProbLo();
 
   momentsMF.setVal(0.0);
 
   Real qdto2mc = charge / mass * 0.5 * dt;
-
-  const Real invVol = invDx[ix_] * invDx[iy_] * invDx[iz_];
 
   PartInfo pinfo;
   const int lev = 0;
@@ -401,9 +398,9 @@ PartInfo Particles<NStructReal, NStructInt>::sum_moments(
       const Real qp = p.rdata(iqp_);
 
       //-----calculate interpolate coef begin-------------
-      int loIdx[3];
-      Real dShift[3];
-      for (int i = 0; i < 3; i++) {
+      int loIdx[nDim];
+      Real dShift[nDim];
+      for (int i = 0; i < nDim; i++) {
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
         loIdx[i] = fastfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
@@ -689,8 +686,6 @@ void Particles<NStructReal, NStructInt>::mover(const amrex::MultiFab& nodeEMF,
                                                amrex::Real dtNext) {
   timing_func("Particles::mover");
 
-  const auto& plo = Geom(0).ProbLo();
-
   const Real qdto2mc = charge / mass * 0.5 * dt;
   Real dtLoc = 0.5 * (dt + dtNext);
 
@@ -718,9 +713,9 @@ void Particles<NStructReal, NStructInt>::mover(const amrex::MultiFab& nodeEMF,
       const Real zp = p.pos(iz_);
 
       //-----calculate interpolate coef begin-------------
-      int loIdx[3];
-      Real dShift[3];
-      for (int i = 0; i < 3; i++) {
+      int loIdx[nDim];
+      Real dShift[nDim];
+      for (int i = 0; i < nDim; i++) {
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
         loIdx[i] = fastfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
@@ -796,10 +791,6 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
     const amrex::MultiFab& phiMF) {
   timing_func("Particles::divE_correct_position");
 
-  const auto& plo = Geom(0).ProbLo();
-
-  const Real invVol = invDx[ix_] * invDx[iy_] * invDx[iz_];
-
   const Real coef = charge / fabs(charge);
   const Real epsLimit = 0.1;
   Real epsMax = 0;
@@ -823,9 +814,9 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       }
       const Real qp = p.rdata(iqp_);
 
-      int loIdx[3];
-      Real dShift[3];
-      for (int i = 0; i < 3; i++) {
+      int loIdx[nDim];
+      Real dShift[nDim];
+      for (int i = 0; i < nDim; i++) {
         // plo is the corner location => -0.5
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i] - 0.5;
         loIdx[i] = fastfloor(dShift[i]);
@@ -833,7 +824,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       }
 
       {
-        Real weights_IIID[2][2][2][3];
+        Real weights_IIID[2][2][2][nDim];
         //----- Mass matrix calculation begin--------------
         const Real xi0 = dShift[ix_] * dx[ix_];
         const Real eta0 = dShift[iy_] * dx[iy_];
@@ -890,18 +881,18 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         const int jMin = loIdx[iy_];
         const int kMin = loIdx[iz_];
 
-        Real eps_D[3] = { 0, 0, 0 };
+        Real eps_D[nDim] = { 0, 0, 0 };
 
         for (int k = 0; k < 2; k++)
           for (int j = 0; j < 2; j++)
             for (int i = 0; i < 2; i++) {
               const Real coef = phiArr(iMin + i, jMin + j, kMin + k);
-              for (int iDim = 0; iDim < 3; iDim++) {
+              for (int iDim = 0; iDim < nDim; iDim++) {
                 eps_D[iDim] += coef * weights_IIID[i][j][k][iDim];
               }
             }
 
-        for (int iDim = 0; iDim < 3; iDim++)
+        for (int iDim = 0; iDim < nDim; iDim++)
           eps_D[iDim] *= coef * fourPI;
 
         if (fabs(eps_D[ix_] * invDx[ix_]) > epsLimit ||
@@ -913,11 +904,11 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
           const Real dl = sqrt(pow(eps_D[ix_], 2) + pow(eps_D[iy_], 2) +
                                pow(eps_D[iz_], 2));
           const Real ratio = epsLimit * dx[ix_] / dl;
-          for (int iDim = 0; iDim < 3; iDim++)
+          for (int iDim = 0; iDim < nDim; iDim++)
             eps_D[iDim] *= ratio;
         }
 
-        for (int iDim = 0; iDim < 3; iDim++) {
+        for (int iDim = 0; iDim < nDim; iDim++) {
           if (fabs(eps_D[iDim] * invDx[iDim]) > epsMax)
             epsMax = fabs(eps_D[iDim] * invDx[iDim]);
 
@@ -927,7 +918,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         if (is_outside_ba(p, status, lowCorner, highCorner)) {
           // Do not allow moving particles from physical cells to ghost cells
           // during divE correction.
-          for (int iDim = 0; iDim < 3; iDim++) {
+          for (int iDim = 0; iDim < nDim; iDim++) {
             p.pos(iDim) -= eps_D[iDim];
           }
 
@@ -1083,7 +1074,6 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
 
     // Phase space cell number in one direction.
     // The const 0.8 is choosen by experience.
-    const int nDim = 3;
     const int nCell = 0.8 * pow(nPartGoal, 1. / nDim);
     if (nCell < 1)
       continue;
@@ -1160,8 +1150,8 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
         for (int kCell = 0; kCell < nCell; kCell++) {
           std::sort(phasePartIdx_III[iCell][jCell][kCell].begin(),
                     phasePartIdx_III[iCell][jCell][kCell].end(),
-                    [&particles = particles, ix_ = ix_](const int& idl,
-                                                        const int& idr) {
+                    [& particles = particles, ix_ = ix_](const int& idl,
+                                                         const int& idr) {
                       return particles[idl].rdata(ix_) >
                              particles[idr].rdata(ix_);
                     });
@@ -1197,12 +1187,8 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
     const Real zMin = Geom(0).LoEdge(lo.z, iz_),
                zMax = Geom(0).HiEdge(hi.z, iz_);
 
-    // TODO: use array dx
-    const Real dx = Geom(0).CellSize(ix_);
-    const Real dy = Geom(0).CellSize(iy_);
-    const Real dz = Geom(0).CellSize(iz_);
-
-    const Real invdl2 = 1.0 / (dx * dx + dy * dy + dz * dz);
+    const Real invdl2 =
+        1.0 / (dx[ix_] * dx[ix_] + dx[iy_] * dx[iy_] + dx[iz_] * dx[iz_]);
     const Real invthVel2 = 1.0 / thVel2;
     for (int iu = 0; iu < nCell; iu++)
       for (int iv = 0; iv < nCell; iv++)

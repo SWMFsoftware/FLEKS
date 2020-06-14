@@ -46,6 +46,7 @@ protected:
   amrex::Vector<amrex::RealBox> boxRange_I;
 
   amrex::Real plo[nDim], phi[nDim], dx[nDim], invDx[nDim];
+  amrex::Real invVol; 
   bool isPeriodic[nDim];
 
 public:

@@ -175,7 +175,7 @@ void ParticleTracker::save_restart_data() {
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
 
-    // TODO: the following two lines seem unnecessary
+    // Keep the following two lines for safety. 
     parts[iPart]->label_particles_outside_ba();
     parts[iPart]->Redistribute();
 
