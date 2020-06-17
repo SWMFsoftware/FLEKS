@@ -49,6 +49,10 @@ void Pic::read_param(const std::string& command, ReadParam& readParam) {
   } else if (command == "#DISCRETIZE" || command == "#DISCRETIZATION") {
     readParam.read_var("theta", fsolver.theta);
     readParam.read_var("coefDiff", fsolver.coefDiff);
+  } else if (command == "#SMOOTHE") {
+    readParam.read_var("doSmoothE", doSmoothE);
+    readParam.read_var("nSmoothE", nSmoothE);
+    readParam.read_var("coefSmoothE", coefSmoothE);
   } else if (command == "#RESAMPLING") {
     readParam.read_var("doReSampling", doReSampling);
     readParam.read_var("reSamplingLowLimit", reSamplingLowLimit);
@@ -775,6 +779,10 @@ void Pic::update_E() {
   nodeEth.SumBoundary(geom.periodicity());
   nodeEth.FillBoundary(geom.periodicity());
 
+  if (doSmoothE) {
+    smooth_E(nodeEth);
+  }
+
   MultiFab::Add(nodeEth, nodeE, 0, 0, nodeEth.nComp(), nGst);
 
   MultiFab::LinComb(nodeE, -(1.0 - fsolver.theta) / fsolver.theta, nodeE, 0,
@@ -964,6 +972,42 @@ void Pic::update_B() {
   nodeB.FillBoundary(geom.periodicity());
 
   apply_external_BC(nodeStatus, nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
+}
+
+//==========================================================
+void Pic::smooth_E(MultiFab& mfE) {
+  if (!doSmoothE)
+    return;
+
+  Real weightSelf = 1 - coefSmoothE;
+  Real WeightNei = coefSmoothE / 6.0;
+  MultiFab tmp(mfE.boxArray(), mfE.DistributionMap(), mfE.nComp(), mfE.nGrow());
+  for (int icount = 0; icount < nSmoothE; icount++) {
+    MultiFab::Copy(tmp, mfE, 0, 0, mfE.nComp(), mfE.nGrow());
+
+    for (MFIter mfi(mfE); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+
+      amrex::Array4<amrex::Real> const& arrE = mfE[mfi].array();
+      amrex::Array4<amrex::Real> const& arrTmp = tmp[mfi].array();
+
+      const auto lo = IntVect(bx.loVect());
+      const auto hi = IntVect(bx.hiVect());
+
+      for (int iVar = 0; iVar < mfE.nComp(); iVar++)
+        for (int k = lo[iz_] + 1; k <= hi[iz_] - 1; k++)
+          for (int j = lo[iy_]; j <= hi[iy_]; j++)
+            for (int i = lo[ix_]; i <= hi[ix_]; i++) {
+              arrE(i, j, k, iVar) =
+                  weightSelf * arrE(i, j, k, iVar) +
+                  WeightNei *
+                      (arrTmp(i - 1, j, k, iVar) + arrTmp(i + 1, j, k, iVar) +
+                       arrTmp(i, j - 1, k, iVar) + arrTmp(i, j + 1, k, iVar) +
+                       arrTmp(i, j, k - 1, iVar) + arrTmp(i, j, k + 1, iVar));
+            }
+    }
+    mfE.FillBoundary(geom.periodicity());
+  }
 }
 
 //==========================================================

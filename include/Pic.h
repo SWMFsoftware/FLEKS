@@ -91,6 +91,10 @@ private:
   std::string domainName;
   int domainID;
 
+  bool doSmoothE; 
+  int nSmoothE; 
+  int coefSmoothE; 
+
   // public methods
 public:
   Pic() {
@@ -109,6 +113,10 @@ public:
 
     divESolver.set_tol(0.01);
     divESolver.set_nIter(20);
+
+    doSmoothE = false; 
+    nSmoothE = 0; 
+    coefSmoothE = 0; 
   };
   ~Pic(){};
 
@@ -171,7 +179,9 @@ public:
   void update_E_rhs(double *rhos);
   void update_E_matvec(const double *vecIn, double *vecOut,
                        const bool useZeroBC = true);
-  void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF);
+  void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF);  
+
+  void smooth_E(amrex::MultiFab &mfE); 
   //-------------Electric field solver end-------------
 
   void update_B();
