@@ -10,10 +10,11 @@ using namespace amrex;
 template <int NStructReal, int NStructInt>
 Particles<NStructReal, NStructInt>::Particles(
     const amrex::BoxArray& regionBAIn, const Geometry& geom,
-    const DistributionMapping& dm, const BoxArray& ba, TimeCtr* const tcIn,
-    const int speciesIDIn, const Real chargeIn, const Real massIn,
-    const IntVect& nPartPerCellIn)
+    const DistributionMapping& dm, const BoxArray& ba,
+    FluidInterface* const fluidIn, TimeCtr* const tcIn, const int speciesIDIn,
+    const Real chargeIn, const Real massIn, const IntVect& nPartPerCellIn)
     : ParticleContainer<NStructReal, NStructInt>(geom, dm, ba),
+      fluidInterface(fluidIn),
       tc(tcIn),
       speciesID(speciesIDIn),
       charge(chargeIn),
@@ -44,23 +45,23 @@ Particles<NStructReal, NStructInt>::Particles(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::add_particles_cell(
-    const MFIter& mfi, const FluidInterface& fluidInterface, int i, int j,
-    int k) {
+void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
+                                                            int i, int j,
+                                                            int k) {
   int ig, jg, kg, nxcg, nycg, nzcg, iCycle, npcel, nRandom = 7;
   // Why +1? for comparison with iPIC3D.-----
 
   ig = i + 2;
   jg = j + 2;
   kg = k;
-  if (fluidInterface.getnDim() > 2)
+  if (fluidInterface->getnDim() > 2)
     kg = kg + 2; // just for comparison with iPIC3D;
   //----------------------------------------
 
-  nxcg = fluidInterface.getFluidNxc() + 2;
-  nycg = fluidInterface.getFluidNyc() + 2;
-  nzcg = fluidInterface.getFluidNzc();
-  if (fluidInterface.getnDim() > 2)
+  nxcg = fluidInterface->getFluidNxc() + 2;
+  nycg = fluidInterface->getFluidNyc() + 2;
+  nzcg = fluidInterface->getFluidNzc();
+  if (fluidInterface->getnDim() > 2)
     nzcg += 2;
 
   iCycle = tc->get_cycle();
@@ -112,7 +113,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
             plo[iz_];
 
         double q = vol2Npcel *
-                   fluidInterface.get_number_density(mfi, x, y, z, speciesID);
+                   fluidInterface->get_number_density(mfi, x, y, z, speciesID);
         if (q != 0) {
           double rand;
           Real u, v, w;
@@ -121,14 +122,15 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           double rand3 = randNum();
           double rand4 = randNum();
 
-          if (fluidInterface.getUseAnisoP() &&
-              (speciesID > 0 || fluidInterface.get_useElectronFluid())) {
-            fluidInterface.set_particle_uth_aniso(mfi, x, y, z, &u, &v, &w,
-                                                  rand1, rand2, rand3, rand4,
-                                                  speciesID);
+          if (fluidInterface->getUseAnisoP() &&
+              (speciesID > 0 || fluidInterface->get_useElectronFluid())) {
+            fluidInterface->set_particle_uth_aniso(mfi, x, y, z, &u, &v, &w,
+                                                   rand1, rand2, rand3, rand4,
+                                                   speciesID);
           } else {
-            fluidInterface.set_particle_uth_iso(mfi, x, y, z, &u, &v, &w, rand1,
-                                                rand2, rand3, rand4, speciesID);
+            fluidInterface->set_particle_uth_iso(mfi, x, y, z, &u, &v, &w,
+                                                 rand1, rand2, rand3, rand4,
+                                                 speciesID);
           }
 
           // Increase the thermal velocity a little so that the variation of the
@@ -137,9 +139,9 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           v *= coefSD;
           w *= coefSD;
 
-          u += fluidInterface.get_ux(mfi, x, y, z, speciesID);
-          v += fluidInterface.get_uy(mfi, x, y, z, speciesID);
-          w += fluidInterface.get_uz(mfi, x, y, z, speciesID);
+          u += fluidInterface->get_ux(mfi, x, y, z, speciesID);
+          v += fluidInterface->get_uy(mfi, x, y, z, speciesID);
+          w += fluidInterface->get_uz(mfi, x, y, z, speciesID);
 
           ParticleType p;
           if (ParticleType::the_next_id >= amrex::LastParticleID) {
@@ -172,7 +174,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_domain(
-    const FluidInterface& fluidInterface, const iMultiFab& cellStatus) {
+    const iMultiFab& cellStatus) {
   timing_func("Particles::add_particles");
 
   const int lev = 0;
@@ -189,7 +191,7 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
       for (int j = jMin; j <= jMax; ++j)
         for (int k = kMin; k <= kMax; ++k) {
           if (status(i, j, k) == iOnNew_) {
-            add_particles_cell(mfi, fluidInterface, i, j, k);
+            add_particles_cell(mfi, i, j, k);
           }
         }
   }
@@ -198,7 +200,7 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
-    const FluidInterface& fluidInterface, const iMultiFab& cellStatus) {
+    const iMultiFab& cellStatus) {
   timing_func("Particles::inject_particles_at_boundary");
 
   // Only inject nGstInject layers.
@@ -226,7 +228,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
           if (do_inject_particles_for_this_cell(bx, status, i, j, k)) {
-            add_particles_cell(mfi, fluidInterface, i, j, k);
+            add_particles_cell(mfi, i, j, k);
           }
         }
   }
@@ -237,7 +239,7 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::sum_to_center(
     amrex::MultiFab& netChargeMF, amrex::UMultiFab<RealCMM>& centerMM,
     bool doNetChargeOnly) {
-  timing_func("Particles::sum_to_center");  
+  timing_func("Particles::sum_to_center");
 
   const int lev = 0;
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
@@ -1431,8 +1433,8 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
 IOParticles::IOParticles(Particles& other, Geometry geomIO, Real no2outL,
                          Real no2outV, Real no2outM, RealBox IORange)
     : Particles(other.get_region_ba(), geomIO, other.ParticleDistributionMap(0),
-                other.ParticleBoxArray(0), nullptr, other.get_speciesID(),
-                other.get_charge(), other.get_mass(),
+                other.ParticleBoxArray(0), nullptr, nullptr,
+                other.get_speciesID(), other.get_charge(), other.get_mass(),
                 amrex::IntVect(-1, -1, -1)) {
   const int lev = 0;
 

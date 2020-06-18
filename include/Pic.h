@@ -12,7 +12,7 @@
 #include "TimeCtr.h"
 #include "UMultiFab.h"
 
-class ParticleTracker; 
+class ParticleTracker;
 class Pic;
 
 class FieldSolver {
@@ -34,7 +34,7 @@ typedef void (Pic::*PicWriteAmrex)(const std::string &filename,
 // The grid is defined in DomaiGrid. This class contains the data on the grid.
 class Pic : public PicGrid {
   friend PlotWriter;
-  friend ParticleTracker; 
+  friend ParticleTracker;
   // public variables
 public:
   // private variables
@@ -73,7 +73,7 @@ private:
   amrex::Vector<amrex::MultiFab> nodePlasma;
   amrex::Vector<amrex::Real> plasmaEnergy;
 
-  amrex::Vector<std::unique_ptr<Particles<>> > parts;
+  amrex::Vector<std::unique_ptr<Particles<> > > parts;
 
   amrex::IntVect nPartPerCell;
   amrex::Real qomEl;
@@ -91,9 +91,9 @@ private:
   std::string domainName;
   int domainID;
 
-  bool doSmoothE; 
-  int nSmoothE; 
-  amrex::Real coefSmoothE; 
+  bool doSmoothE;
+  int nSmoothE;
+  amrex::Real coefSmoothE;
 
   // public methods
 public:
@@ -114,9 +114,9 @@ public:
     divESolver.set_tol(0.01);
     divESolver.set_nIter(20);
 
-    doSmoothE = false; 
-    nSmoothE = 0; 
-    coefSmoothE = 0; 
+    doSmoothE = false;
+    nSmoothE = 0;
+    coefSmoothE = 0;
   };
   ~Pic(){};
 
@@ -151,13 +151,13 @@ public:
 
   void inject_particles_for_new_cells() {
     for (auto &pts : parts) {
-      pts->add_particles_domain(*fluidInterface, cellStatus);
+      pts->add_particles_domain(cellStatus);
     }
   }
 
   void inject_particles_for_boundary_cells() {
     for (auto &pts : parts) {
-      pts->inject_particles_at_boundary(*fluidInterface, cellStatus);
+      pts->inject_particles_at_boundary(cellStatus);
     }
   }
 
@@ -179,9 +179,9 @@ public:
   void update_E_rhs(double *rhos);
   void update_E_matvec(const double *vecIn, double *vecOut,
                        const bool useZeroBC = true);
-  void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF);  
+  void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF);
 
-  void smooth_E(amrex::MultiFab &mfE); 
+  void smooth_E(amrex::MultiFab &mfE);
   //-------------Electric field solver end-------------
 
   void update_B();

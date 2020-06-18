@@ -46,7 +46,7 @@ protected:
   amrex::Vector<amrex::RealBox> boxRange_I;
 
   amrex::Real plo[nDim], phi[nDim], dx[nDim], invDx[nDim];
-  amrex::Real invVol; 
+  amrex::Real invVol;
   bool isPeriodic[nDim];
 
 public:
@@ -62,7 +62,7 @@ public:
 
   Particles(const amrex::BoxArray& regionBAIn, const amrex::Geometry& geom,
             const amrex::DistributionMapping& dm, const amrex::BoxArray& ba,
-            TimeCtr* const tcIn, const int speciesIDIn,
+            FluidInterface* fluidIn, TimeCtr* tcIn, const int speciesIDIn,
             const amrex::Real chargeIn, const amrex::Real massIn,
             const amrex::IntVect& nPartPerCellIn);
 
@@ -81,13 +81,9 @@ public:
     // }
   }
 
-  void add_particles_domain(const FluidInterface& fluidInterface,
-                            const amrex::iMultiFab& cellStatus);
-  void add_particles_cell(const amrex::MFIter& mfi,
-                          const FluidInterface& fluidInterface, int i, int j,
-                          int k);
-  void inject_particles_at_boundary(const FluidInterface& fluidInterface,
-                                    const amrex::iMultiFab& cellStatus);
+  void add_particles_domain(const amrex::iMultiFab& cellStatus);
+  void add_particles_cell(const amrex::MFIter& mfi, int i, int j, int k);
+  void inject_particles_at_boundary(const amrex::iMultiFab& cellStatus);
 
   // 1) Only inject particles ONCE for one ghost cells. This function decides
   // which block injects particles. 2) bx should be a valid box 3) The cell
@@ -163,7 +159,8 @@ public:
 
   void label_particles_outside_ba() {
     const int lev = 0;
-    for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid(); ++pti) {
+    for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+         ++pti) {
       auto& particles = pti.GetArrayOfStructs();
       const amrex::Array4<int const>& status = cellStatus[pti].array();
       const amrex::Box& bx = cellStatus[pti].box();
@@ -180,7 +177,8 @@ public:
 
   void label_particles_outside_ba_general() {
     const int lev = 0;
-    for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid(); ++pti) {
+    for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+         ++pti) {
       auto& particles = pti.GetArrayOfStructs();
       for (auto& p : particles) {
         if (is_outside_ba(p)) {
@@ -215,6 +213,7 @@ protected:
   amrex::IntVect nPartPerCell;
 
   TimeCtr* tc;
+  FluidInterface* fluidInterface;
 };
 
 class IOParticles : public Particles<nPicPartReal> {
