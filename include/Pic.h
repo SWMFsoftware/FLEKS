@@ -93,7 +93,7 @@ private:
 
   bool doSmoothE; 
   int nSmoothE; 
-  int coefSmoothE; 
+  amrex::Real coefSmoothE; 
 
   // public methods
 public:

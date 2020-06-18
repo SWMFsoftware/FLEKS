@@ -779,10 +779,6 @@ void Pic::update_E() {
   nodeEth.SumBoundary(geom.periodicity());
   nodeEth.FillBoundary(geom.periodicity());
 
-  if (doSmoothE) {
-    smooth_E(nodeEth);
-  }
-
   MultiFab::Add(nodeEth, nodeE, 0, 0, nodeEth.nComp(), nGst);
 
   MultiFab::LinComb(nodeE, -(1.0 - fsolver.theta) / fsolver.theta, nodeE, 0,
@@ -790,6 +786,11 @@ void Pic::update_E() {
 
   apply_external_BC(nodeStatus, nodeE, 0, nDim, &Pic::get_node_E);
   apply_external_BC(nodeStatus, nodeEth, 0, nDim, &Pic::get_node_E);
+
+  if (doSmoothE) {
+    smooth_E(nodeEth);
+    smooth_E(nodeE);
+  }
 
   div_node_to_center(nodeE, centerDivE, geom.InvCellSize());
 }
@@ -979,6 +980,9 @@ void Pic::smooth_E(MultiFab& mfE) {
   if (!doSmoothE)
     return;
 
+  std::string nameFunc = "Pic::smooth_E";
+  timing_func(nameFunc);
+
   Real weightSelf = 1 - coefSmoothE;
   Real WeightNei = coefSmoothE / 6.0;
   MultiFab tmp(mfE.boxArray(), mfE.DistributionMap(), mfE.nComp(), mfE.nGrow());
@@ -995,7 +999,7 @@ void Pic::smooth_E(MultiFab& mfE) {
       const auto hi = IntVect(bx.hiVect());
 
       for (int iVar = 0; iVar < mfE.nComp(); iVar++)
-        for (int k = lo[iz_] + 1; k <= hi[iz_] - 1; k++)
+        for (int k = lo[iz_]; k <= hi[iz_]; k++)
           for (int j = lo[iy_]; j <= hi[iy_]; j++)
             for (int i = lo[ix_]; i <= hi[ix_]; i++) {
               arrE(i, j, k, iVar) =
