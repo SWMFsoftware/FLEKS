@@ -16,9 +16,9 @@ public:
 public:
   TestParticles(const amrex::BoxArray& regionBAIn, const amrex::Geometry& geom,
                 const amrex::DistributionMapping& dm, const amrex::BoxArray& ba,
-                TimeCtr* const tcIn, const int speciesID,
-                const amrex::Real charge, const amrex::Real mass,
-                int domainIDIn = 0);
+                FluidInterface* const fluidIn, TimeCtr* const tcIn,
+                const int speciesID, const amrex::Real charge,
+                const amrex::Real mass, int domainIDIn = 0);
 
   ~TestParticles() { write_particles(true); };
 
@@ -30,10 +30,9 @@ public:
                                const amrex::MultiFab& nodeBMF, amrex::Real dt,
                                amrex::Real dtNext, amrex::Real tNow);
 
-  void add_test_particles(const FluidInterface& fluidInterface,
-                          const amrex::iMultiFab& cellStatus);
+  void add_test_particles(const amrex::iMultiFab& cellStatus);
 
-  void write_particles(bool forceOutput = false);
+  bool write_particles(bool forceOutput = false);
 
   unsigned long long int loop_particles(
       std::string action = "count_record_size", char* buff = nullptr,
@@ -73,6 +72,12 @@ public:
                                 ParallelDescriptor::IOProcessorNumber());
   }
 
+  void update_initial_particle_number() {
+    nInitPart = TotalNumberOfParticles(false, false);
+  }
+
+  unsigned long int init_particle_number() const { return nInitPart; }
+
 private:
   int iFileCount;
   int iStep;
@@ -83,6 +88,8 @@ private:
   int domainID;
 
   amrex::Real no2outL, no2outV, no2outM;
+
+  unsigned long int nInitPart;
 };
 
 #endif

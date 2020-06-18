@@ -9,8 +9,8 @@ void ParticleTracker::set_ic(Pic& pic) {
 
   update_field(pic);
   for (auto& tps : parts) {
-    tps->add_test_particles(*fluidInterface, cellStatus);
-
+    tps->add_test_particles(cellStatus);
+    tps->update_initial_particle_number();
     tps->set_IO_units(pw.No2OutTable("X"), pw.No2OutTable("u"),
                       pw.No2OutTable("mass"));
   }
@@ -24,7 +24,14 @@ void ParticleTracker::update(Pic& pic) {
   for (auto& tps : parts) {
     tps->move_and_save_particles(nodeE, nodeB, tc->get_dt(), tc->get_next_dt(),
                                  tc->get_time_si());
-    tps->write_particles();
+
+    bool doWrite = tps->write_particles();
+    if (doWrite) {
+      // Refill test particles if necessary.
+      if (tps->TotalNumberOfParticles() < 0.5 * tps->init_particle_number()) {        
+        tps->add_test_particles(cellStatus);        
+      }
+    }
   }
 }
 
@@ -134,7 +141,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::make_unique<TestParticles>(
-          ptRegionBA, geom, dm, centerBA, tc.get(), i,
+          ptRegionBA, geom, dm, centerBA, fluidInterface.get(), tc.get(), i,
           fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i),
           domainID);
       parts.push_back(std::move(ptr));
@@ -170,12 +177,12 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
 void ParticleTracker::save_restart_data() {
   if (isGridEmpty)
     return;
-    
+
   std::string restartDir = "PC/restartOUT/";
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
 
-    // Keep the following two lines for safety. 
+    // Keep the following two lines for safety.
     parts[iPart]->label_particles_outside_ba();
     parts[iPart]->Redistribute();
 

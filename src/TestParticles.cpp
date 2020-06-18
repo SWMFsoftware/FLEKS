@@ -7,11 +7,12 @@ using namespace amrex;
 TestParticles::TestParticles(const amrex::BoxArray& regionBAIn,
                              const amrex::Geometry& geom,
                              const amrex::DistributionMapping& dm,
-                             const amrex::BoxArray& ba, TimeCtr* const tcIn,
+                             const amrex::BoxArray& ba,
+                             FluidInterface* const fluidIn, TimeCtr* const tcIn,
                              const int speciesID, const amrex::Real charge,
                              const amrex::Real mass, int domainIDIn)
-    : Particles(regionBAIn, geom, dm, ba, tcIn, speciesID, charge, mass,
-                IntVect(1, 1, 1)) {
+    : Particles(regionBAIn, geom, dm, ba, fluidIn, tcIn, speciesID, charge,
+                mass, IntVect(1, 1, 1)) {
   domainID = domainIDIn;
 
   {
@@ -24,6 +25,8 @@ TestParticles::TestParticles(const amrex::BoxArray& regionBAIn,
   iFileCount = 0;
   iStep = 0;
   outputDir = "PC/plots/test_particles";
+
+  nInitPart = 0;
 }
 
 void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
@@ -154,36 +157,39 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
   iStep++;
 }
 
-void TestParticles::add_test_particles(const FluidInterface& fluidInterface,
-                                       const iMultiFab& cellStatus) {
-  timing_func("TestParticles::add_test_particles");
+void TestParticles::add_test_particles(const iMultiFab& cellStatus) {
+  std::string funcName = "TestParticles::add_test_particles";
+  timing_func(funcName);
+  Print() << funcName << " : nInitPart = " << nInitPart
+          << " : current number = " << TotalNumberOfParticles(true, false) << std::endl;
 
   const int lev = 0;
+
+  const Real partNumCtr = 0.2;
 
   for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
     const auto& status = cellStatus[mfi].array();
     const Box& bx = mfi.validbox();
     const IntVect lo = IntVect(bx.loVect());
     const IntVect hi = IntVect(bx.hiVect());
-    // IntVect mid = (lo + hi) / 2;
 
     IntVect idxMin = lo, idxMax = hi;
 
     for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
-          if (status(i, j, k) == iAddPTParticle_) {
-            add_particles_cell(mfi, fluidInterface, i, j, k);
+          if (status(i, j, k) == iAddPTParticle_ && randNum() < partNumCtr) {
+            add_particles_cell(mfi, i, j, k);
           }
         }
   }
 }
 
 //======================================================================
-void TestParticles::write_particles(bool forceOutput) {
+bool TestParticles::write_particles(bool forceOutput) {
 
   if (iStep % nPTRecord != 0 && !forceOutput)
-    return;
+    return false;
 
   const int nProc = ParallelDescriptor::NProcs();
   int nPartLoc = TotalNumberOfParticles(false, true);
@@ -206,18 +212,18 @@ void TestParticles::write_particles(bool forceOutput) {
   partList.resize(nPartLoc * listUnitSize);
   tmp = loop_particles("get_record_loc", partList.data(), partList.size(),
                        nByteAhead);
-  
+
   std::stringstream ss;
-  ss << std::setfill('0') << std::setw(4)<< std::to_string(iFileCount);
+  ss << std::setfill('0') << std::setw(4) << std::to_string(iFileCount);
 
   amrex::UtilCreateDirectory(outputDir, 0755);
-  std::string fileNamePartList =
-      outputDir + "/" + domainName + "_particle_list_species_" +
-    std::to_string(speciesID) + "_" + ss.str(); 
+  std::string fileNamePartList = outputDir + "/" + domainName +
+                                 "_particle_list_species_" +
+                                 std::to_string(speciesID) + "_" + ss.str();
 
-  std::string fileNamePartRecord =
-      outputDir + "/" + domainName + "_particle_species_" +
-    std::to_string(speciesID) + "_" + ss.str();
+  std::string fileNamePartRecord = outputDir + "/" + domainName +
+                                   "_particle_species_" +
+                                   std::to_string(speciesID) + "_" + ss.str();
   iFileCount++;
 
   MPI_File recordFile, listFile;
@@ -237,6 +243,8 @@ void TestParticles::write_particles(bool forceOutput) {
 
   loop_particles("reset_record_counter", partList.data(), partList.size(),
                  nByteAhead);
+
+  return true;
 }
 
 unsigned long long int TestParticles::loop_particles(
