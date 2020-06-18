@@ -206,17 +206,18 @@ void TestParticles::write_particles(bool forceOutput) {
   partList.resize(nPartLoc * listUnitSize);
   tmp = loop_particles("get_record_loc", partList.data(), partList.size(),
                        nByteAhead);
-
-  // print_record_buffer(dataBuffer.data(), dataBuffer.size());
+  
+  std::stringstream ss;
+  ss << std::setfill('0') << std::setw(4)<< std::to_string(iFileCount);
 
   amrex::UtilCreateDirectory(outputDir, 0755);
   std::string fileNamePartList =
       outputDir + "/" + domainName + "_particle_list_species_" +
-      std::to_string(speciesID) + "_" + std::to_string(iFileCount);
+    std::to_string(speciesID) + "_" + ss.str(); 
 
   std::string fileNamePartRecord =
       outputDir + "/" + domainName + "_particle_species_" +
-      std::to_string(speciesID) + "_" + std::to_string(iFileCount);
+    std::to_string(speciesID) + "_" + ss.str();
   iFileCount++;
 
   MPI_File recordFile, listFile;
