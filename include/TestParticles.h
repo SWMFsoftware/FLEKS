@@ -20,7 +20,7 @@ public:
                 const int speciesID, const amrex::Real charge,
                 const amrex::Real mass, int domainIDIn = 0);
 
-  ~TestParticles() { write_particles(true); };
+  ~TestParticles()=default;
 
   inline int record_var_index(int iPart, int iVar = 0) {
     return nPicPartReal + ptRecordSize * iPart + iVar;
@@ -32,7 +32,9 @@ public:
 
   void add_test_particles(const amrex::iMultiFab& cellStatus);
 
-  bool write_particles(bool forceOutput = false);
+  void reset_record_counter(); 
+
+  bool write_particles(int cycle);
 
   unsigned long long int loop_particles(
       std::string action = "count_record_size", char* buff = nullptr,
@@ -78,8 +80,7 @@ public:
 
   unsigned long int init_particle_number() const { return nInitPart; }
 
-private:
-  int iFileCount;
+private:  
   int iStep;
   std::string outputDir;
 

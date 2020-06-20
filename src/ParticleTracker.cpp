@@ -11,9 +11,9 @@ void ParticleTracker::set_ic(Pic& pic) {
   for (auto& tps : parts) {
     tps->add_test_particles(cellStatus);
     tps->update_initial_particle_number();
-    tps->set_IO_units(pw.No2OutTable("X"), pw.No2OutTable("u"),
-                      pw.No2OutTable("mass"));
   }
+
+  complete_parameters();
 }
 
 void ParticleTracker::update(Pic& pic) {
@@ -21,15 +21,16 @@ void ParticleTracker::update(Pic& pic) {
     return;
 
   update_field(pic);
+  bool doSave = savectr->is_time_to();
   for (auto& tps : parts) {
     tps->move_and_save_particles(nodeE, nodeB, tc->get_dt(), tc->get_next_dt(),
                                  tc->get_time_si());
 
-    bool doWrite = tps->write_particles();
-    if (doWrite) {
+    if (doSave) {
+      tps->write_particles(tc->get_cycle());
       // Refill test particles if necessary.
-      if (tps->TotalNumberOfParticles() < 0.5 * tps->init_particle_number()) {        
-        tps->add_test_particles(cellStatus);        
+      if (tps->TotalNumberOfParticles() < 0.5 * tps->init_particle_number()) {
+        tps->add_test_particles(cellStatus);
       }
     }
   }
@@ -85,26 +86,8 @@ void ParticleTracker::init(std::shared_ptr<FluidInterface>& fluidIn,
     printPrefix = domainName + ": ";
   }
 
-  auto& writer = pw;
-
-  // Pass information to writers.
-  writer.set_rank(ParallelDescriptor::MyProc());
-  writer.set_nProcs(ParallelDescriptor::NProcs());
-  writer.set_nDim(fluidInterface->getnDim());
-  // writer.set_iRegion(domainID);
-  // writer.set_domainMin_D({ { 0, 0, 0 } });
-
-  // writer.set_domainMax_D({ { 1, 1, 1 } });
-
-  // const Real* dx = geom.CellSize();
-  // writer.set_dx_D({ { dx[ix_], dx[iy_], dx[iz_] } });
-  writer.set_units(fluidInterface->getNo2SiL(), fluidInterface->getNo2SiV(),
-                   fluidInterface->getNo2SiB(), fluidInterface->getNo2SiRho(),
-                   fluidInterface->getNo2SiP(), fluidInterface->getNo2SiJ(),
-                   fluidInterface->getrPlanet());
-  writer.set_No2NoL(fluidInterface->getMhdNo2NoL());
-  //--------------------------------------------------
-  writer.init();
+  savectr = std::make_unique<PlotCtr>(tc.get(), domainID, -1, nPTRecord,
+                                      "3d fluid test_particle real4 planet");
 }
 
 //==========================================================
@@ -181,12 +164,9 @@ void ParticleTracker::save_restart_data() {
   std::string restartDir = "PC/restartOUT/";
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
-
     // Keep the following two lines for safety.
     parts[iPart]->label_particles_outside_ba();
     parts[iPart]->Redistribute();
-
-    parts[iPart]->write_particles();
     parts[iPart]->Checkpoint(restartDir, domainName + "_test_particles" +
                                              std::to_string(iPart));
   }
@@ -197,5 +177,40 @@ void ParticleTracker::read_restart() {
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     parts[iPart]->Restart(restartDir, domainName + "_test_particles" +
                                           std::to_string(iPart));
+    parts[iPart]->reset_record_counter();
+  }
+  complete_parameters();
+}
+
+void ParticleTracker::complete_parameters() {
+  PlotWriter& writer = savectr->writer;
+  {
+    // The plotCtr requires writing at the very begining, which should not
+    // happen for test particle. So skip the first saving.
+    savectr->is_time_to();
+  }
+
+  // Pass information to writers.
+  writer.set_rank(ParallelDescriptor::MyProc());
+  writer.set_nProcs(ParallelDescriptor::NProcs());
+  writer.set_nDim(fluidInterface->getnDim());
+  // writer.set_iRegion(domainID);
+  // writer.set_domainMin_D({ { 0, 0, 0 } });
+
+  // writer.set_domainMax_D({ { 1, 1, 1 } });
+
+  // const Real* dx = geom.CellSize();
+  // writer.set_dx_D({ { dx[ix_], dx[iy_], dx[iz_] } });
+  writer.set_units(fluidInterface->getNo2SiL(), fluidInterface->getNo2SiV(),
+                   fluidInterface->getNo2SiB(), fluidInterface->getNo2SiRho(),
+                   fluidInterface->getNo2SiP(), fluidInterface->getNo2SiJ(),
+                   fluidInterface->getrPlanet());
+  writer.set_No2NoL(fluidInterface->getMhdNo2NoL());
+  //--------------------------------------------------
+  writer.init();
+
+  for (auto& tps : parts) {
+    tps->set_IO_units(writer.No2OutTable("X"), writer.No2OutTable("u"),
+                      writer.No2OutTable("mass"));
   }
 }

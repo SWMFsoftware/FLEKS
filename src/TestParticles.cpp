@@ -22,7 +22,6 @@ TestParticles::TestParticles(const amrex::BoxArray& regionBAIn,
     printPrefix = domainName + ": ";
   }
 
-  iFileCount = 0;
   iStep = 0;
   outputDir = "PC/plots/test_particles";
 
@@ -55,6 +54,7 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
 
     auto& particles = pti.GetArrayOfStructs();
     for (auto& p : particles) {
+      Print() << "p(irecord) = " << p.idata(iRecordCount_) << std::endl;
       if (p.idata(iRecordCount_) >= nPTRecord) {
         Abort("Error: there is not enough allocated memory to store the "
               "particle record!!");
@@ -161,7 +161,8 @@ void TestParticles::add_test_particles(const iMultiFab& cellStatus) {
   std::string funcName = "TestParticles::add_test_particles";
   timing_func(funcName);
   Print() << funcName << " : nInitPart = " << nInitPart
-          << " : current number = " << TotalNumberOfParticles(true, false) << std::endl;
+          << " : current number = " << TotalNumberOfParticles(true, false)
+          << std::endl;
 
   const int lev = 0;
 
@@ -186,11 +187,7 @@ void TestParticles::add_test_particles(const iMultiFab& cellStatus) {
 }
 
 //======================================================================
-bool TestParticles::write_particles(bool forceOutput) {
-
-  if (iStep % nPTRecord != 0 && !forceOutput)
-    return false;
-
+bool TestParticles::write_particles(int cycle) {
   const int nProc = ParallelDescriptor::NProcs();
   int nPartLoc = TotalNumberOfParticles(false, true);
   int nPartAhead = 0;
@@ -214,7 +211,7 @@ bool TestParticles::write_particles(bool forceOutput) {
                        nByteAhead);
 
   std::stringstream ss;
-  ss << std::setfill('0') << std::setw(4) << std::to_string(iFileCount);
+  ss << "n" << std::setfill('0') << std::setw(8) << cycle;
 
   amrex::UtilCreateDirectory(outputDir, 0755);
   std::string fileNamePartList = outputDir + "/" + domainName +
@@ -224,7 +221,8 @@ bool TestParticles::write_particles(bool forceOutput) {
   std::string fileNamePartRecord = outputDir + "/" + domainName +
                                    "_particle_species_" +
                                    std::to_string(speciesID) + "_" + ss.str();
-  iFileCount++;
+
+  Print() << "fileNamePartList = " << fileNamePartList << std::endl;
 
   MPI_File recordFile, listFile;
   MPI_Status status;
@@ -371,5 +369,16 @@ void TestParticles::print_record_buffer(char* buffer,
       AllPrint() << std::endl;
     }
     AllPrint() << "----------------" << std::endl;
+  }
+}
+
+void TestParticles::reset_record_counter() {
+  const int lev = 0;
+  for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, lev); pti.isValid();
+       ++pti) {
+    auto& particles = pti.GetArrayOfStructs();
+    for (auto& p : particles) {
+      p.idata(iRecordCount_) = 0;
+    }
   }
 }

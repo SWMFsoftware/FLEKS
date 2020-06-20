@@ -9,11 +9,18 @@
 class ParticleTracker {
 public:
   // Make up a plot string to initialize pw, but the unit should be 'planet'.
-  ParticleTracker() : pw(domainID, "3d fluid test_particle real4 planet") {
+  ParticleTracker() {
     isGridInitialized = false;
     isGridEmpty = false;
   };
-  ~ParticleTracker() = default;
+  ~ParticleTracker() {
+    bool doSave = savectr->is_time_to(true);
+    for (auto &tps : parts) {
+      if (doSave) {
+        tps->write_particles(tc->get_cycle());
+      }
+    }
+  };
 
   void init(std::shared_ptr<FluidInterface> &fluidIn,
             std::shared_ptr<TimeCtr> &tcIn, int domainIDIn = 0);
@@ -30,6 +37,8 @@ public:
   void update_cell_status(Pic &pic);
   void set_ic(Pic &pic);
   void update(Pic &pic);
+
+  void complete_parameters();
 
   void save_restart_data();
   void read_restart();
@@ -58,7 +67,7 @@ private:
 
   amrex::iMultiFab cellStatus;
 
-  PlotWriter pw;
+  std::unique_ptr<PlotCtr> savectr;
 
   bool isGridInitialized;
 
