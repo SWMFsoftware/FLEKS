@@ -43,7 +43,7 @@ bool EventCtr::is_time_to(bool doForce) {
 
   if (useDn && tc->get_cycle() >= nNext) {
     nLast = tc->get_cycle();
-    nNext += nLast + dnEvent;
+    nNext = nLast + dnEvent;
     isTime = true;
   }
 
