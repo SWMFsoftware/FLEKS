@@ -984,9 +984,13 @@ void Pic::smooth_E(MultiFab& mfE) {
   timing_func(nameFunc);
 
   Real weightSelf = 1 - coefSmoothE;
-  Real WeightNei = coefSmoothE / 6.0;
+  Real WeightNei = coefSmoothE / 2.0;
   MultiFab tmp(mfE.boxArray(), mfE.DistributionMap(), mfE.nComp(), mfE.nGrow());
-  for (int icount = 0; icount < nSmoothE; icount++) {
+
+  auto smooth_dir = [&](int iDir) {
+    int dIdx[3] = { 0, 0, 0 };
+    dIdx[iDir] = 1;
+
     MultiFab::Copy(tmp, mfE, 0, 0, mfE.nComp(), mfE.nGrow());
 
     for (MFIter mfi(mfE); mfi.isValid(); ++mfi) {
@@ -1002,15 +1006,21 @@ void Pic::smooth_E(MultiFab& mfE) {
         for (int k = lo[iz_]; k <= hi[iz_]; k++)
           for (int j = lo[iy_]; j <= hi[iy_]; j++)
             for (int i = lo[ix_]; i <= hi[ix_]; i++) {
+              Real neiSum =
+                  arrTmp(i - dIdx[ix_], j - dIdx[iy_], k - dIdx[iz_], iVar) +
+                  arrTmp(i + dIdx[ix_], j + dIdx[iy_], k + dIdx[iz_], iVar);
               arrE(i, j, k, iVar) =
-                  weightSelf * arrE(i, j, k, iVar) +
-                  WeightNei *
-                      (arrTmp(i - 1, j, k, iVar) + arrTmp(i + 1, j, k, iVar) +
-                       arrTmp(i, j - 1, k, iVar) + arrTmp(i, j + 1, k, iVar) +
-                       arrTmp(i, j, k - 1, iVar) + arrTmp(i, j, k + 1, iVar));
+                  weightSelf * arrE(i, j, k, iVar) + WeightNei * neiSum;
             }
     }
+
     mfE.FillBoundary(geom.periodicity());
+  };
+
+  for (int icount = 0; icount < nSmoothE; icount++) {
+    smooth_dir(ix_);
+    smooth_dir(iy_);
+    smooth_dir(iz_);
   }
 }
 
