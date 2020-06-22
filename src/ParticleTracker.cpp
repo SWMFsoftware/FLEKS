@@ -163,10 +163,16 @@ void ParticleTracker::save_restart_data() {
 
   std::string restartDir = "PC/restartOUT/";
 
+  bool doSavePlot = savectr->is_time_to(true);
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     // Keep the following two lines for safety.
     parts[iPart]->label_particles_outside_ba();
     parts[iPart]->Redistribute();
+
+    if (doSavePlot) {
+      parts[iPart]->write_particles(tc->get_cycle());
+    }
+
     parts[iPart]->Checkpoint(restartDir, domainName + "_test_particles" +
                                              std::to_string(iPart));
   }

@@ -53,7 +53,7 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
     const IntVect highCorner = bx.bigEnd();
 
     auto& particles = pti.GetArrayOfStructs();
-    for (auto& p : particles) {      
+    for (auto& p : particles) {
       if (p.idata(iRecordCount_) >= nPTRecord) {
         Abort("Error: there is not enough allocated memory to store the "
               "particle record!!");
@@ -219,7 +219,10 @@ bool TestParticles::write_particles(int cycle) {
 
   std::string fileNamePartRecord = outputDir + "/" + domainName +
                                    "_particle_species_" +
-                                   std::to_string(speciesID) + "_" + ss.str();  
+                                   std::to_string(speciesID) + "_" + ss.str();
+
+  Print() << printPrefix << "Saving test particles into " << fileNamePartRecord
+          << std::endl;
 
   MPI_File recordFile, listFile;
   MPI_Status status;
