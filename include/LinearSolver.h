@@ -32,9 +32,10 @@ public:
       : rhs(nullptr),
         xLeft(nullptr),
         matvec(nullptr),
-        fMatvec(nullptr),
+        fMatvec(nullptr),        
         nGrid(0),
         nVar(0),
+        nSolve(0),
         nDim(0),
         tol(1),
         nIter(0) {}
@@ -54,9 +55,11 @@ public:
       nGrid = in;
       de_alloc();
       nSolve = nGrid * nVar;
-      rhs = new double[nSolve];
-      xLeft = new double[nSolve];
-      matvec = new double[nSolve];
+      if(nSolve>0){
+	rhs = new double[nSolve];
+	xLeft = new double[nSolve];
+	matvec = new double[nSolve];
+      }
     }
 
     for (int i = 0; i < nSolve; i++) {
