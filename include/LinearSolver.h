@@ -47,6 +47,9 @@ public:
       delete[] rhs;
       delete[] xLeft;
       delete[] matvec;
+      rhs = nullptr;
+      xLeft = nullptr;
+      fMatvec = nullptr; 
     }
   }
 
