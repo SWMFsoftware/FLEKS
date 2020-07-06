@@ -302,6 +302,7 @@ void Domain::save_restart_header() {
     headerFile << "\n";
 
     pic.save_restart_header(headerFile);
+    pt.save_restart_header(headerFile);
 
     headerFile << "\n";
   }
@@ -426,6 +427,45 @@ void Domain::read_param() {
       readParam.read_var("dt", dt);
       tc->loadBalance.init(dt, dn);
     } else if (command == "#SAVEPLOT" || command == "#SAVEIDL") {
+
+      /*
+      Example:
+      #SAVEPLOT
+      6                                 nPlot
+      z=0 var real4 planet              plotString
+      -1                                dn
+      20                                dt
+      1                                 dx
+      {fluid} numS0                     varName
+      y=0 fluid real4 planet            plotString
+      -100                              dn
+      5                                 dt
+      -1                                dx
+      3d var amrex planet               plotString
+      -1                                dn
+      10                                dt
+      1                                 dx
+      {fluid} numS0                     varName
+      3d fluid real4 planet compact     plotString
+      -1                                dn
+      10                                dt
+      1                                 dx
+      cut fluid real8 si                plotString
+      -1                                dn
+      100                               dt
+      5                                 xMin
+      10                                xMax
+      -2                                yMin
+      2                                 yMax
+      -2                                zMin
+      2                                 zMax
+      1                                 dx
+      3d particles0 amrex planet        plotString
+      -1                                dn
+      200                               dt
+      1                                 dx
+      */
+
       int nPlot;
       readParam.read_var("nPlotFile", nPlot);
 
@@ -495,6 +535,8 @@ void Domain::read_param() {
       for (int i = 0; i < nDim; ++i) {
         readParam.read_var("nCell", nCell[i]);
       }
+    } else if (command == "#TESTPARTICLENUMBER") {
+      pt.read_param(command, readParam);
     }
     //--------- The commands above exist in restart.H only --------
   }

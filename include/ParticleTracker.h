@@ -41,7 +41,9 @@ public:
   void complete_parameters();
 
   void save_restart_data();
+  void save_restart_header(std::ofstream &headerFile);
   void read_restart();
+  void read_param(const std::string &command, ReadParam &readParam);
 
 private:
   std::string printPrefix;
@@ -54,6 +56,8 @@ private:
   int nSpecies;
   amrex::Vector<std::unique_ptr<TestParticles> > parts;
   amrex::MultiFab nodeE, nodeB;
+
+  amrex::Vector<unsigned long int> initPartNumber; 
 
   int nGst;
   amrex::DistributionMapping dm;
