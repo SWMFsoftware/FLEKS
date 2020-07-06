@@ -184,6 +184,7 @@ void ParticleTracker::read_restart() {
     parts[iPart]->Restart(restartDir, domainName + "_test_particles" +
                                           std::to_string(iPart));
     parts[iPart]->reset_record_counter();
+    parts[iPart]->init_particle_number(initPartNumber[iPart]);
   }
   complete_parameters();
 }
@@ -218,5 +219,30 @@ void ParticleTracker::complete_parameters() {
   for (auto& tps : parts) {
     tps->set_IO_units(writer.No2OutTable("X"), writer.No2OutTable("u"),
                       writer.No2OutTable("mass"));
+  }
+}
+
+void ParticleTracker::save_restart_header(std::ofstream& headerFile) {
+  std::string command_suffix = "_" + domainName + "\n";
+
+  if (ParallelDescriptor::IOProcessor()) {
+    headerFile << "#TESTPARTICLENUMBER" + command_suffix;
+    for (auto& tp : parts) {
+      headerFile << tp->init_particle_number() << "\n";
+    }
+    headerFile << "\n";
+  }
+}
+
+void ParticleTracker::read_param(const std::string& command,
+                                 ReadParam& readParam) {
+
+  if (command == "#TESTPARTICLENUMBER") {
+    initPartNumber.clear();
+    unsigned long int num;
+    for (int iPart = 0; iPart < nSpecies; iPart++) {
+      readParam.read_var("Number", num);
+      initPartNumber.push_back(num);
+    }
   }
 }

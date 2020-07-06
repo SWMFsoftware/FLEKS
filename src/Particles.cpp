@@ -814,6 +814,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         p.id() = -1;
         continue;
       }
+
       const Real qp = p.rdata(iqp_);
 
       int loIdx[nDim];
@@ -824,6 +825,21 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         loIdx[i] = fastfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
       }
+
+      // Since the boundary condition for solving phi is not perfect, correcting
+      // particles that are close to the boundaries may produce artificial
+      // oscillations, which are seen in Earth's magnetotail simulations. So, it
+      // is better to skip the boundary physical cells.
+      bool isBoundaryPhysicalCell = false;
+      for (int ix = 0; ix <= 1; ix++)
+        for (int iy = 0; iy <= 1; iy++)
+          for (int iz = 0; iz <= 1; iz++) {
+            if (status(loIdx[ix_] + ix, loIdx[iy_] + iy, loIdx[iz_] + iz) ==
+                iBoundary_)
+              isBoundaryPhysicalCell = true;
+          }
+      if (isBoundaryPhysicalCell)
+        continue;
 
       {
         Real weights_IIID[2][2][2][nDim];
@@ -1152,8 +1168,8 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
         for (int kCell = 0; kCell < nCell; kCell++) {
           std::sort(phasePartIdx_III[iCell][jCell][kCell].begin(),
                     phasePartIdx_III[iCell][jCell][kCell].end(),
-                    [& particles = particles, ix_ = ix_](const int& idl,
-                                                         const int& idr) {
+                    [&particles = particles, ix_ = ix_](const int& idl,
+                                                        const int& idr) {
                       return particles[idl].rdata(ix_) >
                              particles[idr].rdata(ix_);
                     });

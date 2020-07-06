@@ -363,6 +363,9 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
     } else if (var.substr(0, 5) == "divEc") {
       const amrex::Array4<amrex::Real const>& arr = centerDivE[mfi].array();
       value = arr(ix, iy, iz);
+    } else if (var.substr(0, 3) == "phi") {
+      const amrex::Array4<amrex::Real const>& arr = centerPhi[mfi].array();
+      value = arr(ix, iy, iz);
     } else if (var.substr(0, 4) == "rank") {
       value = ParallelDescriptor::MyProc();
     } else if (var.substr(0, 5) == "block") {
@@ -761,5 +764,6 @@ void find_output_list_caller(const PlotWriter& writerIn,
 void get_field_var_caller(const VectorPointList& pointList_II,
                           const std::vector<std::string>& sVar_I,
                           MDArray<double>& var_II) {
-  fleksDomains(fleksDomains.selected()).pic.get_field_var(pointList_II, sVar_I, var_II);
+  fleksDomains(fleksDomains.selected())
+      .pic.get_field_var(pointList_II, sVar_I, var_II);
 }
