@@ -5,6 +5,8 @@ import glob
 import struct
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+from random import random
 
 
 from yt.funcs import setdefaultattr
@@ -82,6 +84,13 @@ plot_unit_si = {
     "p_uz": "m/s",
     "p_w": "kg"
 }
+
+
+def show_image(imname):
+    img = mpimg.imread(imname)
+    fig, ax = plt.subplots()
+    ax.axis("off")
+    ax.imshow(img)
 
 
 def get_unit(var, unit_type="planet"):
@@ -223,7 +232,7 @@ class FLEKSDataset(BoxlibDataset):
                  dataset_type='boxlib_native',
                  storage_filename=None,
                  units_override=None,
-                 unit_system="mks"):        
+                 unit_system="mks"):
         self.default_fluid_type = "mesh"
         self.default_field = ("mesh", "density")
         self.fluid_types = ("mesh", "index", "raw")
@@ -292,7 +301,8 @@ class FLEKSDataset(BoxlibDataset):
 
         cut_loc : float. The location of the slice.
 
-        vars : a list of plotting variables. Example: ["Bx", "rhos0"]
+        vars : a list or string of plotting variables. 
+            Example: "Bx rhos0" or ["Bx", "rhos0"]
 
         unit_type : The unit system of the plots. "planet" or "si".
 
@@ -305,6 +315,9 @@ class FLEKSDataset(BoxlibDataset):
         >>> splt.display()
         """
 
+        if type(vars) == str:
+            vars = vars.split()
+
         center = self.domain_center
         idir = "xyz".find(norm.lower())
         center[idir] = cut_loc
@@ -315,7 +328,15 @@ class FLEKSDataset(BoxlibDataset):
             splt.set_unit(var, get_unit(var, unit_type))
 
         splt.set_axes_unit(get_unit("X", unit_type))
-        # splt.display()
+
+        # yt uses Ipython.display to show the plot, and it does not work from 
+        # terminal. To show the image from a terminal, the following code saves 
+        # the plot to disk first, then reads and shows the image with matplotlib.        
+        tmpnames=splt.save(name="tmp")
+        for pname in tmpnames:
+            show_image(pname)
+            os.remove(pname)
+        
         return splt
 
     def plot_phase(self, left_edge, right_edge, x_field, y_field, z_field,
@@ -356,6 +377,14 @@ class FLEKSDataset(BoxlibDataset):
         plot.set_unit((var_type, y_field), get_unit(y_field, unit_type))
         plot.set_unit((var_type, z_field), get_unit(z_field, unit_type))
 
+        # yt uses Ipython.display to show the plot, and it does not work from 
+        # terminal. To show the image from a terminal, the following code saves 
+        # the plot to disk first, then reads and shows the image with matplotlib.
+        tmpfile = "tmp"+str(int(random()*1000))+".png"
+        plot.save(name=tmpfile)
+        show_image(tmpfile)
+        os.remove(tmpfile)
+
         return plot
 
     def plot_particles(self, left_edge, right_edge, x_field, y_field, z_field,
@@ -382,14 +411,24 @@ class FLEKSDataset(BoxlibDataset):
         >>> phase = ds.plot_particles([8, -1, -1], [10, 0, 0], "p_x",
                      "p_y", "p_w", unit_type="planet")        
         >>> phase.show()
-        """                     
+        """
         dd = self.box(left_edge, right_edge)
         var_type = 'particle'
-        plot = yt.ParticlePlot(self, (var_type, x_field), (var_type, y_field),
+        nmap = {"p_x": "particle_position_x",
+                "p_y": "particle_position_y", "p_z": "particle_position_z"}
+        plot = yt.ParticlePlot(self, (var_type, nmap[x_field]), (var_type, nmap[y_field]),
                                (var_type, z_field), data_source=dd)
         plot.set_axes_unit((get_unit(x_field, unit_type),
                             get_unit(y_field, unit_type)))
         plot.set_unit((var_type, z_field), get_unit(z_field, unit_type))
+
+        # yt uses Ipython.display to show the plot, and it does not work from 
+        # terminal. To show the image from a terminal, the following code saves 
+        # the plot to disk first, then reads and shows the image with matplotlib.
+        tmpfile = "tmp"+str(int(random()*1000))+".png"
+        plot.save(name=tmpfile)
+        show_image(tmpfile)
+        os.remove(tmpfile)
 
         return plot
 
@@ -427,10 +466,10 @@ class FLEKSTP(object):
         print(outputDirs)
         for outputDir in outputDirs:
             self.plistfiles = self.plistfiles+glob.glob(outputDir+"/FLEKS" +
-                                             str(iDomain)+"_particle_list_species_"+str(iSpecies)+"_*")
+                                                        str(iDomain)+"_particle_list_species_"+str(iSpecies)+"_*")
 
             self.pfiles = self.pfiles + glob.glob(outputDir+"/FLEKS" +
-                                         str(iDomain)+"_particle_species_"+str(iSpecies)+"_*")
+                                                  str(iDomain)+"_particle_species_"+str(iSpecies)+"_*")
 
         self.plistfiles.sort()
         self.pfiles.sort()
@@ -460,7 +499,7 @@ class FLEKSTP(object):
                 (cpu, id, loc) = struct.unpack('iiQ', binaryData)
                 plist.update({(cpu, id): loc})
         return plist
-    
+
     def IDs(self):
         return self.pset
 
@@ -509,20 +548,21 @@ class FLEKSTP(object):
                         'iiif', binaryData)
                     nRead = 1
                     binaryData = f.read(4*unitSize*nRead)
-                    dataList = list(struct.unpack('f'*nRead*unitSize, binaryData))
+                    dataList = list(struct.unpack(
+                        'f'*nRead*unitSize, binaryData))
         return dataList
 
     def select_particles(self, fSelect=None):
-        selected={}
-        icount = 0        
+        selected = {}
+        icount = 0
 
         if fSelect == None:
-            fSelect = lambda id,data: True
+            def fSelect(id, data): return True
 
         for pid in self.pset:
             pdata = self.read_initial_loc_with_ID(pid)
             if(fSelect(pid, pdata)):
-                selected.update({pid:pdata})
+                selected.update({pid: pdata})
                 icount = icount + 1
         return selected
 
@@ -531,7 +571,7 @@ class FLEKSTP(object):
         t = data[:, FLEKSTP.it_]
 
         tNorm = (t-t[0])/(t[-1]-t[0])
-        
+
         f = plt.figure(figsize=(12, 6))
 
         nrow = 3
@@ -562,18 +602,19 @@ class FLEKSTP(object):
 
         isub = isub + 1
         ax = f.add_subplot(nrow, ncol, isub, projection='3d')
-        ax.plot3D(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iy_], data[:, FLEKSTP.iz_])
-        ax.scatter(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iy_], data[:, FLEKSTP.iz_], c=plt.cm.winter(tNorm), marker='o',s=3)
+        ax.plot3D(data[:, FLEKSTP.ix_],
+                  data[:, FLEKSTP.iy_], data[:, FLEKSTP.iz_])
+        ax.scatter(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iy_],
+                   data[:, FLEKSTP.iz_], c=plt.cm.winter(tNorm), marker='o', s=3)
         ax.set_xlabel('x')
         ax.set_ylabel('y')
         ax.set_zlabel('z')
 
-
         isub = isub + 1
         ax = f.add_subplot(nrow, ncol, isub)
         ax.plot(t, data[:, FLEKSTP.ix_], label='x')
-        ax.scatter(t,data[:, FLEKSTP.ix_] , c=plt.cm.winter(tNorm),
-                         edgecolor='none', marker='o', s=20)
+        ax.scatter(t, data[:, FLEKSTP.ix_], c=plt.cm.winter(tNorm),
+                   edgecolor='none', marker='o', s=20)
         ax.set_xlabel('time')
         ax.set_ylabel('x')
 
@@ -581,7 +622,7 @@ class FLEKSTP(object):
         ax = f.add_subplot(nrow, ncol, isub)
         ax.plot(t, data[:, FLEKSTP.iy_], label='y')
         ax.scatter(t, data[:, FLEKSTP.iy_], c=plt.cm.winter(tNorm),
-                         edgecolor='none', marker='o', s=20)
+                   edgecolor='none', marker='o', s=20)
         ax.set_xlabel('time')
         ax.set_ylabel('y')
 
@@ -589,17 +630,17 @@ class FLEKSTP(object):
         ax = f.add_subplot(nrow, ncol, isub)
         ax.plot(t, data[:, FLEKSTP.iz_], label='z')
         ax.scatter(t, data[:, FLEKSTP.iz_], c=plt.cm.winter(tNorm),
-                         edgecolor='none', marker='o', s=20)
+                   edgecolor='none', marker='o', s=20)
         ax.set_xlabel('time')
         ax.set_ylabel('z')
-        
+
         isub = isub + 1
 
         isub = isub + 1
         ax = f.add_subplot(nrow, ncol, isub)
         ax.plot(t, data[:, FLEKSTP.iu_], label='Vx')
-        ax.scatter(t,data[:, FLEKSTP.iu_] , c=plt.cm.winter(tNorm),
-                         edgecolor='none', marker='o', s=20)
+        ax.scatter(t, data[:, FLEKSTP.iu_], c=plt.cm.winter(tNorm),
+                   edgecolor='none', marker='o', s=20)
         ax.set_xlabel('time')
         ax.set_ylabel('Vx')
 
@@ -607,7 +648,7 @@ class FLEKSTP(object):
         ax = f.add_subplot(nrow, ncol, isub)
         ax.plot(t, data[:, FLEKSTP.iv_], label='Vy')
         ax.scatter(t, data[:, FLEKSTP.iv_], c=plt.cm.winter(tNorm),
-                         edgecolor='none', marker='o', s=20)
+                   edgecolor='none', marker='o', s=20)
         ax.set_xlabel('time')
         ax.set_ylabel('Vy')
 
@@ -615,10 +656,9 @@ class FLEKSTP(object):
         ax = f.add_subplot(nrow, ncol, isub)
         ax.plot(t, data[:, FLEKSTP.iw_], label='Vz')
         ax.scatter(t, data[:, FLEKSTP.iw_], c=plt.cm.winter(tNorm),
-                         edgecolor='none', marker='o', s=20)
+                   edgecolor='none', marker='o', s=20)
         ax.set_xlabel('time')
         ax.set_ylabel('Vz')
-
 
         v = np.sqrt(data[:, FLEKSTP.iu_]**2 +
                     data[:, FLEKSTP.iv_]**2 + data[:, FLEKSTP.iw_]**2)
@@ -626,7 +666,7 @@ class FLEKSTP(object):
         ax = f.add_subplot(nrow, ncol, isub)
         ax.plot(data[:, FLEKSTP.it_], v, label='velocity')
         ax.scatter(t, v, c=plt.cm.winter(tNorm),
-                         edgecolor='none', marker='o', s=20)
+                   edgecolor='none', marker='o', s=20)
         ax.set_xlabel('time')
         ax.set_ylabel('|V|')
 
