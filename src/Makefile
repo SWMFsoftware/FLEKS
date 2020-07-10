@@ -23,6 +23,12 @@ OBJECTS_EXE = \
 
 FLEKSEXE = ${BINDIR}/FLEKS.exe
 
+
+CONVERTER_OBJECTS = \
+	Converter.o
+
+CONVERTEREXE = ../bin/Converter.exe
+
 SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 
 FLAGC_EXTRA = ${FLAGC_LOCAL} 
@@ -36,6 +42,15 @@ EXE:
 	$(MAKE) ${OBJECTS_EXE}
 	${LINK.f90} -o ${FLEKSEXE} ${OBJECTS_EXE} \
 		-L -lFLEKS ${Lflag}
+
+CONVERTER:	
+	$(MAKE) ${CONVERTER_OBJECTS}
+	${LINK.f90} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
+		-L -lFLEKS ${Lflag}
+	@echo
+	@echo ${CONVERTEREXE} has been brought up to date.
+	@echo
+
 
 %.o: %.cpp
 %.o: %.cpp $(DEPDIR)/%.d
@@ -51,6 +66,7 @@ LIB:
 	@echo
 	@echo ${LIBFLEKS} has been brought up to date.
 	@echo
+	$(MAKE) CONVERTER
 
 ${LIBFLEKS}: ${OBJECTS} 
 	${AR} ${LIBFLEKS} ${OBJECTS}
