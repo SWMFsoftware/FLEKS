@@ -412,6 +412,105 @@ PartInfo Particles<NStructReal, NStructInt>::sum_moments(
       linear_interpolation_coef(dShift, coef);
       //-----calculate interpolate coef end-------------
 
+      //-------nodePlasma begin---------
+      Real pMoments[nMoments];
+
+      pMoments[iNum_] = 1;
+      pMoments[iRho_] = qp;
+
+      {
+        const Real mx = qp * up;
+        const Real my = qp * vp;
+        const Real mz = qp * wp;
+        pMoments[iMx_] = mx;
+        pMoments[iMy_] = my;
+        pMoments[iMz_] = mz;
+
+        pMoments[iPxx_] = mx * up;
+        pMoments[iPyy_] = my * vp;
+        pMoments[iPzz_] = mz * wp;
+
+        pMoments[iPxy_] = mx * vp;
+        pMoments[iPxz_] = mx * wp;
+        pMoments[iPyz_] = my * wp;
+      }
+
+      for (int iVar = 0; iVar < nMoments; iVar++)
+        for (int kk = 0; kk < 2; kk++)
+          for (int jj = 0; jj < 2; jj++)
+            for (int ii = 0; ii < 2; ii++) {
+              momentsArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
+                         iVar) += coef[ii][jj][kk] * pMoments[iVar];
+            }
+
+      //-------nodePlasma end---------
+
+      pinfo.energy += qp * (up * up + vp * vp + wp * wp);
+    } // for p
+  }
+
+  // Exclude the number density.
+  momentsMF.mult(invVol, 0, nMoments - 1, momentsMF.nGrow());
+
+  momentsMF.SumBoundary(Geom(0).periodicity());
+
+  // FillBoundary seems unnecessary. --Yuxi
+  momentsMF.FillBoundary(Geom(0).periodicity());
+
+  // This function should be called before 'convert_to_fluid_moments'
+  pinfo.uMax = calc_max_thermal_velocity(momentsMF);
+
+  convert_to_fluid_moments(momentsMF);
+
+  // Calculate the total particle energy--------------
+  pinfo.energy *= 0.5 / get_qom();
+  ParallelDescriptor::ReduceRealSum(pinfo.energy,
+                                    ParallelDescriptor::IOProcessorNumber());
+  if (!ParallelDescriptor::IOProcessor())
+    pinfo.energy = 0;
+  //------------------------------------------------------
+
+  return pinfo;
+}
+
+//==========================================================
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::calc_mass_matrix(
+    UMultiFab<RealMM>& nodeMM, MultiFab& jHat, MultiFab& nodeBMF, Real dt) {
+  timing_func("Particles::calc_mass_matrix");
+
+  Real qdto2mc = charge / mass * 0.5 * dt;
+
+  const int lev = 0;
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+       ++pti) {
+    Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
+    Array4<Real> const& jArr = jHat[pti].array();
+    Array4<RealMM> const& mmArr = nodeMM[pti].array();
+
+    const auto& particles = pti.GetArrayOfStructs();
+
+    for (const auto& p : particles) {
+
+      // Print()<<"p = "<<p<<std::endl;
+      const Real up = p.rdata(iup_);
+      const Real vp = p.rdata(ivp_);
+      const Real wp = p.rdata(iwp_);
+      const Real qp = p.rdata(iqp_);
+
+      //-----calculate interpolate coef begin-------------
+      int loIdx[nDim];
+      Real dShift[nDim];
+      for (int i = 0; i < nDim; i++) {
+        dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
+        loIdx[i] = fastfloor(dShift[i]);
+        dShift[i] = dShift[i] - loIdx[i];
+      }
+
+      Real coef[2][2][2];
+      linear_interpolation_coef(dShift, coef);
+      //-----calculate interpolate coef end-------------
+
       //----- Mass matrix calculation begin--------------
       Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];
 
@@ -449,6 +548,26 @@ PartInfo Particles<NStructReal, NStructInt>::sum_moments(
       alpha[6] = (Omy + Omx * Omz) * c0;
       alpha[7] = (-Omx + Omy * Omz) * c0;
       alpha[8] = (1 + Omz * Omz) * c0;
+
+      {
+        // jHat
+        Real currents[nDim];
+
+        {
+          const Real coef1 = denom * qp;
+          currents[ix_] = (up + (vp * Omz - wp * Omy + udotOm * Omx)) * coef1;
+          currents[iy_] = (vp + (wp * Omx - up * Omz + udotOm * Omy)) * coef1;
+          currents[iz_] = (wp + (up * Omy - vp * Omx + udotOm * Omz)) * coef1;
+        }
+
+        for (int iVar = 0; iVar < nDim; iVar++)
+          for (int kk = 0; kk < 2; kk++)
+            for (int jj = 0; jj < 2; jj++)
+              for (int ii = 0; ii < 2; ii++) {
+                jArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk, iVar) +=
+                    coef[ii][jj][kk] * currents[iVar];
+              }
+      }
 
       // int count = 0;
       // int ip, jp, kp;         // Indexes for g'
@@ -489,47 +608,6 @@ PartInfo Particles<NStructReal, NStructInt>::sum_moments(
 
       //----- Mass matrix calculation end--------------
 
-      //-------Moments begin---------
-      Real pMoments[nMoments];
-
-      pMoments[iNum_] = 1;
-      pMoments[iRho_] = qp;
-
-      {
-        const Real mx = qp * up;
-        const Real my = qp * vp;
-        const Real mz = qp * wp;
-        pMoments[iMx_] = mx;
-        pMoments[iMy_] = my;
-        pMoments[iMz_] = mz;
-
-        pMoments[iPxx_] = mx * up;
-        pMoments[iPyy_] = my * vp;
-        pMoments[iPzz_] = mz * wp;
-
-        pMoments[iPxy_] = mx * vp;
-        pMoments[iPxz_] = mx * wp;
-        pMoments[iPyz_] = my * wp;
-      }
-
-      {
-        const Real coef1 = denom * qp;
-        pMoments[iJhx_] = (up + (vp * Omz - wp * Omy + udotOm * Omx)) * coef1;
-        pMoments[iJhy_] = (vp + (wp * Omx - up * Omz + udotOm * Omy)) * coef1;
-        pMoments[iJhz_] = (wp + (up * Omy - vp * Omx + udotOm * Omz)) * coef1;
-      }
-
-      for (int iVar = 0; iVar < nMoments; iVar++)
-        for (int kk = 0; kk < 2; kk++)
-          for (int jj = 0; jj < 2; jj++)
-            for (int ii = 0; ii < 2; ii++) {
-              momentsArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
-                         iVar) += coef[ii][jj][kk] * pMoments[iVar];
-            }
-
-      //-------Moments end---------
-
-      pinfo.energy += qp * (up * up + vp * vp + wp * wp);
     } // for p
   }
 
@@ -578,29 +656,6 @@ PartInfo Particles<NStructReal, NStructInt>::sum_moments(
           }     // jp
         }       // k1
   }
-
-  // Exclude the number density.
-  momentsMF.mult(invVol, 0, nMoments - 1, momentsMF.nGrow());
-
-  momentsMF.SumBoundary(Geom(0).periodicity());
-
-  // FillBoundary seems unnecessary. --Yuxi
-  momentsMF.FillBoundary(Geom(0).periodicity());
-
-  // This function should be called before 'convert_to_fluid_moments'
-  pinfo.uMax = calc_max_thermal_velocity(momentsMF);
-
-  convert_to_fluid_moments(momentsMF);
-
-  // Calculate the total particle energy--------------
-  pinfo.energy *= 0.5 / get_qom();
-  ParallelDescriptor::ReduceRealSum(pinfo.energy,
-                                    ParallelDescriptor::IOProcessorNumber());
-  if (!ParallelDescriptor::IOProcessor())
-    pinfo.energy = 0;
-  //------------------------------------------------------
-
-  return pinfo;
 }
 
 //==========================================================
@@ -682,6 +737,50 @@ void Particles<NStructReal, NStructInt>::convert_to_fluid_moments(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
+    const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
+    amrex::Real dt) {
+  timing_func("Particles::update_position_to_half_stage");
+
+  Real dtLoc = 0.5 * dt;
+
+  const int lev = 0;
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+       ++pti) {
+    const Box& bx = cellStatus[pti].box();
+    const IntVect lowCorner = bx.smallEnd();
+    const IntVect highCorner = bx.bigEnd();
+
+    const Array4<int const>& status = cellStatus[pti].array();
+
+    auto& particles = pti.GetArrayOfStructs();
+    for (auto& p : particles) {
+      const Real up = p.rdata(iup_);
+      const Real vp = p.rdata(ivp_);
+      const Real wp = p.rdata(iwp_);
+      const Real qp = p.rdata(iqp_);
+      const Real xp = p.pos(ix_);
+      const Real yp = p.pos(iy_);
+      const Real zp = p.pos(iz_);
+
+      p.pos(ix_) = xp + up * dtLoc;
+      p.pos(iy_) = yp + vp * dtLoc;
+      p.pos(iz_) = zp + wp * dtLoc;
+
+      // Mark for deletion
+      if (is_outside_ba(p, status, lowCorner, highCorner)) {
+        p.id() = -1;
+      }
+    } // for p
+  }   // for pti
+
+  // This function distributes particles to proper processors and apply
+  // periodic boundary conditions if needed.
+  Redistribute();
+}
+
+//==========================================================
+template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::mover(const amrex::MultiFab& nodeEMF,
                                                const amrex::MultiFab& nodeBMF,
                                                amrex::Real dt,
@@ -690,6 +789,11 @@ void Particles<NStructReal, NStructInt>::mover(const amrex::MultiFab& nodeEMF,
 
   const Real qdto2mc = charge / mass * 0.5 * dt;
   Real dtLoc = 0.5 * (dt + dtNext);
+
+  if (particlePosition == NonStaggered) {
+    // Update location from x^{n+1/2} to x^{n+1} for nonstaggered case.
+    dtLoc = 0.5 * dt;
+  }
 
   const int lev = 0;
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
@@ -1491,3 +1595,6 @@ IOParticles::IOParticles(Particles& other, Geometry geomIO, Real no2outL,
 // template arguments.
 template class Particles<nPicPartReal>;
 template class Particles<nPTPartReal, nPTPartInt>;
+
+template <> ParticleStaggering Particles<nPicPartReal, 0>::particlePosition = Staggered;
+template <> ParticleStaggering Particles<nPTPartReal, nPTPartInt>::particlePosition = Staggered;

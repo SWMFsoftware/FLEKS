@@ -26,6 +26,8 @@ void Pic::init(std::shared_ptr<FluidInterface>& fluidIn,
     domainName = ss.str();
     printPrefix = domainName + ": ";
   }
+
+  Particles<>::particlePosition = Staggered;
 }
 
 //==========================================================
@@ -154,6 +156,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
         distribute_FabArray(pl, nodeBA, dm, nMoments, nGst, doMoveData);
       }
     }
+
+    distribute_FabArray(jHat, nodeBA, dm, 3, nGst, doMoveData);
 
     distribute_FabArray(nodeMM, nodeBA, dm, 1, 1, doMoveData);
     distribute_FabArray(costMF, centerBA, dm, 1, nGst, doMoveData);
@@ -473,6 +477,19 @@ void Pic::fill_particles() {
 }
 
 //==========================================================
+void Pic::update_part_loc_to_half_stage() {
+  std::string nameFunc = "Pic::update_part_loc_to_half_stage";
+
+  timing_func(nameFunc);
+
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->update_position_to_half_stage(nodeEth, nodeB, tc->get_dt());
+  }
+
+  inject_particles_for_boundary_cells();
+}
+
+//==========================================================
 void Pic::particle_mover() {
   std::string nameFunc = "Pic::mover";
 
@@ -488,6 +505,40 @@ void Pic::particle_mover() {
   }
 
   inject_particles_for_boundary_cells();
+}
+
+//==========================================================
+void Pic::calc_mass_matrix() {
+  std::string nameFunc = "Pic::calc_mass_matrix";
+
+  if (isGridEmpty)
+    return;
+
+  timing_func(nameFunc);
+
+  jHat.setVal(0.0);
+  const RealMM mm0(0.0);
+  nodeMM.setVal(mm0);
+
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->calc_mass_matrix(nodeMM, jHat, nodeB, tc->get_dt());
+  }
+
+  Real invVol = 1;
+  for (int i = 0; i < nDim; i++) {
+    invVol *= geom.InvCellSize(i);
+  }
+
+  jHat.mult(invVol, 0, jHat.nComp(), jHat.nGrow());
+
+  jHat.SumBoundary(geom.periodicity());
+
+  // FillBoundary seems unnecessary. --Yuxi
+  jHat.FillBoundary(geom.periodicity());
+
+  nodeMM.SumBoundary(geom.periodicity());
+
+  nodeMM.FillBoundary(geom.periodicity());
 }
 
 //==========================================================
@@ -507,47 +558,48 @@ void Pic::sum_moments(bool updateDt) {
   }
 
   Real umax = -1;
-  int nLoop = tc->get_dt() < 0 && updateDt ? 2 : 1;
-  for (int iLoop = 0; iLoop < nLoop; iLoop++) {
-    // If this is called during initialization, dt may not known and the
-    // following code should be looped twice: 1) call sum_moments to find umax
-    // and then calculate dt; 2) call sum_moments to calculate mass matrix with
-    // proper dt;
 
-    nodePlasma[nSpecies].setVal(0.0);
-    const RealMM mm0(0.0);
-    nodeMM.setVal(mm0);
+  nodePlasma[nSpecies].setVal(0.0);
+  plasmaEnergy[iTot] = 0;
+  for (int i = 0; i < nSpecies; i++) {
+    PartInfo pinfo =
+        parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, tc->get_dt());
 
-    plasmaEnergy[iTot] = 0;
-    for (int i = 0; i < nSpecies; i++) {
-      PartInfo pinfo =
-          parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, tc->get_dt());
-      plasmaEnergy[i] = pinfo.energy;
-      Print() << printPrefix << std::setprecision(5) << "Species " << i
-              << ": max(uth) = " << pinfo.uMax << std::endl;
-      if (pinfo.uMax > umax)
-        umax = pinfo.uMax;
-      plasmaEnergy[iTot] += plasmaEnergy[i];
-      MultiFab::Add(nodePlasma[nSpecies], nodePlasma[i], 0, 0, nMoments, 0);
+    plasmaEnergy[i] = pinfo.energy;
+
+    Print() << printPrefix << std::setprecision(5) << "Species " << i
+            << ": max(uth) = " << pinfo.uMax << std::endl;
+
+    if (pinfo.uMax > umax)
+      umax = pinfo.uMax;
+
+    plasmaEnergy[iTot] += plasmaEnergy[i];
+
+    MultiFab::Add(nodePlasma[nSpecies], nodePlasma[i], 0, 0, nMoments, 0);
+  }
+
+  if (updateDt && tc->get_cfl() > 0) {
+    Real dt = tc->get_cfl() * minDx / umax;
+    tc->set_next_dt(dt);
+
+    if (tc->get_dt() < 0) {
+      tc->set_dt(dt);
     }
 
-    if (updateDt && tc->get_cfl() > 0) {
-      Real dtNext = tc->get_cfl() * minDx / umax;
-      tc->set_next_dt(dtNext);
-
-      if (tc->get_dt() < 0) {
-        tc->set_dt(dtNext);
-      }
+    if (Particles<>::particlePosition == NonStaggered) {
+      tc->set_dt(dt);
     }
   }
 
-  Print() << printPrefix << std::setprecision(5) << "dt = " << tc->get_dt_si()
-          << " dtNext = " << tc->get_next_dt_si()
-          << " CFL(dtNext) = " << tc->get_next_dt() * umax / minDx << std::endl;
-
-  nodeMM.SumBoundary(geom.periodicity());
-
-  nodeMM.FillBoundary(geom.periodicity());
+  if (Particles<>::particlePosition == Staggered) {
+    Print() << printPrefix << std::setprecision(5) << "dt = " << tc->get_dt_si()
+            << " dtNext = " << tc->get_next_dt_si()
+            << " CFL(dtNext) = " << tc->get_next_dt() * umax / minDx
+            << std::endl;
+  } else {
+    Print() << printPrefix << std::setprecision(5) << "dt = " << tc->get_dt_si()
+            << " CFL = " << tc->get_dt() * umax / minDx << std::endl;
+  }
 }
 
 //==========================================================
@@ -599,9 +651,14 @@ void Pic::calculate_phi(LinearSolver& solver) {
 
   div_node_to_center(nodeE, tempCenter1, geom.InvCellSize());
 
-  MultiFab::LinComb(tempCenter1, 1.0 / rhoTheta, tempCenter1, 0,
-                    -fourPI / rhoTheta, centerNetChargeN, 0, 0,
-                    tempCenter1.nComp(), tempCenter1.nGrow());
+  Real coef = 1;
+  if (Particles<>::particlePosition == Staggered) {
+    coef = 1.0 / rhoTheta;
+  }
+
+  MultiFab::LinComb(tempCenter1, coef, tempCenter1, 0, -fourPI * coef,
+                    centerNetChargeN, 0, 0, tempCenter1.nComp(),
+                    tempCenter1.nGrow());
 
   convert_3d_to_1d(tempCenter1, solver.rhs, geom);
 
@@ -674,13 +731,18 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
   apply_external_BC(cellStatus, centerNetChargeNew, 0,
                     centerNetChargeNew.nComp(), &Pic::get_zero);
 
-  MultiFab::LinComb(centerNetChargeN, 1 - rhoTheta, centerNetChargeOld, 0,
-                    rhoTheta, centerNetChargeNew, 0, 0,
-                    centerNetChargeN.nComp(), centerNetChargeN.nGrow());
+  if (Particles<>::particlePosition == NonStaggered) {
+    MultiFab::Copy(centerNetChargeN, centerNetChargeNew, 0, 0,
+                   centerNetChargeN.nComp(), centerNetChargeN.nGrow());
+  } else {
+    MultiFab::LinComb(centerNetChargeN, 1 - rhoTheta, centerNetChargeOld, 0,
+                      rhoTheta, centerNetChargeNew, 0, 0,
+                      centerNetChargeN.nComp(), centerNetChargeN.nGrow());
 
-  if (!isBeforeCorrection) {
-    MultiFab::Copy(centerNetChargeOld, centerNetChargeNew, 0, 0,
-                   centerNetChargeOld.nComp(), centerNetChargeOld.nGrow());
+    if (!isBeforeCorrection) {
+      MultiFab::Copy(centerNetChargeOld, centerNetChargeNew, 0, 0,
+                     centerNetChargeOld.nComp(), centerNetChargeOld.nGrow());
+    }
   }
 }
 
@@ -714,17 +776,24 @@ void Pic::update() {
     }
   }
 
+  if (Particles<>::particlePosition == NonStaggered) {
+    update_part_loc_to_half_stage();
+  }
+
+  calc_mass_matrix();
+
   update_E();
 
   particle_mover();
+
   update_B();
 
   if (doCorrectDivE) {
     divE_correction();
   }
 
-  // Apply load balance before sum_moments so that the moments and mass matrix
-  // on the gird do NOT require MPI communication.
+  // Apply load balance before sum_moments so that the nodePlasma and mass
+  // matrix on the gird do NOT require MPI communication.
   load_balance();
 
   tc->set_dt(tc->get_next_dt());
@@ -941,8 +1010,8 @@ void Pic::update_E_rhs(double* rhs) {
   const Real* invDx = geom.InvCellSize();
   curl_center_to_node(centerB, tempNode, invDx);
 
-  MultiFab::Saxpy(temp2Node, -fourPI, nodePlasma[iTot], iJhx_, 0,
-                  temp2Node.nComp(), temp2Node.nGrow());
+  MultiFab::Saxpy(temp2Node, -fourPI, jHat, 0, 0, temp2Node.nComp(),
+                  temp2Node.nGrow());
 
   MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), temp2Node.nGrow());
 

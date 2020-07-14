@@ -73,6 +73,8 @@ private:
   amrex::Vector<amrex::MultiFab> nodePlasma;
   amrex::Vector<amrex::Real> plasmaEnergy;
 
+  amrex::MultiFab jHat; 
+
   amrex::Vector<std::unique_ptr<Particles<> > > parts;
 
   amrex::IntVect nPartPerCell;
@@ -146,6 +148,10 @@ public:
   //----------------Initialization end-------------------------------
 
   void sum_moments(bool updateDt = false);
+
+  void calc_mass_matrix();
+
+  void update_part_loc_to_half_stage();
 
   void particle_mover();
 

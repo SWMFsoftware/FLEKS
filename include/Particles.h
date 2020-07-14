@@ -29,6 +29,9 @@ public:
 template <int NStructReal = nPicPartReal, int NStructInt = 0>
 class Particles : public amrex::ParticleContainer<NStructReal, NStructInt> {
 public:
+  static ParticleStaggering particlePosition;
+
+public:
   // Since this is a template, the compiler will not search names in the base
   // class by default, and the following 'using ' statements are required.
   using ParticleType = amrex::Particle<NStructReal, NStructInt>;
@@ -96,6 +99,9 @@ public:
                        amrex::UMultiFab<RealMM>& nodeMM,
                        amrex::MultiFab& nodeBMF, amrex::Real dt);
 
+  void calc_mass_matrix(amrex::UMultiFab<RealMM>& nodeMM, amrex::MultiFab& jHat,
+                        amrex::MultiFab& nodeBMF, amrex::Real dt);
+
   // It is real 'thermal velocity'. It is sqrt(sum(q*v2)/sum(q)).
   amrex::Real calc_max_thermal_velocity(amrex::MultiFab& momentsMF);
 
@@ -105,9 +111,9 @@ public:
   void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
              amrex::Real dt, amrex::Real dtNext);
 
-  void mover_boris(const amrex::MultiFab& nodeEMF,
-                   const amrex::MultiFab& nodeBMF, amrex::Real dt,
-                   amrex::Real dtLoc);
+  void update_position_to_half_stage(const amrex::MultiFab& nodeEMF,
+                                     const amrex::MultiFab& nodeBMF,
+                                     amrex::Real dt);
 
   void convert_to_fluid_moments(amrex::MultiFab& momentsMF);
 
@@ -226,5 +232,4 @@ public:
               amrex::RealBox IORange = amrex::RealBox());
   ~IOParticles() = default;
 };
-
 #endif

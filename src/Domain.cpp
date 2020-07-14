@@ -384,6 +384,14 @@ void Domain::read_param() {
     } else if (command == "#RESTART") {
       readParam.read_var("doRestart", doRestart);
       pic.set_doRestart(doRestart);
+    } else if (command == "#PARTICLESTAGGERING") {
+      bool doStaggering;
+      readParam.read_var("doStaggering", doStaggering);
+      ParticleStaggering ps = doStaggering ? Staggered : NonStaggered;
+
+      Particles<nPicPartReal, 0>::particlePosition = ps;
+      Particles<nPTPartReal, nPTPartInt>::particlePosition = ps;
+
     } else if (command == "#MAXBLOCKSIZE") {
       // The block size in each direction can not larger than maxBlockSize.
       int tmp;

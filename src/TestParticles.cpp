@@ -35,6 +35,12 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
   timing_func("TestParticles::mover");
 
   Real dtLoc = 0.5 * (dt + dtNext);
+
+  if (particlePosition == NonStaggered) {
+    update_position_to_half_stage(nodeEMF, nodeBMF, dt);
+    dtLoc = 0.5 * dt;
+  }
+
   const auto& plo = Geom(0).ProbLo();
 
   const Real qdto2mc = charge / mass * 0.5 * dt;
