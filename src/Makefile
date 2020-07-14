@@ -41,12 +41,12 @@ EXE:
 	$(MAKE) LIB
 	$(MAKE) ${OBJECTS_EXE}
 	${LINK.f90} -o ${FLEKSEXE} ${OBJECTS_EXE} \
-		-L -lFLEKS ${Lflag}
+		-L -lFLEKS ${LflagMpi}
 
 CONVERTER:	
 	$(MAKE) ${CONVERTER_OBJECTS}
 	${LINK.f90} ${NOMAINFLAG} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
-		-L -lFLEKS ${Lflag}
+		-L -lFLEKS ${LflagMpi}
 	@echo
 	@echo ${CONVERTEREXE} has been brought up to date.
 	@echo
