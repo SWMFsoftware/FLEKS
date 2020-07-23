@@ -4,7 +4,7 @@
 
 module PC_wrapper
 
-  ! Wrapper for the IPIC3D (PC) component
+  ! Wrapper for the FLEKS (PC) component
 
   implicit none
 
@@ -45,7 +45,7 @@ contains
     type(CompInfoType), intent(inout):: CompInfo   ! Information for this comp.
     character (len=*), intent(in)    :: TypeAction ! What to do
 
-    ! The PARAM.in segment for IPIC3D
+    ! The PARAM.in segment for FLEKS
     character(len=lStringLine), allocatable :: StringLineF_I(:) 
 
     integer:: iComm, nProc
@@ -60,7 +60,7 @@ contains
     case('VERSION')
        call put(CompInfo,&
             Use        = .true., &
-            NameVersion= 'IPIC3D', &
+            NameVersion= 'FLEKS', &
             Version    = 1.0)
     case('MPI')
        call get(CompInfo, iComm=iComm, iProc=iProc, nProc=nProc)
