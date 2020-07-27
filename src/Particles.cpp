@@ -1557,7 +1557,6 @@ IOParticles::IOParticles(Particles& other, Geometry geomIO, Real no2outL,
                 other.get_speciesID(), other.get_charge(), other.get_mass(),
                 amrex::IntVect(-1, -1, -1)) {
   const int lev = 0;
-
   no2outM /= get_qom();
 
   const bool doLimit = IORange.ok();
@@ -1576,19 +1575,23 @@ IOParticles::IOParticles(Particles& other, Geometry geomIO, Real no2outL,
 
     const auto& aosOther = tileOther.GetArrayOfStructs();
 
-    for (auto p : aosOther) {
+    for (auto p : aosOther) {      
+      for (int iDim = 0; iDim < nDim; iDim++) {
+        p.pos(ix_ + iDim) = no2outL * p.pos(ix_ + iDim);        
+      }
+
       if (doLimit &&
           !IORange.contains(RealVect(p.pos(ix_), p.pos(iy_), p.pos(iz_))))
         continue;
 
-      for (int iDim = 0; iDim < nDim; iDim++) {
-        p.pos(ix_ + iDim) = no2outL * p.pos(ix_ + iDim);
+      for (int iDim = 0; iDim < nDim; iDim++) {        
         p.rdata(iup_ + iDim) = no2outV * p.rdata(iup_ + iDim);
       }
       p.rdata(iqp_) = no2outM * p.rdata(iqp_);
       plevel[index].push_back(p);
     }
   }
+  Redistribute(); 
 }
 
 // Since Particles is a template, it is necessary to explicitly instantiate with

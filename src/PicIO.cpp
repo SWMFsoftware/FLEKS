@@ -511,9 +511,9 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
 
   std::string dirName = pw.get_amrex_filename(timeNow, iCycle);
 
-  // Saving field/coordinates information. It is required by yt, but I do not
-  // know whether it is necessary at this point. --Yuxi
-  write_amrex_field(pw, timeNow, iCycle, std::string(), dirName);
+  // Saving field/coordinates information. It seems it is required by yt, but I
+  // do not 100% sure whether it is necessary at this point. --Yuxi
+  write_amrex_field(pw, timeNow, iCycle, "E B", dirName);
 
   Vector<int> writeRealComp;
   for (int i = 0; i < nPicPartReal; ++i) {
@@ -540,8 +540,8 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
 
   if (pw.get_plotString().find("cut") != std::string::npos)
     for (int iDim = 0; iDim < nDim; iDim++) {
-      outRange.setLo(iDim, pw.get_plotMin_D(iDim));
-      outRange.setHi(iDim, pw.get_plotMax_D(iDim));
+      outRange.setLo(iDim, pw.get_plotMin_D(iDim) * no2outL);
+      outRange.setHi(iDim, pw.get_plotMax_D(iDim) * no2outL);
     }
 
   IOParticles particlesOut(*parts[iSpecies].get(), geomOut, no2outL, no2outV,
