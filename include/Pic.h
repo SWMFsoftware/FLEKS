@@ -155,6 +155,8 @@ public:
 
   void particle_mover();
 
+  void re_sampling(); 
+
   void inject_particles_for_new_cells() {
     for (auto &pts : parts) {
       pts->add_particles_domain(cellStatus);

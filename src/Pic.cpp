@@ -490,6 +490,20 @@ void Pic::update_part_loc_to_half_stage() {
 }
 
 //==========================================================
+void Pic::re_sampling() {
+  std::string nameFunc = "Pic::re_sampling";
+
+  timing_func(nameFunc);
+
+  if (doReSampling) {
+    for (int i = 0; i < nSpecies; i++) {
+      parts[i]->split_particles(reSamplingLowLimit);
+      parts[i]->combine_particles(reSamplingHighLimit);
+    }
+  }
+}
+
+//==========================================================
 void Pic::particle_mover() {
   std::string nameFunc = "Pic::mover";
 
@@ -776,9 +790,11 @@ void Pic::update() {
     }
   }
 
+  re_sampling(); 
+
   if (Particles<>::particlePosition == NonStaggered) {
     update_part_loc_to_half_stage();
-  }
+  }  
 
   calc_mass_matrix();
 

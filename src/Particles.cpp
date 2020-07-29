@@ -1056,15 +1056,19 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
   timing_func("Particles::split_particles");
-  const int nPartGoal =
-      nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_] * limit;
+
+  const int nInitial =
+      nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_];
+  const int nLowerLimit = nInitial * limit;
+
+  const int nGoal = nLowerLimit > nInitial ? nLowerLimit : nInitial;
 
   IntVect iv = { 1, 1, 1 };
   if (!(do_tiling && tile_size == iv))
     return;
 
   const int lev = 0;
-  Real dl = 0.5 * Geom(0).CellSize()[ix_] / nPartPerCell.max();
+  Real dl = 0.1 * Geom(0).CellSize()[ix_] / nPartPerCell.max();
 
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
        ++pti) {
@@ -1073,11 +1077,11 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
 
     const int nPartOrig = particles.size();
 
-    const int nNew =
-        nPartGoal - nPartOrig > nPartOrig ? nPartOrig : nPartGoal - nPartOrig;
-
-    if (nNew <= 0)
+    if (nPartOrig > nLowerLimit)
       continue;
+
+    const int nNew =
+        nGoal - nPartOrig > nPartOrig ? nPartOrig : nGoal - nPartOrig;
 
     // Find the 'heaviest' nNew particles by sorting the weight (charge).-----
 
@@ -1272,8 +1276,8 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
         for (int kCell = 0; kCell < nCell; kCell++) {
           std::sort(phasePartIdx_III[iCell][jCell][kCell].begin(),
                     phasePartIdx_III[iCell][jCell][kCell].end(),
-                    [&particles = particles, ix_ = ix_](const int& idl,
-                                                        const int& idr) {
+                    [& particles = particles, ix_ = ix_](const int& idl,
+                                                         const int& idr) {
                       return particles[idl].rdata(ix_) >
                              particles[idr].rdata(ix_);
                     });
@@ -1315,10 +1319,9 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
     for (int iu = 0; iu < nCell; iu++)
       for (int iv = 0; iv < nCell; iv++)
         for (int iw = 0; iw < nCell; iw++) {
-          int nCombineCell =
-              fastfloor(ratioCombine * phasePartIdx_III[iu][iv][iw].size() /
-                        nPartCombine);
-          for (int iCombine = 0; iCombine < nCombineCell; iCombine++) {
+          for (int icount = 0;
+               icount < phasePartIdx_III[iu][iv][iw].size() - nPartCombine;
+               icount += ceil(nPartCombine / ratioCombine)) {
             /*
                 Delete 1 particle out of 6 particles:
                 1) Choose two particles that are closest to each other.
@@ -1379,7 +1382,8 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
               idx_I[nPartCombine - 1] = idxTmp;
             }
 
-            //---------------Solve the new particle weights---------------------
+            //---------------Solve the new particle
+            // weights---------------------
             const int nVar = 5;
             const int iq_ = 0, iu_ = 1, iv_ = 2, iw_ = 3, ie_ = 4;
             Real a[nVar][nVar + 1];
@@ -1575,23 +1579,23 @@ IOParticles::IOParticles(Particles& other, Geometry geomIO, Real no2outL,
 
     const auto& aosOther = tileOther.GetArrayOfStructs();
 
-    for (auto p : aosOther) {      
+    for (auto p : aosOther) {
       for (int iDim = 0; iDim < nDim; iDim++) {
-        p.pos(ix_ + iDim) = no2outL * p.pos(ix_ + iDim);        
+        p.pos(ix_ + iDim) = no2outL * p.pos(ix_ + iDim);
       }
 
       if (doLimit &&
           !IORange.contains(RealVect(p.pos(ix_), p.pos(iy_), p.pos(iz_))))
         continue;
 
-      for (int iDim = 0; iDim < nDim; iDim++) {        
+      for (int iDim = 0; iDim < nDim; iDim++) {
         p.rdata(iup_ + iDim) = no2outV * p.rdata(iup_ + iDim);
       }
       p.rdata(iqp_) = no2outM * p.rdata(iqp_);
       plevel[index].push_back(p);
     }
   }
-  Redistribute(); 
+  Redistribute();
 }
 
 // Since Particles is a template, it is necessary to explicitly instantiate with
@@ -1599,5 +1603,8 @@ IOParticles::IOParticles(Particles& other, Geometry geomIO, Real no2outL,
 template class Particles<nPicPartReal>;
 template class Particles<nPTPartReal, nPTPartInt>;
 
-template <> ParticleStaggering Particles<nPicPartReal, 0>::particlePosition = Staggered;
-template <> ParticleStaggering Particles<nPTPartReal, nPTPartInt>::particlePosition = Staggered;
+template <>
+ParticleStaggering Particles<nPicPartReal, 0>::particlePosition = Staggered;
+template <>
+ParticleStaggering Particles<nPTPartReal, nPTPartInt>::particlePosition =
+    Staggered;
