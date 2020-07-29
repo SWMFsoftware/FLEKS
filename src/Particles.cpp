@@ -1269,37 +1269,41 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
       phasePartIdx_III[iCell_D[u_]][iCell_D[v_]][iCell_D[w_]].push_back(pid);
     }
 
-    // Sorting the particles indexes so that the results change with different
-    // number of processors.
+    // Find the center of the particles, and sort the particles based on its
+    // distance to the center.
     for (int iCell = 0; iCell < nCell; iCell++)
       for (int jCell = 0; jCell < nCell; jCell++)
         for (int kCell = 0; kCell < nCell; kCell++) {
-          std::sort(phasePartIdx_III[iCell][jCell][kCell].begin(),
-                    phasePartIdx_III[iCell][jCell][kCell].end(),
-                    [& particles = particles, ix_ = ix_](const int& idl,
-                                                         const int& idr) {
-                      return particles[idl].rdata(ix_) >
-                             particles[idr].rdata(ix_);
+          Vector<int>& partIdx = phasePartIdx_III[iCell][jCell][kCell];
+
+          if (partIdx.size() == 0)
+            continue;
+
+          Real middle[3] = { 0, 0, 0 };
+          for (int pID : partIdx) {
+            for (int iDir = ix_; iDir <= iz_; iDir++) {
+              middle[iDir] += particles[pID].pos(iDir);
+            }
+          }
+
+          for (int iDir = ix_; iDir <= iz_; iDir++) {
+            middle[iDir] /= partIdx.size();
+          }
+
+          std::sort(partIdx.begin(), partIdx.end(),
+                    [& particles = particles, &middle = middle, ix_ = ix_,
+                     iz_ = iz_](const int& idl, const int& idr) {
+                      Real lval = 0, rval = 0;
+                      for (int iDir = ix_; iDir <= iz_; iDir++) {
+                        lval += pow(particles[idl].pos(iDir) - middle[iDir], 2);
+                        rval += pow(particles[idr].pos(iDir) - middle[iDir], 2);
+                      }
+
+                      return lval < rval;
                     });
         }
 
     const int nPartCombine = 6;
-    int iCount = 0;
-    int nAvailableCombine = 0;
-    for (int iu = 0; iu < nCell; iu++)
-      for (int iv = 0; iv < nCell; iv++)
-        for (int iw = 0; iw < nCell; iw++) {
-          iCount += phasePartIdx_III[iu][iv][iw].size();
-          nAvailableCombine +=
-              fastfloor(phasePartIdx_III[iu][iv][iw].size() / nPartCombine);
-        }
-
-    Real ratioCombine;
-    if (nAvailableCombine < nCombineGoal) {
-      ratioCombine = 1;
-    } else {
-      ratioCombine = Real(nCombineGoal) / nAvailableCombine;
-    }
 
     const auto lo = lbound(pti.tilebox());
     const auto hi = ubound(pti.tilebox());
@@ -1319,9 +1323,10 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
     for (int iu = 0; iu < nCell; iu++)
       for (int iv = 0; iv < nCell; iv++)
         for (int iw = 0; iw < nCell; iw++) {
-          for (int icount = 0;
-               icount < phasePartIdx_III[iu][iv][iw].size() - nPartCombine;
-               icount += ceil(nPartCombine / ratioCombine)) {
+          Vector<int>& partIdx = phasePartIdx_III[iu][iv][iw];
+
+          // Only combien once.
+          if (partIdx.size() > nPartCombine) {
             /*
                 Delete 1 particle out of 6 particles:
                 1) Choose two particles that are closest to each other.
@@ -1334,9 +1339,8 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
 
             int idx_I[nPartCombine];
             for (int ip = 0; ip < nPartCombine; ip++) {
-              // Pop three particle indices.
-              idx_I[ip] = phasePartIdx_III[iu][iv][iw].back();
-              phasePartIdx_III[iu][iv][iw].pop_back();
+              idx_I[ip] = partIdx.back();
+              partIdx.pop_back();
             }
 
             // Find the pairs close to each other in phase space.

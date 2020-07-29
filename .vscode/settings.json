@@ -64,6 +64,9 @@
         "thread": "cpp",
         "typeindex": "cpp",
         "typeinfo": "cpp",
-        "*.def": "cpp"
+        "*.def": "cpp",
+        "hash_map": "cpp",
+        "ranges": "cpp",
+        "valarray": "cpp"
     }
 }
