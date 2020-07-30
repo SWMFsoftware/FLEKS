@@ -1187,6 +1187,9 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
 
   const int lev = 0;
 
+  const int nPartCombine = 6;
+  const int nCombineThreshold = nPartCombine + 2;
+
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
        ++pti) {
 
@@ -1200,7 +1203,9 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
 
     // Phase space cell number in one direction.
     // The const 0.8 is choosen by experience.
-    const int nCell = 0.8 * pow(nPartGoal, 1. / nDim);
+    int nCell = ceil(0.8 * pow(nPartGoal, 1. / nDim));
+    nCell = nCell>10? 10: nCell; 
+
     if (nCell < 1)
       continue;
 
@@ -1276,7 +1281,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
         for (int kCell = 0; kCell < nCell; kCell++) {
           Vector<int>& partIdx = phasePartIdx_III[iCell][jCell][kCell];
 
-          if (partIdx.size() == 0)
+          if (partIdx.size() < nCombineThreshold)
             continue;
 
           Real middle[3] = { 0, 0, 0 };
@@ -1291,7 +1296,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
           }
 
           std::sort(partIdx.begin(), partIdx.end(),
-                    [& particles = particles, &middle = middle, ix_ = ix_,
+                    [&particles = particles, &middle = middle, ix_ = ix_,
                      iz_ = iz_](const int& idl, const int& idr) {
                       Real lval = 0, rval = 0;
                       for (int iDir = ix_; iDir <= iz_; iDir++) {
@@ -1302,8 +1307,6 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
                       return lval < rval;
                     });
         }
-
-    const int nPartCombine = 6;
 
     const auto lo = lbound(pti.tilebox());
     const auto hi = ubound(pti.tilebox());
@@ -1326,7 +1329,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
           Vector<int>& partIdx = phasePartIdx_III[iu][iv][iw];
 
           // Only combien once.
-          if (partIdx.size() > nPartCombine) {
+          if (partIdx.size() >= nCombineThreshold) {
             /*
                 Delete 1 particle out of 6 particles:
                 1) Choose two particles that are closest to each other.
