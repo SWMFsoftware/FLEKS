@@ -12,14 +12,16 @@ Particles<NStructReal, NStructInt>::Particles(
     const amrex::BoxArray& regionBAIn, const Geometry& geom,
     const DistributionMapping& dm, const BoxArray& ba,
     FluidInterface* const fluidIn, TimeCtr* const tcIn, const int speciesIDIn,
-    const Real chargeIn, const Real massIn, const IntVect& nPartPerCellIn)
+    const Real chargeIn, const Real massIn, const IntVect& nPartPerCellIn,
+    TestCase tcase)
     : ParticleContainer<NStructReal, NStructInt>(geom, dm, ba),
       fluidInterface(fluidIn),
       tc(tcIn),
       speciesID(speciesIDIn),
       charge(chargeIn),
       mass(massIn),
-      nPartPerCell(nPartPerCellIn) {
+      nPartPerCell(nPartPerCellIn),
+      testCase(tcase) {
   do_tiling = true;
 
   qom = charge / mass;
@@ -99,7 +101,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
   }
   const Real coefSD = sqrt(Real(nPartEffective) / (nPartEffective - 1));
   //-----------------------------------------------------------
-
+  int icount = 0;
   // loop over particles inside grid cell i, j, k
   for (int ii = 0; ii < nPartPerCell[ix_]; ii++)
     for (int jj = 0; jj < nPartPerCell[iy_]; jj++)
@@ -139,9 +141,19 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
           v *= coefSD;
           w *= coefSD;
 
-          u += fluidInterface->get_ux(mfi, x, y, z, speciesID);
-          v += fluidInterface->get_uy(mfi, x, y, z, speciesID);
-          w += fluidInterface->get_uz(mfi, x, y, z, speciesID);
+          Real uBulk = fluidInterface->get_ux(mfi, x, y, z, speciesID);
+          Real vBulk = fluidInterface->get_uy(mfi, x, y, z, speciesID);
+          Real wBulk = fluidInterface->get_uz(mfi, x, y, z, speciesID);
+
+          if (testCase == TwoStream && icount % 2 == 0) {
+            uBulk = -uBulk;
+            vBulk = -vBulk;
+            wBulk = -wBulk;
+          }
+
+          u += uBulk;
+          v += vBulk;
+          w += wBulk;
 
           ParticleType p;
           if (ParticleType::the_next_id >= amrex::LastParticleID) {
@@ -167,6 +179,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
 
           particles.push_back(p);
           // Print() << p << std::endl;
+          icount++;
         }
       }
 }
@@ -1204,7 +1217,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
     // Phase space cell number in one direction.
     // The const 0.8 is choosen by experience.
     int nCell = ceil(0.8 * pow(nPartGoal, 1. / nDim));
-    nCell = nCell>10? 10: nCell; 
+    nCell = nCell > 10 ? 10 : nCell;
 
     if (nCell < 1)
       continue;

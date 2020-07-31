@@ -28,4 +28,6 @@ constexpr static int ptRecordSize = 7;
 constexpr static int nPTPartReal = nPicPartReal + ptRecordSize * nPTRecord, nPTPartInt = 1; 
 
 enum ParticleStaggering {Staggered, NonStaggered}; 
+
+enum TestCase {RegularSimulation, TwoStream}; 
 #endif

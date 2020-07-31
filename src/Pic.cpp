@@ -59,6 +59,12 @@ void Pic::read_param(const std::string& command, ReadParam& readParam) {
     readParam.read_var("doReSampling", doReSampling);
     readParam.read_var("reSamplingLowLimit", reSamplingLowLimit);
     readParam.read_var("reSamplingHighLimit", reSamplingHighLimit);
+  } else if (command == "#TESTCASE") {
+    std::string testcase;
+    readParam.read_var("testCase", testcase);
+    if (testcase == "TwoStream") {
+      testCase = TwoStream;
+    }
   }
 }
 
@@ -253,8 +259,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
       auto ptr = std::make_unique<Particles<> >(
           picRegionBA, geom, dm, centerBA, fluidInterface.get(), tc.get(), i,
           fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i),
-          nPartPerCell);
-      parts.push_back(std::move(ptr));
+          nPartPerCell, testCase);
+      parts.push_back(std::move(ptr));      
     }
   } else {
     for (int i = 0; i < nSpecies; i++) {
@@ -790,11 +796,11 @@ void Pic::update() {
     }
   }
 
-  re_sampling(); 
+  re_sampling();
 
   if (Particles<>::particlePosition == NonStaggered) {
     update_part_loc_to_half_stage();
-  }  
+  }
 
   calc_mass_matrix();
 

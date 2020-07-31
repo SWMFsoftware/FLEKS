@@ -58,6 +58,8 @@ public:
   static const int iwp_ = 2;
   static const int iqp_ = 3;
 
+  TestCase testCase;
+
   // Index of the integer data.
   static const int iRecordCount_ = 0;
 
@@ -67,7 +69,8 @@ public:
             const amrex::DistributionMapping& dm, const amrex::BoxArray& ba,
             FluidInterface* fluidIn, TimeCtr* tcIn, const int speciesIDIn,
             const amrex::Real chargeIn, const amrex::Real massIn,
-            const amrex::IntVect& nPartPerCellIn);
+            const amrex::IntVect& nPartPerCellIn,
+            TestCase tcase = RegularSimulation);
 
   amrex::BoxArray get_region_ba() const { return regionBA; }
 

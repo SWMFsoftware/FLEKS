@@ -379,7 +379,8 @@ void Domain::read_param() {
     if (command == "#DIVE" || command == "#EFIELDSOLVER" ||
         command == "#PARTICLES" || command == "#ELECTRON" ||
         command == "#DISCRETIZE" || command == "#DISCRETIZATION" ||
-        command == "#RESAMPLING" || command == "#SMOOTHE") {
+        command == "#RESAMPLING" || command == "#SMOOTHE" ||
+        command == "#TESTCASE") {
       pic.read_param(command, readParam);
     } else if (command == "#RESTART") {
       readParam.read_var("doRestart", doRestart);

@@ -97,6 +97,8 @@ private:
   int nSmoothE;
   amrex::Real coefSmoothE;
 
+  TestCase testCase; 
+
   // public methods
 public:
   Pic() {
@@ -119,6 +121,8 @@ public:
     doSmoothE = false;
     nSmoothE = 0;
     coefSmoothE = 0;
+
+    testCase = RegularSimulation; 
   };
   ~Pic(){};
 
