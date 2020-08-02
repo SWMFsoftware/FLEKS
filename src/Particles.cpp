@@ -1101,12 +1101,12 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
     // Sort the particles by x first to make sure the results are the same for
     // different number of processors
     std::sort(particles.begin(), particles.end(),
-              [ix_ = ix_](const auto& pl, const auto& pr) {
+              [](const auto& pl, const auto& pr) {
                 return pl.rdata(ix_) > pr.rdata(ix_);
               });
 
     std::sort(particles.begin(), particles.end(),
-              [ix_ = ix_](const auto& pl, const auto& pr) {
+              [](const auto& pl, const auto& pr) {
                 return fabs(pl.rdata(iqp_)) > fabs(pr.rdata(iqp_));
               });
     //----------------------------------------------------------------
@@ -1309,8 +1309,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
           }
 
           std::sort(partIdx.begin(), partIdx.end(),
-                    [&particles = particles, &middle = middle, ix_ = ix_,
-                     iz_ = iz_](const int& idl, const int& idr) {
+                    [&particles, middle](const int& idl, const int& idr) {
                       Real lval = 0, rval = 0;
                       for (int iDir = ix_; iDir <= iz_; iDir++) {
                         lval += pow(particles[idl].pos(iDir) - middle[iDir], 2);
