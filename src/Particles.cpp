@@ -1621,9 +1621,3 @@ IOParticles::IOParticles(Particles& other, Geometry geomIO, Real no2outL,
 // template arguments.
 template class Particles<nPicPartReal>;
 template class Particles<nPTPartReal, nPTPartInt>;
-
-template <>
-ParticleStaggering Particles<nPicPartReal, 0>::particlePosition = Staggered;
-template <>
-ParticleStaggering Particles<nPTPartReal, nPTPartInt>::particlePosition =
-    Staggered;

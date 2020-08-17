@@ -225,6 +225,9 @@ protected:
   FluidInterface* fluidInterface;
 };
 
+template <int NStructReal, int NStructInt>
+ParticleStaggering Particles<NStructReal, NStructInt>::particlePosition = Staggered;
+
 class IOParticles : public Particles<nPicPartReal> {
 public:
   IOParticles() = delete;
