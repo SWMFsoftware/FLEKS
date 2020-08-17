@@ -45,8 +45,7 @@ EXE:
 
 CONVERTER:	
 	$(MAKE) ${CONVERTER_OBJECTS}
-	${LINK.f90} ${NOMAINFLAG} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
-		-L -lFLEKS ${LflagMpi}
+	${LINK.f90} ${NOMAINFLAG} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} ${LflagMpi}
 	@echo
 	@echo ${CONVERTEREXE} has been brought up to date.
 	@echo
