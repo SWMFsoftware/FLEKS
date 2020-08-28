@@ -38,6 +38,8 @@ Particles<NStructReal, NStructInt>::Particles(
     invVol *= invDx[i];
   }
 
+  mergeThresholdDistance = 0.6; 
+
   set_region_ba(regionBAIn);
 
   // The following line is used to avoid an MPI bug (feature?) on Frontera. It
@@ -208,6 +210,9 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
           }
         }
   }
+
+  // Call Redistribute so that the particles are assigned to correct cells.
+  Redistribute();
 }
 
 //==========================================================
@@ -1198,11 +1203,16 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
   const int nPartGoal =
       nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_] * limit;
 
+  const int nPartCombine = 6, nPartNew = 5;
+
+  const Real coefVel = 1, coefPos = 1;
+
+  // The range of the velocity domain: [-r0,r0]*thermal_velocity+bulk_velocity
+  const Real r0 = 1.0;
+
+  int nAvailableCombines = 0, nEqs = 0, nSolved = 0;
+
   const int lev = 0;
-
-  const int nPartCombine = 6;
-  const int nCombineThreshold = nPartCombine + 2;
-
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
        ++pti) {
 
@@ -1212,173 +1222,183 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
 
     if (nPartOrig <= nPartGoal)
       continue;
-    const int nCombineGoal = nPartOrig - nPartGoal;
 
     // Phase space cell number in one direction.
     // The const 0.8 is choosen by experience.
-    int nCell = ceil(0.8 * pow(nPartGoal, 1. / nDim));
-    nCell = nCell > 10 ? 10 : nCell;
+    int nCell = ceil(0.8 * r0 * pow(nPartOrig, 1. / nDim));
 
-    if (nCell < 1)
+    if (nCell < 3)
       continue;
 
     //----------------------------------------------------------------
     // Estimate the bulk velocity and thermal velocity.
-    Real uAv = 0, vAv = 0, wAv = 0;
+    Real uBulk[nDim] = { 0, 0, 0 };
     for (int pid = 0; pid < nPartOrig; pid++) {
       auto& pcl = particles[pid];
-      uAv += pcl.rdata(ix_);
-      vAv += pcl.rdata(iy_);
-      wAv += pcl.rdata(iz_);
+      for (int iDir = 0; iDir < nDim; iDir++) {
+        uBulk[iDir] += pcl.rdata(iDir);
+      }
     }
-    uAv /= nPartOrig;
-    vAv /= nPartOrig;
-    wAv /= nPartOrig;
+
+    for (int iDir = 0; iDir < nDim; iDir++) {
+      uBulk[iDir] /= nPartOrig;
+    }
 
     Real thVel = 0, thVel2 = 0;
     for (int pid = 0; pid < nPartOrig; pid++) {
       auto& pcl = particles[pid];
-      thVel2 += pow(pcl.rdata(ix_) - uAv, 2) + pow(pcl.rdata(iy_) - vAv, 2) +
-                pow(pcl.rdata(iz_) - wAv, 2);
+      for (int iDir = 0; iDir < nDim; iDir++) {
+        thVel2 += pow(pcl.rdata(iDir) - uBulk[iDir], 2);
+      }
     }
 
     thVel2 /= nPartOrig;
     thVel = sqrt(thVel2);
 
+    // The coef 0.5 if choosen by experience.
+    const Real velNorm = 1.0 / (0.5 * thVel);
     //----------------------------------------------------------------
 
-    // Storing the particle indices in the corresponding phase space cell.
+    //----------------------------------------------------------------
+    // Assign the particle IDs to the corresponding velocity space cells.
     Vector<int> phasePartIdx_III[nCell][nCell][nCell];
 
-    const int u_ = 0, v_ = 1, w_ = 2;
-    Real velMin_D[nDim], velMax_D[nDim], inv_dVel_D[nDim];
-    const Real r0 = 1.0;
-    velMin_D[u_] = -r0 * thVel + uAv;
-    velMax_D[u_] = r0 * thVel + uAv;
-    velMin_D[v_] = -r0 * thVel + vAv;
-    velMax_D[v_] = r0 * thVel + vAv;
-    velMin_D[w_] = -r0 * thVel + wAv;
-    velMax_D[w_] = r0 * thVel + wAv;
-    for (int iDim = 0; iDim < nDim; iDim++) {
-      inv_dVel_D[iDim] = nCell / (velMax_D[iDim] - velMin_D[iDim]);
+    // Velocity domain range.
+    Real velMin_D[nDim], velMax_D[nDim];
+    for (int iDir = 0; iDir < nDim; iDir++) {
+      velMin_D[iDir] = -r0 * thVel + uBulk[iDir];
+      velMax_D[iDir] = r0 * thVel + uBulk[iDir];
     }
 
-    Real vel_D[nDim];
+    Real invDv = Real(nCell) / (2 * r0 * thVel);
+
     int iCell_D[nDim];
     for (int pid = 0; pid < nPartOrig; pid++) {
       auto& pcl = particles[pid];
-      vel_D[u_] = pcl.rdata(ix_);
-      vel_D[v_] = pcl.rdata(iy_);
-      vel_D[w_] = pcl.rdata(iz_);
 
       bool isOutside = false;
       for (int iDim = 0; iDim < nDim; iDim++) {
-        if (vel_D[iDim] < velMin_D[iDim] || vel_D[iDim] > velMax_D[iDim])
+        if (pcl.rdata(iDim) < velMin_D[iDim] ||
+            pcl.rdata(iDim) > velMax_D[iDim])
           isOutside = true;
       }
       if (isOutside)
         continue;
 
       for (int iDim = 0; iDim < nDim; iDim++) {
-        iCell_D[iDim] =
-            fastfloor((vel_D[iDim] - velMin_D[iDim]) * inv_dVel_D[iDim]);
+        iCell_D[iDim] = fastfloor((pcl.rdata(iDim) - velMin_D[iDim]) * invDv);
       }
 
-      phasePartIdx_III[iCell_D[u_]][iCell_D[v_]][iCell_D[w_]].push_back(pid);
+      phasePartIdx_III[iCell_D[ix_]][iCell_D[iy_]][iCell_D[iz_]].push_back(pid);
     }
+    //----------------------------------------------------------------
 
-    // Find the center of the particles, and sort the particles based on its
-    // distance to the center.
-    for (int iCell = 0; iCell < nCell; iCell++)
-      for (int jCell = 0; jCell < nCell; jCell++)
-        for (int kCell = 0; kCell < nCell; kCell++) {
-          Vector<int>& partIdx = phasePartIdx_III[iCell][jCell][kCell];
-
-          if (partIdx.size() < nCombineThreshold)
-            continue;
-
-          Real middle[3] = { 0, 0, 0 };
-          for (int pID : partIdx) {
-            for (int iDir = ix_; iDir <= iz_; iDir++) {
-              middle[iDir] += particles[pID].pos(iDir);
-            }
-          }
-
-          for (int iDir = ix_; iDir <= iz_; iDir++) {
-            middle[iDir] /= partIdx.size();
-          }
-
-          std::sort(partIdx.begin(), partIdx.end(),
-                    [&particles, middle](const int& idl, const int& idr) {
-                      Real lval = 0, rval = 0;
-                      for (int iDir = ix_; iDir <= iz_; iDir++) {
-                        lval += pow(particles[idl].pos(iDir) - middle[iDir], 2);
-                        rval += pow(particles[idr].pos(iDir) - middle[iDir], 2);
-                      }
-
-                      return lval < rval;
-                    });
-        }
-
-    const auto lo = lbound(pti.tilebox());
-    const auto hi = ubound(pti.tilebox());
-
-    const Real xMin = Geom(0).LoEdge(lo.x, ix_),
-               xMax = Geom(0).HiEdge(hi.x, ix_);
-
-    const Real yMin = Geom(0).LoEdge(lo.y, iy_),
-               yMax = Geom(0).HiEdge(hi.y, iy_);
-
-    const Real zMin = Geom(0).LoEdge(lo.z, iz_),
-               zMax = Geom(0).HiEdge(hi.z, iz_);
-
-    const Real invdl2 =
-        1.0 / (dx[ix_] * dx[ix_] + dx[iy_] * dx[iy_] + dx[iz_] * dx[iz_]);
-    const Real invthVel2 = 1.0 / thVel2;
     for (int iu = 0; iu < nCell; iu++)
       for (int iv = 0; iv < nCell; iv++)
         for (int iw = 0; iw < nCell; iw++) {
           Vector<int>& partIdx = phasePartIdx_III[iu][iv][iw];
 
-          // Only combien once.
-          if (partIdx.size() >= nCombineThreshold) {
+          if (partIdx.size() < nPartCombine)
+            continue;
+
+          Vector<Real> distance;
+          distance.resize(partIdx.size(), 0);
+
+          // Find the center of the particles, and sort the particles based on
+          // its distance to the 6-D center.
+          //----------------------------------------------------------
+          Real middle[6] = { 0, 0, 0, 0, 0, 0 };
+          for (int pID : partIdx) {
+            for (int iDir = ix_; iDir <= iz_; iDir++) {
+              middle[iDir] += particles[pID].pos(iDir);
+              middle[nDim + iDir] += particles[pID].rdata(iDir);
+            }
+          }
+
+          for (int iDir = 0; iDir < 2 * nDim; iDir++) {
+            middle[iDir] /= partIdx.size();
+          }
+
+          auto calc_distance2_to_center = [&, this](int pID) {
+            Real dl2 = 0, dvel2 = 0;
+            for (int iDir = ix_; iDir <= iz_; iDir++) {
+              Real pos = particles[pID].pos(iDir);
+              dl2 += pow((pos - middle[iDir]) * invDx[iDir], 2);
+
+              Real v = particles[pID].rdata(iDir);
+              dvel2 += pow((v - middle[nDim + iDir]) * velNorm, 2);
+            }
+            return coefPos * dl2 + coefVel * dvel2;
+          };
+
+          std::sort(partIdx.begin(), partIdx.end(),
+                    [this, &particles,
+                     calc_distance2_to_center](const int& idl, const int& idr) {
+                      return calc_distance2_to_center(idl) <
+                             calc_distance2_to_center(idr);
+                    });
+          //----------------------------------------------------------
+
+          if (partIdx.size() >= nPartCombine) {
             /*
                 Delete 1 particle out of 6 particles:
                 1) Choose two particles that are closest to each other.
                 2) Delete the lighter one.
                 3) Distribute its weights to another 5 particles to conserve
                    mass, momentum and energy.
-                4) Adjust the location of the particles to conserve
-                   mass center (optional. Turned off by default.)
              */
-
             int idx_I[nPartCombine];
             for (int ip = 0; ip < nPartCombine; ip++) {
-              idx_I[ip] = partIdx.back();
-              partIdx.pop_back();
+              idx_I[ip] = partIdx[ip];
             }
 
-            // Find the pairs close to each other in phase space.
+            // Calculate the center of the particles for combination
+            for (int i = 0; i < 2 * nDim; i++) {
+              middle[i] = 0;
+            }
+            for (int pID : idx_I) {
+              for (int iDir = ix_; iDir <= iz_; iDir++) {
+                middle[iDir] += particles[pID].pos(iDir);
+                middle[nDim + iDir] += particles[pID].rdata(iDir);
+              }
+            }
+            for (int iDir = 0; iDir < 2 * nDim; iDir++) {
+              middle[iDir] /= nPartCombine;
+            }
+            
+            bool doCombine = true;
+            // Print()<<"--------------------"<<std::endl;
+            for (int pID : idx_I) {
+              Real distance = sqrt(calc_distance2_to_center(pID));
+              // Print()<<"distance = "<<distance<<std::endl;
+              if (distance > mergeThresholdDistance) {
+                doCombine = false;
+              }
+            }
+            // Print()<<"--------------------"<<std::endl;
+            nAvailableCombines++;
+            if (!doCombine)
+              continue;
+
+            // ---Find the pairs close to each other in phase space.------
             int pair1 = 0, pair2 = 0;
             Real dis2Min = 2;
             for (int ip1 = 0; ip1 < nPartCombine - 1; ip1++)
               for (int ip2 = ip1 + 1; ip2 < nPartCombine; ip2++) {
-                const Real dup = particles[idx_I[ip1]].rdata(ix_) -
-                                 particles[idx_I[ip2]].rdata(ix_);
-                const Real dvp = particles[idx_I[ip1]].rdata(iy_) -
-                                 particles[idx_I[ip2]].rdata(iy_);
-                const Real dwp = particles[idx_I[ip1]].rdata(iz_) -
-                                 particles[idx_I[ip2]].rdata(iz_);
-                const Real dxp = particles[idx_I[ip1]].pos(ix_) -
-                                 particles[idx_I[ip2]].pos(ix_);
-                const Real dyp = particles[idx_I[ip1]].pos(iy_) -
-                                 particles[idx_I[ip2]].pos(iy_);
-                const Real dzp = particles[idx_I[ip1]].pos(iz_) -
-                                 particles[idx_I[ip2]].pos(iz_);
 
-                const Real dis2 =
-                    (dup * dup + dvp * dvp + dwp * dwp) * invthVel2 +
-                    (dxp * dxp + dyp * dyp + dzp * dzp) * invdl2;
+                // Distance between two particles in 6D space.
+                Real dl2 = 0, dv2 = 0;
+                for (int iDir = 0; iDir < nDim; iDir++) {
+                  Real dv = velNorm * (particles[idx_I[ip1]].rdata(iDir) -
+                                       particles[idx_I[ip2]].rdata(iDir));
+                  dv2 += pow(dv, 2);
+
+                  Real dx = invDx[iDir] * (particles[idx_I[ip1]].pos(iDir) -
+                                           particles[idx_I[ip2]].pos(iDir));
+                  dv2 += pow(dx, 2);
+                }
+
+                const Real dis2 = dv2 * coefVel + dl2 * coefPos;
 
                 if (dis2 < dis2Min) {
                   dis2Min = dis2;
@@ -1386,6 +1406,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
                   pair2 = ip2;
                 }
               }
+            //-------------------------------
 
             // Delete the lighter one.
             int iPartDel = pair1, iPartKeep = pair2;
@@ -1401,9 +1422,9 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
               idx_I[nPartCombine - 1] = idxTmp;
             }
 
-            //---------------Solve the new particle
-            // weights---------------------
-            const int nVar = 5;
+            //-----------Solve the new particle weights---------------
+            nEqs++;
+            const int nVar = nPartNew;
             const int iq_ = 0, iu_ = 1, iv_ = 2, iw_ = 3, ie_ = 4;
             Real a[nVar][nVar + 1];
             Real x[nVar];
@@ -1436,6 +1457,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
               a[ie_][nVar] += qp * v2;
             }
 
+            //------------------------------------------
             auto linear_solver_Gauss_Elimination = [&a, &x, &nVar]() {
               for (int i = 0; i < nVar - 1; i++) {
                 if (a[i][i] == 0)
@@ -1460,16 +1482,16 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
                   x[i] = x[i] / a[i][i];
                 }
               }
-
               return true;
             };
+            //------------------------------------------
 
             bool isSolved = linear_solver_Gauss_Elimination();
 
             if (isSolved) {
               // All the particle weights should have the same sign.
               Real qt = a[iq_][nVar];
-              for (int ip = 0; ip < nPartCombine - 1; ip++) {
+              for (int ip = 0; ip < nPartNew; ip++) {
                 if (qt * x[ip] < 0) {
                   isSolved = false;
                   break;
@@ -1480,61 +1502,24 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
               continue;
             //----------------------------------------------
 
-            //----------------------------------------------
-
-            // 1) Adjust the location to conserve the mass center.
-            // 2) Adjust the weight to conserve mass and energy.
-            const bool doConserveMassCenter = false;
-            if (doConserveMassCenter) {
-              Real centerxOld = 0, centeryOld = 0, centerzOld = 0;
-              for (int ip = 0; ip < nPartCombine; ip++) {
-                centerxOld += particles[idx_I[ip]].rdata(iqp_) *
-                              particles[idx_I[ip]].pos(ix_);
-                centeryOld += particles[idx_I[ip]].rdata(iqp_) *
-                              particles[idx_I[ip]].pos(iy_);
-                centerzOld += particles[idx_I[ip]].rdata(iqp_) *
-                              particles[idx_I[ip]].pos(iz_);
-              }
-
-              Real centerxNew = 0, centeryNew = 0, centerzNew = 0;
-              Real qtotal = 0;
-              for (int ip = 0; ip < nPartCombine - 1; ip++) {
-                centerxNew += x[ip] * particles[idx_I[ip]].pos(ix_);
-                centeryNew += x[ip] * particles[idx_I[ip]].pos(iy_);
-                centerzNew += x[ip] * particles[idx_I[ip]].pos(iz_);
-                qtotal += x[ip];
-              }
-
-              const Real invQtotal = 1. / qtotal;
-              const Real dPartX = (centerxOld - centerxNew) * invQtotal;
-              const Real dPartY = (centeryOld - centeryNew) * invQtotal;
-              const Real dPartZ = (centerzOld - centerzNew) * invQtotal;
-
-              for (int ip = 0; ip < nPartCombine - 1; ip++) {
-                Real xpNew = particles[idx_I[ip]].pos(ix_) + dPartX;
-                Real ypNew = particles[idx_I[ip]].pos(iy_) + dPartY;
-                Real zpNew = particles[idx_I[ip]].pos(iz_) + dPartZ;
-
-                xpNew = bound(xpNew, xMin, xMax);
-                ypNew = bound(ypNew, xMin, xMax);
-                zpNew = bound(zpNew, xMin, xMax);
-
-                particles[idx_I[ip]].pos(ix_) = xpNew;
-                particles[idx_I[ip]].pos(iy_) = ypNew;
-                particles[idx_I[ip]].pos(iz_) = zpNew;
-              }
-            } // if doConserveMassCenter
-
             // Adjust weight.
-            for (int ip = 0; ip < nPartCombine - 1; ip++) {
+            for (int ip = 0; ip < nPartNew; ip++) {
               auto& p = particles[idx_I[ip]];
               p.rdata(iqp_) = x[ip];
             }
             // Mark for deletion
-            particles[idx_I[nPartCombine - 1]].id() = -1;
+            for (int ip = nPartNew; ip < nPartCombine; ip++) {
+              particles[idx_I[ip]].id() = -1;
+            }
+            nSolved++;
           }
         }
   }
+
+  if (nAvailableCombines > 0)
+    AllPrint() << "Particle merging:: nAvailableCombine = "
+               << nAvailableCombines << " nEquations = " << nEqs
+               << " nSolved = " << nSolved << std::endl;
 }
 
 //==========================================================

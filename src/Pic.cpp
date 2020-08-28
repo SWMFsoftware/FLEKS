@@ -59,6 +59,8 @@ void Pic::read_param(const std::string& command, ReadParam& readParam) {
     readParam.read_var("doReSampling", doReSampling);
     readParam.read_var("reSamplingLowLimit", reSamplingLowLimit);
     readParam.read_var("reSamplingHighLimit", reSamplingHighLimit);
+  } else if (command == "#MERGEPARTICLE") {
+    readParam.read_var("mergeThresholdDistance", particleMergeThreshold);
   } else if (command == "#TESTCASE") {
     std::string testcase;
     readParam.read_var("testCase", testcase);
@@ -260,7 +262,14 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
           picRegionBA, geom, dm, centerBA, fluidInterface.get(), tc.get(), i,
           fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i),
           nPartPerCell, testCase);
-      parts.push_back(std::move(ptr));      
+
+      //----- Set parameters------------
+      if (particleMergeThreshold >= 0) {
+        ptr->set_merge_threshold(particleMergeThreshold);
+      }
+      //---------------------------------- 
+
+      parts.push_back(std::move(ptr));
     }
   } else {
     for (int i = 0; i < nSpecies; i++) {

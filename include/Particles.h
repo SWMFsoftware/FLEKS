@@ -52,6 +52,8 @@ protected:
   amrex::Real invVol;
   bool isPeriodic[nDim];
 
+  amrex::Real mergeThresholdDistance;
+
 public:
   static const int iup_ = 0;
   static const int ivp_ = 1;
@@ -209,6 +211,8 @@ public:
   amrex::Real get_charge() const { return charge; }
   amrex::Real get_mass() const { return mass; }
 
+  void set_merge_threshold(amrex::Real in) { mergeThresholdDistance = in; }
+
 protected:
   int speciesID;
   RandNum randNum;
@@ -226,7 +230,8 @@ protected:
 };
 
 template <int NStructReal, int NStructInt>
-ParticleStaggering Particles<NStructReal, NStructInt>::particlePosition = Staggered;
+ParticleStaggering Particles<NStructReal, NStructInt>::particlePosition =
+    Staggered;
 
 class IOParticles : public Particles<nPicPartReal> {
 public:

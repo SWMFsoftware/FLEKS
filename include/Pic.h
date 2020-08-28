@@ -73,7 +73,7 @@ private:
   amrex::Vector<amrex::MultiFab> nodePlasma;
   amrex::Vector<amrex::Real> plasmaEnergy;
 
-  amrex::MultiFab jHat; 
+  amrex::MultiFab jHat;
 
   amrex::Vector<std::unique_ptr<Particles<> > > parts;
 
@@ -97,7 +97,9 @@ private:
   int nSmoothE;
   amrex::Real coefSmoothE;
 
-  TestCase testCase; 
+  TestCase testCase;
+
+  amrex::Real particleMergeThreshold;
 
   // public methods
 public:
@@ -122,7 +124,9 @@ public:
     nSmoothE = 0;
     coefSmoothE = 0;
 
-    testCase = RegularSimulation; 
+    testCase = RegularSimulation;
+
+    particleMergeThreshold = -1; 
   };
   ~Pic(){};
 
@@ -159,7 +163,7 @@ public:
 
   void particle_mover();
 
-  void re_sampling(); 
+  void re_sampling();
 
   void inject_particles_for_new_cells() {
     for (auto &pts : parts) {
