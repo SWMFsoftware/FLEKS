@@ -1516,10 +1516,10 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
         }
   }
 
-  if (nAvailableCombines > 0)
-    AllPrint() << "Particle merging:: nAvailableCombine = "
-               << nAvailableCombines << " nEquations = " << nEqs
-               << " nSolved = " << nSolved << std::endl;
+  // if (nAvailableCombines > 0)
+  //   AllPrint() << "Particle merging:: nAvailableCombine = "
+  //              << nAvailableCombines << " nEquations = " << nEqs
+  //              << " nSolved = " << nSolved << std::endl;
 }
 
 //==========================================================
