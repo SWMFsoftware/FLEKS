@@ -38,7 +38,7 @@ Particles<NStructReal, NStructInt>::Particles(
     invVol *= invDx[i];
   }
 
-  mergeThresholdDistance = 0.6; 
+  mergeThresholdDistance = 0.6;
 
   set_region_ba(regionBAIn);
 
@@ -147,7 +147,8 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
           Real vBulk = fluidInterface->get_uy(mfi, x, y, z, speciesID);
           Real wBulk = fluidInterface->get_uz(mfi, x, y, z, speciesID);
 
-          if (testCase == TwoStream && icount % 2 == 0) {
+          if (testCase == TwoStream && qom < 0 && icount % 2 == 0) {
+            // Electron only (qom<0)
             uBulk = -uBulk;
             vBulk = -vBulk;
             wBulk = -wBulk;
@@ -1365,7 +1366,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
             for (int iDir = 0; iDir < 2 * nDim; iDir++) {
               middle[iDir] /= nPartCombine;
             }
-            
+
             bool doCombine = true;
             // Print()<<"--------------------"<<std::endl;
             for (int pID : idx_I) {
