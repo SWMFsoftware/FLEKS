@@ -14,6 +14,9 @@ public:
     isGridEmpty = false;
   };
   ~ParticleTracker() {
+    if (!isGridInitialized)
+      return;
+
     bool doSave = savectr->is_time_to(true);
     for (auto &tps : parts) {
       if (doSave) {
@@ -57,7 +60,7 @@ private:
   amrex::Vector<std::unique_ptr<TestParticles> > parts;
   amrex::MultiFab nodeE, nodeB;
 
-  amrex::Vector<unsigned long int> initPartNumber; 
+  amrex::Vector<unsigned long int> initPartNumber;
 
   int nGst;
   amrex::DistributionMapping dm;

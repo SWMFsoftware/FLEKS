@@ -9,6 +9,7 @@ class Domain : public DomainGrid {
 private:
   bool doRestart;
 
+  bool usePT; 
 public:
   Pic pic;
   ParticleTracker pt; 
@@ -18,13 +19,14 @@ public:
   std::shared_ptr<FluidInterface> fluidInterface;
   std::shared_ptr<TimeCtr> tc;
 
-  int couplerMarker; 
+  int couplerMarker;   
 
 public:
   Domain() {
     fluidInterface = std::make_shared<FluidInterface>();
     tc = std::make_shared<TimeCtr>();
     doRestart = false;
+    usePT = false; 
   }
 
   ~Domain() = default;
