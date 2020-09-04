@@ -53,12 +53,16 @@ void Pic::read_param(const std::string& command, ReadParam& readParam) {
     readParam.read_var("coefDiff", fsolver.coefDiff);
   } else if (command == "#SMOOTHE") {
     readParam.read_var("doSmoothE", doSmoothE);
-    readParam.read_var("nSmoothE", nSmoothE);
-    readParam.read_var("coefSmoothE", coefSmoothE);
+    if (doSmoothE) {
+      readParam.read_var("nSmoothE", nSmoothE);
+      readParam.read_var("coefSmoothE", coefSmoothE);
+    }
   } else if (command == "#RESAMPLING") {
     readParam.read_var("doReSampling", doReSampling);
-    readParam.read_var("reSamplingLowLimit", reSamplingLowLimit);
-    readParam.read_var("reSamplingHighLimit", reSamplingHighLimit);
+    if (doReSampling) {
+      readParam.read_var("reSamplingLowLimit", reSamplingLowLimit);
+      readParam.read_var("reSamplingHighLimit", reSamplingHighLimit);
+    }
   } else if (command == "#MERGEPARTICLE") {
     readParam.read_var("mergeThresholdDistance", particleMergeThreshold);
   } else if (command == "#TESTCASE") {
@@ -267,7 +271,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
       if (particleMergeThreshold >= 0) {
         ptr->set_merge_threshold(particleMergeThreshold);
       }
-      //---------------------------------- 
+      //----------------------------------
 
       parts.push_back(std::move(ptr));
     }

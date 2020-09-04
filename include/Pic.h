@@ -109,7 +109,9 @@ public:
     doRestart = false;
     doCorrectDivE = true;
 
-    doReSampling = false;
+    doReSampling = true;
+    reSamplingLowLimit = 0.8;
+    reSamplingHighLimit = 1.5;
 
     for (int iDim = 0; iDim < nDim; iDim++)
       nPartPerCell[iDim] = 6;
@@ -120,13 +122,13 @@ public:
     divESolver.set_tol(0.01);
     divESolver.set_nIter(20);
 
-    doSmoothE = false;
-    nSmoothE = 0;
-    coefSmoothE = 0;
+    doSmoothE = true;
+    nSmoothE = 1;
+    coefSmoothE = 0.5;
 
     testCase = RegularSimulation;
 
-    particleMergeThreshold = -1; 
+    particleMergeThreshold = -1;
   };
   ~Pic(){};
 
