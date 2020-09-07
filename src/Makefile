@@ -72,6 +72,7 @@ ${LIBFLEKS}: ${OBJECTS}
 
 clean:
 	-@(rm -f ${OBJECTS} ${OBJECTS_EXE} ${LIBFLEKS})
+	-@(rm -rf ${CONVERTEREXE} ${CONVERTER_OBJECTS})
 	-@(rm -rf .d)
 
 distclean: clean
