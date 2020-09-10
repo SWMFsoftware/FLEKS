@@ -39,6 +39,7 @@ Particles<NStructReal, NStructInt>::Particles(
   }
 
   mergeThresholdDistance = 0.6;
+  velBinBufferSize = 0.125;
 
   set_region_ba(regionBAIn);
 
@@ -1231,6 +1232,11 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
     if (nCell < 3)
       continue;
 
+    // One particle may belong to more than one velocity bins, but it can be
+    // only merged at most once.
+    std::vector<bool> merged;
+    merged.resize(nPartOrig, false);
+
     //----------------------------------------------------------------
     // Estimate the bulk velocity and thermal velocity.
     Real uBulk[nDim] = { 0, 0, 0 };
@@ -1271,7 +1277,8 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
       velMax_D[iDir] = r0 * thVel + uBulk[iDir];
     }
 
-    Real invDv = Real(nCell) / (2 * r0 * thVel);
+    Real dv = (2.0 * r0 * thVel) / nCell;
+    Real invDv = 1.0 / dv;
 
     int iCell_D[nDim];
     for (int pid = 0; pid < nPartOrig; pid++) {
@@ -1290,14 +1297,55 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
         iCell_D[iDim] = fastfloor((pcl.rdata(iDim) - velMin_D[iDim]) * invDv);
       }
 
-      phasePartIdx_III[iCell_D[ix_]][iCell_D[iy_]][iCell_D[iz_]].push_back(pid);
+      // One particle may belong to multiple bins when each bin has a buffer
+      // region.
+      for (int xCell = iCell_D[ix_] - 1; xCell <= iCell_D[ix_] + 1; xCell++)
+        for (int yCell = iCell_D[iy_] - 1; yCell <= iCell_D[iy_] + 1; yCell++)
+          for (int zCell = iCell_D[iz_] - 1; zCell <= iCell_D[iz_] + 1;
+               zCell++) {
+
+            if (xCell < 0 || xCell >= nCell || yCell < 0 || yCell >= nCell ||
+                zCell < 0 || zCell >= nCell)
+              continue;
+
+            int cellIdx[nDim] = { xCell, yCell, zCell };
+
+            Real binMin_D[nDim], binMax_D[nDim];
+
+            for (int iDim = 0; iDim < nDim; iDim++) {
+              binMin_D[iDim] =
+                  velMin_D[iDim] + (cellIdx[iDim] - velBinBufferSize) * dv;
+
+              binMax_D[iDim] =
+                  velMin_D[iDim] + (cellIdx[iDim] + 1 + velBinBufferSize) * dv;
+            }
+
+            bool isInside = true;
+            for (int iDim = 0; iDim < nDim; iDim++) {
+              if (pcl.rdata(iDim) < binMin_D[iDim] ||
+                  pcl.rdata(iDim) > binMax_D[iDim])
+                isInside = false;
+            }
+
+            if (isInside) {
+              phasePartIdx_III[cellIdx[ix_]][cellIdx[iy_]][cellIdx[iz_]]
+                  .push_back(pid);
+            }
+          }
     }
     //----------------------------------------------------------------
 
     for (int iu = 0; iu < nCell; iu++)
       for (int iv = 0; iv < nCell; iv++)
         for (int iw = 0; iw < nCell; iw++) {
-          Vector<int>& partIdx = phasePartIdx_III[iu][iv][iw];
+          Vector<int> partIdx;
+          for (int i = 0; i < phasePartIdx_III[iu][iv][iw].size(); i++) {
+            auto& pIdx = phasePartIdx_III[iu][iv][iw];
+            int pid = pIdx[i];
+            if (!merged[pid]) {
+              partIdx.push_back(pid);
+            }
+          }
 
           if (partIdx.size() < nPartCombine)
             continue;
@@ -1507,10 +1555,12 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
             for (int ip = 0; ip < nPartNew; ip++) {
               auto& p = particles[idx_I[ip]];
               p.rdata(iqp_) = x[ip];
+              merged[idx_I[ip]] = true;
             }
             // Mark for deletion
             for (int ip = nPartNew; ip < nPartCombine; ip++) {
               particles[idx_I[ip]].id() = -1;
+              merged[idx_I[ip]] = true;
             }
             nSolved++;
           }

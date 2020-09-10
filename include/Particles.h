@@ -53,6 +53,7 @@ protected:
   bool isPeriodic[nDim];
 
   amrex::Real mergeThresholdDistance;
+  amrex::Real velBinBufferSize;
 
 public:
   static const int iup_ = 0;
@@ -212,6 +213,7 @@ public:
   amrex::Real get_mass() const { return mass; }
 
   void set_merge_threshold(amrex::Real in) { mergeThresholdDistance = in; }
+  void set_merge_velocity_bin_buffer(amrex::Real in) { velBinBufferSize = in; }
 
 protected:
   int speciesID;

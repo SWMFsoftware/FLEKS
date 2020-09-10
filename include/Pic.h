@@ -99,7 +99,7 @@ private:
 
   TestCase testCase;
 
-  amrex::Real particleMergeThreshold;
+  amrex::Real particleMergeThreshold, particleMergeBinBuffer; 
 
   // public methods
 public:
@@ -129,6 +129,7 @@ public:
     testCase = RegularSimulation;
 
     particleMergeThreshold = -1;
+    particleMergeBinBuffer = -1; 
   };
   ~Pic(){};
 

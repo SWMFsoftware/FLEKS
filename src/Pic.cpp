@@ -65,6 +65,7 @@ void Pic::read_param(const std::string& command, ReadParam& readParam) {
     }
   } else if (command == "#MERGEPARTICLE") {
     readParam.read_var("mergeThresholdDistance", particleMergeThreshold);
+    readParam.read_var("binBuffer", particleMergeBinBuffer);
   } else if (command == "#TESTCASE") {
     std::string testcase;
     readParam.read_var("testCase", testcase);
@@ -270,6 +271,10 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
       //----- Set parameters------------
       if (particleMergeThreshold >= 0) {
         ptr->set_merge_threshold(particleMergeThreshold);
+      }
+
+      if (particleMergeBinBuffer >= 0) {        
+        ptr->set_merge_velocity_bin_buffer(particleMergeBinBuffer);
       }
       //----------------------------------
 
