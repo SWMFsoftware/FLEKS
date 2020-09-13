@@ -1,53 +1,53 @@
 <commandList name="FLexible Exasclae Kinetic Simulator: PC component">
 
-<command name="SAVEPLOT">
-	<parameter name="nPlotFile" type="integer" min="0" max="15" default="0" />
-	<for name="iPlot" from="1" to="$nPlotFile">
-		<parameter name="StringPlot" type="strings" min="4" max="5">
-			<part name="plotarea" type="string" input="select"
-								required="T">
-			        <option name="3D" value="3d"/>
-				<option name="cut" value="cut"/>	  
-				<option name="x=" />
-				<option name="y=" />
-				<option name="z=" />
-			</part>
-			<part name="plotvar" type="string" required="T"
-				input="select">
-				<option name="MHD variables"    value="fluid" />
-				<option name="Set vars" value="var"/>
-				<option name="Particles" value="particles"/>
-			</part>
-			<part name="plotform" type="string" input="select"
-								required="T">
-				<option value="amrex" name="AMReX built-in format"/>
-				<option value="real4" name="IDL single prec"/>
-				<option value="real8" name="IDL double prec"/>
-				<option value="ascii" name="IDL ascii"/>
-			</part>
-			<part name="compactplot" type="string" input="select"
-			      required="F"
-			      if="$plotform !~ /amrex/" > 
-			</part>
-			
-	</parameter>
-	<parameter name="DnSavePlot" type="integer" min="-1"
-		   default="-1"/>
-	<parameter name="DtSavePlot" type="real"    min="-1"
-		   default="-1.0"/>
-	<if expr="$plotarea =~ /\bdpl|cut|slc\b/">
-	  <parameter name="xMinCut" type="real" />
-	  <parameter name="xMaxCut" type="real" min="$xMinCut"/>
-	  <parameter name="yMinCut" type="real" />
-	  <parameter name="yMaxCut" type="real" min="$yMinCut"/>
-	  <parameter name="zMinCut" type="real" />
-	  <parameter name="zMaxCut" type="real" min="$zMinCut"/>
-	</if>
-	<parameter name="DxSavePlot" type="real" min="-1.0" default="-1.0" />
-	<if expr="$plotvar =~ /\bvar\b/i">
-	  <parameter name="NameVars" type="string" length="200"/>
-	</if>
-	</for>
+  <command name="SAVEPLOT">
+    <parameter name="nPlotFile" type="integer" min="0" max="15" default="0" />
+    <for name="iPlot" from="1" to="$nPlotFile">
+      <parameter name="StringPlot" type="strings" min="4" max="5">
+	<part name="plotarea" type="string" input="select"
+	      required="T">
+	  <option name="3D" value="3d"/>
+	  <option name="cut" value="cut"/>	  
+	  <option name="x=" />
+	  <option name="y=" />
+	  <option name="z=" />
+	</part>
+	<part name="plotvar" type="string" required="T"
+	      input="select">
+	  <option name="MHD variables"    value="fluid" />
+	  <option name="Set vars" value="var"/>
+	  <option name="Particles" value="particles"/>
+	</part>
+	<part name="plotform" type="string" input="select"
+	      required="T">
+	  <option value="amrex" name="AMReX built-in format"/>
+	  <option value="real4" name="IDL single prec"/>
+	  <option value="real8" name="IDL double prec"/>
+	  <option value="ascii" name="IDL ascii"/>
+	</part>
+	<part name="compactplot" type="string" input="select"
+	      required="F"
+	      if="$plotform !~ /amrex/" > 
+	</part>
+	
+      </parameter>
+      <parameter name="DnSavePlot" type="integer" min="-1"
+		 default="-1"/>
+      <parameter name="DtSavePlot" type="real"    min="-1"
+		 default="-1.0"/>
+      <if expr="$plotarea =~ /\bdpl|cut|slc\b/">
+	<parameter name="xMinCut" type="real" />
+	<parameter name="xMaxCut" type="real" min="$xMinCut"/>
+	<parameter name="yMinCut" type="real" />
+	<parameter name="yMaxCut" type="real" min="$yMinCut"/>
+	<parameter name="zMinCut" type="real" />
+	<parameter name="zMaxCut" type="real" min="$zMinCut"/>
+      </if>
+      <parameter name="DxSavePlot" type="real" min="-1.0" default="-1.0" />
+      <if expr="$plotvar =~ /\bvar\b/i">
+	<parameter name="NameVars" type="string" length="200"/>
+      </if>
+    </for>
     
 #SAVEPLOT                                                                         
 6                                 nPlot
@@ -119,10 +119,11 @@ the influence of the bulk velocity.
 
 The file format could be either 'real4' or 'ascii'. The 'unit' can be:
 \begin{verbatim}
-PIC  - normalized PIC unit.
-SI   - SI unit. The unit of current and electric field are not well defined. 
-PLANETARY - planetary unit. B field is in nT, velocity is in km/s, length is in planet radius, density is in amu/cm^3, pressure is in nPa. Current and electric field are not well defined. 
-\end{verbatim}
+PIC       - normalized PIC unit.
+SI        - SI unit. The unit of current and electric field are not well defined. 
+PLANETARY - planetary unit. B field is in nT, velocity is in km/s,
+length is in planet radius, density is in amu/cm^3, pressure is in nPa.
+Current and electric field units are not well defined.
 
 Note:
 1) Available output variables are listed in EMfields3D.cpp::getVar().
@@ -130,14 +131,15 @@ Note:
 3) The position for "cut", "x=", "y="... is in BATSRUS coordinate.
 4) Output variable 'particles' only works for 'cut', '3d' and 'sat'.
 5) The unit of current and electric field are not well defined so far.
+\end{verbatim}
 
-There is no plot file saved by default.
-  </command>
+No plot file is saved by default.
+</command>
 
-  <command name="PERIODICITY">
-    <parameter name="isPeriodicX" type="logical" default="F" />
-    <parameter name="isPeriodicY" type="logical" default="F" />
-    <parameter name="isPeriodicZ" type="logical" default="F" />
+<command name="PERIODICITY">
+  <parameter name="isPeriodicX" type="logical" default="F" />
+  <parameter name="isPeriodicY" type="logical" default="F" />
+  <parameter name="isPeriodicZ" type="logical" default="F" />
   
 #PERIODICITY
 F                 isPeriodicX
@@ -149,11 +151,11 @@ a coupled simulation, and the command above can be used. Note that if there
 is only one cell in one direction, periodic boundary conditions will be used
 in this direction and the parameter above will be ignored. Otherwise
 the default value is false.
-  </command>
+</command>
 
-  <command name="EFIELDSOLVER">
-    <parameter name="EFieldTol" type="real" default="1e-6"/>
-    <parameter name="EFieldIter" type="integer" default="200"/>
+<command name="EFIELDSOLVER">
+  <parameter name="EFieldTol" type="real" default="1e-6"/>
+  <parameter name="EFieldIter" type="integer" default="200"/>
   
 #EFIELDSOLVER
 1e-6                     EFieldTol
@@ -161,11 +163,11 @@ the default value is false.
 
 The tolerance and the maximum iteration number of the electric field 
 GMRES solver. The default values are shown above. 
-  </command>
+</command>
 
-  <command name="DISCRETIZATION">
-    <parameter name="theta" type="real" default="0.51"/>
-    <parameter name="ratioDivC2C" type="real" default="0.1" />
+<command name="DISCRETIZATION">
+  <parameter name="theta" type="real" default="0.51"/>
+  <parameter name="ratioDivC2C" type="real" default="0.1" />
 
 #DISCRETIZATION
 0.51                        theta
@@ -179,10 +181,10 @@ the exact energy conservation may produce artifical oscillations.
 'ratioDivC2C' is the ratio of div(E) calculated from extended stencil
 discretization. It helps to suppress short-wavelength oscillations. 
 Default values are shown.
-  </command>
+</command>
 
-  <command name="DIVE">
-    <parameter name="doCorrectDivE" type="logical" default="T"/>
+<command name="DIVE">
+  <parameter name="doCorrectDivE" type="logical" default="T"/>
   
 #DIVE
 T                         doCorrectDivE
@@ -190,29 +192,49 @@ T                         doCorrectDivE
 Turning on/off the accurate div(E) cleaning, which corrects the particle
 locations to satisfy Gauss's law: div(E) = net_charge. 
 Default is true as it is required for accuracy of long simulations.
-  </command>
+</command>
 
-  <command name="TIMESTEPPING" required="T">
-    <parameter name="dt" type="real"/>
+<command name="TIMESTEPPING" required="T">
+  <parameter name="dt" type="real"/>
 
 #TIMESTEPPING
 0.1                dt
 
 So far, only fixed time step is supported. There is no default value,
 so this command is required.
-  </command>
+</command>
 
-  <command name="ELECTRON">
-    <parameter name="ElectronChargePerMass" type="real" default='-100'>
+<command name="ELECTRON" alias="ELECTRON_FLEKS0,ELECTRON_FLEKS1,ELECTRON_FLEKS2"
+	 multiple="T">
+  <parameter name="ElectronChargePerMass" type="real" default='-100'/>
 
 #ELECTRON
 -100                     ElectronChargePerMass
 
+#ELECTRON_FLEKS1
+-25                      ElectronChargePerMass for FLEKS region 1
+
 This command sets the charge per mass in normalized unit for electrons.
+If the _FLEKSX is added, it sets the value for the X FLEKS region.
 It is ignored when FLEKS is coupled with BATSRUS configured with the 
 five-moment or six-moment fluid closures that define the electron mass.
 
 Default value is shown.
-    </command>
+</command>
 
-  </commandList>
+<command name="PARTICLES" alias="PARTICLES_FLEKS0,PARTICLES_FLEKS1,PARTICLES_FLEKS2"
+	 multiple="T">
+    <parameter name="nParticleX"  type="integer" min="1"/>
+    <parameter name="nParticleY"  type="integer" min="1"/>
+    <parameter name="nParticleZ"  type="integer" min="1"/>
+
+#PARTICLES_FLEKS0
+5                  Particles per cell in X 
+6	           Particles per cell in Y 
+1	           Particles per cell in Z 
+
+The command sets particle numbers in each direction for initial
+condition and ghost cells for a FLEKS region.
+</command>
+
+</commandList>
