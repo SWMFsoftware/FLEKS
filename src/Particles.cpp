@@ -1634,7 +1634,18 @@ IOParticles::IOParticles(Particles& other, Geometry geomIO, Real no2outL,
 
     const auto& aosOther = tileOther.GetArrayOfStructs();
 
+    const Box& bx = other.cellStatus[mfi].box();
+    const IntVect lowCorner = bx.smallEnd();
+    const IntVect highCorner = bx.bigEnd();
+    const Array4<int const>& status = other.cellStatus[mfi].array();
+
     for (auto p : aosOther) {
+      if (other.is_outside_ba(p, status, lowCorner, highCorner)) {
+        // Redistribute() may fail if the ghost cell particles' IDs are not -1
+        // (marked for deletion);
+        p.id() = -1;
+      }
+
       for (int iDim = 0; iDim < nDim; iDim++) {
         p.pos(ix_ + iDim) = no2outL * p.pos(ix_ + iDim);
       }
