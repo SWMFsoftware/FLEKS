@@ -50,9 +50,6 @@ int pic_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
   if (isInitialized)
     return 0;
 
-  // // number of dimensions in GM
-  int nDim = paramint[0];
-
   const int nDomain = paramint[1];
   for (int iDomain = 0; iDomain < nDomain; iDomain++)
     fleksDomains.add_new_domain();

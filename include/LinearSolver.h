@@ -29,16 +29,16 @@ public:
   double* matvec;
 
   LinearSolver()
-      : rhs(nullptr),
-        xLeft(nullptr),
-        matvec(nullptr),
-        fMatvec(nullptr),        
-        nGrid(0),
+      : nGrid(0),
         nVar(0),
         nSolve(0),
         nDim(0),
         tol(1),
-        nIter(0) {}
+        nIter(0),
+        fMatvec(nullptr),
+        rhs(nullptr),
+        xLeft(nullptr),
+        matvec(nullptr) {}
 
   ~LinearSolver() { de_alloc(); }
 
@@ -49,7 +49,7 @@ public:
       delete[] matvec;
       rhs = nullptr;
       xLeft = nullptr;
-      matvec = nullptr; 
+      matvec = nullptr;
     }
   }
 
@@ -58,10 +58,10 @@ public:
       nGrid = in;
       de_alloc();
       nSolve = nGrid * nVar;
-      if(nSolve>0){
-	rhs = new double[nSolve];
-	xLeft = new double[nSolve];
-	matvec = new double[nSolve];
+      if (nSolve > 0) {
+        rhs = new double[nSolve];
+        xLeft = new double[nSolve];
+        matvec = new double[nSolve];
       }
     }
 

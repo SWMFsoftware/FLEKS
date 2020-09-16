@@ -119,8 +119,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
 
         double q = vol2Npcel *
                    fluidInterface->get_number_density(mfi, x, y, z, speciesID);
-        if (q != 0) {
-          double rand;
+        if (q != 0) {          
           Real u, v, w;
           double rand1 = randNum();
           double rand2 = randNum();
@@ -397,17 +396,13 @@ PartInfo Particles<NStructReal, NStructInt>::sum_moments(
     Real dt) {
   timing_func("Particles::sum_moments");
 
-  momentsMF.setVal(0.0);
-
-  Real qdto2mc = charge / mass * 0.5 * dt;
+  momentsMF.setVal(0.0);  
 
   PartInfo pinfo;
   const int lev = 0;
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
        ++pti) {
-    Array4<Real> const& momentsArr = momentsMF[pti].array();
-    Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
-    Array4<RealMM> const& mmArr = nodeMM[pti].array();
+    Array4<Real> const& momentsArr = momentsMF[pti].array();        
 
     const auto& particles = pti.GetArrayOfStructs();
 
@@ -649,7 +644,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     for (int k1 = kMin; k1 <= kMax; k1++)
       for (int j1 = jMin; j1 <= jMax; j1++)
         for (int i1 = iMin; i1 <= iMax; i1++) {
-          const int kp = 2, kpr = 0;
+          const int kp = 2;
           const int kr = k1 + kp - 1;
           if (kr > kMax || kr < kMin)
             continue;
@@ -777,8 +772,7 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
     for (auto& p : particles) {
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
-      const Real wp = p.rdata(iwp_);
-      const Real qp = p.rdata(iqp_);
+      const Real wp = p.rdata(iwp_);      
       const Real xp = p.pos(ix_);
       const Real yp = p.pos(iy_);
       const Real zp = p.pos(iz_);
@@ -833,7 +827,6 @@ void Particles<NStructReal, NStructInt>::mover(const amrex::MultiFab& nodeEMF,
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
       const Real wp = p.rdata(iwp_);
-      const Real qp = p.rdata(iqp_);
       const Real xp = p.pos(ix_);
       const Real yp = p.pos(iy_);
       const Real zp = p.pos(iz_);
@@ -938,8 +931,6 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         p.id() = -1;
         continue;
       }
-
-      const Real qp = p.rdata(iqp_);
 
       int loIdx[nDim];
       Real dShift[nDim];
@@ -1458,11 +1449,10 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
             //-------------------------------
 
             // Delete the lighter one.
-            int iPartDel = pair1, iPartKeep = pair2;
+            int iPartDel = pair1;
             if (fabs(particles[idx_I[pair1]].rdata(iqp_)) >
                 fabs(particles[idx_I[pair2]].rdata(iqp_))) {
-              iPartDel = pair2;
-              iPartKeep = pair1;
+              iPartDel = pair2;              
             }
 
             if (iPartDel != nPartCombine - 1) {

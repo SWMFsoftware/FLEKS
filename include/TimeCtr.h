@@ -58,14 +58,15 @@ private:
   amrex::Real timeNowSI;
   amrex::Real dtSI;
   amrex::Real nextDtSI;
+
+  // The time step when the grid is empty.
+  amrex::Real dummyDtSI;
+
+  amrex::Real cfl;
+
   amrex::Real si2no;
   amrex::Real no2si;
   long int cycle;
-
-  // The time step when the grid is empty. 
-  amrex::Real dummyDtSI; 
-
-  amrex::Real cfl;
 
   // public member variables.
 public:
@@ -124,7 +125,6 @@ public:
   amrex::Real get_dummy_dt() { return dummyDtSI * si2no; }
   amrex::Real get_dummy_dt_si() { return dummyDtSI; }
 
-
   void set_cfl(amrex::Real in) { cfl = in; }
   amrex::Real get_cfl() { return cfl; }
 
@@ -132,7 +132,7 @@ public:
     timeNowSI += dtSI;
     cycle++;
 
-    if(dtSI>0){
+    if (dtSI > 0) {
       set_dummy_dt_si(dtSI);
     }
   }

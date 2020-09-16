@@ -42,8 +42,7 @@ void grad_node_to_center(const amrex::MultiFab& nodeMF,
 
     int imin = lo.x - 1, jmin = lo.y - 1, kmin = lo.z - 1;
     int imax = hi.x + 1, jmax = hi.y + 1, kmax = hi.z + 1;
-
-    const auto& cellStatus = status[mfi].array();
+    
     const amrex::Array4<amrex::Real>& center = centerMF[mfi].array();
     const amrex::Array4<amrex::Real const>& node = nodeMF[mfi].array();
 

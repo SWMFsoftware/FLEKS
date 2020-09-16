@@ -40,7 +40,7 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
     return;
   }
 
-  isGridEmpty = centerBAIn.empty(); 
+  isGridEmpty = centerBAIn.empty();
 
   Print() << nameFunc << std::endl;
 
@@ -93,7 +93,6 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
 
   const Real* dx = geom.CellSize();
   const auto plo = geom.ProbLo();
-  const auto phi = geom.ProbHi();
 
   const double no2siL = getNo2SiL();
 
@@ -141,12 +140,12 @@ int FluidInterface::count_couple_node_number() {
 }
 
 void FluidInterface::get_couple_node_loc(double* const pos_DI) {
-  int tmp = loop_through_node("loc", pos_DI);
+  loop_through_node("loc", pos_DI);
 }
 
 void FluidInterface::set_couple_node_value(const double* const data,
                                            const int* const index) {
-  int tmp = loop_through_node("fill", nullptr, data, index);
+  loop_through_node("fill", nullptr, data, index);
 
   calc_current();
   normalize_fluid_variables();

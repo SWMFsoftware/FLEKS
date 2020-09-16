@@ -27,7 +27,7 @@ int main(int argc, char* argv[]) {
     return 0;
   }
 
-  for (int i = 1; i < commandLine.size(); i++) {
+  for (vector<string>::size_type i = 1; i < commandLine.size(); i++) {
     std::cout << commandLine[i] << std::endl;
     Converter cv(commandLine[i]);
     cv.read();

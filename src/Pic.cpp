@@ -273,7 +273,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
         ptr->set_merge_threshold(particleMergeThreshold);
       }
 
-      if (particleMergeBinBuffer >= 0) {        
+      if (particleMergeBinBuffer >= 0) {
         ptr->set_merge_velocity_bin_buffer(particleMergeBinBuffer);
       }
       //----------------------------------
@@ -341,14 +341,6 @@ void Pic::set_nodeAssignment() {
       bool is2D = false;
       if (geom.isPeriodic(iz_) && (gbx.bigEnd(iz_) == gbx.smallEnd(iz_)))
         is2D = true;
-
-      int iMin = lo.x + 1, iMax = hi.x - 1;
-      int jMin = lo.y + 1, jMax = hi.y - 1;
-      int kMin = lo.z + 1, kMax = hi.z - 1;
-      if (is2D) {
-        kMin = lo.z;
-        kMax = lo.z;
-      }
 
       int diMax = 0, diMin = -1;
       int djMax = 0, djMin = -1;
@@ -1314,11 +1306,8 @@ void Pic::convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
   timing_func(nameFunc);
 
   bool isCenter = MF.ixType().cellCentered();
-  bool isNode = !isCenter;
 
   MF.setVal(0.0);
-
-  const Box& gbx = convert(geom.Domain(), MF.boxArray().ixType());
 
   int iCount = 0;
   for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
@@ -1348,9 +1337,6 @@ void Pic::convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
   timing_func(nameFunc);
 
   bool isCenter = MF.ixType().cellCentered();
-  bool isNode = !isCenter;
-
-  const Box& gbx = convert(geom.Domain(), MF.boxArray().ixType());
 
   int iCount = 0;
   for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {

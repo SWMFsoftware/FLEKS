@@ -68,7 +68,6 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
       const Real wp = p.rdata(iwp_);
-      const Real qp = p.rdata(iqp_);
       const Real xp = p.pos(ix_);
       const Real yp = p.pos(iy_);
       const Real zp = p.pos(iz_);
@@ -193,7 +192,6 @@ void TestParticles::add_test_particles(const iMultiFab& cellStatus) {
 
 //======================================================================
 bool TestParticles::write_particles(int cycle) {
-  const int nProc = ParallelDescriptor::NProcs();
   int nPartLoc = TotalNumberOfParticles(false, true);
   int nPartAhead = 0;
 
@@ -205,15 +203,14 @@ bool TestParticles::write_particles(int cycle) {
 
   Vector<char> dataBuffer;
   dataBuffer.resize(nByteLoc);
-  unsigned long long tmp;
-  tmp = loop_particles("copy_record", dataBuffer.data(), dataBuffer.size());
+  loop_particles("copy_record", dataBuffer.data(), dataBuffer.size());
 
   // cpu + id + loc;
   const int listUnitSize = 2 * sizeof(int) + sizeof(unsigned long long);
   Vector<char> partList;
   partList.resize(nPartLoc * listUnitSize);
-  tmp = loop_particles("get_record_loc", partList.data(), partList.size(),
-                       nByteAhead);
+  loop_particles("get_record_loc", partList.data(), partList.size(),
+                 nByteAhead);
 
   std::stringstream ss;
   ss << "n" << std::setfill('0') << std::setw(8) << cycle;
@@ -252,7 +249,7 @@ bool TestParticles::write_particles(int cycle) {
 }
 
 unsigned long long int TestParticles::loop_particles(
-    std::string action, char* buff, int sizeLimit,
+    std::string action, char* buff, unsigned long long int sizeLimit,
     unsigned long long int shift) {
 
   unsigned long long int nByteCount = 0;
@@ -351,7 +348,7 @@ unsigned long long int TestParticles::loop_particles(
 
 void TestParticles::print_record_buffer(char* buffer,
                                         unsigned long long int nBuffer) {
-  int count = 0;
+  unsigned long long int count = 0;
 
   while (count < nBuffer) {
     AllPrint() << "-----Record-----------" << std::endl;

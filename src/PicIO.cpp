@@ -67,7 +67,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
   double dataPIC_I[nVarPIC];
 
   const int iBx_ = nSpecies * nVarPerSpecies, iBy_ = iBx_ + 1, iBz_ = iBy_ + 1;
-  const int iEx_ = iBz_ + 1, iEy_ = iEx_ + 1, iEz_ = iEy_ + 1;
+  const int iEx_ = iBz_ + 1;
 
   const RealBox& range = geom.ProbDomain();
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
@@ -119,11 +119,9 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
   Real xMaxL_D[nDim] = { plo[ix_], plo[iy_], plo[iz_] };
 
   const auto dx = geom.CellSize();
-
-  int icount = 0;
+  
   int iBlock = 0;
-  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
-    FArrayBox& fab = nodeE[mfi];
+  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {    
     const Box& box = mfi.validbox();
 
     const auto& typeArr = nodeAssignment[mfi].array();
@@ -230,10 +228,7 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
 
   int iBlockCount = 0;
   long iPoint = 0;
-  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
-    FArrayBox& fab = nodeE[mfi];
-    const Box& box = mfi.validbox();
-
+  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {        
     while (iPoint < nPoint) {
       const int ix = pointList_II[iPoint][ix_];
       const int iy = pointList_II[iPoint][iy_];
@@ -443,8 +438,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
     return;
 
   if (doCreateFile && ParallelDescriptor::IOProcessor()) {
-    std::stringstream ss;
-    int time = tc->get_time_si(); // double to int.
+    std::stringstream ss;    
     ss << "PC/plots/log_n" << std::setfill('0') << std::setw(8)
        << tc->get_cycle() << ".log";
     logFile = ss.str();

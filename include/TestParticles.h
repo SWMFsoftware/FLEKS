@@ -38,7 +38,7 @@ public:
 
   unsigned long long int loop_particles(
       std::string action = "count_record_size", char* buff = nullptr,
-      int sizeLimit = 0, unsigned long long int shift = 0);
+      unsigned long long int sizeLimit = 0, unsigned long long int shift = 0);
 
   void print_record_buffer(char* buffer, unsigned long long int nBuffer);
 

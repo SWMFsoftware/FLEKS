@@ -44,6 +44,20 @@ public:
   using amrex::ParticleContainer<NStructReal, NStructInt>::Redistribute;
 
 protected:
+  FluidInterface* fluidInterface;
+  TimeCtr* tc;
+
+  int speciesID;
+  RandNum randNum;
+
+  amrex::Real charge;
+  amrex::Real mass;
+
+  amrex::Real qom;
+  int qomSign;
+
+  amrex::IntVect nPartPerCell;
+
   amrex::BoxArray regionBA;
 
   amrex::Vector<amrex::RealBox> boxRange_I;
@@ -214,21 +228,6 @@ public:
 
   void set_merge_threshold(amrex::Real in) { mergeThresholdDistance = in; }
   void set_merge_velocity_bin_buffer(amrex::Real in) { velBinBufferSize = in; }
-
-protected:
-  int speciesID;
-  RandNum randNum;
-
-  amrex::Real charge;
-  amrex::Real mass;
-
-  amrex::Real qom;
-  int qomSign;
-
-  amrex::IntVect nPartPerCell;
-
-  TimeCtr* tc;
-  FluidInterface* fluidInterface;
 };
 
 template <int NStructReal, int NStructInt>
