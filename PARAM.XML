@@ -278,8 +278,8 @@ Turning on/off the test particle module.
 #PARTICLESTAGGERING
 T                   isStaggered  
 
-If isStaggered is true, the primitive particle locations are at t_{n+1/2},
-otherwise, both locations and velocities are at t_n. 
+If isStaggered is true, the primitive particle locations are at $t_{n+1/2}$,
+otherwise, both locations and velocities are at $t_n$. 
 	</command>
 
 	<command name="MAXBLOCKSIZE" alias="MAXBLOCKSIZE_FLEKS0,MAXBLOCKSIZE_FLEKS1,MAXBLOCKSIZE_FLEKS2" multiple="T">
