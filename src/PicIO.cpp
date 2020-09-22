@@ -119,9 +119,9 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
   Real xMaxL_D[nDim] = { plo[ix_], plo[iy_], plo[iz_] };
 
   const auto dx = geom.CellSize();
-  
+
   int iBlock = 0;
-  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {    
+  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
     const auto& typeArr = nodeAssignment[mfi].array();
@@ -228,7 +228,7 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
 
   int iBlockCount = 0;
   long iPoint = 0;
-  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {        
+  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
     while (iPoint < nPoint) {
       const int ix = pointList_II[iPoint][ix_];
       const int iy = pointList_II[iPoint][iy_];
@@ -398,13 +398,13 @@ void Pic::save_restart_header(std::ofstream& headerFile) {
 
   if (ParallelDescriptor::IOProcessor()) {
     headerFile << "#ELECTRON" + command_suffix;
-    headerFile << qomEl << "\t qomEl\n";
+    headerFile << qomEl << "\t\telectronChargePerMass\n";
     headerFile << "\n";
 
     headerFile << "#PARTICLES" + command_suffix;
-    for (int i = 0; i < nDim; ++i) {
-      headerFile << nPartPerCell[i] << "\n";
-    }
+    headerFile << nPartPerCell[ix_] << "\t\t\tnParticleX\n";
+    headerFile << nPartPerCell[iy_] << "\t\t\tnParticleY\n";
+    headerFile << nPartPerCell[iz_] << "\t\t\tnParticleZ\n";
     headerFile << "\n";
   }
 }
@@ -438,7 +438,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
     return;
 
   if (doCreateFile && ParallelDescriptor::IOProcessor()) {
-    std::stringstream ss;    
+    std::stringstream ss;
     ss << "PC/plots/log_n" << std::setfill('0') << std::setw(8)
        << tc->get_cycle() << ".log";
     logFile = ss.str();

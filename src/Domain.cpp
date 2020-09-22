@@ -261,52 +261,56 @@ void Domain::save_restart_header() {
 
     headerFile.precision(17);
 
-    headerFile << "Restart header \n\n";
+    headerFile << std::scientific;
+
+    headerFile << "Restart header\n\n";
 
     std::string command_suffix = "_" + domainName + "\n";
 
     headerFile << "#RESTART" + command_suffix;
-    headerFile << (pic.is_grid_empty() ? "F" : "T") << "\t doRestart\n";
+    headerFile << (pic.is_grid_empty() ? "F" : "T") << "\t\t\tdoRestart\n";
     headerFile << "\n";
 
     headerFile << "#NSTEP" + command_suffix;
-    headerFile << tc->get_cycle() << "\t nStep\n";
+    headerFile << tc->get_cycle() << "\t\t\tnStep\n";
     headerFile << "\n";
 
     headerFile << "#TIMESIMULATION" + command_suffix;
-    headerFile << tc->get_time_si() << "\t TimeSimulation\n";
+    headerFile << tc->get_time_si() << "\t\ttimeSimulation\n";
     headerFile << "\n";
 
     headerFile << "#TIMESTEP" + command_suffix;
     bool useFixedDt = tc->get_cfl() <= 0;
-    headerFile << (useFixedDt ? "T" : "F") << "\t useFixedDt\n";
+    headerFile << (useFixedDt ? "T" : "F") << "\t\t\tuseFixedDt\n";
     if (useFixedDt) {
-      headerFile << tc->get_dt_si() << "\t dt\n";
+      headerFile << tc->get_dt_si() << "\t\tdt\n";
     } else {
-      headerFile << tc->get_cfl() << "\t cfl\n";
+      headerFile << tc->get_cfl() << "\t\tcfl\n";
     }
 
     if (!useFixedDt) {
       headerFile << "#DT" + command_suffix;
-      headerFile << tc->get_dt_si() << "\t dtSI\n";
-      headerFile << tc->get_next_dt_si() << "\t dtNextSI\n";
+      headerFile << tc->get_dt_si() << "\t\tdtSI\n";
+      headerFile << tc->get_next_dt_si() << "\t\tdtNextSI\n";
     }
 
     headerFile << "\n";
 
     // Geometry
     headerFile << "#GEOMETRY" + command_suffix;
-    for (int i = 0; i < nDim; ++i) {
-      headerFile << domainRange.lo(i) << "\t min\n";
-      headerFile << domainRange.hi(i) << "\t max\n";
-    }
+    headerFile << domainRange.lo(ix_) << "\t\txMin\n";
+    headerFile << domainRange.hi(ix_) << "\t\txMax\n";
+    headerFile << domainRange.lo(iy_) << "\t\tyMin\n";
+    headerFile << domainRange.hi(iy_) << "\t\tyMax\n";
+    headerFile << domainRange.lo(iz_) << "\t\tzMin\n";
+    headerFile << domainRange.hi(iz_) << "\t\tzMax\n";
     headerFile << "\n";
 
     // Cell
     headerFile << "#NCELL" + command_suffix;
-    for (int i = 0; i < nDim; ++i) {
-      headerFile << nCell[i] << "\n";
-    }
+    headerFile << nCell[ix_] << "\t\t\tnCellX\n";
+    headerFile << nCell[iy_] << "\t\t\tnCellY\n";
+    headerFile << nCell[iz_] << "\t\t\tnCellZ\n";
     headerFile << "\n";
 
     pic.save_restart_header(headerFile);
