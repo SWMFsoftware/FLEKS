@@ -40,9 +40,7 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
     return;
   }
 
-  isGridEmpty = centerBAIn.empty();
-
-  Print() << nameFunc << std::endl;
+  isGridEmpty = centerBAIn.empty();  
 
   centerBA = centerBAIn;
   nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });

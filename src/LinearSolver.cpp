@@ -12,7 +12,7 @@ void matvec_divE_accurate(double *vecIn, double *vecOut, int n) {
 
 void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
                          int nDim, int nGrid, double *rhs, double *xLeft,
-                         MATVEC fMatvec) {
+                         MATVEC fMatvec, bool doReport) {
 
   int nJ = 1, nK = 1, nBlock = 1;
   MPI_Fint iComm = MPI_Comm_c2f(amrex::ParallelDescriptor::Communicator());
@@ -22,7 +22,7 @@ void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
   // 0:No precondition; 1: BILU; 2:DILU;
   //[-1,0): MBILU;
   double PrecondParam = 0;
-  int lTest = amrex::ParallelDescriptor::MyProc() == 0;
+  int lTest = (doReport && amrex::ParallelDescriptor::MyProc() == 0);
   linear_solver_matvec_c = fMatvec;
   linear_solver_wrapper("GMRES", &tolerance, &nIteration, &nVarSolve, &nDim,
                         &nGrid, &nJ, &nK, &nBlock, &iComm, rhs, xLeft,

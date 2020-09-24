@@ -119,7 +119,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
 
         double q = vol2Npcel *
                    fluidInterface->get_number_density(mfi, x, y, z, speciesID);
-        if (q != 0) {          
+        if (q != 0) {
           Real u, v, w;
           double rand1 = randNum();
           double rand2 = randNum();
@@ -391,18 +391,19 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-PartInfo Particles<NStructReal, NStructInt>::sum_moments(
-    MultiFab& momentsMF, UMultiFab<RealMM>& nodeMM, MultiFab& nodeBMF,
-    Real dt) {
+Real Particles<NStructReal, NStructInt>::sum_moments(MultiFab& momentsMF,
+                                                     UMultiFab<RealMM>& nodeMM,
+                                                     MultiFab& nodeBMF,
+                                                     Real dt) {
   timing_func("Particles::sum_moments");
 
-  momentsMF.setVal(0.0);  
+  momentsMF.setVal(0.0);
 
-  PartInfo pinfo;
+  Real energy = 0;
   const int lev = 0;
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
        ++pti) {
-    Array4<Real> const& momentsArr = momentsMF[pti].array();        
+    Array4<Real> const& momentsArr = momentsMF[pti].array();
 
     const auto& particles = pti.GetArrayOfStructs();
 
@@ -460,7 +461,7 @@ PartInfo Particles<NStructReal, NStructInt>::sum_moments(
 
       //-------nodePlasma end---------
 
-      pinfo.energy += qp * (up * up + vp * vp + wp * wp);
+      energy += qp * (up * up + vp * vp + wp * wp);
     } // for p
   }
 
@@ -472,20 +473,9 @@ PartInfo Particles<NStructReal, NStructInt>::sum_moments(
   // FillBoundary seems unnecessary. --Yuxi
   momentsMF.FillBoundary(Geom(0).periodicity());
 
-  // This function should be called before 'convert_to_fluid_moments'
-  pinfo.uMax = calc_max_thermal_velocity(momentsMF);
+  energy *= 0.5 / get_qom();
 
-  convert_to_fluid_moments(momentsMF);
-
-  // Calculate the total particle energy--------------
-  pinfo.energy *= 0.5 / get_qom();
-  ParallelDescriptor::ReduceRealSum(pinfo.energy,
-                                    ParallelDescriptor::IOProcessorNumber());
-  if (!ParallelDescriptor::IOProcessor())
-    pinfo.energy = 0;
-  //------------------------------------------------------
-
-  return pinfo;
+  return energy;
 }
 
 //==========================================================
@@ -706,12 +696,6 @@ Real Particles<NStructReal, NStructInt>::calc_max_thermal_velocity(
         }
   }
 
-  ParallelDescriptor::ReduceRealMax(uthMax,
-                                    ParallelDescriptor::IOProcessorNumber());
-
-  ParallelDescriptor::Bcast(&uthMax, 1,
-                            ParallelDescriptor::IOProcessorNumber());
-
   return uthMax;
 }
 
@@ -772,7 +756,7 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
     for (auto& p : particles) {
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
-      const Real wp = p.rdata(iwp_);      
+      const Real wp = p.rdata(iwp_);
       const Real xp = p.pos(ix_);
       const Real yp = p.pos(iy_);
       const Real zp = p.pos(iz_);
@@ -1452,7 +1436,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
             int iPartDel = pair1;
             if (fabs(particles[idx_I[pair1]].rdata(iqp_)) >
                 fabs(particles[idx_I[pair2]].rdata(iqp_))) {
-              iPartDel = pair2;              
+              iPartDel = pair2;
             }
 
             if (iPartDel != nPartCombine - 1) {

@@ -12,7 +12,7 @@ void matvec_divE_accurate(double* vecIn, double* vecOut, int n);
 
 void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
                          int nDim, int nGrid, double* rhs, double* xLeft,
-                         MATVEC fMatvec);
+                         MATVEC fMatvec, bool doReport = true);
 
 class LinearSolver {
   int nGrid;
@@ -82,8 +82,8 @@ public:
     reset(nGridIn);
   }
 
-  void solve() {
-    linear_solver_gmres(tol, nIter, nVar, nDim, nGrid, rhs, xLeft, fMatvec);
+  void solve(bool doReport = true) {
+    linear_solver_gmres(tol, nIter, nVar, nDim, nGrid, rhs, xLeft, fMatvec, doReport);
   }
 
   int get_nSolve() const { return nSolve; }

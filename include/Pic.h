@@ -101,6 +101,8 @@ private:
 
   amrex::Real particleMergeThreshold, particleMergeBinBuffer; 
 
+  bool doReport; 
+
   // public methods
 public:
   Pic() {
@@ -130,6 +132,8 @@ public:
 
     particleMergeThreshold = -1;
     particleMergeBinBuffer = -1; 
+
+    doReport = false; 
   };
   ~Pic(){};
 
@@ -218,7 +222,7 @@ public:
   void load_balance();
   //---------------load balance end---------------------
 
-  void monitor();
+  void report_load_balance();
 
   void set_nodeAssignment();
 

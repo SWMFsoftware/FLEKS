@@ -93,8 +93,6 @@ void Pic::fill_new_cells() {
 
   timing_func(nameFunc);
 
-  Print() << printPrefix << nameFunc << " is called" << std::endl;
-
   fill_E_B_fields();
   fill_particles();
 
@@ -122,8 +120,6 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     return;
 
   isGridEmpty = picRegionIn.empty();
-
-  Print() << nameFunc << std::endl;
 
   doNeedFillNewCell = true;
 
@@ -587,48 +583,63 @@ void Pic::sum_moments(bool updateDt) {
       minDx = dx[iDim];
   }
 
-  Real umax = -1;
-
   nodePlasma[nSpecies].setVal(0.0);
   plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; i++) {
-    PartInfo pinfo =
+    Real energy =
         parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, tc->get_dt());
 
-    plasmaEnergy[i] = pinfo.energy;
+    plasmaEnergy[i] = energy;
+    plasmaEnergy[iTot] += energy;
+  }
 
-    Print() << printPrefix << std::setprecision(5) << "Species " << i
-            << ": max(uth) = " << pinfo.uMax << std::endl;
+  if (updateDt) {
+    Real uMax = 0;
+    if (tc->get_cfl() > 0 || doReport) {
+      for (int i = 0; i < nSpecies; i++) {
+        Real utmp = parts[i]->calc_max_thermal_velocity(nodePlasma[i]);
+        if (utmp > uMax)
+          uMax = utmp;
 
-    if (pinfo.uMax > umax)
-      umax = pinfo.uMax;
+        ParallelDescriptor::ReduceRealMax(uMax);
 
-    plasmaEnergy[iTot] += plasmaEnergy[i];
+        if (doReport)
+          Print() << printPrefix << std::setprecision(5) << "Species " << i
+                  << ": max(uth) = " << utmp << std::endl;
+      }
+    }
 
+    if (tc->get_cfl() > 0) {
+      Real dt = tc->get_cfl() * minDx / uMax;
+      tc->set_next_dt(dt);
+
+      if (tc->get_dt() < 0) {
+        tc->set_dt(dt);
+      }
+
+      if (Particles<>::particlePosition == NonStaggered) {
+        tc->set_dt(dt);
+      }
+    }
+
+    if (doReport) {
+      if (Particles<>::particlePosition == Staggered) {
+        Print() << printPrefix << std::setprecision(5)
+                << "dt = " << tc->get_dt_si()
+                << " dtNext = " << tc->get_next_dt_si()
+                << " CFL(dtNext) = " << tc->get_next_dt() * uMax / minDx
+                << std::endl;
+      } else {
+        Print() << printPrefix << std::setprecision(5)
+                << "dt = " << tc->get_dt_si()
+                << " CFL = " << tc->get_dt() * uMax / minDx << std::endl;
+      }
+    }
+  }
+
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->convert_to_fluid_moments(nodePlasma[i]);
     MultiFab::Add(nodePlasma[nSpecies], nodePlasma[i], 0, 0, nMoments, 0);
-  }
-
-  if (updateDt && tc->get_cfl() > 0) {
-    Real dt = tc->get_cfl() * minDx / umax;
-    tc->set_next_dt(dt);
-
-    if (tc->get_dt() < 0) {
-      tc->set_dt(dt);
-    }
-
-    if (Particles<>::particlePosition == NonStaggered) {
-      tc->set_dt(dt);
-    }
-  }
-
-  if (Particles<>::particlePosition == Staggered) {
-    Print() << printPrefix << std::setprecision(5) << "dt = " << tc->get_dt_si()
-            << " dtNext = " << tc->get_next_dt_si()
-            << " CFL(dtNext) = " << tc->get_next_dt() * umax / minDx
-            << std::endl;
-  } else {
-    Print() << printPrefix << std::setprecision(5) << "dt = " << tc->get_dt_si()
-            << " CFL = " << tc->get_dt() * umax / minDx << std::endl;
   }
 }
 
@@ -641,8 +652,9 @@ void Pic::divE_correction() {
   for (int iIter = 0; iIter < 3; iIter++) {
     sum_to_center(true);
 
-    Print() << "\n-----" << printPrefix << " div(E) correction at iter "
-            << iIter << "----------" << std::endl;
+    if (doReport)
+      Print() << "\n-----" << printPrefix << " div(E) correction at iter "
+              << iIter << "----------" << std::endl;
     calculate_phi(divESolver);
 
     divE_correct_particle_position();
@@ -693,7 +705,7 @@ void Pic::calculate_phi(LinearSolver& solver) {
   convert_3d_to_1d(tempCenter1, solver.rhs, geom);
 
   BL_PROFILE_VAR("Pic::phi_iterate", solve);
-  solver.solve();
+  solver.solve(doReport);
   BL_PROFILE_VAR_STOP(solve);
 
   convert_1d_to_3d(solver.xLeft, centerPhi, geom);
@@ -780,6 +792,8 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
 void Pic::update() {
   std::string nameFunc = "Pic::update";
 
+  doReport = tc->monitor.is_time_to();
+
   if (isGridEmpty) {
     if (tc->get_dt_si() <= 0) {
       tc->set_dt_si(tc->get_dummy_dt_si());
@@ -794,12 +808,15 @@ void Pic::update() {
     const Real t0 = tc->get_time_si();
     // update time, step number.
     tc->update();
-    const Real t1 = tc->get_time_si();
-    Print() << "\n==== " << printPrefix << " Cycle " << tc->get_cycle()
-            << " from t = " << std::setprecision(6) << t0
-            << " (s) to t = " << std::setprecision(6) << t1
-            << " (s) with dt = " << std::setprecision(6) << tc->get_dt_si()
-            << " (s) ====" << std::endl;
+
+    if (doReport) {
+      const Real t1 = tc->get_time_si();
+      Print() << "\n==== " << printPrefix << " Cycle " << tc->get_cycle()
+              << " from t = " << std::setprecision(6) << t0
+              << " (s) to t = " << std::setprecision(6) << t1
+              << " (s) with dt = " << std::setprecision(6) << tc->get_dt_si()
+              << " (s) ====" << std::endl;
+    }
 
     if (isGridEmpty) {
       return;
@@ -832,7 +849,7 @@ void Pic::update() {
 
   sum_moments(true);
 
-  {
+  if (doReport) {
     Real tEnd = second();
     Real nPoint = picRegionBA.d_numPts();
     int nProc = amrex::ParallelDescriptor::NProcs();
@@ -844,10 +861,9 @@ void Pic::update() {
     Print() << printPrefix << "Normalized PIC speed = " << speed / speedNorm
             << " (performance is good if the value >> 1 and bad if <<1 )"
             << std::endl;
-  }
 
-  if (tc->monitor.is_time_to())
-    monitor();
+    report_load_balance();
+  }
 }
 
 //==========================================================
@@ -869,10 +885,12 @@ void Pic::update_E() {
     eSolver.xLeft[i] = 0;
   }
 
-  Print() << "\n-------" << printPrefix << " E solver ------------------"
-          << std::endl;
+  if (doReport)
+    Print() << "\n-------" << printPrefix << " E solver ------------------"
+            << std::endl;
+
   BL_PROFILE_VAR("Pic::E_iterate", eSolver);
-  eSolver.solve();
+  eSolver.solve(doReport);
   BL_PROFILE_VAR_STOP(eSolver);
 
   nodeEth.setVal(0.0);
@@ -1361,7 +1379,7 @@ void Pic::convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
 }
 
 //==========================================================
-void Pic::monitor() {
+void Pic::report_load_balance() {
   // This function report the min, max, and average of the local memory usage,
   // blocks, cells and particles among all the MPIs.
 

@@ -355,14 +355,14 @@ void PlotWriter::write_idl(double const timeNow, int const iCycle,
   find_output_list((*this), nPoint, pointList_II, xMin_D, xMax_D);
   nCellAllProc = nPoint;
 
-  if (isVerbose) {
-    std::cout << "nCellAll = " << nCellAllProc
-              << " nPointList = " << pointList_II.size()
-              << " xMin = " << xMin_D[x_] << " xMax = " << xMax_D[x_]
-              << " yMin = " << xMin_D[y_] << " yMax = " << xMax_D[y_]
-              << " zMin = " << xMin_D[z_] << " zMax = " << xMax_D[z_]
-              << std::endl;
-  }
+  // if (isVerbose) {
+  //   std::cout << "nCellAll = " << nCellAllProc
+  //             << " nPointList = " << pointList_II.size()
+  //             << " xMin = " << xMin_D[x_] << " xMax = " << xMax_D[x_]
+  //             << " yMin = " << xMin_D[y_] << " yMax = " << xMax_D[y_]
+  //             << " zMin = " << xMin_D[z_] << " zMax = " << xMax_D[z_]
+  //             << std::endl;
+  // }
 
   // Correct plot range.
   for (int iDim = 0; iDim < nDim; ++iDim) {

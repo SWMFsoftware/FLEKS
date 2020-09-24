@@ -13,13 +13,6 @@
 #include "TimeCtr.h"
 #include "UMultiFab.h"
 
-class PartInfo {
-public:
-  amrex::Real energy;
-  amrex::Real uMax;
-  PartInfo() : energy(0), uMax(0) {}
-};
-
 template <int NStructReal = nPicPartReal, int NStructInt = 0>
 class ParticlesIter : public amrex::ParIter<NStructReal, NStructInt> {
 public:
@@ -115,9 +108,9 @@ public:
                                          const amrex::Array4<const int>& status,
                                          const int i, const int j, const int k);
 
-  PartInfo sum_moments(amrex::MultiFab& momentsMF,
-                       amrex::UMultiFab<RealMM>& nodeMM,
-                       amrex::MultiFab& nodeBMF, amrex::Real dt);
+  amrex::Real sum_moments(amrex::MultiFab& momentsMF,
+                          amrex::UMultiFab<RealMM>& nodeMM,
+                          amrex::MultiFab& nodeBMF, amrex::Real dt);
 
   void calc_mass_matrix(amrex::UMultiFab<RealMM>& nodeMM, amrex::MultiFab& jHat,
                         amrex::MultiFab& nodeBMF, amrex::Real dt);

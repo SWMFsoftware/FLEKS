@@ -13,7 +13,8 @@ void Pic::set_state_var(double* data, int* index) {
   if (isGridEmpty)
     return;
 
-  Print() << printPrefix << nameFunc << " is called" << std::endl;
+  Print() << printPrefix << " GM -> PC coupling at t =" << tc->get_time_si()
+          << " (s)" << std::endl;
 
   fluidInterface->set_couple_node_value(data, index);
 
@@ -59,7 +60,8 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
                                      double* const data_I, const int nVar) {
   std::string nameFunc = "Pic::get_fluid_state_for_points";
 
-  Print() << printPrefix << nameFunc << " is called" << std::endl;
+  Print() << printPrefix << " PC -> GM coupling at t =" << tc->get_time_si()
+          << " (s)" << std::endl;
 
   // (rho + 3*Moment + 6*p)*nSpecies+ 3*E + 3*B;
   const int nVarPerSpecies = 10;
@@ -451,6 +453,9 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
   }
 
   if (tc->log.is_time_to(doForce)) {
+    ParallelDescriptor::ReduceRealSum(plasmaEnergy.data(), plasmaEnergy.size(),
+                                      ParallelDescriptor::IOProcessorNumber());
+
     Real eEnergy = calc_E_field_energy();
     Real bEnergy = calc_B_field_energy();
     if (ParallelDescriptor::IOProcessor()) {
@@ -474,7 +479,8 @@ void Pic::write_plots(bool doForce) {
     return;
   for (auto& plot : tc->plots) {
     if (plot.is_time_to(doForce)) {
-      amrex::Print() << "Saving plot at time = " << tc->get_time_si()
+      amrex::Print() << printPrefix
+                     << " Saving plot at time = " << tc->get_time_si()
                      << " (s) for " << plot.writer.get_plotString()
                      << std::endl;
       if (plot.writer.is_amrex_format()) {

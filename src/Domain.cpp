@@ -263,6 +263,17 @@ void Domain::save_restart_header() {
 
     headerFile << std::scientific;
 
+    /*
+    The format of the header:
+
+    #COMMAND
+    value TAB TAB [TAB] name
+
+    The third TAB is added if the length of value is less than 8 characters.
+    Otherwise there are 2 TABS. The “name" should agree with the description in
+    the PARAM.XML file.
+    */
+
     headerFile << "Restart header\n\n";
 
     std::string command_suffix = "_" + domainName + "\n";

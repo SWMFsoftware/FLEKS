@@ -195,6 +195,17 @@ T                  useFixedDt
 Setting the CFL or fixed time step. The typical CFL number is 0.1~0.4.
 	</command>
 
+	<command name="MONITOR" alias="MONITOR_FLEKS0,MONITOR_FLEKS1,MONITOR_FLEKS2" multiple="T">
+		<parameter name="dnReport" type="integer" default="10"/>
+#MONITOR 
+10                 dnReport
+
+This command controls the frequency of printing simulation information, 
+such as the GMRES convergence history, to STDOUT. The default frequency
+is every 10 steps. 
+
+	</command>
+
 	<command name="ELECTRON" alias="ELECTRON_FLEKS0,ELECTRON_FLEKS1,ELECTRON_FLEKS2" multiple="T">
 		<parameter name="electronChargePerMass" type="real" default='-100'/>
 
