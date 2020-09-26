@@ -597,15 +597,15 @@ void Pic::sum_moments(bool updateDt) {
     Real uMax = 0;
     if (tc->get_cfl() > 0 || doReport) {
       for (int i = 0; i < nSpecies; i++) {
-        Real utmp = parts[i]->calc_max_thermal_velocity(nodePlasma[i]);
-        if (utmp > uMax)
-          uMax = utmp;
-
-        ParallelDescriptor::ReduceRealMax(uMax);
+        Real uMaxSpecies = parts[i]->calc_max_thermal_velocity(nodePlasma[i]);
+        ParallelDescriptor::ReduceRealMax(uMaxSpecies);
 
         if (doReport)
           Print() << printPrefix << std::setprecision(5) << "Species " << i
-                  << ": max(uth) = " << utmp << std::endl;
+                  << ": max(uth) = " << uMaxSpecies << std::endl;
+
+        if (uMaxSpecies > uMax)
+          uMax = uMaxSpecies;
       }
     }
 
@@ -858,7 +858,8 @@ void Pic::update() {
 
     // speedNorm is a value obtained from tests.
     Real speedNorm = 1000;
-    Print() << printPrefix << "Normalized PIC speed = " << speed / speedNorm
+    Print() << printPrefix
+            << "Normalized PIC simulation speed = " << speed / speedNorm
             << " (performance is good if the value >> 1 and bad if <<1 )"
             << std::endl;
 
