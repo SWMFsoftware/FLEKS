@@ -8,8 +8,6 @@
 #include "Converter.h"
 #include "GridUtility.h"
 
-using namespace std;
-
 int main(int argc, char* argv[]) {
   amrex::Initialize(MPI_COMM_WORLD);
 
@@ -18,7 +16,8 @@ int main(int argc, char* argv[]) {
     commandLine.push_back((std::string)(argv[i]));
   }
 
-  if (argc > 1 && (commandLine[1] == "-h" || commandLine[1] == "-help")) {
+  std::array<std::string,2>arg = {"-h","-help"};
+  if (argc > 1 && find(arg.begin(),arg.end(),commandLine[1]) != arg.end()) {
     std::cout << " \n"
               << " This exectuable combines all the blocks in a *_amrex file "
                  "into one block. "
@@ -27,7 +26,7 @@ int main(int argc, char* argv[]) {
     return 0;
   }
 
-  for (vector<string>::size_type i = 1; i < commandLine.size(); i++) {
+  for (std::vector<std::string>::size_type i = 1; i < commandLine.size(); i++) {
     std::cout << commandLine[i] << std::endl;
     Converter cv(commandLine[i]);
     cv.read();
