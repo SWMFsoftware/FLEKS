@@ -31,14 +31,14 @@ typedef amrex::Real (Pic::*GETVALUE)(amrex::MFIter &mfi, int i, int j, int k,
 typedef void (Pic::*PicWriteAmrex)(const std::string &filename,
                                    const std::string varName);
 
-// The grid is defined in DomaiGrid. This class contains the data on the grid.
+// The grid is defined in DomainGrid. This class contains the data on the grid.
 class Pic : public PicGrid {
   friend PlotWriter;
   friend ParticleTracker;
   // public variables
 public:
-  // private variables
 
+  // private variables
 private:
   std::shared_ptr<FluidInterface> fluidInterface;
   std::shared_ptr<TimeCtr> tc;
