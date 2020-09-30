@@ -20,3 +20,4 @@ share
 include/show_git_info.h
 gitinfo.txt
 *__pycache__
+Backtrace.*
