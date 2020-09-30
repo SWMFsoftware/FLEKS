@@ -160,8 +160,8 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
 
           ParticleType p;
           if (ParticleType::the_next_id >= amrex::LastParticleID) {
-            // id should not larger than LastParticleID. This is a bad solution,
-            // since the ID becomes nonunique. --Yuxi
+            // id should not be larger than LastParticleID. This is a bad 
+            // solution, since the ID becomes nonunique. --Yuxi
             p.id() = amrex::LastParticleID;
           } else {
             p.id() = ParticleType::NextID();
