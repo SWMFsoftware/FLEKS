@@ -18,7 +18,7 @@ int main(int argc, char* argv[]) {
     commandLine.push_back((std::string)(argv[i]));
   }
 
-  if (argc > 1 && commandLine[1] == "-h") {
+  if (argc > 1 && (commandLine[1] == "-h" || commandLine[1] == "-help")) {
     std::cout << " \n"
               << " This exectuable combines all the blocks in a *_amrex file "
                  "into one block. "
