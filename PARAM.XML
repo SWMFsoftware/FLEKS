@@ -2,7 +2,7 @@
 
 <commandgroup name="Output">
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! SCHEME !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! OUTPUT !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 <command name="SAVEPLOT">
@@ -57,7 +57,8 @@
   </for>
     
 #SAVEPLOT
-6 nPlot z=0 var real4 planet      plotString
+6                                 nPlot
+z=0 var real4 planet              plotString
 -1                                dn
 20                                dt
 1                                 dx
@@ -66,11 +67,10 @@ y=0 fluid real4 pic               plotString
 -100                              dn
 5                                 dt
 -1                                dx
-3d var amrex planet               plotString
+3d fluid amrex planet             plotString
 -1                                dn
 10                                dt
 1                                 dx
-{fluid} numS0                     varName
 3d fluid real4 planet compact     plotString
 -1                                dn
 10                                dt
@@ -96,6 +96,7 @@ variables, file format and variable units.
 The plotting frequencies are given by DnOutput and DtOutput. 
 
 StringPlot has the format: 'domain variables format unit'.
+
 The first part 'domain' can be one of the following: 
 \begin{verbatim}
 x=x0     - a 2D cut of x=x0 plane. 'x0' is the coordinate. 
@@ -104,19 +105,29 @@ z=z0     - a 2D cut of z=z0 plane. 'z0' is the coordinate.
 3d       - the whole computational domain.
 cut      - part of the 3D domain. Need to specifiy the output range.
 \end{verbatim}
+
 The value of 'variables' can be:
 \begin{verbatim}
 particlesN - location, velocity and weight of species N particles (N=0,1,..)
 fluid      - all the fluid variables of the first two species:
-   'rhoS0 rhoS1 Bx By Bz Ex Ey Ez uxS0 uyS0 uzS0 uxS1 uyS1 uzS1 pS0 pS1 pXXS0 pYYS0 pZZS0 pXYS0 pXZS0 pYZS0 pXXS1 pYYS1 pZZS1 pXYS1 pXZS1 pYZS1'
-var        - read from parameter file
+             'rhoS0 rhoS1 Bx By Bz Ex Ey Ez uxS0 uyS0 uzS0 uxS1 uyS1 uzS1 pS0 pS1 pXXS0 pYYS0 pZZS0 pXYS0 pXZS0 pYZS0 pXXS1 pYYS1 pZZS1 pXYS1 pXZS1 pYZS1'
+var        - read from parameter file. The available variables:
+             'Bx By Bz Ex Ey Ez numS* rhoS* uxS* uyS* uzS* pS* pXXS* pYYS* pZZS* pXYS* pXZS* pYZS* qc divEc',
+             where '*' is the number of the species. The variables 'qc' and
+	     'divEc' are the net charge and the divergence of the electric field
+	     at the cell center, respectively.
 \end{verbatim}
-The file format can be either 'real4' or 'ascii'. The 'unit' can be:
+
+The file format can be 'real4', 'real8', 'ascii' or 'amrex'. The IDL formats
+'real4', 'real8' and 'ascii' support the 2D/3D and 'cut' ouput domains for
+the fields. But they can not save particles. The 'amrex' format supports
+'3d' and 'cut' domains for saving particles, and '3d' domain for saving fields.
+
+The 'unit' can be:
 \begin{verbatim}
 pic    - normalized CGS units
-si     - SI units (current and electric field are not well defined?!)
-planet - planetary unit. (nT, km/s, planet radius, amu/cm^3, nPa)
-Current and electric field units are not well defined.
+si     - SI units
+planet - planetary unit. (nT, micro-volt/m, km/s, planet radius, amu/cm^3, nPa)
 \end{verbatim}
 
 No plot file is saved by default.
@@ -418,7 +429,7 @@ This command should only exist in the restart file FLEKSX_restart.H
 0.1                 dtSI 
 0.12	            dtNextSI 
 
-The last ant the next time step. 
+The last and the next time step. 
 
 This command should only exist in the restart file FLEKSX_restart.H
 </command>
