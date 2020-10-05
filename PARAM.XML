@@ -1,145 +1,231 @@
 <commandList name="FLexible Exasclae Kinetic Simulator: PC component">
 
-	<commandgroup name="FLEKS">
+<commandgroup name="Output">
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! SCHEME !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-		<command name="SAVEPLOT">
-			<parameter name="nPlotFile" type="integer" min="0" max="15" default="0" />
-			<for name="iPlot" from="1" to="$nPlotFile">
-				<parameter name="StringPlot" type="strings" min="4" max="5">
-					<part name="plotarea" type="string" input="select" required="T">
-						<option name="3D" value="3d"/>
-						<option name="cut" value="cut"/>
-						<option name="x=0" />
-						<option name="y=0" />
-						<option name="z=0" />
-					</part>
-					<part name="plotvar" type="string" required="T" input="select">
-						<option name="MHD variables" value="fluid" />
-						<option name="Set vars" value="var"/>
-						<option name="Particles" value="particles0/particles1"/>
-					</part>
-					<part name="plotform" type="string" input="select" required="T">
-						<option value="amrex" name="AMReX built-in format"/>
-						<option value="real4" name="IDL single prec"/>
-						<option value="real8" name="IDL double prec"/>
-						<option value="ascii" name="IDL ascii"/>
-					</part>
-					<part name="plotunit" type="string" input="select" required="T">
-						<option value="si" name="SI units"/>
-						<option value="planet" name="planet units"/>
-						<option value="pic" name="PIC normalized units"/>
-					</part>
-
-					<part name="compactplot" type="string" input="select" required="F" if="$plotform !~ /amrex/">
-						<option name="compact"/>
-					</part>
-
-				</parameter>
-				<parameter name="DnSavePlot" type="integer" min="-1" default="-1"/>
-				<parameter name="DtSavePlot" type="real" min="-1" default="-1.0"/>
-				<if expr="$plotarea =~ /\bdpl|cut|slc\b/">
-					<parameter name="xMinCut" type="real" />
-					<parameter name="xMaxCut" type="real" min="$xMinCut"/>
-					<parameter name="yMinCut" type="real" />
-					<parameter name="yMaxCut" type="real" min="$yMinCut"/>
-					<parameter name="zMinCut" type="real" />
-					<parameter name="zMaxCut" type="real" min="$zMinCut"/>
-				</if>
-				<parameter name="DxSavePlot" type="real" min="-1.0" default="-1.0" />
-				<if expr="$plotvar =~ /\bvar\b/i">
-					<parameter name="NameVars" type="string" length="200"/>
-				</if>
-			</for>
+<command name="SAVEPLOT">
+  <parameter name="nPlotFile" type="integer" min="0" max="15" default="0" />
+  <for name="iPlot" from="1" to="$nPlotFile">
+    <parameter name="StringPlot" type="strings" min="4" max="5">
+      <part name="plotarea" type="string" input="select" required="T">
+	<option name="3D" value="3d"/>
+	<option name="cut" value="cut"/>
+	<option name="x=0" />
+	<option name="y=0" />
+	<option name="z=0" />
+      </part>
+      <part name="plotvar" type="string" required="T" input="select">
+	<option name="Fluid variables" value="fluid" />
+	<option name="Set variables"   value="var"/>
+	<option name="Particles 0"     value="particles0" />
+	<option name="Particles 1"     value="particles1" />
+	<option name="Particles 2"     value="particles2" />
+	<option name="Particles 3"     value="particles3" />
+      </part>
+      <part name="plotform" type="string" input="select" required="T">
+	<option value="amrex" name="AMReX built-in format"/>
+	<option value="real4" name="IDL single prec"/>
+	<option value="real8" name="IDL double prec"/>
+	<option value="ascii" name="IDL ascii"/>
+      </part>
+      <part name="plotunit" type="string" input="select" required="T">
+	<option value="si"     name="SI units"/>
+	<option value="planet" name="planet units"/>
+	<option value="pic"    name="PIC normalized units"/>
+      </part>
+      <part name="compactplot" type="string" input="select" required="F"
+	    if="$plotform !~ /amrex/">
+	<option value="compact"/>
+      </part>
+    </parameter>
+    <parameter name="DnSavePlot" type="integer" min="-1" default="-1"/>
+    <parameter name="DtSavePlot" type="real" min="-1" default="-1.0"/>
+    <if expr="$plotarea =~ /\bdpl|cut|slc\b/">
+      <parameter name="xMinCut" type="real" />
+      <parameter name="xMaxCut" type="real" min="$xMinCut"/>
+      <parameter name="yMinCut" type="real" />
+      <parameter name="yMaxCut" type="real" min="$yMinCut"/>
+      <parameter name="zMinCut" type="real" />
+      <parameter name="zMaxCut" type="real" min="$zMinCut"/>
+    </if>
+    <parameter name="DxSavePlot" type="real" min="-1.0" default="-1.0" />
+    <if expr="$plotvar =~ /\bvar\b/i">
+      <parameter name="NameVars" type="string" length="200"/>
+    </if>
+  </for>
     
-#SAVEPLOT                                                                         
-6 nPlot z=0 var real4 planet              plotString                                      
--1                                dn                                              
-20                                dt                                              
-1                                 dx                                              
-{fluid} numS0                     varName y=0 fluid real4 pic               plotString                                      
--100                              dn                                              
-5                                 dt                                              
--1                                dx                                              
-3d var amrex planet               plotString                                      
--1                                dn                                              
-10                                dt                                              
-1                                 dx                                              
-{fluid} numS0                     varName                                         
-3d fluid real4 planet compact     plotString                                      
--1                                dn                                              
-10                                dt                                              
-1                                 dx                                              
-cut fluid real8 si                plotString                                      
--1                                dn                                              
-100                               dt                                              
-5                                 xMin                                            
-10                                xMax                                            
--2                                yMin                                            
-2                                 yMax                                            
--2                                zMin                                            
-2                                 zMax                                            
-1                                 dx                                              
-3d particles0 amrex planet        plotString                                      
--1                                dn                                              
-200                               dt                                              
+#SAVEPLOT
+6 nPlot z=0 var real4 planet      plotString
+-1                                dn
+20                                dt
+1                                 dx
+{fluid} numS0                     varName
+y=0 fluid real4 pic               plotString
+-100                              dn
+5                                 dt
+-1                                dx
+3d var amrex planet               plotString
+-1                                dn
+10                                dt
+1                                 dx
+{fluid} numS0                     varName
+3d fluid real4 planet compact     plotString
+-1                                dn
+10                                dt
+1                                 dx
+cut fluid real8 si                plotString
+-1                                dn
+100                               dt
+5                                 xMin
+10                                xMax
+-2                                yMin
+2                                 yMax
+-2                                zMin
+2                                 zMax
+1                                 dx
+3d particles0 amrex planet        plotString
+-1                                dn
+200                               dt
 1                                 dx   
 
-
 The first parameter is nPlotFile, which is the number of files to be saved.
-Each output starts with StringPlot, which specify the output region, variables,
-file format and variable units. The plotting frequencies DnOutput and DtOutput
-are following. 
+Each output starts with StringPlot, which specifies the output region,
+variables, file format and variable units.
+The plotting frequencies are given by DnOutput and DtOutput. 
 
-StringPlot has the format:'domain variables format unit'.
-'domain' can be one of the following: 
+StringPlot has the format: 'domain variables format unit'.
+The first part 'domain' can be one of the following: 
 \begin{verbatim}
- x=x0     - a 2D cut of x=x0 plane. 'x0' is the coordinate. 
- y=y0     - a 2D cut of y=y0 plane. 'y0' is the coordinate. 
- z=z0     - a 2D cut of z=z0 plane. 'z0' is the coordinate.
+x=x0     - a 2D cut of x=x0 plane. 'x0' is the coordinate. 
+y=y0     - a 2D cut of y=y0 plane. 'y0' is the coordinate. 
+z=z0     - a 2D cut of z=z0 plane. 'z0' is the coordinate.
 3d       - the whole computational domain.
 cut      - part of the 3D domain. Need to specifiy the output range.
 \end{verbatim}
-The value of 'variables' could be:
+The value of 'variables' can be:
 \begin{verbatim}
-fluid                               - all the FLUID field variables of the first two species:
+particlesN - location, velocity and weight of species N particles (N=0,1,..)
+fluid      - all the fluid variables of the first two species:
    'rhoS0 rhoS1 Bx By Bz Ex Ey Ez uxS0 uyS0 uzS0 uxS1 uyS1 uzS1 pS0 pS1 pXXS0 pYYS0 pZZS0 pXYS0 pXZS0 pYZS0 pXXS1 pYYS1 pZZS1 pXYS1 pXZS1 pYZS1'
-var                                 - read from parameter file
-particles0/particles1/particles2... - the location, velocity and weight of particles belonging to species0, species1, ... 
-   The particle species needs to be specified. One and only one species is allowd in one output file. 
+var        - read from parameter file
 \end{verbatim}
-
-The file format could be either 'real4' or 'ascii'. The 'unit' can be:
+The file format can be either 'real4' or 'ascii'. The 'unit' can be:
 \begin{verbatim}
-pic       - normalized PIC unit.
-si        - SI unit. The unit of current and electric field are not well defined. 
-planet - planetary unit. B field is in nT, velocity is in km/s,
-length is in planet radius, density is in amu/cm^3, pressure is in nPa.
+pic    - normalized CGS units
+si     - SI units (current and electric field are not well defined?!)
+planet - planetary unit. (nT, km/s, planet radius, amu/cm^3, nPa)
 Current and electric field units are not well defined.
 \end{verbatim}
 
 No plot file is saved by default.
-		</command>
+</command>
 
-		<command name="PERIODICITY">
-			<parameter name="isPeriodicX" type="logical" default="F" />
-			<parameter name="isPeriodicY" type="logical" default="F" />
-			<parameter name="isPeriodicZ" type="logical" default="F" />
+<command name="PARTICLETRACKER"
+	 alias="PARTICLETRACKER_FLEKS0,PARTICLETRACKER_FLEKS1,PARTICLETRACKER_FLEKS2"
+	 multiple="T">
+  <parameter name="useParticleTracker" type="logical" default="F"/>
+
+#PARTICLETRACKER
+T                   useParticleTracker 
+
+Turning on/off the test particle module. 
+</command>
+
+<command name="MONITOR"
+	 alias="MONITOR_FLEKS0,MONITOR_FLEKS1,MONITOR_FLEKS2"
+	 multiple="T">
+  <parameter name="dnReport" type="integer" default="10"/>
+#MONITOR 
+10                 dnReport
+
+This command controls the frequency of printing simulation information, 
+such as the GMRES convergence history, to STDOUT. The default frequency
+is every 10 steps. 
+</command>
+
+</commandgroup>
+
+<commandgroup name="Scheme">
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! SCHEME !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+<command name="TIMESTEPPING"
+	 alias="TIMESTEPPING_FLEKS0,TIMESTEPPING_FLEKS1,TIMESTEP,TIMESTEP_FLEKS2,TIMESTEP_FLEKS0,TIMESTEP_FLEKS1,TIMESTEP_FLEKS2"
+	 multiple="T">
+  <parameter name="useFixedDt" type="logical" default="F"/>
+  <parameter name="dt" type="real" if="$useFixedDt"/>
+  <parameter name="cfl" type="real" default="0.2" if="not $useFixedDt"/>
+
+#TIMESTEPPING
+F                  useFixedDt
+0.1                cfl (if useFixedDt is false)
+
+#TIMESTEPPING_FLEKS1
+T                  useFixedDt
+0.01               dt  (if useFixedDt is true)
+
+Setting the CFL or fixed time step. The typical CFL number is 0.1~0.4.
+</command>
+
+<command name="PARTICLESTAGGERING"
+	 alias="PARTICLESTAGGERING_FLEKS0,PARTICLESTAGGERING_FLEKS1,PARTICLESTAGGERING_FLEKS2"
+	 multiple="T">
+  <parameter name="isStaggered" type="logical" default="T"/>
+
+#PARTICLESTAGGERING
+T                   isStaggered  
+
+If isStaggered is true, the primitive particle locations are at $t_{n+1/2}$,
+otherwise, both locations and velocities are at $t_n$. 
+</command>
+
+<command name="RESAMPLING"
+	 alias="RESAMPLING_FLEKS0,RESAMPLING_FLEKS1,RESAMPLING_FLEKS2" multiple="T">
+  <parameter name="doReSampling" type="logical" default="T"/>
+  <if expr="$doReSampling">
+    <parameter name="splittingLimit" type="real" default="0.8" max="1"/>
+    <parameter name="mergingLimit" type="real" default="1.5" min="1"/>
+  </if>
   
-#PERIODICITY
-F                 isPeriodicX
-F                 isPeriodicY
-F                 isPeriodicZ
+#RESAMPLING
+T                   doReSampling (rest is read if true)
+0.8                 splittingLimit 
+0.5                 mergingLimit 
 
-We may want to use periodic boundary conditions in some directions even in
-a coupled simulation, and the command above can be used. Note that if there
-is only one cell in one direction, periodic boundary conditions will be used
-in this direction and the parameter above will be ignored. Otherwise
-the default value is false.
-		</command>
+Turning on/off the particle splitting and merging to control the number of
+particles per cell. If the initial particle number per cell is nPart, 
+splitting (merging) will be triggered once the particle numer per cell 
+becomes lower (higher) than splittingLimit*nPart (mergingLimit*nPart). 
 
-		<command name="EFIELDSOLVER">
-			<parameter name="EFieldTol" type="real" default="1e-6"/>
-			<parameter name="EFieldIter" type="integer" default="200"/>
+</command>
+
+<command name="DISCRETIZATION" alias="DISCRETIZE">
+  <parameter name="theta" type="real" default="0.51"/>
+  <parameter name="ratioDivC2C" type="real" default="0.1" />
+
+#DISCRETIZATION
+0.51                        theta
+0.1                         ratioDivC2C
+
+The Theta parameter sets $\theta$ for the time centering of the electric field,
+which is calculated at the time $t_{n+\theta}$. When $\theta$ 
+is 0.5, the total energy is conserved if ratioDivC2C is 0. However, 
+the exact energy conservation may produce artifical oscillations. 
+Typical values for Theta are from 0.51 to 0.6.
+
+The ratioDivC2C parameter is the fraction of div(E) calculated from an
+extended stencil in the discretization of the Maxwell equation.
+Using an extended stencil helps to suppress short-wavelength oscillations. 
+
+Default values are shown.
+</command>
+
+<command name="EFIELDSOLVER">
+  <parameter name="EFieldTol" type="real" default="1e-6"/>
+  <parameter name="EFieldIter" type="integer" default="200"/>
   
 #EFIELDSOLVER
 1e-6                     EFieldTol
@@ -147,28 +233,10 @@ the default value is false.
 
 The tolerance and the maximum iteration number of the electric field 
 GMRES solver. The default values are shown above. 
-		</command>
+</command>
 
-		<command name="DISCRETIZATION" alias="DISCRETIZE">
-			<parameter name="theta" type="real" default="0.51"/>
-			<parameter name="ratioDivC2C" type="real" default="0.1" />
-
-#DISCRETIZATION
-0.51                        theta
-0.1                         ratioDivC2C
-
-The electric field is calculated at the time $t_{n+\theta}$. When $\theta$ 
-is 0.5, the total energy is conserved if ratioDivC2C is 0. However, 
-the exact energy conservation may produce artifical oscillations. 
-0.51-0.6 are typical values of $\theta$.
-
-'ratioDivC2C' is the ratio of div(E) calculated from extended stencil
-discretization. It helps to suppress short-wavelength oscillations. 
-Default values are shown.
-		</command>
-
-		<command name="DIVE">
-			<parameter name="doCorrectDivE" type="logical" default="T"/>
+<command name="DIVE">
+  <parameter name="doCorrectDivE" type="logical" default="T"/>
   
 #DIVE
 T                         doCorrectDivE
@@ -176,41 +244,64 @@ T                         doCorrectDivE
 Turning on/off the accurate div(E) cleaning, which corrects the particle
 locations to satisfy Gauss's law: div(E) = net_charge. 
 Default is true as it is required for accuracy of long simulations.
-		</command>
+</command>
 
-		<command name="TIMESTEPPING" alias="TIMESTEPPING_FLEKS0,TIMESTEPPING_FLEKS1,TIMESTEP,TIMESTEP_FLEKS2,TIMESTEP_FLEKS0,TIMESTEP_FLEKS1,TIMESTEP_FLEKS2" multiple="T">
-			<parameter name="useFixedDt" type="logical" default="F"/>
-			<if expr="$useFixedDt">
-				<parameter name="dt" type="real"/>
-			</if>
-			<if expr="not $useFixedDt">
-				<parameter name="cfl" type="real" default="0.2"/>
-			</if>
+<command name="SMOOTHE"
+	 alias="SMOOTHE_FLEKS0,SMOOTHE_FLEKS1,SMOOTHE_FLEKS2"
+	 multiple="T">
+  <parameter name="doSmoothE" type="logical" default="T"/>
+  <if expr="$doSmoothE">
+    <parameter name="nSmoothE" type="integer" default="1"/>
+    <parameter name="coefSmoothE" type="real" default="0.5" max="0.5"/>
+  </if>
+  
+#SMOOTHE
+T                  doSmoothE (rest is read if true)
+1                  nSmoothE 
+0.5                coefSmoothE 
 
-#TIMESTEPPING
-F                  useFixedDt
-0.1                cfl
+#SMOOTHE_FLEKS2
+F                  doSmoothE 
 
-#TIMESTEPPING_FLEKS1
-T                  useFixedDt
-0.01               dt
+Turning on/off the smoothing of the electric field. It is helpful to suppress
+the short-wavelength oscillations. nSmoothE is the number of times the 
+smoothing is performed. The coefSmoothE parameter is proportional to the
+strength of the smoothing. coefSmoothE = 0.5 is the most effective and
+coefSmoothE > 0.5 may be not stable. 
+</command>
 
-Setting the CFL or fixed time step. The typical CFL number is 0.1~0.4.
-		</command>
+</commandgroup>
 
-		<command name="MONITOR" alias="MONITOR_FLEKS0,MONITOR_FLEKS1,MONITOR_FLEKS2" multiple="T">
-			<parameter name="dnReport" type="integer" default="10"/>
-#MONITOR 
-10                 dnReport
+<commandgroup name="Inital and boundary conditions">
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!! INITIAL AND BOUNDARY CONDITIONS !!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-This command controls the frequency of printing simulation information, 
-such as the GMRES convergence history, to STDOUT. The default frequency
-is every 10 steps. 
+<command name="PARTICLES"
+	 alias="PARTICLES_FLEKS0,PARTICLES_FLEKS1,PARTICLES_FLEKS2"
+	 multiple="T">
+  <parameter name="nParticleX" type="integer" min="1" default="6"/>
+  <parameter name="nParticleY" type="integer" min="1" default="6"/>
+  <parameter name="nParticleZ" type="integer" min="1" default="6"/>
 
-		</command>
+#PARTICLES
+6                  particles per cell in X 
+6                  particles per cell in Y 
+6                  particles per cell in Z 
 
-		<command name="ELECTRON" alias="ELECTRON_FLEKS0,ELECTRON_FLEKS1,ELECTRON_FLEKS2" multiple="T">
-			<parameter name="electronChargePerMass" type="real" default='-100'/>
+#PARTICLES_FLEKS1
+10                 particles per cell in X 
+10                 particles per cell in Y 
+1                  particles per cell in Z 
+
+The command sets particle numbers in each direction for initial
+condition and ghost cells for a FLEKS region.
+</command>
+
+<command name="ELECTRON"
+	 alias="ELECTRON_FLEKS0,ELECTRON_FLEKS1,ELECTRON_FLEKS2"
+	 multiple="T">
+  <parameter name="electronChargePerMass" type="real" default="-100"/>
 
 #ELECTRON
 -100                     electronChargePerMass
@@ -224,127 +315,78 @@ It is ignored when FLEKS is coupled with BATSRUS configured with the
 five-moment or six-moment fluid closures that define the electron mass.
 
 Default value is shown.
-		</command>
+</command>
 
-		<command name="PARTICLES" alias="PARTICLES_FLEKS0,PARTICLES_FLEKS1,PARTICLES_FLEKS2" multiple="T">
-			<parameter name="nParticleX" type="integer" min="1" default="6"/>
-			<parameter name="nParticleY" type="integer" min="1" default="6"/>
-			<parameter name="nParticleZ" type="integer" min="1" default="6"/>
-
-#PARTICLES
-6                  particles per cell in X 
-6	          	   particles per cell in Y 
-6	               particles per cell in Z 
-
-#PARTICLES_FLEKS1
-6                  particles per cell in X 
-6	          	   particles per cell in Y 
-6	               particles per cell in Z 
-
-The command sets particle numbers in each direction for initial
-condition and ghost cells for a FLEKS region.
-		</command>
-
-		<command name="SMOOTHE" alias="SMOOTHE_FLEKS0,SMOOTHE_FLEKS1,SMOOTHE_FLEKS2" multiple="T">
-			<parameter name="doSmoothE" type="logical" default="T"/>
-			<if expr="$doSmoothE">
-				<parameter name="nSmoothE" type="integer" default="1"/>
-				<parameter name="coefSmoothE" type="real" default="0.5" max="0.5"/>
-			</if>
-  
-#SMOOTHE
-T                  doSmoothE 
-1				   nSmoothE 
-0.5	               coefSmoothE 
-
-#SMOOTHE_FLEKS2 
-F                  doSmoothE 
-
-Turning on/off the Smoothing of the electric field. It is helpful to suppress
-the short-wavelength oscillations. nSmoothE is the number of times of 
-smoothing. coefSmoothE is proportional to the strength of the smoothing. 
-coefSmoothE = 0.5 is the most effective and coefSmoothE > 0.5 may be 
-not stable. 
-		</command>
-
-		<command name="TESTCASE" alias="TESTCASE_FLEKS0,TESTCASE_FLEKS1,TESTCASE_FLEKS2" multiple="T">
-			<parameter name="testCase" type="string"/>
+<command name="TESTCASE"
+	 alias="TESTCASE_FLEKS0,TESTCASE_FLEKS1,TESTCASE_FLEKS2" multiple="T">
+  <parameter name="testCase" type="string"/>
 
 #TESTCASE 
 TwoStream			testCase
 
 It will set the initial conditions for a specific test case.
-		</command>
+</command>
 
+<command name="PERIODICITY">
+  <parameter name="isPeriodicX" type="logical" default="F" />
+  <parameter name="isPeriodicY" type="logical" default="F" />
+  <parameter name="isPeriodicZ" type="logical" default="F" />
+  
+#PERIODICITY
+F                 isPeriodicX
+F                 isPeriodicY
+F                 isPeriodicZ
 
-		<command name="PARTICLETRACKER" alias="PARTICLETRACKER_FLEKS0,PARTICLETRACKER_FLEKS1,PARTICLETRACKER_FLEKS2" multiple="T">
-			<parameter name="useParticleTracker" type="logical" default="F"/>
+We may want to use periodic boundary conditions in some directions even in
+a coupled simulation, and the command above can be used. Note that if there
+is only one cell in one direction, periodic boundary conditions will be used
+in this direction and the parameter above will be ignored. Otherwise
+the default value is false.
+</command>
 
-#PARTICLETRACKER
-T                   useParticleTracker 
-
-Turning on/off the test particle module. 
-		</command>
-
-		<command name="PARTICLESTAGGERING" alias="PARTICLESTAGGERING_FLEKS0,PARTICLESTAGGERING_FLEKS1,PARTICLESTAGGERING_FLEKS2" multiple="T">
-			<parameter name="isStaggered" type="logical" default="T"/>
-
-#PARTICLESTAGGERING
-T                   isStaggered  
-
-If isStaggered is true, the primitive particle locations are at $t_{n+1/2}$,
-otherwise, both locations and velocities are at $t_n$. 
-		</command>
-
-		<command name="MAXBLOCKSIZE" alias="MAXBLOCKSIZE_FLEKS0,MAXBLOCKSIZE_FLEKS1,MAXBLOCKSIZE_FLEKS2" multiple="T">
-			<parameter name="nCellX" type="integer" min="1" default="8"/>
-			<parameter name="nCellY" type="integer" min="1" default="8"/>
-			<parameter name="nCellZ" type="integer" min="1" default="8"/>
+<command name="MAXBLOCKSIZE" alias="MAXBLOCKSIZE_FLEKS0,MAXBLOCKSIZE_FLEKS1,MAXBLOCKSIZE_FLEKS2"
+	 multiple="T">
+  <parameter name="nCellX" type="integer" min="1" default="8"/>
+  <parameter name="nCellY" type="integer" min="1" default="8"/>
+  <parameter name="nCellZ" type="integer" min="1" default="8"/>
 
 #MAXBLOCKSIZE
-8                 nCellX
-8	          	  nCellY
-1	              nCellZ 
+8                   nCellX
+8                   nCellY
+1                   nCellZ 
 
-This command sets the largest block size that is allowd. All blocks are 
+This command sets the largest block size that is allowed. All blocks are 
 equal to or smaller than the sizes set here. Users can search 
 "grid information summary" and "load balance report" to obtain the 
 grid information. 
 
 8 to 16 cells per direction usually reaches a good balance between 
-efficiency and flexibility. 8*8*8 or 16*8*8 are typical for a 3D simulation. 
-		</command>
+efficiency and flexibility. 8*8*8 or 16*8*8 are typical for a 3D simulation.
+</command>
 
-		<command name="RESAMPLING" alias="RESAMPLING_FLEKS0,RESAMPLING_FLEKS1,RESAMPLING_FLEKS2" multiple="T">
-			<parameter name="doReSampling" type="logical" default="T"/>
-			<if expr="$doReSampling">
-				<parameter name="splittingLimit" type="real" default="0.8" max="1"/>
-				<parameter name="mergingLimit" type="real" default="1.5" min="1"/>
-			</if>
-  
-#RESAMPLING
-T                  doReSampling
-0.8				   splittingLimit 
-0.5	               mergingLimit 
+</commandgroup>
 
-Turining on/off the particle splitting and merging to control the numer of
-particles per cell. Assume the initial particle number per cell is nPart, 
-splitting (merging) will be triggered once the particle numer per cell 
-becomes lower (higher) than splittingLimit*nPart (mergingLimit*nPart). 
+<commandgroup name="Restart">
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! RESTART !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-		</command>
-
-		<command name="RESTART" alias="RESTART_FLEKS0,RESTART_FLEKS1,RESTART_FLEKS2" multiple="T">
-			<parameter name="doRestart" type="logical" default="F"/>
+<command name="RESTART"
+	 alias="RESTART_FLEKS0,RESTART_FLEKS1,RESTART_FLEKS2"
+	 multiple="T">
+  <parameter name="doRestart" type="logical" default="F"/>
 
 #RESTART 
 F                 doRestart 
 
 This command should only exist in the restart file FLEKSX_restart.H
-		</command>
+to indicate that the FLEKS region is restarted from a file.
+</command>
 
-		<command name="NSTEP" alias="NSTEP_FLEKS0,NSTEP_FLEKS1,NSTEP_FLEKS2" multiple="T">
-			<parameter name="nStep" type="integer"/>
+<command name="NSTEP"
+	 alias="NSTEP_FLEKS0,NSTEP_FLEKS1,NSTEP_FLEKS2"
+	 multiple="T">
+  <parameter name="nStep" type="integer"/>
 
 #NSTEP
 100                 nStep 
@@ -352,10 +394,12 @@ This command should only exist in the restart file FLEKSX_restart.H
 The cycle number of the restart file. 
 
 This command should only exist in the restart file FLEKSX_restart.H
-		</command>
+</command>
 
-		<command name="TIMESIMULATION" alias="TIMESIMULATION_FLEKS0,TIMESIMULATION_FLEKS1,TIMESIMULATION_FLEKS2" multiple="T">
-			<parameter name="timeSimulation" type="real"/>
+<command name="TIMESIMULATION"
+	 alias="TIMESIMULATION_FLEKS0,TIMESIMULATION_FLEKS1,TIMESIMULATION_FLEKS2"
+	 multiple="T">
+  <parameter name="timeSimulation" type="real"/>
 
 #TIMESIMULATION
 1.3                 timeSimulation
@@ -363,11 +407,12 @@ This command should only exist in the restart file FLEKSX_restart.H
 The simulation time of the restart file. 
 
 This command should only exist in the restart file FLEKSX_restart.H
-		</command>
+</command>
 
-		<command name="DT" alias="DT_FLEKS0,DT_FLEKS1,DT_FLEKS2" multiple="T">
-			<parameter name="dtSI" type="real"/>
-			<parameter name="dtNextSI" type="real"/>
+<command name="DT"
+	 alias="DT_FLEKS0,DT_FLEKS1,DT_FLEKS2" multiple="T">
+  <parameter name="dtSI" type="real"/>
+  <parameter name="dtNextSI" type="real"/>
 
 #DT
 0.1                 dtSI 
@@ -376,36 +421,35 @@ This command should only exist in the restart file FLEKSX_restart.H
 The last ant the next time step. 
 
 This command should only exist in the restart file FLEKSX_restart.H
-		</command>
+</command>
 
-
-		<command name="GEOMETRY" alias="GEOMETRY_FLEKS0,GEOMETRY_FLEKS1,GEOMETRY_FLEKS2" multiple="T">
-			<parameter name="xMin" type="real"/>
-			<parameter name="xMax" type="real"/>
-			<parameter name="yMin" type="real"/>
-			<parameter name="yMax" type="real"/>
-			<parameter name="zMin" type="real"/>
-			<parameter name="zMax" type="real"/>
+<command name="GEOMETRY"
+	 alias="GEOMETRY_FLEKS0,GEOMETRY_FLEKS1,GEOMETRY_FLEKS2" multiple="T">
+  <parameter name="xMin" type="real"/>
+  <parameter name="xMax" type="real"/>
+  <parameter name="yMin" type="real"/>
+  <parameter name="yMax" type="real"/>
+  <parameter name="zMin" type="real"/>
+  <parameter name="zMax" type="real"/>
 	
-#GEOMETRY 
--1					xMin 
+#GEOMETRY
+-1			xMin 
 1 	                xMax 
--1					yMin 
+-1			yMin 
 1 	                yMax 
--1					zMin 
+-1			zMin 
 1 	                zMax 
 
 The simulation domain. 
 
 This command should only exist in the restart file FLEKSX_restart.H
-		</command>
+</command>
 
-
-		<command name="NCELL" alias="NCELL_FLEKS0,NCELL_FLEKS1,NCELL_FLEKS2" multiple="T">
-			<parameter name="nCellX" type="integer"/>
-			<parameter name="nCellY" type="integer"/>
-			<parameter name="nCellZ" type="integer"/>
-	
+<command name="NCELL" alias="NCELL_FLEKS0,NCELL_FLEKS1,NCELL_FLEKS2"
+	 multiple="T">
+  <parameter name="nCellX" type="integer"/>
+  <parameter name="nCellY" type="integer"/>
+  <parameter name="nCellZ" type="integer"/>
 #NCELL 
 32					nCellX 
 64					nCellY
@@ -414,7 +458,8 @@ This command should only exist in the restart file FLEKSX_restart.H
 The number of cells of the whole FLEKS domain. 
 
 This command should only exist in the restart file FLEKSX_restart.H
-		</command>
+</command>
 
-	</commandgroup>
+</commandgroup>
+
 </commandList>
