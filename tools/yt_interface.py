@@ -3,108 +3,17 @@ import os
 import numpy as np
 import glob
 import struct
+import data_container
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from random import random
 
-
 from yt.funcs import setdefaultattr
 from yt.frontends.boxlib.api import BoxlibHierarchy, BoxlibDataset
 from yt.fields.field_info_container import FieldInfoContainer
 
-plot_unit_planet = {
-    "time": "s",
-    "t": "s",
-    "mass": "amu",
-    "rho": "amu/cm**3",
-    "u": "km/s",
-    "ux": "km/s",
-    "uy": "km/s",
-    "uz": "km/s",
-    "p": "nPa",
-    "pxx": "nPa",
-    "pxy": "nPa",
-    "pxz": "nPa",
-    "pyy": "nPa",
-    "pyz": "nPa",
-    "pzz": "nPa",
-    "B": "nT",
-    "Bx": "nT",
-    "By": "nT",
-    "Bz": "nT",
-    "E": "nT*km/s",
-    "Ex": "nT*km/s",
-    "Ey": "nT*km/s",
-    "Ez": "nT*km/s",
-    "X": "Planet_Radius",
-    "Y": "Planet_Radius",
-    "Z": "Planet_Radius",
-    "p_x": "Planet_Radius",
-    "p_y": "Planet_Radius",
-    "p_z": "Planet_Radius",
-    "p_ux": "km/s",
-    "p_uy": "km/s",
-    "p_uz": "km/s",
-    "p_w": "amu"
-}
-
-plot_unit_si = {
-    "time": "s",
-    "t": "s",
-    "mass": "kg",
-    "rho": "kg/m**3",
-    "u": "m/s",
-    "ux": "m/s",
-    "uy": "m/s",
-    "uz": "m/s",
-    "p": "Pa",
-    "pxx": "Pa",
-    "pxy": "Pa",
-    "pxz": "Pa",
-    "pyy": "Pa",
-    "pyz": "Pa",
-    "pzz": "Pa",
-    "B": "T",
-    "Bx": "T",
-    "By": "T",
-    "Bz": "T",
-    "E": "T*m/s",
-    "Ex": "T*m/s",
-    "Ey": "T*m/s",
-    "Ez": "T*m/s",
-    "X": "m",
-    "Y": "m",
-    "Z": "m",
-    "p_x": "m",
-    "p_y": "m",
-    "p_z": "m",
-    "p_ux": "m/s",
-    "p_uy": "m/s",
-    "p_uz": "m/s",
-    "p_w": "kg"
-}
-
-
-def show_image(imname):
-    img = mpimg.imread(imname)
-    fig, ax = plt.subplots()
-    ax.axis("off")
-    ax.imshow(img)
-
-
-def get_unit(var, unit_type="planet"):
-    if var[-1].isdigit():
-        # Example: pxxs0 -> pxx
-        var = var[0:-2]
-
-    if unit_type == "planet":
-        return plot_unit_planet[var]
-    elif unit_type == "si":
-        return plot_unit_si[var]
-    else:
-        return "unitary"
-
+from utilities import plot_unit_planet, plot_unit_si, get_unit
 
 class FLEKSFieldInfo(FieldInfoContainer):
     l_units = "code_length"
@@ -117,12 +26,15 @@ class FLEKSFieldInfo(FieldInfoContainer):
 
     # TODO: find a way to avoid repeating s0, s1...
     known_other_fields = (
-        ("Bx", (b_units,   [], r"B_x")),
-        ("By", (b_units,   [], r"B_y")),
-        ("Bz", (b_units,   [], r"B_z")),
+        ("Bx", (b_units,   ["magnetic_field_x"], r"B_x")),
+        ("By", (b_units,   ["magnetic_field_y"], r"B_y")),
+        ("Bz", (b_units,   ["magnetic_field_z"], r"B_z")),
         ("Ex", (e_units, [], r"E_x")),
         ("Ey", (e_units, [], r"E_y")),
         ("Ez", (e_units, [], r"E_z")),
+        ("X", (l_units, [], r"X")),
+        ("Y", (l_units, [], r"Y")),
+        ("Z", (l_units, [], r"Z")),
         ("rhos0", (rho_units, [], r"\rho")),
         ("uxs0", (v_units, [], r"u_x")),
         ("uys0", (v_units, [], r"u_y")),
@@ -291,6 +203,72 @@ class FLEKSDataset(BoxlibDataset):
         setdefaultattr(self, 'pressure_unit',
                        self.quan(1, get_unit("p", unit)))
 
+    def get_slice(self, norm, cut_loc):
+        r""" 
+        This method returns a dataContainer2D object that contains a slice along
+        the 'norm' direction at 'cut_loc' 
+
+        Parameters
+        ---------------------
+        norm: String 
+        'x', 'y' or 'z' 
+
+        cut_log: Float         
+        """ 
+
+        axDir = {'X': 0, 'Y': 1, 'Z': 2}
+        idir = axDir[norm.upper()]
+
+        if type(cut_loc) != yt.units.yt_array.YTArray:
+            cut_loc = self.arr(cut_loc, 'code_length')
+
+        # Define the slice range -------------------
+        slice_dimension = self.domain_dimensions
+        slice_dimension[idir] = 1
+
+        left_edge = self.domain_left_edge
+        right_edge = self.domain_right_edge
+
+        dd = (right_edge[idir] - left_edge[idir])*1e-6
+        left_edge[idir] = cut_loc - dd
+        right_edge[idir] = cut_loc + dd
+        # ----------------------------------------------
+
+        abArr = self.arbitrary_grid(left_edge, right_edge, slice_dimension)
+
+        dataSets = {}
+        for _, var in self.field_list:
+            dataSets[var] = np.squeeze(abArr[var])
+
+        axLabes = {0: ('Y', 'Z'), 1: ('X', 'Z'), 2: ('X', 'Y')}
+
+        axes = []
+        for axis_label in axLabes[idir]:
+            ax_dir = axDir[axis_label]
+            axes.append(np.linspace(self.domain_left_edge[ax_dir],
+                                    self.domain_right_edge[ax_dir], self.domain_dimensions[ax_dir]))
+
+        return data_container.dataContainer2D(
+            dataSets, axes[0], axes[1], axLabes[idir][0], axLabes[idir][1], norm, cut_loc)
+
+    def get_domain(self):
+        r"""
+        Reading in all the simulation data into a 3D box. It returns a dataContainer3D object. 
+        """ 
+        domain = self.covering_grid(
+            level=0, left_edge=self.domain_left_edge, dims=self.domain_dimensions)
+
+        dataSets = {}
+        for _, var in self.field_list:
+            dataSets[var] = domain[var]
+
+        axes = []
+        for idim in range(self.dimensionality):
+            axes.append(np.linspace(self.domain_left_edge[idim],
+                                    self.domain_right_edge[idim], self.domain_dimensions[idim]))
+
+        return data_container.dataContainer3D(dataSets, axes[0], axes[1], axes[2])
+
     def plot_slice(self, norm, cut_loc, vars, unit_type="planet",
                    *args, **kwargs):
         r"""Plot 2D slice
@@ -329,14 +307,6 @@ class FLEKSDataset(BoxlibDataset):
 
         splt.set_axes_unit(get_unit("X", unit_type))
 
-        # yt uses Ipython.display to show the plot, and it does not work from 
-        # terminal. To show the image from a terminal, the following code saves 
-        # the plot to disk first, then reads and shows the image with matplotlib.        
-        tmpnames=splt.save(name="tmp")
-        for pname in tmpnames:
-            show_image(pname)
-            os.remove(pname)
-        
         return splt
 
     def plot_phase(self, left_edge, right_edge, x_field, y_field, z_field,
@@ -377,14 +347,6 @@ class FLEKSDataset(BoxlibDataset):
         plot.set_unit((var_type, y_field), get_unit(y_field, unit_type))
         plot.set_unit((var_type, z_field), get_unit(z_field, unit_type))
 
-        # yt uses Ipython.display to show the plot, and it does not work from 
-        # terminal. To show the image from a terminal, the following code saves 
-        # the plot to disk first, then reads and shows the image with matplotlib.
-        tmpfile = "tmp"+str(int(random()*1000))+".png"
-        plot.save(name=tmpfile)
-        show_image(tmpfile)
-        os.remove(tmpfile)
-
         return plot
 
     def plot_particles(self, left_edge, right_edge, x_field, y_field, z_field,
@@ -414,6 +376,7 @@ class FLEKSDataset(BoxlibDataset):
         """
         dd = self.box(left_edge, right_edge)
         var_type = 'particle'
+
         nmap = {"p_x": "particle_position_x",
                 "p_y": "particle_position_y", "p_z": "particle_position_z"}
         plot = yt.ParticlePlot(self, (var_type, nmap[x_field]), (var_type, nmap[y_field]),
@@ -421,14 +384,6 @@ class FLEKSDataset(BoxlibDataset):
         plot.set_axes_unit((get_unit(x_field, unit_type),
                             get_unit(y_field, unit_type)))
         plot.set_unit((var_type, z_field), get_unit(z_field, unit_type))
-
-        # yt uses Ipython.display to show the plot, and it does not work from 
-        # terminal. To show the image from a terminal, the following code saves 
-        # the plot to disk first, then reads and shows the image with matplotlib.
-        tmpfile = "tmp"+str(int(random()*1000))+".png"
-        plot.save(name=tmpfile)
-        show_image(tmpfile)
-        os.remove(tmpfile)
 
         return plot
 
@@ -670,8 +625,17 @@ class FLEKSTP(object):
         ax.set_xlabel('time')
         ax.set_ylabel('|V|')
 
+        plt.tight_layout()
+
         return f
 
     def plot(self, partID):
+        r""" 
+        Plots the trajectory and velocities of a particle. 
+
+        Example
+        -----------------
+        >>> tp.plot((3,15))
+        """        
         pData = self.read_particle_trajectory(partID)
         return self.plot_data(pData)
