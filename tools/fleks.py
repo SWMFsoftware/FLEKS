@@ -1,4 +1,4 @@
-import glob
+import glob, os
 from idl_format_data import IDLDataSet
 from yt_interface import FLEKSDataset, FLEKSTP
 
@@ -7,8 +7,9 @@ def load(filename):
     if len(files) == 0:
         raise Exception('Error: can not find the file/director!')
     filename = files[0]
+
+    tmp = os.path.basename(os.path.normpath(filename))
     
-    tmp = filename.split('/')[-1]
     if tmp == 'test_particles':
         return FLEKSTP(filename)
     elif tmp.find('.') and tmp.split('.')[-1] == 'out':
