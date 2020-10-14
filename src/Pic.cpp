@@ -289,7 +289,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     }
   }
 
-  { // Copy cell Status to Particles objects.
+  { // Copy cellStatus to Particles objects.
     for (int i = 0; i < nSpecies; i++) {
       distribute_FabArray(parts[i]->cellStatus, centerBA, dm, 1,
                           nGst >= 2 ? nGst : 2, false);

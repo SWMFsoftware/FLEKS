@@ -78,7 +78,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
       (nxcg * nycg * nzcg * iCycle + nycg * nzcg * ig + nzcg * jg + kg);
   randNum.set_seed(seed);
 
-  Real x, y, z; // Particle location.
+  Real x, y, z; // Particle location
 
   const Real vol = dx[ix_] * dx[iy_] * dx[iz_];
   const Real vol2Npcel = qomSign * vol / npcel;
@@ -105,7 +105,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
   const Real coefSD = sqrt(Real(nPartEffective) / (nPartEffective - 1));
   //-----------------------------------------------------------
   int icount = 0;
-  // loop over particles inside grid cell i, j, k
+  // Loop over particles inside grid cell i, j, k
   for (int ii = 0; ii < nPartPerCell[ix_]; ii++)
     for (int jj = 0; jj < nPartPerCell[iy_]; jj++)
       for (int kk = 0; kk < nPartPerCell[iz_]; kk++) {

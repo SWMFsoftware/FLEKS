@@ -103,7 +103,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
 
   timing_func(nameFunc);
 
-  // Why need 'isGridInitialized'? See the explaination in Domain::regrid().
+  // Why need 'isGridInitialized'? See the explanation in Domain::regrid().
   if (centerBAIn == centerBA && isGridInitialized)
     return;
 
