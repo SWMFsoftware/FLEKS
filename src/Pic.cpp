@@ -713,7 +713,7 @@ void Pic::calculate_phi(LinearSolver& solver) {
 }
 
 //==========================================================
-void Pic::divE_accurate_matvec(double* vecIn, double* vecOut) {
+void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut) {
   std::string nameFunc = "Pic::divE_matvec";
   timing_func(nameFunc);
 

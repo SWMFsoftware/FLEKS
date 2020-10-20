@@ -3,17 +3,52 @@
 
 #include <AMReX_ParallelDescriptor.H>
 
-#include "linear_solver_wrapper_c.h"
+typedef void (*MATVEC)(const double *vecIn, double *vecOut, int n);
 
-typedef void (*MATVEC)(double* vecIn, double* vecOut, int n);
+enum PrecondType {
+  NONE,  // No preconditioner
+  MBILU, // Gustaffson modification of diagonal blocks
+  DILU,  // LU for diagonal, keep off-diagonal blocks
+  BILU,  // LU for diagonal, premultiply U with D^-1
+};
+enum KrylovType { GMRES, BICGSTAB, CG };
+enum StopType { // (||.|| denotes the 2-norm):
+  REL,          // relative stopping crit.:||res|| <= Tol*||res0||
+  ABS,          // absolute stopping crit.:||res|| <= Tol
+  MAX           // maximum  stopping crit.: max(abs(res)) <= Tol
+};
+enum PrecondSideType { LEFT };
 
-void matvec_E_solver(double* vecIn, double* vecOut, int n);
-void matvec_divE_accurate(double* vecIn, double* vecOut, int n);
+struct LinearSolverParam {
+  bool doPrecond;                  // Do preconditioning
+  PrecondSideType typePrecondSide; // Precondition left, right, symmetric
+  PrecondType typePrecond;         // Preconditioner type
+  KrylovType typeKrylov;           // Krylov solver type
+  StopType typeStop;               // Stopping criterion type
+  double errorMax;                 // Tolerance for solver
+  int maxMatvec;                   // Maximum number of iterations
+  int nKrylovVector;               // Number of vectors for GMRES
+  bool useInitialGuess;            // Non-zero initial guess
+  double error;                    // Actual accuracy achieved
+  int nMatvec;                     // Actual number of iterations
+};
+
+struct Block {
+  int nDim;       // Number of spatial dimensions
+  int nVar;       // Number of impl. variables/cell
+  int nI, nJ, nK; // Number of cells in a block
+  int nBlock;     // Number of impl. blocks on current proc
+  double *precondMatrix_II;
+};
+
+void matvec_E_solver(const double *vecIn, double *vecOut, int n);
+void matvec_divE_accurate(const double *vecIn, double *vecOut, int n);
 
 void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
-                         int nDim, int nGrid, double* rhs, double* xLeft,
+                         int nDim, int nGrid, double *rhs, double *xLeft,
                          MATVEC fMatvec, bool doReport = true);
 
+// hyzhou: eventually we should use this and merge the above into this class!
 class LinearSolver {
   int nGrid;
   int nVar;
@@ -24,9 +59,9 @@ class LinearSolver {
   MATVEC fMatvec;
 
 public:
-  double* rhs;
-  double* xLeft;
-  double* matvec;
+  double *rhs;
+  double *xLeft;
+  double *matvec;
 
   LinearSolver()
       : nGrid(0),
@@ -83,10 +118,31 @@ public:
   }
 
   void solve(bool doReport = true) {
-    linear_solver_gmres(tol, nIter, nVar, nDim, nGrid, rhs, xLeft, fMatvec, doReport);
+    linear_solver_gmres(tol, nIter, nVar, nDim, nGrid, rhs, xLeft, fMatvec,
+                        doReport);
   }
 
   int get_nSolve() const { return nSolve; }
 };
+
+void linear_solver_wrapper_hy(
+    std::function<void(const double *, double *, const int)> matvec,
+    const KrylovType solverType, const double tolerance, const int nIteration,
+    const int nVar, const int nDim, const int nI, const int nJ, const int nK,
+    const int nBlock, MPI_Comm iComm, double *Rhs_I, double *x_I,
+    const PrecondType TypePrecond, double *precond_matrix, const int lTest);
+
+int gmres(std::function<void(const double *, double *, const int)>
+              matvec,              // Func for matrix vector multiplication
+          const double *rhs,       // Right hand side vector
+          double *sol,             // Initial guess / solution vector
+          const bool isInit,       // true if Sol contains initial guess
+          const int n,             // Number of unknowns
+          const int nKrylov,       // Size of krylov subspace
+          double &tol,             // Required / achieved residual
+          const StopType typeStop, // Determine stopping criterion
+          int &nIter,              // Maximum/actual number of iterations
+          const bool doTest,       // Write debug info if true
+          MPI_Comm iComm);         // MPI communicator
 
 #endif
