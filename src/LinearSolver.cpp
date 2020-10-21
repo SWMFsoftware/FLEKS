@@ -1,5 +1,5 @@
 #include "SWMFDomains.h"
-#include "linear_solver_wrapper_c.h" // Calling Fortran solver
+//#include "linear_solver_wrapper_c.h" // Calling Fortran solver
 #include "LinearSolver.h"
 
 using namespace std;
@@ -28,8 +28,12 @@ void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
                              nDim, nGrid, nJ, nK, nBlock, iComm, rhs, xLeft,
                              TypePrecond, precond_matrix_II[0], lTest);
   } else { // Fortran solver
+    /*
+    // The shared library matvec requires non-const vecIn due to compatibility
+    // issue with AMPS. If one intends to use it, remember to change the
+    // definition of `const double *vecIn` to `double vecIn`.
     MPI_Fint iComm = MPI_Comm_c2f(amrex::ParallelDescriptor::Communicator());
-    // parameter to choose preconditioner types
+    //// parameter to choose preconditioner types
     // 0:No precondition; 1: BILU; 2:DILU;
     //[-1,0): MBILU;
     double PrecondParam = 0;
@@ -37,6 +41,7 @@ void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
     linear_solver_wrapper("GMRES", &tolerance, &nIteration, &nVarSolve, &nDim,
                           &nGrid, &nJ, &nK, &nBlock, &iComm, rhs, xLeft,
                           &PrecondParam, precond_matrix_II[0], &lTest);
+    */
   }
 }
 
