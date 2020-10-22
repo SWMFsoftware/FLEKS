@@ -182,11 +182,12 @@ int gmres(function<void(const double *, double *, const int)>
   if (doTest)
     cout << "GMRES tol,nIter:" << tol << " " << nIter << endl;
 
+  int nKrylov1 = nKrylov + 1;
   vector<double> c(nKrylov);
   vector<double> s(nKrylov);
-  vector<double> rs(nKrylov + 1);
+  vector<double> rs(nKrylov1);
   auto *Krylov_II = new double[n * (nKrylov + 2)];
-  auto *hh = new double[n * (nKrylov + 2)];
+  auto *hh = new double[nKrylov1 * nKrylov];
 
   double epsmac;
   if (true) // double precision by default
@@ -272,14 +273,14 @@ int gmres(function<void(const double *, double *, const int)>
       for (int j = 0; j <= i; j++) {
         double t =
             dot_product_mpi(&Krylov_II[j * n], &Krylov_II[i1 * n], n, iComm);
-        hh[i * n + j] = t;
+        hh[i * nKrylov1 + j] = t;
         for (int k = 0; k < n; k++) {
           Krylov_II[i1 * n + k] -= t * Krylov_II[j * n + k];
         }
       }
       double cDot = sqrt(
           dot_product_mpi(&Krylov_II[i1 * n], &Krylov_II[i1 * n], n, iComm));
-      hh[i * n + i1] = cDot;
+      hh[i * nKrylov1 + i1] = cDot;
       if (cDot != 0.0) {
         cDot = 1.0 / cDot;
         for (int k = 0; k < n; k++) {
@@ -290,23 +291,23 @@ int gmres(function<void(const double *, double *, const int)>
       // Update factorization of hh.
       // Perform previous transformations on i-th column of h.
       for (int k = 1; k <= i; k++) {
-        int k1;
-        k1 = k - 1;
-        double t = hh[i * n + k1];
-        hh[i * n + k1] = c[k1] * t + s[k1] * hh[i * n + k];
-        hh[i * n + k] = -s[k1] * t + c[k1] * hh[i * n + k];
+        int k1 = k - 1;
+        double t = hh[i * nKrylov1 + k1];
+        hh[i * nKrylov1 + k1] = c[k1] * t + s[k1] * hh[i * nKrylov1 + k];
+        hh[i * nKrylov1 + k] = -s[k1] * t + c[k1] * hh[i * nKrylov1 + k];
       }
-      double g =
-          sqrt(hh[i * n + i] * hh[i * n + i] + hh[i * n + i1] * hh[i * n + i1]);
+      double g = sqrt(hh[i * nKrylov1 + i] * hh[i * nKrylov1 + i] +
+                      hh[i * nKrylov1 + i1] * hh[i * nKrylov1 + i1]);
       if (g == 0.0)
         g = epsmac;
       // Determine next plane rotation
-      c[i] = hh[i * n + i] / g;
-      s[i] = hh[i * n + i1] / g;
+      c[i] = hh[i * nKrylov1 + i] / g;
+      s[i] = hh[i * nKrylov1 + i1] / g;
       rs[i1] = -s[i] * rs[i];
       rs[i] *= c[i];
       // Determine residual norm and test for convergence
-      hh[i * n + i] = c[i] * hh[i * n + i] + s[i] * hh[i * n + i1];
+      hh[i * nKrylov1 + i] =
+          c[i] * hh[i * nKrylov1 + i] + s[i] * hh[i * nKrylov1 + i1];
       ro = abs(rs[i1]);
       if (doTest) {
         if (typeStop == REL) {
@@ -324,11 +325,9 @@ int gmres(function<void(const double *, double *, const int)>
     // rs := hh(1:i,1:i) ^-1 * rs
     for (int j = i - 1; j >= 0; j--) {
       if (rs[j] != 0.0) {
-        // rs[j] /= hh[j][j];
-        rs[j] /= hh[j * n + j];
+        rs[j] /= hh[j * nKrylov1 + j];
         for (int k = j - 1; k >= 0; k--) {
-          // s[k] -= rs[j] * hh[k][j];
-          rs[k] -= rs[j] * hh[j * n + k];
+          rs[k] -= rs[j] * hh[j * nKrylov1 + k];
         }
       }
     }
