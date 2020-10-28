@@ -12,7 +12,7 @@ def load(filename):
     
     if tmp == 'test_particles':
         return FLEKSTP(filename)
-    elif tmp.find('.') and tmp.split('.')[-1] == 'out':
+    elif tmp.find('.') and tmp.split('.')[-1] in ['out', 'outs']:
         return IDLDataSet(filename)
     elif tmp[-6:] == '_amrex':
         return FLEKSDataset(filename)
