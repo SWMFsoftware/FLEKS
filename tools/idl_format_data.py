@@ -87,7 +87,7 @@ class IDLDataSet(object):
         self.isOuts = self.filename[-4:] == "outs"
         self.variables = ''
         self.unit = ''
-        self.npict = 1
+        self.npict = 0
         self.nInstance = -1 if self.isOuts else 1
         self.data = dataframe()
 
@@ -215,7 +215,7 @@ class IDLDataSet(object):
 
             self.nInstance = round(nLineFile/self.nInstanceLength)
 
-        nLineSkip = (self.npict-1)*self.nInstanceLength if self.isOuts else 0
+        nLineSkip = (self.npict)*self.nInstanceLength if self.isOuts else 0
         with open(self.filename, 'r') as f:
             if nLineSkip > 0:
                 for i, line in enumerate(f):
@@ -301,7 +301,7 @@ class IDLDataSet(object):
 
         with open(self.filename, 'rb') as f:
             if self.isOuts:
-                f.seek((self.npict-1)*self.nInstanceLength, 0)
+                f.seek((self.npict)*self.nInstanceLength, 0)
             self.read_binary_instance(f)
 
     def read_binary_instance(self, infile):
