@@ -207,47 +207,48 @@ class dataContainer2D(object):
         Return: A YTArray 
         """ 
 
+        
         if var in self.data.keys():
             varUnit = get_unit(var, unit)
             ytarr = self.data[var]
-
-        var = var.lower()
-        expression = None 
-        if var == "b":
-            expression = "np.sqrt({Bx}**2+{By}**2+{Bz}**2)"   
-            varUnit = get_unit('b', unit)         
-        elif var == 'bb':
-            expression = "{Bx}**2+{By}**2+{Bz}**2"            
-            varUnit = get_unit('b', unit)+"**2"
-        elif var[0:2] == 'ps':
-            ss = var[2:3]
-            expression = "({pxxs"+ss+"}+"+"{pyys"+ss+"}+"+"{pzzs"+ss+"})/3"
-            varUnit = get_unit('p', unit)
-        elif var == 'pb':
-            coef = 0.5/(yt.units.mu_0.value)
-            ytarr = coef*self.get_variable('bb', 'si')
-            ytarr = yt.YTArray(ytarr.value, 'Pa')
-            varUnit = get_unit('p', unit)
-        elif var == "pbeta":
-            ytarr = (self.get_variable('ps0', unit) +
-                     self.get_variable('ps1', unit)) / self.get_variable('pb', unit)
-            varUnit = 'dimensionless'
-        elif var == "calfven":
-            ytarr = self.get_variable(
-                'b', 'si')/np.sqrt(yt.units.mu_0.value * self.get_variable('rhos1', 'si'))
-            ytarr = yt.YTArray(ytarr.value, 'm/s')
-            varUnit = get_unit('u', unit)
-
-        if expression != None: 
-            ytarr = self.evaluate_expression(expression,unit)            
-            if type(ytarr) != yt.units.yt_array.YTArray: 
+        else: 
+            var = var.lower()
+            expression = None 
+            if var == "b":
+                expression = "np.sqrt({Bx}**2+{By}**2+{Bz}**2)"   
+                varUnit = get_unit('b', unit)         
+            elif var == 'bb':
+                expression = "{Bx}**2+{By}**2+{Bz}**2"            
+                varUnit = get_unit('b', unit)+"**2"
+            elif var[0:2] == 'ps':
+                ss = var[2:3]
+                expression = "({pxxs"+ss+"}+"+"{pyys"+ss+"}+"+"{pzzs"+ss+"})/3"
+                varUnit = get_unit('p', unit)
+            elif var == 'pb':
+                coef = 0.5/(yt.units.mu_0.value)
+                ytarr = coef*self.get_variable('bb', 'si')
+                ytarr = yt.YTArray(ytarr.value, 'Pa')
+                varUnit = get_unit('p', unit)
+            elif var == "pbeta":
+                ytarr = (self.get_variable('ps0', unit) +
+                        self.get_variable('ps1', unit)) / self.get_variable('pb', unit)
                 varUnit = 'dimensionless'
-                ytarr = yt.YTArray(ytarr, varUnit)                
+            elif var == "calfven":
+                ytarr = self.get_variable(
+                    'b', 'si')/np.sqrt(yt.units.mu_0.value * self.get_variable('rhos1', 'si'))
+                ytarr = yt.YTArray(ytarr.value, 'm/s')
+                varUnit = get_unit('u', unit)
+
+            if expression != None: 
+                ytarr = self.evaluate_expression(expression,unit)            
+                if type(ytarr) != yt.units.yt_array.YTArray: 
+                    varUnit = 'dimensionless'
+                    ytarr = yt.YTArray(ytarr, varUnit)                
         
         return ytarr if str(ytarr.units)=='dimensionless' else ytarr.in_units(varUnit) 
 
     def contour(self, vars, xlim=None, ylim=None, unit="planet",
-                levels=200, cmap="rainbow", figsize=(12,8), log=False, *args, **kwargs):
+                nlevels=200, cmap="rainbow", figsize=(12,8), log=False, *args, **kwargs):
         r""" 
         Contour plots. 
 
@@ -262,7 +263,7 @@ class dataContainer2D(object):
         unit: String
         'planet' or 'si' 
 
-        levels: Integer 
+        nlevels: Integer 
         Number of the countour plot color levels
 
         cmap: String 
@@ -309,18 +310,23 @@ class dataContainer2D(object):
 
             vmin = v.min() if varMin[isub] == None else varMin[isub]
             vmax = v.max() if varMax[isub] == None else varMax[isub]
-            v = np.clip(v, vmin, vmax)
+            # v = np.clip(v, vmin, vmax)
 
             logplot = log and vmin > 0
             if logplot:
                 v = np.log10(v)
 
+            levels = np.linspace(vmin, vmax, nlevels)
             cs = ax.contourf(self.x.value, self.y.value, v.T, levels=levels,
                              cmap=cmap, *args, **kwargs)
+            #cs.set_clim(vmin,vmax)
+            
 
             ticks = get_ticks(vmin, vmax)
             cb = f.colorbar(cs, ax=ax,ticks=ticks)
+            
             cb.ax.set_yticks()
+            #cb.set_clim(vmin,vmax)
 
             ax.set_xlim(xlim)
             ax.set_ylim(ylim)
