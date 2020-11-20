@@ -15,11 +15,6 @@ from yt.fields.field_info_container import FieldInfoContainer
 
 from utilities import plot_unit_planet, plot_unit_si, get_unit
 
-def _unit_one(field, data):
-    res = np.zeros(data[('particle','p_w')].shape)
-    res[:] = 1
-    return res
-
 class FLEKSFieldInfo(FieldInfoContainer):
     l_units = "code_length"
     v_units = "code_velocity"
@@ -151,9 +146,7 @@ class FLEKSDataset(BoxlibDataset):
                  unit_system="mks"):
         self.default_fluid_type = "mesh"
         self.default_field = ("mesh", "density")
-        self.fluid_types = ("mesh", "index", "raw")    
-
-        yt.add_field(("particle", "unit_one"), function=_unit_one, particle_type=True)
+        self.fluid_types = ("mesh", "index", "raw")                                
 
         super(FLEKSDataset, self).__init__(output_dir,
                                            cparam_filename,
