@@ -559,9 +559,6 @@ void Pic::calc_mass_matrix() {
 
   jHat.SumBoundary(geom.periodicity());
 
-  // FillBoundary seems unnecessary. --Yuxi
-  jHat.FillBoundary(geom.periodicity());
-
   nodeMM.SumBoundary(geom.periodicity());
 
   nodeMM.FillBoundary(geom.periodicity());
