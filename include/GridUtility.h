@@ -52,34 +52,8 @@ void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
   distribute_FabArray(fa, baNew, dm, fa.nComp(), fa.nGrow(), doCopy);
 }
 
-inline void add_cells_to_BoxArray(amrex::BoxArray& ba,
-                                  const amrex::Vector<amrex::IntVect>& cells) {
-  amrex::BoxList bl(ba);
-  for (const amrex::IntVect& cell : cells) {
-    bl.push_back(amrex::Box(cell, cell, bl.ixType()));
-  }
-  bl.simplify();
-  bl.simplify();
-  bl.simplify();
-  ba.define(bl);
-}
-
-inline void add_boxes_to_BoxArray(amrex::BoxArray& ba,
-                                  const amrex::Vector<amrex::Box>& boxes) {
-  amrex::BoxList bl(ba);
-  for (const amrex::Box& bx : boxes) {
-    bl.push_back(bx);
-  }
-
-  // nSimplify is chosen based on tests. It seems 3 is a reasonable choice.
-  const int nSimplify = 3;
-  for (int i = 0; i < nSimplify; i++) {
-    bl.simplify();
-  }
-
-  ba.define(bl);
-}
-
+// This function is called recursively to combine active patahces into larger
+// boxes. The number of boxes should be minimized.
 inline void get_boxlist_from_region(amrex::BoxList& bl, GridInfo& gridInfo,
                                     amrex::IntVect imin, amrex::IntVect imax) {
 
@@ -95,9 +69,6 @@ inline void get_boxlist_from_region(amrex::BoxList& bl, GridInfo& gridInfo,
       amrex::Abort("Error: the sub-region range is wrong!");
     patchLen[i] /= patchSize[i];
   }
-  // amrex::Print() << "imin = " << imin << " imax = " << imax
-  //                << " patchLen = " << patchLen << " patchenlen == 1"
-  //                << ((patchLen == 1) ? 'T' : 'F') << std::endl;
 
   if (patchLen == 1) {
     if (gridInfo.get_status(imin[ix_], imin[iy_], imin[iz_]) ==
@@ -125,6 +96,8 @@ inline void get_boxlist_from_region(amrex::BoxList& bl, GridInfo& gridInfo,
         }
         get_boxlist_from_region(blLoc, gridInfo, iminsub, imaxsub);
       }
+
+  // The number '3' is chosen based on numerical experiments.
   for (int i = 0; i < 3; i++)
     blLoc.simplify();
 
