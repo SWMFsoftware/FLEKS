@@ -160,7 +160,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
 
           ParticleType p;
           if (ParticleType::the_next_id >= amrex::LastParticleID) {
-            // id should not be larger than LastParticleID. This is a bad 
+            // id should not be larger than LastParticleID. This is a bad
             // solution, since the ID becomes nonunique. --Yuxi
             p.id() = amrex::LastParticleID;
           } else {
@@ -470,7 +470,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(MultiFab& momentsMF,
 
   momentsMF.SumBoundary(Geom(0).periodicity());
 
-  // FillBoundary seems unnecessary. --Yuxi
+  // FillBoundary seems necessary for non-box active PIC region. But why? --Yuxi
   momentsMF.FillBoundary(Geom(0).periodicity());
 
   energy *= 0.5 / get_qom();
