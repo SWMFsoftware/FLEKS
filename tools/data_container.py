@@ -321,7 +321,6 @@ class dataContainer2D(object):
                              cmap=cmap, *args, **kwargs)
             #cs.set_clim(vmin,vmax)
             
-
             ticks = get_ticks(vmin, vmax)
             cb = f.colorbar(cs, ax=ax,ticks=ticks)
             

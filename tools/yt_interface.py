@@ -80,8 +80,7 @@ class FLEKSFieldInfo(FieldInfoContainer):
             finfo.nodal_flag = ds.nodal_flags[field]
 
     def setup_fluid_fields(self):
-        from yt.fields.magnetic_field import \
-            setup_magnetic_field_aliases
+        from yt.fields.magnetic_field import setup_magnetic_field_aliases
 
         for field in self.known_other_fields:
             fname = field[0]
@@ -164,7 +163,7 @@ class FLEKSDataset(BoxlibDataset):
             plot_string = f.readline().lower()
             self.radius = float(f.readline())  # should be in unit [m]
 
-        # It seems the second argument should be in the unit of cm.
+        # It seems the second argument should be in the unit of [cm].
         self.unit_registry.add("Planet_Radius", 100*self.radius,
                                yt.units.dimensions.length)
 
@@ -193,14 +192,10 @@ class FLEKSDataset(BoxlibDataset):
         setdefaultattr(self, 'time_unit', self.quan(1, get_unit("time", unit)))
         setdefaultattr(self, 'length_unit', self.quan(1, get_unit("X", unit)))
         setdefaultattr(self, 'mass_unit', self.quan(1, get_unit("mass", unit)))
-        setdefaultattr(self, 'velocity_unit',
-                       self.quan(1, get_unit("u", unit)))
-        setdefaultattr(self, 'magnetic_unit',
-                       self.quan(1, get_unit("B", unit)))
-        setdefaultattr(self, 'density_unit',
-                       self.quan(1, get_unit("rho", unit)))
-        setdefaultattr(self, 'pressure_unit',
-                       self.quan(1, get_unit("p", unit)))
+        setdefaultattr(self, 'velocity_unit', self.quan(1, get_unit("u", unit)))
+        setdefaultattr(self, 'magnetic_unit', self.quan(1, get_unit("B", unit)))
+        setdefaultattr(self, 'density_unit', self.quan(1, get_unit("rho", unit)))
+        setdefaultattr(self, 'pressure_unit', self.quan(1, get_unit("p", unit)))
 
     def get_slice(self, norm, cut_loc):
         r""" 
@@ -339,9 +334,11 @@ class FLEKSDataset(BoxlibDataset):
 
         dd = self.box(left_edge, right_edge)
         var_type = 'particle'
-        plot = yt.PhasePlot(dd, (var_type, x_field), (var_type, y_field),
-                            (var_type, z_field), weight_field=None,
-                            x_bins=x_bins, y_bins=y_bins)
+        plot = yt.PhasePlot(dd,
+                            (var_type, x_field),
+                            (var_type, y_field),
+                            (var_type, z_field),
+                            weight_field=None, x_bins=x_bins, y_bins=y_bins)
         plot.set_unit((var_type, x_field), get_unit(x_field, unit_type))
         plot.set_unit((var_type, y_field), get_unit(y_field, unit_type))
         plot.set_unit((var_type, z_field), get_unit(z_field, unit_type))
@@ -378,8 +375,11 @@ class FLEKSDataset(BoxlibDataset):
 
         nmap = {"p_x": "particle_position_x",
                 "p_y": "particle_position_y", "p_z": "particle_position_z"}
-        plot = yt.ParticlePlot(self, (var_type, nmap[x_field]), (var_type, nmap[y_field]),
-                               (var_type, z_field), data_source=dd)
+        plot = yt.ParticlePlot(self,
+                               (var_type, nmap[x_field]),
+                               (var_type, nmap[y_field]),
+                               (var_type, z_field),
+                               data_source=dd)
         plot.set_axes_unit((get_unit(x_field, unit_type),
                             get_unit(y_field, unit_type)))
         plot.set_unit((var_type, z_field), get_unit(z_field, unit_type))
