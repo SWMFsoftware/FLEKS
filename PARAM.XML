@@ -377,6 +377,24 @@ efficiency and flexibility. 8*8*8 or 16*8*8 are typical for a 3D simulation.
 
 </commandgroup>
 
+<commandgroup name="SCRIPT COMMANDS">
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!! SCRIPT COMMANDS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+<command name="INCLUDE">
+	<parameter name="NameIncludeFile" type="string" />
+#INCLUDE
+PC/restartIN/FLEKS0_restart.H		NameIncludeFile
+
+Include a file. The most useful application is including the restart
+header file as show by the example. Including this file helps making sure
+that the original and restarted runs use consistent settings.
+
+The default is to use a single PARAM.in file.
+</command>
+
+</commandgroup>
+
 <commandgroup name="Restart">
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! RESTART !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -392,6 +410,9 @@ F                 doRestart
 
 This command should only exist in the restart file FLEKSX_restart.H
 to indicate that the FLEKS region is restarted from a file.
+
+In PARAM.in, users should use the command #INCLUDE instead of #RESTART
+to control the restart.
 </command>
 
 <command name="NSTEP"
