@@ -38,8 +38,7 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
 
   pic.init(fluidInterface, tc, domainID);
 
-  if (usePT)
-    pt.init(fluidInterface, tc, domainID);
+  pt.init(fluidInterface, tc, domainID);
 
   read_param();
 
