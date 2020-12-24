@@ -59,8 +59,8 @@ protected:
   amrex::Real invVol;
   bool isPeriodic[nDim];
 
-  amrex::Real mergeThresholdDistance;
-  amrex::Real velBinBufferSize;
+  amrex::Real mergeThresholdDistance = 0.6;
+  amrex::Real velBinBufferSize = 0.125;
 
 public:
   static const int iup_ = 0;

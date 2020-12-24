@@ -37,7 +37,6 @@ class Pic : public PicGrid {
   friend ParticleTracker;
   // public variables
 public:
-
   // private variables
 private:
   std::shared_ptr<FluidInterface> fluidInterface;
@@ -78,43 +77,34 @@ private:
   amrex::Vector<std::unique_ptr<Particles<> > > parts;
 
   amrex::IntVect nPartPerCell;
-  amrex::Real qomEl;
+  amrex::Real qomEl = -100;
 
   FieldSolver fsolver;
 
-  bool doRestart;
-  bool doCorrectDivE;
+  bool doRestart = false;
+  bool doCorrectDivE = true;
 
-  bool doReSampling;
-  amrex::Real reSamplingLowLimit;
-  amrex::Real reSamplingHighLimit;
+  bool doReSampling = true;
+  amrex::Real reSamplingLowLimit = 0.8;
+  amrex::Real reSamplingHighLimit = 1.5;
 
   std::string printPrefix;
   std::string domainName;
   int domainID;
 
-  bool doSmoothE;
-  int nSmoothE;
-  amrex::Real coefSmoothE;
+  bool doSmoothE = true;
+  int nSmoothE = 1;
+  amrex::Real coefSmoothE = 0.5;
 
-  TestCase testCase;
+  TestCase testCase = RegularSimulation;
 
-  amrex::Real particleMergeThreshold, particleMergeBinBuffer; 
+  amrex::Real particleMergeThreshold = -1, particleMergeBinBuffer = -1;
 
-  bool doReport; 
+  bool doReport = false;
 
   // public methods
 public:
   Pic() {
-    qomEl = -100;
-
-    doRestart = false;
-    doCorrectDivE = true;
-
-    doReSampling = true;
-    reSamplingLowLimit = 0.8;
-    reSamplingHighLimit = 1.5;
-
     for (int iDim = 0; iDim < nDim; iDim++)
       nPartPerCell[iDim] = 6;
 
@@ -123,17 +113,6 @@ public:
 
     divESolver.set_tol(0.01);
     divESolver.set_nIter(20);
-
-    doSmoothE = true;
-    nSmoothE = 1;
-    coefSmoothE = 0.5;
-
-    testCase = RegularSimulation;
-
-    particleMergeThreshold = -1;
-    particleMergeBinBuffer = -1; 
-
-    doReport = false; 
   };
   ~Pic(){};
 

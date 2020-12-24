@@ -8,11 +8,7 @@
 
 class ParticleTracker {
 public:
-  // Make up a plot string to initialize pw, but the unit should be 'planet'.
-  ParticleTracker() {
-    isGridInitialized = false;
-    isGridEmpty = false;
-  };
+  ParticleTracker(){};
   ~ParticleTracker() {
     if (!isGridInitialized)
       return;
@@ -76,9 +72,9 @@ private:
 
   std::unique_ptr<PlotCtr> savectr;
 
-  bool isGridInitialized;
+  bool isGridInitialized = false;
 
-  bool isGridEmpty;
+  bool isGridEmpty = false;
 };
 
 #endif

@@ -38,9 +38,6 @@ Particles<NStructReal, NStructInt>::Particles(
     invVol *= invDx[i];
   }
 
-  mergeThresholdDistance = 0.6;
-  velBinBufferSize = 0.125;
-
   set_region_ba(regionBAIn);
 
   // The following line is used to avoid an MPI bug (feature?) on Frontera. It

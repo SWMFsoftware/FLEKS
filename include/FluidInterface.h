@@ -40,14 +40,11 @@ private:
   std::string domainName;
   std::string printPrefix;
 
-  bool isGridInitialized;
-  bool isGridEmpty;
+  bool isGridInitialized = false;
+  bool isGridEmpty = false;
 
 public:
-  FluidInterface() {
-    isGridInitialized = false;
-    isGridEmpty = false;
-  }
+  FluidInterface() {}
   ~FluidInterface() = default;
   void init(int domainIDIn);
   void receive_info_from_gm(const int* const paramInt,

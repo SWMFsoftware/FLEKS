@@ -10,14 +10,12 @@
 class Timer {
 private:
   std::string name;
-  bool isTiming;
+  bool isTiming = true;
 
 public:
   Timer(std::string nameIn) {
     name = nameIn;    
-    timing_start(name);
-
-    isTiming = true;
+    timing_start(name);    
   }
 
   ~Timer() { stop(); }

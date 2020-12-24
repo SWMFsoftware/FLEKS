@@ -55,18 +55,14 @@ protected:
   amrex::iMultiFab nodeAssignment;
   constexpr static int iAssign_ = 1, iNotAssign_ = 0;
 
-  bool doNeedFillNewCell;
+  bool doNeedFillNewCell = true;
 
-  bool isGridInitialized;
+  bool isGridInitialized = false;
 
-  bool isGridEmpty;
+  bool isGridEmpty = false;
 
 public:
-  PicGrid() {
-    doNeedFillNewCell = true;
-    isGridInitialized = false;
-    isGridEmpty = false;
-  };
+  PicGrid(){};
   ~PicGrid() = default;
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }

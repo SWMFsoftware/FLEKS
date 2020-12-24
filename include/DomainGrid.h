@@ -23,7 +23,7 @@ protected:
   int nGst;
 
   amrex::IntVect nCell;
-  
+
   amrex::IntVect maxBlockSize;
   int periodicity[nDim];
   amrex::IntVect centerBoxLo;
@@ -36,24 +36,21 @@ protected:
 
   GridInfo gridInfo;
 
-  int iGrid;
-  int iDecomp;
+  int iGrid = 1;
+  int iDecomp = 1;
 
-  int domainID; 
-  std::string printPrefix; 
-  std::string domainName; 
+  int domainID;
+  std::string printPrefix;
+  std::string domainName;
 
-  bool isGridInitialized; 
+  bool isGridInitialized = false;
 
 public:
   DomainGrid() {
-    iGrid = 1;
-    iDecomp = 1;
     for (int i = 0; i < nDim; i++) {
       periodicity[i] = 0;
       maxBlockSize[i] = 8;
     }
-    isGridInitialized = false;
   }
   ~DomainGrid() = default;
 
