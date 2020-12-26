@@ -1077,16 +1077,24 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
 
     // Find the 'heaviest' nNew particles by sorting the weight (charge).-----
 
-    // Sort the particles by x first to make sure the results are the same for
+    // Sort the particles by ID first to make sure the results are the same for
     // different number of processors
     std::sort(particles.begin(), particles.end(),
               [](const auto& pl, const auto& pr) {
-                return pl.rdata(ix_) > pr.rdata(ix_);
+		return pl.id() > pr.id(); 
               });
 
+    // Sort the particles by the weight in decending order. 
     std::sort(particles.begin(), particles.end(),
               [](const auto& pl, const auto& pr) {
-                return fabs(pl.rdata(iqp_)) > fabs(pr.rdata(iqp_));
+		const Real ql = fabs(pl.rdata(iqp_)); 
+		const Real qr = fabs(pr.rdata(iqp_));
+		//Q: Why use '1e-6*ql' instead of `0'?
+		//A: If it is sorted by 'ql > qr', and all the particles in this cell
+		//   have the same weight, the particles are essentially sorted by the
+		//   last digit, which is random. The threshold '1e-6*ql' is introduced
+		//   to avoid the randomness.
+                return  ql - qr > 1e-6*ql;
               });
     //----------------------------------------------------------------
 
