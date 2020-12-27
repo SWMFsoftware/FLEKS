@@ -1077,11 +1077,12 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
 
     // Find the 'heaviest' nNew particles by sorting the weight (charge).-----
 
-    // Sort the particles by ID first to make sure the results are the same for
-    // different number of processors
+    // Sort the particles by the location first to make sure the results 
+    // are the same for different number of processors
     std::sort(particles.begin(), particles.end(),
               [](const auto& pl, const auto& pr) {
-		return pl.id() > pr.id(); 
+		return pl.pos(ix_) + pl.pos(iy_) + pl.pos(iz_) > 
+		  pr.pos(ix_) + pr.pos(iy_) + pr.pos(iz_); 
               });
 
     // Sort the particles by the weight in decending order. 
