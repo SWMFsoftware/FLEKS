@@ -35,6 +35,14 @@ FLAGC_EXTRA = ${FLAGC_LOCAL}
 
 include ../Makefile.conf
 
+ifeq ($(C_COMPILER_NAME), nvc)
+      DEPFLAGS = 
+endif
+
+ifeq ($(C_COMPILER_NAME), pgcc)
+      DEPFLAGS = 
+endif
+
 default: EXE
 
 EXE:

@@ -18,6 +18,14 @@ SRCS := \
 include ../Makefile.conf
 include ../Makefile.conf.local
 
+ifeq ($(C_COMPILER_NAME), nvc)
+      DEPFLAGS = 
+endif
+
+ifeq ($(C_COMPILER_NAME), pgcc)
+      DEPFLAGS = 
+endif
+
 # OBJECT FILE FOR THE WRAPPER
 
 OBJECTS = ${OBJS} PC_wrapper.o
