@@ -86,8 +86,9 @@ void ParticleTracker::init(std::shared_ptr<FluidInterface>& fluidIn,
     printPrefix = domainName + ": ";
   }
 
-  savectr = std::make_unique<PlotCtr>(tc.get(), domainID, -1, nPTRecord,
-                                      "3d fluid test_particle real4 planet");
+  savectr = std::unique_ptr<PlotCtr>(
+      new PlotCtr(tc.get(), domainID, -1, nPTRecord,
+                  "3d fluid test_particle real4 planet"));
 }
 
 //==========================================================
@@ -123,10 +124,10 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
   //--------------test particles-----------------------------------
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
-      auto ptr = std::make_unique<TestParticles>(
-          ptRegionBA, geom, dm, centerBA, fluidInterface.get(), tc.get(), i,
-          fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i),
-          domainID);
+      auto ptr = std::unique_ptr<TestParticles>(
+          new TestParticles(ptRegionBA, geom, dm, centerBA, fluidInterface.get(),
+                           tc.get(), i, fluidInterface->getQiSpecies(i),
+                           fluidInterface->getMiSpecies(i), domainID));
       parts.push_back(std::move(ptr));
     }
   } else {

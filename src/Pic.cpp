@@ -259,10 +259,10 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   //--------------particles-----------------------------------
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
-      auto ptr = std::make_unique<Particles<> >(
+      auto ptr = std::unique_ptr<Particles<> >(new Particles<>(
           picRegionBA, geom, dm, centerBA, fluidInterface.get(), tc.get(), i,
           fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i),
-          nPartPerCell, testCase);
+          nPartPerCell, testCase));
 
       //----- Set parameters------------
       if (particleMergeThreshold >= 0) {
