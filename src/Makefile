@@ -1,3 +1,6 @@
+include ../Makefile.def
+-include Makefile.DEPEND
+
 # source files
 SRCS := \
 	Domain.cpp \
@@ -13,16 +16,12 @@ SRCS := \
 	Pic.cpp \
 	PicIO.cpp	
 
-include ../Makefile.conf.local
-include ../Makefile.def
-
-OBJECTS = ${OBJS}
+OBJECTS := $(patsubst %, %.o,$(basename $(SRCS)))
 
 OBJECTS_EXE = \
 	main.o
 
 FLEKSEXE = ${BINDIR}/FLEKS.exe
-
 
 CONVERTER_OBJECTS = \
 	Converter.o
@@ -31,17 +30,9 @@ CONVERTEREXE = ../bin/Converter.exe
 
 SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 
-FLAGC_EXTRA = ${FLAGC_LOCAL} 
+LIBFLEKS  = libFLEKS.a
 
 include ../Makefile.conf
-
-ifeq ($(C_COMPILER_NAME), nvc)
-      DEPFLAGS = 
-endif
-
-ifeq ($(C_COMPILER_NAME), pgcc)
-      DEPFLAGS = 
-endif
 
 default: EXE
 
@@ -58,17 +49,10 @@ CONVERTER:
 	@echo ${CONVERTEREXE} has been brought up to date.
 	@echo
 
-
-%.o: %.cpp
-%.o: %.cpp $(DEPDIR)/%.d
-	${COMPILE.mpicxx} -o $@ -c ${DEPFLAGS} $(FLAGCC) $<
-
 DEPEND:
+	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJECTS} ${OBJECTS_EXE}
 
-
-LIBFLEKS  = libFLEKS.a
-
-LIB:    
+LIB:    DEPEND
 	$(MAKE) ${LIBFLEKS}
 	@echo
 	@echo ${LIBFLEKS} has been brought up to date.
