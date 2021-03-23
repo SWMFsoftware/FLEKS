@@ -16,8 +16,8 @@ int main(int argc, char* argv[]) {
     commandLine.push_back((std::string)(argv[i]));
   }
 
-  std::array<std::string,2>arg = {"-h","-help"};
-  if (argc > 1 && find(arg.begin(),arg.end(),commandLine[1]) != arg.end()) {
+  std::array<std::string, 2> arg = { "-h", "-help" };
+  if (argc > 1 && find(arg.begin(), arg.end(), commandLine[1]) != arg.end()) {
     std::cout << " \n"
               << " This exectuable combines all the blocks in a *_amrex file "
                  "into one block. "

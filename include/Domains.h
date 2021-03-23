@@ -29,13 +29,11 @@ public:
     return *(domainVector[i]);
   };
 
-  int size(){
-      return domainVector.size();
-  }
+  int size() { return domainVector.size(); }
 
-  void select(int i){iSelected = i; }
+  void select(int i) { iSelected = i; }
 
-  int selected()const{return iSelected;}
+  int selected() const { return iSelected; }
 };
 
 #endif

@@ -2,24 +2,25 @@
 #define _DOMAIN_H_
 
 #include "DomainGrid.h"
-#include "Pic.h"
 #include "ParticleTracker.h"
+#include "Pic.h"
 
 class Domain : public DomainGrid {
 private:
   bool doRestart = false;
 
-  bool usePT = false; 
+  bool usePT = false;
+
 public:
   Pic pic;
-  ParticleTracker pt; 
+  ParticleTracker pt;
 
   // Conceptually, both the Domain class and the Pic class may use the
   // following classes, so they are handled by shared pointers.
   std::shared_ptr<FluidInterface> fluidInterface;
   std::shared_ptr<TimeCtr> tc;
 
-  int couplerMarker;   
+  int couplerMarker;
 
 public:
   Domain() {
@@ -32,8 +33,8 @@ public:
   void update();
 
   //--------------Initialization begin-------------------------------
-  void init(double time, const std::string &paramString, int *paramInt, double *gridDim,
-            double *paramReal, int iDomain = 1);
+  void init(double time, const std::string &paramString, int *paramInt,
+            double *gridDim, double *paramReal, int iDomain = 1);
   void set_ic();
   //----------------Initialization end-------------------------------
 

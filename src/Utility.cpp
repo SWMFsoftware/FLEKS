@@ -1,8 +1,8 @@
 #include <iostream>
 
-#include "Utility.h"
 #include "Constants.h"
 #include "Timer.h"
+#include "Utility.h"
 
 using namespace std;
 using namespace amrex;
@@ -24,7 +24,7 @@ void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
     MultiFab srcAliasMF(srcMF, amrex::make_alias, i, 1);
     grad_node_to_center(srcAliasMF, centerMF, invDx, status);
 
-    //centerMF.FillBoundary(geom.periodicity());
+    // centerMF.FillBoundary(geom.periodicity());
     MultiFab dstAliasMF(dstMF, amrex::make_alias, i, 1);
     div_center_to_node(centerMF, dstAliasMF, invDx);
   }
@@ -42,7 +42,7 @@ void grad_node_to_center(const amrex::MultiFab& nodeMF,
 
     int imin = lo.x - 1, jmin = lo.y - 1, kmin = lo.z - 1;
     int imax = hi.x + 1, jmax = hi.y + 1, kmax = hi.z + 1;
-    
+
     const amrex::Array4<amrex::Real>& center = centerMF[mfi].array();
     const amrex::Array4<amrex::Real const>& node = nodeMF[mfi].array();
 
@@ -348,7 +348,7 @@ void print_MultiFab(const amrex::iMultiFab& data, std::string tag, int nshift) {
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
-    AllPrint()<<"box = "<<box<<std::endl;
+    AllPrint() << "box = " << box << std::endl;
 
     for (int i = lo.x - nshift; i <= hi.x + nshift; ++i)
       for (int j = lo.y - nshift; j <= hi.y + nshift; ++j)
@@ -534,38 +534,37 @@ void average_center_to_node(const amrex::MultiFab& centerMF,
   }
 }
 
+double read_mem_usage() {
+  // This function returns the resident set size (RSS) of
+  // this processor in unit MB.
 
-double read_mem_usage(){                                                                                                    
-  // This function returns the resident set size (RSS) of                                                                   
-  // this processor in unit MB.                                                                                             
-                                                                                                                            
-  // From wiki:                                                                                                             
-  // RSS is the portion of memory occupied by a process that is                                                             
-  // held in main memory (RAM).                                                                                             
-                                                                                                                            
-  double rssMB = 0.0;                                                                                                       
-                                                                                                                            
-  ifstream stat_stream("/proc/self/stat", ios_base::in);                                                                    
-                                                                                                                            
-  if (!stat_stream.fail()) {                                                                                                
-    // Dummy vars for leading entries in stat that we don't care about                                                      
-    string pid, comm, state, ppid, pgrp, session, tty_nr;                                                                   
-    string tpgid, flags, minflt, cminflt, majflt, cmajflt;                                                                  
-    string utime, stime, cutime, cstime, priority, nice;                                                                    
-    string O, itrealvalue, starttime;                                                                                       
-                                                                                                                            
-    // Two values we want                                                                                                   
-    unsigned long vsize;                                                                                                    
-    unsigned long rss;                                                                                                      
-                                                                                                                            
-    stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr >>                                             
-      tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >>                                                  
-      stime >> cutime >> cstime >> priority >> nice >> O >> itrealvalue >>                                                  
-      starttime >> vsize >> rss; // Ignore the rest                                                                         
-    stat_stream.close();                                                                                                    
-                                                                                                                            
-    rssMB = rss*sysconf(_SC_PAGE_SIZE)/1024.0/1024.0;                                                                       
-  }                                                                                                                         
-                                                                                                                            
-  return rssMB;                                                                                                             
-}  
+  // From wiki:
+  // RSS is the portion of memory occupied by a process that is
+  // held in main memory (RAM).
+
+  double rssMB = 0.0;
+
+  ifstream stat_stream("/proc/self/stat", ios_base::in);
+
+  if (!stat_stream.fail()) {
+    // Dummy vars for leading entries in stat that we don't care about
+    string pid, comm, state, ppid, pgrp, session, tty_nr;
+    string tpgid, flags, minflt, cminflt, majflt, cmajflt;
+    string utime, stime, cutime, cstime, priority, nice;
+    string O, itrealvalue, starttime;
+
+    // Two values we want
+    unsigned long vsize;
+    unsigned long rss;
+
+    stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr >>
+        tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >>
+        stime >> cutime >> cstime >> priority >> nice >> O >> itrealvalue >>
+        starttime >> vsize >> rss; // Ignore the rest
+    stat_stream.close();
+
+    rssMB = rss * sysconf(_SC_PAGE_SIZE) / 1024.0 / 1024.0;
+  }
+
+  return rssMB;
+}

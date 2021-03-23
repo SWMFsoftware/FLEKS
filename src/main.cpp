@@ -9,10 +9,10 @@
 
 int main(int argc, char* argv[]) {
 
-  amrex::Initialize(argc, argv);  
+  amrex::Initialize(argc, argv);
   {
     if (amrex::ParallelDescriptor::MyProc() == 0)
-    print_git_info();
+      print_git_info();
 
     // Domain domain;
 

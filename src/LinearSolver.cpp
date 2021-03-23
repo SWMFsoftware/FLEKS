@@ -62,7 +62,7 @@ void linear_solver_wrapper_hy(
     double *precondMatrix_II, // Diagonal and super/sub diagonal elements from
                               // the matrix A, which is in the equation Ax = b
     const int lTest) {
-  struct LinearSolverParam param;  
+  struct LinearSolverParam param;
 
   param.typePrecond = typePrecond;
   if (param.typePrecond == NONE) {

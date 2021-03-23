@@ -1077,25 +1077,26 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
 
     // Find the 'heaviest' nNew particles by sorting the weight (charge).-----
 
-    // Sort the particles by the location first to make sure the results 
+    // Sort the particles by the location first to make sure the results
     // are the same for different number of processors
     std::sort(particles.begin(), particles.end(),
               [](const ParticleType& pl, const ParticleType& pr) {
-		return pl.pos(ix_) + pl.pos(iy_) + pl.pos(iz_) > 
-		  pr.pos(ix_) + pr.pos(iy_) + pr.pos(iz_); 
+                return pl.pos(ix_) + pl.pos(iy_) + pl.pos(iz_) >
+                       pr.pos(ix_) + pr.pos(iy_) + pr.pos(iz_);
               });
 
-    // Sort the particles by the weight in decending order. 
+    // Sort the particles by the weight in decending order.
     std::sort(particles.begin(), particles.end(),
               [](const ParticleType& pl, const ParticleType& pr) {
-		const Real ql = fabs(pl.rdata(iqp_)); 
-		const Real qr = fabs(pr.rdata(iqp_));
-		//Q: Why use '1e-6*ql' instead of `0'?
-		//A: If it is sorted by 'ql > qr', and all the particles in this cell
-		//   have the same weight, the particles are essentially sorted by the
-		//   last digit, which is random. The threshold '1e-6*ql' is introduced
-		//   to avoid the randomness.
-                return  ql - qr > 1e-6*ql;
+                const Real ql = fabs(pl.rdata(iqp_));
+                const Real qr = fabs(pr.rdata(iqp_));
+                // Q: Why use '1e-6*ql' instead of `0'?
+                // A: If it is sorted by 'ql > qr', and all the particles in
+                // this cell
+                //   have the same weight, the particles are essentially sorted
+                //   by the last digit, which is random. The threshold '1e-6*ql'
+                //   is introduced to avoid the randomness.
+                return ql - qr > 1e-6 * ql;
               });
     //----------------------------------------------------------------
 
