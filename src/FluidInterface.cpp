@@ -255,14 +255,6 @@ void FluidInterface::set_plasma_charge_and_mass(amrex::Real qomEl) {
     QoQi0_S[i] = QoQi_S[i];
   }
 
-  if (doSplitSpecies) {
-    int idx;
-    for (int i = 0; i < nS; i++) {
-      idx = iSPic2Mhd_I[i];
-      QoQi_S[i] = QoQi0_S[idx];
-      MoMi_S[i] = MoMi0_S[idx];
-    }
-  }
 }
 
 void FluidInterface::load_balance(const DistributionMapping& dmIn) {

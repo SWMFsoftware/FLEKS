@@ -236,9 +236,9 @@ public:
   amrex::Real get_ppar(const amrex::MFIter& mfi, const Type x, const Type y,
                        const Type z, const int is) const {
     amrex::Real P;
-    if (useMultiSpecies || useMultiFluid || doSplitSpecies) {
+    if (useMultiSpecies || useMultiFluid) {
       std::cout << " getFluidPpar has not implemented for "
-                   "multifluid/multispecies/doSplitSpecies!!"
+                   "multifluid/multispecies!!"
                 << std::endl;
       abort();
     }
@@ -492,9 +492,9 @@ public:
     // indexes for the norm_DD matix
     int Norm_, Perp1_, Perp2_, X_, Y_, Z_;
 
-    if (useMultiFluid || useMultiSpecies || doSplitSpecies) {
+    if (useMultiFluid || useMultiSpecies) {
       std::cout << " setFluidanisoUth has not implemented for "
-                   "multifluid/multispecies/doSplitSpecies!!!"
+                   "multifluid/multispecies!!!"
                 << std::endl;
       abort();
     }
