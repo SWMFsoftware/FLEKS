@@ -262,7 +262,7 @@ void FluidInterface::load_balance(const DistributionMapping& dmIn) {
 
 //-------------------------------------------------------------------------
 
-void FluidInterface::init_data() {
+void FluidInterface::calc_normalized_units() {
 
   // normalization variables
   double RHOnorm, Bnorm, Jnorm, Pnorm;
@@ -380,7 +380,7 @@ void FluidInterface::init_data() {
 }
 //-------------------------------------------------------------------------
 
-void FluidInterface::re_norm_length() {
+void FluidInterface::normalize_length() {
   // Normalization
   for (int i = 0; i < 3; i++) {
     dx_D[i] *= Si2NoL;
@@ -641,13 +641,9 @@ void FluidInterface::read_from_GM(const int* const paramint,
     Mnorm = 1.0;
   }
 
-  init_data();
-  re_norm_length();
-  check_param();
-}
+  calc_normalized_units();
+  normalize_length();  
 
-/** Check the parameters passed or calculated from BATSRUS*/
-void FluidInterface::check_param() {
   if (useMultiFluid && !useMhdPe) {
     cout << " Use multi-fluid but do not use electron pressure. This case is "
             "not supported so far!!!"

@@ -14,9 +14,7 @@
 #include <AMReX_Vector.H>
 #include <AMReX_VisMF.H>
 
-#include "BC.h"
 #include "Constants.h"
-#include "FluidPicInterface.h"
 #include "MDArray.h"
 #include "ReadParam.h"
 #include "Utility.h"
@@ -24,7 +22,7 @@
 
 class FluidInterface {
 
-protected:
+private:
   static const int nDimMax = 3;
   int myrank;
 
@@ -34,10 +32,9 @@ protected:
 
   // Min and Max of the physical domain in normalized PIC units.
   double phyMin_D[3], phyMax_D[3];
-
-  // The length of the computational domain in normalized PIC units, including
-  // the ghost cell layers.
   double lenPhy_D[3];
+  
+  int nPhyCell_D[nDimMax];
 
   // Cell Size
   double dx_D[3];
@@ -46,9 +43,6 @@ protected:
   double R_DD[3][3];
 
   bool doRotate;
-
-  // Number of nodes in each direction, including the ghost cell layers.
-  int nPhyCell_D[nDimMax];
 
   // Number of variables passing between MHD and PIC.
   int nVarFluid;
@@ -69,8 +63,6 @@ protected:
   int nVarCoupling;
 
   bool useMultiSpecies, useMultiFluid, useElectronFluid;
-
-  static const int NG = 1; // number of ghost cell
 
   bool useAnisoP; // Use anisotripic pressure
 
@@ -101,20 +93,16 @@ protected:
 
   double PeRatio; // temperature ratio for electrons: PeRatio = Pe/Ptotal
   double SumMass; // Sum of masses of each particle species
-public:
-  ReadParam readParam;
 
-protected:
-  // Variables for IDL format output.
-
-public:
-  // These variables are also used in PSKOutput.h
   int *iRho_I, *iRhoUx_I, *iRhoUy_I, *iRhoUz_I, iBx, iBy, iBz, iEx, iEy, iEz,
       iPe, *iPpar_I, *iP_I, iJx, iJy, iJz, *iUx_I, *iUy_I, *iUz_I, iRhoTotal;
 
   // At most 10 vectors are supported during the coupling.
   static const int nVecMax = 10;
   int vecIdxStart_I[nVecMax], nVec;
+
+public:
+  ReadParam readParam;
 
 private:
   // ------Grid info----------
@@ -172,20 +160,18 @@ public:
 
   void load_balance(const amrex::DistributionMapping& dmIn);
 
-  void init_data();
+  void calc_normalized_units();
 
-  void re_norm_length();
+  void normalize_length();
 
   void read_from_GM(const int* const paramint,
-                      const double* const ParamRealRegion,
-                      const double* const ParamRealComm,
-                      const std::stringstream* const ss);
-
-  void check_param();
+                    const double* const ParamRealRegion,
+                    const double* const ParamRealComm,
+                    const std::stringstream* const ss);
 
   /** Get nomal and pendicular vector to magnetic field */
   void calc_mag_base_vector(const double Bx, const double By, const double Bz,
-                           MDArray<double>& norm_DD) const;
+                            MDArray<double>& norm_DD) const;
 
   void calc_fluid_state(const double* dataPIC_I, double* dataFluid_I) const;
 
@@ -197,7 +183,7 @@ public:
   void print_info();
 
   int get_nCellPerPatch() const { return nCellPerPatch; }
-  
+
   bool get_UseAnisoP() const { return (useAnisoP); }
 
   bool get_useElectronFluid() const { return useElectronFluid; }
