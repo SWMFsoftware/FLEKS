@@ -349,9 +349,9 @@ void Domain::init_time_ctr() {
       scalarVar_I.push_back(fluidInterface->getQiSpecies(i));
     }
     scalarName_I.push_back("cLight");
-    scalarVar_I.push_back(fluidInterface->getcLightSI());
+    scalarVar_I.push_back(fluidInterface->get_cLight_SI());
     scalarName_I.push_back("rPlanet");
-    scalarVar_I.push_back(fluidInterface->getrPlanet());
+    scalarVar_I.push_back(fluidInterface->get_rPlanet_SI());
     //-------------------------------------
 
     for (auto &plot : tc->plots) {
@@ -375,7 +375,7 @@ void Domain::init_time_ctr() {
                        fluidInterface->getNo2SiB(),
                        fluidInterface->getNo2SiRho(),
                        fluidInterface->getNo2SiP(), fluidInterface->getNo2SiJ(),
-                       fluidInterface->getrPlanet());
+                       fluidInterface->get_rPlanet_SI());
       writer.set_No2NoL(fluidInterface->getMhdNo2NoL());
 
       writer.set_scalarValue_I(scalarVar_I);

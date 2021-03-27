@@ -212,7 +212,7 @@ void ParticleTracker::complete_parameters() {
   writer.set_units(fluidInterface->getNo2SiL(), fluidInterface->getNo2SiV(),
                    fluidInterface->getNo2SiB(), fluidInterface->getNo2SiRho(),
                    fluidInterface->getNo2SiP(), fluidInterface->getNo2SiJ(),
-                   fluidInterface->getrPlanet());
+                   fluidInterface->get_rPlanet_SI());
   writer.set_No2NoL(fluidInterface->getMhdNo2NoL());
   //--------------------------------------------------
   writer.init();

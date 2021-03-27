@@ -24,8 +24,9 @@
 
 class FluidInterface {
 
-protected:    
-  int myrank; 
+protected:
+  static const int nDimMax = 3;
+  int myrank;
 
   int nCellPerPatch;
 
@@ -36,7 +37,7 @@ protected:
 
   // The length of the computational domain in normalized PIC units, including
   // the ghost cell layers.
-  double lenGst_D[3];
+  double lenPhy_D[3];
 
   // Cell Size
   double dx_D[3];
@@ -46,8 +47,8 @@ protected:
 
   bool doRotate;
 
-  // Number of cells/nodes in each direction, including the ghost cell layers.
-  int nCellGst_D[3], nNodeGst_D[3];  
+  // Number of nodes in each direction, including the ghost cell layers.
+  int nPhyCell_D[nDimMax];
 
   // Number of variables passing between MHD and PIC.
   int nVarFluid;
@@ -77,10 +78,8 @@ protected:
 
   double rPlanetSi;
 
-  double dt;
-
-  double* Si2No_V;    // array storing unit conversion factors
-  double* No2Si_V;    // array storing inverse unit conversion factors
+  double* Si2No_V; // array storing unit conversion factors
+  double* No2Si_V; // array storing inverse unit conversion factors
   double Si2NoM, Si2NoV, Si2NoRho, Si2NoB, Si2NoP, Si2NoJ, Si2NoL, Si2NoE;
   double No2SiV, No2SiL;
   double MhdNo2SiL; // Length in BATSRUS normalized unit -> Si
@@ -102,25 +101,13 @@ protected:
 
   double PeRatio; // temperature ratio for electrons: PeRatio = Pe/Ptotal
   double SumMass; // Sum of masses of each particle species
-
-  // The range of the computtational domain on this processor.
-  double xStart, xEnd, yStart, yEnd, zStart, zEnd;
-  double *xStart_I, *xEnd_I, *yStart_I, *yEnd_I, *zStart_I, *zEnd_I;
-
 public:
-
   ReadParam readParam;
 
 protected:
-  static const int x_ = 0, y_ = 1, z_ = 2;
-
   // Variables for IDL format output.
-  static const int nDimMax = 3;
 
 public:
-  // The ghost cell number in each direction in each side.
-  int nG_D[nDimMax];
-
   // These variables are also used in PSKOutput.h
   int *iRho_I, *iRhoUx_I, *iRhoUy_I, *iRhoUz_I, iBx, iBy, iBz, iEx, iEy, iEz,
       iPe, *iPpar_I, *iP_I, iJx, iJy, iJz, *iUx_I, *iUy_I, *iUz_I, iRhoTotal;
@@ -213,11 +200,6 @@ public:
   bool getUseAnisoP() const { return (useAnisoP); }
   // void setAnisoP(bool useAnisoPIn){useAnisoP = useAnisoPIn;}
 
-  /** Whether electron pressure is passed between PIC and BATSRUS */
-  bool getUseMhdPe() const { return (useMhdPe); }
-
-  bool getUseMultiFluid() const { return (useMultiFluid); }
-  bool getUseMultiSpecies() const { return (useMultiSpecies); }
   bool get_useElectronFluid() const { return useElectronFluid; }
 
   /** Get convertion factor to from IPIC3D internal units */
@@ -230,15 +212,9 @@ public:
   // layer PIC ghost cell.
   double getphyMin(int i) const { return phyMin_D[i]; }
   double getphyMax(int i) const { return phyMax_D[i]; }
-  double getdx(int i) const { return dx_D[i]; }
-  bool getdoRotate() const { return doRotate; }
-  double getRDD(int i, int j) const { return R_DD[i][j]; }
 
   int getnDim() const { return (nDim); }
 
-  int getnVarFluid() const { return (nVarFluid); }
-  int get_nVarCoupling() const { return (nVarCoupling); }
-  int getnIon() const { return (nIon); }
   int get_nS() const { return nS; }
   int get_nFluid() const { return (nFluid); }
 
@@ -256,32 +232,17 @@ public:
   double getQiSpecies(int i) const { return QoQi_S[i]; };
   double get_qom(int is) const { return QoQi_S[is] / MoMi_S[is]; }
 
-  double getcLightSI() const { return Unorm / 100; /*Unorm is in cgs unit*/ };
+  double get_cLight_SI() const { return Unorm / 100; /*Unorm is in cgs unit*/ };
   // return planet radius in SI unit.
-  inline double getrPlanet() const { return (rPlanetSi); }
+  inline double get_rPlanet_SI() const { return (rPlanetSi); }
   // return MhdNo2SiL
   inline double getMhdNo2SiL() const { return (MhdNo2SiL); }
   // BATSRUS normalized unit -> PIC normalized unit;
   inline double getMhdNo2NoL() const { return (MhdNo2SiL * Si2NoL); }
 
-  /** nNodeGst_D includes 1 guard/ghost cell layer... */
-  inline double getFluidNxc() const { return (nNodeGst_D[0] - 3 * NG); }
-
-  /** nNodeGst_D includes 1 guard/ghost cell layer... */
-  inline double getFluidNyc() const {
-    if (nNodeGst_D[1] > 3 * NG)
-      return (nNodeGst_D[1] - 3 * NG);
-    else
-      return (1);
-  }
-
-  /** nNodeGst_D includes 1 guard/ghost cell layer... */
-  inline double getFluidNzc() const {
-    if (nNodeGst_D[2] > 3 * NG)
-      return (nNodeGst_D[2] - 3 * NG);
-    else
-      return (1);
-  }
+  inline double getFluidNxc() const { return nPhyCell_D[ix_]; }
+  inline double getFluidNyc() const { return nPhyCell_D[iy_]; }  
+  inline double getFluidNzc() const { return nPhyCell_D[iz_]; }
 
   void save_restart_data() {
     if (isGridEmpty)

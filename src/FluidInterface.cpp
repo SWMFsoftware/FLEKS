@@ -384,7 +384,7 @@ void FluidInterface::ReNormLength() {
   // Normalization
   for (int i = 0; i < 3; i++) {
     dx_D[i] *= Si2NoL;
-    lenGst_D[i] *= Si2NoL;
+    lenPhy_D[i] *= Si2NoL;
     phyMin_D[i] *= Si2NoL;
     phyMax_D[i] *= Si2NoL;
     if (i >= nDim) {
@@ -575,10 +575,7 @@ void FluidInterface::ReadFromGMinit(const int* const paramint,
     phyMin_D[i] = ParamRealRegion[n++]; // Lmin
     phyMax_D[i] = phyMin_D[i] + ParamRealRegion[n++];
     dx_D[i] = ParamRealRegion[n++]; // dx
-    lenGst_D[i] = phyMax_D[i] - phyMin_D[i];
-  }
-  for (int i = 0; i < nDim; i++) {
-    lenGst_D[i] += 2 * dx_D[i];
+    lenPhy_D[i] = phyMax_D[i] - phyMin_D[i];
   }
 
   for (int i = 0; i < 3; i++) {
@@ -600,11 +597,7 @@ void FluidInterface::ReadFromGMinit(const int* const paramint,
     }
 
   for (int i = 0; i < 3; i++)
-    nNodeGst_D[i] = (int)(lenGst_D[i] / dx_D[i] + 0.5);
-
-  // Add 1 as we count the nodes not cells
-  for (int i = 0; i < nDim; i++)
-    nNodeGst_D[i] += 1;
+    nPhyCell_D[i] = (int)(lenPhy_D[i] / dx_D[i] + 0.5);
 
   QoQi_S = new double[nS];
   MoMi_S = new double[nS];
@@ -655,17 +648,6 @@ void FluidInterface::ReadFromGMinit(const int* const paramint,
 
 /** Check the parameters passed or calculated from BATSRUS*/
 void FluidInterface::checkParam() {
-
-  // #ifndef COUPLEAMPS
-  //   assert_ge(lenGst_D[0], 0.0);
-  //   assert_ge(lenGst_D[1], 0.0);
-  //   assert_ge(lenGst_D[2], 0.0);
-
-  //   assert_ge(dx_D[0], 0.0);
-  //   assert_ge(dx_D[1], 0.0);
-  //   assert_ge(dx_D[2], 0.0);
-  // #endif
-
   if (useMultiFluid && !useMhdPe) {
     cout << " Use multi-fluid but do not use electron pressure. This case is "
             "not supported so far!!!"

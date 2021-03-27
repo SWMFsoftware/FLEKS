@@ -729,7 +729,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
       amrex::FileOpenFailed(headerName);
 
     headerFile << pw.get_plotString() << "\n";
-    headerFile << fluidInterface->getrPlanet() << "\n";
+    headerFile << fluidInterface->get_rPlanet_SI() << "\n";
   }
 
   if (isDensityZero) {
