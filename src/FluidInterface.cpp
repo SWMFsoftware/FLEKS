@@ -214,7 +214,7 @@ void FluidInterface::convert_moment_to_velocity() {
             for (int iIon = 0; iIon < nIon; ++iIon) {
               // Rho = sum(Rhoi) + Rhoe;
               Rhot += arr(i, j, k, iRho_I[iIon]) *
-                      (1 + MoMi0_S[0] / MoMi0_S[iIon + 1]);
+                      (1 + MoMi_S[0] / MoMi_S[iIon + 1]);
             } // iIon
 
             arr(i, j, k, iUx_I[0]) /= Rhot;
@@ -239,18 +239,10 @@ void FluidInterface::set_plasma_charge_and_mass(amrex::Real qomEl) {
   }
 
   SumMass = 0.0;
-  for (int is = 0; is < nSIn; is++)
+  for (int is = 0; is < nS; is++)
     SumMass += MoMi_S[is];
 
   invSumMass = 1. / SumMass;
-
-  // Fix the values of MoMi_S and QoQi_S;
-  MoMi0_S = new double[nSIn];
-  QoQi0_S = new double[nSIn];
-  for (int i = 0; i < nSIn; i++) {
-    MoMi0_S[i] = MoMi_S[i];
-    QoQi0_S[i] = QoQi_S[i];
-  }
 }
 
 void FluidInterface::load_balance(const DistributionMapping& dmIn) {
@@ -480,9 +472,7 @@ void FluidInterface::read_from_GM(const int* const paramint,
     nIonFluid = nFluid;
     nIon = nFluid + nSpecies - 1; // Assuming one electron species.
     nS = nIon + 1;                // + electron
-  }
-
-  nSIn = nS;
+  }  
 
   useMultiFluid = nIonFluid > 1;
   useMultiSpecies = nSpecies > 1;
@@ -605,13 +595,13 @@ void FluidInterface::read_from_GM(const int* const paramint,
   /** Do not change the order of the following lines. */
   n = 0;
   if (useElectronFluid) {
-    for (int i = 0; i < nSIn; ++i) {
+    for (int i = 0; i < nS; ++i) {
       QoQi_S[i] = ParamRealComm[n++];
       MoMi_S[i] = ParamRealComm[n++];
     }
   } else {
     QoQi_S[0] = -1.0;
-    for (int i = 1; i < nSIn; ++i) {
+    for (int i = 1; i < nS; ++i) {
       QoQi_S[i] = ParamRealComm[n++];
       MoMi_S[i] = ParamRealComm[n++];
     }

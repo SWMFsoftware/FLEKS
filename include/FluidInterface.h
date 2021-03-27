@@ -33,7 +33,7 @@ private:
   // Min and Max of the physical domain in normalized PIC units.
   double phyMin_D[3], phyMax_D[3];
   double lenPhy_D[3];
-  
+
   int nPhyCell_D[nDimMax];
 
   // Cell Size
@@ -80,15 +80,9 @@ private:
              // Normalized q/m ==1 for proton in CGS units
 
   //-------------------------------------------------------------------
-  // nSIn is the number of species exists at the MHD side. PIC may use
-  // two or more species to represent one MHD species. nS is the nuber of the
-  // PIC species.
-  long nS;         // number of particle species
-  int nSIn;        // number of particle species before splitting.
+  long nS;         // number of particle species  
   double* MoMi_S;  // masses for the particles species
   double* QoQi_S;  // charge for each particle species
-  double* MoMi0_S; // masses for the particles species before splitting
-  double* QoQi0_S; // charge for each particle species before splitting
   //-------------------------------------------------------------------
 
   double PeRatio; // temperature ratio for electrons: PeRatio = Pe/Ptotal
@@ -270,7 +264,7 @@ public:
     if (useElectronFluid) {
       Rho = get_value(mfi, x, y, z, iRho_I[is]);
       // TODO: change division to multiplication.
-      NumDens = Rho / MoMi0_S[is];
+      NumDens = Rho / MoMi_S[is];
     } else if (useMultiFluid || useMultiSpecies) {
       if (is == 0) {
         // Electron
@@ -278,13 +272,13 @@ public:
         for (int iIon = 0; iIon < nIon; ++iIon) {
           Rho = get_value(mfi, x, y, z, iRho_I[iIon]);
           // TODO: change division to multiplication.
-          NumDens += Rho / MoMi0_S[iIon + 1];
+          NumDens += Rho / MoMi_S[iIon + 1];
         }
       } else {
         // Ion
         Rho = get_value(mfi, x, y, z, iRho_I[is - 1]);
         // TODO: change division to multiplication.
-        NumDens = Rho / MoMi0_S[is];
+        NumDens = Rho / MoMi_S[is];
       }
     } else {
       // Electrons and iones have same density, ignoring is
@@ -311,7 +305,7 @@ public:
         amrex::Real Ui, ni, ne;
         J = get_value(mfi, x, y, z, iJ);
         ne = get_number_density(mfi, x, y, z, 0);
-        U = J / (QoQi0_S[0] * ne);
+        U = J / (QoQi_S[0] * ne);
 
         for (int iIon = 0; iIon < nIon; ++iIon) {
           Ui = get_u(mfi, x, y, z, iIon + 1, iU_I, iJ);
@@ -336,18 +330,18 @@ public:
         Qit = 0;
         for (int iIon = 0; iIon < nIon; ++iIon) {
           Numi = get_number_density(mfi, x, y, z, iIon + 1);
-          Rhoit += Numi * MoMi0_S[iIon + 1];
-          Qit += Numi * QoQi0_S[iIon + 1];
+          Rhoit += Numi * MoMi_S[iIon + 1];
+          Qit += Numi * QoQi_S[iIon + 1];
         }
         moq = 0;
         if (Qit != 0)
           moq = Rhoit / Qit;
       } else
-        moq = MoMi0_S[0] / QoQi0_S[0];
+        moq = MoMi_S[0] / QoQi_S[0];
 
       Rhot = 0;
-      for (int is0 = 0; is0 < nSIn; ++is0) {
-        Rhot += MoMi0_S[is0] * get_number_density(mfi, x, y, z, is0);
+      for (int is0 = 0; is0 < nS; ++is0) {
+        Rhot += MoMi_S[is0] * get_number_density(mfi, x, y, z, is0);
       }
 
       U = get_value(mfi, x, y, z, iU_I[0]);
@@ -466,8 +460,8 @@ public:
     } else {
       Pxx = get_p(mfi, x, y, z, is);
     }
-    return (QoQi0_S[is] *
-            (Pxx / MoMi0_S[is] + get_number_density(mfi, x, y, z, is) *
+    return (QoQi_S[is] *
+            (Pxx / MoMi_S[is] + get_number_density(mfi, x, y, z, is) *
                                      pow(get_ux(mfi, x, y, z, is), 2)));
   }
 
@@ -490,8 +484,8 @@ public:
     } else {
       Pyy = get_p(mfi, x, y, z, is);
     }
-    return (QoQi0_S[is] *
-            (Pyy / MoMi0_S[is] + get_number_density(mfi, x, y, z, is) *
+    return (QoQi_S[is] *
+            (Pyy / MoMi_S[is] + get_number_density(mfi, x, y, z, is) *
                                      pow(get_uy(mfi, x, y, z, is), 2)));
   }
 
@@ -514,8 +508,8 @@ public:
     } else {
       Pzz = get_p(mfi, x, y, z, is);
     }
-    return (QoQi0_S[is] *
-            (Pzz / MoMi0_S[is] + get_number_density(mfi, x, y, z, is) *
+    return (QoQi_S[is] *
+            (Pzz / MoMi_S[is] + get_number_density(mfi, x, y, z, is) *
                                      pow(get_uz(mfi, x, y, z, is), 2)));
   }
 
@@ -536,8 +530,8 @@ public:
       Pxy = (Ppar - Pperp) * Bx * By / Bt2;
     }
 
-    return QoQi0_S[is] *
-           (Pxy / MoMi0_S[is] + get_number_density(mfi, x, y, z, is) *
+    return QoQi_S[is] *
+           (Pxy / MoMi_S[is] + get_number_density(mfi, x, y, z, is) *
                                     get_ux(mfi, x, y, z, is) *
                                     get_uy(mfi, x, y, z, is));
   }
@@ -559,8 +553,8 @@ public:
       Pxz = (Ppar - Pperp) * Bx * Bz / Bt2;
     }
 
-    return QoQi0_S[is] *
-           (Pxz / MoMi0_S[is] + get_number_density(mfi, x, y, z, is) *
+    return QoQi_S[is] *
+           (Pxz / MoMi_S[is] + get_number_density(mfi, x, y, z, is) *
                                     get_ux(mfi, x, y, z, is) *
                                     get_uz(mfi, x, y, z, is));
   }
@@ -582,8 +576,8 @@ public:
       Pyz = (Ppar - Pperp) * By * Bz / Bt2;
     }
 
-    return QoQi0_S[is] *
-           (Pyz / MoMi0_S[is] + get_number_density(mfi, x, y, z, is) *
+    return QoQi_S[is] *
+           (Pyz / MoMi_S[is] + get_number_density(mfi, x, y, z, is) *
                                     get_uy(mfi, x, y, z, is) *
                                     get_uz(mfi, x, y, z, is));
   }
@@ -595,7 +589,7 @@ public:
     p = get_p(mfi, x, y, z, is);
     ni = get_number_density(mfi, x, y, z, is);
     if (ni > 0)
-      Uth = sqrt(p / (ni * MoMi0_S[is]));
+      Uth = sqrt(p / (ni * MoMi_S[is]));
     return Uth;
   }
 
@@ -669,11 +663,11 @@ public:
     // Get the thermal verlocities
     prob = sqrt(-2.0 * log(1.0 - .999999999 * rand1));
     theta = 2.0 * M_PI * rand2;
-    Uthpar = sqrt(Ppar / (MoMi0_S[is] * ni)) * prob * cos(theta);
+    Uthpar = sqrt(Ppar / (MoMi_S[is] * ni)) * prob * cos(theta);
 
     prob = sqrt(-2.0 * log(1.0 - .999999999 * rand3));
     theta = 2.0 * M_PI * rand4;
-    Uthperp = sqrt(Pperp / (MoMi0_S[is] * ni)) * prob;
+    Uthperp = sqrt(Pperp / (MoMi_S[is] * ni)) * prob;
     Uthperp1 = Uthperp * cos(theta);
     Uthperp2 = Uthperp * sin(theta);
 
