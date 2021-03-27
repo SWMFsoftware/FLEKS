@@ -8,6 +8,7 @@ using namespace amrex;
 using namespace std;
 
 void FluidInterface::init(int domainIDIn) {
+  myrank = ParallelDescriptor::MyProc(); 
   domainID = domainIDIn;
   {
     std::stringstream ss;
@@ -548,8 +549,7 @@ void FluidInterface::ReadFromGMinit(const int* const paramint,
     nVec++; // + E field.
   if (nVec > nVecMax) {
     if (myrank == 0)
-      cout << "Error: nVec > nVecMax!!!!" << endl;
-    // MPI_Abort(MPI_COMM_MYSIM, iErr);
+      cout << "Error: nVec > nVecMax!!!!" << endl;  
   }
   for (int iVec = 0; iVec < nFluid; iVec++)
     vecIdxStart_I[iVec] = iRhoUx_I[iVec];

@@ -24,10 +24,8 @@
 
 class FluidInterface {
 
-protected:
-  static const int iErr = 11;
-
-  bool doCoupleAMPS;
+protected:    
+  int myrank; 
 
   int nCellPerPatch;
 
@@ -49,11 +47,7 @@ protected:
   bool doRotate;
 
   // Number of cells/nodes in each direction, including the ghost cell layers.
-  int nCellGst_D[3], nNodeGst_D[3];
-
-  double SItime; // time in SI units
-
-  int nBlock;
+  int nCellGst_D[3], nNodeGst_D[3];  
 
   // Number of variables passing between MHD and PIC.
   int nVarFluid;
@@ -75,10 +69,6 @@ protected:
 
   bool useMultiSpecies, useMultiFluid, useElectronFluid;
 
-  // storage for starting/ending physical (not include ghost cell)
-  // cell indexes of this processor
-  int StartIdx_D[3], EndIdx_D[3];
-
   static const int NG = 1; // number of ghost cell
 
   bool useAnisoP; // Use anisotripic pressure
@@ -89,8 +79,6 @@ protected:
 
   double dt;
 
-  double tUnitPic;    // conversenfactor to time used in IPIC3D
-  double invtUnitPic; // 1/tUnitPic
   double* Si2No_V;    // array storing unit conversion factors
   double* No2Si_V;    // array storing inverse unit conversion factors
   double Si2NoM, Si2NoV, Si2NoRho, Si2NoB, Si2NoP, Si2NoJ, Si2NoL, Si2NoE;
@@ -114,122 +102,28 @@ protected:
 
   double PeRatio; // temperature ratio for electrons: PeRatio = Pe/Ptotal
   double SumMass; // Sum of masses of each particle species
-  int nOverlap;   // Number of grid point from boundary where we have MHD+PIC
-                  // solution
-  int nOverlapP;  // Nomber of overlap cells for redistrebute particles
-  int nIsotropic, nCharge; // Intrpolation region for curents/pressure
-                           // (nIsotropoc) and charge
-  // nCharge. <0 : do nothing; ==0 only ghost region; >0 interpolate inside
-  // domain
-
-  unsigned long iSyncStep; // Iterator for sync with fluid
-  long nSync;              //
-
-  int myrank; // this process mpi rank
-  int nProcs;
-
-  bool isFirstTime;
-
-  int iRegion;
-  std::string sRegion;
-
-  // Do not include ghost cells.
-  int nxcLocal, nycLocal, nzcLocal;
-
-  // Nodes, include ghost cells.
-  int nxnLG, nynLG, nznLG;
 
   // The range of the computtational domain on this processor.
   double xStart, xEnd, yStart, yEnd, zStart, zEnd;
   double *xStart_I, *xEnd_I, *yStart_I, *yEnd_I, *zStart_I, *zEnd_I;
 
-  // Unless it is the first step to initilize PC, otherwise, only boundary
-  // information is needed from GM.
-  bool doNeedBCOnly;
-
-  int iCycle;
-
 public:
-  std::list<Writer> writer_I;
 
   ReadParam readParam;
 
 protected:
   static const int x_ = 0, y_ = 1, z_ = 2;
 
-  bool doSubCycling;
-
   // Variables for IDL format output.
   static const int nDimMax = 3;
-  int nPlotFile;
-  int* dnOutput_I;
-  double *dtOutput_I, *plotDx_I;
-  // The second dimension: xmin, xmax, ymin, ymax, zmin, zmax.
-  // double **plotRangeMin_ID, **plotRangeMax_ID;
-  MDArray<double> plotRangeMin_ID, plotRangeMax_ID;
-  std::string* plotString_I;
-  std::string* plotVar_I;
-  bool doSaveBinary;
-  double drSat; // A particle within drSat*dx from a satellite point will be
-                // wrote out.
-
-  std::vector<std::vector<std::array<double, 4> > > satInfo_III;
-
-  // Simulation start time.
-  int iYear, iMonth, iDay, iHour, iMinute, iSecond;
-
-  // If the maximum thermal velocity of one node exceeds uthLimit, which is in
-  // normalized PIC unit, then save the output and stop runing.
-  double uthLimit; //
-
-  // 1) If useSWMFDt is true, use the dt given by coupling frequency.
-  // 2) If useSWMFDt is false and useFixedDt is true, use fixedDt, which is set
-  // with
-  //    command #TIMESTEP.
-  // 3) If both useSWMFDt and useFixedDt are false, calculate dt using the
-  // 'CFL' condition.
-  bool useFixedDt;
-  double fixedDt; // In SI unit
-
-  bool isPeriodicX, isPeriodicY,
-      isPeriodicZ; // Use periodic BC in one direction?
-
-  // Variables for test setup.
-  bool doTestEMWave;
-  double waveVec_D[3], phase0, amplE_D[3];
 
 public:
-  MDArray<double> Bc_BGD; // cell centered B
-
-  // double ****State_BGV; // node centered state variables
-  MDArray<double> State_BGV;
-
-  // The min/max location of blocks. Do not include ghost cells.
-  MDArray<double> BlockMin_BD, BlockMax_BD, CellSize_BD;
-
   // The ghost cell number in each direction in each side.
   int nG_D[nDimMax];
 
   // These variables are also used in PSKOutput.h
   int *iRho_I, *iRhoUx_I, *iRhoUy_I, *iRhoUz_I, iBx, iBy, iBz, iEx, iEy, iEz,
       iPe, *iPpar_I, *iP_I, iJx, iJy, iJz, *iUx_I, *iUy_I, *iUz_I, iRhoTotal;
-
-  int nBCLayer;
-  bool useRandomPerCell;
-  bool doUseOldRestart;
-  std::string testFuncs;
-  int iTest, jTest, kTest;
-
-  int nPartGhost;
-
-  // If useUniformPart is true, then assign the particle position uniformly.
-  bool useUniformPart;
-
-  // Change smooth coefficient near the boundary.
-  // Parameters 'SmoothNiter' and 'Smooth' are declared in Colective.h
-  bool doSmoothAll; // Smooth jh and rhoh?.
-  double innerSmoothFactor, boundarySmoothFactor;
-  double nBoundarySmooth;
 
   // At most 10 vectors are supported during the coupling.
   static const int nVecMax = 10;
@@ -358,9 +252,6 @@ public:
   double getNo2SiJ() const { return (1. / Si2NoJ); }
   double getNo2SiT() const { return Si2NoV / Si2NoL; }
 
-  int getNxcLocal() const { return nxcLocal; }
-  int getNycLocal() const { return nycLocal; }
-  int getNzcLocal() const { return nzcLocal; }
   double getMiSpecies(int i) const { return MoMi_S[i]; };
   double getQiSpecies(int i) const { return QoQi_S[i]; };
   double get_qom(int is) const { return QoQi_S[is] / MoMi_S[is]; }
