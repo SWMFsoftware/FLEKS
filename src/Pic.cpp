@@ -261,7 +261,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::unique_ptr<Particles<> >(new Particles<>(
           picRegionBA, geom, dm, centerBA, fluidInterface.get(), tc.get(), i,
-          fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i),
+          fluidInterface->get_species_charge(i), fluidInterface->get_species_mass(i),
           nPartPerCell, testCase));
 
       //----- Set parameters------------

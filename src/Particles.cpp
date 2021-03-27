@@ -56,14 +56,14 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
   ig = i + 2;
   jg = j + 2;
   kg = k;
-  if (fluidInterface->getnDim() > 2)
+  if (fluidInterface->get_GM_ndim() > 2)
     kg = kg + 2; // just for comparison with iPIC3D;
   //----------------------------------------
 
-  nxcg = fluidInterface->getFluidNxc() + 2;
-  nycg = fluidInterface->getFluidNyc() + 2;
-  nzcg = fluidInterface->getFluidNzc();
-  if (fluidInterface->getnDim() > 2)
+  nxcg = fluidInterface->get_phy_cell_number(ix_) + 2;
+  nycg = fluidInterface->get_phy_cell_number(iy_) + 2;
+  nzcg = fluidInterface->get_phy_cell_number(iz_);
+  if (fluidInterface->get_GM_ndim() > 2)
     nzcg += 2;
 
   iCycle = tc->get_cycle();
@@ -123,7 +123,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
           double rand3 = randNum();
           double rand4 = randNum();
 
-          if (fluidInterface->getUseAnisoP() &&
+          if (fluidInterface->get_UseAnisoP() &&
               (speciesID > 0 || fluidInterface->get_useElectronFluid())) {
             fluidInterface->set_particle_uth_aniso(mfi, x, y, z, &u, &v, &w,
                                                    rand1, rand2, rand3, rand4,

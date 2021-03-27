@@ -39,8 +39,8 @@ void Pic::get_grid(double* pos_DI) {
 //==========================================================
 void Pic::find_mpi_rank_for_points(const int nPoint, const double* const xyz_I,
                                    int* const rank_I) {
-  int nDimGM = fluidInterface->getnDim();
-  amrex::Real si2nol = fluidInterface->getSi2NoL();
+  int nDimGM = fluidInterface->get_GM_ndim();
+  amrex::Real si2nol = fluidInterface->get_Si2NoL();
   const RealBox& range = geom.ProbDomain();
   for (int i = 0; i < nPoint; i++) {
     amrex::Real x = xyz_I[i * nDimGM + ix_] * si2nol;
@@ -75,7 +75,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     double pic_D[3] = { 0 };
     for (int iDim = 0; iDim < nDim; iDim++) {
-      pic_D[iDim] = xyz_I[iPoint * nDim + iDim] * fluidInterface->getSi2NoL();
+      pic_D[iDim] = xyz_I[iPoint * nDim + iDim] * fluidInterface->get_Si2NoL();
     }
 
     const Real xp = pic_D[0];
@@ -102,7 +102,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     }
 
     // Combine PIC plasma data into MHD fluid data.
-    fluidInterface->CalcFluidState(dataPIC_I, &data_I[iPoint * nVar]);
+    fluidInterface->calc_fluid_state(dataPIC_I, &data_I[iPoint * nVar]);
   }
 }
 

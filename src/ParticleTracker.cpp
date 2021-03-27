@@ -126,7 +126,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::unique_ptr<TestParticles>(new TestParticles(
           ptRegionBA, geom, dm, centerBA, fluidInterface.get(), tc.get(), i,
-          fluidInterface->getQiSpecies(i), fluidInterface->getMiSpecies(i),
+          fluidInterface->get_species_charge(i), fluidInterface->get_species_mass(i),
           domainID));
       parts.push_back(std::move(ptr));
     }
@@ -201,7 +201,7 @@ void ParticleTracker::complete_parameters() {
   // Pass information to writers.
   writer.set_rank(ParallelDescriptor::MyProc());
   writer.set_nProcs(ParallelDescriptor::NProcs());
-  writer.set_nDim(fluidInterface->getnDim());
+  writer.set_nDim(fluidInterface->get_GM_ndim());
   // writer.set_iRegion(domainID);
   // writer.set_domainMin_D({ { 0, 0, 0 } });
 
@@ -209,11 +209,11 @@ void ParticleTracker::complete_parameters() {
 
   // const Real* dx = geom.CellSize();
   // writer.set_dx_D({ { dx[ix_], dx[iy_], dx[iz_] } });
-  writer.set_units(fluidInterface->getNo2SiL(), fluidInterface->getNo2SiV(),
-                   fluidInterface->getNo2SiB(), fluidInterface->getNo2SiRho(),
-                   fluidInterface->getNo2SiP(), fluidInterface->getNo2SiJ(),
+  writer.set_units(fluidInterface->get_No2SiL(), fluidInterface->get_No2SiV(),
+                   fluidInterface->get_No2SiB(), fluidInterface->get_No2SiRho(),
+                   fluidInterface->get_No2SiP(), fluidInterface->get_No2SiJ(),
                    fluidInterface->get_rPlanet_SI());
-  writer.set_No2NoL(fluidInterface->getMhdNo2NoL());
+  writer.set_No2NoL(fluidInterface->get_MhdNo2NoL());
   //--------------------------------------------------
   writer.init();
 

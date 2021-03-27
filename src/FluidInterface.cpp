@@ -23,7 +23,7 @@ void FluidInterface::receive_info_from_gm(const int* const paramInt,
                                           const double* const paramDouble,
                                           const std::string& paramString) {
   std::stringstream* ss = nullptr;
-  ReadFromGMinit(paramInt, gridDim, paramDouble, ss);
+  read_from_GM(paramInt, gridDim, paramDouble, ss);
   readParam = paramString;
 }
 
@@ -59,7 +59,7 @@ void FluidInterface::set_geom(const int nGstIn, const amrex::Geometry& geomIn) {
 
   // As a interface between PC and MHD. It can not be periodic unless MHD is 2D.
   for (int i = 0; i < nDimMax; i++) {
-    if (i < getnDim()) {
+    if (i < get_GM_ndim()) {
       period[i] = 0;
     } else {
       period[i] = 1;
@@ -89,7 +89,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
   const Real* dx = geom.CellSize();
   const auto plo = geom.ProbLo();
 
-  const double no2siL = getNo2SiL();
+  const double no2siL = get_No2SiL();
 
   int nIdxCount = 0;
   int nCount = 0;
@@ -112,7 +112,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
             } else if (doGetLoc) {
               pos_DI[nCount++] = (i * dx[ix_] + plo[ix_]) * no2siL;
               pos_DI[nCount++] = (j * dx[iy_] + plo[iy_]) * no2siL;
-              if (getnDim() > 2)
+              if (get_GM_ndim() > 2)
                 pos_DI[nCount++] = (k * dx[iz_] + plo[iz_]) * no2siL;
             } else if (doFill) {
               for (int iVar = 0; iVar < nVarFluid; iVar++) {
@@ -162,7 +162,7 @@ void FluidInterface::calc_current() {
 
   // The outmost layer of currentMF can not be calculated from centerB
   curl_center_to_node(centerB, currentMF, geom.InvCellSize());
-  currentMF.mult(1.0 / (getNo2SiL() * fourPI * 1e-7), currentMF.nGrow());
+  currentMF.mult(1.0 / (get_No2SiL() * fourPI * 1e-7), currentMF.nGrow());
 
   currentMF.FillBoundary(geom.periodicity());
 
@@ -262,7 +262,7 @@ void FluidInterface::load_balance(const DistributionMapping& dmIn) {
 
 //-------------------------------------------------------------------------
 
-void FluidInterface::InitData() {
+void FluidInterface::init_data() {
 
   // normalization variables
   double RHOnorm, Bnorm, Jnorm, Pnorm;
@@ -380,7 +380,7 @@ void FluidInterface::InitData() {
 }
 //-------------------------------------------------------------------------
 
-void FluidInterface::ReNormLength() {
+void FluidInterface::re_norm_length() {
   // Normalization
   for (int i = 0; i < 3; i++) {
     dx_D[i] *= Si2NoL;
@@ -397,7 +397,7 @@ void FluidInterface::ReNormLength() {
 //-------------------------------------------------------------------------
 
 /** Get nomal and pendicular vector to magnetic field */
-void FluidInterface::MagneticBaseVectors(const double Bx, const double By,
+void FluidInterface::calc_mag_base_vector(const double Bx, const double By,
                                          const double Bz,
                                          MDArray<double>& norm_DD) const {
   double inv;
@@ -448,7 +448,7 @@ void FluidInterface::MagneticBaseVectors(const double Bx, const double By,
 }
 
 // Data recived from SWMF coupler
-void FluidInterface::ReadFromGMinit(const int* const paramint,
+void FluidInterface::read_from_GM(const int* const paramint,
                                     const double* const ParamRealRegion,
                                     const double* const ParamRealComm,
                                     const stringstream* const ss) {
@@ -641,13 +641,13 @@ void FluidInterface::ReadFromGMinit(const int* const paramint,
     Mnorm = 1.0;
   }
 
-  InitData();
-  ReNormLength();
-  checkParam();
+  init_data();
+  re_norm_length();
+  check_param();
 }
 
 /** Check the parameters passed or calculated from BATSRUS*/
-void FluidInterface::checkParam() {
+void FluidInterface::check_param() {
   if (useMultiFluid && !useMhdPe) {
     cout << " Use multi-fluid but do not use electron pressure. This case is "
             "not supported so far!!!"
@@ -657,7 +657,7 @@ void FluidInterface::checkParam() {
 }
 
 /** print info for coupling */
-void FluidInterface::PrintFluidPicInterface() {
+void FluidInterface::print_info() {
 
   if (myrank == 0) {
     cout << "nS = " << nS << " Sum all particle masses = " << SumMass << endl;
@@ -686,7 +686,7 @@ void FluidInterface::PrintFluidPicInterface() {
   }
 }
 
-void FluidInterface::CalcFluidState(const double* dataPIC_I,
+void FluidInterface::calc_fluid_state(const double* dataPIC_I,
                                     double* data_I) const {
   /* Input: dataPIC_I
      Output: data_I
@@ -920,7 +920,7 @@ void FluidInterface::CalcFluidState(const double* dataPIC_I,
 
   // Convert to SI units
   for (int iVar = 0; iVar < nVarFluid; ++iVar) {
-    data_I[iVar] *= getNo2Si_V(iVar);
+    data_I[iVar] *= get_No2Si_V(iVar);
   }
 
   // Convert the vectors from PIC coordinates to MHD coordinates.

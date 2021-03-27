@@ -172,77 +172,69 @@ public:
 
   void load_balance(const amrex::DistributionMapping& dmIn);
 
-  void InitData();
+  void init_data();
 
-  void ReNormLength();
+  void re_norm_length();
 
-  void ReadFromGMinit(const int* const paramint,
+  void read_from_GM(const int* const paramint,
                       const double* const ParamRealRegion,
                       const double* const ParamRealComm,
                       const std::stringstream* const ss);
 
-  void checkParam();
+  void check_param();
 
   /** Get nomal and pendicular vector to magnetic field */
-  void MagneticBaseVectors(const double Bx, const double By, const double Bz,
+  void calc_mag_base_vector(const double Bx, const double By, const double Bz,
                            MDArray<double>& norm_DD) const;
 
-  void CalcFluidState(const double* dataPIC_I, double* dataFluid_I) const;
+  void calc_fluid_state(const double* dataPIC_I, double* dataFluid_I) const;
 
   void mhd_to_Pic_Vec(double const* vecIn_D, double* vecOut_D,
                       bool isZeroOrigin = false) const;
   void pic_to_Mhd_Vec(double const* vecIn_D, double* vecOut_D,
                       bool isZeroOrigin = false) const;
-  void PrintFluidPicInterface();
+
+  void print_info();
 
   int get_nCellPerPatch() const { return nCellPerPatch; }
-  /** Use anisotropisc pressure when seting upt the particle distribution */
-  bool getUseAnisoP() const { return (useAnisoP); }
-  // void setAnisoP(bool useAnisoPIn){useAnisoP = useAnisoPIn;}
+  
+  bool get_UseAnisoP() const { return (useAnisoP); }
 
   bool get_useElectronFluid() const { return useElectronFluid; }
 
-  /** Get convertion factor to from IPIC3D internal units */
-  inline double getNo2Si_V(int idx) const { return (No2Si_V[idx]); }
+  double get_phy_domain_min(int i) const { return phyMin_D[i]; }
+  double get_phy_domain_max(int i) const { return phyMax_D[i]; }
 
-  /** Get convertion factor to from IPIC3D internal units */
-  inline double getSi2No_V(int idx) const { return (Si2No_V[idx]); }
-
-  // The begining 'physical' point of this IPIC region. Assume there is one
-  // layer PIC ghost cell.
-  double getphyMin(int i) const { return phyMin_D[i]; }
-  double getphyMax(int i) const { return phyMax_D[i]; }
-
-  int getnDim() const { return (nDim); }
+  int get_GM_ndim() const { return (nDim); }
 
   int get_nS() const { return nS; }
-  int get_nFluid() const { return (nFluid); }
 
-  double getSi2NoL() const { return (Si2NoL); }
-  double getSi2NoT() const { return Si2NoL / Si2NoV; }
-  double getNo2SiL() const { return (No2SiL); }
-  double getNo2SiRho() const { return (1. / Si2NoRho); }
-  double getNo2SiV() const { return (1. / Si2NoV); }
-  double getNo2SiB() const { return (1. / Si2NoB); }
-  double getNo2SiP() const { return (1. / Si2NoP); }
-  double getNo2SiJ() const { return (1. / Si2NoJ); }
-  double getNo2SiT() const { return Si2NoV / Si2NoL; }
+  double get_No2Si_V(int idx) const { return (No2Si_V[idx]); }
+  double get_Si2No_V(int idx) const { return (Si2No_V[idx]); }
+  double get_Si2NoL() const { return (Si2NoL); }
+  double get_Si2NoT() const { return Si2NoL / Si2NoV; }
+  double get_No2SiL() const { return (No2SiL); }
+  double get_No2SiRho() const { return (1. / Si2NoRho); }
+  double get_No2SiV() const { return (1. / Si2NoV); }
+  double get_No2SiB() const { return (1. / Si2NoB); }
+  double get_No2SiP() const { return (1. / Si2NoP); }
+  double get_No2SiJ() const { return (1. / Si2NoJ); }
+  double get_No2SiT() const { return Si2NoV / Si2NoL; }
 
-  double getMiSpecies(int i) const { return MoMi_S[i]; };
-  double getQiSpecies(int i) const { return QoQi_S[i]; };
+  double get_species_mass(int i) const { return MoMi_S[i]; };
+  double get_species_charge(int i) const { return QoQi_S[i]; };
   double get_qom(int is) const { return QoQi_S[is] / MoMi_S[is]; }
 
   double get_cLight_SI() const { return Unorm / 100; /*Unorm is in cgs unit*/ };
-  // return planet radius in SI unit.
-  inline double get_rPlanet_SI() const { return (rPlanetSi); }
-  // return MhdNo2SiL
-  inline double getMhdNo2SiL() const { return (MhdNo2SiL); }
-  // BATSRUS normalized unit -> PIC normalized unit;
-  inline double getMhdNo2NoL() const { return (MhdNo2SiL * Si2NoL); }
 
-  inline double getFluidNxc() const { return nPhyCell_D[ix_]; }
-  inline double getFluidNyc() const { return nPhyCell_D[iy_]; }  
-  inline double getFluidNzc() const { return nPhyCell_D[iz_]; }
+  double get_rPlanet_SI() const { return (rPlanetSi); }
+
+  // return MhdNo2SiL
+  double get_MhdNo2SiL() const { return (MhdNo2SiL); }
+  // BATSRUS normalized unit -> PIC normalized unit;
+  double get_MhdNo2NoL() const { return (MhdNo2SiL * Si2NoL); }
+
+  int get_phy_cell_number(const int iDir) const { return nPhyCell_D[iDir]; }
 
   void save_restart_data() {
     if (isGridEmpty)
@@ -686,7 +678,7 @@ public:
 
     // Get 3 vertors spaning the vector space
     norm_DD.init(3, 3);
-    MagneticBaseVectors(Bx, By, Bz, norm_DD);
+    calc_mag_base_vector(Bx, By, Bz, norm_DD);
 
     // Get the thermal verlocities
     prob = sqrt(-2.0 * log(1.0 - .999999999 * rand1));

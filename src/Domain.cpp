@@ -42,7 +42,7 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
 
   read_param();
 
-  fluidInterface->PrintFluidPicInterface();
+  fluidInterface->print_info();
 
   make_grid();
 
@@ -60,18 +60,18 @@ void Domain::make_grid() {
   nGst = 2;
 
   // If MHD is 2D, PIC has to be periodic in the z-direction.
-  for (int iDim = fluidInterface->getnDim(); iDim < nDim; iDim++)
+  for (int iDim = fluidInterface->get_GM_ndim(); iDim < nDim; iDim++)
     set_periodicity(iDim, true);
 
   if (!doRestart) {
     // If restart, these variables read from restart.H
-    nCell[ix_] = fluidInterface->getFluidNxc();
-    nCell[iy_] = fluidInterface->getFluidNyc();
-    nCell[iz_] = fluidInterface->getFluidNzc();
+    for (int iDir = ix_; iDir <= iz_; iDir++) {
+      nCell[iDir] = fluidInterface->get_phy_cell_number(iDir);
+    }
 
     for (int i = 0; i < nDim; i++) {
-      domainRange.setLo(i, fluidInterface->getphyMin(i));
-      domainRange.setHi(i, fluidInterface->getphyMax(i));
+      domainRange.setLo(i, fluidInterface->get_phy_domain_min(i));
+      domainRange.setHi(i, fluidInterface->get_phy_domain_max(i));
     }
   }
 
@@ -333,7 +333,7 @@ void Domain::save_restart_header() {
 
 //========================================================
 void Domain::init_time_ctr() {
-  tc->set_si2no(fluidInterface->getSi2NoT());
+  tc->set_si2no(fluidInterface->get_Si2NoT());
 
   { //----------Init plot data------------------------
 
@@ -345,8 +345,8 @@ void Domain::init_time_ctr() {
     for (int i = 0; i < nS; ++i) {
       scalarName_I.push_back(ms + std::to_string(i));
       scalarName_I.push_back(qs + std::to_string(i));
-      scalarVar_I.push_back(fluidInterface->getMiSpecies(i));
-      scalarVar_I.push_back(fluidInterface->getQiSpecies(i));
+      scalarVar_I.push_back(fluidInterface->get_species_mass(i));
+      scalarVar_I.push_back(fluidInterface->get_species_charge(i));
     }
     scalarName_I.push_back("cLight");
     scalarVar_I.push_back(fluidInterface->get_cLight_SI());
@@ -360,7 +360,7 @@ void Domain::init_time_ctr() {
       // Pass information to writers.
       writer.set_rank(ParallelDescriptor::MyProc());
       writer.set_nProcs(ParallelDescriptor::NProcs());
-      writer.set_nDim(fluidInterface->getnDim());
+      writer.set_nDim(fluidInterface->get_GM_ndim());
       writer.set_iRegion(domainID);
       writer.set_domainMin_D({ { domainRange.lo(ix_), domainRange.lo(iy_),
                                  domainRange.lo(iz_) } });
@@ -371,12 +371,12 @@ void Domain::init_time_ctr() {
       const Real *dx = geom.CellSize();
       writer.set_dx_D({ { dx[ix_], dx[iy_], dx[iz_] } });
       writer.set_nSpecies(nS);
-      writer.set_units(fluidInterface->getNo2SiL(), fluidInterface->getNo2SiV(),
-                       fluidInterface->getNo2SiB(),
-                       fluidInterface->getNo2SiRho(),
-                       fluidInterface->getNo2SiP(), fluidInterface->getNo2SiJ(),
+      writer.set_units(fluidInterface->get_No2SiL(), fluidInterface->get_No2SiV(),
+                       fluidInterface->get_No2SiB(),
+                       fluidInterface->get_No2SiRho(),
+                       fluidInterface->get_No2SiP(), fluidInterface->get_No2SiJ(),
                        fluidInterface->get_rPlanet_SI());
-      writer.set_No2NoL(fluidInterface->getMhdNo2NoL());
+      writer.set_No2NoL(fluidInterface->get_MhdNo2NoL());
 
       writer.set_scalarValue_I(scalarVar_I);
       writer.set_scalarName_I(scalarName_I);
