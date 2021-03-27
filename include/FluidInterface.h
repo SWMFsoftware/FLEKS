@@ -17,9 +17,223 @@
 #include "BC.h"
 #include "Constants.h"
 #include "FluidPicInterface.h"
+#include "MDArray.h"
+#include "ReadParam.h"
 #include "Utility.h"
+#include "Writer.h"
 
-class FluidInterface : public FluidPicInterface {
+class FluidInterface {
+
+protected:
+  static const int iErr = 11;
+
+  bool doCoupleAMPS;
+
+  int nCellPerPatch;
+
+  int nDim; // number of dimentions
+
+  // Min and Max of the physical domain in normalized PIC units.
+  double phyMin_D[3], phyMax_D[3];
+
+  // The length of the computational domain in normalized PIC units, including
+  // the ghost cell layers.
+  double lenGst_D[3];
+
+  // Cell Size
+  double dx_D[3];
+
+  // Rotation matrix.
+  double R_DD[3][3];
+
+  bool doRotate;
+
+  // Number of cells/nodes in each direction, including the ghost cell layers.
+  int nCellGst_D[3], nNodeGst_D[3];
+
+  double SItime; // time in SI units
+
+  int nBlock;
+
+  // Number of variables passing between MHD and PIC.
+  int nVarFluid;
+
+  // Number of fluid at the MHD side. One 'fluid' has its own density,
+  // velocity and pressure. Electron can be one fluid.
+  int nFluid;
+
+  // Number of ion fluid at the MHD side.
+  int nIonFluid;
+
+  // Number of species at the MHD side. One 'species' only has its own density.
+  int nSpecies;
+
+  // Total number of ion/electron species exit in the fluid code.
+  int nIon;
+
+  int nVarCoupling;
+
+  bool useMultiSpecies, useMultiFluid, useElectronFluid;
+
+  // storage for starting/ending physical (not include ghost cell)
+  // cell indexes of this processor
+  int StartIdx_D[3], EndIdx_D[3];
+
+  static const int NG = 1; // number of ghost cell
+
+  bool useAnisoP; // Use anisotripic pressure
+
+  bool useMhdPe;
+
+  double rPlanetSi;
+
+  double dt;
+
+  double tUnitPic;    // conversenfactor to time used in IPIC3D
+  double invtUnitPic; // 1/tUnitPic
+  double* Si2No_V;    // array storing unit conversion factors
+  double* No2Si_V;    // array storing inverse unit conversion factors
+  double Si2NoM, Si2NoV, Si2NoRho, Si2NoB, Si2NoP, Si2NoJ, Si2NoL, Si2NoE;
+  double No2SiV, No2SiL;
+  double MhdNo2SiL; // Length in BATSRUS normalized unit -> Si
+  double Lnorm, Unorm, Mnorm,
+      Qnorm; // normalization units for length, velocity, mass and charge
+             // Normalized q/m ==1 for proton in CGS units
+
+  //-------------------------------------------------------------------
+  // nSIn is the number of species exists at the MHD side. PIC may use
+  // two or more species to represent one MHD species. nS is the nuber of the
+  // PIC species.
+  long nS;         // number of particle species
+  int nSIn;        // number of particle species before splitting.
+  double* MoMi_S;  // masses for the particles species
+  double* QoQi_S;  // charge for each particle species
+  double* MoMi0_S; // masses for the particles species before splitting
+  double* QoQi0_S; // charge for each particle species before splitting
+  //-------------------------------------------------------------------
+
+  double PeRatio; // temperature ratio for electrons: PeRatio = Pe/Ptotal
+  double SumMass; // Sum of masses of each particle species
+  int nOverlap;   // Number of grid point from boundary where we have MHD+PIC
+                  // solution
+  int nOverlapP;  // Nomber of overlap cells for redistrebute particles
+  int nIsotropic, nCharge; // Intrpolation region for curents/pressure
+                           // (nIsotropoc) and charge
+  // nCharge. <0 : do nothing; ==0 only ghost region; >0 interpolate inside
+  // domain
+
+  unsigned long iSyncStep; // Iterator for sync with fluid
+  long nSync;              //
+
+  int myrank; // this process mpi rank
+  int nProcs;
+
+  bool isFirstTime;
+
+  int iRegion;
+  std::string sRegion;
+
+  // Do not include ghost cells.
+  int nxcLocal, nycLocal, nzcLocal;
+
+  // Nodes, include ghost cells.
+  int nxnLG, nynLG, nznLG;
+
+  // The range of the computtational domain on this processor.
+  double xStart, xEnd, yStart, yEnd, zStart, zEnd;
+  double *xStart_I, *xEnd_I, *yStart_I, *yEnd_I, *zStart_I, *zEnd_I;
+
+  // Unless it is the first step to initilize PC, otherwise, only boundary
+  // information is needed from GM.
+  bool doNeedBCOnly;
+
+  int iCycle;
+
+public:
+  std::list<Writer> writer_I;
+
+  ReadParam readParam;
+
+protected:
+  static const int x_ = 0, y_ = 1, z_ = 2;
+
+  bool doSubCycling;
+
+  // Variables for IDL format output.
+  static const int nDimMax = 3;
+  int nPlotFile;
+  int* dnOutput_I;
+  double *dtOutput_I, *plotDx_I;
+  // The second dimension: xmin, xmax, ymin, ymax, zmin, zmax.
+  // double **plotRangeMin_ID, **plotRangeMax_ID;
+  MDArray<double> plotRangeMin_ID, plotRangeMax_ID;
+  std::string* plotString_I;
+  std::string* plotVar_I;
+  bool doSaveBinary;
+  double drSat; // A particle within drSat*dx from a satellite point will be
+                // wrote out.
+
+  std::vector<std::vector<std::array<double, 4> > > satInfo_III;
+
+  // Simulation start time.
+  int iYear, iMonth, iDay, iHour, iMinute, iSecond;
+
+  // If the maximum thermal velocity of one node exceeds uthLimit, which is in
+  // normalized PIC unit, then save the output and stop runing.
+  double uthLimit; //
+
+  // 1) If useSWMFDt is true, use the dt given by coupling frequency.
+  // 2) If useSWMFDt is false and useFixedDt is true, use fixedDt, which is set
+  // with
+  //    command #TIMESTEP.
+  // 3) If both useSWMFDt and useFixedDt are false, calculate dt using the
+  // 'CFL' condition.
+  bool useFixedDt;
+  double fixedDt; // In SI unit
+
+  bool isPeriodicX, isPeriodicY,
+      isPeriodicZ; // Use periodic BC in one direction?
+
+  // Variables for test setup.
+  bool doTestEMWave;
+  double waveVec_D[3], phase0, amplE_D[3];
+
+public:
+  MDArray<double> Bc_BGD; // cell centered B
+
+  // double ****State_BGV; // node centered state variables
+  MDArray<double> State_BGV;
+
+  // The min/max location of blocks. Do not include ghost cells.
+  MDArray<double> BlockMin_BD, BlockMax_BD, CellSize_BD;
+
+  // The ghost cell number in each direction in each side.
+  int nG_D[nDimMax];
+
+  // These variables are also used in PSKOutput.h
+  int *iRho_I, *iRhoUx_I, *iRhoUy_I, *iRhoUz_I, iBx, iBy, iBz, iEx, iEy, iEz,
+      iPe, *iPpar_I, *iP_I, iJx, iJy, iJz, *iUx_I, *iUy_I, *iUz_I, iRhoTotal;
+
+  int nBCLayer;
+  bool useRandomPerCell;
+  bool doUseOldRestart;
+  std::string testFuncs;
+  int iTest, jTest, kTest;
+
+  int nPartGhost;
+
+  // If useUniformPart is true, then assign the particle position uniformly.
+  bool useUniformPart;
+
+  // Change smooth coefficient near the boundary.
+  // Parameters 'SmoothNiter' and 'Smooth' are declared in Colective.h
+  bool doSmoothAll; // Smooth jh and rhoh?.
+  double innerSmoothFactor, boundarySmoothFactor;
+  double nBoundarySmooth;
+
+  // At most 10 vectors are supported during the coupling.
+  static const int nVecMax = 10;
+  int vecIdxStart_I[nVecMax], nVec;
 
 private:
   // ------Grid info----------
@@ -76,6 +290,107 @@ public:
   void set_plasma_charge_and_mass(amrex::Real qomEl);
 
   void load_balance(const amrex::DistributionMapping& dmIn);
+
+  void InitData();
+
+  void ReNormLength();
+
+  void ReadFromGMinit(const int* const paramint,
+                      const double* const ParamRealRegion,
+                      const double* const ParamRealComm,
+                      const std::stringstream* const ss);
+
+  void checkParam();
+
+  /** Get nomal and pendicular vector to magnetic field */
+  void MagneticBaseVectors(const double Bx, const double By, const double Bz,
+                           MDArray<double>& norm_DD) const;
+
+  void CalcFluidState(const double* dataPIC_I, double* dataFluid_I) const;
+
+  void mhd_to_Pic_Vec(double const* vecIn_D, double* vecOut_D,
+                      bool isZeroOrigin = false) const;
+  void pic_to_Mhd_Vec(double const* vecIn_D, double* vecOut_D,
+                      bool isZeroOrigin = false) const;
+  void PrintFluidPicInterface();
+
+  int get_nCellPerPatch() const { return nCellPerPatch; }
+  /** Use anisotropisc pressure when seting upt the particle distribution */
+  bool getUseAnisoP() const { return (useAnisoP); }
+  // void setAnisoP(bool useAnisoPIn){useAnisoP = useAnisoPIn;}
+
+  /** Whether electron pressure is passed between PIC and BATSRUS */
+  bool getUseMhdPe() const { return (useMhdPe); }
+
+  bool getUseMultiFluid() const { return (useMultiFluid); }
+  bool getUseMultiSpecies() const { return (useMultiSpecies); }
+  bool get_useElectronFluid() const { return useElectronFluid; }
+
+  /** Get convertion factor to from IPIC3D internal units */
+  inline double getNo2Si_V(int idx) const { return (No2Si_V[idx]); }
+
+  /** Get convertion factor to from IPIC3D internal units */
+  inline double getSi2No_V(int idx) const { return (Si2No_V[idx]); }
+
+  // The begining 'physical' point of this IPIC region. Assume there is one
+  // layer PIC ghost cell.
+  double getphyMin(int i) const { return phyMin_D[i]; }
+  double getphyMax(int i) const { return phyMax_D[i]; }
+  double getdx(int i) const { return dx_D[i]; }
+  bool getdoRotate() const { return doRotate; }
+  double getRDD(int i, int j) const { return R_DD[i][j]; }
+
+  int getnDim() const { return (nDim); }
+
+  int getnVarFluid() const { return (nVarFluid); }
+  int get_nVarCoupling() const { return (nVarCoupling); }
+  int getnIon() const { return (nIon); }
+  int get_nS() const { return nS; }
+  int get_nFluid() const { return (nFluid); }
+
+  double getSi2NoL() const { return (Si2NoL); }
+  double getSi2NoT() const { return Si2NoL / Si2NoV; }
+  double getNo2SiL() const { return (No2SiL); }
+  double getNo2SiRho() const { return (1. / Si2NoRho); }
+  double getNo2SiV() const { return (1. / Si2NoV); }
+  double getNo2SiB() const { return (1. / Si2NoB); }
+  double getNo2SiP() const { return (1. / Si2NoP); }
+  double getNo2SiJ() const { return (1. / Si2NoJ); }
+  double getNo2SiT() const { return Si2NoV / Si2NoL; }
+
+  int getNxcLocal() const { return nxcLocal; }
+  int getNycLocal() const { return nycLocal; }
+  int getNzcLocal() const { return nzcLocal; }
+  double getMiSpecies(int i) const { return MoMi_S[i]; };
+  double getQiSpecies(int i) const { return QoQi_S[i]; };
+  double get_qom(int is) const { return QoQi_S[is] / MoMi_S[is]; }
+
+  double getcLightSI() const { return Unorm / 100; /*Unorm is in cgs unit*/ };
+  // return planet radius in SI unit.
+  inline double getrPlanet() const { return (rPlanetSi); }
+  // return MhdNo2SiL
+  inline double getMhdNo2SiL() const { return (MhdNo2SiL); }
+  // BATSRUS normalized unit -> PIC normalized unit;
+  inline double getMhdNo2NoL() const { return (MhdNo2SiL * Si2NoL); }
+
+  /** nNodeGst_D includes 1 guard/ghost cell layer... */
+  inline double getFluidNxc() const { return (nNodeGst_D[0] - 3 * NG); }
+
+  /** nNodeGst_D includes 1 guard/ghost cell layer... */
+  inline double getFluidNyc() const {
+    if (nNodeGst_D[1] > 3 * NG)
+      return (nNodeGst_D[1] - 3 * NG);
+    else
+      return (1);
+  }
+
+  /** nNodeGst_D includes 1 guard/ghost cell layer... */
+  inline double getFluidNzc() const {
+    if (nNodeGst_D[2] > 3 * NG)
+      return (nNodeGst_D[2] - 3 * NG);
+    else
+      return (1);
+  }
 
   void save_restart_data() {
     if (isGridEmpty)
