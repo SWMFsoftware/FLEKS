@@ -1,4 +1,5 @@
 include ../Makefile.def
+-include Makefile.DEPEND
 
 SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 
@@ -12,7 +13,7 @@ OBJECTS = ${OBJS} PC_wrapper.o
 include ../Makefile.conf
 
 PC_wrapper.o: ../include/SWMFInterface.h \
-	SWMFInterface.cpp \
+	SWMFInterface.o \
 	${LIBRARYDIR}/CON_comp_info.o
 
 LIBFLEKS = ../src/libFLEKS.a
@@ -20,9 +21,9 @@ LIBFLEKS = ../src/libFLEKS.a
 LIBPC    = ${LIBDIR}/libPC.a
 
 DEPEND:
-	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJECTS} ${OBJECTS_EXE}
+	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJS} ${OBJECTS_EXE}
 
-LIB:    ${LIBFLEKS} ${DEPEND}
+LIB:    ${LIBFLEKS} DEPEND
 	make ${LIBPC}
 	@echo
 	@echo ${LIBPC} has been brought up to date.
