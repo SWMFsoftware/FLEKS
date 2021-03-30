@@ -8,7 +8,7 @@ using namespace amrex;
 using namespace std;
 
 void FluidInterface::init(int domainIDIn) {
-  myrank = ParallelDescriptor::MyProc(); 
+  myrank = ParallelDescriptor::MyProc();
   domainID = domainIDIn;
   {
     std::stringstream ss;
@@ -59,7 +59,7 @@ void FluidInterface::set_geom(const int nGstIn, const amrex::Geometry& geomIn) {
 
   // As a interface between PC and MHD. It can not be periodic unless MHD is 2D.
   for (int i = 0; i < nDimMax; i++) {
-    if (i < get_GM_ndim()) {
+    if (i < get_fluid_dimension()) {
       period[i] = 0;
     } else {
       period[i] = 1;
@@ -112,7 +112,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
             } else if (doGetLoc) {
               pos_DI[nCount++] = (i * dx[ix_] + plo[ix_]) * no2siL;
               pos_DI[nCount++] = (j * dx[iy_] + plo[iy_]) * no2siL;
-              if (get_GM_ndim() > 2)
+              if (get_fluid_dimension() > 2)
                 pos_DI[nCount++] = (k * dx[iz_] + plo[iz_]) * no2siL;
             } else if (doFill) {
               for (int iVar = 0; iVar < nVarFluid; iVar++) {
@@ -281,20 +281,6 @@ void FluidInterface::calc_normalized_units() {
   Pnorm = RHOnorm * Unorm * Unorm;
   Jnorm = Qnorm * Unorm / (Lnorm * Lnorm * Lnorm);
 
-  if (myrank == 0) {
-    cout.precision(15);
-    cout << "============= Normalization factors =============" << endl;
-    cout << "Mnorm   = " << Mnorm << endl;
-    cout << "Unorm   = " << Unorm << endl;
-    cout << "Qnorm   = " << Qnorm << endl;
-    cout << "Lnorm   = " << Lnorm << endl;
-    cout << "RhoNorm = " << RHOnorm << endl;
-    cout << "Bnorm   = " << Bnorm << endl;
-    cout << "Pnorm   = " << Pnorm << endl;
-    cout << "Jnorm   = " << Jnorm << endl;
-    // cout<<"========================================="<<endl;
-  }
-
   // SI -> CGS conversion
   Si2NoRho = 0.001; // [kg/m^3] -> [g/cm^3] and get numnber desity
   Si2NoV = 100.0;   // [m/s] -> [cm/s]
@@ -379,7 +365,7 @@ void FluidInterface::normalize_length() {
     lenPhy_D[i] *= Si2NoL;
     phyMin_D[i] *= Si2NoL;
     phyMax_D[i] *= Si2NoL;
-    if (i >= nDim) {
+    if (i >= nDimFluid) {
       // If MHD is 2D.
       phyMin_D[i] = 0;
       phyMax_D[i] = dx_D[i];
@@ -390,8 +376,8 @@ void FluidInterface::normalize_length() {
 
 /** Get nomal and pendicular vector to magnetic field */
 void FluidInterface::calc_mag_base_vector(const double Bx, const double By,
-                                         const double Bz,
-                                         MDArray<double>& norm_DD) const {
+                                          const double Bz,
+                                          MDArray<double>& norm_DD) const {
   double inv;
   int Norm_, Perp1_, Perp2_, X_, Y_, Z_;
   Norm_ = 0;
@@ -441,14 +427,14 @@ void FluidInterface::calc_mag_base_vector(const double Bx, const double By,
 
 // Data recived from SWMF coupler
 void FluidInterface::read_from_GM(const int* const paramint,
-                                    const double* const ParamRealRegion,
-                                    const double* const ParamRealComm,
-                                    const stringstream* const ss) {
+                                  const double* const ParamRealRegion,
+                                  const double* const ParamRealComm,
+                                  const stringstream* const ss) {
 
-  nDim = paramint[0];
+  nDimFluid = paramint[0];
   nVarFluid = paramint[2];
   nFluid = paramint[3];
-  nSpecies = paramint[4];
+  nSpeciesFluid = paramint[4];
 
   // c++ index starts from 0. So, minus 1.
   iPe = paramint[5] - 1;
@@ -470,24 +456,24 @@ void FluidInterface::read_from_GM(const int* const paramint,
     nS = nFluid;
   } else {
     nIonFluid = nFluid;
-    nIon = nFluid + nSpecies - 1; // Assuming one electron species.
+    nIon = nFluid + nSpeciesFluid - 1; // Assuming one electron species.
     nS = nIon + 1;                // + electron
-  }  
+  }
 
   useMultiFluid = nIonFluid > 1;
-  useMultiSpecies = nSpecies > 1;
+  useMultiSpecies = nSpeciesFluid > 1;
 
   nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
 
-  iRho_I = new int[nS];
-  iRhoUx_I = new int[nS];
-  iRhoUy_I = new int[nS];
-  iRhoUz_I = new int[nS];
-  iUx_I = new int[nS];
-  iUy_I = new int[nS];
-  iUz_I = new int[nS];
-  iPpar_I = new int[nS];
-  iP_I = new int[nS];
+  iRho_I.resize(nS);
+  iRhoUx_I.resize(nS);
+  iRhoUy_I.resize(nS);
+  iRhoUz_I.resize(nS);
+  iUx_I.resize(nS);
+  iUy_I.resize(nS);
+  iUz_I.resize(nS);
+  iPpar_I.resize(nS);
+  iP_I.resize(nS);
 
   int n = 9;
   if (useMultiSpecies) {
@@ -534,18 +520,17 @@ void FluidInterface::read_from_GM(const int* const paramint,
       iP_I[iFluid] = paramint[n++] - 1;
   }
 
-  nVec = nFluid + 1;
+  int nVec = nFluid + 1;
   if (useElectronFluid)
     nVec++; // + E field.
-  if (nVec > nVecMax) {
-    if (myrank == 0)
-      cout << "Error: nVec > nVecMax!!!!" << endl;  
-  }
+
+  vecIdx_I.resize(nVec);
+
   for (int iVec = 0; iVec < nFluid; iVec++)
-    vecIdxStart_I[iVec] = iRhoUx_I[iVec];
-  vecIdxStart_I[nFluid] = iBx;
+    vecIdx_I[iVec] = iRhoUx_I[iVec];
+  vecIdx_I[nFluid] = iBx;
   if (useElectronFluid)
-    vecIdxStart_I[nFluid + 1] = iEx;
+    vecIdx_I[nFluid + 1] = iEx;
 
   // See GM/BATSRUS/src/ModExtraVariables.f90.
   useAnisoP = iPpar_I[0] != 0;
@@ -555,8 +540,9 @@ void FluidInterface::read_from_GM(const int* const paramint,
   iJy = iJx + 1;
   iJz = iJx + 2;
 
-  Si2No_V = new double[nVarCoupling];
-  No2Si_V = new double[nVarCoupling];
+  Si2No_V.resize(nVarCoupling);
+  No2Si_V.resize(nVarCoupling);
+
   for (int i = 0; i < nVarCoupling; i++)
     Si2No_V[i] = 1;
 
@@ -581,7 +567,7 @@ void FluidInterface::read_from_GM(const int* const paramint,
 
   doRotate = false;
   double csmall = 1e-7;
-  for (int i = 0; i < nDim; i++)
+  for (int i = 0; i < nDimFluid; i++)
     if (fabs(R_DD[i][i] - 1) > csmall) {
       doRotate = true;
     }
@@ -589,8 +575,8 @@ void FluidInterface::read_from_GM(const int* const paramint,
   for (int i = 0; i < 3; i++)
     nPhyCell_D[i] = (int)(lenPhy_D[i] / dx_D[i] + 0.5);
 
-  QoQi_S = new double[nS];
-  MoMi_S = new double[nS];
+  QoQi_S.resize(nS);
+  MoMi_S.resize(nS);
 
   /** Do not change the order of the following lines. */
   n = 0;
@@ -632,10 +618,11 @@ void FluidInterface::read_from_GM(const int* const paramint,
   }
 
   calc_normalized_units();
-  normalize_length();  
+  normalize_length();
 
   if (useMultiFluid && !useMhdPe) {
-    cout << " Use multi-fluid but do not use electron pressure. This case is "
+    cout << printPrefix
+         << " Use multi-fluid but do not use electron pressure. This case is "
             "not supported so far!!!"
          << endl;
     abort();
@@ -646,34 +633,49 @@ void FluidInterface::read_from_GM(const int* const paramint,
 void FluidInterface::print_info() {
 
   if (myrank == 0) {
-    cout << "nS = " << nS << " Sum all particle masses = " << SumMass << endl;
-    cout << "useMultiFluid   = " << (useMultiFluid ? "T" : "F");
+    cout << endl;
+    cout.precision(15);
+    cout << printPrefix << "Number of PIC species     = " << nS << endl;
+    cout << printPrefix << "Total mass of all species = " << SumMass << endl;
+    cout << printPrefix << "useMultiFluid  = " << (useMultiFluid ? "T" : "F")
+         << endl;
+
     if (useMultiFluid)
-      cout << " nFluid = " << nFluid << endl;
-    cout << "useMultiSpecies = " << (useMultiSpecies ? "T" : "F");
+      cout << printPrefix << "nFluid = " << nFluid << endl;
+    cout << printPrefix << "useMultiSpecies = " << (useMultiSpecies ? "T" : "F")
+         << endl;
     if (useMultiSpecies)
-      cout << " nSpecies =" << nSpecies << endl;
-    cout << "useElectronFluid = " << (useElectronFluid ? "T" : "F") << endl;
+      cout << printPrefix << "nSpeciesFluid =" << nSpeciesFluid << endl;
+    cout << printPrefix
+         << "useElectronFluid = " << (useElectronFluid ? "T" : "F") << endl;
     for (int is = 0; is < nS; is++) {
-      cout << "Q/Qi[" << is << "] = " << QoQi_S[is] << endl;
-      cout << "M/Mi[" << is << "] = " << MoMi_S[is] << endl;
+      cout << printPrefix << "Q/Qi[" << is << "] = " << QoQi_S[is] << endl;
+      cout << printPrefix << "M/Mi[" << is << "] = " << MoMi_S[is] << endl;
     }
     if (!useMhdPe)
-      cout << "Pe/Ptotal = " << PeRatio << endl;
-    cout << "========== Unit conversion factors ==============" << endl;
-    cout << " Si2NoRho = " << Si2NoRho << endl;
-    cout << " Si2NoV   = " << Si2NoV << endl;
-    cout << " Si2NoB   = " << Si2NoB << endl;
-    cout << " Si2NoE   = " << Si2NoE << endl;
-    cout << " Si2NoP   = " << Si2NoP << endl;
-    cout << " Si2NoJ   = " << Si2NoJ << endl;
-    cout << " Si2NoL   = " << Si2NoL << endl;
-    cout << "===================================================" << endl;
+      cout << printPrefix << "Pe/Ptotal = " << PeRatio << endl;
+    cout << printPrefix
+         << "============= Normalization factors =============" << endl;
+    cout << printPrefix << "Mnorm    = " << Mnorm << endl;
+    cout << printPrefix << "Unorm    = " << Unorm << endl;
+    cout << printPrefix << "Qnorm    = " << Qnorm << endl;
+    cout << printPrefix << "Lnorm    = " << Lnorm << endl;
+    cout << printPrefix
+         << "========== Unit conversion factors ==============" << endl;
+    cout << printPrefix << "Si2NoRho = " << Si2NoRho << endl;
+    cout << printPrefix << "Si2NoV   = " << Si2NoV << endl;
+    cout << printPrefix << "Si2NoB   = " << Si2NoB << endl;
+    cout << printPrefix << "Si2NoE   = " << Si2NoE << endl;
+    cout << printPrefix << "Si2NoP   = " << Si2NoP << endl;
+    cout << printPrefix << "Si2NoJ   = " << Si2NoJ << endl;
+    cout << printPrefix << "Si2NoL   = " << Si2NoL << endl;
+    cout << printPrefix
+         << "===================================================" << endl;
   }
 }
 
 void FluidInterface::calc_fluid_state(const double* dataPIC_I,
-                                    double* data_I) const {
+                                      double* data_I) const {
   /* Input: dataPIC_I
      Output: data_I
      Function:
@@ -836,7 +838,8 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
           // ONLY works for iso pressure so far!!!!!
           data_I[iP_I[iIon]] += (PiXX + PiYY + PiZZ) / 3;
           if (useAnisoP) {
-            cout << "Multi-fluid model can not work with aniso pressure "
+            cout << printPrefix
+                 << "Multi-fluid model can not work with aniso pressure "
                     "now!!"
                  << endl;
             abort();
@@ -911,13 +914,13 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
 
   // Convert the vectors from PIC coordinates to MHD coordinates.
   double mhd_D[3], pic_D[3];
-  for (int iVec = 0; iVec < nVec; iVec++) {
+  for (int iVec = 0; iVec < vecIdx_I.size(); iVec++) {
     int idx0;
-    idx0 = vecIdxStart_I[iVec];
-    for (int iVar = idx0; iVar < idx0 + nDim; iVar++)
+    idx0 = vecIdx_I[iVec];
+    for (int iVar = idx0; iVar < idx0 + nDimFluid; iVar++)
       pic_D[iVar - idx0] = data_I[iVar];
     pic_to_Mhd_Vec(pic_D, mhd_D, true);
-    for (int iVar = idx0; iVar < idx0 + nDim; iVar++)
+    for (int iVar = idx0; iVar < idx0 + nDimFluid; iVar++)
       data_I[iVar] = mhd_D[iVar - idx0];
   } // iVec
 }
@@ -928,9 +931,9 @@ void FluidInterface::pic_to_Mhd_Vec(double const* vecIn_D, double* vecOut_D,
       PIC coordinates to INxRange_I.
    **/
 
-  for (int iDim = 0; iDim < nDim; iDim++) {
+  for (int iDim = 0; iDim < nDimFluid; iDim++) {
     vecOut_D[iDim] = 0;
-    for (int jDim = 0; jDim < nDim; jDim++) {
+    for (int jDim = 0; jDim < nDimFluid; jDim++) {
       vecOut_D[iDim] += R_DD[iDim][jDim] * vecIn_D[jDim];
     }
     if (!isZeroOrigin)
@@ -947,16 +950,16 @@ void FluidInterface::mhd_to_Pic_Vec(double const* vecIn_D, double* vecOut_D,
 
   double vec_D[3];
   if (!isZeroOrigin) {
-    for (int iDim = 0; iDim < nDim; iDim++)
+    for (int iDim = 0; iDim < nDimFluid; iDim++)
       vec_D[iDim] = vecIn_D[iDim] - phyMin_D[iDim];
   } else {
-    for (int iDim = 0; iDim < nDim; iDim++)
+    for (int iDim = 0; iDim < nDimFluid; iDim++)
       vec_D[iDim] = vecIn_D[iDim];
   }
 
-  for (int iDim = 0; iDim < nDim; iDim++) {
+  for (int iDim = 0; iDim < nDimFluid; iDim++) {
     vecOut_D[iDim] = 0;
-    for (int jDim = 0; jDim < nDim; jDim++) {
+    for (int jDim = 0; jDim < nDimFluid; jDim++) {
       vecOut_D[iDim] += R_DD[jDim][iDim] * vec_D[jDim];
     }
   } // iDim

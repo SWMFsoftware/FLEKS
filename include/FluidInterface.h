@@ -21,27 +21,40 @@
 #include "Writer.h"
 
 class FluidInterface {
-
 private:
   static const int nDimMax = 3;
+
+  // ------Grid info----------
+  amrex::DistributionMapping dm;
+  amrex::Geometry geom;
+  amrex::BoxArray centerBA;
+  amrex::BoxArray nodeBA;
+  //------------------------
+
+  amrex::MultiFab nodeFluid;
+  amrex::MultiFab centerB;
+
+  int domainID;
+  std::string domainName;
+  std::string printPrefix;
+
+  bool isGridInitialized = false;
+  bool isGridEmpty = false;
+
   int myrank;
 
   int nCellPerPatch;
 
-  int nDim; // number of dimentions
+  int nDimFluid;
 
   // Min and Max of the physical domain in normalized PIC units.
   double phyMin_D[3], phyMax_D[3];
-  double lenPhy_D[3];
-
+  double lenPhy_D[3], dx_D[3];
   int nPhyCell_D[nDimMax];
-
-  // Cell Size
-  double dx_D[3];
+  int nGst;
 
   // Rotation matrix.
   double R_DD[3][3];
-
   bool doRotate;
 
   // Number of variables passing between MHD and PIC.
@@ -55,70 +68,49 @@ private:
   int nIonFluid;
 
   // Number of species at the MHD side. One 'species' only has its own density.
-  int nSpecies;
+  int nSpeciesFluid;
 
   // Total number of ion/electron species exit in the fluid code.
   int nIon;
 
   int nVarCoupling;
 
-  bool useMultiSpecies, useMultiFluid, useElectronFluid;
+  bool useMultiSpecies, useMultiFluid, useElectronFluid, useAnisoP, useMhdPe;
 
-  bool useAnisoP; // Use anisotripic pressure
+  //-------------------------------------------------------------------
+  int nS;                       // number of particle species
+  amrex::Vector<double> MoMi_S; // masses for the particles species
+  amrex::Vector<double> QoQi_S; // charge for each particle species
+  //-------------------------------------------------------------------
 
-  bool useMhdPe;
+  // temperature ratio for electrons: PeRatio = Pe/Ptotal
+  double PeRatio;
+
+  // Sum of masses of each particle species
+  double SumMass, invSumMass;
+
+  amrex::Vector<int> iRho_I, iRhoUx_I, iRhoUy_I, iRhoUz_I, iPpar_I, iP_I, iUx_I,
+      iUy_I, iUz_I;
+
+  int iBx, iBy, iBz, iEx, iEy, iEz, iPe, iJx, iJy, iJz, iRhoTotal;
 
   double rPlanetSi;
 
-  double* Si2No_V; // array storing unit conversion factors
-  double* No2Si_V; // array storing inverse unit conversion factors
+  // normalization units for length, velocity, mass and charge
+  // Normalized q/m ==1 for proton in CGS units
+  double Lnorm, Unorm, Mnorm, Qnorm;
+
+  amrex::Vector<double> Si2No_V, No2Si_V;
   double Si2NoM, Si2NoV, Si2NoRho, Si2NoB, Si2NoP, Si2NoJ, Si2NoL, Si2NoE;
   double No2SiV, No2SiL;
-  double MhdNo2SiL; // Length in BATSRUS normalized unit -> Si
-  double Lnorm, Unorm, Mnorm,
-      Qnorm; // normalization units for length, velocity, mass and charge
-             // Normalized q/m ==1 for proton in CGS units
 
-  //-------------------------------------------------------------------
-  long nS;         // number of particle species  
-  double* MoMi_S;  // masses for the particles species
-  double* QoQi_S;  // charge for each particle species
-  //-------------------------------------------------------------------
+  // Length in BATSRUS normalized unit -> Si
+  double MhdNo2SiL;
 
-  double PeRatio; // temperature ratio for electrons: PeRatio = Pe/Ptotal
-  double SumMass; // Sum of masses of each particle species
-
-  int *iRho_I, *iRhoUx_I, *iRhoUy_I, *iRhoUz_I, iBx, iBy, iBz, iEx, iEy, iEz,
-      iPe, *iPpar_I, *iP_I, iJx, iJy, iJz, *iUx_I, *iUy_I, *iUz_I, iRhoTotal;
-
-  // At most 10 vectors are supported during the coupling.
-  static const int nVecMax = 10;
-  int vecIdxStart_I[nVecMax], nVec;
+  amrex::Vector<int> vecIdx_I;
 
 public:
   ReadParam readParam;
-
-private:
-  // ------Grid info----------
-  amrex::DistributionMapping dm;
-  amrex::Geometry geom;
-  amrex::BoxArray centerBA;
-  amrex::BoxArray nodeBA;
-  //------------------------
-
-  amrex::MultiFab nodeFluid;
-  amrex::MultiFab centerB;
-
-  double invSumMass;
-
-  int nGst;
-
-  int domainID;
-  std::string domainName;
-  std::string printPrefix;
-
-  bool isGridInitialized = false;
-  bool isGridEmpty = false;
 
 public:
   FluidInterface() {}
@@ -185,7 +177,7 @@ public:
   double get_phy_domain_min(int i) const { return phyMin_D[i]; }
   double get_phy_domain_max(int i) const { return phyMax_D[i]; }
 
-  int get_GM_ndim() const { return (nDim); }
+  int get_fluid_dimension() const { return (nDimFluid); }
 
   int get_nS() const { return nS; }
 
@@ -290,7 +282,7 @@ public:
 
   template <typename Type>
   amrex::Real get_u(const amrex::MFIter& mfi, const Type x, const Type y,
-                    const Type z, const int is, const int* iU_I,
+                    const Type z, const int is, const amrex::Vector<int>& iU_I,
                     const int iJ) const {
 
     amrex::Real U, J, Rhoit, Qit, Rhot;
@@ -462,7 +454,7 @@ public:
     }
     return (QoQi_S[is] *
             (Pxx / MoMi_S[is] + get_number_density(mfi, x, y, z, is) *
-                                     pow(get_ux(mfi, x, y, z, is), 2)));
+                                    pow(get_ux(mfi, x, y, z, is), 2)));
   }
 
   template <typename Type>
@@ -486,7 +478,7 @@ public:
     }
     return (QoQi_S[is] *
             (Pyy / MoMi_S[is] + get_number_density(mfi, x, y, z, is) *
-                                     pow(get_uy(mfi, x, y, z, is), 2)));
+                                    pow(get_uy(mfi, x, y, z, is), 2)));
   }
 
   template <typename Type>
@@ -510,7 +502,7 @@ public:
     }
     return (QoQi_S[is] *
             (Pzz / MoMi_S[is] + get_number_density(mfi, x, y, z, is) *
-                                     pow(get_uz(mfi, x, y, z, is), 2)));
+                                    pow(get_uz(mfi, x, y, z, is), 2)));
   }
 
   template <typename Type>
@@ -532,8 +524,8 @@ public:
 
     return QoQi_S[is] *
            (Pxy / MoMi_S[is] + get_number_density(mfi, x, y, z, is) *
-                                    get_ux(mfi, x, y, z, is) *
-                                    get_uy(mfi, x, y, z, is));
+                                   get_ux(mfi, x, y, z, is) *
+                                   get_uy(mfi, x, y, z, is));
   }
 
   template <typename Type>
@@ -555,8 +547,8 @@ public:
 
     return QoQi_S[is] *
            (Pxz / MoMi_S[is] + get_number_density(mfi, x, y, z, is) *
-                                    get_ux(mfi, x, y, z, is) *
-                                    get_uz(mfi, x, y, z, is));
+                                   get_ux(mfi, x, y, z, is) *
+                                   get_uz(mfi, x, y, z, is));
   }
 
   template <typename Type>
@@ -578,8 +570,8 @@ public:
 
     return QoQi_S[is] *
            (Pyz / MoMi_S[is] + get_number_density(mfi, x, y, z, is) *
-                                    get_uy(mfi, x, y, z, is) *
-                                    get_uz(mfi, x, y, z, is));
+                                   get_uy(mfi, x, y, z, is) *
+                                   get_uz(mfi, x, y, z, is));
   }
 
   template <typename Type>

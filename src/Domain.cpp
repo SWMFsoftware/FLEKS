@@ -60,7 +60,7 @@ void Domain::make_grid() {
   nGst = 2;
 
   // If MHD is 2D, PIC has to be periodic in the z-direction.
-  for (int iDim = fluidInterface->get_GM_ndim(); iDim < nDim; iDim++)
+  for (int iDim = fluidInterface->get_fluid_dimension(); iDim < nDim; iDim++)
     set_periodicity(iDim, true);
 
   if (!doRestart) {
@@ -360,7 +360,7 @@ void Domain::init_time_ctr() {
       // Pass information to writers.
       writer.set_rank(ParallelDescriptor::MyProc());
       writer.set_nProcs(ParallelDescriptor::NProcs());
-      writer.set_nDim(fluidInterface->get_GM_ndim());
+      writer.set_nDim(fluidInterface->get_fluid_dimension());
       writer.set_iRegion(domainID);
       writer.set_domainMin_D({ { domainRange.lo(ix_), domainRange.lo(iy_),
                                  domainRange.lo(iz_) } });

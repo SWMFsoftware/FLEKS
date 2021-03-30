@@ -39,7 +39,7 @@ void Pic::get_grid(double* pos_DI) {
 //==========================================================
 void Pic::find_mpi_rank_for_points(const int nPoint, const double* const xyz_I,
                                    int* const rank_I) {
-  int nDimGM = fluidInterface->get_GM_ndim();
+  int nDimGM = fluidInterface->get_fluid_dimension();
   amrex::Real si2nol = fluidInterface->get_Si2NoL();
   const RealBox& range = geom.ProbDomain();
   for (int i = 0; i < nPoint; i++) {

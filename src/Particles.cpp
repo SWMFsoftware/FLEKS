@@ -56,14 +56,14 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
   ig = i + 2;
   jg = j + 2;
   kg = k;
-  if (fluidInterface->get_GM_ndim() > 2)
+  if (fluidInterface->get_fluid_dimension() > 2)
     kg = kg + 2; // just for comparison with iPIC3D;
   //----------------------------------------
 
   nxcg = fluidInterface->get_phy_cell_number(ix_) + 2;
   nycg = fluidInterface->get_phy_cell_number(iy_) + 2;
   nzcg = fluidInterface->get_phy_cell_number(iz_);
-  if (fluidInterface->get_GM_ndim() > 2)
+  if (fluidInterface->get_fluid_dimension() > 2)
     nzcg += 2;
 
   iCycle = tc->get_cycle();

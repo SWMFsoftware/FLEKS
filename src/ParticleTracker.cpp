@@ -201,7 +201,7 @@ void ParticleTracker::complete_parameters() {
   // Pass information to writers.
   writer.set_rank(ParallelDescriptor::MyProc());
   writer.set_nProcs(ParallelDescriptor::NProcs());
-  writer.set_nDim(fluidInterface->get_GM_ndim());
+  writer.set_nDim(fluidInterface->get_fluid_dimension());
   // writer.set_iRegion(domainID);
   // writer.set_domainMin_D({ { 0, 0, 0 } });
 
