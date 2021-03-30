@@ -28,6 +28,9 @@ void Pic::init(std::shared_ptr<FluidInterface>& fluidIn,
   }
 
   Particles<>::particlePosition = Staggered;
+
+  if (useSource)
+    sourceInterface = *fluidInterface;
 }
 
 //==========================================================
@@ -114,6 +117,9 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   std::string nameFunc = "Pic::regrid";
 
   timing_func(nameFunc);
+
+  if (useSource)
+    sourceInterface.regrid(centerBAIn, dmIn);
 
   // Why need 'isGridInitialized'? See the explaination in Domain::regrid().
   if (centerBAIn == centerBA && isGridInitialized)
@@ -261,8 +267,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::unique_ptr<Particles<> >(new Particles<>(
           picRegionBA, geom, dm, centerBA, fluidInterface.get(), tc.get(), i,
-          fluidInterface->get_species_charge(i), fluidInterface->get_species_mass(i),
-          nPartPerCell, testCase));
+          fluidInterface->get_species_charge(i),
+          fluidInterface->get_species_mass(i), nPartPerCell, testCase));
 
       //----- Set parameters------------
       if (particleMergeThreshold >= 0) {

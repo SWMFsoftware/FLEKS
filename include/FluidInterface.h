@@ -20,10 +20,17 @@
 #include "Utility.h"
 #include "Writer.h"
 
+// amrex::MultiFab does not provide an assignment operator. MultiFabFLEKS is
+// derived from MultiFab and provides an empty assignment operator.
+class MultiFabFLEKS : public amrex::MultiFab {
+public:
+  MultiFabFLEKS() {}
+  ~MultiFabFLEKS() = default;
+  MultiFabFLEKS& operator=(const MultiFabFLEKS& other) { return *this; };
+};
+
 class FluidInterface {
 private:
-  static const int nDimMax = 3;
-
   // ------Grid info----------
   amrex::DistributionMapping dm;
   amrex::Geometry geom;
@@ -31,8 +38,8 @@ private:
   amrex::BoxArray nodeBA;
   //------------------------
 
-  amrex::MultiFab nodeFluid;
-  amrex::MultiFab centerB;
+  MultiFabFLEKS nodeFluid;
+  MultiFabFLEKS centerB;
 
   int domainID;
   std::string domainName;
@@ -115,6 +122,7 @@ public:
 public:
   FluidInterface() {}
   ~FluidInterface() = default;
+  FluidInterface& operator=(const FluidInterface& other) = default;
   void init(int domainIDIn);
   void receive_info_from_gm(const int* const paramInt,
                             const double* const gridDim,

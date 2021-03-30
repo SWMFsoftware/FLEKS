@@ -67,6 +67,9 @@ private:
   amrex::MultiFab tempCenter1_1;
   //--------------------------------------
 
+  bool useSource = true;
+  FluidInterface sourceInterface; 
+
   int nSpecies;
   int iTot;
   amrex::Vector<amrex::MultiFab> nodePlasma;

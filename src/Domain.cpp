@@ -139,8 +139,9 @@ void Domain::regrid() {
   if (!baPic.empty())
     dmPic.define(baPic);
 
-  pic.regrid(picRegionBA, baPic, dmPic);
   fluidInterface->regrid(baPic, dmPic);
+
+  pic.regrid(picRegionBA, baPic, dmPic);
 
   if (usePT)
     pt.regrid(picRegionBA, baPic, dmPic, pic);
@@ -371,11 +372,11 @@ void Domain::init_time_ctr() {
       const Real *dx = geom.CellSize();
       writer.set_dx_D({ { dx[ix_], dx[iy_], dx[iz_] } });
       writer.set_nSpecies(nS);
-      writer.set_units(fluidInterface->get_No2SiL(), fluidInterface->get_No2SiV(),
-                       fluidInterface->get_No2SiB(),
-                       fluidInterface->get_No2SiRho(),
-                       fluidInterface->get_No2SiP(), fluidInterface->get_No2SiJ(),
-                       fluidInterface->get_rPlanet_SI());
+      writer.set_units(
+          fluidInterface->get_No2SiL(), fluidInterface->get_No2SiV(),
+          fluidInterface->get_No2SiB(), fluidInterface->get_No2SiRho(),
+          fluidInterface->get_No2SiP(), fluidInterface->get_No2SiJ(),
+          fluidInterface->get_rPlanet_SI());
       writer.set_No2NoL(fluidInterface->get_MhdNo2NoL());
 
       writer.set_scalarValue_I(scalarVar_I);
