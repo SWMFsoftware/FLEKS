@@ -28,9 +28,6 @@ void Pic::init(std::shared_ptr<FluidInterface>& fluidIn,
   }
 
   Particles<>::particlePosition = Staggered;
-
-  if (useSource)
-    sourceInterface = *fluidInterface;
 }
 
 //==========================================================
@@ -69,6 +66,8 @@ void Pic::read_param(const std::string& command, ReadParam& readParam) {
   } else if (command == "#MERGEPARTICLE") {
     readParam.read_var("mergeThresholdDistance", particleMergeThreshold);
     readParam.read_var("binBuffer", particleMergeBinBuffer);
+  } else if (command == "#SOURCE") {
+    readParam.read_var("useSource", useSource);
   } else if (command == "#TESTCASE") {
     std::string testcase;
     readParam.read_var("testCase", testcase);
@@ -494,6 +493,15 @@ void Pic::fill_particles() {
   inject_particles_for_boundary_cells();
 }
 
+void Pic::fill_source_particles() {
+  sourceInterface.update_nodeFluid(fluidInterface->get_nodeFluid(),
+                                   tc->get_dt());
+
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->add_particles_source(nodePlasma[i], sourceInterface);
+  }
+}
+
 //==========================================================
 void Pic::update_part_loc_to_half_stage() {
   std::string nameFunc = "Pic::update_part_loc_to_half_stage";
@@ -529,14 +537,14 @@ void Pic::particle_mover() {
 
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->mover(nodeEth, nodeB, tc->get_dt(), tc->get_next_dt());
+  }
 
-    if (doReSampling) {
+  if (doReSampling)
+    for (int i = 0; i < nSpecies; i++) {
+      // TODO: this part should be removed!!!
       parts[i]->split_particles(reSamplingLowLimit);
       parts[i]->combine_particles(reSamplingHighLimit);
     }
-  }
-
-  inject_particles_for_boundary_cells();
 }
 
 //==========================================================
@@ -826,6 +834,10 @@ void Pic::update() {
     }
   }
 
+  if (useSource) {
+    fill_source_particles();
+  }
+
   re_sampling();
 
   if (Particles<>::particlePosition == NonStaggered) {
@@ -837,6 +849,8 @@ void Pic::update() {
   update_E();
 
   particle_mover();
+
+  inject_particles_for_boundary_cells();
 
   update_B();
 

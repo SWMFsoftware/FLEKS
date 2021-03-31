@@ -133,6 +133,8 @@ public:
 
   void regrid(const amrex::BoxArray& centerBAIn,
               const amrex::DistributionMapping& dmIn);
+            
+  void update_nodeFluid(const MultiFabFLEKS& nodeIn, const double dt);
 
   int count_couple_node_number();
 
@@ -174,7 +176,7 @@ public:
   void pic_to_Mhd_Vec(double const* vecIn_D, double* vecOut_D,
                       bool isZeroOrigin = false) const;
 
-  void print_info();
+  void print_info() const;
 
   int get_nCellPerPatch() const { return nCellPerPatch; }
 
@@ -236,7 +238,7 @@ public:
 
   // ---------Functions to read/interpolate value from nodeFluid.
   // Begin------------
-  const amrex::MultiFab& get_nodeFluid() const { return nodeFluid; }
+  const MultiFabFLEKS& get_nodeFluid() const { return nodeFluid; }
 
   amrex::Real get_center_b(const amrex::MFIter& mfi, const int i, const int j,
                            const int k, const int iDir) const {

@@ -48,6 +48,8 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
 
   init_time_ctr();
 
+  pic.init_source(*fluidInterface);
+
   if (doRestart) {
     // Restoring the restart data before coupling with GM, because the PIC grid
     // may change again during coupling.
@@ -404,7 +406,8 @@ void Domain::read_param() {
         command == "#PARTICLES" || command == "#ELECTRON" ||
         command == "#DISCRETIZE" || command == "#DISCRETIZATION" ||
         command == "#RESAMPLING" || command == "#SMOOTHE" ||
-        command == "#TESTCASE" || command == "#MERGEPARTICLE") {
+        command == "#TESTCASE" || command == "#MERGEPARTICLE" ||
+        command == "#SOURCE") {
       pic.read_param(command, readParam);
     } else if (command == "#PARTICLETRACKER") {
       readParam.read_var("usePT", usePT);

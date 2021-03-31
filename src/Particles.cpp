@@ -47,27 +47,39 @@ Particles<NStructReal, NStructInt>::Particles(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
-                                                            int i, int j,
-                                                            int k) {
+void Particles<NStructReal, NStructInt>::add_particles_cell(
+    const MFIter& mfi, const int i, const int j, const int k,
+    const FluidInterface& interface, Real ratio) {
+
   int ig, jg, kg, nxcg, nycg, nzcg, iCycle, npcel, nRandom = 7;
-  // Why +1? for comparison with iPIC3D.-----
+
+  if (ratio != 1) {
+    // Change the random number seed.
+    nRandom = 19;
+
+    ratio = pow(ratio, 1 / 3);  
+  }
+
+  int nPPC[nDim];
+  for (int iDim = 0; iDim < nDim; iDim++) {
+    nPPC[iDim] = ceil(nPartPerCell[iDim] * ratio);
+  }
 
   ig = i + 2;
   jg = j + 2;
   kg = k;
-  if (fluidInterface->get_fluid_dimension() > 2)
+  if (interface.get_fluid_dimension() > 2)
     kg = kg + 2; // just for comparison with iPIC3D;
   //----------------------------------------
 
-  nxcg = fluidInterface->get_phy_cell_number(ix_) + 2;
-  nycg = fluidInterface->get_phy_cell_number(iy_) + 2;
-  nzcg = fluidInterface->get_phy_cell_number(iz_);
-  if (fluidInterface->get_fluid_dimension() > 2)
+  nxcg = interface.get_phy_cell_number(ix_) + 2;
+  nycg = interface.get_phy_cell_number(iy_) + 2;
+  nzcg = interface.get_phy_cell_number(iz_);
+  if (interface.get_fluid_dimension() > 2)
     nzcg += 2;
 
   iCycle = tc->get_cycle();
-  npcel = nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_];
+  npcel = nPPC[ix_] * nPPC[iy_] * nPPC[iz_];
 
   // What if the seed overflow?
   const long seed =
@@ -92,9 +104,9 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
     const Box& gbx = convert(Geom(0).Domain(), { 0, 0, 0 });
     const bool is2D = gbx.bigEnd(iz_) == gbx.smallEnd(iz_);
     int nCellContribute = is2D ? 4 : 8;
-    const int nx = nPartPerCell[ix_];
-    const int ny = nPartPerCell[iy_];
-    const int nz = nPartPerCell[iz_];
+    const int nx = nPPC[ix_];
+    const int ny = nPPC[iy_];
+    const int nz = nPPC[iz_];
     const Real coefCorrection = 27. / 8 * (nx + 1) * (ny + 1) * (nz + 1) /
                                 ((2 * nx + 1) * (2 * ny + 1) * (2 * nz + 1));
     nPartEffective = nCellContribute * npcel * coefCorrection;
@@ -103,19 +115,16 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
   //-----------------------------------------------------------
   int icount = 0;
   // Loop over particles inside grid cell i, j, k
-  for (int ii = 0; ii < nPartPerCell[ix_]; ii++)
-    for (int jj = 0; jj < nPartPerCell[iy_]; jj++)
-      for (int kk = 0; kk < nPartPerCell[iz_]; kk++) {
+  for (int ii = 0; ii < nPPC[ix_]; ii++)
+    for (int jj = 0; jj < nPPC[iy_]; jj++)
+      for (int kk = 0; kk < nPPC[iz_]; kk++) {
 
-        x = (ii + randNum()) * (dx[ix_] / nPartPerCell[ix_]) + i * dx[ix_] +
-            plo[ix_];
-        y = (jj + randNum()) * (dx[iy_] / nPartPerCell[iy_]) + j * dx[iy_] +
-            plo[iy_];
-        z = (kk + randNum()) * (dx[iz_] / nPartPerCell[iz_]) + k * dx[iz_] +
-            plo[iz_];
+        x = (ii + randNum()) * (dx[ix_] / nPPC[ix_]) + i * dx[ix_] + plo[ix_];
+        y = (jj + randNum()) * (dx[iy_] / nPPC[iy_]) + j * dx[iy_] + plo[iy_];
+        z = (kk + randNum()) * (dx[iz_] / nPPC[iz_]) + k * dx[iz_] + plo[iz_];
 
-        double q = vol2Npcel *
-                   fluidInterface->get_number_density(mfi, x, y, z, speciesID);
+        double q =
+            vol2Npcel * interface.get_number_density(mfi, x, y, z, speciesID);
         if (q != 0) {
           Real u, v, w;
           double rand1 = randNum();
@@ -123,15 +132,13 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
           double rand3 = randNum();
           double rand4 = randNum();
 
-          if (fluidInterface->get_UseAnisoP() &&
-              (speciesID > 0 || fluidInterface->get_useElectronFluid())) {
-            fluidInterface->set_particle_uth_aniso(mfi, x, y, z, &u, &v, &w,
-                                                   rand1, rand2, rand3, rand4,
-                                                   speciesID);
+          if (interface.get_UseAnisoP() &&
+              (speciesID > 0 || interface.get_useElectronFluid())) {
+            interface.set_particle_uth_aniso(mfi, x, y, z, &u, &v, &w, rand1,
+                                             rand2, rand3, rand4, speciesID);
           } else {
-            fluidInterface->set_particle_uth_iso(mfi, x, y, z, &u, &v, &w,
-                                                 rand1, rand2, rand3, rand4,
-                                                 speciesID);
+            interface.set_particle_uth_iso(mfi, x, y, z, &u, &v, &w, rand1,
+                                           rand2, rand3, rand4, speciesID);
           }
 
           // Increase the thermal velocity a little so that the variation of the
@@ -140,9 +147,9 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
           v *= coefSD;
           w *= coefSD;
 
-          Real uBulk = fluidInterface->get_ux(mfi, x, y, z, speciesID);
-          Real vBulk = fluidInterface->get_uy(mfi, x, y, z, speciesID);
-          Real wBulk = fluidInterface->get_uz(mfi, x, y, z, speciesID);
+          Real uBulk = interface.get_ux(mfi, x, y, z, speciesID);
+          Real vBulk = interface.get_uy(mfi, x, y, z, speciesID);
+          Real wBulk = interface.get_uz(mfi, x, y, z, speciesID);
 
           if (testCase == TwoStream && qom < 0 && icount % 2 == 0) {
             // Electron only (qom<0)
@@ -186,9 +193,33 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(const MFIter& mfi,
 
 //==========================================================
 template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::add_particles_source(
+    const amrex::MultiFab& momentsMF, const FluidInterface& interface) {
+  timing_func("Particles::add_particles_source");
+
+  const int lev = 0;
+  for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
+    const Box& tile_box = mfi.validbox();
+    const auto lo = amrex::lbound(tile_box);
+    const auto hi = amrex::ubound(tile_box);
+
+    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
+    int iMin = lo.x, jMin = lo.y, kMin = lo.z;
+
+    for (int i = iMin; i <= iMax; ++i)
+      for (int j = jMin; j <= jMax; ++j)
+        for (int k = kMin; k <= kMax; ++k) {
+          Real ratio = 0.5;
+          add_particles_cell(mfi, i, j, k, interface, ratio);
+        }
+  }
+}
+
+//==========================================================
+template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_domain(
     const iMultiFab& cellStatus) {
-  timing_func("Particles::add_particles");
+  timing_func("Particles::add_particles_domain");
 
   const int lev = 0;
   for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
@@ -204,12 +235,12 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
       for (int j = jMin; j <= jMax; ++j)
         for (int k = kMin; k <= kMax; ++k) {
           if (status(i, j, k) == iOnNew_) {
-            add_particles_cell(mfi, i, j, k);
+            add_particles_cell(mfi, i, j, k, *fluidInterface);
           }
         }
   }
 
-  // Call Redistribute so that the particles are assigned to correct cells.
+  //TODO: Is this really necessary?
   Redistribute();
 }
 
@@ -244,7 +275,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
           if (do_inject_particles_for_this_cell(bx, status, i, j, k)) {
-            add_particles_cell(mfi, i, j, k);
+            add_particles_cell(mfi, i, j, k, *fluidInterface);
           }
         }
   }

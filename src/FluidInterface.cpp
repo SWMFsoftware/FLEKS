@@ -457,7 +457,7 @@ void FluidInterface::read_from_GM(const int* const paramint,
   } else {
     nIonFluid = nFluid;
     nIon = nFluid + nSpeciesFluid - 1; // Assuming one electron species.
-    nS = nIon + 1;                // + electron
+    nS = nIon + 1;                     // + electron
   }
 
   useMultiFluid = nIonFluid > 1;
@@ -630,7 +630,7 @@ void FluidInterface::read_from_GM(const int* const paramint,
 }
 
 /** print info for coupling */
-void FluidInterface::print_info() {
+void FluidInterface::print_info() const {
 
   if (myrank == 0) {
     cout << endl;
@@ -963,4 +963,64 @@ void FluidInterface::mhd_to_Pic_Vec(double const* vecIn_D, double* vecOut_D,
       vecOut_D[iDim] += R_DD[jDim][iDim] * vec_D[jDim];
     }
   } // iDim
+}
+
+void FluidInterface::update_nodeFluid(const MultiFabFLEKS& nodeIn,
+                                      const double dt) {
+
+  double No2MhdNoL = No2SiL * (1.0 / MhdNo2SiL);
+  double dtSI = dt * get_No2SiT();
+
+  nodeFluid.setVal(0);
+
+  for (MFIter mfi(nodeFluid); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.fabbox();
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    const Array4<Real>& arr = nodeFluid[mfi].array();
+    const Array4<const Real>& arrIn = nodeIn[mfi].array();
+
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+
+          Real z = geom.CellCenter(k, iz_) * No2MhdNoL;
+          Real y = geom.CellCenter(j, iy_) * No2MhdNoL;
+          Real x = geom.CellCenter(i, ix_) * No2MhdNoL;
+
+          if (useMultiSpecies) {
+            // double Rhot = 0;
+            // for (int iIon = 0; iIon < nIon; ++iIon) {
+            //   // Rho = sum(Rhoi) + Rhoe;
+            //   Rhot += arr(i, j, k, iRho_I[iIon]) *
+            //           (1 + MoMi_S[0] / MoMi_S[iIon + 1]);
+            // } // iIon
+
+            // arr(i, j, k, iUx_I[0]) /= Rhot;
+            // arr(i, j, k, iUy_I[0]) /= Rhot;
+            // arr(i, j, k, iUz_I[0]) /= Rhot;
+          } else {
+
+            Real x0 = 5, y0 = 5, z0 = 0, r0 = 2;
+            x -= x0;
+            y -= y0;
+            z -= z0;
+            Real r = sqrt(x * x + y * y + z * z);
+            Real ratio = exp(-r / r0) * 0.1;
+            for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
+
+              arr(i, j, k, iRho_I[iFluid]) =
+                  ratio * arrIn(i, j, k, iRho_I[iFluid]);
+
+              arr(i, j, k, iUx_I[iFluid]) = arrIn(i, j, k, iUx_I[iFluid]);
+              arr(i, j, k, iUy_I[iFluid]) = arrIn(i, j, k, iUy_I[iFluid]);
+              arr(i, j, k, iUz_I[iFluid]) = arrIn(i, j, k, iUz_I[iFluid]);
+
+              arr(i, j, k, iP_I[iFluid]) = ratio * arrIn(i, j, k, iP_I[iFluid]);
+
+            } // iFluid
+          }
+        }
+  }
 }

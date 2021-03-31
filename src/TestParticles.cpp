@@ -184,7 +184,7 @@ void TestParticles::add_test_particles(const iMultiFab& cellStatus) {
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
           if (status(i, j, k) == iAddPTParticle_ && randNum() < partNumCtr) {
-            add_particles_cell(mfi, i, j, k);
+            add_particles_cell(mfi, i, j, k, *fluidInterface);
           }
         }
   }

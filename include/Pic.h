@@ -67,8 +67,8 @@ private:
   amrex::MultiFab tempCenter1_1;
   //--------------------------------------
 
-  bool useSource = true;
-  FluidInterface sourceInterface; 
+  bool useSource = false;
+  FluidInterface sourceInterface;
 
   int nSpecies;
   int iTot;
@@ -142,6 +142,11 @@ public:
   void fill_new_center_B();
 
   void fill_particles();
+  
+  void init_source(const FluidInterface &interfaceIn) {
+    sourceInterface = interfaceIn;
+  }
+
   //----------------Initialization end-------------------------------
 
   void sum_moments(bool updateDt = false);
@@ -153,6 +158,8 @@ public:
   void particle_mover();
 
   void re_sampling();
+
+  void fill_source_particles();
 
   void inject_particles_for_new_cells() {
     for (auto &pts : parts) {
