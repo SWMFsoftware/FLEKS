@@ -45,6 +45,8 @@ public:
   void read_param(const std::string &command, ReadParam &readParam);
 
 private:
+  bool usePT = false; 
+
   std::string printPrefix;
   std::string domainName;
   int domainID;

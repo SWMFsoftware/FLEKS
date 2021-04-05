@@ -8,9 +8,6 @@
 class Domain : public DomainGrid {
 private:
   bool doRestart = false;
-
-  bool usePT = false;
-
 public:
   Pic pic;
   ParticleTracker pt;

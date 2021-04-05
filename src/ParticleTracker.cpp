@@ -4,7 +4,7 @@
 using namespace amrex;
 
 void ParticleTracker::set_ic(Pic& pic) {
-  if (isGridEmpty)
+  if (isGridEmpty || !usePT)
     return;
 
   update_field(pic);
@@ -17,7 +17,7 @@ void ParticleTracker::set_ic(Pic& pic) {
 }
 
 void ParticleTracker::update(Pic& pic) {
-  if (isGridEmpty)
+  if (isGridEmpty || !usePT)
     return;
 
   update_field(pic);
@@ -93,6 +93,9 @@ void ParticleTracker::init(std::shared_ptr<FluidInterface>& fluidIn,
 
 //==========================================================
 void ParticleTracker::set_geom(int nGstIn, const Geometry& geomIn) {
+  if (!usePT)
+    return;
+
   nGst = nGstIn;
   geom = geomIn;
 }
@@ -103,6 +106,9 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
   std::string nameFunc = "PT::regrid";
 
   timing_func(nameFunc);
+
+  if (!usePT)
+    return;
 
   // Why need 'isGridInitialized'? See the explanation in Domain::regrid().
   if (centerBAIn == centerBA && isGridInitialized)
@@ -126,8 +132,8 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::unique_ptr<TestParticles>(new TestParticles(
           ptRegionBA, geom, dm, centerBA, fluidInterface.get(), tc.get(), i,
-          fluidInterface->get_species_charge(i), fluidInterface->get_species_mass(i),
-          domainID));
+          fluidInterface->get_species_charge(i),
+          fluidInterface->get_species_mass(i), domainID));
       parts.push_back(std::move(ptr));
     }
   } else {
@@ -159,7 +165,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
 }
 
 void ParticleTracker::save_restart_data() {
-  if (isGridEmpty)
+  if (isGridEmpty || !usePT)
     return;
 
   std::string restartDir = "PC/restartOUT/";
@@ -180,6 +186,9 @@ void ParticleTracker::save_restart_data() {
 }
 
 void ParticleTracker::read_restart() {
+  if (!usePT)
+    return;
+
   std::string restartDir = "PC/restartIN/";
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     parts[iPart]->Restart(restartDir, domainName + "_test_particles" +
@@ -224,6 +233,9 @@ void ParticleTracker::complete_parameters() {
 }
 
 void ParticleTracker::save_restart_header(std::ofstream& headerFile) {
+  if (!usePT)
+    return;
+
   std::string command_suffix = "_" + domainName + "\n";
 
   if (ParallelDescriptor::IOProcessor()) {
@@ -238,7 +250,9 @@ void ParticleTracker::save_restart_header(std::ofstream& headerFile) {
 void ParticleTracker::read_param(const std::string& command,
                                  ReadParam& readParam) {
 
-  if (command == "#TESTPARTICLENUMBER") {
+  if (command == "#PARTICLETRACKER") {
+    readParam.read_var("usePT", usePT);
+  } else if (command == "#TESTPARTICLENUMBER") {
     initPartNumber.clear();
     unsigned long int num;
     for (int iPart = 0; iPart < nSpecies; iPart++) {

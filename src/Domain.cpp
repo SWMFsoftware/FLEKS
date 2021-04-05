@@ -12,8 +12,7 @@ void Domain::update() {
 
   pic.write_log();
 
-  if (usePT)
-    pt.update(pic);
+  pt.update(pic);
 };
 
 //========================================================
@@ -95,8 +94,7 @@ void Domain::make_grid() {
   pic.set_geom(nGst, geom);
   fluidInterface->set_geom(nGst, geom);
 
-  if (usePT)
-    pt.set_geom(nGst, geom);
+  pt.set_geom(nGst, geom);
 }
 
 //========================================================
@@ -145,8 +143,7 @@ void Domain::regrid() {
 
   pic.regrid(picRegionBA, baPic, dmPic);
 
-  if (usePT)
-    pt.regrid(picRegionBA, baPic, dmPic, pic);
+  pt.regrid(picRegionBA, baPic, dmPic, pic);
 
   iGrid++;
   iDecomp++;
@@ -169,8 +166,7 @@ void Domain::set_ic() {
   write_plots(true);
   pic.write_log(true, true);
 
-  if (usePT)
-    pt.set_ic(pic);
+  pt.set_ic(pic);
 }
 
 //========================================================
@@ -211,13 +207,11 @@ void Domain::read_restart() {
   fluidInterface->regrid(baPic, dmPic);
 
   // Assume dmPT == dmPIC so far.
-  if (usePT)
-    pt.regrid(baPic, baPic, dmPic, pic);
+  pt.regrid(baPic, baPic, dmPic, pic);
 
   fluidInterface->read_restart();
   pic.read_restart();
-  if (usePT)
-    pt.read_restart();
+  pt.read_restart();
 
   write_plots(true);
   pic.write_log(true, true);
@@ -234,8 +228,7 @@ void Domain::save_restart_data() {
   VisMF::SetNOutFiles(64);
   fluidInterface->save_restart_data();
   pic.save_restart_data();
-  if (usePT)
-    pt.save_restart_data();
+  pt.save_restart_data();
 }
 
 //========================================================
@@ -327,8 +320,7 @@ void Domain::save_restart_header() {
     headerFile << "\n";
 
     pic.save_restart_header(headerFile);
-    if (usePT)
-      pt.save_restart_header(headerFile);
+    pt.save_restart_header(headerFile);
 
     headerFile << "\n";
   }
@@ -409,8 +401,9 @@ void Domain::read_param() {
         command == "#TESTCASE" || command == "#MERGEPARTICLE" ||
         command == "#SOURCE") {
       pic.read_param(command, readParam);
-    } else if (command == "#PARTICLETRACKER") {
-      readParam.read_var("usePT", usePT);
+    } else if (command == "#PARTICLETRACKER" ||
+               command == "#TESTPARTICLENUMBER") {
+      pt.read_param(command, readParam);
     } else if (command == "#RESTART") {
       readParam.read_var("doRestart", doRestart);
       pic.set_doRestart(doRestart);
@@ -573,9 +566,6 @@ void Domain::read_param() {
       for (int i = 0; i < nDim; ++i) {
         readParam.read_var("nCell", nCell[i]);
       }
-    } else if (command == "#TESTPARTICLENUMBER") {
-      if (usePT)
-        pt.read_param(command, readParam);
     }
     //--------- The commands above exist in restart.H only --------
   }
