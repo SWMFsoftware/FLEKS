@@ -33,7 +33,9 @@ void Pic::init(std::shared_ptr<FluidInterface>& fluidIn,
 //==========================================================
 void Pic::read_param(const std::string& command, ReadParam& readParam) {
 
-  if (command == "#DIVE") {
+  if (command == "#PIC") {
+    readParam.read_var("usePIC", usePIC);
+  } else if (command == "#DIVE") {
     readParam.read_var("doCorrectDivE", doCorrectDivE);
   } else if (command == "#EFIELDSOLVER") {
     Real tol;
@@ -96,10 +98,12 @@ void Pic::fill_new_cells() {
   timing_func(nameFunc);
 
   fill_E_B_fields();
-  fill_particles();
 
-  sum_moments(true);
-  sum_to_center(false);
+  if (usePIC) {
+    fill_particles();
+    sum_moments(true);
+    sum_to_center(false);
+  }
 
   doNeedFillNewCell = false;
 }
@@ -193,21 +197,23 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     if (!cellStatus.empty()) {
       cellStatus.setVal(iBoundary_);
       cellStatus.setVal(iOnNew_, 0);
-      for (MFIter mfi(cellStatus); mfi.isValid(); ++mfi) {
-        const Box& box = mfi.validbox();
-        const Array4<int>& cellArr = cellStatus[mfi].array();
-        const auto lo = lbound(box);
-        const auto hi = ubound(box);
 
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              if (cellArr(i, j, k) == iOnNew_ &&
-                  centerBAOld.contains({ i, j, k })) {
-                cellArr(i, j, k) = iOnOld_;
+      if (usePIC)
+        for (MFIter mfi(cellStatus); mfi.isValid(); ++mfi) {
+          const Box& box = mfi.validbox();
+          const Array4<int>& cellArr = cellStatus[mfi].array();
+          const auto lo = lbound(box);
+          const auto hi = ubound(box);
+
+          for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+              for (int i = lo.x; i <= hi.x; ++i) {
+                if (cellArr(i, j, k) == iOnNew_ &&
+                    centerBAOld.contains({ i, j, k })) {
+                  cellArr(i, j, k) = iOnOld_;
+                }
               }
-            }
-      }
+        }
     }
 
     cellStatus.FillBoundary(geom.periodicity());
@@ -237,22 +243,23 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
       nodeStatus.setVal(iBoundary_);
       nodeStatus.setVal(iOnNew_, 0);
 
-      for (MFIter mfi(nodeStatus); mfi.isValid(); ++mfi) {
-        const Box& box = mfi.validbox();
-        const auto& nodeArr = nodeStatus[mfi].array();
+      if (usePIC)
+        for (MFIter mfi(nodeStatus); mfi.isValid(); ++mfi) {
+          const Box& box = mfi.validbox();
+          const auto& nodeArr = nodeStatus[mfi].array();
 
-        const auto lo = lbound(box);
-        const auto hi = ubound(box);
+          const auto lo = lbound(box);
+          const auto hi = ubound(box);
 
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              if (nodeArr(i, j, k) == iOnNew_ &&
-                  nodeBAOld.contains({ i, j, k })) {
-                nodeArr(i, j, k) = iOnOld_;
+          for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+              for (int i = lo.x; i <= hi.x; ++i) {
+                if (nodeArr(i, j, k) == iOnNew_ &&
+                    nodeBAOld.contains({ i, j, k })) {
+                  nodeArr(i, j, k) = iOnOld_;
+                }
               }
-            }
-      }
+        }
     }
 
     nodeStatus.FillBoundary(geom.periodicity());
@@ -800,39 +807,17 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
 }
 
 //==========================================================
-void Pic::update() {
+void Pic::update(bool doReportIn) {
   std::string nameFunc = "Pic::update";
 
-  doReport = tc->monitor.is_time_to();
-
-  if (isGridEmpty) {
-    if (tc->get_dt_si() <= 0) {
-      tc->set_dt_si(tc->get_dummy_dt_si());
-    }
-  }
+  if (isGridEmpty || !usePIC)
+    return;
 
   timing_func(nameFunc);
 
+  doReport = doReportIn;
+
   Real tStart = second();
-
-  {
-    const Real t0 = tc->get_time_si();
-    // update time, step number.
-    tc->update();
-
-    if (doReport) {
-      const Real t1 = tc->get_time_si();
-      Print() << "\n==== " << printPrefix << " Cycle " << tc->get_cycle()
-              << " from t = " << std::setprecision(6) << t0
-              << " (s) to t = " << std::setprecision(6) << t1
-              << " (s) with dt = " << std::setprecision(6) << tc->get_dt_si()
-              << " (s) ====" << std::endl;
-    }
-
-    if (isGridEmpty) {
-      return;
-    }
-  }
 
   if (useSource) {
     fill_source_particles();

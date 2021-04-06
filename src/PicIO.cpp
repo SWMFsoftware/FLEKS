@@ -63,6 +63,13 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
   Print() << printPrefix << " PC -> GM coupling at t =" << tc->get_time_si()
           << " (s)" << std::endl;
 
+  if (!usePIC) {
+    for (int i = 0; i < nVar * nPoint; i++) {
+      data_I[i] = 0;
+    }
+    return;
+  }
+
   // (rho + 3*Moment + 6*p)*nSpecies+ 3*E + 3*B;
   const int nVarPerSpecies = 10;
   int nVarPIC = nSpecies * nVarPerSpecies + 6;
@@ -436,7 +443,7 @@ void Pic::read_restart() {
 
 //==========================================================
 void Pic::write_log(bool doForce, bool doCreateFile) {
-  if (isGridEmpty)
+  if (isGridEmpty || !usePIC)
     return;
 
   if (doCreateFile && ParallelDescriptor::IOProcessor()) {
@@ -585,7 +592,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   if (plotVars.find("E") != std::string::npos)
     nVarOut += 3;
 
-  if (plotVars.find("plasma") != std::string::npos)
+  if (usePIC && plotVars.find("plasma") != std::string::npos)
     nVarOut += 10 * nSpecies;
 
   // Save cell-centered, instead of the nodal, values, because the AMReX
@@ -649,7 +656,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
   bool isDensityZero = false;
   int zeroI, zeroJ, zeroK;
-  if (plotVars.find("plasma") != std::string::npos) {
+  if (usePIC && plotVars.find("plasma") != std::string::npos) {
     //-------------plasma---------------------
 
     // The order of the varname should be consistent with nodePlasma.

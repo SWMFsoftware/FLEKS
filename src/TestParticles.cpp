@@ -162,7 +162,7 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
 }
 
 void TestParticles::add_test_particles(const iMultiFab& cellStatus) {
-  std::string funcName = "TestParticles::add_test_particles";
+  std::string funcName = "TP::add_test_particles";
   timing_func(funcName);
   Print() << funcName << " : nInitPart = " << nInitPart
           << " : current number = " << TotalNumberOfParticles(true, false)
@@ -183,15 +183,16 @@ void TestParticles::add_test_particles(const iMultiFab& cellStatus) {
     for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
-          if (status(i, j, k) == iAddPTParticle_ && randNum() < partNumCtr) {
-            add_particles_cell(mfi, i, j, k, *fluidInterface);
-          }
+          add_particles_cell(mfi, i, j, k, *fluidInterface, partNumCtr);
         }
   }
 }
 
 //======================================================================
 bool TestParticles::write_particles(int cycle) {
+  std::string funcName = "TP::write_particles";
+  timing_func(funcName);
+
   int nPartLoc = TotalNumberOfParticles(false, true);
   int nPartAhead = 0;
 

@@ -8,25 +8,39 @@ void ParticleTracker::set_ic(Pic& pic) {
     return;
 
   update_field(pic);
-  for (auto& tps : parts) {
+  for (int i = 0; i < parts.size(); i++) {
+    auto& tps = parts[i];
     tps->add_test_particles(cellStatus);
     tps->update_initial_particle_number();
+
+    Print() << printPrefix << " initial particle # is "
+            << tps->init_particle_number() << " for species " << i << std::endl;
   }
 
   complete_parameters();
 }
 
 void ParticleTracker::update(Pic& pic) {
+  std::string funcName = "PTracker::update";
+  timing_func(funcName);
+
   if (isGridEmpty || !usePT)
     return;
 
   update_field(pic);
   bool doSave = savectr->is_time_to();
-  for (auto& tps : parts) {
+  for (int i = 0; i < parts.size(); i++) {
+    auto& tps = parts[i];
     tps->move_and_save_particles(nodeE, nodeB, tc->get_dt(), tc->get_next_dt(),
                                  tc->get_time_si());
 
     if (doSave) {
+      Print() << printPrefix << "particle number of species " << i
+              << ": initial = " << tps->init_particle_number()
+              << ". current = " << tps->TotalNumberOfParticles() << ". ratio = "
+              << (double)tps->TotalNumberOfParticles() / tps->init_particle_number()
+              << std::endl;
+
       tps->write_particles(tc->get_cycle());
       // Refill test particles if necessary.
       if (tps->TotalNumberOfParticles() < 0.5 * tps->init_particle_number()) {
@@ -83,7 +97,7 @@ void ParticleTracker::init(std::shared_ptr<FluidInterface>& fluidIn,
     std::stringstream ss;
     ss << "FLEKS" << domainID;
     domainName = ss.str();
-    printPrefix = domainName + ": ";
+    printPrefix = domainName + " PT: ";
   }
 
   savectr = std::unique_ptr<PlotCtr>(

@@ -6,7 +6,31 @@ using namespace amrex;
 
 //========================================================
 void Domain::update() {
-  pic.update();
+  std::string funcName = "Domain::update";
+  timing_func(funcName);
+
+  bool doReport = tc->monitor.is_time_to();
+
+  if (pic.is_grid_empty()) {
+    if (tc->get_dt_si() <= 0) {
+      tc->set_dt_si(tc->get_dummy_dt_si());
+    }
+  }
+
+  const Real t0 = tc->get_time_si();
+  // update time, step number.
+  tc->update();
+
+  if (doReport) {
+    const Real t1 = tc->get_time_si();
+    Print() << "\n==== " << printPrefix << " Cycle " << tc->get_cycle()
+            << " from t = " << std::setprecision(6) << t0
+            << " (s) to t = " << std::setprecision(6) << t1
+            << " (s) with dt = " << std::setprecision(6) << tc->get_dt_si()
+            << " (s) ====" << std::endl;
+  }
+
+  pic.update(doReport);
 
   write_plots();
 
@@ -399,7 +423,7 @@ void Domain::read_param() {
         command == "#DISCRETIZE" || command == "#DISCRETIZATION" ||
         command == "#RESAMPLING" || command == "#SMOOTHE" ||
         command == "#TESTCASE" || command == "#MERGEPARTICLE" ||
-        command == "#SOURCE") {
+        command == "#SOURCE" || command == "#PIC") {
       pic.read_param(command, readParam);
     } else if (command == "#PARTICLETRACKER" ||
                command == "#TESTPARTICLENUMBER") {

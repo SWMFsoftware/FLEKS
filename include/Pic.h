@@ -35,10 +35,10 @@ typedef void (Pic::*PicWriteAmrex)(const std::string &filename,
 class Pic : public PicGrid {
   friend PlotWriter;
   friend ParticleTracker;
-  // public variables
-public:
   // private variables
 private:
+  bool usePIC = true;
+
   std::shared_ptr<FluidInterface> fluidInterface;
   std::shared_ptr<TimeCtr> tc;
 
@@ -119,7 +119,7 @@ public:
   };
   ~Pic(){};
 
-  void update();
+  void update(bool doReportIn = false);
 
   void set_doRestart(bool in) { doRestart = in; }
 
@@ -142,7 +142,7 @@ public:
   void fill_new_center_B();
 
   void fill_particles();
-  
+
   void init_source(const FluidInterface &interfaceIn) {
     sourceInterface = interfaceIn;
   }
@@ -162,12 +162,18 @@ public:
   void fill_source_particles();
 
   void inject_particles_for_new_cells() {
+    if (!usePIC)
+      return;
+
     for (auto &pts : parts) {
       pts->add_particles_domain(cellStatus);
     }
   }
 
   void inject_particles_for_boundary_cells() {
+    if (!usePIC)
+      return;
+      
     for (auto &pts : parts) {
       pts->inject_particles_at_boundary(cellStatus);
     }
