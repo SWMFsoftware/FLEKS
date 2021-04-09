@@ -150,11 +150,13 @@ void Domain::regrid() {
 
   baPic.maxSize(maxBlockSize);
   Print() << "=====" << printPrefix << " Grid Information summary========="
-          << "\n Number of Boxes to describe PIC = " << picRegionBA.size()
-          << "\n Number of PIC boxes             = " << baPic.size()
-          << "\n Number of PIC cells             = " << nCellPic
-          << "\n Number of domain cells          = " << centerBox.numPts()
-          << "\n Ratio: (PIC cell)/(Domain cell) = "
+          << "\n Number of Boxes to describe active region = "
+          << picRegionBA.size()
+          << "\n Number of boxes                           = " << baPic.size()
+          << "\n Number of active cells                    = " << nCellPic
+          << "\n Number of domain cells                    = "
+          << centerBox.numPts()
+          << "\n Ratio: (active cell)/(Domain cell)        = "
           << nCellPic / centerBox.d_numPts()
           << "\n===================================================="
           << std::endl;
