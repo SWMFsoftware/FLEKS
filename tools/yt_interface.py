@@ -504,7 +504,7 @@ class FLEKSTP(object):
                     binaryData = f.read(4*unitSize*nRead)
                     dataList = list(struct.unpack(
                         'f'*nRead*unitSize, binaryData))
-        return dataList
+                return dataList
 
     def select_particles(self, fSelect=None):
         selected = {}
