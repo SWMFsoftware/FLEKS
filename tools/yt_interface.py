@@ -416,8 +416,7 @@ class FLEKSTP(object):
             outputDirs = [outputDirs]
 
         self.plistfiles = list()
-        self.pfiles = list()
-        print(outputDirs)
+        self.pfiles = list()        
         for outputDir in outputDirs:
             self.plistfiles = self.plistfiles+glob.glob(outputDir+"/FLEKS" +
                                                         str(iDomain)+"_particle_list_species_"+str(iSpecies)+"_*")
@@ -426,9 +425,7 @@ class FLEKSTP(object):
                                                   str(iDomain)+"_particle_species_"+str(iSpecies)+"_*")
 
         self.plistfiles.sort()
-        self.pfiles.sort()
-
-        print(self.plistfiles)
+        self.pfiles.sort()        
 
         self.plists = []
         for fileName in self.plistfiles:
@@ -437,6 +434,9 @@ class FLEKSTP(object):
         self.pset = set()
         for plist in self.plists:
             self.pset.update(plist.keys())
+
+        print('Particles of species ', iSpecies,' are read from ', outputDirs)
+        print('Number of particles: ', len(self.pset))
 
     def read_particle_list(self, fileName):
         r"""
