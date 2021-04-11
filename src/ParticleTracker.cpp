@@ -6,6 +6,8 @@ using namespace amrex;
 void ParticleTracker::set_ic(Pic& pic) {
   if (isGridEmpty || !usePT)
     return;
+    
+  complete_parameters();
 
   update_field(pic);
   for (int i = 0; i < parts.size(); i++) {
@@ -16,8 +18,6 @@ void ParticleTracker::set_ic(Pic& pic) {
     Print() << printPrefix << " initial particle # is "
             << tps->init_particle_number() << " for species " << i << std::endl;
   }
-
-  complete_parameters();
 }
 
 void ParticleTracker::update(Pic& pic) {
