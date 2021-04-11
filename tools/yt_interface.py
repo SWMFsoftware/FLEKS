@@ -638,3 +638,16 @@ class FLEKSTP(object):
         """        
         pData = self.read_particle_trajectory(partID)
         return self.plot_data(pData)
+
+    def save_to_csv(self, partID, fileName=None):
+        r""" 
+        Save the trajectory of a particle to a csv file.  
+
+        Example
+        -----------------
+        >>> tp.save_to_csv((3,15))
+        """        
+        pData = self.read_particle_trajectory(partID)
+        if fileName == None:
+            fileName = "trajectory_"+str(partID[0])+"_"+str(partID[1])+".csv"
+        np.savetxt(fileName,pData,delimiter=",",header="time, x, y, z, ux, uy, uz",comments="")
