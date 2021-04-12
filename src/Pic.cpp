@@ -545,13 +545,6 @@ void Pic::particle_mover() {
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->mover(nodeEth, nodeB, tc->get_dt(), tc->get_next_dt());
   }
-
-  if (doReSampling)
-    for (int i = 0; i < nSpecies; i++) {
-      // TODO: this part should be removed!!!
-      parts[i]->split_particles(reSamplingLowLimit);
-      parts[i]->combine_particles(reSamplingHighLimit);
-    }
 }
 
 //==========================================================
