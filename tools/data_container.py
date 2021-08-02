@@ -108,7 +108,7 @@ class dataContainer2D(object):
         'x', 'y' or 'z'
 
         cut_loc: Float 
-        cut_norm and cut_loc are used to recored the position of slicing if this 2D 
+        cut_norm and cut_loc are used to record the position of slice if this 2D 
         data set is obtained from a 3D box. 
         """
 

@@ -121,7 +121,7 @@ class FLEKSHierarchy(BoxlibHierarchy):
 
 class FLEKSDataset(BoxlibDataset):
     r"""
-    Read the plot the AMReX format output from FLEKS.
+    Read and plot the AMReX format output from FLEKS.
 
     Parameters
     ----------
