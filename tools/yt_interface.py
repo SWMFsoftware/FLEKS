@@ -309,9 +309,49 @@ class FLEKSDataset(BoxlibDataset):
 
         return splt
 
+    def plot_phase_region(self, region, x_field, y_field, z_field,
+                          unit_type="planet", x_bins=128, y_bins=128):
+        r"""Plot phase space distribution of particle
+
+        Parameters
+        ----------
+        region : YTSelectionContainer Object
+        The data object to be profiled, such as all_data, box, region, or
+        sphere. 
+
+        x_field & y_field: string
+            The x- y- axes. Potential input: "p_ux", "p_uy", "p_uz".
+            Eventhough this is assumed to be a 'phase' plot, the x- and y- axex
+            can also be set as 'p_x', 'p_y' or 'p_z' and it will show the 
+            spatial distribution of the particles.             
+
+        z_field: string
+            It is usually the particle wegith: "p_w".
+
+        unit_type : string
+            The unit system of the plots. "planet" or "si".
+
+        Examples
+        --------
+        >>> phase = ds.plot_phase([8.75, -1, -1], [9.25, 0, 0], 
+                                "p_ux", "p_uy", "p_w")
+        >>> phase.show()
+        """
+        var_type = 'particle'
+        plot = yt.PhasePlot(region,
+                            (var_type, x_field),
+                            (var_type, y_field),
+                            (var_type, z_field),
+                            weight_field=None, x_bins=x_bins, y_bins=y_bins)
+        plot.set_unit((var_type, x_field), get_unit(x_field, unit_type))
+        plot.set_unit((var_type, y_field), get_unit(y_field, unit_type))
+        plot.set_unit((var_type, z_field), get_unit(z_field, unit_type))
+
+        return plot
+
     def plot_phase(self, left_edge, right_edge, x_field, y_field, z_field,
                    unit_type="planet", x_bins=128, y_bins=128):
-        r"""Plot phase space distribution of particle
+        r"""Plot phase space distribution of particles that are inside a box
 
         Parameters
         ----------
@@ -337,23 +377,55 @@ class FLEKSDataset(BoxlibDataset):
                                 "p_ux", "p_uy", "p_w")
         >>> phase.show()
         """
-
         dd = self.box(left_edge, right_edge)
+        plot = self.plot_phase_region(
+            dd, x_field, y_field, z_field, unit_type=unit_type, x_bins=x_bins, y_bins=y_bins)
+
+        return plot
+
+    def plot_particles_region(self, region, x_field, y_field, z_field,
+                              unit_type="planet", x_bins=128, y_bins=128):
+        r"""Plot the particle position of particles inside a box
+
+        Parameters
+        ----------
+        region : YTSelectionContainer Object
+        The data object to be profiled, such as all_data, box, region, or
+        sphere. 
+
+        x_field & y_field: string
+            The x- y- axes. Potential input: "p_x", "p_y", "p_z".
+
+        z_field: string
+            It is usually the particle wegith: "p_w".
+
+        unit_type : string
+            The unit system of the plots. "planet" or "si".
+
+        Examples
+        --------
+        >>> phase = ds.plot_particles([8, -1, -1], [10, 0, 0], "p_x",
+                     "p_y", "p_w", unit_type="planet")        
+        >>> phase.show()
+        """
         var_type = 'particle'
-        plot = yt.PhasePlot(dd,
-                            (var_type, x_field),
-                            (var_type, y_field),
-                            (var_type, z_field),
-                            weight_field=None, x_bins=x_bins, y_bins=y_bins)
-        plot.set_unit((var_type, x_field), get_unit(x_field, unit_type))
-        plot.set_unit((var_type, y_field), get_unit(y_field, unit_type))
+
+        nmap = {"p_x": "particle_position_x",
+                "p_y": "particle_position_y", "p_z": "particle_position_z"}
+        plot = yt.ParticlePlot(self,
+                               (var_type, nmap[x_field]),
+                               (var_type, nmap[y_field]),
+                               (var_type, z_field),
+                               data_source=region)
+        plot.set_axes_unit((get_unit(x_field, unit_type),
+                            get_unit(y_field, unit_type)))
         plot.set_unit((var_type, z_field), get_unit(z_field, unit_type))
 
         return plot
 
     def plot_particles(self, left_edge, right_edge, x_field, y_field, z_field,
                        unit_type="planet", x_bins=128, y_bins=128):
-        r"""Plot the particle position
+        r"""Plot the particle position of particles inside a box
 
         Parameters
         ----------
@@ -377,19 +449,8 @@ class FLEKSDataset(BoxlibDataset):
         >>> phase.show()
         """
         dd = self.box(left_edge, right_edge)
-        var_type = 'particle'
-
-        nmap = {"p_x": "particle_position_x",
-                "p_y": "particle_position_y", "p_z": "particle_position_z"}
-        plot = yt.ParticlePlot(self,
-                               (var_type, nmap[x_field]),
-                               (var_type, nmap[y_field]),
-                               (var_type, z_field),
-                               data_source=dd)
-        plot.set_axes_unit((get_unit(x_field, unit_type),
-                            get_unit(y_field, unit_type)))
-        plot.set_unit((var_type, z_field), get_unit(z_field, unit_type))
-
+        plot = self.plot_particles_region(
+            dd, x_field, y_field, z_field, unit_type=unit_type, x_bins=x_bins, y_bins=y_bins)
         return plot
 
 
