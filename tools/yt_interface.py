@@ -237,8 +237,8 @@ class FLEKSDataset(BoxlibDataset):
         abArr = self.arbitrary_grid(left_edge, right_edge, slice_dimension)
 
         dataSets = {}
-        for _, var in self.field_list:
-            dataSets[var] = np.squeeze(abArr[var])
+        for var in self.field_list:
+            dataSets[var[1]] = np.squeeze(abArr[var])
 
         axLabes = {0: ('Y', 'Z'), 1: ('X', 'Z'), 2: ('X', 'Y')}
 
@@ -259,8 +259,8 @@ class FLEKSDataset(BoxlibDataset):
             level=0, left_edge=self.domain_left_edge, dims=self.domain_dimensions)
 
         dataSets = {}
-        for _, var in self.field_list:
-            dataSets[var] = domain[var]
+        for var in self.field_list:
+            dataSets[var[1]] = domain[var]
 
         axes = []
         for idim in range(self.dimensionality):
