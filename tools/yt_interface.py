@@ -338,11 +338,16 @@ class FLEKSDataset(BoxlibDataset):
         >>> phase.show()
         """
         var_type = 'particle'
-        plot = yt.PhasePlot(region,
-                            (var_type, x_field),
-                            (var_type, y_field),
-                            (var_type, z_field),
-                            weight_field=None, x_bins=x_bins, y_bins=y_bins)
+        
+        # The bins should be uniform instead of logarithmic
+        logs = {(var_type, x_field): False, (var_type, y_field): False}
+
+        bin_fields = [(var_type, x_field), (var_type, y_field)]        
+        profile = yt.create_profile(data_source=region, bin_fields=bin_fields, fields=(
+            var_type, z_field), weight_field=None, logs=logs)
+
+        plot = yt.PhasePlot.from_profile(profile)
+
         plot.set_unit((var_type, x_field), get_unit(x_field, unit_type))
         plot.set_unit((var_type, y_field), get_unit(y_field, unit_type))
         plot.set_unit((var_type, z_field), get_unit(z_field, unit_type))
