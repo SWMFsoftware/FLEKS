@@ -318,7 +318,7 @@ class dataContainer2D(object):
 
             levels = np.linspace(vmin, vmax, nlevels)
             cs = ax.contourf(self.x.value, self.y.value, v.T, levels=levels,
-                             cmap=cmap, *args, **kwargs)
+                             cmap=cmap, extend="both", *args, **kwargs)
             #cs.set_clim(vmin,vmax)
             
             ticks = get_ticks(vmin, vmax)
