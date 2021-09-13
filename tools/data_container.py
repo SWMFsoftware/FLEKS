@@ -125,7 +125,7 @@ class dataContainer2D(object):
         self.cut_norm = cut_norm
         self.cut_loc = cut_loc
 
-        self.vars = [x for x in self.data.keys()]
+        self.vars = [var for var in self.data.keys()]
         self.range = [[x[0], x[-1]], [y[0], y[-1]]]
         self.dimensions = self.data[self.vars[0]].shape
 
