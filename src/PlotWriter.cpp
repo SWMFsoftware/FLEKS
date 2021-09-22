@@ -9,7 +9,7 @@
 
 using namespace std;
 
-bool PlotWriter::doSaveBinary = false;
+bool PlotWriter::doSaveBinary = true;
 
 void PlotWriter::init() {
   isVerbose = rank == 0;
