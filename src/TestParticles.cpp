@@ -22,6 +22,9 @@ TestParticles::TestParticles(const amrex::BoxArray& regionBAIn,
     printPrefix = domainName + ": ";
   }
 
+  for (int iDim = 0; iDim < nDim; iDim++)
+    nPartPerCell[iDim] = 2;
+
   iStep = 0;
   outputDir = "PC/plots/test_particles";
 
@@ -170,8 +173,6 @@ void TestParticles::add_test_particles(const iMultiFab& cellStatus) {
 
   const int lev = 0;
 
-  const Real partNumCtr = 0.2;
-
   for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
     const auto& status = cellStatus[mfi].array();
     const Box& bx = mfi.validbox();
@@ -182,9 +183,10 @@ void TestParticles::add_test_particles(const iMultiFab& cellStatus) {
 
     for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
-        for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
-          add_particles_cell(mfi, i, j, k, *fluidInterface, partNumCtr);
-        }
+        for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k)
+          if (status(i, j, k) == iAddPTParticle_) {
+            add_particles_cell(mfi, i, j, k, *fluidInterface);
+          }
   }
 }
 
