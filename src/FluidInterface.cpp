@@ -328,9 +328,11 @@ void FluidInterface::calc_normalized_units() {
   Si2No_V[iJy] = Si2NoJ;
   Si2No_V[iJz] = Si2NoJ;
 
-  Si2No_V[iEx] = Si2NoE;
-  Si2No_V[iEy] = Si2NoE;
-  Si2No_V[iEz] = Si2NoE;
+  if (useElectronFluid) {
+    Si2No_V[iEx] = Si2NoE;
+    Si2No_V[iEy] = Si2NoE;
+    Si2No_V[iEz] = Si2NoE;
+  }
 
   if (useMhdPe)
     Si2No_V[iPe] = Si2NoP;
