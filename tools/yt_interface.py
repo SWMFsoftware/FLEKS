@@ -344,7 +344,7 @@ class FLEKSDataset(BoxlibDataset):
 
         bin_fields = [(var_type, x_field), (var_type, y_field)]        
         profile = yt.create_profile(data_source=region, bin_fields=bin_fields, fields=(
-            var_type, z_field), weight_field=None, logs=logs)
+            var_type, z_field), n_bins=[x_bins,y_bins], weight_field=None, logs=logs)
 
         plot = yt.PhasePlot.from_profile(profile)
 
