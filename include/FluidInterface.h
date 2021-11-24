@@ -133,7 +133,7 @@ public:
 
   void regrid(const amrex::BoxArray& centerBAIn,
               const amrex::DistributionMapping& dmIn);
-            
+
   void update_nodeFluid(const MultiFabFLEKS& nodeIn, const double dt);
 
   int count_couple_node_number();
@@ -707,8 +707,17 @@ public:
     if (useElectronFluid) {
       Ex = get_value(mfi, x, y, z, iEx);
     } else {
-      Ex = get_uz(mfi, x, y, z, 0) * get_by(mfi, x, y, z) -
-           get_uy(mfi, x, y, z, 0) * get_bz(mfi, x, y, z);
+      const bool UseGradPe = false;
+      if (UseGradPe) {
+        amrex::Real ne = get_number_density(mfi, x, y, z, 0);
+        amrex::Real gradpe = get_grad_pe_x(mfi, x, y, z);
+        Ex = get_uz(mfi, x, y, z, 0) * get_by(mfi, x, y, z) -
+             get_uy(mfi, x, y, z, 0) * get_bz(mfi, x, y, z) -
+             gradpe / fabs(QoQi_S[0] * ne);
+      } else {
+        Ex = get_uz(mfi, x, y, z, 0) * get_by(mfi, x, y, z) -
+             get_uy(mfi, x, y, z, 0) * get_bz(mfi, x, y, z);
+      }
     }
     return Ex;
   }
@@ -720,8 +729,17 @@ public:
     if (useElectronFluid) {
       Ey = get_value(mfi, x, y, z, iEy);
     } else {
-      Ey = get_ux(mfi, x, y, z, 0) * get_bz(mfi, x, y, z) -
-           get_uz(mfi, x, y, z, 0) * get_bx(mfi, x, y, z);
+      const bool UseGradPe = false;
+      if (UseGradPe) {
+        amrex::Real ne = get_number_density(mfi, x, y, z, 0);
+        amrex::Real gradpe = get_grad_pe_y(mfi, x, y, z);
+        Ey = get_ux(mfi, x, y, z, 0) * get_bz(mfi, x, y, z) -
+             get_uz(mfi, x, y, z, 0) * get_bx(mfi, x, y, z) -
+             gradpe / fabs(QoQi_S[0] * ne);
+      } else {
+        Ey = get_ux(mfi, x, y, z, 0) * get_bz(mfi, x, y, z) -
+             get_uz(mfi, x, y, z, 0) * get_bx(mfi, x, y, z);
+      }
     }
     return Ey;
   }
@@ -733,11 +751,90 @@ public:
     if (useElectronFluid) {
       Ez = get_value(mfi, x, y, z, iEz);
     } else {
-      Ez = get_uy(mfi, x, y, z, 0) * get_bx(mfi, x, y, z) -
-           get_ux(mfi, x, y, z, 0) * get_by(mfi, x, y, z);
+      const bool UseGradPe = false;
+      if (UseGradPe) {
+        amrex::Real ne = get_number_density(mfi, x, y, z, 0);
+        amrex::Real gradpe = get_grad_pe_z(mfi, x, y, z);
+        Ez = get_uy(mfi, x, y, z, 0) * get_bx(mfi, x, y, z) -
+             get_ux(mfi, x, y, z, 0) * get_by(mfi, x, y, z) -
+             gradpe / fabs(QoQi_S[0] * ne);
+      } else {
+        Ez = get_uy(mfi, x, y, z, 0) * get_bx(mfi, x, y, z) -
+             get_ux(mfi, x, y, z, 0) * get_by(mfi, x, y, z);
+      }
     }
     return Ez;
   }
+
+  // Calculate grad(pe) at node (x,y,z). If this node is at the boundary of the
+  // fab, it will return grad(pe) at a node that is one cell away from the
+  // boundary. Only works when useElectronFluid is False.
+  amrex::Real get_grad_pe_x(const amrex::MFIter& mfi, const int x, const int y,
+                            const int z) const {
+
+    const amrex::Box& box = mfi.fabbox();
+    const auto lo = amrex::lbound(box);
+    const auto hi = amrex::ubound(box);
+
+    int xCenter = x;
+
+    if (x == lo.x) {
+      xCenter = x + 1;
+    } else if (x == hi.x) {
+      xCenter = x - 1;
+    }
+
+    amrex::Real gradpe =
+        0.5 * geom.InvCellSize(ix_) *
+        (get_p(mfi, xCenter + 1, y, z, 0) - get_p(mfi, xCenter - 1, y, z, 0));
+
+    return gradpe;
+  }
+
+  amrex::Real get_grad_pe_y(const amrex::MFIter& mfi, const int x, const int y,
+                            const int z) const {
+
+    const amrex::Box& box = mfi.fabbox();
+    const auto lo = amrex::lbound(box);
+    const auto hi = amrex::ubound(box);
+
+    int yCenter = y;
+
+    if (y == lo.y) {
+      yCenter = y + 1;
+    } else if (y == hi.y) {
+      yCenter = y - 1;
+    }
+
+    amrex::Real gradpe =
+        0.5 * geom.InvCellSize(iy_) *
+        (get_p(mfi, x, yCenter + 1, z, 0) - get_p(mfi, x, yCenter - 1, z, 0));
+
+    return gradpe;
+  }
+
+  amrex::Real get_grad_pe_z(const amrex::MFIter& mfi, const int x, const int y,
+                            const int z) const {
+
+    const amrex::Box& box = mfi.fabbox();
+    const auto lo = amrex::lbound(box);
+    const auto hi = amrex::ubound(box);
+
+    int zCenter = z;
+
+    if (z == lo.z) {
+      zCenter = z + 1;
+    } else if (z == hi.z) {
+      zCenter = z - 1;
+    }
+
+    amrex::Real gradpe =
+        0.5 * geom.InvCellSize(iz_) *
+        (get_p(mfi, x, y, zCenter + 1, 0) - get_p(mfi, x, y, zCenter - 1, 0));
+
+    return gradpe;
+  }
+
   // ---------Functions to read/interpolate value from nodeFluid.
   // End------------
 };
