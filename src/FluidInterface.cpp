@@ -52,21 +52,7 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
 
 void FluidInterface::set_geom(const int nGstIn, const amrex::Geometry& geomIn) {
   nGst = nGstIn;
-
   geom = geomIn;
-
-  Array<int, 3> period;
-
-  // As a interface between PC and MHD. It can not be periodic unless MHD is 2D.
-  for (int i = 0; i < nDimMax; i++) {
-    if (i < get_fluid_dimension()) {
-      period[i] = 0;
-    } else {
-      period[i] = 1;
-    }
-  }
-
-  geom.setPeriodicity(period);
 }
 
 int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
@@ -89,6 +75,9 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
   const Real* dx = geom.CellSize();
   const auto plo = geom.ProbLo();
 
+  // Global NODE box.
+  const Box gbx = convert(geom.Domain(), { 1, 1, 1 });  
+
   const double no2siL = get_No2SiL();
 
   int nIdxCount = 0;
@@ -110,10 +99,17 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
             if (doCount) {
               nCount++;
             } else if (doGetLoc) {
-              pos_DI[nCount++] = (i * dx[ix_] + plo[ix_]) * no2siL;
-              pos_DI[nCount++] = (j * dx[iy_] + plo[iy_]) * no2siL;
-              if (get_fluid_dimension() > 2)
-                pos_DI[nCount++] = (k * dx[iz_] + plo[iz_]) * no2siL;
+              int idx[nDimMax] = { i, j, k };
+              for (int iDim = 0; iDim < nDimMax; iDim++) {
+                if (geom.isPeriodic(iDim)) {
+                  idx[iDim] = shift_periodic_index(
+                      idx[iDim], gbx.smallEnd(iDim), gbx.bigEnd(iDim));
+                }
+              }
+
+              for (int iDim = 0; iDim < get_fluid_dimension(); iDim++) {
+                pos_DI[nCount++] = (idx[iDim] * dx[iDim] + plo[iDim]) * no2siL;
+              }
             } else if (doFill) {
               for (int iVar = 0; iVar < nVarFluid; iVar++) {
                 int idx;
@@ -126,7 +122,6 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
           } // for k
     }
 
-  // Print() << "action = " << action << " nCount = " << nCount << std::endl;
   return nCount;
 }
 
@@ -172,17 +167,17 @@ void FluidInterface::calc_current() {
 
   A: If the whole domain is just ONE block, it will work. Otherwise, it will
   not. For example, For a 2D simulation domain of 6x3 with 2 blocks. In the
-  x-direction, block-1 convers cell 0 (c+0) to cell 2 (c+2), and block-2 covers
-  c+3 to c+5. The node (n+5, n-1) is the corner ghost node for the block-1, and
-  it is the face ghost node for the block-2. On block-2, this node can be
-  calculated from curl_center_to_node(centerB, currentMF....). However, block-1
-  does not know how to calculate it, and FillBoundary will also NOT copy this
-  node from block-2 to block-1, because this node is a boundary node and it is
-  not covered by any physical node.
+  x-direction, block-1 convers cell 0 (c+0) to cell 2 (c+2), and block-2
+  covers c+3 to c+5. The node (n+5, n-1) is the corner ghost node for the
+  block-1, and it is the face ghost node for the block-2. On block-2, this
+  node can be calculated from curl_center_to_node(centerB, currentMF....).
+  However, block-1 does not know how to calculate it, and FillBoundary will
+  also NOT copy this node from block-2 to block-1, because this node is a
+  boundary node and it is not covered by any physical node.
 
-  So, we should keep in mind, the variables that are directly received from the
-  MHD side, such as the magnetic fields, are accurate on all ghost nodes, but
-  the current releated variables (current, plasma velocities, and electric
+  So, we should keep in mind, the variables that are directly received from
+  the MHD side, such as the magnetic fields, are accurate on all ghost nodes,
+  but the current releated variables (current, plasma velocities, and electric
   field) are unknown at the outmost boundary node layer.
   */
 }

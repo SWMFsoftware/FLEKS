@@ -50,6 +50,16 @@ void print_MultiFab(const amrex::MultiFab& data, std::string tag,
 void print_MultiFab(const amrex::MultiFab& data, std::string tag,
                     amrex::Geometry& geom, int nshift = 0);
 
+inline int shift_periodic_index(int idx, int lo, int hi) {
+  if (idx > hi)
+    idx -= hi - lo;
+
+  if (idx < lo)
+    idx += hi - lo;
+
+  return idx;
+};
+
 template <class T> inline void a_cross_b(T (&a)[3], T (&b)[3], T (&c)[3]) {
   // c = a x b
 
