@@ -179,16 +179,20 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
     const auto lo = lbound(gbx);
     const auto hi = ubound(gbx);
 
-    int kMax = hi.z;
+    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
+    if(geom.isPeriodic(ix_)) --iMax;
+    if(geom.isPeriodic(iy_)) --jMax;
+    if(geom.isPeriodic(iz_)) --kMax;
+
     const bool is2D = geom.Domain().bigEnd(iz_) == geom.Domain().smallEnd(iz_);
     if (is2D)
       kMax = lo.z;
 
     for (int k = lo.z; k <= kMax; ++k) {
       const double zp = k * dx[iz_] + plo[iz_];
-      for (int j = lo.y; j <= hi.y; ++j) {
+      for (int j = lo.y; j <= jMax; ++j) {
         const double yp = j * dx[iy_] + plo[iy_];
-        for (int i = lo.x; i <= hi.x; ++i) {
+        for (int i = lo.x; i <= iMax; ++i) {
           const double xp = i * dx[ix_] + plo[ix_];
           if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp) &&
               !nodeBA.contains({ i, j, k })) {
