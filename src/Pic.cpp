@@ -92,10 +92,25 @@ void Pic::fill_new_cells() {
   if (isGridEmpty)
     return;
 
-  if (!doNeedFillNewCell)
+  if (usePIC && !doNeedFillNewCell)
     return;
 
   timing_func(nameFunc);
+
+  if (!usePIC) {
+    // If this method is called when PIC component is off, it suggests the test
+    // particle component is activated. The test particle component copies EM
+    // field from PIC, so PIC EM field should be updated here.
+    if (!nodeStatus.empty()) {
+      nodeStatus.setVal(iBoundary_);
+      nodeStatus.setVal(iOnNew_, 0);
+    }
+
+    if (!cellStatus.empty()) {
+      cellStatus.setVal(iBoundary_);
+      cellStatus.setVal(iOnNew_, 0);
+    }
+  }
 
   fill_E_B_fields();
 

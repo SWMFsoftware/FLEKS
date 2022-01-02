@@ -18,7 +18,10 @@ void Pic::set_state_var(double* data, int* index) {
 
   fluidInterface->set_couple_node_value(data, index);
 
-  if (doNeedFillNewCell)
+  // If fill_new_cells is called when PIC component is off, it suggests the test
+  // particle component is activated. The test particle component copies EM
+  // field from PIC, so PIC EM field should be updated here.
+  if (doNeedFillNewCell || !usePIC)
     fill_new_cells();
 
   return;
@@ -180,9 +183,12 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
     const auto hi = ubound(gbx);
 
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
-    if(geom.isPeriodic(ix_)) --iMax;
-    if(geom.isPeriodic(iy_)) --jMax;
-    if(geom.isPeriodic(iz_)) --kMax;
+    if (geom.isPeriodic(ix_))
+      --iMax;
+    if (geom.isPeriodic(iy_))
+      --jMax;
+    if (geom.isPeriodic(iz_))
+      --kMax;
 
     const bool is2D = geom.Domain().bigEnd(iz_) == geom.Domain().smallEnd(iz_);
     if (is2D)
