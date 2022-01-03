@@ -79,7 +79,7 @@ private:
 
   amrex::Vector<std::unique_ptr<Particles<> > > parts;
 
-  amrex::IntVect nPartPerCell;
+  amrex::IntVect nPartPerCell = { 6, 6, 6 };
   amrex::Real qomEl = -100;
 
   FieldSolver fsolver;
@@ -108,9 +108,6 @@ private:
   // public methods
 public:
   Pic() {
-    for (int iDim = 0; iDim < nDim; iDim++)
-      nPartPerCell[iDim] = 6;
-
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 
@@ -173,7 +170,7 @@ public:
   void inject_particles_for_boundary_cells() {
     if (!usePIC)
       return;
-      
+
     for (auto &pts : parts) {
       pts->inject_particles_at_boundary(cellStatus);
     }

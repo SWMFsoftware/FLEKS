@@ -6,7 +6,7 @@ using namespace amrex;
 void ParticleTracker::set_ic(Pic& pic) {
   if (isGridEmpty || !usePT)
     return;
-    
+
   complete_parameters();
 
   update_field(pic);
@@ -38,7 +38,8 @@ void ParticleTracker::update(Pic& pic) {
       Print() << printPrefix << "particle number of species " << i
               << ": initial = " << tps->init_particle_number()
               << ". current = " << tps->TotalNumberOfParticles() << ". ratio = "
-              << (double)tps->TotalNumberOfParticles() / tps->init_particle_number()
+              << (double)tps->TotalNumberOfParticles() /
+                     tps->init_particle_number()
               << std::endl;
 
       tps->write_particles(tc->get_cycle());
@@ -148,6 +149,9 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
           ptRegionBA, geom, dm, centerBA, fluidInterface.get(), tc.get(), i,
           fluidInterface->get_species_charge(i),
           fluidInterface->get_species_mass(i), domainID));
+      ptr->set_ppc(nTPPerCell);
+      ptr->set_interval(nTPIntervalCell);
+      ptr->set_particle_region(sPartRegion);
       parts.push_back(std::move(ptr));
     }
   } else {
@@ -266,6 +270,16 @@ void ParticleTracker::read_param(const std::string& command,
 
   if (command == "#PARTICLETRACKER") {
     readParam.read_var("usePT", usePT);
+  } else if (command == "#TESTPARTICLES") {
+    readParam.read_var("npcelx", nTPPerCell[ix_]);
+    readParam.read_var("npcely", nTPPerCell[iy_]);
+    readParam.read_var("npcelz", nTPPerCell[iz_]);
+  } else if (command == "#TPCELLINTERVAL") {
+    readParam.read_var("nIntervalX", nTPIntervalCell[ix_]);
+    readParam.read_var("nIntervalY", nTPIntervalCell[iy_]);
+    readParam.read_var("nIntervalZ", nTPIntervalCell[iz_]);
+  } else if (command == "#TPREGION") {
+    readParam.read_var("region", sPartRegion);
   } else if (command == "#TESTPARTICLENUMBER") {
     initPartNumber.clear();
     unsigned long int num;

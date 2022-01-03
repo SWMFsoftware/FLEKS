@@ -428,7 +428,9 @@ void Domain::read_param() {
         command == "#SOURCE" || command == "#PIC") {
       pic.read_param(command, readParam);
     } else if (command == "#PARTICLETRACKER" ||
-               command == "#TESTPARTICLENUMBER") {
+               command == "#TESTPARTICLENUMBER" ||
+               command == "#TESTPARTICLES" || command == "#TPCELLINTERVAL" ||
+               command == "#TPREGION") {
       pt.read_param(command, readParam);
     } else if (command == "#RESTART") {
       readParam.read_var("doRestart", doRestart);

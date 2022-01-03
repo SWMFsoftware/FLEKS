@@ -45,7 +45,7 @@ public:
   void read_param(const std::string &command, ReadParam &readParam);
 
 private:
-  bool usePT = false; 
+  bool usePT = false;
 
   std::string printPrefix;
   std::string domainName;
@@ -77,6 +77,11 @@ private:
   bool isGridInitialized = false;
 
   bool isGridEmpty = false;
+
+  amrex::IntVect nTPPerCell = { 1, 1, 1 };
+  amrex::IntVect nTPIntervalCell = { 1, 1, 1 };
+
+  std::string sPartRegion;
 };
 
 #endif

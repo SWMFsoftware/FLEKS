@@ -135,6 +135,8 @@ public:
 
   void convert_to_fluid_moments(amrex::MultiFab& momentsMF);
 
+  void set_ppc(amrex::IntVect& in) { nPartPerCell = in; };
+
   inline bool is_outside_ba(const ParticleType& p) {
     amrex::Real loc[3] = { 0, 0, 0 };
     for (int iDim = 0; iDim < 3; iDim++) {

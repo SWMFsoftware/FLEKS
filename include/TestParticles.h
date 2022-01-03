@@ -13,6 +13,10 @@ public:
   static const int iRecordv_ = 5;
   static const int iRecordw_ = 6;
 
+private:
+  static const int iRegionBoundary_ = 1;
+  static const int iRegionUniform_ = 2;
+
 public:
   TestParticles(const amrex::BoxArray& regionBAIn, const amrex::Geometry& geom,
                 const amrex::DistributionMapping& dm, const amrex::BoxArray& ba,
@@ -47,6 +51,20 @@ public:
     no2outL = no2outLIn;
     no2outV = no2outVIn;
     no2outM = no2outMIn;
+  }
+
+  void set_interval(amrex::IntVect& in) { nIntervalCell = in; };
+
+  void set_particle_region(std::string& sRegion) {
+    if (!sRegion.empty()) {
+      if (sRegion.find("boundary") != std::string::npos) {
+        iPartRegion = iRegionBoundary_;
+      } else if (sRegion.find("uniform") != std::string::npos) {
+        iPartRegion = iRegionUniform_;
+      } else {
+        amrex::Abort("Error:Unknown test particle region!");
+      }
+    }
   }
 
   template <typename T> void gather_accumulate_and_scatter(T& local, T& ahead) {
@@ -88,6 +106,10 @@ private:
   std::string printPrefix;
   std::string domainName;
   int domainID;
+
+  amrex::IntVect nIntervalCell = { 1, 1, 1 };
+
+  int iPartRegion = iRegionBoundary_;
 
   amrex::Real no2outL, no2outV, no2outM;
 

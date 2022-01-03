@@ -181,10 +181,12 @@ void TestParticles::add_test_particles(const iMultiFab& cellStatus) {
 
     IntVect idxMin = lo, idxMax = hi;
 
-    for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)
-      for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
-        for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k)
-          if (status(i, j, k) == iAddPTParticle_) {
+    for (int i = idxMin[ix_]; i <= idxMax[ix_]; i += nIntervalCell[ix_])
+      for (int j = idxMin[iy_]; j <= idxMax[iy_]; j += nIntervalCell[iy_])
+        for (int k = idxMin[iz_]; k <= idxMax[iz_]; k += nIntervalCell[iz_])
+          if (iPartRegion == iRegionUniform_ ||
+              (iPartRegion == iRegionBoundary_ &&
+               status(i, j, k) == iAddPTParticle_)) {
             add_particles_cell(mfi, i, j, k, *fluidInterface);
           }
   }
