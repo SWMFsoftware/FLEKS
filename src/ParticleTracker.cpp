@@ -101,9 +101,8 @@ void ParticleTracker::init(std::shared_ptr<FluidInterface>& fluidIn,
     printPrefix = domainName + " PT: ";
   }
 
-  savectr = std::unique_ptr<PlotCtr>(
-      new PlotCtr(tc.get(), domainID, -1, nPTRecord,
-                  "3d fluid test_particle real4 planet"));
+  savectr =
+      std::unique_ptr<PlotCtr>(new PlotCtr(tc.get(), domainID, -1, nPTRecord));
 }
 
 //==========================================================
@@ -226,6 +225,7 @@ void ParticleTracker::complete_parameters() {
   }
 
   // Pass information to writers.
+  writer.set_plotString("3d fluid test_particle real4 " + sIOUnit);
   writer.set_rank(ParallelDescriptor::MyProc());
   writer.set_nProcs(ParallelDescriptor::NProcs());
   writer.set_nDim(fluidInterface->get_fluid_dimension());
@@ -280,6 +280,8 @@ void ParticleTracker::read_param(const std::string& command,
     readParam.read_var("nIntervalZ", nTPIntervalCell[iz_]);
   } else if (command == "#TPREGION") {
     readParam.read_var("region", sPartRegion);
+  } else if (command == "#TPIOUNIT") {
+    readParam.read_var("IOUnit", sIOUnit);
   } else if (command == "#TESTPARTICLENUMBER") {
     initPartNumber.clear();
     unsigned long int num;

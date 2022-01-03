@@ -430,7 +430,7 @@ void Domain::read_param() {
     } else if (command == "#PARTICLETRACKER" ||
                command == "#TESTPARTICLENUMBER" ||
                command == "#TESTPARTICLES" || command == "#TPCELLINTERVAL" ||
-               command == "#TPREGION") {
+               command == "#TPREGION" || command == "#TPIOUNIT") {
       pt.read_param(command, readParam);
     } else if (command == "#RESTART") {
       readParam.read_var("doRestart", doRestart);

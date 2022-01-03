@@ -82,6 +82,8 @@ private:
   amrex::IntVect nTPIntervalCell = { 1, 1, 1 };
 
   std::string sPartRegion;
+
+  std::string sIOUnit="planet"; 
 };
 
 #endif
