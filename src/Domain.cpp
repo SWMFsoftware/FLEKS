@@ -428,9 +428,9 @@ void Domain::read_param() {
         command == "#SOURCE" || command == "#PIC") {
       pic.read_param(command, readParam);
     } else if (command == "#PARTICLETRACKER" ||
-               command == "#TESTPARTICLENUMBER" ||
-               command == "#TESTPARTICLES" || command == "#TPCELLINTERVAL" ||
-               command == "#TPREGION" || command == "#TPIOUNIT") {
+               command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
+               command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
+               command == "#TPIOUNIT") {
       pt.read_param(command, readParam);
     } else if (command == "#RESTART") {
       readParam.read_var("doRestart", doRestart);
@@ -594,6 +594,9 @@ void Domain::read_param() {
       for (int i = 0; i < nDim; ++i) {
         readParam.read_var("nCell", nCell[i]);
       }
+    } else {
+      Print() << "Error: command = " << command << std::endl;
+      Abort("Can not find this command!");
     }
     //--------- The commands above exist in restart.H only --------
   }

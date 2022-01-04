@@ -270,7 +270,7 @@ void ParticleTracker::read_param(const std::string& command,
 
   if (command == "#PARTICLETRACKER") {
     readParam.read_var("usePT", usePT);
-  } else if (command == "#TESTPARTICLES") {
+  } else if (command == "#TPPARTICLES") {
     readParam.read_var("npcelx", nTPPerCell[ix_]);
     readParam.read_var("npcely", nTPPerCell[iy_]);
     readParam.read_var("npcelz", nTPPerCell[iz_]);
