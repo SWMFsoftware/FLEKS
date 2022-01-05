@@ -151,6 +151,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
       ptr->set_ppc(nTPPerCell);
       ptr->set_interval(nTPIntervalCell);
       ptr->set_particle_region(sPartRegion);
+      ptr->set_relativistic(isRelativistic); 
       parts.push_back(std::move(ptr));
     }
   } else {
@@ -282,6 +283,8 @@ void ParticleTracker::read_param(const std::string& command,
     readParam.read_var("region", sPartRegion);
   } else if (command == "#TPIOUNIT") {
     readParam.read_var("IOUnit", sIOUnit);
+  } else if (command == "#TPRELATIVISTIC") {
+    readParam.read_var("isRelativistic", isRelativistic);
   } else if (command == "#TESTPARTICLENUMBER") {
     initPartNumber.clear();
     unsigned long int num;

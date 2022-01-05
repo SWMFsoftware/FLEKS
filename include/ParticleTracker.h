@@ -83,7 +83,9 @@ private:
 
   std::string sPartRegion;
 
-  std::string sIOUnit="planet"; 
+  std::string sIOUnit = "planet";
+
+  bool isRelativistic = false;
 };
 
 #endif

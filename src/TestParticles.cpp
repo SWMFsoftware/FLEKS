@@ -68,9 +68,9 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
               "particle record!!");
       }
 
-      const Real up = p.rdata(iup_);
-      const Real vp = p.rdata(ivp_);
-      const Real wp = p.rdata(iwp_);
+      Real up = p.rdata(iup_);
+      Real vp = p.rdata(ivp_);
+      Real wp = p.rdata(iwp_);
       const Real xp = p.pos(ix_);
       const Real yp = p.pos(iy_);
       const Real zp = p.pos(iz_);
@@ -106,17 +106,41 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
             Ezl += nodeEArr(iNodeX, iNodeY, iNodeZ, iz_) * c0;
           }
 
-      const double Omx = qdto2mc * Bxl;
-      const double Omy = qdto2mc * Byl;
-      const double Omz = qdto2mc * Bzl;
+      Real gamma = 1;
+      Real invGamma = 1. / gamma;
+
+      if (isRelativistic) {
+        // Convert: vel -> gamma*vel
+        const Real v2 = up * up + vp * vp + wp * wp;
+        if (v2 > 1) {
+          Abort("Error: particle speed is fast than light!");
+        }
+        invGamma = sqrt(1 - v2);
+        gamma = 1 / invGamma;
+        up *= gamma;
+        vp *= gamma;
+        wp *= gamma;
+      }
+
+      // Half step acceleration
+      const Real ut = up + qdto2mc * Exl;
+      const Real vt = vp + qdto2mc * Eyl;
+      const Real wt = wp + qdto2mc * Ezl;
+
+      if (isRelativistic) {        
+        const Real p2 = ut * ut + vt * vt + wt * wt;
+        gamma = sqrt(1 + p2);
+        invGamma = 1. / gamma;
+      }
+
+      const double Omx = qdto2mc * Bxl * invGamma;
+      const double Omy = qdto2mc * Byl * invGamma;
+      const double Omz = qdto2mc * Bzl * invGamma;
 
       // end interpolation
       const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
       const Real denom = 1.0 / (1.0 + omsq);
-      // solve the position equation
-      const Real ut = up + qdto2mc * Exl;
-      const Real vt = vp + qdto2mc * Eyl;
-      const Real wt = wp + qdto2mc * Ezl;
+
       // const pfloat udotb = ut * Bxl + vt * Byl + wt * Bzl;
       const Real udotOm = ut * Omx + vt * Omy + wt * Omz;
       // solve the velocity equation
@@ -124,9 +148,20 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
       const Real vavg = (vt + (wt * Omx - ut * Omz + udotOm * Omy)) * denom;
       const Real wavg = (wt + (ut * Omy - vt * Omx + udotOm * Omz)) * denom;
 
-      const double unp1 = 2.0 * uavg - up;
-      const double vnp1 = 2.0 * vavg - vp;
-      const double wnp1 = 2.0 * wavg - wp;
+      double unp1 = 2.0 * uavg - up;
+      double vnp1 = 2.0 * vavg - vp;
+      double wnp1 = 2.0 * wavg - wp;
+
+      if (isRelativistic) {
+        // Convert: gamma*vel -> vel
+        const Real p2 = unp1 * unp1 + vnp1 * vnp1 + wnp1 * wnp1;
+        gamma = sqrt(1 + p2);
+        invGamma = 1. / gamma;
+
+        unp1 *= invGamma;
+        vnp1 *= invGamma;
+        wnp1 *= invGamma;
+      }
 
       p.rdata(ix_) = unp1;
       p.rdata(iy_) = vnp1;

@@ -62,6 +62,8 @@ protected:
   amrex::Real mergeThresholdDistance = 0.6;
   amrex::Real velBinBufferSize = 0.125;
 
+  bool isRelativistic = false;
+
 public:
   static const int iup_ = 0;
   static const int ivp_ = 1;
@@ -228,6 +230,8 @@ public:
 
   void set_merge_threshold(amrex::Real in) { mergeThresholdDistance = in; }
   void set_merge_velocity_bin_buffer(amrex::Real in) { velBinBufferSize = in; }
+
+  void set_relativistic(const bool& in) { isRelativistic = in; }
 };
 
 template <int NStructReal, int NStructInt>
