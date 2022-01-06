@@ -133,17 +133,6 @@ planet - planetary unit. (nT, micro-volt/m, km/s, planet radius, amu/cm^3, nPa)
 No plot file is saved by default.
 </command>
 
-<command name="PARTICLETRACKER"
-	 alias="PARTICLETRACKER_FLEKS0,PARTICLETRACKER_FLEKS1,PARTICLETRACKER_FLEKS2"
-	 multiple="T">
-  <parameter name="useParticleTracker" type="logical" default="F"/>
-
-#PARTICLETRACKER
-T                   useParticleTracker 
-
-Turning on/off the test particle module. 
-</command>
-
 <command name="MONITOR"
 	 alias="MONITOR_FLEKS0,MONITOR_FLEKS1,MONITOR_FLEKS2"
 	 multiple="T">
@@ -162,6 +151,28 @@ is every 10 steps.
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! SCHEME !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+<command name="PIC"
+	 alias="PIC_FLEKS0,PIC_FLEKS1,PIC_FLEKS2"
+	 multiple="T">
+  <parameter name="" type="logical" default="T"/>
+
+#PIC
+T                   usePIC
+
+Turning on/off the PIC module. 
+</command>
+
+<command name="PARTICLETRACKER"
+	 alias="PARTICLETRACKER_FLEKS0,PARTICLETRACKER_FLEKS1,PARTICLETRACKER_FLEKS2"
+	 multiple="T">
+  <parameter name="useParticleTracker" type="logical" default="F"/>
+
+#PARTICLETRACKER
+T                   useParticleTracker 
+
+Turning on/off the test particle module. 
+</command>
 
 <command name="TIMESTEPPING"
 	 alias="TIMESTEPPING_FLEKS0,TIMESTEPPING_FLEKS1,TIMESTEP,TIMESTEP_FLEKS2,TIMESTEP_FLEKS0,TIMESTEP_FLEKS1,TIMESTEP_FLEKS2"
@@ -281,6 +292,17 @@ strength of the smoothing. coefSmoothE = 0.5 is the most effective and
 coefSmoothE > 0.5 may be not stable. 
 </command>
 
+<command name="TPRELATIVISTIC"
+	 alias="TPRELATIVISTIC_FLEKS0,TPRELATIVISTIC_FLEKS1,TPRELATIVISTIC_FLEKS2"
+	 multiple="T">
+  <parameter name="isRelativistic" type="logical" default="F"/>
+  
+#TPRELATIVISTIC
+T                         isRelativistic
+
+If it is true, the test particle velocity update will be relativistic.
+</command>
+
 </commandgroup>
 
 <commandgroup name="Inital and boundary conditions">
@@ -308,6 +330,55 @@ coefSmoothE > 0.5 may be not stable.
 The command sets particle numbers in each direction for initial
 condition and ghost cells for a FLEKS region.
 </command>
+
+<command name="TPREGION"
+	 alias="TPREGION_FLEKS0,TPREGION_FLEKS1,TPREGION_FLEKS2"
+	 multiple="T">
+  <parameter name="region" type="string"/>     
+
+#TPREGION
+boundary           region
+
+#TPREGION_FLEKS0
+uniform           region
+
+Users can choose generating test particles either in the whole 
+domain (uniform) or only at the boundary. 
+</command>
+
+<command name="TPPARTICLES"
+	 alias="TPPARTICLES_FLEKS0,TPPARTICLES_FLEKS1,TPPARTICLES_FLEKS2"
+	 multiple="T">
+  <parameter name="nParticleX" type="integer" min="1" default="1"/>
+  <parameter name="nParticleY" type="integer" min="1" default="1"/>
+  <parameter name="nParticleZ" type="integer" min="1" default="1"/>
+
+#TPPARTICLES
+1                  particles per cell in X 
+1                  particles per cell in Y 
+1                  particles per cell in Z 
+
+This command sets the number of test particles per cell. 
+
+</command>
+
+<command name="TPCELLINTERVAL"
+	 alias="TPCELLINTERVAL_FLEKS0,TPCELLINTERVAL_FLEKS1,TPCELLINTERVAL_FLEKS2"
+	 multiple="T">
+  <parameter name="nIntervalX" type="integer" min="1" default="1"/>
+  <parameter name="nIntervalY" type="integer" min="1" default="1"/>
+  <parameter name="nIntervalZ" type="integer" min="1" default="1"/>
+
+#TPCELLINTERVAL
+1                  nIntervalX
+1                  nIntervalY
+1                  nIntervalZ
+
+Generating test particles for every cell may be too much for some applications. 
+This command allows generating test particles for every nInterval cells in the
+region defined by command #TPREGION
+</command>
+
 
 <command name="ELECTRON"
 	 alias="ELECTRON_FLEKS0,ELECTRON_FLEKS1,ELECTRON_FLEKS2"
