@@ -4,7 +4,7 @@ A physical quantity contains two parts: the value times the unit. For example, t
 
 ## Mass normalization
 
-With CGS unit, the particle motion equation is
+With the CGS unit, the particle motion equation is
 $$
 \frac{dv}{dt} = \frac{q}{m}(E + \frac{v}{c} \times B) 
 $$ 
@@ -28,7 +28,7 @@ Once $m_{SI}^*$ is obtained, it is passed to FLEKS and converted to $m_{cgs}^*$.
 
 ## Length and velocity normalization
 
-There two are free parameters. 
+These two are free parameters. 
 
 ## Charge and current normalization
 
