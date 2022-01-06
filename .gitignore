@@ -7,6 +7,9 @@
 *.out
 *~
 *.d
+*.aux
+*.log
+*.pdf
 run*/
 Makefile.def
 Makefile.RULES
