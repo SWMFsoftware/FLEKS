@@ -155,7 +155,7 @@ is every 10 steps.
 <command name="PIC"
 	 alias="PIC_FLEKS0,PIC_FLEKS1,PIC_FLEKS2"
 	 multiple="T">
-  <parameter name="" type="logical" default="T"/>
+  <parameter name="usePIC" type="logical" default="T"/>
 
 #PIC
 T                   usePIC
