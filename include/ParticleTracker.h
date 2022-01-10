@@ -24,6 +24,8 @@ public:
   void init(std::shared_ptr<FluidInterface> &fluidIn,
             std::shared_ptr<TimeCtr> &tcIn, int domainIDIn = 0);
 
+  void post_process_param();
+
   void set_geom(int nGstIn, const amrex::Geometry &geomIn);
 
   void regrid(const amrex::BoxArray &ptRegionBAIn,
@@ -73,6 +75,7 @@ private:
   amrex::iMultiFab cellStatus;
 
   std::unique_ptr<PlotCtr> savectr;
+  int dnSave = 1; 
 
   bool isGridInitialized = false;
 

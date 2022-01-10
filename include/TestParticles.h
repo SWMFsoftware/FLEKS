@@ -32,7 +32,7 @@ public:
 
   void move_and_save_particles(const amrex::MultiFab& nodeEMF,
                                const amrex::MultiFab& nodeBMF, amrex::Real dt,
-                               amrex::Real dtNext, amrex::Real tNow);
+                               amrex::Real dtNext, amrex::Real tNow, bool doSave);
 
   void add_test_particles(const amrex::iMultiFab& cellStatus);
 

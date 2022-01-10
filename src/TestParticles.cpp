@@ -34,7 +34,7 @@ TestParticles::TestParticles(const amrex::BoxArray& regionBAIn,
 void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
                                             const amrex::MultiFab& nodeBMF,
                                             amrex::Real dt, amrex::Real dtNext,
-                                            amrex::Real tNowSI) {
+                                            amrex::Real tNowSI, bool doSave) {
   timing_func("TestParticles::mover");
 
   Real dtLoc = 0.5 * (dt + dtNext);
@@ -127,7 +127,7 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
       const Real vt = vp + qdto2mc * Eyl;
       const Real wt = wp + qdto2mc * Ezl;
 
-      if (isRelativistic) {        
+      if (isRelativistic) {
         const Real p2 = ut * ut + vt * vt + wt * wt;
         gamma = sqrt(1 + p2);
         invGamma = 1. / gamma;
@@ -171,17 +171,18 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
       p.pos(iy_) = yp + vnp1 * dtLoc;
       p.pos(iz_) = zp + wnp1 * dtLoc;
 
-      const int iStart_ = record_var_index(p.idata(iRecordCount_));
-      p.rdata(iStart_ + iRecordt_) = tNowSI;
-      p.rdata(iStart_ + iRecordu_) = unp1;
-      p.rdata(iStart_ + iRecordv_) = vnp1;
-      p.rdata(iStart_ + iRecordw_) = wnp1;
-      p.rdata(iStart_ + iRecordx_) = xp + unp1 * 0.5 * dt;
-      p.rdata(iStart_ + iRecordy_) = yp + vnp1 * 0.5 * dt;
-      p.rdata(iStart_ + iRecordz_) = zp + wnp1 * 0.5 * dt;
+      if (doSave) {
+        const int iStart_ = record_var_index(p.idata(iRecordCount_));
+        p.rdata(iStart_ + iRecordt_) = tNowSI;
+        p.rdata(iStart_ + iRecordu_) = unp1;
+        p.rdata(iStart_ + iRecordv_) = vnp1;
+        p.rdata(iStart_ + iRecordw_) = wnp1;
+        p.rdata(iStart_ + iRecordx_) = xp + unp1 * 0.5 * dt;
+        p.rdata(iStart_ + iRecordy_) = yp + vnp1 * 0.5 * dt;
+        p.rdata(iStart_ + iRecordz_) = zp + wnp1 * 0.5 * dt;
 
-      p.idata(iRecordCount_) = p.idata(iRecordCount_) + 1;
-
+        p.idata(iRecordCount_) = p.idata(iRecordCount_) + 1;
+      }
       // Print() << "p = " << p << std::endl;
 
       // Mark for deletion

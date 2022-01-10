@@ -32,7 +32,8 @@ void ParticleTracker::update(Pic& pic) {
   for (int i = 0; i < parts.size(); i++) {
     auto& tps = parts[i];
     tps->move_and_save_particles(nodeE, nodeB, tc->get_dt(), tc->get_next_dt(),
-                                 tc->get_time_si());
+                                 tc->get_time_si(),
+                                 tc->get_cycle() % dnSave == 0);
 
     if (doSave) {
       Print() << printPrefix << "particle number of species " << i
@@ -100,9 +101,11 @@ void ParticleTracker::init(std::shared_ptr<FluidInterface>& fluidIn,
     domainName = ss.str();
     printPrefix = domainName + " PT: ";
   }
+}
 
-  savectr =
-      std::unique_ptr<PlotCtr>(new PlotCtr(tc.get(), domainID, -1, nPTRecord));
+void ParticleTracker::post_process_param() {
+  savectr = std::unique_ptr<PlotCtr>(
+      new PlotCtr(tc.get(), domainID, -1, nPTRecord * dnSave));
 }
 
 //==========================================================
@@ -151,7 +154,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
       ptr->set_ppc(nTPPerCell);
       ptr->set_interval(nTPIntervalCell);
       ptr->set_particle_region(sPartRegion);
-      ptr->set_relativistic(isRelativistic); 
+      ptr->set_relativistic(isRelativistic);
       parts.push_back(std::move(ptr));
     }
   } else {
@@ -281,8 +284,9 @@ void ParticleTracker::read_param(const std::string& command,
     readParam.read_var("nIntervalZ", nTPIntervalCell[iz_]);
   } else if (command == "#TPREGION") {
     readParam.read_var("region", sPartRegion);
-  } else if (command == "#TPIOUNIT") {
+  } else if (command == "#TPSAVE") {
     readParam.read_var("IOUnit", sIOUnit);
+    readParam.read_var("dnSave", dnSave);
   } else if (command == "#TPRELATIVISTIC") {
     readParam.read_var("isRelativistic", isRelativistic);
   } else if (command == "#TESTPARTICLENUMBER") {

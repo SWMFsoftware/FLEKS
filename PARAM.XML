@@ -145,6 +145,24 @@ such as the GMRES convergence history, to STDOUT. The default frequency
 is every 10 steps. 
 </command>
 
+<command name="TPSAVE"
+	 alias="TPSAVE_FLEKS0,TPSAVE_FLEKS1,TPSAVE_FLEKS2"
+	 multiple="T">
+  <parameter name="unit" type="string" input="select">
+    <option value="si"     name="SI units"/>
+    <option value="planet" name="planet units" default="T"/>
+    <option value="pic"    name="PIC normalized units"/>
+  </parameter>
+  <parameter name="dnSave" type="integer" default="1"/>
+
+#TPSAVE
+planet                     unit
+10                         dnSave
+
+The unit and frequence of saving test particles.
+
+</command>
+
 </commandgroup>
 
 <commandgroup name="Scheme">

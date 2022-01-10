@@ -430,7 +430,7 @@ void Domain::read_param() {
     } else if (command == "#PARTICLETRACKER" ||
                command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
-               command == "#TPIOUNIT" || command == "#TPRELATIVISTIC") {
+               command == "#TPSAVE" || command == "#TPRELATIVISTIC") {
       pt.read_param(command, readParam);
     } else if (command == "#OHMSLAW") {
       bool useOhmResist = false;
@@ -612,6 +612,7 @@ void Domain::read_param() {
   }
 
   pic.post_process_param();
+  pt.post_process_param();
 }
 
 //========================================================
