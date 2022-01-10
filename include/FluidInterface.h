@@ -116,6 +116,9 @@ private:
 
   amrex::Vector<int> vecIdx_I;
 
+  bool useResist = false;
+  double etaSI = 0, etaNO = 0;
+
 public:
   ReadParam readParam;
 
@@ -217,6 +220,15 @@ public:
   double get_MhdNo2NoL() const { return (MhdNo2SiL * Si2NoL); }
 
   int get_phy_cell_number(const int iDir) const { return nPhyCell_D[iDir]; }
+
+  void set_resistivity(bool useResistIn, double etaSIIn) {
+    useResist = useResistIn;
+    if (useResist) {
+      etaSI = etaSIIn;
+      const double etaCGS = etaSI / 9e9;
+      etaNO = etaCGS * get_Si2NoT();
+    }
+  }
 
   void save_restart_data() {
     if (isGridEmpty)
@@ -719,6 +731,11 @@ public:
              get_uy(mfi, x, y, z, 0) * get_bz(mfi, x, y, z);
       }
     }
+
+    if (useResist) {
+      Ex += etaNO * get_value(mfi, x, y, z, iJx);
+    }
+
     return Ex;
   }
 
@@ -741,6 +758,11 @@ public:
              get_uz(mfi, x, y, z, 0) * get_bx(mfi, x, y, z);
       }
     }
+
+    if (useResist) {
+      Ey += etaNO * get_value(mfi, x, y, z, iJy);
+    }
+
     return Ey;
   }
 
@@ -763,6 +785,11 @@ public:
              get_ux(mfi, x, y, z, 0) * get_by(mfi, x, y, z);
       }
     }
+
+    if (useResist) {
+      Ez += etaNO * get_value(mfi, x, y, z, iJz);
+    }
+
     return Ez;
   }
 

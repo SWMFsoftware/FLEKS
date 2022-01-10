@@ -76,7 +76,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
   const auto plo = geom.ProbLo();
 
   // Global NODE box.
-  const Box gbx = convert(geom.Domain(), { 1, 1, 1 });  
+  const Box gbx = convert(geom.Domain(), { 1, 1, 1 });
 
   const double no2siL = get_No2SiL();
 
@@ -668,6 +668,9 @@ void FluidInterface::print_info() const {
     cout << printPrefix << "Si2NoL   = " << Si2NoL << endl;
     cout << printPrefix
          << "===================================================" << endl;
+
+    cout << printPrefix << "useResistivity = " << (useResist ? "T" : "F")
+         << " etaSI = " << etaSI << " etaNO = " << etaNO << endl;
   }
 }
 
