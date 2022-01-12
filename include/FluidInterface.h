@@ -222,11 +222,14 @@ public:
   int get_phy_cell_number(const int iDir) const { return nPhyCell_D[iDir]; }
 
   void set_resistivity(bool useResistIn, double etaSIIn) {
+    // In SI unit R = u_si*L_si/eta_si, where eta_si is magnetic diffusivity
+    // with unit m^2/s. In normalized CGS unit R = u_pic*L_pic/(eta_pic/4pi),
+    // where eta_pic is also magnetic diffusivity. Magnetic Reynolds number R
+    // should not change, so eta_pic = 4*pi*eta_si*Si2NoV*Si2NoL.
     useResist = useResistIn;
     if (useResist) {
-      etaSI = etaSIIn;
-      const double etaCGS = etaSI / 9e9;
-      etaNO = etaCGS * get_Si2NoT();
+      etaSI = etaSIIn;      
+      etaNO = fourPI*etaSI*Si2NoV*Si2NoL;
     }
   }
 

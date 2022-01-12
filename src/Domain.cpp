@@ -432,14 +432,13 @@ void Domain::read_param() {
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
                command == "#TPSAVE" || command == "#TPRELATIVISTIC") {
       pt.read_param(command, readParam);
-    } else if (command == "#OHMSLAW") {
+    } else if (command == "#OHMSLAW") {      
       bool useOhmResist = false;
-      Real eta2mu;
+      Real eta;
       readParam.read_var("useOhmResist", useOhmResist);
       if (useOhmResist) {
-        readParam.read_var("resistivity", eta2mu);
-        Real etaSI = eta2mu * mu0;
-        fluidInterface->set_resistivity(useOhmResist, etaSI);
+        readParam.read_var("resistivity", eta);        
+        fluidInterface->set_resistivity(useOhmResist, eta);
       }
 
     } else if (command == "#RESTART") {

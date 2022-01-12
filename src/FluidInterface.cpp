@@ -670,7 +670,9 @@ void FluidInterface::print_info() const {
          << "===================================================" << endl;
 
     cout << printPrefix << "useResistivity = " << (useResist ? "T" : "F")
-         << " etaSI = " << etaSI << " etaNO = " << etaNO << endl;
+         << "\n etaSI (magnetic diffusivity with unit m^2/s) = " << etaSI
+         << "\n etaNO (magnetic diffusivity)                 = " << etaNO
+         << endl;
   }
 }
 
