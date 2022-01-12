@@ -31,6 +31,8 @@ public:
 
 class FluidInterface {
 private:
+  static const int OhmUe_ = 1, OhmUi_ = 2, OhmUMHD_ = 3;
+
   // ------Grid info----------
   amrex::DistributionMapping dm;
   amrex::Geometry geom;
@@ -118,6 +120,7 @@ private:
 
   bool useResist = false;
   double etaSI = 0, etaNO = 0;
+  int OhmU = OhmUe_;
 
 public:
   ReadParam readParam;
@@ -221,15 +224,28 @@ public:
 
   int get_phy_cell_number(const int iDir) const { return nPhyCell_D[iDir]; }
 
-  void set_resistivity(bool useResistIn, double etaSIIn) {
+  void set_resistivity(double etaSIIn) {
     // In SI unit R = u_si*L_si/eta_si, where eta_si is magnetic diffusivity
     // with unit m^2/s. In normalized CGS unit R = u_pic*L_pic/(eta_pic/4pi),
     // where eta_pic is also magnetic diffusivity. Magnetic Reynolds number R
     // should not change, so eta_pic = 4*pi*eta_si*Si2NoV*Si2NoL.
-    useResist = useResistIn;
-    if (useResist) {
-      etaSI = etaSIIn;      
-      etaNO = fourPI*etaSI*Si2NoV*Si2NoL;
+    etaSI = etaSIIn;
+    useResist = etaSI > 0;
+    if (useResist)
+      etaNO = fourPI * etaSI * Si2NoV * Si2NoL;
+  }
+
+  void set_ohm_u(std::string ss) {
+    if (ss.find("ue") != std::string::npos) {
+      OhmU = OhmUe_;
+    } else if (ss.find("ui") != std::string::npos) {
+      OhmU = OhmUi_;
+    } else if (ss.find("umhd") != std::string::npos) {
+      OhmU = OhmUMHD_;
+    } else {
+      amrex::Print() << "Error: unknown velocity type: " << ss
+                     << " It should be 'ue', 'ui' or 'umhd' " << std::endl;
+      amrex::Abort(" ");
     }
   }
 
@@ -723,22 +739,34 @@ public:
       Ex = get_value(mfi, x, y, z, iEx);
     } else {
       const bool UseGradPe = false;
+
+      amrex::Real uz, uy;
+
+      if (OhmU == OhmUe_) {
+        uz = get_uz(mfi, x, y, z, 0);
+        uy = get_uy(mfi, x, y, z, 0);
+      } else if (OhmU == OhmUi_) {
+        uz = get_uz(mfi, x, y, z, 1);
+        uy = get_uy(mfi, x, y, z, 1);
+      } else if (OhmU == OhmUMHD_) {
+        const amrex::Real r0 = MoMi_S[0] / (MoMi_S[0] + MoMi_S[1]);
+        const amrex::Real r1 = 1 - r0;
+        uz = r0 * get_uz(mfi, x, y, z, 0) + r1 * get_uz(mfi, x, y, z, 1);
+        uy = r0 * get_uy(mfi, x, y, z, 0) + r1 * get_uy(mfi, x, y, z, 1);
+      }
+
+      Ex = uz * get_by(mfi, x, y, z) - uy * get_bz(mfi, x, y, z);
+
       if (UseGradPe) {
         amrex::Real ne = get_number_density(mfi, x, y, z, 0);
         amrex::Real gradpe = get_grad_pe_x(mfi, x, y, z);
-        Ex = get_uz(mfi, x, y, z, 0) * get_by(mfi, x, y, z) -
-             get_uy(mfi, x, y, z, 0) * get_bz(mfi, x, y, z) -
-             gradpe / fabs(QoQi_S[0] * ne);
-      } else {
-        Ex = get_uz(mfi, x, y, z, 0) * get_by(mfi, x, y, z) -
-             get_uy(mfi, x, y, z, 0) * get_bz(mfi, x, y, z);
+        Ex -= gradpe / fabs(QoQi_S[0] * ne);
+      }
+
+      if (useResist) {
+        Ex += etaNO * get_value(mfi, x, y, z, iJx);
       }
     }
-
-    if (useResist) {
-      Ex += etaNO * get_value(mfi, x, y, z, iJx);
-    }
-
     return Ex;
   }
 
@@ -750,20 +778,33 @@ public:
       Ey = get_value(mfi, x, y, z, iEy);
     } else {
       const bool UseGradPe = false;
+
+      amrex::Real ux, uz;
+
+      if (OhmU == OhmUe_) {
+        uz = get_uz(mfi, x, y, z, 0);
+        ux = get_ux(mfi, x, y, z, 0);
+      } else if (OhmU == OhmUi_) {
+        uz = get_uz(mfi, x, y, z, 1);
+        ux = get_ux(mfi, x, y, z, 1);
+      } else if (OhmU == OhmUMHD_) {
+        const amrex::Real r0 = MoMi_S[0] / (MoMi_S[0] + MoMi_S[1]);
+        const amrex::Real r1 = 1 - r0;
+        uz = r0 * get_uz(mfi, x, y, z, 0) + r1 * get_uz(mfi, x, y, z, 1);
+        ux = r0 * get_ux(mfi, x, y, z, 0) + r1 * get_ux(mfi, x, y, z, 1);
+      }
+
+      Ey = ux * get_bz(mfi, x, y, z) - uz * get_bx(mfi, x, y, z);
+
       if (UseGradPe) {
         amrex::Real ne = get_number_density(mfi, x, y, z, 0);
         amrex::Real gradpe = get_grad_pe_y(mfi, x, y, z);
-        Ey = get_ux(mfi, x, y, z, 0) * get_bz(mfi, x, y, z) -
-             get_uz(mfi, x, y, z, 0) * get_bx(mfi, x, y, z) -
-             gradpe / fabs(QoQi_S[0] * ne);
-      } else {
-        Ey = get_ux(mfi, x, y, z, 0) * get_bz(mfi, x, y, z) -
-             get_uz(mfi, x, y, z, 0) * get_bx(mfi, x, y, z);
+        Ey -= gradpe / fabs(QoQi_S[0] * ne);
       }
-    }
 
-    if (useResist) {
-      Ey += etaNO * get_value(mfi, x, y, z, iJy);
+      if (useResist) {
+        Ey += etaNO * get_value(mfi, x, y, z, iJy);
+      }
     }
 
     return Ey;
@@ -777,22 +818,34 @@ public:
       Ez = get_value(mfi, x, y, z, iEz);
     } else {
       const bool UseGradPe = false;
+
+      amrex::Real ux, uy;
+
+      if (OhmU == OhmUe_) {
+        ux = get_ux(mfi, x, y, z, 0);
+        uy = get_uy(mfi, x, y, z, 0);
+      } else if (OhmU == OhmUi_) {
+        ux = get_ux(mfi, x, y, z, 1);
+        uy = get_uy(mfi, x, y, z, 1);
+      } else if (OhmU == OhmUMHD_) {
+        const amrex::Real r0 = MoMi_S[0] / (MoMi_S[0] + MoMi_S[1]);
+        const amrex::Real r1 = 1 - r0;
+        ux = r0 * get_ux(mfi, x, y, z, 0) + r1 * get_ux(mfi, x, y, z, 1);
+        uy = r0 * get_uy(mfi, x, y, z, 0) + r1 * get_uy(mfi, x, y, z, 1);
+      }
+
+      Ez = uy * get_bx(mfi, x, y, z) - ux * get_by(mfi, x, y, z);
+
       if (UseGradPe) {
         amrex::Real ne = get_number_density(mfi, x, y, z, 0);
         amrex::Real gradpe = get_grad_pe_z(mfi, x, y, z);
-        Ez = get_uy(mfi, x, y, z, 0) * get_bx(mfi, x, y, z) -
-             get_ux(mfi, x, y, z, 0) * get_by(mfi, x, y, z) -
-             gradpe / fabs(QoQi_S[0] * ne);
-      } else {
-        Ez = get_uy(mfi, x, y, z, 0) * get_bx(mfi, x, y, z) -
-             get_ux(mfi, x, y, z, 0) * get_by(mfi, x, y, z);
+        Ez -= gradpe / fabs(QoQi_S[0] * ne);
+      }
+
+      if (useResist) {
+        Ez += etaNO * get_value(mfi, x, y, z, iJz);
       }
     }
-
-    if (useResist) {
-      Ez += etaNO * get_value(mfi, x, y, z, iJz);
-    }
-
     return Ez;
   }
 
