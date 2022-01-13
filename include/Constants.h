@@ -26,7 +26,7 @@ constexpr static int iBoundary_ = 0, iOnNew_ = 1, iOnOld_ = 2,
 
 constexpr static int nPicPartReal = 4;
 
-constexpr static int nPTRecord = 100;
+constexpr static int nPTRecord = 20;
 constexpr static int ptRecordSize = 7;
 constexpr static int nPTPartReal = nPicPartReal + ptRecordSize * nPTRecord,
                      nPTPartInt = 1;
