@@ -6,6 +6,8 @@ module PC_wrapper
 
   ! Wrapper for the FLEKS (PC) component
 
+  use ModUtilities, ONLY: CON_set_do_test, CON_stop
+  
   implicit none
 
   save
