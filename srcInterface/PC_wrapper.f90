@@ -7,7 +7,7 @@ module PC_wrapper
   ! Wrapper for the FLEKS (PC) component
 
   use ModUtilities, ONLY: CON_set_do_test, CON_stop
-  
+
   implicit none
 
   save
@@ -36,7 +36,6 @@ module PC_wrapper
   integer:: iProc  
 
 contains
-
   !==========================================================================
   subroutine PC_set_param(CompInfo, TypeAction)
 
@@ -78,7 +77,7 @@ contains
                n_line_read()-i_line_read(), lStringLine,iProc)
        end if
     case('CHECK')
-       
+
     case('STDOUT')
 
     case('FILEOUT')
@@ -91,9 +90,7 @@ contains
     end select
 
   end subroutine PC_set_param
-
   !============================================================================
-
   subroutine PC_init_session(iSession, TimeSimulation)
 
     !INPUT PARAMETERS:
@@ -101,14 +98,11 @@ contains
     real,     intent(in) :: TimeSimulation   ! seconds from start time
 
     character(len=*), parameter :: NameSub='PC_init_session'
-    !--------------------------------------------------------------------------    
-    
+    !--------------------------------------------------------------------------
     call pic_init(TimeSimulation)
 
   end subroutine PC_init_session
-
   !============================================================================
-
   subroutine PC_finalize(TimeSimulation)
 
     !INPUT PARAMETERS:
@@ -116,13 +110,10 @@ contains
 
     character(len=*), parameter :: NameSub='PC_finalize'
     !-------------------------------------------------------------------------
-
     call pic_end()
 
   end subroutine PC_finalize
-
   !============================================================================
-
   subroutine PC_save_restart(TimeSimulation)
 
     !INPUT PARAMETERS:
@@ -130,13 +121,10 @@ contains
 
     character(len=*), parameter :: NameSub='PC_save_restart'
     !--------------------------------------------------------------------------
-
     call pic_save_restart()
 
   end subroutine PC_save_restart
-
   !============================================================================
-
   subroutine PC_run(TimeSimulation, TimeSimulationLimit)
 
     !INPUT/OUTPUT ARGUMENTS:
@@ -151,24 +139,21 @@ contains
     character(len=*), parameter :: NameSub='PC_run'
     !--------------------------------------------------------------------------
     call CON_set_do_test(NameSub, DoTest, DoTestMe)
-    
+
     if(DoTestMe)write(*,*) NameSub, &
          ' starting with TimeSimulation, TimeSimulationLimit=', &
          TimeSimulation, TimeSimulationLimit
 
-     call pic_run(PicTime)
+    call pic_run(PicTime)
 
     TimeSimulation = PicTime
 
 
     if(DoTestMe)write(*,*) NameSub, &
-         ' finishing with TimeSimulation =', &
-         TimeSimulation
+         ' finishing with TimeSimulation =', TimeSimulation
 
   end subroutine PC_run
-
   !============================================================================
-
   subroutine PC_get_grid_info(nDimOut, iGridOut, iDecompOut)
 
     integer, intent(out):: nDimOut    ! grid dimensionality
@@ -179,23 +164,25 @@ contains
 
     character(len=*), parameter :: NameSub = 'PC_get_grid_info'
     !--------------------------------------------------------------------------
-   nDimOut    = nDim
-   call pic_get_grid_info(iGridOut, iDecompOut); 
+    nDimOut    = nDim
+    call pic_get_grid_info(iGridOut, iDecompOut); 
   end subroutine PC_get_grid_info
   !============================================================================
   subroutine PC_put_from_gm_dt(DtSiIn)
 
     real,    intent(in) :: DtSiIn
-
     character(len=*), parameter :: NameSub = 'PC_put_from_gm_dt'
     !--------------------------------------------------------------------------
+
   end subroutine PC_put_from_gm_dt
-    !============================================================================
-  subroutine PC_put_from_gm_grid_info(nInt, nPicGrid, AccumulatedSize_I, Int_I)
+  !============================================================================
+  subroutine PC_put_from_gm_grid_info(nInt, nPicGrid, nSize_I, Int_I)
+
     integer, intent(in)         :: nInt, nPicGrid
-    integer, intent(in)         :: Int_I(nInt), AccumulatedSize_I(nPicGrid)
-    
-    call pic_set_grid_info(nInt, AccumulatedSize_I, Int_I)
+    integer, intent(in)         :: Int_I(nInt), nSize_I(nPicGrid)
+    !--------------------------------------------------------------------------
+    call pic_set_grid_info(nInt, nSize_I, Int_I)
+
   end subroutine PC_put_from_gm_grid_info
   !============================================================================
   subroutine PC_put_from_gm_init(nParamInt, nParamReal, iParam_I, Param_I, &
@@ -226,7 +213,6 @@ contains
 
     character(len=*), parameter:: NameSub = 'PC_find_points'
     !--------------------------------------------------------------------------
-
     call pic_find_points(nPoint, Xyz_DI, iProc_I)
 
   end subroutine PC_find_points
@@ -292,5 +278,6 @@ contains
          nDimIn, nPoint, Xyz_DI, Data_VI, nVarIn)
 
   end subroutine PC_get_for_gm
-
+  !============================================================================
 end module PC_wrapper
+!==============================================================================
