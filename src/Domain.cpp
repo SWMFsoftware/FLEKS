@@ -367,7 +367,8 @@ void Domain::init_time_ctr() {
       scalarName_I.push_back(ms + std::to_string(i));
       scalarName_I.push_back(qs + std::to_string(i));
       scalarVar_I.push_back(fluidInterface->get_species_mass(i));
-      scalarVar_I.push_back(fluidInterface->get_species_charge(i));
+      scalarVar_I.push_back(fluidInterface->get_species_charge(i) /
+                            fluidInterface->get_scaling_factor());
     }
     scalarName_I.push_back("cLight");
     scalarVar_I.push_back(fluidInterface->get_cLight_SI());

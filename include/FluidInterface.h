@@ -105,6 +105,8 @@ private:
 
   double rPlanetSi;
 
+  double ScalingFactor;
+
   // normalization units for length, velocity, mass and charge
   // Normalized q/m ==1 for proton in CGS units
   double Lnorm, Unorm, Mnorm, Qnorm;
@@ -215,7 +217,9 @@ public:
 
   double get_cLight_SI() const { return Unorm / 100; /*Unorm is in cgs unit*/ };
 
-  double get_rPlanet_SI() const { return (rPlanetSi); }
+  double get_rPlanet_SI() const { return rPlanetSi; }
+
+  double get_scaling_factor() const { return ScalingFactor; }
 
   // return MhdNo2SiL
   double get_MhdNo2SiL() const { return (MhdNo2SiL); }

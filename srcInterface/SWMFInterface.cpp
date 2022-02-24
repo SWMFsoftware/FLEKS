@@ -54,7 +54,7 @@ int pic_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
   for (int iDomain = 0; iDomain < nDomain; iDomain++)
     fleksDomains.add_new_domain();
 
-  int nParamRegion = 21;
+  int nParamRegion = 22;
   for (int i = 0; i < fleksDomains.size(); i++) {
     fleksDomains.select(i);
     fleksDomains(i).init(timeNow, paramString, paramint,
