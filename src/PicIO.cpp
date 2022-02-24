@@ -132,20 +132,27 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 
   const auto dx = geom.CellSize();
 
+  const Box& gbx = convert(geom.Domain(), { 1, 1, 1 });
+
   int iBlock = 0;
   for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
     const auto& typeArr = nodeAssignment[mfi].array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+    auto lo = box.loVect3d();
+    auto hi = box.hiVect3d();
 
-    for (int k = lo.z; k <= hi.z; ++k) {
+    // Do not output the rightmost nodes for periodic boundary.
+    for (int iDim = 0; iDim < nDim; iDim++)
+      if ((geom.isPeriodic(iDim)) && gbx.bigEnd(iDim) == hi[iDim])
+        hi[iDim]--;
+
+    for (int k = lo[iz_]; k <= hi[iz_]; ++k) {
       const double zp = k * dx[iz_] + plo[iz_];
-      for (int j = lo.y; j <= hi.y; ++j) {
+      for (int j = lo[iy_]; j <= hi[iy_]; ++j) {
         const double yp = j * dx[iy_] + plo[iy_];
-        for (int i = lo.x; i <= hi.x; ++i) {
+        for (int i = lo[ix_]; i <= hi[ix_]; ++i) {
           const double xp = i * dx[ix_] + plo[ix_];
           if (typeArr(i, j, k) == iAssign_ &&
               writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
