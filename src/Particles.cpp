@@ -57,7 +57,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
     // Change the random number seed.
     nRandom = 19;
 
-    ratio = pow(ratio, 1 / 3);  
+    ratio = pow(ratio, 1 / 3);
   }
 
   int nPPC[nDim];
@@ -240,7 +240,7 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
         }
   }
 
-  //TODO: Is this really necessary?
+  // TODO: Is this really necessary?
   Redistribute();
 }
 
@@ -264,11 +264,9 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
 
     IntVect idxMin = lo, idxMax = hi;
 
-    for (int iDim = 0; iDim < nDim; iDim++) {
-      if (!Geom(0).isPeriodic(iDim)) {
-        idxMin[iDim] -= nGstInject;
-        idxMax[iDim] += nGstInject;
-      }
+    for (int iDim = 0; iDim < fluidInterface->get_fluid_dimension(); iDim++) {
+      idxMin[iDim] -= nGstInject;
+      idxMax[iDim] += nGstInject;
     }
 
     for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)

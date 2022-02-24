@@ -1169,10 +1169,8 @@ void Pic::apply_external_BC(const iMultiFab& status, MultiFab& mf,
   BoxArray ba = convert(picRegionBA, mf.boxArray().ixType());
 
   const IntVect& ngrow = mf.nGrowVect();
-  for (int i = 0; i < nDim; ++i) {
-    if (geom.isPeriodic(i)) {
-      ba.grow(i, ngrow[i]);
-    }
+  for (int i = 0; i < fluidInterface->get_fluid_dimension(); ++i) {
+    ba.grow(i, ngrow[i]);
   }
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
