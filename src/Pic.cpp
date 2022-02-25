@@ -1169,8 +1169,8 @@ void Pic::apply_external_BC(const iMultiFab& status, MultiFab& mf,
   BoxArray ba = convert(picRegionBA, mf.boxArray().ixType());
 
   const IntVect& ngrow = mf.nGrowVect();
-  for (int i = 0; i < fluidInterface->get_fluid_dimension(); ++i) {
-    ba.grow(i, ngrow[i]);
+  if (geom.Domain().bigEnd(iz_) == geom.Domain().smallEnd(iz_)) {
+    ba.grow(iz_, ngrow[iz_]);
   }
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
