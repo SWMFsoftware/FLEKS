@@ -50,16 +50,20 @@ protected:
   // A node may be shared by a few blocks/boxes. Sometimes (such as the E field
   // solver) only one of the boexes needs to take care such nodes. The following
   // multifab is usually used for this purpose: if one node of one box is
-  // 'iAssign_', this box needs to take care of this node (this node must be
-  // 'iNotAssign_' on other boxes).
-  amrex::iMultiFab nodeAssignment;
-  constexpr static int iAssign_ = 1, iNotAssign_ = 0;
+  // 'iAssign_', this box needs to take care of this node; in fake 2D, a node
+  // can be 'iAbandon_' to ignore one layer node; if a node is neither
+  // 'iAssign_' nor 'iAbandon_', nodeShare stors the neighbor that handle
+  // this node.
+  amrex::iMultiFab nodeShare;
+  constexpr static int iAssign_ = (1<<4), iAbandon_ = -1;
 
   bool doNeedFillNewCell = true;
 
   bool isGridInitialized = false;
 
   bool isGridEmpty = false;
+
+  bool isFake2D = false; 
 
 public:
   PicGrid(){};

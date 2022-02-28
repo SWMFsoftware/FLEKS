@@ -134,11 +134,14 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 
   const Box& gbx = convert(geom.Domain(), { 1, 1, 1 });
 
+  const auto glo = lbound(gbx);
+  const auto ghi = ubound(gbx);
+
   int iBlock = 0;
   for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
-    const auto& typeArr = nodeAssignment[mfi].array();
+    const auto& typeArr = nodeShare[mfi].array();
 
     auto lo = box.loVect3d();
     auto hi = box.hiVect3d();
@@ -148,13 +151,32 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
       if ((geom.isPeriodic(iDim)) && gbx.bigEnd(iDim) == hi[iDim])
         hi[iDim]--;
 
+    auto do_output_this_node = [&](int i, int j, int k) {
+      int type = typeArr(i, j, k);
+      
+      if (type == iAssign_)
+        return true;
+
+      if (type != iAbandon_) {
+        if (geom.isPeriodic(ix_) && i == glo.x && !test_bit(type, ix_))
+          return true;
+        if (geom.isPeriodic(iy_) && j == glo.y && !test_bit(type, iy_))
+          return true;
+        if (!isFake2D && geom.isPeriodic(iz_) && k == glo.z &&
+            !test_bit(type, iz_))
+          return true;
+      }
+
+      return false;
+    };
+
     for (int k = lo[iz_]; k <= hi[iz_]; ++k) {
       const double zp = k * dx[iz_] + plo[iz_];
       for (int j = lo[iy_]; j <= hi[iy_]; ++j) {
         const double yp = j * dx[iy_] + plo[iy_];
         for (int i = lo[ix_]; i <= hi[ix_]; ++i) {
           const double xp = i * dx[ix_] + plo[ix_];
-          if (typeArr(i, j, k) == iAssign_ &&
+          if (do_output_this_node(i, j, k) &&
               writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
 
             pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
@@ -197,8 +219,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
     if (geom.isPeriodic(iz_))
       --kMax;
 
-    const bool is2D = geom.Domain().bigEnd(iz_) == geom.Domain().smallEnd(iz_);
-    if (is2D)
+    if (isFake2D)
       kMax = lo.z;
 
     for (int k = lo.z; k <= kMax; ++k) {

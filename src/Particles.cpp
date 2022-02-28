@@ -102,8 +102,8 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   int nPartEffective;
   {
     const Box& gbx = convert(Geom(0).Domain(), { 0, 0, 0 });
-    const bool is2D = gbx.bigEnd(iz_) == gbx.smallEnd(iz_);
-    int nCellContribute = is2D ? 4 : 8;
+    const bool isFake2D = gbx.bigEnd(iz_) == gbx.smallEnd(iz_);
+    int nCellContribute = isFake2D ? 4 : 8;
     const int nx = nPPC[ix_];
     const int ny = nPPC[iy_];
     const int nz = nPPC[iz_];

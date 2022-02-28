@@ -127,6 +127,7 @@ void Pic::fill_new_cells() {
 void Pic::set_geom(int nGstIn, const Geometry& geomIn) {
   set_nGst(nGstIn);
   geom = geomIn;
+  isFake2D = geom.Domain().bigEnd(iz_) == geom.Domain().smallEnd(iz_);
 }
 
 //==========================================================
@@ -232,9 +233,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     }
 
     cellStatus.FillBoundary(geom.periodicity());
-
-    const bool is2D = geom.Domain().bigEnd(iz_) == geom.Domain().smallEnd(iz_);
-    if (is2D) {
+    
+    if (isFake2D) {
       // For the fake 2D cases, in the z-direction, only the first layer ghost
       // cells are filled in correctly by the method FillBoundary.
       if (!cellStatus.empty())
@@ -279,8 +279,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
     nodeStatus.FillBoundary(geom.periodicity());
 
-    distribute_FabArray(nodeAssignment, nodeBA, dm, 1, 0, false);
-    set_nodeAssignment();
+    distribute_FabArray(nodeShare, nodeBA, dm, 1, 0, false);
+    set_nodeShare();
   }
 
   //--------------particles-----------------------------------
@@ -343,32 +343,28 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 }
 
 //==========================================================
-void Pic::set_nodeAssignment() {
-  if (!nodeAssignment.empty())
-    nodeAssignment.setVal(iNotAssign_);
+void Pic::set_nodeShare() {
+  if (!nodeShare.empty())
+    nodeShare.setVal(iAbandon_);
 
   const Box& gbx = convert(geom.Domain(), { 0, 0, 0 });
 
-  if (!nodeAssignment.empty())
-    for (MFIter mfi(nodeAssignment); mfi.isValid(); ++mfi) {
+  if (!nodeShare.empty())
+    for (MFIter mfi(nodeShare); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
 
       const Box& cellBox = convert(box, { 0, 0, 0 });
 
-      const auto& typeArr = nodeAssignment[mfi].array();
+      const auto& typeArr = nodeShare[mfi].array();
       const auto& statusArr = cellStatus[mfi].array();
 
       const auto lo = lbound(box);
       const auto hi = ubound(box);
 
-      bool is2D = false;
-      if (geom.isPeriodic(iz_) && (gbx.bigEnd(iz_) == gbx.smallEnd(iz_)))
-        is2D = true;
-
       int diMax = 0, diMin = -1;
       int djMax = 0, djMin = -1;
       int dkMax = 0, dkMin = -1;
-      if (is2D) {
+      if (isFake2D) {
         dkMin = 0;
       }
 
@@ -379,32 +375,38 @@ void Pic::set_nodeAssignment() {
               if (statusArr(i + di, j + dj, k + dk) != iBoundary_) {
                 // Find the first CELL that shares this node.
                 if (cellBox.contains({ i + di, j + dj, k + dk })) {
-                  return true;
+                  return iAssign_;
                 } else {
-                  return false;
+                  int ii = 0;
+                  if (di == 0)
+                    ii += 1;
+                  if (dj == 0)
+                    ii += 2;
+                  if (!isFake2D && dk == 0)
+                    ii += 4;
+                    
+                  return ii;
                 }
               }
             }
         Abort("Error: something is wrong here!");
-        return false;
+        return 0; 
       };
 
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            if (!is2D || k == lo.z) {
+            if (!isFake2D || k == lo.z) {
               // for 2D (1 cell in the z-direction), only handle the layer of
               // k=0
               if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
-                  (!is2D && (k == lo.z || k == hi.z))) {
+                  (!isFake2D && (k == lo.z || k == hi.z))) {
                 // Block boundary nodes.
 
                 // Check if this block boundary node needs to be handled by this
                 // block.
 
-                if (fHandle(i, j, k)) {
-                  typeArr(i, j, k) = iAssign_;
-                }
+                typeArr(i, j, k) = fHandle(i, j, k);
               } else {
                 typeArr(i, j, k) = iAssign_;
               }
@@ -1346,7 +1348,7 @@ void Pic::convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
     int iMin = lo.x, jMin = lo.y, kMin = lo.z;
 
-    const auto& nodeArr = nodeAssignment[mfi].array();
+    const auto& nodeArr = nodeShare[mfi].array();
     for (int iVar = 0; iVar < MF.nComp(); iVar++)
       for (int k = kMin; k <= kMax; ++k)
         for (int j = jMin; j <= jMax; ++j)
@@ -1376,7 +1378,7 @@ void Pic::convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
     int iMin = lo.x, jMin = lo.y, kMin = lo.z;
 
-    const auto& nodeArr = nodeAssignment[mfi].array();
+    const auto& nodeArr = nodeShare[mfi].array();
     for (int iVar = 0; iVar < MF.nComp(); iVar++)
       for (int k = kMin; k <= kMax; ++k)
         for (int j = jMin; j <= jMax; ++j)
