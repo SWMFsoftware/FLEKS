@@ -86,6 +86,7 @@ private:
 
   bool doRestart = false;
   bool doCorrectDivE = true;
+  int nDivECorrection = 3;
 
   bool doReSampling = true;
   amrex::Real reSamplingLowLimit = 0.8;

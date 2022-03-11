@@ -277,13 +277,16 @@ GMRES solver. The default values are shown above.
 
 <command name="DIVE">
   <parameter name="doCorrectDivE" type="logical" default="T"/>
-  
+  <parameter name="nDivECorrection" type="integer" default="3"/>
 #DIVE
 T                         doCorrectDivE
+3                         nDivECorrection
 
 Turning on/off the accurate div(E) cleaning, which corrects the particle
 locations to satisfy Gauss's law: div(E) = net_charge. 
-Default is true as it is required for accuracy of long simulations.
+Default is true as it is required for accuracy of long simulations. The
+correction repeats nDivECorrection (default is 3) times. If the divE 
+cleaning is time consuming, reducing nDivECorrection to 1 may also work.
 </command>
 
 <command name="SMOOTHE"

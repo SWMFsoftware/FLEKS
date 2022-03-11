@@ -37,6 +37,9 @@ void Pic::read_param(const std::string& command, ReadParam& readParam) {
     readParam.read_var("usePIC", usePIC);
   } else if (command == "#DIVE") {
     readParam.read_var("doCorrectDivE", doCorrectDivE);
+    if (doCorrectDivE) {
+      readParam.read_var("nDivECorrection", nDivECorrection);
+    }
   } else if (command == "#EFIELDSOLVER") {
     Real tol;
     int nIter;
@@ -233,7 +236,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     }
 
     cellStatus.FillBoundary(geom.periodicity());
-    
+
     if (isFake2D) {
       // For the fake 2D cases, in the z-direction, only the first layer ghost
       // cells are filled in correctly by the method FillBoundary.
@@ -384,13 +387,13 @@ void Pic::set_nodeShare() {
                     ii += 2;
                   if (!isFake2D && dk == 0)
                     ii += 4;
-                    
+
                   return ii;
                 }
               }
             }
         Abort("Error: something is wrong here!");
-        return 0; 
+        return 0;
       };
 
       for (int k = lo.z; k <= hi.z; ++k)
@@ -677,7 +680,7 @@ void Pic::divE_correction() {
 
   timing_func(nameFunc);
 
-  for (int iIter = 0; iIter < 3; iIter++) {
+  for (int iIter = 0; iIter < nDivECorrection; iIter++) {
     sum_to_center(true);
 
     if (doReport)
