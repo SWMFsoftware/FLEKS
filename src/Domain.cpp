@@ -319,6 +319,7 @@ void Domain::save_restart_header() {
     } else {
       headerFile << tc->get_cfl() << "\t\tcfl\n";
     }
+    headerFile << "\n";
 
     if (!useFixedDt) {
       headerFile << "#DT" + command_suffix;
