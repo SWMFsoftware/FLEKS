@@ -509,13 +509,13 @@ void Pic::fill_E_B_fields() {
   nodeE.FillBoundary(geom.periodicity());
   nodeB.FillBoundary(geom.periodicity());
 
-  apply_external_BC(nodeStatus, nodeE, 0, nDim, &Pic::get_node_E);
-  apply_external_BC(nodeStatus, nodeB, 0, nDim, &Pic::get_node_B);
+  apply_BC(nodeStatus, nodeE, 0, nDim, &Pic::get_node_E);
+  apply_BC(nodeStatus, nodeB, 0, nDim, &Pic::get_node_B);
 
   fill_new_center_B();
   centerB.FillBoundary(geom.periodicity());
 
-  apply_external_BC(cellStatus, centerB, 0, centerB.nComp(),
+  apply_BC(cellStatus, centerB, 0, centerB.nComp(),
                     &Pic::get_center_B);
 }
 
@@ -806,7 +806,7 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
 
   centerNetChargeNew.SumBoundary(geom.periodicity());
 
-  apply_external_BC(cellStatus, centerNetChargeNew, 0,
+  apply_BC(cellStatus, centerNetChargeNew, 0,
                     centerNetChargeNew.nComp(), &Pic::get_zero);
 
   if (Particles<>::particlePosition == NonStaggered) {
@@ -924,8 +924,8 @@ void Pic::update_E() {
   MultiFab::LinComb(nodeE, -(1.0 - fsolver.theta) / fsolver.theta, nodeE, 0,
                     1. / fsolver.theta, nodeEth, 0, 0, nodeE.nComp(), nGst);
 
-  apply_external_BC(nodeStatus, nodeE, 0, nDim, &Pic::get_node_E);
-  apply_external_BC(nodeStatus, nodeEth, 0, nDim, &Pic::get_node_E);
+  apply_BC(nodeStatus, nodeE, 0, nDim, &Pic::get_node_E);
+  apply_BC(nodeStatus, nodeEth, 0, nDim, &Pic::get_node_E);
 
   if (doSmoothE) {
     calc_smooth_coef();
@@ -962,9 +962,9 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
     // The boundary nodes would not be filled in by convert_1d_3d. So, there
     // is not need to apply zero boundary conditions again here.
   } else {
-    // Even after apply_external_BC(), the outmost layer node E is still
+    // Even after apply_BC(), the outmost layer node E is still
     // unknow. See FluidInterface::calc_current for detailed explaniation.
-    apply_external_BC(nodeStatus, vecMF, 0, nDim, &Pic::get_node_E);
+    apply_BC(nodeStatus, vecMF, 0, nDim, &Pic::get_node_E);
   }
 
   lap_node_to_node(vecMF, matvecMF, dm, geom, cellStatus);
@@ -998,7 +998,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
       // 1) The outmost boundary layer of tempCenter3 is not accurate.
       // 2) The 2 outmost boundary layers (all ghosts if there are 2 ghost
       // cells) of tempCenter1 are not accurate
-      apply_external_BC(cellStatus, tempCenter1, 0, tempCenter1.nComp(),
+      apply_BC(cellStatus, tempCenter1, 0, tempCenter1.nComp(),
                         &Pic::get_zero);
 
       MultiFab::LinComb(centerDivE, 1 - fsolver.coefDiff, centerDivE, 0,
@@ -1075,9 +1075,9 @@ void Pic::update_E_rhs(double* rhs) {
   MultiFab temp2Node(nodeBA, dm, 3, nGst);
   temp2Node.setVal(0.0);
 
-  apply_external_BC(cellStatus, centerB, 0, centerB.nComp(),
+  apply_BC(cellStatus, centerB, 0, centerB.nComp(),
                     &Pic::get_center_B);
-  apply_external_BC(nodeStatus, nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
+  apply_BC(nodeStatus, nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
 
   const Real* invDx = geom.InvCellSize();
   curl_center_to_node(centerB, tempNode, invDx);
@@ -1107,13 +1107,13 @@ void Pic::update_B() {
                   centerB.nGrow());
   centerB.FillBoundary(geom.periodicity());
 
-  apply_external_BC(cellStatus, centerB, 0, centerB.nComp(),
+  apply_BC(cellStatus, centerB, 0, centerB.nComp(),
                     &Pic::get_center_B);
 
   average_center_to_node(centerB, nodeB);
   nodeB.FillBoundary(geom.periodicity());
 
-  apply_external_BC(nodeStatus, nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
+  apply_BC(nodeStatus, nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
 }
 
 //==========================================================
@@ -1222,9 +1222,9 @@ void Pic::smooth_E(MultiFab& mfE) {
 }
 
 //==========================================================
-void Pic::apply_external_BC(const iMultiFab& status, MultiFab& mf,
-                            const int iStart, const int nComp, GETVALUE func) {
-  std::string nameFunc = "Pic::apply_external_BC";
+void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
+                   const int nComp, GETVALUE func) {
+  std::string nameFunc = "Pic::apply_BC";
   timing_func(nameFunc);
 
   if (geom.isAllPeriodic())
@@ -1253,7 +1253,7 @@ void Pic::apply_external_BC(const iMultiFab& status, MultiFab& mf,
       const auto lo = IntVect(bx.loVect());
       const auto hi = IntVect(bx.hiVect());
 
-      for (int iVar = iStart; iVar < nComp; iVar++)
+      for (int iVar = iStart; iVar < iStart + nComp; iVar++)
         for (int k = lo[iz_] + 1; k <= hi[iz_] - 1; k++)
           for (int j = lo[iy_]; j <= hi[iy_]; j++)
             for (int i = lo[ix_]; i <= hi[ix_]; i++)

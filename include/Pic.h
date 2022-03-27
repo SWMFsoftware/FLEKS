@@ -100,10 +100,10 @@ private:
   int nSmoothE = 1;
   amrex::Real coefStrongSmooth = 0.5;
   amrex::Real coefWeakSmooth = 0;
-  amrex::Real strongSmoothMach = 0.8; 
-  amrex::Real weakSmoothMach = 0.7; 
+  amrex::Real strongSmoothMach = 0.8;
+  amrex::Real weakSmoothMach = 0.7;
 
-  amrex::MultiFab nodeSmoothCoef; 
+  amrex::MultiFab nodeSmoothCoef;
 
   TestCase testCase = RegularSimulation;
 
@@ -262,8 +262,8 @@ public:
   //--------------- IO end--------------------------------
 
   //--------------- Boundary begin ------------------------
-  void apply_external_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,
-                         const int iStart, const int nComp, GETVALUE func);
+  void apply_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,
+                const int iStart, const int nComp, GETVALUE func = nullptr);
 
   amrex::Real get_zero(amrex::MFIter &mfi, int i, int j, int k, int iVar) {
     return 0.0;
