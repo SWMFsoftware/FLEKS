@@ -98,7 +98,12 @@ private:
 
   bool doSmoothE = true;
   int nSmoothE = 1;
-  amrex::Real coefSmoothE = 0.5;
+  amrex::Real coefStrongSmooth = 0.5;
+  amrex::Real coefWeakSmooth = 0;
+  amrex::Real strongSmoothMach = 0.8; 
+  amrex::Real weakSmoothMach = 0.7; 
+
+  amrex::MultiFab nodeSmoothCoef; 
 
   TestCase testCase = RegularSimulation;
 
@@ -198,6 +203,8 @@ public:
   void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF);
 
   void smooth_E(amrex::MultiFab &mfE);
+
+  void calc_smooth_coef();
   //-------------Electric field solver end-------------
 
   void update_B();

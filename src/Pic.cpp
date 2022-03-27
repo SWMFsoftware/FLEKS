@@ -60,7 +60,10 @@ void Pic::read_param(const std::string& command, ReadParam& readParam) {
     readParam.read_var("doSmoothE", doSmoothE);
     if (doSmoothE) {
       readParam.read_var("nSmoothE", nSmoothE);
-      readParam.read_var("coefSmoothE", coefSmoothE);
+      readParam.read_var("coefStrongSmooth", coefStrongSmooth);
+      readParam.read_var("coefWeakSmooth", coefWeakSmooth);
+      readParam.read_var("strongSmoothMach", strongSmoothMach);
+      readParam.read_var("weakSmoothMach", weakSmoothMach);
     }
   } else if (command == "#RESAMPLING") {
     readParam.read_var("doReSampling", doReSampling);
@@ -204,6 +207,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     distribute_FabArray(tempCenter3, centerBA, dm, 3, nGst, doMoveData);
     distribute_FabArray(tempCenter1, centerBA, dm, 1, nGst, doMoveData);
     distribute_FabArray(tempCenter1_1, centerBA, dm, 1, nGst, doMoveData);
+
+    distribute_FabArray(nodeSmoothCoef, nodeBA, dm, 1, nGst, doMoveData);
   }
   //===========Move field data around end====================
 
@@ -923,6 +928,7 @@ void Pic::update_E() {
   apply_external_BC(nodeStatus, nodeEth, 0, nDim, &Pic::get_node_E);
 
   if (doSmoothE) {
+    calc_smooth_coef();
     smooth_E(nodeEth);
     smooth_E(nodeE);
   }
@@ -1111,6 +1117,58 @@ void Pic::update_B() {
 }
 
 //==========================================================
+void Pic::calc_smooth_coef() {
+  std::string nameFunc = "Pic::calc_smooth_coef";
+  timing_func(nameFunc);
+
+  nodeSmoothCoef.setVal(coefWeakSmooth);
+
+  if (fabs(coefStrongSmooth - coefWeakSmooth) < 1e-3)
+    return;
+
+  Real gamma = 5. / 3;
+  for (MFIter mfi(nodePlasma[nSpecies]); mfi.isValid(); ++mfi) {
+    FArrayBox& fab = nodePlasma[nSpecies][mfi];
+    const Box& box = mfi.fabbox();
+    const Array4<Real>& arr = fab.array();
+
+    const Array4<Real>& arrCoef = nodeSmoothCoef[mfi].array();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          const Real rho = arr(i, j, k, iRho_);
+
+          if (rho > 1e-99) {
+            const Real uBulk =
+                sqrt(pow(arr(i, j, k, iUx_), 2) + pow(arr(i, j, k, iUy_), 2) +
+                     pow(arr(i, j, k, iUz_), 2)) /
+                rho;
+
+            const Real uth = sqrt(gamma / 3.0 *
+                                  (arr(i, j, k, iPxx_) + arr(i, j, k, iPyy_) +
+                                   arr(i, j, k, iPzz_)) /
+                                  rho);
+
+            const Real mach = uBulk / uth;
+
+            if (mach > strongSmoothMach) {
+              arrCoef(i, j, k) = coefStrongSmooth;
+            } else if (mach > weakSmoothMach) {
+              Real r0 =
+                  (mach - weakSmoothMach) / (strongSmoothMach - weakSmoothMach);
+              arrCoef(i, j, k) =
+                  coefWeakSmooth + (coefStrongSmooth - coefWeakSmooth) * r0;
+            }
+          }
+        }
+  }
+}
+
+//==========================================================
 void Pic::smooth_E(MultiFab& mfE) {
   if (!doSmoothE)
     return;
@@ -1118,21 +1176,21 @@ void Pic::smooth_E(MultiFab& mfE) {
   std::string nameFunc = "Pic::smooth_E";
   timing_func(nameFunc);
 
-  Real weightSelf = 1 - coefSmoothE;
-  Real WeightNei = coefSmoothE / 2.0;
-  MultiFab tmp(mfE.boxArray(), mfE.DistributionMap(), mfE.nComp(), mfE.nGrow());
+  // MultiFab tmp(mfE.boxArray(), mfE.DistributionMap(), mfE.nComp(),
+  // mfE.nGrow());
 
   auto smooth_dir = [&](int iDir) {
     int dIdx[3] = { 0, 0, 0 };
     dIdx[iDir] = 1;
 
-    MultiFab::Copy(tmp, mfE, 0, 0, mfE.nComp(), mfE.nGrow());
+    MultiFab::Copy(tempNode3, mfE, 0, 0, mfE.nComp(), mfE.nGrow());
 
     for (MFIter mfi(mfE); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
 
       amrex::Array4<amrex::Real> const& arrE = mfE[mfi].array();
-      amrex::Array4<amrex::Real> const& arrTmp = tmp[mfi].array();
+      amrex::Array4<amrex::Real> const& arrTmp = tempNode3[mfi].array();
+      amrex::Array4<amrex::Real> const& arrCoef = nodeSmoothCoef[mfi].array();
 
       const auto lo = IntVect(bx.loVect());
       const auto hi = IntVect(bx.hiVect());
@@ -1141,7 +1199,11 @@ void Pic::smooth_E(MultiFab& mfE) {
         for (int k = lo[iz_]; k <= hi[iz_]; k++)
           for (int j = lo[iy_]; j <= hi[iy_]; j++)
             for (int i = lo[ix_]; i <= hi[ix_]; i++) {
-              Real neiSum =
+              const Real coef = arrCoef(i, j, k);
+              const Real weightSelf = 1 - coef;
+              const Real WeightNei = coef / 2.0;
+
+              const Real neiSum =
                   arrTmp(i - dIdx[ix_], j - dIdx[iy_], k - dIdx[iz_], iVar) +
                   arrTmp(i + dIdx[ix_], j + dIdx[iy_], k + dIdx[iz_], iVar);
               arrE(i, j, k, iVar) =

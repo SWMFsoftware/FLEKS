@@ -153,7 +153,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 
     auto do_output_this_node = [&](int i, int j, int k) {
       int type = typeArr(i, j, k);
-      
+
       if (type == iAssign_)
         return true;
 
@@ -407,6 +407,9 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
       value = arr(ix, iy, iz);
     } else if (var.substr(0, 3) == "phi") {
       const amrex::Array4<amrex::Real const>& arr = centerPhi[mfi].array();
+      value = arr(ix, iy, iz);
+    } else if (var.substr(0, 7) == "smoothE") {
+      const amrex::Array4<amrex::Real const>& arr = nodeSmoothCoef[mfi].array();
       value = arr(ix, iy, iz);
     } else if (var.substr(0, 4) == "rank") {
       value = ParallelDescriptor::MyProc();
