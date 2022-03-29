@@ -515,8 +515,7 @@ void Pic::fill_E_B_fields() {
   fill_new_center_B();
   centerB.FillBoundary(geom.periodicity());
 
-  apply_BC(cellStatus, centerB, 0, centerB.nComp(),
-                    &Pic::get_center_B);
+  apply_BC(cellStatus, centerB, 0, centerB.nComp(), &Pic::get_center_B);
 }
 
 //==========================================================
@@ -806,8 +805,8 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
 
   centerNetChargeNew.SumBoundary(geom.periodicity());
 
-  apply_BC(cellStatus, centerNetChargeNew, 0,
-                    centerNetChargeNew.nComp(), &Pic::get_zero);
+  apply_BC(cellStatus, centerNetChargeNew, 0, centerNetChargeNew.nComp(),
+           &Pic::get_zero);
 
   if (Particles<>::particlePosition == NonStaggered) {
     MultiFab::Copy(centerNetChargeN, centerNetChargeNew, 0, 0,
@@ -998,8 +997,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
       // 1) The outmost boundary layer of tempCenter3 is not accurate.
       // 2) The 2 outmost boundary layers (all ghosts if there are 2 ghost
       // cells) of tempCenter1 are not accurate
-      apply_BC(cellStatus, tempCenter1, 0, tempCenter1.nComp(),
-                        &Pic::get_zero);
+      apply_BC(cellStatus, tempCenter1, 0, tempCenter1.nComp(), &Pic::get_zero);
 
       MultiFab::LinComb(centerDivE, 1 - fsolver.coefDiff, centerDivE, 0,
                         fsolver.coefDiff, tempCenter1, 0, 0, 1, 1);
@@ -1075,8 +1073,7 @@ void Pic::update_E_rhs(double* rhs) {
   MultiFab temp2Node(nodeBA, dm, 3, nGst);
   temp2Node.setVal(0.0);
 
-  apply_BC(cellStatus, centerB, 0, centerB.nComp(),
-                    &Pic::get_center_B);
+  apply_BC(cellStatus, centerB, 0, centerB.nComp(), &Pic::get_center_B);
   apply_BC(nodeStatus, nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
 
   const Real* invDx = geom.InvCellSize();
@@ -1107,8 +1104,7 @@ void Pic::update_B() {
                   centerB.nGrow());
   centerB.FillBoundary(geom.periodicity());
 
-  apply_BC(cellStatus, centerB, 0, centerB.nComp(),
-                    &Pic::get_center_B);
+  apply_BC(cellStatus, centerB, 0, centerB.nComp(), &Pic::get_center_B);
 
   average_center_to_node(centerB, nodeB);
   nodeB.FillBoundary(geom.periodicity());
@@ -1176,8 +1172,6 @@ void Pic::smooth_E(MultiFab& mfE) {
   std::string nameFunc = "Pic::smooth_E";
   timing_func(nameFunc);
 
-  // MultiFab tmp(mfE.boxArray(), mfE.DistributionMap(), mfE.nComp(),
-  // mfE.nGrow());
 
   auto smooth_dir = [&](int iDir) {
     int dIdx[3] = { 0, 0, 0 };
@@ -1218,6 +1212,8 @@ void Pic::smooth_E(MultiFab& mfE) {
     smooth_dir(ix_);
     smooth_dir(iy_);
     smooth_dir(iz_);
+
+    apply_BC(nodeStatus, mfE, 0, mfE.nComp());
   }
 }
 
@@ -1232,6 +1228,8 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   if (mf.nGrow() == 0)
     return;
 
+  bool useFloatBC = (func == nullptr);
+
   // BoxArray ba = mf.boxArray();
   BoxArray ba = convert(picRegionBA, mf.boxArray().ixType());
 
@@ -1240,28 +1238,69 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
     ba.grow(iz_, ngrow[iz_]);
   }
 
-  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
-    const Box& bx = mfi.fabbox();
+  if (useFloatBC) {
+    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.fabbox();
 
-    //! if there are cells not in the valid + periodic grown box
-    //! we need to fill them here
-    if (!ba.contains(bx)) {
-      amrex::Array4<amrex::Real> const& arr = mf[mfi].array();
+      //! if there are cells not in the valid + periodic grown box
+      //! we need to fill them here
+      if (!ba.contains(bx)) {
+        amrex::Array4<amrex::Real> const& arr = mf[mfi].array();
 
-      const Array4<const int>& statusArr = status[mfi].array();
+        const Array4<const int>& statusArr = status[mfi].array();
 
-      const auto lo = IntVect(bx.loVect());
-      const auto hi = IntVect(bx.hiVect());
+        const auto lo = IntVect(bx.loVect());
+        const auto hi = IntVect(bx.hiVect());
 
-      for (int iVar = iStart; iVar < iStart + nComp; iVar++)
         for (int k = lo[iz_] + 1; k <= hi[iz_] - 1; k++)
-          for (int j = lo[iy_]; j <= hi[iy_]; j++)
-            for (int i = lo[ix_]; i <= hi[ix_]; i++)
+          for (int j = lo[iy_] + 1; j <= hi[iy_] - 1; j++)
+            for (int i = lo[ix_] + 1; i <= hi[ix_] - 1; i++)
               if (statusArr(i, j, k, 0) == iBoundary_) {
-                arr(i, j, k, iVar) = (this->*func)(mfi, i, j, k, iVar - iStart);
-              }
+                bool isNeiFound = false;
 
-      continue;
+                // Find the neighboring physical cell
+                for (int kk = -1; kk <= 1; kk++)
+                  for (int jj = -1; jj <= 1; jj++)
+                    for (int ii = -1; ii <= 1; ii++) {
+                      if (!isNeiFound &&
+                          statusArr(i + ii, j + jj, k + kk, 0) != iBoundary_) {
+                        isNeiFound = true;
+                        for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
+                          arr(i, j, k, iVar) =
+                              arr(i + ii, j + jj, k + kk, iVar);
+                        }
+                      }
+                    }
+
+                continue;
+              }
+      }
+    }
+  } else {
+    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.fabbox();
+
+      //! if there are cells not in the valid + periodic grown box
+      //! we need to fill them here
+      if (!ba.contains(bx)) {
+        amrex::Array4<amrex::Real> const& arr = mf[mfi].array();
+
+        const Array4<const int>& statusArr = status[mfi].array();
+
+        const auto lo = IntVect(bx.loVect());
+        const auto hi = IntVect(bx.hiVect());
+
+        for (int iVar = iStart; iVar < iStart + nComp; iVar++)
+          for (int k = lo[iz_] + 1; k <= hi[iz_] - 1; k++)
+            for (int j = lo[iy_]; j <= hi[iy_]; j++)
+              for (int i = lo[ix_]; i <= hi[ix_]; i++)
+                if (statusArr(i, j, k, 0) == iBoundary_) {
+                  arr(i, j, k, iVar) =
+                      (this->*func)(mfi, i, j, k, iVar - iStart);
+                }
+
+        continue;
+      }
     }
   }
 }
