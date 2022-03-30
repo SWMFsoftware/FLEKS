@@ -296,22 +296,38 @@ cleaning is time consuming, reducing nDivECorrection to 1 may also work.
   <parameter name="doSmoothE" type="logical" default="T"/>
   <if expr="$doSmoothE">
     <parameter name="nSmoothE" type="integer" default="1"/>
-    <parameter name="coefSmoothE" type="real" default="0.5" max="0.5"/>
+    <parameter name="coefStrongSmooth" type="real" default="0.5" max="0.5"/>
+    <parameter name="coefWeakSmooth" type="real" default="0" max="0.5"/>
+    <parameter name="strongSmoothMach" type="real" default="0.8" min="0"/>
+    <parameter name="weakSmoothMach" type="real" default="0.7" min="0"/>
   </if>
   
 #SMOOTHE
 T                  doSmoothE (rest is read if true)
 1                  nSmoothE 
-0.5                coefSmoothE 
+0.5                coefStrongSmooth
+0.0                coefWeakSmooth
+0.8                strongSmoothMach
+0.7                weakSmoothMach
 
 #SMOOTHE_FLEKS2
 F                  doSmoothE 
 
 Turning on/off the smoothing of the electric field. It is helpful to suppress
 the short-wavelength oscillations. nSmoothE is the number of times the 
-smoothing is performed. The coefSmoothE parameter is proportional to the
-strength of the smoothing. coefSmoothE = 0.5 is the most effective and
-coefSmoothE > 0.5 may be not stable. 
+smoothing is performed. The smoothing coefficient is determined by local Mach 
+number:
+coef = coefStrongSmooth  if Mach > strongSmoothMach 
+coef = coefWeakSmooth  if Mach < weakSmoothMach 
+coef = linear_combination(coefStrongSmooth, coefWeakSmooth) 
+if weakSmoothMach < Mach < strongSmoothMach 
+
+The coef is proportional to the strength of the smoothing. coef = 0.5 
+is the most effective and coef > 0.5 may be not stable. 
+
+The smoothing algorithm used here is the same as the 'digital filtering'.
+It seems it is not uncommon to apply smoothing tens of times for challenging 
+simulations (https://doi.org/10.1016/j.jcp.2011.04.003). 
 </command>
 
 <command name="TPRELATIVISTIC"
