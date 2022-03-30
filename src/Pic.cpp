@@ -674,7 +674,7 @@ void Pic::sum_moments(bool updateDt) {
 
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->convert_to_fluid_moments(nodePlasma[i]);
-    MultiFab::Add(nodePlasma[nSpecies], nodePlasma[i], 0, 0, nMoments, 0);
+    MultiFab::Add(nodePlasma[nSpecies], nodePlasma[i], 0, 0, nMoments, nGst);
   }
 }
 
@@ -1162,6 +1162,8 @@ void Pic::calc_smooth_coef() {
           }
         }
   }
+  
+  smooth_multifab(nodeSmoothCoef, true, 0.5);
 }
 
 //==========================================================
