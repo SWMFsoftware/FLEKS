@@ -1165,35 +1165,38 @@ void Pic::calc_smooth_coef() {
 }
 
 //==========================================================
-void Pic::smooth_E(MultiFab& mfE) {
-  if (!doSmoothE)
-    return;
-
-  std::string nameFunc = "Pic::smooth_E";
+void Pic::smooth_multifab(amrex::MultiFab& mf, bool useFixedCoef,
+                          double coefIn) {
+  std::string nameFunc = "Pic::smooth_multifab";
   timing_func(nameFunc);
 
+  MultiFab mfOld(mf.boxArray(), mf.DistributionMap(), mf.nComp(), mf.nGrow());
 
   auto smooth_dir = [&](int iDir) {
     int dIdx[3] = { 0, 0, 0 };
     dIdx[iDir] = 1;
 
-    MultiFab::Copy(tempNode3, mfE, 0, 0, mfE.nComp(), mfE.nGrow());
+    MultiFab::Copy(mfOld, mf, 0, 0, mf.nComp(), mf.nGrow());
 
-    for (MFIter mfi(mfE); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
 
-      amrex::Array4<amrex::Real> const& arrE = mfE[mfi].array();
-      amrex::Array4<amrex::Real> const& arrTmp = tempNode3[mfi].array();
+      amrex::Array4<amrex::Real> const& arrE = mf[mfi].array();
+      amrex::Array4<amrex::Real> const& arrTmp = mfOld[mfi].array();
       amrex::Array4<amrex::Real> const& arrCoef = nodeSmoothCoef[mfi].array();
 
       const auto lo = IntVect(bx.loVect());
       const auto hi = IntVect(bx.hiVect());
 
-      for (int iVar = 0; iVar < mfE.nComp(); iVar++)
+      for (int iVar = 0; iVar < mf.nComp(); iVar++)
         for (int k = lo[iz_]; k <= hi[iz_]; k++)
           for (int j = lo[iy_]; j <= hi[iy_]; j++)
             for (int i = lo[ix_]; i <= hi[ix_]; i++) {
-              const Real coef = arrCoef(i, j, k);
+              Real coef = coefIn;
+              if (!useFixedCoef) {
+                coef = arrCoef(i, j, k);
+              }
+
               const Real weightSelf = 1 - coef;
               const Real WeightNei = coef / 2.0;
 
@@ -1205,14 +1208,24 @@ void Pic::smooth_E(MultiFab& mfE) {
             }
     }
 
-    mfE.FillBoundary(geom.periodicity());
+    mf.FillBoundary(geom.periodicity());
   };
 
-  for (int icount = 0; icount < nSmoothE; icount++) {
-    smooth_dir(ix_);
-    smooth_dir(iy_);
-    smooth_dir(iz_);
+  smooth_dir(ix_);
+  smooth_dir(iy_);
+  smooth_dir(iz_);
+}
 
+//==========================================================
+void Pic::smooth_E(MultiFab& mfE) {
+  if (!doSmoothE)
+    return;
+
+  std::string nameFunc = "Pic::smooth_E";
+  timing_func(nameFunc);
+
+  for (int icount = 0; icount < nSmoothE; icount++) {
+    smooth_multifab(mfE);
     apply_BC(nodeStatus, mfE, 0, mfE.nComp());
   }
 }

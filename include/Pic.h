@@ -204,6 +204,9 @@ public:
 
   void smooth_E(amrex::MultiFab &mfE);
 
+  void smooth_multifab(amrex::MultiFab &mf, bool useFixedCoef = false,
+                       double coefIn = 1);
+
   void calc_smooth_coef();
   //-------------Electric field solver end-------------
 
