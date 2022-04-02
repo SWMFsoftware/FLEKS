@@ -317,13 +317,13 @@ Turning on/off the smoothing of the electric field. It is helpful to suppress
 the short-wavelength oscillations. nSmoothE is the number of times the 
 smoothing is performed. The smoothing coefficient is determined by local Mach 
 number:
-coef = coefStrongSmooth  if Mach > strongSmoothMach 
-coef = coefWeakSmooth  if Mach < weakSmoothMach 
+coef = coefStrongSmooth  if Mach .ge. strongSmoothMach 
+coef = coefWeakSmooth  if Mach .le. weakSmoothMach 
 coef = linear_combination(coefStrongSmooth, coefWeakSmooth) 
-if weakSmoothMach < Mach < strongSmoothMach 
+if weakSmoothMach .lt. Mach .lt. strongSmoothMach 
 
 The coef is proportional to the strength of the smoothing. coef = 0.5 
-is the most effective and coef > 0.5 may be not stable. 
+is the most effective and coef .lt. 0.5 may be not stable. 
 
 The smoothing algorithm used here is the same as the 'digital filtering'.
 It seems it is not uncommon to apply smoothing tens of times for challenging 
