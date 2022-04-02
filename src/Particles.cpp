@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdlib>
 
 #include "Particles.h"
 #include "Timer.h"
@@ -1601,13 +1602,13 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
     for (int di = -1; di <= 1; di++)
       for (int dj = -1; dj <= 1; dj++)
         for (int dk = -1; dk <= 1; dk++) {
-          const int sum = abs(di) + abs(dj) + abs(dk);
+          const int sum = std::abs(di) + std::abs(dj) + std::abs(dk);
           if (iloop != sum)
             continue;
 
           if (status(i + di, j + dj, k + dk) != iBoundary_) {
             // The first neighbor cell that is NOT a boundary cell.
-            if (bx.contains({ i + di, j + dj, k + dk })) {
+            if (bx.contains(IntVect{ i + di, j + dj, k + dk })) {
               return true;
             } else {
               return false;

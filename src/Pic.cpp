@@ -233,7 +233,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
             for (int j = lo.y; j <= hi.y; ++j)
               for (int i = lo.x; i <= hi.x; ++i) {
                 if (cellArr(i, j, k) == iOnNew_ &&
-                    centerBAOld.contains({ i, j, k })) {
+                    centerBAOld.contains(IntVect{ i, j, k })) {
                   cellArr(i, j, k) = iOnOld_;
                 }
               }
@@ -278,7 +278,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
             for (int j = lo.y; j <= hi.y; ++j)
               for (int i = lo.x; i <= hi.x; ++i) {
                 if (nodeArr(i, j, k) == iOnNew_ &&
-                    nodeBAOld.contains({ i, j, k })) {
+                    nodeBAOld.contains(IntVect{ i, j, k })) {
                   nodeArr(i, j, k) = iOnOld_;
                 }
               }
@@ -382,7 +382,7 @@ void Pic::set_nodeShare() {
             for (int di = diMax; di >= diMin; di--) {
               if (statusArr(i + di, j + dj, k + dk) != iBoundary_) {
                 // Find the first CELL that shares this node.
-                if (cellBox.contains({ i + di, j + dj, k + dk })) {
+                if (cellBox.contains(IntVect{ i + di, j + dj, k + dk })) {
                   return iAssign_;
                 } else {
                   int ii = 0;
@@ -1162,7 +1162,7 @@ void Pic::calc_smooth_coef() {
           }
         }
   }
-  
+
   smooth_multifab(nodeSmoothCoef, true, 0.5);
 }
 

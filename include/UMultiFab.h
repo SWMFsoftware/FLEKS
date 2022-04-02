@@ -39,16 +39,16 @@ public:
 
     if (boxArray().ixType().cellCentered()) {
       // Self copy is safe only for cell-centered MultiFab
-      this->copy(*this, scomp, scomp, ncomp, n_grow, nghost, period,
-                 FabArrayBase::ADD);
+      this->ParallelCopy(*this, scomp, scomp, ncomp, n_grow, nghost, period,
+                         FabArrayBase::ADD);
     } else {
       UMultiFab tmp;
       tmp.define(boxArray(), DistributionMap(), ncomp, n_grow, MFInfo(),
                  Factory());
       UMultiFab::Copy(tmp, *this, scomp, 0, ncomp, n_grow);
       this->setVal(0.0, scomp, ncomp, nghost);
-      this->copy(tmp, 0, scomp, ncomp, n_grow, nghost, period,
-                 FabArrayBase::ADD);
+      this->ParallelCopy(tmp, 0, scomp, ncomp, n_grow, nghost, period,
+                         FabArrayBase::ADD);
     }
   }
   //---------------------------------------------------------
