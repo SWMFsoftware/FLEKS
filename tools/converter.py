@@ -4,6 +4,7 @@ import sys
 import time
 import re
 import os
+from amrex2tec import amrex2tec
 
 # Q: How to fix "no module named paraview" error?
 # A: Add paraview python package location to $PYTHONPATH. For example:
@@ -65,26 +66,6 @@ def tec2vtk(datPath):
 
 ######################################################################
 
-
-def amrex2tec(datPath):
-    tStart = time.time()
-
-    fleksDir = __file__.replace("/tools/converter.py", "")
-    binPath = fleksDir+"/bin/converter.exe"
-    if not os.path.exists(binPath):
-        os.system("cd "+fleksDir+"; make CONVERTER > /dev/null")
-
-    if os.system(binPath + " " + datPath + " > /dev/null") == -1:
-        print("amrex2tec conversion failed for file ", datPath)
-
-    tecPath = datPath+".dat"
-
-    tEnd = time.time()
-    print("amrex2tec conversion takes {0} s".format(tEnd-tStart))
-
-    return tecPath
-
-
 def amrex2vtk(datPath):
     tStart = time.time()
 
@@ -97,23 +78,11 @@ def amrex2vtk(datPath):
 
 
 if __name__ == "__main__":
-    target = sys.argv[1]
-
-    files = sys.argv[2:]
-
-    print(target)
-
-    if target == "-tec":
-        for f in files:
+    files = sys.argv[1:]
+    for f in files:
+        if f.find(".dat") >= 0:
+            print("\n Converting ", f)
+            tec2vtk(f)
+        else:
             print("\nConverting ", f)
-            amrex2tec(f)
-    elif target == "-vtk":
-        for f in files:
-            if f.find(".dat") >= 0:
-                print("\n Converting ", f)
-                tec2vtk(f)
-            else:
-                print("\nConverting ", f)
-                amrex2vtk(f)
-    else:
-        print("Error: Please specify the target file format!")
+            amrex2vtk(f)
