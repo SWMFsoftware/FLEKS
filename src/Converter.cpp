@@ -8,8 +8,9 @@
 #include "Converter.h"
 #include "GridUtility.h"
 
+using namespace amrex;
 int main(int argc, char* argv[]) {
-  amrex::Initialize(MPI_COMM_WORLD);
+  Initialize(MPI_COMM_WORLD);
 
   std::vector<std::string> commandLine;
   for (int i = 0; i < argc; ++i) {
@@ -19,8 +20,8 @@ int main(int argc, char* argv[]) {
   std::array<std::string, 2> arg = { "-h", "-help" };
   if (argc > 1 && find(arg.begin(), arg.end(), commandLine[1]) != arg.end()) {
     std::cout << " \n"
-              << " This exectuable combines all the blocks in a *_amrex file "
-                 "into one block. "
+              << " This exectuable converts a *_amrex file to a tecplot ascii "
+                 "*.dat file. "
                  " \n\n Usage:\n "
                  " ./Converter.exe *_amrex\n\n";
     return 0;
@@ -30,18 +31,17 @@ int main(int argc, char* argv[]) {
     std::cout << commandLine[i] << std::endl;
     Converter cv(commandLine[i]);
     cv.read();
-    cv.convert();
     cv.write();
   }
 
-  amrex::Finalize();
+  Finalize();
 
   return 1;
 }
 
 void Converter::read() {
-  amrex::VisMF::Read(mf, dirIn + "/Level_0/Cell");
-  amrex::Print() << "Reading in " << dirIn << std::endl;
+  VisMF::Read(mf, dirIn + "/Level_0/Cell");
+  Print() << "Reading in " << dirIn << std::endl;
 
   std::string headerName = dirIn + "/Header";
   std::ifstream HeaderFile;
@@ -69,13 +69,13 @@ void Converter::read() {
   int nLevel;
   HeaderFile >> nLevel;
   for (int i = 0; i < nDim; ++i) {
-    amrex::Real lo;
+    Real lo;
     HeaderFile >> lo;
     domainRange.setLo(i, lo);
   }
 
   for (int i = 0; i < nDim; ++i) {
-    amrex::Real hi;
+    Real hi;
     HeaderFile >> hi;
     domainRange.setHi(i, hi);
   }
@@ -89,40 +89,119 @@ void Converter::read() {
   HeaderFile.close();
 }
 
-void Converter::convert() {
-  amrex::BoxArray baIn = mf.boxArray();
-  minBox = amrex::convert(baIn.minimalBox(), { 0, 0, 0 });
+void Converter::write() {
+  if (!mf.is_cell_centered())
+    Abort("Error: only support cell centered data!");
 
-  amrex::BoxArray baOut;
-  baOut.define(minBox);
-  amrex::DistributionMapping dm;
-  dm.define(baOut);
+  iCell.define(mf.boxArray(), mf.DistributionMap(), 1, 1);
+  iCell.setVal(0);
 
-  distribute_FabArray(mf, baOut, dm, mf.nComp(), mf.nGrow(), true);
+  nCell = loop_cell();
 
-  int coord = 0;
-  geom.define(minBox, &domainRange, coord);
+  iCell.FillBoundary();
+
+  nBrick = loop_brick();
+
+  std::string outName = dirIn + ".dat";
+
+  Print() << "Writing to " << outName << std::endl;
+
+  outFile.open(outName.c_str(), std::ofstream::out | std::ofstream::trunc);
+
+  //-----------Write header---------------
+  outFile << "TITLE = " << '"' << outName << '"' << "\n";
+
+  outFile << "VARIABLES = ";
+
+  for (int i = 0; i < varNames.size(); ++i) {
+    outFile << '"' << varNames[i] << '"';
+    if (i != varNames.size() - 1) {
+      outFile << ',' << " ";
+    }
+  }
+  outFile << "\n";
+
+  outFile << "ZONE "
+          << " N=" << nCell << ", E=" << nBrick << ", F=FEPOINT, ET=BRICK"
+          << "\n";
+  //-----------------------------------------
+
+  nCell = loop_cell(false);
+  nBrick = loop_brick(false);
+
+  if (outFile.is_open()) {
+    outFile.close();
+  }
+
+  // Print() << "nCell = " << nCell << " nBrick = " << nBrick << std::endl;
 }
 
-void Converter::write() {
-  std::string dirOut;
-  std::size_t found = dirIn.find_last_of("_");
-  if (found != std::string::npos) {
-    dirOut = dirIn.substr(0, found) + "_single_block_amrex";
-  } else {
-    dirOut = "single_block_" + dirIn;
+int Converter::loop_cell(bool doCountOnly) {
+  int iCount = 0;
+  for (MFIter mfi(iCell); mfi.isValid(); ++mfi) {
+    const amrex::Box& box = mfi.validbox();
+    const Array4<int>& cell = iCell[mfi].array();
+    const Array4<Real>& data = mf[mfi].array();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          iCount++;
+          cell(i, j, k) = iCount;
+          if (!doCountOnly) {
+            for (int iVar = 0; iVar < mf.nComp(); iVar++) {
+              outFile << data(i, j, k, iVar) << " ";
+            }
+            outFile << "\n";
+          }
+        }
   }
-  amrex::Print() << "Saving to " << dirOut << std::endl;
+  return iCount;
+}
 
-  amrex::WriteSingleLevelPlotfile(dirOut, mf, varNames, geom, time, 0);
+int Converter::loop_brick(bool doCountOnly) {
+  int iBrick = 0;
 
-  const std::string headerName = dirOut + "/FLEKSHeader";
-  std::ofstream headerFile;
-  headerFile.open(headerName.c_str(), std::ios::out | std::ios::trunc);
-  if (!headerFile.good())
-    amrex::FileOpenFailed(headerName);
+  if (!doCountOnly)
+    outFile.width(8);
 
-  headerFile << plot_string << "\n";
-  headerFile << rPlanet << "\n";
-  headerFile.close();
+  for (MFIter mfi(iCell); mfi.isValid(); ++mfi) {
+    const amrex::Box& box = mfi.validbox();
+    const Array4<int>& cell = iCell[mfi].array();
+
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          bool isBrick = true;
+
+          for (int kk = k; kk <= k + 1; kk++)
+            for (int jj = j; jj <= j + 1; jj++)
+              for (int ii = i; ii <= i + 1; ii++) {
+                if (cell(ii, jj, kk) == 0)
+                  isBrick = false;
+              }
+
+          if (isBrick) {
+            iBrick++;
+
+            if (!doCountOnly) {
+              outFile << cell(i, j, k) << " ";
+              outFile << cell(i + 1, j, k) << " ";
+              outFile << cell(i + 1, j + 1, k) << " ";
+              outFile << cell(i, j + 1, k) << " ";
+              outFile << cell(i, j, k + 1) << " ";
+              outFile << cell(i + 1, j, k + 1) << " ";
+              outFile << cell(i + 1, j + 1, k + 1) << " ";
+              outFile << cell(i, j + 1, k + 1) << "\n";
+            }
+          }
+        }
+  }
+  return iBrick;
 }

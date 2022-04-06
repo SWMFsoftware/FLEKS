@@ -11,29 +11,33 @@
 #include <AMReX_RealBox.H>
 #include <AMReX_Vector.H>
 #include <AMReX_VisMF.H>
+#include <AMReX_iMultiFab.H>
 
 class Converter {
 private:
   std::string dirIn;
   amrex::MultiFab mf;
-  amrex::Box minBox;
+  amrex::iMultiFab iCell;
+  int nCell;
+  int nBrick;
   amrex::RealBox domainRange;
-  amrex::Geometry geom;
   std::string plot_string;
   amrex::Real rPlanet;
-
-  int iCycle;
+  
   amrex::Real time;
 
   amrex::Vector<std::string> varNames;
+
+  std::ofstream outFile;
 
 public:
   Converter(const std::string& in) { dirIn = in; }
   ~Converter() = default;
 
   void read();
-  void convert();
   void write();
+  int loop_cell(bool doCountOnly = false);
+  int loop_brick(bool doCountOnly = false);
 };
 
 #endif

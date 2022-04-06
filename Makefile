@@ -7,7 +7,7 @@ help:
 	@echo Makefile targets:
 	@echo
 	#@echo 'make FLEKS                  - compile standalone executable'
-	@echo 'make LIB                    - compile libPW.a for SWMF'
+	@echo 'make LIB                    - compile libPC.a for SWMF'
 	@echo 'make clean                  - remove object files'
 	@echo 'make distclean              - remove all files not part of CVS'
 	@echo
@@ -30,6 +30,8 @@ LIB:
 	cd src; $(MAKE) LIB
 	cd srcInterface; $(MAKE) LIB
 
+CONVERTER:
+	cd src; $(MAKE) CONVERTER
 
 rundir:
 	mkdir -p ${RUNDIR}/PC

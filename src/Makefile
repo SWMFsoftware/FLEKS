@@ -26,7 +26,7 @@ FLEKSEXE = ${BINDIR}/FLEKS.exe
 CONVERTER_OBJECTS = \
 	Converter.o
 
-CONVERTEREXE = ../bin/Converter.exe
+CONVERTEREXE = ../bin/converter.exe
 
 SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 
