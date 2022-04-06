@@ -131,6 +131,13 @@ planet - planetary unit. (nT, micro-volt/m, km/s, planet radius, amu/cm^3, nPa)
 \end{verbatim}
 
 No plot file is saved by default.
+
+The idl format files can be visualized by SWMF IDL scripts. The amrex format
+files can be visualized with Paraview, Visit or yt. Paraview is probably the 
+most user-friendly choice. However, Paraview does not support AMR data well
+so far (https://gitlab.kitware.com/paraview/paraview/-/issues/20074). To avoid
+these issues, amrex format files can be converted to either Tecplot ascii (.dat) 
+or vtk files with the scripts (amrex2tec.sh and amrex2vtk.sh) in FLEKS/tools.
 </command>
 
 <command name="MONITOR"
