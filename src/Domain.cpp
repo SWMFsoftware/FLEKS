@@ -432,7 +432,8 @@ void Domain::read_param() {
     } else if (command == "#PARTICLETRACKER" ||
                command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
-               command == "#TPSAVE" || command == "#TPRELATIVISTIC") {
+               command == "#TPSAVE" || command == "#TPRELATIVISTIC" ||
+               command == "#TPINITFROMPIC") {
       pt.read_param(command, readParam);
     } else if (command == "#OHMSLAW") {
       std::string sOhmU;

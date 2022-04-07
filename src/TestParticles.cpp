@@ -200,8 +200,92 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
   iStep++;
 }
 
-void TestParticles::add_test_particles(const iMultiFab& cellStatus) {
-  std::string funcName = "TP::add_test_particles";
+//======================================================================
+// Trace the PIC particles that are in the list (listFiles).
+void TestParticles::add_test_particles_from_pic(
+    const amrex::Vector<std::string>& listFiles, Particles<>* pts) {
+  std::string funcName = "TP::add_test_particles_from_pic";
+  timing_func(funcName);
+
+  std::string listName;
+  for (int i = 0; i < listFiles.size(); i++) {
+    // Assume the particle list file's name is *N.dat, where N is
+    // the species ID (Usually 0 or 1).
+    if (listFiles[i].find(std::to_string(speciesID) + ".dat") !=
+        std::string::npos) {
+      listName = listFiles[i];
+      break;
+    }
+  }
+
+  if (listName.empty())
+    return;
+
+  std::set<PID> ids;
+
+  { // Read particle list to the set ids
+    std::ifstream fs;
+    fs.open(listName, std::ifstream::in);
+    PID id;
+    while (fs >> id.cpu >> id.id) {
+      ids.insert(id);
+    }
+    fs.close();
+  }
+
+  if (ids.size() == 0)
+    return;
+
+  const int lev = 0;
+
+  const auto& lOther = pts->GetParticles(lev);
+
+  // Loop through the PIC particles.
+  for (MFIter mfi = pts->MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
+    auto index = std::make_pair(mfi.index(), mfi.LocalTileIndex());
+
+    if (lOther.find(index) == lOther.end())
+      continue;
+
+    const auto& tileOther = lOther.at(index);
+
+    if (tileOther.numParticles() == 0)
+      continue;
+
+    auto& particles = GetParticles(lev)[index];
+
+    const auto& aosOther = tileOther.GetArrayOfStructs();
+
+    for (auto pOther : aosOther) {
+      PID id;
+      id.cpu = pOther.cpu();
+      id.id = pOther.id();
+
+      // ids is a sorted set. The complexity of find is O(log(n))
+      if (ids.find(id) != ids.end()) {
+        ParticleType p;
+        p.cpu() = pOther.cpu();
+        p.id() = pOther.id();
+        p.pos(ix_) = pOther.pos(ix_);
+        p.pos(iy_) = pOther.pos(iy_);
+        p.pos(iz_) = pOther.pos(iz_);
+        p.rdata(iup_) = pOther.rdata(iup_);
+        p.rdata(ivp_) = pOther.rdata(ivp_);
+        p.rdata(iwp_) = pOther.rdata(iwp_);
+        p.rdata(iqp_) = pOther.rdata(iqp_);
+        if (NStructInt > 0) {
+          p.idata(iRecordCount_) = 0;
+        }
+
+        particles.push_back(p);
+      }
+    }
+  }
+}
+
+//======================================================================
+void TestParticles::add_test_particles_from_fluid(const iMultiFab& cellStatus) {
+  std::string funcName = "TP::add_test_particles_from_fluid";
   timing_func(funcName);
   Print() << funcName << " : nInitPart = " << nInitPart
           << " : current number = " << TotalNumberOfParticles(true, false)

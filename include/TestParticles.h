@@ -32,9 +32,13 @@ public:
 
   void move_and_save_particles(const amrex::MultiFab& nodeEMF,
                                const amrex::MultiFab& nodeBMF, amrex::Real dt,
-                               amrex::Real dtNext, amrex::Real tNow, bool doSave);
+                               amrex::Real dtNext, amrex::Real tNow,
+                               bool doSave);
 
-  void add_test_particles(const amrex::iMultiFab& cellStatus);
+  void add_test_particles_from_fluid(const amrex::iMultiFab& cellStatus);
+
+  void add_test_particles_from_pic(const amrex::Vector<std::string>& listFiles,
+                                   Particles<>* pts);
 
   void reset_record_counter();
 

@@ -75,7 +75,7 @@ private:
   amrex::iMultiFab cellStatus;
 
   std::unique_ptr<PlotCtr> savectr;
-  int dnSave = 1; 
+  int dnSave = 1;
 
   bool isGridInitialized = false;
 
@@ -89,6 +89,9 @@ private:
   std::string sIOUnit = "planet";
 
   bool isRelativistic = false;
+
+  amrex::Vector<std::string> listFiles;
+  bool doInitFromPIC = false;
 };
 
 #endif

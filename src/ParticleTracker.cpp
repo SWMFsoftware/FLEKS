@@ -12,7 +12,11 @@ void ParticleTracker::set_ic(Pic& pic) {
   update_field(pic);
   for (int i = 0; i < parts.size(); i++) {
     auto& tps = parts[i];
-    tps->add_test_particles(cellStatus);
+    if (doInitFromPIC) {
+      tps->add_test_particles_from_pic(listFiles, pic.get_particle_pointer(i));
+    } else {
+      tps->add_test_particles_from_fluid(cellStatus);
+    }
     tps->update_initial_particle_number();
 
     Print() << printPrefix << " initial particle # is "
@@ -45,8 +49,9 @@ void ParticleTracker::update(Pic& pic) {
 
       tps->write_particles(tc->get_cycle());
       // Refill test particles if necessary.
-      if (tps->TotalNumberOfParticles() < 0.5 * tps->init_particle_number()) {
-        tps->add_test_particles(cellStatus);
+      if (!doInitFromPIC &&
+          tps->TotalNumberOfParticles() < 0.5 * tps->init_particle_number()) {
+        tps->add_test_particles_from_fluid(cellStatus);
       }
     }
   }
@@ -289,6 +294,17 @@ void ParticleTracker::read_param(const std::string& command,
     readParam.read_var("dnSave", dnSave);
   } else if (command == "#TPRELATIVISTIC") {
     readParam.read_var("isRelativistic", isRelativistic);
+  } else if (command == "#TPINITFROMPIC") {
+    readParam.read_var("doInitFromPIC", doInitFromPIC);
+    if (doInitFromPIC) {
+      int nList;
+      readParam.read_var("nList", nList);
+      for (int i = 0; i < nList; i++) {
+        std::string s;
+        readParam.read_var("list", s);
+        listFiles.push_back(s);
+      }
+    }
   } else if (command == "#TESTPARTICLENUMBER") {
     initPartNumber.clear();
     unsigned long int num;

@@ -126,6 +126,8 @@ public:
 
   void set_doRestart(bool in) { doRestart = in; }
 
+  Particles<> *get_particle_pointer(int i) { return parts[i].get(); }
+
   //--------------Initialization begin-------------------------------
   void init(std::shared_ptr<FluidInterface> &fluidIn,
             std::shared_ptr<TimeCtr> &tcIn, int domainIDIn = 0);
