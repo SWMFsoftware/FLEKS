@@ -13,6 +13,22 @@
 #include "TimeCtr.h"
 #include "UMultiFab.h"
 
+struct PID {
+  int cpu;
+  int id;
+
+  // This function is used by set to order
+  // elements of PID.
+  bool operator<(const PID& t) const {
+    bool lt = cpu < t.cpu;
+
+    if (cpu == t.cpu)
+      lt = id < t.id;
+
+    return lt;
+  }
+};
+
 template <int NStructReal = nPicPartReal, int NStructInt = 0>
 class ParticlesIter : public amrex::ParIter<NStructReal, NStructInt> {
 public:
