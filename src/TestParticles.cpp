@@ -273,9 +273,8 @@ void TestParticles::add_test_particles_from_pic(
         p.rdata(ivp_) = pOther.rdata(ivp_);
         p.rdata(iwp_) = pOther.rdata(iwp_);
         p.rdata(iqp_) = pOther.rdata(iqp_);
-        if (NStructInt > 0) {
-          p.idata(iRecordCount_) = 0;
-        }
+
+        p.idata(iRecordCount_) = 0;
 
         particles.push_back(p);
       }
