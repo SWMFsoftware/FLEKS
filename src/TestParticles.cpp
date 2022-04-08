@@ -241,7 +241,7 @@ void TestParticles::add_test_particles_from_pic(
   const auto& lOther = pts->GetParticles(lev);
 
   // Loop through the PIC particles.
-  for (MFIter mfi = pts->MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
+  for (MFIter mfi = pts->MakeMFIter(lev); mfi.isValid(); ++mfi) {
     auto index = std::make_pair(mfi.index(), mfi.LocalTileIndex());
 
     if (lOther.find(index) == lOther.end())
