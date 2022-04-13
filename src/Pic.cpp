@@ -1233,7 +1233,6 @@ void Pic::smooth_E(MultiFab& mfE) {
 
   for (int icount = 0; icount < nSmoothE; icount++) {
     smooth_multifab(mfE);
-    apply_BC(nodeStatus, mfE, 0, mfE.nComp());
   }
 }
 
