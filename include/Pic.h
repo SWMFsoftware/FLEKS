@@ -96,7 +96,7 @@ private:
   std::string domainName;
   int domainID;
 
-  bool doSmoothE = true;
+  bool doSmoothE = false;
   int nSmoothE = 1;
   amrex::Real coefStrongSmooth = 0.5;
   amrex::Real coefWeakSmooth = 0;

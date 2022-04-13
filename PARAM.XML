@@ -300,7 +300,7 @@ cleaning is time consuming, reducing nDivECorrection to 1 may also work.
 <command name="SMOOTHE"
 	 alias="SMOOTHE_FLEKS0,SMOOTHE_FLEKS1,SMOOTHE_FLEKS2"
 	 multiple="T">
-  <parameter name="doSmoothE" type="logical" default="T"/>
+  <parameter name="doSmoothE" type="logical" default="F"/>
   <if expr="$doSmoothE">
     <parameter name="nSmoothE" type="integer" default="1"/>
     <parameter name="coefStrongSmooth" type="real" default="0.5" max="0.5"/>
@@ -335,6 +335,13 @@ is the most effective and coef .lt. 0.5 may be not stable.
 The smoothing algorithm used here is the same as the 'digital filtering'.
 It seems it is not uncommon to apply smoothing tens of times for challenging 
 simulations (https://doi.org/10.1016/j.jcp.2011.04.003). 
+
+However, smoothing electric field is not always helpful. It adds diffusion to 
+electric field and may artifically increase reconnection rate as it was seen in 
+the island merge simulations. On the other hand, it seems the smoothing may 
+transform the short-wavelength oscillations into long-wavelength oscillations, 
+and the long-wavelength field aligned electric field would accelerate electrons. 
+
 </command>
 
 <command name="TPRELATIVISTIC"
