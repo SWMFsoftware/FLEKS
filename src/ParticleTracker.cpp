@@ -13,7 +13,8 @@ void ParticleTracker::set_ic(Pic& pic) {
   for (int i = 0; i < parts.size(); i++) {
     auto& tps = parts[i];
     if (doInitFromPIC) {
-      tps->add_test_particles_from_pic(listFiles, pic.get_particle_pointer(i));
+      tps->read_test_particle_list(listFiles);
+      tps->add_test_particles_from_pic(pic.get_particle_pointer(i));
     } else {
       tps->add_test_particles_from_fluid(cellStatus);
     }
@@ -49,8 +50,11 @@ void ParticleTracker::update(Pic& pic) {
 
       tps->write_particles(tc->get_cycle());
       // Refill test particles if necessary.
-      if (!doInitFromPIC &&
-          tps->TotalNumberOfParticles() < 0.5 * tps->init_particle_number()) {
+
+      if (doInitFromPIC) {
+        tps->add_test_particles_from_pic(pic.get_particle_pointer(i));
+      } else if (tps->TotalNumberOfParticles() <
+                 0.5 * tps->init_particle_number()) {
         tps->add_test_particles_from_fluid(cellStatus);
       }
     }

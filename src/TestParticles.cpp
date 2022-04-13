@@ -201,10 +201,9 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
 }
 
 //======================================================================
-// Trace the PIC particles that are in the list (listFiles).
-void TestParticles::add_test_particles_from_pic(
-    const amrex::Vector<std::string>& listFiles, Particles<>* pts) {
-  std::string funcName = "TP::add_test_particles_from_pic";
+void TestParticles::read_test_particle_list(
+    const amrex::Vector<std::string>& listFiles) {
+  std::string funcName = "TP::read_test_particle_list";
   timing_func(funcName);
 
   std::string listName;
@@ -221,19 +220,28 @@ void TestParticles::add_test_particles_from_pic(
   if (listName.empty())
     return;
 
-  std::set<PID> ids;
+  vIDs.clear();
 
-  { // Read particle list to the set ids
-    std::ifstream fs;
-    fs.open(listName, std::ifstream::in);
-    PID id;
-    while (fs >> id.cpu >> id.id) {
-      ids.insert(id);
-    }
-    fs.close();
+  // Read particle IDs
+  std::ifstream fs;
+  fs.open(listName, std::ifstream::in);
+  PID id;
+  while (fs >> id.cpu >> id.id) {
+    vIDs.push_back(id);
+    id.flag = true;
   }
+  fs.close();
 
-  if (ids.size() == 0)
+  std::sort(vIDs.begin(), vIDs.end());
+}
+
+//======================================================================
+// Trace the PIC particles that are in the list (listFiles).
+void TestParticles::add_test_particles_from_pic(Particles<>* pts) {
+  std::string funcName = "TP::add_test_particles_from_pic";
+  timing_func(funcName);
+
+  if (vIDs.size() == 0)
     return;
 
   const int lev = 0;
@@ -261,8 +269,11 @@ void TestParticles::add_test_particles_from_pic(
       id.cpu = pOther.cpu();
       id.id = pOther.id();
 
-      // ids is a sorted set. The complexity of find is O(log(n))
-      if (ids.find(id) != ids.end()) {
+      auto it = std::lower_bound(vIDs.begin(), vIDs.end(), id);
+
+      // This particle is on the test particle list. Generate a new test
+      // particle.
+      if (*it == id) {
         ParticleType p;
         p.cpu() = pOther.cpu();
         p.id() = pOther.id();
@@ -277,8 +288,39 @@ void TestParticles::add_test_particles_from_pic(
         p.idata(iRecordCount_) = 0;
 
         particles.push_back(p);
+
+        // Remove this id from the test particle list later.
+        (*it).flag = false;
       }
     }
+  }
+
+  { // If a test particle has been generated on one proc, all proc should remove
+    // this particle from the test particle list (vIDs). Use a bit array to do
+    // mpi_allreduce to improve performance.
+    BitArray ba(vIDs.size());
+    for (int i = 0; i < vIDs.size(); i++) {
+      if (vIDs[i].flag) {
+        ba.set(i, 1);
+      }
+    }
+
+    MPI_Allreduce(MPI_IN_PLACE, ba.get(), ba.size_int(), MPI_INT, MPI_BAND,
+                  amrex::ParallelDescriptor::Communicator());
+
+    for (int i = 0; i < vIDs.size(); i++) {
+      if (ba.get(i) == 0) {
+        vIDs[i].flag = false;
+      }
+    }
+  }
+
+  // After move, vIDs is empty.
+  std::vector<PID> tmp = std::move(vIDs);
+
+  for (auto t : tmp) {
+    if (t.flag)
+      vIDs.push_back(t);
   }
 }
 

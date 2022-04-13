@@ -16,9 +16,9 @@
 struct PID {
   int cpu;
   int id;
+  bool flag;
 
-  // This function is used by set to order
-  // elements of PID.
+  // This function is used by c++ STL algorithms.
   bool operator<(const PID& t) const {
     bool lt = cpu < t.cpu;
 
@@ -27,6 +27,8 @@ struct PID {
 
     return lt;
   }
+
+  bool operator==(const PID& t) const { return cpu == t.cpu && id == t.id; }
 };
 
 template <int NStructReal = nPicPartReal, int NStructInt = 0>

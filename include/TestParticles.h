@@ -2,6 +2,7 @@
 #define _TESTPARTICLES_H_
 
 #include "Particles.h"
+#include "BitArray.h"
 
 class TestParticles : public Particles<nPTPartReal, nPTPartInt> {
 public:
@@ -16,7 +17,7 @@ public:
 private:
   static const int iRegionBoundary_ = 1;
   static const int iRegionUniform_ = 2;
-
+  
 public:
   TestParticles(const amrex::BoxArray& regionBAIn, const amrex::Geometry& geom,
                 const amrex::DistributionMapping& dm, const amrex::BoxArray& ba,
@@ -35,10 +36,11 @@ public:
                                amrex::Real dtNext, amrex::Real tNow,
                                bool doSave);
 
+  void read_test_particle_list(const amrex::Vector<std::string>& listFiles);
+
   void add_test_particles_from_fluid(const amrex::iMultiFab& cellStatus);
 
-  void add_test_particles_from_pic(const amrex::Vector<std::string>& listFiles,
-                                   Particles<>* pts);
+  void add_test_particles_from_pic(Particles<>* pts);
 
   void reset_record_counter();
 
@@ -118,6 +120,8 @@ private:
   amrex::Real no2outL, no2outV, no2outM;
 
   unsigned long int nInitPart;
+  
+  std::vector<PID> vIDs; 
 };
 
 #endif
