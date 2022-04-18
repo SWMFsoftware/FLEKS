@@ -39,6 +39,8 @@ class Pic : public PicGrid {
 private:
   bool usePIC = true;
 
+  bool useExplicitPIC = false; 
+
   std::shared_ptr<FluidInterface> fluidInterface;
   std::shared_ptr<TimeCtr> tc;
 
@@ -199,6 +201,8 @@ public:
 
   //-------------Electric field solver begin-------------
   void update_E();
+  void update_E_impl();
+  void update_E_expl();
   void update_E_rhs(double *rhos);
   void update_E_matvec(const double *vecIn, double *vecOut,
                        const bool useZeroBC = true);

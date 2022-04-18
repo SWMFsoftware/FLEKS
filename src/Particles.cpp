@@ -418,8 +418,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-Real Particles<NStructReal, NStructInt>::sum_moments(MultiFab& momentsMF,
-                                                     UMultiFab<RealMM>& nodeMM,
+Real Particles<NStructReal, NStructInt>::sum_moments(MultiFab& momentsMF,                                                     
                                                      MultiFab& nodeBMF,
                                                      Real dt) {
   timing_func("Particles::sum_moments");
@@ -600,11 +599,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
                     coef[ii][jj][kk] * currents[iVar];
               }
       }
-
-      // int count = 0;
-      // int ip, jp, kp;         // Indexes for g'
-      // double wg, wgp, weight; // W_pg, W_pg'
-
+  
       const int iMin = loIdx[ix_];
       const int jMin = loIdx[iy_];
       const int kMin = loIdx[iz_];
@@ -688,6 +683,105 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
           }     // jp
         }       // k1
   }
+}
+
+//==========================================================
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::calc_jhat(
+    MultiFab& jHat, MultiFab& nodeBMF, Real dt) {
+  timing_func("Particles::calc_jhat");
+
+  Real qdto2mc = charge / mass * 0.5 * dt;
+
+  const int lev = 0;
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+       ++pti) {
+    Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
+    Array4<Real> const& jArr = jHat[pti].array();    
+
+    const auto& particles = pti.GetArrayOfStructs();
+
+    for (const auto& p : particles) {
+
+      // Print()<<"p = "<<p<<std::endl;
+      const Real up = p.rdata(iup_);
+      const Real vp = p.rdata(ivp_);
+      const Real wp = p.rdata(iwp_);
+      const Real qp = p.rdata(iqp_);
+
+      //-----calculate interpolate coef begin-------------
+      int loIdx[nDim];
+      Real dShift[nDim];
+      for (int i = 0; i < nDim; i++) {
+        dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
+        loIdx[i] = fastfloor(dShift[i]);
+        dShift[i] = dShift[i] - loIdx[i];
+      }
+
+      Real coef[2][2][2];
+      linear_interpolation_coef(dShift, coef);
+      //-----calculate interpolate coef end-------------
+      
+      Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];
+
+      for (int kk = 0; kk < 2; kk++)
+        for (int jj = 0; jj < 2; jj++)
+          for (int ii = 0; ii < 2; ii++) {
+            Bxl += nodeBArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
+                            ix_) *
+                   coef[ii][jj][kk];
+            Byl += nodeBArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
+                            iy_) *
+                   coef[ii][jj][kk];
+            Bzl += nodeBArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
+                            iz_) *
+                   coef[ii][jj][kk];
+          }
+
+      const Real Omx = qdto2mc * Bxl;
+      const Real Omy = qdto2mc * Byl;
+      const Real Omz = qdto2mc * Bzl;
+
+      // end interpolation
+      const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
+      const Real denom = 1.0 / (1.0 + omsq);
+      const Real udotOm = up * Omx + vp * Omy + wp * Omz;
+
+      const Real c0 = denom * invVol * qp * qdto2mc;
+      Real alpha[9];
+      alpha[0] = (1 + Omx * Omx) * c0;
+      alpha[1] = (Omz + Omx * Omy) * c0;
+      alpha[2] = (-Omy + Omx * Omz) * c0;
+      alpha[3] = (-Omz + Omx * Omy) * c0;
+      alpha[4] = (1 + Omy * Omy) * c0;
+      alpha[5] = (Omx + Omy * Omz) * c0;
+      alpha[6] = (Omy + Omx * Omz) * c0;
+      alpha[7] = (-Omx + Omy * Omz) * c0;
+      alpha[8] = (1 + Omz * Omz) * c0;
+
+      {
+        // jHat
+        Real currents[nDim];
+
+        {
+          const Real coef1 = denom * qp;
+          currents[ix_] = (up + (vp * Omz - wp * Omy + udotOm * Omx)) * coef1;
+          currents[iy_] = (vp + (wp * Omx - up * Omz + udotOm * Omy)) * coef1;
+          currents[iz_] = (wp + (up * Omy - vp * Omx + udotOm * Omz)) * coef1;
+        }
+
+        for (int iVar = 0; iVar < nDim; iVar++)
+          for (int kk = 0; kk < 2; kk++)
+            for (int jj = 0; jj < 2; jj++)
+              for (int ii = 0; ii < 2; ii++) {
+                jArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk, iVar) +=
+                    coef[ii][jj][kk] * currents[iVar];
+              }
+      }
+
+    } // for p
+  }
+
 }
 
 //==========================================================

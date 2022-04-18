@@ -427,7 +427,8 @@ void Domain::read_param() {
         command == "#DISCRETIZE" || command == "#DISCRETIZATION" ||
         command == "#RESAMPLING" || command == "#SMOOTHE" ||
         command == "#TESTCASE" || command == "#MERGEPARTICLE" ||
-        command == "#SOURCE" || command == "#PIC") {
+        command == "#SOURCE" || command == "#PIC" ||
+        command == "#EXPLICITPIC") {
       pic.read_param(command, readParam);
     } else if (command == "#PARTICLETRACKER" ||
                command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||

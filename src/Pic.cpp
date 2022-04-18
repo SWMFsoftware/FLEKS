@@ -40,6 +40,8 @@ void Pic::read_param(const std::string& command, ReadParam& readParam) {
     if (doCorrectDivE) {
       readParam.read_var("nDivECorrection", nDivECorrection);
     }
+  } else if (command == "#EXPLICITPIC") {
+    readParam.read_var("useExplicitPIC", useExplicitPIC);
   } else if (command == "#EFIELDSOLVER") {
     Real tol;
     int nIter;
@@ -199,7 +201,9 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
     distribute_FabArray(jHat, nodeBA, dm, 3, nGst, doMoveData);
 
-    distribute_FabArray(nodeMM, nodeBA, dm, 1, 1, doMoveData);
+    if (!useExplicitPIC) {
+      distribute_FabArray(nodeMM, nodeBA, dm, 1, 1, doMoveData);
+    }
     distribute_FabArray(costMF, centerBA, dm, 1, nGst, doMoveData);
     distribute_FabArray(centerMM, centerBA, dm, 1, nGst, doMoveData);
 
@@ -571,8 +575,19 @@ void Pic::particle_mover() {
 
   timing_func(nameFunc);
 
-  for (int i = 0; i < nSpecies; i++) {
-    parts[i]->mover(nodeEth, nodeB, tc->get_dt(), tc->get_next_dt());
+  if (useExplicitPIC) {
+    // nodeE/nodeEth is at t_n/t_{n+1}, tempNode3 is at t_{n+0.5}
+    MultiFab::LinComb(tempNode3, 0.5, nodeEth, 0, 0.5, nodeE, 0, 0,
+                      nodeE.nComp(), nodeE.nGrow());
+    for (int i = 0; i < nSpecies; i++) {
+      parts[i]->mover(tempNode3, nodeB, tc->get_dt(), tc->get_next_dt());
+    }
+
+  } else {
+
+    for (int i = 0; i < nSpecies; i++) {
+      parts[i]->mover(nodeEth, nodeB, tc->get_dt(), tc->get_next_dt());
+    }
   }
 }
 
@@ -586,11 +601,18 @@ void Pic::calc_mass_matrix() {
   timing_func(nameFunc);
 
   jHat.setVal(0.0);
-  const RealMM mm0(0.0);
-  nodeMM.setVal(mm0);
+
+  if (!useExplicitPIC) {
+    const RealMM mm0(0.0);
+    nodeMM.setVal(mm0);
+  }
 
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->calc_mass_matrix(nodeMM, jHat, nodeB, tc->get_dt());
+    if (useExplicitPIC) {
+      parts[i]->calc_jhat(jHat, nodeB, tc->get_dt());
+    } else {
+      parts[i]->calc_mass_matrix(nodeMM, jHat, nodeB, tc->get_dt());
+    }
   }
 
   Real invVol = 1;
@@ -602,9 +624,10 @@ void Pic::calc_mass_matrix() {
 
   jHat.SumBoundary(geom.periodicity());
 
-  nodeMM.SumBoundary(geom.periodicity());
-
-  nodeMM.FillBoundary(geom.periodicity());
+  if (!useExplicitPIC) {
+    nodeMM.SumBoundary(geom.periodicity());
+    nodeMM.FillBoundary(geom.periodicity());
+  }
 }
 
 //==========================================================
@@ -626,8 +649,7 @@ void Pic::sum_moments(bool updateDt) {
   nodePlasma[nSpecies].setVal(0.0);
   plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; i++) {
-    Real energy =
-        parts[i]->sum_moments(nodePlasma[i], nodeMM, nodeB, tc->get_dt());
+    Real energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
 
     plasmaEnergy[i] = energy;
     plasmaEnergy[iTot] += energy;
@@ -893,7 +915,43 @@ void Pic::update(bool doReportIn) {
 
 //==========================================================
 void Pic::update_E() {
-  std::string nameFunc = "Pic::update_E";
+  if (useExplicitPIC) {
+    update_E_expl();
+  } else {
+    update_E_impl();
+  }
+}
+
+//==========================================================
+void Pic::update_E_expl() {
+  std::string nameFunc = "Pic::update_E_expl";
+
+  timing_func(nameFunc);
+
+  MultiFab::Copy(nodeEth, nodeE, 0, 0, nodeE.nComp(), nodeE.nGrow());
+
+  apply_BC(cellStatus, centerB, 0, centerB.nComp(), &Pic::get_center_B);
+
+  const Real dt = tc->get_dt();
+  Real dt2dx[nDimMax];
+  for (int i = 0; i < nDimMax; i++) {
+    dt2dx[i] = dt * geom.InvCellSize(i);
+  }
+
+  curl_center_to_node(centerB, nodeE, dt2dx);
+
+  MultiFab::Saxpy(nodeE, -fourPI * dt, jHat, 0, 0, nodeE.nComp(),
+                  nodeE.nGrow());
+
+  MultiFab::Add(nodeE, nodeEth, 0, 0, nodeE.nComp(), nodeE.nGrow());
+
+  nodeE.FillBoundary(geom.periodicity());
+  apply_BC(nodeStatus, nodeE, 0, nDim, &Pic::get_node_E);
+}
+
+//==========================================================
+void Pic::update_E_impl() {
+  std::string nameFunc = "Pic::update_E_impl";
 
   timing_func(nameFunc);
 
@@ -1433,7 +1491,9 @@ void Pic::load_balance() {
       redistribute_FabArray(pl, dm, doMoveData);
     }
 
-    redistribute_FabArray(nodeMM, dm, doMoveData);
+    if (!useExplicitPIC) {
+      redistribute_FabArray(nodeMM, dm, doMoveData);
+    }
     redistribute_FabArray(costMF, dm, doMoveData);
     redistribute_FabArray(centerMM, dm, doMoveData);
 

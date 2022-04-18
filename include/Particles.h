@@ -133,12 +133,14 @@ public:
                                          const amrex::Array4<const int>& status,
                                          const int i, const int j, const int k);
 
-  amrex::Real sum_moments(amrex::MultiFab& momentsMF,
-                          amrex::UMultiFab<RealMM>& nodeMM,
-                          amrex::MultiFab& nodeBMF, amrex::Real dt);
+  amrex::Real sum_moments(amrex::MultiFab& momentsMF, amrex::MultiFab& nodeBMF,
+                          amrex::Real dt);
 
   void calc_mass_matrix(amrex::UMultiFab<RealMM>& nodeMM, amrex::MultiFab& jHat,
                         amrex::MultiFab& nodeBMF, amrex::Real dt);
+
+  void calc_jhat(amrex::MultiFab& jHat, amrex::MultiFab& nodeBMF,
+                 amrex::Real dt);
 
   // It is real 'thermal velocity'. It is sqrt(sum(q*v2)/sum(q)).
   amrex::Real calc_max_thermal_velocity(amrex::MultiFab& momentsMF);
