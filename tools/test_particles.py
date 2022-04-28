@@ -32,7 +32,7 @@ class FLEKSTP(object):
     iv_ = 5
     iw_ = 6
 
-    def __init__(self, outputDirs, iDomain=0, iSpecies=0):
+    def __init__(self, outputDirs, iDomain=0, iSpecies=0, iListStart=0, iListEnd=-1):
         if type(outputDirs) == str:
             outputDirs = [outputDirs]
 
@@ -45,6 +45,10 @@ class FLEKSTP(object):
 
             self.pfiles = self.pfiles + glob.glob(outputDir+"/FLEKS" +
                                                   str(iDomain)+"_particle_species_"+str(iSpecies)+"_*")
+        
+        if iListEnd == -1: iListEnd = len(self.plistfiles)
+        self.plistfiles = self.plistfiles[iListStart:iListEnd]
+        self.pfiles = self.pfiles[iListStart:iListEnd]
 
         self.plistfiles.sort()
         self.pfiles.sort()
