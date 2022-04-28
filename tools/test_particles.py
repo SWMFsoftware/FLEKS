@@ -46,12 +46,12 @@ class FLEKSTP(object):
             self.pfiles = self.pfiles + glob.glob(outputDir+"/FLEKS" +
                                                   str(iDomain)+"_particle_species_"+str(iSpecies)+"_*")
         
+        self.plistfiles.sort()
+        self.pfiles.sort()
+
         if iListEnd == -1: iListEnd = len(self.plistfiles)
         self.plistfiles = self.plistfiles[iListStart:iListEnd]
         self.pfiles = self.pfiles[iListStart:iListEnd]
-
-        self.plistfiles.sort()
-        self.pfiles.sort()
 
         self.plists = []
         for fileName in self.plistfiles:
