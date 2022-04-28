@@ -4,6 +4,7 @@ import numpy as np
 import glob
 import struct
 
+
 class FLEKSTP(object):
     r"""
     A class that is used to read and plot test particles.    
@@ -109,9 +110,16 @@ class FLEKSTP(object):
         to the current directory if doSave is True. The location of 
         these particles (the csv file) can be visualized with Paraview.
 
+        Parameters
+        -----------
+        ids: a numpy array of tuples contains the particle IDs.
+        pData: a numpy array real number. Contains the particle weight, 
+            location and velocity
+
+
         Examples
         ----------
-        >>> pData = pt.read_particles_at_time(3700, doSave=True)
+        >>> ids, pData = pt.read_particles_at_time(3700, doSave=True)
         """
 
         nFile = len(self.pfiles)
@@ -129,6 +137,7 @@ class FLEKSTP(object):
 
         unitSize = 7
         dataList = []
+        idList = []
         with open(fileName, 'rb') as f:
             while True:
                 binaryData = f.read(4*4)
@@ -143,16 +152,17 @@ class FLEKSTP(object):
                 for i in range(nRecord):
                     if(allRecords[unitSize*i + FLEKSTP.it_] > time or i == nRecord-1):
                         dataList.append(allRecords[unitSize*i:unitSize*(i+1)])
+                        idList.append((cpu, idtmp))
                         break
 
         npData = np.array(dataList)
-
+        idData = np.array(idList, dtype="i,i")
         if doSave:
             fileName = "particles_t"+str(time)+".csv"
             np.savetxt(fileName, npData, delimiter=",",
                        header="time, x, y, z, ux, uy, uz", comments="")
 
-        return npData
+        return idData, npData
 
     def IDs(self):
         return self.pset
