@@ -259,7 +259,8 @@ void ParticleTracker::complete_parameters() {
 
   for (auto& tps : parts) {
     tps->set_IO_units(writer.No2OutTable("X"), writer.No2OutTable("u"),
-                      writer.No2OutTable("mass"));
+                      writer.No2OutTable("mass"), writer.No2OutTable("B"),
+                      writer.No2OutTable("E"));
   }
 }
 

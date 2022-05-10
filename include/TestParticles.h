@@ -1,23 +1,29 @@
 #ifndef _TESTPARTICLES_H_
 #define _TESTPARTICLES_H_
 
-#include "Particles.h"
 #include "BitArray.h"
+#include "Particles.h"
 
 class TestParticles : public Particles<nPTPartReal, nPTPartInt> {
 public:
-  static const int iRecordt_ = 0;
-  static const int iRecordx_ = 1;
-  static const int iRecordy_ = 2;
-  static const int iRecordz_ = 3;
-  static const int iRecordu_ = 4;
-  static const int iRecordv_ = 5;
-  static const int iRecordw_ = 6;
+  static const int iTPt_ = 0;
+  static const int iTPx_ = 1;
+  static const int iTPy_ = 2;
+  static const int iTPz_ = 3;
+  static const int iTPu_ = 4;
+  static const int iTPv_ = 5;
+  static const int iTPw_ = 6;
+  static const int iTPBx_ = 7;
+  static const int iTPBy_ = 8;
+  static const int iTPBz_ = 9;
+  static const int iTPEx_ = 10;
+  static const int iTPEy_ = 11;
+  static const int iTPEz_ = 12;
 
 private:
   static const int iRegionBoundary_ = 1;
   static const int iRegionUniform_ = 2;
-  
+
 public:
   TestParticles(const amrex::BoxArray& regionBAIn, const amrex::Geometry& geom,
                 const amrex::DistributionMapping& dm, const amrex::BoxArray& ba,
@@ -53,10 +59,13 @@ public:
   void print_record_buffer(char* buffer, unsigned long long int nBuffer);
 
   void set_IO_units(amrex::Real no2outLIn, amrex::Real no2outVIn,
-                    amrex::Real no2outMIn) {
+                    amrex::Real no2outMIn, amrex::Real no2outBIn,
+                    amrex::Real no2outEIn) {
     no2outL = no2outLIn;
     no2outV = no2outVIn;
     no2outM = no2outMIn;
+    no2outB = no2outBIn;
+    no2outE = no2outEIn;
   }
 
   void set_interval(amrex::IntVect& in) { nIntervalCell = in; };
@@ -117,11 +126,11 @@ private:
 
   int iPartRegion = iRegionBoundary_;
 
-  amrex::Real no2outL, no2outV, no2outM;
+  amrex::Real no2outL, no2outV, no2outM, no2outB, no2outE;
 
   unsigned long int nInitPart;
-  
-  std::vector<PID> vIDs; 
+
+  std::vector<PID> vIDs;
 };
 
 #endif

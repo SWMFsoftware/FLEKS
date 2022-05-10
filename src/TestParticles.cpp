@@ -172,14 +172,26 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
       p.pos(iz_) = zp + wnp1 * dtLoc;
 
       if (doSave) {
-        const int iStart_ = record_var_index(p.idata(iRecordCount_));
-        p.rdata(iStart_ + iRecordt_) = tNowSI;
-        p.rdata(iStart_ + iRecordu_) = unp1;
-        p.rdata(iStart_ + iRecordv_) = vnp1;
-        p.rdata(iStart_ + iRecordw_) = wnp1;
-        p.rdata(iStart_ + iRecordx_) = xp + unp1 * 0.5 * dt;
-        p.rdata(iStart_ + iRecordy_) = yp + vnp1 * 0.5 * dt;
-        p.rdata(iStart_ + iRecordz_) = zp + wnp1 * 0.5 * dt;
+        const int i0 = record_var_index(p.idata(iRecordCount_));
+        p.rdata(i0 + iTPt_) = tNowSI;
+        p.rdata(i0 + iTPu_) = unp1;
+        p.rdata(i0 + iTPv_) = vnp1;
+        p.rdata(i0 + iTPw_) = wnp1;
+        p.rdata(i0 + iTPx_) = xp + unp1 * 0.5 * dt;
+        p.rdata(i0 + iTPy_) = yp + vnp1 * 0.5 * dt;
+        p.rdata(i0 + iTPz_) = zp + wnp1 * 0.5 * dt;
+
+        if (ptRecordSize > iTPBx_) {
+          p.rdata(i0 + iTPBx_) = Bxl;
+          p.rdata(i0 + iTPBy_) = Byl;
+          p.rdata(i0 + iTPBz_) = Bzl;
+        }
+
+        if (ptRecordSize > iTPEx_) {
+          p.rdata(i0 + iTPEx_) = Exl;
+          p.rdata(i0 + iTPEy_) = Eyl;
+          p.rdata(i0 + iTPEz_) = Ezl;
+        }
 
         p.idata(iRecordCount_) = p.idata(iRecordCount_) + 1;
       }
@@ -411,6 +423,20 @@ bool TestParticles::write_particles(int cycle) {
   loop_particles("reset_record_counter", partList.data(), partList.size(),
                  nByteAhead);
 
+  {
+    if (ParallelDescriptor::IOProcessor()) {
+      std::string headerName = outputDir + "/Header";
+
+      std::ofstream headerFile;
+      headerFile.open(headerName.c_str(), std::ios::out | std::ios::trunc);
+
+      if (!headerFile.good())
+        amrex::FileOpenFailed(headerName);
+
+      headerFile << ptRecordSize << "\n";
+    }
+  }
+
   return true;
 }
 
@@ -435,8 +461,9 @@ unsigned long long int TestParticles::loop_particles(
       int nRecord = p.idata(iRecordCount_);
 
       // int: cpu + id + nRecord
-      // Real: weight + (t, x, y, z, ux, uy, uz)*nRecord
-      int nBytePerPart = 3 * sizeof(int) + (1 + 7 * nRecord) * sizeof(float);
+      // Real: weight + ptRecordSize*nRecord
+      int nBytePerPart =
+          3 * sizeof(int) + (1 + ptRecordSize * nRecord) * sizeof(float);
 
       if (doResetRecordCounter) {
         p.idata(iRecordCount_) = 0;
@@ -471,27 +498,32 @@ unsigned long long int TestParticles::loop_particles(
         memcpy(buff + nByteCount + iCountLoc, &weight, sizeLoc);
         iCountLoc += sizeLoc;
 
-        // t, x, y, z, u, v, w
-        sizeLoc = sizeof(float) * 7;
+        sizeLoc = sizeof(float) * ptRecordSize;
         for (int i = 0; i < nRecord; i++) {
-          float recordData[7];
+          float recordData[ptRecordSize];
 
-          const int iStart_ = record_var_index(i);
+          const int i0 = record_var_index(i);
 
           // time is already in SI unit
-          recordData[iRecordt_] = (float)p.rdata(iStart_ + iRecordt_);
-          recordData[iRecordx_] =
-              (float)(p.rdata(iStart_ + iRecordx_) * no2outL);
-          recordData[iRecordy_] =
-              (float)(p.rdata(iStart_ + iRecordy_) * no2outL);
-          recordData[iRecordz_] =
-              (float)(p.rdata(iStart_ + iRecordz_) * no2outL);
-          recordData[iRecordu_] =
-              (float)(p.rdata(iStart_ + iRecordu_) * no2outV);
-          recordData[iRecordv_] =
-              (float)(p.rdata(iStart_ + iRecordv_) * no2outV);
-          recordData[iRecordw_] =
-              (float)(p.rdata(iStart_ + iRecordw_) * no2outV);
+          recordData[iTPt_] = (float)p.rdata(i0 + iTPt_);
+          recordData[iTPx_] = (float)(p.rdata(i0 + iTPx_) * no2outL);
+          recordData[iTPy_] = (float)(p.rdata(i0 + iTPy_) * no2outL);
+          recordData[iTPz_] = (float)(p.rdata(i0 + iTPz_) * no2outL);
+          recordData[iTPu_] = (float)(p.rdata(i0 + iTPu_) * no2outV);
+          recordData[iTPv_] = (float)(p.rdata(i0 + iTPv_) * no2outV);
+          recordData[iTPw_] = (float)(p.rdata(i0 + iTPw_) * no2outV);
+
+          if (ptRecordSize > iTPBx_) {
+            recordData[iTPBx_] = (float)(p.rdata(i0 + iTPBx_) * no2outB);
+            recordData[iTPBy_] = (float)(p.rdata(i0 + iTPBy_) * no2outB);
+            recordData[iTPBz_] = (float)(p.rdata(i0 + iTPBz_) * no2outB);
+          }
+
+          if (ptRecordSize > iTPEx_) {
+            recordData[iTPEx_] = (float)(p.rdata(i0 + iTPEx_) * no2outE);
+            recordData[iTPEy_] = (float)(p.rdata(i0 + iTPEy_) * no2outE);
+            recordData[iTPEz_] = (float)(p.rdata(i0 + iTPEz_) * no2outE);
+          }
 
           memcpy(buff + nByteCount + iCountLoc, &recordData, sizeLoc);
           iCountLoc += sizeLoc;
@@ -531,7 +563,7 @@ void TestParticles::print_record_buffer(char* buffer,
     count += sizeof(float);
 
     for (int i = 0; i < nRecord; i++) {
-      for (int ii = 0; ii < 7; ii++) {
+      for (int ii = 0; ii < ptRecordSize; ii++) {
         AllPrint() << " data" << ii << " = " << (*(float*)(buffer + count));
         count += sizeof(float);
       }

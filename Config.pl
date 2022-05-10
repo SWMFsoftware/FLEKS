@@ -43,19 +43,29 @@ our $Help;
 our $ERROR;
 our $WARNING;
 
- foreach (@Arguments){
-     if(/^-s$/)                 {$Show=1;  next};
-     if(/^-h$/)                 {$Help=1;  next};
-#     if(/^-compiler=(.*)/i)     {$compiler="$1";  next};
-#     if(/^-debug=(.*)/i)        {$debug=uc("$1");  next};
-#     warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
+my $TPSave = "P";
+my $NewTPSave;
+my %nTPString=(7=>'P', 10=>'PB', 13=>'PBE');
+my %nTPSave=('P' => 7, 'PB' => 10, 'PBE' => 13);
+my %TPInfo=('P' => "Particle", 'PB' => "Particle+B", 'PBE' => "Particle+B+E");
+
+foreach (@Arguments){
+     if(/^-s$/)                 {$Show=1;       next};
+     if(/^-h$/)                 {$Help=1;       next};
+     if(/^-tp=(.*)$/)           {$NewTPSave=$1;    next};    
+     warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
  }
+
+die "$ERROR -tp input should be 'P', 'PB', or 'PBE'.\n" 
+    if $NewTPSave and not exists $nTPSave{$NewTPSave};
 
 my $AmrexComp;
 my $AmrexDebug;
 my $AmrexTinyProfile; 
 
 &set_options;
+
+&set_test_particle if $NewTPSave;
 
 &print_help if $Help;
 &show_settings if $Show;
@@ -73,6 +83,30 @@ sub get_settings{
         $AmrexTinyProfile = $1 if/^TINY_PROFILE = (\S*)/i; 
        }
     close $AmrexMakefile;
+    
+    my $NameConstFile = "include/Constants.h";
+    `make $NameConstFile`;
+    my $nSize;
+    open(FILE, $NameConstFile) or die "$ERROR could not open $NameConstFile\n";   
+    while(<FILE>){                                                                      
+        $nSize=$2           if /\b(ptRecordSize\s*=\s*)(\d+)/i;                                
+    }            
+    $TPSave = $nTPString{$nSize};
+    close FILE;
+}
+
+################################################################################
+sub set_test_particle{
+    $TPSave = $NewTPSave if $NewTPSave;
+
+    my $NameConstFile = "include/Constants.h";
+    my $nSize = $nTPSave{$TPSave};     
+    @ARGV = ($NameConstFile);
+    while(<>){                                                                                                                                                                                                 
+        s/\b(ptRecordSize\s*=[^0-9]*)(\d+)/$1$nSize/i;
+        print;                                                                                                                                                                                         
+    } 
+
 }
 
 ################################################################################
@@ -95,15 +129,20 @@ sub show_settings{
     print "AMReX compiler     = $AmrexComp \n";
     print "AMReX debug        = $AmrexDebug \n";
     print "AMReX tiny profile = $AmrexTinyProfile \n";    
+    print "Test Particle info = $TPInfo{$TPSave} \n";
 }
 ################################################################################
 
 sub print_help{
 
     print "
-There is not any configuration setting needed for FLEKS so far. 
-Show the configuration for AMReX:
-    ./Config.pl 
-";
+-s            Show the configuration for AMReX.
+
+-tp=P,PB,PBE  Test particle output information. 
+              P: only save particle velocity + location
+              PB: particle + magnetic field. 
+              PBE: particle + magnetic field + electric field
+
+\n";
     exit -0;
 }
