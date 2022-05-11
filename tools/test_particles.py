@@ -31,10 +31,24 @@ class FLEKSTP(object):
     iu_ = 4
     iv_ = 5
     iw_ = 6
+    iBx_ = 7
+    iBy_ = 8
+    iBz_ = 9
+    iEx_ = 10
+    iEy_ = 11
+    iEz_ = 12
 
     def __init__(self, outputDirs, iDomain=0, iSpecies=0, iListStart=0, iListEnd=-1):
         if type(outputDirs) == str:
             outputDirs = [outputDirs]
+
+        header = outputDirs[0]+"/Header"
+        if os.path.exists(header):
+            with open(header, 'r') as f:
+                self.nReal = int(f.readline())
+        else:
+            # By default, 7 real numbers saved for each step: time + position + velocity
+            self.nReal = 7
 
         self.iSpecies = iSpecies
         self.plistfiles = list()
@@ -45,11 +59,12 @@ class FLEKSTP(object):
 
             self.pfiles = self.pfiles + glob.glob(outputDir+"/FLEKS" +
                                                   str(iDomain)+"_particle_species_"+str(iSpecies)+"_*")
-        
+
         self.plistfiles.sort()
         self.pfiles.sort()
 
-        if iListEnd == -1: iListEnd = len(self.plistfiles)
+        if iListEnd == -1:
+            iListEnd = len(self.plistfiles)
         self.plistfiles = self.plistfiles[iListStart:iListEnd]
         self.pfiles = self.pfiles[iListStart:iListEnd]
 
@@ -91,7 +106,6 @@ class FLEKSTP(object):
         Get the first record stored in one file. 
         """
         dataList = list()
-        unitSize = 7
         with open(fileName, 'rb') as f:
             while True:
                 binaryData = f.read(4*4)
@@ -102,9 +116,9 @@ class FLEKSTP(object):
                 (cpu, idtmp, nRecord, weight) = struct.unpack(
                     'iiif', binaryData)
                 if nRecord > 0:
-                    binaryData = f.read(4*unitSize)
+                    binaryData = f.read(4*self.nReal)
                     dataList = dataList + \
-                        list(struct.unpack('f'*unitSize, binaryData))
+                        list(struct.unpack('f'*self.nReal, binaryData))
                     return dataList
 
     def read_particles_at_time(self, time, doSave=False):
@@ -139,7 +153,6 @@ class FLEKSTP(object):
 
         fileName = self.pfiles[iFile]
 
-        unitSize = 7
         dataList = []
         idList = []
         with open(fileName, 'rb') as f:
@@ -150,12 +163,13 @@ class FLEKSTP(object):
 
                 (cpu, idtmp, nRecord, weight) = struct.unpack(
                     'iiif', binaryData)
-                binaryData = f.read(4*unitSize*nRecord)
+                binaryData = f.read(4*self.nReal*nRecord)
                 allRecords = list(struct.unpack(
-                    'f'*nRecord*unitSize, binaryData))
+                    'f'*nRecord*self.nReal, binaryData))
                 for i in range(nRecord):
-                    if(allRecords[unitSize*i + FLEKSTP.it_] > time or i == nRecord-1):
-                        dataList.append(allRecords[unitSize*i:unitSize*(i+1)])
+                    if(allRecords[self.nReal*i + FLEKSTP.it_] > time or i == nRecord-1):
+                        dataList.append(
+                            allRecords[self.nReal*i:self.nReal*(i+1)])
                         idList.append((cpu, idtmp))
                         break
 
@@ -198,7 +212,6 @@ class FLEKSTP(object):
         >>> trajectory = tp.read_particle_trajectory((66,888))
         """
         dataList = list()
-        unitSize = 7
         for fileName, plist in zip(self.pfiles, self.plists):
             if partID in plist:
                 ploc = plist[partID]
@@ -207,19 +220,18 @@ class FLEKSTP(object):
                     binaryData = f.read(4*4)
                     (cpu, idtmp, nRecord, weight) = struct.unpack(
                         'iiif', binaryData)
-                    binaryData = f.read(4*unitSize*nRecord)
+                    binaryData = f.read(4*self.nReal*nRecord)
                     dataList = dataList + \
-                        list(struct.unpack('f'*nRecord*unitSize, binaryData))
+                        list(struct.unpack('f'*nRecord*self.nReal, binaryData))
 
-        nRecord = int(len(dataList)/unitSize)
-        return np.array(dataList).reshape(nRecord, unitSize)
+        nRecord = int(len(dataList)/self.nReal)
+        return np.array(dataList).reshape(nRecord, self.nReal)
 
     def read_initial_loc_with_ID(self, partID):
         r"""
         Read and return the initial location of a test particle
         """
 
-        unitSize = 7
         for fileName, plist in zip(self.pfiles, self.plists):
             if partID in plist:
                 ploc = plist[partID]
@@ -229,9 +241,9 @@ class FLEKSTP(object):
                     (cpu, idtmp, nRecord, weight) = struct.unpack(
                         'iiif', binaryData)
                     nRead = 1
-                    binaryData = f.read(4*unitSize*nRead)
+                    binaryData = f.read(4*self.nReal*nRead)
                     dataList = list(struct.unpack(
-                        'f'*nRead*unitSize, binaryData))
+                        'f'*nRead*self.nReal, binaryData))
                 return dataList
 
     def select_particles(self, fSelect=None):
@@ -283,6 +295,14 @@ class FLEKSTP(object):
 
         nrow = 3
         ncol = 4
+
+        if self.nReal == 10:
+            # plot B field
+            nrow = 4
+        elif self.nReal == 13:
+            # plot B and E field
+            nrow = 5
+
         isub = 1
         ax = f.add_subplot(nrow, ncol, isub)
         ax.plot(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iy_], 'k')
@@ -317,65 +337,39 @@ class FLEKSTP(object):
         ax.set_ylabel('y')
         ax.set_zlabel('z')
 
-        isub = isub + 1
-        ax = f.add_subplot(nrow, ncol, isub)
-        ax.plot(t, data[:, FLEKSTP.ix_], label='x')
-        ax.scatter(t, data[:, FLEKSTP.ix_], c=plt.cm.winter(tNorm),
-                   edgecolor='none', marker='o', s=20)
-        ax.set_xlabel('time')
-        ax.set_ylabel('x')
+        def plot_data_(dd, label):
+            nonlocal isub
+            isub = isub + 1
+            ax = f.add_subplot(nrow, ncol, isub)
+            ax.plot(t, dd, label=label)
+            ax.scatter(t, dd, c=plt.cm.winter(tNorm),
+                       edgecolor='none', marker='o', s=20)
+            ax.set_xlabel('time')
+            ax.set_ylabel(label)
+
+        def plot_vector_(idx, labels, norm_label=None):
+            v = 0
+            for i, label in zip(idx, labels):
+                dd = data[:, i]
+                plot_data_(dd, label)
+                if norm_label !=None: 
+                    v += dd**2
+
+            if norm_label != None:
+                v = np.sqrt(v)
+                plot_data_(v,norm_label)
+
+        plot_vector_([FLEKSTP.ix_, FLEKSTP.iy_, FLEKSTP.iz_], ['x', 'y', 'z'])
 
         isub = isub + 1
-        ax = f.add_subplot(nrow, ncol, isub)
-        ax.plot(t, data[:, FLEKSTP.iy_], label='y')
-        ax.scatter(t, data[:, FLEKSTP.iy_], c=plt.cm.winter(tNorm),
-                   edgecolor='none', marker='o', s=20)
-        ax.set_xlabel('time')
-        ax.set_ylabel('y')
 
-        isub = isub + 1
-        ax = f.add_subplot(nrow, ncol, isub)
-        ax.plot(t, data[:, FLEKSTP.iz_], label='z')
-        ax.scatter(t, data[:, FLEKSTP.iz_], c=plt.cm.winter(tNorm),
-                   edgecolor='none', marker='o', s=20)
-        ax.set_xlabel('time')
-        ax.set_ylabel('z')
+        plot_vector_([FLEKSTP.iu_, FLEKSTP.iv_, FLEKSTP.iw_], ['Vx', 'Vy', 'Vz'], norm_label="|V|")
 
-        isub = isub + 1
+        if self.nReal > FLEKSTP.iBx_:
+            plot_vector_([FLEKSTP.iBx_, FLEKSTP.iBy_, FLEKSTP.iBz_], ['Bx', 'By', 'Bz'], norm_label="|B|")
 
-        isub = isub + 1
-        ax = f.add_subplot(nrow, ncol, isub)
-        ax.plot(t, data[:, FLEKSTP.iu_], label='Vx')
-        ax.scatter(t, data[:, FLEKSTP.iu_], c=plt.cm.winter(tNorm),
-                   edgecolor='none', marker='o', s=20)
-        ax.set_xlabel('time')
-        ax.set_ylabel('Vx')
-
-        isub = isub + 1
-        ax = f.add_subplot(nrow, ncol, isub)
-        ax.plot(t, data[:, FLEKSTP.iv_], label='Vy')
-        ax.scatter(t, data[:, FLEKSTP.iv_], c=plt.cm.winter(tNorm),
-                   edgecolor='none', marker='o', s=20)
-        ax.set_xlabel('time')
-        ax.set_ylabel('Vy')
-
-        isub = isub + 1
-        ax = f.add_subplot(nrow, ncol, isub)
-        ax.plot(t, data[:, FLEKSTP.iw_], label='Vz')
-        ax.scatter(t, data[:, FLEKSTP.iw_], c=plt.cm.winter(tNorm),
-                   edgecolor='none', marker='o', s=20)
-        ax.set_xlabel('time')
-        ax.set_ylabel('Vz')
-
-        v = np.sqrt(data[:, FLEKSTP.iu_]**2 +
-                    data[:, FLEKSTP.iv_]**2 + data[:, FLEKSTP.iw_]**2)
-        isub = isub + 1
-        ax = f.add_subplot(nrow, ncol, isub)
-        ax.plot(data[:, FLEKSTP.it_], v, label='velocity')
-        ax.scatter(t, v, c=plt.cm.winter(tNorm),
-                   edgecolor='none', marker='o', s=20)
-        ax.set_xlabel('time')
-        ax.set_ylabel('|V|')
+        if self.nReal > FLEKSTP.iEx_:
+            plot_vector_([FLEKSTP.iEx_, FLEKSTP.iEy_, FLEKSTP.iEz_], ['Ex', 'Ey', 'Ez'], norm_label="|E|")
 
         plt.tight_layout()
 
