@@ -398,6 +398,30 @@ Users can choose generating test particles either in the whole
 domain (uniform) or only at the boundary. 
 </command>
 
+<command name="TPSTATESI"
+	 alias="TPSTATE_FLEKS0,TPSTATE_FLEKS1,TPSTATE_FLEKS2"
+	 multiple="T">
+  <parameter name="nState" type="integer" min="0" default="0"/>
+  <parameter name="iSpecies" type="integer"/>
+  <parameter name="vth" type="real"/>
+  <parameter name="vx" type="real"/>
+  <parameter name="vy" type="real"/>
+  <parameter name="vz" type="real"/>
+  
+
+#TPSTATESI                                   
+1                       nState                
+1                       iSpecies             
+0                       vth[m/s]
+1e5                     vx[m/s]             
+2e5                     vy[m/s]                   
+1e6                     vz[m/s] 
+
+Initializating test particles with user defined thermal velocity (vth) and 
+bulk velocities (vx, vy and vz) for iSpecies. The velocities are in SI unit. 
+
+</command>
+
 <command name="TPPARTICLES"
 	 alias="TPPARTICLES_FLEKS0,TPPARTICLES_FLEKS1,TPPARTICLES_FLEKS2"
 	 multiple="T">
