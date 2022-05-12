@@ -434,7 +434,7 @@ void Domain::read_param() {
                command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
                command == "#TPSAVE" || command == "#TPRELATIVISTIC" ||
-               command == "#TPINITFROMPIC") {
+               command == "#TPINITFROMPIC" || command == "#TPSTATESI") {
       pt.read_param(command, readParam);
     } else if (command == "#OHMSLAW") {
       std::string sOhmU;

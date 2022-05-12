@@ -337,7 +337,8 @@ void TestParticles::add_test_particles_from_pic(Particles<>* pts) {
 }
 
 //======================================================================
-void TestParticles::add_test_particles_from_fluid(const iMultiFab& cellStatus) {
+void TestParticles::add_test_particles_from_fluid(const iMultiFab& cellStatus,
+                                                  Vector<Vel> tpStates) {
   std::string funcName = "TP::add_test_particles_from_fluid";
   timing_func(funcName);
   Print() << funcName << " : nInitPart = " << nInitPart
@@ -345,6 +346,13 @@ void TestParticles::add_test_particles_from_fluid(const iMultiFab& cellStatus) {
           << std::endl;
 
   const int lev = 0;
+
+  Vel tpVel;
+  for (auto& state : tpStates) {
+    if (state.tag == speciesID) {
+      tpVel = state;
+    }
+  }
 
   for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
     const auto& status = cellStatus[mfi].array();
@@ -360,7 +368,7 @@ void TestParticles::add_test_particles_from_fluid(const iMultiFab& cellStatus) {
           if (iPartRegion == iRegionUniform_ ||
               (iPartRegion == iRegionBoundary_ &&
                status(i, j, k) == iAddPTParticle_)) {
-            add_particles_cell(mfi, i, j, k, *fluidInterface);
+            add_particles_cell(mfi, i, j, k, *fluidInterface, 1, tpVel);
           }
   }
 }

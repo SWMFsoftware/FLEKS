@@ -92,6 +92,8 @@ private:
 
   amrex::Vector<std::string> listFiles;
   bool doInitFromPIC = false;
+
+  amrex::Vector<Vel> tpStates;
 };
 
 #endif

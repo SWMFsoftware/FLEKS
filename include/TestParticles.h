@@ -44,7 +44,9 @@ public:
 
   void read_test_particle_list(const amrex::Vector<std::string>& listFiles);
 
-  void add_test_particles_from_fluid(const amrex::iMultiFab& cellStatus);
+  void add_test_particles_from_fluid(
+      const amrex::iMultiFab& cellStatus,
+      amrex::Vector<Vel> tpStates = amrex::Vector<Vel>());
 
   void add_test_particles_from_pic(Particles<>* pts);
 

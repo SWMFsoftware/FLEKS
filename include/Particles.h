@@ -31,6 +31,23 @@ struct PID {
   bool operator==(const PID& t) const { return cpu == t.cpu && id == t.id; }
 };
 
+struct Vel {
+  amrex::Real vth;
+  amrex::Real vx;
+  amrex::Real vy;
+  amrex::Real vz;
+  // tag is usually the species ID
+  int tag;
+
+  Vel() {
+    vth = 0;
+    vx = 0;
+    vy = 0;
+    vz = 0;
+    tag = -1;
+  }
+};
+
 template <int NStructReal = nPicPartReal, int NStructInt = 0>
 class ParticlesIter : public amrex::ParIter<NStructReal, NStructInt> {
 public:
@@ -120,7 +137,7 @@ public:
   void add_particles_domain(const amrex::iMultiFab& cellStatus);
   void add_particles_cell(const amrex::MFIter& mfi, const int i, const int j,
                           const int k, const FluidInterface& interface,
-                          amrex::Real ratio = 1);
+                          amrex::Real ratio = 1, Vel tpVel = Vel());
   void inject_particles_at_boundary(const amrex::iMultiFab& cellStatus);
 
   void add_particles_source(const amrex::MultiFab& momentsMF,

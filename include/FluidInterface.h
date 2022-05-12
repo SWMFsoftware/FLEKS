@@ -206,6 +206,7 @@ public:
   double get_No2SiL() const { return (No2SiL); }
   double get_No2SiRho() const { return (1. / Si2NoRho); }
   double get_No2SiV() const { return (1. / Si2NoV); }
+  double get_Si2NoV() const { return Si2NoV; }
   double get_No2SiB() const { return (1. / Si2NoB); }
   double get_No2SiP() const { return (1. / Si2NoP); }
   double get_No2SiJ() const { return (1. / Si2NoJ); }
@@ -635,7 +636,7 @@ public:
                             const Type y, const Type z, double* u, double* v,
                             double* w, const double rand1, const double rand2,
                             const double rand3, const double rand4,
-                            const int is) const {
+                            const int is, const double uthIn = -1) const {
     double harvest, prob, theta, Uth;
 
     // u = X velocity
@@ -643,7 +644,7 @@ public:
     prob = sqrt(-2.0 * log(1.0 - .999999999 * harvest));
     harvest = rand2;
     theta = 2.0 * M_PI * harvest;
-    Uth = get_uth_iso(mfi, x, y, z, is);
+    Uth = (uthIn >= 0 ? uthIn : get_uth_iso(mfi, x, y, z, is));
 
     (*u) = Uth * prob * cos(theta);
     // v = Y velocity
@@ -661,7 +662,8 @@ public:
                               const Type y, const Type z, double* u, double* v,
                               double* w, const double rand1, const double rand2,
                               const double rand3, const double rand4,
-                              const int is) const {
+                              const int is, const double uthParIn = -1,
+                              const double uthPerpIn = -1) const {
     amrex::Real Bx, By, Bz, P, Ppar, Pperp, Uthperp, Uthpar, Uthperp1, Uthperp2,
         prob, theta;
     MDArray<double> norm_DD;
@@ -700,11 +702,13 @@ public:
     // Get the thermal verlocities
     prob = sqrt(-2.0 * log(1.0 - .999999999 * rand1));
     theta = 2.0 * M_PI * rand2;
-    Uthpar = sqrt(Ppar / (MoMi_S[is] * ni)) * prob * cos(theta);
+    Uthpar = uthParIn >= 0 ? uthParIn
+                           : sqrt(Ppar / (MoMi_S[is] * ni)) * prob * cos(theta);
 
     prob = sqrt(-2.0 * log(1.0 - .999999999 * rand3));
     theta = 2.0 * M_PI * rand4;
-    Uthperp = sqrt(Pperp / (MoMi_S[is] * ni)) * prob;
+    Uthperp =
+        uthPerpIn >= 0 ? uthPerpIn : sqrt(Pperp / (MoMi_S[is] * ni)) * prob;
     Uthperp1 = Uthperp * cos(theta);
     Uthperp2 = Uthperp * sin(theta);
 

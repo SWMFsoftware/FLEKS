@@ -50,9 +50,13 @@ Particles<NStructReal, NStructInt>::Particles(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_cell(
     const MFIter& mfi, const int i, const int j, const int k,
-    const FluidInterface& interface, Real ratio) {
+    const FluidInterface& interface, Real ratio, Vel tpVel) {
 
   int ig, jg, kg, nxcg, nycg, nzcg, iCycle, npcel, nRandom = 7;
+
+  // If true, initialize the test particles with user defined velocities instead
+  // of from fluid.
+  bool userState = (tpVel.tag == speciesID);
 
   if (ratio != 1) {
     // Change the random number seed.
@@ -133,24 +137,31 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           double rand3 = randNum();
           double rand4 = randNum();
 
+          double uth = (userState ? tpVel.vth : -1);
           if (interface.get_UseAnisoP() &&
               (speciesID > 0 || interface.get_useElectronFluid())) {
             interface.set_particle_uth_aniso(mfi, x, y, z, &u, &v, &w, rand1,
-                                             rand2, rand3, rand4, speciesID);
+                                             rand2, rand3, rand4, speciesID,
+                                             uth, uth);
           } else {
             interface.set_particle_uth_iso(mfi, x, y, z, &u, &v, &w, rand1,
-                                           rand2, rand3, rand4, speciesID);
+                                           rand2, rand3, rand4, speciesID, uth);
           }
 
-          // Increase the thermal velocity a little so that the variation of the
-          // velocity space distribution is unbiased.
-          u *= coefSD;
-          v *= coefSD;
-          w *= coefSD;
+          if (!userState) {
+            // Increase the thermal velocity a little so that the variation of
+            // the velocity space distribution is unbiased.
+            u *= coefSD;
+            v *= coefSD;
+            w *= coefSD;
+          }
 
-          Real uBulk = interface.get_ux(mfi, x, y, z, speciesID);
-          Real vBulk = interface.get_uy(mfi, x, y, z, speciesID);
-          Real wBulk = interface.get_uz(mfi, x, y, z, speciesID);
+          Real uBulk =
+              userState ? tpVel.vx : interface.get_ux(mfi, x, y, z, speciesID);
+          Real vBulk =
+              userState ? tpVel.vy : interface.get_uy(mfi, x, y, z, speciesID);
+          Real wBulk =
+              userState ? tpVel.vz : interface.get_uz(mfi, x, y, z, speciesID);
 
           if (testCase == TwoStream && qom < 0 && icount % 2 == 0) {
             // Electron only (qom<0)
@@ -418,7 +429,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-Real Particles<NStructReal, NStructInt>::sum_moments(MultiFab& momentsMF,                                                     
+Real Particles<NStructReal, NStructInt>::sum_moments(MultiFab& momentsMF,
                                                      MultiFab& nodeBMF,
                                                      Real dt) {
   timing_func("Particles::sum_moments");
@@ -599,7 +610,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
                     coef[ii][jj][kk] * currents[iVar];
               }
       }
-  
+
       const int iMin = loIdx[ix_];
       const int jMin = loIdx[iy_];
       const int kMin = loIdx[iz_];
@@ -687,8 +698,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::calc_jhat(
-    MultiFab& jHat, MultiFab& nodeBMF, Real dt) {
+void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
+                                                   MultiFab& nodeBMF, Real dt) {
   timing_func("Particles::calc_jhat");
 
   Real qdto2mc = charge / mass * 0.5 * dt;
@@ -697,7 +708,7 @@ void Particles<NStructReal, NStructInt>::calc_jhat(
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
        ++pti) {
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
-    Array4<Real> const& jArr = jHat[pti].array();    
+    Array4<Real> const& jArr = jHat[pti].array();
 
     const auto& particles = pti.GetArrayOfStructs();
 
@@ -721,7 +732,7 @@ void Particles<NStructReal, NStructInt>::calc_jhat(
       Real coef[2][2][2];
       linear_interpolation_coef(dShift, coef);
       //-----calculate interpolate coef end-------------
-      
+
       Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];
 
       for (int kk = 0; kk < 2; kk++)
@@ -781,7 +792,6 @@ void Particles<NStructReal, NStructInt>::calc_jhat(
 
     } // for p
   }
-
 }
 
 //==========================================================

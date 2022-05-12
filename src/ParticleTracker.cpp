@@ -16,7 +16,7 @@ void ParticleTracker::set_ic(Pic& pic) {
       tps->read_test_particle_list(listFiles);
       tps->add_test_particles_from_pic(pic.get_particle_pointer(i));
     } else {
-      tps->add_test_particles_from_fluid(cellStatus);
+      tps->add_test_particles_from_fluid(cellStatus, tpStates);
     }
     tps->update_initial_particle_number();
 
@@ -31,6 +31,11 @@ void ParticleTracker::update(Pic& pic) {
 
   if (isGridEmpty || !usePT)
     return;
+
+  Print() << printPrefix
+          << " updating test particles. t =  " << std::setprecision(6)
+          << tc->get_time_si() << " (s), cycle = " << tc->get_cycle()
+          << std::endl;
 
   update_field(pic);
   bool doSave = savectr->is_time_to();
@@ -49,13 +54,13 @@ void ParticleTracker::update(Pic& pic) {
               << std::endl;
 
       tps->write_particles(tc->get_cycle());
-      // Refill test particles if necessary.
 
+      // Refill test particles if necessary.
       if (doInitFromPIC) {
         tps->add_test_particles_from_pic(pic.get_particle_pointer(i));
       } else if (tps->TotalNumberOfParticles() <
                  0.5 * tps->init_particle_number()) {
-        tps->add_test_particles_from_fluid(cellStatus);
+        tps->add_test_particles_from_fluid(cellStatus, tpStates);
       }
     }
   }
@@ -299,6 +304,23 @@ void ParticleTracker::read_param(const std::string& command,
     readParam.read_var("dnSave", dnSave);
   } else if (command == "#TPRELATIVISTIC") {
     readParam.read_var("isRelativistic", isRelativistic);
+  } else if (command == "#TPSTATESI") {
+    double si2noV = fluidInterface->get_Si2NoV();
+    int nState;
+    readParam.read_var("nState", nState);
+    for (int i = 0; i < nState; i++) {
+      Vel state;
+      readParam.read_var("iSpecies", state.tag);
+      readParam.read_var("vth", state.vth);
+      readParam.read_var("vx", state.vx);
+      readParam.read_var("vy", state.vy);
+      readParam.read_var("vz", state.vz);
+      state.vth *= si2noV;
+      state.vx *= si2noV;
+      state.vy *= si2noV;
+      state.vz *= si2noV;
+      tpStates.push_back(state);
+    }
   } else if (command == "#TPINITFROMPIC") {
     readParam.read_var("doInitFromPIC", doInitFromPIC);
     if (doInitFromPIC) {
