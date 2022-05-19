@@ -22,6 +22,16 @@ void ParticleTracker::set_ic(Pic& pic) {
 
     Print() << printPrefix << " initial particle # is "
             << tps->init_particle_number() << " for species " << i << std::endl;
+
+    for (int i = 0; i < parts.size(); i++) {
+      // The initial state is special. Here, we do a fake update with dt=0, and
+      // write the initial state to disk.
+      bool doSave = true;
+      auto& tps = parts[i];
+      tps->move_and_save_particles(nodeE, nodeB, 0, 0, tc->get_time_si(),
+                                   doSave);
+      tps->write_particles(tc->get_cycle());
+    }
   }
 }
 
