@@ -148,7 +148,7 @@ class FLEKSTP(object):
 
             if iFile == nFile - 1:
                 break
-            if time > self.file_time[iFile] and time < self.file_time[iFile+1]:
+            if time >= self.file_time[iFile] and time < self.file_time[iFile+1]:
                 break
 
         fileName = self.pfiles[iFile]
@@ -167,7 +167,7 @@ class FLEKSTP(object):
                 allRecords = list(struct.unpack(
                     'f'*nRecord*self.nReal, binaryData))
                 for i in range(nRecord):
-                    if(allRecords[self.nReal*i + FLEKSTP.it_] > time or i == nRecord-1):
+                    if(allRecords[self.nReal*i + FLEKSTP.it_] >= time or i == nRecord-1):
                         dataList.append(
                             allRecords[self.nReal*i:self.nReal*(i+1)])
                         idList.append((cpu, idtmp))
