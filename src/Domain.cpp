@@ -81,6 +81,13 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
 };
 
 //========================================================
+void Domain::update_param(const std::string &paramString) {
+  fluidInterface->readParam = paramString;
+  read_param();
+  init_time_ctr();
+};
+
+//========================================================
 void Domain::make_grid() {
   nGst = 2;
 
@@ -539,6 +546,10 @@ void Domain::read_param() {
 
       int nPlot;
       readParam.read_var("nPlotFile", nPlot);
+
+      if (nPlot > 0) {
+        tc->plots.clear();
+      }
 
       for (int iPlot = 0; iPlot < nPlot; iPlot++) {
 

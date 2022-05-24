@@ -36,10 +36,16 @@ int pic_init_(double *time) {
 
 //==========================================================
 int pic_read_param_(char *paramIn, int *nlines, int *ncharline, int *iProc) {
-  if (!isFirstSession)
-    return 0;
 
+  paramString.clear();
   paramString = char_to_string(paramIn, (*nlines) * (*ncharline), *ncharline);
+
+  if (!isFirstSession) {
+    for (int i = 0; i < fleksDomains.size(); i++) {
+      fleksDomains.select(i);
+      fleksDomains(i).update_param(paramString);
+    }
+  }
 
   isFirstSession = false;
   return 0;

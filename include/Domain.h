@@ -32,6 +32,7 @@ public:
   //--------------Initialization begin-------------------------------
   void init(double time, const std::string &paramString, int *paramInt,
             double *gridDim, double *paramReal, int iDomain = 1);
+  void update_param(const std::string &paramString);
   void set_ic();
   //----------------Initialization end-------------------------------
 
