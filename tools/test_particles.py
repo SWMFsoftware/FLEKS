@@ -20,7 +20,7 @@ class FLEKSTP(object):
     >>> pIDs = list(tp.IDs())
     >>> tp.plot_trajectory(pIDs[3])
     >>> tp.save_trajectory_to_csv(pIDs[5])
-    >>> pData = tp.read_particles_at_time(6500.8, doSave=True)    
+    >>> ids, pData = tp.read_particles_at_time(6500.8, doSave=True)    
     >>> f = tp.plot_loc(pData)
     """
 
@@ -381,7 +381,7 @@ class FLEKSTP(object):
 
         Examples
         ----------
-        >>> pData = tp.read_particles_at_time(3700, doSave=True)
+        >>> ids, pData = tp.read_particles_at_time(3700, doSave=True)
         >>> f = tp.plot_loc(pData)
         """
 

@@ -26,3 +26,4 @@ gitinfo.txt
 *__pycache__
 Backtrace.*
 tools/.ipynb*
+tools/*user.py
