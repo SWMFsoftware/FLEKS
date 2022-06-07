@@ -416,6 +416,6 @@ class FLEKSTP(object):
         ax.scatter(px, py, pz, s=1)
         ax.set_xlabel('x')
         ax.set_ylabel('y')
-        ax.set_ylabel('z')
+        ax.set_zlabel('z')
 
         return f
