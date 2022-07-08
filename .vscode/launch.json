@@ -19,8 +19,7 @@
                 "miDebuggerPath": "/usr/bin/gdb"
               },
               "osx": {
-                "MIMode": "lldb",
-                "miDebuggerPath": "/Applications/Xcode.app/Contents/Developer/usr/bin/lldb-mi"
+                "MIMode": "lldb"
               },
             "setupCommands": [
                 {
