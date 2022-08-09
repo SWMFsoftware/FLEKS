@@ -1,6 +1,7 @@
 #ifndef _PICGRID_H_
 #define _PICGRID_H_
 
+#include <AMReX_AmrCore.H>
 #include <AMReX_BCRec.H>
 #include <AMReX_Box.H>
 #include <AMReX_BoxArray.H>
@@ -18,7 +19,7 @@
 #include "Constants.h"
 
 // This class define the grid information, but NOT the data on the grid.
-class PicGrid {
+class PicGrid : public amrex::AmrCore {
 
 protected:
   int nGst;
@@ -55,7 +56,7 @@ protected:
   // 'iAssign_' nor 'iAbandon_', nodeShare stors the neighbor that handle
   // this node.
   amrex::iMultiFab nodeShare;
-  constexpr static int iAssign_ = (1<<4), iAbandon_ = -1;
+  constexpr static int iAssign_ = (1 << 4), iAbandon_ = -1;
 
   bool doNeedFillNewCell = true;
 
@@ -63,7 +64,7 @@ protected:
 
   bool isGridEmpty = false;
 
-  bool isFake2D = false; 
+  bool isFake2D = false;
 
 public:
   PicGrid(){};
