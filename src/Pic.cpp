@@ -134,8 +134,8 @@ void Pic::fill_new_cells() {
 //==========================================================
 void Pic::set_geom(int nGstIn, const Geometry& geomIn) {
   set_nGst(nGstIn);
-  geom = geomIn;
-  isFake2D = geom.Domain().bigEnd(iz_) == geom.Domain().smallEnd(iz_);
+  gm = geomIn;
+  isFake2D = gm.Domain().bigEnd(iz_) == gm.Domain().smallEnd(iz_);
 }
 
 //==========================================================
@@ -244,7 +244,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
         }
     }
 
-    cellStatus.FillBoundary(geom.periodicity());
+    cellStatus.FillBoundary(gm.periodicity());
 
     if (isFake2D) {
       // For the fake 2D cases, in the z-direction, only the first layer ghost
@@ -289,7 +289,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
         }
     }
 
-    nodeStatus.FillBoundary(geom.periodicity());
+    nodeStatus.FillBoundary(gm.periodicity());
 
     distribute_FabArray(nodeShare, nodeBA, dm, 1, 0, false);
     set_nodeShare();
@@ -299,7 +299,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::unique_ptr<Particles<> >(new Particles<>(
-          picRegionBA, geom, dm, centerBA, fluidInterface.get(), tc.get(), i,
+          picRegionBA, gm, dm, centerBA, fluidInterface.get(), tc.get(), i,
           fluidInterface->get_species_charge(i),
           fluidInterface->get_species_mass(i), nPartPerCell, testCase));
 
@@ -364,7 +364,7 @@ void Pic::set_nodeShare() {
   if (!nodeShare.empty())
     nodeShare.setVal(iAbandon_);
 
-  const Box& gbx = convert(geom.Domain(), { 0, 0, 0 });
+  const Box& gbx = convert(gm.Domain(), { 0, 0, 0 });
 
   if (!nodeShare.empty())
     for (MFIter mfi(nodeShare); mfi.isValid(); ++mfi) {
@@ -515,14 +515,14 @@ void Pic::fill_E_B_fields() {
   fill_new_node_E();
   fill_new_node_B();
 
-  nodeE.FillBoundary(geom.periodicity());
-  nodeB.FillBoundary(geom.periodicity());
+  nodeE.FillBoundary(gm.periodicity());
+  nodeB.FillBoundary(gm.periodicity());
 
   apply_BC(nodeStatus, nodeE, 0, nDim, &Pic::get_node_E);
   apply_BC(nodeStatus, nodeB, 0, nDim, &Pic::get_node_B);
 
   fill_new_center_B();
-  centerB.FillBoundary(geom.periodicity());
+  centerB.FillBoundary(gm.periodicity());
 
   apply_BC(cellStatus, centerB, 0, centerB.nComp(), &Pic::get_center_B);
 }
@@ -617,16 +617,16 @@ void Pic::calc_mass_matrix() {
 
   Real invVol = 1;
   for (int i = 0; i < nDim; i++) {
-    invVol *= geom.InvCellSize(i);
+    invVol *= gm.InvCellSize(i);
   }
 
   jHat.mult(invVol, 0, jHat.nComp(), jHat.nGrow());
 
-  jHat.SumBoundary(geom.periodicity());
+  jHat.SumBoundary(gm.periodicity());
 
   if (!useExplicitPIC) {
-    nodeMM.SumBoundary(geom.periodicity());
-    nodeMM.FillBoundary(geom.periodicity());
+    nodeMM.SumBoundary(gm.periodicity());
+    nodeMM.FillBoundary(gm.periodicity());
   }
 }
 
@@ -639,7 +639,7 @@ void Pic::sum_moments(bool updateDt) {
 
   timing_func(nameFunc);
 
-  const auto& dx = geom.CellSize();
+  const auto& dx = gm.CellSize();
   Real minDx = 1e99;
   for (int iDim = 0; iDim < nDim; iDim++) {
     if (minDx > dx[iDim])
@@ -753,7 +753,7 @@ void Pic::calculate_phi(LinearSolver& solver) {
 
   solver.reset(get_local_node_or_cell_number(centerDivE));
 
-  div_node_to_center(nodeE, tempCenter1, geom.InvCellSize());
+  div_node_to_center(nodeE, tempCenter1, gm.InvCellSize());
 
   Real coef = 1;
   if (Particles<>::particlePosition == Staggered) {
@@ -764,14 +764,14 @@ void Pic::calculate_phi(LinearSolver& solver) {
                     centerNetChargeN, 0, 0, tempCenter1.nComp(),
                     tempCenter1.nGrow());
 
-  convert_3d_to_1d(tempCenter1, solver.rhs, geom);
+  convert_3d_to_1d(tempCenter1, solver.rhs, gm);
 
   BL_PROFILE_VAR("Pic::phi_iterate", solve);
   solver.solve(doReport);
   BL_PROFILE_VAR_STOP(solve);
 
-  convert_1d_to_3d(solver.xLeft, centerPhi, geom);
-  centerPhi.FillBoundary(geom.periodicity());
+  convert_1d_to_3d(solver.xLeft, centerPhi, gm);
+  centerPhi.FillBoundary(gm.periodicity());
 }
 
 //==========================================================
@@ -781,8 +781,8 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut) {
 
   zero_array(vecOut, divESolver.get_nSolve());
 
-  convert_1d_to_3d(vecIn, tempCenter1, geom);
-  tempCenter1.FillBoundary(0, 1, IntVect(1), geom.periodicity());
+  convert_1d_to_3d(vecIn, tempCenter1, gm);
+  tempCenter1.FillBoundary(0, 1, IntVect(1), gm.periodicity());
 
   tempCenter1_1.setVal(0.0);
   for (amrex::MFIter mfi(tempCenter1); mfi.isValid(); ++mfi) {
@@ -806,7 +806,7 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut) {
               }
   }
   tempCenter1_1.mult(fourPI * fourPI);
-  convert_3d_to_1d(tempCenter1_1, vecOut, geom);
+  convert_3d_to_1d(tempCenter1_1, vecOut, gm);
 }
 
 //==========================================================
@@ -827,10 +827,10 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
   }
 
   if (!doNetChargeOnly) {
-    centerMM.SumBoundary(geom.periodicity());
+    centerMM.SumBoundary(gm.periodicity());
   }
 
-  centerNetChargeNew.SumBoundary(geom.periodicity());
+  centerNetChargeNew.SumBoundary(gm.periodicity());
 
   apply_BC(cellStatus, centerNetChargeNew, 0, centerNetChargeNew.nComp(),
            &Pic::get_zero);
@@ -935,7 +935,7 @@ void Pic::update_E_expl() {
   const Real dt = tc->get_dt();
   Real dt2dx[nDimMax];
   for (int i = 0; i < nDimMax; i++) {
-    dt2dx[i] = dt * geom.InvCellSize(i);
+    dt2dx[i] = dt * gm.InvCellSize(i);
   }
 
   curl_center_to_node(centerB, nodeE, dt2dx);
@@ -945,7 +945,7 @@ void Pic::update_E_expl() {
 
   MultiFab::Add(nodeE, nodeEth, 0, 0, nodeE.nComp(), nodeE.nGrow());
 
-  nodeE.FillBoundary(geom.periodicity());
+  nodeE.FillBoundary(gm.periodicity());
   apply_BC(nodeStatus, nodeE, 0, nDim, &Pic::get_node_E);
 }
 
@@ -959,7 +959,7 @@ void Pic::update_E_impl() {
 
   update_E_rhs(eSolver.rhs);
 
-  convert_3d_to_1d(nodeE, eSolver.xLeft, geom);
+  convert_3d_to_1d(nodeE, eSolver.xLeft, gm);
 
   update_E_matvec(eSolver.xLeft, eSolver.matvec, false);
 
@@ -977,9 +977,9 @@ void Pic::update_E_impl() {
   BL_PROFILE_VAR_STOP(eSolver);
 
   nodeEth.setVal(0.0);
-  convert_1d_to_3d(eSolver.xLeft, nodeEth, geom);
-  nodeEth.SumBoundary(geom.periodicity());
-  nodeEth.FillBoundary(geom.periodicity());
+  convert_1d_to_3d(eSolver.xLeft, nodeEth, gm);
+  nodeEth.SumBoundary(gm.periodicity());
+  nodeEth.FillBoundary(gm.periodicity());
 
   MultiFab::Add(nodeEth, nodeE, 0, 0, nodeEth.nComp(), nGst);
 
@@ -995,7 +995,7 @@ void Pic::update_E_impl() {
     smooth_E(nodeE);
   }
 
-  div_node_to_center(nodeE, centerDivE, geom.InvCellSize());
+  div_node_to_center(nodeE, centerDivE, gm.InvCellSize());
 }
 
 //==========================================================
@@ -1012,13 +1012,13 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
   MultiFab matvecMF(nodeBA, dm, 3, 1);
   matvecMF.setVal(0.0);
 
-  convert_1d_to_3d(vecIn, vecMF, geom);
+  convert_1d_to_3d(vecIn, vecMF, gm);
 
   // The right side edges should be filled in.
-  vecMF.SumBoundary(geom.periodicity());
+  vecMF.SumBoundary(gm.periodicity());
 
   // M*E needs ghost cell information.
-  vecMF.FillBoundary(geom.periodicity());
+  vecMF.FillBoundary(gm.periodicity());
 
   if (useZeroBC) {
     // The boundary nodes would not be filled in by convert_1d_3d. So, there
@@ -1029,13 +1029,13 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
     apply_BC(nodeStatus, vecMF, 0, nDim, &Pic::get_node_E);
   }
 
-  lap_node_to_node(vecMF, matvecMF, dm, geom, cellStatus);
+  lap_node_to_node(vecMF, matvecMF, dm, gm, cellStatus);
 
   Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
   matvecMF.mult(-delt2);
 
   { // grad(divE)
-    div_node_to_center(vecMF, centerDivE, geom.InvCellSize());
+    div_node_to_center(vecMF, centerDivE, gm.InvCellSize());
 
     if (fsolver.coefDiff > 0) {
       // Calculate cell center E for center-to-center divE.
@@ -1049,13 +1049,13 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
       // FluidInterface::calc_current, cell (c+4, c-1) of tempCenter3-block1
       // is not accurate, so the values at (c+4, c-2) will be wrong if we only
       // apply float BC for the outmost layer.
-      // apply_float_boundary(cellStatus, tempCenter3, geom, 0,
+      // apply_float_boundary(cellStatus, tempCenter3, gm, 0,
       //                           tempCenter3.nComp());
       //------------------------------------------------------------
 
-      div_center_to_center(tempCenter3, tempCenter1, geom.InvCellSize());
+      div_center_to_center(tempCenter3, tempCenter1, gm.InvCellSize());
 
-      tempCenter1.FillBoundary(0, 1, IntVect(1), geom.periodicity());
+      tempCenter1.FillBoundary(0, 1, IntVect(1), gm.periodicity());
 
       // 1) The outmost boundary layer of tempCenter3 is not accurate.
       // 2) The 2 outmost boundary layers (all ghosts if there are 2 ghost
@@ -1066,7 +1066,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
                         fsolver.coefDiff, tempCenter1, 0, 0, 1, 1);
     }
 
-    grad_center_to_node(centerDivE, tempNode3, geom.InvCellSize());
+    grad_center_to_node(centerDivE, tempNode3, gm.InvCellSize());
 
     tempNode3.mult(delt2);
     MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(),
@@ -1080,7 +1080,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
 
   MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
 
-  convert_3d_to_1d(matvecMF, vecOut, geom);
+  convert_3d_to_1d(matvecMF, vecOut, gm);
 }
 
 //==========================================================
@@ -1139,7 +1139,7 @@ void Pic::update_E_rhs(double* rhs) {
   apply_BC(cellStatus, centerB, 0, centerB.nComp(), &Pic::get_center_B);
   apply_BC(nodeStatus, nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
 
-  const Real* invDx = geom.InvCellSize();
+  const Real* invDx = gm.InvCellSize();
   curl_center_to_node(centerB, tempNode, invDx);
 
   MultiFab::Saxpy(temp2Node, -fourPI, jHat, 0, 0, temp2Node.nComp(),
@@ -1151,7 +1151,7 @@ void Pic::update_E_rhs(double* rhs) {
 
   MultiFab::Add(temp2Node, nodeE, 0, 0, nodeE.nComp(), temp2Node.nGrow());
 
-  convert_3d_to_1d(temp2Node, rhs, geom);
+  convert_3d_to_1d(temp2Node, rhs, gm);
 }
 
 //==========================================================
@@ -1161,16 +1161,16 @@ void Pic::update_B() {
 
   MultiFab dB(centerBA, dm, 3, nGst);
 
-  curl_node_to_center(nodeEth, dB, geom.InvCellSize());
+  curl_node_to_center(nodeEth, dB, gm.InvCellSize());
 
   MultiFab::Saxpy(centerB, -tc->get_dt(), dB, 0, 0, centerB.nComp(),
                   centerB.nGrow());
-  centerB.FillBoundary(geom.periodicity());
+  centerB.FillBoundary(gm.periodicity());
 
   apply_BC(cellStatus, centerB, 0, centerB.nComp(), &Pic::get_center_B);
 
   average_center_to_node(centerB, nodeB);
-  nodeB.FillBoundary(geom.periodicity());
+  nodeB.FillBoundary(gm.periodicity());
 
   apply_BC(nodeStatus, nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
 }
@@ -1273,7 +1273,7 @@ void Pic::smooth_multifab(amrex::MultiFab& mf, bool useFixedCoef,
             }
     }
 
-    mf.FillBoundary(geom.periodicity());
+    mf.FillBoundary(gm.periodicity());
   };
 
   smooth_dir(ix_);
@@ -1300,7 +1300,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   std::string nameFunc = "Pic::apply_BC";
   timing_func(nameFunc);
 
-  if (geom.isAllPeriodic())
+  if (gm.isAllPeriodic())
     return;
   if (mf.nGrow() == 0)
     return;
@@ -1311,7 +1311,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   BoxArray ba = convert(picRegionBA, mf.boxArray().ixType());
 
   const IntVect& ngrow = mf.nGrowVect();
-  if (geom.Domain().bigEnd(iz_) == geom.Domain().smallEnd(iz_)) {
+  if (gm.Domain().bigEnd(iz_) == gm.Domain().smallEnd(iz_)) {
     ba.grow(iz_, ngrow[iz_]);
   }
 
@@ -1402,7 +1402,7 @@ Real Pic::calc_E_field_energy() {
                     pow(arr(i, j, k, iz_), 2);
         }
 
-    const auto& dx = geom.CellSize();
+    const auto& dx = gm.CellSize();
     const Real coef = 0.5 * dx[ix_] * dx[iy_] * dx[iz_] / fourPI;
     sum += sumLoc * coef;
   }
@@ -1434,7 +1434,7 @@ Real Pic::calc_B_field_energy() {
                     pow(arr(i, j, k, iz_), 2);
         }
 
-    const auto& dx = geom.CellSize();
+    const auto& dx = gm.CellSize();
     const Real coef = 0.5 * dx[ix_] * dx[iy_] * dx[iz_] / fourPI;
     sum += sumLoc * coef;
   }
@@ -1513,7 +1513,7 @@ void Pic::load_balance() {
 
 //==========================================================
 void Pic::convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
-                           amrex::Geometry& geom) {
+                           amrex::Geometry& gm) {
   std::string nameFunc = "Pic::convert_1d_to_3d";
   timing_func(nameFunc);
 
@@ -1544,7 +1544,7 @@ void Pic::convert_1d_to_3d(const double* const p, amrex::MultiFab& MF,
 
 //==========================================================
 void Pic::convert_3d_to_1d(const amrex::MultiFab& MF, double* const p,
-                           amrex::Geometry& geom) {
+                           amrex::Geometry& gm) {
   std::string nameFunc = "Pic::convert_3d_to_1d";
   timing_func(nameFunc);
 

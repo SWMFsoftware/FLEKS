@@ -52,7 +52,7 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
 
 void FluidInterface::set_geom(const int nGstIn, const amrex::Geometry& geomIn) {
   nGst = nGstIn;
-  geom = geomIn;
+  gm = geomIn;
 }
 
 int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
@@ -72,11 +72,11 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
     amrex::Abort("Error: unknown action!\n");
   }
 
-  const Real* dx = geom.CellSize();
-  const auto plo = geom.ProbLo();
+  const Real* dx = gm.CellSize();
+  const auto plo = gm.ProbLo();
 
   // Global NODE box.
-  const Box gbx = convert(geom.Domain(), { 1, 1, 1 });
+  const Box gbx = convert(gm.Domain(), { 1, 1, 1 });
 
   const double no2siL = get_No2SiL();
 
@@ -101,7 +101,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
             } else if (doGetLoc) {
               int idx[nDimMax] = { i, j, k };
               for (int iDim = 0; iDim < nDimMax; iDim++) {
-                if (geom.isPeriodic(iDim)) {
+                if (gm.isPeriodic(iDim)) {
                   idx[iDim] = shift_periodic_index(
                       idx[iDim], gbx.smallEnd(iDim), gbx.bigEnd(iDim));
                 }
@@ -156,10 +156,10 @@ void FluidInterface::calc_current() {
   MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
 
   // The outmost layer of currentMF can not be calculated from centerB
-  curl_center_to_node(centerB, currentMF, geom.InvCellSize());
+  curl_center_to_node(centerB, currentMF, gm.InvCellSize());
   currentMF.mult(1.0 / (get_No2SiL() * fourPI * 1e-7), currentMF.nGrow());
 
-  currentMF.FillBoundary(geom.periodicity());
+  currentMF.FillBoundary(gm.periodicity());
 
   /*
   Q: The outmost layer of currentMF is not accurate. Why not use
@@ -989,9 +989,9 @@ void FluidInterface::update_nodeFluid(const MultiFabFLEKS& nodeIn,
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
 
-          Real z = geom.CellCenter(k, iz_) * No2MhdNoL;
-          Real y = geom.CellCenter(j, iy_) * No2MhdNoL;
-          Real x = geom.CellCenter(i, ix_) * No2MhdNoL;
+          Real z = gm.CellCenter(k, iz_) * No2MhdNoL;
+          Real y = gm.CellCenter(j, iy_) * No2MhdNoL;
+          Real x = gm.CellCenter(i, ix_) * No2MhdNoL;
 
           if (useMultiSpecies) {
             // double Rhot = 0;

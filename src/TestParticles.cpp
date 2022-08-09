@@ -5,13 +5,13 @@
 using namespace amrex;
 
 TestParticles::TestParticles(const amrex::BoxArray& regionBAIn,
-                             const amrex::Geometry& geom,
+                             const amrex::Geometry& gm,
                              const amrex::DistributionMapping& dm,
                              const amrex::BoxArray& ba,
                              FluidInterface* const fluidIn, TimeCtr* const tcIn,
                              const int speciesID, const amrex::Real charge,
                              const amrex::Real mass, int domainIDIn)
-    : Particles(regionBAIn, geom, dm, ba, fluidIn, tcIn, speciesID, charge,
+    : Particles(regionBAIn, gm, dm, ba, fluidIn, tcIn, speciesID, charge,
                 mass, IntVect(1, 1, 1)) {
   domainID = domainIDIn;
 

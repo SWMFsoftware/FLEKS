@@ -118,14 +118,14 @@ void Domain::make_grid() {
   centerBox.setSmall(centerBoxLo);
   centerBox.setBig(centerBoxHi);
 
-  geom.define(centerBox, &domainRange, coord, periodicity);
+  gm.define(centerBox, &domainRange, coord, periodicity);
 
   Print() << printPrefix << "Domain range = " << domainRange << std::endl;
 
-  pic.set_geom(nGst, geom);
-  fluidInterface->set_geom(nGst, geom);
+  pic.set_geom(nGst, gm);
+  fluidInterface->set_geom(nGst, gm);
 
-  pt.set_geom(nGst, geom);
+  pt.set_geom(nGst, gm);
 }
 
 //========================================================
@@ -398,7 +398,7 @@ void Domain::init_time_ctr() {
       writer.set_domainMax_D({ { domainRange.hi(ix_), domainRange.hi(iy_),
                                  domainRange.hi(iz_) } });
 
-      const Real *dx = geom.CellSize();
+      const Real *dx = gm.CellSize();
       writer.set_dx_D({ { dx[ix_], dx[iy_], dx[iz_] } });
       writer.set_nSpecies(nS);
       writer.set_units(

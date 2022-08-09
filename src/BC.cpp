@@ -7,14 +7,14 @@
 using namespace amrex;
 
 void apply_float_boundary(const iMultiFab& status, MultiFab& mf,
-                          const Geometry& geom, const int iStart,
+                          const Geometry& gm, const int iStart,
                           const int nComp, const int nshift) {
 
   Abort("Error: function apply_float_boundary has not been implemented!");
 
   //----The commented implementation is problematic!!------------------
 
-  // if (geom.isAllPeriodic())
+  // if (gm.isAllPeriodic())
   //   return;
   // if (mf.nGrow() == 0)
   //   return;

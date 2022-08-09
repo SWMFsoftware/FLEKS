@@ -10,12 +10,12 @@ using namespace amrex;
 //==========================================================
 template <int NStructReal, int NStructInt>
 Particles<NStructReal, NStructInt>::Particles(
-    const amrex::BoxArray& regionBAIn, const Geometry& geom,
+    const amrex::BoxArray& regionBAIn, const Geometry& gm,
     const DistributionMapping& dm, const BoxArray& ba,
     FluidInterface* const fluidIn, TimeCtr* const tcIn, const int speciesIDIn,
     const Real chargeIn, const Real massIn, const IntVect& nPartPerCellIn,
     TestCase tcase)
-    : ParticleContainer<NStructReal, NStructInt>(geom, dm, ba),
+    : ParticleContainer<NStructReal, NStructInt>(gm, dm, ba),
       fluidInterface(fluidIn),
       tc(tcIn),
       speciesID(speciesIDIn),

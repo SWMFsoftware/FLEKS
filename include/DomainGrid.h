@@ -32,7 +32,7 @@ protected:
   amrex::RealBox domainRange;
 
   const int coord = 0; // Cartesian grid
-  amrex::Geometry geom;
+  amrex::Geometry gm;
 
   GridInfo gridInfo;
 

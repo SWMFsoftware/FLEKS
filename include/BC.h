@@ -8,6 +8,6 @@
 #include <AMReX_iMultiFab.H>
 
 void apply_float_boundary(const amrex::iMultiFab& status, amrex::MultiFab& mf,
-                          const amrex::Geometry& geom, const int iStart,
+                          const amrex::Geometry& gm, const int iStart,
                           const int nComp, const int nshift = 0);
 #endif

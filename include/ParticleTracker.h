@@ -64,7 +64,7 @@ private:
 
   int nGst;
   amrex::DistributionMapping dm;
-  amrex::Geometry geom;
+  amrex::Geometry gm;
   amrex::BoxArray nodeBA, centerBA;
 
   // A collection of boxes to describe the PT domain. The boxes have been

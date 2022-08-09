@@ -10,9 +10,9 @@ using namespace amrex;
 
 void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
                       const amrex::DistributionMapping dm,
-                      const amrex::Geometry& geom,
+                      const amrex::Geometry& gm,
                       const amrex::iMultiFab& status) {
-  const amrex::Real* invDx = geom.InvCellSize();
+  const amrex::Real* invDx = gm.InvCellSize();
 
   BoxArray centerBA =
       convert(srcMF.boxArray(), IntVect{ AMREX_D_DECL(0, 0, 0) });
@@ -25,7 +25,7 @@ void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
     MultiFab srcAliasMF(srcMF, amrex::make_alias, i, 1);
     grad_node_to_center(srcAliasMF, centerMF, invDx, status);
 
-    // centerMF.FillBoundary(geom.periodicity());
+    // centerMF.FillBoundary(gm.periodicity());
     MultiFab dstAliasMF(dstMF, amrex::make_alias, i, 1);
     div_center_to_node(centerMF, dstAliasMF, invDx);
   }
@@ -230,7 +230,7 @@ void div_center_to_center(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
 }
 
 void print_MultiFab(const amrex::MultiFab& data, std::string tag,
-                    Geometry& geom, int nshift) {
+                    Geometry& gm, int nshift) {
   AllPrint() << "-----" << tag << " begin-----" << std::endl;
   Real sum = 0;
   Real sum2 = 0;
@@ -238,7 +238,7 @@ void print_MultiFab(const amrex::MultiFab& data, std::string tag,
   bool isCenter = data.ixType().cellCentered();
   bool isNode = !isCenter;
 
-  const Box& gbx = convert(geom.Domain(), data.boxArray().ixType());
+  const Box& gbx = convert(gm.Domain(), data.boxArray().ixType());
 
   for (MFIter mfi(data); mfi.isValid(); ++mfi) {
     const FArrayBox& fab = data[mfi];
@@ -258,35 +258,35 @@ void print_MultiFab(const amrex::MultiFab& data, std::string tag,
       jMax--;
       kMax--;
 
-      if ((!geom.isPeriodic(ix_)) && gbx.bigEnd(ix_) == hi.x)
+      if ((!gm.isPeriodic(ix_)) && gbx.bigEnd(ix_) == hi.x)
         iMax++;
-      if ((!geom.isPeriodic(iy_)) && gbx.bigEnd(iy_) == hi.y)
+      if ((!gm.isPeriodic(iy_)) && gbx.bigEnd(iy_) == hi.y)
         jMax++;
-      if ((!geom.isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z)
+      if ((!gm.isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z)
         kMax++;
     }
 
-    if (!geom.isPeriodic(ix_) && gbx.bigEnd(ix_) == hi.x) {
+    if (!gm.isPeriodic(ix_) && gbx.bigEnd(ix_) == hi.x) {
       iMax += nshift;
     }
 
-    if (!geom.isPeriodic(iy_) && gbx.bigEnd(iy_) == hi.y) {
+    if (!gm.isPeriodic(iy_) && gbx.bigEnd(iy_) == hi.y) {
       jMax += nshift;
     }
 
-    if (!geom.isPeriodic(iz_) && gbx.bigEnd(iz_) == hi.z) {
+    if (!gm.isPeriodic(iz_) && gbx.bigEnd(iz_) == hi.z) {
       kMax += nshift;
     }
 
-    if (!geom.isPeriodic(ix_) && gbx.smallEnd(ix_) == lo.x) {
+    if (!gm.isPeriodic(ix_) && gbx.smallEnd(ix_) == lo.x) {
       iMin -= nshift;
     }
 
-    if (!geom.isPeriodic(iy_) && gbx.smallEnd(iy_) == lo.y) {
+    if (!gm.isPeriodic(iy_) && gbx.smallEnd(iy_) == lo.y) {
       jMin -= nshift;
     }
 
-    if (!geom.isPeriodic(iz_) && gbx.smallEnd(iz_) == lo.z) {
+    if (!gm.isPeriodic(iz_) && gbx.smallEnd(iz_) == lo.z) {
       kMin -= nshift;
     }
 

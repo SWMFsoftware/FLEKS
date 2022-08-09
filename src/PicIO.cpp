@@ -44,7 +44,7 @@ void Pic::find_mpi_rank_for_points(const int nPoint, const double* const xyz_I,
                                    int* const rank_I) {
   int nDimGM = fluidInterface->get_fluid_dimension();
   amrex::Real si2nol = fluidInterface->get_Si2NoL();
-  const RealBox& range = geom.ProbDomain();
+  const RealBox& range = gm.ProbDomain();
   for (int i = 0; i < nPoint; i++) {
     amrex::Real x = xyz_I[i * nDimGM + ix_] * si2nol;
     amrex::Real y = xyz_I[i * nDimGM + iy_] * si2nol;
@@ -81,7 +81,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
   const int iBx_ = nSpecies * nVarPerSpecies, iBy_ = iBx_ + 1, iBz_ = iBy_ + 1;
   const int iEx_ = iBz_ + 1;
 
-  const RealBox& range = geom.ProbDomain();
+  const RealBox& range = gm.ProbDomain();
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     double pic_D[3] = { 0 };
     for (int iDim = 0; iDim < nDim; iDim++) {
@@ -100,15 +100,15 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
       for (int iVar = iRho_; iVar <= iPyz_; iVar++) {
         const int iStart = iSpecies * nVarPerSpecies;
         dataPIC_I[iStart + iVar] =
-            get_value_at_loc(nodePlasma[iSpecies], geom, xp, yp, zp, iVar);
+            get_value_at_loc(nodePlasma[iSpecies], gm, xp, yp, zp, iVar);
       }
 
     for (int iDir = ix_; iDir <= iz_; iDir++) {
-      dataPIC_I[iBx_ + iDir] = get_value_at_loc(nodeB, geom, xp, yp, zp, iDir);
+      dataPIC_I[iBx_ + iDir] = get_value_at_loc(nodeB, gm, xp, yp, zp, iDir);
     }
 
     for (int iDir = ix_; iDir <= iz_; iDir++) {
-      dataPIC_I[iEx_ + iDir] = get_value_at_loc(nodeE, geom, xp, yp, zp, iDir);
+      dataPIC_I[iEx_ + iDir] = get_value_at_loc(nodeE, gm, xp, yp, zp, iDir);
     }
 
     // Combine PIC plasma data into MHD fluid data.
@@ -124,15 +124,15 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
   if (isGridEmpty)
     return;
 
-  const auto plo = geom.ProbLo();
-  const auto plh = geom.ProbHi();
+  const auto plo = gm.ProbLo();
+  const auto plh = gm.ProbHi();
 
   Real xMinL_D[nDim] = { plh[ix_], plh[iy_], plh[iz_] };
   Real xMaxL_D[nDim] = { plo[ix_], plo[iy_], plo[iz_] };
 
-  const auto dx = geom.CellSize();
+  const auto dx = gm.CellSize();
 
-  const Box& gbx = convert(geom.Domain(), { 1, 1, 1 });
+  const Box& gbx = convert(gm.Domain(), { 1, 1, 1 });
 
   const auto glo = lbound(gbx);
   const auto ghi = ubound(gbx);
@@ -148,7 +148,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 
     // Do not output the rightmost nodes for periodic boundary.
     for (int iDim = 0; iDim < nDim; iDim++)
-      if ((geom.isPeriodic(iDim)) && gbx.bigEnd(iDim) == hi[iDim])
+      if ((gm.isPeriodic(iDim)) && gbx.bigEnd(iDim) == hi[iDim])
         hi[iDim]--;
 
     auto do_output_this_node = [&](int i, int j, int k) {
@@ -158,11 +158,11 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         return true;
 
       if (type != iAbandon_) {
-        if (geom.isPeriodic(ix_) && i == glo.x && !test_bit(type, ix_))
+        if (gm.isPeriodic(ix_) && i == glo.x && !test_bit(type, ix_))
           return true;
-        if (geom.isPeriodic(iy_) && j == glo.y && !test_bit(type, iy_))
+        if (gm.isPeriodic(iy_) && j == glo.y && !test_bit(type, iy_))
           return true;
-        if (!isFake2D && geom.isPeriodic(iz_) && k == glo.z &&
+        if (!isFake2D && gm.isPeriodic(iz_) && k == glo.z &&
             !test_bit(type, iz_))
           return true;
       }
@@ -203,7 +203,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 
   if (ParallelDescriptor::MyProc() == 0 && writerIn.get_plotDx() >= 0) {
     // Processor-0 output the inactive PIC nodes for structured output.
-    Box gbx = convert(geom.Domain(), { 1, 1, 1 });
+    Box gbx = convert(gm.Domain(), { 1, 1, 1 });
 
     if (writerIn.is_compact())
       gbx = convert(nodeBA.minimalBox(), { 1, 1, 1 });
@@ -212,11 +212,11 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
     const auto hi = ubound(gbx);
 
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
-    if (geom.isPeriodic(ix_))
+    if (gm.isPeriodic(ix_))
       --iMax;
-    if (geom.isPeriodic(iy_))
+    if (gm.isPeriodic(iy_))
       --jMax;
-    if (geom.isPeriodic(iz_))
+    if (gm.isPeriodic(iz_))
       --kMax;
 
     if (isFake2D)
@@ -322,16 +322,16 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
     // If not isValidMFI, then it is not possible to output variables other than
     // 'X', 'Y', 'Z'
     if (var.substr(0, 1) == "X") {
-      const auto plo = geom.ProbLo();
-      const auto dx = geom.CellSize();
+      const auto plo = gm.ProbLo();
+      const auto dx = gm.CellSize();
       value = ix * dx[ix_] + plo[ix_];
     } else if (var.substr(0, 1) == "Y") {
-      const auto plo = geom.ProbLo();
-      const auto dx = geom.CellSize();
+      const auto plo = gm.ProbLo();
+      const auto dx = gm.CellSize();
       value = iy * dx[iy_] + plo[iy_];
     } else if (var.substr(0, 1) == "Z") {
-      const auto plo = geom.ProbLo();
-      const auto dx = geom.CellSize();
+      const auto plo = gm.ProbLo();
+      const auto dx = gm.CellSize();
       value = iz * dx[iz_] + plo[iz_];
     } else if (var.substr(0, 2) == "Ex") {
       const amrex::Array4<amrex::Real const>& arr = nodeE[mfi].array();
@@ -604,13 +604,13 @@ void Pic::set_IO_geom(amrex::Geometry& geomIO, const PlotWriter& pw) {
   RealBox boxRangeOut;
   Real no2outL = pw.No2OutTable("X");
   for (int i = 0; i < nDim; i++) {
-    boxRangeOut.setLo(i, geom.ProbLo(i) * no2outL);
-    boxRangeOut.setHi(i, geom.ProbHi(i) * no2outL);
+    boxRangeOut.setLo(i, gm.ProbLo(i) * no2outL);
+    boxRangeOut.setHi(i, gm.ProbHi(i) * no2outL);
   }
   Array<int, nDim> periodicity;
   for (int i = 0; i < nDim; i++)
-    periodicity[i] = geom.isPeriodic(i);
-  geomIO.define(geom.Domain(), boxRangeOut, geom.Coord(), periodicity);
+    periodicity[i] = gm.isPeriodic(i);
+  geomIO.define(gm.Domain(), boxRangeOut, gm.Coord(), periodicity);
 }
 
 //==========================================================
@@ -657,13 +657,13 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
       const auto hi = ubound(box);
 
       for (int k = lo.z; k <= hi.z; ++k) {
-        // Use the value returned from geom instead of geomOut, and it will be
+        // Use the value returned from gm instead of geomOut, and it will be
         // converted to output unit just as other variables.
-        const Real z0 = geom.CellCenter(k, iz_);
+        const Real z0 = gm.CellCenter(k, iz_);
         for (int j = lo.y; j <= hi.y; ++j) {
-          const Real y0 = geom.CellCenter(j, iy_);
+          const Real y0 = gm.CellCenter(j, iy_);
           for (int i = lo.x; i <= hi.x; ++i) {
-            const Real x0 = geom.CellCenter(i, ix_);
+            const Real x0 = gm.CellCenter(i, ix_);
             cellArr(i, j, k, ix_) = x0;
             cellArr(i, j, k, iy_) = y0;
             cellArr(i, j, k, iz_) = z0;

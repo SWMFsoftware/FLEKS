@@ -24,7 +24,7 @@ protected:
   int nGst;
 
   // const int coord = 0; // Cartesian grid
-  amrex::Geometry geom;
+  amrex::Geometry gm;
 
   // A collection of boxes to describe the PIC domain. The boxes have been
   // combined if possible. It covers the same region as centerBA, but usually
@@ -76,7 +76,7 @@ public:
   inline int find_mpi_rank_from_coord(amrex::Real const x, amrex::Real const y,
                                       amrex::Real const z) const {
     amrex::Real loc[3] = { x, y, z };
-    auto idx = geom.CellIndex(loc);
+    auto idx = gm.CellIndex(loc);
     return find_mpi_rank_from_cell_index(idx[ix_], idx[iy_], idx[iz_]);
   }
 

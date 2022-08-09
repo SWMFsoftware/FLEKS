@@ -21,7 +21,7 @@ void curl_node_to_center(const amrex::MultiFab& nodeMF,
 
 void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
                       const amrex::DistributionMapping dm,
-                      const amrex::Geometry& geom,
+                      const amrex::Geometry& gm,
                       const amrex::iMultiFab& status);
 
 void grad_node_to_center(const amrex::MultiFab& nodeMF,
@@ -50,7 +50,7 @@ void print_MultiFab(const amrex::MultiFab& data, std::string tag,
                     int nshift = 0);
 
 void print_MultiFab(const amrex::MultiFab& data, std::string tag,
-                    amrex::Geometry& geom, int nshift = 0);
+                    amrex::Geometry& gm, int nshift = 0);
 
 inline int shift_periodic_index(int idx, int lo, int hi) {
   if (idx > hi)
@@ -128,13 +128,13 @@ inline amrex::Real get_value_at_node(const amrex::MultiFab& mf,
 
 inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
                                     const amrex::MFIter& mfi,
-                                    const amrex::Geometry& geom,
+                                    const amrex::Geometry& gm,
                                     const amrex::Real x, const amrex::Real y,
                                     const amrex::Real z, const int iVar) {
-  const auto plo = geom.ProbLo();
+  const auto plo = gm.ProbLo();
   const amrex::Real loc[nDim] = { x, y, z };
 
-  const auto invDx = geom.InvCellSize();
+  const auto invDx = gm.InvCellSize();
 
   int loIdx[3];
   amrex::Real dx[3];
@@ -189,16 +189,16 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
 }
 
 inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
-                                    const amrex::Geometry& geom,
+                                    const amrex::Geometry& gm,
                                     const amrex::Real x, const amrex::Real y,
                                     const amrex::Real z, const int iVar) {
   amrex::Real loc[3] = { x, y, z };
-  auto idx = geom.CellIndex(loc);
+  auto idx = gm.CellIndex(loc);
 
   for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const amrex::Box& bx = mfi.validbox();
     if (bx.contains(idx))
-      return get_value_at_loc(mf, mfi, geom, x, y, z, iVar);
+      return get_value_at_loc(mf, mfi, gm, x, y, z, iVar);
   }
 
   amrex::AllPrint() << "loc = " << loc[ix_] << " " << loc[iy_] << " "

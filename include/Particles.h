@@ -112,7 +112,7 @@ public:
 
   amrex::iMultiFab cellStatus;
 
-  Particles(const amrex::BoxArray& regionBAIn, const amrex::Geometry& geom,
+  Particles(const amrex::BoxArray& regionBAIn, const amrex::Geometry& gm,
             const amrex::DistributionMapping& dm, const amrex::BoxArray& ba,
             FluidInterface* fluidIn, TimeCtr* tcIn, const int speciesIDIn,
             const amrex::Real chargeIn, const amrex::Real massIn,

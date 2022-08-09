@@ -35,7 +35,7 @@ private:
 
   // ------Grid info----------
   amrex::DistributionMapping dm;
-  amrex::Geometry geom;
+  amrex::Geometry gm;
   amrex::BoxArray centerBA;
   amrex::BoxArray nodeBA;
   //------------------------
@@ -291,7 +291,7 @@ public:
   amrex::Real get_value(const amrex::MFIter& mfi, const amrex::Real x,
                         const amrex::Real y, const amrex::Real z,
                         const int iVar) const {
-    return get_value_at_loc(nodeFluid, mfi, geom, x, y, z, iVar);
+    return get_value_at_loc(nodeFluid, mfi, gm, x, y, z, iVar);
   }
 
   template <typename T>
@@ -876,7 +876,7 @@ public:
     }
 
     amrex::Real gradpe =
-        0.5 * geom.InvCellSize(ix_) *
+        0.5 * gm.InvCellSize(ix_) *
         (get_p(mfi, xCenter + 1, y, z, 0) - get_p(mfi, xCenter - 1, y, z, 0));
 
     return gradpe;
@@ -898,7 +898,7 @@ public:
     }
 
     amrex::Real gradpe =
-        0.5 * geom.InvCellSize(iy_) *
+        0.5 * gm.InvCellSize(iy_) *
         (get_p(mfi, x, yCenter + 1, z, 0) - get_p(mfi, x, yCenter - 1, z, 0));
 
     return gradpe;
@@ -920,7 +920,7 @@ public:
     }
 
     amrex::Real gradpe =
-        0.5 * geom.InvCellSize(iz_) *
+        0.5 * gm.InvCellSize(iz_) *
         (get_p(mfi, x, y, zCenter + 1, 0) - get_p(mfi, x, y, zCenter - 1, 0));
 
     return gradpe;

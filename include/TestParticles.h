@@ -25,7 +25,7 @@ private:
   static const int iRegionUniform_ = 2;
 
 public:
-  TestParticles(const amrex::BoxArray& regionBAIn, const amrex::Geometry& geom,
+  TestParticles(const amrex::BoxArray& regionBAIn, const amrex::Geometry& gm,
                 const amrex::DistributionMapping& dm, const amrex::BoxArray& ba,
                 FluidInterface* const fluidIn, TimeCtr* const tcIn,
                 const int speciesID, const amrex::Real charge,
