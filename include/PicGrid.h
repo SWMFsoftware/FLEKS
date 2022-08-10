@@ -67,7 +67,10 @@ protected:
   bool isFake2D = false;
 
 public:
-  PicGrid(){};
+  // This strange constructor is used to satisfy the requirement of
+  // AmrCore. It should be improved! --Yuxi
+  PicGrid(amrex::RealBox rb = amrex::RealBox({ -1, -1, -1 }, { 1, 1, 1 }))
+      : AmrCore(&rb, 0, amrex::Vector<int>({ 8, 8, 8 })){};
   ~PicGrid() = default;
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }
@@ -94,6 +97,45 @@ public:
     amrex::Abort("Error: can not find this cell!");
     return -1; // To suppress compiler warnings.
   }
+
+  // Make a new level using provided BoxArray and DistributionMapping and
+  // fill with interpolated coarse level data.
+  // overrides the pure virtual function in AmrCore
+  virtual void MakeNewLevelFromCoarse(
+      int lev, amrex::Real time, const amrex::BoxArray& ba,
+      const amrex::DistributionMapping& dm) override{
+    // To be implemented
+  };
+
+  // Remake an existing level using provided BoxArray and DistributionMapping
+  // and fill with existing fine and coarse data. overrides the pure virtual
+  // function in AmrCore
+  virtual void RemakeLevel(int lev, amrex::Real time, const amrex::BoxArray& ba,
+                           const amrex::DistributionMapping& dm) override{
+    // To be implemented
+  };
+
+  // Delete level data
+  // overrides the pure virtual function in AmrCore
+  virtual void ClearLevel(int lev) override{
+    // To be implemented
+  };
+
+  // Make a new level from scratch using provided BoxArray and
+  // DistributionMapping. Only used during initialization. overrides the pure
+  // virtual function in AmrCore
+  virtual void MakeNewLevelFromScratch(
+      int lev, amrex::Real time, const amrex::BoxArray& ba,
+      const amrex::DistributionMapping& dm) override{
+    // To be implemented
+  };
+
+  // tag all cells for refinement
+  // overrides the pure virtual function in AmrCore
+  virtual void ErrorEst(int lev, amrex::TagBoxArray& tags, amrex::Real time,
+                        int ngrow) override{
+    // To be implemented
+  };
 };
 
 #endif
