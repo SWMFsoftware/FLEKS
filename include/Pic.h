@@ -8,7 +8,7 @@
 #include "FluidInterface.h"
 #include "LinearSolver.h"
 #include "Particles.h"
-#include "PicGrid.h"
+#include "Grid.h"
 #include "TimeCtr.h"
 #include "UMultiFab.h"
 
@@ -32,7 +32,7 @@ typedef void (Pic::*PicWriteAmrex)(const std::string &filename,
                                    const std::string varName);
 
 // The grid is defined in DomainGrid. This class contains the data on the grid.
-class Pic : public PicGrid {
+class Pic : public Grid {
   friend PlotWriter;
   friend ParticleTracker;
   // private variables

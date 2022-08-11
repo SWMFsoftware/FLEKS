@@ -176,10 +176,10 @@ contains
 
   end subroutine PC_put_from_gm_dt
   !============================================================================
-  subroutine PC_put_from_gm_grid_info(nInt, nPicGrid, nSize_I, Int_I)
+  subroutine PC_put_from_gm_grid_info(nInt, nGrid, nSize_I, Int_I)
 
-    integer, intent(in)         :: nInt, nPicGrid
-    integer, intent(in)         :: Int_I(nInt), nSize_I(nPicGrid)
+    integer, intent(in)         :: nInt, nGrid
+    integer, intent(in)         :: Int_I(nInt), nSize_I(nGrid)
     !--------------------------------------------------------------------------
     call pic_set_grid_info(nInt, nSize_I, Int_I)
 

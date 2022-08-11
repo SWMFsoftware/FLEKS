@@ -1,5 +1,5 @@
-#ifndef _PICGRID_H_
-#define _PICGRID_H_
+#ifndef _Grid_H_
+#define _Grid_H_
 
 #include <AMReX_AmrCore.H>
 #include <AMReX_BCRec.H>
@@ -19,7 +19,7 @@
 #include "Constants.h"
 
 // This class define the grid information, but NOT the data on the grid.
-class PicGrid : public amrex::AmrCore {
+class Grid : public amrex::AmrCore {
 
 protected:
   int nGst;
@@ -69,9 +69,9 @@ protected:
 public:
   // This strange constructor is used to satisfy the requirement of
   // AmrCore. It should be improved! --Yuxi
-  PicGrid(amrex::RealBox rb = amrex::RealBox({ -1, -1, -1 }, { 1, 1, 1 }))
+  Grid(amrex::RealBox rb = amrex::RealBox({ -1, -1, -1 }, { 1, 1, 1 }))
       : AmrCore(&rb, 0, amrex::Vector<int>({ 8, 8, 8 })){};
-  ~PicGrid() = default;
+  ~Grid() = default;
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }
 
