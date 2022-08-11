@@ -136,7 +136,7 @@ public:
 
   void set_geom(int nGstIn, const amrex::Geometry &geomIn);
 
-  void regrid(const amrex::BoxArray &picRegionBAIn,
+  void regrid(const amrex::BoxArray &activeRegionBAIn,
               const amrex::BoxArray &centerBAIn,
               const amrex::DistributionMapping &dmIn);
 

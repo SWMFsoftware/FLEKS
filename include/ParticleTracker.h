@@ -3,10 +3,11 @@
 
 #include <AMReX_Vector.H>
 
+#include "Grid.h"
 #include "Pic.h"
 #include "TestParticles.h"
 
-class ParticleTracker {
+class ParticleTracker : public Grid {
 public:
   ParticleTracker(){};
   ~ParticleTracker() {
@@ -28,7 +29,7 @@ public:
 
   void set_geom(int nGstIn, const amrex::Geometry &geomIn);
 
-  void regrid(const amrex::BoxArray &ptRegionBAIn,
+  void regrid(const amrex::BoxArray &activeRegionBAIn,
               const amrex::BoxArray &centerBAIn,
               const amrex::DistributionMapping &dmIn, Pic &pic);
 
@@ -62,24 +63,8 @@ private:
 
   amrex::Vector<unsigned long int> initPartNumber;
 
-  int nGst;
-  amrex::DistributionMapping dm;
-  amrex::Geometry gm;
-  amrex::BoxArray nodeBA, centerBA;
-
-  // A collection of boxes to describe the PT domain. The boxes have been
-  // combined if possible. It covers the same region as centerBA, but usually
-  // contains less boxes.
-  amrex::BoxArray ptRegionBA;
-
-  amrex::iMultiFab cellStatus;
-
   std::unique_ptr<PlotCtr> savectr;
   int dnSave = 1;
-
-  bool isGridInitialized = false;
-
-  bool isGridEmpty = false;
 
   amrex::IntVect nTPPerCell = { 1, 1, 1 };
   amrex::IntVect nTPIntervalCell = { 1, 1, 1 };

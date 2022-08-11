@@ -156,7 +156,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   doNeedFillNewCell = true;
 
-  picRegionBA = picRegionIn;
+  activeRegionBA = picRegionIn;
 
   centerBAOld = centerBA;
   nodeBAOld = convert(centerBAOld, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
@@ -299,7 +299,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::unique_ptr<Particles<> >(new Particles<>(
-          picRegionBA, gm, dm, centerBA, fluidInterface.get(), tc.get(), i,
+          activeRegionBA, gm, dm, centerBA, fluidInterface.get(), tc.get(), i,
           fluidInterface->get_species_charge(i),
           fluidInterface->get_species_mass(i), nPartPerCell, testCase));
 
@@ -320,7 +320,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
       // Label the particles outside the OLD PIC region.
       parts[i]->label_particles_outside_ba();
 
-      parts[i]->set_region_ba(picRegionBA);
+      parts[i]->set_region_ba(activeRegionBA);
 
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_ba_general();
@@ -897,7 +897,7 @@ void Pic::update(bool doReportIn) {
 
   if (doReport) {
     Real tEnd = second();
-    Real nPoint = picRegionBA.d_numPts();
+    Real nPoint = activeRegionBA.d_numPts();
     int nProc = amrex::ParallelDescriptor::NProcs();
     // The unit of the speed is (cell per processor per second)
     Real speed = nPoint / nProc / (tEnd - tStart);
@@ -1308,7 +1308,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   bool useFloatBC = (func == nullptr);
 
   // BoxArray ba = mf.boxArray();
-  BoxArray ba = convert(picRegionBA, mf.boxArray().ixType());
+  BoxArray ba = convert(activeRegionBA, mf.boxArray().ixType());
 
   const IntVect& ngrow = mf.nGrowVect();
   if (gm.Domain().bigEnd(iz_) == gm.Domain().smallEnd(iz_)) {

@@ -157,7 +157,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
 
   isGridEmpty = ptRegionIn.empty();
 
-  ptRegionBA = ptRegionIn;
+  activeRegionBA = ptRegionIn;
   centerBA = centerBAIn;
   nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
   dm = dmIn;
@@ -172,7 +172,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::unique_ptr<TestParticles>(new TestParticles(
-          ptRegionBA, gm, dm, centerBA, fluidInterface.get(), tc.get(), i,
+          activeRegionBA, gm, dm, centerBA, fluidInterface.get(), tc.get(), i,
           fluidInterface->get_species_charge(i),
           fluidInterface->get_species_mass(i), domainID));
       ptr->set_ppc(nTPPerCell);
@@ -186,7 +186,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
       // Label the particles outside the OLD PIC region.
       parts[i]->label_particles_outside_ba();
       parts[i]->SetParticleBoxArray(0, centerBA);
-      parts[i]->set_region_ba(ptRegionBA);
+      parts[i]->set_region_ba(activeRegionBA);
       parts[i]->SetParticleDistributionMap(0, dm);
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_ba_general();

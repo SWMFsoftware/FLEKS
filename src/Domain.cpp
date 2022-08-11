@@ -146,19 +146,19 @@ void Domain::regrid() {
 
   BoxList bl;
   get_boxlist_from_region(bl, gridInfo, centerBoxLo, centerBoxHi);
-  BoxArray picRegionBA(bl);
+  BoxArray activeRegionBA(bl);
 
   long nCellPic = 0;
   for (const auto &bx : bl) {
     nCellPic += bx.numPts();
   }
 
-  BoxArray baPic(picRegionBA);
+  BoxArray baPic(activeRegionBA);
 
   baPic.maxSize(maxBlockSize);
   Print() << "=====" << printPrefix << " Grid Information summary========="
           << "\n Number of Boxes to describe active region = "
-          << picRegionBA.size()
+          << activeRegionBA.size()
           << "\n Number of boxes                           = " << baPic.size()
           << "\n Number of active cells                    = " << nCellPic
           << "\n Number of domain cells                    = "
@@ -174,9 +174,9 @@ void Domain::regrid() {
 
   fluidInterface->regrid(baPic, dmPic);
 
-  pic.regrid(picRegionBA, baPic, dmPic);
+  pic.regrid(activeRegionBA, baPic, dmPic);
 
-  pt.regrid(picRegionBA, baPic, dmPic, pic);
+  pt.regrid(activeRegionBA, baPic, dmPic, pic);
 
   iGrid++;
   iDecomp++;

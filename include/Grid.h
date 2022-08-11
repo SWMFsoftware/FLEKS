@@ -27,10 +27,10 @@ protected:
   // const int coord = 0; // Cartesian grid
   amrex::Geometry gm;
 
-  // A collection of boxes to describe the PIC domain. The boxes have been
-  // combined if possible. It covers the same region as centerBA, but usually
-  // contains less boxes.
-  amrex::BoxArray picRegionBA;
+  // A collection of boxes to describe the simulation domain. The boxes have
+  // been combined if possible. It covers the same region as centerBA, but
+  // usually contains less boxes.
+  amrex::BoxArray activeRegionBA;
 
   amrex::BoxArray centerBAOld;
   amrex::BoxArray centerBA;
