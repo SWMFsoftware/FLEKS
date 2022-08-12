@@ -5,11 +5,11 @@
 using namespace std;
 
 void matvec_E_solver(const double *vecIn, double *vecOut, int n) {
-  fleksDomains(fleksDomains.selected()).pic.update_E_matvec(vecIn, vecOut);
+  fleksDomains(fleksDomains.selected()).pic->update_E_matvec(vecIn, vecOut);
 }
 
 void matvec_divE_accurate(const double *vecIn, double *vecOut, int n) {
-  fleksDomains(fleksDomains.selected()).pic.divE_accurate_matvec(vecIn, vecOut);
+  fleksDomains(fleksDomains.selected()).pic->divE_accurate_matvec(vecIn, vecOut);
 }
 
 void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,

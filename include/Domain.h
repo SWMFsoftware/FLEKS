@@ -8,9 +8,16 @@
 class Domain : public DomainGrid {
 private:
   bool doRestart = false;
+
 public:
-  Pic pic;
-  ParticleTracker pt;
+  // Q: Why are pic and pt defined as pointers?
+  // A: Pic and particleTracker are derived from AmrCore, whose initialization
+  // requires the informaion of the domain, such as the domain range and cell
+  // size. Such information is not known untill Domain received information from
+  // GM and read the input parameters. pic and pt are used as pointers so that
+  // their initialization is defered until the grid information is obtained.
+  std::unique_ptr<Pic> pic;
+  std::unique_ptr<ParticleTracker> pt;
 
   // Conceptually, both the Domain class and the Pic class may use the
   // following classes, so they are handled by shared pointers.

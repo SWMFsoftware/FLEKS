@@ -804,8 +804,8 @@ void find_output_list_caller(const PlotWriter& writerIn,
                              std::array<double, nDim>& xMin_D,
                              std::array<double, nDim>& xMax_D) {
   fleksDomains(fleksDomains.selected())
-      .pic.find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
-                            xMax_D);
+      .pic->find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
+                             xMax_D);
 }
 
 //==========================================================
@@ -813,5 +813,5 @@ void get_field_var_caller(const VectorPointList& pointList_II,
                           const std::vector<std::string>& sVar_I,
                           MDArray<double>& var_II) {
   fleksDomains(fleksDomains.selected())
-      .pic.get_field_var(pointList_II, sVar_I, var_II);
+      .pic->get_field_var(pointList_II, sVar_I, var_II);
 }

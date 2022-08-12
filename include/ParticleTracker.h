@@ -33,8 +33,6 @@ public:
               const amrex::BoxArray &centerBAIn,
               const amrex::DistributionMapping &dmIn, Pic &pic);
 
-  bool is_grid_empty() const { return isGridEmpty; }
-
   void update_field(Pic &pic);
   void update_cell_status(Pic &pic);
   void set_ic(Pic &pic);

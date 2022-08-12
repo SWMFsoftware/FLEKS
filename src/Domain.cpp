@@ -11,7 +11,7 @@ void Domain::update() {
 
   bool doReport = tc->monitor.is_time_to();
 
-  if (pic.is_grid_empty()) {
+  if (pic->is_grid_empty()) {
     if (tc->get_dt_si() <= 0) {
       tc->set_dt_si(tc->get_dummy_dt_si());
     }
@@ -30,13 +30,13 @@ void Domain::update() {
             << " (s) ====" << std::endl;
   }
 
-  pic.update(doReport);
+  pic->update(doReport);
 
   write_plots();
 
-  pic.write_log();
+  pic->write_log();
 
-  pt.update(pic);
+  pt->update(*pic);
 };
 
 //========================================================
@@ -59,9 +59,13 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
   fluidInterface->receive_info_from_gm(paramInt, gridDim, paramReal,
                                        paramString);
 
-  pic.init(fluidInterface, tc, domainID);
+  pic = std::make_unique<Pic>();
 
-  pt.init(fluidInterface, tc, domainID);
+  pt = std::make_unique<ParticleTracker>();
+
+  pic->init(fluidInterface, tc, domainID);
+
+  pt->init(fluidInterface, tc, domainID);
 
   read_param();
 
@@ -71,7 +75,7 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
 
   init_time_ctr();
 
-  pic.init_source(*fluidInterface);
+  pic->init_source(*fluidInterface);
 
   if (doRestart) {
     // Restoring the restart data before coupling with GM, because the PIC grid
@@ -122,10 +126,10 @@ void Domain::make_grid() {
 
   Print() << printPrefix << "Domain range = " << domainRange << std::endl;
 
-  pic.set_geom(nGst, gm);
+  pic->set_geom(nGst, gm);
   fluidInterface->set_geom(nGst, gm);
 
-  pt.set_geom(nGst, gm);
+  pt->set_geom(nGst, gm);
 }
 
 //========================================================
@@ -174,9 +178,9 @@ void Domain::regrid() {
 
   fluidInterface->regrid(baPic, dmPic);
 
-  pic.regrid(activeRegionBA, baPic, dmPic);
+  pic->regrid(activeRegionBA, baPic, dmPic);
 
-  pt.regrid(activeRegionBA, baPic, dmPic, pic);
+  pt->regrid(activeRegionBA, baPic, dmPic, *pic);
 
   iGrid++;
   iDecomp++;
@@ -195,36 +199,36 @@ void Domain::set_ic() {
   if (doRestart)
     return;
 
-  pic.fill_new_cells();
+  pic->fill_new_cells();
   write_plots(true);
-  pic.write_log(true, true);
+  pic->write_log(true, true);
 
-  pt.set_ic(pic);
+  pt->set_ic(*pic);
 }
 
 //========================================================
 void Domain::set_state_var(double *data, int *index) {
-  pic.set_state_var(data, index);
+  pic->set_state_var(data, index);
 }
 
 //========================================================
-int Domain::get_grid_nodes_number() { return pic.get_grid_nodes_number(); }
+int Domain::get_grid_nodes_number() { return pic->get_grid_nodes_number(); }
 
 //========================================================
-void Domain::get_grid(double *pos_DI) { pic.get_grid(pos_DI); }
+void Domain::get_grid(double *pos_DI) { pic->get_grid(pos_DI); }
 
 //========================================================
 void Domain::find_mpi_rank_for_points(const int nPoint,
                                       const double *const xyz_I,
                                       int *const rank_I) {
-  pic.find_mpi_rank_for_points(nPoint, xyz_I, rank_I);
+  pic->find_mpi_rank_for_points(nPoint, xyz_I, rank_I);
 }
 
 //========================================================
 void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
                                         const double *const xyz_I,
                                         double *const data_I, const int nVar) {
-  pic.get_fluid_state_for_points(nDim, nPoint, xyz_I, data_I, nVar);
+  pic->get_fluid_state_for_points(nDim, nPoint, xyz_I, data_I, nVar);
 }
 
 //========================================================
@@ -236,18 +240,18 @@ void Domain::read_restart() {
   BoxArray baPic = tmp.boxArray();
   DistributionMapping dmPic = tmp.DistributionMap();
 
-  pic.regrid(baPic, baPic, dmPic);
+  pic->regrid(baPic, baPic, dmPic);
   fluidInterface->regrid(baPic, dmPic);
 
   // Assume dmPT == dmPIC so far.
-  pt.regrid(baPic, baPic, dmPic, pic);
+  pt->regrid(baPic, baPic, dmPic, *pic);
 
   fluidInterface->read_restart();
-  pic.read_restart();
-  pt.read_restart();
+  pic->read_restart();
+  pt->read_restart();
 
   write_plots(true);
-  pic.write_log(true, true);
+  pic->write_log(true, true);
 }
 
 //========================================================
@@ -260,8 +264,8 @@ void Domain::save_restart() {
 void Domain::save_restart_data() {
   VisMF::SetNOutFiles(64);
   fluidInterface->save_restart_data();
-  pic.save_restart_data();
-  pt.save_restart_data();
+  pic->save_restart_data();
+  pt->save_restart_data();
 }
 
 //========================================================
@@ -307,7 +311,7 @@ void Domain::save_restart_header() {
     std::string command_suffix = "_" + domainName + "\n";
 
     headerFile << "#RESTART" + command_suffix;
-    headerFile << (pic.is_grid_empty() ? "F" : "T") << "\t\t\tdoRestart\n";
+    headerFile << (pic->is_grid_empty() ? "F" : "T") << "\t\t\tdoRestart\n";
     headerFile << "\n";
 
     headerFile << "#NSTEP" + command_suffix;
@@ -353,8 +357,8 @@ void Domain::save_restart_header() {
     headerFile << nCell[iz_] << "\t\t\tnCellZ\n";
     headerFile << "\n";
 
-    pic.save_restart_header(headerFile);
-    pt.save_restart_header(headerFile);
+    pic->save_restart_header(headerFile);
+    pt->save_restart_header(headerFile);
 
     headerFile << "\n";
   }
@@ -436,13 +440,13 @@ void Domain::read_param() {
         command == "#TESTCASE" || command == "#MERGEPARTICLE" ||
         command == "#SOURCE" || command == "#PIC" ||
         command == "#EXPLICITPIC") {
-      pic.read_param(command, readParam);
+      pic->read_param(command, readParam);
     } else if (command == "#PARTICLETRACKER" ||
                command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
                command == "#TPSAVE" || command == "#TPRELATIVISTIC" ||
                command == "#TPINITFROMPIC" || command == "#TPSTATESI") {
-      pt.read_param(command, readParam);
+      pt->read_param(command, readParam);
     } else if (command == "#OHMSLAW") {
       std::string sOhmU;
       Real eta;
@@ -453,7 +457,7 @@ void Domain::read_param() {
       fluidInterface->set_ohm_u(sOhmU);
     } else if (command == "#RESTART") {
       readParam.read_var("doRestart", doRestart);
-      pic.set_doRestart(doRestart);
+      pic->set_doRestart(doRestart);
     } else if (command == "#PARTICLESTAGGERING") {
       bool doStaggering;
       readParam.read_var("doStaggering", doStaggering);
@@ -624,9 +628,9 @@ void Domain::read_param() {
     //--------- The commands above exist in restart.H only --------
   }
 
-  pic.post_process_param();
-  pt.post_process_param();
+  pic->post_process_param();
+  pt->post_process_param();
 }
 
 //========================================================
-void Domain::write_plots(bool doForce) { pic.write_plots(doForce); }
+void Domain::write_plots(bool doForce) { pic->write_plots(doForce); }
