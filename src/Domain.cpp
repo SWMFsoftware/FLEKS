@@ -59,9 +59,16 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
   fluidInterface->receive_info_from_gm(paramInt, gridDim, paramReal,
                                        paramString);
 
-  pic = std::make_unique<Pic>();
+  { // Preparing grid information for Grid/AmrCore initialization.
+    read_param(true);
+    fluidInterface->readParam.roll_back();
+    make_grid();
+  }
 
-  pt = std::make_unique<ParticleTracker>();
+  pic = std::make_unique<Pic>(domainRange, nCell, coord, nLevel, periodicity);
+
+  pt = std::make_unique<ParticleTracker>(domainRange, nCell, coord, nLevel,
+                                         periodicity);
 
   pic->init(fluidInterface, tc, domainID);
 
@@ -71,7 +78,11 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
 
   fluidInterface->print_info();
 
-  make_grid();
+  {
+    pic->set_geom(nGst, gm);
+    fluidInterface->set_geom(nGst, gm);
+    pt->set_geom(nGst, gm);
+  }
 
   init_time_ctr();
 
@@ -125,11 +136,6 @@ void Domain::make_grid() {
   gm.define(centerBox, &domainRange, coord, periodicity);
 
   Print() << printPrefix << "Domain range = " << domainRange << std::endl;
-
-  pic->set_geom(nGst, gm);
-  fluidInterface->set_geom(nGst, gm);
-
-  pt->set_geom(nGst, gm);
 }
 
 //========================================================
@@ -422,7 +428,7 @@ void Domain::init_time_ctr() {
 }
 
 //========================================================
-void Domain::read_param() {
+void Domain::read_param(const bool readGridInfoOnly) {
   // The default values shoudl be set in the constructor.
 
   std::string command;
@@ -432,6 +438,13 @@ void Domain::read_param() {
   readParam.set_command_suffix(domainName);
 
   while (readParam.get_next_command(command)) {
+
+    // If readGridInfoOnly is true, only read the following commands.
+    if (readGridInfoOnly &&
+        !(command == "#MAXBLOCKSIZE" || command == "#PERIODICITY" ||
+          command == "#GEOMETRY" || command == "NCELL" ||
+          command == "#RESTART"))
+      continue;
 
     if (command == "#DIVE" || command == "#EFIELDSOLVER" ||
         command == "#PARTICLES" || command == "#ELECTRON" ||
@@ -457,7 +470,6 @@ void Domain::read_param() {
       fluidInterface->set_ohm_u(sOhmU);
     } else if (command == "#RESTART") {
       readParam.read_var("doRestart", doRestart);
-      pic->set_doRestart(doRestart);
     } else if (command == "#PARTICLESTAGGERING") {
       bool doStaggering;
       readParam.read_var("doStaggering", doStaggering);
@@ -626,10 +638,12 @@ void Domain::read_param() {
       Abort("Can not find this command!");
     }
     //--------- The commands above exist in restart.H only --------
-  }
+  } // While
 
-  pic->post_process_param();
-  pt->post_process_param();
+  if (!readGridInfoOnly) {
+    pic->post_process_param();
+    pt->post_process_param();
+  }
 }
 
 //========================================================

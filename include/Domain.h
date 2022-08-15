@@ -59,7 +59,7 @@ public:
   //------------Coupler related end--------------
 
   //--------------- IO begin--------------------------------
-  void read_param();
+  void read_param(const bool readGridInfoOnly = false);
   void save_restart();
   void save_restart_header();
   void save_restart_data();

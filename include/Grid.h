@@ -67,10 +67,11 @@ protected:
   bool isFake2D = false;
 
 public:
-  // This strange constructor is used to satisfy the requirement of
-  // AmrCore. It should be improved! --Yuxi
-  Grid(amrex::RealBox rb = amrex::RealBox({ -1, -1, -1 }, { 1, 1, 1 }))
-      : AmrCore(&rb, 0, amrex::Vector<int>({ 8, 8, 8 })){};
+  Grid(
+      const amrex::RealBox& rb, const amrex::Vector<int>& nCell, int coord = 0,
+      int nLevel = 0, const int* isPer = nullptr,
+      amrex::Vector<amrex::IntVect> refRatios = amrex::Vector<amrex::IntVect>())
+      : AmrCore(&rb, nLevel, nCell, coord, refRatios, isPer){};
   ~Grid() = default;
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }

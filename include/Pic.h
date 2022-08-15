@@ -6,9 +6,9 @@
 #include "Array1D.h"
 #include "Constants.h"
 #include "FluidInterface.h"
+#include "Grid.h"
 #include "LinearSolver.h"
 #include "Particles.h"
-#include "Grid.h"
 #include "TimeCtr.h"
 #include "UMultiFab.h"
 
@@ -39,7 +39,7 @@ class Pic : public Grid {
 private:
   bool usePIC = true;
 
-  bool useExplicitPIC = false; 
+  bool useExplicitPIC = false;
 
   std::shared_ptr<FluidInterface> fluidInterface;
   std::shared_ptr<TimeCtr> tc;
@@ -86,7 +86,6 @@ private:
 
   FieldSolver fsolver;
 
-  bool doRestart = false;
   bool doCorrectDivE = true;
   int nDivECorrection = 3;
 
@@ -115,7 +114,9 @@ private:
 
   // public methods
 public:
-  Pic() {
+  Pic(const amrex::RealBox &rb, const amrex::Vector<int> &nCell, int coord = 0,
+      int nLevel = 0, const int *isPer = nullptr)
+      : Grid(rb, nCell, coord, nLevel, isPer) {
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 
@@ -125,8 +126,6 @@ public:
   ~Pic(){};
 
   void update(bool doReportIn = false);
-
-  void set_doRestart(bool in) { doRestart = in; }
 
   Particles<> *get_particle_pointer(int i) { return parts[i].get(); }
 

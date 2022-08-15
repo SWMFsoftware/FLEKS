@@ -22,7 +22,9 @@ class DomainGrid {
 protected:
   int nGst;
 
-  amrex::IntVect nCell;
+  amrex::Vector<int> nCell = { 1, 1, 1 };
+
+  int nLevel = 0;
 
   amrex::IntVect maxBlockSize;
   int periodicity[nDim];
