@@ -13,24 +13,6 @@
 using namespace amrex;
 
 //==========================================================
-void Pic::init(std::shared_ptr<FluidInterface>& fluidIn,
-               std::shared_ptr<TimeCtr>& tcIn, int domainIDIn) {
-  tc = tcIn;
-  fluidInterface = fluidIn;
-
-  domainID = domainIDIn;
-
-  {
-    std::stringstream ss;
-    ss << "FLEKS" << domainID;
-    domainName = ss.str();
-    printPrefix = domainName + ": ";
-  }
-
-  Particles<>::particlePosition = Staggered;  
-}
-
-//==========================================================
 void Pic::read_param(const std::string& command, ReadParam& readParam) {
 
   if (command == "#PIC") {

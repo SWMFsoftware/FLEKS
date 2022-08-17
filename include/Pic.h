@@ -114,13 +114,27 @@ private:
 
   // public methods
 public:
-  Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo)
-      : Grid(gm, amrInfo) {
+  Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo,
+      std::shared_ptr<FluidInterface> &fluidIn, std::shared_ptr<TimeCtr> &tcIn,
+      int domainIDIn = 0)
+      : Grid(gm, amrInfo),
+        tc(tcIn),
+        fluidInterface(fluidIn),
+        domainID(domainIDIn) {
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 
     divESolver.set_tol(0.01);
     divESolver.set_nIter(20);
+
+    {
+      std::stringstream ss;
+      ss << "FLEKS" << domainID;
+      domainName = ss.str();
+      printPrefix = domainName + ": ";
+    }
+
+    Particles<>::particlePosition = Staggered;
   };
   ~Pic(){};
 
@@ -129,9 +143,6 @@ public:
   Particles<> *get_particle_pointer(int i) { return parts[i].get(); }
 
   //--------------Initialization begin-------------------------------
-  void init(std::shared_ptr<FluidInterface> &fluidIn,
-            std::shared_ptr<TimeCtr> &tcIn, int domainIDIn = 0);
-
   void init_amr_from_scratch() { InitFromScratch(tc->get_time()); }
 
   void set_geom(int nGstIn, const amrex::Geometry &geomIn);

@@ -65,13 +65,10 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
     prepare_grid_info();
   }
 
-  pic = std::make_unique<Pic>(gm, amrInfo);
+  pic = std::make_unique<Pic>(gm, amrInfo, fluidInterface, tc, domainID);
 
-  pt = std::make_unique<ParticleTracker>(gm, amrInfo);
-
-  pic->init(fluidInterface, tc, domainID);
-
-  pt->init(fluidInterface, tc, domainID);
+  pt = std::make_unique<ParticleTracker>(gm, amrInfo, fluidInterface, tc,
+                                         domainID);
 
   read_param();
 
@@ -127,7 +124,7 @@ void Domain::prepare_grid_info() {
 
   for (int i = 0; i < nDim; i++) {
     centerBoxLo[i] = 0;
-    centerBoxHi[i] = nCell[i]-1;
+    centerBoxHi[i] = nCell[i] - 1;
   }
 
   centerBox.setSmall(centerBoxLo);
@@ -136,7 +133,7 @@ void Domain::prepare_grid_info() {
   gm.define(centerBox, &domainRange, coord, periodicity);
 
   amrInfo.blocking_factor.clear();
-  amrInfo.blocking_factor.push_back(IntVect(1,1,1));
+  amrInfo.blocking_factor.push_back(IntVect(1, 1, 1));
 
   Print() << printPrefix << "Domain range = " << domainRange << std::endl;
 }

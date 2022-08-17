@@ -111,22 +111,6 @@ void ParticleTracker::update_cell_status(Pic& pic) {
   }
 }
 
-void ParticleTracker::init(std::shared_ptr<FluidInterface>& fluidIn,
-                           std::shared_ptr<TimeCtr>& tcIn, int domainIDIn) {
-  tc = tcIn;
-  fluidInterface = fluidIn;
-  nSpecies = fluidInterface->get_nS();
-
-  domainID = domainIDIn;
-
-  {
-    std::stringstream ss;
-    ss << "FLEKS" << domainID;
-    domainName = ss.str();
-    printPrefix = domainName + " PT: ";
-  }
-}
-
 void ParticleTracker::post_process_param() {
   savectr = std::unique_ptr<PlotCtr>(
       new PlotCtr(tc.get(), domainID, -1, nPTRecord * dnSave));
