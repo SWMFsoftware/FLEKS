@@ -27,7 +27,7 @@ void Pic::init(std::shared_ptr<FluidInterface>& fluidIn,
     printPrefix = domainName + ": ";
   }
 
-  Particles<>::particlePosition = Staggered;
+  Particles<>::particlePosition = Staggered;  
 }
 
 //==========================================================

@@ -62,13 +62,12 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
   { // Preparing grid information for Grid/AmrCore initialization.
     read_param(true);
     fluidInterface->readParam.roll_back();
-    make_grid();
+    prepare_grid_info();
   }
 
-  pic = std::make_unique<Pic>(domainRange, nCell, coord, nLevel, periodicity);
+  pic = std::make_unique<Pic>(gm, amrInfo);
 
-  pt = std::make_unique<ParticleTracker>(domainRange, nCell, coord, nLevel,
-                                         periodicity);
+  pt = std::make_unique<ParticleTracker>(gm, amrInfo);
 
   pic->init(fluidInterface, tc, domainID);
 
@@ -76,15 +75,16 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
 
   read_param();
 
+  init_time_ctr();
+
   fluidInterface->print_info();
 
   {
+    pic->init_amr_from_scratch();
     pic->set_geom(nGst, gm);
     fluidInterface->set_geom(nGst, gm);
     pt->set_geom(nGst, gm);
   }
-
-  init_time_ctr();
 
   pic->init_source(*fluidInterface);
 
@@ -103,7 +103,7 @@ void Domain::update_param(const std::string &paramString) {
 };
 
 //========================================================
-void Domain::make_grid() {
+void Domain::prepare_grid_info() {
   nGst = 2;
 
   // If MHD is 2D, PIC has to be periodic in the z-direction.
@@ -127,13 +127,16 @@ void Domain::make_grid() {
 
   for (int i = 0; i < nDim; i++) {
     centerBoxLo[i] = 0;
-    centerBoxHi[i] = nCell[i] - 1;
+    centerBoxHi[i] = nCell[i]-1;
   }
 
   centerBox.setSmall(centerBoxLo);
   centerBox.setBig(centerBoxHi);
 
   gm.define(centerBox, &domainRange, coord, periodicity);
+
+  amrInfo.blocking_factor.clear();
+  amrInfo.blocking_factor.push_back(IntVect(1,1,1));
 
   Print() << printPrefix << "Domain range = " << domainRange << std::endl;
 }

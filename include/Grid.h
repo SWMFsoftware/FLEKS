@@ -67,11 +67,8 @@ protected:
   bool isFake2D = false;
 
 public:
-  Grid(
-      const amrex::RealBox& rb, const amrex::Vector<int>& nCell, int coord = 0,
-      int nLevel = 0, const int* isPer = nullptr,
-      amrex::Vector<amrex::IntVect> refRatios = amrex::Vector<amrex::IntVect>())
-      : AmrCore(&rb, nLevel, nCell, coord, refRatios, isPer){};
+  Grid(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo)
+      : AmrCore(gm, amrInfo){};
   ~Grid() = default;
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }

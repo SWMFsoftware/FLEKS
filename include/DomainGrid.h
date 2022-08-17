@@ -1,6 +1,7 @@
 #ifndef _DOMAINGRID_H_
 #define _DOMAINGRID_H_
 
+#include <AMReX_AmrMesh.H>
 #include <AMReX_BCRec.H>
 #include <AMReX_Box.H>
 #include <AMReX_BoxArray.H>
@@ -24,8 +25,6 @@ protected:
 
   amrex::Vector<int> nCell = { 1, 1, 1 };
 
-  int nLevel = 0;
-
   amrex::IntVect maxBlockSize;
   int periodicity[nDim];
   amrex::IntVect centerBoxLo;
@@ -35,6 +34,8 @@ protected:
 
   const int coord = 0; // Cartesian grid
   amrex::Geometry gm;
+
+  amrex::AmrInfo amrInfo;
 
   GridInfo gridInfo;
 

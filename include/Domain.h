@@ -68,7 +68,7 @@ public:
   //--------------- IO end----------------------------------
 
   //-------------- grid begin-------------------------------
-  void make_grid();
+  void prepare_grid_info();
   void regrid();
   void receive_grid_info(int *status);
   //-------------- grid end---------------------------------

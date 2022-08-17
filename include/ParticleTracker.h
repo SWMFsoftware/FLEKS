@@ -9,9 +9,8 @@
 
 class ParticleTracker : public Grid {
 public:
-  ParticleTracker(const amrex::RealBox &rb, const amrex::Vector<int> &nCell,
-                  int coord = 0, int nLevel = 0, const int *isPer = nullptr)
-      : Grid(rb, nCell, coord, nLevel, isPer){};
+  ParticleTracker(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo)
+      : Grid(gm, amrInfo){};
 
   ~ParticleTracker() {
     if (!isGridInitialized)

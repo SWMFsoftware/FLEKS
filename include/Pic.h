@@ -114,9 +114,8 @@ private:
 
   // public methods
 public:
-  Pic(const amrex::RealBox &rb, const amrex::Vector<int> &nCell, int coord = 0,
-      int nLevel = 0, const int *isPer = nullptr)
-      : Grid(rb, nCell, coord, nLevel, isPer) {
+  Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo)
+      : Grid(gm, amrInfo) {
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 
@@ -132,6 +131,8 @@ public:
   //--------------Initialization begin-------------------------------
   void init(std::shared_ptr<FluidInterface> &fluidIn,
             std::shared_ptr<TimeCtr> &tcIn, int domainIDIn = 0);
+
+  void init_amr_from_scratch() { InitFromScratch(tc->get_time()); }
 
   void set_geom(int nGstIn, const amrex::Geometry &geomIn);
 
