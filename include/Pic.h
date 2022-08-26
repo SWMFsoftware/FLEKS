@@ -246,11 +246,9 @@ public:
 
   void set_nodeShare();
 
-  void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF,
-                        amrex::Geometry &gm);
+  void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF);
 
-  void convert_3d_to_1d(const amrex::MultiFab &MF, double *const p,
-                        amrex::Geometry &gm);
+  void convert_3d_to_1d(const amrex::MultiFab &MF, double *const p);
 
   //--------------- IO begin--------------------------------
   void find_output_list(const PlotWriter &writerIn, long int &nPointAllProc,

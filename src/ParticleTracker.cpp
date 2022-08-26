@@ -122,7 +122,7 @@ void ParticleTracker::set_geom(int nGstIn, const Geometry& geomIn) {
     return;
 
   nGst = nGstIn;
-  gm = geomIn;
+  gmtest = geomIn;
 }
 
 void ParticleTracker::regrid(const BoxArray& ptRegionIn,
@@ -156,7 +156,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::unique_ptr<TestParticles>(new TestParticles(
-          activeRegionBA, gm, dm, centerBA, fluidInterface.get(), tc.get(), i,
+          activeRegionBA, gmtest, dm, centerBA, fluidInterface.get(), tc.get(), i,
           fluidInterface->get_species_charge(i),
           fluidInterface->get_species_mass(i), domainID));
       ptr->set_ppc(nTPPerCell);
@@ -246,7 +246,7 @@ void ParticleTracker::complete_parameters() {
 
   // writer.set_domainMax_D({ { 1, 1, 1 } });
 
-  // const Real* dx = gm.CellSize();
+  // const Real* dx = gmtest.CellSize();
   // writer.set_dx_D({ { dx[ix_], dx[iy_], dx[iz_] } });
   writer.set_units(fluidInterface->get_No2SiL(), fluidInterface->get_No2SiV(),
                    fluidInterface->get_No2SiB(), fluidInterface->get_No2SiRho(),
