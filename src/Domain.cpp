@@ -442,7 +442,7 @@ void Domain::read_param(const bool readGridInfoOnly) {
     // If readGridInfoOnly is true, only read the following commands.
     if (readGridInfoOnly &&
         !(command == "#MAXBLOCKSIZE" || command == "#PERIODICITY" ||
-          command == "#GEOMETRY" || command == "NCELL" ||
+          command == "#GEOMETRY" || command == "#NCELL" ||
           command == "#RESTART"))
       continue;
 
