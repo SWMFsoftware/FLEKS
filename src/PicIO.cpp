@@ -641,7 +641,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   // are cell-centered.
 
   MultiFab centerMF;
-  centerMF.define(centerBA, dm, nVarOut, 0);
+  centerMF.define(centerBA, DistributionMap(0), nVarOut, 0);
 
   Vector<std::string> varNames;
   int iStart = 0;

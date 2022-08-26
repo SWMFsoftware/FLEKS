@@ -115,7 +115,7 @@ void Pic::fill_new_cells() {
 
 //==========================================================
 void Pic::set_geom(int nGstIn, const Geometry& geomIn) {
-  set_nGst(nGstIn);  
+  set_nGst(nGstIn);
   SetGeometry(0, geomIn);
   isFake2D = Geom(0).Domain().bigEnd(iz_) == Geom(0).Domain().smallEnd(iz_);
 }
@@ -145,20 +145,24 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   centerBA = centerBAIn;
   nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
-  dm = dmIn;
+
+  SetDistributionMap(0, dmIn);
 
   //===========Move field data around begin====================
-  distribute_FabArray(nodeE, nodeBA, dm, 3, nGst);
-  distribute_FabArray(nodeEth, nodeBA, dm, 3, nGst);
-  distribute_FabArray(nodeB, nodeBA, dm, 3, nGst);
-  distribute_FabArray(centerB, centerBA, dm, 3, nGst);
+  distribute_FabArray(nodeE, nodeBA, DistributionMap(0), 3, nGst);
+  distribute_FabArray(nodeEth, nodeBA, DistributionMap(0), 3, nGst);
+  distribute_FabArray(nodeB, nodeBA, DistributionMap(0), 3, nGst);
+  distribute_FabArray(centerB, centerBA, DistributionMap(0), 3, nGst);
 
-  distribute_FabArray(centerNetChargeOld, centerBA, dm, 1, nGst);
-  distribute_FabArray(centerNetChargeN, centerBA, dm, 1, nGst);   // false??
-  distribute_FabArray(centerNetChargeNew, centerBA, dm, 1, nGst); // false??
+  distribute_FabArray(centerNetChargeOld, centerBA, DistributionMap(0), 1,
+                      nGst);
+  distribute_FabArray(centerNetChargeN, centerBA, DistributionMap(0), 1,
+                      nGst); // false??
+  distribute_FabArray(centerNetChargeNew, centerBA, DistributionMap(0), 1,
+                      nGst); // false??
 
-  distribute_FabArray(centerDivE, centerBA, dm, 1, nGst);
-  distribute_FabArray(centerPhi, centerBA, dm, 1, nGst);
+  distribute_FabArray(centerDivE, centerBA, DistributionMap(0), 1, nGst);
+  distribute_FabArray(centerPhi, centerBA, DistributionMap(0), 1, nGst);
 
   {
     bool doMoveData = false;
@@ -172,29 +176,37 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
       // The last one is the sum of all species.
       nodePlasma.resize(nSpecies + 1);
       for (auto& pl : nodePlasma) {
-        pl.define(nodeBA, dm, nMoments, nGst);
+        pl.define(nodeBA, DistributionMap(0), nMoments, nGst);
         pl.setVal(0.0);
       }
     } else {
       for (auto& pl : nodePlasma) {
-        distribute_FabArray(pl, nodeBA, dm, nMoments, nGst, doMoveData);
+        distribute_FabArray(pl, nodeBA, DistributionMap(0), nMoments, nGst,
+                            doMoveData);
       }
     }
 
-    distribute_FabArray(jHat, nodeBA, dm, 3, nGst, doMoveData);
+    distribute_FabArray(jHat, nodeBA, DistributionMap(0), 3, nGst, doMoveData);
 
     if (!useExplicitPIC) {
-      distribute_FabArray(nodeMM, nodeBA, dm, 1, 1, doMoveData);
+      distribute_FabArray(nodeMM, nodeBA, DistributionMap(0), 1, 1, doMoveData);
     }
-    distribute_FabArray(costMF, centerBA, dm, 1, nGst, doMoveData);
-    distribute_FabArray(centerMM, centerBA, dm, 1, nGst, doMoveData);
+    distribute_FabArray(costMF, centerBA, DistributionMap(0), 1, nGst,
+                        doMoveData);
+    distribute_FabArray(centerMM, centerBA, DistributionMap(0), 1, nGst,
+                        doMoveData);
 
-    distribute_FabArray(tempNode3, nodeBA, dm, 3, nGst, doMoveData);
-    distribute_FabArray(tempCenter3, centerBA, dm, 3, nGst, doMoveData);
-    distribute_FabArray(tempCenter1, centerBA, dm, 1, nGst, doMoveData);
-    distribute_FabArray(tempCenter1_1, centerBA, dm, 1, nGst, doMoveData);
+    distribute_FabArray(tempNode3, nodeBA, DistributionMap(0), 3, nGst,
+                        doMoveData);
+    distribute_FabArray(tempCenter3, centerBA, DistributionMap(0), 3, nGst,
+                        doMoveData);
+    distribute_FabArray(tempCenter1, centerBA, DistributionMap(0), 1, nGst,
+                        doMoveData);
+    distribute_FabArray(tempCenter1_1, centerBA, DistributionMap(0), 1, nGst,
+                        doMoveData);
 
-    distribute_FabArray(nodeSmoothCoef, nodeBA, dm, 1, nGst, doMoveData);
+    distribute_FabArray(nodeSmoothCoef, nodeBA, DistributionMap(0), 1, nGst,
+                        doMoveData);
   }
   //===========Move field data around end====================
 
@@ -202,8 +214,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
     // The algorithm decides inject particles or not needs at least 2 ghost cell
     // layers.
-    distribute_FabArray(cellStatus, centerBA, dm, 1, nGst >= 2 ? nGst : 2,
-                        false);
+    distribute_FabArray(cellStatus, centerBA, DistributionMap(0), 1,
+                        nGst >= 2 ? nGst : 2, false);
     if (!cellStatus.empty()) {
       cellStatus.setVal(iBoundary_);
       cellStatus.setVal(iOnNew_, 0);
@@ -247,7 +259,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
         }
     }
 
-    distribute_FabArray(nodeStatus, nodeBA, dm, 1, nGst, false);
+    distribute_FabArray(nodeStatus, nodeBA, DistributionMap(0), 1, nGst, false);
     if (!nodeStatus.empty()) {
       nodeStatus.setVal(iBoundary_);
       nodeStatus.setVal(iOnNew_, 0);
@@ -273,7 +285,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
     nodeStatus.FillBoundary(Geom(0).periodicity());
 
-    distribute_FabArray(nodeShare, nodeBA, dm, 1, 0, false);
+    distribute_FabArray(nodeShare, nodeBA, DistributionMap(0), 1, 0, false);
     set_nodeShare();
   }
 
@@ -281,8 +293,9 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::unique_ptr<Particles<> >(new Particles<>(
-          activeRegionBA, Geom(0), dm, centerBA, fluidInterface.get(), tc.get(),
-          i, fluidInterface->get_species_charge(i),
+          activeRegionBA, Geom(0), DistributionMap(0), centerBA,
+          fluidInterface.get(), tc.get(), i,
+          fluidInterface->get_species_charge(i),
           fluidInterface->get_species_mass(i), nPartPerCell, testCase));
 
       //----- Set parameters------------
@@ -309,7 +322,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
       if (centerBA.size() > 0) {
         parts[i]->SetParticleBoxArray(0, centerBA);
-        parts[i]->SetParticleDistributionMap(0, dm);
+        parts[i]->SetParticleDistributionMap(0, DistributionMap(0));
       }
       parts[i]->Redistribute();
     }
@@ -317,7 +330,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   { // Copy cellStatus to Particles objects.
     for (int i = 0; i < nSpecies; i++) {
-      distribute_FabArray(parts[i]->cellStatus, centerBA, dm, 1,
+      distribute_FabArray(parts[i]->cellStatus, centerBA, DistributionMap(0), 1,
                           nGst >= 2 ? nGst : 2, false);
 
       if (!cellStatus.empty()) {
@@ -988,10 +1001,10 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
 
   zero_array(vecOut, eSolver.get_nSolve());
 
-  MultiFab vecMF(nodeBA, dm, 3, nGst);
+  MultiFab vecMF(nodeBA, DistributionMap(0), 3, nGst);
   vecMF.setVal(0.0);
 
-  MultiFab matvecMF(nodeBA, dm, 3, 1);
+  MultiFab matvecMF(nodeBA, DistributionMap(0), 3, 1);
   matvecMF.setVal(0.0);
 
   convert_1d_to_3d(vecIn, vecMF);
@@ -1011,7 +1024,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
     apply_BC(nodeStatus, vecMF, 0, nDim, &Pic::get_node_E);
   }
 
-  lap_node_to_node(vecMF, matvecMF, dm, Geom(0), cellStatus);
+  lap_node_to_node(vecMF, matvecMF, DistributionMap(0), Geom(0), cellStatus);
 
   Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
   matvecMF.mult(-delt2);
@@ -1113,9 +1126,9 @@ void Pic::update_E_rhs(double* rhs) {
   std::string nameFunc = "Pic::update_E_rhs";
   timing_func(nameFunc);
 
-  MultiFab tempNode(nodeBA, dm, 3, nGst);
+  MultiFab tempNode(nodeBA, DistributionMap(0), 3, nGst);
   tempNode.setVal(0.0);
-  MultiFab temp2Node(nodeBA, dm, 3, nGst);
+  MultiFab temp2Node(nodeBA, DistributionMap(0), 3, nGst);
   temp2Node.setVal(0.0);
 
   apply_BC(cellStatus, centerB, 0, centerB.nComp(), &Pic::get_center_B);
@@ -1141,7 +1154,7 @@ void Pic::update_B() {
   std::string nameFunc = "Pic::update_B";
   timing_func(nameFunc);
 
-  MultiFab dB(centerBA, dm, 3, nGst);
+  MultiFab dB(centerBA, DistributionMap(0), 3, nGst);
 
   curl_node_to_center(nodeEth, dB, Geom(0).InvCellSize());
 
@@ -1449,48 +1462,48 @@ void Pic::load_balance() {
           << std::endl;
 
   // iDecomp++;
-  Print() << printPrefix << "before dm = " << dm << std::endl;
+  Print() << printPrefix << "before dm = " << DistributionMap(0) << std::endl;
   compute_cost();
-  dm = DistributionMapping::makeSFC(costMF, false);
-  Print() << printPrefix << "after dm = " << dm << std::endl;
+  SetDistributionMap(0, DistributionMapping::makeSFC(costMF, false));
+  Print() << printPrefix << "after dm = " << DistributionMap(0) << std::endl;
 
-  redistribute_FabArray(nodeE, dm);
-  redistribute_FabArray(nodeEth, dm);
-  redistribute_FabArray(nodeB, dm);
-  redistribute_FabArray(centerB, dm);
+  redistribute_FabArray(nodeE, DistributionMap(0));
+  redistribute_FabArray(nodeEth, DistributionMap(0));
+  redistribute_FabArray(nodeB, DistributionMap(0));
+  redistribute_FabArray(centerB, DistributionMap(0));
 
-  redistribute_FabArray(centerNetChargeOld, dm);
-  redistribute_FabArray(centerNetChargeN, dm);   // false??
-  redistribute_FabArray(centerNetChargeNew, dm); // false??
+  redistribute_FabArray(centerNetChargeOld, DistributionMap(0));
+  redistribute_FabArray(centerNetChargeN, DistributionMap(0));   // false??
+  redistribute_FabArray(centerNetChargeNew, DistributionMap(0)); // false??
 
-  redistribute_FabArray(centerDivE, dm);
-  redistribute_FabArray(centerPhi, dm);
+  redistribute_FabArray(centerDivE, DistributionMap(0));
+  redistribute_FabArray(centerPhi, DistributionMap(0));
 
   {
     bool doMoveData = false;
 
     for (auto& pl : nodePlasma) {
-      redistribute_FabArray(pl, dm, doMoveData);
+      redistribute_FabArray(pl, DistributionMap(0), doMoveData);
     }
 
     if (!useExplicitPIC) {
-      redistribute_FabArray(nodeMM, dm, doMoveData);
+      redistribute_FabArray(nodeMM, DistributionMap(0), doMoveData);
     }
-    redistribute_FabArray(costMF, dm, doMoveData);
-    redistribute_FabArray(centerMM, dm, doMoveData);
+    redistribute_FabArray(costMF, DistributionMap(0), doMoveData);
+    redistribute_FabArray(centerMM, DistributionMap(0), doMoveData);
 
-    redistribute_FabArray(tempNode3, dm, doMoveData);
-    redistribute_FabArray(tempCenter3, dm, doMoveData);
-    redistribute_FabArray(tempCenter1, dm, doMoveData);
-    redistribute_FabArray(tempCenter1_1, dm, doMoveData);
+    redistribute_FabArray(tempNode3, DistributionMap(0), doMoveData);
+    redistribute_FabArray(tempCenter3, DistributionMap(0), doMoveData);
+    redistribute_FabArray(tempCenter1, DistributionMap(0), doMoveData);
+    redistribute_FabArray(tempCenter1_1, DistributionMap(0), doMoveData);
   }
   // Load balance particles.
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->SetParticleDistributionMap(0, dm);
+    parts[i]->SetParticleDistributionMap(0, DistributionMap(0));
     parts[i]->Redistribute();
   }
 
-  fluidInterface->load_balance(dm);
+  fluidInterface->load_balance(DistributionMap(0));
 }
 
 //==========================================================

@@ -37,7 +37,7 @@ protected:
   amrex::BoxArray nodeBA;
   amrex::BoxArray nodeBAOld;
 
-  amrex::DistributionMapping dm;
+  // amrex::DistributionMapping DistributionMap(0);
 
   amrex::MultiFab costMF;
 
@@ -87,7 +87,7 @@ public:
     for (int ii = 0, n = centerBA.size(); ii < n; ii++) {
       const amrex::Box& bx = centerBA[ii];
       if (bx.contains(idx))
-        return dm[ii];
+        return DistributionMap(0)[ii];
     }
 
     amrex::AllPrint() << "idx = " << idx << std::endl;
