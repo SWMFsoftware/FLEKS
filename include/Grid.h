@@ -94,7 +94,7 @@ public:
     amrex::Abort("Error: can not find this cell!");
     return -1; // To suppress compiler warnings.
   }
-  
+
   // Make a new level using provided BoxArray and DistributionMapping and
   // fill with interpolated coarse level data.
   // overrides the pure virtual function in AmrCore

@@ -104,11 +104,13 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
       }
 
     for (int iDir = ix_; iDir <= iz_; iDir++) {
-      dataPIC_I[iBx_ + iDir] = get_value_at_loc(nodeB, Geom(0), xp, yp, zp, iDir);
+      dataPIC_I[iBx_ + iDir] =
+          get_value_at_loc(nodeB, Geom(0), xp, yp, zp, iDir);
     }
 
     for (int iDir = ix_; iDir <= iz_; iDir++) {
-      dataPIC_I[iEx_ + iDir] = get_value_at_loc(nodeE, Geom(0), xp, yp, zp, iDir);
+      dataPIC_I[iEx_ + iDir] =
+          get_value_at_loc(nodeE, Geom(0), xp, yp, zp, iDir);
     }
 
     // Combine PIC plasma data into MHD fluid data.
@@ -657,8 +659,8 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
       const auto hi = ubound(box);
 
       for (int k = lo.z; k <= hi.z; ++k) {
-        // Use the value returned from Geom(0) instead of geomOut, and it will be
-        // converted to output unit just as other variables.
+        // Use the value returned from Geom(0) instead of geomOut, and it will
+        // be converted to output unit just as other variables.
         const Real z0 = Geom(0).CellCenter(k, iz_);
         for (int j = lo.y; j <= hi.y; ++j) {
           const Real y0 = Geom(0).CellCenter(j, iy_);

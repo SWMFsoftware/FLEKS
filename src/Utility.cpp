@@ -229,8 +229,8 @@ void div_center_to_center(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
   }
 }
 
-void print_MultiFab(const amrex::MultiFab& data, std::string tag,
-                    Geometry& gm, int nshift) {
+void print_MultiFab(const amrex::MultiFab& data, std::string tag, Geometry& gm,
+                    int nshift) {
   AllPrint() << "-----" << tag << " begin-----" << std::endl;
   Real sum = 0;
   Real sum2 = 0;

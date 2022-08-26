@@ -7,8 +7,8 @@
 using namespace amrex;
 
 void apply_float_boundary(const iMultiFab& status, MultiFab& mf,
-                          const Geometry& gm, const int iStart,
-                          const int nComp, const int nshift) {
+                          const Geometry& gm, const int iStart, const int nComp,
+                          const int nshift) {
 
   Abort("Error: function apply_float_boundary has not been implemented!");
 

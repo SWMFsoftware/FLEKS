@@ -144,7 +144,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
   activeRegionBA = ptRegionIn;
   centerBA = centerBAIn;
   nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
-  
+
   SetDistributionMap(0, dmIn);
 
   distribute_FabArray(nodeE, nodeBA, DistributionMap(0), 3, nGst, false);
@@ -156,10 +156,11 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
   //--------------test particles-----------------------------------
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
-      auto ptr = std::unique_ptr<TestParticles>(new TestParticles(
-          activeRegionBA, Geom(0), DistributionMap(0), centerBA, fluidInterface.get(),
-          tc.get(), i, fluidInterface->get_species_charge(i),
-          fluidInterface->get_species_mass(i), domainID));
+      auto ptr = std::unique_ptr<TestParticles>(
+          new TestParticles(activeRegionBA, Geom(0), DistributionMap(0),
+                            centerBA, fluidInterface.get(), tc.get(), i,
+                            fluidInterface->get_species_charge(i),
+                            fluidInterface->get_species_mass(i), domainID));
       ptr->set_ppc(nTPPerCell);
       ptr->set_interval(nTPIntervalCell);
       ptr->set_particle_region(sPartRegion);
@@ -181,7 +182,8 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
 
   { // Copy cell Status to Particles objects.
     for (int i = 0; i < nSpecies; i++) {
-      distribute_FabArray(parts[i]->cellStatus, centerBA, DistributionMap(0), 1, nGst, false);
+      distribute_FabArray(parts[i]->cellStatus, centerBA, DistributionMap(0), 1,
+                          nGst, false);
 
       if (!cellStatus.empty()) {
         iMultiFab::Copy(parts[i]->cellStatus, cellStatus, 0, 0,

@@ -23,7 +23,7 @@ private:
   amrex::RealBox domainRange;
   std::string plot_string;
   amrex::Real rPlanet;
-  
+
   amrex::Real time;
 
   amrex::Vector<std::string> varNames;
