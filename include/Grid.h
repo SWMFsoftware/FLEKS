@@ -78,7 +78,7 @@ public:
   inline int find_mpi_rank_from_coord(amrex::Real const x, amrex::Real const y,
                                       amrex::Real const z) const {
     amrex::Real loc[3] = { x, y, z };
-    auto idx = gmtest.CellIndex(loc);
+    auto idx = get_gem(0).CellIndex(loc);
     return find_mpi_rank_from_cell_index(idx[ix_], idx[iy_], idx[iz_]);
   }
 
@@ -96,7 +96,7 @@ public:
     return -1; // To suppress compiler warnings.
   }
 
-  const amrex::Geometry& Geom(int lev) const noexcept { return gmtest; }
+  const amrex::Geometry& get_gem(int lev) const noexcept { return gmtest; }
 
   // Make a new level using provided BoxArray and DistributionMapping and
   // fill with interpolated coarse level data.
