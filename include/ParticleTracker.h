@@ -11,19 +11,11 @@ class ParticleTracker : public Grid {
 public:
   ParticleTracker(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo,
                   std::shared_ptr<FluidInterface> &fluidIn,
-                  std::shared_ptr<TimeCtr> &tcIn, int domainIDIn)
-      : Grid(gm, amrInfo),
+                  std::shared_ptr<TimeCtr> &tcIn, int id)
+      : Grid(gm, amrInfo, id),
         tc(tcIn),
         fluidInterface(fluidIn),
-        domainID(domainIDIn) {
-    nSpecies = fluidInterface->get_nS();
-    {
-      std::stringstream ss;
-      ss << "FLEKS" << domainID;
-      domainName = ss.str();
-      printPrefix = domainName + " PT: ";
-    }
-  };
+        nSpecies(fluidInterface->get_nS()){};
 
   ~ParticleTracker() {
     if (!isGridInitialized)
@@ -38,7 +30,7 @@ public:
   };
 
   void init(std::shared_ptr<FluidInterface> &fluidIn,
-            std::shared_ptr<TimeCtr> &tcIn, int domainIDIn = 0);
+            std::shared_ptr<TimeCtr> &tcIn, int id = 0);
 
   void post_process_param();
 
@@ -64,8 +56,8 @@ private:
   bool usePT = false;
 
   std::string printPrefix;
-  std::string domainName;
-  int domainID;
+  std::string gridName;
+  int gridID;
 
   std::shared_ptr<FluidInterface> fluidInterface;
   std::shared_ptr<TimeCtr> tc;

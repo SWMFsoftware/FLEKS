@@ -113,7 +113,7 @@ void ParticleTracker::update_cell_status(Pic& pic) {
 
 void ParticleTracker::post_process_param() {
   savectr = std::unique_ptr<PlotCtr>(
-      new PlotCtr(tc.get(), domainID, -1, nPTRecord * dnSave));
+      new PlotCtr(tc.get(), gridID, -1, nPTRecord * dnSave));
 }
 
 //==========================================================
@@ -160,7 +160,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
           new TestParticles(activeRegionBA, Geom(0), DistributionMap(0),
                             centerBA, fluidInterface.get(), tc.get(), i,
                             fluidInterface->get_species_charge(i),
-                            fluidInterface->get_species_mass(i), domainID));
+                            fluidInterface->get_species_mass(i), gridID));
       ptr->set_ppc(nTPPerCell);
       ptr->set_interval(nTPIntervalCell);
       ptr->set_particle_region(sPartRegion);
@@ -212,7 +212,7 @@ void ParticleTracker::save_restart_data() {
       parts[iPart]->write_particles(tc->get_cycle());
     }
 
-    parts[iPart]->Checkpoint(restartDir, domainName + "_test_particles" +
+    parts[iPart]->Checkpoint(restartDir, gridName + "_test_particles" +
                                              std::to_string(iPart));
   }
 }
@@ -223,7 +223,7 @@ void ParticleTracker::read_restart() {
 
   std::string restartDir = "PC/restartIN/";
   for (int iPart = 0; iPart < parts.size(); iPart++) {
-    parts[iPart]->Restart(restartDir, domainName + "_test_particles" +
+    parts[iPart]->Restart(restartDir, gridName + "_test_particles" +
                                           std::to_string(iPart));
     parts[iPart]->reset_record_counter();
     parts[iPart]->init_particle_number(initPartNumber[iPart]);
@@ -244,7 +244,7 @@ void ParticleTracker::complete_parameters() {
   writer.set_rank(ParallelDescriptor::MyProc());
   writer.set_nProcs(ParallelDescriptor::NProcs());
   writer.set_nDim(fluidInterface->get_fluid_dimension());
-  // writer.set_iRegion(domainID);
+  // writer.set_iRegion(gridID);
   // writer.set_domainMin_D({ { 0, 0, 0 } });
 
   // writer.set_domainMax_D({ { 1, 1, 1 } });
@@ -270,7 +270,7 @@ void ParticleTracker::save_restart_header(std::ofstream& headerFile) {
   if (!usePT)
     return;
 
-  std::string command_suffix = "_" + domainName + "\n";
+  std::string command_suffix = "_" + gridName + "\n";
 
   if (ParallelDescriptor::IOProcessor()) {
     headerFile << "#TESTPARTICLENUMBER" + command_suffix;

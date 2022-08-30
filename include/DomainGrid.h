@@ -42,9 +42,9 @@ protected:
   int iGrid = 1;
   int iDecomp = 1;
 
-  int domainID;
+  int gridID;
   std::string printPrefix;
-  std::string domainName;
+  std::string gridName;
 
   bool isGridInitialized = false;
 

@@ -431,22 +431,22 @@ void Pic::save_restart_data() {
     return;
 
   std::string restartDir = "PC/restartOUT/";
-  VisMF::Write(nodeE, restartDir + domainName + "_nodeE");
-  VisMF::Write(nodeB, restartDir + domainName + "_nodeB");
-  VisMF::Write(centerB, restartDir + domainName + "_centerB");
+  VisMF::Write(nodeE, restartDir + gridName + "_nodeE");
+  VisMF::Write(nodeB, restartDir + gridName + "_nodeB");
+  VisMF::Write(centerB, restartDir + gridName + "_centerB");
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     parts[iPart]->label_particles_outside_ba();
     parts[iPart]->Redistribute();
     parts[iPart]->Checkpoint(restartDir,
-                             domainName + "_particles" + std::to_string(iPart));
+                             gridName + "_particles" + std::to_string(iPart));
   }
   inject_particles_for_boundary_cells();
 }
 
 //==========================================================
 void Pic::save_restart_header(std::ofstream& headerFile) {
-  std::string command_suffix = "_" + domainName + "\n";
+  std::string command_suffix = "_" + gridName + "\n";
 
   if (ParallelDescriptor::IOProcessor()) {
     headerFile << "#ELECTRON" + command_suffix;
@@ -466,13 +466,13 @@ void Pic::read_restart() {
   Print() << "Pic::read_restart() start....." << std::endl;
 
   std::string restartDir = "PC/restartIN/";
-  VisMF::Read(nodeE, restartDir + domainName + "_nodeE");
-  VisMF::Read(nodeB, restartDir + domainName + "_nodeB");
-  VisMF::Read(centerB, restartDir + domainName + "_centerB");
+  VisMF::Read(nodeE, restartDir + gridName + "_nodeE");
+  VisMF::Read(nodeB, restartDir + gridName + "_nodeB");
+  VisMF::Read(centerB, restartDir + gridName + "_centerB");
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     parts[iPart]->Restart(restartDir,
-                          domainName + "_particles" + std::to_string(iPart));
+                          gridName + "_particles" + std::to_string(iPart));
   }
   inject_particles_for_boundary_cells();
 

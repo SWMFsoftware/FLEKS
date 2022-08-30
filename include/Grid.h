@@ -24,6 +24,12 @@ class Grid : public amrex::AmrCore {
 protected:
   int nGst;
 
+  std::string printPrefix;
+  std::string gridName;
+  int gridID;
+
+  bool useAMRGrid = false;
+
   // const int coord = 0; // Cartesian grid
 
   // A collection of boxes to describe the simulation domain. The boxes have
@@ -35,9 +41,7 @@ protected:
   amrex::BoxArray centerBA;
 
   amrex::BoxArray nodeBA;
-  amrex::BoxArray nodeBAOld;
-
-  // amrex::DistributionMapping DistributionMap(0);
+  amrex::BoxArray nodeBAOld;  
 
   amrex::MultiFab costMF;
 
@@ -66,8 +70,11 @@ protected:
   bool isFake2D = false;
 
 public:
-  Grid(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo)
-      : AmrCore(gm, amrInfo){};
+  Grid(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo, int id)
+      : AmrCore(gm, amrInfo), gridID(id) {    
+    gridName = std::string("FLEKS")+std::to_string(gridID);
+    printPrefix = gridName + ": ";
+  };
   ~Grid() = default;
 
   void set_nGst(const int nGstIn) { nGst = nGstIn; }

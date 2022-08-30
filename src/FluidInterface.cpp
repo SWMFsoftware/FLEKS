@@ -7,14 +7,14 @@
 using namespace amrex;
 using namespace std;
 
-void FluidInterface::init(int domainIDIn) {
+void FluidInterface::init(int id) {
   myrank = ParallelDescriptor::MyProc();
-  domainID = domainIDIn;
+  gridID = id;
   {
     std::stringstream ss;
-    ss << "FLEKS" << domainID;
-    domainName = ss.str();
-    printPrefix = domainName + ": ";
+    ss << "FLEKS" << gridID;
+    gridName = ss.str();
+    printPrefix = gridName + ": ";
   }
 }
 

@@ -47,15 +47,15 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
 
   tc->set_time_si(time);
 
-  domainID = iDomain;
+  gridID = iDomain;
   {
     std::stringstream ss;
-    ss << "FLEKS" << domainID;
-    domainName = ss.str();
-    printPrefix = domainName + ": ";
+    ss << "FLEKS" << gridID;
+    gridName = ss.str();
+    printPrefix = gridName + ": ";
   }
 
-  fluidInterface->init(domainID);
+  fluidInterface->init(gridID);
   fluidInterface->receive_info_from_gm(paramInt, gridDim, paramReal,
                                        paramString);
 
@@ -65,10 +65,10 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
     prepare_grid_info();
   }
 
-  pic = std::make_unique<Pic>(gm, amrInfo, fluidInterface, tc, domainID);
+  pic = std::make_unique<Pic>(gm, amrInfo, fluidInterface, tc, gridID);
 
   pt = std::make_unique<ParticleTracker>(gm, amrInfo, fluidInterface, tc,
-                                         domainID);
+                                         gridID);
 
   read_param();
 
@@ -242,7 +242,7 @@ void Domain::read_restart() {
   std::string restartDir = "PC/restartIN/";
 
   MultiFab tmp;
-  VisMF::Read(tmp, restartDir + domainName + "_centerB");
+  VisMF::Read(tmp, restartDir + gridName + "_centerB");
   BoxArray baPic = tmp.boxArray();
   DistributionMapping dmPic = tmp.DistributionMap();
 
@@ -288,7 +288,7 @@ void Domain::save_restart_header() {
 
     headerFile.rdbuf()->pubsetbuf(ioBuffer.dataPtr(), ioBuffer.size());
 
-    std::string headerFileName("PC/restartOUT/" + domainName + "_restart.H");
+    std::string headerFileName("PC/restartOUT/" + gridName + "_restart.H");
 
     headerFile.open(headerFileName.c_str(),
                     std::ofstream::out | std::ofstream::trunc);
@@ -314,7 +314,7 @@ void Domain::save_restart_header() {
 
     headerFile << "Restart header\n\n";
 
-    std::string command_suffix = "_" + domainName + "\n";
+    std::string command_suffix = "_" + gridName + "\n";
 
     headerFile << "#RESTART" + command_suffix;
     headerFile << (pic->is_grid_empty() ? "F" : "T") << "\t\t\tdoRestart\n";
@@ -401,7 +401,7 @@ void Domain::init_time_ctr() {
       writer.set_rank(ParallelDescriptor::MyProc());
       writer.set_nProcs(ParallelDescriptor::NProcs());
       writer.set_nDim(fluidInterface->get_fluid_dimension());
-      writer.set_iRegion(domainID);
+      writer.set_iRegion(gridID);
       writer.set_domainMin_D({ { domainRange.lo(ix_), domainRange.lo(iy_),
                                  domainRange.lo(iz_) } });
 
@@ -435,7 +435,7 @@ void Domain::read_param(const bool readGridInfoOnly) {
   ReadParam &readParam = fluidInterface->readParam;
   readParam.set_verbose(ParallelDescriptor::MyProc() == 0);
 
-  readParam.set_command_suffix(domainName);
+  readParam.set_command_suffix(gridName);
 
   while (readParam.get_next_command(command)) {
 

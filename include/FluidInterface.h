@@ -43,8 +43,8 @@ private:
   MultiFabFLEKS nodeFluid;
   MultiFabFLEKS centerB;
 
-  int domainID;
-  std::string domainName;
+  int gridID;
+  std::string gridName;
   std::string printPrefix;
 
   bool isGridInitialized = false;
@@ -131,7 +131,7 @@ public:
   FluidInterface() {}
   ~FluidInterface() = default;
   FluidInterface& operator=(const FluidInterface& other) = default;
-  void init(int domainIDIn);
+  void init(int id);
   void receive_info_from_gm(const int* const paramInt,
                             const double* const gridDim,
                             const double* const paramDouble,
@@ -260,16 +260,16 @@ public:
 
     std::string restartDir = "PC/restartOUT/";
     amrex::VisMF::Write(nodeFluid,
-                        restartDir + domainName + "_Interface_nodeFluid");
+                        restartDir + gridName + "_Interface_nodeFluid");
     amrex::VisMF::Write(centerB,
-                        restartDir + domainName + "_Interface_centerB");
+                        restartDir + gridName + "_Interface_centerB");
   };
 
   void read_restart() {
     std::string restartDir = "PC/restartIN/";
     amrex::VisMF::Read(nodeFluid,
-                       restartDir + domainName + "_Interface_nodeFluid");
-    amrex::VisMF::Read(centerB, restartDir + domainName + "_Interface_centerB");
+                       restartDir + gridName + "_Interface_nodeFluid");
+    amrex::VisMF::Read(centerB, restartDir + gridName + "_Interface_centerB");
   }
 
   // ---------Functions to read/interpolate value from nodeFluid.

@@ -29,7 +29,7 @@ public:
                 const amrex::DistributionMapping& dm, const amrex::BoxArray& ba,
                 FluidInterface* const fluidIn, TimeCtr* const tcIn,
                 const int speciesID, const amrex::Real charge,
-                const amrex::Real mass, int domainIDIn = 0);
+                const amrex::Real mass, int id = 0);
 
   ~TestParticles() = default;
 
@@ -121,8 +121,8 @@ private:
   std::string outputDir;
 
   std::string printPrefix;
-  std::string domainName;
-  int domainID;
+  std::string gridName;
+  int gridID;
 
   amrex::IntVect nIntervalCell = { 1, 1, 1 };
 

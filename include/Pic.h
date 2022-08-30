@@ -93,10 +93,6 @@ private:
   amrex::Real reSamplingLowLimit = 0.8;
   amrex::Real reSamplingHighLimit = 1.5;
 
-  std::string printPrefix;
-  std::string domainName;
-  int domainID;
-
   bool doSmoothE = false;
   int nSmoothE = 1;
   amrex::Real coefStrongSmooth = 0.5;
@@ -116,23 +112,13 @@ private:
 public:
   Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo,
       std::shared_ptr<FluidInterface> &fluidIn, std::shared_ptr<TimeCtr> &tcIn,
-      int domainIDIn = 0)
-      : Grid(gm, amrInfo),
-        tc(tcIn),
-        fluidInterface(fluidIn),
-        domainID(domainIDIn) {
+      int id = 0)
+      : Grid(gm, amrInfo, id), tc(tcIn), fluidInterface(fluidIn) {
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 
     divESolver.set_tol(0.01);
     divESolver.set_nIter(20);
-
-    {
-      std::stringstream ss;
-      ss << "FLEKS" << domainID;
-      domainName = ss.str();
-      printPrefix = domainName + ": ";
-    }
 
     Particles<>::particlePosition = Staggered;
   };

@@ -10,16 +10,16 @@ TestParticles::TestParticles(const amrex::BoxArray& regionBAIn,
                              const amrex::BoxArray& ba,
                              FluidInterface* const fluidIn, TimeCtr* const tcIn,
                              const int speciesID, const amrex::Real charge,
-                             const amrex::Real mass, int domainIDIn)
+                             const amrex::Real mass, int id)
     : Particles(regionBAIn, gm, dm, ba, fluidIn, tcIn, speciesID, charge, mass,
                 IntVect(1, 1, 1)) {
-  domainID = domainIDIn;
+  gridID = id;
 
   {
     std::stringstream ss;
-    ss << "FLEKS" << domainID;
-    domainName = ss.str();
-    printPrefix = domainName + ": ";
+    ss << "FLEKS" << gridID;
+    gridName = ss.str();
+    printPrefix = gridName + ": ";
   }
 
   for (int iDim = 0; iDim < nDim; iDim++)
@@ -402,11 +402,11 @@ bool TestParticles::write_particles(int cycle) {
   ss << "n" << std::setfill('0') << std::setw(8) << cycle;
 
   amrex::UtilCreateDirectory(outputDir, 0755);
-  std::string fileNamePartList = outputDir + "/" + domainName +
+  std::string fileNamePartList = outputDir + "/" + gridName +
                                  "_particle_list_species_" +
                                  std::to_string(speciesID) + "_" + ss.str();
 
-  std::string fileNamePartRecord = outputDir + "/" + domainName +
+  std::string fileNamePartRecord = outputDir + "/" + gridName +
                                    "_particle_species_" +
                                    std::to_string(speciesID) + "_" + ss.str();
 
