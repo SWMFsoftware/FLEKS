@@ -129,7 +129,7 @@ public:
   Particles<> *get_particle_pointer(int i) { return parts[i].get(); }
 
   //--------------Initialization begin-------------------------------
-  void init_amr_from_scratch() { InitFromScratch(tc->get_time()); }
+  //void init_amr_from_scratch() { InitFromScratch(tc->get_time()); }
 
   void set_geom(int nGstIn, const amrex::Geometry &geomIn);
 
@@ -305,6 +305,34 @@ public:
   }
 
   //--------------- Boundary end ------------------------
+
+  // Make a new level from scratch using provided BoxArray and
+  // DistributionMapping. Only used during initialization. overrides the pure
+  // virtual function in AmrCore
+  virtual void MakeNewLevelFromScratch(
+      int lev, amrex::Real time, const amrex::BoxArray &ba,
+      const amrex::DistributionMapping &dm) override {
+    std::string nameFunc = "Pic::MakeNewLevelFromScratch";
+    amrex::Print() << printPrefix << nameFunc << " lev = " << lev
+                   << " ba = " << ba << std::endl;
+  };
+
+  // Make a new level using provided BoxArray and DistributionMapping and
+  // fill with interpolated coarse level data.
+  // overrides the pure virtual function in AmrCore
+  virtual void MakeNewLevelFromCoarse(
+      int lev, amrex::Real time, const amrex::BoxArray &ba,
+      const amrex::DistributionMapping &dm) override {
+    std::string nameFunc = "Pic::MakeNewLevelFromCoarse";
+    amrex::Print() << printPrefix << nameFunc << " lev = " << lev
+                   << " ba = " << ba << std::endl;
+  };
+
+  virtual void PostProcessBaseGrids(amrex::BoxArray &ba) const override {
+    std::string nameFunc = "Pic::PostProcessBaseGrids";
+    ba = centerBA;
+    amrex::Print() << printPrefix << nameFunc << " ba = " << ba << std::endl;
+  };
 
   // private methods
 private:

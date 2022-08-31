@@ -77,7 +77,7 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
   fluidInterface->print_info();
 
   {
-    pic->init_amr_from_scratch();
+    //pic->init_amr_from_scratch();
     pic->set_geom(nGst, gm);
     fluidInterface->set_geom(nGst, gm);
     pt->set_geom(nGst, gm);

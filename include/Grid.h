@@ -41,7 +41,7 @@ protected:
   amrex::BoxArray centerBA;
 
   amrex::BoxArray nodeBA;
-  amrex::BoxArray nodeBAOld;  
+  amrex::BoxArray nodeBAOld;
 
   amrex::MultiFab costMF;
 
@@ -71,8 +71,8 @@ protected:
 
 public:
   Grid(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo, int id)
-      : AmrCore(gm, amrInfo), gridID(id) {    
-    gridName = std::string("FLEKS")+std::to_string(gridID);
+      : AmrCore(gm, amrInfo), gridID(id) {
+    gridName = std::string("FLEKS") + std::to_string(gridID);
     printPrefix = gridName + ": ";
   };
   ~Grid() = default;
@@ -107,22 +107,25 @@ public:
   // overrides the pure virtual function in AmrCore
   virtual void MakeNewLevelFromCoarse(
       int lev, amrex::Real time, const amrex::BoxArray& ba,
-      const amrex::DistributionMapping& dm) override{
-    // To be implemented
+      const amrex::DistributionMapping& dm) override {
+    std::string nameFunc = "Grid::MakeNewLevelFromCoarse";
+    amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
   };
 
   // Remake an existing level using provided BoxArray and DistributionMapping
   // and fill with existing fine and coarse data. overrides the pure virtual
   // function in AmrCore
   virtual void RemakeLevel(int lev, amrex::Real time, const amrex::BoxArray& ba,
-                           const amrex::DistributionMapping& dm) override{
-    // To be implemented
+                           const amrex::DistributionMapping& dm) override {
+    std::string nameFunc = "Grid::RemakeLevel";
+    amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
   };
 
   // Delete level data
   // overrides the pure virtual function in AmrCore
-  virtual void ClearLevel(int lev) override{
-    // To be implemented
+  virtual void ClearLevel(int lev) override {
+    std::string nameFunc = "Grid::ClearLevel";
+    amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
   };
 
   // Make a new level from scratch using provided BoxArray and
@@ -130,15 +133,17 @@ public:
   // virtual function in AmrCore
   virtual void MakeNewLevelFromScratch(
       int lev, amrex::Real time, const amrex::BoxArray& ba,
-      const amrex::DistributionMapping& dm) override{
-    // To be implemented
+      const amrex::DistributionMapping& dm) override {
+    std::string nameFunc = "Grid::MakeNewLevelFromScratch";
+    amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
   };
 
   // tag all cells for refinement
   // overrides the pure virtual function in AmrCore
   virtual void ErrorEst(int lev, amrex::TagBoxArray& tags, amrex::Real time,
-                        int ngrow) override{
-    // To be implemented
+                        int ngrow) override {
+    std::string nameFunc = "Grid::ErrorEst";
+    amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
   };
 };
 
