@@ -324,7 +324,7 @@ class dataContainer2D(object):
             ticks = get_ticks(vmin, vmax)
             cb = f.colorbar(cs, ax=ax,ticks=ticks)
             
-            cb.ax.set_yticks()
+            #cb.ax.set_yticks()
             #cb.set_clim(vmin,vmax)
 
             ax.set_xlim(xlim)
