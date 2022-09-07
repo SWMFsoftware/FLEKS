@@ -6,6 +6,19 @@ from utilities import get_unit, get_ticks
 import streamplot
 
 
+def compare(d1, d2):
+    header = ("var", "min|d1-d2|", "max|d1-d2|",
+              "mean|d1-d2|", "mean|d1|", "mean|d2|")
+    s = '{:8}   '+'{:10}      '*5
+    print(s.format(*header))
+    for var in d1.vars:
+        dif = abs(d1.data[var] - d2.data[var])
+        l = (var, float(dif.min()), float(dif.max()), float(dif.mean()),
+             float(d1.data[var].mean()), float(d2.data[var].mean()))
+        s = '{:10}'+'{:.6e},   '*5
+        print(s.format(*l))
+
+
 class dataContainer3D(object):
     r"""
     A class handles 3D box data sets.     

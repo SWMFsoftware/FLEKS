@@ -3,6 +3,7 @@ import os
 from idl_format_data import IDLDataSet
 from yt_interface import FLEKSDataset
 from test_particles import FLEKSTP
+from data_container import compare
 
 
 def load(filename, iDomain=0, iSpecies=0):
