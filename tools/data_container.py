@@ -10,30 +10,18 @@ from copy import deepcopy
 def compare(d1, d2):
     header = ("var", "min|d1-d2|", "max|d1-d2|",
               "mean|d1-d2|", "mean|d1|", "mean|d2|")
-    s = '{:8}   '+'{:10}      '*5
+    s = '{:8}   '+'{:18}'*5
     print(s.format(*header))
     for var in d1.vars:
         dif = abs(d1.data[var] - d2.data[var])
         l = (var, float(dif.min()), float(dif.max()), float(dif.mean()),
              float(d1.data[var].mean()), float(d2.data[var].mean()))
-        s = '{:10}'+'{:.6e},   '*5
+        s = '{:10}'+'{:+.6e},   '*5
         print(s.format(*l))
 
 
-class dataContainer3D(object):
-    r"""
-    A class handles 3D box data sets.     
-    """
-
-    def __init__(self, dataSets, x, y, z, xlabel='X', ylabel='Y', zlabel='Z'):
-        r"""
-        Parameters
-        ---------------------
-        dataSets: dictonary 
-        The key is the variable name, and the dictionary value is usually a YTArray. 
-
-        x/y/z: A 1D YTArray 
-        """
+class dataContainer(object):
+    def __init__(self, dataSets, x, y, z, xlabel, ylabel, zlabel):
 
         # Re-generate the coordinates to make sure they are equally spaced.
         x = np.linspace(x[0], x[-1], len(x))
@@ -57,8 +45,33 @@ class dataContainer3D(object):
         print("Variables       :", self.vars)
         print("\nData range      :", self.range)
         print("\nData dimensions :", self.dimensions)
+
+        header = ("var", "min", "max", "mean")
+        s = '{:8}   '+'{:18}'*3
+        print(s.format(*header))
+        for v in self.vars:
+            d = self.data[v]
+            s = '{:10}'+'{:+.6e},   '*3
+            print(s.format(v, float(d.min()), float(d.max()), float(d.mean())))
         print("-----------------------------")
         return "\n"
+
+class dataContainer3D(dataContainer):
+    r"""
+    A class handles 3D box data sets.     
+    """
+
+    def __init__(self, dataSets, x, y, z, xlabel='X', ylabel='Y', zlabel='Z'):
+        r"""
+        Parameters
+        ---------------------
+        dataSets: dictonary 
+        The key is the variable name, and the dictionary value is usually a YTArray. 
+
+        x/y/z: A 1D YTArray 
+        """
+        super(dataContainer3D, self).__init__(
+            dataSets, x, y, z, xlabel, ylabel, zlabel)
 
     def get_slice(self, norm, cut_loc):
         r"""
@@ -103,7 +116,7 @@ class dataContainer3D(object):
             dataSets, axes[ax[idir][0]], axes[ax[idir][1]], axLabes[idir][0], axLabes[idir][1], norm, cut_loc)
 
 
-class dataContainer2D(object):
+class dataContainer2D(dataContainer):
     r""" 
     A class handles 2D Cartesian data. 
     """
@@ -127,34 +140,13 @@ class dataContainer2D(object):
         data set is obtained from a 3D box. 
         """
 
-        # Re-generate the coordinates to make sure they are equally spaced.
-        x = np.linspace(x[0], x[-1], len(x))
-        y = np.linspace(y[0], y[-1], len(y))
-
-        self.data = dataSets
-        self.x = x
-        self.y = y
-        self.xlabel = xlabel
-        self.ylabel = ylabel
+        zlabel=None
+        z=(0,0)
+        super(dataContainer2D, self).__init__(
+            dataSets, x, y, z, xlabel, ylabel, zlabel)
 
         self.cut_norm = cut_norm
         self.cut_loc = cut_loc
-
-        self.vars = [var for var in self.data.keys()]
-        self.range = [[x[0], x[-1]], [y[0], y[-1]]]
-        self.dimensions = self.data[self.vars[0]].shape
-
-    def __repr__(self):
-        print("\n-----------------------------")
-        print("Variables       :", self.vars)
-        print("\nData range      :", self.range)
-        print("\nData dimensions :", self.dimensions)
-        for v in self.vars:
-            d = self.data[v]
-            print("{:10}: min = {:+.6e}, max = {:+.6e}, mean = {:+.6e}".format(
-                v, float(d.min()), float(d.max()), float(d.mean())))
-        print("-----------------------------")
-        return "\n"
 
     def __sub__(self, other):
         dif = deepcopy(self)
