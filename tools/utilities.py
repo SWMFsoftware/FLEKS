@@ -94,6 +94,8 @@ def get_unit(var, unit_type="planet"):
 
 def get_ticks(vmin, vmax):    
     dv = vmax - vmin
+    if dv == 0: 
+        return [vmin]
     norder = 10**(math.floor(math.log10(dv))-1)
 
     v0 = int(vmin/norder)

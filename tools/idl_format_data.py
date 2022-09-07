@@ -111,6 +111,7 @@ class IDLDataSet(object):
         print("npict       : ", self.npict)
         print("time        : ", self.runtime)
         print("nIter       : ", self.iter)
+        print("ndim        : ", self.ndim)
         print("grid        : ", self.grid)
         print("-----------------------------")
 
@@ -141,11 +142,14 @@ class IDLDataSet(object):
                 axes[idim] = yt.YTArray(
                     self.data.array[idx, :, :, :], unit, registry=self.registry)
 
-        if self.ndim == 2:
+        if self.ndim == 1:
+            dc = data_container.dataContainer1D(
+                dataSets, np.squeeze(axes[0]),labels[0])
+        elif self.ndim == 2:
             dc = data_container.dataContainer2D(
                 dataSets, np.squeeze(axes[0])[:,0], np.squeeze(axes[1])[0,:], 
                 labels[0], labels[1])
-        else:
+        else: 
             dc = data_container.dataContainer3D(
                 dataSets, axes[0][:,0,0], axes[1][0,:,0], axes[2][0,0,:])
 

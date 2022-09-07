@@ -45,6 +45,7 @@ class dataContainer(object):
         print("Variables       :", self.vars)
         print("\nData range      :", self.range)
         print("\nData dimensions :", self.dimensions)
+        print("\n")
 
         header = ("var", "min", "max", "mean")
         s = '{:8}   '+'{:18}'*3
@@ -55,104 +56,6 @@ class dataContainer(object):
             print(s.format(v, float(d.min()), float(d.max()), float(d.mean())))
         print("-----------------------------")
         return "\n"
-
-class dataContainer3D(dataContainer):
-    r"""
-    A class handles 3D box data sets.     
-    """
-
-    def __init__(self, dataSets, x, y, z, xlabel='X', ylabel='Y', zlabel='Z'):
-        r"""
-        Parameters
-        ---------------------
-        dataSets: dictonary 
-        The key is the variable name, and the dictionary value is usually a YTArray. 
-
-        x/y/z: A 1D YTArray 
-        """
-        super(dataContainer3D, self).__init__(
-            dataSets, x, y, z, xlabel, ylabel, zlabel)
-
-    def get_slice(self, norm, cut_loc):
-        r"""
-        Get a 2D slice from the 3D box data. 
-
-        Parameters
-        ------------------
-        norm: String
-        The normal direction of the slice. Potential value: 'x', 'y' or 'z'
-
-        cur_loc: Float 
-        The position of slicing. 
-
-        Return: A dataContainer2D object 
-        """
-
-        axDir = {'X': 0, 'Y': 1, 'Z': 2}
-        idir = axDir[norm.upper()]
-
-        axes = [self.x, self.y, self.z]
-
-        axSlice = axes[idir]
-
-        for iSlice in range(axSlice.size):
-            if axSlice[iSlice] > cut_loc:
-                break
-
-        dataSets = {}
-        for varname, val in self.data.items():
-            if idir == 0:
-                arr = val[iSlice, :, :]
-            elif idir == 1:
-                arr = val[:, iSlice, :]
-            elif idir == 2:
-                arr = val[:, :, iSlice]
-            dataSets[varname] = np.squeeze(arr)
-
-        axLabes = {0: ('Y', 'Z'), 1: ('X', 'Z'), 2: ('X', 'Y')}
-        ax = {0: (1, 2), 1: (0, 2), 2: (0, 1)}
-
-        return dataContainer2D(
-            dataSets, axes[ax[idir][0]], axes[ax[idir][1]], axLabes[idir][0], axLabes[idir][1], norm, cut_loc)
-
-
-class dataContainer2D(dataContainer):
-    r""" 
-    A class handles 2D Cartesian data. 
-    """
-
-    def __init__(self, dataSets, x, y, xlabel, ylabel, cut_norm=None, cut_loc=None):
-        r"""
-        Parameters
-        ---------------------
-        dataSets: dictonary 
-        The key is the variable name, and the dictionary value is usually a YTArray. 
-
-        x/y: A 1D YTArray 
-
-        xlabel/ylabel: String 
-
-        cut_norm: String
-        'x', 'y' or 'z'
-
-        cut_loc: Float 
-        cut_norm and cut_loc are used to record the position of slice if this 2D 
-        data set is obtained from a 3D box. 
-        """
-
-        zlabel=None
-        z=(0,0)
-        super(dataContainer2D, self).__init__(
-            dataSets, x, y, z, xlabel, ylabel, zlabel)
-
-        self.cut_norm = cut_norm
-        self.cut_loc = cut_loc
-
-    def __sub__(self, other):
-        dif = deepcopy(self)
-        for var in dif.vars:
-            dif.data[var] -= other.data[var]
-        return dif
 
     def analyze_variable_string(self, var):
         r"""
@@ -263,6 +166,105 @@ class dataContainer2D(dataContainer):
 
         return ytarr if str(ytarr.units) == 'dimensionless' else ytarr.in_units(varUnit)
 
+
+class dataContainer3D(dataContainer):
+    r"""
+    A class handles 3D box data sets.     
+    """
+
+    def __init__(self, dataSets, x, y, z, xlabel='X', ylabel='Y', zlabel='Z'):
+        r"""
+        Parameters
+        ---------------------
+        dataSets: dictonary 
+        The key is the variable name, and the dictionary value is usually a YTArray. 
+
+        x/y/z: A 1D YTArray 
+        """
+        super(dataContainer3D, self).__init__(
+            dataSets, x, y, z, xlabel, ylabel, zlabel)
+
+    def get_slice(self, norm, cut_loc):
+        r"""
+        Get a 2D slice from the 3D box data. 
+
+        Parameters
+        ------------------
+        norm: String
+        The normal direction of the slice. Potential value: 'x', 'y' or 'z'
+
+        cur_loc: Float 
+        The position of slicing. 
+
+        Return: A dataContainer2D object 
+        """
+
+        axDir = {'X': 0, 'Y': 1, 'Z': 2}
+        idir = axDir[norm.upper()]
+
+        axes = [self.x, self.y, self.z]
+
+        axSlice = axes[idir]
+
+        for iSlice in range(axSlice.size):
+            if axSlice[iSlice] > cut_loc:
+                break
+
+        dataSets = {}
+        for varname, val in self.data.items():
+            if idir == 0:
+                arr = val[iSlice, :, :]
+            elif idir == 1:
+                arr = val[:, iSlice, :]
+            elif idir == 2:
+                arr = val[:, :, iSlice]
+            dataSets[varname] = np.squeeze(arr)
+
+        axLabes = {0: ('Y', 'Z'), 1: ('X', 'Z'), 2: ('X', 'Y')}
+        ax = {0: (1, 2), 1: (0, 2), 2: (0, 1)}
+
+        return dataContainer2D(
+            dataSets, axes[ax[idir][0]], axes[ax[idir][1]], axLabes[idir][0], axLabes[idir][1], norm, cut_loc)
+
+
+class dataContainer2D(dataContainer):
+    r""" 
+    A class handles 2D Cartesian data. 
+    """
+
+    def __init__(self, dataSets, x, y, xlabel, ylabel, cut_norm=None, cut_loc=None):
+        r"""
+        Parameters
+        ---------------------
+        dataSets: dictonary 
+        The key is the variable name, and the dictionary value is usually a YTArray. 
+
+        x/y: A 1D YTArray 
+
+        xlabel/ylabel: String 
+
+        cut_norm: String
+        'x', 'y' or 'z'
+
+        cut_loc: Float 
+        cut_norm and cut_loc are used to record the position of slice if this 2D 
+        data set is obtained from a 3D box. 
+        """
+
+        zlabel = None
+        z = (0, 0)
+        super(dataContainer2D, self).__init__(
+            dataSets, x, y, z, xlabel, ylabel, zlabel)
+
+        self.cut_norm = cut_norm
+        self.cut_loc = cut_loc
+
+    def __sub__(self, other):
+        dif = deepcopy(self)
+        for var in dif.vars:
+            dif.data[var] -= other.data[var]
+        return dif
+
     def contour(self, vars, xlim=None, ylim=None, unit="planet", nlevels=200,
                 cmap="rainbow", figsize=(12, 8), pcolor=False, log=False, *args, **kwargs):
         r""" 
@@ -326,16 +328,15 @@ class dataContainer2D(dataContainer):
 
             vmin = v.min() if varMin[isub] == None else varMin[isub]
             vmax = v.max() if varMax[isub] == None else varMax[isub]
-            # v = np.clip(v, vmin, vmax)
 
             logplot = log and vmin > 0
             if logplot:
                 v = np.log10(v)
 
             levels = np.linspace(vmin, vmax, nlevels)
-            if pcolor:
+            if pcolor or abs(vmin-vmax) < 1e-20*abs(vmax):
                 cs = ax.pcolormesh(self.x.value, self.y.value, v.T,
-                                   cmap=cmap, edgecolor='k', *args, **kwargs)
+                                   cmap=cmap, *args, **kwargs)
             else:
                 cs = ax.contourf(self.x.value, self.y.value, v.T, levels=levels,
                                  cmap=cmap, extend="both", *args, **kwargs)
@@ -427,3 +428,79 @@ class dataContainer2D(dataContainer):
             v2 = v2.value
         streamplot.streamplot(ax, self.x.value, self.y.value,
                               v1.T, v2.T, density=density, *args, **kwargs)
+
+
+class dataContainer1D(dataContainer):
+    r""" 
+    A class handles 1D Cartesian data. 
+    """
+
+    def __init__(self, dataSets, x, xlabel):
+        r"""
+        Parameters
+        ---------------------
+        dataSets: dictonary 
+        The key is the variable name, and the dictionary value is usually a YTArray. 
+
+        x: A 1D YTArray 
+
+        xlabel: String 
+        """
+
+        ylabel = None
+        y = (0, 0)
+
+        zlabel = None
+        z = (0, 0)
+
+        super(dataContainer1D, self).__init__(
+            dataSets, x, y, z, xlabel, ylabel, zlabel)
+
+    def plot(self, vars, xlim=None, ylim=None, unit="planet",
+             figsize=(12, 8), log=False, *args, **kwargs):
+        """
+        Examples
+        ----------------
+        >>> f,axes=dc.plot("absdivb bx",xlim=[-5,5],color='k',linestyle='solid',marker='x')
+        """
+
+        if type(vars) == str:
+            vars = vars.split()
+
+        nvar = len(vars)
+        nRow = int(round(np.sqrt(nvar)))
+        nCol = math.ceil(nvar/nRow)
+
+        varNames = []
+        varMin = []
+        varMax = []
+        for var in vars:
+            vname, vmin, vmax = self.analyze_variable_string(var)
+            varNames.append(vname)
+            varMin.append(vmin)
+            varMax.append(vmax)
+
+        f, axes = plt.subplots(nRow, nCol, figsize=figsize)
+        axes = np.array(axes)  # in case nRow = nCol = 1
+
+        axes = axes.reshape(-1)
+
+        for isub, ax in zip(range(nvar), axes):
+            ytVar = self.evaluate_expression(varNames[isub], unit)
+            v = ytVar
+            varUnit = 'dimensionless'
+            if type(ytVar) == yt.units.yt_array.YTArray:
+                v = ytVar.value
+                varUnit = str(ytVar.units)
+
+            vmin = v.min() if varMin[isub] == None else varMin[isub]
+            vmax = v.max() if varMax[isub] == None else varMax[isub]
+            # v = np.clip(v, vmin, vmax)
+            ax.plot(self.x.value, v, label=varNames[isub], *args, **kwargs)
+
+            ax.set_xlim(xlim)
+            ax.set_ylim(ylim)
+            ax.set_xlabel(self.xlabel)
+            ax.legend()
+
+        return f, axes
