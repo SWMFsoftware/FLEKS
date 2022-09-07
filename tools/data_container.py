@@ -5,6 +5,7 @@ import math
 from utilities import get_unit, get_ticks
 import streamplot
 
+
 class dataContainer3D(object):
     r"""
     A class handles 3D box data sets.     
@@ -58,7 +59,7 @@ class dataContainer3D(object):
         The position of slicing. 
 
         Return: A dataContainer2D object 
-        """ 
+        """
 
         axDir = {'X': 0, 'Y': 1, 'Z': 2}
         idir = axDir[norm.upper()]
@@ -148,11 +149,11 @@ class dataContainer2D(object):
 
         Return: a tuple contains the variable name, variable min and max. 
         Example: return "{bb}", -10, -9.8
-        """ 
+        """
         vMin = None
         vMax = None
 
-        varName = var        
+        varName = var
         if varName.find(">") > 0:
             varName = varName[:varName.find(">")]
 
@@ -180,9 +181,9 @@ class dataContainer2D(object):
         -------------------
         expression: String
         Example: expression = "np.log({rhos0}+{rhos1})"
-        """ 
+        """
 
-        if expression.find('{') < 0: 
+        if expression.find('{') < 0:
             return self.get_variable(expression, unit)
 
         exp1 = expression.replace('{', "self.get_variable('")
@@ -205,20 +206,19 @@ class dataContainer2D(object):
         Example: var = "pbeta"
 
         Return: A YTArray 
-        """ 
+        """
 
-        
         if var in self.data.keys():
             varUnit = get_unit(var, unit)
             ytarr = self.data[var]
-        else: 
+        else:
             var = var.lower()
-            expression = None 
+            expression = None
             if var == "b":
-                expression = "np.sqrt({Bx}**2+{By}**2+{Bz}**2)"   
-                varUnit = get_unit('b', unit)         
+                expression = "np.sqrt({Bx}**2+{By}**2+{Bz}**2)"
+                varUnit = get_unit('b', unit)
             elif var == 'bb':
-                expression = "{Bx}**2+{By}**2+{Bz}**2"            
+                expression = "{Bx}**2+{By}**2+{Bz}**2"
                 varUnit = get_unit('b', unit)+"**2"
             elif var[0:2] == 'ps':
                 ss = var[2:3]
@@ -231,7 +231,7 @@ class dataContainer2D(object):
                 varUnit = get_unit('p', unit)
             elif var == "pbeta":
                 ytarr = (self.get_variable('ps0', unit) +
-                        self.get_variable('ps1', unit)) / self.get_variable('pb', unit)
+                         self.get_variable('ps1', unit)) / self.get_variable('pb', unit)
                 varUnit = 'dimensionless'
             elif var == "calfven":
                 ytarr = self.get_variable(
@@ -239,16 +239,16 @@ class dataContainer2D(object):
                 ytarr = yt.YTArray(ytarr.value, 'm/s')
                 varUnit = get_unit('u', unit)
 
-            if expression != None: 
-                ytarr = self.evaluate_expression(expression,unit)            
-                if type(ytarr) != yt.units.yt_array.YTArray: 
+            if expression != None:
+                ytarr = self.evaluate_expression(expression, unit)
+                if type(ytarr) != yt.units.yt_array.YTArray:
                     varUnit = 'dimensionless'
-                    ytarr = yt.YTArray(ytarr, varUnit)                
-        
-        return ytarr if str(ytarr.units)=='dimensionless' else ytarr.in_units(varUnit) 
+                    ytarr = yt.YTArray(ytarr, varUnit)
 
-    def contour(self, vars, xlim=None, ylim=None, unit="planet",
-                nlevels=200, cmap="rainbow", figsize=(12,8), log=False, *args, **kwargs):
+        return ytarr if str(ytarr.units) == 'dimensionless' else ytarr.in_units(varUnit)
+
+    def contour(self, vars, xlim=None, ylim=None, unit="planet", nlevels=200,
+                cmap="rainbow", figsize=(12, 8), pcolor=False, log=False, *args, **kwargs):
         r""" 
         Contour plots. 
 
@@ -278,7 +278,7 @@ class dataContainer2D(object):
         ----------------
         >>> f,axes = dc.contour("Bx<(50)>(-50) By (np.log(2*{rhos0}))>(-5)",xlim=[-40,-5])
         """
-        
+
         if type(vars) == str:
             vars = vars.split()
 
@@ -294,17 +294,17 @@ class dataContainer2D(object):
             varNames.append(vname)
             varMin.append(vmin)
             varMax.append(vmax)
-        
-        f, axes = plt.subplots(nRow, nCol,figsize=figsize)
+
+        f, axes = plt.subplots(nRow, nCol, figsize=figsize)
         axes = np.array(axes)  # in case nRow = nCol = 1
 
         axes = axes.reshape(-1)
 
         for isub, ax in zip(range(nvar), axes):
             ytVar = self.evaluate_expression(varNames[isub], unit)
-            v = ytVar 
+            v = ytVar
             varUnit = 'dimensionless'
-            if type(ytVar) == yt.units.yt_array.YTArray: 
+            if type(ytVar) == yt.units.yt_array.YTArray:
                 v = ytVar.value
                 varUnit = str(ytVar.units)
 
@@ -317,15 +317,20 @@ class dataContainer2D(object):
                 v = np.log10(v)
 
             levels = np.linspace(vmin, vmax, nlevels)
-            cs = ax.contourf(self.x.value, self.y.value, v.T, levels=levels,
-                             cmap=cmap, extend="both", *args, **kwargs)
-            #cs.set_clim(vmin,vmax)
-            
+            if pcolor:
+                cs = ax.pcolormesh(self.x.value, self.y.value, v.T,
+                                   cmap=cmap, edgecolor='k', *args, **kwargs)
+            else:
+                cs = ax.contourf(self.x.value, self.y.value, v.T, levels=levels,
+                                 cmap=cmap, extend="both", *args, **kwargs)
+
+            # cs.set_clim(vmin,vmax)
+
             ticks = get_ticks(vmin, vmax)
-            cb = f.colorbar(cs, ax=ax,ticks=ticks)
-            
-            #cb.ax.set_yticks()
-            #cb.set_clim(vmin,vmax)
+            cb = f.colorbar(cs, ax=ax, ticks=ticks)
+
+            # cb.ax.set_yticks()
+            # cb.set_clim(vmin,vmax)
 
             ax.set_xlim(xlim)
             ax.set_ylim(ylim)
@@ -368,8 +373,8 @@ class dataContainer2D(object):
         vname, vmin, vmax = self.analyze_variable_string(var)
 
         ytVar = self.evaluate_expression(vname, unit)
-        v = ytVar 
-        if type(ytVar) == yt.units.yt_array.YTArray: 
+        v = ytVar
+        if type(ytVar) == yt.units.yt_array.YTArray:
             v = ytVar.value
 
         vmin = v.min() if vmin == None else vmin
@@ -400,8 +405,9 @@ class dataContainer2D(object):
 
         v1 = self.evaluate_expression(var1).value
         v2 = self.evaluate_expression(var2).value
-        if type(v1) == yt.units.yt_array.YTArray: 
+        if type(v1) == yt.units.yt_array.YTArray:
             v1 = v1.value
-        if type(v2) == yt.units.yt_array.YTArray: 
+        if type(v2) == yt.units.yt_array.YTArray:
             v2 = v2.value
-        streamplot.streamplot(ax, self.x.value, self.y.value, v1.T, v2.T, density=density, *args, **kwargs)
+        streamplot.streamplot(ax, self.x.value, self.y.value,
+                              v1.T, v2.T, density=density, *args, **kwargs)
