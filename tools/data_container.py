@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import math
 from utilities import get_unit, get_ticks
 import streamplot
+from copy import deepcopy
 
 
 def compare(d1, d2):
@@ -148,8 +149,18 @@ class dataContainer2D(object):
         print("Variables       :", self.vars)
         print("\nData range      :", self.range)
         print("\nData dimensions :", self.dimensions)
+        for v in self.vars:
+            d = self.data[v]
+            print("{:10}: min = {:+.6e}, max = {:+.6e}, mean = {:+.6e}".format(
+                v, float(d.min()), float(d.max()), float(d.mean())))
         print("-----------------------------")
         return "\n"
+
+    def __sub__(self, other):
+        dif = deepcopy(self)
+        for var in dif.vars:
+            dif.data[var] -= other.data[var]
+        return dif
 
     def analyze_variable_string(self, var):
         r"""
