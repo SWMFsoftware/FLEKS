@@ -21,7 +21,7 @@ def compare(d1, d2):
 
 
 class dataContainer(object):
-    def __init__(self, dataSets, x, y, z, xlabel, ylabel, zlabel):
+    def __init__(self, dataSets, x, y, z, xlabel, ylabel, zlabel, step=-1, time=-1, filename=""):
 
         # Re-generate the coordinates to make sure they are equally spaced.
         x = np.linspace(x[0], x[-1], len(x))
@@ -39,6 +39,9 @@ class dataContainer(object):
         self.vars = [x for x in self.data.keys()]
         self.range = [[x[0], x[-1]], [y[0], y[-1]], [z[0], z[-1]]]
         self.dimensions = self.data[self.vars[0]].shape
+        self.nstep = step
+        self.time = time
+        self.filename = filename
 
     def __repr__(self):
         print("\n-----------------------------")
@@ -56,6 +59,10 @@ class dataContainer(object):
             print(s.format(v, float(d.min()), float(d.max()), float(d.mean())))
         print("-----------------------------")
         return "\n"
+
+    def add_bottom_line(self,f):
+        s = "nstep = "+str(self.nstep)+"       time = "+str(self.time) + " "*20+self.filename
+        f.text(0.01,0.01,s)        
 
     def analyze_variable_string(self, var):
         r"""
@@ -172,7 +179,7 @@ class dataContainer3D(dataContainer):
     A class handles 3D box data sets.     
     """
 
-    def __init__(self, dataSets, x, y, z, xlabel='X', ylabel='Y', zlabel='Z'):
+    def __init__(self, dataSets, x, y, z, xlabel='X', ylabel='Y', zlabel='Z',*args, **kwargs):
         r"""
         Parameters
         ---------------------
@@ -182,7 +189,7 @@ class dataContainer3D(dataContainer):
         x/y/z: A 1D YTArray 
         """
         super(dataContainer3D, self).__init__(
-            dataSets, x, y, z, xlabel, ylabel, zlabel)
+            dataSets, x, y, z, xlabel, ylabel, zlabel, *args, **kwargs)
 
     def get_slice(self, norm, cut_loc):
         r"""
@@ -232,7 +239,7 @@ class dataContainer2D(dataContainer):
     A class handles 2D Cartesian data. 
     """
 
-    def __init__(self, dataSets, x, y, xlabel, ylabel, cut_norm=None, cut_loc=None):
+    def __init__(self, dataSets, x, y, xlabel, ylabel, cut_norm=None, cut_loc=None, *args, **kwargs):
         r"""
         Parameters
         ---------------------
@@ -254,7 +261,7 @@ class dataContainer2D(dataContainer):
         zlabel = None
         z = (0, 0)
         super(dataContainer2D, self).__init__(
-            dataSets, x, y, z, xlabel, ylabel, zlabel)
+            dataSets, x, y, z, xlabel, ylabel, zlabel, *args, **kwargs)
 
         self.cut_norm = cut_norm
         self.cut_loc = cut_loc
@@ -368,6 +375,7 @@ class dataContainer2D(dataContainer):
         if self.cut_norm != None and self.cut_loc != None:
             print("Plots at "+self.cut_norm+' = ', self.cut_loc)
 
+        self.add_bottom_line(f)
         return f, axes.reshape(nRow, nCol)
 
     def add_contour(self, ax, var, unit='planet', *args, **kwargs):
@@ -435,7 +443,7 @@ class dataContainer1D(dataContainer):
     A class handles 1D Cartesian data. 
     """
 
-    def __init__(self, dataSets, x, xlabel):
+    def __init__(self, dataSets, x, xlabel, *args, **kwargs):
         r"""
         Parameters
         ---------------------
@@ -454,7 +462,7 @@ class dataContainer1D(dataContainer):
         z = (0, 0)
 
         super(dataContainer1D, self).__init__(
-            dataSets, x, y, z, xlabel, ylabel, zlabel)
+            dataSets, x, y, z, xlabel, ylabel, zlabel, *args, **kwargs)
 
     def plot(self, vars, xlim=None, ylim=None, unit="planet",
              figsize=(12, 8), log=False, *args, **kwargs):
@@ -503,4 +511,5 @@ class dataContainer1D(dataContainer):
             ax.set_xlabel(self.xlabel)
             ax.legend()
 
+        self.add_bottom_line(f)
         return f, axes

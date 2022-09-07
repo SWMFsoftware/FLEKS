@@ -32,16 +32,16 @@ class dataframe:
         self.cut[:, :, :]
 
     def setData(self, dataIn, nameIn):
-        assert(nameIn.size == dataIn.shape[0])
-        assert(dataIn.ndim <= 4)
+        assert (nameIn.size == dataIn.shape[0])
+        assert (dataIn.ndim <= 4)
         shape = list(dataIn.shape) + [1]*(4-dataIn.ndim)
         self.array = np.reshape(dataIn, shape)
         self.name = tuple(nameIn)
 
     def fixDataSize(self):
         self.name = tuple(self.name)
-        assert(len(self.name) == self.array.shape[0])
-        assert(self.array.ndim <= 4)
+        assert (len(self.name) == self.array.shape[0])
+        assert (self.array.ndim <= 4)
         shape = list(self.array.shape) + [1]*(4-self.array.ndim)
         self.array = np.reshape(self.array, shape)
 
@@ -144,14 +144,16 @@ class IDLDataSet(object):
 
         if self.ndim == 1:
             dc = data_container.dataContainer1D(
-                dataSets, np.squeeze(axes[0]),labels[0])
+                dataSets, np.squeeze(axes[0]), labels[0],
+                step=self.iter, time=self.runtime, filename=self.filename)
         elif self.ndim == 2:
             dc = data_container.dataContainer2D(
-                dataSets, np.squeeze(axes[0])[:,0], np.squeeze(axes[1])[0,:], 
-                labels[0], labels[1])
-        else: 
+                dataSets, np.squeeze(axes[0])[:, 0], np.squeeze(axes[1])[0, :],
+                labels[0], labels[1], step=self.iter, time=self.runtime, filename=self.filename)
+        else:
             dc = data_container.dataContainer3D(
-                dataSets, axes[0][:,0,0], axes[1][0,:,0], axes[2][0,0,:])
+                dataSets, axes[0][:, 0, 0], axes[1][0, :, 0], axes[2][0, 0, :],
+                step=self.iter, time=self.runtime, filename=self.filename)
 
         return dc
 
@@ -336,7 +338,7 @@ class IDLDataSet(object):
          self.ndim, self.nparam, self.nvar) = \
             struct.unpack('{0}l{1}3l'.format(
                 EndChar, pformat), infile.read(RecLen))
-        self.ndim = abs(self.ndim)                
+        self.ndim = abs(self.ndim)
         # Get gridsize
         (OldLen, RecLen) = struct.unpack(EndChar+'2l', infile.read(8))
 
