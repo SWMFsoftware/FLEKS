@@ -21,12 +21,12 @@ def compare(d1, d2):
 
 
 class dataContainer(object):
-    def __init__(self, dataSets, x, y, z, xlabel, ylabel, zlabel, step=-1, time=-1, filename=""):
+    def __init__(self, dataSets, x, y, z, xlabel, ylabel, zlabel, step=-1, time=-1, gencoord=False, filename=""):
 
         # Re-generate the coordinates to make sure they are equally spaced.
-        x = np.linspace(x[0], x[-1], len(x))
-        y = np.linspace(y[0], y[-1], len(y))
-        z = np.linspace(z[0], z[-1], len(z))
+        # x = np.linspace(x[0], x[-1], len(x))
+        # y = np.linspace(y[0], y[-1], len(y))
+        # z = np.linspace(z[0], z[-1], len(z))
 
         self.data = dataSets
         self.x = x
@@ -42,6 +42,7 @@ class dataContainer(object):
         self.nstep = step
         self.time = time
         self.filename = filename
+        self.gencoord = gencoord
 
     def __repr__(self):
         print("\n-----------------------------")
@@ -60,9 +61,10 @@ class dataContainer(object):
         print("-----------------------------")
         return "\n"
 
-    def add_bottom_line(self,f):
-        s = "nstep = "+str(self.nstep)+"       time = "+str(self.time) + " "*20+self.filename
-        f.text(0.01,0.01,s)        
+    def add_bottom_line(self, f):
+        s = "nstep = "+str(self.nstep)+"       time = " + \
+            str(self.time) + " "*20+self.filename
+        f.text(0.01, 0.01, s)
 
     def analyze_variable_string(self, var):
         r"""
@@ -179,7 +181,7 @@ class dataContainer3D(dataContainer):
     A class handles 3D box data sets.     
     """
 
-    def __init__(self, dataSets, x, y, z, xlabel='X', ylabel='Y', zlabel='Z',*args, **kwargs):
+    def __init__(self, dataSets, x, y, z, xlabel='X', ylabel='Y', zlabel='Z', *args, **kwargs):
         r"""
         Parameters
         ---------------------
@@ -273,7 +275,8 @@ class dataContainer2D(dataContainer):
         return dif
 
     def contour(self, vars, xlim=None, ylim=None, unit="planet", nlevels=200,
-                cmap="rainbow", figsize=(12, 8), pcolor=False, log=False, *args, **kwargs):
+                cmap="rainbow", figsize=(12, 8), pcolor=False, log=False, 
+                addgrid=False, *args, **kwargs):
         r""" 
         Contour plots. 
 
@@ -341,12 +344,23 @@ class dataContainer2D(dataContainer):
                 v = np.log10(v)
 
             levels = np.linspace(vmin, vmax, nlevels)
-            if pcolor or abs(vmin-vmax) < 1e-20*abs(vmax):
-                cs = ax.pcolormesh(self.x.value, self.y.value, v.T,
-                                   cmap=cmap, *args, **kwargs)
+            if self.gencoord:
+                if pcolor or abs(vmin-vmax) < 1e-20*abs(vmax):
+                    cs = ax.tripcolor(self.x.value, self.y.value, v.T,
+                                      cmap=cmap, *args, **kwargs)
+                else:
+                    cs = ax.tricontourf(self.x.value, self.y.value, v.T, levels=levels,
+                                        cmap=cmap, extend="both", *args, **kwargs)
             else:
-                cs = ax.contourf(self.x.value, self.y.value, v.T, levels=levels,
-                                 cmap=cmap, extend="both", *args, **kwargs)
+                if pcolor or abs(vmin-vmax) < 1e-20*abs(vmax):
+                    cs = ax.pcolormesh(self.x.value, self.y.value, v.T,
+                                       cmap=cmap, *args, **kwargs)
+                else:
+                    cs = ax.contourf(self.x.value, self.y.value, v.T, levels=levels,
+                                     cmap=cmap, extend="both", *args, **kwargs)
+
+            if addgrid:
+                ax.plot(self.x.value, self.y.value, 'x')
 
             # cs.set_clim(vmin,vmax)
 

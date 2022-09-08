@@ -146,8 +146,13 @@ class IDLDataSet(object):
             if name in ["X", "Y", "Z"]:
                 axes[idim] = yt.YTArray(
                     self.data.array[idx, :, :, :], unit, registry=self.registry)
-
-        if self.ndim == 1:
+                    
+        if self.gencoord :
+            dc = data_container.dataContainer2D(
+                dataSets, np.squeeze(axes[0]), np.squeeze(axes[1]),
+                labels[0], labels[1], step=self.iter, time=self.runtime, 
+                filename=self.filename, gencoord=True)
+        elif self.ndim == 1:
             dc = data_container.dataContainer1D(
                 dataSets, np.squeeze(axes[0]), labels[0],
                 step=self.iter, time=self.runtime, filename=self.filename)
