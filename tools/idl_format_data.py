@@ -1,7 +1,6 @@
 import glob
 import numpy as np
 import matplotlib.pyplot as plt
-#from pyevtk.hl import gridToVTK
 import struct
 import math
 import utilities
@@ -12,16 +11,12 @@ x_ = 0
 y_ = 1
 z_ = 2
 
-plt.ion()
-
-
 class selector:
     def __getitem__(self, keys):
         self.indices = list(keys)
         if len(self.indices) < 3:
             self.indices += [0]*(3-len(self.indices))
         return self.indices
-
 
 class dataframe:
     def __init__(self):
@@ -83,17 +78,26 @@ class IDLDataSet(object):
             ifile = 1
 
         self.filename = fileList[ifile - 1]
-        self.fileformat = "unset"
         self.isOuts = self.filename[-4:] == "outs"
-        self.variables = ''
-        self.unit = ''
-        self.npict = 0
-        self.nInstance = -1 if self.isOuts else 1
-        self.data = dataframe()
+        self.data = dataframe()        
+        self.nInstance = None if self.isOuts else 1
+        self.npict = 1            
+        self.fileformat = None        
+        self.variables = None
+        self.unit = None        
+        self.iter = None
+        self.runtime = None
+        self.ndim = None
+        self.gencoord = None
+        self.grid = None
 
         self.read_data()
 
-        planet_radius = 1.0
+    def __post_process_param__(self):
+
+        planet_radius = 1.0 
+        
+        # Not always correct. 
         for var, val in zip(self.param_name, self.para):
             if var == "xSI":
                 planet_radius = float(100*val)
@@ -186,7 +190,7 @@ class IDLDataSet(object):
                         f.write('\n')
 
     def read_data(self):
-        if self.fileformat == "unset":
+        if self.fileformat is None:
             with open(self.filename, 'rb') as f:
                 EndChar = '<'  # Endian marker (default: little.)
                 RecLenRaw = f.read(4)
@@ -208,9 +212,10 @@ class IDLDataSet(object):
         self.data.name = tuple(self.variables)[0:ndim+nvar]
         self.data.fixDataSize()
         self.param_name = self.variables[ndim+nvar:]
+        self.__post_process_param__()
 
     def read_ascii(self):
-        if self.nInstance == -1:
+        if self.nInstance is None:
             # Count how many instances are there.
             with open(self.filename, 'r') as f:
                 for i, l in enumerate(f):
@@ -300,7 +305,7 @@ class IDLDataSet(object):
         return nline
 
     def read_binary(self):
-        if self.nInstance == -1:
+        if self.nInstance is None:
             with open(self.filename, 'rb') as f:
                 self.read_binary_instance(f)
                 self.nInstanceLength = f.tell()
