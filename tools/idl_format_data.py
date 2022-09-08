@@ -112,6 +112,7 @@ class IDLDataSet(object):
         print("time        : ", self.runtime)
         print("nIter       : ", self.iter)
         print("ndim        : ", self.ndim)
+        print("gencoord    : ", self.gencoord)
         print("grid        : ", self.grid)
         print("-----------------------------")
 
@@ -241,7 +242,9 @@ class IDLDataSet(object):
         nline += 1
         self.iter = int(parts[0])
         self.runtime = float(parts[1])
-        self.ndim = abs(int(parts[2]))
+        self.ndim = int(parts[2])
+        self.gencoord = self.ndim < 0
+        self.ndim = abs(self.ndim)
         self.nparam = int(parts[3])
         self.nvar = int(parts[4])
 
@@ -338,6 +341,7 @@ class IDLDataSet(object):
          self.ndim, self.nparam, self.nvar) = \
             struct.unpack('{0}l{1}3l'.format(
                 EndChar, pformat), infile.read(RecLen))
+        self.gencoord = self.ndim < 0                 
         self.ndim = abs(self.ndim)
         # Get gridsize
         (OldLen, RecLen) = struct.unpack(EndChar+'2l', infile.read(8))
