@@ -136,20 +136,20 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
     return;
 
   // Why need 'isGridInitialized'? See the explanation in Domain::regrid().
-  if (centerBAIn == centerBA && isGridInitialized)
+  if (centerBAIn == cGrid && isGridInitialized)
     return;
 
   isGridEmpty = ptRegionIn.empty();
 
   activeRegionBA = ptRegionIn;
-  centerBA = centerBAIn;
-  nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
+  cGrid = centerBAIn;
+  nGrid = convert(cGrid, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
 
   SetDistributionMap(0, dmIn);
 
-  distribute_FabArray(nodeE, nodeBA, DistributionMap(0), 3, nGst, false);
-  distribute_FabArray(nodeB, nodeBA, DistributionMap(0), 3, nGst, false);
-  distribute_FabArray(cellStatus, centerBA, DistributionMap(0), 1, nGst, false);
+  distribute_FabArray(nodeE, nGrid, DistributionMap(0), 3, nGst, false);
+  distribute_FabArray(nodeB, nGrid, DistributionMap(0), 3, nGst, false);
+  distribute_FabArray(cellStatus, cGrid, DistributionMap(0), 1, nGst, false);
 
   update_cell_status(pic);
 
@@ -158,7 +158,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::unique_ptr<TestParticles>(
           new TestParticles(activeRegionBA, Geom(0), DistributionMap(0),
-                            centerBA, fluidInterface.get(), tc.get(), i,
+                            cGrid, fluidInterface.get(), tc.get(), i,
                             fluidInterface->get_species_charge(i),
                             fluidInterface->get_species_mass(i), gridID));
       ptr->set_ppc(nTPPerCell);
@@ -171,7 +171,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
     for (int i = 0; i < nSpecies; i++) {
       // Label the particles outside the OLD PIC region.
       parts[i]->label_particles_outside_ba();
-      parts[i]->SetParticleBoxArray(0, centerBA);
+      parts[i]->SetParticleBoxArray(0, cGrid);
       parts[i]->set_region_ba(activeRegionBA);
       parts[i]->SetParticleDistributionMap(0, DistributionMap(0));
       // Label the particles outside the NEW PIC region.
@@ -182,7 +182,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
 
   { // Copy cell Status to Particles objects.
     for (int i = 0; i < nSpecies; i++) {
-      distribute_FabArray(parts[i]->cellStatus, centerBA, DistributionMap(0), 1,
+      distribute_FabArray(parts[i]->cellStatus, cGrid, DistributionMap(0), 1,
                           nGst, false);
 
       if (!cellStatus.empty()) {

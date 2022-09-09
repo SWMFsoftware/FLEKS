@@ -32,20 +32,20 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
   std::string nameFunc = "FluidInterface::regrid";
 
   // Why need 'isGridInitialized'? See the explaination in Domain::regrid().
-  if (centerBAIn == centerBA && isGridInitialized) {
+  if (centerBAIn == cGrid && isGridInitialized) {
     // The interface grid does not change.
     return;
   }
 
   isGridEmpty = centerBAIn.empty();
 
-  centerBA = centerBAIn;
-  nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
+  cGrid = centerBAIn;
+  nGrid = convert(cGrid, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
   dm = dmIn;
 
   const bool doCopy = true;
-  distribute_FabArray(nodeFluid, nodeBA, dm, nVarCoupling, nGst, doCopy);
-  distribute_FabArray(centerB, centerBA, dm, nDimMax, nGst, doCopy);
+  distribute_FabArray(nodeFluid, nGrid, dm, nVarCoupling, nGst, doCopy);
+  distribute_FabArray(centerB, cGrid, dm, nDimMax, nGst, doCopy);
 
   isGridInitialized = true;
 }

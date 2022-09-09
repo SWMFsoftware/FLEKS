@@ -330,7 +330,7 @@ public:
 
   virtual void PostProcessBaseGrids(amrex::BoxArray &ba) const override {
     std::string nameFunc = "Pic::PostProcessBaseGrids";
-    ba = centerBA;
+    ba = cGrid;
     amrex::Print() << printPrefix << nameFunc << " ba = " << ba << std::endl;
   };
 

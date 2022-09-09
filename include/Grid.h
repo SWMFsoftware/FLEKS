@@ -33,15 +33,15 @@ protected:
   // const int coord = 0; // Cartesian grid
 
   // A collection of boxes to describe the simulation domain. The boxes have
-  // been combined if possible. It covers the same region as centerBA, but
+  // been combined if possible. It covers the same region as cGrid, but
   // usually contains less boxes.
   amrex::BoxArray activeRegionBA;
 
-  amrex::BoxArray centerBAOld;
-  amrex::BoxArray centerBA;
+  // Cell center
+  amrex::BoxArray cGrid;
 
-  amrex::BoxArray nodeBA;
-  amrex::BoxArray nodeBAOld;
+  // Nodal
+  amrex::BoxArray nGrid;  
 
   amrex::MultiFab costMF;
 
@@ -91,8 +91,8 @@ public:
   inline int find_mpi_rank_from_cell_index(int const i, int const j,
                                            int const k) const {
     amrex::IntVect idx = { i, j, k };
-    for (int ii = 0, n = centerBA.size(); ii < n; ii++) {
-      const amrex::Box& bx = centerBA[ii];
+    for (int ii = 0, n = cGrid.size(); ii < n; ii++) {
+      const amrex::Box& bx = cGrid[ii];
       if (bx.contains(idx))
         return DistributionMap(0)[ii];
     }

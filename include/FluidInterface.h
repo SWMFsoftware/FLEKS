@@ -36,8 +36,8 @@ private:
   // ------Grid info----------
   amrex::DistributionMapping dm;
   amrex::Geometry gm;
-  amrex::BoxArray centerBA;
-  amrex::BoxArray nodeBA;
+  amrex::BoxArray cGrid;  
+  amrex::BoxArray nGrid;  
   //------------------------
 
   MultiFabFLEKS nodeFluid;

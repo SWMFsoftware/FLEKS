@@ -131,7 +131,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     sourceInterface.regrid(centerBAIn, dmIn);
 
   // Why need 'isGridInitialized'? See the explaination in Domain::regrid().
-  if (centerBAIn == centerBA && isGridInitialized)
+  if (centerBAIn == cGrid && isGridInitialized)
     return;
 
   activeRegionBA = picRegionIn;
@@ -140,11 +140,10 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   doNeedFillNewCell = true;
 
-  centerBAOld = centerBA;
-  nodeBAOld = convert(centerBAOld, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
+  BoxArray cGridOld = cGrid;
 
-  centerBA = centerBAIn;
-  nodeBA = convert(centerBA, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
+  cGrid = centerBAIn;
+  nGrid = convert(cGrid, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
 
   SetDistributionMap(0, dmIn);
 
@@ -152,20 +151,20 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   // InitFromScratch(tc->get_time());
 
   //===========Move field data around begin====================
-  distribute_FabArray(nodeE, nodeBA, DistributionMap(0), 3, nGst);
-  distribute_FabArray(nodeEth, nodeBA, DistributionMap(0), 3, nGst);
-  distribute_FabArray(nodeB, nodeBA, DistributionMap(0), 3, nGst);
-  distribute_FabArray(centerB, centerBA, DistributionMap(0), 3, nGst);
+  distribute_FabArray(nodeE, nGrid, DistributionMap(0), 3, nGst);
+  distribute_FabArray(nodeEth, nGrid, DistributionMap(0), 3, nGst);
+  distribute_FabArray(nodeB, nGrid, DistributionMap(0), 3, nGst);
+  distribute_FabArray(centerB, cGrid, DistributionMap(0), 3, nGst);
 
-  distribute_FabArray(centerNetChargeOld, centerBA, DistributionMap(0), 1,
+  distribute_FabArray(centerNetChargeOld, cGrid, DistributionMap(0), 1,
                       nGst);
-  distribute_FabArray(centerNetChargeN, centerBA, DistributionMap(0), 1,
+  distribute_FabArray(centerNetChargeN, cGrid, DistributionMap(0), 1,
                       nGst); // false??
-  distribute_FabArray(centerNetChargeNew, centerBA, DistributionMap(0), 1,
+  distribute_FabArray(centerNetChargeNew, cGrid, DistributionMap(0), 1,
                       nGst); // false??
 
-  distribute_FabArray(centerDivE, centerBA, DistributionMap(0), 1, nGst);
-  distribute_FabArray(centerPhi, centerBA, DistributionMap(0), 1, nGst);
+  distribute_FabArray(centerDivE, cGrid, DistributionMap(0), 1, nGst);
+  distribute_FabArray(centerPhi, cGrid, DistributionMap(0), 1, nGst);
 
   {
     bool doMoveData = false;
@@ -179,36 +178,36 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
       // The last one is the sum of all species.
       nodePlasma.resize(nSpecies + 1);
       for (auto& pl : nodePlasma) {
-        pl.define(nodeBA, DistributionMap(0), nMoments, nGst);
+        pl.define(nGrid, DistributionMap(0), nMoments, nGst);
         pl.setVal(0.0);
       }
     } else {
       for (auto& pl : nodePlasma) {
-        distribute_FabArray(pl, nodeBA, DistributionMap(0), nMoments, nGst,
+        distribute_FabArray(pl, nGrid, DistributionMap(0), nMoments, nGst,
                             doMoveData);
       }
     }
 
-    distribute_FabArray(jHat, nodeBA, DistributionMap(0), 3, nGst, doMoveData);
+    distribute_FabArray(jHat, nGrid, DistributionMap(0), 3, nGst, doMoveData);
 
     if (!useExplicitPIC) {
-      distribute_FabArray(nodeMM, nodeBA, DistributionMap(0), 1, 1, doMoveData);
+      distribute_FabArray(nodeMM, nGrid, DistributionMap(0), 1, 1, doMoveData);
     }
-    distribute_FabArray(costMF, centerBA, DistributionMap(0), 1, nGst,
+    distribute_FabArray(costMF, cGrid, DistributionMap(0), 1, nGst,
                         doMoveData);
-    distribute_FabArray(centerMM, centerBA, DistributionMap(0), 1, nGst,
-                        doMoveData);
-
-    distribute_FabArray(tempNode3, nodeBA, DistributionMap(0), 3, nGst,
-                        doMoveData);
-    distribute_FabArray(tempCenter3, centerBA, DistributionMap(0), 3, nGst,
-                        doMoveData);
-    distribute_FabArray(tempCenter1, centerBA, DistributionMap(0), 1, nGst,
-                        doMoveData);
-    distribute_FabArray(tempCenter1_1, centerBA, DistributionMap(0), 1, nGst,
+    distribute_FabArray(centerMM, cGrid, DistributionMap(0), 1, nGst,
                         doMoveData);
 
-    distribute_FabArray(nodeSmoothCoef, nodeBA, DistributionMap(0), 1, nGst,
+    distribute_FabArray(tempNode3, nGrid, DistributionMap(0), 3, nGst,
+                        doMoveData);
+    distribute_FabArray(tempCenter3, cGrid, DistributionMap(0), 3, nGst,
+                        doMoveData);
+    distribute_FabArray(tempCenter1, cGrid, DistributionMap(0), 1, nGst,
+                        doMoveData);
+    distribute_FabArray(tempCenter1_1, cGrid, DistributionMap(0), 1, nGst,
+                        doMoveData);
+
+    distribute_FabArray(nodeSmoothCoef, nGrid, DistributionMap(0), 1, nGst,
                         doMoveData);
   }
   //===========Move field data around end====================
@@ -217,7 +216,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
     // The algorithm decides inject particles or not needs at least 2 ghost cell
     // layers.
-    distribute_FabArray(cellStatus, centerBA, DistributionMap(0), 1,
+    distribute_FabArray(cellStatus, cGrid, DistributionMap(0), 1,
                         nGst >= 2 ? nGst : 2, false);
     if (!cellStatus.empty()) {
       cellStatus.setVal(iBoundary_);
@@ -234,7 +233,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
             for (int j = lo.y; j <= hi.y; ++j)
               for (int i = lo.x; i <= hi.x; ++i) {
                 if (cellArr(i, j, k) == iOnNew_ &&
-                    centerBAOld.contains(IntVect{ i, j, k })) {
+                    cGridOld.contains(IntVect{ i, j, k })) {
                   cellArr(i, j, k) = iOnOld_;
                 }
               }
@@ -262,12 +261,14 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
         }
     }
 
-    distribute_FabArray(nodeStatus, nodeBA, DistributionMap(0), 1, nGst, false);
+    distribute_FabArray(nodeStatus, nGrid, DistributionMap(0), 1, nGst, false);
     if (!nodeStatus.empty()) {
       nodeStatus.setVal(iBoundary_);
       nodeStatus.setVal(iOnNew_, 0);
 
-      if (usePIC)
+      if (usePIC) {
+        auto nodeBAOld =
+            convert(cGridOld, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
         for (MFIter mfi(nodeStatus); mfi.isValid(); ++mfi) {
           const Box& box = mfi.validbox();
           const auto& nodeArr = nodeStatus[mfi].array();
@@ -284,11 +285,12 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
                 }
               }
         }
+      }
     }
 
     nodeStatus.FillBoundary(Geom(0).periodicity());
 
-    distribute_FabArray(nodeShare, nodeBA, DistributionMap(0), 1, 0, false);
+    distribute_FabArray(nodeShare, nGrid, DistributionMap(0), 1, 0, false);
     set_nodeShare();
   }
 
@@ -296,7 +298,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::unique_ptr<Particles<> >(new Particles<>(
-          activeRegionBA, Geom(0), DistributionMap(0), centerBA,
+          activeRegionBA, Geom(0), DistributionMap(0), cGrid,
           fluidInterface.get(), tc.get(), i,
           fluidInterface->get_species_charge(i),
           fluidInterface->get_species_mass(i), nPartPerCell, testCase));
@@ -323,8 +325,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_ba_general();
 
-      if (centerBA.size() > 0) {
-        parts[i]->SetParticleBoxArray(0, centerBA);
+      if (cGrid.size() > 0) {
+        parts[i]->SetParticleBoxArray(0, cGrid);
         parts[i]->SetParticleDistributionMap(0, DistributionMap(0));
       }
       parts[i]->Redistribute();
@@ -333,8 +335,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   { // Copy cellStatus to Particles objects.
     for (int i = 0; i < nSpecies; i++) {
-      distribute_FabArray(parts[i]->cellStatus, centerBA, DistributionMap(0), 1,
-                          nGst >= 2 ? nGst : 2, false);
+      distribute_FabArray(parts[i]->cellStatus, cGrid, DistributionMap(0),
+                          1, nGst >= 2 ? nGst : 2, false);
 
       if (!cellStatus.empty()) {
         iMultiFab::Copy(parts[i]->cellStatus, cellStatus, 0, 0,
@@ -1004,10 +1006,10 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
 
   zero_array(vecOut, eSolver.get_nSolve());
 
-  MultiFab vecMF(nodeBA, DistributionMap(0), 3, nGst);
+  MultiFab vecMF(nGrid, DistributionMap(0), 3, nGst);
   vecMF.setVal(0.0);
 
-  MultiFab matvecMF(nodeBA, DistributionMap(0), 3, 1);
+  MultiFab matvecMF(nGrid, DistributionMap(0), 3, 1);
   matvecMF.setVal(0.0);
 
   convert_1d_to_3d(vecIn, vecMF);
@@ -1129,9 +1131,9 @@ void Pic::update_E_rhs(double* rhs) {
   std::string nameFunc = "Pic::update_E_rhs";
   timing_func(nameFunc);
 
-  MultiFab tempNode(nodeBA, DistributionMap(0), 3, nGst);
+  MultiFab tempNode(nGrid, DistributionMap(0), 3, nGst);
   tempNode.setVal(0.0);
-  MultiFab temp2Node(nodeBA, DistributionMap(0), 3, nGst);
+  MultiFab temp2Node(nGrid, DistributionMap(0), 3, nGst);
   temp2Node.setVal(0.0);
 
   apply_BC(cellStatus, centerB, 0, centerB.nComp(), &Pic::get_center_B);
@@ -1157,7 +1159,7 @@ void Pic::update_B() {
   std::string nameFunc = "Pic::update_B";
   timing_func(nameFunc);
 
-  MultiFab dB(centerBA, DistributionMap(0), 3, nGst);
+  MultiFab dB(cGrid, DistributionMap(0), 3, nGst);
 
   curl_node_to_center(nodeEth, dB, Geom(0).InvCellSize());
 
