@@ -362,13 +362,9 @@ class dataContainer2D(dataContainer):
             if addgrid:
                 ax.plot(self.x.value, self.y.value, 'x')
 
-            # cs.set_clim(vmin,vmax)
-
             ticks = get_ticks(vmin, vmax)
             cb = f.colorbar(cs, ax=ax, ticks=ticks)
-
-            # cb.ax.set_yticks()
-            # cb.set_clim(vmin,vmax)
+            cb.formatter.set_powerlimits((0,0))
 
             ax.set_xlim(xlim)
             ax.set_ylim(ylim)
