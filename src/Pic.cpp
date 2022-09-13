@@ -156,8 +156,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   distribute_FabArray(nodeB, nGrid, DistributionMap(0), 3, nGst);
   distribute_FabArray(centerB, cGrid, DistributionMap(0), 3, nGst);
 
-  distribute_FabArray(centerNetChargeOld, cGrid, DistributionMap(0), 1,
-                      nGst);
+  distribute_FabArray(centerNetChargeOld, cGrid, DistributionMap(0), 1, nGst);
   distribute_FabArray(centerNetChargeN, cGrid, DistributionMap(0), 1,
                       nGst); // false??
   distribute_FabArray(centerNetChargeNew, cGrid, DistributionMap(0), 1,
@@ -193,8 +192,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     if (!useExplicitPIC) {
       distribute_FabArray(nodeMM, nGrid, DistributionMap(0), 1, 1, doMoveData);
     }
-    distribute_FabArray(costMF, cGrid, DistributionMap(0), 1, nGst,
-                        doMoveData);
+    distribute_FabArray(costMF, cGrid, DistributionMap(0), 1, nGst, doMoveData);
     distribute_FabArray(centerMM, cGrid, DistributionMap(0), 1, nGst,
                         doMoveData);
 
@@ -335,8 +333,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   { // Copy cellStatus to Particles objects.
     for (int i = 0; i < nSpecies; i++) {
-      distribute_FabArray(parts[i]->cellStatus, cGrid, DistributionMap(0),
-                          1, nGst >= 2 ? nGst : 2, false);
+      distribute_FabArray(parts[i]->cellStatus, cGrid, DistributionMap(0), 1,
+                          nGst >= 2 ? nGst : 2, false);
 
       if (!cellStatus.empty()) {
         iMultiFab::Copy(parts[i]->cellStatus, cellStatus, 0, 0,
@@ -362,7 +360,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 //==========================================================
 void Pic::set_nodeShare() {
   if (!nodeShare.empty())
-    nodeShare.setVal(iAbandon_);
+    nodeShare.setVal(iIgnore_);
 
   const Box& gbx = convert(Geom(0).Domain(), { 0, 0, 0 });
 

@@ -41,9 +41,7 @@ protected:
   amrex::BoxArray cGrid;
 
   // Nodal
-  amrex::BoxArray nGrid;  
-
-  amrex::MultiFab costMF;
+  amrex::BoxArray nGrid;
 
   // The status of a cell could be: iBoundary_, iOnNew_, or iOnOld_.
   amrex::iMultiFab cellStatus;
@@ -53,13 +51,13 @@ protected:
 
   // A node may be shared by a few blocks/boxes. Sometimes (such as the E field
   // solver) only one of the boexes needs to take care such nodes. The following
-  // multifab is usually used for this purpose: if one node of one box is
-  // 'iAssign_', this box needs to take care of this node; in fake 2D, a node
-  // can be 'iAbandon_' to ignore one layer node; if a node is neither
-  // 'iAssign_' nor 'iAbandon_', nodeShare stors the neighbor that handle
-  // this node.
+  // multifab is usually used for the following purposes: (1) if one node of one
+  // box is 'iAssign_', this box needs to take care of this node; (2) in fake
+  // 2D, some nodes are set to 'iIgnore_' so that only one layer of nodes is
+  // solved; (3) if a node is neither 'iAssign_' nor 'iIgnore_', nodeShare
+  // stores the neighbor that handle this node.
   amrex::iMultiFab nodeShare;
-  constexpr static int iAssign_ = (1 << 4), iAbandon_ = -1;
+  constexpr static int iAssign_ = (1 << 4), iIgnore_ = -1;
 
   bool doNeedFillNewCell = true;
 

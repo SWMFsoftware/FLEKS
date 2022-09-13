@@ -51,6 +51,8 @@ private:
 
   amrex::UMultiFab<RealMM> nodeMM;
 
+  amrex::MultiFab costMF;
+
   // ------divE correction--------------
   // Old @ t=t_{n-1/2}; N @ t=t_n; New @ t=t_{n+1/2}
   amrex::MultiFab centerNetChargeOld, centerNetChargeN, centerNetChargeNew;
@@ -129,7 +131,7 @@ public:
   Particles<> *get_particle_pointer(int i) { return parts[i].get(); }
 
   //--------------Initialization begin-------------------------------
-  //void init_amr_from_scratch() { InitFromScratch(tc->get_time()); }
+  // void init_amr_from_scratch() { InitFromScratch(tc->get_time()); }
 
   void set_geom(int nGstIn, const amrex::Geometry &geomIn);
 

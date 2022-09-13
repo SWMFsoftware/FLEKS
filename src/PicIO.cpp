@@ -159,7 +159,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
       if (type == iAssign_)
         return true;
 
-      if (type != iAbandon_) {
+      if (type != iIgnore_) {
         if (Geom(0).isPeriodic(ix_) && i == glo.x && !test_bit(type, ix_))
           return true;
         if (Geom(0).isPeriodic(iy_) && j == glo.y && !test_bit(type, iy_))
