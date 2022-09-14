@@ -131,8 +131,6 @@ public:
   Particles<> *get_particle_pointer(int i) { return parts[i].get(); }
 
   //--------------Initialization begin-------------------------------
-  // void init_amr_from_scratch() { InitFromScratch(tc->get_time()); }
-
   void set_geom(int nGstIn, const amrex::Geometry &geomIn);
 
   void regrid(const amrex::BoxArray &activeRegionBAIn,
@@ -332,8 +330,8 @@ public:
 
   virtual void PostProcessBaseGrids(amrex::BoxArray &ba) const override {
     std::string nameFunc = "Pic::PostProcessBaseGrids";
+    amrex::Print() << printPrefix << nameFunc << " is called." << std::endl;
     ba = cGrid;
-    amrex::Print() << printPrefix << nameFunc << " ba = " << ba << std::endl;
   };
 
   // private methods

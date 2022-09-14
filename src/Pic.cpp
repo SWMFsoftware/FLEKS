@@ -143,6 +143,10 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   BoxArray cGridOld = cGrid;
 
   cGrid = centerBAIn;
+
+  // PostProcessBaseGrids is called from the following method. 
+  InitFromScratch(tc->get_time());
+
   nGrid = convert(cGrid, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
 
   SetDistributionMap(0, dmIn);
