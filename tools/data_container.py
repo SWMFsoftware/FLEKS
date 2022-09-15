@@ -61,10 +61,16 @@ class dataContainer(object):
         print("-----------------------------")
         return "\n"
 
-    def add_bottom_line(self, f):
-        s = "nstep = "+str(self.nstep)+"       time = " + \
-            str(self.time) + " "*20+self.filename
-        f.text(0.01, 0.01, s)
+    def add_bottom_line(self, f, verbose):
+        if verbose > 0:
+            s = "time = " + str(self.time)
+        if verbose > 1:
+            s += " "*5 + "nstep = "+str(self.nstep)
+        if verbose > 2:
+            s += " "*20+self.filename
+
+        if verbose > 0:
+            f.text(0.01, 0.01, s)
 
     def analyze_variable_string(self, var):
         r"""
@@ -275,8 +281,8 @@ class dataContainer2D(dataContainer):
         return dif
 
     def contour(self, vars, xlim=None, ylim=None, unit="planet", nlevels=200,
-                cmap="rainbow", figsize=(12, 8), pcolor=False, log=False, 
-                addgrid=False, *args, **kwargs):
+                cmap="rainbow", figsize=(12, 8), pcolor=False, log=False,
+                addgrid=False, bottomline=10, *args, **kwargs):
         r""" 
         Contour plots. 
 
@@ -358,13 +364,20 @@ class dataContainer2D(dataContainer):
                 else:
                     cs = ax.contourf(self.x.value, self.y.value, v.T, levels=levels,
                                      cmap=cmap, extend="both", *args, **kwargs)
-
             if addgrid:
-                ax.plot(self.x.value, self.y.value, 'x')
+                if self.gencoord:
+                    gx = self.x.value
+                    gy = self.y.value
+                else:
+                    gg = np.meshgrid(self.x.value, self.y.value)
+                    gx = np.reshape(gg[0], -1)
+                    gy = np.reshape(gg[1], -1)
+
+                ax.plot(gx, gy, 'x')
 
             ticks = get_ticks(vmin, vmax)
             cb = f.colorbar(cs, ax=ax, ticks=ticks)
-            cb.formatter.set_powerlimits((0,0))
+            cb.formatter.set_powerlimits((0, 0))
 
             ax.set_xlim(xlim)
             ax.set_ylim(ylim)
@@ -385,7 +398,7 @@ class dataContainer2D(dataContainer):
         if self.cut_norm != None and self.cut_loc != None:
             print("Plots at "+self.cut_norm+' = ', self.cut_loc)
 
-        self.add_bottom_line(f)
+        self.add_bottom_line(f, bottomline)
         return f, axes.reshape(nRow, nCol)
 
     def add_contour(self, ax, var, unit='planet', *args, **kwargs):
@@ -475,7 +488,7 @@ class dataContainer1D(dataContainer):
             dataSets, x, y, z, xlabel, ylabel, zlabel, *args, **kwargs)
 
     def plot(self, vars, xlim=None, ylim=None, unit="planet",
-             figsize=(12, 8), log=False, *args, **kwargs):
+             figsize=(12, 8), log=False, bottomline=10, *args, **kwargs):
         """
         Examples
         ----------------
@@ -521,5 +534,5 @@ class dataContainer1D(dataContainer):
             ax.set_xlabel(self.xlabel)
             ax.legend()
 
-        self.add_bottom_line(f)
+        self.add_bottom_line(f, bottomline)
         return f, axes
