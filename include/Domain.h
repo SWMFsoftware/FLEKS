@@ -10,7 +10,7 @@ class Domain : public DomainGrid {
 private:
   bool doRestart = false;
 
-  ReadParam readParam;
+  ReadParam param;
 
 public:
   // Q: Why are pic and pt defined as pointers?

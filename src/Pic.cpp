@@ -12,56 +12,56 @@
 using namespace amrex;
 
 //==========================================================
-void Pic::read_param(const std::string& command, ReadParam& readParam) {
+void Pic::read_param(const std::string& command, ReadParam& param) {
 
   if (command == "#PIC") {
-    readParam.read_var("usePIC", usePIC);
+    param.read_var("usePIC", usePIC);
   } else if (command == "#DIVE") {
-    readParam.read_var("doCorrectDivE", doCorrectDivE);
+    param.read_var("doCorrectDivE", doCorrectDivE);
     if (doCorrectDivE) {
-      readParam.read_var("nDivECorrection", nDivECorrection);
+      param.read_var("nDivECorrection", nDivECorrection);
     }
   } else if (command == "#EXPLICITPIC") {
-    readParam.read_var("useExplicitPIC", useExplicitPIC);
+    param.read_var("useExplicitPIC", useExplicitPIC);
   } else if (command == "#EFIELDSOLVER") {
     Real tol;
     int nIter;
-    readParam.read_var("tol", tol);
-    readParam.read_var("nIter", nIter);
+    param.read_var("tol", tol);
+    param.read_var("nIter", nIter);
     eSolver.set_tol(tol);
     eSolver.set_nIter(nIter);
   } else if (command == "#PARTICLES") {
-    readParam.read_var("npcelx", nPartPerCell[ix_]);
-    readParam.read_var("npcely", nPartPerCell[iy_]);
-    readParam.read_var("npcelz", nPartPerCell[iz_]);
+    param.read_var("npcelx", nPartPerCell[ix_]);
+    param.read_var("npcely", nPartPerCell[iy_]);
+    param.read_var("npcelz", nPartPerCell[iz_]);
   } else if (command == "#ELECTRON") {
-    readParam.read_var("qom", qomEl);
+    param.read_var("qom", qomEl);
   } else if (command == "#DISCRETIZE" || command == "#DISCRETIZATION") {
-    readParam.read_var("theta", fsolver.theta);
-    readParam.read_var("coefDiff", fsolver.coefDiff);
+    param.read_var("theta", fsolver.theta);
+    param.read_var("coefDiff", fsolver.coefDiff);
   } else if (command == "#SMOOTHE") {
-    readParam.read_var("doSmoothE", doSmoothE);
+    param.read_var("doSmoothE", doSmoothE);
     if (doSmoothE) {
-      readParam.read_var("nSmoothE", nSmoothE);
-      readParam.read_var("coefStrongSmooth", coefStrongSmooth);
-      readParam.read_var("coefWeakSmooth", coefWeakSmooth);
-      readParam.read_var("strongSmoothMach", strongSmoothMach);
-      readParam.read_var("weakSmoothMach", weakSmoothMach);
+      param.read_var("nSmoothE", nSmoothE);
+      param.read_var("coefStrongSmooth", coefStrongSmooth);
+      param.read_var("coefWeakSmooth", coefWeakSmooth);
+      param.read_var("strongSmoothMach", strongSmoothMach);
+      param.read_var("weakSmoothMach", weakSmoothMach);
     }
   } else if (command == "#RESAMPLING") {
-    readParam.read_var("doReSampling", doReSampling);
+    param.read_var("doReSampling", doReSampling);
     if (doReSampling) {
-      readParam.read_var("reSamplingLowLimit", reSamplingLowLimit);
-      readParam.read_var("reSamplingHighLimit", reSamplingHighLimit);
+      param.read_var("reSamplingLowLimit", reSamplingLowLimit);
+      param.read_var("reSamplingHighLimit", reSamplingHighLimit);
     }
   } else if (command == "#MERGEPARTICLE") {
-    readParam.read_var("mergeThresholdDistance", particleMergeThreshold);
-    readParam.read_var("binBuffer", particleMergeBinBuffer);
+    param.read_var("mergeThresholdDistance", particleMergeThreshold);
+    param.read_var("binBuffer", particleMergeBinBuffer);
   } else if (command == "#SOURCE") {
-    readParam.read_var("useSource", useSource);
+    param.read_var("useSource", useSource);
   } else if (command == "#TESTCASE") {
     std::string testcase;
-    readParam.read_var("testCase", testcase);
+    param.read_var("testCase", testcase);
     if (testcase == "TwoStream") {
       testCase = TwoStream;
     }

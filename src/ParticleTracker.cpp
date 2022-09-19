@@ -282,36 +282,36 @@ void ParticleTracker::save_restart_header(std::ofstream& headerFile) {
 }
 
 void ParticleTracker::read_param(const std::string& command,
-                                 ReadParam& readParam) {
+                                 ReadParam& param) {
 
   if (command == "#PARTICLETRACKER") {
-    readParam.read_var("usePT", usePT);
+    param.read_var("usePT", usePT);
   } else if (command == "#TPPARTICLES") {
-    readParam.read_var("npcelx", nTPPerCell[ix_]);
-    readParam.read_var("npcely", nTPPerCell[iy_]);
-    readParam.read_var("npcelz", nTPPerCell[iz_]);
+    param.read_var("npcelx", nTPPerCell[ix_]);
+    param.read_var("npcely", nTPPerCell[iy_]);
+    param.read_var("npcelz", nTPPerCell[iz_]);
   } else if (command == "#TPCELLINTERVAL") {
-    readParam.read_var("nIntervalX", nTPIntervalCell[ix_]);
-    readParam.read_var("nIntervalY", nTPIntervalCell[iy_]);
-    readParam.read_var("nIntervalZ", nTPIntervalCell[iz_]);
+    param.read_var("nIntervalX", nTPIntervalCell[ix_]);
+    param.read_var("nIntervalY", nTPIntervalCell[iy_]);
+    param.read_var("nIntervalZ", nTPIntervalCell[iz_]);
   } else if (command == "#TPREGION") {
-    readParam.read_var("region", sPartRegion);
+    param.read_var("region", sPartRegion);
   } else if (command == "#TPSAVE") {
-    readParam.read_var("IOUnit", sIOUnit);
-    readParam.read_var("dnSave", dnSave);
+    param.read_var("IOUnit", sIOUnit);
+    param.read_var("dnSave", dnSave);
   } else if (command == "#TPRELATIVISTIC") {
-    readParam.read_var("isRelativistic", isRelativistic);
+    param.read_var("isRelativistic", isRelativistic);
   } else if (command == "#TPSTATESI") {
     double si2noV = fluidInterface->get_Si2NoV();
     int nState;
-    readParam.read_var("nState", nState);
+    param.read_var("nState", nState);
     for (int i = 0; i < nState; i++) {
       Vel state;
-      readParam.read_var("iSpecies", state.tag);
-      readParam.read_var("vth", state.vth);
-      readParam.read_var("vx", state.vx);
-      readParam.read_var("vy", state.vy);
-      readParam.read_var("vz", state.vz);
+      param.read_var("iSpecies", state.tag);
+      param.read_var("vth", state.vth);
+      param.read_var("vx", state.vx);
+      param.read_var("vy", state.vy);
+      param.read_var("vz", state.vz);
       state.vth *= si2noV;
       state.vx *= si2noV;
       state.vy *= si2noV;
@@ -319,13 +319,13 @@ void ParticleTracker::read_param(const std::string& command,
       tpStates.push_back(state);
     }
   } else if (command == "#TPINITFROMPIC") {
-    readParam.read_var("doInitFromPIC", doInitFromPIC);
+    param.read_var("doInitFromPIC", doInitFromPIC);
     if (doInitFromPIC) {
       int nList;
-      readParam.read_var("nList", nList);
+      param.read_var("nList", nList);
       for (int i = 0; i < nList; i++) {
         std::string s;
-        readParam.read_var("list", s);
+        param.read_var("list", s);
         listFiles.push_back(s);
       }
     }
@@ -333,7 +333,7 @@ void ParticleTracker::read_param(const std::string& command,
     initPartNumber.clear();
     unsigned long int num;
     for (int iPart = 0; iPart < nSpecies; iPart++) {
-      readParam.read_var("Number", num);
+      param.read_var("Number", num);
       initPartNumber.push_back(num);
     }
   }

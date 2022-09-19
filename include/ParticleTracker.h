@@ -50,7 +50,7 @@ public:
   void save_restart_data();
   void save_restart_header(std::ofstream &headerFile);
   void read_restart();
-  void read_param(const std::string &command, ReadParam &readParam);
+  void read_param(const std::string &command, ReadParam &param);
 
 private:
   bool usePT = false;

@@ -193,7 +193,7 @@ public:
   void get_fluid_state_for_points(const int nDim, const int nPoint,
                                   const double *const xyz_I,
                                   double *const data_I, const int nVar);
-  void read_param(const std::string &command, ReadParam &readParam);
+  void read_param(const std::string &command, ReadParam &param);
   void post_process_param();
   //------------Coupler related end--------------
 

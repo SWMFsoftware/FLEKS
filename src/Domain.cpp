@@ -54,15 +54,15 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
     printPrefix = gridName + ": ";
   }
 
-  readParam = paramString;
-  fluidInterface->init(gridID);
-  fluidInterface->receive_info_from_gm(paramInt, gridDim, paramReal);
-
+  param = paramString;
   { // Preparing grid information for Grid/AmrCore initialization.
     read_param(true);
-    readParam.roll_back();
+    param.roll_back();
     prepare_grid_info();
   }
+
+  fluidInterface->init(gridID);
+  fluidInterface->receive_info_from_gm(paramInt, gridDim, paramReal);
 
   pic = std::make_unique<Pic>(gm, amrInfo, fluidInterface, tc, gridID);
 
@@ -93,7 +93,7 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
 
 //========================================================
 void Domain::update_param(const std::string &paramString) {
-  readParam = paramString;
+  param = paramString;
   read_param();
   init_time_ctr();
 };
@@ -431,11 +431,11 @@ void Domain::read_param(const bool readGridInfoOnly) {
   // The default values shoudl be set in the constructor.
 
   std::string command;
-  readParam.set_verbose(ParallelDescriptor::MyProc() == 0);
+  param.set_verbose(ParallelDescriptor::MyProc() == 0);
 
-  readParam.set_command_suffix(gridName);
+  param.set_command_suffix(gridName);
 
-  while (readParam.get_next_command(command)) {
+  while (param.get_next_command(command)) {
 
     // If readGridInfoOnly is true, only read the following commands.
     if (readGridInfoOnly &&
@@ -451,26 +451,26 @@ void Domain::read_param(const bool readGridInfoOnly) {
         command == "#TESTCASE" || command == "#MERGEPARTICLE" ||
         command == "#SOURCE" || command == "#PIC" ||
         command == "#EXPLICITPIC") {
-      pic->read_param(command, readParam);
+      pic->read_param(command, param);
     } else if (command == "#PARTICLETRACKER" ||
                command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
                command == "#TPSAVE" || command == "#TPRELATIVISTIC" ||
                command == "#TPINITFROMPIC" || command == "#TPSTATESI") {
-      pt->read_param(command, readParam);
+      pt->read_param(command, param);
     } else if (command == "#OHMSLAW") {
       std::string sOhmU;
       Real eta;
-      readParam.read_var("OhmU", sOhmU);
-      readParam.read_var("resistivity", eta);
+      param.read_var("OhmU", sOhmU);
+      param.read_var("resistivity", eta);
 
       fluidInterface->set_resistivity(eta);
       fluidInterface->set_ohm_u(sOhmU);
     } else if (command == "#RESTART") {
-      readParam.read_var("doRestart", doRestart);
+      param.read_var("doRestart", doRestart);
     } else if (command == "#PARTICLESTAGGERING") {
       bool doStaggering;
-      readParam.read_var("doStaggering", doStaggering);
+      param.read_var("doStaggering", doStaggering);
       ParticleStaggering ps = doStaggering ? Staggered : NonStaggered;
 
       Particles<nPicPartReal, 0>::particlePosition = ps;
@@ -480,43 +480,43 @@ void Domain::read_param(const bool readGridInfoOnly) {
       // The block size in each direction can not larger than maxBlockSize.
       int tmp;
       for (int i = 0; i < nDim; i++) {
-        readParam.read_var("maxBlockSize", tmp);
+        param.read_var("maxBlockSize", tmp);
         maxBlockSize[i] = tmp;
       }
     } else if (command == "#TIMESTEP" || command == "#TIMESTEPPING") {
       bool useFixedDt;
-      readParam.read_var("useFixedDt", useFixedDt);
+      param.read_var("useFixedDt", useFixedDt);
       if (useFixedDt) {
         Real dtSI;
-        readParam.read_var("dtSI", dtSI);
+        param.read_var("dtSI", dtSI);
         tc->set_dt_si(dtSI);
         tc->set_next_dt_si(dtSI);
         tc->set_cfl(-1);
       } else {
         Real cfl;
-        readParam.read_var("cfl", cfl);
+        param.read_var("cfl", cfl);
         tc->set_cfl(cfl);
       }
     } else if (command == "#PERIODICITY") {
       for (int i = 0; i < nDim; i++) {
         bool isPeriodic;
-        readParam.read_var("isPeriodic", isPeriodic);
+        param.read_var("isPeriodic", isPeriodic);
         set_periodicity(i, isPeriodic);
       }
 
     } else if (command == "#SAVELOG") {
       int dn;
-      readParam.read_var("dnSave", dn);
+      param.read_var("dnSave", dn);
       tc->log.init(-1, dn);
     } else if (command == "#MONITOR") {
       int dn;
-      readParam.read_var("dnReport", dn);
+      param.read_var("dnReport", dn);
       tc->monitor.init(-1, dn);
     } else if (command == "#LOADBALANCE") {
       int dn;
-      readParam.read_var("dn", dn);
+      param.read_var("dn", dn);
       Real dt;
-      readParam.read_var("dt", dt);
+      param.read_var("dt", dt);
       tc->loadBalance.init(dt, dn);
     } else if (command == "#SAVEPLOT" || command == "#SAVEIDL") {
 
@@ -559,7 +559,7 @@ void Domain::read_param(const bool readGridInfoOnly) {
       */
 
       int nPlot;
-      readParam.read_var("nPlotFile", nPlot);
+      param.read_var("nPlotFile", nPlot);
 
       if (nPlot > 0) {
         tc->plots.clear();
@@ -568,7 +568,7 @@ void Domain::read_param(const bool readGridInfoOnly) {
       for (int iPlot = 0; iPlot < nPlot; iPlot++) {
 
         std::string plotString;
-        readParam.read_var("plotString", plotString);
+        param.read_var("plotString", plotString);
         {
           std::string::size_type pos = plotString.find_first_not_of(' ');
           if (pos != std::string::npos)
@@ -576,27 +576,27 @@ void Domain::read_param(const bool readGridInfoOnly) {
         }
 
         int dnSave;
-        readParam.read_var("dnSavePlot", dnSave);
+        param.read_var("dnSavePlot", dnSave);
 
         Real dtSave;
-        readParam.read_var("dtSavePlot", dtSave);
+        param.read_var("dtSavePlot", dtSave);
 
         std::array<double, nDim> plotMin_D = { 1, 1, 1 },
                                  plotMax_D = { -1, 1 - 1 };
         if (plotString.find("cut") != std::string::npos) {
           // Output range is 'cut' type.
           for (int iDim = 0; iDim < nDim; iDim++) {
-            readParam.read_var("plotMin", plotMin_D[iDim]);
-            readParam.read_var("plotMax", plotMax_D[iDim]);
+            param.read_var("plotMin", plotMin_D[iDim]);
+            param.read_var("plotMax", plotMax_D[iDim]);
           }
         }
 
         int dxSave;
-        readParam.read_var("dxSavePlot", dxSave);
+        param.read_var("dxSavePlot", dxSave);
 
         std::string plotVar;
         if (plotString.find("var") != std::string::npos) {
-          readParam.read_var("plotVar", plotVar);
+          param.read_var("plotVar", plotVar);
         }
 
         PlotCtr pcTmp(tc.get(), iPlot, dtSave, dnSave, plotString, dxSave,
@@ -606,30 +606,30 @@ void Domain::read_param(const bool readGridInfoOnly) {
       //--------- The commands below exist in restart.H only --------
     } else if (command == "#NSTEP") {
       int nStep;
-      readParam.read_var("nStep", nStep);
+      param.read_var("nStep", nStep);
       tc->set_cycle(nStep);
     } else if (command == "#TIMESIMULATION") {
       Real time;
-      readParam.read_var("time", time);
+      param.read_var("time", time);
       tc->set_time_si(time);
     } else if (command == "#DT") {
       // NOTE: this command is useful only for CFL based time stepping.
       Real dtSI, dtNextSI;
-      readParam.read_var("dtSI", dtSI);
-      readParam.read_var("dtNextSI", dtNextSI);
+      param.read_var("dtSI", dtSI);
+      param.read_var("dtNextSI", dtNextSI);
       tc->set_dt_si(dtSI);
       tc->set_next_dt_si(dtNextSI);
     } else if (command == "#GEOMETRY") {
       for (int i = 0; i < nDim; ++i) {
         Real lo, hi;
-        readParam.read_var("min", lo);
-        readParam.read_var("max", hi);
+        param.read_var("min", lo);
+        param.read_var("max", hi);
         domainRange.setLo(i, lo);
         domainRange.setHi(i, hi);
       }
     } else if (command == "#NCELL") {
       for (int i = 0; i < nDim; ++i) {
-        readParam.read_var("nCell", nCell[i]);
+        param.read_var("nCell", nCell[i]);
       }
     } else {
       Print() << "Error: command = " << command << std::endl;
