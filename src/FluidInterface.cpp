@@ -18,15 +18,6 @@ void FluidInterface::init(int id) {
   }
 }
 
-void FluidInterface::receive_info_from_gm(const int* const paramInt,
-                                          const double* const gridDim,
-                                          const double* const paramDouble,
-                                          const std::string& paramString) {
-  std::stringstream* ss = nullptr;
-  read_from_GM(paramInt, gridDim, paramDouble, ss);
-  readParam = paramString;
-}
-
 void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
                             const amrex::DistributionMapping& dmIn) {
   std::string nameFunc = "FluidInterface::regrid";
@@ -423,10 +414,9 @@ void FluidInterface::calc_mag_base_vector(const double Bx, const double By,
 }
 
 // Data recived from SWMF coupler
-void FluidInterface::read_from_GM(const int* const paramint,
-                                  const double* const ParamRealRegion,
-                                  const double* const ParamRealComm,
-                                  const stringstream* const ss) {
+void FluidInterface::receive_info_from_gm(const int* const paramint,
+                                          const double* const ParamRealRegion,
+                                          const double* const ParamRealComm) {
 
   nDimFluid = paramint[0];
   nVarFluid = paramint[2];

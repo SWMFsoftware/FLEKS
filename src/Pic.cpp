@@ -2,7 +2,6 @@
 
 #include <AMReX_MultiFabUtil.H>
 
-#include "GridInfo.h"
 #include "GridUtility.h"
 #include "LinearSolver.h"
 #include "Pic.h"

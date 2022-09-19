@@ -1,5 +1,4 @@
 #include "Domain.h"
-#include "GridInfo.h"
 #include "GridUtility.h"
 
 using namespace amrex;
@@ -55,13 +54,13 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
     printPrefix = gridName + ": ";
   }
 
+  readParam = paramString;
   fluidInterface->init(gridID);
-  fluidInterface->receive_info_from_gm(paramInt, gridDim, paramReal,
-                                       paramString);
+  fluidInterface->receive_info_from_gm(paramInt, gridDim, paramReal);
 
   { // Preparing grid information for Grid/AmrCore initialization.
     read_param(true);
-    fluidInterface->readParam.roll_back();
+    readParam.roll_back();
     prepare_grid_info();
   }
 
@@ -77,7 +76,7 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
   fluidInterface->print_info();
 
   {
-    //pic->init_amr_from_scratch();
+    // pic->init_amr_from_scratch();
     pic->set_geom(nGst, gm);
     fluidInterface->set_geom(nGst, gm);
     pt->set_geom(nGst, gm);
@@ -94,7 +93,7 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
 
 //========================================================
 void Domain::update_param(const std::string &paramString) {
-  fluidInterface->readParam = paramString;
+  readParam = paramString;
   read_param();
   init_time_ctr();
 };
@@ -432,7 +431,6 @@ void Domain::read_param(const bool readGridInfoOnly) {
   // The default values shoudl be set in the constructor.
 
   std::string command;
-  ReadParam &readParam = fluidInterface->readParam;
   readParam.set_verbose(ParallelDescriptor::MyProc() == 0);
 
   readParam.set_command_suffix(gridName);

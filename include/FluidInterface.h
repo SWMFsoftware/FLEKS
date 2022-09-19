@@ -16,7 +16,6 @@
 
 #include "Constants.h"
 #include "MDArray.h"
-#include "ReadParam.h"
 #include "Utility.h"
 #include "Writer.h"
 
@@ -36,8 +35,8 @@ private:
   // ------Grid info----------
   amrex::DistributionMapping dm;
   amrex::Geometry gm;
-  amrex::BoxArray cGrid;  
-  amrex::BoxArray nGrid;  
+  amrex::BoxArray cGrid;
+  amrex::BoxArray nGrid;
   //------------------------
 
   MultiFabFLEKS nodeFluid;
@@ -125,17 +124,13 @@ private:
   int OhmU = OhmUe_;
 
 public:
-  ReadParam readParam;
-
-public:
   FluidInterface() {}
   ~FluidInterface() = default;
   FluidInterface& operator=(const FluidInterface& other) = default;
   void init(int id);
   void receive_info_from_gm(const int* const paramInt,
                             const double* const gridDim,
-                            const double* const paramDouble,
-                            const std::string& paramString);
+                            const double* const paramDouble);
 
   void set_geom(const int nGstIn, const amrex::Geometry& geomIn);
 
@@ -167,11 +162,6 @@ public:
   void calc_normalized_units();
 
   void normalize_length();
-
-  void read_from_GM(const int* const paramint,
-                    const double* const ParamRealRegion,
-                    const double* const ParamRealComm,
-                    const std::stringstream* const ss);
 
   /** Get nomal and pendicular vector to magnetic field */
   void calc_mag_base_vector(const double Bx, const double By, const double Bz,
@@ -261,8 +251,7 @@ public:
     std::string restartDir = "PC/restartOUT/";
     amrex::VisMF::Write(nodeFluid,
                         restartDir + gridName + "_Interface_nodeFluid");
-    amrex::VisMF::Write(centerB,
-                        restartDir + gridName + "_Interface_centerB");
+    amrex::VisMF::Write(centerB, restartDir + gridName + "_Interface_centerB");
   };
 
   void read_restart() {

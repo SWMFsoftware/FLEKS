@@ -11,6 +11,7 @@
 #include "Particles.h"
 #include "TimeCtr.h"
 #include "UMultiFab.h"
+#include "ReadParam.h"
 
 class ParticleTracker;
 class Pic;

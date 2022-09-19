@@ -4,10 +4,13 @@
 #include "DomainGrid.h"
 #include "ParticleTracker.h"
 #include "Pic.h"
+#include "ReadParam.h"
 
 class Domain : public DomainGrid {
 private:
   bool doRestart = false;
+
+  ReadParam readParam;
 
 public:
   // Q: Why are pic and pt defined as pointers?
