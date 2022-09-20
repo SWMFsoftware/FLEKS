@@ -7,17 +7,6 @@
 using namespace amrex;
 using namespace std;
 
-void FluidInterface::init(int id) {
-  myrank = ParallelDescriptor::MyProc();
-  gridID = id;
-  {
-    std::stringstream ss;
-    ss << "FLEKS" << gridID;
-    gridName = ss.str();
-    printPrefix = gridName + ": ";
-  }
-}
-
 void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
                             const amrex::DistributionMapping& dmIn) {
   std::string nameFunc = "FluidInterface::regrid";

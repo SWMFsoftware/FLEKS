@@ -59,8 +59,8 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
     // moment, and it is too early to initialize fluidInterface. Such grid
     // information is processed by the FluidInterface class, so a local
     // FluidInterface object is created to handle the grid information.
-    // This solution is ugly, maybe splitting FluidInterface into two classes is
-    // a better solution.
+    // This solution is ugly, splitting FluidInterface into two classes is
+    // probably a better solution.
 
     Box bTmp({ 0, 0, 0 }, { 7, 7, 7 });
     RealBox rbTmp({ 0, 0, 0 }, { 1, 1, 1 });
@@ -72,7 +72,6 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
   }
 
   fluidInterface = std::make_shared<FluidInterface>(gm, amrInfo, gridID);
-  fluidInterface->init(gridID);
   fluidInterface->receive_info_from_gm(paramInt, gridDim, paramReal);
 
   pic = std::make_unique<Pic>(gm, amrInfo, fluidInterface, tc, gridID);

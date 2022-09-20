@@ -43,10 +43,6 @@ private:
   MultiFabFLEKS nodeFluid;
   MultiFabFLEKS centerB;
 
-  int gridID;
-  std::string gridName;
-  std::string printPrefix;
-
   bool isGridInitialized = false;
   bool isGridEmpty = false;
 
@@ -127,10 +123,11 @@ private:
 public:
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
                  int id)
-      : Grid(gm, amrInfo, id) {}
+      : Grid(gm, amrInfo, id) {
+    myrank = amrex::ParallelDescriptor::MyProc();
+  }
   ~FluidInterface() = default;
-  FluidInterface& operator=(const FluidInterface& other) = default;
-  void init(int id);
+  FluidInterface& operator=(const FluidInterface& other) = default;  
   void receive_info_from_gm(const int* const paramInt,
                             const double* const gridDim,
                             const double* const paramDouble);
