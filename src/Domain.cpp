@@ -47,18 +47,23 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
   tc->set_time_si(time);
 
   gridID = iDomain;
-  {
-    std::stringstream ss;
-    ss << "FLEKS" << gridID;
-    gridName = ss.str();
-    printPrefix = gridName + ": ";
-  }
+  gridName = std::string("FLEKS") + std::to_string(gridID);
+  printPrefix = gridName + ": ";
 
   param = paramString;
   { // Preparing grid information for Grid/AmrCore initialization.
     read_param(true);
     param.roll_back();
-    prepare_grid_info();
+
+    // The simulation domain range and grid size are still not known at this
+    // moment, and it is too early to initialize fluidInterface. Such grid
+    // information is processed by the FluidInterface class, so a local
+    // FluidInterface object is created to handle the grid information.
+    // This solution is ugly, maybe splitting FluidInterface into two classes is
+    // a better solution.
+    FluidInterface fi;
+    fi.receive_info_from_gm(paramInt, gridDim, paramReal);
+    prepare_grid_info(fi);
   }
 
   fluidInterface->init(gridID);
@@ -99,26 +104,26 @@ void Domain::update_param(const std::string &paramString) {
 };
 
 //========================================================
-void Domain::prepare_grid_info() {
+void Domain::prepare_grid_info(const FluidInterface &fi) {
   nGst = 2;
 
   // If MHD is 2D, PIC has to be periodic in the z-direction.
-  for (int iDim = fluidInterface->get_fluid_dimension(); iDim < nDim; iDim++)
+  for (int iDim = fi.get_fluid_dimension(); iDim < nDim; iDim++)
     set_periodicity(iDim, true);
 
   if (!doRestart) {
     // If restart, these variables read from restart.H
     for (int iDir = ix_; iDir <= iz_; iDir++) {
-      nCell[iDir] = fluidInterface->get_phy_cell_number(iDir);
+      nCell[iDir] = fi.get_phy_cell_number(iDir);
     }
 
     for (int i = 0; i < nDim; i++) {
-      domainRange.setLo(i, fluidInterface->get_phy_domain_min(i));
-      domainRange.setHi(i, fluidInterface->get_phy_domain_max(i));
+      domainRange.setLo(i, fi.get_phy_domain_min(i));
+      domainRange.setHi(i, fi.get_phy_domain_max(i));
     }
   }
 
-  const int nCellPerPatch = fluidInterface->get_nCellPerPatch();
+  const int nCellPerPatch = fi.get_nCellPerPatch();
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], nCellPerPatch);
 
   for (int i = 0; i < nDim; i++) {
