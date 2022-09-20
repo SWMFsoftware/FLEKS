@@ -42,7 +42,7 @@ private:
 
   bool useExplicitPIC = false;
 
-  std::shared_ptr<FluidInterface> fluidInterface;
+  std::shared_ptr<FluidInterface> fi;
   std::shared_ptr<TimeCtr> tc;
 
   amrex::MultiFab nodeE;
@@ -116,7 +116,7 @@ public:
   Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo,
       std::shared_ptr<FluidInterface> &fluidIn, std::shared_ptr<TimeCtr> &tcIn,
       int id = 0)
-      : Grid(gm, amrInfo, id), tc(tcIn), fluidInterface(fluidIn) {
+      : Grid(gm, amrInfo, id), tc(tcIn), fi(fluidIn) {
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 
@@ -280,11 +280,11 @@ public:
                                 int iVar) {
     amrex::Real e;
     if (iVar == ix_)
-      e = fluidInterface->get_ex(mfi, i, j, k);
+      e = fi->get_ex(mfi, i, j, k);
     if (iVar == iy_)
-      e = fluidInterface->get_ey(mfi, i, j, k);
+      e = fi->get_ey(mfi, i, j, k);
     if (iVar == iz_)
-      e = fluidInterface->get_ez(mfi, i, j, k);
+      e = fi->get_ez(mfi, i, j, k);
 
     return e;
   }
@@ -293,18 +293,18 @@ public:
                                 int iVar) {
     amrex::Real b;
     if (iVar == ix_)
-      b = fluidInterface->get_bx(mfi, i, j, k);
+      b = fi->get_bx(mfi, i, j, k);
     if (iVar == iy_)
-      b = fluidInterface->get_by(mfi, i, j, k);
+      b = fi->get_by(mfi, i, j, k);
     if (iVar == iz_)
-      b = fluidInterface->get_bz(mfi, i, j, k);
+      b = fi->get_bz(mfi, i, j, k);
 
     return b;
   }
 
   inline amrex::Real get_center_B(amrex::MFIter &mfi, int i, int j, int k,
                                   int iVar) {
-    return fluidInterface->get_center_b(mfi, i, j, k, iVar);
+    return fi->get_center_b(mfi, i, j, k, iVar);
   }
 
   //--------------- Boundary end ------------------------

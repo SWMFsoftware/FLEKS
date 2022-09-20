@@ -158,9 +158,8 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::unique_ptr<TestParticles>(
           new TestParticles(activeRegionBA, Geom(0), DistributionMap(0), cGrid,
-                            fluidInterface.get(), tc.get(), i,
-                            fluidInterface->get_species_charge(i),
-                            fluidInterface->get_species_mass(i), gridID));
+                            fi.get(), tc.get(), i, fi->get_species_charge(i),
+                            fi->get_species_mass(i), gridID));
       ptr->set_ppc(nTPPerCell);
       ptr->set_interval(nTPIntervalCell);
       ptr->set_particle_region(sPartRegion);
@@ -243,7 +242,7 @@ void ParticleTracker::complete_parameters() {
   writer.set_plotString("3d fluid test_particle real4 " + sIOUnit);
   writer.set_rank(ParallelDescriptor::MyProc());
   writer.set_nProcs(ParallelDescriptor::NProcs());
-  writer.set_nDim(fluidInterface->get_fluid_dimension());
+  writer.set_nDim(fi->get_fluid_dimension());
   // writer.set_iRegion(gridID);
   // writer.set_domainMin_D({ { 0, 0, 0 } });
 
@@ -251,11 +250,10 @@ void ParticleTracker::complete_parameters() {
 
   // const Real* dx = Geom(0).CellSize();
   // writer.set_dx_D({ { dx[ix_], dx[iy_], dx[iz_] } });
-  writer.set_units(fluidInterface->get_No2SiL(), fluidInterface->get_No2SiV(),
-                   fluidInterface->get_No2SiB(), fluidInterface->get_No2SiRho(),
-                   fluidInterface->get_No2SiP(), fluidInterface->get_No2SiJ(),
-                   fluidInterface->get_rPlanet_SI());
-  writer.set_No2NoL(fluidInterface->get_MhdNo2NoL());
+  writer.set_units(fi->get_No2SiL(), fi->get_No2SiV(), fi->get_No2SiB(),
+                   fi->get_No2SiRho(), fi->get_No2SiP(), fi->get_No2SiJ(),
+                   fi->get_rPlanet_SI());
+  writer.set_No2NoL(fi->get_MhdNo2NoL());
   //--------------------------------------------------
   writer.init();
 
@@ -301,7 +299,7 @@ void ParticleTracker::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#TPRELATIVISTIC") {
     param.read_var("isRelativistic", isRelativistic);
   } else if (command == "#TPSTATESI") {
-    double si2noV = fluidInterface->get_Si2NoV();
+    double si2noV = fi->get_Si2NoV();
     int nState;
     param.read_var("nState", nState);
     for (int i = 0; i < nState; i++) {

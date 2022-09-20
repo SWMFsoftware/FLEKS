@@ -70,8 +70,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 
 //==========================================================
 void Pic::post_process_param() {
-  fluidInterface->set_plasma_charge_and_mass(qomEl);
-  nSpecies = fluidInterface->get_nS();
+  fi->set_plasma_charge_and_mass(qomEl);
+  nSpecies = fi->get_nS();
 }
 
 //==========================================================
@@ -298,11 +298,10 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   //--------------particles-----------------------------------
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
-      auto ptr = std::unique_ptr<Particles<> >(new Particles<>(
-          activeRegionBA, Geom(0), DistributionMap(0), cGrid,
-          fluidInterface.get(), tc.get(), i,
-          fluidInterface->get_species_charge(i),
-          fluidInterface->get_species_mass(i), nPartPerCell, testCase));
+      auto ptr = std::unique_ptr<Particles<> >(
+          new Particles<>(activeRegionBA, Geom(0), DistributionMap(0), cGrid,
+                          fi.get(), tc.get(), i, fi->get_species_charge(i),
+                          fi->get_species_mass(i), nPartPerCell, testCase));
 
       //----- Set parameters------------
       if (particleMergeThreshold >= 0) {
@@ -450,9 +449,9 @@ void Pic::fill_new_node_E() {
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
           if (status(i, j, k) == iOnNew_) {
-            arrE(i, j, k, ix_) = fluidInterface->get_ex(mfi, i, j, k);
-            arrE(i, j, k, iy_) = fluidInterface->get_ey(mfi, i, j, k);
-            arrE(i, j, k, iz_) = fluidInterface->get_ez(mfi, i, j, k);
+            arrE(i, j, k, ix_) = fi->get_ex(mfi, i, j, k);
+            arrE(i, j, k, iy_) = fi->get_ey(mfi, i, j, k);
+            arrE(i, j, k, iz_) = fi->get_ez(mfi, i, j, k);
           }
         }
   }
@@ -473,9 +472,9 @@ void Pic::fill_new_node_B() {
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
           if (status(i, j, k) == iOnNew_) {
-            arrB(i, j, k, ix_) = fluidInterface->get_bx(mfi, i, j, k);
-            arrB(i, j, k, iy_) = fluidInterface->get_by(mfi, i, j, k);
-            arrB(i, j, k, iz_) = fluidInterface->get_bz(mfi, i, j, k);
+            arrB(i, j, k, ix_) = fi->get_bx(mfi, i, j, k);
+            arrB(i, j, k, iy_) = fi->get_by(mfi, i, j, k);
+            arrB(i, j, k, iz_) = fi->get_bz(mfi, i, j, k);
           }
         }
   }
@@ -537,7 +536,7 @@ void Pic::fill_particles() {
 void Pic::fill_source_particles() {
   // To be implemented
 
-  // sourceInterface.update_nodeFluid(fluidInterface->get_nodeFluid(),
+  // sourceInterface.update_nodeFluid(fi->get_nodeFluid(),
   //                                  tc->get_dt());
 
   // for (int i = 0; i < nSpecies; i++) {
@@ -1511,7 +1510,7 @@ void Pic::load_balance() {
     parts[i]->Redistribute();
   }
 
-  fluidInterface->load_balance(DistributionMap(0));
+  fi->load_balance(DistributionMap(0));
 }
 
 //==========================================================

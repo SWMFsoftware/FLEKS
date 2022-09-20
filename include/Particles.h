@@ -72,7 +72,7 @@ public:
   using amrex::ParticleContainer<NStructReal, NStructInt>::Redistribute;
 
 protected:
-  FluidInterface* fluidInterface;
+  FluidInterface* fi;
   TimeCtr* tc;
 
   int speciesID;

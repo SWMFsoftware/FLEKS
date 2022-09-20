@@ -56,7 +56,7 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
     param.roll_back();
 
     // The simulation domain range and grid size are still not known at this
-    // moment, and it is too early to initialize fluidInterface. Such grid
+    // moment, and it is too early to initialize fi. Such grid
     // information is processed by the FluidInterface class, so a local
     // FluidInterface object is created to handle the grid information.
     // This solution is ugly, splitting FluidInterface into two classes is
@@ -66,33 +66,32 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
     RealBox rbTmp({ 0, 0, 0 }, { 1, 1, 1 });
     Geometry gmTmp;
     gmTmp.define(bTmp, rbTmp, coord, { 1, 1, 1 });
-    FluidInterface fi(gmTmp, amrInfo, gridID);
-    fi.receive_info_from_gm(paramInt, gridDim, paramReal);
-    prepare_grid_info(fi);
+    FluidInterface fiTmp(gmTmp, amrInfo, gridID);
+    fiTmp.receive_info_from_gm(paramInt, gridDim, paramReal);
+    prepare_grid_info(fiTmp);
   }
 
-  fluidInterface = std::make_shared<FluidInterface>(gm, amrInfo, gridID);
-  fluidInterface->receive_info_from_gm(paramInt, gridDim, paramReal);
+  fi = std::make_shared<FluidInterface>(gm, amrInfo, gridID);
+  fi->receive_info_from_gm(paramInt, gridDim, paramReal);
 
-  pic = std::make_unique<Pic>(gm, amrInfo, fluidInterface, tc, gridID);
+  pic = std::make_unique<Pic>(gm, amrInfo, fi, tc, gridID);
 
-  pt = std::make_unique<ParticleTracker>(gm, amrInfo, fluidInterface, tc,
-                                         gridID);
+  pt = std::make_unique<ParticleTracker>(gm, amrInfo, fi, tc, gridID);
 
   read_param();
 
   init_time_ctr();
 
-  fluidInterface->print_info();
+  fi->print_info();
 
   {
     // pic->init_amr_from_scratch();
     pic->set_geom(nGst, gm);
-    fluidInterface->set_geom(nGst, gm);
+    fi->set_geom(nGst, gm);
     pt->set_geom(nGst, gm);
   }
 
-  pic->init_source(*fluidInterface);
+  pic->init_source(*fi);
 
   if (doRestart) {
     // Restoring the restart data before coupling with GM, because the PIC grid
@@ -191,7 +190,7 @@ void Domain::regrid() {
   if (!baPic.empty())
     dmPic.define(baPic);
 
-  fluidInterface->regrid(baPic, dmPic);
+  fi->regrid(baPic, dmPic);
 
   pic->regrid(activeRegionBA, baPic, dmPic);
 
@@ -256,12 +255,12 @@ void Domain::read_restart() {
   DistributionMapping dmPic = tmp.DistributionMap();
 
   pic->regrid(baPic, baPic, dmPic);
-  fluidInterface->regrid(baPic, dmPic);
+  fi->regrid(baPic, dmPic);
 
   // Assume dmPT == dmPIC so far.
   pt->regrid(baPic, baPic, dmPic, *pic);
 
-  fluidInterface->read_restart();
+  fi->read_restart();
   pic->read_restart();
   pt->read_restart();
 
@@ -278,7 +277,7 @@ void Domain::save_restart() {
 //========================================================
 void Domain::save_restart_data() {
   VisMF::SetNOutFiles(64);
-  fluidInterface->save_restart_data();
+  fi->save_restart_data();
   pic->save_restart_data();
   pt->save_restart_data();
 }
@@ -381,7 +380,7 @@ void Domain::save_restart_header() {
 
 //========================================================
 void Domain::init_time_ctr() {
-  tc->set_si2no(fluidInterface->get_Si2NoT());
+  tc->set_si2no(fi->get_Si2NoT());
 
   { //----------Init plot data------------------------
 
@@ -389,18 +388,18 @@ void Domain::init_time_ctr() {
     std::vector<std::string> scalarName_I;
     std::vector<double> scalarVar_I;
     std::string ms = "mS", qs = "qS";
-    const int nS = fluidInterface->get_nS();
+    const int nS = fi->get_nS();
     for (int i = 0; i < nS; ++i) {
       scalarName_I.push_back(ms + std::to_string(i));
       scalarName_I.push_back(qs + std::to_string(i));
-      scalarVar_I.push_back(fluidInterface->get_species_mass(i));
-      scalarVar_I.push_back(fluidInterface->get_species_charge(i) /
-                            fluidInterface->get_scaling_factor());
+      scalarVar_I.push_back(fi->get_species_mass(i));
+      scalarVar_I.push_back(fi->get_species_charge(i) /
+                            fi->get_scaling_factor());
     }
     scalarName_I.push_back("cLight");
-    scalarVar_I.push_back(fluidInterface->get_cLight_SI());
+    scalarVar_I.push_back(fi->get_cLight_SI());
     scalarName_I.push_back("rPlanet");
-    scalarVar_I.push_back(fluidInterface->get_rPlanet_SI());
+    scalarVar_I.push_back(fi->get_rPlanet_SI());
     //-------------------------------------
 
     for (auto &plot : tc->plots) {
@@ -409,7 +408,7 @@ void Domain::init_time_ctr() {
       // Pass information to writers.
       writer.set_rank(ParallelDescriptor::MyProc());
       writer.set_nProcs(ParallelDescriptor::NProcs());
-      writer.set_nDim(fluidInterface->get_fluid_dimension());
+      writer.set_nDim(fi->get_fluid_dimension());
       writer.set_iRegion(gridID);
       writer.set_domainMin_D({ { domainRange.lo(ix_), domainRange.lo(iy_),
                                  domainRange.lo(iz_) } });
@@ -420,12 +419,10 @@ void Domain::init_time_ctr() {
       const Real *dx = gm.CellSize();
       writer.set_dx_D({ { dx[ix_], dx[iy_], dx[iz_] } });
       writer.set_nSpecies(nS);
-      writer.set_units(
-          fluidInterface->get_No2SiL(), fluidInterface->get_No2SiV(),
-          fluidInterface->get_No2SiB(), fluidInterface->get_No2SiRho(),
-          fluidInterface->get_No2SiP(), fluidInterface->get_No2SiJ(),
-          fluidInterface->get_rPlanet_SI());
-      writer.set_No2NoL(fluidInterface->get_MhdNo2NoL());
+      writer.set_units(fi->get_No2SiL(), fi->get_No2SiV(), fi->get_No2SiB(),
+                       fi->get_No2SiRho(), fi->get_No2SiP(), fi->get_No2SiJ(),
+                       fi->get_rPlanet_SI());
+      writer.set_No2NoL(fi->get_MhdNo2NoL());
 
       writer.set_scalarValue_I(scalarVar_I);
       writer.set_scalarName_I(scalarName_I);
@@ -474,8 +471,8 @@ void Domain::read_param(const bool readGridInfoOnly) {
       param.read_var("OhmU", sOhmU);
       param.read_var("resistivity", eta);
 
-      fluidInterface->set_resistivity(eta);
-      fluidInterface->set_ohm_u(sOhmU);
+      fi->set_resistivity(eta);
+      fi->set_ohm_u(sOhmU);
     } else if (command == "#RESTART") {
       param.read_var("doRestart", doRestart);
     } else if (command == "#PARTICLESTAGGERING") {

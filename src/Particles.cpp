@@ -16,7 +16,7 @@ Particles<NStructReal, NStructInt>::Particles(
     const Real chargeIn, const Real massIn, const IntVect& nPartPerCellIn,
     TestCase tcase)
     : ParticleContainer<NStructReal, NStructInt>(gm, dm, ba),
-      fluidInterface(fluidIn),
+      fi(fluidIn),
       tc(tcIn),
       speciesID(speciesIDIn),
       charge(chargeIn),
@@ -247,7 +247,7 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
       for (int j = jMin; j <= jMax; ++j)
         for (int k = kMin; k <= kMax; ++k) {
           if (status(i, j, k) == iOnNew_) {
-            add_particles_cell(mfi, i, j, k, *fluidInterface);
+            add_particles_cell(mfi, i, j, k, *fi);
           }
         }
   }
@@ -276,7 +276,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
 
     IntVect idxMin = lo, idxMax = hi;
 
-    for (int iDim = 0; iDim < fluidInterface->get_fluid_dimension(); iDim++) {
+    for (int iDim = 0; iDim < fi->get_fluid_dimension(); iDim++) {
       idxMin[iDim] -= nGstInject;
       idxMax[iDim] += nGstInject;
     }
@@ -285,7 +285,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
           if (do_inject_particles_for_this_cell(bx, status, i, j, k)) {
-            add_particles_cell(mfi, i, j, k, *fluidInterface);
+            add_particles_cell(mfi, i, j, k, *fi);
           }
         }
   }

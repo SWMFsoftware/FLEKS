@@ -24,7 +24,7 @@ public:
 
   // Conceptually, both the Domain class and the Pic class may use the
   // following classes, so they are handled by shared pointers.
-  std::shared_ptr<FluidInterface> fluidInterface;
+  std::shared_ptr<FluidInterface> fi;
   std::shared_ptr<TimeCtr> tc;
 
   int couplerMarker;

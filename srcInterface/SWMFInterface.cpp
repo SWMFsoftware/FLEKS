@@ -149,7 +149,7 @@ int pic_get_ngridpoints_(int *nPoint) {
 int pic_get_grid_(double *Pos_DI, int *n) {
   for (int i = 0; i < fleksDomains.size(); i++) {
     int idx = fleksDomains(i).couplerMarker *
-              fleksDomains(i).fluidInterface->get_fluid_dimension();
+              fleksDomains(i).fi->get_fluid_dimension();
     fleksDomains(i).get_grid(&Pos_DI[idx]);
   }
   return 0;

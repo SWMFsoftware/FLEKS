@@ -16,7 +16,7 @@ void Pic::set_state_var(double* data, int* index) {
   Print() << printPrefix << " GM -> PC coupling at t =" << tc->get_time_si()
           << " (s)" << std::endl;
 
-  fluidInterface->set_couple_node_value(data, index);
+  fi->set_couple_node_value(data, index);
 
   // If fill_new_cells is called when PIC component is off, it suggests the test
   // particle component is activated. The test particle component copies EM
@@ -28,22 +28,20 @@ void Pic::set_state_var(double* data, int* index) {
 }
 
 //==========================================================
-int Pic::get_grid_nodes_number() {
-  return fluidInterface->count_couple_node_number();
-}
+int Pic::get_grid_nodes_number() { return fi->count_couple_node_number(); }
 
 //==========================================================
 void Pic::get_grid(double* pos_DI) {
   std::string nameFunc = "Pic::get_grid";
-  fluidInterface->get_couple_node_loc(pos_DI);
+  fi->get_couple_node_loc(pos_DI);
   return;
 }
 
 //==========================================================
 void Pic::find_mpi_rank_for_points(const int nPoint, const double* const xyz_I,
                                    int* const rank_I) {
-  int nDimGM = fluidInterface->get_fluid_dimension();
-  amrex::Real si2nol = fluidInterface->get_Si2NoL();
+  int nDimGM = fi->get_fluid_dimension();
+  amrex::Real si2nol = fi->get_Si2NoL();
   const RealBox& range = Geom(0).ProbDomain();
   for (int i = 0; i < nPoint; i++) {
     amrex::Real x = xyz_I[i * nDimGM + ix_] * si2nol;
@@ -85,7 +83,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     double pic_D[3] = { 0 };
     for (int iDim = 0; iDim < nDim; iDim++) {
-      pic_D[iDim] = xyz_I[iPoint * nDim + iDim] * fluidInterface->get_Si2NoL();
+      pic_D[iDim] = xyz_I[iPoint * nDim + iDim] * fi->get_Si2NoL();
     }
 
     const Real xp = pic_D[0];
@@ -114,7 +112,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     }
 
     // Combine PIC plasma data into MHD fluid data.
-    fluidInterface->calc_fluid_state(dataPIC_I, &data_I[iPoint * nVar]);
+    fi->calc_fluid_state(dataPIC_I, &data_I[iPoint * nVar]);
   }
 }
 
@@ -779,7 +777,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
       amrex::FileOpenFailed(headerName);
 
     headerFile << pw.get_plotString() << "\n";
-    headerFile << fluidInterface->get_rPlanet_SI() << "\n";
+    headerFile << fi->get_rPlanet_SI() << "\n";
   }
 
   if (isDensityZero) {

@@ -368,7 +368,7 @@ void TestParticles::add_test_particles_from_fluid(const iMultiFab& cellStatus,
           if (iPartRegion == iRegionUniform_ ||
               (iPartRegion == iRegionBoundary_ &&
                status(i, j, k) == iAddPTParticle_)) {
-            add_particles_cell(mfi, i, j, k, *fluidInterface, 1, tpVel);
+            add_particles_cell(mfi, i, j, k, *fi, 1, tpVel);
           }
   }
 }
