@@ -33,13 +33,6 @@ class FluidInterface : public Grid {
 private:
   static const int OhmUe_ = 1, OhmUi_ = 2, OhmUMHD_ = 3;
 
-  // ------Grid info----------
-  amrex::DistributionMapping dm;
-  amrex::Geometry gm;
-  amrex::BoxArray cGrid;
-  amrex::BoxArray nGrid;
-  //------------------------
-
   MultiFabFLEKS nodeFluid;
   MultiFabFLEKS centerB;
 
@@ -55,8 +48,7 @@ private:
   // Min and Max of the physical domain in normalized PIC units.
   double phyMin_D[3], phyMax_D[3];
   double lenPhy_D[3], dx_D[3];
-  int nPhyCell_D[nDimMax];
-  int nGst;
+  int nPhyCell_D[nDimMax];  
 
   // Rotation matrix.
   double R_DD[3][3];
@@ -280,7 +272,7 @@ public:
   amrex::Real get_value(const amrex::MFIter& mfi, const amrex::Real x,
                         const amrex::Real y, const amrex::Real z,
                         const int iVar) const {
-    return get_value_at_loc(nodeFluid, mfi, gm, x, y, z, iVar);
+    return get_value_at_loc(nodeFluid, mfi, Geom(0), x, y, z, iVar);
   }
 
   template <typename T>
@@ -865,7 +857,7 @@ public:
     }
 
     amrex::Real gradpe =
-        0.5 * gm.InvCellSize(ix_) *
+        0.5 * Geom(0).InvCellSize(ix_) *
         (get_p(mfi, xCenter + 1, y, z, 0) - get_p(mfi, xCenter - 1, y, z, 0));
 
     return gradpe;
@@ -887,7 +879,7 @@ public:
     }
 
     amrex::Real gradpe =
-        0.5 * gm.InvCellSize(iy_) *
+        0.5 * Geom(0).InvCellSize(iy_) *
         (get_p(mfi, x, yCenter + 1, z, 0) - get_p(mfi, x, yCenter - 1, z, 0));
 
     return gradpe;
@@ -909,7 +901,7 @@ public:
     }
 
     amrex::Real gradpe =
-        0.5 * gm.InvCellSize(iz_) *
+        0.5 * Geom(0).InvCellSize(iz_) *
         (get_p(mfi, x, y, zCenter + 1, 0) - get_p(mfi, x, y, zCenter - 1, 0));
 
     return gradpe;

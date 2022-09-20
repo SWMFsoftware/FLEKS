@@ -21,18 +21,21 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
 
   cGrid = centerBAIn;
   nGrid = convert(cGrid, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
-  dm = dmIn;
+
+  SetDistributionMap(0, dmIn);
 
   const bool doCopy = true;
-  distribute_FabArray(nodeFluid, nGrid, dm, nVarCoupling, nGst, doCopy);
-  distribute_FabArray(centerB, cGrid, dm, nDimMax, nGst, doCopy);
+  distribute_FabArray(nodeFluid, nGrid, DistributionMap(0), nVarCoupling, nGst,
+                      doCopy);
+  distribute_FabArray(centerB, cGrid, DistributionMap(0), nDimMax, nGst,
+                      doCopy);
 
   isGridInitialized = true;
 }
 
 void FluidInterface::set_geom(const int nGstIn, const amrex::Geometry& geomIn) {
-  nGst = nGstIn;
-  gm = geomIn;
+  set_nGst(nGstIn);
+  SetGeometry(0, geomIn);
 }
 
 int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
@@ -52,11 +55,11 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
     amrex::Abort("Error: unknown action!\n");
   }
 
-  const Real* dx = gm.CellSize();
-  const auto plo = gm.ProbLo();
+  const Real* dx = Geom(0).CellSize();
+  const auto plo = Geom(0).ProbLo();
 
   // Global NODE box.
-  const Box gbx = convert(gm.Domain(), { 1, 1, 1 });
+  const Box gbx = convert(Geom(0).Domain(), { 1, 1, 1 });
 
   const double no2siL = get_No2SiL();
 
@@ -81,7 +84,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
             } else if (doGetLoc) {
               int idx[nDimMax] = { i, j, k };
               for (int iDim = 0; iDim < nDimMax; iDim++) {
-                if (gm.isPeriodic(iDim)) {
+                if (Geom(0).isPeriodic(iDim)) {
                   idx[iDim] = shift_periodic_index(
                       idx[iDim], gbx.smallEnd(iDim), gbx.bigEnd(iDim));
                 }
@@ -136,10 +139,10 @@ void FluidInterface::calc_current() {
   MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
 
   // The outmost layer of currentMF can not be calculated from centerB
-  curl_center_to_node(centerB, currentMF, gm.InvCellSize());
+  curl_center_to_node(centerB, currentMF, Geom(0).InvCellSize());
   currentMF.mult(1.0 / (get_No2SiL() * fourPI * 1e-7), currentMF.nGrow());
 
-  currentMF.FillBoundary(gm.periodicity());
+  currentMF.FillBoundary(Geom(0).periodicity());
 
   /*
   Q: The outmost layer of currentMF is not accurate. Why not use
@@ -221,10 +224,10 @@ void FluidInterface::set_plasma_charge_and_mass(amrex::Real qomEl) {
 }
 
 void FluidInterface::load_balance(const DistributionMapping& dmIn) {
-  dm = dmIn;
+  SetDistributionMap(0, dmIn);
 
-  redistribute_FabArray(nodeFluid, dm); // false?
-  redistribute_FabArray(centerB, dm);   // false?
+  redistribute_FabArray(nodeFluid, DistributionMap(0)); // false?
+  redistribute_FabArray(centerB, DistributionMap(0));   // false?
 }
 
 //-------------------------------------------------------------------------
@@ -968,9 +971,9 @@ void FluidInterface::update_nodeFluid(const MultiFabFLEKS& nodeIn,
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
 
-          Real z = gm.CellCenter(k, iz_) * No2MhdNoL;
-          Real y = gm.CellCenter(j, iy_) * No2MhdNoL;
-          Real x = gm.CellCenter(i, ix_) * No2MhdNoL;
+          Real z = Geom(0).CellCenter(k, iz_) * No2MhdNoL;
+          Real y = Geom(0).CellCenter(j, iy_) * No2MhdNoL;
+          Real x = Geom(0).CellCenter(i, ix_) * No2MhdNoL;
 
           if (useMultiSpecies) {
             // double Rhot = 0;
