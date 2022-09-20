@@ -592,7 +592,9 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
       outRange.setHi(iDim, pw.get_plotMax_D(iDim) * no2outL);
     }
 
-  IOParticles particlesOut(*parts[iSpecies].get(), geomOut, no2outL, no2outV,
+  Grid gridIO(geomOut, AmrInfo(), -gridID);
+
+  IOParticles particlesOut(*parts[iSpecies].get(), &gridIO, no2outL, no2outV,
                            no2outM, outRange);
 
   particlesOut.WritePlotFile(dirName, "particle", writeRealComp, writeIntComp,

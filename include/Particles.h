@@ -3,8 +3,9 @@
 
 #include <memory>
 
+#include <AMReX_AmrCore.H>
 #include <AMReX_CoordSys.H>
-#include <AMReX_Particles.H>
+#include <AMReX_AmrParticles.H>
 
 #include "Array1D.h"
 #include "Constants.h"
@@ -55,7 +56,7 @@ public:
 };
 
 template <int NStructReal = nPicPartReal, int NStructInt = 0>
-class Particles : public amrex::ParticleContainer<NStructReal, NStructInt> {
+class Particles : public amrex::AmrParticleContainer<NStructReal, NStructInt> {
 public:
   static ParticleStaggering particlePosition;
 
@@ -63,13 +64,13 @@ public:
   // Since this is a template, the compiler will not search names in the base
   // class by default, and the following 'using ' statements are required.
   using ParticleType = amrex::Particle<NStructReal, NStructInt>;
-  using amrex::ParticleContainer<NStructReal, NStructInt>::Geom;
-  using amrex::ParticleContainer<NStructReal, NStructInt>::do_tiling;
-  using amrex::ParticleContainer<NStructReal, NStructInt>::tile_size;
-  using amrex::ParticleContainer<NStructReal, NStructInt>::SetUseUnlink;
-  using amrex::ParticleContainer<NStructReal, NStructInt>::GetParticles;
-  using amrex::ParticleContainer<NStructReal, NStructInt>::MakeMFIter;
-  using amrex::ParticleContainer<NStructReal, NStructInt>::Redistribute;
+  using amrex::AmrParticleContainer<NStructReal, NStructInt>::Geom;
+  using amrex::AmrParticleContainer<NStructReal, NStructInt>::do_tiling;
+  using amrex::AmrParticleContainer<NStructReal, NStructInt>::tile_size;
+  using amrex::AmrParticleContainer<NStructReal, NStructInt>::SetUseUnlink;
+  using amrex::AmrParticleContainer<NStructReal, NStructInt>::GetParticles;
+  using amrex::AmrParticleContainer<NStructReal, NStructInt>::MakeMFIter;
+  using amrex::AmrParticleContainer<NStructReal, NStructInt>::Redistribute;
 
 protected:
   FluidInterface* fi;
@@ -112,8 +113,7 @@ public:
 
   amrex::iMultiFab cellStatus;
 
-  Particles(const amrex::BoxArray& regionBAIn, const amrex::Geometry& gm,
-            const amrex::DistributionMapping& dm, const amrex::BoxArray& ba,
+  Particles(const amrex::BoxArray& regionBAIn, amrex::AmrCore* amrcore,
             FluidInterface* fluidIn, TimeCtr* tcIn, const int speciesIDIn,
             const amrex::Real chargeIn, const amrex::Real massIn,
             const amrex::IntVect& nPartPerCellIn,
@@ -279,7 +279,7 @@ class IOParticles : public Particles<nPicPartReal> {
 public:
   IOParticles() = delete;
 
-  IOParticles(Particles<>& other, amrex::Geometry geomIO,
+  IOParticles(Particles<>& other, amrex::AmrCore* amrcore,
               amrex::Real no2outL = 1, amrex::Real no2outV = 1,
               amrex::Real no2OutM = 1,
               amrex::RealBox IORange = amrex::RealBox());

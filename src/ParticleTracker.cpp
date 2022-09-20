@@ -156,10 +156,9 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
   //--------------test particles-----------------------------------
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
-      auto ptr = std::unique_ptr<TestParticles>(
-          new TestParticles(activeRegionBA, Geom(0), DistributionMap(0), cGrid,
-                            fi.get(), tc.get(), i, fi->get_species_charge(i),
-                            fi->get_species_mass(i), gridID));
+      auto ptr = std::unique_ptr<TestParticles>(new TestParticles(
+          activeRegionBA, this, fi.get(), tc.get(), i,
+          fi->get_species_charge(i), fi->get_species_mass(i), gridID));
       ptr->set_ppc(nTPPerCell);
       ptr->set_interval(nTPIntervalCell);
       ptr->set_particle_region(sPartRegion);

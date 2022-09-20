@@ -299,9 +299,9 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::unique_ptr<Particles<> >(
-          new Particles<>(activeRegionBA, Geom(0), DistributionMap(0), cGrid,
-                          fi.get(), tc.get(), i, fi->get_species_charge(i),
-                          fi->get_species_mass(i), nPartPerCell, testCase));
+          new Particles<>(activeRegionBA, this, fi.get(), tc.get(), i,
+                          fi->get_species_charge(i), fi->get_species_mass(i),
+                          nPartPerCell, testCase));
 
       //----- Set parameters------------
       if (particleMergeThreshold >= 0) {

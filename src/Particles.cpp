@@ -10,12 +10,11 @@ using namespace amrex;
 //==========================================================
 template <int NStructReal, int NStructInt>
 Particles<NStructReal, NStructInt>::Particles(
-    const amrex::BoxArray& regionBAIn, const Geometry& gm,
-    const DistributionMapping& dm, const BoxArray& ba,
+    const amrex::BoxArray& regionBAIn, amrex::AmrCore* amrcore,
     FluidInterface* const fluidIn, TimeCtr* const tcIn, const int speciesIDIn,
     const Real chargeIn, const Real massIn, const IntVect& nPartPerCellIn,
     TestCase tcase)
-    : ParticleContainer<NStructReal, NStructInt>(gm, dm, ba),
+    : AmrParticleContainer<NStructReal, NStructInt>(amrcore),
       fi(fluidIn),
       tc(tcIn),
       speciesID(speciesIDIn),
@@ -1724,10 +1723,9 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
   return false; // to suppress compilation warning.
 }
 
-IOParticles::IOParticles(Particles& other, Geometry geomIO, Real no2outL,
+IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
                          Real no2outV, Real no2outM, RealBox IORange)
-    : Particles(other.get_region_ba(), geomIO, other.ParticleDistributionMap(0),
-                other.ParticleBoxArray(0), nullptr, nullptr,
+    : Particles(other.get_region_ba(), amrcore, nullptr, nullptr,
                 other.get_speciesID(), other.get_charge(), other.get_mass(),
                 amrex::IntVect(-1, -1, -1)) {
   const int lev = 0;
