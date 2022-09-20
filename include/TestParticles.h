@@ -25,10 +25,9 @@ private:
   static const int iRegionUniform_ = 2;
 
 public:
-  TestParticles(const amrex::BoxArray& regionBAIn, amrex::AmrCore* amrcore,
-                FluidInterface* const fluidIn, TimeCtr* const tcIn,
-                const int speciesID, const amrex::Real charge,
-                const amrex::Real mass, int id = 0);
+  TestParticles(amrex::AmrCore* amrcore, FluidInterface* const fluidIn,
+                TimeCtr* const tcIn, const int speciesID,
+                const amrex::Real charge, const amrex::Real mass, int id = 0);
 
   ~TestParticles() = default;
 

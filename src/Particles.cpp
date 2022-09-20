@@ -10,10 +10,9 @@ using namespace amrex;
 //==========================================================
 template <int NStructReal, int NStructInt>
 Particles<NStructReal, NStructInt>::Particles(
-    const amrex::BoxArray& regionBAIn, amrex::AmrCore* amrcore,
-    FluidInterface* const fluidIn, TimeCtr* const tcIn, const int speciesIDIn,
-    const Real chargeIn, const Real massIn, const IntVect& nPartPerCellIn,
-    TestCase tcase)
+    amrex::AmrCore* amrcore, FluidInterface* const fluidIn, TimeCtr* const tcIn,
+    const int speciesIDIn, const Real chargeIn, const Real massIn,
+    const IntVect& nPartPerCellIn, TestCase tcase)
     : AmrParticleContainer<NStructReal, NStructInt>(amrcore),
       fi(fluidIn),
       tc(tcIn),
@@ -37,9 +36,7 @@ Particles<NStructReal, NStructInt>::Particles(
     invDx[i] = Geom(0).InvCellSize(i);
     invVol *= invDx[i];
   }
-
-  set_region_ba(regionBAIn);
-
+  
   // The following line is used to avoid an MPI bug (feature?) on Frontera. It
   // should be removed after the bug being fixed.
   SetUseUnlink(false);
@@ -1725,8 +1722,8 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
 
 IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
                          Real no2outV, Real no2outM, RealBox IORange)
-    : Particles(other.get_region_ba(), amrcore, nullptr, nullptr,
-                other.get_speciesID(), other.get_charge(), other.get_mass(),
+    : Particles(amrcore, nullptr, nullptr, other.get_speciesID(),
+                other.get_charge(), other.get_mass(),
                 amrex::IntVect(-1, -1, -1)) {
   const int lev = 0;
   no2outM /= get_qom();

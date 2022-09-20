@@ -298,10 +298,11 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   //--------------particles-----------------------------------
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
-      auto ptr = std::unique_ptr<Particles<> >(
-          new Particles<>(activeRegionBA, this, fi.get(), tc.get(), i,
-                          fi->get_species_charge(i), fi->get_species_mass(i),
-                          nPartPerCell, testCase));
+      auto ptr = std::unique_ptr<Particles<> >(new Particles<>(
+          this, fi.get(), tc.get(), i, fi->get_species_charge(i),
+          fi->get_species_mass(i), nPartPerCell, testCase));
+
+      ptr->set_region_range(activeRegionBA);
 
       //----- Set parameters------------
       if (particleMergeThreshold >= 0) {
@@ -320,7 +321,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
       // Label the particles outside the OLD PIC region.
       parts[i]->label_particles_outside_ba();
 
-      parts[i]->set_region_ba(activeRegionBA);
+      parts[i]->set_region_range(activeRegionBA);
 
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_ba_general();

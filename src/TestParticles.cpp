@@ -4,21 +4,16 @@
 
 using namespace amrex;
 
-TestParticles::TestParticles(const amrex::BoxArray& regionBAIn,
-                             amrex::AmrCore* amrcore,
+TestParticles::TestParticles(amrex::AmrCore* amrcore,
                              FluidInterface* const fluidIn, TimeCtr* const tcIn,
                              const int speciesID, const amrex::Real charge,
                              const amrex::Real mass, int id)
-    : Particles(regionBAIn, amrcore, fluidIn, tcIn, speciesID, charge, mass,
+    : Particles(amrcore, fluidIn, tcIn, speciesID, charge, mass,
                 IntVect(1, 1, 1)) {
   gridID = id;
 
-  {
-    std::stringstream ss;
-    ss << "FLEKS" << gridID;
-    gridName = ss.str();
-    printPrefix = gridName + ": ";
-  }
+  gridName = std::string("FLEKS") + std::to_string(gridID);
+  printPrefix = gridName + ": ";
 
   for (int iDim = 0; iDim < nDim; iDim++)
     nPartPerCell[iDim] = 2;

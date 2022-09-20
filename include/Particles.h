@@ -4,8 +4,8 @@
 #include <memory>
 
 #include <AMReX_AmrCore.H>
-#include <AMReX_CoordSys.H>
 #include <AMReX_AmrParticles.H>
+#include <AMReX_CoordSys.H>
 
 #include "Array1D.h"
 #include "Constants.h"
@@ -87,9 +87,7 @@ protected:
 
   amrex::IntVect nPartPerCell;
 
-  amrex::BoxArray regionBA;
-
-  amrex::Vector<amrex::RealBox> boxRange_I;
+  amrex::Vector<amrex::RealBox> activeRegions;
 
   amrex::Real plo[nDim], phi[nDim], dx[nDim], invDx[nDim];
   amrex::Real invVol;
@@ -113,25 +111,17 @@ public:
 
   amrex::iMultiFab cellStatus;
 
-  Particles(const amrex::BoxArray& regionBAIn, amrex::AmrCore* amrcore,
-            FluidInterface* fluidIn, TimeCtr* tcIn, const int speciesIDIn,
-            const amrex::Real chargeIn, const amrex::Real massIn,
-            const amrex::IntVect& nPartPerCellIn,
+  Particles(amrex::AmrCore* amrcore, FluidInterface* fluidIn, TimeCtr* tcIn,
+            const int speciesIDIn, const amrex::Real chargeIn,
+            const amrex::Real massIn, const amrex::IntVect& nPartPerCellIn,
             TestCase tcase = RegularSimulation);
 
-  amrex::BoxArray get_region_ba() const { return regionBA; }
-
-  void set_region_ba(const amrex::BoxArray& in) {
-    regionBA = in;
-    boxRange_I.clear();
-    for (int iBox = 0; iBox < regionBA.size(); iBox++) {
-      amrex::RealBox rb(regionBA[iBox], Geom(0).CellSize(), Geom(0).Offset());
-      boxRange_I.push_back(rb);
+  void set_region_range(const amrex::BoxArray& ba) {
+    activeRegions.clear();
+    for (int iBox = 0; iBox < ba.size(); iBox++) {
+      amrex::RealBox rb(ba[iBox], Geom(0).CellSize(), Geom(0).Offset());
+      activeRegions.push_back(rb);
     }
-
-    // for(auto&rb:boxRange_I){
-    //   amrex::Print()<<"rb = "<<rb<<std::endl;
-    // }
   }
 
   void add_particles_domain(const amrex::iMultiFab& cellStatus);
@@ -189,7 +179,7 @@ public:
       }
     }
 
-    for (const auto& rb : boxRange_I) {
+    for (const auto& rb : activeRegions) {
       if (rb.contains(loc))
         return false;
     }
