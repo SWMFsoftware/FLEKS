@@ -143,7 +143,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   cGrid = centerBAIn;
 
-  // PostProcessBaseGrids is called from the following method. 
+  // PostProcessBaseGrids is called from the following method.
   InitFromScratch(tc->get_time());
 
   nGrid = convert(cGrid, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
@@ -536,7 +536,7 @@ void Pic::fill_particles() {
 
 void Pic::fill_source_particles() {
   // To be implemented
-  
+
   // sourceInterface.update_nodeFluid(fluidInterface->get_nodeFluid(),
   //                                  tc->get_dt());
 

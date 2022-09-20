@@ -48,7 +48,7 @@ private:
   // Min and Max of the physical domain in normalized PIC units.
   double phyMin_D[3], phyMax_D[3];
   double lenPhy_D[3], dx_D[3];
-  int nPhyCell_D[nDimMax];  
+  int nPhyCell_D[nDimMax];
 
   // Rotation matrix.
   double R_DD[3][3];
@@ -119,7 +119,7 @@ public:
     myrank = amrex::ParallelDescriptor::MyProc();
   }
   ~FluidInterface() = default;
-  FluidInterface& operator=(const FluidInterface& other) = default;  
+  FluidInterface& operator=(const FluidInterface& other) = default;
   void receive_info_from_gm(const int* const paramInt,
                             const double* const gridDim,
                             const double* const paramDouble);

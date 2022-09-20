@@ -30,9 +30,7 @@ public:
   int couplerMarker;
 
 public:
-  Domain() {    
-    tc = std::make_shared<TimeCtr>();
-  }
+  Domain() { tc = std::make_shared<TimeCtr>(); }
 
   ~Domain() = default;
 
@@ -70,7 +68,7 @@ public:
   //--------------- IO end----------------------------------
 
   //-------------- grid begin-------------------------------
-  void prepare_grid_info(const FluidInterface& fi);
+  void prepare_grid_info(const FluidInterface &fi);
   void regrid();
   void receive_grid_info(int *status);
   //-------------- grid end---------------------------------

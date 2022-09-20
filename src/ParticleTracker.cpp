@@ -157,8 +157,8 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::unique_ptr<TestParticles>(
-          new TestParticles(activeRegionBA, Geom(0), DistributionMap(0),
-                            cGrid, fluidInterface.get(), tc.get(), i,
+          new TestParticles(activeRegionBA, Geom(0), DistributionMap(0), cGrid,
+                            fluidInterface.get(), tc.get(), i,
                             fluidInterface->get_species_charge(i),
                             fluidInterface->get_species_mass(i), gridID));
       ptr->set_ppc(nTPPerCell);
@@ -223,8 +223,8 @@ void ParticleTracker::read_restart() {
 
   std::string restartDir = "PC/restartIN/";
   for (int iPart = 0; iPart < parts.size(); iPart++) {
-    parts[iPart]->Restart(restartDir, gridName + "_test_particles" +
-                                          std::to_string(iPart));
+    parts[iPart]->Restart(restartDir,
+                          gridName + "_test_particles" + std::to_string(iPart));
     parts[iPart]->reset_record_counter();
     parts[iPart]->init_particle_number(initPartNumber[iPart]);
   }
@@ -281,8 +281,7 @@ void ParticleTracker::save_restart_header(std::ofstream& headerFile) {
   }
 }
 
-void ParticleTracker::read_param(const std::string& command,
-                                 ReadParam& param) {
+void ParticleTracker::read_param(const std::string& command, ReadParam& param) {
 
   if (command == "#PARTICLETRACKER") {
     param.read_var("usePT", usePT);
