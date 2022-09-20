@@ -126,8 +126,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   timing_func(nameFunc);
 
-  if (useSource)
-    sourceInterface.regrid(centerBAIn, dmIn);
+  // if (useSource)
+  //   sourceInterface.regrid(centerBAIn, dmIn);
 
   // Why need 'isGridInitialized'? See the explaination in Domain::regrid().
   if (centerBAIn == cGrid && isGridInitialized)
@@ -535,12 +535,14 @@ void Pic::fill_particles() {
 }
 
 void Pic::fill_source_particles() {
-  sourceInterface.update_nodeFluid(fluidInterface->get_nodeFluid(),
-                                   tc->get_dt());
+  // To be implemented
+  
+  // sourceInterface.update_nodeFluid(fluidInterface->get_nodeFluid(),
+  //                                  tc->get_dt());
 
-  for (int i = 0; i < nSpecies; i++) {
-    parts[i]->add_particles_source(nodePlasma[i], sourceInterface);
-  }
+  // for (int i = 0; i < nSpecies; i++) {
+  //   parts[i]->add_particles_source(nodePlasma[i], sourceInterface);
+  // }
 }
 
 //==========================================================

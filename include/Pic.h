@@ -9,9 +9,9 @@
 #include "Grid.h"
 #include "LinearSolver.h"
 #include "Particles.h"
+#include "ReadParam.h"
 #include "TimeCtr.h"
 #include "UMultiFab.h"
-#include "ReadParam.h"
 
 class ParticleTracker;
 class Pic;
@@ -73,7 +73,7 @@ private:
   //--------------------------------------
 
   bool useSource = false;
-  FluidInterface sourceInterface;
+  // FluidInterface sourceInterface;
 
   int nSpecies;
   int iTot;
@@ -149,7 +149,9 @@ public:
   void fill_particles();
 
   void init_source(const FluidInterface &interfaceIn) {
-    sourceInterface = interfaceIn;
+    // To be implemented
+    
+    //   sourceInterface = interfaceIn;
   }
 
   //----------------Initialization end-------------------------------
