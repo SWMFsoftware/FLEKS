@@ -15,6 +15,7 @@
 #include <AMReX_VisMF.H>
 
 #include "Constants.h"
+#include "Grid.h"
 #include "MDArray.h"
 #include "Utility.h"
 #include "Writer.h"
@@ -28,7 +29,7 @@ public:
   MultiFabFLEKS& operator=(const MultiFabFLEKS& other) { return *this; };
 };
 
-class FluidInterface {
+class FluidInterface : public Grid {
 private:
   static const int OhmUe_ = 1, OhmUi_ = 2, OhmUMHD_ = 3;
 
@@ -124,7 +125,9 @@ private:
   int OhmU = OhmUe_;
 
 public:
-  FluidInterface() {}
+  FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
+                 int id)
+      : Grid(gm, amrInfo, id) {}
   ~FluidInterface() = default;
   FluidInterface& operator=(const FluidInterface& other) = default;
   void init(int id);

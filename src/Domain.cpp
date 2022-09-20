@@ -61,11 +61,17 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
     // FluidInterface object is created to handle the grid information.
     // This solution is ugly, maybe splitting FluidInterface into two classes is
     // a better solution.
-    FluidInterface fi;
+
+    Box bTmp({ 0, 0, 0 }, { 7, 7, 7 });
+    RealBox rbTmp({ 0, 0, 0 }, { 1, 1, 1 });
+    Geometry gmTmp;
+    gmTmp.define(bTmp, rbTmp, coord, { 1, 1, 1 });
+    FluidInterface fi(gmTmp, amrInfo, gridID);
     fi.receive_info_from_gm(paramInt, gridDim, paramReal);
     prepare_grid_info(fi);
   }
 
+  fluidInterface = std::make_shared<FluidInterface>(gm, amrInfo, gridID);
   fluidInterface->init(gridID);
   fluidInterface->receive_info_from_gm(paramInt, gridDim, paramReal);
 

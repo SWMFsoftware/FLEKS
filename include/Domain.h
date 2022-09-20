@@ -30,8 +30,7 @@ public:
   int couplerMarker;
 
 public:
-  Domain() {
-    fluidInterface = std::make_shared<FluidInterface>();
+  Domain() {    
     tc = std::make_shared<TimeCtr>();
   }
 
