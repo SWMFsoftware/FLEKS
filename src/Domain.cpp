@@ -66,30 +66,23 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
     RealBox rbTmp({ 0, 0, 0 }, { 1, 1, 1 });
     Geometry gmTmp;
     gmTmp.define(bTmp, rbTmp, coord, { 1, 1, 1 });
-    FluidInterface fiTmp(gmTmp, amrInfo, gridID);
+    FluidInterface fiTmp(gmTmp, amrInfo, nGst, gridID);
     fiTmp.receive_info_from_gm(paramInt, gridDim, paramReal);
     prepare_grid_info(fiTmp);
   }
 
-  fi = std::make_shared<FluidInterface>(gm, amrInfo, gridID);
+  fi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID);
   fi->receive_info_from_gm(paramInt, gridDim, paramReal);
 
-  pic = std::make_unique<Pic>(gm, amrInfo, fi, tc, gridID);
+  pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi, tc, gridID);
 
-  pt = std::make_unique<ParticleTracker>(gm, amrInfo, fi, tc, gridID);
+  pt = std::make_unique<ParticleTracker>(gm, amrInfo, nGst, fi, tc, gridID);
 
   read_param();
 
   init_time_ctr();
 
   fi->print_info();
-
-  {
-    // pic->init_amr_from_scratch();
-    pic->set_geom(nGst, gm);
-    fi->set_geom(nGst, gm);
-    pt->set_geom(nGst, gm);
-  }
 
   pic->init_source(*fi);
 

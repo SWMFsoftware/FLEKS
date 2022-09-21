@@ -68,14 +68,15 @@ protected:
   bool isFake2D = false;
 
 public:
-  Grid(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo, int id)
-      : AmrCore(gm, amrInfo), gridID(id) {
+  Grid(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo, int nGstIn,
+       int id)
+      : AmrCore(gm, amrInfo), nGst(nGstIn), gridID(id) {
     gridName = std::string("FLEKS") + std::to_string(gridID);
     printPrefix = gridName + ": ";
+
+    isFake2D = Geom(0).Domain().bigEnd(iz_) == Geom(0).Domain().smallEnd(iz_);
   };
   ~Grid() = default;
-
-  void set_nGst(const int nGstIn) { nGst = nGstIn; }
 
   bool is_grid_empty() const { return isGridEmpty; }
 

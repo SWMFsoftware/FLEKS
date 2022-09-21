@@ -592,7 +592,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
       outRange.setHi(iDim, pw.get_plotMax_D(iDim) * no2outL);
     }
 
-  Grid gridIO(geomOut, AmrInfo(), -gridID);
+  Grid gridIO(geomOut, AmrInfo(), 0, -gridID);
 
   IOParticles particlesOut(*parts[iSpecies].get(), &gridIO, no2outL, no2outV,
                            no2outM, outRange);

@@ -33,11 +33,6 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
   isGridInitialized = true;
 }
 
-void FluidInterface::set_geom(const int nGstIn, const amrex::Geometry& geomIn) {
-  set_nGst(nGstIn);
-  SetGeometry(0, geomIn);
-}
-
 int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
                                       const double* const data,
                                       const int* const index) {

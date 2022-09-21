@@ -114,17 +114,15 @@ private:
 
 public:
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-                 int id)
-      : Grid(gm, amrInfo, id) {
+                 int nGst, int id)
+      : Grid(gm, amrInfo, nGst, id) {
     myrank = amrex::ParallelDescriptor::MyProc();
   }
   ~FluidInterface() = default;
   FluidInterface& operator=(const FluidInterface& other) = default;
   void receive_info_from_gm(const int* const paramInt,
                             const double* const gridDim,
-                            const double* const paramDouble);
-
-  void set_geom(const int nGstIn, const amrex::Geometry& geomIn);
+                            const double* const paramDouble);  
 
   void regrid(const amrex::BoxArray& centerBAIn,
               const amrex::DistributionMapping& dmIn);

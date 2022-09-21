@@ -10,9 +10,9 @@
 class ParticleTracker : public Grid {
 public:
   ParticleTracker(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo,
-                  std::shared_ptr<FluidInterface> &fluidIn,
+                  int nGst, std::shared_ptr<FluidInterface> &fluidIn,
                   std::shared_ptr<TimeCtr> &tcIn, int id)
-      : Grid(gm, amrInfo, id), tc(tcIn), fi(fluidIn) {
+      : Grid(gm, amrInfo, nGst, id), tc(tcIn), fi(fluidIn) {
     nSpecies = fi->get_nS();
   };
 
@@ -31,9 +31,7 @@ public:
   void init(std::shared_ptr<FluidInterface> &fluidIn,
             std::shared_ptr<TimeCtr> &tcIn, int id = 0);
 
-  void post_process_param();
-
-  void set_geom(int nGstIn, const amrex::Geometry &geomIn);
+  void post_process_param();  
 
   void regrid(const amrex::BoxArray &activeRegionBAIn,
               const amrex::BoxArray &centerBAIn,

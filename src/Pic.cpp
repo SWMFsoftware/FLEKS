@@ -113,13 +113,6 @@ void Pic::fill_new_cells() {
 }
 
 //==========================================================
-void Pic::set_geom(int nGstIn, const Geometry& geomIn) {
-  set_nGst(nGstIn);
-  SetGeometry(0, geomIn);
-  isFake2D = Geom(0).Domain().bigEnd(iz_) == Geom(0).Domain().smallEnd(iz_);
-}
-
-//==========================================================
 void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
                  const DistributionMapping& dmIn) {
   std::string nameFunc = "Pic::regrid";

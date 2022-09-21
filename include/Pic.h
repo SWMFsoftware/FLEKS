@@ -113,17 +113,17 @@ private:
 
   // public methods
 public:
-  Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo,
+  Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo, int nGst,
       std::shared_ptr<FluidInterface> &fluidIn, std::shared_ptr<TimeCtr> &tcIn,
       int id = 0)
-      : Grid(gm, amrInfo, id), tc(tcIn), fi(fluidIn) {
+      : Grid(gm, amrInfo, nGst, id), tc(tcIn), fi(fluidIn) {
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 
     divESolver.set_tol(0.01);
     divESolver.set_nIter(20);
 
-    Particles<>::particlePosition = Staggered;
+    Particles<>::particlePosition = Staggered;    
   };
   ~Pic(){};
 
@@ -132,9 +132,7 @@ public:
   Particles<> *get_particle_pointer(int i) { return parts[i].get(); }
 
   //--------------Initialization begin-------------------------------
-  void set_geom(int nGstIn, const amrex::Geometry &geomIn);
-
-  void regrid(const amrex::BoxArray &activeRegionBAIn,
+    void regrid(const amrex::BoxArray &activeRegionBAIn,
               const amrex::BoxArray &centerBAIn,
               const amrex::DistributionMapping &dmIn);
 

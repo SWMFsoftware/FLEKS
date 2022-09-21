@@ -116,15 +116,6 @@ void ParticleTracker::post_process_param() {
       new PlotCtr(tc.get(), gridID, -1, nPTRecord * dnSave));
 }
 
-//==========================================================
-void ParticleTracker::set_geom(int nGstIn, const Geometry& geomIn) {
-  if (!usePT)
-    return;
-
-  nGst = nGstIn;
-  SetGeometry(0, geomIn);
-}
-
 void ParticleTracker::regrid(const BoxArray& ptRegionIn,
                              const BoxArray& centerBAIn,
                              const DistributionMapping& dmIn, Pic& pic) {
