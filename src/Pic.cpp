@@ -136,15 +136,12 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   cGrid = centerBAIn;
 
-  // PostProcessBaseGrids is called from the following method.
+  // This method will call MakeNewLevelFromScratch() and PostProcessBaseGrids()
   InitFromScratch(tc->get_time());
 
   nGrid = convert(cGrid, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
 
   SetDistributionMap(0, dmIn);
-
-  // This method will call MakeNewLevelFromScratch() and PostProcessBaseGrids()
-  // InitFromScratch(tc->get_time());
 
   //===========Move field data around begin====================
   distribute_FabArray(nodeE, nGrid, DistributionMap(0), 3, nGst);

@@ -329,12 +329,6 @@ public:
                    << " ba = " << ba << std::endl;
   };
 
-  virtual void PostProcessBaseGrids(amrex::BoxArray &ba) const override {
-    std::string nameFunc = "Pic::PostProcessBaseGrids";
-    amrex::Print() << printPrefix << nameFunc << " is called." << std::endl;
-    ba = cGrid;
-  };
-
   // private methods
 private:
   amrex::Real calc_E_field_energy();

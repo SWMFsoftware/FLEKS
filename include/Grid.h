@@ -144,6 +144,11 @@ public:
     std::string nameFunc = "Grid::ErrorEst";
     amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
   };
-};
 
+  virtual void PostProcessBaseGrids(amrex::BoxArray& ba) const override {
+    std::string nameFunc = "Grid::PostProcessBaseGrids";
+    amrex::Print() << printPrefix << nameFunc << " is called." << std::endl;
+    ba = cGrid;
+  };
+};
 #endif
