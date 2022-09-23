@@ -123,7 +123,7 @@ public:
     divESolver.set_tol(0.01);
     divESolver.set_nIter(20);
 
-    Particles<>::particlePosition = Staggered;    
+    Particles<>::particlePosition = Staggered;
   };
   ~Pic(){};
 
@@ -132,7 +132,7 @@ public:
   Particles<> *get_particle_pointer(int i) { return parts[i].get(); }
 
   //--------------Initialization begin-------------------------------
-    void regrid(const amrex::BoxArray &activeRegionBAIn,
+  void regrid(const amrex::BoxArray &activeRegionBAIn,
               const amrex::BoxArray &centerBAIn,
               const amrex::DistributionMapping &dmIn);
 
@@ -314,8 +314,7 @@ public:
       int lev, amrex::Real time, const amrex::BoxArray &ba,
       const amrex::DistributionMapping &dm) override {
     std::string nameFunc = "Pic::MakeNewLevelFromScratch";
-    amrex::Print() << printPrefix << nameFunc << " lev = " << lev
-                   << " ba = " << ba << std::endl;
+    amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
   };
 
   // Make a new level using provided BoxArray and DistributionMapping and
@@ -325,8 +324,7 @@ public:
       int lev, amrex::Real time, const amrex::BoxArray &ba,
       const amrex::DistributionMapping &dm) override {
     std::string nameFunc = "Pic::MakeNewLevelFromCoarse";
-    amrex::Print() << printPrefix << nameFunc << " lev = " << lev
-                   << " ba = " << ba << std::endl;
+    amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
   };
 
   // private methods
