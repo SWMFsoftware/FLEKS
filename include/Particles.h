@@ -71,6 +71,8 @@ public:
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::GetParticles;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::MakeMFIter;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Redistribute;
+  using amrex::AmrParticleContainer<NStructReal,
+                                    NStructInt>::NumberOfParticlesAtLevel;
 
 protected:
   FluidInterface* fi;
@@ -214,17 +216,19 @@ public:
 
   void label_particles_outside_ba() {
     const int lev = 0;
-    for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
-         ++pti) {
-      auto& particles = pti.GetArrayOfStructs();
-      const amrex::Array4<int const>& status = cellStatus[pti].array();
-      const amrex::Box& bx = cellStatus[pti].box();
-      const amrex::IntVect lowCorner = bx.smallEnd();
-      const amrex::IntVect highCorner = bx.bigEnd();
-      for (auto& p : particles) {
-        if (is_outside_ba(p, status, lowCorner, highCorner)) {
-          p.id() = -1;
-          // amrex::Print()<<"particle outside ba = "<<p<<std::endl;
+    if (NumberOfParticlesAtLevel(lev, true, true) > 0) {
+      for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev);
+           pti.isValid(); ++pti) {
+        auto& particles = pti.GetArrayOfStructs();
+        const amrex::Array4<int const>& status = cellStatus[pti].array();
+        const amrex::Box& bx = cellStatus[pti].box();
+        const amrex::IntVect lowCorner = bx.smallEnd();
+        const amrex::IntVect highCorner = bx.bigEnd();
+        for (auto& p : particles) {
+          if (is_outside_ba(p, status, lowCorner, highCorner)) {
+            p.id() = -1;
+            // amrex::Print()<<"particle outside ba = "<<p<<std::endl;
+          }
         }
       }
     }
@@ -232,13 +236,15 @@ public:
 
   void label_particles_outside_ba_general() {
     const int lev = 0;
-    for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
-         ++pti) {
-      auto& particles = pti.GetArrayOfStructs();
-      for (auto& p : particles) {
-        if (is_outside_ba(p)) {
-          p.id() = -1;
-          // amrex::Print()<<"particle outside ba = "<<p<<std::endl;
+    if (NumberOfParticlesAtLevel(lev, true, true) > 0) {
+      for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev);
+           pti.isValid(); ++pti) {
+        auto& particles = pti.GetArrayOfStructs();
+        for (auto& p : particles) {
+          if (is_outside_ba(p)) {
+            p.id() = -1;
+            // amrex::Print()<<"particle outside ba = "<<p<<std::endl;
+          }
         }
       }
     }

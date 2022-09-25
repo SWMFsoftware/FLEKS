@@ -30,7 +30,7 @@ void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
   // Assume 'dm' is the new dm.
   amrex::FabArray<FAB> tmp;
 
-  if (!dm.empty()) {
+  if (!baNew.empty()) {
     tmp.define(baNew, dm, nComp, nGst);
     tmp.setVal(-7777);
     if (doCopy && !fa.empty()) {
