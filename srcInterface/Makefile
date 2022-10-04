@@ -8,33 +8,33 @@ SRCS := \
 	SWMFInterface.cpp
 
 OBJS := $(patsubst %, %.o,$(basename $(SRCS)))
-OBJECTS = ${OBJS} PC_wrapper.o
+OBJECTS = ${OBJS} ${COMPONENT}_wrapper.o 
 
 include ../Makefile.conf
 
-PC_wrapper.o: ../include/SWMFInterface.h \
+${COMPONENT}_wrapper.o: ../include/SWMFInterface.h \
 	SWMFInterface.o \
 	${LIBRARYDIR}/CON_comp_info.o
 
 LIBFLEKS = ../src/libFLEKS.a
 
-LIBPC    = ${LIBDIR}/libPC.a
+MYLIB    = ${LIBDIR}/lib${COMPONENT}.a
 
 DEPEND:
 	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJS} ${OBJECTS_EXE}
 
 LIB:    ${LIBFLEKS} DEPEND
-	make ${LIBPC}
+	make ${MYLIB}
 	@echo
-	@echo ${LIBPC} has been brought up to date.
+	@echo ${MYLIB} has been brought up to date.
 	@echo
 
-${LIBPC}: ${OBJECTS} ${LIBFLEKS}
-	cp -f ${LIBFLEKS} ${LIBPC}
-	${AR} ${LIBPC} ${OBJECTS}
+${MYLIB}: ${OBJECTS} ${LIBFLEKS}
+	cp -f ${LIBFLEKS} ${MYLIB}
+	${AR} ${MYLIB} ${OBJECTS}
 
 clean:
-	-@(rm -f ${OBJECTS} ${LIBPC})
+	-@(rm -f ${OBJECTS} ${MYLIB})
 	-@(rm -rf .d)
 
 distclean: clean
