@@ -1,4 +1,4 @@
-#include "SWMFDomains.h"
+#include "SimDomains.h"
 //#include "linear_solver_wrapper_c.h" // Calling Fortran solver
 #include "LinearSolver.h"
 

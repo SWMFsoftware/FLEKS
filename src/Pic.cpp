@@ -5,7 +5,7 @@
 #include "GridUtility.h"
 #include "LinearSolver.h"
 #include "Pic.h"
-#include "SWMFDomains.h"
+#include "SimDomains.h"
 #include "Timer.h"
 #include "Utility.h"
 

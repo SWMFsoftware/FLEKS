@@ -7,7 +7,7 @@
 #include <AMReX_Print.H>
 
 #include "ReadParam.h"
-#include "SWMFDomains.h"
+#include "SimDomains.h"
 #include "FleksInterface.h"
 
 Domains fleksDomains;

@@ -2,7 +2,7 @@
 #include <AMReX_RealVect.H>
 
 #include "Pic.h"
-#include "SWMFDomains.h"
+#include "SimDomains.h"
 
 using namespace amrex;
 
