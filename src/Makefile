@@ -30,6 +30,8 @@ CONVERTEREXE = ../bin/converter.exe
 
 SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 
+FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_
+
 LIBFLEKS  = libFLEKS.a
 
 include ../Makefile.conf

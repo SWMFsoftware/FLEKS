@@ -12,6 +12,8 @@ OBJECTS = ${OBJS} ${COMPONENT}_wrapper.o
 
 include ../Makefile.conf
 
+FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_
+
 ${COMPONENT}_wrapper.o: ../include/SWMFInterface.h \
 	SWMFInterface.o \
 	${LIBRARYDIR}/CON_comp_info.o
