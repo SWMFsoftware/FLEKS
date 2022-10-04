@@ -79,7 +79,7 @@ contains
             Version    = 1.0)
     case('MPI')
        call get(CompInfo, iComm=iComm, iProc=iProc, nProc=nProc)
-       call pic_init_mpi(iComm, iProc, nProc)
+       call fleks_init_mpi(iComm, iProc, nProc)
     case('READ')
 
        ! get section of PARAM.in that contains the PT module
@@ -87,7 +87,7 @@ contains
        call read_text(StringLineF_I)
 
        if(n_line_read()-i_line_read() > 0) then
-          call pic_read_param(StringLineF_I, &
+          call fleks_read_param(StringLineF_I, &
                n_line_read()-i_line_read(), lStringLine,iProc)
        end if
     case('CHECK')
@@ -114,7 +114,7 @@ contains
 
     character(len=*), parameter :: NameSub='PT_init_session'
     !--------------------------------------------------------------------------
-    call pic_init(TimeSimulation)
+    call fleks_init(TimeSimulation)
 
   end subroutine PT_init_session
   !============================================================================
@@ -126,7 +126,7 @@ contains
 
     character(len=*), parameter :: NameSub='PT_finalize'
     !-------------------------------------------------------------------------
-    call pic_end()
+    call fleks_end()
 
   end subroutine PT_finalize
   !============================================================================
@@ -138,7 +138,7 @@ contains
 
     character(len=*), parameter :: NameSub='PT_save_restart'
     !--------------------------------------------------------------------------
-    call pic_save_restart()
+    call fleks_save_restart()
 
   end subroutine PT_save_restart
   !============================================================================
@@ -162,7 +162,7 @@ contains
          ' starting with TimeSimulation, TimeSimulationLimit=', &
          TimeSimulation, TimeSimulationLimit
 
-    call pic_run(PicTime)
+    call fleks_run(PicTime)
 
     TimeSimulation = PicTime
 
@@ -184,7 +184,7 @@ contains
     character(len=*), parameter :: NameSub = 'PT_get_grid_info'
     !--------------------------------------------------------------------------
     nDimOut    = nDim
-    call pic_get_grid_info(iGridOut, iDecompOut); 
+    call fleks_get_grid_info(iGridOut, iDecompOut); 
   end subroutine PT_get_grid_info
   !============================================================================
   
@@ -202,7 +202,7 @@ contains
     integer, intent(in)         :: nInt, nGrid
     integer, intent(in)         :: Int_I(nInt), nSize_I(nGrid)
     !--------------------------------------------------------------------------
-    call pic_set_grid_info(nInt, nSize_I, Int_I)
+    call fleks_set_grid_info(nInt, nSize_I, Int_I)
 
   end subroutine PT_put_from_oh_grid_info
   !============================================================================
@@ -219,7 +219,7 @@ contains
     !--------------------------------------------------------------------------
     ! store OH's nDim, so it is reported as PT's nDim for the point coupler
     nDim = iParam_I(1) 
-    call pic_from_gm_init(iParam_I, Param_I, NameVar)
+    call fleks_from_gm_init(iParam_I, Param_I, NameVar)
 
   end subroutine PT_put_from_oh_init
   !============================================================================
@@ -236,7 +236,7 @@ contains
 
     character(len=*), parameter:: NameSub = 'PT_find_points'
     !--------------------------------------------------------------------------
-    call pic_find_points(nPoint, Xyz_DI, iProc_I)
+    call fleks_find_points(nPoint, Xyz_DI, iProc_I)
 
   end subroutine PT_find_points
   !============================================================================
@@ -261,25 +261,25 @@ contains
     !--------------------------------------------------------------------------
     call CON_set_do_test(NameSub, DoTest, DoTestMe)
     if(.not. present(Data_VI))then
-       call pic_get_ngridpoints(nPoint)
+       call fleks_get_ngridpoints(nPoint)
 
        if(DoTest)write(*,*)NameSub,': iProc, nPoint = ', iProc, nPoint
 
        if(allocated(Pos_DI)) deallocate(Pos_DI)
        allocate(Pos_DI(nDim,nPoint))
 
-       call pic_get_grid(Pos_DI,nDim*nPoint)
+       call fleks_get_grid(Pos_DI,nDim*nPoint)
               
        RETURN
     end if
 
-    call pic_set_state_var(Data_VI, iPoint_I)
+    call fleks_set_state_var(Data_VI, iPoint_I)
 
     if(IsFirstTime)  then
        IsFirstTime = .false.
 
        ! Finishing the setup after the initial state is set from OH
-       call pic_finalize_init
+       call fleks_finalize_init
     end if
 
   end subroutine PT_put_from_oh
@@ -298,7 +298,7 @@ contains
 
     character(len=*), parameter :: NameSub='PT_get_for_oh'
     !--------------------------------------------------------------------------
-    call pic_get_state_var( &
+    call fleks_get_state_var( &
          nDimIn, nPoint, Xyz_DI, Data_VI, nVarIn)
   end subroutine PT_get_for_oh
   !============================================================================

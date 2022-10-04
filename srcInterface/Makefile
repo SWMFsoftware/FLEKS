@@ -5,7 +5,7 @@ SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 
 # source files
 SRCS := \
-	SWMFInterface.cpp
+	FleksInterface.cpp
 
 OBJS := $(patsubst %, %.o,$(basename $(SRCS)))
 OBJECTS = ${OBJS} ${COMPONENT}_wrapper.o 
@@ -14,8 +14,8 @@ include ../Makefile.conf
 
 FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_
 
-${COMPONENT}_wrapper.o: ../include/SWMFInterface.h \
-	SWMFInterface.o \
+${COMPONENT}_wrapper.o: ../include/FleksInterface.h \
+	FleksInterface.o \
 	${LIBRARYDIR}/CON_comp_info.o
 
 LIBFLEKS = ../src/libFLEKS.a
