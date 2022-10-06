@@ -36,7 +36,7 @@ Particles<NStructReal, NStructInt>::Particles(
     invDx[i] = Geom(0).InvCellSize(i);
     invVol *= invDx[i];
   }
-  
+
   // The following line is used to avoid an MPI bug (feature?) on Frontera. It
   // should be removed after the bug being fixed.
   SetUseUnlink(false);
@@ -910,7 +910,19 @@ void Particles<NStructReal, NStructInt>::mover(const amrex::MultiFab& nodeEMF,
                                                const amrex::MultiFab& nodeBMF,
                                                amrex::Real dt,
                                                amrex::Real dtNext) {
-  timing_func("Particles::mover");
+  if (is_neutral()) {
+    neutral_mover(dt);
+  } else {
+    charged_particle_mover(nodeEMF, nodeBMF, dt, dtNext);
+  }
+}
+
+//==========================================================
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::charged_particle_mover(
+    const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
+    amrex::Real dt, amrex::Real dtNext) {
+  timing_func("Particles::charged_particle_mover");
 
   const Real qdto2mc = charge / mass * 0.5 * dt;
   Real dtLoc = 0.5 * (dt + dtNext);
@@ -1017,6 +1029,47 @@ void Particles<NStructReal, NStructInt>::mover(const amrex::MultiFab& nodeEMF,
 
 //==========================================================
 template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::neutral_mover(amrex::Real dt) {
+  timing_func("Particles::neutral_mover");
+
+  const int lev = 0;
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+       ++pti) {
+
+    const Array4<int const>& status = cellStatus[pti].array();
+    // cellStatus[pti] is a FAB, and the box returned from the box() method
+    // already contains the ghost cells.
+    const Box& bx = cellStatus[pti].box();
+    const IntVect lowCorner = bx.smallEnd();
+    const IntVect highCorner = bx.bigEnd();
+
+    auto& particles = pti.GetArrayOfStructs();
+    for (auto& p : particles) {
+      const Real up = p.rdata(iup_);
+      const Real vp = p.rdata(ivp_);
+      const Real wp = p.rdata(iwp_);
+      const Real xp = p.pos(ix_);
+      const Real yp = p.pos(iy_);
+      const Real zp = p.pos(iz_);
+
+      p.pos(ix_) = xp + up * dt;
+      p.pos(iy_) = yp + vp * dt;
+      p.pos(iz_) = zp + wp * dt;
+
+      // Mark for deletion
+      if (is_outside_ba(p, status, lowCorner, highCorner)) {
+        p.id() = -1;
+      }
+    } // for p
+  }   // for pti
+
+  // This function distributes particles to proper processors and apply
+  // periodic boundary conditions if needed.
+  Redistribute();
+}
+
+//==========================================================
+template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::divE_correct_position(
     const amrex::MultiFab& phiMF) {
   timing_func("Particles::divE_correct_position");
@@ -1052,10 +1105,10 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         dShift[i] = dShift[i] - loIdx[i];
       }
 
-      // Since the boundary condition for solving phi is not perfect, correcting
-      // particles that are close to the boundaries may produce artificial
-      // oscillations, which are seen in Earth's magnetotail simulations. So, it
-      // is better to skip the boundary physical cells.
+      // Since the boundary condition for solving phi is not perfect,
+      // correcting particles that are close to the boundaries may produce
+      // artificial oscillations, which are seen in Earth's magnetotail
+      // simulations. So, it is better to skip the boundary physical cells.
       bool isBoundaryPhysicalCell = false;
       for (int ix = 0; ix <= 1; ix++)
         for (int iy = 0; iy <= 1; iy++)
@@ -1223,9 +1276,9 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
                 // Q: Why use '1e-6*ql' instead of `0'?
                 // A: If it is sorted by 'ql > qr', and all the particles in
                 // this cell
-                //   have the same weight, the particles are essentially sorted
-                //   by the last digit, which is random. The threshold '1e-6*ql'
-                //   is introduced to avoid the randomness.
+                //   have the same weight, the particles are essentially
+                //   sorted by the last digit, which is random. The threshold
+                //   '1e-6*ql' is introduced to avoid the randomness.
                 return ql - qr > 1e-6 * ql;
               });
     //----------------------------------------------------------------
@@ -1774,7 +1827,7 @@ IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
   Redistribute();
 }
 
-// Since Particles is a template, it is necessary to explicitly instantiate with
-// template arguments.
+// Since Particles is a template, it is necessary to explicitly instantiate
+// with template arguments.
 template class Particles<nPicPartReal>;
 template class Particles<nPTPartReal, nPTPartInt>;

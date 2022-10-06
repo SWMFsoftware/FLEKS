@@ -5,13 +5,11 @@
 #include <sstream>
 
 extern "C" {
-#ifdef _PT_COMPONENT_
 void OH_get_charge_exchange_wrapper(double *rhoIon, double *cs2Ion,
                                     double uIon_D[3], double *rhoNeu,
                                     double *cs2Neu, double uNeu_D[3],
                                     double sourceIon_V[5],
                                     double sourceNeu_V[5]);
-#endif
 }
 
 

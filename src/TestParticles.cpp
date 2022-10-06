@@ -17,17 +17,29 @@ TestParticles::TestParticles(amrex::AmrCore* amrcore,
 
   for (int iDim = 0; iDim < nDim; iDim++)
     nPartPerCell[iDim] = 2;
-
-  iStep = 0;
+  
   outputDir = "PC/plots/test_particles";
 
   nInitPart = 0;
 }
 
+//==========================================================
 void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
                                             const amrex::MultiFab& nodeBMF,
                                             amrex::Real dt, amrex::Real dtNext,
                                             amrex::Real tNowSI, bool doSave) {
+  if (is_neutral()) {
+    move_and_save_neutral(dt, tNowSI, doSave);
+  } else {
+    move_and_save_charged_particles(nodeEMF, nodeBMF, dt, dtNext, tNowSI,
+                                    doSave);
+  }
+}
+
+//==========================================================
+void TestParticles::move_and_save_charged_particles(
+    const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
+    amrex::Real dt, amrex::Real dtNext, amrex::Real tNowSI, bool doSave) {
   timing_func("TestParticles::mover");
 
   Real dtLoc = 0.5 * (dt + dtNext);
@@ -201,8 +213,64 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
   // This function distributes particles to proper processors and apply
   // periodic boundary conditions if needed.
   Redistribute();
+}
 
-  iStep++;
+//==========================================================
+void TestParticles::move_and_save_neutral(amrex::Real dt, amrex::Real tNowSI,
+                                          bool doSave) {
+  timing_func("TestParticles::mover");
+
+  const int lev = 0;
+  for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, lev); pti.isValid();
+       ++pti) {
+    const Array4<int const>& status = cellStatus[pti].array();
+    // cellStatus[pti] is a FAB, and the box returned from the box() method
+    // already contains the ghost cells.
+    const Box& bx = cellStatus[pti].box();
+    const IntVect lowCorner = bx.smallEnd();
+    const IntVect highCorner = bx.bigEnd();
+
+    auto& particles = pti.GetArrayOfStructs();
+    for (auto& p : particles) {
+      if (p.idata(iRecordCount_) >= nPTRecord) {
+        Abort("Error: there is not enough allocated memory to store the "
+              "particle record!!");
+      }
+
+      Real up = p.rdata(iup_);
+      Real vp = p.rdata(ivp_);
+      Real wp = p.rdata(iwp_);
+      const Real xp = p.pos(ix_);
+      const Real yp = p.pos(iy_);
+      const Real zp = p.pos(iz_);
+
+      p.pos(ix_) = xp + up * dt;
+      p.pos(iy_) = yp + vp * dt;
+      p.pos(iz_) = zp + wp * dt;
+
+      if (doSave) {
+        const int i0 = record_var_index(p.idata(iRecordCount_));
+        p.rdata(i0 + iTPt_) = tNowSI;
+        p.rdata(i0 + iTPu_) = p.rdata(iup_);
+        p.rdata(i0 + iTPv_) = p.rdata(ivp_);
+        p.rdata(i0 + iTPw_) = p.rdata(iwp_);
+        p.rdata(i0 + iTPx_) = p.pos(ix_);
+        p.rdata(i0 + iTPy_) = p.pos(iy_);
+        p.rdata(i0 + iTPz_) = p.pos(iz_);
+
+        p.idata(iRecordCount_) = p.idata(iRecordCount_) + 1;
+      }
+
+      // Mark for deletion
+      if (is_outside_ba(p, status, lowCorner, highCorner)) {
+        p.id() = -1;
+      }
+    }
+  }
+
+  // This function distributes particles to proper processors and apply
+  // periodic boundary conditions if needed.
+  Redistribute();
 }
 
 //======================================================================

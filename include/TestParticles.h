@@ -40,6 +40,13 @@ public:
                                amrex::Real dtNext, amrex::Real tNow,
                                bool doSave);
 
+  void move_and_save_charged_particles(const amrex::MultiFab& nodeEMF,
+                                       const amrex::MultiFab& nodeBMF,
+                                       amrex::Real dt, amrex::Real dtNext,
+                                       amrex::Real tNow, bool doSave);
+
+  void move_and_save_neutral(amrex::Real dt, amrex::Real tNow, bool doSave);
+
   void read_test_particle_list(const amrex::Vector<std::string>& listFiles);
 
   void add_test_particles_from_fluid(
@@ -115,7 +122,6 @@ public:
   void init_particle_number(unsigned long int in) { nInitPart = in; }
 
 private:
-  int iStep;
   std::string outputDir;
 
   std::string printPrefix;

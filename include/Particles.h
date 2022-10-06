@@ -160,6 +160,12 @@ public:
   void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
              amrex::Real dt, amrex::Real dtNext);
 
+  void charged_particle_mover(const amrex::MultiFab& nodeEMF,
+                    const amrex::MultiFab& nodeBMF, amrex::Real dt,
+                    amrex::Real dtNext);
+
+  void neutral_mover(amrex::Real dt);
+
   void update_position_to_half_stage(const amrex::MultiFab& nodeEMF,
                                      const amrex::MultiFab& nodeBMF,
                                      amrex::Real dt);
@@ -256,6 +262,8 @@ public:
   void divE_correct_position(const amrex::MultiFab& phiMF);
 
   amrex::Real get_qom() { return charge / mass; }
+
+  bool is_neutral() const { return charge == 0; };
 
   int get_speciesID() const { return speciesID; }
   amrex::Real get_charge() const { return charge; }
