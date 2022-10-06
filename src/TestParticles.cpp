@@ -17,7 +17,7 @@ TestParticles::TestParticles(amrex::AmrCore* amrcore,
 
   for (int iDim = 0; iDim < nDim; iDim++)
     nPartPerCell[iDim] = 2;
-  
+
   outputDir = "PC/plots/test_particles";
 
   nInitPart = 0;
@@ -29,7 +29,7 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
                                             amrex::Real dt, amrex::Real dtNext,
                                             amrex::Real tNowSI, bool doSave) {
   if (is_neutral()) {
-    move_and_save_neutral(dt, tNowSI, doSave);
+    move_and_save_neutrals(dt, tNowSI, doSave);
   } else {
     move_and_save_charged_particles(nodeEMF, nodeBMF, dt, dtNext, tNowSI,
                                     doSave);
@@ -40,7 +40,7 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
 void TestParticles::move_and_save_charged_particles(
     const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
     amrex::Real dt, amrex::Real dtNext, amrex::Real tNowSI, bool doSave) {
-  timing_func("TestParticles::mover");
+  timing_func("TestParticles::move_charged_particles");
 
   Real dtLoc = 0.5 * (dt + dtNext);
 
@@ -216,9 +216,9 @@ void TestParticles::move_and_save_charged_particles(
 }
 
 //==========================================================
-void TestParticles::move_and_save_neutral(amrex::Real dt, amrex::Real tNowSI,
-                                          bool doSave) {
-  timing_func("TestParticles::mover");
+void TestParticles::move_and_save_neutrals(amrex::Real dt, amrex::Real tNowSI,
+                                           bool doSave) {
+  timing_func("TestParticles::move_neutrals");
 
   const int lev = 0;
   for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, lev); pti.isValid();

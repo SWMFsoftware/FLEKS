@@ -45,7 +45,7 @@ public:
                                        amrex::Real dt, amrex::Real dtNext,
                                        amrex::Real tNow, bool doSave);
 
-  void move_and_save_neutral(amrex::Real dt, amrex::Real tNow, bool doSave);
+  void move_and_save_neutrals(amrex::Real dt, amrex::Real tNow, bool doSave);
 
   void read_test_particle_list(const amrex::Vector<std::string>& listFiles);
 
