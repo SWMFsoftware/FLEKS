@@ -136,8 +136,10 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   cGrid = centerBAIn;
   nGrid = convert(cGrid, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
-  // This method will call MakeNewLevelFromScratch() and PostProcessBaseGrids()
+
   if (!cGrid.empty()) {
+    // This method will call MakeNewLevelFromScratch() and
+    // PostProcessBaseGrids()
     InitFromScratch(tc->get_time());
     SetDistributionMap(0, dmIn);
   }

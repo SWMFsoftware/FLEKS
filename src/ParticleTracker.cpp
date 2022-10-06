@@ -136,7 +136,12 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
   cGrid = centerBAIn;
   nGrid = convert(cGrid, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
 
-  SetDistributionMap(0, dmIn);
+  if (!cGrid.empty()) {
+    // This method will call MakeNewLevelFromScratch() and
+    // PostProcessBaseGrids()
+    InitFromScratch(tc->get_time());
+    SetDistributionMap(0, dmIn);
+  }
 
   distribute_FabArray(nodeE, nGrid, DistributionMap(0), 3, nGst, false);
   distribute_FabArray(nodeB, nGrid, DistributionMap(0), 3, nGst, false);

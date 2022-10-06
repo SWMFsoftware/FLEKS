@@ -31,7 +31,7 @@ public:
   void init(std::shared_ptr<FluidInterface> &fluidIn,
             std::shared_ptr<TimeCtr> &tcIn, int id = 0);
 
-  void post_process_param();  
+  void post_process_param();
 
   void regrid(const amrex::BoxArray &activeRegionBAIn,
               const amrex::BoxArray &centerBAIn,
@@ -48,13 +48,9 @@ public:
   void save_restart_header(std::ofstream &headerFile);
   void read_restart();
   void read_param(const std::string &command, ReadParam &param);
-
+  
 private:
   bool usePT = false;
-
-  std::string printPrefix;
-  std::string gridName;
-  int gridID;
 
   std::shared_ptr<FluidInterface> fi;
   std::shared_ptr<TimeCtr> tc;
