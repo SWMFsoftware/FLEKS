@@ -608,7 +608,7 @@ void FluidInterface::receive_info_from_gm(const int* const paramint,
 /** print info for coupling */
 void FluidInterface::print_info() const {
 
-  if (myrank == 0) {
+  if (ParallelDescriptor::MyProc() == 0) {
     cout << endl;
     cout.precision(15);
     cout << printPrefix << "Number of PIC species     = " << nS << endl;

@@ -39,8 +39,6 @@ private:
   bool isGridInitialized = false;
   bool isGridEmpty = false;
 
-  int myrank;
-
   int nCellPerPatch;
 
   int nDimFluid;
@@ -115,14 +113,12 @@ private:
 public:
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
                  int nGst, int id)
-      : Grid(gm, amrInfo, nGst, id) {
-    myrank = amrex::ParallelDescriptor::MyProc();
-  }
+      : Grid(gm, amrInfo, nGst, id) {}
   ~FluidInterface() = default;
   FluidInterface& operator=(const FluidInterface& other) = default;
   void receive_info_from_gm(const int* const paramInt,
                             const double* const gridDim,
-                            const double* const paramDouble);  
+                            const double* const paramDouble);
 
   void regrid(const amrex::BoxArray& centerBAIn,
               const amrex::DistributionMapping& dmIn);
