@@ -55,6 +55,10 @@ void ParticleTracker::update(Pic& pic) {
                                  tc->get_time_si(),
                                  tc->get_cycle() % dnSave == 0);
 
+    //std::array<Real, 5> moments;
+    //moments = tps->total_moments();
+      
+
     if (doSave) {
       Print() << printPrefix << "particle number of species " << i
               << ": initial = " << tps->init_particle_number()

@@ -145,6 +145,8 @@ public:
   amrex::Real sum_moments(amrex::MultiFab& momentsMF, amrex::MultiFab& nodeBMF,
                           amrex::Real dt);
 
+  std::array<amrex::Real, 5> total_moments(bool localOnly = false);
+
   void calc_mass_matrix(amrex::UMultiFab<RealMM>& nodeMM, amrex::MultiFab& jHat,
                         amrex::MultiFab& nodeBMF, amrex::Real dt);
 
@@ -161,8 +163,8 @@ public:
              amrex::Real dt, amrex::Real dtNext);
 
   void charged_particle_mover(const amrex::MultiFab& nodeEMF,
-                    const amrex::MultiFab& nodeBMF, amrex::Real dt,
-                    amrex::Real dtNext);
+                              const amrex::MultiFab& nodeBMF, amrex::Real dt,
+                              amrex::Real dtNext);
 
   void neutral_mover(amrex::Real dt);
 

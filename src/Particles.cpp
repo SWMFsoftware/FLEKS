@@ -425,6 +425,46 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
+std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
+    bool localOnly) {
+  timing_func("Particles::total_moments");
+
+  std::array<Real, 5> sum = { 0, 0, 0, 0, 0 };
+
+  for (int i = 0; i < 5; i++)
+    sum[i] = 0;
+
+  const int lev = 0;
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+       ++pti) {
+    const auto& particles = pti.GetArrayOfStructs();
+    for (const auto& p : particles) {
+      const Real up = p.rdata(iup_);
+      const Real vp = p.rdata(ivp_);
+      const Real wp = p.rdata(iwp_);
+      const Real qp = p.rdata(iqp_);
+
+      sum[0] += qp;
+      sum[1] += qp * up;
+      sum[2] += qp * vp;
+      sum[3] += qp * wp;
+      sum[4] += 0.5 * qp * (up * up + vp * vp + wp * wp);
+    }
+  }
+
+  for (int i = 0; i < 5; i++)
+    sum[i] /= get_qom();
+
+  if (!localOnly) {
+    ParallelDescriptor::ReduceRealSum(sum.data(), sum.size(),
+                                      ParallelDescriptor::IOProcessorNumber());
+  }
+
+  return sum;
+}
+
+//==========================================================
+template <int NStructReal, int NStructInt>
 Real Particles<NStructReal, NStructInt>::sum_moments(MultiFab& momentsMF,
                                                      MultiFab& nodeBMF,
                                                      Real dt) {
