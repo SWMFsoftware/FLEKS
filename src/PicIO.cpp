@@ -489,7 +489,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
 
   if (doCreateFile && ParallelDescriptor::IOProcessor()) {
     std::stringstream ss;
-    ss << "PC/plots/log_n" << std::setfill('0') << std::setw(8)
+    ss << "PC/plots/log_pic_n" << std::setfill('0') << std::setw(8)
        << tc->get_cycle() << ".log";
     logFile = ss.str();
     std::ofstream of(logFile.c_str());
@@ -500,7 +500,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
     of.close();
   }
 
-  if (tc->log.is_time_to(doForce)) {
+  if (tc->picLog.is_time_to(doForce)) {
     ParallelDescriptor::ReduceRealSum(plasmaEnergy.data(), plasmaEnergy.size(),
                                       ParallelDescriptor::IOProcessorNumber());
 

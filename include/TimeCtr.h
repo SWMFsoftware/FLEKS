@@ -72,7 +72,9 @@ private:
 public:
   amrex::Vector<PlotCtr> plots;
 
-  EventCtr log;
+  EventCtr picLog;
+
+  EventCtr ptLog;
 
   EventCtr loadBalance;
 
@@ -89,7 +91,8 @@ public:
         si2no(1),
         no2si(1),
         cycle(0),
-        log(this, -1, 1),
+        picLog(this, -1, 10),
+        ptLog(this, -1, 10),
         loadBalance(this, -1, -1),
         monitor(this, -1, 10) {}
 

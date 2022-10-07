@@ -48,7 +48,8 @@ public:
   void save_restart_header(std::ofstream &headerFile);
   void read_restart();
   void read_param(const std::string &command, ReadParam &param);
-  
+  void write_log(bool doForce = false, bool doCreateFile = false);
+
 private:
   bool usePT = false;
 
@@ -77,6 +78,8 @@ private:
   bool doInitFromPIC = false;
 
   amrex::Vector<Vel> tpStates;
+
+  std::string logFile;
 };
 
 #endif

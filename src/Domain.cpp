@@ -36,6 +36,7 @@ void Domain::update() {
   pic->write_log();
 
   pt->update(*pic);
+  pt->write_log();
 };
 
 //========================================================
@@ -211,6 +212,7 @@ void Domain::set_ic() {
   pic->write_log(true, true);
 
   pt->set_ic(*pic);
+  pt->write_log(true, true);
 }
 
 //========================================================
@@ -254,11 +256,13 @@ void Domain::read_restart() {
   pt->regrid(baPic, baPic, dmPic, *pic);
 
   fi->read_restart();
-  pic->read_restart();
-  pt->read_restart();
 
+  pic->read_restart();
   write_plots(true);
   pic->write_log(true, true);
+
+  pt->read_restart();
+  pt->write_log(true, true);
 }
 
 //========================================================
@@ -506,8 +510,10 @@ void Domain::read_param(const bool readGridInfoOnly) {
 
     } else if (command == "#SAVELOG") {
       int dn;
-      param.read_var("dnSave", dn);
-      tc->log.init(-1, dn);
+      param.read_var("dnSavePic", dn);
+      tc->picLog.init(-1, dn);
+      param.read_var("dnSavePT", dn);
+      tc->ptLog.init(-1, dn);
     } else if (command == "#MONITOR") {
       int dn;
       param.read_var("dnReport", dn);

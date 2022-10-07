@@ -35,6 +35,50 @@ void ParticleTracker::set_ic(Pic& pic) {
   }
 }
 
+//==========================================================
+void ParticleTracker::write_log(bool doForce, bool doCreateFile) {
+  if (isGridEmpty || !usePT)
+    return;
+
+  if (doCreateFile && ParallelDescriptor::IOProcessor()) {
+    std::stringstream ss;
+    ss << "PC/plots/log_pt_n" << std::setfill('0') << std::setw(8)
+       << tc->get_cycle() << ".log";
+    logFile = ss.str();
+    std::ofstream of(logFile.c_str());
+    of << "time nStep ";
+    for (int i = 0; i < nSpecies; i++)
+      of << " mass_" << i << " moment_x_" << i << " moment_y_" << i
+         << " moment_z_" << i << " energy_" << i;
+
+    of << std::endl;
+    of.close();
+  }
+
+  if (tc->ptLog.is_time_to(doForce)) {
+
+    Vector<std::array<Real, 5> > moments;
+    for (int i = 0; i < parts.size(); i++) {
+      moments.push_back(parts[i]->total_moments());
+    }
+
+    if (ParallelDescriptor::IOProcessor()) {
+      std::ofstream of(logFile.c_str(), std::fstream::app);
+      of.precision(15);
+      of << std::scientific;
+      of << tc->get_time_si() << "\t" << tc->get_cycle();
+
+      for (int i = 0; i < parts.size(); i++) {
+        for (auto& m : moments[i])
+          of << "\t" << m;
+      }
+      of << std::endl;
+      of.close();
+    }
+  }
+}
+
+//==========================================================
 void ParticleTracker::update(Pic& pic) {
   std::string funcName = "PTracker::update";
   timing_func(funcName);
@@ -54,10 +98,6 @@ void ParticleTracker::update(Pic& pic) {
     tps->move_and_save_particles(nodeE, nodeB, tc->get_dt(), tc->get_next_dt(),
                                  tc->get_time_si(),
                                  tc->get_cycle() % dnSave == 0);
-
-    //std::array<Real, 5> moments;
-    //moments = tps->total_moments();
-      
 
     if (doSave) {
       Print() << printPrefix << "particle number of species " << i

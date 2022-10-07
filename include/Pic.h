@@ -111,6 +111,8 @@ private:
 
   bool doReport = false;
 
+  std::string logFile;
+
   // public methods
 public:
   Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo, int nGst,
@@ -251,7 +253,6 @@ public:
   void save_restart_header(std::ofstream &headerFile);
   void save_restart_data();
   void read_restart();
-  std::string logFile;
   void write_log(bool doForce = false, bool doCreateFile = false);
   void write_plots(bool doForce = false);
   void write_amrex(const PlotWriter &pw, double const timeNow,
