@@ -1,6 +1,7 @@
 #include <AMReX_PlotFileUtil.H>
 #include <AMReX_RealVect.H>
 
+#include "GridUtility.h"
 #include "Pic.h"
 #include "SimDomains.h"
 
@@ -559,10 +560,6 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
 
   std::string dirName = pw.get_amrex_filename(timeNow, iCycle);
 
-  // Saving field/coordinates information. It seems it is required by yt, but I
-  // do not 100% sure whether it is necessary at this point. --Yuxi
-  write_amrex_field(pw, timeNow, iCycle, "E B", dirName);
-
   Vector<int> writeRealComp;
   for (int i = 0; i < nPicPartReal; ++i) {
     writeRealComp.push_back(1);
@@ -578,8 +575,6 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
   Vector<int> writeIntComp;
   Vector<std::string> intCompNames;
 
-  Geometry geomOut;
-  set_IO_geom(geomOut, pw);
   Real no2outL = pw.No2OutTable("X");
   Real no2outV = pw.No2OutTable("u");
   Real no2outM = pw.No2OutTable("mass");
@@ -592,10 +587,14 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
       outRange.setHi(iDim, pw.get_plotMax_D(iDim) * no2outL);
     }
 
-  Grid gridIO(geomOut, AmrInfo(), 0, -gridID);
-
-  IOParticles particlesOut(*parts[iSpecies].get(), &gridIO, no2outL, no2outV,
+  IOParticles particlesOut(*parts[iSpecies].get(), this, no2outL, no2outV,
                            no2outM, outRange);
+
+  // Saving field/coordinates information. It is required by yt for unknown
+  // reasons.
+  const int lev = 0;
+  write_amrex_field(pw, timeNow, iCycle, "E B", dirName,
+                    particlesOut.ParticleBoxArray(lev));
 
   particlesOut.WritePlotFile(dirName, "particle", writeRealComp, writeIntComp,
                              realCompNames, intCompNames);
@@ -618,7 +617,8 @@ void Pic::set_IO_geom(amrex::Geometry& geomIO, const PlotWriter& pw) {
 //==========================================================
 void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
                             int const iCycle, const std::string plotVars,
-                            const std::string filenameIn) {
+                            const std::string filenameIn,
+                            const BoxArray baOut) {
   Print() << "amrex::" << pw.get_amrex_filename(timeNow, iCycle) << std::endl;
 
   Geometry geomOut;
@@ -764,6 +764,10 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   std::string filename = pw.get_amrex_filename(timeNow, iCycle);
   if (!filenameIn.empty()) {
     filename = filenameIn;
+  }
+
+  if (!baOut.empty()) {
+    distribute_FabArray(centerMF, baOut, DistributionMapping(baOut));
   }
 
   WriteSingleLevelPlotfile(filename, centerMF, varNames, geomOut, timeNow,

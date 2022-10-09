@@ -260,7 +260,8 @@ public:
   void write_amrex_field(const PlotWriter &pw, double const timeNow,
                          int const iCycle,
                          const std::string plotVars = "X E B plasma",
-                         const std::string filenameIn = std::string());
+                         const std::string filenameIn = std::string(),
+                         const amrex::BoxArray baOut = amrex::BoxArray());
   void write_amrex_particle(const PlotWriter &pw, double const timeNow,
                             int const iCycle);
 
