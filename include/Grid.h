@@ -78,6 +78,8 @@ public:
   };
   ~Grid() = default;
 
+  void set_base_grid(const amrex::BoxArray& ba) { cGrid = ba; }
+
   bool is_grid_empty() const { return isGridEmpty; }
 
   inline int find_mpi_rank_from_coord(amrex::Real const x, amrex::Real const y,

@@ -1865,31 +1865,6 @@ IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
       plevel[index].push_back(p);
     }
   }
-
-  auto lo = IORange.lo();
-  auto hi = IORange.hi();
-  IntVect cellLo, cellHi;
-  for (int i = 0; i < 3; i++) {
-    cellLo[i] = fastfloor((lo[i] / no2outL - plo[i]) * invDx[i]);
-    cellHi[i] = fastfloor((hi[i] / no2outL - plo[i]) * invDx[i]);
-  }
-
-  const Box& gbx = convert(Geom(0).Domain(), { 0, 0, 0 });
-  const bool isFake2D = gbx.bigEnd(iz_) == gbx.smallEnd(iz_);
-  if (isFake2D) {
-    cellLo[iz_] = 0;
-    cellHi[iz_] = 0;
-  }
-
-  BoxArray baIO(Box(cellLo, cellHi));
-  baIO.maxSize(IntVect(8, 8, 8));
-
-  SetParticleBoxArray(lev, baIO);
-  if (!baIO.empty()) {
-    DistributionMapping dm(baIO);
-    SetParticleDistributionMap(lev, dm);
-  }
-
   Redistribute();
 }
 

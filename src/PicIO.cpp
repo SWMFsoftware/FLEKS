@@ -587,14 +587,50 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
       outRange.setHi(iDim, pw.get_plotMax_D(iDim) * no2outL);
     }
 
-  IOParticles particlesOut(*parts[iSpecies].get(), this, no2outL, no2outV,
+  BoxArray baIO;
+  {
+    // Find the box that contains the output region.
+    const auto lo = outRange.lo();
+    const auto hi = outRange.hi();
+
+    const auto plo = Geom(0).ProbLo();
+    const auto plh = Geom(0).ProbHi();
+    const auto dx = Geom(0).CellSize();
+
+    IntVect cellLo, cellHi;
+
+    for (int i = 0; i < 3; i++) {
+      cellLo[i] = fastfloor((lo[i] / no2outL - plo[i]) / dx[i]);
+      cellHi[i] = fastfloor((hi[i] / no2outL - plo[i]) / dx[i]);
+    }
+
+    if (isFake2D) {
+      cellLo[iz_] = 0;
+      cellHi[iz_] = 0;
+    }
+
+    baIO.define(Box(cellLo, cellHi));
+    baIO.maxSize(IntVect(8, 8, 8));
+  }
+
+  // Create a new grid for saving data in IO units
+  Geometry geomOut;
+  set_IO_geom(geomOut, pw);
+
+  AmrInfo amrInfo;
+  amrInfo.blocking_factor.clear();
+  amrInfo.blocking_factor.push_back(IntVect(1, 1, 1));
+
+  Grid gridIO(geomOut, amrInfo, 0, -gridID);
+  gridIO.set_base_grid(baIO);
+  gridIO.InitFromScratch(0.0);
+
+  IOParticles particlesOut(*parts[iSpecies].get(), &gridIO, no2outL, no2outV,
                            no2outM, outRange);
 
   // Saving field/coordinates information. It is required by yt for unknown
   // reasons.
-  const int lev = 0;
-  write_amrex_field(pw, timeNow, iCycle, "E B", dirName,
-                    particlesOut.ParticleBoxArray(lev));
+  write_amrex_field(pw, timeNow, iCycle, "E B", dirName, baIO);
 
   particlesOut.WritePlotFile(dirName, "particle", writeRealComp, writeIntComp,
                              realCompNames, intCompNames);
