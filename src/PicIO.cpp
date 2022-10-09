@@ -581,14 +581,16 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
 
   RealBox outRange;
 
-  if (pw.get_plotString().find("cut") != std::string::npos)
+  bool isCut = pw.get_plotString().find("cut") != std::string::npos;
+
+  if (isCut)
     for (int iDim = 0; iDim < nDim; iDim++) {
       outRange.setLo(iDim, pw.get_plotMin_D(iDim) * no2outL);
       outRange.setHi(iDim, pw.get_plotMax_D(iDim) * no2outL);
     }
 
   BoxArray baIO;
-  {
+  if(isCut){
     // Find the box that contains the output region.
     const auto lo = outRange.lo();
     const auto hi = outRange.hi();
@@ -611,6 +613,8 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
 
     baIO.define(Box(cellLo, cellHi));
     baIO.maxSize(IntVect(8, 8, 8));
+  }else{
+    baIO = cGrid;
   }
 
   // Create a new grid for saving data in IO units
