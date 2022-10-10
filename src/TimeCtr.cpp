@@ -1,8 +1,10 @@
 #include "TimeCtr.h"
 #include "Domain.h"
 
-EventCtr::EventCtr(TimeCtr *tcIn, const amrex::Real dtIn, const int dnIn) {
+EventCtr::EventCtr(TimeCtr *tcIn, const amrex::Real dtIn, const int dnIn,
+                   const int multipleIn) {
   tc = tcIn;
+  multiple = multipleIn;
   init(dtIn, dnIn);
 }
 
@@ -45,6 +47,13 @@ bool EventCtr::is_time_to(bool doForce) {
   if (useDn && tc->get_cycle() >= nNext) {
     nLast = tc->get_cycle();
     nNext = nLast + dnEvent;
+
+    // Example: assume the test particle save frequency is dn=7, and it writes
+    // to disk for every 20 records, so dnEvent = 140. If it restarts from
+    // ncycle=400, nNext is 540 so far. But 540 can not be divided by dn=7. With
+    // the following line, test particles will be flushed to disk at cycle=539.
+    nNext = floor(float(nNext) / multiple) * multiple;
+
     isTime = true;
   }
 

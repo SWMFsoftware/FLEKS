@@ -28,13 +28,17 @@ private:
   int nLast;
   int nNext;
   bool useDn;
+  int multiple;
 
 public:
-  EventCtr(TimeCtr *tcIn, const amrex::Real dtIn = -1, const int dnIn = -1);
+  EventCtr(TimeCtr *tcIn, const amrex::Real dtIn = -1, const int dnIn = -1,
+           const int dnMultipleIn = 1);
 
   void init(const amrex::Real dtIn, const int dnIn = -1);
 
   bool is_time_to(bool doForce = false);
+
+  void set_multiple(const int in) { multiple = in; }
 };
 
 class PlotCtr : public EventCtr {

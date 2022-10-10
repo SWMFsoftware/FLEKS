@@ -157,6 +157,7 @@ void ParticleTracker::update_cell_status(Pic& pic) {
 void ParticleTracker::post_process_param() {
   savectr = std::unique_ptr<PlotCtr>(
       new PlotCtr(tc.get(), gridID, -1, nPTRecord * dnSave));
+  savectr->set_multiple(dnSave);
 }
 
 void ParticleTracker::regrid(const BoxArray& ptRegionIn,
