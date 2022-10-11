@@ -185,6 +185,21 @@ The unit and frequence of saving test particles.
 
 </command>
 
+<command name="NOUTFILE"
+	 alias="NOUTFILE_FLEKS0,NOUTFILE_FLEKS1,NOUTFILE_FLEKS2"
+	 multiple="T">
+  <parameter name="nFileField" type="integer" default="64"/>
+  <parameter name="nFileParticle" type="integer" default="256"/>
+  
+
+#NOUTFILE
+64                  nFileField
+256                 nFileParticle
+
+Number of files per AMREX format field or particle output. 
+
+</command>
+
 </commandgroup>
 
 <commandgroup name="Scheme">

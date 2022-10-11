@@ -12,6 +12,9 @@ private:
 
   ReadParam param;
 
+  // Number of files per AMREX output.
+  int nFileField = 64, nFileParticle = 256;
+
 public:
   // Q: Why are pic and pt defined as pointers?
   // A: Pic and particleTracker are derived from AmrCore, whose initialization

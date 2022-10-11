@@ -273,7 +273,6 @@ void Domain::save_restart() {
 
 //========================================================
 void Domain::save_restart_data() {
-  VisMF::SetNOutFiles(64);
   fi->save_restart_data();
   pic->save_restart_data();
   pt->save_restart_data();
@@ -472,6 +471,9 @@ void Domain::read_param(const bool readGridInfoOnly) {
       fi->set_ohm_u(sOhmU);
     } else if (command == "#RESTART") {
       param.read_var("doRestart", doRestart);
+    } else if (command == "#NOUTFILE") {
+      param.read_var("nFileField", nFileField);
+      param.read_var("nFileParticle", nFileParticle);
     } else if (command == "#PARTICLESTAGGERING") {
       bool doStaggering;
       param.read_var("doStaggering", doStaggering);
@@ -648,6 +650,11 @@ void Domain::read_param(const bool readGridInfoOnly) {
     pic->post_process_param();
     pt->post_process_param();
   }
+
+  VisMF::SetNOutFiles(nFileField);
+
+  ParmParse pp("particles");
+  pp.add("particles_nfiles", nFileParticle);
 }
 
 //========================================================
