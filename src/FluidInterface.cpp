@@ -400,10 +400,19 @@ void FluidInterface::calc_mag_base_vector(const double Bx, const double By,
   norm_DD(Perp2_, Z_) *= inv;
 }
 
-// Data recived from SWMF coupler
-void FluidInterface::receive_info_from_gm(const int* const paramint,
-                                          const double* const ParamRealRegion,
-                                          const double* const ParamRealComm) {
+void FluidInterface::init(const int* const paramint,
+                          const double* const ParamRealRegion,
+                          const double* const ParamRealComm) {
+  const bool initFromSWMF = !(paramint == nullptr);
+  if (initFromSWMF) {
+    init_from_swmf(paramint, ParamRealRegion, ParamRealComm);
+    return;
+  }
+}
+
+void FluidInterface::init_from_swmf(const int* const paramint,
+                                    const double* const ParamRealRegion,
+                                    const double* const ParamRealComm) {
 
   nDimFluid = paramint[0];
   nVarFluid = paramint[2];

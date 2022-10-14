@@ -32,12 +32,12 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
     Geometry gmTmp;
     gmTmp.define(bTmp, rbTmp, coord, { 1, 1, 1 });
     FluidInterface fiTmp(gmTmp, amrInfo, nGst, gridID);
-    fiTmp.receive_info_from_gm(paramInt, gridDim, paramReal);
+    fiTmp.init(paramInt, gridDim, paramReal);
     prepare_grid_info(fiTmp);
   }
 
   fi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID);
-  fi->receive_info_from_gm(paramInt, gridDim, paramReal);
+  fi->init_from_swmf(paramInt, gridDim, paramReal);
 
   pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi, tc, gridID);
 

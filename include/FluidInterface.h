@@ -116,9 +116,13 @@ public:
       : Grid(gm, amrInfo, nGst, id) {}
   ~FluidInterface() = default;
   FluidInterface& operator=(const FluidInterface& other) = default;
-  void receive_info_from_gm(const int* const paramInt,
-                            const double* const gridDim,
-                            const double* const paramDouble);
+
+  void init(const int* const paramInt = nullptr,
+            const double* const gridDim = nullptr,
+            const double* const paramDouble = nullptr);
+
+  void init_from_swmf(const int* const paramInt, const double* const gridDim,
+                      const double* const paramDouble);
 
   void regrid(const amrex::BoxArray& centerBAIn,
               const amrex::DistributionMapping& dmIn);
