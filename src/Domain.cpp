@@ -4,42 +4,6 @@
 using namespace amrex;
 
 //========================================================
-void Domain::update() {
-  std::string funcName = "Domain::update";
-  timing_func(funcName);
-
-  bool doReport = tc->monitor.is_time_to();
-
-  if (pic->is_grid_empty()) {
-    if (tc->get_dt_si() <= 0) {
-      tc->set_dt_si(tc->get_dummy_dt_si());
-    }
-  }
-
-  const Real t0 = tc->get_time_si();
-  // update time, step number.
-  tc->update();
-
-  if (doReport) {
-    const Real t1 = tc->get_time_si();
-    Print() << "\n==== " << printPrefix << " Cycle " << tc->get_cycle()
-            << " from t = " << std::setprecision(6) << t0
-            << " (s) to t = " << std::setprecision(6) << t1
-            << " (s) with dt = " << std::setprecision(6) << tc->get_dt_si()
-            << " (s) ====" << std::endl;
-  }
-
-  pic->update(doReport);
-
-  write_plots();
-
-  pic->write_log();
-
-  pt->update(*pic);
-  pt->write_log();
-};
-
-//========================================================
 void Domain::init(double time, const std::string &paramString, int *paramInt,
                   double *gridDim, double *paramReal, int iDomain) {
   if (AMREX_SPACEDIM != 3)
@@ -92,6 +56,42 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
     // may change again during coupling.
     read_restart();
   }
+};
+
+//========================================================
+void Domain::update() {
+  std::string funcName = "Domain::update";
+  timing_func(funcName);
+
+  bool doReport = tc->monitor.is_time_to();
+
+  if (pic->is_grid_empty()) {
+    if (tc->get_dt_si() <= 0) {
+      tc->set_dt_si(tc->get_dummy_dt_si());
+    }
+  }
+
+  const Real t0 = tc->get_time_si();
+  // update time, step number.
+  tc->update();
+
+  if (doReport) {
+    const Real t1 = tc->get_time_si();
+    Print() << "\n==== " << printPrefix << " Cycle " << tc->get_cycle()
+            << " from t = " << std::setprecision(6) << t0
+            << " (s) to t = " << std::setprecision(6) << t1
+            << " (s) with dt = " << std::setprecision(6) << tc->get_dt_si()
+            << " (s) ====" << std::endl;
+  }
+
+  pic->update(doReport);
+
+  write_plots();
+
+  pic->write_log();
+
+  pt->update(*pic);
+  pt->write_log();
 };
 
 //========================================================
