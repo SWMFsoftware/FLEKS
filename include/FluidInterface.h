@@ -39,7 +39,7 @@ private:
   bool isGridInitialized = false;
   bool isGridEmpty = false;
 
-  int nCellPerPatch;
+  int nCellPerPatch = 4;
 
   int nDimFluid;
 
@@ -50,27 +50,33 @@ private:
 
   // Rotation matrix.
   double R_DD[3][3];
-  bool doRotate;
+  bool doRotate = false;
 
   // Number of variables passing between MHD and PIC.
   int nVarFluid;
+
+  // nVarFluid + (Jx, Jy, Jz)
+  int nVarCoupling;
 
   // Number of fluid at the MHD side. One 'fluid' has its own density,
   // velocity and pressure. Electron can be one fluid.
   int nFluid;
 
   // Number of ion fluid at the MHD side.
-  int nIonFluid;
+  int nIonFluid = -1;
 
   // Number of species at the MHD side. One 'species' only has its own density.
-  int nSpeciesFluid;
+  int nSpeciesFluid = 0;
 
   // Total number of ion/electron species exit in the fluid code.
-  int nIon;
+  int nIon = -1;
 
-  int nVarCoupling;
-
-  bool useMultiSpecies, useMultiFluid, useElectronFluid, useAnisoP, useMhdPe;
+  // These default flags are set for stand-alone PIC initialization
+  bool useMultiSpecies = false;
+  bool useMultiFluid = false;
+  bool useElectronFluid = true;
+  bool useAnisoP = true;
+  bool useMhdPe = false;
 
   //-------------------------------------------------------------------
   int nS;                       // number of particle species
@@ -112,17 +118,17 @@ private:
 
 public:
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-                 int nGst, int id)
-      : Grid(gm, amrInfo, nGst, id) {}
+                 int nGst, int id, const int* const iParam,
+                 const double* const paramRegion,
+                 const double* const paramComm);
+
+  FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
+                 int nGst, int id);
+
   ~FluidInterface() = default;
   FluidInterface& operator=(const FluidInterface& other) = default;
 
-  void init(const int* const paramInt = nullptr,
-            const double* const gridDim = nullptr,
-            const double* const paramDouble = nullptr);
-
-  void init_from_swmf(const int* const paramInt, const double* const gridDim,
-                      const double* const paramDouble);
+  void set_var_idx();
 
   void regrid(const amrex::BoxArray& centerBAIn,
               const amrex::DistributionMapping& dmIn);

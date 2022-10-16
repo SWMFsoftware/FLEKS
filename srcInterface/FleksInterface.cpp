@@ -52,18 +52,18 @@ int fleks_read_param_(char *paramIn, int *nlines, int *ncharline, int *iProc) {
 }
 
 //==========================================================
-int fleks_from_gm_init_(int *paramint, double *paramreal, char *NameVar) {
+int fleks_from_gm_init_(int *iParam, double *paramreal, char *NameVar) {
   if (isInitialized)
     return 0;
 
-  const int nDomain = paramint[1];
+  const int nDomain = iParam[1];
   for (int iDomain = 0; iDomain < nDomain; iDomain++)
     fleksDomains.add_new_domain();
 
   int nParamRegion = 22;
   for (int i = 0; i < fleksDomains.size(); i++) {
     fleksDomains.select(i);
-    fleksDomains(i).init(timeNow, paramString, paramint,
+    fleksDomains(i).init(timeNow, paramString, iParam,
                          &paramreal[i * nParamRegion],
                          &paramreal[nDomain * nParamRegion], i);
   }

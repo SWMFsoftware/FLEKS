@@ -31,13 +31,13 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
     RealBox rbTmp({ 0, 0, 0 }, { 1, 1, 1 });
     Geometry gmTmp;
     gmTmp.define(bTmp, rbTmp, coord, { 1, 1, 1 });
-    FluidInterface fiTmp(gmTmp, amrInfo, nGst, gridID);
-    fiTmp.init(paramInt, gridDim, paramReal);
+    FluidInterface fiTmp(gmTmp, amrInfo, nGst, gridID, paramInt, gridDim,
+                         paramReal);
     prepare_grid_info(fiTmp);
   }
 
-  fi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID);
-  fi->init_from_swmf(paramInt, gridDim, paramReal);
+  fi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, paramInt,
+                                        gridDim, paramReal);
 
   pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi, tc, gridID);
 

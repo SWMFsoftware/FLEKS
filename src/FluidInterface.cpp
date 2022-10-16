@@ -7,6 +7,231 @@
 using namespace amrex;
 using namespace std;
 
+FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
+                               int nGst, int id)
+    : Grid(gm, amrInfo, nGst, id) {
+
+  nDimFluid = 2;
+  nFluid = 2;
+  // (rho, vx, vy, vz, ppar, p)*nFluid + B + E
+  nVarFluid = 6 * nFluid + 3 + 3;
+
+  nS = nFluid;
+
+  nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
+
+  QoQi_S.resize(nS);
+  MoMi_S.resize(nS);
+
+  QoQi_S[0] = -1;
+  MoMi_S[0] = 0.01;
+
+  QoQi_S[1] = 1;
+  MoMi_S[1] = 1;
+
+  for (int i = 0; i < 3; i++) {
+    phyMin_D[i] = -1;
+    phyMax_D[i] = 1;
+    dx_D[i] = 0.1;
+    lenPhy_D[i] = phyMax_D[i] - phyMin_D[i];
+    nPhyCell_D[i] = (int)(lenPhy_D[i] / dx_D[i] + 0.5);
+  }
+
+  ScalingFactor = 1;
+
+  // Normalization parameters in SI units.
+  Lnorm = 1;
+  Unorm = 1;
+  Mnorm = 1;
+
+  set_var_idx();
+  calc_normalized_units();
+  normalize_length();
+}
+
+FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
+                               int nGst, int id, const int* const iParam,
+                               const double* const paramRegion,
+                               const double* const paramComm)
+    : Grid(gm, amrInfo, nGst, id) {
+
+  nDimFluid = iParam[0];
+  nVarFluid = iParam[2];
+  nFluid = iParam[3];
+  nSpeciesFluid = iParam[4];
+
+  // c++ index starts from 0. So, minus 1.
+  iPe = iParam[5] - 1;
+  iBx = iParam[6] - 1;
+  iBy = iBx + 1;
+  iBz = iBy + 1;
+
+  iEx = iParam[7] - 1;
+  iEy = iEx + 1;
+  iEz = iEy + 1;
+
+  nCellPerPatch = iParam[8];
+
+  useElectronFluid = iEx > 1;
+
+  if (useElectronFluid) {
+    nIonFluid = -1; // Do not distinguish between electrons and ions.
+    nIon = -1;
+    nS = nFluid;
+  } else {
+    nIonFluid = nFluid;
+    nIon = nFluid + nSpeciesFluid - 1; // Assuming one electron species.
+    nS = nIon + 1;                     // + electron
+  }
+
+  useMultiFluid = nIonFluid > 1;
+  useMultiSpecies = nSpeciesFluid > 1;
+
+  nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
+
+  iRho_I.resize(nS);
+  iRhoUx_I.resize(nS);
+  iRhoUy_I.resize(nS);
+  iRhoUz_I.resize(nS);
+  iUx_I.resize(nS);
+  iUy_I.resize(nS);
+  iUz_I.resize(nS);
+  iPpar_I.resize(nS);
+  iP_I.resize(nS);
+
+  int n = 9;
+  if (useMultiSpecies) {
+    // MultiSpecies. Densities of each species are known. Total velocity
+    // and total pressure are known.
+    iRhoTotal = iParam[n++] - 1;
+    iRho_I[0] = iRhoTotal + 1;
+    iRhoUx_I[0] = iParam[n++] - 1;
+    iUx_I[0] = iRhoUx_I[0];
+    iRhoUy_I[0] = iRhoUx_I[0] + 1;
+    iUy_I[0] = iRhoUy_I[0];
+    iRhoUz_I[0] = iRhoUx_I[0] + 2;
+    iUz_I[0] = iRhoUz_I[0];
+    iPpar_I[0] = iParam[n++] - 1;
+    iP_I[0] = iParam[n++] - 1;
+
+    for (int iIon = 1; iIon < nIon; ++iIon) {
+      iRho_I[iIon] = iRho_I[0] + iIon;
+      iRhoUx_I[iIon] = iRhoUx_I[0];
+      iUx_I[iIon] = iUx_I[0];
+      iRhoUy_I[iIon] = iRhoUy_I[0];
+      iUy_I[iIon] = iUy_I[0];
+      iRhoUz_I[iIon] = iRhoUz_I[0];
+      iUz_I[iIon] = iUz_I[0];
+      iPpar_I[iIon] = iPpar_I[0];
+      iP_I[iIon] = iP_I[0];
+    }
+  } else {
+    // Not multi-species
+    for (int iFluid = 0; iFluid < nFluid; ++iFluid)
+      iRho_I[iFluid] = iParam[n++] - 1;
+    for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
+      iRhoUx_I[iFluid] = iParam[n++] - 1;
+      iUx_I[iFluid] = iRhoUx_I[iFluid];
+      iRhoUy_I[iFluid] = iRhoUx_I[iFluid] + 1;
+      iUy_I[iFluid] = iRhoUy_I[iFluid];
+      iRhoUz_I[iFluid] = iRhoUx_I[iFluid] + 2;
+      iUz_I[iFluid] = iRhoUz_I[iFluid];
+    }
+
+    for (int iFluid = 0; iFluid < nFluid; ++iFluid)
+      iPpar_I[iFluid] = iParam[n++] - 1;
+    for (int iFluid = 0; iFluid < nFluid; ++iFluid)
+      iP_I[iFluid] = iParam[n++] - 1;
+  }
+
+  int nVec = nFluid + 1;
+  if (useElectronFluid)
+    nVec++; // + E field.
+
+  vecIdx_I.resize(nVec);
+
+  for (int iVec = 0; iVec < nFluid; iVec++)
+    vecIdx_I[iVec] = iRhoUx_I[iVec];
+  vecIdx_I[nFluid] = iBx;
+  if (useElectronFluid)
+    vecIdx_I[nFluid + 1] = iEx;
+
+  // See GM/BATSRUS/src/ModExtraVariables.f90.
+  useAnisoP = iPpar_I[0] != 0;
+  useMhdPe = iPe != 0;
+
+  iJx = nVarFluid;
+  iJy = iJx + 1;
+  iJz = iJx + 2;
+
+  n = 0;
+  for (int i = 0; i < 3; i++) {
+    phyMin_D[i] = paramRegion[n++]; // Lmin
+    phyMax_D[i] = phyMin_D[i] + paramRegion[n++];
+    dx_D[i] = paramRegion[n++]; // dx
+    lenPhy_D[i] = phyMax_D[i] - phyMin_D[i];
+  }
+
+  for (int i = 0; i < 3; i++) {
+    for (int j = 0; j < 3; j++) {
+      R_DD[i][j] = paramRegion[n++];
+    }
+  }
+
+  // Normalization parameters.
+  Lnorm = paramRegion[n++];
+  Unorm = paramRegion[n++];
+  Mnorm = paramRegion[n++];
+
+  ScalingFactor = paramRegion[n++];
+
+  doRotate = false;
+  double csmall = 1e-7;
+  for (int i = 0; i < nDimFluid; i++)
+    if (fabs(R_DD[i][i] - 1) > csmall) {
+      doRotate = true;
+    }
+
+  for (int i = 0; i < 3; i++)
+    nPhyCell_D[i] = (int)(lenPhy_D[i] / dx_D[i] + 0.5);
+
+  QoQi_S.resize(nS);
+  MoMi_S.resize(nS);
+
+  /** Do not change the order of the following lines. */
+  n = 0;
+  if (useElectronFluid) {
+    for (int i = 0; i < nS; ++i) {
+      QoQi_S[i] = paramComm[n++];
+      MoMi_S[i] = paramComm[n++];
+    }
+  } else {
+    QoQi_S[0] = -1.0;
+    for (int i = 1; i < nS; ++i) {
+      QoQi_S[i] = paramComm[n++];
+      MoMi_S[i] = paramComm[n++];
+    }
+  }
+
+  // Electron pressure ratio: Pe/Ptotal
+  PeRatio = paramComm[n++];
+
+  rPlanetSi = paramComm[n++];
+  MhdNo2SiL = paramComm[n++];
+  /** Do not change the order of above lines. */
+
+  calc_normalized_units();
+  normalize_length();
+
+  if (useMultiFluid && !useMhdPe) {
+    cout << printPrefix
+         << " Use multi-fluid but do not use electron pressure. This case is "
+            "not supported so far!!!"
+         << endl;
+    abort();
+  }
+}
+
 void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
                             const amrex::DistributionMapping& dmIn) {
   std::string nameFunc = "FluidInterface::regrid";
@@ -229,6 +454,23 @@ void FluidInterface::load_balance(const DistributionMapping& dmIn) {
 
 void FluidInterface::calc_normalized_units() {
 
+  // Normalization units converted [SI] -> [cgs]
+  if (Lnorm > 0) {
+    Lnorm *= 100.0;
+  } else {
+    Lnorm = 1.0;
+  }
+  if (Unorm > 0) {
+    Unorm *= 100.0;
+  } else {
+    Unorm = 1.0;
+  }
+  if (Mnorm > 0) {
+    Mnorm *= 1000.0;
+  } else {
+    Mnorm = 1.0;
+  }
+
   // normalization variables
   double RHOnorm, Bnorm, Jnorm, Pnorm;
 
@@ -292,6 +534,12 @@ void FluidInterface::calc_normalized_units() {
 
   No2SiV = 1. / Si2NoV;
   No2SiL = 1. / Si2NoL;
+
+  Si2No_V.resize(nVarCoupling);
+  No2Si_V.resize(nVarCoupling);
+
+  for (int i = 0; i < nVarCoupling; i++)
+    Si2No_V[i] = 1;
 
   Si2No_V[iBx] = Si2NoB;
   Si2No_V[iBy] = Si2NoB;
@@ -400,54 +648,7 @@ void FluidInterface::calc_mag_base_vector(const double Bx, const double By,
   norm_DD(Perp2_, Z_) *= inv;
 }
 
-void FluidInterface::init(const int* const paramint,
-                          const double* const ParamRealRegion,
-                          const double* const ParamRealComm) {
-  const bool initFromSWMF = !(paramint == nullptr);
-  if (initFromSWMF) {
-    init_from_swmf(paramint, ParamRealRegion, ParamRealComm);
-    return;
-  }
-}
-
-void FluidInterface::init_from_swmf(const int* const paramint,
-                                    const double* const ParamRealRegion,
-                                    const double* const ParamRealComm) {
-
-  nDimFluid = paramint[0];
-  nVarFluid = paramint[2];
-  nFluid = paramint[3];
-  nSpeciesFluid = paramint[4];
-
-  // c++ index starts from 0. So, minus 1.
-  iPe = paramint[5] - 1;
-  iBx = paramint[6] - 1;
-  iBy = iBx + 1;
-  iBz = iBy + 1;
-
-  iEx = paramint[7] - 1;
-  iEy = iEx + 1;
-  iEz = iEy + 1;
-
-  nCellPerPatch = paramint[8];
-
-  useElectronFluid = iEx > 1;
-
-  if (useElectronFluid) {
-    nIonFluid = -1; // Do not distinguish between electrons and ions.
-    nIon = -1;
-    nS = nFluid;
-  } else {
-    nIonFluid = nFluid;
-    nIon = nFluid + nSpeciesFluid - 1; // Assuming one electron species.
-    nS = nIon + 1;                     // + electron
-  }
-
-  useMultiFluid = nIonFluid > 1;
-  useMultiSpecies = nSpeciesFluid > 1;
-
-  nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
-
+void FluidInterface::set_var_idx() {
   iRho_I.resize(nS);
   iRhoUx_I.resize(nS);
   iRhoUy_I.resize(nS);
@@ -458,160 +659,27 @@ void FluidInterface::init_from_swmf(const int* const paramint,
   iPpar_I.resize(nS);
   iP_I.resize(nS);
 
-  int n = 9;
-  if (useMultiSpecies) {
-    // MultiSpecies. Densities of each species are known. Total velocity
-    // and total pressure are known.
-    iRhoTotal = paramint[n++] - 1;
-    iRho_I[0] = iRhoTotal + 1;
-    iRhoUx_I[0] = paramint[n++] - 1;
-    iUx_I[0] = iRhoUx_I[0];
-    iRhoUy_I[0] = iRhoUx_I[0] + 1;
-    iUy_I[0] = iRhoUy_I[0];
-    iRhoUz_I[0] = iRhoUx_I[0] + 2;
-    iUz_I[0] = iRhoUz_I[0];
-    iPpar_I[0] = paramint[n++] - 1;
-    iP_I[0] = paramint[n++] - 1;
-
-    for (int iIon = 1; iIon < nIon; ++iIon) {
-      iRho_I[iIon] = iRho_I[0] + iIon;
-      iRhoUx_I[iIon] = iRhoUx_I[0];
-      iUx_I[iIon] = iUx_I[0];
-      iRhoUy_I[iIon] = iRhoUy_I[0];
-      iUy_I[iIon] = iUy_I[0];
-      iRhoUz_I[iIon] = iRhoUz_I[0];
-      iUz_I[iIon] = iUz_I[0];
-      iPpar_I[iIon] = iPpar_I[0];
-      iP_I[iIon] = iP_I[0];
-    }
-  } else {
-    // Not multi-species
-    for (int iFluid = 0; iFluid < nFluid; ++iFluid)
-      iRho_I[iFluid] = paramint[n++] - 1;
-    for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
-      iRhoUx_I[iFluid] = paramint[n++] - 1;
-      iUx_I[iFluid] = iRhoUx_I[iFluid];
-      iRhoUy_I[iFluid] = iRhoUx_I[iFluid] + 1;
-      iUy_I[iFluid] = iRhoUy_I[iFluid];
-      iRhoUz_I[iFluid] = iRhoUx_I[iFluid] + 2;
-      iUz_I[iFluid] = iRhoUz_I[iFluid];
-    }
-
-    for (int iFluid = 0; iFluid < nFluid; ++iFluid)
-      iPpar_I[iFluid] = paramint[n++] - 1;
-    for (int iFluid = 0; iFluid < nFluid; ++iFluid)
-      iP_I[iFluid] = paramint[n++] - 1;
+  int idx = 0;
+  for (int i = 0; i < nS; i++) {
+    iRho_I[i] = idx++;
+    iUx_I[i] = idx++;
+    iUy_I[i] = idx++;
+    iUz_I[i] = idx++;
+    iPpar_I[i] = idx++;
+    iP_I[i] = idx++;
   }
-
-  int nVec = nFluid + 1;
-  if (useElectronFluid)
-    nVec++; // + E field.
-
-  vecIdx_I.resize(nVec);
-
-  for (int iVec = 0; iVec < nFluid; iVec++)
-    vecIdx_I[iVec] = iRhoUx_I[iVec];
-  vecIdx_I[nFluid] = iBx;
-  if (useElectronFluid)
-    vecIdx_I[nFluid + 1] = iEx;
-
-  // See GM/BATSRUS/src/ModExtraVariables.f90.
-  useAnisoP = iPpar_I[0] != 0;
-  useMhdPe = iPe != 0;
-
+  iBx = idx++;
+  iBy = idx++;
+  iBz = idx++;
+  iEx = idx++;
+  iEy = idx++;
+  iEz = idx++;
   iJx = nVarFluid;
   iJy = iJx + 1;
   iJz = iJx + 2;
-
-  Si2No_V.resize(nVarCoupling);
-  No2Si_V.resize(nVarCoupling);
-
-  for (int i = 0; i < nVarCoupling; i++)
-    Si2No_V[i] = 1;
-
-  n = 0;
-  for (int i = 0; i < 3; i++) {
-    phyMin_D[i] = ParamRealRegion[n++]; // Lmin
-    phyMax_D[i] = phyMin_D[i] + ParamRealRegion[n++];
-    dx_D[i] = ParamRealRegion[n++]; // dx
-    lenPhy_D[i] = phyMax_D[i] - phyMin_D[i];
-  }
-
-  for (int i = 0; i < 3; i++) {
-    for (int j = 0; j < 3; j++) {
-      R_DD[i][j] = ParamRealRegion[n++];
-    }
-  }
-
-  // Normalization parameters.
-  Lnorm = ParamRealRegion[n++];
-  Unorm = ParamRealRegion[n++];
-  Mnorm = ParamRealRegion[n++];
-
-  ScalingFactor = ParamRealRegion[n++];
-
-  doRotate = false;
-  double csmall = 1e-7;
-  for (int i = 0; i < nDimFluid; i++)
-    if (fabs(R_DD[i][i] - 1) > csmall) {
-      doRotate = true;
-    }
-
-  for (int i = 0; i < 3; i++)
-    nPhyCell_D[i] = (int)(lenPhy_D[i] / dx_D[i] + 0.5);
-
-  QoQi_S.resize(nS);
-  MoMi_S.resize(nS);
-
-  /** Do not change the order of the following lines. */
-  n = 0;
-  if (useElectronFluid) {
-    for (int i = 0; i < nS; ++i) {
-      QoQi_S[i] = ParamRealComm[n++];
-      MoMi_S[i] = ParamRealComm[n++];
-    }
-  } else {
-    QoQi_S[0] = -1.0;
-    for (int i = 1; i < nS; ++i) {
-      QoQi_S[i] = ParamRealComm[n++];
-      MoMi_S[i] = ParamRealComm[n++];
-    }
-  }
-
-  // Electron pressure ratio: Pe/Ptotal
-  PeRatio = ParamRealComm[n++];
-
-  rPlanetSi = ParamRealComm[n++];
-  MhdNo2SiL = ParamRealComm[n++];
-  /** Do not change the order of above lines. */
-
-  // Normalization units converted [SI] -> [cgs]
-  if (Lnorm > 0) {
-    Lnorm *= 100.0;
-  } else {
-    Lnorm = 1.0;
-  }
-  if (Unorm > 0) {
-    Unorm *= 100.0;
-  } else {
-    Unorm = 1.0;
-  }
-  if (Mnorm > 0) {
-    Mnorm *= 1000.0;
-  } else {
-    Mnorm = 1.0;
-  }
-
-  calc_normalized_units();
-  normalize_length();
-
-  if (useMultiFluid && !useMhdPe) {
-    cout << printPrefix
-         << " Use multi-fluid but do not use electron pressure. This case is "
-            "not supported so far!!!"
-         << endl;
-    abort();
-  }
+  iRhoUx_I = iUx_I;
+  iRhoUy_I = iUy_I;
+  iRhoUz_I = iUz_I;
 }
 
 /** print info for coupling */

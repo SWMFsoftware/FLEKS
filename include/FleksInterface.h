@@ -12,7 +12,7 @@ int fleks_run_(double *time);
 int fleks_save_restart_();
 int fleks_end_();
 int fleks_read_param_(char *param, int *nlines, int *ncharline, int *iProc);
-int fleks_from_gm_init_(int *paramint, double *paramreal, char *NameVar);
+int fleks_from_gm_init_(int *iParam, double *paramreal, char *NameVar);
 int fleks_get_ngridpoints_(int *nPoint);
 int fleks_get_grid_(double *Pos_DI, int *n);
 int fleks_set_state_var_(double *Data_VI, int *iPoint_I);
