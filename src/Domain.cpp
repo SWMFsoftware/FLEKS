@@ -16,15 +16,11 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
   printPrefix = gridName + ": ";
 
   param = paramString;
-  { // Preparing grid information for Grid/AmrCore initialization.
-    read_param(true);
-    param.roll_back();
+  
+  if (paramInt[0] == 2)
+    isFake2D = true;
 
-    if (paramInt[0] == 2)
-      isFake2D = true;
-
-    prepare_grid_info(gridDim);
-  }
+  prepare_grid_info(gridDim);
 
   fi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, paramInt,
                                         gridDim, paramReal);
@@ -95,7 +91,9 @@ void Domain::update_param(const std::string &paramString) {
 
 //========================================================
 void Domain::prepare_grid_info(const double *const info) {
-  nGst = 2;
+
+  read_param(true);
+  param.roll_back();
 
   // If MHD is 2D, PIC has to be periodic in the z-direction.
   if (isFake2D)

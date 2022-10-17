@@ -71,6 +71,7 @@ public:
   //--------------- IO end----------------------------------
 
   //-------------- grid begin-------------------------------
+  // Preparing grid information for Grid/AmrCore initialization.
   void prepare_grid_info(const double *const info);
   void regrid();
   void receive_grid_info(int *status);

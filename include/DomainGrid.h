@@ -21,7 +21,7 @@
 class DomainGrid {
 
 protected:
-  int nGst;
+  const int nGst = 2;
 
   bool isFake2D = false;
 
