@@ -177,8 +177,13 @@ class FLEKSTP(object):
         idData = np.array(idList, dtype="i,i")
         if doSave:
             fileName = "particles_t"+str(time)+".csv"
+            header = "time, x, y, z, ux, uy, uz"
+            if self.nReal == 10:
+                header += ", bx, by, bz"
+            if self.nReal == 13:
+                header += ", bx, by, bz, ex, ey, ex"
             np.savetxt(fileName, npData, delimiter=",",
-                       header="time, x, y, z, ux, uy, uz", comments="")
+                       header=header, comments="")
 
         return idData, npData
 
@@ -196,8 +201,13 @@ class FLEKSTP(object):
         pData = self.read_particle_trajectory(partID)
         if fileName == None:
             fileName = "trajectory_"+str(partID[0])+"_"+str(partID[1])+".csv"
+        header = "time, x, y, z, ux, uy, uz"
+        if self.nReal == 10:
+            header += ", bx, by, bz"
+        if self.nReal == 13:
+            header += ", bx, by, bz, ex, ey, ex"
         np.savetxt(fileName, pData, delimiter=",",
-                   header="time, x, y, z, ux, uy, uz", comments="")
+                   header=header, comments="")
 
     def read_particle_trajectory(self, partID):
         r"""
