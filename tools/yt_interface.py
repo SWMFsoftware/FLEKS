@@ -1,3 +1,4 @@
+from xml import dom
 import yt
 import os
 import numpy as np
@@ -310,7 +311,7 @@ class FLEKSDataset(BoxlibDataset):
         return splt
 
     def plot_phase_region(self, region, x_field, y_field, z_field,
-                          unit_type="planet", x_bins=128, y_bins=128):
+                          unit_type="planet", x_bins=128, y_bins=128, domain_size=None):
         r"""Plot phase space distribution of particle
 
         Parameters
@@ -331,10 +332,13 @@ class FLEKSDataset(BoxlibDataset):
         unit_type : string
             The unit system of the plots. "planet" or "si".
 
+        domain_size : tuple
+            Consist of 4 elements: x_min, x_max, y_min, y_max
+
         Examples
         --------
         >>> phase = ds.plot_phase([8.75, -1, -1], [9.25, 0, 0], 
-                                "p_ux", "p_uy", "p_w")
+                                "p_ux", "p_uy", "p_w", (-1, 1, -1, 1))
         >>> phase.show()
         """
         var_type = 'particle'
@@ -342,9 +346,13 @@ class FLEKSDataset(BoxlibDataset):
         # The bins should be uniform instead of logarithmic
         logs = {(var_type, x_field): False, (var_type, y_field): False}
 
-        bin_fields = [(var_type, x_field), (var_type, y_field)]        
+        bin_fields = [(var_type, x_field), (var_type, y_field)]
+        if domain_size is not None:
+            extrema = {(var_type, x_field): (domain_size[0], domain_size[1]), (var_type, y_field): (domain_size[2], domain_size[3])}   
+        else:
+            extrema = None
         profile = yt.create_profile(data_source=region, bin_fields=bin_fields, fields=(
-            var_type, z_field), n_bins=[x_bins,y_bins], weight_field=None, logs=logs)
+            var_type, z_field), n_bins=[x_bins,y_bins], weight_field=None, extrema=extrema, logs=logs)
 
         plot = yt.PhasePlot.from_profile(profile)
 
@@ -355,7 +363,7 @@ class FLEKSDataset(BoxlibDataset):
         return plot
 
     def plot_phase(self, left_edge, right_edge, x_field, y_field, z_field,
-                   unit_type="planet", x_bins=128, y_bins=128):
+                   unit_type="planet", x_bins=128, y_bins=128, domain_size=None):
         r"""Plot phase space distribution of particles that are inside a box
 
         Parameters
@@ -376,15 +384,18 @@ class FLEKSDataset(BoxlibDataset):
         unit_type : string
             The unit system of the plots. "planet" or "si".
 
+        domain_size : tuple
+            Consist of 4 elements: x_min, x_max, y_min, y_max
+
         Examples
         --------
         >>> phase = ds.plot_phase([8.75, -1, -1], [9.25, 0, 0], 
-                                "p_ux", "p_uy", "p_w")
+                                "p_ux", "p_uy", "p_w", (-1, 1, -1, 1))
         >>> phase.show()
         """
         dd = self.box(left_edge, right_edge)
         plot = self.plot_phase_region(
-            dd, x_field, y_field, z_field, unit_type=unit_type, x_bins=x_bins, y_bins=y_bins)
+            dd, x_field, y_field, z_field, unit_type=unit_type, x_bins=x_bins, y_bins=y_bins, domain_size=domain_size)
 
         return plot
 
