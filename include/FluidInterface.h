@@ -43,15 +43,6 @@ private:
 
   int nDimFluid;
 
-  // Min and Max of the physical domain in normalized PIC units.
-  double phyMin_D[3], phyMax_D[3];
-  double lenPhy_D[3], dx_D[3];
-  int nPhyCell_D[nDimMax];
-
-  // Rotation matrix.
-  double R_DD[3][3];
-  bool doRotate = false;
-
   // Number of variables passing between MHD and PIC.
   int nVarFluid;
 
@@ -119,7 +110,7 @@ private:
 public:
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
                  int nGst, int id, const amrex::Vector<int>& iParam,
-                 const amrex::Vector<double>& paramRegion,
+                 const amrex::Vector<double>& norm,
                  const amrex::Vector<double>& paramComm);
 
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
@@ -157,18 +148,11 @@ public:
 
   void calc_normalized_units();
 
-  void normalize_length();
-
   /** Get nomal and pendicular vector to magnetic field */
   void calc_mag_base_vector(const double Bx, const double By, const double Bz,
                             MDArray<double>& norm_DD) const;
 
   void calc_fluid_state(const double* dataPIC_I, double* dataFluid_I) const;
-
-  void mhd_to_Pic_Vec(double const* vecIn_D, double* vecOut_D,
-                      bool isZeroOrigin = false) const;
-  void pic_to_Mhd_Vec(double const* vecIn_D, double* vecOut_D,
-                      bool isZeroOrigin = false) const;
 
   void print_info() const;
 
@@ -177,9 +161,6 @@ public:
   bool get_UseAnisoP() const { return (useAnisoP); }
 
   bool get_useElectronFluid() const { return useElectronFluid; }
-
-  double get_phy_domain_min(int i) const { return phyMin_D[i]; }
-  double get_phy_domain_max(int i) const { return phyMax_D[i]; }
 
   int get_fluid_dimension() const { return (nDimFluid); }
 
@@ -212,8 +193,6 @@ public:
   double get_MhdNo2SiL() const { return (MhdNo2SiL); }
   // BATSRUS normalized unit -> PIC normalized unit;
   double get_MhdNo2NoL() const { return (MhdNo2SiL * Si2NoL); }
-
-  int get_phy_cell_number(const int iDir) const { return nPhyCell_D[iDir]; }
 
   void set_resistivity(double etaSIIn) {
     // In SI unit R = u_si*L_si/eta_si, where eta_si is magnetic diffusivity

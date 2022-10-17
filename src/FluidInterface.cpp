@@ -29,14 +29,6 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
   QoQi_S[1] = 1;
   MoMi_S[1] = 1;
 
-  for (int i = 0; i < 3; i++) {
-    phyMin_D[i] = -1;
-    phyMax_D[i] = 1;
-    dx_D[i] = 0.1;
-    lenPhy_D[i] = phyMax_D[i] - phyMin_D[i];
-    nPhyCell_D[i] = (int)(lenPhy_D[i] / dx_D[i] + 0.5);
-  }
-
   ScalingFactor = 1;
 
   // Normalization parameters in SI units.
@@ -46,17 +38,16 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
 
   set_var_idx();
   calc_normalized_units();
-  normalize_length();
 }
 
 FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
                                int nGst, int id,
                                const amrex::Vector<int>& iParam,
-                               const amrex::Vector<double>& paramRegion,
+                               const amrex::Vector<double>& norm,
                                const amrex::Vector<double>& paramComm)
     : Grid(gm, amrInfo, nGst, id) {
 
-  if (iParam.empty() || paramRegion.empty() || paramComm.empty())
+  if (iParam.empty() || norm.empty() || paramComm.empty())
     amrex::Abort("Error: one of the input vector is empty!\n");
 
   nDimFluid = iParam[0];
@@ -169,35 +160,11 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
   iJz = iJx + 2;
 
   n = 0;
-  for (int i = 0; i < 3; i++) {
-    phyMin_D[i] = paramRegion[n++]; // Lmin
-    phyMax_D[i] = phyMin_D[i] + paramRegion[n++];
-    dx_D[i] = paramRegion[n++]; // dx
-    lenPhy_D[i] = phyMax_D[i] - phyMin_D[i];
-  }
-
-  for (int i = 0; i < 3; i++) {
-    for (int j = 0; j < 3; j++) {
-      R_DD[i][j] = paramRegion[n++];
-    }
-  }
-
   // Normalization parameters.
-  Lnorm = paramRegion[n++];
-  Unorm = paramRegion[n++];
-  Mnorm = paramRegion[n++];
-
-  ScalingFactor = paramRegion[n++];
-
-  doRotate = false;
-  double csmall = 1e-7;
-  for (int i = 0; i < nDimFluid; i++)
-    if (fabs(R_DD[i][i] - 1) > csmall) {
-      doRotate = true;
-    }
-
-  for (int i = 0; i < 3; i++)
-    nPhyCell_D[i] = (int)(lenPhy_D[i] / dx_D[i] + 0.5);
+  Lnorm = norm[n++];
+  Unorm = norm[n++];
+  Mnorm = norm[n++];
+  ScalingFactor = norm[n++];
 
   QoQi_S.resize(nS);
   MoMi_S.resize(nS);
@@ -225,7 +192,6 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
   /** Do not change the order of above lines. */
 
   calc_normalized_units();
-  normalize_length();
 
   if (useMultiFluid && !useMhdPe) {
     cout << printPrefix
@@ -582,22 +548,6 @@ void FluidInterface::calc_normalized_units() {
   // Get back to SI units
   for (int iVar = 0; iVar < nVarCoupling; iVar++)
     No2Si_V[iVar] = 1.0 / Si2No_V[iVar];
-}
-//-------------------------------------------------------------------------
-
-void FluidInterface::normalize_length() {
-  // Normalization
-  for (int i = 0; i < 3; i++) {
-    dx_D[i] *= Si2NoL;
-    lenPhy_D[i] *= Si2NoL;
-    phyMin_D[i] *= Si2NoL;
-    phyMax_D[i] *= Si2NoL;
-    if (i >= nDimFluid) {
-      // If MHD is 2D.
-      phyMin_D[i] = 0;
-      phyMax_D[i] = dx_D[i];
-    }
-  }
 }
 //-------------------------------------------------------------------------
 
@@ -975,56 +925,16 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
   }
 
   // Convert the vectors from PIC coordinates to MHD coordinates.
-  double mhd_D[3], pic_D[3];
+  double pic_D[3];
   for (int iVec = 0; iVec < vecIdx_I.size(); iVec++) {
     int idx0;
     idx0 = vecIdx_I[iVec];
     for (int iVar = idx0; iVar < idx0 + nDimFluid; iVar++)
       pic_D[iVar - idx0] = data_I[iVar];
-    pic_to_Mhd_Vec(pic_D, mhd_D, true);
+
     for (int iVar = idx0; iVar < idx0 + nDimFluid; iVar++)
-      data_I[iVar] = mhd_D[iVar - idx0];
+      data_I[iVar] = pic_D[iVar - idx0];
   } // iVec
-}
-void FluidInterface::pic_to_Mhd_Vec(double const* vecIn_D, double* vecOut_D,
-                                    bool isZeroOrigin) const {
-  /** 1) Change a vector in coupling PIC coordinates to MHD coordinates.
-      If not isZeroOrigin, then shifting the origin of the coupling
-      PIC coordinates to INxRange_I.
-   **/
-
-  for (int iDim = 0; iDim < nDimFluid; iDim++) {
-    vecOut_D[iDim] = 0;
-    for (int jDim = 0; jDim < nDimFluid; jDim++) {
-      vecOut_D[iDim] += R_DD[iDim][jDim] * vecIn_D[jDim];
-    }
-    if (!isZeroOrigin)
-      vecOut_D[iDim] += phyMin_D[iDim];
-  }
-}
-
-void FluidInterface::mhd_to_Pic_Vec(double const* vecIn_D, double* vecOut_D,
-                                    bool isZeroOrigin) const {
-  /** 1) Change a vector in MHD coordinates to coupling PIC coordinates.
-      If not isZeroOrigin, then shifting the origin of the coupling
-      PIC coordinates to phyMin_D.
-  **/
-
-  double vec_D[3];
-  if (!isZeroOrigin) {
-    for (int iDim = 0; iDim < nDimFluid; iDim++)
-      vec_D[iDim] = vecIn_D[iDim] - phyMin_D[iDim];
-  } else {
-    for (int iDim = 0; iDim < nDimFluid; iDim++)
-      vec_D[iDim] = vecIn_D[iDim];
-  }
-
-  for (int iDim = 0; iDim < nDimFluid; iDim++) {
-    vecOut_D[iDim] = 0;
-    for (int jDim = 0; jDim < nDimFluid; jDim++) {
-      vecOut_D[iDim] += R_DD[jDim][iDim] * vec_D[jDim];
-    }
-  } // iDim
 }
 
 void FluidInterface::update_nodeFluid(const MultiFabFLEKS& nodeIn,

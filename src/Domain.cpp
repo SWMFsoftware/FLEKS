@@ -25,8 +25,9 @@ void Domain::init(double time, const int iDomain,
 
   prepare_grid_info(paramRegion);
 
-  fi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, paramInt,
-                                        paramRegion, paramComm);
+  fi = std::make_shared<FluidInterface>(
+      gm, amrInfo, nGst, gridID, paramInt,
+      Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm);
 
   pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi, tc, gridID);
 

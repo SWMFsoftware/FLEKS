@@ -73,9 +73,11 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
     kg = kg + 2; // just for comparison with iPIC3D;
   //----------------------------------------
 
-  nxcg = interface.get_phy_cell_number(ix_) + 2;
-  nycg = interface.get_phy_cell_number(iy_) + 2;
-  nzcg = interface.get_phy_cell_number(iz_);
+  IntVect nCell = Geom(0).Domain().size();
+
+  nxcg = nCell[ix_] + 2;
+  nycg = nCell[iy_] + 2;
+  nzcg = nCell[iz_];
   if (interface.get_fluid_dimension() > 2)
     nzcg += 2;
 
