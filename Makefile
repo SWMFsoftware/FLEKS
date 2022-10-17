@@ -1,7 +1,7 @@
 default: FLEKS
 
-include Makefile.conf
-include Makefile.def
+-include Makefile.conf
+-include Makefile.def
 
 help:
 	@echo Makefile targets:
@@ -57,6 +57,6 @@ distclean:
 allclean:
 	-@(cd src; $(MAKE) distclean)
 	-@(cd srcInterface; $(MAKE) distclean)
-	-@(rm -rf *~ ./bin lib ${TESTDIR})
+	-@(rm -rf *~ ./bin lib ${TESTDIR} include/Constants.h)
 	-@(rm -f test*.diff)
 
