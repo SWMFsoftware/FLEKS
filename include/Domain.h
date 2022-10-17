@@ -40,8 +40,10 @@ public:
   void update();
 
   //--------------Initialization begin-------------------------------
-  void init(double time, const std::string &paramString, int *paramInt,
-            double *gridDim, double *paramReal, int iDomain = 1);
+  void init(double time, const std::string &paramString,
+            const amrex::Vector<int> &paramInt,
+            const amrex::Vector<double> &paramRegion,
+            const amrex::Vector<double> &paramComm, int iDomain = 1);
   void update_param(const std::string &paramString);
   void set_ic();
   //----------------Initialization end-------------------------------
@@ -72,7 +74,7 @@ public:
 
   //-------------- grid begin-------------------------------
   // Preparing grid information for Grid/AmrCore initialization.
-  void prepare_grid_info(const double *const info);
+  void prepare_grid_info(const amrex::Vector<double> &info);
   void regrid();
   void receive_grid_info(int *status);
   //-------------- grid end---------------------------------

@@ -4,8 +4,10 @@
 using namespace amrex;
 
 //========================================================
-void Domain::init(double time, const std::string &paramString, int *paramInt,
-                  double *gridDim, double *paramReal, int iDomain) {
+void Domain::init(double time, const std::string &paramString,
+                  const amrex::Vector<int> &paramInt,
+                  const amrex::Vector<double> &paramRegion,
+                  const amrex::Vector<double> &paramComm, int iDomain) {
   if (AMREX_SPACEDIM != 3)
     Abort("Error: AMReX should be compiled with 3D configuration!!");
 
@@ -16,14 +18,14 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
   printPrefix = gridName + ": ";
 
   param = paramString;
-  
+
   if (paramInt[0] == 2)
     isFake2D = true;
 
-  prepare_grid_info(gridDim);
+  prepare_grid_info(paramRegion);
 
   fi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, paramInt,
-                                        gridDim, paramReal);
+                                        paramRegion, paramComm);
 
   pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi, tc, gridID);
 
@@ -90,7 +92,7 @@ void Domain::update_param(const std::string &paramString) {
 };
 
 //========================================================
-void Domain::prepare_grid_info(const double *const info) {
+void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
 
   read_param(true);
   param.roll_back();

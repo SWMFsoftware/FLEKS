@@ -118,9 +118,9 @@ private:
 
 public:
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-                 int nGst, int id, const int* const iParam,
-                 const double* const paramRegion,
-                 const double* const paramComm);
+                 int nGst, int id, const amrex::Vector<int>& iParam,
+                 const amrex::Vector<double>& paramRegion,
+                 const amrex::Vector<double>& paramComm);
 
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
                  int nGst, int id);

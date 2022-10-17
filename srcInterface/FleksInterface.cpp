@@ -6,9 +6,9 @@
 #include <AMReX.H>
 #include <AMReX_Print.H>
 
+#include "FleksInterface.h"
 #include "ReadParam.h"
 #include "SimDomains.h"
-#include "FleksInterface.h"
 
 Domains fleksDomains;
 
@@ -57,15 +57,30 @@ int fleks_from_gm_init_(int *iParam, double *paramreal, char *NameVar) {
     return 0;
 
   const int nDomain = iParam[1];
+  const int nIonFluid = iParam[3];
+  const int nSpecies = iParam[4];
+  const int nS = (nIonFluid > nSpecies ? nIonFluid : nSpecies);
+  const int nParamRegion = 22;
+  // See GM_couple_pc.f90 for the size of these arrays.
+  const int nReal = nDomain * nParamRegion + nS * 2 + 3;
+  const int nInt = 9 + nIonFluid * 4;
+
   for (int iDomain = 0; iDomain < nDomain; iDomain++)
     fleksDomains.add_new_domain();
 
-  int nParamRegion = 22;
+  const amrex::Vector<int> paramInt(iParam, iParam + nInt);
+
   for (int i = 0; i < fleksDomains.size(); i++) {
     fleksDomains.select(i);
-    fleksDomains(i).init(timeNow, paramString, iParam,
-                         &paramreal[i * nParamRegion],
-                         &paramreal[nDomain * nParamRegion], i);
+
+    const amrex::Vector<double> paramRegion(paramreal + i * nParamRegion,
+                                            paramreal + (i + 1) * nParamRegion);
+
+    const amrex::Vector<double> paramComm(paramreal + nDomain * nParamRegion,
+                                          paramreal + nReal);
+
+    fleksDomains(i).init(timeNow, paramString, paramInt, paramRegion, paramComm,
+                         i);
   }
 
   isInitialized = true;
@@ -166,7 +181,7 @@ int fleks_set_state_var_(double *Data_VI, int *iPoint_I) {
 
 //==========================================================
 int fleks_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
-                       int *nVar) {
+                         int *nVar) {
   for (int i = 0; i < fleksDomains.size(); i++)
     fleksDomains(i).get_fluid_state_for_points(*nDim, *nPoint, Xyz_I, data_I,
                                                *nVar);

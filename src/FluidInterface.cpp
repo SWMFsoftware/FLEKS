@@ -50,9 +50,10 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
 }
 
 FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
-                               int nGst, int id, const int* const iParam,
-                               const double* const paramRegion,
-                               const double* const paramComm)
+                               int nGst, int id,
+                               const amrex::Vector<int>& iParam,
+                               const amrex::Vector<double>& paramRegion,
+                               const amrex::Vector<double>& paramComm)
     : Grid(gm, amrInfo, nGst, id) {
 
   nDimFluid = iParam[0];
