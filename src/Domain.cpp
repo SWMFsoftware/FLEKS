@@ -20,20 +20,10 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
     read_param(true);
     param.roll_back();
 
-    // The simulation domain range and grid size are still not known at this
-    // moment, and it is too early to initialize fi. Such grid
-    // information is processed by the FluidInterface class, so a local
-    // FluidInterface object is created to handle the grid information.
-    // This solution is ugly, splitting FluidInterface into two classes is
-    // probably a better solution.
+    if (paramInt[0] == 2)
+      isFake2D = true;
 
-    Box bTmp({ 0, 0, 0 }, { 7, 7, 7 });
-    RealBox rbTmp({ 0, 0, 0 }, { 1, 1, 1 });
-    Geometry gmTmp;
-    gmTmp.define(bTmp, rbTmp, coord, { 1, 1, 1 });
-    FluidInterface fiTmp(gmTmp, amrInfo, nGst, gridID, paramInt, gridDim,
-                         paramReal);
-    prepare_grid_info(fiTmp);
+    prepare_grid_info(gridDim);
   }
 
   fi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, paramInt,
@@ -46,6 +36,8 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
   read_param();
 
   init_time_ctr();
+
+  gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 
   fi->print_info();
 
@@ -102,27 +94,35 @@ void Domain::update_param(const std::string &paramString) {
 };
 
 //========================================================
-void Domain::prepare_grid_info(const FluidInterface &fi) {
+void Domain::prepare_grid_info(const double *const info) {
   nGst = 2;
 
   // If MHD is 2D, PIC has to be periodic in the z-direction.
-  for (int iDim = fi.get_fluid_dimension(); iDim < nDim; iDim++)
-    set_periodicity(iDim, true);
+  if (isFake2D)
+    set_periodicity(iz_, true);
 
   if (!doRestart) {
-    // If restart, these variables read from restart.H
-    for (int iDir = ix_; iDir <= iz_; iDir++) {
-      nCell[iDir] = fi.get_phy_cell_number(iDir);
-    }
+    // If restart, the grid info will be read from restart.H
 
+    Real si2noL = 1. / info[18];
+
+    int n = 0;
     for (int i = 0; i < nDim; i++) {
-      domainRange.setLo(i, fi.get_phy_domain_min(i));
-      domainRange.setHi(i, fi.get_phy_domain_max(i));
+      Real phyMin, phyMax, dx;
+      phyMin = info[n++] * si2noL; // Lmin
+      phyMax = phyMin + info[n++] * si2noL;
+      dx = info[n++] * si2noL; // dx
+      nCell[i] = (int)((phyMax - phyMin) / dx + 0.5);
+
+      if (isFake2D && i == iz_) {
+        phyMin = 0;
+        phyMax = dx;
+      }
+
+      domainRange.setLo(i, phyMin);
+      domainRange.setHi(i, phyMax);
     }
   }
-
-  const int nCellPerPatch = fi.get_nCellPerPatch();
-  gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], nCellPerPatch);
 
   for (int i = 0; i < nDim; i++) {
     centerBoxLo[i] = 0;

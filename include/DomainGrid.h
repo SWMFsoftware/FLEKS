@@ -23,6 +23,8 @@ class DomainGrid {
 protected:
   int nGst;
 
+  bool isFake2D = false;
+
   amrex::Vector<int> nCell = { 1, 1, 1 };
 
   amrex::IntVect maxBlockSize;

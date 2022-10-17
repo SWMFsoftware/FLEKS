@@ -71,7 +71,7 @@ public:
   //--------------- IO end----------------------------------
 
   //-------------- grid begin-------------------------------
-  void prepare_grid_info(const FluidInterface &fi);
+  void prepare_grid_info(const double *const info);
   void regrid();
   void receive_grid_info(int *status);
   //-------------- grid end---------------------------------
