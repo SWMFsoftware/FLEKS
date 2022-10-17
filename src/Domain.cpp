@@ -33,7 +33,7 @@ void Domain::init(double time, const std::string &paramString, int *paramInt,
 
   pt = std::make_unique<ParticleTracker>(gm, amrInfo, nGst, fi, tc, gridID);
 
-  read_param();
+  read_param(false);
 
   init_time_ctr();
 
@@ -89,7 +89,7 @@ void Domain::update() {
 //========================================================
 void Domain::update_param(const std::string &paramString) {
   param = paramString;
-  read_param();
+  read_param(false);
   init_time_ctr();
 };
 
@@ -430,22 +430,26 @@ void Domain::init_time_ctr() {
 }
 
 //========================================================
-void Domain::read_param(const bool readGridInfoOnly) {
+void Domain::read_param(const bool readGridInfo) {
   // The default values shoudl be set in the constructor.
 
   std::string command;
-  param.set_verbose(ParallelDescriptor::MyProc() == 0);
 
+  param.set_verbose(false);
   param.set_command_suffix(gridName);
-
   while (param.get_next_command(command)) {
 
-    // If readGridInfoOnly is true, only read the following commands.
-    if (readGridInfoOnly &&
-        !(command == "#MAXBLOCKSIZE" || command == "#PERIODICITY" ||
-          command == "#GEOMETRY" || command == "#NCELL" ||
-          command == "#RESTART"))
+    bool isGridCommand = command == "#MAXBLOCKSIZE" ||
+                         command == "#PERIODICITY" || command == "#GEOMETRY" ||
+                         command == "#NCELL" || command == "#RESTART";
+
+    // Skip this command
+    if (readGridInfo != isGridCommand)
       continue;
+
+    param.set_verbose(ParallelDescriptor::IOProcessor());
+    Print() << "\n"
+            << "PC: " << command << " " << gridName << std::endl;
 
     if (command == "#DIVE" || command == "#EFIELDSOLVER" ||
         command == "#PARTICLES" || command == "#ELECTRON" ||
@@ -644,9 +648,10 @@ void Domain::read_param(const bool readGridInfoOnly) {
       Abort("Can not find this command!");
     }
     //--------- The commands above exist in restart.H only --------
+    param.set_verbose(false);
   } // While
 
-  if (!readGridInfoOnly) {
+  if (!readGridInfo) {
     pic->post_process_param();
     pt->post_process_param();
   }
