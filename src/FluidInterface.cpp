@@ -56,6 +56,9 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
                                const amrex::Vector<double>& paramComm)
     : Grid(gm, amrInfo, nGst, id) {
 
+  if (iParam.empty() || paramRegion.empty() || paramComm.empty())
+    amrex::Abort("Error: one of the input vector is empty!\n");
+
   nDimFluid = iParam[0];
   nVarFluid = iParam[2];
   nFluid = iParam[3];

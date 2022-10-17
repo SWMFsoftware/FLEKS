@@ -79,8 +79,8 @@ int fleks_from_gm_init_(int *iParam, double *paramreal, char *NameVar) {
     const amrex::Vector<double> paramComm(paramreal + nDomain * nParamRegion,
                                           paramreal + nReal);
 
-    fleksDomains(i).init(timeNow, paramString, paramInt, paramRegion, paramComm,
-                         i);
+    fleksDomains(i).init(timeNow, i, paramString, paramInt, paramRegion,
+                         paramComm);
   }
 
   isInitialized = true;

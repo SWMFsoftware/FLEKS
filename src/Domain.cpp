@@ -4,10 +4,11 @@
 using namespace amrex;
 
 //========================================================
-void Domain::init(double time, const std::string &paramString,
+void Domain::init(double time, const int iDomain,
+                  const std::string &paramString,
                   const amrex::Vector<int> &paramInt,
                   const amrex::Vector<double> &paramRegion,
-                  const amrex::Vector<double> &paramComm, int iDomain) {
+                  const amrex::Vector<double> &paramComm) {
   if (AMREX_SPACEDIM != 3)
     Abort("Error: AMReX should be compiled with 3D configuration!!");
 

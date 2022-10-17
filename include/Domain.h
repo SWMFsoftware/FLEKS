@@ -40,10 +40,11 @@ public:
   void update();
 
   //--------------Initialization begin-------------------------------
-  void init(double time, const std::string &paramString,
-            const amrex::Vector<int> &paramInt,
-            const amrex::Vector<double> &paramRegion,
-            const amrex::Vector<double> &paramComm, int iDomain = 1);
+  void init(const double time = 0, const int iDomain = 1,
+            const std::string &paramString = std::string(),
+            const amrex::Vector<int> &paramInt = amrex::Vector<int>(),
+            const amrex::Vector<double> &paramRegion = amrex::Vector<double>(),
+            const amrex::Vector<double> &paramComm = amrex::Vector<double>());
   void update_param(const std::string &paramString);
   void set_ic();
   //----------------Initialization end-------------------------------
