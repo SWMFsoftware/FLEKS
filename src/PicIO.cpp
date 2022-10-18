@@ -8,17 +8,7 @@
 using namespace amrex;
 
 //==========================================================
-void Pic::set_state_var(double* data, int* index) {
-  std::string nameFunc = "Pic::set_state_var";
-
-  if (isGridEmpty)
-    return;
-
-  Print() << printPrefix << " GM -> PC coupling at t =" << tc->get_time_si()
-          << " (s)" << std::endl;
-
-  fi->set_couple_node_value(data, index);
-
+void Pic::update_cells_for_pt() {
   // If fill_new_cells is called when PIC component is off, it suggests the test
   // particle component is activated. The test particle component copies EM
   // field from PIC, so PIC EM field should be updated here.
@@ -590,7 +580,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
     }
 
   BoxArray baIO;
-  if(isCut){
+  if (isCut) {
     // Find the box that contains the output region.
     const auto lo = outRange.lo();
     const auto hi = outRange.hi();
@@ -613,7 +603,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
 
     baIO.define(Box(cellLo, cellHi));
     baIO.maxSize(IntVect(8, 8, 8));
-  }else{
+  } else {
     baIO = cGrid;
   }
 

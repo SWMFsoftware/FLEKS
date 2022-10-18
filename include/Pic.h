@@ -187,7 +187,7 @@ public:
   }
 
   //------------Coupler related begin--------------
-  void set_state_var(double *data, int *index);
+  void update_cells_for_pt();
   int get_grid_nodes_number();
   void get_grid(double *pos_DI);
   void find_mpi_rank_for_points(const int nPoint, const double *const xyz_I,

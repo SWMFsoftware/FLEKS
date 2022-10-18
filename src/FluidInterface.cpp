@@ -313,8 +313,11 @@ void FluidInterface::get_couple_node_loc(double* const pos_DI) {
   loop_through_node("loc", pos_DI);
 }
 
-void FluidInterface::set_couple_node_value(const double* const data,
-                                           const int* const index) {
+void FluidInterface::set_node_fluid(const double* const data,
+                                    const int* const index) {
+  if (isGridEmpty)
+    return;
+
   loop_through_node("fill", nullptr, data, index);
 
   calc_current();
@@ -325,7 +328,7 @@ void FluidInterface::set_couple_node_value(const double* const data,
 }
 
 void FluidInterface::calc_current() {
-  if (nodeFluid.empty())
+  if (isGridEmpty)
     return;
 
   // All centerB, including all ghost cells are accurate.

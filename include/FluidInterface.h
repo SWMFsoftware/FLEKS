@@ -145,7 +145,7 @@ public:
 
   void get_couple_node_loc(double* const pos_DI);
 
-  void set_couple_node_value(const double* const data, const int* const index);
+  void set_node_fluid(const double* const data, const int* const index);
 
   void calc_current();
 

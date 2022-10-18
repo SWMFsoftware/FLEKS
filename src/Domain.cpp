@@ -25,9 +25,13 @@ void Domain::init(double time, const int iDomain,
 
   prepare_grid_info(paramRegion);
 
-  fi = std::make_shared<FluidInterface>(
-      gm, amrInfo, nGst, gridID, paramInt,
-      Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm);
+  if (initFromSWMF) {
+    fi = std::make_shared<FluidInterface>(
+        gm, amrInfo, nGst, gridID, paramInt,
+        Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm);
+  } else {
+    fi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID);
+  }
 
   pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi, tc, gridID);
 
@@ -218,7 +222,13 @@ void Domain::set_ic() {
 
 //========================================================
 void Domain::set_state_var(double *data, int *index) {
-  pic->set_state_var(data, index);
+
+  Print() << printPrefix << " GM -> PC coupling at t =" << tc->get_time_si()
+          << " (s)" << std::endl;
+
+  fi->set_node_fluid(data, index);
+
+  pic->update_cells_for_pt();
 }
 
 //========================================================
@@ -469,16 +479,10 @@ void Domain::read_param(const bool readGridInfo) {
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
                command == "#BODYSIZE" || command == "#PLASMA") {
       fi->read_param(command, param);
-    } else if (command == "#OHMSLAW") {
-      std::string sOhmU;
-      Real eta;
-      param.read_var("OhmU", sOhmU);
-      param.read_var("resistivity", eta);
-
-      fi->set_resistivity(eta);
-      fi->set_ohm_u(sOhmU);
     } else if (command == "#RESTART") {
       param.read_var("doRestart", doRestart);
+    } else if (command == "#INITFROMSWMF") {
+      param.read_var("initFromSWMF", initFromSWMF);
     } else if (command == "#GEOMETRY") {
       for (int i = 0; i < nDim; ++i) {
         Real lo, hi;
@@ -635,6 +639,14 @@ void Domain::read_param(const bool readGridInfo) {
                       plotVar, plotMin_D, plotMax_D);
         tc->plots.push_back(pcTmp);
       }
+    } else if (command == "#OHMSLAW") {
+      std::string sOhmU;
+      Real eta;
+      param.read_var("OhmU", sOhmU);
+      param.read_var("resistivity", eta);
+
+      fi->set_resistivity(eta);
+      fi->set_ohm_u(sOhmU);
       //--------- The commands below exist in restart.H only --------
     } else if (command == "#NSTEP") {
       int nStep;

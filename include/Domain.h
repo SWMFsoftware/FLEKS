@@ -15,6 +15,7 @@ private:
   // Number of files per AMREX output.
   int nFileField = 64, nFileParticle = 256;
 
+  bool initFromSWMF = true;
 public:
   // Q: Why are pic and pt defined as pointers?
   // A: Pic and particleTracker are derived from AmrCore, whose initialization
