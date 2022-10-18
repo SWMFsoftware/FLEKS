@@ -110,10 +110,9 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
 
     int n = 0;
     for (int i = 0; i < nDim; i++) {
-      Real phyMin, phyMax, dx;
-      phyMin = info[n++] * si2noL; // Lmin
-      phyMax = phyMin + info[n++] * si2noL;
-      dx = info[n++] * si2noL; // dx
+      Real phyMin = info[n++] * si2noL; // Lmin
+      Real phyMax = phyMin + info[n++] * si2noL;
+      Real dx = info[n++] * si2noL; // dx
       nCell[i] = (int)((phyMax - phyMin) / dx + 0.5);
 
       if (isFake2D && i == iz_) {
@@ -467,6 +466,9 @@ void Domain::read_param(const bool readGridInfo) {
                command == "#TPSAVE" || command == "#TPRELATIVISTIC" ||
                command == "#TPINITFROMPIC" || command == "#TPSTATESI") {
       pt->read_param(command, param);
+    } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
+               command == "#BODYSIZE" || command == "#PLASMA") {
+      fi->read_param(command, param);
     } else if (command == "#OHMSLAW") {
       std::string sOhmU;
       Real eta;
@@ -477,6 +479,22 @@ void Domain::read_param(const bool readGridInfo) {
       fi->set_ohm_u(sOhmU);
     } else if (command == "#RESTART") {
       param.read_var("doRestart", doRestart);
+    } else if (command == "#GEOMETRY") {
+      for (int i = 0; i < nDim; ++i) {
+        Real lo, hi;
+        param.read_var("min", lo);
+        param.read_var("max", hi);
+        domainRange.setLo(i, lo);
+        domainRange.setHi(i, hi);
+      }
+      if (!domainRange.ok())
+        Abort("Error: invalid input!");
+    } else if (command == "#NCELL") {
+      for (int i = 0; i < nDim; ++i) {
+        param.read_var("nCell", nCell[i]);
+        if (nCell[i] <= 0)
+          Abort("Error: invalid input!");
+      }
     } else if (command == "#NOUTFILE") {
       param.read_var("nFileField", nFileField);
       param.read_var("nFileParticle", nFileParticle);
@@ -633,18 +651,6 @@ void Domain::read_param(const bool readGridInfo) {
       param.read_var("dtNextSI", dtNextSI);
       tc->set_dt_si(dtSI);
       tc->set_next_dt_si(dtNextSI);
-    } else if (command == "#GEOMETRY") {
-      for (int i = 0; i < nDim; ++i) {
-        Real lo, hi;
-        param.read_var("min", lo);
-        param.read_var("max", hi);
-        domainRange.setLo(i, lo);
-        domainRange.setHi(i, hi);
-      }
-    } else if (command == "#NCELL") {
-      for (int i = 0; i < nDim; ++i) {
-        param.read_var("nCell", nCell[i]);
-      }
     } else {
       Print() << "Error: command = " << command << std::endl;
       Abort("Can not find this command!");
@@ -656,6 +662,7 @@ void Domain::read_param(const bool readGridInfo) {
   if (!readGridInfo) {
     pic->post_process_param();
     pt->post_process_param();
+    fi->post_process_param();
   }
 
   VisMF::SetNOutFiles(nFileField);

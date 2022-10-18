@@ -7,34 +7,15 @@
 using namespace amrex;
 using namespace std;
 
-FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
-                               int nGst, int id)
-    : Grid(gm, amrInfo, nGst, id) {
+void FluidInterface::post_process_param() {
+  if (initFromSWMF)
+    return;
 
-  nDimFluid = 2;
-  nFluid = 2;
-  // (rho, vx, vy, vz, ppar, p)*nFluid + B + E
-  nVarFluid = 6 * nFluid + 3 + 3;
+  nDimFluid = (Geom(0).Domain().length(iz_) == 1) ? 2 : 3;
 
-  nS = nFluid;
+  const Real protonMassPerChargeSI = 1.67262192e-27 / 1.60217663e-19;
 
-  nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
-
-  QoQi_S.resize(nS);
-  MoMi_S.resize(nS);
-
-  QoQi_S[0] = -1;
-  MoMi_S[0] = 0.01;
-
-  QoQi_S[1] = 1;
-  MoMi_S[1] = 1;
-
-  ScalingFactor = 1;
-
-  // Normalization parameters in SI units.
-  Lnorm = 1;
-  Unorm = 1;
-  Mnorm = 1;
+  Mnorm = 1e7 * Lnorm * pow(protonMassPerChargeSI * ScalingFactor, 2);
 
   set_var_idx();
   calc_normalized_units();
@@ -47,10 +28,12 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
                                const amrex::Vector<double>& paramComm)
     : Grid(gm, amrInfo, nGst, id) {
 
+  initFromSWMF = true;
+
   if (iParam.empty() || norm.empty() || paramComm.empty())
     amrex::Abort("Error: one of the input vector is empty!\n");
 
-  nDimFluid = iParam[0];
+  nDimFluid = (Geom(0).Domain().length(iz_) == 1) ? 2 : 3;
   nVarFluid = iParam[2];
   nFluid = iParam[3];
   nSpeciesFluid = iParam[4];
@@ -199,6 +182,30 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
             "not supported so far!!!"
          << endl;
     abort();
+  }
+}
+
+//==========================================================
+void FluidInterface::read_param(const std::string& command, ReadParam& param) {
+  if (command == "#NORMALIZATION") {
+    param.read_var("lNorm", Lnorm);
+    param.read_var("uNorm", Unorm);
+  } else if (command == "#SCALINGFACTOR") {
+    param.read_var("scaling", ScalingFactor);
+  } else if (command == "#BODYSIZE") {
+    param.read_var("scaling", rPlanetSi);
+  } else if (command == "#PLASMA") {
+    param.read_var("nS", nS);
+    QoQi_S.resize(nS);
+    MoMi_S.resize(nS);
+    for (int i = 0; i < nS; i++) {
+      param.read_var("mass", MoMi_S[i]);
+      param.read_var("charge", QoQi_S[i]);
+    }
+    nFluid = nS;
+    // (rho, vx, vy, vz, ppar, p)*nFluid + B + E
+    nVarFluid = 6 * nFluid + 3 + 3;
+    nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
   }
 }
 

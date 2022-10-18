@@ -17,6 +17,7 @@
 #include "Constants.h"
 #include "Grid.h"
 #include "MDArray.h"
+#include "ReadParam.h"
 #include "Utility.h"
 #include "Writer.h"
 
@@ -39,7 +40,7 @@ private:
   bool isGridInitialized = false;
   bool isGridEmpty = false;
 
-  int nCellPerPatch = 4;
+  int nCellPerPatch = 1;
 
   int nDimFluid;
 
@@ -86,13 +87,14 @@ private:
 
   int iBx, iBy, iBz, iEx, iEy, iEz, iPe, iJx, iJy, iJz, iRhoTotal;
 
-  double rPlanetSi;
+  double rPlanetSi = 1;
 
-  double ScalingFactor;
+  int ScalingFactor = 1;
 
   // normalization units for length, velocity, mass and charge
   // Normalized q/m ==1 for proton in CGS units
-  double Lnorm, Unorm, Mnorm, Qnorm;
+  double Lnorm = 1, Unorm = 1;
+  double Mnorm, Qnorm;
 
   amrex::Vector<double> Si2No_V, No2Si_V;
   double Si2NoM, Si2NoV, Si2NoRho, Si2NoB, Si2NoP, Si2NoJ, Si2NoL, Si2NoE;
@@ -107,6 +109,8 @@ private:
   double etaSI = 0, etaNO = 0;
   int OhmU = OhmUe_;
 
+  bool initFromSWMF;
+
 public:
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
                  int nGst, int id, const amrex::Vector<int>& iParam,
@@ -114,10 +118,17 @@ public:
                  const amrex::Vector<double>& paramComm);
 
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-                 int nGst, int id);
+                 int nGst, int id)
+      : Grid(gm, amrInfo, nGst, id) {
+    initFromSWMF = false;
+  }
 
   ~FluidInterface() = default;
   FluidInterface& operator=(const FluidInterface& other) = default;
+
+  void read_param(const std::string& command, ReadParam& param);
+
+  void post_process_param();
 
   void set_var_idx();
 
@@ -187,7 +198,7 @@ public:
 
   double get_rPlanet_SI() const { return rPlanetSi; }
 
-  double get_scaling_factor() const { return ScalingFactor; }
+  int get_scaling_factor() const { return ScalingFactor; }
 
   // return MhdNo2SiL
   double get_MhdNo2SiL() const { return (MhdNo2SiL); }
@@ -821,8 +832,8 @@ public:
     return Ez;
   }
 
-  // Calculate grad(pe) at node (x,y,z). If this node is at the boundary of the
-  // fab, it will return grad(pe) at a node that is one cell away from the
+  // Calculate grad(pe) at node (x,y,z). If this node is at the boundary of
+  // the fab, it will return grad(pe) at a node that is one cell away from the
   // boundary. Only works when useElectronFluid is False.
   amrex::Real get_grad_pe_x(const amrex::MFIter& mfi, const int x, const int y,
                             const int z) const {

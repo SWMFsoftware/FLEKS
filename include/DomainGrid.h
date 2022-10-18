@@ -34,6 +34,11 @@ protected:
   amrex::Box centerBox;
   amrex::RealBox domainRange;
 
+  amrex::Real lNormSI = 0;
+  amrex::Real uNormSI = 0;
+  amrex::Real mNormSI = 0;
+  int scalingFactor = 1;
+
   const int coord = 0; // Cartesian grid
   amrex::Geometry gm;
 
