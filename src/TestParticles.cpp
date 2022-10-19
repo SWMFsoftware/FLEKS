@@ -18,7 +18,7 @@ TestParticles::TestParticles(amrex::AmrCore* amrcore,
   for (int iDim = 0; iDim < nDim; iDim++)
     nPartPerCell[iDim] = 2;
 
-  outputDir = "PC/plots/test_particles";
+  outputDir = component + "/plots/test_particles";
 
   nInitPart = 0;
 }

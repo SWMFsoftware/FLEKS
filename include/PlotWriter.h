@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "Constants.h"
 #include "MDArray.h"
 
 class PlotWriter; // Forward declaration
@@ -55,7 +56,7 @@ private:
   bool isVerbose;
   //----Input parameters--------------------------------------
 
-  std::string SaveDirName = "PC/plots";
+  std::string SaveDirName = component + "/plots";
   std::string namePrefix;
 
   // Output variable list. Include X/Y/Z.

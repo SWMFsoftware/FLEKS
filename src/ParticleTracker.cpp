@@ -41,7 +41,7 @@ void ParticleTracker::write_log(bool doForce, bool doCreateFile) {
 
   if (doCreateFile && ParallelDescriptor::IOProcessor()) {
     std::stringstream ss;
-    ss << "PC/plots/log_pt_n" << std::setfill('0') << std::setw(8)
+    ss << component << "/plots/log_pt_n" << std::setfill('0') << std::setw(8)
        << tc->get_cycle() << ".log";
     logFile = ss.str();
     std::ofstream of(logFile.c_str());
@@ -239,7 +239,7 @@ void ParticleTracker::save_restart_data() {
   if (isGridEmpty || !usePT)
     return;
 
-  std::string restartDir = "PC/restartOUT/";
+  std::string restartDir = component + "/restartOUT/";
 
   bool doSavePlot = savectr->is_time_to(true);
   for (int iPart = 0; iPart < parts.size(); iPart++) {
@@ -260,7 +260,7 @@ void ParticleTracker::read_restart() {
   if (!usePT)
     return;
 
-  std::string restartDir = "PC/restartIN/";
+  std::string restartDir = component + "/restartIN/";
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     parts[iPart]->Restart(restartDir,
                           gridName + "_test_particles" + std::to_string(iPart));

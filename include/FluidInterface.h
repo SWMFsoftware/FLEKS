@@ -234,14 +234,14 @@ public:
     if (isGridEmpty)
       return;
 
-    std::string restartDir = "PC/restartOUT/";
+    std::string restartDir = component + "/restartOUT/";
     amrex::VisMF::Write(nodeFluid,
                         restartDir + gridName + "_Interface_nodeFluid");
     amrex::VisMF::Write(centerB, restartDir + gridName + "_Interface_centerB");
   };
 
   void read_restart() {
-    std::string restartDir = "PC/restartIN/";
+    std::string restartDir = component + "/restartIN/";
     amrex::VisMF::Read(nodeFluid,
                        restartDir + gridName + "_Interface_nodeFluid");
     amrex::VisMF::Read(centerB, restartDir + gridName + "_Interface_centerB");

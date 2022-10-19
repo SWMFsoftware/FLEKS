@@ -254,7 +254,7 @@ void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
 
 //========================================================
 void Domain::read_restart() {
-  std::string restartDir = "PC/restartIN/";
+  std::string restartDir = component + "/restartIN/";
 
   MultiFab tmp;
   VisMF::Read(tmp, restartDir + gridName + "_centerB");
@@ -304,7 +304,8 @@ void Domain::save_restart_header() {
 
     headerFile.rdbuf()->pubsetbuf(ioBuffer.dataPtr(), ioBuffer.size());
 
-    std::string headerFileName("PC/restartOUT/" + gridName + "_restart.H");
+    std::string headerFileName(component + "/restartOUT/" + gridName +
+                               "_restart.H");
 
     headerFile.open(headerFileName.c_str(),
                     std::ofstream::out | std::ofstream::trunc);
@@ -449,6 +450,7 @@ void Domain::read_param(const bool readGridInfo) {
 
   param.set_verbose(false);
   param.set_command_suffix(gridName);
+  param.set_component(component);
   while (param.get_next_command(command)) {
 
     bool isGridCommand = command == "#MAXBLOCKSIZE" ||
@@ -462,7 +464,7 @@ void Domain::read_param(const bool readGridInfo) {
 
     param.set_verbose(ParallelDescriptor::IOProcessor());
     Print() << "\n"
-            << "PC: " << command << " " << gridName << std::endl;
+            << component << ": " << command << " " << gridName << std::endl;
 
     if (command == "#DIVE" || command == "#EFIELDSOLVER" ||
         command == "#PARTICLES" || command == "#ELECTRON" ||

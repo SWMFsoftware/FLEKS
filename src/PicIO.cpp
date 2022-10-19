@@ -52,8 +52,9 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
                                      double* const data_I, const int nVar) {
   std::string nameFunc = "Pic::get_fluid_state_for_points";
 
-  Print() << printPrefix << " PC -> GM coupling at t =" << tc->get_time_si()
-          << " (s)" << std::endl;
+  Print() << printPrefix << component
+          << " -> GM coupling at t =" << tc->get_time_si() << " (s)"
+          << std::endl;
 
   if (!usePIC) {
     for (int i = 0; i < nVar * nPoint; i++) {
@@ -419,7 +420,7 @@ void Pic::save_restart_data() {
   if (isGridEmpty)
     return;
 
-  std::string restartDir = "PC/restartOUT/";
+  std::string restartDir = component + "/restartOUT/";
   VisMF::Write(nodeE, restartDir + gridName + "_nodeE");
   VisMF::Write(nodeB, restartDir + gridName + "_nodeB");
   VisMF::Write(centerB, restartDir + gridName + "_centerB");
@@ -454,7 +455,7 @@ void Pic::save_restart_header(std::ofstream& headerFile) {
 void Pic::read_restart() {
   Print() << "Pic::read_restart() start....." << std::endl;
 
-  std::string restartDir = "PC/restartIN/";
+  std::string restartDir = component + "/restartIN/";
   VisMF::Read(nodeE, restartDir + gridName + "_nodeE");
   VisMF::Read(nodeB, restartDir + gridName + "_nodeB");
   VisMF::Read(centerB, restartDir + gridName + "_centerB");
@@ -480,7 +481,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
 
   if (doCreateFile && ParallelDescriptor::IOProcessor()) {
     std::stringstream ss;
-    ss << "PC/plots/log_pic_n" << std::setfill('0') << std::setw(8)
+    ss << component << "/plots/log_pic_n" << std::setfill('0') << std::setw(8)
        << tc->get_cycle() << ".log";
     logFile = ss.str();
     std::ofstream of(logFile.c_str());

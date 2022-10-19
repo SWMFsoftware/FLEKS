@@ -30,6 +30,11 @@ constexpr static int nPTRecord = 20;
 constexpr static int ptRecordSize = 7;
 constexpr static int nPTPartReal = nPicPartReal + ptRecordSize * nPTRecord,
                      nPTPartInt = 1;
+#ifdef _PT_COMPONENT_
+static const std::string component="PT";
+#else
+static const std::string component="PC";
+#endif
 
 enum ParticleStaggering { Staggered, NonStaggered };
 
