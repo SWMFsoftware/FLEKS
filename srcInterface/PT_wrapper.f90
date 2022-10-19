@@ -26,10 +26,8 @@ module PT_wrapper
 
   
   ! OH coupler
-  public:: PT_put_from_oh_dt
-  public:: PT_put_from_oh_init
-  public:: PT_put_from_oh_grid_info
   public:: PT_put_from_oh
+  public:: PT_put_from_oh_dt
   public:: PT_get_for_oh
 
   ! SC/IH/GM coupling. Have not implemented. Empty functions
@@ -114,6 +112,8 @@ contains
 
     character(len=*), parameter :: NameSub='PT_init_session'
     !--------------------------------------------------------------------------
+    write(*,*)NameSub
+
     call fleks_init(TimeSimulation)
 
   end subroutine PT_init_session
@@ -193,35 +193,8 @@ contains
     real,    intent(in) :: DtSiIn
     character(len=*), parameter :: NameSub = 'PT_put_from_oh_dt'
     !--------------------------------------------------------------------------
-
+    write(*,*)'Error: ', NameSub
   end subroutine PT_put_from_oh_dt
-  
-  !============================================================================
-  subroutine PT_put_from_oh_grid_info(nInt, nGrid, nSize_I, Int_I)
-
-    integer, intent(in)         :: nInt, nGrid
-    integer, intent(in)         :: Int_I(nInt), nSize_I(nGrid)
-    !--------------------------------------------------------------------------
-    call fleks_set_grid_info(nInt, nSize_I, Int_I)
-
-  end subroutine PT_put_from_oh_grid_info
-  !============================================================================
-  
-  subroutine PT_put_from_oh_init(nParamInt, nParamReal, iParam_I, Param_I, &
-       NameVar)
-
-    integer, intent(in)         :: nParamInt, nParamReal! number of parameters
-    integer, intent(in)         :: iParam_I(nParamInt)  ! integer parameters
-    real,    intent(in)         :: Param_I(nParamReal)  ! real parameters
-    character(len=*), intent(in):: NameVar              ! names of variables
-
-    character(len=*), parameter :: NameSub = 'PT_put_from_oh_init'
-    !--------------------------------------------------------------------------
-    ! store OH's nDim, so it is reported as PT's nDim for the point coupler
-    nDim = iParam_I(1) 
-    call fleks_from_gm_init(iParam_I, Param_I, NameVar)
-
-  end subroutine PT_put_from_oh_init
   !============================================================================
   
   subroutine PT_find_points(nDimIn, nPoint, Xyz_DI, iProc_I)
@@ -260,6 +233,7 @@ contains
     character(len=*), parameter :: NameSub='PT_put_from_oh'
     !--------------------------------------------------------------------------
     call CON_set_do_test(NameSub, DoTest, DoTestMe)
+    write(*,*)'Warning: ', NameSub    
     if(.not. present(Data_VI))then
        call fleks_get_ngridpoints(nPoint)
 
@@ -298,8 +272,8 @@ contains
 
     character(len=*), parameter :: NameSub='PT_get_for_oh'
     !--------------------------------------------------------------------------
-    call fleks_get_state_var( &
-         nDimIn, nPoint, Xyz_DI, Data_VI, nVarIn)
+    write(*,*)'Error: ', NameSub
+
   end subroutine PT_get_for_oh
   !============================================================================
 

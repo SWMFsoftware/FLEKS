@@ -31,6 +31,21 @@ int fleks_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc) {
 //==========================================================
 int fleks_init_(double *time) {
   timeNow = (*time);
+
+#ifdef _PT_COMPONENT_
+
+  int nDomain = 1;
+  for (int iDomain = 0; iDomain < nDomain; iDomain++)
+    fleksDomains.add_new_domain();
+
+  for (int i = 0; i < fleksDomains.size(); i++) {
+    fleksDomains.select(i);
+    fleksDomains(i).init(timeNow, i, paramString);
+  }
+
+  isInitialized = true;
+#endif
+
   return 0;
 }
 

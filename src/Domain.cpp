@@ -20,8 +20,9 @@ void Domain::init(double time, const int iDomain,
 
   param = paramString;
 
-  if (paramInt[0] == 2)
-    isFake2D = true;
+  if (!paramInt.empty())
+    if (paramInt[0] == 2)
+      isFake2D = true;
 
   prepare_grid_info(paramRegion);
 
@@ -107,7 +108,7 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
   if (isFake2D)
     set_periodicity(iz_, true);
 
-  if (!doRestart) {
+  if (!doRestart && initFromSWMF) {
     // If restart, the grid info will be read from restart.H
 
     Real si2noL = 1. / info[18];
@@ -452,7 +453,8 @@ void Domain::read_param(const bool readGridInfo) {
 
     bool isGridCommand = command == "#MAXBLOCKSIZE" ||
                          command == "#PERIODICITY" || command == "#GEOMETRY" ||
-                         command == "#NCELL" || command == "#RESTART";
+                         command == "#NCELL" || command == "#RESTART" ||
+                         command == "#INITFROMSWMF";
 
     // Skip this command
     if (readGridInfo != isGridCommand)
@@ -499,6 +501,7 @@ void Domain::read_param(const bool readGridInfo) {
         if (nCell[i] <= 0)
           Abort("Error: invalid input!");
       }
+      isFake2D = (nCell[iz_] == 1);
     } else if (command == "#NOUTFILE") {
       param.read_var("nFileField", nFileField);
       param.read_var("nFileParticle", nFileParticle);
