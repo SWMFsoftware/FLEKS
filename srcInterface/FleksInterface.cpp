@@ -33,7 +33,6 @@ int fleks_init_(double *time) {
   timeNow = (*time);
 
 #ifdef _PT_COMPONENT_
-
   int nDomain = 1;
   for (int iDomain = 0; iDomain < nDomain; iDomain++)
     fleksDomains.add_new_domain();
@@ -44,6 +43,8 @@ int fleks_init_(double *time) {
   }
 
   isInitialized = true;
+
+  fleks_turn_on_all_cells_();
 #endif
 
   return 0;
@@ -265,6 +266,14 @@ int fleks_set_grid_info_(int *nInt, int *accumulatedSize, int *status) {
     fleksDomains(i).receive_grid_info(&status[idxStart]);
     fleksDomains(i).regrid();
   }
+  return 0;
+}
 
+//==========================================================
+int fleks_turn_on_all_cells_() {
+  for (int i = 0; i < fleksDomains.size(); i++) {
+    fleksDomains(i).receive_grid_info();
+    fleksDomains(i).regrid();
+  }
   return 0;
 }

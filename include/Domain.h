@@ -16,6 +16,7 @@ private:
   int nFileField = 64, nFileParticle = 256;
 
   bool initFromSWMF = true;
+
 public:
   // Q: Why are pic and pt defined as pointers?
   // A: Pic and particleTracker are derived from AmrCore, whose initialization
@@ -78,7 +79,7 @@ public:
   // Preparing grid information for Grid/AmrCore initialization.
   void prepare_grid_info(const amrex::Vector<double> &info);
   void regrid();
-  void receive_grid_info(int *status);
+  void receive_grid_info(int *status = nullptr);
   //-------------- grid end---------------------------------
 
   // void make_data();
