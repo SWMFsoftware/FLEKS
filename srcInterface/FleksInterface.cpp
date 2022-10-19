@@ -226,12 +226,14 @@ int fleks_cal_dt_(double *dtOut) {
 }
 
 //==========================================================
-int fleks_get_grid_info_(int *iGrid, int *iDecomp) {
+int fleks_get_grid_info_(int *fluidDim, int *iGrid, int *iDecomp) {
   (*iGrid) = 0;
   (*iDecomp) = 0;
+  (*fluidDim) = 0;
   for (int i = 0; i < fleksDomains.size(); i++) {
     (*iGrid) += fleksDomains(i).get_iGrid();
     (*iDecomp) += fleksDomains(i).get_iDecomp();
+    (*fluidDim) = fleksDomains(i).fi->get_fluid_dimension();
   }
   return 0;
 }

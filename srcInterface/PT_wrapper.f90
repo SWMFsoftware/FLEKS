@@ -182,9 +182,9 @@ contains
     logical:: IsFirstTime = .true.
 
     character(len=*), parameter :: NameSub = 'PT_get_grid_info'
-    !--------------------------------------------------------------------------
-    nDimOut    = nDim
-    call fleks_get_grid_info(iGridOut, iDecompOut); 
+    !--------------------------------------------------------------------------    
+    call fleks_get_grid_info(nDim, iGridOut, iDecompOut); 
+    nDimOut = nDim;    
   end subroutine PT_get_grid_info
   !============================================================================
   

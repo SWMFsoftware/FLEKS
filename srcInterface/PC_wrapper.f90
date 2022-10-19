@@ -163,9 +163,9 @@ contains
     logical:: IsFirstTime = .true.
 
     character(len=*), parameter :: NameSub = 'PC_get_grid_info'
-    !--------------------------------------------------------------------------
+    !--------------------------------------------------------------------------    
+    call fleks_get_grid_info(nDimOut, iGridOut, iDecompOut); 
     nDimOut    = nDim
-    call fleks_get_grid_info(iGridOut, iDecompOut); 
   end subroutine PC_get_grid_info
   !============================================================================
   subroutine PC_put_from_gm_dt(DtSiIn)
