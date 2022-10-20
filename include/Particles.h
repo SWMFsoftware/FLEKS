@@ -263,8 +263,6 @@ public:
 
   void divE_correct_position(const amrex::MultiFab& phiMF);
 
-  amrex::Real get_qom() { return charge / mass; }
-
   bool is_neutral() const { return charge == 0; };
 
   int get_speciesID() const { return speciesID; }

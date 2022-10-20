@@ -24,7 +24,7 @@ Particles<NStructReal, NStructInt>::Particles(
   do_tiling = true;
 
   qom = charge / mass;
-  qomSign = qom > 0 ? 1 : -1;
+  qomSign = qom >= 0 ? 1 : -1;
 
   invVol = 1;
   for (int i = 0; i < nDim; i++) {
@@ -455,7 +455,7 @@ std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
   }
 
   for (int i = 0; i < 5; i++)
-    sum[i] /= get_qom();
+    sum[i] *= qomSign * get_mass();
 
   if (!localOnly) {
     ParallelDescriptor::ReduceRealSum(sum.data(), sum.size(),
@@ -548,7 +548,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(MultiFab& momentsMF,
   // FillBoundary seems necessary for non-box active PIC region. But why? --Yuxi
   momentsMF.FillBoundary(Geom(0).periodicity());
 
-  energy *= 0.5 / get_qom();
+  energy *= 0.5 * qomSign * get_mass();
 
   return energy;
 }
@@ -873,7 +873,7 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::convert_to_fluid_moments(
     MultiFab& momentsMF) {
   MultiFab tmpMF(momentsMF, make_alias, iRho_, iPyz_ - iRho_ + 1);
-  tmpMF.mult(1.0 / get_qom(), tmpMF.nGrow());
+  tmpMF.mult(qomSign * get_mass(), tmpMF.nGrow());
 
   for (MFIter mfi(momentsMF); mfi.isValid(); ++mfi) {
     FArrayBox& fab = momentsMF[mfi];
@@ -1821,7 +1821,7 @@ IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
                 other.get_charge(), other.get_mass(),
                 amrex::IntVect(-1, -1, -1)) {
   const int lev = 0;
-  no2outM /= get_qom();
+  no2outM *= qomSign * get_mass();
 
   const bool doLimit = IORange.ok();
   const auto& plevelOther = other.GetParticles(lev);

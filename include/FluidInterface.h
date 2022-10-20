@@ -195,7 +195,6 @@ public:
 
   double get_species_mass(int i) const { return MoMi_S[i]; };
   double get_species_charge(int i) const { return QoQi_S[i]; };
-  double get_qom(int is) const { return QoQi_S[is] / MoMi_S[is]; }
 
   double get_lnorm_si() const { return lNormSI; }
   double get_unorm_si() const { return uNormSI; }
