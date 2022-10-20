@@ -15,9 +15,55 @@ void FluidInterface::post_process_param() {
 
   const Real protonMassPerChargeSI = 1.67262192e-27 / 1.60217663e-19;
 
-  Mnorm = 1e7 * Lnorm * pow(protonMassPerChargeSI * ScalingFactor, 2);
+  mNormSI = 1e7 * lNormSI * pow(protonMassPerChargeSI * ScalingFactor, 2);
 
   set_var_idx();
+  calc_normalized_units();
+}
+
+FluidInterface::FluidInterface(amrex::Geometry const& gm,
+                               amrex::AmrInfo const& amrInfo, int nGst, int id,
+                               const FluidInterface* const other)
+    : Grid(gm, amrInfo, nGst, id) {
+  initFromSWMF = false;
+  lNormSI = other->get_lnorm_si();
+  uNormSI = other->get_unorm_si();
+  mNormSI = other->get_mnorm_si();
+
+  ScalingFactor = other->get_scaling_factor();
+
+  useMultiFluid = false;
+  useMultiSpecies = false;
+  useElectronFluid = false;
+  useMhdPe = false;
+  useAnisoP = false;
+
+  // For BATSRUS MHD equations
+  nVarFluid = 5 + 3;
+  nVarCoupling = nVarFluid + 3;
+  nFluid = 1;
+  nSpeciesFluid = 1;
+  nIon = 1;
+  nS = 1;
+
+  QoQi_S.push_back(1);
+  MoMi_S.push_back(1);
+
+  int idx = 0;
+  iRho_I.push_back(idx++);
+  iRhoUx_I.push_back(idx);
+  iUx_I.push_back(idx++);
+  iRhoUy_I.push_back(idx);
+  iUy_I.push_back(idx++);
+  iRhoUz_I.push_back(idx);
+  iUz_I.push_back(idx++);
+  iBx = idx++;
+  iBy = idx++;
+  iBz = idx++;
+
+  iP_I.push_back(idx);
+  iPpar_I.push_back(idx);
+
   calc_normalized_units();
 }
 
@@ -144,9 +190,9 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
 
   n = 0;
   // Normalization parameters.
-  Lnorm = norm[n++];
-  Unorm = norm[n++];
-  Mnorm = norm[n++];
+  lNormSI = norm[n++];
+  uNormSI = norm[n++];
+  mNormSI = norm[n++];
   ScalingFactor = norm[n++];
 
   QoQi_S.resize(nS);
@@ -178,7 +224,8 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
 
   if (useMultiFluid && !useMhdPe) {
     cout << printPrefix
-         << " Use multi-fluid but do not use electron pressure. This case is "
+         << " Use multi-fluid but do not use electron pressure. This "
+            "case is "
             "not supported so far!!!"
          << endl;
     abort();
@@ -188,8 +235,8 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
 //==========================================================
 void FluidInterface::read_param(const std::string& command, ReadParam& param) {
   if (command == "#NORMALIZATION") {
-    param.read_var("lNorm", Lnorm);
-    param.read_var("uNorm", Unorm);
+    param.read_var("lNorm", lNormSI);
+    param.read_var("uNorm", uNormSI);
   } else if (command == "#SCALINGFACTOR") {
     param.read_var("scaling", ScalingFactor);
   } else if (command == "#BODYSIZE") {
@@ -213,7 +260,8 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
                             const amrex::DistributionMapping& dmIn) {
   std::string nameFunc = "FluidInterface::regrid";
 
-  // Why need 'isGridInitialized'? See the explaination in Domain::regrid().
+  // Why need 'isGridInitialized'? See the explaination in
+  // Domain::regrid().
   if (centerBAIn == cGrid && isGridInitialized) {
     // The interface grid does not change.
     return;
@@ -348,20 +396,22 @@ void FluidInterface::calc_current() {
   Q: The outmost layer of currentMF is not accurate. Why not use
   apply_float_boundary to fill in first-order estimation?
 
-  A: If the whole domain is just ONE block, it will work. Otherwise, it will
-  not. For example, For a 2D simulation domain of 6x3 with 2 blocks. In the
-  x-direction, block-1 convers cell 0 (c+0) to cell 2 (c+2), and block-2
-  covers c+3 to c+5. The node (n+5, n-1) is the corner ghost node for the
-  block-1, and it is the face ghost node for the block-2. On block-2, this
-  node can be calculated from curl_center_to_node(centerB, currentMF....).
-  However, block-1 does not know how to calculate it, and FillBoundary will
-  also NOT copy this node from block-2 to block-1, because this node is a
-  boundary node and it is not covered by any physical node.
+  A: If the whole domain is just ONE block, it will work. Otherwise, it
+  will not. For example, For a 2D simulation domain of 6x3 with 2 blocks.
+  In the x-direction, block-1 convers cell 0 (c+0) to cell 2 (c+2), and
+  block-2 covers c+3 to c+5. The node (n+5, n-1) is the corner ghost node
+  for the block-1, and it is the face ghost node for the block-2. On
+  block-2, this node can be calculated from curl_center_to_node(centerB,
+  currentMF....). However, block-1 does not know how to calculate it, and
+  FillBoundary will also NOT copy this node from block-2 to block-1,
+  because this node is a boundary node and it is not covered by any
+  physical node.
 
-  So, we should keep in mind, the variables that are directly received from
-  the MHD side, such as the magnetic fields, are accurate on all ghost nodes,
-  but the current releated variables (current, plasma velocities, and electric
-  field) are unknown at the outmost boundary node layer.
+  So, we should keep in mind, the variables that are directly received
+  from the MHD side, such as the magnetic fields, are accurate on all
+  ghost nodes, but the current releated variables (current, plasma
+  velocities, and electric field) are unknown at the outmost boundary node
+  layer.
   */
 }
 
@@ -435,18 +485,18 @@ void FluidInterface::load_balance(const DistributionMapping& dmIn) {
 void FluidInterface::calc_normalized_units() {
 
   // Normalization units converted [SI] -> [cgs]
-  if (Lnorm > 0) {
-    Lnorm *= 100.0;
+  if (lNormSI > 0) {
+    Lnorm = 100.0 * lNormSI;
   } else {
     Lnorm = 1.0;
   }
-  if (Unorm > 0) {
-    Unorm *= 100.0;
+  if (uNormSI > 0) {
+    Unorm = 100.0 * uNormSI;
   } else {
     Unorm = 1.0;
   }
-  if (Mnorm > 0) {
-    Mnorm *= 1000.0;
+  if (mNormSI > 0) {
+    Mnorm = 1000.0 * mNormSI;
   } else {
     Mnorm = 1.0;
   }
@@ -460,8 +510,8 @@ void FluidInterface::calc_normalized_units() {
      1. Method 1
       In CGS unit, we have:
       1) [B] = [E]
-      2) div(E) ~ rhoq, where rhoq is the charge density -> [E] = [rhoq]*[L]
-      3) moment equation: d(rho*u)/dt ~ rhoq*u x B/c     ->
+      2) div(E) ~ rhoq, where rhoq is the charge density -> [E] =
+    [rhoq]*[L] 3) moment equation: d(rho*u)/dt ~ rhoq*u x B/c     ->
                          [RHO]*[U]/[T] = [rhoq]*[B]
         From the three equations above, we obtain: [B]=[E]=sqrt[RHO]*[U]
 

@@ -93,8 +93,8 @@ private:
 
   // normalization units for length, velocity, mass and charge
   // Normalized q/m ==1 for proton in CGS units
-  double Lnorm = 1, Unorm = 1;
-  double Mnorm, Qnorm;
+  double Lnorm, Unorm, lNormSI = 1, uNormSI = 1;
+  double Mnorm, Qnorm, mNormSI;
 
   amrex::Vector<double> Si2No_V, No2Si_V;
   double Si2NoM, Si2NoV, Si2NoRho, Si2NoB, Si2NoP, Si2NoJ, Si2NoL, Si2NoE;
@@ -123,8 +123,11 @@ public:
     initFromSWMF = false;
   }
 
+  // Initialization from other FluidInterface
+  FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
+                 int nGst, int id, const FluidInterface* const other);
+
   ~FluidInterface() = default;
-  FluidInterface& operator=(const FluidInterface& other) = default;
 
   void read_param(const std::string& command, ReadParam& param);
 
@@ -194,7 +197,11 @@ public:
   double get_species_charge(int i) const { return QoQi_S[i]; };
   double get_qom(int is) const { return QoQi_S[is] / MoMi_S[is]; }
 
-  double get_cLight_SI() const { return Unorm / 100; /*Unorm is in cgs unit*/ };
+  double get_lnorm_si() const { return lNormSI; }
+  double get_unorm_si() const { return uNormSI; }
+  double get_mnorm_si() const { return mNormSI; };
+
+  double get_cLight_SI() const { return uNormSI; }
 
   double get_rPlanet_SI() const { return rPlanetSi; }
 

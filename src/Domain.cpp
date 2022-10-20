@@ -40,11 +40,24 @@ void Domain::init(double time, const int iDomain,
 
   read_param(false);
 
+#ifdef _PT_COMPONENT_
+  otherfi =
+      std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, fi.get());
+#endif
+
   init_time_ctr();
 
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 
   fi->print_info();
+
+#ifdef _PT_COMPONENT_
+  Print() << "\n\n" << printPrefix << "============= otherfi info ============";
+  otherfi->print_info();
+  Print() << printPrefix << "=======================================\n\n"
+          << std::endl;
+
+#endif
 
   pic->init_source(*fi);
 
