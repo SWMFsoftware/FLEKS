@@ -62,7 +62,11 @@ FluidInterface::FluidInterface(amrex::Geometry const& gm,
   iBz = idx++;
 
   iP_I.push_back(idx);
-  iPpar_I.push_back(idx);
+  iPpar_I.push_back(idx++);
+  
+  iJx = idx++; 
+  iJy = idx++; 
+  iJz = idx++; 
 
   calc_normalized_units();
 }
@@ -272,7 +276,12 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
   cGrid = centerBAIn;
   nGrid = convert(cGrid, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
 
-  SetDistributionMap(0, dmIn);
+  if (!cGrid.empty()) {
+    // This method will call MakeNewLevelFromScratch() and
+    // PostProcessBaseGrids()
+    InitFromScratch(0.0);
+    SetDistributionMap(0, dmIn);
+  }
 
   const bool doCopy = true;
   distribute_FabArray(nodeFluid, nGrid, DistributionMap(0), nVarCoupling, nGst,
@@ -415,7 +424,7 @@ void FluidInterface::calc_current() {
   */
 }
 
-void FluidInterface::normalize_fluid_variables() {
+void FluidInterface::normalize_fluid_variables() {  
   for (int i = 0; i < nodeFluid.nComp(); ++i) {
     MultiFab tmpMF(nodeFluid, make_alias, i, 1);
     tmpMF.mult(Si2No_V[i], tmpMF.nGrow());

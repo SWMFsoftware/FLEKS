@@ -51,13 +51,13 @@ void Domain::init(double time, const int iDomain,
 
   fi->print_info();
 
-#ifdef _PT_COMPONENT_
-  Print() << "\n\n" << printPrefix << "============= otherfi info ============";
-  otherfi->print_info();
-  Print() << printPrefix << "=======================================\n\n"
-          << std::endl;
-
-#endif
+  if (otherfi) {
+    Print() << "\n\n"
+            << printPrefix << "============= otherfi info ============";
+    otherfi->print_info();
+    Print() << printPrefix << "=======================================\n\n"
+            << std::endl;
+  }
 
   pic->init_source(*fi);
 
@@ -205,6 +205,9 @@ void Domain::regrid() {
 
   fi->regrid(baPic, dmPic);
 
+  if (otherfi)
+    otherfi->regrid(baPic, dmPic);
+
   pic->regrid(activeRegionBA, baPic, dmPic);
 
   pt->regrid(activeRegionBA, baPic, dmPic, *pic);
@@ -240,9 +243,13 @@ void Domain::set_state_var(double *data, int *index) {
   Print() << printPrefix << " GM -> PC coupling at t =" << tc->get_time_si()
           << " (s)" << std::endl;
 
-  fi->set_node_fluid(data, index);
-
-  pic->update_cells_for_pt();
+  if (otherfi) {
+    // PT mode
+    otherfi->set_node_fluid(data, index);
+  } else {
+    fi->set_node_fluid(data, index);
+    pic->update_cells_for_pt();
+  }
 }
 
 //========================================================
@@ -275,7 +282,7 @@ void Domain::read_restart() {
   DistributionMapping dmPic = tmp.DistributionMap();
 
   pic->regrid(baPic, baPic, dmPic);
-  fi->regrid(baPic, dmPic);
+  fi->regrid(baPic, dmPic);  
 
   // Assume dmPT == dmPIC so far.
   pt->regrid(baPic, baPic, dmPic, *pic);
