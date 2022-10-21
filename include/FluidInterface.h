@@ -100,6 +100,9 @@ private:
   double Si2NoM, Si2NoV, Si2NoRho, Si2NoB, Si2NoP, Si2NoJ, Si2NoL, Si2NoE;
   double No2SiV, No2SiL;
 
+  // Variable names of nodeFluid.
+  amrex::Vector<std::string> varNames;
+
   // Length in BATSRUS normalized unit -> Si
   double MhdNo2SiL;
 
@@ -130,6 +133,8 @@ public:
                  const FluidInterface* const other);
 
   ~FluidInterface() = default;
+
+  void save_amrex_file();
 
   void read_param(const std::string& command, ReadParam& param);
 

@@ -1,4 +1,5 @@
 #include <AMReX_MultiFabUtil.H>
+#include <AMReX_PlotFileUtil.H>
 
 #include "FluidInterface.h"
 #include "GridUtility.h"
@@ -17,7 +18,54 @@ void FluidInterface::post_process_param() {
 
   mNormSI = 1e7 * lNormSI * pow(protonMassPerChargeSI * ScalingFactor, 2);
 
-  set_var_idx();
+  {
+    iRho_I.resize(nS);
+    iRhoUx_I.resize(nS);
+    iRhoUy_I.resize(nS);
+    iRhoUz_I.resize(nS);
+    iUx_I.resize(nS);
+    iUy_I.resize(nS);
+    iUz_I.resize(nS);
+    iPpar_I.resize(nS);
+    iP_I.resize(nS);
+
+    int idx = 0;
+    for (int i = 0; i < nS; i++) {
+      iRho_I[i] = idx++;
+      varNames.push_back("rho" + to_string(i));
+      iUx_I[i] = idx++;
+      varNames.push_back("ux" + to_string(i));
+      iUy_I[i] = idx++;
+      varNames.push_back("uy" + to_string(i));
+      iUz_I[i] = idx++;
+      varNames.push_back("uz" + to_string(i));
+      iPpar_I[i] = idx++;
+      varNames.push_back("ppar" + to_string(i));
+      iP_I[i] = idx++;
+      varNames.push_back("p" + to_string(i));
+    }
+    iBx = idx++;
+    varNames.push_back("bx");
+    iBy = idx++;
+    varNames.push_back("by");
+    iBz = idx++;
+    varNames.push_back("bz");
+    iEx = idx++;
+    varNames.push_back("ex");
+    iEy = idx++;
+    varNames.push_back("ey");
+    iEz = idx++;
+    varNames.push_back("ez");
+    iJx = nVarFluid;
+    varNames.push_back("jx");
+    iJy = iJx + 1;
+    varNames.push_back("jy");
+    iJz = iJx + 2;
+    varNames.push_back("jz");
+    iRhoUx_I = iUx_I;
+    iRhoUy_I = iUy_I;
+    iRhoUz_I = iUz_I;
+  }
   calc_normalized_units();
 }
 
@@ -52,22 +100,33 @@ FluidInterface::FluidInterface(amrex::Geometry const& gm,
 
   int idx = 0;
   iRho_I.push_back(idx++);
+  varNames.push_back("rho");
   iRhoUx_I.push_back(idx);
   iUx_I.push_back(idx++);
+  varNames.push_back("ux");
   iRhoUy_I.push_back(idx);
   iUy_I.push_back(idx++);
+  varNames.push_back("uy");
   iRhoUz_I.push_back(idx);
   iUz_I.push_back(idx++);
+  varNames.push_back("uz");
   iBx = idx++;
+  varNames.push_back("bx");
   iBy = idx++;
+  varNames.push_back("by");
   iBz = idx++;
+  varNames.push_back("bz");
 
   iP_I.push_back(idx);
   iPpar_I.push_back(idx++);
+  varNames.push_back("p");
 
   iJx = idx++;
+  varNames.push_back("jx");
   iJy = idx++;
+  varNames.push_back("jy");
   iJz = idx++;
+  varNames.push_back("jz");
 
   calc_normalized_units();
 }
@@ -383,6 +442,8 @@ void FluidInterface::set_node_fluid(const double* const data,
   convert_moment_to_velocity();
 
   MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
+
+  save_amrex_file();
 }
 
 void FluidInterface::calc_current() {
@@ -670,40 +731,6 @@ void FluidInterface::calc_mag_base_vector(const double Bx, const double By,
   norm_DD(Perp2_, X_) *= inv;
   norm_DD(Perp2_, Y_) *= inv;
   norm_DD(Perp2_, Z_) *= inv;
-}
-
-void FluidInterface::set_var_idx() {
-  iRho_I.resize(nS);
-  iRhoUx_I.resize(nS);
-  iRhoUy_I.resize(nS);
-  iRhoUz_I.resize(nS);
-  iUx_I.resize(nS);
-  iUy_I.resize(nS);
-  iUz_I.resize(nS);
-  iPpar_I.resize(nS);
-  iP_I.resize(nS);
-
-  int idx = 0;
-  for (int i = 0; i < nS; i++) {
-    iRho_I[i] = idx++;
-    iUx_I[i] = idx++;
-    iUy_I[i] = idx++;
-    iUz_I[i] = idx++;
-    iPpar_I[i] = idx++;
-    iP_I[i] = idx++;
-  }
-  iBx = idx++;
-  iBy = idx++;
-  iBz = idx++;
-  iEx = idx++;
-  iEy = idx++;
-  iEz = idx++;
-  iJx = nVarFluid;
-  iJy = iJx + 1;
-  iJz = iJx + 2;
-  iRhoUx_I = iUx_I;
-  iRhoUy_I = iUy_I;
-  iRhoUz_I = iUz_I;
 }
 
 /** print info for coupling */
@@ -1064,5 +1091,22 @@ void FluidInterface::update_nodeFluid(const MultiFabFLEKS& nodeIn,
             } // iFluid
           }
         }
+  }
+}
+
+void FluidInterface::save_amrex_file() {
+  string filename = component + "/plots/" + tag;
+  Print() << "Writing FluidInterface file " << filename;
+
+  for (int i = 0; i < nodeFluid.nComp(); i++) {
+    Real no2out = No2Si_V[i];
+    nodeFluid.mult(no2out, i, 1, nodeFluid.nGrow());
+  }
+
+  WriteSingleLevelPlotfile(filename, nodeFluid, varNames, Geom(0), 0, 0);
+
+  for (int i = 0; i < nodeFluid.nComp(); i++) {
+    Real out2no = Si2No_V[i];
+    nodeFluid.mult(out2no, i, 1, nodeFluid.nGrow());
   }
 }
