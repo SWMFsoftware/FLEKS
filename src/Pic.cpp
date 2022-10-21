@@ -288,10 +288,16 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   //--------------particles-----------------------------------
   if (parts.empty()) {
+    solveEM = true;
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::unique_ptr<Particles<> >(new Particles<>(
           this, fi.get(), tc.get(), i, fi->get_species_charge(i),
           fi->get_species_mass(i), nPartPerCell, testCase));
+
+      // If contains neutrals, assume this is OH-PT coupling, and do not solve
+      // for EM fields.
+      if (ptr->is_neutral())
+        solveEM = false;
 
       ptr->set_region_range(activeRegionBA);
 
@@ -592,6 +598,9 @@ void Pic::calc_mass_matrix() {
   if (isGridEmpty)
     return;
 
+  if (!solveEM)
+    return;
+
   timing_func(nameFunc);
 
   jHat.setVal(0.0);
@@ -701,6 +710,9 @@ void Pic::sum_moments(bool updateDt) {
 
 //==========================================================
 void Pic::divE_correction() {
+  if (!solveEM)
+    return;
+
   std::string nameFunc = "Pic::divE_correction";
 
   timing_func(nameFunc);
@@ -909,6 +921,9 @@ void Pic::update(bool doReportIn) {
 
 //==========================================================
 void Pic::update_E() {
+  if (!solveEM)
+    return;
+
   if (useExplicitPIC) {
     update_E_expl();
   } else {
@@ -1150,9 +1165,11 @@ void Pic::update_E_rhs(double* rhs) {
 
 //==========================================================
 void Pic::update_B() {
+  if (!solveEM)
+    return;
+
   std::string nameFunc = "Pic::update_B";
   timing_func(nameFunc);
-
   MultiFab dB(cGrid, DistributionMap(0), 3, nGst);
 
   curl_node_to_center(nodeEth, dB, Geom(0).InvCellSize());

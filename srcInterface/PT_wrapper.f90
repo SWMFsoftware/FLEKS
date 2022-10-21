@@ -196,7 +196,7 @@ contains
     real,    intent(in) :: DtSiIn
     character(len=*), parameter :: NameSub = 'PT_put_from_oh_dt'
     !--------------------------------------------------------------------------
-    write(*,*)'Error: ', NameSub
+    call CON_stop(NameSub//' has not been implemented!')    
   end subroutine PT_put_from_oh_dt
   !============================================================================
   
@@ -281,6 +281,7 @@ contains
     call CON_set_do_test(NameSub, DoTest, DoTestMe)
     write(*,*)'Error: ', NameSub
 
+    Data_VI = 0
   end subroutine PT_get_for_oh
   !============================================================================
 

@@ -42,6 +42,10 @@ private:
 
   bool useExplicitPIC = false;
 
+  // If there is neutral species (OH-PT coupling), do not solve for
+  // EM fields.
+  bool solveEM = true;
+
   std::shared_ptr<FluidInterface> fi;
   std::shared_ptr<TimeCtr> tc;
 
