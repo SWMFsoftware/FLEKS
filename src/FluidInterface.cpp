@@ -23,8 +23,9 @@ void FluidInterface::post_process_param() {
 
 FluidInterface::FluidInterface(amrex::Geometry const& gm,
                                amrex::AmrInfo const& amrInfo, int nGst, int id,
+                               std::string tag,
                                const FluidInterface* const other)
-    : Grid(gm, amrInfo, nGst, id) {
+    : Grid(gm, amrInfo, nGst, id, tag) {
   initFromSWMF = false;
   lNormSI = other->get_lnorm_si();
   uNormSI = other->get_unorm_si();
@@ -72,11 +73,11 @@ FluidInterface::FluidInterface(amrex::Geometry const& gm,
 }
 
 FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
-                               int nGst, int id,
+                               int nGst, int id, std::string tag,
                                const amrex::Vector<int>& iParam,
                                const amrex::Vector<double>& norm,
                                const amrex::Vector<double>& paramComm)
-    : Grid(gm, amrInfo, nGst, id) {
+    : Grid(gm, amrInfo, nGst, id, tag) {
 
   initFromSWMF = true;
 

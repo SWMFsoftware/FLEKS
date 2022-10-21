@@ -28,10 +28,10 @@ void Domain::init(double time, const int iDomain,
 
   if (initFromSWMF) {
     fi = std::make_shared<FluidInterface>(
-        gm, amrInfo, nGst, gridID, paramInt,
+        gm, amrInfo, nGst, gridID, "fi", paramInt,
         Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm);
   } else {
-    fi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID);
+    fi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
   }
 
   pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi, tc, gridID);
@@ -41,8 +41,8 @@ void Domain::init(double time, const int iDomain,
   read_param(false);
 
 #ifdef _PT_COMPONENT_
-  otherfi =
-      std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, fi.get());
+  otherfi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID,
+                                             "otherfi", fi.get());
 #endif
 
   init_time_ctr();
@@ -51,13 +51,8 @@ void Domain::init(double time, const int iDomain,
 
   fi->print_info();
 
-  if (otherfi) {
-    Print() << "\n\n"
-            << printPrefix << "============= otherfi info ============";
+  if (otherfi)
     otherfi->print_info();
-    Print() << printPrefix << "=======================================\n\n"
-            << std::endl;
-  }
 
   pic->init_source(*fi);
 
@@ -282,7 +277,7 @@ void Domain::read_restart() {
   DistributionMapping dmPic = tmp.DistributionMap();
 
   pic->regrid(baPic, baPic, dmPic);
-  fi->regrid(baPic, dmPic);  
+  fi->regrid(baPic, dmPic);
 
   // Assume dmPT == dmPIC so far.
   pt->regrid(baPic, baPic, dmPic, *pic);

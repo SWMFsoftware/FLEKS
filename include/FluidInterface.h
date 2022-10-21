@@ -113,19 +113,21 @@ private:
 
 public:
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-                 int nGst, int id, const amrex::Vector<int>& iParam,
+                 int nGst, int id, std::string tag,
+                 const amrex::Vector<int>& iParam,
                  const amrex::Vector<double>& norm,
                  const amrex::Vector<double>& paramComm);
 
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-                 int nGst, int id)
-      : Grid(gm, amrInfo, nGst, id) {
+                 int nGst, int id, std::string tag)
+      : Grid(gm, amrInfo, nGst, id, tag) {
     initFromSWMF = false;
   }
 
   // Initialization from other FluidInterface
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-                 int nGst, int id, const FluidInterface* const other);
+                 int nGst, int id, std::string tag,
+                 const FluidInterface* const other);
 
   ~FluidInterface() = default;
 
