@@ -63,10 +63,10 @@ FluidInterface::FluidInterface(amrex::Geometry const& gm,
 
   iP_I.push_back(idx);
   iPpar_I.push_back(idx++);
-  
-  iJx = idx++; 
-  iJy = idx++; 
-  iJz = idx++; 
+
+  iJx = idx++;
+  iJy = idx++;
+  iJz = idx++;
 
   calc_normalized_units();
 }
@@ -424,7 +424,7 @@ void FluidInterface::calc_current() {
   */
 }
 
-void FluidInterface::normalize_fluid_variables() {  
+void FluidInterface::normalize_fluid_variables() {
   for (int i = 0; i < nodeFluid.nComp(); ++i) {
     MultiFab tmpMF(nodeFluid, make_alias, i, 1);
     tmpMF.mult(Si2No_V[i], tmpMF.nGrow());

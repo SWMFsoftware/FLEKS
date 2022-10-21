@@ -181,8 +181,11 @@ contains
 
     logical:: IsFirstTime = .true.
 
+    logical:: DoTest, DoTestMe
     character(len=*), parameter :: NameSub = 'PT_get_grid_info'
     !--------------------------------------------------------------------------    
+    call CON_set_do_test(NameSub, DoTest, DoTestMe)
+
     call fleks_get_grid_info(nDim, iGridOut, iDecompOut); 
     nDimOut = nDim;    
   end subroutine PT_get_grid_info
@@ -207,10 +210,13 @@ contains
     ! Find array of points and return processor indexes owning them
     ! Could be generalized to return multiple processors...
 
+    logical:: DoTest, DoTestMe
     character(len=*), parameter:: NameSub = 'PT_find_points'
     !--------------------------------------------------------------------------
+    call CON_set_do_test(NameSub, DoTest, DoTestMe)
     call fleks_find_points(nPoint, Xyz_DI, iProc_I)
 
+    write(*,*)NameSub,'nPoint = ', nPoint
   end subroutine PT_find_points
   !============================================================================
   
@@ -232,8 +238,7 @@ contains
     logical:: DoTest, DoTestMe
     character(len=*), parameter :: NameSub='PT_put_from_oh'
     !--------------------------------------------------------------------------
-    call CON_set_do_test(NameSub, DoTest, DoTestMe)
-    write(*,*)'Warning: ', NameSub    
+    call CON_set_do_test(NameSub, DoTest, DoTestMe)    
     if(.not. present(Data_VI))then
        call fleks_get_ngridpoints(nPoint)
 
@@ -270,8 +275,10 @@ contains
     real, intent(in) :: Xyz_DI(nDimIn,nPoint)  ! Position vectors
     real, intent(out):: Data_VI(nVarIn,nPoint) ! Data array
 
+    logical:: DoTest, DoTestMe
     character(len=*), parameter :: NameSub='PT_get_for_oh'
     !--------------------------------------------------------------------------
+    call CON_set_do_test(NameSub, DoTest, DoTestMe)
     write(*,*)'Error: ', NameSub
 
   end subroutine PT_get_for_oh
