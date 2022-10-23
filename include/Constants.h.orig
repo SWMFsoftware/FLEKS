@@ -18,7 +18,7 @@ constexpr static bool doTiling = false;
 
 constexpr static double fourPI = 3.14159265359 * 4;
 
-constexpr static double mu0 = fourPI*1e-7; // unit N/A^2
+constexpr static double mu0 = fourPI * 1e-7; // unit N/A^2
 
 // Integers to label the the status of a cell.
 constexpr static int iBoundary_ = 0, iOnNew_ = 1, iOnOld_ = 2,
@@ -31,12 +31,14 @@ constexpr static int ptRecordSize = 7;
 constexpr static int nPTPartReal = nPicPartReal + ptRecordSize * nPTRecord,
                      nPTPartInt = 1;
 #ifdef _PT_COMPONENT_
-static const std::string component="PT";
+static const std::string component = "PT";
 #else
-static const std::string component="PC";
+static const std::string component = "PC";
 #endif
 
 enum ParticleStaggering { Staggered, NonStaggered };
 
 enum TestCase { RegularSimulation, TwoStream };
+
+enum FluidType { PICFluid, InteractionFluid, SourceFluid };
 #endif

@@ -34,6 +34,8 @@ class FluidInterface : public Grid {
 private:
   static const int OhmUe_ = 1, OhmUi_ = 2, OhmUMHD_ = 3;
 
+  FluidType myType = PICFluid;
+
   MultiFabFLEKS nodeFluid;
   MultiFabFLEKS centerB;
 
@@ -124,17 +126,24 @@ public:
                  const amrex::Vector<double>& paramComm);
 
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-                 int nGst, int id, std::string tag)
-      : Grid(gm, amrInfo, nGst, id, tag) {
+                 int nGst, int id, std::string tag, FluidType typeIn = PICFluid)
+      : Grid(gm, amrInfo, nGst, id, tag), myType(typeIn) {
+
     initFromSWMF = false;
+
+    if (myType != PICFluid)
+      nS = 0;
   }
 
   // Initialization from other FluidInterface
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
                  int nGst, int id, std::string tag,
-                 const FluidInterface* const other);
+                 const FluidInterface* const other,
+                 FluidType typeIn = PICFluid);
 
   ~FluidInterface() = default;
+
+  FluidType my_type() { return myType; };
 
   void save_amrex_file();
 

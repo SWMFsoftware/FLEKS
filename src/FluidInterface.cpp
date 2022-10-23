@@ -56,12 +56,14 @@ void FluidInterface::post_process_param() {
     varNames.push_back("ey");
     iEz = idx++;
     varNames.push_back("ez");
-    iJx = nVarFluid;
-    varNames.push_back("jx");
-    iJy = iJx + 1;
-    varNames.push_back("jy");
-    iJz = iJx + 2;
-    varNames.push_back("jz");
+    if (nVarCoupling > nVarFluid) {
+      iJx = nVarFluid;
+      varNames.push_back("jx");
+      iJy = iJx + 1;
+      varNames.push_back("jy");
+      iJz = iJx + 2;
+      varNames.push_back("jz");
+    }
     iRhoUx_I = iUx_I;
     iRhoUy_I = iUy_I;
     iRhoUz_I = iUz_I;
@@ -72,9 +74,14 @@ void FluidInterface::post_process_param() {
 FluidInterface::FluidInterface(amrex::Geometry const& gm,
                                amrex::AmrInfo const& amrInfo, int nGst, int id,
                                std::string tag,
-                               const FluidInterface* const other)
-    : Grid(gm, amrInfo, nGst, id, tag) {
+                               const FluidInterface* const other,
+                               FluidType typeIn)
+    : Grid(gm, amrInfo, nGst, id, tag), myType(typeIn) {
   initFromSWMF = false;
+
+  if (myType != PICFluid)
+    nS = 0;
+
   lNormSI = other->get_lnorm_si();
   uNormSI = other->get_unorm_si();
   mNormSI = other->get_mnorm_si();
@@ -89,14 +96,14 @@ FluidInterface::FluidInterface(amrex::Geometry const& gm,
 
   // For BATSRUS MHD equations
   nVarFluid = 5 + 3;
-  nVarCoupling = nVarFluid + 3;
+
+  nVarCoupling = nVarFluid;
+  if (myType == PICFluid)
+    nVarCoupling += 3;
+
   nFluid = 1;
   nSpeciesFluid = 1;
   nIon = 1;
-  nS = 1;
-
-  QoQi_S.push_back(1);
-  MoMi_S.push_back(1);
 
   int idx = 0;
   iRho_I.push_back(idx++);
@@ -121,12 +128,14 @@ FluidInterface::FluidInterface(amrex::Geometry const& gm,
   iPpar_I.push_back(idx++);
   varNames.push_back("p");
 
-  iJx = idx++;
-  varNames.push_back("jx");
-  iJy = idx++;
-  varNames.push_back("jy");
-  iJz = idx++;
-  varNames.push_back("jz");
+  if (nVarCoupling > nVarFluid) {
+    iJx = idx++;
+    varNames.push_back("jx");
+    iJy = idx++;
+    varNames.push_back("jy");
+    iJz = idx++;
+    varNames.push_back("jz");
+  }
 
   calc_normalized_units();
 }
@@ -175,7 +184,9 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
   useMultiFluid = nIonFluid > 1;
   useMultiSpecies = nSpeciesFluid > 1;
 
-  nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
+  nVarCoupling = nVarFluid;
+  if (myType == PICFluid)
+    nVarCoupling += 3; // nVarFluid + (Jx, Jy, Jz)
 
   iRho_I.resize(nS);
   iRhoUx_I.resize(nS);
@@ -474,7 +485,9 @@ void FluidInterface::set_node_fluid(const double* const data,
   normalize_fluid_variables();
   // convert_moment_to_velocity();
 
-  MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
+  if (nodeFluid.size() > iJx) {
+    MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
+  }
 
   save_amrex_file();
 }
@@ -494,13 +507,18 @@ void FluidInterface::set_node_fluid() {
   normalize_fluid_variables();
   convert_moment_to_velocity();
 
-  MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
+  if (nodeFluid.size() > iJx) {
+    MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
+  }
 
   save_amrex_file();
 }
 
 void FluidInterface::calc_current() {
   if (isGridEmpty)
+    return;
+
+  if (nVarCoupling == nVarFluid)
     return;
 
   // All centerB, including all ghost cells are accurate.
@@ -699,9 +717,11 @@ void FluidInterface::calc_normalized_units() {
   Si2No_V[iBy] = Si2NoB;
   Si2No_V[iBz] = Si2NoB;
 
-  Si2No_V[iJx] = Si2NoJ;
-  Si2No_V[iJy] = Si2NoJ;
-  Si2No_V[iJz] = Si2NoJ;
+  if (Si2No_V.size() > iJz) {
+    Si2No_V[iJx] = Si2NoJ;
+    Si2No_V[iJy] = Si2NoJ;
+    Si2No_V[iJz] = Si2NoJ;
+  }
 
   if (useElectronFluid) {
     Si2No_V[iEx] = Si2NoE;
