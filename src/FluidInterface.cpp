@@ -317,6 +317,39 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     // (rho, vx, vy, vz, ppar, p)*nFluid + B + E
     nVarFluid = 6 * nFluid + 3 + 3;
     nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
+  } else if (command == "#UNIFORMSTATE") {
+    if (nS <= 0) {
+      amrex::Abort("Error: number of species <=0! Use #PLASMA command "
+                   "to set plasma species information.");
+    }
+    double tmp;
+    for (int i = 0; i < nS; i++) {
+      double rho;
+      param.read_var("rho", rho);
+      uniformState.push_back(rho);
+      param.read_var("ux", tmp);
+      uniformState.push_back(tmp * rho);
+      param.read_var("uy", tmp);
+      uniformState.push_back(tmp * rho);
+      param.read_var("uz", tmp);
+      uniformState.push_back(tmp * rho);
+      param.read_var("ppar", tmp);
+      uniformState.push_back(tmp);
+      param.read_var("p", tmp);
+      uniformState.push_back(tmp);
+    }
+    param.read_var("bx", tmp);
+    uniformState.push_back(tmp);
+    param.read_var("by", tmp);
+    uniformState.push_back(tmp);
+    param.read_var("bz", tmp);
+    uniformState.push_back(tmp);
+    param.read_var("ex", tmp);
+    uniformState.push_back(tmp);
+    param.read_var("ey", tmp);
+    uniformState.push_back(tmp);
+    param.read_var("ez", tmp);
+    uniformState.push_back(tmp);
   }
 }
 
@@ -436,6 +469,26 @@ void FluidInterface::set_node_fluid(const double* const data,
     return;
 
   loop_through_node("fill", nullptr, data, index);
+
+  calc_current();
+  normalize_fluid_variables();
+  // convert_moment_to_velocity();
+
+  MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
+
+  save_amrex_file();
+}
+
+void FluidInterface::set_node_fluid() {
+  if (isGridEmpty)
+    return;
+
+  if (uniformState.empty()) {
+    Abort("Error: use #UNIFORMSTATE command to set the initail state.");
+  }
+
+  for (int i = 0; i < nVarFluid; i++)
+    nodeFluid.setVal(uniformState[i], i, 1, nodeFluid.nGrow());
 
   calc_current();
   normalize_fluid_variables();

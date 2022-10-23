@@ -103,6 +103,8 @@ private:
   // Variable names of nodeFluid.
   amrex::Vector<std::string> varNames;
 
+  amrex::Vector<double> uniformState;
+
   // Length in BATSRUS normalized unit -> Si
   double MhdNo2SiL;
 
@@ -156,6 +158,8 @@ public:
   void get_couple_node_loc(double* const pos_DI);
 
   void set_node_fluid(const double* const data, const int* const index);
+
+  void set_node_fluid();
 
   void calc_current();
 

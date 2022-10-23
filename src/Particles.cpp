@@ -136,7 +136,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           double rand4 = randNum();
 
           double uth = (userState ? tpVel.vth : -1);
-          if (interface.get_UseAnisoP() &&
+          if (!is_neutral() && interface.get_UseAnisoP() &&
               (speciesID > 0 || interface.get_useElectronFluid())) {
             interface.set_particle_uth_aniso(mfi, x, y, z, &u, &v, &w, rand1,
                                              rand2, rand3, rand4, speciesID,

@@ -224,6 +224,10 @@ void Domain::set_ic() {
   if (doRestart)
     return;
 
+#ifdef _PT_COMPONENT_
+  fi->set_node_fluid();
+#endif
+
   pic->fill_new_cells();
   write_plots(true);
   pic->write_log(true, true);
@@ -496,7 +500,8 @@ void Domain::read_param(const bool readGridInfo) {
                command == "#TPINITFROMPIC" || command == "#TPSTATESI") {
       pt->read_param(command, param);
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
-               command == "#BODYSIZE" || command == "#PLASMA") {
+               command == "#BODYSIZE" || command == "#PLASMA" ||
+               command == "#UNIFORMSTATE") {
       fi->read_param(command, param);
     } else if (command == "#RESTART") {
       param.read_var("doRestart", doRestart);

@@ -349,41 +349,46 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
                var.substr(0, 4) == "pZZS" || var.substr(0, 4) == "pXYS" ||
                var.substr(0, 4) == "pXZS" || var.substr(0, 4) == "pYZS" ||
                var.substr(0, 4) == "numS") {
-      int iVar;
 
-      if (var.substr(0, 4) == "rhoS")
-        iVar = iRho_;
-      if (var.substr(0, 3) == "uxS")
-        iVar = iUx_;
-      if (var.substr(0, 3) == "uyS")
-        iVar = iUy_;
-      if (var.substr(0, 3) == "uzS")
-        iVar = iUz_;
-      if (var.substr(0, 4) == "pXXS")
-        iVar = iPxx_;
-      if (var.substr(0, 4) == "pYYS")
-        iVar = iPyy_;
-      if (var.substr(0, 4) == "pZZS")
-        iVar = iPzz_;
-      if (var.substr(0, 4) == "pXYS")
-        iVar = iPxy_;
-      if (var.substr(0, 4) == "pXZS")
-        iVar = iPxz_;
-      if (var.substr(0, 4) == "pYZS")
-        iVar = iPyz_;
-      if (var.substr(0, 4) == "numS")
-        iVar = iNum_;
+      // The last element of nodePlasma is the sum of all species.
+      if (get_is() >= nodePlasma.size() - 1) {
+        value = 0;
+      } else {
+        int iVar;
 
-      const amrex::Array4<amrex::Real const>& arr =
-          nodePlasma[get_is()][mfi].array();
-      value = arr(ix, iy, iz, iVar);
+        if (var.substr(0, 4) == "rhoS")
+          iVar = iRho_;
+        if (var.substr(0, 3) == "uxS")
+          iVar = iUx_;
+        if (var.substr(0, 3) == "uyS")
+          iVar = iUy_;
+        if (var.substr(0, 3) == "uzS")
+          iVar = iUz_;
+        if (var.substr(0, 4) == "pXXS")
+          iVar = iPxx_;
+        if (var.substr(0, 4) == "pYYS")
+          iVar = iPyy_;
+        if (var.substr(0, 4) == "pZZS")
+          iVar = iPzz_;
+        if (var.substr(0, 4) == "pXYS")
+          iVar = iPxy_;
+        if (var.substr(0, 4) == "pXZS")
+          iVar = iPxz_;
+        if (var.substr(0, 4) == "pYZS")
+          iVar = iPyz_;
+        if (var.substr(0, 4) == "numS")
+          iVar = iNum_;
 
-      if (var.substr(0, 1) == "u") {
-        double rho = arr(ix, iy, iz, iRho_);
-        if (rho != 0)
-          value /= rho;
+        const amrex::Array4<amrex::Real const>& arr =
+            nodePlasma[get_is()][mfi].array();
+        value = arr(ix, iy, iz, iVar);
+
+        if (var.substr(0, 1) == "u") {
+          double rho = arr(ix, iy, iz, iRho_);
+          if (rho != 0)
+            value /= rho;
+        }
       }
-
     } else if (var.substr(0, 2) == "pS") {
       const amrex::Array4<amrex::Real const>& arr =
           nodePlasma[get_is()][mfi].array();
