@@ -27,7 +27,6 @@ public:
   std::unique_ptr<Pic> pic;
   std::unique_ptr<ParticleTracker> pt;
 
-
   //------------------------------
   // Conceptually, both the Domain class and the Pic class may use the
   // following classes, so they are handled by shared pointers.
@@ -39,6 +38,9 @@ public:
   // So far, stateOH is only used for OH-PT coupling. It stores the plasma
   // variables obtained from OH.
   std::shared_ptr<FluidInterface> stateOH;
+
+  std::shared_ptr<FluidInterface> source;
+
   std::shared_ptr<TimeCtr> tc;
   //--------------------------------
 
