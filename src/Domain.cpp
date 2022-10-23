@@ -41,8 +41,8 @@ void Domain::init(double time, const int iDomain,
   read_param(false);
 
 #ifdef _PT_COMPONENT_
-  otherfi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID,
-                                             "otherfi", fi.get());
+  stateOH = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID,
+                                             "stateOH", fi.get());
 #endif
 
   init_time_ctr();
@@ -51,8 +51,8 @@ void Domain::init(double time, const int iDomain,
 
   fi->print_info();
 
-  if (otherfi)
-    otherfi->print_info();
+  if (stateOH)
+    stateOH->print_info();
 
   pic->init_source(*fi);
 
@@ -200,8 +200,8 @@ void Domain::regrid() {
 
   fi->regrid(baPic, dmPic);
 
-  if (otherfi)
-    otherfi->regrid(baPic, dmPic);
+  if (stateOH)
+    stateOH->regrid(baPic, dmPic);
 
   pic->regrid(activeRegionBA, baPic, dmPic);
 
@@ -242,9 +242,9 @@ void Domain::set_state_var(double *data, int *index) {
   Print() << printPrefix << " GM -> PC coupling at t =" << tc->get_time_si()
           << " (s)" << std::endl;
 
-  if (otherfi) {
+  if (stateOH) {
     // PT mode
-    otherfi->set_node_fluid(data, index);
+    stateOH->set_node_fluid(data, index);
   } else {
     fi->set_node_fluid(data, index);
     pic->update_cells_for_pt();

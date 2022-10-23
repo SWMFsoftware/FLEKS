@@ -36,9 +36,9 @@ public:
   // particles.
   std::shared_ptr<FluidInterface> fi;
 
-  // So far, otherfi is only used for OH-PT coupling. It stores the plasma
+  // So far, stateOH is only used for OH-PT coupling. It stores the plasma
   // variables obtained from OH.
-  std::shared_ptr<FluidInterface> otherfi;
+  std::shared_ptr<FluidInterface> stateOH;
   std::shared_ptr<TimeCtr> tc;
   //--------------------------------
 
