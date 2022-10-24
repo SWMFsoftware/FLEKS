@@ -1882,14 +1882,6 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
   const int lev = 0;
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
        ++pti) {
-
-    const Array4<int const>& status = cellStatus[pti].array();
-    // cellStatus[pti] is a FAB, and the box returned from the box() method
-    // already contains the ghost cells.
-    const Box& bx = cellStatus[pti].box();
-    const IntVect lowCorner = bx.smallEnd();
-    const IntVect highCorner = bx.bigEnd();
-
     auto& particles = pti.GetArrayOfStructs();
     for (auto& p : particles) {
       const Real xp = p.pos(ix_);
