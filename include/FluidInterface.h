@@ -200,18 +200,23 @@ public:
 
   int get_nS() const { return nS; }
 
-  double get_No2Si_V(int idx) const { return (No2Si_V[idx]); }
+
   double get_Si2No_V(int idx) const { return (Si2No_V[idx]); }
   double get_Si2NoL() const { return (Si2NoL); }
   double get_Si2NoT() const { return Si2NoL / Si2NoV; }
+  double get_Si2NoM() const { return 1. / mNormSI; }
+  double get_Si2NoRho() const { return Si2NoRho; }
+  double get_Si2NoV() const { return Si2NoV; }
+
+  double get_No2Si_V(int idx) const { return (No2Si_V[idx]); }
   double get_No2SiL() const { return (No2SiL); }
   double get_No2SiRho() const { return (1. / Si2NoRho); }
   double get_No2SiV() const { return (1. / Si2NoV); }
-  double get_Si2NoV() const { return Si2NoV; }
   double get_No2SiB() const { return (1. / Si2NoB); }
   double get_No2SiP() const { return (1. / Si2NoP); }
   double get_No2SiJ() const { return (1. / Si2NoJ); }
   double get_No2SiT() const { return Si2NoV / Si2NoL; }
+  double get_No2SiM() const { return mNormSI; }
 
   double get_species_mass(int i) const { return MoMi_S[i]; };
   double get_species_charge(int i) const { return QoQi_S[i]; };
@@ -390,6 +395,29 @@ public:
         U -= moq * J / Rhot;
     }
     return U;
+  }
+
+  template <typename T>
+  amrex::Real get_fluid_mass_density(const amrex::MFIter& mfi, const T x,
+                                     const T y, const T z, const int is) const {
+    return get_value(mfi, x, y, z, iRho_I[is]);
+  }
+
+  template <typename Type>
+  amrex::Real get_fluid_p(const amrex::MFIter& mfi, const Type x, const Type y,
+                          const Type z, const int is) const {
+    return get_value(mfi, x, y, z, iP_I[is]);
+  }
+
+  template <typename Type>
+  amrex::Real get_fluid_uth(const amrex::MFIter& mfi, const Type x,
+                            const Type y, const Type z, const int is) const {
+    amrex::Real Uth = 0, p, rho;
+    p = get_fluid_p(mfi, x, y, z, is);
+    rho = get_fluid_mass_density(mfi, x, y, z, is);
+    if (rho > 0)
+      Uth = sqrt(p / rho);
+    return Uth;
   }
 
   template <typename Type>

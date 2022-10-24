@@ -14,7 +14,7 @@ void FluidInterface::post_process_param() {
 
   nDimFluid = (Geom(0).Domain().length(iz_) == 1) ? 2 : 3;
 
-  const Real protonMassPerChargeSI = 1.67262192e-27 / 1.60217663e-19;
+  const Real protonMassPerChargeSI = cProtonMassSI / cUnitChargeSI;
 
   mNormSI = 1e7 * lNormSI * pow(protonMassPerChargeSI * ScalingFactor, 2);
 

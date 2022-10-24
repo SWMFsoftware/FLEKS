@@ -1879,6 +1879,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 
   Print() << "charge_exchange called" << std::endl;
 
+  double vol = 1. / invVol;
   const int lev = 0;
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
        ++pti) {
@@ -1890,20 +1891,31 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 
       double cs2Neu = 0, uNeu[3], rhoNeu;
       double cs2Ion, uIon[3], rhoIon;
-      double ion2neu[5], neu2ion[5];
+      double ion2neu[5], neu2ion[5], si2no[5];
       const int iRho_ = 0, iUx_ = 1, iUy_ = 2, iUz_ = 3, iP_ = 4;
 
-      rhoNeu = qomSign * p.rdata(iqp_) * get_mass() * stateOH->get_No2SiRho();
+      // si2no[iRho_] = 1.0 / stateOH->get_No2SiRho();
+      // si2no[iUx_] = stateOH->get_Si2NoV();
+      // si2no[iUy_] = stateOH->get_Si2NoV();
+      // si2no[iUz_] = stateOH->get_Si2NoV();
+
+      rhoNeu = qomSign * p.rdata(iqp_) * get_mass() * invVol *
+               stateOH->get_No2SiRho();
+
       for (int i = 0; i < nDim; i++) {
         uNeu[i] = p.rdata(iup_ + i) * stateOH->get_No2SiV();
       }
 
       int fluidID = 0;
-      rhoIon = stateOH->get_number_density(pti, xp, yp, zp, fluidID) *
-               get_mass() * stateOH->get_No2SiRho();
+      rhoIon = stateOH->get_fluid_mass_density(pti, xp, yp, zp, fluidID) *
+               stateOH->get_No2SiRho();
 
-      double cs = stateOH->get_uth_iso(pti, xp, yp, zp, fluidID) *
+      // cs = sqrt(P/n)
+      double cs = stateOH->get_fluid_uth(pti, xp, yp, zp, fluidID) *
                   stateOH->get_No2SiV();
+
+      // cs2Ion = 2*P/n. The definition of thermal speed in get_uth_iso() is
+      // different from the requirement in OH_get_charge_exchange_wrapper().
       cs2Ion = 2 * pow(cs, 2);
 
       uIon[ix_] = stateOH->get_fluid_ux(pti, xp, yp, zp, fluidID) *
@@ -1916,12 +1928,39 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       OH_get_charge_exchange_wrapper(&rhoIon, &cs2Ion, uIon, &rhoNeu, &cs2Neu,
                                      uNeu, ion2neu, neu2ion);
 
+      // Somehow, the function above returns number density changing rate.
+      ion2neu[iRho_] *= cProtonMassSI;
+      neu2ion[iRho_] *= cProtonMassSI;
+
+      Real dtSI = dt * stateOH->get_No2SiT();
+      Print() << "rhoion = " << rhoIon << " cs2Ion = " << cs2Ion
+              << " rhoNeu = " << rhoNeu << " cs2Neu = " << cs2Neu
+              << " dtSI = " << dtSI << std::endl;
+      for (int i = 0; i < 5; i++) {
+        ion2neu[i] *= dtSI;
+        neu2ion[i] *= dtSI;
+        Print() << " i = " << i << " ion2neu = " << ion2neu[i]
+                << " neu2ion = " << neu2ion[i] << std::endl;
+      }
+
+      Real massExchange = neu2ion[iRho_] * stateOH->get_Si2NoRho() / invVol;
+
+      Print() << "nden = " << p.rdata(iqp_)
+              << " massExchange = " << massExchange << std::endl;
+      if (p.rdata(iqp_) - massExchange < 0.01 * p.rdata(iqp_)) {
+        // Mark for deletion
+        p.id() = -1;
+      } else {
+        // Reduce mass due to charge exchange
+        p.rdata(iqp_) = p.rdata(iqp_) - massExchange;
+      }
+
+      
+
     } // for p
   }   // for pti
 
-  // This function distributes particles to proper processors and apply
-  // periodic boundary conditions if needed. It is probably unnecessary here. To
-  // be verified. --Yuxi
+  // This function distributes and deletes invalid particles.
   Redistribute();
 }
 

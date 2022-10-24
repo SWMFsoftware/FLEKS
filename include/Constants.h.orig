@@ -3,6 +3,16 @@
 
 #include <AMReX.H>
 
+//========= Physical constants =====================
+constexpr static double fourPI = 3.14159265359 * 4;
+
+constexpr static double cProtonMassSI = 1.67262192e-27; // kg
+constexpr static double cUnitChargeSI = 1.60217663e-19; // C
+
+constexpr static double mu0 = fourPI * 1e-7; // unit N/A^2
+//===================================================
+
+//========= Numerical constants =====================
 // FLEKS is always 3D. But it can be fake 2D with one cell in the z-direction.
 constexpr static int nDim = 3, nDimMax = 3;
 constexpr static int ix_ = 0, iy_ = 1, iz_ = 2;
@@ -15,10 +25,6 @@ constexpr static int iPxx_ = 4, iPyy_ = 5, iPzz_ = 6, iPxy_ = 7, iPxz_ = 8,
                      iPyz_ = 9, iNum_ = 10;
 
 constexpr static bool doTiling = false;
-
-constexpr static double fourPI = 3.14159265359 * 4;
-
-constexpr static double mu0 = fourPI * 1e-7; // unit N/A^2
 
 // Integers to label the the status of a cell.
 constexpr static int iBoundary_ = 0, iOnNew_ = 1, iOnOld_ = 2,
