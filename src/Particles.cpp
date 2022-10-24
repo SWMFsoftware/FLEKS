@@ -2,6 +2,7 @@
 #include <cstdlib>
 
 #include "Particles.h"
+#include "SWMFInterface.h"
 #include "Timer.h"
 #include "Utility.h"
 
@@ -1867,6 +1868,68 @@ IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
       plevel[index].push_back(p);
     }
   }
+  Redistribute();
+}
+
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::charge_exchange(
+    Real dt, FluidInterface* stateOH, FluidInterface* source) {
+
+  timing_func("Particles::charge_exchange");
+
+  Print() << "charge_exchange called" << std::endl;
+
+  const int lev = 0;
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+       ++pti) {
+
+    const Array4<int const>& status = cellStatus[pti].array();
+    // cellStatus[pti] is a FAB, and the box returned from the box() method
+    // already contains the ghost cells.
+    const Box& bx = cellStatus[pti].box();
+    const IntVect lowCorner = bx.smallEnd();
+    const IntVect highCorner = bx.bigEnd();
+
+    auto& particles = pti.GetArrayOfStructs();
+    for (auto& p : particles) {
+      const Real xp = p.pos(ix_);
+      const Real yp = p.pos(iy_);
+      const Real zp = p.pos(iz_);
+
+      double cs2Neu = 0, uNeu[3], rhoNeu;
+      double cs2Ion, uIon[3], rhoIon;
+      double ion2neu[5], neu2ion[5];
+      const int iRho_ = 0, iUx_ = 1, iUy_ = 2, iUz_ = 3, iP_ = 4;
+
+      rhoNeu = qomSign * p.rdata(iqp_) * get_mass() * stateOH->get_No2SiRho();
+      for (int i = 0; i < nDim; i++) {
+        uNeu[i] = p.rdata(iup_ + i) * stateOH->get_No2SiV();
+      }
+
+      int fluidID = 0;
+      rhoIon = stateOH->get_number_density(pti, xp, yp, zp, fluidID) *
+               get_mass() * stateOH->get_No2SiRho();
+
+      double cs = stateOH->get_uth_iso(pti, xp, yp, zp, fluidID) *
+                  stateOH->get_No2SiV();
+      cs2Ion = 2 * pow(cs, 2);
+
+      uIon[ix_] = stateOH->get_fluid_ux(pti, xp, yp, zp, fluidID) *
+                  stateOH->get_No2SiV();
+      uIon[iy_] = stateOH->get_fluid_uy(pti, xp, yp, zp, fluidID) *
+                  stateOH->get_No2SiV();
+      uIon[iz_] = stateOH->get_fluid_uz(pti, xp, yp, zp, fluidID) *
+                  stateOH->get_No2SiV();
+
+      OH_get_charge_exchange_wrapper(&rhoIon, &cs2Ion, uIon, &rhoNeu, &cs2Neu,
+                                     uNeu, ion2neu, neu2ion);
+
+    } // for p
+  }   // for pti
+
+  // This function distributes particles to proper processors and apply
+  // periodic boundary conditions if needed. It is probably unnecessary here. To
+  // be verified. --Yuxi
   Redistribute();
 }
 

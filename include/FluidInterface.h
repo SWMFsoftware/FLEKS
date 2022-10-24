@@ -393,6 +393,24 @@ public:
   }
 
   template <typename Type>
+  amrex::Real get_fluid_ux(const amrex::MFIter& mfi, const Type x, const Type y,
+                           const Type z, const int is) const {
+    return get_value(mfi, x, y, z, iUx_I[is]);
+  }
+
+  template <typename Type>
+  amrex::Real get_fluid_uy(const amrex::MFIter& mfi, const Type x, const Type y,
+                           const Type z, const int is) const {
+    return get_value(mfi, x, y, z, iUy_I[is]);
+  }
+
+  template <typename Type>
+  amrex::Real get_fluid_uz(const amrex::MFIter& mfi, const Type x, const Type y,
+                           const Type z, const int is) const {
+    return get_value(mfi, x, y, z, iUz_I[is]);
+  }
+
+  template <typename Type>
   amrex::Real get_ux(const amrex::MFIter& mfi, const Type x, const Type y,
                      const Type z, const int is) const {
     return get_u(mfi, x, y, z, is, iUx_I, iJx);

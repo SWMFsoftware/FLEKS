@@ -46,6 +46,8 @@ void Domain::init(double time, const int iDomain,
 
   source = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, "source",
                                             fi.get(), SourceFluid);
+  pic->set_stateOH(stateOH);
+  pic->set_source(source);
 #endif
 
   init_time_ctr();

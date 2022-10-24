@@ -885,6 +885,8 @@ void Pic::update(bool doReportIn) {
 
   particle_mover();
 
+  charge_exchange();
+
   inject_particles_for_boundary_cells();
 
   update_B();
@@ -1672,5 +1674,14 @@ void Pic::report_load_balance() {
 
   if (ParallelDescriptor::MyProc() == root) {
     delete[] globalInfo;
+  }
+}
+
+void Pic::charge_exchange() {
+  if (!stateOH || !source)
+    return;
+
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->charge_exchange(tc->get_dt(), stateOH.get(), source.get());
   }
 }

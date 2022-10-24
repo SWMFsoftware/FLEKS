@@ -159,6 +159,9 @@ public:
   void sum_to_center(amrex::MultiFab& netChargeMF,
                      amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly);
 
+  void charge_exchange(amrex::Real dt, FluidInterface* stateOH,
+                       FluidInterface* source);
+
   void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
              amrex::Real dt, amrex::Real dtNext);
 

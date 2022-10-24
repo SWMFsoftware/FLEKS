@@ -47,6 +47,8 @@ private:
   bool solveEM = true;
 
   std::shared_ptr<FluidInterface> fi;
+  std::shared_ptr<FluidInterface> stateOH;
+  std::shared_ptr<FluidInterface> source;
   std::shared_ptr<TimeCtr> tc;
 
   amrex::MultiFab nodeE;
@@ -122,7 +124,7 @@ public:
   Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo, int nGst,
       std::shared_ptr<FluidInterface> &fluidIn, std::shared_ptr<TimeCtr> &tcIn,
       int id = 0)
-      : Grid(gm, amrInfo, nGst, id), tc(tcIn), fi(fluidIn) {
+      : Grid(gm, amrInfo, nGst, id), fi(fluidIn), tc(tcIn) {
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 
@@ -136,6 +138,9 @@ public:
   void update(bool doReportIn = false);
 
   Particles<> *get_particle_pointer(int i) { return parts[i].get(); }
+
+  void set_stateOH(std::shared_ptr<FluidInterface> &in) { stateOH = in; }
+  void set_source(std::shared_ptr<FluidInterface> &in) { source = in; }
 
   //--------------Initialization begin-------------------------------
   void regrid(const amrex::BoxArray &activeRegionBAIn,
@@ -159,6 +164,8 @@ public:
   }
 
   //----------------Initialization end-------------------------------
+
+  void charge_exchange();
 
   void sum_moments(bool updateDt = false);
 
