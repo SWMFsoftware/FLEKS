@@ -40,17 +40,19 @@ void Domain::init(double time, const int iDomain,
 
   read_param(false);
 
+  init_time_ctr();
+
 #ifdef _PT_COMPONENT_
   stateOH = std::make_shared<FluidInterface>(
       gm, amrInfo, nGst, gridID, "stateOH", fi.get(), InteractionFluid);
 
   source = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, "source",
                                             fi.get(), SourceFluid);
+  source->set_period_start_si(tc->get_time_si());
+
   pic->set_stateOH(stateOH);
   pic->set_source(source);
 #endif
-
-  init_time_ctr();
 
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 
@@ -210,6 +212,9 @@ void Domain::regrid() {
 
   if (stateOH)
     stateOH->regrid(baPic, dmPic);
+
+  if (source)
+    source->regrid(baPic, dmPic);
 
   pic->regrid(activeRegionBA, baPic, dmPic);
 

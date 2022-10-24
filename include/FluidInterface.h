@@ -39,6 +39,8 @@ private:
   MultiFabFLEKS nodeFluid;
   MultiFabFLEKS centerB;
 
+  double tStartSI;
+
   bool isGridInitialized = false;
   bool isGridEmpty = false;
 
@@ -145,6 +147,10 @@ public:
 
   FluidType my_type() { return myType; };
 
+  void set_period_start_si(double t) { tStartSI = t; }
+
+  double get_period_start_si() const { return tStartSI; }
+
   void save_amrex_file();
 
   void read_param(const std::string& command, ReadParam& param);
@@ -199,7 +205,6 @@ public:
   int get_fluid_dimension() const { return (nDimFluid); }
 
   int get_nS() const { return nS; }
-
 
   double get_Si2No_V(int idx) const { return (Si2No_V[idx]); }
   double get_Si2NoL() const { return (Si2NoL); }
@@ -276,6 +281,18 @@ public:
     amrex::VisMF::Read(nodeFluid,
                        restartDir + gridName + "_Interface_nodeFluid");
     amrex::VisMF::Read(centerB, restartDir + gridName + "_Interface_centerB");
+  }
+
+  void add_to_cell(const amrex::Real& val, amrex::MFIter& mfi, const int i,
+                   const int j, const int k, const int iVar) {
+    const amrex::Array4<amrex::Real>& arr = nodeFluid[mfi].array();
+    arr(i, j, k, iVar) += val;
+  }
+
+  void add_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
+                  const amrex::Real x, const amrex::Real y, const amrex::Real z,
+                  const int iVar) {
+    add_to_mf(val, nodeFluid, mfi, Geom(0), x, y, z, iVar);
   }
 
   // ---------Functions to read/interpolate value from nodeFluid.

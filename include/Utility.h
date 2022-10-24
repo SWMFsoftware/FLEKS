@@ -208,6 +208,66 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
   return -1; // To suppress compiler warnings.
 }
 
+inline void add_to_mf(const amrex::Real& val, amrex::MultiFab& mf,
+                      const amrex::MFIter& mfi, const amrex::Geometry& gm,
+                      const amrex::Real x, const amrex::Real y,
+                      const amrex::Real z, const int iVar) {
+  const auto plo = gm.ProbLo();
+  const amrex::Real loc[nDim] = { x, y, z };
+
+  const auto invDx = gm.InvCellSize();
+
+  int loIdx[3];
+  amrex::Real dx[3];
+  for (int i = 0; i < 3; i++) {
+    dx[i] = (loc[i] - plo[i]) * invDx[i];
+    loIdx[i] = fastfloor(dx[i]);
+    dx[i] = dx[i] - loIdx[i];
+  }
+
+  amrex::Real coef[2][2][2];
+  {
+    amrex::Real xi[2];
+    amrex::Real eta[2];
+    amrex::Real zeta[2];
+    xi[0] = dx[0];
+    eta[0] = dx[1];
+    zeta[0] = dx[2];
+    xi[1] = 1 - xi[0];
+    eta[1] = 1 - eta[0];
+    zeta[1] = 1 - zeta[0];
+
+    amrex::Real multi[2][2];
+    multi[0][0] = xi[0] * eta[0];
+    multi[0][1] = xi[0] * eta[1];
+    multi[1][0] = xi[1] * eta[0];
+    multi[1][1] = xi[1] * eta[1];
+
+    // coef[k][j][i]
+    coef[0][0][0] = multi[1][1] * zeta[1];
+    coef[1][0][0] = multi[1][1] * zeta[0];
+    coef[0][1][0] = multi[1][0] * zeta[1];
+    coef[1][1][0] = multi[1][0] * zeta[0];
+    coef[0][0][1] = multi[0][1] * zeta[1];
+    coef[1][0][1] = multi[0][1] * zeta[0];
+    coef[0][1][1] = multi[0][0] * zeta[1];
+    coef[1][1][1] = multi[0][0] * zeta[0];
+  }
+
+  const amrex::Array4<amrex::Real>& arr = mf[mfi].array();
+  for (int kk = 0; kk < 2; kk++) {
+    const int kIdx = loIdx[iz_] + kk;
+    for (int jj = 0; jj < 2; jj++) {
+      const int jIdx = loIdx[iy_] + jj;
+      for (int ii = 0; ii < 2; ii++) {
+        arr(loIdx[ix_] + ii, jIdx, kIdx, iVar) += val * coef[kk][jj][ii];
+      }
+    }
+  }
+
+  return;
+}
+
 template <typename T>
 inline T bound(const T& val, const T& xmin, const T& xmax) {
   if (val < xmin)

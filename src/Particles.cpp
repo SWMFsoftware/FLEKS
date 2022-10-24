@@ -1955,7 +1955,12 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         p.rdata(iqp_) = p.rdata(iqp_) - massExchange;
       }
 
-      
+      for (int i = 0; i < 5; i++) {
+        source->add_to_loc(neu2ion[i], pti, xp, yp, zp, i);
+      }
+
+      Print() << "source rho= "
+              << source->get_fluid_mass_density(pti, xp, yp, zp, fluidID);
 
     } // for p
   }   // for pti
