@@ -38,7 +38,7 @@ class FLEKSTP(object):
     iEy_ = 11
     iEz_ = 12
 
-    def __init__(self, outputDirs, iDomain=0, iSpecies=0, iListStart=0, iListEnd=-1):
+    def __init__(self, outputDirs, iDomain=0, iSpecies=0, iListStart=0, iListEnd=-1, readAllFiles=False):
         if type(outputDirs) == str:
             outputDirs = [outputDirs]
 
@@ -63,6 +63,12 @@ class FLEKSTP(object):
         self.plistfiles.sort()
         self.pfiles.sort()
 
+        self.list_index_to_time = []
+        if readAllFiles:
+            for filename in self.pfiles:
+                record = self._read_the_first_record(filename)
+                self.list_index_to_time.append(record[FLEKSTP.it_])
+
         if iListEnd == -1:
             iListEnd = len(self.plistfiles)
         self.plistfiles = self.plistfiles[iListStart:iListEnd]
@@ -84,6 +90,14 @@ class FLEKSTP(object):
         print('Particles of species ', self.iSpecies,
               ' are read from ', outputDirs)
         print('Number of particles: ', len(self.pset))
+
+    def get_index_to_time(self):
+        r"""
+        Getter method for accessing get_index_to_time
+        """
+        if len(self.list_index_to_time) == 0:
+            print("Index to time mapping was not initialized")
+        return self.list_index_to_time
 
     def read_particle_list(self, fileName):
         r"""
