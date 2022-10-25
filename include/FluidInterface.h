@@ -196,6 +196,10 @@ public:
 
   void print_info() const;
 
+  void get_for_points(const int nDim, const int nPoint,
+                      const double* const xyz_I, double* const data_I,
+                      const int nVar, const double coef = 1);
+
   int get_nCellPerPatch() const { return nCellPerPatch; }
 
   bool get_UseAnisoP() const { return (useAnisoP); }

@@ -1183,3 +1183,32 @@ void FluidInterface::save_amrex_file() {
     nodeFluid.mult(out2no, i, 1, nodeFluid.nGrow());
   }
 }
+
+void FluidInterface::get_for_points(const int nDim, const int nPoint,
+                                    const double* const xyz_I,
+                                    double* const data_I, const int nVar,
+                                    const double coef) {
+  std::string nameFunc = "FI::get_for_points";
+
+  const RealBox& range = Geom(0).ProbDomain();
+  for (int iPoint = 0; iPoint < nPoint; iPoint++) {
+    double xyz[3];
+    for (int iDim = 0; iDim < nDim; iDim++) {
+      xyz[iDim] = xyz_I[iPoint * nDim + iDim] * get_Si2NoL();
+    }
+
+    const Real xp = xyz[0];
+    const Real yp = (nDim > 1) ? xyz[1] : 0.0;
+    const Real zp = (nDim > 2) ? xyz[2] : 0.0;
+
+    // Check if this point is inside this FLEKS domain.
+    if (!range.contains(RealVect(xp, yp, zp), 1e-10))
+      continue;
+
+    const int iStart = iPoint * nVar;
+    for (int iVar = 0; iVar <= nVar; iVar++) {
+      data_I[iStart + iVar] =
+          get_value_at_loc(nodeFluid, Geom(0), xp, yp, zp, iVar) * coef;
+    }
+  }
+}

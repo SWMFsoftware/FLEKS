@@ -279,9 +279,9 @@ contains
     character(len=*), parameter :: NameSub='PT_get_for_oh'
     !--------------------------------------------------------------------------
     call CON_set_do_test(NameSub, DoTest, DoTestMe)
-    write(*,*)'Error: ', NameSub
 
-    Data_VI = 0
+    call fleks_get_for_oh( &
+         nDimIn, nPoint, Xyz_DI, Data_VI, nVarIn)    
   end subroutine PT_get_for_oh
   !============================================================================
 

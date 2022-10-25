@@ -20,6 +20,8 @@ int fleks_cal_dt_(double *dt);
 int fleks_find_points_(int *nPoint, double *Xyz_DI, int *iProc_I);
 int fleks_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
                          int *nVar);
+int fleks_get_for_oh_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
+                      int *nVar);
 int fleks_get_grid_info_(int *fluidDim, int *iGrid, int *iDecomp);
 int fleks_set_grid_info_(int *nInt, int *accumulatedSize, int *status);
 int fleks_turn_on_all_cells_();

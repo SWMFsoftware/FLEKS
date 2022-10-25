@@ -285,6 +285,27 @@ void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
 }
 
 //========================================================
+void Domain::get_source_for_points(const int nDim, const int nPoint,
+                                   const double *const xyz_I,
+                                   double *const data_I, const int nVar) {
+  if (!source)
+    return;
+
+  Print() << printPrefix << component
+          << " -> OH coupling at t =" << tc->get_time_si() << " (s)"
+          << std::endl;
+  Real t0 = source->get_period_start_si();
+  Real t1 = tc->get_time_si();
+  Print() << printPrefix << " t0 = " << t0 << " t1 = " << t1 << std::endl;
+  double invDt = 0;
+  if (t1 - t0 > 1e-99)
+    invDt = 1. / (t1 - t0);
+
+  source->get_for_points(nDim, nPoint, xyz_I, data_I, nVar, invDt);
+  source->set_period_start_si(t1);
+}
+
+//========================================================
 void Domain::read_restart() {
   std::string restartDir = component + "/restartIN/";
 

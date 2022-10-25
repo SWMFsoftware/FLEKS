@@ -76,6 +76,9 @@ public:
   void get_fluid_state_for_points(const int nDim, const int nPoint,
                                   const double *const xyz_I,
                                   double *const data_I, const int nVar);
+  void get_source_for_points(const int nDim, const int nPoint,
+                             const double *const xyz_I, double *const data_I,
+                             const int nVar);
   //------------Coupler related end--------------
 
   //--------------- IO begin--------------------------------

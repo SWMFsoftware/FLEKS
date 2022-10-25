@@ -205,6 +205,14 @@ int fleks_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
 }
 
 //==========================================================
+int fleks_get_for_oh_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
+                      int *nVar) {
+  for (int i = 0; i < fleksDomains.size(); i++)
+    fleksDomains(i).get_source_for_points(*nDim, *nPoint, Xyz_I, data_I, *nVar);
+  return 0;
+}
+
+//==========================================================
 int fleks_find_points_(int *nPoint, double *Xyz_I, int *iProc_I) {
   for (int i = 0; i < fleksDomains.size(); i++)
     fleksDomains(i).find_mpi_rank_for_points(*nPoint, Xyz_I, iProc_I);
