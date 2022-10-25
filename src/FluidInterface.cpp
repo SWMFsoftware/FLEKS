@@ -489,7 +489,7 @@ void FluidInterface::set_node_fluid(const double* const data,
     MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
   }
 
-  save_amrex_file();
+  // save_amrex_file();
 }
 
 void FluidInterface::set_node_fluid() {
@@ -511,7 +511,7 @@ void FluidInterface::set_node_fluid() {
     MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
   }
 
-  save_amrex_file();
+  // save_amrex_file();
 }
 
 void FluidInterface::calc_current() {
