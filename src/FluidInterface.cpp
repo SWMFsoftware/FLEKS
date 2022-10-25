@@ -483,7 +483,7 @@ void FluidInterface::set_node_fluid(const double* const data,
 
   calc_current();
   normalize_fluid_variables();
-  // convert_moment_to_velocity();
+  convert_moment_to_velocity();
 
   if (nodeFluid.size() > iJx) {
     MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
