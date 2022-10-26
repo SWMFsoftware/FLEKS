@@ -302,7 +302,10 @@ void Domain::get_source_for_points(const int nDim, const int nPoint,
     invDt = 1. / (t1 - t0);
 
   source->get_for_points(nDim, nPoint, xyz_I, data_I, nVar, invDt);
+
   source->set_period_start_si(t1);
+  
+  source->set_node_fluid_to_zero();
 }
 
 //========================================================

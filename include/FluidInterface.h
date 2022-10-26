@@ -176,6 +176,8 @@ public:
 
   void set_node_fluid();
 
+  void set_node_fluid_to_zero() { nodeFluid.setVal(0.0); };
+
   void calc_current();
 
   void normalize_fluid_variables();
