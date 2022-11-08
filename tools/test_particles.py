@@ -67,6 +67,8 @@ class FLEKSTP(object):
         if readAllFiles:
             for filename in self.pfiles:
                 record = self._read_the_first_record(filename)
+                if record == None:
+                    continue
                 self.list_index_to_time.append(record[FLEKSTP.it_])
 
         if iListEnd == -1:
@@ -85,6 +87,8 @@ class FLEKSTP(object):
         self.file_time = []
         for filename in self.pfiles:
             record = self._read_the_first_record(filename)
+            if record == None:
+                    continue
             self.file_time.append(record[FLEKSTP.it_])
 
         print('Particles of species ', self.iSpecies,
@@ -219,7 +223,7 @@ class FLEKSTP(object):
         if self.nReal == 10:
             header += ", bx, by, bz"
         if self.nReal == 13:
-            header += ", bx, by, bz, ex, ey, ex"
+            header += ", bx, by, bz, ex, ey, ez"
         np.savetxt(fileName, pData, delimiter=",",
                    header=header, comments="")
 
