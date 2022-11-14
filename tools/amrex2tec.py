@@ -9,9 +9,16 @@ def amrex2tec(datPath):
         os.system("cd "+fleksDir+"; make CONVERTER > /dev/null")
 
     tecPath = datPath+".dat"
+    pltPath = datPath+".plt"
 
-    if not os.path.exists(tecPath) and os.system(binPath + " " + datPath + " > /dev/null") == -1:
+    if (not os.path.exists(tecPath) and not os.path.exists(pltPath) and
+        os.system(binPath + " " + datPath + " > /dev/null") == -1):
         print("amrex2tec conversion failed for file ", datPath)
+
+    if not os.path.exists(pltPath) and os.system("preplot " + tecPath) == -1:
+        print("tecplot preplot failed for file ", tecPath)
+
+    os.system("rm " + tecPath)
 
     tEnd = time.time()
     print("amrex2tec conversion takes {0} s".format(tEnd-tStart))
