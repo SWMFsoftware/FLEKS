@@ -8,10 +8,10 @@ def amrex2tec(datPath):
     if not os.path.exists(binPath):
         os.system("cd "+fleksDir+"; make CONVERTER > /dev/null")
 
-    if os.system(binPath + " " + datPath + " > /dev/null") == -1:
-        print("amrex2tec conversion failed for file ", datPath)
-
     tecPath = datPath+".dat"
+
+    if not os.path.exists(tecPath) and os.system(binPath + " " + datPath + " > /dev/null") == -1:
+        print("amrex2tec conversion failed for file ", datPath)
 
     tEnd = time.time()
     print("amrex2tec conversion takes {0} s".format(tEnd-tStart))
