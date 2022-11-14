@@ -1,6 +1,6 @@
 import os, time, sys
 
-def amrex2tec(datPath):
+def amrex2tec(datPath, savePlt=False):
     tStart = time.time()
 
     fleksDir = __file__.replace("/tools/amrex2tec.py", "")
@@ -15,10 +15,11 @@ def amrex2tec(datPath):
         os.system(binPath + " " + datPath + " > /dev/null") == -1):
         print("amrex2tec conversion failed for file ", datPath)
 
-    if not os.path.exists(pltPath) and os.system("preplot " + tecPath) == -1:
-        print("tecplot preplot failed for file ", tecPath)
+    if savePlt:
+        if not os.path.exists(pltPath) and os.system("preplot " + tecPath) == -1:
+            print("tecplot preplot failed for file ", tecPath)
 
-    os.system("rm " + tecPath)
+        os.system("rm " + tecPath)
 
     tEnd = time.time()
     print("amrex2tec conversion takes {0} s".format(tEnd-tStart))
