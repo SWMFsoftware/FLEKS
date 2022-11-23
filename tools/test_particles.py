@@ -208,9 +208,15 @@ class FLEKSTP(object):
     def IDs(self):
         return self.pset
 
-    def save_trajectory_to_csv(self, partID, fileName=None):
+    def save_trajectory_to_csv(self, partID, fileName=None, shiftTime=False, scaleTime=False):
         r""" 
         Save the trajectory of a particle to a csv file.  
+
+        Parameters
+        ----------
+        shiftTime: If set to True, set the initial time to be 0
+        scaleTime: If set to True, scale the time into [0,1] range, only scale time if
+                    shiftTime = True
 
         Example
         -----------------
@@ -224,6 +230,10 @@ class FLEKSTP(object):
             header += ", bx, by, bz"
         if self.nReal == 13:
             header += ", bx, by, bz, ex, ey, ez"
+        if shiftTime:
+            pData[:,0] -= pData[0,0]
+            if scaleTime:
+                pData[:,0] /= pData[-1,0]
         np.savetxt(fileName, pData, delimiter=",",
                    header=header, comments="")
 
