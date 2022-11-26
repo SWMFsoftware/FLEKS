@@ -496,6 +496,7 @@ void PlotWriter::set_output_unit() {
     No2OutRho = No2SiRho;
     No2OutP = No2SiP;
     No2OutJ = No2SiJ;
+    No2OutM = No2SiRho * pow(No2OutL, 3);
 
     if (outputUnit == "PLANETARY") {
       double massProton = 1.6726219e-27;   // unit: kg
@@ -503,6 +504,7 @@ void PlotWriter::set_output_unit() {
       No2OutV *= 1e-3;                     // m/s -> km/s
       No2OutB *= 1e9;                      // T -> nT
       No2OutRho *= 1. / massProton * 1e-6; // kg/m^3 -> amu/cm^3
+      No2OutM *= 1. / massProton;          // kg -> amu
       No2OutP *= 1e9;                      // Pa -> nPa
       No2OutJ *= 1; // ?????????????????????? what should it be??????
     }
@@ -511,6 +513,7 @@ void PlotWriter::set_output_unit() {
     No2OutV = 1;
     No2OutB = 1;
     No2OutRho = 1;
+    No2OutM = 1;
     No2OutP = 1;
     No2OutJ = 1;
   } else {
@@ -536,7 +539,7 @@ double PlotWriter::No2OutTable(std::string const& var) const {
     value = No2OutRho;
   } else if (var.substr(0, 4) == "mass") {
     // mass
-    value = No2OutRho * pow(No2OutL, 3);
+    value = No2OutM;
   } else if (var.substr(0, 3) == "rgS") {
     // gyro-radius
     value = No2OutL;
