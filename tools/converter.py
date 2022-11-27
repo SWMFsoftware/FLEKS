@@ -19,7 +19,7 @@ def clean_dat(datPath):
     for i in range(10):
         p0 = f.tell()
         line = f.readline()
-        if(line.find("VARIABLES") != -1):
+        if (line.find("VARIABLES") != -1):
             p1 = f.tell()
             break
     # Remove the unit.
@@ -61,10 +61,11 @@ def tec2vtk(datPath):
         f.write(line)
 
     tEnd = time.time()
-    print("tec2vtk conversion takes {0} s".format(tEnd-tStart))
+    print("tec2vtk conversion takes {0} s".format(tEnd-tStart), flush=True)
     return vtkPath
 
 ######################################################################
+
 
 def amrex2vtk(datPath):
     tStart = time.time()
@@ -74,15 +75,15 @@ def amrex2vtk(datPath):
     os.system("rm -rf "+tecPath)
 
     tEnd = time.time()
-    print("amrex2vtk conversion takes {0} s".format(tEnd-tStart))
+    print("amrex2vtk conversion takes {0} s".format(tEnd-tStart), flush=True)
 
 
 if __name__ == "__main__":
     files = sys.argv[1:]
     for f in files:
         if f.find(".dat") >= 0:
-            print("\n Converting ", f)
+            print("\n Converting ", f, flush=True)
             tec2vtk(f)
         else:
-            print("\nConverting ", f)
+            print("\nConverting ", f, flush=True)
             amrex2vtk(f)

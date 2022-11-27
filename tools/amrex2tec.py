@@ -1,4 +1,7 @@
-import os, time, sys
+import os
+import time
+import sys
+
 
 def amrex2tec(datPath, savePlt=False):
     tStart = time.time()
@@ -13,21 +16,22 @@ def amrex2tec(datPath, savePlt=False):
 
     if (not os.path.exists(tecPath) and not os.path.exists(pltPath) and
         os.system(binPath + " " + datPath + " > /dev/null") == -1):
-        print("amrex2tec conversion failed for file ", datPath)
+        print("amrex2tec conversion failed for file ", datPath, flush=True)
 
     if savePlt:
         if not os.path.exists(pltPath) and os.system("preplot " + tecPath) == -1:
-            print("tecplot preplot failed for file ", tecPath)
+            print("tecplot preplot failed for file ", tecPath, flush=True)
 
         os.system("rm " + tecPath)
 
     tEnd = time.time()
-    print("amrex2tec conversion takes {0} s".format(tEnd-tStart))
+    print("amrex2tec conversion takes {0} s".format(tEnd-tStart), flush=True)
 
     return tecPath
+
 
 if __name__ == "__main__":
     files = sys.argv[1:]
     for f in files:
-        print("\nConverting ", f)
+        print("\nConverting ", f, flush=True)
         amrex2tec(f)
