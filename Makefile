@@ -37,8 +37,8 @@ CONVERTER:
 	cd src; $(MAKE) CONVERTER
 
 rundir:
-	mkdir -p ${RUNDIR}/PC
-	cd ${RUNDIR}/PC; \
+	mkdir -p ${RUNDIR}/${COMPONENT}
+	cd ${RUNDIR}/${COMPONENT}; \
 		mkdir restartIN restartOUT plots;\
 		ln -s ${BINDIR}/PostIDL.exe .; \
 		cp    ${SCRIPTDIR}/pIDL .
