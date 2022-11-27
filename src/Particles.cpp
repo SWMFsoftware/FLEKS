@@ -1873,7 +1873,7 @@ IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charge_exchange(
-    Real dt, FluidInterface* stateOH, FluidInterface* source) {
+    Real dt, FluidInterface* stateOH, FluidInterface* sourceOH) {
 
   timing_func("Particles::charge_exchange");
 
@@ -1956,11 +1956,11 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       }
 
       for (int i = 0; i < 5; i++) {
-        source->add_to_loc(neu2ion[i], pti, xp, yp, zp, i);
+        sourceOH->add_to_loc(neu2ion[i], pti, xp, yp, zp, i);
       }
 
-      Print() << "source rho= "
-              << source->get_fluid_mass_density(pti, xp, yp, zp, fluidID);
+      Print() << "sourceOH rho= "
+              << sourceOH->get_fluid_mass_density(pti, xp, yp, zp, fluidID);
 
       // TODO: Added new neutral particles here!!!!!!!!!!
 

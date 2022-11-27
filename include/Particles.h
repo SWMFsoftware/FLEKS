@@ -160,7 +160,7 @@ public:
                      amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly);
 
   void charge_exchange(amrex::Real dt, FluidInterface* stateOH,
-                       FluidInterface* source);
+                       FluidInterface* sourceOH);
 
   void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
              amrex::Real dt, amrex::Real dtNext);

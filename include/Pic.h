@@ -48,7 +48,7 @@ private:
 
   std::shared_ptr<FluidInterface> fi;
   std::shared_ptr<FluidInterface> stateOH;
-  std::shared_ptr<FluidInterface> source;
+  std::shared_ptr<FluidInterface> sourceOH;
   std::shared_ptr<TimeCtr> tc;
 
   amrex::MultiFab nodeE;
@@ -140,7 +140,7 @@ public:
   Particles<> *get_particle_pointer(int i) { return parts[i].get(); }
 
   void set_stateOH(std::shared_ptr<FluidInterface> &in) { stateOH = in; }
-  void set_source(std::shared_ptr<FluidInterface> &in) { source = in; }
+  void set_sourceOH(std::shared_ptr<FluidInterface> &in) { sourceOH = in; }
 
   //--------------Initialization begin-------------------------------
   void regrid(const amrex::BoxArray &activeRegionBAIn,

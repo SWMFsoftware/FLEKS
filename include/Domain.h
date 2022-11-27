@@ -38,8 +38,8 @@ public:
   // So far, stateOH is only used for OH-PT coupling. It stores the plasma
   // variables obtained from OH.
   std::shared_ptr<FluidInterface> stateOH;
-
-  std::shared_ptr<FluidInterface> source;
+  // The Neu->Ion source for PT->OH coupling. 
+  std::shared_ptr<FluidInterface> sourceOH;
 
   std::shared_ptr<TimeCtr> tc;
   //--------------------------------

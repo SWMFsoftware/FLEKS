@@ -46,12 +46,12 @@ void Domain::init(double time, const int iDomain,
   stateOH = std::make_shared<FluidInterface>(
       gm, amrInfo, nGst, gridID, "stateOH", fi.get(), InteractionFluid);
 
-  source = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, "source",
+  sourceOH = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, "sourceOH",
                                             fi.get(), SourceFluid);
-  source->set_period_start_si(tc->get_time_si());
+  sourceOH->set_period_start_si(tc->get_time_si());
 
   pic->set_stateOH(stateOH);
-  pic->set_source(source);
+  pic->set_sourceOH(sourceOH);
 #endif
 
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
@@ -61,8 +61,8 @@ void Domain::init(double time, const int iDomain,
   if (stateOH)
     stateOH->print_info();
 
-  if (source)
-    source->print_info();
+  if (sourceOH)
+    sourceOH->print_info();
 
   pic->init_source(*fi);
 
@@ -213,8 +213,8 @@ void Domain::regrid() {
   if (stateOH)
     stateOH->regrid(baPic, dmPic);
 
-  if (source)
-    source->regrid(baPic, dmPic);
+  if (sourceOH)
+    sourceOH->regrid(baPic, dmPic);
 
   pic->regrid(activeRegionBA, baPic, dmPic);
 
@@ -288,24 +288,24 @@ void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
 void Domain::get_source_for_points(const int nDim, const int nPoint,
                                    const double *const xyz_I,
                                    double *const data_I, const int nVar) {
-  if (!source)
+  if (!sourceOH)
     return;
 
   Print() << printPrefix << component
           << " -> OH coupling at t =" << tc->get_time_si() << " (s)"
           << std::endl;
-  Real t0 = source->get_period_start_si();
+  Real t0 = sourceOH->get_period_start_si();
   Real t1 = tc->get_time_si();
   Print() << printPrefix << " t0 = " << t0 << " t1 = " << t1 << std::endl;
   double invDt = 0;
   if (t1 - t0 > 1e-99)
     invDt = 1. / (t1 - t0);
 
-  source->get_for_points(nDim, nPoint, xyz_I, data_I, nVar, invDt);
+  sourceOH->get_for_points(nDim, nPoint, xyz_I, data_I, nVar, invDt);
 
-  source->set_period_start_si(t1);
+  sourceOH->set_period_start_si(t1);
   
-  source->set_node_fluid_to_zero();
+  sourceOH->set_node_fluid_to_zero();
 }
 
 //========================================================
