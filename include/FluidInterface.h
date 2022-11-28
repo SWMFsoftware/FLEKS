@@ -30,19 +30,15 @@ public:
   MultiFabFLEKS& operator=(const MultiFabFLEKS& other) { return *this; };
 };
 
-class FluidInterface : public Grid {
-private:
+class FluidInterfaceParameters {
+public:
+  FluidInterfaceParameters() = default;
+  FluidInterfaceParameters(const FluidInterfaceParameters& fip) = default;
+
+protected:
   static const int OhmUe_ = 1, OhmUi_ = 2, OhmUMHD_ = 3;
 
-  FluidType myType = PICFluid;
-
-  MultiFabFLEKS nodeFluid;
-  MultiFabFLEKS centerB;
-
   double tStartSI;
-
-  bool isGridInitialized = false;
-  bool isGridEmpty = false;
 
   int nCellPerPatch = 1;
 
@@ -119,6 +115,21 @@ private:
   int OhmU = OhmUe_;
 
   bool initFromSWMF;
+};
+
+class FluidInterface : public Grid, public FluidInterfaceParameters {
+  /*
+  Q: It is preferable to declare copyable variables in 
+    FluidInterfaceParameters. Why?
+  A: Grid's base class AmrCore deletes the copy constructor. 
+    So FluidInterface's default constructor is also deleted. It is much
+    easier to copy variables in FluidInterfaceParameters. 
+  */
+protected:
+  FluidType myType = PICFluid;
+
+  MultiFabFLEKS nodeFluid;
+  MultiFabFLEKS centerB;
 
 public:
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
@@ -139,9 +150,11 @@ public:
 
   // Initialization from other FluidInterface
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-                 int nGst, int id, std::string tag,
-                 const FluidInterface* const other,
-                 FluidType typeIn = PICFluid);
+                 int nGst, int id, std::string tag, const FluidInterface& other,
+                 FluidType typeIn = PICFluid)
+      : Grid(gm, amrInfo, nGst, id, tag),
+        myType(typeIn),
+        FluidInterfaceParameters(other){};
 
   ~FluidInterface() = default;
 

@@ -8,6 +8,7 @@
 #include "FluidInterface.h"
 #include "Grid.h"
 #include "LinearSolver.h"
+#include "OHInterface.h"
 #include "Particles.h"
 #include "ReadParam.h"
 #include "TimeCtr.h"
@@ -139,8 +140,8 @@ public:
 
   Particles<> *get_particle_pointer(int i) { return parts[i].get(); }
 
-  void set_stateOH(std::shared_ptr<FluidInterface> &in) { stateOH = in; }
-  void set_sourceOH(std::shared_ptr<FluidInterface> &in) { sourceOH = in; }
+  void set_stateOH(std::shared_ptr<OHInterface> &in) { stateOH = in; }
+  void set_sourceOH(std::shared_ptr<OHInterface> &in) { sourceOH = in; }
 
   //--------------Initialization begin-------------------------------
   void regrid(const amrex::BoxArray &activeRegionBAIn,

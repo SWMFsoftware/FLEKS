@@ -43,11 +43,11 @@ void Domain::init(double time, const int iDomain,
   init_time_ctr();
 
 #ifdef _PT_COMPONENT_
-  stateOH = std::make_shared<FluidInterface>(
-      gm, amrInfo, nGst, gridID, "stateOH", fi.get(), InteractionFluid);
+  stateOH = std::make_shared<OHInterface>(gm, amrInfo, nGst, gridID, "stateOH",
+                                          *fi, InteractionFluid);
 
-  sourceOH = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, "sourceOH",
-                                            fi.get(), SourceFluid);
+  sourceOH = std::make_shared<OHInterface>(gm, amrInfo, nGst, gridID,
+                                           "sourceOH", *fi, SourceFluid);
   sourceOH->set_period_start_si(tc->get_time_si());
 
   pic->set_stateOH(stateOH);
@@ -304,7 +304,7 @@ void Domain::get_source_for_points(const int nDim, const int nPoint,
   sourceOH->get_for_points(nDim, nPoint, xyz_I, data_I, nVar, invDt);
 
   sourceOH->set_period_start_si(t1);
-  
+
   sourceOH->set_node_fluid_to_zero();
 }
 
