@@ -2,10 +2,10 @@
 #define _DOMAIN_H_
 
 #include "DomainGrid.h"
+#include "OHInterface.h"
 #include "ParticleTracker.h"
 #include "Pic.h"
 #include "ReadParam.h"
-#include "OHInterface.h"
 
 class Domain : public DomainGrid {
 private:
@@ -39,7 +39,7 @@ public:
   // So far, stateOH is only used for OH-PT coupling. It stores the plasma
   // variables obtained from OH.
   std::shared_ptr<OHInterface> stateOH;
-  // The Neu->Ion source for PT->OH coupling. 
+  // The Neu->Ion source for PT->OH coupling.
   std::shared_ptr<OHInterface> sourceOH;
 
   std::shared_ptr<TimeCtr> tc;

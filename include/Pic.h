@@ -6,6 +6,7 @@
 #include "Array1D.h"
 #include "Constants.h"
 #include "FluidInterface.h"
+#include "FluidSource.h"
 #include "Grid.h"
 #include "LinearSolver.h"
 #include "OHInterface.h"
@@ -51,6 +52,8 @@ private:
   std::shared_ptr<FluidInterface> stateOH;
   std::shared_ptr<FluidInterface> sourceOH;
   std::shared_ptr<TimeCtr> tc;
+
+  std::shared_ptr<FluidSource> fs;
 
   amrex::MultiFab nodeE;
   amrex::MultiFab nodeEth;

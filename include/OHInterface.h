@@ -5,10 +5,9 @@
 
 class OHInterface : public FluidInterface {
 public:
-  OHInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-              int nGst, int id, std::string tag, const FluidInterface& other,
+  OHInterface(const FluidInterface& other, int id, std::string tag,
               FluidType typeIn = SourceFluid)
-      : FluidInterface(gm, amrInfo, nGst, id, tag, other, typeIn) {
+      : FluidInterface(other, id, tag, typeIn) {
     initFromSWMF = false;
 
     if (myType != PICFluid) {

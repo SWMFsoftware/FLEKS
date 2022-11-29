@@ -72,6 +72,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 void Pic::post_process_param() {
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
+
+  if (useSource) {
+    fs = std::make_shared<FluidSource>(*fi, gridID, "picSource", SourceFluid);
+  }
 }
 
 //==========================================================

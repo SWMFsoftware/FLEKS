@@ -69,10 +69,19 @@ protected:
 
   std::string tag;
 
+private:
+  // Here is the inheritance chain: AmrInfo -> AmrMesh -> AmrCore -> Grid. We
+  // need to copy Grid object sometime, but the copy constructor of AmrCore is
+  // deleted. I also do not know how to copy the information in AmrInfo. In
+  // order to simplify the copy operation, the following variable is used to
+  // install the initial AmrInfo.
+  amrex::AmrInfo gridAmrInfo;
+
 public:
-  Grid(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo, int nGstIn,
-       int id, std::string tagIn = std::string())
+  Grid(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
+       const int nGstIn, int id, std::string tagIn = std::string())
       : AmrCore(gm, amrInfo), nGst(nGstIn), gridID(id) {
+    gridAmrInfo = amrInfo;
     tag = tagIn;
     gridName = std::string("FLEKS") + std::to_string(gridID);
     if (tag.empty()) {
@@ -83,7 +92,12 @@ public:
 
     isFake2D = Geom(0).Domain().bigEnd(iz_) == Geom(0).Domain().smallEnd(iz_);
   };
+  
   ~Grid() = default;
+
+  int get_n_ghost() const { return nGst; }
+
+  const amrex::AmrInfo& get_amr_info() const { return gridAmrInfo; }
 
   void set_base_grid(const amrex::BoxArray& ba) { cGrid = ba; }
 

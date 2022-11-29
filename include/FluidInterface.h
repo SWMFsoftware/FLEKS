@@ -119,11 +119,11 @@ protected:
 
 class FluidInterface : public Grid, public FluidInterfaceParameters {
   /*
-  Q: It is preferable to declare copyable variables in 
+  Q: It is preferable to declare copyable variables in
     FluidInterfaceParameters. Why?
-  A: Grid's base class AmrCore deletes the copy constructor. 
+  A: Grid's base class AmrCore deletes the copy constructor.
     So FluidInterface's default constructor is also deleted. It is much
-    easier to copy variables in FluidInterfaceParameters. 
+    easier to copy variables in FluidInterfaceParameters.
   */
 protected:
   FluidType myType = PICFluid;
@@ -149,10 +149,9 @@ public:
   }
 
   // Initialization from other FluidInterface
-  FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-                 int nGst, int id, std::string tag, const FluidInterface& other,
+  FluidInterface(const FluidInterface& other, int id, std::string tag,
                  FluidType typeIn = PICFluid)
-      : Grid(gm, amrInfo, nGst, id, tag),
+      : Grid(other.Geom(0), other.get_amr_info(), other.get_n_ghost(), id, tag),
         myType(typeIn),
         FluidInterfaceParameters(other){};
 
