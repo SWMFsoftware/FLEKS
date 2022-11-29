@@ -57,8 +57,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#MERGEPARTICLE") {
     param.read_var("mergeThresholdDistance", particleMergeThreshold);
     param.read_var("binBuffer", particleMergeBinBuffer);
-  } else if (command == "#SOURCE") {
-    param.read_var("useSource", useSource);
   } else if (command == "#TESTCASE") {
     std::string testcase;
     param.read_var("testCase", testcase);
@@ -72,10 +70,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 void Pic::post_process_param() {
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
-
-  if (useSource) {
-    fs = std::make_shared<FluidSource>(*fi, gridID, "picSource", SourceFluid);
-  }
 }
 
 //==========================================================
@@ -873,7 +867,7 @@ void Pic::update(bool doReportIn) {
 
   Real tStart = second();
 
-  if (useSource) {
+  if (fs) {
     fill_source_particles();
   }
 

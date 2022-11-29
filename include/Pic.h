@@ -51,9 +51,8 @@ private:
   std::shared_ptr<FluidInterface> fi;
   std::shared_ptr<FluidInterface> stateOH;
   std::shared_ptr<FluidInterface> sourceOH;
-  std::shared_ptr<TimeCtr> tc;
-
   std::shared_ptr<FluidSource> fs;
+  std::shared_ptr<TimeCtr> tc;
 
   amrex::MultiFab nodeE;
   amrex::MultiFab nodeEth;
@@ -81,9 +80,6 @@ private:
   amrex::MultiFab tempCenter1;
   amrex::MultiFab tempCenter1_1;
   //--------------------------------------
-
-  bool useSource = false;
-  // FluidInterface sourceInterface;
 
   int nSpecies;
   int iTot;
@@ -145,6 +141,7 @@ public:
 
   void set_stateOH(std::shared_ptr<OHInterface> &in) { stateOH = in; }
   void set_sourceOH(std::shared_ptr<OHInterface> &in) { sourceOH = in; }
+  void set_fluid_source(std::shared_ptr<FluidSource> &in) { fs = in; }
 
   //--------------Initialization begin-------------------------------
   void regrid(const amrex::BoxArray &activeRegionBAIn,

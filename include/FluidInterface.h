@@ -188,6 +188,8 @@ public:
 
   void set_node_fluid();
 
+  virtual void set_node_fluid(const FluidInterface& other);
+
   void set_node_fluid_to_zero() { nodeFluid.setVal(0.0); };
 
   void calc_current();

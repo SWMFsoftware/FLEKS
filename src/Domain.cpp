@@ -54,9 +54,17 @@ void Domain::init(double time, const int iDomain,
   pic->set_sourceOH(sourceOH);
 #endif
 
+  if (useFluidSource) {
+    fs = std::make_shared<FluidSource>(*fi, gridID, "picSource", SourceFluid);
+    pic->set_fluid_source(fs);
+  }
+
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 
   fi->print_info();
+
+  if (fs)
+    fs->print_info();
 
   if (stateOH)
     stateOH->print_info();
@@ -162,6 +170,7 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
   amrInfo.blocking_factor.push_back(IntVect(1, 1, 1));
 
   Print() << printPrefix << "Domain range = " << domainRange << std::endl;
+  Print() << printPrefix << "Center box = " << centerBox << std::endl;
 }
 
 //========================================================
@@ -209,6 +218,9 @@ void Domain::regrid() {
     dmPic.define(baPic);
 
   fi->regrid(baPic, dmPic);
+
+  if (fs)
+    fs->regrid(baPic, dmPic);
 
   if (stateOH)
     stateOH->regrid(baPic, dmPic);
@@ -262,6 +274,9 @@ void Domain::set_state_var(double *data, int *index) {
     fi->set_node_fluid(data, index);
     pic->update_cells_for_pt();
   }
+
+  if (fs)
+    fs->set_node_fluid(*fi);
 }
 
 //========================================================
@@ -527,8 +542,7 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#DISCRETIZE" || command == "#DISCRETIZATION" ||
         command == "#RESAMPLING" || command == "#SMOOTHE" ||
         command == "#TESTCASE" || command == "#MERGEPARTICLE" ||
-        command == "#SOURCE" || command == "#PIC" ||
-        command == "#EXPLICITPIC") {
+        command == "#PIC" || command == "#EXPLICITPIC") {
       pic->read_param(command, param);
     } else if (command == "#PARTICLETRACKER" ||
                command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
@@ -542,6 +556,8 @@ void Domain::read_param(const bool readGridInfo) {
       fi->read_param(command, param);
     } else if (command == "#RESTART") {
       param.read_var("doRestart", doRestart);
+    } else if (command == "#SOURCE") {
+      param.read_var("useFluidSource", useFluidSource);
     } else if (command == "#INITFROMSWMF") {
       param.read_var("initFromSWMF", initFromSWMF);
     } else if (command == "#GEOMETRY") {

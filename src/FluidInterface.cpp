@@ -445,6 +445,24 @@ void FluidInterface::set_node_fluid() {
   // save_amrex_file();
 }
 
+void FluidInterface::set_node_fluid(const FluidInterface& other) {
+  if (isGridEmpty)
+    return;
+
+  MultiFab::Copy(nodeFluid, other.nodeFluid, 0, 0, nodeFluid.nComp(),
+                 nodeFluid.nGrow());
+
+  calc_current();
+  normalize_fluid_variables();
+  convert_moment_to_velocity();
+
+  if (nodeFluid.size() > iJx) {
+    MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
+  }
+
+  // save_amrex_file();
+}
+
 void FluidInterface::calc_current() {
   if (isGridEmpty)
     return;

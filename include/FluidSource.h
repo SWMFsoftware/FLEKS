@@ -14,6 +14,14 @@ public:
       : FluidInterface(other, id, tag, typeIn) {
     initFromSWMF = false;
   }
+
+  void set_node_fluid(const FluidInterface& other) override {
+    std::string nameFunc = "FS:set_node_fluid";
+    amrex::Print() << nameFunc << " is called.";
+    
+    FluidInterface::set_node_fluid(other);
+
+  }
 };
 
 #endif
