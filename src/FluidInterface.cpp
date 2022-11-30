@@ -457,7 +457,7 @@ void FluidInterface::set_node_fluid(const FluidInterface& other) {
 
   if (nodeFluid.size() > iJx) {
     MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
-  }  
+  }
 }
 
 void FluidInterface::calc_current() {
@@ -1122,6 +1122,11 @@ void FluidInterface::save_amrex_file() {
     nodeFluid.mult(no2out, i, 1, nodeFluid.nGrow());
   }
 
+  if (varNames.empty()) {
+    for (int i = 0; i < nodeFluid.nComp(); i++) {
+      varNames.push_back("var" + to_string(i));
+    }
+  }
   WriteSingleLevelPlotfile(filename, nodeFluid, varNames, Geom(0), 0, 0);
 
   for (int i = 0; i < nodeFluid.nComp(); i++) {
