@@ -133,7 +133,7 @@ public:
                           amrex::Real dt = -1);
   void inject_particles_at_boundary(const amrex::iMultiFab& cellStatus,
                                     const FluidInterface* fiIn = nullptr,
-                                    amrex::Real dt = -1);
+                                    amrex::Real dt = -1, amrex::Real ratio = 1);
 
   void add_particles_source(const amrex::iMultiFab& cellStatus,
                             const FluidInterface& interface,

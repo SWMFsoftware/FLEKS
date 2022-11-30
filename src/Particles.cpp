@@ -62,9 +62,8 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 
   if (ratio != 1) {
     // Change the random number seed.
-    nRandom = 19;
-
-    ratio = pow(ratio, 1 / 3);
+    nRandom = 19;    
+    ratio = pow(ratio, 1.0 / 3);
   }
 
   int nPPC[nDim];
@@ -192,9 +191,9 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           p.pos(iz_) = z;
           p.rdata(iup_) = u;
           p.rdata(ivp_) = v;
+          p.rdata(iwp_) = w;
           // Convert 'density changing rate' to 'density' if necessary.
-          p.rdata(iwp_) = w * dt;
-          p.rdata(iqp_) = q;
+          p.rdata(iqp_) = q * dt;
 
           if (NStructInt > 0) {
             // For test particle only.
@@ -202,7 +201,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           }
 
           particles.push_back(p);
-          // Print() << p << std::endl;
+          // AllPrint() << p << std::endl;
           icount++;
         }
       }
@@ -217,6 +216,7 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
 
   // 1. Inject particles for physical cells.
   const int lev = 0;
+  Real ratio = 0.01;
   for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
     const Box& tile_box = mfi.validbox();
     const auto lo = amrex::lbound(tile_box);
@@ -228,12 +228,12 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
     for (int i = iMin; i <= iMax; ++i)
       for (int j = jMin; j <= jMax; ++j)
         for (int k = kMin; k <= kMax; ++k) {
-          Real ratio = 1;
           add_particles_cell(mfi, i, j, k, interface, ratio, Vel(), dt);
         }
   }
 
-  // inject_particles_at_boundary(cellStatus, &interface, dt);
+  // 2. Inject particles for boundary cells.
+  inject_particles_at_boundary(cellStatus, &interface, dt, ratio);
 }
 
 //==========================================================
@@ -268,7 +268,8 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
-    const iMultiFab& cellStatus, const FluidInterface* fiIn, Real dt) {
+    const iMultiFab& cellStatus, const FluidInterface* fiIn, Real dt,
+    Real ratio) {
   timing_func("Particles::inject_particles_at_boundary");
 
   // Only inject nGstInject layers.
@@ -299,7 +300,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
           if (do_inject_particles_for_this_cell(bx, status, i, j, k)) {
-            add_particles_cell(mfi, i, j, k, *fiTmp, dt);
+            add_particles_cell(mfi, i, j, k, *fiTmp, ratio, Vel(), dt);
           }
         }
   }
