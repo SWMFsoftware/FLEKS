@@ -140,6 +140,7 @@ class FLEKSDataset(BoxlibDataset):
     _field_info_class = FLEKSFieldInfo
 
     def __init__(self, output_dir,
+                 read_field_data=False,
                  cparam_filename=None,
                  fparam_filename=None,
                  dataset_type='boxlib_native',
@@ -149,6 +150,7 @@ class FLEKSDataset(BoxlibDataset):
         self.default_fluid_type = "mesh"
         self.default_field = ("mesh", "density")
         self.fluid_types = ("mesh", "index", "raw")
+        self.read_field_data = read_field_data
 
         super(FLEKSDataset, self).__init__(output_dir,
                                            cparam_filename,
@@ -181,7 +183,7 @@ class FLEKSDataset(BoxlibDataset):
 
         particle_types = glob.glob(self.output_dir + "/*/Header")
         particle_types = [cpt.split(os.sep)[-2] for cpt in particle_types]
-        if len(particle_types) > 0:
+        if len(particle_types) > 0 and not self.read_field_data:
             self.parameters["particles"] = 1
             self.particle_types = tuple(particle_types)
             self.particle_types_raw = self.particle_types

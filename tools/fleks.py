@@ -6,7 +6,7 @@ from test_particles import FLEKSTP
 from data_container import compare
 
 
-def load(filename, iDomain=0, iSpecies=0):
+def load(filename, iDomain=0, iSpecies=0, readFieldData=False):
     files = glob.glob(filename)
     if len(files) == 0:
         raise Exception('Error: can not find the file/directory!')
@@ -19,6 +19,6 @@ def load(filename, iDomain=0, iSpecies=0):
     elif basename.find('.') and basename.split('.')[-1] in ['out', 'outs']:
         return IDLDataSet(filename)
     elif basename[-6:] == '_amrex':
-        return FLEKSDataset(filename)
+        return FLEKSDataset(filename, readFieldData)
     else:
         raise Exception('Error: unknown file format!')
