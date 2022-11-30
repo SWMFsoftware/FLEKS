@@ -205,9 +205,10 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_source(
-    const amrex::MultiFab& momentsMF, const FluidInterface& interface) {
+    const iMultiFab& cellStatus, const FluidInterface& interface) {
   timing_func("Particles::add_particles_source");
 
+  // 1. Inject particles for physical cells.
   const int lev = 0;
   for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
     const Box& tile_box = mfi.validbox();
@@ -220,10 +221,12 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
     for (int i = iMin; i <= iMax; ++i)
       for (int j = jMin; j <= jMax; ++j)
         for (int k = kMin; k <= kMax; ++k) {
-          Real ratio = 0.5;
+          Real ratio = 1;
           add_particles_cell(mfi, i, j, k, interface, ratio);
         }
   }
+
+  inject_particles_at_boundary(cellStatus, &interface);
 }
 
 //==========================================================
@@ -258,13 +261,18 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
-    const iMultiFab& cellStatus) {
+    const iMultiFab& cellStatus, const FluidInterface* fiIn) {
   timing_func("Particles::inject_particles_at_boundary");
 
   // Only inject nGstInject layers.
   const int nGstInject = 1;
 
   const int lev = 0;
+
+  // By default, use fi for injecting particles.
+  const FluidInterface* fiTmp = fi;
+  if (fiIn)
+    fiTmp = fiIn;
 
   for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
     const auto& status = cellStatus[mfi].array();
@@ -275,7 +283,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
 
     IntVect idxMin = lo, idxMax = hi;
 
-    for (int iDim = 0; iDim < fi->get_fluid_dimension(); iDim++) {
+    for (int iDim = 0; iDim < fiTmp->get_fluid_dimension(); iDim++) {
       idxMin[iDim] -= nGstInject;
       idxMax[iDim] += nGstInject;
     }
@@ -284,7 +292,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
           if (do_inject_particles_for_this_cell(bx, status, i, j, k)) {
-            add_particles_cell(mfi, i, j, k, *fi);
+            add_particles_cell(mfi, i, j, k, *fiTmp);
           }
         }
   }

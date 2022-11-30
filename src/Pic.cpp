@@ -530,14 +530,15 @@ void Pic::fill_particles() {
 }
 
 void Pic::fill_source_particles() {
-  // To be implemented
-
-  // sourceInterface.update_nodeFluid(fi->get_nodeFluid(),
-  //                                  tc->get_dt());
-
-  // for (int i = 0; i < nSpecies; i++) {
-  //   parts[i]->add_particles_source(nodePlasma[i], sourceInterface);
-  // }
+  for (int i = 0; i < nSpecies; i++) {
+    Print() << "before ff = " << parts[i]->TotalNumberOfParticles(false, false)
+            << " tf = " << parts[i]->TotalNumberOfParticles(true, false)
+            << std::endl;
+    parts[i]->add_particles_source(cellStatus, *fs);
+    Print() << "after ff = " << parts[i]->TotalNumberOfParticles(false, false)
+            << " tf = " << parts[i]->TotalNumberOfParticles(true, false)
+            << std::endl;
+  }
 }
 
 //==========================================================

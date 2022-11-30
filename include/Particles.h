@@ -130,9 +130,10 @@ public:
   void add_particles_cell(const amrex::MFIter& mfi, const int i, const int j,
                           const int k, const FluidInterface& interface,
                           amrex::Real ratio = 1, Vel tpVel = Vel());
-  void inject_particles_at_boundary(const amrex::iMultiFab& cellStatus);
+  void inject_particles_at_boundary(const amrex::iMultiFab& cellStatus,
+                                    const FluidInterface* fiIn = nullptr);
 
-  void add_particles_source(const amrex::MultiFab& momentsMF,
+  void add_particles_source(const amrex::iMultiFab& cellStatus,
                             const FluidInterface& interface);
 
   // 1) Only inject particles ONCE for one ghost cells. This function decides
@@ -204,7 +205,6 @@ public:
                             amrex::Array4<int const> const& status,
                             const amrex::IntVect& low,
                             const amrex::IntVect& high) {
-
     // Contains ghost cells.
     bool isInsideBox = true;
     int cellIdx[3];
