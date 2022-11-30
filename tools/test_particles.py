@@ -225,11 +225,11 @@ class FLEKSTP(object):
         pData = self.read_particle_trajectory(partID)
         if fileName == None:
             fileName = "trajectory_"+str(partID[0])+"_"+str(partID[1])+".csv"
-        header = "time, x, y, z, ux, uy, uz"
+        header = "time [s], X [R], Y [R], Z [R], U_x [km/s], U_y [km/s], U_z [km/s]"
         if self.nReal == 10:
-            header += ", bx, by, bz"
+            header += ", B_x [nT], B_y [nT], B_z [nT]"
         if self.nReal == 13:
-            header += ", bx, by, bz, ex, ey, ez"
+            header += ", B_x [nT], B_y [nT], B_z [nT], E_x [uV/m], E_y [uV/m], E_z [uV/m]"
         if shiftTime:
             pData[:,0] -= pData[0,0]
             if scaleTime:
