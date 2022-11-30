@@ -82,6 +82,21 @@ public:
 
             } // for k
       }
+
+    {
+      // The current stored in nodeFluid are used to initialize particle
+      // velocities. Since the source particles only contribute little the total
+      // current, set current to zero.
+      if (isGridEmpty)
+        return;
+      if (nVarCoupling == nVarFluid)
+        return;
+
+      amrex::MultiFab currentMF(nodeFluid, amrex::make_alias, iJx, nDimMax);
+      currentMF.setVal(0, currentMF.nGrow());
+    }
+
+    save_amrex_file();
   }
 };
 
