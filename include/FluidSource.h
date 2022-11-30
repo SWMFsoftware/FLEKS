@@ -3,14 +3,14 @@
 
 #include "FluidInterface.h"
 
-#define _MERCURY_EXOSPHERE_
+//#define _MERCURY_EXOSPHERE_
 
 #ifdef _MERCURY_EXOSPHERE_
 extern "C" {
 void get_source_wrapper(double xyzSI[3], double sourceSI[6]);
 }
 #else
-void get_source_wrapper(double xyzSI[3], double sourceSI[6]) {}
+inline void get_source_wrapper(double xyzSI[3], double sourceSI[6]) {}
 #endif
 
 class FluidSource : public FluidInterface {
