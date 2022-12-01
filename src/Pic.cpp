@@ -531,13 +531,7 @@ void Pic::fill_particles() {
 
 void Pic::fill_source_particles() {
   for (int i = 0; i < nSpecies; i++) {
-    Print() << "before ff = " << parts[i]->TotalNumberOfParticles(false, false)
-            << " tf = " << parts[i]->TotalNumberOfParticles(true, false)
-            << std::endl;
     parts[i]->add_particles_source(cellStatus, *fs, tc->get_dt());
-    Print() << "after ff = " << parts[i]->TotalNumberOfParticles(false, false)
-            << " tf = " << parts[i]->TotalNumberOfParticles(true, false)
-            << std::endl;
   }
 }
 
