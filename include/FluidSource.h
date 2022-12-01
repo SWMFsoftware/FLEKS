@@ -80,6 +80,25 @@ public:
                 arr(i, j, k, iPe) = source[5] * Si2NoP / get_Si2NoT();
               }
 
+              amrex::Real r = 0;
+              for (int i = 0; i < 3; i++) {
+                xyz[i] *= no2siL / rPlanetSi;
+                r += xyz[i] * xyz[i];
+              }
+              r = sqrt(r);
+              if (r <= 1) {
+                printf("Warning: x=%e, y=%e, z=%e, r=%e < 1.0 !\n", xyz[0],
+                       xyz[1], xyz[2], r);
+              }
+
+              // printf("i=%d, j=%d, k=%d, x=%e, y=%e, z = %e, source[0]=%e, "
+              //        "source[1] = %e, source[2] "
+              //        "= %e, source[3] = %e, source[4] = %e, source[5] = %e, "
+              //        "pe=%e\n",
+              //        i, j, k, xyz[0] / rPlanetSi, xyz[1] / rPlanetSi,
+              //        xyz[2] / rPlanetSi, source[0], source[1], source[2],
+              //        source[3], source[4], source[5], arr(i, j, k, iPe));
+
             } // for k
       }
 

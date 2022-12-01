@@ -539,9 +539,19 @@ void FluidInterface::convert_moment_to_velocity() {
           } else {
             for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
               const double& rho = arr(i, j, k, iRho_I[iFluid]);
-              arr(i, j, k, iUx_I[iFluid]) /= rho;
-              arr(i, j, k, iUy_I[iFluid]) /= rho;
-              arr(i, j, k, iUz_I[iFluid]) /= rho;
+              if (rho > 0) {
+                arr(i, j, k, iUx_I[iFluid]) /= rho;
+                arr(i, j, k, iUy_I[iFluid]) /= rho;
+                arr(i, j, k, iUz_I[iFluid]) /= rho;
+              } else {
+                const Real* dx = Geom(0).CellSize();
+                const auto plo = Geom(0).ProbLo();
+                const Real x = (i * dx[ix_] + plo[ix_]) * No2SiL / rPlanetSi;
+                const Real y = (j * dx[iy_] + plo[iy_]) * No2SiL / rPlanetSi;
+                const Real z = (k * dx[iz_] + plo[iz_]) * No2SiL / rPlanetSi;
+                printf("Warning: ZERO density at x = %e, y = %e, z = %e\n", x,
+                       y, z);
+              }
             } // iFluid
           }   // else
         }
