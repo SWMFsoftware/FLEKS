@@ -239,7 +239,7 @@ class FLEKSTP(object):
 
     def read_particle_trajectory(self, partID):
         r"""
-        Read and return the trajector of a particle. 
+        Read and return the trajectory of a particle. 
 
         Parameters
         ----------
