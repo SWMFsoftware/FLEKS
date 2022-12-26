@@ -216,7 +216,7 @@ class FLEKSDataset(BoxlibDataset):
         norm: String 
         'x', 'y' or 'z' 
 
-        cut_log: Float         
+        cut_loc: Float         
         """
 
         axDir = {'X': 0, 'Y': 1, 'Z': 2}
