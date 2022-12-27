@@ -302,7 +302,7 @@ class dataContainer2D(dataContainer):
 
     def contour(self, vars, xlim=None, ylim=None, unit="planet", nlevels=200,
                 cmap="rainbow", figsize=(12, 8), pcolor=False, log=False,
-                addgrid=False, bottomline=10, *args, **kwargs):
+                addgrid=False, bottomline=10, plot=None, *args, **kwargs):
         r""" 
         Contour plots. 
 
@@ -326,7 +326,10 @@ class dataContainer2D(dataContainer):
         figsize: A tuple         
 
         log: Bool 
-        Using log plot or not. 
+        Using log plot or not.
+
+        plot: list or tuple of [f, axes]
+        Used to fine tune the individual subplot
 
         Examples
         ----------------
@@ -349,8 +352,11 @@ class dataContainer2D(dataContainer):
             varMin.append(vmin)
             varMax.append(vmax)
 
-        f, axes = plt.subplots(nRow, nCol, figsize=figsize)
-        axes = np.array(axes)  # in case nRow = nCol = 1
+        if plot:
+            f, axes = plot
+        else:
+            f, axes = plt.subplots(nRow, nCol, figsize=figsize)
+            axes = np.array(axes)  # in case nRow = nCol = 1
 
         axes = axes.reshape(-1)
 
