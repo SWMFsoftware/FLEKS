@@ -130,6 +130,26 @@ class dataContainer(object):
 
         return locals()['result']
 
+    def add_variable(self, name, val):
+        r"""
+        This method adds a variable to the dataset for visualization purpose
+
+        Parameters
+        ------------------
+        name: String
+        The name of the variable to be added into self.data
+
+        val: array-like structure
+        Values of the variable stored in an array
+
+        """
+
+        if type(val) != yt.units.yt_array.YTArray:
+            val = yt.YTArray(val, 'dimensionless')
+        
+        self.data[name] = val
+        self.vars.append(name)
+
     def get_variable(self, var, unit='planet'):
         r"""
         This method calculate the value of the variable. 
