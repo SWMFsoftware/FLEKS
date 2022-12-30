@@ -147,8 +147,9 @@ class dataContainer(object):
         if type(val) != yt.units.yt_array.YTArray:
             val = yt.YTArray(val, 'dimensionless')
         
+        if name not in self.data.keys():
+            self.vars.append(name)
         self.data[name] = val
-        self.vars.append(name)
 
     def get_variable(self, var, unit='planet'):
         r"""
