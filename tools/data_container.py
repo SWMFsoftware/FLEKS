@@ -302,7 +302,7 @@ class dataContainer2D(dataContainer):
 
     def contour(self, vars, xlim=None, ylim=None, unit="planet", nlevels=200,
                 cmap="rainbow", figsize=(12, 8), pcolor=False, log=False,
-                addgrid=False, bottomline=10, plot=None, *args, **kwargs):
+                addgrid=False, bottomline=10, plot=None, showcolorbar=True, *args, **kwargs):
         r""" 
         Contour plots. 
 
@@ -402,8 +402,9 @@ class dataContainer2D(dataContainer):
                 ax.plot(gx, gy, 'x')
 
             ticks = get_ticks(vmin, vmax)
-            cb = f.colorbar(cs, ax=ax, ticks=ticks)
-            cb.formatter.set_powerlimits((0, 0))
+            if showcolorbar:
+                cb = f.colorbar(cs, ax=ax, ticks=ticks)
+                cb.formatter.set_powerlimits((0, 0))
 
             ax.set_xlim(xlim)
             ax.set_ylim(ylim)
