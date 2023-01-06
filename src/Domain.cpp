@@ -43,11 +43,12 @@ void Domain::init(double time, const int iDomain,
   init_time_ctr();
 
 #ifdef _PT_COMPONENT_
-  stateOH = std::make_shared<OHInterface>(gm, amrInfo, nGst, gridID, "stateOH",
-                                          *fi, InteractionFluid);
+  stateOH =
+      std::make_shared<OHInterface>(*fi, gridID, "stateOH", InteractionFluid);
 
-  sourceOH = std::make_shared<OHInterface>(gm, amrInfo, nGst, gridID,
-                                           "sourceOH", *fi, SourceFluid);
+  sourceOH =
+      std::make_shared<OHInterface>(*fi, gridID, "sourceOH", SourceFluid);
+      
   sourceOH->set_period_start_si(tc->get_time_si());
 
   pic->set_stateOH(stateOH);
