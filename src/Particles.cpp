@@ -62,7 +62,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 
   if (ratio != 1) {
     // Change the random number seed.
-    nRandom = 19;    
+    nRandom = 19;
     ratio = pow(ratio, 1.0 / 3);
   }
 
@@ -1915,16 +1915,18 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       // si2no[iUy_] = stateOH->get_Si2NoV();
       // si2no[iUz_] = stateOH->get_Si2NoV();
 
+      // amu/m^3
       rhoNeu = qomSign * p.rdata(iqp_) * get_mass() * invVol *
-               stateOH->get_No2SiRho();
+               stateOH->get_No2SiRho() / cProtonMassSI;
 
       for (int i = 0; i < nDim; i++) {
         uNeu[i] = p.rdata(iup_ + i) * stateOH->get_No2SiV();
       }
 
       int fluidID = 0;
+      // amu/m^3
       rhoIon = stateOH->get_fluid_mass_density(pti, xp, yp, zp, fluidID) *
-               stateOH->get_No2SiRho();
+               stateOH->get_No2SiRho() / cProtonMassSI;
 
       // cs = sqrt(P/n)
       double cs = stateOH->get_fluid_uth(pti, xp, yp, zp, fluidID) *
@@ -1972,11 +1974,17 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       }
 
       for (int i = 0; i < 5; i++) {
-        sourceOH->add_to_loc(neu2ion[i], pti, xp, yp, zp, i);
+        // Q: Why is (neu2ion-ion2neu) divided by rhoIon?
+        // A: What passed between PT and OH is 'source per ion density'
+        // instead of source. The ion density will be multiplied back in OH
+        // ModUser.f90
+        sourceOH->add_to_loc((neu2ion[i] - ion2neu[i]) / rhoIon, pti, xp, yp,
+                             zp, i);
       }
 
       Print() << "sourceOH rho= "
-              << sourceOH->get_fluid_mass_density(pti, xp, yp, zp, fluidID);
+              << sourceOH->get_fluid_mass_density(pti, xp, yp, zp, fluidID)
+              << std::endl;
 
       // TODO: Added new neutral particles here!!!!!!!!!!
 
