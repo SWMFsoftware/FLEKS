@@ -37,7 +37,7 @@ public:
   // particles.
   std::shared_ptr<FluidInterface> fi;
 
-  std::shared_ptr<SourceInterface> fs;
+  std::shared_ptr<SourceInterface> source;
   bool useFluidSource = false;
 
   // So far, stateOH is only used for OH-PT coupling. It stores the plasma

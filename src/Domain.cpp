@@ -56,16 +56,16 @@ void Domain::init(double time, const int iDomain,
 #endif
 
   if (useFluidSource) {
-    fs = std::make_shared<SourceInterface>(*fi, gridID, "picSource", SourceFluid);
-    pic->set_fluid_source(fs);
+    source = std::make_shared<SourceInterface>(*fi, gridID, "picSource", SourceFluid);
+    pic->set_fluid_source(source);
   }
 
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 
   fi->print_info();
 
-  if (fs)
-    fs->print_info();
+  if (source)
+    source->print_info();
 
   if (stateOH)
     stateOH->print_info();
@@ -220,8 +220,8 @@ void Domain::regrid() {
 
   fi->regrid(baPic, dmPic);
 
-  if (fs)
-    fs->regrid(baPic, dmPic);
+  if (source)
+    source->regrid(baPic, dmPic);
 
   if (stateOH)
     stateOH->regrid(baPic, dmPic);
@@ -276,8 +276,8 @@ void Domain::set_state_var(double *data, int *index) {
     pic->update_cells_for_pt();
   }
 
-  if (fs)
-    fs->set_node_fluid(*fi);
+  if (source)
+    source->set_node_fluid(*fi);
 }
 
 //========================================================

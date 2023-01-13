@@ -531,7 +531,7 @@ void Pic::fill_particles() {
 
 void Pic::fill_source_particles() {
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->add_particles_source(cellStatus, *fs, tc->get_dt());
+    parts[i]->add_particles_source(cellStatus, *source, tc->get_dt());
   }
 }
 
@@ -862,7 +862,7 @@ void Pic::update(bool doReportIn) {
 
   Real tStart = second();
 
-  if (fs) {
+  if (source) {
     fill_source_particles();
   }
 

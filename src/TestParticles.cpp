@@ -296,14 +296,14 @@ void TestParticles::read_test_particle_list(
   vIDs.clear();
 
   // Read particle IDs
-  std::ifstream fs;
-  fs.open(listName, std::ifstream::in);
+  std::ifstream source;
+  source.open(listName, std::ifstream::in);
   PID id;
-  while (fs >> id.cpu >> id.id) {
+  while (source >> id.cpu >> id.id) {
     vIDs.push_back(id);
     id.flag = true;
   }
-  fs.close();
+  source.close();
 
   std::sort(vIDs.begin(), vIDs.end());
 }
