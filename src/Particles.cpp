@@ -7,6 +7,7 @@
 #include "Utility.h"
 
 using namespace amrex;
+using namespace std;
 
 //==========================================================
 template <int NStructReal, int NStructInt>
@@ -1890,10 +1891,11 @@ IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charge_exchange(
     Real dt, FluidInterface* stateOH, FluidInterface* sourceOH) {
+  string nameFunc = "Particles::charge_exchange";
 
-  timing_func("Particles::charge_exchange");
+  timing_func(nameFunc);
 
-  Print() << "charge_exchange called" << std::endl;
+  Print() << nameFunc << std::endl;
 
   double vol = 1. / invVol;
   const int lev = 0;
@@ -1910,11 +1912,6 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       double ion2neu[5], neu2ion[5], si2no[5];
       const int iRho_ = 0, iUx_ = 1, iUy_ = 2, iUz_ = 3, iP_ = 4;
 
-      // si2no[iRho_] = 1.0 / stateOH->get_No2SiRho();
-      // si2no[iUx_] = stateOH->get_Si2NoV();
-      // si2no[iUy_] = stateOH->get_Si2NoV();
-      // si2no[iUz_] = stateOH->get_Si2NoV();
-
       // amu/m^3
       rhoNeu = qomSign * p.rdata(iqp_) * get_mass() * invVol *
                stateOH->get_No2SiRho() / cProtonMassSI;
@@ -1923,17 +1920,19 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         uNeu[i] = p.rdata(iup_ + i) * stateOH->get_No2SiV();
       }
 
-      int fluidID = 0;
+      // MHD fluid index.
+      const int fluidID = 0;
       // amu/m^3
       rhoIon = stateOH->get_fluid_mass_density(pti, xp, yp, zp, fluidID) *
                stateOH->get_No2SiRho() / cProtonMassSI;
 
-      // cs = sqrt(P/n)
+      // cs = sqrt(P/n); m/s
       double cs = stateOH->get_fluid_uth(pti, xp, yp, zp, fluidID) *
                   stateOH->get_No2SiV();
 
       // cs2Ion = 2*P/n. The definition of thermal speed in get_uth_iso() is
       // different from the requirement in OH_get_charge_exchange_wrapper().
+      // See page 92 of Adam Michael's thesis.
       cs2Ion = 2 * pow(cs, 2);
 
       uIon[ix_] = stateOH->get_fluid_ux(pti, xp, yp, zp, fluidID) *
@@ -1946,7 +1945,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       OH_get_charge_exchange_wrapper(&rhoIon, &cs2Ion, uIon, &rhoNeu, &cs2Neu,
                                      uNeu, ion2neu, neu2ion);
 
-      // Somehow, the function above returns number density changing rate.
+      // The function above returns number density changing rate.
       ion2neu[iRho_] *= cProtonMassSI;
       neu2ion[iRho_] *= cProtonMassSI;
 
@@ -1954,7 +1953,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       Print() << "rhoion = " << rhoIon << " cs2Ion = " << cs2Ion
               << " rhoNeu = " << rhoNeu << " cs2Neu = " << cs2Neu
               << " dtSI = " << dtSI << std::endl;
-      for (int i = 0; i < 5; i++) {
+      for (int i = iRho_; i <= iP_; i++) {
         ion2neu[i] *= dtSI;
         neu2ion[i] *= dtSI;
         Print() << " i = " << i << " ion2neu = " << ion2neu[i]
@@ -1965,11 +1964,18 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 
       Print() << "nden = " << p.rdata(iqp_)
               << " massExchange = " << massExchange << std::endl;
-      if (p.rdata(iqp_) - massExchange < 0.01 * p.rdata(iqp_)) {
+      if (p.rdata(iqp_) - massExchange <= 0) {
         // Mark for deletion
         p.id() = -1;
+
+        // Reduce the sources accordingly to conserve total masses.
+        const Real ratio = p.rdata(iqp_) / massExchange;
+        for (int i = iRho_; i <= iP_; i++) {
+          ion2neu[i] *= ratio;
+          neu2ion[i] *= ratio;
+        }
       } else {
-        // Reduce mass due to charge exchange
+        // Reduce particle mass due to charge exchange
         p.rdata(iqp_) = p.rdata(iqp_) - massExchange;
       }
 
