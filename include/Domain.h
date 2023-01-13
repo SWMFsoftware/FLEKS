@@ -2,7 +2,7 @@
 #define _DOMAIN_H_
 
 #include "DomainGrid.h"
-#include "FluidSource.h"
+#include "SourceInterface.h"
 #include "OHInterface.h"
 #include "ParticleTracker.h"
 #include "Pic.h"
@@ -37,7 +37,7 @@ public:
   // particles.
   std::shared_ptr<FluidInterface> fi;
 
-  std::shared_ptr<FluidSource> fs;
+  std::shared_ptr<SourceInterface> fs;
   bool useFluidSource = false;
 
   // So far, stateOH is only used for OH-PT coupling. It stores the plasma

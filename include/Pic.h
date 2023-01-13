@@ -6,7 +6,7 @@
 #include "Array1D.h"
 #include "Constants.h"
 #include "FluidInterface.h"
-#include "FluidSource.h"
+#include "SourceInterface.h"
 #include "Grid.h"
 #include "LinearSolver.h"
 #include "OHInterface.h"
@@ -51,7 +51,7 @@ private:
   std::shared_ptr<FluidInterface> fi;
   std::shared_ptr<FluidInterface> stateOH;
   std::shared_ptr<FluidInterface> sourcePT2OH;
-  std::shared_ptr<FluidSource> fs;
+  std::shared_ptr<SourceInterface> fs;
   std::shared_ptr<TimeCtr> tc;
 
   amrex::MultiFab nodeE;
@@ -141,7 +141,7 @@ public:
 
   void set_stateOH(std::shared_ptr<OHInterface> &in) { stateOH = in; }
   void set_sourceOH(std::shared_ptr<OHInterface> &in) { sourcePT2OH = in; }
-  void set_fluid_source(std::shared_ptr<FluidSource> &in) { fs = in; }
+  void set_fluid_source(std::shared_ptr<SourceInterface> &in) { fs = in; }
 
   //--------------Initialization begin-------------------------------
   void regrid(const amrex::BoxArray &activeRegionBAIn,

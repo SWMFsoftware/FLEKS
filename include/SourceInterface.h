@@ -1,5 +1,5 @@
-#ifndef _FLUIDSOURCE_H_
-#define _FLUIDSOURCE_H_
+#ifndef _SOURCEINTERFACE_H_
+#define _SOURCEINTERFACE_H_
 
 #include "FluidInterface.h"
 
@@ -13,9 +13,9 @@ void get_source_wrapper(double xyzSI[3], double sourceSI[6]);
 inline void get_source_wrapper(double xyzSI[3], double sourceSI[6]) {}
 #endif
 
-class FluidSource : public FluidInterface {
+class SourceInterface : public FluidInterface {
 public:
-  FluidSource(const FluidInterface& other, int id, std::string tag,
+  SourceInterface(const FluidInterface& other, int id, std::string tag,
               FluidType typeIn = SourceFluid)
       : FluidInterface(other, id, tag, typeIn) {
     initFromSWMF = false;

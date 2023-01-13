@@ -56,7 +56,7 @@ void Domain::init(double time, const int iDomain,
 #endif
 
   if (useFluidSource) {
-    fs = std::make_shared<FluidSource>(*fi, gridID, "picSource", SourceFluid);
+    fs = std::make_shared<SourceInterface>(*fi, gridID, "picSource", SourceFluid);
     pic->set_fluid_source(fs);
   }
 
