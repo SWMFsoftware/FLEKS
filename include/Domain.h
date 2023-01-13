@@ -44,7 +44,7 @@ public:
   // variables obtained from OH.
   std::shared_ptr<OHInterface> stateOH;
   // The Neu->Ion source for PT->OH coupling.
-  std::shared_ptr<OHInterface> sourceOH;
+  std::shared_ptr<OHInterface> sourcePT2OH;
 
   std::shared_ptr<TimeCtr> tc;
   //--------------------------------

@@ -1890,7 +1890,7 @@ IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charge_exchange(
-    Real dt, FluidInterface* stateOH, FluidInterface* sourceOH) {
+    Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH) {
   string nameFunc = "Particles::charge_exchange";
 
   timing_func(nameFunc);
@@ -1984,12 +1984,12 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         // A: What passed between PT and OH is 'source per ion density'
         // instead of source. The ion density will be multiplied back in OH
         // ModUser.f90
-        sourceOH->add_to_loc((neu2ion[i] - ion2neu[i]) / rhoIon, pti, xp, yp,
+        sourcePT2OH->add_to_loc((neu2ion[i] - ion2neu[i]) / rhoIon, pti, xp, yp,
                              zp, i);
       }
 
-      Print() << "sourceOH rho= "
-              << sourceOH->get_fluid_mass_density(pti, xp, yp, zp, fluidID)
+      Print() << "sourcePT2OH rho= "
+              << sourcePT2OH->get_fluid_mass_density(pti, xp, yp, zp, fluidID)
               << std::endl;
 
       // TODO: Added new neutral particles here!!!!!!!!!!

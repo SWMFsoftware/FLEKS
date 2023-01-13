@@ -50,7 +50,7 @@ private:
 
   std::shared_ptr<FluidInterface> fi;
   std::shared_ptr<FluidInterface> stateOH;
-  std::shared_ptr<FluidInterface> sourceOH;
+  std::shared_ptr<FluidInterface> sourcePT2OH;
   std::shared_ptr<FluidSource> fs;
   std::shared_ptr<TimeCtr> tc;
 
@@ -140,7 +140,7 @@ public:
   Particles<> *get_particle_pointer(int i) { return parts[i].get(); }
 
   void set_stateOH(std::shared_ptr<OHInterface> &in) { stateOH = in; }
-  void set_sourceOH(std::shared_ptr<OHInterface> &in) { sourceOH = in; }
+  void set_sourceOH(std::shared_ptr<OHInterface> &in) { sourcePT2OH = in; }
   void set_fluid_source(std::shared_ptr<FluidSource> &in) { fs = in; }
 
   //--------------Initialization begin-------------------------------

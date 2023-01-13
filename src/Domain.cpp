@@ -46,13 +46,13 @@ void Domain::init(double time, const int iDomain,
   stateOH =
       std::make_shared<OHInterface>(*fi, gridID, "stateOH", InteractionFluid);
 
-  sourceOH =
-      std::make_shared<OHInterface>(*fi, gridID, "sourceOH", SourceFluid);
+  sourcePT2OH =
+      std::make_shared<OHInterface>(*fi, gridID, "sourcePT2OH", SourceFluid);
       
-  sourceOH->set_period_start_si(tc->get_time_si());
+  sourcePT2OH->set_period_start_si(tc->get_time_si());
 
   pic->set_stateOH(stateOH);
-  pic->set_sourceOH(sourceOH);
+  pic->set_sourceOH(sourcePT2OH);
 #endif
 
   if (useFluidSource) {
@@ -70,8 +70,8 @@ void Domain::init(double time, const int iDomain,
   if (stateOH)
     stateOH->print_info();
 
-  if (sourceOH)
-    sourceOH->print_info();
+  if (sourcePT2OH)
+    sourcePT2OH->print_info();
 
   pic->init_source(*fi);
 
@@ -226,8 +226,8 @@ void Domain::regrid() {
   if (stateOH)
     stateOH->regrid(baPic, dmPic);
 
-  if (sourceOH)
-    sourceOH->regrid(baPic, dmPic);
+  if (sourcePT2OH)
+    sourcePT2OH->regrid(baPic, dmPic);
 
   pic->regrid(activeRegionBA, baPic, dmPic);
 
@@ -304,24 +304,24 @@ void Domain::get_fluid_state_for_points(const int nDim, const int nPoint,
 void Domain::get_source_for_points(const int nDim, const int nPoint,
                                    const double *const xyz_I,
                                    double *const data_I, const int nVar) {
-  if (!sourceOH)
+  if (!sourcePT2OH)
     return;
 
   Print() << printPrefix << component
           << " -> OH coupling at t =" << tc->get_time_si() << " (s)"
           << std::endl;
-  Real t0 = sourceOH->get_period_start_si();
+  Real t0 = sourcePT2OH->get_period_start_si();
   Real t1 = tc->get_time_si();
   Print() << printPrefix << " t0 = " << t0 << " t1 = " << t1 << std::endl;
   double invDt = 0;
   if (t1 - t0 > 1e-99)
     invDt = 1. / (t1 - t0);
 
-  sourceOH->get_for_points(nDim, nPoint, xyz_I, data_I, nVar, invDt);
+  sourcePT2OH->get_for_points(nDim, nPoint, xyz_I, data_I, nVar, invDt);
 
-  sourceOH->set_period_start_si(t1);
+  sourcePT2OH->set_period_start_si(t1);
 
-  sourceOH->set_node_fluid_to_zero();
+  sourcePT2OH->set_node_fluid_to_zero();
 }
 
 //========================================================
