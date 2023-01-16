@@ -1677,8 +1677,9 @@ void Pic::charge_exchange() {
   source->set_node_fluid_to_zero();
 
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->charge_exchange(tc->get_dt(), stateOH.get(), sourcePT2OH.get());
+    parts[i]->charge_exchange(tc->get_dt(), stateOH.get(), sourcePT2OH.get(),
+                              source.get());
   }
 
-  fill_source_particles();
+  //fill_source_particles();
 }

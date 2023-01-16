@@ -1890,7 +1890,8 @@ IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charge_exchange(
-    Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH) {
+    Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH,
+    SourceInterface* source) {
   string nameFunc = "Particles::charge_exchange";
 
   timing_func(nameFunc);
@@ -1911,6 +1912,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       double cs2Ion, uIon[3], rhoIon;
       double ion2neu[5], neu2ion[5], si2no[5];
       const int iRho_ = 0, iUx_ = 1, iUy_ = 2, iUz_ = 3, iP_ = 4;
+      const int iRhoUx_ = iUx_, iRhoUy_ = iUy_, iRhoUz_ = iUz_, iE_ = iP_;
 
       // amu/m^3
       rhoNeu = qomSign * p.rdata(iqp_) * get_mass() * invVol *
@@ -1979,13 +1981,38 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         p.rdata(iqp_) = p.rdata(iqp_) - massExchange;
       }
 
-      for (int i = 0; i < 5; i++) {
+      for (int i = iRho_; i <= iP_; i++) {
         // Q: Why is (neu2ion-ion2neu) divided by rhoIon?
         // A: What passed between PT and OH is 'source per ion density'
         // instead of source. The ion density will be multiplied back in OH
         // ModUser.f90
         sourcePT2OH->add_to_loc((neu2ion[i] - ion2neu[i]) / rhoIon, pti, xp, yp,
-                             zp, i);
+                                zp, i);
+      }
+
+      { // Add source to nodes.
+        Real si2no_v[5];
+        si2no_v[iRho_] = source->get_Si2NoRho();
+        si2no_v[iUx_] = source->get_Si2NoV();
+        si2no_v[iUy_] = si2no_v[iUx_];
+        si2no_v[iUz_] = si2no_v[iUx_];
+        si2no_v[iP_] = source->get_Si2NoP();
+
+        // momentum => velocituy
+        Real u2 = 0;
+        for (int i = iUx_; i <= iUz_; i++) {
+          ion2neu[i] /= ion2neu[iRho_];
+          u2 += pow(ion2neu[i], 2);
+        }
+
+        const Real gamma = 5. / 3;
+        // P = (gamma-1)*(E - 0.5*rho*u2)
+        ion2neu[iP_] = (gamma - 1) * (ion2neu[iE_] - 0.5 * ion2neu[iRho_] * u2);
+
+        // source saves changing rate (density/s...).
+        for (int i = iRho_; i <= iP_; i++) {
+          source->add_to_loc(ion2neu[i] * si2no_v[i] / dt, pti, xp, yp, zp, i);
+        }
       }
 
       Print() << "sourcePT2OH rho= "

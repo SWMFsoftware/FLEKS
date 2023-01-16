@@ -11,6 +11,7 @@
 #include "Constants.h"
 #include "FluidInterface.h"
 #include "RandNum.h"
+#include "SourceInterface.h"
 #include "TimeCtr.h"
 #include "UMultiFab.h"
 
@@ -164,7 +165,7 @@ public:
                      amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly);
 
   void charge_exchange(amrex::Real dt, FluidInterface* stateOH,
-                       FluidInterface* sourcePT2OH);
+                       FluidInterface* sourcePT2OH, SourceInterface* source);
 
   void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
              amrex::Real dt, amrex::Real dtNext);

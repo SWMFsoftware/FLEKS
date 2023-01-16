@@ -232,6 +232,7 @@ public:
   double get_Si2NoM() const { return 1. / mNormSI; }
   double get_Si2NoRho() const { return Si2NoRho; }
   double get_Si2NoV() const { return Si2NoV; }
+  double get_Si2NoP() const { return Si2NoP; }
 
   double get_No2Si_V(int idx) const { return (No2Si_V[idx]); }
   double get_No2SiL() const { return (No2SiL); }
