@@ -1671,10 +1671,14 @@ void Pic::report_load_balance() {
 }
 
 void Pic::charge_exchange() {
-  if (!stateOH || !sourcePT2OH)
+  if (!stateOH || !sourcePT2OH || !source)
     return;
+
+  source->set_node_fluid_to_zero();
 
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->charge_exchange(tc->get_dt(), stateOH.get(), sourcePT2OH.get());
   }
+
+  fill_source_particles();
 }

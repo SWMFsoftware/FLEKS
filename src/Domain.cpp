@@ -42,23 +42,27 @@ void Domain::init(double time, const int iDomain,
 
   init_time_ctr();
 
+  bool useSource = false;
 #ifdef _PT_COMPONENT_
+  useSource = true;
   stateOH =
       std::make_shared<OHInterface>(*fi, gridID, "stateOH", InteractionFluid);
 
   sourcePT2OH =
       std::make_shared<OHInterface>(*fi, gridID, "sourcePT2OH", SourceFluid);
-      
+
   sourcePT2OH->set_period_start_si(tc->get_time_si());
 
   pic->set_stateOH(stateOH);
   pic->set_sourceOH(sourcePT2OH);
 #endif
 
-  if (useFluidSource) {
-    source = std::make_shared<SourceInterface>(*fi, gridID, "picSource", SourceFluid);
-    pic->set_fluid_source(source);
+  if (useFluidSource || useSource) {
+    source = std::make_shared<SourceInterface>(*fi, gridID, "picSource",
+                                               SourceFluid);
   }
+  if (source)
+    pic->set_fluid_source(source);
 
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 
@@ -276,8 +280,8 @@ void Domain::set_state_var(double *data, int *index) {
     pic->update_cells_for_pt();
   }
 
-  if (source)
-    source->set_node_fluid(*fi);
+  if (source && useFluidSource)
+    source->get_source_from_fluid(*fi);
 }
 
 //========================================================

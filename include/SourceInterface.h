@@ -3,7 +3,7 @@
 
 #include "FluidInterface.h"
 
-//#define _MERCURY_EXOSPHERE_
+// #define _MERCURY_EXOSPHERE_
 
 #ifdef _MERCURY_EXOSPHERE_
 extern "C" {
@@ -16,13 +16,14 @@ inline void get_source_wrapper(double xyzSI[3], double sourceSI[6]) {}
 class SourceInterface : public FluidInterface {
 public:
   SourceInterface(const FluidInterface& other, int id, std::string tag,
-              FluidType typeIn = SourceFluid)
+                  FluidType typeIn = SourceFluid)
       : FluidInterface(other, id, tag, typeIn) {
     initFromSWMF = false;
   }
 
-  void set_node_fluid(const FluidInterface& other) override {
-    std::string nameFunc = "FS:set_node_fluid";
+  // Set nodeFluid from get_source_wrapper.
+  void get_source_from_fluid(const FluidInterface& other) {
+    std::string nameFunc = "FS:get_source_from_fluid";
     amrex::Print() << nameFunc << " is called.";
 
     FluidInterface::set_node_fluid(other);
