@@ -262,6 +262,8 @@ public:
   // BATSRUS normalized unit -> PIC normalized unit;
   double get_MhdNo2NoL() const { return (MhdNo2SiL * Si2NoL); }
 
+  void sum_boundary() { nodeFluid.SumBoundary(Geom(0).periodicity()); }
+
   void set_resistivity(double etaSIIn) {
     // In SI unit R = u_si*L_si/eta_si, where eta_si is magnetic diffusivity
     // with unit m^2/s. In normalized CGS unit R = u_pic*L_pic/(eta_pic/4pi),

@@ -1952,20 +1952,20 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       neu2ion[iRho_] *= cProtonMassSI;
 
       Real dtSI = dt * stateOH->get_No2SiT();
-      Print() << "rhoion = " << rhoIon << " cs2Ion = " << cs2Ion
-              << " rhoNeu = " << rhoNeu << " cs2Neu = " << cs2Neu
-              << " dtSI = " << dtSI << std::endl;
+      // Print() << "rhoion = " << rhoIon << " cs2Ion = " << cs2Ion
+      //         << " rhoNeu = " << rhoNeu << " cs2Neu = " << cs2Neu
+      //         << " dtSI = " << dtSI << std::endl;
       for (int i = iRho_; i <= iP_; i++) {
         ion2neu[i] *= dtSI;
         neu2ion[i] *= dtSI;
-        Print() << " i = " << i << " ion2neu = " << ion2neu[i]
-                << " neu2ion = " << neu2ion[i] << std::endl;
+        //Print() << " i = " << i << " ion2neu = " << ion2neu[i]
+        //        << " neu2ion = " << neu2ion[i] << std::endl;
       }
 
       Real massExchange = neu2ion[iRho_] * stateOH->get_Si2NoRho() / invVol;
 
-      Print() << "nden = " << p.rdata(iqp_)
-              << " massExchange = " << massExchange << std::endl;
+      //Print() << "nden = " << p.rdata(iqp_)
+      //        << " massExchange = " << massExchange << std::endl;
       if (p.rdata(iqp_) - massExchange <= 0) {
         // Mark for deletion
         p.id() = -1;
@@ -2015,17 +2015,19 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         }
       }
 
-      Print() << "sourcePT2OH rho= "
-              << sourcePT2OH->get_fluid_mass_density(pti, xp, yp, zp, fluidID)
-              << std::endl;
-
-      // TODO: Added new neutral particles here!!!!!!!!!!
+      // Print() << "sourcePT2OH rho= "
+      //         << sourcePT2OH->get_fluid_mass_density(pti, xp, yp, zp, fluidID)
+      //         << std::endl;
 
     } // for p
   }   // for pti
 
+
+  source->sum_boundary();
+  sourcePT2OH->sum_boundary();
+
   // This function distributes and deletes invalid particles.
-  Redistribute();
+  // Redistribute();
 }
 
 // Since Particles is a template, it is necessary to explicitly instantiate
