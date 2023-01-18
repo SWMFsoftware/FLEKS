@@ -106,22 +106,22 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
       GetParticles(lev)[std::make_pair(mfi.index(), mfi.LocalTileIndex())];
 
   //----------------------------------------------------------
-  // Calculate the coefficient to correct the thermal velocity so that the
-  // variation of the velocity space distribution is unbiased.
-  int nPartEffective;
-  {
-    const Box& gbx = convert(Geom(0).Domain(), { 0, 0, 0 });
-    const bool isFake2D = gbx.bigEnd(iz_) == gbx.smallEnd(iz_);
-    int nCellContribute = isFake2D ? 4 : 8;
-    const int nx = nPPC[ix_];
-    const int ny = nPPC[iy_];
-    const int nz = nPPC[iz_];
-    const Real coefCorrection = 27. / 8 * (nx + 1) * (ny + 1) * (nz + 1) /
-                                ((2 * nx + 1) * (2 * ny + 1) * (2 * nz + 1));
-    nPartEffective = nCellContribute * npcel * coefCorrection;
-  }
-  const Real coefSD = sqrt(Real(nPartEffective) / (nPartEffective - 1));
+  // The following lines are left here for reference only. They are useless.
+  // int nPartEffective;
+  // {
+  //   const Box& gbx = convert(Geom(0).Domain(), { 0, 0, 0 });
+  //   const bool isFake2D = gbx.bigEnd(iz_) == gbx.smallEnd(iz_);
+  //   int nCellContribute = isFake2D ? 4 : 8;
+  //   const int nx = nPPC[ix_];
+  //   const int ny = nPPC[iy_];
+  //   const int nz = nPPC[iz_];
+  //   const Real coefCorrection = 27. / 8 * (nx + 1) * (ny + 1) * (nz + 1) /
+  //                               ((2 * nx + 1) * (2 * ny + 1) * (2 * nz + 1));
+  //   nPartEffective = nCellContribute * npcel * coefCorrection;
+  // }
+  // const Real coefSD = sqrt(Real(nPartEffective) / (nPartEffective - 1));
   //-----------------------------------------------------------
+
   int icount = 0;
   // Loop over particles inside grid cell i, j, k
   for (int ii = 0; ii < nPPC[ix_]; ii++)
@@ -132,15 +132,13 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
         y = (jj + randNum()) * (dx[iy_] / nPPC[iy_]) + j * dx[iy_] + plo[iy_];
         z = (kk + randNum()) * (dx[iz_] / nPPC[iz_]) + k * dx[iz_] + plo[iz_];
 
-        Real x0 = x, y0 = y, z0 = z;
-        const bool conserveMass = true;
-        if (conserveMass) {
-          // If the particle weight is sampled in a random location, the sum of
-          // particle mass is NOT the same as the integral of the grid density.
-          x0 = (ii + 0.5) * (dx[ix_] / nPPC[ix_]) + i * dx[ix_] + plo[ix_];
-          y0 = (jj + 0.5) * (dx[iy_] / nPPC[iy_]) + j * dx[iy_] + plo[iy_];
-          z0 = (kk + 0.5) * (dx[iz_] / nPPC[iz_]) + k * dx[iz_] + plo[iz_];
-        }
+        // If the particle weight is sampled in a random location, the sum of
+        // particle mass is NOT the same as the integral of the grid density.
+        // It is more convenient for debugging if mass is exactly conserved. For
+        // a production run, it makes little difference.
+        Real x0 = (ii + 0.5) * (dx[ix_] / nPPC[ix_]) + i * dx[ix_] + plo[ix_];
+        Real y0 = (jj + 0.5) * (dx[iy_] / nPPC[iy_]) + j * dx[iy_] + plo[iy_];
+        Real z0 = (kk + 0.5) * (dx[iz_] / nPPC[iz_]) + k * dx[iz_] + plo[iz_];
 
         double q = vol2Npcel *
                    interface.get_number_density(mfi, x0, y0, z0, speciesID);
@@ -160,14 +158,6 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           } else {
             interface.set_particle_uth_iso(mfi, x, y, z, &u, &v, &w, rand1,
                                            rand2, rand3, rand4, speciesID, uth);
-          }
-
-          if (!userState) {
-            // Increase the thermal velocity a little so that the variation of
-            // the velocity space distribution is unbiased.
-            u *= coefSD;
-            v *= coefSD;
-            w *= coefSD;
           }
 
           Real uBulk =
@@ -1968,14 +1958,14 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       for (int i = iRho_; i <= iP_; i++) {
         ion2neu[i] *= dtSI;
         neu2ion[i] *= dtSI;
-        //Print() << " i = " << i << " ion2neu = " << ion2neu[i]
-        //        << " neu2ion = " << neu2ion[i] << std::endl;
+        // Print() << " i = " << i << " ion2neu = " << ion2neu[i]
+        //         << " neu2ion = " << neu2ion[i] << std::endl;
       }
 
       Real massExchange = neu2ion[iRho_] * stateOH->get_Si2NoRho() / invVol;
 
-      //Print() << "nden = " << p.rdata(iqp_)
-      //        << " massExchange = " << massExchange << std::endl;
+      // Print() << "nden = " << p.rdata(iqp_)
+      //         << " massExchange = " << massExchange << std::endl;
       if (p.rdata(iqp_) - massExchange <= 0) {
         // Mark for deletion
         p.id() = -1;
@@ -2026,12 +2016,12 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       }
 
       // Print() << "sourcePT2OH rho= "
-      //         << sourcePT2OH->get_fluid_mass_density(pti, xp, yp, zp, fluidID)
+      //         << sourcePT2OH->get_fluid_mass_density(pti, xp, yp, zp,
+      //         fluidID)
       //         << std::endl;
 
     } // for p
   }   // for pti
-
 
   source->sum_boundary();
   sourcePT2OH->sum_boundary();
