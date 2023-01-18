@@ -862,10 +862,6 @@ void Pic::update(bool doReportIn) {
 
   Real tStart = second();
 
-  if (source) {
-    fill_source_particles();
-  }
-
   re_sampling();
 
   if (Particles<>::particlePosition == NonStaggered) {
@@ -879,6 +875,10 @@ void Pic::update(bool doReportIn) {
   particle_mover();
 
   charge_exchange();
+
+  if (source) {
+    fill_source_particles();
+  }
 
   inject_particles_for_boundary_cells();
 
@@ -1681,5 +1681,5 @@ void Pic::charge_exchange() {
                               source.get());
   }
 
-  //fill_source_particles();
+  // fill_source_particles();
 }
