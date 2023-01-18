@@ -132,8 +132,18 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
         y = (jj + randNum()) * (dx[iy_] / nPPC[iy_]) + j * dx[iy_] + plo[iy_];
         z = (kk + randNum()) * (dx[iz_] / nPPC[iz_]) + k * dx[iz_] + plo[iz_];
 
-        double q =
-            vol2Npcel * interface.get_number_density(mfi, x, y, z, speciesID);
+        Real x0 = x, y0 = y, z0 = z;
+        const bool conserveMass = true;
+        if (conserveMass) {
+          // If the particle weight is sampled in a random location, the sum of
+          // particle mass is NOT the same as the integral of the grid density.
+          x0 = (ii + 0.5) * (dx[ix_] / nPPC[ix_]) + i * dx[ix_] + plo[ix_];
+          y0 = (jj + 0.5) * (dx[iy_] / nPPC[iy_]) + j * dx[iy_] + plo[iy_];
+          z0 = (kk + 0.5) * (dx[iz_] / nPPC[iz_]) + k * dx[iz_] + plo[iz_];
+        }
+
+        double q = vol2Npcel *
+                   interface.get_number_density(mfi, x0, y0, z0, speciesID);
         if (q != 0) {
           Real u, v, w;
           double rand1 = randNum();
