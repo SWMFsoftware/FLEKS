@@ -416,10 +416,6 @@ void FluidInterface::set_node_fluid(const double* const data,
   normalize_fluid_variables();
   convert_moment_to_velocity();
 
-  if (nodeFluid.size() > iJx) {
-    MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
-  }
-
   // save_amrex_file();
 }
 
@@ -438,10 +434,6 @@ void FluidInterface::set_node_fluid() {
   normalize_fluid_variables();
   convert_moment_to_velocity();
 
-  if (nodeFluid.size() > iJx) {
-    MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
-  }
-
   // save_amrex_file();
 }
 
@@ -454,10 +446,6 @@ void FluidInterface::set_node_fluid(const FluidInterface& other) {
 
   MultiFab::Copy(centerB, other.centerB, 0, 0, centerB.nComp(),
                  centerB.nGrow());
-
-  if (nodeFluid.size() > iJx) {
-    MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
-  }
 }
 
 void FluidInterface::calc_current() {
@@ -1125,11 +1113,16 @@ void FluidInterface::update_nodeFluid(const MultiFabFLEKS& nodeIn,
 
 void FluidInterface::save_amrex_file() {
   string filename = component + "/plots/" + tag;
-  Print() << "Writing FluidInterface file " << filename;
+  Print() << "Writing FluidInterface file " << filename << std::endl;
+  
 
   for (int i = 0; i < nodeFluid.nComp(); i++) {
     Real no2out = No2Si_V[i];
     nodeFluid.mult(no2out, i, 1, nodeFluid.nGrow());
+  }
+
+  if (varNames.size() != nodeFluid.nComp()) {
+    varNames.clear();
   }
 
   if (varNames.empty()) {
