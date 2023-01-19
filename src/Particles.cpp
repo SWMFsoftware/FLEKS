@@ -2020,8 +2020,10 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
     } // for p
   }   // for pti
 
+  // 'source' is applied to generate new particles every step, so sum_boundary()
+  // is called here to correct boundary nodes. Boundary nodes of 'sourcePT2OH'
+  // should be corrected just before PT->OH coupling, instead of here.
   source->sum_boundary();
-  sourcePT2OH->sum_boundary();
 
   // This function distributes and deletes invalid particles.
   // Redistribute();

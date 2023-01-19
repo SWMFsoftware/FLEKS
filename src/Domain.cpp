@@ -321,6 +321,8 @@ void Domain::get_source_for_points(const int nDim, const int nPoint,
   if (t1 - t0 > 1e-99)
     invDt = 1. / (t1 - t0);
 
+  sourcePT2OH->sum_boundary();
+
   sourcePT2OH->get_for_points(nDim, nPoint, xyz_I, data_I, nVar, invDt);
 
   sourcePT2OH->set_period_start_si(t1);
