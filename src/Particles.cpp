@@ -563,9 +563,6 @@ Real Particles<NStructReal, NStructInt>::sum_moments(MultiFab& momentsMF,
 
   momentsMF.SumBoundary(Geom(0).periodicity());
 
-  // FillBoundary seems necessary for non-box active PIC region. But why? --Yuxi
-  momentsMF.FillBoundary(Geom(0).periodicity());
-
   energy *= 0.5 * qomSign * get_mass();
 
   return energy;

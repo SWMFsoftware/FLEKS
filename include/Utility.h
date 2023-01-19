@@ -196,7 +196,8 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
   auto idx = gm.CellIndex(loc);
 
   for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
-    const amrex::Box& bx = mfi.validbox();
+    // Cell box
+    const amrex::Box& bx = amrex::convert(mfi.validbox(), { 0, 0, 0 });
     if (bx.contains(idx))
       return get_value_at_loc(mf, mfi, gm, x, y, z, iVar);
   }
