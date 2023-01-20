@@ -173,7 +173,9 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
             vBulk = -vBulk;
             wBulk = -wBulk;
           }
-
+          // printf("p u=%e, v=%e, w=%e, ubulk=%e, vbulk=%e, wbulk=%e \n", u, v,
+          // w,
+          //        uBulk, vBulk, wBulk);
           u += uBulk;
           v += vBulk;
           w += wBulk;
@@ -202,7 +204,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           }
 
           particles.push_back(p);
-          // AllPrint() << p << std::endl;
+          // AllPrint() << "p=" << p << std::endl;
           icount++;
         }
       }
@@ -1990,21 +1992,19 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       { // Add source to nodes.
         Real si2no_v[5];
         si2no_v[iRho_] = source->get_Si2NoRho();
-        si2no_v[iUx_] = source->get_Si2NoV();
-        si2no_v[iUy_] = si2no_v[iUx_];
-        si2no_v[iUz_] = si2no_v[iUx_];
+        si2no_v[iRhoUx_] = source->get_Si2NoV() * si2no_v[iRho_];
+        si2no_v[iRhoUy_] = si2no_v[iRhoUx_];
+        si2no_v[iRhoUz_] = si2no_v[iRhoUx_];
         si2no_v[iP_] = source->get_Si2NoP();
 
-        // momentum => velocituy
-        Real u2 = 0;
-        for (int i = iUx_; i <= iUz_; i++) {
-          ion2neu[i] /= ion2neu[iRho_];
-          u2 += pow(ion2neu[i], 2);
+        Real m2 = 0;
+        for (int i = iRhoUx_; i <= iRhoUz_; i++) {
+          m2 += pow(ion2neu[i], 2);
         }
 
         const Real gamma = 5. / 3;
         // P = (gamma-1)*(E - 0.5*rho*u2)
-        ion2neu[iP_] = (gamma - 1) * (ion2neu[iE_] - 0.5 * ion2neu[iRho_] * u2);
+        ion2neu[iP_] = (gamma - 1) * (ion2neu[iE_] - 0.5 * m2 / ion2neu[iRho_]);
 
         // source saves changing rate (density/s...).
         for (int i = iRho_; i <= iP_; i++) {
@@ -2024,6 +2024,9 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
   // is called here to correct boundary nodes. Boundary nodes of 'sourcePT2OH'
   // should be corrected just before PT->OH coupling, instead of here.
   source->sum_boundary();
+  source->convert_moment_to_velocity();
+
+  // source->save_amrex_file();
 
   // This function distributes and deletes invalid particles.
   // Redistribute();
