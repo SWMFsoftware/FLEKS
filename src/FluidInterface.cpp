@@ -39,8 +39,6 @@ void FluidInterface::post_process_param() {
       varNames.push_back("uy" + to_string(i));
       iUz_I[i] = idx++;
       varNames.push_back("uz" + to_string(i));
-      iPpar_I[i] = idx++;
-      varNames.push_back("ppar" + to_string(i));
       iP_I[i] = idx++;
       varNames.push_back("p" + to_string(i));
     }
@@ -256,8 +254,8 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
       param.read_var("charge", QoQi_S[i]);
     }
     nFluid = nS;
-    // (rho, vx, vy, vz, ppar, p)*nFluid + B + E
-    nVarFluid = 6 * nFluid + 3 + 3;
+    // (rho, vx, vy, vz, p)*nFluid + B + E
+    nVarFluid = 5 * nFluid + 3 + 3;
     nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
   } else if (command == "#UNIFORMSTATE") {
     if (nS <= 0) {
@@ -275,8 +273,6 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
       uniformState.push_back(tmp * rho);
       param.read_var("uz", tmp);
       uniformState.push_back(tmp * rho);
-      param.read_var("ppar", tmp);
-      uniformState.push_back(tmp);
       param.read_var("p", tmp);
       uniformState.push_back(tmp);
     }

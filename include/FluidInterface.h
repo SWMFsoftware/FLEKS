@@ -67,7 +67,7 @@ protected:
   bool useMultiSpecies = false;
   bool useMultiFluid = false;
   bool useElectronFluid = true;
-  bool useAnisoP = true;
+  bool useAnisoP = false;
   bool useMhdPe = false;
 
   //-------------------------------------------------------------------
