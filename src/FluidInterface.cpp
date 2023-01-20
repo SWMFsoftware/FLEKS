@@ -18,6 +18,8 @@ void FluidInterface::post_process_param() {
 
   mNormSI = 1e7 * lNormSI * pow(protonMassPerChargeSI * ScalingFactor, 2);
 
+  rPlanetSi = lNormSI;
+
   {
     iRho_I.resize(nS);
     iRhoUx_I.resize(nS);
@@ -496,10 +498,12 @@ void FluidInterface::normalize_fluid_variables() {
   centerB.mult(Si2NoB, centerB.nGrow());
 }
 
-void FluidInterface::convert_moment_to_velocity() {
+void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly) {
 
   for (MFIter mfi(nodeFluid); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.fabbox();
+    Box box = mfi.fabbox();
+    if (phyNodeOnly)
+      box = mfi.validbox();
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
@@ -1110,7 +1114,6 @@ void FluidInterface::update_nodeFluid(const MultiFabFLEKS& nodeIn,
 void FluidInterface::save_amrex_file() {
   string filename = component + "/plots/" + tag;
   Print() << "Writing FluidInterface file " << filename << std::endl;
-  
 
   for (int i = 0; i < nodeFluid.nComp(); i++) {
     Real no2out = No2Si_V[i];
