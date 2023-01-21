@@ -545,11 +545,12 @@ void Domain::read_param(const bool readGridInfo) {
             << component << ": " << command << " " << gridName << std::endl;
 
     if (command == "#DIVE" || command == "#EFIELDSOLVER" ||
-        command == "#PARTICLES" || command == "#ELECTRON" ||
-        command == "#DISCRETIZE" || command == "#DISCRETIZATION" ||
-        command == "#RESAMPLING" || command == "#SMOOTHE" ||
-        command == "#TESTCASE" || command == "#MERGEPARTICLE" ||
-        command == "#PIC" || command == "#EXPLICITPIC") {
+        command == "#PARTICLES" || command == "#SOURCEPARTICLES" ||
+        command == "#ELECTRON" || command == "#DISCRETIZE" ||
+        command == "#DISCRETIZATION" || command == "#RESAMPLING" ||
+        command == "#SMOOTHE" || command == "#TESTCASE" ||
+        command == "#MERGEPARTICLE" || command == "#PIC" ||
+        command == "#EXPLICITPIC") {
       pic->read_param(command, param);
     } else if (command == "#PARTICLETRACKER" ||
                command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||

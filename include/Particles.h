@@ -130,15 +130,17 @@ public:
   void add_particles_domain(const amrex::iMultiFab& cellStatus);
   void add_particles_cell(const amrex::MFIter& mfi, const int i, const int j,
                           const int k, const FluidInterface& interface,
-                          amrex::Real ratio = 1, const Vel tpVel = Vel(),
-                          amrex::Real dt = -1);
+                          amrex::IntVect ppc = amrex::IntVect(),
+                          const Vel tpVel = Vel(), amrex::Real dt = -1);
   void inject_particles_at_boundary(const amrex::iMultiFab& cellStatus,
                                     const FluidInterface* fiIn = nullptr,
-                                    amrex::Real dt = -1, amrex::Real ratio = 1);
+                                    amrex::Real dt = -1,
+                                    amrex::IntVect ppc = amrex::IntVect());
 
   void add_particles_source(const amrex::iMultiFab& cellStatus,
                             const FluidInterface& interface,
-                            amrex::Real dt = -1);
+                            amrex::Real dt = -1,
+                            amrex::IntVect ppc = amrex::IntVect());
 
   // 1) Only inject particles ONCE for one ghost cells. This function decides
   // which block injects particles. 2) bx should be a valid box 3) The cell

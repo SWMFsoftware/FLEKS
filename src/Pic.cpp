@@ -34,6 +34,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("npcelx", nPartPerCell[ix_]);
     param.read_var("npcely", nPartPerCell[iy_]);
     param.read_var("npcelz", nPartPerCell[iz_]);
+  } else if (command == "#SOURCEPARTICLES") {
+    param.read_var("npcelx", nSourcePPC[ix_]);
+    param.read_var("npcely", nSourcePPC[iy_]);
+    param.read_var("npcelz", nSourcePPC[iz_]);
   } else if (command == "#ELECTRON") {
     param.read_var("qom", qomEl);
   } else if (command == "#DISCRETIZE" || command == "#DISCRETIZATION") {
@@ -531,7 +535,8 @@ void Pic::fill_particles() {
 
 void Pic::fill_source_particles() {
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->add_particles_source(cellStatus, *source, tc->get_dt());
+    parts[i]->add_particles_source(cellStatus, *source, tc->get_dt(),
+                                   nSourcePPC);
   }
 }
 

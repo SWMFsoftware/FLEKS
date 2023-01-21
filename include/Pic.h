@@ -93,6 +93,9 @@ private:
   amrex::IntVect nPartPerCell = { 6, 6, 6 };
   amrex::Real qomEl = -100;
 
+  // Particle Per Cell (PPC) of source particles.
+  amrex::IntVect nSourcePPC = { 0, 0, 0 };
+
   FieldSolver fsolver;
 
   bool doCorrectDivE = true;
