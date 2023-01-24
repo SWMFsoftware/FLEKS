@@ -1712,13 +1712,14 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
                 tryDeleteOrder[iPartDel] = idx_I[0];
               }
             } else {
-              // Sort the nPartCombine particles by weights.
               nTry == nPartCombine;
 
+              // Sort the particles by weights.
               std::sort(tryDeleteOrder, tryDeleteOrder + nPartCombine,
                         [&particles](const int& idLeft, const int& idRight) {
-                          return fabs(particles[idLeft].rdata(iqp_)) <
-                                 fabs(particles[idRight].rdata(iqp_));
+                          const Real ql = fabs(particles[idLeft].rdata(iqp_));
+                          const Real qr = fabs(particles[idRight].rdata(iqp_));
+                          return ql - qr < 1e-6 * ql;
                         });
 
               for (int i = 0; i < nPartCombine; i++) {
