@@ -867,8 +867,6 @@ void Pic::update(bool doReportIn) {
 
   Real tStart = second();
 
-  re_sampling();
-
   if (Particles<>::particlePosition == NonStaggered) {
     update_part_loc_to_half_stage();
   }
@@ -878,6 +876,10 @@ void Pic::update(bool doReportIn) {
   update_E();
 
   particle_mover();
+
+  // Calling re_sampling after particle mover so that all the particles outside
+  // the domain have been deleted.
+  re_sampling();
 
   charge_exchange();
 
