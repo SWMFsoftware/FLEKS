@@ -49,8 +49,8 @@ public:
   PlotCtr(TimeCtr *tcIn, const int idIn = 0, const amrex::Real dtIn = -1,
           const int dnIn = -1, const std::string plotStringIN = "",
           const double dxIn = 1, const std::string plotVarIn = "",
-          const std::array<double, 3> plotMinIn_D = { { 1, 1, 1 } },
-          const std::array<double, 3> plotMaxIn_D = { { -1, -1, -1 } },
+          const std::array<double, 3> plotMinIn_D = { 1, 1, 1 },
+          const std::array<double, 3> plotMaxIn_D = { -1, -1, -1 },
           const int nSpeciesIn = 2)
       : EventCtr(tcIn, dtIn, dnIn),
         writer(idIn, plotStringIN, dxIn, plotVarIn, plotMinIn_D, plotMaxIn_D,

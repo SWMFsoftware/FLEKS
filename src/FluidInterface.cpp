@@ -20,6 +20,9 @@ void FluidInterface::post_process_param() {
 
   rPlanetSi = lNormSI;
 
+  // This is just a guess. To be improved. 
+  MhdNo2SiL = rPlanetSi;
+
   {
     iRho_I.resize(nS);
     iRhoUx_I.resize(nS);
@@ -1159,7 +1162,7 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
       continue;
 
     const int iStart = iPoint * nVar;
-    for (int iVar = 0; iVar <= nVar; iVar++) {
+    for (int iVar = 0; iVar < nVar; iVar++) {
       data_I[iStart + iVar] =
           get_value_at_loc(nodeFluid, Geom(0), xp, yp, zp, iVar) * coef;
     }

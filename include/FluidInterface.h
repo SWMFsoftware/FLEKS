@@ -77,7 +77,7 @@ protected:
   //-------------------------------------------------------------------
 
   // temperature ratio for electrons: PeRatio = Pe/Ptotal
-  double PeRatio;
+  double PeRatio = 0;
 
   // Sum of masses of each particle species
   double SumMass, invSumMass;
@@ -196,7 +196,7 @@ public:
 
   void normalize_fluid_variables();
 
-  void convert_moment_to_velocity(bool phyNodeOnly=false);
+  void convert_moment_to_velocity(bool phyNodeOnly = false);
 
   void set_plasma_charge_and_mass(amrex::Real qomEl);
 

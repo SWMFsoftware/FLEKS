@@ -704,7 +704,7 @@ void Domain::read_param(const bool readGridInfo) {
         param.read_var("dtSavePlot", dtSave);
 
         std::array<double, nDim> plotMin_D = { 1, 1, 1 },
-                                 plotMax_D = { -1, 1 - 1 };
+                                 plotMax_D = { -1, -1, -1 };
         if (plotString.find("cut") != std::string::npos) {
           // Output range is 'cut' type.
           for (int iDim = 0; iDim < nDim; iDim++) {

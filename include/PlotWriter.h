@@ -98,9 +98,8 @@ private:
 public:
   PlotWriter(const int idIn = 0, const std::string plotStringIN = "",
              const double dxIn = 1, const std::string plotVarIn = "",
-             const std::array<double, nDimMax>& plotMinIn_D = { { 1, 1, 1 } },
-             const std::array<double, nDimMax>& plotMaxIn_D = { { -1, -1,
-                                                                  -1 } },
+             const std::array<double, nDimMax>& plotMinIn_D = { 1, 1, 1 },
+             const std::array<double, nDimMax>& plotMaxIn_D = { -1, -1, -1 },
              const int nSpeciesIn = 2)
       : nProcs(0),
         nDim(0),
