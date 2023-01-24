@@ -1450,8 +1450,20 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
     if (nCell < 3)
       continue;
 
-    Print() << "nPartOrig = " << nPartOrig << " nPartGoal = " << nPartGoal
-            << " nCell = " << nCell << std::endl;
+    if (fastMerge) {
+      nCell = nCell > 5 ? 5 : nCell;
+    }
+
+    // Sort the particles by the location first to make sure the results
+    // are the same for different number of processors
+    std::sort(particles.begin(), particles.end(),
+              [](const ParticleType& pl, const ParticleType& pr) {
+                return pl.pos(ix_) + pl.pos(iy_) + pl.pos(iz_) >
+                       pr.pos(ix_) + pr.pos(iy_) + pr.pos(iz_);
+              });
+
+    // Print() << "nPartOrig = " << nPartOrig << " nPartGoal = " << nPartGoal
+    //         << " nCell = " << nCell << std::endl;
 
     // One particle may belong to more than one velocity bins, but it can be
     // only merged at most once.
@@ -1654,7 +1666,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
             if (fastMerge) {
               nTry = nPartCombine;
             }
-            
+
             int tryDeleteOrder[nPartCombine];
             for (int i = 0; i < nPartCombine; i++) {
               tryDeleteOrder[i] = idx_I[i];
@@ -1806,9 +1818,10 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
                 }
               }
 
-              Print() << " ipartdel = " << iPartDel << " w = "
-                      << particles[idx_I[nPartCombine - 1]].rdata(iqp_)
-                      << " isSolved = " << (isSolved ? 'T' : 'F') << std::endl;
+              // Print() << " ipartdel = " << iPartDel << " w = "
+              //         << particles[idx_I[nPartCombine - 1]].rdata(iqp_)
+              //         << " isSolved = " << (isSolved ? 'T' : 'F') <<
+              //         std::endl;
               if (isSolved) {
                 break;
               }
@@ -1833,10 +1846,10 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
         }
   }
 
-  if (nAvailableCombines > 0)
-    AllPrint() << "Particle merging:: nAvailableCombine = "
-               << nAvailableCombines << " nEquations = " << nEqs
-               << " nSolved = " << nSolved << std::endl;
+  // if (nAvailableCombines > 0)
+  //   AllPrint() << "Particle merging:: nAvailableCombine = "
+  //              << nAvailableCombines << " nEquations = " << nEqs
+  //              << " nSolved = " << nSolved << std::endl;
 }
 
 //==========================================================
@@ -1938,7 +1951,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 
   timing_func(nameFunc);
 
-  Print() << nameFunc << std::endl;
+  // Print() << nameFunc << std::endl;
 
   double vol = 1. / invVol;
   const int lev = 0;
