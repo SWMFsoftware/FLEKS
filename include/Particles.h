@@ -99,6 +99,12 @@ protected:
   amrex::Real mergeThresholdDistance = 0.6;
   amrex::Real velBinBufferSize = 0.125;
 
+  // If fastMerge == false: find the particle pair that is closest to each other
+  // in the phase space and try to delete the lighter one.
+  // If fastMerge == true: sort the particles by weights from light to heavy,
+  // and try to delete one of them one by one.
+  bool fastMerge = false;
+
   bool isRelativistic = false;
 
 public:
@@ -280,6 +286,7 @@ public:
 
   void set_merge_threshold(amrex::Real in) { mergeThresholdDistance = in; }
   void set_merge_velocity_bin_buffer(amrex::Real in) { velBinBufferSize = in; }
+  void fast_merge(bool in) { fastMerge = in; }
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
 };

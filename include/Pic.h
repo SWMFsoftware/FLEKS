@@ -117,6 +117,7 @@ private:
   TestCase testCase = RegularSimulation;
 
   amrex::Real particleMergeThreshold = -1, particleMergeBinBuffer = -1;
+  bool fastMerge = false;
 
   bool doReport = false;
 

@@ -1651,6 +1651,10 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
               continue;
 
             int nTry = 1;
+            if (fastMerge) {
+              nTry = nPartCombine;
+            }
+            
             int tryDeleteOrder[nPartCombine];
             for (int i = 0; i < nPartCombine; i++) {
               tryDeleteOrder[i] = idx_I[i];

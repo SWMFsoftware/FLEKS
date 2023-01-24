@@ -58,9 +58,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("reSamplingLowLimit", reSamplingLowLimit);
       param.read_var("reSamplingHighLimit", reSamplingHighLimit);
     }
-  } else if (command == "#MERGEPARTICLE") {
+  } else if (command == "#MERGEEFFICIENCY") {
     param.read_var("mergeThresholdDistance", particleMergeThreshold);
-    param.read_var("binBuffer", particleMergeBinBuffer);
+    param.read_var("fastMerge", fastMerge);
   } else if (command == "#TESTCASE") {
     std::string testcase;
     param.read_var("testCase", testcase);
@@ -311,6 +311,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
       if (particleMergeBinBuffer >= 0) {
         ptr->set_merge_velocity_bin_buffer(particleMergeBinBuffer);
       }
+
+      ptr->fast_merge(fastMerge);
       //----------------------------------
 
       parts.push_back(std::move(ptr));
