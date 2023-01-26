@@ -20,7 +20,7 @@ void FluidInterface::post_process_param() {
 
   rPlanetSi = lNormSI;
 
-  // This is just a guess. To be improved. 
+  // This is just a guess. To be improved.
   MhdNo2SiL = rPlanetSi;
 
   {
@@ -271,15 +271,24 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     for (int i = 0; i < nS; i++) {
       double rho;
       param.read_var("rho", rho);
-      uniformState.push_back(rho);
+      // amu/cc -> kg/m^3
+      rho *= 1e6 * cProtonMassSI;      
+      uniformState.push_back(rho);      
       param.read_var("ux", tmp);
+      // km/s -> m/s
+      tmp *= 1e3;
       uniformState.push_back(tmp * rho);
       param.read_var("uy", tmp);
+      tmp *= 1e3;
       uniformState.push_back(tmp * rho);
       param.read_var("uz", tmp);
+      tmp *= 1e3;
       uniformState.push_back(tmp * rho);
-      param.read_var("p", tmp);
-      uniformState.push_back(tmp);
+      param.read_var("T", tmp);
+      double n = rho / cProtonMassSI;
+      // p = nkT
+      double p = n * cBoltzmannSI * tmp;      
+      uniformState.push_back(p);
     }
     param.read_var("bx", tmp);
     uniformState.push_back(tmp);

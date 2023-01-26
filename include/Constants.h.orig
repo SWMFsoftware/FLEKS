@@ -9,6 +9,8 @@ constexpr static double fourPI = 3.14159265359 * 4;
 constexpr static double cProtonMassSI = 1.67262192e-27; // kg
 constexpr static double cUnitChargeSI = 1.60217663e-19; // C
 
+constexpr static double cBoltzmannSI = 1.380649e-23;
+
 constexpr static double mu0 = fourPI * 1e-7; // unit N/A^2
 //===================================================
 
