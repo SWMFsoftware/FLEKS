@@ -279,6 +279,27 @@ becomes lower (higher) than splittingLimit*nPart (mergingLimit*nPart).
 
 </command>
 
+<command name="MERGEEFFICIENCY"
+	 alias="MERGEEFFICIENCY_FLEKS0,MERGEEFFICIENCY_FLEKS1,MERGEEFFICIENCY_FLEKS2" multiple="T">
+  <parameter name="mergeThresholdDistance" type="real" default="0.6"/>   
+  <parameter name="fastMerge" type="logical" default="F"/>   
+  
+#MERGEEFFICIENCY
+1.0                 mergeThresholdDistance
+T                   fastMerge
+
+After selecting particles for merging, all particle's 6D distance to their 
+center should be less than mergeThresholdDistance, otherwise, merging
+stops for this particle set. 
+
+If fastMerge is false, the code finds the closest pair from the particle
+set, and tries to delete the lighter one. Merging fails if there is 
+no physical solution for the linear equations. If fastMerge is switched 
+on, the code sorts the particle weight in ascending order, and tries to
+delete the particle one by one until success. 
+
+</command>
+
 <command name="DISCRETIZATION" alias="DISCRETIZE">
   <parameter name="theta" type="real" default="0.51"/>
   <parameter name="ratioDivC2C" type="real" default="0.1" />
@@ -411,6 +432,26 @@ If it is true, the test particle velocity update will be relativistic.
 
 The command sets particle numbers in each direction for initial
 condition and ghost cells for a FLEKS region.
+</command>
+
+<command name="SOURCEPARTICLES"
+	 alias="SOURCEPARTICLES_FLEKS0,SOURCEPARTICLES_FLEKS1,SOURCEPARTICLES_FLEKS2"
+	 multiple="T">
+  <parameter name="nParticleX" type="integer" min="0" default="0"/>
+  <parameter name="nParticleY" type="integer" min="0" default="0"/>
+  <parameter name="nParticleZ" type="integer" min="0" default="0"/>
+
+#SOURCEPARTICLES
+1                  particles per cell in X 
+1                  particles per cell in Y 
+1                  particles per cell in Z 
+
+#SOURCEPARTICLES_FLEKS1
+10                 particles per cell in X 
+10                 particles per cell in Y 
+1                  particles per cell in Z 
+
+The command sets particle number per cell for plasma sources.
 </command>
 
 <command name="TPREGION"
@@ -550,6 +591,100 @@ grid information.
 
 8 to 16 cells per direction usually reaches a good balance between 
 efficiency and flexibility. 8*8*8 or 16*8*8 are typical for a 3D simulation.
+</command>
+
+
+<command name="INITFROMSWMF"
+	 alias="INITFROMSWMF_FLEKS0,INITFROMSWMF_FLEKS1,INITFROMSWMF_FLEKS2"
+	 multiple="T">
+  <parameter name="initFromSWMF" type="logical" default="T"/>
+
+#INITFROMSWMF
+T                   initFromSWMF
+
+By default, the PIC EM fields and particles are initialized based on the 
+fields received from SWMF. If initFromSWMF is set to false, PIC will be 
+initialized from the #UNIFORMSTATE command.
+</command>
+
+<command name="NORMALIZATION"
+	 alias="NORMALIZATION_FLEKS0,NORMALIZATION_FLEKS1,NORMALIZATION_FLEKS2"
+	 multiple="T">
+  <parameter name="lNorm" type="real"/>
+  <parameter name="uNorm" type="real"/>
+
+#NORMALIZATION
+1.495978707E11          lNorm [m]
+3.0e8                   uNorm [m/s]
+
+If PIC is not initialized from SWMF (#INITFROMSWMF), length and speed 
+normalization should be set here. Both lNorm and uNorm are in SI units.
+</command>
+
+<command name="PLASMA"
+	 alias="PLASMA_FLEKS0,PLASMA_FLEKS1,PLASMA_FLEKS2"
+	 multiple="T">
+  <parameter name="nS" type="integer"/>
+  <parameter name="mass" type="real"/>
+  <parameter name="charge" type="real"/>
+
+#PLASMA
+1                       nS
+1                       mass
+0                       charge ! neutral particle
+
+#PLASMA_FLEKS0
+2                       nS
+1                       mass
+1                       charge
+0.1                     mass
+-1                      charge
+
+If PIC is not initialized from SWMF (#INITFROMSWMF), set particle
+mass and charge here. The units of mass and charge are amu and 
+elementary charge, respectively. If charge is 0, then it is a 
+neutral species. 
+
+</command>
+
+
+<command name="UNIFORMSTATE"
+	 alias="UNIFORMSTATE_FLEKS0,UNIFORMSTATE_FLEKS1,UNIFORMSTATE_FLEKS2"
+	 multiple="T">
+  <parameter name="rho" type="real"/>  
+  <parameter name="ux" type="real"/>  
+  <parameter name="uy" type="real"/>  
+  <parameter name="uz" type="real"/>  
+  <parameter name="T" type="real"/>  
+  <parameter name="Bx" type="real"/>  
+  <parameter name="By" type="real"/>  
+  <parameter name="Bz" type="real"/>  
+  <parameter name="Ex" type="real"/>  
+  <parameter name="Ey" type="real"/>  
+  <parameter name="Ez" type="real"/>  
+
+#UNIFORMSTATE
+1.8                 rho [amu/cc]  ! Species 1 
+100                 ux [km/s]
+0                   uy [km/s]
+0                   uz [km/s]
+6000                T  [K] 
+0.18                rho [amu/cc]  ! Species 2 
+100                 ux [km/s]
+0                   uy [km/s]
+0                   uz [km/s]
+6000                T  [K] 
+0.0                 Bx [?]
+0.0                 By [?]
+0.0                 Bz [?]
+0.0                 Ex [?]
+0.0                 Ey [?]
+0.0                 Ez [?]
+
+If PIC is not initialized from SWMF (#INITFROMSWMF), set uniform initial
+conditions here. This command has only been tested with neutral particles
+(OH-PT coupling) so far. The units of B and E are SI, and it is likely
+they will be changed to other units in the future.
 </command>
 
 </commandgroup>
