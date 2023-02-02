@@ -37,7 +37,7 @@ module PT_wrapper
   public:: PT_put_from_ih_dt
   public:: PT_put_from_gm
 
-  !return state of calculating plasma div u
+  ! Return logical for using plasma div u
   public:: PT_divu_coupling_state
   
   ! Provides interfaces, but the following functions are empty. 
@@ -52,12 +52,13 @@ module PT_wrapper
 
 contains
   !==========================================================================
-  subroutine PT_divu_coupling_state(flag)
-    logical,intent(out)::flag
+  subroutine PT_divu_coupling_state(UseDivu)
 
-    flag=.false.
-  end subroutine
+    logical, intent(out):: UseDivu
+    UseDivu = .false.
 
+  end subroutine PT_divu_coupling_state
+  !==========================================================================
   subroutine PT_set_param(CompInfo, TypeAction)
 
     use CON_comp_info
