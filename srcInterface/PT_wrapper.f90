@@ -24,22 +24,15 @@ module PT_wrapper
   public:: PT_get_grid_info
   public:: PT_find_points
 
-  
   ! OH coupler
   public:: PT_put_from_oh
-  public:: PT_put_from_oh_dt
   public:: PT_get_for_oh
 
   ! SC/IH/GM coupling. Have not implemented. Empty functions
   public:: PT_put_from_sc
-  public:: PT_put_from_sc_dt
   public:: PT_put_from_ih
-  public:: PT_put_from_ih_dt
   public:: PT_put_from_gm
 
-  ! Return logical for using plasma div u
-  public:: PT_divu_coupling_state
-  
   ! Provides interfaces, but the following functions are empty. 
   public:: PT_do_extract_lines
   public:: PT_put_coupling_param
@@ -51,13 +44,6 @@ module PT_wrapper
   integer:: iProc  
 
 contains
-  !==========================================================================
-  subroutine PT_divu_coupling_state(UseDivu)
-
-    logical, intent(out):: UseDivu
-    UseDivu = .false.
-
-  end subroutine PT_divu_coupling_state
   !==========================================================================
   subroutine PT_set_param(CompInfo, TypeAction)
 
@@ -200,16 +186,6 @@ contains
     nDimOut = nDim;    
   end subroutine PT_get_grid_info
   !============================================================================
-  
-  subroutine PT_put_from_oh_dt(DtSiIn)
-
-    real,    intent(in) :: DtSiIn
-    character(len=*), parameter :: NameSub = 'PT_put_from_oh_dt'
-    !--------------------------------------------------------------------------
-    call CON_stop(NameSub//' has not been implemented!')    
-  end subroutine PT_put_from_oh_dt
-  !============================================================================
-  
   subroutine PT_find_points(nDimIn, nPoint, Xyz_DI, iProc_I)
 
     integer, intent(in) :: nDimIn                ! dimension of position vector
@@ -324,15 +300,6 @@ contains
     call CON_stop(NameSub//' has not been implemented!')
   end subroutine PT_put_from_sc
   !============================================================================
-  
-  subroutine PT_put_from_sc_dt(Dt)
-    real,    intent(in):: Dt
-    character(len=*), parameter:: NameSub = 'PT_put_from_sc_dt'
-    !--------------------------------------------------------------------------
-    call CON_stop(NameSub//' has not been implemented!')
-  end subroutine PT_put_from_sc_dt
-  !============================================================================
-
     subroutine PT_put_from_ih(NameVar, nVar, nPoint, Data_VI, iPoint_I, Pos_DI)
     character(len=*), intent(inout):: NameVar ! List of variables
     integer,          intent(inout):: nVar    ! Number of variables in Data_VI
@@ -347,7 +314,6 @@ contains
     call CON_stop(NameSub//' has not been implemented!')
   end subroutine PT_put_from_ih
   !============================================================================
-  
   subroutine PT_put_from_ih_dt(Dt)
     real,    intent(in):: Dt
     character(len=*), parameter:: NameSub = 'PT_put_from_ih_dt'
@@ -355,7 +321,6 @@ contains
     call CON_stop(NameSub//' has not been implemented!')
   end subroutine PT_put_from_ih_dt
   !============================================================================
-
   subroutine PT_do_extract_lines(DoExtract)
     logical, intent(out):: DoExtract
     character(len=*), parameter:: NameSub = 'PT_do_extract_lines'
@@ -363,7 +328,6 @@ contains
     call CON_stop(NameSub//' has not been implemented!')
   end subroutine PT_do_extract_lines
   !============================================================================
-  
   subroutine PT_put_coupling_param(Source_, TimeIn)
     integer,        intent(in) :: Source_
     real,           intent(in) :: TimeIn
@@ -372,7 +336,6 @@ contains
     call CON_stop(NameSub//' has not been implemented!')
   end subroutine PT_put_coupling_param
   !============================================================================
-  
   subroutine PT_adjust_lines(Source_)
     integer, intent(in) :: Source_
     character(len=*), parameter:: NameSub = 'PT_adjust_lines'
@@ -380,6 +343,5 @@ contains
     call CON_stop(NameSub//' has not been implemented!')
   end subroutine PT_adjust_lines
   !============================================================================
-  
 end module PT_wrapper
 !==============================================================================
