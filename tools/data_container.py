@@ -5,7 +5,8 @@ import math
 from utilities import get_unit, get_ticks
 import streamplot
 from copy import deepcopy
-
+from scipy.interpolate import griddata
+import matplotlib.tri as tri
 
 def compare(d1, d2):
     header = ("var", "min|d1-d2|", "max|d1-d2|",
@@ -303,7 +304,8 @@ class dataContainer2D(dataContainer):
 
     def contour(self, vars, xlim=None, ylim=None, unit="planet", nlevels=200,
                 cmap="rainbow", figsize=(12, 8), pcolor=False, log=False,
-                addgrid=False, bottomline=10, plot=None, showcolorbar=True, *args, **kwargs):
+                addgrid=False, bottomline=10, plot=None, cbticks=None, 
+                showcolorbar=True, *args, **kwargs):
         r""" 
         Contour plots. 
 
@@ -402,7 +404,11 @@ class dataContainer2D(dataContainer):
 
                 ax.plot(gx, gy, 'x')
 
-            ticks = get_ticks(vmin, vmax)
+            if cbticks:
+                ticks = cbticks
+            else:
+                ticks = get_ticks(vmin, vmax)
+
             if showcolorbar:
                 cb = f.colorbar(cs, ax=ax, ticks=ticks)
                 cb.formatter.set_powerlimits((0, 0))
@@ -429,7 +435,7 @@ class dataContainer2D(dataContainer):
         self.add_bottom_line(f, bottomline)
         return f, axes.reshape(nRow, nCol)
 
-    def add_contour(self, ax, var, unit='planet', *args, **kwargs):
+    def add_contour(self, ax, var, unit='planet', rmask=None, *args, **kwargs):
         r""" 
         Adding contour lines to an axis. 
 
@@ -457,9 +463,20 @@ class dataContainer2D(dataContainer):
         vmax = v.max() if vmin == None else vmax
         v = np.clip(v, vmin, vmax)
 
-        ax.contour(self.x, self.y, v.T, *args, **kwargs)
+        if self.gencoord:
+            triang = tri.Triangulation(self.x, self.y)
+            if rmask != None:
+                r = np.sqrt(self.x**2+self.y**2)            
+                isbad = np.less(r,1.2)
+                mask = np.all(np.where(isbad[triang.triangles], True, False), axis=1)
+                triang.set_mask(mask)
+            ax.tricontour(triang, v.T, *args, **kwargs)
+        else:
+            ax.contour(self.x, self.y, v.T, *args, **kwargs)
 
-    def add_stream(self, ax, var1, var2, density=1, *args, **kwargs):
+    def add_stream(self, ax, var1, var2, density=1, nx=400, ny=400,
+                   xmin=None, xmax=None, ymin=None, ymax=None, rmask=None,
+                   *args, **kwargs):
         r""" 
         Adding streamlines to an axis. 
 
@@ -485,8 +502,44 @@ class dataContainer2D(dataContainer):
             v1 = v1.value
         if type(v2) == yt.units.yt_array.YTArray:
             v2 = v2.value
-        streamplot.streamplot(ax, self.x.value, self.y.value,
-                              v1.T, v2.T, density=density, *args, **kwargs)
+
+        if self.gencoord:
+            if xmin == None:
+                xmin = self.x.value.min()
+            if xmax == None:
+                xmax = self.x.value.max()
+            if ymin == None:
+                ymin = self.y.value.min()
+            if ymax == None:
+                ymax = self.y.value.max()
+
+            gridx, gridy = np.mgrid[0:nx+1, 0:ny+1]
+            gridx = gridx*(xmax-xmin)/nx + xmin
+            gridy = gridy*(ymax-ymin)/ny + ymin
+            xy = np.zeros((len(self.x), 2))
+            xy[:, 0] = self.x.value
+            xy[:, 1] = self.y.value
+            # The first and last row/column may be None. Remove them
+            vect1 = griddata(xy, v1, (gridx, gridy), method='linear')[1:-1, 1:-1]
+            vect2 = griddata(xy, v2, (gridx, gridy), method='linear')[1:-1, 1:-1]
+            xx = gridx[1:-1, 0]
+            yy = gridy[0, 1:-1]
+        else:
+            xx = self.x.value
+            yy = self.y.value        
+
+        if rmask != None: 
+            mask = np.zeros(vect1.shape, dtype=bool)
+            r2 = rmask**2
+            for i in range(len(xx)):
+                for j in range(len(yy)):
+                    if xx[i]**2 + yy[j]**2 < r2: 
+                        # vect1 and vect2 have been transposed
+                        vect1[i,j] = np.nan
+                        vect2[i,j] = np.nan
+
+        streamplot.streamplot(ax, xx, yy,
+                              vect1.T, vect2.T, density=density, *args, **kwargs)
 
 
 class dataContainer1D(dataContainer):
