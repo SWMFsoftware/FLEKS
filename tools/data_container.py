@@ -526,7 +526,8 @@ class dataContainer2D(dataContainer):
             yy = gridy[0, 1:-1]
         else:
             xx = self.x.value
-            yy = self.y.value        
+            yy = self.y.value
+            vect1, vect2 = v1, v2        
 
         if rmask != None: 
             mask = np.zeros(vect1.shape, dtype=bool)
