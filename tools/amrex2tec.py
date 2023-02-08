@@ -19,7 +19,7 @@ def amrex2tec(datPath, savePlt=False):
         print("amrex2tec conversion failed for file ", datPath, flush=True)
 
     if savePlt:
-        if not os.path.exists(pltPath) and os.system("preplot " + tecPath) == -1:
+        if not os.path.exists(pltPath) and os.system("preplot " + tecPath + " > /dev/null") == -1:
             print("tecplot preplot failed for file ", tecPath, flush=True)
 
         os.system("rm " + tecPath)
