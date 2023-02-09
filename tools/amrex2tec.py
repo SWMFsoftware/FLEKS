@@ -31,7 +31,8 @@ def amrex2tec(datPath, savePlt=False):
 
 
 if __name__ == "__main__":
-    files = sys.argv[1:]
+    flag = int(sys.argv[1])
+    files = sys.argv[2:]
     for f in files:
         print("\nConverting ", f, flush=True)
-        amrex2tec(f)
+        amrex2tec(f, flag != 0)
