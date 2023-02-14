@@ -27,3 +27,4 @@ gitinfo.txt
 Backtrace.*
 tools/.ipynb*
 tools/*user.py
+*srcBATL*
