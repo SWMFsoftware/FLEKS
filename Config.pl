@@ -20,8 +20,15 @@ our @Arguments       = @ARGV;
 my $config     = "share/Scripts/Config.pl";
 
 my $GITCLONE = "git clone"; my $GITDIR = "git\@gitlab.umich.edu:swmf_software";
+
 if (not -f $config and not -f "../../$config"){
+    # Stand-alone
     `$GITCLONE $GITDIR/share; $GITCLONE $GITDIR/util`;    
+}
+
+if(-f "../../$config"){
+    # Not stand-alone
+    `$GITCLONE $GITDIR/srcBATL srcBATL_orig` unless -d "srcBATL_orig";
 }
 
 my $AmrexDir = "util/AMREX";

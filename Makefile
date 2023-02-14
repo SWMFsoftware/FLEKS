@@ -27,11 +27,22 @@ FLEKS: GITINFO
 bin:
 	mkdir bin
 
-install: bin include/Constants.h
+install: bin include/Constants.h srcBATL/Makefile srcBATL/BATL_size.f90
 
 LIB: include/Constants.h
 	cd src; $(MAKE) LIB
 	cd srcInterface; $(MAKE) LIB
+
+srcBATL/Makefile:
+	rm -rf srcBATL; mkdir srcBATL 
+	cd srcBATL_orig; cp BATL*.f90 Makefile* ../srcBATL; \
+	cd ../srcBATL; ${SCRIPTDIR}/Methods.pl ${COMPONENT} *.f90; \
+	${SCRIPTDIR}/Rename.pl -w -r -common=${COMPONENT} *.f90; \
+	rm -f *~
+
+srcBATL/BATL_size.f90: srcBATL/BATL_size_orig.f90
+	cp -f srcBATL/BATL_size_orig.f90 srcBATL/BATL_size.f90
+
 
 CONVERTER:
 	cd src; $(MAKE) CONVERTER
