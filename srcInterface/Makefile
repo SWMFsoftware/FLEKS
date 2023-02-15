@@ -8,11 +8,16 @@ SRCS := \
 	FleksInterface.cpp
 
 OBJS := $(patsubst %, %.o,$(basename $(SRCS)))
-OBJECTS = ${OBJS} ${COMPONENT}_wrapper.o 
+OBJECTS = ${OBJS} \
+	${COMPONENT}_wrapper.o \
+	ModReadAmr.o \
+	wrap_read_amr.o
 
 include ../Makefile.conf
 
 FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_
+
+wrap_read_amr.o: ModReadAmr.o
 
 ${COMPONENT}_wrapper.o: ../include/FleksInterface.h \
 	FleksInterface.o \
@@ -31,9 +36,9 @@ LIB:    ${LIBFLEKS} DEPEND
 	@echo ${MYLIB} has been brought up to date.
 	@echo
 
-${MYLIB}: ${OBJECTS} ${LIBFLEKS}
+${MYLIB}: ${OBJECTS} ${LIBFLEKS} 
 	cp -f ${LIBFLEKS} ${MYLIB}
-	${AR} ${MYLIB} ${OBJECTS}
+	${AR} ${MYLIB} ${OBJECTS} 
 
 clean:
 	-@(rm -f ${OBJECTS} ${MYLIB})
