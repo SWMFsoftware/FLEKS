@@ -46,6 +46,7 @@ if(-f $config){
 # These are inherited from $config
 our %Remaining;   # Arguments not handled by share/Scripts/Config.pl
 our $Show;
+our $NewGridSize;
 our $Help;
 our $ERROR;
 our $WARNING;
@@ -56,9 +57,17 @@ my %nTPString=(7=>'P', 10=>'PB', 13=>'PBE');
 my %nTPSave=('P' => 7, 'PB' => 10, 'PBE' => 13);
 my %TPInfo=('P' => "Particle", 'PB' => "Particle+B", 'PBE' => "Particle+B+E");
 
+# BATL Grid size variables
+my $NameGridFile = "srcBATL/BATL_size.f90";
+my $GridSize;
+my ($nI, $nJ, $nK, $iRatio, $jRatio, $kRatio);
+my $GhostCell;
+my $NewGhostCell;
+
 foreach (@Arguments){
      if(/^-s$/)                 {$Show=1;       next};
      if(/^-h$/)                 {$Help=1;       next};
+     if(/^-ng=(.*)$/)           {$NewGhostCell=$1; next};
      if(/^-tp=(.*)$/)           {$NewTPSave=$1;    next};    
      warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
  }
@@ -75,10 +84,76 @@ my $AmrexTinyProfile;
 &set_test_particle if $NewTPSave;
 
 &print_help if $Help;
+
+&get_batl_settings;
+
+&set_batl_grid_size;
+
 &show_settings if $Show;
 
 exit 0;
 #############################################################################
+
+sub get_batl_settings{
+
+    # Read size of the grid from $NameGridFile
+    open(MODSIZE,$NameGridFile) or die "$ERROR could not open $NameGridFile\n";
+    while(<MODSIZE>){
+        next if /^\s*!/; # skip commented out lines
+        $nI=$1           if /\bnI\s*=\s*(\d+)/i;
+        $nJ=$1           if /\bnJ\s*=\s*(\d+)/i;
+        $nK=$1           if /\bnK\s*=\s*(\d+)/i;
+	$iRatio=$1       if /\biRatio\s*=\s*min\(\s*(\d)/;
+	$jRatio=$1       if /\bjRatio\s*=\s*min\(\s*(\d)/;
+	$kRatio=$1       if /\bkRatio\s*=\s*min\(\s*(\d)/;
+	$GhostCell=$1    if /\bnG\s*=\s*(\d)/;
+    }
+    close MODSIZE;
+
+    die "$ERROR could not read nI from $NameGridFile\n" unless length($nI);
+    die "$ERROR could not read nJ from $NameGridFile\n" unless length($nJ);
+    die "$ERROR could not read nK from $NameGridFile\n" unless length($nK);
+
+    die "$ERROR could not read iRatio from $NameGridFile\n" 
+	unless length($iRatio);
+    die "$ERROR could not read jRatio from $NameGridFile\n" 
+	unless length($jRatio);
+    die "$ERROR could not read kRatio from $NameGridFile\n" 
+	unless length($kRatio);
+
+    die "$ERROR could not read nG from $NameGridFile\n" 
+	unless length($GhostCell);
+
+    $GridSize  = "$nI,$nJ,$nK";
+}
+
+#############################################################################
+
+sub set_batl_grid_size{
+
+    $GridSize = $NewGridSize if $NewGridSize;
+
+    $GhostCell = $NewGhostCell if $NewGhostCell;
+    
+    if($GridSize =~ /^[1-9]\d*,[1-9]\d*,[1-9]\d*$/){
+	($nI,$nJ,$nK) = split(',', $GridSize);
+    }elsif($GridSize){
+	die "$ERROR ".
+	    "-g=$GridSize should be 3 positive integers separated by commas\n";
+    }
+
+    @ARGV = ($NameGridFile);
+
+    while(<>){
+	if(/^\s*!/){print; next} # Skip commented out lines
+	s/\b(nI\s*=[^0-9]*)\d+/$1$nI/i;
+	s/\b(nJ\s*=[^0-9]*)\d+/$1$nJ/i;
+	s/\b(nK\s*=[^0-9]*)\d+/$1$nK/i;
+	s/\b(nG\s*=[^0-9]*)\d+/$1$GhostCell/i;
+	print;
+    }
+
+}
 
 sub get_settings{
     my $AmrexMakefile = "${AmrexDir}/GNUmakefile";
@@ -100,6 +175,8 @@ sub get_settings{
     }            
     $TPSave = $nTPString{$nSize};
     close FILE;
+
+    
 }
 
 ################################################################################
@@ -137,6 +214,8 @@ sub show_settings{
     print "AMReX debug        = $AmrexDebug \n";
     print "AMReX tiny profile = $AmrexTinyProfile \n";    
     print "Test Particle info = $TPInfo{$TPSave} \n";
+    print "FLEKS BATL block size       : nI=$nI, nJ=$nJ, nK=$nK \n";
+    print "FLEKS BATL ghost cell layers: nG=$GhostCell \n";
 }
 ################################################################################
 
