@@ -56,8 +56,8 @@ contains
     use ModIoUnit, ONLY: UnitTmp_
     use FL_BATL_lib,  ONLY: MaxDim, nDim, nIjk, nIjk_D, iProc, nProc, iComm, &
          init_batl
-    use BATL_grid, ONLY: create_grid
-    use BATL_tree, ONLY: read_tree_file, distribute_tree
+    use FL_BATL_grid, ONLY: create_grid
+    use FL_BATL_tree, ONLY: read_tree_file, distribute_tree
     use ModReadParam, ONLY: read_init, read_echo_set, read_file, &
          read_line, read_command, read_var, lStringLine
 
