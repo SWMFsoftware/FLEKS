@@ -1703,8 +1703,11 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
 
               // Delete the lighter one.
               int iPartDel = pair1;
+              // Q: Why is it 'l>(1+1e-6)*r' instead of 'l>r'?
+              // A: The particle weights can be the same for some cases. 'l>r'
+              // may return random results due to the truncation error.
               if (fabs(particles[idx_I[pair1]].rdata(iqp_)) >
-                  fabs(particles[idx_I[pair2]].rdata(iqp_))) {
+                  (1 + 1e-6) * fabs(particles[idx_I[pair2]].rdata(iqp_))) {
                 iPartDel = pair2;
               }
               if (iPartDel != 0) {
