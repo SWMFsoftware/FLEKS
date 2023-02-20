@@ -305,7 +305,7 @@ class dataContainer2D(dataContainer):
     def contour(self, vars, xlim=None, ylim=None, unit="planet", nlevels=200,
                 cmap="rainbow", figsize=(12, 8), pcolor=False, log=False,
                 addgrid=False, bottomline=10, plot=None, cbticks=None, 
-                showcolorbar=True, *args, **kwargs):
+                showcolorbar=True, createcanvas=False, *args, **kwargs):
         r""" 
         Contour plots. 
 
@@ -333,6 +333,11 @@ class dataContainer2D(dataContainer):
 
         plot: list or tuple of [f, axes]
         Used to fine tune the individual subplot
+
+        createcanvas: boolean
+        If set to True, skip the contour making process to get an empty
+        canvas which can be used to generate subplots in different styles.
+        Set this flag to get the value for 'plot' parameter.
 
         Examples
         ----------------
@@ -364,6 +369,8 @@ class dataContainer2D(dataContainer):
         axes = axes.reshape(-1)
 
         for isub, ax in zip(range(nvar), axes):
+            if createcanvas:    # no need to make any contour, just keep
+                break           # the canvas clean
             ytVar = self.evaluate_expression(varNames[isub], unit)
             v = ytVar
             varUnit = 'dimensionless'
