@@ -16,7 +16,7 @@ def load(filename, iDomain=0, iSpecies=0, readFieldData=False):
 
     if basename == 'test_particles':
         return FLEKSTP(filename, iDomain=iDomain, iSpecies=iSpecies)
-    elif basename.find('.') and basename.split('.')[-1] in ['out', 'outs']:
+    elif basename.find('.') != -1 and basename.split('.')[-1] in ['out', 'outs']:
         return IDLDataSet(filename)
     elif basename[-6:] == '_amrex':
         return FLEKSDataset(filename, readFieldData)
