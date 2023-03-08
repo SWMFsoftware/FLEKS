@@ -41,8 +41,9 @@ void Pic::find_mpi_rank_for_points(const int nPoint, const double* const xyz_I,
     if (nDimGM > 2)
       z = xyz_I[i * nDimGM + iz_] * si2nol;
     // Check if this point is inside this FLEKS domain.
-    if (range.contains(RealVect(x, y, z), 1e-10))
+    if (range.contains(RealVect(x, y, z), 1e-6*Geom(0).CellSize()[ix_] )){
       rank_I[i] = find_mpi_rank_from_coord(x, y, z);
+    }
   }
 }
 
