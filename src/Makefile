@@ -55,17 +55,14 @@ CONVERTER:
 DEPEND:
 	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJECTS} ${OBJECTS_EXE}
 
-LIBBATL = ../srcBATL/libBATL.a
-
-LIB:    ${LIBBATL} DEPEND
+LIB: DEPEND
 	$(MAKE) ${LIBFLEKS}
 	@echo
 	@echo ${LIBFLEKS} has been brought up to date.
 	@echo
 	$(MAKE) CONVERTER
 
-${LIBFLEKS}: ${LIBBATL} ${OBJECTS}
-	cp -f ${LIBBATL} ${LIBFLEKS}
+${LIBFLEKS}:${OBJECTS}	
 	${AR} ${LIBFLEKS} ${OBJECTS}
 
 clean:

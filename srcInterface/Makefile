@@ -9,15 +9,12 @@ SRCS := \
 
 OBJS := $(patsubst %, %.o,$(basename $(SRCS)))
 OBJECTS = ${OBJS} \
-	${COMPONENT}_wrapper.o \
-	ModReadAmr.o \
-	wrap_read_amr.o
+	${COMPONENT}_wrapper.o
 
 include ../Makefile.conf
 
 FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_
 
-wrap_read_amr.o: ModReadAmr.o
 
 ${COMPONENT}_wrapper.o: ../include/FleksInterface.h \
 	FleksInterface.o \

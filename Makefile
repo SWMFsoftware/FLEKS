@@ -29,18 +29,9 @@ bin:
 
 install: bin include/Constants.h
 
-LIB: include/Constants.h srcBATL/Makefile
-	cd srcBATL; $(MAKE) LIB
+LIB: include/Constants.h
 	cd src; $(MAKE) LIB
 	cd srcInterface; $(MAKE) LIB
-
-srcBATL/Makefile:
-	rm -rf srcBATL; mkdir srcBATL 
-	cd srcBATL_orig; cp BATL*.f90 Makefile* ../srcBATL; \
-	cd ../srcBATL; ${SCRIPTDIR}/Methods.pl FL *.f90; \
-	${SCRIPTDIR}/Rename.pl -w -r -common=FL *.f90; \
-	rm -f *~
-	cp -f srcBATL/BATL_size_orig.f90 srcBATL/BATL_size.f90
 
 CONVERTER:
 	cd src; $(MAKE) CONVERTER
@@ -59,10 +50,8 @@ clean:
 	cd src; $(MAKE) clean
 	cd srcInterface; $(MAKE) clean
 	rm -rf bin/*
-	rm -rf srcBATL
 
-distclean:
-	rm -rf srcBATL*
+distclean:	
 	-@(./Config.pl -uninstall)
 
 allclean:
