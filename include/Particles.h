@@ -74,6 +74,7 @@ public:
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Redistribute;
   using amrex::AmrParticleContainer<NStructReal,
                                     NStructInt>::NumberOfParticlesAtLevel;
+  using amrex::AmrParticleContainer<NStructReal, NStructInt>::finestLevel;
 
 protected:
   FluidInterface* fi;

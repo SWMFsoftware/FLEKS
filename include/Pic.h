@@ -7,6 +7,7 @@
 #include "Constants.h"
 #include "FluidInterface.h"
 #include "Grid.h"
+#include "GridUtility.h"
 #include "LinearSolver.h"
 #include "OHInterface.h"
 #include "Particles.h"
@@ -57,7 +58,7 @@ private:
   amrex::MultiFab nodeE;
   amrex::MultiFab nodeEth;
   amrex::MultiFab nodeB;
-  amrex::MultiFab centerB;
+  amrex::Vector<amrex::MultiFab> centerB;
 
   amrex::UMultiFab<RealMM> nodeMM;
 
@@ -143,6 +144,17 @@ public:
 
   Particles<> *get_particle_pointer(int i) { return parts[i].get(); }
 
+  // amrex::Vector<const amrex::MultiFab *> PlotFileMF() const {
+
+  //   amrex::Vector<const amrex::MultiFab *> r;
+  //   for (int i = 0; i <= finest_level; ++i) {
+  //     r.push_back(&phi[i]);
+  //   }
+  //   return r;
+  // }
+
+  // amrex::Vector<std::string> PlotFileVarNames() const { return { "phi" }; }
+
   void set_stateOH(std::shared_ptr<OHInterface> &in) { stateOH = in; }
   void set_sourceOH(std::shared_ptr<OHInterface> &in) { sourcePT2OH = in; }
   void set_fluid_source(std::shared_ptr<SourceInterface> &in) { source = in; }
@@ -151,6 +163,9 @@ public:
   void regrid(const amrex::BoxArray &activeRegionBAIn,
               const amrex::BoxArray &centerBAIn,
               const amrex::DistributionMapping &dmIn);
+
+  void distribute_arrays(int lev, const amrex::BoxArray &ba,
+                         const amrex::DistributionMapping &dm);
 
   void fill_new_cells();
   void fill_E_B_fields();
@@ -333,6 +348,8 @@ public:
       const amrex::DistributionMapping &dm) override {
     std::string nameFunc = "Pic::MakeNewLevelFromScratch";
     amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
+
+    distribute_arrays(lev, ba, dm);
   };
 
   // Make a new level using provided BoxArray and DistributionMapping and
@@ -343,6 +360,35 @@ public:
       const amrex::DistributionMapping &dm) override {
     std::string nameFunc = "Pic::MakeNewLevelFromCoarse";
     amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
+  };
+
+  // tag all cells for refinement
+  // overrides the pure virtual function in AmrCore
+  virtual void ErrorEst(int lev, amrex::TagBoxArray &tags, amrex::Real time,
+                        int ngrow) override {
+    std::string nameFunc = "Pic::ErrorEst";
+    amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
+
+    const int tagval = amrex::TagBox::SET;
+    // return;
+    for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi) {
+      const amrex::Box &bx = mfi.tilebox();
+      const auto tagfab = tags.array(mfi);
+
+      const auto lo = lbound(bx);
+      const auto hi = ubound(bx);
+
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (i > 69) {
+
+              if (j > 46) {
+                tagfab(i, j, k) = 1;
+              }
+            }
+          }
+    }
   };
 
   // private methods

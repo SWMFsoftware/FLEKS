@@ -258,8 +258,17 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
         }
   }
 
+  for (int lev = 0; lev <= finestLevel(); lev++) {
+    auto n = NumberOfParticlesAtLevel(lev, true, true);
+    Print() << "loc1 lev = " << lev << " number = " << n << std::endl;
+  }
   // TODO: Is this really necessary?
   Redistribute();
+
+  for (int lev = 0; lev <= finestLevel(); lev++) {
+    auto n = NumberOfParticlesAtLevel(lev, true, true);
+    Print() << "loc2 lev = " << lev << " number = " << n << std::endl;
+  }
 }
 
 //==========================================================
@@ -489,70 +498,70 @@ Real Particles<NStructReal, NStructInt>::sum_moments(MultiFab& momentsMF,
   momentsMF.setVal(0.0);
 
   Real energy = 0;
-  const int lev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
-       ++pti) {
-    Array4<Real> const& momentsArr = momentsMF[pti].array();
+  for (int lev = 0; lev <= finestLevel(); lev++)
+    for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+         ++pti) {
+      Array4<Real> const& momentsArr = momentsMF[pti].array();
 
-    const auto& particles = pti.GetArrayOfStructs();
+      const auto& particles = pti.GetArrayOfStructs();
 
-    for (const auto& p : particles) {
+      for (const auto& p : particles) {
 
-      // Print()<<"p = "<<p<<std::endl;
-      const Real up = p.rdata(iup_);
-      const Real vp = p.rdata(ivp_);
-      const Real wp = p.rdata(iwp_);
-      const Real qp = p.rdata(iqp_);
+        // Print()<<"p = "<<p<<std::endl;
+        const Real up = p.rdata(iup_);
+        const Real vp = p.rdata(ivp_);
+        const Real wp = p.rdata(iwp_);
+        const Real qp = p.rdata(iqp_);
 
-      //-----calculate interpolate coef begin-------------
-      int loIdx[nDim];
-      Real dShift[nDim];
-      for (int i = 0; i < nDim; i++) {
-        dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
-        loIdx[i] = fastfloor(dShift[i]);
-        dShift[i] = dShift[i] - loIdx[i];
-      }
+        //-----calculate interpolate coef begin-------------
+        int loIdx[nDim];
+        Real dShift[nDim];
+        for (int i = 0; i < nDim; i++) {
+          dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
+          loIdx[i] = fastfloor(dShift[i]);
+          dShift[i] = dShift[i] - loIdx[i];
+        }
 
-      Real coef[2][2][2];
-      linear_interpolation_coef(dShift, coef);
-      //-----calculate interpolate coef end-------------
+        Real coef[2][2][2];
+        linear_interpolation_coef(dShift, coef);
+        //-----calculate interpolate coef end-------------
 
-      //-------nodePlasma begin---------
-      Real pMoments[nMoments];
+        //-------nodePlasma begin---------
+        Real pMoments[nMoments];
 
-      pMoments[iNum_] = 1;
-      pMoments[iRho_] = qp;
+        pMoments[iNum_] = 1;
+        pMoments[iRho_] = qp;
 
-      {
-        const Real mx = qp * up;
-        const Real my = qp * vp;
-        const Real mz = qp * wp;
-        pMoments[iMx_] = mx;
-        pMoments[iMy_] = my;
-        pMoments[iMz_] = mz;
+        {
+          const Real mx = qp * up;
+          const Real my = qp * vp;
+          const Real mz = qp * wp;
+          pMoments[iMx_] = mx;
+          pMoments[iMy_] = my;
+          pMoments[iMz_] = mz;
 
-        pMoments[iPxx_] = mx * up;
-        pMoments[iPyy_] = my * vp;
-        pMoments[iPzz_] = mz * wp;
+          pMoments[iPxx_] = mx * up;
+          pMoments[iPyy_] = my * vp;
+          pMoments[iPzz_] = mz * wp;
 
-        pMoments[iPxy_] = mx * vp;
-        pMoments[iPxz_] = mx * wp;
-        pMoments[iPyz_] = my * wp;
-      }
+          pMoments[iPxy_] = mx * vp;
+          pMoments[iPxz_] = mx * wp;
+          pMoments[iPyz_] = my * wp;
+        }
 
-      for (int iVar = 0; iVar < nMoments; iVar++)
-        for (int kk = 0; kk < 2; kk++)
-          for (int jj = 0; jj < 2; jj++)
-            for (int ii = 0; ii < 2; ii++) {
-              momentsArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
-                         iVar) += coef[ii][jj][kk] * pMoments[iVar];
-            }
+        for (int iVar = 0; iVar < nMoments; iVar++)
+          for (int kk = 0; kk < 2; kk++)
+            for (int jj = 0; jj < 2; jj++)
+              for (int ii = 0; ii < 2; ii++) {
+                momentsArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
+                           iVar) += coef[ii][jj][kk] * pMoments[iVar];
+              }
 
-      //-------nodePlasma end---------
+        //-------nodePlasma end---------
 
-      energy += qp * (up * up + vp * vp + wp * wp);
-    } // for p
-  }
+        energy += qp * (up * up + vp * vp + wp * wp);
+      } // for p
+    }
 
   // Exclude the number density.
   momentsMF.mult(invVol, 0, nMoments - 1, momentsMF.nGrow());

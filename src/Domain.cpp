@@ -171,8 +171,17 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
 
   gm.define(centerBox, &domainRange, coord, periodicity);
 
+  // The value of blocking_factor constrains grid creation in that in that each
+  // grid must be divisible by blocking_factor. Note that both the domain (at
+  // each level) and max_grid_size must be divisible by blocking_factor, and
+  // that blocking_factor must be either 1 or a power of 2 (otherwise the
+  // gridding algorithm would not in fact create grids divisible by
+  // blocking_factor because of how blocking_factor is used in the gridding
+  // algorithm).
   amrInfo.blocking_factor.clear();
   amrInfo.blocking_factor.push_back(IntVect(1, 1, 1));
+  
+  amrInfo.max_level = 0; 
 
   Print() << printPrefix << "Domain range = " << domainRange << std::endl;
   Print() << printPrefix << "Center box = " << centerBox << std::endl;

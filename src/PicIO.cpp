@@ -41,7 +41,7 @@ void Pic::find_mpi_rank_for_points(const int nPoint, const double* const xyz_I,
     if (nDimGM > 2)
       z = xyz_I[i * nDimGM + iz_] * si2nol;
     // Check if this point is inside this FLEKS domain.
-    if (range.contains(RealVect(x, y, z), 1e-6*Geom(0).CellSize()[ix_] )){
+    if (range.contains(RealVect(x, y, z), 1e-6 * Geom(0).CellSize()[ix_])) {
       rank_I[i] = find_mpi_rank_from_coord(x, y, z);
     }
   }
@@ -429,7 +429,9 @@ void Pic::save_restart_data() {
   std::string restartDir = component + "/restartOUT/";
   VisMF::Write(nodeE, restartDir + gridName + "_nodeE");
   VisMF::Write(nodeB, restartDir + gridName + "_nodeB");
-  VisMF::Write(centerB, restartDir + gridName + "_centerB");
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    VisMF::Write(centerB[iLevTest], restartDir + gridName + "_centerB");
+  }
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     parts[iPart]->label_particles_outside_ba();
@@ -464,7 +466,9 @@ void Pic::read_restart() {
   std::string restartDir = component + "/restartIN/";
   VisMF::Read(nodeE, restartDir + gridName + "_nodeE");
   VisMF::Read(nodeB, restartDir + gridName + "_nodeB");
-  VisMF::Read(centerB, restartDir + gridName + "_centerB");
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    VisMF::Read(centerB[iLevTest], restartDir + gridName + "_centerB");
+  }
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     parts[iPart]->Restart(restartDir,
@@ -718,7 +722,10 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
   if (plotVars.find("B") != std::string::npos) {
     //------------------B---------------
-    MultiFab::Copy(centerMF, centerB, 0, iStart, nodeB.nComp(), 0);
+    for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+      MultiFab::Copy(centerMF, centerB[iLevTest], 0, iStart, nodeB.nComp(), 0);
+    }
+
     iStart += nodeB.nComp();
     varNames.push_back("Bx");
     varNames.push_back("By");

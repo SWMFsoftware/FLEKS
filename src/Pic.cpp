@@ -1,6 +1,7 @@
 #include <math.h>
 
 #include <AMReX_MultiFabUtil.H>
+#include <AMReX_PlotFileUtil.H>
 
 #include "GridUtility.h"
 #include "LinearSolver.h"
@@ -115,6 +116,17 @@ void Pic::fill_new_cells() {
 }
 
 //==========================================================
+void Pic::distribute_arrays(int lev, const BoxArray& ba,
+                            const DistributionMapping& dm) {
+  const int nLev = max_level + 1;
+  if (centerB.empty()) {
+    centerB.resize(nLev);
+  }
+
+  distribute_FabArray(centerB[lev], ba, dm, 3, nGst);
+}
+
+//==========================================================
 void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
                  const DistributionMapping& dmIn) {
   std::string nameFunc = "Pic::regrid";
@@ -142,15 +154,25 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   if (!cGrid.empty()) {
     // This method will call MakeNewLevelFromScratch() and
     // PostProcessBaseGrids()
+    // phi.resize(finest_level + 1);
+    // centerB.resize(1);
+
     InitFromScratch(tc->get_time());
     SetDistributionMap(0, dmIn);
+
+    for (int lev = 0; lev <= finest_level; lev++) {
+      Print() << "lev = " << lev << " count = " << CountCells(lev) << std::endl;
+    }
   }
+
+  int lev = 0;
+  distribute_arrays(lev, cGrid, DistributionMap(lev));
 
   //===========Move field data around begin====================
   distribute_FabArray(nodeE, nGrid, DistributionMap(0), 3, nGst);
   distribute_FabArray(nodeEth, nGrid, DistributionMap(0), 3, nGst);
   distribute_FabArray(nodeB, nGrid, DistributionMap(0), 3, nGst);
-  distribute_FabArray(centerB, cGrid, DistributionMap(0), 3, nGst);
+  // Odistribute_FabArray(centerB[0], cGrid, DistributionMap(0), 3, nGst);
 
   distribute_FabArray(centerNetChargeOld, cGrid, DistributionMap(0), 1, nGst);
   distribute_FabArray(centerNetChargeN, cGrid, DistributionMap(0), 1,
@@ -484,9 +506,10 @@ void Pic::fill_new_node_B() {
 
 //==========================================================
 void Pic::fill_new_center_B() {
-  for (MFIter mfi(centerB); mfi.isValid(); ++mfi) {
+  int iLevTest = 0;
+  for (MFIter mfi(centerB[iLevTest]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
-    const Array4<Real>& centerArr = centerB[mfi].array();
+    const Array4<Real>& centerArr = centerB[iLevTest][mfi].array();
     const auto& nodeArr = nodeB[mfi].array();
 
     const auto lo = lbound(box);
@@ -494,7 +517,7 @@ void Pic::fill_new_center_B() {
 
     const auto& status = cellStatus[mfi].array();
 
-    for (int iVar = 0; iVar < centerB.nComp(); iVar++)
+    for (int iVar = 0; iVar < centerB[iLevTest].nComp(); iVar++)
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
@@ -514,19 +537,22 @@ void Pic::fill_new_center_B() {
 //==========================================================
 void Pic::fill_E_B_fields() {
 
-  fill_new_node_E();
-  fill_new_node_B();
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    fill_new_node_E();
+    fill_new_node_B();
 
-  nodeE.FillBoundary(Geom(0).periodicity());
-  nodeB.FillBoundary(Geom(0).periodicity());
+    nodeE.FillBoundary(Geom(0).periodicity());
+    nodeB.FillBoundary(Geom(0).periodicity());
 
-  apply_BC(nodeStatus, nodeE, 0, nDim, &Pic::get_node_E);
-  apply_BC(nodeStatus, nodeB, 0, nDim, &Pic::get_node_B);
+    apply_BC(nodeStatus, nodeE, 0, nDim, &Pic::get_node_E);
+    apply_BC(nodeStatus, nodeB, 0, nDim, &Pic::get_node_B);
 
-  fill_new_center_B();
-  centerB.FillBoundary(Geom(0).periodicity());
+    fill_new_center_B();
+    centerB[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
 
-  apply_BC(cellStatus, centerB, 0, centerB.nComp(), &Pic::get_center_B);
+    apply_BC(cellStatus, centerB[iLevTest], 0, centerB[iLevTest].nComp(),
+             &Pic::get_center_B);
+  }
 }
 
 //==========================================================
@@ -942,16 +968,18 @@ void Pic::update_E_expl() {
   timing_func(nameFunc);
 
   MultiFab::Copy(nodeEth, nodeE, 0, 0, nodeE.nComp(), nodeE.nGrow());
-
-  apply_BC(cellStatus, centerB, 0, centerB.nComp(), &Pic::get_center_B);
-
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    apply_BC(cellStatus, centerB[iLevTest], 0, centerB[iLevTest].nComp(),
+             &Pic::get_center_B);
+  }
   const Real dt = tc->get_dt();
   Real dt2dx[nDimMax];
   for (int i = 0; i < nDimMax; i++) {
     dt2dx[i] = dt * Geom(0).InvCellSize(i);
   }
-
-  curl_center_to_node(centerB, nodeE, dt2dx);
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    curl_center_to_node(centerB[iLevTest], nodeE, dt2dx);
+  }
 
   MultiFab::Saxpy(nodeE, -fourPI * dt, jHat, 0, 0, nodeE.nComp(),
                   nodeE.nGrow());
@@ -1149,11 +1177,18 @@ void Pic::update_E_rhs(double* rhs) {
   MultiFab temp2Node(nGrid, DistributionMap(0), 3, nGst);
   temp2Node.setVal(0.0);
 
-  apply_BC(cellStatus, centerB, 0, centerB.nComp(), &Pic::get_center_B);
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    apply_BC(cellStatus, centerB[iLevTest], 0, centerB[iLevTest].nComp(),
+             &Pic::get_center_B);
+  }
+
   apply_BC(nodeStatus, nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
 
   const Real* invDx = Geom(0).InvCellSize();
-  curl_center_to_node(centerB, tempNode, invDx);
+
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    curl_center_to_node(centerB[iLevTest], tempNode, invDx);
+  }
 
   MultiFab::Saxpy(temp2Node, -fourPI, jHat, 0, 0, temp2Node.nComp(),
                   temp2Node.nGrow());
@@ -1178,13 +1213,17 @@ void Pic::update_B() {
 
   curl_node_to_center(nodeEth, dB, Geom(0).InvCellSize());
 
-  MultiFab::Saxpy(centerB, -tc->get_dt(), dB, 0, 0, centerB.nComp(),
-                  centerB.nGrow());
-  centerB.FillBoundary(Geom(0).periodicity());
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
 
-  apply_BC(cellStatus, centerB, 0, centerB.nComp(), &Pic::get_center_B);
+    MultiFab::Saxpy(centerB[iLevTest], -tc->get_dt(), dB, 0, 0,
+                    centerB[iLevTest].nComp(), centerB[iLevTest].nGrow());
+    centerB[iLevTest].FillBoundary(Geom(0).periodicity());
 
-  average_center_to_node(centerB, nodeB);
+    apply_BC(cellStatus, centerB[iLevTest], 0, centerB[iLevTest].nComp(),
+             &Pic::get_center_B);
+
+    average_center_to_node(centerB[iLevTest], nodeB);
+  }
   nodeB.FillBoundary(Geom(0).periodicity());
 
   apply_BC(nodeStatus, nodeB, 0, nodeB.nComp(), &Pic::get_node_B);
@@ -1433,25 +1472,28 @@ Real Pic::calc_E_field_energy() {
 //==========================================================
 Real Pic::calc_B_field_energy() {
   Real sum = 0;
-  for (MFIter mfi(centerB); mfi.isValid(); ++mfi) {
-    FArrayBox& fab = centerB[mfi];
-    const Box& box = mfi.validbox();
-    const Array4<Real>& arr = fab.array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    for (MFIter mfi(centerB[iLevTest]); mfi.isValid(); ++mfi) {
+      FArrayBox& fab = centerB[iLevTest][mfi];
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arr = fab.array();
 
-    Real sumLoc = 0;
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          sumLoc += pow(arr(i, j, k, ix_), 2) + pow(arr(i, j, k, iy_), 2) +
-                    pow(arr(i, j, k, iz_), 2);
-        }
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
 
-    const auto& dx = Geom(0).CellSize();
-    const Real coef = 0.5 * dx[ix_] * dx[iy_] * dx[iz_] / fourPI;
-    sum += sumLoc * coef;
+      Real sumLoc = 0;
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            sumLoc += pow(arr(i, j, k, ix_), 2) + pow(arr(i, j, k, iy_), 2) +
+                      pow(arr(i, j, k, iz_), 2);
+          }
+
+      const auto& dx = Geom(0).CellSize();
+      const Real coef = 0.5 * dx[ix_] * dx[iy_] * dx[iz_] / fourPI;
+      sum += sumLoc * coef;
+    }
   }
   ParallelDescriptor::ReduceRealSum(sum,
                                     ParallelDescriptor::IOProcessorNumber());
@@ -1469,61 +1511,64 @@ void Pic::compute_cost() {
 
 //==========================================================
 void Pic::load_balance() {
-  if (ParallelDescriptor::NProcs() == 1)
-    return;
+  //   if (ParallelDescriptor::NProcs() == 1)
+  //     return;
 
-  if (!tc->loadBalance.is_time_to())
-    return;
+  //   if (!tc->loadBalance.is_time_to())
+  //     return;
 
-  std::string nameFunc = "Pic::load_balance";
-  timing_func(nameFunc);
+  //   std::string nameFunc = "Pic::load_balance";
+  //   timing_func(nameFunc);
 
-  Print() << printPrefix << "--------- Load balancing ------------"
-          << std::endl;
+  //   Print() << printPrefix << "--------- Load balancing ------------"
+  //           << std::endl;
 
-  // iDecomp++;
-  Print() << printPrefix << "before dm = " << DistributionMap(0) << std::endl;
-  compute_cost();
-  SetDistributionMap(0, DistributionMapping::makeSFC(costMF, false));
-  Print() << printPrefix << "after dm = " << DistributionMap(0) << std::endl;
+  //   // iDecomp++;
+  //   Print() << printPrefix << "before dm = " << DistributionMap(0) <<
+  //   std::endl; compute_cost(); SetDistributionMap(0,
+  //   DistributionMapping::makeSFC(costMF, false)); Print() << printPrefix <<
+  //   "after dm = " << DistributionMap(0) << std::endl;
 
-  redistribute_FabArray(nodeE, DistributionMap(0));
-  redistribute_FabArray(nodeEth, DistributionMap(0));
-  redistribute_FabArray(nodeB, DistributionMap(0));
-  redistribute_FabArray(centerB, DistributionMap(0));
+  //   redistribute_FabArray(nodeE, DistributionMap(0));
+  //   redistribute_FabArray(nodeEth, DistributionMap(0));
+  //   redistribute_FabArray(nodeB, DistributionMap(0));
 
-  redistribute_FabArray(centerNetChargeOld, DistributionMap(0));
-  redistribute_FabArray(centerNetChargeN, DistributionMap(0));   // false??
-  redistribute_FabArray(centerNetChargeNew, DistributionMap(0)); // false??
+  //   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+  //  redistribute_FabArray(centerB[iLevTest], DistributionMap(0));
+  //   }
 
-  redistribute_FabArray(centerDivE, DistributionMap(0));
-  redistribute_FabArray(centerPhi, DistributionMap(0));
+  //   redistribute_FabArray(centerNetChargeOld, DistributionMap(0));
+  //   redistribute_FabArray(centerNetChargeN, DistributionMap(0));   // false??
+  //   redistribute_FabArray(centerNetChargeNew, DistributionMap(0)); // false??
 
-  {
-    bool doMoveData = false;
+  //   redistribute_FabArray(centerDivE, DistributionMap(0));
+  //   redistribute_FabArray(centerPhi, DistributionMap(0));
 
-    for (auto& pl : nodePlasma) {
-      redistribute_FabArray(pl, DistributionMap(0), doMoveData);
-    }
+  //   {
+  //     bool doMoveData = false;
 
-    if (!useExplicitPIC) {
-      redistribute_FabArray(nodeMM, DistributionMap(0), doMoveData);
-    }
-    redistribute_FabArray(costMF, DistributionMap(0), doMoveData);
-    redistribute_FabArray(centerMM, DistributionMap(0), doMoveData);
+  //     for (auto& pl : nodePlasma) {
+  //       redistribute_FabArray(pl, DistributionMap(0), doMoveData);
+  //     }
 
-    redistribute_FabArray(tempNode3, DistributionMap(0), doMoveData);
-    redistribute_FabArray(tempCenter3, DistributionMap(0), doMoveData);
-    redistribute_FabArray(tempCenter1, DistributionMap(0), doMoveData);
-    redistribute_FabArray(tempCenter1_1, DistributionMap(0), doMoveData);
-  }
-  // Load balance particles.
-  for (int i = 0; i < nSpecies; i++) {
-    parts[i]->SetParticleDistributionMap(0, DistributionMap(0));
-    parts[i]->Redistribute();
-  }
+  //     if (!useExplicitPIC) {
+  //       redistribute_FabArray(nodeMM, DistributionMap(0), doMoveData);
+  //     }
+  //     redistribute_FabArray(costMF, DistributionMap(0), doMoveData);
+  //     redistribute_FabArray(centerMM, DistributionMap(0), doMoveData);
 
-  fi->load_balance(DistributionMap(0));
+  //     redistribute_FabArray(tempNode3, DistributionMap(0), doMoveData);
+  //     redistribute_FabArray(tempCenter3, DistributionMap(0), doMoveData);
+  //     redistribute_FabArray(tempCenter1, DistributionMap(0), doMoveData);
+  //     redistribute_FabArray(tempCenter1_1, DistributionMap(0), doMoveData);
+  //   }
+  //   // Load balance particles.
+  //   for (int i = 0; i < nSpecies; i++) {
+  //     parts[i]->SetParticleDistributionMap(0, DistributionMap(0));
+  //     parts[i]->Redistribute();
+  //   }
+
+  //   fi->load_balance(DistributionMap(0));
 }
 
 //==========================================================
@@ -1608,8 +1653,12 @@ void Pic::report_load_balance() {
   }
 
   localInfo[iMem_] = (float)read_mem_usage();
-  localInfo[iNBlk_] = (float)centerB.local_size();
-  localInfo[iNCell_] = (float)get_local_node_or_cell_number(centerB);
+
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    localInfo[iNBlk_] = (float)centerB[iLevTest].local_size();
+    localInfo[iNCell_] =
+        (float)get_local_node_or_cell_number(centerB[iLevTest]);
+  }
 
   {
     long npart = 0;
