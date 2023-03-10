@@ -12,7 +12,6 @@
 
 Domains fleksDomains;
 
-// The string contains the input string.
 std::string paramString;
 bool isFirstSession = true;
 bool isInitialized = false;
@@ -187,10 +186,22 @@ int fleks_get_grid_(double *Pos_DI, int *n) {
 }
 
 //==========================================================
-int fleks_set_state_var_(double *Data_VI, int *iPoint_I) {
+int fleks_set_state_var_(double *Data_VI, int *iPoint_I, int *nVar,
+                         char *nameVar, int *nChar) {
+                          
+  std::stringstream ss(std::string(nameVar, *nChar));
+  std::vector<std::string> names;
+  for (int i = 0; i < (*nVar); i++) {
+    std::string name;
+    if (ss >> name) {
+      names.push_back(name);
+    } else {
+      amrex::Abort("Error: variable names are not set correctly!\n");
+    }
+  }
   for (int i = 0; i < fleksDomains.size(); i++) {
     int idx = fleksDomains(i).couplerMarker;
-    fleksDomains(i).set_state_var(Data_VI, &iPoint_I[idx]);
+    fleksDomains(i).set_state_var(Data_VI, &iPoint_I[idx], names);
   }
   return 0;
 }

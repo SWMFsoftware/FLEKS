@@ -276,10 +276,15 @@ void Domain::set_ic() {
 }
 
 //========================================================
-void Domain::set_state_var(double *data, int *index) {
+void Domain::set_state_var(double *data, int *index,
+                           std::vector<std::string> &names) {
 
   Print() << printPrefix << " GM -> PC coupling at t =" << tc->get_time_si()
           << " (s)" << std::endl;
+
+  for (int i = 0; i < names.size(); i++) {
+    Print() << "i = " << i << " name = " << names[i] << std::endl;
+  }
 
   if (stateOH) {
     // PT mode

@@ -2,11 +2,11 @@
 #define _DOMAIN_H_
 
 #include "DomainGrid.h"
-#include "SourceInterface.h"
 #include "OHInterface.h"
 #include "ParticleTracker.h"
 #include "Pic.h"
 #include "ReadParam.h"
+#include "SourceInterface.h"
 
 class Domain : public DomainGrid {
 private:
@@ -69,7 +69,7 @@ public:
   //----------------Initialization end-------------------------------
 
   //------------Coupler related begin--------------
-  void set_state_var(double *data, int *index);
+  void set_state_var(double *data, int *index, std::vector<std::string> &names);
 
   int get_grid_nodes_number();
 

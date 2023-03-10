@@ -230,7 +230,7 @@ contains
     ! Finish the initialization after the first coupling
     logical:: IsFirstTime = .true.
 
-    integer:: i
+    integer:: nChar
     
     logical:: DoTest, DoTestMe
     character(len=*), parameter :: NameSub='PC_put_from_gm'
@@ -248,8 +248,8 @@ contains
               
        RETURN
     end if
-
-    call fleks_set_state_var(Data_VI, iPoint_I)
+    nChar = len(NameVar)
+    call fleks_set_state_var(Data_VI, iPoint_I, nVar, NameVar, nChar)
 
     if(IsFirstTime)  then
        IsFirstTime = .false.
