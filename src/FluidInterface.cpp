@@ -272,8 +272,8 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
       double rho;
       param.read_var("rho", rho);
       // amu/cc -> kg/m^3
-      rho *= 1e6 * cProtonMassSI;      
-      uniformState.push_back(rho);      
+      rho *= 1e6 * cProtonMassSI;
+      uniformState.push_back(rho);
       param.read_var("ux", tmp);
       // km/s -> m/s
       tmp *= 1e3;
@@ -287,7 +287,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
       param.read_var("T", tmp);
       double n = rho / cProtonMassSI;
       // p = nkT
-      double p = n * cBoltzmannSI * tmp;      
+      double p = n * cBoltzmannSI * tmp;
       uniformState.push_back(p);
     }
     param.read_var("bx", tmp);
@@ -335,6 +335,26 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
                       doCopy);
 
   isGridInitialized = true;
+}
+
+//==========================================================
+void FluidInterface::find_mpi_rank_for_points(const int nPoint,
+                                              const double* const xyz_I,
+                                              int* const rank_I) {
+  int nDimGM = get_fluid_dimension();
+  amrex::Real si2nol = get_Si2NoL();
+  const RealBox& range = Geom(0).ProbDomain();
+  for (int i = 0; i < nPoint; i++) {
+    amrex::Real x = xyz_I[i * nDimGM + ix_] * si2nol;
+    amrex::Real y = xyz_I[i * nDimGM + iy_] * si2nol;
+    amrex::Real z = 0;
+    if (nDimGM > 2)
+      z = xyz_I[i * nDimGM + iz_] * si2nol;
+    // Check if this point is inside this FLEKS domain.
+    if (range.contains(RealVect(x, y, z), 1e-6 * Geom(0).CellSize()[ix_])) {
+      rank_I[i] = find_mpi_rank_from_coord(x, y, z);
+    }
+  }
 }
 
 int FluidInterface::loop_through_node(std::string action, double* const pos_DI,

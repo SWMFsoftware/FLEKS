@@ -19,6 +19,8 @@ private:
 
   bool initFromSWMF = true;
 
+  bool receiveICOnly = false;
+
 public:
   // Q: Why are pic and pt defined as pointers?
   // A: Pic and particleTracker are derived from AmrCore, whose initialization
@@ -104,6 +106,8 @@ public:
 
   // void make_data();
   void init_time_ctr();
+
+  bool receive_ic_only() { return receiveICOnly; };
 };
 
 #endif

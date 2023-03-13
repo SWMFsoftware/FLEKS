@@ -182,6 +182,9 @@ public:
                         const double* const data = nullptr,
                         const int* const index = nullptr);
 
+  void find_mpi_rank_for_points(const int nPoint, const double* const xyz_I,
+                                int* const rank_I);
+
   void get_couple_node_loc(double* const pos_DI);
 
   void set_node_fluid(const double* const data, const int* const index);

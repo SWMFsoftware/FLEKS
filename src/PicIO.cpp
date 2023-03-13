@@ -19,35 +19,6 @@ void Pic::update_cells_for_pt() {
 }
 
 //==========================================================
-int Pic::get_grid_nodes_number() { return fi->count_couple_node_number(); }
-
-//==========================================================
-void Pic::get_grid(double* pos_DI) {
-  std::string nameFunc = "Pic::get_grid";
-  fi->get_couple_node_loc(pos_DI);
-  return;
-}
-
-//==========================================================
-void Pic::find_mpi_rank_for_points(const int nPoint, const double* const xyz_I,
-                                   int* const rank_I) {
-  int nDimGM = fi->get_fluid_dimension();
-  amrex::Real si2nol = fi->get_Si2NoL();
-  const RealBox& range = Geom(0).ProbDomain();
-  for (int i = 0; i < nPoint; i++) {
-    amrex::Real x = xyz_I[i * nDimGM + ix_] * si2nol;
-    amrex::Real y = xyz_I[i * nDimGM + iy_] * si2nol;
-    amrex::Real z = 0;
-    if (nDimGM > 2)
-      z = xyz_I[i * nDimGM + iz_] * si2nol;
-    // Check if this point is inside this FLEKS domain.
-    if (range.contains(RealVect(x, y, z), 1e-6 * Geom(0).CellSize()[ix_])) {
-      rank_I[i] = find_mpi_rank_from_coord(x, y, z);
-    }
-  }
-}
-
-//==========================================================
 void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
                                      const double* const xyz_I,
                                      double* const data_I, const int nVar) {

@@ -127,25 +127,27 @@ int fleks_run_(double *time) {
     mayNeedUpdata = false;
 
     for (int i = 0; i < fleksDomains.size(); i++) {
-      double domainTime = (double)(fleksDomains(i).tc->get_time_si());
-      double domainDt = (double)(fleksDomains(i).tc->get_dt_si());
+      if (!fleksDomains(i).receive_ic_only()) {
+        double domainTime = (double)(fleksDomains(i).tc->get_time_si());
+        double domainDt = (double)(fleksDomains(i).tc->get_dt_si());
 
-      if (iLoop == 0 || domainTime + domainDt <= tMax + 1e-10 * domainDt) {
-        // Update at least once, and a domain should be updated to a time that
-        // is close to but smaller or equal to tMax.
-        fleksDomains.select(i);
-        fleksDomains(i).update();
-        mayNeedUpdata = true;
-      }
+        if (iLoop == 0 || domainTime + domainDt <= tMax + 1e-10 * domainDt) {
+          // Update at least once, and a domain should be updated to a time that
+          // is close to but smaller or equal to tMax.
+          fleksDomains.select(i);
+          fleksDomains(i).update();
+          mayNeedUpdata = true;
+        }
 
-      if (iLoop == 0) {
-        domainTime = (double)(fleksDomains(i).tc->get_time_si());
-        // Find out tMax for the first while loop.
-        if (i == 0) {
-          tMax = domainTime;
-        } else {
-          if (tMax < domainTime)
-            tMax = (domainTime);
+        if (iLoop == 0) {
+          domainTime = (double)(fleksDomains(i).tc->get_time_si());
+          // Find out tMax for the first while loop.
+          if (i == 0) {
+            tMax = domainTime;
+          } else {
+            if (tMax < domainTime)
+              tMax = (domainTime);
+          }
         }
       }
     }
@@ -154,7 +156,9 @@ int fleks_run_(double *time) {
 
   // Not all domains have reached tMax, but the difference should be within one
   // step.
-  (*time) = tMax;
+  if (tMax > 0)
+    (*time) = tMax;
+    
   return 0;
 }
 
@@ -188,7 +192,7 @@ int fleks_get_grid_(double *Pos_DI, int *n) {
 //==========================================================
 int fleks_set_state_var_(double *Data_VI, int *iPoint_I, int *nVar,
                          char *nameVar, int *nChar) {
-                          
+
   std::stringstream ss(std::string(nameVar, *nChar));
   std::vector<std::string> names;
   for (int i = 0; i < (*nVar); i++) {

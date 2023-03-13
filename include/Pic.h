@@ -219,10 +219,6 @@ public:
 
   //------------Coupler related begin--------------
   void update_cells_for_pt();
-  int get_grid_nodes_number();
-  void get_grid(double *pos_DI);
-  void find_mpi_rank_for_points(const int nPoint, const double *const xyz_I,
-                                int *const rank_I);
   void get_fluid_state_for_points(const int nDim, const int nPoint,
                                   const double *const xyz_I,
                                   double *const data_I, const int nVar);

@@ -26,11 +26,25 @@ void Domain::init(double time, const int iDomain,
 
   prepare_grid_info(paramRegion);
 
-  if (initFromSWMF) {
+  if (receiveICOnly) {
+    fi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
+    read_param(false);
+
+    gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
+
+    init_time_ctr();
+
+    fi->print_info();
+
+    return;
+  }
+
+  if (initFromSWMF && !receiveICOnly) {
     fi = std::make_shared<FluidInterface>(
         gm, amrInfo, nGst, gridID, "fi", paramInt,
         Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm);
   } else {
+    // if (NOT initFromSWMF) or receiveIConly
     fi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
   }
 
@@ -139,7 +153,9 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
   if (isFake2D)
     set_periodicity(iz_, true);
 
-  if (!doRestart && initFromSWMF) {
+  bool setGridFromSWMF = !doRestart && initFromSWMF && !receiveICOnly;
+
+  if (setGridFromSWMF) {
     // If restart, the grid info will be read from restart.H
 
     Real si2noL = 1. / info[18];
@@ -180,8 +196,8 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
   // algorithm).
   amrInfo.blocking_factor.clear();
   amrInfo.blocking_factor.push_back(IntVect(1, 1, 1));
-  
-  amrInfo.max_level = 0; 
+
+  amrInfo.max_level = 0;
 
   Print() << printPrefix << "Domain range = " << domainRange << std::endl;
   Print() << printPrefix << "Center box = " << centerBox << std::endl;
@@ -242,9 +258,11 @@ void Domain::regrid() {
   if (sourcePT2OH)
     sourcePT2OH->regrid(baPic, dmPic);
 
-  pic->regrid(activeRegionBA, baPic, dmPic);
+  if (pic)
+    pic->regrid(activeRegionBA, baPic, dmPic);
 
-  pt->regrid(activeRegionBA, baPic, dmPic, *pic);
+  if (pt)
+    pt->regrid(activeRegionBA, baPic, dmPic, *pic);
 
   iGrid++;
   iDecomp++;
@@ -263,6 +281,9 @@ void Domain::set_ic() {
   if (doRestart)
     return;
 
+  if (receiveICOnly)
+    return;
+
 #ifdef _PT_COMPONENT_
   fi->set_node_fluid();
 #endif
@@ -279,36 +300,40 @@ void Domain::set_ic() {
 void Domain::set_state_var(double *data, int *index,
                            std::vector<std::string> &names) {
 
-  Print() << printPrefix << " GM -> PC coupling at t =" << tc->get_time_si()
-          << " (s)" << std::endl;
+  Print() << printPrefix << " GM -> " << component
+          << " coupling at t =" << tc->get_time_si() << " (s)" << std::endl;
 
   for (int i = 0; i < names.size(); i++) {
     Print() << "i = " << i << " name = " << names[i] << std::endl;
   }
 
-  if (stateOH) {
-    // PT mode
-    stateOH->set_node_fluid(data, index);
-  } else {
+  if (receiveICOnly) {
     fi->set_node_fluid(data, index);
-    pic->update_cells_for_pt();
-  }
+  } else {
+    if (stateOH) {
+      // PT mode
+      stateOH->set_node_fluid(data, index);
+    } else {
+      fi->set_node_fluid(data, index);
+      pic->update_cells_for_pt();
+    }
 
-  if (source && useFluidSource)
-    source->get_source_from_fluid(*fi);
+    if (source && useFluidSource)
+      source->get_source_from_fluid(*fi);
+  }
 }
 
 //========================================================
-int Domain::get_grid_nodes_number() { return pic->get_grid_nodes_number(); }
+int Domain::get_grid_nodes_number() { return fi->count_couple_node_number(); }
 
 //========================================================
-void Domain::get_grid(double *pos_DI) { pic->get_grid(pos_DI); }
+void Domain::get_grid(double *pos_DI) { fi->get_couple_node_loc(pos_DI); }
 
 //========================================================
 void Domain::find_mpi_rank_for_points(const int nPoint,
                                       const double *const xyz_I,
                                       int *const rank_I) {
-  pic->find_mpi_rank_for_points(nPoint, xyz_I, rank_I);
+  fi->find_mpi_rank_for_points(nPoint, xyz_I, rank_I);
 }
 
 //========================================================
@@ -378,8 +403,10 @@ void Domain::save_restart() {
 //========================================================
 void Domain::save_restart_data() {
   fi->save_restart_data();
-  pic->save_restart_data();
-  pt->save_restart_data();
+  if (pic)
+    pic->save_restart_data();
+  if (pt)
+    pt->save_restart_data();
 }
 
 //========================================================
@@ -425,9 +452,13 @@ void Domain::save_restart_header() {
 
     std::string command_suffix = "_" + gridName + "\n";
 
-    headerFile << "#RESTART" + command_suffix;
-    headerFile << (pic->is_grid_empty() ? "F" : "T") << "\t\t\tdoRestart\n";
-    headerFile << "\n";
+    if (receiveICOnly) {
+      // Save something here.
+    } else {
+      headerFile << "#RESTART" + command_suffix;
+      headerFile << (pic->is_grid_empty() ? "F" : "T") << "\t\t\tdoRestart\n";
+      headerFile << "\n";
+    }
 
     headerFile << "#NSTEP" + command_suffix;
     headerFile << tc->get_cycle() << "\t\t\tnStep\n";
@@ -472,8 +503,11 @@ void Domain::save_restart_header() {
     headerFile << nCell[iz_] << "\t\t\tnCellZ\n";
     headerFile << "\n";
 
-    pic->save_restart_header(headerFile);
-    pt->save_restart_header(headerFile);
+    if (pic)
+      pic->save_restart_header(headerFile);
+
+    if (pt)
+      pt->save_restart_header(headerFile);
 
     headerFile << "\n";
   }
@@ -548,7 +582,8 @@ void Domain::read_param(const bool readGridInfo) {
     bool isGridCommand = command == "#MAXBLOCKSIZE" ||
                          command == "#PERIODICITY" || command == "#GEOMETRY" ||
                          command == "#NCELL" || command == "#RESTART" ||
-                         command == "#INITFROMSWMF";
+                         command == "#INITFROMSWMF" ||
+                         command == "#RECEIVEICONLY";
 
     // Skip this command
     if (readGridInfo != isGridCommand)
@@ -582,6 +617,8 @@ void Domain::read_param(const bool readGridInfo) {
       param.read_var("useFluidSource", useFluidSource);
     } else if (command == "#INITFROMSWMF") {
       param.read_var("initFromSWMF", initFromSWMF);
+    } else if (command == "#RECEIVEICONLY") {
+      param.read_var("receiveICOnly", receiveICOnly);
     } else if (command == "#GEOMETRY") {
       for (int i = 0; i < nDim; ++i) {
         Real lo, hi;
@@ -772,9 +809,14 @@ void Domain::read_param(const bool readGridInfo) {
   } // While
 
   if (!readGridInfo) {
-    pic->post_process_param();
-    pt->post_process_param();
-    fi->post_process_param();
+    if (pic)
+      pic->post_process_param();
+
+    if (pt)
+      pt->post_process_param();
+
+    if (fi)
+      fi->post_process_param();
   }
 
   VisMF::SetNOutFiles(nFileField);
@@ -784,4 +826,7 @@ void Domain::read_param(const bool readGridInfo) {
 }
 
 //========================================================
-void Domain::write_plots(bool doForce) { pic->write_plots(doForce); }
+void Domain::write_plots(bool doForce) {
+  if (pic)
+    pic->write_plots(doForce);
+}
