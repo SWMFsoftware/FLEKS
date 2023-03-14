@@ -29,7 +29,10 @@ void ParticleTracker::set_ic(Pic& pic) {
     // write the initial state to disk.
     bool doSave = true;
     auto& tps = parts[i];
-    tps->move_and_save_particles(nodeE, nodeB, 0, 0, tc->get_time_si(), doSave);
+    for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+      tps->move_and_save_particles(nodeE, nodeB[iLevTest], 0, 0,
+                                   tc->get_time_si(), doSave);
+    }
     tps->write_particles(tc->get_cycle());
   }
 }
@@ -94,9 +97,12 @@ void ParticleTracker::update(Pic& pic) {
   bool doSave = savectr->is_time_to();
   for (int i = 0; i < parts.size(); i++) {
     auto& tps = parts[i];
-    tps->move_and_save_particles(nodeE, nodeB, tc->get_dt(), tc->get_next_dt(),
-                                 tc->get_time_si(),
-                                 tc->get_cycle() % dnSave == 0);
+
+    for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+      tps->move_and_save_particles(nodeE, nodeB[iLevTest], tc->get_dt(),
+                                   tc->get_next_dt(), tc->get_time_si(),
+                                   tc->get_cycle() % dnSave == 0);
+    }
 
     if (doSave) {
       Print() << printPrefix << "particle number of species " << i
@@ -121,7 +127,10 @@ void ParticleTracker::update(Pic& pic) {
 
 void ParticleTracker::update_field(Pic& pic) {
   MultiFab::Copy(nodeE, pic.nodeE, 0, 0, nodeE.nComp(), nodeE.nGrow());
-  MultiFab::Copy(nodeB, pic.nodeB, 0, 0, nodeB.nComp(), nodeB.nGrow());
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    MultiFab::Copy(nodeB[iLevTest], pic.nodeB[iLevTest], 0, 0,
+                   nodeB[iLevTest].nComp(), nodeB[iLevTest].nGrow());
+  }
 }
 
 void ParticleTracker::update_cell_status(Pic& pic) {
@@ -187,8 +196,15 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
     SetDistributionMap(0, dmIn);
   }
 
+  if (nodeB.empty()) {
+    nodeB.resize(max_level + 1);
+  }
+
   distribute_FabArray(nodeE, nGrid, DistributionMap(0), 3, nGst, false);
-  distribute_FabArray(nodeB, nGrid, DistributionMap(0), 3, nGst, false);
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    distribute_FabArray(nodeB[iLevTest], nGrid, DistributionMap(iLevTest), 3,
+                        nGst, false);
+  }
   distribute_FabArray(cellStatus, cGrid, DistributionMap(0), 1, nGst, false);
 
   update_cell_status(pic);

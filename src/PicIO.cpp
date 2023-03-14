@@ -65,9 +65,11 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
             get_value_at_loc(nodePlasma[iSpecies], Geom(0), xp, yp, zp, iVar);
       }
 
-    for (int iDir = ix_; iDir <= iz_; iDir++) {
-      dataPIC_I[iBx_ + iDir] =
-          get_value_at_loc(nodeB, Geom(0), xp, yp, zp, iDir);
+    for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+      for (int iDir = ix_; iDir <= iz_; iDir++) {
+        dataPIC_I[iBx_ + iDir] =
+            get_value_at_loc(nodeB[iLevTest], Geom(iLevTest), xp, yp, zp, iDir);
+      }
     }
 
     for (int iDir = ix_; iDir <= iz_; iDir++) {
@@ -307,13 +309,13 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
       const amrex::Array4<amrex::Real const>& arr = nodeE[mfi].array();
       value = arr(ix, iy, iz, iz_);
     } else if (var.substr(0, 2) == "Bx") {
-      const amrex::Array4<amrex::Real const>& arr = nodeB[mfi].array();
+      const amrex::Array4<amrex::Real const>& arr = nodeB[0][mfi].array();
       value = arr(ix, iy, iz, ix_);
     } else if (var.substr(0, 2) == "By") {
-      const amrex::Array4<amrex::Real const>& arr = nodeB[mfi].array();
+      const amrex::Array4<amrex::Real const>& arr = nodeB[0][mfi].array();
       value = arr(ix, iy, iz, iy_);
     } else if (var.substr(0, 2) == "Bz") {
-      const amrex::Array4<amrex::Real const>& arr = nodeB[mfi].array();
+      const amrex::Array4<amrex::Real const>& arr = nodeB[0][mfi].array();
       value = arr(ix, iy, iz, iz_);
     } else if (var.substr(0, 4) == "rhoS" || var.substr(0, 3) == "uxS" ||
                var.substr(0, 3) == "uyS" || var.substr(0, 3) == "uzS" ||
@@ -399,8 +401,8 @@ void Pic::save_restart_data() {
 
   std::string restartDir = component + "/restartOUT/";
   VisMF::Write(nodeE, restartDir + gridName + "_nodeE");
-  VisMF::Write(nodeB, restartDir + gridName + "_nodeB");
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    VisMF::Write(nodeB[iLevTest], restartDir + gridName + "_nodeB");
     VisMF::Write(centerB[iLevTest], restartDir + gridName + "_centerB");
   }
 
@@ -436,8 +438,10 @@ void Pic::read_restart() {
 
   std::string restartDir = component + "/restartIN/";
   VisMF::Read(nodeE, restartDir + gridName + "_nodeE");
-  VisMF::Read(nodeB, restartDir + gridName + "_nodeB");
+
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    VisMF::Read(nodeB[iLevTest], restartDir + gridName + "_nodeB");
+
     VisMF::Read(centerB[iLevTest], restartDir + gridName + "_centerB");
   }
 
@@ -694,10 +698,11 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   if (plotVars.find("B") != std::string::npos) {
     //------------------B---------------
     for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-      MultiFab::Copy(centerMF, centerB[iLevTest], 0, iStart, nodeB.nComp(), 0);
+      MultiFab::Copy(centerMF, centerB[iLevTest], 0, iStart,
+                     nodeB[iLevTest].nComp(), 0);
+      iStart += nodeB[iLevTest].nComp();
     }
 
-    iStart += nodeB.nComp();
     varNames.push_back("Bx");
     varNames.push_back("By");
     varNames.push_back("Bz");

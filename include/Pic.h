@@ -57,7 +57,7 @@ private:
 
   amrex::MultiFab nodeE;
   amrex::MultiFab nodeEth;
-  amrex::MultiFab nodeB;
+  amrex::Vector<amrex::MultiFab> nodeB;
   amrex::Vector<amrex::MultiFab> centerB;
 
   amrex::UMultiFab<RealMM> nodeMM;
@@ -346,6 +346,7 @@ public:
     amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
 
     distribute_arrays(lev, ba, dm);
+    
   };
 
   // Make a new level using provided BoxArray and DistributionMapping and

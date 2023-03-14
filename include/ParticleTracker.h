@@ -58,7 +58,9 @@ private:
 
   int nSpecies;
   amrex::Vector<std::unique_ptr<TestParticles> > parts;
-  amrex::MultiFab nodeE, nodeB;
+  amrex::MultiFab nodeE;
+
+  amrex::Vector<amrex::MultiFab> nodeB;
 
   amrex::Vector<unsigned long int> initPartNumber;
 
