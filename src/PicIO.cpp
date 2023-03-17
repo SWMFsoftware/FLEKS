@@ -70,11 +70,10 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
         dataPIC_I[iBx_ + iDir] =
             get_value_at_loc(nodeB[iLevTest], Geom(iLevTest), xp, yp, zp, iDir);
       }
-    }
-
-    for (int iDir = ix_; iDir <= iz_; iDir++) {
-      dataPIC_I[iEx_ + iDir] =
-          get_value_at_loc(nodeE, Geom(0), xp, yp, zp, iDir);
+      for (int iDir = ix_; iDir <= iz_; iDir++) {
+        dataPIC_I[iEx_ + iDir] =
+            get_value_at_loc(nodeE[iLevTest], Geom(iLevTest), xp, yp, zp, iDir);
+      }
     }
 
     // Combine PIC plasma data into MHD fluid data.
@@ -89,7 +88,8 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
                            std::array<double, nDim>& xMax_D) {
   if (isGridEmpty)
     return;
-
+  // Loop not implemented correctly // Talha
+  int iLevTest = 0;
   const auto plo = Geom(0).ProbLo();
   const auto plh = Geom(0).ProbHi();
 
@@ -104,7 +104,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
   const auto ghi = ubound(gbx);
 
   int iBlock = 0;
-  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodeE[iLevTest]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
     const auto& typeArr = nodeShare[mfi].array();
@@ -234,6 +234,9 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 void Pic::get_field_var(const VectorPointList& pointList_II,
                         const std::vector<std::string>& sVar_I,
                         MDArray<double>& var_II) {
+
+  // loop not implemented correctly // Talha
+  int iLevTest = 0;
   const int iBlk_ = 6;
 
   long nPoint = pointList_II.size();
@@ -241,7 +244,7 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
 
   int iBlockCount = 0;
   long iPoint = 0;
-  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodeE[iLevTest]); mfi.isValid(); ++mfi) {
     while (iPoint < nPoint) {
       const int ix = pointList_II[iPoint][ix_];
       const int iy = pointList_II[iPoint][iy_];
@@ -300,13 +303,14 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
       const auto dx = Geom(0).CellSize();
       value = iz * dx[iz_] + plo[iz_];
     } else if (var.substr(0, 2) == "Ex") {
-      const amrex::Array4<amrex::Real const>& arr = nodeE[mfi].array();
+      const amrex::Array4<amrex::Real const>& arr =
+          nodeE[0][mfi].array(); // Talha- check // no loop
       value = arr(ix, iy, iz, ix_);
     } else if (var.substr(0, 2) == "Ey") {
-      const amrex::Array4<amrex::Real const>& arr = nodeE[mfi].array();
+      const amrex::Array4<amrex::Real const>& arr = nodeE[0][mfi].array();
       value = arr(ix, iy, iz, iy_);
     } else if (var.substr(0, 2) == "Ez") {
-      const amrex::Array4<amrex::Real const>& arr = nodeE[mfi].array();
+      const amrex::Array4<amrex::Real const>& arr = nodeE[0][mfi].array();
       value = arr(ix, iy, iz, iz_);
     } else if (var.substr(0, 2) == "Bx") {
       const amrex::Array4<amrex::Real const>& arr = nodeB[0][mfi].array();
@@ -400,8 +404,8 @@ void Pic::save_restart_data() {
     return;
 
   std::string restartDir = component + "/restartOUT/";
-  VisMF::Write(nodeE, restartDir + gridName + "_nodeE");
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    VisMF::Write(nodeE[iLevTest], restartDir + gridName + "_nodeE");
     VisMF::Write(nodeB[iLevTest], restartDir + gridName + "_nodeB");
     VisMF::Write(centerB[iLevTest], restartDir + gridName + "_centerB");
   }
@@ -437,11 +441,10 @@ void Pic::read_restart() {
   Print() << "Pic::read_restart() start....." << std::endl;
 
   std::string restartDir = component + "/restartIN/";
-  VisMF::Read(nodeE, restartDir + gridName + "_nodeE");
 
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    VisMF::Read(nodeE[iLevTest], restartDir + gridName + "_nodeE");
     VisMF::Read(nodeB[iLevTest], restartDir + gridName + "_nodeB");
-
     VisMF::Read(centerB[iLevTest], restartDir + gridName + "_centerB");
   }
 
@@ -710,8 +713,11 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
   if (plotVars.find("E") != std::string::npos) {
     //-----------------E-----------------------------
-    average_node_to_cellcenter(centerMF, iStart, nodeE, 0, nodeE.nComp(), 0);
-    iStart += nodeE.nComp();
+    for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+      average_node_to_cellcenter(centerMF, iStart, nodeE[iLevTest], 0, nodeE[iLevTest].nComp(), 0);
+      iStart += nodeE[iLevTest].nComp();
+    }
+
     varNames.push_back("Ex");
     varNames.push_back("Ey");
     varNames.push_back("Ez");

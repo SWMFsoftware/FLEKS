@@ -55,7 +55,7 @@ private:
   std::shared_ptr<SourceInterface> source;
   std::shared_ptr<TimeCtr> tc;
 
-  amrex::MultiFab nodeE;
+  amrex::Vector<amrex::MultiFab> nodeE;
   amrex::MultiFab nodeEth;
   amrex::Vector<amrex::MultiFab> nodeB;
   amrex::Vector<amrex::MultiFab> centerB;

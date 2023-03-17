@@ -122,10 +122,13 @@ void Pic::distribute_arrays(int lev, const BoxArray& ba,
   if (centerB.empty()) {
     centerB.resize(nLev);
     nodeB.resize(nLev);
+    nodeE.resize(nLev);
   }
   distribute_FabArray(centerB[lev], ba, dm, 3, nGst);
   distribute_FabArray(nodeB[lev], nGrid, dm, 3,
-                      nGst); // might fail nGrid->transform from ba
+                      nGst); // might fail nGrid->transform from ba // Talha
+  distribute_FabArray(nodeE[lev], nGrid, dm, 3,
+                      nGst); // might fail nGrid->transform from ba // Talha
 }
 
 //==========================================================
@@ -171,7 +174,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   distribute_arrays(lev, cGrid, DistributionMap(lev));
 
   //===========Move field data around begin====================
-  distribute_FabArray(nodeE, nGrid, DistributionMap(0), 3, nGst);
+  // distribute_FabArray(nodeE, nGrid, DistributionMap(0), 3, nGst);
   distribute_FabArray(nodeEth, nGrid, DistributionMap(0), 3, nGst);
 
   // distribute_FabArray(centerB[0], cGrid, DistributionMap(0), 3, nGst);
@@ -374,8 +377,10 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   //--------------particles-----------------------------------
 
   {
-    int nGrid = get_local_node_or_cell_number(nodeE);
-    eSolver.init(nGrid, nDim, nDim, matvec_E_solver);
+    for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+      int nGrid = get_local_node_or_cell_number(nodeE[iLevTest]);
+      eSolver.init(nGrid, nDim, nDim, matvec_E_solver);
+    }
   }
 
   {
@@ -461,9 +466,9 @@ void Pic::set_nodeShare() {
 
 //==========================================================
 void Pic::fill_new_node_E() {
-
-  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
-    FArrayBox& fab = nodeE[mfi];
+  int iLevTest = 0;
+  for (MFIter mfi(nodeE[iLevTest]); mfi.isValid(); ++mfi) {
+    FArrayBox& fab = nodeE[iLevTest][mfi];
     const Box& box = mfi.validbox();
     const Array4<Real>& arrE = fab.array();
 
@@ -487,7 +492,7 @@ void Pic::fill_new_node_E() {
 //==========================================================
 void Pic::fill_new_node_B() {
   int iLevTest = 0; // will fail - loop //Talha
-  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodeE[iLevTest]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrB = nodeB[iLevTest][mfi].array();
 
@@ -545,14 +550,12 @@ void Pic::fill_E_B_fields() {
     fill_new_node_E();
     fill_new_node_B();
 
-    nodeE.FillBoundary(Geom(0).periodicity());
-
     for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+      nodeE[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
       nodeB[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
       apply_BC(nodeStatus, nodeB[iLevTest], 0, nDim, &Pic::get_node_B);
+      apply_BC(nodeStatus, nodeE[iLevTest], 0, nDim, &Pic::get_node_E);
     }
-
-    apply_BC(nodeStatus, nodeE, 0, nDim, &Pic::get_node_E);
 
     fill_new_center_B();
     centerB[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
@@ -614,8 +617,8 @@ void Pic::particle_mover() {
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
     if (useExplicitPIC) {
       // nodeE/nodeEth is at t_n/t_{n+1}, tempNode3 is at t_{n+0.5}
-      MultiFab::LinComb(tempNode3, 0.5, nodeEth, 0, 0.5, nodeE, 0, 0,
-                        nodeE.nComp(), nodeE.nGrow());
+      MultiFab::LinComb(tempNode3, 0.5, nodeEth, 0, 0.5, nodeE[iLevTest], 0, 0,
+                        nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
       for (int i = 0; i < nSpecies; i++) {
         parts[i]->mover(tempNode3, nodeB[iLevTest], tc->get_dt(),
                         tc->get_next_dt());
@@ -803,8 +806,10 @@ void Pic::calculate_phi(LinearSolver& solver) {
   timing_func(nameFunc);
 
   solver.reset(get_local_node_or_cell_number(centerDivE));
-
-  div_node_to_center(nodeE, tempCenter1, Geom(0).InvCellSize());
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    div_node_to_center(nodeE[iLevTest], tempCenter1,
+                       Geom(iLevTest).InvCellSize());
+  }
 
   Real coef = 1;
   if (Particles<>::particlePosition == Staggered) {
@@ -986,8 +991,9 @@ void Pic::update_E_expl() {
 
   timing_func(nameFunc);
 
-  MultiFab::Copy(nodeEth, nodeE, 0, 0, nodeE.nComp(), nodeE.nGrow());
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    MultiFab::Copy(nodeEth, nodeE[iLevTest], 0, 0, nodeE[iLevTest].nComp(),
+                   nodeE[iLevTest].nGrow());
     apply_BC(cellStatus, centerB[iLevTest], 0, centerB[iLevTest].nComp(),
              &Pic::get_center_B);
   }
@@ -997,16 +1003,16 @@ void Pic::update_E_expl() {
     dt2dx[i] = dt * Geom(0).InvCellSize(i);
   }
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    curl_center_to_node(centerB[iLevTest], nodeE, dt2dx);
+    curl_center_to_node(centerB[iLevTest], nodeE[iLevTest], dt2dx);
+    MultiFab::Saxpy(nodeE[iLevTest], -fourPI * dt, jHat, 0, 0,
+                    nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
+
+    MultiFab::Add(nodeE[iLevTest], nodeEth, 0, 0, nodeE[iLevTest].nComp(),
+                  nodeE[iLevTest].nGrow());
+
+    nodeE[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
+    apply_BC(nodeStatus, nodeE[iLevTest], 0, nDim, &Pic::get_node_E);
   }
-
-  MultiFab::Saxpy(nodeE, -fourPI * dt, jHat, 0, 0, nodeE.nComp(),
-                  nodeE.nGrow());
-
-  MultiFab::Add(nodeE, nodeEth, 0, 0, nodeE.nComp(), nodeE.nGrow());
-
-  nodeE.FillBoundary(Geom(0).periodicity());
-  apply_BC(nodeStatus, nodeE, 0, nDim, &Pic::get_node_E);
 }
 
 //==========================================================
@@ -1014,12 +1020,13 @@ void Pic::update_E_impl() {
   std::string nameFunc = "Pic::update_E_impl";
 
   timing_func(nameFunc);
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    eSolver.reset(get_local_node_or_cell_number(nodeE[iLevTest]));
 
-  eSolver.reset(get_local_node_or_cell_number(nodeE));
+    update_E_rhs(eSolver.rhs);
 
-  update_E_rhs(eSolver.rhs);
-
-  convert_3d_to_1d(nodeE, eSolver.xLeft);
+    convert_3d_to_1d(nodeE[iLevTest], eSolver.xLeft);
+  }
 
   update_E_matvec(eSolver.xLeft, eSolver.matvec, false);
 
@@ -1040,22 +1047,23 @@ void Pic::update_E_impl() {
   convert_1d_to_3d(eSolver.xLeft, nodeEth);
   nodeEth.SumBoundary(Geom(0).periodicity());
   nodeEth.FillBoundary(Geom(0).periodicity());
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    MultiFab::Add(nodeEth, nodeE[iLevTest], 0, 0, nodeEth.nComp(), nGst);
 
-  MultiFab::Add(nodeEth, nodeE, 0, 0, nodeEth.nComp(), nGst);
+    MultiFab::LinComb(nodeE[iLevTest], -(1.0 - fsolver.theta) / fsolver.theta,
+                      nodeE[iLevTest], 0, 1. / fsolver.theta, nodeEth, 0, 0,
+                      nodeE[iLevTest].nComp(), nGst);
 
-  MultiFab::LinComb(nodeE, -(1.0 - fsolver.theta) / fsolver.theta, nodeE, 0,
-                    1. / fsolver.theta, nodeEth, 0, 0, nodeE.nComp(), nGst);
-
-  apply_BC(nodeStatus, nodeE, 0, nDim, &Pic::get_node_E);
-  apply_BC(nodeStatus, nodeEth, 0, nDim, &Pic::get_node_E);
-
-  if (doSmoothE) {
-    calc_smooth_coef();
-    smooth_E(nodeEth);
-    smooth_E(nodeE);
+    apply_BC(nodeStatus, nodeE[iLevTest], 0, nDim, &Pic::get_node_E);
+    apply_BC(nodeStatus, nodeEth, 0, nDim, &Pic::get_node_E);
+    if (doSmoothE) {
+      calc_smooth_coef();
+      smooth_E(nodeEth);
+      smooth_E(nodeE[iLevTest]);
+    }
+    div_node_to_center(nodeE[iLevTest], centerDivE,
+                       Geom(iLevTest).InvCellSize());
   }
-
-  div_node_to_center(nodeE, centerDivE, Geom(0).InvCellSize());
 }
 
 //==========================================================
@@ -1215,8 +1223,9 @@ void Pic::update_E_rhs(double* rhs) {
   MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), temp2Node.nGrow());
 
   temp2Node.mult(fsolver.theta * tc->get_dt());
-
-  MultiFab::Add(temp2Node, nodeE, 0, 0, nodeE.nComp(), temp2Node.nGrow());
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    MultiFab::Add(temp2Node, nodeE[iLevTest], 0, 0, nodeE[iLevTest].nComp(), temp2Node.nGrow());
+  }
 
   convert_3d_to_1d(temp2Node, rhs);
 }
@@ -1457,9 +1466,10 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
 
 //==========================================================
 Real Pic::calc_E_field_energy() {
-  Real sum = 0;
-  for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
-    FArrayBox& fab = nodeE[mfi];
+ Real sum = 0; 
+ for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+  for (MFIter mfi(nodeE[iLevTest]); mfi.isValid(); ++mfi) {
+    FArrayBox& fab = nodeE[iLevTest][mfi];
     const Box& box = mfi.validbox();
     const Array4<Real>& arr = fab.array();
 
@@ -1484,7 +1494,7 @@ Real Pic::calc_E_field_energy() {
 
   if (!ParallelDescriptor::IOProcessor())
     sum = 0;
-
+}
   return sum;
 }
 
