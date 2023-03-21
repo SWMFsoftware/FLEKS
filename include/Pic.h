@@ -56,7 +56,7 @@ private:
   std::shared_ptr<TimeCtr> tc;
 
   amrex::Vector<amrex::MultiFab> nodeE;
-  amrex::MultiFab nodeEth;
+  amrex::Vector<amrex::MultiFab> nodeEth;
   amrex::Vector<amrex::MultiFab> nodeB;
   amrex::Vector<amrex::MultiFab> centerB;
 
@@ -346,8 +346,7 @@ public:
     amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
 
     distribute_arrays(lev, ba, dm);
-    
-  };
+    };
 
   // Make a new level using provided BoxArray and DistributionMapping and
   // fill with interpolated coarse level data.
@@ -375,16 +374,16 @@ public:
       const auto lo = lbound(bx);
       const auto hi = ubound(bx);
 
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (i > 69) {
+      // for (int k = lo.z; k <= hi.z; ++k)
+      //   for (int j = lo.y; j <= hi.y; ++j)
+      //     for (int i = lo.x; i <= hi.x; ++i) {
+      //       if (i > 69) {
 
-              if (j > 46) {
-                tagfab(i, j, k) = 1;
-              }
-            }
-          }
+      //         if (j > 46) {
+      //           tagfab(i, j, k) = 1;
+      //         }
+      //       }
+      //     }
     }
   };
 

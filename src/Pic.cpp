@@ -123,11 +123,14 @@ void Pic::distribute_arrays(int lev, const BoxArray& ba,
     centerB.resize(nLev);
     nodeB.resize(nLev);
     nodeE.resize(nLev);
+    nodeEth.resize(nLev);
   }
   distribute_FabArray(centerB[lev], ba, dm, 3, nGst);
   distribute_FabArray(nodeB[lev], nGrid, dm, 3,
                       nGst); // might fail nGrid->transform from ba // Talha
   distribute_FabArray(nodeE[lev], nGrid, dm, 3,
+                      nGst); // might fail nGrid->transform from ba // Talha
+  distribute_FabArray(nodeEth[lev], nGrid, dm, 3,
                       nGst); // might fail nGrid->transform from ba // Talha
 }
 
@@ -175,8 +178,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   //===========Move field data around begin====================
   // distribute_FabArray(nodeE, nGrid, DistributionMap(0), 3, nGst);
-  distribute_FabArray(nodeEth, nGrid, DistributionMap(0), 3, nGst);
-
+  // distribute_FabArray(nodeEth, nGrid, DistributionMap(0), 3, nGst);
   // distribute_FabArray(centerB[0], cGrid, DistributionMap(0), 3, nGst);
   // distribute_FabArray(nodeB[0], cGrid, DistributionMap(0), 3, nGst);
 
@@ -586,8 +588,8 @@ void Pic::update_part_loc_to_half_stage() {
 
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
     for (int i = 0; i < nSpecies; i++) {
-      parts[i]->update_position_to_half_stage(nodeEth, nodeB[iLevTest],
-                                              tc->get_dt());
+      parts[i]->update_position_to_half_stage(nodeEth[iLevTest],
+                                              nodeB[iLevTest], tc->get_dt());
     }
   }
 
@@ -617,8 +619,9 @@ void Pic::particle_mover() {
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
     if (useExplicitPIC) {
       // nodeE/nodeEth is at t_n/t_{n+1}, tempNode3 is at t_{n+0.5}
-      MultiFab::LinComb(tempNode3, 0.5, nodeEth, 0, 0.5, nodeE[iLevTest], 0, 0,
-                        nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
+      MultiFab::LinComb(tempNode3, 0.5, nodeEth[iLevTest], 0, 0.5,
+                        nodeE[iLevTest], 0, 0, nodeE[iLevTest].nComp(),
+                        nodeE[iLevTest].nGrow());
       for (int i = 0; i < nSpecies; i++) {
         parts[i]->mover(tempNode3, nodeB[iLevTest], tc->get_dt(),
                         tc->get_next_dt());
@@ -627,7 +630,7 @@ void Pic::particle_mover() {
     } else {
 
       for (int i = 0; i < nSpecies; i++) {
-        parts[i]->mover(nodeEth, nodeB[iLevTest], tc->get_dt(),
+        parts[i]->mover(nodeEth[iLevTest], nodeB[iLevTest], tc->get_dt(),
                         tc->get_next_dt());
       }
     }
@@ -992,8 +995,8 @@ void Pic::update_E_expl() {
   timing_func(nameFunc);
 
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    MultiFab::Copy(nodeEth, nodeE[iLevTest], 0, 0, nodeE[iLevTest].nComp(),
-                   nodeE[iLevTest].nGrow());
+    MultiFab::Copy(nodeEth[iLevTest], nodeE[iLevTest], 0, 0,
+                   nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
     apply_BC(cellStatus, centerB[iLevTest], 0, centerB[iLevTest].nComp(),
              &Pic::get_center_B);
   }
@@ -1007,8 +1010,8 @@ void Pic::update_E_expl() {
     MultiFab::Saxpy(nodeE[iLevTest], -fourPI * dt, jHat, 0, 0,
                     nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
 
-    MultiFab::Add(nodeE[iLevTest], nodeEth, 0, 0, nodeE[iLevTest].nComp(),
-                  nodeE[iLevTest].nGrow());
+    MultiFab::Add(nodeE[iLevTest], nodeEth[iLevTest], 0, 0,
+                  nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
 
     nodeE[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
     apply_BC(nodeStatus, nodeE[iLevTest], 0, nDim, &Pic::get_node_E);
@@ -1043,22 +1046,23 @@ void Pic::update_E_impl() {
   eSolver.solve(doReport);
   BL_PROFILE_VAR_STOP(eSolver);
 
-  nodeEth.setVal(0.0);
-  convert_1d_to_3d(eSolver.xLeft, nodeEth);
-  nodeEth.SumBoundary(Geom(0).periodicity());
-  nodeEth.FillBoundary(Geom(0).periodicity());
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    MultiFab::Add(nodeEth, nodeE[iLevTest], 0, 0, nodeEth.nComp(), nGst);
+    nodeEth[iLevTest].setVal(0.0);
+    convert_1d_to_3d(eSolver.xLeft, nodeEth[iLevTest]);
+    nodeEth[iLevTest].SumBoundary(Geom(iLevTest).periodicity());
+    nodeEth[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
+    MultiFab::Add(nodeEth[iLevTest], nodeE[iLevTest], 0, 0,
+                  nodeEth[iLevTest].nComp(), nGst);
 
     MultiFab::LinComb(nodeE[iLevTest], -(1.0 - fsolver.theta) / fsolver.theta,
-                      nodeE[iLevTest], 0, 1. / fsolver.theta, nodeEth, 0, 0,
-                      nodeE[iLevTest].nComp(), nGst);
+                      nodeE[iLevTest], 0, 1. / fsolver.theta, nodeEth[iLevTest],
+                      0, 0, nodeE[iLevTest].nComp(), nGst);
 
     apply_BC(nodeStatus, nodeE[iLevTest], 0, nDim, &Pic::get_node_E);
-    apply_BC(nodeStatus, nodeEth, 0, nDim, &Pic::get_node_E);
+    apply_BC(nodeStatus, nodeEth[iLevTest], 0, nDim, &Pic::get_node_E);
     if (doSmoothE) {
       calc_smooth_coef();
-      smooth_E(nodeEth);
+      smooth_E(nodeEth[iLevTest]);
       smooth_E(nodeE[iLevTest]);
     }
     div_node_to_center(nodeE[iLevTest], centerDivE,
@@ -1224,7 +1228,8 @@ void Pic::update_E_rhs(double* rhs) {
 
   temp2Node.mult(fsolver.theta * tc->get_dt());
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    MultiFab::Add(temp2Node, nodeE[iLevTest], 0, 0, nodeE[iLevTest].nComp(), temp2Node.nGrow());
+    MultiFab::Add(temp2Node, nodeE[iLevTest], 0, 0, nodeE[iLevTest].nComp(),
+                  temp2Node.nGrow());
   }
 
   convert_3d_to_1d(temp2Node, rhs);
@@ -1239,10 +1244,8 @@ void Pic::update_B() {
   timing_func(nameFunc);
   MultiFab dB(cGrid, DistributionMap(0), 3, nGst);
 
-  curl_node_to_center(nodeEth, dB, Geom(0).InvCellSize());
-
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-
+    curl_node_to_center(nodeEth[iLevTest], dB, Geom(0).InvCellSize());
     MultiFab::Saxpy(centerB[iLevTest], -tc->get_dt(), dB, 0, 0,
                     centerB[iLevTest].nComp(), centerB[iLevTest].nGrow());
     centerB[iLevTest].FillBoundary(Geom(0).periodicity());
@@ -1466,35 +1469,35 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
 
 //==========================================================
 Real Pic::calc_E_field_energy() {
- Real sum = 0; 
- for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-  for (MFIter mfi(nodeE[iLevTest]); mfi.isValid(); ++mfi) {
-    FArrayBox& fab = nodeE[iLevTest][mfi];
-    const Box& box = mfi.validbox();
-    const Array4<Real>& arr = fab.array();
+  Real sum = 0;
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    for (MFIter mfi(nodeE[iLevTest]); mfi.isValid(); ++mfi) {
+      FArrayBox& fab = nodeE[iLevTest][mfi];
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arr = fab.array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
 
-    // Do not count the right edges.
-    Real sumLoc = 0;
-    for (int k = lo.z; k <= hi.z - 1; ++k)
-      for (int j = lo.y; j <= hi.y - 1; ++j)
-        for (int i = lo.x; i <= hi.x - 1; ++i) {
-          sumLoc += pow(arr(i, j, k, ix_), 2) + pow(arr(i, j, k, iy_), 2) +
-                    pow(arr(i, j, k, iz_), 2);
-        }
+      // Do not count the right edges.
+      Real sumLoc = 0;
+      for (int k = lo.z; k <= hi.z - 1; ++k)
+        for (int j = lo.y; j <= hi.y - 1; ++j)
+          for (int i = lo.x; i <= hi.x - 1; ++i) {
+            sumLoc += pow(arr(i, j, k, ix_), 2) + pow(arr(i, j, k, iy_), 2) +
+                      pow(arr(i, j, k, iz_), 2);
+          }
 
-    const auto& dx = Geom(0).CellSize();
-    const Real coef = 0.5 * dx[ix_] * dx[iy_] * dx[iz_] / fourPI;
-    sum += sumLoc * coef;
+      const auto& dx = Geom(0).CellSize();
+      const Real coef = 0.5 * dx[ix_] * dx[iy_] * dx[iz_] / fourPI;
+      sum += sumLoc * coef;
+    }
+    ParallelDescriptor::ReduceRealSum(sum,
+                                      ParallelDescriptor::IOProcessorNumber());
+
+    if (!ParallelDescriptor::IOProcessor())
+      sum = 0;
   }
-  ParallelDescriptor::ReduceRealSum(sum,
-                                    ParallelDescriptor::IOProcessorNumber());
-
-  if (!ParallelDescriptor::IOProcessor())
-    sum = 0;
-}
   return sum;
 }
 
