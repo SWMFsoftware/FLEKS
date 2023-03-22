@@ -259,8 +259,8 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
       param.read_var("charge", QoQi_S[i]);
     }
     nFluid = nS;
-    // (rho, vx, vy, vz, p)*nFluid + B + E
-    nVarFluid = 5 * nFluid + 3 + 3;
+    // (rho, vx, vy, vz, p)*nFluid + B
+    nVarFluid = 5 * nFluid + 3;
     nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
   } else if (command == "#UNIFORMSTATE") {
     if (nS <= 0) {
@@ -302,6 +302,11 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     uniformState.push_back(tmp);
     param.read_var("ez", tmp);
     uniformState.push_back(tmp);
+
+    nFluid = nS;
+    // (rho, vx, vy, vz, p)*nFluid + B + E
+    nVarFluid = 5 * nFluid + 3 + 3;
+    nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
   }
 }
 
@@ -436,9 +441,21 @@ void FluidInterface::get_couple_node_loc(double* const pos_DI) {
 }
 
 void FluidInterface::set_node_fluid(const double* const data,
-                                    const int* const index) {
+                                    const int* const index,
+                                    const std::vector<std::string>& names) {
   if (isGridEmpty)
     return;
+
+  varNames.clear();
+  for (auto& name : names) {
+    varNames.push_back(name);
+  }
+
+  if (nVarCoupling > nVarFluid) {
+    varNames.push_back("jx");
+    varNames.push_back("jy");
+    varNames.push_back("jz");
+  }
 
   loop_through_node("fill", nullptr, data, index);
 
@@ -446,7 +463,7 @@ void FluidInterface::set_node_fluid(const double* const data,
   normalize_fluid_variables();
   convert_moment_to_velocity();
 
-  // save_amrex_file();
+  save_amrex_file();
 }
 
 void FluidInterface::set_node_fluid() {
@@ -524,7 +541,7 @@ void FluidInterface::calc_current() {
 void FluidInterface::normalize_fluid_variables() {
   for (int i = 0; i < nodeFluid.nComp(); ++i) {
     MultiFab tmpMF(nodeFluid, make_alias, i, 1);
-    tmpMF.mult(Si2No_V[i], tmpMF.nGrow());
+    tmpMF.mult(Si2No_V[i], tmpMF.nGrow());    
   }
 
   centerB.mult(Si2NoB, centerB.nGrow());

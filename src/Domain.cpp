@@ -308,13 +308,13 @@ void Domain::set_state_var(double *data, int *index,
   }
 
   if (receiveICOnly) {
-    fi->set_node_fluid(data, index);
+    fi->set_node_fluid(data, index, names);
   } else {
     if (stateOH) {
       // PT mode
-      stateOH->set_node_fluid(data, index);
+      stateOH->set_node_fluid(data, index, names);
     } else {
-      fi->set_node_fluid(data, index);
+      fi->set_node_fluid(data, index, names);
       pic->update_cells_for_pt();
     }
 
