@@ -17,12 +17,12 @@ bool isFirstSession = true;
 bool isInitialized = false;
 double timeNow = -1;
 
+MPI_Comm c_iComm;
+
 //==========================================================
 int fleks_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc) {
   // fortran communicator tranlated to C comunicator
-  MPI_Comm c_iComm = MPI_Comm_f2c(*iComm);
-
-  amrex::Initialize(c_iComm);
+  c_iComm = MPI_Comm_f2c(*iComm);
 
   return 0;
 }
@@ -30,6 +30,8 @@ int fleks_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc) {
 //==========================================================
 int fleks_init_(double *time) {
   timeNow = (*time);
+
+  amrex::Initialize(c_iComm);  
 
 #ifdef _PT_COMPONENT_
   int nDomain = 1;
@@ -158,7 +160,7 @@ int fleks_run_(double *time) {
   // step.
   if (tMax > 0)
     (*time) = tMax;
-    
+
   return 0;
 }
 
@@ -277,6 +279,7 @@ int fleks_end_() {
     // amrex::Finalize().
   }
 
+  amrex::Print() << "FLEKS: Finalizing AMReX..." << std::endl;
   amrex::Finalize();
 
   return 0;
