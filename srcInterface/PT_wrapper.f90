@@ -268,6 +268,10 @@ contains
     !--------------------------------------------------------------------------
     call CON_set_do_test(NameSub, DoTest, DoTestMe)
 
+
+    ! Initialize the data array to zero, since the corresponding locations
+    ! may be outside of the FLEKS domain for PT->OH coupling.
+    Data_VI = 0.0
     call fleks_get_for_oh( &
          nDimIn, nPoint, Xyz_DI, Data_VI, nVarIn)    
   end subroutine PT_get_for_oh

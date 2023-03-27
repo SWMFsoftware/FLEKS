@@ -358,6 +358,11 @@ void FluidInterface::find_mpi_rank_for_points(const int nPoint,
     // Check if this point is inside this FLEKS domain.
     if (range.contains(RealVect(x, y, z), 1e-6 * Geom(0).CellSize()[ix_])) {
       rank_I[i] = find_mpi_rank_from_coord(x, y, z);
+    } else {
+      // For PT->OH coupling, MHD does not know the range of FLEKS.
+      // If the location is outside the domain, set the rank to be the IO
+      // processor. FLEKS will ignore this point and 0.0 will be sent to MHD.
+      rank_I[i] = amrex::ParallelDescriptor::IOProcessorNumber();
     }
   }
 }
@@ -541,7 +546,7 @@ void FluidInterface::calc_current() {
 void FluidInterface::normalize_fluid_variables() {
   for (int i = 0; i < nodeFluid.nComp(); ++i) {
     MultiFab tmpMF(nodeFluid, make_alias, i, 1);
-    tmpMF.mult(Si2No_V[i], tmpMF.nGrow());    
+    tmpMF.mult(Si2No_V[i], tmpMF.nGrow());
   }
 
   centerB.mult(Si2NoB, centerB.nGrow());
