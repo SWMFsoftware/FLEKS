@@ -278,14 +278,15 @@ void Domain::set_ic() {
 
   // If it is restart, the values should have been restored before coupling with
   // GM. See Domain::init().
-  if (doRestart)
+  if (doRestart && !doRestartFIOnly)
     return;
 
   if (receiveICOnly)
     return;
 
 #ifdef _PT_COMPONENT_
-  fi->set_node_fluid();
+  if (!doRestartFIOnly)
+    fi->set_node_fluid();
 #endif
 
   pic->fill_new_cells();
@@ -374,7 +375,20 @@ void Domain::read_restart() {
   std::string restartDir = component + "/restartIN/";
 
   MultiFab tmp;
-  VisMF::Read(tmp, restartDir + gridName + "_centerB");
+  std::string filename = restartDir + gridName + "_centerB";
+
+  { // Try to open FLEKS0_centerB first. This file does not exist if the RESTART
+    // file only contains FI data. In this case, try to read
+    // FLEKS0_Interface_centerB instead.
+    std::ifstream iss;
+    iss.open(filename.c_str(), std::ios::in);
+    if (!iss.good()) {
+      doRestartFIOnly = true;
+      filename = restartDir + gridName + "_Interface_centerB";
+    }
+  }
+
+  VisMF::Read(tmp, filename);
   BoxArray baPic = tmp.boxArray();
   DistributionMapping dmPic = tmp.DistributionMap();
 
@@ -386,12 +400,14 @@ void Domain::read_restart() {
 
   fi->read_restart();
 
-  pic->read_restart();
-  write_plots(true);
-  pic->write_log(true, true);
+  if (!doRestartFIOnly) {
+    pic->read_restart();
+    write_plots(true);
+    pic->write_log(true, true);
 
-  pt->read_restart();
-  pt->write_log(true, true);
+    pt->read_restart();
+    pt->write_log(true, true);
+  }
 }
 
 //========================================================
@@ -452,13 +468,10 @@ void Domain::save_restart_header() {
 
     std::string command_suffix = "_" + gridName + "\n";
 
-    if (receiveICOnly) {
-      // Save something here.
-    } else {
-      headerFile << "#RESTART" + command_suffix;
-      headerFile << (pic->is_grid_empty() ? "F" : "T") << "\t\t\tdoRestart\n";
-      headerFile << "\n";
-    }
+    doRestart = !fi->is_grid_empty();
+    headerFile << "#RESTART" + command_suffix;
+    headerFile << (doRestart ? "T" : "F") << "\t\t\tdoRestart\n";
+    headerFile << "\n";
 
     headerFile << "#NSTEP" + command_suffix;
     headerFile << tc->get_cycle() << "\t\t\tnStep\n";

@@ -12,6 +12,8 @@ class Domain : public DomainGrid {
 private:
   bool doRestart = false;
 
+  bool doRestartFIOnly = false;
+
   ReadParam param;
 
   // Number of files per AMREX output.
