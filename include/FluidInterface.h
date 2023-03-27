@@ -230,6 +230,7 @@ public:
 
   int get_nS() const { return nS; }
 
+  const amrex::Vector<std::string>& get_var_names() const { return varNames; }  
   double get_Si2No_V(int idx) const { return (Si2No_V[idx]); }
   double get_Si2NoL() const { return (Si2NoL); }
   double get_Si2NoT() const { return Si2NoL / Si2NoV; }

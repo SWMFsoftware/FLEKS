@@ -473,6 +473,16 @@ void Domain::save_restart_header() {
     headerFile << (doRestart ? "T" : "F") << "\t\t\tdoRestart\n";
     headerFile << "\n";
 
+    if (receiveICOnly) {
+      headerFile << "#FLUIDVARNAMES" + command_suffix;
+      const amrex::Vector<std::string> names = fi->get_var_names();
+      headerFile << names.size() << "\t\t\tnVar\n";
+      for (int i = 0; i < names.size(); i++) {
+        headerFile << names[i] << "\t\t\tvarNames\n";
+      }
+      headerFile << "\n";
+    }
+
     headerFile << "#NSTEP" + command_suffix;
     headerFile << tc->get_cycle() << "\t\t\tnStep\n";
     headerFile << "\n";
