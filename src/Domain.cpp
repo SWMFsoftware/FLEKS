@@ -632,7 +632,7 @@ void Domain::read_param(const bool readGridInfo) {
       pt->read_param(command, param);
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
                command == "#BODYSIZE" || command == "#PLASMA" ||
-               command == "#UNIFORMSTATE") {
+               command == "#UNIFORMSTATE" || command == "#FLUIDVARNAMES" ) {
       fi->read_param(command, param);
     } else if (command == "#RESTART") {
       param.read_var("doRestart", doRestart);

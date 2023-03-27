@@ -250,6 +250,18 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     param.read_var("scaling", ScalingFactor);
   } else if (command == "#BODYSIZE") {
     param.read_var("scaling", rPlanetSi);
+  } else if (command == "#FLUIDVARNAMES") {
+    int nVar;
+    param.read_var("nVar", nVar);
+    restartNames.clear();
+    for (int i = 0; i < nVar; i++) {
+      std::string name;
+      param.read_var("name", name);
+      restartNames.push_back(name);
+    }
+
+    for (auto& var : restartNames)
+      cout << "var=" << var << endl;
   } else if (command == "#PLASMA") {
     param.read_var("nS", nS);
     QoQi_S.resize(nS);

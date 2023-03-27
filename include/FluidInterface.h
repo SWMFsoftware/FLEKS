@@ -103,6 +103,8 @@ protected:
   // Variable names of nodeFluid.
   amrex::Vector<std::string> varNames;
 
+  amrex::Vector<std::string> restartNames;
+
   amrex::Vector<double> uniformState;
 
   // Length in BATSRUS normalized unit -> Si
