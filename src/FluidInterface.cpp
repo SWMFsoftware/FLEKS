@@ -23,17 +23,32 @@ void FluidInterface::post_process_param() {
   // This is just a guess. To be improved.
   MhdNo2SiL = rPlanetSi;
 
-  {
-    iRho_I.resize(nS);
-    iRhoUx_I.resize(nS);
-    iRhoUy_I.resize(nS);
-    iRhoUz_I.resize(nS);
-    iUx_I.resize(nS);
-    iUy_I.resize(nS);
-    iUz_I.resize(nS);
-    iPpar_I.resize(nS);
-    iP_I.resize(nS);
+  iRho_I.resize(nS);
+  iRhoUx_I.resize(nS);
+  iRhoUy_I.resize(nS);
+  iRhoUz_I.resize(nS);
+  iUx_I.resize(nS);
+  iUy_I.resize(nS);
+  iUz_I.resize(nS);
+  iPpar_I.resize(nS);
+  iP_I.resize(nS);
 
+  if (restartNames.size() > 0) {
+    int iNeu = 0;
+    for (int i = 0; i < restartNames.size(); i++) {
+      const auto& name = restartNames[i];
+      if (name.size() == 6) {
+        if (name.compare(0, 2, "ne") == 0 && name.compare(3, 3, "rho")) {
+          iRho_I[iNeu] = i;
+          iUx_I[iNeu] = i + 1;
+          iUy_I[iNeu] = i + 2;
+          iUz_I[iNeu] = i + 3;
+          iP_I[iNeu] = i + 4;
+          iNeu++;
+        }
+      }
+    }
+  } else {
     int idx = 0;
     for (int i = 0; i < nS; i++) {
       iRho_I[i] = idx++;
@@ -67,10 +82,12 @@ void FluidInterface::post_process_param() {
       iJz = iJx + 2;
       varNames.push_back("jz");
     }
-    iRhoUx_I = iUx_I;
-    iRhoUy_I = iUy_I;
-    iRhoUz_I = iUz_I;
   }
+
+  iRhoUx_I = iUx_I;
+  iRhoUy_I = iUy_I;
+  iRhoUz_I = iUz_I;
+
   calc_normalized_units();
 }
 
@@ -260,8 +277,39 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
       restartNames.push_back(name);
     }
 
-    for (auto& var : restartNames)
-      cout << "var=" << var << endl;
+    if (restartNames.size() > 0) {
+      // Assume only use neutral fluids
+      int nNeuFluid = 0;
+      int nIon = 0;
+      for (auto& name : restartNames) {
+        if (name.size() == 6) {
+          // Assume a neutral fluid's density is named as "ne*rho"
+          if (name.compare(0, 2, "ne") == 0 && name.compare(3, 3, "rho") == 0) {
+            nNeuFluid++;
+            Print() << "name " << name << " size = " << name.size() << endl;
+          }
+        }
+
+        if (name == "rho")
+          nIon++;
+      }
+
+      nS = nNeuFluid;
+      nFluid = nS;
+
+      // Ion fluid is useless for this case.
+      nVarFluid = 5 * (nFluid + nIon) + 3;
+      nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
+
+      QoQi_S.resize(nS);
+      MoMi_S.resize(nS);
+
+      for (int i = 0; i < nS; i++) {
+        QoQi_S[i] = 0.0;
+        MoMi_S[i] = 1.0;
+      }
+    }
+
   } else if (command == "#PLASMA") {
     param.read_var("nS", nS);
     QoQi_S.resize(nS);
