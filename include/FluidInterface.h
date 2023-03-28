@@ -220,7 +220,18 @@ public:
 
   void get_for_points(const int nDim, const int nPoint,
                       const double* const xyz_I, double* const data_I,
-                      const int nVar, const double coef = 1);
+                      const int nVar, const double coef = 1,
+                      amrex::Vector<int> idxMap = amrex::Vector<int>());
+
+  void get_moments_for_points(const int nDim, const int nPoint,
+                              const double* const xyz_I, double* const data_I,
+                              const int nVar, const double coef = 1,
+                              const int iFluid = 0) {
+    amrex::Vector<int> idxMap = { iRho_I[iFluid], iRhoUx_I[iFluid],
+                                  iRhoUy_I[iFluid], iRhoUz_I[iFluid],
+                                  iP_I[iFluid] };
+    get_for_points(nDim, nPoint, xyz_I, data_I, nVar, coef, idxMap);
+  }
 
   int get_nCellPerPatch() const { return nCellPerPatch; }
 
@@ -232,7 +243,7 @@ public:
 
   int get_nS() const { return nS; }
 
-  const amrex::Vector<std::string>& get_var_names() const { return varNames; }  
+  const amrex::Vector<std::string>& get_var_names() const { return varNames; }
   double get_Si2No_V(int idx) const { return (Si2No_V[idx]); }
   double get_Si2NoL() const { return (Si2NoL); }
   double get_Si2NoT() const { return Si2NoL / Si2NoV; }
@@ -311,7 +322,6 @@ public:
     amrex::VisMF::Read(nodeFluid,
                        restartDir + gridName + "_Interface_nodeFluid");
 
-                           
     amrex::VisMF::Read(centerB, restartDir + gridName + "_Interface_centerB");
   }
 
@@ -319,6 +329,36 @@ public:
                    const int j, const int k, const int iVar) {
     const amrex::Array4<amrex::Real>& arr = nodeFluid[mfi].array();
     arr(i, j, k, iVar) += val;
+  }
+
+  void add_rho_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
+                      const amrex::Real x, const amrex::Real y,
+                      const amrex::Real z, const int iFluid) {
+    add_to_mf(val, nodeFluid, mfi, Geom(0), x, y, z, iRho_I[iFluid]);
+  }
+
+  void add_mx_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
+                     const amrex::Real x, const amrex::Real y,
+                     const amrex::Real z, const int iFluid) {
+    add_to_mf(val, nodeFluid, mfi, Geom(0), x, y, z, iRhoUx_I[iFluid]);
+  }
+
+  void add_my_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
+                     const amrex::Real x, const amrex::Real y,
+                     const amrex::Real z, const int iFluid) {
+    add_to_mf(val, nodeFluid, mfi, Geom(0), x, y, z, iRhoUy_I[iFluid]);
+  }
+
+  void add_mz_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
+                     const amrex::Real x, const amrex::Real y,
+                     const amrex::Real z, const int iFluid) {
+    add_to_mf(val, nodeFluid, mfi, Geom(0), x, y, z, iRhoUz_I[iFluid]);
+  }
+
+  void add_p_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
+                    const amrex::Real x, const amrex::Real y,
+                    const amrex::Real z, const int iFluid) {
+    add_to_mf(val, nodeFluid, mfi, Geom(0), x, y, z, iP_I[iFluid]);
   }
 
   void add_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,

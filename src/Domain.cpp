@@ -363,7 +363,7 @@ void Domain::get_source_for_points(const int nDim, const int nPoint,
 
   sourcePT2OH->sum_boundary();
 
-  sourcePT2OH->get_for_points(nDim, nPoint, xyz_I, data_I, nVar, invDt);
+  sourcePT2OH->get_moments_for_points(nDim, nPoint, xyz_I, data_I, nVar, invDt);
 
   sourcePT2OH->set_period_start_si(t1);
 

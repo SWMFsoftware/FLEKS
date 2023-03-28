@@ -1339,7 +1339,8 @@ void FluidInterface::save_amrex_file() {
 void FluidInterface::get_for_points(const int nDim, const int nPoint,
                                     const double* const xyz_I,
                                     double* const data_I, const int nVar,
-                                    const double coef) {
+                                    const double coef,
+                                    amrex::Vector<int> idxMap) {
   std::string nameFunc = "FI::get_for_points";
 
   const RealBox& range = Geom(0).ProbDomain();
@@ -1357,10 +1358,15 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
     if (!range.contains(RealVect(xp, yp, zp), 1e-10))
       continue;
 
+    if (idxMap.size() == 0) {
+      for (int i = 0; i < nVar; i++)
+        idxMap.push_back(i);
+    }
+
     const int iStart = iPoint * nVar;
     for (int iVar = 0; iVar < nVar; iVar++) {
       data_I[iStart + iVar] =
-          get_value_at_loc(nodeFluid, Geom(0), xp, yp, zp, iVar) * coef;
+          get_value_at_loc(nodeFluid, Geom(0), xp, yp, zp, idxMap[iVar]) * coef;
     }
   }
 }
