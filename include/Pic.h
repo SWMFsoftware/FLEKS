@@ -130,6 +130,7 @@ public:
       std::shared_ptr<FluidInterface> &fluidIn, std::shared_ptr<TimeCtr> &tcIn,
       int id = 0)
       : Grid(gm, amrInfo, nGst, id), fi(fluidIn), tc(tcIn) {
+    init_Pic();
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 
@@ -166,7 +167,7 @@ public:
 
   void distribute_arrays(int lev, const amrex::BoxArray &ba,
                          const amrex::DistributionMapping &dm);
-
+  void init_Pic();
   void fill_new_cells();
   void fill_E_B_fields();
 
@@ -344,9 +345,7 @@ public:
       const amrex::DistributionMapping &dm) override {
     std::string nameFunc = "Pic::MakeNewLevelFromScratch";
     amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
-
-    distribute_arrays(lev, ba, dm);
-    };
+  };
 
   // Make a new level using provided BoxArray and DistributionMapping and
   // fill with interpolated coarse level data.
@@ -374,16 +373,16 @@ public:
       const auto lo = lbound(bx);
       const auto hi = ubound(bx);
 
-      // for (int k = lo.z; k <= hi.z; ++k)
-      //   for (int j = lo.y; j <= hi.y; ++j)
-      //     for (int i = lo.x; i <= hi.x; ++i) {
-      //       if (i > 69) {
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (i > 69) {
 
-      //         if (j > 46) {
-      //           tagfab(i, j, k) = 1;
-      //         }
-      //       }
-      //     }
+              if (j > 46) {
+                tagfab(i, j, k) = 1;
+              }
+            }
+          }
     }
   };
 

@@ -38,9 +38,11 @@ protected:
   amrex::BoxArray activeRegionBA;
 
   // Cell center
-  amrex::BoxArray cGrid;
+  amrex::BoxArray& cGrid = grids[0];
+  amrex::Vector<amrex::BoxArray>& cGrids = grids;
 
   // Nodal
+  amrex::Vector<amrex::BoxArray> nGrids;
   amrex::BoxArray nGrid;
 
   // The status of a cell could be: iBoundary_, iOnNew_, or iOnOld_.
@@ -92,7 +94,7 @@ public:
 
     isFake2D = Geom(0).Domain().bigEnd(iz_) == Geom(0).Domain().smallEnd(iz_);
   };
-  
+
   ~Grid() = default;
 
   int get_n_ghost() const { return nGst; }

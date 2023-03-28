@@ -116,15 +116,19 @@ void Pic::fill_new_cells() {
 }
 
 //==========================================================
-void Pic::distribute_arrays(int lev, const BoxArray& ba,
-                            const DistributionMapping& dm) {
+void Pic::init_Pic() {
   const int nLev = max_level + 1;
-  if (centerB.empty()) {
+  {
     centerB.resize(nLev);
     nodeB.resize(nLev);
     nodeE.resize(nLev);
     nodeEth.resize(nLev);
+    nGrids.resize(nLev);
   }
+}
+//==========================================================
+void Pic::distribute_arrays(int lev, const BoxArray& ba,
+                            const DistributionMapping& dm) {
   distribute_FabArray(centerB[lev], ba, dm, 3, nGst);
   distribute_FabArray(nodeB[lev], nGrid, dm, 3,
                       nGst); // might fail nGrid->transform from ba // Talha
@@ -157,7 +161,6 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   BoxArray cGridOld = cGrid;
 
   cGrid = centerBAIn;
-  nGrid = convert(cGrid, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
 
   if (!cGrid.empty()) {
     // This method will call MakeNewLevelFromScratch() and
@@ -173,6 +176,10 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     }
   }
 
+  for (int ii = 0; ii <= finest_level; ii++) {
+    nGrids[ii] = convert(cGrids[ii], amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
+  }
+  nGrid = nGrids[0];
   int lev = 0;
   distribute_arrays(lev, cGrid, DistributionMap(lev));
 
