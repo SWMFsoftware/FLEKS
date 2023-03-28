@@ -2049,21 +2049,25 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         p.rdata(iqp_) = p.rdata(iqp_) - massExchange;
       }
 
-      // Q: Why is (neu2ion-ion2neu) divided by rhoIon?
-      // A: What passed between PT and OH is 'source per ion density'
-      // instead of source. The ion density will be multiplied back in OH
-      // ModUser.f90
-
-      sourcePT2OH->add_rho_to_loc((neu2ion[iRho_] - ion2neu[iRho_]) / rhoIon,
-                                  pti, xp, yp, zp, fluidID);
-      sourcePT2OH->add_mx_to_loc((neu2ion[iRhoUx_] - ion2neu[iRhoUx_]) / rhoIon,
-                                 pti, xp, yp, zp, fluidID);
-      sourcePT2OH->add_my_to_loc((neu2ion[iRhoUy_] - ion2neu[iRhoUy_]) / rhoIon,
-                                 pti, xp, yp, zp, fluidID);
-      sourcePT2OH->add_mz_to_loc((neu2ion[iRhoUz_] - ion2neu[iRhoUz_]) / rhoIon,
-                                 pti, xp, yp, zp, fluidID);
-      sourcePT2OH->add_p_to_loc((neu2ion[iP_] - ion2neu[iP_]) / rhoIon, pti, xp,
-                                yp, zp, fluidID);
+      {
+        // Q: Why is (neu2ion-ion2neu) divided by rhoIon?
+        // A: What passed between PT and OH is 'source per ion density'
+        // instead of source. The ion density will be multiplied back in OH
+        // ModUser.f90
+        sourcePT2OH->add_rho_to_loc((neu2ion[iRho_] - ion2neu[iRho_]) / rhoIon,
+                                    pti, xp, yp, zp, fluidID);
+        sourcePT2OH->add_mx_to_loc((neu2ion[iRhoUx_] - ion2neu[iRhoUx_]) /
+                                       rhoIon,
+                                   pti, xp, yp, zp, fluidID);
+        sourcePT2OH->add_my_to_loc((neu2ion[iRhoUy_] - ion2neu[iRhoUy_]) /
+                                       rhoIon,
+                                   pti, xp, yp, zp, fluidID);
+        sourcePT2OH->add_mz_to_loc((neu2ion[iRhoUz_] - ion2neu[iRhoUz_]) /
+                                       rhoIon,
+                                   pti, xp, yp, zp, fluidID);
+        sourcePT2OH->add_p_to_loc((neu2ion[iP_] - ion2neu[iP_]) / rhoIon, pti,
+                                  xp, yp, zp, fluidID);
+      }
 
       { // Add source to nodes.
         Real si2no_v[5];
@@ -2083,9 +2087,16 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         ion2neu[iP_] = (gamma - 1) * (ion2neu[iE_] - 0.5 * m2 / ion2neu[iRho_]);
 
         // source saves changing rate (density/s...).
-        for (int i = iRho_; i <= iP_; i++) {
-          source->add_to_loc(ion2neu[i] * si2no_v[i] / dt, pti, xp, yp, zp, i);
-        }
+        source->add_rho_to_loc(ion2neu[iRho_] * si2no_v[iRho_] / dt, pti, xp,
+                               yp, zp, speciesID);
+        source->add_mx_to_loc(ion2neu[iRhoUx_] * si2no_v[iRhoUx_] / dt, pti, xp,
+                              yp, zp, speciesID);
+        source->add_my_to_loc(ion2neu[iRhoUy_] * si2no_v[iRhoUy_] / dt, pti, xp,
+                              yp, zp, speciesID);
+        source->add_mz_to_loc(ion2neu[iRhoUz_] * si2no_v[iRhoUz_] / dt, pti, xp,
+                              yp, zp, speciesID);
+        source->add_p_to_loc(ion2neu[iP_] * si2no_v[iP_] / dt, pti, xp, yp, zp,
+                             speciesID);
       }
 
       // Print() << "sourcePT2OH rho= "
