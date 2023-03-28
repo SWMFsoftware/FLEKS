@@ -169,7 +169,7 @@ public:
 
   void read_param(const std::string& command, ReadParam& param);
 
-  void post_process_param();
+  void post_process_param(bool receiveICOnly = false);
 
   void set_var_idx();
 
@@ -310,6 +310,8 @@ public:
     std::string restartDir = component + "/restartIN/";
     amrex::VisMF::Read(nodeFluid,
                        restartDir + gridName + "_Interface_nodeFluid");
+
+                           
     amrex::VisMF::Read(centerB, restartDir + gridName + "_Interface_centerB");
   }
 

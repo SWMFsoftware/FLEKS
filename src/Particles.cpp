@@ -199,7 +199,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           }
 
           particles.push_back(p);
-          // AllPrint() << "p=" << p << std::endl;
+          AllPrint() << "p=" << p << std::endl;
           icount++;
         }
       }

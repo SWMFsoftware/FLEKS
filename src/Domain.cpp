@@ -632,7 +632,7 @@ void Domain::read_param(const bool readGridInfo) {
       pt->read_param(command, param);
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
                command == "#BODYSIZE" || command == "#PLASMA" ||
-               command == "#UNIFORMSTATE" || command == "#FLUIDVARNAMES" ) {
+               command == "#UNIFORMSTATE" || command == "#FLUIDVARNAMES") {
       fi->read_param(command, param);
     } else if (command == "#RESTART") {
       param.read_var("doRestart", doRestart);
@@ -839,7 +839,7 @@ void Domain::read_param(const bool readGridInfo) {
       pt->post_process_param();
 
     if (fi)
-      fi->post_process_param();
+      fi->post_process_param(receiveICOnly);
   }
 
   VisMF::SetNOutFiles(nFileField);

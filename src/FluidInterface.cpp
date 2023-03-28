@@ -8,7 +8,7 @@
 using namespace amrex;
 using namespace std;
 
-void FluidInterface::post_process_param() {
+void FluidInterface::post_process_param(bool receiveICOnly) {
   if (initFromSWMF)
     return;
 
@@ -23,6 +23,14 @@ void FluidInterface::post_process_param() {
   // This is just a guess. To be improved.
   MhdNo2SiL = rPlanetSi;
 
+  if (receiveICOnly) {
+    nS = 5;
+    nFluid = nS;
+    // (rho, vx, vy, vz, p)*nFluid + B
+    nVarFluid = 5 * nFluid + 3;
+    nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
+  }
+
   iRho_I.resize(nS);
   iRhoUx_I.resize(nS);
   iRhoUy_I.resize(nS);
@@ -33,12 +41,13 @@ void FluidInterface::post_process_param() {
   iPpar_I.resize(nS);
   iP_I.resize(nS);
 
+  iEx = -1;
   if (restartNames.size() > 0) {
     int iNeu = 0;
     for (int i = 0; i < restartNames.size(); i++) {
       const auto& name = restartNames[i];
       if (name.size() == 6) {
-        if (name.compare(0, 2, "ne") == 0 && name.compare(3, 3, "rho")) {
+        if (name.compare(0, 2, "ne") == 0 && name.compare(3, 3, "rho") == 0) {
           iRho_I[iNeu] = i;
           iUx_I[iNeu] = i + 1;
           iUy_I[iNeu] = i + 2;
@@ -47,8 +56,59 @@ void FluidInterface::post_process_param() {
           iNeu++;
         }
       }
+
+      if (name.compare(0, 2, "bx") == 0) {
+        iBx = i;
+      } else if (name.compare(0, 2, "by") == 0) {
+        iBy = i;
+      } else if (name.compare(0, 2, "bz") == 0) {
+        iBz = i;
+      }
+    }
+
+    if (nVarCoupling > nVarFluid) {
+      iJx = nVarFluid;
+      iJy = iJx + 1;
+      iJz = iJx + 2;
+    }
+
+  } else if (receiveICOnly) {
+    if (nS != 5) {
+      amrex::Abort("Error: nS != 5");
+    }
+
+    MoMi_S.resize(nS);
+    QoQi_S.resize(nS);
+    int iFluid = 0;
+    int iFluidStart[5] = { 0, 8, 13, 18, 23 };
+
+    for (int iFluid = 0; iFluid < nS; iFluid++) {
+      iRho_I[iFluid] = iFluidStart[iFluid];
+      iUx_I[iFluid] = iFluidStart[iFluid] + 1;
+      iUy_I[iFluid] = iFluidStart[iFluid] + 2;
+      iUz_I[iFluid] = iFluidStart[iFluid] + 3;
+
+      MoMi_S[iFluid] = 0;
+      if (iFluid == 0) {
+        iP_I[iFluid] = iFluidStart[iFluid] + 7;
+        QoQi_S[iFluid] = 1.0;
+      } else {
+        iP_I[iFluid] = iFluidStart[iFluid] + 4;
+        QoQi_S[iFluid] = 0.0;
+      }
+    }
+
+    iBx = 4;
+    iBy = iBx + 1;
+    iBz = iBy + 1;
+
+    if (nVarCoupling > nVarFluid) {
+      iJx = nVarFluid;
+      iJy = iJx + 1;
+      iJz = iJx + 2;
     }
   } else {
+    // Assume the variables are set through command #UNIFORMSTATE
     int idx = 0;
     for (int i = 0; i < nS; i++) {
       iRho_I[i] = idx++;
@@ -89,6 +149,13 @@ void FluidInterface::post_process_param() {
   iRhoUz_I = iUz_I;
 
   calc_normalized_units();
+
+  for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
+    Print() << printPrefix;
+    printf("iFluid=%d, iRho_I[iFluid]=%d, iUx_I[iFluid]=%d, "
+           "iUy_I[iFluid]=%d, iUz_I[iFluid]=%d\n",
+           iFluid, iRho_I[iFluid], iUx_I[iFluid], iUy_I[iFluid], iUz_I[iFluid]);
+  }
 }
 
 FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
@@ -487,6 +554,8 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
                 int idx;
                 idx = iVar + nVarFluid * (index[nIdxCount] - 1);
                 arr(i, j, k, iVar) = data[idx];
+                Print() << "i,j,k,iVar,arr" << i << " " << j << " " << k << " "
+                        << iVar << " " << arr(i, j, k, iVar) << "\n";
               }
               nIdxCount++;
             }
@@ -640,11 +709,27 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly) {
             arr(i, j, k, iUz_I[0]) /= Rhot;
           } else {
             for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
+              Print() << printPrefix;
+              printf("iFluid=%d, iRho_I[iFluid]=%d, iUx_I[iFluid]=%d, "
+                     "iUy_I[iFluid]=%d, iUz_I[iFluid]=%d\n",
+                     iFluid, iRho_I[iFluid], iUx_I[iFluid], iUy_I[iFluid],
+                     iUz_I[iFluid]);
               const double& rho = arr(i, j, k, iRho_I[iFluid]);
               if (rho > 0) {
+                printf("i=%d, j=%d, k=%d, rho=%e, mx=%e, my=%e, mz=%e\n", i, j,
+                       k, rho, arr(i, j, k, iUx_I[iFluid]),
+                       arr(i, j, k, iUx_I[iFluid]),
+                       arr(i, j, k, iUy_I[iFluid]));
+
                 arr(i, j, k, iUx_I[iFluid]) /= rho;
                 arr(i, j, k, iUy_I[iFluid]) /= rho;
                 arr(i, j, k, iUz_I[iFluid]) /= rho;
+
+                printf("i=%d, j=%d, k=%d, rho=%e, ux=%e, uy=%e, uz=%e\n", i, j,
+                       k, rho, arr(i, j, k, iUx_I[iFluid]),
+                       arr(i, j, k, iUx_I[iFluid]),
+                       arr(i, j, k, iUy_I[iFluid]));
+
               } else {
                 const Real* dx = Geom(0).CellSize();
                 const auto plo = Geom(0).ProbLo();
@@ -781,7 +866,7 @@ void FluidInterface::calc_normalized_units() {
     Si2No_V[iJz] = Si2NoJ;
   }
 
-  if (useElectronFluid) {
+  if (useElectronFluid && iEx >= 0) {
     Si2No_V[iEx] = Si2NoE;
     Si2No_V[iEy] = Si2NoE;
     Si2No_V[iEz] = Si2NoE;
@@ -1231,7 +1316,7 @@ void FluidInterface::save_amrex_file() {
 
   for (int i = 0; i < nodeFluid.nComp(); i++) {
     Real no2out = No2Si_V[i];
-    nodeFluid.mult(no2out, i, 1, nodeFluid.nGrow());
+    // nodeFluid.mult(no2out, i, 1, nodeFluid.nGrow());
   }
 
   if (varNames.size() != nodeFluid.nComp()) {
@@ -1247,7 +1332,7 @@ void FluidInterface::save_amrex_file() {
 
   for (int i = 0; i < nodeFluid.nComp(); i++) {
     Real out2no = Si2No_V[i];
-    nodeFluid.mult(out2no, i, 1, nodeFluid.nGrow());
+    // nodeFluid.mult(out2no, i, 1, nodeFluid.nGrow());
   }
 }
 

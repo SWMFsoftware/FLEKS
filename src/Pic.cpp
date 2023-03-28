@@ -554,6 +554,8 @@ void Pic::fill_new_center_B() {
 
 //==========================================================
 void Pic::fill_E_B_fields() {
+  if (!solveEM)
+    return;
 
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
     fill_new_node_E();
