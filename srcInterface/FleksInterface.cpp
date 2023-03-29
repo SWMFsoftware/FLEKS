@@ -16,6 +16,7 @@ std::string paramString;
 bool isFirstSession = true;
 bool isInitialized = false;
 double timeNow = -1;
+bool isAMReXInitialized = false;
 
 MPI_Comm c_iComm;
 
@@ -31,7 +32,10 @@ int fleks_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc) {
 int fleks_init_(double *time) {
   timeNow = (*time);
 
-  amrex::Initialize(c_iComm);  
+  if (!isAMReXInitialized) {
+    amrex::Initialize(c_iComm);
+    isAMReXInitialized = true;
+  }
 
 #ifdef _PT_COMPONENT_
   int nDomain = 1;
