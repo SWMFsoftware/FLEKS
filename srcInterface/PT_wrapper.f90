@@ -202,6 +202,8 @@ contains
     character(len=*), parameter:: NameSub = 'PT_find_points'
     !--------------------------------------------------------------------------
     call CON_set_do_test(NameSub, DoTest, DoTestMe)
+
+    iProc_I = -777
     call fleks_find_points(nPoint, Xyz_DI, iProc_I)
 
     write(*,*)NameSub,'nPoint = ', nPoint

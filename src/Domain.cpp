@@ -371,20 +371,21 @@ void Domain::read_restart() {
   std::string restartDir = component + "/restartIN/";
 
   MultiFab tmp;
-  std::string filename = restartDir + gridName + "_centerB";
+  std::string nameMF = restartDir + gridName + "_centerB";
 
   { // Try to open FLEKS0_centerB first. This file does not exist if the RESTART
     // file only contains FI data. In this case, try to read
     // FLEKS0_Interface_centerB instead.
     std::ifstream iss;
-    iss.open(filename.c_str(), std::ios::in);
+    std::string headerFile = nameMF + "_H";
+    iss.open(headerFile.c_str(), std::ios::in);
     if (!iss.good()) {
       doRestartFIOnly = true;
-      filename = restartDir + gridName + "_Interface_centerB";
+      nameMF = restartDir + gridName + "_Interface_centerB";
     }
   }
 
-  VisMF::Read(tmp, filename);
+  VisMF::Read(tmp, nameMF);
   BoxArray baPic = tmp.boxArray();
   DistributionMapping dmPic = tmp.DistributionMap();
 

@@ -154,7 +154,8 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
   //   Print() << printPrefix;
   //   printf("iFluid=%d, iRho_I[iFluid]=%d, iUx_I[iFluid]=%d, "
   //          "iUy_I[iFluid]=%d, iUz_I[iFluid]=%d\n",
-  //          iFluid, iRho_I[iFluid], iUx_I[iFluid], iUy_I[iFluid], iUz_I[iFluid]);
+  //          iFluid, iRho_I[iFluid], iUx_I[iFluid], iUy_I[iFluid],
+  //          iUz_I[iFluid]);
   // }
 }
 
@@ -473,6 +474,7 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
 void FluidInterface::find_mpi_rank_for_points(const int nPoint,
                                               const double* const xyz_I,
                                               int* const rank_I) {
+  const int iNotSet_ = -777;
   int nDimGM = get_fluid_dimension();
   amrex::Real si2nol = get_Si2NoL();
   const RealBox& range = Geom(0).ProbDomain();
@@ -485,7 +487,7 @@ void FluidInterface::find_mpi_rank_for_points(const int nPoint,
     // Check if this point is inside this FLEKS domain.
     if (range.contains(RealVect(x, y, z), 1e-6 * Geom(0).CellSize()[ix_])) {
       rank_I[i] = find_mpi_rank_from_coord(x, y, z);
-    } else {
+    } else if (rank_I[i] == iNotSet_) {
       // For PT->OH coupling, MHD does not know the range of FLEKS.
       // If the location is outside the domain, set the rank to be the IO
       // processor. FLEKS will ignore this point and 0.0 will be sent to MHD.

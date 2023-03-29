@@ -213,6 +213,8 @@ contains
 
     character(len=*), parameter:: NameSub = 'PC_find_points'
     !--------------------------------------------------------------------------
+
+    iProc_I = -777
     call fleks_find_points(nPoint, Xyz_DI, iProc_I)
 
   end subroutine PC_find_points
