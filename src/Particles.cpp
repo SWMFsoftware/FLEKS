@@ -2098,25 +2098,8 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         source->add_p_to_loc(ion2neu[iP_] * si2no_v[iP_] / dt, pti, xp, yp, zp,
                              speciesID);
       }
-
-      // Print() << "sourcePT2OH rho= "
-      //         << sourcePT2OH->get_fluid_mass_density(pti, xp, yp, zp,
-      //         fluidID)
-      //         << std::endl;
-
     } // for p
   }   // for pti
-
-  // 'source' is applied to generate new particles every step, so sum_boundary()
-  // is called here to correct boundary nodes. Boundary nodes of 'sourcePT2OH'
-  // should be corrected just before PT->OH coupling, instead of here.
-  source->sum_boundary();
-  source->convert_moment_to_velocity(true);
-
-  // source->save_amrex_file();
-
-  // This function distributes and deletes invalid particles.
-  // Redistribute();
 }
 
 // Since Particles is a template, it is necessary to explicitly instantiate

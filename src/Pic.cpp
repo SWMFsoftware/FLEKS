@@ -1780,5 +1780,11 @@ void Pic::charge_exchange() {
                               source.get());
   }
 
+  // 'source' is applied to generate new particles every step, so sum_boundary()
+  // is called here to correct boundary nodes. Boundary nodes of 'sourcePT2OH'
+  // should be corrected just before PT->OH coupling, instead of here.
+  source->sum_boundary();
+  source->convert_moment_to_velocity(true);
+
   // fill_source_particles();
 }
