@@ -199,7 +199,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           }
 
           particles.push_back(p);
-          AllPrint() << "p=" << p << std::endl;
+          // AllPrint() << "p=" << p << std::endl;
           icount++;
         }
       }
@@ -258,17 +258,13 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
         }
   }
 
-  for (int lev = 0; lev <= finestLevel(); lev++) {
-    auto n = NumberOfParticlesAtLevel(lev, true, true);
-    Print() << "loc1 lev = " << lev << " number = " << n << std::endl;
-  }
+  // for (int lev = 0; lev <= finestLevel(); lev++) {
+  //   auto n = NumberOfParticlesAtLevel(lev, true, true);
+  //   Print() << "loc1 lev = " << lev << " number = " << n << std::endl;
+  // }
   // TODO: Is this really necessary?
   Redistribute();
 
-  for (int lev = 0; lev <= finestLevel(); lev++) {
-    auto n = NumberOfParticlesAtLevel(lev, true, true);
-    Print() << "loc2 lev = " << lev << " number = " << n << std::endl;
-  }
 }
 
 //==========================================================

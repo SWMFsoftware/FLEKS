@@ -304,10 +304,6 @@ void Domain::set_state_var(double *data, int *index,
   Print() << printPrefix << " GM -> " << component
           << " coupling at t =" << tc->get_time_si() << " (s)" << std::endl;
 
-  for (int i = 0; i < names.size(); i++) {
-    Print() << "i = " << i << " name = " << names[i] << std::endl;
-  }
-
   if (receiveICOnly) {
     fi->set_node_fluid(data, index, names);
   } else {

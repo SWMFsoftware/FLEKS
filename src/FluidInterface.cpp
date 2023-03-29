@@ -150,12 +150,12 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
 
   calc_normalized_units();
 
-  for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
-    Print() << printPrefix;
-    printf("iFluid=%d, iRho_I[iFluid]=%d, iUx_I[iFluid]=%d, "
-           "iUy_I[iFluid]=%d, iUz_I[iFluid]=%d\n",
-           iFluid, iRho_I[iFluid], iUx_I[iFluid], iUy_I[iFluid], iUz_I[iFluid]);
-  }
+  // for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
+  //   Print() << printPrefix;
+  //   printf("iFluid=%d, iRho_I[iFluid]=%d, iUx_I[iFluid]=%d, "
+  //          "iUy_I[iFluid]=%d, iUz_I[iFluid]=%d\n",
+  //          iFluid, iRho_I[iFluid], iUx_I[iFluid], iUy_I[iFluid], iUz_I[iFluid]);
+  // }
 }
 
 FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
@@ -554,8 +554,6 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
                 int idx;
                 idx = iVar + nVarFluid * (index[nIdxCount] - 1);
                 arr(i, j, k, iVar) = data[idx];
-                Print() << "i,j,k,iVar,arr" << i << " " << j << " " << k << " "
-                        << iVar << " " << arr(i, j, k, iVar) << "\n";
               }
               nIdxCount++;
             }
@@ -709,27 +707,11 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly) {
             arr(i, j, k, iUz_I[0]) /= Rhot;
           } else {
             for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
-              Print() << printPrefix;
-              printf("iFluid=%d, iRho_I[iFluid]=%d, iUx_I[iFluid]=%d, "
-                     "iUy_I[iFluid]=%d, iUz_I[iFluid]=%d\n",
-                     iFluid, iRho_I[iFluid], iUx_I[iFluid], iUy_I[iFluid],
-                     iUz_I[iFluid]);
               const double& rho = arr(i, j, k, iRho_I[iFluid]);
               if (rho > 0) {
-                printf("i=%d, j=%d, k=%d, rho=%e, mx=%e, my=%e, mz=%e\n", i, j,
-                       k, rho, arr(i, j, k, iUx_I[iFluid]),
-                       arr(i, j, k, iUx_I[iFluid]),
-                       arr(i, j, k, iUy_I[iFluid]));
-
                 arr(i, j, k, iUx_I[iFluid]) /= rho;
                 arr(i, j, k, iUy_I[iFluid]) /= rho;
                 arr(i, j, k, iUz_I[iFluid]) /= rho;
-
-                printf("i=%d, j=%d, k=%d, rho=%e, ux=%e, uy=%e, uz=%e\n", i, j,
-                       k, rho, arr(i, j, k, iUx_I[iFluid]),
-                       arr(i, j, k, iUx_I[iFluid]),
-                       arr(i, j, k, iUy_I[iFluid]));
-
               } else {
                 const Real* dx = Geom(0).CellSize();
                 const auto plo = Geom(0).ProbLo();
