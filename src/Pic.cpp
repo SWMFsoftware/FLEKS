@@ -224,8 +224,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
     if (!useExplicitPIC) {
       distribute_FabArray(nodeMM, nGrid, DistributionMap(0), 1, 1, doMoveData);
-    }
-    distribute_FabArray(costMF, cGrid, DistributionMap(0), 1, nGst, doMoveData);
+    }    
     distribute_FabArray(centerMM, cGrid, DistributionMap(0), 1, nGst,
                         doMoveData);
 
@@ -959,10 +958,6 @@ void Pic::update(bool doReportIn) {
     divE_correction();
   }
 
-  // Apply load balance before sum_moments so that the nodePlasma and mass
-  // matrix on the gird do NOT require MPI communication.
-  load_balance();
-
   tc->set_dt(tc->get_next_dt());
 
   sum_moments(true);
@@ -1543,73 +1538,6 @@ Real Pic::calc_B_field_energy() {
     sum = 0;
 
   return sum;
-}
-
-//==========================================================
-void Pic::compute_cost() {
-  average_node_to_cellcenter(costMF, 0, nodePlasma[iTot], iNum_, 1);
-}
-
-//==========================================================
-void Pic::load_balance() {
-  //   if (ParallelDescriptor::NProcs() == 1)
-  //     return;
-
-  //   if (!tc->loadBalance.is_time_to())
-  //     return;
-
-  //   std::string nameFunc = "Pic::load_balance";
-  //   timing_func(nameFunc);
-
-  //   Print() << printPrefix << "--------- Load balancing ------------"
-  //           << std::endl;
-
-  //   // iDecomp++;
-  //   Print() << printPrefix << "before dm = " << DistributionMap(0) <<
-  //   std::endl; compute_cost(); SetDistributionMap(0,
-  //   DistributionMapping::makeSFC(costMF, false)); Print() << printPrefix <<
-  //   "after dm = " << DistributionMap(0) << std::endl;
-
-  //   redistribute_FabArray(nodeE, DistributionMap(0));
-  //   redistribute_FabArray(nodeEth, DistributionMap(0));
-  //   redistribute_FabArray(nodeB, DistributionMap(0));
-
-  //   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-  //  redistribute_FabArray(centerB[iLevTest], DistributionMap(0));
-  //   }
-
-  //   redistribute_FabArray(centerNetChargeOld, DistributionMap(0));
-  //   redistribute_FabArray(centerNetChargeN, DistributionMap(0));   // false??
-  //   redistribute_FabArray(centerNetChargeNew, DistributionMap(0)); // false??
-
-  //   redistribute_FabArray(centerDivE, DistributionMap(0));
-  //   redistribute_FabArray(centerPhi, DistributionMap(0));
-
-  //   {
-  //     bool doMoveData = false;
-
-  //     for (auto& pl : nodePlasma) {
-  //       redistribute_FabArray(pl, DistributionMap(0), doMoveData);
-  //     }
-
-  //     if (!useExplicitPIC) {
-  //       redistribute_FabArray(nodeMM, DistributionMap(0), doMoveData);
-  //     }
-  //     redistribute_FabArray(costMF, DistributionMap(0), doMoveData);
-  //     redistribute_FabArray(centerMM, DistributionMap(0), doMoveData);
-
-  //     redistribute_FabArray(tempNode3, DistributionMap(0), doMoveData);
-  //     redistribute_FabArray(tempCenter3, DistributionMap(0), doMoveData);
-  //     redistribute_FabArray(tempCenter1, DistributionMap(0), doMoveData);
-  //     redistribute_FabArray(tempCenter1_1, DistributionMap(0), doMoveData);
-  //   }
-  //   // Load balance particles.
-  //   for (int i = 0; i < nSpecies; i++) {
-  //     parts[i]->SetParticleDistributionMap(0, DistributionMap(0));
-  //     parts[i]->Redistribute();
-  //   }
-
-  //   fi->load_balance(DistributionMap(0));
 }
 
 //==========================================================

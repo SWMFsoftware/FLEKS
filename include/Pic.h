@@ -62,8 +62,6 @@ private:
 
   amrex::UMultiFab<RealMM> nodeMM;
 
-  amrex::MultiFab costMF;
-
   // ------divE correction--------------
   // Old @ t=t_{n-1/2}; N @ t=t_n; New @ t=t_{n+1/2}
   amrex::MultiFab centerNetChargeOld, centerNetChargeN, centerNetChargeNew;
@@ -253,12 +251,7 @@ public:
   void sum_to_center(bool isBeforeCorrection);
   void calculate_phi(LinearSolver &solver);
   //-------------div(E) correction end----------------
-
-  //---------------load balance begin-------------------
-  void compute_cost();
-  void load_balance();
-  //---------------load balance end---------------------
-
+  
   void report_load_balance();
 
   void set_nodeShare();
