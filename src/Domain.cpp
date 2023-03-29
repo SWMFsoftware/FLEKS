@@ -388,15 +388,14 @@ void Domain::read_restart() {
   BoxArray baPic = tmp.boxArray();
   DistributionMapping dmPic = tmp.DistributionMap();
 
-  pic->regrid(baPic, baPic, dmPic);
   fi->regrid(baPic, dmPic);
-
-  // Assume dmPT == dmPIC so far.
-  pt->regrid(baPic, baPic, dmPic, *pic);
-
   fi->read_restart();
 
   if (!doRestartFIOnly) {
+    pic->regrid(baPic, baPic, dmPic);
+    // Assume dmPT == dmPIC so far.
+    pt->regrid(baPic, baPic, dmPic, *pic);
+
     pic->read_restart();
     write_plots(true);
     pic->write_log(true, true);
