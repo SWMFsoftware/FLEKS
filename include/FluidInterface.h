@@ -47,8 +47,8 @@ protected:
   // Number of variables passing between MHD and PIC.
   int nVarFluid;
 
-  // nVarFluid + (Jx, Jy, Jz)
-  int nVarCoupling;
+  // If true, nodeFluid contains (Jx, Jy, Jz)
+  bool useCurrent = true;
 
   // Number of fluid at the MHD side. One 'fluid' has its own density,
   // velocity and pressure. Electron can be one fluid.

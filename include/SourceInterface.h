@@ -91,32 +91,16 @@ public:
                 printf("Warning: x=%e, y=%e, z=%e, r=%e < 1.0 !\n", xyz[0],
                        xyz[1], xyz[2], r);
               }
-
-              // printf("i=%d, j=%d, k=%d, x=%e, y=%e, z = %e, source[0]=%e, "
-              //        "source[1] = %e, source[2] "
-              //        "= %e, source[3] = %e, source[4] = %e, source[5] = %e, "
-              //        "pe=%e\n",
-              //        i, j, k, xyz[0] / rPlanetSi, xyz[1] / rPlanetSi,
-              //        xyz[2] / rPlanetSi, source[0], source[1], source[2],
-              //        source[3], source[4], source[5], arr(i, j, k, iPe));
-
             } // for k
       }
 
-    {
+    if (!isGridEmpty && useCurrent) {
       // The current stored in nodeFluid are used to initialize particle
-      // velocities. Since the source particles only contribute little the total
-      // current, set current to zero.
-      if (isGridEmpty)
-        return;
-      if (nVarCoupling == nVarFluid)
-        return;
-
+      // velocities. Since the source particles only contribute little to the
+      // total current, set current to zero.
       amrex::MultiFab currentMF(nodeFluid, amrex::make_alias, iJx, nDimMax);
       currentMF.setVal(0, currentMF.nGrow());
     }
-
-    // save_amrex_file();
   }
 };
 

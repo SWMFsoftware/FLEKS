@@ -14,6 +14,9 @@ public:
       nS = 0;
       MoMi_S.clear();
       QoQi_S.clear();
+      useCurrent = false;
+    } else {
+      useCurrent = true;
     }
 
     useMultiFluid = false;
@@ -24,10 +27,6 @@ public:
 
     // For BATSRUS MHD equations
     nVarFluid = 5 + 3;
-
-    nVarCoupling = nVarFluid;
-    if (myType == PICFluid)
-      nVarCoupling += 3;
 
     nFluid = 1;
     nSpeciesFluid = 1;
@@ -66,7 +65,7 @@ public:
     iPpar_I.push_back(idx++);
     varNames.push_back("p");
 
-    if (nVarCoupling > nVarFluid) {
+    if (useCurrent) {
       iJx = idx++;
       varNames.push_back("jx");
       iJy = idx++;

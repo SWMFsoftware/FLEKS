@@ -37,7 +37,7 @@ void FluidInterface::analyze_var_names(bool useNeutralOnly) {
 
   // (rho, vx, vy, vz, p)*nFluid + B
   nVarFluid = 5 * nFluid + 3;
-  nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
+  useCurrent = true;
 
   iRho_I.resize(nS);
   iRhoUx_I.resize(nS);
@@ -80,7 +80,7 @@ void FluidInterface::analyze_var_names(bool useNeutralOnly) {
     }
   }
 
-  if (nVarCoupling > nVarFluid) {
+  if (useCurrent) {
     iJx = nVarFluid;
     iJy = iJx + 1;
     iJz = iJx + 2;
@@ -121,7 +121,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
     nFluid = nS;
     // (rho, vx, vy, vz, p)*nFluid + B
     nVarFluid = 5 * nFluid + 3;
-    nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
+    useCurrent = true;
   }
 
   iRho_I.resize(nS);
@@ -159,7 +159,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
       }
     }
 
-    if (nVarCoupling > nVarFluid) {
+    if (useCurrent) {
       iJx = nVarFluid;
       iJy = iJx + 1;
       iJz = iJx + 2;
@@ -195,7 +195,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
     iBy = iBx + 1;
     iBz = iBy + 1;
 
-    if (nVarCoupling > nVarFluid) {
+    if (useCurrent) {
       iJx = nVarFluid;
       iJy = iJx + 1;
       iJz = iJx + 2;
@@ -227,7 +227,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
     varNames.push_back("ey");
     iEz = idx++;
     varNames.push_back("ez");
-    if (nVarCoupling > nVarFluid) {
+    if (useCurrent) {
       iJx = nVarFluid;
       varNames.push_back("jx");
       iJy = iJx + 1;
@@ -290,9 +290,7 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
   useMultiFluid = nIonFluid > 1;
   useMultiSpecies = nSpeciesFluid > 1;
 
-  nVarCoupling = nVarFluid;
-  if (myType == PICFluid)
-    nVarCoupling += 3; // nVarFluid + (Jx, Jy, Jz)
+  useCurrent = (myType == PICFluid) ? true : false;
 
   iRho_I.resize(nS);
   iRhoUx_I.resize(nS);
@@ -456,7 +454,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
 
       // Ion fluid is useless for this case.
       nVarFluid = 5 * (nFluid + nIon) + 3;
-      nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
+      useCurrent = true;
 
       QoQi_S.resize(nS);
       MoMi_S.resize(nS);
@@ -478,7 +476,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     nFluid = nS;
     // (rho, vx, vy, vz, p)*nFluid + B
     nVarFluid = 5 * nFluid + 3;
-    nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
+    useCurrent = true;
   } else if (command == "#UNIFORMSTATE") {
     if (nS <= 0) {
       amrex::Abort("Error: number of species <=0! Use #PLASMA command "
@@ -523,7 +521,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     nFluid = nS;
     // (rho, vx, vy, vz, p)*nFluid + B + E
     nVarFluid = 5 * nFluid + 3 + 3;
-    nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
+    useCurrent = true;
   }
 }
 
@@ -551,7 +549,8 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
   }
 
   const bool doCopy = true;
-  distribute_FabArray(nodeFluid, nGrid, DistributionMap(0), nVarCoupling, nGst,
+  const int nVarNode = (useCurrent ? nVarFluid + 3 : nVarFluid);
+  distribute_FabArray(nodeFluid, nGrid, DistributionMap(0), nVarNode, nGst,
                       doCopy);
   distribute_FabArray(centerB, cGrid, DistributionMap(0), nDimMax, nGst,
                       doCopy);
@@ -725,7 +724,7 @@ void FluidInterface::calc_current() {
   if (isGridEmpty)
     return;
 
-  if (nVarCoupling == nVarFluid)
+  if (!useCurrent)
     return;
 
   // All centerB, including all ghost cells are accurate.
@@ -843,10 +842,12 @@ void FluidInterface::load_balance(const DistributionMapping& dmIn) {
 
 //-----------------------------------------------------------------------
 void FluidInterface::calc_conversion_units() {
-  Si2No_V.resize(nVarCoupling);
-  No2Si_V.resize(nVarCoupling);
+  const int nVar = (useCurrent ? nVarFluid + 3 : nVarFluid);
 
-  for (int i = 0; i < nVarCoupling; i++)
+  Si2No_V.resize(nVar);
+  No2Si_V.resize(nVar);
+
+  for (int i = 0; i < nVar; i++)
     Si2No_V[i] = 1;
 
   Si2No_V[iBx] = Si2NoB;
@@ -886,7 +887,7 @@ void FluidInterface::calc_conversion_units() {
   }
 
   // Get back to SI units
-  for (int iVar = 0; iVar < nVarCoupling; iVar++)
+  for (int iVar = 0; iVar < nVar; iVar++)
     No2Si_V[iVar] = 1.0 / Si2No_V[iVar];
 }
 
