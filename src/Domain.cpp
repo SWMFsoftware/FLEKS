@@ -474,7 +474,7 @@ void Domain::save_restart_header() {
       const amrex::Vector<std::string> names = fi->get_var_names();
       headerFile << names.size() << "\t\t\tnVar\n";
       for (int i = 0; i < names.size(); i++) {
-        headerFile << names[i] << "\t\t\tvarNames\n";
+        headerFile << names[i] << "\t\t\tvarName\n";
       }
       headerFile << "\n";
     }

@@ -727,6 +727,26 @@ In PARAM.in, users should use the command #INCLUDE instead of #RESTART
 to control the restart.
 </command>
 
+<command name="RECEIVEICONLY"
+	 alias="RECEIVEICONLY_FLEKS0,RECEIVEICONLY_FLEKS1,RECEIVEICONLY_FLEKS2"
+	 multiple="T">
+  <parameter name="receiveICOnly" type="logical" default="F"/>
+
+pass
+</command>
+
+<command name="FLUIDVARNAMES"
+	 alias="FLUIDVARNAMES_FLEKS0,FLUIDVARNAMES_FLEKS1,FLUIDVARNAMES_FLEKS2"
+	 multiple="T">
+  <parameter name="nVar" type="integer" min="0" max="100" default="0"/>
+  <for from="1" to="$nVar">
+    <parameter name="varName" type="string"/>
+  </for>
+
+PASS
+
+</command>
+
 <command name="NSTEP"
 	 alias="NSTEP_FLEKS0,NSTEP_FLEKS1,NSTEP_FLEKS2"
 	 multiple="T">
