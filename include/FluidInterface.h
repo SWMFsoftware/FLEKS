@@ -54,6 +54,8 @@ protected:
   // velocity and pressure. Electron can be one fluid.
   int nFluid;
 
+  int nNeuFluid;
+
   // Number of ion fluid at the MHD side.
   int nIonFluid = -1;
 
@@ -102,8 +104,6 @@ protected:
 
   // Variable names of nodeFluid.
   amrex::Vector<std::string> varNames;
-
-  amrex::Vector<std::string> restartNames;
 
   amrex::Vector<double> uniformState;
 
@@ -208,7 +208,11 @@ public:
 
   void load_balance(const amrex::DistributionMapping& dmIn);
 
-  void calc_normalized_units();
+  void calc_normalization_units();
+
+  void calc_conversion_units();
+
+  void analyze_var_names(bool useNeutral = false);
 
   /** Get nomal and pendicular vector to magnetic field */
   void calc_mag_base_vector(const double Bx, const double By, const double Bz,

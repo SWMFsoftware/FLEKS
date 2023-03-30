@@ -75,7 +75,9 @@ public:
       varNames.push_back("jz");
     }
 
-    calc_normalized_units();
+    calc_normalization_units();
+
+    calc_conversion_units();
   };
 };
 

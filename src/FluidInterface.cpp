@@ -8,6 +8,99 @@
 using namespace amrex;
 using namespace std;
 
+void FluidInterface::analyze_var_names(bool useNeutralOnly) {
+
+  if (varNames.size() == 0)
+    return;
+
+  nIonFluid = 0;
+  nNeuFluid = 0;
+
+  // Count number of ion and neutral fluid. Does not work for multi-species
+  for (const auto& name : varNames) {
+    // Match "*rho*"
+    if (name.find("rho") != std::string::npos) {
+      if (name.compare(0, 2, "ne") == 0) {
+        // Assume neutral fluid density is named as "ne*rho"
+        nNeuFluid++;
+      } else {
+        nIonFluid++;
+      }
+    }
+  }
+
+  if (useNeutralOnly)
+    nIonFluid = 0;
+
+  nFluid = nNeuFluid + nIonFluid;
+  nS = nFluid;
+
+  // (rho, vx, vy, vz, p)*nFluid + B
+  nVarFluid = 5 * nFluid + 3;
+  nVarCoupling = nVarFluid + 3; // nVarFluid + (Jx, Jy, Jz)
+
+  iRho_I.resize(nS);
+  iRhoUx_I.resize(nS);
+  iRhoUy_I.resize(nS);
+  iRhoUz_I.resize(nS);
+  iUx_I.resize(nS);
+  iUy_I.resize(nS);
+  iUz_I.resize(nS);
+  iPpar_I.resize(nS);
+  iP_I.resize(nS);
+
+  iEx = -1;
+  int iFluid = 0;
+  for (int i = 0; i < varNames.size(); i++) {
+    const auto& name = varNames[i];
+    if (name.find("rho") != std::string::npos) {
+      if (useNeutralOnly && name.compare(0, 2, "ne") != 0)
+        continue;
+
+      bool isFirstIonFluid = (name == "rho");
+      iRho_I[iFluid] = i;
+      iUx_I[iFluid] = i + 1;
+      iUy_I[iFluid] = i + 2;
+      iUz_I[iFluid] = i + 3;
+      if (!isFirstIonFluid) {
+        iP_I[iFluid] = i + 4;
+        iFluid++;
+      }
+    }
+
+    if (name == "p") {
+      iP_I[iFluid] = i;
+      iFluid++;
+    } else if (name == "bx") {
+      iBx = i;
+    } else if (name == "by") {
+      iBy = i;
+    } else if (name == "bz") {
+      iBz = i;
+    }
+  }
+
+  if (nVarCoupling > nVarFluid) {
+    iJx = nVarFluid;
+    iJy = iJx + 1;
+    iJz = iJx + 2;
+  }
+
+  iRhoUx_I = iUx_I;
+  iRhoUy_I = iUy_I;
+  iRhoUz_I = iUz_I;
+
+  const bool doTest = true;
+  if (doTest) {
+    for (int i = 0; i < nS; i++) {
+      printf("iFluid=%d, iRho_I=%i, iUx_I=%d, iUy_I=%d, iUz_I=%d, iP_I=%d\n", i,
+             iRho_I[i], iUx_I[i], iUy_I[i], iUz_I[i], iP_I[i]);
+    }
+    printf("iBx=%d, iBy=%d, iBz=%d, iJx=%d, iJy=%d, iJz=%d", iBx, iBy, iBz, iJx,
+           iJy, iJz);
+  }
+}
+
 void FluidInterface::post_process_param(bool receiveICOnly) {
   if (initFromSWMF)
     return;
@@ -42,10 +135,10 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
   iP_I.resize(nS);
 
   iEx = -1;
-  if (restartNames.size() > 0) {
+  if (varNames.size() > 0) {
     int iNeu = 0;
-    for (int i = 0; i < restartNames.size(); i++) {
-      const auto& name = restartNames[i];
+    for (int i = 0; i < varNames.size(); i++) {
+      const auto& name = varNames[i];
       if (name.size() == 6) {
         if (name.compare(0, 2, "ne") == 0 && name.compare(3, 3, "rho") == 0) {
           iRho_I[iNeu] = i;
@@ -148,15 +241,9 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
   iRhoUy_I = iUy_I;
   iRhoUz_I = iUz_I;
 
-  calc_normalized_units();
+  calc_normalization_units();
 
-  // for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
-  //   Print() << printPrefix;
-  //   printf("iFluid=%d, iRho_I[iFluid]=%d, iUx_I[iFluid]=%d, "
-  //          "iUy_I[iFluid]=%d, iUz_I[iFluid]=%d\n",
-  //          iFluid, iRho_I[iFluid], iUx_I[iFluid], iUy_I[iFluid],
-  //          iUz_I[iFluid]);
-  // }
+  calc_conversion_units();
 }
 
 FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
@@ -314,7 +401,9 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
   MhdNo2SiL = paramComm[n++];
   /** Do not change the order of above lines. */
 
-  calc_normalized_units();
+  calc_normalization_units();
+
+  calc_conversion_units();
 
   if (useMultiFluid && !useMhdPe) {
     cout << printPrefix
@@ -338,18 +427,18 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#FLUIDVARNAMES") {
     int nVar;
     param.read_var("nVar", nVar);
-    restartNames.clear();
+    varNames.clear();
     for (int i = 0; i < nVar; i++) {
       std::string name;
       param.read_var("name", name);
-      restartNames.push_back(name);
+      varNames.push_back(name);
     }
 
-    if (restartNames.size() > 0) {
+    if (varNames.size() > 0) {
       // Assume only use neutral fluids
       int nNeuFluid = 0;
       int nIon = 0;
-      for (auto& name : restartNames) {
+      for (auto& name : varNames) {
         if (name.size() == 6) {
           // Assume a neutral fluid's density is named as "ne*rho"
           if (name.compare(0, 2, "ne") == 0 && name.compare(3, 3, "rho") == 0) {
@@ -580,15 +669,18 @@ void FluidInterface::set_node_fluid(const double* const data,
   if (isGridEmpty)
     return;
 
-  varNames.clear();
-  for (auto& name : names) {
-    varNames.push_back(name);
-  }
+  if (varNames.size() == 0) {
+    for (auto& name : names) {
+      varNames.push_back(name);
+    }
 
-  if (nVarCoupling > nVarFluid) {
     varNames.push_back("jx");
     varNames.push_back("jy");
     varNames.push_back("jz");
+
+#ifdef _PT_COMPONENT_
+    analyze_var_names();
+#endif
   }
 
   loop_through_node("fill", nullptr, data, index);
@@ -749,9 +841,58 @@ void FluidInterface::load_balance(const DistributionMapping& dmIn) {
   redistribute_FabArray(centerB, DistributionMap(0));   // false?
 }
 
+//-----------------------------------------------------------------------
+void FluidInterface::calc_conversion_units() {
+  Si2No_V.resize(nVarCoupling);
+  No2Si_V.resize(nVarCoupling);
+
+  for (int i = 0; i < nVarCoupling; i++)
+    Si2No_V[i] = 1;
+
+  Si2No_V[iBx] = Si2NoB;
+  Si2No_V[iBy] = Si2NoB;
+  Si2No_V[iBz] = Si2NoB;
+
+  if (Si2No_V.size() > iJz) {
+    Si2No_V[iJx] = Si2NoJ;
+    Si2No_V[iJy] = Si2NoJ;
+    Si2No_V[iJz] = Si2NoJ;
+  }
+
+  if (useElectronFluid && iEx >= 0) {
+    Si2No_V[iEx] = Si2NoE;
+    Si2No_V[iEy] = Si2NoE;
+    Si2No_V[iEz] = Si2NoE;
+  }
+
+  if (useMhdPe)
+    Si2No_V[iPe] = Si2NoP;
+  if (useMultiSpecies)
+    Si2No_V[iRhoTotal] = Si2NoRho;
+
+  int iMax;
+  iMax = nFluid;
+  if (useMultiSpecies)
+    iMax = nIon;
+
+  for (int i = 0; i < iMax; ++i) {
+    Si2No_V[iRho_I[i]] = Si2NoRho;
+    Si2No_V[iRhoUx_I[i]] = Si2NoM;
+    Si2No_V[iRhoUy_I[i]] = Si2NoM;
+    Si2No_V[iRhoUz_I[i]] = Si2NoM;
+    Si2No_V[iP_I[i]] = Si2NoP;
+    if (useAnisoP)
+      Si2No_V[iPpar_I[i]] = Si2NoP;
+  }
+
+  // Get back to SI units
+  for (int iVar = 0; iVar < nVarCoupling; iVar++)
+    No2Si_V[iVar] = 1.0 / Si2No_V[iVar];
+}
+
 //-------------------------------------------------------------------------
 
-void FluidInterface::calc_normalized_units() {
+void FluidInterface::calc_normalization_units() {
 
   // Normalization units converted [SI] -> [cgs]
   if (lNormSI > 0) {
@@ -833,52 +974,6 @@ void FluidInterface::calc_normalized_units() {
 
   No2SiV = 1. / Si2NoV;
   No2SiL = 1. / Si2NoL;
-
-  Si2No_V.resize(nVarCoupling);
-  No2Si_V.resize(nVarCoupling);
-
-  for (int i = 0; i < nVarCoupling; i++)
-    Si2No_V[i] = 1;
-
-  Si2No_V[iBx] = Si2NoB;
-  Si2No_V[iBy] = Si2NoB;
-  Si2No_V[iBz] = Si2NoB;
-
-  if (Si2No_V.size() > iJz) {
-    Si2No_V[iJx] = Si2NoJ;
-    Si2No_V[iJy] = Si2NoJ;
-    Si2No_V[iJz] = Si2NoJ;
-  }
-
-  if (useElectronFluid && iEx >= 0) {
-    Si2No_V[iEx] = Si2NoE;
-    Si2No_V[iEy] = Si2NoE;
-    Si2No_V[iEz] = Si2NoE;
-  }
-
-  if (useMhdPe)
-    Si2No_V[iPe] = Si2NoP;
-  if (useMultiSpecies)
-    Si2No_V[iRhoTotal] = Si2NoRho;
-
-  int iMax;
-  iMax = nFluid;
-  if (useMultiSpecies)
-    iMax = nIon;
-
-  for (int i = 0; i < iMax; ++i) {
-    Si2No_V[iRho_I[i]] = Si2NoRho;
-    Si2No_V[iRhoUx_I[i]] = Si2NoM;
-    Si2No_V[iRhoUy_I[i]] = Si2NoM;
-    Si2No_V[iRhoUz_I[i]] = Si2NoM;
-    Si2No_V[iP_I[i]] = Si2NoP;
-    if (useAnisoP)
-      Si2No_V[iPpar_I[i]] = Si2NoP;
-  }
-
-  // Get back to SI units
-  for (int iVar = 0; iVar < nVarCoupling; iVar++)
-    No2Si_V[iVar] = 1.0 / Si2No_V[iVar];
 }
 //-------------------------------------------------------------------------
 
