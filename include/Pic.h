@@ -251,7 +251,7 @@ public:
   void sum_to_center(bool isBeforeCorrection);
   void calculate_phi(LinearSolver &solver);
   //-------------div(E) correction end----------------
-  
+
   void report_load_balance();
 
   void set_nodeShare();
@@ -369,11 +369,8 @@ public:
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            if (i > 69) {
-
-              if (j > 46) {
-                tagfab(i, j, k) = 1;
-              }
+            if (i >= 16 && i < 24 && j >= 8 && j < 16) {
+              tagfab(i, j, k) = 1;
             }
           }
     }

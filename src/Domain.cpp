@@ -197,6 +197,9 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
   amrInfo.blocking_factor.clear();
   amrInfo.blocking_factor.push_back(IntVect(1, 1, 1));
 
+  amrInfo.max_grid_size.clear();
+  amrInfo.max_grid_size.push_back(maxBlockSize);
+
   amrInfo.max_level = 0;
 
   Print() << printPrefix << "Domain range = " << domainRange << std::endl;
@@ -231,7 +234,7 @@ void Domain::regrid() {
   BoxArray baPic(activeRegionBA);
 
   baPic.maxSize(maxBlockSize);
-  Print() << "=====" << printPrefix << " Grid Information summary========="
+  Print() << "=====" << printPrefix << "Base Grid Information Summary========="
           << "\n Number of Boxes to describe active region = "
           << activeRegionBA.size()
           << "\n Number of boxes                           = " << baPic.size()

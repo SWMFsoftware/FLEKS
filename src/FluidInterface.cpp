@@ -676,7 +676,7 @@ void FluidInterface::set_node_fluid(const double* const data,
   normalize_fluid_variables();
   convert_moment_to_velocity();
 
-  save_amrex_file();
+  // save_amrex_file();
 }
 
 void FluidInterface::set_node_fluid() {

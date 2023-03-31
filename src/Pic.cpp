@@ -123,7 +123,6 @@ void Pic::init_Pic() {
     nodeB.resize(nLev);
     nodeE.resize(nLev);
     nodeEth.resize(nLev);
-    nGrids.resize(nLev);
   }
 }
 //==========================================================
@@ -165,21 +164,14 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   if (!cGrid.empty()) {
     // This method will call MakeNewLevelFromScratch() and
     // PostProcessBaseGrids()
-    // phi.resize(finest_level + 1);
-    // centerB.resize(1);
-
     InitFromScratch(tc->get_time());
     SetDistributionMap(0, dmIn);
-
-    for (int lev = 0; lev <= finest_level; lev++) {
-      Print() << "lev = " << lev << " count = " << CountCells(lev) << std::endl;
-    }
   }
 
-  for (int ii = 0; ii <= finest_level; ii++) {
-    nGrids[ii] = convert(cGrids[ii], amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
-  }
-  nGrid = nGrids[0];
+  calc_node_grids();
+
+  print_grid_info(false);
+
   int lev = 0;
   distribute_arrays(lev, cGrid, DistributionMap(lev));
 
@@ -224,7 +216,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
     if (!useExplicitPIC) {
       distribute_FabArray(nodeMM, nGrid, DistributionMap(0), 1, 1, doMoveData);
-    }    
+    }
     distribute_FabArray(centerMM, cGrid, DistributionMap(0), 1, nGst,
                         doMoveData);
 

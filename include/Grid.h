@@ -28,8 +28,6 @@ protected:
   std::string gridName;
   int gridID;
 
-  bool useAMRGrid = false;
-
   // const int coord = 0; // Cartesian grid
 
   // A collection of boxes to describe the simulation domain. The boxes have
@@ -124,6 +122,43 @@ public:
     amrex::AllPrint() << "idx = " << idx << std::endl;
     amrex::Abort("Error: can not find this cell!");
     return -1; // To suppress compiler warnings.
+  }
+
+  void calc_node_grids() {
+    nGrids.resize(finest_level + 1);
+    for (int lev = 0; lev <= finest_level; lev++) {
+      nGrids[lev] =
+          amrex::convert(cGrids[lev], amrex::IntVect::TheNodeVector());
+    }
+    nGrid = nGrids[0];
+  }
+
+  void print_grid_info(bool printBoxes = false) {
+    amrex::Print() << printPrefix << " =======Grid Info========" << std::endl;
+    amrex::Print() << printPrefix << " max_level = " << max_level << std::endl;
+    amrex::Print() << printPrefix << " finest_level = " << finest_level
+                   << std::endl;
+
+    for (int lev = 0; lev <= finest_level; lev++) {
+      amrex::Print() << printPrefix << " lev = " << lev
+                     << "\t # of boxes = " << std::setw(9) << cGrids[lev].size()
+                     << "\t # of cells = " << std::setw(11) << CountCells(lev)
+                     << "\t max_grid_size = " << max_grid_size[lev]
+                     << std::endl;
+    }
+
+    if (printBoxes) {
+      for (int lev = 0; lev <= finest_level; lev++) {
+        amrex::Print() << printPrefix << " Boxes of lev = " << lev << std::endl;
+        for (int ii = 0, n = cGrids[lev].size(); ii < n; ii++) {
+          amrex::Print() << printPrefix << " box " << ii << " = "
+                         << cGrids[lev][ii] << std::endl;
+        }
+      }
+    }
+
+    amrex::Print() << printPrefix << " =========================\n"
+                   << std::endl;
   }
 
   // Make a new level using provided BoxArray and DistributionMapping and
