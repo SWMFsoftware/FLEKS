@@ -282,7 +282,7 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
     useMultiFluid = false;
     nIon = -1;
     nS = nFluid;
-  } else {    
+  } else {
     nIon = nFluid + nSpeciesFluid - 1; // Assuming one electron species.
     nS = nIon + 1;                     // + electron
     useMultiFluid = nFluid > 1;
@@ -346,18 +346,6 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
     for (int iFluid = 0; iFluid < nFluid; ++iFluid)
       iP_I[iFluid] = iParam[n++] - 1;
   }
-
-  int nVec = nFluid + 1;
-  if (useElectronFluid)
-    nVec++; // + E field.
-
-  vecIdx_I.resize(nVec);
-
-  for (int iVec = 0; iVec < nFluid; iVec++)
-    vecIdx_I[iVec] = iRhoUx_I[iVec];
-  vecIdx_I[nFluid] = iBx;
-  if (useElectronFluid)
-    vecIdx_I[nFluid + 1] = iEx;
 
   // See GM/BATSRUS/src/ModExtraVariables.f90.
   useAnisoP = iPpar_I[0] != 0;
@@ -1316,18 +1304,6 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
   for (int iVar = 0; iVar < nVarFluid; ++iVar) {
     data_I[iVar] *= get_No2Si_V(iVar);
   }
-
-  // Convert the vectors from PIC coordinates to MHD coordinates.
-  double pic_D[3];
-  for (int iVec = 0; iVec < vecIdx_I.size(); iVec++) {
-    int idx0;
-    idx0 = vecIdx_I[iVec];
-    for (int iVar = idx0; iVar < idx0 + nDimFluid; iVar++)
-      pic_D[iVar - idx0] = data_I[iVar];
-
-    for (int iVar = idx0; iVar < idx0 + nDimFluid; iVar++)
-      data_I[iVar] = pic_D[iVar - idx0];
-  } // iVec
 }
 
 void FluidInterface::update_nodeFluid(const MultiFabFLEKS& nodeIn,

@@ -103,9 +103,7 @@ protected:
   amrex::Vector<double> uniformState;
 
   // Length in BATSRUS normalized unit -> Si
-  double MhdNo2SiL;
-
-  amrex::Vector<int> vecIdx_I;
+  double MhdNo2SiL;  
 
   bool useResist = false;
   double etaSI = 0, etaNO = 0;
