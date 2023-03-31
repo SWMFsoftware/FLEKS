@@ -72,14 +72,7 @@ private:
 
   LinearSolver eSolver;
   LinearSolver divESolver;
-
-  //------Temporary variables for field---
-  amrex::MultiFab tempNode3;
-  amrex::MultiFab tempCenter3;
-  amrex::MultiFab tempCenter1;
-  amrex::MultiFab tempCenter1_1;
-  //--------------------------------------
-
+  
   int nSpecies;
   int iTot;
   amrex::Vector<amrex::MultiFab> nodePlasma;
@@ -163,8 +156,8 @@ public:
               const amrex::BoxArray &centerBAIn,
               const amrex::DistributionMapping &dmIn);
 
-  void distribute_arrays(int lev, const amrex::BoxArray &ba,
-                         const amrex::DistributionMapping &dm);
+  void distribute_arrays();
+  
   void init_Pic();
   void fill_new_cells();
   void fill_E_B_fields();

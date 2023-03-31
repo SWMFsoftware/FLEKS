@@ -125,6 +125,12 @@ public:
   }
 
   void calc_node_grids() {
+    nGrids.clear();
+    nGrid.clear();
+
+    if (cGrid.empty())
+      return;
+
     nGrids.resize(finest_level + 1);
     for (int lev = 0; lev <= finest_level; lev++) {
       nGrids[lev] =
