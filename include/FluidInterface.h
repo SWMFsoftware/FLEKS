@@ -54,11 +54,6 @@ protected:
   // velocity and pressure. Electron can be one fluid.
   int nFluid;
 
-  int nNeuFluid;
-
-  // Number of ion fluid at the MHD side.
-  int nIonFluid = -1;
-
   // Number of species at the MHD side. One 'species' only has its own density.
   int nSpeciesFluid = 0;
 

@@ -13,8 +13,9 @@ void FluidInterface::analyze_var_names(bool useNeutralOnly) {
   if (varNames.size() == 0)
     return;
 
-  nIonFluid = 0;
-  nNeuFluid = 0;
+  int nNeuFluid = 0;
+
+  int nIonFluid = 0;
 
   // Count number of ion and neutral fluid. Does not work for multi-species
   for (const auto& name : varNames) {
@@ -278,16 +279,15 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
   useElectronFluid = iEx > 1;
 
   if (useElectronFluid) {
-    nIonFluid = -1; // Do not distinguish between electrons and ions.
+    useMultiFluid = false;
     nIon = -1;
     nS = nFluid;
-  } else {
-    nIonFluid = nFluid;
+  } else {    
     nIon = nFluid + nSpeciesFluid - 1; // Assuming one electron species.
     nS = nIon + 1;                     // + electron
+    useMultiFluid = nFluid > 1;
   }
 
-  useMultiFluid = nIonFluid > 1;
   useMultiSpecies = nSpeciesFluid > 1;
 
   useCurrent = (myType == PICFluid) ? true : false;
