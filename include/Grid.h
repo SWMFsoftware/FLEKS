@@ -31,12 +31,12 @@ protected:
   // const int coord = 0; // Cartesian grid
 
   // A collection of boxes to describe the simulation domain. The boxes have
-  // been combined if possible. It covers the same region as cGrid, but
+  // been combined if possible. It covers the same region as cGrids[0], but
   // usually contains less boxes.
   amrex::BoxArray activeRegionBA;
 
   // Cell center
-  amrex::BoxArray& cGrid = grids[0];
+  amrex::BoxArray baseGrid;
   amrex::Vector<amrex::BoxArray>& cGrids = grids;
 
   // Nodal
@@ -98,7 +98,7 @@ public:
 
   const amrex::AmrInfo& get_amr_info() const { return gridAmrInfo; }
 
-  void set_base_grid(const amrex::BoxArray& ba) { cGrid = ba; }
+  void set_base_grid(const amrex::BoxArray& ba) { baseGrid = ba; }
 
   bool is_grid_empty() const { return isGridEmpty; }
 
@@ -112,8 +112,8 @@ public:
   inline int find_mpi_rank_from_cell_index(int const i, int const j,
                                            int const k) const {
     amrex::IntVect idx = { i, j, k };
-    for (int ii = 0, n = cGrid.size(); ii < n; ii++) {
-      const amrex::Box& bx = cGrid[ii];
+    for (int ii = 0, n = cGrids[0].size(); ii < n; ii++) {
+      const amrex::Box& bx = cGrids[0][ii];
       if (bx.contains(idx))
         return DistributionMap(0)[ii];
     }
@@ -126,9 +126,9 @@ public:
   void calc_node_grids() {
     nGrids.clear();
 
-    if (cGrid.empty()) {
+    if (baseGrid.empty()) {
       // If there is no active cell, still push an empty box array as the base
-      // nGrids[0]. Because nGrids[0] is used later.
+      // grid
       nGrids.push_back(amrex::BoxArray());
     } else {
       nGrids.resize(finest_level + 1);
@@ -232,7 +232,7 @@ public:
   virtual void PostProcessBaseGrids(amrex::BoxArray& ba) const override {
     std::string nameFunc = "Grid::PostProcessBaseGrids";
     amrex::Print() << printPrefix << nameFunc << " is called." << std::endl;
-    ba = cGrid;
+    ba = baseGrid;
   };
 };
 #endif

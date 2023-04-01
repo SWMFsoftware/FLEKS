@@ -593,7 +593,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
     baIO.define(Box(cellLo, cellHi));
     baIO.maxSize(IntVect(8, 8, 8));
   } else {
-    baIO = cGrid;
+    baIO = cGrids[0];
   }
 
   // Create a new grid for saving data in IO units
@@ -662,7 +662,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   // are cell-centered.
 
   MultiFab centerMF;
-  centerMF.define(cGrid, DistributionMap(0), nVarOut, 0);
+  centerMF.define(cGrids[0], DistributionMap(0), nVarOut, 0);
 
   Vector<std::string> varNames;
   int iStart = 0;

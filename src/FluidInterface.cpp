@@ -519,16 +519,19 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
 
   // Why need 'isGridInitialized'? See the explaination in
   // Domain::regrid().
-  if (centerBAIn == cGrid && isGridInitialized) {
+  if (centerBAIn == cGrids[0] && isGridInitialized) {
     // The interface grid does not change.
     return;
   }
 
   isGridEmpty = centerBAIn.empty();
 
-  cGrid = centerBAIn;
+  baseGrid = centerBAIn;
 
-  if (!cGrid.empty()) {
+  if (baseGrid.empty()) {
+    cGrids.clear();
+    cGrids.push_back(amrex::BoxArray());
+  } else {  
     // This method will call MakeNewLevelFromScratch() and
     // PostProcessBaseGrids()
     InitFromScratch(0.0);
@@ -541,7 +544,7 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
   const int nVarNode = (useCurrent ? nVarFluid + 3 : nVarFluid);
   distribute_FabArray(nodeFluid, nGrids[0], DistributionMap(0), nVarNode, nGst,
                       doCopy);
-  distribute_FabArray(centerB, cGrid, DistributionMap(0), nDimMax, nGst,
+  distribute_FabArray(centerB, cGrids[0], DistributionMap(0), nDimMax, nGst,
                       doCopy);
 
   isGridInitialized = true;

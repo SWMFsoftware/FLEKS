@@ -127,7 +127,7 @@ void Pic::init_Pic() {
 }
 //==========================================================
 void Pic::distribute_arrays() {
-  if (cGrid.empty()) {
+  if (cGrids[0].empty()) {
     return;
   }
 
@@ -152,7 +152,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   //   sourceInterface.regrid(centerBAIn, dmIn);
 
   // Why need 'isGridInitialized'? See the explaination in Domain::regrid().
-  if (centerBAIn == cGrid && isGridInitialized)
+  if (centerBAIn == cGrids[0] && isGridInitialized)
     return;
 
   activeRegionBA = picRegionIn;
@@ -161,11 +161,14 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   doNeedFillNewCell = true;
 
-  BoxArray cGridOld = cGrid;
+  BoxArray cGridOld = cGrids[0];
 
-  cGrid = centerBAIn;
+  baseGrid = centerBAIn;
 
-  if (!cGrid.empty()) {
+  if (baseGrid.empty()) {
+    cGrids.clear();
+    cGrids.push_back(amrex::BoxArray());
+  } else {
     // This method will call MakeNewLevelFromScratch() and
     // PostProcessBaseGrids()
     InitFromScratch(tc->get_time());
@@ -181,17 +184,18 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   //===========Move field data around begin====================
   // distribute_FabArray(nodeE, nGrids[0], DistributionMap(0), 3, nGst);
   // distribute_FabArray(nodeEth, nGrids[0], DistributionMap(0), 3, nGst);
-  // distribute_FabArray(centerB[0], cGrid, DistributionMap(0), 3, nGst);
-  // distribute_FabArray(nodeB[0], cGrid, DistributionMap(0), 3, nGst);
+  // distribute_FabArray(centerB[0], cGrids[0], DistributionMap(0), 3, nGst);
+  // distribute_FabArray(nodeB[0], cGrids[0], DistributionMap(0), 3, nGst);
 
-  distribute_FabArray(centerNetChargeOld, cGrid, DistributionMap(0), 1, nGst);
-  distribute_FabArray(centerNetChargeN, cGrid, DistributionMap(0), 1,
+  distribute_FabArray(centerNetChargeOld, cGrids[0], DistributionMap(0), 1,
+                      nGst);
+  distribute_FabArray(centerNetChargeN, cGrids[0], DistributionMap(0), 1,
                       nGst); // false??
-  distribute_FabArray(centerNetChargeNew, cGrid, DistributionMap(0), 1,
+  distribute_FabArray(centerNetChargeNew, cGrids[0], DistributionMap(0), 1,
                       nGst); // false??
 
-  distribute_FabArray(centerDivE, cGrid, DistributionMap(0), 1, nGst);
-  distribute_FabArray(centerPhi, cGrid, DistributionMap(0), 1, nGst);
+  distribute_FabArray(centerDivE, cGrids[0], DistributionMap(0), 1, nGst);
+  distribute_FabArray(centerPhi, cGrids[0], DistributionMap(0), 1, nGst);
 
   {
     bool doMoveData = false;
@@ -222,7 +226,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
       distribute_FabArray(nodeMM, nGrids[0], DistributionMap(0), 1, 1,
                           doMoveData);
     }
-    distribute_FabArray(centerMM, cGrid, DistributionMap(0), 1, nGst,
+    distribute_FabArray(centerMM, cGrids[0], DistributionMap(0), 1, nGst,
                         doMoveData);
 
     distribute_FabArray(nodeSmoothCoef, nGrids[0], DistributionMap(0), 1, nGst,
@@ -234,7 +238,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
     // The algorithm decides inject particles or not needs at least 2 ghost cell
     // layers.
-    distribute_FabArray(cellStatus, cGrid, DistributionMap(0), 1,
+    distribute_FabArray(cellStatus, cGrids[0], DistributionMap(0), 1,
                         nGst >= 2 ? nGst : 2, false);
     if (!cellStatus.empty()) {
       cellStatus.setVal(iBoundary_);
@@ -352,8 +356,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_ba_general();
 
-      if (cGrid.size() > 0) {
-        parts[i]->SetParticleBoxArray(0, cGrid);
+      if (cGrids[0].size() > 0) {
+        parts[i]->SetParticleBoxArray(0, cGrids[0]);
         parts[i]->SetParticleDistributionMap(0, DistributionMap(0));
       }
       parts[i]->Redistribute();
@@ -362,8 +366,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   { // Copy cellStatus to Particles objects.
     for (int i = 0; i < nSpecies; i++) {
-      distribute_FabArray(parts[i]->cellStatus, cGrid, DistributionMap(0), 1,
-                          nGst >= 2 ? nGst : 2, false);
+      distribute_FabArray(parts[i]->cellStatus, cGrids[0], DistributionMap(0),
+                          1, nGst >= 2 ? nGst : 2, false);
 
       if (!cellStatus.empty()) {
         iMultiFab::Copy(parts[i]->cellStatus, cellStatus, 0, 0,
@@ -1250,7 +1254,7 @@ void Pic::update_B() {
 
   std::string nameFunc = "Pic::update_B";
   timing_func(nameFunc);
-  MultiFab dB(cGrid, DistributionMap(0), 3, nGst);
+  MultiFab dB(cGrids[0], DistributionMap(0), 3, nGst);
 
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
     curl_node_to_center(nodeEth[iLevTest], dB, Geom(0).InvCellSize());

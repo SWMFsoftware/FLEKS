@@ -181,15 +181,18 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
     return;
 
   // Why need 'isGridInitialized'? See the explanation in Domain::regrid().
-  if (centerBAIn == cGrid && isGridInitialized)
+  if (centerBAIn == cGrids[0] && isGridInitialized)
     return;
 
   isGridEmpty = ptRegionIn.empty();
 
   activeRegionBA = ptRegionIn;
-  cGrid = centerBAIn;  
-
-  if (!cGrid.empty()) {
+  baseGrid = centerBAIn;  
+  
+  if (baseGrid.empty()) {
+    cGrids.clear();
+    cGrids.push_back(amrex::BoxArray());
+  } else {
     // This method will call MakeNewLevelFromScratch() and
     // PostProcessBaseGrids()
     InitFromScratch(tc->get_time());
@@ -211,7 +214,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
     distribute_FabArray(nodeB[iLevTest], nGrids[0], DistributionMap(iLevTest), 3,
                         nGst, false);
   }
-  distribute_FabArray(cellStatus, cGrid, DistributionMap(0), 1, nGst, false);
+  distribute_FabArray(cellStatus, cGrids[0], DistributionMap(0), 1, nGst, false);
 
   update_cell_status(pic);
 
@@ -232,7 +235,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
     for (int i = 0; i < nSpecies; i++) {
       // Label the particles outside the OLD PIC region.
       parts[i]->label_particles_outside_ba();
-      parts[i]->SetParticleBoxArray(0, cGrid);
+      parts[i]->SetParticleBoxArray(0, cGrids[0]);
       parts[i]->set_region_range(activeRegionBA);
       parts[i]->SetParticleDistributionMap(0, DistributionMap(0));
       // Label the particles outside the NEW PIC region.
@@ -243,7 +246,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
 
   { // Copy cell Status to Particles objects.
     for (int i = 0; i < nSpecies; i++) {
-      distribute_FabArray(parts[i]->cellStatus, cGrid, DistributionMap(0), 1,
+      distribute_FabArray(parts[i]->cellStatus, cGrids[0], DistributionMap(0), 1,
                           nGst, false);
 
       if (!cellStatus.empty()) {
