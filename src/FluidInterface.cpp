@@ -527,7 +527,6 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
   isGridEmpty = centerBAIn.empty();
 
   cGrid = centerBAIn;
-  nGrid = convert(cGrid, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
 
   if (!cGrid.empty()) {
     // This method will call MakeNewLevelFromScratch() and
@@ -536,9 +535,11 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
     SetDistributionMap(0, dmIn);
   }
 
+  calc_node_grids();
+
   const bool doCopy = true;
   const int nVarNode = (useCurrent ? nVarFluid + 3 : nVarFluid);
-  distribute_FabArray(nodeFluid, nGrid, DistributionMap(0), nVarNode, nGst,
+  distribute_FabArray(nodeFluid, nGrids[0], DistributionMap(0), nVarNode, nGst,
                       doCopy);
   distribute_FabArray(centerB, cGrid, DistributionMap(0), nDimMax, nGst,
                       doCopy);

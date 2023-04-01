@@ -179,8 +179,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   distribute_arrays();
 
   //===========Move field data around begin====================
-  // distribute_FabArray(nodeE, nGrid, DistributionMap(0), 3, nGst);
-  // distribute_FabArray(nodeEth, nGrid, DistributionMap(0), 3, nGst);
+  // distribute_FabArray(nodeE, nGrids[0], DistributionMap(0), 3, nGst);
+  // distribute_FabArray(nodeEth, nGrids[0], DistributionMap(0), 3, nGst);
   // distribute_FabArray(centerB[0], cGrid, DistributionMap(0), 3, nGst);
   // distribute_FabArray(nodeB[0], cGrid, DistributionMap(0), 3, nGst);
 
@@ -205,25 +205,27 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
       // The last one is the sum of all species.
       nodePlasma.resize(nSpecies + 1);
       for (auto& pl : nodePlasma) {
-        pl.define(nGrid, DistributionMap(0), nMoments, nGst);
+        pl.define(nGrids[0], DistributionMap(0), nMoments, nGst);
         pl.setVal(0.0);
       }
     } else {
       for (auto& pl : nodePlasma) {
-        distribute_FabArray(pl, nGrid, DistributionMap(0), nMoments, nGst,
+        distribute_FabArray(pl, nGrids[0], DistributionMap(0), nMoments, nGst,
                             doMoveData);
       }
     }
 
-    distribute_FabArray(jHat, nGrid, DistributionMap(0), 3, nGst, doMoveData);
+    distribute_FabArray(jHat, nGrids[0], DistributionMap(0), 3, nGst,
+                        doMoveData);
 
     if (!useExplicitPIC) {
-      distribute_FabArray(nodeMM, nGrid, DistributionMap(0), 1, 1, doMoveData);
+      distribute_FabArray(nodeMM, nGrids[0], DistributionMap(0), 1, 1,
+                          doMoveData);
     }
     distribute_FabArray(centerMM, cGrid, DistributionMap(0), 1, nGst,
                         doMoveData);
 
-    distribute_FabArray(nodeSmoothCoef, nGrid, DistributionMap(0), 1, nGst,
+    distribute_FabArray(nodeSmoothCoef, nGrids[0], DistributionMap(0), 1, nGst,
                         doMoveData);
   }
   //===========Move field data around end====================
@@ -277,7 +279,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
         }
     }
 
-    distribute_FabArray(nodeStatus, nGrid, DistributionMap(0), 1, nGst, false);
+    distribute_FabArray(nodeStatus, nGrids[0], DistributionMap(0), 1, nGst,
+                        false);
     if (!nodeStatus.empty()) {
       nodeStatus.setVal(iBoundary_);
       nodeStatus.setVal(iOnNew_, 0);
@@ -306,7 +309,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
     nodeStatus.FillBoundary(Geom(0).periodicity());
 
-    distribute_FabArray(nodeShare, nGrid, DistributionMap(0), 1, 0, false);
+    distribute_FabArray(nodeShare, nGrids[0], DistributionMap(0), 1, 0, false);
     set_nodeShare();
   }
 
@@ -372,14 +375,14 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   {
     for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-      int nGrid = get_local_node_or_cell_number(nodeE[iLevTest]);
-      eSolver.init(nGrid, nDim, nDim, matvec_E_solver);
+      int n = get_local_node_or_cell_number(nodeE[iLevTest]);
+      eSolver.init(n, nDim, nDim, matvec_E_solver);
     }
   }
 
   {
-    int nGrid = get_local_node_or_cell_number(centerDivE);
-    divESolver.init(nGrid, 1, nDim, matvec_divE_accurate);
+    int n = get_local_node_or_cell_number(centerDivE);
+    divESolver.init(n, 1, nDim, matvec_divE_accurate);
   }
 
   isGridInitialized = true;
@@ -1076,10 +1079,10 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
 
   zero_array(vecOut, eSolver.get_nSolve());
 
-  MultiFab vecMF(nGrid, DistributionMap(0), 3, nGst);
+  MultiFab vecMF(nGrids[0], DistributionMap(0), 3, nGst);
   vecMF.setVal(0.0);
 
-  MultiFab matvecMF(nGrid, DistributionMap(0), 3, 1);
+  MultiFab matvecMF(nGrids[0], DistributionMap(0), 3, 1);
   matvecMF.setVal(0.0);
 
   MultiFab tempCenter3(cGrids[0], DistributionMap(0), 3, nGst);
@@ -1208,9 +1211,9 @@ void Pic::update_E_rhs(double* rhs) {
   std::string nameFunc = "Pic::update_E_rhs";
   timing_func(nameFunc);
 
-  MultiFab tempNode(nGrid, DistributionMap(0), 3, nGst);
+  MultiFab tempNode(nGrids[0], DistributionMap(0), 3, nGst);
   tempNode.setVal(0.0);
-  MultiFab temp2Node(nGrid, DistributionMap(0), 3, nGst);
+  MultiFab temp2Node(nGrids[0], DistributionMap(0), 3, nGst);
   temp2Node.setVal(0.0);
 
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {

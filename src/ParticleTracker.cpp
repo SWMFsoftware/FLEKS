@@ -187,8 +187,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
   isGridEmpty = ptRegionIn.empty();
 
   activeRegionBA = ptRegionIn;
-  cGrid = centerBAIn;
-  nGrid = convert(cGrid, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
+  cGrid = centerBAIn;  
 
   if (!cGrid.empty()) {
     // This method will call MakeNewLevelFromScratch() and
@@ -196,6 +195,8 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
     InitFromScratch(tc->get_time());
     SetDistributionMap(0, dmIn);
   }
+
+  calc_node_grids();
 
   if (nodeB.empty()) {
     nodeB.resize(max_level + 1);
@@ -205,9 +206,9 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
   }
 
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    distribute_FabArray(nodeE[iLevTest], nGrid, DistributionMap(iLevTest), 3,
+    distribute_FabArray(nodeE[iLevTest], nGrids[0], DistributionMap(iLevTest), 3,
                         nGst, false);
-    distribute_FabArray(nodeB[iLevTest], nGrid, DistributionMap(iLevTest), 3,
+    distribute_FabArray(nodeB[iLevTest], nGrids[0], DistributionMap(iLevTest), 3,
                         nGst, false);
   }
   distribute_FabArray(cellStatus, cGrid, DistributionMap(0), 1, nGst, false);

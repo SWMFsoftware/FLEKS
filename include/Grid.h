@@ -41,7 +41,6 @@ protected:
 
   // Nodal
   amrex::Vector<amrex::BoxArray> nGrids;
-  amrex::BoxArray nGrid;
 
   // The status of a cell could be: iBoundary_, iOnNew_, or iOnOld_.
   amrex::iMultiFab cellStatus;
@@ -126,17 +125,18 @@ public:
 
   void calc_node_grids() {
     nGrids.clear();
-    nGrid.clear();
 
-    if (cGrid.empty())
-      return;
-
-    nGrids.resize(finest_level + 1);
-    for (int lev = 0; lev <= finest_level; lev++) {
-      nGrids[lev] =
-          amrex::convert(cGrids[lev], amrex::IntVect::TheNodeVector());
+    if (cGrid.empty()) {
+      // If there is no active cell, still push an empty box array as the base
+      // nGrids[0]. Because nGrids[0] is used later.
+      nGrids.push_back(amrex::BoxArray());
+    } else {
+      nGrids.resize(finest_level + 1);
+      for (int lev = 0; lev <= finest_level; lev++) {
+        nGrids[lev] =
+            amrex::convert(cGrids[lev], amrex::IntVect::TheNodeVector());
+      }
     }
-    nGrid = nGrids[0];
   }
 
   void print_grid_info(bool printBoxes = false) {

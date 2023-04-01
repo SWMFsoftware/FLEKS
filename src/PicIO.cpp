@@ -172,7 +172,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
     Box gbx = convert(Geom(0).Domain(), { 1, 1, 1 });
 
     if (writerIn.is_compact())
-      gbx = convert(nGrid.minimalBox(), { 1, 1, 1 });
+      gbx = convert(nGrids[0].minimalBox(), { 1, 1, 1 });
 
     const auto lo = lbound(gbx);
     const auto hi = ubound(gbx);
@@ -195,7 +195,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         for (int i = lo.x; i <= iMax; ++i) {
           const double xp = i * dx[ix_] + plo[ix_];
           if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp) &&
-              !nGrid.contains(IntVect{ i, j, k })) {
+              !nGrids[0].contains(IntVect{ i, j, k })) {
             const int iBlock = -1;
             pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
                                      zp, (double)iBlock });
