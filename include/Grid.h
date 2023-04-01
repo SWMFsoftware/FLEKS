@@ -33,10 +33,9 @@ protected:
   // A collection of boxes to describe the simulation domain. The boxes have
   // been combined if possible. It covers the same region as cGrids[0], but
   // usually contains less boxes.
-  amrex::BoxArray activeRegionBA;
+  amrex::BoxArray activeRegion;
 
-  // Cell center
-  amrex::BoxArray baseGrid;
+  // Cell center  
   amrex::Vector<amrex::BoxArray>& cGrids = grids;
 
   // Nodal
@@ -98,7 +97,7 @@ public:
 
   const amrex::AmrInfo& get_amr_info() const { return gridAmrInfo; }
 
-  void set_base_grid(const amrex::BoxArray& ba) { baseGrid = ba; }
+  void set_base_grid(const amrex::BoxArray& ba) { activeRegion = ba; }
 
   bool is_grid_empty() const { return isGridEmpty; }
 
@@ -126,7 +125,7 @@ public:
   void calc_node_grids() {
     nGrids.clear();
 
-    if (baseGrid.empty()) {
+    if (activeRegion.empty()) {
       // If there is no active cell, still push an empty box array as the base
       // grid
       nGrids.push_back(amrex::BoxArray());
@@ -232,7 +231,7 @@ public:
   virtual void PostProcessBaseGrids(amrex::BoxArray& ba) const override {
     std::string nameFunc = "Grid::PostProcessBaseGrids";
     amrex::Print() << printPrefix << nameFunc << " is called." << std::endl;
-    ba = baseGrid;
+    ba = activeRegion;
   };
 };
 #endif

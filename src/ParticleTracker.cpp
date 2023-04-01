@@ -186,10 +186,10 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
 
   isGridEmpty = ptRegionIn.empty();
 
-  activeRegionBA = ptRegionIn;
-  baseGrid = centerBAIn;  
+  activeRegion = ptRegionIn;
+  activeRegion = centerBAIn;  
   
-  if (baseGrid.empty()) {
+  if (activeRegion.empty()) {
     cGrids.clear();
     cGrids.push_back(amrex::BoxArray());
   } else {
@@ -224,7 +224,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
       auto ptr = std::unique_ptr<TestParticles>(new TestParticles(
           this, fi.get(), tc.get(), i, fi->get_species_charge(i),
           fi->get_species_mass(i), gridID));
-      ptr->set_region_range(activeRegionBA);
+      ptr->set_region_range(activeRegion);
       ptr->set_ppc(nTPPerCell);
       ptr->set_interval(nTPIntervalCell);
       ptr->set_particle_region(sPartRegion);
@@ -236,7 +236,7 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
       // Label the particles outside the OLD PIC region.
       parts[i]->label_particles_outside_ba();
       parts[i]->SetParticleBoxArray(0, cGrids[0]);
-      parts[i]->set_region_range(activeRegionBA);
+      parts[i]->set_region_range(activeRegion);
       parts[i]->SetParticleDistributionMap(0, DistributionMap(0));
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_ba_general();

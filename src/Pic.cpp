@@ -155,7 +155,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   if (centerBAIn == cGrids[0] && isGridInitialized)
     return;
 
-  activeRegionBA = picRegionIn;
+  activeRegion = picRegionIn;
 
   isGridEmpty = picRegionIn.empty();
 
@@ -163,9 +163,9 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
 
   BoxArray cGridOld = cGrids[0];
 
-  baseGrid = centerBAIn;
+  activeRegion = centerBAIn;
 
-  if (baseGrid.empty()) {
+  if (activeRegion.empty()) {
     cGrids.clear();
     cGrids.push_back(amrex::BoxArray());
   } else {
@@ -330,7 +330,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
       if (ptr->is_neutral())
         solveEM = false;
 
-      ptr->set_region_range(activeRegionBA);
+      ptr->set_region_range(activeRegion);
 
       //----- Set parameters------------
       if (particleMergeThreshold >= 0) {
@@ -351,7 +351,7 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
       // Label the particles outside the OLD PIC region.
       parts[i]->label_particles_outside_ba();
 
-      parts[i]->set_region_range(activeRegionBA);
+      parts[i]->set_region_range(activeRegion);
 
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_ba_general();
@@ -963,7 +963,7 @@ void Pic::update(bool doReportIn) {
 
   if (doReport) {
     Real tEnd = second();
-    Real nPoint = activeRegionBA.d_numPts();
+    Real nPoint = activeRegion.d_numPts();
     int nProc = amrex::ParallelDescriptor::NProcs();
     // The unit of the speed is (cell per processor per second)
     Real speed = nPoint / nProc / (tEnd - tStart);
@@ -1405,7 +1405,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   bool useFloatBC = (func == nullptr);
 
   // BoxArray ba = mf.boxArray();
-  BoxArray ba = convert(activeRegionBA, mf.boxArray().ixType());
+  BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
 
   const IntVect& ngrow = mf.nGrowVect();
   if (Geom(0).Domain().bigEnd(iz_) == Geom(0).Domain().smallEnd(iz_)) {

@@ -224,19 +224,19 @@ void Domain::regrid() {
 
   BoxList bl;
   get_boxlist_from_region(bl, gridInfo, centerBoxLo, centerBoxHi);
-  BoxArray activeRegionBA(bl);
+  BoxArray activeRegion(bl);
 
   long nCellPic = 0;
   for (const auto &bx : bl) {
     nCellPic += bx.numPts();
   }
 
-  BoxArray baPic(activeRegionBA);
+  BoxArray baPic(activeRegion);
 
   baPic.maxSize(maxBlockSize);
   Print() << "=====" << printPrefix << "Base Grid Information Summary========="
           << "\n Number of Boxes to describe active region = "
-          << activeRegionBA.size()
+          << activeRegion.size()
           << "\n Number of boxes                           = " << baPic.size()
           << "\n Number of active cells                    = " << nCellPic
           << "\n Number of domain cells                    = "
@@ -262,10 +262,10 @@ void Domain::regrid() {
     sourcePT2OH->regrid(baPic, dmPic);
 
   if (pic)
-    pic->regrid(activeRegionBA, baPic, dmPic);
+    pic->regrid(activeRegion, baPic, dmPic);
 
   if (pt)
-    pt->regrid(activeRegionBA, baPic, dmPic, *pic);
+    pt->regrid(activeRegion, baPic, dmPic, *pic);
 
   iGrid++;
   iDecomp++;

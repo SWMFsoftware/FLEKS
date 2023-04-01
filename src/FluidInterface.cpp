@@ -526,9 +526,9 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
 
   isGridEmpty = centerBAIn.empty();
 
-  baseGrid = centerBAIn;
+  activeRegion = centerBAIn;
 
-  if (baseGrid.empty()) {
+  if (activeRegion.empty()) {
     cGrids.clear();
     cGrids.push_back(amrex::BoxArray());
   } else {  
