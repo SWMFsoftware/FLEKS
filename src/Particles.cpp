@@ -1993,8 +1993,9 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
                stateOH->get_No2SiRho() / cProtonMassSI;
 
       // cs = sqrt(P/n); m/s
+      // Assume p = pi + pe = 2pi, so divide by sqrt(2.0).
       double cs = stateOH->get_fluid_uth(pti, xp, yp, zp, fluidID) *
-                  stateOH->get_No2SiV();
+                  stateOH->get_No2SiV()/sqrt(2.0);
 
       // cs2Ion = 2*P/n. The definition of thermal speed in get_uth_iso() is
       // different from the requirement in OH_get_charge_exchange_wrapper().
