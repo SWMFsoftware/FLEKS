@@ -195,13 +195,20 @@ class FLEKSTP(object):
         idData = np.array(idList, dtype="i,i")
         if doSave:
             fileName = "particles_t"+str(time)+".csv"
-            header = "time, x, y, z, ux, uy, uz"
+            header = "cpu,iid,time,x,y,z,ux,uy,uz"
             if self.nReal == 10:
-                header += ", bx, by, bz"
+                header += ",bx,by,bz"
             if self.nReal == 13:
-                header += ", bx, by, bz, ex, ey, ex"
-            np.savetxt(fileName, npData, delimiter=",",
-                       header=header, comments="")
+                header += ",bx,by,bz,ex,ey,ez"
+
+            with open(fileName, "w") as f:
+                f.write(header + "\n")
+                for i in range(len(idData)):
+                    ss = ",".join([str(x) for x in idData[i]])
+                    ss +=","
+                    ss +=",".join([str(x) for x in npData[i,:]])
+                    ss += "\n"
+                    f.write(ss)
 
         return idData, npData
 
