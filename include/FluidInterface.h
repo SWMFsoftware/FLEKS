@@ -103,7 +103,7 @@ protected:
   amrex::Vector<double> uniformState;
 
   // Length in BATSRUS normalized unit -> Si
-  double MhdNo2SiL;  
+  double MhdNo2SiL;
 
   bool useResist = false;
   double etaSI = 0, etaNO = 0;
@@ -166,8 +166,9 @@ public:
 
   void set_var_idx();
 
-  void regrid(const amrex::BoxArray& centerBAIn,
-              const amrex::DistributionMapping& dmIn);
+  void regrid(
+      const amrex::BoxArray& centerBAIn,
+      const amrex::DistributionMapping& dmIn = amrex::DistributionMapping());
 
   void update_nodeFluid(const MultiFabFLEKS& nodeIn, const double dt);
 
@@ -198,8 +199,6 @@ public:
   void convert_moment_to_velocity(bool phyNodeOnly = false);
 
   void set_plasma_charge_and_mass(amrex::Real qomEl);
-
-  void load_balance(const amrex::DistributionMapping& dmIn);
 
   void calc_normalization_units();
 
@@ -280,10 +279,11 @@ public:
   void sum_boundary() { nodeFluid.SumBoundary(Geom(0).periodicity()); }
 
   void set_resistivity(double etaSIIn) {
-    // In SI unit R = u_si*L_si/eta_si, where eta_si is magnetic diffusivity
-    // with unit m^2/s. In normalized CGS unit R = u_pic*L_pic/(eta_pic/4pi),
-    // where eta_pic is also magnetic diffusivity. Magnetic Reynolds number R
-    // should not change, so eta_pic = 4*pi*eta_si*Si2NoV*Si2NoL.
+    // In SI unit R = u_si*L_si/eta_si, where eta_si is magnetic
+    // diffusivity with unit m^2/s. In normalized CGS unit R =
+    // u_pic*L_pic/(eta_pic/4pi), where eta_pic is also magnetic
+    // diffusivity. Magnetic Reynolds number R should not change, so
+    // eta_pic = 4*pi*eta_si*Si2NoV*Si2NoL.
     etaSI = etaSIIn;
     useResist = etaSI > 0;
     if (useResist)

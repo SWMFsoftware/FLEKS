@@ -99,9 +99,9 @@ void ParticleTracker::update(Pic& pic) {
     auto& tps = parts[i];
 
     for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-      tps->move_and_save_particles(nodeE[iLevTest], nodeB[iLevTest], tc->get_dt(),
-                                   tc->get_next_dt(), tc->get_time_si(),
-                                   tc->get_cycle() % dnSave == 0);
+      tps->move_and_save_particles(
+          nodeE[iLevTest], nodeB[iLevTest], tc->get_dt(), tc->get_next_dt(),
+          tc->get_time_si(), tc->get_cycle() % dnSave == 0);
     }
 
     if (doSave) {
@@ -170,8 +170,7 @@ void ParticleTracker::post_process_param() {
   savectr->set_multiple(dnSave);
 }
 
-void ParticleTracker::regrid(const BoxArray& ptRegionIn,
-                             const BoxArray& centerBAIn,
+void ParticleTracker::regrid(const BoxArray& region,
                              const DistributionMapping& dmIn, Pic& pic) {
   std::string nameFunc = "PT::regrid";
 
@@ -181,15 +180,13 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
     return;
 
   // Why need 'isGridInitialized'? See the explanation in Domain::regrid().
-  if (centerBAIn == cGrids[0] && isGridInitialized)
+  if (region == activeRegion && isGridInitialized)
     return;
 
-  isGridEmpty = ptRegionIn.empty();
+  activeRegion = region;
+  isGridEmpty = activeRegion.empty();
 
-  activeRegion = ptRegionIn;
-  activeRegion = centerBAIn;  
-  
-  if (activeRegion.empty()) {
+  if (isGridEmpty) {
     cGrids.clear();
     cGrids.push_back(amrex::BoxArray());
   } else {
@@ -209,12 +206,13 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
   }
 
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    distribute_FabArray(nodeE[iLevTest], nGrids[0], DistributionMap(iLevTest), 3,
-                        nGst, false);
-    distribute_FabArray(nodeB[iLevTest], nGrids[0], DistributionMap(iLevTest), 3,
-                        nGst, false);
+    distribute_FabArray(nodeE[iLevTest], nGrids[0], DistributionMap(iLevTest),
+                        3, nGst, false);
+    distribute_FabArray(nodeB[iLevTest], nGrids[0], DistributionMap(iLevTest),
+                        3, nGst, false);
   }
-  distribute_FabArray(cellStatus, cGrids[0], DistributionMap(0), 1, nGst, false);
+  distribute_FabArray(cellStatus, cGrids[0], DistributionMap(0), 1, nGst,
+                      false);
 
   update_cell_status(pic);
 
@@ -246,8 +244,8 @@ void ParticleTracker::regrid(const BoxArray& ptRegionIn,
 
   { // Copy cell Status to Particles objects.
     for (int i = 0; i < nSpecies; i++) {
-      distribute_FabArray(parts[i]->cellStatus, cGrids[0], DistributionMap(0), 1,
-                          nGst, false);
+      distribute_FabArray(parts[i]->cellStatus, cGrids[0], DistributionMap(0),
+                          1, nGst, false);
 
       if (!cellStatus.empty()) {
         iMultiFab::Copy(parts[i]->cellStatus, cellStatus, 0, 0,

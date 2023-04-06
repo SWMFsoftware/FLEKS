@@ -142,7 +142,7 @@ void Pic::distribute_arrays() {
 }
 
 //==========================================================
-void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
+void Pic::regrid(const BoxArray& region,
                  const DistributionMapping& dmIn) {
   std::string nameFunc = "Pic::regrid";
 
@@ -152,20 +152,18 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
   //   sourceInterface.regrid(centerBAIn, dmIn);
 
   // Why need 'isGridInitialized'? See the explaination in Domain::regrid().
-  if (centerBAIn == cGrids[0] && isGridInitialized)
+  if (region == activeRegion && isGridInitialized)
     return;
 
-  activeRegion = picRegionIn;
+  activeRegion = region;
 
-  isGridEmpty = picRegionIn.empty();
+  isGridEmpty = activeRegion.empty();
 
   doNeedFillNewCell = true;
 
   BoxArray cGridOld = cGrids[0];
 
-  activeRegion = centerBAIn;
-
-  if (activeRegion.empty()) {
+  if (isGridEmpty) {
     cGrids.clear();
     cGrids.push_back(amrex::BoxArray());
   } else {
@@ -174,6 +172,8 @@ void Pic::regrid(const BoxArray& picRegionIn, const BoxArray& centerBAIn,
     InitFromScratch(tc->get_time());
     SetDistributionMap(0, dmIn);
   }
+
+  Print() << "dm = " << DistributionMap(0) << std::endl;
 
   calc_node_grids();
 

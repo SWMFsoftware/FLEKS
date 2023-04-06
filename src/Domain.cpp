@@ -231,13 +231,9 @@ void Domain::regrid() {
     nCellPic += bx.numPts();
   }
 
-  BoxArray baPic(activeRegion);
-
-  baPic.maxSize(maxBlockSize);
   Print() << "=====" << printPrefix << "Base Grid Information Summary========="
           << "\n Number of Boxes to describe active region = "
           << activeRegion.size()
-          << "\n Number of boxes                           = " << baPic.size()
           << "\n Number of active cells                    = " << nCellPic
           << "\n Number of domain cells                    = "
           << centerBox.numPts()
@@ -246,26 +242,22 @@ void Domain::regrid() {
           << "\n===================================================="
           << std::endl;
 
-  DistributionMapping dmPic;
-  if (!baPic.empty())
-    dmPic.define(baPic);
-
-  fi->regrid(baPic, dmPic);
+  fi->regrid(activeRegion);
 
   if (source)
-    source->regrid(baPic, dmPic);
+    source->regrid(activeRegion, fi->DistributionMap(0));
 
   if (stateOH)
-    stateOH->regrid(baPic, dmPic);
+    stateOH->regrid(activeRegion, fi->DistributionMap(0));
 
   if (sourcePT2OH)
-    sourcePT2OH->regrid(baPic, dmPic);
+    sourcePT2OH->regrid(activeRegion, fi->DistributionMap(0));
 
   if (pic)
-    pic->regrid(activeRegion, baPic, dmPic);
+    pic->regrid(activeRegion, fi->DistributionMap(0));
 
   if (pt)
-    pt->regrid(activeRegion, baPic, dmPic, *pic);
+    pt->regrid(activeRegion, fi->DistributionMap(0), *pic);
 
   iGrid++;
   iDecomp++;
@@ -396,9 +388,9 @@ void Domain::read_restart() {
   fi->read_restart();
 
   if (!doRestartFIOnly) {
-    pic->regrid(baPic, baPic, dmPic);
+    pic->regrid(baPic, dmPic);
     // Assume dmPT == dmPIC so far.
-    pt->regrid(baPic, baPic, dmPic, *pic);
+    pt->regrid(baPic, dmPic, *pic);
 
     pic->read_restart();
     write_plots(true);

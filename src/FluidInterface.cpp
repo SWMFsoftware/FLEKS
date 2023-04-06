@@ -519,24 +519,27 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
 
   // Why need 'isGridInitialized'? See the explaination in
   // Domain::regrid().
-  if (centerBAIn == cGrids[0] && isGridInitialized) {
+  if (centerBAIn == activeRegion && isGridInitialized) {
     // The interface grid does not change.
     return;
   }
 
-  isGridEmpty = centerBAIn.empty();
-
   activeRegion = centerBAIn;
+  isGridEmpty = activeRegion.empty();
 
-  if (activeRegion.empty()) {
+  if (isGridEmpty) {
     cGrids.clear();
     cGrids.push_back(amrex::BoxArray());
-  } else {  
+  } else {
     // This method will call MakeNewLevelFromScratch() and
     // PostProcessBaseGrids()
     InitFromScratch(0.0);
-    SetDistributionMap(0, dmIn);
+    if (!dmIn.empty()) {
+      SetDistributionMap(0, dmIn);
+    }
   }
+
+  // Print() << "dm = " << DistributionMap(0) << std::endl;
 
   calc_node_grids();
 
@@ -823,13 +826,6 @@ void FluidInterface::set_plasma_charge_and_mass(amrex::Real qomEl) {
     SumMass += MoMi_S[is];
 
   invSumMass = 1. / SumMass;
-}
-
-void FluidInterface::load_balance(const DistributionMapping& dmIn) {
-  SetDistributionMap(0, dmIn);
-
-  redistribute_FabArray(nodeFluid, DistributionMap(0)); // false?
-  redistribute_FabArray(centerB, DistributionMap(0));   // false?
 }
 
 //-----------------------------------------------------------------------
