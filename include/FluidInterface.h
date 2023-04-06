@@ -166,9 +166,8 @@ public:
 
   void set_var_idx();
 
-  void regrid(
-      const amrex::BoxArray& centerBAIn,
-      const amrex::DistributionMapping& dmIn = amrex::DistributionMapping());
+  void regrid(const amrex::BoxArray& centerBAIn,
+              const Grid* const grid = nullptr);
 
   void update_nodeFluid(const MultiFabFLEKS& nodeIn, const double dt);
 

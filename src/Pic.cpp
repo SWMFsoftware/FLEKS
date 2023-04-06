@@ -142,14 +142,10 @@ void Pic::distribute_arrays() {
 }
 
 //==========================================================
-void Pic::regrid(const BoxArray& region,
-                 const DistributionMapping& dmIn) {
+void Pic::regrid(const BoxArray& region, const Grid* const grid) {
   std::string nameFunc = "Pic::regrid";
 
   timing_func(nameFunc);
-
-  // if (useSource)
-  //   sourceInterface.regrid(centerBAIn, dmIn);
 
   // Why need 'isGridInitialized'? See the explaination in Domain::regrid().
   if (region == activeRegion && isGridInitialized)
@@ -170,10 +166,15 @@ void Pic::regrid(const BoxArray& region,
     // This method will call MakeNewLevelFromScratch() and
     // PostProcessBaseGrids()
     InitFromScratch(tc->get_time());
-    SetDistributionMap(0, dmIn);
+    for (int iLev = 0; iLev <= max_level; iLev++) {
+      // Q: Why is it required to set distribution map here?
+      // A: fi and pic should have the same grids and distribution maps.
+      // However, it seems AMReX is too smart that it will try to load balance
+      // the box arrays so that the distribution maps can be different even the
+      // grid is the same. So we need to set the distribution map here.
+      SetDistributionMap(iLev, grid->DistributionMap(iLev));
+    }
   }
-
-  Print() << "dm = " << DistributionMap(0) << std::endl;
 
   calc_node_grids();
 

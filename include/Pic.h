@@ -72,7 +72,7 @@ private:
 
   LinearSolver eSolver;
   LinearSolver divESolver;
-  
+
   int nSpecies;
   int iTot;
   amrex::Vector<amrex::MultiFab> nodePlasma;
@@ -152,11 +152,10 @@ public:
   void set_fluid_source(std::shared_ptr<SourceInterface> &in) { source = in; }
 
   //--------------Initialization begin-------------------------------
-  void regrid(const amrex::BoxArray &region,
-              const amrex::DistributionMapping &dmIn);
+  void regrid(const amrex::BoxArray &region, const Grid *const grid = nullptr);
 
   void distribute_arrays();
-  
+
   void init_Pic();
   void fill_new_cells();
   void fill_E_B_fields();
@@ -347,7 +346,8 @@ public:
   // virtual void ErrorEst(int lev, amrex::TagBoxArray &tags, amrex::Real time,
   //                       int ngrow) override {
   //   std::string nameFunc = "Pic::ErrorEst";
-  //   amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
+  //   amrex::Print() << printPrefix << nameFunc << " lev = " << lev <<
+  //   std::endl;
 
   //   const int tagval = amrex::TagBox::SET;
   //   // return;

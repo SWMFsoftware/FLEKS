@@ -33,8 +33,7 @@ public:
 
   void post_process_param();
 
-  void regrid(const amrex::BoxArray &region,
-              const amrex::DistributionMapping &dmIn, Pic &pic);
+  void regrid(const amrex::BoxArray &region, const Grid *const grid, Pic &pic);
 
   void update_field(Pic &pic);
   void update_cell_status(Pic &pic);

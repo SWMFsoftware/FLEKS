@@ -514,7 +514,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
 }
 
 void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
-                            const amrex::DistributionMapping& dmIn) {
+                            const Grid* const grid) {
   std::string nameFunc = "FluidInterface::regrid";
 
   // Why need 'isGridInitialized'? See the explaination in
@@ -534,8 +534,11 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
     // This method will call MakeNewLevelFromScratch() and
     // PostProcessBaseGrids()
     InitFromScratch(0.0);
-    if (!dmIn.empty()) {
-      SetDistributionMap(0, dmIn);
+
+    if (grid) {
+      for (int iLev = 0; iLev <= max_level; iLev++) {
+        SetDistributionMap(iLev, grid->DistributionMap(iLev));
+      }
     }
   }
 

@@ -170,8 +170,8 @@ void ParticleTracker::post_process_param() {
   savectr->set_multiple(dnSave);
 }
 
-void ParticleTracker::regrid(const BoxArray& region,
-                             const DistributionMapping& dmIn, Pic& pic) {
+void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
+                             Pic& pic) {
   std::string nameFunc = "PT::regrid";
 
   timing_func(nameFunc);
@@ -193,7 +193,10 @@ void ParticleTracker::regrid(const BoxArray& region,
     // This method will call MakeNewLevelFromScratch() and
     // PostProcessBaseGrids()
     InitFromScratch(tc->get_time());
-    SetDistributionMap(0, dmIn);
+
+    for (int iLev = 0; iLev <= max_level; iLev++) {
+      SetDistributionMap(iLev, grid->DistributionMap(iLev));
+    }
   }
 
   calc_node_grids();

@@ -243,21 +243,21 @@ void Domain::regrid() {
           << std::endl;
 
   fi->regrid(activeRegion);
-
+  
   if (source)
-    source->regrid(activeRegion, fi->DistributionMap(0));
+    source->regrid(activeRegion, fi.get());
 
   if (stateOH)
-    stateOH->regrid(activeRegion, fi->DistributionMap(0));
+    stateOH->regrid(activeRegion, fi.get());
 
   if (sourcePT2OH)
-    sourcePT2OH->regrid(activeRegion, fi->DistributionMap(0));
+    sourcePT2OH->regrid(activeRegion, fi.get());
 
   if (pic)
-    pic->regrid(activeRegion, fi->DistributionMap(0));
+    pic->regrid(activeRegion, fi.get());
 
   if (pt)
-    pt->regrid(activeRegion, fi->DistributionMap(0), *pic);
+    pt->regrid(activeRegion, fi.get(), *pic);
 
   iGrid++;
   iDecomp++;
@@ -382,15 +382,14 @@ void Domain::read_restart() {
 
   VisMF::Read(tmp, nameMF);
   BoxArray baPic = tmp.boxArray();
-  DistributionMapping dmPic = tmp.DistributionMap();
 
-  fi->regrid(baPic, dmPic);
+  fi->regrid(baPic);
   fi->read_restart();
 
   if (!doRestartFIOnly) {
-    pic->regrid(baPic, dmPic);
+    pic->regrid(baPic, fi.get());
     // Assume dmPT == dmPIC so far.
-    pt->regrid(baPic, dmPic, *pic);
+    pt->regrid(baPic, fi.get(), *pic);
 
     pic->read_restart();
     write_plots(true);
