@@ -160,6 +160,8 @@ public:
   void regrid(const amrex::BoxArray& centerBAIn,
               const Grid* const grid = nullptr);
 
+  void distribute_arrays();
+
   void update_nodeFluid(const amrex::MultiFab& nodeIn, const double dt);
 
   int count_couple_node_number();

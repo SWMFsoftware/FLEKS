@@ -546,6 +546,13 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
 
   calc_node_grids();
 
+  isGridInitialized = true;
+
+  distribute_arrays();
+}
+
+//==========================================================
+void FluidInterface::distribute_arrays() {
   if (nodeFluid.empty())
     nodeFluid.resize(max_level + 1);
 
@@ -554,12 +561,13 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
 
   const bool doCopy = true;
   const int nVarNode = (useCurrent ? nVarFluid + 3 : nVarFluid);
-  distribute_FabArray(nodeFluid[0], nGrids[0], DistributionMap(0), nVarNode,
-                      nGst, doCopy);
-  distribute_FabArray(centerB[0], cGrids[0], DistributionMap(0), nDimMax, nGst,
-                      doCopy);
 
-  isGridInitialized = true;
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    distribute_FabArray(nodeFluid[iLev], nGrids[iLev], DistributionMap(iLev),
+                        nVarNode, nGst, doCopy);
+    distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev),
+                        nDimMax, nGst, doCopy);
+  }
 }
 
 //==========================================================
