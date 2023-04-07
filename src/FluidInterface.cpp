@@ -615,26 +615,29 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
     amrex::Abort("Error: unknown action!\n");
   }
 
-  const Real* dx = Geom(0).CellSize();
-  const auto plo = Geom(0).ProbLo();
-
-  // Global NODE box.
-  const Box gbx = convert(Geom(0).Domain(), { 1, 1, 1 });
-
   const double no2siL = get_No2SiL();
 
   int nIdxCount = 0;
   int nCount = 0;
-  int ifab = 0;
-  if (!nodeFluid[0].empty())
-    for (MFIter mfi(nodeFluid[0]); mfi.isValid(); ++mfi) {
-      ifab++;
+
+  // Global NODE box.
+  const Box gbx = convert(Geom(0).Domain(), { 1, 1, 1 });
+
+  for (int iLev = 0; iLev <= max_level; iLev++) {
+    const Real* dx = Geom(iLev).CellSize();
+    const auto plo = Geom(iLev).ProbLo();
+
+    auto& fluid = nodeFluid[iLev];
+    if (fluid.empty())
+      continue;
+
+    for (MFIter mfi(fluid); mfi.isValid(); ++mfi) {
       // For each block, looping through all nodes, including ghost nodes.
       const Box& box = mfi.fabbox();
       const auto lo = lbound(box);
       const auto hi = ubound(box);
 
-      const Array4<Real>& arr = nodeFluid[0][mfi].array();
+      const Array4<Real>& arr = fluid[mfi].array();
 
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
@@ -661,9 +664,9 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
               }
               nIdxCount++;
             }
-
           } // for k
     }
+  }
 
   return nCount;
 }
@@ -702,7 +705,7 @@ void FluidInterface::set_node_fluid(const double* const data,
   normalize_fluid_variables();
   convert_moment_to_velocity();
 
-  // save_amrex_file();
+  save_amrex_file();
 }
 
 void FluidInterface::set_node_fluid() {
@@ -727,11 +730,13 @@ void FluidInterface::set_node_fluid(const FluidInterface& other) {
   if (isGridEmpty)
     return;
 
-  MultiFab::Copy(nodeFluid[0], other.nodeFluid[0], 0, 0, nodeFluid[0].nComp(),
-                 nodeFluid[0].nGrow());
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    MultiFab::Copy(nodeFluid[iLev], other.nodeFluid[iLev], 0, 0,
+                   nodeFluid[iLev].nComp(), nodeFluid[iLev].nGrow());
 
-  MultiFab::Copy(centerB[0], other.centerB[0], 0, 0, centerB[0].nComp(),
-                 centerB[0].nGrow());
+    MultiFab::Copy(centerB[iLev], other.centerB[iLev], 0, 0,
+                   centerB[iLev].nComp(), centerB[iLev].nGrow());
+  }
 }
 
 void FluidInterface::calc_current() {
@@ -741,18 +746,20 @@ void FluidInterface::calc_current() {
   if (!useCurrent)
     return;
 
-  // All centerB, including all ghost cells are accurate.
-  average_node_to_cellcenter(centerB[0], 0, nodeFluid[0], iBx,
-                             centerB[0].nComp(), centerB[0].nGrow());
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    // All centerB, including all ghost cells are accurate.
+    average_node_to_cellcenter(centerB[iLev], 0, nodeFluid[iLev], iBx,
+                               centerB[iLev].nComp(), centerB[iLev].nGrow());
 
-  // currentMF is just an alias of current components of nodeFluid[0].
-  MultiFab currentMF(nodeFluid[0], make_alias, iJx, nDimMax);
+    // currentMF is just an alias of current components of nodeFluid.
+    MultiFab currentMF(nodeFluid[iLev], make_alias, iJx, nDimMax);
 
-  // The outmost layer of currentMF can not be calculated from centerB[0]
-  curl_center_to_node(centerB[0], currentMF, Geom(0).InvCellSize());
-  currentMF.mult(1.0 / (get_No2SiL() * fourPI * 1e-7), currentMF.nGrow());
+    // The outmost layer of currentMF can not be calculated from centerB
+    curl_center_to_node(centerB[iLev], currentMF, Geom(iLev).InvCellSize());
+    currentMF.mult(1.0 / (get_No2SiL() * fourPI * 1e-7), currentMF.nGrow());
 
-  currentMF.FillBoundary(Geom(0).periodicity());
+    currentMF.FillBoundary(Geom(iLev).periodicity());
+  }
 
   /*
   Q: The outmost layer of currentMF is not accurate. Why not use
@@ -778,60 +785,63 @@ void FluidInterface::calc_current() {
 }
 
 void FluidInterface::normalize_fluid_variables() {
-  for (int i = 0; i < nodeFluid[0].nComp(); ++i) {
-    MultiFab tmpMF(nodeFluid[0], make_alias, i, 1);
-    tmpMF.mult(Si2No_V[i], tmpMF.nGrow());
-  }
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    for (int i = 0; i < nodeFluid[iLev].nComp(); ++i) {
+      MultiFab tmpMF(nodeFluid[iLev], make_alias, i, 1);
+      tmpMF.mult(Si2No_V[i], tmpMF.nGrow());
+    }
 
-  centerB[0].mult(Si2NoB, centerB[0].nGrow());
+    centerB[iLev].mult(Si2NoB, centerB[iLev].nGrow());
+  }
 }
 
 void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly) {
 
-  for (MFIter mfi(nodeFluid[0]); mfi.isValid(); ++mfi) {
-    Box box = mfi.fabbox();
-    if (phyNodeOnly)
-      box = mfi.validbox();
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+  for (int iLev = 0; iLev <= finest_level; iLev++)
+    for (MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
+      Box box = mfi.fabbox();
+      if (phyNodeOnly)
+        box = mfi.validbox();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
 
-    const Array4<Real>& arr = nodeFluid[0][mfi].array();
+      const Array4<Real>& arr = nodeFluid[iLev][mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
 
-          if (useMultiSpecies) {
-            double Rhot = 0;
-            for (int iIon = 0; iIon < nIon; ++iIon) {
-              // Rho = sum(Rhoi) + Rhoe;
-              Rhot += arr(i, j, k, iRho_I[iIon]) *
-                      (1 + MoMi_S[0] / MoMi_S[iIon + 1]);
-            } // iIon
+            if (useMultiSpecies) {
+              double Rhot = 0;
+              for (int iIon = 0; iIon < nIon; ++iIon) {
+                // Rho = sum(Rhoi) + Rhoe;
+                Rhot += arr(i, j, k, iRho_I[iIon]) *
+                        (1 + MoMi_S[0] / MoMi_S[iIon + 1]);
+              } // iIon
 
-            arr(i, j, k, iUx_I[0]) /= Rhot;
-            arr(i, j, k, iUy_I[0]) /= Rhot;
-            arr(i, j, k, iUz_I[0]) /= Rhot;
-          } else {
-            for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
-              const double& rho = arr(i, j, k, iRho_I[iFluid]);
-              if (rho > 0) {
-                arr(i, j, k, iUx_I[iFluid]) /= rho;
-                arr(i, j, k, iUy_I[iFluid]) /= rho;
-                arr(i, j, k, iUz_I[iFluid]) /= rho;
-              } else {
-                const Real* dx = Geom(0).CellSize();
-                const auto plo = Geom(0).ProbLo();
-                const Real x = (i * dx[ix_] + plo[ix_]) * No2SiL / rPlanetSi;
-                const Real y = (j * dx[iy_] + plo[iy_]) * No2SiL / rPlanetSi;
-                const Real z = (k * dx[iz_] + plo[iz_]) * No2SiL / rPlanetSi;
-                printf("Warning: ZERO density at x = %e, y = %e, z = %e\n", x,
-                       y, z);
-              }
-            } // iFluid
-          }   // else
-        }
-  }
+              arr(i, j, k, iUx_I[0]) /= Rhot;
+              arr(i, j, k, iUy_I[0]) /= Rhot;
+              arr(i, j, k, iUz_I[0]) /= Rhot;
+            } else {
+              for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
+                const double& rho = arr(i, j, k, iRho_I[iFluid]);
+                if (rho > 0) {
+                  arr(i, j, k, iUx_I[iFluid]) /= rho;
+                  arr(i, j, k, iUy_I[iFluid]) /= rho;
+                  arr(i, j, k, iUz_I[iFluid]) /= rho;
+                } else {
+                  const Real* dx = Geom(0).CellSize();
+                  const auto plo = Geom(0).ProbLo();
+                  const Real x = (i * dx[ix_] + plo[ix_]) * No2SiL / rPlanetSi;
+                  const Real y = (j * dx[iy_] + plo[iy_]) * No2SiL / rPlanetSi;
+                  const Real z = (k * dx[iz_] + plo[iz_]) * No2SiL / rPlanetSi;
+                  printf("Warning: ZERO density at x = %e, y = %e, z = %e\n", x,
+                         y, z);
+                }
+              } // iFluid
+            }   // else
+          }
+    }
 }
 
 void FluidInterface::set_plasma_charge_and_mass(amrex::Real qomEl) {
@@ -1402,7 +1412,12 @@ void FluidInterface::save_amrex_file() {
       varNames.push_back("var" + to_string(i));
     }
   }
-  WriteSingleLevelPlotfile(filename, nodeFluid[0], varNames, Geom(0), 0, 0);
+  // WriteSingleLevelPlotfile(filename, nodeFluid[0], varNames, Geom(0), 0, 0);
+
+  const int nLev = finest_level + 1;
+  WriteMultiLevelPlotfile(filename, nLev, amrex::GetVecOfConstPtrs(nodeFluid),
+                          varNames, geom, 0.0, Vector<int>(nLev, 0),
+                          refRatio());
 
   for (int i = 0; i < nodeFluid[0].nComp(); i++) {
     Real out2no = Si2No_V[i];
