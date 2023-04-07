@@ -21,15 +21,6 @@
 #include "Utility.h"
 #include "Writer.h"
 
-// amrex::MultiFab does not provide an assignment operator. MultiFabFLEKS is
-// derived from MultiFab and provides an empty assignment operator.
-class MultiFabFLEKS : public amrex::MultiFab {
-public:
-  MultiFabFLEKS() {}
-  ~MultiFabFLEKS() = default;
-  MultiFabFLEKS& operator=(const MultiFabFLEKS& other) { return *this; };
-};
-
 class FluidInterfaceParameters {
 public:
   FluidInterfaceParameters() = default;
@@ -47,7 +38,7 @@ protected:
   // Number of variables passing between MHD and PIC.
   int nVarFluid;
 
-  // If true, nodeFluid contains (Jx, Jy, Jz)
+  // If true, nodeFluid[0] contains (Jx, Jy, Jz)
   bool useCurrent = true;
 
   // Number of fluid at the MHD side. One 'fluid' has its own density,
@@ -97,7 +88,7 @@ protected:
   double Si2NoM, Si2NoV, Si2NoRho, Si2NoB, Si2NoP, Si2NoJ, Si2NoL, Si2NoE;
   double No2SiV, No2SiL;
 
-  // Variable names of nodeFluid.
+  // Variable names of nodeFluid[0].
   amrex::Vector<std::string> varNames;
 
   amrex::Vector<double> uniformState;
@@ -123,8 +114,8 @@ class FluidInterface : public Grid, public FluidInterfaceParameters {
 protected:
   FluidType myType = PICFluid;
 
-  MultiFabFLEKS nodeFluid;
-  MultiFabFLEKS centerB;
+  amrex::Vector<amrex::MultiFab> nodeFluid;
+  amrex::Vector<amrex::MultiFab> centerB;
 
 public:
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
@@ -169,7 +160,7 @@ public:
   void regrid(const amrex::BoxArray& centerBAIn,
               const Grid* const grid = nullptr);
 
-  void update_nodeFluid(const MultiFabFLEKS& nodeIn, const double dt);
+  void update_nodeFluid(const amrex::MultiFab& nodeIn, const double dt);
 
   int count_couple_node_number();
 
@@ -189,7 +180,7 @@ public:
 
   virtual void set_node_fluid(const FluidInterface& other);
 
-  void set_node_fluid_to_zero() { nodeFluid.setVal(0.0); };
+  void set_node_fluid_to_zero() { nodeFluid[0].setVal(0.0); };
 
   void calc_current();
 
@@ -275,7 +266,7 @@ public:
   // BATSRUS normalized unit -> PIC normalized unit;
   double get_MhdNo2NoL() const { return (MhdNo2SiL * Si2NoL); }
 
-  void sum_boundary() { nodeFluid.SumBoundary(Geom(0).periodicity()); }
+  void sum_boundary() { nodeFluid[0].SumBoundary(Geom(0).periodicity()); }
 
   void set_resistivity(double etaSIIn) {
     // In SI unit R = u_si*L_si/eta_si, where eta_si is magnetic
@@ -308,81 +299,81 @@ public:
       return;
 
     std::string restartDir = component + "/restartOUT/";
-    amrex::VisMF::Write(nodeFluid,
+    amrex::VisMF::Write(nodeFluid[0],
                         restartDir + gridName + "_Interface_nodeFluid");
-    amrex::VisMF::Write(centerB, restartDir + gridName + "_Interface_centerB");
+    amrex::VisMF::Write(centerB[0], restartDir + gridName + "_Interface_centerB");
   };
 
   void read_restart() {
     std::string restartDir = component + "/restartIN/";
-    amrex::VisMF::Read(nodeFluid,
+    amrex::VisMF::Read(nodeFluid[0],
                        restartDir + gridName + "_Interface_nodeFluid");
 
-    amrex::VisMF::Read(centerB, restartDir + gridName + "_Interface_centerB");
+    amrex::VisMF::Read(centerB[0], restartDir + gridName + "_Interface_centerB");
   }
 
   void add_to_cell(const amrex::Real& val, amrex::MFIter& mfi, const int i,
                    const int j, const int k, const int iVar) {
-    const amrex::Array4<amrex::Real>& arr = nodeFluid[mfi].array();
+    const amrex::Array4<amrex::Real>& arr = nodeFluid[0][mfi].array();
     arr(i, j, k, iVar) += val;
   }
 
   void add_rho_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                       const amrex::Real x, const amrex::Real y,
                       const amrex::Real z, const int iFluid) {
-    add_to_mf(val, nodeFluid, mfi, Geom(0), x, y, z, iRho_I[iFluid]);
+    add_to_mf(val, nodeFluid[0], mfi, Geom(0), x, y, z, iRho_I[iFluid]);
   }
 
   void add_mx_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                      const amrex::Real x, const amrex::Real y,
                      const amrex::Real z, const int iFluid) {
-    add_to_mf(val, nodeFluid, mfi, Geom(0), x, y, z, iRhoUx_I[iFluid]);
+    add_to_mf(val, nodeFluid[0], mfi, Geom(0), x, y, z, iRhoUx_I[iFluid]);
   }
 
   void add_my_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                      const amrex::Real x, const amrex::Real y,
                      const amrex::Real z, const int iFluid) {
-    add_to_mf(val, nodeFluid, mfi, Geom(0), x, y, z, iRhoUy_I[iFluid]);
+    add_to_mf(val, nodeFluid[0], mfi, Geom(0), x, y, z, iRhoUy_I[iFluid]);
   }
 
   void add_mz_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                      const amrex::Real x, const amrex::Real y,
                      const amrex::Real z, const int iFluid) {
-    add_to_mf(val, nodeFluid, mfi, Geom(0), x, y, z, iRhoUz_I[iFluid]);
+    add_to_mf(val, nodeFluid[0], mfi, Geom(0), x, y, z, iRhoUz_I[iFluid]);
   }
 
   void add_p_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                     const amrex::Real x, const amrex::Real y,
                     const amrex::Real z, const int iFluid) {
-    add_to_mf(val, nodeFluid, mfi, Geom(0), x, y, z, iP_I[iFluid]);
+    add_to_mf(val, nodeFluid[0], mfi, Geom(0), x, y, z, iP_I[iFluid]);
   }
 
   void add_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                   const amrex::Real x, const amrex::Real y, const amrex::Real z,
                   const int iVar) {
-    add_to_mf(val, nodeFluid, mfi, Geom(0), x, y, z, iVar);
+    add_to_mf(val, nodeFluid[0], mfi, Geom(0), x, y, z, iVar);
   }
 
-  // ---------Functions to read/interpolate value from nodeFluid.
+  // ---------Functions to read/interpolate value from nodeFluid[0].
   // Begin------------
-  const MultiFabFLEKS& get_nodeFluid() const { return nodeFluid; }
+  const amrex::MultiFab& get_nodeFluid() const { return nodeFluid[0]; }
 
   amrex::Real get_center_b(const amrex::MFIter& mfi, const int i, const int j,
                            const int k, const int iDir) const {
-    const auto& arr = centerB[mfi].array();
+    const auto& arr = centerB[0][mfi].array();
     return arr(i, j, k, iDir);
   }
 
   amrex::Real get_value(const amrex::MFIter& mfi, const int i, const int j,
                         const int k, const int iVar) const {
-    const auto& arr = nodeFluid[mfi].array();
+    const auto& arr = nodeFluid[0][mfi].array();
     return arr(i, j, k, iVar);
   }
 
   amrex::Real get_value(const amrex::MFIter& mfi, const amrex::Real x,
                         const amrex::Real y, const amrex::Real z,
                         const int iVar) const {
-    return get_value_at_loc(nodeFluid, mfi, Geom(0), x, y, z, iVar);
+    return get_value_at_loc(nodeFluid[0], mfi, Geom(0), x, y, z, iVar);
   }
 
   template <typename T>
@@ -1058,7 +1049,7 @@ public:
     return gradpe;
   }
 
-  // ---------Functions to read/interpolate value from nodeFluid.
+  // ---------Functions to read/interpolate value from nodeFluid[0].
   // End------------
 };
 #endif

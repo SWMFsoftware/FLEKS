@@ -21,7 +21,7 @@ public:
     initFromSWMF = false;
   }
 
-  // Set nodeFluid from get_source_wrapper.
+  // Set nodeFluid[0] from get_source_wrapper.
   void get_source_from_fluid(const FluidInterface& other) {
     std::string nameFunc = "FS:get_source_from_fluid";
     amrex::Print() << nameFunc << " is called.";
@@ -36,14 +36,14 @@ public:
 
     const double no2siL = get_No2SiL();
 
-    if (!nodeFluid.empty())
-      for (amrex::MFIter mfi(nodeFluid); mfi.isValid(); ++mfi) {
+    if (!nodeFluid[0].empty())
+      for (amrex::MFIter mfi(nodeFluid[0]); mfi.isValid(); ++mfi) {
         // For each block, looping through all nodes, including ghost nodes.
         const amrex::Box& box = mfi.fabbox();
         const auto lo = lbound(box);
         const auto hi = ubound(box);
 
-        const amrex::Array4<amrex::Real>& arr = nodeFluid[mfi].array();
+        const amrex::Array4<amrex::Real>& arr = nodeFluid[0][mfi].array();
 
         for (int k = lo.z; k <= hi.z; ++k)
           for (int j = lo.y; j <= hi.y; ++j)
@@ -95,10 +95,10 @@ public:
       }
 
     if (!isGridEmpty && useCurrent) {
-      // The current stored in nodeFluid are used to initialize particle
+      // The current stored in nodeFluid[0] are used to initialize particle
       // velocities. Since the source particles only contribute little to the
       // total current, set current to zero.
-      amrex::MultiFab currentMF(nodeFluid, amrex::make_alias, iJx, nDimMax);
+      amrex::MultiFab currentMF(nodeFluid[0], amrex::make_alias, iJx, nDimMax);
       currentMF.setVal(0, currentMF.nGrow());
     }
   }

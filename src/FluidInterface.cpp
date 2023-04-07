@@ -546,11 +546,17 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
 
   calc_node_grids();
 
+  if (nodeFluid.empty())
+    nodeFluid.resize(max_level + 1);
+
+  if (centerB.empty())
+    centerB.resize(max_level + 1);
+
   const bool doCopy = true;
   const int nVarNode = (useCurrent ? nVarFluid + 3 : nVarFluid);
-  distribute_FabArray(nodeFluid, nGrids[0], DistributionMap(0), nVarNode, nGst,
-                      doCopy);
-  distribute_FabArray(centerB, cGrids[0], DistributionMap(0), nDimMax, nGst,
+  distribute_FabArray(nodeFluid[0], nGrids[0], DistributionMap(0), nVarNode,
+                      nGst, doCopy);
+  distribute_FabArray(centerB[0], cGrids[0], DistributionMap(0), nDimMax, nGst,
                       doCopy);
 
   isGridInitialized = true;
@@ -610,15 +616,15 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
   int nIdxCount = 0;
   int nCount = 0;
   int ifab = 0;
-  if (!nodeFluid.empty())
-    for (MFIter mfi(nodeFluid); mfi.isValid(); ++mfi) {
+  if (!nodeFluid[0].empty())
+    for (MFIter mfi(nodeFluid[0]); mfi.isValid(); ++mfi) {
       ifab++;
       // For each block, looping through all nodes, including ghost nodes.
       const Box& box = mfi.fabbox();
       const auto lo = lbound(box);
       const auto hi = ubound(box);
 
-      const Array4<Real>& arr = nodeFluid[mfi].array();
+      const Array4<Real>& arr = nodeFluid[0][mfi].array();
 
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
@@ -698,7 +704,7 @@ void FluidInterface::set_node_fluid() {
   }
 
   for (int i = 0; i < nVarFluid; i++)
-    nodeFluid.setVal(uniformState[i], i, 1, nodeFluid.nGrow());
+    nodeFluid[0].setVal(uniformState[i], i, 1, nodeFluid[0].nGrow());
 
   calc_current();
   normalize_fluid_variables();
@@ -711,11 +717,11 @@ void FluidInterface::set_node_fluid(const FluidInterface& other) {
   if (isGridEmpty)
     return;
 
-  MultiFab::Copy(nodeFluid, other.nodeFluid, 0, 0, nodeFluid.nComp(),
-                 nodeFluid.nGrow());
+  MultiFab::Copy(nodeFluid[0], other.nodeFluid[0], 0, 0, nodeFluid[0].nComp(),
+                 nodeFluid[0].nGrow());
 
-  MultiFab::Copy(centerB, other.centerB, 0, 0, centerB.nComp(),
-                 centerB.nGrow());
+  MultiFab::Copy(centerB[0], other.centerB[0], 0, 0, centerB[0].nComp(),
+                 centerB[0].nGrow());
 }
 
 void FluidInterface::calc_current() {
@@ -726,14 +732,14 @@ void FluidInterface::calc_current() {
     return;
 
   // All centerB, including all ghost cells are accurate.
-  average_node_to_cellcenter(centerB, 0, nodeFluid, iBx, centerB.nComp(),
-                             centerB.nGrow());
+  average_node_to_cellcenter(centerB[0], 0, nodeFluid[0], iBx,
+                             centerB[0].nComp(), centerB[0].nGrow());
 
-  // currentMF is just an alias of current components of nodeFluid.
-  MultiFab currentMF(nodeFluid, make_alias, iJx, nDimMax);
+  // currentMF is just an alias of current components of nodeFluid[0].
+  MultiFab currentMF(nodeFluid[0], make_alias, iJx, nDimMax);
 
-  // The outmost layer of currentMF can not be calculated from centerB
-  curl_center_to_node(centerB, currentMF, Geom(0).InvCellSize());
+  // The outmost layer of currentMF can not be calculated from centerB[0]
+  curl_center_to_node(centerB[0], currentMF, Geom(0).InvCellSize());
   currentMF.mult(1.0 / (get_No2SiL() * fourPI * 1e-7), currentMF.nGrow());
 
   currentMF.FillBoundary(Geom(0).periodicity());
@@ -762,24 +768,24 @@ void FluidInterface::calc_current() {
 }
 
 void FluidInterface::normalize_fluid_variables() {
-  for (int i = 0; i < nodeFluid.nComp(); ++i) {
-    MultiFab tmpMF(nodeFluid, make_alias, i, 1);
+  for (int i = 0; i < nodeFluid[0].nComp(); ++i) {
+    MultiFab tmpMF(nodeFluid[0], make_alias, i, 1);
     tmpMF.mult(Si2No_V[i], tmpMF.nGrow());
   }
 
-  centerB.mult(Si2NoB, centerB.nGrow());
+  centerB[0].mult(Si2NoB, centerB[0].nGrow());
 }
 
 void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly) {
 
-  for (MFIter mfi(nodeFluid); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodeFluid[0]); mfi.isValid(); ++mfi) {
     Box box = mfi.fabbox();
     if (phyNodeOnly)
       box = mfi.validbox();
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
-    const Array4<Real>& arr = nodeFluid[mfi].array();
+    const Array4<Real>& arr = nodeFluid[0][mfi].array();
 
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
@@ -1309,20 +1315,19 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
   }
 }
 
-void FluidInterface::update_nodeFluid(const MultiFabFLEKS& nodeIn,
-                                      const double dt) {
+void FluidInterface::update_nodeFluid(const MultiFab& nodeIn, const double dt) {
 
   double No2MhdNoL = No2SiL * (1.0 / MhdNo2SiL);
   double dtSI = dt * get_No2SiT();
 
-  nodeFluid.setVal(0);
+  nodeFluid[0].setVal(0);
 
-  for (MFIter mfi(nodeFluid); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodeFluid[0]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.fabbox();
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
-    const Array4<Real>& arr = nodeFluid[mfi].array();
+    const Array4<Real>& arr = nodeFluid[0][mfi].array();
     const Array4<const Real>& arrIn = nodeIn[mfi].array();
 
     for (int k = lo.z; k <= hi.z; ++k)
@@ -1373,25 +1378,25 @@ void FluidInterface::save_amrex_file() {
   string filename = component + "/plots/" + tag;
   Print() << "Writing FluidInterface file " << filename << std::endl;
 
-  for (int i = 0; i < nodeFluid.nComp(); i++) {
+  for (int i = 0; i < nodeFluid[0].nComp(); i++) {
     Real no2out = No2Si_V[i];
-    // nodeFluid.mult(no2out, i, 1, nodeFluid.nGrow());
+    // nodeFluid[0].mult(no2out, i, 1, nodeFluid[0].nGrow());
   }
 
-  if (varNames.size() != nodeFluid.nComp()) {
+  if (varNames.size() != nodeFluid[0].nComp()) {
     varNames.clear();
   }
 
   if (varNames.empty()) {
-    for (int i = 0; i < nodeFluid.nComp(); i++) {
+    for (int i = 0; i < nodeFluid[0].nComp(); i++) {
       varNames.push_back("var" + to_string(i));
     }
   }
-  WriteSingleLevelPlotfile(filename, nodeFluid, varNames, Geom(0), 0, 0);
+  WriteSingleLevelPlotfile(filename, nodeFluid[0], varNames, Geom(0), 0, 0);
 
-  for (int i = 0; i < nodeFluid.nComp(); i++) {
+  for (int i = 0; i < nodeFluid[0].nComp(); i++) {
     Real out2no = Si2No_V[i];
-    // nodeFluid.mult(out2no, i, 1, nodeFluid.nGrow());
+    // nodeFluid[0].mult(out2no, i, 1, nodeFluid[0].nGrow());
   }
 }
 
@@ -1425,7 +1430,8 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
     const int iStart = iPoint * nVar;
     for (int iVar = 0; iVar < nVar; iVar++) {
       data_I[iStart + iVar] =
-          get_value_at_loc(nodeFluid, Geom(0), xp, yp, zp, idxMap[iVar]) * coef;
+          get_value_at_loc(nodeFluid[0], Geom(0), xp, yp, zp, idxMap[iVar]) *
+          coef;
     }
   }
 }
