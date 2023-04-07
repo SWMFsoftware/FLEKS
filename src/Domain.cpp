@@ -200,7 +200,11 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
   amrInfo.max_grid_size.clear();
   amrInfo.max_grid_size.push_back(maxBlockSize);
 
+#ifdef _AMR_DEV_
+  amrInfo.max_level = 1;
+#else
   amrInfo.max_level = 0;
+#endif
 
   Print() << printPrefix << "Domain range = " << domainRange << std::endl;
   Print() << printPrefix << "Center box = " << centerBox << std::endl;
@@ -243,7 +247,7 @@ void Domain::regrid() {
           << std::endl;
 
   fi->regrid(activeRegion);
-  
+
   if (source)
     source->regrid(activeRegion, fi.get());
 

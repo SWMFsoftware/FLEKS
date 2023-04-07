@@ -35,7 +35,7 @@ protected:
   // usually contains less boxes.
   amrex::BoxArray activeRegion;
 
-  // Cell center  
+  // Cell center
   amrex::Vector<amrex::BoxArray>& cGrids = grids;
 
   // Nodal
@@ -209,15 +209,14 @@ public:
     std::string nameFunc = "Grid::ErrorEst";
     amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
 
+#ifdef _AMR_DEV_
     const int tagval = amrex::TagBox::SET;
-    // return;
     for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.tilebox();
       const auto tagfab = tags.array(mfi);
 
       const auto lo = lbound(bx);
       const auto hi = ubound(bx);
-
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
@@ -226,6 +225,7 @@ public:
             }
           }
     }
+#endif
   };
 
   virtual void PostProcessBaseGrids(amrex::BoxArray& ba) const override {

@@ -546,6 +546,8 @@ void FluidInterface::regrid(const amrex::BoxArray& centerBAIn,
 
   calc_node_grids();
 
+  print_grid_info();
+
   isGridInitialized = true;
 
   distribute_arrays();
