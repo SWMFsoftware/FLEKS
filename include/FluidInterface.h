@@ -38,7 +38,7 @@ protected:
   // Number of variables passing between MHD and PIC.
   int nVarFluid;
 
-  // If true, nodeFluid[0] contains (Jx, Jy, Jz)
+  // If true, nodeFluid contains (Jx, Jy, Jz)
   bool useCurrent = true;
 
   // Number of fluid at the MHD side. One 'fluid' has its own density,
@@ -88,7 +88,7 @@ protected:
   double Si2NoM, Si2NoV, Si2NoRho, Si2NoB, Si2NoP, Si2NoJ, Si2NoL, Si2NoE;
   double No2SiV, No2SiL;
 
-  // Variable names of nodeFluid[0].
+  // Variable names of nodeFluid.
   amrex::Vector<std::string> varNames;
 
   amrex::Vector<double> uniformState;
@@ -162,8 +162,6 @@ public:
 
   void distribute_arrays();
 
-  void update_nodeFluid(const amrex::MultiFab& nodeIn, const double dt);
-
   int count_couple_node_number();
 
   int loop_through_node(std::string action, double* const pos_DI = nullptr,
@@ -182,7 +180,10 @@ public:
 
   virtual void set_node_fluid(const FluidInterface& other);
 
-  void set_node_fluid_to_zero() { nodeFluid[0].setVal(0.0); };
+  void set_node_fluid_to_zero() {
+    for (int iLev = 0; iLev < nodeFluid.size(); ++iLev)
+      nodeFluid[iLev].setVal(0.0);
+  };
 
   void calc_current();
 
@@ -268,7 +269,10 @@ public:
   // BATSRUS normalized unit -> PIC normalized unit;
   double get_MhdNo2NoL() const { return (MhdNo2SiL * Si2NoL); }
 
-  void sum_boundary() { nodeFluid[0].SumBoundary(Geom(0).periodicity()); }
+  void sum_boundary() {
+    for (int iLev = 0; iLev < nodeFluid.size(); ++iLev)
+      nodeFluid[iLev].SumBoundary(Geom(iLev).periodicity());
+  }
 
   void set_resistivity(double etaSIIn) {
     // In SI unit R = u_si*L_si/eta_si, where eta_si is magnetic
@@ -301,81 +305,102 @@ public:
       return;
 
     std::string restartDir = component + "/restartOUT/";
-    amrex::VisMF::Write(nodeFluid[0],
-                        restartDir + gridName + "_Interface_nodeFluid");
-    amrex::VisMF::Write(centerB[0], restartDir + gridName + "_Interface_centerB");
+
+    if (nodeFluid.size() > 1) {
+      amrex::Abort("save_restart_data: Multi-level grid is not supported yet.");
+    }
+
+    for (int iLev = 0; iLev < nodeFluid.size(); ++iLev) {
+      // TODO: The current implementataion does not really support multi-level
+      // grid yet. The level number iLev should be part of the file name.
+      amrex::VisMF::Write(nodeFluid[iLev],
+                          restartDir + gridName + "_Interface_nodeFluid");
+      amrex::VisMF::Write(centerB[iLev],
+                          restartDir + gridName + "_Interface_centerB");
+    }
   };
 
   void read_restart() {
     std::string restartDir = component + "/restartIN/";
-    amrex::VisMF::Read(nodeFluid[0],
-                       restartDir + gridName + "_Interface_nodeFluid");
 
-    amrex::VisMF::Read(centerB[0], restartDir + gridName + "_Interface_centerB");
+    if (nodeFluid.size() > 1) {
+      amrex::Abort("read_restart: Multi-level grid is not supported yet.");
+    }
+
+    for (int iLev = 0; iLev < nodeFluid.size(); ++iLev) {
+      // TODO: The current implementataion does not really support multi-level
+      // grid yet. The level number iLev should be part of the file name.
+      amrex::VisMF::Read(nodeFluid[iLev],
+                         restartDir + gridName + "_Interface_nodeFluid");
+      amrex::VisMF::Read(centerB[iLev],
+                         restartDir + gridName + "_Interface_centerB");
+    }
   }
 
   void add_to_cell(const amrex::Real& val, amrex::MFIter& mfi, const int i,
-                   const int j, const int k, const int iVar) {
-    const amrex::Array4<amrex::Real>& arr = nodeFluid[0][mfi].array();
+                   const int j, const int k, const int iVar,
+                   const int iLev = 0) {
+    const amrex::Array4<amrex::Real>& arr = nodeFluid[iLev][mfi].array();
     arr(i, j, k, iVar) += val;
   }
 
   void add_rho_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                       const amrex::Real x, const amrex::Real y,
-                      const amrex::Real z, const int iFluid) {
-    add_to_mf(val, nodeFluid[0], mfi, Geom(0), x, y, z, iRho_I[iFluid]);
+                      const amrex::Real z, const int iFluid,
+                      const int iLev = 0) {
+    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iRho_I[iFluid]);
   }
 
   void add_mx_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                      const amrex::Real x, const amrex::Real y,
-                     const amrex::Real z, const int iFluid) {
-    add_to_mf(val, nodeFluid[0], mfi, Geom(0), x, y, z, iRhoUx_I[iFluid]);
+                     const amrex::Real z, const int iFluid,
+                     const int iLev = 0) {
+    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iRhoUx_I[iFluid]);
   }
 
   void add_my_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                      const amrex::Real x, const amrex::Real y,
-                     const amrex::Real z, const int iFluid) {
-    add_to_mf(val, nodeFluid[0], mfi, Geom(0), x, y, z, iRhoUy_I[iFluid]);
+                     const amrex::Real z, const int iFluid,
+                     const int iLev = 0) {
+    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iRhoUy_I[iFluid]);
   }
 
   void add_mz_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                      const amrex::Real x, const amrex::Real y,
-                     const amrex::Real z, const int iFluid) {
-    add_to_mf(val, nodeFluid[0], mfi, Geom(0), x, y, z, iRhoUz_I[iFluid]);
+                     const amrex::Real z, const int iFluid,
+                     const int iLev = 0) {
+    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iRhoUz_I[iFluid]);
   }
 
   void add_p_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                     const amrex::Real x, const amrex::Real y,
-                    const amrex::Real z, const int iFluid) {
-    add_to_mf(val, nodeFluid[0], mfi, Geom(0), x, y, z, iP_I[iFluid]);
+                    const amrex::Real z, const int iFluid, const int iLev = 0) {
+    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iP_I[iFluid]);
   }
 
   void add_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                   const amrex::Real x, const amrex::Real y, const amrex::Real z,
-                  const int iVar) {
-    add_to_mf(val, nodeFluid[0], mfi, Geom(0), x, y, z, iVar);
+                  const int iVar, const int iLev = 0) {
+    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iVar);
   }
 
-  // ---------Functions to read/interpolate value from nodeFluid[0].
-  // Begin------------
-  const amrex::MultiFab& get_nodeFluid() const { return nodeFluid[0]; }
-
   amrex::Real get_center_b(const amrex::MFIter& mfi, const int i, const int j,
-                           const int k, const int iDir) const {
-    const auto& arr = centerB[0][mfi].array();
+                           const int k, const int iDir,
+                           const int iLev = 0) const {
+    const auto& arr = centerB[iLev][mfi].array();
     return arr(i, j, k, iDir);
   }
 
   amrex::Real get_value(const amrex::MFIter& mfi, const int i, const int j,
-                        const int k, const int iVar) const {
-    const auto& arr = nodeFluid[0][mfi].array();
+                        const int k, const int iVar, const int iLev = 0) const {
+    const auto& arr = nodeFluid[iLev][mfi].array();
     return arr(i, j, k, iVar);
   }
 
   amrex::Real get_value(const amrex::MFIter& mfi, const amrex::Real x,
                         const amrex::Real y, const amrex::Real z,
-                        const int iVar) const {
-    return get_value_at_loc(nodeFluid[0], mfi, Geom(0), x, y, z, iVar);
+                        const int iVar, const int iLev = 0) const {
+    return get_value_at_loc(nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iVar);
   }
 
   template <typename T>
@@ -1050,8 +1075,5 @@ public:
 
     return gradpe;
   }
-
-  // ---------Functions to read/interpolate value from nodeFluid[0].
-  // End------------
 };
 #endif
