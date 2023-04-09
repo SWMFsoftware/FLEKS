@@ -468,81 +468,81 @@ void Pic::set_nodeShare() {
 
 //==========================================================
 void Pic::fill_new_node_E() {
-  int iLevTest = 0;
-  for (MFIter mfi(nodeE[iLevTest]); mfi.isValid(); ++mfi) {
-    FArrayBox& fab = nodeE[iLevTest][mfi];
-    const Box& box = mfi.validbox();
-    const Array4<Real>& arrE = fab.array();
+  for (int iLev = 0; iLev < nodeE.size(); iLev++)
+    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+      FArrayBox& fab = nodeE[iLev][mfi];
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arrE = fab.array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
 
-    const auto& status = nodeStatus[mfi].array();
+      const auto& status = nodeStatus[mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          if (status(i, j, k) == iOnNew_) {
-            arrE(i, j, k, ix_) = fi->get_ex(mfi, i, j, k);
-            arrE(i, j, k, iy_) = fi->get_ey(mfi, i, j, k);
-            arrE(i, j, k, iz_) = fi->get_ez(mfi, i, j, k);
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (status(i, j, k) == iOnNew_) {
+              arrE(i, j, k, ix_) = fi->get_ex(mfi, i, j, k, iLev);
+              arrE(i, j, k, iy_) = fi->get_ey(mfi, i, j, k, iLev);
+              arrE(i, j, k, iz_) = fi->get_ez(mfi, i, j, k, iLev);
+            }
           }
-        }
-  }
+    }
 }
 
 //==========================================================
 void Pic::fill_new_node_B() {
-  int iLevTest = 0; // will fail - loop //Talha
-  for (MFIter mfi(nodeE[iLevTest]); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
-    const Array4<Real>& arrB = nodeB[iLevTest][mfi].array();
+  for (int iLev = 0; iLev < nodeB.size(); ++iLev)
+    for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arrB = nodeB[iLev][mfi].array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
 
-    const auto& status = nodeStatus[mfi].array();
+      const auto& status = nodeStatus[mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          if (status(i, j, k) == iOnNew_) {
-            arrB(i, j, k, ix_) = fi->get_bx(mfi, i, j, k);
-            arrB(i, j, k, iy_) = fi->get_by(mfi, i, j, k);
-            arrB(i, j, k, iz_) = fi->get_bz(mfi, i, j, k);
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (status(i, j, k) == iOnNew_) {
+              arrB(i, j, k, ix_) = fi->get_bx(mfi, i, j, k, iLev);
+              arrB(i, j, k, iy_) = fi->get_by(mfi, i, j, k, iLev);
+              arrB(i, j, k, iz_) = fi->get_bz(mfi, i, j, k, iLev);
+            }
           }
-        }
-  }
+    }
 }
 
 //==========================================================
 void Pic::fill_new_center_B() {
-  int iLevTest = 0;
-  for (MFIter mfi(centerB[iLevTest]); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
-    const Array4<Real>& centerArr = centerB[iLevTest][mfi].array();
-    const auto& nodeArr = nodeB[iLevTest][mfi].array();
+  for (int iLev = 0; iLev < centerB.size(); ++iLev)
+    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& centerArr = centerB[iLev][mfi].array();
+      const auto& nodeArr = nodeB[iLev][mfi].array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
 
-    const auto& status = cellStatus[mfi].array();
+      const auto& status = cellStatus[mfi].array();
 
-    for (int iVar = 0; iVar < centerB[iLevTest].nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (status(i, j, k) != iOnOld_) {
-              centerArr(i, j, k, iVar) = 0;
-              for (int di = 0; di <= 1; di++)
-                for (int dj = 0; dj <= 1; dj++)
-                  for (int dk = 0; dk <= 1; dk++) {
-                    centerArr(i, j, k, iVar) +=
-                        0.125 * nodeArr(i + di, j + dj, k + dk, iVar);
-                  }
+      for (int iVar = 0; iVar < centerB[iLev].nComp(); iVar++)
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i) {
+              if (status(i, j, k) != iOnOld_) {
+                centerArr(i, j, k, iVar) = 0;
+                for (int di = 0; di <= 1; di++)
+                  for (int dj = 0; dj <= 1; dj++)
+                    for (int dk = 0; dk <= 1; dk++) {
+                      centerArr(i, j, k, iVar) +=
+                          0.125 * nodeArr(i + di, j + dj, k + dk, iVar);
+                    }
+              }
             }
-          }
-  }
+    }
 }
 
 //==========================================================
@@ -550,22 +550,23 @@ void Pic::fill_E_B_fields() {
   if (!solveEM)
     return;
 
+  fill_new_node_E();
+  fill_new_node_B();
+
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    fill_new_node_E();
-    fill_new_node_B();
+    nodeE[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
+    nodeB[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
+    apply_BC(nodeStatus, nodeB[iLevTest], 0, nDim, &Pic::get_node_B, iLevTest);
+    apply_BC(nodeStatus, nodeE[iLevTest], 0, nDim, &Pic::get_node_E, iLevTest);
+  }
 
-    for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-      nodeE[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
-      nodeB[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
-      apply_BC(nodeStatus, nodeB[iLevTest], 0, nDim, &Pic::get_node_B);
-      apply_BC(nodeStatus, nodeE[iLevTest], 0, nDim, &Pic::get_node_E);
-    }
+  fill_new_center_B();
 
-    fill_new_center_B();
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
     centerB[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
 
     apply_BC(cellStatus, centerB[iLevTest], 0, centerB[iLevTest].nComp(),
-             &Pic::get_center_B);
+             &Pic::get_center_B, iLevTest);
   }
 }
 
@@ -899,8 +900,9 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
 
   centerNetChargeNew.SumBoundary(Geom(0).periodicity());
 
+  const int iLevTest = 0;
   apply_BC(cellStatus, centerNetChargeNew, 0, centerNetChargeNew.nComp(),
-           &Pic::get_zero);
+           &Pic::get_zero, iLevTest);
 
   if (Particles<>::particlePosition == NonStaggered) {
     MultiFab::Copy(centerNetChargeN, centerNetChargeNew, 0, 0,
@@ -1002,7 +1004,7 @@ void Pic::update_E_expl() {
     MultiFab::Copy(nodeEth[iLevTest], nodeE[iLevTest], 0, 0,
                    nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
     apply_BC(cellStatus, centerB[iLevTest], 0, centerB[iLevTest].nComp(),
-             &Pic::get_center_B);
+             &Pic::get_center_B, iLevTest);
   }
   const Real dt = tc->get_dt();
   Real dt2dx[nDimMax];
@@ -1018,7 +1020,7 @@ void Pic::update_E_expl() {
                   nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
 
     nodeE[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
-    apply_BC(nodeStatus, nodeE[iLevTest], 0, nDim, &Pic::get_node_E);
+    apply_BC(nodeStatus, nodeE[iLevTest], 0, nDim, &Pic::get_node_E, iLevTest);
   }
 }
 
@@ -1062,8 +1064,9 @@ void Pic::update_E_impl() {
                       nodeE[iLevTest], 0, 1. / fsolver.theta, nodeEth[iLevTest],
                       0, 0, nodeE[iLevTest].nComp(), nGst);
 
-    apply_BC(nodeStatus, nodeE[iLevTest], 0, nDim, &Pic::get_node_E);
-    apply_BC(nodeStatus, nodeEth[iLevTest], 0, nDim, &Pic::get_node_E);
+    apply_BC(nodeStatus, nodeE[iLevTest], 0, nDim, &Pic::get_node_E, iLevTest);
+    apply_BC(nodeStatus, nodeEth[iLevTest], 0, nDim, &Pic::get_node_E,
+             iLevTest);
     if (doSmoothE) {
       calc_smooth_coef();
       smooth_E(nodeEth[iLevTest]);
@@ -1111,7 +1114,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
   } else {
     // Even after apply_BC(), the outmost layer node E is still
     // unknow. See FluidInterface::calc_current for detailed explaniation.
-    apply_BC(nodeStatus, vecMF, 0, nDim, &Pic::get_node_E);
+    apply_BC(nodeStatus, vecMF, 0, nDim, &Pic::get_node_E, iLev);
   }
 
   lap_node_to_node(vecMF, matvecMF, DistributionMap(0), Geom(0), cellStatus);
@@ -1145,7 +1148,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
       // 1) The outmost boundary layer of tempCenter3 is not accurate.
       // 2) The 2 outmost boundary layers (all ghosts if there are 2 ghost
       // cells) of tempCenter1 are not accurate
-      apply_BC(cellStatus, tempCenter1, 0, tempCenter1.nComp(), &Pic::get_zero);
+      apply_BC(cellStatus, tempCenter1, 0, tempCenter1.nComp(), &Pic::get_zero, iLev);
 
       MultiFab::LinComb(centerDivE, 1 - fsolver.coefDiff, centerDivE, 0,
                         fsolver.coefDiff, tempCenter1, 0, 0, 1, 1);
@@ -1223,9 +1226,9 @@ void Pic::update_E_rhs(double* rhs) {
 
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
     apply_BC(cellStatus, centerB[iLevTest], 0, centerB[iLevTest].nComp(),
-             &Pic::get_center_B);
+             &Pic::get_center_B, iLevTest);
     apply_BC(nodeStatus, nodeB[iLevTest], 0, nodeB[iLevTest].nComp(),
-             &Pic::get_node_B);
+             &Pic::get_node_B, iLevTest);
   }
 
   const Real* invDx = Geom(0).InvCellSize();
@@ -1264,12 +1267,12 @@ void Pic::update_B() {
     centerB[iLevTest].FillBoundary(Geom(0).periodicity());
 
     apply_BC(cellStatus, centerB[iLevTest], 0, centerB[iLevTest].nComp(),
-             &Pic::get_center_B);
+             &Pic::get_center_B, iLevTest);
 
     average_center_to_node(centerB[iLevTest], nodeB[iLevTest]);
     nodeB[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
     apply_BC(nodeStatus, nodeB[iLevTest], 0, nodeB[iLevTest].nComp(),
-             &Pic::get_node_B);
+             &Pic::get_node_B, iLevTest);
   }
 }
 
@@ -1394,11 +1397,11 @@ void Pic::smooth_E(MultiFab& mfE) {
 
 //==========================================================
 void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
-                   const int nComp, GETVALUE func) {
+                   const int nComp, GETVALUE func, const int iLev) {
   std::string nameFunc = "Pic::apply_BC";
   timing_func(nameFunc);
 
-  if (Geom(0).isAllPeriodic())
+  if (Geom(iLev).isAllPeriodic())
     return;
   if (mf.nGrow() == 0)
     return;
@@ -1409,7 +1412,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
 
   const IntVect& ngrow = mf.nGrowVect();
-  if (Geom(0).Domain().bigEnd(iz_) == Geom(0).Domain().smallEnd(iz_)) {
+  if (Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
     ba.grow(iz_, ngrow[iz_]);
   }
 
@@ -1471,7 +1474,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
               for (int i = lo[ix_]; i <= hi[ix_]; i++)
                 if (statusArr(i, j, k, 0) == iBoundary_) {
                   arr(i, j, k, iVar) =
-                      (this->*func)(mfi, i, j, k, iVar - iStart);
+                      (this->*func)(mfi, i, j, k, iVar - iStart, iLev);
                 }
 
         continue;

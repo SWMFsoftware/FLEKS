@@ -30,7 +30,7 @@ public:
 };
 
 typedef amrex::Real (Pic::*GETVALUE)(amrex::MFIter &mfi, int i, int j, int k,
-                                     int iVar);
+                                     int iVar, const int iLev);
 
 typedef void (Pic::*PicWriteAmrex)(const std::string &filename,
                                    const std::string varName);
@@ -282,41 +282,43 @@ public:
 
   //--------------- Boundary begin ------------------------
   void apply_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,
-                const int iStart, const int nComp, GETVALUE func = nullptr);
+                const int iStart, const int nComp, GETVALUE func,
+                const int iLev);
 
-  amrex::Real get_zero(amrex::MFIter &mfi, int i, int j, int k, int iVar) {
+  amrex::Real get_zero(amrex::MFIter &mfi, int i, int j, int k, int iVar,
+                       int iLev) {
     return 0.0;
   }
 
   inline amrex::Real get_node_E(amrex::MFIter &mfi, int i, int j, int k,
-                                int iVar) {
+                                int iVar, const int iLev) {
     amrex::Real e;
     if (iVar == ix_)
-      e = fi->get_ex(mfi, i, j, k);
+      e = fi->get_ex(mfi, i, j, k, iLev);
     if (iVar == iy_)
-      e = fi->get_ey(mfi, i, j, k);
+      e = fi->get_ey(mfi, i, j, k, iLev);
     if (iVar == iz_)
-      e = fi->get_ez(mfi, i, j, k);
+      e = fi->get_ez(mfi, i, j, k, iLev);
 
     return e;
   }
 
   inline amrex::Real get_node_B(amrex::MFIter &mfi, int i, int j, int k,
-                                int iVar) {
+                                int iVar, const int iLev) {
     amrex::Real b;
     if (iVar == ix_)
-      b = fi->get_bx(mfi, i, j, k);
+      b = fi->get_bx(mfi, i, j, k, iLev);
     if (iVar == iy_)
-      b = fi->get_by(mfi, i, j, k);
+      b = fi->get_by(mfi, i, j, k, iLev);
     if (iVar == iz_)
-      b = fi->get_bz(mfi, i, j, k);
+      b = fi->get_bz(mfi, i, j, k, iLev);
 
     return b;
   }
 
   inline amrex::Real get_center_B(amrex::MFIter &mfi, int i, int j, int k,
-                                  int iVar) {
-    return fi->get_center_b(mfi, i, j, k, iVar);
+                                  int iVar, const int iLev) {
+    return fi->get_center_b(mfi, i, j, k, iVar, iLev);
   }
 
   //--------------- Boundary end ------------------------

@@ -209,10 +209,10 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
   }
 
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    distribute_FabArray(nodeE[iLevTest], nGrids[0], DistributionMap(iLevTest),
-                        3, nGst, false);
-    distribute_FabArray(nodeB[iLevTest], nGrids[0], DistributionMap(iLevTest),
-                        3, nGst, false);
+    distribute_FabArray(nodeE[iLevTest], nGrids[iLevTest],
+                        DistributionMap(iLevTest), 3, nGst, false);
+    distribute_FabArray(nodeB[iLevTest], nGrids[iLevTest],
+                        DistributionMap(iLevTest), 3, nGst, false);
   }
   distribute_FabArray(cellStatus, cGrids[0], DistributionMap(0), 1, nGst,
                       false);
