@@ -1,6 +1,7 @@
 #ifndef _Grid_H_
 #define _Grid_H_
 
+#include "Constants.h"
 #include <AMReX_AmrCore.H>
 #include <AMReX_BCRec.H>
 #include <AMReX_Box.H>
@@ -10,13 +11,12 @@
 #include <AMReX_IndexType.H>
 #include <AMReX_IntVect.H>
 #include <AMReX_MultiFab.H>
+#include <AMReX_PlotFileUtil.H>
 #include <AMReX_Print.H>
 #include <AMReX_REAL.H>
 #include <AMReX_RealBox.H>
 #include <AMReX_Vector.H>
 #include <AMReX_iMultiFab.H>
-
-#include "Constants.h"
 
 // This class define the grid information, but NOT the data on the grid.
 class Grid : public amrex::AmrCore {
@@ -232,6 +232,29 @@ public:
     std::string nameFunc = "Grid::PostProcessBaseGrids";
     amrex::Print() << printPrefix << nameFunc << " is called." << std::endl;
     ba = activeRegion;
+  };
+
+  void WriteMF(amrex::Vector<amrex::MultiFab>& MF, int nlev = 0,
+               std::string st = "WriteMF",
+               amrex::Vector<std::string> var = {}) {
+    if (nlev == 0) {
+      nlev = MF.size();
+    }
+    amrex::Vector<const amrex::MultiFab*> tMF;
+    for (int i = 0; i < nlev; ++i) {
+      tMF.push_back(&MF[i]);
+    }
+    amrex::Vector<int> tmpVint;
+    if (var.empty()) {
+      for (int i = 0; i < MF[0].nComp(); i++) {
+        var.push_back(std::to_string(i + 1));
+      }
+    }
+    for (int i = 0; i <= nlev; i++) {
+      tmpVint.push_back(0);
+    }
+    amrex::WriteMultiLevelPlotfile(st, nlev, tMF, var, geom, 0.0, tmpVint,
+                                   ref_ratio);
   };
 };
 #endif
