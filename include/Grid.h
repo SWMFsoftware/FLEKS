@@ -7,6 +7,7 @@
 #include <AMReX_Box.H>
 #include <AMReX_BoxArray.H>
 #include <AMReX_DistributionMapping.H>
+#include <AMReX_FillPatchUtil.H>
 #include <AMReX_Geometry.H>
 #include <AMReX_IndexType.H>
 #include <AMReX_IntVect.H>
@@ -220,7 +221,7 @@ public:
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            if (i >= 16 && i < 24 && j >= 8 && j < 16) {
+            if (i >= 10 && i < 24 && j >= 8 && j < 16) {
               tagfab(i, j, k) = 1;
             }
           }
@@ -234,11 +235,13 @@ public:
     ba = activeRegion;
   };
 
-  void WriteMF(amrex::Vector<amrex::MultiFab>& MF, int nlev = 0,
+  void WriteMF(amrex::Vector<amrex::MultiFab>& MF, int nlev = -1,
                std::string st = "WriteMF",
                amrex::Vector<std::string> var = {}) {
-    if (nlev == 0) {
+    if (nlev == -1) {
       nlev = MF.size();
+    } else {
+      nlev = nlev + 1;
     }
     amrex::Vector<const amrex::MultiFab*> tMF;
     for (int i = 0; i < nlev; ++i) {
@@ -255,6 +258,34 @@ public:
     }
     amrex::WriteMultiLevelPlotfile(st, nlev, tMF, var, geom, 0.0, tmpVint,
                                    ref_ratio);
+  };
+  void InterpFromCoarse(amrex::Vector<amrex::MultiFab>& mf, int lev) {
+    amrex::Vector<amrex::BCRec> bcs;
+    bcs.resize(1);
+    amrex::Interpolater* mapper = &amrex::cell_bilinear_interp;
+    amrex::CpuBndryFuncFab bndry_func(nullptr);
+    amrex::PhysBCFunct<amrex::CpuBndryFuncFab> cphysbc(geom[lev - 1], bcs,
+                                                       bndry_func);
+    amrex::PhysBCFunct<amrex::CpuBndryFuncFab> fphysbc(geom[lev], bcs,
+                                                       bndry_func);
+    amrex::InterpFromCoarseLevel(
+        mf[lev], 0.0, mf[lev - 1], 0, 0, mf[lev].nComp(), geom[lev - 1],
+        geom[lev], cphysbc, 0, fphysbc, 0, refRatio(lev - 1), mapper, bcs, 0);
+  };
+  void InterpFromCoarseAllLevels(amrex::Vector<amrex::MultiFab>& mf, int lev) {
+    amrex::Vector<amrex::BCRec> bcs;
+    bcs.resize(1);
+    amrex::Interpolater* mapper = &amrex::cell_bilinear_interp;
+    amrex::CpuBndryFuncFab bndry_func(nullptr);
+    for (int i = 1; i <= lev; i++) {
+      amrex::PhysBCFunct<amrex::CpuBndryFuncFab> cphysbc(geom[lev - 1], bcs,
+                                                         bndry_func);
+      amrex::PhysBCFunct<amrex::CpuBndryFuncFab> fphysbc(geom[lev], bcs,
+                                                         bndry_func);
+      amrex::InterpFromCoarseLevel(
+          mf[lev], 0.0, mf[lev - 1], 0, 0, mf[lev].nComp(), geom[lev - 1],
+          geom[lev], cphysbc, 0, fphysbc, 0, refRatio(lev - 1), mapper, bcs, 0);
+    }
   };
 };
 #endif

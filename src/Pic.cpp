@@ -105,7 +105,7 @@ void Pic::fill_new_cells() {
   }
 
   fill_E_B_fields();
-
+  
   if (usePIC) {
     fill_particles();
     sum_moments(true);
@@ -468,81 +468,96 @@ void Pic::set_nodeShare() {
 
 //==========================================================
 void Pic::fill_new_node_E() {
-  for (int iLev = 0; iLev < nodeE.size(); iLev++)
-    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = nodeE[iLev][mfi];
-      const Box& box = mfi.validbox();
-      const Array4<Real>& arrE = fab.array();
+  // for (int iLev = 0; iLev < nodeE.size(); iLev++) //-Talha-Eventually needs to be implemented - FluidInterface already capable - checked
+  int iLev = 0;
+  for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+    FArrayBox& fab = nodeE[iLev][mfi];
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrE = fab.array();
 
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
 
-      const auto& status = nodeStatus[mfi].array();
+    const auto& status = nodeStatus[mfi].array();
 
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (status(i, j, k) == iOnNew_) {
-              arrE(i, j, k, ix_) = fi->get_ex(mfi, i, j, k, iLev);
-              arrE(i, j, k, iy_) = fi->get_ey(mfi, i, j, k, iLev);
-              arrE(i, j, k, iz_) = fi->get_ez(mfi, i, j, k, iLev);
-            }
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          if (status(i, j, k) == iOnNew_) {
+            arrE(i, j, k, ix_) = fi->get_ex(mfi, i, j, k, iLev);
+            arrE(i, j, k, iy_) = fi->get_ey(mfi, i, j, k, iLev);
+            arrE(i, j, k, iz_) = fi->get_ez(mfi, i, j, k, iLev);
           }
-    }
+        }
+  }
+
+  if (max_level > 0) {
+    InterpFromCoarseAllLevels(nodeE, finest_level);
+  }
 }
 
 //==========================================================
 void Pic::fill_new_node_B() {
-  for (int iLev = 0; iLev < nodeB.size(); ++iLev)
-    for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.validbox();
-      const Array4<Real>& arrB = nodeB[iLev][mfi].array();
+  // for (int iLev = 0; iLev < nodeE.size(); iLev++)
+  int iLev = 0;
+  for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrB = nodeB[iLev][mfi].array();
 
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
 
-      const auto& status = nodeStatus[mfi].array();
+    const auto& status = nodeStatus[mfi].array();
 
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (status(i, j, k) == iOnNew_) {
-              arrB(i, j, k, ix_) = fi->get_bx(mfi, i, j, k, iLev);
-              arrB(i, j, k, iy_) = fi->get_by(mfi, i, j, k, iLev);
-              arrB(i, j, k, iz_) = fi->get_bz(mfi, i, j, k, iLev);
-            }
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          if (status(i, j, k) == iOnNew_) {
+            arrB(i, j, k, ix_) = fi->get_bx(mfi, i, j, k, iLev);
+            arrB(i, j, k, iy_) = fi->get_by(mfi, i, j, k, iLev);
+            arrB(i, j, k, iz_) = fi->get_bz(mfi, i, j, k, iLev);
           }
-    }
+        }
+  }
+if (max_level > 0) {
+    InterpFromCoarseAllLevels(nodeB, finest_level);
+  }
+
 }
 
 //==========================================================
 void Pic::fill_new_center_B() {
-  for (int iLev = 0; iLev < centerB.size(); ++iLev)
-    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.validbox();
-      const Array4<Real>& centerArr = centerB[iLev][mfi].array();
-      const auto& nodeArr = nodeB[iLev][mfi].array();
+  // for (int iLev = 0; iLev < nodeE.size(); iLev++)
+  int iLev = 0;
+  for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& centerArr = centerB[iLev][mfi].array();
+    const auto& nodeArr = nodeB[iLev][mfi].array();
 
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
 
-      const auto& status = cellStatus[mfi].array();
+    const auto& status = cellStatus[mfi].array();
 
-      for (int iVar = 0; iVar < centerB[iLev].nComp(); iVar++)
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              if (status(i, j, k) != iOnOld_) {
-                centerArr(i, j, k, iVar) = 0;
-                for (int di = 0; di <= 1; di++)
-                  for (int dj = 0; dj <= 1; dj++)
-                    for (int dk = 0; dk <= 1; dk++) {
-                      centerArr(i, j, k, iVar) +=
-                          0.125 * nodeArr(i + di, j + dj, k + dk, iVar);
-                    }
-              }
+    for (int iVar = 0; iVar < centerB[iLev].nComp(); iVar++)
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (status(i, j, k) != iOnOld_) {
+              centerArr(i, j, k, iVar) = 0;
+              for (int di = 0; di <= 1; di++)
+                for (int dj = 0; dj <= 1; dj++)
+                  for (int dk = 0; dk <= 1; dk++) {
+                    centerArr(i, j, k, iVar) +=
+                        0.125 * nodeArr(i + di, j + dj, k + dk, iVar);
+                  }
             }
-    }
+          }
+  }
+
+  if (max_level > 0) {
+    InterpFromCoarseAllLevels(centerB, finest_level);
+  }
 }
 
 //==========================================================
@@ -1148,7 +1163,8 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
       // 1) The outmost boundary layer of tempCenter3 is not accurate.
       // 2) The 2 outmost boundary layers (all ghosts if there are 2 ghost
       // cells) of tempCenter1 are not accurate
-      apply_BC(cellStatus, tempCenter1, 0, tempCenter1.nComp(), &Pic::get_zero, iLev);
+      apply_BC(cellStatus, tempCenter1, 0, tempCenter1.nComp(), &Pic::get_zero,
+               iLev);
 
       MultiFab::LinComb(centerDivE, 1 - fsolver.coefDiff, centerDivE, 0,
                         fsolver.coefDiff, tempCenter1, 0, 0, 1, 1);
