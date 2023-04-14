@@ -108,7 +108,6 @@ contains
 
     character(len=*), parameter :: NameSub='PT_init_session'
     !--------------------------------------------------------------------------
-    write(*,*)NameSub
 
     call fleks_init(TimeSimulation)
 
