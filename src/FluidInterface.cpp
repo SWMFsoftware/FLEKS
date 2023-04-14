@@ -91,7 +91,7 @@ void FluidInterface::analyze_var_names(bool useNeutralOnly) {
   iRhoUy_I = iUy_I;
   iRhoUz_I = iUz_I;
 
-  const bool doTest = true;
+  const bool doTest = false;
   if (doTest) {
     for (int i = 0; i < nS; i++) {
       printf("iFluid=%d, iRho_I=%i, iUx_I=%d, iUy_I=%d, iUz_I=%d, iP_I=%d\n", i,
