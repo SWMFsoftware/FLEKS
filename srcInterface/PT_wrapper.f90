@@ -205,7 +205,6 @@ contains
     iProc_I = -777
     call fleks_find_points(nPoint, Xyz_DI, iProc_I)
 
-    write(*,*)NameSub,'nPoint = ', nPoint
   end subroutine PT_find_points
   !============================================================================
   
