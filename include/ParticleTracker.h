@@ -12,7 +12,7 @@ public:
   ParticleTracker(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo,
                   int nGst, std::shared_ptr<FluidInterface> &fluidIn,
                   std::shared_ptr<TimeCtr> &tcIn, int id)
-      : Grid(gm, amrInfo, nGst, id), tc(tcIn), fi(fluidIn) {
+      : Grid(gm, amrInfo, nGst, id, "pt"), tc(tcIn), fi(fluidIn) {
     nSpecies = fi->get_nS();
   };
 

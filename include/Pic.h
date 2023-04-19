@@ -120,7 +120,7 @@ public:
   Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo, int nGst,
       std::shared_ptr<FluidInterface> &fluidIn, std::shared_ptr<TimeCtr> &tcIn,
       int id = 0)
-      : Grid(gm, amrInfo, nGst, id), fi(fluidIn), tc(tcIn) {
+      : Grid(gm, amrInfo, nGst, id, "pic"), fi(fluidIn), tc(tcIn) {
     init_Pic();
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);

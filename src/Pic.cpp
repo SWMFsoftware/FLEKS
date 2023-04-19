@@ -178,7 +178,7 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
 
   calc_node_grids();
 
-  print_grid_info(false);
+  print_grid_info();
 
   distribute_arrays();
 

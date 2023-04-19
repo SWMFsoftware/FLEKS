@@ -201,6 +201,8 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
 
   calc_node_grids();
 
+  print_grid_info();
+
   if (nodeB.empty()) {
     nodeB.resize(max_level + 1);
   }
