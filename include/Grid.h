@@ -232,7 +232,7 @@ public:
   virtual void PostProcessBaseGrids(amrex::BoxArray& ba) const override {
     std::string nameFunc = "Grid::PostProcessBaseGrids";
     amrex::Print() << printPrefix << nameFunc << " is called." << std::endl;
-    ba = activeRegion;
+    // ba = activeRegion;
   };
 
   void WriteMF(amrex::Vector<amrex::MultiFab>& MF, int nlev = -1,
