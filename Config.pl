@@ -51,10 +51,12 @@ my %nTPString=(7=>'P', 10=>'PB', 13=>'PBE');
 my %nTPSave=('P' => 7, 'PB' => 10, 'PBE' => 13);
 my %TPInfo=('P' => "Particle", 'PB' => "Particle+B", 'PBE' => "Particle+B+E");
 
+my $AmrexDim;
+
 foreach (@Arguments){
      if(/^-s$/)                 {$Show=1;       next};
      if(/^-h$/)                 {$Help=1;       next};     
-     if(/^-tp=(.*)$/)           {$NewTPSave=$1;    next};    
+     if(/^-tp=(.*)$/)           {$NewTPSave=$1;    next};      
      warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
  }
 
@@ -64,8 +66,6 @@ die "$ERROR -tp input should be 'P', 'PB', or 'PBE'.\n"
 my $AmrexComp;
 my $AmrexDebug;
 my $AmrexTinyProfile; 
-
-&set_options;
 
 &set_test_particle if $NewTPSave;
 
@@ -84,6 +84,7 @@ sub get_settings{
        	$AmrexComp = $1 if/^COMP = (\S*)/i;
       	$AmrexDebug = $1 if/^DEBUG = (\S*)/i; 
         $AmrexTinyProfile = $1 if/^TINY_PROFILE = (\S*)/i; 
+        $AmrexDim = $1 if/^DIM = (\S*)/i; 
        }
     close $AmrexMakefile;
     
@@ -109,22 +110,9 @@ sub set_test_particle{
     @ARGV = ($NameConstFile);
     while(<>){                                                                                                                                                                                                 
         s/\b(ptRecordSize\s*=[^0-9]*)(\d+)/$1$nSize/i;
-        print;                                                                                                                                                                                         
+        print;                                                                                                                                                                                       
     } 
 
-}
-
-################################################################################
-sub set_options{
-    # print "set_options\n"; 
-    # die "$ERROR File $makefileamrex does not exist!\n" unless -f $makefileamrex;
-
-    #  @ARGV = ($makefileamrex);
-    # while(<>){
-    # 	if($compiler  ne "")     {s/^COMP =.*/COMP = $compiler/;};
-    # 	if($debug     ne "")     {s/^DEBUG =.*/DEBUG = $debug/;};
-    # 	print;
-    # }    
 }
 
 ################################################################################
@@ -133,6 +121,7 @@ sub show_settings{
 
     print "AMReX compiler     = $AmrexComp \n";
     print "AMReX debug        = $AmrexDebug \n";
+    print "AMReX nDim         = $AmrexDim \n";
     print "AMReX tiny profile = $AmrexTinyProfile \n";    
     print "Test Particle info = $TPInfo{$TPSave} \n";
 }
