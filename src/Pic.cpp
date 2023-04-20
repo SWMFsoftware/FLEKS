@@ -105,7 +105,7 @@ void Pic::fill_new_cells() {
   }
 
   fill_E_B_fields();
-  
+
   if (usePIC) {
     fill_particles();
     sum_moments(true);
@@ -256,7 +256,7 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
             for (int j = lo.y; j <= hi.y; ++j)
               for (int i = lo.x; i <= hi.x; ++i) {
                 if (cellArr(i, j, k) == iOnNew_ &&
-                    cGridOld.contains(IntVect{ i, j, k })) {
+                    cGridOld.contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
                   cellArr(i, j, k) = iOnOld_;
                 }
               }
@@ -304,7 +304,7 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
             for (int j = lo.y; j <= hi.y; ++j)
               for (int i = lo.x; i <= hi.x; ++i) {
                 if (nodeArr(i, j, k) == iOnNew_ &&
-                    nodeBAOld.contains(IntVect{ i, j, k })) {
+                    nodeBAOld.contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
                   nodeArr(i, j, k) = iOnOld_;
                 }
               }
@@ -398,13 +398,13 @@ void Pic::set_nodeShare() {
   if (!nodeShare.empty())
     nodeShare.setVal(iIgnore_);
 
-  const Box& gbx = convert(Geom(0).Domain(), { 0, 0, 0 });
+  const Box& gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(0, 0, 0) });
 
   if (!nodeShare.empty())
     for (MFIter mfi(nodeShare); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
 
-      const Box& cellBox = convert(box, { 0, 0, 0 });
+      const Box& cellBox = convert(box, { AMREX_D_DECL(0, 0, 0) });
 
       const auto& typeArr = nodeShare[mfi].array();
       const auto& statusArr = cellStatus[mfi].array();
@@ -425,7 +425,8 @@ void Pic::set_nodeShare() {
             for (int di = diMax; di >= diMin; di--) {
               if (statusArr(i + di, j + dj, k + dk) != iBoundary_) {
                 // Find the first CELL that shares this node.
-                if (cellBox.contains(IntVect{ i + di, j + dj, k + dk })) {
+                if (cellBox.contains(
+                        IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) })) {
                   return iAssign_;
                 } else {
                   int ii = 0;
@@ -468,7 +469,8 @@ void Pic::set_nodeShare() {
 
 //==========================================================
 void Pic::fill_new_node_E() {
-  // for (int iLev = 0; iLev < nodeE.size(); iLev++) //-Talha-Eventually needs to be implemented - FluidInterface already capable - checked
+  // for (int iLev = 0; iLev < nodeE.size(); iLev++) //-Talha-Eventually needs
+  // to be implemented - FluidInterface already capable - checked
   int iLev = 0;
   for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
     FArrayBox& fab = nodeE[iLev][mfi];
@@ -519,10 +521,9 @@ void Pic::fill_new_node_B() {
           }
         }
   }
-if (max_level > 0) {
+  if (max_level > 0) {
     InterpFromCoarseAllLevels(nodeB, finest_level);
   }
-
 }
 
 //==========================================================

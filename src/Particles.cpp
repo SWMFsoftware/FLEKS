@@ -264,7 +264,6 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
   // }
   // TODO: Is this really necessary?
   Redistribute();
-
 }
 
 //==========================================================
@@ -329,8 +328,8 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
       const Real qp = p.rdata(iqp_);
 
       //-----calculate interpolate coef begin-------------
-      int loIdx[nDim];
-      Real dShift[nDim];
+      IntVect loIdx;
+      RealVect dShift;
       for (int i = 0; i < nDim; i++) {
         // plo is the corner location => -0.5
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i] - 0.5;
@@ -510,8 +509,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments(MultiFab& momentsMF,
         const Real qp = p.rdata(iqp_);
 
         //-----calculate interpolate coef begin-------------
-        int loIdx[nDim];
-        Real dShift[nDim];
+        IntVect loIdx;
+        RealVect dShift;
         for (int i = 0; i < nDim; i++) {
           dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
           loIdx[i] = fastfloor(dShift[i]);
@@ -595,8 +594,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       const Real qp = p.rdata(iqp_);
 
       //-----calculate interpolate coef begin-------------
-      int loIdx[nDim];
-      Real dShift[nDim];
+      IntVect loIdx;
+      RealVect dShift;
       for (int i = 0; i < nDim; i++) {
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
         loIdx[i] = fastfloor(dShift[i]);
@@ -775,8 +774,8 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
       const Real qp = p.rdata(iqp_);
 
       //-----calculate interpolate coef begin-------------
-      int loIdx[nDim];
-      Real dShift[nDim];
+      IntVect loIdx;
+      RealVect dShift;
       for (int i = 0; i < nDim; i++) {
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
         loIdx[i] = fastfloor(dShift[i]);
@@ -1013,8 +1012,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       const Real zp = p.pos(iz_);
 
       //-----calculate interpolate coef begin-------------
-      int loIdx[nDim];
-      Real dShift[nDim];
+      IntVect loIdx;
+      RealVect dShift;
       for (int i = 0; i < nDim; i++) {
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
         loIdx[i] = fastfloor(dShift[i]);
@@ -1236,7 +1235,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         const int jMin = loIdx[iy_];
         const int kMin = loIdx[iz_];
 
-        Real eps_D[nDim] = { 0, 0, 0 };
+        RealVect eps_D = { AMREX_D_DECL(0, 0, 0) };
 
         for (int k = 0; k < 2; k++)
           for (int j = 0; j < 2; j++)
@@ -1296,7 +1295,7 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
 
   const int nGoal = nLowerLimit > nInitial ? nLowerLimit : nInitial;
 
-  IntVect iv = { 1, 1, 1 };
+  IntVect iv = { AMREX_D_DECL(1, 1, 1) };
   if (!(do_tiling && tile_size == iv))
     return;
 
@@ -1421,7 +1420,7 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
   timing_func("Particles::combine_particles");
-  IntVect iv = { 1, 1, 1 };
+  IntVect iv = { AMREX_D_DECL(1, 1, 1) };
   if (!(do_tiling && tile_size == iv))
     return;
 
@@ -1477,7 +1476,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
 
     //----------------------------------------------------------------
     // Estimate the bulk velocity and thermal velocity.
-    Real uBulk[nDim] = { 0, 0, 0 };
+    RealVect uBulk = { AMREX_D_DECL(0, 0, 0) };
     for (int pid = 0; pid < nPartOrig; pid++) {
       auto& pcl = particles[pid];
       for (int iDir = 0; iDir < nDim; iDir++) {
@@ -1546,7 +1545,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
                 zCell < 0 || zCell >= nCell)
               continue;
 
-            int cellIdx[nDim] = { xCell, yCell, zCell };
+            IntVect cellIdx = { AMREX_D_DECL(xCell, yCell, zCell) };
 
             Real binMin_D[nDim], binMax_D[nDim];
 
@@ -1885,7 +1884,7 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
 
           if (status(i + di, j + dj, k + dk) != iBoundary_) {
             // The first neighbor cell that is NOT a boundary cell.
-            if (bx.contains(IntVect{ i + di, j + dj, k + dk })) {
+            if (bx.contains(IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) })) {
               return true;
             } else {
               return false;
@@ -1901,7 +1900,7 @@ IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
                          Real no2outV, Real no2outM, RealBox IORange)
     : Particles(amrcore, nullptr, nullptr, other.get_speciesID(),
                 other.get_charge(), other.get_mass(),
-                amrex::IntVect(-1, -1, -1)) {
+                amrex::IntVect(AMREX_D_DECL(-1, -1, -1))) {
   const int lev = 0;
   no2outM *= qomSign * get_mass();
 
@@ -1937,8 +1936,8 @@ IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
         p.pos(ix_ + iDim) = no2outL * p.pos(ix_ + iDim);
       }
 
-      if (doLimit &&
-          !IORange.contains(RealVect(p.pos(ix_), p.pos(iy_), p.pos(iz_))))
+      if (doLimit && !IORange.contains(RealVect(
+                         AMREX_D_DECL(p.pos(ix_), p.pos(iy_), p.pos(iz_)))))
         continue;
 
       for (int iDim = 0; iDim < nDim; iDim++) {
@@ -1995,7 +1994,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       // cs = sqrt(P/n); m/s
       // Assume p = pi + pe = 2pi, so divide by sqrt(2.0).
       double cs = stateOH->get_fluid_uth(pti, xp, yp, zp, fluidID) *
-                  stateOH->get_No2SiV()/sqrt(2.0);
+                  stateOH->get_No2SiV() / sqrt(2.0);
 
       // cs2Ion = 2*P/n. The definition of thermal speed in get_uth_iso() is
       // different from the requirement in OH_get_charge_exchange_wrapper().

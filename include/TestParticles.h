@@ -75,7 +75,7 @@ public:
     no2outE = no2outEIn;
   }
 
-  void set_interval(amrex::IntVect& in) { nIntervalCell = in; };
+  void set_interval(amrex::IntVect in) { nIntervalCell = in; };
 
   void set_particle_region(std::string& sRegion) {
     if (!sRegion.empty()) {
@@ -128,7 +128,7 @@ private:
   std::string gridName;
   int gridID;
 
-  amrex::IntVect nIntervalCell = { 1, 1, 1 };
+  amrex::IntVect nIntervalCell = { AMREX_D_DECL(1, 1, 1) };
 
   int iPartRegion = iRegionBoundary_;
 

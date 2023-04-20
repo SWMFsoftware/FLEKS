@@ -350,7 +350,7 @@ void PlotWriter::write_idl(double const timeNow, int const iCycle,
   long int nPoint;
   VectorPointList pointList_II;
 
-  std::array<double, nDimMax> xMin_D, xMax_D;
+  amrex::RealVect xMin_D, xMax_D;
 
   find_output_list((*this), nPoint, pointList_II, xMin_D, xMax_D);
   nCellAllProc = nPoint;

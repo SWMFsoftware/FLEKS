@@ -1,6 +1,7 @@
 #ifndef _PLOTWRITER_H_
 #define _PLOTWRITER_H_
 
+#include <AMReX_RealVect.H>
 #include <array>
 #include <iostream>
 #include <string>
@@ -17,8 +18,8 @@ public:
   typedef std::array<double, 7> ArrayPointLoc; // (i,j,k,x,y,z,iBlock)
   typedef std::vector<ArrayPointLoc> VectorPointList;
   typedef void (*FuncFindPointList)(const PlotWriter&, long int&,
-                                    VectorPointList&, std::array<double, 3>&,
-                                    std::array<double, 3>&);
+                                    VectorPointList&, amrex::RealVect&,
+                                    amrex::RealVect&);
   typedef void (*FuncGetField)(const VectorPointList&,
                                const std::vector<std::string>&,
                                MDArray<double>&);
@@ -40,15 +41,15 @@ private:
   double plotDx;
 
   // Global plot domain in PIC unit
-  std::array<double, nDimMax> plotMin_D, plotMinCorrected_D;
-  std::array<double, nDimMax> plotMax_D, plotMaxCorrected_D;
+  amrex::RealVect plotMin_D, plotMinCorrected_D;
+  amrex::RealVect plotMax_D, plotMaxCorrected_D;
 
   // Global simulation domain in PIC unit
-  std::array<double, nDimMax> domainMin_D;
-  std::array<double, nDimMax> domainMax_D;
+  amrex::RealVect domainMin_D = { AMREX_D_DECL(1.0, 1.0, 1.0) };
+  amrex::RealVect domainMax_D = { AMREX_D_DECL(-1.0, -1.0, -1.0) };
 
   // Cell size in PIC unit.
-  std::array<double, nDimMax> dx_D;
+  amrex::RealVect dx_D = { AMREX_D_DECL(0, 0, 0) };
 
   // The species number used to generate output variable list.
   int nSpecies;
@@ -98,8 +99,8 @@ private:
 public:
   PlotWriter(const int idIn = 0, const std::string plotStringIN = "",
              const double dxIn = 1, const std::string plotVarIn = "",
-             const std::array<double, nDimMax>& plotMinIn_D = { 1, 1, 1 },
-             const std::array<double, nDimMax>& plotMaxIn_D = { -1, -1, -1 },
+             const amrex::RealVect& plotMinIn_D = { AMREX_D_DECL(1, 1, 1) },
+             const amrex::RealVect& plotMaxIn_D = { AMREX_D_DECL(-1, -1, -1) },
              const int nSpeciesIn = 2)
       : nProcs(0),
         nDim(0),
@@ -111,9 +112,6 @@ public:
         plotDx(dxIn == 0 ? 1 : dxIn),
         plotMin_D(plotMinIn_D),
         plotMax_D(plotMaxIn_D),
-        domainMin_D({ { 1, 1, 1 } }),
-        domainMax_D({ { -1, -1, -1 } }),
-        dx_D({ { 0, 0, 0 } }),
         nSpecies(nSpeciesIn),
         nextWriteCycle(0),
         nextWriteTime(0),
@@ -166,15 +164,11 @@ public:
   void set_nDim(const int in) { nDim = in; }
   void set_iRegion(const int in) { iRegion = in; }
   void set_No2NoL(const double& in) { No2NoL = in; }
-  void set_plotMin_D(const std::array<double, nDimMax>& in) { plotMin_D = in; }
-  void set_plotMax_D(const std::array<double, nDimMax>& in) { plotMax_D = in; }
-  void set_domainMin_D(const std::array<double, nDimMax>& in) {
-    domainMin_D = in;
-  }
-  void set_domainMax_D(const std::array<double, nDimMax>& in) {
-    domainMax_D = in;
-  }
-  void set_dx_D(const std::array<double, nDimMax>& in) { dx_D = in; }
+  void set_plotMin_D(const amrex::RealVect& in) { plotMin_D = in; }
+  void set_plotMax_D(const amrex::RealVect& in) { plotMax_D = in; }
+  void set_domainMin_D(const amrex::RealVect& in) { domainMin_D = in; }
+  void set_domainMax_D(const amrex::RealVect& in) { domainMax_D = in; }
+  void set_dx_D(const amrex::RealVect& in) { dx_D = in; }
   void set_units(const double No2SiLIn, const double No2SiVIn,
                  const double No2SiBIn, const double No2SiRhoIn,
                  const double No2SiPIn, const double No2SiJIn,

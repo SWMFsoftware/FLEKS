@@ -9,7 +9,7 @@ TestParticles::TestParticles(amrex::AmrCore* amrcore,
                              const int speciesID, const amrex::Real charge,
                              const amrex::Real mass, int id)
     : Particles(amrcore, fluidIn, tcIn, speciesID, charge, mass,
-                IntVect(1, 1, 1)) {
+                IntVect(AMREX_D_DECL(1, 1, 1))) {
   gridID = id;
 
   gridName = std::string("FLEKS") + std::to_string(gridID);
@@ -81,8 +81,8 @@ void TestParticles::move_and_save_charged_particles(
       const Real zp = p.pos(iz_);
 
       //-----calculate interpolate coef begin-------------
-      int loIdx[3];
-      Real dShift[3];
+      IntVect loIdx;
+      RealVect dShift;
       for (int i = 0; i < 3; i++) {
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
         loIdx[i] = fastfloor(dShift[i]);
@@ -429,7 +429,8 @@ void TestParticles::add_test_particles_from_fluid(const iMultiFab& cellStatus,
           if (iPartRegion == iRegionUniform_ ||
               (iPartRegion == iRegionBoundary_ &&
                status(i, j, k) == iAddPTParticle_)) {
-            add_particles_cell(mfi, i, j, k, *fi, { 0, 0, 0 }, tpVel);
+            add_particles_cell(mfi, i, j, k, *fi, { AMREX_D_DECL(0, 0, 0) },
+                               tpVel);
           }
   }
 }

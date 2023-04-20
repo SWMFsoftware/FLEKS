@@ -65,8 +65,8 @@ private:
   std::unique_ptr<PlotCtr> savectr;
   int dnSave = 1;
 
-  amrex::IntVect nTPPerCell = { 1, 1, 1 };
-  amrex::IntVect nTPIntervalCell = { 1, 1, 1 };
+  amrex::IntVect nTPPerCell = { AMREX_D_DECL(1, 1, 1) };
+  amrex::IntVect nTPIntervalCell = { AMREX_D_DECL(1, 1, 1) };
 
   std::string sPartRegion;
 

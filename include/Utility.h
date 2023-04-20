@@ -90,7 +90,7 @@ template <class T> inline void zero_array(T* arr, int nSize) {
     arr[i] = 0;
 }
 
-inline void linear_interpolation_coef(amrex::Real (&dx)[3],
+inline void linear_interpolation_coef(amrex::RealVect& dx,
                                       amrex::Real (&coef)[2][2][2]) {
 
   amrex::Real xi[2];
@@ -132,7 +132,7 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
                                     const amrex::Real x, const amrex::Real y,
                                     const amrex::Real z, const int iVar) {
   const auto plo = gm.ProbLo();
-  const amrex::Real loc[nDim] = { x, y, z };
+  const amrex::RealVect loc = { AMREX_D_DECL(x, y, z) };
 
   const auto invDx = gm.InvCellSize();
 
@@ -197,7 +197,8 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
 
   for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
     // Cell box
-    const amrex::Box& bx = amrex::convert(mfi.validbox(), { 0, 0, 0 });
+    const amrex::Box& bx =
+        amrex::convert(mfi.validbox(), { AMREX_D_DECL(0, 0, 0) });
     if (bx.contains(idx))
       return get_value_at_loc(mf, mfi, gm, x, y, z, iVar);
   }
@@ -214,7 +215,7 @@ inline void add_to_mf(const amrex::Real& val, amrex::MultiFab& mf,
                       const amrex::Real x, const amrex::Real y,
                       const amrex::Real z, const int iVar) {
   const auto plo = gm.ProbLo();
-  const amrex::Real loc[nDim] = { x, y, z };
+  const amrex::RealVect loc = { AMREX_D_DECL(x, y, z) };
 
   const auto invDx = gm.InvCellSize();
 

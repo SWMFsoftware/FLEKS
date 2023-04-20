@@ -16,6 +16,7 @@
 #include <AMReX_Print.H>
 #include <AMReX_REAL.H>
 #include <AMReX_RealBox.H>
+#include <AMReX_SPACE.H>
 #include <AMReX_Vector.H>
 #include <AMReX_iMultiFab.H>
 
@@ -111,7 +112,7 @@ public:
 
   inline int find_mpi_rank_from_cell_index(int const i, int const j,
                                            int const k) const {
-    amrex::IntVect idx = { i, j, k };
+    amrex::IntVect idx = { AMREX_D_DECL(i, j, k) };
     for (int ii = 0, n = cGrids[0].size(); ii < n; ii++) {
       const amrex::Box& bx = cGrids[0][ii];
       if (bx.contains(idx))

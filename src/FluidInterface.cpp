@@ -587,7 +587,8 @@ void FluidInterface::find_mpi_rank_for_points(const int nPoint,
     if (nDimGM > 2)
       z = xyz_I[i * nDimGM + iz_] * si2nol;
     // Check if this point is inside this FLEKS domain.
-    if (range.contains(RealVect(x, y, z), 1e-6 * Geom(0).CellSize()[ix_])) {
+    if (range.contains(RealVect(AMREX_D_DECL(x, y, z)),
+                       1e-6 * Geom(0).CellSize()[ix_])) {
       rank_I[i] = find_mpi_rank_from_coord(x, y, z);
     } else if (rank_I[i] == iNotSet_) {
       // For PT->OH coupling, MHD does not know the range of FLEKS.
@@ -621,7 +622,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
   int nCount = 0;
 
   // Global NODE box.
-  const Box gbx = convert(Geom(0).Domain(), { 1, 1, 1 });
+  const Box gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
 
   for (int iLev = 0; iLev <= max_level; iLev++) {
     const Real* dx = Geom(iLev).CellSize();
@@ -1391,7 +1392,7 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
     const Real zp = (nDim > 2) ? xyz[2] : 0.0;
 
     // Check if this point is inside this FLEKS domain.
-    if (!range.contains(RealVect(xp, yp, zp), 1e-10))
+    if (!range.contains(RealVect(AMREX_D_DECL(xp, yp, zp)), 1e-10))
       continue;
 
     if (idxMap.size() == 0) {

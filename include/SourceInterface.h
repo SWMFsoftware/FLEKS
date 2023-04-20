@@ -29,7 +29,7 @@ public:
     FluidInterface::set_node_fluid(other);
 
     // Global NODE box.
-    const amrex::Box gbx = convert(Geom(0).Domain(), { 1, 1, 1 });
+    const amrex::Box gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
 
     const double no2siL = get_No2SiL();
 

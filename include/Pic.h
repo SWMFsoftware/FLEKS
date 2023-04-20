@@ -82,11 +82,11 @@ private:
 
   amrex::Vector<std::unique_ptr<Particles<> > > parts;
 
-  amrex::IntVect nPartPerCell = { 6, 6, 6 };
+  amrex::IntVect nPartPerCell = { AMREX_D_DECL(6, 6, 6) };
   amrex::Real qomEl = -100;
 
   // Particle Per Cell (PPC) of source particles.
-  amrex::IntVect nSourcePPC = { 0, 0, 0 };
+  amrex::IntVect nSourcePPC = { AMREX_D_DECL(0, 0, 0) };
 
   FieldSolver fsolver;
 
@@ -254,8 +254,7 @@ public:
   //--------------- IO begin--------------------------------
   void find_output_list(const PlotWriter &writerIn, long int &nPointAllProc,
                         PlotWriter::VectorPointList &pointList_II,
-                        std::array<double, nDim> &xMin_D,
-                        std::array<double, nDim> &xMax_D);
+                        amrex::RealVect &xMin_D, amrex::RealVect &xMax_D);
 
   void get_field_var(const VectorPointList &pointList_II,
                      const std::vector<std::string> &sVar_I,
@@ -379,8 +378,7 @@ private:
 void find_output_list_caller(const PlotWriter &writerIn,
                              long int &nPointAllProc,
                              PlotWriter::VectorPointList &pointList_II,
-                             std::array<double, nDim> &xMin_D,
-                             std::array<double, nDim> &xMax_D);
+                             amrex::RealVect &xMin_D, amrex::RealVect &xMax_D);
 
 void get_field_var_caller(const VectorPointList &pointList_II,
                           const std::vector<std::string> &sVar_I,

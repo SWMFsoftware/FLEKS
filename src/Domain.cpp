@@ -195,7 +195,7 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
   // blocking_factor because of how blocking_factor is used in the gridding
   // algorithm).
   amrInfo.blocking_factor.clear();
-  amrInfo.blocking_factor.push_back(IntVect(1, 1, 1));
+  amrInfo.blocking_factor.push_back(IntVect(AMREX_D_DECL(1, 1, 1)));
 
   amrInfo.max_grid_size.clear();
   amrInfo.max_grid_size.push_back(maxBlockSize);
@@ -562,14 +562,14 @@ void Domain::init_time_ctr() {
       writer.set_nProcs(ParallelDescriptor::NProcs());
       writer.set_nDim(fi->get_fluid_dimension());
       writer.set_iRegion(gridID);
-      writer.set_domainMin_D({ { domainRange.lo(ix_), domainRange.lo(iy_),
-                                 domainRange.lo(iz_) } });
+      writer.set_domainMin_D({ AMREX_D_DECL(
+          domainRange.lo(ix_), domainRange.lo(iy_), domainRange.lo(iz_)) });
 
-      writer.set_domainMax_D({ { domainRange.hi(ix_), domainRange.hi(iy_),
-                                 domainRange.hi(iz_) } });
+      writer.set_domainMax_D({ AMREX_D_DECL(
+          domainRange.hi(ix_), domainRange.hi(iy_), domainRange.hi(iz_)) });
 
       const Real *dx = gm.CellSize();
-      writer.set_dx_D({ { dx[ix_], dx[iy_], dx[iz_] } });
+      writer.set_dx_D({ AMREX_D_DECL(dx[ix_], dx[iy_], dx[iz_]) });
       writer.set_nSpecies(nS);
       writer.set_units(fi->get_No2SiL(), fi->get_No2SiV(), fi->get_No2SiB(),
                        fi->get_No2SiRho(), fi->get_No2SiP(), fi->get_No2SiJ(),
@@ -771,8 +771,8 @@ void Domain::read_param(const bool readGridInfo) {
         Real dtSave;
         param.read_var("dtSavePlot", dtSave);
 
-        std::array<double, nDim> plotMin_D = { 1, 1, 1 },
-                                 plotMax_D = { -1, -1, -1 };
+        amrex::RealVect plotMin_D = { AMREX_D_DECL(1, 1, 1) },
+                        plotMax_D = { AMREX_D_DECL(-1, -1, -1) };
         if (plotString.find("cut") != std::string::npos) {
           // Output range is 'cut' type.
           for (int iDim = 0; iDim < nDim; iDim++) {

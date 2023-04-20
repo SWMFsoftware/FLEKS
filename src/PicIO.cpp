@@ -55,7 +55,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     const Real zp = (nDim > 2) ? pic_D[2] : 0.0;
 
     // Check if this point is inside this FLEKS domain.
-    if (!range.contains(RealVect(xp, yp, zp), 1e-10))
+    if (!range.contains(RealVect(AMREX_D_DECL(xp, yp, zp)), 1e-10))
       continue;
 
     for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++)
@@ -84,8 +84,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
 //==========================================================
 void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
                            PlotWriter::VectorPointList& pointList_II,
-                           std::array<double, nDim>& xMin_D,
-                           std::array<double, nDim>& xMax_D) {
+                           amrex::RealVect& xMin_D, amrex::RealVect& xMax_D) {
   if (isGridEmpty)
     return;
   // Loop not implemented correctly // Talha
@@ -93,12 +92,12 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
   const auto plo = Geom(0).ProbLo();
   const auto plh = Geom(0).ProbHi();
 
-  Real xMinL_D[nDim] = { plh[ix_], plh[iy_], plh[iz_] };
-  Real xMaxL_D[nDim] = { plo[ix_], plo[iy_], plo[iz_] };
+  Real xMinL_D[nDim] = { AMREX_D_DECL(plh[ix_], plh[iy_], plh[iz_]) };
+  Real xMaxL_D[nDim] = { AMREX_D_DECL(plo[ix_], plo[iy_], plo[iz_]) };
 
   const auto dx = Geom(0).CellSize();
 
-  const Box& gbx = convert(Geom(0).Domain(), { 1, 1, 1 });
+  const Box& gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
 
   const auto glo = lbound(gbx);
   const auto ghi = ubound(gbx);
@@ -169,10 +168,10 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 
   if (ParallelDescriptor::MyProc() == 0 && writerIn.get_plotDx() >= 0) {
     // Processor-0 output the inactive PIC nodes for structured output.
-    Box gbx = convert(Geom(0).Domain(), { 1, 1, 1 });
+    Box gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
 
     if (writerIn.is_compact())
-      gbx = convert(nGrids[0].minimalBox(), { 1, 1, 1 });
+      gbx = convert(nGrids[0].minimalBox(), { AMREX_D_DECL(1, 1, 1) });
 
     const auto lo = lbound(gbx);
     const auto hi = ubound(gbx);
@@ -195,7 +194,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         for (int i = lo.x; i <= iMax; ++i) {
           const double xp = i * dx[ix_] + plo[ix_];
           if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp) &&
-              !nGrids[0].contains(IntVect{ i, j, k })) {
+              !nGrids[0].contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
             const int iBlock = -1;
             pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
                                      zp, (double)iBlock });
@@ -591,7 +590,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
     }
 
     baIO.define(Box(cellLo, cellHi));
-    baIO.maxSize(IntVect(8, 8, 8));
+    baIO.maxSize(IntVect(AMREX_D_DECL(8, 8, 8)));
   } else {
     baIO = cGrids[0];
   }
@@ -602,7 +601,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
 
   AmrInfo amrInfo;
   amrInfo.blocking_factor.clear();
-  amrInfo.blocking_factor.push_back(IntVect(1, 1, 1));
+  amrInfo.blocking_factor.push_back(IntVect(AMREX_D_DECL(1, 1, 1)));
 
   Grid gridIO(geomOut, amrInfo, 0, -gridID);
   gridIO.set_base_grid(baIO);
@@ -714,7 +713,8 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   if (plotVars.find("E") != std::string::npos) {
     //-----------------E-----------------------------
     for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-      average_node_to_cellcenter(centerMF, iStart, nodeE[iLevTest], 0, nodeE[iLevTest].nComp(), 0);
+      average_node_to_cellcenter(centerMF, iStart, nodeE[iLevTest], 0,
+                                 nodeE[iLevTest].nComp(), 0);
       iStart += nodeE[iLevTest].nComp();
     }
 
@@ -833,8 +833,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 void find_output_list_caller(const PlotWriter& writerIn,
                              long int& nPointAllProc,
                              PlotWriter::VectorPointList& pointList_II,
-                             std::array<double, nDim>& xMin_D,
-                             std::array<double, nDim>& xMax_D) {
+                             amrex::RealVect& xMin_D, amrex::RealVect& xMax_D) {
   fleksDomains(fleksDomains.selected())
       .pic->find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
                              xMax_D);
