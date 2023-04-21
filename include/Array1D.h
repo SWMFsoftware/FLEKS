@@ -15,6 +15,11 @@ public:
       data[i] = b;
   }
 
+  Array1D(const Array1D<T, n>& b) {
+    for (int i = 0; i < n; i++)
+      data[i] = b.data[i];
+  }
+
   Array1D<T, n>& operator=(const Array1D<T, n>& b) {
     for (int i = 0; i < n; i++)
       data[i] = b.data[i];
