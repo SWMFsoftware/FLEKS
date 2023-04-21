@@ -72,15 +72,15 @@ void linear_solver_wrapper_hy(
     param.doPrecond = true;
   }
 
-  // CG solver does not have preconditioner.
-  assert(!(param.doPrecond && param.typeKrylov == CG));
-
   param.typeKrylov = typeSolver;
   param.typeStop = REL;
   param.errorMax = tolerance;
   param.maxMatvec = nIteration;
   param.nKrylovVector = nIteration;
   param.useInitialGuess = false;
+
+  // CG solver does not have preconditioner.
+  assert(!(param.doPrecond && param.typeKrylov == CG));
 
   int nVarIjk = nVar * nI * nJ * nK; // Number of variables per block
 
