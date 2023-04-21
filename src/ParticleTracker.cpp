@@ -260,6 +260,8 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
   }
   //--------------test particles-----------------------------------
 
+  activeRegion = activeRegion.simplified();
+
   isGridInitialized = true;
 }
 

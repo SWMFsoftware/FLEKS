@@ -390,6 +390,10 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
     divESolver.init(n, 1, nDim, matvec_divE_accurate);
   }
 
+  // If regrid() is called from from read_restart(), activeRegion is not
+  // simplifed. Simplify it here.
+  activeRegion = activeRegion.simplified();
+
   isGridInitialized = true;
 }
 

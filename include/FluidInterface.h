@@ -157,8 +157,7 @@ public:
 
   void set_var_idx();
 
-  void regrid(const amrex::BoxArray& centerBAIn,
-              const Grid* const grid = nullptr);
+  void regrid(const amrex::BoxArray& region, const Grid* const grid = nullptr);
 
   void distribute_arrays();
 
