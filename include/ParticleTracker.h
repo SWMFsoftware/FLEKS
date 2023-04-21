@@ -51,8 +51,8 @@ public:
 private:
   bool usePT = false;
 
-  std::shared_ptr<FluidInterface> fi;
   std::shared_ptr<TimeCtr> tc;
+  std::shared_ptr<FluidInterface> fi;
 
   int nSpecies;
   amrex::Vector<std::unique_ptr<TestParticles> > parts;
