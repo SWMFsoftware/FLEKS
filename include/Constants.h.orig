@@ -2,6 +2,7 @@
 #define _CONSTANTS_H_
 
 #include <AMReX.H>
+#include <AMReX_SPACE.H>
 
 //========= Physical constants =====================
 constexpr static double fourPI = 3.14159265359 * 4;
@@ -16,7 +17,7 @@ constexpr static double mu0 = fourPI * 1e-7; // unit N/A^2
 
 //========= Numerical constants =====================
 // FLEKS is always 3D. But it can be fake 2D with one cell in the z-direction.
-constexpr static int nDim = 3, nDimMax = 3;
+constexpr static int nDim = amrex::SpaceDim;
 constexpr static int ix_ = 0, iy_ = 1, iz_ = 2;
 
 constexpr static int nMoments = 11;

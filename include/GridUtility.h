@@ -58,13 +58,13 @@ inline void get_boxlist_from_region(amrex::BoxList& bl, GridInfo& gridInfo,
                                     amrex::IntVect imin, amrex::IntVect imax) {
 
   amrex::IntVect patchSize;
-  for (int i = 0; i < amrex::SpaceDim; i++) {
+  for (int i = 0; i < nDim; i++) {
     patchSize[i] = gridInfo.get_patch_size(i);
   }
 
   amrex::IntVect patchLen = imax - imin + 1;
 
-  for (int i = 0; i < amrex::SpaceDim; i++) {
+  for (int i = 0; i < nDim; i++) {
     if ((patchLen[i] % patchSize[i]) != 0)
       amrex::Abort("Error: the sub-region range is wrong!");
     patchLen[i] /= patchSize[i];
@@ -79,7 +79,7 @@ inline void get_boxlist_from_region(amrex::BoxList& bl, GridInfo& gridInfo,
   }
 
   amrex::IntVect dhalf;
-  for (int i = 0; i < amrex::SpaceDim; i++) {
+  for (int i = 0; i < nDim; i++) {
     dhalf[i] = ceil(patchLen[i] / 2.0) * patchSize[i];
   }
 
@@ -90,7 +90,7 @@ inline void get_boxlist_from_region(amrex::BoxList& bl, GridInfo& gridInfo,
         amrex::IntVect iminsub = { AMREX_D_DECL(i, j, k) };
         amrex::IntVect imaxsub = iminsub + dhalf - 1;
 
-        for (int i = 0; i < amrex::SpaceDim; i++) {
+        for (int i = 0; i < nDim; i++) {
           if (imaxsub[i] > imax[i])
             imaxsub[i] = imax[i];
         }

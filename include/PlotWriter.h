@@ -27,7 +27,6 @@ public:
 private:
   static const int nVarMax = 100;
   static const int x_ = 0, y_ = 1, z_ = 2;
-  static const int nDimMax = 3;
   static bool doSaveBinary; // Save *.idl file in binary format or not.
 
   //----Input parameters--------------------------------------

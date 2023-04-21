@@ -1,3 +1,4 @@
+#include <AMReX_RealVect.H>
 #include <cctype>
 #include <cmath>
 #include <fstream>
@@ -53,7 +54,7 @@ void PlotWriter::init() {
     plotMin_D[idx] = plotMin_D[idx] * No2NoL;
     plotMax_D[idx] = plotMin_D[idx] + 1e-10;
 
-    for (int iDim = 0; iDim < nDimMax; ++iDim) {
+    for (int iDim = 0; iDim < nDim; ++iDim) {
       if (iDim != idx) {
         plotMin_D[iDim] = domainMin_D[iDim];
         plotMax_D[iDim] = domainMax_D[iDim];
@@ -61,13 +62,13 @@ void PlotWriter::init() {
     }
 
   } else if (subString.substr(0, 2) == "3d") {
-    for (int iDim = 0; iDim < nDimMax; ++iDim) {
+    for (int iDim = 0; iDim < nDim; ++iDim) {
       plotMin_D[iDim] = domainMin_D[iDim];
       plotMax_D[iDim] = domainMax_D[iDim];
     }
 
   } else if (subString.substr(0, 3) == "cut") {
-    for (int iDim = 0; iDim < nDimMax; ++iDim) {
+    for (int iDim = 0; iDim < nDim; ++iDim) {
       plotMin_D[iDim] = plotMin_D[iDim] * No2NoL;
       plotMax_D[iDim] = plotMax_D[iDim] * No2NoL;
     }
@@ -311,7 +312,7 @@ bool PlotWriter::is_inside_plot_region(int const ix, int const iy, int const iz,
     isInside = true;
   }
 
-  double x_D[nDimMax] = { x, y, z };
+  amrex::RealVect x_D = { AMREX_D_DECL(x, y, z) };
 
   for (int iDim = 0; iDim < nDim; ++iDim) {
     isInside = isInside && x_D[iDim] >= plotMin_D[iDim] - 0.5 * dx_D[iDim] &&
@@ -465,8 +466,8 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
   outFile << "\n";
 
   outFile << "#PLOTVARIABLE\n";
-  outFile << var_I.size() - nDimMax << "\t nPlotVar\n";
-  for (vector<string>::size_type i = nDimMax; i < var_I.size(); ++i)
+  outFile << var_I.size() - 3 << "\t nPlotVar\n";
+  for (vector<string>::size_type i = 3; i < var_I.size(); ++i)
     outFile << var_I[i] << " ";
   for (std::string& sTmp : scalarName_I)
     outFile << sTmp << " ";

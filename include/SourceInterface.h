@@ -49,14 +49,14 @@ public:
           for (int k = lo.z; k <= hi.z; ++k)
             for (int j = lo.y; j <= hi.y; ++j)
               for (int i = lo.x; i <= hi.x; ++i) {
-                int idx[nDimMax] = { i, j, k };
-                for (int iDim = 0; iDim < nDimMax; iDim++) {
+                amrex::IntVect idx = { AMREX_D_DECL(i, j, k) };
+                for (int iDim = 0; iDim < nDim; iDim++) {
                   if (Geom(iLev).isPeriodic(iDim)) {
                     idx[iDim] = shift_periodic_index(
                         idx[iDim], gbx.smallEnd(iDim), gbx.bigEnd(iDim));
                   }
                 }
-                double xyz[3];
+                double xyz[3] = { 0, 0, 0 };
                 for (int iDim = 0; iDim < get_fluid_dimension(); iDim++) {
                   xyz[iDim] = (idx[iDim] * dx[iDim] + plo[iDim]) * no2siL;
                 }
@@ -103,8 +103,7 @@ public:
       // velocities. Since the source particles only contribute little to the
       // total current, set current to zero.
       for (int iLev = 0; iLev < nodeFluid.size(); iLev++) {
-        amrex::MultiFab currentMF(nodeFluid[iLev], amrex::make_alias, iJx,
-                                  nDimMax);
+        amrex::MultiFab currentMF(nodeFluid[iLev], amrex::make_alias, iJx, 3);
         currentMF.setVal(0, currentMF.nGrow());
       }
     }

@@ -9,8 +9,7 @@ void Domain::init(double time, const int iDomain,
                   const amrex::Vector<int> &paramInt,
                   const amrex::Vector<double> &paramRegion,
                   const amrex::Vector<double> &paramComm) {
-  if (AMREX_SPACEDIM != 3)
-    Abort("Error: AMReX should be compiled with 3D configuration!!");
+
 
   tc->set_time_si(time);
 

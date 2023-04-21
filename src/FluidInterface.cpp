@@ -567,8 +567,8 @@ void FluidInterface::distribute_arrays() {
   for (int iLev = 0; iLev <= finest_level; iLev++) {
     distribute_FabArray(nodeFluid[iLev], nGrids[iLev], DistributionMap(iLev),
                         nVarNode, nGst, doCopy);
-    distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev),
-                        nDimMax, nGst, doCopy);
+    distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
+                        nGst, doCopy);
   }
 }
 
@@ -646,8 +646,8 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
             if (doCount) {
               nCount++;
             } else if (doGetLoc) {
-              int idx[nDimMax] = { i, j, k };
-              for (int iDim = 0; iDim < nDimMax; iDim++) {
+              IntVect idx = { AMREX_D_DECL(i, j, k) };
+              for (int iDim = 0; iDim < nDim; iDim++) {
                 if (Geom(0).isPeriodic(iDim)) {
                   idx[iDim] = shift_periodic_index(
                       idx[iDim], gbx.smallEnd(iDim), gbx.bigEnd(iDim));
@@ -755,7 +755,7 @@ void FluidInterface::calc_current() {
                                centerB[iLev].nComp(), centerB[iLev].nGrow());
 
     // currentMF is just an alias of current components of nodeFluid.
-    MultiFab currentMF(nodeFluid[iLev], make_alias, iJx, nDimMax);
+    MultiFab currentMF(nodeFluid[iLev], make_alias, iJx, 3);
 
     // The outmost layer of currentMF can not be calculated from centerB
     curl_center_to_node(centerB[iLev], currentMF, Geom(iLev).InvCellSize());

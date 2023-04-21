@@ -1023,8 +1023,8 @@ void Pic::update_E_expl() {
              &Pic::get_center_B, iLevTest);
   }
   const Real dt = tc->get_dt();
-  Real dt2dx[nDimMax];
-  for (int i = 0; i < nDimMax; i++) {
+  Real dt2dx[nDim];
+  for (int i = 0; i < nDim; i++) {
     dt2dx[i] = dt * Geom(0).InvCellSize(i);
   }
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
