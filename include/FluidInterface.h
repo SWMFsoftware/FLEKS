@@ -828,9 +828,9 @@ public:
                 << std::endl;
       abort();
     }
-    
-    const int iLev = 0; 
-    if(max_level>0){
+
+    const int iLev = 0;
+    if (max_level > 0) {
       amrex::Abort("setFluidanisoUth has not implemented for multilevel");
     }
 

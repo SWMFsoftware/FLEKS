@@ -10,7 +10,6 @@ void Domain::init(double time, const int iDomain,
                   const amrex::Vector<double> &paramRegion,
                   const amrex::Vector<double> &paramComm) {
 
-
   tc->set_time_si(time);
 
   gridID = iDomain;
