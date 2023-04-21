@@ -183,7 +183,7 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
   centerBox.setSmall(centerBoxLo);
   centerBox.setBig(centerBoxHi);
 
-  gm.define(centerBox, &domainRange, coord, periodicity);
+  gm.define(centerBox, &domainRange, coord, periodicity.getVect());
 
   // The value of blocking_factor constrains grid creation in that in that each
   // grid must be divisible by blocking_factor. Note that both the domain (at

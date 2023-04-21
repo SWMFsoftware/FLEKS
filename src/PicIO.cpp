@@ -92,8 +92,8 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
   const auto plo = Geom(0).ProbLo();
   const auto plh = Geom(0).ProbHi();
 
-  Real xMinL_D[nDim] = { AMREX_D_DECL(plh[ix_], plh[iy_], plh[iz_]) };
-  Real xMaxL_D[nDim] = { AMREX_D_DECL(plo[ix_], plo[iy_], plo[iz_]) };
+  RealVect xMinL_D = { AMREX_D_DECL(plh[ix_], plh[iy_], plh[iz_]) };
+  RealVect xMaxL_D = { AMREX_D_DECL(plo[ix_], plo[iy_], plo[iz_]) };
 
   const auto dx = Geom(0).CellSize();
 
@@ -220,8 +220,8 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
   nPointAllProc = pointList_II.size();
   ParallelDescriptor::ReduceLongSum(nPointAllProc);
 
-  ParallelDescriptor::ReduceRealMin(xMinL_D, nDim);
-  ParallelDescriptor::ReduceRealMax(xMaxL_D, nDim);
+  ParallelDescriptor::ReduceRealMin(xMinL_D.begin(), nDim);
+  ParallelDescriptor::ReduceRealMax(xMaxL_D.begin(), nDim);
 
   for (int iDim = 0; iDim < nDim; ++iDim) {
     xMin_D[iDim] = xMinL_D[iDim];

@@ -93,9 +93,8 @@ protected:
 
   amrex::Vector<amrex::RealBox> activeRegions;
 
-  amrex::Real plo[nDim], phi[nDim], dx[nDim], invDx[nDim];
+  amrex::RealVect plo, phi, dx, invDx;
   amrex::Real invVol;
-  bool isPeriodic[nDim];
 
   amrex::Real mergeThresholdDistance = 0.6;
   amrex::Real velBinBufferSize = 0.125;
@@ -197,7 +196,7 @@ public:
     amrex::Real loc[3] = { 0, 0, 0 };
     for (int iDim = 0; iDim < 3; iDim++) {
       loc[iDim] = p.pos(iDim);
-      if (isPeriodic[iDim]) {
+      if (Geom(0).isPeriodic(iDim)) {
         // Fix index/loc for periodic BC.
         while (loc[iDim] > phi[iDim])
           loc[iDim] -= phi[iDim] - plo[iDim];

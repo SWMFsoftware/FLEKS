@@ -28,7 +28,7 @@ protected:
   amrex::Vector<int> nCell = { 1, 1, 1 };
 
   amrex::IntVect maxBlockSize;
-  int periodicity[nDim];
+  amrex::IntVect periodicity;
   amrex::IntVect centerBoxLo;
   amrex::IntVect centerBoxHi;
   amrex::Box centerBox;

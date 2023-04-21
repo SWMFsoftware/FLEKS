@@ -1023,12 +1023,12 @@ void Pic::update_E_expl() {
              &Pic::get_center_B, iLevTest);
   }
   const Real dt = tc->get_dt();
-  Real dt2dx[nDim];
+  RealVect dt2dx;
   for (int i = 0; i < nDim; i++) {
     dt2dx[i] = dt * Geom(0).InvCellSize(i);
   }
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    curl_center_to_node(centerB[iLevTest], nodeE[iLevTest], dt2dx);
+    curl_center_to_node(centerB[iLevTest], nodeE[iLevTest], dt2dx.begin());
     MultiFab::Saxpy(nodeE[iLevTest], -fourPI * dt, jHat, 0, 0,
                     nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
 

@@ -32,8 +32,7 @@ Particles<NStructReal, NStructInt>::Particles(
   for (int i = 0; i < nDim; i++) {
     tile_size[i] = 1;
     plo[i] = Geom(0).ProbLo(i);
-    phi[i] = Geom(0).ProbHi(i);
-    isPeriodic[i] = Geom(0).isPeriodic(i);
+    phi[i] = Geom(0).ProbHi(i);    
     dx[i] = Geom(0).CellSize(i);
     invDx[i] = Geom(0).InvCellSize(i);
     invVol *= invDx[i];
@@ -405,7 +404,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
         const int kMax = kMin + 1;
 
         const Real coef = fabs(qp) * invVol;
-        Real wg_D[nDim];
+        RealVect wg_D;
         for (int k1 = kMin; k1 <= kMax; k1++)
           for (int j1 = jMin; j1 <= jMax; j1++)
             for (int i1 = iMin; i1 <= iMax; i1++) {
@@ -646,7 +645,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
       {
         // jHat
-        Real currents[nDim];
+        Real currents[3];
 
         {
           const Real coef1 = denom * qp;
@@ -655,7 +654,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
           currents[iz_] = (wp + (up * Omy - vp * Omx + udotOm * Omz)) * coef1;
         }
 
-        for (int iVar = 0; iVar < nDim; iVar++)
+        for (int iVar = 0; iVar < 3; iVar++)
           for (int kk = 0; kk < 2; kk++)
             for (int jj = 0; jj < 2; jj++)
               for (int ii = 0; ii < 2; ii++) {
@@ -825,7 +824,7 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
 
       {
         // jHat
-        Real currents[nDim];
+        Real currents[3];
 
         {
           const Real coef1 = denom * qp;
@@ -1153,8 +1152,8 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         continue;
       }
 
-      int loIdx[nDim];
-      Real dShift[nDim];
+      IntVect loIdx;
+      RealVect dShift;
       for (int i = 0; i < nDim; i++) {
         // plo is the corner location => -0.5
         dShift[i] = (p.pos(i) - plo[i]) * invDx[i] - 0.5;
@@ -1476,22 +1475,22 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
 
     //----------------------------------------------------------------
     // Estimate the bulk velocity and thermal velocity.
-    RealVect uBulk = { AMREX_D_DECL(0, 0, 0) };
+    Real uBulk[nDimVel] = { 0, 0, 0 };
     for (int pid = 0; pid < nPartOrig; pid++) {
       auto& pcl = particles[pid];
-      for (int iDir = 0; iDir < nDim; iDir++) {
+      for (int iDir = 0; iDir < 3; iDir++) {
         uBulk[iDir] += pcl.rdata(iDir);
       }
     }
 
-    for (int iDir = 0; iDir < nDim; iDir++) {
+    for (int iDir = 0; iDir < nDimVel; iDir++) {
       uBulk[iDir] /= nPartOrig;
     }
 
     Real thVel = 0, thVel2 = 0;
     for (int pid = 0; pid < nPartOrig; pid++) {
       auto& pcl = particles[pid];
-      for (int iDir = 0; iDir < nDim; iDir++) {
+      for (int iDir = 0; iDir < nDimVel; iDir++) {
         thVel2 += pow(pcl.rdata(iDir) - uBulk[iDir], 2);
       }
     }
@@ -1508,8 +1507,8 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
     Vector<int> phasePartIdx_III[nCell][nCell][nCell];
 
     // Velocity domain range.
-    Real velMin_D[nDim], velMax_D[nDim];
-    for (int iDir = 0; iDir < nDim; iDir++) {
+    Real velMin_D[nDimVel], velMax_D[nDimVel];
+    for (int iDir = 0; iDir < nDimVel; iDir++) {
       velMin_D[iDir] = -r0 * thVel + uBulk[iDir];
       velMax_D[iDir] = r0 * thVel + uBulk[iDir];
     }
@@ -1517,12 +1516,12 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
     Real dv = (2.0 * r0 * thVel) / nCell;
     Real invDv = 1.0 / dv;
 
-    int iCell_D[nDim];
+    int iCell_D[nDimVel];
     for (int pid = 0; pid < nPartOrig; pid++) {
       auto& pcl = particles[pid];
 
       bool isOutside = false;
-      for (int iDim = 0; iDim < nDim; iDim++) {
+      for (int iDim = 0; iDim < nDimVel; iDim++) {
         if (pcl.rdata(iDim) < velMin_D[iDim] ||
             pcl.rdata(iDim) > velMax_D[iDim])
           isOutside = true;
@@ -1530,7 +1529,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
       if (isOutside)
         continue;
 
-      for (int iDim = 0; iDim < nDim; iDim++) {
+      for (int iDim = 0; iDim < nDimVel; iDim++) {
         iCell_D[iDim] = fastfloor((pcl.rdata(iDim) - velMin_D[iDim]) * invDv);
       }
 
@@ -1547,9 +1546,9 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
 
             IntVect cellIdx = { AMREX_D_DECL(xCell, yCell, zCell) };
 
-            Real binMin_D[nDim], binMax_D[nDim];
+            Real binMin_D[nDimVel], binMax_D[nDimVel];
 
-            for (int iDim = 0; iDim < nDim; iDim++) {
+            for (int iDim = 0; iDim < nDimVel; iDim++) {
               binMin_D[iDim] =
                   velMin_D[iDim] + (cellIdx[iDim] - velBinBufferSize) * dv;
 
@@ -1558,7 +1557,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
             }
 
             bool isInside = true;
-            for (int iDim = 0; iDim < nDim; iDim++) {
+            for (int iDim = 0; iDim < nDimVel; iDim++) {
               if (pcl.rdata(iDim) < binMin_D[iDim] ||
                   pcl.rdata(iDim) > binMax_D[iDim])
                 isInside = false;
