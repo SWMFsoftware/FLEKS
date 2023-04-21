@@ -173,7 +173,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
 
     MoMi_S.resize(nS);
     QoQi_S.resize(nS);
-    int iFluid = 0;
+    
     int iFluidStart[5] = { 0, 8, 13, 18, 23 };
 
     for (int iFluid = 0; iFluid < nS; iFluid++) {
@@ -1342,10 +1342,10 @@ void FluidInterface::save_amrex_file() {
   string filename = component + "/plots/" + tag;
   Print() << "Writing FluidInterface file " << filename << std::endl;
 
-  for (int i = 0; i < nodeFluid[0].nComp(); i++) {
-    Real no2out = No2Si_V[i];
-    // nodeFluid[0].mult(no2out, i, 1, nodeFluid[0].nGrow());
-  }
+  // for (int i = 0; i < nodeFluid[0].nComp(); i++) {
+  //   Real no2out = No2Si_V[i];
+  //   // nodeFluid[0].mult(no2out, i, 1, nodeFluid[0].nGrow());
+  // }
 
   if (varNames.size() != nodeFluid[0].nComp()) {
     varNames.clear();
@@ -1363,10 +1363,10 @@ void FluidInterface::save_amrex_file() {
                           varNames, geom, 0.0, Vector<int>(nLev, 0),
                           refRatio());
 
-  for (int i = 0; i < nodeFluid[0].nComp(); i++) {
-    Real out2no = Si2No_V[i];
-    // nodeFluid[0].mult(out2no, i, 1, nodeFluid[0].nGrow());
-  }
+  // for (int i = 0; i < nodeFluid[0].nComp(); i++) {
+  //   Real out2no = Si2No_V[i];
+  //   // nodeFluid[0].mult(out2no, i, 1, nodeFluid[0].nGrow());
+  // }
 }
 
 void FluidInterface::get_for_points(const int nDim, const int nPoint,

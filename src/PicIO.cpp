@@ -99,8 +99,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 
   const Box& gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
 
-  const auto glo = lbound(gbx);
-  const auto ghi = ubound(gbx);
+  const auto glo = lbound(gbx);  
 
   int iBlock = 0;
   for (MFIter mfi(nodeE[iLevTest]); mfi.isValid(); ++mfi) {
@@ -573,8 +572,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
     const auto lo = outRange.lo();
     const auto hi = outRange.hi();
 
-    const auto plo = Geom(0).ProbLo();
-    const auto plh = Geom(0).ProbHi();
+    const auto plo = Geom(0).ProbLo();    
     const auto dx = Geom(0).CellSize();
 
     IntVect cellLo, cellHi;

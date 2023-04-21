@@ -32,7 +32,7 @@ Particles<NStructReal, NStructInt>::Particles(
   for (int i = 0; i < nDim; i++) {
     tile_size[i] = 1;
     plo[i] = Geom(0).ProbLo(i);
-    phi[i] = Geom(0).ProbHi(i);    
+    phi[i] = Geom(0).ProbHi(i);
     dx[i] = Geom(0).CellSize(i);
     invDx[i] = Geom(0).InvCellSize(i);
     invVol *= invDx[i];
@@ -809,18 +809,6 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
       const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
       const Real denom = 1.0 / (1.0 + omsq);
       const Real udotOm = up * Omx + vp * Omy + wp * Omz;
-
-      const Real c0 = denom * invVol * qp * qdto2mc;
-      Real alpha[9];
-      alpha[0] = (1 + Omx * Omx) * c0;
-      alpha[1] = (Omz + Omx * Omy) * c0;
-      alpha[2] = (-Omy + Omx * Omz) * c0;
-      alpha[3] = (-Omz + Omx * Omy) * c0;
-      alpha[4] = (1 + Omy * Omy) * c0;
-      alpha[5] = (Omx + Omy * Omz) * c0;
-      alpha[6] = (Omy + Omx * Omz) * c0;
-      alpha[7] = (-Omx + Omy * Omz) * c0;
-      alpha[8] = (1 + Omz * Omz) * c0;
 
       {
         // jHat
@@ -1718,8 +1706,6 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
                 tryDeleteOrder[iPartDel] = idx_I[0];
               }
             } else {
-              nTry == nPartCombine;
-
               // Sort the particles by weights.
               std::sort(tryDeleteOrder, tryDeleteOrder + nPartCombine,
                         [&particles](const int& idLeft, const int& idRight) {
@@ -1727,11 +1713,6 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
                           const Real qr = fabs(particles[idRight].rdata(iqp_));
                           return ql - qr < 1e-6 * ql;
                         });
-
-              for (int i = 0; i < nPartCombine; i++) {
-                const int id = tryDeleteOrder[i];
-                const Real qp = particles[id].rdata(iqp_);
-              }
             }
 
             nEqs++;
@@ -1958,9 +1939,6 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 
   timing_func(nameFunc);
 
-  // Print() << nameFunc << std::endl;
-
-  double vol = 1. / invVol;
   const int lev = 0;
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
        ++pti) {
@@ -1972,7 +1950,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 
       double cs2Neu = 0, uNeu[3], rhoNeu;
       double cs2Ion, uIon[3], rhoIon;
-      double ion2neu[5], neu2ion[5], si2no[5];
+      double ion2neu[5], neu2ion[5];
       const int iRho_ = 0, iUx_ = 1, iUy_ = 2, iUz_ = 3, iP_ = 4;
       const int iRhoUx_ = iUx_, iRhoUy_ = iUy_, iRhoUz_ = iUz_, iE_ = iP_;
 

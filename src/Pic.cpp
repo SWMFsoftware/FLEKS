@@ -398,8 +398,6 @@ void Pic::set_nodeShare() {
   if (!nodeShare.empty())
     nodeShare.setVal(iIgnore_);
 
-  const Box& gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(0, 0, 0) });
-
   if (!nodeShare.empty())
     for (MFIter mfi(nodeShare); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();

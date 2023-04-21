@@ -138,8 +138,8 @@ public:
   FluidInterface(const FluidInterface& other, int id, std::string tag,
                  FluidType typeIn = PICFluid)
       : Grid(other.Geom(0), other.get_amr_info(), other.get_n_ghost(), id, tag),
-        myType(typeIn),
-        FluidInterfaceParameters(other){};
+        FluidInterfaceParameters(other),
+        myType(typeIn){};
 
   ~FluidInterface() = default;
 

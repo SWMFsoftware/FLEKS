@@ -372,7 +372,7 @@ void TestParticles::add_test_particles_from_pic(Particles<>* pts) {
     // this particle from the test particle list (vIDs). Use a bit array to do
     // mpi_allreduce to improve performance.
     BitArray ba(vIDs.size());
-    for (int i = 0; i < vIDs.size(); i++) {
+    for (unsigned int i = 0; i < vIDs.size(); i++) {
       if (vIDs[i].flag) {
         ba.set(i, 1);
       }
@@ -381,7 +381,7 @@ void TestParticles::add_test_particles_from_pic(Particles<>* pts) {
     MPI_Allreduce(MPI_IN_PLACE, ba.get(), ba.size_int(), MPI_INT, MPI_BAND,
                   amrex::ParallelDescriptor::Communicator());
 
-    for (int i = 0; i < vIDs.size(); i++) {
+    for (unsigned int i = 0; i < vIDs.size(); i++) {
       if (ba.get(i) == 0) {
         vIDs[i].flag = false;
       }
