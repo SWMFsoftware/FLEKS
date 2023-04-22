@@ -518,6 +518,12 @@ void Domain::save_restart_header() {
     headerFile << nCell[iz_] << "\t\t\tnCellZ\n";
     headerFile << "\n";
 
+    // Block size
+    headerFile << "#MAXBLOCKSIZE" << command_suffix;
+    headerFile << maxBlockSize[ix_] << "\t\tnCellX\n";
+    headerFile << maxBlockSize[iy_] << "\t\tnCellY\n";
+    headerFile << maxBlockSize[iz_] << "\t\tnCellZ\n";
+
     if (pic)
       pic->save_restart_header(headerFile);
 
