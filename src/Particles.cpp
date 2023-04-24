@@ -1799,7 +1799,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
                 // All the particle weights should have the same sign.
                 Real qt = a[iq_][nVar];
                 for (int ip = 0; ip < nPartNew; ip++) {
-                  if (qt * x[ip] < 0) {
+                  if (qt * x[ip] <= 0) {
                     isSolved = false;
                     break;
                   }
