@@ -99,7 +99,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 
   const Box& gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
 
-  const auto glo = lbound(gbx);  
+  const auto glo = lbound(gbx);
 
   int iBlock = 0;
   for (MFIter mfi(nodeE[iLevTest]); mfi.isValid(); ++mfi) {
@@ -572,7 +572,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
     const auto lo = outRange.lo();
     const auto hi = outRange.hi();
 
-    const auto plo = Geom(0).ProbLo();    
+    const auto plo = Geom(0).ProbLo();
     const auto dx = Geom(0).CellSize();
 
     IntVect cellLo, cellHi;
@@ -730,18 +730,20 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
     Vector<std::string> plasmaNames = { "rho", "ux",  "uy",  "uz",  "pxx",
                                         "pyy", "pzz", "pxy", "pxz", "pyz" };
 
-    for (int i = 0; i < nSpecies; i++) {
-      MultiFab rho(nodePlasma[i], make_alias, iRho_, 1);
+    for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++) {
+      auto& plasma = nodePlasma[iSpecies];
+
+      MultiFab rho(plasma, make_alias, iRho_, 1);
 
       // Get momentums
-      MultiFab ux(nodePlasma[i], make_alias, iMx_, 1);
-      MultiFab uy(nodePlasma[i], make_alias, iMy_, 1);
-      MultiFab uz(nodePlasma[i], make_alias, iMz_, 1);
+      MultiFab ux(plasma, make_alias, iMx_, 1);
+      MultiFab uy(plasma, make_alias, iMy_, 1);
+      MultiFab uz(plasma, make_alias, iMz_, 1);
 
-      for (MFIter mfi(nodePlasma[i]); mfi.isValid(); ++mfi) {
+      for (MFIter mfi(plasma); mfi.isValid(); ++mfi) {
         // Convert momentum to velocity;
         const Box& box = mfi.validbox();
-        const Array4<Real>& plasmaArr = nodePlasma[i][mfi].array();
+        const Array4<Real>& plasmaArr = plasma[mfi].array();
         const Array4<Real>& uxArr = ux[mfi].array();
         const Array4<Real>& uyArr = uy[mfi].array();
         const Array4<Real>& uzArr = uz[mfi].array();
@@ -766,11 +768,11 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
             }
       }
 
-      MultiFab pl(nodePlasma[i], make_alias, iRho_, iPyz_ - iRho_ + 1);
+      MultiFab pl(plasma, make_alias, iRho_, iPyz_ - iRho_ + 1);
       average_node_to_cellcenter(centerMF, iStart, pl, 0, pl.nComp(), 0);
       iStart += pl.nComp();
       for (auto& var : plasmaNames) {
-        varNames.push_back(var + "s" + std::to_string(i));
+        varNames.push_back(var + "s" + std::to_string(iSpecies));
       }
 
       // Convert velocity to momentum
