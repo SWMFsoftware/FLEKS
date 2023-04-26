@@ -572,6 +572,14 @@ void FluidInterface::distribute_arrays() {
                         nVarNode, nGst, doCopy);
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst, doCopy);
+
+    if (iLev == 0) {
+      distribute_FabArray(nodeStatus, nGrids[iLev], DistributionMap(iLev), 1,
+                          nGst, false);
+      nodeStatus.setVal(iBoundary_);
+      nodeStatus.setVal(iOnNew_, 0);
+      nodeStatus.FillBoundary(Geom(iLev).periodicity());
+    }
   }
 }
 
@@ -641,38 +649,46 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
     for (MFIter mfi(fluid); mfi.isValid(); ++mfi) {
       // For each block, looping through all nodes, including ghost nodes.
       const Box& box = mfi.fabbox();
+      const Box& validBox = mfi.validbox();
       const auto lo = lbound(box);
       const auto hi = ubound(box);
 
       const Array4<Real>& arr = fluid[mfi].array();
+      const auto& status = nodeStatus[mfi].array();
 
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (doCount) {
-              nCount++;
-            } else if (doGetLoc) {
-              IntVect idx = { AMREX_D_DECL(i, j, k) };
-              for (int iDim = 0; iDim < nDim; iDim++) {
-                if (Geom(0).isPeriodic(iDim)) {
-                  idx[iDim] = shift_periodic_index(
-                      idx[iDim], gbx.smallEnd(iDim), gbx.bigEnd(iDim));
-                }
-              }
+          for (int i = lo.x; i <= hi.x; ++i)
+            if (status(i, j, k) == iBoundary_ || validBox.contains(i, j, k)) {
+              // If this node is the boundary or inside the valid box.
 
-              for (int iDim = 0; iDim < get_fluid_dimension(); iDim++) {
-                pos_DI[nCount++] = (idx[iDim] * dx[iDim] + plo[iDim]) * no2siL;
+              if (doCount) {
+                nCount++;
+              } else if (doGetLoc) {
+                IntVect idx = { AMREX_D_DECL(i, j, k) };
+                for (int iDim = 0; iDim < nDim; iDim++) {
+                  if (Geom(0).isPeriodic(iDim)) {
+                    idx[iDim] = shift_periodic_index(
+                        idx[iDim], gbx.smallEnd(iDim), gbx.bigEnd(iDim));
+                  }
+                }
+
+                for (int iDim = 0; iDim < get_fluid_dimension(); iDim++) {
+                  pos_DI[nCount++] =
+                      (idx[iDim] * dx[iDim] + plo[iDim]) * no2siL;
+                }
+              } else if (doFill) {
+                for (int iVar = 0; iVar < nVarFluid; iVar++) {
+                  int idx;
+                  idx = iVar + nVarFluid * (index[nIdxCount] - 1);
+                  arr(i, j, k, iVar) = data[idx];
+                }
+                nIdxCount++;
               }
-            } else if (doFill) {
-              for (int iVar = 0; iVar < nVarFluid; iVar++) {
-                int idx;
-                idx = iVar + nVarFluid * (index[nIdxCount] - 1);
-                arr(i, j, k, iVar) = data[idx];
-              }
-              nIdxCount++;
-            }
-          } // for k
+            } // for k
     }
+
+    fluid.FillBoundary(Geom(iLev).periodicity());
   }
 
   return nCount;
