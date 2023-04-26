@@ -173,7 +173,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
 
     MoMi_S.resize(nS);
     QoQi_S.resize(nS);
-    
+
     int iFluidStart[5] = { 0, 8, 13, 18, 23 };
 
     for (int iFluid = 0; iFluid < nS; iFluid++) {
@@ -525,7 +525,7 @@ void FluidInterface::regrid(const amrex::BoxArray& region,
   }
 
   activeRegion = region;
-  
+
   isGridEmpty = activeRegion.empty();
 
   if (isGridEmpty) {
@@ -605,6 +605,9 @@ void FluidInterface::find_mpi_rank_for_points(const int nPoint,
 int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
                                       const double* const data,
                                       const int* const index) {
+  std::string funcName = "FI::loop_through_node";
+  timing_func(funcName);
+
   bool doCount = false;
   bool doGetLoc = false;
   bool doFill = false;
@@ -686,6 +689,9 @@ void FluidInterface::get_couple_node_loc(double* const pos_DI) {
 void FluidInterface::set_node_fluid(const double* const data,
                                     const int* const index,
                                     const std::vector<std::string>& names) {
+  std::string funcName = "FI::set_node_fluid";
+  timing_func(funcName);
+
   if (isGridEmpty)
     return;
 
@@ -713,6 +719,9 @@ void FluidInterface::set_node_fluid(const double* const data,
 }
 
 void FluidInterface::set_node_fluid() {
+  std::string funcName = "FI::set_node_fluid_1";
+  timing_func(funcName);
+
   if (isGridEmpty)
     return;
 
@@ -746,11 +755,15 @@ void FluidInterface::set_node_fluid(const FluidInterface& other) {
 }
 
 void FluidInterface::calc_current() {
+  std::string funcName = "FI::calc_current";
+
   if (isGridEmpty)
     return;
 
   if (!useCurrent)
     return;
+
+  timing_func(funcName);
 
   for (int iLev = 0; iLev <= finest_level; iLev++) {
     // All centerB, including all ghost cells are accurate.
@@ -802,6 +815,8 @@ void FluidInterface::normalize_fluid_variables() {
 }
 
 void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly) {
+  std::string funcName = "FI::convert_moment_to_velocity";
+  timing_func(funcName);
 
   for (int iLev = 0; iLev <= finest_level; iLev++)
     for (MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {

@@ -297,6 +297,8 @@ void Domain::set_ic() {
 //========================================================
 void Domain::set_state_var(double *data, int *index,
                            std::vector<std::string> &names) {
+  std::string funcName = "Domain::set_state_var";
+  timing_func(funcName);
 
   Print() << printPrefix << " GM -> " << component
           << " coupling at t =" << tc->get_time_si() << " (s)" << std::endl;
