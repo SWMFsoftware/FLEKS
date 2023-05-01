@@ -576,9 +576,11 @@ void FluidInterface::distribute_arrays() {
     if (iLev == 0) {
       distribute_FabArray(nodeStatus, nGrids[iLev], DistributionMap(iLev), 1,
                           nGst, false);
-      nodeStatus.setVal(iBoundary_);
-      nodeStatus.setVal(iOnNew_, 0);
-      nodeStatus.FillBoundary(Geom(iLev).periodicity());
+      if (!nodeStatus.empty()) {
+        nodeStatus.setVal(iBoundary_);
+        nodeStatus.setVal(iOnNew_, 0);
+        nodeStatus.FillBoundary(Geom(iLev).periodicity());
+      }
     }
   }
 }
