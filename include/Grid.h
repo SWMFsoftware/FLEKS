@@ -51,7 +51,7 @@ protected:
 
   // If a node is inside the physical domain, it is set to iOnNew_. Otherwise,
   // it is iBoundary_.
-  amrex::iMultiFab boundaryNode;
+  amrex::Vector<amrex::iMultiFab> boundaryNode;
 
   // A node may be shared by a few blocks/boxes. Sometimes (such as the E field
   // solver) only one of the boexes needs to take care such nodes. The following

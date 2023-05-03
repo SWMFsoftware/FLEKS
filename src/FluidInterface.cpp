@@ -564,6 +564,9 @@ void FluidInterface::distribute_arrays() {
   if (centerB.empty())
     centerB.resize(max_level + 1);
 
+  if (boundaryNode.empty())
+    boundaryNode.resize(max_level + 1);
+
   const bool doCopy = true;
   const int nVarNode = (useCurrent ? nVarFluid + 3 : nVarFluid);
 
@@ -573,14 +576,12 @@ void FluidInterface::distribute_arrays() {
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst, doCopy);
 
-    if (iLev == 0) {
-      distribute_FabArray(boundaryNode, nGrids[iLev], DistributionMap(iLev), 1,
-                          nGst, false);
-      if (!boundaryNode.empty()) {
-        boundaryNode.setVal(iBoundary_);
-        boundaryNode.setVal(iOnNew_, 0);
-        boundaryNode.FillBoundary(Geom(iLev).periodicity());
-      }
+    distribute_FabArray(boundaryNode[iLev], nGrids[iLev], DistributionMap(iLev),
+                        1, nGst, false);
+    if (!boundaryNode[iLev].empty()) {
+      boundaryNode[iLev].setVal(iBoundary_);
+      boundaryNode[iLev].setVal(iOnNew_, 0);
+      boundaryNode[iLev].FillBoundary(Geom(iLev).periodicity());
     }
   }
 }
@@ -656,7 +657,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
       const auto hi = ubound(box);
 
       const Array4<Real>& arr = fluid[mfi].array();
-      const auto& status = boundaryNode[mfi].array();
+      const auto& status = boundaryNode[iLev][mfi].array();
 
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
