@@ -49,6 +49,10 @@ protected:
   // The status of a Node could be: iBoundary_, iOnNew_, or iOnOld_.
   amrex::iMultiFab nodeStatus;
 
+  // If a node is inside the physical domain, it is set to iOnNew_. Otherwise,
+  // it is iBoundary_.
+  amrex::iMultiFab boundaryNode;
+
   // A node may be shared by a few blocks/boxes. Sometimes (such as the E field
   // solver) only one of the boexes needs to take care such nodes. The following
   // multifab is usually used for the following purposes: (1) if one node of one
@@ -233,7 +237,7 @@ public:
   virtual void PostProcessBaseGrids(amrex::BoxArray& ba) const override {
     std::string nameFunc = "Grid::PostProcessBaseGrids";
     amrex::Print() << printPrefix << nameFunc << " is called." << std::endl;
-    
+
     ba = activeRegion;
     const int iLev = 0;
     ba.maxSize(max_grid_size[iLev]);

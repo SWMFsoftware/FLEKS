@@ -574,12 +574,12 @@ void FluidInterface::distribute_arrays() {
                         nGst, doCopy);
 
     if (iLev == 0) {
-      distribute_FabArray(nodeStatus, nGrids[iLev], DistributionMap(iLev), 1,
+      distribute_FabArray(boundaryNode, nGrids[iLev], DistributionMap(iLev), 1,
                           nGst, false);
-      if (!nodeStatus.empty()) {
-        nodeStatus.setVal(iBoundary_);
-        nodeStatus.setVal(iOnNew_, 0);
-        nodeStatus.FillBoundary(Geom(iLev).periodicity());
+      if (!boundaryNode.empty()) {
+        boundaryNode.setVal(iBoundary_);
+        boundaryNode.setVal(iOnNew_, 0);
+        boundaryNode.FillBoundary(Geom(iLev).periodicity());
       }
     }
   }
@@ -656,7 +656,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
       const auto hi = ubound(box);
 
       const Array4<Real>& arr = fluid[mfi].array();
-      const auto& status = nodeStatus[mfi].array();
+      const auto& status = boundaryNode[mfi].array();
 
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
