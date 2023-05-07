@@ -438,7 +438,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
             }
       } // if doChargeOnly
 
-    } // for p
+    }   // for p
   }
 }
 
@@ -691,10 +691,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
                     }
                   } // k2
 
-                } // j2
-              }   // if (ip > 0)
-            }     // i2
-          }       // k1
+                }   // j2
+              }     // if (ip > 0)
+            }       // i2
+          }         // k1
 
       //----- Mass matrix calculation end--------------
 
@@ -2058,6 +2058,10 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         const Real gamma = 5. / 3;
         // P = (gamma-1)*(E - 0.5*rho*u2)
         ion2neu[iP_] = (gamma - 1) * (ion2neu[iE_] - 0.5 * m2 / ion2neu[iRho_]);
+
+        if (ion2neu[iP_] < 0) {
+          ion2neu[iP_] = 0;
+        }
 
         // source saves changing rate (density/s...).
         source->add_rho_to_loc(ion2neu[iRho_] * si2no_v[iRho_] / dt, pti, xp,
