@@ -208,7 +208,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_source(
     const iMultiFab& cellStatus, const FluidInterface& interface,
-    amrex::Real dt, IntVect ppc) {
+    const FluidInterface* const stateOH, Real dt, IntVect ppc) {
   timing_func("Particles::add_particles_source");
 
   // 1. Inject particles for physical cells.
@@ -224,7 +224,17 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
     for (int i = iMin; i <= iMax; ++i)
       for (int j = jMin; j <= jMax; ++j)
         for (int k = kMin; k <= kMax; ++k) {
-          add_particles_cell(mfi, i, j, k, interface, ppc, Vel(), dt);
+          bool doAdd = true;
+#ifdef _PT_COMPONENT_
+          if (stateOH) {
+            const int iFluid = 0;
+            const int iRegion =
+                stateOH->get_neu_source_region(mfi, i, j, k, iFluid, lev);
+            // doAdd = (iRegion == speciesID);
+          }
+#endif
+          if (doAdd)
+            add_particles_cell(mfi, i, j, k, interface, ppc, Vel(), dt);
         }
   }
 

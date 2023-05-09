@@ -146,6 +146,7 @@ public:
 
   void add_particles_source(const amrex::iMultiFab& cellStatus,
                             const FluidInterface& interface,
+                            const FluidInterface* const stateOH = nullptr,
                             amrex::Real dt = -1,
                             amrex::IntVect ppc = amrex::IntVect());
 

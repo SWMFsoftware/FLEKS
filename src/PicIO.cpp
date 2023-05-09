@@ -388,6 +388,13 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
       value = ParallelDescriptor::MyProc();
     } else if (var.substr(0, 5) == "block") {
       value = mfi.index();
+    } else if (var.substr(0, 9) == "neuregion") {
+      if (stateOH) {
+        const int iLev = 0, iFluid = 0;
+        value = stateOH->get_neu_source_region(mfi, ix, iy, iz, iFluid, iLev);
+      } else {
+        value = -1;
+      }
     } else {
       value = 0;
     }

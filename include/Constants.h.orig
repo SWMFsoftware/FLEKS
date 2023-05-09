@@ -13,6 +13,8 @@ constexpr static double cUnitChargeSI = 1.60217663e-19; // C
 constexpr static double cBoltzmannSI = 1.380649e-23;
 
 constexpr static double mu0 = fourPI * 1e-7; // unit N/A^2
+
+constexpr static double cAUSI = 1.495978707e11; // m
 //===================================================
 
 //========= Numerical constants =====================

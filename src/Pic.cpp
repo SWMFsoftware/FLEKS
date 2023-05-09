@@ -596,8 +596,8 @@ void Pic::fill_particles() {
 
 void Pic::fill_source_particles() {
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->add_particles_source(cellStatus, *source, tc->get_dt(),
-                                   nSourcePPC);
+    parts[i]->add_particles_source(cellStatus, *source, stateOH.get(),
+                                   tc->get_dt(), nSourcePPC);
   }
 }
 

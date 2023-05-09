@@ -2,6 +2,7 @@
 #define _OHINTERFACE_H_
 
 #include "FluidInterface.h"
+#include "SWMFInterface.h"
 
 class OHInterface : public FluidInterface {
 public:
@@ -78,6 +79,46 @@ public:
 
     calc_conversion_units();
   };
+
+  virtual int get_neu_source_region(const amrex::MFIter& mfi, const int i,
+                                    const int j, const int k, const int iFluid,
+                                    const int iLev) const override {
+    // amu/m^3
+    amrex::Real n = get_fluid_mass_density(mfi, i, j, k, iFluid) *
+                    get_No2SiRho() / cProtonMassSI;
+
+    // km/s
+    const amrex::Real ux =
+        get_fluid_ux(mfi, i, j, k, iFluid) * get_No2SiV() * 1e-3;
+    const amrex::Real uy =
+        get_fluid_uy(mfi, i, j, k, iFluid) * get_No2SiV() * 1e-3;
+    const amrex::Real uz =
+        get_fluid_uz(mfi, i, j, k, iFluid) * get_No2SiV() * 1e-3;
+    amrex::Real u2 = ux * ux + uy * uy + uz * uz;
+
+    // Pa
+    const amrex::Real p = get_fluid_p(mfi, i, j, k, iFluid) * get_No2SiP();
+    amrex::Real T = p / n / cBoltzmannSI;
+
+    const amrex::Real gamma = 5. / 3;
+
+    // (km/s)^2
+    const amrex::Real cs2 = gamma * p / (n * cProtonMassSI) * 1e-6;
+
+    amrex::Real mach2 = u2 / cs2;
+
+    const amrex::Real x = Geom(iLev).CellCenter(i, ix_);
+    const amrex::Real y = Geom(iLev).CellCenter(j, iy_);
+    const amrex::Real z = Geom(iLev).CellCenter(k, iz_);
+
+    // cAU
+    amrex::Real r = sqrt(x * x + y * y + z * z) * get_No2SiL() / cAUSI;
+
+    int iRegion = -1;
+    OH_get_charge_exchange_region(&iRegion, &r, &n, &u2, &T, &mach2);
+
+    return iRegion;
+  }
 };
 
 #endif
