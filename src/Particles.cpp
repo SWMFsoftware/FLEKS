@@ -266,13 +266,6 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
           }
         }
   }
-
-  // for (int lev = 0; lev <= finestLevel(); lev++) {
-  //   auto n = NumberOfParticlesAtLevel(lev, true, true);
-  //   Print() << "loc1 lev = " << lev << " number = " << n << std::endl;
-  // }
-  // TODO: Is this really necessary?
-  Redistribute();
 }
 
 //==========================================================

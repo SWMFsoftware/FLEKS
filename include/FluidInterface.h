@@ -415,22 +415,19 @@ public:
     amrex::Real Rho, NumDens;
 
     if (useElectronFluid) {
-      Rho = get_value(mfi, x, y, z, iRho_I[is], iLev);
-      // TODO: change division to multiplication.
+      Rho = get_value(mfi, x, y, z, iRho_I[is], iLev);      
       NumDens = Rho / MoMi_S[is];
     } else if (useMultiFluid || useMultiSpecies) {
       if (is == 0) {
         // Electron
         NumDens = 0;
         for (int iIon = 0; iIon < nIon; ++iIon) {
-          Rho = get_value(mfi, x, y, z, iRho_I[iIon], iLev);
-          // TODO: change division to multiplication.
+          Rho = get_value(mfi, x, y, z, iRho_I[iIon], iLev);          
           NumDens += Rho / MoMi_S[iIon + 1];
         }
       } else {
         // Ion
-        Rho = get_value(mfi, x, y, z, iRho_I[is - 1], iLev);
-        // TODO: change division to multiplication.
+        Rho = get_value(mfi, x, y, z, iRho_I[is - 1], iLev);        
         NumDens = Rho / MoMi_S[is];
       }
     } else {
