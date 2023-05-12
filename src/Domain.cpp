@@ -162,7 +162,7 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
     for (int i = 0; i < nDim; i++) {
       Real phyMin = info[n++] * si2noL; // Lmin
       Real phyMax = phyMin + info[n++] * si2noL;
-      Real dx = info[n++] * si2noL; // dx
+      Real dx = info[n++] * si2noL;     // dx
       nCell[i] = (int)((phyMax - phyMin) / dx + 0.5);
 
       if (isFake2D && i == iz_) {
@@ -525,6 +525,7 @@ void Domain::save_restart_header() {
     headerFile << maxBlockSize[ix_] << "\t\tnCellX\n";
     headerFile << maxBlockSize[iy_] << "\t\tnCellY\n";
     headerFile << maxBlockSize[iz_] << "\t\tnCellZ\n";
+    headerFile << "\n";
 
     if (pic)
       pic->save_restart_header(headerFile);

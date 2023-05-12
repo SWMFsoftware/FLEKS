@@ -95,9 +95,13 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   const Real vol = dx[ix_] * dx[iy_] * dx[iz_];
   const Real vol2Npcel = qomSign * vol / npcel;
 
+  Box tbx;
+  IntVect iv(i, j, k);
+  const int tileIdx =
+      getTileIndex(iv, mfi.validbox(), do_tiling, tile_size, tbx);
+
   const int lev = 0;
-  auto& particles =
-      GetParticles(lev)[std::make_pair(mfi.index(), mfi.LocalTileIndex())];
+  auto& particles = GetParticles(lev)[std::make_pair(mfi.index(), tileIdx)];
 
   //----------------------------------------------------------
   // The following lines are left here for reference only. They are useless.
