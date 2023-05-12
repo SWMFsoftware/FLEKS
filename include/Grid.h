@@ -72,6 +72,7 @@ protected:
   bool isFake2D = false;
 
   std::string tag;
+  amrex::Vector<amrex::iMultiFab> tagged;
 
 private:
   // Here is the inheritance chain: AmrInfo -> AmrMesh -> AmrCore -> Grid. We
@@ -95,6 +96,7 @@ public:
     }
 
     isFake2D = Geom(0).Domain().bigEnd(iz_) == Geom(0).Domain().smallEnd(iz_);
+    init_Grid();
   };
 
   ~Grid() = default;
@@ -215,19 +217,23 @@ public:
     std::string nameFunc = "Grid::ErrorEst";
     amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
 
+    tagged[lev].define(grids[lev], dmap[lev], 1, nGst);
 #ifdef _AMR_DEV_
-    const int tagval = amrex::TagBox::SET;
+    // const int tagval = amrex::TagBox::SET;
+    const int tagval = 1;
     for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.tilebox();
       const auto tagfab = tags.array(mfi);
-
+      const auto& tagfabperm = tagged[lev][mfi].array();
       const auto lo = lbound(bx);
       const auto hi = ubound(bx);
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            if (i >= 10 && i < 24 && j >= 8 && j < 16) {
-              tagfab(i, j, k) = 1;
+            tagfabperm(i, j, k) = 0;
+            if (i >= 10 && i < 24 && j >= 8 && j < 32) {
+              tagfab(i, j, k) = tagval;
+              tagfabperm(i, j, k) = tagval;
             }
           }
     }
@@ -242,6 +248,34 @@ public:
     const int iLev = 0;
     ba.maxSize(max_grid_size[iLev]);
   };
+
+  void WriteMF(amrex::Vector<amrex::iMultiFab>& MF, int nlev = -1,
+               std::string st = "WriteMF",
+               amrex::Vector<std::string> var = {}) {
+
+    amrex::Vector<amrex::MultiFab> tmf;
+    tmf.resize(MF.size());
+    for (int lev = 0; lev < MF.size(); lev++) {
+
+      tmf[lev].define(MF[lev].boxArray(), MF[lev].DistributionMap(),
+                      MF[lev].nComp(), MF[lev].nGrow());
+
+      for (amrex::MFIter mfi(MF[lev]); mfi.isValid(); ++mfi) {
+        const amrex::Box& box = mfi.fabbox();
+        const amrex::Array4<int>& fab = MF[lev][mfi].array();
+        const amrex::Array4<amrex::Real>& fab2 = tmf[lev][mfi].array();
+        const auto lo = lbound(box);
+        const auto hi = ubound(box);
+
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i) {
+              fab2(i, j, k) = fab(i, j, k);
+            }
+      }
+    }
+    WriteMF(tmf, nlev, st, var);
+  }
 
   void WriteMF(amrex::Vector<amrex::MultiFab>& MF, int nlev = -1,
                std::string st = "WriteMF",
@@ -295,5 +329,9 @@ public:
           geom[lev], cphysbc, 0, fphysbc, 0, refRatio(lev - 1), mapper, bcs, 0);
     }
   };
+  void init_Grid() {
+    const int nLev = max_level + 1;
+    { tagged.resize(nLev); }
+  }
 };
 #endif
