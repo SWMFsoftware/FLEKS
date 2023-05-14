@@ -115,6 +115,9 @@ private:
 
   std::string logFile;
 
+  // Boundary conditions for particles.
+  BC pBC;
+
   // public methods
 public:
   Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo, int nGst,

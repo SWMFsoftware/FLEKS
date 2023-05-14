@@ -623,7 +623,7 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#DISCRETIZATION" || command == "#RESAMPLING" ||
         command == "#SMOOTHE" || command == "#TESTCASE" ||
         command == "#MERGEEFFICIENCY" || command == "#PIC" ||
-        command == "#EXPLICITPIC") {
+        command == "#EXPLICITPIC" || command == "#PARTICLEBOXBOUNDARY") {
       pic->read_param(command, param);
     } else if (command == "#PARTICLETRACKER" ||
                command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||

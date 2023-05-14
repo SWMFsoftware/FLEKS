@@ -8,6 +8,7 @@
 #include <AMReX_CoordSys.H>
 
 #include "Array1D.h"
+#include "BC.h"
 #include "Constants.h"
 #include "FluidInterface.h"
 #include "RandNum.h"
@@ -76,6 +77,7 @@ public:
                                     NStructInt>::NumberOfParticlesAtLevel;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::finestLevel;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Checkpoint;
+  using amrex::AmrParticleContainer<NStructReal, NStructInt>::Index;
 
 protected:
   FluidInterface* fi;
@@ -107,6 +109,8 @@ protected:
   bool fastMerge = false;
 
   bool isRelativistic = false;
+
+  BC bc; // boundary condition
 
 public:
   static const int iup_ = 0;
@@ -150,12 +154,18 @@ public:
                             amrex::Real dt = -1,
                             amrex::IntVect ppc = amrex::IntVect());
 
+  // Copy particles from (ip,jp,kp) to (ig, jg, kg) and shift boundary
+  // particle's coordinates accordingly.
+  void outflow_bc(const amrex::MFIter& mfi, const int ig, const int jg,
+                  const int kg, const int ip, const int jp, const int kp);
+
   // 1) Only inject particles ONCE for one ghost cells. This function decides
   // which block injects particles. 2) bx should be a valid box 3) The cell
   // (i,j,k) can NOT be the outmost ghost cell layer!!!!
   bool do_inject_particles_for_this_cell(const amrex::Box& bx,
                                          const amrex::Array4<const int>& status,
-                                         const int i, const int j, const int k);
+                                         const int i, const int j, const int k,
+                                         int& isrc, int& jsrc, int& ksrc);
 
   amrex::Real sum_moments(amrex::MultiFab& momentsMF, amrex::MultiFab& nodeBMF,
                           amrex::Real dt);
@@ -193,6 +203,8 @@ public:
   void convert_to_fluid_moments(amrex::MultiFab& momentsMF);
 
   void set_ppc(amrex::IntVect& in) { nPartPerCell = in; };
+
+  void set_bc(BC& bcIn) { bc = bcIn; }
 
   inline bool is_outside_ba(const ParticleType& p) {
     amrex::Real loc[3] = { 0, 0, 0 };

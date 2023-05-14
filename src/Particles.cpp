@@ -45,6 +45,67 @@ Particles<NStructReal, NStructInt>::Particles(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::outflow_bc(const amrex::MFIter& mfi,
+                                                    const int ig, const int jg,
+                                                    const int kg, const int ip,
+                                                    const int jp,
+                                                    const int kp) {
+  const int lev = 0;
+
+  Box bxGst;
+  IntVect idxGst(ig, jg, kg);
+  const int tileGst =
+      getTileIndex(idxGst, mfi.validbox(), do_tiling, tile_size, bxGst);
+  auto& pGst = GetParticles(lev)[std::make_pair(mfi.index(), tileGst)];
+
+  // TODO: Extract the following a few lines into a function
+  Box bxPhy;
+  IntVect idxPhy(ip, jp, kp);
+  const int tilePhy =
+      getTileIndex(idxPhy, mfi.validbox(), do_tiling, tile_size, bxPhy);
+  auto& pPhy = GetParticles(lev)[std::make_pair(mfi.index(), tilePhy)];
+  auto& phyParts = pPhy.GetArrayOfStructs();
+
+  Real dx[3] = { 0, 0, 0 };
+  for (int i = 0; i < nDim; i++) {
+    dx[i] = Geom(lev).CellSize(i) * (idxGst[i] - idxPhy[i]);
+  }
+
+  Vector<ParticleType> pList;
+  for (const auto& p : phyParts) {
+    IntVect iv = Index(p, lev);
+    // Q: Why do we need to check if the physical domain contains the particle?
+    // A: Even if tiling with tile_size=1 is used, it seems the ghost cells
+    // still share the the same tile with a physical cell. Therefore, we need to
+    // make sure a particle in a "physical tile" is actually inside the physical
+    // domain.
+    if (mfi.validbox().contains(IntVect(iv))) {
+      // TODO: Check NextID
+      ParticleType pNew = p;
+
+      pNew.id() = ParticleType::NextID();
+      pNew.cpu() = ParallelDescriptor::MyProc();
+
+      for (int i = 0; i < nDim; i++) {
+        pNew.pos(i) = p.pos(i) + dx[i];
+      }
+
+      pList.push_back(pNew);
+    }
+  }
+
+  // Q: Why do not push the new particles into pGst inside previous loop?
+  // A: Sometimes, if not always, pPhy and pGst share the same tile. Previous
+  // for-loop loops through al particles in pPhy. If we push the new particles
+  // into pGst, which is the same as pPhy sometimes, the loop behavior is not
+  // well defined.
+  for (auto& p : pList) {
+    pGst.push_back(p);
+  }
+}
+
+//==========================================================
+template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_cell(
     const MFIter& mfi, const int i, const int j, const int k,
     const FluidInterface& interface, IntVect ppc, const Vel tpVel, Real dt) {
@@ -306,8 +367,19 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
     for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
-          if (do_inject_particles_for_this_cell(bx, status, i, j, k)) {
-            add_particles_cell(mfi, i, j, k, *fiTmp, ppc, Vel(), dt);
+          int isrc, jsrc, ksrc;
+          if (do_inject_particles_for_this_cell(bx, status, i, j, k, isrc, jsrc,
+                                                ksrc)) {
+            if (((bc.lo[ix_] == bc.outflow) && i < lo[ix_]) ||
+                ((bc.hi[ix_] == bc.outflow) && i > hi[ix_]) ||
+                ((bc.lo[iy_] == bc.outflow) && j < lo[iy_]) ||
+                ((bc.hi[iy_] == bc.outflow) && j > hi[iy_]) ||
+                ((bc.lo[iz_] == bc.outflow) && k < lo[iz_]) ||
+                ((bc.hi[iz_] == bc.outflow) && k > hi[iz_])) {
+              outflow_bc(mfi, i, j, k, isrc, jsrc, ksrc);
+            } else {
+              add_particles_cell(mfi, i, j, k, *fiTmp, ppc, Vel(), dt);
+            }
           }
         }
   }
@@ -1851,7 +1923,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
 template <int NStructReal, int NStructInt>
 bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
     const amrex::Box& bx, const amrex::Array4<const int>& status, const int i,
-    const int j, const int k) {
+    const int j, const int k, int& isrc, int& jsrc, int& ksrc) {
 
   // This cell should be a boundary cell at least.
   if (status(i, j, k) != iBoundary_)
@@ -1872,6 +1944,9 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
           if (status(i + di, j + dj, k + dk) != iBoundary_) {
             // The first neighbor cell that is NOT a boundary cell.
             if (bx.contains(IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) })) {
+              isrc = i + di;
+              jsrc = j + dj;
+              ksrc = k + dk;
               return true;
             } else {
               return false;
@@ -1914,8 +1989,8 @@ IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
 
     for (auto p : aosOther) {
       if (other.is_outside_ba(p, status, lowCorner, highCorner)) {
-        // Redistribute() may fail if the ghost cell particles' IDs are not -1
-        // (marked for deletion);
+        // Redistribute() may fail if the ghost cell particles' IDs are not
+        // -1 (marked for deletion);
         p.id() = -1;
       }
 

@@ -17,6 +17,14 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 
   if (command == "#PIC") {
     param.read_var("usePIC", usePIC);
+  } else if (command == "#PARTICLEBOXBOUNDARY") {
+    for (int i = 0; i < nDim; i++) {
+      std::string lo, hi;
+      param.read_var("particleBoxBoundaryLo", lo);
+      param.read_var("particleBoxBoundaryHi", hi);
+      pBC.lo[i] = pBC.num_type(lo);
+      pBC.hi[i] = pBC.num_type(hi);
+    }
   } else if (command == "#DIVE") {
     param.read_var("doCorrectDivE", doCorrectDivE);
     if (doCorrectDivE) {
@@ -343,6 +351,8 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
       }
 
       ptr->fast_merge(fastMerge);
+
+      ptr->set_bc(pBC);
       //----------------------------------
 
       parts.push_back(std::move(ptr));
