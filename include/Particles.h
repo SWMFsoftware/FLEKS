@@ -66,6 +66,7 @@ public:
   // Since this is a template, the compiler will not search names in the base
   // class by default, and the following 'using ' statements are required.
   using ParticleType = amrex::Particle<NStructReal, NStructInt>;
+  using ParticleTileType = amrex::ParticleTile<NStructReal, NStructInt, 0, 0>;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Geom;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::do_tiling;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::tile_size;
@@ -78,6 +79,7 @@ public:
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::finestLevel;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Checkpoint;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Index;
+  using amrex::AmrParticleContainer<NStructReal, NStructInt>::ParticlesAt;
 
 protected:
   FluidInterface* fi;
@@ -201,6 +203,19 @@ public:
                                      amrex::Real dt);
 
   void convert_to_fluid_moments(amrex::MultiFab& momentsMF);
+
+  ParticleTileType& get_particle_tile(int iLev, const amrex::MFIter& mfi, int i,
+                                      int j, int k) {
+    return get_particle_tile(iLev, mfi, amrex::IntVect(i, j, k));
+  }
+
+  ParticleTileType& get_particle_tile(int iLev, const amrex::MFIter& mfi,
+                                      const amrex::IntVect& iv) {
+    amrex::Box tileBox;
+    const int tileIdx =
+        getTileIndex(iv, mfi.validbox(), do_tiling, tile_size, tileBox);
+    return GetParticles(iLev)[std::make_pair(mfi.index(), tileIdx)];
+  }
 
   void set_ppc(amrex::IntVect& in) { nPartPerCell = in; };
 

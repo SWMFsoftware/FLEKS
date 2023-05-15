@@ -52,18 +52,11 @@ void Particles<NStructReal, NStructInt>::outflow_bc(const amrex::MFIter& mfi,
                                                     const int kp) {
   const int lev = 0;
 
-  Box bxGst;
   IntVect idxGst(ig, jg, kg);
-  const int tileGst =
-      getTileIndex(idxGst, mfi.validbox(), do_tiling, tile_size, bxGst);
-  auto& pGst = GetParticles(lev)[std::make_pair(mfi.index(), tileGst)];
+  ParticleTileType& pGst = get_particle_tile(lev, mfi, idxGst);
 
-  // TODO: Extract the following a few lines into a function
-  Box bxPhy;
   IntVect idxPhy(ip, jp, kp);
-  const int tilePhy =
-      getTileIndex(idxPhy, mfi.validbox(), do_tiling, tile_size, bxPhy);
-  auto& pPhy = GetParticles(lev)[std::make_pair(mfi.index(), tilePhy)];
+  ParticleTileType& pPhy = get_particle_tile(lev, mfi, idxGst);
   auto& phyParts = pPhy.GetArrayOfStructs();
 
   Real dx[3] = { 0, 0, 0 };
@@ -156,14 +149,9 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   const Real vol = dx[ix_] * dx[iy_] * dx[iz_];
   const Real vol2Npcel = qomSign * vol / npcel;
 
-  Box tbx;
-  IntVect iv(i, j, k);
-  const int tileIdx =
-      getTileIndex(iv, mfi.validbox(), do_tiling, tile_size, tbx);
-
   const int lev = 0;
-  auto& particles = GetParticles(lev)[std::make_pair(mfi.index(), tileIdx)];
-
+  ParticleTileType& particles = get_particle_tile(lev, mfi, i, j, k);
+  
   //----------------------------------------------------------
   // The following lines are left here for reference only. They are useless.
   // int nPartEffective;
