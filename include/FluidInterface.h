@@ -188,7 +188,7 @@ public:
 
   void normalize_fluid_variables();
 
-  void convert_moment_to_velocity(bool phyNodeOnly = false);
+  void convert_moment_to_velocity(bool phyNodeOnly = false, bool doWarn = true);
 
   void set_plasma_charge_and_mass(amrex::Real qomEl);
 
@@ -415,19 +415,19 @@ public:
     amrex::Real Rho, NumDens;
 
     if (useElectronFluid) {
-      Rho = get_value(mfi, x, y, z, iRho_I[is], iLev);      
+      Rho = get_value(mfi, x, y, z, iRho_I[is], iLev);
       NumDens = Rho / MoMi_S[is];
     } else if (useMultiFluid || useMultiSpecies) {
       if (is == 0) {
         // Electron
         NumDens = 0;
         for (int iIon = 0; iIon < nIon; ++iIon) {
-          Rho = get_value(mfi, x, y, z, iRho_I[iIon], iLev);          
+          Rho = get_value(mfi, x, y, z, iRho_I[iIon], iLev);
           NumDens += Rho / MoMi_S[iIon + 1];
         }
       } else {
         // Ion
-        Rho = get_value(mfi, x, y, z, iRho_I[is - 1], iLev);        
+        Rho = get_value(mfi, x, y, z, iRho_I[is - 1], iLev);
         NumDens = Rho / MoMi_S[is];
       }
     } else {
