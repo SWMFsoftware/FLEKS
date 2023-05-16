@@ -195,6 +195,11 @@ void PlotWriter::init() {
     }
   }
 
+  // Find max time unit
+  if (plotString.find("year") != std::string::npos) {
+    maxTimeUnit = "year";
+  }
+
   set_output_unit();
 }
 //====================================================================
@@ -333,18 +338,6 @@ void PlotWriter::write(double const timeNow, int const iCycle,
   }
 }
 
-std::string PlotWriter::get_amrex_filename(double const timeNow,
-                                           int const iCycle) const {
-  std::string filename;
-  std::stringstream ss;
-
-  ss << "_region" << iRegion << "_" << ID << "_t" << std::setfill('0')
-     << std::setw(8) << second_to_clock_time(timeNow) << "_n"
-     << std::setfill('0') << std::setw(8) << iCycle << "_amrex";
-  filename = namePrefix + ss.str();
-  return filename;
-}
-
 void PlotWriter::write_idl(double const timeNow, int const iCycle,
                            FuncFindPointList find_output_list,
                            FuncGetField get_var) {
@@ -382,15 +375,8 @@ void PlotWriter::write_idl(double const timeNow, int const iCycle,
 
 void PlotWriter::write_header(double const timeNow, int const iCycle) {
 
-  int time = timeNow; // double to int.
+  std::string filename = get_filename(timeNow, iCycle) + ".h";
 
-  std::stringstream ss;
-  ss << "_region" << iRegion << "_" << ID << "_t" << std::setfill('0')
-     << std::setw(8) << second_to_clock_time(time) << "_n" << std::setfill('0')
-     << std::setw(8) << iCycle << ".h";
-
-  std::string filename;
-  filename = namePrefix + ss.str();
   std::ofstream outFile;
   outFile.open(filename.c_str(), std::fstream::out | std::fstream::trunc);
   outFile << std::scientific;
@@ -587,8 +573,6 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
   get_var(pointList_II, var_I, value_II);
   //------------Get values end-----------------------
 
-  std::string filename;
-  std::stringstream ss;
   int nLength;
   if (nProcs > 10000) {
     nLength = 5;
@@ -597,11 +581,10 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
   } else {
     nLength = 4;
   }
-  ss << "_region" << iRegion << "_" << ID << "_t" << std::setfill('0')
-     << std::setw(8) << second_to_clock_time(timeNow) << "_n"
-     << std::setfill('0') << std::setw(8) << iCycle << "_pe"
-     << std::setfill('0') << std::setw(nLength) << rank << ".idl";
-  filename = namePrefix + ss.str();
+
+  stringstream ss;
+  ss << "_pe" << std::setfill('0') << std::setw(nLength) << rank << ".idl";
+  string filename = get_filename(timeNow, iCycle) + ss.str();
 
   std::ofstream outFile;
   if (doSaveBinary) {
@@ -651,13 +634,31 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
     outFile.close();
 }
 
-int PlotWriter::second_to_clock_time(int second) {
-  int iHr, iMn, iSc, time;
-  iHr = floor(second / 3600);
-  second -= iHr * 3600;
-  iMn = floor(second / 60);
-  iSc = second - iMn * 60;
+int PlotWriter::get_time_digits(int second) const {
+  int digits;
 
-  time = iSc + 100 * iMn + 10000 * iHr;
-  return time;
+  if (maxTimeUnit.find("hour") != std::string::npos) {
+    /*Example: For the input second = 3668 = 1hour + 1min + 8s,
+the output will be a int of 010108*/
+
+    int iHr, iMn, iSc;
+    iHr = floor(second / 3600);
+    second -= iHr * 3600;
+    iMn = floor(second / 60);
+    iSc = second - iMn * 60;
+
+    digits = iSc + 100 * iMn + 10000 * iHr;
+  } else if (maxTimeUnit.find("year") != std::string::npos) {
+    // Left four digits are year, right four digits are day.
+    int iYr, iDy;
+    int scInYr = 3600 * 24 * 365.25;
+
+    iYr = floor(second / (scInYr));
+    second -= iYr * scInYr;
+    iDy = floor(second / (3600 * 24));
+
+    digits = iDy + 10000 * iYr;
+  }
+
+  return digits;
 }

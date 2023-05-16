@@ -35,6 +35,10 @@
 	<option value="planet" name="planet units"/>
 	<option value="pic"    name="PIC normalized units"/>
       </part>
+      <part name="maxtimeunit" type="string" input="select" required="F">
+	<option value="hour"   name="hour"/>
+  <option value="year"   name="year"/>
+      </part>
       <part name="compactplot" type="string" input="select" required="F"
 	    if="$plotform !~ /amrex/">
 	<option value="compact"/>
@@ -58,12 +62,12 @@
     
 #SAVEPLOT
 6                                 nPlot
-z=0 var real4 planet              plotString
+z=0 var real4 planet year         plotString
 -1                                dn
 20                                dt
 1                                 dx
 {fluid} numS0                     varName
-y=0 fluid real4 pic               plotString
+y=0 fluid real4 pic hour          plotString
 -100                              dn
 5                                 dt
 -1                                dx
@@ -95,7 +99,7 @@ Each output starts with StringPlot, which specifies the output region,
 variables, file format and variable units.
 The plotting frequencies are given by DnOutput and DtOutput. 
 
-StringPlot has the format: 'domain variables format unit'.
+StringPlot has the format: 'domain variables format unit maxtimeunit'.
 
 The first part 'domain' can be one of the following: 
 \begin{verbatim}
@@ -128,6 +132,13 @@ The 'unit' can be:
 pic    - normalized CGS units
 si     - SI units
 planet - planetary unit. (nT, micro-volt/m, km/s, planet radius, amu/cm^3, nPa)
+\end{verbatim}
+
+The 'maxtimeunit' determines the largest time unit of of the 8-digit file
+name. The default is 'hour', and 'year' is also available.
+\begin{verbatim}
+hour   - HHHHMMSS
+year   - YYYY0DDD (DDD is the day of the year)
 \end{verbatim}
 
 No plot file is saved by default.

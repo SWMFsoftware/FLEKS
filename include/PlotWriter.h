@@ -59,6 +59,8 @@ private:
   std::string SaveDirName = component + "/plots";
   std::string namePrefix;
 
+  std::string maxTimeUnit = "hour";
+
   // Output variable list. Include X/Y/Z.
   std::vector<std::string> var_I;
 
@@ -227,16 +229,28 @@ public:
                              double const z) const;
 
   bool is_amrex_format() const { return outputFormat == "amrex"; }
-  std::string get_amrex_filename(double const timeNow, int const iCycle) const;
+  std::string get_amrex_filename(double const timeNow, int const iCycle) const {
+    return get_filename(timeNow, iCycle) + "_amrex";
+  };
 
   std::string expand_variables(std::string inVars) const;
   std::string add_plasma_variables(std::string varString, int is) const;
 
-  /*Example: For the input second = 3668 = 1hour + 1min + 8s,
-    the output will be a int of 010108*/
-  static int second_to_clock_time(int second);
-
   friend std::ostream& operator<<(std::ostream& cout, PlotWriter const& output);
+
+  int get_time_digits(int second) const;
+
+  // Return the filename for the input time and cycle. Do not contain the
+  // file extension.
+  std::string get_filename(double const time, int const iCycle) const {
+
+    std::stringstream ss;
+    ss << namePrefix << "_region" << iRegion << "_" << ID << "_t"
+       << std::setfill('0') << std::setw(8) << get_time_digits(time) << "_n"
+       << std::setfill('0') << std::setw(8) << iCycle;
+
+    return ss.str();
+  };
 };
 
 // Overload << operator for Writer class.
