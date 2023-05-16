@@ -151,7 +151,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 
   const int lev = 0;
   ParticleTileType& particles = get_particle_tile(lev, mfi, i, j, k);
-  
+
   //----------------------------------------------------------
   // The following lines are left here for reference only. They are useless.
   // int nPartEffective;
@@ -261,7 +261,8 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_source(
     const iMultiFab& cellStatus, const FluidInterface& interface,
-    const FluidInterface* const stateOH, Real dt, IntVect ppc) {
+    const FluidInterface* const stateOH, Real dt, IntVect ppc,
+    const bool doSelectRegion) {
   timing_func("Particles::add_particles_source");
 
   // 1. Inject particles for physical cells.
@@ -279,11 +280,11 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
         for (int k = kMin; k <= kMax; ++k) {
           bool doAdd = true;
 #ifdef _PT_COMPONENT_
-          if (stateOH) {
+          if (stateOH && doSelectRegion) {
             const int iFluid = 0;
             const int iRegion =
                 stateOH->get_neu_source_region(mfi, i, j, k, iFluid, lev);
-            // doAdd = (iRegion == speciesID);
+            doAdd = (iRegion == speciesID);
           }
 #endif
           if (doAdd)

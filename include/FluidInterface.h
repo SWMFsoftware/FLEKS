@@ -68,7 +68,7 @@ protected:
   double PeRatio = 0;
 
   // Sum of masses of each particle species
-  double SumMass, invSumMass;
+  double SumMass = 0, invSumMass = 0;
 
   amrex::Vector<int> iRho_I, iRhoUx_I, iRhoUy_I, iRhoUz_I, iPpar_I, iP_I, iUx_I,
       iUy_I, iUz_I;

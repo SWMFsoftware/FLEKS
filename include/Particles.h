@@ -154,7 +154,8 @@ public:
                             const FluidInterface& interface,
                             const FluidInterface* const stateOH = nullptr,
                             amrex::Real dt = -1,
-                            amrex::IntVect ppc = amrex::IntVect());
+                            amrex::IntVect ppc = amrex::IntVect(),
+                            const bool doSelectRegion = false);
 
   // Copy particles from (ip,jp,kp) to (ig, jg, kg) and shift boundary
   // particle's coordinates accordingly.

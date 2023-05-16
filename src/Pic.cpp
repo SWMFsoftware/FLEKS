@@ -605,9 +605,13 @@ void Pic::fill_particles() {
 }
 
 void Pic::fill_source_particles() {
+  bool doSelectRegion = false;
+#ifdef _PT_COMPONENT_
+  doSelectRegion = (nSpecies == 4);
+#endif
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->add_particles_source(cellStatus, *source, stateOH.get(),
-                                   tc->get_dt(), nSourcePPC);
+                                   tc->get_dt(), nSourcePPC, doSelectRegion);
   }
 }
 
