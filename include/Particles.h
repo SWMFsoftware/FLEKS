@@ -320,20 +320,31 @@ public:
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
 
-  void Write_Paraview(std::string folder, std::string particletype) {
+  void Write_Paraview(std::string folder = "Particles",
+                      std::string particletype = "1") {
     std::string command = "python "
                           "../util/AMREX/Tools/Py_util/amrex_particles_to_vtp/"
                           "amrex_binary_particles_to_vtp.py";
     Checkpoint(folder, particletype);
     command = command + " " + folder + " " + particletype;
-    std::system(command.c_str());
+    if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::system(command.c_str());
+    }
     command = "mv";
     command = command + " " + folder + ".vtp" + " " + folder + "_" +
               particletype + ".vtp";
-    std::system(command.c_str());
+    if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::system(command.c_str());
+    }
+    command = "rm -rf";
+    command = command + " " + folder;
+    if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::system(command.c_str());
+    }
   }
 
-  void Write_Binary(std::string folder, std::string particletype) {
+  void Write_Binary(std::string folder = "Particles",
+                    std::string particletype = "1") {
     Checkpoint(folder, particletype);
   }
 };
