@@ -72,7 +72,7 @@ protected:
   bool isFake2D = false;
 
   std::string tag;
-  amrex::Vector<amrex::iMultiFab> tagged;
+  amrex::Vector<amrex::iMultiFab> FineMask;
 
 private:
   // Here is the inheritance chain: AmrInfo -> AmrMesh -> AmrCore -> Grid. We
@@ -216,15 +216,12 @@ public:
                         int ngrow) override {
     std::string nameFunc = "Grid::ErrorEst";
     amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
-
-    tagged[lev].define(grids[lev], dmap[lev], 1, nGst);
 #ifdef _AMR_DEV_
     // const int tagval = amrex::TagBox::SET;
     const int tagval = 1;
     for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.tilebox();
       const auto tagfab = tags.array(mfi);
-      const auto& tagfabperm = tagged[lev][mfi].array();
       const auto lo = lbound(bx);
       const auto hi = ubound(bx);
       for (int k = lo.z; k <= hi.z; ++k)
@@ -330,8 +327,8 @@ public:
     }
   };
   void init_Grid() {
-    const int nLev = max_level + 1;
-    { tagged.resize(nLev); }
+    ////////////////////////////////////////////
+    ////////////////////////////////////////////
   }
 };
 #endif
