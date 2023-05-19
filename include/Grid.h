@@ -238,7 +238,7 @@ public:
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
             tagfabperm(i, j, k) = 0;
-#ifdef _PT_COMMENT_
+#ifdef _PT_COMPONENT_
             if (i >= 4 && i < 6 && j >= 4 && j < 6 && k >= 4 && k < 6) {
 #else
             if (i >= 10 && i < 24 && j >= 8 && j < 32) {
