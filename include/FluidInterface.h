@@ -311,34 +311,26 @@ public:
 
     std::string restartDir = component + "/restartOUT/";
 
-    if (nodeFluid.size() > 1) {
-      amrex::Abort("save_restart_data: Multi-level grid is not supported yet.");
-    }
-
     for (int iLev = 0; iLev < nodeFluid.size(); ++iLev) {
-      // TODO: The current implementataion does not really support multi-level
-      // grid yet. The level number iLev should be part of the file name.
-      amrex::VisMF::Write(nodeFluid[iLev],
-                          restartDir + gridName + "_Interface_nodeFluid");
-      amrex::VisMF::Write(centerB[iLev],
-                          restartDir + gridName + "_Interface_centerB");
+      amrex::VisMF::Write(nodeFluid[iLev], restartDir + gridName +
+                                               "_Interface_nodeFluid" +
+                                               lev_string(iLev));
+      amrex::VisMF::Write(centerB[iLev], restartDir + gridName +
+                                             "_Interface_centerB" +
+                                             lev_string(iLev));
     }
   };
 
   void read_restart() {
     std::string restartDir = component + "/restartIN/";
 
-    if (nodeFluid.size() > 1) {
-      amrex::Abort("read_restart: Multi-level grid is not supported yet.");
-    }
-
     for (int iLev = 0; iLev < nodeFluid.size(); ++iLev) {
-      // TODO: The current implementataion does not really support multi-level
-      // grid yet. The level number iLev should be part of the file name.
-      amrex::VisMF::Read(nodeFluid[iLev],
-                         restartDir + gridName + "_Interface_nodeFluid");
-      amrex::VisMF::Read(centerB[iLev],
-                         restartDir + gridName + "_Interface_centerB");
+      amrex::VisMF::Read(nodeFluid[iLev], restartDir + gridName +
+                                              "_Interface_nodeFluid" +
+                                              lev_string(iLev));
+      amrex::VisMF::Read(centerB[iLev], restartDir + gridName +
+                                            "_Interface_centerB" +
+                                            lev_string(iLev));
     }
   }
 

@@ -110,6 +110,15 @@ public:
 
   bool is_grid_empty() const { return isGridEmpty; }
 
+  std::string lev_string(int iLev) {
+    std::string sLev = "_lev_" + std::to_string(iLev);
+    if (max_level == 0) {
+      // Keep backward compatibility.
+      sLev = "";
+    }
+    return sLev;
+  }
+
   inline int find_mpi_rank_from_coord(amrex::Real const x, amrex::Real const y,
                                       amrex::Real const z) const {
     amrex::Real loc[3] = { x, y, z };
@@ -228,7 +237,12 @@ public:
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
+            tagfabperm(i, j, k) = 0;
+#ifdef _PT_COMMENT_
+            if (i >= 4 && i < 6 && j >= 4 && j < 6 && k >= 4 && k < 6) {
+#else
             if (i >= 10 && i < 24 && j >= 8 && j < 32) {
+#endif
               tagfab(i, j, k) = tagval;
             }
           }
