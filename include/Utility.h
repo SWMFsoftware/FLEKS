@@ -52,26 +52,6 @@ void print_MultiFab(const amrex::MultiFab& data, std::string tag,
 void print_MultiFab(const amrex::MultiFab& data, std::string tag,
                     amrex::Geometry& gm, int nshift = 0);
 
-
-inline void ChangeMultiFabDM(amrex::iMultiFab& mf, amrex::DistributionMapping dm)
-  
-  {
-  amrex::iMultiFab tmpMF(mf.boxArray(), dm, mf.nComp(), mf.nGrowVect());
-  tmpMF.ParallelCopy(mf);
-  mf = std::move(tmpMF);
-  }
-  inline void ChangeMultiFabDM(amrex::MultiFab& mf, amrex::DistributionMapping dm)
-  
-  {
-  amrex::MultiFab tmpMF(mf.boxArray(), dm, mf.nComp(), mf.nGrowVect());
-  tmpMF.ParallelCopy(mf);
-  mf = std::move(tmpMF);
-  }
-
-
-
-
-
 inline int shift_periodic_index(int idx, int lo, int hi) {
   if (idx > hi)
     idx -= hi - lo;

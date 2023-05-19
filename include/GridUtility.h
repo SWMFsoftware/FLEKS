@@ -52,6 +52,15 @@ void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
   distribute_FabArray(fa, baNew, dm, fa.nComp(), fa.nGrow(), doCopy);
 }
 
+template <class T>
+void ChangeMultiFabDM(T& mf, amrex::DistributionMapping dm)
+
+{
+  T tmpMF(mf.boxArray(), dm, mf.nComp(), mf.nGrowVect());
+  tmpMF.ParallelCopy(mf);
+  mf = std::move(tmpMF);
+}
+
 // This function is called recursively to combine active patahces into larger
 // boxes. The number of boxes should be minimized.
 inline void get_boxlist_from_region(amrex::BoxList& bl, GridInfo& gridInfo,
