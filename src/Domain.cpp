@@ -380,7 +380,7 @@ void Domain::read_restart() {
     iss.open(headerFile.c_str(), std::ios::in);
     if (!iss.good()) {
       doRestartFIOnly = true;
-      nameMF = restartDir + gridName + "_Interface_centerB";
+      nameMF = restartDir + gridName + "_Interface_centerB" + fi->lev_string(0);
     }
   }
 
