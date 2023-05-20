@@ -12,6 +12,7 @@
 #include <AMReX_IndexType.H>
 #include <AMReX_IntVect.H>
 #include <AMReX_MultiFab.H>
+#include <AMReX_MultiFabUtil.H>
 #include <AMReX_PlotFileUtil.H>
 #include <AMReX_Print.H>
 #include <AMReX_REAL.H>
@@ -227,10 +228,8 @@ public:
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            tagfabperm(i, j, k) = 0;
             if (i >= 10 && i < 24 && j >= 8 && j < 32) {
               tagfab(i, j, k) = tagval;
-              tagfabperm(i, j, k) = tagval;
             }
           }
     }
@@ -245,6 +244,26 @@ public:
     const int iLev = 0;
     ba.maxSize(max_grid_size[iLev]);
   };
+
+  void WriteMF(amrex::iMultiFab& MF, int nlev = -1, std::string st = "WriteMF",
+               amrex::Vector<std::string> var = {}) {
+
+    amrex::Vector<amrex::iMultiFab> tmf;
+    tmf.resize(1);
+    tmf[0] = std::move(MF);
+
+    WriteMF(tmf, nlev, st, var);
+  }
+
+  void WriteMF(amrex::MultiFab& MF, int nlev = -1, std::string st = "WriteMF",
+               amrex::Vector<std::string> var = {}) {
+
+    amrex::Vector<amrex::MultiFab> tmf;
+    tmf.resize(1);
+    tmf[0] = std::move(MF);
+
+    WriteMF(tmf, nlev, st, var);
+  }
 
   void WriteMF(amrex::Vector<amrex::iMultiFab>& MF, int nlev = -1,
                std::string st = "WriteMF",
@@ -298,6 +317,7 @@ public:
     amrex::WriteMultiLevelPlotfile(st, nlev, tMF, var, geom, 0.0, tmpVint,
                                    ref_ratio);
   };
+
   void InterpFromCoarse(amrex::Vector<amrex::MultiFab>& mf, int lev) {
     amrex::Vector<amrex::BCRec> bcs;
     bcs.resize(1);
@@ -326,9 +346,31 @@ public:
           geom[lev], cphysbc, 0, fphysbc, 0, refRatio(lev - 1), mapper, bcs, 0);
     }
   };
+
+  void UpdateFineMask(int lev = -1) {
+    if (max_level == 0) {
+      FineMask[0].define(grids[0], dmap[0], 1, 0);
+      FineMask[0].setVal(0); // Needed for particle generation if only one level
+                             // exists
+    } else {
+      if (lev == -1) {
+        for (int i = 0; i < max_level; i++) {
+          FineMask[i] = amrex::makeFineMask(grids[i], dmap[i], grids[i + 1],
+                                            ref_ratio[i], 0, 1);
+        }
+        FineMask[max_level].define(grids[max_level], dmap[max_level], 1, 0);
+        FineMask[max_level].setVal(0); // Finest level tags should be zero for
+                                       // particle generation etc.
+      } else {
+        FineMask[lev] = amrex::makeFineMask(
+            grids[lev], dmap[lev], grids[lev + 1], ref_ratio[lev], 0, 1);
+      }
+    }
+  };
+
   void init_Grid() {
-    ////////////////////////////////////////////
-    ////////////////////////////////////////////
+    FineMask.resize(max_level + 1); // Max_level +1 is needed because the finest
+                                    // level also needs all cell tags to be 0
   }
 };
 #endif

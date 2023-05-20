@@ -299,12 +299,14 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_domain(
-    const iMultiFab& cellStatus) {
+    const iMultiFab& cellStatus,
+    const amrex::Vector<amrex::iMultiFab>& FineMask) {
   timing_func("Particles::add_particles_domain");
 
   const int lev = 0;
   for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
     const auto& status = cellStatus[mfi].array();
+    const auto& tags = FineMask[lev][mfi].array();
     const Box& tile_box = mfi.validbox();
     const auto lo = amrex::lbound(tile_box);
     const auto hi = amrex::ubound(tile_box);
@@ -315,7 +317,7 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
     for (int i = iMin; i <= iMax; ++i)
       for (int j = jMin; j <= jMax; ++j)
         for (int k = kMin; k <= kMax; ++k) {
-          if (status(i, j, k) == iOnNew_) {
+          if (status(i, j, k) == iOnNew_ && !tags(i, j, k)) {
             add_particles_cell(mfi, i, j, k, *fi);
           }
         }
