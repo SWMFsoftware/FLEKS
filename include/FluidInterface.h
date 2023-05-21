@@ -218,6 +218,12 @@ public:
     amrex::Vector<int> idxMap = { iRho_I[iFluid], iRhoUx_I[iFluid],
                                   iRhoUy_I[iFluid], iRhoUz_I[iFluid],
                                   iP_I[iFluid] };
+    if (nVar != idxMap.size()) {
+      amrex::Print() << "nVar = " << nVar
+                     << " idxMap.size() = " << idxMap.size() << std::endl;
+      amrex::Abort("Error: nVar != idxMap.size(). It is likely BATSRUS was "
+                   "compiled with incorrect equation module.");
+    }
     get_for_points(nDim, nPoint, xyz_I, data_I, nVar, coef, idxMap);
   }
 
