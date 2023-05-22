@@ -198,6 +198,10 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
   amrInfo.max_grid_size.clear();
   amrInfo.max_grid_size.push_back(maxBlockSize);
 
+  // Buffer cells around each tagged cell. AMREX default is 1.
+  amrInfo.n_error_buf.clear();
+  amrInfo.n_error_buf.push_back(IntVect(0));
+
 #ifdef _AMR_DEV_
   amrInfo.max_level = 1;
 #else
