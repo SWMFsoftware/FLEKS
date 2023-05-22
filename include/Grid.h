@@ -75,7 +75,7 @@ protected:
   std::string tag;
 
   // Label every cell of every level: iRefined or iNotRefined.
-  amrex::Vector<amrex::iMultiFab> iRefinement;  
+  amrex::Vector<amrex::iMultiFab> iRefinement;
 
 private:
   // Here is the inheritance chain: AmrInfo -> AmrMesh -> AmrCore -> Grid. We
@@ -223,30 +223,26 @@ public:
     amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
   };
 
-  // tag all cells for refinement
-  // overrides the pure virtual function in AmrCore
+  // Tag cells for refinement.
   virtual void ErrorEst(int lev, amrex::TagBoxArray& tags, amrex::Real time,
                         int ngrow) override {
     std::string nameFunc = "Grid::ErrorEst";
     amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
 #ifdef _AMR_DEV_
-    // const int tagval = amrex::TagBox::SET;
-    const int tagval = 1;
     for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.tilebox();
-      const auto tagfab = tags.array(mfi);
+      const auto tagArr = tags.array(mfi);
       const auto lo = lbound(bx);
       const auto hi = ubound(bx);
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            tagfabperm(i, j, k) = 0;
 #ifdef _PT_COMPONENT_
             if (i >= 4 && i < 6 && j >= 4 && j < 6 && k >= 4 && k < 6) {
 #else
             if (i >= 10 && i < 24 && j >= 8 && j < 32) {
 #endif
-              tagfab(i, j, k) = tagval;
+              tagArr(i, j, k) = amrex::TagBox::SET;
             }
           }
     }
