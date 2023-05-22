@@ -197,6 +197,7 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
     for (int iLev = 0; iLev <= max_level; iLev++) {
       SetDistributionMap(iLev, grid->DistributionMap(iLev));
     }
+    update_refinement_info();
   }
 
   calc_node_grids();

@@ -541,6 +541,8 @@ void FluidInterface::regrid(const amrex::BoxArray& region,
         SetDistributionMap(iLev, grid->DistributionMap(iLev));
       }
     }
+
+    update_refinement_info();
   }
 
   // Print() << "dm = " << DistributionMap(0) << std::endl;
