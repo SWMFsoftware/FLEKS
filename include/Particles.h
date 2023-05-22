@@ -141,7 +141,7 @@ public:
   }
 
   void add_particles_domain(const amrex::iMultiFab& cellStatus,
-                            const amrex::Vector<amrex::iMultiFab>& FineMask);
+                            const amrex::Vector<amrex::iMultiFab>& iRefinement);
   void add_particles_cell(const amrex::MFIter& mfi, const int i, const int j,
                           const int k, const FluidInterface& interface,
                           amrex::IntVect ppc = amrex::IntVect(),

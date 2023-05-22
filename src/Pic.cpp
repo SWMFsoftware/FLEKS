@@ -182,8 +182,8 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
       // grid is the same. So we need to set the distribution map here.
       SetDistributionMap(iLev, grid->DistributionMap(iLev));
     }
-    UpdateFineMask(); // Should be done after boxarrays and distribution maps
-                      // are set.
+
+    update_refinement_info();
   }
 
   calc_node_grids();

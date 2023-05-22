@@ -73,7 +73,9 @@ protected:
   bool isFake2D = false;
 
   std::string tag;
-  amrex::Vector<amrex::iMultiFab> FineMask;
+
+  // Label every cell of every level: iRefined or iNotRefined.
+  amrex::Vector<amrex::iMultiFab> iRefinement;  
 
 private:
   // Here is the inheritance chain: AmrInfo -> AmrMesh -> AmrCore -> Grid. We
@@ -97,7 +99,8 @@ public:
     }
 
     isFake2D = Geom(0).Domain().bigEnd(iz_) == Geom(0).Domain().smallEnd(iz_);
-    init_Grid();
+
+    iRefinement.resize(max_level + 1);
   };
 
   ~Grid() = default;
@@ -345,6 +348,7 @@ public:
         mf[lev], 0.0, mf[lev - 1], 0, 0, mf[lev].nComp(), geom[lev - 1],
         geom[lev], cphysbc, 0, fphysbc, 0, refRatio(lev - 1), mapper, bcs, 0);
   };
+
   void InterpFromCoarseAllLevels(amrex::Vector<amrex::MultiFab>& mf, int lev) {
     amrex::Vector<amrex::BCRec> bcs;
     bcs.resize(1);
@@ -361,30 +365,13 @@ public:
     }
   };
 
-  void UpdateFineMask(int lev = -1) {
-    if (max_level == 0) {
-      FineMask[0].define(grids[0], dmap[0], 1, 0);
-      FineMask[0].setVal(0); // Needed for particle generation if only one level
-                             // exists
-    } else {
-      if (lev == -1) {
-        for (int i = 0; i < max_level; i++) {
-          FineMask[i] = amrex::makeFineMask(grids[i], dmap[i], grids[i + 1],
-                                            ref_ratio[i], 0, 1);
-        }
-        FineMask[max_level].define(grids[max_level], dmap[max_level], 1, 0);
-        FineMask[max_level].setVal(0); // Finest level tags should be zero for
-                                       // particle generation etc.
-      } else {
-        FineMask[lev] = amrex::makeFineMask(
-            grids[lev], dmap[lev], grids[lev + 1], ref_ratio[lev], 0, 1);
-      }
+  void update_refinement_info() {
+    for (int i = 0; i < max_level; i++) {
+      iRefinement[i] = amrex::makeFineMask(grids[i], dmap[i], grids[i + 1],
+                                           ref_ratio[i], iNotRefined, iRefined);
     }
+    iRefinement[max_level].define(grids[max_level], dmap[max_level], 1, 0);
+    iRefinement[max_level].setVal(iNotRefined);
   };
-
-  void init_Grid() {
-    FineMask.resize(max_level + 1); // Max_level +1 is needed because the finest
-                                    // level also needs all cell tags to be 0
-  }
 };
 #endif

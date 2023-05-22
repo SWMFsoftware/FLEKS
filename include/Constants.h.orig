@@ -38,6 +38,7 @@ constexpr static bool doTiling = false;
 // Integers to label the the status of a cell.
 constexpr static int iBoundary_ = 0, iOnNew_ = 1, iOnOld_ = 2,
                      iAddPTParticle_ = 3;
+constexpr static int iRefined = 1, iNotRefined = 2;
 
 constexpr static int nPicPartReal = 4;
 

@@ -197,7 +197,7 @@ public:
       return;
 
     for (auto &pts : parts) {
-      pts->add_particles_domain(cellStatus, FineMask);
+      pts->add_particles_domain(cellStatus, iRefinement);
     }
   }
 
