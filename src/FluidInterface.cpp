@@ -532,14 +532,16 @@ void FluidInterface::regrid(const amrex::BoxArray& region,
     cGrids.clear();
     cGrids.push_back(amrex::BoxArray());
   } else {
-    // This method will call MakeNewLevelFromScratch() and
-    // PostProcessBaseGrids()
-    InitFromScratch(0.0);
-
     if (grid) {
       for (int iLev = 0; iLev <= max_level; iLev++) {
+        SetBoxArray(iLev, grid->boxArray(iLev));
         SetDistributionMap(iLev, grid->DistributionMap(iLev));
+        finest_level = grid->finestLevel();
       }
+    } else {
+      // This method will call MakeNewLevelFromScratch() and
+      // PostProcessBaseGrids()
+      InitFromScratch(0.0);
     }
 
     update_refinement_info();
@@ -736,7 +738,7 @@ void FluidInterface::set_node_fluid(const double* const data,
   normalize_fluid_variables();
   convert_moment_to_velocity();
 
-  // save_amrex_file();
+  save_amrex_file();
 }
 
 void FluidInterface::set_node_fluid() {

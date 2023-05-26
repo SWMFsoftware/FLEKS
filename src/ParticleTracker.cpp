@@ -190,12 +190,16 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
     cGrids.clear();
     cGrids.push_back(amrex::BoxArray());
   } else {
-    // This method will call MakeNewLevelFromScratch() and
-    // PostProcessBaseGrids()
-    InitFromScratch(tc->get_time());
-
-    for (int iLev = 0; iLev <= max_level; iLev++) {
-      SetDistributionMap(iLev, grid->DistributionMap(iLev));
+    if (grid) {
+      for (int iLev = 0; iLev <= max_level; iLev++) {
+        SetBoxArray(iLev, grid->boxArray(iLev));
+        SetDistributionMap(iLev, grid->DistributionMap(iLev));
+        finest_level = grid->finestLevel();
+      }
+    } else {
+      // This method will call MakeNewLevelFromScratch() and
+      // PostProcessBaseGrids()
+      InitFromScratch(tc->get_time());
     }
     update_refinement_info();
   }
