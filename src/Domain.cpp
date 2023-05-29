@@ -373,23 +373,26 @@ void Domain::get_source_for_points(const int nDim, const int nPoint,
 void Domain::read_restart() {
   std::string restartDir = component + "/restartIN/";
 
-  MultiFab tmp;
-  std::string nameMF = restartDir + gridName + "_centerB";
+  MultiFab mf;
+  std::string filename = restartDir + gridName + "_centerB";
 
   { // Try to open FLEKS0_centerB first. This file does not exist if the RESTART
     // file only contains FI data. In this case, try to read
     // FLEKS0_Interface_centerB instead.
     std::ifstream iss;
-    std::string headerFile = nameMF + "_H";
+    std::string headerFile = filename + "_H";
     iss.open(headerFile.c_str(), std::ios::in);
     if (!iss.good()) {
       doRestartFIOnly = true;
-      nameMF = restartDir + gridName + "_Interface_centerB" + fi->lev_string(0);
+      filename =
+          restartDir + gridName + "_Interface_centerB" + fi->lev_string(0);
     }
   }
 
-  VisMF::Read(tmp, nameMF);
-  BoxArray baPic = tmp.boxArray();
+  VisMF::Read(mf, filename);
+  BoxArray baPic = mf.boxArray();
+
+  Grid grid(gm, amrInfo, nGst, -1);
 
   fi->regrid(baPic);
   fi->read_restart();
@@ -529,6 +532,15 @@ void Domain::save_restart_header() {
     headerFile << maxBlockSize[ix_] << "\t\tnCellX\n";
     headerFile << maxBlockSize[iy_] << "\t\tnCellY\n";
     headerFile << maxBlockSize[iz_] << "\t\tnCellZ\n";
+    headerFile << "\n";
+
+    // Grid box array
+    headerFile << "#GRIDBOXARRAY" << command_suffix;
+    headerFile << fi->finestLevel() + 1 << "\t\t\tnLev\n";
+    for (int iLev = 0; iLev < fi->finestLevel() + 1; iLev++) {
+      fi->boxArray(iLev).writeOn(headerFile);
+      headerFile << "\n";
+    }
     headerFile << "\n";
 
     if (pic)
