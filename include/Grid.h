@@ -122,23 +122,47 @@ public:
     return sLev;
   }
 
+  // Find the finest level that contains the cell (x, y, z).
+  inline int get_finest_lev(amrex::Real const x, amrex::Real const y,
+                            amrex::Real const z) const {
+    amrex::Real loc[3] = { x, y, z };
+    for (int iLev = finest_level; iLev >= 0; iLev--) {
+      auto idx = Geom(iLev).CellIndex(loc);
+      if (cGrids[iLev].contains(idx)) {
+        return iLev;
+      }
+    }
+
+    printf("Error: x = %f, y = %f, z = %f is out of the domain\n", loc[0],
+           loc[1], loc[2]);
+    amrex::Abort();
+    return -1; // To suppress compiler warnings.
+  }
+
   inline int find_mpi_rank_from_coord(amrex::Real const x, amrex::Real const y,
                                       amrex::Real const z) const {
     amrex::Real loc[3] = { x, y, z };
-    auto idx = Geom(0).CellIndex(loc);
-    return find_mpi_rank_from_cell_index(idx[ix_], idx[iy_], idx[iz_]);
+
+    int iLev = get_finest_lev(x, y, z);
+
+    auto idx = Geom(iLev).CellIndex(loc);
+
+    int rank =
+        find_mpi_rank_from_cell_index(iLev, idx[ix_], idx[iy_], idx[iz_]);
+
+    return rank;
   }
 
-  inline int find_mpi_rank_from_cell_index(int const i, int const j,
-                                           int const k) const {
+  inline int find_mpi_rank_from_cell_index(int const iLev, int const i,
+                                           int const j, int const k) const {
     amrex::IntVect idx = { AMREX_D_DECL(i, j, k) };
-    for (int ii = 0, n = cGrids[0].size(); ii < n; ii++) {
-      const amrex::Box& bx = cGrids[0][ii];
+    for (int ii = 0, n = cGrids[iLev].size(); ii < n; ii++) {
+      const amrex::Box& bx = cGrids[iLev][ii];
       if (bx.contains(idx))
-        return DistributionMap(0)[ii];
+        return DistributionMap(iLev)[ii];
     }
 
-    amrex::AllPrint() << "idx = " << idx << std::endl;
+    amrex::AllPrint() << "iLev = " << iLev << " idx = " << idx << std::endl;
     amrex::Abort("Error: can not find this cell!");
     return -1; // To suppress compiler warnings.
   }
@@ -238,7 +262,7 @@ public:
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
 #ifdef _PT_COMPONENT_
-            if (i >= 4 && i < 6 && j >= 4 && j < 6 && k >= 4 && k < 6) {
+            if (i >= 4 && j >= 4 && k >= 4) {
 #else
             if (i >= 10 && i < 24 && j >= 8 && j < 32) {
 #endif

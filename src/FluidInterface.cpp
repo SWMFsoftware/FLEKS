@@ -1418,10 +1418,6 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
                                     amrex::Vector<int> idxMap) {
   std::string nameFunc = "FI::get_for_points";
 
-  if (nodeFluid.size() > 1) {
-    amrex::Abort("get_for_points: Multi-level grid is not supported yet.");
-  }
-
   const RealBox& range = Geom(0).ProbDomain();
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     double xyz[3];
@@ -1442,13 +1438,12 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
         idxMap.push_back(i);
     }
 
+    int iLev = get_finest_lev(xp, yp, zp);
     const int iStart = iPoint * nVar;
     for (int iVar = 0; iVar < nVar; iVar++) {
-      // TODO: the following lines should be improved. We should determine the
-      // level of the point first. -- Yuxi
-      data_I[iStart + iVar] =
-          get_value_at_loc(nodeFluid[0], Geom(0), xp, yp, zp, idxMap[iVar]) *
-          coef;
+      data_I[iStart + iVar] = get_value_at_loc(nodeFluid[iLev], Geom(iLev), xp,
+                                               yp, zp, idxMap[iVar]) *
+                              coef;
     }
   }
 }
