@@ -36,8 +36,8 @@ void FluidInterface::analyze_var_names(bool useNeutralOnly) {
   nFluid = nNeuFluid + nIonFluid;
   nS = nFluid;
 
-  // (rho, vx, vy, vz, p)*nFluid + B
-  nVarFluid = 5 * nFluid + 3;
+  // (rho, vx, vy, vz, p)*nFluid + B + LevelHP_
+  nVarFluid = 5 * nFluid + 3 + 1;
   useCurrent = true;
 
   iRho_I.resize(nS);
@@ -97,8 +97,8 @@ void FluidInterface::analyze_var_names(bool useNeutralOnly) {
       printf("iFluid=%d, iRho_I=%i, iUx_I=%d, iUy_I=%d, iUz_I=%d, iP_I=%d\n", i,
              iRho_I[i], iUx_I[i], iUy_I[i], iUz_I[i], iP_I[i]);
     }
-    printf("iBx=%d, iBy=%d, iBz=%d, iJx=%d, iJy=%d, iJz=%d", iBx, iBy, iBz, iJx,
-           iJy, iJz);
+    printf("iBx=%d, iBy=%d, iBz=%d, iJx=%d, iJy=%d, iJz=%d\n", iBx, iBy, iBz,
+           iJx, iJy, iJz);
   }
 }
 
@@ -121,7 +121,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
     nS = 5;
     nFluid = nS;
     // (rho, vx, vy, vz, p)*nFluid + B
-    nVarFluid = 5 * nFluid + 3;
+    nVarFluid = 5 * nFluid + 3 + 1;
     useCurrent = true;
   }
 
@@ -174,7 +174,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
     MoMi_S.resize(nS);
     QoQi_S.resize(nS);
 
-    int iFluidStart[5] = { 0, 8, 13, 18, 23 };
+    int iFluidStart[5] = { 0, 9, 14, 19, 24};
 
     for (int iFluid = 0; iFluid < nS; iFluid++) {
       iRho_I[iFluid] = iFluidStart[iFluid];
@@ -184,7 +184,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
 
       MoMi_S[iFluid] = 0;
       if (iFluid == 0) {
-        iP_I[iFluid] = iFluidStart[iFluid] + 7;
+        iP_I[iFluid] = iFluidStart[iFluid] + 8;
         QoQi_S[iFluid] = 1.0;
       } else {
         iP_I[iFluid] = iFluidStart[iFluid] + 4;
@@ -241,6 +241,16 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
   iRhoUx_I = iUx_I;
   iRhoUy_I = iUy_I;
   iRhoUz_I = iUz_I;
+
+  const bool doTest = false;
+  if (doTest) {
+    for (int i = 0; i < nS; i++) {
+      printf("iFluid=%d, iRho_I=%i, iUx_I=%d, iUy_I=%d, iUz_I=%d, iP_I=%d\n", i,
+             iRho_I[i], iUx_I[i], iUy_I[i], iUz_I[i], iP_I[i]);
+    }
+    printf("iBx=%d, iBy=%d, iBz=%d, iJx=%d, iJy=%d, iJz=%d\n", iBx, iBy, iBz,
+           iJx, iJy, iJz);
+  }
 
   calc_normalization_units();
 
@@ -441,7 +451,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
       nFluid = nS;
 
       // Ion fluid is useless for this case.
-      nVarFluid = 5 * (nFluid + nIon) + 3;
+      nVarFluid = 5 * (nFluid + nIon) + 3 + 1;
       useCurrent = true;
 
       QoQi_S.resize(nS);
@@ -463,7 +473,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     }
     nFluid = nS;
     // (rho, vx, vy, vz, p)*nFluid + B
-    nVarFluid = 5 * nFluid + 3;
+    nVarFluid = 5 * nFluid + 3 + 1;
     useCurrent = true;
   } else if (command == "#UNIFORMSTATE") {
     if (nS <= 0) {

@@ -26,8 +26,8 @@ public:
     useMhdPe = false;
     useAnisoP = false;
 
-    // For BATSRUS MHD equations
-    nVarFluid = 5 + 3;
+    // For BATSRUS MHD equations (+ LevelHP_)
+    nVarFluid = 5 + 3 + 1;
 
     nFluid = 1;
     nSpeciesFluid = 1;
@@ -61,6 +61,9 @@ public:
     varNames.push_back("by");
     iBz = idx++;
     varNames.push_back("bz");
+
+    // Skip LevelHP_
+    idx++;
 
     iP_I.push_back(idx);
     iPpar_I.push_back(idx++);
