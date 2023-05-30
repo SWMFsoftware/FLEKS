@@ -490,6 +490,11 @@ void Domain::save_restart_header() {
     headerFile << "\n";
 
     if (receiveICOnly) {
+      headerFile << "#RESTARTFIONLY" + command_suffix;
+      headerFile << "T"
+                 << "\t\t\tdoRestartFIOnly\n";
+      headerFile << "\n";
+
       headerFile << "#FLUIDVARNAMES" + command_suffix;
       const amrex::Vector<std::string> names = fi->get_var_names();
       headerFile << names.size() << "\t\t\tnVar\n";
@@ -687,6 +692,8 @@ void Domain::read_param(const bool readGridInfo) {
       fi->read_param(command, param);
     } else if (command == "#RESTART") {
       param.read_var("doRestart", doRestart);
+    } else if (command == "#RESTARTFIONLY") {
+      param.read_var("doRestartFIOnly", doRestartFIOnly);
     } else if (command == "#SOURCE") {
       param.read_var("useFluidSource", useFluidSource);
     } else if (command == "#INITFROMSWMF") {

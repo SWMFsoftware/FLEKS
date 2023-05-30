@@ -746,6 +746,18 @@ to control the restart.
 pass
 </command>
 
+<command name="RESTARTFIONLY"
+	 alias="RESTARTFIONLY_FLEKS0,RESTARTFIONLY_FLEKS1,RESTARTFIONLY_FLEKS2"
+	 multiple="T">
+  <parameter name="doRestartFIOnly" type="logical" default="F"/>
+
+#RESTARTFIONLY 
+F                 doRestartFIOnly 
+
+This command should only exist in the restart file FLEKSX_restart.H. If 
+it is true, only the fluid interface restarts.
+</command>
+
 <command name="FLUIDVARNAMES"
 	 alias="FLUIDVARNAMES_FLEKS0,FLUIDVARNAMES_FLEKS1,FLUIDVARNAMES_FLEKS2"
 	 multiple="T">
