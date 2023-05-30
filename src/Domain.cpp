@@ -373,34 +373,49 @@ void Domain::get_source_for_points(const int nDim, const int nPoint,
 void Domain::read_restart() {
   std::string restartDir = component + "/restartIN/";
 
-  MultiFab mf;
-  std::string filename = restartDir + gridName + "_centerB";
+  std::string headerFileName(restartDir + gridName + "_amrex_restart.H");
 
-  { // Try to open FLEKS0_centerB first. This file does not exist if the RESTART
-    // file only contains FI data. In this case, try to read
-    // FLEKS0_Interface_centerB instead.
-    std::ifstream iss;
-    std::string headerFile = filename + "_H";
-    iss.open(headerFile.c_str(), std::ios::in);
-    if (!iss.good()) {
-      doRestartFIOnly = true;
-      filename =
-          restartDir + gridName + "_Interface_centerB" + fi->lev_string(0);
-    }
+  VisMF::IO_Buffer ioBuffer(VisMF::GetIOBufferSize());
+
+  Vector<char> fileCharPtr;
+  ParallelDescriptor::ReadAndBcastFile(headerFileName, fileCharPtr);
+  std::string fileCharPtrString(fileCharPtr.dataPtr());
+  std::istringstream is(fileCharPtrString, std::istringstream::in);
+
+  std::string line, word;
+
+  std::getline(is, line);
+  if (line.substr(0, 13) != "#GRIDBOXARRAY")
+    amrex::Abort("Domain::read_restart: wrong header file format.");
+
+  int nLev;
+  is >> nLev;
+
+  amrex::Vector<amrex::BoxArray> bas;
+  bas.resize(nLev);
+  for (int iLev = 0; iLev < nLev; iLev++) {
+    bas[iLev].readFrom(is);
+    is.ignore(100000, '\n');
+    Print() << "restart ba = " << bas[iLev] << std::endl;
   }
 
-  VisMF::Read(mf, filename);
-  BoxArray baPic = mf.boxArray();
+  Grid grid(gm, amrInfo, nGst, gridID);
 
-  Grid grid(gm, amrInfo, nGst, -1);
+  grid.SetFinestLevel(nLev - 1);
+  for (int iLev = 0; iLev < nLev; iLev++) {
+    grid.SetBoxArray(iLev, bas[iLev]);
+    grid.SetDistributionMap(iLev, DistributionMapping(bas[iLev]));
+  }
 
-  fi->regrid(baPic);
+  //----------------------------------------------------------------
+
+  fi->regrid(grid.boxArray(0), &grid);
   fi->read_restart();
 
   if (!doRestartFIOnly) {
-    pic->regrid(baPic, fi.get());
+    pic->regrid(grid.boxArray(0), fi.get());
     // Assume dmPT == dmPIC so far.
-    pt->regrid(baPic, fi.get(), *pic);
+    pt->regrid(grid.boxArray(0), fi.get(), *pic);
 
     pic->read_restart();
     write_plots(true);
@@ -534,21 +549,40 @@ void Domain::save_restart_header() {
     headerFile << maxBlockSize[iz_] << "\t\tnCellZ\n";
     headerFile << "\n";
 
-    // Grid box array
-    headerFile << "#GRIDBOXARRAY" << command_suffix;
-    headerFile << fi->finestLevel() + 1 << "\t\t\tnLev\n";
-    for (int iLev = 0; iLev < fi->finestLevel() + 1; iLev++) {
-      fi->boxArray(iLev).writeOn(headerFile);
-      headerFile << "\n";
-    }
-    headerFile << "\n";
-
     if (pic)
       pic->save_restart_header(headerFile);
 
     if (pt)
       pt->save_restart_header(headerFile);
 
+    headerFile << "\n";
+  }
+
+  // Header file for AMREX grid information.
+  if (ParallelDescriptor::IOProcessor()) {
+    VisMF::IO_Buffer ioBuffer(VisMF::IO_Buffer_Size);
+
+    std::ofstream headerFile;
+
+    headerFile.rdbuf()->pubsetbuf(ioBuffer.dataPtr(), ioBuffer.size());
+
+    std::string headerFileName(component + "/restartOUT/" + gridName +
+                               "_amrex_restart.H");
+
+    headerFile.open(headerFileName.c_str(),
+                    std::ofstream::out | std::ofstream::trunc);
+
+    if (!headerFile.good()) {
+      amrex::FileOpenFailed(headerFileName);
+    }
+
+    // Grid box array
+    headerFile << "#GRIDBOXARRAY \n";
+    headerFile << fi->finestLevel() + 1 << "\n";
+    for (int iLev = 0; iLev < fi->finestLevel() + 1; iLev++) {
+      fi->boxArray(iLev).writeOn(headerFile);
+      headerFile << "\n";
+    }
     headerFile << "\n";
   }
 }

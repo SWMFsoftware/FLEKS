@@ -533,10 +533,10 @@ void FluidInterface::regrid(const amrex::BoxArray& region,
     cGrids.push_back(amrex::BoxArray());
   } else {
     if (grid) {
+      finest_level = grid->finestLevel();
       for (int iLev = 0; iLev <= max_level; iLev++) {
         SetBoxArray(iLev, grid->boxArray(iLev));
         SetDistributionMap(iLev, grid->DistributionMap(iLev));
-        finest_level = grid->finestLevel();
       }
     } else {
       // This method will call MakeNewLevelFromScratch() and

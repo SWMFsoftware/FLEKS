@@ -173,6 +173,7 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
   } else {
 
     if (grid) {
+      finest_level =  grid->finestLevel();
       for (int iLev = 0; iLev <= max_level; iLev++) {
         // Q: Why is it required to set distribution map here?
         // A: fi and pic should have the same grids and distribution maps.
@@ -180,8 +181,7 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
         // the box arrays so that the distribution maps can be different even
         // the grid is the same. So we need to set the distribution map here.
         SetBoxArray(iLev, grid->boxArray(iLev));
-        SetDistributionMap(iLev, grid->DistributionMap(iLev));
-        finest_level =  grid->finestLevel();
+        SetDistributionMap(iLev, grid->DistributionMap(iLev));        
       }
     } else {
       // This method will call MakeNewLevelFromScratch() and
