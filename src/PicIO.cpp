@@ -272,17 +272,6 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
 //==========================================================
 double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
                     const MFIter& mfi, bool isValidMFI) {
-
-  auto get_is = [var]() {
-    std::string::size_type pos;
-    std::stringstream ss;
-    int is;
-    pos = var.find_first_of("0123456789");
-    ss << var.substr(pos);
-    ss >> is;
-    return is;
-  };
-
   double value = 0;
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
       var.substr(0, 1) == "Z") {
@@ -327,7 +316,7 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
                var.substr(0, 4) == "numS") {
 
       // The last element of nodePlasma is the sum of all species.
-      if (get_is() >= nodePlasma.size() - 1) {
+      if (extract_int(var) >= nodePlasma.size() - 1) {
         value = 0;
       } else {
         int iVar;
@@ -356,7 +345,7 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
           iVar = iNum_;
 
         const amrex::Array4<amrex::Real const>& arr =
-            nodePlasma[get_is()][mfi].array();
+            nodePlasma[extract_int(var)][mfi].array();
         value = arr(ix, iy, iz, iVar);
 
         if (var.substr(0, 1) == "u") {
@@ -367,7 +356,7 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
       }
     } else if (var.substr(0, 2) == "pS") {
       const amrex::Array4<amrex::Real const>& arr =
-          nodePlasma[get_is()][mfi].array();
+          nodePlasma[extract_int(var)][mfi].array();
       value = (arr(ix, iy, iz, iPxx_) + arr(ix, iy, iz, iPyy_) +
                arr(ix, iy, iz, iPzz_)) /
               3.0;

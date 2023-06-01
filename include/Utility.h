@@ -52,6 +52,14 @@ void print_MultiFab(const amrex::MultiFab& data, std::string tag,
 void print_MultiFab(const amrex::MultiFab& data, std::string tag,
                     amrex::Geometry& gm, int nshift = 0);
 
+// Return the firs integer in the string.
+// Example: "abc123def345b" -> 123
+inline int extract_int(std::string s) {
+  std::size_t i0 = s.find_first_of("0123456789");
+  std::size_t i1 = s.find_last_of("0123456789");
+  return std::stoi(s.substr(i0, i1 - i0 + 1));
+};
+
 inline int shift_periodic_index(int idx, int lo, int hi) {
   if (idx > hi)
     idx -= hi - lo;

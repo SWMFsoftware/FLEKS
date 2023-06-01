@@ -90,22 +90,10 @@ void PlotWriter::init() {
   } else if (plotString.find("fluid") != string::npos) {
     plotVar = expand_variables("{fluid}");
     namePrefix += "_fluid";
-
   } else if (plotString.find("particles") != string::npos) {
     namePrefix += "_particle";
-
     string::size_type pos = plotString.find("particles");
-    string speciesString = plotString.substr(pos + 9, 1);
-
-    if (!isdigit(speciesString.c_str()[0])) {
-      cout << errorPrefix
-           << "the species number should be follow after 'particles'!" << endl;
-      abort();
-    }
-
-    stringstream ss;
-    ss << speciesString;
-    ss >> particleSpecies;
+    particleSpecies = extract_int(plotString.substr(pos));
   } else {
     if (isVerbose)
       cout << errorPrefix
@@ -200,15 +188,10 @@ void PlotWriter::init() {
 //====================================================================
 
 string PlotWriter::add_plasma_variables(string varString, int is) const {
-  string::size_type pos1;
-  stringstream ss;
-  ss << is;
-  string iString = ss.str();
   varString.insert(0, " ");
-
-  pos1 = varString.find_first_of("S");
+  string::size_type pos1 = varString.find_first_of("S");
   while (pos1 != string::npos) {
-    varString.insert(pos1 + 1, iString);
+    varString.insert(pos1 + 1, to_string(is));
     pos1 = varString.find_first_of("S", pos1 + 1);
   }
 
