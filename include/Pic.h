@@ -76,7 +76,7 @@ private:
 
   int nSpecies;
   int iTot;
-  amrex::Vector<amrex::MultiFab> nodePlasma;
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasma;
   amrex::Vector<amrex::Real> plasmaEnergy;
 
   amrex::Vector<amrex::MultiFab> jHat;

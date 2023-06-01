@@ -143,6 +143,8 @@ void Pic::init_Pic() {
   centerMM.resize(nLev);
 
   jHat.resize(nLev);
+
+  nodePlasma.resize(nLev);
 }
 //==========================================================
 void Pic::distribute_arrays() {
@@ -182,6 +184,20 @@ void Pic::distribute_arrays() {
 
     distribute_FabArray(jHat[lev], nGrids[lev], DistributionMap(lev), 3, nGst,
                         doMoveData);
+
+    if (nodePlasma[lev].empty()) {
+      // The last one is the sum of all species.
+      nodePlasma[lev].resize(nSpecies + 1);
+      for (auto& pl : nodePlasma[lev]) {
+        pl.define(nGrids[lev], DistributionMap(lev), nMoments, nGst);
+        pl.setVal(0.0);
+      }
+    } else {
+      for (auto& pl : nodePlasma[lev]) {
+        distribute_FabArray(pl, nGrids[lev], DistributionMap(lev), nMoments,
+                            nGst, doMoveData);
+      }
+    }
   }
 }
 
@@ -240,20 +256,6 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
     iTot = nSpecies;
     if (plasmaEnergy.empty()) {
       plasmaEnergy.resize(nSpecies + 1);
-    }
-
-    if (nodePlasma.empty()) {
-      // The last one is the sum of all species.
-      nodePlasma.resize(nSpecies + 1);
-      for (auto& pl : nodePlasma) {
-        pl.define(nGrids[0], DistributionMap(0), nMoments, nGst);
-        pl.setVal(0.0);
-      }
-    } else {
-      for (auto& pl : nodePlasma) {
-        distribute_FabArray(pl, nGrids[0], DistributionMap(0), nMoments, nGst,
-                            doMoveData);
-      }
     }
 
     distribute_FabArray(nodeSmoothCoef, nGrids[0], DistributionMap(0), 1, nGst,
@@ -742,6 +744,7 @@ void Pic::sum_moments(bool updateDt) {
 
   timing_func(nameFunc);
 
+  int iLev = 0;
   const auto& dx = Geom(0).CellSize();
   Real minDx = 1e99;
   for (int iDim = 0; iDim < nDim; iDim++) {
@@ -749,13 +752,13 @@ void Pic::sum_moments(bool updateDt) {
       minDx = dx[iDim];
   }
 
-  nodePlasma[nSpecies].setVal(0.0);
+  nodePlasma[iLev][nSpecies].setVal(0.0);
   plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; i++) {
 
     for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-      Real energy =
-          parts[i]->sum_moments(nodePlasma[i], nodeB[iLevTest], tc->get_dt());
+      Real energy = parts[i]->sum_moments(nodePlasma[iLevTest][i],
+                                          nodeB[iLevTest], tc->get_dt());
       plasmaEnergy[i] = energy;
       plasmaEnergy[iTot] += energy;
     }
@@ -765,7 +768,8 @@ void Pic::sum_moments(bool updateDt) {
     Real uMax = 0;
     if (tc->get_cfl() > 0 || doReport) {
       for (int i = 0; i < nSpecies; i++) {
-        Real uMaxSpecies = parts[i]->calc_max_thermal_velocity(nodePlasma[i]);
+        Real uMaxSpecies =
+            parts[i]->calc_max_thermal_velocity(nodePlasma[iLev][i]);
         ParallelDescriptor::ReduceRealMax(uMaxSpecies);
 
         if (doReport)
@@ -806,8 +810,9 @@ void Pic::sum_moments(bool updateDt) {
   }
 
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->convert_to_fluid_moments(nodePlasma[i]);
-    MultiFab::Add(nodePlasma[nSpecies], nodePlasma[i], 0, 0, nMoments, nGst);
+    parts[i]->convert_to_fluid_moments(nodePlasma[iLev][i]);
+    MultiFab::Add(nodePlasma[iLev][nSpecies], nodePlasma[iLev][i], 0, 0,
+                  nMoments, nGst);
   }
 }
 
@@ -1056,7 +1061,7 @@ void Pic::update_E_expl() {
   std::string nameFunc = "Pic::update_E_expl";
 
   timing_func(nameFunc);
-  int iLev = 0; 
+  int iLev = 0;
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
     MultiFab::Copy(nodeEth[iLevTest], nodeE[iLevTest], 0, 0,
                    nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
@@ -1279,7 +1284,7 @@ void Pic::update_E_rhs(double* rhs) {
   std::string nameFunc = "Pic::update_E_rhs";
   timing_func(nameFunc);
 
-  int iLev = 0; 
+  int iLev = 0;
 
   MultiFab tempNode(nGrids[0], DistributionMap(0), 3, nGst);
   tempNode.setVal(0.0);
@@ -1348,9 +1353,10 @@ void Pic::calc_smooth_coef() {
   if (fabs(coefStrongSmooth - coefWeakSmooth) < 1e-3)
     return;
 
+  int iLev = 0;
   Real gamma = 5. / 3;
-  for (MFIter mfi(nodePlasma[nSpecies]); mfi.isValid(); ++mfi) {
-    FArrayBox& fab = nodePlasma[nSpecies][mfi];
+  for (MFIter mfi(nodePlasma[iLev][nSpecies]); mfi.isValid(); ++mfi) {
+    FArrayBox& fab = nodePlasma[iLev][nSpecies][mfi];
     const Box& box = mfi.fabbox();
     const Array4<Real>& arr = fab.array();
 

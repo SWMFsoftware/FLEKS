@@ -35,6 +35,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     return;
   }
 
+  int iLev = 0;
   // (rho + 3*Moment + 6*p)*nSpecies+ 3*E + 3*B;
   const int nVarPerSpecies = 10;
   int nVarPIC = nSpecies * nVarPerSpecies + 6;
@@ -61,8 +62,8 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++)
       for (int iVar = iRho_; iVar <= iPyz_; iVar++) {
         const int iStart = iSpecies * nVarPerSpecies;
-        dataPIC_I[iStart + iVar] =
-            get_value_at_loc(nodePlasma[iSpecies], Geom(0), xp, yp, zp, iVar);
+        dataPIC_I[iStart + iVar] = get_value_at_loc(nodePlasma[iLev][iSpecies],
+                                                    Geom(0), xp, yp, zp, iVar);
       }
 
     for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
@@ -316,7 +317,7 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
                var.substr(0, 4) == "numS") {
 
       // The last element of nodePlasma is the sum of all species.
-      if (extract_int(var) >= nodePlasma.size() - 1) {
+      if (extract_int(var) >= nodePlasma[0].size() - 1) {
         value = 0;
       } else {
         int iVar;
@@ -345,7 +346,7 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
           iVar = iNum_;
 
         const amrex::Array4<amrex::Real const>& arr =
-            nodePlasma[extract_int(var)][mfi].array();
+            nodePlasma[0][extract_int(var)][mfi].array();
         value = arr(ix, iy, iz, iVar);
 
         if (var.substr(0, 1) == "u") {
@@ -356,7 +357,7 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
       }
     } else if (var.substr(0, 2) == "pS") {
       const amrex::Array4<amrex::Real const>& arr =
-          nodePlasma[extract_int(var)][mfi].array();
+          nodePlasma[0][extract_int(var)][mfi].array();
       value = (arr(ix, iy, iz, iPxx_) + arr(ix, iy, iz, iPyy_) +
                arr(ix, iy, iz, iPzz_)) /
               3.0;
@@ -727,7 +728,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
                                         "pyy", "pzz", "pxy", "pxz", "pyz" };
 
     for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++) {
-      auto& plasma = nodePlasma[iSpecies];
+      auto& plasma = nodePlasma[0][iSpecies];
 
       MultiFab rho(plasma, make_alias, iRho_, 1);
 
