@@ -125,7 +125,6 @@ public:
       std::shared_ptr<FluidInterface> &fluidIn, std::shared_ptr<TimeCtr> &tcIn,
       int id = 0)
       : Grid(gm, amrInfo, nGst, id, "pic"), fi(fluidIn), tc(tcIn) {
-    init_Pic();
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 
@@ -133,6 +132,28 @@ public:
     divESolver.set_nIter(20);
 
     Particles<>::particlePosition = Staggered;
+
+    //-----------------------------------------------------
+    const int nLev = max_level + 1;
+
+    centerB.resize(nLev);
+    nodeB.resize(nLev);
+    nodeE.resize(nLev);
+    nodeEth.resize(nLev);
+
+    centerNetChargeOld.resize(nLev);
+    centerNetChargeN.resize(nLev);
+    centerNetChargeNew.resize(nLev);
+
+    centerDivE.resize(nLev);
+    centerPhi.resize(nLev);
+
+    nodeMM.resize(nLev);
+    centerMM.resize(nLev);
+
+    jHat.resize(nLev);
+
+    nodePlasma.resize(nLev);
   };
   ~Pic(){};
 
@@ -160,7 +181,6 @@ public:
 
   void distribute_arrays();
 
-  void init_Pic();
   void fill_new_cells();
   void fill_E_B_fields();
 

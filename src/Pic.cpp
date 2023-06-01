@@ -124,29 +124,6 @@ void Pic::fill_new_cells() {
 }
 
 //==========================================================
-void Pic::init_Pic() {
-  const int nLev = max_level + 1;
-
-  centerB.resize(nLev);
-  nodeB.resize(nLev);
-  nodeE.resize(nLev);
-  nodeEth.resize(nLev);
-
-  centerNetChargeOld.resize(nLev);
-  centerNetChargeN.resize(nLev);
-  centerNetChargeNew.resize(nLev);
-
-  centerDivE.resize(nLev);
-  centerPhi.resize(nLev);
-
-  nodeMM.resize(nLev);
-  centerMM.resize(nLev);
-
-  jHat.resize(nLev);
-
-  nodePlasma.resize(nLev);
-}
-//==========================================================
 void Pic::distribute_arrays() {
   if (cGrids[0].empty()) {
     return;
