@@ -126,12 +126,15 @@ void Pic::fill_new_cells() {
 //==========================================================
 void Pic::init_Pic() {
   const int nLev = max_level + 1;
-  {
-    centerB.resize(nLev);
-    nodeB.resize(nLev);
-    nodeE.resize(nLev);
-    nodeEth.resize(nLev);
-  }
+
+  centerB.resize(nLev);
+  nodeB.resize(nLev);
+  nodeE.resize(nLev);
+  nodeEth.resize(nLev);
+
+  centerNetChargeOld.resize(nLev);
+  centerNetChargeN.resize(nLev);
+  centerNetChargeNew.resize(nLev);
 }
 //==========================================================
 void Pic::distribute_arrays() {
@@ -146,6 +149,13 @@ void Pic::distribute_arrays() {
     distribute_FabArray(nodeE[lev], nGrids[lev], DistributionMap(lev), 3, nGst);
     distribute_FabArray(nodeEth[lev], nGrids[lev], DistributionMap(lev), 3,
                         nGst);
+
+    distribute_FabArray(centerNetChargeOld[lev], cGrids[lev],
+                        DistributionMap(lev), 1, nGst);
+    distribute_FabArray(centerNetChargeN[lev], cGrids[lev],
+                        DistributionMap(lev), 1, nGst);
+    distribute_FabArray(centerNetChargeNew[lev], cGrids[lev],
+                        DistributionMap(lev), 1, nGst);
   }
 }
 
@@ -173,7 +183,7 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
   } else {
 
     if (grid) {
-      finest_level =  grid->finestLevel();
+      finest_level = grid->finestLevel();
       for (int iLev = 0; iLev <= max_level; iLev++) {
         // Q: Why is it required to set distribution map here?
         // A: fi and pic should have the same grids and distribution maps.
@@ -181,7 +191,7 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
         // the box arrays so that the distribution maps can be different even
         // the grid is the same. So we need to set the distribution map here.
         SetBoxArray(iLev, grid->boxArray(iLev));
-        SetDistributionMap(iLev, grid->DistributionMap(iLev));        
+        SetDistributionMap(iLev, grid->DistributionMap(iLev));
       }
     } else {
       // This method will call MakeNewLevelFromScratch() and
@@ -197,19 +207,6 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
   print_grid_info();
 
   distribute_arrays();
-
-  //===========Move field data around begin====================
-  // distribute_FabArray(nodeE, nGrids[0], DistributionMap(0), 3, nGst);
-  // distribute_FabArray(nodeEth, nGrids[0], DistributionMap(0), 3, nGst);
-  // distribute_FabArray(centerB[0], cGrids[0], DistributionMap(0), 3, nGst);
-  // distribute_FabArray(nodeB[0], cGrids[0], DistributionMap(0), 3, nGst);
-
-  distribute_FabArray(centerNetChargeOld, cGrids[0], DistributionMap(0), 1,
-                      nGst);
-  distribute_FabArray(centerNetChargeN, cGrids[0], DistributionMap(0), 1,
-                      nGst); // false??
-  distribute_FabArray(centerNetChargeNew, cGrids[0], DistributionMap(0), 1,
-                      nGst); // false??
 
   distribute_FabArray(centerDivE, cGrids[0], DistributionMap(0), 1, nGst);
   distribute_FabArray(centerPhi, cGrids[0], DistributionMap(0), 1, nGst);
@@ -864,7 +861,8 @@ void Pic::calculate_phi(LinearSolver& solver) {
   }
 
   MultiFab::LinComb(residual, coef, residual, 0, -fourPI * coef,
-                    centerNetChargeN, 0, 0, residual.nComp(), residual.nGrow());
+                    centerNetChargeN[iLev], 0, 0, residual.nComp(),
+                    residual.nGrow());
 
   convert_3d_to_1d(residual, solver.rhs);
 
@@ -923,7 +921,9 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
 
   timing_func(nameFunc);
 
-  centerNetChargeNew.setVal(0.0);
+  int iLev = 0;
+
+  centerNetChargeNew[iLev].setVal(0.0);
 
   const RealCMM mm0(0.0);
   centerMM.setVal(mm0);
@@ -931,30 +931,34 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
   bool doNetChargeOnly = !isBeforeCorrection;
 
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->sum_to_center(centerNetChargeNew, centerMM, doNetChargeOnly);
+    parts[i]->sum_to_center(centerNetChargeNew[iLev], centerMM,
+                            doNetChargeOnly);
   }
 
   if (!doNetChargeOnly) {
     centerMM.SumBoundary(Geom(0).periodicity());
   }
 
-  centerNetChargeNew.SumBoundary(Geom(0).periodicity());
+  centerNetChargeNew[iLev].SumBoundary(Geom(0).periodicity());
 
   const int iLevTest = 0;
-  apply_BC(cellStatus, centerNetChargeNew, 0, centerNetChargeNew.nComp(),
-           &Pic::get_zero, iLevTest);
+  apply_BC(cellStatus, centerNetChargeNew[iLev], 0,
+           centerNetChargeNew[iLev].nComp(), &Pic::get_zero, iLevTest);
 
   if (Particles<>::particlePosition == NonStaggered) {
-    MultiFab::Copy(centerNetChargeN, centerNetChargeNew, 0, 0,
-                   centerNetChargeN.nComp(), centerNetChargeN.nGrow());
+    MultiFab::Copy(centerNetChargeN[iLev], centerNetChargeNew[iLev], 0, 0,
+                   centerNetChargeN[iLev].nComp(),
+                   centerNetChargeN[iLev].nGrow());
   } else {
-    MultiFab::LinComb(centerNetChargeN, 1 - rhoTheta, centerNetChargeOld, 0,
-                      rhoTheta, centerNetChargeNew, 0, 0,
-                      centerNetChargeN.nComp(), centerNetChargeN.nGrow());
+    MultiFab::LinComb(
+        centerNetChargeN[iLev], 1 - rhoTheta, centerNetChargeOld[iLev], 0,
+        rhoTheta, centerNetChargeNew[iLev], 0, 0,
+        centerNetChargeN[iLev].nComp(), centerNetChargeN[iLev].nGrow());
 
     if (!isBeforeCorrection) {
-      MultiFab::Copy(centerNetChargeOld, centerNetChargeNew, 0, 0,
-                     centerNetChargeOld.nComp(), centerNetChargeOld.nGrow());
+      MultiFab::Copy(centerNetChargeOld[iLev], centerNetChargeNew[iLev], 0, 0,
+                     centerNetChargeOld[iLev].nComp(),
+                     centerNetChargeOld[iLev].nGrow());
     }
   }
 }

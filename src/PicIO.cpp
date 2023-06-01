@@ -362,7 +362,7 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
               3.0;
     } else if (var.substr(0, 2) == "qc") {
       const amrex::Array4<amrex::Real const>& arr =
-          centerNetChargeN[mfi].array();
+          centerNetChargeN[0][mfi].array();
       value = arr(ix, iy, iz);
     } else if (var.substr(0, 5) == "divEc") {
       const amrex::Array4<amrex::Real const>& arr = centerDivE[mfi].array();
