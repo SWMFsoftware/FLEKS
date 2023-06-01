@@ -135,6 +135,9 @@ void Pic::init_Pic() {
   centerNetChargeOld.resize(nLev);
   centerNetChargeN.resize(nLev);
   centerNetChargeNew.resize(nLev);
+
+  centerDivE.resize(nLev);
+  centerPhi.resize(nLev);
 }
 //==========================================================
 void Pic::distribute_arrays() {
@@ -156,6 +159,12 @@ void Pic::distribute_arrays() {
                         DistributionMap(lev), 1, nGst);
     distribute_FabArray(centerNetChargeNew[lev], cGrids[lev],
                         DistributionMap(lev), 1, nGst);
+
+    distribute_FabArray(centerDivE[lev], cGrids[lev], DistributionMap(lev), 1,
+                        nGst);
+
+    distribute_FabArray(centerPhi[lev], cGrids[lev], DistributionMap(lev), 1,
+                        nGst);
   }
 }
 
@@ -207,9 +216,6 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
   print_grid_info();
 
   distribute_arrays();
-
-  distribute_FabArray(centerDivE, cGrids[0], DistributionMap(0), 1, nGst);
-  distribute_FabArray(centerPhi, cGrids[0], DistributionMap(0), 1, nGst);
 
   {
     bool doMoveData = false;
@@ -393,15 +399,12 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
   }
   //--------------particles-----------------------------------
 
-  {
-    for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-      int n = get_local_node_or_cell_number(nodeE[iLevTest]);
-      eSolver.init(n, nDim, nDim, matvec_E_solver);
-    }
-  }
+  // This part does not really work for multi-level.
+  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    int n = get_local_node_or_cell_number(nodeE[iLevTest]);
+    eSolver.init(n, nDim, nDim, matvec_E_solver);
 
-  {
-    int n = get_local_node_or_cell_number(centerDivE);
+    n = get_local_node_or_cell_number(centerDivE[iLevTest]);
     divESolver.init(n, 1, nDim, matvec_divE_accurate);
   }
 
@@ -837,7 +840,7 @@ void Pic::divE_correct_particle_position() {
   timing_func(nameFunc);
 
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->divE_correct_position(centerPhi);
+    parts[i]->divE_correct_position(centerPhi[0]);
   }
 }
 
@@ -850,7 +853,7 @@ void Pic::calculate_phi(LinearSolver& solver) {
   const int iLev = 0;
   MultiFab residual(cGrids[iLev], DistributionMap(iLev), 1, nGst);
 
-  solver.reset(get_local_node_or_cell_number(centerDivE));
+  solver.reset(get_local_node_or_cell_number(centerDivE[iLev]));
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
     div_node_to_center(nodeE[iLevTest], residual, Geom(iLevTest).InvCellSize());
   }
@@ -870,8 +873,8 @@ void Pic::calculate_phi(LinearSolver& solver) {
   solver.solve(doReport);
   BL_PROFILE_VAR_STOP(solve);
 
-  convert_1d_to_3d(solver.xLeft, centerPhi);
-  centerPhi.FillBoundary(Geom(0).periodicity());
+  convert_1d_to_3d(solver.xLeft, centerPhi[iLev]);
+  centerPhi[iLev].FillBoundary(Geom(iLev).periodicity());
 }
 
 //==========================================================
@@ -1116,7 +1119,7 @@ void Pic::update_E_impl() {
       smooth_E(nodeEth[iLevTest]);
       smooth_E(nodeE[iLevTest]);
     }
-    div_node_to_center(nodeE[iLevTest], centerDivE,
+    div_node_to_center(nodeE[iLevTest], centerDivE[iLevTest],
                        Geom(iLevTest).InvCellSize());
   }
 }
@@ -1167,7 +1170,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
   matvecMF.mult(-delt2);
 
   { // grad(divE)
-    div_node_to_center(vecMF, centerDivE, Geom(0).InvCellSize());
+    div_node_to_center(vecMF, centerDivE[iLev], Geom(0).InvCellSize());
 
     if (fsolver.coefDiff > 0) {
       // Calculate cell center E for center-to-center divE.
@@ -1195,11 +1198,12 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
       apply_BC(cellStatus, tempCenter1, 0, tempCenter1.nComp(), &Pic::get_zero,
                iLev);
 
-      MultiFab::LinComb(centerDivE, 1 - fsolver.coefDiff, centerDivE, 0,
-                        fsolver.coefDiff, tempCenter1, 0, 0, 1, 1);
+      MultiFab::LinComb(centerDivE[iLev], 1 - fsolver.coefDiff,
+                        centerDivE[iLev], 0, fsolver.coefDiff, tempCenter1, 0,
+                        0, 1, 1);
     }
 
-    grad_center_to_node(centerDivE, tempNode3, Geom(0).InvCellSize());
+    grad_center_to_node(centerDivE[iLev], tempNode3, Geom(0).InvCellSize());
 
     tempNode3.mult(delt2);
     MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(),

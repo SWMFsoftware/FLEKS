@@ -66,7 +66,7 @@ private:
   // Old @ t=t_{n-1/2}; N @ t=t_n; New @ t=t_{n+1/2}
   amrex::Vector<amrex::MultiFab> centerNetChargeOld, centerNetChargeN,
       centerNetChargeNew;
-  amrex::MultiFab centerDivE, centerPhi;
+  amrex::Vector<amrex::MultiFab> centerDivE, centerPhi;
   amrex::UMultiFab<RealCMM> centerMM;
   const amrex::Real rhoTheta = 0.51;
   //--------------------------------------

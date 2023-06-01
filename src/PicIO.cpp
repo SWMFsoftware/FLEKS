@@ -365,10 +365,10 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
           centerNetChargeN[0][mfi].array();
       value = arr(ix, iy, iz);
     } else if (var.substr(0, 5) == "divEc") {
-      const amrex::Array4<amrex::Real const>& arr = centerDivE[mfi].array();
+      const amrex::Array4<amrex::Real const>& arr = centerDivE[0][mfi].array();
       value = arr(ix, iy, iz);
     } else if (var.substr(0, 3) == "phi") {
-      const amrex::Array4<amrex::Real const>& arr = centerPhi[mfi].array();
+      const amrex::Array4<amrex::Real const>& arr = centerPhi[0][mfi].array();
       value = arr(ix, iy, iz);
     } else if (var.substr(0, 7) == "smoothE") {
       const amrex::Array4<amrex::Real const>& arr = nodeSmoothCoef[mfi].array();
