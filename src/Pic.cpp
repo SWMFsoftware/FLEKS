@@ -138,6 +138,11 @@ void Pic::init_Pic() {
 
   centerDivE.resize(nLev);
   centerPhi.resize(nLev);
+
+  nodeMM.resize(nLev);
+  centerMM.resize(nLev);
+
+  jHat.resize(nLev);
 }
 //==========================================================
 void Pic::distribute_arrays() {
@@ -165,6 +170,18 @@ void Pic::distribute_arrays() {
 
     distribute_FabArray(centerPhi[lev], cGrids[lev], DistributionMap(lev), 1,
                         nGst);
+
+    bool doMoveData = false;
+    if (!useExplicitPIC) {
+      distribute_FabArray(nodeMM[lev], nGrids[lev], DistributionMap(lev), 1, 1,
+                          doMoveData);
+    }
+
+    distribute_FabArray(centerMM[lev], cGrids[lev], DistributionMap(lev), 1,
+                        nGst, doMoveData);
+
+    distribute_FabArray(jHat[lev], nGrids[lev], DistributionMap(lev), 3, nGst,
+                        doMoveData);
   }
 }
 
@@ -238,16 +255,6 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
                             doMoveData);
       }
     }
-
-    distribute_FabArray(jHat, nGrids[0], DistributionMap(0), 3, nGst,
-                        doMoveData);
-
-    if (!useExplicitPIC) {
-      distribute_FabArray(nodeMM, nGrids[0], DistributionMap(0), 1, 1,
-                          doMoveData);
-    }
-    distribute_FabArray(centerMM, cGrids[0], DistributionMap(0), 1, nGst,
-                        doMoveData);
 
     distribute_FabArray(nodeSmoothCoef, nGrids[0], DistributionMap(0), 1, nGst,
                         doMoveData);
@@ -691,19 +698,22 @@ void Pic::calc_mass_matrix() {
 
   timing_func(nameFunc);
 
-  jHat.setVal(0.0);
+  int iLev = 0;
+
+  jHat[iLev].setVal(0.0);
 
   if (!useExplicitPIC) {
     const RealMM mm0(0.0);
-    nodeMM.setVal(mm0);
+    nodeMM[iLev].setVal(mm0);
   }
 
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
     for (int i = 0; i < nSpecies; i++) {
       if (useExplicitPIC) {
-        parts[i]->calc_jhat(jHat, nodeB[iLevTest], tc->get_dt());
+        parts[i]->calc_jhat(jHat[iLevTest], nodeB[iLevTest], tc->get_dt());
       } else {
-        parts[i]->calc_mass_matrix(nodeMM, jHat, nodeB[iLevTest], tc->get_dt());
+        parts[i]->calc_mass_matrix(nodeMM[iLevTest], jHat[iLevTest],
+                                   nodeB[iLevTest], tc->get_dt());
       }
     }
   }
@@ -713,13 +723,13 @@ void Pic::calc_mass_matrix() {
     invVol *= Geom(0).InvCellSize(i);
   }
 
-  jHat.mult(invVol, 0, jHat.nComp(), jHat.nGrow());
+  jHat[iLev].mult(invVol, 0, jHat[iLev].nComp(), jHat[iLev].nGrow());
 
-  jHat.SumBoundary(Geom(0).periodicity());
+  jHat[iLev].SumBoundary(Geom(iLev).periodicity());
 
   if (!useExplicitPIC) {
-    nodeMM.SumBoundary(Geom(0).periodicity());
-    nodeMM.FillBoundary(Geom(0).periodicity());
+    nodeMM[iLev].SumBoundary(Geom(iLev).periodicity());
+    nodeMM[iLev].FillBoundary(Geom(iLev).periodicity());
   }
 }
 
@@ -901,7 +911,7 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut) {
 
     const amrex::Array4<amrex::Real>& lArr = outMF[mfi].array();
     const amrex::Array4<amrex::Real const>& rArr = inMF[mfi].array();
-    const amrex::Array4<RealCMM>& mmArr = centerMM[mfi].array();
+    const amrex::Array4<RealCMM>& mmArr = centerMM[iLev][mfi].array();
 
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
@@ -929,17 +939,17 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
   centerNetChargeNew[iLev].setVal(0.0);
 
   const RealCMM mm0(0.0);
-  centerMM.setVal(mm0);
+  centerMM[iLev].setVal(mm0);
 
   bool doNetChargeOnly = !isBeforeCorrection;
 
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->sum_to_center(centerNetChargeNew[iLev], centerMM,
+    parts[i]->sum_to_center(centerNetChargeNew[iLev], centerMM[iLev],
                             doNetChargeOnly);
   }
 
   if (!doNetChargeOnly) {
-    centerMM.SumBoundary(Geom(0).periodicity());
+    centerMM[iLev].SumBoundary(Geom(0).periodicity());
   }
 
   centerNetChargeNew[iLev].SumBoundary(Geom(0).periodicity());
@@ -1046,7 +1056,7 @@ void Pic::update_E_expl() {
   std::string nameFunc = "Pic::update_E_expl";
 
   timing_func(nameFunc);
-
+  int iLev = 0; 
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
     MultiFab::Copy(nodeEth[iLevTest], nodeE[iLevTest], 0, 0,
                    nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
@@ -1060,7 +1070,7 @@ void Pic::update_E_expl() {
   }
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
     curl_center_to_node(centerB[iLevTest], nodeE[iLevTest], dt2dx.begin());
-    MultiFab::Saxpy(nodeE[iLevTest], -fourPI * dt, jHat, 0, 0,
+    MultiFab::Saxpy(nodeE[iLevTest], -fourPI * dt, jHat[iLev], 0, 0,
                     nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
 
     MultiFab::Add(nodeE[iLevTest], nodeEth[iLevTest], 0, 0,
@@ -1226,6 +1236,7 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
   timing_func(nameFunc);
 
   outMF.setVal(0.0);
+  int iLev = 0;
   Real c0 = fourPI * fsolver.theta * tc->get_dt();
   for (amrex::MFIter mfi(outMF); mfi.isValid(); ++mfi) {
     const amrex::Box& box = mfi.validbox();
@@ -1234,7 +1245,7 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
 
     const amrex::Array4<amrex::Real const>& inArr = inMF[mfi].array();
     const amrex::Array4<amrex::Real>& ourArr = outMF[mfi].array();
-    const amrex::Array4<RealMM>& mmArr = nodeMM[mfi].array();
+    const amrex::Array4<RealMM>& mmArr = nodeMM[iLev][mfi].array();
 
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
@@ -1268,6 +1279,8 @@ void Pic::update_E_rhs(double* rhs) {
   std::string nameFunc = "Pic::update_E_rhs";
   timing_func(nameFunc);
 
+  int iLev = 0; 
+
   MultiFab tempNode(nGrids[0], DistributionMap(0), 3, nGst);
   tempNode.setVal(0.0);
   MultiFab temp2Node(nGrids[0], DistributionMap(0), 3, nGst);
@@ -1286,7 +1299,7 @@ void Pic::update_E_rhs(double* rhs) {
     curl_center_to_node(centerB[iLevTest], tempNode, invDx);
   }
 
-  MultiFab::Saxpy(temp2Node, -fourPI, jHat, 0, 0, temp2Node.nComp(),
+  MultiFab::Saxpy(temp2Node, -fourPI, jHat[iLev], 0, 0, temp2Node.nComp(),
                   temp2Node.nGrow());
 
   MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), temp2Node.nGrow());
