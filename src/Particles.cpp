@@ -554,24 +554,23 @@ std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-Real Particles<NStructReal, NStructInt>::sum_moments(MultiFab& momentsMF,
-                                                     MultiFab& nodeBMF,
-                                                     Real dt) {
+Real Particles<NStructReal, NStructInt>::sum_moments(
+    Vector<MultiFab>& momentsMF, Vector<MultiFab>& nodeBMF, Real dt) {
   timing_func("Particles::sum_moments");
 
-  momentsMF.setVal(0.0);
-
   Real energy = 0;
-  for (int lev = 0; lev <= finestLevel(); lev++)
-    for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+    momentsMF[iLev].setVal(0.0);
+    for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
-      Array4<Real> const& momentsArr = momentsMF[pti].array();
+      Array4<Real> const& momentsArr = momentsMF[iLev][pti].array();
 
       const auto& particles = pti.GetArrayOfStructs();
 
+      Print() << "iLev = " << iLev << std::endl;
       for (const auto& p : particles) {
 
-        // Print()<<"p = "<<p<<std::endl;
+        Print() << "p = " << p << std::endl;
         const Real up = p.rdata(iup_);
         const Real vp = p.rdata(ivp_);
         const Real wp = p.rdata(iwp_);
@@ -627,10 +626,11 @@ Real Particles<NStructReal, NStructInt>::sum_moments(MultiFab& momentsMF,
       } // for p
     }
 
-  // Exclude the number density.
-  momentsMF.mult(invVol, 0, nMoments - 1, momentsMF.nGrow());
+    // Exclude the number density.
+    momentsMF[iLev].mult(invVol, 0, nMoments - 1, momentsMF[iLev].nGrow());
 
-  momentsMF.SumBoundary(Geom(0).periodicity());
+    momentsMF[iLev].SumBoundary(Geom(iLev).periodicity());
+  }
 
   energy *= 0.5 * qomSign * get_mass();
 

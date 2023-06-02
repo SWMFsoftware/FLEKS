@@ -720,7 +720,6 @@ void Pic::sum_moments(bool updateDt) {
 
   timing_func(nameFunc);
 
-  int iLev = 0;
   const auto& dx = Geom(0).CellSize();
   Real minDx = 1e99;
   for (int iDim = 0; iDim < nDim; iDim++) {
@@ -728,22 +727,23 @@ void Pic::sum_moments(bool updateDt) {
       minDx = dx[iDim];
   }
 
-  nodePlasma[nSpecies][iLev].setVal(0.0);
+  for (int iLev = 0; iLev < nLev; iLev++) {
+    nodePlasma[nSpecies][iLev].setVal(0.0);
+  }
+
   plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; i++) {
-
-    for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-      Real energy = parts[i]->sum_moments(nodePlasma[i][iLevTest],
-                                          nodeB[iLevTest], tc->get_dt());
-      plasmaEnergy[i] = energy;
-      plasmaEnergy[iTot] += energy;
-    }
+    printf("i = %d\n", i);
+    Real energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
+    plasmaEnergy[i] = energy;
+    plasmaEnergy[iTot] += energy;
   }
 
   if (updateDt) {
     Real uMax = 0;
     if (tc->get_cfl() > 0 || doReport) {
       for (int i = 0; i < nSpecies; i++) {
+        const int iLev = 0;
         Real uMaxSpecies =
             parts[i]->calc_max_thermal_velocity(nodePlasma[i][iLev]);
         ParallelDescriptor::ReduceRealMax(uMaxSpecies);
@@ -786,6 +786,7 @@ void Pic::sum_moments(bool updateDt) {
   }
 
   for (int i = 0; i < nSpecies; i++) {
+    const int iLev = 0; 
     parts[i]->convert_to_fluid_moments(nodePlasma[i][iLev]);
     MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
                   nMoments, nGst);

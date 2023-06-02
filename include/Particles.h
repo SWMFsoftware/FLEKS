@@ -171,7 +171,8 @@ public:
                                          const int i, const int j, const int k,
                                          int& isrc, int& jsrc, int& ksrc);
 
-  amrex::Real sum_moments(amrex::MultiFab& momentsMF, amrex::MultiFab& nodeBMF,
+  amrex::Real sum_moments(amrex::Vector<amrex::MultiFab>& momentsMF,
+                          amrex::Vector<amrex::MultiFab>& nodeBMF,
                           amrex::Real dt);
 
   std::array<amrex::Real, 5> total_moments(bool localOnly = false);
