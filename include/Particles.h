@@ -275,9 +275,9 @@ public:
   }
 
   void label_particles_outside_ba() {
-    const int lev = 0;
-    if (NumberOfParticlesAtLevel(lev, true, true) > 0) {
-      for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev);
+    const int iLev = 0;
+    if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
+      for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev);
            pti.isValid(); ++pti) {
         auto& particles = pti.GetArrayOfStructs();
         const amrex::Array4<int const>& status = cellStatus[pti].array();
@@ -295,9 +295,9 @@ public:
   }
 
   void label_particles_outside_ba_general() {
-    const int lev = 0;
-    if (NumberOfParticlesAtLevel(lev, true, true) > 0) {
-      for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev);
+    const int iLev = 0;
+    if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
+      for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev);
            pti.isValid(); ++pti) {
         auto& particles = pti.GetArrayOfStructs();
         for (auto& p : particles) {

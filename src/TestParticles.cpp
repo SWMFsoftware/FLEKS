@@ -218,8 +218,8 @@ void TestParticles::move_and_save_neutrals(amrex::Real dt, amrex::Real tNowSI,
                                            bool doSave) {
   timing_func("TestParticles::move_neutrals");
 
-  const int lev = 0;
-  for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, lev); pti.isValid();
+  const int iLev = 0;
+  for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, iLev); pti.isValid();
        ++pti) {
     const Array4<int const>& status = cellStatus[pti].array();
     // cellStatus[pti] is a FAB, and the box returned from the box() method
@@ -315,12 +315,12 @@ void TestParticles::add_test_particles_from_pic(Particles<>* pts) {
   if (vIDs.size() == 0)
     return;
 
-  const int lev = 0;
+  const int iLev = 0;
 
-  const auto& lOther = pts->GetParticles(lev);
+  const auto& lOther = pts->GetParticles(iLev);
 
   // Loop through the PIC particles.
-  for (MFIter mfi = pts->MakeMFIter(lev); mfi.isValid(); ++mfi) {
+  for (MFIter mfi = pts->MakeMFIter(iLev); mfi.isValid(); ++mfi) {
     auto index = std::make_pair(mfi.index(), mfi.LocalTileIndex());
 
     if (lOther.find(index) == lOther.end())
@@ -331,7 +331,7 @@ void TestParticles::add_test_particles_from_pic(Particles<>* pts) {
     if (tileOther.numParticles() == 0)
       continue;
 
-    auto& particles = GetParticles(lev)[index];
+    auto& particles = GetParticles(iLev)[index];
 
     const auto& aosOther = tileOther.GetArrayOfStructs();
 
@@ -404,7 +404,7 @@ void TestParticles::add_test_particles_from_fluid(const iMultiFab& cellStatus,
           << " : current number = " << TotalNumberOfParticles(true, false)
           << std::endl;
 
-  const int lev = 0;
+  const int iLev = 0;
 
   Vel tpVel;
   for (auto& state : tpStates) {
@@ -413,7 +413,7 @@ void TestParticles::add_test_particles_from_fluid(const iMultiFab& cellStatus,
     }
   }
 
-  for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
+  for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
     const auto& status = cellStatus[mfi].array();
     const Box& bx = mfi.validbox();
     const IntVect lo = IntVect(bx.loVect());
@@ -521,8 +521,8 @@ unsigned long long int TestParticles::loop_particles(
   int iPartCount = 0;
   const int listUnitSize = 2 * sizeof(int) + sizeof(unsigned long long);
 
-  const int lev = 0;
-  for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, lev); pti.isValid();
+  const int iLev = 0;
+  for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, iLev); pti.isValid();
        ++pti) {
     auto& particles = pti.GetArrayOfStructs();
     for (auto& p : particles) {
@@ -642,8 +642,8 @@ void TestParticles::print_record_buffer(char* buffer,
 }
 
 void TestParticles::reset_record_counter() {
-  const int lev = 0;
-  for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, lev); pti.isValid();
+  const int iLev = 0;
+  for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, iLev); pti.isValid();
        ++pti) {
     auto& particles = pti.GetArrayOfStructs();
     for (auto& p : particles) {

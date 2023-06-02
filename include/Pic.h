@@ -346,28 +346,28 @@ public:
   // DistributionMapping. Only used during initialization. overrides the pure
   // virtual function in AmrCore
   virtual void MakeNewLevelFromScratch(
-      int lev, amrex::Real time, const amrex::BoxArray &ba,
+      int iLev, amrex::Real time, const amrex::BoxArray &ba,
       const amrex::DistributionMapping &dm) override {
     std::string nameFunc = "Pic::MakeNewLevelFromScratch";
-    amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
+    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev << std::endl;
   };
 
   // Make a new level using provided BoxArray and DistributionMapping and
   // fill with interpolated coarse level data.
   // overrides the pure virtual function in AmrCore
   virtual void MakeNewLevelFromCoarse(
-      int lev, amrex::Real time, const amrex::BoxArray &ba,
+      int iLev, amrex::Real time, const amrex::BoxArray &ba,
       const amrex::DistributionMapping &dm) override {
     std::string nameFunc = "Pic::MakeNewLevelFromCoarse";
-    amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
+    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev << std::endl;
   };
 
   // tag all cells for refinement
   // overrides the pure virtual function in AmrCore
-  // virtual void ErrorEst(int lev, amrex::TagBoxArray &tags, amrex::Real time,
+  // virtual void ErrorEst(int iLev, amrex::TagBoxArray &tags, amrex::Real time,
   //                       int ngrow) override {
   //   std::string nameFunc = "Pic::ErrorEst";
-  //   amrex::Print() << printPrefix << nameFunc << " lev = " << lev <<
+  //   amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev <<
   //   std::endl;
 
   //   const int tagval = amrex::TagBox::SET;

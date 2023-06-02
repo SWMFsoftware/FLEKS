@@ -180,9 +180,9 @@ public:
       nGrids.push_back(amrex::BoxArray());
     } else {
       nGrids.resize(finest_level + 1);
-      for (int lev = 0; lev <= finest_level; lev++) {
-        nGrids[lev] =
-            amrex::convert(cGrids[lev], amrex::IntVect::TheNodeVector());
+      for (int iLev = 0; iLev <= finest_level; iLev++) {
+        nGrids[iLev] =
+            amrex::convert(cGrids[iLev], amrex::IntVect::TheNodeVector());
       }
     }
   }
@@ -193,20 +193,20 @@ public:
     amrex::Print() << printPrefix << " finest_level = " << finest_level
                    << std::endl;
 
-    for (int lev = 0; lev <= finest_level; lev++) {
-      amrex::Print() << printPrefix << " lev = " << lev
-                     << "\t # of boxes = " << std::setw(9) << cGrids[lev].size()
-                     << "\t # of cells = " << std::setw(11) << CountCells(lev)
-                     << "\t max_grid_size = " << max_grid_size[lev]
+    for (int iLev = 0; iLev <= finest_level; iLev++) {
+      amrex::Print() << printPrefix << " iLev = " << iLev
+                     << "\t # of boxes = " << std::setw(9) << cGrids[iLev].size()
+                     << "\t # of cells = " << std::setw(11) << CountCells(iLev)
+                     << "\t max_grid_size = " << max_grid_size[iLev]
                      << std::endl;
     }
 
     if (printBoxes) {
-      for (int lev = 0; lev <= finest_level; lev++) {
-        amrex::Print() << printPrefix << " Boxes of lev = " << lev << std::endl;
-        for (int ii = 0, n = cGrids[lev].size(); ii < n; ii++) {
+      for (int iLev = 0; iLev <= finest_level; iLev++) {
+        amrex::Print() << printPrefix << " Boxes of iLev = " << iLev << std::endl;
+        for (int ii = 0, n = cGrids[iLev].size(); ii < n; ii++) {
           amrex::Print() << printPrefix << " box " << ii << " = "
-                         << cGrids[lev][ii] << std::endl;
+                         << cGrids[iLev][ii] << std::endl;
         }
       }
     }
@@ -219,43 +219,43 @@ public:
   // fill with interpolated coarse level data.
   // overrides the pure virtual function in AmrCore
   virtual void MakeNewLevelFromCoarse(
-      int lev, amrex::Real time, const amrex::BoxArray& ba,
+      int iLev, amrex::Real time, const amrex::BoxArray& ba,
       const amrex::DistributionMapping& dm) override {
     std::string nameFunc = "Grid::MakeNewLevelFromCoarse";
-    amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
+    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev << std::endl;
   };
 
   // Remake an existing level using provided BoxArray and DistributionMapping
   // and fill with existing fine and coarse data. overrides the pure virtual
   // function in AmrCore
-  virtual void RemakeLevel(int lev, amrex::Real time, const amrex::BoxArray& ba,
+  virtual void RemakeLevel(int iLev, amrex::Real time, const amrex::BoxArray& ba,
                            const amrex::DistributionMapping& dm) override {
     std::string nameFunc = "Grid::RemakeLevel";
-    amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
+    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev << std::endl;
   };
 
   // Delete level data
   // overrides the pure virtual function in AmrCore
-  virtual void ClearLevel(int lev) override {
+  virtual void ClearLevel(int iLev) override {
     std::string nameFunc = "Grid::ClearLevel";
-    amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
+    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev << std::endl;
   };
 
   // Make a new level from scratch using provided BoxArray and
   // DistributionMapping. Only used during initialization. overrides the pure
   // virtual function in AmrCore
   virtual void MakeNewLevelFromScratch(
-      int lev, amrex::Real time, const amrex::BoxArray& ba,
+      int iLev, amrex::Real time, const amrex::BoxArray& ba,
       const amrex::DistributionMapping& dm) override {
     std::string nameFunc = "Grid::MakeNewLevelFromScratch";
-    amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
+    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev << std::endl;
   };
 
   // Tag cells for refinement.
-  virtual void ErrorEst(int lev, amrex::TagBoxArray& tags, amrex::Real time,
+  virtual void ErrorEst(int iLev, amrex::TagBoxArray& tags, amrex::Real time,
                         int ngrow) override {
     std::string nameFunc = "Grid::ErrorEst";
-    amrex::Print() << printPrefix << nameFunc << " lev = " << lev << std::endl;
+    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev << std::endl;
 #ifdef _AMR_DEV_
     for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.tilebox();
@@ -312,15 +312,15 @@ public:
 
     amrex::Vector<amrex::MultiFab> tmf;
     tmf.resize(MF.size());
-    for (int lev = 0; lev < MF.size(); lev++) {
+    for (int iLev = 0; iLev < MF.size(); iLev++) {
 
-      tmf[lev].define(MF[lev].boxArray(), MF[lev].DistributionMap(),
-                      MF[lev].nComp(), MF[lev].nGrow());
+      tmf[iLev].define(MF[iLev].boxArray(), MF[iLev].DistributionMap(),
+                      MF[iLev].nComp(), MF[iLev].nGrow());
 
-      for (amrex::MFIter mfi(MF[lev]); mfi.isValid(); ++mfi) {
+      for (amrex::MFIter mfi(MF[iLev]); mfi.isValid(); ++mfi) {
         const amrex::Box& box = mfi.fabbox();
-        const amrex::Array4<int>& fab = MF[lev][mfi].array();
-        const amrex::Array4<amrex::Real>& fab2 = tmf[lev][mfi].array();
+        const amrex::Array4<int>& fab = MF[iLev][mfi].array();
+        const amrex::Array4<amrex::Real>& fab2 = tmf[iLev][mfi].array();
         const auto lo = lbound(box);
         const auto hi = ubound(box);
 
@@ -359,33 +359,33 @@ public:
                                    ref_ratio);
   };
 
-  void InterpFromCoarse(amrex::Vector<amrex::MultiFab>& mf, int lev) {
+  void InterpFromCoarse(amrex::Vector<amrex::MultiFab>& mf, int iLev) {
     amrex::Vector<amrex::BCRec> bcs;
     bcs.resize(1);
     amrex::Interpolater* mapper = &amrex::cell_bilinear_interp;
     amrex::CpuBndryFuncFab bndry_func(nullptr);
-    amrex::PhysBCFunct<amrex::CpuBndryFuncFab> cphysbc(geom[lev - 1], bcs,
+    amrex::PhysBCFunct<amrex::CpuBndryFuncFab> cphysbc(geom[iLev - 1], bcs,
                                                        bndry_func);
-    amrex::PhysBCFunct<amrex::CpuBndryFuncFab> fphysbc(geom[lev], bcs,
+    amrex::PhysBCFunct<amrex::CpuBndryFuncFab> fphysbc(geom[iLev], bcs,
                                                        bndry_func);
     amrex::InterpFromCoarseLevel(
-        mf[lev], 0.0, mf[lev - 1], 0, 0, mf[lev].nComp(), geom[lev - 1],
-        geom[lev], cphysbc, 0, fphysbc, 0, refRatio(lev - 1), mapper, bcs, 0);
+        mf[iLev], 0.0, mf[iLev - 1], 0, 0, mf[iLev].nComp(), geom[iLev - 1],
+        geom[iLev], cphysbc, 0, fphysbc, 0, refRatio(iLev - 1), mapper, bcs, 0);
   };
 
-  void InterpFromCoarseAllLevels(amrex::Vector<amrex::MultiFab>& mf, int lev) {
+  void InterpFromCoarseAllLevels(amrex::Vector<amrex::MultiFab>& mf, int iLev) {
     amrex::Vector<amrex::BCRec> bcs;
     bcs.resize(1);
     amrex::Interpolater* mapper = &amrex::cell_bilinear_interp;
     amrex::CpuBndryFuncFab bndry_func(nullptr);
-    for (int i = 1; i <= lev; i++) {
-      amrex::PhysBCFunct<amrex::CpuBndryFuncFab> cphysbc(geom[lev - 1], bcs,
+    for (int i = 1; i <= iLev; i++) {
+      amrex::PhysBCFunct<amrex::CpuBndryFuncFab> cphysbc(geom[iLev - 1], bcs,
                                                          bndry_func);
-      amrex::PhysBCFunct<amrex::CpuBndryFuncFab> fphysbc(geom[lev], bcs,
+      amrex::PhysBCFunct<amrex::CpuBndryFuncFab> fphysbc(geom[iLev], bcs,
                                                          bndry_func);
       amrex::InterpFromCoarseLevel(
-          mf[lev], 0.0, mf[lev - 1], 0, 0, mf[lev].nComp(), geom[lev - 1],
-          geom[lev], cphysbc, 0, fphysbc, 0, refRatio(lev - 1), mapper, bcs, 0);
+          mf[iLev], 0.0, mf[iLev - 1], 0, 0, mf[iLev].nComp(), geom[iLev - 1],
+          geom[iLev], cphysbc, 0, fphysbc, 0, refRatio(iLev - 1), mapper, bcs, 0);
     }
   };
 
