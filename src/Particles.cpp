@@ -139,7 +139,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
     kg = kg + 2; // just for comparison with iPIC3D;
   //----------------------------------------
 
-  IntVect nCell = Geom(0).Domain().size();
+  IntVect nCell = Geom(iLev).Domain().size();
 
   nxcg = nCell[ix_] + 2;
   nycg = nCell[iy_] + 2;
@@ -167,7 +167,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   // The following lines are left here for reference only. They are useless.
   // int nPartEffective;
   // {
-  //   const Box& gbx = convert(Geom(0).Domain(), { 0, 0, 0 });
+  //   const Box& gbx = convert(Geom(iLev).Domain(), { 0, 0, 0 });
   //   const bool isFake2D = gbx.bigEnd(iz_) == gbx.smallEnd(iz_);
   //   int nCellContribute = isFake2D ? 4 : 8;
   //   const int nx = nPPC[ix_];
@@ -525,7 +525,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
             }
       } // if doChargeOnly
 
-    } // for p
+    }   // for p
   }
 }
 
@@ -779,10 +779,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
                     }
                   } // k2
 
-                } // j2
-              }   // if (ip > 0)
-            }     // i2
-          }       // k1
+                }   // j2
+              }     // if (ip > 0)
+            }       // i2
+          }         // k1
 
       //----- Mass matrix calculation end--------------
 
@@ -1375,7 +1375,7 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
     return;
 
   const int iLev = 0;
-  Real dl = 0.1 * Geom(0).CellSize()[ix_] / nPartPerCell.max();
+  Real dl = 0.1 * Geom(iLev).CellSize()[ix_] / nPartPerCell.max();
 
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
@@ -1418,20 +1418,20 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
     const auto lo = lbound(pti.tilebox());
     const auto hi = ubound(pti.tilebox());
 
-    const Real xMin =
-                   Geom(0).LoEdge(lo.x, ix_) + Geom(0).CellSize()[ix_] * 1e-10,
-               xMax =
-                   Geom(0).HiEdge(hi.x, ix_) - Geom(0).CellSize()[ix_] * 1e-10;
+    const Real xMin = Geom(iLev).LoEdge(lo.x, ix_) +
+                      Geom(iLev).CellSize()[ix_] * 1e-10,
+               xMax = Geom(iLev).HiEdge(hi.x, ix_) -
+                      Geom(iLev).CellSize()[ix_] * 1e-10;
 
-    const Real yMin =
-                   Geom(0).LoEdge(lo.y, iy_) + Geom(0).CellSize()[iy_] * 1e-10,
-               yMax =
-                   Geom(0).HiEdge(hi.y, iy_) - Geom(0).CellSize()[iy_] * 1e-10;
+    const Real yMin = Geom(iLev).LoEdge(lo.y, iy_) +
+                      Geom(iLev).CellSize()[iy_] * 1e-10,
+               yMax = Geom(iLev).HiEdge(hi.y, iy_) -
+                      Geom(iLev).CellSize()[iy_] * 1e-10;
 
-    const Real zMin =
-                   Geom(0).LoEdge(lo.z, iz_) + Geom(0).CellSize()[iz_] * 1e-10,
-               zMax =
-                   Geom(0).HiEdge(hi.z, iz_) - Geom(0).CellSize()[iz_] * 1e-10;
+    const Real zMin = Geom(iLev).LoEdge(lo.z, iz_) +
+                      Geom(iLev).CellSize()[iz_] * 1e-10,
+               zMax = Geom(iLev).HiEdge(hi.z, iz_) -
+                      Geom(iLev).CellSize()[iz_] * 1e-10;
 
     for (int ip = 0; ip < nNew; ip++) {
       auto& p = particles[ip];

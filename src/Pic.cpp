@@ -698,7 +698,7 @@ void Pic::calc_mass_matrix() {
 
   Real invVol = 1;
   for (int i = 0; i < nDim; i++) {
-    invVol *= Geom(0).InvCellSize(i);
+    invVol *= Geom(iLev).InvCellSize(i);
   }
 
   jHat[iLev].mult(invVol, 0, jHat[iLev].nComp(), jHat[iLev].nGrow());
@@ -720,13 +720,6 @@ void Pic::sum_moments(bool updateDt) {
 
   timing_func(nameFunc);
 
-  const auto& dx = Geom(0).CellSize();
-  Real minDx = 1e99;
-  for (int iDim = 0; iDim < nDim; iDim++) {
-    if (minDx > dx[iDim])
-      minDx = dx[iDim];
-  }
-
   for (int iLev = 0; iLev < nLev; iLev++) {
     nodePlasma[nSpecies][iLev].setVal(0.0);
   }
@@ -740,6 +733,13 @@ void Pic::sum_moments(bool updateDt) {
   }
 
   if (updateDt) {
+    const auto& dx = Geom(0).CellSize();
+    Real minDx = 1e99;
+    for (int iDim = 0; iDim < nDim; iDim++) {
+      if (minDx > dx[iDim])
+        minDx = dx[iDim];
+    }
+
     Real uMax = 0;
     if (tc->get_cfl() > 0 || doReport) {
       for (int i = 0; i < nSpecies; i++) {
@@ -881,7 +881,7 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut) {
   MultiFab inMF(cGrids[iLev], DistributionMap(iLev), 1, nGst);
 
   convert_1d_to_3d(vecIn, inMF);
-  inMF.FillBoundary(0, 1, IntVect(1), Geom(0).periodicity());
+  inMF.FillBoundary(0, 1, IntVect(1), Geom(iLev).periodicity());
 
   MultiFab outMF(cGrids[iLev], DistributionMap(iLev), 1, nGst);
   outMF.setVal(0.0);
@@ -931,10 +931,10 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
   }
 
   if (!doNetChargeOnly) {
-    centerMM[iLev].SumBoundary(Geom(0).periodicity());
+    centerMM[iLev].SumBoundary(Geom(iLev).periodicity());
   }
 
-  centerNetChargeNew[iLev].SumBoundary(Geom(0).periodicity());
+  centerNetChargeNew[iLev].SumBoundary(Geom(iLev).periodicity());
 
   const int iLevTest = 0;
   apply_BC(cellStatus, centerNetChargeNew[iLev], 0,

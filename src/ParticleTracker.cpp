@@ -318,13 +318,6 @@ void ParticleTracker::complete_parameters() {
   writer.set_rank(ParallelDescriptor::MyProc());
   writer.set_nProcs(ParallelDescriptor::NProcs());
   writer.set_nDim(fi->get_fluid_dimension());
-  // writer.set_iRegion(gridID);
-  // writer.set_domainMin_D({ { 0, 0, 0 } });
-
-  // writer.set_domainMax_D({ { 1, 1, 1 } });
-
-  // const Real* dx = Geom(0).CellSize();
-  // writer.set_dx_D({ { dx[ix_], dx[iy_], dx[iz_] } });
   writer.set_units(fi->get_No2SiL(), fi->get_No2SiV(), fi->get_No2SiB(),
                    fi->get_No2SiRho(), fi->get_No2SiP(), fi->get_No2SiJ(),
                    fi->get_rPlanet_SI());

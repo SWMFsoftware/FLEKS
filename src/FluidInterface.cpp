@@ -652,10 +652,10 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
   int nIdxCount = 0;
   int nCount = 0;
 
-  // Global NODE box.
-  const Box gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
-
   for (int iLev = 0; iLev <= max_level; iLev++) {
+    // Global NODE box.
+    const Box gbx = convert(Geom(iLev).Domain(), { AMREX_D_DECL(1, 1, 1) });
+
     const Real* dx = Geom(iLev).CellSize();
     const auto plo = Geom(iLev).ProbLo();
 
@@ -684,7 +684,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
               } else if (doGetLoc) {
                 IntVect idx = { AMREX_D_DECL(i, j, k) };
                 for (int iDim = 0; iDim < nDim; iDim++) {
-                  if (Geom(0).isPeriodic(iDim)) {
+                  if (Geom(iLev).isPeriodic(iDim)) {
                     idx[iDim] = shift_periodic_index(
                         idx[iDim], gbx.smallEnd(iDim), gbx.bigEnd(iDim));
                   }
@@ -884,8 +884,8 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
                   arr(i, j, k, iUy_I[iFluid]) /= rho;
                   arr(i, j, k, iUz_I[iFluid]) /= rho;
                 } else {
-                  const Real* dx = Geom(0).CellSize();
-                  const auto plo = Geom(0).ProbLo();
+                  const Real* dx = Geom(iLev).CellSize();
+                  const auto plo = Geom(iLev).ProbLo();
                   const Real x = (i * dx[ix_] + plo[ix_]) * No2SiL / rPlanetSi;
                   const Real y = (j * dx[iy_] + plo[iy_]) * No2SiL / rPlanetSi;
                   const Real z = (k * dx[iz_] + plo[iz_]) * No2SiL / rPlanetSi;
