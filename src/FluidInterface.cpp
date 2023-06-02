@@ -174,7 +174,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
     MoMi_S.resize(nS);
     QoQi_S.resize(nS);
 
-    int iFluidStart[5] = { 0, 9, 14, 19, 24};
+    int iFluidStart[5] = { 0, 9, 14, 19, 24 };
 
     for (int iFluid = 0; iFluid < nS; iFluid++) {
       iRho_I[iFluid] = iFluidStart[iFluid];

@@ -786,7 +786,7 @@ void Pic::sum_moments(bool updateDt) {
   }
 
   for (int i = 0; i < nSpecies; i++) {
-    const int iLev = 0; 
+    const int iLev = 0;
     parts[i]->convert_to_fluid_moments(nodePlasma[i][iLev]);
     MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
                   nMoments, nGst);

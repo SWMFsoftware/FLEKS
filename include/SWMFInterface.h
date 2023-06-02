@@ -18,14 +18,14 @@ void OH_get_charge_exchange_region(int *iRegion, double *r, double *rhoDim,
 }
 #else
 inline void OH_get_charge_exchange_wrapper(double *rhoIon, double *cs2Ion,
-                                    double uIon_D[3], double *rhoNeu,
-                                    double *cs2Neu, double uNeu_D[3],
-                                    double sourceIon_V[5],
-                                    double sourceNeu_V[5]) {}
+                                           double uIon_D[3], double *rhoNeu,
+                                           double *cs2Neu, double uNeu_D[3],
+                                           double sourceIon_V[5],
+                                           double sourceNeu_V[5]) {}
 
-inline void OH_get_charge_exchange_region(int *iRegion, double *r, double *rhoDim,
-                                   double *u2Dim, double *tempDim,
-                                   double *mach2) {}
+inline void OH_get_charge_exchange_region(int *iRegion, double *r,
+                                          double *rhoDim, double *u2Dim,
+                                          double *tempDim, double *mach2) {}
 #endif
 
 #endif

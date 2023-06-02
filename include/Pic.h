@@ -133,7 +133,7 @@ public:
 
     Particles<>::particlePosition = Staggered;
 
-    //-----------------------------------------------------    
+    //-----------------------------------------------------
     centerB.resize(nLev);
     nodeB.resize(nLev);
     nodeE.resize(nLev);
@@ -349,7 +349,8 @@ public:
       int iLev, amrex::Real time, const amrex::BoxArray &ba,
       const amrex::DistributionMapping &dm) override {
     std::string nameFunc = "Pic::MakeNewLevelFromScratch";
-    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev << std::endl;
+    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev
+                   << std::endl;
   };
 
   // Make a new level using provided BoxArray and DistributionMapping and
@@ -359,7 +360,8 @@ public:
       int iLev, amrex::Real time, const amrex::BoxArray &ba,
       const amrex::DistributionMapping &dm) override {
     std::string nameFunc = "Pic::MakeNewLevelFromCoarse";
-    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev << std::endl;
+    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev
+                   << std::endl;
   };
 
   // tag all cells for refinement

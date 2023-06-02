@@ -195,7 +195,8 @@ public:
 
     for (int iLev = 0; iLev <= finest_level; iLev++) {
       amrex::Print() << printPrefix << " iLev = " << iLev
-                     << "\t # of boxes = " << std::setw(9) << cGrids[iLev].size()
+                     << "\t # of boxes = " << std::setw(9)
+                     << cGrids[iLev].size()
                      << "\t # of cells = " << std::setw(11) << CountCells(iLev)
                      << "\t max_grid_size = " << max_grid_size[iLev]
                      << std::endl;
@@ -203,7 +204,8 @@ public:
 
     if (printBoxes) {
       for (int iLev = 0; iLev <= finest_level; iLev++) {
-        amrex::Print() << printPrefix << " Boxes of iLev = " << iLev << std::endl;
+        amrex::Print() << printPrefix << " Boxes of iLev = " << iLev
+                       << std::endl;
         for (int ii = 0, n = cGrids[iLev].size(); ii < n; ii++) {
           amrex::Print() << printPrefix << " box " << ii << " = "
                          << cGrids[iLev][ii] << std::endl;
@@ -222,23 +224,27 @@ public:
       int iLev, amrex::Real time, const amrex::BoxArray& ba,
       const amrex::DistributionMapping& dm) override {
     std::string nameFunc = "Grid::MakeNewLevelFromCoarse";
-    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev << std::endl;
+    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev
+                   << std::endl;
   };
 
   // Remake an existing level using provided BoxArray and DistributionMapping
   // and fill with existing fine and coarse data. overrides the pure virtual
   // function in AmrCore
-  virtual void RemakeLevel(int iLev, amrex::Real time, const amrex::BoxArray& ba,
+  virtual void RemakeLevel(int iLev, amrex::Real time,
+                           const amrex::BoxArray& ba,
                            const amrex::DistributionMapping& dm) override {
     std::string nameFunc = "Grid::RemakeLevel";
-    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev << std::endl;
+    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev
+                   << std::endl;
   };
 
   // Delete level data
   // overrides the pure virtual function in AmrCore
   virtual void ClearLevel(int iLev) override {
     std::string nameFunc = "Grid::ClearLevel";
-    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev << std::endl;
+    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev
+                   << std::endl;
   };
 
   // Make a new level from scratch using provided BoxArray and
@@ -248,14 +254,16 @@ public:
       int iLev, amrex::Real time, const amrex::BoxArray& ba,
       const amrex::DistributionMapping& dm) override {
     std::string nameFunc = "Grid::MakeNewLevelFromScratch";
-    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev << std::endl;
+    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev
+                   << std::endl;
   };
 
   // Tag cells for refinement.
   virtual void ErrorEst(int iLev, amrex::TagBoxArray& tags, amrex::Real time,
                         int ngrow) override {
     std::string nameFunc = "Grid::ErrorEst";
-    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev << std::endl;
+    amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev
+                   << std::endl;
 #ifdef _AMR_DEV_
     for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.tilebox();
@@ -315,7 +323,7 @@ public:
     for (int iLev = 0; iLev < MF.size(); iLev++) {
 
       tmf[iLev].define(MF[iLev].boxArray(), MF[iLev].DistributionMap(),
-                      MF[iLev].nComp(), MF[iLev].nGrow());
+                       MF[iLev].nComp(), MF[iLev].nGrow());
 
       for (amrex::MFIter mfi(MF[iLev]); mfi.isValid(); ++mfi) {
         const amrex::Box& box = mfi.fabbox();
@@ -383,9 +391,10 @@ public:
                                                          bndry_func);
       amrex::PhysBCFunct<amrex::CpuBndryFuncFab> fphysbc(geom[iLev], bcs,
                                                          bndry_func);
-      amrex::InterpFromCoarseLevel(
-          mf[iLev], 0.0, mf[iLev - 1], 0, 0, mf[iLev].nComp(), geom[iLev - 1],
-          geom[iLev], cphysbc, 0, fphysbc, 0, refRatio(iLev - 1), mapper, bcs, 0);
+      amrex::InterpFromCoarseLevel(mf[iLev], 0.0, mf[iLev - 1], 0, 0,
+                                   mf[iLev].nComp(), geom[iLev - 1], geom[iLev],
+                                   cphysbc, 0, fphysbc, 0, refRatio(iLev - 1),
+                                   mapper, bcs, 0);
     }
   };
 

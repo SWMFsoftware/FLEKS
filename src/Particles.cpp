@@ -119,7 +119,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   // of from fluid.
   bool userState = (tpVel.tag == speciesID);
 
-  int iLev = 0; 
+  int iLev = 0;
 
   // If dt >0, it suggests the 'density' obtained from interface is actually the
   // density changing rate.
@@ -186,17 +186,23 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
     for (int jj = 0; jj < nPPC[iy_]; jj++)
       for (int kk = 0; kk < nPPC[iz_]; kk++) {
 
-        x = (ii + randNum()) * (dx[iLev][ix_] / nPPC[ix_]) + i * dx[iLev][ix_] + plo[iLev][ix_];
-        y = (jj + randNum()) * (dx[iLev][iy_] / nPPC[iy_]) + j * dx[iLev][iy_] + plo[iLev][iy_];
-        z = (kk + randNum()) * (dx[iLev][iz_] / nPPC[iz_]) + k * dx[iLev][iz_] + plo[iLev][iz_];
+        x = (ii + randNum()) * (dx[iLev][ix_] / nPPC[ix_]) + i * dx[iLev][ix_] +
+            plo[iLev][ix_];
+        y = (jj + randNum()) * (dx[iLev][iy_] / nPPC[iy_]) + j * dx[iLev][iy_] +
+            plo[iLev][iy_];
+        z = (kk + randNum()) * (dx[iLev][iz_] / nPPC[iz_]) + k * dx[iLev][iz_] +
+            plo[iLev][iz_];
 
         // If the particle weight is sampled in a random location, the sum of
         // particle mass is NOT the same as the integral of the grid density.
         // It is more convenient for debugging if mass is exactly conserved. For
         // a production run, it makes little difference.
-        Real x0 = (ii + 0.5) * (dx[iLev][ix_] / nPPC[ix_]) + i * dx[iLev][ix_] + plo[iLev][ix_];
-        Real y0 = (jj + 0.5) * (dx[iLev][iy_] / nPPC[iy_]) + j * dx[iLev][iy_] + plo[iLev][iy_];
-        Real z0 = (kk + 0.5) * (dx[iLev][iz_] / nPPC[iz_]) + k * dx[iLev][iz_] + plo[iLev][iz_];
+        Real x0 = (ii + 0.5) * (dx[iLev][ix_] / nPPC[ix_]) + i * dx[iLev][ix_] +
+                  plo[iLev][ix_];
+        Real y0 = (jj + 0.5) * (dx[iLev][iy_] / nPPC[iy_]) + j * dx[iLev][iy_] +
+                  plo[iLev][iy_];
+        Real z0 = (kk + 0.5) * (dx[iLev][iz_] / nPPC[iz_]) + k * dx[iLev][iz_] +
+                  plo[iLev][iz_];
 
         double q = vol2Npcel *
                    interface.get_number_density(mfi, x0, y0, z0, speciesID);
@@ -519,7 +525,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
             }
       } // if doChargeOnly
 
-    }   // for p
+    } // for p
   }
 }
 
@@ -638,7 +644,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     }
 
     // Exclude the number density.
-    momentsMF[iLev].mult(invVol[iLev], 0, nMoments - 1, momentsMF[iLev].nGrow());
+    momentsMF[iLev].mult(invVol[iLev], 0, nMoments - 1,
+                         momentsMF[iLev].nGrow());
 
     momentsMF[iLev].SumBoundary(Geom(iLev).periodicity());
   }
@@ -772,10 +779,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
                     }
                   } // k2
 
-                }   // j2
-              }     // if (ip > 0)
-            }       // i2
-          }         // k1
+                } // j2
+              }   // if (ip > 0)
+            }     // i2
+          }       // k1
 
       //----- Mass matrix calculation end--------------
 
@@ -1758,7 +1765,8 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
                                          particles[idx_I[ip2]].rdata(iDir));
                     dv2 += pow(dv, 2);
 
-                    Real dx = invDx[iLev][iDir] * (particles[idx_I[ip1]].pos(iDir) -
+                    Real dx =
+                        invDx[iLev][iDir] * (particles[idx_I[ip1]].pos(iDir) -
                                              particles[idx_I[ip2]].pos(iDir));
                     dv2 += pow(dx, 2);
                   }
@@ -2087,7 +2095,8 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         //         << " neu2ion = " << neu2ion[i] << std::endl;
       }
 
-      Real massExchange = neu2ion[iRho_] * stateOH->get_Si2NoRho() / invVol[iLev];
+      Real massExchange =
+          neu2ion[iRho_] * stateOH->get_Si2NoRho() / invVol[iLev];
 
       // Print() << "nden = " << p.rdata(iqp_)
       //         << " massExchange = " << massExchange << std::endl;

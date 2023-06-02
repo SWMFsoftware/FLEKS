@@ -162,7 +162,7 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
     for (int i = 0; i < nDim; i++) {
       Real phyMin = info[n++] * si2noL; // Lmin
       Real phyMax = phyMin + info[n++] * si2noL;
-      Real dx = info[n++] * si2noL;     // dx
+      Real dx = info[n++] * si2noL; // dx
       nCell[i] = (int)((phyMax - phyMin) / dx + 0.5);
 
       if (isFake2D && i == iz_) {
