@@ -110,7 +110,7 @@ void Particles<NStructReal, NStructInt>::outflow_bc(const amrex::MFIter& mfi,
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_cell(
-    const MFIter& mfi, const int i, const int j, const int k,
+    const int iLev, const MFIter& mfi, const int i, const int j, const int k,
     const FluidInterface& interface, IntVect ppc, const Vel tpVel, Real dt) {
 
   int ig, jg, kg, nxcg, nycg, nzcg, iCycle, npcel, nRandom = 7;
@@ -118,8 +118,6 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   // If true, initialize the test particles with user defined velocities instead
   // of from fluid.
   bool userState = (tpVel.tag == speciesID);
-
-  int iLev = 0;
 
   // If dt >0, it suggests the 'density' obtained from interface is actually the
   // density changing rate.
@@ -305,7 +303,7 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
           }
 #endif
           if (doAdd)
-            add_particles_cell(mfi, i, j, k, interface, ppc, Vel(), dt);
+            add_particles_cell(iLev, mfi, i, j, k, interface, ppc, Vel(), dt);
         }
   }
 
@@ -320,24 +318,29 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
     const amrex::Vector<amrex::iMultiFab>& iRefinement) {
   timing_func("Particles::add_particles_domain");
 
-  const int iLev = 0;
-  for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
-    const auto& status = cellStatus[mfi].array();
-    const auto& iRefine = iRefinement[iLev][mfi].array();
-    const Box& tile_box = mfi.validbox();
-    const auto lo = amrex::lbound(tile_box);
-    const auto hi = amrex::ubound(tile_box);
+  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+    for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+      const auto& status = cellStatus[mfi].array();
+      const auto& iRefine = iRefinement[iLev][mfi].array();
+      const Box& bx = mfi.validbox();
+      const auto lo = amrex::lbound(bx);
+      const auto hi = amrex::ubound(bx);
 
-    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
-    int iMin = lo.x, jMin = lo.y, kMin = lo.z;
+      int iMax = hi.x, jMax = hi.y, kMax = hi.z;
+      int iMin = lo.x, jMin = lo.y, kMin = lo.z;
 
-    for (int i = iMin; i <= iMax; ++i)
-      for (int j = jMin; j <= jMax; ++j)
-        for (int k = kMin; k <= kMax; ++k) {
-          if (status(i, j, k) == iOnNew_ && iRefine(i, j, k) == iNotRefined) {
-            add_particles_cell(mfi, i, j, k, *fi);
+      Print() << "iLev = " << iLev << " bx = " << bx << std::endl;
+
+      for (int i = iMin; i <= iMax; ++i)
+        for (int j = jMin; j <= jMax; ++j)
+          for (int k = kMin; k <= kMax; ++k) {
+            if (status(i, j, k) == iOnNew_ && iRefine(i, j, k) == iNotRefined) {
+              printf("add particles iLev = %d, i = %d, j = %d, k = %d\n", iLev,
+                     i, j, k);
+              add_particles_cell(iLev, mfi, i, j, k, *fi);
+            }
           }
-        }
+    }
   }
 }
 
@@ -386,7 +389,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
                 ((bc.hi[iz_] == bc.outflow) && k > hi[iz_])) {
               outflow_bc(mfi, i, j, k, isrc, jsrc, ksrc);
             } else {
-              add_particles_cell(mfi, i, j, k, *fiTmp, ppc, Vel(), dt);
+              add_particles_cell(iLev, mfi, i, j, k, *fiTmp, ppc, Vel(), dt);
             }
           }
         }

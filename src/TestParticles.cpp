@@ -427,8 +427,8 @@ void TestParticles::add_test_particles_from_fluid(const iMultiFab& cellStatus,
           if (iPartRegion == iRegionUniform_ ||
               (iPartRegion == iRegionBoundary_ &&
                status(i, j, k) == iAddPTParticle_)) {
-            add_particles_cell(mfi, i, j, k, *fi, { AMREX_D_DECL(0, 0, 0) },
-                               tpVel);
+            add_particles_cell(iLev, mfi, i, j, k, *fi,
+                               { AMREX_D_DECL(0, 0, 0) }, tpVel);
           }
   }
 }
