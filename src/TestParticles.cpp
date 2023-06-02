@@ -49,12 +49,10 @@ void TestParticles::move_and_save_charged_particles(
     dtLoc = 0.5 * dt;
   }
 
-  const auto& plo = Geom(0).ProbLo();
-
   const Real qdto2mc = charge / mass * 0.5 * dt;
 
-  const int lev = 0;
-  for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, lev); pti.isValid();
+  const int iLev = 0;
+  for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, iLev); pti.isValid();
        ++pti) {
     const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
     const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
@@ -84,7 +82,7 @@ void TestParticles::move_and_save_charged_particles(
       IntVect loIdx;
       RealVect dShift;
       for (int i = 0; i < 3; i++) {
-        dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
+        dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
         loIdx[i] = fastfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
       }

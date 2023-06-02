@@ -28,14 +28,24 @@ Particles<NStructReal, NStructInt>::Particles(
   qom = charge / mass;
   qomSign = qom >= 0 ? 1 : -1;
 
-  invVol = 1;
-  for (int i = 0; i < nDim; i++) {
-    tile_size[i] = 1;
-    plo[i] = Geom(0).ProbLo(i);
-    phi[i] = Geom(0).ProbHi(i);
-    dx[i] = Geom(0).CellSize(i);
-    invDx[i] = Geom(0).InvCellSize(i);
-    invVol *= invDx[i];
+  nLev = maxLevel() + 1;
+
+  plo.resize(nLev);
+  phi.resize(nLev);
+  dx.resize(nLev);
+  invDx.resize(nLev);
+  invVol.resize(nLev);
+
+  for (int iLev = 0; iLev < nLev; iLev++) {
+    invVol[iLev] = 1;
+    for (int i = 0; i < nDim; i++) {
+      tile_size[i] = 1;
+      plo[iLev][i] = Geom(iLev).ProbLo(i);
+      phi[iLev][i] = Geom(iLev).ProbHi(i);
+      dx[iLev][i] = Geom(iLev).CellSize(i);
+      invDx[iLev][i] = Geom(iLev).InvCellSize(i);
+      invVol[iLev] *= invDx[iLev][i];
+    }
   }
 
   // The following line is used to avoid an MPI bug (feature?) on Frontera. It
@@ -50,23 +60,23 @@ void Particles<NStructReal, NStructInt>::outflow_bc(const amrex::MFIter& mfi,
                                                     const int kg, const int ip,
                                                     const int jp,
                                                     const int kp) {
-  const int lev = 0;
+  const int iLev = 0;
 
   IntVect idxGst(ig, jg, kg);
-  ParticleTileType& pGst = get_particle_tile(lev, mfi, idxGst);
+  ParticleTileType& pGst = get_particle_tile(iLev, mfi, idxGst);
 
   IntVect idxPhy(ip, jp, kp);
-  ParticleTileType& pPhy = get_particle_tile(lev, mfi, idxGst);
+  ParticleTileType& pPhy = get_particle_tile(iLev, mfi, idxGst);
   auto& phyParts = pPhy.GetArrayOfStructs();
 
-  Real dx[3] = { 0, 0, 0 };
+  Real dxshift[3] = { 0, 0, 0 };
   for (int i = 0; i < nDim; i++) {
-    dx[i] = Geom(lev).CellSize(i) * (idxGst[i] - idxPhy[i]);
+    dxshift[i] = Geom(iLev).CellSize(i) * (idxGst[i] - idxPhy[i]);
   }
 
   Vector<ParticleType> pList;
   for (const auto& p : phyParts) {
-    IntVect iv = Index(p, lev);
+    IntVect iv = Index(p, iLev);
     // Q: Why do we need to check if the physical domain contains the particle?
     // A: Even if tiling with tile_size=1 is used, it seems the ghost cells
     // still share the the same tile with a physical cell. Therefore, we need to
@@ -80,7 +90,7 @@ void Particles<NStructReal, NStructInt>::outflow_bc(const amrex::MFIter& mfi,
       pNew.cpu() = ParallelDescriptor::MyProc();
 
       for (int i = 0; i < nDim; i++) {
-        pNew.pos(i) = p.pos(i) + dx[i];
+        pNew.pos(i) = p.pos(i) + dxshift[i];
       }
 
       pList.push_back(pNew);
@@ -108,6 +118,8 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   // If true, initialize the test particles with user defined velocities instead
   // of from fluid.
   bool userState = (tpVel.tag == speciesID);
+
+  int iLev = 0; 
 
   // If dt >0, it suggests the 'density' obtained from interface is actually the
   // density changing rate.
@@ -146,11 +158,10 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 
   Real x, y, z; // Particle location
 
-  const Real vol = dx[ix_] * dx[iy_] * dx[iz_];
+  const Real vol = dx[iLev][ix_] * dx[iLev][iy_] * dx[iLev][iz_];
   const Real vol2Npcel = qomSign * vol / npcel;
 
-  const int lev = 0;
-  ParticleTileType& particles = get_particle_tile(lev, mfi, i, j, k);
+  ParticleTileType& particles = get_particle_tile(iLev, mfi, i, j, k);
 
   //----------------------------------------------------------
   // The following lines are left here for reference only. They are useless.
@@ -175,17 +186,17 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
     for (int jj = 0; jj < nPPC[iy_]; jj++)
       for (int kk = 0; kk < nPPC[iz_]; kk++) {
 
-        x = (ii + randNum()) * (dx[ix_] / nPPC[ix_]) + i * dx[ix_] + plo[ix_];
-        y = (jj + randNum()) * (dx[iy_] / nPPC[iy_]) + j * dx[iy_] + plo[iy_];
-        z = (kk + randNum()) * (dx[iz_] / nPPC[iz_]) + k * dx[iz_] + plo[iz_];
+        x = (ii + randNum()) * (dx[iLev][ix_] / nPPC[ix_]) + i * dx[iLev][ix_] + plo[iLev][ix_];
+        y = (jj + randNum()) * (dx[iLev][iy_] / nPPC[iy_]) + j * dx[iLev][iy_] + plo[iLev][iy_];
+        z = (kk + randNum()) * (dx[iLev][iz_] / nPPC[iz_]) + k * dx[iLev][iz_] + plo[iLev][iz_];
 
         // If the particle weight is sampled in a random location, the sum of
         // particle mass is NOT the same as the integral of the grid density.
         // It is more convenient for debugging if mass is exactly conserved. For
         // a production run, it makes little difference.
-        Real x0 = (ii + 0.5) * (dx[ix_] / nPPC[ix_]) + i * dx[ix_] + plo[ix_];
-        Real y0 = (jj + 0.5) * (dx[iy_] / nPPC[iy_]) + j * dx[iy_] + plo[iy_];
-        Real z0 = (kk + 0.5) * (dx[iz_] / nPPC[iz_]) + k * dx[iz_] + plo[iz_];
+        Real x0 = (ii + 0.5) * (dx[iLev][ix_] / nPPC[ix_]) + i * dx[iLev][ix_] + plo[iLev][ix_];
+        Real y0 = (jj + 0.5) * (dx[iLev][iy_] / nPPC[iy_]) + j * dx[iLev][iy_] + plo[iLev][iy_];
+        Real z0 = (kk + 0.5) * (dx[iLev][iz_] / nPPC[iz_]) + k * dx[iLev][iz_] + plo[iLev][iz_];
 
         double q = vol2Npcel *
                    interface.get_number_density(mfi, x0, y0, z0, speciesID);
@@ -266,8 +277,8 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
   timing_func("Particles::add_particles_source");
 
   // 1. Inject particles for physical cells.
-  const int lev = 0;
-  for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
+  const int iLev = 0;
+  for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
     const Box& tile_box = mfi.validbox();
     const auto lo = amrex::lbound(tile_box);
     const auto hi = amrex::ubound(tile_box);
@@ -283,7 +294,7 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
           if (stateOH && doSelectRegion) {
             const int iFluid = 0;
             const int iRegion =
-                stateOH->get_neu_source_region(mfi, i, j, k, iFluid, lev);
+                stateOH->get_neu_source_region(mfi, i, j, k, iFluid, iLev);
             doAdd = (iRegion == speciesID);
           }
 #endif
@@ -303,10 +314,10 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
     const amrex::Vector<amrex::iMultiFab>& iRefinement) {
   timing_func("Particles::add_particles_domain");
 
-  const int lev = 0;
-  for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
+  const int iLev = 0;
+  for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
     const auto& status = cellStatus[mfi].array();
-    const auto& iRefine = iRefinement[lev][mfi].array();
+    const auto& iRefine = iRefinement[iLev][mfi].array();
     const Box& tile_box = mfi.validbox();
     const auto lo = amrex::lbound(tile_box);
     const auto hi = amrex::ubound(tile_box);
@@ -334,14 +345,14 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
   // Only inject nGstInject layers.
   const int nGstInject = 1;
 
-  const int lev = 0;
+  const int iLev = 0;
 
   // By default, use fi for injecting particles.
   const FluidInterface* fiTmp = fi;
   if (fiIn)
     fiTmp = fiIn;
 
-  for (MFIter mfi = MakeMFIter(lev, false); mfi.isValid(); ++mfi) {
+  for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
     const auto& status = cellStatus[mfi].array();
     const Box& bx = mfi.validbox();
     const IntVect lo = IntVect(bx.loVect());
@@ -383,8 +394,8 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
     bool doNetChargeOnly) {
   timing_func("Particles::sum_to_center");
 
-  const int lev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+  const int iLev = 0;
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
     Array4<Real> const& chargeArr = netChargeMF[pti].array();
     Array4<RealCMM> const& mmArr = centerMM[pti].array();
@@ -401,7 +412,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
       RealVect dShift;
       for (int i = 0; i < nDim; i++) {
         // plo is the corner location => -0.5
-        dShift[i] = (p.pos(i) - plo[i]) * invDx[i] - 0.5;
+        dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i] - 0.5;
         loIdx[i] = fastfloor(dShift[i]); // floor() is slow.
         dShift[i] = dShift[i] - loIdx[i];
       }
@@ -409,7 +420,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
       linear_interpolation_coef(dShift, coef);
       //-----calculate interpolate coef end-------------
 
-      const Real cTmp = qp * invVol;
+      const Real cTmp = qp * invVol[iLev];
       for (int kk = 0; kk < 2; kk++)
         for (int jj = 0; jj < 2; jj++)
           for (int ii = 0; ii < 2; ii++) {
@@ -420,51 +431,51 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
       if (!doNetChargeOnly) {
         Real weights_IIID[2][2][2][nDim];
         //----- Mass matrix calculation begin--------------
-        const Real xi0 = dShift[ix_] * dx[ix_];
-        const Real eta0 = dShift[iy_] * dx[iy_];
-        const Real zeta0 = dShift[iz_] * dx[iz_];
-        const Real xi1 = dx[ix_] - xi0;
-        const Real eta1 = dx[iy_] - eta0;
-        const Real zeta1 = dx[iz_] - zeta0;
+        const Real xi0 = dShift[ix_] * dx[iLev][ix_];
+        const Real eta0 = dShift[iy_] * dx[iLev][iy_];
+        const Real zeta0 = dShift[iz_] * dx[iLev][iz_];
+        const Real xi1 = dx[iLev][ix_] - xi0;
+        const Real eta1 = dx[iLev][iy_] - eta0;
+        const Real zeta1 = dx[iLev][iz_] - zeta0;
 
-        weights_IIID[1][1][1][ix_] = eta0 * zeta0 * invVol;
-        weights_IIID[1][1][1][iy_] = xi0 * zeta0 * invVol;
-        weights_IIID[1][1][1][iz_] = xi0 * eta0 * invVol;
+        weights_IIID[1][1][1][ix_] = eta0 * zeta0 * invVol[iLev];
+        weights_IIID[1][1][1][iy_] = xi0 * zeta0 * invVol[iLev];
+        weights_IIID[1][1][1][iz_] = xi0 * eta0 * invVol[iLev];
 
-        // xi0*eta0*zeta1*invVOL;
-        weights_IIID[1][1][0][ix_] = eta0 * zeta1 * invVol;
-        weights_IIID[1][1][0][iy_] = xi0 * zeta1 * invVol;
-        weights_IIID[1][1][0][iz_] = -xi0 * eta0 * invVol;
+        // xi0*eta0*zeta1*invVol[iLev];
+        weights_IIID[1][1][0][ix_] = eta0 * zeta1 * invVol[iLev];
+        weights_IIID[1][1][0][iy_] = xi0 * zeta1 * invVol[iLev];
+        weights_IIID[1][1][0][iz_] = -xi0 * eta0 * invVol[iLev];
 
-        // xi0*eta1*zeta0*invVOL;
-        weights_IIID[1][0][1][ix_] = eta1 * zeta0 * invVol;
-        weights_IIID[1][0][1][iy_] = -xi0 * zeta0 * invVol;
-        weights_IIID[1][0][1][iz_] = xi0 * eta1 * invVol;
+        // xi0*eta1*zeta0*invVol[iLev];
+        weights_IIID[1][0][1][ix_] = eta1 * zeta0 * invVol[iLev];
+        weights_IIID[1][0][1][iy_] = -xi0 * zeta0 * invVol[iLev];
+        weights_IIID[1][0][1][iz_] = xi0 * eta1 * invVol[iLev];
 
-        // xi0*eta1*zeta1*invVOL;
-        weights_IIID[1][0][0][ix_] = eta1 * zeta1 * invVol;
-        weights_IIID[1][0][0][iy_] = -xi0 * zeta1 * invVol;
-        weights_IIID[1][0][0][iz_] = -xi0 * eta1 * invVol;
+        // xi0*eta1*zeta1*invVol[iLev];
+        weights_IIID[1][0][0][ix_] = eta1 * zeta1 * invVol[iLev];
+        weights_IIID[1][0][0][iy_] = -xi0 * zeta1 * invVol[iLev];
+        weights_IIID[1][0][0][iz_] = -xi0 * eta1 * invVol[iLev];
 
-        // xi1*eta0*zeta0*invVOL;
-        weights_IIID[0][1][1][ix_] = -eta0 * zeta0 * invVol;
-        weights_IIID[0][1][1][iy_] = xi1 * zeta0 * invVol;
-        weights_IIID[0][1][1][iz_] = xi1 * eta0 * invVol;
+        // xi1*eta0*zeta0*invVol[iLev];
+        weights_IIID[0][1][1][ix_] = -eta0 * zeta0 * invVol[iLev];
+        weights_IIID[0][1][1][iy_] = xi1 * zeta0 * invVol[iLev];
+        weights_IIID[0][1][1][iz_] = xi1 * eta0 * invVol[iLev];
 
-        // xi1*eta0*zeta1*invVOL;
-        weights_IIID[0][1][0][ix_] = -eta0 * zeta1 * invVol;
-        weights_IIID[0][1][0][iy_] = xi1 * zeta1 * invVol;
-        weights_IIID[0][1][0][iz_] = -xi1 * eta0 * invVol;
+        // xi1*eta0*zeta1*invVol[iLev];
+        weights_IIID[0][1][0][ix_] = -eta0 * zeta1 * invVol[iLev];
+        weights_IIID[0][1][0][iy_] = xi1 * zeta1 * invVol[iLev];
+        weights_IIID[0][1][0][iz_] = -xi1 * eta0 * invVol[iLev];
 
-        // xi1*eta1*zeta0*invVOL;
-        weights_IIID[0][0][1][ix_] = -eta1 * zeta0 * invVol;
-        weights_IIID[0][0][1][iy_] = -xi1 * zeta0 * invVol;
-        weights_IIID[0][0][1][iz_] = xi1 * eta1 * invVol;
+        // xi1*eta1*zeta0*invVol[iLev];
+        weights_IIID[0][0][1][ix_] = -eta1 * zeta0 * invVol[iLev];
+        weights_IIID[0][0][1][iy_] = -xi1 * zeta0 * invVol[iLev];
+        weights_IIID[0][0][1][iz_] = xi1 * eta1 * invVol[iLev];
 
-        // xi1*eta1*zeta1*invVOL;
-        weights_IIID[0][0][0][ix_] = -eta1 * zeta1 * invVol;
-        weights_IIID[0][0][0][iy_] = -xi1 * zeta1 * invVol;
-        weights_IIID[0][0][0][iz_] = -xi1 * eta1 * invVol;
+        // xi1*eta1*zeta1*invVol[iLev];
+        weights_IIID[0][0][0][ix_] = -eta1 * zeta1 * invVol[iLev];
+        weights_IIID[0][0][0][iy_] = -xi1 * zeta1 * invVol[iLev];
+        weights_IIID[0][0][0][iz_] = -xi1 * eta1 * invVol[iLev];
 
         const int iMin = loIdx[ix_];
         const int jMin = loIdx[iy_];
@@ -473,7 +484,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
         const int jMax = jMin + 1;
         const int kMax = kMin + 1;
 
-        const Real coef = fabs(qp) * invVol;
+        const Real coef = fabs(qp) * invVol[iLev];
         RealVect wg_D;
         for (int k1 = kMin; k1 <= kMax; k1++)
           for (int j1 = jMin; j1 <= jMax; j1++)
@@ -523,8 +534,8 @@ std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
   for (int i = 0; i < 5; i++)
     sum[i] = 0;
 
-  const int lev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+  const int iLev = 0;
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
     const auto& particles = pti.GetArrayOfStructs();
     for (const auto& p : particles) {
@@ -567,10 +578,10 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 
       const auto& particles = pti.GetArrayOfStructs();
 
-      Print() << "iLev = " << iLev << std::endl;
+      // Print() << "iLev = " << iLev << std::endl;
       for (const auto& p : particles) {
 
-        Print() << "p = " << p << std::endl;
+        // Print() << "p = " << p << std::endl;
         const Real up = p.rdata(iup_);
         const Real vp = p.rdata(ivp_);
         const Real wp = p.rdata(iwp_);
@@ -580,7 +591,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
         IntVect loIdx;
         RealVect dShift;
         for (int i = 0; i < nDim; i++) {
-          dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
+          dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
           loIdx[i] = fastfloor(dShift[i]);
           dShift[i] = dShift[i] - loIdx[i];
         }
@@ -627,7 +638,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     }
 
     // Exclude the number density.
-    momentsMF[iLev].mult(invVol, 0, nMoments - 1, momentsMF[iLev].nGrow());
+    momentsMF[iLev].mult(invVol[iLev], 0, nMoments - 1, momentsMF[iLev].nGrow());
 
     momentsMF[iLev].SumBoundary(Geom(iLev).periodicity());
   }
@@ -645,8 +656,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
   Real qdto2mc = charge / mass * 0.5 * dt;
 
-  const int lev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+  const int iLev = 0;
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
     Array4<Real> const& jArr = jHat[pti].array();
@@ -666,7 +677,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       IntVect loIdx;
       RealVect dShift;
       for (int i = 0; i < nDim; i++) {
-        dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
+        dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
         loIdx[i] = fastfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
       }
@@ -701,7 +712,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       const Real denom = 1.0 / (1.0 + omsq);
       const Real udotOm = up * Omx + vp * Omy + wp * Omz;
 
-      const Real c0 = denom * invVol * qp * qdto2mc;
+      const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
       Real alpha[9];
       alpha[0] = (1 + Omx * Omx) * c0;
       alpha[1] = (Omz + Omx * Omy) * c0;
@@ -826,8 +837,8 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
 
   Real qdto2mc = charge / mass * 0.5 * dt;
 
-  const int lev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+  const int iLev = 0;
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
     Array4<Real> const& jArr = jHat[pti].array();
@@ -846,7 +857,7 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
       IntVect loIdx;
       RealVect dShift;
       for (int i = 0; i < nDim; i++) {
-        dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
+        dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
         loIdx[i] = fastfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
       }
@@ -984,8 +995,8 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
 
   Real dtLoc = 0.5 * dt;
 
-  const int lev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+  const int iLev = 0;
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
     const Box& bx = cellStatus[pti].box();
     const IntVect lowCorner = bx.smallEnd();
@@ -1046,8 +1057,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
     dtLoc = 0.5 * dt;
   }
 
-  const int lev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+  const int iLev = 0;
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
     const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
     const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
@@ -1072,7 +1083,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       IntVect loIdx;
       RealVect dShift;
       for (int i = 0; i < nDim; i++) {
-        dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
+        dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
         loIdx[i] = fastfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
       }
@@ -1146,8 +1157,8 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::neutral_mover(amrex::Real dt) {
   timing_func("Particles::neutral_mover");
 
-  const int lev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+  const int iLev = 0;
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
 
     const Array4<int const>& status = cellStatus[pti].array();
@@ -1192,8 +1203,8 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
   const Real epsLimit = 0.1;
   Real epsMax = 0;
 
-  const int lev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+  const int iLev = 0;
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
     Array4<Real const> const& phiArr = phiMF[pti].array();
 
@@ -1214,7 +1225,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       RealVect dShift;
       for (int i = 0; i < nDim; i++) {
         // plo is the corner location => -0.5
-        dShift[i] = (p.pos(i) - plo[i]) * invDx[i] - 0.5;
+        dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i] - 0.5;
         loIdx[i] = fastfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
       }
@@ -1237,53 +1248,53 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       {
         Real weights_IIID[2][2][2][nDim];
         //----- Mass matrix calculation begin--------------
-        const Real xi0 = dShift[ix_] * dx[ix_];
-        const Real eta0 = dShift[iy_] * dx[iy_];
-        const Real zeta0 = dShift[iz_] * dx[iz_];
-        const Real xi1 = dx[ix_] - xi0;
-        const Real eta1 = dx[iy_] - eta0;
-        const Real zeta1 = dx[iz_] - zeta0;
+        const Real xi0 = dShift[ix_] * dx[iLev][ix_];
+        const Real eta0 = dShift[iy_] * dx[iLev][iy_];
+        const Real zeta0 = dShift[iz_] * dx[iLev][iz_];
+        const Real xi1 = dx[iLev][ix_] - xi0;
+        const Real eta1 = dx[iLev][iy_] - eta0;
+        const Real zeta1 = dx[iLev][iz_] - zeta0;
 
-        const Real zeta02Vol = zeta0 * invVol;
-        const Real zeta12Vol = zeta1 * invVol;
-        const Real eta02Vol = eta0 * invVol;
-        const Real eta12Vol = eta1 * invVol;
+        const Real zeta02Vol = zeta0 * invVol[iLev];
+        const Real zeta12Vol = zeta1 * invVol[iLev];
+        const Real eta02Vol = eta0 * invVol[iLev];
+        const Real eta12Vol = eta1 * invVol[iLev];
 
         weights_IIID[1][1][1][ix_] = eta0 * zeta02Vol;
         weights_IIID[1][1][1][iy_] = xi0 * zeta02Vol;
         weights_IIID[1][1][1][iz_] = xi0 * eta02Vol;
 
-        // xi0*eta0*zeta1*invVOL;
+        // xi0*eta0*zeta1*invVol[iLev];
         weights_IIID[1][1][0][ix_] = eta0 * zeta12Vol;
         weights_IIID[1][1][0][iy_] = xi0 * zeta12Vol;
         weights_IIID[1][1][0][iz_] = -xi0 * eta02Vol;
 
-        // xi0*eta1*zeta0*invVOL;
+        // xi0*eta1*zeta0*invVol[iLev];
         weights_IIID[1][0][1][ix_] = eta1 * zeta02Vol;
         weights_IIID[1][0][1][iy_] = -xi0 * zeta02Vol;
         weights_IIID[1][0][1][iz_] = xi0 * eta12Vol;
 
-        // xi0*eta1*zeta1*invVOL;
+        // xi0*eta1*zeta1*invVol[iLev];
         weights_IIID[1][0][0][ix_] = eta1 * zeta12Vol;
         weights_IIID[1][0][0][iy_] = -xi0 * zeta12Vol;
         weights_IIID[1][0][0][iz_] = -xi0 * eta12Vol;
 
-        // xi1*eta0*zeta0*invVOL;
+        // xi1*eta0*zeta0*invVol[iLev];
         weights_IIID[0][1][1][ix_] = -eta0 * zeta02Vol;
         weights_IIID[0][1][1][iy_] = xi1 * zeta02Vol;
         weights_IIID[0][1][1][iz_] = xi1 * eta02Vol;
 
-        // xi1*eta0*zeta1*invVOL;
+        // xi1*eta0*zeta1*invVol[iLev];
         weights_IIID[0][1][0][ix_] = -eta0 * zeta12Vol;
         weights_IIID[0][1][0][iy_] = xi1 * zeta12Vol;
         weights_IIID[0][1][0][iz_] = -xi1 * eta02Vol;
 
-        // xi1*eta1*zeta0*invVOL;
+        // xi1*eta1*zeta0*invVol[iLev];
         weights_IIID[0][0][1][ix_] = -eta1 * zeta02Vol;
         weights_IIID[0][0][1][iy_] = -xi1 * zeta02Vol;
         weights_IIID[0][0][1][iz_] = xi1 * eta12Vol;
 
-        // xi1*eta1*zeta1*invVOL;
+        // xi1*eta1*zeta1*invVol[iLev];
         weights_IIID[0][0][0][ix_] = -eta1 * zeta12Vol;
         weights_IIID[0][0][0][iy_] = -xi1 * zeta12Vol;
         weights_IIID[0][0][0][iz_] = -xi1 * eta12Vol;
@@ -1306,22 +1317,22 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         for (int iDim = 0; iDim < nDim; iDim++)
           eps_D[iDim] *= coef * fourPI;
 
-        if (fabs(eps_D[ix_] * invDx[ix_]) > epsLimit ||
-            fabs(eps_D[iy_] * invDx[iy_]) > epsLimit ||
-            fabs(eps_D[iz_] * invDx[iz_]) > epsLimit) {
+        if (fabs(eps_D[ix_] * invDx[iLev][ix_]) > epsLimit ||
+            fabs(eps_D[iy_] * invDx[iLev][iy_]) > epsLimit ||
+            fabs(eps_D[iz_] * invDx[iLev][iz_]) > epsLimit) {
           // If eps_D is too large, the underlying assumption of the particle
           // correction method will be not valid. Comparing each exp_D
           // component instead of the length dl saves the computational time.
           const Real dl = sqrt(pow(eps_D[ix_], 2) + pow(eps_D[iy_], 2) +
                                pow(eps_D[iz_], 2));
-          const Real ratio = epsLimit * dx[ix_] / dl;
+          const Real ratio = epsLimit * dx[iLev][ix_] / dl;
           for (int iDim = 0; iDim < nDim; iDim++)
             eps_D[iDim] *= ratio;
         }
 
         for (int iDim = 0; iDim < nDim; iDim++) {
-          if (fabs(eps_D[iDim] * invDx[iDim]) > epsMax)
-            epsMax = fabs(eps_D[iDim] * invDx[iDim]);
+          if (fabs(eps_D[iDim] * invDx[iLev][iDim]) > epsMax)
+            epsMax = fabs(eps_D[iDim] * invDx[iLev][iDim]);
 
           p.pos(iDim) += eps_D[iDim];
         }
@@ -1356,10 +1367,10 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
   if (!(do_tiling && tile_size == iv))
     return;
 
-  const int lev = 0;
+  const int iLev = 0;
   Real dl = 0.1 * Geom(0).CellSize()[ix_] / nPartPerCell.max();
 
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
 
     auto& particles = pti.GetArrayOfStructs();
@@ -1493,8 +1504,8 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
 
   int nAvailableCombines = 0, nEqs = 0, nSolved = 0;
 
-  const int lev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+  const int iLev = 0;
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
 
     auto& particles = pti.GetArrayOfStructs();
@@ -1666,7 +1677,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
             Real dl2 = 0, dvel2 = 0;
             for (int iDir = ix_; iDir <= iz_; iDir++) {
               Real pos = particles[pID].pos(iDir);
-              dl2 += pow((pos - middle[iDir]) * invDx[iDir], 2);
+              dl2 += pow((pos - middle[iDir]) * invDx[iLev][iDir], 2);
 
               Real v = particles[pID].rdata(iDir);
               dvel2 += pow((v - middle[nDim + iDir]) * velNorm, 2);
@@ -1747,7 +1758,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
                                          particles[idx_I[ip2]].rdata(iDir));
                     dv2 += pow(dv, 2);
 
-                    Real dx = invDx[iDir] * (particles[idx_I[ip1]].pos(iDir) -
+                    Real dx = invDx[iLev][iDir] * (particles[idx_I[ip1]].pos(iDir) -
                                              particles[idx_I[ip2]].pos(iDir));
                     dv2 += pow(dx, 2);
                   }
@@ -1954,13 +1965,13 @@ IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
     : Particles(amrcore, nullptr, nullptr, other.get_speciesID(),
                 other.get_charge(), other.get_mass(),
                 amrex::IntVect(AMREX_D_DECL(-1, -1, -1))) {
-  const int lev = 0;
+  const int iLev = 0;
   no2outM *= qomSign * get_mass();
 
   const bool doLimit = IORange.ok();
-  const auto& plevelOther = other.GetParticles(lev);
-  auto& plevel = GetParticles(lev);
-  for (MFIter mfi = other.MakeMFIter(lev); mfi.isValid(); ++mfi) {
+  const auto& plevelOther = other.GetParticles(iLev);
+  auto& plevel = GetParticles(iLev);
+  for (MFIter mfi = other.MakeMFIter(iLev); mfi.isValid(); ++mfi) {
     auto index = std::make_pair(mfi.index(), mfi.LocalTileIndex());
 
     if (plevelOther.find(index) == plevelOther.end())
@@ -2012,8 +2023,8 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 
   timing_func(nameFunc);
 
-  const int lev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, lev); pti.isValid();
+  const int iLev = 0;
+  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
     auto& particles = pti.GetArrayOfStructs();
     for (auto& p : particles) {
@@ -2028,7 +2039,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       const int iRhoUx_ = iUx_, iRhoUy_ = iUy_, iRhoUz_ = iUz_, iE_ = iP_;
 
       // amu/m^3
-      rhoNeu = qomSign * p.rdata(iqp_) * get_mass() * invVol *
+      rhoNeu = qomSign * p.rdata(iqp_) * get_mass() * invVol[iLev] *
                stateOH->get_No2SiRho() / cProtonMassSI;
 
       for (int i = 0; i < nDim; i++) {
@@ -2076,7 +2087,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         //         << " neu2ion = " << neu2ion[i] << std::endl;
       }
 
-      Real massExchange = neu2ion[iRho_] * stateOH->get_Si2NoRho() / invVol;
+      Real massExchange = neu2ion[iRho_] * stateOH->get_Si2NoRho() / invVol[iLev];
 
       // Print() << "nden = " << p.rdata(iqp_)
       //         << " massExchange = " << massExchange << std::endl;

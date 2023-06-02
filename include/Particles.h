@@ -80,6 +80,7 @@ public:
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Checkpoint;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Index;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::ParticlesAt;
+  using amrex::AmrParticleContainer<NStructReal, NStructInt>::maxLevel;
 
 protected:
   FluidInterface* fi;
@@ -87,6 +88,8 @@ protected:
 
   int speciesID;
   RandNum randNum;
+
+  int nLev;
 
   amrex::Real charge;
   amrex::Real mass;
@@ -98,8 +101,8 @@ protected:
 
   amrex::Vector<amrex::RealBox> activeRegions;
 
-  amrex::RealVect plo, phi, dx, invDx;
-  amrex::Real invVol;
+  amrex::Vector<amrex::RealVect> plo, phi, dx, invDx;
+  amrex::Vector<amrex::Real> invVol;
 
   amrex::Real mergeThresholdDistance = 0.6;
   amrex::Real velBinBufferSize = 0.125;
@@ -225,15 +228,16 @@ public:
   void set_bc(BC& bcIn) { bc = bcIn; }
 
   inline bool is_outside_ba(const ParticleType& p) {
+    int iLev = 0;
     amrex::Real loc[3] = { 0, 0, 0 };
     for (int iDim = 0; iDim < 3; iDim++) {
       loc[iDim] = p.pos(iDim);
-      if (Geom(0).isPeriodic(iDim)) {
+      if (Geom(iLev).isPeriodic(iDim)) {
         // Fix index/loc for periodic BC.
-        while (loc[iDim] > phi[iDim])
-          loc[iDim] -= phi[iDim] - plo[iDim];
-        while (loc[iDim] < plo[iDim])
-          loc[iDim] += phi[iDim] - plo[iDim];
+        while (loc[iDim] > phi[iLev][iDim])
+          loc[iDim] -= phi[iLev][iDim] - plo[iLev][iDim];
+        while (loc[iDim] < plo[iLev][iDim])
+          loc[iDim] += phi[iLev][iDim] - plo[iLev][iDim];
       }
     }
 
@@ -249,12 +253,13 @@ public:
                             amrex::Array4<int const> const& status,
                             const amrex::IntVect& low,
                             const amrex::IntVect& high) {
+    int iLev = 0;
     // Contains ghost cells.
     bool isInsideBox = true;
     int cellIdx[3];
     amrex::Real dShift[3];
     for (int i = 0; i < 3; i++) {
-      dShift[i] = (p.pos(i) - plo[i]) * invDx[i];
+      dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
       cellIdx[i] = fastfloor(dShift[i]);
       if (cellIdx[i] > high[i] || cellIdx[i] < low[i]) {
         isInsideBox = false;
