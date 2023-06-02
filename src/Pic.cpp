@@ -129,51 +129,50 @@ void Pic::distribute_arrays() {
     return;
   }
 
-  for (int lev = 0; lev <= finest_level; lev++) {
-    distribute_FabArray(centerB[lev], cGrids[lev], DistributionMap(lev), 3,
-                        nGst);
-    distribute_FabArray(nodeB[lev], nGrids[lev], DistributionMap(lev), 3, nGst);
-    distribute_FabArray(nodeE[lev], nGrids[lev], DistributionMap(lev), 3, nGst);
-    distribute_FabArray(nodeEth[lev], nGrids[lev], DistributionMap(lev), 3,
-                        nGst);
+  // The last one is the sum of all species.
+  if (nodePlasma.empty())
+    nodePlasma.resize(nSpecies + 1);
 
-    distribute_FabArray(centerNetChargeOld[lev], cGrids[lev],
-                        DistributionMap(lev), 1, nGst);
-    distribute_FabArray(centerNetChargeN[lev], cGrids[lev],
-                        DistributionMap(lev), 1, nGst);
-    distribute_FabArray(centerNetChargeNew[lev], cGrids[lev],
-                        DistributionMap(lev), 1, nGst);
-
-    distribute_FabArray(centerDivE[lev], cGrids[lev], DistributionMap(lev), 1,
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
+                        nGst);
+    distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                        nGst);
+    distribute_FabArray(nodeE[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                        nGst);
+    distribute_FabArray(nodeEth[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
 
-    distribute_FabArray(centerPhi[lev], cGrids[lev], DistributionMap(lev), 1,
+    distribute_FabArray(centerNetChargeOld[iLev], cGrids[iLev],
+                        DistributionMap(iLev), 1, nGst);
+    distribute_FabArray(centerNetChargeN[iLev], cGrids[iLev],
+                        DistributionMap(iLev), 1, nGst);
+    distribute_FabArray(centerNetChargeNew[iLev], cGrids[iLev],
+                        DistributionMap(iLev), 1, nGst);
+
+    distribute_FabArray(centerDivE[iLev], cGrids[iLev], DistributionMap(iLev),
+                        1, nGst);
+
+    distribute_FabArray(centerPhi[iLev], cGrids[iLev], DistributionMap(iLev), 1,
                         nGst);
 
     bool doMoveData = false;
     if (!useExplicitPIC) {
-      distribute_FabArray(nodeMM[lev], nGrids[lev], DistributionMap(lev), 1, 1,
-                          doMoveData);
+      distribute_FabArray(nodeMM[iLev], nGrids[iLev], DistributionMap(iLev), 1,
+                          1, doMoveData);
     }
 
-    distribute_FabArray(centerMM[lev], cGrids[lev], DistributionMap(lev), 1,
+    distribute_FabArray(centerMM[iLev], cGrids[iLev], DistributionMap(iLev), 1,
                         nGst, doMoveData);
 
-    distribute_FabArray(jHat[lev], nGrids[lev], DistributionMap(lev), 3, nGst,
-                        doMoveData);
+    distribute_FabArray(jHat[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                        nGst, doMoveData);
 
-    if (nodePlasma[lev].empty()) {
-      // The last one is the sum of all species.
-      nodePlasma[lev].resize(nSpecies + 1);
-      for (auto& pl : nodePlasma[lev]) {
-        pl.define(nGrids[lev], DistributionMap(lev), nMoments, nGst);
-        pl.setVal(0.0);
-      }
-    } else {
-      for (auto& pl : nodePlasma[lev]) {
-        distribute_FabArray(pl, nGrids[lev], DistributionMap(lev), nMoments,
-                            nGst, doMoveData);
-      }
+    for (auto& pl : nodePlasma) {
+      if (pl.empty())
+        pl.resize(nLev);
+      distribute_FabArray(pl[iLev], nGrids[iLev], DistributionMap(iLev),
+                          nMoments, nGst, doMoveData);
     }
   }
 }
@@ -729,12 +728,12 @@ void Pic::sum_moments(bool updateDt) {
       minDx = dx[iDim];
   }
 
-  nodePlasma[iLev][nSpecies].setVal(0.0);
+  nodePlasma[nSpecies][iLev].setVal(0.0);
   plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; i++) {
 
     for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-      Real energy = parts[i]->sum_moments(nodePlasma[iLevTest][i],
+      Real energy = parts[i]->sum_moments(nodePlasma[i][iLevTest],
                                           nodeB[iLevTest], tc->get_dt());
       plasmaEnergy[i] = energy;
       plasmaEnergy[iTot] += energy;
@@ -746,7 +745,7 @@ void Pic::sum_moments(bool updateDt) {
     if (tc->get_cfl() > 0 || doReport) {
       for (int i = 0; i < nSpecies; i++) {
         Real uMaxSpecies =
-            parts[i]->calc_max_thermal_velocity(nodePlasma[iLev][i]);
+            parts[i]->calc_max_thermal_velocity(nodePlasma[i][iLev]);
         ParallelDescriptor::ReduceRealMax(uMaxSpecies);
 
         if (doReport)
@@ -787,8 +786,8 @@ void Pic::sum_moments(bool updateDt) {
   }
 
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->convert_to_fluid_moments(nodePlasma[iLev][i]);
-    MultiFab::Add(nodePlasma[iLev][nSpecies], nodePlasma[iLev][i], 0, 0,
+    parts[i]->convert_to_fluid_moments(nodePlasma[i][iLev]);
+    MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
                   nMoments, nGst);
   }
 }
@@ -1332,8 +1331,8 @@ void Pic::calc_smooth_coef() {
 
   int iLev = 0;
   Real gamma = 5. / 3;
-  for (MFIter mfi(nodePlasma[iLev][nSpecies]); mfi.isValid(); ++mfi) {
-    FArrayBox& fab = nodePlasma[iLev][nSpecies][mfi];
+  for (MFIter mfi(nodePlasma[nSpecies][iLev]); mfi.isValid(); ++mfi) {
+    FArrayBox& fab = nodePlasma[nSpecies][iLev][mfi];
     const Box& box = mfi.fabbox();
     const Array4<Real>& arr = fab.array();
 

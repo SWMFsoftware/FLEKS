@@ -31,6 +31,8 @@ protected:
   std::string gridName;
   int gridID;
 
+  int nLev = 1;
+
   // const int coord = 0; // Cartesian grid
 
   // A collection of boxes to describe the simulation domain. The boxes have
@@ -100,7 +102,9 @@ public:
 
     isFake2D = Geom(0).Domain().bigEnd(iz_) == Geom(0).Domain().smallEnd(iz_);
 
-    iRefinement.resize(max_level + 1);
+    nLev = max_level + 1;
+
+    iRefinement.resize(nLev);
   };
 
   ~Grid() = default;

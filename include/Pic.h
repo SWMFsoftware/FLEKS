@@ -133,9 +133,7 @@ public:
 
     Particles<>::particlePosition = Staggered;
 
-    //-----------------------------------------------------
-    const int nLev = max_level + 1;
-
+    //-----------------------------------------------------    
     centerB.resize(nLev);
     nodeB.resize(nLev);
     nodeE.resize(nLev);
@@ -152,8 +150,6 @@ public:
     centerMM.resize(nLev);
 
     jHat.resize(nLev);
-
-    nodePlasma.resize(nLev);
   };
   ~Pic(){};
 
