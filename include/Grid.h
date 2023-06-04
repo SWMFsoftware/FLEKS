@@ -122,7 +122,7 @@ public:
 
   std::string lev_string(int iLev) {
     std::string sLev = "_lev_" + std::to_string(iLev);
-    if (max_level == 0) {
+    if (nLev == 0) {
       // Keep backward compatibility.
       sLev = "";
     }
@@ -192,7 +192,7 @@ public:
 
   void print_grid_info(bool printBoxes = false) {
     amrex::Print() << printPrefix << " =======Grid Info========" << std::endl;
-    amrex::Print() << printPrefix << " max_level = " << max_level << std::endl;
+    amrex::Print() << printPrefix << " nLev = " << nLev << std::endl;
     amrex::Print() << printPrefix << " finest_level = " << finest_level
                    << std::endl;
 

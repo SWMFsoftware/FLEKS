@@ -291,7 +291,7 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
 
     if (grid) {
       finest_level = grid->finestLevel();
-      for (int iLev = 0; iLev <= max_level; iLev++) {
+      for (int iLev = 0; iLev < nLev; iLev++) {
         // Q: Why is it required to set distribution map here?
         // A: fi and pic should have the same grids and distribution maps.
         // However, it seems AMReX is too smart that it will try to load balance
@@ -509,7 +509,7 @@ void Pic::fill_new_node_E() {
         }
   }
 
-  if (max_level > 0) {
+  if (nLev > 1) {
     InterpFromCoarseAllLevels(nodeE, finest_level);
   }
 }
@@ -537,7 +537,7 @@ void Pic::fill_new_node_B() {
           }
         }
   }
-  if (max_level > 0) {
+  if (nLev > 1) {
     InterpFromCoarseAllLevels(nodeB, finest_level);
   }
 }
@@ -572,7 +572,7 @@ void Pic::fill_new_center_B() {
           }
   }
 
-  if (max_level > 0) {
+  if (nLev > 1) {
     InterpFromCoarseAllLevels(centerB, finest_level);
   }
 }
@@ -588,10 +588,8 @@ void Pic::fill_E_B_fields() {
   for (int iLev = 0; iLev <= finest_level; iLev++) {
     nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nDim, &Pic::get_node_B,
-             iLev);
-    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E,
-             iLev);
+    apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nDim, &Pic::get_node_B, iLev);
+    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E, iLev);
   }
 
   fill_new_center_B();
@@ -599,8 +597,8 @@ void Pic::fill_E_B_fields() {
   for (int iLev = 0; iLev <= finest_level; iLev++) {
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
-    apply_BC(cellStatus[iLev], centerB[iLev], 0,
-             centerB[iLev].nComp(), &Pic::get_center_B, iLev);
+    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+             &Pic::get_center_B, iLev);
   }
 }
 
@@ -630,8 +628,8 @@ void Pic::update_part_loc_to_half_stage() {
 
   for (int iLev = 0; iLev <= finest_level; iLev++) {
     for (int i = 0; i < nSpecies; i++) {
-      parts[i]->update_position_to_half_stage(nodeEth[iLev],
-                                              nodeB[iLev], tc->get_dt());
+      parts[i]->update_position_to_half_stage(nodeEth[iLev], nodeB[iLev],
+                                              tc->get_dt());
     }
   }
 
@@ -662,8 +660,8 @@ void Pic::particle_mover() {
     if (useExplicitPIC) {
       MultiFab tmpE(nGrids[iLev], DistributionMap(iLev), 3, nGst);
       // nodeE/nodeEth is at t_n/t_{n+1}, tmpE is at t_{n+0.5}
-      MultiFab::LinComb(tmpE, 0.5, nodeEth[iLev], 0, 0.5, nodeE[iLev],
-                        0, 0, nodeE[iLev].nComp(), nodeE[iLev].nGrow());
+      MultiFab::LinComb(tmpE, 0.5, nodeEth[iLev], 0, 0.5, nodeE[iLev], 0, 0,
+                        nodeE[iLev].nComp(), nodeE[iLev].nGrow());
       for (int i = 0; i < nSpecies; i++) {
         parts[i]->mover(tmpE, nodeB[iLev], tc->get_dt(), tc->get_next_dt());
       }
@@ -704,8 +702,8 @@ void Pic::calc_mass_matrix() {
       if (useExplicitPIC) {
         parts[i]->calc_jhat(jHat[iLev], nodeB[iLev], tc->get_dt());
       } else {
-        parts[i]->calc_mass_matrix(nodeMM[iLev], jHat[iLev],
-                                   nodeB[iLev], tc->get_dt());
+        parts[i]->calc_mass_matrix(nodeMM[iLev], jHat[iLev], nodeB[iLev],
+                                   tc->get_dt());
       }
     }
   }
@@ -1051,12 +1049,12 @@ void Pic::update_E_expl() {
   std::string nameFunc = "Pic::update_E_expl";
 
   timing_func(nameFunc);
-  
+
   for (int iLev = 0; iLev <= finest_level; iLev++) {
-    MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0,
-                   nodeE[iLev].nComp(), nodeE[iLev].nGrow());
-    apply_BC(cellStatus[iLev], centerB[iLev], 0,
-             centerB[iLev].nComp(), &Pic::get_center_B, iLev);
+    MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
+                   nodeE[iLev].nGrow());
+    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+             &Pic::get_center_B, iLev);
   }
   const Real dt = tc->get_dt();
   RealVect dt2dx;
@@ -1068,12 +1066,11 @@ void Pic::update_E_expl() {
     MultiFab::Saxpy(nodeE[iLev], -fourPI * dt, jHat[iLev], 0, 0,
                     nodeE[iLev].nComp(), nodeE[iLev].nGrow());
 
-    MultiFab::Add(nodeE[iLev], nodeEth[iLev], 0, 0,
-                  nodeE[iLev].nComp(), nodeE[iLev].nGrow());
+    MultiFab::Add(nodeE[iLev], nodeEth[iLev], 0, 0, nodeE[iLev].nComp(),
+                  nodeE[iLev].nGrow());
 
     nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E,
-             iLev);
+    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E, iLev);
   }
 }
 
@@ -1110,24 +1107,21 @@ void Pic::update_E_impl() {
     convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev]);
     nodeEth[iLev].SumBoundary(Geom(iLev).periodicity());
     nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
-    MultiFab::Add(nodeEth[iLev], nodeE[iLev], 0, 0,
-                  nodeEth[iLev].nComp(), nGst);
+    MultiFab::Add(nodeEth[iLev], nodeE[iLev], 0, 0, nodeEth[iLev].nComp(),
+                  nGst);
 
     MultiFab::LinComb(nodeE[iLev], -(1.0 - fsolver.theta) / fsolver.theta,
-                      nodeE[iLev], 0, 1. / fsolver.theta, nodeEth[iLev],
-                      0, 0, nodeE[iLev].nComp(), nGst);
+                      nodeE[iLev], 0, 1. / fsolver.theta, nodeEth[iLev], 0, 0,
+                      nodeE[iLev].nComp(), nGst);
 
-    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E,
-             iLev);
-    apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim, &Pic::get_node_E,
-             iLev);
+    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E, iLev);
+    apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim, &Pic::get_node_E, iLev);
     if (doSmoothE) {
       calc_smooth_coef();
       smooth_E(nodeEth[iLev]);
       smooth_E(nodeE[iLev]);
     }
-    div_node_to_center(nodeE[iLev], centerDivE[iLev],
-                       Geom(iLev).InvCellSize());
+    div_node_to_center(nodeE[iLev], centerDivE[iLev], Geom(iLev).InvCellSize());
   }
 }
 
@@ -1285,8 +1279,8 @@ void Pic::update_E_rhs(double* rhs) {
   temp2Node.setVal(0.0);
 
   for (int iLev = 0; iLev <= finest_level; iLev++) {
-    apply_BC(cellStatus[iLev], centerB[iLev], 0,
-             centerB[iLev].nComp(), &Pic::get_center_B, iLev);
+    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+             &Pic::get_center_B, iLev);
     apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
              &Pic::get_node_B, iLev);
   }
@@ -1326,8 +1320,8 @@ void Pic::update_B() {
                     centerB[iLev].nComp(), centerB[iLev].nGrow());
     centerB[iLev].FillBoundary(Geom(0).periodicity());
 
-    apply_BC(cellStatus[iLev], centerB[iLev], 0,
-             centerB[iLev].nComp(), &Pic::get_center_B, iLev);
+    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+             &Pic::get_center_B, iLev);
 
     average_center_to_node(centerB[iLev], nodeB[iLev]);
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -1700,8 +1694,7 @@ void Pic::report_load_balance() {
 
   for (int iLev = 0; iLev <= finest_level; iLev++) {
     localInfo[iNBlk_] = (float)centerB[iLev].local_size();
-    localInfo[iNCell_] =
-        (float)get_local_node_or_cell_number(centerB[iLev]);
+    localInfo[iNCell_] = (float)get_local_node_or_cell_number(centerB[iLev]);
   }
 
   {

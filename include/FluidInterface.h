@@ -830,7 +830,7 @@ public:
     }
 
     const int iLev = 0;
-    if (max_level > 0) {
+    if (nLev > 1) {
       amrex::Abort("setFluidanisoUth has not implemented for multilevel");
     }
 

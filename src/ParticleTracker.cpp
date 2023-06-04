@@ -197,7 +197,7 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
   } else {
     if (grid) {
       finest_level = grid->finestLevel();
-      for (int iLev = 0; iLev <= max_level; iLev++) {
+      for (int iLev = 0; iLev < nLev; iLev++) {
         SetBoxArray(iLev, grid->boxArray(iLev));
         SetDistributionMap(iLev, grid->DistributionMap(iLev));
       }
@@ -214,10 +214,10 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
   print_grid_info();
 
   if (nodeB.empty()) {
-    nodeB.resize(max_level + 1);
+    nodeB.resize(nLev);
   }
   if (nodeE.empty()) {
-    nodeE.resize(max_level + 1);
+    nodeE.resize(nLev);
   }
 
   for (int iLev = 0; iLev <= finest_level; iLev++) {

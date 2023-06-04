@@ -544,7 +544,7 @@ void FluidInterface::regrid(const amrex::BoxArray& region,
   } else {
     if (grid) {
       finest_level = grid->finestLevel();
-      for (int iLev = 0; iLev <= max_level; iLev++) {
+      for (int iLev = 0; iLev < nLev; iLev++) {
         SetBoxArray(iLev, grid->boxArray(iLev));
         SetDistributionMap(iLev, grid->DistributionMap(iLev));
       }
@@ -573,13 +573,13 @@ void FluidInterface::regrid(const amrex::BoxArray& region,
 //==========================================================
 void FluidInterface::distribute_arrays() {
   if (nodeFluid.empty())
-    nodeFluid.resize(max_level + 1);
+    nodeFluid.resize(nLev);
 
   if (centerB.empty())
-    centerB.resize(max_level + 1);
+    centerB.resize(nLev);
 
   if (boundaryNode.empty())
-    boundaryNode.resize(max_level + 1);
+    boundaryNode.resize(nLev);
 
   const bool doCopy = true;
   const int nVarNode = (useCurrent ? nVarFluid + 3 : nVarFluid);
@@ -652,7 +652,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
   int nIdxCount = 0;
   int nCount = 0;
 
-  for (int iLev = 0; iLev <= max_level; iLev++) {
+  for (int iLev = 0; iLev < nLev; iLev++) {
     // Global NODE box.
     const Box gbx = convert(Geom(iLev).Domain(), { AMREX_D_DECL(1, 1, 1) });
 
