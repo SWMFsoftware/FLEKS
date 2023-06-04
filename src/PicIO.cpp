@@ -66,14 +66,14 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
                                                     Geom(0), xp, yp, zp, iVar);
       }
 
-    for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+    for (int iLev = 0; iLev <= finest_level; iLev++) {
       for (int iDir = ix_; iDir <= iz_; iDir++) {
         dataPIC_I[iBx_ + iDir] =
-            get_value_at_loc(nodeB[iLevTest], Geom(iLevTest), xp, yp, zp, iDir);
+            get_value_at_loc(nodeB[iLev], Geom(iLev), xp, yp, zp, iDir);
       }
       for (int iDir = ix_; iDir <= iz_; iDir++) {
         dataPIC_I[iEx_ + iDir] =
-            get_value_at_loc(nodeE[iLevTest], Geom(iLevTest), xp, yp, zp, iDir);
+            get_value_at_loc(nodeE[iLev], Geom(iLev), xp, yp, zp, iDir);
       }
     }
 
@@ -89,7 +89,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
   if (isGridEmpty)
     return;
   // Loop not implemented correctly // Talha
-  int iLevTest = 0;
+  int iLev = 0;
   const auto plo = Geom(0).ProbLo();
   const auto plh = Geom(0).ProbHi();
 
@@ -103,10 +103,10 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
   const auto glo = lbound(gbx);
 
   int iBlock = 0;
-  for (MFIter mfi(nodeE[iLevTest]); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
-    const auto& typeArr = nodeShare[iLevTest][mfi].array();
+    const auto& typeArr = nodeShare[iLev][mfi].array();
 
     auto lo = box.loVect3d();
     auto hi = box.hiVect3d();
@@ -235,7 +235,7 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
                         MDArray<double>& var_II) {
 
   // loop not implemented correctly // Talha
-  int iLevTest = 0;
+  int iLev = 0;
   const int iBlk_ = 6;
 
   long nPoint = pointList_II.size();
@@ -243,7 +243,7 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
 
   int iBlockCount = 0;
   long iPoint = 0;
-  for (MFIter mfi(nodeE[iLevTest]); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
     while (iPoint < nPoint) {
       const int ix = pointList_II[iPoint][ix_];
       const int iy = pointList_II[iPoint][iy_];
@@ -399,10 +399,10 @@ void Pic::save_restart_data() {
     return;
 
   std::string restartDir = component + "/restartOUT/";
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    VisMF::Write(nodeE[iLevTest], restartDir + gridName + "_nodeE");
-    VisMF::Write(nodeB[iLevTest], restartDir + gridName + "_nodeB");
-    VisMF::Write(centerB[iLevTest], restartDir + gridName + "_centerB");
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    VisMF::Write(nodeE[iLev], restartDir + gridName + "_nodeE");
+    VisMF::Write(nodeB[iLev], restartDir + gridName + "_nodeB");
+    VisMF::Write(centerB[iLev], restartDir + gridName + "_centerB");
   }
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
@@ -437,10 +437,10 @@ void Pic::read_restart() {
 
   std::string restartDir = component + "/restartIN/";
 
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    VisMF::Read(nodeE[iLevTest], restartDir + gridName + "_nodeE");
-    VisMF::Read(nodeB[iLevTest], restartDir + gridName + "_nodeB");
-    VisMF::Read(centerB[iLevTest], restartDir + gridName + "_centerB");
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    VisMF::Read(nodeE[iLev], restartDir + gridName + "_nodeE");
+    VisMF::Read(nodeB[iLev], restartDir + gridName + "_nodeB");
+    VisMF::Read(centerB[iLev], restartDir + gridName + "_centerB");
   }
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
@@ -694,10 +694,10 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
   if (plotVars.find("B") != std::string::npos) {
     //------------------B---------------
-    for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-      MultiFab::Copy(centerMF, centerB[iLevTest], 0, iStart,
-                     nodeB[iLevTest].nComp(), 0);
-      iStart += nodeB[iLevTest].nComp();
+    for (int iLev = 0; iLev <= finest_level; iLev++) {
+      MultiFab::Copy(centerMF, centerB[iLev], 0, iStart,
+                     nodeB[iLev].nComp(), 0);
+      iStart += nodeB[iLev].nComp();
     }
 
     varNames.push_back("Bx");
@@ -707,10 +707,10 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
   if (plotVars.find("E") != std::string::npos) {
     //-----------------E-----------------------------
-    for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-      average_node_to_cellcenter(centerMF, iStart, nodeE[iLevTest], 0,
-                                 nodeE[iLevTest].nComp(), 0);
-      iStart += nodeE[iLevTest].nComp();
+    for (int iLev = 0; iLev <= finest_level; iLev++) {
+      average_node_to_cellcenter(centerMF, iStart, nodeE[iLev], 0,
+                                 nodeE[iLev].nComp(), 0);
+      iStart += nodeE[iLev].nComp();
     }
 
     varNames.push_back("Ex");

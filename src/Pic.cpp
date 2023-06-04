@@ -393,11 +393,11 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
   //--------------particles-----------------------------------
 
   // This part does not really work for multi-level.
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    int n = get_local_node_or_cell_number(nodeE[iLevTest]);
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    int n = get_local_node_or_cell_number(nodeE[iLev]);
     eSolver.init(n, nDim, nDim, matvec_E_solver);
 
-    n = get_local_node_or_cell_number(centerDivE[iLevTest]);
+    n = get_local_node_or_cell_number(centerDivE[iLev]);
     divESolver.init(n, 1, nDim, matvec_divE_accurate);
   }
 
@@ -585,22 +585,22 @@ void Pic::fill_E_B_fields() {
   fill_new_node_E();
   fill_new_node_B();
 
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    nodeE[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
-    nodeB[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
-    apply_BC(nodeStatus[iLevTest], nodeB[iLevTest], 0, nDim, &Pic::get_node_B,
-             iLevTest);
-    apply_BC(nodeStatus[iLevTest], nodeE[iLevTest], 0, nDim, &Pic::get_node_E,
-             iLevTest);
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+    apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nDim, &Pic::get_node_B,
+             iLev);
+    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E,
+             iLev);
   }
 
   fill_new_center_B();
 
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    centerB[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
-    apply_BC(cellStatus[iLevTest], centerB[iLevTest], 0,
-             centerB[iLevTest].nComp(), &Pic::get_center_B, iLevTest);
+    apply_BC(cellStatus[iLev], centerB[iLev], 0,
+             centerB[iLev].nComp(), &Pic::get_center_B, iLev);
   }
 }
 
@@ -628,10 +628,10 @@ void Pic::update_part_loc_to_half_stage() {
 
   timing_func(nameFunc);
 
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
     for (int i = 0; i < nSpecies; i++) {
-      parts[i]->update_position_to_half_stage(nodeEth[iLevTest],
-                                              nodeB[iLevTest], tc->get_dt());
+      parts[i]->update_position_to_half_stage(nodeEth[iLev],
+                                              nodeB[iLev], tc->get_dt());
     }
   }
 
@@ -658,20 +658,20 @@ void Pic::particle_mover() {
 
   timing_func(nameFunc);
 
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
     if (useExplicitPIC) {
-      MultiFab tmpE(nGrids[iLevTest], DistributionMap(iLevTest), 3, nGst);
+      MultiFab tmpE(nGrids[iLev], DistributionMap(iLev), 3, nGst);
       // nodeE/nodeEth is at t_n/t_{n+1}, tmpE is at t_{n+0.5}
-      MultiFab::LinComb(tmpE, 0.5, nodeEth[iLevTest], 0, 0.5, nodeE[iLevTest],
-                        0, 0, nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
+      MultiFab::LinComb(tmpE, 0.5, nodeEth[iLev], 0, 0.5, nodeE[iLev],
+                        0, 0, nodeE[iLev].nComp(), nodeE[iLev].nGrow());
       for (int i = 0; i < nSpecies; i++) {
-        parts[i]->mover(tmpE, nodeB[iLevTest], tc->get_dt(), tc->get_next_dt());
+        parts[i]->mover(tmpE, nodeB[iLev], tc->get_dt(), tc->get_next_dt());
       }
 
     } else {
 
       for (int i = 0; i < nSpecies; i++) {
-        parts[i]->mover(nodeEth[iLevTest], nodeB[iLevTest], tc->get_dt(),
+        parts[i]->mover(nodeEth[iLev], nodeB[iLev], tc->get_dt(),
                         tc->get_next_dt());
       }
     }
@@ -699,13 +699,13 @@ void Pic::calc_mass_matrix() {
     nodeMM[iLev].setVal(mm0);
   }
 
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
     for (int i = 0; i < nSpecies; i++) {
       if (useExplicitPIC) {
-        parts[i]->calc_jhat(jHat[iLevTest], nodeB[iLevTest], tc->get_dt());
+        parts[i]->calc_jhat(jHat[iLev], nodeB[iLev], tc->get_dt());
       } else {
-        parts[i]->calc_mass_matrix(nodeMM[iLevTest], jHat[iLevTest],
-                                   nodeB[iLevTest], tc->get_dt());
+        parts[i]->calc_mass_matrix(nodeMM[iLev], jHat[iLev],
+                                   nodeB[iLev], tc->get_dt());
       }
     }
   }
@@ -860,8 +860,8 @@ void Pic::calculate_phi(LinearSolver& solver) {
   MultiFab residual(cGrids[iLev], DistributionMap(iLev), 1, nGst);
 
   solver.reset(get_local_node_or_cell_number(centerDivE[iLev]));
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    div_node_to_center(nodeE[iLevTest], residual, Geom(iLevTest).InvCellSize());
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    div_node_to_center(nodeE[iLev], residual, Geom(iLev).InvCellSize());
   }
 
   Real coef = 1;
@@ -1051,29 +1051,29 @@ void Pic::update_E_expl() {
   std::string nameFunc = "Pic::update_E_expl";
 
   timing_func(nameFunc);
-  int iLev = 0;
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    MultiFab::Copy(nodeEth[iLevTest], nodeE[iLevTest], 0, 0,
-                   nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
-    apply_BC(cellStatus[iLevTest], centerB[iLevTest], 0,
-             centerB[iLevTest].nComp(), &Pic::get_center_B, iLevTest);
+  
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0,
+                   nodeE[iLev].nComp(), nodeE[iLev].nGrow());
+    apply_BC(cellStatus[iLev], centerB[iLev], 0,
+             centerB[iLev].nComp(), &Pic::get_center_B, iLev);
   }
   const Real dt = tc->get_dt();
   RealVect dt2dx;
   for (int i = 0; i < nDim; i++) {
     dt2dx[i] = dt * Geom(0).InvCellSize(i);
   }
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    curl_center_to_node(centerB[iLevTest], nodeE[iLevTest], dt2dx.begin());
-    MultiFab::Saxpy(nodeE[iLevTest], -fourPI * dt, jHat[iLev], 0, 0,
-                    nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    curl_center_to_node(centerB[iLev], nodeE[iLev], dt2dx.begin());
+    MultiFab::Saxpy(nodeE[iLev], -fourPI * dt, jHat[iLev], 0, 0,
+                    nodeE[iLev].nComp(), nodeE[iLev].nGrow());
 
-    MultiFab::Add(nodeE[iLevTest], nodeEth[iLevTest], 0, 0,
-                  nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
+    MultiFab::Add(nodeE[iLev], nodeEth[iLev], 0, 0,
+                  nodeE[iLev].nComp(), nodeE[iLev].nGrow());
 
-    nodeE[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
-    apply_BC(nodeStatus[iLevTest], nodeE[iLevTest], 0, nDim, &Pic::get_node_E,
-             iLevTest);
+    nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E,
+             iLev);
   }
 }
 
@@ -1082,12 +1082,12 @@ void Pic::update_E_impl() {
   std::string nameFunc = "Pic::update_E_impl";
 
   timing_func(nameFunc);
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    eSolver.reset(get_local_node_or_cell_number(nodeE[iLevTest]));
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    eSolver.reset(get_local_node_or_cell_number(nodeE[iLev]));
 
     update_E_rhs(eSolver.rhs);
 
-    convert_3d_to_1d(nodeE[iLevTest], eSolver.xLeft);
+    convert_3d_to_1d(nodeE[iLev], eSolver.xLeft);
   }
 
   update_E_matvec(eSolver.xLeft, eSolver.matvec, false);
@@ -1105,29 +1105,29 @@ void Pic::update_E_impl() {
   eSolver.solve(doReport);
   BL_PROFILE_VAR_STOP(eSolver);
 
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    nodeEth[iLevTest].setVal(0.0);
-    convert_1d_to_3d(eSolver.xLeft, nodeEth[iLevTest]);
-    nodeEth[iLevTest].SumBoundary(Geom(iLevTest).periodicity());
-    nodeEth[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
-    MultiFab::Add(nodeEth[iLevTest], nodeE[iLevTest], 0, 0,
-                  nodeEth[iLevTest].nComp(), nGst);
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    nodeEth[iLev].setVal(0.0);
+    convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev]);
+    nodeEth[iLev].SumBoundary(Geom(iLev).periodicity());
+    nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
+    MultiFab::Add(nodeEth[iLev], nodeE[iLev], 0, 0,
+                  nodeEth[iLev].nComp(), nGst);
 
-    MultiFab::LinComb(nodeE[iLevTest], -(1.0 - fsolver.theta) / fsolver.theta,
-                      nodeE[iLevTest], 0, 1. / fsolver.theta, nodeEth[iLevTest],
-                      0, 0, nodeE[iLevTest].nComp(), nGst);
+    MultiFab::LinComb(nodeE[iLev], -(1.0 - fsolver.theta) / fsolver.theta,
+                      nodeE[iLev], 0, 1. / fsolver.theta, nodeEth[iLev],
+                      0, 0, nodeE[iLev].nComp(), nGst);
 
-    apply_BC(nodeStatus[iLevTest], nodeE[iLevTest], 0, nDim, &Pic::get_node_E,
-             iLevTest);
-    apply_BC(nodeStatus[iLevTest], nodeEth[iLevTest], 0, nDim, &Pic::get_node_E,
-             iLevTest);
+    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E,
+             iLev);
+    apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim, &Pic::get_node_E,
+             iLev);
     if (doSmoothE) {
       calc_smooth_coef();
-      smooth_E(nodeEth[iLevTest]);
-      smooth_E(nodeE[iLevTest]);
+      smooth_E(nodeEth[iLev]);
+      smooth_E(nodeE[iLev]);
     }
-    div_node_to_center(nodeE[iLevTest], centerDivE[iLevTest],
-                       Geom(iLevTest).InvCellSize());
+    div_node_to_center(nodeE[iLev], centerDivE[iLev],
+                       Geom(iLev).InvCellSize());
   }
 }
 
@@ -1284,17 +1284,17 @@ void Pic::update_E_rhs(double* rhs) {
   MultiFab temp2Node(nGrids[0], DistributionMap(0), 3, nGst);
   temp2Node.setVal(0.0);
 
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    apply_BC(cellStatus[iLevTest], centerB[iLevTest], 0,
-             centerB[iLevTest].nComp(), &Pic::get_center_B, iLevTest);
-    apply_BC(nodeStatus[iLevTest], nodeB[iLevTest], 0, nodeB[iLevTest].nComp(),
-             &Pic::get_node_B, iLevTest);
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    apply_BC(cellStatus[iLev], centerB[iLev], 0,
+             centerB[iLev].nComp(), &Pic::get_center_B, iLev);
+    apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+             &Pic::get_node_B, iLev);
   }
 
   const Real* invDx = Geom(0).InvCellSize();
 
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    curl_center_to_node(centerB[iLevTest], tempNode, invDx);
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    curl_center_to_node(centerB[iLev], tempNode, invDx);
   }
 
   MultiFab::Saxpy(temp2Node, -fourPI, jHat[iLev], 0, 0, temp2Node.nComp(),
@@ -1303,8 +1303,8 @@ void Pic::update_E_rhs(double* rhs) {
   MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), temp2Node.nGrow());
 
   temp2Node.mult(fsolver.theta * tc->get_dt());
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    MultiFab::Add(temp2Node, nodeE[iLevTest], 0, 0, nodeE[iLevTest].nComp(),
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    MultiFab::Add(temp2Node, nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                   temp2Node.nGrow());
   }
 
@@ -1320,19 +1320,19 @@ void Pic::update_B() {
   timing_func(nameFunc);
   MultiFab dB(cGrids[0], DistributionMap(0), 3, nGst);
 
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    curl_node_to_center(nodeEth[iLevTest], dB, Geom(0).InvCellSize());
-    MultiFab::Saxpy(centerB[iLevTest], -tc->get_dt(), dB, 0, 0,
-                    centerB[iLevTest].nComp(), centerB[iLevTest].nGrow());
-    centerB[iLevTest].FillBoundary(Geom(0).periodicity());
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    curl_node_to_center(nodeEth[iLev], dB, Geom(0).InvCellSize());
+    MultiFab::Saxpy(centerB[iLev], -tc->get_dt(), dB, 0, 0,
+                    centerB[iLev].nComp(), centerB[iLev].nGrow());
+    centerB[iLev].FillBoundary(Geom(0).periodicity());
 
-    apply_BC(cellStatus[iLevTest], centerB[iLevTest], 0,
-             centerB[iLevTest].nComp(), &Pic::get_center_B, iLevTest);
+    apply_BC(cellStatus[iLev], centerB[iLev], 0,
+             centerB[iLev].nComp(), &Pic::get_center_B, iLev);
 
-    average_center_to_node(centerB[iLevTest], nodeB[iLevTest]);
-    nodeB[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
-    apply_BC(nodeStatus[iLevTest], nodeB[iLevTest], 0, nodeB[iLevTest].nComp(),
-             &Pic::get_node_B, iLevTest);
+    average_center_to_node(centerB[iLev], nodeB[iLev]);
+    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+    apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+             &Pic::get_node_B, iLev);
   }
 }
 
@@ -1547,9 +1547,9 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
 //==========================================================
 Real Pic::calc_E_field_energy() {
   Real sum = 0;
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    for (MFIter mfi(nodeE[iLevTest]); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = nodeE[iLevTest][mfi];
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+      FArrayBox& fab = nodeE[iLev][mfi];
       const Box& box = mfi.validbox();
       const Array4<Real>& arr = fab.array();
 
@@ -1582,9 +1582,9 @@ Real Pic::calc_E_field_energy() {
 Real Pic::calc_B_field_energy() {
   Real sum = 0;
 
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    for (MFIter mfi(centerB[iLevTest]); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = centerB[iLevTest][mfi];
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+      FArrayBox& fab = centerB[iLev][mfi];
       const Box& box = mfi.validbox();
       const Array4<Real>& arr = fab.array();
 
@@ -1698,10 +1698,10 @@ void Pic::report_load_balance() {
 
   localInfo[iMem_] = (float)read_mem_usage();
 
-  for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    localInfo[iNBlk_] = (float)centerB[iLevTest].local_size();
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    localInfo[iNBlk_] = (float)centerB[iLev].local_size();
     localInfo[iNCell_] =
-        (float)get_local_node_or_cell_number(centerB[iLevTest]);
+        (float)get_local_node_or_cell_number(centerB[iLev]);
   }
 
   {
