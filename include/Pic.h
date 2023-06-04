@@ -175,7 +175,7 @@ public:
   //--------------Initialization begin-------------------------------
   void regrid(const amrex::BoxArray &region, const Grid *const grid = nullptr);
 
-  void distribute_arrays();
+  void distribute_arrays(amrex::Vector<amrex::BoxArray> &cGridsOld);
 
   void fill_new_cells();
   void fill_E_B_fields();
@@ -213,8 +213,9 @@ public:
     if (!usePIC)
       return;
 
+    int iLev = 0;
     for (auto &pts : parts) {
-      pts->add_particles_domain(cellStatus, iRefinement);
+      pts->add_particles_domain(cellStatus[iLev], iRefinement);
     }
   }
 
@@ -222,8 +223,9 @@ public:
     if (!usePIC)
       return;
 
+    int iLev = 0;
     for (auto &pts : parts) {
-      pts->inject_particles_at_boundary(cellStatus);
+      pts->inject_particles_at_boundary(cellStatus[iLev]);
     }
   }
 

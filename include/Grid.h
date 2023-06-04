@@ -47,10 +47,10 @@ protected:
   amrex::Vector<amrex::BoxArray> nGrids;
 
   // The status of a cell could be: iBoundary_, iOnNew_, or iOnOld_.
-  amrex::iMultiFab cellStatus;
+  amrex::Vector<amrex::iMultiFab> cellStatus;
 
   // The status of a Node could be: iBoundary_, iOnNew_, or iOnOld_.
-  amrex::iMultiFab nodeStatus;
+  amrex::Vector<amrex::iMultiFab> nodeStatus;
 
   // If a node is inside the physical domain, it is set to iOnNew_. Otherwise,
   // it is iBoundary_.
@@ -63,7 +63,7 @@ protected:
   // 2D, some nodes are set to 'iIgnore_' so that only one layer of nodes is
   // solved; (3) if a node is neither 'iAssign_' nor 'iIgnore_', nodeShare
   // stores the neighbor that handle this node.
-  amrex::iMultiFab nodeShare;
+  amrex::Vector<amrex::iMultiFab> nodeShare;
   constexpr static int iAssign_ = (1 << 4), iIgnore_ = -1;
 
   bool doNeedFillNewCell = true;
@@ -105,6 +105,9 @@ public:
     nLev = max_level + 1;
 
     iRefinement.resize(nLev);
+    cellStatus.resize(nLev);
+    nodeStatus.resize(nLev);
+    nodeShare.resize(nLev);
   };
 
   ~Grid() = default;

@@ -106,7 +106,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
   for (MFIter mfi(nodeE[iLevTest]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
-    const auto& typeArr = nodeShare[mfi].array();
+    const auto& typeArr = nodeShare[iLevTest][mfi].array();
 
     auto lo = box.loVect3d();
     auto hi = box.hiVect3d();

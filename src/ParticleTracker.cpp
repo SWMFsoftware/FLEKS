@@ -10,13 +10,15 @@ void ParticleTracker::set_ic(Pic& pic) {
   complete_parameters();
 
   update_field(pic);
+
+  int iLev = 0;
   for (int i = 0; i < parts.size(); i++) {
     auto& tps = parts[i];
     if (doInitFromPIC) {
       tps->read_test_particle_list(listFiles);
       tps->add_test_particles_from_pic(pic.get_particle_pointer(i));
     } else {
-      tps->add_test_particles_from_fluid(cellStatus, tpStates);
+      tps->add_test_particles_from_fluid(cellStatus[iLev], tpStates);
     }
     tps->update_initial_particle_number();
 
@@ -94,6 +96,8 @@ void ParticleTracker::update(Pic& pic) {
           << std::endl;
 
   update_field(pic);
+
+  int iLev = 0;
   bool doSave = savectr->is_time_to();
   for (int i = 0; i < parts.size(); i++) {
     auto& tps = parts[i];
@@ -119,7 +123,7 @@ void ParticleTracker::update(Pic& pic) {
         tps->add_test_particles_from_pic(pic.get_particle_pointer(i));
       } else if (tps->TotalNumberOfParticles() <
                  0.5 * tps->init_particle_number()) {
-        tps->add_test_particles_from_fluid(cellStatus, tpStates);
+        tps->add_test_particles_from_fluid(cellStatus[iLev], tpStates);
       }
     }
   }
@@ -136,16 +140,17 @@ void ParticleTracker::update_field(Pic& pic) {
 
 void ParticleTracker::update_cell_status(Pic& pic) {
 
-  if (cellStatus.empty())
+  int iLev = 0;
+  if (cellStatus[iLev].empty())
     return;
 
-  iMultiFab::Copy(cellStatus, pic.cellStatus, 0, 0, cellStatus.nComp(),
-                  cellStatus.nGrow());
+  iMultiFab::Copy(cellStatus[iLev], pic.cellStatus[iLev], 0, 0,
+                  cellStatus[iLev].nComp(), cellStatus[iLev].nGrow());
 
-  for (MFIter mfi(cellStatus); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
-    const auto& cellArrPT = cellStatus[mfi].array();
-    const auto& cellArrPIC = pic.cellStatus[mfi].array();
+    const auto& cellArrPT = cellStatus[iLev][mfi].array();
+    const auto& cellArrPIC = pic.cellStatus[iLev][mfi].array();
 
     const auto lo = lbound(box);
     const auto hi = ubound(box);
@@ -220,9 +225,10 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
                         DistributionMap(iLevTest), 3, nGst, false);
     distribute_FabArray(nodeB[iLevTest], nGrids[iLevTest],
                         DistributionMap(iLevTest), 3, nGst, false);
+
+    distribute_FabArray(cellStatus[iLevTest], cGrids[iLevTest],
+                        DistributionMap(iLevTest), 1, nGst, false);
   }
-  distribute_FabArray(cellStatus, cGrids[0], DistributionMap(0), 1, nGst,
-                      false);
 
   update_cell_status(pic);
 
@@ -253,13 +259,14 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
   }
 
   { // Copy cell Status to Particles objects.
+    int iLev = 0;
     for (int i = 0; i < nSpecies; i++) {
-      distribute_FabArray(parts[i]->cellStatus, cGrids[0], DistributionMap(0),
-                          1, nGst, false);
+      distribute_FabArray(parts[i]->cellStatus, cGrids[iLev],
+                          DistributionMap(iLev), 1, nGst, false);
 
-      if (!cellStatus.empty()) {
-        iMultiFab::Copy(parts[i]->cellStatus, cellStatus, 0, 0,
-                        cellStatus.nComp(), cellStatus.nGrow());
+      if (!cellStatus[iLev].empty()) {
+        iMultiFab::Copy(parts[i]->cellStatus, cellStatus[iLev], 0, 0,
+                        cellStatus[iLev].nComp(), cellStatus[iLev].nGrow());
       }
     }
   }

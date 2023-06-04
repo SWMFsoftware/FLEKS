@@ -101,14 +101,17 @@ void Pic::fill_new_cells() {
     // If this method is called when PIC component is off, it suggests the test
     // particle component is activated. The test particle component copies EM
     // field from PIC, so PIC EM field should be updated here.
-    if (!nodeStatus.empty()) {
-      nodeStatus.setVal(iBoundary_);
-      nodeStatus.setVal(iOnNew_, 0);
-    }
 
-    if (!cellStatus.empty()) {
-      cellStatus.setVal(iBoundary_);
-      cellStatus.setVal(iOnNew_, 0);
+    for (int iLev = 0; iLev <= finest_level; iLev++) {
+      if (!nodeStatus[iLev].empty()) {
+        nodeStatus[iLev].setVal(iBoundary_);
+        nodeStatus[iLev].setVal(iOnNew_, 0);
+      }
+
+      if (!cellStatus[iLev].empty()) {
+        cellStatus[iLev].setVal(iBoundary_);
+        cellStatus[iLev].setVal(iOnNew_, 0);
+      }
     }
   }
 
@@ -124,7 +127,7 @@ void Pic::fill_new_cells() {
 }
 
 //==========================================================
-void Pic::distribute_arrays() {
+void Pic::distribute_arrays(Vector<BoxArray>& cGridsOld) {
   if (cGrids[0].empty()) {
     return;
   }
@@ -174,7 +177,93 @@ void Pic::distribute_arrays() {
       distribute_FabArray(pl[iLev], nGrids[iLev], DistributionMap(iLev),
                           nMoments, nGst, doMoveData);
     }
+
+    { //===========Label cellStatus/nodeStatus ==========
+
+      // The algorithm decides inject particles or not needs at least 2 ghost
+      // cell layers.
+      distribute_FabArray(cellStatus[iLev], cGrids[iLev], DistributionMap(iLev),
+                          1, nGst >= 2 ? nGst : 2, false);
+      if (!cellStatus[iLev].empty()) {
+        cellStatus[iLev].setVal(iBoundary_);
+        cellStatus[iLev].setVal(iOnNew_, 0);
+
+        if (usePIC)
+          for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+            const Box& box = mfi.validbox();
+            const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
+            const auto lo = lbound(box);
+            const auto hi = ubound(box);
+
+            for (int k = lo.z; k <= hi.z; ++k)
+              for (int j = lo.y; j <= hi.y; ++j)
+                for (int i = lo.x; i <= hi.x; ++i) {
+                  if (cellArr(i, j, k) == iOnNew_ &&
+                      cGridsOld[iLev].contains(
+                          IntVect{ AMREX_D_DECL(i, j, k) })) {
+                    cellArr(i, j, k) = iOnOld_;
+                  }
+                }
+          }
+      }
+
+      cellStatus[iLev].FillBoundary(Geom(iLev).periodicity());
+
+      if (isFake2D) {
+        // For the fake 2D cases, in the z-direction, only the first layer ghost
+        // cells are filled in correctly by the method FillBoundary.
+        if (!cellStatus[iLev].empty())
+          for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+            const Box& box = mfi.fabbox();
+            const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
+            const auto lo = lbound(box);
+            const auto hi = ubound(box);
+
+            for (int k = lo.z; k <= hi.z; ++k)
+              if (k < -1 || k > 1)
+                for (int j = lo.y; j <= hi.y; ++j)
+                  for (int i = lo.x; i <= hi.x; ++i) {
+                    cellArr(i, j, k) = cellArr(i, j, 0);
+                  }
+          }
+      }
+
+      distribute_FabArray(nodeStatus[iLev], nGrids[iLev], DistributionMap(iLev),
+                          1, nGst, false);
+      if (!nodeStatus[iLev].empty()) {
+        nodeStatus[iLev].setVal(iBoundary_);
+        nodeStatus[iLev].setVal(iOnNew_, 0);
+
+        if (usePIC) {
+          auto nodeBAOld =
+              convert(cGridsOld[iLev], amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
+          for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+            const Box& box = mfi.validbox();
+            const auto& nodeArr = nodeStatus[iLev][mfi].array();
+
+            const auto lo = lbound(box);
+            const auto hi = ubound(box);
+
+            for (int k = lo.z; k <= hi.z; ++k)
+              for (int j = lo.y; j <= hi.y; ++j)
+                for (int i = lo.x; i <= hi.x; ++i) {
+                  if (nodeArr(i, j, k) == iOnNew_ &&
+                      nodeBAOld.contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
+                    nodeArr(i, j, k) = iOnOld_;
+                  }
+                }
+          }
+        }
+      }
+
+      nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
+
+      distribute_FabArray(nodeShare[iLev], nGrids[iLev], DistributionMap(iLev),
+                          1, 0, false);
+    }
   }
+
+  set_nodeShare();
 }
 
 //==========================================================
@@ -187,13 +276,13 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
   if (region == activeRegion && isGridInitialized)
     return;
 
+  Vector<BoxArray> cGridsOld(cGrids);
+
   activeRegion = region;
 
   isGridEmpty = activeRegion.empty();
 
   doNeedFillNewCell = true;
-
-  BoxArray cGridOld = cGrids[0];
 
   if (isGridEmpty) {
     cGrids.clear();
@@ -224,7 +313,7 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
 
   print_grid_info();
 
-  distribute_arrays();
+  distribute_arrays(cGridsOld);
 
   {
     bool doMoveData = false;
@@ -238,89 +327,6 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
                         doMoveData);
   }
   //===========Move field data around end====================
-
-  { //===========Label cellStatus/nodeStatus ==========
-
-    // The algorithm decides inject particles or not needs at least 2 ghost cell
-    // layers.
-    distribute_FabArray(cellStatus, cGrids[0], DistributionMap(0), 1,
-                        nGst >= 2 ? nGst : 2, false);
-    if (!cellStatus.empty()) {
-      cellStatus.setVal(iBoundary_);
-      cellStatus.setVal(iOnNew_, 0);
-
-      if (usePIC)
-        for (MFIter mfi(cellStatus); mfi.isValid(); ++mfi) {
-          const Box& box = mfi.validbox();
-          const Array4<int>& cellArr = cellStatus[mfi].array();
-          const auto lo = lbound(box);
-          const auto hi = ubound(box);
-
-          for (int k = lo.z; k <= hi.z; ++k)
-            for (int j = lo.y; j <= hi.y; ++j)
-              for (int i = lo.x; i <= hi.x; ++i) {
-                if (cellArr(i, j, k) == iOnNew_ &&
-                    cGridOld.contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
-                  cellArr(i, j, k) = iOnOld_;
-                }
-              }
-        }
-    }
-
-    cellStatus.FillBoundary(Geom(0).periodicity());
-
-    if (isFake2D) {
-      // For the fake 2D cases, in the z-direction, only the first layer ghost
-      // cells are filled in correctly by the method FillBoundary.
-      if (!cellStatus.empty())
-        for (MFIter mfi(cellStatus); mfi.isValid(); ++mfi) {
-          const Box& box = mfi.fabbox();
-          const Array4<int>& cellArr = cellStatus[mfi].array();
-          const auto lo = lbound(box);
-          const auto hi = ubound(box);
-
-          for (int k = lo.z; k <= hi.z; ++k)
-            if (k < -1 || k > 1)
-              for (int j = lo.y; j <= hi.y; ++j)
-                for (int i = lo.x; i <= hi.x; ++i) {
-                  cellArr(i, j, k) = cellArr(i, j, 0);
-                }
-        }
-    }
-
-    distribute_FabArray(nodeStatus, nGrids[0], DistributionMap(0), 1, nGst,
-                        false);
-    if (!nodeStatus.empty()) {
-      nodeStatus.setVal(iBoundary_);
-      nodeStatus.setVal(iOnNew_, 0);
-
-      if (usePIC) {
-        auto nodeBAOld =
-            convert(cGridOld, amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
-        for (MFIter mfi(nodeStatus); mfi.isValid(); ++mfi) {
-          const Box& box = mfi.validbox();
-          const auto& nodeArr = nodeStatus[mfi].array();
-
-          const auto lo = lbound(box);
-          const auto hi = ubound(box);
-
-          for (int k = lo.z; k <= hi.z; ++k)
-            for (int j = lo.y; j <= hi.y; ++j)
-              for (int i = lo.x; i <= hi.x; ++i) {
-                if (nodeArr(i, j, k) == iOnNew_ &&
-                    nodeBAOld.contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
-                  nodeArr(i, j, k) = iOnOld_;
-                }
-              }
-        }
-      }
-    }
-
-    nodeStatus.FillBoundary(Geom(0).periodicity());
-
-    distribute_FabArray(nodeShare, nGrids[0], DistributionMap(0), 1, 0, false);
-    set_nodeShare();
-  }
 
   //--------------particles-----------------------------------
   if (parts.empty()) {
@@ -372,13 +378,15 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
   }
 
   { // Copy cellStatus to Particles objects.
+    int iLev = 0;
     for (int i = 0; i < nSpecies; i++) {
-      distribute_FabArray(parts[i]->cellStatus, cGrids[0], DistributionMap(0),
-                          1, nGst >= 2 ? nGst : 2, false);
+      distribute_FabArray(parts[i]->cellStatus, cGrids[iLev],
+                          DistributionMap(iLev), 1, nGst >= 2 ? nGst : 2,
+                          false);
 
-      if (!cellStatus.empty()) {
-        iMultiFab::Copy(parts[i]->cellStatus, cellStatus, 0, 0,
-                        cellStatus.nComp(), cellStatus.nGrow());
+      if (!cellStatus[iLev].empty()) {
+        iMultiFab::Copy(parts[i]->cellStatus, cellStatus[iLev], 0, 0,
+                        cellStatus[iLev].nComp(), cellStatus[iLev].nGrow());
       }
     }
   }
@@ -402,74 +410,77 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
 
 //==========================================================
 void Pic::set_nodeShare() {
-  if (!nodeShare.empty())
-    nodeShare.setVal(iIgnore_);
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
 
-  if (!nodeShare.empty())
-    for (MFIter mfi(nodeShare); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.validbox();
+    if (!nodeShare[iLev].empty())
+      nodeShare[iLev].setVal(iIgnore_);
 
-      const Box& cellBox = convert(box, { AMREX_D_DECL(0, 0, 0) });
+    if (!nodeShare[iLev].empty())
+      for (MFIter mfi(nodeShare[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
 
-      const auto& typeArr = nodeShare[mfi].array();
-      const auto& statusArr = cellStatus[mfi].array();
+        const Box& cellBox = convert(box, { AMREX_D_DECL(0, 0, 0) });
 
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
+        const auto& typeArr = nodeShare[iLev][mfi].array();
+        const auto& statusArr = cellStatus[iLev][mfi].array();
 
-      int diMax = 0, diMin = -1;
-      int djMax = 0, djMin = -1;
-      int dkMax = 0, dkMin = -1;
-      if (isFake2D) {
-        dkMin = 0;
-      }
+        const auto lo = lbound(box);
+        const auto hi = ubound(box);
 
-      auto fHandle = [&](int i, int j, int k) {
-        for (int dk = dkMax; dk >= dkMin; dk--)
-          for (int dj = djMax; dj >= djMin; dj--)
-            for (int di = diMax; di >= diMin; di--) {
-              if (statusArr(i + di, j + dj, k + dk) != iBoundary_) {
-                // Find the first CELL that shares this node.
-                if (cellBox.contains(
-                        IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) })) {
-                  return iAssign_;
+        int diMax = 0, diMin = -1;
+        int djMax = 0, djMin = -1;
+        int dkMax = 0, dkMin = -1;
+        if (isFake2D) {
+          dkMin = 0;
+        }
+
+        auto fHandle = [&](int i, int j, int k) {
+          for (int dk = dkMax; dk >= dkMin; dk--)
+            for (int dj = djMax; dj >= djMin; dj--)
+              for (int di = diMax; di >= diMin; di--) {
+                if (statusArr(i + di, j + dj, k + dk) != iBoundary_) {
+                  // Find the first CELL that shares this node.
+                  if (cellBox.contains(
+                          IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) })) {
+                    return iAssign_;
+                  } else {
+                    int ii = 0;
+                    if (di == 0)
+                      ii += 1;
+                    if (dj == 0)
+                      ii += 2;
+                    if (!isFake2D && dk == 0)
+                      ii += 4;
+
+                    return ii;
+                  }
+                }
+              }
+          Abort("Error: something is wrong here!");
+          return 0;
+        };
+
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i) {
+              if (!isFake2D || k == lo.z) {
+                // for 2D (1 cell in the z-direction), only handle the layer of
+                // k=0
+                if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
+                    (!isFake2D && (k == lo.z || k == hi.z))) {
+                  // Block boundary nodes.
+
+                  // Check if this block boundary node needs to be handled by
+                  // this block.
+
+                  typeArr(i, j, k) = fHandle(i, j, k);
                 } else {
-                  int ii = 0;
-                  if (di == 0)
-                    ii += 1;
-                  if (dj == 0)
-                    ii += 2;
-                  if (!isFake2D && dk == 0)
-                    ii += 4;
-
-                  return ii;
+                  typeArr(i, j, k) = iAssign_;
                 }
               }
             }
-        Abort("Error: something is wrong here!");
-        return 0;
-      };
-
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (!isFake2D || k == lo.z) {
-              // for 2D (1 cell in the z-direction), only handle the layer of
-              // k=0
-              if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
-                  (!isFake2D && (k == lo.z || k == hi.z))) {
-                // Block boundary nodes.
-
-                // Check if this block boundary node needs to be handled by this
-                // block.
-
-                typeArr(i, j, k) = fHandle(i, j, k);
-              } else {
-                typeArr(i, j, k) = iAssign_;
-              }
-            }
-          }
-    }
+      }
+  }
 }
 
 //==========================================================
@@ -485,7 +496,7 @@ void Pic::fill_new_node_E() {
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
-    const auto& status = nodeStatus[mfi].array();
+    const auto& status = nodeStatus[iLev][mfi].array();
 
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
@@ -514,7 +525,7 @@ void Pic::fill_new_node_B() {
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
-    const auto& status = nodeStatus[mfi].array();
+    const auto& status = nodeStatus[iLev][mfi].array();
 
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
@@ -543,7 +554,7 @@ void Pic::fill_new_center_B() {
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
-    const auto& status = cellStatus[mfi].array();
+    const auto& status = cellStatus[iLev][mfi].array();
 
     for (int iVar = 0; iVar < centerB[iLev].nComp(); iVar++)
       for (int k = lo.z; k <= hi.z; ++k)
@@ -577,8 +588,10 @@ void Pic::fill_E_B_fields() {
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
     nodeE[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
     nodeB[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
-    apply_BC(nodeStatus, nodeB[iLevTest], 0, nDim, &Pic::get_node_B, iLevTest);
-    apply_BC(nodeStatus, nodeE[iLevTest], 0, nDim, &Pic::get_node_E, iLevTest);
+    apply_BC(nodeStatus[iLevTest], nodeB[iLevTest], 0, nDim, &Pic::get_node_B,
+             iLevTest);
+    apply_BC(nodeStatus[iLevTest], nodeE[iLevTest], 0, nDim, &Pic::get_node_E,
+             iLevTest);
   }
 
   fill_new_center_B();
@@ -586,8 +599,8 @@ void Pic::fill_E_B_fields() {
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
     centerB[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
 
-    apply_BC(cellStatus, centerB[iLevTest], 0, centerB[iLevTest].nComp(),
-             &Pic::get_center_B, iLevTest);
+    apply_BC(cellStatus[iLevTest], centerB[iLevTest], 0,
+             centerB[iLevTest].nComp(), &Pic::get_center_B, iLevTest);
   }
 }
 
@@ -602,8 +615,9 @@ void Pic::fill_source_particles() {
 #ifdef _PT_COMPONENT_
   doSelectRegion = (nSpecies == 4);
 #endif
+  int iLev = 0;
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->add_particles_source(cellStatus, *source, stateOH.get(),
+    parts[i]->add_particles_source(cellStatus[iLev], *source, stateOH.get(),
                                    tc->get_dt(), nSourcePPC, doSelectRegion);
   }
 }
@@ -936,9 +950,8 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
 
   centerNetChargeNew[iLev].SumBoundary(Geom(iLev).periodicity());
 
-  const int iLevTest = 0;
-  apply_BC(cellStatus, centerNetChargeNew[iLev], 0,
-           centerNetChargeNew[iLev].nComp(), &Pic::get_zero, iLevTest);
+  apply_BC(cellStatus[iLev], centerNetChargeNew[iLev], 0,
+           centerNetChargeNew[iLev].nComp(), &Pic::get_zero, iLev);
 
   if (Particles<>::particlePosition == NonStaggered) {
     MultiFab::Copy(centerNetChargeN[iLev], centerNetChargeNew[iLev], 0, 0,
@@ -1042,8 +1055,8 @@ void Pic::update_E_expl() {
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
     MultiFab::Copy(nodeEth[iLevTest], nodeE[iLevTest], 0, 0,
                    nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
-    apply_BC(cellStatus, centerB[iLevTest], 0, centerB[iLevTest].nComp(),
-             &Pic::get_center_B, iLevTest);
+    apply_BC(cellStatus[iLevTest], centerB[iLevTest], 0,
+             centerB[iLevTest].nComp(), &Pic::get_center_B, iLevTest);
   }
   const Real dt = tc->get_dt();
   RealVect dt2dx;
@@ -1059,7 +1072,8 @@ void Pic::update_E_expl() {
                   nodeE[iLevTest].nComp(), nodeE[iLevTest].nGrow());
 
     nodeE[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
-    apply_BC(nodeStatus, nodeE[iLevTest], 0, nDim, &Pic::get_node_E, iLevTest);
+    apply_BC(nodeStatus[iLevTest], nodeE[iLevTest], 0, nDim, &Pic::get_node_E,
+             iLevTest);
   }
 }
 
@@ -1103,8 +1117,9 @@ void Pic::update_E_impl() {
                       nodeE[iLevTest], 0, 1. / fsolver.theta, nodeEth[iLevTest],
                       0, 0, nodeE[iLevTest].nComp(), nGst);
 
-    apply_BC(nodeStatus, nodeE[iLevTest], 0, nDim, &Pic::get_node_E, iLevTest);
-    apply_BC(nodeStatus, nodeEth[iLevTest], 0, nDim, &Pic::get_node_E,
+    apply_BC(nodeStatus[iLevTest], nodeE[iLevTest], 0, nDim, &Pic::get_node_E,
+             iLevTest);
+    apply_BC(nodeStatus[iLevTest], nodeEth[iLevTest], 0, nDim, &Pic::get_node_E,
              iLevTest);
     if (doSmoothE) {
       calc_smooth_coef();
@@ -1153,10 +1168,11 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
   } else {
     // Even after apply_BC(), the outmost layer node E is still
     // unknow. See FluidInterface::calc_current for detailed explaniation.
-    apply_BC(nodeStatus, vecMF, 0, nDim, &Pic::get_node_E, iLev);
+    apply_BC(nodeStatus[iLev], vecMF, 0, nDim, &Pic::get_node_E, iLev);
   }
 
-  lap_node_to_node(vecMF, matvecMF, DistributionMap(0), Geom(0), cellStatus);
+  lap_node_to_node(vecMF, matvecMF, DistributionMap(iLev), Geom(iLev),
+                   cellStatus[iLev]);
 
   Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
   matvecMF.mult(-delt2);
@@ -1187,8 +1203,8 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
       // 1) The outmost boundary layer of tempCenter3 is not accurate.
       // 2) The 2 outmost boundary layers (all ghosts if there are 2 ghost
       // cells) of tempCenter1 are not accurate
-      apply_BC(cellStatus, tempCenter1, 0, tempCenter1.nComp(), &Pic::get_zero,
-               iLev);
+      apply_BC(cellStatus[iLev], tempCenter1, 0, tempCenter1.nComp(),
+               &Pic::get_zero, iLev);
 
       MultiFab::LinComb(centerDivE[iLev], 1 - fsolver.coefDiff,
                         centerDivE[iLev], 0, fsolver.coefDiff, tempCenter1, 0,
@@ -1269,9 +1285,9 @@ void Pic::update_E_rhs(double* rhs) {
   temp2Node.setVal(0.0);
 
   for (int iLevTest = 0; iLevTest <= finest_level; iLevTest++) {
-    apply_BC(cellStatus, centerB[iLevTest], 0, centerB[iLevTest].nComp(),
-             &Pic::get_center_B, iLevTest);
-    apply_BC(nodeStatus, nodeB[iLevTest], 0, nodeB[iLevTest].nComp(),
+    apply_BC(cellStatus[iLevTest], centerB[iLevTest], 0,
+             centerB[iLevTest].nComp(), &Pic::get_center_B, iLevTest);
+    apply_BC(nodeStatus[iLevTest], nodeB[iLevTest], 0, nodeB[iLevTest].nComp(),
              &Pic::get_node_B, iLevTest);
   }
 
@@ -1310,12 +1326,12 @@ void Pic::update_B() {
                     centerB[iLevTest].nComp(), centerB[iLevTest].nGrow());
     centerB[iLevTest].FillBoundary(Geom(0).periodicity());
 
-    apply_BC(cellStatus, centerB[iLevTest], 0, centerB[iLevTest].nComp(),
-             &Pic::get_center_B, iLevTest);
+    apply_BC(cellStatus[iLevTest], centerB[iLevTest], 0,
+             centerB[iLevTest].nComp(), &Pic::get_center_B, iLevTest);
 
     average_center_to_node(centerB[iLevTest], nodeB[iLevTest]);
     nodeB[iLevTest].FillBoundary(Geom(iLevTest).periodicity());
-    apply_BC(nodeStatus, nodeB[iLevTest], 0, nodeB[iLevTest].nComp(),
+    apply_BC(nodeStatus[iLevTest], nodeB[iLevTest], 0, nodeB[iLevTest].nComp(),
              &Pic::get_node_B, iLevTest);
   }
 }
@@ -1606,6 +1622,7 @@ void Pic::convert_1d_to_3d(const double* const p, amrex::MultiFab& MF) {
 
   MF.setVal(0.0);
 
+  int iLev = 0;
   int iCount = 0;
   for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
     const amrex::Box& box = mfi.tilebox();
@@ -1616,7 +1633,7 @@ void Pic::convert_1d_to_3d(const double* const p, amrex::MultiFab& MF) {
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
     int iMin = lo.x, jMin = lo.y, kMin = lo.z;
 
-    const auto& nodeArr = nodeShare[mfi].array();
+    const auto& nodeArr = nodeShare[iLev][mfi].array();
     for (int iVar = 0; iVar < MF.nComp(); iVar++)
       for (int k = kMin; k <= kMax; ++k)
         for (int j = jMin; j <= jMax; ++j)
@@ -1634,6 +1651,7 @@ void Pic::convert_3d_to_1d(const amrex::MultiFab& MF, double* const p) {
 
   bool isCenter = MF.ixType().cellCentered();
 
+  int iLev = 0;
   int iCount = 0;
   for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
     const amrex::Box& box = mfi.tilebox();
@@ -1645,7 +1663,7 @@ void Pic::convert_3d_to_1d(const amrex::MultiFab& MF, double* const p) {
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
     int iMin = lo.x, jMin = lo.y, kMin = lo.z;
 
-    const auto& nodeArr = nodeShare[mfi].array();
+    const auto& nodeArr = nodeShare[iLev][mfi].array();
     for (int iVar = 0; iVar < MF.nComp(); iVar++)
       for (int k = kMin; k <= kMax; ++k)
         for (int j = jMin; j <= jMax; ++j)
