@@ -121,7 +121,7 @@ protected:
 
   BC bc; // boundary condition
 
-  amrex::iMultiFab cellStatus;
+  amrex::Vector<amrex::iMultiFab> cellStatus;
 
 public:
   static const int iup_ = 0;
@@ -212,17 +212,24 @@ public:
 
   void convert_to_fluid_moments(amrex::MultiFab& momentsMF);
 
-  const amrex::iMultiFab& get_cell_status() const { return cellStatus; }
+  const amrex::Vector<amrex::iMultiFab>& get_cell_status() const {
+    return cellStatus;
+  }
+
+  const amrex::iMultiFab& get_cell_status(int iLev) const {
+    return cellStatus[iLev];
+  }
 
   void update_cell_status(const amrex::Vector<amrex::iMultiFab>& in) {
-    int iLev = 0;
-    const int nGst = in[iLev].nGrow();
-    distribute_FabArray(cellStatus, ParticleBoxArray(iLev),
-                        ParticleDistributionMap(iLev), 1, nGst, false);
+    for (int iLev = 0; iLev < nLev; iLev++) {
+      const int nGst = in[iLev].nGrow();
+      distribute_FabArray(cellStatus[iLev], ParticleBoxArray(iLev),
+                          ParticleDistributionMap(iLev), 1, nGst, false);
 
-    if (!in[iLev].empty()) {
-      amrex::iMultiFab::Copy(cellStatus, in[iLev], 0, 0, in[iLev].nComp(),
-                             nGst);
+      if (!in[iLev].empty()) {
+        amrex::iMultiFab::Copy(cellStatus[iLev], in[iLev], 0, 0,
+                               in[iLev].nComp(), nGst);
+      }
     }
   }
 
@@ -296,8 +303,8 @@ public:
       for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev);
            pti.isValid(); ++pti) {
         auto& particles = pti.GetArrayOfStructs();
-        const amrex::Array4<int const>& status = cellStatus[pti].array();
-        const amrex::Box& bx = cellStatus[pti].box();
+        const amrex::Array4<int const>& status = cellStatus[iLev][pti].array();
+        const amrex::Box& bx = cellStatus[iLev][pti].box();
         const amrex::IntVect lowCorner = bx.smallEnd();
         const amrex::IntVect highCorner = bx.bigEnd();
         for (auto& p : particles) {

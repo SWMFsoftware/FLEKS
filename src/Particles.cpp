@@ -30,6 +30,8 @@ Particles<NStructReal, NStructInt>::Particles(
 
   nLev = maxLevel() + 1;
 
+  cellStatus.resize(nLev);
+
   plo.resize(nLev);
   phi.resize(nLev);
   dx.resize(nLev);
@@ -318,7 +320,7 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
 
   for (int iLev = 0; iLev <= finestLevel(); iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
-      const auto& status = cellStatus[mfi].array();
+      const auto& status = cellStatus[iLev][mfi].array();
       const auto& iRefine = iRefinement[iLev][mfi].array();
       const Box& bx = mfi.validbox();
       const auto lo = amrex::lbound(bx);
@@ -360,7 +362,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
     fiTmp = fiIn;
 
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
-    const auto& status = cellStatus[mfi].array();
+    const auto& status = cellStatus[iLev][mfi].array();
     const Box& bx = mfi.validbox();
     const IntVect lo = IntVect(bx.loVect());
     const IntVect hi = IntVect(bx.hiVect());
@@ -1006,11 +1008,11 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
   const int iLev = 0;
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
-    const Box& bx = cellStatus[pti].box();
+    const Box& bx = cellStatus[iLev][pti].box();
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
 
-    const Array4<int const>& status = cellStatus[pti].array();
+    const Array4<int const>& status = cellStatus[iLev][pti].array();
 
     auto& particles = pti.GetArrayOfStructs();
     for (auto& p : particles) {
@@ -1071,10 +1073,10 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
     const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
     const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
 
-    const Array4<int const>& status = cellStatus[pti].array();
-    // cellStatus[pti] is a FAB, and the box returned from the box() method
-    // already contains the ghost cells.
-    const Box& bx = cellStatus[pti].box();
+    const Array4<int const>& status = cellStatus[iLev][pti].array();
+    // cellStatus[iLev][pti] is a FAB, and the box returned from the box()
+    // method already contains the ghost cells.
+    const Box& bx = cellStatus[iLev][pti].box();
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
 
@@ -1169,10 +1171,10 @@ void Particles<NStructReal, NStructInt>::neutral_mover(amrex::Real dt) {
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
 
-    const Array4<int const>& status = cellStatus[pti].array();
-    // cellStatus[pti] is a FAB, and the box returned from the box() method
-    // already contains the ghost cells.
-    const Box& bx = cellStatus[pti].box();
+    const Array4<int const>& status = cellStatus[iLev][pti].array();
+    // cellStatus[iLev][pti] is a FAB, and the box returned from the box()
+    // method already contains the ghost cells.
+    const Box& bx = cellStatus[iLev][pti].box();
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
 
@@ -1216,8 +1218,8 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
        ++pti) {
     Array4<Real const> const& phiArr = phiMF[pti].array();
 
-    const Array4<int const>& status = cellStatus[pti].array();
-    const Box& bx = cellStatus[pti].box();
+    const Array4<int const>& status = cellStatus[iLev][pti].array();
+    const Box& bx = cellStatus[iLev][pti].box();
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
 
@@ -1993,10 +1995,10 @@ IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
 
     const auto& aosOther = tileOther.GetArrayOfStructs();
 
-    const Box& bx = other.get_cell_status()[mfi].box();
+    const Box& bx = other.get_cell_status(iLev)[mfi].box();
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
-    const Array4<int const>& status = other.get_cell_status()[mfi].array();
+    const Array4<int const>& status = other.get_cell_status(iLev)[mfi].array();
 
     for (auto p : aosOther) {
       if (other.is_outside_ba(p, status, lowCorner, highCorner)) {

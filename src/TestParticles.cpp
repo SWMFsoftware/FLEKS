@@ -57,10 +57,10 @@ void TestParticles::move_and_save_charged_particles(
     const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
     const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
 
-    const Array4<int const>& status = cellStatus[pti].array();
-    // cellStatus[pti] is a FAB, and the box returned from the box() method
-    // already contains the ghost cells.
-    const Box& bx = cellStatus[pti].box();
+    const Array4<int const>& status = cellStatus[iLev][pti].array();
+    // cellStatus[iLev][pti] is a FAB, and the box returned from the box()
+    // method already contains the ghost cells.
+    const Box& bx = cellStatus[iLev][pti].box();
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
 
@@ -221,10 +221,10 @@ void TestParticles::move_and_save_neutrals(amrex::Real dt, amrex::Real tNowSI,
   const int iLev = 0;
   for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, iLev); pti.isValid();
        ++pti) {
-    const Array4<int const>& status = cellStatus[pti].array();
-    // cellStatus[pti] is a FAB, and the box returned from the box() method
-    // already contains the ghost cells.
-    const Box& bx = cellStatus[pti].box();
+    const Array4<int const>& status = cellStatus[iLev][pti].array();
+    // cellStatus[iLev][pti] is a FAB, and the box returned from the box()
+    // method already contains the ghost cells.
+    const Box& bx = cellStatus[iLev][pti].box();
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
 
@@ -396,8 +396,7 @@ void TestParticles::add_test_particles_from_pic(Particles<>* pts) {
 }
 
 //======================================================================
-void TestParticles::add_test_particles_from_fluid(const iMultiFab& cellStatus,
-                                                  Vector<Vel> tpStates) {
+void TestParticles::add_test_particles_from_fluid(Vector<Vel> tpStates) {
   std::string funcName = "TP::add_test_particles_from_fluid";
   timing_func(funcName);
   Print() << funcName << " : nInitPart = " << nInitPart
@@ -414,7 +413,7 @@ void TestParticles::add_test_particles_from_fluid(const iMultiFab& cellStatus,
   }
 
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
-    const auto& status = cellStatus[mfi].array();
+    const auto& status = cellStatus[iLev][mfi].array();
     const Box& bx = mfi.validbox();
     const IntVect lo = IntVect(bx.loVect());
     const IntVect hi = IntVect(bx.hiVect());

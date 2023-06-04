@@ -11,14 +11,13 @@ void ParticleTracker::set_ic(Pic& pic) {
 
   update_field(pic);
 
-  int iLev = 0;
   for (int i = 0; i < parts.size(); i++) {
     auto& tps = parts[i];
     if (doInitFromPIC) {
       tps->read_test_particle_list(listFiles);
       tps->add_test_particles_from_pic(pic.get_particle_pointer(i));
     } else {
-      tps->add_test_particles_from_fluid(cellStatus[iLev], tpStates);
+      tps->add_test_particles_from_fluid(tpStates);
     }
     tps->update_initial_particle_number();
 
@@ -97,7 +96,6 @@ void ParticleTracker::update(Pic& pic) {
 
   update_field(pic);
 
-  int iLev = 0;
   bool doSave = savectr->is_time_to();
   for (int i = 0; i < parts.size(); i++) {
     auto& tps = parts[i];
@@ -123,7 +121,7 @@ void ParticleTracker::update(Pic& pic) {
         tps->add_test_particles_from_pic(pic.get_particle_pointer(i));
       } else if (tps->TotalNumberOfParticles() <
                  0.5 * tps->init_particle_number()) {
-        tps->add_test_particles_from_fluid(cellStatus[iLev], tpStates);
+        tps->add_test_particles_from_fluid(tpStates);
       }
     }
   }
