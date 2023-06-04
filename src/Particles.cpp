@@ -329,14 +329,15 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
       int iMax = hi.x, jMax = hi.y, kMax = hi.z;
       int iMin = lo.x, jMin = lo.y, kMin = lo.z;
 
-      Print() << "iLev = " << iLev << " bx = " << bx << std::endl;
+      // Print() << "iLev = " << iLev << " bx = " << bx << std::endl;
 
       for (int i = iMin; i <= iMax; ++i)
         for (int j = jMin; j <= jMax; ++j)
           for (int k = kMin; k <= kMax; ++k) {
             if (status(i, j, k) == iOnNew_ && iRefine(i, j, k) == iNotRefined) {
-              printf("add particles iLev = %d, i = %d, j = %d, k = %d\n", iLev,
-                     i, j, k);
+              //  printf("add particles iLev = %d, i = %d, j = %d, k = %d\n",
+              //  iLev,
+              //        i, j, k);
               add_particles_cell(iLev, mfi, i, j, k, *fi);
             }
           }

@@ -128,9 +128,6 @@ void Pic::fill_new_cells() {
 
 //==========================================================
 void Pic::distribute_arrays(Vector<BoxArray>& cGridsOld) {
-  if (cGrids[0].empty()) {
-    return;
-  }
 
   // The last one is the sum of all species.
   if (nodePlasma.empty())
@@ -378,7 +375,7 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
   }
 
   { // Copy cellStatus to Particles objects.
-    int iLev = 0;
+    int iLev = 0;    
     for (int i = 0; i < nSpecies; i++) {
       distribute_FabArray(parts[i]->cellStatus, cGrids[iLev],
                           DistributionMap(iLev), 1, nGst >= 2 ? nGst : 2,
