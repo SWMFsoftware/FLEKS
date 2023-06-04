@@ -275,9 +275,8 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_source(
-    const iMultiFab& cellStatus, const FluidInterface& interface,
-    const FluidInterface* const stateOH, Real dt, IntVect ppc,
-    const bool doSelectRegion) {
+    const FluidInterface& interface, const FluidInterface* const stateOH,
+    Real dt, IntVect ppc, const bool doSelectRegion) {
   timing_func("Particles::add_particles_source");
 
   // 1. Inject particles for physical cells.
@@ -308,13 +307,12 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
   }
 
   // 2. Inject particles for boundary cells.
-  inject_particles_at_boundary(cellStatus, &interface, dt, ppc);
+  inject_particles_at_boundary(&interface, dt, ppc);
 }
 
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_domain(
-    const iMultiFab& cellStatus,
     const amrex::Vector<amrex::iMultiFab>& iRefinement) {
   timing_func("Particles::add_particles_domain");
 
@@ -348,8 +346,7 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
-    const iMultiFab& cellStatus, const FluidInterface* fiIn, Real dt,
-    IntVect ppc) {
+    const FluidInterface* fiIn, Real dt, IntVect ppc) {
   timing_func("Particles::inject_particles_at_boundary");
 
   // Only inject nGstInject layers.
@@ -1996,10 +1993,10 @@ IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
 
     const auto& aosOther = tileOther.GetArrayOfStructs();
 
-    const Box& bx = other.cellStatus[mfi].box();
+    const Box& bx = other.get_cell_status()[mfi].box();
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
-    const Array4<int const>& status = other.cellStatus[mfi].array();
+    const Array4<int const>& status = other.get_cell_status()[mfi].array();
 
     for (auto p : aosOther) {
       if (other.is_outside_ba(p, status, lowCorner, highCorner)) {

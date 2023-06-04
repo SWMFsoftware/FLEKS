@@ -103,9 +103,9 @@ void ParticleTracker::update(Pic& pic) {
     auto& tps = parts[i];
 
     for (int iLev = 0; iLev <= finest_level; iLev++) {
-      tps->move_and_save_particles(
-          nodeE[iLev], nodeB[iLev], tc->get_dt(), tc->get_next_dt(),
-          tc->get_time_si(), tc->get_cycle() % dnSave == 0);
+      tps->move_and_save_particles(nodeE[iLev], nodeB[iLev], tc->get_dt(),
+                                   tc->get_next_dt(), tc->get_time_si(),
+                                   tc->get_cycle() % dnSave == 0);
     }
 
     if (doSave) {
@@ -131,10 +131,10 @@ void ParticleTracker::update(Pic& pic) {
 
 void ParticleTracker::update_field(Pic& pic) {
   for (int iLev = 0; iLev <= finest_level; iLev++) {
-    MultiFab::Copy(nodeE[iLev], pic.nodeE[iLev], 0, 0,
-                   nodeE[iLev].nComp(), nodeE[iLev].nGrow());
-    MultiFab::Copy(nodeB[iLev], pic.nodeB[iLev], 0, 0,
-                   nodeB[iLev].nComp(), nodeB[iLev].nGrow());
+    MultiFab::Copy(nodeE[iLev], pic.nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
+                   nodeE[iLev].nGrow());
+    MultiFab::Copy(nodeB[iLev], pic.nodeB[iLev], 0, 0, nodeB[iLev].nComp(),
+                   nodeB[iLev].nGrow());
   }
 }
 
@@ -221,13 +221,13 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
   }
 
   for (int iLev = 0; iLev <= finest_level; iLev++) {
-    distribute_FabArray(nodeE[iLev], nGrids[iLev],
-                        DistributionMap(iLev), 3, nGst, false);
-    distribute_FabArray(nodeB[iLev], nGrids[iLev],
-                        DistributionMap(iLev), 3, nGst, false);
+    distribute_FabArray(nodeE[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                        nGst, false);
+    distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                        nGst, false);
 
-    distribute_FabArray(cellStatus[iLev], cGrids[iLev],
-                        DistributionMap(iLev), 1, nGst, false);
+    distribute_FabArray(cellStatus[iLev], cGrids[iLev], DistributionMap(iLev),
+                        1, nGst, false);
   }
 
   update_cell_status(pic);
@@ -258,18 +258,10 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
     }
   }
 
-  { // Copy cell Status to Particles objects.
-    int iLev = 0;
-    for (int i = 0; i < nSpecies; i++) {
-      distribute_FabArray(parts[i]->cellStatus, cGrids[iLev],
-                          DistributionMap(iLev), 1, nGst, false);
-
-      if (!cellStatus[iLev].empty()) {
-        iMultiFab::Copy(parts[i]->cellStatus, cellStatus[iLev], 0, 0,
-                        cellStatus[iLev].nComp(), cellStatus[iLev].nGrow());
-      }
-    }
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->update_cell_status(cellStatus);
   }
+
   //--------------test particles-----------------------------------
 
   activeRegion = activeRegion.simplified();

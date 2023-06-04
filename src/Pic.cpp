@@ -374,19 +374,11 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
     }
   }
 
-  { // Copy cellStatus to Particles objects.
-    int iLev = 0;    
-    for (int i = 0; i < nSpecies; i++) {
-      distribute_FabArray(parts[i]->cellStatus, cGrids[iLev],
-                          DistributionMap(iLev), 1, nGst >= 2 ? nGst : 2,
-                          false);
-
-      if (!cellStatus[iLev].empty()) {
-        iMultiFab::Copy(parts[i]->cellStatus, cellStatus[iLev], 0, 0,
-                        cellStatus[iLev].nComp(), cellStatus[iLev].nGrow());
-      }
-    }
+  // Copy cellStatus to Particles objects.
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->update_cell_status(cellStatus);
   }
+
   //--------------particles-----------------------------------
 
   // This part does not really work for multi-level.
@@ -610,10 +602,9 @@ void Pic::fill_source_particles() {
 #ifdef _PT_COMPONENT_
   doSelectRegion = (nSpecies == 4);
 #endif
-  int iLev = 0;
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->add_particles_source(cellStatus[iLev], *source, stateOH.get(),
-                                   tc->get_dt(), nSourcePPC, doSelectRegion);
+    parts[i]->add_particles_source(*source, stateOH.get(), tc->get_dt(),
+                                   nSourcePPC, doSelectRegion);
   }
 }
 

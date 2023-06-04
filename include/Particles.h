@@ -11,6 +11,7 @@
 #include "BC.h"
 #include "Constants.h"
 #include "FluidInterface.h"
+#include "GridUtility.h"
 #include "RandNum.h"
 #include "SourceInterface.h"
 #include "TimeCtr.h"
@@ -81,6 +82,9 @@ public:
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Index;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::ParticlesAt;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::maxLevel;
+  using amrex::AmrParticleContainer<NStructReal, NStructInt>::ParticleBoxArray;
+  using amrex::AmrParticleContainer<NStructReal,
+                                    NStructInt>::ParticleDistributionMap;
 
 protected:
   FluidInterface* fi;
@@ -117,6 +121,8 @@ protected:
 
   BC bc; // boundary condition
 
+  amrex::iMultiFab cellStatus;
+
 public:
   static const int iup_ = 0;
   static const int ivp_ = 1;
@@ -127,8 +133,6 @@ public:
 
   // Index of the integer data.
   static const int iRecordCount_ = 0;
-
-  amrex::iMultiFab cellStatus;
 
   Particles(amrex::AmrCore* amrcore, FluidInterface* fluidIn, TimeCtr* tcIn,
             const int speciesIDIn, const amrex::Real chargeIn,
@@ -143,20 +147,17 @@ public:
     }
   }
 
-  void add_particles_domain(const amrex::iMultiFab& cellStatus,
-                            const amrex::Vector<amrex::iMultiFab>& iRefinement);
+  void add_particles_domain(const amrex::Vector<amrex::iMultiFab>& iRefinement);
   void add_particles_cell(const int iLev, const amrex::MFIter& mfi, const int i,
                           const int j, const int k,
                           const FluidInterface& interface,
                           amrex::IntVect ppc = amrex::IntVect(),
                           const Vel tpVel = Vel(), amrex::Real dt = -1);
-  void inject_particles_at_boundary(const amrex::iMultiFab& cellStatus,
-                                    const FluidInterface* fiIn = nullptr,
+  void inject_particles_at_boundary(const FluidInterface* fiIn = nullptr,
                                     amrex::Real dt = -1,
                                     amrex::IntVect ppc = amrex::IntVect());
 
-  void add_particles_source(const amrex::iMultiFab& cellStatus,
-                            const FluidInterface& interface,
+  void add_particles_source(const FluidInterface& interface,
                             const FluidInterface* const stateOH = nullptr,
                             amrex::Real dt = -1,
                             amrex::IntVect ppc = amrex::IntVect(),
@@ -210,6 +211,20 @@ public:
                                      amrex::Real dt);
 
   void convert_to_fluid_moments(amrex::MultiFab& momentsMF);
+
+  const amrex::iMultiFab& get_cell_status() const { return cellStatus; }
+
+  void update_cell_status(const amrex::Vector<amrex::iMultiFab>& in) {
+    int iLev = 0;
+    const int nGst = in[iLev].nGrow();
+    distribute_FabArray(cellStatus, ParticleBoxArray(iLev),
+                        ParticleDistributionMap(iLev), 1, nGst, false);
+
+    if (!in[iLev].empty()) {
+      amrex::iMultiFab::Copy(cellStatus, in[iLev], 0, 0, in[iLev].nComp(),
+                             nGst);
+    }
+  }
 
   ParticleTileType& get_particle_tile(int iLev, const amrex::MFIter& mfi, int i,
                                       int j, int k) {

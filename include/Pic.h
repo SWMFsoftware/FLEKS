@@ -213,19 +213,17 @@ public:
     if (!usePIC)
       return;
 
-    int iLev = 0;
     for (auto &pts : parts) {
-      pts->add_particles_domain(cellStatus[iLev], iRefinement);
+      pts->add_particles_domain(iRefinement);
     }
   }
 
   void inject_particles_for_boundary_cells() {
     if (!usePIC)
       return;
-
-    int iLev = 0;
+    
     for (auto &pts : parts) {
-      pts->inject_particles_at_boundary(cellStatus[iLev]);
+      pts->inject_particles_at_boundary();
     }
   }
 
