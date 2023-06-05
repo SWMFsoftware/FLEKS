@@ -204,8 +204,8 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
         Real z0 = (kk + 0.5) * (dx[iLev][iz_] / nPPC[iz_]) + k * dx[iLev][iz_] +
                   plo[iLev][iz_];
 
-        double q = vol2Npcel *
-                   interface.get_number_density(mfi, x0, y0, z0, speciesID);
+        double q = vol2Npcel * interface.get_number_density(mfi, x0, y0, z0,
+                                                            speciesID, iLev);
         if (q != 0) {
           Real u, v, w;
           double rand1 = randNum();
@@ -216,20 +216,24 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           double uth = (userState ? tpVel.vth : -1);
           if (!is_neutral() && interface.get_UseAnisoP() &&
               (speciesID > 0 || interface.get_useElectronFluid())) {
-            interface.set_particle_uth_aniso(mfi, x, y, z, &u, &v, &w, rand1,
-                                             rand2, rand3, rand4, speciesID,
-                                             uth, uth);
+            interface.set_particle_uth_aniso(iLev, mfi, x, y, z, &u, &v, &w,
+                                             rand1, rand2, rand3, rand4,
+                                             speciesID, uth, uth);
           } else {
-            interface.set_particle_uth_iso(mfi, x, y, z, &u, &v, &w, rand1,
-                                           rand2, rand3, rand4, speciesID, uth);
+            interface.set_particle_uth_iso(iLev, mfi, x, y, z, &u, &v, &w,
+                                           rand1, rand2, rand3, rand4,
+                                           speciesID, uth);
           }
 
-          Real uBulk =
-              userState ? tpVel.vx : interface.get_ux(mfi, x, y, z, speciesID);
-          Real vBulk =
-              userState ? tpVel.vy : interface.get_uy(mfi, x, y, z, speciesID);
-          Real wBulk =
-              userState ? tpVel.vz : interface.get_uz(mfi, x, y, z, speciesID);
+          Real uBulk = userState
+                           ? tpVel.vx
+                           : interface.get_ux(mfi, x, y, z, speciesID, iLev);
+          Real vBulk = userState
+                           ? tpVel.vy
+                           : interface.get_uy(mfi, x, y, z, speciesID, iLev);
+          Real wBulk = userState
+                           ? tpVel.vz
+                           : interface.get_uz(mfi, x, y, z, speciesID, iLev);
 
           if (testCase == TwoStream && qom < 0 && icount % 2 == 0) {
             // Electron only (qom<0)
@@ -329,15 +333,14 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
       int iMax = hi.x, jMax = hi.y, kMax = hi.z;
       int iMin = lo.x, jMin = lo.y, kMin = lo.z;
 
-      // Print() << "iLev = " << iLev << " bx = " << bx << std::endl;
+      Print() << "iLev = " << iLev << " bx = " << bx << std::endl;
 
       for (int i = iMin; i <= iMax; ++i)
         for (int j = jMin; j <= jMax; ++j)
           for (int k = kMin; k <= kMax; ++k) {
             if (status(i, j, k) == iOnNew_ && iRefine(i, j, k) == iNotRefined) {
-              //  printf("add particles iLev = %d, i = %d, j = %d, k = %d\n",
-              //  iLev,
-              //        i, j, k);
+              printf("add particles iLev = %d, i = %d, j = %d, k = %d\n", iLev,
+                     i, j, k);
               add_particles_cell(iLev, mfi, i, j, k, *fi);
             }
           }

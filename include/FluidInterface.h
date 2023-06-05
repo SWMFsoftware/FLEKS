@@ -575,7 +575,7 @@ public:
       P = get_value(mfi, x, y, z, iPpar_I[is], iLev);
     } else if (useMhdPe) {
       if (is == 0)
-        P = get_value(mfi, x, y, z, iPe, iLev); // Electron
+        P = get_value(mfi, x, y, z, iPe, iLev);        // Electron
       if (is == 1)
         P = get_value(mfi, x, y, z, iPpar_I[0], iLev); // Ion
     } else {
@@ -599,7 +599,7 @@ public:
     } else if (useMultiFluid) {
       // Multi-fluid.
       if (is == 0)
-        P = get_value(mfi, x, y, z, iPe, iLev); // Electron
+        P = get_value(mfi, x, y, z, iPe, iLev);          // Electron
       else
         P = get_value(mfi, x, y, z, iP_I[is - 1], iLev); // Ion
     } else {
@@ -612,7 +612,7 @@ public:
           P *= (1 - PeRatio);
       } else {
         if (is == 0)
-          P = get_value(mfi, x, y, z, iPe, iLev); // Electron
+          P = get_value(mfi, x, y, z, iPe, iLev);     // Electron
         else if (is > 0)
           P = get_value(mfi, x, y, z, iP_I[0], iLev); // Ion
       }
@@ -784,11 +784,12 @@ public:
   }
 
   template <typename Type>
-  void set_particle_uth_iso(const amrex::MFIter& mfi, const Type x,
-                            const Type y, const Type z, double* u, double* v,
-                            double* w, const double rand1, const double rand2,
-                            const double rand3, const double rand4,
-                            const int is, const double uthIn = -1) const {
+  void set_particle_uth_iso(const int iLev, const amrex::MFIter& mfi,
+                            const Type x, const Type y, const Type z, double* u,
+                            double* v, double* w, const double rand1,
+                            const double rand2, const double rand3,
+                            const double rand4, const int is,
+                            const double uthIn = -1) const {
     double harvest, prob, theta, Uth;
 
     // u = X velocity
@@ -796,7 +797,7 @@ public:
     prob = sqrt(-2.0 * log(1.0 - .999999999 * harvest));
     harvest = rand2;
     theta = 2.0 * M_PI * harvest;
-    Uth = (uthIn >= 0 ? uthIn : get_uth_iso(mfi, x, y, z, is));
+    Uth = (uthIn >= 0 ? uthIn : get_uth_iso(mfi, x, y, z, is, iLev));
 
     (*u) = Uth * prob * cos(theta);
     // v = Y velocity
@@ -810,9 +811,10 @@ public:
   }
 
   template <typename Type>
-  void set_particle_uth_aniso(const amrex::MFIter& mfi, const Type x,
-                              const Type y, const Type z, double* u, double* v,
-                              double* w, const double rand1, const double rand2,
+  void set_particle_uth_aniso(const int iLev, const amrex::MFIter& mfi,
+                              const Type x, const Type y, const Type z,
+                              double* u, double* v, double* w,
+                              const double rand1, const double rand2,
                               const double rand3, const double rand4,
                               const int is, const double uthParIn = -1,
                               const double uthPerpIn = -1) const {
@@ -829,7 +831,6 @@ public:
       abort();
     }
 
-    const int iLev = 0;
     if (nLev > 1) {
       amrex::Abort("setFluidanisoUth has not implemented for multilevel");
     }
@@ -842,14 +843,14 @@ public:
     Z_ = 2;
 
     // Get number density and B at the particle position
-    double ni = get_number_density(mfi, x, y, z, is);
-    Bx = get_value(mfi, x, y, z, iBx);
-    By = get_value(mfi, x, y, z, iBy);
-    Bz = get_value(mfi, x, y, z, iBz);
+    double ni = get_number_density(mfi, x, y, z, is, iLev);
+    Bx = get_value(mfi, x, y, z, iBx, iLev);
+    By = get_value(mfi, x, y, z, iBy, iLev);
+    Bz = get_value(mfi, x, y, z, iBz, iLev);
 
     // Get Parallel and perpendicular presure
     Ppar = get_ppar(mfi, x, y, z, is, iLev);
-    P = get_p(mfi, x, y, z, is);
+    P = get_p(mfi, x, y, z, is, iLev);
     Pperp = 0.5 * (3.0 * P - Ppar);
 
     // Get 3 vertors spaning the vector space
