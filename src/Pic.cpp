@@ -728,8 +728,7 @@ void Pic::sum_moments(bool updateDt) {
   }
 
   plasmaEnergy[iTot] = 0;
-  for (int i = 0; i < nSpecies; i++) {
-    printf("i = %d\n", i);
+  for (int i = 0; i < nSpecies; i++) {    
     Real energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
     plasmaEnergy[i] = energy;
     plasmaEnergy[iTot] += energy;
