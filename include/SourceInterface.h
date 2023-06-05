@@ -21,6 +21,41 @@ public:
     initFromSWMF = false;
   }
 
+  void sum_to_single_source() {
+    for (int iLev = 0; iLev < nodeFluid.size(); iLev++) {
+      if (!nodeFluid[iLev].empty()) {
+        for (amrex::MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
+          const amrex::Box& box = mfi.fabbox();
+          const auto lo = lbound(box);
+          const auto hi = ubound(box);
+
+          const amrex::Array4<amrex::Real>& arr = nodeFluid[iLev][mfi].array();
+
+          for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+              for (int i = lo.x; i <= hi.x; ++i) {
+
+                auto sum_moment = [&, this](amrex::Vector<int>& idx) {
+                  amrex::Real sum = 0;
+                  for (int ii = 0; ii < idx.size(); ii++) {
+                    sum += arr(i, j, k, idx[ii]);
+                  }
+                  for (int ii = 0; ii < idx.size(); ii++) {
+                    arr(i, j, k, idx[ii]) = sum;
+                  }
+                };
+
+                sum_moment(iRho_I);
+                sum_moment(iRhoUx_I);
+                sum_moment(iRhoUy_I);
+                sum_moment(iRhoUz_I);
+                sum_moment(iP_I);
+              }
+        }
+      }
+    }
+  }
+
   // Set nodeFluid from get_source_wrapper.
   void get_source_from_fluid(const FluidInterface& other) {
     std::string nameFunc = "FS:get_source_from_fluid";

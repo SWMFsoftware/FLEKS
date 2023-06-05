@@ -728,7 +728,7 @@ void Pic::sum_moments(bool updateDt) {
   }
 
   plasmaEnergy[iTot] = 0;
-  for (int i = 0; i < nSpecies; i++) {    
+  for (int i = 0; i < nSpecies; i++) {
     Real energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
     plasmaEnergy[i] = energy;
     plasmaEnergy[iTot] += energy;
@@ -1770,6 +1770,14 @@ void Pic::charge_exchange() {
   // is called here to correct boundary nodes. Boundary nodes of 'sourcePT2OH'
   // should be corrected just before PT->OH coupling, instead of here.
   source->sum_boundary();
+
+#ifdef _PT_COMPONENT_
+  bool doRegionSplit = (nSpecies == 4);
+  if (doRegionSplit) {
+    source->sum_to_single_source();
+  }
+#endif
+
   source->convert_moment_to_velocity(true, false);
 
   // fill_source_particles();
