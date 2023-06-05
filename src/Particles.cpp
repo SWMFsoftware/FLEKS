@@ -354,45 +354,44 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
   // Only inject nGstInject layers.
   const int nGstInject = 1;
 
-  const int iLev = 0;
-
   // By default, use fi for injecting particles.
   const FluidInterface* fiTmp = fi;
   if (fiIn)
     fiTmp = fiIn;
+  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+    for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+      const auto& status = cellStatus[iLev][mfi].array();
+      const Box& bx = mfi.validbox();
+      const IntVect lo = IntVect(bx.loVect());
+      const IntVect hi = IntVect(bx.hiVect());
+      // IntVect mid = (lo + hi) / 2;
 
-  for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
-    const auto& status = cellStatus[iLev][mfi].array();
-    const Box& bx = mfi.validbox();
-    const IntVect lo = IntVect(bx.loVect());
-    const IntVect hi = IntVect(bx.hiVect());
-    // IntVect mid = (lo + hi) / 2;
+      IntVect idxMin = lo, idxMax = hi;
 
-    IntVect idxMin = lo, idxMax = hi;
+      for (int iDim = 0; iDim < fiTmp->get_fluid_dimension(); iDim++) {
+        idxMin[iDim] -= nGstInject;
+        idxMax[iDim] += nGstInject;
+      }
 
-    for (int iDim = 0; iDim < fiTmp->get_fluid_dimension(); iDim++) {
-      idxMin[iDim] -= nGstInject;
-      idxMax[iDim] += nGstInject;
-    }
-
-    for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)
-      for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
-        for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
-          int isrc, jsrc, ksrc;
-          if (do_inject_particles_for_this_cell(bx, status, i, j, k, isrc, jsrc,
-                                                ksrc)) {
-            if (((bc.lo[ix_] == bc.outflow) && i < lo[ix_]) ||
-                ((bc.hi[ix_] == bc.outflow) && i > hi[ix_]) ||
-                ((bc.lo[iy_] == bc.outflow) && j < lo[iy_]) ||
-                ((bc.hi[iy_] == bc.outflow) && j > hi[iy_]) ||
-                ((bc.lo[iz_] == bc.outflow) && k < lo[iz_]) ||
-                ((bc.hi[iz_] == bc.outflow) && k > hi[iz_])) {
-              outflow_bc(mfi, i, j, k, isrc, jsrc, ksrc);
-            } else {
-              add_particles_cell(iLev, mfi, i, j, k, *fiTmp, ppc, Vel(), dt);
+      for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)
+        for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
+          for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
+            int isrc, jsrc, ksrc;
+            if (do_inject_particles_for_this_cell(bx, status, i, j, k, isrc,
+                                                  jsrc, ksrc)) {
+              if (((bc.lo[ix_] == bc.outflow) && i < lo[ix_]) ||
+                  ((bc.hi[ix_] == bc.outflow) && i > hi[ix_]) ||
+                  ((bc.lo[iy_] == bc.outflow) && j < lo[iy_]) ||
+                  ((bc.hi[iy_] == bc.outflow) && j > hi[iy_]) ||
+                  ((bc.lo[iz_] == bc.outflow) && k < lo[iz_]) ||
+                  ((bc.hi[iz_] == bc.outflow) && k > hi[iz_])) {
+                outflow_bc(mfi, i, j, k, isrc, jsrc, ksrc);
+              } else {
+                add_particles_cell(iLev, mfi, i, j, k, *fiTmp, ppc, Vel(), dt);
+              }
             }
           }
-        }
+    }
   }
 }
 

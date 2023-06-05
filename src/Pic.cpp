@@ -366,9 +366,12 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_ba_general();
 
-      if (cGrids[0].size() > 0) {
-        parts[i]->SetParticleBoxArray(0, cGrids[0]);
-        parts[i]->SetParticleDistributionMap(0, DistributionMap(0));
+      for (int iLev = 0; iLev < nLev; iLev++) {
+        // TODO: Is the follwoing check necessary?
+        if (cGrids[iLev].size() > 0) {
+          parts[i]->SetParticleBoxArray(iLev, cGrids[iLev]);
+          parts[i]->SetParticleDistributionMap(iLev, DistributionMap(iLev));
+        }
       }
       parts[i]->Redistribute();
     }
