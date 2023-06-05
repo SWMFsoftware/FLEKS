@@ -311,9 +311,6 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
             add_particles_cell(iLev, mfi, i, j, k, interface, ppc, Vel(), dt);
         }
   }
-
-  // 2. Inject particles for boundary cells.
-  inject_particles_at_boundary(&interface, dt, ppc);
 }
 
 //==========================================================
