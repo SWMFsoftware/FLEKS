@@ -2101,6 +2101,12 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       Real massExchange =
           neu2ion[iRho_] * stateOH->get_Si2NoRho() / invVol[iLev];
 
+      if (massExchange == 0) {
+        // It can happen for some special cases. For example, when neutral
+        // density is zero.
+        continue;
+      }
+
       // Print() << "nden = " << p.rdata(iqp_)
       //         << " massExchange = " << massExchange << std::endl;
       if (p.rdata(iqp_) - massExchange <= 0) {
