@@ -1446,7 +1446,9 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
       Real vp1 = p.rdata(ivp_);
       Real wp1 = p.rdata(iwp_);
 
-      const Real coef = dl / sqrt(up1 * up1 + vp1 * vp1 + wp1 * wp1);
+      const Real u2 = up1 * up1 + vp1 * vp1 + wp1 * wp1;
+
+      Real coef = (u2 < 1e-13) ? 0 : dl / sqrt(u2);
       const Real dpx = coef * up1;
       const Real dpy = coef * vp1;
       const Real dpz = coef * wp1;
@@ -1578,7 +1580,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
     thVel = sqrt(thVel2);
 
     // The coef 0.5 if choosen by experience.
-    const Real velNorm = 1.0 / (0.5 * thVel);
+    const Real velNorm = (thVel < 1e-13) ? 0 : 1.0 / (0.5 * thVel);
     //----------------------------------------------------------------
 
     //----------------------------------------------------------------
@@ -1593,7 +1595,7 @@ void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
     }
 
     Real dv = (2.0 * r0 * thVel) / nCell;
-    Real invDv = 1.0 / dv;
+    Real invDv = (dv < 1e-13) ? 0 : 1.0 / dv;
 
     int iCell_D[nDimVel];
     for (int pid = 0; pid < nPartOrig; pid++) {
@@ -2034,6 +2036,9 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 
   timing_func(nameFunc);
 
+  if (dt <= 0)
+    return;
+
   const int iLev = 0;
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
@@ -2144,7 +2149,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
                                   xp, yp, zp, fluidID);
       }
 
-      { // Add source to nodes.
+      if (ion2neu[iRho_] > 0) { // Add source to nodes.
         Real si2no_v[5];
         si2no_v[iRho_] = source->get_Si2NoRho();
         si2no_v[iRhoUx_] = source->get_Si2NoV() * si2no_v[iRho_];
