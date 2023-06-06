@@ -395,8 +395,7 @@ void Domain::read_restart() {
   bas.resize(nLev);
   for (int iLev = 0; iLev < nLev; iLev++) {
     bas[iLev].readFrom(is);
-    is.ignore(100000, '\n');
-    Print() << "restart ba = " << bas[iLev] << std::endl;
+    is.ignore(100000, '\n');    
   }
 
   Grid grid(gm, amrInfo, nGst, gridID);
