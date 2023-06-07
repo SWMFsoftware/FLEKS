@@ -238,7 +238,7 @@ public:
 
   friend std::ostream& operator<<(std::ostream& cout, PlotWriter const& output);
 
-  int get_time_digits(int second) const;
+  int get_time_digits(double second) const;
 
   // Return the filename for the input time and cycle. Do not contain the
   // file extension.

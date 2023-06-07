@@ -611,7 +611,7 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
     outFile.close();
 }
 
-int PlotWriter::get_time_digits(int second) const {
+int PlotWriter::get_time_digits(double second) const {
   int digits;
 
   if (maxTimeUnit.find("hour") != string::npos) {
@@ -628,7 +628,7 @@ the output will be a int of 010108*/
   } else if (maxTimeUnit.find("year") != string::npos) {
     // Left four digits are year, right four digits are day.
     int iYr, iDy;
-    int scInYr = 3600 * 24 * 365.25;
+    double scInYr = 3600 * 24 * 365.25;
 
     iYr = floor(second / (scInYr));
     second -= iYr * scInYr;
