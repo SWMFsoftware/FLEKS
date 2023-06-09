@@ -212,6 +212,26 @@ public:
 
   void convert_to_fluid_moments(amrex::MultiFab& momentsMF);
 
+  void set_random_seed(const int iLev, const int i, const int j, const int k,
+                       const amrex::IntVect nPPC) {
+    amrex::IntVect nCell = Geom(iLev).Domain().size();
+
+    int nRandom = 7;
+
+    int nxcg = nCell[ix_];
+    int nycg = nCell[iy_];
+    int nzcg = nCell[iz_];
+    int iCycle = tc->get_cycle();
+    int npcel = nPPC[ix_] * nPPC[iy_] * nPPC[iz_];
+
+    // What if the seed overflow?
+    const long seed =
+        (speciesID + 3) * nRandom * npcel *
+        (nxcg * nycg * nzcg * iCycle + nycg * nzcg * i + nzcg * j + k);
+
+    randNum.set_seed(seed);
+  }
+
   const amrex::Vector<amrex::iMultiFab>& get_cell_status() const {
     return cellStatus;
   }

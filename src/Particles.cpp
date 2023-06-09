@@ -115,8 +115,6 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
     const int iLev, const MFIter& mfi, const int i, const int j, const int k,
     const FluidInterface& interface, IntVect ppc, const Vel tpVel, Real dt) {
 
-  int ig, jg, kg, nxcg, nycg, nzcg, iCycle, npcel, nRandom = 7;
-
   // If true, initialize the test particles with user defined velocities instead
   // of from fluid.
   bool userState = (tpVel.tag == speciesID);
@@ -128,57 +126,18 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 
   IntVect nPPC = nPartPerCell;
   if (!(ppc == 0)) {
-    nRandom = 19;
     nPPC = ppc;
   }
 
-  ig = i + 2;
-  jg = j + 2;
-  kg = k;
-  if (interface.get_fluid_dimension() > 2)
-    kg = kg + 2; // just for comparison with iPIC3D;
-  //----------------------------------------
-
-  IntVect nCell = Geom(iLev).Domain().size();
-
-  nxcg = nCell[ix_] + 2;
-  nycg = nCell[iy_] + 2;
-  nzcg = nCell[iz_];
-  if (interface.get_fluid_dimension() > 2)
-    nzcg += 2;
-
-  iCycle = tc->get_cycle();
-  npcel = nPPC[ix_] * nPPC[iy_] * nPPC[iz_];
-
-  // What if the seed overflow?
-  const long seed =
-      (speciesID + 3) * nRandom * npcel *
-      (nxcg * nycg * nzcg * iCycle + nycg * nzcg * ig + nzcg * jg + kg);
-  randNum.set_seed(seed);
+  set_random_seed(iLev, i, j, k, nPPC);
 
   Real x, y, z; // Particle location
 
   const Real vol = dx[iLev][ix_] * dx[iLev][iy_] * dx[iLev][iz_];
+  const int npcel = nPPC[ix_] * nPPC[iy_] * nPPC[iz_];
   const Real vol2Npcel = qomSign * vol / npcel;
 
   ParticleTileType& particles = get_particle_tile(iLev, mfi, i, j, k);
-
-  //----------------------------------------------------------
-  // The following lines are left here for reference only. They are useless.
-  // int nPartEffective;
-  // {
-  //   const Box& gbx = convert(Geom(iLev).Domain(), { 0, 0, 0 });
-  //   const bool isFake2D = gbx.bigEnd(iz_) == gbx.smallEnd(iz_);
-  //   int nCellContribute = isFake2D ? 4 : 8;
-  //   const int nx = nPPC[ix_];
-  //   const int ny = nPPC[iy_];
-  //   const int nz = nPPC[iz_];
-  //   const Real coefCorrection = 27. / 8 * (nx + 1) * (ny + 1) * (nz + 1) /
-  //                               ((2 * nx + 1) * (2 * ny + 1) * (2 * nz + 1));
-  //   nPartEffective = nCellContribute * npcel * coefCorrection;
-  // }
-  // const Real coefSD = sqrt(Real(nPartEffective) / (nPartEffective - 1));
-  //-----------------------------------------------------------
 
   int icount = 0;
   // Loop over particles inside grid cell i, j, k
