@@ -67,13 +67,24 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
       }
 
     for (int iLev = 0; iLev <= finest_level; iLev++) {
-      for (int iDir = ix_; iDir <= iz_; iDir++) {
-        dataPIC_I[iBx_ + iDir] =
-            get_value_at_loc(nodeB[iLev], Geom(iLev), xp, yp, zp, iDir);
-      }
-      for (int iDir = ix_; iDir <= iz_; iDir++) {
-        dataPIC_I[iEx_ + iDir] =
-            get_value_at_loc(nodeE[iLev], Geom(iLev), xp, yp, zp, iDir);
+
+      auto dx = Geom(iLev).CellSizeArray();
+      auto problo = Geom(iLev).ProbLoArray();
+      auto dom = Geom(iLev).Domain();
+      IntVect ind;
+      ind[0] = lbound(dom).x + floor((xp - problo[0]) / dx[0]);
+      ind[1] = lbound(dom).y + floor((yp - problo[1]) / dx[1]);
+      ind[2] = lbound(dom).z + floor((zp - problo[2]) / dx[2]);
+
+      if (grids[iLev].contains(ind)) {
+        for (int iDir = ix_; iDir <= iz_; iDir++) {
+          dataPIC_I[iBx_ + iDir] =
+              get_value_at_loc(nodeB[iLev], Geom(iLev), xp, yp, zp, iDir);
+        }
+        for (int iDir = ix_; iDir <= iz_; iDir++) {
+          dataPIC_I[iEx_ + iDir] =
+              get_value_at_loc(nodeE[iLev], Geom(iLev), xp, yp, zp, iDir);
+        }
       }
     }
 
@@ -695,8 +706,8 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   if (plotVars.find("B") != std::string::npos) {
     //------------------B---------------
     for (int iLev = 0; iLev <= finest_level; iLev++) {
-      MultiFab::Copy(centerMF, centerB[iLev], 0, iStart,
-                     nodeB[iLev].nComp(), 0);
+      MultiFab::Copy(centerMF, centerB[iLev], 0, iStart, nodeB[iLev].nComp(),
+                     0);
       iStart += nodeB[iLev].nComp();
     }
 
