@@ -198,11 +198,11 @@ public:
                        FluidInterface* sourcePT2OH, SourceInterface* source);
 
   void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
-             amrex::Real dt, amrex::Real dtNext);
+             int iLev, amrex::Real dt, amrex::Real dtNext);
 
   void charged_particle_mover(const amrex::MultiFab& nodeEMF,
-                              const amrex::MultiFab& nodeBMF, amrex::Real dt,
-                              amrex::Real dtNext);
+                              const amrex::MultiFab& nodeBMF, int iLev,
+                              amrex::Real dt, amrex::Real dtNext);
 
   void neutral_mover(amrex::Real dt);
 

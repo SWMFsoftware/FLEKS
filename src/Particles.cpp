@@ -1002,19 +1002,19 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::mover(const amrex::MultiFab& nodeEMF,
                                                const amrex::MultiFab& nodeBMF,
-                                               amrex::Real dt,
+                                               int iLev, amrex::Real dt,
                                                amrex::Real dtNext) {
   if (is_neutral()) {
     neutral_mover(dt);
   } else {
-    charged_particle_mover(nodeEMF, nodeBMF, dt, dtNext);
+    charged_particle_mover(nodeEMF, nodeBMF, iLev, dt, dtNext);
   }
 }
 
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover(
-    const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
+    const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF, int iLev,
     amrex::Real dt, amrex::Real dtNext) {
   timing_func("Particles::charged_particle_mover");
 
@@ -1026,7 +1026,6 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
     dtLoc = 0.5 * dt;
   }
 
-  const int iLev = 0;
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
     const Array4<Real const>& nodeEArr = nodeEMF[pti].array();

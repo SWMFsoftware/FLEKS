@@ -477,87 +477,84 @@ void Pic::set_nodeShare() {
 
 //==========================================================
 void Pic::fill_new_node_E() {
-  for (int iLev = 0; iLev <= finest_level; iLev++) 
-  {
-  for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
-    FArrayBox& fab = nodeE[iLev][mfi];
-    const Box& box = mfi.validbox();
-    const Array4<Real>& arrE = fab.array();
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+      FArrayBox& fab = nodeE[iLev][mfi];
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arrE = fab.array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
 
-    const auto& status = nodeStatus[iLev][mfi].array();
+      const auto& status = nodeStatus[iLev][mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          if (status(i, j, k) == iOnNew_) {
-            arrE(i, j, k, ix_) = fi->get_ex(mfi, i, j, k, iLev);
-            arrE(i, j, k, iy_) = fi->get_ey(mfi, i, j, k, iLev);
-            arrE(i, j, k, iz_) = fi->get_ez(mfi, i, j, k, iLev);
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (status(i, j, k) == iOnNew_) {
+              arrE(i, j, k, ix_) = fi->get_ex(mfi, i, j, k, iLev);
+              arrE(i, j, k, iy_) = fi->get_ey(mfi, i, j, k, iLev);
+              arrE(i, j, k, iz_) = fi->get_ez(mfi, i, j, k, iLev);
+            }
           }
-        }
-  }
+    }
   }
 }
 
 //==========================================================
 void Pic::fill_new_node_B() {
-   for (int iLev = 0; iLev <= finest_level; iLev++) 
-  {
-  for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
-    const Array4<Real>& arrB = nodeB[iLev][mfi].array();
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arrB = nodeB[iLev][mfi].array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
 
-    const auto& status = nodeStatus[iLev][mfi].array();
+      const auto& status = nodeStatus[iLev][mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          if (status(i, j, k) == iOnNew_) {
-            arrB(i, j, k, ix_) = fi->get_bx(mfi, i, j, k, iLev);
-            arrB(i, j, k, iy_) = fi->get_by(mfi, i, j, k, iLev);
-            arrB(i, j, k, iz_) = fi->get_bz(mfi, i, j, k, iLev);
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (status(i, j, k) == iOnNew_) {
+              arrB(i, j, k, ix_) = fi->get_bx(mfi, i, j, k, iLev);
+              arrB(i, j, k, iy_) = fi->get_by(mfi, i, j, k, iLev);
+              arrB(i, j, k, iz_) = fi->get_bz(mfi, i, j, k, iLev);
+            }
           }
-        }
+    }
   }
-}
 }
 
 //==========================================================
 void Pic::fill_new_center_B() {
- for (int iLev = 0; iLev <= finest_level; iLev++) 
- {
-  for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
-    const Array4<Real>& centerArr = centerB[iLev][mfi].array();
-    const auto& nodeArr = nodeB[iLev][mfi].array();
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& centerArr = centerB[iLev][mfi].array();
+      const auto& nodeArr = nodeB[iLev][mfi].array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
 
-    const auto& status = cellStatus[iLev][mfi].array();
+      const auto& status = cellStatus[iLev][mfi].array();
 
-    for (int iVar = 0; iVar < centerB[iLev].nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (status(i, j, k) != iOnOld_) {
-              centerArr(i, j, k, iVar) = 0;
-              for (int di = 0; di <= 1; di++)
-                for (int dj = 0; dj <= 1; dj++)
-                  for (int dk = 0; dk <= 1; dk++) {
-                    centerArr(i, j, k, iVar) +=
-                        0.125 * nodeArr(i + di, j + dj, k + dk, iVar);
-                  }
+      for (int iVar = 0; iVar < centerB[iLev].nComp(); iVar++)
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i) {
+              if (status(i, j, k) != iOnOld_) {
+                centerArr(i, j, k, iVar) = 0;
+                for (int di = 0; di <= 1; di++)
+                  for (int dj = 0; dj <= 1; dj++)
+                    for (int dk = 0; dk <= 1; dk++) {
+                      centerArr(i, j, k, iVar) +=
+                          0.125 * nodeArr(i + di, j + dj, k + dk, iVar);
+                    }
+              }
             }
-          }
+    }
   }
-}
 }
 
 //==========================================================
@@ -645,13 +642,14 @@ void Pic::particle_mover() {
       MultiFab::LinComb(tmpE, 0.5, nodeEth[iLev], 0, 0.5, nodeE[iLev], 0, 0,
                         nodeE[iLev].nComp(), nodeE[iLev].nGrow());
       for (int i = 0; i < nSpecies; i++) {
-        parts[i]->mover(tmpE, nodeB[iLev], tc->get_dt(), tc->get_next_dt());
+        parts[i]->mover(tmpE, nodeB[iLev], iLev, tc->get_dt(),
+                        tc->get_next_dt());
       }
 
     } else {
 
       for (int i = 0; i < nSpecies; i++) {
-        parts[i]->mover(nodeEth[iLev], nodeB[iLev], tc->get_dt(),
+        parts[i]->mover(nodeEth[iLev], nodeB[iLev], iLev, tc->get_dt(),
                         tc->get_next_dt());
       }
     }
