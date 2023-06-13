@@ -477,9 +477,8 @@ void Pic::set_nodeShare() {
 
 //==========================================================
 void Pic::fill_new_node_E() {
-  // for (int iLev = 0; iLev < nodeE.size(); iLev++) //-Talha-Eventually needs
-  // to be implemented - FluidInterface already capable - checked
-  int iLev = 0;
+  for (int iLev = 0; iLev <= finest_level; iLev++) 
+  {
   for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
     FArrayBox& fab = nodeE[iLev][mfi];
     const Box& box = mfi.validbox();
@@ -500,16 +499,13 @@ void Pic::fill_new_node_E() {
           }
         }
   }
-
-  if (nLev > 1) {
-    InterpFromCoarseAllLevels(nodeE, finest_level);
   }
 }
 
 //==========================================================
 void Pic::fill_new_node_B() {
-  // for (int iLev = 0; iLev < nodeE.size(); iLev++)
-  int iLev = 0;
+   for (int iLev = 0; iLev <= finest_level; iLev++) 
+  {
   for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrB = nodeB[iLev][mfi].array();
@@ -529,15 +525,13 @@ void Pic::fill_new_node_B() {
           }
         }
   }
-  if (nLev > 1) {
-    InterpFromCoarseAllLevels(nodeB, finest_level);
-  }
+}
 }
 
 //==========================================================
 void Pic::fill_new_center_B() {
-  // for (int iLev = 0; iLev < nodeE.size(); iLev++)
-  int iLev = 0;
+ for (int iLev = 0; iLev <= finest_level; iLev++) 
+ {
   for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& centerArr = centerB[iLev][mfi].array();
@@ -563,10 +557,7 @@ void Pic::fill_new_center_B() {
             }
           }
   }
-
-  if (nLev > 1) {
-    InterpFromCoarseAllLevels(centerB, finest_level);
-  }
+}
 }
 
 //==========================================================
