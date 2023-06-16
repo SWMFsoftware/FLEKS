@@ -122,7 +122,7 @@ public:
 
   std::string lev_string(int iLev) {
     std::string sLev = "_lev_" + std::to_string(iLev);
-    if (nLev == 0) {
+    if (nLev == 1) {
       // Keep backward compatibility.
       sLev = "";
     }
