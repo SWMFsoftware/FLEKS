@@ -12,13 +12,15 @@
 
 Domains fleksDomains;
 
-std::string paramString;
-bool isFirstSession = true;
-bool isInitialized = false;
-double timeNow = -1;
-bool isAMReXInitialized = false;
+// What does 'static' means?
+// A 'static' variable is only visible in this translation unit.
+static std::string paramString;
+static bool isFirstSession = true;
+static bool isInitialized = false;
+static double timeNow = -1;
+static bool isAMReXInitialized = false;
 
-MPI_Comm c_iComm;
+static MPI_Comm c_iComm;
 
 //==========================================================
 int fleks_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc) {
