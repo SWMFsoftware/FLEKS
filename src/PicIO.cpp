@@ -35,7 +35,6 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     return;
   }
 
-  int iLev = 0;
   // (rho + 3*Moment + 6*p)*nSpecies+ 3*E + 3*B;
   const int nVarPerSpecies = 10;
   int nVarPIC = nSpecies * nVarPerSpecies + 6;
@@ -59,24 +58,16 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     if (!range.contains(RealVect(AMREX_D_DECL(xp, yp, zp)), 1e-10))
       continue;
 
-    for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++)
-      for (int iVar = iRho_; iVar <= iPyz_; iVar++) {
-        const int iStart = iSpecies * nVarPerSpecies;
-        dataPIC_I[iStart + iVar] = get_value_at_loc(nodePlasma[iSpecies][iLev],
-                                                    Geom(0), xp, yp, zp, iVar);
-      }
-
     for (int iLev = 0; iLev <= finest_level; iLev++) {
-
-      auto dx = Geom(iLev).CellSizeArray();
-      auto problo = Geom(iLev).ProbLoArray();
-      auto dom = Geom(iLev).Domain();
-      IntVect ind;
-      ind[0] = lbound(dom).x + floor((xp - problo[0]) / dx[0]);
-      ind[1] = lbound(dom).y + floor((yp - problo[1]) / dx[1]);
-      ind[2] = lbound(dom).z + floor((zp - problo[2]) / dx[2]);
-
-      if (grids[iLev].contains(ind)) {
+      amrex::Real loc[3] = { xp, yp, zp };
+      auto idx = Geom(iLev).CellIndex(loc);
+      if (grids[iLev].contains(idx)) {
+        for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++)
+          for (int iVar = iRho_; iVar <= iPyz_; iVar++) {
+            const int iStart = iSpecies * nVarPerSpecies;
+            dataPIC_I[iStart + iVar] = get_value_at_loc(
+                nodePlasma[iSpecies][iLev], Geom(0), xp, yp, zp, iVar);
+          }
         for (int iDir = ix_; iDir <= iz_; iDir++) {
           dataPIC_I[iBx_ + iDir] =
               get_value_at_loc(nodeB[iLev], Geom(iLev), xp, yp, zp, iDir);
