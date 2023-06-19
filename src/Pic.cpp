@@ -651,16 +651,6 @@ void Pic::particle_mover() {
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->mover(nodeEth, nodeB, tc->get_dt(), tc->get_next_dt());
   }
-
-  // Q: Why do not call Redistribution() inside mover()?
-  // A: For applications like OH-PT coupling, the particle number per cell
-  // various a lot across the domain. Calling Redistribution() inside mover()
-  // may increase MPI waiting time compared to current implementation.
-  for (int i = 0; i < nSpecies; i++) {
-    // This function distributes particles to proper processors and apply
-    // periodic boundary conditions if needed.
-    parts[i]->Redistribute();
-  }
 }
 
 //==========================================================

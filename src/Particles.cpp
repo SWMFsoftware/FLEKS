@@ -1115,6 +1115,10 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       } // for p
     }   // for pti
   }
+
+  // This function distributes particles to proper processors and apply
+  // periodic boundary conditions if needed.
+  Redistribute();
 }
 
 //==========================================================
@@ -1153,6 +1157,10 @@ void Particles<NStructReal, NStructInt>::neutral_mover(amrex::Real dt) {
       } // for p
     }   // for pti
   }
+
+  // This function distributes particles to proper processors and apply
+  // periodic boundary conditions if needed.
+  Redistribute();
 }
 
 //==========================================================
