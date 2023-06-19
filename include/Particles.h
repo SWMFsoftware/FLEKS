@@ -211,7 +211,7 @@ public:
                                      const amrex::MultiFab& nodeBMF,
                                      amrex::Real dt);
 
-  void convert_to_fluid_moments(amrex::MultiFab& momentsMF);
+  void convert_to_fluid_moments(amrex::Vector<amrex::MultiFab>& momentsMF);
 
   void set_random_seed(const int iLev, const int i, const int j, const int k,
                        const amrex::IntVect nPPC) {

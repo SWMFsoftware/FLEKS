@@ -709,10 +709,6 @@ void Pic::sum_moments(bool updateDt) {
 
   timing_func(nameFunc);
 
-  for (int iLev = 0; iLev < nLev; iLev++) {
-    nodePlasma[nSpecies][iLev].setVal(0.0);
-  }
-
   plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; i++) {
     Real energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
@@ -773,11 +769,17 @@ void Pic::sum_moments(bool updateDt) {
     }
   }
 
+  for (int iLev = 0; iLev < nLev; iLev++) {
+    nodePlasma[nSpecies][iLev].setVal(0.0);
+  }
+
   for (int i = 0; i < nSpecies; i++) {
-    const int iLev = 0;
-    parts[i]->convert_to_fluid_moments(nodePlasma[i][iLev]);
-    MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
-                  nMoments, nGst);
+    parts[i]->convert_to_fluid_moments(nodePlasma[i]);
+
+    for (int iLev = 0; iLev <= finest_level; iLev++) {
+      MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
+                    nMoments, nGst);
+    }
   }
 }
 
