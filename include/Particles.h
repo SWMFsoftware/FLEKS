@@ -372,6 +372,7 @@ public:
 
   void Write_Paraview(std::string folder = "Particles",
                       std::string particletype = "1") {
+    Redistribute();
     std::string command = "python "
                           "../util/AMREX/Tools/Py_util/amrex_particles_to_vtp/"
                           "amrex_binary_particles_to_vtp.py";
