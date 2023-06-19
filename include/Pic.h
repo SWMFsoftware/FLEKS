@@ -221,7 +221,7 @@ public:
   void inject_particles_for_boundary_cells() {
     if (!usePIC)
       return;
-    
+
     for (auto &pts : parts) {
       pts->inject_particles_at_boundary();
     }

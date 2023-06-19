@@ -575,7 +575,7 @@ public:
       P = get_value(mfi, x, y, z, iPpar_I[is], iLev);
     } else if (useMhdPe) {
       if (is == 0)
-        P = get_value(mfi, x, y, z, iPe, iLev);        // Electron
+        P = get_value(mfi, x, y, z, iPe, iLev); // Electron
       if (is == 1)
         P = get_value(mfi, x, y, z, iPpar_I[0], iLev); // Ion
     } else {
@@ -599,7 +599,7 @@ public:
     } else if (useMultiFluid) {
       // Multi-fluid.
       if (is == 0)
-        P = get_value(mfi, x, y, z, iPe, iLev);          // Electron
+        P = get_value(mfi, x, y, z, iPe, iLev); // Electron
       else
         P = get_value(mfi, x, y, z, iP_I[is - 1], iLev); // Ion
     } else {
@@ -612,7 +612,7 @@ public:
           P *= (1 - PeRatio);
       } else {
         if (is == 0)
-          P = get_value(mfi, x, y, z, iPe, iLev);     // Electron
+          P = get_value(mfi, x, y, z, iPe, iLev); // Electron
         else if (is > 0)
           P = get_value(mfi, x, y, z, iP_I[0], iLev); // Ion
       }

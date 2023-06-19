@@ -487,7 +487,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
             }
       } // if doChargeOnly
 
-    }   // for p
+    } // for p
   }
 }
 
@@ -741,10 +741,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
                     }
                   } // k2
 
-                }   // j2
-              }     // if (ip > 0)
-            }       // i2
-          }         // k1
+                } // j2
+              }   // if (ip > 0)
+            }     // i2
+          }       // k1
 
       //----- Mass matrix calculation end--------------
 
