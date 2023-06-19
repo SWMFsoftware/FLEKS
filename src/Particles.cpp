@@ -1478,416 +1478,418 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
 
   int nAvailableCombines = 0, nEqs = 0, nSolved = 0;
 
-  const int iLev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-       ++pti) {
+  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+    for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
+         ++pti) {
 
-    auto& particles = pti.GetArrayOfStructs();
+      auto& particles = pti.GetArrayOfStructs();
 
-    const int nPartOrig = particles.size();
+      const int nPartOrig = particles.size();
 
-    if (nPartOrig <= nPartGoal)
-      continue;
-
-    // Phase space cell number in one direction.
-    // The const 0.8 is choosen by experience.
-    int nCell = ceil(0.8 * r0 * pow(nPartOrig, 1. / nDim));
-
-    if (nCell < 3)
-      continue;
-
-    if (fastMerge) {
-      nCell = nCell > 5 ? 5 : nCell;
-    }
-
-    // Sort the particles by the location first to make sure the results
-    // are the same for different number of processors
-    std::sort(particles.begin(), particles.end(),
-              [](const ParticleType& pl, const ParticleType& pr) {
-                return pl.pos(ix_) + pl.pos(iy_) + pl.pos(iz_) >
-                       pr.pos(ix_) + pr.pos(iy_) + pr.pos(iz_);
-              });
-
-    // Print() << "nPartOrig = " << nPartOrig << " nPartGoal = " << nPartGoal
-    //         << " nCell = " << nCell << std::endl;
-
-    // One particle may belong to more than one velocity bins, but it can be
-    // only merged at most once.
-    std::vector<bool> merged;
-    merged.resize(nPartOrig, false);
-
-    //----------------------------------------------------------------
-    // Estimate the bulk velocity and thermal velocity.
-    Real uBulk[nDimVel] = { 0, 0, 0 };
-    for (int pid = 0; pid < nPartOrig; pid++) {
-      auto& pcl = particles[pid];
-      for (int iDir = 0; iDir < 3; iDir++) {
-        uBulk[iDir] += pcl.rdata(iDir);
-      }
-    }
-
-    for (int iDir = 0; iDir < nDimVel; iDir++) {
-      uBulk[iDir] /= nPartOrig;
-    }
-
-    Real thVel = 0, thVel2 = 0;
-    for (int pid = 0; pid < nPartOrig; pid++) {
-      auto& pcl = particles[pid];
-      for (int iDir = 0; iDir < nDimVel; iDir++) {
-        thVel2 += pow(pcl.rdata(iDir) - uBulk[iDir], 2);
-      }
-    }
-
-    thVel2 /= nPartOrig;
-    thVel = sqrt(thVel2);
-
-    // The coef 0.5 if choosen by experience.
-    const Real velNorm = (thVel < 1e-13) ? 0 : 1.0 / (0.5 * thVel);
-    //----------------------------------------------------------------
-
-    //----------------------------------------------------------------
-    // Assign the particle IDs to the corresponding velocity space cells.
-    Vector<int> phasePartIdx_III[nCell][nCell][nCell];
-
-    // Velocity domain range.
-    Real velMin_D[nDimVel], velMax_D[nDimVel];
-    for (int iDir = 0; iDir < nDimVel; iDir++) {
-      velMin_D[iDir] = -r0 * thVel + uBulk[iDir];
-      velMax_D[iDir] = r0 * thVel + uBulk[iDir];
-    }
-
-    Real dv = (2.0 * r0 * thVel) / nCell;
-    Real invDv = (dv < 1e-13) ? 0 : 1.0 / dv;
-
-    int iCell_D[nDimVel];
-    for (int pid = 0; pid < nPartOrig; pid++) {
-      auto& pcl = particles[pid];
-
-      bool isOutside = false;
-      for (int iDim = 0; iDim < nDimVel; iDim++) {
-        if (pcl.rdata(iDim) < velMin_D[iDim] ||
-            pcl.rdata(iDim) > velMax_D[iDim])
-          isOutside = true;
-      }
-      if (isOutside)
+      if (nPartOrig <= nPartGoal)
         continue;
 
-      for (int iDim = 0; iDim < nDimVel; iDim++) {
-        iCell_D[iDim] = fastfloor((pcl.rdata(iDim) - velMin_D[iDim]) * invDv);
+      // Phase space cell number in one direction.
+      // The const 0.8 is choosen by experience.
+      int nCell = ceil(0.8 * r0 * pow(nPartOrig, 1. / nDim));
+
+      if (nCell < 3)
+        continue;
+
+      if (fastMerge) {
+        nCell = nCell > 5 ? 5 : nCell;
       }
 
-      // One particle may belong to multiple bins when each bin has a buffer
-      // region.
-      for (int xCell = iCell_D[ix_] - 1; xCell <= iCell_D[ix_] + 1; xCell++)
-        for (int yCell = iCell_D[iy_] - 1; yCell <= iCell_D[iy_] + 1; yCell++)
-          for (int zCell = iCell_D[iz_] - 1; zCell <= iCell_D[iz_] + 1;
-               zCell++) {
+      // Sort the particles by the location first to make sure the results
+      // are the same for different number of processors
+      std::sort(particles.begin(), particles.end(),
+                [](const ParticleType& pl, const ParticleType& pr) {
+                  return pl.pos(ix_) + pl.pos(iy_) + pl.pos(iz_) >
+                         pr.pos(ix_) + pr.pos(iy_) + pr.pos(iz_);
+                });
 
-            if (xCell < 0 || xCell >= nCell || yCell < 0 || yCell >= nCell ||
-                zCell < 0 || zCell >= nCell)
+      // Print() << "nPartOrig = " << nPartOrig << " nPartGoal = " << nPartGoal
+      //         << " nCell = " << nCell << std::endl;
+
+      // One particle may belong to more than one velocity bins, but it can be
+      // only merged at most once.
+      std::vector<bool> merged;
+      merged.resize(nPartOrig, false);
+
+      //----------------------------------------------------------------
+      // Estimate the bulk velocity and thermal velocity.
+      Real uBulk[nDimVel] = { 0, 0, 0 };
+      for (int pid = 0; pid < nPartOrig; pid++) {
+        auto& pcl = particles[pid];
+        for (int iDir = 0; iDir < 3; iDir++) {
+          uBulk[iDir] += pcl.rdata(iDir);
+        }
+      }
+
+      for (int iDir = 0; iDir < nDimVel; iDir++) {
+        uBulk[iDir] /= nPartOrig;
+      }
+
+      Real thVel = 0, thVel2 = 0;
+      for (int pid = 0; pid < nPartOrig; pid++) {
+        auto& pcl = particles[pid];
+        for (int iDir = 0; iDir < nDimVel; iDir++) {
+          thVel2 += pow(pcl.rdata(iDir) - uBulk[iDir], 2);
+        }
+      }
+
+      thVel2 /= nPartOrig;
+      thVel = sqrt(thVel2);
+
+      // The coef 0.5 if choosen by experience.
+      const Real velNorm = (thVel < 1e-13) ? 0 : 1.0 / (0.5 * thVel);
+      //----------------------------------------------------------------
+
+      //----------------------------------------------------------------
+      // Assign the particle IDs to the corresponding velocity space cells.
+      Vector<int> phasePartIdx_III[nCell][nCell][nCell];
+
+      // Velocity domain range.
+      Real velMin_D[nDimVel], velMax_D[nDimVel];
+      for (int iDir = 0; iDir < nDimVel; iDir++) {
+        velMin_D[iDir] = -r0 * thVel + uBulk[iDir];
+        velMax_D[iDir] = r0 * thVel + uBulk[iDir];
+      }
+
+      Real dv = (2.0 * r0 * thVel) / nCell;
+      Real invDv = (dv < 1e-13) ? 0 : 1.0 / dv;
+
+      int iCell_D[nDimVel];
+      for (int pid = 0; pid < nPartOrig; pid++) {
+        auto& pcl = particles[pid];
+
+        bool isOutside = false;
+        for (int iDim = 0; iDim < nDimVel; iDim++) {
+          if (pcl.rdata(iDim) < velMin_D[iDim] ||
+              pcl.rdata(iDim) > velMax_D[iDim])
+            isOutside = true;
+        }
+        if (isOutside)
+          continue;
+
+        for (int iDim = 0; iDim < nDimVel; iDim++) {
+          iCell_D[iDim] = fastfloor((pcl.rdata(iDim) - velMin_D[iDim]) * invDv);
+        }
+
+        // One particle may belong to multiple bins when each bin has a buffer
+        // region.
+        for (int xCell = iCell_D[ix_] - 1; xCell <= iCell_D[ix_] + 1; xCell++)
+          for (int yCell = iCell_D[iy_] - 1; yCell <= iCell_D[iy_] + 1; yCell++)
+            for (int zCell = iCell_D[iz_] - 1; zCell <= iCell_D[iz_] + 1;
+                 zCell++) {
+
+              if (xCell < 0 || xCell >= nCell || yCell < 0 || yCell >= nCell ||
+                  zCell < 0 || zCell >= nCell)
+                continue;
+
+              IntVect cellIdx = { AMREX_D_DECL(xCell, yCell, zCell) };
+
+              Real binMin_D[nDimVel], binMax_D[nDimVel];
+
+              for (int iDim = 0; iDim < nDimVel; iDim++) {
+                binMin_D[iDim] =
+                    velMin_D[iDim] + (cellIdx[iDim] - velBinBufferSize) * dv;
+
+                binMax_D[iDim] = velMin_D[iDim] +
+                                 (cellIdx[iDim] + 1 + velBinBufferSize) * dv;
+              }
+
+              bool isInside = true;
+              for (int iDim = 0; iDim < nDimVel; iDim++) {
+                if (pcl.rdata(iDim) < binMin_D[iDim] ||
+                    pcl.rdata(iDim) > binMax_D[iDim])
+                  isInside = false;
+              }
+
+              if (isInside) {
+                phasePartIdx_III[cellIdx[ix_]][cellIdx[iy_]][cellIdx[iz_]]
+                    .push_back(pid);
+              }
+            }
+      }
+      //----------------------------------------------------------------
+
+      for (int iu = 0; iu < nCell; iu++)
+        for (int iv = 0; iv < nCell; iv++)
+          for (int iw = 0; iw < nCell; iw++) {
+            Vector<int> partIdx;
+            for (int i = 0; i < phasePartIdx_III[iu][iv][iw].size(); i++) {
+              auto& pIdx = phasePartIdx_III[iu][iv][iw];
+              int pid = pIdx[i];
+              if (!merged[pid]) {
+                partIdx.push_back(pid);
+              }
+            }
+
+            if (partIdx.size() < nPartCombine)
               continue;
 
-            IntVect cellIdx = { AMREX_D_DECL(xCell, yCell, zCell) };
+            Vector<Real> distance;
+            distance.resize(partIdx.size(), 0);
 
-            Real binMin_D[nDimVel], binMax_D[nDimVel];
-
-            for (int iDim = 0; iDim < nDimVel; iDim++) {
-              binMin_D[iDim] =
-                  velMin_D[iDim] + (cellIdx[iDim] - velBinBufferSize) * dv;
-
-              binMax_D[iDim] =
-                  velMin_D[iDim] + (cellIdx[iDim] + 1 + velBinBufferSize) * dv;
-            }
-
-            bool isInside = true;
-            for (int iDim = 0; iDim < nDimVel; iDim++) {
-              if (pcl.rdata(iDim) < binMin_D[iDim] ||
-                  pcl.rdata(iDim) > binMax_D[iDim])
-                isInside = false;
-            }
-
-            if (isInside) {
-              phasePartIdx_III[cellIdx[ix_]][cellIdx[iy_]][cellIdx[iz_]]
-                  .push_back(pid);
-            }
-          }
-    }
-    //----------------------------------------------------------------
-
-    for (int iu = 0; iu < nCell; iu++)
-      for (int iv = 0; iv < nCell; iv++)
-        for (int iw = 0; iw < nCell; iw++) {
-          Vector<int> partIdx;
-          for (int i = 0; i < phasePartIdx_III[iu][iv][iw].size(); i++) {
-            auto& pIdx = phasePartIdx_III[iu][iv][iw];
-            int pid = pIdx[i];
-            if (!merged[pid]) {
-              partIdx.push_back(pid);
-            }
-          }
-
-          if (partIdx.size() < nPartCombine)
-            continue;
-
-          Vector<Real> distance;
-          distance.resize(partIdx.size(), 0);
-
-          // Find the center of the particles, and sort the particles based on
-          // its distance to the 6-D center.
-          //----------------------------------------------------------
-          Real middle[6] = { 0, 0, 0, 0, 0, 0 };
-          for (int pID : partIdx) {
-            for (int iDir = ix_; iDir <= iz_; iDir++) {
-              middle[iDir] += particles[pID].pos(iDir);
-              middle[nDim + iDir] += particles[pID].rdata(iDir);
-            }
-          }
-
-          for (int iDir = 0; iDir < 2 * nDim; iDir++) {
-            middle[iDir] /= partIdx.size();
-          }
-
-          auto calc_distance2_to_center = [&, this](int pID) {
-            Real dl2 = 0, dvel2 = 0;
-            for (int iDir = ix_; iDir <= iz_; iDir++) {
-              Real pos = particles[pID].pos(iDir);
-              dl2 += pow((pos - middle[iDir]) * invDx[iLev][iDir], 2);
-
-              Real v = particles[pID].rdata(iDir);
-              dvel2 += pow((v - middle[nDim + iDir]) * velNorm, 2);
-            }
-            return coefPos * dl2 + coefVel * dvel2;
-          };
-
-          std::sort(partIdx.begin(), partIdx.end(),
-                    [this, &particles,
-                     calc_distance2_to_center](const int& idl, const int& idr) {
-                      return calc_distance2_to_center(idl) <
-                             calc_distance2_to_center(idr);
-                    });
-          //----------------------------------------------------------
-
-          if (partIdx.size() >= nPartCombine) {
-            /*
-                Delete 1 particle out of 6 particles:
-                1) Choose two particles that are closest to each other.
-                2) Delete the lighter one.
-                3) Distribute its weights to another 5 particles to conserve
-                   mass, momentum and energy.
-             */
-            int idx_I[nPartCombine];
-            for (int ip = 0; ip < nPartCombine; ip++) {
-              idx_I[ip] = partIdx[ip];
-            }
-
-            // Calculate the center of the particles for combination
-            for (int i = 0; i < 2 * nDim; i++) {
-              middle[i] = 0;
-            }
-            for (int pID : idx_I) {
+            // Find the center of the particles, and sort the particles based on
+            // its distance to the 6-D center.
+            //----------------------------------------------------------
+            Real middle[6] = { 0, 0, 0, 0, 0, 0 };
+            for (int pID : partIdx) {
               for (int iDir = ix_; iDir <= iz_; iDir++) {
                 middle[iDir] += particles[pID].pos(iDir);
                 middle[nDim + iDir] += particles[pID].rdata(iDir);
               }
             }
+
             for (int iDir = 0; iDir < 2 * nDim; iDir++) {
-              middle[iDir] /= nPartCombine;
+              middle[iDir] /= partIdx.size();
             }
 
-            bool doCombine = true;
-            // Print()<<"--------------------"<<std::endl;
-            for (int pID : idx_I) {
-              Real distance = sqrt(calc_distance2_to_center(pID));
-              // Print()<<"distance = "<<distance<<std::endl;
-              if (distance > mergeThresholdDistance) {
-                doCombine = false;
+            auto calc_distance2_to_center = [&, this](int pID) {
+              Real dl2 = 0, dvel2 = 0;
+              for (int iDir = ix_; iDir <= iz_; iDir++) {
+                Real pos = particles[pID].pos(iDir);
+                dl2 += pow((pos - middle[iDir]) * invDx[iLev][iDir], 2);
+
+                Real v = particles[pID].rdata(iDir);
+                dvel2 += pow((v - middle[nDim + iDir]) * velNorm, 2);
               }
-            }
-            // Print()<<"--------------------"<<std::endl;
-            nAvailableCombines++;
-            if (!doCombine)
-              continue;
+              return coefPos * dl2 + coefVel * dvel2;
+            };
 
-            int nTry = 1;
-            if (fastMerge) {
-              nTry = nPartCombine;
-            }
+            std::sort(partIdx.begin(), partIdx.end(),
+                      [this, &particles, calc_distance2_to_center](
+                          const int& idl, const int& idr) {
+                        return calc_distance2_to_center(idl) <
+                               calc_distance2_to_center(idr);
+                      });
+            //----------------------------------------------------------
 
-            int tryDeleteOrder[nPartCombine];
-            for (int i = 0; i < nPartCombine; i++) {
-              tryDeleteOrder[i] = idx_I[i];
-            }
-
-            if (nTry == 1) {
-              // Find the pair that is closest to each other in phase space
-              int pair1 = 0, pair2 = 0;
-              Real dis2Min = 2;
-              for (int ip1 = 0; ip1 < nPartCombine - 1; ip1++)
-                for (int ip2 = ip1 + 1; ip2 < nPartCombine; ip2++) {
-
-                  // Distance between two particles in 6D space.
-                  Real dl2 = 0, dv2 = 0;
-                  for (int iDir = 0; iDir < nDim; iDir++) {
-                    Real dv = velNorm * (particles[idx_I[ip1]].rdata(iDir) -
-                                         particles[idx_I[ip2]].rdata(iDir));
-                    dv2 += pow(dv, 2);
-
-                    Real dx =
-                        invDx[iLev][iDir] * (particles[idx_I[ip1]].pos(iDir) -
-                                             particles[idx_I[ip2]].pos(iDir));
-                    dv2 += pow(dx, 2);
-                  }
-
-                  const Real dis2 = dv2 * coefVel + dl2 * coefPos;
-
-                  if (dis2 < dis2Min) {
-                    dis2Min = dis2;
-                    pair1 = ip1;
-                    pair2 = ip2;
-                  }
-                }
-              //-------------------------------
-
-              // Delete the lighter one.
-              int iPartDel = pair1;
-              // Q: Why is it 'l>(1+1e-6)*r' instead of 'l>r'?
-              // A: The particle weights can be the same for some cases. 'l>r'
-              // may return random results due to the truncation error.
-              if (fabs(particles[idx_I[pair1]].rdata(iqp_)) >
-                  (1 + 1e-6) * fabs(particles[idx_I[pair2]].rdata(iqp_))) {
-                iPartDel = pair2;
-              }
-              if (iPartDel != 0) {
-                tryDeleteOrder[0] = idx_I[iPartDel];
-                tryDeleteOrder[iPartDel] = idx_I[0];
-              }
-            } else {
-              // Sort the particles by weights.
-              std::sort(tryDeleteOrder, tryDeleteOrder + nPartCombine,
-                        [&particles](const int& idLeft, const int& idRight) {
-                          const Real ql = fabs(particles[idLeft].rdata(iqp_));
-                          const Real qr = fabs(particles[idRight].rdata(iqp_));
-                          return ql - qr < 1e-6 * ql;
-                        });
-            }
-
-            nEqs++;
-            bool isSolved;
-            const int nVar = nPartNew;
-            Real x[nVar];
-
-            for (int iPartDel = 0; iPartDel < nTry; iPartDel++) {
-              for (int i = 0; i < nPartCombine; i++) {
-                idx_I[i] = tryDeleteOrder[i];
-              }
-
-              if (iPartDel != nPartCombine - 1) {
-                const int idxTmp = idx_I[iPartDel];
-                idx_I[iPartDel] = idx_I[nPartCombine - 1];
-                idx_I[nPartCombine - 1] = idxTmp;
-              }
-
-              //-----------Solve the new particle weights---------------
-              // const int nVar = nPartNew;
-              const int iq_ = 0, iu_ = 1, iv_ = 2, iw_ = 3, ie_ = 4;
-              Real a[nVar][nVar + 1];
-              for (int i = 0; i < nVar; i++) {
-                x[i] = 0;
-                for (int j = 0; j < nVar + 1; j++) {
-                  a[i][j] = 0;
-                }
-              }
-
+            if (partIdx.size() >= nPartCombine) {
+              /*
+                  Delete 1 particle out of 6 particles:
+                  1) Choose two particles that are closest to each other.
+                  2) Delete the lighter one.
+                  3) Distribute its weights to another 5 particles to conserve
+                     mass, momentum and energy.
+               */
+              int idx_I[nPartCombine];
               for (int ip = 0; ip < nPartCombine; ip++) {
-                const Real qp = particles[idx_I[ip]].rdata(iqp_);
-                const Real up = particles[idx_I[ip]].rdata(ix_);
-                const Real vp = particles[idx_I[ip]].rdata(iy_);
-                const Real wp = particles[idx_I[ip]].rdata(iz_);
-                const Real v2 = (pow(up, 2) + pow(vp, 2) + pow(wp, 2));
-
-                if (ip < nVar) {
-                  a[iq_][ip] = 1;
-                  a[iu_][ip] = up;
-                  a[iv_][ip] = vp;
-                  a[iw_][ip] = wp;
-                  a[ie_][ip] = v2;
-                }
-
-                a[iq_][nVar] += qp;
-                a[iu_][nVar] += qp * up;
-                a[iv_][nVar] += qp * vp;
-                a[iw_][nVar] += qp * wp;
-                a[ie_][nVar] += qp * v2;
+                idx_I[ip] = partIdx[ip];
               }
 
-              //------------------------------------------
-              auto linear_solver_Gauss_Elimination = [&a, &x, &nVar]() {
-                for (int i = 0; i < nVar - 1; i++) {
-                  if (a[i][i] == 0)
-                    return false;
-                  for (int k = i + 1; k < nVar; k++) {
-
-                    Real t = a[k][i] / a[i][i];
-                    for (int j = 0; j <= nVar; j++)
-                      a[k][j] = a[k][j] - t * a[i][j];
-                  }
-                }
-
-                for (int i = nVar - 1; i >= 0; i--) {
-                  x[i] = a[i][nVar];
-                  for (int j = i + 1; j < nVar; j++) {
-                    if (j != i)
-                      x[i] = x[i] - a[i][j] * x[j];
-                  }
-                  if (a[i][i] == 0) {
-                    return false;
-                  } else {
-                    x[i] = x[i] / a[i][i];
-                  }
-                }
-                return true;
-              };
-              //------------------------------------------
-
-              isSolved = linear_solver_Gauss_Elimination();
-
-              if (isSolved) {
-                // All the particle weights should have the same sign.
-                Real qt = a[iq_][nVar];
-                for (int ip = 0; ip < nPartNew; ip++) {
-                  if (qt * x[ip] <= 0) {
-                    isSolved = false;
-                    break;
-                  }
+              // Calculate the center of the particles for combination
+              for (int i = 0; i < 2 * nDim; i++) {
+                middle[i] = 0;
+              }
+              for (int pID : idx_I) {
+                for (int iDir = ix_; iDir <= iz_; iDir++) {
+                  middle[iDir] += particles[pID].pos(iDir);
+                  middle[nDim + iDir] += particles[pID].rdata(iDir);
                 }
               }
-
-              // Print() << " ipartdel = " << iPartDel << " w = "
-              //         << particles[idx_I[nPartCombine - 1]].rdata(iqp_)
-              //         << " isSolved = " << (isSolved ? 'T' : 'F') <<
-              //         std::endl;
-              if (isSolved) {
-                break;
+              for (int iDir = 0; iDir < 2 * nDim; iDir++) {
+                middle[iDir] /= nPartCombine;
               }
-            }
-            if (!isSolved)
-              continue;
-            //----------------------------------------------
 
-            // Adjust weight.
-            for (int ip = 0; ip < nPartNew; ip++) {
-              auto& p = particles[idx_I[ip]];
-              p.rdata(iqp_) = x[ip];
-              merged[idx_I[ip]] = true;
+              bool doCombine = true;
+              // Print()<<"--------------------"<<std::endl;
+              for (int pID : idx_I) {
+                Real distance = sqrt(calc_distance2_to_center(pID));
+                // Print()<<"distance = "<<distance<<std::endl;
+                if (distance > mergeThresholdDistance) {
+                  doCombine = false;
+                }
+              }
+              // Print()<<"--------------------"<<std::endl;
+              nAvailableCombines++;
+              if (!doCombine)
+                continue;
+
+              int nTry = 1;
+              if (fastMerge) {
+                nTry = nPartCombine;
+              }
+
+              int tryDeleteOrder[nPartCombine];
+              for (int i = 0; i < nPartCombine; i++) {
+                tryDeleteOrder[i] = idx_I[i];
+              }
+
+              if (nTry == 1) {
+                // Find the pair that is closest to each other in phase space
+                int pair1 = 0, pair2 = 0;
+                Real dis2Min = 2;
+                for (int ip1 = 0; ip1 < nPartCombine - 1; ip1++)
+                  for (int ip2 = ip1 + 1; ip2 < nPartCombine; ip2++) {
+
+                    // Distance between two particles in 6D space.
+                    Real dl2 = 0, dv2 = 0;
+                    for (int iDir = 0; iDir < nDim; iDir++) {
+                      Real dv = velNorm * (particles[idx_I[ip1]].rdata(iDir) -
+                                           particles[idx_I[ip2]].rdata(iDir));
+                      dv2 += pow(dv, 2);
+
+                      Real dx =
+                          invDx[iLev][iDir] * (particles[idx_I[ip1]].pos(iDir) -
+                                               particles[idx_I[ip2]].pos(iDir));
+                      dv2 += pow(dx, 2);
+                    }
+
+                    const Real dis2 = dv2 * coefVel + dl2 * coefPos;
+
+                    if (dis2 < dis2Min) {
+                      dis2Min = dis2;
+                      pair1 = ip1;
+                      pair2 = ip2;
+                    }
+                  }
+                //-------------------------------
+
+                // Delete the lighter one.
+                int iPartDel = pair1;
+                // Q: Why is it 'l>(1+1e-6)*r' instead of 'l>r'?
+                // A: The particle weights can be the same for some cases. 'l>r'
+                // may return random results due to the truncation error.
+                if (fabs(particles[idx_I[pair1]].rdata(iqp_)) >
+                    (1 + 1e-6) * fabs(particles[idx_I[pair2]].rdata(iqp_))) {
+                  iPartDel = pair2;
+                }
+                if (iPartDel != 0) {
+                  tryDeleteOrder[0] = idx_I[iPartDel];
+                  tryDeleteOrder[iPartDel] = idx_I[0];
+                }
+              } else {
+                // Sort the particles by weights.
+                std::sort(tryDeleteOrder, tryDeleteOrder + nPartCombine,
+                          [&particles](const int& idLeft, const int& idRight) {
+                            const Real ql = fabs(particles[idLeft].rdata(iqp_));
+                            const Real qr =
+                                fabs(particles[idRight].rdata(iqp_));
+                            return ql - qr < 1e-6 * ql;
+                          });
+              }
+
+              nEqs++;
+              bool isSolved;
+              const int nVar = nPartNew;
+              Real x[nVar];
+
+              for (int iPartDel = 0; iPartDel < nTry; iPartDel++) {
+                for (int i = 0; i < nPartCombine; i++) {
+                  idx_I[i] = tryDeleteOrder[i];
+                }
+
+                if (iPartDel != nPartCombine - 1) {
+                  const int idxTmp = idx_I[iPartDel];
+                  idx_I[iPartDel] = idx_I[nPartCombine - 1];
+                  idx_I[nPartCombine - 1] = idxTmp;
+                }
+
+                //-----------Solve the new particle weights---------------
+                // const int nVar = nPartNew;
+                const int iq_ = 0, iu_ = 1, iv_ = 2, iw_ = 3, ie_ = 4;
+                Real a[nVar][nVar + 1];
+                for (int i = 0; i < nVar; i++) {
+                  x[i] = 0;
+                  for (int j = 0; j < nVar + 1; j++) {
+                    a[i][j] = 0;
+                  }
+                }
+
+                for (int ip = 0; ip < nPartCombine; ip++) {
+                  const Real qp = particles[idx_I[ip]].rdata(iqp_);
+                  const Real up = particles[idx_I[ip]].rdata(ix_);
+                  const Real vp = particles[idx_I[ip]].rdata(iy_);
+                  const Real wp = particles[idx_I[ip]].rdata(iz_);
+                  const Real v2 = (pow(up, 2) + pow(vp, 2) + pow(wp, 2));
+
+                  if (ip < nVar) {
+                    a[iq_][ip] = 1;
+                    a[iu_][ip] = up;
+                    a[iv_][ip] = vp;
+                    a[iw_][ip] = wp;
+                    a[ie_][ip] = v2;
+                  }
+
+                  a[iq_][nVar] += qp;
+                  a[iu_][nVar] += qp * up;
+                  a[iv_][nVar] += qp * vp;
+                  a[iw_][nVar] += qp * wp;
+                  a[ie_][nVar] += qp * v2;
+                }
+
+                //------------------------------------------
+                auto linear_solver_Gauss_Elimination = [&a, &x, &nVar]() {
+                  for (int i = 0; i < nVar - 1; i++) {
+                    if (a[i][i] == 0)
+                      return false;
+                    for (int k = i + 1; k < nVar; k++) {
+
+                      Real t = a[k][i] / a[i][i];
+                      for (int j = 0; j <= nVar; j++)
+                        a[k][j] = a[k][j] - t * a[i][j];
+                    }
+                  }
+
+                  for (int i = nVar - 1; i >= 0; i--) {
+                    x[i] = a[i][nVar];
+                    for (int j = i + 1; j < nVar; j++) {
+                      if (j != i)
+                        x[i] = x[i] - a[i][j] * x[j];
+                    }
+                    if (a[i][i] == 0) {
+                      return false;
+                    } else {
+                      x[i] = x[i] / a[i][i];
+                    }
+                  }
+                  return true;
+                };
+                //------------------------------------------
+
+                isSolved = linear_solver_Gauss_Elimination();
+
+                if (isSolved) {
+                  // All the particle weights should have the same sign.
+                  Real qt = a[iq_][nVar];
+                  for (int ip = 0; ip < nPartNew; ip++) {
+                    if (qt * x[ip] <= 0) {
+                      isSolved = false;
+                      break;
+                    }
+                  }
+                }
+
+                // Print() << " ipartdel = " << iPartDel << " w = "
+                //         << particles[idx_I[nPartCombine - 1]].rdata(iqp_)
+                //         << " isSolved = " << (isSolved ? 'T' : 'F') <<
+                //         std::endl;
+                if (isSolved) {
+                  break;
+                }
+              }
+              if (!isSolved)
+                continue;
+              //----------------------------------------------
+
+              // Adjust weight.
+              for (int ip = 0; ip < nPartNew; ip++) {
+                auto& p = particles[idx_I[ip]];
+                p.rdata(iqp_) = x[ip];
+                merged[idx_I[ip]] = true;
+              }
+              // Mark for deletion
+              for (int ip = nPartNew; ip < nPartCombine; ip++) {
+                particles[idx_I[ip]].id() = -1;
+                merged[idx_I[ip]] = true;
+              }
+              nSolved++;
             }
-            // Mark for deletion
-            for (int ip = nPartNew; ip < nPartCombine; ip++) {
-              particles[idx_I[ip]].id() = -1;
-              merged[idx_I[ip]] = true;
-            }
-            nSolved++;
           }
-        }
+    }
   }
 
   // if (nAvailableCombines > 0)
