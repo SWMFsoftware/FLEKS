@@ -1115,10 +1115,6 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       } // for p
     }   // for pti
   }
-
-  // This function distributes particles to proper processors and apply
-  // periodic boundary conditions if needed.
-  Redistribute();
 }
 
 //==========================================================
@@ -1126,40 +1122,37 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::neutral_mover(amrex::Real dt) {
   timing_func("Particles::neutral_mover");
 
-  const int iLev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-       ++pti) {
+  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+    for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
+         ++pti) {
 
-    const Array4<int const>& status = cellStatus[iLev][pti].array();
-    // cellStatus[iLev][pti] is a FAB, and the box returned from the box()
-    // method already contains the ghost cells.
-    const Box& bx = cellStatus[iLev][pti].box();
-    const IntVect lowCorner = bx.smallEnd();
-    const IntVect highCorner = bx.bigEnd();
+      const Array4<int const>& status = cellStatus[iLev][pti].array();
+      // cellStatus[iLev][pti] is a FAB, and the box returned from the box()
+      // method already contains the ghost cells.
+      const Box& bx = cellStatus[iLev][pti].box();
+      const IntVect lowCorner = bx.smallEnd();
+      const IntVect highCorner = bx.bigEnd();
 
-    auto& particles = pti.GetArrayOfStructs();
-    for (auto& p : particles) {
-      const Real up = p.rdata(iup_);
-      const Real vp = p.rdata(ivp_);
-      const Real wp = p.rdata(iwp_);
-      const Real xp = p.pos(ix_);
-      const Real yp = p.pos(iy_);
-      const Real zp = p.pos(iz_);
+      auto& particles = pti.GetArrayOfStructs();
+      for (auto& p : particles) {
+        const Real up = p.rdata(iup_);
+        const Real vp = p.rdata(ivp_);
+        const Real wp = p.rdata(iwp_);
+        const Real xp = p.pos(ix_);
+        const Real yp = p.pos(iy_);
+        const Real zp = p.pos(iz_);
 
-      p.pos(ix_) = xp + up * dt;
-      p.pos(iy_) = yp + vp * dt;
-      p.pos(iz_) = zp + wp * dt;
+        p.pos(ix_) = xp + up * dt;
+        p.pos(iy_) = yp + vp * dt;
+        p.pos(iz_) = zp + wp * dt;
 
-      // Mark for deletion
-      if (is_outside_ba(p, status, lowCorner, highCorner)) {
-        p.id() = -1;
-      }
-    } // for p
-  }   // for pti
-
-  // This function distributes particles to proper processors and apply
-  // periodic boundary conditions if needed.
-  Redistribute();
+        // Mark for deletion
+        if (is_outside_ba(p, status, lowCorner, highCorner)) {
+          p.id() = -1;
+        }
+      } // for p
+    }   // for pti
+  }
 }
 
 //==========================================================
