@@ -1460,8 +1460,8 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::combine_particles(Real limit) {
-  timing_func("Particles::combine_particles");
+void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
+  timing_func("Particles::merge_particles");
   IntVect iv = { AMREX_D_DECL(1, 1, 1) };
   if (!(do_tiling && tile_size == iv))
     return;
