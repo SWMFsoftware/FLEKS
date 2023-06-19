@@ -1337,121 +1337,123 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
   if (!(do_tiling && tile_size == iv))
     return;
 
-  const int iLev = 0;
-  Real dl = 0.1 * Geom(iLev).CellSize()[ix_] / nPartPerCell.max();
+  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
 
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-       ++pti) {
+    const Real dl = 0.1 * Geom(iLev).CellSize()[ix_] / nPartPerCell.max();
 
-    auto& particles = pti.GetArrayOfStructs();
+    for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
+         ++pti) {
 
-    const int nPartOrig = particles.size();
+      auto& particles = pti.GetArrayOfStructs();
 
-    if (nPartOrig > nLowerLimit)
-      continue;
+      const int nPartOrig = particles.size();
 
-    const int nNew =
-        nGoal - nPartOrig > nPartOrig ? nPartOrig : nGoal - nPartOrig;
+      if (nPartOrig > nLowerLimit)
+        continue;
 
-    // Find the 'heaviest' nNew particles by sorting the weight (charge).-----
+      const int nNew =
+          nGoal - nPartOrig > nPartOrig ? nPartOrig : nGoal - nPartOrig;
 
-    // Sort the particles by the location first to make sure the results
-    // are the same for different number of processors
-    std::sort(particles.begin(), particles.end(),
-              [](const ParticleType& pl, const ParticleType& pr) {
-                return pl.pos(ix_) + pl.pos(iy_) + pl.pos(iz_) >
-                       pr.pos(ix_) + pr.pos(iy_) + pr.pos(iz_);
-              });
+      // Find the 'heaviest' nNew particles by sorting the weight (charge).-----
 
-    // Sort the particles by the weight in decending order.
-    std::sort(particles.begin(), particles.end(),
-              [](const ParticleType& pl, const ParticleType& pr) {
-                const Real ql = fabs(pl.rdata(iqp_));
-                const Real qr = fabs(pr.rdata(iqp_));
-                // Q: Why use '1e-6*ql' instead of `0'?
-                // A: If it is sorted by 'ql > qr', and all the particles in
-                // this cell
-                //   have the same weight, the particles are essentially
-                //   sorted by the last digit, which is random. The threshold
-                //   '1e-6*ql' is introduced to avoid the randomness.
-                return ql - qr > 1e-6 * ql;
-              });
-    //----------------------------------------------------------------
+      // Sort the particles by the location first to make sure the results
+      // are the same for different number of processors
+      std::sort(particles.begin(), particles.end(),
+                [](const ParticleType& pl, const ParticleType& pr) {
+                  return pl.pos(ix_) + pl.pos(iy_) + pl.pos(iz_) >
+                         pr.pos(ix_) + pr.pos(iy_) + pr.pos(iz_);
+                });
 
-    const auto lo = lbound(pti.tilebox());
-    const auto hi = ubound(pti.tilebox());
+      // Sort the particles by the weight in decending order.
+      std::sort(particles.begin(), particles.end(),
+                [](const ParticleType& pl, const ParticleType& pr) {
+                  const Real ql = fabs(pl.rdata(iqp_));
+                  const Real qr = fabs(pr.rdata(iqp_));
+                  // Q: Why use '1e-6*ql' instead of `0'?
+                  // A: If it is sorted by 'ql > qr', and all the particles in
+                  // this cell
+                  //   have the same weight, the particles are essentially
+                  //   sorted by the last digit, which is random. The threshold
+                  //   '1e-6*ql' is introduced to avoid the randomness.
+                  return ql - qr > 1e-6 * ql;
+                });
+      //----------------------------------------------------------------
 
-    const Real xMin = Geom(iLev).LoEdge(lo.x, ix_) +
-                      Geom(iLev).CellSize()[ix_] * 1e-10,
-               xMax = Geom(iLev).HiEdge(hi.x, ix_) -
-                      Geom(iLev).CellSize()[ix_] * 1e-10;
+      const auto lo = lbound(pti.tilebox());
+      const auto hi = ubound(pti.tilebox());
 
-    const Real yMin = Geom(iLev).LoEdge(lo.y, iy_) +
-                      Geom(iLev).CellSize()[iy_] * 1e-10,
-               yMax = Geom(iLev).HiEdge(hi.y, iy_) -
-                      Geom(iLev).CellSize()[iy_] * 1e-10;
+      const Real xMin = Geom(iLev).LoEdge(lo.x, ix_) +
+                        Geom(iLev).CellSize()[ix_] * 1e-10,
+                 xMax = Geom(iLev).HiEdge(hi.x, ix_) -
+                        Geom(iLev).CellSize()[ix_] * 1e-10;
 
-    const Real zMin = Geom(iLev).LoEdge(lo.z, iz_) +
-                      Geom(iLev).CellSize()[iz_] * 1e-10,
-               zMax = Geom(iLev).HiEdge(hi.z, iz_) -
-                      Geom(iLev).CellSize()[iz_] * 1e-10;
+      const Real yMin = Geom(iLev).LoEdge(lo.y, iy_) +
+                        Geom(iLev).CellSize()[iy_] * 1e-10,
+                 yMax = Geom(iLev).HiEdge(hi.y, iy_) -
+                        Geom(iLev).CellSize()[iy_] * 1e-10;
 
-    for (int ip = 0; ip < nNew; ip++) {
-      auto& p = particles[ip];
-      Real qp1 = p.rdata(iqp_);
-      Real xp1 = p.pos(ix_);
-      Real yp1 = p.pos(iy_);
-      Real zp1 = p.pos(iz_);
-      Real up1 = p.rdata(iup_);
-      Real vp1 = p.rdata(ivp_);
-      Real wp1 = p.rdata(iwp_);
+      const Real zMin = Geom(iLev).LoEdge(lo.z, iz_) +
+                        Geom(iLev).CellSize()[iz_] * 1e-10,
+                 zMax = Geom(iLev).HiEdge(hi.z, iz_) -
+                        Geom(iLev).CellSize()[iz_] * 1e-10;
 
-      const Real u2 = up1 * up1 + vp1 * vp1 + wp1 * wp1;
+      for (int ip = 0; ip < nNew; ip++) {
+        auto& p = particles[ip];
+        Real qp1 = p.rdata(iqp_);
+        Real xp1 = p.pos(ix_);
+        Real yp1 = p.pos(iy_);
+        Real zp1 = p.pos(iz_);
+        Real up1 = p.rdata(iup_);
+        Real vp1 = p.rdata(ivp_);
+        Real wp1 = p.rdata(iwp_);
 
-      Real coef = (u2 < 1e-13) ? 0 : dl / sqrt(u2);
-      const Real dpx = coef * up1;
-      const Real dpy = coef * vp1;
-      const Real dpz = coef * wp1;
+        const Real u2 = up1 * up1 + vp1 * vp1 + wp1 * wp1;
 
-      Real xp2 = xp1 + dpx;
-      Real yp2 = yp1 + dpy;
-      Real zp2 = zp1 + dpz;
+        Real coef = (u2 < 1e-13) ? 0 : dl / sqrt(u2);
+        const Real dpx = coef * up1;
+        const Real dpy = coef * vp1;
+        const Real dpz = coef * wp1;
 
-      xp1 -= dpx;
-      yp1 -= dpy;
-      zp1 -= dpz;
+        Real xp2 = xp1 + dpx;
+        Real yp2 = yp1 + dpy;
+        Real zp2 = zp1 + dpz;
 
-      xp1 = bound(xp1, xMin, xMax);
-      yp1 = bound(yp1, yMin, yMax);
-      zp1 = bound(zp1, zMin, zMax);
+        xp1 -= dpx;
+        yp1 -= dpy;
+        zp1 -= dpz;
 
-      xp2 = bound(xp2, xMin, xMax);
-      yp2 = bound(yp2, yMin, yMax);
-      zp2 = bound(zp2, zMin, zMax);
+        xp1 = bound(xp1, xMin, xMax);
+        yp1 = bound(yp1, yMin, yMax);
+        zp1 = bound(zp1, zMin, zMax);
 
-      p.rdata(iqp_) = (qp1 / 2);
-      p.pos(ix_) = xp1;
-      p.pos(iy_) = yp1;
-      p.pos(iz_) = zp1;
+        xp2 = bound(xp2, xMin, xMax);
+        yp2 = bound(yp2, yMin, yMax);
+        zp2 = bound(zp2, zMin, zMax);
 
-      ParticleType pnew;
-      if (ParticleType::the_next_id >= amrex::LastParticleID) {
-        // id should not larger than LastParticleID. This is a bad solution,
-        // since the ID becomes nonunique. --Yuxi
-        pnew.id() = amrex::LastParticleID;
-      } else {
-        pnew.id() = ParticleType::NextID();
+        p.rdata(iqp_) = (qp1 / 2);
+        p.pos(ix_) = xp1;
+        p.pos(iy_) = yp1;
+        p.pos(iz_) = zp1;
+
+        ParticleType pnew;
+        if (ParticleType::the_next_id >= amrex::LastParticleID) {
+          // id should not larger than LastParticleID. This is a bad solution,
+          // since the ID becomes nonunique. --Yuxi
+          pnew.id() = amrex::LastParticleID;
+        } else {
+          pnew.id() = ParticleType::NextID();
+        }
+
+        pnew.cpu() = ParallelDescriptor::MyProc();
+        pnew.pos(ix_) = xp2;
+        pnew.pos(iy_) = yp2;
+        pnew.pos(iz_) = zp2;
+        pnew.rdata(iup_) = up1;
+        pnew.rdata(ivp_) = vp1;
+        pnew.rdata(iwp_) = wp1;
+        pnew.rdata(iqp_) = qp1 / 2;
+        particles.push_back(pnew);
       }
-
-      pnew.cpu() = ParallelDescriptor::MyProc();
-      pnew.pos(ix_) = xp2;
-      pnew.pos(iy_) = yp2;
-      pnew.pos(iz_) = zp2;
-      pnew.rdata(iup_) = up1;
-      pnew.rdata(ivp_) = vp1;
-      pnew.rdata(iwp_) = wp1;
-      pnew.rdata(iqp_) = qp1 / 2;
-      particles.push_back(pnew);
     }
   }
 }
