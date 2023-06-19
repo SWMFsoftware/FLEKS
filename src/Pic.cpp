@@ -635,24 +635,21 @@ void Pic::particle_mover() {
 
   timing_func(nameFunc);
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
-    if (useExplicitPIC) {
-      MultiFab tmpE(nGrids[iLev], DistributionMap(iLev), 3, nGst);
-      // nodeE/nodeEth is at t_n/t_{n+1}, tmpE is at t_{n+0.5}
-      MultiFab::LinComb(tmpE, 0.5, nodeEth[iLev], 0, 0.5, nodeE[iLev], 0, 0,
-                        nodeE[iLev].nComp(), nodeE[iLev].nGrow());
-      for (int i = 0; i < nSpecies; i++) {
-        parts[i]->mover(tmpE, nodeB[iLev], iLev, tc->get_dt(),
-                        tc->get_next_dt());
-      }
+  // if (useExplicitPIC) {
 
-    } else {
+  // MultiFab tmpE(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+  // // nodeE/nodeEth is at t_n/t_{n+1}, tmpE is at t_{n+0.5}
+  // MultiFab::LinComb(tmpE, 0.5, nodeEth[iLev], 0, 0.5, nodeE[iLev], 0, 0,
+  //                   nodeE[iLev].nComp(), nodeE[iLev].nGrow());
+  // for (int i = 0; i < nSpecies; i++) {
+  //   parts[i]->mover(tmpE, nodeB[iLev], iLev, tc->get_dt(),
+  //                   tc->get_next_dt());
+  // }
 
-      for (int i = 0; i < nSpecies; i++) {
-        parts[i]->mover(nodeEth[iLev], nodeB[iLev], iLev, tc->get_dt(),
-                        tc->get_next_dt());
-      }
-    }
+  // } else {
+
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->mover(nodeEth, nodeB, tc->get_dt(), tc->get_next_dt());
   }
 }
 

@@ -197,11 +197,12 @@ public:
   void charge_exchange(amrex::Real dt, FluidInterface* stateOH,
                        FluidInterface* sourcePT2OH, SourceInterface* source);
 
-  void mover(const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
-             int iLev, amrex::Real dt, amrex::Real dtNext);
+  void mover(const amrex::Vector<amrex::MultiFab>& nodeE,
+             const amrex::Vector<amrex::MultiFab>& nodeB, amrex::Real dt,
+             amrex::Real dtNext);
 
-  void charged_particle_mover(const amrex::MultiFab& nodeEMF,
-                              const amrex::MultiFab& nodeBMF, int iLev,
+  void charged_particle_mover(const amrex::Vector<amrex::MultiFab>& nodeE,
+                              const amrex::Vector<amrex::MultiFab>& nodeB,
                               amrex::Real dt, amrex::Real dtNext);
 
   void neutral_mover(amrex::Real dt);

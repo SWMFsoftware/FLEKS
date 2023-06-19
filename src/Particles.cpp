@@ -487,7 +487,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
             }
       } // if doChargeOnly
 
-    } // for p
+    }   // for p
   }
 }
 
@@ -741,10 +741,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
                     }
                   } // k2
 
-                } // j2
-              }   // if (ip > 0)
-            }     // i2
-          }       // k1
+                }   // j2
+              }     // if (ip > 0)
+            }       // i2
+          }         // k1
 
       //----- Mass matrix calculation end--------------
 
@@ -1000,22 +1000,21 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::mover(const amrex::MultiFab& nodeEMF,
-                                               const amrex::MultiFab& nodeBMF,
-                                               int iLev, amrex::Real dt,
-                                               amrex::Real dtNext) {
+void Particles<NStructReal, NStructInt>::mover(const Vector<MultiFab>& nodeE,
+                                               const Vector<MultiFab>& nodeB,
+                                               Real dt, Real dtNext) {
   if (is_neutral()) {
     neutral_mover(dt);
   } else {
-    charged_particle_mover(nodeEMF, nodeBMF, iLev, dt, dtNext);
+    charged_particle_mover(nodeE, nodeB, dt, dtNext);
   }
 }
 
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover(
-    const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF, int iLev,
-    amrex::Real dt, amrex::Real dtNext) {
+    const Vector<MultiFab>& nodeE, const Vector<MultiFab>& nodeB, Real dt,
+    Real dtNext) {
   timing_func("Particles::charged_particle_mover");
 
   const Real qdto2mc = charge / mass * 0.5 * dt;
@@ -1026,94 +1025,96 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
     dtLoc = 0.5 * dt;
   }
 
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-       ++pti) {
-    const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
-    const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
+  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+    for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
+         ++pti) {
+      const Array4<Real const>& nodeEArr = nodeE[iLev][pti].array();
+      const Array4<Real const>& nodeBArr = nodeB[iLev][pti].array();
 
-    const Array4<int const>& status = cellStatus[iLev][pti].array();
-    // cellStatus[iLev][pti] is a FAB, and the box returned from the box()
-    // method already contains the ghost cells.
-    const Box& bx = cellStatus[iLev][pti].box();
-    const IntVect lowCorner = bx.smallEnd();
-    const IntVect highCorner = bx.bigEnd();
+      const Array4<int const>& status = cellStatus[iLev][pti].array();
+      // cellStatus[iLev][pti] is a FAB, and the box returned from the box()
+      // method already contains the ghost cells.
+      const Box& bx = cellStatus[iLev][pti].box();
+      const IntVect lowCorner = bx.smallEnd();
+      const IntVect highCorner = bx.bigEnd();
 
-    auto& particles = pti.GetArrayOfStructs();
-    for (auto& p : particles) {
-      const Real up = p.rdata(iup_);
-      const Real vp = p.rdata(ivp_);
-      const Real wp = p.rdata(iwp_);
-      const Real xp = p.pos(ix_);
-      const Real yp = p.pos(iy_);
-      const Real zp = p.pos(iz_);
+      auto& particles = pti.GetArrayOfStructs();
+      for (auto& p : particles) {
+        const Real up = p.rdata(iup_);
+        const Real vp = p.rdata(ivp_);
+        const Real wp = p.rdata(iwp_);
+        const Real xp = p.pos(ix_);
+        const Real yp = p.pos(iy_);
+        const Real zp = p.pos(iz_);
 
-      //-----calculate interpolate coef begin-------------
-      IntVect loIdx;
-      RealVect dShift;
-      for (int i = 0; i < nDim; i++) {
-        dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
-        loIdx[i] = fastfloor(dShift[i]);
-        dShift[i] = dShift[i] - loIdx[i];
-      }
+        //-----calculate interpolate coef begin-------------
+        IntVect loIdx;
+        RealVect dShift;
+        for (int i = 0; i < nDim; i++) {
+          dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
+          loIdx[i] = fastfloor(dShift[i]);
+          dShift[i] = dShift[i] - loIdx[i];
+        }
 
-      Real coef[2][2][2];
-      linear_interpolation_coef(dShift, coef);
-      //-----calculate interpolate coef end-------------
+        Real coef[2][2][2];
+        linear_interpolation_coef(dShift, coef);
+        //-----calculate interpolate coef end-------------
 
-      Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];
-      Real Exl = 0, Eyl = 0, Ezl = 0;
-      for (int ii = 0; ii < 2; ii++)
-        for (int jj = 0; jj < 2; jj++)
-          for (int kk = 0; kk < 2; kk++) {
-            const int iNodeX = loIdx[ix_] + ii;
-            const int iNodeY = loIdx[iy_] + jj;
-            const int iNodeZ = loIdx[iz_] + kk;
-            const Real& c0 = coef[ii][jj][kk];
-            Bxl += nodeBArr(iNodeX, iNodeY, iNodeZ, ix_) * c0;
-            Byl += nodeBArr(iNodeX, iNodeY, iNodeZ, iy_) * c0;
-            Bzl += nodeBArr(iNodeX, iNodeY, iNodeZ, iz_) * c0;
+        Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];
+        Real Exl = 0, Eyl = 0, Ezl = 0;
+        for (int ii = 0; ii < 2; ii++)
+          for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++) {
+              const int iNodeX = loIdx[ix_] + ii;
+              const int iNodeY = loIdx[iy_] + jj;
+              const int iNodeZ = loIdx[iz_] + kk;
+              const Real& c0 = coef[ii][jj][kk];
+              Bxl += nodeBArr(iNodeX, iNodeY, iNodeZ, ix_) * c0;
+              Byl += nodeBArr(iNodeX, iNodeY, iNodeZ, iy_) * c0;
+              Bzl += nodeBArr(iNodeX, iNodeY, iNodeZ, iz_) * c0;
 
-            Exl += nodeEArr(iNodeX, iNodeY, iNodeZ, ix_) * c0;
-            Eyl += nodeEArr(iNodeX, iNodeY, iNodeZ, iy_) * c0;
-            Ezl += nodeEArr(iNodeX, iNodeY, iNodeZ, iz_) * c0;
-          }
+              Exl += nodeEArr(iNodeX, iNodeY, iNodeZ, ix_) * c0;
+              Eyl += nodeEArr(iNodeX, iNodeY, iNodeZ, iy_) * c0;
+              Ezl += nodeEArr(iNodeX, iNodeY, iNodeZ, iz_) * c0;
+            }
 
-      const double Omx = qdto2mc * Bxl;
-      const double Omy = qdto2mc * Byl;
-      const double Omz = qdto2mc * Bzl;
+        const double Omx = qdto2mc * Bxl;
+        const double Omy = qdto2mc * Byl;
+        const double Omz = qdto2mc * Bzl;
 
-      // end interpolation
-      const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
-      const Real denom = 1.0 / (1.0 + omsq);
-      // solve the position equation
-      const Real ut = up + qdto2mc * Exl;
-      const Real vt = vp + qdto2mc * Eyl;
-      const Real wt = wp + qdto2mc * Ezl;
-      // const pfloat udotb = ut * Bxl + vt * Byl + wt * Bzl;
-      const Real udotOm = ut * Omx + vt * Omy + wt * Omz;
-      // solve the velocity equation
-      const Real uavg = (ut + (vt * Omz - wt * Omy + udotOm * Omx)) * denom;
-      const Real vavg = (vt + (wt * Omx - ut * Omz + udotOm * Omy)) * denom;
-      const Real wavg = (wt + (ut * Omy - vt * Omx + udotOm * Omz)) * denom;
+        // end interpolation
+        const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
+        const Real denom = 1.0 / (1.0 + omsq);
+        // solve the position equation
+        const Real ut = up + qdto2mc * Exl;
+        const Real vt = vp + qdto2mc * Eyl;
+        const Real wt = wp + qdto2mc * Ezl;
+        // const pfloat udotb = ut * Bxl + vt * Byl + wt * Bzl;
+        const Real udotOm = ut * Omx + vt * Omy + wt * Omz;
+        // solve the velocity equation
+        const Real uavg = (ut + (vt * Omz - wt * Omy + udotOm * Omx)) * denom;
+        const Real vavg = (vt + (wt * Omx - ut * Omz + udotOm * Omy)) * denom;
+        const Real wavg = (wt + (ut * Omy - vt * Omx + udotOm * Omz)) * denom;
 
-      const double unp1 = 2.0 * uavg - up;
-      const double vnp1 = 2.0 * vavg - vp;
-      const double wnp1 = 2.0 * wavg - wp;
+        const double unp1 = 2.0 * uavg - up;
+        const double vnp1 = 2.0 * vavg - vp;
+        const double wnp1 = 2.0 * wavg - wp;
 
-      p.rdata(ix_) = unp1;
-      p.rdata(iy_) = vnp1;
-      p.rdata(iz_) = wnp1;
+        p.rdata(ix_) = unp1;
+        p.rdata(iy_) = vnp1;
+        p.rdata(iz_) = wnp1;
 
-      p.pos(ix_) = xp + unp1 * dtLoc;
-      p.pos(iy_) = yp + vnp1 * dtLoc;
-      p.pos(iz_) = zp + wnp1 * dtLoc;
+        p.pos(ix_) = xp + unp1 * dtLoc;
+        p.pos(iy_) = yp + vnp1 * dtLoc;
+        p.pos(iz_) = zp + wnp1 * dtLoc;
 
-      // Mark for deletion
-      if (is_outside_ba(p, status, lowCorner, highCorner)) {
-        p.id() = -1;
-      }
-    } // for p
-  }   // for pti
+        // Mark for deletion
+        if (is_outside_ba(p, status, lowCorner, highCorner)) {
+          p.id() = -1;
+        }
+      } // for p
+    }   // for pti
+  }
 
   // This function distributes particles to proper processors and apply
   // periodic boundary conditions if needed.
