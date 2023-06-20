@@ -150,6 +150,9 @@ public:
   bool is_particle() const {
     return plotString.find("particles") != std::string::npos;
   }
+  bool save_node() const {
+    return plotString.find("node") != std::string::npos;
+  }
   int get_particleSpecies() const { return particleSpecies; }
   double get_plotMin_D(int iDim) const { return plotMin_D[iDim]; }
   double get_plotMax_D(int iDim) const { return plotMax_D[iDim]; }

@@ -638,6 +638,11 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
                             const BoxArray baOut) {
   Print() << "amrex::" << pw.get_amrex_filename(timeNow, iCycle) << std::endl;
 
+  // Save node-centered or cell-centered data. AMReX IO and most visualization
+  // tools expect cell-centered data. So the node-centered output looks strange
+  // in most visualization tools and it is only useful for debugging.
+  const bool saveNode = pw.save_node();
+
   Vector<Geometry> geomOut(nLev);
 
   set_IO_geom(geomOut, pw);
@@ -660,19 +665,24 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   // document says some virtualiazaion tools assumes the AMReX format outputs
   // are cell-centered.
 
-  Vector<MultiFab> centerMF(nLev);
+  Vector<MultiFab> out(nLev);
   Vector<std::string> varNames;
   bool isDensityZero = false;
   int zeroI, zeroJ, zeroK;
   for (int iLev = 0; iLev <= finest_level; iLev++) {
-    centerMF[iLev].define(cGrids[iLev], DistributionMap(iLev), nVarOut, 0);
+    if (saveNode) {
+      out[iLev].define(nGrids[iLev], DistributionMap(iLev), nVarOut, 0);
+    } else {
+      out[iLev].define(cGrids[iLev], DistributionMap(iLev), nVarOut, 0);
+    }
+
     int iStart = 0;
 
     varNames.clear();
 
     if (plotVars.find("X") != std::string::npos) {
       //--------------Coordinates-------------------------
-      MultiFab xyz(centerMF[iLev], make_alias, 0, 3);
+      MultiFab xyz(out[iLev], make_alias, 0, 3);
 
       for (MFIter mfi(xyz); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
@@ -681,13 +691,19 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
         const auto hi = ubound(box);
 
         for (int k = lo.z; k <= hi.z; ++k) {
-          // Use the value returned from Geom(0) instead of geomOut, and it will
+          // Use the value returned from Geom instead of geomOut, and it will
           // be converted to output unit just as other variables.
-          const Real z0 = Geom(iLev).CellCenter(k, iz_);
+          const Real z0 = saveNode ? Geom(iLev).LoEdge(k, iz_)
+                                   : Geom(iLev).CellCenter(k, iz_);
+
           for (int j = lo.y; j <= hi.y; ++j) {
-            const Real y0 = Geom(iLev).CellCenter(j, iy_);
+            const Real y0 = saveNode ? Geom(iLev).LoEdge(j, iy_)
+                                     : Geom(iLev).CellCenter(j, iy_);
+
             for (int i = lo.x; i <= hi.x; ++i) {
-              const Real x0 = Geom(iLev).CellCenter(i, ix_);
+              const Real x0 = saveNode ? Geom(iLev).LoEdge(i, ix_)
+                                       : Geom(iLev).CellCenter(i, ix_);
+
               cellArr(i, j, k, ix_) = x0;
               cellArr(i, j, k, iy_) = y0;
               cellArr(i, j, k, iz_) = z0;
@@ -703,8 +719,14 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
     if (plotVars.find("B") != std::string::npos) {
       //------------------B---------------
-      MultiFab::Copy(centerMF[iLev], centerB[iLev], 0, iStart,
-                     nodeB[iLev].nComp(), 0);
+      if (saveNode) {
+        MultiFab::Copy(out[iLev], nodeB[iLev], 0, iStart, nodeB[iLev].nComp(),
+                       0);
+      } else {
+        MultiFab::Copy(out[iLev], centerB[iLev], 0, iStart, nodeB[iLev].nComp(),
+                       0);
+      }
+
       iStart += nodeB[iLev].nComp();
       varNames.push_back("Bx");
       varNames.push_back("By");
@@ -713,8 +735,13 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
     if (plotVars.find("E") != std::string::npos) {
       //-----------------E-----------------------------
-      average_node_to_cellcenter(centerMF[iLev], iStart, nodeE[iLev], 0,
-                                 nodeE[iLev].nComp(), 0);
+      if (saveNode) {
+        MultiFab::Copy(out[iLev], nodeE[iLev], 0, iStart, nodeE[iLev].nComp(),
+                       0);
+      } else {
+        average_node_to_cellcenter(out[iLev], iStart, nodeE[iLev], 0,
+                                   nodeE[iLev].nComp(), 0);
+      }
       iStart += nodeE[iLev].nComp();
       varNames.push_back("Ex");
       varNames.push_back("Ey");
@@ -767,8 +794,12 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
         }
 
         MultiFab pl(plasma, make_alias, iRho_, iPyz_ - iRho_ + 1);
-        average_node_to_cellcenter(centerMF[iLev], iStart, pl, 0, pl.nComp(),
-                                   0);
+        if (saveNode) {
+          MultiFab::Copy(out[iLev], pl, 0, iStart, pl.nComp(), 0);
+        } else {
+          average_node_to_cellcenter(out[iLev], iStart, pl, 0, pl.nComp(), 0);
+        }
+
         iStart += pl.nComp();
         for (auto& var : plasmaNames) {
           varNames.push_back(var + "s" + std::to_string(iSpecies));
@@ -781,9 +812,9 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
       }
     }
 
-    for (int i = 0; i < centerMF[iLev].nComp(); i++) {
+    for (int i = 0; i < out[iLev].nComp(); i++) {
       Real no2out = pw.No2OutTable(varNames[i]);
-      centerMF[iLev].mult(no2out, i, 1);
+      out[iLev].mult(no2out, i, 1);
     }
   }
 
@@ -792,15 +823,18 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
     filename = filenameIn;
   }
 
+  if (saveNode)
+    filename += "_node";
+
   if (!baOut.empty() && nLev == 1) {
-    // TODO: make it works for multi-lev in the future.
-    distribute_FabArray(centerMF[0], baOut, DistributionMapping(baOut));
+    // TODO: make it works for multi-lev and node-centered in the future.
+    distribute_FabArray(out[0], baOut, DistributionMapping(baOut));
   }
 
   Vector<const MultiFab*> mf(nLev);
   Vector<int> steps(nLev);
   for (int iLev = 0; iLev < nLev; iLev++) {
-    mf[iLev] = &centerMF[iLev];
+    mf[iLev] = &out[iLev];
     steps[iLev] = iCycle;
   }
 
