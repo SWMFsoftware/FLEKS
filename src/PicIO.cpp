@@ -91,9 +91,9 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
   // Loop not implemented correctly // Talha
   int iLev = 0;
   const auto plo = Geom(0).ProbLo();
-  const auto plh = Geom(0).ProbHi();
+  const auto phi = Geom(0).ProbHi();
 
-  RealVect xMinL_D = { AMREX_D_DECL(plh[ix_], plh[iy_], plh[iz_]) };
+  RealVect xMinL_D = { AMREX_D_DECL(phi[ix_], phi[iy_], phi[iz_]) };
   RealVect xMaxL_D = { AMREX_D_DECL(plo[ix_], plo[iy_], plo[iz_]) };
 
   const auto dx = Geom(0).CellSize();
