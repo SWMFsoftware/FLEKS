@@ -47,7 +47,7 @@ void print_MultiFab(const amrex::iMultiFab& data, std::string tag,
                     int nshift = 0);
 
 void print_MultiFab(const amrex::MultiFab& data, std::string tag,
-                    int nshift = 0);
+                    const int iVarStart, const int iVarEnd, int nshift = 0);
 
 void print_MultiFab(const amrex::MultiFab& data, std::string tag,
                     amrex::Geometry& gm, int nshift = 0);

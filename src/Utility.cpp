@@ -306,7 +306,8 @@ void print_MultiFab(const amrex::MultiFab& data, std::string tag, Geometry& gm,
   AllPrint() << "-----" << tag << " end-----" << std::endl;
 }
 
-void print_MultiFab(const amrex::MultiFab& data, std::string tag, int nshift) {
+void print_MultiFab(const amrex::MultiFab& data, std::string tag,
+                    const int iVarStart, const int iVarEnd, int nshift) {
   AllPrint() << "-----" << tag << " begin-----" << std::endl;
   Real sum = 0;
   Real sum2 = 0;
@@ -323,7 +324,7 @@ void print_MultiFab(const amrex::MultiFab& data, std::string tag, int nshift) {
     for (int i = lo.x - nshift; i <= hi.x + nshift; ++i)
       for (int j = lo.y - nshift; j <= hi.y + nshift; ++j)
         for (int k = lo.z; k <= hi.z; ++k)
-          for (int iVar = 0; iVar < data.nComp(); iVar++) {
+          for (int iVar = iVarStart; iVar < iVarEnd; iVar++) {
             AllPrint() << " i = " << i << " j = " << j << " k = " << k
                        << " iVar = " << iVar
                        << " data = " << data(i, j, k, iVar) << std::endl;
