@@ -253,12 +253,13 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
       if (ParallelDescriptor::MyProc() == 0 && iBlock == -1) {
         // Processor-0 output the inactive PIC nodes for structured output.
         for (int iVar = 0; iVar < nVar; ++iVar) {
-          var_II(iPoint, iVar) = get_var(sVar_I[iVar], ix, iy, iz, mfi, false);
+          var_II(iPoint, iVar) =
+              get_var(sVar_I[iVar], iLev, ix, iy, iz, mfi, false);
         }
         iPoint++;
       } else if (iBlock == iBlockCount) {
         for (int iVar = 0; iVar < nVar; ++iVar) {
-          var_II(iPoint, iVar) = get_var(sVar_I[iVar], ix, iy, iz, mfi);
+          var_II(iPoint, iVar) = get_var(sVar_I[iVar], iLev, ix, iy, iz, mfi);
         }
         iPoint++;
       } else {
@@ -271,43 +272,43 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
 }
 
 //==========================================================
-double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
-                    const MFIter& mfi, bool isValidMFI) {
+double Pic::get_var(std::string var, const int iLev, const int ix, const int iy,
+                    const int iz, const MFIter& mfi, bool isValidMFI) {
   double value = 0;
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
       var.substr(0, 1) == "Z") {
     // If not isValidMFI, then it is not possible to output variables other than
     // 'X', 'Y', 'Z'
     if (var.substr(0, 1) == "X") {
-      const auto plo = Geom(0).ProbLo();
-      const auto dx = Geom(0).CellSize();
+      const auto plo = Geom(iLev).ProbLo();
+      const auto dx = Geom(iLev).CellSize();
       value = ix * dx[ix_] + plo[ix_];
     } else if (var.substr(0, 1) == "Y") {
-      const auto plo = Geom(0).ProbLo();
-      const auto dx = Geom(0).CellSize();
+      const auto plo = Geom(iLev).ProbLo();
+      const auto dx = Geom(iLev).CellSize();
       value = iy * dx[iy_] + plo[iy_];
     } else if (var.substr(0, 1) == "Z") {
-      const auto plo = Geom(0).ProbLo();
-      const auto dx = Geom(0).CellSize();
+      const auto plo = Geom(iLev).ProbLo();
+      const auto dx = Geom(iLev).CellSize();
       value = iz * dx[iz_] + plo[iz_];
     } else if (var.substr(0, 2) == "Ex") {
       const amrex::Array4<amrex::Real const>& arr =
-          nodeE[0][mfi].array(); // Talha- check // no loop
+          nodeE[iLev][mfi].array(); // Talha- check // no loop
       value = arr(ix, iy, iz, ix_);
     } else if (var.substr(0, 2) == "Ey") {
-      const amrex::Array4<amrex::Real const>& arr = nodeE[0][mfi].array();
+      const amrex::Array4<amrex::Real const>& arr = nodeE[iLev][mfi].array();
       value = arr(ix, iy, iz, iy_);
     } else if (var.substr(0, 2) == "Ez") {
-      const amrex::Array4<amrex::Real const>& arr = nodeE[0][mfi].array();
+      const amrex::Array4<amrex::Real const>& arr = nodeE[iLev][mfi].array();
       value = arr(ix, iy, iz, iz_);
     } else if (var.substr(0, 2) == "Bx") {
-      const amrex::Array4<amrex::Real const>& arr = nodeB[0][mfi].array();
+      const amrex::Array4<amrex::Real const>& arr = nodeB[iLev][mfi].array();
       value = arr(ix, iy, iz, ix_);
     } else if (var.substr(0, 2) == "By") {
-      const amrex::Array4<amrex::Real const>& arr = nodeB[0][mfi].array();
+      const amrex::Array4<amrex::Real const>& arr = nodeB[iLev][mfi].array();
       value = arr(ix, iy, iz, iy_);
     } else if (var.substr(0, 2) == "Bz") {
-      const amrex::Array4<amrex::Real const>& arr = nodeB[0][mfi].array();
+      const amrex::Array4<amrex::Real const>& arr = nodeB[iLev][mfi].array();
       value = arr(ix, iy, iz, iz_);
     } else if (var.substr(0, 4) == "rhoS" || var.substr(0, 3) == "uxS" ||
                var.substr(0, 3) == "uyS" || var.substr(0, 3) == "uzS" ||
@@ -346,7 +347,7 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
           iVar = iNum_;
 
         const amrex::Array4<amrex::Real const>& arr =
-            nodePlasma[extract_int(var)][0][mfi].array();
+            nodePlasma[extract_int(var)][iLev][mfi].array();
         value = arr(ix, iy, iz, iVar);
 
         if (var.substr(0, 1) == "u") {
@@ -357,19 +358,21 @@ double Pic::get_var(std::string var, const int ix, const int iy, const int iz,
       }
     } else if (var.substr(0, 2) == "pS") {
       const amrex::Array4<amrex::Real const>& arr =
-          nodePlasma[extract_int(var)][0][mfi].array();
+          nodePlasma[extract_int(var)][iLev][mfi].array();
       value = (arr(ix, iy, iz, iPxx_) + arr(ix, iy, iz, iPyy_) +
                arr(ix, iy, iz, iPzz_)) /
               3.0;
     } else if (var.substr(0, 2) == "qc") {
       const amrex::Array4<amrex::Real const>& arr =
-          centerNetChargeN[0][mfi].array();
+          centerNetChargeN[iLev][mfi].array();
       value = arr(ix, iy, iz);
     } else if (var.substr(0, 5) == "divEc") {
-      const amrex::Array4<amrex::Real const>& arr = centerDivE[0][mfi].array();
+      const amrex::Array4<amrex::Real const>& arr =
+          centerDivE[iLev][mfi].array();
       value = arr(ix, iy, iz);
     } else if (var.substr(0, 3) == "phi") {
-      const amrex::Array4<amrex::Real const>& arr = centerPhi[0][mfi].array();
+      const amrex::Array4<amrex::Real const>& arr =
+          centerPhi[iLev][mfi].array();
       value = arr(ix, iy, iz);
     } else if (var.substr(0, 7) == "smoothE") {
       const amrex::Array4<amrex::Real const>& arr = nodeSmoothCoef[mfi].array();
