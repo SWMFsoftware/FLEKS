@@ -296,7 +296,8 @@ public:
   void write_amrex_particle(const PlotWriter &pw, double const timeNow,
                             int const iCycle);
 
-  void set_IO_geom(amrex::Geometry &geomIO, const PlotWriter &pw);
+  void set_IO_geom(amrex::Vector<amrex::Geometry> &geomIO,
+                   const PlotWriter &pw);
   //--------------- IO end--------------------------------
 
   //--------------- Boundary begin ------------------------

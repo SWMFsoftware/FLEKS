@@ -591,14 +591,14 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
   }
 
   // Create a new grid for saving data in IO units
-  Geometry geomOut;
+  Vector<Geometry> geomOut(nLev);
   set_IO_geom(geomOut, pw);
 
   AmrInfo amrInfo;
   amrInfo.blocking_factor.clear();
   amrInfo.blocking_factor.push_back(IntVect(AMREX_D_DECL(1, 1, 1)));
 
-  Grid gridIO(geomOut, amrInfo, 0, -gridID);
+  Grid gridIO(geomOut[0], amrInfo, 0, -gridID);
   gridIO.set_base_grid(baIO);
   gridIO.InitFromScratch(0.0);
 
@@ -613,18 +613,22 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
                              realCompNames, intCompNames);
 }
 
-void Pic::set_IO_geom(amrex::Geometry& geomIO, const PlotWriter& pw) {
-  // Creating geomIO, which uses output length unit, for amrex format output.
-  RealBox boxRangeOut;
-  Real no2outL = pw.No2OutTable("X");
-  for (int i = 0; i < nDim; i++) {
-    boxRangeOut.setLo(i, Geom(0).ProbLo(i) * no2outL);
-    boxRangeOut.setHi(i, Geom(0).ProbHi(i) * no2outL);
+void Pic::set_IO_geom(Vector<Geometry>& geomIO, const PlotWriter& pw) {
+  for (int iLev = 0; iLev < nLev; iLev++) {
+    // Creating geomIO, which uses output length unit, for amrex format output.
+    RealBox boxRangeOut;
+    Real no2outL = pw.No2OutTable("X");
+
+    for (int i = 0; i < nDim; i++) {
+      boxRangeOut.setLo(i, Geom(iLev).ProbLo(i) * no2outL);
+      boxRangeOut.setHi(i, Geom(iLev).ProbHi(i) * no2outL);
+    }
+    Array<int, nDim> periodicity;
+    for (int i = 0; i < nDim; i++)
+      periodicity[i] = Geom(iLev).isPeriodic(i);
+    geomIO[iLev].define(Geom(iLev).Domain(), boxRangeOut, Geom(iLev).Coord(),
+                        periodicity);
   }
-  Array<int, nDim> periodicity;
-  for (int i = 0; i < nDim; i++)
-    periodicity[i] = Geom(0).isPeriodic(i);
-  geomIO.define(Geom(0).Domain(), boxRangeOut, Geom(0).Coord(), periodicity);
 }
 
 //==========================================================
@@ -634,7 +638,8 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
                             const BoxArray baOut) {
   Print() << "amrex::" << pw.get_amrex_filename(timeNow, iCycle) << std::endl;
 
-  Geometry geomOut;
+  Vector<Geometry> geomOut(nLev);
+
   set_IO_geom(geomOut, pw);
 
   int nVarOut = 0;
@@ -655,133 +660,131 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   // document says some virtualiazaion tools assumes the AMReX format outputs
   // are cell-centered.
 
-  MultiFab centerMF;
-  centerMF.define(cGrids[0], DistributionMap(0), nVarOut, 0);
-
+  Vector<MultiFab> centerMF(nLev);
   Vector<std::string> varNames;
-  int iStart = 0;
-
-  if (plotVars.find("X") != std::string::npos) {
-    //--------------Coordinates-------------------------
-    MultiFab xyz(centerMF, make_alias, 0, 3);
-
-    for (MFIter mfi(xyz); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.validbox();
-      const auto& cellArr = xyz[mfi].array();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-
-      for (int k = lo.z; k <= hi.z; ++k) {
-        // Use the value returned from Geom(0) instead of geomOut, and it will
-        // be converted to output unit just as other variables.
-        const Real z0 = Geom(0).CellCenter(k, iz_);
-        for (int j = lo.y; j <= hi.y; ++j) {
-          const Real y0 = Geom(0).CellCenter(j, iy_);
-          for (int i = lo.x; i <= hi.x; ++i) {
-            const Real x0 = Geom(0).CellCenter(i, ix_);
-            cellArr(i, j, k, ix_) = x0;
-            cellArr(i, j, k, iy_) = y0;
-            cellArr(i, j, k, iz_) = z0;
-          }
-        }
-      }
-    }
-    iStart += 3;
-    varNames.push_back("X");
-    varNames.push_back("Y");
-    varNames.push_back("Z");
-  }
-
-  if (plotVars.find("B") != std::string::npos) {
-    //------------------B---------------
-    for (int iLev = 0; iLev <= finest_level; iLev++) {
-      MultiFab::Copy(centerMF, centerB[iLev], 0, iStart, nodeB[iLev].nComp(),
-                     0);
-      iStart += nodeB[iLev].nComp();
-    }
-
-    varNames.push_back("Bx");
-    varNames.push_back("By");
-    varNames.push_back("Bz");
-  }
-
-  if (plotVars.find("E") != std::string::npos) {
-    //-----------------E-----------------------------
-    for (int iLev = 0; iLev <= finest_level; iLev++) {
-      average_node_to_cellcenter(centerMF, iStart, nodeE[iLev], 0,
-                                 nodeE[iLev].nComp(), 0);
-      iStart += nodeE[iLev].nComp();
-    }
-
-    varNames.push_back("Ex");
-    varNames.push_back("Ey");
-    varNames.push_back("Ez");
-  }
-
   bool isDensityZero = false;
   int zeroI, zeroJ, zeroK;
-  if (usePIC && plotVars.find("plasma") != std::string::npos) {
-    //-------------plasma---------------------
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    centerMF[iLev].define(cGrids[iLev], DistributionMap(iLev), nVarOut, 0);
+    int iStart = 0;
 
-    // The order of the varname should be consistent with nodePlasma.
-    Vector<std::string> plasmaNames = { "rho", "ux",  "uy",  "uz",  "pxx",
-                                        "pyy", "pzz", "pxy", "pxz", "pyz" };
+    varNames.clear();
 
-    for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++) {
-      auto& plasma = nodePlasma[iSpecies][0];
+    if (plotVars.find("X") != std::string::npos) {
+      //--------------Coordinates-------------------------
+      MultiFab xyz(centerMF[iLev], make_alias, 0, 3);
 
-      MultiFab rho(plasma, make_alias, iRho_, 1);
-
-      // Get momentums
-      MultiFab ux(plasma, make_alias, iMx_, 1);
-      MultiFab uy(plasma, make_alias, iMy_, 1);
-      MultiFab uz(plasma, make_alias, iMz_, 1);
-
-      for (MFIter mfi(plasma); mfi.isValid(); ++mfi) {
-        // Convert momentum to velocity;
+      for (MFIter mfi(xyz); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
-        const Array4<Real>& plasmaArr = plasma[mfi].array();
-        const Array4<Real>& uxArr = ux[mfi].array();
-        const Array4<Real>& uyArr = uy[mfi].array();
-        const Array4<Real>& uzArr = uz[mfi].array();
-
+        const auto& cellArr = xyz[mfi].array();
         const auto lo = lbound(box);
         const auto hi = ubound(box);
 
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
+        for (int k = lo.z; k <= hi.z; ++k) {
+          // Use the value returned from Geom(0) instead of geomOut, and it will
+          // be converted to output unit just as other variables.
+          const Real z0 = Geom(iLev).CellCenter(k, iz_);
+          for (int j = lo.y; j <= hi.y; ++j) {
+            const Real y0 = Geom(iLev).CellCenter(j, iy_);
             for (int i = lo.x; i <= hi.x; ++i) {
-              const Real rho = plasmaArr(i, j, k, iRho_);
-              if (rho > 1e-99) {
-                uxArr(i, j, k) = plasmaArr(i, j, k, iUx_) / rho;
-                uyArr(i, j, k) = plasmaArr(i, j, k, iUy_) / rho;
-                uzArr(i, j, k) = plasmaArr(i, j, k, iUz_) / rho;
-              } else {
-                isDensityZero = true;
-                zeroI = i;
-                zeroJ = j;
-                zeroK = k;
-              }
+              const Real x0 = Geom(iLev).CellCenter(i, ix_);
+              cellArr(i, j, k, ix_) = x0;
+              cellArr(i, j, k, iy_) = y0;
+              cellArr(i, j, k, iz_) = z0;
             }
+          }
+        }
       }
-
-      MultiFab pl(plasma, make_alias, iRho_, iPyz_ - iRho_ + 1);
-      average_node_to_cellcenter(centerMF, iStart, pl, 0, pl.nComp(), 0);
-      iStart += pl.nComp();
-      for (auto& var : plasmaNames) {
-        varNames.push_back(var + "s" + std::to_string(iSpecies));
-      }
-
-      // Convert velocity to momentum
-      MultiFab::Multiply(ux, rho, 0, 0, 1, 0);
-      MultiFab::Multiply(uy, rho, 0, 0, 1, 0);
-      MultiFab::Multiply(uz, rho, 0, 0, 1, 0);
+      iStart += 3;
+      varNames.push_back("X");
+      varNames.push_back("Y");
+      varNames.push_back("Z");
     }
-  }
 
-  for (int i = 0; i < centerMF.nComp(); i++) {
-    Real no2out = pw.No2OutTable(varNames[i]);
-    centerMF.mult(no2out, i, 1);
+    if (plotVars.find("B") != std::string::npos) {
+      //------------------B---------------
+      MultiFab::Copy(centerMF[iLev], centerB[iLev], 0, iStart,
+                     nodeB[iLev].nComp(), 0);
+      iStart += nodeB[iLev].nComp();
+      varNames.push_back("Bx");
+      varNames.push_back("By");
+      varNames.push_back("Bz");
+    }
+
+    if (plotVars.find("E") != std::string::npos) {
+      //-----------------E-----------------------------
+      average_node_to_cellcenter(centerMF[iLev], iStart, nodeE[iLev], 0,
+                                 nodeE[iLev].nComp(), 0);
+      iStart += nodeE[iLev].nComp();
+      varNames.push_back("Ex");
+      varNames.push_back("Ey");
+      varNames.push_back("Ez");
+    }
+
+    if (usePIC && plotVars.find("plasma") != std::string::npos) {
+      //-------------plasma---------------------
+
+      // The order of the varname should be consistent with nodePlasma.
+      Vector<std::string> plasmaNames = { "rho", "ux",  "uy",  "uz",  "pxx",
+                                          "pyy", "pzz", "pxy", "pxz", "pyz" };
+
+      for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++) {
+        auto& plasma = nodePlasma[iSpecies][iLev];
+
+        MultiFab rho(plasma, make_alias, iRho_, 1);
+
+        // Get momentums
+        MultiFab ux(plasma, make_alias, iMx_, 1);
+        MultiFab uy(plasma, make_alias, iMy_, 1);
+        MultiFab uz(plasma, make_alias, iMz_, 1);
+
+        for (MFIter mfi(plasma); mfi.isValid(); ++mfi) {
+          // Convert momentum to velocity;
+          const Box& box = mfi.validbox();
+          const Array4<Real>& plasmaArr = plasma[mfi].array();
+          const Array4<Real>& uxArr = ux[mfi].array();
+          const Array4<Real>& uyArr = uy[mfi].array();
+          const Array4<Real>& uzArr = uz[mfi].array();
+
+          const auto lo = lbound(box);
+          const auto hi = ubound(box);
+
+          for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+              for (int i = lo.x; i <= hi.x; ++i) {
+                const Real rho = plasmaArr(i, j, k, iRho_);
+                if (rho > 1e-99) {
+                  uxArr(i, j, k) = plasmaArr(i, j, k, iUx_) / rho;
+                  uyArr(i, j, k) = plasmaArr(i, j, k, iUy_) / rho;
+                  uzArr(i, j, k) = plasmaArr(i, j, k, iUz_) / rho;
+                } else {
+                  isDensityZero = true;
+                  zeroI = i;
+                  zeroJ = j;
+                  zeroK = k;
+                }
+              }
+        }
+
+        MultiFab pl(plasma, make_alias, iRho_, iPyz_ - iRho_ + 1);
+        average_node_to_cellcenter(centerMF[iLev], iStart, pl, 0, pl.nComp(),
+                                   0);
+        iStart += pl.nComp();
+        for (auto& var : plasmaNames) {
+          varNames.push_back(var + "s" + std::to_string(iSpecies));
+        }
+
+        // Convert velocity to momentum
+        MultiFab::Multiply(ux, rho, 0, 0, 1, 0);
+        MultiFab::Multiply(uy, rho, 0, 0, 1, 0);
+        MultiFab::Multiply(uz, rho, 0, 0, 1, 0);
+      }
+    }
+
+    for (int i = 0; i < centerMF[iLev].nComp(); i++) {
+      Real no2out = pw.No2OutTable(varNames[i]);
+      centerMF[iLev].mult(no2out, i, 1);
+    }
   }
 
   std::string filename = pw.get_amrex_filename(timeNow, iCycle);
@@ -789,12 +792,20 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
     filename = filenameIn;
   }
 
-  if (!baOut.empty()) {
-    distribute_FabArray(centerMF, baOut, DistributionMapping(baOut));
+  if (!baOut.empty() && nLev == 1) {
+    // TODO: make it works for multi-lev in the future.
+    distribute_FabArray(centerMF[0], baOut, DistributionMapping(baOut));
   }
 
-  WriteSingleLevelPlotfile(filename, centerMF, varNames, geomOut, timeNow,
-                           iCycle);
+  Vector<const MultiFab*> mf(nLev);
+  Vector<int> steps(nLev);
+  for (int iLev = 0; iLev < nLev; iLev++) {
+    mf[iLev] = &centerMF[iLev];
+    steps[iLev] = iCycle;
+  }
+
+  WriteMultiLevelPlotfile(filename, nLev, mf, varNames, geomOut, timeNow, steps,
+                          ref_ratio);
 
   if (ParallelDescriptor::IOProcessor()) {
     // Write FLEKS header
