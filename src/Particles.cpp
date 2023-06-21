@@ -318,40 +318,42 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
   const FluidInterface* fiTmp = fi;
   if (fiIn)
     fiTmp = fiIn;
-  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
-    for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
-      const auto& status = cellStatus[iLev][mfi].array();
-      const Box& bx = mfi.validbox();
-      const IntVect lo = IntVect(bx.loVect());
-      const IntVect hi = IntVect(bx.hiVect());
-      // IntVect mid = (lo + hi) / 2;
 
-      IntVect idxMin = lo, idxMax = hi;
+  // Assume the boundary cells aren't and cannot be refined. --Yuxi
+  int iLev = 0;
 
-      for (int iDim = 0; iDim < fiTmp->get_fluid_dimension(); iDim++) {
-        idxMin[iDim] -= nGstInject;
-        idxMax[iDim] += nGstInject;
-      }
+  for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+    const auto& status = cellStatus[iLev][mfi].array();
+    const Box& bx = mfi.validbox();
+    const IntVect lo = IntVect(bx.loVect());
+    const IntVect hi = IntVect(bx.hiVect());
+    // IntVect mid = (lo + hi) / 2;
 
-      for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)
-        for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
-          for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
-            int isrc, jsrc, ksrc;
-            if (do_inject_particles_for_this_cell(bx, status, i, j, k, isrc,
-                                                  jsrc, ksrc)) {
-              if (((bc.lo[ix_] == bc.outflow) && i < lo[ix_]) ||
-                  ((bc.hi[ix_] == bc.outflow) && i > hi[ix_]) ||
-                  ((bc.lo[iy_] == bc.outflow) && j < lo[iy_]) ||
-                  ((bc.hi[iy_] == bc.outflow) && j > hi[iy_]) ||
-                  ((bc.lo[iz_] == bc.outflow) && k < lo[iz_]) ||
-                  ((bc.hi[iz_] == bc.outflow) && k > hi[iz_])) {
-                outflow_bc(mfi, i, j, k, isrc, jsrc, ksrc);
-              } else {
-                add_particles_cell(iLev, mfi, i, j, k, *fiTmp, ppc, Vel(), dt);
-              }
+    IntVect idxMin = lo, idxMax = hi;
+
+    for (int iDim = 0; iDim < fiTmp->get_fluid_dimension(); iDim++) {
+      idxMin[iDim] -= nGstInject;
+      idxMax[iDim] += nGstInject;
+    }
+
+    for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)
+      for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
+        for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
+          int isrc, jsrc, ksrc;
+          if (do_inject_particles_for_this_cell(bx, status, i, j, k, isrc, jsrc,
+                                                ksrc)) {
+            if (((bc.lo[ix_] == bc.outflow) && i < lo[ix_]) ||
+                ((bc.hi[ix_] == bc.outflow) && i > hi[ix_]) ||
+                ((bc.lo[iy_] == bc.outflow) && j < lo[iy_]) ||
+                ((bc.hi[iy_] == bc.outflow) && j > hi[iy_]) ||
+                ((bc.lo[iz_] == bc.outflow) && k < lo[iz_]) ||
+                ((bc.hi[iz_] == bc.outflow) && k > hi[iz_])) {
+              outflow_bc(mfi, i, j, k, isrc, jsrc, ksrc);
+            } else {
+              add_particles_cell(iLev, mfi, i, j, k, *fiTmp, ppc, Vel(), dt);
             }
           }
-    }
+        }
   }
 }
 
@@ -595,8 +597,11 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
           for (int kk = 0; kk < 2; kk++)
             for (int jj = 0; jj < 2; jj++)
               for (int ii = 0; ii < 2; ii++) {
-                momentsArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
-                           iVar) += coef[ii][jj][kk] * pMoments[iVar];
+                const int i0 = loIdx[ix_] + ii;
+                const int j0 = loIdx[iy_] + jj;
+                const int k0 = loIdx[iz_] + kk;
+                momentsArr(i0, j0, k0, iVar) +=
+                    coef[ii][jj][kk] * pMoments[iVar];
               }
 
         //-------nodePlasma end---------
