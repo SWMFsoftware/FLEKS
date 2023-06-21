@@ -615,6 +615,11 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
                          momentsMF[iLev].nGrow());
 
     momentsMF[iLev].SumBoundary(Geom(iLev).periodicity());
+  }  
+
+  for (int iLev = 0; iLev < finestLevel(); iLev++) {
+    sum_two_lev_interface_nodes(momentsMF[iLev], momentsMF[iLev + 1], 0,
+                                momentsMF[iLev].nComp(), get_ref_ratio(iLev));
   }
 
   energy *= 0.5 * qomSign * get_mass();

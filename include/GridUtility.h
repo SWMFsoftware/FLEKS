@@ -3,6 +3,8 @@
 
 #include <AMReX_DistributionMapping.H>
 #include <AMReX_FabArray.H>
+#include <AMReX_MultiFab.H>
+#include <AMReX_MultiFabUtil.H>
 
 #include "Constants.h"
 #include "GridInfo.h"
@@ -50,6 +52,25 @@ void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
                          bool doCopy = true) {
 
   distribute_FabArray(fa, baNew, dm, fa.nComp(), fa.nGrow(), doCopy);
+}
+
+template <class FAB>
+void sum_two_lev_interface_nodes(amrex::FabArray<FAB>& coarse,
+                                 amrex::FabArray<FAB>& fine, int iStart,
+                                 int nComp, amrex::IntVect ratio) {
+  amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
+  amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
+
+  amrex::FabArray<FAB> ctmp(c.boxArray(), c.DistributionMap(), nComp, 0);
+  ctmp.setVal(0.0);
+
+  // f and c/ctmp have different distribution maps. Inside
+  // average_down_nodal(), parallel copy is called to copy coarsen(f) to ctmp.
+  amrex::average_down_nodal(f, ctmp, ratio);
+
+  // This is the Add() declared in AMReX_FabArray.H instead of MultiFab::Add(),
+  // which only works for MultiFab.
+  amrex::Add(c, ctmp, 0, 0, nComp, 0);
 }
 
 template <class T>

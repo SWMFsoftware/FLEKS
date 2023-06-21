@@ -82,6 +82,7 @@ public:
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Index;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::ParticlesAt;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::maxLevel;
+  using amrex::AmrParticleContainer<NStructReal, NStructInt>::GetParGDB;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::ParticleBoxArray;
   using amrex::AmrParticleContainer<NStructReal,
                                     NStructInt>::ParticleDistributionMap;
@@ -212,6 +213,11 @@ public:
                                      amrex::Real dt);
 
   void convert_to_fluid_moments(amrex::Vector<amrex::MultiFab>& momentsMF);
+
+  amrex::IntVect get_ref_ratio(const int iLev) const {
+    const amrex::ParGDBBase* gdb = GetParGDB();
+    return gdb->refRatio(iLev);
+  }
 
   void set_random_seed(const int iLev, const int i, const int j, const int k,
                        const amrex::IntVect nPPC) {
