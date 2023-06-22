@@ -162,7 +162,7 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
     for (int i = 0; i < nDim; i++) {
       Real phyMin = info[n++] * si2noL; // Lmin
       Real phyMax = phyMin + info[n++] * si2noL;
-      Real dx = info[n++] * si2noL; // dx
+      Real dx = info[n++] * si2noL;     // dx
       nCell[i] = (int)((phyMax - phyMin) / dx + 0.5);
 
       if (isFake2D && i == iz_) {
@@ -185,6 +185,12 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
 
   gm.define(centerBox, &domainRange, coord, periodicity.getVect());
 
+#ifdef _AMR_DEV_
+  amrInfo.max_level = 1;
+#else
+  amrInfo.max_level = 0;
+#endif
+
   // The value of blocking_factor constrains grid creation in that in that each
   // grid must be divisible by blocking_factor. Note that both the domain (at
   // each level) and max_grid_size must be divisible by blocking_factor, and
@@ -193,7 +199,13 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
   // blocking_factor because of how blocking_factor is used in the gridding
   // algorithm).
   amrInfo.blocking_factor.clear();
-  amrInfo.blocking_factor.push_back(IntVect(AMREX_D_DECL(1, 1, 1)));
+  for (int iLev = 0; iLev <= amrInfo.max_level; iLev++) {
+    // If (isFake2D && iLev==0) is true, there is only one cell in the
+    // z-direction.
+    amrInfo.blocking_factor.push_back((isFake2D && iLev == 0)
+                                          ? IntVect(AMREX_D_DECL(2, 2, 1))
+                                          : IntVect(AMREX_D_DECL(2, 2, 2)));
+  }
 
   amrInfo.max_grid_size.clear();
   amrInfo.max_grid_size.push_back(maxBlockSize);
@@ -201,12 +213,6 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
   // Buffer cells around each tagged cell. AMREX default is 1.
   amrInfo.n_error_buf.clear();
   amrInfo.n_error_buf.push_back(IntVect(0));
-
-#ifdef _AMR_DEV_
-  amrInfo.max_level = 1;
-#else
-  amrInfo.max_level = 0;
-#endif
 
   Print() << printPrefix << "Domain range = " << domainRange << std::endl;
   Print() << printPrefix << "Center box = " << centerBox << std::endl;
