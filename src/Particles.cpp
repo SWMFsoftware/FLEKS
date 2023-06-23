@@ -294,7 +294,8 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
       for (int i = iMin; i <= iMax; ++i)
         for (int j = jMin; j <= jMax; ++j)
           for (int k = kMin; k <= kMax; ++k) {
-            if (status(i, j, k) == iOnNew_ && iRefine(i, j, k) == iNotRefined) {
+            if (test_bit(status(i, j, k), iDigitNew_) &&
+                iRefine(i, j, k) == iNotRefined) {
               // printf("add particles iLev = %d, i = %d, j = %d, k = %d\n",
               // iLev,
               //        i, j, k);
@@ -615,7 +616,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
                          momentsMF[iLev].nGrow());
 
     momentsMF[iLev].SumBoundary(Geom(iLev).periodicity());
-  }  
+  }
 
   for (int iLev = 0; iLev < finestLevel(); iLev++) {
     sum_two_lev_interface_nodes(momentsMF[iLev], momentsMF[iLev + 1], 0,
@@ -1221,8 +1222,9 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       for (int ix = 0; ix <= 1; ix++)
         for (int iy = 0; iy <= 1; iy++)
           for (int iz = 0; iz <= 1; iz++) {
-            if (status(loIdx[ix_] + ix, loIdx[iy_] + iy, loIdx[iz_] + iz) ==
-                iBoundary_)
+            if (test_bit(
+                    status(loIdx[ix_] + ix, loIdx[iy_] + iy, loIdx[iz_] + iz),
+                    iDigitBny_))
               isBoundaryPhysicalCell = true;
           }
       if (isBoundaryPhysicalCell)
@@ -1918,7 +1920,7 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
     const int j, const int k, int& isrc, int& jsrc, int& ksrc) {
 
   // This cell should be a boundary cell at least.
-  if (status(i, j, k) != iBoundary_)
+  if (!test_bit(status(i, j, k), iDigitBny_))
     return false;
 
   for (int iloop = 1; iloop <= 3; iloop++) {
@@ -1933,7 +1935,7 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
           if (iloop != sum)
             continue;
 
-          if (status(i + di, j + dj, k + dk) != iBoundary_) {
+          if (!test_bit(status(i + di, j + dj, k + dk), iDigitBny_)) {
             // The first neighbor cell that is NOT a boundary cell.
             if (bx.contains(IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) })) {
               isrc = i + di;

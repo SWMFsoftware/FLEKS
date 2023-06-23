@@ -177,10 +177,6 @@ public:
 
   void distribute_arrays(amrex::Vector<amrex::BoxArray> &cGridsOld);
 
-  void update_cell_status(const amrex::Vector<amrex::BoxArray> &cGridsOld);
-
-  void update_node_status(const amrex::Vector<amrex::BoxArray> &cGridsOld);
-
   void fill_new_cells();
   void fill_E_B_fields();
 

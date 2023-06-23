@@ -318,7 +318,8 @@ public:
     }
 
     if (isInsideBox) {
-      return status(cellIdx[ix_], cellIdx[iy_], cellIdx[iz_]) == iBoundary_;
+      return test_bit(status(cellIdx[ix_], cellIdx[iy_], cellIdx[iz_]),
+                      iDigitBny_);
     } else {
       return is_outside_ba(p);
     }

@@ -425,7 +425,7 @@ void TestParticles::add_test_particles_from_fluid(Vector<Vel> tpStates) {
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; k += nIntervalCell[iz_])
           if (iPartRegion == iRegionUniform_ ||
               (iPartRegion == iRegionBoundary_ &&
-               status(i, j, k) == iAddPTParticle_)) {
+               test_bit(status(i, j, k), iDigitAddParticle_))) {
             add_particles_cell(iLev, mfi, i, j, k, *fi,
                                { AMREX_D_DECL(0, 0, 0) }, tpVel);
           }

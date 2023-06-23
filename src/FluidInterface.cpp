@@ -578,9 +578,6 @@ void FluidInterface::distribute_arrays() {
   if (centerB.empty())
     centerB.resize(nLev);
 
-  if (boundaryNode.empty())
-    boundaryNode.resize(nLev);
-
   const bool doCopy = true;
   const int nVarNode = (useCurrent ? nVarFluid + 3 : nVarFluid);
 
@@ -590,14 +587,11 @@ void FluidInterface::distribute_arrays() {
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst, doCopy);
 
-    distribute_FabArray(boundaryNode[iLev], nGrids[iLev], DistributionMap(iLev),
+    distribute_FabArray(nodeStatus[iLev], nGrids[iLev], DistributionMap(iLev),
                         1, nGst, false);
-    if (!boundaryNode[iLev].empty()) {
-      boundaryNode[iLev].setVal(iBoundary_);
-      boundaryNode[iLev].setVal(iOnNew_, 0);
-      boundaryNode[iLev].FillBoundary(Geom(iLev).periodicity());
-    }
   }
+
+  update_node_status();
 }
 
 //==========================================================
@@ -671,12 +665,13 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
       const auto hi = ubound(box);
 
       const Array4<Real>& arr = fluid[mfi].array();
-      const auto& status = boundaryNode[iLev][mfi].array();
+      const auto& status = nodeStatus[iLev][mfi].array();
 
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i)
-            if (status(i, j, k) == iBoundary_ || validBox.contains(i, j, k)) {
+            if (test_bit(status(i, j, k), iDigitBny_) ||
+                validBox.contains(i, j, k)) {
               // If this node is the boundary or inside the valid box.
 
               if (doCount) {

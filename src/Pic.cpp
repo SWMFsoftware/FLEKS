@@ -102,17 +102,8 @@ void Pic::fill_new_cells() {
     // particle component is activated. The test particle component copies EM
     // field from PIC, so PIC EM field should be updated here.
 
-    for (int iLev = 0; iLev <= finest_level; iLev++) {
-      if (!nodeStatus[iLev].empty()) {
-        nodeStatus[iLev].setVal(iBoundary_);
-        nodeStatus[iLev].setVal(iOnNew_, 0);
-      }
-
-      if (!cellStatus[iLev].empty()) {
-        cellStatus[iLev].setVal(iBoundary_);
-        cellStatus[iLev].setVal(iOnNew_, 0);
-      }
-    }
+    update_cell_status();
+    update_node_status();
   }
 
   fill_E_B_fields();
@@ -124,90 +115,6 @@ void Pic::fill_new_cells() {
   }
 
   doNeedFillNewCell = false;
-}
-
-//==========================================================
-void Pic::update_cell_status(const Vector<BoxArray>& cGridsOld) {
-
-  for (int iLev = 0; iLev < nLev; iLev++) {
-
-    if (!cellStatus[iLev].empty()) {
-      cellStatus[iLev].setVal(iBoundary_);
-      cellStatus[iLev].setVal(iOnNew_, 0);
-
-      if (usePIC)
-        for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
-          const Box& box = mfi.validbox();
-          const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-          const auto lo = lbound(box);
-          const auto hi = ubound(box);
-
-          for (int k = lo.z; k <= hi.z; ++k)
-            for (int j = lo.y; j <= hi.y; ++j)
-              for (int i = lo.x; i <= hi.x; ++i) {
-                if (cellArr(i, j, k) == iOnNew_ &&
-                    cGridsOld[iLev].contains(
-                        IntVect{ AMREX_D_DECL(i, j, k) })) {
-                  cellArr(i, j, k) = iOnOld_;
-                }
-              }
-        }
-    }
-
-    cellStatus[iLev].FillBoundary(Geom(iLev).periodicity());
-
-    if (isFake2D) {
-      // For the fake 2D cases, in the z-direction, only the first layer ghost
-      // cells are filled in correctly by the method FillBoundary.
-      if (!cellStatus[iLev].empty())
-        for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
-          const Box& box = mfi.fabbox();
-          const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-          const auto lo = lbound(box);
-          const auto hi = ubound(box);
-
-          for (int k = lo.z; k <= hi.z; ++k)
-            if (k < -1 || k > 1)
-              for (int j = lo.y; j <= hi.y; ++j)
-                for (int i = lo.x; i <= hi.x; ++i) {
-                  cellArr(i, j, k) = cellArr(i, j, 0);
-                }
-        }
-    }
-  }
-}
-
-//==========================================================
-void Pic::update_node_status(const Vector<BoxArray>& cGridsOld) {
-  for (int iLev = 0; iLev < nLev; iLev++) {
-
-    if (!nodeStatus[iLev].empty()) {
-      nodeStatus[iLev].setVal(iBoundary_);
-      nodeStatus[iLev].setVal(iOnNew_, 0);
-
-      if (usePIC) {
-        auto nodeBAOld =
-            convert(cGridsOld[iLev], amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
-        for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
-          const Box& box = mfi.validbox();
-          const auto& nodeArr = nodeStatus[iLev][mfi].array();
-
-          const auto lo = lbound(box);
-          const auto hi = ubound(box);
-
-          for (int k = lo.z; k <= hi.z; ++k)
-            for (int j = lo.y; j <= hi.y; ++j)
-              for (int i = lo.x; i <= hi.x; ++i) {
-                if (nodeArr(i, j, k) == iOnNew_ &&
-                    nodeBAOld.contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
-                  nodeArr(i, j, k) = iOnOld_;
-                }
-              }
-        }
-      }
-    }
-    nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
-  }
 }
 
 //==========================================================
@@ -445,7 +352,7 @@ void Pic::set_nodeShare() {
           for (int dk = dkMax; dk >= dkMin; dk--)
             for (int dj = djMax; dj >= djMin; dj--)
               for (int di = diMax; di >= diMin; di--) {
-                if (statusArr(i + di, j + dj, k + dk) != iBoundary_) {
+                if (!test_bit(statusArr(i + di, j + dj, k + dk), iDigitBny_)) {
                   // Find the first CELL that shares this node.
                   if (cellBox.contains(
                           IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) })) {
@@ -506,7 +413,7 @@ void Pic::fill_new_node_E() {
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            if (status(i, j, k) == iOnNew_) {
+            if (test_bit(status(i, j, k), iDigitNew_)) {
               arrE(i, j, k, ix_) = fi->get_ex(mfi, i, j, k, iLev);
               arrE(i, j, k, iy_) = fi->get_ey(mfi, i, j, k, iLev);
               arrE(i, j, k, iz_) = fi->get_ez(mfi, i, j, k, iLev);
@@ -531,7 +438,7 @@ void Pic::fill_new_node_B() {
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            if (status(i, j, k) == iOnNew_) {
+            if (test_bit(status(i, j, k), iDigitNew_)) {
               arrB(i, j, k, ix_) = fi->get_bx(mfi, i, j, k, iLev);
               arrB(i, j, k, iy_) = fi->get_by(mfi, i, j, k, iLev);
               arrB(i, j, k, iz_) = fi->get_bz(mfi, i, j, k, iLev);
@@ -558,7 +465,7 @@ void Pic::fill_new_center_B() {
         for (int k = lo.z; k <= hi.z; ++k)
           for (int j = lo.y; j <= hi.y; ++j)
             for (int i = lo.x; i <= hi.x; ++i) {
-              if (status(i, j, k) != iOnOld_) {
+              if (test_bit(status(i, j, k), iDigitNew_)) {
                 centerArr(i, j, k, iVar) = 0;
                 for (int di = 0; di <= 1; di++)
                   for (int dj = 0; dj <= 1; dj++)
@@ -1481,7 +1388,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
         for (int k = lo[iz_] + 1; k <= hi[iz_] - 1; k++)
           for (int j = lo[iy_] + 1; j <= hi[iy_] - 1; j++)
             for (int i = lo[ix_] + 1; i <= hi[ix_] - 1; i++)
-              if (statusArr(i, j, k, 0) == iBoundary_) {
+              if (test_bit(statusArr(i, j, k, 0), iDigitBny_)) {
                 bool isNeiFound = false;
 
                 // Find the neighboring physical cell
@@ -1489,7 +1396,8 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
                   for (int jj = -1; jj <= 1; jj++)
                     for (int ii = -1; ii <= 1; ii++) {
                       if (!isNeiFound &&
-                          statusArr(i + ii, j + jj, k + kk, 0) != iBoundary_) {
+                          test_bit(!statusArr(i + ii, j + jj, k + kk, 0),
+                                   iDigitBny_)) {
                         isNeiFound = true;
                         for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
                           arr(i, j, k, iVar) =
@@ -1520,7 +1428,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
           for (int k = lo[iz_] + 1; k <= hi[iz_] - 1; k++)
             for (int j = lo[iy_]; j <= hi[iy_]; j++)
               for (int i = lo[ix_]; i <= hi[ix_]; i++)
-                if (statusArr(i, j, k, 0) == iBoundary_) {
+                if (test_bit(statusArr(i, j, k, 0), iDigitBny_)) {
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart, iLev);
                 }

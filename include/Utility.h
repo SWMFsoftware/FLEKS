@@ -13,6 +13,10 @@ inline int fastfloor(amrex::Real x) { return (int)(x + 8) - 8; }
 
 inline bool test_bit(int i, int pos) { return i & (1 << pos); }
 
+inline void turn_on_bit(int& i, int pos) { i |= (1 << pos); }
+
+inline void turn_off_bit(int& i, int pos) { i &= ~(1 << pos); }
+
 void curl_center_to_node(const amrex::MultiFab& centerMF,
                          amrex::MultiFab& nodeMF, const amrex::Real* invDx);
 

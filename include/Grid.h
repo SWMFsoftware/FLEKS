@@ -2,6 +2,7 @@
 #define _Grid_H_
 
 #include "Constants.h"
+#include "utility.h"
 #include <AMReX_AmrCore.H>
 #include <AMReX_BCRec.H>
 #include <AMReX_Box.H>
@@ -46,10 +47,8 @@ protected:
   // Nodal
   amrex::Vector<amrex::BoxArray> nGrids;
 
-  // The status of a cell could be: iBoundary_, iOnNew_, or iOnOld_.
   amrex::Vector<amrex::iMultiFab> cellStatus;
 
-  // The status of a Node could be: iBoundary_, iOnNew_, or iOnOld_.
   amrex::Vector<amrex::iMultiFab> nodeStatus;
 
   // If a node is inside the physical domain, it is set to iOnNew_. Otherwise,
@@ -119,6 +118,110 @@ public:
   void set_base_grid(const amrex::BoxArray& ba) { activeRegion = ba; }
 
   bool is_grid_empty() const { return isGridEmpty; }
+
+  //==========================================================
+  void update_cell_status(const amrex::Vector<amrex::BoxArray>& cGridsOld =
+                              amrex::Vector<amrex::BoxArray>()) {
+
+    for (int iLev = 0; iLev < nLev; iLev++) {
+      if (!cellStatus[iLev].empty()) {
+        int istatus = 0;
+        turn_on_bit(istatus, iDigitBny_);
+        cellStatus[iLev].setVal(istatus);
+
+        for (amrex::MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+          const amrex::Box& box = mfi.validbox();
+          const amrex::Array4<int>& cellArr = cellStatus[iLev][mfi].array();
+          const auto lo = amrex::lbound(box);
+          const auto hi = amrex::ubound(box);
+
+          for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+              for (int i = lo.x; i <= hi.x; ++i) {
+                // Not boundary cell
+                turn_off_bit(cellArr(i, j, k), iDigitBny_);
+
+                // New active cell
+                turn_on_bit(cellArr(i, j, k), iDigitNew_);
+
+                if (!cGridsOld.empty()) {
+                  if (cGridsOld[iLev].contains(
+                          amrex::IntVect{ AMREX_D_DECL(i, j, k) })) {
+                    turn_off_bit(cellArr(i, j, k), iDigitNew_);
+                  }
+                }
+              }
+        }
+      }
+
+      cellStatus[iLev].FillBoundary(Geom(iLev).periodicity());
+
+      if (isFake2D) {
+        // For the fake 2D cases, in the z-direction, only the first layer ghost
+        // cells are filled in correctly by the method FillBoundary.
+        if (!cellStatus[iLev].empty())
+          for (amrex::MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+            const amrex::Box& box = mfi.fabbox();
+            const amrex::Array4<int>& cellArr = cellStatus[iLev][mfi].array();
+            const auto lo = amrex::lbound(box);
+            const auto hi = amrex::ubound(box);
+
+            for (int k = lo.z; k <= hi.z; ++k)
+              if (k < -1 || k > 1)
+                for (int j = lo.y; j <= hi.y; ++j)
+                  for (int i = lo.x; i <= hi.x; ++i) {
+                    cellArr(i, j, k) = cellArr(i, j, 0);
+                  }
+          }
+      }
+    }
+  }
+
+  //==========================================================
+  void update_node_status(const amrex::Vector<amrex::BoxArray>& cGridsOld =
+                              amrex::Vector<amrex::BoxArray>()) {
+    for (int iLev = 0; iLev < nLev; iLev++) {
+      if (!nodeStatus[iLev].empty()) {
+
+        int istatus = 0;
+        turn_on_bit(istatus, iDigitBny_);
+        nodeStatus[iLev].setVal(istatus);
+
+        amrex::BoxArray nodeBAOld;
+
+        if (!cGridsOld.empty()) {
+          nodeBAOld =
+              convert(cGridsOld[iLev], amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
+        }
+
+        for (amrex::MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+          const amrex::Box& box = mfi.validbox();
+          const auto& nodeArr = nodeStatus[iLev][mfi].array();
+
+          const auto lo = amrex::lbound(box);
+          const auto hi = amrex::ubound(box);
+
+          for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+              for (int i = lo.x; i <= hi.x; ++i) {
+                // Not boundary cell
+                turn_off_bit(nodeArr(i, j, k), iDigitBny_);
+
+                // New active cell
+                turn_on_bit(nodeArr(i, j, k), iDigitNew_);
+
+                if (!nodeBAOld.empty()) {
+                  if (nodeBAOld.contains(
+                          amrex::IntVect{ AMREX_D_DECL(i, j, k) })) {
+                    turn_off_bit(nodeArr(i, j, k), iDigitNew_);
+                  }
+                }
+              }
+        }
+      }
+      nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
 
   std::string lev_string(int iLev) {
     std::string sLev = "_lev_" + std::to_string(iLev);
