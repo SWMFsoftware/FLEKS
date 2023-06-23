@@ -127,6 +127,90 @@ void Pic::fill_new_cells() {
 }
 
 //==========================================================
+void Pic::update_cell_status(const Vector<BoxArray>& cGridsOld) {
+
+  for (int iLev = 0; iLev < nLev; iLev++) {
+
+    if (!cellStatus[iLev].empty()) {
+      cellStatus[iLev].setVal(iBoundary_);
+      cellStatus[iLev].setVal(iOnNew_, 0);
+
+      if (usePIC)
+        for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+          const Box& box = mfi.validbox();
+          const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
+          const auto lo = lbound(box);
+          const auto hi = ubound(box);
+
+          for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+              for (int i = lo.x; i <= hi.x; ++i) {
+                if (cellArr(i, j, k) == iOnNew_ &&
+                    cGridsOld[iLev].contains(
+                        IntVect{ AMREX_D_DECL(i, j, k) })) {
+                  cellArr(i, j, k) = iOnOld_;
+                }
+              }
+        }
+    }
+
+    cellStatus[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    if (isFake2D) {
+      // For the fake 2D cases, in the z-direction, only the first layer ghost
+      // cells are filled in correctly by the method FillBoundary.
+      if (!cellStatus[iLev].empty())
+        for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+          const Box& box = mfi.fabbox();
+          const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
+          const auto lo = lbound(box);
+          const auto hi = ubound(box);
+
+          for (int k = lo.z; k <= hi.z; ++k)
+            if (k < -1 || k > 1)
+              for (int j = lo.y; j <= hi.y; ++j)
+                for (int i = lo.x; i <= hi.x; ++i) {
+                  cellArr(i, j, k) = cellArr(i, j, 0);
+                }
+        }
+    }
+  }
+}
+
+//==========================================================
+void Pic::update_node_status(const Vector<BoxArray>& cGridsOld) {
+  for (int iLev = 0; iLev < nLev; iLev++) {
+
+    if (!nodeStatus[iLev].empty()) {
+      nodeStatus[iLev].setVal(iBoundary_);
+      nodeStatus[iLev].setVal(iOnNew_, 0);
+
+      if (usePIC) {
+        auto nodeBAOld =
+            convert(cGridsOld[iLev], amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
+        for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+          const Box& box = mfi.validbox();
+          const auto& nodeArr = nodeStatus[iLev][mfi].array();
+
+          const auto lo = lbound(box);
+          const auto hi = ubound(box);
+
+          for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+              for (int i = lo.x; i <= hi.x; ++i) {
+                if (nodeArr(i, j, k) == iOnNew_ &&
+                    nodeBAOld.contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
+                  nodeArr(i, j, k) = iOnOld_;
+                }
+              }
+        }
+      }
+    }
+    nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+}
+
+//==========================================================
 void Pic::distribute_arrays(Vector<BoxArray>& cGridsOld) {
 
   // The last one is the sum of all species.
@@ -175,90 +259,21 @@ void Pic::distribute_arrays(Vector<BoxArray>& cGridsOld) {
                           nMoments, nGst, doMoveData);
     }
 
-    { //===========Label cellStatus/nodeStatus ==========
+    // The algorithm decides inject particles or not needs at least 2 ghost
+    // cell layers.
+    distribute_FabArray(cellStatus[iLev], cGrids[iLev], DistributionMap(iLev),
+                        1, nGst, false);
 
-      // The algorithm decides inject particles or not needs at least 2 ghost
-      // cell layers.
-      distribute_FabArray(cellStatus[iLev], cGrids[iLev], DistributionMap(iLev),
-                          1, nGst >= 2 ? nGst : 2, false);
-      if (!cellStatus[iLev].empty()) {
-        cellStatus[iLev].setVal(iBoundary_);
-        cellStatus[iLev].setVal(iOnNew_, 0);
+    distribute_FabArray(nodeStatus[iLev], nGrids[iLev], DistributionMap(iLev),
+                        1, nGst, false);
 
-        if (usePIC)
-          for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
-            const Box& box = mfi.validbox();
-            const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-            const auto lo = lbound(box);
-            const auto hi = ubound(box);
-
-            for (int k = lo.z; k <= hi.z; ++k)
-              for (int j = lo.y; j <= hi.y; ++j)
-                for (int i = lo.x; i <= hi.x; ++i) {
-                  if (cellArr(i, j, k) == iOnNew_ &&
-                      cGridsOld[iLev].contains(
-                          IntVect{ AMREX_D_DECL(i, j, k) })) {
-                    cellArr(i, j, k) = iOnOld_;
-                  }
-                }
-          }
-      }
-
-      cellStatus[iLev].FillBoundary(Geom(iLev).periodicity());
-
-      if (isFake2D) {
-        // For the fake 2D cases, in the z-direction, only the first layer ghost
-        // cells are filled in correctly by the method FillBoundary.
-        if (!cellStatus[iLev].empty())
-          for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
-            const Box& box = mfi.fabbox();
-            const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-            const auto lo = lbound(box);
-            const auto hi = ubound(box);
-
-            for (int k = lo.z; k <= hi.z; ++k)
-              if (k < -1 || k > 1)
-                for (int j = lo.y; j <= hi.y; ++j)
-                  for (int i = lo.x; i <= hi.x; ++i) {
-                    cellArr(i, j, k) = cellArr(i, j, 0);
-                  }
-          }
-      }
-
-      distribute_FabArray(nodeStatus[iLev], nGrids[iLev], DistributionMap(iLev),
-                          1, nGst, false);
-      if (!nodeStatus[iLev].empty()) {
-        nodeStatus[iLev].setVal(iBoundary_);
-        nodeStatus[iLev].setVal(iOnNew_, 0);
-
-        if (usePIC) {
-          auto nodeBAOld =
-              convert(cGridsOld[iLev], amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
-          for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
-            const Box& box = mfi.validbox();
-            const auto& nodeArr = nodeStatus[iLev][mfi].array();
-
-            const auto lo = lbound(box);
-            const auto hi = ubound(box);
-
-            for (int k = lo.z; k <= hi.z; ++k)
-              for (int j = lo.y; j <= hi.y; ++j)
-                for (int i = lo.x; i <= hi.x; ++i) {
-                  if (nodeArr(i, j, k) == iOnNew_ &&
-                      nodeBAOld.contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
-                    nodeArr(i, j, k) = iOnOld_;
-                  }
-                }
-          }
-        }
-      }
-
-      nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
-
-      distribute_FabArray(nodeShare[iLev], nGrids[iLev], DistributionMap(iLev),
-                          1, 0, false);
-    }
+    distribute_FabArray(nodeShare[iLev], nGrids[iLev], DistributionMap(iLev), 1,
+                        0, false);
   }
+
+  update_cell_status(cGridsOld);
+
+  update_node_status(cGridsOld);
 
   set_nodeShare();
 }
