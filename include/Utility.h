@@ -53,14 +53,14 @@ void print_MultiFab(const amrex::MultiFab& data, std::string tag,
                     amrex::Geometry& gm, int nshift = 0);
 
 template <class FAB>
-void print_fab(const amrex::FabArray<FAB>& fab, std::string tag,
+void print_fab(const amrex::FabArray<FAB>& mf, std::string tag,
                const int iStart, const int nComp, int nshift = 0) {
   amrex::AllPrint() << "-----" << tag << " begin-----" << std::endl;
   amrex::Real sum = 0;
   amrex::Real sum2 = 0;
 
-  for (amrex::MFIter mfi(fab); mfi.isValid(); ++mfi) {
-    const auto& fab = fab[mfi];
+  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const FAB& fab = mf[mfi];
     const auto& box = mfi.validbox();
     const auto& data = fab.array();
 
