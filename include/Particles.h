@@ -16,6 +16,7 @@
 #include "SourceInterface.h"
 #include "TimeCtr.h"
 #include "UMultiFab.h"
+#include "bit.h"
 
 struct PID {
   int cpu;
@@ -318,8 +319,7 @@ public:
     }
 
     if (isInsideBox) {
-      return test_bit(status(cellIdx[ix_], cellIdx[iy_], cellIdx[iz_]),
-                      iDigitBny_);
+      return bit::is_boundary(status(cellIdx[ix_], cellIdx[iy_], cellIdx[iz_]));
     } else {
       return is_outside_ba(p);
     }

@@ -352,7 +352,7 @@ void Pic::set_nodeShare() {
           for (int dk = dkMax; dk >= dkMin; dk--)
             for (int dj = djMax; dj >= djMin; dj--)
               for (int di = diMax; di >= diMin; di--) {
-                if (!test_bit(statusArr(i + di, j + dj, k + dk), iDigitBny_)) {
+                if (!bit::is_boundary(statusArr(i + di, j + dj, k + dk))) {
                   // Find the first CELL that shares this node.
                   if (cellBox.contains(
                           IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) })) {
@@ -413,7 +413,7 @@ void Pic::fill_new_node_E() {
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            if (test_bit(status(i, j, k), iDigitNew_)) {
+            if (bit::is_new(status(i, j, k))) {
               arrE(i, j, k, ix_) = fi->get_ex(mfi, i, j, k, iLev);
               arrE(i, j, k, iy_) = fi->get_ey(mfi, i, j, k, iLev);
               arrE(i, j, k, iz_) = fi->get_ez(mfi, i, j, k, iLev);
@@ -438,7 +438,7 @@ void Pic::fill_new_node_B() {
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            if (test_bit(status(i, j, k), iDigitNew_)) {
+            if (bit::is_new(status(i, j, k))) {
               arrB(i, j, k, ix_) = fi->get_bx(mfi, i, j, k, iLev);
               arrB(i, j, k, iy_) = fi->get_by(mfi, i, j, k, iLev);
               arrB(i, j, k, iz_) = fi->get_bz(mfi, i, j, k, iLev);
@@ -465,7 +465,7 @@ void Pic::fill_new_center_B() {
         for (int k = lo.z; k <= hi.z; ++k)
           for (int j = lo.y; j <= hi.y; ++j)
             for (int i = lo.x; i <= hi.x; ++i) {
-              if (test_bit(status(i, j, k), iDigitNew_)) {
+              if (bit::is_new(status(i, j, k))) {
                 centerArr(i, j, k, iVar) = 0;
                 for (int di = 0; di <= 1; di++)
                   for (int dj = 0; dj <= 1; dj++)
@@ -1388,16 +1388,15 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
         for (int k = lo[iz_] + 1; k <= hi[iz_] - 1; k++)
           for (int j = lo[iy_] + 1; j <= hi[iy_] - 1; j++)
             for (int i = lo[ix_] + 1; i <= hi[ix_] - 1; i++)
-              if (test_bit(statusArr(i, j, k, 0), iDigitBny_)) {
+              if (bit::is_boundary(statusArr(i, j, k, 0))) {
                 bool isNeiFound = false;
 
                 // Find the neighboring physical cell
                 for (int kk = -1; kk <= 1; kk++)
                   for (int jj = -1; jj <= 1; jj++)
                     for (int ii = -1; ii <= 1; ii++) {
-                      if (!isNeiFound &&
-                          test_bit(!statusArr(i + ii, j + jj, k + kk, 0),
-                                   iDigitBny_)) {
+                      if (!isNeiFound && !bit::is_boundary(statusArr(
+                                             i + ii, j + jj, k + kk, 0))) {
                         isNeiFound = true;
                         for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
                           arr(i, j, k, iVar) =
@@ -1428,7 +1427,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
           for (int k = lo[iz_] + 1; k <= hi[iz_] - 1; k++)
             for (int j = lo[iy_]; j <= hi[iy_]; j++)
               for (int i = lo[ix_]; i <= hi[ix_]; i++)
-                if (test_bit(statusArr(i, j, k, 0), iDigitBny_)) {
+                if (bit::is_boundary(statusArr(i, j, k, 0))) {
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart, iLev);
                 }

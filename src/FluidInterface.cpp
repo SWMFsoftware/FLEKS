@@ -4,6 +4,7 @@
 #include "FluidInterface.h"
 #include "GridUtility.h"
 #include "Utility.h"
+#include "bit.h"
 
 using namespace amrex;
 using namespace std;
@@ -670,7 +671,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i)
-            if (test_bit(status(i, j, k), iDigitBny_) ||
+            if (bit::is_boundary(status(i, j, k)) ||
                 validBox.contains(i, j, k)) {
               // If this node is the boundary or inside the valid box.
 

@@ -123,12 +123,12 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         return true;
 
       if (type != iIgnore_) {
-        if (Geom(0).isPeriodic(ix_) && i == glo.x && !test_bit(type, ix_))
+        if (Geom(0).isPeriodic(ix_) && i == glo.x && !bit::test_bit(type, ix_))
           return true;
-        if (Geom(0).isPeriodic(iy_) && j == glo.y && !test_bit(type, iy_))
+        if (Geom(0).isPeriodic(iy_) && j == glo.y && !bit::test_bit(type, iy_))
           return true;
         if (!isFake2D && Geom(0).isPeriodic(iz_) && k == glo.z &&
-            !test_bit(type, iz_))
+            !bit::test_bit(type, iz_))
           return true;
       }
 

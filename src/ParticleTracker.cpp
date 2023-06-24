@@ -160,8 +160,8 @@ void ParticleTracker::update_cell_status(Pic& pic) {
           for (int kk = k - 1; kk <= k + 1; kk++)
             for (int jj = j - 1; jj <= j + 1; jj++)
               for (int ii = i - 1; ii <= i + 1; ii++) {
-                if (test_bit(cellArrPIC(ii, jj, kk), iDigitBny_))
-                  turn_on_bit(cellArrPT(i, j, k), iDigitAddParticle_);
+                if (bit::is_boundary(cellArrPIC(ii, jj, kk)))
+                  bit::set_edge(cellArrPT(i, j, k));
               }
         }
   }

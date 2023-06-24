@@ -2,6 +2,7 @@
 #define _Grid_H_
 
 #include "Constants.h"
+#include "bit.h"
 #include "utility.h"
 #include <AMReX_AmrCore.H>
 #include <AMReX_BCRec.H>
@@ -126,7 +127,7 @@ public:
     for (int iLev = 0; iLev < nLev; iLev++) {
       if (!cellStatus[iLev].empty()) {
         int istatus = 0;
-        turn_on_bit(istatus, iDigitBny_);
+        bit::set_boundary(istatus);
         cellStatus[iLev].setVal(istatus);
 
         for (amrex::MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
@@ -139,15 +140,15 @@ public:
             for (int j = lo.y; j <= hi.y; ++j)
               for (int i = lo.x; i <= hi.x; ++i) {
                 // Not boundary cell
-                turn_off_bit(cellArr(i, j, k), iDigitBny_);
+                bit::set_not_boundary(cellArr(i, j, k));
 
                 // New active cell
-                turn_on_bit(cellArr(i, j, k), iDigitNew_);
+                bit::set_new(cellArr(i, j, k));
 
                 if (!cGridsOld.empty()) {
                   if (cGridsOld[iLev].contains(
                           amrex::IntVect{ AMREX_D_DECL(i, j, k) })) {
-                    turn_off_bit(cellArr(i, j, k), iDigitNew_);
+                    bit::set_not_new(cellArr(i, j, k));
                   }
                 }
               }
@@ -184,7 +185,8 @@ public:
       if (!nodeStatus[iLev].empty()) {
 
         int istatus = 0;
-        turn_on_bit(istatus, iDigitBny_);
+
+        bit::set_boundary(istatus);
         nodeStatus[iLev].setVal(istatus);
 
         amrex::BoxArray nodeBAOld;
@@ -205,15 +207,15 @@ public:
             for (int j = lo.y; j <= hi.y; ++j)
               for (int i = lo.x; i <= hi.x; ++i) {
                 // Not boundary cell
-                turn_off_bit(nodeArr(i, j, k), iDigitBny_);
+                bit::set_not_boundary(nodeArr(i, j, k));
 
                 // New active cell
-                turn_on_bit(nodeArr(i, j, k), iDigitNew_);
+                bit::set_new(nodeArr(i, j, k));
 
                 if (!nodeBAOld.empty()) {
                   if (nodeBAOld.contains(
                           amrex::IntVect{ AMREX_D_DECL(i, j, k) })) {
-                    turn_off_bit(nodeArr(i, j, k), iDigitNew_);
+                    bit::set_not_new(nodeArr(i, j, k));
                   }
                 }
               }
