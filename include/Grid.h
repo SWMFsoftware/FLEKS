@@ -1,9 +1,9 @@
 #ifndef _Grid_H_
 #define _Grid_H_
 
+#include "Bit.h"
 #include "Constants.h"
-#include "bit.h"
-#include "utility.h"
+#include "Utility.h"
 #include <AMReX_AmrCore.H>
 #include <AMReX_BCRec.H>
 #include <AMReX_Box.H>

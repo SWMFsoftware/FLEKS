@@ -1,10 +1,10 @@
 #include <AMReX_MultiFabUtil.H>
 #include <AMReX_PlotFileUtil.H>
 
+#include "Bit.h"
 #include "FluidInterface.h"
 #include "GridUtility.h"
 #include "Utility.h"
-#include "bit.h"
 
 using namespace amrex;
 using namespace std;

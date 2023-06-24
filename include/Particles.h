@@ -9,6 +9,7 @@
 
 #include "Array1D.h"
 #include "BC.h"
+#include "Bit.h"
 #include "Constants.h"
 #include "FluidInterface.h"
 #include "GridUtility.h"
@@ -16,7 +17,6 @@
 #include "SourceInterface.h"
 #include "TimeCtr.h"
 #include "UMultiFab.h"
-#include "bit.h"
 
 struct PID {
   int cpu;
