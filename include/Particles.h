@@ -124,6 +124,7 @@ protected:
   BC bc; // boundary condition
 
   amrex::Vector<amrex::iMultiFab> cellStatus;
+  amrex::Vector<amrex::iMultiFab> nodeStatus;
 
 public:
   static const int iup_ = 0;
@@ -256,6 +257,22 @@ public:
 
       if (!in[iLev].empty()) {
         amrex::iMultiFab::Copy(cellStatus[iLev], in[iLev], 0, 0,
+                               in[iLev].nComp(), nGst);
+      }
+    }
+  }
+
+  void update_node_status(const amrex::Vector<amrex::iMultiFab>& in) {
+    for (int iLev = 0; iLev < nLev; iLev++) {
+      const int nGst = in[iLev].nGrow();
+
+      distribute_FabArray(nodeStatus[iLev],
+                          amrex::convert(ParticleBoxArray(iLev),
+                                         amrex::IntVect::TheNodeVector()),
+                          ParticleDistributionMap(iLev), 1, nGst, false);
+
+      if (!in[iLev].empty()) {
+        amrex::iMultiFab::Copy(nodeStatus[iLev], in[iLev], 0, 0,
                                in[iLev].nComp(), nGst);
       }
     }

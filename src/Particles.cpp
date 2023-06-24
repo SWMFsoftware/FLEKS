@@ -32,6 +32,8 @@ Particles<NStructReal, NStructInt>::Particles(
 
   cellStatus.resize(nLev);
 
+  nodeStatus.resize(nLev);
+
   plo.resize(nLev);
   phi.resize(nLev);
   dx.resize(nLev);
@@ -619,8 +621,9 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
   }
 
   for (int iLev = 0; iLev < finestLevel(); iLev++) {
-    sum_two_lev_interface_nodes(momentsMF[iLev], momentsMF[iLev + 1], 0,
-                                momentsMF[iLev].nComp(), get_ref_ratio(iLev));
+    sum_two_lev_interface_node(
+        momentsMF[iLev], momentsMF[iLev + 1], 0, momentsMF[iLev].nComp(),
+        get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1), nodeStatus[iLev + 1]);
   }
 
   energy *= 0.5 * qomSign * get_mass();

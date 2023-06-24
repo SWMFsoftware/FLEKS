@@ -37,6 +37,7 @@ public:
 
   void update_field(Pic &pic);
   void update_cell_status(Pic &pic);
+  void update_node_status(Pic &pic);
   void set_ic(Pic &pic);
   void update(Pic &pic);
 
