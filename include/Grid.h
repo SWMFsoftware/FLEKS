@@ -52,10 +52,6 @@ protected:
 
   amrex::Vector<amrex::iMultiFab> nodeStatus;
 
-  // If a node is inside the physical domain, it is set to iOnNew_. Otherwise,
-  // it is iBoundary_.
-  amrex::Vector<amrex::iMultiFab> boundaryNode;
-
   // A node may be shared by a few blocks/boxes. Sometimes (such as the E field
   // solver) only one of the boexes needs to take care such nodes. The following
   // multifab is usually used for the following purposes: (1) if one node of one
@@ -125,41 +121,65 @@ public:
                               amrex::Vector<amrex::BoxArray>()) {
 
     for (int iLev = 0; iLev < nLev; iLev++) {
-      if (!cellStatus[iLev].empty()) {
-        int istatus = 0;
-        bit::set_boundary(istatus);
-        cellStatus[iLev].setVal(istatus);
+      if (cellStatus[iLev].empty())
+        continue;
 
-        for (amrex::MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
-          const amrex::Box& box = mfi.validbox();
-          const amrex::Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-          const auto lo = amrex::lbound(box);
-          const auto hi = amrex::ubound(box);
+      int istatus = 0;
+      bit::set_boundary(istatus);
+      cellStatus[iLev].setVal(istatus);
 
-          for (int k = lo.z; k <= hi.z; ++k)
-            for (int j = lo.y; j <= hi.y; ++j)
-              for (int i = lo.x; i <= hi.x; ++i) {
-                // Not boundary cell
-                bit::set_not_boundary(cellArr(i, j, k));
+      for (amrex::MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+        const amrex::Box& box = mfi.validbox();
+        const amrex::Array4<int>& cellArr = cellStatus[iLev][mfi].array();
+        const auto lo = amrex::lbound(box);
+        const auto hi = amrex::ubound(box);
 
-                // New active cell
-                bit::set_new(cellArr(i, j, k));
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i) {
+              // Not boundary cell
+              bit::set_not_boundary(cellArr(i, j, k));
 
-                if (!cGridsOld.empty()) {
-                  if (cGridsOld[iLev].contains(
-                          amrex::IntVect{ AMREX_D_DECL(i, j, k) })) {
-                    bit::set_not_new(cellArr(i, j, k));
-                  }
+              // New active cell
+              bit::set_new(cellArr(i, j, k));
+
+              if (!cGridsOld.empty()) {
+                if (cGridsOld[iLev].contains(
+                        amrex::IntVect{ AMREX_D_DECL(i, j, k) })) {
+                  bit::set_not_new(cellArr(i, j, k));
                 }
               }
-        }
+            }
       }
 
       cellStatus[iLev].FillBoundary(Geom(iLev).periodicity());
 
+      // Set the edge cells.
+      // Q: But what is the edge cell?
+      // A: It is a physical cell that has one or more neighbor cells are
+      // boundary cell.
+      for (amrex::MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+        const amrex::Box& box = mfi.validbox();
+        const amrex::Array4<int>& cellArr = cellStatus[iLev][mfi].array();
+        const auto lo = amrex::lbound(box);
+        const auto hi = amrex::ubound(box);
+
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i) {
+
+              for (int kk = k - 1; kk <= k + 1; kk++)
+                for (int jj = j - 1; jj <= j + 1; jj++)
+                  for (int ii = i - 1; ii <= i + 1; ii++) {
+                    if (bit::is_boundary(cellArr(ii, jj, kk)))
+                      bit::set_edge(cellArr(i, j, k));
+                  }
+            }
+      }
+
       if (isFake2D) {
-        // For the fake 2D cases, in the z-direction, only the first layer ghost
-        // cells are filled in correctly by the method FillBoundary.
+        // For the fake 2D cases, in the z-direction, only the first layer
+        // ghost cells are filled in correctly by the method FillBoundary.
         if (!cellStatus[iLev].empty())
           for (amrex::MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
             const amrex::Box& box = mfi.fabbox();
@@ -182,46 +202,69 @@ public:
   void update_node_status(const amrex::Vector<amrex::BoxArray>& cGridsOld =
                               amrex::Vector<amrex::BoxArray>()) {
     for (int iLev = 0; iLev < nLev; iLev++) {
-      if (!nodeStatus[iLev].empty()) {
+      if (nodeStatus[iLev].empty())
+        continue;
 
-        int istatus = 0;
+      int istatus = 0;
 
-        bit::set_boundary(istatus);
-        nodeStatus[iLev].setVal(istatus);
+      bit::set_boundary(istatus);
+      nodeStatus[iLev].setVal(istatus);
 
-        amrex::BoxArray nodeBAOld;
+      amrex::BoxArray nodeBAOld;
 
-        if (!cGridsOld.empty()) {
-          nodeBAOld =
-              convert(cGridsOld[iLev], amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
-        }
+      if (!cGridsOld.empty()) {
+        nodeBAOld =
+            convert(cGridsOld[iLev], amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
+      }
 
-        for (amrex::MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
-          const amrex::Box& box = mfi.validbox();
-          const auto& nodeArr = nodeStatus[iLev][mfi].array();
+      for (amrex::MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+        const amrex::Box& box = mfi.validbox();
+        const auto& nodeArr = nodeStatus[iLev][mfi].array();
 
-          const auto lo = amrex::lbound(box);
-          const auto hi = amrex::ubound(box);
+        const auto lo = amrex::lbound(box);
+        const auto hi = amrex::ubound(box);
 
-          for (int k = lo.z; k <= hi.z; ++k)
-            for (int j = lo.y; j <= hi.y; ++j)
-              for (int i = lo.x; i <= hi.x; ++i) {
-                // Not boundary cell
-                bit::set_not_boundary(nodeArr(i, j, k));
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i) {
+              // Not boundary cell
+              bit::set_not_boundary(nodeArr(i, j, k));
 
-                // New active cell
-                bit::set_new(nodeArr(i, j, k));
+              // New active cell
+              bit::set_new(nodeArr(i, j, k));
 
-                if (!nodeBAOld.empty()) {
-                  if (nodeBAOld.contains(
-                          amrex::IntVect{ AMREX_D_DECL(i, j, k) })) {
-                    bit::set_not_new(nodeArr(i, j, k));
-                  }
+              if (!nodeBAOld.empty()) {
+                if (nodeBAOld.contains(
+                        amrex::IntVect{ AMREX_D_DECL(i, j, k) })) {
+                  bit::set_not_new(nodeArr(i, j, k));
                 }
               }
-        }
+            }
       }
+
       nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
+
+      // Set the edge nodes.
+      // Q: But what is the edge node?
+      // A: It is a node at the boundary of a level.
+      for (amrex::MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+        const amrex::Box& box = mfi.validbox();
+        const amrex::Array4<int>& nodeArr = nodeStatus[iLev][mfi].array();
+        const auto lo = amrex::lbound(box);
+        const auto hi = amrex::ubound(box);
+
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i) {
+
+              for (int kk = k - 1; kk <= k + 1; kk++)
+                for (int jj = j - 1; jj <= j + 1; jj++)
+                  for (int ii = i - 1; ii <= i + 1; ii++) {
+                    if (bit::is_boundary(nodeArr(ii, jj, kk)))
+                      bit::set_edge(nodeArr(i, j, k));
+                  }
+            }
+      }
     }
   }
 

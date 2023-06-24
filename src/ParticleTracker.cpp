@@ -137,33 +137,11 @@ void ParticleTracker::update_field(Pic& pic) {
 }
 
 void ParticleTracker::update_cell_status(Pic& pic) {
-
-  int iLev = 0;
-  if (cellStatus[iLev].empty())
-    return;
-
-  iMultiFab::Copy(cellStatus[iLev], pic.cellStatus[iLev], 0, 0,
-                  cellStatus[iLev].nComp(), cellStatus[iLev].nGrow());
-
-  for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
-    const auto& cellArrPT = cellStatus[iLev][mfi].array();
-    const auto& cellArrPIC = pic.cellStatus[iLev][mfi].array();
-
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
-
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-
-          for (int kk = k - 1; kk <= k + 1; kk++)
-            for (int jj = j - 1; jj <= j + 1; jj++)
-              for (int ii = i - 1; ii <= i + 1; ii++) {
-                if (bit::is_boundary(cellArrPIC(ii, jj, kk)))
-                  bit::set_edge(cellArrPT(i, j, k));
-              }
-        }
+  for (int iLev = 0; iLev < nLev; iLev++) {
+    if (cellStatus[iLev].empty())
+      continue;
+    iMultiFab::Copy(cellStatus[iLev], pic.cellStatus[iLev], 0, 0,
+                    cellStatus[iLev].nComp(), cellStatus[iLev].nGrow());
   }
 }
 
