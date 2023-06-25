@@ -587,12 +587,9 @@ void FluidInterface::distribute_arrays() {
                         nVarNode, nGst, doCopy);
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst, doCopy);
-
-    distribute_FabArray(nodeStatus[iLev], nGrids[iLev], DistributionMap(iLev),
-                        1, nGst, false);
   }
 
-  update_node_status();
+  distribute_grid_arrays();
 }
 
 //==========================================================

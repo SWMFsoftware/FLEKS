@@ -1,9 +1,6 @@
 #ifndef _Grid_H_
 #define _Grid_H_
 
-#include "Bit.h"
-#include "Constants.h"
-#include "Utility.h"
 #include <AMReX_AmrCore.H>
 #include <AMReX_BCRec.H>
 #include <AMReX_Box.H>
@@ -22,6 +19,11 @@
 #include <AMReX_SPACE.H>
 #include <AMReX_Vector.H>
 #include <AMReX_iMultiFab.H>
+
+#include "Bit.h"
+#include "Constants.h"
+#include "GridUtility.h"
+#include "Utility.h"
 
 // This class define the grid information, but NOT the data on the grid.
 class Grid : public amrex::AmrCore {
@@ -116,6 +118,25 @@ public:
 
   bool is_grid_empty() const { return isGridEmpty; }
 
+  // 1. Allocate memory for Fab declared in this class.
+  // 2. Set cellStatus and nodeStatus. If cGridsOld is not empty, it will also
+  // decide if a cell/node is new or not.
+  void distribute_grid_arrays(const amrex::Vector<amrex::BoxArray>& cGridsOld =
+                                  amrex::Vector<amrex::BoxArray>()) {
+
+    for (int iLev = 0; iLev <= finest_level; iLev++) {
+      distribute_FabArray(cellStatus[iLev], cGrids[iLev], DistributionMap(iLev),
+                          1, nGst, false);
+
+      distribute_FabArray(nodeStatus[iLev], nGrids[iLev], DistributionMap(iLev),
+                          1, nGst, false);
+    }
+
+    update_cell_status(cGridsOld);
+
+    update_node_status(cGridsOld);
+  }
+
   const amrex::iMultiFab& cell_status(int iLev) const {
     return cellStatus[iLev];
   }
@@ -124,29 +145,7 @@ public:
     return nodeStatus[iLev];
   }
 
-  //==========================================================
-  void update_cell_status(Grid& other) {
-    for (int iLev = 0; iLev < nLev; iLev++) {
-      if (cellStatus[iLev].empty())
-        continue;
-      amrex::iMultiFab::Copy(cellStatus[iLev], other.cellStatus[iLev], 0, 0,
-                             cellStatus[iLev].nComp(),
-                             cellStatus[iLev].nGrow());
-    }
-  }
-
-  //==========================================================
-  void update_node_status(Grid& other) {
-    for (int iLev = 0; iLev < nLev; iLev++) {
-      if (nodeStatus[iLev].empty())
-        continue;
-      amrex::iMultiFab::Copy(nodeStatus[iLev], other.nodeStatus[iLev], 0, 0,
-                             nodeStatus[iLev].nComp(),
-                             nodeStatus[iLev].nGrow());
-    }
-  }
-
-  //==========================================================
+  // If cGridsOld is provided, it will also decide if a cell is new or not.
   void update_cell_status(const amrex::Vector<amrex::BoxArray>& cGridsOld =
                               amrex::Vector<amrex::BoxArray>()) {
 
@@ -228,7 +227,7 @@ public:
     }
   }
 
-  //==========================================================
+  // If cGridsOld is provided, it will also decide if a node is new or not.
   void update_node_status(const amrex::Vector<amrex::BoxArray>& cGridsOld =
                               amrex::Vector<amrex::BoxArray>()) {
     for (int iLev = 0; iLev < nLev; iLev++) {

@@ -155,6 +155,14 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
   if (region == activeRegion && isGridInitialized)
     return;
 
+  if (!parts.empty()) {
+    for (int i = 0; i < nSpecies; i++) {
+      // Label the particles outside the OLD PIC region. It should be called
+      // before active region is updated.
+      parts[i]->label_particles_outside_ba();
+    }
+  }
+
   activeRegion = region;
   isGridEmpty = activeRegion.empty();
 
@@ -192,16 +200,9 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
                         nGst, false);
     distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst, false);
-
-    distribute_FabArray(cellStatus[iLev], cGrids[iLev], DistributionMap(iLev),
-                        1, nGst, false);
-
-    distribute_FabArray(nodeStatus[iLev], nGrids[iLev], DistributionMap(iLev),
-                        1, nGst, false);
   }
 
-  update_cell_status(pic);
-  update_node_status(pic);
+  distribute_grid_arrays();
 
   //--------------test particles-----------------------------------
   if (parts.empty()) {
@@ -218,8 +219,6 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
     }
   } else {
     for (int i = 0; i < nSpecies; i++) {
-      // Label the particles outside the OLD PIC region.
-      parts[i]->label_particles_outside_ba();
       parts[i]->SetParticleBoxArray(0, cGrids[0]);
       parts[i]->set_region_range(activeRegion);
       parts[i]->SetParticleDistributionMap(0, DistributionMap(0));

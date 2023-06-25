@@ -175,7 +175,7 @@ public:
   //--------------Initialization begin-------------------------------
   void regrid(const amrex::BoxArray &region, const Grid *const grid = nullptr);
 
-  void distribute_arrays(amrex::Vector<amrex::BoxArray> &cGridsOld);
+  void distribute_arrays(const amrex::Vector<amrex::BoxArray> &cGridsOld);
 
   void fill_new_cells();
   void fill_E_B_fields();

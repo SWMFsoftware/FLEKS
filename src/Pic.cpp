@@ -118,7 +118,7 @@ void Pic::fill_new_cells() {
 }
 
 //==========================================================
-void Pic::distribute_arrays(Vector<BoxArray>& cGridsOld) {
+void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 
   // The last one is the sum of all species.
   if (nodePlasma.empty())
@@ -166,21 +166,11 @@ void Pic::distribute_arrays(Vector<BoxArray>& cGridsOld) {
                           nMoments, nGst, doMoveData);
     }
 
-    // The algorithm decides inject particles or not needs at least 2 ghost
-    // cell layers.
-    distribute_FabArray(cellStatus[iLev], cGrids[iLev], DistributionMap(iLev),
-                        1, nGst, false);
-
-    distribute_FabArray(nodeStatus[iLev], nGrids[iLev], DistributionMap(iLev),
-                        1, nGst, false);
-
     distribute_FabArray(nodeShare[iLev], nGrids[iLev], DistributionMap(iLev), 1,
                         0, false);
   }
 
-  update_cell_status(cGridsOld);
-
-  update_node_status(cGridsOld);
+  distribute_grid_arrays(cGridsOld);
 
   set_nodeShare();
 }
@@ -202,6 +192,14 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
   isGridEmpty = activeRegion.empty();
 
   doNeedFillNewCell = true;
+
+  if (!parts.empty()) {
+    for (int i = 0; i < nSpecies; i++) {
+      // Label the particles outside the OLD PIC region. It should be called
+      // before active region is updated.
+      parts[i]->label_particles_outside_ba();
+    }
+  }
 
   if (isGridEmpty) {
     cGrids.clear();
@@ -280,21 +278,18 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
     }
   } else {
     for (int i = 0; i < nSpecies; i++) {
-      // Label the particles outside the OLD PIC region.
-      parts[i]->label_particles_outside_ba();
-
       parts[i]->set_region_range(activeRegion);
 
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_ba_general();
 
       for (int iLev = 0; iLev < nLev; iLev++) {
-        // TODO: Is the follwoing check necessary?
         if (cGrids[iLev].size() > 0) {
           parts[i]->SetParticleBoxArray(iLev, cGrids[iLev]);
           parts[i]->SetParticleDistributionMap(iLev, DistributionMap(iLev));
         }
       }
+
       parts[i]->Redistribute();
     }
   }
