@@ -50,19 +50,10 @@ protected:
   // Nodal
   amrex::Vector<amrex::BoxArray> nGrids;
 
+  // Each bit of the integer represents a status of a cell/node. See Bit.h for
+  // potential status.
   amrex::Vector<amrex::iMultiFab> cellStatus;
-
   amrex::Vector<amrex::iMultiFab> nodeStatus;
-
-  // A node may be shared by a few blocks/boxes. Sometimes (such as the E field
-  // solver) only one of the boexes needs to take care such nodes. The following
-  // multifab is usually used for the following purposes: (1) if one node of one
-  // box is 'iAssign_', this box needs to take care of this node; (2) in fake
-  // 2D, some nodes are set to 'iIgnore_' so that only one layer of nodes is
-  // solved; (3) if a node is neither 'iAssign_' nor 'iIgnore_', nodeShare
-  // stores the neighbor that handle this node.
-  amrex::Vector<amrex::iMultiFab> nodeShare;
-  constexpr static int iAssign_ = (1 << 4), iIgnore_ = -1;
 
   bool doNeedFillNewCell = true;
 
@@ -105,7 +96,6 @@ public:
     iRefinement.resize(nLev);
     cellStatus.resize(nLev);
     nodeStatus.resize(nLev);
-    nodeShare.resize(nLev);
   };
 
   ~Grid() = default;

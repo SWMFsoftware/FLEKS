@@ -165,9 +165,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(pl[iLev], nGrids[iLev], DistributionMap(iLev),
                           nMoments, nGst, doMoveData);
     }
-
-    distribute_FabArray(nodeShare[iLev], nGrids[iLev], DistributionMap(iLev), 1,
-                        0, false);
   }
 
   distribute_grid_arrays(cGridsOld);
@@ -315,17 +312,26 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
 void Pic::set_nodeShare() {
   for (int iLev = 0; iLev <= finest_level; iLev++) {
 
-    if (!nodeShare[iLev].empty())
-      nodeShare[iLev].setVal(iIgnore_);
+    if (!nodeStatus[iLev].empty())
+      for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
 
-    if (!nodeShare[iLev].empty())
-      for (MFIter mfi(nodeShare[iLev]); mfi.isValid(); ++mfi) {
+        {
+          const Box& box = mfi.fabbox();
+          const auto lo = lbound(box);
+          const auto hi = ubound(box);
+          const auto& typeArr = nodeStatus[iLev][mfi].array();
+          for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+              for (int i = lo.x; i <= hi.x; ++i) {
+                bit::set_skip(typeArr(i, j, k));
+              }
+        }
+
         const Box& box = mfi.validbox();
-
         const Box& cellBox = convert(box, { AMREX_D_DECL(0, 0, 0) });
 
-        const auto& typeArr = nodeShare[iLev][mfi].array();
-        const auto& statusArr = cellStatus[iLev][mfi].array();
+        const auto& typeArr = nodeStatus[iLev][mfi].array();
+        const auto& cell = cellStatus[iLev][mfi].array();
 
         const auto lo = lbound(box);
         const auto hi = ubound(box);
@@ -341,26 +347,18 @@ void Pic::set_nodeShare() {
           for (int dk = dkMax; dk >= dkMin; dk--)
             for (int dj = djMax; dj >= djMin; dj--)
               for (int di = diMax; di >= diMin; di--) {
-                if (!bit::is_boundary(statusArr(i + di, j + dj, k + dk))) {
+                if (!bit::is_boundary(cell(i + di, j + dj, k + dk))) {
                   // Find the first CELL that shares this node.
                   if (cellBox.contains(
                           IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) })) {
-                    return iAssign_;
+                    return true;
                   } else {
-                    int ii = 0;
-                    if (di == 0)
-                      ii += 1;
-                    if (dj == 0)
-                      ii += 2;
-                    if (!isFake2D && dk == 0)
-                      ii += 4;
-
-                    return ii;
+                    return false;
                   }
                 }
               }
           Abort("Error: something is wrong here!");
-          return 0;
+          return false;
         };
 
         for (int k = lo.z; k <= hi.z; ++k)
@@ -369,16 +367,21 @@ void Pic::set_nodeShare() {
               if (!isFake2D || k == lo.z) {
                 // for 2D (1 cell in the z-direction), only handle the layer of
                 // k=0
+
+                bit::set_not_skip(typeArr(i, j, k));
+
                 if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
                     (!isFake2D && (k == lo.z || k == hi.z))) {
                   // Block boundary nodes.
 
-                  // Check if this block boundary node needs to be handled by
-                  // this block.
+                  if (fHandle(i, j, k)) {
+                    bit::set_owner(typeArr(i, j, k));
+                  } else {
+                    bit::set_not_owner(typeArr(i, j, k));
+                  }
 
-                  typeArr(i, j, k) = fHandle(i, j, k);
                 } else {
-                  typeArr(i, j, k) = iAssign_;
+                  bit::set_owner(typeArr(i, j, k));
                 }
               }
             }
@@ -1516,12 +1519,12 @@ void Pic::convert_1d_to_3d(const double* const p, amrex::MultiFab& MF) {
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
     int iMin = lo.x, jMin = lo.y, kMin = lo.z;
 
-    const auto& nodeArr = nodeShare[iLev][mfi].array();
+    const auto& nodeArr = nodeStatus[iLev][mfi].array();
     for (int iVar = 0; iVar < MF.nComp(); iVar++)
       for (int k = kMin; k <= kMax; ++k)
         for (int j = jMin; j <= jMax; ++j)
           for (int i = iMin; i <= iMax; ++i)
-            if (isCenter || nodeArr(i, j, k) == iAssign_) {
+            if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
               arr(i, j, k, iVar) = p[iCount++];
             }
   }
@@ -1546,12 +1549,12 @@ void Pic::convert_3d_to_1d(const amrex::MultiFab& MF, double* const p) {
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
     int iMin = lo.x, jMin = lo.y, kMin = lo.z;
 
-    const auto& nodeArr = nodeShare[iLev][mfi].array();
+    const auto& nodeArr = nodeStatus[iLev][mfi].array();
     for (int iVar = 0; iVar < MF.nComp(); iVar++)
       for (int k = kMin; k <= kMax; ++k)
         for (int j = jMin; j <= jMax; ++j)
           for (int i = iMin; i <= iMax; ++i)
-            if (isCenter || nodeArr(i, j, k) == iAssign_) {
+            if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
               p[iCount++] = arr(i, j, k, iVar);
             }
   }

@@ -106,7 +106,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
   for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
-    const auto& typeArr = nodeShare[iLev][mfi].array();
+    const auto& typeArr = nodeStatus[iLev][mfi].array();
 
     auto lo = box.loVect3d();
     auto hi = box.hiVect3d();
@@ -117,12 +117,12 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         hi[iDim]--;
 
     auto do_output_this_node = [&](int i, int j, int k) {
-      int type = typeArr(i, j, k);
+      const int type = typeArr(i, j, k);
 
-      if (type == iAssign_)
+      if (bit::is_owner(type))
         return true;
 
-      if (type != iIgnore_) {
+      if (!bit::is_skip(type)) {
         if (Geom(0).isPeriodic(ix_) && i == glo.x && !bit::test_bit(type, ix_))
           return true;
         if (Geom(0).isPeriodic(iy_) && j == glo.y && !bit::test_bit(type, iy_))
