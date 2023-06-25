@@ -553,9 +553,7 @@ void FluidInterface::regrid(const amrex::BoxArray& region,
       // This method will call MakeNewLevelFromScratch() and
       // PostProcessBaseGrids()
       InitFromScratch(0.0);
-    }
-
-    update_refinement_info();
+    }    
   }
 
   // Print() << "dm = " << DistributionMap(0) << std::endl;

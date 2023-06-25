@@ -273,14 +273,12 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::add_particles_domain(
-    const amrex::Vector<amrex::iMultiFab>& iRefinement) {
+void Particles<NStructReal, NStructInt>::add_particles_domain() {
   timing_func("Particles::add_particles_domain");
 
   for (int iLev = 0; iLev <= finestLevel(); iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
       const auto& status = cell_status(iLev)[mfi].array();
-      const auto& iRefine = iRefinement[iLev][mfi].array();
       const Box& bx = mfi.validbox();
       const auto lo = amrex::lbound(bx);
       const auto hi = amrex::ubound(bx);
@@ -288,16 +286,11 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
       int iMax = hi.x, jMax = hi.y, kMax = hi.z;
       int iMin = lo.x, jMin = lo.y, kMin = lo.z;
 
-      //      Print() << "iLev = " << iLev << " bx = " << bx << std::endl;
-
       for (int i = iMin; i <= iMax; ++i)
         for (int j = jMin; j <= jMax; ++j)
           for (int k = kMin; k <= kMax; ++k) {
             if (bit::is_new(status(i, j, k)) &&
-                iRefine(i, j, k) == iNotRefined) {
-              // printf("add particles iLev = %d, i = %d, j = %d, k = %d\n",
-              // iLev,
-              //        i, j, k);
+                !bit::is_refined(status(i, j, k))) {
               add_particles_cell(iLev, mfi, i, j, k, *fi);
             }
           }

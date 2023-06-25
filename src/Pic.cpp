@@ -217,8 +217,6 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
       // PostProcessBaseGrids()
       InitFromScratch(tc->get_time());
     }
-
-    update_refinement_info();
   }
 
   calc_node_grids();

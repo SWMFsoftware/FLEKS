@@ -149,7 +149,7 @@ public:
     }
   }
 
-  void add_particles_domain(const amrex::Vector<amrex::iMultiFab>& iRefinement);
+  void add_particles_domain();
   void add_particles_cell(const int iLev, const amrex::MFIter& mfi, const int i,
                           const int j, const int k,
                           const FluidInterface& interface,

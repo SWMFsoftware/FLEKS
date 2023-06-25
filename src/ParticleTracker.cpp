@@ -180,8 +180,7 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
       // This method will call MakeNewLevelFromScratch() and
       // PostProcessBaseGrids()
       InitFromScratch(tc->get_time());
-    }
-    update_refinement_info();
+    }    
   }
 
   calc_node_grids();

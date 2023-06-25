@@ -65,9 +65,6 @@ protected:
 
   std::string tag;
 
-  // Label every cell of every level: iRefined or iNotRefined.
-  amrex::Vector<amrex::iMultiFab> iRefinement;
-
 private:
   // Here is the inheritance chain: AmrInfo -> AmrMesh -> AmrCore -> Grid. We
   // need to copy Grid object sometime, but the copy constructor of AmrCore is
@@ -93,7 +90,6 @@ public:
 
     nLev = max_level + 1;
 
-    iRefinement.resize(nLev);
     cellStatus.resize(nLev);
     nodeStatus.resize(nLev);
   };
@@ -143,10 +139,21 @@ public:
       if (cellStatus[iLev].empty())
         continue;
 
-      int istatus = 0;
-      bit::set_boundary(istatus);
-      cellStatus[iLev].setVal(istatus);
+      // Set default status for all cells.
+      for (amrex::MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+        const amrex::Box& box = mfi.fabbox();
+        const auto& cellArr = cellStatus[iLev][mfi].array();
+        const auto lo = amrex::lbound(box);
+        const auto hi = amrex::ubound(box);
 
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i) {
+              bit::set_boundary(cellArr(i, j, k));
+            }
+      }
+
+      // Set 'boundary', 'new' status.
       for (amrex::MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
         const amrex::Box& box = mfi.validbox();
         const amrex::Array4<int>& cellArr = cellStatus[iLev][mfi].array();
@@ -169,6 +176,30 @@ public:
                 }
               }
             }
+      }
+
+      // Set the 'refined' status
+      if (iLev < max_level) {
+        const int iRefined = 1, iNotRefined = 2;
+        auto iRefine =
+            amrex::makeFineMask(grids[iLev], dmap[iLev], grids[iLev + 1],
+                                ref_ratio[iLev], iNotRefined, iRefined);
+
+        for (amrex::MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+          const amrex::Box& box = mfi.validbox();
+          const amrex::Array4<int>& cellArr = cellStatus[iLev][mfi].array();
+          const auto& iRef = iRefine[mfi].array();
+          const auto lo = amrex::lbound(box);
+          const auto hi = amrex::ubound(box);
+
+          for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+              for (int i = lo.x; i <= hi.x; ++i) {
+                if (iRef(i, j, k) == iRefined) {
+                  bit::set_refined(cellArr(i, j, k));
+                }
+              }
+        }
       }
 
       cellStatus[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -630,15 +661,6 @@ public:
                                    cphysbc, 0, fphysbc, 0, refRatio(iLev - 1),
                                    mapper, bcs, 0);
     }
-  };
-
-  void update_refinement_info() {
-    for (int i = 0; i < max_level; i++) {
-      iRefinement[i] = amrex::makeFineMask(grids[i], dmap[i], grids[i + 1],
-                                           ref_ratio[i], iNotRefined, iRefined);
-    }
-    iRefinement[max_level].define(grids[max_level], dmap[max_level], 1, 0);
-    iRefinement[max_level].setVal(iNotRefined);
   };
 };
 #endif
