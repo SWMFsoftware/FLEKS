@@ -224,10 +224,20 @@ public:
       if (nodeStatus[iLev].empty())
         continue;
 
-      int istatus = 0;
+      // Set default status for all nodes.
+      for (amrex::MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+        const amrex::Box& box = mfi.fabbox();
+        const auto& nodeArr = nodeStatus[iLev][mfi].array();
+        const auto lo = amrex::lbound(box);
+        const auto hi = amrex::ubound(box);
 
-      bit::set_boundary(istatus);
-      nodeStatus[iLev].setVal(istatus);
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i) {
+              bit::set_boundary(nodeArr(i, j, k));
+              bit::set_skip(nodeArr(i, j, k));
+            }
+      }
 
       amrex::BoxArray nodeBAOld;
 
@@ -236,6 +246,7 @@ public:
             convert(cGridsOld[iLev], amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
       }
 
+      // Set 'boundary', 'new' status.
       for (amrex::MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
         const amrex::Box& box = mfi.validbox();
         const auto& nodeArr = nodeStatus[iLev][mfi].array();
@@ -263,7 +274,7 @@ public:
 
       nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
 
-      // Set the edge nodes.
+      // Set the 'edge' status
       // Q: But what is the edge node?
       // A: It is a node at the boundary of a level.
       for (amrex::MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
@@ -272,6 +283,59 @@ public:
         const auto lo = amrex::lbound(box);
         const auto hi = amrex::ubound(box);
 
+        { // Set 'owner' and 'skip' status
+          const auto& cellBox = convert(box, { AMREX_D_DECL(0, 0, 0) });
+          const auto& cell = cellStatus[iLev][mfi].array();
+          int diMax = 0, diMin = -1;
+          int djMax = 0, djMin = -1;
+          int dkMax = 0, dkMin = -1;
+          if (isFake2D) {
+            dkMin = 0;
+          }
+          // If this box is the owner of this node?
+          auto is_the_box_owner = [&](int i, int j, int k) {
+            for (int dk = dkMax; dk >= dkMin; dk--)
+              for (int dj = djMax; dj >= djMin; dj--)
+                for (int di = diMax; di >= diMin; di--) {
+                  if (!bit::is_boundary(cell(i + di, j + dj, k + dk))) {
+                    // Find the first CELL that shares this node.
+                    if (cellBox.contains(amrex::IntVect{
+                            AMREX_D_DECL(i + di, j + dj, k + dk) })) {
+                      return true;
+                    } else {
+                      return false;
+                    }
+                  }
+                }
+            amrex::Abort("Error: something is wrong here!");
+            return false;
+          };
+
+          for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+              for (int i = lo.x; i <= hi.x; ++i) {
+                if (!isFake2D || k == lo.z) {
+                  // for fake 2D , only use the layer of k=0
+                  bit::set_not_skip(nodeArr(i, j, k));
+
+                  if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
+                      (!isFake2D && (k == lo.z || k == hi.z))) {
+                    // Block boundary nodes.
+                    if (is_the_box_owner(i, j, k)) {
+                      bit::set_owner(nodeArr(i, j, k));
+                    } else {
+                      bit::set_not_owner(nodeArr(i, j, k));
+                    }
+
+                  } else {
+                    // Nodes indside the box.
+                    bit::set_owner(nodeArr(i, j, k));
+                  }
+                }
+              }
+        }
+
+        // Set 'edge' status
         for (int k = lo.z; k <= hi.z; ++k)
           for (int j = lo.y; j <= hi.y; ++j)
             for (int i = lo.x; i <= hi.x; ++i) {

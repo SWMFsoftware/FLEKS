@@ -263,9 +263,7 @@ public:
   void calculate_phi(LinearSolver &solver);
   //-------------div(E) correction end----------------
 
-  void report_load_balance();
-
-  void set_nodeShare();
+  void report_load_balance();  
 
   void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF);
 

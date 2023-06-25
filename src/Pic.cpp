@@ -168,8 +168,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   }
 
   distribute_grid_arrays(cGridsOld);
-
-  set_nodeShare();
 }
 
 //==========================================================
@@ -306,87 +304,6 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
   activeRegion = activeRegion.simplified();
 
   isGridInitialized = true;
-}
-
-//==========================================================
-void Pic::set_nodeShare() {
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
-
-    if (!nodeStatus[iLev].empty())
-      for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
-
-        {
-          const Box& box = mfi.fabbox();
-          const auto lo = lbound(box);
-          const auto hi = ubound(box);
-          const auto& typeArr = nodeStatus[iLev][mfi].array();
-          for (int k = lo.z; k <= hi.z; ++k)
-            for (int j = lo.y; j <= hi.y; ++j)
-              for (int i = lo.x; i <= hi.x; ++i) {
-                bit::set_skip(typeArr(i, j, k));
-              }
-        }
-
-        const Box& box = mfi.validbox();
-        const Box& cellBox = convert(box, { AMREX_D_DECL(0, 0, 0) });
-
-        const auto& typeArr = nodeStatus[iLev][mfi].array();
-        const auto& cell = cellStatus[iLev][mfi].array();
-
-        const auto lo = lbound(box);
-        const auto hi = ubound(box);
-
-        int diMax = 0, diMin = -1;
-        int djMax = 0, djMin = -1;
-        int dkMax = 0, dkMin = -1;
-        if (isFake2D) {
-          dkMin = 0;
-        }
-
-        auto fHandle = [&](int i, int j, int k) {
-          for (int dk = dkMax; dk >= dkMin; dk--)
-            for (int dj = djMax; dj >= djMin; dj--)
-              for (int di = diMax; di >= diMin; di--) {
-                if (!bit::is_boundary(cell(i + di, j + dj, k + dk))) {
-                  // Find the first CELL that shares this node.
-                  if (cellBox.contains(
-                          IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) })) {
-                    return true;
-                  } else {
-                    return false;
-                  }
-                }
-              }
-          Abort("Error: something is wrong here!");
-          return false;
-        };
-
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              if (!isFake2D || k == lo.z) {
-                // for 2D (1 cell in the z-direction), only handle the layer of
-                // k=0
-
-                bit::set_not_skip(typeArr(i, j, k));
-
-                if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
-                    (!isFake2D && (k == lo.z || k == hi.z))) {
-                  // Block boundary nodes.
-
-                  if (fHandle(i, j, k)) {
-                    bit::set_owner(typeArr(i, j, k));
-                  } else {
-                    bit::set_not_owner(typeArr(i, j, k));
-                  }
-
-                } else {
-                  bit::set_owner(typeArr(i, j, k));
-                }
-              }
-            }
-      }
-  }
 }
 
 //==========================================================
