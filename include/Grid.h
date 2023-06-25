@@ -631,36 +631,5 @@ public:
     amrex::WriteMultiLevelPlotfile(st, nlev, tMF, var, geom, 0.0, tmpVint,
                                    ref_ratio);
   };
-
-  void InterpFromCoarse(amrex::Vector<amrex::MultiFab>& mf, int iLev) {
-    amrex::Vector<amrex::BCRec> bcs;
-    bcs.resize(1);
-    amrex::Interpolater* mapper = &amrex::cell_bilinear_interp;
-    amrex::CpuBndryFuncFab bndry_func(nullptr);
-    amrex::PhysBCFunct<amrex::CpuBndryFuncFab> cphysbc(geom[iLev - 1], bcs,
-                                                       bndry_func);
-    amrex::PhysBCFunct<amrex::CpuBndryFuncFab> fphysbc(geom[iLev], bcs,
-                                                       bndry_func);
-    amrex::InterpFromCoarseLevel(
-        mf[iLev], 0.0, mf[iLev - 1], 0, 0, mf[iLev].nComp(), geom[iLev - 1],
-        geom[iLev], cphysbc, 0, fphysbc, 0, refRatio(iLev - 1), mapper, bcs, 0);
-  };
-
-  void InterpFromCoarseAllLevels(amrex::Vector<amrex::MultiFab>& mf, int iLev) {
-    amrex::Vector<amrex::BCRec> bcs;
-    bcs.resize(1);
-    amrex::Interpolater* mapper = &amrex::cell_bilinear_interp;
-    amrex::CpuBndryFuncFab bndry_func(nullptr);
-    for (int i = 1; i <= iLev; i++) {
-      amrex::PhysBCFunct<amrex::CpuBndryFuncFab> cphysbc(geom[iLev - 1], bcs,
-                                                         bndry_func);
-      amrex::PhysBCFunct<amrex::CpuBndryFuncFab> fphysbc(geom[iLev], bcs,
-                                                         bndry_func);
-      amrex::InterpFromCoarseLevel(mf[iLev], 0.0, mf[iLev - 1], 0, 0,
-                                   mf[iLev].nComp(), geom[iLev - 1], geom[iLev],
-                                   cphysbc, 0, fphysbc, 0, refRatio(iLev - 1),
-                                   mapper, bcs, 0);
-    }
-  };
 };
 #endif

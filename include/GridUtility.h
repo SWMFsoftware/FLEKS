@@ -13,21 +13,12 @@
 #include "GridInfo.h"
 #include "Utility.h"
 
-template <class FAB>
-void redistribute_FabArray(amrex::FabArray<FAB>& fa,
-                           const amrex::DistributionMapping& dm,
-                           bool doRedistribute = true) {
-  // Assume 'dm' is the new dm.
-
-  amrex::FabArray<FAB> tmp;
-  tmp.define(fa.boxArray(), dm, fa.nComp(), fa.nGrow());
-  if (doRedistribute) {
-    tmp.Redistribute(fa, 0, 0, tmp.nComp(), tmp.nGrowVect());
-  } else {
-    tmp.setVal(0);
-  }
-  fa = std::move(tmp);
-}
+template <class FAB> class PhysBCFunctNoOpFab {
+public:
+  void operator()(amrex::FabArray<FAB>& /*mf*/, int /*dcomp*/, int /*ncomp*/,
+                  amrex::IntVect const& /*nghost*/, amrex::Real /*time*/,
+                  int /*bccomp*/) {}
+};
 
 template <class FAB>
 void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
@@ -57,13 +48,6 @@ void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
 
   distribute_FabArray(fa, baNew, dm, fa.nComp(), fa.nGrow(), doCopy);
 }
-
-template <class FAB> class PhysBCFunctNoOpFab {
-public:
-  void operator()(amrex::FabArray<FAB>& /*mf*/, int /*dcomp*/, int /*ncomp*/,
-                  amrex::IntVect const& /*nghost*/, amrex::Real /*time*/,
-                  int /*bccomp*/) {}
-};
 
 // Interpolate from coarse lev to fine lev
 template <class FAB>
@@ -159,15 +143,6 @@ void sum_two_lev_interface_node(amrex::FabArray<FAB>& coarse,
   sum_fine_to_coarse_bny_node(coarse, fine, iStart, nComp, ratio);
   sum_coarse_to_fine_bny_node(coarse, fine, iStart, nComp, ratio, cgeom, fgeom,
                               fstatus);
-}
-
-template <class T>
-void ChangeMultiFabDM(T& mf, amrex::DistributionMapping dm)
-
-{
-  T tmpMF(mf.boxArray(), dm, mf.nComp(), mf.nGrowVect());
-  tmpMF.ParallelCopy(mf);
-  mf = std::move(tmpMF);
 }
 
 // This function is called recursively to combine active patahces into larger

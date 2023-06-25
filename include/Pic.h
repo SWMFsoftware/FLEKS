@@ -364,33 +364,6 @@ public:
                    << std::endl;
   };
 
-  // tag all cells for refinement
-  // overrides the pure virtual function in AmrCore
-  // virtual void ErrorEst(int iLev, amrex::TagBoxArray &tags, amrex::Real time,
-  //                       int ngrow) override {
-  //   std::string nameFunc = "Pic::ErrorEst";
-  //   amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev <<
-  //   std::endl;
-
-  //   const int tagval = amrex::TagBox::SET;
-  //   // return;
-  //   for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi) {
-  //     const amrex::Box &bx = mfi.tilebox();
-  //     const auto tagfab = tags.array(mfi);
-
-  //     const auto lo = lbound(bx);
-  //     const auto hi = ubound(bx);
-
-  //     for (int k = lo.z; k <= hi.z; ++k)
-  //       for (int j = lo.y; j <= hi.y; ++j)
-  //         for (int i = lo.x; i <= hi.x; ++i) {
-  //           if (i >= 16 && i < 24 && j >= 8 && j < 16) {
-  //             tagfab(i, j, k) = 1;
-  //           }
-  //         }
-  //   }
-  // };
-
   // private methods
 private:
   amrex::Real calc_E_field_energy();
