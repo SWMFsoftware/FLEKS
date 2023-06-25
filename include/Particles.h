@@ -89,6 +89,8 @@ public:
                                     NStructInt>::ParticleDistributionMap;
 
 protected:
+  Grid* grid;
+
   FluidInterface* fi;
   TimeCtr* tc;
 
@@ -123,9 +125,6 @@ protected:
 
   BC bc; // boundary condition
 
-  amrex::Vector<amrex::iMultiFab> cellStatus;
-  amrex::Vector<amrex::iMultiFab> nodeStatus;
-
 public:
   static const int iup_ = 0;
   static const int ivp_ = 1;
@@ -137,7 +136,7 @@ public:
   // Index of the integer data.
   static const int iRecordCount_ = 0;
 
-  Particles(amrex::AmrCore* amrcore, FluidInterface* fluidIn, TimeCtr* tcIn,
+  Particles(Grid* gridIn, FluidInterface* fluidIn, TimeCtr* tcIn,
             const int speciesIDIn, const amrex::Real chargeIn,
             const amrex::Real massIn, const amrex::IntVect& nPartPerCellIn,
             TestCase tcase = RegularSimulation);
@@ -241,41 +240,12 @@ public:
     randNum.set_seed(seed);
   }
 
-  const amrex::Vector<amrex::iMultiFab>& get_cell_status() const {
-    return cellStatus;
+  const amrex::iMultiFab& cell_status(int iLev) const {
+    return grid->cell_status(iLev);
   }
 
-  const amrex::iMultiFab& get_cell_status(int iLev) const {
-    return cellStatus[iLev];
-  }
-
-  void update_cell_status(const amrex::Vector<amrex::iMultiFab>& in) {
-    for (int iLev = 0; iLev < nLev; iLev++) {
-      const int nGst = in[iLev].nGrow();
-      distribute_FabArray(cellStatus[iLev], ParticleBoxArray(iLev),
-                          ParticleDistributionMap(iLev), 1, nGst, false);
-
-      if (!in[iLev].empty()) {
-        amrex::iMultiFab::Copy(cellStatus[iLev], in[iLev], 0, 0,
-                               in[iLev].nComp(), nGst);
-      }
-    }
-  }
-
-  void update_node_status(const amrex::Vector<amrex::iMultiFab>& in) {
-    for (int iLev = 0; iLev < nLev; iLev++) {
-      const int nGst = in[iLev].nGrow();
-
-      distribute_FabArray(nodeStatus[iLev],
-                          amrex::convert(ParticleBoxArray(iLev),
-                                         amrex::IntVect::TheNodeVector()),
-                          ParticleDistributionMap(iLev), 1, nGst, false);
-
-      if (!in[iLev].empty()) {
-        amrex::iMultiFab::Copy(nodeStatus[iLev], in[iLev], 0, 0,
-                               in[iLev].nComp(), nGst);
-      }
-    }
+  const amrex::iMultiFab& node_status(int iLev) const {
+    return grid->node_status(iLev);
   }
 
   ParticleTileType& get_particle_tile(int iLev, const amrex::MFIter& mfi, int i,
@@ -348,14 +318,21 @@ public:
       for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev);
            pti.isValid(); ++pti) {
         auto& particles = pti.GetArrayOfStructs();
-        const amrex::Array4<int const>& status = cellStatus[iLev][pti].array();
-        const amrex::Box& bx = cellStatus[iLev][pti].box();
-        const amrex::IntVect lowCorner = bx.smallEnd();
-        const amrex::IntVect highCorner = bx.bigEnd();
-        for (auto& p : particles) {
-          if (is_outside_ba(p, status, lowCorner, highCorner)) {
+        if (cell_status(iLev).empty()) {
+          for (auto& p : particles) {
             p.id() = -1;
-            // amrex::Print()<<"particle outside ba = "<<p<<std::endl;
+          }
+        } else {
+          const amrex::Array4<int const>& status =
+              cell_status(iLev)[pti].array();
+          const amrex::Box& bx = cell_status(iLev)[pti].box();
+          const amrex::IntVect lowCorner = bx.smallEnd();
+          const amrex::IntVect highCorner = bx.bigEnd();
+          for (auto& p : particles) {
+            if (is_outside_ba(p, status, lowCorner, highCorner)) {
+              p.id() = -1;
+              // amrex::Print()<<"particle outside ba = "<<p<<std::endl;
+            }
           }
         }
       }
@@ -433,9 +410,8 @@ class IOParticles : public Particles<nPicPartReal> {
 public:
   IOParticles() = delete;
 
-  IOParticles(Particles<>& other, amrex::AmrCore* amrcore,
-              amrex::Real no2outL = 1, amrex::Real no2outV = 1,
-              amrex::Real no2OutM = 1,
+  IOParticles(Particles<>& other, Grid* gridIn, amrex::Real no2outL = 1,
+              amrex::Real no2outV = 1, amrex::Real no2OutM = 1,
               amrex::RealBox IORange = amrex::RealBox());
   ~IOParticles() = default;
 };

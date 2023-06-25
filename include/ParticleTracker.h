@@ -35,9 +35,7 @@ public:
 
   void regrid(const amrex::BoxArray &region, const Grid *const grid, Pic &pic);
 
-  void update_field(Pic &pic);
-  void update_cell_status(Pic &pic);
-  void update_node_status(Pic &pic);
+  void update_field(Pic &pic);  
   void set_ic(Pic &pic);
   void update(Pic &pic);
 

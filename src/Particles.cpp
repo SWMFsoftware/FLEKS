@@ -12,10 +12,11 @@ using namespace std;
 //==========================================================
 template <int NStructReal, int NStructInt>
 Particles<NStructReal, NStructInt>::Particles(
-    amrex::AmrCore* amrcore, FluidInterface* const fluidIn, TimeCtr* const tcIn,
+    Grid* gridIn, FluidInterface* const fluidIn, TimeCtr* const tcIn,
     const int speciesIDIn, const Real chargeIn, const Real massIn,
     const IntVect& nPartPerCellIn, TestCase tcase)
-    : AmrParticleContainer<NStructReal, NStructInt>(amrcore),
+    : AmrParticleContainer<NStructReal, NStructInt>(gridIn),
+      grid(gridIn),
       fi(fluidIn),
       tc(tcIn),
       speciesID(speciesIDIn),
@@ -29,10 +30,6 @@ Particles<NStructReal, NStructInt>::Particles(
   qomSign = qom >= 0 ? 1 : -1;
 
   nLev = maxLevel() + 1;
-
-  cellStatus.resize(nLev);
-
-  nodeStatus.resize(nLev);
 
   plo.resize(nLev);
   phi.resize(nLev);
@@ -282,7 +279,7 @@ void Particles<NStructReal, NStructInt>::add_particles_domain(
 
   for (int iLev = 0; iLev <= finestLevel(); iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
-      const auto& status = cellStatus[iLev][mfi].array();
+      const auto& status = cell_status(iLev)[mfi].array();
       const auto& iRefine = iRefinement[iLev][mfi].array();
       const Box& bx = mfi.validbox();
       const auto lo = amrex::lbound(bx);
@@ -326,7 +323,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
   int iLev = 0;
 
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
-    const auto& status = cellStatus[iLev][mfi].array();
+    const auto& status = cell_status(iLev)[mfi].array();
     const Box& bx = mfi.validbox();
     const IntVect lo = IntVect(bx.loVect());
     const IntVect hi = IntVect(bx.hiVect());
@@ -623,7 +620,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
   for (int iLev = 0; iLev < finestLevel(); iLev++) {
     sum_two_lev_interface_node(
         momentsMF[iLev], momentsMF[iLev + 1], 0, momentsMF[iLev].nComp(),
-        get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1), nodeStatus[iLev + 1]);
+        get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
   }
 
   energy *= 0.5 * qomSign * get_mass();
@@ -984,11 +981,11 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
   const int iLev = 0;
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
-    const Box& bx = cellStatus[iLev][pti].box();
+    const Box& bx = cell_status(iLev)[pti].box();
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
 
-    const Array4<int const>& status = cellStatus[iLev][pti].array();
+    const Array4<int const>& status = cell_status(iLev)[pti].array();
 
     auto& particles = pti.GetArrayOfStructs();
     for (auto& p : particles) {
@@ -1048,10 +1045,10 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       const Array4<Real const>& nodeEArr = nodeE[iLev][pti].array();
       const Array4<Real const>& nodeBArr = nodeB[iLev][pti].array();
 
-      const Array4<int const>& status = cellStatus[iLev][pti].array();
-      // cellStatus[iLev][pti] is a FAB, and the box returned from the box()
+      const Array4<int const>& status = cell_status(iLev)[pti].array();
+      // cell_status(iLev)[pti] is a FAB, and the box returned from the box()
       // method already contains the ghost cells.
-      const Box& bx = cellStatus[iLev][pti].box();
+      const Box& bx = cell_status(iLev)[pti].box();
       const IntVect lowCorner = bx.smallEnd();
       const IntVect highCorner = bx.bigEnd();
 
@@ -1147,10 +1144,10 @@ void Particles<NStructReal, NStructInt>::neutral_mover(amrex::Real dt) {
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
 
-      const Array4<int const>& status = cellStatus[iLev][pti].array();
-      // cellStatus[iLev][pti] is a FAB, and the box returned from the box()
+      const Array4<int const>& status = cell_status(iLev)[pti].array();
+      // cell_status(iLev)[pti] is a FAB, and the box returned from the box()
       // method already contains the ghost cells.
-      const Box& bx = cellStatus[iLev][pti].box();
+      const Box& bx = cell_status(iLev)[pti].box();
       const IntVect lowCorner = bx.smallEnd();
       const IntVect highCorner = bx.bigEnd();
 
@@ -1195,8 +1192,8 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
        ++pti) {
     Array4<Real const> const& phiArr = phiMF[pti].array();
 
-    const Array4<int const>& status = cellStatus[iLev][pti].array();
-    const Box& bx = cellStatus[iLev][pti].box();
+    const Array4<int const>& status = cell_status(iLev)[pti].array();
+    const Box& bx = cell_status(iLev)[pti].box();
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
 
@@ -1954,9 +1951,9 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
   return false; // to suppress compilation warning.
 }
 
-IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
+IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
                          Real no2outV, Real no2outM, RealBox IORange)
-    : Particles(amrcore, nullptr, nullptr, other.get_speciesID(),
+    : Particles(gridIn, nullptr, nullptr, other.get_speciesID(),
                 other.get_charge(), other.get_mass(),
                 amrex::IntVect(AMREX_D_DECL(-1, -1, -1))) {
   const int iLev = 0;
@@ -1978,10 +1975,10 @@ IOParticles::IOParticles(Particles& other, AmrCore* amrcore, Real no2outL,
 
     const auto& aosOther = tileOther.GetArrayOfStructs();
 
-    const Box& bx = other.get_cell_status(iLev)[mfi].box();
+    const Box& bx = other.cell_status(iLev)[mfi].box();
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
-    const Array4<int const>& status = other.get_cell_status(iLev)[mfi].array();
+    const Array4<int const>& status = other.cell_status(iLev)[mfi].array();
 
     for (auto p : aosOther) {
       if (other.is_outside_ba(p, status, lowCorner, highCorner)) {

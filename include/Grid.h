@@ -116,6 +116,36 @@ public:
 
   bool is_grid_empty() const { return isGridEmpty; }
 
+  const amrex::iMultiFab& cell_status(int iLev) const {
+    return cellStatus[iLev];
+  }
+
+  const amrex::iMultiFab& node_status(int iLev) const {
+    return nodeStatus[iLev];
+  }
+
+  //==========================================================
+  void update_cell_status(Grid& other) {
+    for (int iLev = 0; iLev < nLev; iLev++) {
+      if (cellStatus[iLev].empty())
+        continue;
+      amrex::iMultiFab::Copy(cellStatus[iLev], other.cellStatus[iLev], 0, 0,
+                             cellStatus[iLev].nComp(),
+                             cellStatus[iLev].nGrow());
+    }
+  }
+
+  //==========================================================
+  void update_node_status(Grid& other) {
+    for (int iLev = 0; iLev < nLev; iLev++) {
+      if (nodeStatus[iLev].empty())
+        continue;
+      amrex::iMultiFab::Copy(nodeStatus[iLev], other.nodeStatus[iLev], 0, 0,
+                             nodeStatus[iLev].nComp(),
+                             nodeStatus[iLev].nGrow());
+    }
+  }
+
   //==========================================================
   void update_cell_status(const amrex::Vector<amrex::BoxArray>& cGridsOld =
                               amrex::Vector<amrex::BoxArray>()) {
@@ -427,7 +457,7 @@ public:
 #ifdef _PT_COMPONENT_
             if (i >= 4 && j >= 4 && k >= 4) {
 #else
-            if (i >= 10 && i < 24 && j >= 8 && j < 32) {
+            if (i >= 4 && i < 6 && j >= 4 && j < 6) {
 #endif
               tagArr(i, j, k) = amrex::TagBox::SET;
             }

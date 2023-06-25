@@ -25,7 +25,7 @@ private:
   static const int iRegionUniform_ = 2;
 
 public:
-  TestParticles(amrex::AmrCore* amrcore, FluidInterface* const fluidIn,
+  TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
                 TimeCtr* const tcIn, const int speciesID,
                 const amrex::Real charge, const amrex::Real mass, int id = 0);
 

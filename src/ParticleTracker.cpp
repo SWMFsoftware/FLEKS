@@ -136,24 +136,6 @@ void ParticleTracker::update_field(Pic& pic) {
   }
 }
 
-void ParticleTracker::update_cell_status(Pic& pic) {
-  for (int iLev = 0; iLev < nLev; iLev++) {
-    if (cellStatus[iLev].empty())
-      continue;
-    iMultiFab::Copy(cellStatus[iLev], pic.cellStatus[iLev], 0, 0,
-                    cellStatus[iLev].nComp(), cellStatus[iLev].nGrow());
-  }
-}
-
-void ParticleTracker::update_node_status(Pic& pic) {
-  for (int iLev = 0; iLev < nLev; iLev++) {
-    if (nodeStatus[iLev].empty())
-      continue;
-    iMultiFab::Copy(nodeStatus[iLev], pic.nodeStatus[iLev], 0, 0,
-                    nodeStatus[iLev].nComp(), nodeStatus[iLev].nGrow());
-  }
-}
-
 void ParticleTracker::post_process_param() {
   savectr = std::unique_ptr<PlotCtr>(
       new PlotCtr(tc.get(), gridID, -1, nPTRecord * dnSave));
@@ -246,12 +228,6 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
       parts[i]->Redistribute();
     }
   }
-
-  for (int i = 0; i < nSpecies; i++) {
-    parts[i]->update_cell_status(cellStatus);
-    parts[i]->update_node_status(nodeStatus);
-  }
-
   //--------------test particles-----------------------------------
 
   activeRegion = activeRegion.simplified();

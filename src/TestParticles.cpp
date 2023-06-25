@@ -4,11 +4,11 @@
 
 using namespace amrex;
 
-TestParticles::TestParticles(amrex::AmrCore* amrcore,
-                             FluidInterface* const fluidIn, TimeCtr* const tcIn,
-                             const int speciesID, const amrex::Real charge,
-                             const amrex::Real mass, int id)
-    : Particles(amrcore, fluidIn, tcIn, speciesID, charge, mass,
+TestParticles::TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
+                             TimeCtr* const tcIn, const int speciesID,
+                             const amrex::Real charge, const amrex::Real mass,
+                             int id)
+    : Particles(gridIn, fluidIn, tcIn, speciesID, charge, mass,
                 IntVect(AMREX_D_DECL(1, 1, 1))) {
   gridID = id;
 
@@ -57,10 +57,10 @@ void TestParticles::move_and_save_charged_particles(
     const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
     const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
 
-    const Array4<int const>& status = cellStatus[iLev][pti].array();
-    // cellStatus[iLev][pti] is a FAB, and the box returned from the box()
+    const Array4<int const>& status = cell_status(iLev)[pti].array();
+    // cell_status(iLev)[pti] is a FAB, and the box returned from the box()
     // method already contains the ghost cells.
-    const Box& bx = cellStatus[iLev][pti].box();
+    const Box& bx = cell_status(iLev)[pti].box();
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
 
@@ -221,10 +221,10 @@ void TestParticles::move_and_save_neutrals(amrex::Real dt, amrex::Real tNowSI,
   const int iLev = 0;
   for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, iLev); pti.isValid();
        ++pti) {
-    const Array4<int const>& status = cellStatus[iLev][pti].array();
-    // cellStatus[iLev][pti] is a FAB, and the box returned from the box()
+    const Array4<int const>& status = cell_status(iLev)[pti].array();
+    // cell_status(iLev)[pti] is a FAB, and the box returned from the box()
     // method already contains the ghost cells.
-    const Box& bx = cellStatus[iLev][pti].box();
+    const Box& bx = cell_status(iLev)[pti].box();
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
 
@@ -413,7 +413,7 @@ void TestParticles::add_test_particles_from_fluid(Vector<Vel> tpStates) {
   }
 
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
-    const auto& status = cellStatus[iLev][mfi].array();
+    const auto& status = cell_status(iLev)[mfi].array();
     const Box& bx = mfi.validbox();
     const IntVect lo = IntVect(bx.loVect());
     const IntVect hi = IntVect(bx.hiVect());

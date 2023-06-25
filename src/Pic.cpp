@@ -298,13 +298,6 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
       parts[i]->Redistribute();
     }
   }
-
-  // Copy cellStatus to Particles objects.
-  for (int i = 0; i < nSpecies; i++) {
-    parts[i]->update_cell_status(cellStatus);
-    parts[i]->update_node_status(nodeStatus);
-  }
-
   //--------------particles-----------------------------------
 
   // This part does not really work for multi-level.
