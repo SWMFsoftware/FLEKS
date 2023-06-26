@@ -159,7 +159,7 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
     for (int i = 0; i < nSpecies; i++) {
       // Label the particles outside the OLD PIC region. It should be called
       // before active region is updated.
-      parts[i]->label_particles_outside_ba();
+      parts[i]->label_particles_outside_active_region();
     }
   }
 
@@ -222,7 +222,7 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
       parts[i]->set_region_range(activeRegion);
       parts[i]->SetParticleDistributionMap(0, DistributionMap(0));
       // Label the particles outside the NEW PIC region.
-      parts[i]->label_particles_outside_ba_general();
+      parts[i]->label_particles_outside_active_region_general();
       parts[i]->Redistribute();
     }
   }
@@ -242,7 +242,7 @@ void ParticleTracker::save_restart_data() {
   bool doSavePlot = savectr->is_time_to(true);
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     // Keep the following two lines for safety.
-    parts[iPart]->label_particles_outside_ba();
+    parts[iPart]->label_particles_outside_active_region();
     parts[iPart]->Redistribute();
 
     if (doSavePlot) {

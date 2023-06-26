@@ -298,43 +298,41 @@ public:
     return is_outside_active_region(p);
   }
 
-  void label_particles_outside_ba() {
-    const int iLev = 0;
-    if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
-      for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev);
-           pti.isValid(); ++pti) {
-        auto& particles = pti.GetArrayOfStructs();
-        if (cell_status(iLev).empty()) {
-          for (auto& p : particles) {
-            p.id() = -1;
-          }
-        } else {
-          const amrex::Box& validBox = pti.validbox();
-          for (auto& p : particles) {
-            if (is_outside_active_region(p, iLev, validBox)) {
+  inline void label_particles_outside_active_region() {
+    for (int iLev = 0; iLev <= finestLevel(); iLev++)
+      if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
+        for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev);
+             pti.isValid(); ++pti) {
+          auto& particles = pti.GetArrayOfStructs();
+          if (cell_status(iLev).empty()) {
+            for (auto& p : particles) {
               p.id() = -1;
-              // amrex::Print()<<"particle outside ba = "<<p<<std::endl;
+            }
+          } else {
+            const amrex::Box& validBox = pti.validbox();
+            for (auto& p : particles) {
+              if (is_outside_active_region(p, iLev, validBox)) {
+                p.id() = -1;
+              }
             }
           }
         }
       }
-    }
   }
 
-  void label_particles_outside_ba_general() {
-    const int iLev = 0;
-    if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
-      for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev);
-           pti.isValid(); ++pti) {
-        auto& particles = pti.GetArrayOfStructs();
-        for (auto& p : particles) {
-          if (is_outside_active_region(p)) {
-            p.id() = -1;
-            // amrex::Print()<<"particle outside ba = "<<p<<std::endl;
+  inline void label_particles_outside_active_region_general() {
+    for (int iLev = 0; iLev <= finestLevel(); iLev++)
+      if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
+        for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev);
+             pti.isValid(); ++pti) {
+          auto& particles = pti.GetArrayOfStructs();
+          for (auto& p : particles) {
+            if (is_outside_active_region(p)) {
+              p.id() = -1;
+            }
           }
         }
       }
-    }
   }
 
   void split_particles(amrex::Real limit);

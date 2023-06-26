@@ -192,7 +192,7 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
     for (int i = 0; i < nSpecies; i++) {
       // Label the particles outside the OLD PIC region. It should be called
       // before active region is updated.
-      parts[i]->label_particles_outside_ba();
+      parts[i]->label_particles_outside_active_region();
     }
   }
 
@@ -274,7 +274,7 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
       parts[i]->set_region_range(activeRegion);
 
       // Label the particles outside the NEW PIC region.
-      parts[i]->label_particles_outside_ba_general();
+      parts[i]->label_particles_outside_active_region_general();
 
       for (int iLev = 0; iLev < nLev; iLev++) {
         if (cGrids[iLev].size() > 0) {
