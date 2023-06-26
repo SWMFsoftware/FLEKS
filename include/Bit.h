@@ -22,12 +22,8 @@ constexpr static int iEdge_ = 2;
 // node. This box is the 'owner' of this node.
 constexpr static int iOwner_ = 3;
 
-// For fake 2D case, some nodes should be skipped so that only one layer of
-// nodes is solved/saved.
-constexpr static int iSkip_ = 4;
-
 // For cell only. If a cell is refined or not.
-constexpr static int iRefined_ = 5;
+constexpr static int iRefined_ = 4;
 //=========================================================
 
 inline bool test_bit(const int& i, int pos) { return i & (1 << pos); }
@@ -55,11 +51,6 @@ inline bool is_edge(const int& i) { return test_bit(i, iEdge_); }
 inline void set_owner(int& i) { turn_on_bit(i, iOwner_); }
 inline void set_not_owner(int& i) { turn_off_bit(i, iOwner_); }
 inline bool is_owner(const int& i) { return test_bit(i, iOwner_); }
-
-//======= Skip cell/node =======
-inline void set_skip(int& i) { turn_on_bit(i, iSkip_); }
-inline void set_not_skip(int& i) { turn_off_bit(i, iSkip_); }
-inline bool is_skip(const int& i) { return test_bit(i, iSkip_); }
 
 //======= Refined cell =======
 inline void set_refined(int& i) { turn_on_bit(i, iRefined_); }

@@ -116,32 +116,13 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
       if ((Geom(0).isPeriodic(iDim)) && gbx.bigEnd(iDim) == hi[iDim])
         hi[iDim]--;
 
-    auto do_output_this_node = [&](int i, int j, int k) {
-      const int type = typeArr(i, j, k);
-
-      if (bit::is_owner(type))
-        return true;
-
-      if (!bit::is_skip(type)) {
-        if (Geom(0).isPeriodic(ix_) && i == glo.x && !bit::test_bit(type, ix_))
-          return true;
-        if (Geom(0).isPeriodic(iy_) && j == glo.y && !bit::test_bit(type, iy_))
-          return true;
-        if (!isFake2D && Geom(0).isPeriodic(iz_) && k == glo.z &&
-            !bit::test_bit(type, iz_))
-          return true;
-      }
-
-      return false;
-    };
-
     for (int k = lo[iz_]; k <= hi[iz_]; ++k) {
       const double zp = k * dx[iz_] + plo[iz_];
       for (int j = lo[iy_]; j <= hi[iy_]; ++j) {
         const double yp = j * dx[iy_] + plo[iy_];
         for (int i = lo[ix_]; i <= hi[ix_]; ++i) {
           const double xp = i * dx[ix_] + plo[ix_];
-          if (do_output_this_node(i, j, k) &&
+          if (bit::is_owner(typeArr(i, j, k)) &&
               writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
 
             pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,

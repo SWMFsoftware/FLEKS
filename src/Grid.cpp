@@ -174,7 +174,6 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
             bit::set_boundary(nodeArr(i, j, k));
-            bit::set_skip(nodeArr(i, j, k));
           }
     }
 
@@ -220,7 +219,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
       const auto lo = lbound(box);
       const auto hi = ubound(box);
 
-      { // Set 'owner' and 'skip' status
+      { // Set 'owner' status
         const auto& cellBox = convert(box, { AMREX_D_DECL(0, 0, 0) });
         const auto& cell = cellStatus[iLev][mfi].array();
         int diMax = 0, diMin = -1;
@@ -252,8 +251,6 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
           for (int j = lo.y; j <= hi.y; ++j)
             for (int i = lo.x; i <= hi.x; ++i) {
               if (!isFake2D || k == lo.z) {
-                // for fake 2D , only use the layer of k=0
-                bit::set_not_skip(nodeArr(i, j, k));
 
                 if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
                     (!isFake2D && (k == lo.z || k == hi.z))) {
@@ -263,7 +260,6 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
                   } else {
                     bit::set_not_owner(nodeArr(i, j, k));
                   }
-
                 } else {
                   // Nodes indside the box.
                   bit::set_owner(nodeArr(i, j, k));
