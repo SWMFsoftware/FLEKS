@@ -503,22 +503,24 @@ public:
 
   template <typename T>
   amrex::Real get_fluid_mass_density(const amrex::MFIter& mfi, const T x,
-                                     const T y, const T z, const int is) const {
-    return get_value(mfi, x, y, z, iRho_I[is]);
+                                     const T y, const T z, const int is,
+                                     const int iLev) const {
+    return get_value(mfi, x, y, z, iRho_I[is], iLev);
   }
 
   template <typename Type>
   amrex::Real get_fluid_p(const amrex::MFIter& mfi, const Type x, const Type y,
-                          const Type z, const int is) const {
-    return get_value(mfi, x, y, z, iP_I[is]);
+                          const Type z, const int is, const int iLev) const {
+    return get_value(mfi, x, y, z, iP_I[is], iLev);
   }
 
   template <typename Type>
   amrex::Real get_fluid_uth(const amrex::MFIter& mfi, const Type x,
-                            const Type y, const Type z, const int is) const {
+                            const Type y, const Type z, const int is,
+                            const int iLev) const {
     amrex::Real Uth = 0, p, rho;
-    p = get_fluid_p(mfi, x, y, z, is);
-    rho = get_fluid_mass_density(mfi, x, y, z, is);
+    p = get_fluid_p(mfi, x, y, z, is, iLev);
+    rho = get_fluid_mass_density(mfi, x, y, z, is, iLev);
     if (rho > 0)
       Uth = sqrt(p / rho);
     return Uth;
@@ -526,20 +528,20 @@ public:
 
   template <typename Type>
   amrex::Real get_fluid_ux(const amrex::MFIter& mfi, const Type x, const Type y,
-                           const Type z, const int is) const {
-    return get_value(mfi, x, y, z, iUx_I[is]);
+                           const Type z, const int is, const int iLev) const {
+    return get_value(mfi, x, y, z, iUx_I[is], iLev);
   }
 
   template <typename Type>
   amrex::Real get_fluid_uy(const amrex::MFIter& mfi, const Type x, const Type y,
-                           const Type z, const int is) const {
-    return get_value(mfi, x, y, z, iUy_I[is]);
+                           const Type z, const int is, const int iLev) const {
+    return get_value(mfi, x, y, z, iUy_I[is], iLev);
   }
 
   template <typename Type>
   amrex::Real get_fluid_uz(const amrex::MFIter& mfi, const Type x, const Type y,
-                           const Type z, const int is) const {
-    return get_value(mfi, x, y, z, iUz_I[is]);
+                           const Type z, const int is, const int iLev) const {
+    return get_value(mfi, x, y, z, iUz_I[is], iLev);
   }
 
   template <typename Type>

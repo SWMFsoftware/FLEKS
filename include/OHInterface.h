@@ -87,20 +87,21 @@ public:
                                     const int j, const int k, const int iFluid,
                                     const int iLev) const override {
     // amu/m^3
-    amrex::Real n = get_fluid_mass_density(mfi, i, j, k, iFluid) *
+    amrex::Real n = get_fluid_mass_density(mfi, i, j, k, iFluid, iLev) *
                     get_No2SiRho() / cProtonMassSI;
 
     // km/s
     const amrex::Real ux =
-        get_fluid_ux(mfi, i, j, k, iFluid) * get_No2SiV() * 1e-3;
+        get_fluid_ux(mfi, i, j, k, iFluid, iLev) * get_No2SiV() * 1e-3;
     const amrex::Real uy =
-        get_fluid_uy(mfi, i, j, k, iFluid) * get_No2SiV() * 1e-3;
+        get_fluid_uy(mfi, i, j, k, iFluid, iLev) * get_No2SiV() * 1e-3;
     const amrex::Real uz =
-        get_fluid_uz(mfi, i, j, k, iFluid) * get_No2SiV() * 1e-3;
+        get_fluid_uz(mfi, i, j, k, iFluid, iLev) * get_No2SiV() * 1e-3;
     amrex::Real u2 = ux * ux + uy * uy + uz * uz;
 
     // Pa
-    const amrex::Real p = get_fluid_p(mfi, i, j, k, iFluid) * get_No2SiP();
+    const amrex::Real p =
+        get_fluid_p(mfi, i, j, k, iFluid, iLev) * get_No2SiP();
     amrex::Real T = p / n / cBoltzmannSI;
 
     const amrex::Real gamma = 5. / 3;

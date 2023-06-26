@@ -206,6 +206,16 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           v += vBulk;
           w += wBulk;
 
+          if (false) {
+            x = x0;
+            y = y0;
+            z = z0;
+            u = 0;
+            v = 0;
+            w = 0;
+            q = 1;
+          }
+
           ParticleType p;
           if (ParticleType::the_next_id >= amrex::LastParticleID) {
             // id should not be larger than LastParticleID. This is a bad
@@ -2014,12 +2024,12 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       // MHD fluid index.
       const int fluidID = 0;
       // amu/m^3
-      rhoIon = stateOH->get_fluid_mass_density(pti, xp, yp, zp, fluidID) *
+      rhoIon = stateOH->get_fluid_mass_density(pti, xp, yp, zp, fluidID, iLev) *
                stateOH->get_No2SiRho() / cProtonMassSI;
 
       // cs = sqrt(P/n); m/s
       // Assume p = pi + pe = 2pi, so divide by sqrt(2.0).
-      double cs = stateOH->get_fluid_uth(pti, xp, yp, zp, fluidID) *
+      double cs = stateOH->get_fluid_uth(pti, xp, yp, zp, fluidID, iLev) *
                   stateOH->get_No2SiV() / sqrt(2.0);
 
       // cs2Ion = 2*P/n. The definition of thermal speed in get_uth_iso() is
@@ -2027,11 +2037,11 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       // See page 92 of Adam Michael's thesis.
       cs2Ion = 2 * pow(cs, 2);
 
-      uIon[ix_] = stateOH->get_fluid_ux(pti, xp, yp, zp, fluidID) *
+      uIon[ix_] = stateOH->get_fluid_ux(pti, xp, yp, zp, fluidID, iLev) *
                   stateOH->get_No2SiV();
-      uIon[iy_] = stateOH->get_fluid_uy(pti, xp, yp, zp, fluidID) *
+      uIon[iy_] = stateOH->get_fluid_uy(pti, xp, yp, zp, fluidID, iLev) *
                   stateOH->get_No2SiV();
-      uIon[iz_] = stateOH->get_fluid_uz(pti, xp, yp, zp, fluidID) *
+      uIon[iz_] = stateOH->get_fluid_uz(pti, xp, yp, zp, fluidID, iLev) *
                   stateOH->get_No2SiV();
 
       OH_get_charge_exchange_wrapper(&rhoIon, &cs2Ion, uIon, &rhoNeu, &cs2Neu,
