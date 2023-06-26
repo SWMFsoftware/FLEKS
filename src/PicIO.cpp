@@ -98,9 +98,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 
   const auto dx = Geom(0).CellSize();
 
-  const Box& gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
-
-  const auto glo = lbound(gbx);
+  const Box& gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });  
 
   int iBlock = 0;
   for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {

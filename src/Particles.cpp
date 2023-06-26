@@ -994,7 +994,7 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
       p.pos(iz_) = zp + wp * dtLoc;
 
       // Mark for deletion
-      if (is_outside_ba(p, status, lowCorner, highCorner)) {
+      if (is_outside_active_region(p, status, lowCorner, highCorner)) {
         p.id() = -1;
       }
     } // for p
@@ -1116,7 +1116,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         p.pos(iz_) = zp + wnp1 * dtLoc;
 
         // Mark for deletion
-        if (is_outside_ba(p, status, lowCorner, highCorner)) {
+        if (is_outside_active_region(p, status, lowCorner, highCorner)) {
           p.id() = -1;
         }
       } // for p
@@ -1158,7 +1158,7 @@ void Particles<NStructReal, NStructInt>::neutral_mover(amrex::Real dt) {
         p.pos(iz_) = zp + wp * dt;
 
         // Mark for deletion
-        if (is_outside_ba(p, status, lowCorner, highCorner)) {
+        if (is_outside_active_region(p, status, lowCorner, highCorner)) {
           p.id() = -1;
         }
       } // for p
@@ -1193,7 +1193,8 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
     auto& particles = pti.GetArrayOfStructs();
 
     for (auto& p : particles) {
-      if (p.id() == -1 || is_outside_ba(p, status, lowCorner, highCorner)) {
+      if (p.id() == -1 ||
+          is_outside_active_region(p, status, lowCorner, highCorner)) {
         p.id() = -1;
         continue;
       }
@@ -1314,7 +1315,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
           p.pos(iDim) += eps_D[iDim];
         }
 
-        if (is_outside_ba(p, status, lowCorner, highCorner)) {
+        if (is_outside_active_region(p, status, lowCorner, highCorner)) {
           // Do not allow moving particles from physical cells to ghost cells
           // during divE correction.
           for (int iDim = 0; iDim < nDim; iDim++) {
@@ -1974,7 +1975,7 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
     const Array4<int const>& status = other.cell_status(iLev)[mfi].array();
 
     for (auto p : aosOther) {
-      if (other.is_outside_ba(p, status, lowCorner, highCorner)) {
+      if (other.is_outside_active_region(p, status, lowCorner, highCorner)) {
         // Redistribute() may fail if the ghost cell particles' IDs are not
         // -1 (marked for deletion);
         p.id() = -1;

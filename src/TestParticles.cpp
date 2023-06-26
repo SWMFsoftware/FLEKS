@@ -201,7 +201,7 @@ void TestParticles::move_and_save_charged_particles(
       // Print() << "p = " << p << std::endl;
 
       // Mark for deletion
-      if (is_outside_ba(p, status, lowCorner, highCorner)) {
+      if (is_outside_active_region(p, status, lowCorner, highCorner)) {
         p.id() = -1;
       }
 
@@ -260,7 +260,7 @@ void TestParticles::move_and_save_neutrals(amrex::Real dt, amrex::Real tNowSI,
       }
 
       // Mark for deletion
-      if (is_outside_ba(p, status, lowCorner, highCorner)) {
+      if (is_outside_active_region(p, status, lowCorner, highCorner)) {
         p.id() = -1;
       }
     }

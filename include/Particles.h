@@ -265,7 +265,7 @@ public:
 
   void set_bc(BC& bcIn) { bc = bcIn; }
 
-  inline bool is_outside_ba(const ParticleType& p) {
+  inline bool is_outside_active_region(const ParticleType& p) {
     int iLev = 0;
     amrex::Real loc[3] = { 0, 0, 0 };
     for (int iDim = 0; iDim < 3; iDim++) {
@@ -287,10 +287,10 @@ public:
     return true;
   }
 
-  inline bool is_outside_ba(const ParticleType& p,
-                            amrex::Array4<int const> const& status,
-                            const amrex::IntVect& low,
-                            const amrex::IntVect& high) {
+  inline bool is_outside_active_region(const ParticleType& p,
+                                       amrex::Array4<int const> const& status,
+                                       const amrex::IntVect& low,
+                                       const amrex::IntVect& high) {
     int iLev = 0;
     // Contains ghost cells.
     bool isInsideBox = true;
@@ -308,7 +308,7 @@ public:
     if (isInsideBox) {
       return bit::is_boundary(status(cellIdx[ix_], cellIdx[iy_], cellIdx[iz_]));
     } else {
-      return is_outside_ba(p);
+      return is_outside_active_region(p);
     }
   }
 
@@ -329,7 +329,7 @@ public:
           const amrex::IntVect lowCorner = bx.smallEnd();
           const amrex::IntVect highCorner = bx.bigEnd();
           for (auto& p : particles) {
-            if (is_outside_ba(p, status, lowCorner, highCorner)) {
+            if (is_outside_active_region(p, status, lowCorner, highCorner)) {
               p.id() = -1;
               // amrex::Print()<<"particle outside ba = "<<p<<std::endl;
             }
@@ -346,7 +346,7 @@ public:
            pti.isValid(); ++pti) {
         auto& particles = pti.GetArrayOfStructs();
         for (auto& p : particles) {
-          if (is_outside_ba(p)) {
+          if (is_outside_active_region(p)) {
             p.id() = -1;
             // amrex::Print()<<"particle outside ba = "<<p<<std::endl;
           }
