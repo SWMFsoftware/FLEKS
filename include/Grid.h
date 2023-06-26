@@ -104,24 +104,21 @@ public:
 
   bool is_grid_empty() const { return isGridEmpty; }
 
+  void print_grid_info(bool printBoxes = false);
+
   // 1. Allocate memory for Fab declared in this class.
   // 2. Set cellStatus and nodeStatus. If cGridsOld is not empty, it will also
   // decide if a cell/node is new or not.
   void distribute_grid_arrays(const amrex::Vector<amrex::BoxArray>& cGridsOld =
-                                  amrex::Vector<amrex::BoxArray>()) {
+                                  amrex::Vector<amrex::BoxArray>());
 
-    for (int iLev = 0; iLev <= finest_level; iLev++) {
-      distribute_FabArray(cellStatus[iLev], cGrids[iLev], DistributionMap(iLev),
-                          1, nGst, false);
+  // If cGridsOld is provided, it will also decide if a cell is new or not.
+  void update_cell_status(const amrex::Vector<amrex::BoxArray>& cGridsOld =
+                              amrex::Vector<amrex::BoxArray>());
 
-      distribute_FabArray(nodeStatus[iLev], nGrids[iLev], DistributionMap(iLev),
-                          1, nGst, false);
-    }
-
-    update_cell_status(cGridsOld);
-
-    update_node_status(cGridsOld);
-  }
+  // If cGridsOld is provided, it will also decide if a node is new or not.
+  void update_node_status(const amrex::Vector<amrex::BoxArray>& cGridsOld =
+                              amrex::Vector<amrex::BoxArray>());
 
   const amrex::iMultiFab& cell_status(int iLev) const {
     return cellStatus[iLev];
@@ -129,257 +126,6 @@ public:
 
   const amrex::iMultiFab& node_status(int iLev) const {
     return nodeStatus[iLev];
-  }
-
-  // If cGridsOld is provided, it will also decide if a cell is new or not.
-  void update_cell_status(const amrex::Vector<amrex::BoxArray>& cGridsOld =
-                              amrex::Vector<amrex::BoxArray>()) {
-
-    for (int iLev = 0; iLev < nLev; iLev++) {
-      if (cellStatus[iLev].empty())
-        continue;
-
-      // Set default status for all cells.
-      for (amrex::MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
-        const amrex::Box& box = mfi.fabbox();
-        const auto& cellArr = cellStatus[iLev][mfi].array();
-        const auto lo = amrex::lbound(box);
-        const auto hi = amrex::ubound(box);
-
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              bit::set_boundary(cellArr(i, j, k));
-            }
-      }
-
-      // Set 'boundary', 'new' status.
-      for (amrex::MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
-        const amrex::Box& box = mfi.validbox();
-        const amrex::Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-        const auto lo = amrex::lbound(box);
-        const auto hi = amrex::ubound(box);
-
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              // Not boundary cell
-              bit::set_not_boundary(cellArr(i, j, k));
-
-              // New active cell
-              bit::set_new(cellArr(i, j, k));
-
-              if (!cGridsOld.empty()) {
-                if (cGridsOld[iLev].contains(
-                        amrex::IntVect{ AMREX_D_DECL(i, j, k) })) {
-                  bit::set_not_new(cellArr(i, j, k));
-                }
-              }
-            }
-      }
-
-      // Set the 'refined' status
-      if (iLev < max_level) {
-        const int iRefined = 1, iNotRefined = 2;
-        auto iRefine =
-            amrex::makeFineMask(grids[iLev], dmap[iLev], grids[iLev + 1],
-                                ref_ratio[iLev], iNotRefined, iRefined);
-
-        for (amrex::MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
-          const amrex::Box& box = mfi.validbox();
-          const amrex::Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-          const auto& iRef = iRefine[mfi].array();
-          const auto lo = amrex::lbound(box);
-          const auto hi = amrex::ubound(box);
-
-          for (int k = lo.z; k <= hi.z; ++k)
-            for (int j = lo.y; j <= hi.y; ++j)
-              for (int i = lo.x; i <= hi.x; ++i) {
-                if (iRef(i, j, k) == iRefined) {
-                  bit::set_refined(cellArr(i, j, k));
-                }
-              }
-        }
-      }
-
-      cellStatus[iLev].FillBoundary(Geom(iLev).periodicity());
-
-      // Set the edge cells.
-      // Q: But what is the edge cell?
-      // A: It is a physical cell that has one or more neighbor cells are
-      // boundary cell.
-      for (amrex::MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
-        const amrex::Box& box = mfi.validbox();
-        const amrex::Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-        const auto lo = amrex::lbound(box);
-        const auto hi = amrex::ubound(box);
-
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-
-              for (int kk = k - 1; kk <= k + 1; kk++)
-                for (int jj = j - 1; jj <= j + 1; jj++)
-                  for (int ii = i - 1; ii <= i + 1; ii++) {
-                    if (bit::is_boundary(cellArr(ii, jj, kk)))
-                      bit::set_edge(cellArr(i, j, k));
-                  }
-            }
-      }
-
-      if (isFake2D) {
-        // For the fake 2D cases, in the z-direction, only the first layer
-        // ghost cells are filled in correctly by the method FillBoundary.
-        if (!cellStatus[iLev].empty())
-          for (amrex::MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
-            const amrex::Box& box = mfi.fabbox();
-            const amrex::Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-            const auto lo = amrex::lbound(box);
-            const auto hi = amrex::ubound(box);
-
-            for (int k = lo.z; k <= hi.z; ++k)
-              if (k < -1 || k > 1)
-                for (int j = lo.y; j <= hi.y; ++j)
-                  for (int i = lo.x; i <= hi.x; ++i) {
-                    cellArr(i, j, k) = cellArr(i, j, 0);
-                  }
-          }
-      }
-    }
-  }
-
-  // If cGridsOld is provided, it will also decide if a node is new or not.
-  void update_node_status(const amrex::Vector<amrex::BoxArray>& cGridsOld =
-                              amrex::Vector<amrex::BoxArray>()) {
-    for (int iLev = 0; iLev < nLev; iLev++) {
-      if (nodeStatus[iLev].empty())
-        continue;
-
-      // Set default status for all nodes.
-      for (amrex::MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
-        const amrex::Box& box = mfi.fabbox();
-        const auto& nodeArr = nodeStatus[iLev][mfi].array();
-        const auto lo = amrex::lbound(box);
-        const auto hi = amrex::ubound(box);
-
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              bit::set_boundary(nodeArr(i, j, k));
-              bit::set_skip(nodeArr(i, j, k));
-            }
-      }
-
-      amrex::BoxArray nodeBAOld;
-
-      if (!cGridsOld.empty()) {
-        nodeBAOld =
-            convert(cGridsOld[iLev], amrex::IntVect{ AMREX_D_DECL(1, 1, 1) });
-      }
-
-      // Set 'boundary', 'new' status.
-      for (amrex::MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
-        const amrex::Box& box = mfi.validbox();
-        const auto& nodeArr = nodeStatus[iLev][mfi].array();
-
-        const auto lo = amrex::lbound(box);
-        const auto hi = amrex::ubound(box);
-
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              // Not boundary cell
-              bit::set_not_boundary(nodeArr(i, j, k));
-
-              // New active cell
-              bit::set_new(nodeArr(i, j, k));
-
-              if (!nodeBAOld.empty()) {
-                if (nodeBAOld.contains(
-                        amrex::IntVect{ AMREX_D_DECL(i, j, k) })) {
-                  bit::set_not_new(nodeArr(i, j, k));
-                }
-              }
-            }
-      }
-
-      nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
-
-      // Set the 'edge' status
-      // Q: But what is the edge node?
-      // A: It is a node at the boundary of a level.
-      for (amrex::MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
-        const amrex::Box& box = mfi.validbox();
-        const amrex::Array4<int>& nodeArr = nodeStatus[iLev][mfi].array();
-        const auto lo = amrex::lbound(box);
-        const auto hi = amrex::ubound(box);
-
-        { // Set 'owner' and 'skip' status
-          const auto& cellBox = convert(box, { AMREX_D_DECL(0, 0, 0) });
-          const auto& cell = cellStatus[iLev][mfi].array();
-          int diMax = 0, diMin = -1;
-          int djMax = 0, djMin = -1;
-          int dkMax = 0, dkMin = -1;
-          if (isFake2D) {
-            dkMin = 0;
-          }
-          // If this box is the owner of this node?
-          auto is_the_box_owner = [&](int i, int j, int k) {
-            for (int dk = dkMax; dk >= dkMin; dk--)
-              for (int dj = djMax; dj >= djMin; dj--)
-                for (int di = diMax; di >= diMin; di--) {
-                  if (!bit::is_boundary(cell(i + di, j + dj, k + dk))) {
-                    // Find the first CELL that shares this node.
-                    if (cellBox.contains(amrex::IntVect{
-                            AMREX_D_DECL(i + di, j + dj, k + dk) })) {
-                      return true;
-                    } else {
-                      return false;
-                    }
-                  }
-                }
-            amrex::Abort("Error: something is wrong here!");
-            return false;
-          };
-
-          for (int k = lo.z; k <= hi.z; ++k)
-            for (int j = lo.y; j <= hi.y; ++j)
-              for (int i = lo.x; i <= hi.x; ++i) {
-                if (!isFake2D || k == lo.z) {
-                  // for fake 2D , only use the layer of k=0
-                  bit::set_not_skip(nodeArr(i, j, k));
-
-                  if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
-                      (!isFake2D && (k == lo.z || k == hi.z))) {
-                    // Block boundary nodes.
-                    if (is_the_box_owner(i, j, k)) {
-                      bit::set_owner(nodeArr(i, j, k));
-                    } else {
-                      bit::set_not_owner(nodeArr(i, j, k));
-                    }
-
-                  } else {
-                    // Nodes indside the box.
-                    bit::set_owner(nodeArr(i, j, k));
-                  }
-                }
-              }
-        }
-
-        // Set 'edge' status
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-
-              for (int kk = k - 1; kk <= k + 1; kk++)
-                for (int jj = j - 1; jj <= j + 1; jj++)
-                  for (int ii = i - 1; ii <= i + 1; ii++) {
-                    if (bit::is_boundary(nodeArr(ii, jj, kk)))
-                      bit::set_edge(nodeArr(i, j, k));
-                  }
-            }
-      }
-    }
   }
 
   std::string lev_string(int iLev) {
@@ -408,6 +154,7 @@ public:
     return -1; // To suppress compiler warnings.
   }
 
+  //===========================================================================
   inline int find_mpi_rank_from_coord(amrex::Real const x, amrex::Real const y,
                                       amrex::Real const z) const {
     amrex::Real loc[3] = { x, y, z };
@@ -422,6 +169,7 @@ public:
     return rank;
   }
 
+  //===========================================================================
   inline int find_mpi_rank_from_cell_index(int const iLev, int const i,
                                            int const j, int const k) const {
     amrex::IntVect idx = { AMREX_D_DECL(i, j, k) };
@@ -436,6 +184,7 @@ public:
     return -1; // To suppress compiler warnings.
   }
 
+  //===========================================================================
   void calc_node_grids() {
     nGrids.clear();
 
@@ -450,36 +199,6 @@ public:
             amrex::convert(cGrids[iLev], amrex::IntVect::TheNodeVector());
       }
     }
-  }
-
-  void print_grid_info(bool printBoxes = false) {
-    amrex::Print() << printPrefix << " =======Grid Info========" << std::endl;
-    amrex::Print() << printPrefix << " nLev = " << nLev << std::endl;
-    amrex::Print() << printPrefix << " finest_level = " << finest_level
-                   << std::endl;
-
-    for (int iLev = 0; iLev <= finest_level; iLev++) {
-      amrex::Print() << printPrefix << " iLev = " << iLev
-                     << "\t # of boxes = " << std::setw(9)
-                     << cGrids[iLev].size()
-                     << "\t # of cells = " << std::setw(11) << CountCells(iLev)
-                     << "\t max_grid_size = " << max_grid_size[iLev]
-                     << std::endl;
-    }
-
-    if (printBoxes) {
-      for (int iLev = 0; iLev <= finest_level; iLev++) {
-        amrex::Print() << printPrefix << " Boxes of iLev = " << iLev
-                       << std::endl;
-        for (int ii = 0, n = cGrids[iLev].size(); ii < n; ii++) {
-          amrex::Print() << printPrefix << " box " << ii << " = "
-                         << cGrids[iLev][ii] << std::endl;
-        }
-      }
-    }
-
-    amrex::Print() << printPrefix << " =========================\n"
-                   << std::endl;
   }
 
   // Make a new level using provided BoxArray and DistributionMapping and

@@ -14,7 +14,8 @@ SRCS := \
 	BC.cpp \
 	FluidInterface.cpp \
 	Pic.cpp \
-	PicIO.cpp	
+	PicIO.cpp \
+	Grid.cpp
 
 OBJECTS := $(patsubst %, %.o,$(basename $(SRCS)))
 
