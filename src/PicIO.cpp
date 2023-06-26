@@ -98,7 +98,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 
   const auto dx = Geom(0).CellSize();
 
-  const Box& gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });  
+  const Box& gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
 
   int iBlock = 0;
   for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
@@ -641,7 +641,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
     nVarOut += 3;
 
   if (usePIC && plotVars.find("plasma") != std::string::npos)
-    nVarOut += 10 * nSpecies;
+    nVarOut += nMoments * nSpecies;
 
   // Save cell-centered, instead of the nodal, values, because the AMReX
   // document says some virtualiazaion tools assumes the AMReX format outputs
@@ -734,8 +734,9 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
       //-------------plasma---------------------
 
       // The order of the varname should be consistent with nodePlasma.
-      Vector<std::string> plasmaNames = { "rho", "ux",  "uy",  "uz",  "pxx",
-                                          "pyy", "pzz", "pxy", "pxz", "pyz" };
+      Vector<std::string> plasmaNames = { "rho", "ux",  "uy",  "uz",
+                                          "pxx", "pyy", "pzz", "pxy",
+                                          "pxz", "pyz", "num" };
 
       for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++) {
         auto& plasma = nodePlasma[iSpecies][iLev];
@@ -775,7 +776,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
               }
         }
 
-        MultiFab pl(plasma, make_alias, iRho_, iPyz_ - iRho_ + 1);
+        MultiFab pl(plasma, make_alias, iRho_, nMoments);
         if (saveNode) {
           MultiFab::Copy(out[iLev], pl, 0, iStart, pl.nComp(), 0);
         } else {
