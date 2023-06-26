@@ -974,13 +974,8 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
   const int iLev = 0;
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
-    const Box& bx = cell_status(iLev)[pti].box();
-    const IntVect lowCorner = bx.smallEnd();
-    const IntVect highCorner = bx.bigEnd();
-
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
-
     auto& particles = pti.GetArrayOfStructs();
+    const Box& validBox = pti.validbox();
     for (auto& p : particles) {
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
@@ -994,7 +989,7 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
       p.pos(iz_) = zp + wp * dtLoc;
 
       // Mark for deletion
-      if (is_outside_active_region(p, status, lowCorner, highCorner)) {
+      if (is_outside_active_region(p, iLev, validBox)) {
         p.id() = -1;
       }
     } // for p
@@ -1038,12 +1033,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       const Array4<Real const>& nodeEArr = nodeE[iLev][pti].array();
       const Array4<Real const>& nodeBArr = nodeB[iLev][pti].array();
 
-      const Array4<int const>& status = cell_status(iLev)[pti].array();
-      // cell_status(iLev)[pti] is a FAB, and the box returned from the box()
-      // method already contains the ghost cells.
-      const Box& bx = cell_status(iLev)[pti].box();
-      const IntVect lowCorner = bx.smallEnd();
-      const IntVect highCorner = bx.bigEnd();
+      const Box& validBox = pti.validbox();
 
       auto& particles = pti.GetArrayOfStructs();
       for (auto& p : particles) {
@@ -1116,7 +1106,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         p.pos(iz_) = zp + wnp1 * dtLoc;
 
         // Mark for deletion
-        if (is_outside_active_region(p, status, lowCorner, highCorner)) {
+        if (is_outside_active_region(p, iLev, validBox)) {
           p.id() = -1;
         }
       } // for p
@@ -1136,15 +1126,8 @@ void Particles<NStructReal, NStructInt>::neutral_mover(amrex::Real dt) {
   for (int iLev = 0; iLev <= finestLevel(); iLev++) {
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
-
-      const Array4<int const>& status = cell_status(iLev)[pti].array();
-      // cell_status(iLev)[pti] is a FAB, and the box returned from the box()
-      // method already contains the ghost cells.
-      const Box& bx = cell_status(iLev)[pti].box();
-      const IntVect lowCorner = bx.smallEnd();
-      const IntVect highCorner = bx.bigEnd();
-
       auto& particles = pti.GetArrayOfStructs();
+      const Box& validBox = pti.validbox();
       for (auto& p : particles) {
         const Real up = p.rdata(iup_);
         const Real vp = p.rdata(ivp_);
@@ -1158,7 +1141,7 @@ void Particles<NStructReal, NStructInt>::neutral_mover(amrex::Real dt) {
         p.pos(iz_) = zp + wp * dt;
 
         // Mark for deletion
-        if (is_outside_active_region(p, status, lowCorner, highCorner)) {
+        if (is_outside_active_region(p, iLev, validBox)) {
           p.id() = -1;
         }
       } // for p
@@ -1186,15 +1169,13 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
     Array4<Real const> const& phiArr = phiMF[pti].array();
 
     const Array4<int const>& status = cell_status(iLev)[pti].array();
-    const Box& bx = cell_status(iLev)[pti].box();
-    const IntVect lowCorner = bx.smallEnd();
-    const IntVect highCorner = bx.bigEnd();
 
     auto& particles = pti.GetArrayOfStructs();
 
+    const Box& validBox = pti.validbox();
+
     for (auto& p : particles) {
-      if (p.id() == -1 ||
-          is_outside_active_region(p, status, lowCorner, highCorner)) {
+      if (p.id() == -1 || is_outside_active_region(p, iLev, validBox)) {
         p.id() = -1;
         continue;
       }
@@ -1315,7 +1296,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
           p.pos(iDim) += eps_D[iDim];
         }
 
-        if (is_outside_active_region(p, status, lowCorner, highCorner)) {
+        if (is_outside_active_region(p, iLev, validBox)) {
           // Do not allow moving particles from physical cells to ghost cells
           // during divE correction.
           for (int iDim = 0; iDim < nDim; iDim++) {
@@ -1969,13 +1950,9 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
 
     const auto& aosOther = tileOther.GetArrayOfStructs();
 
-    const Box& bx = other.cell_status(iLev)[mfi].box();
-    const IntVect lowCorner = bx.smallEnd();
-    const IntVect highCorner = bx.bigEnd();
-    const Array4<int const>& status = other.cell_status(iLev)[mfi].array();
-
+    const Box& validBox = mfi.validbox();
     for (auto p : aosOther) {
-      if (other.is_outside_active_region(p, status, lowCorner, highCorner)) {
+      if (other.is_outside_active_region(p, iLev, validBox)) {
         // Redistribute() may fail if the ghost cell particles' IDs are not
         // -1 (marked for deletion);
         p.id() = -1;

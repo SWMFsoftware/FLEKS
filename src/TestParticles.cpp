@@ -57,14 +57,8 @@ void TestParticles::move_and_save_charged_particles(
     const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
     const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
 
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
-    // cell_status(iLev)[pti] is a FAB, and the box returned from the box()
-    // method already contains the ghost cells.
-    const Box& bx = cell_status(iLev)[pti].box();
-    const IntVect lowCorner = bx.smallEnd();
-    const IntVect highCorner = bx.bigEnd();
-
     auto& particles = pti.GetArrayOfStructs();
+    const Box& validBox = pti.validbox();
     for (auto& p : particles) {
       if (p.idata(iRecordCount_) >= nPTRecord) {
         Abort("Error: there is not enough allocated memory to store the "
@@ -201,7 +195,7 @@ void TestParticles::move_and_save_charged_particles(
       // Print() << "p = " << p << std::endl;
 
       // Mark for deletion
-      if (is_outside_active_region(p, status, lowCorner, highCorner)) {
+      if (is_outside_active_region(p, iLev, validBox)) {
         p.id() = -1;
       }
 
@@ -221,14 +215,8 @@ void TestParticles::move_and_save_neutrals(amrex::Real dt, amrex::Real tNowSI,
   const int iLev = 0;
   for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, iLev); pti.isValid();
        ++pti) {
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
-    // cell_status(iLev)[pti] is a FAB, and the box returned from the box()
-    // method already contains the ghost cells.
-    const Box& bx = cell_status(iLev)[pti].box();
-    const IntVect lowCorner = bx.smallEnd();
-    const IntVect highCorner = bx.bigEnd();
-
     auto& particles = pti.GetArrayOfStructs();
+    const Box& validBox = pti.validbox();
     for (auto& p : particles) {
       if (p.idata(iRecordCount_) >= nPTRecord) {
         Abort("Error: there is not enough allocated memory to store the "
@@ -260,7 +248,7 @@ void TestParticles::move_and_save_neutrals(amrex::Real dt, amrex::Real tNowSI,
       }
 
       // Mark for deletion
-      if (is_outside_active_region(p, status, lowCorner, highCorner)) {
+      if (is_outside_active_region(p, iLev, validBox)) {
         p.id() = -1;
       }
     }
