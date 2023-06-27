@@ -276,13 +276,6 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_active_region_general();
 
-      for (int iLev = 0; iLev < n_lev(); iLev++) {
-        if (cGrids[iLev].size() > 0) {
-          parts[i]->SetParticleBoxArray(iLev, cGrids[iLev]);
-          parts[i]->SetParticleDistributionMap(iLev, DistributionMap(iLev));
-        }
-      }
-
       parts[i]->Redistribute();
     }
   }

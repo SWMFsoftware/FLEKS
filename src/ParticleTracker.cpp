@@ -218,9 +218,8 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
     }
   } else {
     for (int i = 0; i < nSpecies; i++) {
-      parts[i]->SetParticleBoxArray(0, cGrids[0]);
-      parts[i]->set_region_range(activeRegion);
-      parts[i]->SetParticleDistributionMap(0, DistributionMap(0));
+      parts[i]->set_region_range(activeRegion);    
+        
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_active_region_general();
       parts[i]->Redistribute();
