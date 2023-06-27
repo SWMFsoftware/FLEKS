@@ -134,22 +134,22 @@ public:
     Particles<>::particlePosition = Staggered;
 
     //-----------------------------------------------------
-    centerB.resize(nLev);
-    nodeB.resize(nLev);
-    nodeE.resize(nLev);
-    nodeEth.resize(nLev);
+    centerB.resize(n_lev_max());
+    nodeB.resize(n_lev_max());
+    nodeE.resize(n_lev_max());
+    nodeEth.resize(n_lev_max());
 
-    centerNetChargeOld.resize(nLev);
-    centerNetChargeN.resize(nLev);
-    centerNetChargeNew.resize(nLev);
+    centerNetChargeOld.resize(n_lev_max());
+    centerNetChargeN.resize(n_lev_max());
+    centerNetChargeNew.resize(n_lev_max());
 
-    centerDivE.resize(nLev);
-    centerPhi.resize(nLev);
+    centerDivE.resize(n_lev_max());
+    centerPhi.resize(n_lev_max());
 
-    nodeMM.resize(nLev);
-    centerMM.resize(nLev);
+    nodeMM.resize(n_lev_max());
+    centerMM.resize(n_lev_max());
 
-    jHat.resize(nLev);
+    jHat.resize(n_lev_max());
   };
   ~Pic(){};
 
@@ -160,7 +160,7 @@ public:
   // amrex::Vector<const amrex::MultiFab *> PlotFileMF() const {
 
   //   amrex::Vector<const amrex::MultiFab *> r;
-  //   for (int i = 0; i <= finest_level; ++i) {
+  //   for (int i = 0; i < n_lev(); ++i) {
   //     r.push_back(&phi[i]);
   //   }
   //   return r;

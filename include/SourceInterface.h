@@ -22,7 +22,7 @@ public:
   }
 
   void sum_to_single_source() {
-    for (int iLev = 0; iLev < nodeFluid.size(); iLev++) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (!nodeFluid[iLev].empty()) {
         for (amrex::MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
           const amrex::Box& box = mfi.fabbox();
@@ -68,7 +68,7 @@ public:
 
     const double no2siL = get_No2SiL();
 
-    for (int iLev = 0; iLev < nodeFluid.size(); iLev++) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (!nodeFluid[iLev].empty()) {
         for (amrex::MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
           const amrex::Real* dx = Geom(iLev).CellSize();
@@ -137,7 +137,7 @@ public:
       // The current stored in nodeFluid are used to initialize particle
       // velocities. Since the source particles only contribute little to the
       // total current, set current to zero.
-      for (int iLev = 0; iLev < nodeFluid.size(); iLev++) {
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
         amrex::MultiFab currentMF(nodeFluid[iLev], amrex::make_alias, iJx, 3);
         currentMF.setVal(0, currentMF.nGrow());
       }

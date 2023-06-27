@@ -30,7 +30,7 @@ void ParticleTracker::set_ic(Pic& pic) {
     // write the initial state to disk.
     bool doSave = true;
     auto& tps = parts[i];
-    for (int iLev = 0; iLev <= finest_level; iLev++) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
       tps->move_and_save_particles(nodeE[iLev], nodeB[iLev], 0, 0,
                                    tc->get_time_si(), doSave);
     }
@@ -100,7 +100,7 @@ void ParticleTracker::update(Pic& pic) {
   for (int i = 0; i < parts.size(); i++) {
     auto& tps = parts[i];
 
-    for (int iLev = 0; iLev <= finest_level; iLev++) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
       tps->move_and_save_particles(nodeE[iLev], nodeB[iLev], tc->get_dt(),
                                    tc->get_next_dt(), tc->get_time_si(),
                                    tc->get_cycle() % dnSave == 0);
@@ -128,7 +128,7 @@ void ParticleTracker::update(Pic& pic) {
 }
 
 void ParticleTracker::update_field(Pic& pic) {
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab::Copy(nodeE[iLev], pic.nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                    nodeE[iLev].nGrow());
     MultiFab::Copy(nodeB[iLev], pic.nodeB[iLev], 0, 0, nodeB[iLev].nComp(),
@@ -171,8 +171,8 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
     cGrids.push_back(amrex::BoxArray());
   } else {
     if (grid) {
-      finest_level = grid->finestLevel();
-      for (int iLev = 0; iLev < nLev; iLev++) {
+      SetFinestLevel(grid->finestLevel());
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
         SetBoxArray(iLev, grid->boxArray(iLev));
         SetDistributionMap(iLev, grid->DistributionMap(iLev));
       }
@@ -180,7 +180,7 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
       // This method will call MakeNewLevelFromScratch() and
       // PostProcessBaseGrids()
       InitFromScratch(tc->get_time());
-    }    
+    }
   }
 
   calc_node_grids();
@@ -188,13 +188,13 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
   print_grid_info();
 
   if (nodeB.empty()) {
-    nodeB.resize(nLev);
+    nodeB.resize(n_lev_max());
   }
   if (nodeE.empty()) {
-    nodeE.resize(nLev);
+    nodeE.resize(n_lev_max());
   }
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     distribute_FabArray(nodeE[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst, false);
     distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,

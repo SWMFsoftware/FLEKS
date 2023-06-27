@@ -584,8 +584,8 @@ void Domain::save_restart_header() {
 
     // Grid box array
     headerFile << "#GRIDBOXARRAY \n";
-    headerFile << fi->finestLevel() + 1 << "\n";
-    for (int iLev = 0; iLev < fi->finestLevel() + 1; iLev++) {
+    headerFile << fi->n_lev() << "\n";
+    for (int iLev = 0; iLev < fi->n_lev(); iLev++) {
       fi->boxArray(iLev).writeOn(headerFile);
       headerFile << "\n";
     }

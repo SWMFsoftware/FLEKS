@@ -181,7 +181,7 @@ public:
   virtual void set_node_fluid(const FluidInterface& other);
 
   void set_node_fluid_to_zero() {
-    for (int iLev = 0; iLev < nodeFluid.size(); ++iLev)
+    for (int iLev = 0; iLev < n_lev(); ++iLev)
       nodeFluid[iLev].setVal(0.0);
   };
 
@@ -276,10 +276,10 @@ public:
   double get_MhdNo2NoL() const { return (MhdNo2SiL * Si2NoL); }
 
   void sum_boundary() {
-    for (int iLev = 0; iLev < nodeFluid.size(); ++iLev)
+    for (int iLev = 0; iLev < n_lev(); ++iLev)
       nodeFluid[iLev].SumBoundary(Geom(iLev).periodicity());
 
-    for (int iLev = 0; iLev < finestLevel(); iLev++) {
+    for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
       sum_two_lev_interface_node(
           nodeFluid[iLev], nodeFluid[iLev + 1], 0, nodeFluid[iLev].nComp(),
           ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
@@ -324,7 +324,7 @@ public:
 
     std::string restartDir = component + "/restartOUT/";
 
-    for (int iLev = 0; iLev < nodeFluid.size(); ++iLev) {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
       amrex::VisMF::Write(nodeFluid[iLev], restartDir + gridName +
                                                "_Interface_nodeFluid" +
                                                lev_string(iLev));
@@ -337,7 +337,7 @@ public:
   void read_restart() {
     std::string restartDir = component + "/restartIN/";
 
-    for (int iLev = 0; iLev < nodeFluid.size(); ++iLev) {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
       amrex::VisMF::Read(nodeFluid[iLev], restartDir + gridName +
                                               "_Interface_nodeFluid" +
                                               lev_string(iLev));
@@ -836,7 +836,7 @@ public:
       abort();
     }
 
-    if (nLev > 1) {
+    if (n_lev() > 1) {
       amrex::Abort("setFluidanisoUth has not implemented for multilevel");
     }
 

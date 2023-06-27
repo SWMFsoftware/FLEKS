@@ -95,9 +95,7 @@ protected:
   TimeCtr* tc;
 
   int speciesID;
-  RandNum randNum;
-
-  int nLev;
+  RandNum randNum;  
 
   amrex::Real charge;
   amrex::Real mass;
@@ -140,6 +138,10 @@ public:
             const int speciesIDIn, const amrex::Real chargeIn,
             const amrex::Real massIn, const amrex::IntVect& nPartPerCellIn,
             TestCase tcase = RegularSimulation);
+
+  int n_lev() const { return finestLevel() + 1; }
+
+  int n_lev_max() const { return maxLevel() + 1; }
 
   void set_region_range(const amrex::BoxArray& ba) {
     activeRegions.clear();
@@ -299,7 +301,7 @@ public:
   }
 
   inline void label_particles_outside_active_region() {
-    for (int iLev = 0; iLev <= finestLevel(); iLev++)
+    for (int iLev = 0; iLev < n_lev(); iLev++)
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
         for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev);
              pti.isValid(); ++pti) {
@@ -321,7 +323,7 @@ public:
   }
 
   inline void label_particles_outside_active_region_general() {
-    for (int iLev = 0; iLev <= finestLevel(); iLev++)
+    for (int iLev = 0; iLev < n_lev(); iLev++)
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
         for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev);
              pti.isValid(); ++pti) {

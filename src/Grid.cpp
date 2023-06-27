@@ -5,10 +5,10 @@ using namespace amrex;
 //============================================================================//
 void Grid::print_grid_info(bool printBoxes) {
   Print() << printPrefix << " =======Grid Info========" << std::endl;
-  Print() << printPrefix << " nLev = " << nLev << std::endl;
-  Print() << printPrefix << " finest_level = " << finest_level << std::endl;
+  Print() << printPrefix << " n_lev_max = " << n_lev_max() << std::endl;
+  Print() << printPrefix << " n_lev     = " << n_lev() << std::endl;
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     Print() << printPrefix << " iLev = " << iLev
             << "\t # of boxes = " << std::setw(9) << cGrids[iLev].size()
             << "\t # of cells = " << std::setw(11) << CountCells(iLev)
@@ -16,7 +16,7 @@ void Grid::print_grid_info(bool printBoxes) {
   }
 
   if (printBoxes) {
-    for (int iLev = 0; iLev <= finest_level; iLev++) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
       Print() << printPrefix << " Boxes of iLev = " << iLev << std::endl;
       for (int ii = 0, n = cGrids[iLev].size(); ii < n; ii++) {
         Print() << printPrefix << " box " << ii << " = " << cGrids[iLev][ii]
@@ -30,7 +30,7 @@ void Grid::print_grid_info(bool printBoxes) {
 
 //============================================================================//
 void Grid::distribute_grid_arrays(const Vector<BoxArray>& cGridsOld) {
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     distribute_FabArray(cellStatus[iLev], cGrids[iLev], DistributionMap(iLev),
                         1, nGst, false);
 
@@ -46,7 +46,7 @@ void Grid::distribute_grid_arrays(const Vector<BoxArray>& cGridsOld) {
 //============================================================================//
 void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
 
-  for (int iLev = 0; iLev < nLev; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (cellStatus[iLev].empty())
       continue;
 
@@ -89,7 +89,7 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
     }
 
     // Set the 'refined' status
-    if (iLev < max_level) {
+    if (iLev < n_lev() - 1) {
       const int iRefined = 1, iNotRefined = 2;
       auto iRefine = makeFineMask(grids[iLev], dmap[iLev], grids[iLev + 1],
                                   ref_ratio[iLev], iNotRefined, iRefined);
@@ -159,7 +159,7 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
 
 //============================================================================//
 void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
-  for (int iLev = 0; iLev < nLev; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (nodeStatus[iLev].empty())
       continue;
 

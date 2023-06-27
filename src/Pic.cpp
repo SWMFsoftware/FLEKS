@@ -124,7 +124,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   if (nodePlasma.empty())
     nodePlasma.resize(nSpecies + 1);
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
     distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
@@ -161,7 +161,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 
     for (auto& pl : nodePlasma) {
       if (pl.empty())
-        pl.resize(nLev);
+        pl.resize(n_lev_max());
       distribute_FabArray(pl[iLev], nGrids[iLev], DistributionMap(iLev),
                           nMoments, nGst, doMoveData);
     }
@@ -202,8 +202,8 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
   } else {
 
     if (grid) {
-      finest_level = grid->finestLevel();
-      for (int iLev = 0; iLev < nLev; iLev++) {
+      SetFinestLevel(grid->finestLevel());
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
         // Q: Why is it required to set distribution map here?
         // A: fi and pic should have the same grids and distribution maps.
         // However, it seems AMReX is too smart that it will try to load balance
@@ -276,7 +276,7 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_active_region_general();
 
-      for (int iLev = 0; iLev < nLev; iLev++) {
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
         if (cGrids[iLev].size() > 0) {
           parts[i]->SetParticleBoxArray(iLev, cGrids[iLev]);
           parts[i]->SetParticleDistributionMap(iLev, DistributionMap(iLev));
@@ -289,7 +289,7 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
   //--------------particles-----------------------------------
 
   // This part does not really work for multi-level.
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     int n = get_local_node_or_cell_number(nodeE[iLev]);
     eSolver.init(n, nDim, nDim, matvec_E_solver);
 
@@ -306,7 +306,7 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
 
 //==========================================================
 void Pic::fill_new_node_E() {
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
       FArrayBox& fab = nodeE[iLev][mfi];
       const Box& box = mfi.validbox();
@@ -332,7 +332,7 @@ void Pic::fill_new_node_E() {
 
 //==========================================================
 void Pic::fill_new_node_B() {
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real>& arrB = nodeB[iLev][mfi].array();
@@ -357,7 +357,7 @@ void Pic::fill_new_node_B() {
 
 //==========================================================
 void Pic::fill_new_center_B() {
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real>& centerArr = centerB[iLev][mfi].array();
@@ -394,7 +394,7 @@ void Pic::fill_E_B_fields() {
   fill_new_node_E();
   fill_new_node_B();
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nDim, &Pic::get_node_B, iLev);
@@ -403,7 +403,7 @@ void Pic::fill_E_B_fields() {
 
   fill_new_center_B();
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
     apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
@@ -434,7 +434,7 @@ void Pic::update_part_loc_to_half_stage() {
 
   timing_func(nameFunc);
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (int i = 0; i < nSpecies; i++) {
       parts[i]->update_position_to_half_stage(nodeEth[iLev], nodeB[iLev],
                                               tc->get_dt());
@@ -503,7 +503,7 @@ void Pic::calc_mass_matrix() {
     nodeMM[iLev].setVal(mm0);
   }
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (int i = 0; i < nSpecies; i++) {
       if (useExplicitPIC) {
         parts[i]->calc_jhat(jHat[iLev], nodeB[iLev], tc->get_dt());
@@ -598,14 +598,14 @@ void Pic::sum_moments(bool updateDt) {
     }
   }
 
-  for (int iLev = 0; iLev < nLev; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     nodePlasma[nSpecies][iLev].setVal(0.0);
   }
 
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->convert_to_fluid_moments(nodePlasma[i]);
 
-    for (int iLev = 0; iLev <= finest_level; iLev++) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
       MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
                     nMoments, nGst);
     }
@@ -665,7 +665,7 @@ void Pic::calculate_phi(LinearSolver& solver) {
   MultiFab residual(cGrids[iLev], DistributionMap(iLev), 1, nGst);
 
   solver.reset(get_local_node_or_cell_number(centerDivE[iLev]));
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     div_node_to_center(nodeE[iLev], residual, Geom(iLev).InvCellSize());
   }
 
@@ -857,7 +857,7 @@ void Pic::update_E_expl() {
 
   timing_func(nameFunc);
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                    nodeE[iLev].nGrow());
     apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
@@ -868,7 +868,7 @@ void Pic::update_E_expl() {
   for (int i = 0; i < nDim; i++) {
     dt2dx[i] = dt * Geom(0).InvCellSize(i);
   }
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     curl_center_to_node(centerB[iLev], nodeE[iLev], dt2dx.begin());
     MultiFab::Saxpy(nodeE[iLev], -fourPI * dt, jHat[iLev], 0, 0,
                     nodeE[iLev].nComp(), nodeE[iLev].nGrow());
@@ -886,7 +886,7 @@ void Pic::update_E_impl() {
   std::string nameFunc = "Pic::update_E_impl";
 
   timing_func(nameFunc);
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     eSolver.reset(get_local_node_or_cell_number(nodeE[iLev]));
 
     update_E_rhs(eSolver.rhs);
@@ -909,7 +909,7 @@ void Pic::update_E_impl() {
   eSolver.solve(doReport);
   BL_PROFILE_VAR_STOP(eSolver);
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     nodeEth[iLev].setVal(0.0);
     convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev]);
     nodeEth[iLev].SumBoundary(Geom(iLev).periodicity());
@@ -1085,7 +1085,7 @@ void Pic::update_E_rhs(double* rhs) {
   MultiFab temp2Node(nGrids[0], DistributionMap(0), 3, nGst);
   temp2Node.setVal(0.0);
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
              &Pic::get_center_B, iLev);
     apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
@@ -1094,7 +1094,7 @@ void Pic::update_E_rhs(double* rhs) {
 
   const Real* invDx = Geom(0).InvCellSize();
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     curl_center_to_node(centerB[iLev], tempNode, invDx);
   }
 
@@ -1104,7 +1104,7 @@ void Pic::update_E_rhs(double* rhs) {
   MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), temp2Node.nGrow());
 
   temp2Node.mult(fsolver.theta * tc->get_dt());
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab::Add(temp2Node, nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                   temp2Node.nGrow());
   }
@@ -1121,7 +1121,7 @@ void Pic::update_B() {
   timing_func(nameFunc);
   MultiFab dB(cGrids[0], DistributionMap(0), 3, nGst);
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     curl_node_to_center(nodeEth[iLev], dB, Geom(0).InvCellSize());
     MultiFab::Saxpy(centerB[iLev], -tc->get_dt(), dB, 0, 0,
                     centerB[iLev].nComp(), centerB[iLev].nGrow());
@@ -1348,7 +1348,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
 //==========================================================
 Real Pic::calc_E_field_energy() {
   Real sum = 0;
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
       FArrayBox& fab = nodeE[iLev][mfi];
       const Box& box = mfi.validbox();
@@ -1383,7 +1383,7 @@ Real Pic::calc_E_field_energy() {
 Real Pic::calc_B_field_energy() {
   Real sum = 0;
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       FArrayBox& fab = centerB[iLev][mfi];
       const Box& box = mfi.validbox();
@@ -1499,7 +1499,7 @@ void Pic::report_load_balance() {
 
   localInfo[iMem_] = (float)read_mem_usage();
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     localInfo[iNBlk_] = (float)centerB[iLev].local_size();
     localInfo[iNCell_] = (float)get_local_node_or_cell_number(centerB[iLev]);
   }

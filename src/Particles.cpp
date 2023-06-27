@@ -29,15 +29,13 @@ Particles<NStructReal, NStructInt>::Particles(
   qom = charge / mass;
   qomSign = qom >= 0 ? 1 : -1;
 
-  nLev = maxLevel() + 1;
+  plo.resize(n_lev_max());
+  phi.resize(n_lev_max());
+  dx.resize(n_lev_max());
+  invDx.resize(n_lev_max());
+  invVol.resize(n_lev_max());
 
-  plo.resize(nLev);
-  phi.resize(nLev);
-  dx.resize(nLev);
-  invDx.resize(nLev);
-  invVol.resize(nLev);
-
-  for (int iLev = 0; iLev < nLev; iLev++) {
+  for (int iLev = 0; iLev < n_lev_max(); iLev++) {
     invVol[iLev] = 1;
     for (int i = 0; i < nDim; i++) {
       tile_size[i] = 1;
@@ -253,7 +251,7 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
     Real dt, IntVect ppc, const bool doSelectRegion) {
   timing_func("Particles::add_particles_source");
 
-  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
       const Box& tile_box = mfi.validbox();
       const auto lo = amrex::lbound(tile_box);
@@ -291,7 +289,7 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_domain() {
   timing_func("Particles::add_particles_domain");
 
-  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
       const auto& status = cell_status(iLev)[mfi].array();
       const Box& bx = mfi.validbox();
@@ -548,7 +546,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
   timing_func("Particles::sum_moments");
 
   Real energy = 0;
-  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     momentsMF[iLev].setVal(0.0);
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
@@ -625,7 +623,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     momentsMF[iLev].SumBoundary(Geom(iLev).periodicity());
   }
 
-  for (int iLev = 0; iLev < finestLevel(); iLev++) {
+  for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
     sum_two_lev_interface_node(
         momentsMF[iLev], momentsMF[iLev + 1], 0, momentsMF[iLev].nComp(),
         get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
@@ -944,7 +942,7 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::convert_to_fluid_moments(
     Vector<MultiFab>& momentsMF) {
 
-  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab tmpMF(momentsMF[iLev], make_alias, iRho_, iPyz_ - iRho_ + 1);
     tmpMF.mult(qomSign * get_mass(), tmpMF.nGrow());
 
@@ -1042,7 +1040,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
     dtLoc = 0.5 * dt;
   }
 
-  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
       const Array4<Real const>& nodeEArr = nodeE[iLev][pti].array();
@@ -1138,7 +1136,7 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::neutral_mover(amrex::Real dt) {
   timing_func("Particles::neutral_mover");
 
-  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
       auto& particles = pti.GetArrayOfStructs();
@@ -1341,7 +1339,7 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
   if (!(do_tiling && tile_size == iv))
     return;
 
-  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
 
     const Real dl = 0.1 * Geom(iLev).CellSize()[ix_] / nPartPerCell.max();
 
@@ -1482,7 +1480,7 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
 
   int nAvailableCombines = 0, nEqs = 0, nSolved = 0;
 
-  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
 
@@ -2003,7 +2001,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
   if (dt <= 0)
     return;
 
-  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
       auto& particles = pti.GetArrayOfStructs();

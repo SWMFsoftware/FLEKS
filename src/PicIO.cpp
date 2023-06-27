@@ -381,7 +381,7 @@ void Pic::save_restart_data() {
     return;
 
   std::string restartDir = component + "/restartOUT/";
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     VisMF::Write(nodeE[iLev], restartDir + gridName + "_nodeE");
     VisMF::Write(nodeB[iLev], restartDir + gridName + "_nodeB");
     VisMF::Write(centerB[iLev], restartDir + gridName + "_centerB");
@@ -419,7 +419,7 @@ void Pic::read_restart() {
 
   std::string restartDir = component + "/restartIN/";
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     VisMF::Read(nodeE[iLev], restartDir + gridName + "_nodeE");
     VisMF::Read(nodeB[iLev], restartDir + gridName + "_nodeB");
     VisMF::Read(centerB[iLev], restartDir + gridName + "_centerB");
@@ -573,7 +573,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
   }
 
   // Create a new grid for saving data in IO units
-  Vector<Geometry> geomOut(nLev);
+  Vector<Geometry> geomOut(n_lev());
   set_IO_geom(geomOut, pw);
 
   AmrInfo amrInfo;
@@ -596,7 +596,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
 }
 
 void Pic::set_IO_geom(Vector<Geometry>& geomIO, const PlotWriter& pw) {
-  for (int iLev = 0; iLev < nLev; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     // Creating geomIO, which uses output length unit, for amrex format output.
     RealBox boxRangeOut;
     Real no2outL = pw.No2OutTable("X");
@@ -625,7 +625,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   // in most visualization tools and it is only useful for debugging.
   const bool saveNode = pw.save_node();
 
-  Vector<Geometry> geomOut(nLev);
+  Vector<Geometry> geomOut(n_lev());
 
   set_IO_geom(geomOut, pw);
 
@@ -647,11 +647,11 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   // document says some virtualiazaion tools assumes the AMReX format outputs
   // are cell-centered.
 
-  Vector<MultiFab> out(nLev);
+  Vector<MultiFab> out(n_lev());
   Vector<std::string> varNames;
   bool isDensityZero = false;
   int zeroI, zeroJ, zeroK;
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (saveNode) {
       out[iLev].define(nGrids[iLev], DistributionMap(iLev), nVarOut, 0);
     } else {
@@ -809,20 +809,20 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   if (saveNode)
     filename += "_node";
 
-  if (!baOut.empty() && nLev == 1) {
+  if (!baOut.empty() && n_lev() == 1) {
     // TODO: make it works for multi-lev and node-centered in the future.
     distribute_FabArray(out[0], baOut, DistributionMapping(baOut));
   }
 
-  Vector<const MultiFab*> mf(nLev);
-  Vector<int> steps(nLev);
-  for (int iLev = 0; iLev < nLev; iLev++) {
+  Vector<const MultiFab*> mf(n_lev());
+  Vector<int> steps(n_lev());
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     mf[iLev] = &out[iLev];
     steps[iLev] = iCycle;
   }
 
-  WriteMultiLevelPlotfile(filename, nLev, mf, varNames, geomOut, timeNow, steps,
-                          ref_ratio);
+  WriteMultiLevelPlotfile(filename, n_lev(), mf, varNames, geomOut, timeNow,
+                          steps, ref_ratio);
 
   if (ParallelDescriptor::IOProcessor()) {
     // Write FLEKS header

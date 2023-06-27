@@ -35,8 +35,6 @@ protected:
   std::string gridName;
   int gridID;
 
-  int nLev = 1;
-
   // const int coord = 0; // Cartesian grid
 
   // A collection of boxes to describe the simulation domain. The boxes have
@@ -88,13 +86,17 @@ public:
 
     isFake2D = Geom(0).Domain().bigEnd(iz_) == Geom(0).Domain().smallEnd(iz_);
 
-    nLev = max_level + 1;
-
-    cellStatus.resize(nLev);
-    nodeStatus.resize(nLev);
+    cellStatus.resize(n_lev_max());
+    nodeStatus.resize(n_lev_max());
   };
 
   ~Grid() = default;
+
+  int n_lev() const { return finestLevel() + 1; }
+
+  // n_lev_max() is usually only used for initialization. n_lev() shoudl be used
+  // for most purposes.
+  int n_lev_max() const { return maxLevel() + 1; }
 
   int get_n_ghost() const { return nGst; }
 
@@ -130,7 +132,7 @@ public:
 
   std::string lev_string(int iLev) {
     std::string sLev = "_lev_" + std::to_string(iLev);
-    if (nLev == 1) {
+    if (n_lev_max() == 1) {
       // Keep backward compatibility.
       sLev = "";
     }
@@ -194,7 +196,7 @@ public:
       nGrids.push_back(amrex::BoxArray());
     } else {
       nGrids.resize(finest_level + 1);
-      for (int iLev = 0; iLev <= finest_level; iLev++) {
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
         nGrids[iLev] =
             amrex::convert(cGrids[iLev], amrex::IntVect::TheNodeVector());
       }

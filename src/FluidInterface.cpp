@@ -544,8 +544,8 @@ void FluidInterface::regrid(const amrex::BoxArray& region,
     cGrids.push_back(amrex::BoxArray());
   } else {
     if (grid) {
-      finest_level = grid->finestLevel();
-      for (int iLev = 0; iLev < nLev; iLev++) {
+      SetFinestLevel(grid->finestLevel());      
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
         SetBoxArray(iLev, grid->boxArray(iLev));
         SetDistributionMap(iLev, grid->DistributionMap(iLev));
       }
@@ -553,7 +553,7 @@ void FluidInterface::regrid(const amrex::BoxArray& region,
       // This method will call MakeNewLevelFromScratch() and
       // PostProcessBaseGrids()
       InitFromScratch(0.0);
-    }    
+    }
   }
 
   // Print() << "dm = " << DistributionMap(0) << std::endl;
@@ -572,15 +572,15 @@ void FluidInterface::regrid(const amrex::BoxArray& region,
 //==========================================================
 void FluidInterface::distribute_arrays() {
   if (nodeFluid.empty())
-    nodeFluid.resize(nLev);
+    nodeFluid.resize(n_lev_max());
 
   if (centerB.empty())
-    centerB.resize(nLev);
+    centerB.resize(n_lev_max());
 
   const bool doCopy = true;
   const int nVarNode = (useCurrent ? nVarFluid + 3 : nVarFluid);
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     distribute_FabArray(nodeFluid[iLev], nGrids[iLev], DistributionMap(iLev),
                         nVarNode, nGst, doCopy);
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
@@ -642,7 +642,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
   int nIdxCount = 0;
   int nCount = 0;
 
-  for (int iLev = 0; iLev < nLev; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     // Global NODE box.
     const Box gbx = convert(Geom(iLev).Domain(), { AMREX_D_DECL(1, 1, 1) });
 
@@ -753,7 +753,7 @@ void FluidInterface::set_node_fluid() {
     Abort("Error: use #UNIFORMSTATE command to set the initail state.");
   }
 
-  for (int iLev = 0; iLev < nodeFluid.size(); iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (int i = 0; i < nVarFluid; i++)
       nodeFluid[iLev].setVal(uniformState[i], i, 1, nodeFluid[iLev].nGrow());
   }
@@ -769,7 +769,7 @@ void FluidInterface::set_node_fluid(const FluidInterface& other) {
   if (isGridEmpty)
     return;
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab::Copy(nodeFluid[iLev], other.nodeFluid[iLev], 0, 0,
                    nodeFluid[iLev].nComp(), nodeFluid[iLev].nGrow());
 
@@ -789,7 +789,7 @@ void FluidInterface::calc_current() {
 
   timing_func(funcName);
 
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     // All centerB, including all ghost cells are accurate.
     average_node_to_cellcenter(centerB[iLev], 0, nodeFluid[iLev], iBx,
                                centerB[iLev].nComp(), centerB[iLev].nGrow());
@@ -828,7 +828,7 @@ void FluidInterface::calc_current() {
 }
 
 void FluidInterface::normalize_fluid_variables() {
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (int i = 0; i < nodeFluid[iLev].nComp(); ++i) {
       MultiFab tmpMF(nodeFluid[iLev], make_alias, i, 1);
       tmpMF.mult(Si2No_V[i], tmpMF.nGrow());
@@ -842,7 +842,7 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
   std::string funcName = "FI::convert_moment_to_velocity";
   timing_func(funcName);
 
-  for (int iLev = 0; iLev <= finest_level; iLev++)
+  for (int iLev = 0; iLev < n_lev(); iLev++)
     for (MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
       Box box = mfi.fabbox();
       if (phyNodeOnly)
@@ -1403,10 +1403,9 @@ void FluidInterface::save_amrex_file() {
   }
   // WriteSingleLevelPlotfile(filename, nodeFluid[0], varNames, Geom(0), 0, 0);
 
-  const int nLev = nodeFluid.size();
-  WriteMultiLevelPlotfile(filename, nLev, amrex::GetVecOfConstPtrs(nodeFluid),
-                          varNames, geom, 0.0, Vector<int>(nLev, 0),
-                          refRatio());
+  WriteMultiLevelPlotfile(filename, n_lev(),
+                          amrex::GetVecOfConstPtrs(nodeFluid), varNames, geom,
+                          0.0, Vector<int>(n_lev(), 0), refRatio());
 
   // for (int i = 0; i < nodeFluid[0].nComp(); i++) {
   //   Real out2no = Si2No_V[i];
