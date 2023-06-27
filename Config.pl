@@ -53,10 +53,14 @@ my %TPInfo=('P' => "Particle", 'PB' => "Particle+B", 'PBE' => "Particle+B+E");
 
 my $AmrexDim;
 
+my $nGridLev=1;
+my $NewGridLev;
+
 foreach (@Arguments){
      if(/^-s$/)                 {$Show=1;       next};
      if(/^-h$/)                 {$Help=1;       next};     
-     if(/^-tp=(.*)$/)           {$NewTPSave=$1;    next};      
+     if(/^-tp=(.*)$/)           {$NewTPSave=$1; next};
+     if(/^-lev=(.*)$/)          {$NewGridLev=$1;next};           
      warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
  }
 
@@ -68,6 +72,8 @@ my $AmrexDebug;
 my $AmrexTinyProfile; 
 
 &set_test_particle if $NewTPSave;
+
+&set_grid if $NewGridLev;
 
 &print_help if $Help;
 
@@ -93,12 +99,25 @@ sub get_settings{
     my $nSize;
     open(FILE, $NameConstFile) or die "$ERROR could not open $NameConstFile\n";   
     while(<FILE>){                                                                      
-        $nSize=$2           if /\b(ptRecordSize\s*=\s*)(\d+)/i;                                
+        $nSize=$2           if /\b(ptRecordSize\s*=\s*)(\d+)/i;
+	    $nGridLev=$2        if /\b(nGridLev\s*=\s*)(\d+)/i;
     }            
     $TPSave = $nTPString{$nSize};
     close FILE;
 
     
+}
+
+################################################################################
+sub set_grid{
+    $nGridLev = $NewGridLev if $NewGridLev;
+
+    my $NameConstFile = "include/Constants.h";
+    @ARGV = ($NameConstFile);
+    while(<>){
+        s/\b(nGridLev\s*=[^0-9]*)(\d+)/$1$nGridLev/i;
+        print;
+    } 
 }
 
 ################################################################################
@@ -108,9 +127,9 @@ sub set_test_particle{
     my $NameConstFile = "include/Constants.h";
     my $nSize = $nTPSave{$TPSave};     
     @ARGV = ($NameConstFile);
-    while(<>){                                                                                                                                                                                                 
+    while(<>){
         s/\b(ptRecordSize\s*=[^0-9]*)(\d+)/$1$nSize/i;
-        print;                                                                                                                                                                                       
+        print;
     } 
 
 }
@@ -122,6 +141,7 @@ sub show_settings{
     print "AMReX compiler     = $AmrexComp \n";
     print "AMReX debug        = $AmrexDebug \n";
     print "AMReX nDim         = $AmrexDim \n";
+    print "AMReX nGridLev     = $nGridLev \n";    
     print "AMReX tiny profile = $AmrexTinyProfile \n";    
     print "Test Particle info = $TPInfo{$TPSave} \n";
 }
@@ -131,6 +151,8 @@ sub print_help{
 
     print "
 -s            Show the configuration for AMReX.
+
+-lev          Number of maximum grid levels. It is a uniform grid without AMR if lev=1.	
 
 -tp=P,PB,PBE  Test particle output information. 
               P: only save particle velocity + location
