@@ -185,7 +185,7 @@ void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
 
   gm.define(centerBox, &domainRange, coord, periodicity.getVect());
 
-  amrInfo.max_level = config::nGridLev - 1;
+  amrInfo.max_level = config::nLevMax - 1;
 
   // The value of blocking_factor constrains grid creation in that in that each
   // grid must be divisible by blocking_factor. Note that both the domain (at

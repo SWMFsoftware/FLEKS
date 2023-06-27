@@ -26,7 +26,7 @@ constexpr static int nDimVel = 3;
 
 namespace config{
 // Level of grids. 
-constexpr static int nGridLev = 1; 
+constexpr static int nLevMax = 1; 
 }
 
 constexpr static int ix_ = 0, iy_ = 1, iz_ = 2;

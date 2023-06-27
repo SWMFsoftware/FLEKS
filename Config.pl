@@ -53,14 +53,14 @@ my %TPInfo=('P' => "Particle", 'PB' => "Particle+B", 'PBE' => "Particle+B+E");
 
 my $AmrexDim;
 
-my $nGridLev=1;
-my $NewGridLev;
+my $nLevMax=1;
+my $NewLevMax;
 
 foreach (@Arguments){
      if(/^-s$/)                 {$Show=1;       next};
      if(/^-h$/)                 {$Help=1;       next};     
      if(/^-tp=(.*)$/)           {$NewTPSave=$1; next};
-     if(/^-lev=(.*)$/)          {$NewGridLev=$1;next};           
+     if(/^-lev=(.*)$/)          {$NewLevMax=$1; next};           
      warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
  }
 
@@ -73,7 +73,7 @@ my $AmrexTinyProfile;
 
 &set_test_particle if $NewTPSave;
 
-&set_grid if $NewGridLev;
+&set_grid if $NewLevMax;
 
 &print_help if $Help;
 
@@ -100,7 +100,7 @@ sub get_settings{
     open(FILE, $NameConstFile) or die "$ERROR could not open $NameConstFile\n";   
     while(<FILE>){                                                                      
         $nSize=$2           if /\b(ptRecordSize\s*=\s*)(\d+)/i;
-	    $nGridLev=$2        if /\b(nGridLev\s*=\s*)(\d+)/i;
+	    $nLevMax=$2        if /\b(nLevMax\s*=\s*)(\d+)/i;
     }            
     $TPSave = $nTPString{$nSize};
     close FILE;
@@ -110,12 +110,12 @@ sub get_settings{
 
 ################################################################################
 sub set_grid{
-    $nGridLev = $NewGridLev if $NewGridLev;
+    $nLevMax = $NewLevMax if $NewLevMax;
 
     my $NameConstFile = "include/Constants.h";
     @ARGV = ($NameConstFile);
     while(<>){
-        s/\b(nGridLev\s*=[^0-9]*)(\d+)/$1$nGridLev/i;
+        s/\b(nLevMax\s*=[^0-9]*)(\d+)/$1$nLevMax/i;
         print;
     } 
 }
@@ -141,7 +141,7 @@ sub show_settings{
     print "AMReX compiler     = $AmrexComp \n";
     print "AMReX debug        = $AmrexDebug \n";
     print "AMReX nDim         = $AmrexDim \n";
-    print "AMReX nGridLev     = $nGridLev \n";    
+    print "AMReX nLevMax      = $nLevMax \n";    
     print "AMReX tiny profile = $AmrexTinyProfile \n";    
     print "Test Particle info = $TPInfo{$TPSave} \n";
 }
