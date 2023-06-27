@@ -253,31 +253,36 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
     Real dt, IntVect ppc, const bool doSelectRegion) {
   timing_func("Particles::add_particles_source");
 
-  // 1. Inject particles for physical cells.
-  const int iLev = 0;
-  for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
-    const Box& tile_box = mfi.validbox();
-    const auto lo = amrex::lbound(tile_box);
-    const auto hi = amrex::ubound(tile_box);
+  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+    for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+      const Box& tile_box = mfi.validbox();
+      const auto lo = amrex::lbound(tile_box);
+      const auto hi = amrex::ubound(tile_box);
 
-    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
-    int iMin = lo.x, jMin = lo.y, kMin = lo.z;
+      int iMax = hi.x, jMax = hi.y, kMax = hi.z;
+      int iMin = lo.x, jMin = lo.y, kMin = lo.z;
 
-    for (int i = iMin; i <= iMax; ++i)
-      for (int j = jMin; j <= jMax; ++j)
-        for (int k = kMin; k <= kMax; ++k) {
-          bool doAdd = true;
+      for (int i = iMin; i <= iMax; ++i)
+        for (int j = jMin; j <= jMax; ++j)
+          for (int k = kMin; k <= kMax; ++k) {
+            const auto& status = cell_status(iLev)[mfi].array();
+            if (bit::is_refined(status(i, j, k)))
+              continue;
+
+            bool doAdd = true;
 #ifdef _PT_COMPONENT_
-          if (stateOH && doSelectRegion) {
-            const int iFluid = 0;
-            const int iRegion =
-                stateOH->get_neu_source_region(mfi, i, j, k, iFluid, iLev);
-            doAdd = (iRegion == speciesID);
-          }
+            if (stateOH && doSelectRegion) {
+              const int iFluid = 0;
+              const int iRegion =
+                  stateOH->get_neu_source_region(mfi, i, j, k, iFluid, iLev);
+              doAdd = (iRegion == speciesID);
+            }
 #endif
-          if (doAdd)
-            add_particles_cell(iLev, mfi, i, j, k, interface, ppc, Vel(), dt);
-        }
+            if (doAdd) {
+              add_particles_cell(iLev, mfi, i, j, k, interface, ppc, Vel(), dt);
+            }
+          }
+    }
   }
 }
 
