@@ -2003,153 +2003,156 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
   if (dt <= 0)
     return;
 
-  const int iLev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-       ++pti) {
-    auto& particles = pti.GetArrayOfStructs();
-    for (auto& p : particles) {
-      const Real xp = p.pos(ix_);
-      const Real yp = p.pos(iy_);
-      const Real zp = p.pos(iz_);
+  for (int iLev = 0; iLev <= finestLevel(); iLev++) {
+    for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
+         ++pti) {
+      auto& particles = pti.GetArrayOfStructs();
+      for (auto& p : particles) {
+        const Real xp = p.pos(ix_);
+        const Real yp = p.pos(iy_);
+        const Real zp = p.pos(iz_);
 
-      double cs2Neu = 0, uNeu[3], rhoNeu;
-      double cs2Ion, uIon[3], rhoIon;
-      double ion2neu[5], neu2ion[5];
-      const int iRho_ = 0, iUx_ = 1, iUy_ = 2, iUz_ = 3, iP_ = 4;
-      const int iRhoUx_ = iUx_, iRhoUy_ = iUy_, iRhoUz_ = iUz_, iE_ = iP_;
+        double cs2Neu = 0, uNeu[3], rhoNeu;
+        double cs2Ion, uIon[3], rhoIon;
+        double ion2neu[5], neu2ion[5];
+        const int iRho_ = 0, iUx_ = 1, iUy_ = 2, iUz_ = 3, iP_ = 4;
+        const int iRhoUx_ = iUx_, iRhoUy_ = iUy_, iRhoUz_ = iUz_, iE_ = iP_;
 
-      // amu/m^3
-      rhoNeu = qomSign * p.rdata(iqp_) * get_mass() * invVol[iLev] *
-               stateOH->get_No2SiRho() / cProtonMassSI;
+        // amu/m^3
+        rhoNeu = qomSign * p.rdata(iqp_) * get_mass() * invVol[iLev] *
+                 stateOH->get_No2SiRho() / cProtonMassSI;
 
-      for (int i = 0; i < nDim; i++) {
-        uNeu[i] = p.rdata(iup_ + i) * stateOH->get_No2SiV();
-      }
+        for (int i = 0; i < nDim; i++) {
+          uNeu[i] = p.rdata(iup_ + i) * stateOH->get_No2SiV();
+        }
 
-      // MHD fluid index.
-      const int fluidID = 0;
-      // amu/m^3
-      rhoIon = stateOH->get_fluid_mass_density(pti, xp, yp, zp, fluidID, iLev) *
-               stateOH->get_No2SiRho() / cProtonMassSI;
+        // MHD fluid index.
+        const int fluidID = 0;
+        // amu/m^3
+        rhoIon =
+            stateOH->get_fluid_mass_density(pti, xp, yp, zp, fluidID, iLev) *
+            stateOH->get_No2SiRho() / cProtonMassSI;
 
-      // cs = sqrt(P/n); m/s
-      // Assume p = pi + pe = 2pi, so divide by sqrt(2.0).
-      double cs = stateOH->get_fluid_uth(pti, xp, yp, zp, fluidID, iLev) *
-                  stateOH->get_No2SiV() / sqrt(2.0);
+        // cs = sqrt(P/n); m/s
+        // Assume p = pi + pe = 2pi, so divide by sqrt(2.0).
+        double cs = stateOH->get_fluid_uth(pti, xp, yp, zp, fluidID, iLev) *
+                    stateOH->get_No2SiV() / sqrt(2.0);
 
-      // cs2Ion = 2*P/n. The definition of thermal speed in get_uth_iso() is
-      // different from the requirement in OH_get_charge_exchange_wrapper().
-      // See page 92 of Adam Michael's thesis.
-      cs2Ion = 2 * pow(cs, 2);
+        // cs2Ion = 2*P/n. The definition of thermal speed in get_uth_iso() is
+        // different from the requirement in OH_get_charge_exchange_wrapper().
+        // See page 92 of Adam Michael's thesis.
+        cs2Ion = 2 * pow(cs, 2);
 
-      uIon[ix_] = stateOH->get_fluid_ux(pti, xp, yp, zp, fluidID, iLev) *
-                  stateOH->get_No2SiV();
-      uIon[iy_] = stateOH->get_fluid_uy(pti, xp, yp, zp, fluidID, iLev) *
-                  stateOH->get_No2SiV();
-      uIon[iz_] = stateOH->get_fluid_uz(pti, xp, yp, zp, fluidID, iLev) *
-                  stateOH->get_No2SiV();
+        uIon[ix_] = stateOH->get_fluid_ux(pti, xp, yp, zp, fluidID, iLev) *
+                    stateOH->get_No2SiV();
+        uIon[iy_] = stateOH->get_fluid_uy(pti, xp, yp, zp, fluidID, iLev) *
+                    stateOH->get_No2SiV();
+        uIon[iz_] = stateOH->get_fluid_uz(pti, xp, yp, zp, fluidID, iLev) *
+                    stateOH->get_No2SiV();
 
-      OH_get_charge_exchange_wrapper(&rhoIon, &cs2Ion, uIon, &rhoNeu, &cs2Neu,
-                                     uNeu, ion2neu, neu2ion);
+        OH_get_charge_exchange_wrapper(&rhoIon, &cs2Ion, uIon, &rhoNeu, &cs2Neu,
+                                       uNeu, ion2neu, neu2ion);
 
-      // The function above returns number density changing rate.
-      ion2neu[iRho_] *= cProtonMassSI;
-      neu2ion[iRho_] *= cProtonMassSI;
+        // The function above returns number density changing rate.
+        ion2neu[iRho_] *= cProtonMassSI;
+        neu2ion[iRho_] *= cProtonMassSI;
 
-      Real dtSI = dt * stateOH->get_No2SiT();
-      // Print() << "rhoion = " << rhoIon << " cs2Ion = " << cs2Ion
-      //         << " rhoNeu = " << rhoNeu << " cs2Neu = " << cs2Neu
-      //         << " dtSI = " << dtSI << std::endl;
-      for (int i = iRho_; i <= iP_; i++) {
-        ion2neu[i] *= dtSI;
-        neu2ion[i] *= dtSI;
-        // Print() << " i = " << i << " ion2neu = " << ion2neu[i]
-        //         << " neu2ion = " << neu2ion[i] << std::endl;
-      }
-
-      Real massExchange =
-          neu2ion[iRho_] * stateOH->get_Si2NoRho() / invVol[iLev];
-
-      if (massExchange == 0) {
-        // It can happen for some special cases. For example, when neutral
-        // density is zero.
-        continue;
-      }
-
-      // Print() << "nden = " << p.rdata(iqp_)
-      //         << " massExchange = " << massExchange << std::endl;
-      if (p.rdata(iqp_) - massExchange <= 0) {
-        // Mark for deletion
-        p.id() = -1;
-
-        // Reduce the sources accordingly to conserve total masses.
-        const Real ratio = p.rdata(iqp_) / massExchange;
+        Real dtSI = dt * stateOH->get_No2SiT();
+        // Print() << "rhoion = " << rhoIon << " cs2Ion = " << cs2Ion
+        //         << " rhoNeu = " << rhoNeu << " cs2Neu = " << cs2Neu
+        //         << " dtSI = " << dtSI << std::endl;
         for (int i = iRho_; i <= iP_; i++) {
-          ion2neu[i] *= ratio;
-          neu2ion[i] *= ratio;
-        }
-      } else {
-        // Reduce particle mass due to charge exchange
-        p.rdata(iqp_) = p.rdata(iqp_) - massExchange;
-      }
-
-      {
-        // Q: Why is (neu2ion-ion2neu) divided by rhoIon?
-        // A: What passed between PT and OH is 'source per ion density'
-        // instead of source. The ion density will be multiplied back in OH
-        // ModUser.f90
-        sourcePT2OH->add_rho_to_loc((neu2ion[iRho_] - ion2neu[iRho_]) / rhoIon,
-                                    pti, xp, yp, zp, fluidID);
-        sourcePT2OH->add_mx_to_loc((neu2ion[iRhoUx_] - ion2neu[iRhoUx_]) /
-                                       rhoIon,
-                                   pti, xp, yp, zp, fluidID);
-        sourcePT2OH->add_my_to_loc((neu2ion[iRhoUy_] - ion2neu[iRhoUy_]) /
-                                       rhoIon,
-                                   pti, xp, yp, zp, fluidID);
-        sourcePT2OH->add_mz_to_loc((neu2ion[iRhoUz_] - ion2neu[iRhoUz_]) /
-                                       rhoIon,
-                                   pti, xp, yp, zp, fluidID);
-        sourcePT2OH->add_p_to_loc((neu2ion[iP_] - ion2neu[iP_]) / rhoIon, pti,
-                                  xp, yp, zp, fluidID);
-      }
-
-      if (ion2neu[iRho_] > 0) { // Add source to nodes.
-        Real si2no_v[5];
-        si2no_v[iRho_] = source->get_Si2NoRho();
-        si2no_v[iRhoUx_] = source->get_Si2NoV() * si2no_v[iRho_];
-        si2no_v[iRhoUy_] = si2no_v[iRhoUx_];
-        si2no_v[iRhoUz_] = si2no_v[iRhoUx_];
-        si2no_v[iP_] = source->get_Si2NoP();
-
-        Real m2 = 0;
-        for (int i = iRhoUx_; i <= iRhoUz_; i++) {
-          m2 += pow(ion2neu[i], 2);
+          ion2neu[i] *= dtSI;
+          neu2ion[i] *= dtSI;
+          // Print() << " i = " << i << " ion2neu = " << ion2neu[i]
+          //         << " neu2ion = " << neu2ion[i] << std::endl;
         }
 
-        const Real gamma = 5. / 3;
-        // P = (gamma-1)*(E - 0.5*rho*u2)
-        ion2neu[iP_] = (gamma - 1) * (ion2neu[iE_] - 0.5 * m2 / ion2neu[iRho_]);
+        Real massExchange =
+            neu2ion[iRho_] * stateOH->get_Si2NoRho() / invVol[iLev];
 
-        if (ion2neu[iP_] < 0) {
-          ion2neu[iP_] = 0;
+        if (massExchange == 0) {
+          // It can happen for some special cases. For example, when neutral
+          // density is zero.
+          continue;
         }
 
-        // source saves changing rate (density/s...).
-        source->add_rho_to_loc(ion2neu[iRho_] * si2no_v[iRho_] / dt, pti, xp,
-                               yp, zp, speciesID);
-        source->add_mx_to_loc(ion2neu[iRhoUx_] * si2no_v[iRhoUx_] / dt, pti, xp,
-                              yp, zp, speciesID);
-        source->add_my_to_loc(ion2neu[iRhoUy_] * si2no_v[iRhoUy_] / dt, pti, xp,
-                              yp, zp, speciesID);
-        source->add_mz_to_loc(ion2neu[iRhoUz_] * si2no_v[iRhoUz_] / dt, pti, xp,
-                              yp, zp, speciesID);
-        source->add_p_to_loc(ion2neu[iP_] * si2no_v[iP_] / dt, pti, xp, yp, zp,
-                             speciesID);
-      }
-    } // for p
-  }   // for pti
+        // Print() << "nden = " << p.rdata(iqp_)
+        //         << " massExchange = " << massExchange << std::endl;
+        if (p.rdata(iqp_) - massExchange <= 0) {
+          // Mark for deletion
+          p.id() = -1;
+
+          // Reduce the sources accordingly to conserve total masses.
+          const Real ratio = p.rdata(iqp_) / massExchange;
+          for (int i = iRho_; i <= iP_; i++) {
+            ion2neu[i] *= ratio;
+            neu2ion[i] *= ratio;
+          }
+        } else {
+          // Reduce particle mass due to charge exchange
+          p.rdata(iqp_) = p.rdata(iqp_) - massExchange;
+        }
+
+        {
+          // Q: Why is (neu2ion-ion2neu) divided by rhoIon?
+          // A: What passed between PT and OH is 'source per ion density'
+          // instead of source. The ion density will be multiplied back in OH
+          // ModUser.f90
+          sourcePT2OH->add_rho_to_loc((neu2ion[iRho_] - ion2neu[iRho_]) /
+                                          rhoIon,
+                                      pti, xp, yp, zp, fluidID, iLev);
+          sourcePT2OH->add_mx_to_loc((neu2ion[iRhoUx_] - ion2neu[iRhoUx_]) /
+                                         rhoIon,
+                                     pti, xp, yp, zp, fluidID, iLev);
+          sourcePT2OH->add_my_to_loc((neu2ion[iRhoUy_] - ion2neu[iRhoUy_]) /
+                                         rhoIon,
+                                     pti, xp, yp, zp, fluidID, iLev);
+          sourcePT2OH->add_mz_to_loc((neu2ion[iRhoUz_] - ion2neu[iRhoUz_]) /
+                                         rhoIon,
+                                     pti, xp, yp, zp, fluidID, iLev);
+          sourcePT2OH->add_p_to_loc((neu2ion[iP_] - ion2neu[iP_]) / rhoIon, pti,
+                                    xp, yp, zp, fluidID, iLev);
+        }
+
+        if (ion2neu[iRho_] > 0) { // Add source to nodes.
+          Real si2no_v[5];
+          si2no_v[iRho_] = source->get_Si2NoRho();
+          si2no_v[iRhoUx_] = source->get_Si2NoV() * si2no_v[iRho_];
+          si2no_v[iRhoUy_] = si2no_v[iRhoUx_];
+          si2no_v[iRhoUz_] = si2no_v[iRhoUx_];
+          si2no_v[iP_] = source->get_Si2NoP();
+
+          Real m2 = 0;
+          for (int i = iRhoUx_; i <= iRhoUz_; i++) {
+            m2 += pow(ion2neu[i], 2);
+          }
+
+          const Real gamma = 5. / 3;
+          // P = (gamma-1)*(E - 0.5*rho*u2)
+          ion2neu[iP_] =
+              (gamma - 1) * (ion2neu[iE_] - 0.5 * m2 / ion2neu[iRho_]);
+
+          if (ion2neu[iP_] < 0) {
+            ion2neu[iP_] = 0;
+          }
+
+          // source saves changing rate (density/s...).
+          source->add_rho_to_loc(ion2neu[iRho_] * si2no_v[iRho_] / dt, pti, xp,
+                                 yp, zp, speciesID, iLev);
+          source->add_mx_to_loc(ion2neu[iRhoUx_] * si2no_v[iRhoUx_] / dt, pti,
+                                xp, yp, zp, speciesID, iLev);
+          source->add_my_to_loc(ion2neu[iRhoUy_] * si2no_v[iRhoUy_] / dt, pti,
+                                xp, yp, zp, speciesID, iLev);
+          source->add_mz_to_loc(ion2neu[iRhoUz_] * si2no_v[iRhoUz_] / dt, pti,
+                                xp, yp, zp, speciesID, iLev);
+          source->add_p_to_loc(ion2neu[iP_] * si2no_v[iP_] / dt, pti, xp, yp,
+                               zp, speciesID, iLev);
+        }
+      } // for p
+    }   // for pti
+  }
 }
-
 // Since Particles is a template, it is necessary to explicitly instantiate
 // with template arguments.
 template class Particles<nPicPartReal>;

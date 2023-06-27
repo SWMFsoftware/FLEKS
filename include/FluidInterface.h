@@ -276,7 +276,7 @@ public:
 
   void sum_boundary() {
     for (int iLev = 0; iLev < nodeFluid.size(); ++iLev)
-      nodeFluid[iLev].SumBoundary(Geom(iLev).periodicity());
+      nodeFluid[iLev].SumBoundary(Geom(iLev).periodicity());    
   }
 
   virtual int get_neu_source_region(const amrex::MFIter& mfi, const int i,
@@ -349,41 +349,37 @@ public:
 
   void add_rho_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                       const amrex::Real x, const amrex::Real y,
-                      const amrex::Real z, const int iFluid,
-                      const int iLev = 0) {
+                      const amrex::Real z, const int iFluid, const int iLev) {
     add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iRho_I[iFluid]);
   }
 
   void add_mx_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                      const amrex::Real x, const amrex::Real y,
-                     const amrex::Real z, const int iFluid,
-                     const int iLev = 0) {
+                     const amrex::Real z, const int iFluid, const int iLev) {
     add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iRhoUx_I[iFluid]);
   }
 
   void add_my_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                      const amrex::Real x, const amrex::Real y,
-                     const amrex::Real z, const int iFluid,
-                     const int iLev = 0) {
+                     const amrex::Real z, const int iFluid, const int iLev) {
     add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iRhoUy_I[iFluid]);
   }
 
   void add_mz_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                      const amrex::Real x, const amrex::Real y,
-                     const amrex::Real z, const int iFluid,
-                     const int iLev = 0) {
+                     const amrex::Real z, const int iFluid, const int iLev) {
     add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iRhoUz_I[iFluid]);
   }
 
   void add_p_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                     const amrex::Real x, const amrex::Real y,
-                    const amrex::Real z, const int iFluid, const int iLev = 0) {
+                    const amrex::Real z, const int iFluid, const int iLev) {
     add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iP_I[iFluid]);
   }
 
   void add_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
                   const amrex::Real x, const amrex::Real y, const amrex::Real z,
-                  const int iVar, const int iLev = 0) {
+                  const int iVar, const int iLev) {
     add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iVar);
   }
 
