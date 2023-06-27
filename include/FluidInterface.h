@@ -16,6 +16,7 @@
 
 #include "Constants.h"
 #include "Grid.h"
+#include "GridUtility.h"
 #include "MDArray.h"
 #include "ReadParam.h"
 #include "Utility.h"
@@ -276,7 +277,13 @@ public:
 
   void sum_boundary() {
     for (int iLev = 0; iLev < nodeFluid.size(); ++iLev)
-      nodeFluid[iLev].SumBoundary(Geom(iLev).periodicity());    
+      nodeFluid[iLev].SumBoundary(Geom(iLev).periodicity());
+
+    for (int iLev = 0; iLev < finestLevel(); iLev++) {
+      sum_two_lev_interface_node(
+          nodeFluid[iLev], nodeFluid[iLev + 1], 0, nodeFluid[iLev].nComp(),
+          ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
+    }
   }
 
   virtual int get_neu_source_region(const amrex::MFIter& mfi, const int i,
