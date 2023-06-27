@@ -258,7 +258,7 @@ public:
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
 #ifdef _PT_COMPONENT_
-            if (i >= 4 && j >= 4 && k >= 4) {
+            if (i >= 4 && i < 6 && j >= 4 && j < 6 && k >= 4 && k < 6) {
 #else
             if (i >= 4 && i < 6 && j >= 4 && j < 6) {
 #endif
