@@ -1008,9 +1008,7 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
     } // for p
   }   // for pti
 
-  // This function distributes particles to proper processors and apply
-  // periodic boundary conditions if needed.
-  Redistribute();
+  redistribute_particles();
 }
 
 //==========================================================
@@ -1126,9 +1124,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
     }   // for pti
   }
 
-  // This function distributes particles to proper processors and apply
-  // periodic boundary conditions if needed.
-  Redistribute();
+  redistribute_particles();
 }
 
 //==========================================================
@@ -1161,9 +1157,7 @@ void Particles<NStructReal, NStructInt>::neutral_mover(amrex::Real dt) {
     }   // for pti
   }
 
-  // This function distributes particles to proper processors and apply
-  // periodic boundary conditions if needed.
-  Redistribute();
+  redistribute_particles();
 }
 
 //==========================================================
@@ -1966,8 +1960,8 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
     const Box& validBox = mfi.validbox();
     for (auto p : aosOther) {
       if (other.is_outside_active_region(p, iLev, validBox)) {
-        // Redistribute() may fail if the ghost cell particles' IDs are not
-        // -1 (marked for deletion);
+        // redistribute_particles() may fail if the ghost cell particles' IDs
+        // are not -1 (marked for deletion);
         p.id() = -1;
       }
 
@@ -1987,7 +1981,7 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
       plevel[index].push_back(p);
     }
   }
-  Redistribute();
+  redistribute_particles();
 }
 
 template <int NStructReal, int NStructInt>

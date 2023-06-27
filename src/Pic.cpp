@@ -276,7 +276,7 @@ void Pic::regrid(const BoxArray& region, const Grid* const grid) {
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_active_region_general();
 
-      parts[i]->Redistribute();
+      parts[i]->redistribute_particles();
     }
   }
   //--------------particles-----------------------------------
@@ -627,10 +627,10 @@ void Pic::divE_correction() {
 
   for (int i = 0; i < nSpecies; i++) {
     // The particles outside the simulation domain is marked for deletion
-    // inside divE_correct_particle_position(). Redistribute() deletes these
-    // particles. In order to get correct moments, re-inject particles in the
-    // ghost cells.
-    parts[i]->Redistribute();
+    // inside divE_correct_particle_position(). redistribute_particles() deletes
+    // these particles. In order to get correct moments, re-inject particles in
+    // the ghost cells.
+    parts[i]->redistribute_particles();
   }
   inject_particles_for_boundary_cells();
 

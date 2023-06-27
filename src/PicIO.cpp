@@ -389,7 +389,7 @@ void Pic::save_restart_data() {
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     parts[iPart]->label_particles_outside_active_region();
-    parts[iPart]->Redistribute();
+    parts[iPart]->redistribute_particles();
     parts[iPart]->Checkpoint(restartDir,
                              gridName + "_particles" + std::to_string(iPart));
   }

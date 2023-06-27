@@ -95,7 +95,7 @@ protected:
   TimeCtr* tc;
 
   int speciesID;
-  RandNum randNum;  
+  RandNum randNum;
 
   amrex::Real charge;
   amrex::Real mass;
@@ -220,6 +220,17 @@ public:
   amrex::IntVect get_ref_ratio(const int iLev) const {
     const amrex::ParGDBBase* gdb = GetParGDB();
     return gdb->refRatio(iLev);
+  }
+
+  // This function distributes particles to proper processors and apply
+  // periodic boundary conditions if needed.
+  void redistribute_particles() {
+    const amrex::ParGDBBase* gdb = GetParGDB();
+
+    if (!gdb->boxArray(0).empty()) {
+      // It will crash if there is no active cells.
+      Redistribute();
+    }
   }
 
   void set_random_seed(const int iLev, const int i, const int j, const int k,
@@ -356,7 +367,7 @@ public:
 
   void Write_Paraview(std::string folder = "Particles",
                       std::string particletype = "1") {
-    Redistribute();
+    redistribute_particles();
     std::string command = "python "
                           "../util/AMREX/Tools/Py_util/amrex_particles_to_vtp/"
                           "amrex_binary_particles_to_vtp.py";

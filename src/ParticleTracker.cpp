@@ -218,11 +218,11 @@ void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
     }
   } else {
     for (int i = 0; i < nSpecies; i++) {
-      parts[i]->set_region_range(activeRegion);    
-        
+      parts[i]->set_region_range(activeRegion);
+
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_active_region_general();
-      parts[i]->Redistribute();
+      parts[i]->redistribute_particles();
     }
   }
   //--------------test particles-----------------------------------
@@ -242,7 +242,7 @@ void ParticleTracker::save_restart_data() {
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     // Keep the following two lines for safety.
     parts[iPart]->label_particles_outside_active_region();
-    parts[iPart]->Redistribute();
+    parts[iPart]->redistribute_particles();
 
     if (doSavePlot) {
       parts[iPart]->write_particles(tc->get_cycle());

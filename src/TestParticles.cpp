@@ -202,9 +202,7 @@ void TestParticles::move_and_save_charged_particles(
     } // for p
   }   // for pti
 
-  // This function distributes particles to proper processors and apply
-  // periodic boundary conditions if needed.
-  Redistribute();
+  redistribute_particles();
 }
 
 //==========================================================
@@ -254,9 +252,7 @@ void TestParticles::move_and_save_neutrals(amrex::Real dt, amrex::Real tNowSI,
     }
   }
 
-  // This function distributes particles to proper processors and apply
-  // periodic boundary conditions if needed.
-  Redistribute();
+  redistribute_particles();
 }
 
 //======================================================================
