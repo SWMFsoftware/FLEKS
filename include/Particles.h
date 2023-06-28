@@ -59,6 +59,36 @@ public:
   using amrex::ParIter<NStructReal, NStructInt>::ParIter;
 };
 
+/*
+Q: How it the Grid* gridIn variable used inside the particle container?
+A: The following codes show how gridIn is passed into the particle container.
+
+  1.
+    AmrParticleContainer (AmrCore* amr_core)
+        : ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt,
+Allocator>(amr_core->GetParGDB()){ }
+
+  2.
+      ParticleContainer (ParGDBBase* gdb):
+        ParticleContainerBase(gdb)
+
+  3.
+      ParticleContainerBase (ParGDBBase* gdb)
+        :
+        m_verbose(0),
+        m_gdb(gdb)
+    {}
+
+But, what is amr_core->GetParGDB()? It returns a AmrParGDB pointer that is
+pointing to AmrCore::m_gdb. AmrParGDB class (object AmrCore::m_gdb) contains a
+member variable  AmrCore* m_amrcore, which is a copy of amr_core pointer. So,
+the Geometries, DistributionMaps and BoxArrays of Grid can be accessed by the
+particle container through m_gdb pointer.
+
+In short, once the grids or distributions maps of Pic or ParticleTracker change,
+the particle contains aware of the changes through the m_gdb pointer.
+*/
+
 template <int NStructReal = nPicPartReal, int NStructInt = 0>
 class Particles : public amrex::AmrParticleContainer<NStructReal, NStructInt> {
 public:
