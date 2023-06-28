@@ -108,15 +108,11 @@ public:
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Redistribute;
   using amrex::AmrParticleContainer<NStructReal,
                                     NStructInt>::NumberOfParticlesAtLevel;
-  using amrex::AmrParticleContainer<NStructReal, NStructInt>::finestLevel;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Checkpoint;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Index;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::ParticlesAt;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::maxLevel;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::GetParGDB;
-  using amrex::AmrParticleContainer<NStructReal, NStructInt>::ParticleBoxArray;
-  using amrex::AmrParticleContainer<NStructReal,
-                                    NStructInt>::ParticleDistributionMap;
 
 protected:
   Grid* grid;
@@ -169,7 +165,7 @@ public:
             const amrex::Real massIn, const amrex::IntVect& nPartPerCellIn,
             TestCase tcase = RegularSimulation);
 
-  int n_lev() const { return finestLevel() + 1; }
+  int n_lev() const { return GetParGDB()->finestLevel() + 1; }
 
   int n_lev_max() const { return maxLevel() + 1; }
 
