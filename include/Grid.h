@@ -257,25 +257,21 @@ public:
     std::string nameFunc = "Grid::ErrorEst";
     amrex::Print() << printPrefix << nameFunc << " iLev = " << iLev
                    << std::endl;
-#ifdef _AMR_DEV_
     for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi) {
-      const amrex::Box& bx = mfi.tilebox();
+      const amrex::Box& bx = mfi.validbox();
       const auto tagArr = tags.array(mfi);
       const auto lo = lbound(bx);
       const auto hi = ubound(bx);
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-#ifdef _PT_COMPONENT_
-            if (i >= 4 && i < 6 && j >= 4 && j < 6 && k >= 4 && k < 6) {
-#else
-            if (i >= 4 && i < 6 && j >= 4 && j < 6) {
-#endif
+            amrex::Real xyz[nDim];
+            Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
+            if (refineRegions[iLev].is_inside(xyz)) {
               tagArr(i, j, k) = amrex::TagBox::SET;
             }
           }
     }
-#endif
   };
 
   virtual void PostProcessBaseGrids(amrex::BoxArray& ba) const override {
