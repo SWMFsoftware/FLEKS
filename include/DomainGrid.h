@@ -54,7 +54,7 @@ protected:
   std::string printPrefix;
   std::string gridName;
 
-  amrex::Vector<std::unique_ptr<Shape> > regions;
+  amrex::Vector<std::unique_ptr<Shape> > shapes;
 
   bool isGridInitialized = false;
 
