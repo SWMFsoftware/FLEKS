@@ -19,6 +19,7 @@
 #include "GridUtility.h"
 #include "MDArray.h"
 #include "ReadParam.h"
+#include "Regions.h"
 #include "Utility.h"
 #include "Writer.h"
 
@@ -158,7 +159,9 @@ public:
 
   void set_var_idx();
 
-  void regrid(const amrex::BoxArray& region, const Grid* const grid = nullptr);
+  void regrid(const amrex::BoxArray& region,
+              const amrex::Vector<Regions>& refine,
+              const Grid* grid = nullptr);
 
   void distribute_arrays();
 

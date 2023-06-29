@@ -525,8 +525,11 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
 }
 
 void FluidInterface::regrid(const amrex::BoxArray& region,
+                            const Vector<Regions>& refine,
                             const Grid* const grid) {
   std::string nameFunc = "FluidInterface::regrid";
+
+  refineRegions = refine;
 
   // Why need 'isGridInitialized'? See the explaination in
   // Domain::regrid().
@@ -544,7 +547,7 @@ void FluidInterface::regrid(const amrex::BoxArray& region,
     cGrids.push_back(amrex::BoxArray());
   } else {
     if (grid) {
-      SetFinestLevel(grid->finestLevel());      
+      SetFinestLevel(grid->finestLevel());
       for (int iLev = 0; iLev < n_lev(); iLev++) {
         SetBoxArray(iLev, grid->boxArray(iLev));
         SetDistributionMap(iLev, grid->DistributionMap(iLev));

@@ -109,6 +109,10 @@ public:
 
   bool is_grid_empty() const { return isGridEmpty; }
 
+  void update_refine_region(const amrex::Vector<Regions>& in) {
+    refineRegions = in;
+  }
+
   void print_grid_info(bool printBoxes = false);
 
   // 1. Allocate memory for Fab declared in this class.

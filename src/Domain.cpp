@@ -254,22 +254,22 @@ void Domain::regrid() {
           << "\n===================================================="
           << std::endl;
 
-  fi->regrid(activeRegion);
+  fi->regrid(activeRegion, refineRegions);
 
   if (source)
-    source->regrid(activeRegion, fi.get());
+    source->regrid(activeRegion, refineRegions, fi.get());
 
   if (stateOH)
-    stateOH->regrid(activeRegion, fi.get());
+    stateOH->regrid(activeRegion, refineRegions, fi.get());
 
   if (sourcePT2OH)
-    sourcePT2OH->regrid(activeRegion, fi.get());
+    sourcePT2OH->regrid(activeRegion, refineRegions, fi.get());
 
   if (pic)
-    pic->regrid(activeRegion, fi.get());
+    pic->regrid(activeRegion, refineRegions, fi.get());
 
   if (pt)
-    pt->regrid(activeRegion, fi.get(), *pic);
+    pt->regrid(activeRegion, refineRegions, fi.get(), *pic);
 
   iGrid++;
   iDecomp++;
@@ -414,13 +414,13 @@ void Domain::read_restart() {
 
   //----------------------------------------------------------------
 
-  fi->regrid(grid.boxArray(0), &grid);
+  fi->regrid(grid.boxArray(0), refineRegions, &grid);
   fi->read_restart();
 
   if (!doRestartFIOnly) {
-    pic->regrid(grid.boxArray(0), fi.get());
+    pic->regrid(grid.boxArray(0), refineRegions, fi.get());
     // Assume dmPT == dmPIC so far.
-    pt->regrid(grid.boxArray(0), fi.get(), *pic);
+    pt->regrid(grid.boxArray(0), refineRegions, fi.get(), *pic);
 
     pic->read_restart();
     write_plots(true);

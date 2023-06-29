@@ -142,11 +142,14 @@ void ParticleTracker::post_process_param() {
   savectr->set_multiple(dnSave);
 }
 
-void ParticleTracker::regrid(const BoxArray& region, const Grid* const grid,
-                             Pic& pic) {
+void ParticleTracker::regrid(const BoxArray& region,
+                             const Vector<Regions>& refine,
+                             const Grid* const grid, Pic& pic) {
   std::string nameFunc = "PT::regrid";
 
   timing_func(nameFunc);
+
+  refineRegions = refine;
 
   if (!usePT)
     return;

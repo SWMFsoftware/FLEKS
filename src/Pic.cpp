@@ -171,10 +171,13 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 }
 
 //==========================================================
-void Pic::regrid(const BoxArray& region, const Grid* const grid) {
+void Pic::regrid(const BoxArray& region, const Vector<Regions>& refine,
+                 const Grid* const grid) {
   std::string nameFunc = "Pic::regrid";
 
   timing_func(nameFunc);
+
+  refineRegions = refine;
 
   // Why need 'isGridInitialized'? See the explaination in Domain::regrid().
   if (region == activeRegion && isGridInitialized)
