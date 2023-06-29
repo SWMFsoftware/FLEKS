@@ -1,6 +1,8 @@
 #ifndef _SHAPE_H_
 #define _SHAPE_H_
 
+#include <string>
+
 #include <AMReX_Box.H>
 #include <AMReX_IntVect.H>
 #include <AMReX_RealBox.H>
@@ -11,6 +13,9 @@ class Shape {
 public:
   virtual ~Shape();
   virtual bool is_inside(const amrex::Real* xyz) const = 0;
+
+private:
+  std::string name;
 };
 
 //=========== Box ===========//
