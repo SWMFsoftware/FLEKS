@@ -23,6 +23,7 @@
 #include "Bit.h"
 #include "Constants.h"
 #include "GridUtility.h"
+#include "Shape.h"
 #include "Utility.h"
 
 // This class define the grid information, but NOT the data on the grid.
@@ -52,6 +53,9 @@ protected:
   // potential status.
   amrex::Vector<amrex::iMultiFab> cellStatus;
   amrex::Vector<amrex::iMultiFab> nodeStatus;
+
+  // It is only used to access the data, and do NOT use it to manage the memory.
+  amrex::Vector<Shape*> regions;
 
   bool doNeedFillNewCell = true;
 
@@ -107,6 +111,12 @@ public:
   bool is_grid_empty() const { return isGridEmpty; }
 
   void print_grid_info(bool printBoxes = false);
+
+  void set_regions(amrex::Vector<std::unique_ptr<Shape> > const& regionsIn) {
+    for (auto& region : regionsIn) {
+      regions.push_back(region.get());
+    }
+  }
 
   // 1. Allocate memory for Fab declared in this class.
   // 2. Set cellStatus and nodeStatus. If cGridsOld is not empty, it will also
