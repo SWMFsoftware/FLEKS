@@ -55,6 +55,7 @@ protected:
   std::string gridName;
 
   amrex::Vector<std::unique_ptr<Shape> > shapes;
+  amrex::Vector<std::string> refineRegions;
 
   bool isGridInitialized = false;
 

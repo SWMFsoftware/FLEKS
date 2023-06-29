@@ -1,5 +1,6 @@
 #include "Domain.h"
 #include "GridUtility.h"
+#include "Shape.h"
 
 using namespace amrex;
 
@@ -23,6 +24,8 @@ void Domain::init(double time, const int iDomain,
       isFake2D = true;
 
   prepare_grid_info(paramRegion);
+
+  refineRegions.resize(amrInfo.max_level + 1);
 
   if (receiveICOnly) {
     fi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
@@ -718,6 +721,32 @@ void Domain::read_param(const bool readGridInfo) {
           Abort("Error: invalid input!");
       }
       isFake2D = (nCell[iz_] == 1);
+
+    } else if (command == "#REGION") {
+      std::string name, type;
+      param.read_var("name", name);
+      param.read_var("shape", type);
+
+      if (type == "box") {
+        Real lo[nDim], hi[nDim];
+        for (int i = 0; i < nDim; i++) {
+          param.read_var("min", lo[i]);
+          param.read_var("max", hi[i]);
+        }
+        shapes.push_back(std::make_unique<BoxShape>(name, lo, hi));
+      }
+
+    } else if (command == "#REFINEREGION") {
+      int iLev;
+      std::string s;
+      param.read_var("iLev", iLev);
+
+      if (iLev >= refineRegions.size() - 1)
+        Abort("Error: iLev should be smaller than the max level index!");
+
+      param.read_var("regions", s);
+      refineRegions[iLev] = s + " ";
+
     } else if (command == "#NOUTFILE") {
       param.read_var("nFileField", nFileField);
       param.read_var("nFileParticle", nFileParticle);
@@ -905,6 +934,12 @@ void Domain::read_param(const bool readGridInfo) {
 
   ParmParse pp("particles");
   pp.add("particles_nfiles", nFileParticle);
+
+  for (int i = refineRegions.size() - 1; i > 0; --i) {
+    if (refineRegions[i].size() > 0) {
+      refineRegions[i - 1] += refineRegions[i];
+    }
+  }
 }
 
 //========================================================
