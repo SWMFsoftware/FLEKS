@@ -11,24 +11,29 @@
 // units
 class Shape {
 public:
-  virtual ~Shape();
+  virtual ~Shape(){};
   virtual bool is_inside(const amrex::Real* xyz) const = 0;
 
   std::string get_name() const { return name; };
 
-private:
+protected:
   std::string name;
 };
 
 //=========== Box ===========//
 class BoxShape : public Shape {
 public:
-  BoxShape(const amrex::Real* lo, const amrex::Real* hi) {
+  BoxShape(const std::string& nameIn, const amrex::Real* lo,
+           const amrex::Real* hi) {
+    name = nameIn;
     rb.setLo(lo);
     rb.setHi(hi);
   }
 
-  BoxShape(amrex::RealBox& in) { rb = in; };
+  BoxShape(const std::string& nameIn, amrex::RealBox& in) {
+    name = nameIn;
+    rb = in;
+  };
 
   bool is_inside(const amrex::Real* xyz) const override {
     return rb.contains(xyz);
@@ -41,9 +46,10 @@ private:
 //========== Sphere =========//
 class Sphere : public Shape {
 public:
-  Sphere(const amrex::Real* c, amrex::Real r) {
-    radius = r;
+  Sphere(const std::string& nameIn, const amrex::Real* c, amrex::Real r) {
+    name = nameIn;
 
+    radius = r;
     for (int i = 0; i < 3; ++i)
       center[i] = c[i];
   }
@@ -62,10 +68,12 @@ private:
 
 //========= Shell ==========//
 class Shell : public Shape {
-  Shell(const amrex::Real* c, amrex::Real rInner, amrex::Real rOuter) {
+  Shell(const std::string& nameIn, const amrex::Real* c, amrex::Real rInner,
+        amrex::Real rOuter) {
+    name = nameIn;
+
     radiusInner = rInner;
     radiusOuter = rOuter;
-
     for (int i = 0; i < 3; ++i)
       center[i] = c[i];
   }
