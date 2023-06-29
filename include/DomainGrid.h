@@ -17,7 +17,7 @@
 
 #include "Constants.h"
 #include "GridInfo.h"
-#include "Shape.h"
+#include "Regions.h"
 
 class DomainGrid {
 
@@ -55,7 +55,8 @@ protected:
   std::string gridName;
 
   amrex::Vector<std::unique_ptr<Shape> > shapes;
-  amrex::Vector<std::string> refineRegions;
+  amrex::Vector<std::string> refineRegionsStr;
+  amrex::Vector<Regions> refineRegions;
 
   bool isGridInitialized = false;
 

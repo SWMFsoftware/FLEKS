@@ -25,6 +25,7 @@ void Domain::init(double time, const int iDomain,
 
   prepare_grid_info(paramRegion);
 
+  refineRegionsStr.resize(amrInfo.max_level + 1);
   refineRegions.resize(amrInfo.max_level + 1);
 
   if (receiveICOnly) {
@@ -741,11 +742,11 @@ void Domain::read_param(const bool readGridInfo) {
       std::string s;
       param.read_var("iLev", iLev);
 
-      if (iLev >= refineRegions.size() - 1)
+      if (iLev >= refineRegionsStr.size() - 1)
         Abort("Error: iLev should be smaller than the max level index!");
 
       param.read_var("regions", s);
-      refineRegions[iLev] = s + " ";
+      refineRegionsStr[iLev] = s + " ";
 
     } else if (command == "#NOUTFILE") {
       param.read_var("nFileField", nFileField);
@@ -935,11 +936,19 @@ void Domain::read_param(const bool readGridInfo) {
   ParmParse pp("particles");
   pp.add("particles_nfiles", nFileParticle);
 
-  for (int i = refineRegions.size() - 1; i > 0; --i) {
-    if (refineRegions[i].size() > 0) {
-      refineRegions[i - 1] += refineRegions[i];
+  { //====== Post process refinement region====
+    for (int i = refineRegionsStr.size() - 1; i > 0; --i) {
+      if (refineRegionsStr[i].size() > 0) {
+        refineRegionsStr[i - 1] += refineRegionsStr[i];
+      }
     }
-  }
+    for (int i = 0; i < refineRegionsStr.size() - 1; ++i) {
+      if (refineRegionsStr[i].size() > 0) {
+        refineRegions.push_back(Regions(shapes, refineRegionsStr[i]));
+      }
+    }
+
+  } //==========================================
 }
 
 //========================================================
