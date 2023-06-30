@@ -109,6 +109,9 @@ public:
 
   bool is_grid_empty() const { return isGridEmpty; }
 
+  void regrid_base(const amrex::BoxArray& region,
+                   const Grid* const grid = nullptr);
+
   void update_refine_region(const amrex::Vector<Regions>& in) {
     refineRegions = in;
   }

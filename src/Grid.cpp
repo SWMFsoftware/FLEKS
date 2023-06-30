@@ -2,6 +2,51 @@
 
 using namespace amrex;
 
+void Grid::regrid_base(const amrex::BoxArray& region, const Grid* const grid) {
+  std::string nameFunc = "Grid::regrid_base";
+
+  doNeedFillNewCell = true;
+
+  activeRegion = region;
+
+  isGridEmpty = activeRegion.empty();
+
+  if (isGridEmpty) {
+    cGrids.clear();
+    cGrids.push_back(amrex::BoxArray());
+  } else {
+    if (grid) {
+      SetFinestLevel(grid->finestLevel());
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        // Q: Why is it required to set distribution map here?
+        // A: fi and pic should have the same grids and distribution maps.
+        // However, it seems AMReX is too smart that it will try to load balance
+        // the box arrays so that the distribution maps can be different even
+        // the grid is the same. So we need to set the distribution map here.
+
+        SetBoxArray(iLev, grid->boxArray(iLev));
+        SetDistributionMap(iLev, grid->DistributionMap(iLev));
+      }
+    } else {
+      // This method will call MakeNewLevelFromScratch() and
+      // PostProcessBaseGrids()
+      InitFromScratch(0.0);
+    }
+  }
+
+  // Print() << "dm = " << DistributionMap(0) << std::endl;
+
+  calc_node_grids();
+
+  print_grid_info();
+
+  // If regrid() is called from from read_restart(), activeRegion is not
+  // simplifed. Simplify it here.
+  activeRegion = activeRegion.simplified();
+
+  isGridInitialized = true;
+}
+
 //============================================================================//
 void Grid::print_grid_info(bool printBoxes) {
   Print() << printPrefix << " =======Grid Info========" << std::endl;

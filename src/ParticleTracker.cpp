@@ -166,29 +166,7 @@ void ParticleTracker::regrid(const BoxArray& region,
     }
   }
 
-  activeRegion = region;
-  isGridEmpty = activeRegion.empty();
-
-  if (isGridEmpty) {
-    cGrids.clear();
-    cGrids.push_back(amrex::BoxArray());
-  } else {
-    if (grid) {
-      SetFinestLevel(grid->finestLevel());
-      for (int iLev = 0; iLev < n_lev(); iLev++) {
-        SetBoxArray(iLev, grid->boxArray(iLev));
-        SetDistributionMap(iLev, grid->DistributionMap(iLev));
-      }
-    } else {
-      // This method will call MakeNewLevelFromScratch() and
-      // PostProcessBaseGrids()
-      InitFromScratch(tc->get_time());
-    }
-  }
-
-  calc_node_grids();
-
-  print_grid_info();
+  regrid_base(region, grid);
 
   if (nodeB.empty()) {
     nodeB.resize(n_lev_max());
@@ -229,10 +207,6 @@ void ParticleTracker::regrid(const BoxArray& region,
     }
   }
   //--------------test particles-----------------------------------
-
-  activeRegion = activeRegion.simplified();
-
-  isGridInitialized = true;
 }
 
 void ParticleTracker::save_restart_data() {

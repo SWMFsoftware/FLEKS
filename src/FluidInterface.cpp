@@ -531,45 +531,13 @@ void FluidInterface::regrid(const amrex::BoxArray& region,
 
   refineRegions = refine;
 
-  // Why need 'isGridInitialized'? See the explaination in
-  // Domain::regrid().
-  if (region == activeRegion && isGridInitialized) {
-    // The interface grid does not change.
+  // Why need 'isGridInitialized'? See the explanation in Domain::regrid().
+  if (region == activeRegion && isGridInitialized)
     return;
-  }
 
-  activeRegion = region;
-
-  isGridEmpty = activeRegion.empty();
-
-  if (isGridEmpty) {
-    cGrids.clear();
-    cGrids.push_back(amrex::BoxArray());
-  } else {
-    if (grid) {
-      SetFinestLevel(grid->finestLevel());
-      for (int iLev = 0; iLev < n_lev(); iLev++) {
-        SetBoxArray(iLev, grid->boxArray(iLev));
-        SetDistributionMap(iLev, grid->DistributionMap(iLev));
-      }
-    } else {
-      // This method will call MakeNewLevelFromScratch() and
-      // PostProcessBaseGrids()
-      InitFromScratch(0.0);
-    }
-  }
-
-  // Print() << "dm = " << DistributionMap(0) << std::endl;
-
-  calc_node_grids();
-
-  print_grid_info();
-
-  isGridInitialized = true;
+  regrid_base(region, grid);
 
   distribute_arrays();
-
-  activeRegion = activeRegion.simplified();
 }
 
 //==========================================================

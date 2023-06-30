@@ -179,17 +179,9 @@ void Pic::regrid(const BoxArray& region, const Vector<Regions>& refine,
 
   refineRegions = refine;
 
-  // Why need 'isGridInitialized'? See the explaination in Domain::regrid().
+  // Why need 'isGridInitialized'? See the explanation in Domain::regrid().
   if (region == activeRegion && isGridInitialized)
     return;
-
-  Vector<BoxArray> cGridsOld(cGrids);
-
-  activeRegion = region;
-
-  isGridEmpty = activeRegion.empty();
-
-  doNeedFillNewCell = true;
 
   if (!parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
@@ -199,32 +191,9 @@ void Pic::regrid(const BoxArray& region, const Vector<Regions>& refine,
     }
   }
 
-  if (isGridEmpty) {
-    cGrids.clear();
-    cGrids.push_back(amrex::BoxArray());
-  } else {
+  Vector<BoxArray> cGridsOld(cGrids);
 
-    if (grid) {
-      SetFinestLevel(grid->finestLevel());
-      for (int iLev = 0; iLev < n_lev(); iLev++) {
-        // Q: Why is it required to set distribution map here?
-        // A: fi and pic should have the same grids and distribution maps.
-        // However, it seems AMReX is too smart that it will try to load balance
-        // the box arrays so that the distribution maps can be different even
-        // the grid is the same. So we need to set the distribution map here.
-        SetBoxArray(iLev, grid->boxArray(iLev));
-        SetDistributionMap(iLev, grid->DistributionMap(iLev));
-      }
-    } else {
-      // This method will call MakeNewLevelFromScratch() and
-      // PostProcessBaseGrids()
-      InitFromScratch(tc->get_time());
-    }
-  }
-
-  calc_node_grids();
-
-  print_grid_info();
+  regrid_base(region, grid);
 
   distribute_arrays(cGridsOld);
 
@@ -292,12 +261,6 @@ void Pic::regrid(const BoxArray& region, const Vector<Regions>& refine,
     n = get_local_node_or_cell_number(centerDivE[iLev]);
     divESolver.init(n, 1, nDim, matvec_divE_accurate);
   }
-
-  // If regrid() is called from from read_restart(), activeRegion is not
-  // simplifed. Simplify it here.
-  activeRegion = activeRegion.simplified();
-
-  isGridInitialized = true;
 }
 
 //==========================================================

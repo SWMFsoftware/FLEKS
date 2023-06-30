@@ -157,17 +157,6 @@ public:
 
   Particles<> *get_particle_pointer(int i) { return parts[i].get(); }
 
-  // amrex::Vector<const amrex::MultiFab *> PlotFileMF() const {
-
-  //   amrex::Vector<const amrex::MultiFab *> r;
-  //   for (int i = 0; i < n_lev(); ++i) {
-  //     r.push_back(&phi[i]);
-  //   }
-  //   return r;
-  // }
-
-  // amrex::Vector<std::string> PlotFileVarNames() const { return { "phi" }; }
-
   void set_stateOH(std::shared_ptr<OHInterface> &in) { stateOH = in; }
   void set_sourceOH(std::shared_ptr<OHInterface> &in) { sourcePT2OH = in; }
   void set_fluid_source(std::shared_ptr<SourceInterface> &in) { source = in; }
