@@ -623,7 +623,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     momentsMF[iLev].SumBoundary(Geom(iLev).periodicity());
   }
 
-  for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
+  for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
     sum_two_lev_interface_node(
         momentsMF[iLev], momentsMF[iLev + 1], 0, momentsMF[iLev].nComp(),
         get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
