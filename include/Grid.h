@@ -251,7 +251,20 @@ public:
                    << std::endl;
   };
 
-  // Tag cells for refinement.
+  // 1. "The creation of grids at levels > 0 begins by tagging cells at the
+  // coarser level and follows the Berger-Rigoutsos clustering algorithm with
+  // the additional constraints of satisfying the blocking_factor and
+  // max_grid_size criteria." - AMReX online documentation
+
+  // 2. Berger-Rigoutsos paper: An algorithm for point clustering and grid
+  // generation (10.1109/21.120081). The principles for the algorithm are:
+  // (1) There should be as little unnecessarily refined area as possible. (2)
+  // There should be as few rectangles as possible. (3) The rectangles should
+  // ‘fit” the data. (4) The algorithm should be fast.
+
+  // 3. So, even the AMR buffer size is 0 (amrInfo.n_error_buf), the cells that
+  // are not tagged in ErrorEst() may still be refined du to the clustering
+  // algorithm. Tests show the clustering is pretty smart.
   virtual void ErrorEst(int iLev, amrex::TagBoxArray& tags, amrex::Real time,
                         int ngrow) override {
     std::string nameFunc = "Grid::ErrorEst";
@@ -267,9 +280,15 @@ public:
           for (int i = lo.x; i <= hi.x; ++i) {
             amrex::Real xyz[nDim];
             Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
-            if (refineRegions[iLev].is_inside(xyz)) {
-              tagArr(i, j, k) = amrex::TagBox::SET;
-            }
+
+            // Loop through all levels from the finest to the current level.
+            // If a cell is required to be refined at lev=n (n>=iLev), this cell
+            // should be also refined at lev=iLev.
+            for (int il = n_lev_max() - 2; il >= iLev; il--)
+              if (refineRegions[il].is_inside(xyz)) {
+                tagArr(i, j, k) = amrex::TagBox::SET;
+                continue;
+              }
           }
     }
   };
