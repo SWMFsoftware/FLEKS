@@ -723,6 +723,8 @@ void Domain::read_param(const bool readGridInfo) {
       }
       isFake2D = (nCell[iz_] == 1);
 
+    } else if (command == "#GRIDEFFICIENCY") {
+      param.read_var("gridEfficiency", gridEfficiency);
     } else if (command == "#REGION") {
       std::string name, type;
       param.read_var("name", name);

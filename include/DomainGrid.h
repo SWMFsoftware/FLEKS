@@ -58,6 +58,11 @@ protected:
   amrex::Vector<std::string> refineRegionsStr;
   amrex::Vector<Regions> refineRegions;
 
+  // "This threshold value, which defaults to 0.7 (or 70%), is used to ensure
+  // that grids do not contain too large a fraction of un-tagged cells." - AMReX
+  // online docs
+  amrex::Real gridEfficiency = 0.7;
+
   bool isGridInitialized = false;
 
 public:
