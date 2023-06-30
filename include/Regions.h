@@ -24,10 +24,11 @@ public:
     std::stringstream ss(list);
     std::string token;
     while (ss >> token) {
-      if (token.find("+") != std::string::npos) {
-        includeList.push_back(token);
-      } else if (token.find("-") != std::string::npos) {
-        excludeList.push_back(token);
+      token = amrex::trim(token);
+      if (token[0] == '+') {
+        includeList.push_back(token.substr(1));
+      } else if (token[0] == '-') {
+        excludeList.push_back(token.substr(1));
       }
     }
   }
@@ -37,7 +38,7 @@ public:
                 const amrex::Vector<std::string>& list) const {
     bool doContain = false;
 
-    for (auto& l : list) {
+    for (const auto& l : list) {
       if (l == shape->get_name()) {
         doContain = true;
         break;
@@ -48,12 +49,12 @@ public:
   }
 
   // Is the 'shape' in the include list?
-  bool is_included(const Shape* shape) const {
+  bool is_include(const Shape* shape) const {
     return contains(shape, includeList);
   }
 
   // Is the 'shape' in the exclude list?
-  bool is_excluded(const Shape* shape) const {
+  bool is_exclude(const Shape* shape) const {
     return contains(shape, excludeList);
   }
 
@@ -61,7 +62,7 @@ public:
   bool is_inside(amrex::Real* xyz) const {
     bool isIncluded = false;
     for (auto& shape : shapes) {
-      if (is_included(shape))
+      if (is_include(shape))
         isIncluded = shape->is_inside(xyz);
 
       if (isIncluded)
@@ -70,7 +71,7 @@ public:
 
     bool isExcluded = false;
     for (auto& shape : shapes) {
-      if (is_excluded(shape))
+      if (is_exclude(shape))
         isExcluded = shape->is_inside(xyz);
 
       if (isExcluded)
