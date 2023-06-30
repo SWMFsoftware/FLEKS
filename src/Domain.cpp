@@ -741,6 +741,34 @@ void Domain::read_param(const bool readGridInfo) {
         }
 
         shapes.push_back(std::make_unique<BoxShape>(name, lo, hi));
+      } else if (type == "sphere") {
+
+        Real center[nDim], radius;
+        for (int i = 0; i < nDim; i++) {
+          param.read_var("center", center[i]);
+        }
+        param.read_var("radius", radius);
+
+        if (isFake2D) {
+          center[iz_] = 0;
+        }
+
+        shapes.push_back(std::make_unique<Sphere>(name, center, radius));
+
+      } else if (type == "shell") {
+
+        Real center[nDim], rInner, rOuter;
+        for (int i = 0; i < nDim; i++) {
+          param.read_var("center", center[i]);
+        }
+        param.read_var("rInner", rInner);
+        param.read_var("rOuter", rOuter);
+
+        if (isFake2D) {
+          center[iz_] = 0;
+        }
+
+        shapes.push_back(std::make_unique<Shell>(name, center, rInner, rOuter));
       }
 
     } else if (command == "#REFINEREGION") {

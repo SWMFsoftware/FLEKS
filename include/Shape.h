@@ -68,6 +68,7 @@ private:
 
 //========= Shell ==========//
 class Shell : public Shape {
+public:
   Shell(const std::string& nameIn, const amrex::Real* c, amrex::Real rInner,
         amrex::Real rOuter) {
     name = nameIn;
