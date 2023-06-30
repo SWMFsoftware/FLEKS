@@ -7,6 +7,8 @@
 #include <AMReX_IntVect.H>
 #include <AMReX_RealBox.H>
 
+#include "Constants.h"
+
 // Abstract base class for shapes. All shapes should be defined in normalized
 // units
 class Shape {
@@ -50,20 +52,22 @@ public:
     name = nameIn;
 
     radius = r;
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < nDim; ++i)
       center[i] = c[i];
   }
 
   bool is_inside(const amrex::Real* xyz) const override {
-    amrex::Real l =
-        sqrt(pow(xyz[0] - center[0], 2) + pow(xyz[1] - center[1], 2) +
-             pow(xyz[2] - center[2], 2));
+    amrex::Real l = 0;
+
+    for (int i = 0; i < nDim; ++i)
+      l += sqrt(pow(xyz[i] - center[i], 2));
+
     return l < radius;
   };
 
 private:
   amrex::Real radius;
-  amrex::Real center[3];
+  amrex::Real center[nDim];
 };
 
 //========= Shell ==========//
