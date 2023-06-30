@@ -57,12 +57,12 @@ public:
   }
 
   bool is_inside(const amrex::Real* xyz) const override {
-    amrex::Real l = 0;
+    amrex::Real l2 = 0;
 
     for (int i = 0; i < nDim; ++i)
-      l += sqrt(pow(xyz[i] - center[i], 2));
-
-    return l < radius;
+      l2 += pow(xyz[i] - center[i], 2);
+    
+    return l2 < pow(radius, 2);
   };
 
 private:
