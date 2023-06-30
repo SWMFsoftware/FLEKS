@@ -734,6 +734,12 @@ void Domain::read_param(const bool readGridInfo) {
           param.read_var("min", lo[i]);
           param.read_var("max", hi[i]);
         }
+
+        if (isFake2D) {
+          lo[iz_] = -10 * fabs(hi[ix_] - lo[ix_]);
+          hi[iz_] = 10 * fabs(hi[ix_] - lo[ix_]);
+        }
+
         shapes.push_back(std::make_unique<BoxShape>(name, lo, hi));
       }
 
@@ -920,7 +926,16 @@ void Domain::read_param(const bool readGridInfo) {
     param.set_verbose(false);
   } // While
 
+  // Post processing
   if (!readGridInfo) {
+    { //====== Post process refinement region====
+      for (int i = 0; i < refineRegionsStr.size() - 1; ++i) {
+        if (refineRegionsStr[i].size() > 0) {
+          refineRegions[i] = Regions(shapes, refineRegionsStr[i]);
+        }
+      }
+    } //==========================================
+
     if (pic)
       pic->post_process_param();
 
@@ -935,20 +950,6 @@ void Domain::read_param(const bool readGridInfo) {
 
   ParmParse pp("particles");
   pp.add("particles_nfiles", nFileParticle);
-
-  { //====== Post process refinement region====
-    for (int i = refineRegionsStr.size() - 1; i > 0; --i) {
-      if (refineRegionsStr[i].size() > 0) {
-        refineRegionsStr[i - 1] += refineRegionsStr[i];
-      }
-    }
-    for (int i = 0; i < refineRegionsStr.size() - 1; ++i) {
-      if (refineRegionsStr[i].size() > 0) {
-        refineRegions.push_back(Regions(shapes, refineRegionsStr[i]));
-      }
-    }
-
-  } //==========================================
 }
 
 //========================================================
