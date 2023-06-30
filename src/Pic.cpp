@@ -171,18 +171,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 }
 
 //==========================================================
-void Pic::regrid(const BoxArray& region, const Vector<Regions>& refine,
-                 const Grid* const grid) {
-  std::string nameFunc = "Pic::regrid";
-
-  timing_func(nameFunc);
-
-  refineRegions = refine;
-
-  // Why need 'isGridInitialized'? See the explanation in Domain::regrid().
-  if (region == activeRegion && isGridInitialized)
-    return;
-
+void Pic::pre_regrid() {
   if (!parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
       // Label the particles outside the OLD PIC region. It should be called
@@ -190,10 +179,9 @@ void Pic::regrid(const BoxArray& region, const Vector<Regions>& refine,
       parts[i]->label_particles_outside_active_region();
     }
   }
+}
 
-  Vector<BoxArray> cGridsOld(cGrids);
-
-  regrid_base(region, grid);
+void Pic::post_regrid() {
 
   distribute_arrays(cGridsOld);
 

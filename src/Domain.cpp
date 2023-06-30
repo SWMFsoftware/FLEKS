@@ -254,22 +254,22 @@ void Domain::regrid() {
           << "\n===================================================="
           << std::endl;
 
-  fi->regrid(activeRegion, refineRegions);
+  fi->regrid(activeRegion, refineRegions, gridEfficiency);
 
   if (source)
-    source->regrid(activeRegion, refineRegions, fi.get());
+    source->regrid(activeRegion, fi.get());
 
   if (stateOH)
-    stateOH->regrid(activeRegion, refineRegions, fi.get());
+    stateOH->regrid(activeRegion, fi.get());
 
   if (sourcePT2OH)
-    sourcePT2OH->regrid(activeRegion, refineRegions, fi.get());
+    sourcePT2OH->regrid(activeRegion, fi.get());
 
   if (pic)
-    pic->regrid(activeRegion, refineRegions, fi.get());
+    pic->regrid(activeRegion, fi.get());
 
   if (pt)
-    pt->regrid(activeRegion, refineRegions, fi.get(), *pic);
+    pt->regrid(activeRegion, fi.get());
 
   iGrid++;
   iDecomp++;
@@ -412,15 +412,18 @@ void Domain::read_restart() {
     grid.SetDistributionMap(iLev, DistributionMapping(bas[iLev]));
   }
 
+  grid.SetGridEff(gridEfficiency);
+  grid.set_refine_regions(refineRegions);
+
   //----------------------------------------------------------------
 
-  fi->regrid(grid.boxArray(0), refineRegions, &grid);
+  fi->regrid(grid.boxArray(0), &grid);
   fi->read_restart();
 
   if (!doRestartFIOnly) {
-    pic->regrid(grid.boxArray(0), refineRegions, fi.get());
+    pic->regrid(grid.boxArray(0), fi.get());
     // Assume dmPT == dmPIC so far.
-    pt->regrid(grid.boxArray(0), refineRegions, fi.get(), *pic);
+    pt->regrid(grid.boxArray(0), fi.get());
 
     pic->read_restart();
     write_plots(true);

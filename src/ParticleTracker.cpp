@@ -142,22 +142,7 @@ void ParticleTracker::post_process_param() {
   savectr->set_multiple(dnSave);
 }
 
-void ParticleTracker::regrid(const BoxArray& region,
-                             const Vector<Regions>& refine,
-                             const Grid* const grid, Pic& pic) {
-  std::string nameFunc = "PT::regrid";
-
-  timing_func(nameFunc);
-
-  refineRegions = refine;
-
-  if (!usePT)
-    return;
-
-  // Why need 'isGridInitialized'? See the explanation in Domain::regrid().
-  if (region == activeRegion && isGridInitialized)
-    return;
-
+void ParticleTracker::pre_regrid() {
   if (!parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
       // Label the particles outside the OLD PIC region. It should be called
@@ -165,8 +150,9 @@ void ParticleTracker::regrid(const BoxArray& region,
       parts[i]->label_particles_outside_active_region();
     }
   }
+}
 
-  regrid_base(region, grid);
+void ParticleTracker::post_regrid() {
 
   if (nodeB.empty()) {
     nodeB.resize(n_lev_max());

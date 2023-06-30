@@ -159,9 +159,7 @@ public:
 
   void set_var_idx();
 
-  void regrid(const amrex::BoxArray& region,
-              const amrex::Vector<Regions>& refine,
-              const Grid* grid = nullptr);
+  void post_regrid() override { distribute_arrays(); }
 
   void distribute_arrays();
 

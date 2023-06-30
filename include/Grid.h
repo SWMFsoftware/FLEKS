@@ -46,6 +46,8 @@ protected:
   // Cell center
   amrex::Vector<amrex::BoxArray>& cGrids = grids;
 
+  amrex::Vector<amrex::BoxArray> cGridsOld;
+
   // Nodal
   amrex::Vector<amrex::BoxArray> nGrids;
 
@@ -109,8 +111,26 @@ public:
 
   bool is_grid_empty() const { return isGridEmpty; }
 
-  void regrid_base(const amrex::BoxArray& region,
-                   const Grid* const grid = nullptr);
+  virtual void pre_regrid(){};
+
+  amrex::Vector<Regions> get_refine_regions() const { return refineRegions; }
+
+  void set_refine_regions(const amrex::Vector<Regions>& in) {
+    refineRegions = in;
+  }
+
+  void regrid(const amrex::BoxArray& region,
+              const amrex::Vector<Regions>& refine, const amrex::Real eff) {
+    refineRegions = refine;
+    SetGridEff(eff);
+
+    regrid(region, nullptr);
+  }
+
+  // TODO: Maybe the first argument 'region' can be removed? --Yuxi
+  void regrid(const amrex::BoxArray& region, const Grid* const grid);
+
+  virtual void post_regrid(){};
 
   void update_refine_region(const amrex::Vector<Regions>& in) {
     refineRegions = in;
@@ -265,9 +285,9 @@ public:
   // There should be as few rectangles as possible. (3) The rectangles should
   // ‘fit” the data. (4) The algorithm should be fast.
 
-  // 3. So, even the AMR buffer size is 0 (amrInfo.n_error_buf), the cells that
-  // are not tagged in ErrorEst() may still be refined du to the clustering
-  // algorithm. Tests show the clustering is pretty smart.
+  // 3. So, even the AMR buffer size is 0 (amrInfo.n_error_buf), the cells
+  // that are not tagged in ErrorEst() may still be refined du to the
+  // clustering algorithm. Tests show the clustering is pretty smart.
   virtual void ErrorEst(int iLev, amrex::TagBoxArray& tags, amrex::Real time,
                         int ngrow) override {
     std::string nameFunc = "Grid::ErrorEst";
@@ -285,8 +305,8 @@ public:
             Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
 
             // Loop through all levels from the finest to the current level.
-            // If a cell is required to be refined at lev=n (n>=iLev), this cell
-            // should be also refined at lev=iLev.
+            // If a cell is required to be refined at lev=n (n>=iLev), this
+            // cell should be also refined at lev=iLev.
             for (int il = n_lev_max() - 2; il >= iLev; il--)
               if (refineRegions[il].is_inside(xyz)) {
                 tagArr(i, j, k) = amrex::TagBox::SET;

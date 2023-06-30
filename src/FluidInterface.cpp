@@ -524,22 +524,6 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
   }
 }
 
-void FluidInterface::regrid(const amrex::BoxArray& region,
-                            const Vector<Regions>& refine,
-                            const Grid* const grid) {
-  std::string nameFunc = "FluidInterface::regrid";
-
-  refineRegions = refine;
-
-  // Why need 'isGridInitialized'? See the explanation in Domain::regrid().
-  if (region == activeRegion && isGridInitialized)
-    return;
-
-  regrid_base(region, grid);
-
-  distribute_arrays();
-}
-
 //==========================================================
 void FluidInterface::distribute_arrays() {
   if (nodeFluid.empty())

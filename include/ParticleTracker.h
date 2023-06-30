@@ -33,9 +33,8 @@ public:
 
   void post_process_param();
 
-  void regrid(const amrex::BoxArray &region,
-              const amrex::Vector<Regions> &refine, const Grid *const grid,
-              Pic &pic);
+  void pre_regrid() override;
+  void post_regrid() override;
 
   void update_field(Pic &pic);
   void set_ic(Pic &pic);

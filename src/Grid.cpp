@@ -2,8 +2,21 @@
 
 using namespace amrex;
 
-void Grid::regrid_base(const amrex::BoxArray& region, const Grid* const grid) {
+void Grid::regrid(const amrex::BoxArray& region, const Grid* const grid) {
   std::string nameFunc = "Grid::regrid_base";
+
+  if (grid) {
+    refineRegions = grid->get_refine_regions();
+    SetGridEff(grid->gridEff());
+  }
+
+  // Why need 'isGridInitialized'? See the explanation in Domain::regrid().
+  if (region == activeRegion && isGridInitialized)
+    return;
+
+  pre_regrid();
+
+  cGridsOld = cGrids;
 
   doNeedFillNewCell = true;
 
@@ -45,6 +58,8 @@ void Grid::regrid_base(const amrex::BoxArray& region, const Grid* const grid) {
   activeRegion = activeRegion.simplified();
 
   isGridInitialized = true;
+
+  post_regrid();
 }
 
 //============================================================================//

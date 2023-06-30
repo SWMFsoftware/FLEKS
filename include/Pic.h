@@ -162,9 +162,8 @@ public:
   void set_fluid_source(std::shared_ptr<SourceInterface> &in) { source = in; }
 
   //--------------Initialization begin-------------------------------
-  void regrid(const amrex::BoxArray &region,
-              const amrex::Vector<Regions> &refine,
-              const Grid *const grid = nullptr);
+  virtual void pre_regrid() override;
+  virtual void post_regrid() override;
 
   void distribute_arrays(const amrex::Vector<amrex::BoxArray> &cGridsOld);
 
