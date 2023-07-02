@@ -370,7 +370,7 @@ void Pic::fill_source_particles() {
   doSelectRegion = (nSpecies == 4);
 #endif
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->add_particles_source(*source, stateOH, tc->get_dt(), nSourcePPC,
+    parts[i]->add_particles_source(source, stateOH, tc->get_dt(), nSourcePPC,
                                    doSelectRegion);
   }
 }

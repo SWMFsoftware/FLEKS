@@ -109,7 +109,7 @@ void Particles<NStructReal, NStructInt>::outflow_bc(const MFIter& mfi,
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_cell(
     const int iLev, const MFIter& mfi, const int i, const int j, const int k,
-    const FluidInterface& interface, IntVect ppc, const Vel tpVel, Real dt) {
+    const FluidInterface* interface, IntVect ppc, const Vel tpVel, Real dt) {
 
   // If true, initialize the test particles with user defined velocities instead
   // of from fluid.
@@ -159,8 +159,8 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
         Real z0 = (kk + 0.5) * (dx[iLev][iz_] / nPPC[iz_]) + k * dx[iLev][iz_] +
                   plo[iLev][iz_];
 
-        double q = vol2Npcel * interface.get_number_density(mfi, x0, y0, z0,
-                                                            speciesID, iLev);
+        double q = vol2Npcel * interface->get_number_density(mfi, x0, y0, z0,
+                                                             speciesID, iLev);
         if (q != 0) {
           Real u, v, w;
           double rand1 = randNum();
@@ -169,26 +169,26 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           double rand4 = randNum();
 
           double uth = (userState ? tpVel.vth : -1);
-          if (!is_neutral() && interface.get_UseAnisoP() &&
-              (speciesID > 0 || interface.get_useElectronFluid())) {
-            interface.set_particle_uth_aniso(iLev, mfi, x, y, z, &u, &v, &w,
-                                             rand1, rand2, rand3, rand4,
-                                             speciesID, uth, uth);
+          if (!is_neutral() && interface->get_UseAnisoP() &&
+              (speciesID > 0 || interface->get_useElectronFluid())) {
+            interface->set_particle_uth_aniso(iLev, mfi, x, y, z, &u, &v, &w,
+                                              rand1, rand2, rand3, rand4,
+                                              speciesID, uth, uth);
           } else {
-            interface.set_particle_uth_iso(iLev, mfi, x, y, z, &u, &v, &w,
-                                           rand1, rand2, rand3, rand4,
-                                           speciesID, uth);
+            interface->set_particle_uth_iso(iLev, mfi, x, y, z, &u, &v, &w,
+                                            rand1, rand2, rand3, rand4,
+                                            speciesID, uth);
           }
 
           Real uBulk = userState
                            ? tpVel.vx
-                           : interface.get_ux(mfi, x, y, z, speciesID, iLev);
+                           : interface->get_ux(mfi, x, y, z, speciesID, iLev);
           Real vBulk = userState
                            ? tpVel.vy
-                           : interface.get_uy(mfi, x, y, z, speciesID, iLev);
+                           : interface->get_uy(mfi, x, y, z, speciesID, iLev);
           Real wBulk = userState
                            ? tpVel.vz
-                           : interface.get_uz(mfi, x, y, z, speciesID, iLev);
+                           : interface->get_uz(mfi, x, y, z, speciesID, iLev);
 
           if (testCase == TwoStream && qom < 0 && icount % 2 == 0) {
             // Electron only (qom<0)
@@ -246,7 +246,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_source(
-    const FluidInterface& interface, const FluidInterface* const stateOH,
+    const FluidInterface* interface, const FluidInterface* const stateOH,
     Real dt, IntVect ppc, const bool doSelectRegion) {
   timing_func("Particles::add_particles_source");
 
@@ -303,7 +303,7 @@ void Particles<NStructReal, NStructInt>::add_particles_domain() {
           for (int k = kMin; k <= kMax; ++k) {
             if (bit::is_new(status(i, j, k)) &&
                 !bit::is_refined(status(i, j, k))) {
-              add_particles_cell(iLev, mfi, i, j, k, *fi);
+              add_particles_cell(iLev, mfi, i, j, k, fi);
             }
           }
     }
@@ -355,7 +355,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
                 ((bc.hi[iz_] == bc.outflow) && k > hi[iz_])) {
               outflow_bc(mfi, i, j, k, isrc, jsrc, ksrc);
             } else {
-              add_particles_cell(iLev, mfi, i, j, k, *fiTmp, ppc, Vel(), dt);
+              add_particles_cell(iLev, mfi, i, j, k, fiTmp, ppc, Vel(), dt);
             }
           }
         }

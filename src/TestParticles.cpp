@@ -409,7 +409,7 @@ void TestParticles::add_test_particles_from_fluid(Vector<Vel> tpStates) {
           if (iPartRegion == iRegionUniform_ ||
               (iPartRegion == iRegionBoundary_ &&
                bit::is_edge(status(i, j, k)))) {
-            add_particles_cell(iLev, mfi, i, j, k, *fi,
+            add_particles_cell(iLev, mfi, i, j, k, fi,
                                { AMREX_D_DECL(0, 0, 0) }, tpVel);
           }
   }

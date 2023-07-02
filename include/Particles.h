@@ -180,14 +180,14 @@ public:
   void add_particles_domain();
   void add_particles_cell(const int iLev, const amrex::MFIter& mfi, const int i,
                           const int j, const int k,
-                          const FluidInterface& interface,
+                          const FluidInterface* interface,
                           amrex::IntVect ppc = amrex::IntVect(),
                           const Vel tpVel = Vel(), amrex::Real dt = -1);
   void inject_particles_at_boundary(const FluidInterface* fiIn = nullptr,
                                     amrex::Real dt = -1,
                                     amrex::IntVect ppc = amrex::IntVect());
 
-  void add_particles_source(const FluidInterface& interface,
+  void add_particles_source(const FluidInterface* interface,
                             const FluidInterface* const stateOH = nullptr,
                             amrex::Real dt = -1,
                             amrex::IntVect ppc = amrex::IntVect(),
