@@ -33,30 +33,26 @@ public:
   std::unique_ptr<Pic> pic;
   std::unique_ptr<ParticleTracker> pt;
 
-  //------------------------------
-  // Conceptually, both the Domain class and the Pic class may use the
-  // following classes, so they are handled by shared pointers.
-
   // fi stores EM field and/or the fluid quantities that are used to generate
   // particles.
-  std::shared_ptr<FluidInterface> fi;
+  std::unique_ptr<FluidInterface> fi;
 
-  std::shared_ptr<SourceInterface> source;
+  std::unique_ptr<SourceInterface> source;
   bool useFluidSource = false;
 
   // So far, stateOH is only used for OH-PT coupling. It stores the plasma
   // variables obtained from OH.
-  std::shared_ptr<OHInterface> stateOH;
+  std::unique_ptr<OHInterface> stateOH;
   // The Neu->Ion source for PT->OH coupling.
-  std::shared_ptr<OHInterface> sourcePT2OH;
+  std::unique_ptr<OHInterface> sourcePT2OH;
 
-  std::shared_ptr<TimeCtr> tc;
+  std::unique_ptr<TimeCtr> tc;
   //--------------------------------
 
   int couplerMarker;
 
 public:
-  Domain() { tc = std::make_shared<TimeCtr>(); }
+  Domain() { tc = std::make_unique<TimeCtr>(); }
 
   ~Domain() = default;
 

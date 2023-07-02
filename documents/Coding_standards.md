@@ -2,8 +2,8 @@
 
 # Standards
 1. Avoid using raw pointer and 'new' to allocate memory unless there is a good reason. 
- Try to use shared_ptr or unique_ptr to manage resources. For arrays, using an 
- object to manage resources is a good choice. 
+   In other words, shared_ptr or unique_ptr should be always used to manage ownership. 
+   If there is no notion of ownership, raw pointer should be used.
 
 2. Naming standards:
  - File name: FileName.cpp, HeaderName.h
@@ -11,12 +11,13 @@
  - Variable name: variableName
  - Function/method name: this_is_a_function_name
 
-3. Never put 'using namespace xxx' into a header. 
+3. 'using namespace amrex' is allowed in *.cpp files. Otherwise, do NOT leave 
+   'using namespace xxx' in the code. 
 
 4. For beauty, the order of headers: std headers -> AMReX headers -> user headers. 
-    The correctness of the code shoud NOT depend on the order of headers.      
+    The behavior of the code shoud NOT depend on the order of headers.      
 
-4. Use 'nullptr' instead of NULL for pointer. 
+5. Use 'nullptr' instead of NULL for pointer. 
 
 6. Always use 'const' if possible. 
 

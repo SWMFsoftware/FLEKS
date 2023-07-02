@@ -10,8 +10,7 @@
 class ParticleTracker : public Grid {
 public:
   ParticleTracker(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo,
-                  int nGst, std::shared_ptr<FluidInterface> &fluidIn,
-                  std::shared_ptr<TimeCtr> &tcIn, int id)
+                  int nGst, FluidInterface *fluidIn, TimeCtr *tcIn, int id)
       : Grid(gm, amrInfo, nGst, id, "pt"), tc(tcIn), fi(fluidIn) {
     nSpecies = fi->get_nS();
   };
@@ -27,9 +26,6 @@ public:
       }
     }
   };
-
-  void init(std::shared_ptr<FluidInterface> &fluidIn,
-            std::shared_ptr<TimeCtr> &tcIn, int id = 0);
 
   void post_process_param();
 
@@ -53,8 +49,8 @@ public:
 private:
   bool usePT = false;
 
-  std::shared_ptr<TimeCtr> tc;
-  std::shared_ptr<FluidInterface> fi;
+  TimeCtr *tc;
+  FluidInterface *fi;
 
   int nSpecies;
   amrex::Vector<std::unique_ptr<TestParticles> > parts;

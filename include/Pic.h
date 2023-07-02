@@ -49,11 +49,11 @@ private:
   // EM fields.
   bool solveEM = true;
 
-  std::shared_ptr<FluidInterface> fi;
-  std::shared_ptr<FluidInterface> stateOH;
-  std::shared_ptr<FluidInterface> sourcePT2OH;
-  std::shared_ptr<SourceInterface> source;
-  std::shared_ptr<TimeCtr> tc;
+  FluidInterface *fi;
+  FluidInterface *stateOH;
+  FluidInterface *sourcePT2OH;
+  SourceInterface *source;
+  TimeCtr *tc;
 
   amrex::Vector<amrex::MultiFab> nodeE;
   amrex::Vector<amrex::MultiFab> nodeEth;
@@ -122,8 +122,7 @@ private:
   // public methods
 public:
   Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo, int nGst,
-      std::shared_ptr<FluidInterface> &fluidIn, std::shared_ptr<TimeCtr> &tcIn,
-      int id = 0)
+      FluidInterface *fluidIn, TimeCtr *tcIn, int id = 0)
       : Grid(gm, amrInfo, nGst, id, "pic"), fi(fluidIn), tc(tcIn) {
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
@@ -157,9 +156,9 @@ public:
 
   Particles<> *get_particle_pointer(int i) { return parts[i].get(); }
 
-  void set_stateOH(std::shared_ptr<OHInterface> &in) { stateOH = in; }
-  void set_sourceOH(std::shared_ptr<OHInterface> &in) { sourcePT2OH = in; }
-  void set_fluid_source(std::shared_ptr<SourceInterface> &in) { source = in; }
+  void set_stateOH(OHInterface *in) { stateOH = in; }
+  void set_sourceOH(OHInterface *in) { sourcePT2OH = in; }
+  void set_fluid_source(SourceInterface *in) { source = in; }
 
   //--------------Initialization begin-------------------------------
   virtual void pre_regrid() override;

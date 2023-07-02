@@ -28,7 +28,7 @@ void Domain::init(double time, const int iDomain,
   refineRegions.resize(amrInfo.max_level + 1);
 
   if (receiveICOnly) {
-    fi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
+    fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
     read_param(false);
 
     gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
@@ -41,17 +41,18 @@ void Domain::init(double time, const int iDomain,
   }
 
   if (initFromSWMF && !receiveICOnly) {
-    fi = std::make_shared<FluidInterface>(
+    fi = std::make_unique<FluidInterface>(
         gm, amrInfo, nGst, gridID, "fi", paramInt,
         Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm);
   } else {
     // if (NOT initFromSWMF) or receiveIConly
-    fi = std::make_shared<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
+    fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
   }
 
-  pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi, tc, gridID);
+  pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi.get(), tc.get(), gridID);
 
-  pt = std::make_unique<ParticleTracker>(gm, amrInfo, nGst, fi, tc, gridID);
+  pt = std::make_unique<ParticleTracker>(gm, amrInfo, nGst, fi.get(), tc.get(),
+                                         gridID);
 
   read_param(false);
 
@@ -61,23 +62,23 @@ void Domain::init(double time, const int iDomain,
 #ifdef _PT_COMPONENT_
   useSource = true;
   stateOH =
-      std::make_shared<OHInterface>(*fi, gridID, "stateOH", InteractionFluid);
+      std::make_unique<OHInterface>(*fi, gridID, "stateOH", InteractionFluid);
 
   sourcePT2OH =
-      std::make_shared<OHInterface>(*fi, gridID, "sourcePT2OH", SourceFluid);
+      std::make_unique<OHInterface>(*fi, gridID, "sourcePT2OH", SourceFluid);
 
   sourcePT2OH->set_period_start_si(tc->get_time_si());
 
-  pic->set_stateOH(stateOH);
-  pic->set_sourceOH(sourcePT2OH);
+  pic->set_stateOH(stateOH.get());
+  pic->set_sourceOH(sourcePT2OH.get());
 #endif
 
   if (useFluidSource || useSource) {
-    source = std::make_shared<SourceInterface>(*fi, gridID, "picSource",
+    source = std::make_unique<SourceInterface>(*fi, gridID, "picSource",
                                                SourceFluid);
   }
   if (source)
-    pic->set_fluid_source(source);
+    pic->set_fluid_source(source.get());
 
   gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 

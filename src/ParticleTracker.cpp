@@ -137,8 +137,8 @@ void ParticleTracker::update_field(Pic& pic) {
 }
 
 void ParticleTracker::post_process_param() {
-  savectr = std::unique_ptr<PlotCtr>(
-      new PlotCtr(tc.get(), gridID, -1, nPTRecord * dnSave));
+  savectr =
+      std::unique_ptr<PlotCtr>(new PlotCtr(tc, gridID, -1, nPTRecord * dnSave));
   savectr->set_multiple(dnSave);
 }
 
@@ -173,9 +173,9 @@ void ParticleTracker::post_regrid() {
   //--------------test particles-----------------------------------
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
-      auto ptr = std::unique_ptr<TestParticles>(new TestParticles(
-          this, fi.get(), tc.get(), i, fi->get_species_charge(i),
-          fi->get_species_mass(i), gridID));
+      auto ptr = std::unique_ptr<TestParticles>(
+          new TestParticles(this, fi, tc, i, fi->get_species_charge(i),
+                            fi->get_species_mass(i), gridID));
       ptr->set_region_range(activeRegion);
       ptr->set_ppc(nTPPerCell);
       ptr->set_interval(nTPIntervalCell);

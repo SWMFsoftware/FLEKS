@@ -202,9 +202,9 @@ void Pic::post_regrid() {
   if (parts.empty()) {
     solveEM = true;
     for (int i = 0; i < nSpecies; i++) {
-      auto ptr = std::unique_ptr<Particles<> >(new Particles<>(
-          this, fi.get(), tc.get(), i, fi->get_species_charge(i),
-          fi->get_species_mass(i), nPartPerCell, testCase));
+      auto ptr = std::unique_ptr<Particles<> >(
+          new Particles<>(this, fi, tc, i, fi->get_species_charge(i),
+                          fi->get_species_mass(i), nPartPerCell, testCase));
 
       // If contains neutrals, assume this is OH-PT coupling, and do not solve
       // for EM fields.
@@ -370,8 +370,8 @@ void Pic::fill_source_particles() {
   doSelectRegion = (nSpecies == 4);
 #endif
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->add_particles_source(*source, stateOH.get(), tc->get_dt(),
-                                   nSourcePPC, doSelectRegion);
+    parts[i]->add_particles_source(*source, stateOH, tc->get_dt(), nSourcePPC,
+                                   doSelectRegion);
   }
 }
 
@@ -1525,8 +1525,7 @@ void Pic::charge_exchange() {
   source->set_node_fluid_to_zero();
 
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->charge_exchange(tc->get_dt(), stateOH.get(), sourcePT2OH.get(),
-                              source.get());
+    parts[i]->charge_exchange(tc->get_dt(), stateOH, sourcePT2OH, source);
   }
 
   // 'source' is applied to generate new particles every step, so sum_boundary()
