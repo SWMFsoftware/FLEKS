@@ -774,6 +774,25 @@ void Domain::read_param(const bool readGridInfo) {
         }
 
         shapes.push_back(std::make_unique<Shell>(name, center, rInner, rOuter));
+      } else if (type == "paraboloid") {
+        int iAxis;
+        Real center[nDim], height, r1, r2;
+
+        param.read_var("iAxis", iAxis);
+        for (int i = 0; i < nDim; i++) {
+          param.read_var("center", center[i]);
+        }
+
+        param.read_var("height", height);
+        param.read_var("r1", r1);
+        param.read_var("r2", r2);
+
+        if (isFake2D) {
+          center[iz_] = 0;
+        }
+
+        shapes.push_back(
+            std::make_unique<Paraboloid>(name, center, r1, r2, height, iAxis));
       }
 
     } else if (command == "#REFINEREGION") {
