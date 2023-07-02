@@ -6,8 +6,7 @@ using namespace amrex;
 
 //========================================================
 void Domain::init(double time, const int iDomain,
-                  const std::string &paramString,
-                  const Vector<int> &paramInt,
+                  const std::string &paramString, const Vector<int> &paramInt,
                   const Vector<double> &paramRegion,
                   const Vector<double> &paramComm) {
 
@@ -268,7 +267,9 @@ void Domain::regrid() {
   if (pic)
     pic->regrid(activeRegion, fi.get());
 
-  if (pt)
+  // Short circuit evaluation, and order of evaluation, is a mandated semantic
+  // standard in both C and C++. So the following line is safe.
+  if (pt && pt->use_pt())
     pt->regrid(activeRegion, fi.get());
 
   iGrid++;
@@ -925,7 +926,7 @@ void Domain::read_param(const bool readGridInfo) {
         param.read_var("dtSavePlot", dtSave);
 
         RealVect plotMin_D = { AMREX_D_DECL(1, 1, 1) },
-                        plotMax_D = { AMREX_D_DECL(-1, -1, -1) };
+                 plotMax_D = { AMREX_D_DECL(-1, -1, -1) };
         if (plotString.find("cut") != std::string::npos) {
           // Output range is 'cut' type.
           for (int iDim = 0; iDim < nDim; iDim++) {
