@@ -7,7 +7,6 @@
 #include "Utility.h"
 
 using namespace amrex;
-using namespace std;
 
 void FluidInterface::analyze_var_names(bool useNeutralOnly) {
 
@@ -207,15 +206,15 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
     int idx = 0;
     for (int i = 0; i < nS; i++) {
       iRho_I[i] = idx++;
-      varNames.push_back("rho" + to_string(i));
+      varNames.push_back("rho" + std::to_string(i));
       iUx_I[i] = idx++;
-      varNames.push_back("ux" + to_string(i));
+      varNames.push_back("ux" + std::to_string(i));
       iUy_I[i] = idx++;
-      varNames.push_back("uy" + to_string(i));
+      varNames.push_back("uy" + std::to_string(i));
       iUz_I[i] = idx++;
-      varNames.push_back("uz" + to_string(i));
+      varNames.push_back("uz" + std::to_string(i));
       iP_I[i] = idx++;
-      varNames.push_back("p" + to_string(i));
+      varNames.push_back("p" + std::to_string(i));
     }
     iBx = idx++;
     varNames.push_back("bx");
@@ -403,11 +402,11 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
   calc_conversion_units();
 
   if (useMultiFluid && !useMhdPe) {
-    cout << printPrefix
-         << " Use multi-fluid but do not use electron pressure. This "
-            "case is "
-            "not supported so far!!!"
-         << endl;
+    std::cout << printPrefix
+              << " Use multi-fluid but do not use electron pressure. This "
+                 "case is "
+                 "not supported so far!!!"
+              << std::endl;
     abort();
   }
 }
@@ -440,7 +439,8 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
           // Assume a neutral fluid's density is named as "ne*rho"
           if (name.compare(0, 2, "ne") == 0 && name.compare(3, 3, "rho") == 0) {
             nNeuFluid++;
-            Print() << "name " << name << " size = " << name.size() << endl;
+            Print() << "name " << name << " size = " << name.size()
+                    << std::endl;
           }
         }
 
@@ -1053,49 +1053,60 @@ void FluidInterface::calc_mag_base_vector(const double Bx, const double By,
 void FluidInterface::print_info() const {
 
   if (ParallelDescriptor::MyProc() == 0) {
-    cout << endl;
-    cout.precision(15);
-    cout << printPrefix << "Number of PIC species     = " << nS << endl;
-    cout << printPrefix << "Total mass of all species = " << SumMass << endl;
-    cout << printPrefix << "useMultiFluid  = " << (useMultiFluid ? "T" : "F")
-         << endl;
+    std::cout << std::endl;
+    std::cout.precision(15);
+    std::cout << printPrefix << "Number of PIC species     = " << nS
+              << std::endl;
+    std::cout << printPrefix << "Total mass of all species = " << SumMass
+              << std::endl;
+    std::cout << printPrefix
+              << "useMultiFluid  = " << (useMultiFluid ? "T" : "F")
+              << std::endl;
 
     if (useMultiFluid)
-      cout << printPrefix << "nFluid = " << nFluid << endl;
-    cout << printPrefix << "useMultiSpecies = " << (useMultiSpecies ? "T" : "F")
-         << endl;
+      std::cout << printPrefix << "nFluid = " << nFluid << std::endl;
+    std::cout << printPrefix
+              << "useMultiSpecies = " << (useMultiSpecies ? "T" : "F")
+              << std::endl;
     if (useMultiSpecies)
-      cout << printPrefix << "nSpeciesFluid =" << nSpeciesFluid << endl;
-    cout << printPrefix
-         << "useElectronFluid = " << (useElectronFluid ? "T" : "F") << endl;
+      std::cout << printPrefix << "nSpeciesFluid =" << nSpeciesFluid
+                << std::endl;
+    std::cout << printPrefix
+              << "useElectronFluid = " << (useElectronFluid ? "T" : "F")
+              << std::endl;
     for (int is = 0; is < nS; is++) {
-      cout << printPrefix << "Q/Qi[" << is << "] = " << QoQi_S[is] << endl;
-      cout << printPrefix << "M/Mi[" << is << "] = " << MoMi_S[is] << endl;
+      std::cout << printPrefix << "Q/Qi[" << is << "] = " << QoQi_S[is]
+                << std::endl;
+      std::cout << printPrefix << "M/Mi[" << is << "] = " << MoMi_S[is]
+                << std::endl;
     }
     if (!useMhdPe)
-      cout << printPrefix << "Pe/Ptotal = " << PeRatio << endl;
-    cout << printPrefix
-         << "============= Normalization factors =============" << endl;
-    cout << printPrefix << "Mnorm    = " << Mnorm << endl;
-    cout << printPrefix << "Unorm    = " << Unorm << endl;
-    cout << printPrefix << "Qnorm    = " << Qnorm << endl;
-    cout << printPrefix << "Lnorm    = " << Lnorm << endl;
-    cout << printPrefix
-         << "========== Unit conversion factors ==============" << endl;
-    cout << printPrefix << "Si2NoRho = " << Si2NoRho << endl;
-    cout << printPrefix << "Si2NoV   = " << Si2NoV << endl;
-    cout << printPrefix << "Si2NoB   = " << Si2NoB << endl;
-    cout << printPrefix << "Si2NoE   = " << Si2NoE << endl;
-    cout << printPrefix << "Si2NoP   = " << Si2NoP << endl;
-    cout << printPrefix << "Si2NoJ   = " << Si2NoJ << endl;
-    cout << printPrefix << "Si2NoL   = " << Si2NoL << endl;
-    cout << printPrefix
-         << "===================================================" << endl;
+      std::cout << printPrefix << "Pe/Ptotal = " << PeRatio << std::endl;
+    std::cout << printPrefix
+              << "============= Normalization factors ============="
+              << std::endl;
+    std::cout << printPrefix << "Mnorm    = " << Mnorm << std::endl;
+    std::cout << printPrefix << "Unorm    = " << Unorm << std::endl;
+    std::cout << printPrefix << "Qnorm    = " << Qnorm << std::endl;
+    std::cout << printPrefix << "Lnorm    = " << Lnorm << std::endl;
+    std::cout << printPrefix
+              << "========== Unit conversion factors =============="
+              << std::endl;
+    std::cout << printPrefix << "Si2NoRho = " << Si2NoRho << std::endl;
+    std::cout << printPrefix << "Si2NoV   = " << Si2NoV << std::endl;
+    std::cout << printPrefix << "Si2NoB   = " << Si2NoB << std::endl;
+    std::cout << printPrefix << "Si2NoE   = " << Si2NoE << std::endl;
+    std::cout << printPrefix << "Si2NoP   = " << Si2NoP << std::endl;
+    std::cout << printPrefix << "Si2NoJ   = " << Si2NoJ << std::endl;
+    std::cout << printPrefix << "Si2NoL   = " << Si2NoL << std::endl;
+    std::cout << printPrefix
+              << "==================================================="
+              << std::endl;
 
-    cout << printPrefix << "useResistivity = " << (useResist ? "T" : "F")
-         << "\n etaSI (magnetic diffusivity with unit m^2/s) = " << etaSI
-         << "\n etaNO (magnetic diffusivity)                 = " << etaNO
-         << endl;
+    std::cout << printPrefix << "useResistivity = " << (useResist ? "T" : "F")
+              << "\n etaSI (magnetic diffusivity with unit m^2/s) = " << etaSI
+              << "\n etaNO (magnetic diffusivity)                 = " << etaNO
+              << std::endl;
   }
 }
 
@@ -1263,10 +1274,10 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
           // ONLY works for iso pressure so far!!!!!
           data_I[iP_I[iIon]] += (PiXX + PiYY + PiZZ) / 3;
           if (useAnisoP) {
-            cout << printPrefix
-                 << "Multi-fluid model can not work with aniso pressure "
-                    "now!!"
-                 << endl;
+            std::cout << printPrefix
+                      << "Multi-fluid model can not work with aniso pressure "
+                         "now!!"
+                      << std::endl;
             abort();
           }
         }
@@ -1339,7 +1350,7 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
 }
 
 void FluidInterface::save_amrex_file() {
-  string filename = component + "/plots/" + tag;
+  std::string filename = component + "/plots/" + tag;
   Print() << "Writing FluidInterface file " << filename << std::endl;
 
   // for (int i = 0; i < nodeFluid[0].nComp(); i++) {
@@ -1353,7 +1364,7 @@ void FluidInterface::save_amrex_file() {
 
   if (varNames.empty()) {
     for (int i = 0; i < nodeFluid[0].nComp(); i++) {
-      varNames.push_back("var" + to_string(i));
+      varNames.push_back("var" + std::to_string(i));
     }
   }
   // WriteSingleLevelPlotfile(filename, nodeFluid[0], varNames, Geom(0), 0, 0);

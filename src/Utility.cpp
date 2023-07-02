@@ -5,7 +5,6 @@
 #include "Timer.h"
 #include "Utility.h"
 
-using namespace std;
 using namespace amrex;
 
 void lap_node_to_node(const MultiFab& srcMF, MultiFab& dstMF,
@@ -543,14 +542,14 @@ double read_mem_usage() {
 
   double rssMB = 0.0;
 
-  ifstream stat_stream("/proc/self/stat", ios_base::in);
+  std::ifstream stat_stream("/proc/self/stat", std::ios_base::in);
 
   if (!stat_stream.fail()) {
     // Dummy vars for leading entries in stat that we don't care about
-    string pid, comm, state, ppid, pgrp, session, tty_nr;
-    string tpgid, flags, minflt, cminflt, majflt, cmajflt;
-    string utime, stime, cutime, cstime, priority, nice;
-    string O, itrealvalue, starttime;
+    std::string pid, comm, state, ppid, pgrp, session, tty_nr;
+    std::string tpgid, flags, minflt, cminflt, majflt, cmajflt;
+    std::string utime, stime, cutime, cstime, priority, nice;
+    std::string O, itrealvalue, starttime;
 
     // Two values we want
     unsigned long vsize;

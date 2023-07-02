@@ -2,8 +2,6 @@
 // #include "linear_solver_wrapper_c.h" // Calling Fortran solver
 #include "LinearSolver.h"
 
-using namespace std;
-
 void matvec_E_solver(const double *vecIn, double *vecOut, int n) {
   fleksDomains(fleksDomains.selected()).pic->update_E_matvec(vecIn, vecOut);
 }
@@ -47,7 +45,7 @@ void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
 }
 
 void linear_solver_wrapper_hy(
-    function<void(const double *, double *, const int)> matvec,
+    std::function<void(const double *, double *, const int)> matvec,
     // Matrix-free operation
     const KrylovType typeSolver,              // Type of Solver
     const double tolerance,                   // Tolerance for the solver
@@ -57,7 +55,7 @@ void linear_solver_wrapper_hy(
     const int nI, const int nJ, const int nK, // Number of cells in a block
     const int nBlock,              // Number of impl. blocks on current proc
     const MPI_Comm iComm,          // MPI communicator for processors
-    double *rhs_I,                 // RHS vector
+    double *rhs_I,                 // RHS std::vector
     double *x_I,                   // Initial guess/solution
     const PrecondType typePrecond, // Parameter for the preconditioner
     double *precondMatrix_II, // Diagonal and super/sub diagonal elements from
@@ -84,15 +82,15 @@ void linear_solver_wrapper_hy(
 
   int nVarIjk = nVar * nI * nJ * nK; // Number of variables per block
 
-  int nImpl = nVarIjk * nBlock; // Number of variables per processor
+  int nImpl = nVarIjk * nBlock;      // Number of variables per processor
 
   bool DoTest = lTest == 1;
 
   // Make sure that left preconditioning is used when necessary
   param.typePrecondSide = LEFT;
 
-  // Initialize solution vector to zero
-  fill(x_I, x_I + nImpl, 0.0);
+  // Initialize solution std::vector to zero
+  std::fill(x_I, x_I + nImpl, 0.0);
 
   // Get preconditioning matrix if required.
   // Precondition RHS and initial guess (for symmetric prec only)
@@ -103,8 +101,9 @@ void linear_solver_wrapper_hy(
   param.error = param.errorMax;
 
   if (DoTest)
-    cout << "Before " << param.typeKrylov
-         << " nMatVec, Error: " << param.nMatvec << " " << param.error << endl;
+    std::cout << "Before " << param.typeKrylov
+              << " nMatVec, Error: " << param.nMatvec << " " << param.error
+              << std::endl;
 
   int iError;
 
@@ -126,12 +125,12 @@ void linear_solver_wrapper_hy(
       //   DoTest, iComm);
       break;
     default:
-      cout << "Unknown solver type = " << param.typeKrylov << endl;
+      std::cout << "Unknown solver type = " << param.typeKrylov << std::endl;
   }
 
   if (DoTest)
-    cout << "After nMatVec, Error, iError = " << param.nMatvec << " "
-         << param.error << " " << iError << endl;
+    std::cout << "After nMatVec, Error, iError = " << param.nMatvec << " "
+              << param.error << " " << iError << std::endl;
 }
 
 // In C++20, use span
@@ -158,10 +157,10 @@ Rewritten into F90 and parallelized by Gabor Toth (May 2002)
 Moved into LinearSolver.f90 for SWMF by Gabor Toth (Dec 2006)
 Rewritten into C++ by Hongyang Zhou (Oct 2020)
 */
-int gmres(function<void(const double *, double *, const int)>
-              matvec,              // Func for matrix vector multiplication
-          const double *rhs,       // Right hand side vector
-          double *sol,             // Initial guess / solution vector
+int gmres(std::function<void(const double *, double *, const int)>
+              matvec,              // Func for matrix std::vector multiplication
+          const double *rhs,       // Right hand side std::vector
+          double *sol,             // Initial guess / solution std::vector
           const bool isInit,       // true if sol contains initial guess
           const int n,             // Number of unknowns
           const int nKrylov,       // Size of krylov subspace
@@ -180,12 +179,12 @@ int gmres(function<void(const double *, double *, const int)>
   //                -: residual did not reduce
 
   if (doTest)
-    cout << "GMRES tol,nIter:" << tol << " " << nIter << endl;
+    std::cout << "GMRES tol,nIter:" << tol << " " << nIter << std::endl;
 
   int nKrylov1 = nKrylov + 1;
-  vector<double> c(nKrylov);
-  vector<double> s(nKrylov);
-  vector<double> rs(nKrylov1);
+  std::vector<double> c(nKrylov);
+  std::vector<double> s(nKrylov);
+  std::vector<double> rs(nKrylov1);
   auto *Krylov_II = new double[n * (nKrylov + 2)];
   auto *hh = new double[nKrylov1 * nKrylov];
 
@@ -203,7 +202,7 @@ int gmres(function<void(const double *, double *, const int)>
 
   do // Restart loop
   {
-    // Compute initial residual vector
+    // Compute initial residual std::vector
     // Krylov_II[1]:=A*sol
     if (isInit || its > 0) {
       matvec(sol, Krylov_II, n);
@@ -236,7 +235,7 @@ int gmres(function<void(const double *, double *, const int)>
     if (its == 0) {
       ro0 = ro;
       if (doTest)
-        cout << "initial rnrm: " << ro0 << endl;
+        std::cout << "initial rnrm: " << ro0 << std::endl;
       if (typeStop == ABS) {
         Tol1 = tol;
         if (ro <= Tol1) { // Quit if accurate enough
@@ -244,7 +243,7 @@ int gmres(function<void(const double *, double *, const int)>
           tol = ro;
           nIter = its;
           if (doTest)
-            cout << "GMRES: nothing to do. info = " << info;
+            std::cout << "GMRES: nothing to do. info = " << info;
           return info;
         }
       } else {
@@ -311,11 +310,11 @@ int gmres(function<void(const double *, double *, const int)>
       ro = abs(rs[i1]);
       if (doTest) {
         if (typeStop == REL) {
-          cout << its << " matvecs, "
-               << " ||rn||/||r0|| = " << ro / ro0 << endl;
+          std::cout << its << " matvecs, "
+                    << " ||rn||/||r0|| = " << ro / ro0 << std::endl;
         } else if (typeStop == ABS) {
-          cout << its << " matvecs, "
-               << " ||rn|| = " << ro << endl;
+          std::cout << its << " matvecs, "
+                    << " ||rn|| = " << ro << std::endl;
         }
       }
       i += 1;

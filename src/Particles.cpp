@@ -7,7 +7,6 @@
 #include "Utility.h"
 
 using namespace amrex;
-using namespace std;
 
 //==========================================================
 template <int NStructReal, int NStructInt>
@@ -1986,7 +1985,7 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charge_exchange(
     Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH,
     SourceInterface* source) {
-  string nameFunc = "Particles::charge_exchange";
+  std::string nameFunc = "Particles::charge_exchange";
 
   timing_func(nameFunc);
 
