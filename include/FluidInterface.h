@@ -280,7 +280,7 @@ public:
     for (int iLev = 0; iLev < n_lev(); ++iLev)
       nodeFluid[iLev].SumBoundary(Geom(iLev).periodicity());
 
-    for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
+    for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
       sum_two_lev_interface_node(
           nodeFluid[iLev], nodeFluid[iLev + 1], 0, nodeFluid[iLev].nComp(),
           ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
