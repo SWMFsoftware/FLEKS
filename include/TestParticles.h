@@ -89,28 +89,28 @@ public:
   }
 
   template <typename T> void gather_accumulate_and_scatter(T& local, T& ahead) {
-    using namespace amrex;
-
-    int nProc = ParallelDescriptor::NProcs();
+    int nProc = amrex::ParallelDescriptor::NProcs();
 
     // The following two vectors are only useful on the root processor. They are
     // allocated on all processors to avoid memory leak since they are passed to
     // functions like Gather()
-    Vector<T> perProc, accumulated;
+    amrex::Vector<T> perProc, accumulated;
     perProc.resize(nProc, 0);
     accumulated.resize(nProc, 0);
 
-    ParallelDescriptor::Gather(&local, 1, &perProc[0], 1,
-                               ParallelDescriptor::IOProcessorNumber());
+    amrex::ParallelDescriptor::Gather(
+        &local, 1, &perProc[0], 1,
+        amrex::ParallelDescriptor::IOProcessorNumber());
 
-    if (ParallelDescriptor::IOProcessor()) {
+    if (amrex::ParallelDescriptor::IOProcessor()) {
       for (int i = 1; i < accumulated.size(); i++) {
         accumulated[i] = accumulated[i - 1] + perProc[i - 1];
       }
     }
 
-    ParallelDescriptor::Scatter(&ahead, 1, &accumulated[0], 1,
-                                ParallelDescriptor::IOProcessorNumber());
+    amrex::ParallelDescriptor::Scatter(
+        &ahead, 1, &accumulated[0], 1,
+        amrex::ParallelDescriptor::IOProcessorNumber());
   }
 
   void update_initial_particle_number() {
