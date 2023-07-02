@@ -652,14 +652,14 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut) {
   MultiFab outMF(cGrids[iLev], DistributionMap(iLev), 1, nGst);
   outMF.setVal(0.0);
 
-  for (amrex::MFIter mfi(inMF); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.validbox();
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
+  for (MFIter mfi(inMF); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
 
-    const amrex::Array4<amrex::Real>& lArr = outMF[mfi].array();
-    const amrex::Array4<amrex::Real const>& rArr = inMF[mfi].array();
-    const amrex::Array4<RealCMM>& mmArr = centerMM[iLev][mfi].array();
+    const Array4<Real>& lArr = outMF[mfi].array();
+    const Array4<Real const>& rArr = inMF[mfi].array();
+    const Array4<RealCMM>& mmArr = centerMM[iLev][mfi].array();
 
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
@@ -771,7 +771,7 @@ void Pic::update(bool doReportIn) {
   if (doReport) {
     Real tEnd = second();
     Real nPoint = activeRegion.d_numPts();
-    int nProc = amrex::ParallelDescriptor::NProcs();
+    int nProc = ParallelDescriptor::NProcs();
     // The unit of the speed is (cell per processor per second)
     Real speed = nPoint / nProc / (tEnd - tStart);
 
@@ -984,14 +984,14 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
   outMF.setVal(0.0);
   int iLev = 0;
   Real c0 = fourPI * fsolver.theta * tc->get_dt();
-  for (amrex::MFIter mfi(outMF); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.validbox();
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
+  for (MFIter mfi(outMF); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
 
-    const amrex::Array4<amrex::Real const>& inArr = inMF[mfi].array();
-    const amrex::Array4<amrex::Real>& ourArr = outMF[mfi].array();
-    const amrex::Array4<RealMM>& mmArr = nodeMM[iLev][mfi].array();
+    const Array4<Real const>& inArr = inMF[mfi].array();
+    const Array4<Real>& ourArr = outMF[mfi].array();
+    const Array4<RealMM>& mmArr = nodeMM[iLev][mfi].array();
 
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
@@ -1140,8 +1140,7 @@ void Pic::calc_smooth_coef() {
 }
 
 //==========================================================
-void Pic::smooth_multifab(amrex::MultiFab& mf, bool useFixedCoef,
-                          double coefIn) {
+void Pic::smooth_multifab(MultiFab& mf, bool useFixedCoef, double coefIn) {
   std::string nameFunc = "Pic::smooth_multifab";
   timing_func(nameFunc);
 
@@ -1156,9 +1155,9 @@ void Pic::smooth_multifab(amrex::MultiFab& mf, bool useFixedCoef,
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.validbox();
 
-      amrex::Array4<amrex::Real> const& arrE = mf[mfi].array();
-      amrex::Array4<amrex::Real> const& arrTmp = mfOld[mfi].array();
-      amrex::Array4<amrex::Real> const& arrCoef = nodeSmoothCoef[mfi].array();
+      Array4<Real> const& arrE = mf[mfi].array();
+      Array4<Real> const& arrTmp = mfOld[mfi].array();
+      Array4<Real> const& arrCoef = nodeSmoothCoef[mfi].array();
 
       const auto lo = IntVect(bx.loVect());
       const auto hi = IntVect(bx.hiVect());
@@ -1232,7 +1231,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
       //! if there are cells not in the valid + periodic grown box
       //! we need to fill them here
       if (!ba.contains(bx)) {
-        amrex::Array4<amrex::Real> const& arr = mf[mfi].array();
+        Array4<Real> const& arr = mf[mfi].array();
 
         const Array4<const int>& statusArr = status[mfi].array();
 
@@ -1270,7 +1269,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
       //! if there are cells not in the valid + periodic grown box
       //! we need to fill them here
       if (!ba.contains(bx)) {
-        amrex::Array4<amrex::Real> const& arr = mf[mfi].array();
+        Array4<Real> const& arr = mf[mfi].array();
 
         const Array4<const int>& statusArr = status[mfi].array();
 
@@ -1362,7 +1361,7 @@ Real Pic::calc_B_field_energy() {
 }
 
 //==========================================================
-void Pic::convert_1d_to_3d(const double* const p, amrex::MultiFab& MF) {
+void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF) {
   std::string nameFunc = "Pic::convert_1d_to_3d";
   timing_func(nameFunc);
 
@@ -1372,11 +1371,11 @@ void Pic::convert_1d_to_3d(const double* const p, amrex::MultiFab& MF) {
 
   int iLev = 0;
   int iCount = 0;
-  for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.tilebox();
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
-    const amrex::Array4<amrex::Real>& arr = MF[mfi].array();
+  for (MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.tilebox();
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+    const Array4<Real>& arr = MF[mfi].array();
 
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
     int iMin = lo.x, jMin = lo.y, kMin = lo.z;
@@ -1393,7 +1392,7 @@ void Pic::convert_1d_to_3d(const double* const p, amrex::MultiFab& MF) {
 }
 
 //==========================================================
-void Pic::convert_3d_to_1d(const amrex::MultiFab& MF, double* const p) {
+void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p) {
   std::string nameFunc = "Pic::convert_3d_to_1d";
   timing_func(nameFunc);
 
@@ -1401,11 +1400,11 @@ void Pic::convert_3d_to_1d(const amrex::MultiFab& MF, double* const p) {
 
   int iLev = 0;
   int iCount = 0;
-  for (amrex::MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.tilebox();
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
-    const amrex::Array4<amrex::Real const>& arr = MF[mfi].array();
+  for (MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.tilebox();
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+    const Array4<Real const>& arr = MF[mfi].array();
 
     // Avoid double counting the share edges.
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;

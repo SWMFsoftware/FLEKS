@@ -139,7 +139,7 @@ void Converter::write() {
 int Converter::loop_cell(bool doCountOnly) {
   int iCount = 0;
   for (MFIter mfi(iCell); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.validbox();
+    const Box& box = mfi.validbox();
     const Array4<int>& cell = iCell[mfi].array();
     const Array4<Real>& data = mf[mfi].array();
 
@@ -169,7 +169,7 @@ int Converter::loop_brick(bool doCountOnly) {
     outFile.width(8);
 
   for (MFIter mfi(iCell); mfi.isValid(); ++mfi) {
-    const amrex::Box& box = mfi.validbox();
+    const Box& box = mfi.validbox();
     const Array4<int>& cell = iCell[mfi].array();
 
     const auto lo = lbound(box);

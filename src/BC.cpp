@@ -46,7 +46,7 @@ void apply_float_boundary(const iMultiFab& status, MultiFab& mf,
   //                    BCType::foextrap);
   //     }
 
-  //     amrex::Array4<amrex::Real> const& arr = mf[mfi].array();
+  //     Array4<Real> const& arr = mf[mfi].array();
   //     const auto& statusArr = status[mfi].array();
 
   //     // Include ghost cells.

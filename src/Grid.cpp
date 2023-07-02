@@ -2,7 +2,7 @@
 
 using namespace amrex;
 
-void Grid::regrid(const amrex::BoxArray& region, const Grid* const grid) {
+void Grid::regrid(const BoxArray& region, const Grid* const grid) {
   std::string nameFunc = "Grid::regrid_base";
 
   if (grid) {
@@ -26,7 +26,7 @@ void Grid::regrid(const amrex::BoxArray& region, const Grid* const grid) {
 
   if (isGridEmpty) {
     cGrids.clear();
-    cGrids.push_back(amrex::BoxArray());
+    cGrids.push_back(BoxArray());
   } else {
     if (grid) {
       SetFinestLevel(grid->finestLevel());

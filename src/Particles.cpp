@@ -54,7 +54,7 @@ Particles<NStructReal, NStructInt>::Particles(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::outflow_bc(const amrex::MFIter& mfi,
+void Particles<NStructReal, NStructInt>::outflow_bc(const MFIter& mfi,
                                                     const int ig, const int jg,
                                                     const int kg, const int ip,
                                                     const int jp,
@@ -215,10 +215,10 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           }
 
           ParticleType p;
-          if (ParticleType::the_next_id >= amrex::LastParticleID) {
+          if (ParticleType::the_next_id >= LastParticleID) {
             // id should not be larger than LastParticleID. This is a bad
             // solution, since the ID becomes nonunique. --Yuxi
-            p.id() = amrex::LastParticleID;
+            p.id() = LastParticleID;
           } else {
             p.id() = ParticleType::NextID();
           }
@@ -254,8 +254,8 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
       const Box& tile_box = mfi.validbox();
-      const auto lo = amrex::lbound(tile_box);
-      const auto hi = amrex::ubound(tile_box);
+      const auto lo = lbound(tile_box);
+      const auto hi = ubound(tile_box);
 
       int iMax = hi.x, jMax = hi.y, kMax = hi.z;
       int iMin = lo.x, jMin = lo.y, kMin = lo.z;
@@ -293,8 +293,8 @@ void Particles<NStructReal, NStructInt>::add_particles_domain() {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
       const auto& status = cell_status(iLev)[mfi].array();
       const Box& bx = mfi.validbox();
-      const auto lo = amrex::lbound(bx);
-      const auto hi = amrex::ubound(bx);
+      const auto lo = lbound(bx);
+      const auto hi = ubound(bx);
 
       int iMax = hi.x, jMax = hi.y, kMax = hi.z;
       int iMin = lo.x, jMin = lo.y, kMin = lo.z;
@@ -366,8 +366,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::sum_to_center(
-    amrex::MultiFab& netChargeMF, amrex::UMultiFab<RealCMM>& centerMM,
-    bool doNetChargeOnly) {
+    MultiFab& netChargeMF, UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly) {
   timing_func("Particles::sum_to_center");
 
   const int iLev = 0;
@@ -978,8 +977,7 @@ void Particles<NStructReal, NStructInt>::convert_to_fluid_moments(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
-    const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
-    amrex::Real dt) {
+    const MultiFab& nodeEMF, const MultiFab& nodeBMF, Real dt) {
   timing_func("Particles::update_position_to_half_stage");
 
   Real dtLoc = 0.5 * dt;
@@ -1129,7 +1127,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::neutral_mover(amrex::Real dt) {
+void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
   timing_func("Particles::neutral_mover");
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -1163,7 +1161,7 @@ void Particles<NStructReal, NStructInt>::neutral_mover(amrex::Real dt) {
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::divE_correct_position(
-    const amrex::MultiFab& phiMF) {
+    const MultiFab& phiMF) {
   timing_func("Particles::divE_correct_position");
 
   const Real coef = charge / fabs(charge);
@@ -1432,10 +1430,10 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
         p.pos(iz_) = zp1;
 
         ParticleType pnew;
-        if (ParticleType::the_next_id >= amrex::LastParticleID) {
+        if (ParticleType::the_next_id >= LastParticleID) {
           // id should not larger than LastParticleID. This is a bad solution,
           // since the ID becomes nonunique. --Yuxi
-          pnew.id() = amrex::LastParticleID;
+          pnew.id() = LastParticleID;
         } else {
           pnew.id() = ParticleType::NextID();
         }
@@ -1897,8 +1895,8 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
 //==========================================================
 template <int NStructReal, int NStructInt>
 bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
-    const amrex::Box& bx, const amrex::Array4<const int>& status, const int i,
-    const int j, const int k, int& isrc, int& jsrc, int& ksrc) {
+    const Box& bx, const Array4<const int>& status, const int i, const int j,
+    const int k, int& isrc, int& jsrc, int& ksrc) {
 
   // This cell should be a boundary cell at least.
   if (!bit::is_boundary(status(i, j, k)))
@@ -1937,7 +1935,7 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
                          Real no2outV, Real no2outM, RealBox IORange)
     : Particles(gridIn, nullptr, nullptr, other.get_speciesID(),
                 other.get_charge(), other.get_mass(),
-                amrex::IntVect(AMREX_D_DECL(-1, -1, -1))) {
+                IntVect(AMREX_D_DECL(-1, -1, -1))) {
   const int iLev = 0;
   no2outM *= qomSign * get_mass();
 

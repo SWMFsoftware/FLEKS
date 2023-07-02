@@ -7,9 +7,9 @@ using namespace amrex;
 //========================================================
 void Domain::init(double time, const int iDomain,
                   const std::string &paramString,
-                  const amrex::Vector<int> &paramInt,
-                  const amrex::Vector<double> &paramRegion,
-                  const amrex::Vector<double> &paramComm) {
+                  const Vector<int> &paramInt,
+                  const Vector<double> &paramRegion,
+                  const Vector<double> &paramComm) {
 
   tc->set_time_si(time);
 
@@ -146,7 +146,7 @@ void Domain::update_param(const std::string &paramString) {
 };
 
 //========================================================
-void Domain::prepare_grid_info(const amrex::Vector<double> &info) {
+void Domain::prepare_grid_info(const Vector<double> &info) {
 
   read_param(true);
   param.roll_back();
@@ -392,12 +392,12 @@ void Domain::read_restart() {
 
   std::getline(is, line);
   if (line.substr(0, 13) != "#GRIDBOXARRAY")
-    amrex::Abort("Domain::read_restart: wrong header file format.");
+    Abort("Domain::read_restart: wrong header file format.");
 
   int nLev;
   is >> nLev;
 
-  amrex::Vector<amrex::BoxArray> bas;
+  Vector<BoxArray> bas;
   bas.resize(nLev);
   for (int iLev = 0; iLev < nLev; iLev++) {
     bas[iLev].readFrom(is);
@@ -470,7 +470,7 @@ void Domain::save_restart_header() {
                     std::ofstream::out | std::ofstream::trunc);
 
     if (!headerFile.good()) {
-      amrex::FileOpenFailed(headerFileName);
+      FileOpenFailed(headerFileName);
     }
 
     headerFile.precision(17);
@@ -504,7 +504,7 @@ void Domain::save_restart_header() {
       headerFile << "\n";
 
       headerFile << "#FLUIDVARNAMES" + command_suffix;
-      const amrex::Vector<std::string> names = fi->get_var_names();
+      const Vector<std::string> names = fi->get_var_names();
       headerFile << names.size() << "\t\t\tnVar\n";
       for (int i = 0; i < names.size(); i++) {
         headerFile << names[i] << "\t\t\tvarName\n";
@@ -586,7 +586,7 @@ void Domain::save_restart_header() {
                     std::ofstream::out | std::ofstream::trunc);
 
     if (!headerFile.good()) {
-      amrex::FileOpenFailed(headerFileName);
+      FileOpenFailed(headerFileName);
     }
 
     // Grid box array
@@ -924,7 +924,7 @@ void Domain::read_param(const bool readGridInfo) {
         Real dtSave;
         param.read_var("dtSavePlot", dtSave);
 
-        amrex::RealVect plotMin_D = { AMREX_D_DECL(1, 1, 1) },
+        RealVect plotMin_D = { AMREX_D_DECL(1, 1, 1) },
                         plotMax_D = { AMREX_D_DECL(-1, -1, -1) };
         if (plotString.find("cut") != std::string::npos) {
           // Output range is 'cut' type.

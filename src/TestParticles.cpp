@@ -6,8 +6,7 @@ using namespace amrex;
 
 TestParticles::TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
                              TimeCtr* const tcIn, const int speciesID,
-                             const amrex::Real charge, const amrex::Real mass,
-                             int id)
+                             const Real charge, const Real mass, int id)
     : Particles(gridIn, fluidIn, tcIn, speciesID, charge, mass,
                 IntVect(AMREX_D_DECL(1, 1, 1))) {
   gridID = id;
@@ -24,10 +23,10 @@ TestParticles::TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
 }
 
 //==========================================================
-void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
-                                            const amrex::MultiFab& nodeBMF,
-                                            amrex::Real dt, amrex::Real dtNext,
-                                            amrex::Real tNowSI, bool doSave) {
+void TestParticles::move_and_save_particles(const MultiFab& nodeEMF,
+                                            const MultiFab& nodeBMF, Real dt,
+                                            Real dtNext, Real tNowSI,
+                                            bool doSave) {
   if (is_neutral()) {
     move_and_save_neutrals(dt, tNowSI, doSave);
   } else {
@@ -37,9 +36,10 @@ void TestParticles::move_and_save_particles(const amrex::MultiFab& nodeEMF,
 }
 
 //==========================================================
-void TestParticles::move_and_save_charged_particles(
-    const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
-    amrex::Real dt, amrex::Real dtNext, amrex::Real tNowSI, bool doSave) {
+void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
+                                                    const MultiFab& nodeBMF,
+                                                    Real dt, Real dtNext,
+                                                    Real tNowSI, bool doSave) {
   timing_func("TestParticles::move_charged_particles");
 
   Real dtLoc = 0.5 * (dt + dtNext);
@@ -206,8 +206,7 @@ void TestParticles::move_and_save_charged_particles(
 }
 
 //==========================================================
-void TestParticles::move_and_save_neutrals(amrex::Real dt, amrex::Real tNowSI,
-                                           bool doSave) {
+void TestParticles::move_and_save_neutrals(Real dt, Real tNowSI, bool doSave) {
   timing_func("TestParticles::move_neutrals");
 
   const int iLev = 0;
@@ -257,7 +256,7 @@ void TestParticles::move_and_save_neutrals(amrex::Real dt, amrex::Real tNowSI,
 
 //======================================================================
 void TestParticles::read_test_particle_list(
-    const amrex::Vector<std::string>& listFiles) {
+    const Vector<std::string>& listFiles) {
   std::string funcName = "TP::read_test_particle_list";
   timing_func(funcName);
 
@@ -361,7 +360,7 @@ void TestParticles::add_test_particles_from_pic(Particles<>* pts) {
     }
 
     MPI_Allreduce(MPI_IN_PLACE, ba.get(), ba.size_int(), MPI_INT, MPI_BAND,
-                  amrex::ParallelDescriptor::Communicator());
+                  ParallelDescriptor::Communicator());
 
     for (unsigned int i = 0; i < vIDs.size(); i++) {
       if (ba.get(i) == 0) {
@@ -444,7 +443,7 @@ bool TestParticles::write_particles(int cycle) {
   std::stringstream ss;
   ss << "n" << std::setfill('0') << std::setw(8) << cycle;
 
-  amrex::UtilCreateDirectory(outputDir, 0755);
+  UtilCreateDirectory(outputDir, 0755);
   std::string fileNamePartList = outputDir + "/" + gridName +
                                  "_particle_list_species_" +
                                  std::to_string(speciesID) + "_" + ss.str();
@@ -482,7 +481,7 @@ bool TestParticles::write_particles(int cycle) {
       headerFile.open(headerName.c_str(), std::ios::out | std::ios::trunc);
 
       if (!headerFile.good())
-        amrex::FileOpenFailed(headerName);
+        FileOpenFailed(headerName);
 
       headerFile << ptRecordSize << "\n";
     }

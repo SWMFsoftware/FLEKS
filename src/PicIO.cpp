@@ -85,7 +85,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
 //==========================================================
 void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
                            PlotWriter::VectorPointList& pointList_II,
-                           amrex::RealVect& xMin_D, amrex::RealVect& xMax_D) {
+                           RealVect& xMin_D, RealVect& xMax_D) {
   if (isGridEmpty)
     return;
   // Loop not implemented correctly // Talha
@@ -271,23 +271,23 @@ double Pic::get_var(std::string var, const int iLev, const int ix, const int iy,
       const auto dx = Geom(iLev).CellSize();
       value = iz * dx[iz_] + plo[iz_];
     } else if (var.substr(0, 2) == "Ex") {
-      const amrex::Array4<amrex::Real const>& arr =
+      const Array4<Real const>& arr =
           nodeE[iLev][mfi].array(); // Talha- check // no loop
       value = arr(ix, iy, iz, ix_);
     } else if (var.substr(0, 2) == "Ey") {
-      const amrex::Array4<amrex::Real const>& arr = nodeE[iLev][mfi].array();
+      const Array4<Real const>& arr = nodeE[iLev][mfi].array();
       value = arr(ix, iy, iz, iy_);
     } else if (var.substr(0, 2) == "Ez") {
-      const amrex::Array4<amrex::Real const>& arr = nodeE[iLev][mfi].array();
+      const Array4<Real const>& arr = nodeE[iLev][mfi].array();
       value = arr(ix, iy, iz, iz_);
     } else if (var.substr(0, 2) == "Bx") {
-      const amrex::Array4<amrex::Real const>& arr = nodeB[iLev][mfi].array();
+      const Array4<Real const>& arr = nodeB[iLev][mfi].array();
       value = arr(ix, iy, iz, ix_);
     } else if (var.substr(0, 2) == "By") {
-      const amrex::Array4<amrex::Real const>& arr = nodeB[iLev][mfi].array();
+      const Array4<Real const>& arr = nodeB[iLev][mfi].array();
       value = arr(ix, iy, iz, iy_);
     } else if (var.substr(0, 2) == "Bz") {
-      const amrex::Array4<amrex::Real const>& arr = nodeB[iLev][mfi].array();
+      const Array4<Real const>& arr = nodeB[iLev][mfi].array();
       value = arr(ix, iy, iz, iz_);
     } else if (var.substr(0, 4) == "rhoS" || var.substr(0, 3) == "uxS" ||
                var.substr(0, 3) == "uyS" || var.substr(0, 3) == "uzS" ||
@@ -325,7 +325,7 @@ double Pic::get_var(std::string var, const int iLev, const int ix, const int iy,
         if (var.substr(0, 4) == "numS")
           iVar = iNum_;
 
-        const amrex::Array4<amrex::Real const>& arr =
+        const Array4<Real const>& arr =
             nodePlasma[extract_int(var)][iLev][mfi].array();
         value = arr(ix, iy, iz, iVar);
 
@@ -336,25 +336,22 @@ double Pic::get_var(std::string var, const int iLev, const int ix, const int iy,
         }
       }
     } else if (var.substr(0, 2) == "pS") {
-      const amrex::Array4<amrex::Real const>& arr =
+      const Array4<Real const>& arr =
           nodePlasma[extract_int(var)][iLev][mfi].array();
       value = (arr(ix, iy, iz, iPxx_) + arr(ix, iy, iz, iPyy_) +
                arr(ix, iy, iz, iPzz_)) /
               3.0;
     } else if (var.substr(0, 2) == "qc") {
-      const amrex::Array4<amrex::Real const>& arr =
-          centerNetChargeN[iLev][mfi].array();
+      const Array4<Real const>& arr = centerNetChargeN[iLev][mfi].array();
       value = arr(ix, iy, iz);
     } else if (var.substr(0, 5) == "divEc") {
-      const amrex::Array4<amrex::Real const>& arr =
-          centerDivE[iLev][mfi].array();
+      const Array4<Real const>& arr = centerDivE[iLev][mfi].array();
       value = arr(ix, iy, iz);
     } else if (var.substr(0, 3) == "phi") {
-      const amrex::Array4<amrex::Real const>& arr =
-          centerPhi[iLev][mfi].array();
+      const Array4<Real const>& arr = centerPhi[iLev][mfi].array();
       value = arr(ix, iy, iz);
     } else if (var.substr(0, 7) == "smoothE") {
-      const amrex::Array4<amrex::Real const>& arr = nodeSmoothCoef[mfi].array();
+      const Array4<Real const>& arr = nodeSmoothCoef[mfi].array();
       value = arr(ix, iy, iz);
     } else if (var.substr(0, 4) == "rank") {
       value = ParallelDescriptor::MyProc();
@@ -484,10 +481,8 @@ void Pic::write_plots(bool doForce) {
     return;
   for (auto& plot : tc->plots) {
     if (plot.is_time_to(doForce)) {
-      amrex::Print() << printPrefix
-                     << " Saving plot at time = " << tc->get_time_si()
-                     << " (s) for " << plot.writer.get_plotString()
-                     << std::endl;
+      Print() << printPrefix << " Saving plot at time = " << tc->get_time_si()
+              << " (s) for " << plot.writer.get_plotString() << std::endl;
       if (plot.writer.is_amrex_format()) {
         write_amrex(plot.writer, tc->get_time_si(), tc->get_cycle());
       } else {
@@ -618,7 +613,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
                             int const iCycle, const std::string plotVars,
                             const std::string filenameIn,
                             const BoxArray baOut) {
-  Print() << "amrex::" << pw.get_amrex_filename(timeNow, iCycle) << std::endl;
+  Print() << "" << pw.get_amrex_filename(timeNow, iCycle) << std::endl;
 
   // Save node-centered or cell-centered data. AMReX IO and most visualization
   // tools expect cell-centered data. So the node-centered output looks strange
@@ -831,7 +826,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
     headerFile.open(headerName.c_str(), std::ios::out | std::ios::trunc);
 
     if (!headerFile.good())
-      amrex::FileOpenFailed(headerName);
+      FileOpenFailed(headerName);
 
     headerFile << pw.get_plotString() << "\n";
     headerFile << fi->get_rPlanet_SI() << "\n";
@@ -858,7 +853,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 void find_output_list_caller(const PlotWriter& writerIn,
                              long int& nPointAllProc,
                              PlotWriter::VectorPointList& pointList_II,
-                             amrex::RealVect& xMin_D, amrex::RealVect& xMax_D) {
+                             RealVect& xMin_D, RealVect& xMax_D) {
   fleksDomains(fleksDomains.selected())
       .pic->find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
                              xMax_D);

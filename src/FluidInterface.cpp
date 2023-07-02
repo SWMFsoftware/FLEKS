@@ -169,7 +169,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
 
   } else if (receiveICOnly) {
     if (nS != 5) {
-      amrex::Abort("Error: nS != 5");
+      Abort("Error: nS != 5");
     }
 
     MoMi_S.resize(nS);
@@ -260,15 +260,15 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
 
 FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
                                int nGst, int id, std::string tag,
-                               const amrex::Vector<int>& iParam,
-                               const amrex::Vector<double>& norm,
-                               const amrex::Vector<double>& paramComm)
+                               const Vector<int>& iParam,
+                               const Vector<double>& norm,
+                               const Vector<double>& paramComm)
     : Grid(gm, amrInfo, nGst, id, tag) {
 
   initFromSWMF = true;
 
   if (iParam.empty() || norm.empty() || paramComm.empty())
-    amrex::Abort("Error: one of the input vector is empty!\n");
+    Abort("Error: one of the input vector is empty!\n");
 
   nDimFluid = (Geom(0).Domain().length(iz_) == 1) ? 2 : 3;
   nVarFluid = iParam[2];
@@ -478,8 +478,8 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     useCurrent = true;
   } else if (command == "#UNIFORMSTATE") {
     if (nS <= 0) {
-      amrex::Abort("Error: number of species <=0! Use #PLASMA command "
-                   "to set plasma species information.");
+      Abort("Error: number of species <=0! Use #PLASMA command "
+            "to set plasma species information.");
     }
     double tmp;
     for (int i = 0; i < nS; i++) {
@@ -551,12 +551,12 @@ void FluidInterface::find_mpi_rank_for_points(const int nPoint,
                                               int* const rank_I) {
   const int iNotSet_ = -777;
   int nDimGM = get_fluid_dimension();
-  amrex::Real si2nol = get_Si2NoL();
+  Real si2nol = get_Si2NoL();
   const RealBox& range = Geom(0).ProbDomain();
   for (int i = 0; i < nPoint; i++) {
-    amrex::Real x = xyz_I[i * nDimGM + ix_] * si2nol;
-    amrex::Real y = xyz_I[i * nDimGM + iy_] * si2nol;
-    amrex::Real z = 0;
+    Real x = xyz_I[i * nDimGM + ix_] * si2nol;
+    Real y = xyz_I[i * nDimGM + iy_] * si2nol;
+    Real z = 0;
     if (nDimGM > 2)
       z = xyz_I[i * nDimGM + iz_] * si2nol;
     // Check if this point is inside this FLEKS domain.
@@ -567,7 +567,7 @@ void FluidInterface::find_mpi_rank_for_points(const int nPoint,
       // For PT->OH coupling, MHD does not know the range of FLEKS.
       // If the location is outside the domain, set the rank to be the IO
       // processor. FLEKS will ignore this point and 0.0 will be sent to MHD.
-      rank_I[i] = amrex::ParallelDescriptor::IOProcessorNumber();
+      rank_I[i] = ParallelDescriptor::IOProcessorNumber();
     }
   }
 }
@@ -589,7 +589,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
   } else if (action == "fill") {
     doFill = true;
   } else {
-    amrex::Abort("Error: unknown action!\n");
+    Abort("Error: unknown action!\n");
   }
 
   const double no2siL = get_No2SiL();
@@ -838,7 +838,7 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
                   if (doWarn) {
                     printf("Warning: ZERO density at x = %e, y = %e, z = %e\n",
                            x, y, z);
-                    amrex::Abort("Error: ZERO density!");
+                    Abort("Error: ZERO density!");
                   }
                 }
               } // iFluid
@@ -847,7 +847,7 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
     }
 }
 
-void FluidInterface::set_plasma_charge_and_mass(amrex::Real qomEl) {
+void FluidInterface::set_plasma_charge_and_mass(Real qomEl) {
 
   if (!useElectronFluid) {
     MoMi_S[0] = QoQi_S[0] / qomEl;
@@ -1358,9 +1358,9 @@ void FluidInterface::save_amrex_file() {
   }
   // WriteSingleLevelPlotfile(filename, nodeFluid[0], varNames, Geom(0), 0, 0);
 
-  WriteMultiLevelPlotfile(filename, n_lev(),
-                          amrex::GetVecOfConstPtrs(nodeFluid), varNames, geom,
-                          0.0, Vector<int>(n_lev(), 0), refRatio());
+  WriteMultiLevelPlotfile(filename, n_lev(), GetVecOfConstPtrs(nodeFluid),
+                          varNames, geom, 0.0, Vector<int>(n_lev(), 0),
+                          refRatio());
 
   // for (int i = 0; i < nodeFluid[0].nComp(); i++) {
   //   Real out2no = Si2No_V[i];
@@ -1371,8 +1371,7 @@ void FluidInterface::save_amrex_file() {
 void FluidInterface::get_for_points(const int nDim, const int nPoint,
                                     const double* const xyz_I,
                                     double* const data_I, const int nVar,
-                                    const double coef,
-                                    amrex::Vector<int> idxMap) {
+                                    const double coef, Vector<int> idxMap) {
   std::string nameFunc = "FI::get_for_points";
 
   const RealBox& range = Geom(0).ProbDomain();
