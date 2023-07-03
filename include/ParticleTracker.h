@@ -49,8 +49,8 @@ public:
 private:
   bool usePT = false;
 
-  TimeCtr *tc;
-  FluidInterface *fi;
+  TimeCtr *tc = nullptr;
+  FluidInterface *fi = nullptr;
 
   int nSpecies;
   amrex::Vector<std::unique_ptr<TestParticles> > parts;

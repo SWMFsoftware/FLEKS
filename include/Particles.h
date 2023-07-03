@@ -115,10 +115,10 @@ public:
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::GetParGDB;
 
 protected:
-  Grid* grid;
+  Grid* grid = nullptr;
 
-  FluidInterface* fi;
-  TimeCtr* tc;
+  FluidInterface* fi = nullptr;
+  TimeCtr* tc = nullptr;
 
   int speciesID;
   RandNum randNum;

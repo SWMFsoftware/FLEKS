@@ -49,11 +49,11 @@ private:
   // EM fields.
   bool solveEM = true;
 
-  FluidInterface *fi;
-  FluidInterface *stateOH;
-  FluidInterface *sourcePT2OH;
-  SourceInterface *source;
-  TimeCtr *tc;
+  FluidInterface *fi = nullptr;
+  FluidInterface *stateOH = nullptr;
+  FluidInterface *sourcePT2OH = nullptr;
+  SourceInterface *source = nullptr;
+  TimeCtr *tc = nullptr;
 
   amrex::Vector<amrex::MultiFab> nodeE;
   amrex::Vector<amrex::MultiFab> nodeEth;
