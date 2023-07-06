@@ -127,6 +127,7 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
             bit::set_lev_boundary(cellArr(i, j, k));
+            bit::set_not_domain_boundary(cellArr(i, j, k));
           }
     }
 
@@ -179,6 +180,26 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
 
     cellStatus[iLev].FillBoundary(Geom(iLev).periodicity());
 
+    // Find domain boundary cells
+    for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.fabbox();
+      const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (bit::is_lev_boundary(cellArr(i, j, k))) {
+              Real xyz[nDim];
+              Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
+              if (!is_inside_domain(xyz)) {
+                bit::set_domain_boundary(cellArr(i, j, k));
+              }
+            }
+          }
+    }
+
     // Set the edge cells.
     // Q: But what is the edge cell?
     // A: It is a physical cell that has one or more neighbor cells are
@@ -196,8 +217,13 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
             for (int kk = k - 1; kk <= k + 1; kk++)
               for (int jj = j - 1; jj <= j + 1; jj++)
                 for (int ii = i - 1; ii <= i + 1; ii++) {
-                  if (bit::is_lev_boundary(cellArr(ii, jj, kk)))
+                  if (bit::is_lev_boundary(cellArr(ii, jj, kk))) {
                     bit::set_lev_edge(cellArr(i, j, k));
+
+                    if (bit::is_domain_boundary(cellArr(ii, jj, kk))) {
+                      bit::set_domain_edge(cellArr(i, j, k));
+                    }
+                  }
                 }
           }
     }
@@ -240,6 +266,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
             bit::set_lev_boundary(nodeArr(i, j, k));
+            bit::set_not_domain_boundary(nodeArr(i, j, k));
           }
     }
 
@@ -276,9 +303,26 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
 
     nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
 
-    // Set the 'edge' status
-    // Q: But what is the edge node?
-    // A: It is a node at the boundary of a level.
+    // Find domain boundary cells
+    for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.fabbox();
+      const Array4<int>& nodeArr = nodeStatus[iLev][mfi].array();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (bit::is_lev_boundary(nodeArr(i, j, k))) {
+              Real xyz[nDim];
+              Geom(iLev).LoNode({ AMREX_D_DECL(i, j, k) }, xyz);
+              if (!is_inside_domain(xyz)) {
+                bit::set_domain_boundary(nodeArr(i, j, k));
+              }
+            }
+          }
+    }
+
     for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<int>& nodeArr = nodeStatus[iLev][mfi].array();
@@ -334,7 +378,9 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
             }
       }
 
-      // Set 'edge' status
+      // Set the 'edge' status
+      // Q: But what is the edge node?
+      // A: It is a node at the boundary of a level.
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
@@ -342,8 +388,13 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
             for (int kk = k - 1; kk <= k + 1; kk++)
               for (int jj = j - 1; jj <= j + 1; jj++)
                 for (int ii = i - 1; ii <= i + 1; ii++) {
-                  if (bit::is_lev_boundary(nodeArr(ii, jj, kk)))
+                  if (bit::is_lev_boundary(nodeArr(ii, jj, kk))) {
                     bit::set_lev_edge(nodeArr(i, j, k));
+
+                    if (bit::is_domain_boundary(nodeArr(ii, jj, kk))) {
+                      bit::set_domain_edge(nodeArr(i, j, k));
+                    }
+                  }
                 }
           }
     }
