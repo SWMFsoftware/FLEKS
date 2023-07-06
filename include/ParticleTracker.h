@@ -44,11 +44,7 @@ public:
   void read_param(const std::string &command, ReadParam &param);
   void write_log(bool doForce = false, bool doCreateFile = false);
 
-  bool use_pt() const { return usePT; }
-
 private:
-  bool usePT = false;
-
   TimeCtr *tc = nullptr;
   FluidInterface *fi = nullptr;
 

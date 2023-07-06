@@ -51,8 +51,9 @@ void Domain::init(double time, const int iDomain,
 
   pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi.get(), tc.get(), gridID);
 
-  pt = std::make_unique<ParticleTracker>(gm, amrInfo, nGst, fi.get(), tc.get(),
-                                         gridID);
+  if (usePT)
+    pt = std::make_unique<ParticleTracker>(gm, amrInfo, nGst, fi.get(),
+                                           tc.get(), gridID);
 
   read_param(false);
 
@@ -134,8 +135,11 @@ void Domain::update() {
 
   pic->write_log();
 
-  pt->update(*pic);
-  pt->write_log();
+  if (pt)
+    pt->update(*pic);
+
+  if (pt)
+    pt->write_log();
 };
 
 //========================================================
@@ -270,7 +274,7 @@ void Domain::regrid() {
 
   // Short circuit evaluation, and order of evaluation, is a mandated semantic
   // standard in both C and C++. So the following line is safe.
-  if (pt && pt->use_pt())
+  if (pt)
     pt->regrid(activeRegion, fi.get());
 
   iGrid++;
@@ -302,8 +306,11 @@ void Domain::set_ic() {
   write_plots(true);
   pic->write_log(true, true);
 
-  pt->set_ic(*pic);
-  pt->write_log(true, true);
+  if (pt)
+    pt->set_ic(*pic);
+
+  if (pt)
+    pt->write_log(true, true);
 }
 
 //========================================================
@@ -424,15 +431,19 @@ void Domain::read_restart() {
 
   if (!doRestartFIOnly) {
     pic->regrid(grid.boxArray(0), fi.get());
-    // Assume dmPT == dmPIC so far.
-    pt->regrid(grid.boxArray(0), fi.get());
+
+    if (pt)
+      pt->regrid(grid.boxArray(0), fi.get());
 
     pic->read_restart();
     write_plots(true);
     pic->write_log(true, true);
 
-    pt->read_restart();
-    pt->write_log(true, true);
+    if (pt)
+      pt->read_restart();
+
+    if (pt)
+      pt->write_log(true, true);
   }
 }
 
@@ -668,11 +679,11 @@ void Domain::read_param(const bool readGridInfo) {
   param.set_component(component);
   while (param.get_next_command(command)) {
 
-    bool isGridCommand = command == "#MAXBLOCKSIZE" ||
-                         command == "#PERIODICITY" || command == "#GEOMETRY" ||
-                         command == "#NCELL" || command == "#RESTART" ||
-                         command == "#INITFROMSWMF" ||
-                         command == "#RECEIVEICONLY";
+    bool isGridCommand =
+        command == "#MAXBLOCKSIZE" || command == "#PERIODICITY" ||
+        command == "#GEOMETRY" || command == "#NCELL" ||
+        command == "#RESTART" || command == "#INITFROMSWMF" ||
+        command == "#RECEIVEICONLY" || command == "#PARTICLETRACKER";
 
     // Skip this command
     if (readGridInfo != isGridCommand)
@@ -690,16 +701,18 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#MERGEEFFICIENCY" || command == "#PIC" ||
         command == "#EXPLICITPIC" || command == "#PARTICLEBOXBOUNDARY") {
       pic->read_param(command, param);
-    } else if (command == "#PARTICLETRACKER" ||
-               command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
+    } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
                command == "#TPSAVE" || command == "#TPRELATIVISTIC" ||
                command == "#TPINITFROMPIC" || command == "#TPSTATESI") {
-      pt->read_param(command, param);
+      if (pt)
+        pt->read_param(command, param);
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
                command == "#BODYSIZE" || command == "#PLASMA" ||
                command == "#UNIFORMSTATE" || command == "#FLUIDVARNAMES") {
       fi->read_param(command, param);
+    } else if (command == "#PARTICLETRACKER") {
+      param.read_var("usePT", usePT);
     } else if (command == "#RESTART") {
       param.read_var("doRestart", doRestart);
     } else if (command == "#RESTARTFIONLY") {

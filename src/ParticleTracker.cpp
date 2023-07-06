@@ -4,7 +4,7 @@
 using namespace amrex;
 
 void ParticleTracker::set_ic(Pic& pic) {
-  if (isGridEmpty || !usePT)
+  if (isGridEmpty)
     return;
 
   complete_parameters();
@@ -40,7 +40,7 @@ void ParticleTracker::set_ic(Pic& pic) {
 
 //==========================================================
 void ParticleTracker::write_log(bool doForce, bool doCreateFile) {
-  if (isGridEmpty || !usePT)
+  if (isGridEmpty)
     return;
 
   if (doCreateFile && ParallelDescriptor::IOProcessor()) {
@@ -86,7 +86,7 @@ void ParticleTracker::update(Pic& pic) {
   std::string funcName = "PTracker::update";
   timing_func(funcName);
 
-  if (isGridEmpty || !usePT)
+  if (isGridEmpty)
     return;
 
   Print() << printPrefix
@@ -193,7 +193,7 @@ void ParticleTracker::post_regrid() {
 }
 
 void ParticleTracker::save_restart_data() {
-  if (isGridEmpty || !usePT)
+  if (isGridEmpty)
     return;
 
   std::string restartDir = component + "/restartOUT/";
@@ -214,9 +214,6 @@ void ParticleTracker::save_restart_data() {
 }
 
 void ParticleTracker::read_restart() {
-  if (!usePT)
-    return;
-
   std::string restartDir = component + "/restartIN/";
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     parts[iPart]->Restart(restartDir,
@@ -255,9 +252,6 @@ void ParticleTracker::complete_parameters() {
 }
 
 void ParticleTracker::save_restart_header(std::ofstream& headerFile) {
-  if (!usePT)
-    return;
-
   std::string command_suffix = "_" + gridName + "\n";
 
   if (ParallelDescriptor::IOProcessor()) {
@@ -271,9 +265,7 @@ void ParticleTracker::save_restart_header(std::ofstream& headerFile) {
 
 void ParticleTracker::read_param(const std::string& command, ReadParam& param) {
 
-  if (command == "#PARTICLETRACKER") {
-    param.read_var("usePT", usePT);
-  } else if (command == "#TPPARTICLES") {
+  if (command == "#TPPARTICLES") {
     param.read_var("npcelx", nTPPerCell[ix_]);
     param.read_var("npcely", nTPPerCell[iy_]);
     param.read_var("npcelz", nTPPerCell[iz_]);
