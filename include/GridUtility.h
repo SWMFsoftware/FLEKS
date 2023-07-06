@@ -125,7 +125,7 @@ void sum_coarse_to_fine_lev_bny_node(
       for (int j = lo.y; j <= hi.y; ++j)
         for (int k = lo.z; k <= hi.z; ++k)
           for (int iVar = 0; iVar < f.nComp(); iVar++) {
-            if (bit::is_edge(statusArr(i, j, k))) {
+            if (bit::is_lev_edge(statusArr(i, j, k))) {
               data(i, j, k, iVar) = tmp(i, j, k, iVar);
             }
           }

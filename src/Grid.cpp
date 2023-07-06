@@ -120,7 +120,7 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            bit::set_boundary(cellArr(i, j, k));
+            bit::set_lev_boundary(cellArr(i, j, k));
           }
     }
 
@@ -135,7 +135,7 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
             // Not boundary cell
-            bit::set_not_boundary(cellArr(i, j, k));
+            bit::set_not_lev_boundary(cellArr(i, j, k));
 
             // New active cell
             bit::set_new(cellArr(i, j, k));
@@ -190,8 +190,8 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
             for (int kk = k - 1; kk <= k + 1; kk++)
               for (int jj = j - 1; jj <= j + 1; jj++)
                 for (int ii = i - 1; ii <= i + 1; ii++) {
-                  if (bit::is_boundary(cellArr(ii, jj, kk)))
-                    bit::set_edge(cellArr(i, j, k));
+                  if (bit::is_lev_boundary(cellArr(ii, jj, kk)))
+                    bit::set_lev_edge(cellArr(i, j, k));
                 }
           }
     }
@@ -233,7 +233,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            bit::set_boundary(nodeArr(i, j, k));
+            bit::set_lev_boundary(nodeArr(i, j, k));
           }
     }
 
@@ -255,7 +255,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
             // Not boundary cell
-            bit::set_not_boundary(nodeArr(i, j, k));
+            bit::set_not_lev_boundary(nodeArr(i, j, k));
 
             // New active cell
             bit::set_new(nodeArr(i, j, k));
@@ -293,7 +293,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
           for (int dk = dkMax; dk >= dkMin; dk--)
             for (int dj = djMax; dj >= djMin; dj--)
               for (int di = diMax; di >= diMin; di--) {
-                if (!bit::is_boundary(cell(i + di, j + dj, k + dk))) {
+                if (!bit::is_lev_boundary(cell(i + di, j + dj, k + dk))) {
                   // Find the first CELL that shares this node.
                   if (cellBox.contains(
                           IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) })) {
@@ -336,8 +336,8 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
             for (int kk = k - 1; kk <= k + 1; kk++)
               for (int jj = j - 1; jj <= j + 1; jj++)
                 for (int ii = i - 1; ii <= i + 1; ii++) {
-                  if (bit::is_boundary(nodeArr(ii, jj, kk)))
-                    bit::set_edge(nodeArr(i, j, k));
+                  if (bit::is_lev_boundary(nodeArr(ii, jj, kk)))
+                    bit::set_lev_edge(nodeArr(i, j, k));
                 }
           }
     }

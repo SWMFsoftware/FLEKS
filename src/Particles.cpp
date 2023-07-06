@@ -1201,7 +1201,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       for (int ix = 0; ix <= 1; ix++)
         for (int iy = 0; iy <= 1; iy++)
           for (int iz = 0; iz <= 1; iz++) {
-            if (bit::is_boundary(
+            if (bit::is_lev_boundary(
                     status(loIdx[ix_] + ix, loIdx[iy_] + iy, loIdx[iz_] + iz)))
               isBoundaryPhysicalCell = true;
           }
@@ -1898,7 +1898,7 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
     const int k, int& isrc, int& jsrc, int& ksrc) {
 
   // This cell should be a boundary cell at least.
-  if (!bit::is_boundary(status(i, j, k)))
+  if (!bit::is_lev_boundary(status(i, j, k)))
     return false;
 
   for (int iloop = 1; iloop <= 3; iloop++) {
@@ -1913,7 +1913,7 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
           if (iloop != sum)
             continue;
 
-          if (!bit::is_boundary(status(i + di, j + dj, k + dk))) {
+          if (!bit::is_lev_boundary(status(i + di, j + dj, k + dk))) {
             // The first neighbor cell that is NOT a boundary cell.
             if (bx.contains(IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) })) {
               isrc = i + di;

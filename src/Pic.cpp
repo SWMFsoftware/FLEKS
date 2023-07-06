@@ -1244,14 +1244,14 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
         for (int k = lo[iz_] + 1; k <= hi[iz_] - 1; k++)
           for (int j = lo[iy_] + 1; j <= hi[iy_] - 1; j++)
             for (int i = lo[ix_] + 1; i <= hi[ix_] - 1; i++)
-              if (bit::is_boundary(statusArr(i, j, k, 0))) {
+              if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
                 bool isNeiFound = false;
 
                 // Find the neighboring physical cell
                 for (int kk = -1; kk <= 1; kk++)
                   for (int jj = -1; jj <= 1; jj++)
                     for (int ii = -1; ii <= 1; ii++) {
-                      if (!isNeiFound && !bit::is_boundary(statusArr(
+                      if (!isNeiFound && !bit::is_lev_boundary(statusArr(
                                              i + ii, j + jj, k + kk, 0))) {
                         isNeiFound = true;
                         for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
@@ -1283,7 +1283,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
           for (int k = lo[iz_] + 1; k <= hi[iz_] - 1; k++)
             for (int j = lo[iy_]; j <= hi[iy_]; j++)
               for (int i = lo[ix_]; i <= hi[ix_]; i++)
-                if (bit::is_boundary(statusArr(i, j, k, 0))) {
+                if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, i, j, k, iVar - iStart, iLev);
                 }
