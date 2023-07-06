@@ -12,20 +12,27 @@ namespace bit {
 // 'boundary'
 constexpr static int iLevBny_ = 0;
 
-// The nodes at the boundary or the physical cells just next to the level
+// The cells/nodes that are outside the simulation domain.
+constexpr static int iDomainBny_ = 1;
+
+// The nodes at the level boundary or the physical cells just next to the level
 // boundary.
-constexpr static int iLevEdge_ = 1;
+constexpr static int iLevEdge_ = 2;
+
+// The nodes at the domain boundary or the physical cells just next to the
+// domain boundary.
+constexpr static int iDomainEdge_ = 3;
 
 // New active cell/node
-constexpr static int iNew_ = 2;
+constexpr static int iNew_ = 4;
 
 // Node only. A node may be shared by a few blocks/boxes. Sometimes (such as the
 // E field solver) only one of the boexes needs to do some operations for this
 // node. This box is the 'owner' of this node.
-constexpr static int iOwner_ = 3;
+constexpr static int iOwner_ = 5;
 
 // For cell only. If a cell is refined or not.
-constexpr static int iRefined_ = 4;
+constexpr static int iRefined_ = 6;
 //=========================================================
 
 inline bool test_bit(const int& i, int pos) { return i & (1 << pos); }
@@ -34,20 +41,32 @@ inline void turn_off_bit(int& i, int pos) { i &= ~(1 << pos); }
 
 // inline void flip_bit(int& i, int pos) { i ^= (1 << pos); }
 
-//======= Boundary =======
+//======= Lev boundary =======
 inline void set_lev_boundary(int& i) { turn_on_bit(i, iLevBny_); }
 inline void set_not_lev_boundary(int& i) { turn_off_bit(i, iLevBny_); }
 inline bool is_lev_boundary(const int& i) { return test_bit(i, iLevBny_); }
+
+//======= Lev edge cell/node =======
+inline void set_lev_edge(int& i) { turn_on_bit(i, iLevEdge_); }
+inline void set_not_lev_edge(int& i) { turn_off_bit(i, iLevEdge_); }
+inline bool is_lev_edge(const int& i) { return test_bit(i, iLevEdge_); }
+
+//======= Domain boundary =======
+inline void set_domain_boundary(int& i) { turn_on_bit(i, iDomainBny_); }
+inline void set_not_domain_boundary(int& i) { turn_off_bit(i, iDomainBny_); }
+inline bool is_domain_boundary(const int& i) {
+  return test_bit(i, iDomainBny_);
+}
+
+//======= Domain edge cell/node =======
+inline void set_domain_edge(int& i) { turn_on_bit(i, iDomainEdge_); }
+inline void set_not_domain_edge(int& i) { turn_off_bit(i, iDomainEdge_); }
+inline bool is_domain_edge(const int& i) { return test_bit(i, iDomainEdge_); }
 
 //======= New active cell/node =======
 inline void set_new(int& i) { turn_on_bit(i, iNew_); }
 inline void set_not_new(int& i) { turn_off_bit(i, iNew_); }
 inline bool is_new(const int& i) { return test_bit(i, iNew_); }
-
-//======= Edge cell/node =======
-inline void set_lev_edge(int& i) { turn_on_bit(i, iLevEdge_); }
-inline void set_not_lev_edge(int& i) { turn_off_bit(i, iLevEdge_); }
-inline bool is_lev_edge(const int& i) { return test_bit(i, iLevEdge_); }
 
 //======= Owner node (node only) =======
 inline void set_owner(int& i) { turn_on_bit(i, iOwner_); }
