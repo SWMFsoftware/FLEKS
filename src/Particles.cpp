@@ -324,7 +324,10 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
   if (fiIn)
     fiTmp = fiIn;
 
-  // Assume the boundary cells aren't and cannot be refined. --Yuxi
+  // Only launch particles to the base grid boundary cells. The particle moments
+  // of the domain edge nodes can be corrected by calling
+  // interp_from_coarse_to_fine_for_domain_edge() in order from coarest level to
+  // finest level.
   int iLev = 0;
 
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
@@ -623,6 +626,13 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 
   for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
     sum_two_lev_interface_node(
+        momentsMF[iLev], momentsMF[iLev + 1], 0, momentsMF[iLev].nComp(),
+        get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
+  }
+
+  // Correct domain edge nodes
+  for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
+    interp_from_coarse_to_fine_for_domain_edge(
         momentsMF[iLev], momentsMF[iLev + 1], 0, momentsMF[iLev].nComp(),
         get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
   }

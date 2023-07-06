@@ -285,6 +285,13 @@ public:
           nodeFluid[iLev], nodeFluid[iLev + 1], 0, nodeFluid[iLev].nComp(),
           ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
     }
+
+    // Correct domain edge nodes
+    for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
+      interp_from_coarse_to_fine_for_domain_edge(
+          nodeFluid[iLev], nodeFluid[iLev + 1], 0, nodeFluid[iLev].nComp(),
+          ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
+    }
   }
 
   virtual int get_neu_source_region(const amrex::MFIter& mfi, const int i,
