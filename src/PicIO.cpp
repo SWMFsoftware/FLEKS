@@ -645,7 +645,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   Vector<MultiFab> out(n_lev());
   Vector<std::string> varNames;
   bool isDensityZero = false;
-  int zeroI, zeroJ, zeroK;
+  int zeroI, zeroJ, zeroK, zeroLev;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (saveNode) {
       out[iLev].define(nGrids[iLev], DistributionMap(iLev), nVarOut, 0);
@@ -764,6 +764,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
                   uzArr(i, j, k) = plasmaArr(i, j, k, iUz_) / rho;
                 } else {
                   isDensityZero = true;
+                  zeroLev = iLev;
                   zeroI = i;
                   zeroJ = j;
                   zeroK = k;
@@ -832,12 +833,13 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
     headerFile << fi->get_rPlanet_SI() << "\n";
   }
 
+#ifdef _PC_COMPONENT_
   if (isDensityZero) {
     AllPrint()
-        << "\n\n\n==========" << printPrefix
+        << "\n==========" << printPrefix
         << " Error ===========================\n"
-        << "Density is zero at i = " << zeroI << " j = " << zeroJ
-        << " k = " << zeroK << ".\n"
+        << "Density is zero at iLev = " << zeroLev << " i = " << zeroI
+        << " j = " << zeroJ << " k = " << zeroK << ".\n"
         << "Check the file " << filename << " to see what is going on. \n"
         << "Suggestions:\n"
         << "1) Use the #RESAMPLING command to control the particle number.\n"
@@ -847,6 +849,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
         << std::endl;
     Abort();
   }
+#endif
 }
 
 //==========================================================
