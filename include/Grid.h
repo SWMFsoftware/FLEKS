@@ -43,6 +43,9 @@ protected:
   // usually contains less boxes.
   amrex::BoxArray activeRegion;
 
+  // The range of activeRegion.
+  amrex::Vector<amrex::RealBox> domainRange;
+
   // Cell center
   amrex::Vector<amrex::BoxArray>& cGrids = grids;
 
@@ -119,6 +122,10 @@ public:
     refineRegions = in;
   }
 
+  const amrex::Vector<amrex::RealBox>& domain_range() const {
+    return domainRange;
+  }
+
   void regrid(const amrex::BoxArray& region,
               const amrex::Vector<Regions>& refine, const amrex::Real eff) {
     refineRegions = refine;
@@ -134,6 +141,14 @@ public:
 
   void update_refine_region(const amrex::Vector<Regions>& in) {
     refineRegions = in;
+  }
+
+  bool is_inside_domain(amrex::Real* loc) const {
+    for (const auto& rb : domainRange) {
+      if (rb.contains(loc))
+        return true;
+    }
+    return false;
   }
 
   void print_grid_info(bool printBoxes = false);

@@ -22,6 +22,12 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid) {
 
   activeRegion = region;
 
+  domainRange.clear();
+  for (int iBox = 0; iBox < activeRegion.size(); iBox++) {
+    amrex::RealBox rb(activeRegion[iBox], Geom(0).CellSize(), Geom(0).Offset());
+    domainRange.push_back(rb);
+  }
+
   isGridEmpty = activeRegion.empty();
 
   if (isGridEmpty) {

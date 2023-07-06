@@ -211,8 +211,6 @@ void Pic::post_regrid() {
       if (ptr->is_neutral())
         solveEM = false;
 
-      ptr->set_region_range(activeRegion);
-
       //----- Set parameters------------
       if (particleMergeThreshold >= 0) {
         ptr->set_merge_threshold(particleMergeThreshold);
@@ -231,8 +229,6 @@ void Pic::post_regrid() {
     }
   } else {
     for (int i = 0; i < nSpecies; i++) {
-      parts[i]->set_region_range(activeRegion);
-
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_active_region_general();
 

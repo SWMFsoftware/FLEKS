@@ -131,8 +131,6 @@ protected:
 
   amrex::IntVect nPartPerCell;
 
-  amrex::Vector<amrex::RealBox> activeRegions;
-
   amrex::Vector<amrex::RealVect> plo, phi, dx, invDx;
   amrex::Vector<amrex::Real> invVol;
 
@@ -168,14 +166,6 @@ public:
   int n_lev() const { return GetParGDB()->finestLevel() + 1; }
 
   int n_lev_max() const { return maxLevel() + 1; }
-
-  void set_region_range(const amrex::BoxArray& ba) {
-    activeRegions.clear();
-    for (int iBox = 0; iBox < ba.size(); iBox++) {
-      amrex::RealBox rb(ba[iBox], Geom(0).CellSize(), Geom(0).Offset());
-      activeRegions.push_back(rb);
-    }
-  }
 
   void add_particles_domain();
   void add_particles_cell(const int iLev, const amrex::MFIter& mfi, const int i,
@@ -318,12 +308,7 @@ public:
       }
     }
 
-    for (const auto& rb : activeRegions) {
-      if (rb.contains(loc))
-        return false;
-    }
-
-    return true;
+    return !grid->is_inside_domain(loc);
   }
 
   // validBox should NOT include ghost cells.

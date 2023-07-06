@@ -176,7 +176,6 @@ void ParticleTracker::post_regrid() {
       auto ptr = std::unique_ptr<TestParticles>(
           new TestParticles(this, fi, tc, i, fi->get_species_charge(i),
                             fi->get_species_mass(i), gridID));
-      ptr->set_region_range(activeRegion);
       ptr->set_ppc(nTPPerCell);
       ptr->set_interval(nTPIntervalCell);
       ptr->set_particle_region(sPartRegion);
@@ -185,8 +184,6 @@ void ParticleTracker::post_regrid() {
     }
   } else {
     for (int i = 0; i < nSpecies; i++) {
-      parts[i]->set_region_range(activeRegion);
-
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_active_region_general();
       parts[i]->redistribute_particles();
