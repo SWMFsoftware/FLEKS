@@ -77,9 +77,10 @@ void interp_from_coarse_to_fine(amrex::FabArray<FAB>& coarse,
 
 // Sum from fine level to coarse level for nodes at the interface of two levels.
 template <class FAB>
-void sum_fine_to_coarse_bny_node(amrex::FabArray<FAB>& coarse,
-                                 amrex::FabArray<FAB>& fine, const int iStart,
-                                 const int nComp, const amrex::IntVect ratio) {
+void sum_fine_to_coarse_lev_bny_node(amrex::FabArray<FAB>& coarse,
+                                     amrex::FabArray<FAB>& fine,
+                                     const int iStart, const int nComp,
+                                     const amrex::IntVect ratio) {
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
   amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
 
@@ -96,12 +97,10 @@ void sum_fine_to_coarse_bny_node(amrex::FabArray<FAB>& coarse,
 
 // Sum from coarse level to fine level for nodes at the boundary of two levels.
 template <class FAB>
-void sum_coarse_to_fine_bny_node(amrex::FabArray<FAB>& coarse,
-                                 amrex::FabArray<FAB>& fine, const int iStart,
-                                 const int nComp, const amrex::IntVect ratio,
-                                 const amrex::Geometry& cgeom,
-                                 const amrex::Geometry& fgeom,
-                                 const amrex::iMultiFab& fstatus) {
+void sum_coarse_to_fine_lev_bny_node(
+    amrex::FabArray<FAB>& coarse, amrex::FabArray<FAB>& fine, const int iStart,
+    const int nComp, const amrex::IntVect ratio, const amrex::Geometry& cgeom,
+    const amrex::Geometry& fgeom, const amrex::iMultiFab& fstatus) {
 
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
   amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
@@ -140,9 +139,9 @@ void sum_two_lev_interface_node(amrex::FabArray<FAB>& coarse,
                                 const amrex::Geometry& cgeom,
                                 const amrex::Geometry& fgeom,
                                 const amrex::iMultiFab& fstatus) {
-  sum_fine_to_coarse_bny_node(coarse, fine, iStart, nComp, ratio);
-  sum_coarse_to_fine_bny_node(coarse, fine, iStart, nComp, ratio, cgeom, fgeom,
-                              fstatus);
+  sum_fine_to_coarse_lev_bny_node(coarse, fine, iStart, nComp, ratio);
+  sum_coarse_to_fine_lev_bny_node(coarse, fine, iStart, nComp, ratio, cgeom,
+                                  fgeom, fstatus);
 }
 
 // This function is called recursively to combine active patahces into larger
