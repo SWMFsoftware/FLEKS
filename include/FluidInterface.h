@@ -21,7 +21,6 @@
 #include "ReadParam.h"
 #include "Regions.h"
 #include "Utility.h"
-#include "Writer.h"
 
 class FluidInterfaceParameters {
 public:

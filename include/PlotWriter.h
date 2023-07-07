@@ -10,20 +10,18 @@
 #include "Constants.h"
 #include "MDArray.h"
 
-class PlotWriter; // Forward declaration
+class PlotWriter;                            // Forward declaration
+
+typedef std::array<double, 8> ArrayPointLoc; // (i,j,k,x,y,z,iBlock, iLev)
+typedef std::vector<ArrayPointLoc> VectorPointList;
+typedef void (*FuncFindPointList)(const PlotWriter&, long int&,
+                                  VectorPointList&, amrex::RealVect&,
+                                  amrex::RealVect&);
+typedef void (*FuncGetField)(const VectorPointList&,
+                             const std::vector<std::string>&, MDArray<double>&);
 
 //------------------------------------------------------------------
 class PlotWriter {
-public:
-  typedef std::array<double, 7> ArrayPointLoc; // (i,j,k,x,y,z,iBlock)
-  typedef std::vector<ArrayPointLoc> VectorPointList;
-  typedef void (*FuncFindPointList)(const PlotWriter&, long int&,
-                                    VectorPointList&, amrex::RealVect&,
-                                    amrex::RealVect&);
-  typedef void (*FuncGetField)(const VectorPointList&,
-                               const std::vector<std::string>&,
-                               MDArray<double>&);
-
 private:
   static const int nVarMax = 100;
   static const int x_ = 0, y_ = 1, z_ = 2;

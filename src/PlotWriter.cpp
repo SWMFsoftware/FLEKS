@@ -297,8 +297,8 @@ bool PlotWriter::is_inside_plot_region(int const ix, int const iy, int const iz,
   amrex::RealVect x_D = { AMREX_D_DECL(x, y, z) };
 
   for (int iDim = 0; iDim < nDim; ++iDim) {
-    isInside = isInside && x_D[iDim] >= plotMin_D[iDim] - 0.5 * dx_D[iDim] &&
-               x_D[iDim] < plotMax_D[iDim] + 0.5 * dx_D[iDim];
+    isInside = isInside && x_D[iDim] >= plotMin_D[iDim] - 0.01 * dx_D[iDim] &&
+               x_D[iDim] < plotMax_D[iDim] + 0.01 * dx_D[iDim];
   }
 
   return isInside;

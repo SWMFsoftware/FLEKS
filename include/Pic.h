@@ -260,8 +260,8 @@ public:
 
   //--------------- IO begin--------------------------------
   void find_output_list(const PlotWriter &writerIn, long int &nPointAllProc,
-                        PlotWriter::VectorPointList &pointList_II,
-                        amrex::RealVect &xMin_D, amrex::RealVect &xMax_D);
+                        VectorPointList &pointList_II, amrex::RealVect &xMin_D,
+                        amrex::RealVect &xMax_D);
 
   void get_field_var(const VectorPointList &pointList_II,
                      const std::vector<std::string> &sVar_I,
@@ -361,7 +361,7 @@ private:
 
 void find_output_list_caller(const PlotWriter &writerIn,
                              long int &nPointAllProc,
-                             PlotWriter::VectorPointList &pointList_II,
+                             VectorPointList &pointList_II,
                              amrex::RealVect &xMin_D, amrex::RealVect &xMax_D);
 
 void get_field_var_caller(const VectorPointList &pointList_II,

@@ -84,99 +84,107 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
 
 //==========================================================
 void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
-                           PlotWriter::VectorPointList& pointList_II,
-                           RealVect& xMin_D, RealVect& xMax_D) {
+                           VectorPointList& pointList_II, RealVect& xMin_D,
+                           RealVect& xMax_D) {
   if (isGridEmpty)
     return;
-  // Loop not implemented correctly // Talha
-  int iLev = 0;
+
+  if (n_lev() > 1 && writerIn.get_plotDx() >= 0) {
+    Abort("Error: multi-level grid can not be saved with structured data "
+          "format. Change plotDx of #SAVEPLOT to -1.");
+  }
+
   const auto plo = Geom(0).ProbLo();
   const auto phi = Geom(0).ProbHi();
 
   RealVect xMinL_D = { AMREX_D_DECL(phi[ix_], phi[iy_], phi[iz_]) };
   RealVect xMaxL_D = { AMREX_D_DECL(plo[ix_], plo[iy_], plo[iz_]) };
 
-  const auto dx = Geom(0).CellSize();
-
   const Box& gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
 
-  int iBlock = 0;
-  for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    int iBlock = 0;
+    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
 
-    const auto& typeArr = nodeStatus[iLev][mfi].array();
+      const auto& typeArr = nodeStatus[iLev][mfi].array();
 
-    auto lo = box.loVect3d();
-    auto hi = box.hiVect3d();
+      auto lo = box.loVect3d();
+      auto hi = box.hiVect3d();
 
-    // Do not output the rightmost nodes for periodic boundary.
-    for (int iDim = 0; iDim < nDim; iDim++)
-      if ((Geom(0).isPeriodic(iDim)) && gbx.bigEnd(iDim) == hi[iDim])
-        hi[iDim]--;
+      if (iLev == 0) {
+        // Do not output the rightmost nodes for periodic boundary.
+        for (int iDim = 0; iDim < nDim; iDim++)
+          if ((Geom(iLev).isPeriodic(iDim)) && gbx.bigEnd(iDim) == hi[iDim])
+            hi[iDim]--;
+      }
 
-    for (int k = lo[iz_]; k <= hi[iz_]; ++k) {
-      const double zp = k * dx[iz_] + plo[iz_];
-      for (int j = lo[iy_]; j <= hi[iy_]; ++j) {
-        const double yp = j * dx[iy_] + plo[iy_];
-        for (int i = lo[ix_]; i <= hi[ix_]; ++i) {
-          const double xp = i * dx[ix_] + plo[ix_];
-          if (bit::is_owner(typeArr(i, j, k)) &&
-              writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
+      for (int k = lo[iz_]; k <= hi[iz_]; ++k) {
+        const double zp = Geom(iLev).LoEdge(k, iz_);
+        for (int j = lo[iy_]; j <= hi[iy_]; ++j) {
+          const double yp = Geom(iLev).LoEdge(j, iy_);
+          for (int i = lo[ix_]; i <= hi[ix_]; ++i) {
+            const double xp = Geom(iLev).LoEdge(i, ix_);
+            if (bit::is_owner(typeArr(i, j, k)) &&
+                writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
 
-            pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
-                                     zp, (double)iBlock });
-            if (xp < xMinL_D[ix_])
-              xMinL_D[ix_] = xp;
-            if (yp < xMinL_D[iy_])
-              xMinL_D[iy_] = yp;
-            if (zp < xMinL_D[iz_])
-              xMinL_D[iz_] = zp;
+              pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
+                                       zp, (double)iBlock, (double)iLev });
+              if (xp < xMinL_D[ix_])
+                xMinL_D[ix_] = xp;
+              if (yp < xMinL_D[iy_])
+                xMinL_D[iy_] = yp;
+              if (zp < xMinL_D[iz_])
+                xMinL_D[iz_] = zp;
 
-            if (xp > xMaxL_D[ix_])
-              xMaxL_D[ix_] = xp;
-            if (yp > xMaxL_D[iy_])
-              xMaxL_D[iy_] = yp;
-            if (zp > xMaxL_D[iz_])
-              xMaxL_D[iz_] = zp;
+              if (xp > xMaxL_D[ix_])
+                xMaxL_D[ix_] = xp;
+              if (yp > xMaxL_D[iy_])
+                xMaxL_D[iy_] = yp;
+              if (zp > xMaxL_D[iz_])
+                xMaxL_D[iz_] = zp;
+            }
           }
         }
       }
+      iBlock++;
     }
-    iBlock++;
   }
 
+  // Only works for 1-level grid.
   if (ParallelDescriptor::MyProc() == 0 && writerIn.get_plotDx() >= 0) {
+    int iLev = 0;
     // Processor-0 output the inactive PIC nodes for structured output.
-    Box gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
+    Box gbx = convert(Geom(iLev).Domain(), { AMREX_D_DECL(1, 1, 1) });
 
     if (writerIn.is_compact())
-      gbx = convert(nGrids[0].minimalBox(), { AMREX_D_DECL(1, 1, 1) });
+      gbx = convert(nGrids[iLev].minimalBox(), { AMREX_D_DECL(1, 1, 1) });
 
     const auto lo = lbound(gbx);
     const auto hi = ubound(gbx);
 
     int iMax = hi.x, jMax = hi.y, kMax = hi.z;
-    if (Geom(0).isPeriodic(ix_))
+    if (Geom(iLev).isPeriodic(ix_))
       --iMax;
-    if (Geom(0).isPeriodic(iy_))
+    if (Geom(iLev).isPeriodic(iy_))
       --jMax;
-    if (Geom(0).isPeriodic(iz_))
+    if (Geom(iLev).isPeriodic(iz_))
       --kMax;
 
     if (isFake2D)
       kMax = lo.z;
 
     for (int k = lo.z; k <= kMax; ++k) {
-      const double zp = k * dx[iz_] + plo[iz_];
+      const double zp = Geom(iLev).LoEdge(k, iz_);
       for (int j = lo.y; j <= jMax; ++j) {
-        const double yp = j * dx[iy_] + plo[iy_];
+        const double yp = Geom(iLev).LoEdge(j, iy_);
         for (int i = lo.x; i <= iMax; ++i) {
-          const double xp = i * dx[ix_] + plo[ix_];
+          const double xp = Geom(iLev).LoEdge(i, ix_);
           if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp) &&
-              !nGrids[0].contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
+              !nGrids[iLev].contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
             const int iBlock = -1;
             pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
-                                     zp, (double)iBlock });
+                                     zp, (double)iBlock, (double)iLev });
             if (xp < xMinL_D[ix_])
               xMinL_D[ix_] = xp;
             if (yp < xMinL_D[iy_])
@@ -214,39 +222,47 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
                         MDArray<double>& var_II) {
 
   // loop not implemented correctly // Talha
-  int iLev = 0;
+
   const int iBlk_ = 6;
+  const int iLev_ = 7;
 
   long nPoint = pointList_II.size();
   int nVar = sVar_I.size();
-
-  int iBlockCount = 0;
+  
   long iPoint = 0;
-  for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
-    while (iPoint < nPoint) {
-      const int ix = pointList_II[iPoint][ix_];
-      const int iy = pointList_II[iPoint][iy_];
-      const int iz = pointList_II[iPoint][iz_];
-      const int iBlock = pointList_II[iPoint][iBlk_];
 
-      if (ParallelDescriptor::MyProc() == 0 && iBlock == -1) {
-        // Processor-0 output the inactive PIC nodes for structured output.
-        for (int iVar = 0; iVar < nVar; ++iVar) {
-          var_II(iPoint, iVar) =
-              get_var(sVar_I[iVar], iLev, ix, iy, iz, mfi, false);
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    int iBlockCount = 0;
+    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+      while (iPoint < nPoint) {
+        const int ix = pointList_II[iPoint][ix_];
+        const int iy = pointList_II[iPoint][iy_];
+        const int iz = pointList_II[iPoint][iz_];
+        const int iBlock = pointList_II[iPoint][iBlk_];
+        const int iL = pointList_II[iPoint][iLev_];
+
+        if (iL != iLev)
+          break;
+
+        if (ParallelDescriptor::MyProc() == 0 && iBlock == -1) {
+          // Processor-0 output the inactive PIC nodes for structured output.
+          for (int iVar = 0; iVar < nVar; ++iVar) {
+            var_II(iPoint, iVar) =
+                get_var(sVar_I[iVar], iLev, ix, iy, iz, mfi, false);
+          }
+          iPoint++;
+        } else if (iBlock == iBlockCount) {
+          for (int iVar = 0; iVar < nVar; ++iVar) {
+            var_II(iPoint, iVar) = get_var(sVar_I[iVar], iLev, ix, iy, iz, mfi);
+          }
+          iPoint++;
+        } else {
+          break;
         }
-        iPoint++;
-      } else if (iBlock == iBlockCount) {
-        for (int iVar = 0; iVar < nVar; ++iVar) {
-          var_II(iPoint, iVar) = get_var(sVar_I[iVar], iLev, ix, iy, iz, mfi);
-        }
-        iPoint++;
-      } else {
-        break;
       }
-    }
 
-    iBlockCount++;
+      iBlockCount++;
+    }
   }
 }
 
@@ -259,17 +275,11 @@ double Pic::get_var(std::string var, const int iLev, const int ix, const int iy,
     // If not isValidMFI, then it is not possible to output variables other than
     // 'X', 'Y', 'Z'
     if (var.substr(0, 1) == "X") {
-      const auto plo = Geom(iLev).ProbLo();
-      const auto dx = Geom(iLev).CellSize();
-      value = ix * dx[ix_] + plo[ix_];
+      value = Geom(iLev).LoEdge(ix, ix_);
     } else if (var.substr(0, 1) == "Y") {
-      const auto plo = Geom(iLev).ProbLo();
-      const auto dx = Geom(iLev).CellSize();
-      value = iy * dx[iy_] + plo[iy_];
+      value = Geom(iLev).LoEdge(iy, iy_);
     } else if (var.substr(0, 1) == "Z") {
-      const auto plo = Geom(iLev).ProbLo();
-      const auto dx = Geom(iLev).CellSize();
-      value = iz * dx[iz_] + plo[iz_];
+      value = Geom(iLev).LoEdge(iz, iz_);
     } else if (var.substr(0, 2) == "Ex") {
       const Array4<Real const>& arr =
           nodeE[iLev][mfi].array(); // Talha- check // no loop
@@ -855,8 +865,8 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 //==========================================================
 void find_output_list_caller(const PlotWriter& writerIn,
                              long int& nPointAllProc,
-                             PlotWriter::VectorPointList& pointList_II,
-                             RealVect& xMin_D, RealVect& xMax_D) {
+                             VectorPointList& pointList_II, RealVect& xMin_D,
+                             RealVect& xMax_D) {
   fleksDomains(fleksDomains.selected())
       .pic->find_output_list(writerIn, nPointAllProc, pointList_II, xMin_D,
                              xMax_D);
