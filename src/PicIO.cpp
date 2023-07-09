@@ -228,7 +228,7 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
 
   long nPoint = pointList_II.size();
   int nVar = sVar_I.size();
-  
+
   long iPoint = 0;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -493,7 +493,7 @@ void Pic::write_plots(bool doForce) {
     if (plot.is_time_to(doForce)) {
       Print() << printPrefix << " Saving plot at time = " << tc->get_time_si()
               << " (s) for " << plot.writer.get_plotString() << std::endl;
-      if (plot.writer.is_amrex_format()) {
+      if (plot.writer.is_amrex_format() || plot.writer.is_hdf5_format()) {
         write_amrex(plot.writer, tc->get_time_si(), tc->get_cycle());
       } else {
         plot.writer.write(tc->get_time_si(), tc->get_cycle(),
@@ -623,7 +623,6 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
                             int const iCycle, const std::string plotVars,
                             const std::string filenameIn,
                             const BoxArray baOut) {
-  Print() << "" << pw.get_amrex_filename(timeNow, iCycle) << std::endl;
 
   // Save node-centered or cell-centered data. AMReX IO and most visualization
   // tools expect cell-centered data. So the node-centered output looks strange
@@ -807,7 +806,15 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
     }
   }
 
-  std::string filename = pw.get_amrex_filename(timeNow, iCycle);
+  std::string filename;
+  if (pw.is_amrex_format()) {
+    filename = pw.get_amrex_filename(timeNow, iCycle);
+  } else {
+    filename = pw.get_hdf5_filename(timeNow, iCycle);
+  }
+
+  Print() << "Filename: " << filename << std::endl;
+
   if (!filenameIn.empty()) {
     filename = filenameIn;
   }
@@ -827,10 +834,22 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
     steps[iLev] = iCycle;
   }
 
-  WriteMultiLevelPlotfile(filename, n_lev(), mf, varNames, geomOut, timeNow,
-                          steps, ref_ratio);
+  if (pw.is_amrex_format()) {
 
-  if (ParallelDescriptor::IOProcessor()) {
+    WriteMultiLevelPlotfile(filename, n_lev(), mf, varNames, geomOut, timeNow,
+                            steps, ref_ratio);
+
+  } else if (pw.is_hdf5_format()) {
+#ifdef _USE_HDF5_
+    WriteMultiLevelPlotfileHDF5(filename, n_lev(), mf, varNames, geomOut,
+                                timeNow, steps, ref_ratio);
+#else
+    Abort("Error: HDF5 is not enabled. Please recompile AMREX+FLEKS with HDF5 "
+          "or save with other formats.");
+#endif
+  }
+
+  if (ParallelDescriptor::IOProcessor() && pw.is_amrex_format()) {
     // Write FLEKS header
     const std::string headerName = filename + "/FLEKSHeader";
     std::ofstream headerFile;

@@ -230,8 +230,12 @@ public:
                              double const z) const;
 
   bool is_amrex_format() const { return outputFormat == "amrex"; }
+  bool is_hdf5_format() const { return outputFormat == "hdf5"; }
   std::string get_amrex_filename(double const timeNow, int const iCycle) const {
     return get_filename(timeNow, iCycle) + "_amrex";
+  };
+  std::string get_hdf5_filename(double const timeNow, int const iCycle) const {
+    return get_filename(timeNow, iCycle) + "_hdf5";
   };
 
   std::string expand_variables(std::string inVars) const;

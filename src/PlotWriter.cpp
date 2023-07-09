@@ -125,6 +125,8 @@ void PlotWriter::init() {
     outputFormat = "real8";
   } else if (plotString.find("amrex") != string::npos) {
     outputFormat = "amrex";
+  } else if (plotString.find("hdf5") != string::npos) {
+    outputFormat = "hdf5";
   } else {
     if (isVerbose)
       cout << errorPrefix
