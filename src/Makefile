@@ -34,6 +34,12 @@ SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_
 # FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_ -D_AMR_DEV_
 
+
+# If hdf5.h exists, assume AMReX is built with HDF5 support.
+ifneq ("$(wildcard $(UTILDIR)/AMREX/InstallDir/include/hdf5.h)","")
+    FLAGC_EXTRA := ${FLAGC_EXTRA} -D_USE_HDF5_
+endif
+
 LIBFLEKS  = libFLEKS.a
 
 include ../Makefile.conf
