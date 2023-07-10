@@ -1431,11 +1431,7 @@ void Pic::report_load_balance() {
   const int iMem_ = 0, iNCell_ = 1, iNBlk_ = 2, iNParts_ = 3, nLocal = 4;
   float localInfo[nLocal];
 
-  int nProc = ParallelDescriptor::NProcs(), root = 0;
-  float* globalInfo;
-  if (ParallelDescriptor::MyProc() == root) {
-    globalInfo = new float[nLocal * nProc];
-  }
+  int nProc = ParallelDescriptor::NProcs();
 
   std::vector<int> rc(nProc, nLocal), disp(nProc, 0);
   for (int i = 0; i < nProc; i++) {
@@ -1444,9 +1440,11 @@ void Pic::report_load_balance() {
 
   localInfo[iMem_] = (float)read_mem_usage();
 
+  localInfo[iNBlk_] = 0;
+  localInfo[iNCell_] = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    localInfo[iNBlk_] = (float)centerB[iLev].local_size();
-    localInfo[iNCell_] = (float)get_local_node_or_cell_number(centerB[iLev]);
+    localInfo[iNBlk_] += (float)centerB[iLev].local_size();
+    localInfo[iNCell_] += (float)get_local_node_or_cell_number(centerB[iLev]);
   }
 
   {
@@ -1457,9 +1455,16 @@ void Pic::report_load_balance() {
     localInfo[iNParts_] = (float)npart;
   }
 
-  ParallelDescriptor::Gatherv(localInfo, nLocal, globalInfo, rc, disp, root);
+  Vector<float> globalInfo;
+  if (ParallelDescriptor::IOProcessor()) {
+    globalInfo.resize(nLocal * nProc);
+  }
 
-  if (ParallelDescriptor::MyProc() == root) {
+  int iop = ParallelDescriptor::IOProcessorNumber();
+  ParallelDescriptor::Gatherv(localInfo, nLocal, globalInfo.data(), rc, disp,
+                              iop);
+
+  if (ParallelDescriptor::IOProcessor()) {
     float maxVal[nLocal] = { 0 };
     float minVal[nLocal] = { 1e10, 1e10, 1e10, 1e10 };
     float avgVal[nLocal] = { 0 };
@@ -1482,38 +1487,22 @@ void Pic::report_load_balance() {
       avgVal[iType] /= nProc;
     }
 
-    const int nw = 9;
-    AllPrint()
-        << "==============" << printPrefix
-        << "Load balance report==================\n"
-        << "|    Value     |    Min   |   Avg    |    Max   |where(max)|\n"
+    printf("=============================Load balance "
+           "report============================\n");
+    printf("|    Value         |      Min     |     Avg      |      Max     "
+           "|where(max)|\n");
 
-        << "| Memory(MB)   |" << std::setw(nw) << (int)minVal[iMem_] << " |"
-        << std::setw(nw) << (int)avgVal[iMem_] << " |" << std::setw(nw)
-        << (int)maxVal[iMem_] << " |" << std::setw(nw) << maxLoc[iMem_]
-        << " |\n"
+    Vector<std::string> varType = { "|    Memory(MB)    |",
+                                    "|  # of Blocks     |",
+                                    "|  # of Cells      |",
+                                    "|  # of particles  |" };
 
-        << "|# of Blocks   |" << std::setw(nw) << (int)minVal[iNBlk_] << " |"
-        << std::setw(nw) << (int)avgVal[iNBlk_] << " |" << std::setw(nw)
-        << (int)maxVal[iNBlk_] << " |" << std::setw(nw) << maxLoc[iNBlk_]
-        << " |\n"
-
-        << "|# of Cells    |" << std::setw(nw) << (int)minVal[iNCell_] << " |"
-        << std::setw(nw) << (int)avgVal[iNCell_] << " |" << std::setw(nw)
-        << (int)maxVal[iNCell_] << " |" << std::setw(nw) << maxLoc[iNCell_]
-        << " |\n"
-
-        << "|# of particles|" << std::setw(nw) << minVal[iNParts_] << " |"
-        << std::setw(nw) << (int)avgVal[iNParts_] << " |" << std::setw(nw)
-        << maxVal[iNParts_] << " |" << std::setw(nw) << maxLoc[iNParts_]
-        << " |\n"
-
-        << "============================================================"
-        << std::endl;
-  }
-
-  if (ParallelDescriptor::MyProc() == root) {
-    delete[] globalInfo;
+    for (int i = iMem_; i < nLocal; i++) {
+      printf("%s%13.1f |%13.1f |%13.1f | %9d|\n", varType[i].c_str(), minVal[i],
+             avgVal[i], maxVal[i], maxLoc[i]);
+    }
+    printf("==================================================================="
+           "=========\n");
   }
 }
 
