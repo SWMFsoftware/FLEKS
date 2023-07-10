@@ -26,6 +26,7 @@
       </part>
       <part name="plotform" type="string" input="select" required="T">
 	<option value="amrex" name="AMReX built-in format"/>
+  <option value="hdf5" name="HDF5 format"/>
 	<option value="real4" name="IDL single prec"/>
 	<option value="real8" name="IDL double prec"/>
 	<option value="ascii" name="IDL ascii"/>
@@ -122,10 +123,20 @@ var        - read from parameter file. The available variables:
 	     at the cell center, respectively.
 \end{verbatim}
 
-The file format can be 'real4', 'real8', 'ascii' or 'amrex'. The IDL formats
+The file format can be 'real4', 'real8', 'ascii' 'amrex' or 'hdf5'. The IDL formats
 'real4', 'real8' and 'ascii' support the 2D/3D and 'cut' ouput domains for
 the fields. But they can not save particles. The 'amrex' format supports
 '3d' and 'cut' domains for saving particles, and '3d' domain for saving fields.
+'hdf5' supports '3d' domain for fields, if both AMReX and FLEKS are compiled with a 
+ parallel HDF5 library.
+ 
+ Paraview's 'contour' filter does not work well for both 'amrex' and 'hdf5' files. 
+ Since Paraview contour each block individually, there are cracks across the block 
+ interface. This is a long standing issue of Paraview
+(https://public.kitware.com/pipermail/paraview/2013-October/029492.html 
+https://discourse.paraview.org/t/amrex-output-contour-plot/4723), and it looks like
+Paraview developers will not fix it. So a compromised solution is to convert the files 
+to vtm (Paraview) with the scripts in FLEKS/tools. 
 
 The 'unit' can be:
 \begin{verbatim}
