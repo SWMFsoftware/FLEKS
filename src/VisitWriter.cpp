@@ -57,7 +57,7 @@ static void open_file(const char *filename) {
   if (strstr(filename, ".vtk") != NULL) {
     strcpy(full_filename, filename);
   } else {
-    sprintf(full_filename, "%s.vtk", filename);
+    snprintf(full_filename, sizeof full_filename, "%s.vtk", filename);
   }
 
   fp = fopen(full_filename, "w+");
@@ -250,7 +250,7 @@ void write_variables(int nvars, int *vardim, int *centering,
   // int num_field = 0;
 
   new_section();
-  sprintf(str, "CELL_DATA %d\n", ncells);
+  snprintf(str, sizeof str, "CELL_DATA %d\n", ncells);
   write_string(str);
 
   first_scalar = 0;
@@ -269,7 +269,7 @@ void write_variables(int nvars, int *vardim, int *centering,
       if (vardim[i] == 1) {
         if (first_scalar == 0) {
           should_write = 1;
-          sprintf(str, "SCALARS %s float\n", varname[i]);
+          snprintf(str, sizeof str, "SCALARS %s float\n", varname[i]);
           write_string(str);
           write_string("LOOKUP_TABLE default\n");
           first_scalar = 1;
@@ -278,7 +278,7 @@ void write_variables(int nvars, int *vardim, int *centering,
       } else if (vardim[i] == 3) {
         if (first_vector == 0) {
           should_write = 1;
-          sprintf(str, "VECTORS %s float\n", varname[i]);
+          snprintf(str, sizeof str, "VECTORS %s float\n", varname[i]);
           write_string(str);
           first_vector = 1;
         } else
@@ -301,7 +301,7 @@ void write_variables(int nvars, int *vardim, int *centering,
 
   first_scalar = 0;
   if (num_scalars > 0) {
-    sprintf(str, "FIELD FieldData %d\n", num_scalars);
+    snprintf(str, sizeof str, "FIELD FieldData %d\n", num_scalars);
     write_string(str);
     for (i = 0; i < nvars; i++) {
       int should_write = 0;
@@ -311,7 +311,7 @@ void write_variables(int nvars, int *vardim, int *centering,
             first_scalar = 1;
           } else {
             should_write = 1;
-            sprintf(str, "%s 1 %d float\n", varname[i], ncells);
+            snprintf(str, sizeof str, "%s 1 %d float\n", varname[i], ncells);
             write_string(str);
           }
         }
@@ -329,7 +329,7 @@ void write_variables(int nvars, int *vardim, int *centering,
 
   first_vector = 0;
   if (num_vectors > 0) {
-    sprintf(str, "FIELD FieldData %d\n", num_vectors);
+    snprintf(str, sizeof str, "FIELD FieldData %d\n", num_vectors);
     write_string(str);
     for (i = 0; i < nvars; i++) {
       int should_write = 0;
@@ -341,7 +341,7 @@ void write_variables(int nvars, int *vardim, int *centering,
             first_vector = 1;
           } else {
             should_write = 1;
-            sprintf(str, "%s 3 %d float\n", varname[i], ncells);
+            snprintf(str, sizeof str, "%s 3 %d float\n", varname[i], ncells);
             write_string(str);
           }
         }
@@ -358,7 +358,7 @@ void write_variables(int nvars, int *vardim, int *centering,
   }
 
   new_section();
-  sprintf(str, "POINT_DATA %d\n", npts);
+  snprintf(str, sizeof str, "POINT_DATA %d\n", npts);
   write_string(str);
 
   first_scalar = 0;
@@ -377,7 +377,7 @@ void write_variables(int nvars, int *vardim, int *centering,
       if (vardim[i] == 1) {
         if (first_scalar == 0) {
           should_write = 1;
-          sprintf(str, "SCALARS %s float\n", varname[i]);
+          snprintf(str, sizeof str, "SCALARS %s float\n", varname[i]);
           write_string(str);
           write_string("LOOKUP_TABLE default\n");
           first_scalar = 1;
@@ -386,7 +386,7 @@ void write_variables(int nvars, int *vardim, int *centering,
       } else if (vardim[i] == 3) {
         if (first_vector == 0) {
           should_write = 1;
-          sprintf(str, "VECTORS %s float\n", varname[i]);
+          snprintf(str, sizeof str, "VECTORS %s float\n", varname[i]);
           write_string(str);
           first_vector = 1;
         } else
@@ -409,7 +409,7 @@ void write_variables(int nvars, int *vardim, int *centering,
 
   first_scalar = 0;
   if (num_scalars > 0) {
-    sprintf(str, "FIELD FieldData %d\n", num_scalars);
+    snprintf(str, sizeof str, "FIELD FieldData %d\n", num_scalars);
     write_string(str);
     for (i = 0; i < nvars; i++) {
       int should_write = 0;
@@ -419,7 +419,7 @@ void write_variables(int nvars, int *vardim, int *centering,
             first_scalar = 1;
           } else {
             should_write = 1;
-            sprintf(str, "%s 1 %d float\n", varname[i], npts);
+            snprintf(str, sizeof str, "%s 1 %d float\n", varname[i], npts);
             write_string(str);
           }
         }
@@ -437,7 +437,7 @@ void write_variables(int nvars, int *vardim, int *centering,
 
   first_vector = 0;
   if (num_vectors > 0) {
-    sprintf(str, "FIELD FieldData %d\n", num_vectors);
+    snprintf(str, sizeof str, "FIELD FieldData %d\n", num_vectors);
     write_string(str);
     for (i = 0; i < nvars; i++) {
       int should_write = 0;
@@ -449,7 +449,7 @@ void write_variables(int nvars, int *vardim, int *centering,
             first_vector = 1;
           } else {
             should_write = 1;
-            sprintf(str, "%s 3 %d float\n", varname[i], npts);
+            snprintf(str, sizeof str, "%s 3 %d float\n", varname[i], npts);
             write_string(str);
           }
         }
@@ -504,14 +504,14 @@ void write_point_mesh(const char *filename, int ub, int npts, float *pts,
   write_header();
 
   write_string("DATASET UNSTRUCTURED_GRID\n");
-  sprintf(str, "POINTS %d float\n", npts);
+  snprintf(str, sizeof str, "POINTS %d float\n", npts);
   write_string(str);
   for (i = 0; i < 3 * npts; i++) {
     write_float(pts[i]);
   }
 
   new_section();
-  sprintf(str, "CELLS %d %d\n", npts, 2 * npts);
+  snprintf(str, sizeof str, "CELLS %d %d\n", npts, 2 * npts);
   write_string(str);
   for (i = 0; i < npts; i++) {
     write_int(1);
@@ -520,7 +520,7 @@ void write_point_mesh(const char *filename, int ub, int npts, float *pts,
   }
 
   new_section();
-  sprintf(str, "CELL_TYPES %d\n", npts);
+  snprintf(str, sizeof str, "CELL_TYPES %d\n", npts);
   write_string(str);
   for (i = 0; i < npts; i++) {
     write_int(VISIT_VERTEX);
@@ -637,7 +637,7 @@ void write_unstructured_mesh(const char *filename, int ub, int npts, float *pts,
   write_header();
 
   write_string("DATASET UNSTRUCTURED_GRID\n");
-  sprintf(str, "POINTS %d float\n", npts);
+  snprintf(str, sizeof str, "POINTS %d float\n", npts);
   write_string(str);
   for (i = 0; i < 3 * npts; i++) {
     write_float(pts[i]);
@@ -649,7 +649,7 @@ void write_unstructured_mesh(const char *filename, int ub, int npts, float *pts,
 
     conn_size += npts + 1;
   }
-  sprintf(str, "CELLS %d %d\n", ncells, conn_size);
+  snprintf(str, sizeof str, "CELLS %d %d\n", ncells, conn_size);
   write_string(str);
   for (i = 0; i < ncells; i++) {
     int npts = num_points_for_cell(celltypes[i]);
@@ -660,7 +660,7 @@ void write_unstructured_mesh(const char *filename, int ub, int npts, float *pts,
   }
 
   new_section();
-  sprintf(str, "CELL_TYPES %d\n", ncells);
+  snprintf(str, sizeof str, "CELL_TYPES %d\n", ncells);
   write_string(str);
   for (i = 0; i < ncells; i++) {
     write_int(celltypes[i]);
@@ -727,19 +727,19 @@ void write_rectilinear_mesh(const char *filename, int ub, int *dims, float *x,
   write_header();
 
   write_string("DATASET RECTILINEAR_GRID\n");
-  sprintf(str, "DIMENSIONS %d %d %d\n", dims[0], dims[1], dims[2]);
+  snprintf(str, sizeof str, "DIMENSIONS %d %d %d\n", dims[0], dims[1], dims[2]);
   write_string(str);
-  sprintf(str, "X_COORDINATES %d float\n", dims[0]);
+  snprintf(str, sizeof str, "X_COORDINATES %d float\n", dims[0]);
   write_string(str);
   for (i = 0; i < dims[0]; i++)
     write_float(x[i]);
   new_section();
-  sprintf(str, "Y_COORDINATES %d float\n", dims[1]);
+  snprintf(str, sizeof str, "Y_COORDINATES %d float\n", dims[1]);
   write_string(str);
   for (i = 0; i < dims[1]; i++)
     write_float(y[i]);
   new_section();
-  sprintf(str, "Z_COORDINATES %d float\n", dims[2]);
+  snprintf(str, sizeof str, "Z_COORDINATES %d float\n", dims[2]);
   write_string(str);
   for (i = 0; i < dims[2]; i++)
     write_float(z[i]);
@@ -869,9 +869,9 @@ void write_curvilinear_mesh(const char *filename, int ub, int *dims, float *pts,
   write_header();
 
   write_string("DATASET STRUCTURED_GRID\n");
-  sprintf(str, "DIMENSIONS %d %d %d\n", dims[0], dims[1], dims[2]);
+  snprintf(str, sizeof str, "DIMENSIONS %d %d %d\n", dims[0], dims[1], dims[2]);
   write_string(str);
-  sprintf(str, "POINTS %d float\n", npts);
+  snprintf(str, sizeof str, "POINTS %d float\n", npts);
   write_string(str);
   for (i = 0; i < 3 * npts; i++) {
     write_float(pts[i]);
