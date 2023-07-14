@@ -1428,7 +1428,7 @@ void Pic::report_load_balance() {
   std::string nameFunc = "Pic::monitor";
   timing_func(nameFunc);
 
-  const int iMem_ = 0, iNCell_ = 1, iNBlk_ = 2, iNParts_ = 3, nLocal = 4;
+  const int iMem_ = 0, iNBlk_ = 1, iNCell_ = 2, iNParts_ = 3, nLocal = 4;
   float localInfo[nLocal];
 
   int nProc = ParallelDescriptor::NProcs();
