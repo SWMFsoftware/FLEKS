@@ -790,7 +790,12 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
         iStart += pl.nComp();
         for (auto& var : plasmaNames) {
-          varNames.push_back(var + "s" + std::to_string(iSpecies));
+          std::string name = var + "S" + std::to_string(iSpecies);
+#ifdef _PT_COMPONENT_
+          //  For OH-PT: rhoS0 => rhoPop1, rhoS1 => rhoPop2
+          name = var + "Pop" + std::to_string(iSpecies + 1);
+#endif
+          varNames.push_back(name);
         }
 
         // Convert velocity to momentum

@@ -436,8 +436,17 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
 
   outFile << "#PLOTVARIABLE\n";
   outFile << var_I.size() - 3 << "\t nPlotVar\n";
-  for (std::vector<std::string>::size_type i = 3; i < var_I.size(); ++i)
-    outFile << var_I[i] << " ";
+  for (std::vector<std::string>::size_type i = 3; i < var_I.size(); ++i) {
+    std::string name = var_I[i];
+#ifdef _PT_COMPONENT_
+    // For OH-PT: rhoS0 => rhoPop1, rhoS1 => rhoPop2
+    if (name.substr(name.size() - 2, 1) == "S") {
+      int id = std::stoi(name.substr(name.size() - 1, 1)) + 1;
+      name = name.substr(0, name.size() - 2) + "Pop" + std::to_string(id);
+    }
+#endif
+    outFile << name << " ";
+  }
   for (std::string& sTmp : scalarName_I)
     outFile << sTmp << " ";
   outFile << " \n";
