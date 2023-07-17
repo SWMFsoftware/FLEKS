@@ -304,7 +304,7 @@ double Pic::get_var(std::string var, const int iLev, const int ix, const int iy,
                var.substr(0, 4) == "pXXS" || var.substr(0, 4) == "pYYS" ||
                var.substr(0, 4) == "pZZS" || var.substr(0, 4) == "pXYS" ||
                var.substr(0, 4) == "pXZS" || var.substr(0, 4) == "pYZS" ||
-               var.substr(0, 4) == "numS") {
+               var.substr(0, 4) == "ppcS" || var.substr(0, 4) == "numS") {
 
       // The last element of nodePlasma is the sum of all species.
       if (extract_int(var) >= nodePlasma.size() - 1) {
@@ -332,7 +332,7 @@ double Pic::get_var(std::string var, const int iLev, const int ix, const int iy,
           iVar = iPxz_;
         if (var.substr(0, 4) == "pYZS")
           iVar = iPyz_;
-        if (var.substr(0, 4) == "numS")
+        if (var.substr(0, 4) == "ppcS" || var.substr(0, 4) == "numS")
           iVar = iNum_;
 
         const Array4<Real const>& arr =
@@ -740,7 +740,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
       // The order of the varname should be consistent with nodePlasma.
       Vector<std::string> plasmaNames = { "rho", "ux",  "uy",  "uz",
                                           "pxx", "pyy", "pzz", "pxy",
-                                          "pxz", "pyz", "num" };
+                                          "pxz", "pyz", "ppc" };
 
       for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++) {
         auto& plasma = nodePlasma[iSpecies][iLev];

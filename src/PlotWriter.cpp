@@ -511,7 +511,11 @@ void PlotWriter::set_output_unit() {
 double PlotWriter::No2OutTable(std::string const& var) const {
   double value = 0;
 
-  if (var.substr(0, 1) == "q") {
+  // The order of the following if-else statements matter. For example,
+  // var="ppcS1" matchs "p" if "p" is before "ppc". Bad design.
+  if (var.substr(0, 3) == "ppc") {
+    value = 1;
+  } else if (var.substr(0, 1) == "q") {
     // charge
     value = No2OutV * No2OutB / No2OutL;
   } else if (var.substr(0, 3) == "rho") {

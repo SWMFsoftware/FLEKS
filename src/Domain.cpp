@@ -886,7 +886,7 @@ void Domain::read_param(const bool readGridInfo) {
       -1                                dn
       20                                dt
       1                                 dx
-      {fluid} numS0                     varName
+      {fluid} ppcS0                     varName
       y=0 fluid real4 planet            plotString
       -100                              dn
       5                                 dt
@@ -895,7 +895,7 @@ void Domain::read_param(const bool readGridInfo) {
       -1                                dn
       10                                dt
       1                                 dx
-      {fluid} numS0                     varName
+      {fluid} ppcS0                     varName
       3d fluid real4 planet compact     plotString
       -1                                dn
       10                                dt
