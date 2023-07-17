@@ -8,22 +8,20 @@
 #include "Pic.h"
 #include "PlotWriter.h"
 
-using namespace std;
-
 bool PlotWriter::doSaveBinary = true;
 
 void PlotWriter::init() {
   isVerbose = rank == 0;
   doWriteHeader = rank == 0;
 
-  string errorPrefix = "Error in #SAVEPLOT command: ";
+  std::string errorPrefix = "Error in #SAVEPLOT command: ";
 
-  string subString;
-  string::size_type pos;
+  std::string subString;
+  std::string::size_type pos;
 
-  // Find the first sub-string: 'x=0',or 'y=1.2'.....
+  // Find the first sub-std::string: 'x=0',or 'y=1.2'.....
   pos = plotString.find_first_of(" \t\n");
-  if (pos != string::npos) {
+  if (pos != std::string::npos) {
     subString = plotString.substr(0, pos);
   } else if (plotString.size() > 0) {
     subString = plotString;
@@ -35,7 +33,7 @@ void PlotWriter::init() {
   // than the simulation domain on this processor.
   if (subString.substr(0, 2) == "x=" || subString.substr(0, 2) == "y=" ||
       subString.substr(0, 2) == "z=") {
-    stringstream ss;
+    std::stringstream ss;
 
     int idx = -1;
     if (subString.substr(0, 2) == "x=")
@@ -74,30 +72,32 @@ void PlotWriter::init() {
     }
   } else {
     if (isVerbose)
-      cout << errorPrefix << "Unknown plot range!! plotString = " << plotString
-           << endl;
+      std::cout << errorPrefix
+                << "Unknown plot range!! plotString = " << plotString
+                << std::endl;
     abort();
   }
 
   // Find out plot variables.
-  if (plotString.find("all") != string::npos) {
+  if (plotString.find("all") != std::string::npos) {
     // Only include two species.
     plotVar = expand_variables("{all}");
     namePrefix += "_all";
-  } else if (plotString.find("var") != string::npos) {
+  } else if (plotString.find("var") != std::string::npos) {
     plotVar = expand_variables(plotVar);
     namePrefix += "_var";
-  } else if (plotString.find("fluid") != string::npos) {
+  } else if (plotString.find("fluid") != std::string::npos) {
     plotVar = expand_variables("{fluid}");
     namePrefix += "_fluid";
-  } else if (plotString.find("particles") != string::npos) {
+  } else if (plotString.find("particles") != std::string::npos) {
     namePrefix += "_particle";
-    string::size_type pos = plotString.find("particles");
+    std::string::size_type pos = plotString.find("particles");
     particleSpecies = extract_int(plotString.substr(pos));
   } else {
     if (isVerbose)
-      cout << errorPrefix
-           << "Unknown plot variables!! plotString = " << plotString << endl;
+      std::cout << errorPrefix
+                << "Unknown plot variables!! plotString = " << plotString
+                << std::endl;
     abort();
   }
 
@@ -106,82 +106,84 @@ void PlotWriter::init() {
   var_I.push_back("Y");
   var_I.push_back("Z");
 
-  string::size_type pos1, pos2;
+  std::string::size_type pos1, pos2;
   pos1 = 0;
   pos2 = 0;
-  while (pos1 != string::npos) {
+  while (pos1 != std::string::npos) {
     pos1 = plotVar.find_first_not_of(' ', pos2);
     pos2 = plotVar.find_first_of(" \t\n", pos1);
-    if (pos1 != string::npos)
+    if (pos1 != std::string::npos)
       var_I.push_back(plotVar.substr(pos1, pos2 - pos1));
   }
 
   // Find out output format.
-  if (plotString.find("ascii") != string::npos) {
+  if (plotString.find("ascii") != std::string::npos) {
     outputFormat = "ascii";
-  } else if (plotString.find("real4") != string::npos) {
+  } else if (plotString.find("real4") != std::string::npos) {
     outputFormat = "real4";
-  } else if (plotString.find("real8") != string::npos) {
+  } else if (plotString.find("real8") != std::string::npos) {
     outputFormat = "real8";
-  } else if (plotString.find("amrex") != string::npos) {
+  } else if (plotString.find("amrex") != std::string::npos) {
     outputFormat = "amrex";
-  } else if (plotString.find("hdf5") != string::npos) {
+  } else if (plotString.find("hdf5") != std::string::npos) {
     outputFormat = "hdf5";
   } else {
     if (isVerbose)
-      cout << errorPrefix
-           << "Unknown plot output format!! plotString = " << plotString
-           << endl;
+      std::cout << errorPrefix
+                << "Unknown plot output format!! plotString = " << plotString
+                << std::endl;
     abort();
   }
 
   // Find out output unit.
-  if (plotString.find("si") != string::npos ||
-      plotString.find("SI") != string::npos) {
+  if (plotString.find("si") != std::string::npos ||
+      plotString.find("SI") != std::string::npos) {
     outputUnit = "SI";
-  } else if (plotString.find("pic") != string::npos ||
-             plotString.find("PIC") != string::npos) {
+  } else if (plotString.find("pic") != std::string::npos ||
+             plotString.find("PIC") != std::string::npos) {
     outputUnit = "PIC";
-  } else if (plotString.find("planet") != string::npos ||
-             plotString.find("PLANET") != string::npos) {
+  } else if (plotString.find("planet") != std::string::npos ||
+             plotString.find("PLANET") != std::string::npos) {
     outputUnit = "PLANETARY";
   } else {
     if (isVerbose)
-      cout << errorPrefix
-           << "Unknown plot output unit!! plotString = " << plotString << endl;
+      std::cout << errorPrefix
+                << "Unknown plot output unit!! plotString = " << plotString
+                << std::endl;
     abort();
   }
 
   { //--------------------- Check parameters----------------------
     if (!is_particle() && outputFormat == "amrex" &&
-        plotString.find("3d") == string::npos) {
-      cout << errorPrefix
-           << "for grid data, 'amrex' format output only support "
-              "'3d' plot range!"
-           << endl;
+        plotString.find("3d") == std::string::npos) {
+      std::cout << errorPrefix
+                << "for grid data, 'amrex' format output only support "
+                   "'3d' plot range!"
+                << std::endl;
       abort();
     }
 
     if (is_particle()) {
       if (outputFormat != "amrex") {
-        cout << errorPrefix << "particles can only be saved in 'amrex' format! "
-             << endl;
+        std::cout << errorPrefix
+                  << "particles can only be saved in 'amrex' format! "
+                  << std::endl;
         abort();
       }
 
-      if (plotString.find("3d") == string::npos &&
-          plotString.find("cut") == string::npos) {
-        cout << errorPrefix
-             << "particles can only be saved with either '3d' or "
-                "'cut' plot range! "
-             << endl;
+      if (plotString.find("3d") == std::string::npos &&
+          plotString.find("cut") == std::string::npos) {
+        std::cout << errorPrefix
+                  << "particles can only be saved with either '3d' or "
+                     "'cut' plot range! "
+                  << std::endl;
         abort();
       }
     }
   }
 
   // Find max time unit
-  if (plotString.find("year") != string::npos) {
+  if (plotString.find("year") != std::string::npos) {
     maxTimeUnit = "year";
   }
 
@@ -189,28 +191,29 @@ void PlotWriter::init() {
 }
 //====================================================================
 
-string PlotWriter::add_plasma_variables(string varString, int is) const {
+std::string PlotWriter::add_plasma_variables(std::string varString,
+                                             int is) const {
   varString.insert(0, " ");
-  string::size_type pos1 = varString.find_first_of("S");
-  while (pos1 != string::npos) {
-    varString.insert(pos1 + 1, to_string(is));
+  std::string::size_type pos1 = varString.find_first_of("S");
+  while (pos1 != std::string::npos) {
+    varString.insert(pos1 + 1, std::to_string(is));
     pos1 = varString.find_first_of("S", pos1 + 1);
   }
 
   return varString;
 }
 
-string PlotWriter::expand_variables(string inVars) const {
+std::string PlotWriter::expand_variables(std::string inVars) const {
   // Expand the plot variables inside { };
   // Only support {fluid} so far.
-  string::size_type pos1, pos2;
-  string var0;
+  std::string::size_type pos1, pos2;
+  std::string var0;
 
   pos1 = inVars.find_first_of("{");
-  while (pos1 != string::npos) {
+  while (pos1 != std::string::npos) {
     pos2 = inVars.find_first_of("}");
-    if (pos2 == string::npos) {
-      cout << "Variables should be inside { }: " << inVars << endl;
+    if (pos2 == std::string::npos) {
+      std::cout << "Variables should be inside { }: " << inVars << std::endl;
       abort();
     }
 
@@ -238,7 +241,7 @@ string PlotWriter::expand_variables(string inVars) const {
   return inVars;
 }
 
-ostream& operator<<(ostream& coutIn, PlotWriter const& outputIn) {
+std::ostream& operator<<(std::ostream& coutIn, PlotWriter const& outputIn) {
   coutIn << "==================PlotWriter Input Info======================\n"
          << "ID        : " << outputIn.ID << " \n"
          << "plotString: " << outputIn.plotString << " \n"
@@ -263,7 +266,7 @@ ostream& operator<<(ostream& coutIn, PlotWriter const& outputIn) {
          << outputIn.dx_D[outputIn.y_] << " " << outputIn.dx_D[outputIn.z_]
          << " \n";
   coutIn << "Variables : \n";
-  for (string const& sTmp : outputIn.var_I)
+  for (std::string const& sTmp : outputIn.var_I)
     coutIn << sTmp << " \n";
 
   coutIn << "Normalizationi: \n"
@@ -310,8 +313,8 @@ void PlotWriter::write(double const timeNow, int const iCycle,
                        FuncFindPointList find_output_list,
                        FuncGetField get_var) {
   if (outputFormat == "amrex") {
-    cout << "Warning: amrex format files should be saved from Pic class!!!"
-         << endl;
+    std::cout << "Warning: amrex format files should be saved from Pic class!!!"
+              << std::endl;
   } else {
     write_idl(timeNow, iCycle, find_output_list, get_var);
   }
@@ -329,12 +332,12 @@ void PlotWriter::write_idl(double const timeNow, int const iCycle,
   nCellAllProc = nPoint;
 
   // if (isVerbose) {
-  //   cout << "nCellAll = " << nCellAllProc
+  //   std::cout << "nCellAll = " << nCellAllProc
   //             << " nPointList = " << pointList_II.size()
   //             << " xMin = " << xMin_D[x_] << " xMax = " << xMax_D[x_]
   //             << " yMin = " << xMin_D[y_] << " yMax = " << xMax_D[y_]
   //             << " zMin = " << xMin_D[z_] << " zMax = " << xMax_D[z_]
-  //             << endl;
+  //             << std::endl;
   // }
 
   // Correct plot range.
@@ -349,16 +352,16 @@ void PlotWriter::write_idl(double const timeNow, int const iCycle,
   if (pointList_II.size() > 0)
     write_field(timeNow, iCycle, pointList_II, get_var);
 
-  // cout << "After write_header \n" << (*this) << endl;
+  // std::cout << "After write_header \n" << (*this) << std::endl;
 }
 
 void PlotWriter::write_header(double const timeNow, int const iCycle) {
 
-  string filename = get_filename(timeNow, iCycle) + ".h";
+  std::string filename = get_filename(timeNow, iCycle) + ".h";
 
-  ofstream outFile;
-  outFile.open(filename.c_str(), fstream::out | fstream::trunc);
-  outFile << scientific;
+  std::ofstream outFile;
+  outFile.open(filename.c_str(), std::fstream::out | std::fstream::trunc);
+  outFile << std::scientific;
   outFile.precision(12);
   outFile << "#HEADFILE\n";
   outFile << filename << "\n";
@@ -425,16 +428,17 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
   outFile << "#SCALARPARAM\n";
   outFile << scalarName_I.size() << "\t nParam\n";
 
-  for (vector<string>::size_type i = 0; i < scalarName_I.size(); ++i) {
+  for (std::vector<std::string>::size_type i = 0; i < scalarName_I.size();
+       ++i) {
     outFile << scalarValue_I[i] << "\t" << scalarName_I[i] << "\n";
   }
   outFile << "\n";
 
   outFile << "#PLOTVARIABLE\n";
   outFile << var_I.size() - 3 << "\t nPlotVar\n";
-  for (vector<string>::size_type i = 3; i < var_I.size(); ++i)
+  for (std::vector<std::string>::size_type i = 3; i < var_I.size(); ++i)
     outFile << var_I[i] << " ";
-  for (string& sTmp : scalarName_I)
+  for (std::string& sTmp : scalarName_I)
     outFile << sTmp << " ";
   outFile << " \n";
   outFile << outputUnit << "\n";
@@ -448,7 +452,7 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
   if (outFile.is_open())
     outFile.close();
   // if (doTestFunc) {
-  //   cout << nameSub << " :filename = " << filename << endl;
+  //   std::cout << nameSub << " :filename = " << filename << std::endl;
   // }
 }
 
@@ -484,17 +488,18 @@ void PlotWriter::set_output_unit() {
     No2OutJ = 1;
   } else {
     if (isVerbose)
-      cout << "Unknown unit!! unit = " << outputUnit << endl;
+      std::cout << "Unknown unit!! unit = " << outputUnit << std::endl;
     abort();
   }
 
   No2Out_I.reserve(var_I.size());
-  for (vector<string>::size_type iVar = 0; iVar < var_I.size(); ++iVar) {
+  for (std::vector<std::string>::size_type iVar = 0; iVar < var_I.size();
+       ++iVar) {
     No2Out_I[iVar] = No2OutTable(var_I[iVar]);
   }
 }
 
-double PlotWriter::No2OutTable(string const& var) const {
+double PlotWriter::No2OutTable(std::string const& var) const {
   double value = 0;
 
   if (var.substr(0, 1) == "q") {
@@ -561,15 +566,15 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
     nLength = 4;
   }
 
-  stringstream ss;
-  ss << "_pe" << setfill('0') << setw(nLength) << rank << ".idl";
-  string filename = get_filename(timeNow, iCycle) + ss.str();
+  std::stringstream ss;
+  ss << "_pe" << std::setfill('0') << std::setw(nLength) << rank << ".idl";
+  std::string filename = get_filename(timeNow, iCycle) + ss.str();
 
-  ofstream outFile;
+  std::ofstream outFile;
   if (doSaveBinary) {
     outFile.open(filename.c_str(),
-                 fstream::out | fstream::trunc |
-                     fstream::binary); // Write binary file.
+                 std::fstream::out | std::fstream::trunc |
+                     std::fstream::binary); // Write binary file.
     int nRecord, nSizeDouble, nSizeInt;
     nSizeInt = sizeof(int);
     assert(nSizeInt == 4);
@@ -596,8 +601,8 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
 
   } else {
 
-    outFile.open(filename.c_str(), fstream::out | fstream::trunc);
-    outFile << scientific;
+    outFile.open(filename.c_str(), std::fstream::out | std::fstream::trunc);
+    outFile << std::scientific;
     outFile.precision(7);
     for (long iPoint = 0; iPoint < nPoint; ++iPoint) {
       outFile << dx_D[x_] * No2OutL;
@@ -616,7 +621,7 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
 int PlotWriter::get_time_digits(double second) const {
   int digits;
 
-  if (maxTimeUnit.find("hour") != string::npos) {
+  if (maxTimeUnit.find("hour") != std::string::npos) {
     /*Example: For the input second = 3668 = 1hour + 1min + 8s,
 the output will be a int of 010108*/
 
@@ -627,7 +632,7 @@ the output will be a int of 010108*/
     iSc = second - iMn * 60;
 
     digits = iSc + 100 * iMn + 10000 * iHr;
-  } else if (maxTimeUnit.find("year") != string::npos) {
+  } else if (maxTimeUnit.find("year") != std::string::npos) {
     // Left four digits are year, right four digits are day.
     int iYr, iDy;
     double scInYr = 3600 * 24 * 365.25;
