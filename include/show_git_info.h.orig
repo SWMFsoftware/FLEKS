@@ -2,6 +2,6 @@
 void print_git_info(){
   std::cout 
     << "Main dir=/home/yuxichen/dev/SWMF/PC/FLEKS\n"
-    << "Remote  =git@gitlab.umich.edu:swmf_software\n"
+    << "Remote  =git@github.com:SWMFsoftware\n"
     << "FLEKS                               modified  2020-05-05 fc800a1  \n";
 }
