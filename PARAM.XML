@@ -435,6 +435,170 @@ If it is true, the test particle velocity update will be relativistic.
 !!!!!!!!!!!!!!!! INITIAL AND BOUNDARY CONDITIONS !!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+
+
+<command name="GEOMETRY"
+	 alias="GEOMETRY_FLEKS0,GEOMETRY_FLEKS1,GEOMETRY_FLEKS2" multiple="T">
+  <parameter name="xMin" type="real"/>
+  <parameter name="xMax" type="real"/>
+  <parameter name="yMin" type="real"/>
+  <parameter name="yMax" type="real"/>
+  <parameter name="zMin" type="real"/>
+  <parameter name="zMax" type="real"/>
+	
+#GEOMETRY
+-1			            xMin 
+1 	                xMax 
+-1			            yMin 
+1 	                yMax 
+-1			            zMin 
+1 	                zMax 
+
+It is used to set the simulation domain size for OH-PT simulations. 
+For MHD-AEPIC simulations, the domain is set from BATSRUS and 
+this command should only exist in the restart file.
+</command>
+
+<command name="NCELL" alias="NCELL_FLEKS0,NCELL_FLEKS1,NCELL_FLEKS2"
+	 multiple="T">
+  <parameter name="nCellX" type="integer"/>
+  <parameter name="nCellY" type="integer"/>
+  <parameter name="nCellZ" type="integer"/>
+#NCELL 
+32					nCellX 
+64					nCellY
+48					nCellZ 
+
+It is used to set the domain cell number for OH-PT simulations. 
+For MHD-AEPIC simulations, the cell number is set from BATSRUS and 
+this command should only exist in the restart file.
+</command>
+
+<command name="REGION" alias="REGION_FLEKS0,REGION_FLEKS1,REGION_FLEKS2"  
+  multiple="T">
+  <parameter name="regionName" type="string"/>
+  <parameter name="shape" type="string" input="select" required="T">
+    <option value="box"     />
+    <option value="paraboloid" />
+    <option value="shell"    />
+    <option value="sphere"   />
+  </parameter>
+  <if expr="$shape =~ /paraboloid/">
+    <parameter name="iAxis" type="integer" min="0" max="2"/>    
+  </if>
+  <if expr="$shape !~ /box/">
+    <parameter name="centerX" type="real" />
+    <parameter name="centerY" type="real" />
+    <parameter name="centerZ" type="real" />
+  </if>
+  <if expr="$shape =~ /box\b/">
+    <parameter name="xMinBox" type="real" />
+    <parameter name="xMaxBox" type="real" />
+    <parameter name="yMinBox" type="real" />
+    <parameter name="yMaxBox" type="real" />
+    <parameter name="zMinBox" type="real" />
+    <parameter name="zMaxBox" type="real" />
+  </if>
+  <if expr="$shape =~ /sphere|shell/">
+    <parameter name="radiusInner" type="real" min="0"
+	       if="$shape =~ /shell/"/>
+    <parameter name="radius"  type="real" min="0+$RadiusInner"/>
+  </if>
+  <if expr="$shape =~ /paraboloid/">
+    <parameter name="height"     type="real" />
+    <parameter name="radius1"    type="real" min="0"/>
+    <parameter name="radius2"    type="real" min="0" />
+  </if>  
+
+#REGION
+region1		regionName
+box			  shape
+-64.0			xMin
+-16.0			yMin
+-16.0			zMin
+-32.0			xMax
+ 16.0			yMax
+  0.0			zMax
+
+#REGION
+sphere1		nameRegion
+sphere  	shape
+-10.0			centerX
+ 10.0			centerY
+  0.0			centerZ
+ 20.0			radius
+
+#REGION
+shell1	  nameRegion
+shell     shape
+-10.0			centerX
+ 10.0			centerY
+  0.0			centerZ
+ 20.0			radiusInner
+ 20.0			radiusOuter
+
+
+#REGION
+p1	            nameRegion
+paraboloid   	  shape
+0               iAxis
+-10.0			      centerX
+ 10.0			      centerY
+  0.0			      centerZ
+-10             height
+ 20.0			      radius1
+ 10.0			      radius2
+
+The regions defined here can be used for setting refinement areas. 
+
+For a 'paraboloid', the iAxis is the axis of the paraboloid, and it can 
+be 0 (x-dir), 1 (y-dir), or 2 (z-dir). Its height can be negative, which 
+indicates the orientation direction. The direction of the paraboloid (iAxis)
+and the directions of radius1 and radius2 form a right-hand system. If 
+iAxis is the x/y/z direction, radius1 is the radius in the y/z/x direction,
+and radius isin the z/x/y direction.
+
+</command>
+
+<command name="REFINEREGION" alias="REFINEREGION_FLEKS0,REFINEREGION_FLEKS1,
+REFINEREGION_FLEKS2" multiple="T">
+  <parameter name="refineLev" type="integer" min="0"/>
+  <parameter name="refineArea" type="string" />
+
+#REFINEREGION
+0                         refineLev
++box1 -sphere1		        StringHallRegion
+
+#REFINEREGION
+1                         refineLev
++box2 -sphere2		        StringHallRegion
+
+This command is used to specify the regions of refinement for the 
+level refineLev. The cells inside the '+' shapes but outside the '-' 
+shapes will be refined.
+
+Multiple #REFINEREGION commands can be used for different levels.
+
+</command>
+
+<command name="GRIDEFFICIENCY" alias="GRIDEFFICIENCY_FLEKS0,GRIDEFFICIENCY_FLEKS1,
+GRIDEFFICIENCY_FLEKS2" multiple="T">
+  <parameter name="gridEfficiency" type="real" min="0" max="1" default="0.7"/>
+  
+#GRIDEFFICIENCY
+0.7                       gridEfficiency
+
+From AMReX online docs: "This threshold value (gridEfficiency), which defaults
+to 0.7 (or 70%), is used to ensure that grids do not contain too large a fraction of un-tagged cells."
+
+For a block, if the ratio of its cells that are labelled for refinement is 
+more than 'gridEfficiency', the whole block will be refined. Since the block
+decomposition may be different for the same setup but on different numbers of 
+cores, these simulations may refine grids differently if 'gridEfficiency'
+is not 1. 
+
+</command>
+
 <command name="PARTICLES"
 	 alias="PARTICLES_FLEKS0,PARTICLES_FLEKS1,PARTICLES_FLEKS2"
 	 multiple="T">
@@ -591,7 +755,7 @@ F                 isPeriodicZ
 We may want to use periodic boundary conditions in some directions even in
 a coupled simulation, and the command above can be used. Note that if there
 is only one cell in one direction, periodic boundary conditions will be used
-in this direction and the parameter above will be ignored. Otherwise
+in this direction and the parameter above will be ignored. Otherwise,
 the default value is false.
 </command>
 
@@ -611,7 +775,7 @@ equal to or smaller than the sizes set here. Users can search
 "grid information summary" and "load balance report" to obtain the 
 grid information. 
 
-8 to 16 cells per direction usually reaches a good balance between 
+8 to 16 cells per direction usually reach a good balance between 
 efficiency and flexibility. 8*8*8 or 16*8*8 are typical for a 3D simulation.
 </command>
 
@@ -664,7 +828,7 @@ normalization should be set here. Both lNorm and uNorm are in SI units.
 
 If PIC is not initialized from SWMF (#INITFROMSWMF), set particle
 mass and charge here. The units of mass and charge are amu and 
-elementary charge, respectively. If charge is 0, then it is a 
+elementary charge, respectively. If the charge is 0, then it is a 
 neutral species. 
 
 </command>
@@ -721,7 +885,7 @@ they will be changed to other units in the future.
 PC/restartIN/FLEKS0_restart.H		NameIncludeFile
 
 Include a file. The most useful application is including the restart
-header file as show by the example. Including this file helps making sure
+header file as shown by the example. Including this file helps make sure
 that the original and restarted runs use consistent settings.
 
 The default is to use a single PARAM.in file.
@@ -817,43 +981,6 @@ This command should only exist in the restart file FLEKSX_restart.H
 0.12	            dtNextSI 
 
 The last and the next time step. 
-
-This command should only exist in the restart file FLEKSX_restart.H
-</command>
-
-<command name="GEOMETRY"
-	 alias="GEOMETRY_FLEKS0,GEOMETRY_FLEKS1,GEOMETRY_FLEKS2" multiple="T">
-  <parameter name="xMin" type="real"/>
-  <parameter name="xMax" type="real"/>
-  <parameter name="yMin" type="real"/>
-  <parameter name="yMax" type="real"/>
-  <parameter name="zMin" type="real"/>
-  <parameter name="zMax" type="real"/>
-	
-#GEOMETRY
--1			xMin 
-1 	                xMax 
--1			yMin 
-1 	                yMax 
--1			zMin 
-1 	                zMax 
-
-The simulation domain. 
-
-This command should only exist in the restart file FLEKSX_restart.H
-</command>
-
-<command name="NCELL" alias="NCELL_FLEKS0,NCELL_FLEKS1,NCELL_FLEKS2"
-	 multiple="T">
-  <parameter name="nCellX" type="integer"/>
-  <parameter name="nCellY" type="integer"/>
-  <parameter name="nCellZ" type="integer"/>
-#NCELL 
-32					nCellX 
-64					nCellY
-48					nCellZ 
-
-The number of cells of the whole FLEKS domain. 
 
 This command should only exist in the restart file FLEKSX_restart.H
 </command>
