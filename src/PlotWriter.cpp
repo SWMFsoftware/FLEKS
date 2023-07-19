@@ -112,8 +112,22 @@ void PlotWriter::init() {
   while (pos1 != std::string::npos) {
     pos1 = plotVar.find_first_not_of(' ', pos2);
     pos2 = plotVar.find_first_of(" \t\n", pos1);
-    if (pos1 != std::string::npos)
-      var_I.push_back(plotVar.substr(pos1, pos2 - pos1));
+    if (pos1 != std::string::npos) {
+      std::string name = plotVar.substr(pos1, pos2 - pos1);
+#ifdef _PT_COMPONENT_
+      // For OH-PT simulations, the variable names read from PARAM.in can be
+      // *Pop*, which are also used in the output files. But internationally,
+      // *S* is used. For example: rhoPop1 => rhoS0.
+
+      if (name.find("Pop") != std::string::npos) {
+        int id = std::stoi(name.substr(name.size() - 1, 1)) - 1;
+        name = name.substr(0, name.size() - 4) + "S" + std::to_string(id);
+      }
+
+#endif
+
+      var_I.push_back(name);
+    }
   }
 
   // Find out output format.
