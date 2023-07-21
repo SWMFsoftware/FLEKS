@@ -81,7 +81,7 @@ private:
 
 public:
   Grid(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-       const int nGstIn, int id, std::string tagIn = std::string())
+       const int nGstIn = 0, int id = 0, std::string tagIn = std::string())
       : AmrCore(gm, amrInfo), nGst(nGstIn), gridID(id) {
     gridAmrInfo = amrInfo;
     tag = tagIn;

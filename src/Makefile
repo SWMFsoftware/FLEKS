@@ -15,8 +15,7 @@ SRCS := \
 	FluidInterface.cpp \
 	Pic.cpp \
 	PicIO.cpp \
-	Grid.cpp \
-	VisitWriter.cpp
+	Grid.cpp 	
 
 OBJECTS := $(patsubst %, %.o,$(basename $(SRCS)))
 
@@ -26,7 +25,9 @@ OBJECTS_EXE = \
 FLEKSEXE = ${BINDIR}/FLEKS.exe
 
 CONVERTER_OBJECTS = \
-	Converter.o
+	Converter.o \
+	VisitWriter.o \
+	DataContainer.o
 
 CONVERTEREXE = ../bin/converter.exe
 
