@@ -44,9 +44,9 @@ protected:
   std::string dirIn;
   FileType dataType;
 
-  amrex::MultiFab mf;
-  amrex::iMultiFab iCell;
-  
+  amrex::Vector<amrex::MultiFab> mf;
+  amrex::Vector<amrex::iMultiFab> iCell;
+
   int nCell;
   int nBrick;
   int nVar;
@@ -70,8 +70,11 @@ private:
 public:
   AMReXDataContainer(const std::string& in, const amrex::Geometry& gm,
                      const amrex::AmrInfo& amrInfo)
-      : Grid(gm, amrInfo), DataContainer() {
+      : Grid(gm, amrInfo, 1), DataContainer() {
     dirIn = in;
+
+    mf.resize(n_lev_max());
+    iCell.resize(n_lev_max());
   }
   ~AMReXDataContainer(){};
   static void read_header(std::string& headerName, int& nVar, int& nDim,
@@ -79,6 +82,14 @@ public:
                           amrex::RealBox& domain, amrex::Box& cellBox,
                           amrex::Vector<std::string>& varNames);
   void read_header();
+
+  void post_regrid() override {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      distribute_FabArray(iCell[iLev], cGrids[iLev], DistributionMap(iLev), 1,
+                          nGst, false);      
+    }
+    distribute_grid_arrays();
+  }
 
   void read() override;
   void write() override;

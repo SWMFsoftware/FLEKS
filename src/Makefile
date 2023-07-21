@@ -27,7 +27,8 @@ FLEKSEXE = ${BINDIR}/FLEKS.exe
 CONVERTER_OBJECTS = \
 	Converter.o \
 	VisitWriter.o \
-	DataContainer.o
+	DataContainer.o \
+	Grid.o 
 
 CONVERTEREXE = ../bin/converter.exe
 

@@ -81,7 +81,7 @@ private:
 
 public:
   Grid(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
-       const int nGstIn = 0, int id = 0, std::string tagIn = std::string())
+       const int nGstIn, int id = 0, std::string tagIn = std::string())
       : AmrCore(gm, amrInfo), nGst(nGstIn), gridID(id) {
     gridAmrInfo = amrInfo;
     tag = tagIn;
@@ -137,7 +137,7 @@ public:
   // TODO: Maybe the first argument 'region' can be removed? --Yuxi
   void regrid(const amrex::BoxArray& region, const Grid* const grid);
 
-  virtual void post_regrid(){};
+  virtual void post_regrid() { distribute_grid_arrays(); };
 
   void update_refine_region(const amrex::Vector<Regions>& in) {
     refineRegions = in;

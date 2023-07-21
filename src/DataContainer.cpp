@@ -77,19 +77,29 @@ void AMReXDataContainer::read() {
 
   read_header();
 
-  VisMF::Read(mf, dirIn + "/Level_0/Cell");
+  Grid grid(Geom(0), get_amr_info(), nGst);
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    VisMF::Read(mf[iLev], dirIn + "/Level_" + std::to_string(iLev) + "/Cell");
+
+    grid.SetBoxArray(iLev, mf[iLev].boxArray());
+    grid.SetDistributionMap(iLev, mf[iLev].DistributionMap());
+  }
+  grid.SetFinestLevel(n_lev() - 1);
+
+  // Print() << "grids.ba0 = " << grid.boxArray(0) << std::endl;
+
+  regrid(grid.boxArray(0), &grid);
 }
 
 void AMReXDataContainer::write() {
-  if (!mf.is_cell_centered())
+
+  int iLev = 0;
+
+  if (!mf[iLev].is_cell_centered())
     Abort("Error: only support cell centered data!");
 
-  iCell.define(mf.boxArray(), mf.DistributionMap(), 1, 1);
-  iCell.setVal(0);
-
   nCell = loop_cell();
-
-  iCell.FillBoundary();
 
   nBrick = loop_brick();
 
@@ -129,27 +139,34 @@ void AMReXDataContainer::write() {
 
 int AMReXDataContainer::loop_cell(bool doCountOnly) {
   int iCount = 0;
-  for (MFIter mfi(iCell); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
-    const Array4<int>& cell = iCell[mfi].array();
-    const Array4<Real>& data = mf[mfi].array();
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    for (MFIter mfi(iCell[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const auto& status = cell_status(iLev)[mfi].array();
+      const Array4<int>& cell = iCell[iLev][mfi].array();
+      const Array4<Real>& data = mf[iLev][mfi].array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          iCount++;
-          cell(i, j, k) = iCount;
-          if (!doCountOnly) {
-            for (int iVar = 0; iVar < mf.nComp(); iVar++) {
-              outFile << data(i, j, k, iVar) << " ";
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i)
+            if (!bit::is_refined(status(i, j, k))) {
+              iCount++;
+              cell(i, j, k) = iCount;
+              if (!doCountOnly) {
+                for (int iVar = 0; iVar < mf[iLev].nComp(); iVar++) {
+                  outFile << data(i, j, k, iVar) << " ";
+                }
+                outFile << "\n";
+              }
             }
-            outFile << "\n";
-          }
-        }
+    }
+
+    iCell[iLev].FillBoundary();
   }
+
   return iCount;
 }
 
@@ -159,40 +176,44 @@ int AMReXDataContainer::loop_brick(bool doCountOnly) {
   if (!doCountOnly)
     outFile.width(8);
 
-  for (MFIter mfi(iCell); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
-    const Array4<int>& cell = iCell[mfi].array();
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    for (MFIter mfi(iCell[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<int>& cell = iCell[iLev][mfi].array();
+      const auto& status = cell_status(iLev)[mfi].array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          bool isBrick = true;
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i)
+            if (!bit::is_refined(status(i, j, k))) {
+              bool isBrick = true;
 
-          for (int kk = k; kk <= k + 1; kk++)
-            for (int jj = j; jj <= j + 1; jj++)
-              for (int ii = i; ii <= i + 1; ii++) {
-                if (cell(ii, jj, kk) == 0)
-                  isBrick = false;
+              for (int kk = k; kk <= k + 1; kk++)
+                for (int jj = j; jj <= j + 1; jj++)
+                  for (int ii = i; ii <= i + 1; ii++) {
+                    if (cell(ii, jj, kk) == 0)
+                      isBrick = false;
+                  }
+
+              if (isBrick) {
+                iBrick++;
+
+                if (!doCountOnly) {
+                  outFile << cell(i, j, k) << " ";
+                  outFile << cell(i + 1, j, k) << " ";
+                  outFile << cell(i + 1, j + 1, k) << " ";
+                  outFile << cell(i, j + 1, k) << " ";
+                  outFile << cell(i, j, k + 1) << " ";
+                  outFile << cell(i + 1, j, k + 1) << " ";
+                  outFile << cell(i + 1, j + 1, k + 1) << " ";
+                  outFile << cell(i, j + 1, k + 1) << "\n";
+                }
               }
-
-          if (isBrick) {
-            iBrick++;
-
-            if (!doCountOnly) {
-              outFile << cell(i, j, k) << " ";
-              outFile << cell(i + 1, j, k) << " ";
-              outFile << cell(i + 1, j + 1, k) << " ";
-              outFile << cell(i, j + 1, k) << " ";
-              outFile << cell(i, j, k + 1) << " ";
-              outFile << cell(i + 1, j, k + 1) << " ";
-              outFile << cell(i + 1, j + 1, k + 1) << " ";
-              outFile << cell(i, j + 1, k + 1) << "\n";
             }
-          }
-        }
+    }
   }
   return iBrick;
 }
