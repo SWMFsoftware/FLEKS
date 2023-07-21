@@ -51,11 +51,12 @@ void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
 
 // Interpolate from coarse lev to fine lev
 template <class FAB>
-void interp_from_coarse_to_fine(amrex::FabArray<FAB>& coarse,
-                                amrex::FabArray<FAB>& fine, const int iStart,
-                                const int nComp, const amrex::IntVect ratio,
-                                const amrex::Geometry& cgeom,
-                                const amrex::Geometry& fgeom) {
+void interp_from_coarse_to_fine_nodal(amrex::FabArray<FAB>& coarse,
+                                      amrex::FabArray<FAB>& fine,
+                                      const int iStart, const int nComp,
+                                      const amrex::IntVect ratio,
+                                      const amrex::Geometry& cgeom,
+                                      const amrex::Geometry& fgeom) {
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
   amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
 
@@ -108,7 +109,7 @@ void sum_coarse_to_fine_lev_bny_node(
   amrex::FabArray<FAB> ftmp(f.boxArray(), f.DistributionMap(), nComp, 0);
   ftmp.setVal(0.0);
 
-  interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom);
+  interp_from_coarse_to_fine_nodal(c, ftmp, 0, nComp, ratio, cgeom, fgeom);
 
   for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
     FAB& fab = f[mfi];
@@ -145,7 +146,7 @@ void interp_from_coarse_to_fine_for_domain_edge(
   amrex::FabArray<FAB> ftmp(f.boxArray(), f.DistributionMap(), nComp, 0);
   ftmp.setVal(0.0);
 
-  interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom);
+  interp_from_coarse_to_fine_nodal(c, ftmp, 0, nComp, ratio, cgeom, fgeom);
 
   for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
     FAB& fab = f[mfi];
