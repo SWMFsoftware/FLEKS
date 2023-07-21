@@ -167,6 +167,12 @@ public:
   void update_node_status(const amrex::Vector<amrex::BoxArray>& cGridsOld =
                               amrex::Vector<amrex::BoxArray>());
 
+  void update_grid_status(const amrex::Vector<amrex::BoxArray>& cGridsOld =
+                              amrex::Vector<amrex::BoxArray>()) {
+    update_cell_status(cGridsOld);
+    update_node_status(cGridsOld);
+  }
+
   const amrex::iMultiFab& cell_status(int iLev) const {
     return cellStatus[iLev];
   }

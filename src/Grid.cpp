@@ -104,9 +104,7 @@ void Grid::distribute_grid_arrays(const Vector<BoxArray>& cGridsOld) {
                         1, nGst, false);
   }
 
-  update_cell_status(cGridsOld);
-
-  update_node_status(cGridsOld);
+  update_grid_status(cGridsOld);
 }
 
 //============================================================================//

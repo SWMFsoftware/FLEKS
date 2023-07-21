@@ -102,8 +102,7 @@ void Pic::fill_new_cells() {
     // particle component is activated. The test particle component copies EM
     // field from PIC, so PIC EM field should be updated here.
 
-    update_cell_status();
-    update_node_status();
+    update_grid_status();    
   }
 
   fill_E_B_fields();
