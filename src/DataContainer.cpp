@@ -16,6 +16,9 @@ void AMReXDataContainer::read_header(std::string& headerName, int& nVar,
                                      int& finest_level, amrex::RealBox& domain,
                                      amrex::Box& cellBox,
                                      amrex::Vector<std::string>& varNames) {
+  std::string funcName = "AMReXDataContainer::read_header()";
+  BL_PROFILE(funcName);
+
   std::ifstream HeaderFile;
   HeaderFile.open(headerName, std::ifstream::in);
 
@@ -73,6 +76,9 @@ void AMReXDataContainer::read_header() {
 }
 
 void AMReXDataContainer::read() {
+  std::string funcName = "AMReXDataContainer::read()";
+  BL_PROFILE(funcName);
+
   Print() << "Reading in " << dirIn << std::endl;
 
   read_header();
@@ -93,10 +99,10 @@ void AMReXDataContainer::read() {
 }
 
 void AMReXDataContainer::write() {
+  std::string funcName = "AMReXDataContainer::write()";
+  BL_PROFILE(funcName);
 
-  int iLev = 0;
-
-  if (!mf[iLev].is_cell_centered())
+  if (!mf[0].is_cell_centered())
     Abort("Error: only support cell centered data!");
 
   nCell = loop_cell();
@@ -133,11 +139,12 @@ void AMReXDataContainer::write() {
   if (outFile.is_open()) {
     outFile.close();
   }
-
-  // Print() << "nCell = " << nCell << " nBrick = " << nBrick << std::endl;
 }
 
 int AMReXDataContainer::loop_cell(bool doCountOnly) {
+  std::string funcName = "AMReXDataContainer::loop_cell()";
+  BL_PROFILE(funcName);
+
   int iCount = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(iCell[iLev]); mfi.isValid(); ++mfi) {
@@ -176,6 +183,9 @@ int AMReXDataContainer::loop_cell(bool doCountOnly) {
 }
 
 int AMReXDataContainer::loop_brick(bool doCountOnly) {
+  std::string funcName = "AMReXDataContainer::loop_brick()";
+  BL_PROFILE(funcName);
+
   int iBrick = 0;
 
   if (!doCountOnly)
