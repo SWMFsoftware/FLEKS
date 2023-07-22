@@ -28,6 +28,10 @@ public:
                                           varNames);
 
           info.max_level = finest_lev;
+          info.blocking_factor.clear();
+          for (int iLev = 0; iLev <= info.max_level; iLev++) {
+            info.blocking_factor.push_back(amrex::IntVect(1));            
+          }
         }
 
         gm.define(cellBox, &domain);

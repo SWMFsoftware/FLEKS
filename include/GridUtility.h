@@ -50,13 +50,13 @@ void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
 }
 
 // Interpolate from coarse lev to fine lev
-template <class FAB>
-void interp_from_coarse_to_fine_nodal(amrex::FabArray<FAB>& coarse,
-                                      amrex::FabArray<FAB>& fine,
-                                      const int iStart, const int nComp,
-                                      const amrex::IntVect ratio,
-                                      const amrex::Geometry& cgeom,
-                                      const amrex::Geometry& fgeom) {
+template <class FAB, class Interp>
+void interp_from_coarse_to_fine(amrex::FabArray<FAB>& coarse,
+                                amrex::FabArray<FAB>& fine, const int iStart,
+                                const int nComp, const amrex::IntVect ratio,
+                                const amrex::Geometry& cgeom,
+                                const amrex::Geometry& fgeom, Interp* mapper,
+                                int nGst = 0) {
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
   amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
 
@@ -71,9 +71,9 @@ void interp_from_coarse_to_fine_nodal(amrex::FabArray<FAB>& coarse,
 
   // See definition in
   // AMREX/InstallDir/include/AMReX_FillPatchUtil_I.H
-  amrex::InterpFromCoarseLevel(f, amrex::IntVect(0), 0.0, c, 0, 0, nComp, cgeom,
-                               fgeom, cphysbc, 0, fphysbc, 0, ratio,
-                               &amrex::node_bilinear_interp, bcs, 0);
+  amrex::InterpFromCoarseLevel(f, amrex::IntVect(nGst), 0.0, c, 0, 0, nComp,
+                               cgeom, fgeom, cphysbc, 0, fphysbc, 0, ratio,
+                               mapper, bcs, 0);
 }
 
 // Sum from fine level to coarse level for nodes at the interface of two levels.
@@ -98,6 +98,45 @@ void sum_fine_to_coarse_lev_bny_node(amrex::FabArray<FAB>& coarse,
 
 // Sum from coarse level to fine level for nodes at the boundary of two levels.
 template <class FAB>
+void fill_fine_lev_bny_cell_from_coarse(
+    amrex::FabArray<FAB>& coarse, amrex::FabArray<FAB>& fine, const int iStart,
+    const int nComp, const amrex::IntVect ratio, const amrex::Geometry& cgeom,
+    const amrex::Geometry& fgeom, const amrex::iMultiFab& fstatus) {
+
+  amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
+  amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
+
+  amrex::FabArray<FAB> ftmp(f.boxArray(), f.DistributionMap(), nComp,
+                            fine.nGrow());
+  ftmp.setVal(0.0);
+
+  interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom,
+                             &amrex::pc_interp, f.nGrow());
+
+  for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
+    FAB& fab = f[mfi];
+    const auto& box = mfi.fabbox();
+    const auto& data = fab.array();
+
+    const auto& statusArr = fstatus[mfi].array();
+    const auto& tmp = ftmp[mfi].array();
+
+    const auto lo = amrex::lbound(box);
+    const auto hi = amrex::ubound(box);
+
+    for (int iVar = 0; iVar < f.nComp(); iVar++)
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (bit::is_lev_boundary(statusArr(i, j, k))) {
+              data(i, j, k, iVar) = tmp(i, j, k, iVar);
+            }
+          }
+  }
+}
+
+// Sum from coarse level to fine level for nodes at the boundary of two levels.
+template <class FAB>
 void sum_coarse_to_fine_lev_bny_node(
     amrex::FabArray<FAB>& coarse, amrex::FabArray<FAB>& fine, const int iStart,
     const int nComp, const amrex::IntVect ratio, const amrex::Geometry& cgeom,
@@ -109,7 +148,8 @@ void sum_coarse_to_fine_lev_bny_node(
   amrex::FabArray<FAB> ftmp(f.boxArray(), f.DistributionMap(), nComp, 0);
   ftmp.setVal(0.0);
 
-  interp_from_coarse_to_fine_nodal(c, ftmp, 0, nComp, ratio, cgeom, fgeom);
+  interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom,
+                             &amrex::node_bilinear_interp);
 
   for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
     FAB& fab = f[mfi];
@@ -122,10 +162,10 @@ void sum_coarse_to_fine_lev_bny_node(
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
-    for (int i = lo.x; i <= hi.x; ++i)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int iVar = 0; iVar < f.nComp(); iVar++) {
+    for (int iVar = 0; iVar < f.nComp(); iVar++)
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
             if (bit::is_lev_edge(statusArr(i, j, k))) {
               data(i, j, k, iVar) = tmp(i, j, k, iVar);
             }
@@ -146,7 +186,8 @@ void interp_from_coarse_to_fine_for_domain_edge(
   amrex::FabArray<FAB> ftmp(f.boxArray(), f.DistributionMap(), nComp, 0);
   ftmp.setVal(0.0);
 
-  interp_from_coarse_to_fine_nodal(c, ftmp, 0, nComp, ratio, cgeom, fgeom);
+  interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom,
+                             &amrex::node_bilinear_interp);
 
   for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
     FAB& fab = f[mfi];
@@ -159,10 +200,10 @@ void interp_from_coarse_to_fine_for_domain_edge(
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
-    for (int i = lo.x; i <= hi.x; ++i)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int iVar = 0; iVar < f.nComp(); iVar++) {
+    for (int iVar = 0; iVar < f.nComp(); iVar++)
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
             if (bit::is_domain_edge(statusArr(i, j, k))) {
               data(i, j, k, iVar) = tmp(i, j, k, iVar);
             }

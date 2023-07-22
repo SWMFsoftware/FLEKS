@@ -15,7 +15,9 @@ SRCS := \
 	FluidInterface.cpp \
 	Pic.cpp \
 	PicIO.cpp \
-	Grid.cpp 	
+	Grid.cpp  \
+	DataContainer.cpp \
+	VisitWriter.cpp 
 
 OBJECTS := $(patsubst %, %.o,$(basename $(SRCS)))
 
@@ -24,11 +26,8 @@ OBJECTS_EXE = \
 
 FLEKSEXE = ${BINDIR}/FLEKS.exe
 
-CONVERTER_OBJECTS = \
-	Converter.o \
-	VisitWriter.o \
-	DataContainer.o \
-	Grid.o 
+CONVERTER_OBJECTS = Converter.o 	
+	
 
 CONVERTEREXE = ../bin/converter.exe
 
@@ -53,11 +52,12 @@ EXE:
 	$(MAKE) LIB
 	$(MAKE) ${OBJECTS_EXE}
 	${LINK.f90} -o ${FLEKSEXE} ${OBJECTS_EXE} \
-		-L -lFLEKS ${LflagMpi}
+		-L. -lFLEKS ${LflagMpi}
 
-CONVERTER:	
-	$(MAKE) ${CONVERTER_OBJECTS}
-	${LINK.f90} ${NOMAINFLAG} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} ${LflagMpi}
+CONVERTER:	${CONVERTER_OBJECTS}	
+	$(MAKE) ${LIBFLEKS}
+	${LINK.f90} ${NOMAINFLAG} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
+		-L. -lFLEKS ${LflagMpi}
 	@echo
 	@echo ${CONVERTEREXE} has been brought up to date.
 	@echo

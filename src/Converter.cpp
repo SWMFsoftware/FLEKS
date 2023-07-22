@@ -17,10 +17,6 @@ int main(int argc, char* argv[]) {
     commandLine.push_back((std::string)(argv[i]));
   }
 
-  // commandLine.clear();
-  commandLine.push_back("3d_fluid_region0_0_t876600000_n00000099_amrex");
-  printf("===============hhhhhh=================");
-
   std::array<std::string, 2> arg = { "-h", "-help" };
   if (argc > 1 && find(arg.begin(), arg.end(), commandLine[1]) != arg.end()) {
     std::cout << " \n"
@@ -30,8 +26,6 @@ int main(int argc, char* argv[]) {
                  " ./Converter.exe *_amrex\n\n";
     return 0;
   }
-
-
 
   for (std::vector<std::string>::size_type i = 1; i < commandLine.size(); i++) {
     std::cout << commandLine[i] << std::endl;

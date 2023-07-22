@@ -516,9 +516,9 @@ void average_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF) {
     const auto hi = ubound(box);
 
     for (int iVar = 0; iVar < centerMF.nComp(); iVar++)
-      for (int i = lo.x + 1; i <= hi.x - 1; ++i)
+      for (int k = lo.z + 1; k <= hi.z - 1; ++k)
         for (int j = lo.y + 1; j <= hi.y - 1; ++j)
-          for (int k = lo.z + 1; k <= hi.z - 1; ++k) {
+          for (int i = lo.x + 1; i <= hi.x - 1; ++i) {
             nodeArr(i, j, k, iVar) =
                 0.125 *
                 (centerArr(i - 1, j - 1, k - 1, iVar) +

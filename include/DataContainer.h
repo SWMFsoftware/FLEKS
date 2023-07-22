@@ -45,7 +45,7 @@ protected:
   FileType dataType;
 
   amrex::Vector<amrex::MultiFab> mf;
-  amrex::Vector<amrex::iMultiFab> iCell;
+  amrex::Vector<amrex::MultiFab> iCell;
 
   int nCell;
   int nBrick;
@@ -70,7 +70,7 @@ private:
 public:
   AMReXDataContainer(const std::string& in, const amrex::Geometry& gm,
                      const amrex::AmrInfo& amrInfo)
-      : Grid(gm, amrInfo, 1), DataContainer() {
+      : Grid(gm, amrInfo, 2), DataContainer() {
     dirIn = in;
 
     mf.resize(n_lev_max());
@@ -86,7 +86,7 @@ public:
   void post_regrid() override {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       distribute_FabArray(iCell[iLev], cGrids[iLev], DistributionMap(iLev), 1,
-                          nGst, false);      
+                          nGst, false);
     }
     distribute_grid_arrays();
   }

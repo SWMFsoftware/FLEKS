@@ -143,7 +143,7 @@ int AMReXDataContainer::loop_cell(bool doCountOnly) {
     for (MFIter mfi(iCell[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const auto& status = cell_status(iLev)[mfi].array();
-      const Array4<int>& cell = iCell[iLev][mfi].array();
+      const Array4<Real>& cell = iCell[iLev][mfi].array();
       const Array4<Real>& data = mf[iLev][mfi].array();
 
       const auto lo = lbound(box);
@@ -167,6 +167,11 @@ int AMReXDataContainer::loop_cell(bool doCountOnly) {
     iCell[iLev].FillBoundary();
   }
 
+  for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
+    fill_fine_lev_bny_cell_from_coarse(
+        iCell[iLev], iCell[iLev + 1], 0, iCell[iLev].nComp(), ref_ratio[iLev],
+        Geom(iLev), Geom(iLev + 1), cell_status(iLev + 1));
+  }
   return iCount;
 }
 
@@ -179,16 +184,18 @@ int AMReXDataContainer::loop_brick(bool doCountOnly) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(iCell[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
-      const Array4<int>& cell = iCell[iLev][mfi].array();
+      const Array4<Real>& cell = iCell[iLev][mfi].array();
       const auto& status = cell_status(iLev)[mfi].array();
 
       const auto lo = lbound(box);
       const auto hi = ubound(box);
 
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i)
-            if (!bit::is_refined(status(i, j, k))) {
+      // Loop over valid cells + low end ghost cells
+      for (int k = lo.z - 1; k <= hi.z; ++k)
+        for (int j = lo.y - 1; j <= hi.y; ++j)
+          for (int i = lo.x - 1; i <= hi.x; ++i)
+            if ((iLev > 0 && bit::is_lev_boundary(status(i, j, k))) ||
+                (box.contains(i, j, k) && !bit::is_refined(status(i, j, k)))) {
               bool isBrick = true;
 
               for (int kk = k; kk <= k + 1; kk++)
@@ -202,14 +209,14 @@ int AMReXDataContainer::loop_brick(bool doCountOnly) {
                 iBrick++;
 
                 if (!doCountOnly) {
-                  outFile << cell(i, j, k) << " ";
-                  outFile << cell(i + 1, j, k) << " ";
-                  outFile << cell(i + 1, j + 1, k) << " ";
-                  outFile << cell(i, j + 1, k) << " ";
-                  outFile << cell(i, j, k + 1) << " ";
-                  outFile << cell(i + 1, j, k + 1) << " ";
-                  outFile << cell(i + 1, j + 1, k + 1) << " ";
-                  outFile << cell(i, j + 1, k + 1) << "\n";
+                  outFile << (int)cell(i, j, k) << " ";
+                  outFile << (int)cell(i + 1, j, k) << " ";
+                  outFile << (int)cell(i + 1, j + 1, k) << " ";
+                  outFile << (int)cell(i, j + 1, k) << " ";
+                  outFile << (int)cell(i, j, k + 1) << " ";
+                  outFile << (int)cell(i + 1, j, k + 1) << " ";
+                  outFile << (int)cell(i + 1, j + 1, k + 1) << " ";
+                  outFile << (int)cell(i, j + 1, k + 1) << "\n";
                 }
               }
             }
