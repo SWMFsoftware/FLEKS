@@ -93,14 +93,27 @@ public:
 
   void read() override;
   void write() override;
-  size_t count_cell() { return loop_cell(true); }
-  size_t count_brick() { return loop_brick(true); }
+  size_t count_cell() {
+    amrex::Vector<amrex::Real> vars;
+    return loop_cell(false, false, vars);
+  }
+  size_t count_brick() {
+    amrex::Vector<size_t> bricks;
+    return loop_brick(false, false, bricks);
+  }
 
-  void write_cell() { loop_cell(false); }
-  void write_brick() { loop_brick(false); }
+  void write_cell() {
+    amrex::Vector<amrex::Real> vars;
+    loop_cell(true, false, vars);
+  }
+  void write_brick() {
+    amrex::Vector<size_t> bricks;
+    loop_brick(true, false, bricks);
+  }
 
-  size_t loop_cell(bool doCountOnly);
-  size_t loop_brick(bool doCountOnly);
+  size_t loop_cell(bool doWrite, bool doStore,
+                   amrex::Vector<amrex::Real>& vars);
+  size_t loop_brick(bool doWrite, bool doStore, amrex::Vector<size_t>& bricks);
 };
 
 #endif

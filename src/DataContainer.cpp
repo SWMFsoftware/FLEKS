@@ -141,12 +141,17 @@ void AMReXDataContainer::write() {
   }
 }
 
-size_t AMReXDataContainer::loop_cell(bool doCountOnly) {
+size_t AMReXDataContainer::loop_cell(bool doWrite, bool doStore,
+                                     amrex::Vector<amrex::Real>& vars) {
   std::string funcName = "AMReXDataContainer::loop_cell()";
   BL_PROFILE(funcName);
 
+  if (doStore)
+    vars.clear();
+
   size_t iCount = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    int ncomp = mf[iLev].nComp();
     for (MFIter mfi(iCell[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const auto& status = cell_status(iLev)[mfi].array();
@@ -162,11 +167,15 @@ size_t AMReXDataContainer::loop_cell(bool doCountOnly) {
             if (!bit::is_refined(status(i, j, k))) {
               iCount++;
               cell(i, j, k) = iCount;
-              if (!doCountOnly) {
-                for (int iVar = 0; iVar < mf[iLev].nComp(); iVar++) {
+              if (doWrite) {
+                for (int iVar = 0; iVar < ncomp; iVar++) {
                   outFile << data(i, j, k, iVar) << " ";
                 }
                 outFile << "\n";
+              } else if (doStore) {
+                vars.push_back(ncomp);
+                for (int iVar = 0; iVar < ncomp; iVar++)
+                  vars.push_back(data(i, j, k, iVar));
               }
             }
     }
@@ -182,14 +191,18 @@ size_t AMReXDataContainer::loop_cell(bool doCountOnly) {
   return iCount;
 }
 
-size_t AMReXDataContainer::loop_brick(bool doCountOnly) {
+size_t AMReXDataContainer::loop_brick(bool doWrite, bool doStore,
+                                      amrex::Vector<size_t>& bricks) {
   std::string funcName = "AMReXDataContainer::loop_brick()";
   BL_PROFILE(funcName);
 
   size_t iBrick = 0;
 
-  if (!doCountOnly)
+  if (doWrite)
     outFile.width(8);
+
+  if (doStore)
+    bricks.clear();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(iCell[iLev]); mfi.isValid(); ++mfi) {
@@ -218,7 +231,7 @@ size_t AMReXDataContainer::loop_brick(bool doCountOnly) {
               if (isBrick) {
                 iBrick++;
 
-                if (!doCountOnly) {
+                if (doWrite) {
                   outFile << (int)cell(i, j, k) << " ";
                   outFile << (int)cell(i + 1, j, k) << " ";
                   outFile << (int)cell(i + 1, j + 1, k) << " ";
@@ -227,6 +240,16 @@ size_t AMReXDataContainer::loop_brick(bool doCountOnly) {
                   outFile << (int)cell(i + 1, j, k + 1) << " ";
                   outFile << (int)cell(i + 1, j + 1, k + 1) << " ";
                   outFile << (int)cell(i, j + 1, k + 1) << "\n";
+                } else if (doStore) {
+                  const int cellType = 0;
+                  bricks.push_back((int)cell(i, j, k));
+                  bricks.push_back((int)cell(i + 1, j, k));
+                  bricks.push_back((int)cell(i + 1, j + 1, k));
+                  bricks.push_back((int)cell(i, j + 1, k));
+                  bricks.push_back((int)cell(i, j, k + 1));
+                  bricks.push_back((int)cell(i + 1, j, k + 1));
+                  bricks.push_back((int)cell(i + 1, j + 1, k + 1));
+                  bricks.push_back((int)cell(i, j + 1, k + 1));
                 }
               }
             }
