@@ -71,9 +71,11 @@ my $AmrexComp;
 my $AmrexDebug;
 my $AmrexTinyProfile; 
 
-&set_test_particle if $NewTPSave;
+&get_settings;
 
-&set_grid if $NewLevMax;
+&set_test_particle if $NewTPSave and $NewTPSave ne $TPSave;
+
+&set_grid if $NewLevMax and $NewLevMax ne $nLevMax;
 
 &print_help if $Help;
 
@@ -109,7 +111,7 @@ sub get_settings{
 }
 
 ################################################################################
-sub set_grid{
+sub set_grid{    
     $nLevMax = $NewLevMax if $NewLevMax;
 
     my $NameConstFile = "include/Constants.h";
