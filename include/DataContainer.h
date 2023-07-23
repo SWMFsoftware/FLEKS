@@ -13,7 +13,7 @@
 #include <AMReX_VisMF.H>
 #include <AMReX_iMultiFab.H>
 
-#include "grid.h"
+#include "Grid.h"
 
 enum class FileType { AMREX = 0, IDL, TECPLOT, VTK, HDF5, ADIOS2 };
 
