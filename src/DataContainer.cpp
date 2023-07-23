@@ -105,9 +105,9 @@ void AMReXDataContainer::write() {
   if (!mf[0].is_cell_centered())
     Abort("Error: only support cell centered data!");
 
-  nCell = loop_cell();
+  nCell = count_cell();
 
-  nBrick = loop_brick();
+  nBrick = count_brick();
 
   std::string outName = dirIn + ".dat";
 
@@ -133,19 +133,19 @@ void AMReXDataContainer::write() {
           << "\n";
   //-----------------------------------------
 
-  nCell = loop_cell(false);
-  nBrick = loop_brick(false);
+  write_cell();
+  write_brick();
 
   if (outFile.is_open()) {
     outFile.close();
   }
 }
 
-int AMReXDataContainer::loop_cell(bool doCountOnly) {
+size_t AMReXDataContainer::loop_cell(bool doCountOnly) {
   std::string funcName = "AMReXDataContainer::loop_cell()";
   BL_PROFILE(funcName);
 
-  int iCount = 0;
+  size_t iCount = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(iCell[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
@@ -182,11 +182,11 @@ int AMReXDataContainer::loop_cell(bool doCountOnly) {
   return iCount;
 }
 
-int AMReXDataContainer::loop_brick(bool doCountOnly) {
+size_t AMReXDataContainer::loop_brick(bool doCountOnly) {
   std::string funcName = "AMReXDataContainer::loop_brick()";
   BL_PROFILE(funcName);
 
-  int iBrick = 0;
+  size_t iBrick = 0;
 
   if (!doCountOnly)
     outFile.width(8);

@@ -47,8 +47,8 @@ protected:
   amrex::Vector<amrex::MultiFab> mf;
   amrex::Vector<amrex::MultiFab> iCell;
 
-  int nCell;
-  int nBrick;
+  size_t nCell;
+  size_t nBrick;
   int nVar;
   int nDim;
 
@@ -93,8 +93,14 @@ public:
 
   void read() override;
   void write() override;
-  int loop_cell(bool doCountOnly = false);
-  int loop_brick(bool doCountOnly = false);
+  size_t count_cell() { return loop_cell(true); }
+  size_t count_brick() { return loop_brick(true); }
+
+  void write_cell() { loop_cell(false); }
+  void write_brick() { loop_brick(false); }
+
+  size_t loop_cell(bool doCountOnly);
+  size_t loop_brick(bool doCountOnly);
 };
 
 #endif
