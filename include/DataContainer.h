@@ -28,10 +28,24 @@ class DataContainer {
 public:
   virtual ~DataContainer() = default;
 
-  virtual void read(){};
-  virtual void write(){};
+  virtual void read() = 0;
+  virtual void write() = 0;
+
+  virtual size_t count_cell() = 0;
+
+  virtual size_t count_brick() = 0;
+
+  virtual void get_cell(amrex::Vector<amrex::Real>& vars) = 0;
+
+  virtual void get_bricks(amrex::Vector<size_t>& bricks) = 0;
 
   std::string type_string() { return fileTypeString.at(dataType); }
+
+  int n_var() { return nVar; }
+
+  int n_dim() { return nDim; }
+
+  amrex::Vector<std::string> var_names() { return varNames; }
 
   void print() {
     std::cout << "========DataContainer========\n";
@@ -77,6 +91,7 @@ public:
     iCell.resize(n_lev_max());
   }
   ~AMReXDataContainer(){};
+
   static void read_header(std::string& headerName, int& nVar, int& nDim,
                           amrex::Real& time, int& finest_level,
                           amrex::RealBox& domain, amrex::Box& cellBox,
@@ -93,19 +108,30 @@ public:
 
   void read() override;
   void write() override;
-  size_t count_cell() {
+
+  size_t count_cell() override {
     amrex::Vector<amrex::Real> vars;
     return loop_cell(false, false, vars);
   }
-  size_t count_brick() {
+
+  size_t count_brick() override {
     amrex::Vector<size_t> bricks;
     return loop_brick(false, false, bricks);
+  }
+
+  void get_cell(amrex::Vector<amrex::Real>& vars) override {
+    loop_cell(false, true, vars);
+  }
+
+  void get_bricks(amrex::Vector<size_t>& bricks) override {
+    loop_brick(false, true, bricks);
   }
 
   void write_cell() {
     amrex::Vector<amrex::Real> vars;
     loop_cell(true, false, vars);
   }
+
   void write_brick() {
     amrex::Vector<size_t> bricks;
     loop_brick(true, false, bricks);

@@ -151,7 +151,7 @@ size_t AMReXDataContainer::loop_cell(bool doWrite, bool doStore,
 
   size_t iCount = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    int ncomp = mf[iLev].nComp();
+    const int ncomp = mf[iLev].nComp();
     for (MFIter mfi(iCell[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const auto& status = cell_status(iLev)[mfi].array();
@@ -173,7 +173,6 @@ size_t AMReXDataContainer::loop_cell(bool doWrite, bool doStore,
                 }
                 outFile << "\n";
               } else if (doStore) {
-                vars.push_back(ncomp);
                 for (int iVar = 0; iVar < ncomp; iVar++)
                   vars.push_back(data(i, j, k, iVar));
               }

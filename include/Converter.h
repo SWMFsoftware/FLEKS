@@ -1,7 +1,7 @@
 #ifndef _CONVERTER_H_
 #define _CONVERTER_H_
 
-#include "DataContainer.h"
+#include "DataWriter.h"
 
 class Converter {
 public:
@@ -30,7 +30,7 @@ public:
           info.max_level = finest_lev;
           info.blocking_factor.clear();
           for (int iLev = 0; iLev <= info.max_level; iLev++) {
-            info.blocking_factor.push_back(amrex::IntVect(1));            
+            info.blocking_factor.push_back(amrex::IntVect(1));
           }
         }
 
@@ -47,6 +47,18 @@ public:
       }
       case FileType::TECPLOT: {
         // dc = std::make_unique<TecplotDataContainer>(sourceFile);
+        break;
+      }
+    }
+
+    destType = FileType::TECPLOT;
+
+    switch (destType) {
+      case FileType::IDL: {
+        break;
+      }
+      case FileType::TECPLOT: {
+        writer = std::make_unique<TECWriter>(dc.get(), sourceFile);
         break;
       }
     }
@@ -70,12 +82,15 @@ public:
     }
   }
   void read() { dc->read(); }
-  void write() { dc->write(); }
+  void write() { writer->write(); }
 
 private:
   std::string sourceFile;
   FileType sourceType;
   std::unique_ptr<DataContainer> dc;
+
+  FileType destType;
+  std::unique_ptr<DataWriter> writer;
 };
 
 #endif
