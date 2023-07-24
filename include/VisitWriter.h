@@ -105,7 +105,7 @@ void write_point_mesh(const char *filename, int useBinary, int npts, float *pts,
 //      int ncells = 2;
 //
 //      The cells are both triangles.
-//      int celltypes[2] = { VISIT_TRIANGLE, VISIT_TRIANGLE };
+//      int celltypes[2] = { VTK_TRIANGLE, VTK_TRIANGLE };
 //
 //      The connectivity contains indices into the points list.  The indexing
 //      assumes that each point has size 3 (x,y,z).
@@ -132,16 +132,16 @@ void write_point_mesh(const char *filename, int useBinary, int npts, float *pts,
 //
 // ***************************************************************************/
 
-#define VISIT_VERTEX 1
-#define VISIT_LINE 3
-#define VISIT_TRIANGLE 5
-#define VISIT_PIXEL 8
-#define VISIT_QUAD 9
-#define VISIT_VOXEL 11
-#define VISIT_TETRA 10
-#define VISIT_HEXAHEDRON 12
-#define VISIT_WEDGE 13
-#define VISIT_PYRAMID 14
+#define VTK_VERTEX 1
+#define VTK_LINE 3
+#define VTK_TRIANGLE 5
+#define VTK_PIXEL 8
+#define VTK_QUAD 9
+#define VTK_VOXEL 11
+#define VTK_TETRA 10
+#define VTK_HEXAHEDRON 12
+#define VTK_WEDGE 13
+#define VTK_PYRAMID 14
 
 void write_unstructured_mesh(const char *filename, int useBinary, int npts,
                              float *pts, int ncells, int *celltypes, int *conn,

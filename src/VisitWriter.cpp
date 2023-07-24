@@ -523,7 +523,7 @@ void write_point_mesh(const char *filename, int ub, int npts, float *pts,
   snprintf(str, sizeof str, "CELL_TYPES %d\n", npts);
   write_string(str);
   for (i = 0; i < npts; i++) {
-    write_int(VISIT_VERTEX);
+    write_int(VTK_VERTEX);
     end_line();
   }
 
@@ -555,34 +555,34 @@ void write_point_mesh(const char *filename, int ub, int npts, float *pts,
 static int num_points_for_cell(int celltype) {
   int npts = 0;
   switch (celltype) {
-    case VISIT_VERTEX:
+    case VTK_VERTEX:
       npts = 1;
       break;
-    case VISIT_LINE:
+    case VTK_LINE:
       npts = 2;
       break;
-    case VISIT_TRIANGLE:
+    case VTK_TRIANGLE:
       npts = 3;
       break;
-    case VISIT_QUAD:
+    case VTK_QUAD:
       npts = 4;
       break;
-    case VISIT_PIXEL:
+    case VTK_PIXEL:
       npts = 4;
       break;
-    case VISIT_TETRA:
+    case VTK_TETRA:
       npts = 4;
       break;
-    case VISIT_HEXAHEDRON:
+    case VTK_HEXAHEDRON:
       npts = 8;
       break;
-    case VISIT_VOXEL:
+    case VTK_VOXEL:
       npts = 8;
       break;
-    case VISIT_WEDGE:
+    case VTK_WEDGE:
       npts = 6;
       break;
-    case VISIT_PYRAMID:
+    case VTK_PYRAMID:
       npts = 5;
       break;
   }
