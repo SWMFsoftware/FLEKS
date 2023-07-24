@@ -14,6 +14,7 @@
 #include <AMReX_iMultiFab.H>
 
 #include "Grid.h"
+#include "VisitWriter.h"
 
 enum class FileType { AMREX = 0, IDL, TECPLOT, VTK, HDF5, ADIOS2 };
 
@@ -35,9 +36,11 @@ public:
 
   virtual size_t count_brick() = 0;
 
-  virtual void get_cell(amrex::Vector<amrex::Real>& vars) = 0;
+  virtual void get_cell(amrex::Vector<float>& vars) = 0;
 
   virtual void get_bricks(amrex::Vector<size_t>& bricks) = 0;
+
+  virtual void get_loc(amrex::Vector<float>& vars) = 0;
 
   std::string type_string() { return fileTypeString.at(dataType); }
 
@@ -101,7 +104,7 @@ public:
   void post_regrid() override {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       distribute_FabArray(iCell[iLev], cGrids[iLev], DistributionMap(iLev), 1,
-                          nGst, false);
+                          nGst, false);      
     }
     distribute_grid_arrays();
   }
@@ -110,7 +113,7 @@ public:
   void write() override;
 
   size_t count_cell() override {
-    amrex::Vector<amrex::Real> vars;
+    amrex::Vector<float> vars;
     return loop_cell(false, false, vars);
   }
 
@@ -119,8 +122,12 @@ public:
     return loop_brick(false, false, bricks);
   }
 
-  void get_cell(amrex::Vector<amrex::Real>& vars) override {
+  void get_cell(amrex::Vector<float>& vars) override {
     loop_cell(false, true, vars);
+  }
+
+  void get_loc(amrex::Vector<float>& vars) override {
+    loop_cell(false, true, vars, true);
   }
 
   void get_bricks(amrex::Vector<size_t>& bricks) override {
@@ -128,7 +135,7 @@ public:
   }
 
   void write_cell() {
-    amrex::Vector<amrex::Real> vars;
+    amrex::Vector<float> vars;
     loop_cell(true, false, vars);
   }
 
@@ -137,8 +144,8 @@ public:
     loop_brick(true, false, bricks);
   }
 
-  size_t loop_cell(bool doWrite, bool doStore,
-                   amrex::Vector<amrex::Real>& vars);
+  size_t loop_cell(bool doWrite, bool doStore, amrex::Vector<float>& vars,
+                   bool doStoreLoc = false);
   size_t loop_brick(bool doWrite, bool doStore, amrex::Vector<size_t>& bricks);
 };
 

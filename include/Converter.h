@@ -42,16 +42,15 @@ public:
         break;
       }
       case FileType::IDL: {
-        // dc = std::make_unique<IDLDataContainer>(sourceFile);
         break;
       }
       case FileType::TECPLOT: {
-        // dc = std::make_unique<TecplotDataContainer>(sourceFile);
         break;
       }
     }
 
-    destType = FileType::TECPLOT;
+    // destType = FileType::TECPLOT;
+    destType = FileType::VTK;
 
     switch (destType) {
       case FileType::IDL: {
@@ -59,6 +58,10 @@ public:
       }
       case FileType::TECPLOT: {
         writer = std::make_unique<TECWriter>(dc.get(), sourceFile);
+        break;
+      }
+      case FileType::VTK: {
+        writer = std::make_unique<VTKWriter>(dc.get(), sourceFile);
         break;
       }
     }

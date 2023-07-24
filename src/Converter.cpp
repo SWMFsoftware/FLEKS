@@ -16,7 +16,6 @@ int main(int argc, char* argv[]) {
   for (int i = 0; i < argc; ++i) {
     commandLine.push_back((std::string)(argv[i]));
   }
-  commandLine.push_back("3d_fluid_region0_2_t00020036_n00000010_amrex");
 
   std::array<std::string, 2> arg = { "-h", "-help" };
   if (argc > 1 && find(arg.begin(), arg.end(), commandLine[1]) != arg.end()) {

@@ -31,7 +31,6 @@ protected:
 };
 
 class TECWriter : public DataWriter {
-
 public:
   TECWriter(DataContainer* dcIn, const std::string& filenameIn)
       : DataWriter(dcIn, filenameIn) {
@@ -45,7 +44,7 @@ public:
     size_t nCell = dc->count_cell();
     size_t nBrick = dc->count_brick();
 
-    amrex::Vector<amrex::Real> vars;
+    amrex::Vector<float> vars;
     vars.resize(nCell * dc->n_var());
     dc->get_cell(vars);
 
@@ -85,7 +84,7 @@ public:
 
     // Write brick data
     for (int i = 0; i < nBrick; ++i) {
-      for (int j = 0; j < 8; ++j) {
+      for (int j = 0; j < 8; ++j) {        
         outFile << bricks[i * 8 + j] << " ";
       }
       outFile << "\n";
@@ -94,6 +93,81 @@ public:
     if (outFile.is_open()) {
       outFile.close();
     }
+  }
+};
+
+class VTKWriter : public DataWriter {
+public:
+  VTKWriter(DataContainer* dcIn, const std::string& filenameIn)
+      : DataWriter(dcIn, filenameIn) {
+    fType = FileType::VTK;
+    filename = filenameIn;
+  };
+
+  ~VTKWriter(){};
+
+  void write() override {
+    size_t nCell = dc->count_cell();
+    size_t nBrick = dc->count_brick();
+
+    amrex::Vector<float> vars;
+    vars.resize(nCell * dc->n_var());
+    dc->get_cell(vars);
+
+    amrex::Vector<float> xyz;
+    xyz.resize(dc->n_dim() * dc->n_var());
+    dc->get_loc(xyz);
+
+    //=== Brick data ===
+    amrex::Vector<size_t> bricks;
+    amrex::Vector<int> bricksInt;
+    // Each brick needs 8 integers/nodes.
+    bricks.resize(nBrick * 8);
+    dc->get_bricks(bricks);
+    for (int i = 0; i < bricks.size(); ++i) {
+      
+      bricksInt.push_back(bricks[i] - 1);
+    }
+    int* brickData = bricksInt.data();
+    //===================
+
+    bool useBinary = false;
+
+    amrex::Vector<int> brickType(nBrick, VTK_HEXAHEDRON);
+
+    // All variables are scalars, so vardim is 1.
+    amrex::Vector<int> vardim(dc->n_var(), 1);
+
+    // Cell-based: 0  (This is connectivity cell, NOT simulation cell)
+    // Point-based: 1
+    amrex::Vector<int> centering(dc->n_var(), 1);
+
+    char** varnames;
+    varnames = new char*[dc->n_var()];
+    for (int i = 0; i < dc->n_var(); ++i) {
+      varnames[i] = new char[dc->var_names()[i].size() + 1];
+      strcpy(varnames[i], dc->var_names()[i].c_str());
+    }
+
+    float** v;
+    v = new float*[dc->n_var()];
+    for (int i = 0; i < dc->n_var(); ++i) {
+      v[i] = new float[nCell];
+      for (int j = 0; j < nCell; ++j) {
+        v[i][j] = vars[j * dc->n_var() + i];
+      }
+    }
+
+    write_unstructured_mesh(filename.c_str(), useBinary, nCell, xyz.data(),
+                            nBrick, brickType.data(), brickData, dc->n_var(),
+                            vardim.data(), centering.data(), varnames, v);
+
+    for (int i = 0; i < dc->n_var(); ++i) {
+      delete[] varnames[i];
+      delete[] v[i];
+    }
+    delete[] varnames;
+    delete[] v;
   }
 };
 

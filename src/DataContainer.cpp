@@ -12,10 +12,9 @@
 using namespace amrex;
 
 void AMReXDataContainer::read_header(std::string& headerName, int& nVar,
-                                     int& nDim, amrex::Real& time,
-                                     int& finest_level, amrex::RealBox& domain,
-                                     amrex::Box& cellBox,
-                                     amrex::Vector<std::string>& varNames) {
+                                     int& nDim, Real& time, int& finest_level,
+                                     RealBox& domain, Box& cellBox,
+                                     Vector<std::string>& varNames) {
   std::string funcName = "AMReXDataContainer::read_header()";
   BL_PROFILE(funcName);
 
@@ -41,13 +40,13 @@ void AMReXDataContainer::read_header(std::string& headerName, int& nVar,
   HeaderFile >> finest_level;
 
   for (int i = 0; i < nDim; ++i) {
-    amrex::Real lo;
+    Real lo;
     HeaderFile >> lo;
     domain.setLo(i, lo);
   }
 
   for (int i = 0; i < nDim; ++i) {
-    amrex::Real hi;
+    Real hi;
     HeaderFile >> hi;
     domain.setHi(i, hi);
   }
@@ -55,6 +54,10 @@ void AMReXDataContainer::read_header(std::string& headerName, int& nVar,
   for (int i = 0; i < finest_level; ++i) {
     int refRatio;
     HeaderFile >> refRatio;
+  }
+
+  if (finest_level == 0) {
+    HeaderFile.ignore(100000, '\n');
   }
 
   // Read the base grid and ignore refined leve grids.
@@ -142,7 +145,7 @@ void AMReXDataContainer::write() {
 }
 
 size_t AMReXDataContainer::loop_cell(bool doWrite, bool doStore,
-                                     amrex::Vector<amrex::Real>& vars) {
+                                     Vector<float>& vars, bool doStoreLoc) {
   std::string funcName = "AMReXDataContainer::loop_cell()";
   BL_PROFILE(funcName);
 
@@ -173,8 +176,14 @@ size_t AMReXDataContainer::loop_cell(bool doWrite, bool doStore,
                 }
                 outFile << "\n";
               } else if (doStore) {
-                for (int iVar = 0; iVar < ncomp; iVar++)
-                  vars.push_back(data(i, j, k, iVar));
+                if (doStoreLoc) {
+                  vars.push_back(Geom(iLev).CellCenter(i, ix_));
+                  vars.push_back(Geom(iLev).CellCenter(j, iy_));
+                  vars.push_back(Geom(iLev).CellCenter(k, iz_));
+                } else {
+                  for (int iVar = 0; iVar < ncomp; iVar++)
+                    vars.push_back(data(i, j, k, iVar));
+                }
               }
             }
     }
@@ -191,7 +200,7 @@ size_t AMReXDataContainer::loop_cell(bool doWrite, bool doStore,
 }
 
 size_t AMReXDataContainer::loop_brick(bool doWrite, bool doStore,
-                                      amrex::Vector<size_t>& bricks) {
+                                      Vector<size_t>& bricks) {
   std::string funcName = "AMReXDataContainer::loop_brick()";
   BL_PROFILE(funcName);
 
@@ -240,7 +249,6 @@ size_t AMReXDataContainer::loop_brick(bool doWrite, bool doStore,
                   outFile << (int)cell(i + 1, j + 1, k + 1) << " ";
                   outFile << (int)cell(i, j + 1, k + 1) << "\n";
                 } else if (doStore) {
-                  const int cellType = 0;
                   bricks.push_back((int)cell(i, j, k));
                   bricks.push_back((int)cell(i + 1, j, k));
                   bricks.push_back((int)cell(i + 1, j + 1, k));
