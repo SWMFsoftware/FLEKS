@@ -5,10 +5,12 @@
 
 class Converter {
 public:
-  Converter(const std::string& in) {
-    sourceFile = in;
-    sourceType = find_source_type();
+  Converter(const std::string& in, FileType sType, FileType dType)
+      : sourceFile(in), sourceType(sType), destType(dType) {
 
+    if (sourceType == FileType::UNSET)
+      sourceType = find_source_type();
+    
     switch (sourceType) {
       case FileType::AMREX: {
         amrex::Geometry gm;
@@ -49,9 +51,6 @@ public:
       }
     }
 
-    // destType = FileType::TECPLOT;
-    destType = FileType::VTK;
-
     switch (destType) {
       case FileType::IDL: {
         break;
@@ -64,7 +63,14 @@ public:
         writer = std::make_unique<VTKWriter>(dc.get(), sourceFile);
         break;
       }
+      case FileType::UNSET: {
+        amrex::Abort("Error: set destination file format with -d option!");
+      }
+      case FileType::UNKNOWN: {
+        amrex::Abort("Error: destination file format is unknown!");
+      }
     }
+    writer->print();
   }
 
   FileType find_source_type() {

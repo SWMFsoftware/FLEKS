@@ -16,12 +16,29 @@
 #include "Grid.h"
 #include "VisitWriter.h"
 
-enum class FileType { AMREX = 0, IDL, TECPLOT, VTK, HDF5, ADIOS2 };
+enum class FileType {
+  AMREX = 0,
+  IDL,
+  TECPLOT,
+  VTK,
+  HDF5,
+  ADIOS2,
+  UNSET,
+  UNKNOWN
+};
 
 static const std::map<FileType, std::string> fileTypeString = {
   { FileType::AMREX, "AMReX" },     { FileType::IDL, "IDL" },
   { FileType::TECPLOT, "TECPLOT" }, { FileType::VTK, "VTK" },
-  { FileType::HDF5, "HDF5" },       { FileType::ADIOS2, "ADIOS2" }
+  { FileType::HDF5, "HDF5" },       { FileType::ADIOS2, "ADIOS2" },
+  { FileType::UNSET, "UNSET" },     { FileType::UNKNOWN, "UNKNOWN" }
+};
+
+static const std::map<std::string, FileType> stringToFileType = {
+  { "AMReX", FileType::AMREX },     { "IDL", FileType::IDL },
+  { "TECPLOT", FileType::TECPLOT }, { "VTK", FileType::VTK },
+  { "HDF5", FileType::HDF5 },       { "ADIOS2", FileType::ADIOS2 },
+  { "UNSET", FileType::UNSET },     { "UNKNOWN", FileType::UNKNOWN }
 };
 
 // Virtual base
@@ -104,7 +121,7 @@ public:
   void post_regrid() override {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       distribute_FabArray(iCell[iLev], cGrids[iLev], DistributionMap(iLev), 1,
-                          nGst, false);      
+                          nGst, false);
     }
     distribute_grid_arrays();
   }

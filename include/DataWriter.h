@@ -84,7 +84,7 @@ public:
 
     // Write brick data
     for (int i = 0; i < nBrick; ++i) {
-      for (int j = 0; j < 8; ++j) {        
+      for (int j = 0; j < 8; ++j) {
         outFile << bricks[i * 8 + j] << " ";
       }
       outFile << "\n";
@@ -101,7 +101,7 @@ public:
   VTKWriter(DataContainer* dcIn, const std::string& filenameIn)
       : DataWriter(dcIn, filenameIn) {
     fType = FileType::VTK;
-    filename = filenameIn;
+    filename = filenameIn + ".vtk";
   };
 
   ~VTKWriter(){};
@@ -125,7 +125,7 @@ public:
     bricks.resize(nBrick * 8);
     dc->get_bricks(bricks);
     for (int i = 0; i < bricks.size(); ++i) {
-      
+
       bricksInt.push_back(bricks[i] - 1);
     }
     int* brickData = bricksInt.data();
