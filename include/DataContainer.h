@@ -47,7 +47,6 @@ public:
   virtual ~DataContainer() = default;
 
   virtual void read() = 0;
-  virtual void write() = 0;
 
   virtual size_t count_cell() = 0;
 
@@ -99,13 +98,34 @@ protected:
   std::ofstream outFile;
 };
 
+class IDLDataContainer : public DataContainer {
+public:
+  IDLDataContainer(const std::string& in) {
+    dirIn = in;
+    dataType = FileType::IDL;
+  }
+  ~IDLDataContainer(){};
+
+  void read() override{};
+
+  size_t count_cell() override {}
+
+  size_t count_brick() override {}
+
+  void get_cell(amrex::Vector<float>& vars) override {}
+
+  void get_loc(amrex::Vector<float>& vars) override {}
+
+  void get_bricks(amrex::Vector<size_t>& bricks) override {}
+};
+
 class AMReXDataContainer : public Grid, public DataContainer {
-private:
 public:
   AMReXDataContainer(const std::string& in, const amrex::Geometry& gm,
                      const amrex::AmrInfo& amrInfo)
       : Grid(gm, amrInfo, 2), DataContainer() {
     dirIn = in;
+    dataType = FileType::AMREX;
 
     mf.resize(n_lev_max());
     iCell.resize(n_lev_max());
@@ -127,7 +147,6 @@ public:
   }
 
   void read() override;
-  void write() override;
 
   size_t count_cell() override {
     amrex::Vector<float> vars;
@@ -149,16 +168,6 @@ public:
 
   void get_bricks(amrex::Vector<size_t>& bricks) override {
     loop_brick(false, true, bricks);
-  }
-
-  void write_cell() {
-    amrex::Vector<float> vars;
-    loop_cell(true, false, vars);
-  }
-
-  void write_brick() {
-    amrex::Vector<size_t> bricks;
-    loop_brick(true, false, bricks);
   }
 
   size_t loop_cell(bool doWrite, bool doStore, amrex::Vector<float>& vars,

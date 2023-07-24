@@ -101,49 +101,6 @@ void AMReXDataContainer::read() {
   regrid(grid.boxArray(0), &grid);
 }
 
-void AMReXDataContainer::write() {
-  std::string funcName = "AMReXDataContainer::write()";
-  BL_PROFILE(funcName);
-
-  if (!mf[0].is_cell_centered())
-    Abort("Error: only support cell centered data!");
-
-  nCell = count_cell();
-
-  nBrick = count_brick();
-
-  std::string outName = dirIn + ".dat";
-
-  Print() << "Writing to " << outName << std::endl;
-
-  outFile.open(outName.c_str(), std::ofstream::out | std::ofstream::trunc);
-
-  //-----------Write header---------------
-  outFile << "TITLE = " << '"' << outName << '"' << "\n";
-
-  outFile << "VARIABLES = ";
-
-  for (int i = 0; i < varNames.size(); ++i) {
-    outFile << '"' << varNames[i] << '"';
-    if (i != varNames.size() - 1) {
-      outFile << ',' << " ";
-    }
-  }
-  outFile << "\n";
-
-  outFile << "ZONE "
-          << " N=" << nCell << ", E=" << nBrick << ", F=FEPOINT, ET=BRICK"
-          << "\n";
-  //-----------------------------------------
-
-  write_cell();
-  write_brick();
-
-  if (outFile.is_open()) {
-    outFile.close();
-  }
-}
-
 size_t AMReXDataContainer::loop_cell(bool doWrite, bool doStore,
                                      Vector<float>& vars, bool doStoreLoc) {
   std::string funcName = "AMReXDataContainer::loop_cell()";
