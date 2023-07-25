@@ -3,58 +3,6 @@
 
 #include "DataContainer.h"
 
-class ZoneType {
-public:
-  enum class Type { UNSET = 0, TRIANGLE, BRICK, QUAD };
-
-  ZoneType() = default;
-
-  void set_type(Type typeIn) { type = typeIn; }
-
-  int vtk_index() {
-    switch (type) {
-      case Type::TRIANGLE:
-        return VTK_TRIANGLE;
-      case Type::BRICK:
-        return VTK_HEXAHEDRON;
-      case Type::QUAD:
-        return VTK_QUAD;
-      default:
-        return -1;
-    }    
-  }
-
-  int n_vertex() {
-    switch (type) {
-      case Type::TRIANGLE:
-        return 3;
-      case Type::BRICK:
-        return 8;
-      case Type::QUAD:
-        return 4;
-      default:
-        return -1;
-    }    
-  }
-
-  std::string tec_string() {
-    switch (type) {
-      case Type::TRIANGLE:
-        return "TRIANGLE";
-      case Type::BRICK:
-        return "BRICK";
-      case Type::QUAD:
-        return "QUADRILATERAL";
-      case Type::UNSET:
-        return "UNSET";
-      default:
-        return "UNKNOWN";
-    }    
-  }
-
-private:
-  Type type;
-};
 
 class DataWriter {
 public:
@@ -96,11 +44,8 @@ public:
   ~TECWriter(){};
 
   void write() override {
-    if (dc->n_dim() == 3) {
-      zoneType.set_type(ZoneType::Type::BRICK);
-    } else if (dc->n_dim() == 2) {
-      zoneType.set_type(ZoneType::Type::QUAD);
-    }
+
+    zoneType.set_type(dc->zone_type());
 
     size_t nCell = dc->count_cell();
     size_t nBrick = dc->count_zone();

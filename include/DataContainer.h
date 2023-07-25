@@ -31,6 +31,59 @@ static const std::map<std::string, FileType> stringToFileType = {
   { "UNSET", FileType::UNSET },     { "UNKNOWN", FileType::UNKNOWN }
 };
 
+class ZoneType {
+public:
+  enum class Type { UNSET = 0, TRIANGLE, BRICK, QUAD };
+
+  ZoneType() = default;
+
+  void set_type(Type typeIn) { type = typeIn; }
+
+  int vtk_index() {
+    switch (type) {
+      case Type::TRIANGLE:
+        return VTK_TRIANGLE;
+      case Type::BRICK:
+        return VTK_HEXAHEDRON;
+      case Type::QUAD:
+        return VTK_QUAD;
+      default:
+        return -1;
+    }
+  }
+
+  int n_vertex() {
+    switch (type) {
+      case Type::TRIANGLE:
+        return 3;
+      case Type::BRICK:
+        return 8;
+      case Type::QUAD:
+        return 4;
+      default:
+        return -1;
+    }
+  }
+
+  std::string tec_string() {
+    switch (type) {
+      case Type::TRIANGLE:
+        return "TRIANGLE";
+      case Type::BRICK:
+        return "BRICK";
+      case Type::QUAD:
+        return "QUADRILATERAL";
+      case Type::UNSET:
+        return "UNSET";
+      default:
+        return "UNKNOWN";
+    }
+  }
+
+private:
+  Type type;
+};
+
 // Virtual base
 class DataContainer {
 public:
@@ -53,6 +106,20 @@ public:
   int n_var() { return nVar; }
 
   int n_dim() { return nDim; }
+
+  ZoneType::Type zone_type() {
+    if (nDim == 3) {
+      return ZoneType::Type::BRICK;
+    } else if (nDim == 2) {
+      if (isStructured) {
+        return ZoneType::Type::QUAD;
+      } else {
+        return ZoneType::Type::TRIANGLE;
+      }
+    }
+
+    return ZoneType::Type::UNSET;
+  }
 
   amrex::Vector<std::string> var_names() { return varNames; }
 
@@ -77,6 +144,8 @@ protected:
   amrex::Vector<std::string> varNames;
 
   amrex::Real rPlanet;
+
+  bool isStructured;
 };
 
 class IDLDataContainer : public DataContainer {
@@ -97,7 +166,11 @@ private:
   std::vector<double> param_I;
   std::vector<std::string> paramName_I;
 
+  // For structured grid
   amrex::BaseFab<float> fab;
+
+  // For unstructured grid
+  amrex::Vector<float> vData;
 
   amrex::BaseFab<size_t> iCell;
 
@@ -292,6 +365,13 @@ public:
       iter = read_int();
       time = read_float();
       nDim = read_int();
+      if (nDim == -3) {
+        amrex::Abort("Error: 3D unstructured *.out file is not supported yet!");
+      }
+
+      isStructured = nDim > 0;
+      nDim = std::abs(nDim);
+
       nParam = read_int();
       nVar = read_int();
       nRec = read_int();
@@ -314,15 +394,15 @@ public:
         nCell = nCell > 0 ? nCell * size : size;
       }
       nRec = read_int();
-
-      amrex::Box bx(amrex::IntVect(0),
-                    amrex::IntVect(nSize[0] - 1, nSize[1] - 1, nSize[2] - 1));
-      fab.clear();
-      fab.resize(bx, nVar);
-
-      iCell.clear();
-      iCell.resize(bx, 1);
     }
+
+    amrex::Box bx(amrex::IntVect(0),
+                  amrex::IntVect(nSize[0] - 1, nSize[1] - 1, nSize[2] - 1));
+    fab.clear();
+    fab.resize(bx, nVar);
+
+    iCell.clear();
+    iCell.resize(bx, 1);
 
     {
       nRec = read_int();
@@ -414,6 +494,14 @@ public:
     std::ifstream inFile;
     inFile.open(filename.c_str(), std::ifstream::in);
     inFile >> unit >> iter >> time >> nDim >> nParam >> nVar;
+
+    if (nDim == -3) {
+      amrex::Abort("Error: 3D unstructured *.out file is not supported yet!");
+    }
+
+    isStructured = nDim > 0;
+
+    nDim = std::abs(nDim);
 
     nVar += nDim;
 
