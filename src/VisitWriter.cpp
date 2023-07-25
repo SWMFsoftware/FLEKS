@@ -656,7 +656,7 @@ void write_unstructured_mesh(const char *filename, int ub, int npts, float *pts,
     write_int(npts);
     for (j = 0; j < npts; j++)
       write_int(*curr_conn++);
-    //end_line();
+    end_line();
   }
 
   new_section();
