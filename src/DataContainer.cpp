@@ -69,7 +69,7 @@ void AMReXDataContainer::read_header(std::string& headerName, int& nVar,
 
 void AMReXDataContainer::read_header() {
 
-  std::string headerName = dirIn + "/Header";
+  std::string headerName = filename + "/Header";
 
   int finestLev;
   AMReXDataContainer::read_header(headerName, nVar, nDim, time, finestLev,
@@ -82,14 +82,15 @@ void AMReXDataContainer::read() {
   std::string funcName = "AMReXDataContainer::read()";
   BL_PROFILE(funcName);
 
-  Print() << "Reading in " << dirIn << std::endl;
+  Print() << "Reading in " << filename << std::endl;
 
   read_header();
 
   Grid grid(Geom(0), get_amr_info(), nGst);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    VisMF::Read(mf[iLev], dirIn + "/Level_" + std::to_string(iLev) + "/Cell");
+    VisMF::Read(mf[iLev],
+                filename + "/Level_" + std::to_string(iLev) + "/Cell");
 
     grid.SetBoxArray(iLev, mf[iLev].boxArray());
     grid.SetDistributionMap(iLev, mf[iLev].DistributionMap());

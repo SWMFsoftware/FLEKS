@@ -17,28 +17,17 @@
 #include "Grid.h"
 #include "VisitWriter.h"
 
-enum class FileType {
-  AMREX = 0,
-  IDL,
-  TECPLOT,
-  VTK,
-  HDF5,
-  ADIOS2,
-  UNSET,
-  UNKNOWN
-};
+enum class FileType { AMREX = 0, IDL, TECPLOT, VTK, UNSET, UNKNOWN };
 
 static const std::map<FileType, std::string> fileTypeString = {
   { FileType::AMREX, "AMReX" },     { FileType::IDL, "IDL" },
   { FileType::TECPLOT, "TECPLOT" }, { FileType::VTK, "VTK" },
-  { FileType::HDF5, "HDF5" },       { FileType::ADIOS2, "ADIOS2" },
   { FileType::UNSET, "UNSET" },     { FileType::UNKNOWN, "UNKNOWN" }
 };
 
 static const std::map<std::string, FileType> stringToFileType = {
   { "AMReX", FileType::AMREX },     { "IDL", FileType::IDL },
   { "TECPLOT", FileType::TECPLOT }, { "VTK", FileType::VTK },
-  { "HDF5", FileType::HDF5 },       { "ADIOS2", FileType::ADIOS2 },
   { "UNSET", FileType::UNSET },     { "UNKNOWN", FileType::UNKNOWN }
 };
 
@@ -69,13 +58,13 @@ public:
 
   void print() {
     std::cout << "========DataContainer========\n";
-    std::cout << "Read data from: " << dirIn << "\n";
+    std::cout << "Read data from: " << filename << "\n";
     std::cout << "Data type: " << type_string() << "\n";
     std::cout << "================================" << std::endl;
   }
 
 protected:
-  std::string dirIn;
+  std::string filename;
   FileType dataType;
 
   size_t nCell;
@@ -107,7 +96,6 @@ private:
   int nSize[3] = { 1, 1, 1 };
   std::vector<double> param_I;
   std::vector<std::string> paramName_I;
-  double** data_II = nullptr;
 
   amrex::BaseFab<float> fab;
 
@@ -115,23 +103,16 @@ private:
 
 public:
   IDLDataContainer(const std::string& in) {
-    dirIn = in;
+    filename = in;
     dataType = FileType::IDL;
     idlType = get_file_type();
   }
 
-  ~IDLDataContainer() {
-    if (data_II != nullptr) {
-      for (int i = 0; i < nCell; ++i) {
-        delete[] data_II[i];
-      }
-      delete[] data_II;
-    }
-  };
+  ~IDLDataContainer() = default;
 
   IDLFileType get_file_type() {
     std::ifstream inFile;
-    inFile.open(dirIn.c_str(), std::ifstream::in | std::ifstream::binary);
+    inFile.open(filename.c_str(), std::ifstream::in | std::ifstream::binary);
 
     int lenHead;
     static_assert(i4 == sizeof(int), "Error: the size of integer is not 4!");
@@ -274,7 +255,7 @@ public:
 
   template <typename real> void read_binary() {
     std::ifstream inFile;
-    inFile.open(dirIn.c_str(), std::ifstream::in | std::ifstream::binary);
+    inFile.open(filename.c_str(), std::ifstream::in | std::ifstream::binary);
 
     // Lambda reads 4 bytes integer;
     auto read_int = [&]() {
@@ -376,13 +357,6 @@ public:
       nRec = read_int();
     }
 
-    if (data_II == nullptr) {
-      data_II = new double*[nCell];
-      for (int i = 0; i < nCell; ++i) {
-        data_II[i] = new double[nVar];
-      }
-    }
-
     const amrex::Box box = fab.box();
 
     const auto& data = fab.array();
@@ -438,7 +412,7 @@ public:
 
   void read_ascii() {
     std::ifstream inFile;
-    inFile.open(dirIn.c_str(), std::ifstream::in);
+    inFile.open(filename.c_str(), std::ifstream::in);
     inFile >> unit >> iter >> time >> nDim >> nParam >> nVar;
 
     nVar += nDim;
@@ -488,13 +462,6 @@ public:
       paramName_I.push_back(s);
     }
 
-    if (data_II == nullptr) {
-      data_II = new double*[nCell];
-      for (int i = 0; i < nCell; ++i) {
-        data_II[i] = new double[nVar];
-      }
-    }
-
     const amrex::Box box = fab.box();
 
     const auto& data = fab.array();
@@ -505,10 +472,7 @@ public:
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
           for (int iVar = 0; iVar < nVar; ++iVar) {
-            float f;
-            inFile >> f;
-            data(i, j, k, iVar) = f;
-            // printf("data(%d, %d, %d, %d) = %f\n", i, j, k, iVar, f);
+            inFile >> data(i, j, k, iVar);
           }
         }
 
@@ -531,7 +495,7 @@ public:
   AMReXDataContainer(const std::string& in, const amrex::Geometry& gm,
                      const amrex::AmrInfo& amrInfo)
       : Grid(gm, amrInfo, 2), DataContainer() {
-    dirIn = in;
+    filename = in;
     dataType = FileType::AMREX;
 
     mf.resize(n_lev_max());
