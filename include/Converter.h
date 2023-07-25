@@ -46,8 +46,8 @@ public:
         dc = std::make_unique<IDLDataContainer>(sourceFile);
         break;
       }
-      case FileType::TECPLOT: {
-        amrex::Abort("Error: TECPLOT input is not supported yet!");
+      case FileType::TEC: {
+        amrex::Abort("Error: TEC input is not supported yet!");
         break;
       }
       case FileType::VTK: {
@@ -67,7 +67,7 @@ public:
     dc->print();
 
     switch (destType) {
-      case FileType::TECPLOT: {
+      case FileType::TEC: {
         writer = std::make_unique<TECWriter>(dc.get(), sourceFile);
         break;
       }
@@ -103,7 +103,7 @@ public:
     } else if (sourceFile.size() > 4 &&
                sourceFile.substr(sourceFile.size() - 4, 4) == ".dat") {
       // *.dat
-      return FileType::TECPLOT;
+      return FileType::TEC;
     } else if (sourceFile.size() > 4 &&
                sourceFile.substr(sourceFile.size() - 4, 4) == ".out") {
       // *.out

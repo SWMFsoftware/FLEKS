@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
       printf("  -f        : Specify the file name to convert. Multiple files "
              "can be converted at a time.\n");
       printf("  -d        : Specify the destination file format.\n");
-      printf("               Options : VTK, TECPLOT\n");
+      printf("               Options : VTK, TEC\n");
       printf("  -s [optional]: Specify the source file format.\n");
       printf("               Options: AMReX, IDL\n");
 
@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) {
 
       printf(" Examples:\n");
       printf("  ./Converter.exe -f f1_amrex f2_amrex -d VTK\n");
-      printf("  ./Converter.exe -f 3d*_amrex -d TECPLOT\n");
+      printf("  ./Converter.exe -f 3d*_amrex -d TEC\n");
 
       return 0;
     } else if (cdl[i] == "-s") {

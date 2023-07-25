@@ -18,18 +18,18 @@
 #include "Grid.h"
 #include "VisitWriter.h"
 
-enum class FileType { AMREX = 0, IDL, TECPLOT, VTK, UNSET, UNKNOWN };
+enum class FileType { AMREX = 0, IDL, TEC, VTK, UNSET, UNKNOWN };
 
 static const std::map<FileType, std::string> fileTypeString = {
-  { FileType::AMREX, "AMReX" },     { FileType::IDL, "IDL" },
-  { FileType::TECPLOT, "TECPLOT" }, { FileType::VTK, "VTK" },
-  { FileType::UNSET, "UNSET" },     { FileType::UNKNOWN, "UNKNOWN" }
+  { FileType::AMREX, "AMReX" }, { FileType::IDL, "IDL" },
+  { FileType::TEC, "TEC" },     { FileType::VTK, "VTK" },
+  { FileType::UNSET, "UNSET" }, { FileType::UNKNOWN, "UNKNOWN" }
 };
 
 static const std::map<std::string, FileType> stringToFileType = {
-  { "AMReX", FileType::AMREX },     { "IDL", FileType::IDL },
-  { "TECPLOT", FileType::TECPLOT }, { "VTK", FileType::VTK },
-  { "UNSET", FileType::UNSET },     { "UNKNOWN", FileType::UNKNOWN }
+  { "AMReX", FileType::AMREX }, { "IDL", FileType::IDL },
+  { "TEC", FileType::TEC },     { "VTK", FileType::VTK },
+  { "UNSET", FileType::UNSET }, { "UNKNOWN", FileType::UNKNOWN }
 };
 
 class ZoneType {

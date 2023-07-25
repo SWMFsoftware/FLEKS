@@ -3,7 +3,6 @@
 
 #include "DataContainer.h"
 
-
 class DataWriter {
 public:
   DataWriter(DataContainer* dcIn, const std::string& filenameIn) {
@@ -37,7 +36,7 @@ class TECWriter : public DataWriter {
 public:
   TECWriter(DataContainer* dcIn, const std::string& filenameIn)
       : DataWriter(dcIn, filenameIn) {
-    fType = FileType::TECPLOT;
+    fType = FileType::TEC;
     filename = filenameIn + ".dat";
   };
 
