@@ -151,14 +151,14 @@ size_t AMReXDataContainer::loop_cell(bool doStore, Vector<float>& vars,
   return iCount;
 }
 
-size_t AMReXDataContainer::loop_brick(bool doStore, Vector<size_t>& bricks) {
-  std::string funcName = "AMReXDataContainer::loop_brick()";
+size_t AMReXDataContainer::loop_zone(bool doStore, Vector<size_t>& zones) {
+  std::string funcName = "AMReXDataContainer::loop_zone()";
   BL_PROFILE(funcName);
 
   size_t iBrick = 0;
 
   if (doStore)
-    bricks.clear();
+    zones.clear();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(iCell[iLev]); mfi.isValid(); ++mfi) {
@@ -187,14 +187,14 @@ size_t AMReXDataContainer::loop_brick(bool doStore, Vector<size_t>& bricks) {
               if (isBrick) {
                 iBrick++;
                 if (doStore) {
-                  bricks.push_back((int)cell(i, j, k));
-                  bricks.push_back((int)cell(i + 1, j, k));
-                  bricks.push_back((int)cell(i + 1, j + 1, k));
-                  bricks.push_back((int)cell(i, j + 1, k));
-                  bricks.push_back((int)cell(i, j, k + 1));
-                  bricks.push_back((int)cell(i + 1, j, k + 1));
-                  bricks.push_back((int)cell(i + 1, j + 1, k + 1));
-                  bricks.push_back((int)cell(i, j + 1, k + 1));
+                  zones.push_back((int)cell(i, j, k));
+                  zones.push_back((int)cell(i + 1, j, k));
+                  zones.push_back((int)cell(i + 1, j + 1, k));
+                  zones.push_back((int)cell(i, j + 1, k));
+                  zones.push_back((int)cell(i, j, k + 1));
+                  zones.push_back((int)cell(i + 1, j, k + 1));
+                  zones.push_back((int)cell(i + 1, j + 1, k + 1));
+                  zones.push_back((int)cell(i, j + 1, k + 1));
                 }
               }
             }

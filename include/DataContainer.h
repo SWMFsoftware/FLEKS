@@ -51,11 +51,11 @@ public:
 
   virtual size_t count_cell() = 0;
 
-  virtual size_t count_brick() = 0;
+  virtual size_t count_zone() = 0;
 
   virtual void get_cell(amrex::Vector<float>& vars) = 0;
 
-  virtual void get_bricks(amrex::Vector<size_t>& bricks) = 0;
+  virtual void get_zones(amrex::Vector<size_t>& zones) = 0;
 
   virtual void get_loc(amrex::Vector<float>& vars) = 0;
 
@@ -187,7 +187,7 @@ public:
 
   size_t count_cell() override { return nCell; }
 
-  size_t count_brick() override {
+  size_t count_zone() override {
     int n = 1;
     for (int i = 0; i < nDim; ++i) {
       n *= nSize[i] - 1;
@@ -229,8 +229,8 @@ public:
         }
   }
 
-  void get_bricks(amrex::Vector<size_t>& bricks) override {
-    std::string funcName = "IDLDataContainer::get_brick()";
+  void get_zones(amrex::Vector<size_t>& zones) override {
+    std::string funcName = "IDLDataContainer::get_zone()";
     BL_PROFILE(funcName);
 
     const amrex::Box& box = iCell.box();
@@ -239,28 +239,28 @@ public:
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
-    bricks.clear();
+    zones.clear();
     if (nDim == 2) {
       for (int j = lo.y; j <= hi.y - 1; ++j)
         for (int i = lo.x; i <= hi.x - 1; ++i) {
           int k = lo.z;
-          bricks.push_back(cell(i, j, k));
-          bricks.push_back(cell(i + 1, j, k));
-          bricks.push_back(cell(i + 1, j + 1, k));
-          bricks.push_back(cell(i, j + 1, k));
+          zones.push_back(cell(i, j, k));
+          zones.push_back(cell(i + 1, j, k));
+          zones.push_back(cell(i + 1, j + 1, k));
+          zones.push_back(cell(i, j + 1, k));
         }
     } else if (nDim == 3) {
       for (int k = lo.z; k <= hi.z - 1; ++k)
         for (int j = lo.y; j <= hi.y - 1; ++j)
           for (int i = lo.x; i <= hi.x - 1; ++i) {
-            bricks.push_back(cell(i, j, k));
-            bricks.push_back(cell(i + 1, j, k));
-            bricks.push_back(cell(i + 1, j + 1, k));
-            bricks.push_back(cell(i, j + 1, k));
-            bricks.push_back(cell(i, j, k + 1));
-            bricks.push_back(cell(i + 1, j, k + 1));
-            bricks.push_back(cell(i + 1, j + 1, k + 1));
-            bricks.push_back(cell(i, j + 1, k + 1));
+            zones.push_back(cell(i, j, k));
+            zones.push_back(cell(i + 1, j, k));
+            zones.push_back(cell(i + 1, j + 1, k));
+            zones.push_back(cell(i, j + 1, k));
+            zones.push_back(cell(i, j, k + 1));
+            zones.push_back(cell(i + 1, j, k + 1));
+            zones.push_back(cell(i + 1, j + 1, k + 1));
+            zones.push_back(cell(i, j + 1, k + 1));
           }
     }
   }
@@ -555,9 +555,9 @@ public:
     return loop_cell(false, vars);
   }
 
-  size_t count_brick() override {
-    amrex::Vector<size_t> bricks;
-    return loop_brick(false, bricks);
+  size_t count_zone() override {
+    amrex::Vector<size_t> zones;
+    return loop_zone(false, zones);
   }
 
   void get_cell(amrex::Vector<float>& vars) override { loop_cell(true, vars); }
@@ -566,13 +566,13 @@ public:
     loop_cell(true, vars, true);
   }
 
-  void get_bricks(amrex::Vector<size_t>& bricks) override {
-    loop_brick(true, bricks);
+  void get_zones(amrex::Vector<size_t>& zones) override {
+    loop_zone(true, zones);
   }
 
   size_t loop_cell(bool doStore, amrex::Vector<float>& vars,
                    bool doStoreLoc = false);
-  size_t loop_brick(bool doStore, amrex::Vector<size_t>& bricks);
+  size_t loop_zone(bool doStore, amrex::Vector<size_t>& zones);
 };
 
 #endif

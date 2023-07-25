@@ -42,13 +42,13 @@ public:
 
   void write() override {
     size_t nCell = dc->count_cell();
-    size_t nBrick = dc->count_brick();
+    size_t nBrick = dc->count_zone();
 
     amrex::Vector<float> vars;
     vars.resize(nCell * dc->n_var());
     dc->get_cell(vars);
 
-    amrex::Vector<size_t> bricks;
+    amrex::Vector<size_t> zones;
 
     std::string zoneType;
     int nVertex = 0;
@@ -61,9 +61,9 @@ public:
       zoneType = "QUADRILATERAL";
     }
 
-    bricks.resize(nBrick * nVertex);
+    zones.resize(nBrick * nVertex);
 
-    dc->get_bricks(bricks);
+    dc->get_zones(zones);
 
     outFile.open(filename.c_str(), std::ofstream::out | std::ofstream::trunc);
 
@@ -94,10 +94,10 @@ public:
       outFile << "\n";
     }
 
-    // Write brick data
+    // Write zone data
     for (int i = 0; i < nBrick; ++i) {
       for (int j = 0; j < nVertex; ++j) {
-        outFile << bricks[i * nVertex + j] << " ";
+        outFile << zones[i * nVertex + j] << " ";
       }
       outFile << "\n";
     }
@@ -120,7 +120,7 @@ public:
 
   void write() override {
     size_t nCell = dc->count_cell();
-    size_t nBrick = dc->count_brick();
+    size_t nBrick = dc->count_zone();
 
     amrex::Vector<float> vars;
     vars.resize(nCell * dc->n_var());
@@ -131,14 +131,14 @@ public:
     dc->get_loc(xyz);
 
     //=== Brick data ===
-    amrex::Vector<size_t> bricks;
+    amrex::Vector<size_t> zones;
     amrex::Vector<int> bricksInt;
-    // Each brick needs 8 integers/nodes.
-    bricks.resize(nBrick * 8);
-    dc->get_bricks(bricks);
-    for (int i = 0; i < bricks.size(); ++i) {
+    // Each zone needs 8 integers/nodes.
+    zones.resize(nBrick * 8);
+    dc->get_zones(zones);
+    for (int i = 0; i < zones.size(); ++i) {
 
-      bricksInt.push_back(bricks[i] - 1);
+      bricksInt.push_back(zones[i] - 1);
     }
     int* brickData = bricksInt.data();
     //===================
