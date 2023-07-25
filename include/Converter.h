@@ -10,7 +10,7 @@ public:
 
     if (sourceType == FileType::UNSET)
       sourceType = find_source_type();
-    
+
     switch (sourceType) {
       case FileType::AMREX: {
         amrex::Geometry gm;
@@ -40,16 +40,18 @@ public:
 
         dc = std::make_unique<AMReXDataContainer>(sourceFile, gm, info);
 
-        dc->print();
         break;
       }
       case FileType::IDL: {
+        dc = std::make_unique<IDLDataContainer>(sourceFile);
         break;
       }
       case FileType::TECPLOT: {
         break;
       }
     }
+
+    dc->print();
 
     switch (destType) {
       case FileType::IDL: {

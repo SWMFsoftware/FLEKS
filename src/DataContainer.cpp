@@ -101,8 +101,8 @@ void AMReXDataContainer::read() {
   regrid(grid.boxArray(0), &grid);
 }
 
-size_t AMReXDataContainer::loop_cell(bool doWrite, bool doStore,
-                                     Vector<float>& vars, bool doStoreLoc) {
+size_t AMReXDataContainer::loop_cell(bool doStore, Vector<float>& vars,
+                                     bool doStoreLoc) {
   std::string funcName = "AMReXDataContainer::loop_cell()";
   BL_PROFILE(funcName);
 
@@ -127,12 +127,7 @@ size_t AMReXDataContainer::loop_cell(bool doWrite, bool doStore,
             if (!bit::is_refined(status(i, j, k))) {
               iCount++;
               cell(i, j, k) = iCount;
-              if (doWrite) {
-                for (int iVar = 0; iVar < ncomp; iVar++) {
-                  outFile << data(i, j, k, iVar) << " ";
-                }
-                outFile << "\n";
-              } else if (doStore) {
+              if (doStore) {
                 if (doStoreLoc) {
                   vars.push_back(Geom(iLev).CellCenter(i, ix_));
                   vars.push_back(Geom(iLev).CellCenter(j, iy_));
@@ -156,15 +151,11 @@ size_t AMReXDataContainer::loop_cell(bool doWrite, bool doStore,
   return iCount;
 }
 
-size_t AMReXDataContainer::loop_brick(bool doWrite, bool doStore,
-                                      Vector<size_t>& bricks) {
+size_t AMReXDataContainer::loop_brick(bool doStore, Vector<size_t>& bricks) {
   std::string funcName = "AMReXDataContainer::loop_brick()";
   BL_PROFILE(funcName);
 
   size_t iBrick = 0;
-
-  if (doWrite)
-    outFile.width(8);
 
   if (doStore)
     bricks.clear();
@@ -195,17 +186,7 @@ size_t AMReXDataContainer::loop_brick(bool doWrite, bool doStore,
 
               if (isBrick) {
                 iBrick++;
-
-                if (doWrite) {
-                  outFile << (int)cell(i, j, k) << " ";
-                  outFile << (int)cell(i + 1, j, k) << " ";
-                  outFile << (int)cell(i + 1, j + 1, k) << " ";
-                  outFile << (int)cell(i, j + 1, k) << " ";
-                  outFile << (int)cell(i, j, k + 1) << " ";
-                  outFile << (int)cell(i + 1, j, k + 1) << " ";
-                  outFile << (int)cell(i + 1, j + 1, k + 1) << " ";
-                  outFile << (int)cell(i, j + 1, k + 1) << "\n";
-                } else if (doStore) {
+                if (doStore) {
                   bricks.push_back((int)cell(i, j, k));
                   bricks.push_back((int)cell(i + 1, j, k));
                   bricks.push_back((int)cell(i + 1, j + 1, k));

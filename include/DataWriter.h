@@ -49,8 +49,20 @@ public:
     dc->get_cell(vars);
 
     amrex::Vector<size_t> bricks;
-    // Each brick needs 8 integers/nodes.
-    bricks.resize(nBrick * 8);
+
+    std::string zoneType;
+    int nVertex = 0;
+
+    if (dc->n_dim() == 3) {
+      zoneType = "BRICK";
+      nVertex = 8;
+    } else if (dc->n_dim() == 2) {
+      nVertex = 4;
+      zoneType = "QUADRILATERAL";
+    }
+
+    bricks.resize(nBrick * nVertex);
+
     dc->get_bricks(bricks);
 
     outFile.open(filename.c_str(), std::ofstream::out | std::ofstream::trunc);
@@ -70,8 +82,8 @@ public:
     outFile << "\n";
 
     outFile << "ZONE "
-            << " N=" << nCell << ", E=" << nBrick << ", F=FEPOINT, ET=BRICK"
-            << "\n";
+            << " N=" << nCell << ", E=" << nBrick
+            << ", F=FEPOINT, ET=" << zoneType << "\n";
     //-----------------------------------------
 
     // Write cell data
@@ -84,8 +96,8 @@ public:
 
     // Write brick data
     for (int i = 0; i < nBrick; ++i) {
-      for (int j = 0; j < 8; ++j) {
-        outFile << bricks[i * 8 + j] << " ";
+      for (int j = 0; j < nVertex; ++j) {
+        outFile << bricks[i * nVertex + j] << " ";
       }
       outFile << "\n";
     }
