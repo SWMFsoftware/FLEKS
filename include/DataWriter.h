@@ -3,48 +3,49 @@
 
 #include "DataContainer.h"
 
-enum class ZType { UNSET = 0, TRIANGLE, BRICK, QUAD };
 class ZoneType {
 public:
+  enum class Type { UNSET = 0, TRIANGLE, BRICK, QUAD };
+
   ZoneType() = default;
 
-  void set_type(ZType typeIn) { type = typeIn; }
+  void set_type(Type typeIn) { type = typeIn; }
 
   int vtk_index() {
     switch (type) {
-      case ZType::TRIANGLE:
+      case Type::TRIANGLE:
         return VTK_TRIANGLE;
-      case ZType::BRICK:
+      case Type::BRICK:
         return VTK_HEXAHEDRON;
-      case ZType::QUAD:
+      case Type::QUAD:
         return VTK_QUAD;
     }
   }
 
   int n_vertex() {
     switch (type) {
-      case ZType::TRIANGLE:
+      case Type::TRIANGLE:
         return 3;
-      case ZType::BRICK:
+      case Type::BRICK:
         return 8;
-      case ZType::QUAD:
+      case Type::QUAD:
         return 4;
     }
   }
 
   std::string tec_string() {
     switch (type) {
-      case ZType::TRIANGLE:
+      case Type::TRIANGLE:
         return "TRIANGLE";
-      case ZType::BRICK:
+      case Type::BRICK:
         return "BRICK";
-      case ZType::QUAD:
+      case Type::QUAD:
         return "QUADRILATERAL";
     }
   }
 
 private:
-  ZType type;
+  Type type;
 };
 
 class DataWriter {
@@ -88,9 +89,9 @@ public:
 
   void write() override {
     if (dc->n_dim() == 3) {
-      zoneType.set_type(ZType::BRICK);
+      zoneType.set_type(ZoneType::Type::BRICK);
     } else if (dc->n_dim() == 2) {
-      zoneType.set_type(ZType::QUAD);
+      zoneType.set_type(ZoneType::Type::QUAD);
     }
 
     size_t nCell = dc->count_cell();
@@ -155,15 +156,17 @@ public:
       : DataWriter(dcIn, filenameIn) {
     fType = FileType::VTK;
     filename = filenameIn + ".vtk";
+
+    saveBinary = true;
   };
 
   ~VTKWriter(){};
 
   void write() override {
     if (dc->n_dim() == 3) {
-      zoneType.set_type(ZType::BRICK);
+      zoneType.set_type(ZoneType::Type::BRICK);
     } else if (dc->n_dim() == 2) {
-      zoneType.set_type(ZType::QUAD);
+      zoneType.set_type(ZoneType::Type::QUAD);
     }
 
     size_t nCell = dc->count_cell();
@@ -188,8 +191,6 @@ public:
     }
     int* brickData = bricksInt.data();
     //===================
-
-    bool useBinary = false;
 
     amrex::Vector<int> brickType(nBrick, zoneType.vtk_index());
 
@@ -216,7 +217,7 @@ public:
       }
     }
 
-    write_unstructured_mesh(filename.c_str(), useBinary, nCell, xyz.data(),
+    write_unstructured_mesh(filename.c_str(), saveBinary, nCell, xyz.data(),
                             nBrick, brickType.data(), brickData, dc->n_var(),
                             vardim.data(), centering.data(), varnames, v);
 
@@ -227,6 +228,9 @@ public:
     delete[] varnames;
     delete[] v;
   }
+
+private:
+  bool saveBinary;
 };
 
 #endif
