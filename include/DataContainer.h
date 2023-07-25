@@ -99,7 +99,7 @@ private:
 
   amrex::BaseFab<float> fab;
 
-  amrex::BaseFab<int> iCell;
+  amrex::BaseFab<size_t> iCell;
 
 public:
   IDLDataContainer(const std::string& in) {
@@ -180,7 +180,7 @@ public:
 
   void get_loc(amrex::Vector<float>& vars) override { loop_cell(vars, true); }
 
-  size_t loop_cell(amrex::Vector<float>& vars, bool doStoreLoc) {
+  void loop_cell(amrex::Vector<float>& vars, bool doStoreLoc) {
     std::string funcName = "IDLDataContainer::loop_cell()";
     BL_PROFILE(funcName);
 
@@ -189,12 +189,12 @@ public:
     const amrex::Box& box = fab.box();
     const amrex::Array4<float>& data = fab.array();
 
-    const amrex::Array4<int>& cell = iCell.array();
+    const amrex::Array4<size_t>& cell = iCell.array();
 
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
-    int iCount = 0;
+    size_t iCount = 0;
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
@@ -220,7 +220,7 @@ public:
     BL_PROFILE(funcName);
 
     const amrex::Box& box = iCell.box();
-    const amrex::Array4<int>& cell = iCell.array();
+    const amrex::Array4<size_t>& cell = iCell.array();
 
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
@@ -366,7 +366,7 @@ public:
     {
       // Read coordinates.
       nRec = read_int();
-      assert(nRec / nDim / nReal == nCell);
+      assert(nRec / nDim / nReal == (int)nCell);
 
       real* x;
       x = new real[nCell];

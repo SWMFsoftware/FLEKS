@@ -19,7 +19,7 @@ int main(int argc, char* argv[]) {
   FileType sType = FileType::UNSET;
   FileType dType = FileType::UNSET;
 
-  int i = 1;
+  size_t i = 1;
   while (i < cdl.size()) {
     if (cdl[i] == "-f") {
       i++;
@@ -84,7 +84,7 @@ int main(int argc, char* argv[]) {
 
   Initialize(MPI_COMM_WORLD);
 
-  for (int i = 0; i < fileNames.size(); i++) {
+  for (size_t i = 0; i < fileNames.size(); i++) {
     Converter cv(fileNames[i], sType, dType);
     cv.read();
     cv.write();

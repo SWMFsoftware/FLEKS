@@ -19,7 +19,9 @@ public:
         return VTK_HEXAHEDRON;
       case Type::QUAD:
         return VTK_QUAD;
-    }
+      default:
+        return -1;
+    }    
   }
 
   int n_vertex() {
@@ -30,7 +32,9 @@ public:
         return 8;
       case Type::QUAD:
         return 4;
-    }
+      default:
+        return -1;
+    }    
   }
 
   std::string tec_string() {
@@ -41,7 +45,11 @@ public:
         return "BRICK";
       case Type::QUAD:
         return "QUADRILATERAL";
-    }
+      case Type::UNSET:
+        return "UNSET";
+      default:
+        return "UNKNOWN";
+    }    
   }
 
 private:
@@ -129,7 +137,7 @@ public:
     //-----------------------------------------
 
     // Write cell data
-    for (int i = 0; i < nCell; ++i) {
+    for (size_t i = 0; i < nCell; ++i) {
       for (int j = 0; j < dc->n_var(); ++j) {
         outFile << vars[i * dc->n_var() + j] << " ";
       }
@@ -137,7 +145,7 @@ public:
     }
 
     // Write zone data
-    for (int i = 0; i < nBrick; ++i) {
+    for (size_t i = 0; i < nBrick; ++i) {
       for (int j = 0; j < zoneType.n_vertex(); ++j) {
         outFile << zones[i * zoneType.n_vertex() + j] << " ";
       }
@@ -212,7 +220,7 @@ public:
     v = new float*[dc->n_var()];
     for (int i = 0; i < dc->n_var(); ++i) {
       v[i] = new float[nCell];
-      for (int j = 0; j < nCell; ++j) {
+      for (size_t j = 0; j < nCell; ++j) {
         v[i][j] = vars[j * dc->n_var() + i];
       }
     }

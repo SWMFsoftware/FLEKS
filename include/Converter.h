@@ -47,6 +47,19 @@ public:
         break;
       }
       case FileType::TECPLOT: {
+        amrex::Abort("Error: TECPLOT input is not supported yet!");
+        break;
+      }
+      case FileType::VTK: {
+        amrex::Abort("Error: VTK input is not supported yet!");
+        break;
+      }
+      case FileType::UNSET: {
+        amrex::Abort("Error: set source file format with -s option!");
+        break;
+      }
+      case FileType::UNKNOWN: {
+        amrex::Abort("Error: source file format is unknown!");
         break;
       }
     }
@@ -54,9 +67,6 @@ public:
     dc->print();
 
     switch (destType) {
-      case FileType::IDL: {
-        break;
-      }
       case FileType::TECPLOT: {
         writer = std::make_unique<TECWriter>(dc.get(), sourceFile);
         break;
@@ -65,11 +75,21 @@ public:
         writer = std::make_unique<VTKWriter>(dc.get(), sourceFile);
         break;
       }
+      case FileType::IDL: {
+        amrex::Abort("Error: IDL output is not supported yet!");
+        break;
+      }
+      case FileType::AMREX: {
+        amrex::Abort("Error: AMREX output is not supported yet!");
+        break;
+      }
       case FileType::UNSET: {
         amrex::Abort("Error: set destination file format with -d option!");
+        break;
       }
       case FileType::UNKNOWN: {
         amrex::Abort("Error: destination file format is unknown!");
+        break;
       }
     }
     writer->print();
@@ -91,6 +111,8 @@ public:
     } else {
       amrex::Abort("Unknown sourceFile type");
     }
+
+    return FileType::UNKNOWN;
   }
   void read() { dc->read(); }
   void write() { writer->write(); }
