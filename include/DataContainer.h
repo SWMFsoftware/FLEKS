@@ -14,6 +14,7 @@
 #include <AMReX_VisMF.H>
 #include <AMReX_iMultiFab.H>
 
+#include "Delauator.h"
 #include "Grid.h"
 #include "VisitWriter.h"
 
@@ -169,10 +170,11 @@ private:
   // For structured grid
   amrex::BaseFab<float> fab;
 
-  // For unstructured grid
-  amrex::Vector<float> vData;
-
   amrex::BaseFab<size_t> iCell;
+
+  std::unique_ptr<delaunator::Delaunator> tri;
+
+  amrex::Vector<double> coords2d;
 
 public:
   IDLDataContainer(const std::string& in) {
@@ -237,23 +239,37 @@ public:
       nReal = 8;
       read_binary<double>();
     }
+
+    if (!isStructured) {
+      coords2d.resize(nCell * 2);
+      loop_cell(coords2d, true, false);
+      tri = std::make_unique<delaunator::Delaunator>(coords2d);
+    }
   };
 
   size_t count_cell() override { return nCell; }
 
   size_t count_zone() override {
-    int n = 1;
-    for (int i = 0; i < nDim; ++i) {
-      n *= nSize[i] - 1;
+    if (isStructured) {
+
+      int n = 1;
+      for (int i = 0; i < nDim; ++i) {
+        n *= nSize[i] - 1;
+      }
+      return n;
+
+    } else {
+      return tri->triangles.size() / 3;
     }
-    return n;
   }
 
   void get_cell(amrex::Vector<float>& vars) override { loop_cell(vars, false); }
 
   void get_loc(amrex::Vector<float>& vars) override { loop_cell(vars, true); }
 
-  void loop_cell(amrex::Vector<float>& vars, bool doStoreLoc) {
+  template <typename T>
+  void loop_cell(amrex::Vector<T>& vars, bool doStoreLoc,
+                 bool save3Dim = true) {
     std::string funcName = "IDLDataContainer::loop_cell()";
     BL_PROFILE(funcName);
 
@@ -276,14 +292,14 @@ public:
           if (doStoreLoc) {
             for (int iDim = 0; iDim < 3; iDim++) {
               if (iDim < nDim) {
-                vars.push_back(data(i, j, k, iDim));
-              } else {
+                vars.push_back((T)data(i, j, k, iDim));
+              } else if (save3Dim) {
                 vars.push_back(0.0);
               }
             }
           } else {
             for (int iVar = 0; iVar < fab.nComp(); iVar++)
-              vars.push_back(data(i, j, k, iVar));
+              vars.push_back((T)data(i, j, k, iVar));
           }
         }
   }
@@ -292,35 +308,44 @@ public:
     std::string funcName = "IDLDataContainer::get_zone()";
     BL_PROFILE(funcName);
 
-    const amrex::Box& box = iCell.box();
-    const amrex::Array4<size_t>& cell = iCell.array();
-
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
-
     zones.clear();
-    if (nDim == 2) {
-      for (int j = lo.y; j <= hi.y - 1; ++j)
-        for (int i = lo.x; i <= hi.x - 1; ++i) {
-          int k = lo.z;
-          zones.push_back(cell(i, j, k));
-          zones.push_back(cell(i + 1, j, k));
-          zones.push_back(cell(i + 1, j + 1, k));
-          zones.push_back(cell(i, j + 1, k));
-        }
-    } else if (nDim == 3) {
-      for (int k = lo.z; k <= hi.z - 1; ++k)
+    if (isStructured) {
+
+      const amrex::Box& box = iCell.box();
+      const amrex::Array4<size_t>& cell = iCell.array();
+
+      const auto lo = amrex::lbound(box);
+      const auto hi = amrex::ubound(box);
+
+      if (nDim == 2) {
         for (int j = lo.y; j <= hi.y - 1; ++j)
           for (int i = lo.x; i <= hi.x - 1; ++i) {
+            int k = lo.z;
             zones.push_back(cell(i, j, k));
             zones.push_back(cell(i + 1, j, k));
             zones.push_back(cell(i + 1, j + 1, k));
             zones.push_back(cell(i, j + 1, k));
-            zones.push_back(cell(i, j, k + 1));
-            zones.push_back(cell(i + 1, j, k + 1));
-            zones.push_back(cell(i + 1, j + 1, k + 1));
-            zones.push_back(cell(i, j + 1, k + 1));
           }
+      } else if (nDim == 3) {
+        for (int k = lo.z; k <= hi.z - 1; ++k)
+          for (int j = lo.y; j <= hi.y - 1; ++j)
+            for (int i = lo.x; i <= hi.x - 1; ++i) {
+              zones.push_back(cell(i, j, k));
+              zones.push_back(cell(i + 1, j, k));
+              zones.push_back(cell(i + 1, j + 1, k));
+              zones.push_back(cell(i, j + 1, k));
+              zones.push_back(cell(i, j, k + 1));
+              zones.push_back(cell(i + 1, j, k + 1));
+              zones.push_back(cell(i + 1, j + 1, k + 1));
+              zones.push_back(cell(i, j + 1, k + 1));
+            }
+      }
+    } else {
+      for (std::size_t i = 0; i < tri->triangles.size(); i += 3) {
+        zones.push_back(tri->triangles[i] + 1);
+        zones.push_back(tri->triangles[i + 1] + 1);
+        zones.push_back(tri->triangles[i + 2] + 1);
+      }
     }
   }
 

@@ -116,11 +116,7 @@ public:
   ~VTKWriter(){};
 
   void write() override {
-    if (dc->n_dim() == 3) {
-      zoneType.set_type(ZoneType::Type::BRICK);
-    } else if (dc->n_dim() == 2) {
-      zoneType.set_type(ZoneType::Type::QUAD);
-    }
+    zoneType.set_type(dc->zone_type());
 
     size_t nCell = dc->count_cell();
     size_t nBrick = dc->count_zone();
