@@ -3,6 +3,50 @@
 
 #include "DataContainer.h"
 
+enum class ZType { UNSET = 0, TRIANGLE, BRICK, QUAD };
+class ZoneType {
+public:
+  ZoneType() = default;
+
+  void set_type(ZType typeIn) { type = typeIn; }
+
+  int vtk_index() {
+    switch (type) {
+      case ZType::TRIANGLE:
+        return VTK_TRIANGLE;
+      case ZType::BRICK:
+        return VTK_HEXAHEDRON;
+      case ZType::QUAD:
+        return VTK_QUAD;
+    }
+  }
+
+  int n_vertex() {
+    switch (type) {
+      case ZType::TRIANGLE:
+        return 3;
+      case ZType::BRICK:
+        return 8;
+      case ZType::QUAD:
+        return 4;
+    }
+  }
+
+  std::string tec_string() {
+    switch (type) {
+      case ZType::TRIANGLE:
+        return "TRIANGLE";
+      case ZType::BRICK:
+        return "BRICK";
+      case ZType::QUAD:
+        return "QUADRILATERAL";
+    }
+  }
+
+private:
+  ZType type;
+};
+
 class DataWriter {
 public:
   DataWriter(DataContainer* dcIn, const std::string& filenameIn) {
@@ -28,6 +72,8 @@ protected:
   std::string filename;
   FileType fType;
   std::ofstream outFile;
+
+  ZoneType zoneType;
 };
 
 class TECWriter : public DataWriter {
@@ -41,6 +87,12 @@ public:
   ~TECWriter(){};
 
   void write() override {
+    if (dc->n_dim() == 3) {
+      zoneType.set_type(ZType::BRICK);
+    } else if (dc->n_dim() == 2) {
+      zoneType.set_type(ZType::QUAD);
+    }
+
     size_t nCell = dc->count_cell();
     size_t nBrick = dc->count_zone();
 
@@ -50,18 +102,7 @@ public:
 
     amrex::Vector<size_t> zones;
 
-    std::string zoneType;
-    int nVertex = 0;
-
-    if (dc->n_dim() == 3) {
-      zoneType = "BRICK";
-      nVertex = 8;
-    } else if (dc->n_dim() == 2) {
-      nVertex = 4;
-      zoneType = "QUADRILATERAL";
-    }
-
-    zones.resize(nBrick * nVertex);
+    zones.resize(nBrick * zoneType.n_vertex());
 
     dc->get_zones(zones);
 
@@ -83,7 +124,7 @@ public:
 
     outFile << "ZONE "
             << " N=" << nCell << ", E=" << nBrick
-            << ", F=FEPOINT, ET=" << zoneType << "\n";
+            << ", F=FEPOINT, ET=" << zoneType.tec_string() << "\n";
     //-----------------------------------------
 
     // Write cell data
@@ -96,8 +137,8 @@ public:
 
     // Write zone data
     for (int i = 0; i < nBrick; ++i) {
-      for (int j = 0; j < nVertex; ++j) {
-        outFile << zones[i * nVertex + j] << " ";
+      for (int j = 0; j < zoneType.n_vertex(); ++j) {
+        outFile << zones[i * zoneType.n_vertex() + j] << " ";
       }
       outFile << "\n";
     }
@@ -119,6 +160,12 @@ public:
   ~VTKWriter(){};
 
   void write() override {
+    if (dc->n_dim() == 3) {
+      zoneType.set_type(ZType::BRICK);
+    } else if (dc->n_dim() == 2) {
+      zoneType.set_type(ZType::QUAD);
+    }
+
     size_t nCell = dc->count_cell();
     size_t nBrick = dc->count_zone();
 
@@ -127,17 +174,16 @@ public:
     dc->get_cell(vars);
 
     amrex::Vector<float> xyz;
-    xyz.resize(dc->n_dim() * dc->n_var());
+    // If nDim == 2, set the coordinates of the third dimension to 0.
+    xyz.resize(3 * dc->n_var());
     dc->get_loc(xyz);
 
     //=== Brick data ===
     amrex::Vector<size_t> zones;
     amrex::Vector<int> bricksInt;
-    // Each zone needs 8 integers/nodes.
-    zones.resize(nBrick * 8);
+    zones.resize(nBrick * zoneType.n_vertex());
     dc->get_zones(zones);
     for (int i = 0; i < zones.size(); ++i) {
-
       bricksInt.push_back(zones[i] - 1);
     }
     int* brickData = bricksInt.data();
@@ -145,7 +191,7 @@ public:
 
     bool useBinary = false;
 
-    amrex::Vector<int> brickType(nBrick, VTK_HEXAHEDRON);
+    amrex::Vector<int> brickType(nBrick, zoneType.vtk_index());
 
     // All variables are scalars, so vardim is 1.
     amrex::Vector<int> vardim(dc->n_var(), 1);

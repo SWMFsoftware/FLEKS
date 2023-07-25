@@ -220,8 +220,13 @@ public:
           iCount++;
           cell(i, j, k) = iCount;
           if (doStoreLoc) {
-            for (int iDim = 0; iDim < nDim; i++)
-              vars.push_back(data(i, j, k, iDim));
+            for (int iDim = 0; iDim < 3; iDim++) {
+              if (iDim < nDim) {
+                vars.push_back(data(i, j, k, iDim));
+              } else {
+                vars.push_back(0.0);
+              }
+            }
           } else {
             for (int iVar = 0; iVar < fab.nComp(); iVar++)
               vars.push_back(data(i, j, k, iVar));
