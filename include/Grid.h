@@ -139,6 +139,14 @@ public:
 
   virtual void post_regrid() { distribute_grid_arrays(); };
 
+  void init_grid(const Grid* grid) {
+    SetFinestLevel(grid->finestLevel());
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      SetBoxArray(iLev, grid->boxArray(iLev));
+      SetDistributionMap(iLev, grid->DistributionMap(iLev));
+    }
+  }
+
   void update_refine_region(const amrex::Vector<Regions>& in) {
     refineRegions = in;
   }

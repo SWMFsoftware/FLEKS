@@ -35,17 +35,13 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid) {
     cGrids.push_back(BoxArray());
   } else {
     if (grid) {
-      SetFinestLevel(grid->finestLevel());
-      for (int iLev = 0; iLev < n_lev(); iLev++) {
-        // Q: Why is it required to set distribution map here?
-        // A: fi and pic should have the same grids and distribution maps.
-        // However, it seems AMReX is too smart that it will try to load balance
-        // the box arrays so that the distribution maps can be different even
-        // the grid is the same. So we need to set the distribution map here.
+      // Q: Why is it required to set distribution map (inside init_grid())?
+      // A: fi and pic should have the same grids and distribution maps.
+      // However, it seems AMReX is too smart that it will try to load balance
+      // the box arrays so that the distribution maps can be different even
+      // the grid is the same. So we need to set the distribution map here.
+      init_grid(grid);
 
-        SetBoxArray(iLev, grid->boxArray(iLev));
-        SetDistributionMap(iLev, grid->DistributionMap(iLev));
-      }
     } else {
       // This method will call MakeNewLevelFromScratch() and
       // PostProcessBaseGrids()
