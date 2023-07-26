@@ -146,7 +146,8 @@ public:
     return plotString.find("compact") != std::string::npos;
   }
   bool is_particle() const {
-    return plotString.find("particle") != std::string::npos;
+    return plotString.find("particles") != std::string::npos ||
+           plotString.find("particlePop") != std::string::npos;
   }
   bool save_node() const {
     return plotString.find("node") != std::string::npos;
