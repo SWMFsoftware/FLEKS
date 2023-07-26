@@ -1945,47 +1945,50 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
     : Particles(gridIn, nullptr, nullptr, other.get_speciesID(),
                 other.get_charge(), other.get_mass(),
                 IntVect(AMREX_D_DECL(-1, -1, -1))) {
-  const int iLev = 0;
+
   no2outM *= qomSign * get_mass();
 
   const bool doLimit = IORange.ok();
-  const auto& plevelOther = other.GetParticles(iLev);
-  auto& plevel = GetParticles(iLev);
-  for (MFIter mfi = other.MakeMFIter(iLev); mfi.isValid(); ++mfi) {
-    auto index = std::make_pair(mfi.index(), mfi.LocalTileIndex());
 
-    if (plevelOther.find(index) == plevelOther.end())
-      continue;
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const auto& plevelOther = other.GetParticles(iLev);
+    auto& plevel = GetParticles(iLev);
+    for (MFIter mfi = other.MakeMFIter(iLev); mfi.isValid(); ++mfi) {
+      auto index = std::make_pair(mfi.index(), mfi.LocalTileIndex());
 
-    const auto& tileOther = plevelOther.at(index);
-
-    if (tileOther.numParticles() == 0)
-      continue;
-
-    const auto& aosOther = tileOther.GetArrayOfStructs();
-
-    const Box& validBox = mfi.validbox();
-    for (auto p : aosOther) {
-      if (other.is_outside_active_region(p, iLev, validBox)) {
-        // redistribute_particles() may fail if the ghost cell particles' IDs
-        // are not -1 (marked for deletion);
-        p.id() = -1;
-      }
-
-      for (int iDim = 0; iDim < nDim; iDim++) {
-        p.pos(ix_ + iDim) = no2outL * p.pos(ix_ + iDim);
-      }
-
-      if (doLimit && !IORange.contains(RealVect(
-                         AMREX_D_DECL(p.pos(ix_), p.pos(iy_), p.pos(iz_)))))
+      if (plevelOther.find(index) == plevelOther.end())
         continue;
 
-      for (int iDim = 0; iDim < nDim; iDim++) {
-        p.rdata(iup_ + iDim) = no2outV * p.rdata(iup_ + iDim);
-      }
-      p.rdata(iqp_) = no2outM * p.rdata(iqp_);
+      const auto& tileOther = plevelOther.at(index);
 
-      plevel[index].push_back(p);
+      if (tileOther.numParticles() == 0)
+        continue;
+
+      const auto& aosOther = tileOther.GetArrayOfStructs();
+
+      const Box& validBox = mfi.validbox();
+      for (auto p : aosOther) {
+        if (other.is_outside_active_region(p, iLev, validBox)) {
+          // redistribute_particles() may fail if the ghost cell particles' IDs
+          // are not -1 (marked for deletion);
+          p.id() = -1;
+        }
+
+        for (int iDim = 0; iDim < nDim; iDim++) {
+          p.pos(ix_ + iDim) = no2outL * p.pos(ix_ + iDim);
+        }
+
+        if (doLimit && !IORange.contains(RealVect(
+                           AMREX_D_DECL(p.pos(ix_), p.pos(iy_), p.pos(iz_)))))
+          continue;
+
+        for (int iDim = 0; iDim < nDim; iDim++) {
+          p.rdata(iup_ + iDim) = no2outV * p.rdata(iup_ + iDim);
+        }
+        p.rdata(iqp_) = no2outM * p.rdata(iqp_);
+
+        plevel[index].push_back(p);
+      }
     }
   }
   redistribute_particles();

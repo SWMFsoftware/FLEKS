@@ -369,7 +369,7 @@ double Pic::get_var(std::string var, const int iLev, const int ix, const int iy,
       value = mfi.index();
     } else if (var.substr(0, 9) == "neuregion") {
       if (stateOH) {
-        const int iFluid = 0;        
+        const int iFluid = 0;
         value = stateOH->get_neu_source_region(mfi, ix, iy, iz, iFluid, iLev);
       } else {
         value = -1;
@@ -581,13 +581,8 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
   Vector<Geometry> geomOut(n_lev());
   set_IO_geom(geomOut, pw);
 
-  AmrInfo amrInfo;
-  amrInfo.blocking_factor.clear();
-  amrInfo.blocking_factor.push_back(IntVect(AMREX_D_DECL(1, 1, 1)));
-
-  Grid gridIO(geomOut[0], amrInfo, 0, -gridID);
-  gridIO.set_base_grid(baIO);
-  gridIO.InitFromScratch(0.0);
+  Grid gridIO(geomOut[0], get_amr_info(), 0, -gridID);
+  gridIO.init_grid(this);
 
   IOParticles particlesOut(*parts[iSpecies].get(), &gridIO, no2outL, no2outV,
                            no2outM, outRange);
