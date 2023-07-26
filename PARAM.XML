@@ -23,6 +23,10 @@
 	<option name="Particles 1"     value="particles1" />
 	<option name="Particles 2"     value="particles2" />
 	<option name="Particles 3"     value="particles3" />
+	<option name="Particles 0"     value="particlePop1" />
+	<option name="Particles 1"     value="particlePop2" />
+	<option name="Particles 2"     value="particlePop3" />
+	<option name="Particles 3"     value="particlePop4" />
       </part>
       <part name="plotform" type="string" input="select" required="T">
 	<option value="amrex" name="AMReX built-in format"/>

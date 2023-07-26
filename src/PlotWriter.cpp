@@ -89,9 +89,9 @@ void PlotWriter::init() {
   } else if (plotString.find("fluid") != std::string::npos) {
     plotVar = expand_variables("{fluid}");
     namePrefix += "_fluid";
-  } else if (plotString.find("particles") != std::string::npos) {
+  } else if (plotString.find("particle") != std::string::npos) {
     namePrefix += "_particle";
-    std::string::size_type pos = plotString.find("particles");
+    std::string::size_type pos = plotString.find("particle");
     particleSpecies = extract_int(plotString.substr(pos));
   } else {
     if (isVerbose)
