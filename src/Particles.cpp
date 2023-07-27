@@ -1347,6 +1347,8 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
 
+      amrex::Vector<ParticleType> newparticles;
+
       auto& particles = pti.GetArrayOfStructs();
 
       const int nPartOrig = particles.size();
@@ -1455,7 +1457,11 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
         pnew.rdata(ivp_) = vp1;
         pnew.rdata(iwp_) = wp1;
         pnew.rdata(iqp_) = qp1 / 2;
-        particles.push_back(pnew);
+        newparticles.push_back(pnew);
+      }
+
+      for (auto& p : newparticles) {
+        particles.push_back(p);
       }
     }
   }

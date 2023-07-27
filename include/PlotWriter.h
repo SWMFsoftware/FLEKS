@@ -50,8 +50,8 @@ private:
 
   // The species number used to generate output variable list.
   int nSpecies;
-  bool doWriteHeader; // Only one processor needs to write the header.
-  bool isVerbose;
+  bool doWriteHeader = false; // Only one processor needs to write the header.
+  bool isVerbose = false;
   //----Input parameters--------------------------------------
 
   std::string SaveDirName = component + "/plots";
@@ -135,6 +135,9 @@ public:
 
   // Disabled the assignment operator to avoid potential mistake.
   PlotWriter& operator=(const PlotWriter&) = delete;
+
+  // Copy constructor
+  PlotWriter(const PlotWriter& other) = default;
 
   // Use default copy constructor. Do not introduce pointer to this class!!
   ~PlotWriter() {}
