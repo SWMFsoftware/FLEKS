@@ -118,6 +118,8 @@ protected:
   amrex::Vector<amrex::MultiFab> nodeFluid;
   amrex::Vector<amrex::MultiFab> centerB;
 
+  bool isnodeFluidReady = false;
+
 public:
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
                  int nGst, int id, std::string tag,

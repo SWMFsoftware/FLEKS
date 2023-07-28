@@ -86,6 +86,9 @@ public:
   virtual int get_neu_source_region(const amrex::MFIter& mfi, const int i,
                                     const int j, const int k, const int iFluid,
                                     const int iLev) const override {
+    if (!isnodeFluidReady)
+      return -1;
+
     // amu/m^3
     amrex::Real n = get_fluid_mass_density(mfi, i, j, k, iFluid, iLev) *
                     get_No2SiRho() / cProtonMassSI;

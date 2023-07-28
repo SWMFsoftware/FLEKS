@@ -690,6 +690,8 @@ void FluidInterface::set_node_fluid(const double* const data,
 
   loop_through_node("fill", nullptr, data, index);
 
+  isnodeFluidReady = true;
+
   calc_current();
   normalize_fluid_variables();
   convert_moment_to_velocity();
@@ -713,6 +715,8 @@ void FluidInterface::set_node_fluid() {
       nodeFluid[iLev].setVal(uniformState[i], i, 1, nodeFluid[iLev].nGrow());
   }
 
+  isnodeFluidReady = true;
+
   calc_current();
   normalize_fluid_variables();
   convert_moment_to_velocity();
@@ -731,6 +735,8 @@ void FluidInterface::set_node_fluid(const FluidInterface& other) {
     MultiFab::Copy(centerB[iLev], other.centerB[iLev], 0, 0,
                    centerB[iLev].nComp(), centerB[iLev].nGrow());
   }
+
+  isnodeFluidReady = true;
 }
 
 void FluidInterface::calc_current() {

@@ -389,9 +389,12 @@ void Pic::save_restart_data() {
 
   std::string restartDir = component + "/restartOUT/";
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    VisMF::Write(nodeE[iLev], restartDir + gridName + "_nodeE");
-    VisMF::Write(nodeB[iLev], restartDir + gridName + "_nodeB");
-    VisMF::Write(centerB[iLev], restartDir + gridName + "_centerB");
+    VisMF::Write(nodeE[iLev],
+                 restartDir + gridName + "_nodeE" + lev_string(iLev));
+    VisMF::Write(nodeB[iLev],
+                 restartDir + gridName + "_nodeB" + lev_string(iLev));
+    VisMF::Write(centerB[iLev],
+                 restartDir + gridName + "_centerB" + lev_string(iLev));
   }
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
@@ -427,9 +430,12 @@ void Pic::read_restart() {
   std::string restartDir = component + "/restartIN/";
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    VisMF::Read(nodeE[iLev], restartDir + gridName + "_nodeE");
-    VisMF::Read(nodeB[iLev], restartDir + gridName + "_nodeB");
-    VisMF::Read(centerB[iLev], restartDir + gridName + "_centerB");
+    VisMF::Read(nodeE[iLev],
+                restartDir + gridName + "_nodeE" + lev_string(iLev));
+    VisMF::Read(nodeB[iLev],
+                restartDir + gridName + "_nodeB" + lev_string(iLev));
+    VisMF::Read(centerB[iLev],
+                restartDir + gridName + "_centerB" + lev_string(iLev));
   }
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {

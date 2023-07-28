@@ -515,15 +515,17 @@ void Domain::save_restart_header() {
       headerFile << "T"
                  << "\t\t\tdoRestartFIOnly\n";
       headerFile << "\n";
-
-      headerFile << "#FLUIDVARNAMES" + command_suffix;
-      const Vector<std::string> names = fi->get_var_names();
-      headerFile << names.size() << "\t\t\tnVar\n";
-      for (int i = 0; i < names.size(); i++) {
-        headerFile << names[i] << "\t\t\tvarName\n";
-      }
-      headerFile << "\n";
     }
+
+#ifdef _PT_COMPONENT_
+    headerFile << "#FLUIDVARNAMES" + command_suffix;
+    const Vector<std::string> names = fi->get_var_names();
+    headerFile << names.size() << "\t\t\tnVar\n";
+    for (int i = 0; i < names.size(); i++) {
+      headerFile << names[i] << "\t\t\tvarName\n";
+    }
+    headerFile << "\n";
+#endif
 
     headerFile << "#NSTEP" + command_suffix;
     headerFile << tc->get_cycle() << "\t\t\tnStep\n";
