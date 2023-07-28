@@ -1830,10 +1830,17 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
                   a[ie_][nVar] += qp * v2;
                 }
 
+                Vector<Real> ref(ie_ + 1, 0);
+                const Real csmall = 1e-9;
+                const Real tmp = csmall * fabs(1. / a[iq_][nVar]);
+                for (int i = iq_; i <= ie_; i++) {
+                  ref[i] = fabs(a[i][nVar] * tmp);
+                }
+
                 //------------------------------------------
-                auto linear_solver_Gauss_Elimination = [&a, &x, &nVar]() {
+                auto linear_solver_Gauss_Elimination = [&a, &x, &nVar, &ref]() {
                   for (int i = 0; i < nVar - 1; i++) {
-                    if (a[i][i] == 0)
+                    if (fabs(a[i][i]) <= ref[i])
                       return false;
                     for (int k = i + 1; k < nVar; k++) {
 
@@ -1849,7 +1856,7 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
                       if (j != i)
                         x[i] = x[i] - a[i][j] * x[j];
                     }
-                    if (a[i][i] == 0) {
+                    if (fabs(a[i][i]) <= ref[i]) {
                       return false;
                     } else {
                       x[i] = x[i] / a[i][i];
