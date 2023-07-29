@@ -102,7 +102,7 @@ void Pic::fill_new_cells() {
     // particle component is activated. The test particle component copies EM
     // field from PIC, so PIC EM field should be updated here.
 
-    update_grid_status();    
+    update_grid_status();
   }
 
   fill_E_B_fields();
@@ -1427,31 +1427,42 @@ void Pic::report_load_balance() {
   std::string nameFunc = "Pic::monitor";
   timing_func(nameFunc);
 
-  const int iMem_ = 0, iNBlk_ = 1, iNCell_ = 2, iNParts_ = 3, nLocal = 4;
-  float localInfo[nLocal];
+  int iNBlk_ = 0, iNCell_ = 1, iNParts_ = 2, iMem_ = 3 * (n_lev() + 1),
+      nLocal = iMem_ + 1;
+
+  Vector<float> localInfo(nLocal, 0);
 
   int nProc = ParallelDescriptor::NProcs();
 
-  std::vector<int> rc(nProc, nLocal), disp(nProc, 0);
+  Vector<int> rc(nProc, nLocal), disp(nProc, 0);
   for (int i = 0; i < nProc; i++) {
     disp[i] = i * nLocal;
   }
 
   localInfo[iMem_] = (float)read_mem_usage();
 
-  localInfo[iNBlk_] = 0;
-  localInfo[iNCell_] = 0;
+  const int iBt = n_lev() * 3 + iNBlk_;
+  const int iCt = n_lev() * 3 + iNCell_;
+  const int iPt = n_lev() * 3 + iNParts_;
+  localInfo[iBt] = 0;
+  localInfo[iCt] = 0;
+  localInfo[iPt] = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    localInfo[iNBlk_] += (float)centerB[iLev].local_size();
-    localInfo[iNCell_] += (float)get_local_node_or_cell_number(centerB[iLev]);
-  }
+    const int iB = iLev * 3 + iNBlk_;
+    const int iC = iLev * 3 + iNCell_;
+    const int iP = iLev * 3 + iNParts_;
 
-  {
-    long npart = 0;
+    localInfo[iB] = (float)centerB[iLev].local_size();
+    localInfo[iC] = (float)get_local_node_or_cell_number(centerB[iLev]);
+
+    localInfo[iP] = 0;
     for (auto& part : parts) {
-      npart += part->TotalNumberOfParticles(false, true);
+      localInfo[iP] += (float)part->NumberOfParticlesAtLevel(iLev, false, true);
     }
-    localInfo[iNParts_] = (float)npart;
+
+    localInfo[iBt] += localInfo[iB];
+    localInfo[iCt] += localInfo[iC];
+    localInfo[iPt] += localInfo[iP];
   }
 
   Vector<float> globalInfo;
@@ -1460,14 +1471,15 @@ void Pic::report_load_balance() {
   }
 
   int iop = ParallelDescriptor::IOProcessorNumber();
-  ParallelDescriptor::Gatherv(localInfo, nLocal, globalInfo.data(), rc, disp,
-                              iop);
+  ParallelDescriptor::Gatherv(localInfo.dataPtr(), nLocal, globalInfo.data(),
+                              rc, disp, iop);
 
   if (ParallelDescriptor::IOProcessor()) {
-    float maxVal[nLocal] = { 0 };
-    float minVal[nLocal] = { 1e10, 1e10, 1e10, 1e10 };
-    float avgVal[nLocal] = { 0 };
-    int maxLoc[nLocal] = { 0 };
+    Vector<float> maxVal(nLocal, 0);
+    Vector<float> minVal(nLocal, 1e10);
+    Vector<float> avgVal(nLocal, 0);
+    Vector<int> maxLoc(nLocal, 0);
+
     for (int iProc = 0; iProc < nProc; iProc++)
       for (int iType = 0; iType < nLocal; iType++) {
         const float val = globalInfo[disp[iProc] + iType];
@@ -1486,22 +1498,39 @@ void Pic::report_load_balance() {
       avgVal[iType] /= nProc;
     }
 
-    printf("=============================Load balance "
-           "report============================\n");
-    printf("|    Value         |      Min     |     Avg      |      Max     "
+    printf("===============================Load balance "
+           "report=============================\n");
+    printf("|     Value          |      Min      |     Avg      |      Max     "
            "|where(max)|\n");
 
-    Vector<std::string> varType = { "|    Memory(MB)    |",
-                                    "|  # of Blocks     |",
-                                    "|  # of Cells      |",
-                                    "|  # of particles  |" };
+    Vector<std::string> varType = {
+      "|Blocks # of",
+      "|Cells  # of",
+      "|Parts  # of",
+      "|Memory(MB)          |",
+    };
 
-    for (int i = iMem_; i < nLocal; i++) {
-      printf("%s%13.1f |%13.1f |%13.1f | %9d|\n", varType[i].c_str(), minVal[i],
-             avgVal[i], maxVal[i], maxLoc[i]);
+    for (int iLev = 0; iLev <= n_lev(); iLev++) {
+      for (int i = iNBlk_; i <= iNParts_; i++) {
+        int idx = iLev * 3 + i;
+        if (iLev < n_lev()) {
+          printf("%s lev  %d %s %13.1f |%13.1f |%13.1f | %9d|\n",
+                 varType[i].c_str(), iLev, " |", minVal[idx], avgVal[idx],
+                 maxVal[idx], maxLoc[idx]);
+        } else {
+          printf("%s all levs| %13.1f |%13.1f |%13.1f | %9d|\n",
+                 varType[i].c_str(), minVal[idx], avgVal[idx], maxVal[idx],
+                 maxLoc[idx]);
+        }
+      }
+      printf("----------------------------------------------------------------"
+             "---------------\n");
     }
-    printf("==================================================================="
-           "=========\n");
+    printf("%s %13.1f |%13.1f |%13.1f | %9d|\n", varType[3].c_str(),
+           minVal[iMem_], avgVal[iMem_], maxVal[iMem_], maxLoc[iMem_]);
+
+    printf("================================================================"
+           "===============\n");
   }
 }
 
