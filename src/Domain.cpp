@@ -129,6 +129,10 @@ void Domain::update() {
             << " (s) ====" << std::endl;
   }
 
+  if (tc->loadBalance.is_time_to()) {
+    load_balance();
+  }
+
   pic->update(doReport);
 
   write_plots();
@@ -221,6 +225,9 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
   Print() << printPrefix << "Domain range = " << domainRange << std::endl;
   Print() << printPrefix << "Center box = " << centerBox << std::endl;
 }
+
+//========================================================
+void Domain::load_balance() { pic->load_balance(); }
 
 //========================================================
 void Domain::regrid() {

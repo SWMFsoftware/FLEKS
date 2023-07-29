@@ -1420,9 +1420,11 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p) {
 }
 
 //==========================================================
-void Pic::report_load_balance() {
+void Pic::report_load_balance(bool doReportSummary, bool doReportDetail) {
   // This function report the min, max, and average of the local memory usage,
   // blocks, cells and particles among all the MPIs.
+  if (!doReportSummary && !doReportDetail)
+    return;
 
   std::string nameFunc = "Pic::monitor";
   timing_func(nameFunc);
@@ -1475,62 +1477,102 @@ void Pic::report_load_balance() {
                               rc, disp, iop);
 
   if (ParallelDescriptor::IOProcessor()) {
-    Vector<float> maxVal(nLocal, 0);
-    Vector<float> minVal(nLocal, 1e10);
-    Vector<float> avgVal(nLocal, 0);
-    Vector<int> maxLoc(nLocal, 0);
 
-    for (int iProc = 0; iProc < nProc; iProc++)
+    if (doReportSummary) {
+
+      Vector<float> maxVal(nLocal, 0);
+      Vector<float> minVal(nLocal, 1e10);
+      Vector<float> avgVal(nLocal, 0);
+      Vector<int> maxLoc(nLocal, 0);
+
+      for (int iProc = 0; iProc < nProc; iProc++)
+        for (int iType = 0; iType < nLocal; iType++) {
+          const float val = globalInfo[disp[iProc] + iType];
+          if (val > maxVal[iType]) {
+            maxVal[iType] = val;
+            maxLoc[iType] = iProc;
+          }
+
+          if (val < minVal[iType])
+            minVal[iType] = val;
+
+          avgVal[iType] += val;
+        }
+
       for (int iType = 0; iType < nLocal; iType++) {
-        const float val = globalInfo[disp[iProc] + iType];
-        if (val > maxVal[iType]) {
-          maxVal[iType] = val;
-          maxLoc[iType] = iProc;
-        }
-
-        if (val < minVal[iType])
-          minVal[iType] = val;
-
-        avgVal[iType] += val;
+        avgVal[iType] /= nProc;
       }
 
-    for (int iType = 0; iType < nLocal; iType++) {
-      avgVal[iType] /= nProc;
-    }
+      printf("\n===============================Load balance "
+             "report=============================\n");
+      printf(
+          "|     Value          |      Min      |     Avg      |      Max     "
+          "|where(max)|\n");
 
-    printf("===============================Load balance "
-           "report=============================\n");
-    printf("|     Value          |      Min      |     Avg      |      Max     "
-           "|where(max)|\n");
+      Vector<std::string> varType = {
+        "|Blocks # of",
+        "|Cells  # of",
+        "|Parts  # of",
+        "|Memory(MB)          |",
+      };
 
-    Vector<std::string> varType = {
-      "|Blocks # of",
-      "|Cells  # of",
-      "|Parts  # of",
-      "|Memory(MB)          |",
-    };
-
-    for (int iLev = 0; iLev <= n_lev(); iLev++) {
-      for (int i = iNBlk_; i <= iNParts_; i++) {
-        int idx = iLev * 3 + i;
-        if (iLev < n_lev()) {
-          printf("%s lev  %d %s %13.1f |%13.1f |%13.1f | %9d|\n",
-                 varType[i].c_str(), iLev, " |", minVal[idx], avgVal[idx],
-                 maxVal[idx], maxLoc[idx]);
-        } else {
-          printf("%s all levs| %13.1f |%13.1f |%13.1f | %9d|\n",
-                 varType[i].c_str(), minVal[idx], avgVal[idx], maxVal[idx],
-                 maxLoc[idx]);
+      for (int iLev = 0; iLev <= n_lev(); iLev++) {
+        for (int i = iNBlk_; i <= iNParts_; i++) {
+          int idx = iLev * 3 + i;
+          if (iLev < n_lev()) {
+            printf("%s lev  %d %s %13.1f |%13.1f |%13.1f | %9d|\n",
+                   varType[i].c_str(), iLev, " |", minVal[idx], avgVal[idx],
+                   maxVal[idx], maxLoc[idx]);
+          } else {
+            printf("%s all levs| %13.1f |%13.1f |%13.1f | %9d|\n",
+                   varType[i].c_str(), minVal[idx], avgVal[idx], maxVal[idx],
+                   maxLoc[idx]);
+          }
         }
+        printf(
+            "----------------------------------------------------------------"
+            "---------------\n");
       }
-      printf("----------------------------------------------------------------"
-             "---------------\n");
-    }
-    printf("%s %13.1f |%13.1f |%13.1f | %9d|\n", varType[3].c_str(),
-           minVal[iMem_], avgVal[iMem_], maxVal[iMem_], maxLoc[iMem_]);
+      printf("%s %13.1f |%13.1f |%13.1f | %9d|\n", varType[3].c_str(),
+             minVal[iMem_], avgVal[iMem_], maxVal[iMem_], maxLoc[iMem_]);
 
-    printf("================================================================"
-           "===============\n");
+      printf("================================================================"
+             "===============\n\n");
+    }
+
+    if (doReportDetail) {
+      printf("\n");
+      printf("=======================Work load of each MPI "
+             "rank====================");
+      for (int iLev = 1; iLev <= n_lev(); iLev++) {
+        printf("=============================================");
+      }
+      printf("\n");
+
+      printf("rank    |   Memory(MB) ");
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        printf("| Blocks lev %d |  Cells lev %d |  Parts lev %d ", iLev, iLev,
+               iLev);
+      }
+      printf("| Blocks all   |  Cells all   |  Parts all   |\n");
+
+      for (int rank = 0; rank < nProc; rank++) {
+        float* info = globalInfo.data() + rank * nLocal;
+        printf("%6d  |%13.1f ", rank, info[iMem_]);
+        for (int iLev = 0; iLev <= n_lev(); iLev++) {
+          printf("|%13.1f |%13.1f |%13.1f ", info[iLev * 3 + iNBlk_],
+                 info[iLev * 3 + iNCell_], info[iLev * 3 + iNParts_]);
+        }
+        printf("|\n");
+      }
+
+      printf("================================================================="
+             "====");
+      for (int iLev = 1; iLev <= n_lev(); iLev++) {
+        printf("=============================================");
+      }
+      printf("\n\n");
+    }
   }
 }
 

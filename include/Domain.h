@@ -104,6 +104,8 @@ public:
   void receive_grid_info(int *status = nullptr);
   //-------------- grid end---------------------------------
 
+  void load_balance();
+
   // void make_data();
   void init_time_ctr();
 

@@ -252,7 +252,10 @@ public:
   void calculate_phi(LinearSolver &solver);
   //-------------div(E) correction end----------------
 
-  void report_load_balance();
+  void report_load_balance(bool doReportSummary = true,
+                           bool doReportDetail = false);
+
+  void load_balance() { report_load_balance(true, true); }
 
   void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF);
 
