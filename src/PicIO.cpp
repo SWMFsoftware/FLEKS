@@ -588,7 +588,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
   set_IO_geom(geomOut, pw);
 
   Grid gridIO(geomOut[0], get_amr_info(), 0, -gridID);
-  gridIO.init_grid(this);
+  gridIO.set_ba_and_dm(this);
 
   IOParticles particlesOut(*parts[iSpecies].get(), &gridIO, no2outL, no2outV,
                            no2outM, outRange);

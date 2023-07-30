@@ -139,7 +139,7 @@ public:
 
   virtual void post_regrid() { distribute_grid_arrays(); };
 
-  void init_grid(const Grid* grid) {
+  void set_ba_and_dm(const Grid* grid) {
     SetFinestLevel(grid->finestLevel());
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       SetBoxArray(iLev, grid->boxArray(iLev));

@@ -40,8 +40,7 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid) {
       // However, it seems AMReX is too smart that it will try to load balance
       // the box arrays so that the distribution maps can be different even
       // the grid is the same. So we need to set the distribution map here.
-      init_grid(grid);
-
+      set_ba_and_dm(grid);
     } else {
       // This method will call MakeNewLevelFromScratch() and
       // PostProcessBaseGrids()
