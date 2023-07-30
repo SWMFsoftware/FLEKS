@@ -17,7 +17,8 @@ SRCS := \
 	PicIO.cpp \
 	Grid.cpp  \
 	DataContainer.cpp \
-	VisitWriter.cpp 
+	VisitWriter.cpp  \
+	FleksDistributionMap.cpp
 
 OBJECTS := $(patsubst %, %.o,$(basename $(SRCS)))
 

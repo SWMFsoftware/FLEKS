@@ -5,7 +5,6 @@
 #include <AMReX_BCRec.H>
 #include <AMReX_Box.H>
 #include <AMReX_BoxArray.H>
-#include <AMReX_DistributionMapping.H>
 #include <AMReX_FillPatchUtil.H>
 #include <AMReX_Geometry.H>
 #include <AMReX_IndexType.H>
@@ -22,6 +21,7 @@
 
 #include "Bit.h"
 #include "Constants.h"
+#include "FleksDistributionMap.h"
 #include "GridUtility.h"
 #include "Regions.h"
 #include "Utility.h"
