@@ -97,6 +97,9 @@ void Grid::distribute_grid_arrays(const Vector<BoxArray>& cGridsOld) {
 
     distribute_FabArray(nodeStatus[iLev], nGrids[iLev], DistributionMap(iLev),
                         1, nGst, false);
+
+    distribute_FabArray(cost[iLev], cGrids[iLev], DistributionMap(iLev), 1, 0,
+                        false);
   }
 
   update_grid_status(cGridsOld);

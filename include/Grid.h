@@ -59,6 +59,8 @@ protected:
   amrex::Vector<amrex::iMultiFab> cellStatus;
   amrex::Vector<amrex::iMultiFab> nodeStatus;
 
+  amrex::Vector<amrex::MultiFab> cost;
+
   amrex::Vector<Regions> refineRegions;
 
   bool doNeedFillNewCell = true;
@@ -96,6 +98,7 @@ public:
 
     cellStatus.resize(n_lev_max());
     nodeStatus.resize(n_lev_max());
+    cost.resize(n_lev_max());
   };
 
   ~Grid() = default;
@@ -124,6 +127,15 @@ public:
 
   const amrex::Vector<amrex::RealBox>& domain_range() const {
     return domainRange;
+  }
+
+  const amrex::Vector<amrex::MultiFab>& get_cost() const { return cost; }
+
+  void set_cost(const amrex::Vector<amrex::MultiFab>& in) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      amrex::MultiFab::Copy(cost[iLev], in[iLev], 0, 0, cost[iLev].nComp(),
+                            cost[iLev].nGrow());
+    }
   }
 
   void regrid(const amrex::BoxArray& region,
