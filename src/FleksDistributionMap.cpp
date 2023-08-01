@@ -33,6 +33,7 @@ DistributionMapping FleksDistributionMap::make_knapsack_for_fleks(
   BL_PROFILE("make_knapsack_for_fleks_v1");
 
   Vector<Long> cost = gather_weights_fleks(weight);
+
   int nprocs = ParallelContext::NProcsSub();
   DistributionMapping r;
   r.KnapSackProcessorMap(cost, nprocs, &eff, sort, nmax);

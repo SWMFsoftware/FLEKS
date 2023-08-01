@@ -15,12 +15,50 @@ Vector<DistributionMapping> Grid::calc_balanced_maps() {
     MultiFab::Copy(cost[iLev], cellCost[iLev], 0, 0, 1, 0);
   }
 
+  Real localProcCost = 0;
+  Vector<Real> pcost(ParallelDescriptor::NProcs(), 0);
+
+  Vector<int> ord(ParallelDescriptor::NProcs());
+  for (int i = 0; i < ord.size(); i++)
+    ord[i] = i;
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     Real eff;
-    dmap[iLev] = FleksDistributionMap::make_knapsack_for_fleks(cost[iLev], eff);
-    Print() << printPrefix << " iLev = " << iLev
-            << " load balance efficiency = " << std::setw(10) << eff
-            << std::endl;
+    dmap[iLev] =
+        FleksDistributionMap::make_knapsack_for_fleks(cost[iLev], ord, eff);
+    // Print() << printPrefix << " iLev = " << iLev
+    //         << " load balance efficiency = " << std::setw(10) << eff
+    //         << std::endl;
+
+    distribute_FabArray(cost[iLev], cGrids[iLev], dmap[iLev], 1, 0, true);
+
+    for (MFIter mfi(cost[iLev]); mfi.isValid(); ++mfi) {
+      localProcCost += cost[iLev][mfi].sum<RunOn::Device>(mfi.validbox(), 0);
+    }
+
+    ParallelDescriptor::Gather(&localProcCost, 1, pcost.data(), 1,
+                               ParallelDescriptor::IOProcessorNumber());
+
+    ParallelDescriptor::Bcast(pcost.data(), pcost.size(),
+                              ParallelDescriptor::IOProcessorNumber());
+
+    using LIpair = std::pair<Long, int>;
+
+    Vector<LIpair> pair;
+    pair.reserve(ParallelDescriptor::NProcs());
+
+    for (int i = 0; i < ParallelDescriptor::NProcs(); ++i) {
+      pair.push_back(LIpair(pcost[i], i));
+    }
+
+    std::sort(pair.begin(), pair.end(),
+              [](const LIpair& lhs, const LIpair& rhs) {
+                return lhs.first > rhs.first;
+              });
+
+    for (int i = 0; i < pcost.size(); i++) {
+      ord[i] = pair[i].second;
+    }
   }
 
   return dmap;

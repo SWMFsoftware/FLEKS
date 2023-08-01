@@ -228,6 +228,8 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
 
 //========================================================
 void Domain::load_balance() {
+  timing_func("Domain::load_balance");
+
   pic->calc_cost_per_cell();
 
   fi->set_cost(pic->get_cost());
