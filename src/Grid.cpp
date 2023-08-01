@@ -2,30 +2,79 @@
 
 using namespace amrex;
 
-void Grid::regrid(const BoxArray& region, const Grid* const grid) {
-  std::string nameFunc = "Grid::regrid_base";
+Vector<DistributionMapping> Grid::calc_balanced_maps() {
+  BL_PROFILE("calc_balanced_maps");
 
-  if (grid) {
-    refineRegions = grid->get_refine_regions();
-    SetGridEff(grid->gridEff());
+  Vector<DistributionMapping> dmap(n_lev_max());
+
+  Vector<MultiFab> cost(n_lev_max());
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    distribute_FabArray(cost[iLev], cGrids[iLev], DistributionMap(iLev), 1, 0,
+                        false);
+    MultiFab::Copy(cost[iLev], cellCost[iLev], 0, 0, 1, 0);
   }
 
-  // Why need 'isGridInitialized'? See the explanation in Domain::regrid().
-  if (region == activeRegion && isGridInitialized)
-    return;
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    Real eff;
+    dmap[iLev] = FleksDistributionMap::make_knapsack_for_fleks(cost[iLev], eff);
+    Print() << printPrefix << " iLev = " << iLev
+            << " load balance efficiency = " << std::setw(10) << eff
+            << std::endl;
+  }
 
-  pre_regrid();
+  return dmap;
+}
 
-  cGridsOld = cGrids;
+//==========================================================
+void Grid::load_balance(const Grid* other) {
 
-  doNeedFillNewCell = true;
+  if (other) {
+    regrid(other->get_base_grid(), other, true);
+  } else {
+    Vector<DistributionMapping> dmap = calc_balanced_maps();
 
-  activeRegion = region;
+    Grid grid(Geom(0), get_amr_info(), nGst, gridID);
+    grid.SetFinestLevel(n_lev() - 1);
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      grid.SetBoxArray(iLev, boxArray(iLev));
+      grid.SetDistributionMap(iLev, dmap[iLev]);
+    }
 
-  domainRange.clear();
-  for (int iBox = 0; iBox < activeRegion.size(); iBox++) {
-    amrex::RealBox rb(activeRegion[iBox], Geom(0).CellSize(), Geom(0).Offset());
-    domainRange.push_back(rb);
+    regrid(grid.get_base_grid(), &grid, true);
+  }
+}
+
+//==========================================================
+void Grid::regrid(const BoxArray& region, const Grid* const grid,
+                  bool doLoadBalance) {
+  std::string nameFunc = "Grid::regrid_base";
+
+  if (!doLoadBalance) {
+
+    if (grid) {
+      refineRegions = grid->get_refine_regions();
+      SetGridEff(grid->gridEff());
+    }
+
+    // Why need 'isGridInitialized'? See the explanation in Domain::regrid().
+    if (region == activeRegion && isGridInitialized)
+      return;
+
+    pre_regrid();
+
+    cGridsOld = cGrids;
+
+    doNeedFillNewCell = true;
+
+    activeRegion = region;
+
+    domainRange.clear();
+    for (int iBox = 0; iBox < activeRegion.size(); iBox++) {
+      amrex::RealBox rb(activeRegion[iBox], Geom(0).CellSize(),
+                        Geom(0).Offset());
+      domainRange.push_back(rb);
+    }
   }
 
   isGridEmpty = activeRegion.empty();
@@ -98,8 +147,8 @@ void Grid::distribute_grid_arrays(const Vector<BoxArray>& cGridsOld) {
     distribute_FabArray(nodeStatus[iLev], nGrids[iLev], DistributionMap(iLev),
                         1, nGst, false);
 
-    distribute_FabArray(cost[iLev], cGrids[iLev], DistributionMap(iLev), 1, 0,
-                        false);
+    distribute_FabArray(cellCost[iLev], cGrids[iLev], DistributionMap(iLev), 1,
+                        0, false);
   }
 
   update_grid_status(cGridsOld);

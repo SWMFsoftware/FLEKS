@@ -59,7 +59,7 @@ protected:
   amrex::Vector<amrex::iMultiFab> cellStatus;
   amrex::Vector<amrex::iMultiFab> nodeStatus;
 
-  amrex::Vector<amrex::MultiFab> cost;
+  amrex::Vector<amrex::MultiFab> cellCost;
 
   amrex::Vector<Regions> refineRegions;
 
@@ -98,7 +98,7 @@ public:
 
     cellStatus.resize(n_lev_max());
     nodeStatus.resize(n_lev_max());
-    cost.resize(n_lev_max());
+    cellCost.resize(n_lev_max());
   };
 
   ~Grid() = default;
@@ -115,6 +115,8 @@ public:
 
   void set_base_grid(const amrex::BoxArray& ba) { activeRegion = ba; }
 
+  amrex::BoxArray get_base_grid() const { return activeRegion; }
+
   bool is_grid_empty() const { return isGridEmpty; }
 
   virtual void pre_regrid(){};
@@ -129,14 +131,16 @@ public:
     return domainRange;
   }
 
-  const amrex::Vector<amrex::MultiFab>& get_cost() const { return cost; }
+  const amrex::Vector<amrex::MultiFab>& get_cost() const { return cellCost; }
 
   void set_cost(const amrex::Vector<amrex::MultiFab>& in) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      amrex::MultiFab::Copy(cost[iLev], in[iLev], 0, 0, cost[iLev].nComp(),
-                            cost[iLev].nGrow());
+      amrex::MultiFab::Copy(cellCost[iLev], in[iLev], 0, 0,
+                            cellCost[iLev].nComp(), cellCost[iLev].nGrow());
     }
   }
+
+  amrex::Vector<amrex::DistributionMapping> calc_balanced_maps();
 
   void regrid(const amrex::BoxArray& region,
               const amrex::Vector<Regions>& refine, const amrex::Real eff) {
@@ -147,9 +151,12 @@ public:
   }
 
   // TODO: Maybe the first argument 'region' can be removed? --Yuxi
-  void regrid(const amrex::BoxArray& region, const Grid* const grid);
+  void regrid(const amrex::BoxArray& region, const Grid* const grid,
+              bool doLoadBalance = false);
 
   virtual void post_regrid() { distribute_grid_arrays(); };
+
+  virtual void load_balance(const Grid* other = nullptr);
 
   void set_ba_and_dm(const Grid* grid) {
     SetFinestLevel(grid->finestLevel());

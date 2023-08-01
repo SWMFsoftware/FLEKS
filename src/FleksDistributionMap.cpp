@@ -2,13 +2,12 @@
 #include <AMReX_MultiFab.H>
 
 #include "FleksDistributionMap.h"
-#include "Timer.H"
 
 using namespace amrex;
 
 namespace {
 Vector<Long> gather_weights_fleks(const MultiFab& weight) {
-  timing_func("gather_weights_fleks");
+  BL_PROFILE("gather_weights_fleks");
 
   LayoutData<Real> costld(weight.boxArray(), weight.DistributionMap());
   for (MFIter mfi(weight); mfi.isValid(); ++mfi) {
@@ -31,7 +30,7 @@ Vector<Long> gather_weights_fleks(const MultiFab& weight) {
 
 DistributionMapping FleksDistributionMap::make_knapsack_for_fleks(
     const MultiFab& weight, Real& eff, int nmax, bool sort) {
-  timing_func("make_knapsack_for_fleks_v1");
+  BL_PROFILE("make_knapsack_for_fleks_v1");
 
   Vector<Long> cost = gather_weights_fleks(weight);
   int nprocs = ParallelContext::NProcsSub();
@@ -43,7 +42,7 @@ DistributionMapping FleksDistributionMap::make_knapsack_for_fleks(
 DistributionMapping FleksDistributionMap::make_knapsack_for_fleks(
     const MultiFab& weight, const Vector<int>& ord, Real& eff, int nmax,
     bool sort) {
-  timing_func("make_knapsack_for_fleks_v2");
+  BL_PROFILE("make_knapsack_for_fleks_v2");
 
   if (ord.size() != ParallelDescriptor::NProcs()) {
     amrex::Abort("ord.size()!=ParallelDescriptor::NProcs()");

@@ -110,6 +110,10 @@ void Domain::update() {
 
   bool doReport = tc->monitor.is_time_to();
 
+  if (tc->loadBalance.is_time_to()) {
+    load_balance();
+  }
+
   if (pic->is_grid_empty()) {
     if (tc->get_dt_si() <= 0) {
       tc->set_dt_si(tc->get_dummy_dt_si());
@@ -127,10 +131,6 @@ void Domain::update() {
             << " (s) to t = " << std::setprecision(6) << t1
             << " (s) with dt = " << std::setprecision(6) << tc->get_dt_si()
             << " (s) ====" << std::endl;
-  }
-
-  if (tc->loadBalance.is_time_to()) {
-    load_balance();
   }
 
   pic->update(doReport);
@@ -227,7 +227,34 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
 }
 
 //========================================================
-void Domain::load_balance() { pic->load_balance(); }
+void Domain::load_balance() {
+  pic->calc_cost_per_cell();
+
+  fi->set_cost(pic->get_cost());
+
+  fi->load_balance();
+
+  if (pic) {
+    pic->load_balance(fi.get());
+    pic->report_load_balance(true, true);
+    pic->inject_particles_for_boundary_cells();
+  }
+
+  if (source)
+    source->load_balance(fi.get());
+
+  if (stateOH)
+    stateOH->load_balance(fi.get());
+
+  if (sourcePT2OH)
+    sourcePT2OH->load_balance(fi.get());
+
+  if (pt)
+    pt->load_balance(fi.get());
+
+  iGrid++;
+  iDecomp++;
+}
 
 //========================================================
 void Domain::regrid() {
@@ -279,8 +306,6 @@ void Domain::regrid() {
   if (pic)
     pic->regrid(activeRegion, fi.get());
 
-  // Short circuit evaluation, and order of evaluation, is a mandated semantic
-  // standard in both C and C++. So the following line is safe.
   if (pt)
     pt->regrid(activeRegion, fi.get());
 
@@ -310,6 +335,7 @@ void Domain::set_ic() {
 #endif
 
   pic->fill_new_cells();
+
   write_plots(true);
   pic->write_log(true, true);
 

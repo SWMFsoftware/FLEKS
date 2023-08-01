@@ -4,7 +4,7 @@
 #include <AMReX_DistributionMapping.H>
 
 class FleksDistributionMap : public amrex::DistributionMapping {
-
+public:
   // This method is the same as DistributionMapping::makeKnapSack(), except that
   // 'sort' is provided as an argument below.
   static DistributionMapping make_knapsack_for_fleks(

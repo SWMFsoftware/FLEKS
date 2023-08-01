@@ -558,6 +558,32 @@ void Pic::sum_moments(bool updateDt) {
 }
 
 //==========================================================
+void Pic::calc_cost_per_cell() {
+  // bool balanceByParticle = true;
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    average_node_to_cellcenter(cellCost[iLev], 0, nodePlasma[nSpecies][iLev],
+                               iNum_, cellCost[iLev].nComp(),
+                               cellCost[iLev].nGrow());
+
+    for (MFIter mfi(cellCost[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+      const Array4<Real>& cost = cellCost[iLev][mfi].array();
+      const Array4<int const> status = cellStatus[iLev][mfi].array();
+
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i)
+            if (bit::is_refined(status(i, j, k))) {
+              cost(i, j, k) = 0;
+            }
+    }
+  }
+}
+
+//==========================================================
 void Pic::divE_correction() {
   if (!solveEM)
     return;
