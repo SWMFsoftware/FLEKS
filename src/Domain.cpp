@@ -734,7 +734,8 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#DISCRETIZATION" || command == "#RESAMPLING" ||
         command == "#SMOOTHE" || command == "#TESTCASE" ||
         command == "#MERGEEFFICIENCY" || command == "#PIC" ||
-        command == "#EXPLICITPIC" || command == "#PARTICLEBOXBOUNDARY") {
+        command == "#EXPLICITPIC" || command == "#PARTICLEBOXBOUNDARY" ||
+        command == "#LOADBALANCE") {
       pic->read_param(command, param);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
@@ -905,12 +906,6 @@ void Domain::read_param(const bool readGridInfo) {
       int dn;
       param.read_var("dnReport", dn);
       tc->monitor.init(-1, dn);
-    } else if (command == "#LOADBALANCE") {
-      int dn;
-      param.read_var("dn", dn);
-      Real dt;
-      param.read_var("dt", dt);
-      tc->loadBalance.init(dt, dn);
     } else if (command == "#SAVEPLOT" || command == "#SAVEIDL") {
 
       /*

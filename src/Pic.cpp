@@ -17,6 +17,16 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 
   if (command == "#PIC") {
     param.read_var("usePIC", usePIC);
+  } else if (command == "#LOADBALANCE") {
+    std::string strategy;
+    param.read_var("loadBalanceStrategy", strategy);
+    balanceStrategy = stringToBalanceStrategy.at(strategy);
+
+    int dn;
+    param.read_var("dn", dn);
+    Real dt;
+    param.read_var("dt", dt);
+    tc->loadBalance.init(dt, dn);
   } else if (command == "#PARTICLEBOXBOUNDARY") {
     for (int i = 0; i < nDim; i++) {
       std::string lo, hi;
@@ -562,9 +572,23 @@ void Pic::calc_cost_per_cell() {
   // bool balanceByParticle = true;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    average_node_to_cellcenter(cellCost[iLev], 0, nodePlasma[nSpecies][iLev],
-                               iNum_, cellCost[iLev].nComp(),
-                               cellCost[iLev].nGrow());
+    switch (balanceStrategy) {
+      case BalanceStrategy::Cell: {
+        cellCost[iLev].setVal(1.0);
+        break;
+      }
+      case BalanceStrategy::Particle: {
+        average_node_to_cellcenter(
+            cellCost[iLev], 0, nodePlasma[nSpecies][iLev], iNum_,
+            cellCost[iLev].nComp(), cellCost[iLev].nGrow());
+        break;
+      }
+      case BalanceStrategy::Hybrid: {
+        break;
+      }
+      default:
+        break;
+    }
 
     for (MFIter mfi(cellCost[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
