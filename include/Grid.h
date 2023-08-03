@@ -435,7 +435,7 @@ public:
                std::string st = "WriteMF",
                amrex::Vector<std::string> var = {}) {
     if (nlev == -1) {
-      nlev = MF.size();
+      nlev = finest_level+1;
     } else {
       nlev = nlev + 1;
     }
