@@ -518,10 +518,10 @@ this command should only exist in the restart file.
 region1		regionName
 box			  shape
 -64.0			xMin
--16.0			yMin
--16.0			zMin
 -32.0			xMax
- 16.0			yMax
+-16.0			yMin
+16.0			yMax
+-16.0			zMin
   0.0			zMax
 
 #REGION
