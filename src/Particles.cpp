@@ -1130,8 +1130,6 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       } // for p
     }   // for pti
   }
-
-  redistribute_particles();
 }
 
 //==========================================================
@@ -1163,8 +1161,6 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
       } // for p
     }   // for pti
   }
-
-  redistribute_particles();
 }
 
 //==========================================================

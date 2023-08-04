@@ -422,6 +422,10 @@ void Pic::particle_mover() {
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->mover(nodeEth, nodeB, tc->get_dt(), tc->get_next_dt());
   }
+
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->redistribute_particles();
+  }
 }
 
 //==========================================================
@@ -1623,6 +1627,8 @@ void Pic::report_load_balance(bool doReportSummary, bool doReportDetail) {
 }
 
 void Pic::charge_exchange() {
+  timing_func("Pic::charge_exchange");
+
   if (!stateOH || !sourcePT2OH || !source)
     return;
 
