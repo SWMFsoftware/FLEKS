@@ -397,6 +397,11 @@ void Pic::re_sampling() {
       parts[i]->split_particles(reSamplingLowLimit);
       parts[i]->merge_particles(reSamplingHighLimit);
     }
+
+    for (int i = 0; i < nSpecies; i++) {
+      // Delete particles that have been merged.
+      parts[i]->redistribute_particles();
+    }
   }
 }
 
@@ -559,6 +564,8 @@ void Pic::sum_moments(bool updateDt) {
                     nMoments, nGst);
     }
   }
+
+  isMomentsUpdated = true;
 }
 
 //==========================================================
@@ -806,6 +813,8 @@ void Pic::update(bool doReportIn) {
 
   inject_particles_for_boundary_cells();
 
+  isMomentsUpdated = false;
+
   update_B();
 
   if (doCorrectDivE) {
@@ -814,7 +823,11 @@ void Pic::update(bool doReportIn) {
 
   tc->set_dt(tc->get_next_dt());
 
+#ifdef _PC_COMPONENT_
+  //  For PT simulations, moments are only useful for output. So, there is no
+  //  need to call sum_moments() for every step.
   sum_moments(true);
+#endif
 
   if (doReport) {
     Real tEnd = second();

@@ -497,6 +497,11 @@ void Pic::write_plots(bool doForce) {
     return;
   for (auto& plot : tc->plots) {
     if (plot.is_time_to(doForce)) {
+#ifdef _PT_COMPONENT_
+      if (!isMomentsUpdated) {
+        sum_moments(false);
+      }
+#endif
       Print() << printPrefix << " Saving plot at time = " << tc->get_time_si()
               << " (s) for " << plot.writer.get_plotString() << std::endl;
       if (plot.writer.is_amrex_format() || plot.writer.is_hdf5_format()) {

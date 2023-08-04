@@ -79,6 +79,8 @@ private:
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasma;
   amrex::Vector<amrex::Real> plasmaEnergy;
 
+  bool isMomentsUpdated = false;
+
   amrex::Vector<amrex::MultiFab> jHat;
 
   amrex::Vector<std::unique_ptr<Particles<> > > parts;
