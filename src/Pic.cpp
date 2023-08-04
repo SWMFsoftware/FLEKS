@@ -397,11 +397,6 @@ void Pic::re_sampling() {
       parts[i]->split_particles(reSamplingLowLimit);
       parts[i]->merge_particles(reSamplingHighLimit);
     }
-
-    for (int i = 0; i < nSpecies; i++) {
-      // Delete particles that have been merged.
-      parts[i]->redistribute_particles();
-    }
   }
 }
 
@@ -570,6 +565,9 @@ void Pic::sum_moments(bool updateDt) {
 
 //==========================================================
 void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy) {
+  if (!isMomentsUpdated && balanceStrategy == BalanceStrategy::Particle) {
+    sum_moments(false);
+  }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     switch (balanceStrategy) {

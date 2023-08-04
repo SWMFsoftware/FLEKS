@@ -380,6 +380,8 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
     const auto& particles = pti.GetArrayOfStructs();
 
     for (const auto& p : particles) {
+      if (p.id() < 0)
+        continue;
       // Print() << "particle = " << p << std::endl;
 
       const Real qp = p.rdata(iqp_);
@@ -516,6 +518,9 @@ std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
        ++pti) {
     const auto& particles = pti.GetArrayOfStructs();
     for (const auto& p : particles) {
+      if (p.id() < 0)
+        continue;
+
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
       const Real wp = p.rdata(iwp_);
@@ -558,6 +563,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 
       // Print() << "iLev = " << iLev << std::endl;
       for (const auto& p : particles) {
+        if (p.id() < 0)
+          continue;
 
         // Print() << "p = " << p << std::endl;
         const Real up = p.rdata(iup_);
@@ -663,6 +670,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     const auto& particles = pti.GetArrayOfStructs();
 
     for (const auto& p : particles) {
+      if (p.id() < 0)
+        continue;
 
       // Print()<<"p = "<<p<<std::endl;
       const Real up = p.rdata(iup_);
@@ -843,6 +852,8 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
     const auto& particles = pti.GetArrayOfStructs();
 
     for (const auto& p : particles) {
+      if (p.id() < 0)
+        continue;
 
       // Print()<<"p = "<<p<<std::endl;
       const Real up = p.rdata(iup_);
@@ -1000,6 +1011,9 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
     auto& particles = pti.GetArrayOfStructs();
     const Box& validBox = pti.validbox();
     for (auto& p : particles) {
+      if (p.id() < 0)
+        continue;
+
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
       const Real wp = p.rdata(iwp_);
@@ -1058,6 +1072,9 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 
       auto& particles = pti.GetArrayOfStructs();
       for (auto& p : particles) {
+        if (p.id() < 0)
+          continue;
+
         const Real up = p.rdata(iup_);
         const Real vp = p.rdata(ivp_);
         const Real wp = p.rdata(iwp_);
@@ -1146,6 +1163,9 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
       auto& particles = pti.GetArrayOfStructs();
       const Box& validBox = pti.validbox();
       for (auto& p : particles) {
+        if (p.id() < 0)
+          continue;
+
         const Real up = p.rdata(iup_);
         const Real vp = p.rdata(ivp_);
         const Real wp = p.rdata(iwp_);
@@ -2022,6 +2042,9 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
          ++pti) {
       auto& particles = pti.GetArrayOfStructs();
       for (auto& p : particles) {
+        if (p.id() < 0)
+          continue;
+
         const Real xp = p.pos(ix_);
         const Real yp = p.pos(iy_);
         const Real zp = p.pos(iz_);
