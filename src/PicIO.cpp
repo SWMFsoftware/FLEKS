@@ -454,6 +454,7 @@ void Pic::read_restart() {
 
 //==========================================================
 void Pic::write_log(bool doForce, bool doCreateFile) {
+#ifdef _PC_COMPONENT_
   if (isGridEmpty || !usePIC)
     return;
 
@@ -489,6 +490,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       of.close();
     }
   }
+#endif
 }
 
 //==========================================================
