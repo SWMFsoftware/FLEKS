@@ -278,6 +278,7 @@ public:
   double get_MhdNo2NoL() const { return (MhdNo2SiL * Si2NoL); }
 
   void sum_boundary() {
+    timing_func("FI::sum_boundary");
     for (int iLev = 0; iLev < n_lev(); ++iLev)
       nodeFluid[iLev].SumBoundary(Geom(iLev).periodicity());
 

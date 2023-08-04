@@ -223,6 +223,7 @@ void sum_two_lev_interface_node(amrex::FabArray<FAB>& coarse,
                                 const amrex::Geometry& cgeom,
                                 const amrex::Geometry& fgeom,
                                 const amrex::iMultiFab& fstatus) {
+  BL_PROFILE("sum_two_lev_interface_node");
   sum_fine_to_coarse_lev_bny_node(coarse, fine, iStart, nComp, ratio);
   sum_coarse_to_fine_lev_bny_node(coarse, fine, iStart, nComp, ratio, cgeom,
                                   fgeom, fstatus);
