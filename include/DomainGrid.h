@@ -16,6 +16,7 @@
 #include <AMReX_Vector.H>
 
 #include "Constants.h"
+#include "Grid.h"
 #include "GridInfo.h"
 #include "Regions.h"
 
@@ -64,6 +65,10 @@ protected:
   amrex::Real gridEfficiency = 0.7;
 
   bool isGridInitialized = false;
+
+  BalanceStrategy balanceStrategy = BalanceStrategy::Cell;
+
+  bool doSplitLevs = false;
 
 public:
   DomainGrid() {

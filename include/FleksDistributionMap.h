@@ -19,11 +19,12 @@ public:
   // This method is the same as DistributionMapping::makeKnapSack(), except that
   // 'sort' is provided as an argument below.
   static DistributionMapping make_balanced_map(
-      BalanceMethod method, const amrex::MultiFab& weight, amrex::Real& eff,
-      int nmax = std::numeric_limits<int>::max(), bool sort = false);
+      BalanceMethod method, const amrex::MultiFab& weight, int nprocs,
+      amrex::Real& eff, int nmax = std::numeric_limits<int>::max(),
+      bool sort = false);
 
   static DistributionMapping make_balanced_map(
-      BalanceMethod method, const amrex::MultiFab& weight,
+      BalanceMethod method, const amrex::MultiFab& weight, int nprocs,
       const amrex::Vector<int>& remap, amrex::Real& eff,
       int nmax = std::numeric_limits<int>::max(), bool sort = false);
 };

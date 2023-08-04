@@ -29,13 +29,12 @@ Vector<Long> gather_weights_fleks(const MultiFab& weight) {
 } // namespace
 
 DistributionMapping FleksDistributionMap::make_balanced_map(
-    BalanceMethod method, const MultiFab& weight, Real& eff, int nmax,
-    bool sort) {
+    BalanceMethod method, const MultiFab& weight, int nprocs, Real& eff,
+    int nmax, bool sort) {
   BL_PROFILE("make_balanced_map_v1");
 
   Vector<Long> cost = gather_weights_fleks(weight);
 
-  int nprocs = ParallelContext::NProcsSub();
   DistributionMapping r;
 
   switch (method) {
@@ -54,15 +53,16 @@ DistributionMapping FleksDistributionMap::make_balanced_map(
 }
 
 DistributionMapping FleksDistributionMap::make_balanced_map(
-    BalanceMethod method, const MultiFab& weight, const Vector<int>& remap,
-    Real& eff, int nmax, bool sort) {
+    BalanceMethod method, const MultiFab& weight, int nprocs,
+    const Vector<int>& remap, Real& eff, int nmax, bool sort) {
   BL_PROFILE("make_balanced_map_v2");
 
   if (remap.size() != ParallelDescriptor::NProcs()) {
     amrex::Abort("ord.size()!=ParallelDescriptor::NProcs()");
   }
 
-  DistributionMapping dm = make_balanced_map(method, weight, eff, nmax, sort);
+  DistributionMapping dm =
+      make_balanced_map(method, weight, nprocs, eff, nmax, sort);
 
   Vector<int> pmapNew;
   pmapNew.resize(dm.size());

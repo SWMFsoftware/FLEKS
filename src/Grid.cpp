@@ -2,7 +2,7 @@
 
 using namespace amrex;
 
-Vector<DistributionMapping> Grid::calc_balanced_maps() {
+Vector<DistributionMapping> Grid::calc_balanced_maps(bool doSplitLevs) {
   BL_PROFILE("calc_balanced_maps");
 
   Vector<DistributionMapping> dmap(n_lev_max());
@@ -15,62 +15,95 @@ Vector<DistributionMapping> Grid::calc_balanced_maps() {
     MultiFab::Copy(cost[iLev], cellCost[iLev], 0, 0, 1, 0);
   }
 
-  Real localProcCost = 0;
-  Vector<Real> pcost(ParallelDescriptor::NProcs(), 0);
+  Vector<int> rankStart(n_lev(), 0);
+  Vector<int> nProcEachLev(n_lev(), ParallelDescriptor::NProcs());
 
-  Vector<int> ord(ParallelDescriptor::NProcs());
-  for (int i = 0; i < ord.size(); i++)
-    ord[i] = i;
+  if (doSplitLevs) {
+    Real totalCost = 0;
+    Vector<Real> levCost(n_lev());
+
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      levCost[iLev] = cost[iLev].sum();
+      totalCost += levCost[iLev];
+    }
+
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      if (iLev == 0) {
+        rankStart[iLev] = 0;
+      } else {
+        rankStart[iLev] = nProcEachLev[iLev - 1] + rankStart[iLev - 1];
+      }
+
+      if (iLev < n_lev() - 1) {
+        nProcEachLev[iLev] =
+            floor(ParallelDescriptor::NProcs() * levCost[iLev] / totalCost);
+      } else {
+        nProcEachLev[iLev] = ParallelDescriptor::NProcs() - rankStart[iLev];
+      }
+      Print() << printPrefix << " Ranks from " << rankStart[iLev] << " to "
+              << rankStart[iLev] + nProcEachLev[iLev] - 1
+              << " are assigned to iLev = " << iLev << std::endl;
+    }
+  }
+
+  // Real localProcCost = 0;
+  // Vector<Real> pcost(ParallelDescriptor::NProcs(), 0);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    Vector<int> ord(ParallelDescriptor::NProcs());
+    for (int i = 0; i < nProcEachLev[iLev]; i++) {
+      ord[i] = i + rankStart[iLev];
+    }
+
     Real eff;
-    dmap[iLev] = FleksDistributionMap::make_balanced_map(BalanceMethod::SFC,
-                                                         cost[iLev], ord, eff);
+    dmap[iLev] = FleksDistributionMap::make_balanced_map(
+        BalanceMethod::SFC, cost[iLev], nProcEachLev[iLev], ord, eff);
     // Print() << printPrefix << " iLev = " << iLev
     //         << " load balance efficiency = " << std::setw(10) << eff
     //         << std::endl;
 
     distribute_FabArray(cost[iLev], cGrids[iLev], dmap[iLev], 1, 0, true);
 
-    for (MFIter mfi(cost[iLev]); mfi.isValid(); ++mfi) {
-      localProcCost += cost[iLev][mfi].sum<RunOn::Device>(mfi.validbox(), 0);
-    }
+    //   for (MFIter mfi(cost[iLev]); mfi.isValid(); ++mfi) {
+    //     localProcCost += cost[iLev][mfi].sum<RunOn::Device>(mfi.validbox(),
+    //     0);
+    //   }
 
-    ParallelDescriptor::Gather(&localProcCost, 1, pcost.data(), 1,
-                               ParallelDescriptor::IOProcessorNumber());
+    //   ParallelDescriptor::Gather(&localProcCost, 1, pcost.data(), 1,
+    //                              ParallelDescriptor::IOProcessorNumber());
 
-    ParallelDescriptor::Bcast(pcost.data(), pcost.size(),
-                              ParallelDescriptor::IOProcessorNumber());
+    //   ParallelDescriptor::Bcast(pcost.data(), pcost.size(),
+    //                             ParallelDescriptor::IOProcessorNumber());
 
-    using LIpair = std::pair<Long, int>;
+    //   using LIpair = std::pair<Long, int>;
 
-    Vector<LIpair> pair;
-    pair.reserve(ParallelDescriptor::NProcs());
+    //   Vector<LIpair> pair;
+    //   pair.reserve(ParallelDescriptor::NProcs());
 
-    for (int i = 0; i < ParallelDescriptor::NProcs(); ++i) {
-      pair.push_back(LIpair(pcost[i], i));
-    }
+    //   for (int i = 0; i < ParallelDescriptor::NProcs(); ++i) {
+    //     pair.push_back(LIpair(pcost[i], i));
+    //   }
 
-    std::sort(pair.begin(), pair.end(),
-              [](const LIpair& lhs, const LIpair& rhs) {
-                return lhs.first > rhs.first;
-              });
+    //   std::sort(pair.begin(), pair.end(),
+    //             [](const LIpair& lhs, const LIpair& rhs) {
+    //               return lhs.first > rhs.first;
+    //             });
 
-    for (int i = 0; i < pcost.size(); i++) {
-      ord[i] = pair[i].second;
-    }
+    //   for (int i = 0; i < pcost.size(); i++) {
+    //     ord[i] = pair[i].second;
+    //   }
   }
 
   return dmap;
 }
 
 //==========================================================
-void Grid::load_balance(const Grid* other) {
+void Grid::load_balance(const Grid* other, bool doSplitLevs) {
 
   if (other) {
     regrid(other->get_base_grid(), other, true);
   } else {
-    Vector<DistributionMapping> dmap = calc_balanced_maps();
+    Vector<DistributionMapping> dmap = calc_balanced_maps(doSplitLevs);
 
     Grid grid(Geom(0), get_amr_info(), nGst, gridID);
     grid.SetFinestLevel(n_lev() - 1);

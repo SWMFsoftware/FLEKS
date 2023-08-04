@@ -17,16 +17,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 
   if (command == "#PIC") {
     param.read_var("usePIC", usePIC);
-  } else if (command == "#LOADBALANCE") {
-    std::string strategy;
-    param.read_var("loadBalanceStrategy", strategy);
-    balanceStrategy = stringToBalanceStrategy.at(strategy);
-
-    int dn;
-    param.read_var("dn", dn);
-    Real dt;
-    param.read_var("dt", dt);
-    tc->loadBalance.init(dt, dn);
   } else if (command == "#PARTICLEBOXBOUNDARY") {
     for (int i = 0; i < nDim; i++) {
       std::string lo, hi;
@@ -568,8 +558,7 @@ void Pic::sum_moments(bool updateDt) {
 }
 
 //==========================================================
-void Pic::calc_cost_per_cell() {
-  // bool balanceByParticle = true;
+void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy) {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     switch (balanceStrategy) {
@@ -602,6 +591,13 @@ void Pic::calc_cost_per_cell() {
           for (int i = lo.x; i <= hi.x; ++i)
             if (bit::is_refined(status(i, j, k))) {
               cost(i, j, k) = 0;
+            } else if (bit::is_domain_edge(status(i, j, k))) {
+              // When calculating cost for each cell, the ghost cells are
+              // excluded. However, ghost cells also take time to update (e.g.
+              // fill boundary, launch and update boundary particles...).
+              // Therefore, the cost of ghost cells is added to the cost of the
+              // corresponding valid cells. The factor of 2 is just a guess.
+              cost(i, j, k) *= 2;
             }
     }
   }

@@ -255,7 +255,7 @@ public:
   void report_load_balance(bool doReportSummary = true,
                            bool doReportDetail = false);
 
-  void calc_cost_per_cell();
+  void calc_cost_per_cell(BalanceStrategy balanceStrategy);
 
   void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF);
 

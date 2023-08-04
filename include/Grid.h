@@ -35,8 +35,6 @@ protected:
   std::string gridName;
   int gridID;
 
-  BalanceStrategy balanceStrategy = BalanceStrategy::Cell;
-
   // const int coord = 0; // Cartesian grid
 
   // A collection of boxes to describe the simulation domain. The boxes have
@@ -141,7 +139,8 @@ public:
     }
   }
 
-  amrex::Vector<amrex::DistributionMapping> calc_balanced_maps();
+  amrex::Vector<amrex::DistributionMapping> calc_balanced_maps(
+      bool doSplitLevs = false);
 
   void regrid(const amrex::BoxArray& region,
               const amrex::Vector<Regions>& refine, const amrex::Real eff) {
@@ -157,7 +156,8 @@ public:
 
   virtual void post_regrid() { distribute_grid_arrays(); };
 
-  virtual void load_balance(const Grid* other = nullptr);
+  virtual void load_balance(const Grid* other = nullptr,
+                            bool doSplitLevs = false);
 
   void set_ba_and_dm(const Grid* grid) {
     SetFinestLevel(grid->finestLevel());

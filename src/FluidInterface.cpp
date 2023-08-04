@@ -415,7 +415,7 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
 void FluidInterface::read_param(const std::string& command, ReadParam& param) {
   if (command == "#NORMALIZATION") {
     param.read_var("lNorm", lNormSI);
-    param.read_var("uNorm", uNormSI);
+    param.read_var("uNorm", uNormSI);    
   } else if (command == "#SCALINGFACTOR") {
     param.read_var("scaling", ScalingFactor);
   } else if (command == "#BODYSIZE") {

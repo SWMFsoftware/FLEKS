@@ -230,11 +230,11 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
 void Domain::load_balance() {
   timing_func("Domain::load_balance");
 
-  pic->calc_cost_per_cell();
+  pic->calc_cost_per_cell(balanceStrategy);
 
   fi->set_cost(pic->get_cost());
 
-  fi->load_balance();
+  fi->load_balance(nullptr, doSplitLevs);
 
   if (pic) {
     pic->load_balance(fi.get());
@@ -736,8 +736,7 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#DISCRETIZATION" || command == "#RESAMPLING" ||
         command == "#SMOOTHE" || command == "#TESTCASE" ||
         command == "#MERGEEFFICIENCY" || command == "#PIC" ||
-        command == "#EXPLICITPIC" || command == "#PARTICLEBOXBOUNDARY" ||
-        command == "#LOADBALANCE") {
+        command == "#EXPLICITPIC" || command == "#PARTICLEBOXBOUNDARY") {
       pic->read_param(command, param);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
@@ -749,6 +748,19 @@ void Domain::read_param(const bool readGridInfo) {
                command == "#BODYSIZE" || command == "#PLASMA" ||
                command == "#UNIFORMSTATE" || command == "#FLUIDVARNAMES") {
       fi->read_param(command, param);
+    } else if (command == "#LOADBALANCE") {
+      std::string strategy;
+      param.read_var("loadBalanceStrategy", strategy);
+      balanceStrategy = stringToBalanceStrategy.at(strategy);
+
+      param.read_var("doSplitLevs", doSplitLevs);
+
+      int dn;
+      param.read_var("dn", dn);
+      Real dt;
+      param.read_var("dt", dt);
+      tc->loadBalance.init(dt, dn);
+
     } else if (command == "#PARTICLETRACKER") {
       param.read_var("usePT", usePT);
     } else if (command == "#RESTART") {
