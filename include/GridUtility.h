@@ -57,6 +57,7 @@ void interp_from_coarse_to_fine(amrex::FabArray<FAB>& coarse,
                                 const amrex::Geometry& cgeom,
                                 const amrex::Geometry& fgeom, Interp* mapper,
                                 int nGst = 0) {
+  BL_PROFILE("interp_from_coarse_to_fine");
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
   amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
 
@@ -82,6 +83,7 @@ void sum_fine_to_coarse_lev_bny_node(amrex::FabArray<FAB>& coarse,
                                      amrex::FabArray<FAB>& fine,
                                      const int iStart, const int nComp,
                                      const amrex::IntVect ratio) {
+  BL_PROFILE("sum_fine_to_coarse_lev_bny_node");
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
   amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
 
@@ -102,6 +104,7 @@ void fill_fine_lev_bny_cell_from_coarse(
     amrex::FabArray<FAB>& coarse, amrex::FabArray<FAB>& fine, const int iStart,
     const int nComp, const amrex::IntVect ratio, const amrex::Geometry& cgeom,
     const amrex::Geometry& fgeom, const amrex::iMultiFab& fstatus) {
+  BL_PROFILE("fill_fine_lev_bny_cell_from_coarse");
 
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
   amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
@@ -141,6 +144,7 @@ void sum_coarse_to_fine_lev_bny_node(
     amrex::FabArray<FAB>& coarse, amrex::FabArray<FAB>& fine, const int iStart,
     const int nComp, const amrex::IntVect ratio, const amrex::Geometry& cgeom,
     const amrex::Geometry& fgeom, const amrex::iMultiFab& fstatus) {
+  BL_PROFILE("sum_coarse_to_fine_lev_bny_node");
 
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
   amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
@@ -179,6 +183,7 @@ void interp_from_coarse_to_fine_for_domain_edge(
     amrex::FabArray<FAB>& coarse, amrex::FabArray<FAB>& fine, const int iStart,
     const int nComp, const amrex::IntVect ratio, const amrex::Geometry& cgeom,
     const amrex::Geometry& fgeom, const amrex::iMultiFab& fstatus) {
+  BL_PROFILE("interp_from_coarse_to_fine_for_domain_edge");
 
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
   amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);

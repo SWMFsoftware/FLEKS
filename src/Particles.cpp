@@ -248,7 +248,7 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_source(
     const FluidInterface* interface, const FluidInterface* const stateOH,
     Real dt, IntVect ppc, const bool doSelectRegion) {
-  timing_func("Particles::add_particles_source");
+  timing_func("Pts::add_particles_source");
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
@@ -286,7 +286,7 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_domain() {
-  timing_func("Particles::add_particles_domain");
+  timing_func("Pts::add_particles_domain");
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
@@ -314,7 +314,7 @@ void Particles<NStructReal, NStructInt>::add_particles_domain() {
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
     const FluidInterface* fiIn, Real dt, IntVect ppc) {
-  timing_func("Particles::inject_particles_at_boundary");
+  timing_func("Pts::inject_particles_at_boundary");
 
   // Only inject nGstInject layers.
   const int nGstInject = 1;
@@ -369,7 +369,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::sum_to_center(
     MultiFab& netChargeMF, UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly) {
-  timing_func("Particles::sum_to_center");
+  timing_func("Pts::sum_to_center");
 
   const int iLev = 0;
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
@@ -504,7 +504,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
 template <int NStructReal, int NStructInt>
 std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
     bool localOnly) {
-  timing_func("Particles::total_moments");
+  timing_func("Pts::total_moments");
 
   std::array<Real, 5> sum = { 0, 0, 0, 0, 0 };
 
@@ -544,10 +544,11 @@ std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
 template <int NStructReal, int NStructInt>
 Real Particles<NStructReal, NStructInt>::sum_moments(
     Vector<MultiFab>& momentsMF, Vector<MultiFab>& nodeBMF, Real dt) {
-  timing_func("Particles::sum_moments");
+  timing_func("Pts::sum_moments");
 
   Real energy = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    timing_func("Pts::sum_moments_1");
     momentsMF[iLev].setVal(0.0);
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
@@ -625,6 +626,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
   }
 
   for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
+    timing_func("Pts::sum_moments_2");
     sum_two_lev_interface_node(
         momentsMF[iLev], momentsMF[iLev + 1], 0, momentsMF[iLev].nComp(),
         get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
@@ -632,6 +634,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 
   // Correct domain edge nodes
   for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
+    timing_func("Pts::sum_moments_3");
     interp_from_coarse_to_fine_for_domain_edge(
         momentsMF[iLev], momentsMF[iLev + 1], 0, momentsMF[iLev].nComp(),
         get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
@@ -646,7 +649,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     UMultiFab<RealMM>& nodeMM, MultiFab& jHat, MultiFab& nodeBMF, Real dt) {
-  timing_func("Particles::calc_mass_matrix");
+  timing_func("Pts::calc_mass_matrix");
 
   Real qdto2mc = charge / mass * 0.5 * dt;
 
@@ -827,7 +830,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
                                                    MultiFab& nodeBMF, Real dt) {
-  timing_func("Particles::calc_jhat");
+  timing_func("Pts::calc_jhat");
 
   Real qdto2mc = charge / mass * 0.5 * dt;
 
@@ -987,7 +990,7 @@ void Particles<NStructReal, NStructInt>::convert_to_fluid_moments(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
     const MultiFab& nodeEMF, const MultiFab& nodeBMF, Real dt) {
-  timing_func("Particles::update_position_to_half_stage");
+  timing_func("Pts::update_position_to_half_stage");
 
   Real dtLoc = 0.5 * dt;
 
@@ -1035,7 +1038,7 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover(
     const Vector<MultiFab>& nodeE, const Vector<MultiFab>& nodeB, Real dt,
     Real dtNext) {
-  timing_func("Particles::charged_particle_mover");
+  timing_func("Pts::charged_particle_mover");
 
   const Real qdto2mc = charge / mass * 0.5 * dt;
   Real dtLoc = 0.5 * (dt + dtNext);
@@ -1135,7 +1138,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
-  timing_func("Particles::neutral_mover");
+  timing_func("Pts::neutral_mover");
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
@@ -1167,7 +1170,7 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::divE_correct_position(
     const MultiFab& phiMF) {
-  timing_func("Particles::divE_correct_position");
+  timing_func("Pts:divE_correct_position");
 
   const Real coef = charge / fabs(charge);
   const Real epsLimit = 0.1;
@@ -1324,7 +1327,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
-  timing_func("Particles::split_particles");
+  timing_func("Pts::split_particles");
 
   const int nInitial =
       nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_];
@@ -1466,7 +1469,7 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
-  timing_func("Particles::merge_particles");
+  timing_func("Pts::merge_particles");
   IntVect iv = { AMREX_D_DECL(1, 1, 1) };
   if (!(do_tiling && tile_size == iv))
     return;
@@ -2007,7 +2010,7 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charge_exchange(
     Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH,
     SourceInterface* source) {
-  std::string nameFunc = "Particles::charge_exchange";
+  std::string nameFunc = "Pts::charge_exchange";
 
   timing_func(nameFunc);
 
