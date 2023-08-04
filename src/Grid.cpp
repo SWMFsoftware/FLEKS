@@ -24,8 +24,8 @@ Vector<DistributionMapping> Grid::calc_balanced_maps() {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     Real eff;
-    dmap[iLev] =
-        FleksDistributionMap::make_knapsack_for_fleks(cost[iLev], ord, eff);
+    dmap[iLev] = FleksDistributionMap::make_balanced_map(BalanceMethod::SFC,
+                                                         cost[iLev], ord, eff);
     // Print() << printPrefix << " iLev = " << iLev
     //         << " load balance efficiency = " << std::setw(10) << eff
     //         << std::endl;

@@ -26,15 +26,6 @@
 #include "Regions.h"
 #include "Utility.h"
 
-enum class BalanceStrategy { Cell = 0, Particle, Hybrid, Timing };
-
-static const std::map<std::string, BalanceStrategy> stringToBalanceStrategy = {
-  { "Cell", BalanceStrategy::Cell },
-  { "Particle", BalanceStrategy::Particle },
-  { "Hybrid", BalanceStrategy::Hybrid },
-  { "Timing", BalanceStrategy::Timing }
-};
-
 // This class define the grid information, but NOT the data on the grid.
 class Grid : public amrex::AmrCore {
 protected:

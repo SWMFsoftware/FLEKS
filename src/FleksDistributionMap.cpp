@@ -28,28 +28,41 @@ Vector<Long> gather_weights_fleks(const MultiFab& weight) {
 }
 } // namespace
 
-DistributionMapping FleksDistributionMap::make_knapsack_for_fleks(
-    const MultiFab& weight, Real& eff, int nmax, bool sort) {
-  BL_PROFILE("make_knapsack_for_fleks_v1");
+DistributionMapping FleksDistributionMap::make_balanced_map(
+    BalanceMethod method, const MultiFab& weight, Real& eff, int nmax,
+    bool sort) {
+  BL_PROFILE("make_balanced_map_v1");
 
   Vector<Long> cost = gather_weights_fleks(weight);
 
   int nprocs = ParallelContext::NProcsSub();
   DistributionMapping r;
-  r.KnapSackProcessorMap(cost, nprocs, &eff, sort, nmax);
+
+  switch (method) {
+    case BalanceMethod::Knapsack:
+      r.KnapSackProcessorMap(cost, nprocs, &eff, sort, nmax);
+      break;
+    case BalanceMethod::SFC:
+      r.SFCProcessorMap(weight.boxArray(), cost, nprocs, eff, sort);
+      break;
+    default:
+      amrex::Abort("Unknown BalanceMethod");
+      break;
+  }
+
   return r;
 }
 
-DistributionMapping FleksDistributionMap::make_knapsack_for_fleks(
-    const MultiFab& weight, const Vector<int>& ord, Real& eff, int nmax,
-    bool sort) {
-  BL_PROFILE("make_knapsack_for_fleks_v2");
+DistributionMapping FleksDistributionMap::make_balanced_map(
+    BalanceMethod method, const MultiFab& weight, const Vector<int>& remap,
+    Real& eff, int nmax, bool sort) {
+  BL_PROFILE("make_balanced_map_v2");
 
-  if (ord.size() != ParallelDescriptor::NProcs()) {
+  if (remap.size() != ParallelDescriptor::NProcs()) {
     amrex::Abort("ord.size()!=ParallelDescriptor::NProcs()");
   }
 
-  DistributionMapping dm = make_knapsack_for_fleks(weight, eff, nmax, sort);
+  DistributionMapping dm = make_balanced_map(method, weight, eff, nmax, sort);
 
   Vector<int> pmapNew;
   pmapNew.resize(dm.size());
@@ -57,7 +70,7 @@ DistributionMapping FleksDistributionMap::make_knapsack_for_fleks(
   const Vector<int>& pmap = dm.ProcessorMap();
 
   for (long i = 0; i < pmap.size(); ++i) {
-    pmapNew[i] = ord[pmap[i]];
+    pmapNew[i] = remap[pmap[i]];
   }
 
   return DistributionMapping(pmapNew);
