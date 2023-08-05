@@ -380,8 +380,13 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
     const auto& particles = pti.GetArrayOfStructs();
 
     for (const auto& p : particles) {
-      if (p.id() < 0)
-        continue;
+      /*
+      Q: Why do not check p.id() < 0?
+      A: IDs of ghost cell particles are set to -1 inside
+      divE_correct_position(), but these particles should be take into account
+      here.
+      */
+
       // Print() << "particle = " << p << std::endl;
 
       const Real qp = p.rdata(iqp_);
@@ -1919,6 +1924,7 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
               // Mark for deletion
               for (int ip = nPartNew; ip < nPartCombine; ip++) {
                 particles[idx_I[ip]].id() = -1;
+                particles[idx_I[ip]].rdata(iqp_) = 0;
                 merged[idx_I[ip]] = true;
               }
               nSolved++;
