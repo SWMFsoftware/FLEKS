@@ -751,9 +751,10 @@ void Domain::read_param(const bool readGridInfo) {
     } else if (command == "#LOADBALANCE") {
       std::string strategy;
       param.read_var("loadBalanceStrategy", strategy);
+      strategy[0] = toupper(strategy[0]);
       balanceStrategy = stringToBalanceStrategy.at(strategy);
-
-      param.read_var("doSplitLevs", doSplitLevs);
+  
+      // param.read_var("doSplitLevs", doSplitLevs);
 
       int dn;
       param.read_var("dn", dn);

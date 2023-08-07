@@ -326,6 +326,32 @@ delete the particle one by one until success.
 
 </command>
 
+<command name="LOADBALANCE" alias="LOADBALANCE_FLEKS0, LOADBALANCE_FLEKS2">
+  <parameter name="loadBalanceStrategy" type="string" input="select" required="T">
+    <option value="particle" />
+    <option value="cell"   />
+  </parameter>
+  <parameter name="dn" type="integer" default="-1" required="T" />
+  <parameter name="dt" type="real" default="-1" required="T" />
+
+#LOADBALANCE
+particle                    loadBalanceStrategy
+20                          dn 
+-1.0                        dt
+
+#LOADBALANCE
+cell                        loadBalanceStrategy
+-1                          dn 
+8.0                         dt
+
+Load balancing the blocks based on the work load of each cell. The work load
+is measured by the particle number per cell (ppc) when loadBalanceStrategy
+is 'particle', which is recommended for OH-PT simulations. If loadBalanceStrategy is 'cell', the work loads of all active cells (do not 
+including cells have been refined) are assumed to be the same. 
+
+'dn' and 'dt' control the load balancing frequency.
+</command>
+
 <command name="DISCRETIZATION" alias="DISCRETIZE">
   <parameter name="theta" type="real" default="0.51"/>
   <parameter name="ratioDivC2C" type="real" default="0.1" />
