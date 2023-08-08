@@ -455,7 +455,7 @@ void Pic::calc_mass_matrix() {
         parts[i]->calc_jhat(jHat[iLev], nodeB[iLev], tc->get_dt());
       } else {
         parts[i]->calc_mass_matrix(nodeMM[iLev], jHat[iLev], nodeB[iLev],
-                                   tc->get_dt());
+                                   tc->get_dt(), iLev);
       }
     }
   }

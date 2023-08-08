@@ -203,7 +203,7 @@ public:
   std::array<amrex::Real, 5> total_moments(bool localOnly = false);
 
   void calc_mass_matrix(amrex::UMultiFab<RealMM>& nodeMM, amrex::MultiFab& jHat,
-                        amrex::MultiFab& nodeBMF, amrex::Real dt);
+                        amrex::MultiFab& nodeBMF, amrex::Real dt, int iLev);
 
   void calc_jhat(amrex::MultiFab& jHat, amrex::MultiFab& nodeBMF,
                  amrex::Real dt);
