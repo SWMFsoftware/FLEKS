@@ -458,20 +458,18 @@ void Pic::calc_mass_matrix() {
                                    tc->get_dt(), iLev);
       }
     }
-  }
+    Real invVol = 1;
+    for (int i = 0; i < nDim; i++) {
+      invVol *= Geom(iLev).InvCellSize(i);
+    }
 
-  Real invVol = 1;
-  for (int i = 0; i < nDim; i++) {
-    invVol *= Geom(iLev).InvCellSize(i);
-  }
+    jHat[iLev].mult(invVol, 0, jHat[iLev].nComp(), jHat[iLev].nGrow());
+    jHat[iLev].SumBoundary(Geom(iLev).periodicity());
 
-  jHat[iLev].mult(invVol, 0, jHat[iLev].nComp(), jHat[iLev].nGrow());
-
-  jHat[iLev].SumBoundary(Geom(iLev).periodicity());
-
-  if (!useExplicitPIC) {
-    nodeMM[iLev].SumBoundary(Geom(iLev).periodicity());
-    nodeMM[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (!useExplicitPIC) {
+      nodeMM[iLev].SumBoundary(Geom(iLev).periodicity());
+      nodeMM[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
   }
 }
 
