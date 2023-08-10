@@ -227,6 +227,9 @@ void sum_two_lev_interface_node(amrex::FabArray<FAB>& coarse,
   sum_fine_to_coarse_lev_bny_node(coarse, fine, iStart, nComp, ratio);
   sum_coarse_to_fine_lev_bny_node(coarse, fine, iStart, nComp, ratio, cgeom,
                                   fgeom, fstatus);
+  // Note by Talha: The command below is unnecessary (i think) but corrects data
+  // on unused coarse nodes - Yuxi you can choose to comment this if you want
+  amrex::average_down_nodal(fine, coarse, ratio);
 }
 
 // This function is called recursively to combine active patahces into larger
