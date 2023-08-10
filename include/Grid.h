@@ -374,23 +374,25 @@ public:
     ba.maxSize(max_grid_size[iLev]);
   };
 
-  void WriteMF(amrex::iMultiFab& MF, int nlev = -1, std::string st = "WriteMF",
+  void WriteMF(amrex::iMultiFab& MF, std::string st = "WriteMF",
                amrex::Vector<std::string> var = {}) {
 
     amrex::Vector<amrex::iMultiFab> tmf;
     tmf.resize(1);
-    tmf[0] = std::move(MF);
-
+    tmf[0].define(MF.boxArray(), MF.DistributionMap(), MF.nComp(), MF.nGrow());
+    amrex::iMultiFab::Copy(tmf[0], MF, 0, 0, MF.nComp(), MF.nGrow());
+    int nlev = 0;
     WriteMF(tmf, nlev, st, var);
   }
 
-  void WriteMF(amrex::MultiFab& MF, int nlev = -1, std::string st = "WriteMF",
+  void WriteMF(amrex::MultiFab& MF, std::string st = "WriteMF",
                amrex::Vector<std::string> var = {}) {
 
     amrex::Vector<amrex::MultiFab> tmf;
     tmf.resize(1);
-    tmf[0] = std::move(MF);
-
+    tmf[0].define(MF.boxArray(), MF.DistributionMap(), MF.nComp(), MF.nGrow());
+    amrex::MultiFab::Copy(tmf[0], MF, 0, 0, MF.nComp(), MF.nGrow());
+    int nlev = 0;
     WriteMF(tmf, nlev, st, var);
   }
 
@@ -426,7 +428,7 @@ public:
                std::string st = "WriteMF",
                amrex::Vector<std::string> var = {}) {
     if (nlev == -1) {
-      nlev = finest_level+1;
+      nlev = finest_level + 1;
     } else {
       nlev = nlev + 1;
     }
