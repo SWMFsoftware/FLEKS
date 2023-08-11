@@ -440,16 +440,15 @@ void Pic::calc_mass_matrix() {
 
   timing_func(nameFunc);
 
-  int iLev = 0;
-
-  jHat[iLev].setVal(0.0);
-
-  if (!useExplicitPIC) {
-    const RealMM mm0(0.0);
-    nodeMM[iLev].setVal(mm0);
-  }
-
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+
+    jHat[iLev].setVal(0.0);
+
+    if (!useExplicitPIC) {
+      const RealMM mm0(0.0);
+      nodeMM[iLev].setVal(mm0);
+    }
+
     for (int i = 0; i < nSpecies; i++) {
       if (useExplicitPIC) {
         parts[i]->calc_jhat(jHat[iLev], nodeB[iLev], tc->get_dt());
@@ -470,6 +469,12 @@ void Pic::calc_mass_matrix() {
       nodeMM[iLev].SumBoundary(Geom(iLev).periodicity());
       nodeMM[iLev].FillBoundary(Geom(iLev).periodicity());
     }
+  }
+
+  for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
+    sum_two_lev_interface_node(jHat[iLev], jHat[iLev + 1], 0,
+                               jHat[iLev].nComp(), ref_ratio[iLev], Geom(iLev),
+                               Geom(iLev + 1), node_status(iLev + 1));
   }
 }
 
