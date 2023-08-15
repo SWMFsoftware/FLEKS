@@ -626,8 +626,11 @@ public:
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       distribute_FabArray(iCell[iLev], cGrids[iLev], DistributionMap(iLev), 1,
                           nGst, false);
+      distribute_FabArray(cellStatus[iLev], cGrids[iLev], DistributionMap(iLev),
+                          1, nGst, false);
     }
-    distribute_grid_arrays();
+
+    update_cell_status(cGridsOld);
   }
 
   void read() override;

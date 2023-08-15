@@ -120,6 +120,7 @@ void Grid::load_balance(const Grid* other, bool doSplitLevs) {
 void Grid::regrid(const BoxArray& region, const Grid* const grid,
                   bool doLoadBalance) {
   std::string nameFunc = "Grid::regrid_base";
+  BL_PROFILE(nameFunc);
 
   if (!doLoadBalance) {
 
@@ -139,13 +140,6 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid,
     doNeedFillNewCell = true;
 
     activeRegion = region;
-
-    domainRange.clear();
-    for (int iBox = 0; iBox < activeRegion.size(); iBox++) {
-      amrex::RealBox rb(activeRegion[iBox], Geom(0).CellSize(),
-                        Geom(0).Offset());
-      domainRange.push_back(rb);
-    }
   }
 
   isGridEmpty = activeRegion.empty();
@@ -177,6 +171,12 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid,
   // If regrid() is called from from read_restart(), activeRegion is not
   // simplifed. Simplify it here.
   activeRegion = activeRegion.simplified();
+
+  domainRange.clear();
+  for (int iBox = 0; iBox < activeRegion.size(); iBox++) {
+    amrex::RealBox rb(activeRegion[iBox], Geom(0).CellSize(), Geom(0).Offset());
+    domainRange.push_back(rb);
+  }
 
   isGridInitialized = true;
 
@@ -227,6 +227,8 @@ void Grid::distribute_grid_arrays(const Vector<BoxArray>& cGridsOld) {
 
 //============================================================================//
 void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
+  std::string nameFunc = "Grid::update_cell_status";
+  BL_PROFILE(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (cellStatus[iLev].empty())
@@ -367,6 +369,9 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
 
 //============================================================================//
 void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
+  std::string nameFunc = "Grid::update_node_status()";
+  BL_PROFILE(nameFunc);
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (nodeStatus[iLev].empty())
       continue;
