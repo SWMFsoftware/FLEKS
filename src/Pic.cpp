@@ -476,6 +476,8 @@ void Pic::calc_mass_matrix() {
                                jHat[iLev].nComp(), ref_ratio[iLev], Geom(iLev),
                                Geom(iLev + 1), node_status(iLev + 1));
   }
+
+  // WARNING: interp_from_coarse_to_fine_for_domain_edge might be needed here
 }
 
 //==========================================================
