@@ -25,6 +25,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       pBC.lo[i] = pBC.num_type(lo);
       pBC.hi[i] = pBC.num_type(hi);
     }
+  } else if (command == "#RANDOMPARTICLESLOCATION") {
+    param.read_var("isParticleLocationRandom", isParticleLocationRandom);
   } else if (command == "#DIVE") {
     param.read_var("doCorrectDivE", doCorrectDivE);
     if (doCorrectDivE) {
@@ -112,7 +114,7 @@ void Pic::fill_new_cells() {
     sum_moments(true);
     sum_to_center(false);
   }
-
+  
   doNeedFillNewCell = false;
 }
 

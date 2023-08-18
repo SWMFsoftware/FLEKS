@@ -285,6 +285,17 @@ If isStaggered is true, the primitive particle locations are at $t_{n+1/2}$,
 otherwise, both locations and velocities are at $t_n$. 
 </command>
 
+<command name="RANDOMPARTICLESLOCATION"
+	 alias="RANDOMPARTICLESLOCATION_FLEKS0,RANDOMPARTICLESLOCATION_FLEKS1,RANDOMPARTICLESLOCATION_FLEKS2"
+	 multiple="T">
+  <parameter name="isParticleLocationRandom" type="logical" default="T"/>
+
+#RANDOMPARTICLESLOCATION
+T                   isParticleLocationRandom  
+
+If isParticleLocationRandom is true then particles are initialized with randomaized position, otherwise particles are equally spaced 
+</command>
+
 <command name="RESAMPLING"
 	 alias="RESAMPLING_FLEKS0,RESAMPLING_FLEKS1,RESAMPLING_FLEKS2" multiple="T">
   <parameter name="doReSampling" type="logical" default="T"/>

@@ -145,6 +145,8 @@ protected:
 
   bool isRelativistic = false;
 
+  bool isParticleLocationRandom = true;
+
   BC bc; // boundary condition
 
 public:

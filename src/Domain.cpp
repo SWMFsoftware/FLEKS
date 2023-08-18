@@ -174,7 +174,7 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
     for (int i = 0; i < nDim; i++) {
       Real phyMin = info[n++] * si2noL; // Lmin
       Real phyMax = phyMin + info[n++] * si2noL;
-      Real dx = info[n++] * si2noL;     // dx
+      Real dx = info[n++] * si2noL; // dx
       nCell[i] = (int)((phyMax - phyMin) / dx + 0.5);
 
       if (isFake2D && i == iz_) {
@@ -731,12 +731,13 @@ void Domain::read_param(const bool readGridInfo) {
             << component << ": " << command << " " << gridName << std::endl;
 
     if (command == "#DIVE" || command == "#EFIELDSOLVER" ||
-        command == "#PARTICLES" || command == "#SOURCEPARTICLES" ||
-        command == "#ELECTRON" || command == "#DISCRETIZE" ||
-        command == "#DISCRETIZATION" || command == "#RESAMPLING" ||
-        command == "#SMOOTHE" || command == "#TESTCASE" ||
-        command == "#MERGEEFFICIENCY" || command == "#PIC" ||
-        command == "#EXPLICITPIC" || command == "#PARTICLEBOXBOUNDARY") {
+        command == "#RANDOMPARTICLESLOCATION" || command == "#PARTICLES" ||
+        command == "#SOURCEPARTICLES" || command == "#ELECTRON" ||
+        command == "#DISCRETIZE" || command == "#DISCRETIZATION" ||
+        command == "#RESAMPLING" || command == "#SMOOTHE" ||
+        command == "#TESTCASE" || command == "#MERGEEFFICIENCY" ||
+        command == "#PIC" || command == "#EXPLICITPIC" ||
+        command == "#PARTICLEBOXBOUNDARY") {
       pic->read_param(command, param);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
@@ -753,7 +754,7 @@ void Domain::read_param(const bool readGridInfo) {
       param.read_var("loadBalanceStrategy", strategy);
       strategy[0] = toupper(strategy[0]);
       balanceStrategy = stringToBalanceStrategy.at(strategy);
-  
+
       // param.read_var("doSplitLevs", doSplitLevs);
 
       int dn;

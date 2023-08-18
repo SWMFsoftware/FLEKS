@@ -70,6 +70,8 @@ protected:
 
   bool isFake2D = false;
 
+  bool isParticleLocationRandom = true;
+
   std::string tag;
 
 private:
@@ -117,6 +119,8 @@ public:
   amrex::BoxArray get_base_grid() const { return activeRegion; }
 
   bool is_grid_empty() const { return isGridEmpty; }
+
+  bool is_particle_location_random() { return isParticleLocationRandom; }
 
   virtual void pre_regrid(){};
 

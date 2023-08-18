@@ -23,6 +23,8 @@ Particles<NStructReal, NStructInt>::Particles(
       mass(massIn),
       nPartPerCell(nPartPerCellIn),
       testCase(tcase) {
+
+  isParticleLocationRandom = gridIn->is_particle_location_random();
   do_tiling = true;
 
   qom = charge / mass;
@@ -158,6 +160,12 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
                   plo[iLev][iy_];
         Real z0 = (kk + 0.5) * (dx[iLev][iz_] / nPPC[iz_]) + k * dx[iLev][iz_] +
                   plo[iLev][iz_];
+
+        if (!isParticleLocationRandom) {
+          x = x0;
+          y = y0;
+          z = z0;
+        }
 
         double q = vol2Npcel * interface->get_number_density(mfi, x0, y0, z0,
                                                              speciesID, iLev);
@@ -503,7 +511,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
             }
       } // if doChargeOnly
 
-    }   // for p
+    } // for p
   }
 }
 
@@ -782,10 +790,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
                     }
                   } // k2
 
-                }   // j2
-              }     // if (ip > 0)
-            }       // i2
-          }         // k1
+                } // j2
+              }   // if (ip > 0)
+            }     // i2
+          }       // k1
 
       //----- Mass matrix calculation end--------------
 
