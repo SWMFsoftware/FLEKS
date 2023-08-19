@@ -38,6 +38,13 @@ public:
     return *this;
   }
 
+  Array1D<T, n> operator+(const Array1D<T, n>& b) {
+    Array1D<T, n> tmp;
+    for (int i = 0; i < n; i++)
+      tmp.data[i] = data[i] + b.data[i];
+    return tmp;
+  }
+
   Array1D<T, n>& operator<<(const Array1D<T, n>& b) {
     for (int i = 0; i < n; i++)
       data[i] += b.data[i];
