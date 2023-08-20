@@ -19,11 +19,13 @@
 #include <AMReX_Vector.H>
 #include <AMReX_iMultiFab.H>
 
+#include "Array1D.h"
 #include "Bit.h"
 #include "Constants.h"
 #include "FleksDistributionMap.h"
 #include "GridUtility.h"
 #include "Regions.h"
+#include "UMultiFab.h"
 #include "Utility.h"
 
 // This class define the grid information, but NOT the data on the grid.
@@ -451,6 +453,29 @@ public:
     }
     amrex::WriteMultiLevelPlotfile(st, nlev, tMF, var, geom, 0.0, tmpVint,
                                    ref_ratio);
+  };
+
+  amrex::MultiFab nodeMMtoMF(amrex::UMultiFab<RealMM>& MFin) {
+    amrex::MultiFab MFout(MFin.boxArray(), MFin.DistributionMap(), 243,
+                          MFin.nGrow());
+    for (amrex::MFIter mfi(MFin); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.validbox();
+      const amrex::Array4<RealMM>& fab = MFin[mfi].array();
+      const amrex::Array4<amrex::Real>& fab2 = MFout[mfi].array();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+
+      for (int k = lo.z; k <= hi.z; ++k) {
+        for (int j = lo.y; j <= hi.y; ++j) {
+          for (int i = lo.x; i <= hi.x; ++i) {
+            for (int nvar = 0; nvar < 243; ++nvar) {
+              fab2(i, j, k, nvar) = fab(i, j, k).data[nvar];
+            }
+          }
+        }
+      }
+    }
+    return MFout;
   };
 };
 #endif
