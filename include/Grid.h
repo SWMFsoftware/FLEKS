@@ -456,10 +456,10 @@ public:
   };
 
   amrex::MultiFab nodeMMtoMF(amrex::UMultiFab<RealMM>& MFin) {
-    amrex::MultiFab MFout(MFin.boxArray(), MFin.DistributionMap(), 243,
-                          MFin.nGrow());
-    for (amrex::MFIter mfi(MFin); mfi.isValid(); ++mfi) {
-      const amrex::Box& box = mfi.validbox();
+    amrex::MultiFab MFout;
+    MFout.define(MFin.boxArray(), MFin.DistributionMap(), 243, MFin.nGrow());
+    for (amrex::MFIter mfi(MFout); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.fabbox();
       const amrex::Array4<RealMM>& fab = MFin[mfi].array();
       const amrex::Array4<amrex::Real>& fab2 = MFout[mfi].array();
       const auto lo = lbound(box);
@@ -470,6 +470,29 @@ public:
           for (int i = lo.x; i <= hi.x; ++i) {
             for (int nvar = 0; nvar < 243; ++nvar) {
               fab2(i, j, k, nvar) = fab(i, j, k).data[nvar];
+            }
+          }
+        }
+      }
+    }
+    return MFout;
+  };
+
+  amrex::UMultiFab<RealMM> MFtonodeMM(amrex::MultiFab& MFin) {
+    amrex::UMultiFab<RealMM> MFout;
+    MFout.define(MFin.boxArray(), MFin.DistributionMap(), 1, MFin.nGrow());
+    for (amrex::MFIter mfi(MFin); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.fabbox();
+      const amrex::Array4<RealMM>& fab2 = MFout[mfi].array();
+      const amrex::Array4<amrex::Real>& fab = MFin[mfi].array();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+
+      for (int k = lo.z; k <= hi.z; ++k) {
+        for (int j = lo.y; j <= hi.y; ++j) {
+          for (int i = lo.x; i <= hi.x; ++i) {
+            for (int nvar = 0; nvar < 243; ++nvar) {
+              fab2(i, j, k).data[nvar] = fab(i, j, k, nvar);
             }
           }
         }
