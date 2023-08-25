@@ -11,6 +11,7 @@
 #include "Bit.h"
 #include "Constants.h"
 #include "GridInfo.h"
+#include "UMultiFab.h"
 #include "Utility.h"
 
 template <class FAB> class PhysBCFunctNoOpFab {

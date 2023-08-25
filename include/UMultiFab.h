@@ -10,7 +10,7 @@
 
 namespace amrex {
 
-class UMFInterp_NodeBilinear : public Interpolater {
+template <class T> class UMFInterp_NodeBilinear : public Interpolater {
 
 public:
   // UMFInterp_NodeBilinear () {}
@@ -46,25 +46,97 @@ public:
               const Geometry& fine_geom, Vector<BCRec> const& bcr,
               int actual_comp, int actual_state, RunOn gpu_or_cpu) override {}
 
-  void interp(const BaseFab<RealMM>& crse, int crse_comp, BaseFab<RealMM>& fine,
-              int fine_comp, int ncomp, const Box& fine_region,
-              const IntVect& ratio, const Geometry& crse_geom,
-              const Geometry& fine_geom, Vector<BCRec> const& bcr,
-              int actual_comp, int actual_state, RunOn gpu_or_cpu) {
-    ncomp = 243;
-    Array4<RealMM const> const& crsearr = crse.const_array();
-    Array4<RealMM> const& finearr = fine.array();
-    RunOn runon = (gpu_or_cpu == RunOn::Gpu) ? RunOn::Gpu : RunOn::Cpu;
+  void interp(const T& crse, int crse_comp, T& fine, int fine_comp, int ncomp,
+              const Box& fine_region, const IntVect& ratio,
+              const Geometry& crse_geom, const Geometry& fine_geom,
+              Vector<BCRec> const& bcr, int actual_comp, int actual_state,
+              RunOn gpu_or_cpu) {
+    // ncomp=243;
+    Array4<typename T::value_type const> const& crsearr = crse.const_array();
+    Array4<typename T::value_type> const& finearr = fine.array();
+    // RunOn runon = (gpu_or_cpu == RunOn::Gpu) ? RunOn::Gpu : RunOn::Cpu;
     AMREX_HOST_DEVICE_PARALLEL_FOR_4D_FLAG(
-        runon, fine_region, ncomp, i, j, k, n, {
+        gpu_or_cpu, fine_region, ncomp, i, j, k, n, {
           umf_nodebilin_interp(i, j, k, n, finearr, fine_comp, crsearr,
                                crse_comp, ratio);
         });
   }
 
   AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void umf_nodebilin_interp(
-      int i, int j, int k, int n, Array4<RealMM> const& fine, int fcomp,
-      Array4<RealMM const> const& crse, int ccomp,
+      int i, int j, int k, int n, Array4<typename T::value_type> const& fine,
+      int fcomp, Array4<typename T::value_type const> const& crse, int ccomp,
+      IntVect const& ratio) noexcept {
+
+    int ic = amrex::coarsen(i, ratio[0]);
+    int jc = amrex::coarsen(j, ratio[1]);
+    int kc = amrex::coarsen(k, ratio[2]);
+    int ioff = i - ic * ratio[0];
+    int joff = j - jc * ratio[1];
+    int koff = k - kc * ratio[2];
+    Real rxinv = Real(1.0) / Real(ratio[0]);
+    Real ryinv = Real(1.0) / Real(ratio[1]);
+    Real rzinv = Real(1.0) / Real(ratio[2]);
+    if (ioff != 0 && joff != 0 && koff != 0) {
+      // Fine node at center of cell
+      fine(i, j, k).data =
+          rxinv * ryinv * rzinv *
+          (crse(ic, jc, kc).data * (ratio[0] - ioff) * (ratio[1] - joff) *
+               (ratio[2] - koff) +
+           crse(ic + 1, jc, kc).data * (ioff) * (ratio[1] - joff) *
+               (ratio[2] - koff) +
+           crse(ic, jc + 1, kc).data * (ratio[0] - ioff) * (joff) *
+               (ratio[2] - koff) +
+           crse(ic + 1, jc + 1, kc).data * (ioff) * (joff) * (ratio[2] - koff) +
+           crse(ic, jc, kc + 1).data * (ratio[0] - ioff) * (ratio[1] - joff) *
+               (koff) +
+           crse(ic + 1, jc, kc + 1).data * (ioff) * (ratio[1] - joff) * (koff) +
+           crse(ic, jc + 1, kc + 1).data * (ratio[0] - ioff) * (joff) * (koff) +
+           crse(ic + 1, jc + 1, kc + 1).data * (ioff) * (joff) * (koff));
+    } else if (joff != 0 && koff != 0) {
+      // Node on a Y-Z face
+      fine(i, j, k).data =
+          ryinv * rzinv *
+          (crse(ic, jc, kc).data * (ratio[1] - joff) * (ratio[2] - koff) +
+           crse(ic, jc + 1, kc).data * (joff) * (ratio[2] - koff) +
+           crse(ic, jc, kc + 1).data * (ratio[1] - joff) * (koff) +
+           crse(ic, jc + 1, kc + 1).data * (joff) * (koff));
+    } else if (ioff != 0 && koff != 0) {
+      // Node on a Z-X face
+      fine(i, j, k).data =
+          rxinv * rzinv *
+          (crse(ic, jc, kc).data * (ratio[0] - ioff) * (ratio[2] - koff) +
+           crse(ic + 1, jc, kc).data * (ioff) * (ratio[2] - koff) +
+           crse(ic, jc, kc + 1).data * (ratio[0] - ioff) * (koff) +
+           crse(ic + 1, jc, kc + 1).data * (ioff) * (koff));
+    } else if (ioff != 0 && joff != 0) {
+      // Node on a X-Y face
+      fine(i, j, k).data =
+          rxinv * ryinv *
+          (crse(ic, jc, kc).data * (ratio[0] - ioff) * (ratio[1] - joff) +
+           crse(ic + 1, jc, kc).data * (ioff) * (ratio[1] - joff) +
+           crse(ic, jc + 1, kc).data * (ratio[0] - ioff) * (joff) +
+           crse(ic + 1, jc + 1, kc).data * (ioff) * (joff));
+    } else if (ioff != 0) {
+      // Node on X line
+      fine(i, j, k).data = rxinv * ((ratio[0] - ioff) * crse(ic, jc, kc).data +
+                                    (ioff)*crse(ic + 1, jc, kc).data);
+    } else if (joff != 0) {
+      // Node on Y line
+      fine(i, j, k).data = ryinv * ((ratio[1] - joff) * crse(ic, jc, kc).data +
+                                    (joff)*crse(ic, jc + 1, kc).data);
+    } else if (koff != 0) {
+      // Node on Z line
+      fine(i, j, k).data = rzinv * ((ratio[2] - koff) * crse(ic, jc, kc).data +
+                                    (koff)*crse(ic, jc, kc + 1).data);
+    } else {
+      // Node coincident with coarse node
+      fine(i, j, k).data = crse(ic, jc, kc).data;
+    }
+  }
+
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void umf_nodebilin_interp2(
+      int i, int j, int k, int n, Array4<typename T::value_type> const& fine,
+      int fcomp, Array4<typename T::value_type const> const& crse, int ccomp,
       IntVect const& ratio) noexcept {
 
     int ic = amrex::coarsen(i, ratio[0]);
@@ -144,6 +216,8 @@ public:
     }
   }
 };
+
+// UMFInterp_NodeBilinear umf_node_bilinear_interp;
 
 template <class T> class UMultiFab : public FabArray<BaseFab<T> > {
 public:
