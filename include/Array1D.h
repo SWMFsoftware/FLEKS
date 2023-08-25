@@ -71,6 +71,20 @@ public:
       data[i] += b.data[i];
     return *this;
   }
+
+  friend Array1D<T, n> operator*(const Array1D<T, n>& a, const int& b) {
+    Array1D<T, n> tmp;
+    for (int i = 0; i < n; i++)
+      tmp.data[i] = a.data[i] * b;
+    return tmp;
+  }
+
+  friend Array1D<T, n> operator*(const int& b, const Array1D<T, n>& a) {
+    Array1D<T, n> tmp;
+    for (int i = 0; i < n; i++)
+      tmp.data[i] = a.data[i] * b;
+    return tmp;
+  }
 };
 
 template <class T, const int n>
