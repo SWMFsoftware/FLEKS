@@ -26,11 +26,20 @@ public:
     return *this;
   }
 
-  Array1D<T, n>& operator=(const T& b) {
-    for (int i = 0; i < n; i++)
-      data[i] = b;
-    return *this;
-  }
+  // Array1D<T, n> operator=(const Array1D<T, n>& a) {
+  //   Array1D<T, n> tmp;
+  //   for (int i = 0; i < n; i++)
+  //      tmp.data[i] = a.data[i];
+  //   return tmp;
+  // }
+
+
+
+  // Array1D<T, n>& operator=(const T& b) {
+  //   for (int i = 0; i < n; i++)
+  //     data[i] = b;
+  //   return *this;
+  // }
 
   Array1D<T, n>& operator+=(const Array1D<T, n>& b) {
     for (int i = 0; i < n; i++)
@@ -76,14 +85,14 @@ public:
     return *this;
   }
 
-  friend Array1D<T, n> operator*(const Array1D<T, n>& a, const int& b) {
+  friend Array1D<T, n> operator*(const Array1D<T, n>& a, const double& b) {
     Array1D<T, n> tmp;
     for (int i = 0; i < n; i++)
       tmp.data[i] = a.data[i] * b;
     return tmp;
   }
 
-  friend Array1D<T, n> operator*(const int& b, const Array1D<T, n>& a) {
+  friend Array1D<T, n> operator*(const double& b, const Array1D<T, n>& a) {
     Array1D<T, n> tmp;
     for (int i = 0; i < n; i++)
       tmp.data[i] = a.data[i] * b;
