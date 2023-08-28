@@ -44,30 +44,33 @@ public:
               int fine_comp, int ncomp, const Box& fine_region,
               const IntVect& ratio, const Geometry& crse_geom,
               const Geometry& fine_geom, Vector<BCRec> const& bcr,
-              int actual_comp, int actual_state, RunOn gpu_or_cpu) override {}
-
-  void interp(const T& crse, int crse_comp, T& fine, int fine_comp, int ncomp,
-              const Box& fine_region, const IntVect& ratio,
-              const Geometry& crse_geom, const Geometry& fine_geom,
-              Vector<BCRec> const& bcr, int actual_comp, int actual_state,
-              RunOn gpu_or_cpu) {
-    // ncomp=243;
-    Array4<typename T::value_type const> const& crsearr = crse.const_array();
-    Array4<typename T::value_type> const& finearr = fine.array();
-    // RunOn runon = (gpu_or_cpu == RunOn::Gpu) ? RunOn::Gpu : RunOn::Cpu;
+              int actual_comp, int actual_state, RunOn gpu_or_cpu) override {
+    Array4<Real const> const& crsearr = crse.const_array();
+    Array4<Real> const& finearr = fine.array();
     AMREX_HOST_DEVICE_PARALLEL_FOR_4D_FLAG(
         gpu_or_cpu, fine_region, ncomp, i, j, k, n, {
-          // umf_nodebilin_interp(i, j, k, n, finearr, fine_comp, crsearr,
-          //                      crse_comp, ratio);
-          umf_nodebilin_interp2(i, j, k, finearr, fine_comp, crsearr, crse_comp,
-                            ratio);
+          umf_nodebilin_interp(i, j, k, n, finearr, fine_comp, crsearr,
+                               crse_comp, ratio);
         });
   }
 
-  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void umf_nodebilin_interp(
-      int i, int j, int k, int n, Array4<typename T::value_type> const& fine,
-      int fcomp, Array4<typename T::value_type const> const& crse, int ccomp,
-      IntVect const& ratio) noexcept {
+  void interp(const BaseFab<T>& crse, int crse_comp, BaseFab<T>& fine,
+              int fine_comp, int ncomp, const Box& fine_region,
+              const IntVect& ratio, const Geometry& crse_geom,
+              const Geometry& fine_geom, Vector<BCRec> const& bcr,
+              int actual_comp, int actual_state, RunOn gpu_or_cpu) {
+    Array4<T const> const& crsearr = crse.const_array();
+    Array4<T> const& finearr = fine.array();
+    AMREX_HOST_DEVICE_PARALLEL_FOR_4D_FLAG(
+        gpu_or_cpu, fine_region, ncomp, i, j, k, n, {
+          umf_nodebilin_interp_basefab(i, j, k, n, finearr, fine_comp, crsearr,
+                                       crse_comp, ratio);
+        });
+  }
+
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void umf_nodebilin_interp_basefab(
+      int i, int j, int k, int n, Array4<T> const& fine, int fcomp,
+      Array4<T const> const& crse, int ccomp, IntVect const& ratio) noexcept {
 
     int ic = amrex::coarsen(i, ratio[0]);
     int jc = amrex::coarsen(j, ratio[1]);
@@ -80,65 +83,71 @@ public:
     Real rzinv = Real(1.0) / Real(ratio[2]);
     if (ioff != 0 && joff != 0 && koff != 0) {
       // Fine node at center of cell
-      fine(i, j, k).data =
+      fine(i, j, k, n + fcomp) =
           rxinv * ryinv * rzinv *
-          (crse(ic, jc, kc).data * (ratio[0] - ioff) * (ratio[1] - joff) *
+          (crse(ic, jc, kc, n + ccomp) * (ratio[0] - ioff) * (ratio[1] - joff) *
                (ratio[2] - koff) +
-           crse(ic + 1, jc, kc).data * (ioff) * (ratio[1] - joff) *
+           crse(ic + 1, jc, kc, n + ccomp) * (ioff) * (ratio[1] - joff) *
                (ratio[2] - koff) +
-           crse(ic, jc + 1, kc).data * (ratio[0] - ioff) * (joff) *
+           crse(ic, jc + 1, kc, n + ccomp) * (ratio[0] - ioff) * (joff) *
                (ratio[2] - koff) +
-           crse(ic + 1, jc + 1, kc).data * (ioff) * (joff) * (ratio[2] - koff) +
-           crse(ic, jc, kc + 1).data * (ratio[0] - ioff) * (ratio[1] - joff) *
+           crse(ic + 1, jc + 1, kc, n + ccomp) * (ioff) * (joff) *
+               (ratio[2] - koff) +
+           crse(ic, jc, kc + 1, n + ccomp) * (ratio[0] - ioff) *
+               (ratio[1] - joff) * (koff) +
+           crse(ic + 1, jc, kc + 1, n + ccomp) * (ioff) * (ratio[1] - joff) *
                (koff) +
-           crse(ic + 1, jc, kc + 1).data * (ioff) * (ratio[1] - joff) * (koff) +
-           crse(ic, jc + 1, kc + 1).data * (ratio[0] - ioff) * (joff) * (koff) +
-           crse(ic + 1, jc + 1, kc + 1).data * (ioff) * (joff) * (koff));
+           crse(ic, jc + 1, kc + 1, n + ccomp) * (ratio[0] - ioff) * (joff) *
+               (koff) +
+           crse(ic + 1, jc + 1, kc + 1, n + ccomp) * (ioff) * (joff) * (koff));
     } else if (joff != 0 && koff != 0) {
       // Node on a Y-Z face
-      fine(i, j, k).data =
+      fine(i, j, k, n + fcomp) =
           ryinv * rzinv *
-          (crse(ic, jc, kc).data * (ratio[1] - joff) * (ratio[2] - koff) +
-           crse(ic, jc + 1, kc).data * (joff) * (ratio[2] - koff) +
-           crse(ic, jc, kc + 1).data * (ratio[1] - joff) * (koff) +
-           crse(ic, jc + 1, kc + 1).data * (joff) * (koff));
+          (crse(ic, jc, kc, n + ccomp) * (ratio[1] - joff) * (ratio[2] - koff) +
+           crse(ic, jc + 1, kc, n + ccomp) * (joff) * (ratio[2] - koff) +
+           crse(ic, jc, kc + 1, n + ccomp) * (ratio[1] - joff) * (koff) +
+           crse(ic, jc + 1, kc + 1, n + ccomp) * (joff) * (koff));
     } else if (ioff != 0 && koff != 0) {
       // Node on a Z-X face
-      fine(i, j, k).data =
+      fine(i, j, k, n + fcomp) =
           rxinv * rzinv *
-          (crse(ic, jc, kc).data * (ratio[0] - ioff) * (ratio[2] - koff) +
-           crse(ic + 1, jc, kc).data * (ioff) * (ratio[2] - koff) +
-           crse(ic, jc, kc + 1).data * (ratio[0] - ioff) * (koff) +
-           crse(ic + 1, jc, kc + 1).data * (ioff) * (koff));
+          (crse(ic, jc, kc, n + ccomp) * (ratio[0] - ioff) * (ratio[2] - koff) +
+           crse(ic + 1, jc, kc, n + ccomp) * (ioff) * (ratio[2] - koff) +
+           crse(ic, jc, kc + 1, n + ccomp) * (ratio[0] - ioff) * (koff) +
+           crse(ic + 1, jc, kc + 1, n + ccomp) * (ioff) * (koff));
     } else if (ioff != 0 && joff != 0) {
       // Node on a X-Y face
-      fine(i, j, k).data =
+      fine(i, j, k, n + fcomp) =
           rxinv * ryinv *
-          (crse(ic, jc, kc).data * (ratio[0] - ioff) * (ratio[1] - joff) +
-           crse(ic + 1, jc, kc).data * (ioff) * (ratio[1] - joff) +
-           crse(ic, jc + 1, kc).data * (ratio[0] - ioff) * (joff) +
-           crse(ic + 1, jc + 1, kc).data * (ioff) * (joff));
+          (crse(ic, jc, kc, n + ccomp) * (ratio[0] - ioff) * (ratio[1] - joff) +
+           crse(ic + 1, jc, kc, n + ccomp) * (ioff) * (ratio[1] - joff) +
+           crse(ic, jc + 1, kc, n + ccomp) * (ratio[0] - ioff) * (joff) +
+           crse(ic + 1, jc + 1, kc, n + ccomp) * (ioff) * (joff));
     } else if (ioff != 0) {
       // Node on X line
-      fine(i, j, k).data = rxinv * ((ratio[0] - ioff) * crse(ic, jc, kc).data +
-                                    (ioff)*crse(ic + 1, jc, kc).data);
+      fine(i, j, k, n + fcomp) =
+          rxinv * ((ratio[0] - ioff) * crse(ic, jc, kc, n + ccomp) +
+                   (ioff)*crse(ic + 1, jc, kc, n + ccomp));
     } else if (joff != 0) {
       // Node on Y line
-      fine(i, j, k).data = ryinv * ((ratio[1] - joff) * crse(ic, jc, kc).data +
-                                    (joff)*crse(ic, jc + 1, kc).data);
+      fine(i, j, k, n + fcomp) =
+          ryinv * ((ratio[1] - joff) * crse(ic, jc, kc, n + ccomp) +
+                   (joff)*crse(ic, jc + 1, kc, n + ccomp));
     } else if (koff != 0) {
       // Node on Z line
-      fine(i, j, k).data = rzinv * ((ratio[2] - koff) * crse(ic, jc, kc).data +
-                                    (koff)*crse(ic, jc, kc + 1).data);
+      fine(i, j, k, n + fcomp) =
+          rzinv * ((ratio[2] - koff) * crse(ic, jc, kc, n + ccomp) +
+                   (koff)*crse(ic, jc, kc + 1, n + ccomp));
     } else {
       // Node coincident with coarse node
-      fine(i, j, k).data = crse(ic, jc, kc).data;
+      fine(i, j, k, n + fcomp) = crse(ic, jc, kc, n + ccomp);
     }
   }
 
-  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void umf_nodebilin_interp2(
-      int i, int j, int k, Array4<typename T::value_type> const& fine,
-      int fcomp, Array4<typename T::value_type const> const& crse, int ccomp,
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void umf_nodebilin_interp(
+      int i, int j, int k, int n, Array4<Real> const& fine, int fcomp,
+      Array4<Real const> const& crse, int ccomp,
       IntVect const& ratio) noexcept {
 
     int ic = amrex::coarsen(i, ratio[0]);
@@ -152,69 +161,65 @@ public:
     Real rzinv = Real(1.0) / Real(ratio[2]);
     if (ioff != 0 && joff != 0 && koff != 0) {
       // Fine node at center of cell
-      fine(i, j, k) =
+      fine(i, j, k, n + fcomp) =
           rxinv * ryinv * rzinv *
-          (crse(ic, jc, kc) * (ratio[0] - ioff) *
-               (ratio[1] - joff) * (ratio[2] - koff) +
-           crse(ic + 1, jc, kc) * (ioff) * (ratio[1] - joff) *
+          (crse(ic, jc, kc, n + ccomp) * (ratio[0] - ioff) * (ratio[1] - joff) *
                (ratio[2] - koff) +
-           crse(ic, jc + 1, kc) * (ratio[0] - ioff) * (joff) *
+           crse(ic + 1, jc, kc, n + ccomp) * (ioff) * (ratio[1] - joff) *
                (ratio[2] - koff) +
-           crse(ic + 1, jc + 1, kc) * (ioff) * (joff) *
+           crse(ic, jc + 1, kc, n + ccomp) * (ratio[0] - ioff) * (joff) *
                (ratio[2] - koff) +
-           crse(ic, jc, kc + 1) * (ratio[0] - ioff) *
+           crse(ic + 1, jc + 1, kc, n + ccomp) * (ioff) * (joff) *
+               (ratio[2] - koff) +
+           crse(ic, jc, kc + 1, n + ccomp) * (ratio[0] - ioff) *
                (ratio[1] - joff) * (koff) +
-           crse(ic + 1, jc, kc + 1) * (ioff) *
-               (ratio[1] - joff) * (koff) +
-           crse(ic, jc + 1, kc + 1) * (ratio[0] - ioff) *
-               (joff) * (koff) +
-           crse(ic + 1, jc + 1, kc + 1) * (ioff) * (joff) *
-               (koff));
+           crse(ic + 1, jc, kc + 1, n + ccomp) * (ioff) * (ratio[1] - joff) *
+               (koff) +
+           crse(ic, jc + 1, kc + 1, n + ccomp) * (ratio[0] - ioff) * (joff) *
+               (koff) +
+           crse(ic + 1, jc + 1, kc + 1, n + ccomp) * (ioff) * (joff) * (koff));
     } else if (joff != 0 && koff != 0) {
       // Node on a Y-Z face
-      fine(i, j, k) =
+      fine(i, j, k, n + fcomp) =
           ryinv * rzinv *
-          (crse(ic, jc, kc) * (ratio[1] - joff) *
-               (ratio[2] - koff) +
-           crse(ic, jc + 1, kc) * (joff) * (ratio[2] - koff) +
-           crse(ic, jc, kc + 1) * (ratio[1] - joff) * (koff) +
-           crse(ic, jc + 1, kc + 1) * (joff) * (koff));
+          (crse(ic, jc, kc, n + ccomp) * (ratio[1] - joff) * (ratio[2] - koff) +
+           crse(ic, jc + 1, kc, n + ccomp) * (joff) * (ratio[2] - koff) +
+           crse(ic, jc, kc + 1, n + ccomp) * (ratio[1] - joff) * (koff) +
+           crse(ic, jc + 1, kc + 1, n + ccomp) * (joff) * (koff));
     } else if (ioff != 0 && koff != 0) {
       // Node on a Z-X face
-      fine(i, j, k) =
+      fine(i, j, k, n + fcomp) =
           rxinv * rzinv *
-          (crse(ic, jc, kc) * (ratio[0] - ioff) *
-               (ratio[2] - koff) +
-           crse(ic + 1, jc, kc) * (ioff) * (ratio[2] - koff) +
-           crse(ic, jc, kc + 1) * (ratio[0] - ioff) * (koff) +
-           crse(ic + 1, jc, kc + 1) * (ioff) * (koff));
+          (crse(ic, jc, kc, n + ccomp) * (ratio[0] - ioff) * (ratio[2] - koff) +
+           crse(ic + 1, jc, kc, n + ccomp) * (ioff) * (ratio[2] - koff) +
+           crse(ic, jc, kc + 1, n + ccomp) * (ratio[0] - ioff) * (koff) +
+           crse(ic + 1, jc, kc + 1, n + ccomp) * (ioff) * (koff));
     } else if (ioff != 0 && joff != 0) {
       // Node on a X-Y face
-      fine(i, j, k) =
+      fine(i, j, k, n + fcomp) =
           rxinv * ryinv *
-          (crse(ic, jc, kc) * (ratio[0] - ioff) *
-               (ratio[1] - joff) +
-           crse(ic + 1, jc, kc) * (ioff) * (ratio[1] - joff) +
-           crse(ic, jc + 1, kc) * (ratio[0] - ioff) * (joff) +
-           crse(ic + 1, jc + 1, kc) * (ioff) * (joff));
+          (crse(ic, jc, kc, n + ccomp) * (ratio[0] - ioff) * (ratio[1] - joff) +
+           crse(ic + 1, jc, kc, n + ccomp) * (ioff) * (ratio[1] - joff) +
+           crse(ic, jc + 1, kc, n + ccomp) * (ratio[0] - ioff) * (joff) +
+           crse(ic + 1, jc + 1, kc, n + ccomp) * (ioff) * (joff));
     } else if (ioff != 0) {
       // Node on X line
-      fine(i, j, k) =
-          rxinv * ((ratio[0] - ioff) * crse(ic, jc, kc) +
-                   (ioff)*crse(ic + 1, jc, kc));
+      fine(i, j, k, n + fcomp) =
+          rxinv * ((ratio[0] - ioff) * crse(ic, jc, kc, n + ccomp) +
+                   (ioff)*crse(ic + 1, jc, kc, n + ccomp));
     } else if (joff != 0) {
       // Node on Y line
-      fine(i, j, k) =
-          ryinv * ((ratio[1] - joff) * crse(ic, jc, kc) +
-                   (joff)*crse(ic, jc + 1, kc));
+      fine(i, j, k, n + fcomp) =
+          ryinv * ((ratio[1] - joff) * crse(ic, jc, kc, n + ccomp) +
+                   (joff)*crse(ic, jc + 1, kc, n + ccomp));
     } else if (koff != 0) {
       // Node on Z line
-      fine(i, j, k) =
-          rzinv * ((ratio[2] - koff) * crse(ic, jc, kc) +
-                   (koff)*crse(ic, jc, kc + 1));
+      fine(i, j, k, n + fcomp) =
+          rzinv * ((ratio[2] - koff) * crse(ic, jc, kc, n + ccomp) +
+                   (koff)*crse(ic, jc, kc + 1, n + ccomp));
     } else {
       // Node coincident with coarse node
-      fine(i, j, k) = crse(ic, jc, kc);
+      fine(i, j, k, n + fcomp) = crse(ic, jc, kc, n + ccomp);
     }
   }
 };
