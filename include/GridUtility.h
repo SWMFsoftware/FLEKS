@@ -11,7 +11,7 @@
 #include "Bit.h"
 #include "Constants.h"
 #include "GridInfo.h"
-#include "UMultiFab.h"
+#include "UInterp.h"
 #include "Utility.h"
 
 template <class FAB> class PhysBCFunctNoOpFab {
@@ -152,7 +152,7 @@ void sum_coarse_to_fine_lev_bny_node(
 
   amrex::FabArray<FAB> ftmp(f.boxArray(), f.DistributionMap(), nComp, 0);
   ftmp.setVal(0.0);
-  amrex::UMFInterp_NodeBilinear<typename FAB::value_type> mapper;
+  amrex::UNodeBilinear<typename FAB::value_type> mapper;
   interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper);
 
   for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
