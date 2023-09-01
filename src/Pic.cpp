@@ -114,7 +114,7 @@ void Pic::fill_new_cells() {
     sum_moments(true);
     sum_to_center(false);
   }
-  
+
   doNeedFillNewCell = false;
 }
 
@@ -729,7 +729,7 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut) {
             for (int j2 = j - 1; j2 <= j + 1; j2++)
               for (int k2 = k - 1; k2 <= k + 1; k2++) {
                 const int gp = (i2 - i + 1) * 9 + (j2 - j + 1) * 3 + k2 - k + 1;
-                lArr(i, j, k) += rArr(i2, j2, k2) * mmArr(i, j, k).data[gp];
+                lArr(i, j, k) += rArr(i2, j2, k2) * mmArr(i, j, k)[gp];
               }
   }
   outMF.mult(fourPI * fourPI);
@@ -1062,7 +1062,7 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
-          Real* const data0 = mmArr(i, j, k).data;
+          auto& data0 = mmArr(i, j, k);
           for (int k2 = k - 1; k2 <= k + 1; k2++)
             for (int j2 = j - 1; j2 <= j + 1; j2++)
               for (int i2 = i - 1; i2 <= i + 1; i2++) {

@@ -469,7 +469,7 @@ public:
         for (int j = lo.y; j <= hi.y; ++j) {
           for (int i = lo.x; i <= hi.x; ++i) {
             for (int nvar = 0; nvar < 243; ++nvar) {
-              fab2(i, j, k, nvar) = fab(i, j, k).data[nvar];
+              fab2(i, j, k, nvar) = fab(i, j, k)[nvar];
             }
           }
         }
@@ -492,7 +492,7 @@ public:
         for (int j = lo.y; j <= hi.y; ++j) {
           for (int i = lo.x; i <= hi.x; ++i) {
             for (int nvar = 0; nvar < 243; ++nvar) {
-              fab2(i, j, k).data[nvar] = fab(i, j, k, nvar);
+              fab2(i, j, k)[nvar] = fab(i, j, k, nvar);
             }
           }
         }

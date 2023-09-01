@@ -1,105 +1,107 @@
-#ifndef _ARRAY1D_H_
-#define _ARRAY1D_H_
+#ifndef _Arr1D_H_
+#define _Arr1D_H_
 
 #include <iostream>
 
 #include <AMReX_REAL.H>
 
-template <class T, const int n> class Array1D {
+template <class T, const int n> class Arr1D {
 public:
+  Arr1D(const T& b = T(0)) {
+    for (int i = 0; i < n; i++)
+      data[i] = b;
+  }
+
+  Arr1D(const Arr1D<T, n>& b) {
+    for (int i = 0; i < n; i++)
+      data[i] = b[i];
+  }
+
+  T& operator[](const int i) { return data[i]; }
+  
+  const T& operator[](const int i) const { return data[i]; }
+
+  Arr1D<T, n>& operator=(const Arr1D<T, n>& b) {
+    for (int i = 0; i < n; i++)
+      data[i] = b[i];
+    return *this;
+  }
+
+  Arr1D<T, n>& operator=(const T& b) {
+    for (int i = 0; i < n; i++)
+      data[i] = b;
+    return *this;
+  }
+
+  Arr1D<T, n>& operator+=(const Arr1D<T, n>& b) {
+    for (int i = 0; i < n; i++)
+      data[i] += b[i];
+    return *this;
+  }
+
+  Arr1D<T, n>& operator<<(const Arr1D<T, n>& b) {
+    for (int i = 0; i < n; i++)
+      data[i] += b[i];
+    return *this;
+  }
+
+private:
   T data[n];
-
-  Array1D(){};
-  Array1D(const T& b) {
-    for (int i = 0; i < n; i++)
-      data[i] = b;
-  }
-
-  Array1D(const Array1D<T, n>& b) {
-    for (int i = 0; i < n; i++)
-      data[i] = b.data[i];
-  }
-
-  Array1D<T, n>& operator=(const Array1D<T, n>& b) {
-    for (int i = 0; i < n; i++)
-      data[i] = b.data[i];
-    return *this;
-  }
-
-  Array1D<T, n>& operator=(const T& b) {
-    for (int i = 0; i < n; i++)
-      data[i] = b;
-    return *this;
-  }
-
-  Array1D<T, n>& operator+=(const Array1D<T, n>& b) {
-    for (int i = 0; i < n; i++)
-      data[i] += b.data[i];
-    return *this;
-  }
-
-  friend Array1D<T, n> operator+(const Array1D<T, n>& b,
-                                 const Array1D<T, n>& a) {
-    Array1D<T, n> tmp;
-    for (int i = 0; i < n; i++)
-      tmp.data[i] = a.data[i] + b.data[i];
-    return tmp;
-  }
-
-  friend Array1D<T, n> operator-(const Array1D<T, n>& b,
-                                 const Array1D<T, n>& a) {
-    Array1D<T, n> tmp;
-    for (int i = 0; i < n; i++)
-      tmp.data[i] = a.data[i] - b.data[i];
-    return tmp;
-  }
-
-  friend Array1D<T, n> operator*(const Array1D<T, n>& b,
-                                 const Array1D<T, n>& a) {
-    Array1D<T, n> tmp;
-    for (int i = 0; i < n; i++)
-      tmp.data[i] = a.data[i] * b.data[i];
-    return tmp;
-  }
-
-  friend Array1D<T, n> operator/(const Array1D<T, n>& b,
-                                 const Array1D<T, n>& a) {
-    Array1D<T, n> tmp;
-    for (int i = 0; i < n; i++)
-      tmp.data[i] = b.data[i] / a.data[i];
-    return tmp;
-  }
-
-  Array1D<T, n>& operator<<(const Array1D<T, n>& b) {
-    for (int i = 0; i < n; i++)
-      data[i] += b.data[i];
-    return *this;
-  }
-
-  friend Array1D<T, n> operator*(const Array1D<T, n>& a, const double& b) {
-    Array1D<T, n> tmp;
-    for (int i = 0; i < n; i++)
-      tmp.data[i] = a.data[i] * b;
-    return tmp;
-  }
-
-  friend Array1D<T, n> operator*(const double& b, const Array1D<T, n>& a) {
-    Array1D<T, n> tmp;
-    for (int i = 0; i < n; i++)
-      tmp.data[i] = a.data[i] * b;
-    return tmp;
-  }
 };
 
 template <class T, const int n>
-std::ostream& operator<<(std::ostream& out, const Array1D<T, n>& b) {
+inline Arr1D<T, n> operator+(Arr1D<T, n> a, const Arr1D<T, n>& b) {
   for (int i = 0; i < n; i++)
-    out << " i = " << i << " data[i] = " << b.data[i] << "\t";
+    a[i] += b[i];
+  return a;
+}
+
+// It looks not right. --Yuxi
+// template <class T, const int n>
+// inline Arr1D<T, n> operator-(const Arr1D<T, n>& b, const Arr1D<T, n>& a) {
+//   Arr1D<T, n> tmp;
+//   for (int i = 0; i < n; i++)
+//     tmp[i] = a[i] - b[i];
+//   return tmp;
+// }
+
+template <class T, const int n>
+inline Arr1D<T, n> operator/(Arr1D<T, n> a, const Arr1D<T, n>& b) {
+  for (int i = 0; i < n; i++)
+    a[i] /= b[i];
+  return a;
+}
+
+template <class T, const int n>
+inline Arr1D<T, n> operator*(Arr1D<T, n> a, const Arr1D<T, n>& b) {
+  for (int i = 0; i < n; i++)
+    a[i] *= b[i];
+  return a;
+}
+
+template <class T, const int n>
+inline Arr1D<T, n> operator*(Arr1D<T, n> a, const double& b) {
+  for (int i = 0; i < n; i++)
+    a[i] *= b;
+  return a;
+}
+
+template <class T, const int n>
+inline Arr1D<T, n> operator*(const double& b, Arr1D<T, n> a) {
+  for (int i = 0; i < n; i++)
+    a[i] *= b;
+  return a;
+}
+
+template <class T, const int n>
+std::ostream& operator<<(std::ostream& out, const Arr1D<T, n>& b) {
+  for (int i = 0; i < n; i++)
+    out << " i = " << i << " data[i] = " << b[i] << "\t";
   out << std::endl;
   return out;
 }
 
-using RealMM = Array1D<amrex::Real, 243>;
-using RealCMM = Array1D<amrex::Real, 27>;
+using RealMM = Arr1D<amrex::Real, 243>;
+using RealCMM = Arr1D<amrex::Real, 27>;
 
 #endif

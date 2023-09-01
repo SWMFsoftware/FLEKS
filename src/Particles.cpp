@@ -487,7 +487,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
                     coef * weights_IIID[i1 - iMin][j1 - jMin][k1 - kMin][iDim];
               }
 
-              Real* const data = mmArr(i1, j1, k1).data;
+              auto& data = mmArr(i1, j1, k1);
               // Real weights[27] = { 0 };
               for (int i2 = iMin; i2 <= iMax; i2++) {
                 int ip = i2 - i1 + 1;
@@ -668,7 +668,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_mass_matrix(
-    UMultiFab<RealMM>& nodeMM, MultiFab& jHat, MultiFab& nodeBMF, Real dt, int iLev) {
+    UMultiFab<RealMM>& nodeMM, MultiFab& jHat, MultiFab& nodeBMF, Real dt,
+    int iLev) {
   timing_func("Pts::calc_mass_matrix");
 
   Real qdto2mc = charge / mass * 0.5 * dt;
@@ -773,7 +774,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
         for (int j1 = jMin; j1 < jMax; j1++)
           for (int i1 = iMin; i1 < iMax; i1++) {
             const Real wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
-            Real* const data0 = mmArr(i1, j1, k1).data;
+            auto& data0 = mmArr(i1, j1, k1);
             for (int k2 = kMin; k2 < kMax; k2++) {
               const int kp = k2 - k1 + 1;
               if (kp > 0) {
@@ -822,7 +823,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
           const int kr = k1 + kp - 1;
           if (kr > kMax || kr < kMin)
             continue;
-          const Real* const datas0 = mmArr(i1, j1, k1).data;
+          auto& datas0 = mmArr(i1, j1, k1);
           for (int jp = 0; jp < 3; jp++) {
             const int jr = j1 + jp - 1;
             if (jr > jMax || jr < jMin)
@@ -836,7 +837,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
               gpr = jpr * 3 + ipr;
               gps = 18 + jp * 3 + ip; // gps = kp*9+jp*3+kp
 
-              Real* const datar = &(mmArr(ir, jr, kr).data[gpr * 9]);
+              Real* const datar = &(mmArr(ir, jr, kr)[gpr * 9]);
               const Real* const datas = &(datas0[gps * 9]);
               for (int idx = 0; idx < 9; idx++) {
                 datar[idx] = datas[idx];
