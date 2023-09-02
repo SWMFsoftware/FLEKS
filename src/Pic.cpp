@@ -479,6 +479,12 @@ void Pic::calc_mass_matrix() {
                                Geom(iLev + 1), node_status(iLev + 1));
   }
 
+  for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
+    sum_two_lev_interface_node(
+        nodeMM[iLev], nodeMM[iLev + 1], 0, nodeMM[iLev].nComp(),
+        ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
+  }
+
   // WARNING: interp_from_coarse_to_fine_for_domain_edge might be needed here
 }
 

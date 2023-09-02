@@ -56,14 +56,13 @@ inline Arr1D<T, n> operator+(Arr1D<T, n> a, const Arr1D<T, n>& b) {
   return a;
 }
 
-// It looks not right. --Yuxi
-// template <class T, const int n>
-// inline Arr1D<T, n> operator-(const Arr1D<T, n>& b, const Arr1D<T, n>& a) {
-//   Arr1D<T, n> tmp;
-//   for (int i = 0; i < n; i++)
-//     tmp[i] = a[i] - b[i];
-//   return tmp;
-// }
+// It looks not right. --Yuxi  $$ I think the new version is right. --Talha
+template <class T, const int n>
+inline Arr1D<T, n> operator-(Arr1D<T, n> a, const Arr1D<T, n>& b) {
+  for (int i = 0; i < n; i++)
+    a[i] -= b[i];
+  return a;
+}
 
 template <class T, const int n>
 inline Arr1D<T, n> operator/(Arr1D<T, n> a, const Arr1D<T, n>& b) {
