@@ -1406,13 +1406,13 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
                 [](const ParticleType& pl, const ParticleType& pr) {
                   const Real ql = fabs(pl.rdata(iqp_));
                   const Real qr = fabs(pr.rdata(iqp_));
-                  // Q: Why use '1e-6*ql' instead of `0'?
+                  // Q: Why use '1e-9*ql' instead of `0'?
                   // A: If it is sorted by 'ql > qr', and all the particles in
                   // this cell
                   //   have the same weight, the particles are essentially
                   //   sorted by the last digit, which is random. The threshold
-                  //   '1e-6*ql' is introduced to avoid the randomness.
-                  return ql - qr > 1e-6 * ql;
+                  //   '1e-9*ql' is introduced to avoid the randomness.
+                  return ql - qr > 1e-9 * ql;
                 });
       //----------------------------------------------------------------
 
@@ -1791,11 +1791,11 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
 
                 // Delete the lighter one.
                 int iPartDel = pair1;
-                // Q: Why is it 'l>(1+1e-6)*r' instead of 'l>r'?
+                // Q: Why is it 'l>(1+1e-9)*r' instead of 'l>r'?
                 // A: The particle weights can be the same for some cases. 'l>r'
                 // may return random results due to the truncation error.
                 if (fabs(particles[idx_I[pair1]].rdata(iqp_)) >
-                    (1 + 1e-6) * fabs(particles[idx_I[pair2]].rdata(iqp_))) {
+                    (1 + 1e-9) * fabs(particles[idx_I[pair2]].rdata(iqp_))) {
                   iPartDel = pair2;
                 }
                 if (iPartDel != 0) {
@@ -1809,7 +1809,7 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
                             const Real ql = fabs(particles[idLeft].rdata(iqp_));
                             const Real qr =
                                 fabs(particles[idRight].rdata(iqp_));
-                            return ql - qr < 1e-6 * ql;
+                            return ql - qr < 1e-9 * ql;
                           });
               }
 
