@@ -421,8 +421,9 @@ public:
       nRec = read_int();
     }
 
-    amrex::Box bx(amrex::IntVect(0),
-                  amrex::IntVect(nSize[0] - 1, nSize[1] - 1, nSize[2] - 1));
+    amrex::Box bx(
+        amrex::IntVect(0),
+        amrex::IntVect(AMREX_D_DECL(nSize[0] - 1, nSize[1] - 1, nSize[2] - 1)));
     fab.clear();
     fab.resize(bx, nVar);
 
@@ -546,8 +547,9 @@ public:
       nCell = nCell > 0 ? nCell * size : size;
     }
 
-    amrex::Box bx(amrex::IntVect(0),
-                  amrex::IntVect(nSize[0] - 1, nSize[1] - 1, nSize[2] - 1));
+    amrex::Box bx(
+        amrex::IntVect(0),
+        amrex::IntVect(AMREX_D_DECL(nSize[0] - 1, nSize[1] - 1, nSize[2] - 1)));
     fab.clear();
     fab.resize(bx, nVar);
 

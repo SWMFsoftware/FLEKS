@@ -62,10 +62,10 @@ void Particles<NStructReal, NStructInt>::outflow_bc(const MFIter& mfi,
                                                     const int kp) {
   const int iLev = 0;
 
-  IntVect idxGst(ig, jg, kg);
+  IntVect idxGst(AMREX_D_DECL(ig, jg, kg));
   ParticleTileType& pGst = get_particle_tile(iLev, mfi, idxGst);
 
-  IntVect idxPhy(ip, jp, kp);
+  IntVect idxPhy(AMREX_D_DECL(ip, jp, kp));
   ParticleTileType& pPhy = get_particle_tile(iLev, mfi, idxGst);
   auto& phyParts = pPhy.GetArrayOfStructs();
 

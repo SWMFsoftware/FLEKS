@@ -281,7 +281,7 @@ public:
 
   ParticleTileType& get_particle_tile(int iLev, const amrex::MFIter& mfi, int i,
                                       int j, int k) {
-    return get_particle_tile(iLev, mfi, amrex::IntVect(i, j, k));
+    return get_particle_tile(iLev, mfi, amrex::IntVect(AMREX_D_DECL(i, j, k)));
   }
 
   ParticleTileType& get_particle_tile(int iLev, const amrex::MFIter& mfi,
