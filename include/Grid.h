@@ -97,7 +97,8 @@ public:
       printPrefix = gridName + " " + tag + ": ";
     }
 
-    isFake2D = Geom(0).Domain().bigEnd(iz_) == Geom(0).Domain().smallEnd(iz_);
+    isFake2D = (nDim == 3) &&
+               (Geom(0).Domain().bigEnd(iz_) == Geom(0).Domain().smallEnd(iz_));
 
     cellStatus.resize(n_lev_max());
     nodeStatus.resize(n_lev_max());

@@ -43,14 +43,16 @@ void PlotWriter::init() {
     if (subString.substr(0, 2) == "z=")
       idx = z_;
 
-    subString.erase(0, 2);
-    ss << subString;
-    ss >> plotMin_D[idx];
+    if (idx < nDim) {
+      subString.erase(0, 2);
+      ss << subString;
+      ss >> plotMin_D[idx];
 
-    // The plotMin_D/plotMax_D values read from the #SAVEPLOT command is in
-    // BATSRUS/SWMF IO unit.
-    plotMin_D[idx] = plotMin_D[idx] * No2NoL;
-    plotMax_D[idx] = plotMin_D[idx] + 1e-10;
+      // The plotMin_D/plotMax_D values read from the #SAVEPLOT command is in
+      // BATSRUS/SWMF IO unit.
+      plotMin_D[idx] = plotMin_D[idx] * No2NoL;
+      plotMax_D[idx] = plotMin_D[idx] + 1e-10;
+    }
 
     for (int iDim = 0; iDim < nDim; ++iDim) {
       if (iDim != idx) {

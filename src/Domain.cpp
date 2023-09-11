@@ -19,7 +19,7 @@ void Domain::init(double time, const int iDomain,
   param = paramString;
 
   if (!paramInt.empty())
-    if (paramInt[0] == 2)
+    if (paramInt[0] == 2 && nDim == 3)
       isFake2D = true;
 
   prepare_grid_info(paramRegion);
@@ -791,7 +791,7 @@ void Domain::read_param(const bool readGridInfo) {
         if (nCell[i] <= 0)
           Abort("Error: invalid input!");
       }
-      isFake2D = (nCell[iz_] == 1);
+      isFake2D = (nDim == 3) && (nCell[iz_] == 1);
 
     } else if (command == "#GRIDEFFICIENCY") {
       param.read_var("gridEfficiency", gridEfficiency);
@@ -909,6 +909,8 @@ void Domain::read_param(const bool readGridInfo) {
       for (int i = 0; i < nDim; i++) {
         bool isPeriodic;
         param.read_var("isPeriodic", isPeriodic);
+
+        printf("i=%d, ndim=%d, spacedim=%d\n", i, nDim, AMREX_SPACEDIM);
         set_periodicity(i, isPeriodic);
       }
 

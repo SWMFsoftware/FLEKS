@@ -269,7 +269,8 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
   if (iParam.empty() || norm.empty() || paramComm.empty())
     Abort("Error: one of the input vector is empty!\n");
 
-  nDimFluid = (Geom(0).Domain().length(iz_) == 1) ? 2 : 3;
+  nDimFluid = (nDim == 3 && Geom(0).Domain().length(iz_) > 1) ? 3 : 2;
+
   nVarFluid = iParam[2];
   nFluid = iParam[3];
   nSpeciesFluid = iParam[4];
@@ -415,7 +416,7 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
 void FluidInterface::read_param(const std::string& command, ReadParam& param) {
   if (command == "#NORMALIZATION") {
     param.read_var("lNorm", lNormSI);
-    param.read_var("uNorm", uNormSI);    
+    param.read_var("uNorm", uNormSI);
   } else if (command == "#SCALINGFACTOR") {
     param.read_var("scaling", ScalingFactor);
   } else if (command == "#BODYSIZE") {

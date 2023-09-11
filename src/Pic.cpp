@@ -44,7 +44,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#PARTICLES") {
     param.read_var("npcelx", nPartPerCell[ix_]);
     param.read_var("npcely", nPartPerCell[iy_]);
-    param.read_var("npcelz", nPartPerCell[iz_]);
+    if (nDim == 3)
+      param.read_var("npcelz", nPartPerCell[iz_]);
   } else if (command == "#SOURCEPARTICLES") {
     param.read_var("npcelx", nSourcePPC[ix_]);
     param.read_var("npcely", nSourcePPC[iy_]);
