@@ -231,10 +231,11 @@ public:
   void update_E();
   void update_E_impl();
   void update_E_expl();
-  void update_E_rhs(double *rhos);
-  void update_E_matvec(const double *vecIn, double *vecOut,
+  void update_E_rhs(double *rhos, int iLev);
+  void update_E_matvec(const double *vecIn, double *vecOut, int iLev,
                        const bool useZeroBC = true);
-  void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF);
+  void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF,
+                        int iLev);
 
   void smooth_E(amrex::MultiFab &mfE);
 
@@ -259,9 +260,9 @@ public:
 
   void calc_cost_per_cell(BalanceStrategy balanceStrategy);
 
-  void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF);
+  void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF, int iLev);
 
-  void convert_3d_to_1d(const amrex::MultiFab &MF, double *const p);
+  void convert_3d_to_1d(const amrex::MultiFab &MF, double *const p, int iLev);
 
   //--------------- IO begin--------------------------------
   void find_output_list(const PlotWriter &writerIn, long int &nPointAllProc,

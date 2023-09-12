@@ -692,13 +692,13 @@ void Pic::calculate_phi(LinearSolver& solver) {
                     centerNetChargeN[iLev], 0, 0, residual.nComp(),
                     residual.nGrow());
 
-  convert_3d_to_1d(residual, solver.rhs);
+  convert_3d_to_1d(residual, solver.rhs, iLev);
 
   BL_PROFILE_VAR("Pic::phi_iterate", solve);
   solver.solve(doReport);
   BL_PROFILE_VAR_STOP(solve);
 
-  convert_1d_to_3d(solver.xLeft, centerPhi[iLev]);
+  convert_1d_to_3d(solver.xLeft, centerPhi[iLev], iLev);
   centerPhi[iLev].FillBoundary(Geom(iLev).periodicity());
 }
 
@@ -713,7 +713,7 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut) {
 
   MultiFab inMF(cGrids[iLev], DistributionMap(iLev), 1, nGst);
 
-  convert_1d_to_3d(vecIn, inMF);
+  convert_1d_to_3d(vecIn, inMF, iLev);
   inMF.FillBoundary(0, 1, IntVect(1), Geom(iLev).periodicity());
 
   MultiFab outMF(cGrids[iLev], DistributionMap(iLev), 1, nGst);
@@ -740,7 +740,7 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut) {
               }
   }
   outMF.mult(fourPI * fourPI);
-  convert_3d_to_1d(outMF, vecOut);
+  convert_3d_to_1d(outMF, vecOut, iLev);
 }
 
 //==========================================================
@@ -909,29 +909,27 @@ void Pic::update_E_impl() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     eSolver.reset(get_local_node_or_cell_number(nodeE[iLev]));
 
-    update_E_rhs(eSolver.rhs);
+    update_E_rhs(eSolver.rhs, iLev);
 
-    convert_3d_to_1d(nodeE[iLev], eSolver.xLeft);
-  }
+    convert_3d_to_1d(nodeE[iLev], eSolver.xLeft, iLev);
 
-  update_E_matvec(eSolver.xLeft, eSolver.matvec, false);
+    update_E_matvec(eSolver.xLeft, eSolver.matvec, iLev, false);
 
-  for (int i = 0; i < eSolver.get_nSolve(); i++) {
-    eSolver.rhs[i] -= eSolver.matvec[i];
-    eSolver.xLeft[i] = 0;
-  }
+    for (int i = 0; i < eSolver.get_nSolve(); i++) {
+      eSolver.rhs[i] -= eSolver.matvec[i];
+      eSolver.xLeft[i] = 0;
+    }
 
-  if (doReport)
-    Print() << "\n-------" << printPrefix << " E solver ------------------"
-            << std::endl;
+    if (doReport)
+      Print() << "\n-------" << printPrefix << " E solver ------------------"
+              << std::endl;
 
-  BL_PROFILE_VAR("Pic::E_iterate", eSolver);
-  eSolver.solve(doReport);
-  BL_PROFILE_VAR_STOP(eSolver);
+    BL_PROFILE_VAR("Pic::E_iterate", eSolver);
+    eSolver.solve(doReport);
+    BL_PROFILE_VAR_STOP(eSolver);
 
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
     nodeEth[iLev].setVal(0.0);
-    convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev]);
+    convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev], iLev);
     nodeEth[iLev].SumBoundary(Geom(iLev).periodicity());
     nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
     MultiFab::Add(nodeEth[iLev], nodeE[iLev], 0, 0, nodeEth[iLev].nComp(),
@@ -953,35 +951,33 @@ void Pic::update_E_impl() {
 }
 
 //==========================================================
-void Pic::update_E_matvec(const double* vecIn, double* vecOut,
+void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
                           const bool useZeroBC) {
   std::string nameFunc = "Pic::E_matvec";
   timing_func(nameFunc);
 
-  const int iLev = 0;
-
   zero_array(vecOut, eSolver.get_nSolve());
 
-  MultiFab vecMF(nGrids[0], DistributionMap(0), 3, nGst);
+  MultiFab vecMF(nGrids[iLev], DistributionMap(iLev), 3, nGst);
   vecMF.setVal(0.0);
 
-  MultiFab matvecMF(nGrids[0], DistributionMap(0), 3, 1);
+  MultiFab matvecMF(nGrids[iLev], DistributionMap(iLev), 3, 1);
   matvecMF.setVal(0.0);
 
-  MultiFab tempCenter3(cGrids[0], DistributionMap(0), 3, nGst);
+  MultiFab tempCenter3(cGrids[iLev], DistributionMap(iLev), 3, nGst);
 
   MultiFab tempNode3(nGrids[iLev], DistributionMap(iLev), 3, nGst);
   tempNode3.setVal(0.0);
 
   MultiFab tempCenter1(cGrids[iLev], DistributionMap(iLev), 1, nGst);
 
-  convert_1d_to_3d(vecIn, vecMF);
+  convert_1d_to_3d(vecIn, vecMF, iLev);
 
   // The right side edges should be filled in.
-  vecMF.SumBoundary(Geom(0).periodicity());
+  vecMF.SumBoundary(Geom(iLev).periodicity());
 
   // M*E needs ghost cell information.
-  vecMF.FillBoundary(Geom(0).periodicity());
+  vecMF.FillBoundary(Geom(iLev).periodicity());
 
   if (useZeroBC) {
     // The boundary nodes would not be filled in by convert_1d_3d. So, there
@@ -999,7 +995,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
   matvecMF.mult(-delt2);
 
   { // grad(divE)
-    div_node_to_center(vecMF, centerDivE[iLev], Geom(0).InvCellSize());
+    div_node_to_center(vecMF, centerDivE[iLev], Geom(iLev).InvCellSize());
 
     if (fsolver.coefDiff > 0) {
       // Calculate cell center E for center-to-center divE.
@@ -1017,9 +1013,9 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
       //                           tempCenter3.nComp());
       //------------------------------------------------------------
 
-      div_center_to_center(tempCenter3, tempCenter1, Geom(0).InvCellSize());
+      div_center_to_center(tempCenter3, tempCenter1, Geom(iLev).InvCellSize());
 
-      tempCenter1.FillBoundary(0, 1, IntVect(1), Geom(0).periodicity());
+      tempCenter1.FillBoundary(0, 1, IntVect(1), Geom(iLev).periodicity());
 
       // 1) The outmost boundary layer of tempCenter3 is not accurate.
       // 2) The 2 outmost boundary layers (all ghosts if there are 2 ghost
@@ -1032,7 +1028,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
                         0, 1, 1);
     }
 
-    grad_center_to_node(centerDivE[iLev], tempNode3, Geom(0).InvCellSize());
+    grad_center_to_node(centerDivE[iLev], tempNode3, Geom(iLev).InvCellSize());
 
     tempNode3.mult(delt2);
     MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(),
@@ -1040,22 +1036,21 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut,
   }
 
   tempNode3.setVal(0);
-  update_E_M_dot_E(vecMF, tempNode3);
+  update_E_M_dot_E(vecMF, tempNode3, iLev);
 
   MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
 
   MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
 
-  convert_3d_to_1d(matvecMF, vecOut);
+  convert_3d_to_1d(matvecMF, vecOut, iLev);
 }
 
 //==========================================================
-void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
+void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
   std::string nameFunc = "Pic::update_E_M_dot_E";
   timing_func(nameFunc);
 
   outMF.setVal(0.0);
-  int iLev = 0;
   Real c0 = fourPI * fsolver.theta * tc->get_dt();
   for (MFIter mfi(outMF); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
@@ -1094,29 +1089,23 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF) {
 }
 
 //==========================================================
-void Pic::update_E_rhs(double* rhs) {
+void Pic::update_E_rhs(double* rhs, int iLev) {
   std::string nameFunc = "Pic::update_E_rhs";
   timing_func(nameFunc);
 
-  int iLev = 0;
-
-  MultiFab tempNode(nGrids[0], DistributionMap(0), 3, nGst);
+  MultiFab tempNode(nGrids[iLev], DistributionMap(iLev), 3, nGst);
   tempNode.setVal(0.0);
-  MultiFab temp2Node(nGrids[0], DistributionMap(0), 3, nGst);
+  MultiFab temp2Node(nGrids[iLev], DistributionMap(iLev), 3, nGst);
   temp2Node.setVal(0.0);
 
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-             &Pic::get_center_B, iLev);
-    apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
-             &Pic::get_node_B, iLev);
-  }
+  apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+           &Pic::get_center_B, iLev);
+  apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+           &Pic::get_node_B, iLev);
 
-  const Real* invDx = Geom(0).InvCellSize();
+  const Real* invDx = Geom(iLev).InvCellSize();
 
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    curl_center_to_node(centerB[iLev], tempNode, invDx);
-  }
+  curl_center_to_node(centerB[iLev], tempNode, invDx);
 
   MultiFab::Saxpy(temp2Node, -fourPI, jHat[iLev], 0, 0, temp2Node.nComp(),
                   temp2Node.nGrow());
@@ -1124,12 +1113,10 @@ void Pic::update_E_rhs(double* rhs) {
   MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), temp2Node.nGrow());
 
   temp2Node.mult(fsolver.theta * tc->get_dt());
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    MultiFab::Add(temp2Node, nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
-                  temp2Node.nGrow());
-  }
+  MultiFab::Add(temp2Node, nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
+                temp2Node.nGrow());
 
-  convert_3d_to_1d(temp2Node, rhs);
+  convert_3d_to_1d(temp2Node, rhs, iLev);
 }
 
 //==========================================================
@@ -1434,7 +1421,7 @@ Real Pic::calc_B_field_energy() {
 }
 
 //==========================================================
-void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF) {
+void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF, int iLev) {
   std::string nameFunc = "Pic::convert_1d_to_3d";
   timing_func(nameFunc);
 
@@ -1442,7 +1429,6 @@ void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF) {
 
   MF.setVal(0.0);
 
-  int iLev = 0;
   int iCount = 0;
   for (MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
     const Box& box = mfi.tilebox();
@@ -1465,13 +1451,12 @@ void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF) {
 }
 
 //==========================================================
-void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p) {
+void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
   std::string nameFunc = "Pic::convert_3d_to_1d";
   timing_func(nameFunc);
 
   bool isCenter = MF.ixType().cellCentered();
 
-  int iLev = 0;
   int iCount = 0;
   for (MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
     const Box& box = mfi.tilebox();

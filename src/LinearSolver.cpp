@@ -3,7 +3,7 @@
 #include "LinearSolver.h"
 
 void matvec_E_solver(const double *vecIn, double *vecOut, int n) {
-  fleksDomains(fleksDomains.selected()).pic->update_E_matvec(vecIn, vecOut);
+  fleksDomains(fleksDomains.selected()).pic->update_E_matvec(vecIn, vecOut, 0);
 }
 
 void matvec_divE_accurate(const double *vecIn, double *vecOut, int n) {
@@ -82,7 +82,7 @@ void linear_solver_wrapper_hy(
 
   int nVarIjk = nVar * nI * nJ * nK; // Number of variables per block
 
-  int nImpl = nVarIjk * nBlock;      // Number of variables per processor
+  int nImpl = nVarIjk * nBlock; // Number of variables per processor
 
   bool DoTest = lTest == 1;
 
