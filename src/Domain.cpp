@@ -909,8 +909,6 @@ void Domain::read_param(const bool readGridInfo) {
       for (int i = 0; i < nDim; i++) {
         bool isPeriodic;
         param.read_var("isPeriodic", isPeriodic);
-
-        printf("i=%d, ndim=%d, spacedim=%d\n", i, nDim, AMREX_SPACEDIM);
         set_periodicity(i, isPeriodic);
       }
 
