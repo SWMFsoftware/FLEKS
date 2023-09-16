@@ -2,8 +2,9 @@
 // #include "linear_solver_wrapper_c.h" // Calling Fortran solver
 #include "LinearSolver.h"
 
-void matvec_E_solver(const double *vecIn, double *vecOut, int n) {
-  fleksDomains(fleksDomains.selected()).pic->update_E_matvec(vecIn, vecOut, 0);
+void matvec_E_solver(const double *vecIn, double *vecOut, int iLev) {
+  fleksDomains(fleksDomains.selected())
+      .pic->update_E_matvec(vecIn, vecOut, iLev);
 }
 
 void matvec_divE_accurate(const double *vecIn, double *vecOut, int n) {
@@ -13,7 +14,7 @@ void matvec_divE_accurate(const double *vecIn, double *vecOut, int n) {
 
 void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
                          int nDim, int nGrid, double *rhs, double *xLeft,
-                         MATVEC fMatvec, bool doReport) {
+                         MATVEC fMatvec, int iLev, bool doReport) {
 
   int nJ = 1, nK = 1, nBlock = 1;
   double precond_matrix_II[1][1];
@@ -23,9 +24,9 @@ void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
   if (true) {
     MPI_Comm iComm = amrex::ParallelDescriptor::Communicator();
     PrecondType TypePrecond = NONE;
-    linear_solver_wrapper_hy(fMatvec, GMRES, tolerance, nIteration, nVarSolve,
-                             nDim, nGrid, nJ, nK, nBlock, iComm, rhs, xLeft,
-                             TypePrecond, precond_matrix_II[0], lTest);
+    linear_solver_wrapper_hy(fMatvec, iLev, GMRES, tolerance, nIteration,
+                             nVarSolve, nDim, nGrid, nJ, nK, nBlock, iComm, rhs,
+                             xLeft, TypePrecond, precond_matrix_II[0], lTest);
   } else { // Fortran solver
     /*
     // The shared library matvec requires non-const vecIn due to compatibility
@@ -45,7 +46,7 @@ void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
 }
 
 void linear_solver_wrapper_hy(
-    std::function<void(const double *, double *, const int)> matvec,
+    std::function<void(const double *, double *, const int)> matvec, int iLev,
     // Matrix-free operation
     const KrylovType typeSolver,              // Type of Solver
     const double tolerance,                   // Tolerance for the solver
@@ -110,7 +111,7 @@ void linear_solver_wrapper_hy(
   // Solve linear problem
   switch (param.typeKrylov) {
     case GMRES:
-      iError = gmres(matvec, rhs_I, x_I, param.useInitialGuess, nImpl,
+      iError = gmres(matvec, iLev, rhs_I, x_I, param.useInitialGuess, nImpl,
                      param.nKrylovVector, param.error, param.typeStop,
                      param.nMatvec, DoTest, iComm);
       break;
@@ -157,8 +158,8 @@ Rewritten into F90 and parallelized by Gabor Toth (May 2002)
 Moved into LinearSolver.f90 for SWMF by Gabor Toth (Dec 2006)
 Rewritten into C++ by Hongyang Zhou (Oct 2020)
 */
-int gmres(std::function<void(const double *, double *, const int)>
-              matvec,              // Func for matrix std::vector multiplication
+int gmres(std::function<void(const double *, double *, const int)> matvec,
+          int iLev,                // Func for matrix std::vector multiplication
           const double *rhs,       // Right hand side std::vector
           double *sol,             // Initial guess / solution std::vector
           const bool isInit,       // true if sol contains initial guess
@@ -205,7 +206,7 @@ int gmres(std::function<void(const double *, double *, const int)>
     // Compute initial residual std::vector
     // Krylov_II[1]:=A*sol
     if (isInit || its > 0) {
-      matvec(sol, Krylov_II, n);
+      matvec(sol, Krylov_II, iLev);
       for (int i = 0; i < n; i++) {
         Krylov_II[i] = rhs[i] - Krylov_II[i];
       }
@@ -266,7 +267,7 @@ int gmres(std::function<void(const double *, double *, const int)>
       i1 = i + 1;
 
       // Krylov_II[i1]:=A*Krylov_II[i]
-      matvec(&Krylov_II[i * n], &Krylov_II[i1 * n], n);
+      matvec(&Krylov_II[i * n], &Krylov_II[i1 * n], iLev);
 
       // Modified Gram-Schmidt
       for (int j = 0; j <= i; j++) {
@@ -362,4 +363,5 @@ int gmres(std::function<void(const double *, double *, const int)>
   delete[] hh;
 
   return info;
+
 }

@@ -925,7 +925,7 @@ void Pic::update_E_impl() {
               << std::endl;
 
     BL_PROFILE_VAR("Pic::E_iterate", eSolver);
-    eSolver.solve(doReport);
+    eSolver.solve(iLev,doReport);
     BL_PROFILE_VAR_STOP(eSolver);
 
     nodeEth[iLev].setVal(0.0);

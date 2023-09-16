@@ -41,12 +41,12 @@ struct Block {
   double *precondMatrix_II;
 };
 
-void matvec_E_solver(const double *vecIn, double *vecOut, int n);
+void matvec_E_solver(const double *vecIn, double *vecOut, int iLev);
 void matvec_divE_accurate(const double *vecIn, double *vecOut, int n);
 
 void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
                          int nDim, int nGrid, double *rhs, double *xLeft,
-                         MATVEC fMatvec, bool doReport = true);
+                         MATVEC fMatvec, int iLev, bool doReport = true);
 
 // hyzhou: eventually we should use this and merge the above into this class!
 class LinearSolver {
@@ -117,23 +117,23 @@ public:
     reset(nGridIn);
   }
 
-  void solve(bool doReport = true) {
+  void solve(int iLev, bool doReport = true) {
     linear_solver_gmres(tol, nIter, nVar, nDim, nGrid, rhs, xLeft, fMatvec,
-                        doReport);
+                        iLev, doReport);
   }
 
   int get_nSolve() const { return nSolve; }
 };
 
 void linear_solver_wrapper_hy(
-    std::function<void(const double *, double *, const int)> matvec,
+    std::function<void(const double *, double *, const int)> matvec, int iLev,
     const KrylovType solverType, const double tolerance, const int nIteration,
     const int nVar, const int nDim, const int nI, const int nJ, const int nK,
     const int nBlock, MPI_Comm iComm, double *Rhs_I, double *x_I,
     const PrecondType TypePrecond, double *precond_matrix, const int lTest);
 
-int gmres(std::function<void(const double *, double *, const int)>
-              matvec,              // Func for matrix vector multiplication
+int gmres(std::function<void(const double *, double *, const int)> matvec,
+          int iLev,                // Func for matrix vector multiplication
           const double *rhs,       // Right hand side vector
           double *sol,             // Initial guess / solution vector
           const bool isInit,       // true if Sol contains initial guess
