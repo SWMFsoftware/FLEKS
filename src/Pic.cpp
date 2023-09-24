@@ -107,8 +107,8 @@ void Pic::fill_new_cells() {
 
     update_grid_status();
   }
-
-  fill_E_B_fields();
+  
+    fill_E_B_fields();
 
   if (usePIC) {
     fill_particles();
@@ -254,7 +254,7 @@ void Pic::fill_new_node_E() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
       FArrayBox& fab = nodeE[iLev][mfi];
-      const Box& box = mfi.validbox();
+      const Box& box = mfi.fabbox();
       const Array4<Real>& arrE = fab.array();
 
       const auto lo = lbound(box);
@@ -265,11 +265,11 @@ void Pic::fill_new_node_E() {
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_new(status(i, j, k))) {
+            // if (bit::is_new(status(i, j, k))) {
               arrE(i, j, k, ix_) = fi->get_ex(mfi, i, j, k, iLev);
               arrE(i, j, k, iy_) = fi->get_ey(mfi, i, j, k, iLev);
               arrE(i, j, k, iz_) = fi->get_ez(mfi, i, j, k, iLev);
-            }
+            // }
           }
     }
   }
@@ -808,9 +808,9 @@ void Pic::update(bool doReportIn) {
   }
 
   calc_mass_matrix();
-
+    
   update_E();
-
+  
   particle_mover();
 
   // Calling re_sampling after particle mover so that all the particles outside
@@ -932,7 +932,7 @@ void Pic::update_E_impl() {
     convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev], iLev);
     nodeEth[iLev].SumBoundary(Geom(iLev).periodicity());
     nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
-    MultiFab::Add(nodeEth[iLev], nodeE[iLev], 0, 0, nodeEth[iLev].nComp(),
+        MultiFab::Add(nodeEth[iLev], nodeE[iLev], 0, 0, nodeEth[iLev].nComp(),
                   nGst);
 
     MultiFab::LinComb(nodeE[iLev], -(1.0 - fsolver.theta) / fsolver.theta,
