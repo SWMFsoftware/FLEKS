@@ -5,36 +5,11 @@ import time
 import re
 import os
 from amrex2tec import amrex2tec
+from clean_dat import clean_dat
 
 # Q: How to fix "no module named paraview" error?
 # A: Add paraview python package location to $PYTHONPATH. For example:
 #    export PYTHONPATH=$PYTHONPATH:/usr/lib/python3.10/site-packages
-
-
-def clean_dat(datPath):
-    # In the *.dat file, if 'VARIABLES'contain '[' or ']',
-    # Paraview will fail. So, remove these characters from *.dat file
-    f = open(datPath, "r+")
-    # Assume 'VARIABLES' is in the first 10 lines
-    for i in range(10):
-        p0 = f.tell()
-        line = f.readline()
-        if (line.find("VARIABLES") != -1):
-            p1 = f.tell()
-            break
-    # Remove the unit.
-    lineNew = re.sub(r"\s*?\[(.*?)\]", r"", line)
-    # Remove '\n'
-    lineNew = re.sub(r"\n", r"", lineNew)
-    # Padding space so that lineNew's length is the same as line's
-    lineNew += (len(line)-len(lineNew)-1)*" " + "\n"
-
-    f.seek(p0)
-    f.write(lineNew)
-    f.close()
-
-    return line
-
 
 def tec2vtk(datPath):
     # The performance of converting a 6G .dat file
