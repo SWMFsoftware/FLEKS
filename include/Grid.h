@@ -506,7 +506,9 @@ public:
 
     int ngst = MF[0].nGrow() * WriteGhost;
     int ncomp = MF[0].nComp();
-
+    for (int n = 0; n <= nLev; n++) {
+      MF[n].FillBoundary();
+    }
     std::ofstream myfile;
     myfile.open("MF_Header.txt");
     myfile << nLev << " "
@@ -548,6 +550,14 @@ public:
       }
       myfile.close();
     }
+  };
+  void WriteMFtoTXT(amrex::MultiFab& MF, int WriteGhost = 0) {
+    amrex::Vector<amrex::MultiFab> tmf;
+    tmf.resize(1);
+    tmf[0].define(MF.boxArray(), MF.DistributionMap(), MF.nComp(), MF.nGrow());
+    amrex::MultiFab::Copy(tmf[0], MF, 0, 0, MF.nComp(), MF.nGrow());
+    int nlev = 0;
+    WriteMFtoTXT(tmf, nlev, WriteGhost);
   };
 };
 #endif
