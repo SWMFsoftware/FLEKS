@@ -1540,15 +1540,16 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
         continue;
 
       // Phase space cell number in one direction.
-      // The const 0.8 is choosen by experience.
-      int nCell = ceil(0.8 * r0 * pow(nPartOrig, 1. / nDim));
+      // The const 0.5/0.8 is choosen by experiments.
+      int nCell = 0;
+      if (fastMerge) {
+        nCell = r0 * ceil(0.5 * pow(nPartOrig, 1. / nDim));
+      } else {
+        nCell = r0 * ceil(0.8 * pow(nPartOrig, 1. / nDim));
+      }
 
       if (nCell < 3)
         continue;
-
-      if (fastMerge) {
-        nCell = nCell > 5 ? 5 : nCell;
-      }
 
       // Sort the particles by the location first to make sure the results
       // are the same for different number of processors
@@ -1674,8 +1675,12 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
               }
             }
 
-            if (partIdx.size() < nPartCombine)
+            if (partIdx.size() < nPartNew + 1)
               continue;
+
+            if (fastMerge)
+              nPartCombine = nPartCombineMax < partIdx.size() ? nPartCombineMax
+                                                              : partIdx.size();
 
             Vector<Real> distance;
             distance.resize(partIdx.size(), 0);
@@ -1707,12 +1712,29 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
               return coefPos * dl2 + coefVel * dvel2;
             };
 
-            std::sort(partIdx.begin(), partIdx.end(),
-                      [this, &particles, calc_distance2_to_center](
-                          const int& idl, const int& idr) {
-                        return calc_distance2_to_center(idl) <
-                               calc_distance2_to_center(idr);
-                      });
+            // Sort the particles by weights in decending order.
+            if (fastMerge) {
+              std::sort(partIdx.begin(), partIdx.end(),
+                        [&particles](int idLeft, int idRight) {
+                          const Real ql = fabs(particles[idLeft].rdata(iqp_));
+                          Real xl = fabs(particles[idLeft].pos(ix_));
+                          const Real qr = fabs(particles[idRight].rdata(iqp_));
+                          Real xr = fabs(particles[idRight].pos(ix_));
+
+                          xl = xl / (fabs(xl + xr) + 1e-20) * (ql + qr) * 1e-9;
+
+                          xr = xr / (fabs(xl + xr) + 1e-20) * (ql + qr) * 1e-9;
+
+                          return ql < qr;
+                        });
+            } else {
+              std::sort(partIdx.begin(), partIdx.end(),
+                        [this, &particles, calc_distance2_to_center](
+                            const int& idl, const int& idr) {
+                          return calc_distance2_to_center(idl) <
+                                 calc_distance2_to_center(idr);
+                        });
+            }
             //----------------------------------------------------------
 
             /*
@@ -1731,8 +1753,7 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
             for (int i = 0; i < 2 * nDim; i++) {
               middle[i] = 0;
             }
-            for (int i = 0; i < nPartCombine; i++) {
-              int pID = idx_I[i];
+            for (int pID : idx_I) {
               for (int iDir = ix_; iDir <= iz_; iDir++) {
                 middle[iDir] += particles[pID].pos(iDir);
                 middle[nDim + iDir] += particles[pID].rdata(iDir);
@@ -1743,8 +1764,7 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
             }
 
             bool doCombine = true;
-            for (int i = 0; i < nPartCombine; i++) {
-              int pID = idx_I[i];
+            for (int pID : idx_I) {
               Real distance = sqrt(calc_distance2_to_center(pID));
               if (distance > mergeThresholdDistance) {
                 doCombine = false;
@@ -1756,12 +1776,20 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
               continue;
 
             if (fastMerge) {
-              // Sort the particles by weights.
+              // Sort the particles by weights in ascending order.
               std::sort(idx_I.begin(), idx_I.end(),
-                        [&particles](const int& idLeft, const int& idRight) {
+                        [&particles](int idLeft, int idRight) {
                           const Real ql = fabs(particles[idLeft].rdata(iqp_));
+                          Real xl = fabs(particles[idLeft].pos(ix_));
                           const Real qr = fabs(particles[idRight].rdata(iqp_));
-                          return ql - qr < 1e-9 * ql;
+                          Real xr = fabs(particles[idRight].pos(ix_));
+
+                          xl = xl / (fabs(xl + xr) + 1e-20) * (ql + qr) * 1e-9;
+
+                          xr = xr / (fabs(xl + xr) + 1e-20) * (ql + qr) * 1e-9;
+
+                          // return ql + xl < qr + xr;
+                          return ql < qr;
                         });
             } else {
               // Find the pair that is closest to each other in phase space
@@ -1803,26 +1831,98 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
                 iPartDel = pair2;
               }
 
-              if (iPartDel != nPartCombine - 1) {
-                std::swap(idx_I[iPartDel], idx_I[nPartCombine - 1]);
-              }
+              std::swap(idx_I[iPartDel], idx_I[nPartCombine - 1]);
             }
 
             nEqs++;
             bool isSolved;
-            int nVar = nPartNew;
+            int nVar = 5;
+            if (fastMerge)
+              nVar += nPartNew;
+            const int nVarMax = 24;
+
+            if (nVar > nVarMax) {
+              amrex::Abort("Wrong: nVar>nVarMax");
+            }
+
             const int iq_ = 0, iu_ = 1, iv_ = 2, iw_ = 3, ie_ = 4;
             Vector<Real> x(nVar, 0);
+            Vector<Real> ref(nVar, 0);
             Real a[nVarMax][nVarMax + 1];
 
-            for (int i = 0; i < nVar; i++)
+            for (int i = 0; i < nVar; i++) {
               for (int j = 0; j < nVar + 1; j++) {
                 a[i][j] = 0;
               }
+            }
 
+            //------------------------------------------
             if (fastMerge) {
+              // Reverse the order of the first nPartCombine particles. So,
+              // the particles of idx_I are in descending order.
 
+              Vector<int> iTmp(nPartCombine);
+              for (int i = 0; i < nPartCombine; i++) {
+                iTmp[i] = idx_I[nPartCombine - 1 - i];
+              }
+              for (int i = 0; i < nPartCombine; i++) {
+                idx_I[i] = iTmp[i];
+              }
+
+              // Sum the moments of all the old particles.
+              for (int ip = 0; ip < nPartCombine; ip++) {
+                const Real qp = particles[idx_I[ip]].rdata(iqp_);
+                const Real up = particles[idx_I[ip]].rdata(ix_);
+                const Real vp = particles[idx_I[ip]].rdata(iy_);
+                const Real wp = particles[idx_I[ip]].rdata(iz_);
+                const Real v2 = 0.5 * (pow(up, 2) + pow(vp, 2) + pow(wp, 2));
+                a[nPartNew + iq_][nVar] += qp;
+                a[nPartNew + iu_][nVar] += qp * up;
+                a[nPartNew + iv_][nVar] += qp * vp;
+                a[nPartNew + iw_][nVar] += qp * wp;
+                a[nPartNew + ie_][nVar] += qp * v2;
+              }
+
+              Real w1 = particles[idx_I[0]].rdata(iqp_);
+              Real w2 = particles[idx_I[nPartNew]].rdata(iqp_);
+              // if (w1 / w2 > 10 || w2 / w1 > 10)
+              //   continue;
+
+              const Real invAvg = 2 * nPartNew / a[nPartNew + iq_][nVar];
+              for (int ip = 0; ip < nPartNew; ip++) {
+                const Real qp = particles[idx_I[ip]].rdata(iqp_);
+                const Real up = particles[idx_I[ip]].rdata(ix_);
+                const Real vp = particles[idx_I[ip]].rdata(iy_);
+                const Real wp = particles[idx_I[ip]].rdata(iz_);
+                const Real v2 = 0.5 * (pow(up, 2) + pow(vp, 2) + pow(wp, 2));
+
+                a[ip][nVar] = 2;
+
+                a[ip][ip] = 2. / qp;
+                a[ip][nPartNew + iq_] = 1;
+                a[ip][nPartNew + iu_] = up;
+                a[ip][nPartNew + iv_] = vp;
+                a[ip][nPartNew + iw_] = wp;
+                a[ip][nPartNew + ie_] = v2;
+
+                a[nPartNew + iq_][ip] = 1;
+                a[nPartNew + iu_][ip] = up;
+                a[nPartNew + iv_][ip] = vp;
+                a[nPartNew + iw_][ip] = wp;
+                a[nPartNew + ie_][ip] = v2;
+              }
+
+              const Real csmall = 1e-9;
+              const Real tmp = csmall * invAvg;
+              for (int i = 0; i < nVar; i++) {
+                if (i < nPartNew) {
+                  ref[i] = tmp;
+                } else {
+                  ref[i] = fabs(a[i][nVar] * tmp);
+                }
+              }
             } else {
+              //-----------Solve the new particle weights-------
               for (int ip = 0; ip < nPartCombine; ip++) {
                 const Real qp = particles[idx_I[ip]].rdata(iqp_);
                 const Real up = particles[idx_I[ip]].rdata(ix_);
@@ -1845,68 +1945,68 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
                 a[ie_][nVar] += qp * v2;
               }
 
-              Vector<Real> ref(ie_ + 1, 0);
               const Real csmall = 1e-9;
               const Real tmp = csmall * fabs(1. / a[iq_][nVar]);
               for (int i = iq_; i <= ie_; i++) {
                 ref[i] = fabs(a[i][nVar] * tmp);
               }
+            }
 
-              auto linear_solver_Gauss_Elimination = [&a, &x, &nVar, &ref]() {
-                int m = nVar;
-                int n = nVar + 1;
-                for (int i = 0; i < m - 1; i++) {
-                  // Partial Pivoting
-                  for (int k = i + 1; k < m; k++) {
-                    // If diagonal element(absolute vallue) is smaller than
-                    // any of the terms below it
-                    if (fabs(a[i][i]) < fabs(a[k][i])) {
-                      // Swap the rows
-                      for (int j = 0; j < n; j++) {
-                        std::swap(a[i][j], a[k][j]);
-                      }
-                    }
-                  }
-                  // Begin Gauss Elimination
-                  for (int k = i + 1; k < m; k++) {
-                    if (fabs(a[i][i]) < ref[i]) {
-                      return false;
-                    }
-                    double term = a[k][i] / a[i][i];
+            auto linear_solver_Gauss_Elimination = [&a, &x, &nVar, &ref]() {
+              int m = nVar;
+              int n = nVar + 1;
+              for (int i = 0; i < m - 1; i++) {
+                // Partial Pivoting
+                for (int k = i + 1; k < m; k++) {
+                  // If diagonal element(absolute vallue) is smaller than
+                  // any of the terms below it
+                  if (fabs(a[i][i]) < fabs(a[k][i])) {
+                    // Swap the rows
                     for (int j = 0; j < n; j++) {
-                      a[k][j] = a[k][j] - term * a[i][j];
+                      std::swap(a[i][j], a[k][j]);
                     }
                   }
                 }
-                // Begin Back-substitution
-                for (int i = m - 1; i >= 0; i--) {
-                  x[i] = a[i][n - 1];
-                  for (int j = i + 1; j < n - 1; j++) {
-                    x[i] = x[i] - a[i][j] * x[j];
-                  }
-
+                // Begin Gauss Elimination
+                for (int k = i + 1; k < m; k++) {
                   if (fabs(a[i][i]) < ref[i]) {
                     return false;
                   }
-
-                  x[i] = x[i] / a[i][i];
-                }
-                return true;
-              };
-
-              isSolved = linear_solver_Gauss_Elimination();
-
-              if (isSolved) {
-                // All the particle weights should have the same sign.
-                Real qt = a[iq_][nVar];
-                for (int ip = 0; ip < nPartNew; ip++) {
-                  if (qt * x[ip] <= 0) {
-                    isSolved = false;
-                    break;
+                  double term = a[k][i] / a[i][i];
+                  for (int j = 0; j < n; j++) {
+                    a[k][j] = a[k][j] - term * a[i][j];
                   }
                 }
               }
+              // Begin Back-substitution
+              for (int i = m - 1; i >= 0; i--) {
+                x[i] = a[i][n - 1];
+                for (int j = i + 1; j < n - 1; j++) {
+                  x[i] = x[i] - a[i][j] * x[j];
+                }
+
+                if (fabs(a[i][i]) < ref[i]) {
+                  return false;
+                }
+
+                x[i] = x[i] / a[i][i];
+              }
+              return true;
+            };
+
+            isSolved = linear_solver_Gauss_Elimination();
+
+            if (isSolved) {
+              // All the particle weights should have the same sign.
+              Real qt = x[0];
+              for (int ip = 0; ip < nPartNew; ip++) {
+                if (qt * x[ip] <= 0) {
+                  isSolved = false;
+                  break;
+                }
+              }
             }
+
             if (!isSolved)
               continue;
             //----------------------------------------------
