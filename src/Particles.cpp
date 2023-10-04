@@ -1875,34 +1875,50 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
                   ref[i] = fabs(a[i][nVar] * tmp);
                 }
 
-                //------------------------------------------
                 auto linear_solver_Gauss_Elimination = [&a, &x, &nVar, &ref]() {
-                  for (int i = 0; i < nVar - 1; i++) {
-                    if (fabs(a[i][i]) <= ref[i])
-                      return false;
-                    for (int k = i + 1; k < nVar; k++) {
-
-                      Real t = a[k][i] / a[i][i];
-                      for (int j = 0; j <= nVar; j++)
-                        a[k][j] = a[k][j] - t * a[i][j];
+                  int m = nVar;
+                  int n = nVar + 1;
+                  for (int i = 0; i < m - 1; i++) {
+                    // Partial Pivoting
+                    for (int k = i + 1; k < m; k++) {
+                      // If diagonal element(absolute vallue) is smaller than
+                      // any of the terms below it
+                      if (fabs(a[i][i]) < fabs(a[k][i])) {
+                        // Swap the rows
+                        for (int j = 0; j < n; j++) {
+                          double temp;
+                          temp = a[i][j];
+                          a[i][j] = a[k][j];
+                          a[k][j] = temp;
+                        }
+                      }
+                    }
+                    // Begin Gauss Elimination
+                    for (int k = i + 1; k < m; k++) {
+                      if (fabs(a[i][i]) < ref[i]) {
+                        return false;
+                      }
+                      double term = a[k][i] / a[i][i];
+                      for (int j = 0; j < n; j++) {
+                        a[k][j] = a[k][j] - term * a[i][j];
+                      }
                     }
                   }
+                  // Begin Back-substitution
+                  for (int i = m - 1; i >= 0; i--) {
+                    x[i] = a[i][n - 1];
+                    for (int j = i + 1; j < n - 1; j++) {
+                      x[i] = x[i] - a[i][j] * x[j];
+                    }
 
-                  for (int i = nVar - 1; i >= 0; i--) {
-                    x[i] = a[i][nVar];
-                    for (int j = i + 1; j < nVar; j++) {
-                      if (j != i)
-                        x[i] = x[i] - a[i][j] * x[j];
-                    }
-                    if (fabs(a[i][i]) <= ref[i]) {
+                    if (fabs(a[i][i]) < ref[i]) {
                       return false;
-                    } else {
-                      x[i] = x[i] / a[i][i];
                     }
+
+                    x[i] = x[i] / a[i][i];
                   }
                   return true;
                 };
-                //------------------------------------------
 
                 isSolved = linear_solver_Gauss_Elimination();
 
