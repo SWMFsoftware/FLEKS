@@ -1523,6 +1523,11 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
 
+      // It is assumed the tile size is 1x1x1.
+      Box bx = pti.tilebox();
+      auto cellIdx = bx.smallEnd();
+      set_random_seed(iLev, cellIdx[0], cellIdx[1], cellIdx[2], IntVect(777));
+
       auto& particles = pti.GetArrayOfStructs();
 
       const int nPartOrig = particles.size();
@@ -1590,15 +1595,16 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
       // Assign the particle IDs to the corresponding velocity space cells.
       Vector<int> phasePartIdx_III[nCell][nCell][nCell];
 
+      Real dv = (2.0 * r0 * thVel) / nCell;
+      Real invDv = (dv < 1e-13) ? 0 : 1.0 / dv;
+
       // Velocity domain range.
       Real velMin_D[nDimVel], velMax_D[nDimVel];
       for (int iDir = 0; iDir < nDimVel; iDir++) {
-        velMin_D[iDir] = -r0 * thVel + uBulk[iDir];
-        velMax_D[iDir] = r0 * thVel + uBulk[iDir];
+        Real dvshift = (randNum() - 0.5) * dv;
+        velMin_D[iDir] = -r0 * thVel + uBulk[iDir] + dvshift;
+        velMax_D[iDir] = r0 * thVel + uBulk[iDir] + dvshift;
       }
-
-      Real dv = (2.0 * r0 * thVel) / nCell;
-      Real invDv = (dv < 1e-13) ? 0 : 1.0 / dv;
 
       int iCell_D[nDimVel];
       for (int pid = 0; pid < nPartOrig; pid++) {
