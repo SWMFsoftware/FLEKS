@@ -1364,9 +1364,6 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
 
   const int nInitial =
       nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_];
-  const int nLowerLimit = nInitial * limit;
-
-  const int nGoal = nLowerLimit > nInitial ? nLowerLimit : nInitial;
 
   IntVect iv = { AMREX_D_DECL(1, 1, 1) };
   if (!(do_tiling && tile_size == iv))
@@ -1375,6 +1372,10 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
 
     const Real dl = 0.1 * Geom(iLev).CellSize()[ix_] / nPartPerCell.max();
+
+    const int nLowerLimit = nInitial * limit * pow(1.5, iLev);
+
+    const int nGoal = nLowerLimit > nInitial ? nLowerLimit : nInitial;
 
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
