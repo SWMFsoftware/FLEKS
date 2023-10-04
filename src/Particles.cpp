@@ -1507,19 +1507,22 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
   if (!(do_tiling && tile_size == iv))
     return;
 
-  const int nPartGoal =
-      nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_] * limit;
+  const int nPartCombineMax = 20;
+  const int nVarMax = nPartCombineMax + 5;
 
-  const int nPartCombine = 6, nPartNew = 5;
+  int nPartCombine = 6, nPartNew = 5;
 
   const Real coefVel = 1, coefPos = 1;
 
   // The range of the velocity domain: [-r0,r0]*thermal_velocity+bulk_velocity
-  const Real r0 = 1.0;
+  Real r0 = fastMerge ? 2.0 : 1.0;
 
   int nAvailableCombines = 0, nEqs = 0, nSolved = 0;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const int nPartGoal = nPartPerCell[ix_] * nPartPerCell[iy_] *
+                          nPartPerCell[iz_] * limit * pow(1.5, iLev);
+
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
 
@@ -1553,9 +1556,6 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
                   return pl.pos(ix_) + pl.pos(iy_) + pl.pos(iz_) >
                          pr.pos(ix_) + pr.pos(iy_) + pr.pos(iz_);
                 });
-
-      // Print() << "nPartOrig = " << nPartOrig << " nPartGoal = " << nPartGoal
-      //         << " nCell = " << nCell << std::endl;
 
       // One particle may belong to more than one velocity bins, but it can be
       // only merged at most once.
@@ -1714,259 +1714,218 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
                       });
             //----------------------------------------------------------
 
-            if (partIdx.size() >= nPartCombine) {
-              /*
-                  Delete 1 particle out of 6 particles:
-                  1) Choose two particles that are closest to each other.
-                  2) Delete the lighter one.
-                  3) Distribute its weights to another 5 particles to conserve
-                     mass, momentum and energy.
-               */
-              int idx_I[nPartCombine];
+            /*
+                Delete 1 particle out of 6 particles:
+                1) Choose two particles that are closest to each other.
+                2) Delete the lighter one.
+                3) Distribute its weights to another 5 particles to conserve
+                   mass, momentum and energy.
+             */
+            Vector<int> idx_I(nPartCombine, 0);
+            for (int ip = 0; ip < nPartCombine; ip++) {
+              idx_I[ip] = partIdx[ip];
+            }
+
+            // Calculate the center of the particles for combination
+            for (int i = 0; i < 2 * nDim; i++) {
+              middle[i] = 0;
+            }
+            for (int i = 0; i < nPartCombine; i++) {
+              int pID = idx_I[i];
+              for (int iDir = ix_; iDir <= iz_; iDir++) {
+                middle[iDir] += particles[pID].pos(iDir);
+                middle[nDim + iDir] += particles[pID].rdata(iDir);
+              }
+            }
+            for (int iDir = 0; iDir < 2 * nDim; iDir++) {
+              middle[iDir] /= nPartCombine;
+            }
+
+            bool doCombine = true;
+            for (int i = 0; i < nPartCombine; i++) {
+              int pID = idx_I[i];
+              Real distance = sqrt(calc_distance2_to_center(pID));
+              if (distance > mergeThresholdDistance) {
+                doCombine = false;
+              }
+            }
+
+            nAvailableCombines++;
+            if (!doCombine)
+              continue;
+
+            if (fastMerge) {
+              // Sort the particles by weights.
+              std::sort(idx_I.begin(), idx_I.end(),
+                        [&particles](const int& idLeft, const int& idRight) {
+                          const Real ql = fabs(particles[idLeft].rdata(iqp_));
+                          const Real qr = fabs(particles[idRight].rdata(iqp_));
+                          return ql - qr < 1e-9 * ql;
+                        });
+            } else {
+              // Find the pair that is closest to each other in phase space
+              int pair1 = 0, pair2 = 0;
+              Real dis2Min = 2;
+              for (int ip1 = 0; ip1 < nPartCombine - 1; ip1++)
+                for (int ip2 = ip1 + 1; ip2 < nPartCombine; ip2++) {
+
+                  // Distance between two particles in 6D space.
+                  Real dl2 = 0, dv2 = 0;
+                  for (int iDir = 0; iDir < nDim; iDir++) {
+                    Real dv = velNorm * (particles[idx_I[ip1]].rdata(iDir) -
+                                         particles[idx_I[ip2]].rdata(iDir));
+                    dv2 += pow(dv, 2);
+
+                    Real dx =
+                        invDx[iLev][iDir] * (particles[idx_I[ip1]].pos(iDir) -
+                                             particles[idx_I[ip2]].pos(iDir));
+                    dv2 += pow(dx, 2);
+                  }
+
+                  const Real dis2 = dv2 * coefVel + dl2 * coefPos;
+
+                  if (dis2 < dis2Min) {
+                    dis2Min = dis2;
+                    pair1 = ip1;
+                    pair2 = ip2;
+                  }
+                }
+              //-------------------------------
+
+              // Delete the lighter one.
+              int iPartDel = pair1;
+              // Q: Why is it 'l>(1+1e-9)*r' instead of 'l>r'?
+              // A: The particle weights can be the same for some cases. 'l>r'
+              // may return random results due to the truncation error.
+              if (fabs(particles[idx_I[pair1]].rdata(iqp_)) >
+                  (1 + 1e-9) * fabs(particles[idx_I[pair2]].rdata(iqp_))) {
+                iPartDel = pair2;
+              }
+
+              if (iPartDel != nPartCombine - 1) {
+                std::swap(idx_I[iPartDel], idx_I[nPartCombine - 1]);
+              }
+            }
+
+            nEqs++;
+            bool isSolved;
+            int nVar = nPartNew;
+            const int iq_ = 0, iu_ = 1, iv_ = 2, iw_ = 3, ie_ = 4;
+            Vector<Real> x(nVar, 0);
+            Real a[nVarMax][nVarMax + 1];
+
+            for (int i = 0; i < nVar; i++)
+              for (int j = 0; j < nVar + 1; j++) {
+                a[i][j] = 0;
+              }
+
+            if (fastMerge) {
+
+            } else {
               for (int ip = 0; ip < nPartCombine; ip++) {
-                idx_I[ip] = partIdx[ip];
+                const Real qp = particles[idx_I[ip]].rdata(iqp_);
+                const Real up = particles[idx_I[ip]].rdata(ix_);
+                const Real vp = particles[idx_I[ip]].rdata(iy_);
+                const Real wp = particles[idx_I[ip]].rdata(iz_);
+                const Real v2 = (pow(up, 2) + pow(vp, 2) + pow(wp, 2));
+
+                if (ip < nVar) {
+                  a[iq_][ip] = 1;
+                  a[iu_][ip] = up;
+                  a[iv_][ip] = vp;
+                  a[iw_][ip] = wp;
+                  a[ie_][ip] = v2;
+                }
+
+                a[iq_][nVar] += qp;
+                a[iu_][nVar] += qp * up;
+                a[iv_][nVar] += qp * vp;
+                a[iw_][nVar] += qp * wp;
+                a[ie_][nVar] += qp * v2;
               }
 
-              // Calculate the center of the particles for combination
-              for (int i = 0; i < 2 * nDim; i++) {
-                middle[i] = 0;
-              }
-              for (int pID : idx_I) {
-                for (int iDir = ix_; iDir <= iz_; iDir++) {
-                  middle[iDir] += particles[pID].pos(iDir);
-                  middle[nDim + iDir] += particles[pID].rdata(iDir);
-                }
-              }
-              for (int iDir = 0; iDir < 2 * nDim; iDir++) {
-                middle[iDir] /= nPartCombine;
+              Vector<Real> ref(ie_ + 1, 0);
+              const Real csmall = 1e-9;
+              const Real tmp = csmall * fabs(1. / a[iq_][nVar]);
+              for (int i = iq_; i <= ie_; i++) {
+                ref[i] = fabs(a[i][nVar] * tmp);
               }
 
-              bool doCombine = true;
-              // Print()<<"--------------------"<<std::endl;
-              for (int pID : idx_I) {
-                Real distance = sqrt(calc_distance2_to_center(pID));
-                // Print()<<"distance = "<<distance<<std::endl;
-                if (distance > mergeThresholdDistance) {
-                  doCombine = false;
-                }
-              }
-              // Print()<<"--------------------"<<std::endl;
-              nAvailableCombines++;
-              if (!doCombine)
-                continue;
-
-              int nTry = 1;
-              if (fastMerge) {
-                nTry = nPartCombine;
-              }
-
-              int tryDeleteOrder[nPartCombine];
-              for (int i = 0; i < nPartCombine; i++) {
-                tryDeleteOrder[i] = idx_I[i];
-              }
-
-              if (nTry == 1) {
-                // Find the pair that is closest to each other in phase space
-                int pair1 = 0, pair2 = 0;
-                Real dis2Min = 2;
-                for (int ip1 = 0; ip1 < nPartCombine - 1; ip1++)
-                  for (int ip2 = ip1 + 1; ip2 < nPartCombine; ip2++) {
-
-                    // Distance between two particles in 6D space.
-                    Real dl2 = 0, dv2 = 0;
-                    for (int iDir = 0; iDir < nDim; iDir++) {
-                      Real dv = velNorm * (particles[idx_I[ip1]].rdata(iDir) -
-                                           particles[idx_I[ip2]].rdata(iDir));
-                      dv2 += pow(dv, 2);
-
-                      Real dx =
-                          invDx[iLev][iDir] * (particles[idx_I[ip1]].pos(iDir) -
-                                               particles[idx_I[ip2]].pos(iDir));
-                      dv2 += pow(dx, 2);
-                    }
-
-                    const Real dis2 = dv2 * coefVel + dl2 * coefPos;
-
-                    if (dis2 < dis2Min) {
-                      dis2Min = dis2;
-                      pair1 = ip1;
-                      pair2 = ip2;
-                    }
-                  }
-                //-------------------------------
-
-                // Delete the lighter one.
-                int iPartDel = pair1;
-                // Q: Why is it 'l>(1+1e-9)*r' instead of 'l>r'?
-                // A: The particle weights can be the same for some cases. 'l>r'
-                // may return random results due to the truncation error.
-                if (fabs(particles[idx_I[pair1]].rdata(iqp_)) >
-                    (1 + 1e-9) * fabs(particles[idx_I[pair2]].rdata(iqp_))) {
-                  iPartDel = pair2;
-                }
-                if (iPartDel != 0) {
-                  tryDeleteOrder[0] = idx_I[iPartDel];
-                  tryDeleteOrder[iPartDel] = idx_I[0];
-                }
-              } else {
-                // Sort the particles by weights.
-                std::sort(tryDeleteOrder, tryDeleteOrder + nPartCombine,
-                          [&particles](const int& idLeft, const int& idRight) {
-                            const Real ql = fabs(particles[idLeft].rdata(iqp_));
-                            const Real qr =
-                                fabs(particles[idRight].rdata(iqp_));
-                            return ql - qr < 1e-9 * ql;
-                          });
-              }
-
-              nEqs++;
-              bool isSolved;
-              const int nVar = nPartNew;
-              Real x[nVar];
-
-              for (int iPartDel = 0; iPartDel < nTry; iPartDel++) {
-                for (int i = 0; i < nPartCombine; i++) {
-                  idx_I[i] = tryDeleteOrder[i];
-                }
-
-                if (iPartDel != nPartCombine - 1) {
-                  const int idxTmp = idx_I[iPartDel];
-                  idx_I[iPartDel] = idx_I[nPartCombine - 1];
-                  idx_I[nPartCombine - 1] = idxTmp;
-                }
-
-                //-----------Solve the new particle weights---------------
-                // const int nVar = nPartNew;
-                const int iq_ = 0, iu_ = 1, iv_ = 2, iw_ = 3, ie_ = 4;
-                Real a[nVar][nVar + 1];
-                for (int i = 0; i < nVar; i++) {
-                  x[i] = 0;
-                  for (int j = 0; j < nVar + 1; j++) {
-                    a[i][j] = 0;
-                  }
-                }
-
-                for (int ip = 0; ip < nPartCombine; ip++) {
-                  const Real qp = particles[idx_I[ip]].rdata(iqp_);
-                  const Real up = particles[idx_I[ip]].rdata(ix_);
-                  const Real vp = particles[idx_I[ip]].rdata(iy_);
-                  const Real wp = particles[idx_I[ip]].rdata(iz_);
-                  const Real v2 = (pow(up, 2) + pow(vp, 2) + pow(wp, 2));
-
-                  if (ip < nVar) {
-                    a[iq_][ip] = 1;
-                    a[iu_][ip] = up;
-                    a[iv_][ip] = vp;
-                    a[iw_][ip] = wp;
-                    a[ie_][ip] = v2;
-                  }
-
-                  a[iq_][nVar] += qp;
-                  a[iu_][nVar] += qp * up;
-                  a[iv_][nVar] += qp * vp;
-                  a[iw_][nVar] += qp * wp;
-                  a[ie_][nVar] += qp * v2;
-                }
-
-                Vector<Real> ref(ie_ + 1, 0);
-                const Real csmall = 1e-9;
-                const Real tmp = csmall * fabs(1. / a[iq_][nVar]);
-                for (int i = iq_; i <= ie_; i++) {
-                  ref[i] = fabs(a[i][nVar] * tmp);
-                }
-
-                auto linear_solver_Gauss_Elimination = [&a, &x, &nVar, &ref]() {
-                  int m = nVar;
-                  int n = nVar + 1;
-                  for (int i = 0; i < m - 1; i++) {
-                    // Partial Pivoting
-                    for (int k = i + 1; k < m; k++) {
-                      // If diagonal element(absolute vallue) is smaller than
-                      // any of the terms below it
-                      if (fabs(a[i][i]) < fabs(a[k][i])) {
-                        // Swap the rows
-                        for (int j = 0; j < n; j++) {
-                          double temp;
-                          temp = a[i][j];
-                          a[i][j] = a[k][j];
-                          a[k][j] = temp;
-                        }
-                      }
-                    }
-                    // Begin Gauss Elimination
-                    for (int k = i + 1; k < m; k++) {
-                      if (fabs(a[i][i]) < ref[i]) {
-                        return false;
-                      }
-                      double term = a[k][i] / a[i][i];
+              auto linear_solver_Gauss_Elimination = [&a, &x, &nVar, &ref]() {
+                int m = nVar;
+                int n = nVar + 1;
+                for (int i = 0; i < m - 1; i++) {
+                  // Partial Pivoting
+                  for (int k = i + 1; k < m; k++) {
+                    // If diagonal element(absolute vallue) is smaller than
+                    // any of the terms below it
+                    if (fabs(a[i][i]) < fabs(a[k][i])) {
+                      // Swap the rows
                       for (int j = 0; j < n; j++) {
-                        a[k][j] = a[k][j] - term * a[i][j];
+                        std::swap(a[i][j], a[k][j]);
                       }
                     }
                   }
-                  // Begin Back-substitution
-                  for (int i = m - 1; i >= 0; i--) {
-                    x[i] = a[i][n - 1];
-                    for (int j = i + 1; j < n - 1; j++) {
-                      x[i] = x[i] - a[i][j] * x[j];
-                    }
-
+                  // Begin Gauss Elimination
+                  for (int k = i + 1; k < m; k++) {
                     if (fabs(a[i][i]) < ref[i]) {
                       return false;
                     }
-
-                    x[i] = x[i] / a[i][i];
-                  }
-                  return true;
-                };
-
-                isSolved = linear_solver_Gauss_Elimination();
-
-                if (isSolved) {
-                  // All the particle weights should have the same sign.
-                  Real qt = a[iq_][nVar];
-                  for (int ip = 0; ip < nPartNew; ip++) {
-                    if (qt * x[ip] <= 0) {
-                      isSolved = false;
-                      break;
+                    double term = a[k][i] / a[i][i];
+                    for (int j = 0; j < n; j++) {
+                      a[k][j] = a[k][j] - term * a[i][j];
                     }
                   }
                 }
+                // Begin Back-substitution
+                for (int i = m - 1; i >= 0; i--) {
+                  x[i] = a[i][n - 1];
+                  for (int j = i + 1; j < n - 1; j++) {
+                    x[i] = x[i] - a[i][j] * x[j];
+                  }
 
-                // Print() << " ipartdel = " << iPartDel << " w = "
-                //         << particles[idx_I[nPartCombine - 1]].rdata(iqp_)
-                //         << " isSolved = " << (isSolved ? 'T' : 'F') <<
-                //         std::endl;
-                if (isSolved) {
-                  break;
+                  if (fabs(a[i][i]) < ref[i]) {
+                    return false;
+                  }
+
+                  x[i] = x[i] / a[i][i];
+                }
+                return true;
+              };
+
+              isSolved = linear_solver_Gauss_Elimination();
+
+              if (isSolved) {
+                // All the particle weights should have the same sign.
+                Real qt = a[iq_][nVar];
+                for (int ip = 0; ip < nPartNew; ip++) {
+                  if (qt * x[ip] <= 0) {
+                    isSolved = false;
+                    break;
+                  }
                 }
               }
-              if (!isSolved)
-                continue;
-              //----------------------------------------------
-
-              // Adjust weight.
-              for (int ip = 0; ip < nPartNew; ip++) {
-                auto& p = particles[idx_I[ip]];
-                p.rdata(iqp_) = x[ip];
-                merged[idx_I[ip]] = true;
-              }
-              // Mark for deletion
-              for (int ip = nPartNew; ip < nPartCombine; ip++) {
-                particles[idx_I[ip]].id() = -1;
-                particles[idx_I[ip]].rdata(iqp_) = 0;
-                merged[idx_I[ip]] = true;
-              }
-              nSolved++;
             }
+            if (!isSolved)
+              continue;
+            //----------------------------------------------
+
+            // Adjust weight.
+            for (int ip = 0; ip < nPartNew; ip++) {
+              auto& p = particles[idx_I[ip]];
+              p.rdata(iqp_) = x[ip];
+              merged[idx_I[ip]] = true;
+            }
+            // Mark for deletion
+            for (int ip = nPartNew; ip < nPartCombine; ip++) {
+              particles[idx_I[ip]].id() = -1;
+              particles[idx_I[ip]].rdata(iqp_) = 0;
+              merged[idx_I[ip]] = true;
+            }
+            nSolved++;
           }
     }
   }
-
-  // if (nAvailableCombines > 0)
-  //   AllPrint() << "Particle merging:: nAvailableCombine = "
-  //              << nAvailableCombines << " nEquations = " << nEqs
-  //              << " nSolved = " << nSolved << std::endl;
 }
 
 //==========================================================
