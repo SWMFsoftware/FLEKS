@@ -1402,19 +1402,27 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
                          pr.pos(ix_) + pr.pos(iy_) + pr.pos(iz_);
                 });
 
+      const Real invLx = 1. / (phi[iLev][ix_] - plo[iLev][ix_]);
+      const Real plox = plo[iLev][ix_];
+
       // Sort the particles by the weight in decending order.
-      std::sort(particles.begin(), particles.end(),
-                [](const ParticleType& pl, const ParticleType& pr) {
-                  const Real ql = fabs(pl.rdata(iqp_));
-                  const Real qr = fabs(pr.rdata(iqp_));
-                  // Q: Why use '1e-9*ql' instead of `0'?
-                  // A: If it is sorted by 'ql > qr', and all the particles in
-                  // this cell
-                  //   have the same weight, the particles are essentially
-                  //   sorted by the last digit, which is random. The threshold
-                  //   '1e-9*ql' is introduced to avoid the randomness.
-                  return ql - qr > 1e-9 * ql;
-                });
+      std::sort(
+          particles.begin(), particles.end(),
+          [&plox, &invLx](const ParticleType& pl, const ParticleType& pr) {
+            const Real ql = fabs(pl.rdata(iqp_));
+            const Real qr = fabs(pr.rdata(iqp_));
+
+            // Q: Why are xl and xr required here?
+            // A: If most particle weights are the same, then it
+            // compares the last a few digits of the weights,
+            // which is random,  if xl and xr are not applied.
+            Real xl = pl.pos(ix_);
+            Real xr = pr.pos(ix_);
+            xl = (xl - plox) * invLx * ql * 1e-9;
+            xr = (xr - plox) * invLx * qr * 1e-9;
+
+            return ql + xl > qr + xr;
+          });
       //----------------------------------------------------------------
 
       const auto lo = lbound(pti.tilebox());
@@ -1724,7 +1732,7 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
                           const Real ql = fabs(particles[idLeft].rdata(iqp_));
                           const Real qr = fabs(particles[idRight].rdata(iqp_));
 
-                          // Q: Why are xl and xr are required here?
+                          // Q: Why are xl and xr required here?
                           // A: If most particle weights are the same, then it
                           // compares the last a few digits of the weights,
                           // which is random,  if xl and xr are not applied.
