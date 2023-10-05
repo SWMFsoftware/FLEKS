@@ -1513,6 +1513,9 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
 
   int nPartCombine = 6, nPartNew = 5;
 
+  if (fastMerge)
+    nPartNew = 8;
+
   const Real coefVel = 1, coefPos = 1;
 
   // The range of the velocity domain: [-r0,r0]*thermal_velocity+bulk_velocity
@@ -1712,20 +1715,25 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
               return coefPos * dl2 + coefVel * dvel2;
             };
 
-            // Sort the particles by weights in decending order.
             if (fastMerge) {
+              const Real invLx = 1. / (phi[iLev][ix_] - plo[iLev][ix_]);
+              const Real plox = plo[iLev][ix_];
+              // Sort the particles by weights in ascending order.
               std::sort(partIdx.begin(), partIdx.end(),
-                        [&particles](int idLeft, int idRight) {
+                        [&particles, &invLx, &plox](int idLeft, int idRight) {
                           const Real ql = fabs(particles[idLeft].rdata(iqp_));
-                          Real xl = fabs(particles[idLeft].pos(ix_));
                           const Real qr = fabs(particles[idRight].rdata(iqp_));
-                          Real xr = fabs(particles[idRight].pos(ix_));
 
-                          xl = xl / (fabs(xl + xr) + 1e-20) * (ql + qr) * 1e-9;
+                          // Q: Why are xl and xr are required here?
+                          // A: If most particle weights are the same, then it
+                          // compares the last a few digits of the weights,
+                          // which is random,  if xl and xr are not applied.
+                          Real xl = particles[idLeft].pos(ix_);
+                          Real xr = particles[idRight].pos(ix_);
+                          xl = (xl - plox) * invLx * ql * 1e-9;
+                          xr = (xr - plox) * invLx * qr * 1e-9;
 
-                          xr = xr / (fabs(xl + xr) + 1e-20) * (ql + qr) * 1e-9;
-
-                          return ql < qr;
+                          return ql + xl < qr + xr;
                         });
             } else {
               std::sort(partIdx.begin(), partIdx.end(),
@@ -1775,23 +1783,7 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
             if (!doCombine)
               continue;
 
-            if (fastMerge) {
-              // Sort the particles by weights in ascending order.
-              std::sort(idx_I.begin(), idx_I.end(),
-                        [&particles](int idLeft, int idRight) {
-                          const Real ql = fabs(particles[idLeft].rdata(iqp_));
-                          Real xl = fabs(particles[idLeft].pos(ix_));
-                          const Real qr = fabs(particles[idRight].rdata(iqp_));
-                          Real xr = fabs(particles[idRight].pos(ix_));
-
-                          xl = xl / (fabs(xl + xr) + 1e-20) * (ql + qr) * 1e-9;
-
-                          xr = xr / (fabs(xl + xr) + 1e-20) * (ql + qr) * 1e-9;
-
-                          // return ql + xl < qr + xr;
-                          return ql < qr;
-                        });
-            } else {
+            if (!fastMerge) {
               // Find the pair that is closest to each other in phase space
               int pair1 = 0, pair2 = 0;
               Real dis2Min = 2;
