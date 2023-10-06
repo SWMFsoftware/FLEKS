@@ -1516,18 +1516,28 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
   if (!(do_tiling && tile_size == iv))
     return;
 
-  const int nPartCombineMax = 20;
-  const int nVarMax = nPartCombineMax + 5;
+  constexpr int iq_ = 0, iu_ = 1, iv_ = 2, iw_ = 3, ie_ = 4;
 
-  int nPartCombine = 6, nPartNew = 5;
+  constexpr int nPartNewMax = 16;
+  int nPartCombineMax = 20;
 
-  if (fastMerge)
-    nPartNew = 8;
-
-  const Real coefVel = 1, coefPos = 1;
+  // Why 5? Constraints of mass, momentums and energy conservations.
+  constexpr int nVarMax = nPartNewMax + 5;
 
   // The range of the velocity domain: [-r0,r0]*thermal_velocity+bulk_velocity
-  Real r0 = fastMerge ? 2.0 : 1.0;
+  Real r0 = 1.0;
+
+  int nVar = 5;
+  if (fastMerge) {
+    if (nPartNew > nPartNewMax) {
+      amrex::Abort("Wrong: nPartNew>nPartNewMax");
+    }
+
+    nVar = nPartNew + 5;
+
+    r0 = 2.0;
+  }
+  const Real coefVel = 1, coefPos = 1;
 
   int nAvailableCombines = 0, nEqs = 0, nSolved = 0;
 
@@ -1836,16 +1846,6 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
 
             nEqs++;
             bool isSolved;
-            int nVar = 5;
-            if (fastMerge)
-              nVar += nPartNew;
-            const int nVarMax = 24;
-
-            if (nVar > nVarMax) {
-              amrex::Abort("Wrong: nVar>nVarMax");
-            }
-
-            const int iq_ = 0, iu_ = 1, iv_ = 2, iw_ = 3, ie_ = 4;
             Vector<Real> x(nVar, 0);
             Vector<Real> ref(nVar, 0);
             Real a[nVarMax][nVarMax + 1];
@@ -1882,11 +1882,6 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
                 a[nPartNew + iw_][nVar] += qp * wp;
                 a[nPartNew + ie_][nVar] += qp * v2;
               }
-
-              Real w1 = particles[idx_I[0]].rdata(iqp_);
-              Real w2 = particles[idx_I[nPartNew]].rdata(iqp_);
-              // if (w1 / w2 > 10 || w2 / w1 > 10)
-              //   continue;
 
               const Real invAvg = 2 * nPartNew / a[nPartNew + iq_][nVar];
               for (int ip = 0; ip < nPartNew; ip++) {
@@ -1953,6 +1948,7 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
             }
 
             auto linear_solver_Gauss_Elimination = [&a, &x, &nVar, &ref]() {
+              // a[m][n]
               int m = nVar;
               int n = nVar + 1;
               for (int i = 0; i < m - 1; i++) {

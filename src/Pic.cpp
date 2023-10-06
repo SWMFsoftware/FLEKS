@@ -73,6 +73,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#MERGEEFFICIENCY") {
     param.read_var("mergeThresholdDistance", particleMergeThreshold);
     param.read_var("fastMerge", fastMerge);
+    if (fastMerge) {
+      param.read_var("nMergeOld", nMergeOld);
+      param.read_var("nMergeNew", nMergeNew);
+    }
   } else if (command == "#TESTCASE") {
     std::string testcase;
     param.read_var("testCase", testcase);
@@ -222,7 +226,7 @@ void Pic::post_regrid() {
         ptr->set_merge_velocity_bin_buffer(particleMergeBinBuffer);
       }
 
-      ptr->fast_merge(fastMerge);
+      ptr->fast_merge(fastMerge, nMergeOld, nMergeNew);
 
       ptr->set_bc(pBC);
       //----------------------------------
