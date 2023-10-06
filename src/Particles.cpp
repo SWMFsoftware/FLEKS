@@ -1373,7 +1373,7 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
 
     const Real dl = 0.1 * Geom(iLev).CellSize()[ix_] / nPartPerCell.max();
 
-    const int nLowerLimit = nInitial * limit * pow(1.5, iLev);
+    const int nLowerLimit = nInitial * limit * pow(pLevRatio, iLev);
 
     const int nGoal = nLowerLimit > nInitial ? nLowerLimit : nInitial;
 
@@ -1543,7 +1543,7 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const int nPartGoal = nPartPerCell[ix_] * nPartPerCell[iy_] *
-                          nPartPerCell[iz_] * limit * pow(1.5, iLev);
+                          nPartPerCell[iz_] * limit * pow(pLevRatio, iLev);
 
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {

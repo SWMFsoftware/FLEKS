@@ -114,6 +114,7 @@ private:
   amrex::Real particleMergeThreshold = -1, particleMergeBinBuffer = -1;
   bool fastMerge = false;
   int nMergeOld = 0, nMergeNew = 0;
+  amrex::Real pLevRatio = 1.2;
 
   bool doReport = false;
 

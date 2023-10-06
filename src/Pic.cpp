@@ -77,6 +77,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("nMergeOld", nMergeOld);
       param.read_var("nMergeNew", nMergeNew);
     }
+  } else if (command == "#PARTICLELEVRATIO") {
+    param.read_var("particleLevRatio", pLevRatio);
   } else if (command == "#TESTCASE") {
     std::string testcase;
     param.read_var("testCase", testcase);
@@ -227,6 +229,7 @@ void Pic::post_regrid() {
       }
 
       ptr->fast_merge(fastMerge, nMergeOld, nMergeNew);
+      ptr->particle_lev_ratio(pLevRatio);
 
       ptr->set_bc(pBC);
       //----------------------------------

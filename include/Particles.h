@@ -147,6 +147,8 @@ protected:
   int nPartNew = 5;
   // ------- Particle resampling end -------
 
+  amrex::Real pLevRatio = 1.2;
+
   bool isRelativistic = false;
 
   bool isParticleLocationRandom = true;
@@ -378,6 +380,7 @@ public:
 
   void set_merge_threshold(amrex::Real in) { mergeThresholdDistance = in; }
   void set_merge_velocity_bin_buffer(amrex::Real in) { velBinBufferSize = in; }
+  void particle_lev_ratio(amrex::Real in) { pLevRatio = in; }
   void fast_merge(bool in, int nOld, int nNew) {
     fastMerge = in;
     if (fastMerge) {

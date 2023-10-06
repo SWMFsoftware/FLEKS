@@ -320,10 +320,14 @@ becomes lower (higher) than splittingLimit*nPart (mergingLimit*nPart).
 	 alias="MERGEEFFICIENCY_FLEKS0,MERGEEFFICIENCY_FLEKS1,MERGEEFFICIENCY_FLEKS2" multiple="T">
   <parameter name="mergeThresholdDistance" type="real" default="0.6"/>   
   <parameter name="fastMerge" type="logical" default="F"/>   
+  <parameter name="nMergeOld" type="integer" min="6"/>
+  <parameter name="nMergeNew" type="integer" min="5"/>
   
 #MERGEEFFICIENCY
 1.0                 mergeThresholdDistance
 T                   fastMerge
+20                  nMergeOld
+8                   nMergeNew  
 
 After selecting particles for merging, all particle's 6D distance to their 
 center should be less than mergeThresholdDistance, otherwise, merging
@@ -332,8 +336,23 @@ stops for this particle set.
 If fastMerge is false, the code finds the closest pair from the particle
 set, and tries to delete the lighter one. Merging fails if there is 
 no physical solution for the linear equations. If fastMerge is switched 
-on, the code sorts the particle weight in ascending order, and tries to
-delete the particle one by one until success. 
+on, nMergeOld particles will be merged into nMergeNew particles with 
+a Lagrange multiplier method. It is recommended to use nMergeOld=20
+and nMergeNew=8.
+
+</command>
+
+<command name="PARTICLELEVRATIO"
+	 alias="PARTICLELEVRATIO_FLEKS0,PARTICLELEVRATIO_FLEKS1,PARTICLELEVRATIO_FLEKS2" multiple="T">
+  <parameter name="pLevRatio" type="real" default="1.2"/>
+  
+#PARTICLELEVRATIO
+1.2                 pLevRatio  
+
+For particle splitting and resampling, the base particle number per cell 
+of the level iLev is set to n0*pLevRatio**iLev, where n0 is the ppc set 
+through #PARTICLES command. The goal is to maintain a larger ppc number
+for higher resolution levels.
 
 </command>
 
