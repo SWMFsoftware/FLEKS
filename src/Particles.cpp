@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstdlib>
+#include <random>
 
 #include "Particles.h"
 #include "SWMFInterface.h"
@@ -1551,7 +1552,8 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
       // It is assumed the tile size is 1x1x1.
       Box bx = pti.tilebox();
       auto cellIdx = bx.smallEnd();
-      set_random_seed(iLev, cellIdx[0], cellIdx[1], cellIdx[2], IntVect(777));
+      const long seed = set_random_seed(iLev, cellIdx[0], cellIdx[1],
+                                        cellIdx[2], IntVect(777));
 
       auto& particles = pti.GetArrayOfStructs();
 
@@ -1753,6 +1755,11 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
 
                           return ql + xl < qr + xr;
                         });
+
+              // auto rng =
+              //     std::default_random_engine(seed + iu * 777 + iv * 77 + iw);
+              // std::shuffle(std::begin(partIdx), std::end(partIdx), rng);
+
             } else {
               std::sort(partIdx.begin(), partIdx.end(),
                         [this, &particles, calc_distance2_to_center](

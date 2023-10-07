@@ -257,8 +257,8 @@ public:
     }
   }
 
-  void set_random_seed(const int iLev, const int i, const int j, const int k,
-                       const amrex::IntVect nPPC) {
+  long calc_random_seed(const int iLev, const int i, const int j, const int k,
+                        const amrex::IntVect nPPC) {
     amrex::IntVect nCell = Geom(iLev).Domain().size();
 
     int nRandom = 7;
@@ -273,8 +273,14 @@ public:
     const long seed =
         (speciesID + 3) * nRandom * npcel *
         (nxcg * nycg * nzcg * iCycle + nycg * nzcg * i + nzcg * j + k);
+    return seed;
+  }
 
+  long set_random_seed(const int iLev, const int i, const int j, const int k,
+                       const amrex::IntVect nPPC) {
+    long seed = calc_random_seed(iLev, i, j, k, nPPC);
     randNum.set_seed(seed);
+    return seed;
   }
 
   const amrex::iMultiFab& cell_status(int iLev) const {
