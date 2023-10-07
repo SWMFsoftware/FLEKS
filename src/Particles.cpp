@@ -1360,8 +1360,8 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
-  timing_func("Pts::split_particles");
+void Particles<NStructReal, NStructInt>::split(Real limit) {
+  timing_func("Pts::split");
 
   const int nInitial =
       nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_];
@@ -1511,8 +1511,8 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
-  timing_func("Pts::merge_particles");
+void Particles<NStructReal, NStructInt>::merge(Real limit) {
+  timing_func("Pts::merge");
   IntVect iv = { AMREX_D_DECL(1, 1, 1) };
   if (!(do_tiling && tile_size == iv))
     return;
@@ -1704,12 +1704,6 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
             if (fastMerge)
               nPartCombine = nPartCombineMax < partIdx.size() ? nPartCombineMax
                                                               : partIdx.size();
-
-
-
-
-
-
 
             Vector<Real> distance;
             distance.resize(partIdx.size(), 0);

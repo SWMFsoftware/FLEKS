@@ -401,8 +401,8 @@ void Pic::re_sampling() {
 
   if (doReSampling) {
     for (int i = 0; i < nSpecies; i++) {
-      parts[i]->split_particles(reSamplingLowLimit);
-      parts[i]->merge_particles(reSamplingHighLimit);
+      parts[i]->split(reSamplingLowLimit);
+      parts[i]->merge(reSamplingHighLimit);
     }
   }
 }

@@ -375,8 +375,8 @@ public:
       }
   }
 
-  void split_particles(amrex::Real limit);
-  void merge_particles(amrex::Real limit);
+  void split(amrex::Real limit);
+  void merge(amrex::Real limit);
 
   void divE_correct_position(const amrex::MultiFab& phiMF);
 
