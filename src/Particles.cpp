@@ -68,7 +68,7 @@ void Particles<NStructReal, NStructInt>::outflow_bc(const MFIter& mfi,
 
   IntVect idxPhy(AMREX_D_DECL(ip, jp, kp));
   ParticleTileType& pPhy = get_particle_tile(iLev, mfi, idxGst);
-  auto& phyParts = pPhy.GetArrayOfStructs();
+  AoS& phyParts = pPhy.GetArrayOfStructs();
 
   Real dxshift[3] = { 0, 0, 0 };
   for (int i = 0; i < nDim; i++) {
@@ -386,7 +386,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
     Array4<Real> const& chargeArr = netChargeMF[pti].array();
     Array4<RealCMM> const& mmArr = centerMM[pti].array();
 
-    const auto& particles = pti.GetArrayOfStructs();
+    const AoS& particles = pti.GetArrayOfStructs();
 
     for (const auto& p : particles) {
       /*
@@ -530,7 +530,7 @@ std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
   const int iLev = 0;
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
-    const auto& particles = pti.GetArrayOfStructs();
+    const AoS& particles = pti.GetArrayOfStructs();
     for (const auto& p : particles) {
       if (p.id() < 0)
         continue;
@@ -573,7 +573,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
          ++pti) {
       Array4<Real> const& momentsArr = momentsMF[iLev][pti].array();
 
-      const auto& particles = pti.GetArrayOfStructs();
+      const AoS& particles = pti.GetArrayOfStructs();
 
       // Print() << "iLev = " << iLev << std::endl;
       for (const auto& p : particles) {
@@ -681,7 +681,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     Array4<Real> const& jArr = jHat[pti].array();
     Array4<RealMM> const& mmArr = nodeMM[pti].array();
 
-    const auto& particles = pti.GetArrayOfStructs();
+    const AoS& particles = pti.GetArrayOfStructs();
 
     for (const auto& p : particles) {
       if (p.id() < 0)
@@ -863,7 +863,7 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
     Array4<Real> const& jArr = jHat[pti].array();
 
-    const auto& particles = pti.GetArrayOfStructs();
+    const AoS& particles = pti.GetArrayOfStructs();
 
     for (const auto& p : particles) {
       if (p.id() < 0)
@@ -1022,7 +1022,7 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
   const int iLev = 0;
   for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
        ++pti) {
-    auto& particles = pti.GetArrayOfStructs();
+    AoS& particles = pti.GetArrayOfStructs();
     const Box& validBox = pti.validbox();
     for (auto& p : particles) {
       if (p.id() < 0)
@@ -1084,7 +1084,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 
       const Box& validBox = pti.validbox();
 
-      auto& particles = pti.GetArrayOfStructs();
+      AoS& particles = pti.GetArrayOfStructs();
       for (auto& p : particles) {
         if (p.id() < 0)
           continue;
@@ -1174,7 +1174,7 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
-      auto& particles = pti.GetArrayOfStructs();
+      AoS& particles = pti.GetArrayOfStructs();
       const Box& validBox = pti.validbox();
       for (auto& p : particles) {
         if (p.id() < 0)
@@ -1217,7 +1217,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 
     const Array4<int const>& status = cell_status(iLev)[pti].array();
 
-    auto& particles = pti.GetArrayOfStructs();
+    AoS& particles = pti.GetArrayOfStructs();
 
     const Box& validBox = pti.validbox();
 
@@ -1383,7 +1383,7 @@ void Particles<NStructReal, NStructInt>::split_particles(Real limit) {
 
       amrex::Vector<ParticleType> newparticles;
 
-      auto& particles = pti.GetArrayOfStructs();
+      AoS& particles = pti.GetArrayOfStructs();
 
       const int nPartOrig = particles.size();
 
@@ -1555,7 +1555,7 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
       const long seed = set_random_seed(iLev, cellIdx[0], cellIdx[1],
                                         cellIdx[2], IntVect(777));
 
-      auto& particles = pti.GetArrayOfStructs();
+      AoS& particles = pti.GetArrayOfStructs();
 
       const int nPartOrig = particles.size();
 
@@ -1704,6 +1704,12 @@ void Particles<NStructReal, NStructInt>::merge_particles(Real limit) {
             if (fastMerge)
               nPartCombine = nPartCombineMax < partIdx.size() ? nPartCombineMax
                                                               : partIdx.size();
+
+
+
+
+
+
 
             Vector<Real> distance;
             distance.resize(partIdx.size(), 0);
@@ -2095,7 +2101,7 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
       if (tileOther.numParticles() == 0)
         continue;
 
-      const auto& aosOther = tileOther.GetArrayOfStructs();
+      const AoS& aosOther = tileOther.GetArrayOfStructs();
 
       const Box& validBox = mfi.validbox();
       for (auto p : aosOther) {
@@ -2139,7 +2145,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
-      auto& particles = pti.GetArrayOfStructs();
+      AoS& particles = pti.GetArrayOfStructs();
       for (auto& p : particles) {
         if (p.id() < 0)
           continue;

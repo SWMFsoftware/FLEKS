@@ -114,6 +114,8 @@ public:
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::maxLevel;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::GetParGDB;
 
+  using AoS = amrex::ArrayOfStructs<NStructReal, NStructInt>;
+
 protected:
   Grid* grid = nullptr;
 
@@ -341,7 +343,7 @@ public:
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
         for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev);
              pti.isValid(); ++pti) {
-          auto& particles = pti.GetArrayOfStructs();
+          AoS& particles = pti.GetArrayOfStructs();
           if (cell_status(iLev).empty()) {
             for (auto& p : particles) {
               p.id() = -1;
@@ -363,7 +365,7 @@ public:
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
         for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev);
              pti.isValid(); ++pti) {
-          auto& particles = pti.GetArrayOfStructs();
+          AoS& particles = pti.GetArrayOfStructs();
           for (auto& p : particles) {
             if (is_outside_active_region(p)) {
               p.id() = -1;
