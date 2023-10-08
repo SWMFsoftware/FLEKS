@@ -1705,35 +1705,17 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
               nPartCombine = nPartCombineMax < partIdx.size() ? nPartCombineMax
                                                               : partIdx.size();
 
-            Vector<Real> distance;
-            distance.resize(partIdx.size(), 0);
-
-            // Find the center of the particles, and sort the particles based on
-            // its distance to the 6-D center.
-            //----------------------------------------------------------
-            Real middle[6] = { 0, 0, 0, 0, 0, 0 };
-            for (int pID : partIdx) {
-              for (int iDir = ix_; iDir <= iz_; iDir++) {
-                middle[iDir] += particles[pID].pos(iDir);
-                middle[nDim + iDir] += particles[pID].rdata(iDir);
+            nEqs++;
+            bool isSolved;
+            Vector<Real> x(nVar, 0);
+            Vector<Real> ref(nVar, 0);
+            Array2D<Real, 0, nVarMax - 1, 0, nVarMax> a;
+            for (int i = 0; i < nVar; i++)
+              for (int j = 0; j < nVar + 1; j++) {
+                a(i, j) = 0;
               }
-            }
 
-            for (int iDir = 0; iDir < 2 * nDim; iDir++) {
-              middle[iDir] /= partIdx.size();
-            }
-
-            auto calc_distance2_to_center = [&, this](int pID) {
-              Real dl2 = 0, dvel2 = 0;
-              for (int iDir = ix_; iDir <= iz_; iDir++) {
-                Real pos = particles[pID].pos(iDir);
-                dl2 += pow((pos - middle[iDir]) * invDx[iLev][iDir], 2);
-
-                Real v = particles[pID].rdata(iDir);
-                dvel2 += pow((v - middle[nDim + iDir]) * velNorm, 2);
-              }
-              return coefPos * dl2 + coefVel * dvel2;
-            };
+            Vector<int> idx_I(nPartCombine, 0);
 
             if (fastMerge) {
               const Real invLx = 1. / (phi[iLev][ix_] - plo[iLev][ix_]);
@@ -1760,109 +1742,10 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
               //     std::default_random_engine(seed + iu * 777 + iv * 77 + iw);
               // std::shuffle(std::begin(partIdx), std::end(partIdx), rng);
 
-            } else {
-              std::sort(partIdx.begin(), partIdx.end(),
-                        [this, &particles, calc_distance2_to_center](
-                            const int& idl, const int& idr) {
-                          return calc_distance2_to_center(idl) <
-                                 calc_distance2_to_center(idr);
-                        });
-            }
-            //----------------------------------------------------------
-
-            /*
-                Delete 1 particle out of 6 particles:
-                1) Choose two particles that are closest to each other.
-                2) Delete the lighter one.
-                3) Distribute its weights to another 5 particles to conserve
-                   mass, momentum and energy.
-             */
-            Vector<int> idx_I(nPartCombine, 0);
-            for (int ip = 0; ip < nPartCombine; ip++) {
-              idx_I[ip] = partIdx[ip];
-            }
-
-            // Calculate the center of the particles for combination
-            for (int i = 0; i < 2 * nDim; i++) {
-              middle[i] = 0;
-            }
-            for (int pID : idx_I) {
-              for (int iDir = ix_; iDir <= iz_; iDir++) {
-                middle[iDir] += particles[pID].pos(iDir);
-                middle[nDim + iDir] += particles[pID].rdata(iDir);
-              }
-            }
-            for (int iDir = 0; iDir < 2 * nDim; iDir++) {
-              middle[iDir] /= nPartCombine;
-            }
-
-            bool doCombine = true;
-            for (int pID : idx_I) {
-              Real distance = sqrt(calc_distance2_to_center(pID));
-              if (distance > mergeThresholdDistance) {
-                doCombine = false;
-              }
-            }
-
-            nAvailableCombines++;
-            if (!doCombine)
-              continue;
-
-            if (!fastMerge) {
-              // Find the pair that is closest to each other in phase space
-              int pair1 = 0, pair2 = 0;
-              Real dis2Min = 2;
-              for (int ip1 = 0; ip1 < nPartCombine - 1; ip1++)
-                for (int ip2 = ip1 + 1; ip2 < nPartCombine; ip2++) {
-
-                  // Distance between two particles in 6D space.
-                  Real dl2 = 0, dv2 = 0;
-                  for (int iDir = 0; iDir < nDim; iDir++) {
-                    Real dv = velNorm * (particles[idx_I[ip1]].rdata(iDir) -
-                                         particles[idx_I[ip2]].rdata(iDir));
-                    dv2 += pow(dv, 2);
-
-                    Real dx =
-                        invDx[iLev][iDir] * (particles[idx_I[ip1]].pos(iDir) -
-                                             particles[idx_I[ip2]].pos(iDir));
-                    dv2 += pow(dx, 2);
-                  }
-
-                  const Real dis2 = dv2 * coefVel + dl2 * coefPos;
-
-                  if (dis2 < dis2Min) {
-                    dis2Min = dis2;
-                    pair1 = ip1;
-                    pair2 = ip2;
-                  }
-                }
-              //-------------------------------
-
-              // Delete the lighter one.
-              int iPartDel = pair1;
-              // Q: Why is it 'l>(1+1e-9)*r' instead of 'l>r'?
-              // A: The particle weights can be the same for some cases. 'l>r'
-              // may return random results due to the truncation error.
-              if (fabs(particles[idx_I[pair1]].rdata(iqp_)) >
-                  (1 + 1e-9) * fabs(particles[idx_I[pair2]].rdata(iqp_))) {
-                iPartDel = pair2;
+              for (int ip = 0; ip < nPartCombine; ip++) {
+                idx_I[ip] = partIdx[ip];
               }
 
-              std::swap(idx_I[iPartDel], idx_I[nPartCombine - 1]);
-            }
-
-            nEqs++;
-            bool isSolved;
-            Vector<Real> x(nVar, 0);
-            Vector<Real> ref(nVar, 0);
-            Array2D<Real, 0, nVarMax - 1, 0, nVarMax> a;
-            for (int i = 0; i < nVar; i++)
-              for (int j = 0; j < nVar + 1; j++) {
-                a(i, j) = 0;
-              }
-
-            //------------------------------------------
-            if (fastMerge) {
               // Reverse the order of the first nPartCombine particles. So,
               // the particles of idx_I are in descending order.
 
@@ -1921,7 +1804,122 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
                   ref[i] = fabs(a(i, nVar) * tmp);
                 }
               }
+
             } else {
+
+              // Find the center of the particles, and sort the particles based
+              // on its distance to the 6-D center.
+              //----------------------------------------------------------
+              Real middle[6] = { 0, 0, 0, 0, 0, 0 };
+              for (int pID : partIdx) {
+                for (int iDir = ix_; iDir <= iz_; iDir++) {
+                  middle[iDir] += particles[pID].pos(iDir);
+                  middle[nDim + iDir] += particles[pID].rdata(iDir);
+                }
+              }
+
+              for (int iDir = 0; iDir < 2 * nDim; iDir++) {
+                middle[iDir] /= partIdx.size();
+              }
+
+              auto calc_distance2_to_center = [&, this](int pID) {
+                Real dl2 = 0, dvel2 = 0;
+                for (int iDir = ix_; iDir <= iz_; iDir++) {
+                  Real pos = particles[pID].pos(iDir);
+                  dl2 += pow((pos - middle[iDir]) * invDx[iLev][iDir], 2);
+
+                  Real v = particles[pID].rdata(iDir);
+                  dvel2 += pow((v - middle[nDim + iDir]) * velNorm, 2);
+                }
+                return coefPos * dl2 + coefVel * dvel2;
+              };
+
+              std::sort(partIdx.begin(), partIdx.end(),
+                        [this, &particles, calc_distance2_to_center](
+                            const int& idl, const int& idr) {
+                          return calc_distance2_to_center(idl) <
+                                 calc_distance2_to_center(idr);
+                        });
+
+              /*
+                  Delete 1 particle out of 6 particles:
+                  1) Choose two particles that are closest to each other.
+                  2) Delete the lighter one.
+                  3) Distribute its weights to another 5 particles to conserve
+                     mass, momentum and energy.
+               */
+              for (int ip = 0; ip < nPartCombine; ip++) {
+                idx_I[ip] = partIdx[ip];
+              }
+
+              // Calculate the center of the particles for combination
+              for (int i = 0; i < 2 * nDim; i++) {
+                middle[i] = 0;
+              }
+              for (int pID : idx_I) {
+                for (int iDir = ix_; iDir <= iz_; iDir++) {
+                  middle[iDir] += particles[pID].pos(iDir);
+                  middle[nDim + iDir] += particles[pID].rdata(iDir);
+                }
+              }
+              for (int iDir = 0; iDir < 2 * nDim; iDir++) {
+                middle[iDir] /= nPartCombine;
+              }
+
+              bool doCombine = true;
+              for (int pID : idx_I) {
+                Real distance = sqrt(calc_distance2_to_center(pID));
+                if (distance > mergeThresholdDistance) {
+                  printf("Warning: distance=%e\n", distance);
+                  doCombine = false;
+                }
+              }
+
+              nAvailableCombines++;
+              if (!doCombine)
+                continue;
+
+              // Find the pair that is closest to each other in phase space
+              int pair1 = 0, pair2 = 0;
+              Real dis2Min = 2;
+              for (int ip1 = 0; ip1 < nPartCombine - 1; ip1++)
+                for (int ip2 = ip1 + 1; ip2 < nPartCombine; ip2++) {
+
+                  // Distance between two particles in 6D space.
+                  Real dl2 = 0, dv2 = 0;
+                  for (int iDir = 0; iDir < nDim; iDir++) {
+                    Real dv = velNorm * (particles[idx_I[ip1]].rdata(iDir) -
+                                         particles[idx_I[ip2]].rdata(iDir));
+                    dv2 += pow(dv, 2);
+
+                    Real dx =
+                        invDx[iLev][iDir] * (particles[idx_I[ip1]].pos(iDir) -
+                                             particles[idx_I[ip2]].pos(iDir));
+                    dv2 += pow(dx, 2);
+                  }
+
+                  const Real dis2 = dv2 * coefVel + dl2 * coefPos;
+
+                  if (dis2 < dis2Min) {
+                    dis2Min = dis2;
+                    pair1 = ip1;
+                    pair2 = ip2;
+                  }
+                }
+              //-------------------------------
+
+              // Delete the lighter one.
+              int iPartDel = pair1;
+              // Q: Why is it 'l>(1+1e-9)*r' instead of 'l>r'?
+              // A: The particle weights can be the same for some cases. 'l>r'
+              // may return random results due to the truncation error.
+              if (fabs(particles[idx_I[pair1]].rdata(iqp_)) >
+                  (1 + 1e-9) * fabs(particles[idx_I[pair2]].rdata(iqp_))) {
+                iPartDel = pair2;
+              }
+
+              std::swap(idx_I[iPartDel], idx_I[nPartCombine - 1]);
+
               //-----------Solve the new particle weights-------
               for (int ip = 0; ip < nPartCombine; ip++) {
                 const Real qp = particles[idx_I[ip]].rdata(iqp_);
