@@ -1855,13 +1855,11 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
             bool isSolved;
             Vector<Real> x(nVar, 0);
             Vector<Real> ref(nVar, 0);
-            Real a[nVarMax][nVarMax + 1];
-
-            for (int i = 0; i < nVar; i++) {
+            Array2D<Real, 0, nVarMax - 1, 0, nVarMax> a;
+            for (int i = 0; i < nVar; i++)
               for (int j = 0; j < nVar + 1; j++) {
-                a[i][j] = 0;
+                a(i, j) = 0;
               }
-            }
 
             //------------------------------------------
             if (fastMerge) {
@@ -1883,14 +1881,14 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
                 const Real vp = particles[idx_I[ip]].rdata(iy_);
                 const Real wp = particles[idx_I[ip]].rdata(iz_);
                 const Real v2 = 0.5 * (pow(up, 2) + pow(vp, 2) + pow(wp, 2));
-                a[nPartNew + iq_][nVar] += qp;
-                a[nPartNew + iu_][nVar] += qp * up;
-                a[nPartNew + iv_][nVar] += qp * vp;
-                a[nPartNew + iw_][nVar] += qp * wp;
-                a[nPartNew + ie_][nVar] += qp * v2;
+                a(nPartNew + iq_, nVar) += qp;
+                a(nPartNew + iu_, nVar) += qp * up;
+                a(nPartNew + iv_, nVar) += qp * vp;
+                a(nPartNew + iw_, nVar) += qp * wp;
+                a(nPartNew + ie_, nVar) += qp * v2;
               }
 
-              const Real invAvg = 2 * nPartNew / a[nPartNew + iq_][nVar];
+              const Real invAvg = 2 * nPartNew / a(nPartNew + iq_, nVar);
               for (int ip = 0; ip < nPartNew; ip++) {
                 const Real qp = particles[idx_I[ip]].rdata(iqp_);
                 const Real up = particles[idx_I[ip]].rdata(ix_);
@@ -1898,20 +1896,20 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
                 const Real wp = particles[idx_I[ip]].rdata(iz_);
                 const Real v2 = 0.5 * (pow(up, 2) + pow(vp, 2) + pow(wp, 2));
 
-                a[ip][nVar] = 2;
+                a(ip, nVar) = 2;
 
-                a[ip][ip] = 2. / qp;
-                a[ip][nPartNew + iq_] = 1;
-                a[ip][nPartNew + iu_] = up;
-                a[ip][nPartNew + iv_] = vp;
-                a[ip][nPartNew + iw_] = wp;
-                a[ip][nPartNew + ie_] = v2;
+                a(ip, ip) = 2. / qp;
+                a(ip, nPartNew + iq_) = 1;
+                a(ip, nPartNew + iu_) = up;
+                a(ip, nPartNew + iv_) = vp;
+                a(ip, nPartNew + iw_) = wp;
+                a(ip, nPartNew + ie_) = v2;
 
-                a[nPartNew + iq_][ip] = 1;
-                a[nPartNew + iu_][ip] = up;
-                a[nPartNew + iv_][ip] = vp;
-                a[nPartNew + iw_][ip] = wp;
-                a[nPartNew + ie_][ip] = v2;
+                a(nPartNew + iq_, ip) = 1;
+                a(nPartNew + iu_, ip) = up;
+                a(nPartNew + iv_, ip) = vp;
+                a(nPartNew + iw_, ip) = wp;
+                a(nPartNew + ie_, ip) = v2;
               }
 
               const Real csmall = 1e-9;
@@ -1920,7 +1918,7 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
                 if (i < nPartNew) {
                   ref[i] = tmp;
                 } else {
-                  ref[i] = fabs(a[i][nVar] * tmp);
+                  ref[i] = fabs(a(i, nVar) * tmp);
                 }
               }
             } else {
@@ -1933,71 +1931,30 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
                 const Real v2 = (pow(up, 2) + pow(vp, 2) + pow(wp, 2));
 
                 if (ip < nVar) {
-                  a[iq_][ip] = 1;
-                  a[iu_][ip] = up;
-                  a[iv_][ip] = vp;
-                  a[iw_][ip] = wp;
-                  a[ie_][ip] = v2;
+                  a(iq_, ip) = 1;
+                  a(iu_, ip) = up;
+                  a(iv_, ip) = vp;
+                  a(iw_, ip) = wp;
+                  a(ie_, ip) = v2;
                 }
 
-                a[iq_][nVar] += qp;
-                a[iu_][nVar] += qp * up;
-                a[iv_][nVar] += qp * vp;
-                a[iw_][nVar] += qp * wp;
-                a[ie_][nVar] += qp * v2;
+                a(iq_, nVar) += qp;
+                a(iu_, nVar) += qp * up;
+                a(iv_, nVar) += qp * vp;
+                a(iw_, nVar) += qp * wp;
+                a(ie_, nVar) += qp * v2;
               }
 
               const Real csmall = 1e-9;
-              const Real tmp = csmall * fabs(1. / a[iq_][nVar]);
+              const Real tmp = csmall * fabs(1. / a(iq_, nVar));
               for (int i = iq_; i <= ie_; i++) {
-                ref[i] = fabs(a[i][nVar] * tmp);
+                ref[i] = fabs(a(i, nVar) * tmp);
               }
             }
 
-            auto linear_solver_Gauss_Elimination = [&a, &x, &nVar, &ref]() {
-              // a[m][n]
-              int m = nVar;
-              int n = nVar + 1;
-              for (int i = 0; i < m - 1; i++) {
-                // Partial Pivoting
-                for (int k = i + 1; k < m; k++) {
-                  // If diagonal element(absolute vallue) is smaller than
-                  // any of the terms below it
-                  if (fabs(a[i][i]) < fabs(a[k][i])) {
-                    // Swap the rows
-                    for (int j = 0; j < n; j++) {
-                      std::swap(a[i][j], a[k][j]);
-                    }
-                  }
-                }
-                // Begin Gauss Elimination
-                for (int k = i + 1; k < m; k++) {
-                  if (fabs(a[i][i]) < ref[i]) {
-                    return false;
-                  }
-                  double term = a[k][i] / a[i][i];
-                  for (int j = 0; j < n; j++) {
-                    a[k][j] = a[k][j] - term * a[i][j];
-                  }
-                }
-              }
-              // Begin Back-substitution
-              for (int i = m - 1; i >= 0; i--) {
-                x[i] = a[i][n - 1];
-                for (int j = i + 1; j < n - 1; j++) {
-                  x[i] = x[i] - a[i][j] * x[j];
-                }
-
-                if (fabs(a[i][i]) < ref[i]) {
-                  return false;
-                }
-
-                x[i] = x[i] / a[i][i];
-              }
-              return true;
-            };
-
-            isSolved = linear_solver_Gauss_Elimination();
+            isSolved =
+                linear_solver_Gauss_Elimination<Real, nVarMax, nVarMax + 1>(
+                    nVar, nVar + 1, a, x, ref);
 
             if (isSolved) {
               // All the particle weights should have the same sign.

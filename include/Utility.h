@@ -319,4 +319,56 @@ inline T bound(const T& val, const T& xmin, const T& xmax) {
 }
 
 double read_mem_usage();
+
+template <typename T, int nRow, int nCol>
+bool linear_solver_Gauss_Elimination(
+    int m, int n, amrex::Array2D<T, 0, nRow - 1, 0, nCol - 1>& a,
+    amrex::Vector<T>& x, amrex::Vector<T>& ref) {
+  // a(m,n)
+  if (m > nRow) {
+    amrex::Abort("Error: m>nRow in linear_solver_Gauss_Elimination");
+  }
+  if (n > nCol) {
+    amrex::Abort("Error: n>nCol in linear_solver_Gauss_Elimination");
+  }
+
+  for (int i = 0; i < m - 1; i++) {
+    // Partial Pivoting
+    for (int k = i + 1; k < m; k++) {
+      // If diagonal element(absolute vallue) is smaller than
+      // any of the terms below it
+      if (fabs(a(i, i)) < fabs(a(k, i))) {
+        // Swap the rows
+        for (int j = 0; j < n; j++) {
+          std::swap(a(i, j), a(k, j));
+        }
+      }
+    }
+    // Begin Gauss Elimination
+    for (int k = i + 1; k < m; k++) {
+      if (fabs(a(i, i)) < ref[i]) {
+        return false;
+      }
+      double term = a(k, i) / a(i, i);
+      for (int j = 0; j < n; j++) {
+        a(k, j) = a(k, j) - term * a(i, j);
+      }
+    }
+  }
+  // Begin Back-substitution
+  for (int i = m - 1; i >= 0; i--) {
+    x[i] = a(i, n - 1);
+    for (int j = i + 1; j < n - 1; j++) {
+      x[i] = x[i] - a(i, j) * x[j];
+    }
+
+    if (fabs(a(i, i)) < ref[i]) {
+      return false;
+    }
+
+    x[i] = x[i] / a(i, i);
+  }
+  return true;
+};
+
 #endif
