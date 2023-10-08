@@ -377,6 +377,16 @@ public:
 
   void split(amrex::Real limit);
   void merge(amrex::Real limit);
+  bool merge_particles_fast(int iLev, AoS& particles,
+                            amrex::Vector<int>& partIdx,
+                            amrex::Vector<int>& idx_I, int nPartCombine,
+                            int nPartNew, amrex::Vector<amrex::Real>& x);
+
+  bool merge_particles_accurate(int iLev, AoS& particles,
+                                amrex::Vector<int>& partIdx,
+                                amrex::Vector<int>& idx_I, int nPartCombine,
+                                int nPartNew, amrex::Vector<amrex::Real>& x,
+                                amrex::Real velNorm);
 
   void divE_correct_position(const amrex::MultiFab& phiMF);
 
