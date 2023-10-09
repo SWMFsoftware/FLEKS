@@ -70,12 +70,13 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("reSamplingLowLimit", reSamplingLowLimit);
       param.read_var("reSamplingHighLimit", reSamplingHighLimit);
     }
-  } else if (command == "#MERGEEFFICIENCY") {
-    param.read_var("mergeThresholdDistance", particleMergeThreshold);
+  } else if (command == "#FASTMERGE") {
     param.read_var("fastMerge", fastMerge);
     if (fastMerge) {
       param.read_var("nMergeOld", nMergeOld);
       param.read_var("nMergeNew", nMergeNew);
+      param.read_var("nMergeTry", nMergeTry);
+      param.read_var("mergeRatioMax", mergeRatioMax);
     }
   } else if (command == "#PARTICLELEVRATIO") {
     param.read_var("particleLevRatio", pLevRatio);
@@ -228,7 +229,8 @@ void Pic::post_regrid() {
         ptr->set_merge_velocity_bin_buffer(particleMergeBinBuffer);
       }
 
-      ptr->fast_merge(fastMerge, nMergeOld, nMergeNew);
+      ptr->set_fast_merge(fastMerge, nMergeOld, nMergeNew, nMergeTry,
+                          mergeRatioMax);
       ptr->particle_lev_ratio(pLevRatio);
 
       ptr->set_bc(pBC);

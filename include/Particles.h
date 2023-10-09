@@ -147,6 +147,8 @@ protected:
   bool fastMerge = false;
   int nPartCombine = 6;
   int nPartNew = 5;
+  int nMergeTry = 3;
+  amrex::Real mergeRatioMax = 1.5;
   // ------- Particle resampling end -------
 
   amrex::Real pLevRatio = 1.2;
@@ -380,7 +382,8 @@ public:
   bool merge_particles_fast(int iLev, AoS& particles,
                             amrex::Vector<int>& partIdx,
                             amrex::Vector<int>& idx_I, int nPartCombine,
-                            int nPartNew, amrex::Vector<amrex::Real>& x);
+                            int nPartNew, amrex::Vector<amrex::Real>& x,
+                            long seed);
 
   bool merge_particles_accurate(int iLev, AoS& particles,
                                 amrex::Vector<int>& partIdx,
@@ -399,11 +402,14 @@ public:
   void set_merge_threshold(amrex::Real in) { mergeThresholdDistance = in; }
   void set_merge_velocity_bin_buffer(amrex::Real in) { velBinBufferSize = in; }
   void particle_lev_ratio(amrex::Real in) { pLevRatio = in; }
-  void fast_merge(bool in, int nOld, int nNew) {
+  void set_fast_merge(bool in, int nOld, int nNew, int nTry,
+                      amrex::Real ratio) {
     fastMerge = in;
     if (fastMerge) {
       nPartCombine = nOld;
       nPartNew = nNew;
+      nMergeTry = nTry;
+      mergeRatioMax = ratio;
     }
   }
 

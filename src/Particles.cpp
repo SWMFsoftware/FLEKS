@@ -1691,7 +1691,7 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
 template <int NStructReal, int NStructInt>
 bool Particles<NStructReal, NStructInt>::merge_particles_fast(
     int iLev, AoS& particles, Vector<int>& partIdx, Vector<int>& idx_I,
-    int nPartCombine, int nPartNew, Vector<Real>& x) {
+    int nPartCombine, int nPartNew, Vector<Real>& x, long seed) {
   timing_func("Pts::merge_particles_fast");
 
   constexpr int iq_ = 0, iu_ = 1, iv_ = 2, iw_ = 3, ie_ = 4;
@@ -1707,44 +1707,32 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
       a(i, j) = 0;
     }
 
-  const Real invLx = 1. / (phi[iLev][ix_] - plo[iLev][ix_]);
-  const Real plox = plo[iLev][ix_];
-  // Sort the particles by weights in ascending order.
-  std::sort(partIdx.begin(), partIdx.end(),
-            [&particles, &invLx, &plox](int idLeft, int idRight) {
-              const Real ql = fabs(particles[idLeft].rdata(iqp_));
-              const Real qr = fabs(particles[idRight].rdata(iqp_));
+  // const Real invLx = 1. / (phi[iLev][ix_] - plo[iLev][ix_]);
+  // const Real plox = plo[iLev][ix_];
+  //  Sort the particles by weights in ascending order.
+  //  std::sort(partIdx.begin(), partIdx.end(),
+  //            [&particles, &invLx, &plox](int idLeft, int idRight) {
+  //              const Real ql = fabs(particles[idLeft].rdata(iqp_));
+  //              const Real qr = fabs(particles[idRight].rdata(iqp_));
 
-              // Q: Why are xl and xr required here?
-              // A: If most particle weights are the same, then it
-              // compares the last a few digits of the weights,
-              // which is random,  if xl and xr are not applied.
-              Real xl = particles[idLeft].pos(ix_);
-              Real xr = particles[idRight].pos(ix_);
-              xl = (xl - plox) * invLx * ql * 1e-9;
-              xr = (xr - plox) * invLx * qr * 1e-9;
+  //             // Q: Why are xl and xr required here?
+  //             // A: If most particle weights are the same, then it
+  //             // compares the last a few digits of the weights,
+  //             // which is random,  if xl and xr are not applied.
+  //             Real xl = particles[idLeft].pos(ix_);
+  //             Real xr = particles[idRight].pos(ix_);
+  //             xl = (xl - plox) * invLx * ql * 1e-9;
+  //             xr = (xr - plox) * invLx * qr * 1e-9;
 
-              return ql + xl < qr + xr;
-            });
+  //             return ql + xl < qr + xr;
+  //           });
 
-  // auto rng =
-  //     std::default_random_engine(seed + iu * 777 + iv * 77 + iw);
-  // std::shuffle(std::begin(partIdx), std::end(partIdx), rng);
+  auto rng = std::default_random_engine(seed);
+  std::shuffle(std::begin(partIdx), std::end(partIdx), rng);
 
   idx_I.resize(nPartCombine, 0);
   for (int ip = 0; ip < nPartCombine; ip++) {
     idx_I[ip] = partIdx[ip];
-  }
-
-  // Reverse the order of the first nPartCombine particles. So,
-  // the particles of idx_I are in descending order.
-
-  Vector<int> iTmp(nPartCombine);
-  for (int i = 0; i < nPartCombine; i++) {
-    iTmp[i] = idx_I[nPartCombine - 1 - i];
-  }
-  for (int i = 0; i < nPartCombine; i++) {
-    idx_I[i] = iTmp[i];
   }
 
   // Sum the moments of all the old particles.
@@ -1810,6 +1798,19 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
     }
   }
 
+  if (isSolved) {
+    for (int ip = 0; ip < nPartNew; ip++) {
+      Real pold = particles[idx_I[ip]].rdata(iqp_);
+      Real pnew = x[ip];
+
+      Real c0 = Real(nPartCombine) / nPartNew * mergeRatioMax;
+      if (pnew / pold > c0 || pold / pnew > c0) {
+        isSolved = false;
+        break;
+      }
+    }
+  }
+
   return isSolved;
 }
 
@@ -1820,9 +1821,6 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
   IntVect iv = { AMREX_D_DECL(1, 1, 1) };
   if (!(do_tiling && tile_size == iv))
     return;
-
-  // The range of the velocity domain: [-r0,r0]*thermal_velocity+bulk_velocity
-  Real r0 = fastMerge ? 2.0 : 1.0;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const int nPartGoal = nPartPerCell[ix_] * nPartPerCell[iy_] *
@@ -1843,6 +1841,10 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
 
       if (nPartOrig <= nPartGoal)
         continue;
+
+      // The range of the velocity domain:
+      // [-r0,r0]*thermal_velocity+bulk_velocity
+      const Real r0 = fastMerge ? 2.0 : 1.0;
 
       // Phase space cell number in one direction.
       // The const 0.5/0.8 is choosen by experiments.
@@ -1986,17 +1988,22 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
             Vector<Real> x;
             Vector<int> idx_I;
 
+            int nOld = nPartCombine;
             bool isSolved;
             if (fastMerge) {
-              int nPartCombineMax = 20;
-              nPartCombine = nPartCombineMax < partIdx.size() ? nPartCombineMax
-                                                              : partIdx.size();
-              isSolved = merge_particles_fast(iLev, particles, partIdx, idx_I,
-                                              nPartCombine, nPartNew, x);
+              if (nOld > partIdx.size())
+                nOld = partIdx.size();
+
+              for (int iTry = 0; iTry < nMergeTry; iTry++) {
+                long sd = seed + iu * 777 + iv * 77 + iw + iTry;
+                isSolved = merge_particles_fast(iLev, particles, partIdx, idx_I,
+                                                nOld, nPartNew, x, sd);
+                if (isSolved)
+                  break;
+              }
             } else {
-              isSolved =
-                  merge_particles_accurate(iLev, particles, partIdx, idx_I,
-                                           nPartCombine, nPartNew, x, velNorm);
+              isSolved = merge_particles_accurate(
+                  iLev, particles, partIdx, idx_I, nOld, nPartNew, x, velNorm);
             }
             if (!isSolved)
               continue;
@@ -2010,7 +2017,7 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
               merged[idx_I[ip]] = true;
             }
             // Mark for deletion
-            for (int ip = nPartNew; ip < nPartCombine; ip++) {
+            for (int ip = nPartNew; ip < nOld; ip++) {
               particles[idx_I[ip]].id() = -1;
               particles[idx_I[ip]].rdata(iqp_) = 0;
               merged[idx_I[ip]] = true;
