@@ -168,8 +168,15 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           z = z0;
         }
 
-        double q = vol2Npcel * interface->get_number_density(mfi, x0, y0, z0,
-                                                             speciesID, iLev);
+        const double nDens =
+            interface->get_number_density(mfi, x0, y0, z0, speciesID, iLev) *
+            dt;
+
+        if (nDens < vacuum)
+          continue;
+
+        double q = vol2Npcel * nDens;
+
         if (q != 0) {
           Real u, v, w;
           double rand1 = randNum();
