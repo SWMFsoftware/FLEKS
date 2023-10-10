@@ -118,6 +118,9 @@ private:
   amrex::Real mergeRatioMax = 1.5;
   amrex::Real pLevRatio = 1.2;
 
+  // [amu/cc]
+  amrex::Real vacuum = 0;
+
   bool doReport = false;
 
   std::string logFile;

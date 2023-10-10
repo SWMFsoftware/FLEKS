@@ -78,6 +78,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("nMergeTry", nMergeTry);
       param.read_var("mergeRatioMax", mergeRatioMax);
     }
+  } else if (command == "#VACUUM") {
+    param.read_var("vacuum", vacuum);
   } else if (command == "#PARTICLELEVRATIO") {
     param.read_var("particleLevRatio", pLevRatio);
   } else if (command == "#TESTCASE") {
@@ -231,6 +233,10 @@ void Pic::post_regrid() {
 
       ptr->set_fast_merge(fastMerge, nMergeOld, nMergeNew, nMergeTry,
                           mergeRatioMax);
+
+      const Real vacuumNO = vacuum * cProtonMassSI * 1e6 * fi->get_Si2NoRho();
+      ptr->set_vacuum(vacuumNO);
+
       ptr->particle_lev_ratio(pLevRatio);
 
       ptr->set_bc(pBC);

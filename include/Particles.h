@@ -153,6 +153,8 @@ protected:
 
   amrex::Real pLevRatio = 1.2;
 
+  amrex::Real vacuum = 0;
+
   bool isRelativistic = false;
 
   bool isParticleLocationRandom = true;
@@ -412,6 +414,8 @@ public:
       mergeRatioMax = ratio;
     }
   }
+
+  void set_vacuum(amrex::Real in) { vacuum = in; }
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
 

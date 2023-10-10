@@ -1378,6 +1378,9 @@ void Particles<NStructReal, NStructInt>::split(Real limit) {
 
     const int nGoal = nLowerLimit > nInitial ? nLowerLimit : nInitial;
 
+    const Real vol = dx[iLev][ix_] * dx[iLev][iy_] * dx[iLev][iz_];
+    const Real vacuumMass = vacuum * vol;
+
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
 
@@ -1392,6 +1395,13 @@ void Particles<NStructReal, NStructInt>::split(Real limit) {
 
       const int nNew =
           nGoal - nPartOrig > nPartOrig ? nPartOrig : nGoal - nPartOrig;
+
+      Real totalMass = 0;
+      for (auto& p : particles) {
+        totalMass += p.rdata(iqp_);
+      }
+      if (totalMass < vacuumMass)
+        continue;
 
       // Find the 'heaviest' nNew particles by sorting the weight (charge).-----
 
