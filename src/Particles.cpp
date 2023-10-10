@@ -112,7 +112,8 @@ void Particles<NStructReal, NStructInt>::outflow_bc(const MFIter& mfi,
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_cell(
     const int iLev, const MFIter& mfi, const int i, const int j, const int k,
-    const FluidInterface* interface, IntVect ppc, const Vel tpVel, Real dt) {
+    const FluidInterface* interface, bool doVacuumLimit, IntVect ppc,
+    const Vel tpVel, Real dt) {
 
   // If true, initialize the test particles with user defined velocities instead
   // of from fluid.
@@ -171,7 +172,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
         const double nDens =
             interface->get_number_density(mfi, x0, y0, z0, speciesID, iLev);
 
-        if (nDens * dt < vacuum)
+        if (doVacuumLimit && nDens * dt < vacuum)
           continue;
 
         double q = vol2Npcel * nDens;
@@ -291,7 +292,8 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
             }
 #endif
             if (doAdd) {
-              add_particles_cell(iLev, mfi, i, j, k, interface, ppc, Vel(), dt);
+              add_particles_cell(iLev, mfi, i, j, k, interface, false, ppc,
+                                 Vel(), dt);
             }
           }
     }
@@ -318,7 +320,7 @@ void Particles<NStructReal, NStructInt>::add_particles_domain() {
           for (int k = kMin; k <= kMax; ++k) {
             if (bit::is_new(status(i, j, k)) &&
                 !bit::is_refined(status(i, j, k))) {
-              add_particles_cell(iLev, mfi, i, j, k, fi);
+              add_particles_cell(iLev, mfi, i, j, k, fi, true);
             }
           }
     }
@@ -373,7 +375,8 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
                 ((bc.hi[iz_] == bc.outflow) && k > hi[iz_])) {
               outflow_bc(mfi, i, j, k, isrc, jsrc, ksrc);
             } else {
-              add_particles_cell(iLev, mfi, i, j, k, fiTmp, ppc, Vel(), dt);
+              add_particles_cell(iLev, mfi, i, j, k, fiTmp, true, ppc, Vel(),
+                                 dt);
             }
           }
         }

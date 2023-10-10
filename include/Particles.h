@@ -184,7 +184,7 @@ public:
   void add_particles_domain();
   void add_particles_cell(const int iLev, const amrex::MFIter& mfi, const int i,
                           const int j, const int k,
-                          const FluidInterface* interface,
+                          const FluidInterface* interface, bool doVacuumLimit,
                           amrex::IntVect ppc = amrex::IntVect(),
                           const Vel tpVel = Vel(), amrex::Real dt = -1);
   void inject_particles_at_boundary(const FluidInterface* fiIn = nullptr,
