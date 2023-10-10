@@ -169,10 +169,9 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
         }
 
         const double nDens =
-            interface->get_number_density(mfi, x0, y0, z0, speciesID, iLev) *
-            dt;
+            interface->get_number_density(mfi, x0, y0, z0, speciesID, iLev);
 
-        if (nDens < vacuum)
+        if (nDens * dt < vacuum)
           continue;
 
         double q = vol2Npcel * nDens;
