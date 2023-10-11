@@ -1407,7 +1407,10 @@ void Particles<NStructReal, NStructInt>::split(Real limit) {
 
       Real totalMass = 0;
       for (auto& p : particles) {
-        totalMass += p.rdata(iqp_);
+        // So far, the vacuum limit is designed for OH-PT neutrals only. It is
+        // not clear how should it be done for PIC, where electrons and ions
+        // have different mass. --Yuxi
+        totalMass += qomSign * p.rdata(iqp_);
       }
       if (totalMass < vacuumMass)
         continue;
