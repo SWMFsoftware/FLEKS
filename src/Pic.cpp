@@ -623,7 +623,7 @@ void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy) {
 
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i)
+          for (int i = lo.x; i <= hi.x; ++i) {
             if (bit::is_refined(status(i, j, k))) {
               cost(i, j, k) = 0;
             } else if (bit::is_domain_edge(status(i, j, k))) {
@@ -634,6 +634,15 @@ void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy) {
               // corresponding valid cells. The factor of 2 is just a guess.
               cost(i, j, k) *= 2;
             }
+
+            if (balanceStrategy == BalanceStrategy::Particle) {
+              // 1. The cells have been refined also allocated and use memory.
+              // 2. It looks like these cells need calculations when
+              // interpolating between levels.
+              // 3. The number 10 is chosen by experience.
+              cost(i, j, k) += 10;
+            }
+          }
     }
   }
 }
