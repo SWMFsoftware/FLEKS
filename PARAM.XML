@@ -293,7 +293,8 @@ otherwise, both locations and velocities are at $t_n$.
 #RANDOMPARTICLESLOCATION
 T                   isParticleLocationRandom  
 
-If isParticleLocationRandom is true then particles are initialized with randomaized position, otherwise particles are equally spaced 
+If isParticleLocationRandom is true then particles are initialized with 
+randomaized position, otherwise particles are equally spaced.
 </command>
 
 <command name="RESAMPLING"
@@ -316,29 +317,61 @@ becomes lower (higher) than splittingLimit*nPart (mergingLimit*nPart).
 
 </command>
 
-<command name="MERGEEFFICIENCY"
-	 alias="MERGEEFFICIENCY_FLEKS0,MERGEEFFICIENCY_FLEKS1,MERGEEFFICIENCY_FLEKS2" multiple="T">
-  <parameter name="mergeThresholdDistance" type="real" default="0.6"/>   
+<command name="FASTMERGE"
+	 alias="FASTMERGE_FLEKS0,FASTMERGE_FLEKS1,FASTMERGE_FLEKS2" multiple="T">     
   <parameter name="fastMerge" type="logical" default="F"/>   
-  <parameter name="nMergeOld" type="integer" min="6"/>
-  <parameter name="nMergeNew" type="integer" min="5"/>
+  <parameter name="nOld" type="integer" min="6"/>
+  <parameter name="nNew" type="integer" min="5"/>
+  <parameter name="nTry" type="integer" min="1"/>
+  <parameter name="mergeRatioMax" type="real" min="1"/>
   
-#MERGEEFFICIENCY
-1.0                 mergeThresholdDistance
-T                   fastMerge
-20                  nMergeOld
-8                   nMergeNew  
 
-After selecting particles for merging, all particle's 6D distance to their 
-center should be less than mergeThresholdDistance, otherwise, merging
-stops for this particle set. 
+#FASTMERGE
+T			  fastMerge
+16			nOld
+10			nNew
+3		  	nTry
+4			  mergeRatioMax
 
-If fastMerge is false, the code finds the closest pair from the particle
-set, and tries to delete the lighter one. Merging fails if there is 
-no physical solution for the linear equations. If fastMerge is switched 
-on, nMergeOld particles will be merged into nMergeNew particles with 
-a Lagrange multiplier method. It is recommended to use nMergeOld=20
-and nMergeNew=8.
+When the 'fastMerge' feature is enabled, the merging algorithm aims 
+to merge 'nOld' particles (where 'nOld' is greater than 'nNew') into 
+'nNew' particles (with 'nNew' being equal to or greater than 5). 
+The goal is to achieve this while ensuring the total mass, momentum, 
+and energy are conserved.
+
+To accomplish this, 'nOld - nNew' particles inside the same 6D-space 
+cell are selected for merging with a Lagrange multiplier solver. 
+This solver minimizes the relative change in the mass of the 'nNew' particles.
+
+The selection process for the 'nOld - nNew' particles chosen 
+for deletion is random, and they are chosen from the 'nOld' particles.
+However, it's important to note that the Lagrange multiplier solver may 
+fail to find a physically meaningful solution. In such cases, two conditions 
+should be met:
+(1). The mass of all the new particles must be positive.
+(2). The change in mass of the new particles should not be excessive, 
+satisfying both 'pNew/pOld .lt. mergeRatioMax' 
+and 'pOld/pNew .lt. mergeRatioMax'.
+If the solver fails, the code will make up to 'nTry' attempts to select 
+another set of 'nOld - nNew' particles for deletion until it succeeds.
+
+For simulations involving particle sources, it's recommended to use
+ the following parameters: 'nOld = 16', 'nNew = 10', 'nTry = 3', 
+ and '2 .le. mergeRatioMax .le. 4'.
+
+</command>
+
+<command name="VACUUM"
+  alias="VACUUM_FLEKS0,VACUUM_FLEKS1,VACUUM_FLEKS2" multiple="T">
+  <parameter name="vacuum" type="real" default="0.0"/>
+
+#VACUUM
+1E-5            vacuum [amu/cc]
+
+If the mass density of a cell is below the 'vacuum' threshold, 
+no macro particles are initially launched from that cell. 
+The particle splitting algorithm also excludes cells with 
+densities less than 'vacuum'. The unit of of 'vacuum' is 'amu/cc'.
 
 </command>
 
@@ -350,9 +383,9 @@ and nMergeNew=8.
 1.2                 pLevRatio  
 
 For particle splitting and resampling, the base particle number per cell 
-of the level iLev is set to n0*pLevRatio**iLev, where n0 is the ppc set 
+of the level iLev is set to n0*(pLevRatio**iLev), where n0 is the ppc set 
 through #PARTICLES command. The goal is to maintain a larger ppc number
-for higher resolution levels.
+for the levels of higher resolution.
 
 </command>
 
