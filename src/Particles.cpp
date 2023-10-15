@@ -1729,25 +1729,28 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
       a(i, j) = 0;
     }
 
-  // const Real invLx = 1. / (phi[iLev][ix_] - plo[iLev][ix_]);
-  // const Real plox = plo[iLev][ix_];
-  //  Sort the particles by weights in ascending order.
-  //  std::sort(partIdx.begin(), partIdx.end(),
-  //            [&particles, &invLx, &plox](int idLeft, int idRight) {
-  //              const Real ql = fabs(particles[idLeft].rdata(iqp_));
-  //              const Real qr = fabs(particles[idRight].rdata(iqp_));
+  
+  const Real invLx = 1. / (phi[iLev][ix_] - plo[iLev][ix_]);
+  const Real plox = plo[iLev][ix_];
+  // Q: Sort the particles by weights in ascending order. 
+  // But, why is it required here? 
+  // A: Eliminate randomness. 
+  std::sort(partIdx.begin(), partIdx.end(),
+            [&particles, &invLx, &plox](int idLeft, int idRight) {
+              const Real ql = fabs(particles[idLeft].rdata(iqp_));
+              const Real qr = fabs(particles[idRight].rdata(iqp_));
 
-  //             // Q: Why are xl and xr required here?
-  //             // A: If most particle weights are the same, then it
-  //             // compares the last a few digits of the weights,
-  //             // which is random,  if xl and xr are not applied.
-  //             Real xl = particles[idLeft].pos(ix_);
-  //             Real xr = particles[idRight].pos(ix_);
-  //             xl = (xl - plox) * invLx * ql * 1e-9;
-  //             xr = (xr - plox) * invLx * qr * 1e-9;
+              // Q: Why are xl and xr required here?
+              // A: If most particle weights are the same, then it
+              // compares the last a few digits of the weights,
+              // which is random,  if xl and xr are not applied.
+              Real xl = particles[idLeft].pos(ix_);
+              Real xr = particles[idRight].pos(ix_);
+              xl = (xl - plox) * invLx * ql * 1e-9;
+              xr = (xr - plox) * invLx * qr * 1e-9;
 
-  //             return ql + xl < qr + xr;
-  //           });
+              return ql + xl < qr + xr;
+            });
 
   auto rng = std::default_random_engine(seed);
   std::shuffle(std::begin(partIdx), std::end(partIdx), rng);
