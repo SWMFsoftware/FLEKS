@@ -23,4 +23,7 @@
 
 7. Lambda is useful, but a regular function is better if it is universal or it is long. 
 
-8. Using debug flags and Valgrind to check errors. 
+8. Using debug flags and Valgrind to check errors.
+
+9. Follow the coventional commits format: https://www.conventionalcommits.org/en/v1.0.0/
+
