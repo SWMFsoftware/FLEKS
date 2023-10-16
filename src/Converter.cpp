@@ -19,6 +19,8 @@ int main(int argc, char* argv[]) {
   FileType sType = FileType::UNSET;
   FileType dType = FileType::UNSET;
 
+  int nSmooth = 0;
+
   size_t i = 1;
   while (i < cdl.size()) {
     if (cdl[i] == "-f") {
@@ -47,12 +49,14 @@ int main(int argc, char* argv[]) {
       printf("               Options : VTK, TEC\n");
       printf("  -s [optional]: Specify the source file format.\n");
       printf("               Options: AMReX, IDL\n");
+      printf("  -smooth n : Smooth the data n times\n");
 
       printf("\n");
 
       printf(" Examples:\n");
       printf("  ./Converter.exe -f f1_amrex f2_amrex -d VTK\n");
       printf("  ./Converter.exe -f 3d*_amrex -d TEC\n");
+      printf("  ./Converter.exe -f 3d*_amrex -d TEC -smooth 3\n");
 
       return 0;
     } else if (cdl[i] == "-s") {
@@ -73,6 +77,14 @@ int main(int argc, char* argv[]) {
         std::cout << "dtype = " << cdl[i - 1] << " dtype = " << (int)dType
                   << "\n";
       }
+    } else if (cdl[i] == "-smooth") {
+      i++;
+      if (i >= cdl.size()) {
+        std::cout << "Error: -smooth option requires an argument.\n";
+        return 0;
+      } else {
+        nSmooth = std::stoi(cdl[i++]);
+      }
     }
   }
 
@@ -87,6 +99,9 @@ int main(int argc, char* argv[]) {
   for (size_t i = 0; i < fileNames.size(); i++) {
     Converter cv(fileNames[i], sType, dType);
     cv.read();
+    if (nSmooth > 0) {
+      cv.smooth(nSmooth);
+    }
     cv.write();
   }
 

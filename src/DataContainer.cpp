@@ -203,3 +203,71 @@ size_t AMReXDataContainer::loop_zone(bool doStore, Vector<size_t>& zones) {
   }
   return iBrick;
 }
+
+void AMReXDataContainer::smooth(int nSmooth) {
+  std::string funcName = "AMReXDataContainer::smooth()";
+  BL_PROFILE(funcName);
+
+  for (int iSmooth = 0; iSmooth < nSmooth; iSmooth++)
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      const int ng = 1;
+      MultiFab mfOld(mf[iLev].boxArray(), mf[iLev].DistributionMap(),
+                     mf[iLev].nComp(), ng);
+
+      auto smooth_dir = [&](int iDir) {
+        MultiFab::Copy(mfOld, mf[iLev], 0, 0, mf[iLev].nComp(), 0);
+        mfOld.FillBoundary(Geom(iLev).periodicity());
+
+        int dIdx[3] = { 0, 0, 0 };
+        dIdx[iDir] = 1;
+
+        for (MFIter mfi(mf[iLev]); mfi.isValid(); ++mfi) {
+          const Box& bx = mfi.validbox();
+
+          const auto& status = cell_status(iLev)[mfi].array();
+          Array4<Real> const& arr = mf[iLev][mfi].array();
+          Array4<Real> const& tmp = mfOld[mfi].array();
+
+          const auto lo = IntVect(bx.loVect());
+          const auto hi = IntVect(bx.hiVect());
+
+          for (int iVar = 0; iVar < mf[iLev].nComp(); iVar++)
+            for (int k = lo[iz_]; k <= hi[iz_]; k++)
+              for (int j = lo[iy_]; j <= hi[iy_]; j++)
+                for (int i = lo[ix_]; i <= hi[ix_]; i++) {
+
+                  if (bit::is_lev_edge(status(i, j, k))) {
+                    // Do not understand why this is needed. It seems the
+                    // is_lev_boundary() below does not work as expected. --Yuxi
+                    continue;
+                  }
+
+                  for (int kk = k - dIdx[iz_]; kk <= k + dIdx[iz_]; kk++)
+                    for (int jj = j - dIdx[iy_]; jj <= j + dIdx[iy_]; jj++)
+                      for (int ii = i - dIdx[ix_]; ii <= i + dIdx[ix_]; ii++)
+                        if (bit::is_lev_boundary(status(ii, jj, kk)) ||
+                            bit::is_refined(status(ii, jj, kk))) {
+                          continue;
+                        }
+
+                  Real coef = 0.5;
+
+                  const Real weightSelf = 1 - coef;
+                  const Real WeightNei = coef / 2.0;
+
+                  const Real neiSum =
+                      tmp(i - dIdx[ix_], j - dIdx[iy_], k - dIdx[iz_], iVar) +
+                      tmp(i + dIdx[ix_], j + dIdx[iy_], k + dIdx[iz_], iVar);
+                  arr(i, j, k, iVar) =
+                      weightSelf * arr(i, j, k, iVar) + WeightNei * neiSum;
+                }
+        }
+
+        mf[iLev].FillBoundary(Geom(iLev).periodicity());
+      };
+
+      smooth_dir(ix_);
+      smooth_dir(iy_);
+      smooth_dir(iz_);
+    }
+}

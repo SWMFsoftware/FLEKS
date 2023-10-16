@@ -102,6 +102,10 @@ public:
 
   virtual void get_loc(amrex::Vector<float>& vars) = 0;
 
+  virtual void smooth(int nSmooth = 1) {
+    printf("smooth() has not been implemented yet for this data container!\n");
+  }
+
   std::string type_string() { return fileTypeString.at(dataType); }
 
   int n_var() { return nVar; }
@@ -623,6 +627,8 @@ public:
                           amrex::RealBox& domain, amrex::Box& cellBox,
                           amrex::Vector<std::string>& varNames);
   void read_header();
+
+  void smooth(int nSmooth = 1) override;
 
   void post_regrid() override {
     for (int iLev = 0; iLev < n_lev(); iLev++) {

@@ -117,6 +117,8 @@ public:
   void read() { dc->read(); }
   void write() { writer->write(); }
 
+  void smooth(int nSmooth) { dc->smooth(nSmooth); }
+
 private:
   std::string sourceFile;
   FileType sourceType;
