@@ -1752,7 +1752,7 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
               return ql + xl < qr + xr;
             });
 
-  auto rng = std::default_random_engine(seed);
+  auto rng = std::mt19937(seed);
   std::shuffle(std::begin(partIdx), std::end(partIdx), rng);
 
   idx_I.resize(nPartCombine, 0);
