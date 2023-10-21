@@ -1,6 +1,4 @@
-#include <algorithm>
 #include <cstdlib>
-#include <random>
 
 #include "Particles.h"
 #include "SWMFInterface.h"
@@ -1729,12 +1727,11 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
       a(i, j) = 0;
     }
 
-  
   const Real invLx = 1. / (phi[iLev][ix_] - plo[iLev][ix_]);
   const Real plox = plo[iLev][ix_];
-  // Q: Sort the particles by weights in ascending order. 
-  // But, why is it required here? 
-  // A: Eliminate randomness. 
+  // Q: Sort the particles by weights in ascending order.
+  // But, why is it required here?
+  // A: Eliminate randomness.
   std::sort(partIdx.begin(), partIdx.end(),
             [&particles, &invLx, &plox](int idLeft, int idRight) {
               const Real ql = fabs(particles[idLeft].rdata(iqp_));
@@ -1752,8 +1749,8 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
               return ql + xl < qr + xr;
             });
 
-  auto rng = std::mt19937(seed);
-  std::shuffle(std::begin(partIdx), std::end(partIdx), rng);
+  randNum.set_seed(seed);
+  shuffle_fish_yates(partIdx, randNum);
 
   idx_I.resize(nPartCombine, 0);
   for (int ip = 0; ip < nPartCombine; ip++) {
@@ -1857,8 +1854,8 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
       // It is assumed the tile size is 1x1x1.
       Box bx = pti.tilebox();
       auto cellIdx = bx.smallEnd();
-      const long seed = set_random_seed(iLev, cellIdx[0], cellIdx[1],
-                                        cellIdx[2], IntVect(777));
+      long seed = set_random_seed(iLev, cellIdx[0], cellIdx[1], cellIdx[2],
+                                  IntVect(777));
 
       AoS& particles = pti.GetArrayOfStructs();
 
