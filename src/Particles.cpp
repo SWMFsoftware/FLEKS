@@ -676,8 +676,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_mass_matrix(
-    UMultiFab<RealMM>& nodeMM, MultiFab& jHat, MultiFab& nodeBMF, Real dt,
-    int iLev) {
+    UMultiFab<RealMM>& nodeMM, MultiFab& jHat, MultiFab& nodeBMF,
+    MultiFab& u0MF, Real dt, int iLev) {
   timing_func("Pts::calc_mass_matrix");
 
   Real qdto2mc = charge / mass * 0.5 * dt;
@@ -687,6 +687,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
     Array4<Real> const& jArr = jHat[pti].array();
     Array4<RealMM> const& mmArr = nodeMM[pti].array();
+
+    Array4<Real const> const& u0Arr = u0MF[pti].array();
 
     const AoS& particles = pti.GetArrayOfStructs();
 
@@ -715,6 +717,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
       //----- Mass matrix calculation begin--------------
       Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];
+      Real u0[3] = { 0, 0, 0 };
 
       for (int kk = 0; kk < 2; kk++)
         for (int jj = 0; jj < 2; jj++)
@@ -728,6 +731,12 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
             Bzl += nodeBArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
                             iz_) *
                    coef[ii][jj][kk];
+
+            for (int iDim = 0; iDim < nDimVel; iDim++) {
+              u0[iDim] += u0Arr(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                loIdx[iz_] + kk, iDim) *
+                          coef[ii][jj][kk];
+            }
           }
 
       const Real Omx = qdto2mc * Bxl;
@@ -755,11 +764,20 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
         // jHat
         Real currents[3];
 
+        const Real up1 = up - u0[0];
+        const Real vp1 = vp - u0[1];
+        const Real wp1 = wp - u0[2];
+
+        const Real udotOm1 = up1 * Omx + vp1 * Omy + wp1 * Omz;
+
         {
           const Real coef1 = denom * qp;
-          currents[ix_] = (up + (vp * Omz - wp * Omy + udotOm * Omx)) * coef1;
-          currents[iy_] = (vp + (wp * Omx - up * Omz + udotOm * Omy)) * coef1;
-          currents[iz_] = (wp + (up * Omy - vp * Omx + udotOm * Omz)) * coef1;
+          currents[ix_] =
+              (up1 + (vp1 * Omz - wp1 * Omy + udotOm1 * Omx)) * coef1;
+          currents[iy_] =
+              (vp1 + (wp1 * Omx - up1 * Omz + udotOm1 * Omy)) * coef1;
+          currents[iz_] =
+              (wp1 + (up1 * Omy - vp1 * Omx + udotOm1 * Omz)) * coef1;
         }
 
         for (int iVar = 0; iVar < 3; iVar++)

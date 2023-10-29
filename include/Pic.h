@@ -60,6 +60,9 @@ private:
   amrex::Vector<amrex::MultiFab> nodeB;
   amrex::Vector<amrex::MultiFab> centerB;
 
+  amrex::Vector<amrex::MultiFab> U0;
+  amrex::Vector<amrex::MultiFab> E0;
+
   amrex::Vector<amrex::UMultiFab<RealMM> > nodeMM;
 
   // ------divE correction--------------
@@ -100,6 +103,8 @@ private:
   amrex::Real reSamplingLowLimit = 0.8;
   amrex::Real reSamplingHighLimit = 1.5;
 
+
+  bool doSplitJ = false;
   bool doSmoothE = false;
   int nSmoothE = 1;
   amrex::Real coefStrongSmooth = 0.5;
@@ -146,6 +151,9 @@ public:
     nodeB.resize(n_lev_max());
     nodeE.resize(n_lev_max());
     nodeEth.resize(n_lev_max());
+
+    E0.resize(n_lev_max());
+    U0.resize(n_lev_max());
 
     centerNetChargeOld.resize(n_lev_max());
     centerNetChargeN.resize(n_lev_max());
@@ -250,6 +258,8 @@ public:
                        double coefIn = 1);
 
   void calc_smooth_coef();
+  
+  void update_U0_E0();
   //-------------Electric field solver end-------------
 
   void update_B();

@@ -55,6 +55,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#DISCRETIZE" || command == "#DISCRETIZATION") {
     param.read_var("theta", fsolver.theta);
     param.read_var("coefDiff", fsolver.coefDiff);
+  } else if (command == "#SPLITJ") {
+    param.read_var("splitJ", doSplitJ);
   } else if (command == "#SMOOTHE") {
     param.read_var("doSmoothE", doSmoothE);
     if (doSmoothE) {
@@ -144,6 +146,10 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                         nGst);
     distribute_FabArray(nodeEth[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
+
+    distribute_FabArray(E0[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst);
+
+    distribute_FabArray(U0[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst);
 
     distribute_FabArray(centerNetChargeOld[iLev], cGrids[iLev],
                         DistributionMap(iLev), 1, nGst);
@@ -469,7 +475,7 @@ void Pic::calc_mass_matrix() {
         parts[i]->calc_jhat(jHat[iLev], nodeB[iLev], tc->get_dt());
       } else {
         parts[i]->calc_mass_matrix(nodeMM[iLev], jHat[iLev], nodeB[iLev],
-                                   tc->get_dt(), iLev);
+                                   U0[iLev], tc->get_dt(), iLev);
       }
     }
     Real invVol = 1;
@@ -881,6 +887,86 @@ void Pic::update(bool doReportIn) {
 }
 
 //==========================================================
+void Pic::update_U0_E0() {
+  std::string nameFunc = "Pic::update_U0_E0";
+  timing_func(nameFunc);
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    U0[iLev].setVal(0.0);
+    E0[iLev].setVal(0.0);
+    for (MFIter mfi(U0[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.fabbox();
+      const Array4<Real>& arrU = U0[iLev][mfi].array();
+      const Array4<Real>& arrE = E0[iLev][mfi].array();
+      const Array4<Real>& arrB = nodeB[iLev][mfi].array();
+      const Array4<const Real>& arrMoments =
+          nodePlasma[nSpecies][iLev][mfi].array();
+
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            const Real rho = arrMoments(i, j, k, iRho_);
+            if (rho > 1e-99) {
+              const Real invRho = 1. / rho;
+              for (int iu = iUx_; iu <= iUz_; iu++)
+                arrU(i, j, k, iu - iUx_) = arrMoments(i, j, k, iu) * invRho;
+            }
+          }
+    }
+
+    U0[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    const int nSmooth = 5;
+
+    for (int i = 0; i < nSmooth; i++)
+      smooth_multifab(U0[iLev], true, 0.5);
+
+    // MultiFab::Copy(tempNode3, nodeB, 0, 0, nodeB.nComp(), nodeB.nGrow());
+    // tempNode3.FillBoundary(Geom(0).periodicity());
+    // for (int i = 0; i < 5; i++)
+    //   smooth_multifab(tempNode3, true, 0.5);
+
+    for (MFIter mfi(U0[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arrU = U0[iLev][mfi].array();
+      const Array4<Real>& arrE = E0[iLev][mfi].array();
+      const Array4<Real>& arrB = nodeB[iLev][mfi].array();
+
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            const Real& bx = arrB(i, j, k, ix_);
+            const Real& by = arrB(i, j, k, iy_);
+            const Real& bz = arrB(i, j, k, iz_);
+
+            const Real& ux = arrU(i, j, k, ix_);
+            const Real& uy = arrU(i, j, k, iy_);
+            const Real& uz = arrU(i, j, k, iz_);
+
+            arrE(i, j, k, ix_) = -uy * bz + uz * by;
+            arrE(i, j, k, iy_) = -uz * bx + ux * bz;
+            arrE(i, j, k, iz_) = -ux * by + uy * bx;
+          }
+    }
+
+    E0[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    for (int i = 0; i < nSmooth; i++)
+      smooth_multifab(E0[iLev], true, 0.5);
+
+    //
+    // print_MultiFab(nodeU0, "nodeU0", 1);
+    // print_MultiFab(nodeE0, "nodeE0", 1);
+  }
+}
+
+//==========================================================
 void Pic::update_E() {
   if (!solveEM)
     return;
@@ -927,6 +1013,10 @@ void Pic::update_E_impl() {
   std::string nameFunc = "Pic::update_E_impl";
 
   timing_func(nameFunc);
+
+  if (doSplitJ)
+    update_U0_E0();
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     eSolver.reset(get_local_node_or_cell_number(nodeE[iLev]));
 
@@ -1136,6 +1226,10 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   temp2Node.mult(fsolver.theta * tc->get_dt());
   MultiFab::Add(temp2Node, nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                 temp2Node.nGrow());
+
+  tempNode.setVal(0.0);
+  update_E_M_dot_E(E0[iLev], tempNode, iLev);
+  MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), tempNode.nGrow());
 
   convert_3d_to_1d(temp2Node, rhs, iLev);
 }

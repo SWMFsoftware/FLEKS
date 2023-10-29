@@ -351,6 +351,25 @@ double Pic::get_var(std::string var, const int iLev, const int ix, const int iy,
       value = (arr(ix, iy, iz, iPxx_) + arr(ix, iy, iz, iPyy_) +
                arr(ix, iy, iz, iPzz_)) /
               3.0;
+
+    } else if (var.substr(0, 3) == "E0x") {
+      const Array4<Real const>& arr = E0[iLev][mfi].array();
+      value = arr(ix, iy, iz, ix_);
+    } else if (var.substr(0, 3) == "E0y") {
+      const Array4<Real const>& arr = E0[iLev][mfi].array();
+      value = arr(ix, iy, iz, iy_);
+    } else if (var.substr(0, 3) == "E0z") {
+      const Array4<Real const>& arr = E0[iLev][mfi].array();
+      value = arr(ix, iy, iz, iz_);
+    } else if (var.substr(0, 3) == "U0x") {
+      const Array4<Real const>& arr = U0[iLev][mfi].array();
+      value = arr(ix, iy, iz, ix_);
+    } else if (var.substr(0, 3) == "U0y") {
+      const Array4<Real const>& arr = U0[iLev][mfi].array();
+      value = arr(ix, iy, iz, iy_);
+    } else if (var.substr(0, 3) == "U0z") {
+      const Array4<Real const>& arr = U0[iLev][mfi].array();
+      value = arr(ix, iy, iz, iz_);
     } else if (var.substr(0, 2) == "qc") {
       const Array4<Real const>& arr = centerNetChargeN[iLev][mfi].array();
       value = arr(ix, iy, iz);
