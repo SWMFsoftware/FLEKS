@@ -1612,7 +1612,7 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
   for (int pID : idx_I) {
     Real distance = sqrt(calc_distance2_to_center(pID));
     if (distance > mergeThresholdDistance) {
-      printf("Warning: distance=%e\n", distance);
+      // printf("Warning: distance=%e\n", distance);
       doCombine = false;
     }
   }
