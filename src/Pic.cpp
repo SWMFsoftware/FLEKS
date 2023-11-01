@@ -147,10 +147,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     distribute_FabArray(nodeEth[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
 
-    distribute_FabArray(E0[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst);
-
-    distribute_FabArray(U0[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst);
-
     distribute_FabArray(centerNetChargeOld[iLev], cGrids[iLev],
                         DistributionMap(iLev), 1, nGst);
     distribute_FabArray(centerNetChargeN[iLev], cGrids[iLev],
@@ -169,6 +165,12 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(nodeMM[iLev], nGrids[iLev], DistributionMap(iLev), 1,
                           1, doMoveData);
     }
+
+    distribute_FabArray(E0[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst,
+                        doMoveData);
+
+    distribute_FabArray(U0[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst,
+                        doMoveData);
 
     distribute_FabArray(centerMM[iLev], cGrids[iLev], DistributionMap(iLev), 1,
                         nGst, doMoveData);
