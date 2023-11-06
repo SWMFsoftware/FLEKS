@@ -2171,6 +2171,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
   if (dt <= 0)
     return;
 
+  Real maxExchangeRatio = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
@@ -2262,6 +2263,11 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
           }
         } else {
           // Reduce particle mass due to charge exchange
+
+          Real ratio = massExchange / p.rdata(iqp_);
+          if (ratio > maxExchangeRatio)
+            maxExchangeRatio = ratio;
+
           p.rdata(iqp_) = p.rdata(iqp_) - massExchange;
         }
 
@@ -2322,6 +2328,16 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         }
       } // for p
     }   // for pti
+  }
+
+  ParallelDescriptor::ReduceRealMax(maxExchangeRatio);
+
+  Print() << "maxExchangeRatio = " << maxExchangeRatio << std::endl;
+  if (maxExchangeRatio > 0.2) {
+    Print() << "Warning: maybe the charge exchange rate is too high within one "
+               "time step! Reducing the time step will help to slow down the "
+               "charge exchange."
+            << std::endl;
   }
 }
 // Since Particles is a template, it is necessary to explicitly instantiate
