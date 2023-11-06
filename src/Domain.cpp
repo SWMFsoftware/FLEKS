@@ -738,7 +738,8 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#TESTCASE" || command == "#FASTMERGE" ||
         command == "#VACUUM" || command == "#PARTICLELEVRATIO" ||
         command == "#PIC" || command == "#EXPLICITPIC" ||
-        command == "#SPLITJ" || command == "#PARTICLEBOXBOUNDARY") {
+        command == "#SPLITJ" || command == "#PARTICLEBOXBOUNDARY" ||
+        command == "#MIDDLEPOINTSOURCE") {
       pic->read_param(command, param);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||

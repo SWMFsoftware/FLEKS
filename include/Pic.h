@@ -123,6 +123,8 @@ private:
   amrex::Real mergeRatioMax = 1.5;
   amrex::Real pLevRatio = 1.2;
 
+  bool middlePointSource = false;
+
   // [amu/cc]
   amrex::Real vacuum = 0;
 

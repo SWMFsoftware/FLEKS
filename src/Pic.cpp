@@ -25,6 +25,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       pBC.lo[i] = pBC.num_type(lo);
       pBC.hi[i] = pBC.num_type(hi);
     }
+  } else if (command == "#MIDDLEPOINTSOURCE") {
+    param.read_var("middlePointSource", middlePointSource);
   } else if (command == "#RANDOMPARTICLESLOCATION") {
     param.read_var("isParticleLocationRandom", isParticleLocationRandom);
   } else if (command == "#DIVE") {
@@ -442,8 +444,16 @@ void Pic::particle_mover() {
 
   // } else {
 
+  Real dt = tc->get_dt();
+  Real dtnext = tc->get_next_dt();
+
+  if (middlePointSource) {
+    dt *= 0.5;
+    dtnext *= 0.5;
+  }
+
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->mover(nodeEth, nodeB, tc->get_dt(), tc->get_next_dt());
+    parts[i]->mover(nodeEth, nodeB, dt, dtnext);
   }
 
   for (int i = 0; i < nSpecies; i++) {
@@ -847,6 +857,10 @@ void Pic::update(bool doReportIn) {
   re_sampling();
 
   charge_exchange();
+
+  if (middlePointSource) {
+    particle_mover();
+  }
 
   if (source) {
     fill_source_particles();
