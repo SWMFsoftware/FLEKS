@@ -360,22 +360,17 @@ void Pic::fill_E_B_fields() {
 
   fill_new_node_E();
   fill_new_node_B();
+  fill_new_center_B();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nDim, &Pic::get_node_B, iLev);
-    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E, iLev);
-  }
-
-  fill_new_center_B();
-
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-
-    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-             &Pic::get_center_B, iLev);
   }
+  apply_BC(nodeStatus[0], nodeB[0], 0, nDim, &Pic::get_node_B, 0);
+  apply_BC(nodeStatus[0], nodeE[0], 0, nDim, &Pic::get_node_E, 0);
+  apply_BC(cellStatus[0], centerB[0], 0, centerB[0].nComp(), &Pic::get_center_B,
+           0);
 }
 
 //==========================================================
