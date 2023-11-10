@@ -371,6 +371,25 @@ void Pic::fill_E_B_fields() {
   apply_BC(nodeStatus[0], nodeE[0], 0, nDim, &Pic::get_node_E, 0);
   apply_BC(cellStatus[0], centerB[0], 0, centerB[0].nComp(), &Pic::get_center_B,
            0);
+
+  //-----Fine (iLev>0) grid boundary/internal ghost cells are filled----
+  for (int iLev = 1; iLev <= finest_level; iLev++) {
+    nodeE[iLev].FillBoundary();
+    nodeB[iLev].FillBoundary();
+    centerB[iLev].FillBoundary();
+
+    fill_fine_lev_bny_cell_from_coarse(
+        nodeE[iLev - 1], nodeE[iLev], 0, nodeE[iLev - 1].nComp(),
+        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev));
+
+    fill_fine_lev_bny_cell_from_coarse(
+        nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
+        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev));
+
+    fill_fine_lev_bny_cell_from_coarse(
+        centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev));
+  }
 }
 
 //==========================================================
