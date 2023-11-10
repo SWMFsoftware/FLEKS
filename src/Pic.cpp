@@ -362,11 +362,11 @@ void Pic::fill_E_B_fields() {
   fill_new_node_B();
   fill_new_center_B();
 
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
-    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
-    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-  }
+  //-----Coarse (iLev=0) grid boundary/internal ghost cells are filled----
+
+  nodeE[0].FillBoundary(Geom(0).periodicity());
+  nodeB[0].FillBoundary(Geom(0).periodicity());
+  centerB[0].FillBoundary(Geom(0).periodicity());
   apply_BC(nodeStatus[0], nodeB[0], 0, nDim, &Pic::get_node_B, 0);
   apply_BC(nodeStatus[0], nodeE[0], 0, nDim, &Pic::get_node_E, 0);
   apply_BC(cellStatus[0], centerB[0], 0, centerB[0].nComp(), &Pic::get_center_B,
