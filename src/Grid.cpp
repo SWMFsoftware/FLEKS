@@ -422,8 +422,9 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
           }
     }
 
-    nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
-
+    if (iLev == 0) {
+      nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
     // Find domain boundary cells
     for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
