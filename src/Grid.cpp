@@ -238,27 +238,18 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
       const auto& cellArr = cellStatus[iLev][mfi].array();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            bit::set_lev_boundary(cellArr(i, j, k));
-            bit::set_not_domain_boundary(cellArr(i, j, k));
-          }
+      amrex::ParallelFor(box,
+                         [&] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                           bit::set_lev_boundary(cellArr(i, j, k));
+                           bit::set_not_domain_boundary(cellArr(i, j, k));
+                         });
     }
-
     // Set 'boundary', 'new' status.
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
+      amrex::ParallelFor(
+          box, [&] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             // Not boundary cell
             bit::set_not_lev_boundary(cellArr(i, j, k));
 
@@ -270,7 +261,7 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
                 bit::set_not_new(cellArr(i, j, k));
               }
             }
-          }
+          });
     }
 
     // Set the 'refined' status
@@ -283,16 +274,12 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
         const Box& box = mfi.validbox();
         const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
         const auto& iRef = iRefine[mfi].array();
-        const auto lo = lbound(box);
-        const auto hi = ubound(box);
-
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              if (iRef(i, j, k) == iRefined) {
-                bit::set_refined(cellArr(i, j, k));
-              }
-            }
+        amrex::ParallelFor(box,
+                           [&] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                             if (iRef(i, j, k) == iRefined) {
+                               bit::set_refined(cellArr(i, j, k));
+                             }
+                           });
       }
     }
 
@@ -302,12 +289,8 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
       const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
+      amrex::ParallelFor(
+          box, [&] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             if (bit::is_lev_boundary(cellArr(i, j, k))) {
               Real xyz[nDim];
               Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
@@ -315,7 +298,7 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
                 bit::set_domain_boundary(cellArr(i, j, k));
               }
             }
-          }
+          });
     }
 
     // Set the edge cells.
@@ -325,16 +308,12 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-
-            for (int kk = k - 1; kk <= k + 1; kk++)
-              for (int jj = j - 1; jj <= j + 1; jj++)
-                for (int ii = i - 1; ii <= i + 1; ii++) {
+      amrex::ParallelFor(
+          box, [&] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            Box subBox(IntVect{ AMREX_D_DECL(i - 1, j - 1, k - 1) },
+                       IntVect{ AMREX_D_DECL(i + 1, j + 1, k + 1) });
+            amrex::ParallelFor(
+                subBox, [&] AMREX_GPU_DEVICE(int ii, int jj, int kk) noexcept {
                   if (bit::is_lev_boundary(cellArr(ii, jj, kk))) {
                     bit::set_lev_edge(cellArr(i, j, k));
 
@@ -342,8 +321,8 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
                       bit::set_domain_edge(cellArr(i, j, k));
                     }
                   }
-                }
-          }
+                });
+          });
     }
 
     if (isFake2D) {
@@ -353,15 +332,11 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
         for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
           const Box& box = mfi.fabbox();
           const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-          const auto lo = lbound(box);
-          const auto hi = ubound(box);
-
-          for (int k = lo.z; k <= hi.z; ++k)
-            if (k < -1 || k > 1)
-              for (int j = lo.y; j <= hi.y; ++j)
-                for (int i = lo.x; i <= hi.x; ++i) {
-                  cellArr(i, j, k) = cellArr(i, j, 0);
-                }
+          amrex::ParallelFor(box, [&] AMREX_GPU_DEVICE(int i, int j, int k)
+                                      noexcept {
+                                        if (k < -1 || k > 1)
+                                          cellArr(i, j, k) = cellArr(i, j, 0);
+                                      });
         }
     }
   }
