@@ -131,24 +131,37 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 
   Real x, y, z; // Particle location
 
-  const Real vol = dx[iLev][ix_] * dx[iLev][iy_] * dx[iLev][iz_];
-  const int npcel = nPPC[ix_] * nPPC[iy_] * nPPC[iz_];
+  Real vol = 1;
+  int npcel = 1;
+
+  for (int iDim = 0; iDim < nDim; iDim++) {
+    vol *= dx[iLev][iDim];
+    npcel *= nPPC[iDim];
+  }
+
   const Real vol2Npcel = qomSign * vol / npcel;
 
   ParticleTileType& particles = get_particle_tile(iLev, mfi, i, j, k);
 
   int icount = 0;
   // Loop over particles inside grid cell i, j, k
+
+  int kmax = 0;
+  if (nDim > 2)
+    kmax = nPPC[iz_];
+
   for (int ii = 0; ii < nPPC[ix_]; ii++)
     for (int jj = 0; jj < nPPC[iy_]; jj++)
-      for (int kk = 0; kk < nPPC[iz_]; kk++) {
+      for (int kk = 0; kk < kmax; kk++) {
 
         x = (ii + randNum()) * (dx[iLev][ix_] / nPPC[ix_]) + i * dx[iLev][ix_] +
             plo[iLev][ix_];
         y = (jj + randNum()) * (dx[iLev][iy_] / nPPC[iy_]) + j * dx[iLev][iy_] +
             plo[iLev][iy_];
-        z = (kk + randNum()) * (dx[iLev][iz_] / nPPC[iz_]) + k * dx[iLev][iz_] +
-            plo[iLev][iz_];
+
+        z = nDim > 2 ? (kk + randNum()) * (dx[iLev][iz_] / nPPC[iz_]) +
+                           k * dx[iLev][iz_] + plo[iLev][iz_]
+                     : 0*randNum();
 
         // If the particle weight is sampled in a random location, the sum of
         // particle mass is NOT the same as the integral of the grid density.
@@ -158,8 +171,9 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
                   plo[iLev][ix_];
         Real y0 = (jj + 0.5) * (dx[iLev][iy_] / nPPC[iy_]) + j * dx[iLev][iy_] +
                   plo[iLev][iy_];
-        Real z0 = (kk + 0.5) * (dx[iLev][iz_] / nPPC[iz_]) + k * dx[iLev][iz_] +
-                  plo[iLev][iz_];
+        Real z0 = nDim > 2 ? (kk + 0.5) * (dx[iLev][iz_] / nPPC[iz_]) +
+                                 k * dx[iLev][iz_] + plo[iLev][iz_]
+                           : 0;
 
         if (!isParticleLocationRandom) {
           x = x0;
@@ -745,7 +759,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
       // end interpolation
       const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
-      const Real denom = 1.0 / (1.0 + omsq);      
+      const Real denom = 1.0 / (1.0 + omsq);
 
       const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
       Real alpha[9];

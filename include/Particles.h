@@ -272,9 +272,15 @@ public:
 
     int nxcg = nCell[ix_];
     int nycg = nCell[iy_];
-    int nzcg = nCell[iz_];
+    int nzcg = 1;
+    if (nDim > 2)
+      nzcg = nCell[iz_];
+
     int iCycle = tc->get_cycle();
-    int npcel = nPPC[ix_] * nPPC[iy_] * nPPC[iz_];
+
+    int npcel = 1;
+    for (int iDim = 0; iDim < nDim; iDim++)
+      npcel *= nPPC[iDim];
 
     // What if the seed overflow?
     const long seed =
