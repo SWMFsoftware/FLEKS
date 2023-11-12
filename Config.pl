@@ -90,9 +90,17 @@ sub get_settings{
        while(<FILE>){
        	next if /^\s*!/; # skip commented out lines
        	$AmrexComp = $1 if/^COMP = (\S*)/i;
-      	$AmrexDebug = $1 if/^DEBUG = (\S*)/i; 
-        $AmrexTinyProfile = $1 if/^TINY_PROFILE = (\S*)/i; 
-        $AmrexDim = $1 if/^DIM = (\S*)/i; 
+       }
+    close $AmrexMakefile;
+
+    $AmrexDebug = "False";
+    $AmrexTinyProfile = "False";
+    my $AmrexConfig = "${AmrexDir}/InstallDir/include/AMReX_Config.H";
+    open(FILE, $AmrexConfig) or die "$ERROR could not open $AmrexConfig \n";
+       while(<FILE>){
+      	$AmrexDebug = "True" if/^#define AMREX_DEBUG/i; 
+        $AmrexTinyProfile = "True" if/^#define AMREX_TINY_PROFILING/i; 
+        $AmrexDim = $1 if/^#define AMREX_SPACEDIM (\S*)/i; 
        }
     close $AmrexMakefile;
     
