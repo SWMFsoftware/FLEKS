@@ -175,9 +175,9 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
 
   const auto invDx = gm.InvCellSize();
 
-  int loIdx[3];
-  amrex::Real dx[3];
-  for (int i = 0; i < 3; i++) {
+  int loIdx[nDim];
+  amrex::Real dx[nDim];
+  for (int i = 0; i < nDim; i++) {
     dx[i] = (loc[i] - plo[i]) * invDx[i];
     loIdx[i] = fastfloor(dx[i]);
     dx[i] = dx[i] - loIdx[i];
@@ -201,28 +201,37 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
     multi[1][0] = xi[1] * eta[0];
     multi[1][1] = xi[1] * eta[1];
 
-    // coef[k][j][i]
-    coef[0][0][0] = multi[1][1] * zeta[1];
-    coef[1][0][0] = multi[1][1] * zeta[0];
-    coef[0][1][0] = multi[1][0] * zeta[1];
-    coef[1][1][0] = multi[1][0] * zeta[0];
-    coef[0][0][1] = multi[0][1] * zeta[1];
-    coef[1][0][1] = multi[0][1] * zeta[0];
-    coef[0][1][1] = multi[0][0] * zeta[1];
-    coef[1][1][1] = multi[0][0] * zeta[0];
+    // coef[k][j][i]: This is so wired. But is may be faster since it matches
+    // the AMREX multifab data ordering.
+    if (nDim == 2) {
+      coef[0][0][0] = multi[1][1];
+      coef[0][0][1] = multi[0][1];
+      coef[0][1][0] = multi[1][0];
+      coef[0][1][1] = multi[0][0];
+    } else {
+      coef[0][0][0] = multi[1][1] * zeta[1];
+      coef[1][0][0] = multi[1][1] * zeta[0];
+      coef[0][1][0] = multi[1][0] * zeta[1];
+      coef[1][1][0] = multi[1][0] * zeta[0];
+      coef[0][0][1] = multi[0][1] * zeta[1];
+      coef[1][0][1] = multi[0][1] * zeta[0];
+      coef[0][1][1] = multi[0][0] * zeta[1];
+      coef[1][1][1] = multi[0][0] * zeta[0];
+    }
   }
 
   const auto& arr = mf[mfi].array();
   amrex::Real val = 0;
-  for (int kk = 0; kk < 2; kk++) {
-    const int kIdx = loIdx[iz_] + kk;
-    for (int jj = 0; jj < 2; jj++) {
-      const int jIdx = loIdx[iy_] + jj;
-      for (int ii = 0; ii < 2; ii++) {
-        val += arr(loIdx[ix_] + ii, jIdx, kIdx, iVar) * coef[kk][jj][ii];
-      }
-    }
-  }
+
+  amrex::Box box = amrex::Box(amrex::IntVect(0), amrex::IntVect(1));
+
+  amrex::ParallelFor(box,
+                     [&] AMREX_GPU_DEVICE(int ii, int jj, int kk) noexcept {
+                       int iIdx = loIdx[ix_] + ii;
+                       int jIdx = loIdx[iy_] + jj;
+                       int kIdx = nDim > 2 ? loIdx[iz_] + kk : 0;
+                       val += arr(iIdx, jIdx, kIdx, iVar) * coef[kk][jj][ii];
+                     });
 
   return val;
 }
