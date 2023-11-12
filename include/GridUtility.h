@@ -248,7 +248,7 @@ inline void get_boxlist_from_region(amrex::BoxList& bl, GridInfo& gridInfo,
   }
 
   if (patchLen == 1) {
-    if (gridInfo.get_status(imin[ix_], imin[iy_], imin[iz_]) ==
+    if (gridInfo.get_status(AMREX_D_DECL(imin[ix_], imin[iy_], imin[iz_])) ==
         GridInfo::iPicOn_) {
       bl.push_back(amrex::Box(imin, imax, { AMREX_D_DECL(0, 0, 0) }));
     }
@@ -261,18 +261,18 @@ inline void get_boxlist_from_region(amrex::BoxList& bl, GridInfo& gridInfo,
   }
 
   amrex::BoxList blLoc;
-  for (int i = imin[ix_]; i <= imax[ix_]; i += dhalf[ix_])
-    for (int j = imin[iy_]; j <= imax[iy_]; j += dhalf[iy_])
-      for (int k = imin[iz_]; k <= imax[iz_]; k += dhalf[iz_]) {
-        amrex::IntVect iminsub = { AMREX_D_DECL(i, j, k) };
-        amrex::IntVect imaxsub = iminsub + dhalf - 1;
+  AMREX_D_TERM(for (int i = imin[ix_]; i <= imax[ix_]; i += dhalf[ix_]),
+               for (int j = imin[iy_]; j <= imax[iy_]; j += dhalf[iy_]),
+               for (int k = imin[iz_]; k <= imax[iz_]; k += dhalf[iz_])) {
+    amrex::IntVect iminsub = { AMREX_D_DECL(i, j, k) };
+    amrex::IntVect imaxsub = iminsub + dhalf - 1;
 
-        for (int i = 0; i < nDim; i++) {
-          if (imaxsub[i] > imax[i])
-            imaxsub[i] = imax[i];
-        }
-        get_boxlist_from_region(blLoc, gridInfo, iminsub, imaxsub);
-      }
+    for (int i = 0; i < nDim; i++) {
+      if (imaxsub[i] > imax[i])
+        imaxsub[i] = imax[i];
+    }
+    get_boxlist_from_region(blLoc, gridInfo, iminsub, imaxsub);
+  }
 
   // The number '3' is chosen based on numerical experiments.
   for (int i = 0; i < 3; i++)
