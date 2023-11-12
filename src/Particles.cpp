@@ -745,8 +745,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
       // end interpolation
       const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
-      const Real denom = 1.0 / (1.0 + omsq);
-      const Real udotOm = up * Omx + vp * Omy + wp * Omz;
+      const Real denom = 1.0 / (1.0 + omsq);      
 
       const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
       Real alpha[9];

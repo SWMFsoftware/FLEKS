@@ -926,9 +926,7 @@ void Pic::update_U0_E0() {
     E0[iLev].setVal(0.0);
     for (MFIter mfi(U0[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
-      const Array4<Real>& arrU = U0[iLev][mfi].array();
-      const Array4<Real>& arrE = E0[iLev][mfi].array();
-      const Array4<Real>& arrB = nodeB[iLev][mfi].array();
+      const Array4<Real>& arrU = U0[iLev][mfi].array();            
       const Array4<const Real>& arrMoments =
           nodePlasma[nSpecies][iLev][mfi].array();
 
