@@ -329,26 +329,23 @@ void Pic::fill_new_center_B() {
       const Box& box = mfi.validbox();
       const Array4<Real>& centerArr = centerB[iLev][mfi].array();
       const auto& nodeArr = nodeB[iLev][mfi].array();
-
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-
       const auto& status = cellStatus[iLev][mfi].array();
 
-      for (int iVar = 0; iVar < centerB[iLev].nComp(); iVar++)
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              if (bit::is_new(status(i, j, k))) {
-                centerArr(i, j, k, iVar) = 0;
-                for (int di = 0; di <= 1; di++)
-                  for (int dj = 0; dj <= 1; dj++)
-                    for (int dk = 0; dk <= 1; dk++) {
-                      centerArr(i, j, k, iVar) +=
-                          0.125 * nodeArr(i + di, j + dj, k + dk, iVar);
-                    }
-              }
+      amrex::ParallelFor(
+          box, centerB[iLev].nComp(),
+          [&] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) noexcept {
+            if (bit::is_new(status(i, j, k))) {
+              centerArr(i, j, k, iVar) = 0;
+
+              Box subBox(IntVect{ AMREX_D_DECL(i, j, k) },
+                         IntVect{ AMREX_D_DECL(i + 1, j + 1, k + 1) });
+              amrex::ParallelFor(subBox, [&] AMREX_GPU_DEVICE(int ii, int jj,
+                                                              int kk) noexcept {
+                const Real coef = (nDim == 2 ? 0.25 : 0.125);
+                centerArr(i, j, k, iVar) += coef * nodeArr(ii, jj, kk, iVar);
+              });
             }
+          });
     }
   }
 }
@@ -926,7 +923,7 @@ void Pic::update_U0_E0() {
     E0[iLev].setVal(0.0);
     for (MFIter mfi(U0[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
-      const Array4<Real>& arrU = U0[iLev][mfi].array();            
+      const Array4<Real>& arrU = U0[iLev][mfi].array();
       const Array4<const Real>& arrMoments =
           nodePlasma[nSpecies][iLev][mfi].array();
 
