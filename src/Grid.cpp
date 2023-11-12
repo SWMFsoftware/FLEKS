@@ -355,15 +355,11 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
     for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
       const auto& nodeArr = nodeStatus[iLev][mfi].array();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            bit::set_lev_boundary(nodeArr(i, j, k));
-            bit::set_not_domain_boundary(nodeArr(i, j, k));
-          }
+      amrex::ParallelFor(box,
+                         [&] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                           bit::set_lev_boundary(nodeArr(i, j, k));
+                           bit::set_not_domain_boundary(nodeArr(i, j, k));
+                         });
     }
 
     BoxArray nodeBAOld;
@@ -376,13 +372,8 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
     for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const auto& nodeArr = nodeStatus[iLev][mfi].array();
-
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
+      amrex::ParallelFor(
+          box, [&] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             // Not boundary cell
             bit::set_not_lev_boundary(nodeArr(i, j, k));
 
@@ -394,7 +385,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
                 bit::set_not_new(nodeArr(i, j, k));
               }
             }
-          }
+          });
     }
 
     if (iLev == 0) {
@@ -404,20 +395,17 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
     for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
       const Array4<int>& nodeArr = nodeStatus[iLev][mfi].array();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
 
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_lev_boundary(nodeArr(i, j, k))) {
-              Real xyz[nDim];
-              Geom(iLev).LoNode({ AMREX_D_DECL(i, j, k) }, xyz);
-              if (!is_inside_domain(xyz)) {
-                bit::set_domain_boundary(nodeArr(i, j, k));
-              }
-            }
-          }
+      amrex::ParallelFor(box,
+                         [&] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                           if (bit::is_lev_boundary(nodeArr(i, j, k))) {
+                             Real xyz[nDim];
+                             Geom(iLev).LoNode({ AMREX_D_DECL(i, j, k) }, xyz);
+                             if (!is_inside_domain(xyz)) {
+                               bit::set_domain_boundary(nodeArr(i, j, k));
+                             }
+                           }
+                         });
     }
 
     for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
@@ -432,7 +420,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
         int diMax = 0, diMin = -1;
         int djMax = 0, djMin = -1;
         int dkMax = 0, dkMin = -1;
-        if (isFake2D) {
+        if (isFake2D || nDim == 2) {
           dkMin = 0;
         }
         // If this box is the owner of this node?
@@ -454,11 +442,9 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
           return false;
         };
 
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
+        amrex::ParallelFor(
+            box, [&] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
               if (!isFake2D || k == lo.z) {
-
                 if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
                     (!isFake2D && (k == lo.z || k == hi.z))) {
                   // Block boundary nodes.
@@ -472,19 +458,19 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
                   bit::set_owner(nodeArr(i, j, k));
                 }
               }
-            }
+            });
       }
 
       // Set the 'edge' status
       // Q: But what is the edge node?
       // A: It is a node at the boundary of a level.
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
 
-            for (int kk = k - 1; kk <= k + 1; kk++)
-              for (int jj = j - 1; jj <= j + 1; jj++)
-                for (int ii = i - 1; ii <= i + 1; ii++) {
+      amrex::ParallelFor(
+          box, [&] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            Box subBox(IntVect{ AMREX_D_DECL(i - 1, j - 1, k - 1) },
+                       IntVect{ AMREX_D_DECL(i + 1, j + 1, k + 1) });
+            amrex::ParallelFor(
+                subBox, [&] AMREX_GPU_DEVICE(int ii, int jj, int kk) noexcept {
                   if (bit::is_lev_boundary(nodeArr(ii, jj, kk))) {
                     bit::set_lev_edge(nodeArr(i, j, k));
 
@@ -492,8 +478,8 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
                       bit::set_domain_edge(nodeArr(i, j, k));
                     }
                   }
-                }
-          }
+                });
+          });
     }
   }
 }
