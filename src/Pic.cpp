@@ -388,7 +388,7 @@ void Pic::fill_E_B_fields() {
 
     fill_fine_lev_bny_cell_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev));
+        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev));
   }
 }
 
