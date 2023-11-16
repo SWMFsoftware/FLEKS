@@ -680,8 +680,10 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
   Vector<MultiFab> out(n_lev());
   Vector<std::string> varNames;
+#ifdef _PC_COMPONENT_
   bool isDensityZero = false;
   int zeroI, zeroJ, zeroK, zeroLev;
+#endif
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (saveNode) {
       out[iLev].define(nGrids[iLev], DistributionMap(iLev), nVarOut, 0);
@@ -799,11 +801,13 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
                   uyArr(i, j, k) = plasmaArr(i, j, k, iUy_) / rho;
                   uzArr(i, j, k) = plasmaArr(i, j, k, iUz_) / rho;
                 } else {
+#ifdef _PC_COMPONENT_
                   isDensityZero = true;
                   zeroLev = iLev;
                   zeroI = i;
                   zeroJ = j;
                   zeroK = k;
+#endif
                 }
               }
         }
