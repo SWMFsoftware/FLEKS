@@ -282,8 +282,13 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
                            });
       }
     }
-
-    cellStatus[iLev].FillBoundary(Geom(iLev).periodicity());
+    // Warning: Talha: Yuxi Fillboundary fails because iLev=1 periodicity is
+    // still the same as iLev=0
+    if (iLev == 0) {
+      cellStatus[iLev].FillBoundary(Geom(iLev).periodicity());
+    } else {
+      cellStatus[iLev].FillBoundary();
+    }
 
     // Find domain boundary cells
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
@@ -388,9 +393,14 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
           });
     }
 
+    // Warning: Talha: Yuxi Fillboundary fails because iLev=1 periodicity is
+    // still the same as iLev=0
     if (iLev == 0) {
       nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
+    } else {
+      nodeStatus[iLev].FillBoundary();
     }
+
     // Find domain boundary cells
     for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
