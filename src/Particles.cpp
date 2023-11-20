@@ -161,7 +161,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 
         z = nDim > 2 ? (kk + randNum()) * (dx[iLev][iz_] / nPPC[iz_]) +
                            k * dx[iLev][iz_] + plo[iLev][iz_]
-                     : 0*randNum();
+                     : 0 * randNum();
 
         // If the particle weight is sampled in a random location, the sum of
         // particle mass is NOT the same as the integral of the grid density.
@@ -1393,6 +1393,128 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       }
 
     } // for p
+  }
+}
+
+//==========================================================
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio) {
+  timing_func("Pts::limit_weight");
+
+  if (maxRatio <= 1)
+    return;
+
+  IntVect iv = { AMREX_D_DECL(1, 1, 1) };
+  if (!(do_tiling && tile_size == iv))
+    return;
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+
+    const Real dl = 0.1 * Geom(iLev).CellSize()[ix_];
+
+    for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
+         ++pti) {
+
+      amrex::Vector<ParticleType> newparticles;
+
+      AoS& particles = pti.GetArrayOfStructs();
+
+      Real totalMass = 0;
+      for (auto& p : particles) {
+        totalMass += fabs(p.rdata(iqp_));
+      }
+      Real avg = totalMass / particles.size();
+
+      Real vars = 0;
+      for (auto& p : particles) {
+        vars += pow(avg - fabs(p.rdata(iqp_)), 2);
+      }
+      vars = sqrt(vars / particles.size());
+
+      Real maxWeight = avg + maxRatio * vars;
+
+      const auto lo = lbound(pti.tilebox());
+      const auto hi = ubound(pti.tilebox());
+
+      const Real xMin = Geom(iLev).LoEdge(lo.x, ix_) +
+                        Geom(iLev).CellSize()[ix_] * 1e-10,
+                 xMax = Geom(iLev).HiEdge(hi.x, ix_) -
+                        Geom(iLev).CellSize()[ix_] * 1e-10;
+
+      const Real yMin = Geom(iLev).LoEdge(lo.y, iy_) +
+                        Geom(iLev).CellSize()[iy_] * 1e-10,
+                 yMax = Geom(iLev).HiEdge(hi.y, iy_) -
+                        Geom(iLev).CellSize()[iy_] * 1e-10;
+
+      const Real zMin = Geom(iLev).LoEdge(lo.z, iz_) +
+                        Geom(iLev).CellSize()[iz_] * 1e-10,
+                 zMax = Geom(iLev).HiEdge(hi.z, iz_) -
+                        Geom(iLev).CellSize()[iz_] * 1e-10;
+
+      for (auto& p : particles) {
+        Real qp1 = p.rdata(iqp_);
+        if (fabs(qp1) < maxWeight)
+          continue;
+
+        Real xp1 = p.pos(ix_);
+        Real yp1 = p.pos(iy_);
+        Real zp1 = p.pos(iz_);
+        Real up1 = p.rdata(iup_);
+        Real vp1 = p.rdata(ivp_);
+        Real wp1 = p.rdata(iwp_);
+
+        const Real u2 = up1 * up1 + vp1 * vp1 + wp1 * wp1;
+
+        Real coef = (u2 < 1e-13) ? 0 : dl / sqrt(u2);
+        const Real dpx = coef * up1;
+        const Real dpy = coef * vp1;
+        const Real dpz = coef * wp1;
+
+        Real xp2 = xp1 + dpx;
+        Real yp2 = yp1 + dpy;
+        Real zp2 = zp1 + dpz;
+
+        xp1 -= dpx;
+        yp1 -= dpy;
+        zp1 -= dpz;
+
+        xp1 = bound(xp1, xMin, xMax);
+        yp1 = bound(yp1, yMin, yMax);
+        zp1 = bound(zp1, zMin, zMax);
+
+        xp2 = bound(xp2, xMin, xMax);
+        yp2 = bound(yp2, yMin, yMax);
+        zp2 = bound(zp2, zMin, zMax);
+
+        p.rdata(iqp_) = (qp1 / 2);
+        p.pos(ix_) = xp1;
+        p.pos(iy_) = yp1;
+        p.pos(iz_) = zp1;
+
+        ParticleType pnew;
+        if (ParticleType::the_next_id >= LastParticleID) {
+          // id should not larger than LastParticleID. This is a bad solution,
+          // since the ID becomes nonunique. --Yuxi
+          pnew.id() = LastParticleID;
+        } else {
+          pnew.id() = ParticleType::NextID();
+        }
+
+        pnew.cpu() = ParallelDescriptor::MyProc();
+        pnew.pos(ix_) = xp2;
+        pnew.pos(iy_) = yp2;
+        pnew.pos(iz_) = zp2;
+        pnew.rdata(iup_) = up1;
+        pnew.rdata(ivp_) = vp1;
+        pnew.rdata(iwp_) = wp1;
+        pnew.rdata(iqp_) = qp1 / 2;
+        newparticles.push_back(pnew);
+      }
+
+      for (auto& p : newparticles) {
+        particles.push_back(p);
+      }
+    }
   }
 }
 

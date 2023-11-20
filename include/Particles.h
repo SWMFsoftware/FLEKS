@@ -386,6 +386,7 @@ public:
       }
   }
 
+  void limit_weight(amrex::Real maxRatio);
   void split(amrex::Real limit);
   void merge(amrex::Real limit);
   bool merge_particles_fast(int iLev, AoS& particles,

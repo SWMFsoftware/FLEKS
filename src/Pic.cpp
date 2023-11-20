@@ -73,6 +73,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (doReSampling) {
       param.read_var("reSamplingLowLimit", reSamplingLowLimit);
       param.read_var("reSamplingHighLimit", reSamplingHighLimit);
+      param.read_var("maxWeightRatio", maxWeightRatio);
     }
   } else if (command == "#FASTMERGE") {
     param.read_var("fastMerge", fastMerge);
@@ -430,6 +431,8 @@ void Pic::re_sampling() {
 
   if (doReSampling) {
     for (int i = 0; i < nSpecies; i++) {
+      if (maxWeightRatio > 1)
+        parts[i]->limit_weight(maxWeightRatio);
       parts[i]->split(reSamplingLowLimit);
       parts[i]->merge(reSamplingHighLimit);
     }
