@@ -1075,8 +1075,23 @@ void Pic::update_E_impl() {
                       nodeE[iLev], 0, 1. / fsolver.theta, nodeEth[iLev], 0, 0,
                       nodeE[iLev].nComp(), nGst);
 
-    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E, iLev);
-    apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim, &Pic::get_node_E, iLev);
+    if (iLev == 0) {
+
+      apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E, iLev);
+      apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim, &Pic::get_node_E,
+               iLev);
+
+    } else {
+
+      fill_fine_lev_bny_cell_from_coarse(
+          nodeE[iLev - 1], nodeE[iLev], 0, nodeE[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev));
+
+      fill_fine_lev_bny_cell_from_coarse(
+          nodeEth[iLev - 1], nodeEth[iLev], 0, nodeEth[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev));
+    }
+
     if (doSmoothE) {
       calc_smooth_coef();
       smooth_E(nodeEth[iLev]);
@@ -1121,7 +1136,13 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
   } else {
     // Even after apply_BC(), the outmost layer node E is still
     // unknow. See FluidInterface::calc_current for detailed explaniation.
-    apply_BC(nodeStatus[iLev], vecMF, 0, nDim, &Pic::get_node_E, iLev);
+    if (iLev == 0) {
+      apply_BC(nodeStatus[iLev], vecMF, 0, nDim, &Pic::get_node_E, iLev);
+    } else {
+      fill_fine_lev_bny_cell_from_coarse(
+          nodeE[iLev - 1], vecMF, 0, centerB[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev));
+    }
   }
 
   lap_node_to_node(vecMF, matvecMF, DistributionMap(iLev), Geom(iLev),
@@ -1266,21 +1287,36 @@ void Pic::update_B() {
 
   std::string nameFunc = "Pic::update_B";
   timing_func(nameFunc);
-  MultiFab dB(cGrids[0], DistributionMap(0), 3, nGst);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    curl_node_to_center(nodeEth[iLev], dB, Geom(0).InvCellSize());
+    MultiFab dB(cGrids[iLev], DistributionMap(iLev), 3, nGst);
+    curl_node_to_center(nodeEth[iLev], dB, Geom(iLev).InvCellSize());
     MultiFab::Saxpy(centerB[iLev], -tc->get_dt(), dB, 0, 0,
                     centerB[iLev].nComp(), centerB[iLev].nGrow());
-    centerB[iLev].FillBoundary(Geom(0).periodicity());
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iLev == 0) {
+      apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+               &Pic::get_center_B, iLev);
 
-    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-             &Pic::get_center_B, iLev);
+    } else {
+      fill_fine_lev_bny_cell_from_coarse(
+          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev));
+    }
 
     average_center_to_node(centerB[iLev], nodeB[iLev]);
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
-             &Pic::get_node_B, iLev);
+    if (iLev == 0) {
+
+      apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+               &Pic::get_node_B, iLev);
+
+    } else {
+
+      fill_fine_lev_bny_cell_from_coarse(
+          nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev));
+    }
   }
 }
 
