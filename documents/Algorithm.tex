@@ -154,4 +154,29 @@ where $\mathbf{t} = \frac{q\Delta t}{2m} \mathbf{B}/\gamma^{n+1/2}$. From the de
 \item  Convert $\mathbf{u}$ back to $\mathbf{v}$
 \end{enumerate}
 
+\section{Miscellaneous}
+\subsection{Calculate total pressure tensor from sub groups}
+Pressure tensor for each sub group is:
+\begin{eqnarray}
+    p^s_{m,n} = \frac{1}{V} \sum_{i=1} w_i^s (v_{i,m}^s-\bar{v}_m^s) (v_{i,n}^s-\bar{v}_n^s) 
+\end{eqnarray}
+where $V$ is the volume, and $\bar{v}_n^2$ and $\bar{v}_m^s$ are the average velocity of the sub group $s$. 
+
+The total pressure tensor is:
+\begin{eqnarray}
+    p_{m,n} = \frac{1}{V} \sum_{s}\sum_{i=1} w_i^s (v_{i,m}^s-\bar{v}_m) (v_{i,n}^s-\bar{v}_n)\\
+    \bar{v}_m = \frac{\sum_{s}\sum_{i=1} w_i^s v_{i,m}^s}{\sum_{s}\sum_{i=1} w_i^s} = \frac{\sum_s \rho_s \bar{v}_m}{\sum_{s}\rho_s} \\
+    \bar{v}_n = \frac{\sum_{s}\sum_{i=1} w_i^s v_{i,n}^s}{\sum_{s}\sum_{i=1} w_i^s} = = \frac{\sum_s \rho_s \bar{v}_n}{\sum_{s}\rho_s}
+\end{eqnarray}
+where $\rho_s$ is the density of sub group $s$, $\bar{v}_n$ and $\bar{v}_m$ are the average velocity of all particles
+
+\begin{eqnarray}
+    p_{m,n} = \frac{1}{V} \sum_{s}\sum_{i=1} w_i^s [(v_{i,m}^s- \bar{v}_m^s) + (\bar{v}_m^s -\bar{v}_m)] [(v_{i,n}^s- \bar{v}_n^s) + (\bar{v}_n^s  - \bar{v}_n)]\\
+    = \frac{1}{V} \sum_{s}\sum_{i=1} w_i^s[(v_{i,m}^s- \bar{v}_m^s)(v_{i,n}^s- \bar{v}_n^s)] + \\ \frac{1}{V} \sum_{s}\sum_{i=1} w_i^s[(v_{i,m}^s- \bar{v}_m^s)(\bar{v}_n^s - \bar{v}_n)] + \\
+    \frac{1}{V} \sum_{s}\sum_{i=1} w_i^s[(\bar{v}_m^s -\bar{v}_m)(v_{i,n}^s- \bar{v}_n^s)] + \\ \frac{1}{V} \sum_{s}\sum_{i=1} w_i^s[(\bar{v}_m^s -\bar{v}_m)(\bar{v}_n^s - \bar{v}_n)]
+\end{eqnarray}
+The second and third terms are zeros. The first term is simply the sum of all the sub group tensors. The fourth term is $\sum_s \rho_s [(\bar{v}_m^s -\bar{v}_m)(\bar{v}_n^s - \bar{v}_n)]$. So, the final expression is:
+\begin{eqnarray}
+    p_{m,n} = \sum_s p^s_{m,n} + \sum_s \rho_s [(\bar{v}_m^s -\bar{v}_m)(\bar{v}_n^s - \bar{v}_n)]
+\end{eqnarray}
 \end{document}
