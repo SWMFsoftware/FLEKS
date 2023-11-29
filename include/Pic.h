@@ -104,7 +104,6 @@ private:
   amrex::Real reSamplingHighLimit = 1.5;
   amrex::Real maxWeightRatio = 0;
 
-
   bool doSplitJ = false;
   bool doSmoothE = false;
   int nSmoothE = 1;
@@ -134,7 +133,7 @@ private:
   std::string logFile;
 
   // Boundary conditions for particles.
-  BC pBC;
+  amrex::Vector<BC> pBCs;
 
   // public methods
 public:
@@ -169,6 +168,9 @@ public:
     centerMM.resize(n_lev_max());
 
     jHat.resize(n_lev_max());
+
+    // At most 10 species.
+    pBCs.resize(10);
   };
   ~Pic(){};
 
@@ -261,7 +263,7 @@ public:
                        double coefIn = 1);
 
   void calc_smooth_coef();
-  
+
   void update_U0_E0();
   //-------------Electric field solver end-------------
 

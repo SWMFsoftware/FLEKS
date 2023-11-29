@@ -19,11 +19,16 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("usePIC", usePIC);
   } else if (command == "#PARTICLEBOXBOUNDARY") {
     for (int i = 0; i < nDim; i++) {
+      int iSpecies;
       std::string lo, hi;
+      param.read_var("iSpecies", iSpecies);
+      if (iSpecies >= pBCs.size()) {
+        amrex::Abort("Error: wrong input or too may particle species.");
+      }
       param.read_var("particleBoxBoundaryLo", lo);
       param.read_var("particleBoxBoundaryHi", hi);
-      pBC.lo[i] = pBC.num_type(lo);
-      pBC.hi[i] = pBC.num_type(hi);
+      pBCs[iSpecies].lo[i] = pBCs[iSpecies].num_type(lo);
+      pBCs[iSpecies].hi[i] = pBCs[iSpecies].num_type(hi);
     }
   } else if (command == "#MIDDLEPOINTSOURCE") {
     param.read_var("middlePointSource", middlePointSource);
@@ -250,7 +255,7 @@ void Pic::post_regrid() {
 
       ptr->particle_lev_ratio(pLevRatio);
 
-      ptr->set_bc(pBC);
+      ptr->set_bc(pBCs[i]);
       //----------------------------------
 
       parts.push_back(std::move(ptr));
