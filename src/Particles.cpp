@@ -304,6 +304,42 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
             }
 #endif
             if (doAdd) {
+
+              bool adaptiveSourcePPC = true;
+              if (adaptiveSourcePPC) { // Adjust ppc so that the weight of the
+                                       // source particles is not
+                // so small.
+                int initPPC = 1, sourcePPC = 1;
+                for (int i = 0; i < nDim; i++) {
+                  initPPC *= nPartPerCell[i];
+                  sourcePPC *= ppc[i];
+                }
+
+                Real rho =
+                    fi->get_number_density(mfi, i, j, k, speciesID, iLev);
+                Real rhoSource = interface->get_number_density(mfi, i, j, k,
+                                                               speciesID, iLev);
+                if (dt > 0)
+                  rhoSource *= dt;
+
+                Real avgInitW = rho / initPPC;
+                Real avgSourceW = rhoSource / sourcePPC;
+
+                Real targetSourceW = avgInitW * 0.1;
+
+                if (avgSourceW < targetSourceW) {
+                  Real ratio = pow(avgSourceW / targetSourceW, 1.0 / nDim);
+                  for (int iDim = 0; iDim < nDim; iDim++) {
+                    ppc[iDim] = std::max(1, int(ppc[iDim] * ratio));
+                  }
+                }
+
+                // Print() << "ppc = " << ppc << " rho = " << rho
+                //         << " rhoSource = " << rhoSource
+                //         << " rho/rhosource = " << (rho / rhoSource)
+                //         << " dt = " << dt << std::endl;
+              }
+
               add_particles_cell(iLev, mfi, i, j, k, interface, false, ppc,
                                  Vel(), dt);
             }
