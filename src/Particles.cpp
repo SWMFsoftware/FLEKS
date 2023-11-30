@@ -275,7 +275,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_source(
     const FluidInterface* interface, const FluidInterface* const stateOH,
-    Real dt, IntVect ppc, const bool doSelectRegion) {
+    Real dt, IntVect ppc, const bool doSelectRegion, const bool adaptivePPC) {
   timing_func("Pts::add_particles_source");
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -304,9 +304,7 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
             }
 #endif
             if (doAdd) {
-
-              bool adaptiveSourcePPC = true;
-              if (adaptiveSourcePPC) { // Adjust ppc so that the weight of the
+              if (adaptivePPC) { // Adjust ppc so that the weight of the
                                        // source particles is not
                 // so small.
                 int initPPC = 1, sourcePPC = 1;
@@ -1938,12 +1936,36 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
               return ql + xl < qr + xr;
             });
 
-  randNum.set_seed(seed);
-  shuffle_fish_yates(partIdx, randNum);
+  if (mergeLight) {
+    idx_I.resize(nPartCombine, 0);
+    for (int ip = 0; ip < nPartCombine; ip++) {
+      idx_I[ip] = partIdx[ip];
+    }
 
-  idx_I.resize(nPartCombine, 0);
-  for (int ip = 0; ip < nPartCombine; ip++) {
-    idx_I[ip] = partIdx[ip];
+    Real plight = 1e99, pheavy = 0;
+    for (int ip = 0; ip < nPartCombine; ip++) {
+      auto& p = particles[idx_I[ip]];
+      Real w = fabs(p.rdata(iqp_));
+      if (w < plight)
+        plight = w;
+      if (w > pheavy)
+        pheavy = w;
+    }
+
+    if (pheavy / plight > mergePartRatioMax)
+      return false;
+
+    randNum.set_seed(seed);
+    shuffle_fish_yates(idx_I, randNum);
+
+  } else {
+    randNum.set_seed(seed);
+    shuffle_fish_yates(partIdx, randNum);
+
+    idx_I.resize(nPartCombine, 0);
+    for (int ip = 0; ip < nPartCombine; ip++) {
+      idx_I[ip] = partIdx[ip];
+    }
   }
 
   // Sum the moments of all the old particles.
@@ -2220,6 +2242,17 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
               continue;
 
             //----------------------------------------------
+
+            Real plight = 1e99, pheavy = 0;
+            for (int ip = 0; ip < nOld; ip++) {
+              auto& p = particles[idx_I[ip]];
+              Real w = fabs(p.rdata(iqp_));
+              if (w < plight)
+                plight = w;
+              if (w > pheavy)
+                pheavy = w;
+            }
+            // AllPrint() << "pheavy/plight = " << pheavy / plight << std::endl;
 
             // Adjust weight.
             for (int ip = 0; ip < nPartNew; ip++) {

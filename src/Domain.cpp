@@ -736,6 +736,7 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#DISCRETIZE" || command == "#DISCRETIZATION" ||
         command == "#RESAMPLING" || command == "#SMOOTHE" ||
         command == "#TESTCASE" || command == "#FASTMERGE" ||
+        command == "#ADAPTIVESOURCEPPC" || command == "#MERGELIGHT" ||
         command == "#VACUUM" || command == "#PARTICLELEVRATIO" ||
         command == "#PIC" || command == "#EXPLICITPIC" ||
         command == "#SPLITJ" || command == "#PARTICLEBOXBOUNDARY" ||

@@ -88,6 +88,13 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("nMergeTry", nMergeTry);
       param.read_var("mergeRatioMax", mergeRatioMax);
     }
+  } else if (command == "#ADAPTIVESOURCEPPC") {
+    param.read_var("adaptiveSourcePPC", adaptiveSourcePPC);
+  } else if (command == "#MERGELIGHT") {
+    param.read_var("mergeLight", mergeLight);
+    if (mergeLight) {
+      param.read_var("mergePartRatioMax", mergePartRatioMax);
+    }
   } else if (command == "#VACUUM") {
     param.read_var("vacuum", vacuum);
   } else if (command == "#PARTICLELEVRATIO") {
@@ -248,7 +255,7 @@ void Pic::post_regrid() {
       }
 
       ptr->set_fast_merge(fastMerge, nMergeOld, nMergeNew, nMergeTry,
-                          mergeRatioMax);
+                          mergeRatioMax, mergeLight, mergePartRatioMax);
 
       const Real vacuumNO = vacuum * cProtonMassSI * 1e6 * fi->get_Si2NoRho();
       ptr->set_vacuum(vacuumNO);
@@ -408,7 +415,7 @@ void Pic::fill_source_particles() {
 #endif
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->add_particles_source(source, stateOH, tc->get_dt(), nSourcePPC,
-                                   doSelectRegion);
+                                   doSelectRegion, adaptiveSourcePPC);
   }
 }
 

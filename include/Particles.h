@@ -149,6 +149,9 @@ protected:
   int nPartNew = 5;
   int nMergeTry = 3;
   amrex::Real mergeRatioMax = 1.5;
+
+  bool mergeLight = false;
+  amrex::Real mergePartRatioMax = 10;
   // ------- Particle resampling end -------
 
   amrex::Real pLevRatio = 1.2;
@@ -195,7 +198,8 @@ public:
                             const FluidInterface* const stateOH = nullptr,
                             amrex::Real dt = -1,
                             amrex::IntVect ppc = amrex::IntVect(),
-                            const bool doSelectRegion = false);
+                            const bool doSelectRegion = false,
+                            const bool adaptivePPC = false);
 
   // Copy particles from (ip,jp,kp) to (ig, jg, kg) and shift boundary
   // particle's coordinates accordingly.
@@ -412,14 +416,16 @@ public:
   void set_merge_threshold(amrex::Real in) { mergeThresholdDistance = in; }
   void set_merge_velocity_bin_buffer(amrex::Real in) { velBinBufferSize = in; }
   void particle_lev_ratio(amrex::Real in) { pLevRatio = in; }
-  void set_fast_merge(bool in, int nOld, int nNew, int nTry,
-                      amrex::Real ratio) {
+  void set_fast_merge(bool in, int nOld, int nNew, int nTry, amrex::Real ratio,
+                      bool mergeLightIn, amrex::Real mergePartRatioMaxIn) {
     fastMerge = in;
     if (fastMerge) {
       nPartCombine = nOld;
       nPartNew = nNew;
       nMergeTry = nTry;
       mergeRatioMax = ratio;
+      mergeLight = mergeLightIn;
+      mergePartRatioMax = mergePartRatioMaxIn;
     }
   }
 

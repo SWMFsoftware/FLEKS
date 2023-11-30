@@ -93,6 +93,7 @@ private:
 
   // Particle Per Cell (PPC) of source particles.
   amrex::IntVect nSourcePPC = { AMREX_D_DECL(0, 0, 0) };
+  bool adaptiveSourcePPC = false;
 
   FieldSolver fsolver;
 
@@ -122,6 +123,8 @@ private:
   int nMergeTry = 1;
   amrex::Real mergeRatioMax = 1.5;
   amrex::Real pLevRatio = 1.2;
+  bool mergeLight = false;
+  amrex::Real mergePartRatioMax = 0;
 
   bool middlePointSource = false;
 
