@@ -18,13 +18,14 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   if (command == "#PIC") {
     param.read_var("usePIC", usePIC);
   } else if (command == "#PARTICLEBOXBOUNDARY") {
+    int iSpecies;
+    std::string lo, hi;
+    param.read_var("iSpecies", iSpecies);
+    if (iSpecies >= pBCs.size()) {
+      amrex::Abort("Error: wrong input or too may particle species.");
+    }
+
     for (int i = 0; i < nDim; i++) {
-      int iSpecies;
-      std::string lo, hi;
-      param.read_var("iSpecies", iSpecies);
-      if (iSpecies >= pBCs.size()) {
-        amrex::Abort("Error: wrong input or too may particle species.");
-      }
       param.read_var("particleBoxBoundaryLo", lo);
       param.read_var("particleBoxBoundaryHi", hi);
       pBCs[iSpecies].lo[i] = pBCs[iSpecies].num_type(lo);
