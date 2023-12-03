@@ -308,9 +308,9 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
                                  // source particles is not
                 // so small.
                 int initPPC = 1, sourcePPC = 1;
-                for (int i = 0; i < nDim; i++) {
-                  initPPC *= nPartPerCell[i];
-                  sourcePPC *= ppc[i];
+                for (int iDim = 0; iDim < nDim; iDim++) {
+                  initPPC *= nPartPerCell[iDim];
+                  sourcePPC *= ppc[iDim];
                 }
 
                 Real rho =
