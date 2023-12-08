@@ -445,8 +445,8 @@ void Pic::re_sampling() {
   if (doReSampling) {
     for (int i = 0; i < nSpecies; i++) {
       if (maxWeightRatio > 1)
-        parts[i]->limit_weight(maxWeightRatio);
-      parts[i]->split(reSamplingLowLimit);
+        parts[i]->limit_weight(maxWeightRatio, parts[i]->is_neutral());
+      parts[i]->split(reSamplingLowLimit, parts[i]->is_neutral());
       parts[i]->merge(reSamplingHighLimit);
     }
   }

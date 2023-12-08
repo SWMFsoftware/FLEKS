@@ -390,8 +390,14 @@ public:
       }
   }
 
-  void limit_weight(amrex::Real maxRatio);
-  void split(amrex::Real limit);
+  void limit_weight(amrex::Real maxRatio, bool seperateVelocity = false);
+  void split(amrex::Real limit, bool seperateVelocity = false);
+  void split_particles_by_velocity(amrex::Vector<ParticleType*>& plist,
+                                   amrex::Vector<ParticleType>& newparticles, 
+                                   amrex::Real avgVel[]);
+  void split_by_seperate_velocity(ParticleType& p1, ParticleType& p2,
+                                  ParticleType& p3, ParticleType& p4,
+                                  amrex::Real avgVel[]);
   void merge(amrex::Real limit);
   bool merge_particles_fast(int iLev, AoS& particles,
                             amrex::Vector<int>& partIdx,

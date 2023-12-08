@@ -1432,7 +1432,8 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio) {
+void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
+                                                      bool seperateVelocity) {
   timing_func("Pts::limit_weight");
 
   if (maxRatio <= 1)
@@ -1466,73 +1467,86 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio) {
       // Real maxWeight = avg + maxRatio * vars;
       Real maxWeight = avg * maxRatio;
 
-      for (auto& p : particles) {
-        Real qp1 = p.rdata(iqp_);
-        if (fabs(qp1) < maxWeight)
-          continue;
+      if (seperateVelocity) {
+        Vector<ParticleType*> pold;
+        for (int ip = 0; ip < particles.size(); ip++) {
+          Real qp1 = particles[ip].rdata(iqp_);
+          if (fabs(qp1) < maxWeight)
+            continue;
+          pold.push_back(&(particles[ip]));
+        }
+        split_particles_by_velocity(pold, newparticles, avgVel);
+      } else {
 
-        Real xp1 = p.pos(ix_);
-        Real yp1 = p.pos(iy_);
-        Real zp1 = p.pos(iz_);
-        Real up1 = p.rdata(iup_);
-        Real vp1 = p.rdata(ivp_);
-        Real wp1 = p.rdata(iwp_);
+        const auto lo = lbound(pti.tilebox());
+        const auto hi = ubound(pti.tilebox());
 
-        // new particle velocity = c1*v_old +- delVel
-        // c1 = 1 - delV2/vp2, where vp2 = v_old^2
+        const Real xMin = Geom(iLev).LoEdge(lo.x, ix_) +
+                          Geom(iLev).CellSize()[ix_] * 1e-10,
+                   xMax = Geom(iLev).HiEdge(hi.x, ix_) -
+                          Geom(iLev).CellSize()[ix_] * 1e-10;
 
-        // dv = vp - avgVel
-        // dv2 = dv^2
-        // vp2 = up1^2 + vp1^2 + wp1^2
-        Real vp2 = pow(up1, 2) + pow(vp1, 2) + pow(wp1, 2);
-        Real delVel[nDimVel], delV2 = 0;
-        for (int i = 0; i < nDimVel; i++) {
-          delVel[i] = p.rdata(iup_ + i) - avgVel[i];
-          delV2 += pow(delVel[i], 2);
+        const Real yMin = Geom(iLev).LoEdge(lo.y, iy_) +
+                          Geom(iLev).CellSize()[iy_] * 1e-10,
+                   yMax = Geom(iLev).HiEdge(hi.y, iy_) -
+                          Geom(iLev).CellSize()[iy_] * 1e-10;
+
+        const Real zMin = Geom(iLev).LoEdge(lo.z, iz_) +
+                          Geom(iLev).CellSize()[iz_] * 1e-10,
+                   zMax = Geom(iLev).HiEdge(hi.z, iz_) -
+                          Geom(iLev).CellSize()[iz_] * 1e-10;
+
+        if (is_neutral()) {
+          set_random_seed(iLev, lo.x, lo.y, lo.z, IntVect(999));
         }
 
-        if (delV2 < 1e-16)
-          continue;
+        for (auto& p : particles) {
+          Real qp1 = p.rdata(iqp_);
+          if (fabs(qp1) < maxWeight)
+            continue;
 
-        const Real maxChangeRatio2 = 1e-2;
-        if (delV2 > maxChangeRatio2 * vp2) {
-          Real scale = sqrt(maxChangeRatio2 * vp2 / delV2);
-          delV2 = 0;
-          for (int i = 0; i < nDimVel; i++) {
-            delVel[i] *= scale;
-            delV2 += pow(delVel[i], 2);
-          }
-        }
+          Real up1 = p.rdata(iup_);
+          Real vp1 = p.rdata(ivp_);
+          Real wp1 = p.rdata(iwp_);
 
-        Real c1 = 1 - delV2 / vp2;
+          Real xp1 = p.pos(ix_);
+          Real yp1 = p.pos(iy_);
+          Real zp1 = p.pos(iz_);
 
-        p.rdata(iqp_) = qp1 * 0.5;
+          int nNew = is_neutral() ? 7 : 1;
 
-        for (int iNew = 0; iNew < 2; iNew++) {
-          ParticleType pnew;
-          if (ParticleType::the_next_id >= LastParticleID) {
-            // id should not larger than LastParticleID. This is a bad solution,
-            // since the ID becomes nonunique. --Yuxi
-            pnew.id() = LastParticleID;
-          } else {
-            pnew.id() = ParticleType::NextID();
-          }
+          p.rdata(iqp_) = qp1 / (nNew + 1);
 
-          pnew.cpu() = ParallelDescriptor::MyProc();
-
-          pnew.pos(ix_) = xp1;
-          pnew.pos(iy_) = yp1;
-          pnew.pos(iz_) = zp1;
-
-          for (int i = 0; i < nDimVel; i++) {
-            if (iNew == 0) {
-              pnew.rdata(iup_ + i) = p.rdata(iup_ + i) * c1 + delVel[i];
+          for (int iNew = 0; iNew < nNew; iNew++) {
+            ParticleType pnew;
+            if (ParticleType::the_next_id >= LastParticleID) {
+              // id should not larger than LastParticleID. This is a bad
+              // solution, since the ID becomes nonunique. --Yuxi
+              pnew.id() = LastParticleID;
             } else {
-              pnew.rdata(iup_ + i) = p.rdata(iup_ + i) * c1 - delVel[i];
+              pnew.id() = ParticleType::NextID();
             }
+
+            Real xp2 = xp1 + (xMax - xMin) * (randNum() - 0.5);
+            Real yp2 = yp1 + (yMax - yMin) * (randNum() - 0.5);
+            Real zp2 = zp1 + (zMax - zMin) * (randNum() - 0.5);
+
+            xp2 = bound(xp2, xMin, xMax);
+            yp2 = bound(yp2, yMin, yMax);
+            zp2 = bound(zp2, zMin, zMax);
+
+            pnew.cpu() = ParallelDescriptor::MyProc();
+
+            pnew.pos(ix_) = xp2;
+            pnew.pos(iy_) = yp2;
+            pnew.pos(iz_) = zp2;
+            pnew.rdata(iup_) = up1;
+            pnew.rdata(ivp_) = vp1;
+            pnew.rdata(iwp_) = wp1;
+
+            pnew.rdata(iqp_) = qp1 / (nNew + 1);
+            newparticles.push_back(pnew);
           }
-          pnew.rdata(iqp_) = qp1 * 0.25;
-          newparticles.push_back(pnew);
         }
       }
 
@@ -1543,9 +1557,209 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio) {
   }
 }
 
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
+    Vector<ParticleType*>& plist, Vector<ParticleType>& newparticles,
+    Real avgVel[]) {
+  //----------------------------------------------------------------
+  // Estimate the bulk velocity and thermal velocity.
+  Real uBulk[nDimVel] = { 0, 0, 0 };
+  for (int pid = 0; pid < plist.size(); pid++) {
+    auto& pcl = *plist[pid];
+    for (int iDir = 0; iDir < nDimVel; iDir++) {
+      uBulk[iDir] += pcl.rdata(iDir);
+    }
+  }
+
+  for (int iDir = 0; iDir < nDimVel; iDir++) {
+    uBulk[iDir] /= plist.size();
+  }
+
+  Real thVel = 0, thVel2 = 0;
+  for (int pid = 0; pid < plist.size(); pid++) {
+    auto& pcl = *plist[pid];
+    for (int iDir = 0; iDir < nDimVel; iDir++) {
+      thVel2 += pow(pcl.rdata(iDir) - uBulk[iDir], 2);
+    }
+  }
+
+  thVel2 /= plist.size();
+  thVel = sqrt(thVel2);
+  //----------------------------------------------------------------
+
+  //----------------------------------------------------------------
+  const int nCell = 6;
+  // Assign the particle IDs to the corresponding velocity space cells.
+  Vector<int> phasePartIdx_III[nCell][nCell][nCell];
+
+  const Real r0 = 2.0;
+  Real dv = (2.0 * r0 * thVel) / nCell;
+  Real invDv = (dv < 1e-13) ? 0 : 1.0 / dv;
+
+  // Velocity domain range.
+  Real velMin_D[nDimVel], velMax_D[nDimVel];
+  for (int iDir = 0; iDir < nDimVel; iDir++) {
+    velMin_D[iDir] = -r0 * thVel + uBulk[iDir];
+    velMax_D[iDir] = r0 * thVel + uBulk[iDir];
+  }
+
+  int iCell_D[nDimVel];
+  for (int pid = 0; pid < plist.size(); pid++) {
+    auto& pcl = *plist[pid];
+
+    bool isOutside = false;
+    for (int iDim = 0; iDim < nDimVel; iDim++) {
+      if (pcl.rdata(iDim) < velMin_D[iDim] || pcl.rdata(iDim) > velMax_D[iDim])
+        isOutside = true;
+    }
+    if (isOutside)
+      continue;
+
+    for (int iDim = 0; iDim < nDimVel; iDim++) {
+      iCell_D[iDim] = fastfloor((pcl.rdata(iDim) - velMin_D[iDim]) * invDv);
+    }
+
+    // One particle may belong to multiple bins when each bin has a buffer
+    // region.
+    const Real velBinBufferSize = 0;
+    for (int xCell = iCell_D[ix_] - 1; xCell <= iCell_D[ix_] + 1; xCell++)
+      for (int yCell = iCell_D[iy_] - 1; yCell <= iCell_D[iy_] + 1; yCell++)
+        for (int zCell = iCell_D[iz_] - 1; zCell <= iCell_D[iz_] + 1; zCell++) {
+
+          if (xCell < 0 || xCell >= nCell || yCell < 0 || yCell >= nCell ||
+              zCell < 0 || zCell >= nCell)
+            continue;
+
+          IntVect cellIdx = { AMREX_D_DECL(xCell, yCell, zCell) };
+
+          Real binMin_D[nDimVel], binMax_D[nDimVel];
+
+          for (int iDim = 0; iDim < nDimVel; iDim++) {
+            binMin_D[iDim] =
+                velMin_D[iDim] + (cellIdx[iDim] - velBinBufferSize) * dv;
+
+            binMax_D[iDim] =
+                velMin_D[iDim] + (cellIdx[iDim] + 1 + velBinBufferSize) * dv;
+          }
+
+          bool isInside = true;
+          for (int iDim = 0; iDim < nDimVel; iDim++) {
+            if (pcl.rdata(iDim) < binMin_D[iDim] ||
+                pcl.rdata(iDim) > binMax_D[iDim])
+              isInside = false;
+          }
+
+          if (isInside) {
+            phasePartIdx_III[cellIdx[ix_]][cellIdx[iy_]][cellIdx[iz_]]
+                .push_back(pid);
+          }
+        }
+  }
+
+  for (int iu = 0; iu < nCell; iu++)
+    for (int iv = 0; iv < nCell; iv++)
+      for (int iw = 0; iw < nCell; iw++) {
+
+        int nSplitLocal = phasePartIdx_III[iu][iv][iw].size();
+
+        int nPair = floor(nSplitLocal / 2.0);
+        for (int ip = 0; ip < nPair; ip++) {
+          ParticleType& p1 = *plist[phasePartIdx_III[iu][iv][iw][ip]];
+          ParticleType& p2 = *plist[phasePartIdx_III[iu][iv][iw][ip + nPair]];
+          ParticleType p3, p4;
+
+          split_by_seperate_velocity(p1, p2, p3, p4, avgVel);
+
+          newparticles.push_back(p3);
+          newparticles.push_back(p4);
+        }
+      }
+}
+
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
+    ParticleType& p1, ParticleType& p2, ParticleType& p3, ParticleType& p4,
+    amrex::Real avgVel[]) {
+  // Print() << "Old: p1 = " << p1 << std::endl;
+  // Print() << "Old: p2 = " << p2 << std::endl;
+
+  Real mt = p1.rdata(iqp_) + p2.rdata(iqp_);
+  Real wavg = mt / 4.0;
+
+  Real u[nDimVel], du1[nDimVel], du2[nDimVel];
+  for (int i = 0; i < nDimVel; i++) {
+    u[i] = (p1.rdata(iqp_) * p1.rdata(iup_ + i) +
+            p2.rdata(iqp_) * p2.rdata(iup_ + i)) /
+           mt;
+  }
+
+  Real dSpeed = 0;
+  const bool isP1Heavy = fabs(p1.rdata(iqp_)) > fabs(p2.rdata(iqp_));
+  ParticleType* pHeavey = isP1Heavy ? &p1 : &p2;
+  Real cTmp = isP1Heavy ? 1 : -1;
+  for (int i = 0; i < nDimVel; i++) {
+    du1[i] = cTmp * (pHeavey->rdata(iup_ + i) - u[i]);
+    dSpeed += pow(du1[i], 2);
+  }
+  dSpeed = sqrt(dSpeed);
+
+  {
+    Real utmp[nDimVel];
+    for (int i = 0; i < nDimVel; i++) {
+      utmp[i] = u[i] - avgVel[i];
+    }
+
+    a_cross_b(du1, utmp, du2);
+
+    Real du2Amp = 0;
+    for (int i = 0; i < nDimVel; i++) {
+      du2Amp += pow(du2[i], 2);
+    }
+    du2Amp = sqrt(du2Amp);
+
+    Real scale = dSpeed / du2Amp;
+    for (int i = 0; i < nDimVel; i++) {
+      du2[i] *= scale;
+    }
+  }
+
+  if (ParticleType::the_next_id >= LastParticleID) {
+    p3.id() = LastParticleID;
+    p4.id() = LastParticleID;
+  } else {
+    p3.id() = ParticleType::NextID();
+    p4.id() = ParticleType::NextID();
+  }
+
+  p3.cpu() = ParallelDescriptor::MyProc();
+  p4.cpu() = ParallelDescriptor::MyProc();
+
+  p1.rdata(iqp_) = wavg;
+  p2.rdata(iqp_) = wavg;
+  p3.rdata(iqp_) = wavg;
+  p4.rdata(iqp_) = wavg;
+
+  for (int i = 0; i < nDimVel; i++) {
+    p1.rdata(iup_ + i) = u[i] + du1[i];
+    p2.rdata(iup_ + i) = u[i] - du1[i];
+
+    p3.rdata(iup_ + i) = u[i] + du2[i];
+    p4.rdata(iup_ + i) = u[i] - du2[i];
+
+    p3.pos(i) = p1.pos(i);
+    p4.pos(i) = p2.pos(i);
+  }
+
+  // Print() << "New: p1 = " << p1 << std::endl;
+  // Print() << "New: p2 = " << p2 << std::endl;
+  // Print() << "New: p3 = " << p3 << std::endl;
+  // Print() << "New: p4 = " << p4 << std::endl;
+}
+
 //==========================================================
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::split(Real limit) {
+void Particles<NStructReal, NStructInt>::split(Real limit,
+                                               bool seperateVelocity) {
   timing_func("Pts::split");
 
   const int nInitial =
@@ -1578,7 +1792,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit) {
       if (nPartOrig > nLowerLimit)
         continue;
 
-      const int nNew =
+      const int nSplit =
           nGoal - nPartOrig > nPartOrig ? nPartOrig : nGoal - nPartOrig;
 
       Real totalMass = 0;
@@ -1655,81 +1869,26 @@ void Particles<NStructReal, NStructInt>::split(Real limit) {
                  zMax = Geom(iLev).HiEdge(hi.z, iz_) -
                         Geom(iLev).CellSize()[iz_] * 1e-10;
 
-      for (int ip = 0; ip < nNew; ip++) {
-        auto& p = particles[ip];
-        Real qp1 = p.rdata(iqp_);
-        Real xp1 = p.pos(ix_);
-        Real yp1 = p.pos(iy_);
-        Real zp1 = p.pos(iz_);
-        Real up1 = p.rdata(iup_);
-        Real vp1 = p.rdata(ivp_);
-        Real wp1 = p.rdata(iwp_);
+      if (is_neutral()) {
+        set_random_seed(iLev, lo.x, lo.y, lo.z, IntVect(888));
+      }
 
-        if (is_neutral()) {
-
-          // new particle velocity = c1*v_old +- delVel
-          // c1 = 1 - delV2/vp2, where vp2 = v_old^2
-
-          // dv = vp - avgVel
-          // dv2 = dv^2
-          // vp2 = up1^2 + vp1^2 + wp1^2
-          Real vp2 = pow(up1, 2) + pow(vp1, 2) + pow(wp1, 2);
-          Real delVel[nDimVel], delV2 = 0;
-          for (int i = 0; i < nDimVel; i++) {
-            delVel[i] = p.rdata(iup_ + i) - avgVel[i];
-            delV2 += pow(delVel[i], 2);
-          }
-
-          if (delV2 < 1e-16)
-            continue;
-
-          const Real maxChangeRatio2 = 1e-2;
-          if (delV2 > maxChangeRatio2 * vp2) {
-            Real scale = sqrt(maxChangeRatio2 * vp2 / delV2);
-            delV2 = 0;
-            for (int i = 0; i < nDimVel; i++) {
-              delVel[i] *= scale;
-              delV2 += pow(delVel[i], 2);
-            }
-          }
-
-          Real c1 = 1 - delV2 / vp2;
-
-          p.rdata(iqp_) = qp1 * 0.5;
-
-          // Print() << "pold = " << p << std::endl;
-          // Print() << "c1 = " << c1 << " delVel = " << delVel[0] << " "
-          //         << delVel[1] << " " << delVel[2] << std::endl;
-          for (int iNew = 0; iNew < 2; iNew++) {
-            ParticleType pnew;
-            if (ParticleType::the_next_id >= LastParticleID) {
-              // id should not larger than LastParticleID. This is a bad
-              // solution, since the ID becomes nonunique. --Yuxi
-              pnew.id() = LastParticleID;
-            } else {
-              pnew.id() = ParticleType::NextID();
-            }
-
-            pnew.cpu() = ParallelDescriptor::MyProc();
-
-            pnew.pos(ix_) = xp1;
-            pnew.pos(iy_) = yp1;
-            pnew.pos(iz_) = zp1;
-
-            for (int i = 0; i < nDimVel; i++) {
-              if (iNew == 0) {
-                pnew.rdata(iup_ + i) = p.rdata(iup_ + i) * c1 + delVel[i];
-              } else {
-                pnew.rdata(iup_ + i) = p.rdata(iup_ + i) * c1 - delVel[i];
-              }
-            }
-            pnew.rdata(iqp_) = qp1 * 0.25;
-            newparticles.push_back(pnew);
-
-            // Print() << "pnew = " << pnew << std::endl;
-          }
-
-        } else {
+      if (seperateVelocity) {
+        Vector<ParticleType*> pold;
+        for (int ip = 0; ip < nSplit; ip++) {
+          pold.push_back(&(particles[ip]));
+        }
+        split_particles_by_velocity(pold, newparticles, avgVel);
+      } else {
+        for (int ip = 0; ip < nSplit; ip++) {
+          auto& p = particles[ip];
+          Real qp1 = p.rdata(iqp_);
+          Real xp1 = p.pos(ix_);
+          Real yp1 = p.pos(iy_);
+          Real zp1 = p.pos(iz_);
+          Real up1 = p.rdata(iup_);
+          Real vp1 = p.rdata(ivp_);
+          Real wp1 = p.rdata(iwp_);
 
           const Real u2 = up1 * up1 + vp1 * vp1 + wp1 * wp1;
 
@@ -1742,41 +1901,52 @@ void Particles<NStructReal, NStructInt>::split(Real limit) {
           Real yp2 = yp1 + dpy;
           Real zp2 = zp1 + dpz;
 
-          xp1 -= dpx;
-          yp1 -= dpy;
-          zp1 -= dpz;
+          int nNew = is_neutral() ? 7 : 1;
 
-          xp1 = bound(xp1, xMin, xMax);
-          yp1 = bound(yp1, yMin, yMax);
-          zp1 = bound(zp1, zMin, zMax);
+          p.rdata(iqp_) = qp1 / (nNew + 1.0);
 
-          xp2 = bound(xp2, xMin, xMax);
-          yp2 = bound(yp2, yMin, yMax);
-          zp2 = bound(zp2, zMin, zMax);
+          for (int iNew = 0; iNew < nNew; iNew++) {
 
-          p.rdata(iqp_) = (qp1 / 2);
-          p.pos(ix_) = xp1;
-          p.pos(iy_) = yp1;
-          p.pos(iz_) = zp1;
+            if (is_neutral()) {
+              xp2 = xp1 + (xMax - xMin) * (randNum() - 0.5);
+              yp2 = yp1 + (yMax - yMin) * (randNum() - 0.5);
+              zp2 = zp1 + (zMax - zMin) * (randNum() - 0.5);
+            } else {
+              xp1 -= dpx;
+              yp1 -= dpy;
+              zp1 -= dpz;
 
-          ParticleType pnew;
-          if (ParticleType::the_next_id >= LastParticleID) {
-            // id should not larger than LastParticleID. This is a bad solution,
-            // since the ID becomes nonunique. --Yuxi
-            pnew.id() = LastParticleID;
-          } else {
-            pnew.id() = ParticleType::NextID();
+              xp1 = bound(xp1, xMin, xMax);
+              yp1 = bound(yp1, yMin, yMax);
+              zp1 = bound(zp1, zMin, zMax);
+              p.pos(ix_) = xp1;
+              p.pos(iy_) = yp1;
+              p.pos(iz_) = zp1;
+            }
+
+            xp2 = bound(xp2, xMin, xMax);
+            yp2 = bound(yp2, yMin, yMax);
+            zp2 = bound(zp2, zMin, zMax);
+
+            ParticleType pnew;
+            if (ParticleType::the_next_id >= LastParticleID) {
+              // id should not larger than LastParticleID. This is a bad
+              // solution, since the ID becomes nonunique. --Yuxi
+              pnew.id() = LastParticleID;
+            } else {
+              pnew.id() = ParticleType::NextID();
+            }
+
+            pnew.cpu() = ParallelDescriptor::MyProc();
+            pnew.pos(ix_) = xp2;
+            pnew.pos(iy_) = yp2;
+            pnew.pos(iz_) = zp2;
+            pnew.rdata(iup_) = up1;
+            pnew.rdata(ivp_) = vp1;
+            pnew.rdata(iwp_) = wp1;
+            pnew.rdata(iqp_) = qp1 / (nNew + 1.0);
+            newparticles.push_back(pnew);
           }
-
-          pnew.cpu() = ParallelDescriptor::MyProc();
-          pnew.pos(ix_) = xp2;
-          pnew.pos(iy_) = yp2;
-          pnew.pos(iz_) = zp2;
-          pnew.rdata(iup_) = up1;
-          pnew.rdata(ivp_) = vp1;
-          pnew.rdata(iwp_) = wp1;
-          pnew.rdata(iqp_) = qp1 / 2;
-          newparticles.push_back(pnew);
         }
       }
 
