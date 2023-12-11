@@ -1,5 +1,6 @@
 #include <cstdlib>
 
+#include "Morton.h"
 #include "Particles.h"
 #include "SWMFInterface.h"
 #include "Timer.h"
@@ -1561,119 +1562,91 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
     Vector<ParticleType*>& plist, Vector<ParticleType>& newparticles,
     Real avgVel[]) {
-  //----------------------------------------------------------------
-  // Estimate the bulk velocity and thermal velocity.
-  Real uBulk[nDimVel] = { 0, 0, 0 };
-  for (int pid = 0; pid < plist.size(); pid++) {
-    auto& pcl = *plist[pid];
-    for (int iDir = 0; iDir < nDimVel; iDir++) {
-      uBulk[iDir] += pcl.rdata(iDir);
-    }
-  }
 
-  for (int iDir = 0; iDir < nDimVel; iDir++) {
-    uBulk[iDir] /= plist.size();
-  }
+  if (plist.size() < 2)
+    return;
 
-  Real thVel = 0, thVel2 = 0;
-  for (int pid = 0; pid < plist.size(); pid++) {
-    auto& pcl = *plist[pid];
-    for (int iDir = 0; iDir < nDimVel; iDir++) {
-      thVel2 += pow(pcl.rdata(iDir) - uBulk[iDir], 2);
-    }
-  }
-
-  thVel2 /= plist.size();
-  thVel = sqrt(thVel2);
-  //----------------------------------------------------------------
-
-  //----------------------------------------------------------------
-  const int nCell = 6;
+  const int nCell = pow(2, 3);
   // Assign the particle IDs to the corresponding velocity space cells.
   Vector<int> phasePartIdx_III[nCell][nCell][nCell];
 
-  const Real r0 = 2.0;
-  Real dv = (2.0 * r0 * thVel) / nCell;
-  Real invDv = (dv < 1e-13) ? 0 : 1.0 / dv;
-
   // Velocity domain range.
-  Real velMin_D[nDimVel], velMax_D[nDimVel];
-  for (int iDir = 0; iDir < nDimVel; iDir++) {
-    velMin_D[iDir] = -r0 * thVel + uBulk[iDir];
-    velMax_D[iDir] = r0 * thVel + uBulk[iDir];
+  Real velMin_D[nDimVel] = { 1e9, 1e9, 1e9 },
+       velMax_D[nDimVel] = { -1e9, -1e9, -1e9 };
+
+  for (int pid = 0; pid < plist.size(); pid++) {
+    auto& pcl = *plist[pid];
+    for (int iDir = 0; iDir < nDimVel; iDir++) {
+      if (pcl.rdata(iup_ + iDir) > velMax_D[iDir])
+        velMax_D[iDir] = pcl.rdata(iup_ + iDir);
+      if (pcl.rdata(iup_ + iDir) < velMin_D[iDir])
+        velMin_D[iDir] = pcl.rdata(iup_ + iDir);
+    }
   }
+
+  Real dvMax = 0;
+  for (int iDir = 0; iDir < nDimVel; iDir++) {
+    Real dv = velMax_D[iDir] - velMin_D[iDir];
+    velMax_D[iDir] += 1e-3 * dv;
+    velMin_D[iDir] -= 1e-3 * dv;
+    dv = velMax_D[iDir] - velMin_D[iDir];
+
+    if (dv > dvMax)
+      dvMax = dv;
+  }
+
+  Real dvCell = dvMax == 0 ? 1e-9 : dvMax / nCell;
+  Real invDv = 1 / dvCell;
 
   int iCell_D[nDimVel];
   for (int pid = 0; pid < plist.size(); pid++) {
     auto& pcl = *plist[pid];
-
-    bool isOutside = false;
-    for (int iDim = 0; iDim < nDimVel; iDim++) {
-      if (pcl.rdata(iDim) < velMin_D[iDim] || pcl.rdata(iDim) > velMax_D[iDim])
-        isOutside = true;
-    }
-    if (isOutside)
-      continue;
-
     for (int iDim = 0; iDim < nDimVel; iDim++) {
       iCell_D[iDim] = fastfloor((pcl.rdata(iDim) - velMin_D[iDim]) * invDv);
     }
-
-    // One particle may belong to multiple bins when each bin has a buffer
-    // region.
-    const Real velBinBufferSize = 0;
-    for (int xCell = iCell_D[ix_] - 1; xCell <= iCell_D[ix_] + 1; xCell++)
-      for (int yCell = iCell_D[iy_] - 1; yCell <= iCell_D[iy_] + 1; yCell++)
-        for (int zCell = iCell_D[iz_] - 1; zCell <= iCell_D[iz_] + 1; zCell++) {
-
-          if (xCell < 0 || xCell >= nCell || yCell < 0 || yCell >= nCell ||
-              zCell < 0 || zCell >= nCell)
-            continue;
-
-          IntVect cellIdx = { AMREX_D_DECL(xCell, yCell, zCell) };
-
-          Real binMin_D[nDimVel], binMax_D[nDimVel];
-
-          for (int iDim = 0; iDim < nDimVel; iDim++) {
-            binMin_D[iDim] =
-                velMin_D[iDim] + (cellIdx[iDim] - velBinBufferSize) * dv;
-
-            binMax_D[iDim] =
-                velMin_D[iDim] + (cellIdx[iDim] + 1 + velBinBufferSize) * dv;
-          }
-
-          bool isInside = true;
-          for (int iDim = 0; iDim < nDimVel; iDim++) {
-            if (pcl.rdata(iDim) < binMin_D[iDim] ||
-                pcl.rdata(iDim) > binMax_D[iDim])
-              isInside = false;
-          }
-
-          if (isInside) {
-            phasePartIdx_III[cellIdx[ix_]][cellIdx[iy_]][cellIdx[iz_]]
-                .push_back(pid);
-          }
-        }
+    phasePartIdx_III[iCell_D[ix_]][iCell_D[iy_]][iCell_D[iz_]].push_back(pid);
   }
+
+  Vector<std::array<int, 3> > morton_idx(pow(nCell, 3));
 
   for (int iu = 0; iu < nCell; iu++)
     for (int iv = 0; iv < nCell; iv++)
       for (int iw = 0; iw < nCell; iw++) {
-
-        int nSplitLocal = phasePartIdx_III[iu][iv][iw].size();
-
-        int nPair = floor(nSplitLocal / 2.0);
-        for (int ip = 0; ip < nPair; ip++) {
-          ParticleType& p1 = *plist[phasePartIdx_III[iu][iv][iw][ip]];
-          ParticleType& p2 = *plist[phasePartIdx_III[iu][iv][iw][ip + nPair]];
-          ParticleType p3, p4;
-
-          split_by_seperate_velocity(p1, p2, p3, p4, avgVel);
-
-          newparticles.push_back(p3);
-          newparticles.push_back(p4);
-        }
+        morton_idx[encode_morton_3d(iu, iv, iw)] = { iu, iv, iw };
       }
+
+  Vector<ParticleType*> p_morton;
+
+  for (int i = 0; i < morton_idx.size(); i++) {
+    int iu = morton_idx[i][0];
+    int iv = morton_idx[i][1];
+    int iw = morton_idx[i][2];
+
+    // printf("1 iu = %d iv = %d iw = %d\n", iu, iv, iw);
+    for (int ip = 0; ip < phasePartIdx_III[iu][iv][iw].size(); ip++) {
+      p_morton.push_back(plist[phasePartIdx_III[iu][iv][iw][ip]]);
+    }
+  }
+
+  int nPair = floor(p_morton.size() / 2.0);
+  for (int ip = 0; ip < nPair * 2; ip += 2) {
+    ParticleType& p1 = *p_morton[ip];
+    ParticleType& p2 = *p_morton[ip + 1];
+    ParticleType p3, p4;
+
+    Real du = p1.rdata(iup_) - p2.rdata(iup_);
+    Real dv = p1.rdata(ivp_) - p2.rdata(ivp_);
+    Real dw = p1.rdata(iwp_) - p2.rdata(iwp_);
+    Real dspeed = sqrt(du * du + dv * dv + dw * dw);
+
+    if (dspeed / dvCell > 2)
+      continue;
+
+    split_by_seperate_velocity(p1, p2, p3, p4, avgVel);
+
+    newparticles.push_back(p3);
+    newparticles.push_back(p4);
+  }
 }
 
 template <int NStructReal, int NStructInt>
