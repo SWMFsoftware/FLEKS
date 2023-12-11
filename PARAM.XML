@@ -303,17 +303,24 @@ randomaized position, otherwise particles are equally spaced.
   <if expr="$doReSampling">
     <parameter name="splittingLimit" type="real" default="0.8" max="1"/>
     <parameter name="mergingLimit" type="real" default="1.5" min="1"/>
+    <parameter name="maxWeightRatio" type="real" default="1.0" min="1"/>
   </if>
   
 #RESAMPLING
 T                   doReSampling (rest is read if true)
 0.8                 splittingLimit 
 0.5                 mergingLimit 
+4                   maxWeightRatio
 
 Turning on/off the particle splitting and merging to control the number of
 particles per cell. If the initial particle number per cell is nPart, 
 splitting (merging) will be triggered once the particle numer per cell 
 becomes lower (higher) than splittingLimit*nPart (mergingLimit*nPart). 
+
+If maxWeightRatio is set and it is larger than 1, then the particles with
+wights larger than maxWeightRatio*averageWeight will be split, where 
+averageWeight is the average weight of the particles in a cell. It is 
+recommended to set maxWeightRatio to 4-8 for OH-PT simulations. 
 
 </command>
 

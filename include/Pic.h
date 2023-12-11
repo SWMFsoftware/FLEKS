@@ -103,7 +103,7 @@ private:
   bool doReSampling = true;
   amrex::Real reSamplingLowLimit = 0.8;
   amrex::Real reSamplingHighLimit = 1.5;
-  amrex::Real maxWeightRatio = 0;
+  amrex::Real maxWeightRatio = 1.0;
 
   bool doSplitJ = false;
   bool doSmoothE = false;
