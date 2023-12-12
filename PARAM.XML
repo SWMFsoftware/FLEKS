@@ -303,7 +303,7 @@ randomaized position, otherwise particles are equally spaced.
   <if expr="$doReSampling">
     <parameter name="splittingLimit" type="real" default="0.8" max="1"/>
     <parameter name="mergingLimit" type="real" default="1.5" min="1"/>
-    <parameter name="maxWeightRatio" type="real" default="1.0" min="1"/>
+    <parameter name="maxWeightRatio" type="real" default="1.0"/>
   </if>
   
 #RESAMPLING
