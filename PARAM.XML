@@ -368,6 +368,23 @@ For simulations involving particle sources, it's recommended to use
 
 </command>
 
+
+<command name="MERGELIGHT"
+	 alias="MERGELIGHT_FLEKS0,MERGELIGHT_FLEKS1,MERGELIGHT_FLEKS2" multiple="T">     
+  <parameter name="MERGELIGHT" type="logical" default="F"/>   
+  <parameter name="mergePartRatioMax" type="real" min="1"/>
+
+#MERGELIGHT 
+T        mergeLight 
+10       mergePartRatioMax
+
+When the 'mergeLight' feature is turned on, the merging algorithm will select
+the light particles for merging. Among these light particles, the ratio between
+the heaviest and the lightest particle should be less than 'mergePartRatioMax',
+otherwise, the merging will not be performed.
+
+</command>
+
 <command name="VACUUM"
   alias="VACUUM_FLEKS0,VACUUM_FLEKS1,VACUUM_FLEKS2" multiple="T">
   <parameter name="vacuum" type="real" default="0.0"/>
@@ -738,6 +755,20 @@ condition and ghost cells for a FLEKS region.
 1                  particles per cell in Z 
 
 The command sets particle number per cell for plasma sources.
+</command>
+
+<command name="ADAPTIVESOURCEPPC"
+	 alias="ADAPTIVESOURCEPPC_FLEKS0,ADAPTIVESOURCEPPC_FLEKS1,ADAPTIVESOURCEPPC_FLEKS2"
+	 multiple="T">
+  <parameter name="useAdaptiveSourcePPC" type="logical" default="F"/>
+
+#ADAPTIVESOURCEPPC
+T                  useAdaptiveSourcePPC
+
+If it is true, the particle number per cell per step for the sources will 
+be reduced to as low as 1 if the source density is low.
+
+
 </command>
 
 <command name="TPREGION"
