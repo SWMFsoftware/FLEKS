@@ -1452,6 +1452,14 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
 
       AoS& particles = pti.GetArrayOfStructs();
 
+      // Sort the particles by the location first to make sure the results
+      // are the same for different number of processors
+      std::sort(particles.begin(), particles.end(),
+                [](const ParticleType& pl, const ParticleType& pr) {
+                  return pl.pos(ix_) + pl.pos(iy_) + pl.pos(iz_) >
+                         pr.pos(ix_) + pr.pos(iy_) + pr.pos(iz_);
+                });
+
       Real totalMass = 0;
       Real totalMoment[nDimVel] = { 0, 0, 0 };
       for (auto& p : particles) {
