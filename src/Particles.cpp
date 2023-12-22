@@ -421,6 +421,13 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
                 ((bc.lo[iz_] == bc.outflow) && k < lo[iz_]) ||
                 ((bc.hi[iz_] == bc.outflow) && k > hi[iz_])) {
               outflow_bc(mfi, i, j, k, isrc, jsrc, ksrc);
+            } else if (((bc.lo[ix_] == bc.vacume) && i < lo[ix_]) ||
+                       ((bc.hi[ix_] == bc.vacume) && i > hi[ix_]) ||
+                       ((bc.lo[iy_] == bc.vacume) && j < lo[iy_]) ||
+                       ((bc.hi[iy_] == bc.vacume) && j > hi[iy_]) ||
+                       ((bc.lo[iz_] == bc.vacume) && k < lo[iz_]) ||
+                       ((bc.hi[iz_] == bc.vacume) && k > hi[iz_])) {
+              // pass
             } else {
               add_particles_cell(iLev, mfi, i, j, k, fiTmp, true, ppc, Vel(),
                                  dt);

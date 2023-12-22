@@ -19,6 +19,7 @@ public:
   int periodic = 0;
   int coupled = 1;
   int outflow = 2;
+  int vacume = 3;
 
   amrex::IntVect lo;
   amrex::IntVect hi;
@@ -32,6 +33,8 @@ public:
       return coupled;
     else if (str == "outflow")
       return outflow;
+    else if (str == "vacume")
+      return vacume;
     else
       return unset;
   }
