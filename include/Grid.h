@@ -506,8 +506,22 @@ public:
 
     int ngst = MF[0].nGrow() * WriteGhost;
     int ncomp = MF[0].nComp();
+
+    amrex::Vector<amrex::MultiFab> tmf;
+    tmf.resize(nLev + 1);
     for (int n = 0; n <= nLev; n++) {
+
+      amrex::DistributionMapping dm(MF[n].boxArray(), 1);
+      amrex::MultiFab ttmf;
+      ttmf.define(MF[n].boxArray(), dm, MF[n].nComp(), MF[n].nGrow());
+
+      ttmf.ParallelCopy(MF[n], 0, 0, MF[n].nComp(), MF[n].nGrow(),
+                        MF[n].nGrow());
+
+      tmf[n] = std::move(ttmf);
+
       MF[n].FillBoundary();
+      tmf[n].FillBoundary();
     }
     std::ofstream myfile;
     myfile.open("MF_Header.txt");
@@ -525,10 +539,10 @@ public:
     for (int n = 0; n <= nLev; n++) {
       std::ofstream myfile;
       myfile.open("MF_" + std::to_string(n) + ".txt");
-      for (amrex::MFIter mfi(MF[n]); mfi.isValid(); ++mfi) {
+      for (amrex::MFIter mfi(tmf[n]); mfi.isValid(); ++mfi) {
 
         const amrex::Box& box = mfi.validbox();
-        const amrex::Array4<amrex::Real>& fab = MF[n][mfi].array();
+        const amrex::Array4<amrex::Real>& fab = tmf[n][mfi].array();
         const auto lo = lbound(box);
         const auto hi = ubound(box);
 
