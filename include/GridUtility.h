@@ -101,11 +101,14 @@ void sum_fine_to_coarse_lev_bny_node(amrex::FabArray<FAB>& coarse,
 
 // Sum from coarse level to fine level for nodes at the boundary of two levels.
 template <class FAB>
-void fill_fine_lev_bny_cell_from_coarse(
-    amrex::FabArray<FAB>& coarse, amrex::FabArray<FAB>& fine, const int iStart,
-    const int nComp, const amrex::IntVect ratio, const amrex::Geometry& cgeom,
-    const amrex::Geometry& fgeom, const amrex::iMultiFab& fstatus) {
-  BL_PROFILE("fill_fine_lev_bny_cell_from_coarse");
+void fill_fine_lev_bny_from_coarse(amrex::FabArray<FAB>& coarse,
+                                   amrex::FabArray<FAB>& fine, const int iStart,
+                                   const int nComp, const amrex::IntVect ratio,
+                                   const amrex::Geometry& cgeom,
+                                   const amrex::Geometry& fgeom,
+                                   const amrex::iMultiFab& fstatus,
+                                   amrex::Interpolater& mapper) {
+  BL_PROFILE("fill_fine_lev_bny_from_coarse");
 
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
   amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
@@ -114,8 +117,8 @@ void fill_fine_lev_bny_cell_from_coarse(
                             fine.nGrow());
   ftmp.setVal(0.0);
 
-  interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom,
-                             &amrex::pc_interp, f.nGrow());
+  interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper,
+                             f.nGrow());
 
   for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
     FAB& fab = f[mfi];

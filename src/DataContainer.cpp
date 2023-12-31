@@ -145,9 +145,10 @@ size_t AMReXDataContainer::loop_cell(bool doStore, Vector<float>& vars,
   }
 
   for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
-    fill_fine_lev_bny_cell_from_coarse(
+    fill_fine_lev_bny_from_coarse(
         iCell[iLev], iCell[iLev + 1], 0, iCell[iLev].nComp(), ref_ratio[iLev],
-        Geom(iLev), Geom(iLev + 1), cell_status(iLev + 1));
+        Geom(iLev), Geom(iLev + 1), cell_status(iLev + 1),
+        amrex::cell_bilinear_interp);
   }
   return iCount;
 }

@@ -389,17 +389,20 @@ void Pic::fill_E_B_fields() {
     nodeB[iLev].FillBoundary();
     centerB[iLev].FillBoundary();
 
-    fill_fine_lev_bny_cell_from_coarse(
-        nodeE[iLev - 1], nodeE[iLev], 0, nodeE[iLev - 1].nComp(),
-        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev));
+    fill_fine_lev_bny_from_coarse(nodeE[iLev - 1], nodeE[iLev], 0,
+                                  nodeE[iLev - 1].nComp(), ref_ratio[iLev - 1],
+                                  Geom(iLev - 1), Geom(iLev), node_status(iLev),
+                                  amrex::node_bilinear_interp);
 
-    fill_fine_lev_bny_cell_from_coarse(
-        nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
-        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev));
+    fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
+                                  nodeB[iLev - 1].nComp(), ref_ratio[iLev - 1],
+                                  Geom(iLev - 1), Geom(iLev), node_status(iLev),
+                                  amrex::node_bilinear_interp);
 
-    fill_fine_lev_bny_cell_from_coarse(
+    fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev));
+        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+        amrex::cell_bilinear_interp);
   }
 }
 
@@ -1099,13 +1102,15 @@ void Pic::update_E_impl() {
 
     } else {
 
-      fill_fine_lev_bny_cell_from_coarse(
+      fill_fine_lev_bny_from_coarse(
           nodeE[iLev - 1], nodeE[iLev], 0, nodeE[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev));
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          amrex::node_bilinear_interp);
 
-      fill_fine_lev_bny_cell_from_coarse(
+      fill_fine_lev_bny_from_coarse(
           nodeEth[iLev - 1], nodeEth[iLev], 0, nodeEth[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev));
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          amrex::node_bilinear_interp);
     }
 
     if (doSmoothE) {
@@ -1155,9 +1160,10 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     if (iLev == 0) {
       apply_BC(nodeStatus[iLev], vecMF, 0, nDim, &Pic::get_node_E, iLev);
     } else {
-      fill_fine_lev_bny_cell_from_coarse(
+      fill_fine_lev_bny_from_coarse(
           nodeE[iLev - 1], vecMF, 0, centerB[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev));
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          amrex::node_bilinear_interp);
     }
   }
 
@@ -1315,9 +1321,10 @@ void Pic::update_B() {
                &Pic::get_center_B, iLev);
 
     } else {
-      fill_fine_lev_bny_cell_from_coarse(
+      fill_fine_lev_bny_from_coarse(
           centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev));
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          amrex::cell_bilinear_interp);
     }
 
     average_center_to_node(centerB[iLev], nodeB[iLev]);
@@ -1329,9 +1336,10 @@ void Pic::update_B() {
 
     } else {
 
-      fill_fine_lev_bny_cell_from_coarse(
+      fill_fine_lev_bny_from_coarse(
           nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev));
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          amrex::node_bilinear_interp);
     }
   }
 }
