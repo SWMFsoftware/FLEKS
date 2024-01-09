@@ -2594,6 +2594,42 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
 }
 
 template <int NStructReal, int NStructInt>
+Real Particles<NStructReal, NStructInt>::charge_exchange_dis(amrex::Real* vp,
+                                                             amrex::Real* vh,
+                                                             amrex::Real* up,
+                                                             amrex::Real vth,
+                                                             CrossSection cs) {
+  Real dv_D[3], dv2 = 0, dv = 0;
+  for (int i = 0; i < 3; i++) {
+    dv_D[i] = vh[i] - vp[i];
+    dv2 += dv_D[i] * dv_D[i];
+  }
+
+  if (dv2 == 0)
+    return 0.0;
+
+  dv = sqrt(dv2);
+
+  Real erel = 0.5 * 1.674E-27 * dv2 * 6.2415E15; // in keV
+
+  Real sigma = 0;
+  if (cs == CrossSection::LS) {
+    sigma = (4.15 - 0.531 * log(erel)) * (4.15 - 0.531 * log(erel)) *
+            pow(1 - exp(-67.3 / erel), 4.5) * 1E-20; // cross section in m^2
+  } else if (cs == CrossSection::MT) {
+    Real dvcm = dv * 1E2;                             // velocity in cm/s
+    sigma = pow(1.6 - 0.0695 * log(dvcm), 2) * 1e-18; // cross section in m^2
+  }
+
+  Real dvpup2 = 0;
+  for (int i = 0; i < 3; i++) {
+    dvpup2 += pow(vp[i] - up[i], 2);
+  }
+
+  return dv * sigma * exp(-dvpup2 / (vth * vth));
+}
+
+template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charge_exchange(
     Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH,
     SourceInterface* source) {

@@ -18,6 +18,8 @@
 #include "TimeCtr.h"
 #include "UMultiFab.h"
 
+enum class CrossSection { LS = 0, MT };
+
 struct PID {
   int cpu;
   int id;
@@ -244,6 +246,11 @@ public:
                               const amrex::Vector<amrex::MultiFab>& nodeB,
                               amrex::Real dt, amrex::Real dtNext);
 
+  // Both the input are in the SI unit: m/s
+  amrex::Real charge_exchange_dis(amrex::Real* vp, amrex::Real* vh,
+                                  amrex::Real* up, amrex::Real vth,
+                                  CrossSection cs);
+
   void neutral_mover(amrex::Real dt);
 
   void update_position_to_half_stage(const amrex::MultiFab& nodeEMF,
@@ -393,7 +400,7 @@ public:
   void limit_weight(amrex::Real maxRatio, bool seperateVelocity = false);
   void split(amrex::Real limit, bool seperateVelocity = false);
   void split_particles_by_velocity(amrex::Vector<ParticleType*>& plist,
-                                   amrex::Vector<ParticleType>& newparticles, 
+                                   amrex::Vector<ParticleType>& newparticles,
                                    amrex::Real avgVel[]);
   void split_by_seperate_velocity(ParticleType& p1, ParticleType& p2,
                                   ParticleType& p3, ParticleType& p4,
