@@ -2594,6 +2594,50 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
 }
 
 template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::sample_charge_exchange(
+    amrex::Real* vp, amrex::Real* vh, amrex::Real* up, amrex::Real vth,
+    CrossSection cs) {
+
+  // M (holds normalization costants for both distributions), g(vp) is the
+  // maxwellian distribution
+  Real sup[3] = { up[0] - 3. * vth, up[1] - 3. * vth, up[2] - 3. * vth };
+  Real M = charge_exchange_dis(sup, vh, up, vth, cs) /
+           exp(-((sup[0] - up[0]) * (sup[0] - up[0]) +
+                 (sup[1] - up[1]) * (sup[1] - up[1]) +
+                 (sup[2] - up[2]) * (sup[2] - up[2])) /
+               (vth * vth));
+
+  bool accepted = false;
+  while (!accepted) {
+
+    {
+      Real prob, theta, Uth;
+
+      // u = X velocity
+      prob = sqrt(-2.0 * log(1.0 - .999999999 * randNum()));
+      theta = 2.0 * M_PI * randNum();
+      Uth = vth / sqrt(2.0);
+      vp[0] = Uth * prob * cos(theta) + up[0];
+      // v = Y velocity
+      vp[1] = Uth * prob * sin(theta) + up[1];
+
+      // w = Z velocity
+      prob = sqrt(-2.0 * log(1.0 - .999999999 * randNum()));
+      theta = 2.0 * M_PI * randNum();
+      vp[2] = Uth * prob * cos(theta) + up[2];
+    }
+
+    if (randNum() < charge_exchange_dis(vp, vh, up, vth, cs) /
+                        (M * exp(-((vp[0] - up[0]) * (vp[0] - up[0]) +
+                                   (vp[1] - up[1]) * (vp[1] - up[1]) +
+                                   (vp[2] - up[2]) * (vp[2] - up[2])) /
+                                 (vth * vth)))) {
+      accepted = true;
+    }
+  }
+}
+
+template <int NStructReal, int NStructInt>
 Real Particles<NStructReal, NStructInt>::charge_exchange_dis(amrex::Real* vp,
                                                              amrex::Real* vh,
                                                              amrex::Real* up,

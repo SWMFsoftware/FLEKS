@@ -251,6 +251,9 @@ public:
                                   amrex::Real* up, amrex::Real vth,
                                   CrossSection cs);
 
+  void sample_charge_exchange(amrex::Real* vp, amrex::Real* vh, amrex::Real* up,
+                              amrex::Real vth, CrossSection cs);
+
   void neutral_mover(amrex::Real dt);
 
   void update_position_to_half_stage(const amrex::MultiFab& nodeEMF,
