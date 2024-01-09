@@ -531,6 +531,10 @@ public:
   amrex::Real get_fluid_uth(const amrex::MFIter& mfi, const Type x,
                             const Type y, const Type z, const int is,
                             const int iLev) const {
+    // 'uth' returned by this method is defined as: uth = sqrt(kT/m)
+    // PV = nkT
+    // kT/m = PV/(nm) = P/rho
+    // So, uth = sqrt(P/rho)
     amrex::Real Uth = 0, p, rho;
     p = get_fluid_p(mfi, x, y, z, is, iLev);
     rho = get_fluid_mass_density(mfi, x, y, z, is, iLev);
@@ -590,7 +594,7 @@ public:
       P = get_value(mfi, x, y, z, iPpar_I[is], iLev);
     } else if (useMhdPe) {
       if (is == 0)
-        P = get_value(mfi, x, y, z, iPe, iLev);        // Electron
+        P = get_value(mfi, x, y, z, iPe, iLev); // Electron
       if (is == 1)
         P = get_value(mfi, x, y, z, iPpar_I[0], iLev); // Ion
     } else {
@@ -614,7 +618,7 @@ public:
     } else if (useMultiFluid) {
       // Multi-fluid.
       if (is == 0)
-        P = get_value(mfi, x, y, z, iPe, iLev);          // Electron
+        P = get_value(mfi, x, y, z, iPe, iLev); // Electron
       else
         P = get_value(mfi, x, y, z, iP_I[is - 1], iLev); // Ion
     } else {
@@ -627,7 +631,7 @@ public:
           P *= (1 - PeRatio);
       } else {
         if (is == 0)
-          P = get_value(mfi, x, y, z, iPe, iLev);     // Electron
+          P = get_value(mfi, x, y, z, iPe, iLev); // Electron
         else if (is > 0)
           P = get_value(mfi, x, y, z, iP_I[0], iLev); // Ion
       }
