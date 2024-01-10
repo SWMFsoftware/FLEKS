@@ -2595,8 +2595,7 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::sample_charge_exchange(
-    amrex::Real* vp, amrex::Real* vh, amrex::Real* up, amrex::Real vth,
-    CrossSection cs) {
+    Real* vp, Real* vh, Real* up, Real vth, CrossSection cs) {
 
   // M (holds normalization costants for both distributions), g(vp) is the
   // maxwellian distribution
