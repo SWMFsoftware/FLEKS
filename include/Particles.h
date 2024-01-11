@@ -235,8 +235,15 @@ public:
   void sum_to_center(amrex::MultiFab& netChargeMF,
                      amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly);
 
-  void charge_exchange(amrex::Real dt, FluidInterface* stateOH,
-                       FluidInterface* sourcePT2OH, SourceInterface* source);
+  void charge_exchange(
+      amrex::Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH,
+      SourceInterface* source, bool kineticSource,
+      amrex::Vector<std::unique_ptr<Particles<nPicPartReal> > >& sourceParts,
+      bool doSelectRegion, int nppc);
+
+  void add_source_particles(
+      std::unique_ptr<Particles<nPicPartReal> >& sourcePart,
+      amrex::IntVect ppc, const bool adaptivePPC);
 
   void mover(const amrex::Vector<amrex::MultiFab>& nodeE,
              const amrex::Vector<amrex::MultiFab>& nodeB, amrex::Real dt,

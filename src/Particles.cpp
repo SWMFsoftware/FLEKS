@@ -305,9 +305,9 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
             }
 #endif
             if (doAdd) {
-              if (adaptivePPC) { // Adjust ppc so that the weight of the
-                                 // source particles is not
-                // so small.
+              if (adaptivePPC) {
+                // Adjust ppc so that the weight of the
+                // source particles is not too small.
                 int initPPC = 1, sourcePPC = 1;
                 for (int iDim = 0; iDim < nDim; iDim++) {
                   initPPC *= nPartPerCell[iDim];
@@ -1485,7 +1485,7 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
 
       if (seperateVelocity) {
         Vector<ParticleType*> pold;
-        for (int ip = 0; ip < particles.size(); ip++) {
+        for (size_t ip = 0; ip < particles.size(); ip++) {
           Real qp1 = particles[ip].rdata(iqp_);
           if (fabs(qp1) < maxWeight)
             continue;
@@ -2597,6 +2597,8 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::sample_charge_exchange(
     Real* vp, Real* vh, Real* up, Real vth, CrossSection cs) {
 
+  timing_func("Pts::sample_charge_exchange");
+
   // M (holds normalization costants for both distributions), g(vp) is the
   // maxwellian distribution
   Real sup[3] = { up[0] - 3. * vth, up[1] - 3. * vth, up[2] - 3. * vth };
@@ -2675,7 +2677,9 @@ Real Particles<NStructReal, NStructInt>::charge_exchange_dis(amrex::Real* vp,
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charge_exchange(
     Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH,
-    SourceInterface* source) {
+    SourceInterface* source, bool kineticSource,
+    amrex::Vector<std::unique_ptr<Particles<> > >& sourceParts,
+    bool doSelectRegion, int nppc) {
   std::string nameFunc = "Pts::charge_exchange";
 
   timing_func(nameFunc);
@@ -2683,11 +2687,47 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
   if (dt <= 0)
     return;
 
+  // for (auto& ptr : sourceParts) {
+  //   ptr->clearParticles();
+  // }
+
+  struct NeuPlasmaPair {
+    Real q; // weight
+    Real vp[3];
+    Real vh[3];
+    Real up[3];
+    Real xyz[3];
+    Real vth;
+  };
+
   Real maxExchangeRatio = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
          ++pti) {
       AoS& particles = pti.GetArrayOfStructs();
+
+      // It is assumed the tile size is 1x1x1.
+      Box bx = pti.tilebox();
+      auto cellIdx = bx.smallEnd();
+
+      int iRegion = 0;
+      if (kineticSource && doSelectRegion) {
+        const int iFluid = 0;
+        iRegion = stateOH->get_neu_source_region(pti, cellIdx[0], cellIdx[1],
+                                                 cellIdx[2], iFluid, iLev);
+        if (iRegion < 0)
+          continue;
+      }
+      // ParticleTileType
+      auto& spTile =
+          sourceParts[iRegion]->get_particle_tile(iLev, pti, cellIdx);
+
+      Vector<NeuPlasmaPair> neuPlasmaPairs;
+
+      if (kineticSource) {
+        set_random_seed(iLev, cellIdx[0], cellIdx[1], cellIdx[2], IntVect(999));
+      }
+
       for (auto& p : particles) {
         if (p.id() < 0)
           continue;
@@ -2805,41 +2845,120 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         }
 
         if (ion2neu[iRho_] > 0) { // Add source to nodes.
-          Real si2no_v[5];
-          si2no_v[iRho_] = source->get_Si2NoRho();
-          si2no_v[iRhoUx_] = source->get_Si2NoV() * si2no_v[iRho_];
-          si2no_v[iRhoUy_] = si2no_v[iRhoUx_];
-          si2no_v[iRhoUz_] = si2no_v[iRhoUx_];
-          si2no_v[iP_] = source->get_Si2NoP();
 
-          Real m2 = 0;
-          for (int i = iRhoUx_; i <= iRhoUz_; i++) {
-            m2 += pow(ion2neu[i], 2);
+          if (kineticSource) {
+
+            NeuPlasmaPair pair;
+            pair.q = massExchange;
+            for (int i = 0; i < 3; i++) {
+              pair.vh[i] = uNeu[i];
+              pair.up[i] = uIon[i];
+              pair.vth = sqrt(cs2Ion);
+              pair.xyz[i] = p.pos(ix_ + i);
+            }
+
+            neuPlasmaPairs.push_back(pair);
+
+            // ParticleType newp;
+            // newp = ParticleType::NextID();
+            // newp.cpu() = ParallelDescriptor::MyProc();
+            // newp.rdata(iqp_) = pair.q;
+
+            // sps.push_back(newp);
+
+          } else {
+
+            Real si2no_v[5];
+            si2no_v[iRho_] = source->get_Si2NoRho();
+            si2no_v[iRhoUx_] = source->get_Si2NoV() * si2no_v[iRho_];
+            si2no_v[iRhoUy_] = si2no_v[iRhoUx_];
+            si2no_v[iRhoUz_] = si2no_v[iRhoUx_];
+            si2no_v[iP_] = source->get_Si2NoP();
+
+            Real m2 = 0;
+            for (int i = iRhoUx_; i <= iRhoUz_; i++) {
+              m2 += pow(ion2neu[i], 2);
+            }
+
+            const Real gamma = 5. / 3;
+            // P = (gamma-1)*(E - 0.5*rho*u2)
+            ion2neu[iP_] =
+                (gamma - 1) * (ion2neu[iE_] - 0.5 * m2 / ion2neu[iRho_]);
+
+            if (ion2neu[iP_] < 0) {
+              ion2neu[iP_] = 0;
+            }
+
+            // source saves changing rate (density/s...).
+            source->add_rho_to_loc(ion2neu[iRho_] * si2no_v[iRho_] / dt, pti,
+                                   xp, yp, zp, speciesID, iLev);
+            source->add_mx_to_loc(ion2neu[iRhoUx_] * si2no_v[iRhoUx_] / dt, pti,
+                                  xp, yp, zp, speciesID, iLev);
+            source->add_my_to_loc(ion2neu[iRhoUy_] * si2no_v[iRhoUy_] / dt, pti,
+                                  xp, yp, zp, speciesID, iLev);
+            source->add_mz_to_loc(ion2neu[iRhoUz_] * si2no_v[iRhoUz_] / dt, pti,
+                                  xp, yp, zp, speciesID, iLev);
+            source->add_p_to_loc(ion2neu[iP_] * si2no_v[iP_] / dt, pti, xp, yp,
+                                 zp, speciesID, iLev);
           }
-
-          const Real gamma = 5. / 3;
-          // P = (gamma-1)*(E - 0.5*rho*u2)
-          ion2neu[iP_] =
-              (gamma - 1) * (ion2neu[iE_] - 0.5 * m2 / ion2neu[iRho_]);
-
-          if (ion2neu[iP_] < 0) {
-            ion2neu[iP_] = 0;
-          }
-
-          // source saves changing rate (density/s...).
-          source->add_rho_to_loc(ion2neu[iRho_] * si2no_v[iRho_] / dt, pti, xp,
-                                 yp, zp, speciesID, iLev);
-          source->add_mx_to_loc(ion2neu[iRhoUx_] * si2no_v[iRhoUx_] / dt, pti,
-                                xp, yp, zp, speciesID, iLev);
-          source->add_my_to_loc(ion2neu[iRhoUy_] * si2no_v[iRhoUy_] / dt, pti,
-                                xp, yp, zp, speciesID, iLev);
-          source->add_mz_to_loc(ion2neu[iRhoUz_] * si2no_v[iRhoUz_] / dt, pti,
-                                xp, yp, zp, speciesID, iLev);
-          source->add_p_to_loc(ion2neu[iP_] * si2no_v[iP_] / dt, pti, xp, yp,
-                               zp, speciesID, iLev);
         }
+        // p.id() = -1;
       } // for p
-    }   // for pti
+
+      if (kineticSource) {
+        // Sample the velocity distribution function.
+
+        Vector<NeuPlasmaPair> newPairs;
+
+        Real wt = 0;
+
+        Vector<Real> weights;
+        weights.resize(neuPlasmaPairs.size());
+        for (int i = 0; i < neuPlasmaPairs.size(); i++) {
+          weights[i] = neuPlasmaPairs[i].q;
+          wt += neuPlasmaPairs[i].q;
+        }
+
+        std::vector<int> idx = random_select_weighted_n(weights, nppc, randNum);
+
+        Real wtnew = 0;
+        for (int i : idx) {
+          newPairs.push_back(neuPlasmaPairs[i]);
+          wtnew += neuPlasmaPairs[i].q;
+        }
+        Real scale = wt / wtnew;
+
+        for (auto& pair : newPairs) {
+          sample_charge_exchange(pair.vp, pair.vh, pair.up, pair.vth,
+                                 CrossSection::MT);
+          for (int i = 0; i < 3; i++) {
+            pair.vp[i] *= stateOH->get_Si2NoV();
+          }
+
+          Particle<nPicPartReal, 0> newp;
+          newp.id() = Particle<nPicPartReal, 0>::NextID();
+          newp.cpu() = ParallelDescriptor::MyProc();
+          newp.rdata(iqp_) = pair.q * scale;
+
+          for (int i = 0; i < 3; i++) {
+            newp.rdata(iup_ + i) = pair.vp[i];
+            newp.pos(ix_ + i) = pair.xyz[i];
+          }
+
+          spTile.push_back(newp);
+
+          // ParticleType newp2;
+          // newp2.id() = ParticleType::NextID();
+          // newp2.cpu() = ParallelDescriptor::MyProc();
+          // newp2.rdata(iqp_) = newp.rdata(iqp_);
+          // for (int i = 0; i < 3; i++) {
+          //   newp2.rdata(iup_ + i) = newp.rdata(iup_ + i);
+          //   newp2.pos(ix_ + i) = newp.pos(ix_ + i);
+          // }
+          // pTile.push_back(newp2);
+        }
+      }
+    } // for pti
   }
 
   ParallelDescriptor::ReduceRealMax(maxExchangeRatio);
@@ -2852,6 +2971,95 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
             << std::endl;
   }
 }
+
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::add_source_particles(
+    std::unique_ptr<Particles<nPicPartReal> >& sourcePart, IntVect ppc,
+    const bool adaptivePPC) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
+         ++pti) {
+      // It is assumed the tile size is 1x1x1.
+      Box bx = pti.tilebox();
+      auto cellIdx = bx.smallEnd();
+
+      ParticleTileType& pTile = get_particle_tile(iLev, pti, cellIdx);
+      AoS& particles = pti.GetArrayOfStructs();
+
+      // ParticleTileType
+      auto& spTile = sourcePart->get_particle_tile(iLev, pti, cellIdx);
+
+      // AoS type
+      auto& sps = spTile.GetArrayOfStructs();
+
+      if (sps.size() == 0)
+        continue;
+
+      if (adaptivePPC) {
+        set_random_seed(iLev, cellIdx[0], cellIdx[1], cellIdx[2], IntVect(787));
+        // Adjust ppc so that the weight of the
+        // source particles is not too small.
+        int initPPC = 1, sourcePPC = 1;
+        for (int iDim = 0; iDim < nDim; iDim++) {
+          initPPC *= nPartPerCell[iDim];
+          sourcePPC *= ppc[iDim];
+        }
+
+        Real rho = 0;
+        for (auto& p : particles) {
+          rho += p.rdata(iqp_);
+        }
+
+        Real rhoSource = 0;
+        for (auto& p : sps) {
+          rhoSource += p.rdata(iqp_);
+        }
+
+        Real avgInitW = rho / initPPC;
+        Real avgSourceW = rhoSource / sourcePPC;
+
+        Real targetSourceW = avgInitW * 0.1;
+
+        if (avgSourceW < targetSourceW) {
+          Real ratio = pow(avgSourceW / targetSourceW, 1.0 / nDim);
+          for (int iDim = 0; iDim < nDim; iDim++) {
+            ppc[iDim] = std::max(1, int(ppc[iDim] * ratio));
+          }
+        }
+
+        Vector<Real> weights;
+        weights.resize(sps.size());
+        for (size_t i = 0; i < sps.size(); i++) {
+          weights[i] = sps[i].rdata(iqp_);
+        }
+        int nppc = 1;
+        for (int iDim = 0; iDim < nDim; iDim++) {
+          nppc *= ppc[iDim];
+        }
+        std::vector<int> idx = random_select_weighted_n(weights, nppc, randNum);
+
+        Real wTmp = 0;
+        for (int i : idx) {
+          wTmp += sps[i].rdata(iqp_);
+        }
+        Real scale = rhoSource / wTmp;
+
+        for (int i : idx) {
+          ParticleType newp;
+          newp.id() = ParticleType::NextID();
+          newp.cpu() = ParallelDescriptor::MyProc();
+          newp.rdata(iqp_) = sps[i].rdata(iqp_) * scale;
+          for (int iDim = 0; iDim < nDim; iDim++) {
+            newp.rdata(iup_ + iDim) = sps[i].rdata(iup_ + iDim);
+            newp.pos(ix_ + iDim) = sps[i].pos(ix_ + iDim);
+          }
+          pTile.push_back(newp);
+        }
+      }
+    }
+  }
+}
+
 // Since Particles is a template, it is necessary to explicitly instantiate
 // with template arguments.
 template class Particles<nPicPartReal>;

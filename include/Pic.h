@@ -87,6 +87,7 @@ private:
   amrex::Vector<amrex::MultiFab> jHat;
 
   amrex::Vector<std::unique_ptr<Particles<> > > parts;
+  amrex::Vector<std::unique_ptr<Particles<> > > sourceParts;
 
   amrex::IntVect nPartPerCell = { AMREX_D_DECL(6, 6, 6) };
   amrex::Real qomEl = -100;
@@ -94,6 +95,7 @@ private:
   // Particle Per Cell (PPC) of source particles.
   amrex::IntVect nSourcePPC = { AMREX_D_DECL(0, 0, 0) };
   bool adaptiveSourcePPC = false;
+  bool kineticSource = false;
 
   FieldSolver fsolver;
 
@@ -174,6 +176,10 @@ public:
 
     // At most 10 species.
     pBCs.resize(10);
+
+#ifdef _PT_COMPONENT_
+    // kineticSource = true;
+#endif
   };
   ~Pic(){};
 

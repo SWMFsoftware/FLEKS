@@ -732,15 +732,15 @@ void Domain::read_param(const bool readGridInfo) {
 
     if (command == "#DIVE" || command == "#EFIELDSOLVER" ||
         command == "#RANDOMPARTICLESLOCATION" || command == "#PARTICLES" ||
-        command == "#SOURCEPARTICLES" || command == "#ELECTRON" ||
-        command == "#DISCRETIZE" || command == "#DISCRETIZATION" ||
-        command == "#RESAMPLING" || command == "#SMOOTHE" ||
-        command == "#TESTCASE" || command == "#FASTMERGE" ||
-        command == "#ADAPTIVESOURCEPPC" || command == "#MERGELIGHT" ||
-        command == "#VACUUM" || command == "#PARTICLELEVRATIO" ||
-        command == "#PIC" || command == "#EXPLICITPIC" ||
-        command == "#SPLITJ" || command == "#PARTICLEBOXBOUNDARY" ||
-        command == "#MIDDLEPOINTSOURCE") {
+        command == "#KINETICSOURCE" || command == "#SOURCEPARTICLES" ||
+        command == "#ELECTRON" || command == "#DISCRETIZE" ||
+        command == "#DISCRETIZATION" || command == "#RESAMPLING" ||
+        command == "#SMOOTHE" || command == "#TESTCASE" ||
+        command == "#FASTMERGE" || command == "#ADAPTIVESOURCEPPC" ||
+        command == "#MERGELIGHT" || command == "#VACUUM" ||
+        command == "#PARTICLELEVRATIO" || command == "#PIC" ||
+        command == "#EXPLICITPIC" || command == "#SPLITJ" ||
+        command == "#PARTICLEBOXBOUNDARY" || command == "#MIDDLEPOINTSOURCE") {
       pic->read_param(command, param);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||

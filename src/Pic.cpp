@@ -58,6 +58,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("npcelx", nSourcePPC[ix_]);
     param.read_var("npcely", nSourcePPC[iy_]);
     param.read_var("npcelz", nSourcePPC[iz_]);
+  } else if (command == "#KINETICSOURCE") {
+    param.read_var("kineticSource", kineticSource);
   } else if (command == "#ELECTRON") {
     param.read_var("qom", qomEl);
   } else if (command == "#DISCRETIZE" || command == "#DISCRETIZATION") {
@@ -267,6 +269,12 @@ void Pic::post_regrid() {
       //----------------------------------
 
       parts.push_back(std::move(ptr));
+
+      auto ptrSource = std::unique_ptr<Particles<> >(
+          new Particles<>(this, fi, tc, i, fi->get_species_charge(i),
+                          fi->get_species_mass(i), nPartPerCell, testCase));
+
+      sourceParts.push_back(std::move(ptrSource));
     }
   } else {
     for (int i = 0; i < nSpecies; i++) {
@@ -413,6 +421,9 @@ void Pic::fill_particles() {
 }
 
 void Pic::fill_source_particles() {
+  if (kineticSource)
+    return;
+
   bool doSelectRegion = false;
 #ifdef _PT_COMPONENT_
   doSelectRegion = (nSpecies == 4);
@@ -1842,25 +1853,46 @@ void Pic::charge_exchange() {
   if (!stateOH || !sourcePT2OH || !source)
     return;
 
-  source->set_node_fluid_to_zero();
+  if (!kineticSource)
+    source->set_node_fluid_to_zero();
 
-  for (int i = 0; i < nSpecies; i++) {
-    parts[i]->charge_exchange(tc->get_dt(), stateOH, sourcePT2OH, source);
-  }
-
-  // 'source' is applied to generate new particles every step, so sum_boundary()
-  // is called here to correct boundary nodes. Boundary nodes of 'sourcePT2OH'
-  // should be corrected just before PT->OH coupling, instead of here.
-  source->sum_boundary();
-
+  bool doSelectRegion = false;
 #ifdef _PT_COMPONENT_
-  bool doRegionSplit = (nSpecies == 4);
-  if (doRegionSplit) {
-    source->sum_to_single_source();
-  }
+  doSelectRegion = (nSpecies == 4);
 #endif
 
-  source->convert_moment_to_velocity(true, false);
+  int sourcePPC = 1;
+  for (int i = 0; i < nDim; i++) {
+    sourcePPC *= nSourcePPC[i];
+  }
 
-  // fill_source_particles();
+  for (int i = 0; i < nSpecies; i++) {
+    parts[i]->charge_exchange(tc->get_dt(), stateOH, sourcePT2OH, source,
+                              kineticSource, sourceParts, doSelectRegion,
+                              sourcePPC);
+  }
+
+  if (kineticSource) {
+    for (int i = 0; i < nSpecies; i++) {
+      parts[i]->add_source_particles(sourceParts[i], nSourcePPC,
+                                     adaptiveSourcePPC);
+      sourceParts[i]->clearParticles();
+    }
+
+  } else {
+    // 'source' is applied to generate new particles every step, so
+    // sum_boundary() is called here to correct boundary nodes. Boundary nodes
+    // of 'sourcePT2OH' should be corrected just before PT->OH coupling, instead
+    // of here.
+    source->sum_boundary();
+
+#ifdef _PT_COMPONENT_
+    bool doRegionSplit = (nSpecies == 4);
+    if (doRegionSplit) {
+      source->sum_to_single_source();
+    }
+#endif
+
+    source->convert_moment_to_velocity(true, false);
+  }
 }
