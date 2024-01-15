@@ -83,12 +83,8 @@ void Particles<NStructReal, NStructInt>::outflow_bc(const MFIter& mfi,
     // make sure a particle in a "physical tile" is actually inside the physical
     // domain.
     if (mfi.validbox().contains(IntVect(iv))) {
-      // TODO: Check NextID
       ParticleType pNew = p;
-
-      pNew.id() = ParticleType::NextID();
-      pNew.cpu() = ParallelDescriptor::MyProc();
-
+      set_ids(pNew);
       for (int i = 0; i < nDim; i++) {
         pNew.pos(i) = p.pos(i) + dxshift[i];
       }
@@ -243,14 +239,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           }
 
           ParticleType p;
-          if (ParticleType::the_next_id >= LastParticleID) {
-            // id should not be larger than LastParticleID. This is a bad
-            // solution, since the ID becomes nonunique. --Yuxi
-            p.id() = LastParticleID;
-          } else {
-            p.id() = ParticleType::NextID();
-          }
-          p.cpu() = ParallelDescriptor::MyProc();
+          set_ids(p);
           p.pos(ix_) = x;
           p.pos(iy_) = y;
           p.pos(iz_) = z;
@@ -1525,13 +1514,7 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
 
           for (int iNew = 0; iNew < nNew; iNew++) {
             ParticleType pnew;
-            if (ParticleType::the_next_id >= LastParticleID) {
-              // id should not larger than LastParticleID. This is a bad
-              // solution, since the ID becomes nonunique. --Yuxi
-              pnew.id() = LastParticleID;
-            } else {
-              pnew.id() = ParticleType::NextID();
-            }
+            set_ids(pnew);
 
             Real xp2 = xp1 + (xMax - xMin) * (randNum() - 0.5);
             Real yp2 = yp1 + (yMax - yMin) * (randNum() - 0.5);
@@ -1540,8 +1523,6 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
             xp2 = bound(xp2, xMin, xMax);
             yp2 = bound(yp2, yMin, yMax);
             zp2 = bound(zp2, zMin, zMax);
-
-            pnew.cpu() = ParallelDescriptor::MyProc();
 
             pnew.pos(ix_) = xp2;
             pnew.pos(iy_) = yp2;
@@ -1701,16 +1682,8 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
     }
   }
 
-  if (ParticleType::the_next_id >= LastParticleID) {
-    p3.id() = LastParticleID;
-    p4.id() = LastParticleID;
-  } else {
-    p3.id() = ParticleType::NextID();
-    p4.id() = ParticleType::NextID();
-  }
-
-  p3.cpu() = ParallelDescriptor::MyProc();
-  p4.cpu() = ParallelDescriptor::MyProc();
+  set_ids(p3);
+  set_ids(p4);
 
   p1.rdata(iqp_) = wavg;
   p2.rdata(iqp_) = wavg;
@@ -1906,15 +1879,8 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
             zp2 = bound(zp2, zMin, zMax);
 
             ParticleType pnew;
-            if (ParticleType::the_next_id >= LastParticleID) {
-              // id should not larger than LastParticleID. This is a bad
-              // solution, since the ID becomes nonunique. --Yuxi
-              pnew.id() = LastParticleID;
-            } else {
-              pnew.id() = ParticleType::NextID();
-            }
+            set_ids(pnew);
 
-            pnew.cpu() = ParallelDescriptor::MyProc();
             pnew.pos(ix_) = xp2;
             pnew.pos(iy_) = yp2;
             pnew.pos(iz_) = zp2;
@@ -2846,13 +2812,6 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 
             neuPlasmaPairs.push_back(pair);
 
-            // ParticleType newp;
-            // newp = ParticleType::NextID();
-            // newp.cpu() = ParallelDescriptor::MyProc();
-            // newp.rdata(iqp_) = pair.q;
-
-            // sps.push_back(newp);
-
           } else {
 
             Real si2no_v[5];
@@ -2923,8 +2882,6 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
           }
 
           PicParticle newp;
-          newp.id() = PicParticle::NextID();
-          newp.cpu() = ParallelDescriptor::MyProc();
           newp.rdata(iqp_) = pair.q * scale;
 
           for (int i = 0; i < 3; i++) {
@@ -2933,16 +2890,6 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
           }
 
           spTile.push_back(newp);
-
-          // ParticleType newp2;
-          // newp2.id() = ParticleType::NextID();
-          // newp2.cpu() = ParallelDescriptor::MyProc();
-          // newp2.rdata(iqp_) = newp.rdata(iqp_);
-          // for (int i = 0; i < 3; i++) {
-          //   newp2.rdata(iup_ + i) = newp.rdata(iup_ + i);
-          //   newp2.pos(ix_ + i) = newp.pos(ix_ + i);
-          // }
-          // pTile.push_back(newp2);
         }
       }
     } // for pti
@@ -3032,8 +2979,8 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
 
         for (int i : idx) {
           ParticleType newp;
-          newp.id() = ParticleType::NextID();
-          newp.cpu() = ParallelDescriptor::MyProc();
+          set_ids(newp);
+
           newp.rdata(iqp_) = sps[i].rdata(iqp_) * scale;
           for (int iDim = 0; iDim < nDim; iDim++) {
             newp.rdata(iup_ + iDim) = sps[i].rdata(iup_ + iDim);

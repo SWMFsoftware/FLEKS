@@ -767,8 +767,24 @@ T                  useAdaptiveSourcePPC
 
 If it is true, the particle number per cell per step for the sources will 
 be reduced to as low as 1 if the source density is low.
+</command>
 
+<command name="SUPID"
+	 alias="SUPID_FLEKS0,SUPID_FLEKS1,SUPID_FLEKS2"
+	 multiple="T">
+   <parameter name="nSpecies" type="integer" min="0" max="15" default="0" />
+    <for from="1" to="$nSpecies">
+      <parameter name="supID" type="integer"/>
+    </for>
 
+#SUPID_FLEKS0                                                 
+3                       nSpecies                              
+1                       supID                                 
+1                       supID                                 
+1                       supID    
+
+The starting supID for each species. This command should only exist in 
+a restart file.
 </command>
 
 <command name="TPREGION"

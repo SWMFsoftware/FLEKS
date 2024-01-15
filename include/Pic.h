@@ -140,6 +140,8 @@ private:
   // Boundary conditions for particles.
   amrex::Vector<BC> pBCs;
 
+  amrex::Vector<int> supIDs;
+
   // public methods
 public:
   Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo, int nGst,

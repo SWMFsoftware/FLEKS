@@ -55,6 +55,11 @@ struct Vel {
   }
 };
 
+struct IDs {
+  int id;
+  int supID;
+};
+
 template <int NStructReal, int NStructInt>
 class ParticlesIter : public amrex::ParIter<NStructReal, NStructInt> {
 public:
@@ -177,6 +182,14 @@ protected:
 
   BC bc; // boundary condition
 
+  // AMREX uses 40 bits(it is 40! Not a typo. See AMReX_Particle.H) to store
+  // p.id(), but it is converted to a 32-bit integer when saving to disk. To
+  // avoid the mismatch, FLEKS set the maximum value of p.id() to 2^31-1, and
+  // introduce a new integer 'supID' to avoid the overflow of p.id(). See
+  // set_ids() below. In short, a FLEKS particle is identified by p.cpu(),
+  // p.id() and p.idata(iSupID_).
+  int supID = 1;
+
 public:
   static const int iup_ = 0;
   static const int ivp_ = 1;
@@ -186,7 +199,7 @@ public:
   TestCase testCase;
 
   // Index of the integer data.
-  static const int iRecordCount_ = 0;
+  static const int iRecordCount_ = 1;
 
   Particles(Grid* gridIn, FluidInterface* fluidIn, TimeCtr* tcIn,
             const int speciesIDIn, const amrex::Real chargeIn,
@@ -278,6 +291,30 @@ public:
                                      amrex::Real dt);
 
   void convert_to_fluid_moments(amrex::Vector<amrex::MultiFab>& momentsMF);
+
+  IDs get_next_ids() {
+    constexpr long idMax = 2147483647L;
+    long id = ParticleType::NextID();
+    if (id > idMax) {
+      id = 1;
+      ParticleType::NextID(id);
+      supID++;
+    }
+
+    IDs ids = { static_cast<int>(id), supID };
+    return ids;
+  }
+
+  // set p.id(), p.cpu() and p.idata(iSupID_)
+  void set_ids(ParticleType& p) {
+    auto ids = get_next_ids();
+    p.id() = ids.id;
+    p.idata(iSupID_) = ids.supID;
+    p.cpu() = amrex::ParallelDescriptor::MyProc();
+  }
+
+  int sup_id() const { return supID; }
+  void set_sup_id(int in) { supID = in; }
 
   amrex::IntVect get_ref_ratio(const int iLev) const {
     const amrex::ParGDBBase* gdb = GetParGDB();

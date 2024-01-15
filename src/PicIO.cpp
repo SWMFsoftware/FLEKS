@@ -439,6 +439,13 @@ void Pic::save_restart_header(std::ofstream& headerFile) {
     headerFile << nPartPerCell[iy_] << "\t\t\tnParticleY\n";
     headerFile << nPartPerCell[iz_] << "\t\t\tnParticleZ\n";
     headerFile << "\n";
+
+    headerFile << "#SUPID" + command_suffix;
+    headerFile << nSpecies << "\t\t\tnSpecies\n";
+    for (int i = 0; i < nSpecies; i++) {
+      headerFile << parts[i]->sup_id() << "\t\t\tsupID\n";
+    }
+    headerFile << "\n";
   }
 }
 
@@ -566,7 +573,12 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
   realCompNames[PicParticles::iqp_] = "weight";
 
   Vector<int> writeIntComp;
+  for (int i = 0; i < nPicPartInt; ++i) {
+    writeIntComp.push_back(1);
+  }
   Vector<std::string> intCompNames;
+  intCompNames.resize(nPicPartInt);
+  intCompNames[iSupID_] = "supid";
 
   Real no2outL = pw.No2OutTable("X");
   Real no2outV = pw.No2OutTable("u");

@@ -102,6 +102,15 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("vacuum", vacuum);
   } else if (command == "#PARTICLELEVRATIO") {
     param.read_var("particleLevRatio", pLevRatio);
+
+  } else if (command == "#SUPID") {
+    int n = 0;
+    param.read_var("nSpecies", n);
+    for (int i = 0; i < n; i++) {
+      int supid;
+      param.read_var("supid", supid);
+      supIDs.push_back(supid);
+    }
   } else if (command == "#TESTCASE") {
     std::string testcase;
     param.read_var("testCase", testcase);
@@ -239,9 +248,9 @@ void Pic::post_regrid() {
   if (parts.empty()) {
     solveEM = true;
     for (int i = 0; i < nSpecies; i++) {
-      auto ptr = std::unique_ptr<PicParticles >(
+      auto ptr = std::unique_ptr<PicParticles>(
           new PicParticles(this, fi, tc, i, fi->get_species_charge(i),
-                          fi->get_species_mass(i), nPartPerCell, testCase));
+                           fi->get_species_mass(i), nPartPerCell, testCase));
 
       // If contains neutrals, assume this is OH-PT coupling, and do not solve
       // for EM fields.
@@ -266,13 +275,16 @@ void Pic::post_regrid() {
       ptr->particle_lev_ratio(pLevRatio);
 
       ptr->set_bc(pBCs[i]);
+
+      if (!supIDs.empty())
+        ptr->set_sup_id(supIDs[i]);
       //----------------------------------
 
       parts.push_back(std::move(ptr));
 
-      auto ptrSource = std::unique_ptr<PicParticles >(
+      auto ptrSource = std::unique_ptr<PicParticles>(
           new PicParticles(this, fi, tc, i, fi->get_species_charge(i),
-                          fi->get_species_mass(i), nPartPerCell, testCase));
+                           fi->get_species_mass(i), nPartPerCell, testCase));
 
       sourceParts.push_back(std::move(ptrSource));
     }
