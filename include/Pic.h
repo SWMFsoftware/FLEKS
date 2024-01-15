@@ -86,8 +86,8 @@ private:
 
   amrex::Vector<amrex::MultiFab> jHat;
 
-  amrex::Vector<std::unique_ptr<Particles<> > > parts;
-  amrex::Vector<std::unique_ptr<Particles<> > > sourceParts;
+  amrex::Vector<std::unique_ptr<PicParticles> > parts;
+  amrex::Vector<std::unique_ptr<PicParticles> > sourceParts;
 
   amrex::IntVect nPartPerCell = { AMREX_D_DECL(6, 6, 6) };
   amrex::Real qomEl = -100;
@@ -151,7 +151,7 @@ public:
     divESolver.set_tol(0.01);
     divESolver.set_nIter(20);
 
-    Particles<>::particlePosition = Staggered;
+    PicParticles::particlePosition = Staggered;
 
     //-----------------------------------------------------
     centerB.resize(n_lev_max());
@@ -185,7 +185,7 @@ public:
 
   void update(bool doReportIn = false);
 
-  Particles<> *get_particle_pointer(int i) { return parts[i].get(); }
+  PicParticles *get_particle_pointer(int i) { return parts[i].get(); }
 
   void set_stateOH(OHInterface *in) { stateOH = in; }
   void set_sourceOH(OHInterface *in) { sourcePT2OH = in; }

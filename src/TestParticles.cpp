@@ -52,8 +52,7 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
   const Real qdto2mc = charge / mass * 0.5 * dt;
 
   const int iLev = 0;
-  for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, iLev); pti.isValid();
-       ++pti) {
+  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
     const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
 
@@ -210,8 +209,7 @@ void TestParticles::move_and_save_neutrals(Real dt, Real tNowSI, bool doSave) {
   timing_func("TestParticles::move_neutrals");
 
   const int iLev = 0;
-  for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, iLev); pti.isValid();
-       ++pti) {
+  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     auto& particles = pti.GetArrayOfStructs();
     const Box& validBox = pti.validbox();
     for (auto& p : particles) {
@@ -291,7 +289,7 @@ void TestParticles::read_test_particle_list(
 
 //======================================================================
 // Trace the PIC particles that are in the list (listFiles).
-void TestParticles::add_test_particles_from_pic(Particles<>* pts) {
+void TestParticles::add_test_particles_from_pic(PicParticles* pts) {
   std::string funcName = "TP::add_test_particles_from_pic";
   timing_func(funcName);
 
@@ -504,8 +502,7 @@ unsigned long long int TestParticles::loop_particles(
   const int listUnitSize = 2 * sizeof(int) + sizeof(unsigned long long);
 
   const int iLev = 0;
-  for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, iLev); pti.isValid();
-       ++pti) {
+  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     auto& particles = pti.GetArrayOfStructs();
     for (auto& p : particles) {
       int nRecord = p.idata(iRecordCount_);
@@ -625,8 +622,7 @@ void TestParticles::print_record_buffer(char* buffer,
 
 void TestParticles::reset_record_counter() {
   const int iLev = 0;
-  for (ParticlesIter<nPTPartReal, nPTPartInt> pti(*this, iLev); pti.isValid();
-       ++pti) {
+  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     auto& particles = pti.GetArrayOfStructs();
     for (auto& p : particles) {
       p.idata(iRecordCount_) = 0;

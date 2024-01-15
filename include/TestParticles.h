@@ -4,7 +4,7 @@
 #include "BitArray.h"
 #include "Particles.h"
 
-class TestParticles : public Particles<nPTPartReal, nPTPartInt> {
+class TestParticles : public PTParticles {
 public:
   static const int iTPt_ = 0;
   static const int iTPx_ = 1;
@@ -52,7 +52,7 @@ public:
   void add_test_particles_from_fluid(
       amrex::Vector<Vel> tpStates = amrex::Vector<Vel>());
 
-  void add_test_particles_from_pic(Particles<>* pts);
+  void add_test_particles_from_pic(PicParticles* pts);
 
   void reset_record_counter();
 

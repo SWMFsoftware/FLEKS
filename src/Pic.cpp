@@ -239,8 +239,8 @@ void Pic::post_regrid() {
   if (parts.empty()) {
     solveEM = true;
     for (int i = 0; i < nSpecies; i++) {
-      auto ptr = std::unique_ptr<Particles<> >(
-          new Particles<>(this, fi, tc, i, fi->get_species_charge(i),
+      auto ptr = std::unique_ptr<PicParticles >(
+          new PicParticles(this, fi, tc, i, fi->get_species_charge(i),
                           fi->get_species_mass(i), nPartPerCell, testCase));
 
       // If contains neutrals, assume this is OH-PT coupling, and do not solve
@@ -270,8 +270,8 @@ void Pic::post_regrid() {
 
       parts.push_back(std::move(ptr));
 
-      auto ptrSource = std::unique_ptr<Particles<> >(
-          new Particles<>(this, fi, tc, i, fi->get_species_charge(i),
+      auto ptrSource = std::unique_ptr<PicParticles >(
+          new PicParticles(this, fi, tc, i, fi->get_species_charge(i),
                           fi->get_species_mass(i), nPartPerCell, testCase));
 
       sourceParts.push_back(std::move(ptrSource));
@@ -609,13 +609,13 @@ void Pic::sum_moments(bool updateDt) {
         tc->set_dt(dt);
       }
 
-      if (Particles<>::particlePosition == NonStaggered) {
+      if (PicParticles::particlePosition == NonStaggered) {
         tc->set_dt(dt);
       }
     }
 
     if (doReport) {
-      if (Particles<>::particlePosition == Staggered) {
+      if (PicParticles::particlePosition == Staggered) {
         Print() << printPrefix << std::setprecision(5)
                 << "dt = " << tc->get_dt_si()
                 << " dtNext = " << tc->get_next_dt_si()
@@ -764,7 +764,7 @@ void Pic::calculate_phi(LinearSolver& solver) {
   }
 
   Real coef = 1;
-  if (Particles<>::particlePosition == Staggered) {
+  if (PicParticles::particlePosition == Staggered) {
     coef = 1.0 / rhoTheta;
   }
 
@@ -852,7 +852,7 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
   apply_BC(cellStatus[iLev], centerNetChargeNew[iLev], 0,
            centerNetChargeNew[iLev].nComp(), &Pic::get_zero, iLev);
 
-  if (Particles<>::particlePosition == NonStaggered) {
+  if (PicParticles::particlePosition == NonStaggered) {
     MultiFab::Copy(centerNetChargeN[iLev], centerNetChargeNew[iLev], 0, 0,
                    centerNetChargeN[iLev].nComp(),
                    centerNetChargeN[iLev].nGrow());
@@ -883,7 +883,7 @@ void Pic::update(bool doReportIn) {
 
   Real tStart = second();
 
-  if (Particles<>::particlePosition == NonStaggered) {
+  if (PicParticles::particlePosition == NonStaggered) {
     update_part_loc_to_half_stage();
   }
 

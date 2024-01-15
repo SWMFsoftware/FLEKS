@@ -884,8 +884,8 @@ void Domain::read_param(const bool readGridInfo) {
       param.read_var("doStaggering", doStaggering);
       ParticleStaggering ps = doStaggering ? Staggered : NonStaggered;
 
-      Particles<nPicPartReal, 0>::particlePosition = ps;
-      Particles<nPTPartReal, nPTPartInt>::particlePosition = ps;
+      PicParticles::particlePosition = ps;
+      PTParticles::particlePosition = ps;
 
     } else if (command == "#MAXBLOCKSIZE") {
       // The block size in each direction can not larger than maxBlockSize.

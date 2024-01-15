@@ -560,10 +560,10 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
 
   Vector<std::string> realCompNames;
   realCompNames.resize(nPicPartReal);
-  realCompNames[Particles<>::iup_] = "velocity_x";
-  realCompNames[Particles<>::ivp_] = "velocity_y";
-  realCompNames[Particles<>::iwp_] = "velocity_z";
-  realCompNames[Particles<>::iqp_] = "weight";
+  realCompNames[PicParticles::iup_] = "velocity_x";
+  realCompNames[PicParticles::ivp_] = "velocity_y";
+  realCompNames[PicParticles::iwp_] = "velocity_z";
+  realCompNames[PicParticles::iqp_] = "weight";
 
   Vector<int> writeIntComp;
   Vector<std::string> intCompNames;

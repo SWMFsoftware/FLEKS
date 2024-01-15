@@ -444,8 +444,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
   timing_func("Pts::sum_to_center");
 
   const int iLev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-       ++pti) {
+  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real> const& chargeArr = netChargeMF[pti].array();
     Array4<RealCMM> const& mmArr = centerMM[pti].array();
 
@@ -591,8 +590,7 @@ std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
     sum[i] = 0;
 
   const int iLev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-       ++pti) {
+  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     const AoS& particles = pti.GetArrayOfStructs();
     for (const auto& p : particles) {
       if (p.id() < 0)
@@ -632,8 +630,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     timing_func("Pts::sum_moments_1");
     momentsMF[iLev].setVal(0.0);
-    for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-         ++pti) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       Array4<Real> const& momentsArr = momentsMF[iLev][pti].array();
 
       const AoS& particles = pti.GetArrayOfStructs();
@@ -738,8 +735,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
   Real qdto2mc = charge / mass * 0.5 * dt;
 
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-       ++pti) {
+  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
     Array4<Real> const& jArr = jHat[pti].array();
     Array4<RealMM> const& mmArr = nodeMM[pti].array();
@@ -938,8 +934,7 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
   Real qdto2mc = charge / mass * 0.5 * dt;
 
   const int iLev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-       ++pti) {
+  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
     Array4<Real> const& jArr = jHat[pti].array();
 
@@ -1100,8 +1095,7 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
   Real dtLoc = 0.5 * dt;
 
   const int iLev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-       ++pti) {
+  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     AoS& particles = pti.GetArrayOfStructs();
     const Box& validBox = pti.validbox();
     for (auto& p : particles) {
@@ -1157,8 +1151,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-         ++pti) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       const Array4<Real const>& nodeEArr = nodeE[iLev][pti].array();
       const Array4<Real const>& nodeBArr = nodeB[iLev][pti].array();
 
@@ -1252,8 +1245,7 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
   timing_func("Pts::neutral_mover");
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-         ++pti) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       AoS& particles = pti.GetArrayOfStructs();
       const Box& validBox = pti.validbox();
       for (auto& p : particles) {
@@ -1291,8 +1283,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
   Real epsMax = 0;
 
   const int iLev = 0;
-  for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-       ++pti) {
+  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real const> const& phiArr = phiMF[pti].array();
 
     const Array4<int const>& status = cell_status(iLev)[pti].array();
@@ -1452,8 +1443,7 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
     return;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-         ++pti) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
 
       amrex::Vector<ParticleType> newparticles;
 
@@ -1768,8 +1758,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
     const Real vol = dx[iLev][ix_] * dx[iLev][iy_] * dx[iLev][iz_];
     const Real vacuumMass = vacuum * vol;
 
-    for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-         ++pti) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
 
       amrex::Vector<ParticleType> newparticles;
 
@@ -2288,8 +2277,7 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
     const int nPartGoal = nPartPerCell[ix_] * nPartPerCell[iy_] *
                           nPartPerCell[iz_] * limit * pow(pLevRatio, iLev);
 
-    for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-         ++pti) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
 
       // It is assumed the tile size is 1x1x1.
       Box bx = pti.tilebox();
@@ -2678,7 +2666,7 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charge_exchange(
     Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH,
     SourceInterface* source, bool kineticSource,
-    amrex::Vector<std::unique_ptr<Particles<> > >& sourceParts,
+    amrex::Vector<std::unique_ptr<PicParticles> >& sourceParts,
     bool doSelectRegion, int nppc) {
   std::string nameFunc = "Pts::charge_exchange";
 
@@ -2702,8 +2690,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 
   Real maxExchangeRatio = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-         ++pti) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       AoS& particles = pti.GetArrayOfStructs();
 
       // It is assumed the tile size is 1x1x1.
@@ -2935,8 +2922,8 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
             pair.vp[i] *= stateOH->get_Si2NoV();
           }
 
-          Particle<nPicPartReal, 0> newp;
-          newp.id() = Particle<nPicPartReal, 0>::NextID();
+          PicParticle newp;
+          newp.id() = PicParticle::NextID();
           newp.cpu() = ParallelDescriptor::MyProc();
           newp.rdata(iqp_) = pair.q * scale;
 
@@ -2974,11 +2961,10 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_source_particles(
-    std::unique_ptr<Particles<nPicPartReal> >& sourcePart, IntVect ppc,
+    std::unique_ptr<PicParticles>& sourcePart, IntVect ppc,
     const bool adaptivePPC) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev); pti.isValid();
-         ++pti) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       // It is assumed the tile size is 1x1x1.
       Box bx = pti.tilebox();
       auto cellIdx = bx.smallEnd();
@@ -3062,5 +3048,5 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
 
 // Since Particles is a template, it is necessary to explicitly instantiate
 // with template arguments.
-template class Particles<nPicPartReal>;
+template class Particles<nPicPartReal, nPicPartInt>;
 template class Particles<nPTPartReal, nPTPartInt>;

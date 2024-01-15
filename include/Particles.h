@@ -55,7 +55,7 @@ struct Vel {
   }
 };
 
-template <int NStructReal = nPicPartReal, int NStructInt = 0>
+template <int NStructReal, int NStructInt>
 class ParticlesIter : public amrex::ParIter<NStructReal, NStructInt> {
 public:
   using amrex::ParIter<NStructReal, NStructInt>::ParIter;
@@ -91,7 +91,16 @@ In short, once the grids or distributions maps of Pic or ParticleTracker change,
 the particle contains aware of the changes through the m_gdb pointer.
 */
 
-template <int NStructReal = nPicPartReal, int NStructInt = 0>
+using PicParticle = amrex::Particle<nPicPartReal, nPicPartInt>;
+using nPTParticle = amrex::Particle<nPTPartReal, nPTPartInt>;
+
+// Forward declaration.
+template <int NStructReal, int NStructInt> class Particles;
+
+using PicParticles = Particles<nPicPartReal, nPicPartInt>;
+using PTParticles = Particles<nPTPartReal, nPTPartInt>;
+
+template <int NStructReal, int NStructInt>
 class Particles : public amrex::AmrParticleContainer<NStructReal, NStructInt> {
 public:
   static ParticleStaggering particlePosition;
@@ -117,6 +126,8 @@ public:
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::GetParGDB;
 
   using AoS = amrex::ArrayOfStructs<NStructReal, NStructInt>;
+
+  using PIter = ParticlesIter<NStructReal, NStructInt>;
 
 protected:
   Grid* grid = nullptr;
@@ -238,12 +249,11 @@ public:
   void charge_exchange(
       amrex::Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH,
       SourceInterface* source, bool kineticSource,
-      amrex::Vector<std::unique_ptr<Particles<nPicPartReal> > >& sourceParts,
+      amrex::Vector<std::unique_ptr<PicParticles> >& sourceParts,
       bool doSelectRegion, int nppc);
 
-  void add_source_particles(
-      std::unique_ptr<Particles<nPicPartReal> >& sourcePart,
-      amrex::IntVect ppc, const bool adaptivePPC);
+  void add_source_particles(std::unique_ptr<PicParticles>& sourcePart,
+                            amrex::IntVect ppc, const bool adaptivePPC);
 
   void mover(const amrex::Vector<amrex::MultiFab>& nodeE,
              const amrex::Vector<amrex::MultiFab>& nodeB, amrex::Real dt,
@@ -373,8 +383,7 @@ public:
   inline void label_particles_outside_active_region() {
     for (int iLev = 0; iLev < n_lev(); iLev++)
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
-        for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev);
-             pti.isValid(); ++pti) {
+        for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
           AoS& particles = pti.GetArrayOfStructs();
           if (cell_status(iLev).empty()) {
             for (auto& p : particles) {
@@ -395,8 +404,7 @@ public:
   inline void label_particles_outside_active_region_general() {
     for (int iLev = 0; iLev < n_lev(); iLev++)
       if (NumberOfParticlesAtLevel(iLev, true, true) > 0) {
-        for (ParticlesIter<NStructReal, NStructInt> pti(*this, iLev);
-             pti.isValid(); ++pti) {
+        for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
           AoS& particles = pti.GetArrayOfStructs();
           for (auto& p : particles) {
             if (is_outside_active_region(p)) {
@@ -490,11 +498,11 @@ template <int NStructReal, int NStructInt>
 ParticleStaggering Particles<NStructReal, NStructInt>::particlePosition =
     Staggered;
 
-class IOParticles : public Particles<nPicPartReal> {
+class IOParticles : public PicParticles {
 public:
   IOParticles() = delete;
 
-  IOParticles(Particles<>& other, Grid* gridIn, amrex::Real no2outL = 1,
+  IOParticles(PicParticles& other, Grid* gridIn, amrex::Real no2outL = 1,
               amrex::Real no2outV = 1, amrex::Real no2OutM = 1,
               amrex::RealBox IORange = amrex::RealBox());
   ~IOParticles() = default;
