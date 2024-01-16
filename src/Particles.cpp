@@ -249,7 +249,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           // Convert 'density changing rate' to 'density' if necessary.
           p.rdata(iqp_) = q * dt;
 
-          if (NStructInt > 0) {
+          if (NStructInt > iRecordCount_) {
             // For test particle only.
             p.idata(iRecordCount_) = 0;
           }
