@@ -180,7 +180,7 @@ public:
     pBCs.resize(10);
 
 #ifdef _PT_COMPONENT_
-    // kineticSource = true;
+    kineticSource = true;
 #endif
   };
   ~Pic(){};
