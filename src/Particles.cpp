@@ -1454,15 +1454,13 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
           totalMoment[i] += fabs(p.rdata(iqp_) * p.rdata(iup_ + i));
       }
       Real avg = totalMass / particles.size();
-      Real avgVel[nDimVel];
-      for (int i = 0; i < nDimVel; i++) {
-        avgVel[i] = totalMoment[i] / totalMass;
-      }
 
       // Real maxWeight = avg + maxRatio * vars;
       Real maxWeight = avg * maxRatio;
 
       if (seperateVelocity) {
+        const auto lo = lbound(pti.tilebox());
+        set_random_seed(iLev, lo.x, lo.y, lo.z, IntVect(444));
         Vector<ParticleType*> pold;
         for (size_t ip = 0; ip < particles.size(); ip++) {
           Real qp1 = particles[ip].rdata(iqp_);
@@ -1470,7 +1468,7 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
             continue;
           pold.push_back(&(particles[ip]));
         }
-        split_particles_by_velocity(pold, newparticles, avgVel);
+        split_particles_by_velocity(pold, newparticles);
       } else {
 
         const auto lo = lbound(pti.tilebox());
@@ -1546,8 +1544,7 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
-    Vector<ParticleType*>& plist, Vector<ParticleType>& newparticles,
-    Real avgVel[]) {
+    Vector<ParticleType*>& plist, Vector<ParticleType>& newparticles) {
 
   if (plist.size() < 2)
     return;
@@ -1628,7 +1625,7 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
     if (dspeed / dvCell > 2)
       continue;
 
-    split_by_seperate_velocity(p1, p2, p3, p4, avgVel);
+    split_by_seperate_velocity(p1, p2, p3, p4);
 
     newparticles.push_back(p3);
     newparticles.push_back(p4);
@@ -1637,8 +1634,7 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
-    ParticleType& p1, ParticleType& p2, ParticleType& p3, ParticleType& p4,
-    amrex::Real avgVel[]) {
+    ParticleType& p1, ParticleType& p2, ParticleType& p3, ParticleType& p4) {
   // Print() << "Old: p1 = " << p1 << std::endl;
   // Print() << "Old: p2 = " << p2 << std::endl;
 
@@ -1665,7 +1661,7 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
   {
     Real utmp[nDimVel];
     for (int i = 0; i < nDimVel; i++) {
-      utmp[i] = u[i] - avgVel[i];
+      utmp[i] = randNum() - 0.5;
     }
 
     a_cross_b(du1, utmp, du2);
@@ -1755,19 +1751,6 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
       if (totalMass < vacuumMass)
         continue;
 
-      Real totalMoment[nDimVel] = { 0, 0, 0 };
-      Real avgVel[nDimVel];
-      if (is_neutral()) {
-        for (auto& p : particles) {
-          totalMass += fabs(p.rdata(iqp_));
-          for (int i = 0; i < nDimVel; i++)
-            totalMoment[i] += fabs(p.rdata(iqp_) * p.rdata(iup_ + i));
-        }
-        for (int i = 0; i < nDimVel; i++) {
-          avgVel[i] = totalMoment[i] / totalMass;
-        }
-      }
-
       // Find the 'heaviest' nNew particles by sorting the weight (charge).-----
 
       // Sort the particles by the location first to make sure the results
@@ -1819,7 +1802,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
                  zMax = Geom(iLev).HiEdge(hi.z, iz_) -
                         Geom(iLev).CellSize()[iz_] * 1e-10;
 
-      if (is_neutral()) {
+      if (is_neutral() || seperateVelocity) {
         set_random_seed(iLev, lo.x, lo.y, lo.z, IntVect(888));
       }
 
@@ -1828,7 +1811,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
         for (int ip = 0; ip < nSplit; ip++) {
           pold.push_back(&(particles[ip]));
         }
-        split_particles_by_velocity(pold, newparticles, avgVel);
+        split_particles_by_velocity(pold, newparticles);
       } else {
         for (int ip = 0; ip < nSplit; ip++) {
           auto& p = particles[ip];
