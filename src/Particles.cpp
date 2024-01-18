@@ -2911,6 +2911,11 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
       if (sps.size() == 0)
         continue;
 
+      Real rhoSource = 0;
+      for (auto& p : sps) {
+        rhoSource += p.rdata(iqp_);
+      }
+
       if (adaptivePPC) {
         set_random_seed(iLev, cellIdx[0], cellIdx[1], cellIdx[2], IntVect(787));
         // Adjust ppc so that the weight of the
@@ -2926,11 +2931,6 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
           rho += p.rdata(iqp_);
         }
 
-        Real rhoSource = 0;
-        for (auto& p : sps) {
-          rhoSource += p.rdata(iqp_);
-        }
-
         Real avgInitW = rho / initPPC;
         Real avgSourceW = rhoSource / sourcePPC;
 
@@ -2942,35 +2942,37 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
             ppc[iDim] = std::max(1, int(ppc[iDim] * ratio));
           }
         }
+      }
 
-        Vector<Real> weights;
-        weights.resize(sps.size());
-        for (size_t i = 0; i < sps.size(); i++) {
-          weights[i] = sps[i].rdata(iqp_);
-        }
-        int nppc = 1;
+      Vector<Real> weights;
+      weights.resize(sps.size());
+      for (size_t i = 0; i < sps.size(); i++) {
+        weights[i] = sps[i].rdata(iqp_);
+      }
+
+      int nppc = 1;
+      for (int iDim = 0; iDim < nDim; iDim++) {
+        nppc *= ppc[iDim];
+      }
+
+      std::vector<int> idx = random_select_weighted_n(weights, nppc, randNum);
+
+      Real wTmp = 0;
+      for (int i : idx) {
+        wTmp += sps[i].rdata(iqp_);
+      }
+      Real scale = rhoSource / wTmp;
+
+      for (int i : idx) {
+        ParticleType newp;
+        set_ids(newp);
+
+        newp.rdata(iqp_) = sps[i].rdata(iqp_) * scale;
         for (int iDim = 0; iDim < nDim; iDim++) {
-          nppc *= ppc[iDim];
+          newp.rdata(iup_ + iDim) = sps[i].rdata(iup_ + iDim);
+          newp.pos(ix_ + iDim) = sps[i].pos(ix_ + iDim);
         }
-        std::vector<int> idx = random_select_weighted_n(weights, nppc, randNum);
-
-        Real wTmp = 0;
-        for (int i : idx) {
-          wTmp += sps[i].rdata(iqp_);
-        }
-        Real scale = rhoSource / wTmp;
-
-        for (int i : idx) {
-          ParticleType newp;
-          set_ids(newp);
-
-          newp.rdata(iqp_) = sps[i].rdata(iqp_) * scale;
-          for (int iDim = 0; iDim < nDim; iDim++) {
-            newp.rdata(iup_ + iDim) = sps[i].rdata(iup_ + iDim);
-            newp.pos(ix_ + iDim) = sps[i].pos(ix_ + iDim);
-          }
-          pTile.push_back(newp);
-        }
+        pTile.push_back(newp);
       }
     }
   }
