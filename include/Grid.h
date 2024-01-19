@@ -25,6 +25,7 @@
 #include "FleksDistributionMap.h"
 #include "GridUtility.h"
 #include "Regions.h"
+#include "TimeCtr.h"
 #include "UMultiFab.h"
 #include "Utility.h"
 
@@ -379,6 +380,20 @@ public:
     ba = activeRegion;
     const int iLev = 0;
     ba.maxSize(max_grid_size[iLev]);
+  };
+
+  void WriteMFseries(amrex::Vector<amrex::MultiFab>& MF, TimeCtr tc, int nstep,
+                     int nlev = 0, std::string st = "WriteMF",
+                     amrex::Vector<std::string> var = {}) {
+    int cycle = tc.get_cycle();
+    std::string st2 = std::to_string(cycle);
+    amrex::Real time = tc.get_time();
+    std::string st3 = std::to_string(time);
+
+    st = st + "_" + st2 + "_" + st3;
+    if (cycle % nstep == 0) {
+      WriteMF(MF, nlev, st, var);
+    }
   };
 
   void WriteMF(amrex::iMultiFab& MF, std::string st = "WriteMF",
