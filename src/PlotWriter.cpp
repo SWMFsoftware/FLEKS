@@ -657,7 +657,7 @@ int PlotWriter::get_time_digits(double second) const {
     /*Example: For the input second = 3668 = 1hour + 1min + 8s,
 the output will be a int of 010108*/
 
-    int iHr, iMn, iSc;
+    long iHr, iMn, iSc;
     iHr = floor(second / 3600);
     second -= iHr * 3600;
     iMn = floor(second / 60);
