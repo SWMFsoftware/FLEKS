@@ -392,7 +392,7 @@ template <class Vec, class Rand> void shuffle_fish_yates(Vec& arr, Rand& rd) {
 // Randomly select m elements from an array with weights. These m elements can
 // not repeat.
 template <class Vec, class Rand>
-std::vector<int> random_select_weighted_n(Vec& arr, int m, Rand& rd) {
+std::vector<int> random_select_weighted_n(Vec arr, int m, Rand& rd) {
 
   const int n = arr.size();
   std::vector<int> idx;
@@ -424,6 +424,15 @@ std::vector<int> random_select_weighted_n(Vec& arr, int m, Rand& rd) {
     if (selected[i] == iNotSelected) {
       idx.push_back(i);
       selected[i] = iSelected;
+
+      { // 'Remove' arr[i] so that it will not be selected again.
+        arr[i] = 0;
+        wt = 0;
+        for (int j = 0; j < arr.size(); j++) {
+          wt += arr[j];
+          w1[j] = wt;
+        }
+      }
     }
   }
 
