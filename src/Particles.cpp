@@ -1570,6 +1570,7 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
   Real dvMax = 0;
   for (int iDir = 0; iDir < nDimVel; iDir++) {
     Real dv = velMax_D[iDir] - velMin_D[iDir];
+    if(dv<1e-16) dv = 1e-16;
     velMax_D[iDir] += 1e-3 * dv;
     velMin_D[iDir] -= 1e-3 * dv;
     dv = velMax_D[iDir] - velMin_D[iDir];
@@ -1587,6 +1588,7 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
     for (int iDim = 0; iDim < nDimVel; iDim++) {
       iCell_D[iDim] = fastfloor((pcl.rdata(iDim) - velMin_D[iDim]) * invDv);
     }
+    
     phasePartIdx_III[iCell_D[ix_]][iCell_D[iy_]][iCell_D[iz_]].push_back(pid);
   }
 
@@ -1671,8 +1673,11 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
       du2Amp += pow(du2[i], 2);
     }
     du2Amp = sqrt(du2Amp);
-
-    Real scale = dSpeed / du2Amp;
+    
+    Real scale = 0;
+    if(du2Amp>1e-16){
+      scale = dSpeed / du2Amp;
+    }
     for (int i = 0; i < nDimVel; i++) {
       du2[i] *= scale;
     }
