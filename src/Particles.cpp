@@ -1570,7 +1570,8 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
   Real dvMax = 0;
   for (int iDir = 0; iDir < nDimVel; iDir++) {
     Real dv = velMax_D[iDir] - velMin_D[iDir];
-    if(dv<1e-16) dv = 1e-16;
+    if (dv < 1e-16)
+      dv = 1e-16;
     velMax_D[iDir] += 1e-3 * dv;
     velMin_D[iDir] -= 1e-3 * dv;
     dv = velMax_D[iDir] - velMin_D[iDir];
@@ -1588,7 +1589,7 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
     for (int iDim = 0; iDim < nDimVel; iDim++) {
       iCell_D[iDim] = fastfloor((pcl.rdata(iDim) - velMin_D[iDim]) * invDv);
     }
-    
+
     phasePartIdx_III[iCell_D[ix_]][iCell_D[iy_]][iCell_D[iz_]].push_back(pid);
   }
 
@@ -1673,9 +1674,9 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
       du2Amp += pow(du2[i], 2);
     }
     du2Amp = sqrt(du2Amp);
-    
+
     Real scale = 0;
-    if(du2Amp>1e-16){
+    if (du2Amp > 1e-16) {
       scale = dSpeed / du2Amp;
     }
     for (int i = 0; i < nDimVel; i++) {
@@ -2646,6 +2647,16 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       AoS& particles = pti.GetArrayOfStructs();
+
+      if (kineticSource) {
+        // Sort the particles by the location first to make sure the results
+        // are the same for different number of processors
+        std::sort(particles.begin(), particles.end(),
+                  [](const ParticleType& pl, const ParticleType& pr) {
+                    return pl.pos(ix_) + pl.pos(iy_) + pl.pos(iz_) >
+                           pr.pos(ix_) + pr.pos(iy_) + pr.pos(iz_);
+                  });
+      }
 
       // It is assumed the tile size is 1x1x1.
       Box bx = pti.tilebox();
