@@ -148,7 +148,6 @@ void fill_fine_lev_from_coarse(amrex::FabArray<FAB>& coarse,
                                const int nComp, const amrex::IntVect ratio,
                                const amrex::Geometry& cgeom,
                                const amrex::Geometry& fgeom,
-                               const amrex::iMultiFab& fstatus,
                                amrex::Interpolater& mapper) {
   BL_PROFILE("fill_fine_lev_from_coarse");
 
@@ -167,7 +166,7 @@ void fill_fine_lev_from_coarse(amrex::FabArray<FAB>& coarse,
     const auto& box = mfi.fabbox();
     const auto& data = fab.array();
 
-    const auto& statusArr = fstatus[mfi].array();
+    
     const auto& tmp = ftmp[mfi].array();
 
     const auto lo = amrex::lbound(box);
