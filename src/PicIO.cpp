@@ -126,6 +126,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
           for (int i = lo[ix_]; i <= hi[ix_]; ++i) {
             const double xp = Geom(iLev).LoEdge(i, ix_);
             if (bit::is_owner(typeArr(i, j, k)) &&
+                !bit::is_refined(typeArr(i, j, k)) &&
                 writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
 
               pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
@@ -280,6 +281,8 @@ double Pic::get_var(std::string var, const int iLev, const int ix, const int iy,
       value = Geom(iLev).LoEdge(iy, iy_);
     } else if (var.substr(0, 1) == "Z") {
       value = Geom(iLev).LoEdge(iz, iz_);
+    } else if (var.substr(0, 2) == "dx") {
+      value = Geom(iLev).CellSize(ix_);
     } else if (var.substr(0, 2) == "Ex") {
       const Array4<Real const>& arr =
           nodeE[iLev][mfi].array(); // Talha- check // no loop

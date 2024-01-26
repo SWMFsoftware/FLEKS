@@ -121,7 +121,7 @@ particlesN - location, velocity and weight of species N particles (N=0,1,..)
 fluid      - all the fluid variables of the first two species:
              'rhoS0 rhoS1 Bx By Bz Ex Ey Ez uxS0 uyS0 uzS0 uxS1 uyS1 uzS1 pS0 pS1 pXXS0 pYYS0 pZZS0 pXYS0 pXZS0 pYZS0 pXXS1 pYYS1 pZZS1 pXYS1 pXZS1 pYZS1'
 var        - read from parameter file. The available variables:
-             'Bx By Bz Ex Ey Ez ppcS* rhoS* uxS* uyS* uzS* pS* pXXS* pYYS* pZZS* pXYS* pXZS* pYZS* qc divEc',
+             'Bx By Bz Ex Ey Ez ppcS* rhoS* uxS* uyS* uzS* pS* pXXS* pYYS* pZZS* pXYS* pXZS* pYZS* qc divEc dx',
              where '*' is the number of the species. The variables 'qc' and
 	     'divEc' are the net charge and the divergence of the electric field
 	     at the cell center, respectively.
