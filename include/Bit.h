@@ -31,7 +31,7 @@ constexpr static int iNew_ = 4;
 // node. This box is the 'owner' of this node.
 constexpr static int iOwner_ = 5;
 
-// For cell only. If a cell is refined or not.
+// If a cell/node is refined or not.
 constexpr static int iRefined_ = 6;
 //=========================================================
 

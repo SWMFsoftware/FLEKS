@@ -359,6 +359,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
                          [&] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
                            bit::set_lev_boundary(nodeArr(i, j, k));
                            bit::set_not_domain_boundary(nodeArr(i, j, k));
+                           bit::set_not_refined(nodeArr(i, j, k));
                          });
     }
 
@@ -476,6 +477,20 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
                     if (bit::is_domain_boundary(nodeArr(ii, jj, kk))) {
                       bit::set_domain_edge(nodeArr(i, j, k));
                     }
+                  }
+                });
+          });
+
+      // Set the 'refined' status for nodes
+      const auto& cell = cellStatus[iLev][mfi].array();
+      amrex::ParallelFor(
+          box, [&] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            Box subBox(IntVect{ AMREX_D_DECL(i - 1, j - 1, k - 1) },
+                       IntVect{ AMREX_D_DECL(i, j, k) });
+            amrex::ParallelFor(
+                subBox, [&] AMREX_GPU_DEVICE(int ii, int jj, int kk) noexcept {
+                  if (bit::is_refined(cell(ii, jj, kk))) {
+                    bit::set_refined(nodeArr(i, j, k));
                   }
                 });
           });
