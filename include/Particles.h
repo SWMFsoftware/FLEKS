@@ -211,8 +211,8 @@ public:
   int n_lev_max() const { return maxLevel() + 1; }
 
   void add_particles_domain();
-  void add_particles_cell(const int iLev, const amrex::MFIter& mfi, const int i,
-                          const int j, const int k,
+  void add_particles_cell(const int iLev, const amrex::MFIter& mfi,
+                          const amrex::IntVect ijk,
                           const FluidInterface* interface, bool doVacuumLimit,
                           amrex::IntVect ppc = amrex::IntVect(),
                           const Vel tpVel = Vel(), amrex::Real dt = -1);
@@ -229,16 +229,16 @@ public:
 
   // Copy particles from (ip,jp,kp) to (ig, jg, kg) and shift boundary
   // particle's coordinates accordingly.
-  void outflow_bc(const amrex::MFIter& mfi, const int ig, const int jg,
-                  const int kg, const int ip, const int jp, const int kp);
+  void outflow_bc(const amrex::MFIter& mfi, const amrex::IntVect ijkGst,
+                  const amrex::IntVect ijkPhy);
 
   // 1) Only inject particles ONCE for one ghost cells. This function decides
   // which block injects particles. 2) bx should be a valid box 3) The cell
   // (i,j,k) can NOT be the outmost ghost cell layer!!!!
   bool do_inject_particles_for_this_cell(const amrex::Box& bx,
                                          const amrex::Array4<const int>& status,
-                                         const int i, const int j, const int k,
-                                         int& isrc, int& jsrc, int& ksrc);
+                                         const amrex::IntVect ijk,
+                                         amrex::IntVect& ijksrc);
 
   amrex::Real sum_moments(amrex::Vector<amrex::MultiFab>& momentsMF,
                           amrex::Vector<amrex::MultiFab>& nodeBMF,
@@ -332,7 +332,7 @@ public:
     }
   }
 
-  long calc_random_seed(const int iLev, const int i, const int j, const int k,
+  long calc_random_seed(const int iLev, const amrex::IntVect ijk,
                         const amrex::IntVect nPPC) {
     amrex::IntVect nCell = Geom(iLev).Domain().size();
 
@@ -350,6 +350,10 @@ public:
     for (int iDim = 0; iDim < nDim; iDim++)
       npcel *= nPPC[iDim];
 
+    int i = ijk[0];
+    int j = ijk[1];
+    int k = nDim > 2 ? ijk[2] : 0;
+
     // What if the seed overflow?
     const long seed =
         (speciesID + 3) * nRandom * npcel *
@@ -357,9 +361,9 @@ public:
     return seed;
   }
 
-  long set_random_seed(const int iLev, const int i, const int j, const int k,
+  long set_random_seed(const int iLev, const amrex::IntVect ijk,
                        const amrex::IntVect nPPC) {
-    long seed = calc_random_seed(iLev, i, j, k, nPPC);
+    long seed = calc_random_seed(iLev, ijk, nPPC);
     randNum.set_seed(seed);
     return seed;
   }
@@ -370,11 +374,6 @@ public:
 
   const amrex::iMultiFab& node_status(int iLev) const {
     return grid->node_status(iLev);
-  }
-
-  ParticleTileType& get_particle_tile(int iLev, const amrex::MFIter& mfi, int i,
-                                      int j, int k) {
-    return get_particle_tile(iLev, mfi, amrex::IntVect(AMREX_D_DECL(i, j, k)));
   }
 
   ParticleTileType& get_particle_tile(int iLev, const amrex::MFIter& mfi,

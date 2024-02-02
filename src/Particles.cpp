@@ -55,23 +55,20 @@ Particles<NStructReal, NStructInt>::Particles(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::outflow_bc(const MFIter& mfi,
-                                                    const int ig, const int jg,
-                                                    const int kg, const int ip,
-                                                    const int jp,
-                                                    const int kp) {
+void Particles<NStructReal, NStructInt>::outflow_bc(
+    const MFIter& mfi, const amrex::IntVect ijkGst,
+    const amrex::IntVect ijkPhy) {
   const int iLev = 0;
 
-  IntVect idxGst(AMREX_D_DECL(ig, jg, kg));
-  ParticleTileType& pGst = get_particle_tile(iLev, mfi, idxGst);
+  ParticleTileType& pGst = get_particle_tile(iLev, mfi, ijkGst);
 
-  IntVect idxPhy(AMREX_D_DECL(ip, jp, kp));
-  ParticleTileType& pPhy = get_particle_tile(iLev, mfi, idxGst);
+  ParticleTileType& pPhy = get_particle_tile(iLev, mfi, ijkPhy);
+
   AoS& phyParts = pPhy.GetArrayOfStructs();
 
   Real dxshift[3] = { 0, 0, 0 };
   for (int i = 0; i < nDim; i++) {
-    dxshift[i] = Geom(iLev).CellSize(i) * (idxGst[i] - idxPhy[i]);
+    dxshift[i] = Geom(iLev).CellSize(i) * (ijkGst[i] - ijkPhy[i]);
   }
 
   Vector<ParticleType> pList;
@@ -106,7 +103,7 @@ void Particles<NStructReal, NStructInt>::outflow_bc(const MFIter& mfi,
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_cell(
-    const int iLev, const MFIter& mfi, const int i, const int j, const int k,
+    const int iLev, const MFIter& mfi, IntVect ijk,
     const FluidInterface* interface, bool doVacuumLimit, IntVect ppc,
     const Vel tpVel, Real dt) {
 
@@ -124,7 +121,12 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
     nPPC = ppc;
   }
 
-  set_random_seed(iLev, i, j, k, nPPC);
+  set_random_seed(iLev, ijk, nPPC);
+
+  // TODO: to be removed
+  int i = ijk[0];
+  int j = ijk[1];
+  int k = ijk[2];
 
   Real x, y, z; // Particle location
 
@@ -138,7 +140,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 
   const Real vol2Npcel = qomSign * vol / npcel;
 
-  ParticleTileType& particles = get_particle_tile(iLev, mfi, i, j, k);
+  ParticleTileType& particles = get_particle_tile(iLev, mfi, ijk);
 
   int icount = 0;
   // Loop over particles inside grid cell i, j, k
@@ -328,8 +330,8 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
                 //         << " dt = " << dt << std::endl;
               }
 
-              add_particles_cell(iLev, mfi, i, j, k, interface, false, ppc,
-                                 Vel(), dt);
+              add_particles_cell(iLev, mfi, IntVect{ i, j, k }, interface,
+                                 false, ppc, Vel(), dt);
             }
           }
     }
@@ -356,7 +358,7 @@ void Particles<NStructReal, NStructInt>::add_particles_domain() {
           for (int k = kMin; k <= kMax; ++k) {
             if (bit::is_new(status(i, j, k)) &&
                 !bit::is_refined(status(i, j, k))) {
-              add_particles_cell(iLev, mfi, i, j, k, fi, true);
+              add_particles_cell(iLev, mfi, IntVect{ i, j, k }, fi, true);
             }
           }
     }
@@ -400,16 +402,16 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
     for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
-          int isrc, jsrc, ksrc;
-          if (do_inject_particles_for_this_cell(bx, status, i, j, k, isrc, jsrc,
-                                                ksrc)) {
+          IntVect ijk = { i, j, k };
+          IntVect ijksrc;
+          if (do_inject_particles_for_this_cell(bx, status, ijk, ijksrc)) {
             if (((bc.lo[ix_] == bc.outflow) && i < lo[ix_]) ||
                 ((bc.hi[ix_] == bc.outflow) && i > hi[ix_]) ||
                 ((bc.lo[iy_] == bc.outflow) && j < lo[iy_]) ||
                 ((bc.hi[iy_] == bc.outflow) && j > hi[iy_]) ||
                 ((bc.lo[iz_] == bc.outflow) && k < lo[iz_]) ||
                 ((bc.hi[iz_] == bc.outflow) && k > hi[iz_])) {
-              outflow_bc(mfi, i, j, k, isrc, jsrc, ksrc);
+              outflow_bc(mfi, ijk, ijksrc);
             } else if (((bc.lo[ix_] == bc.vacume) && i < lo[ix_]) ||
                        ((bc.hi[ix_] == bc.vacume) && i > hi[ix_]) ||
                        ((bc.lo[iy_] == bc.vacume) && j < lo[iy_]) ||
@@ -418,8 +420,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
                        ((bc.hi[iz_] == bc.vacume) && k > hi[iz_])) {
               // pass
             } else {
-              add_particles_cell(iLev, mfi, i, j, k, fiTmp, true, ppc, Vel(),
-                                 dt);
+              add_particles_cell(iLev, mfi, ijk, fiTmp, true, ppc, Vel(), dt);
             }
           }
         }
@@ -1459,8 +1460,8 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
       Real maxWeight = avg * maxRatio;
 
       if (seperateVelocity) {
-        const auto lo = lbound(pti.tilebox());
-        set_random_seed(iLev, lo.x, lo.y, lo.z, IntVect(444));
+        Box bx = pti.tilebox();
+        set_random_seed(iLev, bx.smallEnd(), IntVect(444));
         Vector<ParticleType*> pold;
         for (size_t ip = 0; ip < particles.size(); ip++) {
           Real qp1 = particles[ip].rdata(iqp_);
@@ -1490,7 +1491,8 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
                           Geom(iLev).CellSize()[iz_] * 1e-10;
 
         if (is_neutral()) {
-          set_random_seed(iLev, lo.x, lo.y, lo.z, IntVect(999));
+          Box bx = pti.tilebox();
+          set_random_seed(iLev, bx.smallEnd(), IntVect(999));
         }
 
         for (auto& p : particles) {
@@ -1809,7 +1811,8 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
                         Geom(iLev).CellSize()[iz_] * 1e-10;
 
       if (is_neutral() || seperateVelocity) {
-        set_random_seed(iLev, lo.x, lo.y, lo.z, IntVect(888));
+        Box bx = pti.tilebox();
+        set_random_seed(iLev, bx.smallEnd(), IntVect(888));
       }
 
       if (seperateVelocity) {
@@ -2236,9 +2239,7 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
 
       // It is assumed the tile size is 1x1x1.
       Box bx = pti.tilebox();
-      auto cellIdx = bx.smallEnd();
-      long seed = set_random_seed(iLev, cellIdx[0], cellIdx[1], cellIdx[2],
-                                  IntVect(777));
+      long seed = set_random_seed(iLev, bx.smallEnd(), IntVect(777));
 
       AoS& particles = pti.GetArrayOfStructs();
 
@@ -2446,18 +2447,17 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
 //==========================================================
 template <int NStructReal, int NStructInt>
 bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
-    const Box& bx, const Array4<const int>& status, const int i, const int j,
-    const int k, int& isrc, int& jsrc, int& ksrc) {
+    const Box& bx, const Array4<const int>& status, const IntVect ijk,
+    IntVect& ijksrc) {
 
   // This cell should be a boundary cell at least.
-  if (!bit::is_lev_boundary(status(i, j, k)))
+  if (!bit::is_lev_boundary(status(ijk)))
     return false;
 
   for (int iloop = 1; iloop <= 3; iloop++) {
     // iloop==1: loop through faces;
     // iloop==2: loop through edges;
     // iloop==3: loop through corners;
-
     for (int di = -1; di <= 1; di++)
       for (int dj = -1; dj <= 1; dj++)
         for (int dk = -1; dk <= 1; dk++) {
@@ -2465,12 +2465,11 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
           if (iloop != sum)
             continue;
 
-          if (!bit::is_lev_boundary(status(i + di, j + dj, k + dk))) {
+          IntVect ijk1 = ijk + IntVect{ di, dj, dk };
+          if (!bit::is_lev_boundary(status(ijk1))) {
             // The first neighbor cell that is NOT a boundary cell.
-            if (bx.contains(IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) })) {
-              isrc = i + di;
-              jsrc = j + dj;
-              ksrc = k + dk;
+            if (bx.contains(ijk1)) {
+              ijksrc = ijk1;
               return true;
             } else {
               return false;
@@ -2677,7 +2676,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       Vector<NeuPlasmaPair> neuPlasmaPairs;
 
       if (kineticSource) {
-        set_random_seed(iLev, cellIdx[0], cellIdx[1], cellIdx[2], IntVect(999));
+        set_random_seed(iLev, cellIdx, IntVect(999));
       }
 
       for (auto& p : particles) {
@@ -2933,7 +2932,7 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
       }
 
       if (adaptivePPC) {
-        set_random_seed(iLev, cellIdx[0], cellIdx[1], cellIdx[2], IntVect(787));
+        set_random_seed(iLev, cellIdx, IntVect(787));
         // Adjust ppc so that the weight of the
         // source particles is not too small.
         int initPPC = 1, sourcePPC = 1;
