@@ -232,9 +232,11 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
     int iBlockCount = 0;
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
       while (iPoint < nPoint) {
-        const int ix = pointList_II[iPoint][ix_];
-        const int iy = pointList_II[iPoint][iy_];
-        const int iz = pointList_II[iPoint][iz_];
+        IntVect ijk;
+        for (int iDim = 0; iDim < nDim; iDim++) {
+          ijk[iDim] = pointList_II[iPoint][iDim];
+        }
+
         const int iBlock = pointList_II[iPoint][iBlk_];
         const int iL = pointList_II[iPoint][iLev_];
 
@@ -244,13 +246,12 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
         if (ParallelDescriptor::MyProc() == 0 && iBlock == -1) {
           // Processor-0 output the inactive PIC nodes for structured output.
           for (int iVar = 0; iVar < nVar; ++iVar) {
-            var_II(iPoint, iVar) =
-                get_var(sVar_I[iVar], iLev, ix, iy, iz, mfi, false);
+            var_II(iPoint, iVar) = get_var(sVar_I[iVar], iLev, ijk, mfi, false);
           }
           iPoint++;
         } else if (iBlock == iBlockCount) {
           for (int iVar = 0; iVar < nVar; ++iVar) {
-            var_II(iPoint, iVar) = get_var(sVar_I[iVar], iLev, ix, iy, iz, mfi);
+            var_II(iPoint, iVar) = get_var(sVar_I[iVar], iLev, ijk, mfi);
           }
           iPoint++;
         } else {
@@ -264,40 +265,40 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
 }
 
 //==========================================================
-double Pic::get_var(std::string var, const int iLev, const int ix, const int iy,
-                    const int iz, const MFIter& mfi, bool isValidMFI) {
+double Pic::get_var(std::string var, const int iLev, const IntVect ijk,
+                    const MFIter& mfi, bool isValidMFI) {
   double value = 0;
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
       var.substr(0, 1) == "Z") {
     // If not isValidMFI, then it is not possible to output variables other than
     // 'X', 'Y', 'Z'
     if (var.substr(0, 1) == "X") {
-      value = Geom(iLev).LoEdge(ix, ix_);
+      value = Geom(iLev).LoEdge(ijk, ix_);
     } else if (var.substr(0, 1) == "Y") {
-      value = Geom(iLev).LoEdge(iy, iy_);
+      value = Geom(iLev).LoEdge(ijk, iy_);
     } else if (var.substr(0, 1) == "Z") {
-      value = Geom(iLev).LoEdge(iz, iz_);
+      value = Geom(iLev).LoEdge(ijk, iz_);
     } else if (var.substr(0, 2) == "dx") {
       value = Geom(iLev).CellSize(ix_);
     } else if (var.substr(0, 2) == "Ex") {
       const Array4<Real const>& arr =
           nodeE[iLev][mfi].array(); // Talha- check // no loop
-      value = arr(ix, iy, iz, ix_);
+      value = arr(ijk, ix_);
     } else if (var.substr(0, 2) == "Ey") {
       const Array4<Real const>& arr = nodeE[iLev][mfi].array();
-      value = arr(ix, iy, iz, iy_);
+      value = arr(ijk, iy_);
     } else if (var.substr(0, 2) == "Ez") {
       const Array4<Real const>& arr = nodeE[iLev][mfi].array();
-      value = arr(ix, iy, iz, iz_);
+      value = arr(ijk, iz_);
     } else if (var.substr(0, 2) == "Bx") {
       const Array4<Real const>& arr = nodeB[iLev][mfi].array();
-      value = arr(ix, iy, iz, ix_);
+      value = arr(ijk, ix_);
     } else if (var.substr(0, 2) == "By") {
       const Array4<Real const>& arr = nodeB[iLev][mfi].array();
-      value = arr(ix, iy, iz, iy_);
+      value = arr(ijk, iy_);
     } else if (var.substr(0, 2) == "Bz") {
       const Array4<Real const>& arr = nodeB[iLev][mfi].array();
-      value = arr(ix, iy, iz, iz_);
+      value = arr(ijk, iz_);
     } else if (var.substr(0, 4) == "rhoS" || var.substr(0, 3) == "uxS" ||
                var.substr(0, 3) == "uyS" || var.substr(0, 3) == "uzS" ||
                var.substr(0, 4) == "pXXS" || var.substr(0, 4) == "pYYS" ||
@@ -336,10 +337,10 @@ double Pic::get_var(std::string var, const int iLev, const int ix, const int iy,
 
         const Array4<Real const>& arr =
             nodePlasma[extract_int(var)][iLev][mfi].array();
-        value = arr(ix, iy, iz, iVar);
+        value = arr(ijk, iVar);
 
         if (var.substr(0, 1) == "u") {
-          double rho = arr(ix, iy, iz, iRho_);
+          double rho = arr(ijk, iRho_);
           if (rho != 0)
             value /= rho;
         }
@@ -347,40 +348,38 @@ double Pic::get_var(std::string var, const int iLev, const int ix, const int iy,
     } else if (var.substr(0, 2) == "pS") {
       const Array4<Real const>& arr =
           nodePlasma[extract_int(var)][iLev][mfi].array();
-      value = (arr(ix, iy, iz, iPxx_) + arr(ix, iy, iz, iPyy_) +
-               arr(ix, iy, iz, iPzz_)) /
-              3.0;
+      value = (arr(ijk, iPxx_) + arr(ijk, iPyy_) + arr(ijk, iPzz_)) / 3.0;
 
     } else if (var.substr(0, 3) == "E0x") {
       const Array4<Real const>& arr = E0[iLev][mfi].array();
-      value = arr(ix, iy, iz, ix_);
+      value = arr(ijk, ix_);
     } else if (var.substr(0, 3) == "E0y") {
       const Array4<Real const>& arr = E0[iLev][mfi].array();
-      value = arr(ix, iy, iz, iy_);
+      value = arr(ijk, iy_);
     } else if (var.substr(0, 3) == "E0z") {
       const Array4<Real const>& arr = E0[iLev][mfi].array();
-      value = arr(ix, iy, iz, iz_);
+      value = arr(ijk, iz_);
     } else if (var.substr(0, 3) == "U0x") {
       const Array4<Real const>& arr = U0[iLev][mfi].array();
-      value = arr(ix, iy, iz, ix_);
+      value = arr(ijk, ix_);
     } else if (var.substr(0, 3) == "U0y") {
       const Array4<Real const>& arr = U0[iLev][mfi].array();
-      value = arr(ix, iy, iz, iy_);
+      value = arr(ijk, iy_);
     } else if (var.substr(0, 3) == "U0z") {
       const Array4<Real const>& arr = U0[iLev][mfi].array();
-      value = arr(ix, iy, iz, iz_);
+      value = arr(ijk, iz_);
     } else if (var.substr(0, 2) == "qc") {
       const Array4<Real const>& arr = centerNetChargeN[iLev][mfi].array();
-      value = arr(ix, iy, iz);
+      value = arr(ijk);
     } else if (var.substr(0, 5) == "divEc") {
       const Array4<Real const>& arr = centerDivE[iLev][mfi].array();
-      value = arr(ix, iy, iz);
+      value = arr(ijk);
     } else if (var.substr(0, 3) == "phi") {
       const Array4<Real const>& arr = centerPhi[iLev][mfi].array();
-      value = arr(ix, iy, iz);
+      value = arr(ijk);
     } else if (var.substr(0, 7) == "smoothE") {
       const Array4<Real const>& arr = nodeSmoothCoef[mfi].array();
-      value = arr(ix, iy, iz);
+      value = arr(ijk);
     } else if (var.substr(0, 4) == "rank") {
       value = ParallelDescriptor::MyProc();
     } else if (var.substr(0, 5) == "block") {
@@ -388,8 +387,7 @@ double Pic::get_var(std::string var, const int iLev, const int ix, const int iy,
     } else if (var.substr(0, 9) == "neuregion") {
       if (stateOH) {
         const int iFluid = 0;
-        value = stateOH->get_neu_source_region(mfi, IntVect{ ix, iy, iz },
-                                               iFluid, iLev);
+        value = stateOH->get_neu_source_region(mfi, ijk, iFluid, iLev);
       } else {
         value = -1;
       }
