@@ -1408,7 +1408,7 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
         idxMap.push_back(i);
     }
 
-    int iLev = get_finest_lev(xyz[0], xyz[1], xyz[2]);
+    int iLev = get_finest_lev(xyz);
     const int iStart = iPoint * nVar;
     for (int iVar = 0; iVar < nVar; iVar++) {
       data_I[iStart + iVar] =

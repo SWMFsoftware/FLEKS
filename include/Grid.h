@@ -226,19 +226,15 @@ public:
     return sLev;
   }
 
-  // Find the finest level that contains the cell (x, y, z).
-  inline int get_finest_lev(amrex::Real const x, amrex::Real const y,
-                            amrex::Real const z) const {
-    amrex::Real loc[3] = { x, y, z };
+  // Find the finest level that contains the cell xyz.
+  inline int get_finest_lev(amrex::RealVect xyz) const {
     for (int iLev = finest_level; iLev >= 0; iLev--) {
-      auto idx = Geom(iLev).CellIndex(loc);
+      auto idx = Geom(iLev).CellIndex(xyz.begin());
       if (cGrids[iLev].contains(idx)) {
         return iLev;
       }
     }
-
-    printf("Error: x = %f, y = %f, z = %f is out of the domain\n", loc[0],
-           loc[1], loc[2]);
+    amrex::AllPrint() << "Error: xyz = " << xyz << " is out of the domain\n";
     amrex::Abort();
     return -1; // To suppress compiler warnings.
   }
@@ -246,11 +242,11 @@ public:
   //===========================================================================
   inline int find_mpi_rank_from_coord(amrex::Real const x, amrex::Real const y,
                                       amrex::Real const z) const {
-    amrex::Real loc[3] = { x, y, z };
+    amrex::RealVect xyz{ x, y, z };
 
-    int iLev = get_finest_lev(x, y, z);
+    int iLev = get_finest_lev(xyz);
 
-    auto idx = Geom(iLev).CellIndex(loc);
+    auto idx = Geom(iLev).CellIndex(xyz.begin());
 
     int rank =
         find_mpi_rank_from_cell_index(iLev, idx[ix_], idx[iy_], idx[iz_]);

@@ -45,37 +45,32 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
 
   const RealBox& range = Geom(0).ProbDomain();
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
-    double pic_D[3] = { 0 };
+    RealVect xyz;
     for (int iDim = 0; iDim < nDim; iDim++) {
-      pic_D[iDim] = xyz_I[iPoint * nDim + iDim] * fi->get_Si2NoL();
+      xyz[iDim] = xyz_I[iPoint * nDim + iDim] * fi->get_Si2NoL();
     }
 
-    const Real xp = pic_D[0];
-    const Real yp = (nDim > 1) ? pic_D[1] : 0.0;
-    const Real zp = (nDim > 2) ? pic_D[2] : 0.0;
-
     // Check if this point is inside this FLEKS domain.
-    if (!range.contains(RealVect(AMREX_D_DECL(xp, yp, zp)), 1e-10))
+    if (!range.contains(xyz, 1e-10))
       continue;
 
-    const int iLev = get_finest_lev(xp, yp, zp);
+    const int iLev = get_finest_lev(xyz);
 
     for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++) {
       for (int iVar = iRho_; iVar <= iPyz_; iVar++) {
         const int iStart = iSpecies * nVarPerSpecies;
         dataPIC_I[iStart + iVar] =
-            get_value_at_loc(nodePlasma[iSpecies][iLev], Geom(iLev),
-                             RealVect{ xp, yp, zp }, iVar);
+            get_value_at_loc(nodePlasma[iSpecies][iLev], Geom(iLev), xyz, iVar);
       }
     }
 
     for (int iDir = ix_; iDir <= iz_; iDir++) {
-      dataPIC_I[iBx_ + iDir] = get_value_at_loc(nodeB[iLev], Geom(iLev),
-                                                RealVect{ xp, yp, zp }, iDir);
+      dataPIC_I[iBx_ + iDir] =
+          get_value_at_loc(nodeB[iLev], Geom(iLev), xyz, iDir);
     }
     for (int iDir = ix_; iDir <= iz_; iDir++) {
-      dataPIC_I[iEx_ + iDir] = get_value_at_loc(nodeE[iLev], Geom(iLev),
-                                                RealVect{ xp, yp, zp }, iDir);
+      dataPIC_I[iEx_ + iDir] =
+          get_value_at_loc(nodeE[iLev], Geom(iLev), xyz, iDir);
     }
 
     // Combine PIC plasma data into MHD fluid data.
