@@ -555,15 +555,14 @@ void FluidInterface::find_mpi_rank_for_points(const int nPoint,
   Real si2nol = get_Si2NoL();
   const RealBox& range = Geom(0).ProbDomain();
   for (int i = 0; i < nPoint; i++) {
-    Real x = xyz_I[i * nDimGM + ix_] * si2nol;
-    Real y = xyz_I[i * nDimGM + iy_] * si2nol;
-    Real z = 0;
-    if (nDimGM > 2)
-      z = xyz_I[i * nDimGM + iz_] * si2nol;
+    RealVect xyz;
+    for (int iDim = 0; iDim < nDimGM; iDim++) {
+      xyz[iDim] = xyz_I[i * nDimGM + iDim] * si2nol;
+    }
+
     // Check if this point is inside this FLEKS domain.
-    if (range.contains(RealVect(AMREX_D_DECL(x, y, z)),
-                       1e-6 * Geom(0).CellSize()[ix_])) {
-      rank_I[i] = find_mpi_rank_from_coord(x, y, z);
+    if (range.contains(xyz, 1e-6 * Geom(0).CellSize()[ix_])) {
+      rank_I[i] = find_mpi_rank_from_coord(xyz);
     } else if (rank_I[i] == iNotSet_) {
       // For PT->OH coupling, MHD does not know the range of FLEKS.
       // If the location is outside the domain, set the rank to be the IO

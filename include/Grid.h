@@ -240,31 +240,26 @@ public:
   }
 
   //===========================================================================
-  inline int find_mpi_rank_from_coord(amrex::Real const x, amrex::Real const y,
-                                      amrex::Real const z) const {
-    amrex::RealVect xyz{ x, y, z };
-
+  inline int find_mpi_rank_from_coord(const amrex::RealVect xyz) const {
     int iLev = get_finest_lev(xyz);
 
     auto idx = Geom(iLev).CellIndex(xyz.begin());
 
-    int rank =
-        find_mpi_rank_from_cell_index(iLev, idx[ix_], idx[iy_], idx[iz_]);
+    int rank = find_mpi_rank_from_cell_index(iLev, idx);
 
     return rank;
   }
 
   //===========================================================================
-  inline int find_mpi_rank_from_cell_index(int const iLev, int const i,
-                                           int const j, int const k) const {
-    amrex::IntVect idx = { AMREX_D_DECL(i, j, k) };
+  inline int find_mpi_rank_from_cell_index(int const iLev,
+                                           const amrex::IntVect ijk) const {
     for (int ii = 0, n = cGrids[iLev].size(); ii < n; ii++) {
       const amrex::Box& bx = cGrids[iLev][ii];
-      if (bx.contains(idx))
+      if (bx.contains(ijk))
         return DistributionMap(iLev)[ii];
     }
 
-    amrex::AllPrint() << "iLev = " << iLev << " idx = " << idx << std::endl;
+    amrex::AllPrint() << "iLev = " << iLev << " idx = " << ijk << std::endl;
     amrex::Abort("Error: can not find this cell!");
     return -1; // To suppress compiler warnings.
   }
