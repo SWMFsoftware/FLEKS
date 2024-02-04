@@ -1394,17 +1394,13 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
 
   const RealBox& range = Geom(0).ProbDomain();
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
-    double xyz[3];
+    RealVect xyz;
     for (int iDim = 0; iDim < nDim; iDim++) {
       xyz[iDim] = xyz_I[iPoint * nDim + iDim] * get_Si2NoL();
     }
 
-    const Real xp = xyz[0];
-    const Real yp = (nDim > 1) ? xyz[1] : 0.0;
-    const Real zp = (nDim > 2) ? xyz[2] : 0.0;
-
     // Check if this point is inside this FLEKS domain.
-    if (!range.contains(RealVect(AMREX_D_DECL(xp, yp, zp)), 1e-10))
+    if (!range.contains(xyz, 1e-10))
       continue;
 
     if (idxMap.size() == 0) {
@@ -1412,12 +1408,12 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
         idxMap.push_back(i);
     }
 
-    int iLev = get_finest_lev(xp, yp, zp);
+    int iLev = get_finest_lev(xyz[0], xyz[1], xyz[2]);
     const int iStart = iPoint * nVar;
     for (int iVar = 0; iVar < nVar; iVar++) {
-      data_I[iStart + iVar] = get_value_at_loc(nodeFluid[iLev], Geom(iLev), xp,
-                                               yp, zp, idxMap[iVar]) *
-                              coef;
+      data_I[iStart + iVar] =
+          get_value_at_loc(nodeFluid[iLev], Geom(iLev), xyz, idxMap[iVar]) *
+          coef;
     }
   }
 }

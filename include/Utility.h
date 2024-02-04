@@ -158,27 +158,18 @@ inline void linear_interpolation_coef(amrex::RealVect& dx,
   coef[1][1][1] = multi[0][0] * zeta[0];
 }
 
-inline amrex::Real get_value_at_node(const amrex::MultiFab& mf,
-                                     const amrex::MFIter& mfi, const int i,
-                                     const int j, const int k, const int iVar) {
-  const auto& arr = mf[mfi].array();
-  return arr(i, j, k, iVar);
-}
-
 inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
                                     const amrex::MFIter& mfi,
                                     const amrex::Geometry& gm,
-                                    const amrex::Real x, const amrex::Real y,
-                                    const amrex::Real z, const int iVar) {
+                                    const amrex::RealVect xyz, const int iVar) {
   const auto plo = gm.ProbLo();
-  const amrex::RealVect loc = { AMREX_D_DECL(x, y, z) };
 
   const auto invDx = gm.InvCellSize();
 
   int loIdx[nDim];
   amrex::Real dx[nDim];
   for (int i = 0; i < nDim; i++) {
-    dx[i] = (loc[i] - plo[i]) * invDx[i];
+    dx[i] = (xyz[i] - plo[i]) * invDx[i];
     loIdx[i] = fastfloor(dx[i]);
     dx[i] = dx[i] - loIdx[i];
   }
@@ -238,21 +229,18 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
 
 inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
                                     const amrex::Geometry& gm,
-                                    const amrex::Real x, const amrex::Real y,
-                                    const amrex::Real z, const int iVar) {
-  amrex::Real loc[3] = { x, y, z };
-  auto idx = gm.CellIndex(loc);
+                                    const amrex::RealVect xyz, const int iVar) {
+  auto idx = gm.CellIndex(xyz.begin());
 
   for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
     // Cell box
     const amrex::Box& bx =
         amrex::convert(mfi.validbox(), { AMREX_D_DECL(0, 0, 0) });
     if (bx.contains(idx))
-      return get_value_at_loc(mf, mfi, gm, x, y, z, iVar);
+      return get_value_at_loc(mf, mfi, gm, xyz, iVar);
   }
 
-  amrex::AllPrint() << "loc = " << loc[ix_] << " " << loc[iy_] << " "
-                    << loc[iz_] << " idx = " << idx << std::endl;
+  amrex::AllPrint() << "xyz = " << xyz << std::endl;
 
   amrex::Abort("Error: can not find this point!");
   return -1; // To suppress compiler warnings.

@@ -63,18 +63,19 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++) {
       for (int iVar = iRho_; iVar <= iPyz_; iVar++) {
         const int iStart = iSpecies * nVarPerSpecies;
-        dataPIC_I[iStart + iVar] = get_value_at_loc(
-            nodePlasma[iSpecies][iLev], Geom(iLev), xp, yp, zp, iVar);
+        dataPIC_I[iStart + iVar] =
+            get_value_at_loc(nodePlasma[iSpecies][iLev], Geom(iLev),
+                             RealVect{ xp, yp, zp }, iVar);
       }
     }
 
     for (int iDir = ix_; iDir <= iz_; iDir++) {
-      dataPIC_I[iBx_ + iDir] =
-          get_value_at_loc(nodeB[iLev], Geom(iLev), xp, yp, zp, iDir);
+      dataPIC_I[iBx_ + iDir] = get_value_at_loc(nodeB[iLev], Geom(iLev),
+                                                RealVect{ xp, yp, zp }, iDir);
     }
     for (int iDir = ix_; iDir <= iz_; iDir++) {
-      dataPIC_I[iEx_ + iDir] =
-          get_value_at_loc(nodeE[iLev], Geom(iLev), xp, yp, zp, iDir);
+      dataPIC_I[iEx_ + iDir] = get_value_at_loc(nodeE[iLev], Geom(iLev),
+                                                RealVect{ xp, yp, zp }, iDir);
     }
 
     // Combine PIC plasma data into MHD fluid data.

@@ -416,7 +416,8 @@ public:
   amrex::Real get_value(const amrex::MFIter& mfi, const amrex::Real x,
                         const amrex::Real y, const amrex::Real z,
                         const int iVar, const int iLev = 0) const {
-    return get_value_at_loc(nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iVar);
+    return get_value_at_loc(nodeFluid[iLev], mfi, Geom(iLev),
+                            amrex::RealVect{ x, y, z }, iVar);
   }
 
   template <typename T>
