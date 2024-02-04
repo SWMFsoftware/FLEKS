@@ -392,11 +392,10 @@ public:
     add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), xyz, iVar);
   }
 
-  amrex::Real get_center_b(const amrex::MFIter& mfi, const int i, const int j,
-                           const int k, const int iDir,
-                           const int iLev = 0) const {
+  amrex::Real get_center_b(const amrex::MFIter& mfi, const amrex::IntVect ijk,
+                           const int iDir, const int iLev = 0) const {
     const auto& arr = centerB[iLev][mfi].array();
-    return arr(i, j, k, iDir);
+    return arr(ijk, iDir);
   }
 
   amrex::Real get_value(const amrex::MFIter& mfi, const int i, const int j,

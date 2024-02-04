@@ -370,10 +370,7 @@ public:
 
   inline amrex::Real get_center_B(amrex::MFIter &mfi, amrex::IntVect ijk,
                                   int iVar, const int iLev) {
-    int i = ijk[0];
-    int j = ijk[1];
-    int k = ijk[2];
-    return fi->get_center_b(mfi, i, j, k, iVar, iLev);
+    return fi->get_center_b(mfi, ijk, iVar, iLev);
   }
 
   //--------------- Boundary end ------------------------
