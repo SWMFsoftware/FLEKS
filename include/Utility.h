@@ -248,17 +248,15 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
 
 inline void add_to_mf(const amrex::Real& val, amrex::MultiFab& mf,
                       const amrex::MFIter& mfi, const amrex::Geometry& gm,
-                      const amrex::Real x, const amrex::Real y,
-                      const amrex::Real z, const int iVar) {
+                      const amrex::RealVect xyz, const int iVar) {
   const auto plo = gm.ProbLo();
-  const amrex::RealVect loc = { AMREX_D_DECL(x, y, z) };
 
   const auto invDx = gm.InvCellSize();
 
   int loIdx[3];
-  amrex::Real dx[3];
-  for (int i = 0; i < 3; i++) {
-    dx[i] = (loc[i] - plo[i]) * invDx[i];
+  amrex::Real dx[3] = { 0, 0, 0 };
+  for (int i = 0; i < nDim; i++) {
+    dx[i] = (xyz[i] - plo[i]) * invDx[i];
     loIdx[i] = fastfloor(dx[i]);
     dx[i] = dx[i] - loIdx[i];
   }

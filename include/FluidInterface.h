@@ -357,47 +357,39 @@ public:
     }
   }
 
-  void add_to_cell(const amrex::Real& val, amrex::MFIter& mfi, const int i,
-                   const int j, const int k, const int iVar,
-                   const int iLev = 0) {
-    const amrex::Array4<amrex::Real>& arr = nodeFluid[iLev][mfi].array();
-    arr(i, j, k, iVar) += val;
-  }
-
   void add_rho_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
-                      const amrex::Real x, const amrex::Real y,
-                      const amrex::Real z, const int iFluid, const int iLev) {
-    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iRho_I[iFluid]);
+                      const amrex::RealVect xyz, const int iFluid,
+                      const int iLev) {
+    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), xyz, iRho_I[iFluid]);
   }
 
   void add_mx_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
-                     const amrex::Real x, const amrex::Real y,
-                     const amrex::Real z, const int iFluid, const int iLev) {
-    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iRhoUx_I[iFluid]);
+                     const amrex::RealVect xyz, const int iFluid,
+                     const int iLev) {
+    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), xyz, iRhoUx_I[iFluid]);
   }
 
   void add_my_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
-                     const amrex::Real x, const amrex::Real y,
-                     const amrex::Real z, const int iFluid, const int iLev) {
-    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iRhoUy_I[iFluid]);
+                     const amrex::RealVect xyz, const int iFluid,
+                     const int iLev) {
+    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), xyz, iRhoUy_I[iFluid]);
   }
 
   void add_mz_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
-                     const amrex::Real x, const amrex::Real y,
-                     const amrex::Real z, const int iFluid, const int iLev) {
-    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iRhoUz_I[iFluid]);
+                     const amrex::RealVect xyz, const int iFluid,
+                     const int iLev) {
+    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), xyz, iRhoUz_I[iFluid]);
   }
 
   void add_p_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
-                    const amrex::Real x, const amrex::Real y,
-                    const amrex::Real z, const int iFluid, const int iLev) {
-    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iP_I[iFluid]);
+                    const amrex::RealVect xyz, const int iFluid,
+                    const int iLev) {
+    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), xyz, iP_I[iFluid]);
   }
 
   void add_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
-                  const amrex::Real x, const amrex::Real y, const amrex::Real z,
-                  const int iVar, const int iLev) {
-    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), x, y, z, iVar);
+                  const amrex::RealVect xyz, const int iVar, const int iLev) {
+    add_to_mf(val, nodeFluid[iLev], mfi, Geom(iLev), xyz, iVar);
   }
 
   amrex::Real get_center_b(const amrex::MFIter& mfi, const int i, const int j,

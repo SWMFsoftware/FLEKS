@@ -2686,6 +2686,8 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         const Real yp = p.pos(iy_);
         const Real zp = p.pos(iz_);
 
+        RealVect xyz = RealVect(AMREX_D_DECL(xp, yp, zp));
+
         double cs2Neu = 0, uNeu[3], rhoNeu;
         double cs2Ion, uIon[3], rhoIon;
         double ion2neu[5], neu2ion[5];
@@ -2780,18 +2782,18 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
           // ModUser.f90
           sourcePT2OH->add_rho_to_loc((neu2ion[iRho_] - ion2neu[iRho_]) /
                                           rhoIon,
-                                      pti, xp, yp, zp, fluidID, iLev);
+                                      pti, xyz, fluidID, iLev);
           sourcePT2OH->add_mx_to_loc((neu2ion[iRhoUx_] - ion2neu[iRhoUx_]) /
                                          rhoIon,
-                                     pti, xp, yp, zp, fluidID, iLev);
+                                     pti, xyz, fluidID, iLev);
           sourcePT2OH->add_my_to_loc((neu2ion[iRhoUy_] - ion2neu[iRhoUy_]) /
                                          rhoIon,
-                                     pti, xp, yp, zp, fluidID, iLev);
+                                     pti, xyz, fluidID, iLev);
           sourcePT2OH->add_mz_to_loc((neu2ion[iRhoUz_] - ion2neu[iRhoUz_]) /
                                          rhoIon,
-                                     pti, xp, yp, zp, fluidID, iLev);
+                                     pti, xyz, fluidID, iLev);
           sourcePT2OH->add_p_to_loc((neu2ion[iP_] - ion2neu[iP_]) / rhoIon, pti,
-                                    xp, yp, zp, fluidID, iLev);
+                                    xyz, fluidID, iLev);
         }
 
         if (ion2neu[iRho_] > 0) { // Add source to nodes.
@@ -2834,15 +2836,15 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 
             // source saves changing rate (density/s...).
             source->add_rho_to_loc(ion2neu[iRho_] * si2no_v[iRho_] / dt, pti,
-                                   xp, yp, zp, speciesID, iLev);
+                                   xyz, speciesID, iLev);
             source->add_mx_to_loc(ion2neu[iRhoUx_] * si2no_v[iRhoUx_] / dt, pti,
-                                  xp, yp, zp, speciesID, iLev);
+                                  xyz, speciesID, iLev);
             source->add_my_to_loc(ion2neu[iRhoUy_] * si2no_v[iRhoUy_] / dt, pti,
-                                  xp, yp, zp, speciesID, iLev);
+                                  xyz, speciesID, iLev);
             source->add_mz_to_loc(ion2neu[iRhoUz_] * si2no_v[iRhoUz_] / dt, pti,
-                                  xp, yp, zp, speciesID, iLev);
-            source->add_p_to_loc(ion2neu[iP_] * si2no_v[iP_] / dt, pti, xp, yp,
-                                 zp, speciesID, iLev);
+                                  xyz, speciesID, iLev);
+            source->add_p_to_loc(ion2neu[iP_] * si2no_v[iP_] / dt, pti, xyz,
+                                 speciesID, iLev);
           }
         }
         // p.id() = -1;
