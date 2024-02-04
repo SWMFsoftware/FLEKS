@@ -398,76 +398,73 @@ public:
     return arr(ijk, iDir);
   }
 
-  amrex::Real get_value(const amrex::MFIter& mfi, const int i, const int j,
-                        const int k, const int iVar, const int iLev = 0) const {
+  amrex::Real get_value(const amrex::MFIter& mfi, const amrex::IntVect ijk,
+                        const int iVar, const int iLev = 0) const {
     const auto& arr = nodeFluid[iLev][mfi].array();
-    return arr(i, j, k, iVar);
+    return arr(ijk, iVar);
   }
 
-  amrex::Real get_value(const amrex::MFIter& mfi, const amrex::Real x,
-                        const amrex::Real y, const amrex::Real z,
+  amrex::Real get_value(const amrex::MFIter& mfi, const amrex::RealVect xyz,
                         const int iVar, const int iLev = 0) const {
-    return get_value_at_loc(nodeFluid[iLev], mfi, Geom(iLev),
-                            amrex::RealVect{ x, y, z }, iVar);
+    return get_value_at_loc(nodeFluid[iLev], mfi, Geom(iLev), xyz, iVar);
   }
 
   template <typename T>
-  amrex::Real get_number_density(const amrex::MFIter& mfi, const T x, const T y,
-                                 const T z, const int is,
-                                 const int iLev = 0) const {
+  amrex::Real get_number_density(const amrex::MFIter& mfi, const T xyz,
+                                 const int is, const int iLev = 0) const {
     amrex::Real Rho, NumDens;
 
     if (useElectronFluid) {
-      Rho = get_value(mfi, x, y, z, iRho_I[is], iLev);
+      Rho = get_value(mfi, xyz, iRho_I[is], iLev);
       NumDens = Rho / MoMi_S[is];
     } else if (useMultiFluid || useMultiSpecies) {
       if (is == 0) {
         // Electron
         NumDens = 0;
         for (int iIon = 0; iIon < nIon; ++iIon) {
-          Rho = get_value(mfi, x, y, z, iRho_I[iIon], iLev);
+          Rho = get_value(mfi, xyz, iRho_I[iIon], iLev);
           NumDens += Rho / MoMi_S[iIon + 1];
         }
       } else {
         // Ion
-        Rho = get_value(mfi, x, y, z, iRho_I[is - 1], iLev);
+        Rho = get_value(mfi, xyz, iRho_I[is - 1], iLev);
         NumDens = Rho / MoMi_S[is];
       }
     } else {
       // Electrons and iones have same density, ignoring is
-      Rho = get_value(mfi, x, y, z, iRho_I[0], iLev);
+      Rho = get_value(mfi, xyz, iRho_I[0], iLev);
       NumDens = Rho * invSumMass;
     }
     return (NumDens);
   }
 
   template <typename Type>
-  amrex::Real get_u(const amrex::MFIter& mfi, const Type x, const Type y,
-                    const Type z, const int is, const amrex::Vector<int>& iU_I,
-                    const int iJ, const int iLev = 0) const {
+  amrex::Real get_u(const amrex::MFIter& mfi, const Type xyz, const int is,
+                    const amrex::Vector<int>& iU_I, const int iJ,
+                    const int iLev = 0) const {
 
     amrex::Real U, J, Rhoit, Qit, Rhot;
 
     if (useElectronFluid) {
-      U = get_value(mfi, x, y, z, iU_I[is], iLev);
+      U = get_value(mfi, xyz, iU_I[is], iLev);
     } else if (useMultiFluid) {
       if (is == 0) {
         // Electron
         /** Ue = (J - sum(ni*qi*Ui))/(ne*qe)
                = J/(ne*qe) + sum(ni*Ui)/ne */
         amrex::Real Ui, ni, ne;
-        J = get_value(mfi, x, y, z, iJ, iLev);
-        ne = get_number_density(mfi, x, y, z, 0, iLev);
+        J = get_value(mfi, xyz, iJ, iLev);
+        ne = get_number_density(mfi, xyz, 0, iLev);
         U = J / (QoQi_S[0] * ne);
 
         for (int iIon = 0; iIon < nIon; ++iIon) {
-          Ui = get_u(mfi, x, y, z, iIon + 1, iU_I, iJ, iLev);
-          ni = get_number_density(mfi, x, y, z, iIon + 1, iLev);
+          Ui = get_u(mfi, xyz, iIon + 1, iU_I, iJ, iLev);
+          ni = get_number_density(mfi, xyz, iIon + 1, iLev);
           U += ni * Ui / ne;
         }
       } else {
         // Ion
-        U = get_value(mfi, x, y, z, iU_I[is - 1], iLev);
+        U = get_value(mfi, xyz, iU_I[is - 1], iLev);
       }
     } else {
       // Single fluid or multi-species.
@@ -482,7 +479,7 @@ public:
         Rhoit = 0;
         Qit = 0;
         for (int iIon = 0; iIon < nIon; ++iIon) {
-          Numi = get_number_density(mfi, x, y, z, iIon + 1, iLev);
+          Numi = get_number_density(mfi, xyz, iIon + 1, iLev);
           Rhoit += Numi * MoMi_S[iIon + 1];
           Qit += Numi * QoQi_S[iIon + 1];
         }
@@ -494,11 +491,11 @@ public:
 
       Rhot = 0;
       for (int is0 = 0; is0 < nS; ++is0) {
-        Rhot += MoMi_S[is0] * get_number_density(mfi, x, y, z, is0, iLev);
+        Rhot += MoMi_S[is0] * get_number_density(mfi, xyz, is0, iLev);
       }
 
-      U = get_value(mfi, x, y, z, iU_I[0], iLev);
-      J = get_value(mfi, x, y, z, iJ, iLev);
+      U = get_value(mfi, xyz, iU_I[0], iLev);
+      J = get_value(mfi, xyz, iJ, iLev);
 
       if (Rhot != 0)
         U -= moq * J / Rhot;
@@ -507,73 +504,71 @@ public:
   }
 
   template <typename T>
-  amrex::Real get_fluid_mass_density(const amrex::MFIter& mfi, const T x,
-                                     const T y, const T z, const int is,
-                                     const int iLev) const {
-    return get_value(mfi, x, y, z, iRho_I[is], iLev);
+  amrex::Real get_fluid_mass_density(const amrex::MFIter& mfi, const T xyz,
+                                     const int is, const int iLev) const {
+    return get_value(mfi, xyz, iRho_I[is], iLev);
   }
 
   template <typename Type>
-  amrex::Real get_fluid_p(const amrex::MFIter& mfi, const Type x, const Type y,
-                          const Type z, const int is, const int iLev) const {
-    return get_value(mfi, x, y, z, iP_I[is], iLev);
+  amrex::Real get_fluid_p(const amrex::MFIter& mfi, const Type xyz,
+                          const int is, const int iLev) const {
+    return get_value(mfi, xyz, iP_I[is], iLev);
   }
 
   template <typename Type>
-  amrex::Real get_fluid_uth(const amrex::MFIter& mfi, const Type x,
-                            const Type y, const Type z, const int is,
-                            const int iLev) const {
+  amrex::Real get_fluid_uth(const amrex::MFIter& mfi, const Type xyz,
+                            const int is, const int iLev) const {
     // 'uth' returned by this method is defined as: uth = sqrt(kT/m)
     // PV = nkT
     // kT/m = PV/(nm) = P/rho
     // So, uth = sqrt(P/rho)
     amrex::Real Uth = 0, p, rho;
-    p = get_fluid_p(mfi, x, y, z, is, iLev);
-    rho = get_fluid_mass_density(mfi, x, y, z, is, iLev);
+    p = get_fluid_p(mfi, xyz, is, iLev);
+    rho = get_fluid_mass_density(mfi, xyz, is, iLev);
     if (rho > 0)
       Uth = sqrt(p / rho);
     return Uth;
   }
 
   template <typename Type>
-  amrex::Real get_fluid_ux(const amrex::MFIter& mfi, const Type x, const Type y,
-                           const Type z, const int is, const int iLev) const {
-    return get_value(mfi, x, y, z, iUx_I[is], iLev);
+  amrex::Real get_fluid_ux(const amrex::MFIter& mfi, const Type xyz,
+                           const int is, const int iLev) const {
+    return get_value(mfi, xyz, iUx_I[is], iLev);
   }
 
   template <typename Type>
-  amrex::Real get_fluid_uy(const amrex::MFIter& mfi, const Type x, const Type y,
-                           const Type z, const int is, const int iLev) const {
-    return get_value(mfi, x, y, z, iUy_I[is], iLev);
+  amrex::Real get_fluid_uy(const amrex::MFIter& mfi, const Type xyz,
+                           const int is, const int iLev) const {
+    return get_value(mfi, xyz, iUy_I[is], iLev);
   }
 
   template <typename Type>
-  amrex::Real get_fluid_uz(const amrex::MFIter& mfi, const Type x, const Type y,
-                           const Type z, const int is, const int iLev) const {
-    return get_value(mfi, x, y, z, iUz_I[is], iLev);
+  amrex::Real get_fluid_uz(const amrex::MFIter& mfi, const Type xyz,
+                           const int is, const int iLev) const {
+    return get_value(mfi, xyz, iUz_I[is], iLev);
   }
 
   template <typename Type>
-  amrex::Real get_ux(const amrex::MFIter& mfi, const Type x, const Type y,
-                     const Type z, const int is, const int iLev = 0) const {
-    return get_u(mfi, x, y, z, is, iUx_I, iJx, iLev);
+  amrex::Real get_ux(const amrex::MFIter& mfi, const Type xyz, const int is,
+                     const int iLev = 0) const {
+    return get_u(mfi, xyz, is, iUx_I, iJx, iLev);
   }
 
   template <typename Type>
-  amrex::Real get_uy(const amrex::MFIter& mfi, const Type x, const Type y,
-                     const Type z, const int is, const int iLev = 0) const {
-    return get_u(mfi, x, y, z, is, iUy_I, iJy, iLev);
+  amrex::Real get_uy(const amrex::MFIter& mfi, const Type xyz, const int is,
+                     const int iLev = 0) const {
+    return get_u(mfi, xyz, is, iUy_I, iJy, iLev);
   }
 
   template <typename Type>
-  amrex::Real get_uz(const amrex::MFIter& mfi, const Type x, const Type y,
-                     const Type z, const int is, const int iLev = 0) const {
-    return get_u(mfi, x, y, z, is, iUz_I, iJz, iLev);
+  amrex::Real get_uz(const amrex::MFIter& mfi, const Type xyz, const int is,
+                     const int iLev = 0) const {
+    return get_u(mfi, xyz, is, iUz_I, iJz, iLev);
   }
 
   template <typename Type>
-  amrex::Real get_ppar(const amrex::MFIter& mfi, const Type x, const Type y,
-                       const Type z, const int is, const int iLev) const {
+  amrex::Real get_ppar(const amrex::MFIter& mfi, const Type xyz, const int is,
+                       const int iLev) const {
     amrex::Real P;
     if (useMultiSpecies || useMultiFluid) {
       std::cout << " getFluidPpar has not implemented for "
@@ -583,14 +578,14 @@ public:
     }
 
     if (useElectronFluid) {
-      P = get_value(mfi, x, y, z, iPpar_I[is], iLev);
+      P = get_value(mfi, xyz, iPpar_I[is], iLev);
     } else if (useMhdPe) {
       if (is == 0)
-        P = get_value(mfi, x, y, z, iPe, iLev); // Electron
+        P = get_value(mfi, xyz, iPe, iLev); // Electron
       if (is == 1)
-        P = get_value(mfi, x, y, z, iPpar_I[0], iLev); // Ion
+        P = get_value(mfi, xyz, iPpar_I[0], iLev); // Ion
     } else {
-      P = get_value(mfi, x, y, z, iPpar_I[0], iLev);
+      P = get_value(mfi, xyz, iPpar_I[0], iLev);
       if (is == 0)
         P *= PeRatio;
       else if (is == 1)
@@ -601,31 +596,31 @@ public:
   }
 
   template <typename Type>
-  amrex::Real get_p(const amrex::MFIter& mfi, const Type x, const Type y,
-                    const Type z, const int is, const int iLev = 0) const {
+  amrex::Real get_p(const amrex::MFIter& mfi, const Type xyz, const int is,
+                    const int iLev = 0) const {
     amrex::Real P;
 
     if (useElectronFluid) {
-      P = get_value(mfi, x, y, z, iP_I[is], iLev);
+      P = get_value(mfi, xyz, iP_I[is], iLev);
     } else if (useMultiFluid) {
       // Multi-fluid.
       if (is == 0)
-        P = get_value(mfi, x, y, z, iPe, iLev); // Electron
+        P = get_value(mfi, xyz, iPe, iLev); // Electron
       else
-        P = get_value(mfi, x, y, z, iP_I[is - 1], iLev); // Ion
+        P = get_value(mfi, xyz, iP_I[is - 1], iLev); // Ion
     } else {
       // Single-fluid and multi-species.
       if (!useMhdPe) {
-        P = get_value(mfi, x, y, z, iP_I[0], iLev);
+        P = get_value(mfi, xyz, iP_I[0], iLev);
         if (is == 0)
           P *= PeRatio;
         else if (is > 0)
           P *= (1 - PeRatio);
       } else {
         if (is == 0)
-          P = get_value(mfi, x, y, z, iPe, iLev); // Electron
+          P = get_value(mfi, xyz, iPe, iLev); // Electron
         else if (is > 0)
-          P = get_value(mfi, x, y, z, iP_I[0], iLev); // Ion
+          P = get_value(mfi, xyz, iP_I[0], iLev); // Ion
       }
 
       // Split pressure among ions.
@@ -633,162 +628,161 @@ public:
         amrex::Real Numit;
         Numit = 0; // Number of all ions.
         for (int iIon = 0; iIon < nIon; ++iIon)
-          Numit += get_number_density(mfi, x, y, z, iIon + 1, iLev);
+          Numit += get_number_density(mfi, xyz, iIon + 1, iLev);
 
-        P *= get_number_density(mfi, x, y, z, is, iLev) / Numit;
+        P *= get_number_density(mfi, xyz, is, iLev) / Numit;
       }
     }
     return P;
   }
 
   template <typename Type>
-  amrex::Real get_pxx(const amrex::MFIter& mfi, const Type x, const Type y,
-                      const Type z, const int is, const int iLev) const {
+  amrex::Real get_pxx(const amrex::MFIter& mfi, const Type xyz, const int is,
+                      const int iLev) const {
     amrex::Real Pxx;
     if (useAnisoP) {
-      amrex::Real Bx = get_value(mfi, x, y, z, iBx, iLev);
-      amrex::Real By = get_value(mfi, x, y, z, iBy, iLev);
-      amrex::Real Bz = get_value(mfi, x, y, z, iBz, iLev);
+      amrex::Real Bx = get_value(mfi, xyz, iBx, iLev);
+      amrex::Real By = get_value(mfi, xyz, iBy, iLev);
+      amrex::Real Bz = get_value(mfi, xyz, iBz, iLev);
       amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
 
-      amrex::Real Ppar = get_ppar(mfi, x, y, z, is, iLev);
-      amrex::Real P = get_p(mfi, x, y, z, is, iLev);
+      amrex::Real Ppar = get_ppar(mfi, xyz, is, iLev);
+      amrex::Real P = get_p(mfi, xyz, is, iLev);
       amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
 
       Pxx = Pperp + (Ppar - Pperp) * Bx * Bx / Bt2;
 
     } else {
-      Pxx = get_p(mfi, x, y, z, is, iLev);
+      Pxx = get_p(mfi, xyz, is, iLev);
     }
     return (QoQi_S[is] *
-            (Pxx / MoMi_S[is] + get_number_density(mfi, x, y, z, is, iLev) *
-                                    pow(get_ux(mfi, x, y, z, is, iLev), 2)));
+            (Pxx / MoMi_S[is] + get_number_density(mfi, xyz, is, iLev) *
+                                    pow(get_ux(mfi, xyz, is, iLev), 2)));
   }
 
   template <typename Type>
-  amrex::Real get_pyy(const amrex::MFIter& mfi, const Type x, const Type y,
-                      const Type z, const int is, const int iLev = 0) const {
+  amrex::Real get_pyy(const amrex::MFIter& mfi, const Type xyz, const int is,
+                      const int iLev = 0) const {
     amrex::Real Pyy;
     if (useAnisoP) {
-      amrex::Real Bx = get_value(mfi, x, y, z, iBx, iLev);
-      amrex::Real By = get_value(mfi, x, y, z, iBy, iLev);
-      amrex::Real Bz = get_value(mfi, x, y, z, iBz, iLev);
+      amrex::Real Bx = get_value(mfi, xyz, iBx, iLev);
+      amrex::Real By = get_value(mfi, xyz, iBy, iLev);
+      amrex::Real Bz = get_value(mfi, xyz, iBz, iLev);
       amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
 
-      amrex::Real Ppar = get_ppar(mfi, x, y, z, is, iLev);
-      amrex::Real P = get_p(mfi, x, y, z, is, iLev);
+      amrex::Real Ppar = get_ppar(mfi, xyz, is, iLev);
+      amrex::Real P = get_p(mfi, xyz, is, iLev);
       amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
 
       Pyy = Pperp + (Ppar - Pperp) * By * By / Bt2;
 
     } else {
-      Pyy = get_p(mfi, x, y, z, is, iLev);
+      Pyy = get_p(mfi, xyz, is, iLev);
     }
     return (QoQi_S[is] *
-            (Pyy / MoMi_S[is] + get_number_density(mfi, x, y, z, is, iLev) *
-                                    pow(get_uy(mfi, x, y, z, is, iLev), 2)));
+            (Pyy / MoMi_S[is] + get_number_density(mfi, xyz, is, iLev) *
+                                    pow(get_uy(mfi, xyz, is, iLev), 2)));
   }
 
   template <typename Type>
-  amrex::Real get_pzz(const amrex::MFIter& mfi, const Type x, const Type y,
-                      const Type z, const int is, const int iLev = 0) const {
+  amrex::Real get_pzz(const amrex::MFIter& mfi, const Type xyz, const int is,
+                      const int iLev = 0) const {
     amrex::Real Pzz;
     if (useAnisoP) {
-      amrex::Real Bx = get_value(mfi, x, y, z, iBx, iLev);
-      amrex::Real By = get_value(mfi, x, y, z, iBy, iLev);
-      amrex::Real Bz = get_value(mfi, x, y, z, iBz, iLev);
+      amrex::Real Bx = get_value(mfi, xyz, iBx, iLev);
+      amrex::Real By = get_value(mfi, xyz, iBy, iLev);
+      amrex::Real Bz = get_value(mfi, xyz, iBz, iLev);
       amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
 
-      amrex::Real Ppar = get_ppar(mfi, x, y, z, is, iLev);
-      amrex::Real P = get_p(mfi, x, y, z, is, iLev);
+      amrex::Real Ppar = get_ppar(mfi, xyz, is, iLev);
+      amrex::Real P = get_p(mfi, xyz, is, iLev);
       amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
 
       Pzz = Pperp + (Ppar - Pperp) * Bz * Bz / Bt2;
 
     } else {
-      Pzz = get_p(mfi, x, y, z, is, iLev);
+      Pzz = get_p(mfi, xyz, is, iLev);
     }
     return (QoQi_S[is] *
-            (Pzz / MoMi_S[is] + get_number_density(mfi, x, y, z, is, iLev) *
-                                    pow(get_uz(mfi, x, y, z, is, iLev), 2)));
+            (Pzz / MoMi_S[is] + get_number_density(mfi, xyz, is, iLev) *
+                                    pow(get_uz(mfi, xyz, is, iLev), 2)));
   }
 
   template <typename Type>
-  amrex::Real get_pxy(const amrex::MFIter& mfi, const Type x, const Type y,
-                      const Type z, const int is, const int iLev = 0) const {
+  amrex::Real get_pxy(const amrex::MFIter& mfi, const Type xyz, const int is,
+                      const int iLev = 0) const {
     amrex::Real Pxy = 0;
     if (useAnisoP) {
-      amrex::Real Bx = get_value(mfi, x, y, z, iBx, iLev);
-      amrex::Real By = get_value(mfi, x, y, z, iBy, iLev);
-      amrex::Real Bz = get_value(mfi, x, y, z, iBz, iLev);
+      amrex::Real Bx = get_value(mfi, xyz, iBx, iLev);
+      amrex::Real By = get_value(mfi, xyz, iBy, iLev);
+      amrex::Real Bz = get_value(mfi, xyz, iBz, iLev);
       amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
 
-      amrex::Real Ppar = get_ppar(mfi, x, y, z, is, iLev);
-      amrex::Real P = get_p(mfi, x, y, z, is, iLev);
+      amrex::Real Ppar = get_ppar(mfi, xyz, is, iLev);
+      amrex::Real P = get_p(mfi, xyz, is, iLev);
       amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
 
       Pxy = (Ppar - Pperp) * Bx * By / Bt2;
     }
 
     return QoQi_S[is] *
-           (Pxy / MoMi_S[is] + get_number_density(mfi, x, y, z, is, iLev) *
-                                   get_ux(mfi, x, y, z, is, iLev) *
-                                   get_uy(mfi, x, y, z, is, iLev));
+           (Pxy / MoMi_S[is] + get_number_density(mfi, xyz, is, iLev) *
+                                   get_ux(mfi, xyz, is, iLev) *
+                                   get_uy(mfi, xyz, is, iLev));
   }
 
   template <typename Type>
-  amrex::Real get_pxz(const amrex::MFIter& mfi, const Type x, const Type y,
-                      const Type z, const int is, const int iLev = 0) const {
+  amrex::Real get_pxz(const amrex::MFIter& mfi, const Type xyz, const int is,
+                      const int iLev = 0) const {
     amrex::Real Pxz = 0;
     if (useAnisoP) {
-      amrex::Real Bx = get_value(mfi, x, y, z, iBx, iLev);
-      amrex::Real By = get_value(mfi, x, y, z, iBy, iLev);
-      amrex::Real Bz = get_value(mfi, x, y, z, iBz, iLev);
+      amrex::Real Bx = get_value(mfi, xyz, iBx, iLev);
+      amrex::Real By = get_value(mfi, xyz, iBy, iLev);
+      amrex::Real Bz = get_value(mfi, xyz, iBz, iLev);
       amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
 
-      amrex::Real Ppar = get_ppar(mfi, x, y, z, is, iLev);
-      amrex::Real P = get_p(mfi, x, y, z, is, iLev);
+      amrex::Real Ppar = get_ppar(mfi, xyz, is, iLev);
+      amrex::Real P = get_p(mfi, xyz, is, iLev);
       amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
 
       Pxz = (Ppar - Pperp) * Bx * Bz / Bt2;
     }
 
     return QoQi_S[is] *
-           (Pxz / MoMi_S[is] + get_number_density(mfi, x, y, z, is, iLev) *
-                                   get_ux(mfi, x, y, z, is, iLev) *
-                                   get_uz(mfi, x, y, z, is, iLev));
+           (Pxz / MoMi_S[is] + get_number_density(mfi, xyz, is, iLev) *
+                                   get_ux(mfi, xyz, is, iLev) *
+                                   get_uz(mfi, xyz, is, iLev));
   }
 
   template <typename Type>
-  amrex::Real get_pyz(const amrex::MFIter& mfi, const Type x, const Type y,
-                      const Type z, const int is, const int iLev = 0) const {
+  amrex::Real get_pyz(const amrex::MFIter& mfi, const Type xyz, const int is,
+                      const int iLev = 0) const {
     amrex::Real Pyz = 0;
     if (useAnisoP) {
-      amrex::Real Bx = get_value(mfi, x, y, z, iBx, iLev);
-      amrex::Real By = get_value(mfi, x, y, z, iBy, iLev);
-      amrex::Real Bz = get_value(mfi, x, y, z, iBz, iLev);
+      amrex::Real Bx = get_value(mfi, xyz, iBx, iLev);
+      amrex::Real By = get_value(mfi, xyz, iBy, iLev);
+      amrex::Real Bz = get_value(mfi, xyz, iBz, iLev);
       amrex::Real Bt2 = Bx * Bx + By * By + Bz * Bz;
 
-      amrex::Real Ppar = get_ppar(mfi, x, y, z, is, iLev);
-      amrex::Real P = get_p(mfi, x, y, z, is, iLev);
+      amrex::Real Ppar = get_ppar(mfi, xyz, is, iLev);
+      amrex::Real P = get_p(mfi, xyz, is, iLev);
       amrex::Real Pperp = 0.5 * (3.0 * P - Ppar);
 
       Pyz = (Ppar - Pperp) * By * Bz / Bt2;
     }
 
     return QoQi_S[is] *
-           (Pyz / MoMi_S[is] + get_number_density(mfi, x, y, z, is, iLev) *
-                                   get_uy(mfi, x, y, z, is, iLev) *
-                                   get_uz(mfi, x, y, z, is, iLev));
+           (Pyz / MoMi_S[is] + get_number_density(mfi, xyz, is, iLev) *
+                                   get_uy(mfi, xyz, is, iLev) *
+                                   get_uz(mfi, xyz, is, iLev));
   }
 
   template <typename Type>
-  amrex::Real get_uth_iso(const amrex::MFIter& mfi, const Type x, const Type y,
-                          const Type z, const int is,
-                          const int iLev = 0) const {
+  amrex::Real get_uth_iso(const amrex::MFIter& mfi, const Type xyz,
+                          const int is, const int iLev = 0) const {
     amrex::Real Uth = 0, p, ni;
-    p = get_p(mfi, x, y, z, is, iLev);
-    ni = get_number_density(mfi, x, y, z, is, iLev);
+    p = get_p(mfi, xyz, is, iLev);
+    ni = get_number_density(mfi, xyz, is, iLev);
     if (ni > 0)
       Uth = sqrt(p / (ni * MoMi_S[is]));
     return Uth;
@@ -796,11 +790,10 @@ public:
 
   template <typename Type>
   void set_particle_uth_iso(const int iLev, const amrex::MFIter& mfi,
-                            const Type x, const Type y, const Type z, double* u,
-                            double* v, double* w, const double rand1,
-                            const double rand2, const double rand3,
-                            const double rand4, const int is,
-                            const double uthIn = -1) const {
+                            const Type xyz, double* u, double* v, double* w,
+                            const double rand1, const double rand2,
+                            const double rand3, const double rand4,
+                            const int is, const double uthIn = -1) const {
     double harvest, prob, theta, Uth;
 
     // u = X velocity
@@ -808,7 +801,7 @@ public:
     prob = sqrt(-2.0 * log(1.0 - .999999999 * harvest));
     harvest = rand2;
     theta = 2.0 * M_PI * harvest;
-    Uth = (uthIn >= 0 ? uthIn : get_uth_iso(mfi, x, y, z, is, iLev));
+    Uth = (uthIn >= 0 ? uthIn : get_uth_iso(mfi, xyz, is, iLev));
 
     (*u) = Uth * prob * cos(theta);
     // v = Y velocity
@@ -823,8 +816,7 @@ public:
 
   template <typename Type>
   void set_particle_uth_aniso(const int iLev, const amrex::MFIter& mfi,
-                              const Type x, const Type y, const Type z,
-                              double* u, double* v, double* w,
+                              const Type xyz, double* u, double* v, double* w,
                               const double rand1, const double rand2,
                               const double rand3, const double rand4,
                               const int is, const double uthParIn = -1,
@@ -854,14 +846,14 @@ public:
     Z_ = 2;
 
     // Get number density and B at the particle position
-    double ni = get_number_density(mfi, x, y, z, is, iLev);
-    Bx = get_value(mfi, x, y, z, iBx, iLev);
-    By = get_value(mfi, x, y, z, iBy, iLev);
-    Bz = get_value(mfi, x, y, z, iBz, iLev);
+    double ni = get_number_density(mfi, xyz, is, iLev);
+    Bx = get_value(mfi, xyz, iBx, iLev);
+    By = get_value(mfi, xyz, iBy, iLev);
+    Bz = get_value(mfi, xyz, iBz, iLev);
 
     // Get Parallel and perpendicular presure
-    Ppar = get_ppar(mfi, x, y, z, is, iLev);
-    P = get_p(mfi, x, y, z, is, iLev);
+    Ppar = get_ppar(mfi, xyz, is, iLev);
+    P = get_p(mfi, xyz, is, iLev);
     Pperp = 0.5 * (3.0 * P - Ppar);
 
     // Get 3 vertors spaning the vector space
@@ -891,100 +883,96 @@ public:
   }
 
   template <typename Type>
-  amrex::Real get_bx(const amrex::MFIter& mfi, const Type x, const Type y,
-                     const Type z, const int iLev = 0) const {
-    return get_value(mfi, x, y, z, iBx, iLev);
+  amrex::Real get_bx(const amrex::MFIter& mfi, const Type xyz,
+                     const int iLev = 0) const {
+    return get_value(mfi, xyz, iBx, iLev);
   }
 
   template <typename Type>
-  amrex::Real get_by(const amrex::MFIter& mfi, const Type x, const Type y,
-                     const Type z, const int iLev = 0) const {
-    return get_value(mfi, x, y, z, iBy, iLev);
+  amrex::Real get_by(const amrex::MFIter& mfi, const Type xyz,
+                     const int iLev = 0) const {
+    return get_value(mfi, xyz, iBy, iLev);
   }
 
   template <typename Type>
-  amrex::Real get_bz(const amrex::MFIter& mfi, const Type x, const Type y,
-                     const Type z, const int iLev = 0) const {
-    return get_value(mfi, x, y, z, iBz, iLev);
+  amrex::Real get_bz(const amrex::MFIter& mfi, const Type xyz,
+                     const int iLev = 0) const {
+    return get_value(mfi, xyz, iBz, iLev);
   }
 
   template <typename Type>
-  amrex::Real get_ex(const amrex::MFIter& mfi, const Type x, const Type y,
-                     const Type z, const int iLev) const {
+  amrex::Real get_ex(const amrex::MFIter& mfi, const Type xyz,
+                     const int iLev) const {
     amrex::Real Ex;
     if (useElectronFluid) {
-      Ex = get_value(mfi, x, y, z, iEx, iLev);
+      Ex = get_value(mfi, xyz, iEx, iLev);
     } else {
       const bool UseGradPe = false;
 
       amrex::Real uz, uy;
 
       if (OhmU == OhmUe_) {
-        uz = get_uz(mfi, x, y, z, 0, iLev);
-        uy = get_uy(mfi, x, y, z, 0, iLev);
+        uz = get_uz(mfi, xyz, 0, iLev);
+        uy = get_uy(mfi, xyz, 0, iLev);
       } else if (OhmU == OhmUi_) {
-        uz = get_uz(mfi, x, y, z, 1, iLev);
-        uy = get_uy(mfi, x, y, z, 1, iLev);
+        uz = get_uz(mfi, xyz, 1, iLev);
+        uy = get_uy(mfi, xyz, 1, iLev);
       } else if (OhmU == OhmUMHD_) {
         const amrex::Real r0 = MoMi_S[0] / (MoMi_S[0] + MoMi_S[1]);
         const amrex::Real r1 = 1 - r0;
-        uz = r0 * get_uz(mfi, x, y, z, 0, iLev) +
-             r1 * get_uz(mfi, x, y, z, 1, iLev);
-        uy = r0 * get_uy(mfi, x, y, z, 0, iLev) +
-             r1 * get_uy(mfi, x, y, z, 1, iLev);
+        uz = r0 * get_uz(mfi, xyz, 0, iLev) + r1 * get_uz(mfi, xyz, 1, iLev);
+        uy = r0 * get_uy(mfi, xyz, 0, iLev) + r1 * get_uy(mfi, xyz, 1, iLev);
       }
 
-      Ex = uz * get_by(mfi, x, y, z, iLev) - uy * get_bz(mfi, x, y, z, iLev);
+      Ex = uz * get_by(mfi, xyz, iLev) - uy * get_bz(mfi, xyz, iLev);
 
       if (UseGradPe) {
-        amrex::Real ne = get_number_density(mfi, x, y, z, 0, iLev);
-        amrex::Real gradpe = get_grad_pe_x(mfi, x, y, z, iLev);
+        amrex::Real ne = get_number_density(mfi, xyz, 0, iLev);
+        amrex::Real gradpe = get_grad_pe_x(mfi, xyz, iLev);
         Ex -= gradpe / fabs(QoQi_S[0] * ne);
       }
 
       if (useResist) {
-        Ex += etaNO * get_value(mfi, x, y, z, iJx, iLev);
+        Ex += etaNO * get_value(mfi, xyz, iJx, iLev);
       }
     }
     return Ex;
   }
 
   template <typename Type>
-  amrex::Real get_ey(const amrex::MFIter& mfi, const Type x, const Type y,
-                     const Type z, const int iLev = 0) const {
+  amrex::Real get_ey(const amrex::MFIter& mfi, const Type xyz,
+                     const int iLev = 0) const {
     amrex::Real Ey;
     if (useElectronFluid) {
-      Ey = get_value(mfi, x, y, z, iEy, iLev);
+      Ey = get_value(mfi, xyz, iEy, iLev);
     } else {
       const bool UseGradPe = false;
 
       amrex::Real ux, uz;
 
       if (OhmU == OhmUe_) {
-        uz = get_uz(mfi, x, y, z, 0, iLev);
-        ux = get_ux(mfi, x, y, z, 0, iLev);
+        uz = get_uz(mfi, xyz, 0, iLev);
+        ux = get_ux(mfi, xyz, 0, iLev);
       } else if (OhmU == OhmUi_) {
-        uz = get_uz(mfi, x, y, z, 1, iLev);
-        ux = get_ux(mfi, x, y, z, 1, iLev);
+        uz = get_uz(mfi, xyz, 1, iLev);
+        ux = get_ux(mfi, xyz, 1, iLev);
       } else if (OhmU == OhmUMHD_) {
         const amrex::Real r0 = MoMi_S[0] / (MoMi_S[0] + MoMi_S[1]);
         const amrex::Real r1 = 1 - r0;
-        uz = r0 * get_uz(mfi, x, y, z, 0, iLev) +
-             r1 * get_uz(mfi, x, y, z, 1, iLev);
-        ux = r0 * get_ux(mfi, x, y, z, 0, iLev) +
-             r1 * get_ux(mfi, x, y, z, 1, iLev);
+        uz = r0 * get_uz(mfi, xyz, 0, iLev) + r1 * get_uz(mfi, xyz, 1, iLev);
+        ux = r0 * get_ux(mfi, xyz, 0, iLev) + r1 * get_ux(mfi, xyz, 1, iLev);
       }
 
-      Ey = ux * get_bz(mfi, x, y, z, iLev) - uz * get_bx(mfi, x, y, z, iLev);
+      Ey = ux * get_bz(mfi, xyz, iLev) - uz * get_bx(mfi, xyz, iLev);
 
       if (UseGradPe) {
-        amrex::Real ne = get_number_density(mfi, x, y, z, 0, iLev);
-        amrex::Real gradpe = get_grad_pe_y(mfi, x, y, z, iLev);
+        amrex::Real ne = get_number_density(mfi, xyz, 0, iLev);
+        amrex::Real gradpe = get_grad_pe_y(mfi, xyz, iLev);
         Ey -= gradpe / fabs(QoQi_S[0] * ne);
       }
 
       if (useResist) {
-        Ey += etaNO * get_value(mfi, x, y, z, iJy, iLev);
+        Ey += etaNO * get_value(mfi, xyz, iJy, iLev);
       }
     }
 
@@ -992,41 +980,39 @@ public:
   }
 
   template <typename Type>
-  amrex::Real get_ez(const amrex::MFIter& mfi, const Type x, const Type y,
-                     const Type z, const int iLev = 0) const {
+  amrex::Real get_ez(const amrex::MFIter& mfi, const Type xyz,
+                     const int iLev = 0) const {
     amrex::Real Ez;
     if (useElectronFluid) {
-      Ez = get_value(mfi, x, y, z, iEz, iLev);
+      Ez = get_value(mfi, xyz, iEz, iLev);
     } else {
       const bool UseGradPe = false;
 
       amrex::Real ux, uy;
 
       if (OhmU == OhmUe_) {
-        ux = get_ux(mfi, x, y, z, 0, iLev);
-        uy = get_uy(mfi, x, y, z, 0, iLev);
+        ux = get_ux(mfi, xyz, 0, iLev);
+        uy = get_uy(mfi, xyz, 0, iLev);
       } else if (OhmU == OhmUi_) {
-        ux = get_ux(mfi, x, y, z, 1, iLev);
-        uy = get_uy(mfi, x, y, z, 1, iLev);
+        ux = get_ux(mfi, xyz, 1, iLev);
+        uy = get_uy(mfi, xyz, 1, iLev);
       } else if (OhmU == OhmUMHD_) {
         const amrex::Real r0 = MoMi_S[0] / (MoMi_S[0] + MoMi_S[1]);
         const amrex::Real r1 = 1 - r0;
-        ux = r0 * get_ux(mfi, x, y, z, 0, iLev) +
-             r1 * get_ux(mfi, x, y, z, 1, iLev);
-        uy = r0 * get_uy(mfi, x, y, z, 0, iLev) +
-             r1 * get_uy(mfi, x, y, z, 1, iLev);
+        ux = r0 * get_ux(mfi, xyz, 0, iLev) + r1 * get_ux(mfi, xyz, 1, iLev);
+        uy = r0 * get_uy(mfi, xyz, 0, iLev) + r1 * get_uy(mfi, xyz, 1, iLev);
       }
 
-      Ez = uy * get_bx(mfi, x, y, z, iLev) - ux * get_by(mfi, x, y, z, iLev);
+      Ez = uy * get_bx(mfi, xyz, iLev) - ux * get_by(mfi, xyz, iLev);
 
       if (UseGradPe) {
-        amrex::Real ne = get_number_density(mfi, x, y, z, 0, iLev);
-        amrex::Real gradpe = get_grad_pe_z(mfi, x, y, z, iLev);
+        amrex::Real ne = get_number_density(mfi, xyz, 0, iLev);
+        amrex::Real gradpe = get_grad_pe_z(mfi, xyz, iLev);
         Ez -= gradpe / fabs(QoQi_S[0] * ne);
       }
 
       if (useResist) {
-        Ez += etaNO * get_value(mfi, x, y, z, iJz, iLev);
+        Ez += etaNO * get_value(mfi, xyz, iJz, iLev);
       }
     }
     return Ez;
@@ -1035,67 +1021,79 @@ public:
   // Calculate grad(pe) at node (x,y,z). If this node is at the boundary of
   // the fab, it will return grad(pe) at a node that is one cell away from the
   // boundary. Only works when useElectronFluid is False.
-  amrex::Real get_grad_pe_x(const amrex::MFIter& mfi, const int x, const int y,
-                            const int z, const int iLev) const {
+  amrex::Real get_grad_pe_x(const amrex::MFIter& mfi, amrex::IntVect ijk,
+                            const int iLev) const {
     const amrex::Box& box = mfi.fabbox();
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
-    int xCenter = x;
-
-    if (x == lo.x) {
-      xCenter = x + 1;
-    } else if (x == hi.x) {
-      xCenter = x - 1;
+    if (ijk[ix_] == lo.x) {
+      ijk[ix_] += 1;
+    } else if (ijk[ix_] == hi.x) {
+      ijk[ix_] -= 1;
     }
 
-    amrex::Real gradpe = 0.5 * Geom(iLev).InvCellSize(ix_) *
-                         (get_p(mfi, xCenter + 1, y, z, 0, iLev) -
-                          get_p(mfi, xCenter - 1, y, z, 0, iLev));
+    amrex::IntVect ijkL = ijk;
+    amrex::IntVect ijkR = ijk;
+
+    ijkL[ix_] += 1;
+    ijkR[ix_] -= 1;
+
+    amrex::Real gradpe =
+        0.5 * Geom(iLev).InvCellSize(ix_) *
+        (get_p(mfi, ijkL, 0, iLev) - get_p(mfi, ijkR, 0, iLev));
 
     return gradpe;
   }
 
-  amrex::Real get_grad_pe_y(const amrex::MFIter& mfi, const int x, const int y,
-                            const int z, const int iLev) const {
+  amrex::Real get_grad_pe_y(const amrex::MFIter& mfi, amrex::IntVect ijk,
+                            const int iLev) const {
 
     const amrex::Box& box = mfi.fabbox();
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
-    int yCenter = y;
-
-    if (y == lo.y) {
-      yCenter = y + 1;
-    } else if (y == hi.y) {
-      yCenter = y - 1;
+    if (ijk[iy_] == lo.y) {
+      ijk[iy_] += 1;
+    } else if (ijk[iy_] == hi.y) {
+      ijk[iy_] -= 1;
     }
 
-    amrex::Real gradpe = 0.5 * Geom(iLev).InvCellSize(iy_) *
-                         (get_p(mfi, x, yCenter + 1, z, 0, iLev) -
-                          get_p(mfi, x, yCenter - 1, z, 0, iLev));
+    amrex::IntVect ijkL = ijk;
+    amrex::IntVect ijkR = ijk;
+
+    ijkL[iy_] += 1;
+    ijkR[iy_] -= 1;
+
+    amrex::Real gradpe =
+        0.5 * Geom(iLev).InvCellSize(iy_) *
+        (get_p(mfi, ijkL, 0, iLev) - get_p(mfi, ijkR, 0, iLev));
 
     return gradpe;
   }
 
-  amrex::Real get_grad_pe_z(const amrex::MFIter& mfi, const int x, const int y,
-                            const int z, const int iLev) const {
+  amrex::Real get_grad_pe_z(const amrex::MFIter& mfi, amrex::IntVect ijk,
+                            const int iLev) const {
 
     const amrex::Box& box = mfi.fabbox();
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
-    int zCenter = z;
-
-    if (z == lo.z) {
-      zCenter = z + 1;
-    } else if (z == hi.z) {
-      zCenter = z - 1;
+    if (ijk[iz_] == lo.z) {
+      ijk[iz_] += 1;
+    } else if (ijk[iz_] == hi.z) {
+      ijk[iz_] -= 1;
     }
 
-    amrex::Real gradpe = 0.5 * Geom(iLev).InvCellSize(iz_) *
-                         (get_p(mfi, x, y, zCenter + 1, 0, iLev) -
-                          get_p(mfi, x, y, zCenter - 1, 0, iLev));
+    amrex::IntVect ijkL = ijk;
+    amrex::IntVect ijkR = ijk;
+
+    ijkL[iz_] += 1;
+    ijkR[iz_] -= 1;
+
+    amrex::Real gradpe =
+        0.5 * Geom(iLev).InvCellSize(iz_) *
+        (get_p(mfi, ijkL, 0, iLev) - get_p(mfi, ijkR, 0, iLev));
 
     return gradpe;
   }

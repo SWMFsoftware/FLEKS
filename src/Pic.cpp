@@ -324,10 +324,11 @@ void Pic::fill_new_node_E() {
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_new(status(i, j, k))) {
-              arrE(i, j, k, ix_) = fi->get_ex(mfi, i, j, k, iLev);
-              arrE(i, j, k, iy_) = fi->get_ey(mfi, i, j, k, iLev);
-              arrE(i, j, k, iz_) = fi->get_ez(mfi, i, j, k, iLev);
+            IntVect ijk = { AMREX_D_DECL(i, j, k) };
+            if (bit::is_new(status(ijk))) {
+              arrE(i, j, k, ix_) = fi->get_ex(mfi, ijk, iLev);
+              arrE(i, j, k, iy_) = fi->get_ey(mfi, ijk, iLev);
+              arrE(i, j, k, iz_) = fi->get_ez(mfi, ijk, iLev);
             }
           }
     }
@@ -346,10 +347,11 @@ void Pic::fill_new_node_B() {
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
+            IntVect ijk = { AMREX_D_DECL(i, j, k) };
             if (bit::is_new(status(i, j, k))) {
-              arrB(i, j, k, ix_) = fi->get_bx(mfi, i, j, k, iLev);
-              arrB(i, j, k, iy_) = fi->get_by(mfi, i, j, k, iLev);
-              arrB(i, j, k, iz_) = fi->get_bz(mfi, i, j, k, iLev);
+              arrB(i, j, k, ix_) = fi->get_bx(mfi, ijk, iLev);
+              arrB(i, j, k, iy_) = fi->get_by(mfi, ijk, iLev);
+              arrB(i, j, k, iz_) = fi->get_bz(mfi, ijk, iLev);
             }
           }
     }

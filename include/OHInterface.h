@@ -89,26 +89,21 @@ public:
     if (!isnodeFluidReady)
       return -1;
 
-    int i = ijk[0];
-    int j = ijk[1];
-    int k = ijk[2];
-
     // amu/m^3
-    amrex::Real n = get_fluid_mass_density(mfi, i, j, k, iFluid, iLev) *
+    amrex::Real n = get_fluid_mass_density(mfi, ijk, iFluid, iLev) *
                     get_No2SiRho() / cProtonMassSI;
 
     // km/s
     const amrex::Real ux =
-        get_fluid_ux(mfi, i, j, k, iFluid, iLev) * get_No2SiV() * 1e-3;
+        get_fluid_ux(mfi, ijk, iFluid, iLev) * get_No2SiV() * 1e-3;
     const amrex::Real uy =
-        get_fluid_uy(mfi, i, j, k, iFluid, iLev) * get_No2SiV() * 1e-3;
+        get_fluid_uy(mfi, ijk, iFluid, iLev) * get_No2SiV() * 1e-3;
     const amrex::Real uz =
-        get_fluid_uz(mfi, i, j, k, iFluid, iLev) * get_No2SiV() * 1e-3;
+        get_fluid_uz(mfi, ijk, iFluid, iLev) * get_No2SiV() * 1e-3;
     amrex::Real u2 = ux * ux + uy * uy + uz * uz;
 
     // Pa
-    const amrex::Real p =
-        get_fluid_p(mfi, i, j, k, iFluid, iLev) * get_No2SiP();
+    const amrex::Real p = get_fluid_p(mfi, ijk, iFluid, iLev) * get_No2SiP();
     amrex::Real T = p / n / cBoltzmannSI;
 
     const amrex::Real gamma = 5. / 3;
@@ -118,9 +113,9 @@ public:
 
     amrex::Real mach2 = u2 / cs2;
 
-    const amrex::Real x = Geom(iLev).CellCenter(i, ix_);
-    const amrex::Real y = Geom(iLev).CellCenter(j, iy_);
-    const amrex::Real z = Geom(iLev).CellCenter(k, iz_);
+    const amrex::Real x = Geom(iLev).CellCenter(ijk[ix_], ix_);
+    const amrex::Real y = Geom(iLev).CellCenter(ijk[iy_], iy_);
+    const amrex::Real z = Geom(iLev).CellCenter(ijk[iz_], iz_);
 
     // cAU
     amrex::Real r = sqrt(x * x + y * y + z * z) * get_No2SiL() / cAUSI;

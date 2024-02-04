@@ -123,13 +123,6 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 
   set_random_seed(iLev, ijk, nPPC);
 
-  // TODO: to be removed
-  int i = ijk[0];
-  int j = ijk[1];
-  int k = ijk[2];
-
-  Real x, y, z; // Particle location
-
   Real vol = 1;
   int npcel = 1;
 
@@ -152,36 +145,35 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   for (int ii = 0; ii < nPPC[ix_]; ii++)
     for (int jj = 0; jj < nPPC[iy_]; jj++)
       for (int kk = 0; kk < kmax; kk++) {
+        RealVect xyz, xyz0;
 
-        x = (ii + randNum()) * (dx[iLev][ix_] / nPPC[ix_]) + i * dx[iLev][ix_] +
-            plo[iLev][ix_];
-        y = (jj + randNum()) * (dx[iLev][iy_] / nPPC[iy_]) + j * dx[iLev][iy_] +
-            plo[iLev][iy_];
+        xyz[ix_] = (ii + randNum()) * (dx[iLev][ix_] / nPPC[ix_]) +
+                   ijk[ix_] * dx[iLev][ix_] + plo[iLev][ix_];
+        xyz[iy_] = (jj + randNum()) * (dx[iLev][iy_] / nPPC[iy_]) +
+                   ijk[iy_] * dx[iLev][iy_] + plo[iLev][iy_];
 
-        z = nDim > 2 ? (kk + randNum()) * (dx[iLev][iz_] / nPPC[iz_]) +
-                           k * dx[iLev][iz_] + plo[iLev][iz_]
-                     : 0 * randNum();
+        xyz[iz_] = nDim > 2 ? (kk + randNum()) * (dx[iLev][iz_] / nPPC[iz_]) +
+                                  ijk[iz_] * dx[iLev][iz_] + plo[iLev][iz_]
+                            : 0 * randNum();
 
         // If the particle weight is sampled in a random location, the sum of
         // particle mass is NOT the same as the integral of the grid density.
         // It is more convenient for debugging if mass is exactly conserved. For
         // a production run, it makes little difference.
-        Real x0 = (ii + 0.5) * (dx[iLev][ix_] / nPPC[ix_]) + i * dx[iLev][ix_] +
-                  plo[iLev][ix_];
-        Real y0 = (jj + 0.5) * (dx[iLev][iy_] / nPPC[iy_]) + j * dx[iLev][iy_] +
-                  plo[iLev][iy_];
-        Real z0 = nDim > 2 ? (kk + 0.5) * (dx[iLev][iz_] / nPPC[iz_]) +
-                                 k * dx[iLev][iz_] + plo[iLev][iz_]
-                           : 0;
+        xyz0[ix_] = (ii + 0.5) * (dx[iLev][ix_] / nPPC[ix_]) +
+                    ijk[ix_] * dx[iLev][ix_] + plo[iLev][ix_];
+        xyz0[iy_] = (jj + 0.5) * (dx[iLev][iy_] / nPPC[iy_]) +
+                    ijk[iy_] * dx[iLev][iy_] + plo[iLev][iy_];
+        xyz0[iz_] = nDim > 2 ? (kk + 0.5) * (dx[iLev][iz_] / nPPC[iz_]) +
+                                   ijk[iz_] * dx[iLev][iz_] + plo[iLev][iz_]
+                             : 0;
 
         if (!isParticleLocationRandom) {
-          x = x0;
-          y = y0;
-          z = z0;
+          xyz = xyz0;
         }
 
         const double nDens =
-            interface->get_number_density(mfi, x0, y0, z0, speciesID, iLev);
+            interface->get_number_density(mfi, xyz0, speciesID, iLev);
 
         if (doVacuumLimit && nDens * dt < vacuum)
           continue;
@@ -198,24 +190,21 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           double uth = (userState ? tpVel.vth : -1);
           if (!is_neutral() && interface->get_UseAnisoP() &&
               (speciesID > 0 || interface->get_useElectronFluid())) {
-            interface->set_particle_uth_aniso(iLev, mfi, x, y, z, &u, &v, &w,
-                                              rand1, rand2, rand3, rand4,
-                                              speciesID, uth, uth);
+            interface->set_particle_uth_aniso(iLev, mfi, xyz, &u, &v, &w, rand1,
+                                              rand2, rand3, rand4, speciesID,
+                                              uth, uth);
           } else {
-            interface->set_particle_uth_iso(iLev, mfi, x, y, z, &u, &v, &w,
-                                            rand1, rand2, rand3, rand4,
-                                            speciesID, uth);
+            interface->set_particle_uth_iso(iLev, mfi, xyz, &u, &v, &w, rand1,
+                                            rand2, rand3, rand4, speciesID,
+                                            uth);
           }
 
-          Real uBulk = userState
-                           ? tpVel.vx
-                           : interface->get_ux(mfi, x, y, z, speciesID, iLev);
-          Real vBulk = userState
-                           ? tpVel.vy
-                           : interface->get_uy(mfi, x, y, z, speciesID, iLev);
-          Real wBulk = userState
-                           ? tpVel.vz
-                           : interface->get_uz(mfi, x, y, z, speciesID, iLev);
+          Real uBulk = userState ? tpVel.vx
+                                 : interface->get_ux(mfi, xyz, speciesID, iLev);
+          Real vBulk = userState ? tpVel.vy
+                                 : interface->get_uy(mfi, xyz, speciesID, iLev);
+          Real wBulk = userState ? tpVel.vz
+                                 : interface->get_uz(mfi, xyz, speciesID, iLev);
 
           if (testCase == TwoStream && qom < 0 && icount % 2 == 0) {
             // Electron only (qom<0)
@@ -230,21 +219,11 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           v += vBulk;
           w += wBulk;
 
-          if (false) {
-            x = x0;
-            y = y0;
-            z = z0;
-            u = 0;
-            v = 0;
-            w = 0;
-            q = 1;
-          }
-
           ParticleType p;
           set_ids(p);
-          p.pos(ix_) = x;
-          p.pos(iy_) = y;
-          p.pos(iz_) = z;
+          p.pos(ix_) = xyz[ix_];
+          p.pos(iy_) = xyz[iy_];
+          p.pos(iz_) = xyz[iz_];
           p.rdata(iup_) = u;
           p.rdata(ivp_) = v;
           p.rdata(iwp_) = w;
@@ -286,12 +265,14 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
             if (bit::is_refined(status(i, j, k)))
               continue;
 
+            IntVect ijk = { i, j, k };
+
             bool doAdd = true;
 #ifdef _PT_COMPONENT_
             if (stateOH && doSelectRegion) {
               const int iFluid = 0;
-              const int iRegion = stateOH->get_neu_source_region(
-                  mfi, IntVect{ i, j, k }, iFluid, iLev);
+              const int iRegion =
+                  stateOH->get_neu_source_region(mfi, ijk, iFluid, iLev);
               doAdd = (iRegion == speciesID);
             }
 #endif
@@ -305,10 +286,9 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
                   sourcePPC *= ppc[iDim];
                 }
 
-                Real rho =
-                    fi->get_number_density(mfi, i, j, k, speciesID, iLev);
-                Real rhoSource = interface->get_number_density(mfi, i, j, k,
-                                                               speciesID, iLev);
+                Real rho = fi->get_number_density(mfi, ijk, speciesID, iLev);
+                Real rhoSource =
+                    interface->get_number_density(mfi, ijk, speciesID, iLev);
                 if (dt > 0)
                   rhoSource *= dt;
 
@@ -330,8 +310,8 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
                 //         << " dt = " << dt << std::endl;
               }
 
-              add_particles_cell(iLev, mfi, IntVect{ i, j, k }, interface,
-                                 false, ppc, Vel(), dt);
+              add_particles_cell(iLev, mfi, ijk, interface, false, ppc, Vel(),
+                                 dt);
             }
           }
     }
@@ -2682,11 +2662,10 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         if (p.id() < 0)
           continue;
 
-        const Real xp = p.pos(ix_);
-        const Real yp = p.pos(iy_);
-        const Real zp = p.pos(iz_);
-
-        RealVect xyz = RealVect(AMREX_D_DECL(xp, yp, zp));
+        RealVect xyz;
+        for (int i = 0; i < nDim; i++) {
+          xyz[i] = p.pos(i);
+        }
 
         double cs2Neu = 0, uNeu[3], rhoNeu;
         double cs2Ion, uIon[3], rhoIon;
@@ -2705,13 +2684,12 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         // MHD fluid index.
         const int fluidID = 0;
         // amu/m^3
-        rhoIon =
-            stateOH->get_fluid_mass_density(pti, xp, yp, zp, fluidID, iLev) *
-            stateOH->get_No2SiRho() / cProtonMassSI;
+        rhoIon = stateOH->get_fluid_mass_density(pti, xyz, fluidID, iLev) *
+                 stateOH->get_No2SiRho() / cProtonMassSI;
 
         // cs = sqrt(P/n); m/s
         // Assume p = pi + pe = 2pi, so divide by sqrt(2.0).
-        double cs = stateOH->get_fluid_uth(pti, xp, yp, zp, fluidID, iLev) *
+        double cs = stateOH->get_fluid_uth(pti, xyz, fluidID, iLev) *
                     stateOH->get_No2SiV() / sqrt(2.0);
 
         // cs2Ion = 2*P/n. The definition of thermal speed in get_uth_iso() is
@@ -2719,11 +2697,11 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         // See page 92 of Adam Michael's thesis.
         cs2Ion = 2 * pow(cs, 2);
 
-        uIon[ix_] = stateOH->get_fluid_ux(pti, xp, yp, zp, fluidID, iLev) *
+        uIon[ix_] = stateOH->get_fluid_ux(pti, xyz, fluidID, iLev) *
                     stateOH->get_No2SiV();
-        uIon[iy_] = stateOH->get_fluid_uy(pti, xp, yp, zp, fluidID, iLev) *
+        uIon[iy_] = stateOH->get_fluid_uy(pti, xyz, fluidID, iLev) *
                     stateOH->get_No2SiV();
-        uIon[iz_] = stateOH->get_fluid_uz(pti, xp, yp, zp, fluidID, iLev) *
+        uIon[iz_] = stateOH->get_fluid_uz(pti, xyz, fluidID, iLev) *
                     stateOH->get_No2SiV();
 
         OH_get_charge_exchange_wrapper(&rhoIon, &cs2Ion, uIon, &rhoNeu, &cs2Neu,

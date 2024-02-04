@@ -339,15 +339,12 @@ public:
   inline amrex::Real get_node_E(amrex::MFIter &mfi, amrex::IntVect ijk,
                                 int iVar, const int iLev) {
     amrex::Real e;
-    int i = ijk[0];
-    int j = ijk[1];
-    int k = ijk[2];
     if (iVar == ix_)
-      e = fi->get_ex(mfi, i, j, k, iLev);
+      e = fi->get_ex(mfi, ijk, iLev);
     if (iVar == iy_)
-      e = fi->get_ey(mfi, i, j, k, iLev);
+      e = fi->get_ey(mfi, ijk, iLev);
     if (iVar == iz_)
-      e = fi->get_ez(mfi, i, j, k, iLev);
+      e = fi->get_ez(mfi, ijk, iLev);
 
     return e;
   }
@@ -355,15 +352,12 @@ public:
   inline amrex::Real get_node_B(amrex::MFIter &mfi, amrex::IntVect ijk,
                                 int iVar, const int iLev) {
     amrex::Real b;
-    int i = ijk[0];
-    int j = ijk[1];
-    int k = ijk[2];
     if (iVar == ix_)
-      b = fi->get_bx(mfi, i, j, k, iLev);
+      b = fi->get_bx(mfi, ijk, iLev);
     if (iVar == iy_)
-      b = fi->get_by(mfi, i, j, k, iLev);
+      b = fi->get_by(mfi, ijk, iLev);
     if (iVar == iz_)
-      b = fi->get_bz(mfi, i, j, k, iLev);
+      b = fi->get_bz(mfi, ijk, iLev);
 
     return b;
   }
