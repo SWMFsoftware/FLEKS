@@ -83,11 +83,15 @@ public:
     calc_conversion_units();
   };
 
-  virtual int get_neu_source_region(const amrex::MFIter& mfi, const int i,
-                                    const int j, const int k, const int iFluid,
+  virtual int get_neu_source_region(const amrex::MFIter& mfi,
+                                    const amrex::IntVect ijk, const int iFluid,
                                     const int iLev) const override {
     if (!isnodeFluidReady)
       return -1;
+
+    int i = ijk[0];
+    int j = ijk[1];
+    int k = ijk[2];
 
     // amu/m^3
     amrex::Real n = get_fluid_mass_density(mfi, i, j, k, iFluid, iLev) *

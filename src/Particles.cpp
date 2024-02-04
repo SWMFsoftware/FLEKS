@@ -290,8 +290,8 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
 #ifdef _PT_COMPONENT_
             if (stateOH && doSelectRegion) {
               const int iFluid = 0;
-              const int iRegion =
-                  stateOH->get_neu_source_region(mfi, i, j, k, iFluid, iLev);
+              const int iRegion = stateOH->get_neu_source_region(
+                  mfi, IntVect{ i, j, k }, iFluid, iLev);
               doAdd = (iRegion == speciesID);
             }
 #endif
@@ -2664,8 +2664,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       int iRegion = 0;
       if (kineticSource && doSelectRegion) {
         const int iFluid = 0;
-        iRegion = stateOH->get_neu_source_region(pti, cellIdx[0], cellIdx[1],
-                                                 cellIdx[2], iFluid, iLev);
+        iRegion = stateOH->get_neu_source_region(pti, cellIdx, iFluid, iLev);
         if (iRegion < 0)
           continue;
       }

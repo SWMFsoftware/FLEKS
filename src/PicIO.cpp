@@ -388,7 +388,8 @@ double Pic::get_var(std::string var, const int iLev, const int ix, const int iy,
     } else if (var.substr(0, 9) == "neuregion") {
       if (stateOH) {
         const int iFluid = 0;
-        value = stateOH->get_neu_source_region(mfi, ix, iy, iz, iFluid, iLev);
+        value = stateOH->get_neu_source_region(mfi, IntVect{ ix, iy, iz },
+                                               iFluid, iLev);
       } else {
         value = -1;
       }
