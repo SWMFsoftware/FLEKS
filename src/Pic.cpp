@@ -1564,8 +1564,8 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
             for (int j = lo[iy_]; j <= hi[iy_]; j++)
               for (int i = lo[ix_]; i <= hi[ix_]; i++)
                 if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
-                  arr(i, j, k, iVar) =
-                      (this->*func)(mfi, i, j, k, iVar - iStart, iLev);
+                  arr(i, j, k, iVar) = (this->*func)(mfi, IntVect{ i, j, k },
+                                                     iVar - iStart, iLev);
                 }
 
         continue;

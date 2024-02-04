@@ -29,7 +29,7 @@ public:
   }
 };
 
-typedef amrex::Real (Pic::*GETVALUE)(amrex::MFIter &mfi, int i, int j, int k,
+typedef amrex::Real (Pic::*GETVALUE)(amrex::MFIter &mfi, amrex::IntVect ijk,
                                      int iVar, const int iLev);
 
 typedef void (Pic::*PicWriteAmrex)(const std::string &filename,
@@ -332,14 +332,17 @@ public:
                 const int iStart, const int nComp, GETVALUE func,
                 const int iLev);
 
-  amrex::Real get_zero(amrex::MFIter &mfi, int i, int j, int k, int iVar,
+  amrex::Real get_zero(amrex::MFIter &mfi, amrex::IntVect ijk, int iVar,
                        int iLev) {
     return 0.0;
   }
 
-  inline amrex::Real get_node_E(amrex::MFIter &mfi, int i, int j, int k,
+  inline amrex::Real get_node_E(amrex::MFIter &mfi, amrex::IntVect ijk,
                                 int iVar, const int iLev) {
     amrex::Real e;
+    int i = ijk[0];
+    int j = ijk[1];
+    int k = ijk[2];
     if (iVar == ix_)
       e = fi->get_ex(mfi, i, j, k, iLev);
     if (iVar == iy_)
@@ -350,9 +353,12 @@ public:
     return e;
   }
 
-  inline amrex::Real get_node_B(amrex::MFIter &mfi, int i, int j, int k,
+  inline amrex::Real get_node_B(amrex::MFIter &mfi, amrex::IntVect ijk,
                                 int iVar, const int iLev) {
     amrex::Real b;
+    int i = ijk[0];
+    int j = ijk[1];
+    int k = ijk[2];
     if (iVar == ix_)
       b = fi->get_bx(mfi, i, j, k, iLev);
     if (iVar == iy_)
@@ -363,8 +369,11 @@ public:
     return b;
   }
 
-  inline amrex::Real get_center_B(amrex::MFIter &mfi, int i, int j, int k,
+  inline amrex::Real get_center_B(amrex::MFIter &mfi, amrex::IntVect ijk,
                                   int iVar, const int iLev) {
+    int i = ijk[0];
+    int j = ijk[1];
+    int k = ijk[2];
     return fi->get_center_b(mfi, i, j, k, iVar, iLev);
   }
 
