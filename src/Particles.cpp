@@ -265,7 +265,7 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
             if (bit::is_refined(status(i, j, k)))
               continue;
 
-            IntVect ijk = { i, j, k };
+            IntVect ijk = { AMREX_D_DECL(i, j, k) };
 
             bool doAdd = true;
 #ifdef _PT_COMPONENT_
@@ -338,7 +338,8 @@ void Particles<NStructReal, NStructInt>::add_particles_domain() {
           for (int k = kMin; k <= kMax; ++k) {
             if (bit::is_new(status(i, j, k)) &&
                 !bit::is_refined(status(i, j, k))) {
-              add_particles_cell(iLev, mfi, IntVect{ i, j, k }, fi, true);
+              add_particles_cell(iLev, mfi, IntVect{ AMREX_D_DECL(i, j, k) },
+                                 fi, true);
             }
           }
     }
@@ -382,7 +383,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
     for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
-          IntVect ijk = { i, j, k };
+          IntVect ijk = { AMREX_D_DECL(i, j, k) };
           IntVect ijksrc;
           if (do_inject_particles_for_this_cell(bx, status, ijk, ijksrc)) {
             if (((bc.lo[ix_] == bc.outflow) && i < lo[ix_]) ||
@@ -1408,7 +1409,7 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
   if (maxRatio <= 1)
     return;
 
-  IntVect iv = { AMREX_D_DECL(1, 1, 1) };
+  IntVect iv(1);
   if (!(do_tiling && tile_size == iv))
     return;
 
@@ -2445,7 +2446,7 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
           if (iloop != sum)
             continue;
 
-          IntVect ijk1 = ijk + IntVect{ di, dj, dk };
+          IntVect ijk1 = ijk + IntVect{ AMREX_D_DECL(di, dj, dk) };
           if (!bit::is_lev_boundary(status(ijk1))) {
             // The first neighbor cell that is NOT a boundary cell.
             if (bx.contains(ijk1)) {

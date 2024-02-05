@@ -366,7 +366,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
     BoxArray nodeBAOld;
 
     if (!cGridsOld.empty()) {
-      nodeBAOld = convert(cGridsOld[iLev], IntVect{ AMREX_D_DECL(1, 1, 1) });
+      nodeBAOld = convert(cGridsOld[iLev], IntVect(1));
     }
 
     // Set 'boundary', 'new' status.
