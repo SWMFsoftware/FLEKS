@@ -348,17 +348,11 @@ void Particles<NStructReal, NStructInt>::add_particles_domain() {
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
-    const FluidInterface* fiIn, Real dt, IntVect ppc) {
+void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
   timing_func("Pts::inject_particles_at_boundary");
 
   // Only inject nGstInject layers.
   const int nGstInject = 1;
-
-  // By default, use fi for injecting particles.
-  const FluidInterface* fiTmp = fi;
-  if (fiIn)
-    fiTmp = fiIn;
 
   // Only launch particles to the base grid boundary cells. The particle moments
   // of the domain edge nodes can be corrected by calling
@@ -369,42 +363,37 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary(
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
     const auto& status = cell_status(iLev)[mfi].array();
     const Box& bx = mfi.validbox();
-    const IntVect lo = IntVect(bx.loVect());
-    const IntVect hi = IntVect(bx.hiVect());
-    // IntVect mid = (lo + hi) / 2;
+    const auto lo = lbound(bx);
+    const auto hi = ubound(bx);
 
-    IntVect idxMin = lo, idxMax = hi;
-
-    for (int iDim = 0; iDim < fiTmp->get_fluid_dimension(); iDim++) {
-      idxMin[iDim] -= nGstInject;
-      idxMax[iDim] += nGstInject;
+    Box bxGst = bx;
+    for (int iDim = 0; iDim < fi->get_fluid_dimension(); iDim++) {
+      bxGst.grow(iDim, nGstInject);
     }
 
-    for (int i = idxMin[ix_]; i <= idxMax[ix_]; ++i)
-      for (int j = idxMin[iy_]; j <= idxMax[iy_]; ++j)
-        for (int k = idxMin[iz_]; k <= idxMax[iz_]; ++k) {
-          IntVect ijk = { AMREX_D_DECL(i, j, k) };
-          IntVect ijksrc;
-          if (do_inject_particles_for_this_cell(bx, status, ijk, ijksrc)) {
-            if (((bc.lo[ix_] == bc.outflow) && i < lo[ix_]) ||
-                ((bc.hi[ix_] == bc.outflow) && i > hi[ix_]) ||
-                ((bc.lo[iy_] == bc.outflow) && j < lo[iy_]) ||
-                ((bc.hi[iy_] == bc.outflow) && j > hi[iy_]) ||
-                ((bc.lo[iz_] == bc.outflow) && k < lo[iz_]) ||
-                ((bc.hi[iz_] == bc.outflow) && k > hi[iz_])) {
-              outflow_bc(mfi, ijk, ijksrc);
-            } else if (((bc.lo[ix_] == bc.vacume) && i < lo[ix_]) ||
-                       ((bc.hi[ix_] == bc.vacume) && i > hi[ix_]) ||
-                       ((bc.lo[iy_] == bc.vacume) && j < lo[iy_]) ||
-                       ((bc.hi[iy_] == bc.vacume) && j > hi[iy_]) ||
-                       ((bc.lo[iz_] == bc.vacume) && k < lo[iz_]) ||
-                       ((bc.hi[iz_] == bc.vacume) && k > hi[iz_])) {
-              // pass
-            } else {
-              add_particles_cell(iLev, mfi, ijk, fiTmp, true, ppc, Vel(), dt);
-            }
-          }
+    ParallelFor(bxGst, [&] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      IntVect ijk = { AMREX_D_DECL(i, j, k) };
+      IntVect ijksrc;
+      if (do_inject_particles_for_this_cell(bx, status, ijk, ijksrc)) {
+        if (((bc.lo[ix_] == bc.outflow) && i < lo.x) ||
+            ((bc.hi[ix_] == bc.outflow) && i > hi.x) ||
+            (nDim > 1 && (bc.lo[iy_] == bc.outflow) && j < lo.y) ||
+            (nDim > 1 && (bc.hi[iy_] == bc.outflow) && j > hi.y) ||
+            (nDim > 2 && (bc.lo[iz_] == bc.outflow) && k < lo.z) ||
+            (nDim > 2 && (bc.hi[iz_] == bc.outflow) && k > hi.z)) {
+          outflow_bc(mfi, ijk, ijksrc);
+        } else if (((bc.lo[ix_] == bc.vacume) && i < lo.x) ||
+                   ((bc.hi[ix_] == bc.vacume) && i > hi.x) ||
+                   (nDim > 1 && (bc.lo[iy_] == bc.vacume) && j < lo.y) ||
+                   (nDim > 1 && (bc.hi[iy_] == bc.vacume) && j > hi.y) ||
+                   (nDim > 2 && (bc.lo[iz_] == bc.vacume) && k < lo.z) ||
+                   (nDim > 2 && (bc.hi[iz_] == bc.vacume) && k > hi.z)) {
+          // pass
+        } else {
+          add_particles_cell(iLev, mfi, ijk, fi, true, IntVect(), Vel(), -1);
         }
+      }
+    });
   }
 }
 

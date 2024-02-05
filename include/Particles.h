@@ -216,9 +216,7 @@ public:
                           const FluidInterface* interface, bool doVacuumLimit,
                           amrex::IntVect ppc = amrex::IntVect(),
                           const Vel tpVel = Vel(), amrex::Real dt = -1);
-  void inject_particles_at_boundary(const FluidInterface* fiIn = nullptr,
-                                    amrex::Real dt = -1,
-                                    amrex::IntVect ppc = amrex::IntVect());
+  void inject_particles_at_boundary();
 
   void add_particles_source(const FluidInterface* interface,
                             const FluidInterface* const stateOH = nullptr,
