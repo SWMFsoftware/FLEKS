@@ -138,7 +138,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   int icount = 0;
   // Loop over particles inside grid cell i, j, k
 
-  int kmax = 0;
+  int kmax = 1;
   if (nDim > 2)
     kmax = nPPC[iz_];
 
@@ -147,26 +147,24 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
       for (int kk = 0; kk < kmax; kk++) {
         RealVect xyz, xyz0;
 
-        xyz[ix_] = (ii + randNum()) * (dx[iLev][ix_] / nPPC[ix_]) +
-                   ijk[ix_] * dx[iLev][ix_] + plo[iLev][ix_];
-        xyz[iy_] = (jj + randNum()) * (dx[iLev][iy_] / nPPC[iy_]) +
-                   ijk[iy_] * dx[iLev][iy_] + plo[iLev][iy_];
+        IntVect ijk0 = { AMREX_D_DECL(ii, jj, kk) };
 
-        xyz[iz_] = nDim > 2 ? (kk + randNum()) * (dx[iLev][iz_] / nPPC[iz_]) +
-                                  ijk[iz_] * dx[iLev][iz_] + plo[iLev][iz_]
-                            : 0 * randNum();
+        for (int iDim = 0; iDim < nDim; iDim++) {
+          xyz[iDim] = (ijk0[iDim] + randNum()) * (dx[iLev][iDim] / nPPC[iDim]) +
+                      ijk[iDim] * dx[iLev][iDim] + plo[iLev][iDim];
 
-        // If the particle weight is sampled in a random location, the sum of
-        // particle mass is NOT the same as the integral of the grid density.
-        // It is more convenient for debugging if mass is exactly conserved. For
-        // a production run, it makes little difference.
-        xyz0[ix_] = (ii + 0.5) * (dx[iLev][ix_] / nPPC[ix_]) +
-                    ijk[ix_] * dx[iLev][ix_] + plo[iLev][ix_];
-        xyz0[iy_] = (jj + 0.5) * (dx[iLev][iy_] / nPPC[iy_]) +
-                    ijk[iy_] * dx[iLev][iy_] + plo[iLev][iy_];
-        xyz0[iz_] = nDim > 2 ? (kk + 0.5) * (dx[iLev][iz_] / nPPC[iz_]) +
-                                   ijk[iz_] * dx[iLev][iz_] + plo[iLev][iz_]
-                             : 0;
+          // If the particle weight is sampled in a random location, the sum of
+          // particle mass is NOT the same as the integral of the grid density.
+          // It is more convenient for debugging if mass is exactly conserved.
+          // For a production run, it makes little difference.
+          xyz0[iDim] = (ijk0[iDim] + 0.5) * (dx[iLev][iDim] / nPPC[iDim]) +
+                       ijk[iDim] * dx[iLev][iDim] + plo[iLev][iDim];
+        }
+
+        if (nDim == 2) {
+          // For comparison with the 3D case only.
+          randNum();
+        }
 
         if (!isParticleLocationRandom) {
           xyz = xyz0;
@@ -221,9 +219,9 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 
           ParticleType p;
           set_ids(p);
-          p.pos(ix_) = xyz[ix_];
-          p.pos(iy_) = xyz[iy_];
-          p.pos(iz_) = xyz[iz_];
+          for (int iDim = 0; iDim < nDim; iDim++) {
+            p.pos(iDim) = xyz[iDim];
+          }
           p.rdata(iup_) = u;
           p.rdata(ivp_) = v;
           p.rdata(iwp_) = w;
