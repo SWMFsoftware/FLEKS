@@ -112,7 +112,7 @@ x=x0     - a 2D cut of x=x0 plane. 'x0' is the coordinate.
 y=y0     - a 2D cut of y=y0 plane. 'y0' is the coordinate. 
 z=z0     - a 2D cut of z=z0 plane. 'z0' is the coordinate.
 3d       - the whole computational domain.
-cut      - part of the 3D domain. Need to specifiy the output range.
+cut      - part of the 3D domain. Need to specify the output range.
 \end{verbatim}
 
 The value of 'variables' can be:
