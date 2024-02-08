@@ -151,8 +151,14 @@ public:
       bool doSplitLevs = false);
 
   void regrid(const amrex::BoxArray& region,
-              const amrex::Vector<Regions>& refine, const amrex::Real eff) {
+              const amrex::Vector<Regions>& refine = amrex::Vector<Regions>(),
+              const amrex::Real eff = 0.7) {
     refineRegions = refine;
+
+    if (refineRegions.empty()) {
+      refineRegions.resize(n_lev_max());
+    }
+
     SetGridEff(eff);
 
     regrid(region, nullptr);

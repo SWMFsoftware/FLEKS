@@ -601,11 +601,18 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
     const auto plo = Geom(0).ProbLo();
     const auto dx = Geom(0).CellSize();
 
+    IntVect glo = Geom(0).Domain().smallEnd();
+    IntVect ghi = Geom(0).Domain().bigEnd();
+
     IntVect cellLo, cellHi;
 
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < nDim; i++) {
       cellLo[i] = fastfloor((lo[i] / no2outL - plo[i]) / dx[i]);
       cellHi[i] = fastfloor((hi[i] / no2outL - plo[i]) / dx[i]);
+      if (cellLo[i] < glo[i])
+        cellLo[i] = glo[i];
+      if (cellHi[i] > ghi[i])
+        cellHi[i] = ghi[i];
     }
 
     if (isFake2D) {
@@ -613,8 +620,17 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
       cellHi[iz_] = 0;
     }
 
-    baIO.define(Box(cellLo, cellHi));
-    baIO.maxSize(IntVect(AMREX_D_DECL(8, 8, 8)));
+    Box bxOut(cellLo, cellHi);
+    BoxList bl;
+    int iLev = 0;
+    for (long i = 0; i < cGrids[iLev].size(); i++) {
+      Box ba = cGrids[iLev][i];
+      if (ba.intersects(bxOut)) {
+        bl.push_back(ba);
+      }
+    }
+    baIO.define(bl);
+
   } else {
     baIO = cGrids[0];
   }
@@ -624,7 +640,12 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
   set_IO_geom(geomOut, pw);
 
   Grid gridIO(geomOut[0], get_amr_info(), 0, -gridID);
-  gridIO.set_ba_and_dm(this);
+
+  if (isCut) {
+    gridIO.regrid(baIO);
+  } else {
+    gridIO.set_ba_and_dm(this);
+  }
 
   IOParticles particlesOut(*parts[iSpecies].get(), &gridIO, no2outL, no2outV,
                            no2outM, outRange);
