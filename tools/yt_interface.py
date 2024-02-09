@@ -28,9 +28,9 @@ class FLEKSFieldInfo(FieldInfoContainer):
 
     # TODO: find a way to avoid repeating s0, s1...
     known_other_fields = (
-        ("Bx", (b_units,   ["magnetic_field_x"], r"B_x")),
-        ("By", (b_units,   ["magnetic_field_y"], r"B_y")),
-        ("Bz", (b_units,   ["magnetic_field_z"], r"B_z")),
+        ("Bx", (b_units, ["magnetic_field_x"], r"B_x")),
+        ("By", (b_units, ["magnetic_field_y"], r"B_y")),
+        ("Bz", (b_units, ["magnetic_field_z"], r"B_z")),
         ("Ex", (e_units, [], r"E_x")),
         ("Ey", (e_units, [], r"E_y")),
         ("Ez", (e_units, [], r"E_z")),
@@ -69,16 +69,14 @@ class FLEKSFieldInfo(FieldInfoContainer):
         ("particle_velocity_z", (v_units, ["p_uz"], r"u_z")),
     )
 
-    extra_union_fields = (
-        (mass_units, "particle_mass"),
-    )
+    extra_union_fields = ((mass_units, "particle_mass"),)
 
     def __init__(self, ds, field_list):
         super(FLEKSFieldInfo, self).__init__(ds, field_list)
 
         # setup nodal flag information
         for field in ds.index.raw_fields:
-            finfo = self.__getitem__(('raw', field))
+            finfo = self.__getitem__(("raw", field))
             finfo.nodal_flag = ds.nodal_flags[field]
 
     def setup_fluid_fields(self):
@@ -86,11 +84,10 @@ class FLEKSFieldInfo(FieldInfoContainer):
 
         for field in self.known_other_fields:
             fname = field[0]
-            self.alias(("mesh", fname), ('boxlib', fname))
+            self.alias(("mesh", fname), ("boxlib", fname))
 
         # TODO: I do not know the purpose of the following function call. --Yuxi
-        setup_magnetic_field_aliases(
-            self, "FLEKS", ["B%s" % ax for ax in "xyz"])
+        setup_magnetic_field_aliases(self, "FLEKS", ["B%s" % ax for ax in "xyz"])
 
     def setup_fluid_aliases(self):
         super(FLEKSFieldInfo, self).setup_fluid_aliases("mesh")
@@ -114,7 +111,7 @@ class FLEKSHierarchy(BoxlibHierarchy):
         # now detect the optional, non-cell-centered fields
         self.raw_file = self.ds.output_dir + "/raw_fields/"
         self.raw_fields = []
-        self.field_list += [('raw', f) for f in self.raw_fields]
+        self.field_list += [("raw", f) for f in self.raw_fields]
         self.raw_field_map = {}
         self.ds.nodal_flags = {}
         self.raw_field_nghost = {}
@@ -139,26 +136,31 @@ class FLEKSDataset(BoxlibDataset):
     _index_class = FLEKSHierarchy
     _field_info_class = FLEKSFieldInfo
 
-    def __init__(self, output_dir,
-                 read_field_data=False,
-                 cparam_filename=None,
-                 fparam_filename=None,
-                 dataset_type='boxlib_native',
-                 storage_filename=None,
-                 units_override=None,
-                 unit_system="mks"):
+    def __init__(
+        self,
+        output_dir,
+        read_field_data=False,
+        cparam_filename=None,
+        fparam_filename=None,
+        dataset_type="boxlib_native",
+        storage_filename=None,
+        units_override=None,
+        unit_system="mks",
+    ):
         self.default_fluid_type = "mesh"
         self.default_field = ("mesh", "density")
         self.fluid_types = ("mesh", "index", "raw")
         self.read_field_data = read_field_data
 
-        super(FLEKSDataset, self).__init__(output_dir,
-                                           cparam_filename,
-                                           fparam_filename,
-                                           dataset_type,
-                                           storage_filename,
-                                           units_override,
-                                           unit_system)
+        super(FLEKSDataset, self).__init__(
+            output_dir,
+            cparam_filename,
+            fparam_filename,
+            dataset_type,
+            storage_filename,
+            units_override,
+            unit_system,
+        )
 
     def _parse_parameter_file(self):
         super(FLEKSDataset, self)._parse_parameter_file()
@@ -169,8 +171,9 @@ class FLEKSDataset(BoxlibDataset):
             self.radius = float(f.readline())  # should be in unit [m]
 
         # It seems the second argument should be in the unit of [cm].
-        self.unit_registry.add("Planet_Radius", 100*self.radius,
-                               yt.units.dimensions.length)
+        self.unit_registry.add(
+            "Planet_Radius", 100 * self.radius, yt.units.dimensions.length
+        )
 
         if plot_string.find("si") != -1:
             self.parameters["fleks_unit"] = "si"
@@ -194,45 +197,45 @@ class FLEKSDataset(BoxlibDataset):
     def _set_code_unit_attributes(self):
         unit = self.parameters["fleks_unit"]
 
-        setdefaultattr(self, 'time_unit', self.quan(1, get_unit("time", unit)))
-        setdefaultattr(self, 'length_unit', self.quan(1, get_unit("X", unit)))
-        setdefaultattr(self, 'mass_unit', self.quan(1, get_unit("mass", unit)))
-        setdefaultattr(self, 'velocity_unit',
-                       self.quan(1, get_unit("u", unit)))
-        setdefaultattr(self, 'magnetic_unit',
-                       self.quan(1, get_unit("B", unit)))
-        setdefaultattr(self, 'density_unit',
-                       self.quan(1, get_unit("rho", unit)))
-        setdefaultattr(self, 'pressure_unit',
-                       self.quan(1, get_unit("p", unit)))
+        setdefaultattr(self, "time_unit", self.quan(1, get_unit("time", unit)))
+        setdefaultattr(self, "length_unit", self.quan(1, get_unit("X", unit)))
+        setdefaultattr(self, "mass_unit", self.quan(1, get_unit("mass", unit)))
+        setdefaultattr(self, "velocity_unit", self.quan(1, get_unit("u", unit)))
+        setdefaultattr(self, "magnetic_unit", self.quan(1, get_unit("B", unit)))
+        setdefaultattr(self, "density_unit", self.quan(1, get_unit("rho", unit)))
+        setdefaultattr(self, "pressure_unit", self.quan(1, get_unit("p", unit)))
 
     def get_slice(self, norm, cut_loc):
-        r""" 
+        r"""
         This method returns a dataContainer2D object that contains a slice along
-        the 'norm' direction at 'cut_loc' 
+        the 'norm' direction at 'cut_loc'
 
         Parameters
         ---------------------
-        norm: String 
-        'x', 'y' or 'z' 
+        norm: String
+        'x', 'y' or 'z'
 
-        cut_loc: Float         
+        cut_loc: Float
         """
 
-        axDir = {'X': 0, 'Y': 1, 'Z': 2}
+        axDir = {"X": 0, "Y": 1, "Z": 2}
         idir = axDir[norm.upper()]
 
-        if type(cut_loc) != yt.units.yt_array.YTArray:
-            cut_loc = self.arr(cut_loc, 'code_length')
+        # if type(cut_loc) != yt.units.yt_array.YTArray:
+        #    cut_loc = self.arr(cut_loc, "code_length")
 
         # Define the slice range -------------------
-        slice_dimension = self.domain_dimensions
+        slice_dimension = np.array(self.domain_dimensions)
         slice_dimension[idir] = 1
 
-        left_edge = self.domain_left_edge
-        right_edge = self.domain_right_edge
+        left_edge = np.zeros(self.dimensionality)
+        right_edge = np.zeros(self.dimensionality)
 
-        dd = (right_edge[idir] - left_edge[idir])*1e-6
+        for i in range(self.dimensionality):
+            left_edge[i] = self.domain_left_edge[i]
+            right_edge[i] = self.domain_right_edge[i]
+
+        dd = (right_edge[idir] - left_edge[idir]) * 1e-6
         left_edge[idir] = cut_loc - dd
         right_edge[idir] = cut_loc + dd
         # ----------------------------------------------
@@ -243,23 +246,36 @@ class FLEKSDataset(BoxlibDataset):
         for var in self.field_list:
             dataSets[var[1]] = np.squeeze(abArr[var])
 
-        axLabes = {0: ('Y', 'Z'), 1: ('X', 'Z'), 2: ('X', 'Y')}
+        axLabes = {0: ("Y", "Z"), 1: ("X", "Z"), 2: ("X", "Y")}
 
         axes = []
         for axis_label in axLabes[idir]:
             ax_dir = axDir[axis_label]
-            axes.append(np.linspace(self.domain_left_edge[ax_dir],
-                                    self.domain_right_edge[ax_dir], self.domain_dimensions[ax_dir]))
+            axes.append(
+                np.linspace(
+                    self.domain_left_edge[ax_dir],
+                    self.domain_right_edge[ax_dir],
+                    self.domain_dimensions[ax_dir],
+                )
+            )
 
         return data_container.dataContainer2D(
-            dataSets, axes[0], axes[1], axLabes[idir][0], axLabes[idir][1], norm, cut_loc)
+            dataSets,
+            axes[0],
+            axes[1],
+            axLabes[idir][0],
+            axLabes[idir][1],
+            norm,
+            cut_loc,
+        )
 
     def get_domain(self):
         r"""
-        Reading in all the simulation data into a 3D box. It returns a dataContainer3D object. 
+        Reading in all the simulation data into a 3D box. It returns a dataContainer3D object.
         """
         domain = self.covering_grid(
-            level=0, left_edge=self.domain_left_edge, dims=self.domain_dimensions)
+            level=0, left_edge=self.domain_left_edge, dims=self.domain_dimensions
+        )
 
         dataSets = {}
         for var in self.field_list:
@@ -267,13 +283,17 @@ class FLEKSDataset(BoxlibDataset):
 
         axes = []
         for idim in range(self.dimensionality):
-            axes.append(np.linspace(self.domain_left_edge[idim],
-                                    self.domain_right_edge[idim], self.domain_dimensions[idim]))
+            axes.append(
+                np.linspace(
+                    self.domain_left_edge[idim],
+                    self.domain_right_edge[idim],
+                    self.domain_dimensions[idim],
+                )
+            )
 
         return data_container.dataContainer3D(dataSets, axes[0], axes[1], axes[2])
 
-    def plot_slice(self, norm, cut_loc, vars, unit_type="planet",
-                   *args, **kwargs):
+    def plot_slice(self, norm, cut_loc, vars, unit_type="planet", *args, **kwargs):
         r"""Plot 2D slice
 
         Parameters
@@ -282,7 +302,7 @@ class FLEKSDataset(BoxlibDataset):
 
         cut_loc : float. The location of the slice.
 
-        vars : a list or string of plotting variables. 
+        vars : a list or string of plotting variables.
             Example: "Bx rhos0" or ["Bx", "rhos0"]
 
         unit_type : The unit system of the plots. "planet" or "si".
@@ -302,8 +322,9 @@ class FLEKSDataset(BoxlibDataset):
         center = self.domain_center
         idir = "xyz".find(norm.lower())
         center[idir] = cut_loc
-        splt = yt.SlicePlot(self, norm, fields=vars, center=center,
-                            origin='native', *args, **kwargs)
+        splt = yt.SlicePlot(
+            self, norm, fields=vars, center=center, origin="native", *args, **kwargs
+        )
         for var in vars:
             splt.set_log(var, False)
             splt.set_unit(var, get_unit(var, unit_type))
@@ -312,21 +333,30 @@ class FLEKSDataset(BoxlibDataset):
 
         return splt
 
-    def plot_phase_region(self, region, x_field, y_field, z_field,
-                          unit_type="planet", x_bins=128, y_bins=128, domain_size=None):
+    def plot_phase_region(
+        self,
+        region,
+        x_field,
+        y_field,
+        z_field,
+        unit_type="planet",
+        x_bins=128,
+        y_bins=128,
+        domain_size=None,
+    ):
         r"""Plot phase space distribution of particle
 
         Parameters
         ----------
         region : YTSelectionContainer Object
         The data object to be profiled, such as all_data, box, region, or
-        sphere. 
+        sphere.
 
         x_field & y_field: string
             The x- y- axes. Potential input: "p_ux", "p_uy", "p_uz".
             Eventhough this is assumed to be a 'phase' plot, the x- and y- axex
-            can also be set as 'p_x', 'p_y' or 'p_z' and it will show the 
-            spatial distribution of the particles.             
+            can also be set as 'p_x', 'p_y' or 'p_z' and it will show the
+            spatial distribution of the particles.
 
         z_field: string
             It is usually the particle wegith: "p_w".
@@ -339,22 +369,32 @@ class FLEKSDataset(BoxlibDataset):
 
         Examples
         --------
-        >>> phase = ds.plot_phase([8.75, -1, -1], [9.25, 0, 0], 
+        >>> phase = ds.plot_phase([8.75, -1, -1], [9.25, 0, 0],
                                 "p_ux", "p_uy", "p_w", (-1, 1, -1, 1))
         >>> phase.show()
         """
-        var_type = 'particle'
-        
+        var_type = "particle"
+
         # The bins should be uniform instead of logarithmic
         logs = {(var_type, x_field): False, (var_type, y_field): False}
 
         bin_fields = [(var_type, x_field), (var_type, y_field)]
         if domain_size is not None:
-            extrema = {(var_type, x_field): (domain_size[0], domain_size[1]), (var_type, y_field): (domain_size[2], domain_size[3])}   
+            extrema = {
+                (var_type, x_field): (domain_size[0], domain_size[1]),
+                (var_type, y_field): (domain_size[2], domain_size[3]),
+            }
         else:
             extrema = None
-        profile = yt.create_profile(data_source=region, bin_fields=bin_fields, fields=(
-            var_type, z_field), n_bins=[x_bins,y_bins], weight_field=None, extrema=extrema, logs=logs)
+        profile = yt.create_profile(
+            data_source=region,
+            bin_fields=bin_fields,
+            fields=(var_type, z_field),
+            n_bins=[x_bins, y_bins],
+            weight_field=None,
+            extrema=extrema,
+            logs=logs,
+        )
 
         plot = yt.PhasePlot.from_profile(profile)
 
@@ -364,8 +404,18 @@ class FLEKSDataset(BoxlibDataset):
 
         return plot
 
-    def plot_phase(self, left_edge, right_edge, x_field, y_field, z_field,
-                   unit_type="planet", x_bins=128, y_bins=128, domain_size=None):
+    def plot_phase(
+        self,
+        left_edge,
+        right_edge,
+        x_field,
+        y_field,
+        z_field,
+        unit_type="planet",
+        x_bins=128,
+        y_bins=128,
+        domain_size=None,
+    ):
         r"""Plot phase space distribution of particles that are inside a box
 
         Parameters
@@ -377,8 +427,8 @@ class FLEKSDataset(BoxlibDataset):
         x_field & y_field: string
             The x- y- axes. Potential input: "p_ux", "p_uy", "p_uz".
             Eventhough this is assumed to be a 'phase' plot, the x- and y- axex
-            can also be set as 'p_x', 'p_y' or 'p_z' and it will show the 
-            spatial distribution of the particles.             
+            can also be set as 'p_x', 'p_y' or 'p_z' and it will show the
+            spatial distribution of the particles.
 
         z_field: string
             It is usually the particle wegith: "p_w".
@@ -391,25 +441,41 @@ class FLEKSDataset(BoxlibDataset):
 
         Examples
         --------
-        >>> phase = ds.plot_phase([8.75, -1, -1], [9.25, 0, 0], 
+        >>> phase = ds.plot_phase([8.75, -1, -1], [9.25, 0, 0],
                                 "p_ux", "p_uy", "p_w", (-1, 1, -1, 1))
         >>> phase.show()
         """
         dd = self.box(left_edge, right_edge)
         plot = self.plot_phase_region(
-            dd, x_field, y_field, z_field, unit_type=unit_type, x_bins=x_bins, y_bins=y_bins, domain_size=domain_size)
+            dd,
+            x_field,
+            y_field,
+            z_field,
+            unit_type=unit_type,
+            x_bins=x_bins,
+            y_bins=y_bins,
+            domain_size=domain_size,
+        )
 
         return plot
 
-    def plot_particles_region(self, region, x_field, y_field, z_field,
-                              unit_type="planet", x_bins=128, y_bins=128):
+    def plot_particles_region(
+        self,
+        region,
+        x_field,
+        y_field,
+        z_field,
+        unit_type="planet",
+        x_bins=128,
+        y_bins=128,
+    ):
         r"""Plot the particle position of particles inside a box
 
         Parameters
         ----------
         region : YTSelectionContainer Object
         The data object to be profiled, such as all_data, box, region, or
-        sphere. 
+        sphere.
 
         x_field & y_field: string
             The x- y- axes. Potential input: "p_x", "p_y", "p_z".
@@ -423,26 +489,39 @@ class FLEKSDataset(BoxlibDataset):
         Examples
         --------
         >>> phase = ds.plot_particles([8, -1, -1], [10, 0, 0], "p_x",
-                     "p_y", "p_w", unit_type="planet")        
+                     "p_y", "p_w", unit_type="planet")
         >>> phase.show()
         """
-        var_type = 'particle'
+        var_type = "particle"
 
-        nmap = {"p_x": "particle_position_x",
-                "p_y": "particle_position_y", "p_z": "particle_position_z"}
-        plot = yt.ParticlePlot(self,
-                               (var_type, nmap[x_field]),
-                               (var_type, nmap[y_field]),
-                               (var_type, z_field),
-                               data_source=region)
-        plot.set_axes_unit((get_unit(x_field, unit_type),
-                            get_unit(y_field, unit_type)))
+        nmap = {
+            "p_x": "particle_position_x",
+            "p_y": "particle_position_y",
+            "p_z": "particle_position_z",
+        }
+        plot = yt.ParticlePlot(
+            self,
+            (var_type, nmap[x_field]),
+            (var_type, nmap[y_field]),
+            (var_type, z_field),
+            data_source=region,
+        )
+        plot.set_axes_unit((get_unit(x_field, unit_type), get_unit(y_field, unit_type)))
         plot.set_unit((var_type, z_field), get_unit(z_field, unit_type))
 
         return plot
 
-    def plot_particles(self, left_edge, right_edge, x_field, y_field, z_field,
-                       unit_type="planet", x_bins=128, y_bins=128):
+    def plot_particles(
+        self,
+        left_edge,
+        right_edge,
+        x_field,
+        y_field,
+        z_field,
+        unit_type="planet",
+        x_bins=128,
+        y_bins=128,
+    ):
         r"""Plot the particle position of particles inside a box
 
         Parameters
@@ -463,10 +542,17 @@ class FLEKSDataset(BoxlibDataset):
         Examples
         --------
         >>> phase = ds.plot_particles([8, -1, -1], [10, 0, 0], "p_x",
-                     "p_y", "p_w", unit_type="planet")        
+                     "p_y", "p_w", unit_type="planet")
         >>> phase.show()
         """
         dd = self.box(left_edge, right_edge)
         plot = self.plot_particles_region(
-            dd, x_field, y_field, z_field, unit_type=unit_type, x_bins=x_bins, y_bins=y_bins)
+            dd,
+            x_field,
+            y_field,
+            z_field,
+            unit_type=unit_type,
+            x_bins=x_bins,
+            y_bins=y_bins,
+        )
         return plot
