@@ -641,7 +641,9 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
 
   Grid gridIO(geomOut[0], get_amr_info(), 0, -gridID);
 
-  if (isCut) {
+  if (isCut && n_lev() == 1) {
+    // TODO: This is a temporary solution. The current implementation is
+    // 'correct' but occupies too much disk space for AMR grids.
     gridIO.regrid(baIO);
   } else {
     gridIO.set_ba_and_dm(this);
