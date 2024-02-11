@@ -1043,7 +1043,11 @@ void Pic::update_E() {
   if (useExplicitPIC) {
     update_E_expl();
   } else {
-    update_E_impl();
+    if (!usenewElectricSolver) {
+      update_E_impl();
+    } else {
+      update_E_new();
+    }
   }
 }
 
@@ -1074,6 +1078,103 @@ void Pic::update_E_expl() {
 
     nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E, iLev);
+  }
+}
+
+//==========================================================
+void Pic::update_E_new() {
+
+  int iLev = 0;
+  eSolver.reset(get_local_node_or_cell_number(nodeE[iLev]));
+  // RHS-1
+  MultiFab tempNode(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+  tempNode.setVal(0.0);
+
+  MultiFab::Saxpy(tempNode, -fourPI, jHat[iLev], 0, 0, tempNode.nComp(),
+                  tempNode.nGrow());
+  tempNode.mult(fsolver.theta * tc->get_dt());
+  MultiFab::Add(tempNode, nodeE[iLev], 0, 0, tempNode.nComp(),
+                tempNode.nGrow());
+
+  convert_3d_to_1d(tempNode, eSolver.rhs, iLev);
+
+  ////////////
+
+  for (int i = 0; i < eSolver.get_nSolve(); i++) {
+    eSolver.xLeft[i] = 0;
+  }
+
+  update_E_matvec(eSolver.xLeft, eSolver.xLeft, iLev, false);
+  for (int i = 0; i < eSolver.get_nSolve(); i++) {
+    eSolver.rhs[i] = eSolver.rhs[i] - eSolver.xLeft[i];
+    eSolver.xLeft[i] = 0.0;
+  }
+
+  eSolver.solve(iLev, doReport);
+
+  nodeEth[iLev].setVal(0.0);
+  convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev], iLev);
+  nodeEth[iLev].SumBoundary(Geom(iLev).periodicity());
+  nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
+
+  ////////////////////////////////////// Lev1
+  iLev = 1;
+  eSolver.reset(get_local_node_or_cell_number(nodeE[iLev]));
+  // RHS-1
+  MultiFab temp2Node(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+  temp2Node.setVal(0.0);
+
+  MultiFab::Saxpy(temp2Node, -fourPI, jHat[iLev], 0, 0, temp2Node.nComp(),
+                  temp2Node.nGrow());
+  temp2Node.mult(fsolver.theta * tc->get_dt());
+  MultiFab::Add(temp2Node, nodeE[iLev], 0, 0, tempNode.nComp(),
+                temp2Node.nGrow());
+
+  convert_3d_to_1d(temp2Node, eSolver.rhs, iLev);
+
+  for (int i = 0; i < eSolver.get_nSolve(); i++) {
+    eSolver.xLeft[i] = 0;
+  }
+
+  update_E_matvec(eSolver.xLeft, eSolver.xLeft, iLev, false);
+  for (int i = 0; i < eSolver.get_nSolve(); i++) {
+    eSolver.rhs[i] = eSolver.rhs[i] - eSolver.xLeft[i];
+    eSolver.xLeft[i] = 0.0;
+  }
+
+  eSolver.solve(iLev, doReport);
+
+  nodeEth[iLev].setVal(0.0);
+  convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev], iLev);
+  nodeEth[iLev].SumBoundary(Geom(iLev).periodicity());
+  nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
+
+  for (iLev = 0; iLev < n_lev(); iLev++) {
+    // MultiFab::Add(nodeEth[iLev], nodeE[iLev], 0, 0, nodeEth[iLev].nComp(),
+    //               nGst);
+
+    MultiFab::LinComb(nodeE[iLev], -(1.0 - fsolver.theta) / fsolver.theta,
+                      nodeE[iLev], 0, 1. / fsolver.theta, nodeEth[iLev], 0, 0,
+                      nodeE[iLev].nComp(), nGst);
+
+    if (iLev == 0) {
+
+      apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E, iLev);
+      apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim, &Pic::get_node_E,
+               iLev);
+
+    } else {
+
+      fill_fine_lev_bny_from_coarse(
+          nodeE[iLev - 1], nodeE[iLev], 0, nodeE[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          amrex::node_bilinear_interp);
+
+      fill_fine_lev_bny_from_coarse(
+          nodeEth[iLev - 1], nodeEth[iLev], 0, nodeEth[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          amrex::node_bilinear_interp);
+    }
   }
 }
 
@@ -1146,12 +1247,9 @@ void Pic::update_E_impl() {
     div_node_to_center(nodeE[iLev], centerDivE[iLev], Geom(iLev).InvCellSize());
   }
 }
-
 //==========================================================
-void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
-                          const bool useZeroBC) {
-  std::string nameFunc = "Pic::E_matvec";
-  timing_func(nameFunc);
+void Pic::update_E_matvec_new(const double* vecIn, double* vecOut, int iLev,
+                              const bool useZeroBC) {
 
   zero_array(vecOut, eSolver.get_nSolve());
 
@@ -1167,30 +1265,26 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
   tempNode3.setVal(0.0);
 
   MultiFab tempCenter1(cGrids[iLev], DistributionMap(iLev), 1, nGst);
+  tempCenter1.setVal(0.0);
 
   convert_1d_to_3d(vecIn, vecMF, iLev);
 
-  // The right side edges should be filled in.
   vecMF.SumBoundary(Geom(iLev).periodicity());
-
-  // M*E needs ghost cell information.
   vecMF.FillBoundary(Geom(iLev).periodicity());
-
   if (useZeroBC) {
-    // The boundary nodes would not be filled in by convert_1d_3d. So, there
-    // is not need to apply zero boundary conditions again here.
+    fill_lev_bny_from_value(vecMF, node_status(iLev), 0.0);
   } else {
-    // Even after apply_BC(), the outmost layer node E is still
-    // unknow. See FluidInterface::calc_current for detailed explaniation.
-    if (iLev == 0) {
-      apply_BC(nodeStatus[iLev], vecMF, 0, nDim, &Pic::get_node_E, iLev);
-    } else {
+    if (iLev > 0) {
       fill_fine_lev_bny_from_coarse(
-          nodeE[iLev - 1], vecMF, 0, centerB[iLev - 1].nComp(),
+          nodeEth[iLev - 1], vecMF, 0, nodeEth[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
           amrex::node_bilinear_interp);
+    } else {
+      apply_BC(nodeStatus[iLev], vecMF, 0, nDim, &Pic::get_node_E, iLev);
     }
   }
+
+  // apply_BC(nodeStatus[iLev], vecMF, 0, nDim, &Pic::get_value1, iLev);
 
   lap_node_to_node(vecMF, matvecMF, DistributionMap(iLev), Geom(iLev),
                    cellStatus[iLev]);
@@ -1198,55 +1292,118 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
   Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
   matvecMF.mult(-delt2);
 
-  { // grad(divE)
-    div_node_to_center(vecMF, centerDivE[iLev], Geom(iLev).InvCellSize());
-
-    if (fsolver.coefDiff > 0) {
-      // Calculate cell center E for center-to-center divE.
-      // The outmost boundary layer of tempCenter3 is not accurate.
-      average_node_to_cellcenter(tempCenter3, 0, vecMF, 0, 3,
-                                 tempCenter3.nGrow());
-
-      //----The following comments are left here for reference------
-      // Q: Why apply float BC for all boundary ghost nodes, instead of just
-      // the outmost layer? A: For the example described in
-      // FluidInterface::calc_current, cell (c+4, c-1) of tempCenter3-block1
-      // is not accurate, so the values at (c+4, c-2) will be wrong if we only
-      // apply float BC for the outmost layer.
-      // apply_float_boundary(cellStatus, tempCenter3, Geom(0), 0,
-      //                           tempCenter3.nComp());
-      //------------------------------------------------------------
-
-      div_center_to_center(tempCenter3, tempCenter1, Geom(iLev).InvCellSize());
-
-      tempCenter1.FillBoundary(0, 1, IntVect(1), Geom(iLev).periodicity());
-
-      // 1) The outmost boundary layer of tempCenter3 is not accurate.
-      // 2) The 2 outmost boundary layers (all ghosts if there are 2 ghost
-      // cells) of tempCenter1 are not accurate
-      apply_BC(cellStatus[iLev], tempCenter1, 0, tempCenter1.nComp(),
-               &Pic::get_zero, iLev);
-
-      MultiFab::LinComb(centerDivE[iLev], 1 - fsolver.coefDiff,
-                        centerDivE[iLev], 0, fsolver.coefDiff, tempCenter1, 0,
-                        0, 1, 1);
-    }
-
-    grad_center_to_node(centerDivE[iLev], tempNode3, Geom(iLev).InvCellSize());
-
-    tempNode3.mult(delt2);
-    MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(),
-                  matvecMF.nGrow());
-  }
-
-  tempNode3.setVal(0);
-  update_E_M_dot_E(vecMF, tempNode3, iLev);
-
-  MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
-
+  div_node_to_center(vecMF, centerDivE[iLev], Geom(iLev).InvCellSize());
+  grad_center_to_node(centerDivE[iLev], tempNode3, Geom(iLev).InvCellSize());
+  tempNode3.mult(delt2);
+  MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), matvecMF.nGrow());
   MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
 
   convert_3d_to_1d(matvecMF, vecOut, iLev);
+}
+//==========================================================
+void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
+                          const bool useZeroBC) {
+  if (!usenewElectricSolver) {
+    std::string nameFunc = "Pic::E_matvec";
+    timing_func(nameFunc);
+
+    zero_array(vecOut, eSolver.get_nSolve());
+
+    MultiFab vecMF(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+    vecMF.setVal(0.0);
+
+    MultiFab matvecMF(nGrids[iLev], DistributionMap(iLev), 3, 1);
+    matvecMF.setVal(0.0);
+
+    MultiFab tempCenter3(cGrids[iLev], DistributionMap(iLev), 3, nGst);
+
+    MultiFab tempNode3(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+    tempNode3.setVal(0.0);
+
+    MultiFab tempCenter1(cGrids[iLev], DistributionMap(iLev), 1, nGst);
+
+    convert_1d_to_3d(vecIn, vecMF, iLev);
+
+    // The right side edges should be filled in.
+    vecMF.SumBoundary(Geom(iLev).periodicity());
+
+    // M*E needs ghost cell information.
+    vecMF.FillBoundary(Geom(iLev).periodicity());
+
+    if (useZeroBC) {
+      // The boundary nodes would not be filled in by convert_1d_3d. So, there
+      // is not need to apply zero boundary conditions again here.
+    } else {
+      // Even after apply_BC(), the outmost layer node E is still
+      // unknow. See FluidInterface::calc_current for detailed explaniation.
+      if (iLev == 0) {
+        apply_BC(nodeStatus[iLev], vecMF, 0, nDim, &Pic::get_node_E, iLev);
+      } else {
+        fill_fine_lev_bny_from_coarse(
+            nodeE[iLev - 1], vecMF, 0, centerB[iLev - 1].nComp(),
+            ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+            amrex::node_bilinear_interp);
+      }
+    }
+
+    lap_node_to_node(vecMF, matvecMF, DistributionMap(iLev), Geom(iLev),
+                     cellStatus[iLev]);
+
+    Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
+    matvecMF.mult(-delt2);
+
+    { // grad(divE)
+      div_node_to_center(vecMF, centerDivE[iLev], Geom(iLev).InvCellSize());
+
+      if (fsolver.coefDiff > 0) {
+        // Calculate cell center E for center-to-center divE.
+        // The outmost boundary layer of tempCenter3 is not accurate.
+        average_node_to_cellcenter(tempCenter3, 0, vecMF, 0, 3,
+                                   tempCenter3.nGrow());
+
+        //----The following comments are left here for reference------
+        // Q: Why apply float BC for all boundary ghost nodes, instead of just
+        // the outmost layer? A: For the example described in
+        // FluidInterface::calc_current, cell (c+4, c-1) of tempCenter3-block1
+        // is not accurate, so the values at (c+4, c-2) will be wrong if we only
+        // apply float BC for the outmost layer.
+        // apply_float_boundary(cellStatus, tempCenter3, Geom(0), 0,
+        //                           tempCenter3.nComp());
+        //------------------------------------------------------------
+
+        div_center_to_center(tempCenter3, tempCenter1, Geom(iLev).InvCellSize());
+
+        tempCenter1.FillBoundary(0, 1, IntVect(1), Geom(iLev).periodicity());
+
+        // 1) The outmost boundary layer of tempCenter3 is not accurate.
+        // 2) The 2 outmost boundary layers (all ghosts if there are 2 ghost
+        // cells) of tempCenter1 are not accurate
+        apply_BC(cellStatus[iLev], tempCenter1, 0, tempCenter1.nComp(),
+                 &Pic::get_zero, iLev);
+
+        MultiFab::LinComb(centerDivE[iLev], 1 - fsolver.coefDiff,
+                          centerDivE[iLev], 0, fsolver.coefDiff, tempCenter1, 0,
+                          0, 1, 1);
+      }
+
+      grad_center_to_node(centerDivE[iLev], tempNode3, Geom(iLev).InvCellSize());
+
+      tempNode3.mult(delt2);
+      MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(),
+                    matvecMF.nGrow());
+    }
+
+    tempNode3.setVal(0);
+    update_E_M_dot_E(vecMF, tempNode3, iLev);
+
+    MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
+
+    MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
+
+    convert_3d_to_1d(matvecMF, vecOut, iLev);
+  } else {
+    update_E_matvec_new(vecIn, vecOut, iLev, useZeroBC);
+  }
 }
 
 //==========================================================

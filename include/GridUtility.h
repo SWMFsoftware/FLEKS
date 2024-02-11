@@ -100,6 +100,33 @@ void sum_fine_to_coarse_lev_bny_node(amrex::FabArray<FAB>& coarse,
 }
 
 // Sum from coarse level to fine level for nodes at the boundary of two levels.
+
+template <class FAB>
+void fill_lev_bny_from_value(amrex::FabArray<FAB>& dst,
+                             const amrex::iMultiFab& fstatus, amrex::Real value
+                             ) {
+
+  for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
+    FAB& fab = dst[mfi];
+    const auto& box = mfi.fabbox();
+    const auto& data = fab.array();
+
+    const auto& statusArr = fstatus[mfi].array();
+
+    const auto lo = amrex::lbound(box);
+    const auto hi = amrex::ubound(box);
+
+    for (int iVar = 0; iVar < dst.nComp(); iVar++)
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (bit::is_lev_boundary(statusArr(i, j, k))) {
+              data(i, j, k, iVar) = value;
+            }
+          }
+  }
+}
+
 template <class FAB>
 void fill_fine_lev_bny_from_coarse(amrex::FabArray<FAB>& coarse,
                                    amrex::FabArray<FAB>& fine, const int iStart,
@@ -166,7 +193,7 @@ void fill_fine_lev_from_coarse(amrex::FabArray<FAB>& coarse,
     const auto& box = mfi.fabbox();
     const auto& data = fab.array();
 
-    
+
     const auto& tmp = ftmp[mfi].array();
 
     const auto lo = amrex::lbound(box);
