@@ -433,23 +433,31 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
       linear_interpolation_coef(dShift, coef);
       //-----calculate interpolate coef end-------------
 
+      Dim3 lo, hi;
+      {
+        Box bx(IntVect(0), IntVect(1));
+        lo = lbound(bx);
+        hi = ubound(bx);
+      }
+
       const Real cTmp = qp * invVol[iLev];
-      for (int kk = 0; kk < 2; kk++)
-        for (int jj = 0; jj < 2; jj++)
-          for (int ii = 0; ii < 2; ii++) {
-            chargeArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) +=
-                coef[ii][jj][kk] * cTmp;
+      for (int kk = lo.z; kk <= hi.z; kk++)
+        for (int jj = lo.y; jj <= hi.y; jj++)
+          for (int ii = lo.x; ii <= hi.x; ii++) {
+            IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                         loIdx[iz_] + kk) };
+            chargeArr(ijk) += coef[ii][jj][kk] * cTmp;
           }
 
       if (!doNetChargeOnly) {
-        Real weights_IIID[2][2][2][nDim];
+        Real weights_IIID[2][2][2][nDimVel];
         //----- Mass matrix calculation begin--------------
         const Real xi0 = dShift[ix_] * dx[iLev][ix_];
         const Real eta0 = dShift[iy_] * dx[iLev][iy_];
-        const Real zeta0 = dShift[iz_] * dx[iLev][iz_];
+        const Real zeta0 = nDim > 2 ? dShift[iz_] * dx[iLev][iz_] : 0;
         const Real xi1 = dx[iLev][ix_] - xi0;
         const Real eta1 = dx[iLev][iy_] - eta0;
-        const Real zeta1 = dx[iLev][iz_] - zeta0;
+        const Real zeta1 = nDim > 2 ? dx[iLev][iz_] - zeta0 : 1;
 
         weights_IIID[1][1][1][ix_] = eta0 * zeta0 * invVol[iLev];
         weights_IIID[1][1][1][iy_] = xi0 * zeta0 * invVol[iLev];
@@ -492,10 +500,10 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
 
         const int iMin = loIdx[ix_];
         const int jMin = loIdx[iy_];
-        const int kMin = loIdx[iz_];
+        const int kMin = nDim > 2 ? loIdx[iz_] : 0;
         const int iMax = iMin + 1;
         const int jMax = jMin + 1;
-        const int kMax = kMin + 1;
+        const int kMax = nDim > 2 ? kMin + 1 : 0;
 
         const Real coef = fabs(qp) * invVol[iLev];
         RealVect wg_D;
@@ -515,9 +523,9 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
                 const int gp0 = ip * 9;
                 for (int j2 = jMin; j2 <= jMax; j2++) {
                   int jp = j2 - j1 + 1;
-                  const int gp1 = gp0 + jp * nDim;
+                  const int gp1 = gp0 + jp * nDimVel;
                   for (int k2 = kMin; k2 <= kMax; k2++) {
-                    const Real(&wg1_D)[nDim] =
+                    const Real(&wg1_D)[nDimVel] =
                         weights_IIID[i2 - iMin][j2 - jMin][k2 - kMin];
 
                     // const int kp = k2 - k1 + 1;
@@ -640,15 +648,20 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
           pMoments[iPyz_] = my * wp;
         }
 
+        Dim3 lo, hi;
+        {
+          Box bx(IntVect(0), IntVect(1));
+          lo = lbound(bx);
+          hi = ubound(bx);
+        }
+
         for (int iVar = 0; iVar < nMoments; iVar++)
-          for (int kk = 0; kk < 2; kk++)
-            for (int jj = 0; jj < 2; jj++)
-              for (int ii = 0; ii < 2; ii++) {
-                const int i0 = loIdx[ix_] + ii;
-                const int j0 = loIdx[iy_] + jj;
-                const int k0 = loIdx[iz_] + kk;
-                momentsArr(i0, j0, k0, iVar) +=
-                    coef[ii][jj][kk] * pMoments[iVar];
+          for (int kk = lo.z; kk <= hi.z; kk++)
+            for (int jj = lo.y; jj <= hi.y; jj++)
+              for (int ii = lo.x; ii <= hi.x; ii++) {
+                IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                             loIdx[iz_] + kk) };
+                momentsArr(ijk, iVar) += coef[ii][jj][kk] * pMoments[iVar];
               }
 
         //-------nodePlasma end---------

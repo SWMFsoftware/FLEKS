@@ -136,10 +136,12 @@ inline void linear_interpolation_coef(amrex::RealVect& dx,
   amrex::Real eta[2];
   amrex::Real zeta[2];
   xi[0] = dx[0];
-  eta[0] = dx[1];
-  zeta[0] = dx[2];
   xi[1] = 1 - xi[0];
+
+  eta[0] = dx[1];
   eta[1] = 1 - eta[0];
+
+  zeta[0] = nDim > 2 ? dx[2] : 0;
   zeta[1] = 1 - zeta[0];
 
   amrex::Real multi[2][2];
