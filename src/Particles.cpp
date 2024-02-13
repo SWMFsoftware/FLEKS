@@ -995,25 +995,19 @@ Real Particles<NStructReal, NStructInt>::calc_max_thermal_velocity(
     const Box& box = mfi.validbox();
     const Array4<Real>& arr = fab.array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+    ParallelFor(box, [&] AMREX_GPU_DEVICE(int i, int j, int k) {
+      Real rho = arr(i, j, k, iRho_);
+      if (rho == 0)
+        return;
 
-    // Do not calculate for edges twice.
-    for (int k = lo.z; k <= hi.z - 1; ++k)
-      for (int j = lo.y; j <= hi.y - 1; ++j)
-        for (int i = lo.x; i <= hi.x - 1; ++i) {
-          Real rho = arr(i, j, k, iRho_);
-          if (rho == 0)
-            continue;
+      Real p =
+          (arr(i, j, k, iPxx_) + arr(i, j, k, iPyy_) + arr(i, j, k, iPzz_)) *
+          c1over3;
 
-          Real p = (arr(i, j, k, iPxx_) + arr(i, j, k, iPyy_) +
-                    arr(i, j, k, iPzz_)) *
-                   c1over3;
-
-          Real uth = sqrt(p / rho);
-          if (uth > uthMax)
-            uthMax = uth;
-        }
+      Real uth = sqrt(p / rho);
+      if (uth > uthMax)
+        uthMax = uth;
+    });
   }
 
   return uthMax;
@@ -1740,7 +1734,8 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
       if (totalMass < vacuumMass)
         continue;
 
-      // Find the 'heaviest' nNew particles by sorting the weight (charge).-----
+      // Find the 'heaviest' nNew particles by sorting the weight
+      // (charge).-----
 
       // Sort the particles by the location first to make sure the results
       // are the same for different number of processors
@@ -2406,7 +2401,8 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
               if (w > pheavy)
                 pheavy = w;
             }
-            // AllPrint() << "pheavy/plight = " << pheavy / plight << std::endl;
+            // AllPrint() << "pheavy/plight = " << pheavy / plight <<
+            // std::endl;
 
             // Adjust weight.
             for (int ip = 0; ip < nPartNew; ip++) {
@@ -2491,8 +2487,8 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
       const Box& validBox = mfi.validbox();
       for (auto p : aosOther) {
         if (other.is_outside_active_region(p, iLev, validBox)) {
-          // redistribute_particles() may fail if the ghost cell particles' IDs
-          // are not -1 (marked for deletion);
+          // redistribute_particles() may fail if the ghost cell particles'
+          // IDs are not -1 (marked for deletion);
           p.id() = -1;
         }
 
