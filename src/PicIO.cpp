@@ -131,14 +131,14 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
                 xMinL_D[ix_] = xp;
               if (yp < xMinL_D[iy_])
                 xMinL_D[iy_] = yp;
-              if (zp < xMinL_D[iz_])
+              if (nDim > 2 && zp < xMinL_D[iz_])
                 xMinL_D[iz_] = zp;
 
               if (xp > xMaxL_D[ix_])
                 xMaxL_D[ix_] = xp;
               if (yp > xMaxL_D[iy_])
                 xMaxL_D[iy_] = yp;
-              if (zp > xMaxL_D[iz_])
+              if (nDim > 2 && zp > xMaxL_D[iz_])
                 xMaxL_D[iz_] = zp;
             }
           }
