@@ -739,32 +739,30 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       //-----calculate interpolate coef end-------------
 
       //----- Mass matrix calculation begin--------------
-      Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];
       Real u0[3] = { 0, 0, 0 };
+      Real bp[3] = { 0, 0, 0 };
 
-      for (int kk = 0; kk < 2; kk++)
-        for (int jj = 0; jj < 2; jj++)
-          for (int ii = 0; ii < 2; ii++) {
-            Bxl += nodeBArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
-                            ix_) *
-                   coef[ii][jj][kk];
-            Byl += nodeBArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
-                            iy_) *
-                   coef[ii][jj][kk];
-            Bzl += nodeBArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk,
-                            iz_) *
-                   coef[ii][jj][kk];
+      Dim3 lo, hi;
+      {
+        Box bx(IntVect(0), IntVect(1));
+        lo = lbound(bx);
+        hi = ubound(bx);
+      }
 
+      for (int kk = lo.z; kk <= hi.z; kk++)
+        for (int jj = lo.y; jj <= hi.y; jj++)
+          for (int ii = lo.x; ii <= hi.x; ii++) {
+            IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                         loIdx[iz_] + kk) };
             for (int iDim = 0; iDim < nDimVel; iDim++) {
-              u0[iDim] += u0Arr(loIdx[ix_] + ii, loIdx[iy_] + jj,
-                                loIdx[iz_] + kk, iDim) *
-                          coef[ii][jj][kk];
+              u0[iDim] += u0Arr(ijk, iDim) * coef[ii][jj][kk];
+              bp[iDim] += nodeBArr(ijk, iDim) * coef[ii][jj][kk];
             }
           }
 
-      const Real Omx = qdto2mc * Bxl;
-      const Real Omy = qdto2mc * Byl;
-      const Real Omz = qdto2mc * Bzl;
+      const Real Omx = qdto2mc * bp[ix_];
+      const Real Omy = qdto2mc * bp[iy_];
+      const Real Omz = qdto2mc * bp[iz_];
 
       // end interpolation
       const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
@@ -803,24 +801,25 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
         }
 
         for (int iVar = 0; iVar < 3; iVar++)
-          for (int kk = 0; kk < 2; kk++)
-            for (int jj = 0; jj < 2; jj++)
-              for (int ii = 0; ii < 2; ii++) {
-                jArr(loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk, iVar) +=
-                    coef[ii][jj][kk] * currents[iVar];
+          for (int kk = lo.z; kk <= hi.z; kk++)
+            for (int jj = lo.y; jj <= hi.y; jj++)
+              for (int ii = lo.x; ii <= hi.x; ii++) {
+                IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                             loIdx[iz_] + kk) };
+                jArr(ijk, iVar) += coef[ii][jj][kk] * currents[iVar];
               }
       }
 
       const int iMin = loIdx[ix_];
       const int jMin = loIdx[iy_];
-      const int kMin = loIdx[iz_];
-      const int iMax = iMin + 2;
-      const int jMax = jMin + 2;
-      const int kMax = kMin + 2;
+      const int kMin = nDim > 2 ? loIdx[iz_] : 0;
+      const int iMax = iMin + 1;
+      const int jMax = jMin + 1;
+      const int kMax = nDim > 2 ? kMin + 1 : 0;
 
-      for (int k1 = kMin; k1 < kMax; k1++)
-        for (int j1 = jMin; j1 < jMax; j1++)
-          for (int i1 = iMin; i1 < iMax; i1++) {
+      for (int k1 = kMin; k1 <= kMax; k1++)
+        for (int j1 = jMin; j1 <= jMax; j1++)
+          for (int i1 = iMin; i1 <= iMax; i1++) {
             const Real wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
             auto& data0 = mmArr(i1, j1, k1);
             for (int k2 = kMin; k2 < kMax; k2++) {
@@ -860,15 +859,15 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     // We only need the mass matrix on the physical nodes. But the first layer
     // of the ghost nodes may contributes to the physical nodes below (ghost
     // node constributes as a sender). So, we need the '-1' and '+1' staff.
-    const int iMin = lo.x - 1, jMin = lo.y - 1, kMin = lo.z - 1;
-    const int iMax = hi.x + 1, jMax = hi.y + 1, kMax = hi.z + 1;
+    const int iMin = lo.x - 1, jMin = lo.y - 1, kMin = nDim > 2 ? lo.z - 1 : 0;
+    const int iMax = hi.x + 1, jMax = hi.y + 1, kMax = nDim > 2 ? hi.z + 1 : 0;
 
     int gps, gpr; // gp_send, gp_receive
     for (int k1 = kMin; k1 <= kMax; k1++)
       for (int j1 = jMin; j1 <= jMax; j1++)
         for (int i1 = iMin; i1 <= iMax; i1++) {
           const int kp = 2;
-          const int kr = k1 + kp - 1;
+          const int kr = nDim > 2 ? k1 + kp - 1 : 0;
           if (kr > kMax || kr < kMin)
             continue;
           auto& datas0 = mmArr(i1, j1, k1);
