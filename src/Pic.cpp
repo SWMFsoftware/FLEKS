@@ -1419,16 +1419,25 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
     const auto hi = ubound(box);
 
     const Array4<Real const>& inArr = inMF[mfi].array();
-    const Array4<Real>& ourArr = outMF[mfi].array();
+    const Array4<Real>& outArr = outMF[mfi].array();
     const Array4<RealMM>& mmArr = nodeMM[iLev][mfi].array();
 
     for (int k = lo.z; k <= hi.z; ++k)
       for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i) {
           auto& data0 = mmArr(i, j, k);
-          for (int k2 = k - 1; k2 <= k + 1; k2++)
-            for (int j2 = j - 1; j2 <= j + 1; j2++)
-              for (int i2 = i - 1; i2 <= i + 1; i2++) {
+
+          Dim3 lo2, hi2;
+          {
+            Box bx(IntVect(AMREX_D_DECL(i - 1, j - 1, k - 1)),
+                   IntVect(AMREX_D_DECL(i + 1, j + 1, k + 1)));
+            lo2 = lbound(bx);
+            hi2 = ubound(bx);
+          }
+
+          for (int k2 = lo2.z; k2 <= hi2.z; k2++)
+            for (int j2 = lo2.y; j2 <= hi2.y; j2++)
+              for (int i2 = lo2.x; i2 <= hi2.x; i2++) {
                 const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
                 const int idx0 = gp * 9;
 
@@ -1438,11 +1447,11 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
                     inArr(i2, j2, k2, ix_); // vectX[i2][j2][k2];
                 const double& vctY = inArr(i2, j2, k2, iy_);
                 const double& vctZ = inArr(i2, j2, k2, iz_);
-                ourArr(i, j, k, ix_) +=
+                outArr(i, j, k, ix_) +=
                     (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
-                ourArr(i, j, k, iy_) +=
+                outArr(i, j, k, iy_) +=
                     (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
-                ourArr(i, j, k, iz_) +=
+                outArr(i, j, k, iz_) +=
                     (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
               }
         }
