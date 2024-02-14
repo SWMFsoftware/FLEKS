@@ -1067,16 +1067,9 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
       if (p.id() < 0)
         continue;
 
-      const Real up = p.rdata(iup_);
-      const Real vp = p.rdata(ivp_);
-      const Real wp = p.rdata(iwp_);
-      const Real xp = p.pos(ix_);
-      const Real yp = p.pos(iy_);
-      const Real zp = p.pos(iz_);
-
-      p.pos(ix_) = xp + up * dtLoc;
-      p.pos(iy_) = yp + vp * dtLoc;
-      p.pos(iz_) = zp + wp * dtLoc;
+      for (int iDim = 0; iDim < nDim; iDim++) {
+        p.pos(iDim) += p.rdata(iup_ + iDim) * dtLoc;
+      }
 
       // Mark for deletion
       if (is_outside_active_region(p, iLev, validBox)) {

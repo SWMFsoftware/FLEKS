@@ -277,7 +277,7 @@ double Pic::get_var(std::string var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 1) == "Y") {
       value = Geom(iLev).LoEdge(ijk, iy_);
     } else if (var.substr(0, 1) == "Z") {
-      value = Geom(iLev).LoEdge(ijk, iz_);
+      value = nDim > 2 ? Geom(iLev).LoEdge(ijk, iz_) : 0;
     } else if (var.substr(0, 2) == "dx") {
       value = Geom(iLev).CellSize(ix_);
     } else if (var.substr(0, 2) == "Ex") {

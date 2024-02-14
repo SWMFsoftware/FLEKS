@@ -388,8 +388,8 @@ public:
 
   inline bool is_outside_active_region(const ParticleType& p) {
     int iLev = 0;
-    amrex::Real loc[3] = { 0, 0, 0 };
-    for (int iDim = 0; iDim < 3; iDim++) {
+    amrex::RealVect loc;
+    for (int iDim = 0; iDim < nDim; iDim++) {
       loc[iDim] = p.pos(iDim);
       if (Geom(iLev).isPeriodic(iDim)) {
         // Fix index/loc for periodic BC.
@@ -400,7 +400,7 @@ public:
       }
     }
 
-    return !grid->is_inside_domain(loc);
+    return !grid->is_inside_domain(loc.begin());
   }
 
   // validBox should NOT include ghost cells.

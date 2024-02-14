@@ -74,7 +74,7 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
       //-----calculate interpolate coef begin-------------
       IntVect loIdx;
       RealVect dShift;
-      for (int i = 0; i < 3; i++) {
+      for (int i = 0; i < nDim; i++) {
         dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
         loIdx[i] = fastfloor(dShift[i]);
         dShift[i] = dShift[i] - loIdx[i];
@@ -403,13 +403,19 @@ void TestParticles::add_test_particles_from_fluid(Vector<Vel> tpStates) {
 
     for (int i = idxMin[ix_]; i <= idxMax[ix_]; i += nIntervalCell[ix_])
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; j += nIntervalCell[iy_])
+#if (AMREX_SPACEDIM > 2)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; k += nIntervalCell[iz_])
+#else
+        for (int k = 0; k <= 0; k++)
+#endif
+        {
           if (iPartRegion == iRegionUniform_ ||
               (iPartRegion == iRegionBoundary_ &&
                bit::is_lev_edge(status(i, j, k)))) {
             add_particles_cell(iLev, mfi, IntVect{ AMREX_D_DECL(i, j, k) }, fi,
                                false, IntVect(0), tpVel);
           }
+        }
   }
 }
 
