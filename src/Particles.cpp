@@ -822,12 +822,12 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
           for (int i1 = iMin; i1 <= iMax; i1++) {
             const Real wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
             auto& data0 = mmArr(i1, j1, k1);
-            for (int k2 = kMin; k2 < kMax; k2++) {
+            for (int k2 = kMin; k2 <= kMax; k2++) {
               const int kp = k2 - k1 + 1;
               if (kp > 0) {
-                for (int j2 = jMin; j2 < jMax; j2++) {
+                for (int j2 = jMin; j2 <= jMax; j2++) {
                   const int jp = j2 - j1 + 1;
-                  for (int i2 = iMin; i2 < iMax; i2++) {
+                  for (int i2 = iMin; i2 <= iMax; i2++) {
                     const Real weight =
                         wg * coef[i2 - iMin][j2 - jMin][k2 - kMin];
                     const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
