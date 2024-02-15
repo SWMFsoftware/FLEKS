@@ -37,15 +37,14 @@ Particles<NStructReal, NStructInt>::Particles(
   invVol.resize(n_lev_max());
 
   for (int iLev = 0; iLev < n_lev_max(); iLev++) {
-    invVol[iLev] = 1;
     for (int i = 0; i < nDim; i++) {
       tile_size[i] = 1;
       plo[iLev][i] = Geom(iLev).ProbLo(i);
       phi[iLev][i] = Geom(iLev).ProbHi(i);
       dx[iLev][i] = Geom(iLev).CellSize(i);
       invDx[iLev][i] = Geom(iLev).InvCellSize(i);
-      invVol[iLev] *= invDx[iLev][i];
     }
+    invVol[iLev] = invDx[iLev].product();
   }
 
   // The following line is used to avoid an MPI bug (feature?) on Frontera. It
@@ -66,7 +65,7 @@ void Particles<NStructReal, NStructInt>::outflow_bc(
 
   AoS& phyParts = pPhy.GetArrayOfStructs();
 
-  Real dxshift[3] = { 0, 0, 0 };
+  RealVect dxshift;
   for (int i = 0; i < nDim; i++) {
     dxshift[i] = Geom(iLev).CellSize(i) * (ijkGst[i] - ijkPhy[i]);
   }
@@ -248,12 +247,9 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
       const auto lo = lbound(tile_box);
       const auto hi = ubound(tile_box);
 
-      int iMax = hi.x, jMax = hi.y, kMax = hi.z;
-      int iMin = lo.x, jMin = lo.y, kMin = lo.z;
-
-      for (int i = iMin; i <= iMax; ++i)
-        for (int j = jMin; j <= jMax; ++j)
-          for (int k = kMin; k <= kMax; ++k) {
+      for (int i = lo.x; i <= hi.x; ++i)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int k = lo.z; k <= hi.z; ++k) {
             const auto& status = cell_status(iLev)[mfi].array();
             if (bit::is_refined(status(i, j, k)))
               continue;
@@ -273,11 +269,8 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
               if (adaptivePPC) {
                 // Adjust ppc so that the weight of the
                 // source particles is not too small.
-                int initPPC = 1, sourcePPC = 1;
-                for (int iDim = 0; iDim < nDim; iDim++) {
-                  initPPC *= nPartPerCell[iDim];
-                  sourcePPC *= ppc[iDim];
-                }
+                const int initPPC = product(nPartPerCell);
+                const int sourcePPC = product(ppc);
 
                 Real rho = fi->get_number_density(mfi, ijk, speciesID, iLev);
                 Real rhoSource =
@@ -323,16 +316,12 @@ void Particles<NStructReal, NStructInt>::add_particles_domain() {
       const auto lo = lbound(bx);
       const auto hi = ubound(bx);
 
-      int iMax = hi.x, jMax = hi.y, kMax = hi.z;
-      int iMin = lo.x, jMin = lo.y, kMin = lo.z;
-
-      for (int i = iMin; i <= iMax; ++i)
-        for (int j = jMin; j <= jMax; ++j)
-          for (int k = kMin; k <= kMax; ++k) {
-            if (bit::is_new(status(i, j, k)) &&
-                !bit::is_refined(status(i, j, k))) {
-              add_particles_cell(iLev, mfi, IntVect{ AMREX_D_DECL(i, j, k) },
-                                 fi, true);
+      for (int i = lo.x; i <= hi.x; ++i)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int k = lo.z; k <= hi.z; ++k) {
+            IntVect ijk = { AMREX_D_DECL(i, j, k) };
+            if (bit::is_new(status(ijk)) && !bit::is_refined(status(ijk))) {
+              add_particles_cell(iLev, mfi, ijk, fi, true);
             }
           }
     }
