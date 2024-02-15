@@ -123,13 +123,8 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 
   set_random_seed(iLev, ijk, nPPC);
 
-  Real vol = 1;
-  int npcel = 1;
-
-  for (int iDim = 0; iDim < nDim; iDim++) {
-    vol *= dx[iLev][iDim];
-    npcel *= nPPC[iDim];
-  }
+  const Real vol = dx[iLev].product();
+  const int npcel = product(nPPC);
 
   const Real vol2Npcel = qomSign * vol / npcel;
 
@@ -1689,7 +1684,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
                                                bool seperateVelocity) {
   timing_func("Pts::split");
 
-  const int nInitial = multiply_vec(nPartPerCell, nDim);
+  const int nInitial = product(nPartPerCell);
 
   IntVect iv = { AMREX_D_DECL(1, 1, 1) };
   if (!(do_tiling && tile_size == iv))
@@ -1703,7 +1698,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
 
     const int nGoal = nLowerLimit > nInitial ? nLowerLimit : nInitial;
 
-    const Real vol = multiply_vec(dx[iLev], nDim);
+    const Real vol = dx[iLev].product();
 
     const Real vacuumMass = vacuum * vol;
 
@@ -1738,7 +1733,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
       // are the same for different number of processors
       std::sort(particles.begin(), particles.end(),
                 [](const ParticleType& pl, const ParticleType& pr) {
-                  return sum_vec(pl.pos(), nDim) > sum_vec(pr.pos(), nDim);
+                  return pl.pos().sum() > pr.pos().sum();
                 });
 
       const Real invLx = 1. / (phi[iLev][ix_] - plo[iLev][ix_]);
@@ -2214,8 +2209,7 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
 
-    int nPartGoal =
-        multiply_vec(nPartPerCell, nDim) * limit * pow(pLevRatio, iLev);
+    int nPartGoal = product(nPartPerCell) * limit * pow(pLevRatio, iLev);
 
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
 
@@ -2250,7 +2244,7 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
       // are the same for different number of processors
       std::sort(particles.begin(), particles.end(),
                 [](const ParticleType& pl, const ParticleType& pr) {
-                  return sum_vec(pl.pos(), nDim) > sum_vec(pr.pos(), nDim);
+                  return pl.pos().sum() > pr.pos().sum();
                 });
 
       // One particle may belong to more than one velocity bins, but it can be

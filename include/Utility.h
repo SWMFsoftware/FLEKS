@@ -83,6 +83,10 @@ void print_fab(const amrex::FabArray<FAB>& mf, std::string tag,
   amrex::AllPrint() << "-----" << tag << " end-----" << std::endl;
 }
 
+inline int product(amrex::IntVect& vect) {
+  return AMREX_D_TERM(vect[0], *vect[1], *vect[2]);
+}
+
 // Return the firs integer in the string.
 // Example: "abc123def345b" -> 123
 inline int extract_int(std::string s) {
@@ -127,20 +131,6 @@ inline int get_local_node_or_cell_number(const amrex::MultiFab& MF) {
 template <class T> inline void zero_array(T* arr, int nSize) {
   for (int i = 0; i < nSize; i++)
     arr[i] = 0;
-}
-
-template <class T> inline amrex::Real sum_vec(const T& vec, int n) {
-  amrex::Real sum = 0;
-  for (int i = 0; i < n; i++)
-    sum += vec[i];
-  return sum;
-}
-
-template <class T> inline amrex::Real multiply_vec(const T& vec, int n) {
-  amrex::Real res = 1;
-  for (int i = 0; i < n; i++)
-    res *= vec[i];
-  return res;
 }
 
 inline void linear_interpolation_coef(amrex::RealVect& dx,
