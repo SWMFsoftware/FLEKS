@@ -1124,7 +1124,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         const Real wp = p.rdata(iwp_);
         const Real xp = p.pos(ix_);
         const Real yp = p.pos(iy_);
-        const Real zp = p.pos(iz_);
+        const Real zp = nDim > 2 ? p.pos(iz_) : 0;
 
         //-----calculate interpolate coef begin-------------
         IntVect loIdx;
@@ -1139,35 +1139,39 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         linear_interpolation_coef(dShift, coef);
         //-----calculate interpolate coef end-------------
 
-        Real Bxl = 0, Byl = 0, Bzl = 0; // should be bp[3];
-        Real Exl = 0, Eyl = 0, Ezl = 0;
-        for (int ii = 0; ii < 2; ii++)
-          for (int jj = 0; jj < 2; jj++)
-            for (int kk = 0; kk < 2; kk++) {
-              const int iNodeX = loIdx[ix_] + ii;
-              const int iNodeY = loIdx[iy_] + jj;
-              const int iNodeZ = loIdx[iz_] + kk;
-              const Real& c0 = coef[ii][jj][kk];
-              Bxl += nodeBArr(iNodeX, iNodeY, iNodeZ, ix_) * c0;
-              Byl += nodeBArr(iNodeX, iNodeY, iNodeZ, iy_) * c0;
-              Bzl += nodeBArr(iNodeX, iNodeY, iNodeZ, iz_) * c0;
+        Dim3 lo, hi;
+        {
+          Box bx(IntVect(0), IntVect(1));
+          lo = lbound(bx);
+          hi = ubound(bx);
+        }
 
-              Exl += nodeEArr(iNodeX, iNodeY, iNodeZ, ix_) * c0;
-              Eyl += nodeEArr(iNodeX, iNodeY, iNodeZ, iy_) * c0;
-              Ezl += nodeEArr(iNodeX, iNodeY, iNodeZ, iz_) * c0;
+        Real bp[3] = { 0, 0, 0 };
+        Real ep[3] = { 0, 0, 0 };
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i) {
+              IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
+                                           loIdx[iz_] + k) };
+
+              const Real& c0 = coef[i][j][k];
+              for (int iDim = 0; iDim < nDimVel; iDim++) {
+                bp[iDim] += nodeBArr(ijk, iDim) * c0;
+                ep[iDim] += nodeEArr(ijk, iDim) * c0;
+              }
             }
 
-        const double Omx = qdto2mc * Bxl;
-        const double Omy = qdto2mc * Byl;
-        const double Omz = qdto2mc * Bzl;
+        const double Omx = qdto2mc * bp[ix_];
+        const double Omy = qdto2mc * bp[iy_];
+        const double Omz = qdto2mc * bp[iz_];
 
         // end interpolation
         const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
         const Real denom = 1.0 / (1.0 + omsq);
         // solve the position equation
-        const Real ut = up + qdto2mc * Exl;
-        const Real vt = vp + qdto2mc * Eyl;
-        const Real wt = wp + qdto2mc * Ezl;
+        const Real ut = up + qdto2mc * ep[ix_];
+        const Real vt = vp + qdto2mc * ep[iy_];
+        const Real wt = wp + qdto2mc * ep[iz_];
         // const pfloat udotb = ut * Bxl + vt * Byl + wt * Bzl;
         const Real udotOm = ut * Omx + vt * Omy + wt * Omz;
         // solve the velocity equation
@@ -1185,7 +1189,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 
         p.pos(ix_) = xp + unp1 * dtLoc;
         p.pos(iy_) = yp + vnp1 * dtLoc;
-        p.pos(iz_) = zp + wnp1 * dtLoc;
+        if (nDim > 2)
+          p.pos(iz_) = zp + wnp1 * dtLoc;
 
         // Mark for deletion
         if (is_outside_active_region(p, iLev, validBox)) {
