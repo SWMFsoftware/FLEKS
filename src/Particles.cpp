@@ -450,7 +450,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
           }
 
       if (!doNetChargeOnly) {
-        Real weights_IIID[2][2][2][nDimVel];
+        Real weights_IIID[2][2][2][nDim3];
         //----- Mass matrix calculation begin--------------
         const Real xi0 = dShift[ix_] * dx[iLev][ix_];
         const Real eta0 = dShift[iy_] * dx[iLev][iy_];
@@ -523,9 +523,9 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
                 const int gp0 = ip * 9;
                 for (int j2 = jMin; j2 <= jMax; j2++) {
                   int jp = j2 - j1 + 1;
-                  const int gp1 = gp0 + jp * nDimVel;
+                  const int gp1 = gp0 + jp * nDim3;
                   for (int k2 = kMin; k2 <= kMax; k2++) {
-                    const Real(&wg1_D)[nDimVel] =
+                    const Real(&wg1_D)[nDim3] =
                         weights_IIID[i2 - iMin][j2 - jMin][k2 - kMin];
 
                     // const int kp = k2 - k1 + 1;
@@ -754,7 +754,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
           for (int ii = lo.x; ii <= hi.x; ii++) {
             IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
                                          loIdx[iz_] + kk) };
-            for (int iDim = 0; iDim < nDimVel; iDim++) {
+            for (int iDim = 0; iDim < nDim3; iDim++) {
               u0[iDim] += u0Arr(ijk, iDim) * coef[ii][jj][kk];
               bp[iDim] += nodeBArr(ijk, iDim) * coef[ii][jj][kk];
             }
@@ -1155,7 +1155,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
                                            loIdx[iz_] + k) };
 
               const Real& c0 = coef[i][j][k];
-              for (int iDim = 0; iDim < nDimVel; iDim++) {
+              for (int iDim = 0; iDim < nDim3; iDim++) {
                 bp[iDim] += nodeBArr(ijk, iDim) * c0;
                 ep[iDim] += nodeEArr(ijk, iDim) * c0;
               }
@@ -1420,10 +1420,10 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
                 });
 
       Real totalMass = 0;
-      Real totalMoment[nDimVel] = { 0, 0, 0 };
+      Real totalMoment[nDim3] = { 0, 0, 0 };
       for (auto& p : particles) {
         totalMass += fabs(p.rdata(iqp_));
-        for (int i = 0; i < nDimVel; i++)
+        for (int i = 0; i < nDim3; i++)
           totalMoment[i] += fabs(p.rdata(iqp_) * p.rdata(iup_ + i));
       }
       Real avg = totalMass / particles.size();
@@ -1528,12 +1528,12 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
   Vector<int> phasePartIdx_III[nCell][nCell][nCell];
 
   // Velocity domain range.
-  Real velMin_D[nDimVel] = { 1e9, 1e9, 1e9 },
-       velMax_D[nDimVel] = { -1e9, -1e9, -1e9 };
+  Real velMin_D[nDim3] = { 1e9, 1e9, 1e9 },
+       velMax_D[nDim3] = { -1e9, -1e9, -1e9 };
 
   for (int pid = 0; pid < plist.size(); pid++) {
     auto& pcl = *plist[pid];
-    for (int iDir = 0; iDir < nDimVel; iDir++) {
+    for (int iDir = 0; iDir < nDim3; iDir++) {
       if (pcl.rdata(iup_ + iDir) > velMax_D[iDir])
         velMax_D[iDir] = pcl.rdata(iup_ + iDir);
       if (pcl.rdata(iup_ + iDir) < velMin_D[iDir])
@@ -1542,7 +1542,7 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
   }
 
   Real dvMax = 0;
-  for (int iDir = 0; iDir < nDimVel; iDir++) {
+  for (int iDir = 0; iDir < nDim3; iDir++) {
     Real dv = velMax_D[iDir] - velMin_D[iDir];
     if (dv < 1e-16)
       dv = 1e-16;
@@ -1557,10 +1557,10 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
   Real dvCell = dvMax == 0 ? 1e-9 : dvMax / nCell;
   Real invDv = 1 / dvCell;
 
-  int iCell_D[nDimVel];
+  int iCell_D[nDim3];
   for (int pid = 0; pid < plist.size(); pid++) {
     auto& pcl = *plist[pid];
-    for (int iDim = 0; iDim < nDimVel; iDim++) {
+    for (int iDim = 0; iDim < nDim3; iDim++) {
       iCell_D[iDim] = fastfloor((pcl.rdata(iDim) - velMin_D[iDim]) * invDv);
     }
 
@@ -1618,8 +1618,8 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
   Real mt = p1.rdata(iqp_) + p2.rdata(iqp_);
   Real wavg = mt / 4.0;
 
-  Real u[nDimVel], du1[nDimVel], du2[nDimVel];
-  for (int i = 0; i < nDimVel; i++) {
+  Real u[nDim3], du1[nDim3], du2[nDim3];
+  for (int i = 0; i < nDim3; i++) {
     u[i] = (p1.rdata(iqp_) * p1.rdata(iup_ + i) +
             p2.rdata(iqp_) * p2.rdata(iup_ + i)) /
            mt;
@@ -1629,22 +1629,22 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
   const bool isP1Heavy = fabs(p1.rdata(iqp_)) > fabs(p2.rdata(iqp_));
   ParticleType* pHeavey = isP1Heavy ? &p1 : &p2;
   Real cTmp = isP1Heavy ? 1 : -1;
-  for (int i = 0; i < nDimVel; i++) {
+  for (int i = 0; i < nDim3; i++) {
     du1[i] = cTmp * (pHeavey->rdata(iup_ + i) - u[i]);
     dSpeed += pow(du1[i], 2);
   }
   dSpeed = sqrt(dSpeed);
 
   {
-    Real utmp[nDimVel];
-    for (int i = 0; i < nDimVel; i++) {
+    Real utmp[nDim3];
+    for (int i = 0; i < nDim3; i++) {
       utmp[i] = randNum() - 0.5;
     }
 
     a_cross_b(du1, utmp, du2);
 
     Real du2Amp = 0;
-    for (int i = 0; i < nDimVel; i++) {
+    for (int i = 0; i < nDim3; i++) {
       du2Amp += pow(du2[i], 2);
     }
     du2Amp = sqrt(du2Amp);
@@ -1653,7 +1653,7 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
     if (du2Amp > 1e-16) {
       scale = dSpeed / du2Amp;
     }
-    for (int i = 0; i < nDimVel; i++) {
+    for (int i = 0; i < nDim3; i++) {
       du2[i] *= scale;
     }
   }
@@ -1666,7 +1666,7 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
   p3.rdata(iqp_) = wavg;
   p4.rdata(iqp_) = wavg;
 
-  for (int i = 0; i < nDimVel; i++) {
+  for (int i = 0; i < nDim3; i++) {
     p1.rdata(iup_ + i) = u[i] + du1[i];
     p2.rdata(iup_ + i) = u[i] - du1[i];
 
@@ -1888,7 +1888,7 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
   // Find the center of the particles, and sort the particles based
   // on its distance to the 6-D center.
   //----------------------------------------------------------
-  Vector<Real> middle(nDim + nDimVel, 0);
+  Vector<Real> middle(nDim + nDim3, 0);
   for (int pID : partIdx) {
     for (int iDir = ix_; iDir <= iz_; iDir++) {
       if (iDir < nDim)
@@ -2260,7 +2260,7 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
 
       //----------------------------------------------------------------
       // Estimate the bulk velocity and thermal velocity.
-      Real uBulk[nDimVel] = { 0, 0, 0 };
+      Real uBulk[nDim3] = { 0, 0, 0 };
       for (int pid = 0; pid < nPartOrig; pid++) {
         auto& pcl = particles[pid];
         for (int iDir = 0; iDir < 3; iDir++) {
@@ -2268,14 +2268,14 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
         }
       }
 
-      for (int iDir = 0; iDir < nDimVel; iDir++) {
+      for (int iDir = 0; iDir < nDim3; iDir++) {
         uBulk[iDir] /= nPartOrig;
       }
 
       Real thVel = 0, thVel2 = 0;
       for (int pid = 0; pid < nPartOrig; pid++) {
         auto& pcl = particles[pid];
-        for (int iDir = 0; iDir < nDimVel; iDir++) {
+        for (int iDir = 0; iDir < nDim3; iDir++) {
           thVel2 += pow(pcl.rdata(iDir) - uBulk[iDir], 2);
         }
       }
@@ -2295,19 +2295,19 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
       Real invDv = (dv < 1e-13) ? 0 : 1.0 / dv;
 
       // Velocity domain range.
-      Real velMin_D[nDimVel], velMax_D[nDimVel];
-      for (int iDir = 0; iDir < nDimVel; iDir++) {
+      Real velMin_D[nDim3], velMax_D[nDim3];
+      for (int iDir = 0; iDir < nDim3; iDir++) {
         Real dvshift = (randNum() - 0.5) * dv;
         velMin_D[iDir] = -r0 * thVel + uBulk[iDir] + dvshift;
         velMax_D[iDir] = r0 * thVel + uBulk[iDir] + dvshift;
       }
 
-      int iCell_D[nDimVel];
+      int iCell_D[nDim3];
       for (int pid = 0; pid < nPartOrig; pid++) {
         auto& pcl = particles[pid];
 
         bool isOutside = false;
-        for (int iDim = 0; iDim < nDimVel; iDim++) {
+        for (int iDim = 0; iDim < nDim3; iDim++) {
           if (pcl.rdata(iDim) < velMin_D[iDim] ||
               pcl.rdata(iDim) > velMax_D[iDim])
             isOutside = true;
@@ -2315,7 +2315,7 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
         if (isOutside)
           continue;
 
-        for (int iDim = 0; iDim < nDimVel; iDim++) {
+        for (int iDim = 0; iDim < nDim3; iDim++) {
           iCell_D[iDim] = fastfloor((pcl.rdata(iDim) - velMin_D[iDim]) * invDv);
         }
 
@@ -2332,9 +2332,9 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
 
               Vector<int> cellIdx = { xCell, yCell, zCell };
 
-              Real binMin_D[nDimVel], binMax_D[nDimVel];
+              Real binMin_D[nDim3], binMax_D[nDim3];
 
-              for (int iDim = 0; iDim < nDimVel; iDim++) {
+              for (int iDim = 0; iDim < nDim3; iDim++) {
                 binMin_D[iDim] =
                     velMin_D[iDim] + (cellIdx[iDim] - velBinBufferSize) * dv;
 
@@ -2343,7 +2343,7 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
               }
 
               bool isInside = true;
-              for (int iDim = 0; iDim < nDimVel; iDim++) {
+              for (int iDim = 0; iDim < nDim3; iDim++) {
                 if (pcl.rdata(iDim) < binMin_D[iDim] ||
                     pcl.rdata(iDim) > binMax_D[iDim])
                   isInside = false;

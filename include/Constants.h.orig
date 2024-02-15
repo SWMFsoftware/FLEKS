@@ -22,7 +22,7 @@ constexpr static double cAUSI = 1.495978707e11; // m
 constexpr static int nDim = amrex::SpaceDim;
 
 // Always contains 3 velocity components.
-constexpr static int nDimVel = 3; 
+constexpr static int nDim3 = 3; 
 
 namespace config{
 // Level of grids. 

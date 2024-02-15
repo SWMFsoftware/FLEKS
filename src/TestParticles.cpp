@@ -100,7 +100,7 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
                                          loIdx[iz_] + k) };
 
             const Real& c0 = coef[i][j][k];
-            for (int iDim = 0; iDim < nDimVel; iDim++) {
+            for (int iDim = 0; iDim < nDim3; iDim++) {
               bp[iDim] += nodeBArr(ijk, iDim) * c0;
               ep[iDim] += nodeEArr(ijk, iDim) * c0;
             }
