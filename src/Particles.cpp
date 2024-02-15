@@ -1689,8 +1689,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
                                                bool seperateVelocity) {
   timing_func("Pts::split");
 
-  const int nInitial =
-      nPartPerCell[ix_] * nPartPerCell[iy_] * nPartPerCell[iz_];
+  const int nInitial = multiply_vec(nPartPerCell, nDim);
 
   IntVect iv = { AMREX_D_DECL(1, 1, 1) };
   if (!(do_tiling && tile_size == iv))
@@ -1704,7 +1703,8 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
 
     const int nGoal = nLowerLimit > nInitial ? nLowerLimit : nInitial;
 
-    const Real vol = dx[iLev][ix_] * dx[iLev][iy_] * dx[iLev][iz_];
+    const Real vol = multiply_vec(dx[iLev], nDim);
+
     const Real vacuumMass = vacuum * vol;
 
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
@@ -1738,8 +1738,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
       // are the same for different number of processors
       std::sort(particles.begin(), particles.end(),
                 [](const ParticleType& pl, const ParticleType& pr) {
-                  return pl.pos(ix_) + pl.pos(iy_) + pl.pos(iz_) >
-                         pr.pos(ix_) + pr.pos(iy_) + pr.pos(iz_);
+                  return sum_vec(pl.pos(), nDim) > sum_vec(pr.pos(), nDim);
                 });
 
       const Real invLx = 1. / (phi[iLev][ix_] - plo[iLev][ix_]);
@@ -1800,7 +1799,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
           Real qp1 = p.rdata(iqp_);
           Real xp1 = p.pos(ix_);
           Real yp1 = p.pos(iy_);
-          Real zp1 = p.pos(iz_);
+          Real zp1 = nDim > 2 ? p.pos(iz_) : 0;
           Real up1 = p.rdata(iup_);
           Real vp1 = p.rdata(ivp_);
           Real wp1 = p.rdata(iwp_);
@@ -1836,7 +1835,9 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
               zp1 = bound(zp1, zMin, zMax);
               p.pos(ix_) = xp1;
               p.pos(iy_) = yp1;
-              p.pos(iz_) = zp1;
+
+              if (nDim > 2)
+                p.pos(iz_) = zp1;
             }
 
             xp2 = bound(xp2, xMin, xMax);
@@ -1848,7 +1849,8 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
 
             pnew.pos(ix_) = xp2;
             pnew.pos(iy_) = yp2;
-            pnew.pos(iz_) = zp2;
+            if (nDim > 2)
+              pnew.pos(iz_) = zp2;
             pnew.rdata(iup_) = up1;
             pnew.rdata(ivp_) = vp1;
             pnew.rdata(iwp_) = wp1;
@@ -1886,23 +1888,27 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
   // Find the center of the particles, and sort the particles based
   // on its distance to the 6-D center.
   //----------------------------------------------------------
-  Real middle[6] = { 0, 0, 0, 0, 0, 0 };
+  Vector<Real> middle(nDim + nDimVel, 0);
   for (int pID : partIdx) {
     for (int iDir = ix_; iDir <= iz_; iDir++) {
-      middle[iDir] += particles[pID].pos(iDir);
+      if (iDir < nDim)
+        middle[iDir] += particles[pID].pos(iDir);
       middle[nDim + iDir] += particles[pID].rdata(iDir);
     }
   }
 
-  for (int iDir = 0; iDir < 2 * nDim; iDir++) {
-    middle[iDir] /= partIdx.size();
+  for (int i = 0; i < middle.size(); i++) {
+    middle[i] /= partIdx.size();
   }
 
   auto calc_distance2_to_center = [&, this](int pID) {
     Real dl2 = 0, dvel2 = 0;
     for (int iDir = ix_; iDir <= iz_; iDir++) {
-      Real pos = particles[pID].pos(iDir);
-      dl2 += pow((pos - middle[iDir]) * invDx[iLev][iDir], 2);
+
+      if (iDir < nDim) {
+        Real pos = particles[pID].pos(iDir);
+        dl2 += pow((pos - middle[iDir]) * invDx[iLev][iDir], 2);
+      }
 
       Real v = particles[pID].rdata(iDir);
       dvel2 += pow((v - middle[nDim + iDir]) * velNorm, 2);
@@ -1931,17 +1937,19 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
   }
 
   // Calculate the center of the particles for combination
-  for (int i = 0; i < 2 * nDim; i++) {
+  for (int i = 0; i < middle.size(); i++) {
     middle[i] = 0;
   }
   for (int pID : idx_I) {
     for (int iDir = ix_; iDir <= iz_; iDir++) {
-      middle[iDir] += particles[pID].pos(iDir);
+      if (iDir < nDim)
+        middle[iDir] += particles[pID].pos(iDir);
+
       middle[nDim + iDir] += particles[pID].rdata(iDir);
     }
   }
-  for (int iDir = 0; iDir < 2 * nDim; iDir++) {
-    middle[iDir] /= nPartCombine;
+  for (int i = 0; i < middle.size(); i++) {
+    middle[i] /= nPartCombine;
   }
 
   bool doCombine = true;
@@ -2205,8 +2213,9 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
     return;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    const int nPartGoal = nPartPerCell[ix_] * nPartPerCell[iy_] *
-                          nPartPerCell[iz_] * limit * pow(pLevRatio, iLev);
+
+    int nPartGoal =
+        multiply_vec(nPartPerCell, nDim) * limit * pow(pLevRatio, iLev);
 
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
 
@@ -2241,8 +2250,7 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
       // are the same for different number of processors
       std::sort(particles.begin(), particles.end(),
                 [](const ParticleType& pl, const ParticleType& pr) {
-                  return pl.pos(ix_) + pl.pos(iy_) + pl.pos(iz_) >
-                         pr.pos(ix_) + pr.pos(iy_) + pr.pos(iz_);
+                  return sum_vec(pl.pos(), nDim) > sum_vec(pr.pos(), nDim);
                 });
 
       // One particle may belong to more than one velocity bins, but it can be
@@ -2322,7 +2330,7 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
                   zCell < 0 || zCell >= nCell)
                 continue;
 
-              IntVect cellIdx = { AMREX_D_DECL(xCell, yCell, zCell) };
+              Vector<int> cellIdx = { xCell, yCell, zCell };
 
               Real binMin_D[nDimVel], binMax_D[nDimVel];
 
