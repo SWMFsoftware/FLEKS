@@ -129,6 +129,20 @@ template <class T> inline void zero_array(T* arr, int nSize) {
     arr[i] = 0;
 }
 
+template <class T> inline amrex::Real sum_vec(const T& vec, int n) {
+  amrex::Real sum = 0;
+  for (int i = 0; i < n; i++)
+    sum += vec[i];
+  return sum;
+}
+
+template <class T> inline amrex::Real multiply_vec(const T& vec, int n) {
+  amrex::Real res = 1;
+  for (int i = 0; i < n; i++)
+    res *= vec[i];
+  return res;
+}
+
 inline void linear_interpolation_coef(amrex::RealVect& dx,
                                       amrex::Real (&coef)[2][2][2]) {
 
