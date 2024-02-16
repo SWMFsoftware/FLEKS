@@ -34,36 +34,30 @@ void grad_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
   timing_func("grad_node_to_center");
 
   for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
-
-    int imin = lo.x - 1, jmin = lo.y - 1, kmin = nDim > 2 ? lo.z - 1 : 0;
-    int imax = hi.x + 1, jmax = hi.y + 1, kmax = nDim > 2 ? hi.z + 1 : 0;
+    Box box = mfi.validbox();
+    box.grow(1);
 
     const Array4<Real>& center = centerMF[mfi].array();
     const Array4<Real const>& node = nodeMF[mfi].array();
 
-    for (int k = kmin; k <= kmax; ++k)
-      for (int j = jmin; j <= jmax; ++j)
-        for (int i = imin; i <= imax; ++i) {
-          int kp1 = nDim > 2 ? k + 1 : k;
-          center(i, j, k, ix_) =
-              0.25 * invDx[ix_] *
-              (node(i + 1, j, k) - node(i, j, k) + node(i + 1, j, kp1) -
-               node(i, j, kp1) + node(i + 1, j + 1, k) - node(i, j + 1, k) +
-               node(i + 1, j + 1, kp1) - node(i, j + 1, kp1));
-          center(i, j, k, iy_) =
-              0.25 * invDx[iy_] *
-              (node(i, j + 1, k) - node(i, j, k) + node(i, j + 1, kp1) -
-               node(i, j, kp1) + node(i + 1, j + 1, k) - node(i + 1, j, k) +
-               node(i + 1, j + 1, kp1) - node(i + 1, j, kp1));
-          center(i, j, k, iz_) =
-              0.25 * invDx[iz_] *
-              (node(i, j, kp1) - node(i, j, k) + node(i + 1, j, kp1) -
-               node(i + 1, j, k) + node(i, j + 1, kp1) - node(i, j + 1, k) +
-               node(i + 1, j + 1, kp1) - node(i + 1, j + 1, k));
-        }
+    ParallelFor(box, [&](int i, int j, int k) {
+      int kp1 = nDim > 2 ? k + 1 : k;
+      center(i, j, k, ix_) =
+          0.25 * invDx[ix_] *
+          (node(i + 1, j, k) - node(i, j, k) + node(i + 1, j, kp1) -
+           node(i, j, kp1) + node(i + 1, j + 1, k) - node(i, j + 1, k) +
+           node(i + 1, j + 1, kp1) - node(i, j + 1, kp1));
+      center(i, j, k, iy_) =
+          0.25 * invDx[iy_] *
+          (node(i, j + 1, k) - node(i, j, k) + node(i, j + 1, kp1) -
+           node(i, j, kp1) + node(i + 1, j + 1, k) - node(i + 1, j, k) +
+           node(i + 1, j + 1, kp1) - node(i + 1, j, kp1));
+      center(i, j, k, iz_) =
+          0.25 * invDx[iz_] *
+          (node(i, j, kp1) - node(i, j, k) + node(i + 1, j, kp1) -
+           node(i + 1, j, k) + node(i, j + 1, kp1) - node(i, j + 1, k) +
+           node(i + 1, j + 1, kp1) - node(i + 1, j + 1, k));
+    });
   }
 }
 
@@ -72,36 +66,29 @@ void grad_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
 
   for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
 
     const Array4<Real>& node = nodeMF[mfi].array();
     const Array4<Real const>& center = centerMF[mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          int km1 = nDim > 2 ? k - 1 : k;
+    ParallelFor(box, [&](int i, int j, int k) {
+      int km1 = nDim > 2 ? k - 1 : k;
 
-          node(i, j, k, ix_) =
-              0.25 * invDx[ix_] *
-              (center(i, j, k) - center(i - 1, j, k) + center(i, j, km1) -
-               center(i - 1, j, km1) + center(i, j - 1, k) -
-               center(i - 1, j - 1, k) + center(i, j - 1, km1) -
-               center(i - 1, j - 1, km1));
-          node(i, j, k, iy_) =
-              0.25 * invDx[iy_] *
-              (center(i, j, k) - center(i, j - 1, k) + center(i, j, km1) -
-               center(i, j - 1, km1) + center(i - 1, j, k) -
-               center(i - 1, j - 1, k) + center(i - 1, j, km1) -
-               center(i - 1, j - 1, km1));
-          node(i, j, k, iz_) =
-              0.25 * invDx[iz_] *
-              (center(i, j, k) - center(i, j, km1) + center(i - 1, j, k) -
-               center(i - 1, j, km1) + center(i, j - 1, k) -
-               center(i, j - 1, km1) + center(i - 1, j - 1, k) -
-               center(i - 1, j - 1, km1));
-        }
+      node(i, j, k, ix_) = 0.25 * invDx[ix_] *
+                           (center(i, j, k) - center(i - 1, j, k) +
+                            center(i, j, km1) - center(i - 1, j, km1) +
+                            center(i, j - 1, k) - center(i - 1, j - 1, k) +
+                            center(i, j - 1, km1) - center(i - 1, j - 1, km1));
+      node(i, j, k, iy_) = 0.25 * invDx[iy_] *
+                           (center(i, j, k) - center(i, j - 1, k) +
+                            center(i, j, km1) - center(i, j - 1, km1) +
+                            center(i - 1, j, k) - center(i - 1, j - 1, k) +
+                            center(i - 1, j, km1) - center(i - 1, j - 1, km1));
+      node(i, j, k, iz_) =
+          0.25 * invDx[iz_] *
+          (center(i, j, k) - center(i, j, km1) + center(i - 1, j, k) -
+           center(i - 1, j, km1) + center(i, j - 1, k) - center(i, j - 1, km1) +
+           center(i - 1, j - 1, k) - center(i - 1, j - 1, km1));
+    });
   }
 }
 
@@ -110,38 +97,34 @@ void div_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
 
   for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
 
     const Array4<Real const>& center = centerMF[mfi].array();
     const Array4<Real>& node = nodeMF[mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          int km1 = nDim > 2 ? k - 1 : k;
-          const Real compX =
-              0.25 * invDx[ix_] *
-              (center(i, j, k, ix_) - center(i - 1, j, k, ix_) +
-               center(i, j, km1, ix_) - center(i - 1, j, km1, ix_) +
-               center(i, j - 1, k, ix_) - center(i - 1, j - 1, k, ix_) +
-               center(i, j - 1, km1, ix_) - center(i - 1, j - 1, km1, ix_));
+    ParallelFor(box, [&](int i, int j, int k) {
+      int km1 = nDim > 2 ? k - 1 : k;
+      const Real compX =
+          0.25 * invDx[ix_] *
+          (center(i, j, k, ix_) - center(i - 1, j, k, ix_) +
+           center(i, j, km1, ix_) - center(i - 1, j, km1, ix_) +
+           center(i, j - 1, k, ix_) - center(i - 1, j - 1, k, ix_) +
+           center(i, j - 1, km1, ix_) - center(i - 1, j - 1, km1, ix_));
 
-          const Real compY =
-              0.25 * invDx[iy_] *
-              (center(i, j, k, iy_) - center(i, j - 1, k, iy_) +
-               center(i, j, km1, iy_) - center(i, j - 1, km1, iy_) +
-               center(i - 1, j, k, iy_) - center(i - 1, j - 1, k, iy_) +
-               center(i - 1, j, km1, iy_) - center(i - 1, j - 1, km1, iy_));
+      const Real compY =
+          0.25 * invDx[iy_] *
+          (center(i, j, k, iy_) - center(i, j - 1, k, iy_) +
+           center(i, j, km1, iy_) - center(i, j - 1, km1, iy_) +
+           center(i - 1, j, k, iy_) - center(i - 1, j - 1, k, iy_) +
+           center(i - 1, j, km1, iy_) - center(i - 1, j - 1, km1, iy_));
 
-          const Real compZ =
-              0.25 * invDx[iz_] *
-              (center(i, j, k, iz_) - center(i, j, km1, iz_) +
-               center(i - 1, j, k, iz_) - center(i - 1, j, km1, iz_) +
-               center(i, j - 1, k, iz_) - center(i, j - 1, km1, iz_) +
-               center(i - 1, j - 1, k, iz_) - center(i - 1, j - 1, km1, iz_));
-          node(i, j, k) = compX + compY + compZ;
-        }
+      const Real compZ =
+          0.25 * invDx[iz_] *
+          (center(i, j, k, iz_) - center(i, j, km1, iz_) +
+           center(i - 1, j, k, iz_) - center(i - 1, j, km1, iz_) +
+           center(i, j - 1, k, iz_) - center(i, j - 1, km1, iz_) +
+           center(i - 1, j - 1, k, iz_) - center(i - 1, j - 1, km1, iz_));
+      node(i, j, k) = compX + compY + compZ;
+    });
   }
 }
 
@@ -150,39 +133,35 @@ void div_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
 
   for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
     const Box& box = mfi.fabbox();
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
 
     const Array4<Real const>& node = nodeMF[mfi].array();
     const Array4<Real>& center = centerMF[mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          int kp1 = nDim > 2 ? k + 1 : k;
+    ParallelFor(box, [&](int i, int j, int k) {
+      int kp1 = nDim > 2 ? k + 1 : k;
 
-          const Real compX =
-              0.25 * invDx[ix_] *
-              (node(i + 1, j, k, ix_) - node(i, j, k, ix_) +
-               node(i + 1, j, kp1, ix_) - node(i, j, kp1, ix_) +
-               node(i + 1, j + 1, k, ix_) - node(i, j + 1, k, ix_) +
-               node(i + 1, j + 1, kp1, ix_) - node(i, j + 1, kp1, ix_));
+      const Real compX =
+          0.25 * invDx[ix_] *
+          (node(i + 1, j, k, ix_) - node(i, j, k, ix_) +
+           node(i + 1, j, kp1, ix_) - node(i, j, kp1, ix_) +
+           node(i + 1, j + 1, k, ix_) - node(i, j + 1, k, ix_) +
+           node(i + 1, j + 1, kp1, ix_) - node(i, j + 1, kp1, ix_));
 
-          const Real compY =
-              0.25 * invDx[iy_] *
-              (node(i, j + 1, k, iy_) - node(i, j, k, iy_) +
-               node(i, j + 1, kp1, iy_) - node(i, j, kp1, iy_) +
-               node(i + 1, j + 1, k, iy_) - node(i + 1, j, k, iy_) +
-               node(i + 1, j + 1, kp1, iy_) - node(i + 1, j, kp1, iy_));
+      const Real compY =
+          0.25 * invDx[iy_] *
+          (node(i, j + 1, k, iy_) - node(i, j, k, iy_) +
+           node(i, j + 1, kp1, iy_) - node(i, j, kp1, iy_) +
+           node(i + 1, j + 1, k, iy_) - node(i + 1, j, k, iy_) +
+           node(i + 1, j + 1, kp1, iy_) - node(i + 1, j, kp1, iy_));
 
-          const Real compZ =
-              0.25 * invDx[iz_] *
-              (node(i, j, kp1, iz_) - node(i, j, k, iz_) +
-               node(i + 1, j, kp1, iz_) - node(i + 1, j, k, iz_) +
-               node(i, j + 1, kp1, iz_) - node(i, j + 1, k, iz_) +
-               node(i + 1, j + 1, kp1, iz_) - node(i + 1, j + 1, k, iz_));
-          center(i, j, k) = compX + compY + compZ;
-        }
+      const Real compZ =
+          0.25 * invDx[iz_] *
+          (node(i, j, kp1, iz_) - node(i, j, k, iz_) +
+           node(i + 1, j, kp1, iz_) - node(i + 1, j, k, iz_) +
+           node(i, j + 1, kp1, iz_) - node(i, j + 1, k, iz_) +
+           node(i + 1, j + 1, kp1, iz_) - node(i + 1, j + 1, k, iz_));
+      center(i, j, k) = compX + compY + compZ;
+    });
   }
 }
 
@@ -190,46 +169,43 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
                           const Real* invDx) {
 
   for (MFIter mfi(dstMF, doTiling); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.validbox();
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+    Box box = mfi.validbox();
+    box.grow(1);
 
     const Array4<Real const>& srcArr = srcMF[mfi].array();
     const Array4<Real>& dstArr = dstMF[mfi].array();
 
-    for (int k = lo.z - 1; k <= hi.z + 1; ++k)
-      for (int j = lo.y - 1; j <= hi.y + 1; ++j)
-        for (int i = lo.x - 1; i <= hi.x + 1; ++i) {
-          int km1 = nDim > 2 ? k - 1 : k;
-          int kp1 = nDim > 2 ? k + 1 : k;
-          Real compX = 0;
-          for (int jj = -1; jj < 2; jj++)
-            for (int kk = -1; kk < 2; kk++) {
-              int k0 = nDim > 2 ? k + kk : 0;
-              compX += srcArr(i + 1, j + jj, k0, ix_) -
-                       srcArr(i - 1, j + jj, k0, ix_);
-            }
-          compX *= 0.5 * invDx[ix_];
-
-          Real compY = 0;
-          for (int ii = -1; ii < 2; ii++)
-            for (int kk = -1; kk < 2; kk++) {
-              int k0 = nDim > 2 ? k + kk : 0;
-              compY += srcArr(i + ii, j + 1, k0, iy_) -
-                       srcArr(i + ii, j - 1, k0, iy_);
-            }
-          compY *= 0.5 * invDx[iy_];
-
-          Real compZ = 0;
-          for (int ii = -1; ii < 2; ii++)
-            for (int jj = -1; jj < 2; jj++) {
-              compZ += srcArr(i + ii, j + jj, kp1, iz_) -
-                       srcArr(i + ii, j + jj, km1, iz_);
-            }
-          compZ *= 0.5 * invDx[iz_];
-
-          dstArr(i, j, k) = (compX + compY + compZ) / 9;
+    ParallelFor(box, [&](int i, int j, int k) {
+      int km1 = nDim > 2 ? k - 1 : k;
+      int kp1 = nDim > 2 ? k + 1 : k;
+      Real compX = 0;
+      for (int jj = -1; jj < 2; jj++)
+        for (int kk = -1; kk < 2; kk++) {
+          int k0 = nDim > 2 ? k + kk : 0;
+          compX +=
+              srcArr(i + 1, j + jj, k0, ix_) - srcArr(i - 1, j + jj, k0, ix_);
         }
+      compX *= 0.5 * invDx[ix_];
+
+      Real compY = 0;
+      for (int ii = -1; ii < 2; ii++)
+        for (int kk = -1; kk < 2; kk++) {
+          int k0 = nDim > 2 ? k + kk : 0;
+          compY +=
+              srcArr(i + ii, j + 1, k0, iy_) - srcArr(i + ii, j - 1, k0, iy_);
+        }
+      compY *= 0.5 * invDx[iy_];
+
+      Real compZ = 0;
+      for (int ii = -1; ii < 2; ii++)
+        for (int jj = -1; jj < 2; jj++) {
+          compZ += srcArr(i + ii, j + jj, kp1, iz_) -
+                   srcArr(i + ii, j + jj, km1, iz_);
+        }
+      compZ *= 0.5 * invDx[iz_];
+
+      dstArr(i, j, k) = (compX + compY + compZ) / 9;
+    });
   }
 }
 
@@ -380,67 +356,60 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
   Real cYDX, cXDY;
 
   for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.fabbox();
+    Box box = mfi.fabbox();
+    box.grow(-1);
+
     const Array4<Real>& nodeArr = nodeMF[mfi].array();
     const Array4<Real const>& centerArr = centerMF[mfi].array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+    ParallelFor(box, [&](int i, int j, int k) {
+      int km1 = nDim > 2 ? k - 1 : k;
+      cZDY =
+          0.25 * invDx[iy_] *
+          (centerArr(i, j, k, iz_) - centerArr(i, j - 1, k, iz_) +
+           centerArr(i, j, km1, iz_) - centerArr(i, j - 1, km1, iz_) +
+           centerArr(i - 1, j, k, iz_) - centerArr(i - 1, j - 1, k, iz_) +
+           centerArr(i - 1, j, km1, iz_) - centerArr(i - 1, j - 1, km1, iz_));
+      cYDZ =
+          0.25 * invDx[iz_] *
+          (centerArr(i, j, k, iy_) - centerArr(i, j, km1, iy_) +
+           centerArr(i - 1, j, k, iy_) - centerArr(i - 1, j, km1, iy_) +
+           centerArr(i, j - 1, k, iy_) - centerArr(i, j - 1, km1, iy_) +
+           centerArr(i - 1, j - 1, k, iy_) - centerArr(i - 1, j - 1, km1, iy_));
+      // curl - Y
+      cXDZ =
+          0.25 * invDx[iz_] *
+          (centerArr(i, j, k, ix_) - centerArr(i, j, km1, ix_) +
+           centerArr(i - 1, j, k, ix_) - centerArr(i - 1, j, km1, ix_) +
+           centerArr(i, j - 1, k, ix_) - centerArr(i, j - 1, km1, ix_) +
+           centerArr(i - 1, j - 1, k, ix_) - centerArr(i - 1, j - 1, km1, ix_));
 
-    for (int k = lo.z + 1; k <= hi.z - 1; ++k)
-      for (int j = lo.y + 1; j <= hi.y - 1; ++j)
-        for (int i = lo.x + 1; i <= hi.x - 1; ++i) {
-          int km1 = nDim > 2 ? k - 1 : k;
-          cZDY =
-              0.25 * invDx[iy_] *
-              (centerArr(i, j, k, iz_) - centerArr(i, j - 1, k, iz_) +
-               centerArr(i, j, km1, iz_) - centerArr(i, j - 1, km1, iz_) +
-               centerArr(i - 1, j, k, iz_) - centerArr(i - 1, j - 1, k, iz_) +
-               centerArr(i - 1, j, km1, iz_) -
-               centerArr(i - 1, j - 1, km1, iz_));
-          cYDZ = 0.25 * invDx[iz_] *
-                 (centerArr(i, j, k, iy_) - centerArr(i, j, km1, iy_) +
-                  centerArr(i - 1, j, k, iy_) - centerArr(i - 1, j, km1, iy_) +
-                  centerArr(i, j - 1, k, iy_) - centerArr(i, j - 1, km1, iy_) +
-                  centerArr(i - 1, j - 1, k, iy_) -
-                  centerArr(i - 1, j - 1, km1, iy_));
-          // curl - Y
-          cXDZ = 0.25 * invDx[iz_] *
-                 (centerArr(i, j, k, ix_) - centerArr(i, j, km1, ix_) +
-                  centerArr(i - 1, j, k, ix_) - centerArr(i - 1, j, km1, ix_) +
-                  centerArr(i, j - 1, k, ix_) - centerArr(i, j - 1, km1, ix_) +
-                  centerArr(i - 1, j - 1, k, ix_) -
-                  centerArr(i - 1, j - 1, km1, ix_));
+      cZDX =
+          0.25 * invDx[ix_] *
+          (centerArr(i, j, k, iz_) - centerArr(i - 1, j, k, iz_) +
+           centerArr(i, j, km1, iz_) - centerArr(i - 1, j, km1, iz_) +
+           centerArr(i, j - 1, k, iz_) - centerArr(i - 1, j - 1, k, iz_) +
+           centerArr(i, j - 1, km1, iz_) - centerArr(i - 1, j - 1, km1, iz_));
 
-          cZDX =
-              0.25 * invDx[ix_] *
-              (centerArr(i, j, k, iz_) - centerArr(i - 1, j, k, iz_) +
-               centerArr(i, j, km1, iz_) - centerArr(i - 1, j, km1, iz_) +
-               centerArr(i, j - 1, k, iz_) - centerArr(i - 1, j - 1, k, iz_) +
-               centerArr(i, j - 1, km1, iz_) -
-               centerArr(i - 1, j - 1, km1, iz_));
+      // curl - Z
+      cYDX =
+          0.25 * invDx[ix_] *
+          (centerArr(i, j, k, iy_) - centerArr(i - 1, j, k, iy_) +
+           centerArr(i, j, km1, iy_) - centerArr(i - 1, j, km1, iy_) +
+           centerArr(i, j - 1, k, iy_) - centerArr(i - 1, j - 1, k, iy_) +
+           centerArr(i, j - 1, km1, iy_) - centerArr(i - 1, j - 1, km1, iy_));
 
-          // curl - Z
-          cYDX =
-              0.25 * invDx[ix_] *
-              (centerArr(i, j, k, iy_) - centerArr(i - 1, j, k, iy_) +
-               centerArr(i, j, km1, iy_) - centerArr(i - 1, j, km1, iy_) +
-               centerArr(i, j - 1, k, iy_) - centerArr(i - 1, j - 1, k, iy_) +
-               centerArr(i, j - 1, km1, iy_) -
-               centerArr(i - 1, j - 1, km1, iy_));
+      cXDY =
+          0.25 * invDx[iy_] *
+          (centerArr(i, j, k, ix_) - centerArr(i, j - 1, k, ix_) +
+           centerArr(i, j, km1, ix_) - centerArr(i, j - 1, km1, ix_) +
+           centerArr(i - 1, j, k, ix_) - centerArr(i - 1, j - 1, k, ix_) +
+           centerArr(i - 1, j, km1, ix_) - centerArr(i - 1, j - 1, km1, ix_));
 
-          cXDY =
-              0.25 * invDx[iy_] *
-              (centerArr(i, j, k, ix_) - centerArr(i, j - 1, k, ix_) +
-               centerArr(i, j, km1, ix_) - centerArr(i, j - 1, km1, ix_) +
-               centerArr(i - 1, j, k, ix_) - centerArr(i - 1, j - 1, k, ix_) +
-               centerArr(i - 1, j, km1, ix_) -
-               centerArr(i - 1, j - 1, km1, ix_));
-
-          nodeArr(i, j, k, ix_) = cZDY - cYDZ;
-          nodeArr(i, j, k, iy_) = cXDZ - cZDX;
-          nodeArr(i, j, k, iz_) = cYDX - cXDY;
-        }
+      nodeArr(i, j, k, ix_) = cZDY - cYDZ;
+      nodeArr(i, j, k, iy_) = cXDZ - cZDX;
+      nodeArr(i, j, k, iz_) = cYDX - cXDY;
+    });
   }
 }
 
@@ -456,85 +425,69 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
     const Array4<Real>& centerArr = centerMF[mfi].array();
     const Array4<Real const>& nodeArr = nodeMF[mfi].array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+    ParallelFor(box, [&](int i, int j, int k) {
+      int kp1 = nDim > 2 ? k + 1 : k;
+      cZDY = 0.25 * invDx[iy_] *
+             (nodeArr(i, j + 1, k, iz_) - nodeArr(i, j, k, iz_) +
+              nodeArr(i, j + 1, kp1, iz_) - nodeArr(i, j, kp1, iz_) +
+              nodeArr(i + 1, j + 1, k, iz_) - nodeArr(i + 1, j, k, iz_) +
+              nodeArr(i + 1, j + 1, kp1, iz_) - nodeArr(i + 1, j, kp1, iz_));
+      cYDZ = 0.25 * invDx[iz_] *
+             (nodeArr(i, j, kp1, iy_) - nodeArr(i, j, k, iy_) +
+              nodeArr(i + 1, j, kp1, iy_) - nodeArr(i + 1, j, k, iy_) +
+              nodeArr(i, j + 1, kp1, iy_) - nodeArr(i, j + 1, k, iy_) +
+              nodeArr(i + 1, j + 1, kp1, iy_) - nodeArr(i + 1, j + 1, k, iy_));
+      // curl - Y
+      cXDZ = 0.25 * invDx[iz_] *
+             (nodeArr(i, j, kp1, ix_) - nodeArr(i, j, k, ix_) +
+              nodeArr(i + 1, j, kp1, ix_) - nodeArr(i + 1, j, k, ix_) +
+              nodeArr(i, j + 1, kp1, ix_) - nodeArr(i, j + 1, k, ix_) +
+              nodeArr(i + 1, j + 1, kp1, ix_) - nodeArr(i + 1, j + 1, k, ix_));
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          // Needs to be improved. --Yuxi
-          int kp1 = nDim > 2 ? k + 1 : k;
-          cZDY =
-              0.25 * invDx[iy_] *
-              (nodeArr(i, j + 1, k, iz_) - nodeArr(i, j, k, iz_) +
-               nodeArr(i, j + 1, kp1, iz_) - nodeArr(i, j, kp1, iz_) +
-               nodeArr(i + 1, j + 1, k, iz_) - nodeArr(i + 1, j, k, iz_) +
-               nodeArr(i + 1, j + 1, kp1, iz_) - nodeArr(i + 1, j, kp1, iz_));
-          cYDZ =
-              0.25 * invDx[iz_] *
-              (nodeArr(i, j, kp1, iy_) - nodeArr(i, j, k, iy_) +
-               nodeArr(i + 1, j, kp1, iy_) - nodeArr(i + 1, j, k, iy_) +
-               nodeArr(i, j + 1, kp1, iy_) - nodeArr(i, j + 1, k, iy_) +
-               nodeArr(i + 1, j + 1, kp1, iy_) - nodeArr(i + 1, j + 1, k, iy_));
-          // curl - Y
-          cXDZ =
-              0.25 * invDx[iz_] *
-              (nodeArr(i, j, kp1, ix_) - nodeArr(i, j, k, ix_) +
-               nodeArr(i + 1, j, kp1, ix_) - nodeArr(i + 1, j, k, ix_) +
-               nodeArr(i, j + 1, kp1, ix_) - nodeArr(i, j + 1, k, ix_) +
-               nodeArr(i + 1, j + 1, kp1, ix_) - nodeArr(i + 1, j + 1, k, ix_));
+      cZDX = 0.25 * invDx[ix_] *
+             (nodeArr(i + 1, j, k, iz_) - nodeArr(i, j, k, iz_) +
+              nodeArr(i + 1, j, kp1, iz_) - nodeArr(i, j, kp1, iz_) +
+              nodeArr(i + 1, j + 1, k, iz_) - nodeArr(i, j + 1, k, iz_) +
+              nodeArr(i + 1, j + 1, kp1, iz_) - nodeArr(i, j + 1, kp1, iz_));
 
-          cZDX =
-              0.25 * invDx[ix_] *
-              (nodeArr(i + 1, j, k, iz_) - nodeArr(i, j, k, iz_) +
-               nodeArr(i + 1, j, kp1, iz_) - nodeArr(i, j, kp1, iz_) +
-               nodeArr(i + 1, j + 1, k, iz_) - nodeArr(i, j + 1, k, iz_) +
-               nodeArr(i + 1, j + 1, kp1, iz_) - nodeArr(i, j + 1, kp1, iz_));
+      // curl - Z
+      cYDX = 0.25 * invDx[ix_] *
+             (nodeArr(i + 1, j, k, iy_) - nodeArr(i, j, k, iy_) +
+              nodeArr(i + 1, j, kp1, iy_) - nodeArr(i, j, kp1, iy_) +
+              nodeArr(i + 1, j + 1, k, iy_) - nodeArr(i, j + 1, k, iy_) +
+              nodeArr(i + 1, j + 1, kp1, iy_) - nodeArr(i, j + 1, kp1, iy_));
 
-          // curl - Z
-          cYDX =
-              0.25 * invDx[ix_] *
-              (nodeArr(i + 1, j, k, iy_) - nodeArr(i, j, k, iy_) +
-               nodeArr(i + 1, j, kp1, iy_) - nodeArr(i, j, kp1, iy_) +
-               nodeArr(i + 1, j + 1, k, iy_) - nodeArr(i, j + 1, k, iy_) +
-               nodeArr(i + 1, j + 1, kp1, iy_) - nodeArr(i, j + 1, kp1, iy_));
+      cXDY = 0.25 * invDx[iy_] *
+             (nodeArr(i, j + 1, k, ix_) - nodeArr(i, j, k, ix_) +
+              nodeArr(i, j + 1, kp1, ix_) - nodeArr(i, j, kp1, ix_) +
+              nodeArr(i + 1, j + 1, k, ix_) - nodeArr(i + 1, j, k, ix_) +
+              nodeArr(i + 1, j + 1, kp1, ix_) - nodeArr(i + 1, j, kp1, ix_));
 
-          cXDY =
-              0.25 * invDx[iy_] *
-              (nodeArr(i, j + 1, k, ix_) - nodeArr(i, j, k, ix_) +
-               nodeArr(i, j + 1, kp1, ix_) - nodeArr(i, j, kp1, ix_) +
-               nodeArr(i + 1, j + 1, k, ix_) - nodeArr(i + 1, j, k, ix_) +
-               nodeArr(i + 1, j + 1, kp1, ix_) - nodeArr(i + 1, j, kp1, ix_));
-
-          centerArr(i, j, k, ix_) = cZDY - cYDZ;
-          centerArr(i, j, k, iy_) = cXDZ - cZDX;
-          centerArr(i, j, k, iz_) = cYDX - cXDY;
-        }
+      centerArr(i, j, k, ix_) = cZDY - cYDZ;
+      centerArr(i, j, k, iy_) = cXDZ - cZDX;
+      centerArr(i, j, k, iz_) = cYDX - cXDY;
+    });
   }
 }
 
 void average_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF) {
   for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.fabbox();
+    Box box = mfi.fabbox();
+    box.grow(-1);
+
     const Array4<Real>& nodeArr = nodeMF[mfi].array();
     const Array4<Real const>& centerArr = centerMF[mfi].array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
-
-    for (int iVar = 0; iVar < centerMF.nComp(); iVar++)
-      for (int k = lo.z + 1; k <= hi.z - 1; ++k)
-        for (int j = lo.y + 1; j <= hi.y - 1; ++j)
-          for (int i = lo.x + 1; i <= hi.x - 1; ++i) {
-            int km1 = nDim > 2 ? k - 1 : k;
-            nodeArr(i, j, k, iVar) =
-                0.125 *
-                (centerArr(i - 1, j - 1, km1, iVar) +
-                 centerArr(i - 1, j - 1, k, iVar) +
-                 centerArr(i - 1, j, km1, iVar) + centerArr(i - 1, j, k, iVar) +
-                 centerArr(i, j - 1, km1, iVar) + centerArr(i, j - 1, k, iVar) +
-                 centerArr(i, j, k - 1, iVar) + centerArr(i, j, k, iVar));
-          }
+    ParallelFor(box, centerMF.nComp(), [&](int i, int j, int k, int iVar) {
+      int km1 = nDim > 2 ? k - 1 : k;
+      nodeArr(i, j, k, iVar) =
+          0.125 *
+          (centerArr(i - 1, j - 1, km1, iVar) +
+           centerArr(i - 1, j - 1, k, iVar) + centerArr(i - 1, j, km1, iVar) +
+           centerArr(i - 1, j, k, iVar) + centerArr(i, j - 1, km1, iVar) +
+           centerArr(i, j - 1, k, iVar) + centerArr(i, j, k - 1, iVar) +
+           centerArr(i, j, k, iVar));
+    });
   }
 }
 
