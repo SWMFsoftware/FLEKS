@@ -353,7 +353,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
       bxGst.grow(iDim, nGstInject);
     }
 
-    ParallelFor(bxGst, [&] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    ParallelFor(bxGst, [&](int i, int j, int k) noexcept {
       IntVect ijk = { AMREX_D_DECL(i, j, k) };
       IntVect ijksrc;
       if (do_inject_particles_for_this_cell(bx, status, ijk, ijksrc)) {
@@ -978,7 +978,7 @@ Real Particles<NStructReal, NStructInt>::calc_max_thermal_velocity(
     const Box& box = mfi.validbox();
     const Array4<Real>& arr = fab.array();
 
-    ParallelFor(box, [&] AMREX_GPU_DEVICE(int i, int j, int k) {
+    ParallelFor(box, [&](int i, int j, int k) {
       Real rho = arr(i, j, k, iRho_);
       if (rho == 0)
         return;

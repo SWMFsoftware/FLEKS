@@ -369,14 +369,13 @@ void Pic::fill_new_center_B() {
 
       amrex::ParallelFor(
           box, centerB[iLev].nComp(),
-          [&] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) noexcept {
+          [&](int i, int j, int k, int iVar) noexcept {
             if (bit::is_new(status(i, j, k))) {
               centerArr(i, j, k, iVar) = 0;
 
               Box subBox(IntVect{ AMREX_D_DECL(i, j, k) },
                          IntVect{ AMREX_D_DECL(i + 1, j + 1, k + 1) });
-              amrex::ParallelFor(subBox, [&] AMREX_GPU_DEVICE(int ii, int jj,
-                                                              int kk) noexcept {
+              amrex::ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
                 const Real coef = (nDim == 2 ? 0.25 : 0.125);
                 centerArr(i, j, k, iVar) += coef * nodeArr(ii, jj, kk, iVar);
               });
@@ -1371,7 +1370,8 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
         //                           tempCenter3.nComp());
         //------------------------------------------------------------
 
-        div_center_to_center(tempCenter3, tempCenter1, Geom(iLev).InvCellSize());
+        div_center_to_center(tempCenter3, tempCenter1,
+                             Geom(iLev).InvCellSize());
 
         tempCenter1.FillBoundary(0, 1, IntVect(1), Geom(iLev).periodicity());
 
@@ -1386,7 +1386,8 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
                           0, 1, 1);
       }
 
-      grad_center_to_node(centerDivE[iLev], tempNode3, Geom(iLev).InvCellSize());
+      grad_center_to_node(centerDivE[iLev], tempNode3,
+                          Geom(iLev).InvCellSize());
 
       tempNode3.mult(delt2);
       MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(),
