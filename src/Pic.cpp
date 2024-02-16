@@ -315,22 +315,16 @@ void Pic::fill_new_node_E() {
       FArrayBox& fab = nodeE[iLev][mfi];
       const Box& box = mfi.validbox();
       const Array4<Real>& arrE = fab.array();
-
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-
       const auto& status = nodeStatus[iLev][mfi].array();
 
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            IntVect ijk = { AMREX_D_DECL(i, j, k) };
-            if (bit::is_new(status(ijk))) {
-              arrE(i, j, k, ix_) = fi->get_ex(mfi, ijk, iLev);
-              arrE(i, j, k, iy_) = fi->get_ey(mfi, ijk, iLev);
-              arrE(i, j, k, iz_) = fi->get_ez(mfi, ijk, iLev);
-            }
-          }
+      ParallelFor(box, [&](int i, int j, int k) {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (bit::is_new(status(ijk))) {
+          arrE(ijk, ix_) = fi->get_ex(mfi, ijk, iLev);
+          arrE(ijk, iy_) = fi->get_ey(mfi, ijk, iLev);
+          arrE(ijk, iz_) = fi->get_ez(mfi, ijk, iLev);
+        }
+      });
     }
   }
 }
@@ -341,19 +335,16 @@ void Pic::fill_new_node_B() {
     for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real>& arrB = nodeB[iLev][mfi].array();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
       const auto& status = nodeStatus[iLev][mfi].array();
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            IntVect ijk = { AMREX_D_DECL(i, j, k) };
-            if (bit::is_new(status(i, j, k))) {
-              arrB(i, j, k, ix_) = fi->get_bx(mfi, ijk, iLev);
-              arrB(i, j, k, iy_) = fi->get_by(mfi, ijk, iLev);
-              arrB(i, j, k, iz_) = fi->get_bz(mfi, ijk, iLev);
-            }
-          }
+
+      ParallelFor(box, [&](int i, int j, int k) {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (bit::is_new(status(ijk))) {
+          arrB(ijk, ix_) = fi->get_bx(mfi, ijk, iLev);
+          arrB(ijk, iy_) = fi->get_by(mfi, ijk, iLev);
+          arrB(ijk, iz_) = fi->get_bz(mfi, ijk, iLev);
+        }
+      });
     }
   }
 }
@@ -368,16 +359,16 @@ void Pic::fill_new_center_B() {
       const auto& status = cellStatus[iLev][mfi].array();
 
       amrex::ParallelFor(
-          box, centerB[iLev].nComp(),
-          [&](int i, int j, int k, int iVar) noexcept {
-            if (bit::is_new(status(i, j, k))) {
-              centerArr(i, j, k, iVar) = 0;
+          box, centerB[iLev].nComp(), [&](int i, int j, int k, int iVar) {
+            IntVect ijk = { AMREX_D_DECL(i, j, k) };
 
-              Box subBox(IntVect{ AMREX_D_DECL(i, j, k) },
-                         IntVect{ AMREX_D_DECL(i + 1, j + 1, k + 1) });
-              amrex::ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
+            if (bit::is_new(status(ijk))) {
+              centerArr(ijk, iVar) = 0;
+
+              Box subBox(ijk, ijk + 1);
+              amrex::ParallelFor(subBox, [&](int ii, int jj, int kk) {
                 const Real coef = (nDim == 2 ? 0.25 : 0.125);
-                centerArr(i, j, k, iVar) += coef * nodeArr(ii, jj, kk, iVar);
+                centerArr(ijk, iVar) += coef * nodeArr(ii, jj, kk, iVar);
               });
             }
           });
@@ -688,33 +679,30 @@ void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy) {
 
     for (MFIter mfi(cellCost[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
+
       const Array4<Real>& cost = cellCost[iLev][mfi].array();
       const Array4<int const> status = cellStatus[iLev][mfi].array();
 
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_refined(status(i, j, k))) {
-              cost(i, j, k) = 0;
-            } else if (bit::is_domain_edge(status(i, j, k))) {
-              // When calculating cost for each cell, the ghost cells are
-              // excluded. However, ghost cells also take time to update (e.g.
-              // fill boundary, launch and update boundary particles...).
-              // Therefore, the cost of ghost cells is added to the cost of the
-              // corresponding valid cells. The factor of 2 is just a guess.
-              cost(i, j, k) *= 2;
-            }
+      ParallelFor(box, [&](int i, int j, int k) {
+        if (bit::is_refined(status(i, j, k))) {
+          cost(i, j, k) = 0;
+        } else if (bit::is_domain_edge(status(i, j, k))) {
+          // When calculating cost for each cell, the ghost cells are
+          // excluded. However, ghost cells also take time to update (e.g.
+          // fill boundary, launch and update boundary particles...).
+          // Therefore, the cost of ghost cells is added to the cost of the
+          // corresponding valid cells. The factor of 2 is just a guess.
+          cost(i, j, k) *= 2;
+        }
 
-            if (balanceStrategy == BalanceStrategy::Particle) {
-              // 1. The cells have been refined also allocated and use memory.
-              // 2. It looks like these cells need calculations when
-              // interpolating between levels.
-              // 3. The number 10 is chosen by experience.
-              cost(i, j, k) += 10;
-            }
-          }
+        if (balanceStrategy == BalanceStrategy::Particle) {
+          // 1. The cells have been refined also allocated and use memory.
+          // 2. It looks like these cells need calculations when
+          // interpolating between levels.
+          // 3. The number 10 is chosen by experience.
+          cost(i, j, k) += 10;
+        }
+      });
     }
   }
 }
@@ -814,23 +802,20 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut) {
 
   for (MFIter mfi(inMF); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
 
     const Array4<Real>& lArr = outMF[mfi].array();
     const Array4<Real const>& rArr = inMF[mfi].array();
     const Array4<RealCMM>& mmArr = centerMM[iLev][mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i)
+    ParallelFor(box, [&](int i, int j, int k) {
+      IntVect ijk = { AMREX_D_DECL(i, j, k) };
+      Box subBox(ijk - 1, ijk + 1);
 
-          for (int i2 = i - 1; i2 <= i + 1; i2++)
-            for (int j2 = j - 1; j2 <= j + 1; j2++)
-              for (int k2 = k - 1; k2 <= k + 1; k2++) {
-                const int gp = (i2 - i + 1) * 9 + (j2 - j + 1) * 3 + k2 - k + 1;
-                lArr(i, j, k) += rArr(i2, j2, k2) * mmArr(i, j, k)[gp];
-              }
+      ParallelFor(subBox, [&](int i2, int j2, int k2) {
+        const int gp = (i2 - i + 1) * 9 + (j2 - j + 1) * 3 + k2 - k + 1;
+        lArr(i, j, k) += rArr(i2, j2, k2) * mmArr(i, j, k)[gp];
+      });
+    });
   }
   outMF.mult(fourPI * fourPI);
   convert_3d_to_1d(outMF, vecOut, iLev);
@@ -970,19 +955,14 @@ void Pic::update_U0_E0() {
       const Array4<const Real>& arrMoments =
           nodePlasma[nSpecies][iLev][mfi].array();
 
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            const Real rho = arrMoments(i, j, k, iRho_);
-            if (rho > 1e-99) {
-              const Real invRho = 1. / rho;
-              for (int iu = iUx_; iu <= iUz_; iu++)
-                arrU(i, j, k, iu - iUx_) = arrMoments(i, j, k, iu) * invRho;
-            }
-          }
+      ParallelFor(box, [&](int i, int j, int k) {
+        const Real rho = arrMoments(i, j, k, iRho_);
+        if (rho > 1e-99) {
+          const Real invRho = 1. / rho;
+          for (int iu = iUx_; iu <= iUz_; iu++)
+            arrU(i, j, k, iu - iUx_) = arrMoments(i, j, k, iu) * invRho;
+        }
+      });
     }
 
     U0[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -1003,24 +983,19 @@ void Pic::update_U0_E0() {
       const Array4<Real>& arrE = E0[iLev][mfi].array();
       const Array4<Real>& arrB = nodeB[iLev][mfi].array();
 
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
+      ParallelFor(box, [&](int i, int j, int k) {
+        const Real& bx = arrB(i, j, k, ix_);
+        const Real& by = arrB(i, j, k, iy_);
+        const Real& bz = arrB(i, j, k, iz_);
 
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            const Real& bx = arrB(i, j, k, ix_);
-            const Real& by = arrB(i, j, k, iy_);
-            const Real& bz = arrB(i, j, k, iz_);
+        const Real& ux = arrU(i, j, k, ix_);
+        const Real& uy = arrU(i, j, k, iy_);
+        const Real& uz = arrU(i, j, k, iz_);
 
-            const Real& ux = arrU(i, j, k, ix_);
-            const Real& uy = arrU(i, j, k, iy_);
-            const Real& uz = arrU(i, j, k, iz_);
-
-            arrE(i, j, k, ix_) = -uy * bz + uz * by;
-            arrE(i, j, k, iy_) = -uz * bx + ux * bz;
-            arrE(i, j, k, iz_) = -ux * by + uy * bx;
-          }
+        arrE(i, j, k, ix_) = -uy * bz + uz * by;
+        arrE(i, j, k, iy_) = -uz * bx + ux * bz;
+        arrE(i, j, k, iz_) = -ux * by + uy * bx;
+      });
     }
 
     E0[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -1416,46 +1391,35 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
   Real c0 = fourPI * fsolver.theta * tc->get_dt();
   for (MFIter mfi(outMF); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
 
     const Array4<Real const>& inArr = inMF[mfi].array();
     const Array4<Real>& outArr = outMF[mfi].array();
     const Array4<RealMM>& mmArr = nodeMM[iLev][mfi].array();
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          auto& data0 = mmArr(i, j, k);
+    ParallelFor(box, [&](int i, int j, int k) {
+      IntVect ijk = { AMREX_D_DECL(i, j, k) };
 
-          Dim3 lo2, hi2;
-          {
-            Box bx(IntVect(AMREX_D_DECL(i - 1, j - 1, k - 1)),
-                   IntVect(AMREX_D_DECL(i + 1, j + 1, k + 1)));
-            lo2 = lbound(bx);
-            hi2 = ubound(bx);
-          }
+      auto& data0 = mmArr(ijk);
 
-          for (int k2 = lo2.z; k2 <= hi2.z; k2++)
-            for (int j2 = lo2.y; j2 <= hi2.y; j2++)
-              for (int i2 = lo2.x; i2 <= hi2.x; i2++) {
-                const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
-                const int idx0 = gp * 9;
+      Box subBox(ijk - 1, ijk + 1);
 
-                Real* const M_I = &(data0[idx0]);
+      ParallelFor(subBox, [&](int i2, int j2, int k2) {
+        const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
+        const int idx0 = gp * 9;
 
-                const double& vctX =
-                    inArr(i2, j2, k2, ix_); // vectX[i2][j2][k2];
-                const double& vctY = inArr(i2, j2, k2, iy_);
-                const double& vctZ = inArr(i2, j2, k2, iz_);
-                outArr(i, j, k, ix_) +=
-                    (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
-                outArr(i, j, k, iy_) +=
-                    (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
-                outArr(i, j, k, iz_) +=
-                    (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
-              }
-        }
+        Real* const M_I = &(data0[idx0]);
+
+        const double& vctX = inArr(i2, j2, k2, ix_); // vectX[i2][j2][k2];
+        const double& vctY = inArr(i2, j2, k2, iy_);
+        const double& vctZ = inArr(i2, j2, k2, iz_);
+        outArr(i, j, k, ix_) +=
+            (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
+        outArr(i, j, k, iy_) +=
+            (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
+        outArr(i, j, k, iz_) +=
+            (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
+      });
+    });
   }
 }
 
@@ -1555,37 +1519,32 @@ void Pic::calc_smooth_coef() {
 
     const Array4<Real>& arrCoef = nodeSmoothCoef[mfi].array();
 
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+    ParallelFor(box, [&](int i, int j, int k) {
+      const Real rho = arr(i, j, k, iRho_);
 
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          const Real rho = arr(i, j, k, iRho_);
+      if (rho > 1e-99) {
+        const Real uBulk =
+            sqrt(pow(arr(i, j, k, iUx_), 2) + pow(arr(i, j, k, iUy_), 2) +
+                 pow(arr(i, j, k, iUz_), 2)) /
+            rho;
 
-          if (rho > 1e-99) {
-            const Real uBulk =
-                sqrt(pow(arr(i, j, k, iUx_), 2) + pow(arr(i, j, k, iUy_), 2) +
-                     pow(arr(i, j, k, iUz_), 2)) /
-                rho;
+        const Real uth = sqrt(
+            gamma / 3.0 *
+            (arr(i, j, k, iPxx_) + arr(i, j, k, iPyy_) + arr(i, j, k, iPzz_)) /
+            rho);
 
-            const Real uth = sqrt(gamma / 3.0 *
-                                  (arr(i, j, k, iPxx_) + arr(i, j, k, iPyy_) +
-                                   arr(i, j, k, iPzz_)) /
-                                  rho);
+        const Real mach = uBulk / uth;
 
-            const Real mach = uBulk / uth;
-
-            if (mach > strongSmoothMach) {
-              arrCoef(i, j, k) = coefStrongSmooth;
-            } else if (mach > weakSmoothMach) {
-              Real r0 =
-                  (mach - weakSmoothMach) / (strongSmoothMach - weakSmoothMach);
-              arrCoef(i, j, k) =
-                  coefWeakSmooth + (coefStrongSmooth - coefWeakSmooth) * r0;
-            }
-          }
+        if (mach > strongSmoothMach) {
+          arrCoef(i, j, k) = coefStrongSmooth;
+        } else if (mach > weakSmoothMach) {
+          Real r0 =
+              (mach - weakSmoothMach) / (strongSmoothMach - weakSmoothMach);
+          arrCoef(i, j, k) =
+              coefWeakSmooth + (coefStrongSmooth - coefWeakSmooth) * r0;
         }
+      }
+    });
   }
 
   smooth_multifab(nodeSmoothCoef, true, 0.5);
@@ -1605,33 +1564,27 @@ void Pic::smooth_multifab(MultiFab& mf, bool useFixedCoef, double coefIn) {
     MultiFab::Copy(mfOld, mf, 0, 0, mf.nComp(), mf.nGrow());
 
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
-      const Box& bx = mfi.validbox();
+      const Box& box = mfi.validbox();
 
       Array4<Real> const& arrE = mf[mfi].array();
       Array4<Real> const& arrTmp = mfOld[mfi].array();
       Array4<Real> const& arrCoef = nodeSmoothCoef[mfi].array();
 
-      const auto lo = IntVect(bx.loVect());
-      const auto hi = IntVect(bx.hiVect());
+      ParallelFor(box, mf.nComp(), [&](int i, int j, int k, int iVar) {
+        Real coef = coefIn;
+        if (!useFixedCoef) {
+          coef = arrCoef(i, j, k);
+        }
 
-      for (int iVar = 0; iVar < mf.nComp(); iVar++)
-        for (int k = lo[iz_]; k <= hi[iz_]; k++)
-          for (int j = lo[iy_]; j <= hi[iy_]; j++)
-            for (int i = lo[ix_]; i <= hi[ix_]; i++) {
-              Real coef = coefIn;
-              if (!useFixedCoef) {
-                coef = arrCoef(i, j, k);
-              }
+        const Real weightSelf = 1 - coef;
+        const Real WeightNei = coef / 2.0;
 
-              const Real weightSelf = 1 - coef;
-              const Real WeightNei = coef / 2.0;
-
-              const Real neiSum =
-                  arrTmp(i - dIdx[ix_], j - dIdx[iy_], k - dIdx[iz_], iVar) +
-                  arrTmp(i + dIdx[ix_], j + dIdx[iy_], k + dIdx[iz_], iVar);
-              arrE(i, j, k, iVar) =
-                  weightSelf * arrE(i, j, k, iVar) + WeightNei * neiSum;
-            }
+        const Real neiSum =
+            arrTmp(i - dIdx[ix_], j - dIdx[iy_], k - dIdx[iz_], iVar) +
+            arrTmp(i + dIdx[ix_], j + dIdx[iy_], k + dIdx[iz_], iVar);
+        arrE(i, j, k, iVar) =
+            weightSelf * arrE(i, j, k, iVar) + WeightNei * neiSum;
+      });
     }
 
     mf.FillBoundary(Geom(0).periodicity());
@@ -1678,40 +1631,36 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
 
   if (useFloatBC) {
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
-      const Box& bx = mfi.fabbox();
+      const Box& bxFab = mfi.fabbox();
+      const Box& bxValid = mfi.validbox();
 
       //! if there are cells not in the valid + periodic grown box
       //! we need to fill them here
-      if (!ba.contains(bx)) {
+      if (!ba.contains(bxFab)) {
         Array4<Real> const& arr = mf[mfi].array();
 
         const Array4<const int>& statusArr = status[mfi].array();
 
-        const auto lo = IntVect(bx.loVect());
-        const auto hi = IntVect(bx.hiVect());
+        Box box = bxValid;
+        box.grow(1);
 
-        for (int k = lo[iz_] + 1; k <= hi[iz_] - 1; k++)
-          for (int j = lo[iy_] + 1; j <= hi[iy_] - 1; j++)
-            for (int i = lo[ix_] + 1; i <= hi[ix_] - 1; i++)
-              if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
-                bool isNeiFound = false;
+        ParallelFor(box, [&](int i, int j, int k) {
+          if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
+            bool isNeiFound = false;
 
-                // Find the neighboring physical cell
-                for (int kk = -1; kk <= 1; kk++)
-                  for (int jj = -1; jj <= 1; jj++)
-                    for (int ii = -1; ii <= 1; ii++) {
-                      if (!isNeiFound && !bit::is_lev_boundary(statusArr(
-                                             i + ii, j + jj, k + kk, 0))) {
-                        isNeiFound = true;
-                        for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
-                          arr(i, j, k, iVar) =
-                              arr(i + ii, j + jj, k + kk, iVar);
-                        }
-                      }
-                    }
-
-                continue;
+            // Find the neighboring physical cell
+            Box subBox(IntVect(-1), IntVect(1));
+            ParallelFor(subBox, [&](int ii, int jj, int kk) {
+              if (!isNeiFound &&
+                  !bit::is_lev_boundary(statusArr(i + ii, j + jj, k + kk, 0))) {
+                isNeiFound = true;
+                for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
+                  arr(i, j, k, iVar) = arr(i + ii, j + jj, k + kk, iVar);
+                }
               }
+            });
+          }
+        });
       }
     }
   } else {
@@ -1750,20 +1699,18 @@ Real Pic::calc_E_field_energy() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
       FArrayBox& fab = nodeE[iLev][mfi];
-      const Box& box = mfi.validbox();
+      Box box = mfi.validbox();
       const Array4<Real>& arr = fab.array();
 
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-
       // Do not count the right edges.
+      for (int iDim = 0; iDim < nDim; iDim++)
+        box.growHi(iDim, -1);
+
       Real sumLoc = 0;
-      for (int k = lo.z; k <= hi.z - 1; ++k)
-        for (int j = lo.y; j <= hi.y - 1; ++j)
-          for (int i = lo.x; i <= hi.x - 1; ++i) {
-            sumLoc += pow(arr(i, j, k, ix_), 2) + pow(arr(i, j, k, iy_), 2) +
-                      pow(arr(i, j, k, iz_), 2);
-          }
+      ParallelFor(box, [&](int i, int j, int k) {
+        sumLoc += pow(arr(i, j, k, ix_), 2) + pow(arr(i, j, k, iy_), 2) +
+                  pow(arr(i, j, k, iz_), 2);
+      });
 
       const auto& dx = Geom(0).CellSize();
       const Real coef = 0.5 * dx[ix_] * dx[iy_] * dx[iz_] / fourPI;
@@ -1788,16 +1735,11 @@ Real Pic::calc_B_field_energy() {
       const Box& box = mfi.validbox();
       const Array4<Real>& arr = fab.array();
 
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-
       Real sumLoc = 0;
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            sumLoc += pow(arr(i, j, k, ix_), 2) + pow(arr(i, j, k, iy_), 2) +
-                      pow(arr(i, j, k, iz_), 2);
-          }
+      ParallelFor(box, [&](int i, int j, int k) {
+        sumLoc += pow(arr(i, j, k, ix_), 2) + pow(arr(i, j, k, iy_), 2) +
+                  pow(arr(i, j, k, iz_), 2);
+      });
 
       const auto& dx = Geom(0).CellSize();
       const Real coef = 0.5 * dx[ix_] * dx[iy_] * dx[iz_] / fourPI;
@@ -1825,21 +1767,16 @@ void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF, int iLev) {
   int iCount = 0;
   for (MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
     const Box& box = mfi.tilebox();
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+
     const Array4<Real>& arr = MF[mfi].array();
 
-    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
-    int iMin = lo.x, jMin = lo.y, kMin = lo.z;
-
     const auto& nodeArr = nodeStatus[iLev][mfi].array();
-    for (int iVar = 0; iVar < MF.nComp(); iVar++)
-      for (int k = kMin; k <= kMax; ++k)
-        for (int j = jMin; j <= jMax; ++j)
-          for (int i = iMin; i <= iMax; ++i)
-            if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
-              arr(i, j, k, iVar) = p[iCount++];
-            }
+
+    ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
+      if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
+        arr(i, j, k, iVar) = p[iCount++];
+      }
+    });
   }
 }
 
@@ -1853,22 +1790,16 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
   int iCount = 0;
   for (MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
     const Box& box = mfi.tilebox();
-    const auto lo = lbound(box);
-    const auto hi = ubound(box);
+
     const Array4<Real const>& arr = MF[mfi].array();
 
-    // Avoid double counting the share edges.
-    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
-    int iMin = lo.x, jMin = lo.y, kMin = lo.z;
-
     const auto& nodeArr = nodeStatus[iLev][mfi].array();
-    for (int iVar = 0; iVar < MF.nComp(); iVar++)
-      for (int k = kMin; k <= kMax; ++k)
-        for (int j = jMin; j <= jMax; ++j)
-          for (int i = iMin; i <= iMax; ++i)
-            if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
-              p[iCount++] = arr(i, j, k, iVar);
-            }
+
+    ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
+      if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
+        p[iCount++] = arr(i, j, k, iVar);
+      }
+    });
   }
 }
 
