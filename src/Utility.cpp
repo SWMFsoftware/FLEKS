@@ -485,7 +485,7 @@ void average_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF) {
           (centerArr(i - 1, j - 1, km1, iVar) +
            centerArr(i - 1, j - 1, k, iVar) + centerArr(i - 1, j, km1, iVar) +
            centerArr(i - 1, j, k, iVar) + centerArr(i, j - 1, km1, iVar) +
-           centerArr(i, j - 1, k, iVar) + centerArr(i, j, k - 1, iVar) +
+           centerArr(i, j - 1, k, iVar) + centerArr(i, j, km1, iVar) +
            centerArr(i, j, k, iVar));
     });
   }
