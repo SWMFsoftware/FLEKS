@@ -305,8 +305,9 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
       const Box& box = mfi.validbox();
       const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
       ParallelFor(box, [&](int i, int j, int k) noexcept {
-        Box subBox(IntVect{ AMREX_D_DECL(i - 1, j - 1, k - 1) },
-                   IntVect{ AMREX_D_DECL(i + 1, j + 1, k + 1) });
+        IntVect ijk{ AMREX_D_DECL(i, j, k) };
+        Box subBox(ijk - 1, ijk + 1);
+
         ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
           if (bit::is_lev_boundary(cellArr(ii, jj, kk))) {
             bit::set_lev_edge(cellArr(i, j, k));
@@ -455,8 +456,9 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
       // A: It is a node at the boundary of a level.
 
       ParallelFor(box, [&](int i, int j, int k) noexcept {
-        Box subBox(IntVect{ AMREX_D_DECL(i - 1, j - 1, k - 1) },
-                   IntVect{ AMREX_D_DECL(i + 1, j + 1, k + 1) });
+        IntVect ijk{ AMREX_D_DECL(i, j, k) };
+        Box subBox(ijk - 1, ijk + 1);
+
         ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
           if (bit::is_lev_boundary(nodeArr(ii, jj, kk))) {
             bit::set_lev_edge(nodeArr(i, j, k));
@@ -471,8 +473,9 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
       // Set the 'refined' status for nodes
       const auto& cell = cellStatus[iLev][mfi].array();
       ParallelFor(box, [&](int i, int j, int k) noexcept {
-        Box subBox(IntVect{ AMREX_D_DECL(i - 1, j - 1, k - 1) },
-                   IntVect{ AMREX_D_DECL(i, j, k) });
+        IntVect ijk{ AMREX_D_DECL(i, j, k) };
+        Box subBox(ijk - 1, ijk);
+
         ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
           if (bit::is_refined(cell(ii, jj, kk))) {
             bit::set_refined(nodeArr(i, j, k));
