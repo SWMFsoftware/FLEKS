@@ -612,43 +612,38 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
       // For each block, looping through all nodes, including ghost nodes.
       const Box& box = mfi.fabbox();
       const Box& validBox = mfi.validbox();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
 
       const Array4<Real>& arr = fluid[mfi].array();
       const auto& status = nodeStatus[iLev][mfi].array();
 
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i)
-            if (bit::is_lev_boundary(status(i, j, k)) ||
-                validBox.contains(i, j, k)) {
-              // If this node is the boundary or inside the valid box.
+      ParallelFor(box, [&](int i, int j, int k) noexcept {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (bit::is_lev_boundary(status(ijk)) || validBox.contains(ijk)) {
+          // If this node is the boundary or inside the valid box.
 
-              if (doCount) {
-                nCount++;
-              } else if (doGetLoc) {
-                IntVect idx = { AMREX_D_DECL(i, j, k) };
-                for (int iDim = 0; iDim < nDim; iDim++) {
-                  if (Geom(iLev).isPeriodic(iDim)) {
-                    idx[iDim] = shift_periodic_index(
-                        idx[iDim], gbx.smallEnd(iDim), gbx.bigEnd(iDim));
-                  }
-                }
-
-                for (int iDim = 0; iDim < get_fluid_dimension(); iDim++) {
-                  pos_DI[nCount++] =
-                      (idx[iDim] * dx[iDim] + plo[iDim]) * no2siL;
-                }
-              } else if (doFill) {
-                for (int iVar = 0; iVar < nVarFluid; iVar++) {
-                  int idx;
-                  idx = iVar + nVarFluid * (index[nIdxCount] - 1);
-                  arr(i, j, k, iVar) = data[idx];
-                }
-                nIdxCount++;
+          if (doCount) {
+            nCount++;
+          } else if (doGetLoc) {
+            for (int iDim = 0; iDim < nDim; iDim++) {
+              if (Geom(iLev).isPeriodic(iDim)) {
+                ijk[iDim] = shift_periodic_index(ijk[iDim], gbx.smallEnd(iDim),
+                                                 gbx.bigEnd(iDim));
               }
-            } // for k
+            }
+
+            for (int iDim = 0; iDim < get_fluid_dimension(); iDim++) {
+              pos_DI[nCount++] = (ijk[iDim] * dx[iDim] + plo[iDim]) * no2siL;
+            }
+          } else if (doFill) {
+            for (int iVar = 0; iVar < nVarFluid; iVar++) {
+              int idx;
+              idx = iVar + nVarFluid * (index[nIdxCount] - 1);
+              arr(ijk, iVar) = data[idx];
+            }
+            nIdxCount++;
+          }
+        }
+      });
     }
 
     fluid.FillBoundary(Geom(iLev).periodicity());
@@ -808,48 +803,43 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
       Box box = mfi.fabbox();
       if (phyNodeOnly)
         box = mfi.validbox();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
 
       const Array4<Real>& arr = nodeFluid[iLev][mfi].array();
 
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
+      ParallelFor(box, [&](int i, int j, int k) noexcept {
+        if (useMultiSpecies) {
+          double Rhot = 0;
+          for (int iIon = 0; iIon < nIon; ++iIon) {
+            // Rho = sum(Rhoi) + Rhoe;
+            Rhot +=
+                arr(i, j, k, iRho_I[iIon]) * (1 + MoMi_S[0] / MoMi_S[iIon + 1]);
+          } // iIon
 
-            if (useMultiSpecies) {
-              double Rhot = 0;
-              for (int iIon = 0; iIon < nIon; ++iIon) {
-                // Rho = sum(Rhoi) + Rhoe;
-                Rhot += arr(i, j, k, iRho_I[iIon]) *
-                        (1 + MoMi_S[0] / MoMi_S[iIon + 1]);
-              } // iIon
-
-              arr(i, j, k, iUx_I[0]) /= Rhot;
-              arr(i, j, k, iUy_I[0]) /= Rhot;
-              arr(i, j, k, iUz_I[0]) /= Rhot;
+          arr(i, j, k, iUx_I[0]) /= Rhot;
+          arr(i, j, k, iUy_I[0]) /= Rhot;
+          arr(i, j, k, iUz_I[0]) /= Rhot;
+        } else {
+          for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
+            const double& rho = arr(i, j, k, iRho_I[iFluid]);
+            if (rho > 0) {
+              arr(i, j, k, iUx_I[iFluid]) /= rho;
+              arr(i, j, k, iUy_I[iFluid]) /= rho;
+              arr(i, j, k, iUz_I[iFluid]) /= rho;
             } else {
-              for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
-                const double& rho = arr(i, j, k, iRho_I[iFluid]);
-                if (rho > 0) {
-                  arr(i, j, k, iUx_I[iFluid]) /= rho;
-                  arr(i, j, k, iUy_I[iFluid]) /= rho;
-                  arr(i, j, k, iUz_I[iFluid]) /= rho;
-                } else {
-                  const Real* dx = Geom(iLev).CellSize();
-                  const auto plo = Geom(iLev).ProbLo();
-                  const Real x = (i * dx[ix_] + plo[ix_]) * No2SiL / rPlanetSi;
-                  const Real y = (j * dx[iy_] + plo[iy_]) * No2SiL / rPlanetSi;
-                  const Real z = (k * dx[iz_] + plo[iz_]) * No2SiL / rPlanetSi;
-                  if (doWarn) {
-                    printf("Warning: ZERO density at x = %e, y = %e, z = %e\n",
-                           x, y, z);
-                    Abort("Error: ZERO density!");
-                  }
-                }
-              } // iFluid
-            }   // else
-          }
+              const Real* dx = Geom(iLev).CellSize();
+              const auto plo = Geom(iLev).ProbLo();
+              const Real x = (i * dx[ix_] + plo[ix_]) * No2SiL / rPlanetSi;
+              const Real y = (j * dx[iy_] + plo[iy_]) * No2SiL / rPlanetSi;
+              const Real z = (k * dx[iz_] + plo[iz_]) * No2SiL / rPlanetSi;
+              if (doWarn) {
+                printf("Warning: ZERO density at x = %e, y = %e, z = %e\n", x,
+                       y, z);
+                Abort("Error: ZERO density!");
+              }
+            }
+          } // iFluid
+        }   // else
+      });
     }
 }
 

@@ -210,9 +210,8 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
   for (int iLev = 0; iLev <= amrInfo.max_level; iLev++) {
     // If (isFake2D && iLev==0) is true, there is only one cell in the
     // z-direction.
-    amrInfo.blocking_factor.push_back((isFake2D && iLev == 0)
-                                          ? IntVect(AMREX_D_DECL(2, 2, 1))
-                                          : IntVect(AMREX_D_DECL(2, 2, 2)));
+    amrInfo.blocking_factor.push_back(
+        (isFake2D && iLev == 0) ? IntVect(AMREX_D_DECL(2, 2, 1)) : IntVect(2));
   }
 
   amrInfo.max_grid_size.clear();
