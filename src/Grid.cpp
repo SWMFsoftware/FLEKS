@@ -174,7 +174,7 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid,
 
   domainRange.clear();
   for (int iBox = 0; iBox < activeRegion.size(); iBox++) {
-    amrex::RealBox rb(activeRegion[iBox], Geom(0).CellSize(), Geom(0).Offset());
+    RealBox rb(activeRegion[iBox], Geom(0).CellSize(), Geom(0).Offset());
     domainRange.push_back(rb);
   }
 
@@ -238,7 +238,7 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
       const auto& cellArr = cellStatus[iLev][mfi].array();
-      amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
+      ParallelFor(box, [&](int i, int j, int k) noexcept {
         bit::set_lev_boundary(cellArr(i, j, k));
         bit::set_not_domain_boundary(cellArr(i, j, k));
       });
@@ -247,7 +247,7 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-      amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
+      ParallelFor(box, [&](int i, int j, int k) noexcept {
         // Not boundary cell
         bit::set_not_lev_boundary(cellArr(i, j, k));
 
@@ -272,7 +272,7 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
         const Box& box = mfi.validbox();
         const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
         const auto& iRef = iRefine[mfi].array();
-        amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
+        ParallelFor(box, [&](int i, int j, int k) noexcept {
           if (iRef(i, j, k) == iRefined) {
             bit::set_refined(cellArr(i, j, k));
           }
@@ -286,7 +286,7 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
       const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-      amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
+      ParallelFor(box, [&](int i, int j, int k) noexcept {
         if (bit::is_lev_boundary(cellArr(i, j, k))) {
           Real xyz[nDim];
           Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
@@ -304,10 +304,10 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-      amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
+      ParallelFor(box, [&](int i, int j, int k) noexcept {
         Box subBox(IntVect{ AMREX_D_DECL(i - 1, j - 1, k - 1) },
                    IntVect{ AMREX_D_DECL(i + 1, j + 1, k + 1) });
-        amrex::ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
+        ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
           if (bit::is_lev_boundary(cellArr(ii, jj, kk))) {
             bit::set_lev_edge(cellArr(i, j, k));
 
@@ -326,7 +326,7 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
         for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
           const Box& box = mfi.fabbox();
           const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
-          amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
+          ParallelFor(box, [&](int i, int j, int k) noexcept {
             if (k < -1 || k > 1)
               cellArr(i, j, k) = cellArr(i, j, 0);
           });
@@ -348,7 +348,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
     for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
       const auto& nodeArr = nodeStatus[iLev][mfi].array();
-      amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
+      ParallelFor(box, [&](int i, int j, int k) noexcept {
         bit::set_lev_boundary(nodeArr(i, j, k));
         bit::set_not_domain_boundary(nodeArr(i, j, k));
         bit::set_not_refined(nodeArr(i, j, k));
@@ -365,7 +365,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
     for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const auto& nodeArr = nodeStatus[iLev][mfi].array();
-      amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
+      ParallelFor(box, [&](int i, int j, int k) noexcept {
         // Not boundary cell
         bit::set_not_lev_boundary(nodeArr(i, j, k));
 
@@ -387,7 +387,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
       const Box& box = mfi.fabbox();
       const Array4<int>& nodeArr = nodeStatus[iLev][mfi].array();
 
-      amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
+      ParallelFor(box, [&](int i, int j, int k) noexcept {
         if (bit::is_lev_boundary(nodeArr(i, j, k))) {
           Real xyz[nDim];
           Geom(iLev).LoNode({ AMREX_D_DECL(i, j, k) }, xyz);
@@ -432,7 +432,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
           return false;
         };
 
-        amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
+        ParallelFor(box, [&](int i, int j, int k) noexcept {
           if (!isFake2D || k == lo.z) {
             if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
                 (!isFake2D && (k == lo.z || k == hi.z))) {
@@ -454,10 +454,10 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
       // Q: But what is the edge node?
       // A: It is a node at the boundary of a level.
 
-      amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
+      ParallelFor(box, [&](int i, int j, int k) noexcept {
         Box subBox(IntVect{ AMREX_D_DECL(i - 1, j - 1, k - 1) },
                    IntVect{ AMREX_D_DECL(i + 1, j + 1, k + 1) });
-        amrex::ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
+        ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
           if (bit::is_lev_boundary(nodeArr(ii, jj, kk))) {
             bit::set_lev_edge(nodeArr(i, j, k));
 
@@ -470,10 +470,10 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
 
       // Set the 'refined' status for nodes
       const auto& cell = cellStatus[iLev][mfi].array();
-      amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
+      ParallelFor(box, [&](int i, int j, int k) noexcept {
         Box subBox(IntVect{ AMREX_D_DECL(i - 1, j - 1, k - 1) },
                    IntVect{ AMREX_D_DECL(i, j, k) });
-        amrex::ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
+        ParallelFor(subBox, [&](int ii, int jj, int kk) noexcept {
           if (bit::is_refined(cell(ii, jj, kk))) {
             bit::set_refined(nodeArr(i, j, k));
           }

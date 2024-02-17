@@ -8,6 +8,8 @@
 #include "Pic.h"
 #include "PlotWriter.h"
 
+using namespace amrex;
+
 bool PlotWriter::doSaveBinary = true;
 
 void PlotWriter::init() {
@@ -318,7 +320,7 @@ bool PlotWriter::is_inside_plot_region(int const ix, int const iy, int const iz,
     isInside = true;
   }
 
-  amrex::RealVect x_D = { AMREX_D_DECL(x, y, z) };
+  RealVect x_D = { AMREX_D_DECL(x, y, z) };
 
   for (int iDim = 0; iDim < nDim; ++iDim) {
     isInside = isInside && x_D[iDim] >= plotMin_D[iDim] - 0.01 * dx_D[iDim] &&
@@ -345,7 +347,7 @@ void PlotWriter::write_idl(double const timeNow, int const iCycle,
   long int nPoint;
   VectorPointList pointList_II;
 
-  amrex::RealVect xMin_D, xMax_D;
+  RealVect xMin_D, xMax_D;
 
   find_output_list((*this), nPoint, pointList_II, xMin_D, xMax_D);
   nCellAllProc = nPoint;

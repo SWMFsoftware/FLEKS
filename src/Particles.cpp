@@ -54,9 +54,9 @@ Particles<NStructReal, NStructInt>::Particles(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::outflow_bc(
-    const MFIter& mfi, const amrex::IntVect ijkGst,
-    const amrex::IntVect ijkPhy) {
+void Particles<NStructReal, NStructInt>::outflow_bc(const MFIter& mfi,
+                                                    const IntVect ijkGst,
+                                                    const IntVect ijkPhy) {
   const int iLev = 0;
 
   ParticleTileType& pGst = get_particle_tile(iLev, mfi, ijkGst);
@@ -1391,7 +1391,7 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
 
-      amrex::Vector<ParticleType> newparticles;
+      Vector<ParticleType> newparticles;
 
       AoS& particles = pti.GetArrayOfStructs();
 
@@ -1693,7 +1693,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
 
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
 
-      amrex::Vector<ParticleType> newparticles;
+      Vector<ParticleType> newparticles;
 
       AoS& particles = pti.GetArrayOfStructs();
 
@@ -2546,10 +2546,8 @@ void Particles<NStructReal, NStructInt>::sample_charge_exchange(
 }
 
 template <int NStructReal, int NStructInt>
-Real Particles<NStructReal, NStructInt>::charge_exchange_dis(amrex::Real* vp,
-                                                             amrex::Real* vh,
-                                                             amrex::Real* up,
-                                                             amrex::Real vth,
+Real Particles<NStructReal, NStructInt>::charge_exchange_dis(Real* vp, Real* vh,
+                                                             Real* up, Real vth,
                                                              CrossSection cs) {
   Real dv_D[3], dv2 = 0, dv = 0;
   for (int i = 0; i < 3; i++) {
@@ -2585,8 +2583,8 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charge_exchange(
     Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH,
     SourceInterface* source, bool kineticSource,
-    amrex::Vector<std::unique_ptr<PicParticles> >& sourceParts,
-    bool doSelectRegion, int nppc) {
+    Vector<std::unique_ptr<PicParticles> >& sourceParts, bool doSelectRegion,
+    int nppc) {
   std::string nameFunc = "Pts::charge_exchange";
 
   timing_func(nameFunc);

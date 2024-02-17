@@ -2,6 +2,8 @@
 // #include "linear_solver_wrapper_c.h" // Calling Fortran solver
 #include "LinearSolver.h"
 
+using namespace amrex;
+
 void matvec_E_solver(const double *vecIn, double *vecOut, int iLev) {
   fleksDomains(fleksDomains.selected())
       .pic->update_E_matvec(vecIn, vecOut, iLev);
@@ -19,10 +21,10 @@ void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
   int nJ = 1, nK = 1, nBlock = 1;
   double precond_matrix_II[1][1];
   precond_matrix_II[0][0] = 0;
-  int lTest = (doReport && amrex::ParallelDescriptor::MyProc() == 0);
+  int lTest = (doReport && ParallelDescriptor::MyProc() == 0);
 
   if (true) {
-    MPI_Comm iComm = amrex::ParallelDescriptor::Communicator();
+    MPI_Comm iComm = ParallelDescriptor::Communicator();
     PrecondType TypePrecond = NONE;
     linear_solver_wrapper_hy(fMatvec, iLev, GMRES, tolerance, nIteration,
                              nVarSolve, nDim, nGrid, nJ, nK, nBlock, iComm, rhs,
@@ -32,7 +34,7 @@ void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
     // The shared library matvec requires non-const vecIn due to compatibility
     // issue with AMPS. If one intends to use it, remember to change the
     // definition of `const double *vecIn` to `double vecIn`.
-    MPI_Fint iComm = MPI_Comm_c2f(amrex::ParallelDescriptor::Communicator());
+    MPI_Fint iComm = MPI_Comm_c2f(ParallelDescriptor::Communicator());
     //// parameter to choose preconditioner types
     // 0:No precondition; 1: BILU; 2:DILU;
     //[-1,0): MBILU;
@@ -308,7 +310,7 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
       // Determine residual norm and test for convergence
       hh[i * nKrylov1 + i] =
           c[i] * hh[i * nKrylov1 + i] + s[i] * hh[i * nKrylov1 + i1];
-      ro = abs(rs[i1]);
+      ro = std::abs(rs[i1]);
       if (doTest) {
         if (typeStop == REL) {
           std::cout << its << " matvecs, "
@@ -363,5 +365,4 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
   delete[] hh;
 
   return info;
-
 }

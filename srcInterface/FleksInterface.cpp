@@ -10,6 +10,8 @@
 #include "ReadParam.h"
 #include "SimDomains.h"
 
+using namespace amrex;
+
 Domains fleksDomains;
 
 // What does 'static' means?
@@ -35,7 +37,7 @@ int fleks_init_(double *time) {
   timeNow = (*time);
 
   if (!isAMReXInitialized) {
-    amrex::Initialize(c_iComm);
+    Initialize(c_iComm);
     isAMReXInitialized = true;
   }
 
@@ -91,16 +93,16 @@ int fleks_from_gm_init_(int *iParam, double *paramreal, char *NameVar) {
   for (int iDomain = 0; iDomain < nDomain; iDomain++)
     fleksDomains.add_new_domain();
 
-  const amrex::Vector<int> paramInt(iParam, iParam + nInt);
+  const Vector<int> paramInt(iParam, iParam + nInt);
 
   for (int i = 0; i < fleksDomains.size(); i++) {
     fleksDomains.select(i);
 
-    const amrex::Vector<double> paramRegion(paramreal + i * nParamRegion,
-                                            paramreal + (i + 1) * nParamRegion);
+    const Vector<double> paramRegion(paramreal + i * nParamRegion,
+                                     paramreal + (i + 1) * nParamRegion);
 
-    const amrex::Vector<double> paramComm(paramreal + nDomain * nParamRegion,
-                                          paramreal + nReal);
+    const Vector<double> paramComm(paramreal + nDomain * nParamRegion,
+                                   paramreal + nReal);
 
     fleksDomains(i).init(timeNow, i, paramString, paramInt, paramRegion,
                          paramComm);
@@ -208,7 +210,7 @@ int fleks_set_state_var_(double *Data_VI, int *iPoint_I, int *nVar,
     if (ss >> name) {
       names.push_back(name);
     } else {
-      amrex::Abort("Error: variable names are not set correctly!\n");
+      Abort("Error: variable names are not set correctly!\n");
     }
   }
   for (int i = 0; i < fleksDomains.size(); i++) {
@@ -282,11 +284,11 @@ int fleks_end_() {
 
     // Q: Why the curly bracket is here?
     // A: It ensures the destructor is called and finished before the
-    // amrex::Finalize().
+    // Finalize().
   }
 
-  amrex::Print() << "FLEKS: Finalizing AMReX..." << std::endl;
-  amrex::Finalize();
+  Print() << "FLEKS: Finalizing AMReX..." << std::endl;
+  Finalize();
 
   return 0;
 }

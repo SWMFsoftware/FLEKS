@@ -8,10 +8,11 @@
 #include "show_git_info.h"
 
 int main(int argc, char* argv[]) {
+  using namespace amrex;
 
-  amrex::Initialize(argc, argv);
+  Initialize(argc, argv);
   {
-    if (amrex::ParallelDescriptor::MyProc() == 0)
+    if (ParallelDescriptor::MyProc() == 0)
       print_git_info();
 
     // Domain domain;
@@ -19,5 +20,5 @@ int main(int argc, char* argv[]) {
     // domain.init();
   }
 
-  amrex::Finalize();
+  Finalize();
 }

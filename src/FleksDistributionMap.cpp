@@ -45,7 +45,7 @@ DistributionMapping FleksDistributionMap::make_balanced_map(
       r.SFCProcessorMap(weight.boxArray(), cost, nprocs, eff, sort);
       break;
     default:
-      amrex::Abort("Unknown BalanceMethod");
+      Abort("Unknown BalanceMethod");
       break;
   }
 
@@ -58,7 +58,7 @@ DistributionMapping FleksDistributionMap::make_balanced_map(
   BL_PROFILE("make_balanced_map_v2");
 
   if (remap.size() != ParallelDescriptor::NProcs()) {
-    amrex::Abort("ord.size()!=ParallelDescriptor::NProcs()");
+    Abort("ord.size()!=ParallelDescriptor::NProcs()");
   }
 
   DistributionMapping dm =
