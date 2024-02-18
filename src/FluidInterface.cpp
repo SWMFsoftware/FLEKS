@@ -647,6 +647,12 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
     }
 
     fluid.FillBoundary(Geom(iLev).periodicity());
+    if (isFake2D) {
+      // Make sure there is no variation in the z-direction.
+      Periodicity period(IntVect(AMREX_D_DECL(0, 0, 1)));
+
+      fluid.FillBoundary(period);
+    }
   }
 
   return nCount;
