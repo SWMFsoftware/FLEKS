@@ -589,26 +589,24 @@ void Domain::save_restart_header() {
 
     // Geometry
     headerFile << "#GEOMETRY" + command_suffix;
-    headerFile << domainRange.lo(ix_) << "\t\txMin\n";
-    headerFile << domainRange.hi(ix_) << "\t\txMax\n";
-    headerFile << domainRange.lo(iy_) << "\t\tyMin\n";
-    headerFile << domainRange.hi(iy_) << "\t\tyMax\n";
-    headerFile << domainRange.lo(iz_) << "\t\tzMin\n";
-    headerFile << domainRange.hi(iz_) << "\t\tzMax\n";
+    for(int i = 0; i < nDim; i++) {
+      headerFile << domainRange.lo(i) << "\t\tmin\n";
+      headerFile << domainRange.hi(i) << "\t\tmax\n";
+    }
     headerFile << "\n";
 
     // Cell
     headerFile << "#NCELL" + command_suffix;
-    headerFile << nCell[ix_] << "\t\t\tnCellX\n";
-    headerFile << nCell[iy_] << "\t\t\tnCellY\n";
-    headerFile << nCell[iz_] << "\t\t\tnCellZ\n";
+    for(int i = 0; i < nDim; i++) {
+      headerFile << nCell[i] << "\t\tnCell\n";
+    }
     headerFile << "\n";
 
     // Block size
     headerFile << "#MAXBLOCKSIZE" << command_suffix;
-    headerFile << maxBlockSize[ix_] << "\t\t\tnCellX\n";
-    headerFile << maxBlockSize[iy_] << "\t\t\tnCellY\n";
-    headerFile << maxBlockSize[iz_] << "\t\t\tnCellZ\n";
+    for(int i = 0; i < nDim; i++) {
+      headerFile << maxBlockSize[i] << "\t\tmaxBlockSize\n";
+    }
     headerFile << "\n";
 
     if (pic)

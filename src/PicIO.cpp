@@ -433,9 +433,9 @@ void Pic::save_restart_header(std::ofstream& headerFile) {
     headerFile << "\n";
 
     headerFile << "#PARTICLES" + command_suffix;
-    headerFile << nPartPerCell[ix_] << "\t\t\tnParticleX\n";
-    headerFile << nPartPerCell[iy_] << "\t\t\tnParticleY\n";
-    headerFile << nPartPerCell[iz_] << "\t\t\tnParticleZ\n";
+    for(int i = 0; i < nDim; i++) {
+    headerFile << nPartPerCell[i] << "\t\t\tnParticle\n"; 
+    }
     headerFile << "\n";
 
     headerFile << "#SUPID" + command_suffix;
