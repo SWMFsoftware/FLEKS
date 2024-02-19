@@ -301,7 +301,7 @@ void Pic::post_regrid() {
   // This part does not really work for multi-level.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     int n = get_local_node_or_cell_number(nodeE[iLev]);
-    eSolver.init(n, nDim, nDim, matvec_E_solver);
+    eSolver.init(n, nDim3, nDim, matvec_E_solver);
 
     n = get_local_node_or_cell_number(centerDivE[iLev]);
     divESolver.init(n, 1, nDim, matvec_divE_accurate);
@@ -1304,6 +1304,12 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     // M*E needs ghost cell information.
     vecMF.FillBoundary(Geom(iLev).periodicity());
 
+    if (isFake2D) {
+      // Make sure there is no variation in the z-direction.
+      Periodicity period(IntVect(AMREX_D_DECL(0, 0, 1)));
+      vecMF.FillBoundary(period);
+    }
+
     if (useZeroBC) {
       // The boundary nodes would not be filled in by convert_1d_3d. So, there
       // is not need to apply zero boundary conditions again here.
@@ -1364,7 +1370,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
       grad_center_to_node(centerDivE[iLev], tempNode3,
                           Geom(iLev).InvCellSize());
 
-      tempNode3.mult(delt2);
+            tempNode3.mult(delt2);
       MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(),
                     matvecMF.nGrow());
     }
@@ -1455,7 +1461,7 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   update_E_M_dot_E(E0[iLev], tempNode, iLev);
   MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), tempNode.nGrow());
 
-  convert_3d_to_1d(temp2Node, rhs, iLev);
+    convert_3d_to_1d(temp2Node, rhs, iLev);
 }
 
 //==========================================================
@@ -1775,7 +1781,7 @@ void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF, int iLev) {
     ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
       if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
         arr(i, j, k, iVar) = p[iCount++];
-      }
+              }
     });
   }
 }
@@ -1798,7 +1804,7 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
     ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
       if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
         p[iCount++] = arr(i, j, k, iVar);
-      }
+              }
     });
   }
 }
