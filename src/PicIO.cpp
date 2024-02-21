@@ -629,7 +629,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
         bl.push_back(ba);
       }
     }
-    baIO.define(bl);
+    baIO.define(bl);    
 
   } else {
     baIO = cGrids[0];
@@ -639,7 +639,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
   Vector<Geometry> geomOut(n_lev());
   set_IO_geom(geomOut, pw);
 
-  Grid gridIO(geomOut[0], get_amr_info(), 0, -gridID);
+  Grid gridIO(geomOut[0], get_amr_info(), nGst, -gridID);
 
   if (isCut && n_lev() == 1) {
     // TODO: This is a temporary solution. The current implementation is
