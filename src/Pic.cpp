@@ -775,7 +775,7 @@ void Pic::calculate_phi(LinearSolver& solver) {
   convert_3d_to_1d(residual, solver.rhs, iLev);
 
   BL_PROFILE_VAR("Pic::phi_iterate", solve);
-  solver.solve(doReport);
+  solver.solve(iLev, doReport);
   BL_PROFILE_VAR_STOP(solve);
 
   convert_1d_to_3d(solver.xLeft, centerPhi[iLev], iLev);
