@@ -1370,7 +1370,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
       grad_center_to_node(centerDivE[iLev], tempNode3,
                           Geom(iLev).InvCellSize());
 
-            tempNode3.mult(delt2);
+      tempNode3.mult(delt2);
       MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(),
                     matvecMF.nGrow());
     }
@@ -1461,7 +1461,7 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   update_E_M_dot_E(E0[iLev], tempNode, iLev);
   MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), tempNode.nGrow());
 
-    convert_3d_to_1d(temp2Node, rhs, iLev);
+  convert_3d_to_1d(temp2Node, rhs, iLev);
 }
 
 //==========================================================
@@ -1781,7 +1781,7 @@ void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF, int iLev) {
     ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
       if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
         arr(i, j, k, iVar) = p[iCount++];
-              }
+      }
     });
   }
 }
@@ -1804,7 +1804,7 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
     ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
       if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
         p[iCount++] = arr(i, j, k, iVar);
-              }
+      }
     });
   }
 }
@@ -1980,15 +1980,10 @@ void Pic::charge_exchange() {
   doSelectRegion = (nSpecies == 4);
 #endif
 
-  int sourcePPC = 1;
-  for (int i = 0; i < nDim; i++) {
-    sourcePPC *= nSourcePPC[i];
-  }
-
   for (int i = 0; i < nSpecies; i++) {
     parts[i]->charge_exchange(tc->get_dt(), stateOH, sourcePT2OH, source,
                               kineticSource, sourceParts, doSelectRegion,
-                              sourcePPC);
+                              product(nSourcePPC));
   }
 
   if (kineticSource) {

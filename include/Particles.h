@@ -344,17 +344,13 @@ public:
 
     int iCycle = tc->get_cycle();
 
-    int npcel = 1;
-    for (int iDim = 0; iDim < nDim; iDim++)
-      npcel *= nPPC[iDim];
-
     int i = ijk[0];
     int j = ijk[1];
     int k = nDim > 2 ? ijk[2] : 0;
 
     // What if the seed overflow?
     const long seed =
-        (speciesID + 3) * nRandom * npcel *
+        (speciesID + 3) * nRandom * product(nPPC) *
         (nxcg * nycg * nzcg * iCycle + nycg * nzcg * i + nzcg * j + k);
     return seed;
   }

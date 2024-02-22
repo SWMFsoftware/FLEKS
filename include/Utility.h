@@ -83,7 +83,7 @@ void print_fab(const amrex::FabArray<FAB>& mf, std::string tag,
   amrex::AllPrint() << "-----" << tag << " end-----" << std::endl;
 }
 
-inline int product(amrex::IntVect& vect) {
+inline int product(const amrex::IntVect& vect) {
   return AMREX_D_TERM(vect[0], *vect[1], *vect[2]);
 }
 

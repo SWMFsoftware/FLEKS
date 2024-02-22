@@ -2897,19 +2897,14 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
         set_random_seed(iLev, cellIdx, IntVect(787));
         // Adjust ppc so that the weight of the
         // source particles is not too small.
-        int initPPC = 1, sourcePPC = 1;
-        for (int iDim = 0; iDim < nDim; iDim++) {
-          initPPC *= nPartPerCell[iDim];
-          sourcePPC *= ppc[iDim];
-        }
 
         Real rho = 0;
         for (auto& p : particles) {
           rho += p.rdata(iqp_);
         }
 
-        Real avgInitW = rho / initPPC;
-        Real avgSourceW = rhoSource / sourcePPC;
+        Real avgInitW = rho / product(nPartPerCell);
+        Real avgSourceW = rhoSource / product(ppc);
 
         Real targetSourceW = avgInitW * 0.1;
 
@@ -2927,12 +2922,8 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
         weights[i] = sps[i].rdata(iqp_);
       }
 
-      int nppc = 1;
-      for (int iDim = 0; iDim < nDim; iDim++) {
-        nppc *= ppc[iDim];
-      }
-
-      std::vector<int> idx = random_select_weighted_n(weights, nppc, randNum);
+      std::vector<int> idx =
+          random_select_weighted_n(weights, product(ppc), randNum);
 
       Real wTmp = 0;
       for (int i : idx) {
