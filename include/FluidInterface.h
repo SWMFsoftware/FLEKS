@@ -20,7 +20,6 @@
 #include "MDArray.h"
 #include "ReadParam.h"
 #include "Regions.h"
-#include "Utility.h"
 
 class FluidInterfaceParameters {
 public:

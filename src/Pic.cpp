@@ -8,7 +8,6 @@
 #include "Pic.h"
 #include "SimDomains.h"
 #include "Timer.h"
-#include "Utility.h"
 
 using namespace amrex;
 

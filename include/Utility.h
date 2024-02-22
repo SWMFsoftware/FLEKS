@@ -1,6 +1,8 @@
 #ifndef _UTILITY_H_
 #define _UTILITY_H_
 
+#include <unistd.h>
+
 #include <AMReX_MultiFab.H>
 #include <AMReX_REAL.H>
 #include <AMReX_iMultiFab.H>
@@ -10,78 +12,6 @@
 
 // Only works for x>-8;
 inline int fastfloor(amrex::Real x) { return (int)(x + 8) - 8; }
-
-void curl_center_to_node(const amrex::MultiFab& centerMF,
-                         amrex::MultiFab& nodeMF, const amrex::Real* invDx);
-
-void curl_node_to_center(const amrex::MultiFab& nodeMF,
-                         amrex::MultiFab& centerMF, const amrex::Real* invDx);
-
-void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
-                      const amrex::DistributionMapping dm,
-                      const amrex::Geometry& gm,
-                      const amrex::iMultiFab& status);
-
-void grad_node_to_center(const amrex::MultiFab& nodeMF,
-                         amrex::MultiFab& centerMF, const amrex::Real* invDx,
-                         const amrex::iMultiFab& status);
-
-void grad_center_to_node(const amrex::MultiFab& centerMF,
-                         amrex::MultiFab& nodeMF, const amrex::Real* invDx);
-
-void div_center_to_node(const amrex::MultiFab& centerMF,
-                        amrex::MultiFab& nodeMF, const amrex::Real* invDx);
-
-void div_node_to_center(const amrex::MultiFab& nodeMF,
-                        amrex::MultiFab& centerMF, const amrex::Real* invDx);
-
-void div_center_to_center(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
-                          const amrex::Real* invDx);
-
-void average_center_to_node(const amrex::MultiFab& centerMF,
-                            amrex::MultiFab& nodeMF);
-
-void print_MultiFab(const amrex::iMultiFab& data, std::string tag,
-                    int nshift = 0);
-
-void print_MultiFab(const amrex::MultiFab& data, std::string tag,
-                    const int iVarStart, const int iVarEnd, int nshift = 0);
-
-void print_MultiFab(const amrex::MultiFab& data, std::string tag,
-                    amrex::Geometry& gm, int nshift = 0);
-
-template <class FAB>
-void print_fab(const amrex::FabArray<FAB>& mf, std::string tag,
-               const int iStart, const int nComp, int nshift = 0) {
-  amrex::AllPrint() << "-----" << tag << " begin-----" << std::endl;
-  amrex::Real sum = 0;
-  amrex::Real sum2 = 0;
-
-  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
-    const FAB& fab = mf[mfi];
-    const auto& box = mfi.validbox();
-    const auto& data = fab.array();
-
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
-
-    amrex::AllPrint() << "------ box = " << box << std::endl;
-    for (int i = lo.x - nshift; i <= hi.x + nshift; ++i)
-      for (int j = lo.y - nshift; j <= hi.y + nshift; ++j)
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
-            amrex::AllPrint() << " i = " << i << " j = " << j << " k = " << k
-                              << " iVar = " << iVar
-                              << " data = " << data(i, j, k, iVar) << std::endl;
-            sum += data(i, j, k, iVar);
-            sum2 += pow(data(i, j, k, iVar), 2);
-          }
-  }
-  amrex::AllPrint() << "sum = " << sum << " sum2 = " << sqrt(sum2)
-                    << " on proc = " << amrex::ParallelDescriptor::MyProc()
-                    << std::endl;
-  amrex::AllPrint() << "-----" << tag << " end-----" << std::endl;
-}
 
 inline int product(const amrex::IntVect& vect) {
   return AMREX_D_TERM(vect[0], *vect[1], *vect[2]);
@@ -113,19 +43,6 @@ template <class T> inline void a_cross_b(T (&a)[3], T (&b)[3], T (&c)[3]) {
   c[2] = a[0] * b[1] - a[1] * b[0];
 
   return;
-}
-
-inline int get_local_node_or_cell_number(const amrex::MultiFab& MF) {
-
-  int nTotal = 0;
-  if (!MF.empty())
-    for (amrex::MFIter mfi(MF); mfi.isValid(); ++mfi) {
-      const amrex::Box& box = mfi.validbox();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-      nTotal += (hi.x - lo.x + 1) * (hi.y - lo.y + 1) * (hi.z - lo.z + 1);
-    }
-  return nTotal;
 }
 
 template <class T> inline void zero_array(T* arr, int nSize) {
@@ -164,151 +81,6 @@ inline void linear_interpolation_coef(amrex::RealVect& dx,
   coef[1][1][1] = multi[0][0] * zeta[0];
 }
 
-inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
-                                    const amrex::MFIter& mfi,
-                                    const amrex::Geometry& gm,
-                                    const amrex::RealVect xyz, const int iVar) {
-  const auto plo = gm.ProbLo();
-
-  const auto invDx = gm.InvCellSize();
-
-  int loIdx[nDim];
-  amrex::Real dx[nDim];
-  for (int i = 0; i < nDim; i++) {
-    dx[i] = (xyz[i] - plo[i]) * invDx[i];
-    loIdx[i] = fastfloor(dx[i]);
-    dx[i] = dx[i] - loIdx[i];
-  }
-
-  amrex::Real coef[2][2][2];
-  {
-    amrex::Real xi[2];
-    amrex::Real eta[2];
-    amrex::Real zeta[2];
-    xi[0] = dx[0];
-    eta[0] = dx[1];
-    zeta[0] = dx[2];
-    xi[1] = 1 - xi[0];
-    eta[1] = 1 - eta[0];
-    zeta[1] = 1 - zeta[0];
-
-    amrex::Real multi[2][2];
-    multi[0][0] = xi[0] * eta[0];
-    multi[0][1] = xi[0] * eta[1];
-    multi[1][0] = xi[1] * eta[0];
-    multi[1][1] = xi[1] * eta[1];
-
-    // coef[k][j][i]: This is so wired. But is may be faster since it matches
-    // the AMREX multifab data ordering.
-    if (nDim == 2) {
-      coef[0][0][0] = multi[1][1];
-      coef[0][0][1] = multi[0][1];
-      coef[0][1][0] = multi[1][0];
-      coef[0][1][1] = multi[0][0];
-    } else {
-      coef[0][0][0] = multi[1][1] * zeta[1];
-      coef[1][0][0] = multi[1][1] * zeta[0];
-      coef[0][1][0] = multi[1][0] * zeta[1];
-      coef[1][1][0] = multi[1][0] * zeta[0];
-      coef[0][0][1] = multi[0][1] * zeta[1];
-      coef[1][0][1] = multi[0][1] * zeta[0];
-      coef[0][1][1] = multi[0][0] * zeta[1];
-      coef[1][1][1] = multi[0][0] * zeta[0];
-    }
-  }
-
-  const auto& arr = mf[mfi].array();
-  amrex::Real val = 0;
-
-  amrex::Box box = amrex::Box(amrex::IntVect(0), amrex::IntVect(1));
-
-  amrex::ParallelFor(box, [&](int ii, int jj, int kk) noexcept {
-    int iIdx = loIdx[ix_] + ii;
-    int jIdx = loIdx[iy_] + jj;
-    int kIdx = nDim > 2 ? loIdx[iz_] + kk : 0;
-    val += arr(iIdx, jIdx, kIdx, iVar) * coef[kk][jj][ii];
-  });
-
-  return val;
-}
-
-inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
-                                    const amrex::Geometry& gm,
-                                    const amrex::RealVect xyz, const int iVar) {
-  auto idx = gm.CellIndex(xyz.begin());
-
-  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
-    // Cell box
-    const amrex::Box& bx =
-        amrex::convert(mfi.validbox(), { AMREX_D_DECL(0, 0, 0) });
-    if (bx.contains(idx))
-      return get_value_at_loc(mf, mfi, gm, xyz, iVar);
-  }
-
-  amrex::AllPrint() << "xyz = " << xyz << std::endl;
-
-  amrex::Abort("Error: can not find this point!");
-  return -1; // To suppress compiler warnings.
-}
-
-inline void add_to_mf(const amrex::Real& val, amrex::MultiFab& mf,
-                      const amrex::MFIter& mfi, const amrex::Geometry& gm,
-                      const amrex::RealVect xyz, const int iVar) {
-  const auto plo = gm.ProbLo();
-
-  const auto invDx = gm.InvCellSize();
-
-  int loIdx[3];
-  amrex::Real dx[3] = { 0, 0, 0 };
-  for (int i = 0; i < nDim; i++) {
-    dx[i] = (xyz[i] - plo[i]) * invDx[i];
-    loIdx[i] = fastfloor(dx[i]);
-    dx[i] = dx[i] - loIdx[i];
-  }
-
-  amrex::Real coef[2][2][2];
-  {
-    amrex::Real xi[2];
-    amrex::Real eta[2];
-    amrex::Real zeta[2];
-    xi[0] = dx[0];
-    eta[0] = dx[1];
-    zeta[0] = dx[2];
-    xi[1] = 1 - xi[0];
-    eta[1] = 1 - eta[0];
-    zeta[1] = 1 - zeta[0];
-
-    amrex::Real multi[2][2];
-    multi[0][0] = xi[0] * eta[0];
-    multi[0][1] = xi[0] * eta[1];
-    multi[1][0] = xi[1] * eta[0];
-    multi[1][1] = xi[1] * eta[1];
-
-    // coef[k][j][i]
-    coef[0][0][0] = multi[1][1] * zeta[1];
-    coef[1][0][0] = multi[1][1] * zeta[0];
-    coef[0][1][0] = multi[1][0] * zeta[1];
-    coef[1][1][0] = multi[1][0] * zeta[0];
-    coef[0][0][1] = multi[0][1] * zeta[1];
-    coef[1][0][1] = multi[0][1] * zeta[0];
-    coef[0][1][1] = multi[0][0] * zeta[1];
-    coef[1][1][1] = multi[0][0] * zeta[0];
-  }
-
-  const amrex::Array4<amrex::Real>& arr = mf[mfi].array();
-  for (int kk = 0; kk < 2; kk++) {
-    const int kIdx = loIdx[iz_] + kk;
-    for (int jj = 0; jj < 2; jj++) {
-      const int jIdx = loIdx[iy_] + jj;
-      for (int ii = 0; ii < 2; ii++) {
-        arr(loIdx[ix_] + ii, jIdx, kIdx, iVar) += val * coef[kk][jj][ii];
-      }
-    }
-  }
-
-  return;
-}
-
 template <typename T>
 inline T bound(const T& val, const T& xmin, const T& xmax) {
   if (val < xmin)
@@ -317,8 +89,6 @@ inline T bound(const T& val, const T& xmin, const T& xmax) {
     return xmax;
   return val;
 }
-
-double read_mem_usage();
 
 template <typename T, int nRow, int nCol>
 bool linear_solver_Gauss_Elimination(
@@ -429,5 +199,40 @@ std::vector<int> random_select_weighted_n(Vec arr, int m, Rand& rd) {
 
   return idx;
 };
+
+inline double read_mem_usage() {
+  // This function returns the resident set size (RSS) of
+  // this processor in unit MB.
+
+  // From wiki:
+  // RSS is the portion of memory occupied by a process that is
+  // held in main memory (RAM).
+
+  double rssMB = 0.0;
+
+  std::ifstream stat_stream("/proc/self/stat", std::ios_base::in);
+
+  if (!stat_stream.fail()) {
+    // Dummy vars for leading entries in stat that we don't care about
+    std::string pid, comm, state, ppid, pgrp, session, tty_nr;
+    std::string tpgid, flags, minflt, cminflt, majflt, cmajflt;
+    std::string utime, stime, cutime, cstime, priority, nice;
+    std::string O, itrealvalue, starttime;
+
+    // Two values we want
+    unsigned long vsize;
+    unsigned long rss;
+
+    stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr >>
+        tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >>
+        stime >> cutime >> cstime >> priority >> nice >> O >> itrealvalue >>
+        starttime >> vsize >> rss; // Ignore the rest
+    stat_stream.close();
+
+    rssMB = rss * sysconf(_SC_PAGE_SIZE) / 1024.0 / 1024.0;
+  }
+
+  return rssMB;
+}
 
 #endif

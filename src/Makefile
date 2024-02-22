@@ -8,7 +8,7 @@ SRCS := \
 	Particles.cpp \
 	TestParticles.cpp \
 	LinearSolver.cpp \
-	Utility.cpp \
+	GridUtility.cpp \
 	PlotWriter.cpp \
 	TimeCtr.cpp \
 	BC.cpp \

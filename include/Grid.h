@@ -27,7 +27,6 @@
 #include "Regions.h"
 #include "TimeCtr.h"
 #include "UMultiFab.h"
-#include "Utility.h"
 
 // This class define the grid information, but NOT the data on the grid.
 class Grid : public amrex::AmrCore {

@@ -4,7 +4,6 @@
 #include "Bit.h"
 #include "FluidInterface.h"
 #include "GridUtility.h"
-#include "Utility.h"
 
 using namespace amrex;
 

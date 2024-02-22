@@ -1,9 +1,8 @@
 #include <iostream>
-#include <unistd.h>
 
 #include "Constants.h"
+#include "GridUtility.h"
 #include "Timer.h"
-#include "Utility.h"
 
 using namespace amrex;
 
@@ -489,39 +488,4 @@ void average_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF) {
            centerArr(i, j, k, iVar));
     });
   }
-}
-
-double read_mem_usage() {
-  // This function returns the resident set size (RSS) of
-  // this processor in unit MB.
-
-  // From wiki:
-  // RSS is the portion of memory occupied by a process that is
-  // held in main memory (RAM).
-
-  double rssMB = 0.0;
-
-  std::ifstream stat_stream("/proc/self/stat", std::ios_base::in);
-
-  if (!stat_stream.fail()) {
-    // Dummy vars for leading entries in stat that we don't care about
-    std::string pid, comm, state, ppid, pgrp, session, tty_nr;
-    std::string tpgid, flags, minflt, cminflt, majflt, cmajflt;
-    std::string utime, stime, cutime, cstime, priority, nice;
-    std::string O, itrealvalue, starttime;
-
-    // Two values we want
-    unsigned long vsize;
-    unsigned long rss;
-
-    stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr >>
-        tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >>
-        stime >> cutime >> cstime >> priority >> nice >> O >> itrealvalue >>
-        starttime >> vsize >> rss; // Ignore the rest
-    stat_stream.close();
-
-    rssMB = rss * sysconf(_SC_PAGE_SIZE) / 1024.0 / 1024.0;
-  }
-
-  return rssMB;
 }
