@@ -60,6 +60,26 @@ struct IDs {
   int supID;
 };
 
+struct ParticlesInfo {
+  bool fastMerge = false;
+  bool mergeLight = false;
+
+  int nPartCombine = 6;
+  int nPartNew = 5;
+  int nMergeTry = 3;
+
+  amrex::Real mergeThresholdDistance = 0.6;
+  amrex::Real velBinBufferSize = 0.125;
+
+  amrex::Real mergeRatioMax = 1.5;
+  amrex::Real pLevRatio = 1.2;
+
+  amrex::Real mergePartRatioMax = 10;
+
+  // [amu/cc]
+  amrex::Real vacuumIO = 0;
+};
+
 template <int NStructReal, int NStructInt>
 class ParticlesIter : public amrex::ParIter<NStructReal, NStructInt> {
 public:
@@ -290,6 +310,19 @@ public:
 
   void convert_to_fluid_moments(amrex::Vector<amrex::MultiFab>& momentsMF);
 
+  void set_info(ParticlesInfo& pi) {
+    fastMerge = pi.fastMerge;
+    nPartCombine = pi.nPartCombine;
+    nPartNew = pi.nPartNew;
+    nMergeTry = pi.nMergeTry;
+    mergeThresholdDistance = pi.mergeThresholdDistance;
+    velBinBufferSize = pi.velBinBufferSize;
+    mergeRatioMax = pi.mergeRatioMax;
+    pLevRatio = pi.pLevRatio;
+    mergePartRatioMax = pi.mergePartRatioMax;
+    vacuum = pi.vacuumIO * cProtonMassSI * 1e6 * fi->get_Si2NoRho();
+  }
+
   IDs get_next_ids() {
     constexpr long idMax = 2147483647L;
     long id = ParticleType::NextID();
@@ -471,24 +504,6 @@ public:
   int get_speciesID() const { return speciesID; }
   amrex::Real get_charge() const { return charge; }
   amrex::Real get_mass() const { return mass; }
-
-  void set_merge_threshold(amrex::Real in) { mergeThresholdDistance = in; }
-  void set_merge_velocity_bin_buffer(amrex::Real in) { velBinBufferSize = in; }
-  void particle_lev_ratio(amrex::Real in) { pLevRatio = in; }
-  void set_fast_merge(bool in, int nOld, int nNew, int nTry, amrex::Real ratio,
-                      bool mergeLightIn, amrex::Real mergePartRatioMaxIn) {
-    fastMerge = in;
-    if (fastMerge) {
-      nPartCombine = nOld;
-      nPartNew = nNew;
-      nMergeTry = nTry;
-      mergeRatioMax = ratio;
-      mergeLight = mergeLightIn;
-      mergePartRatioMax = mergePartRatioMaxIn;
-    }
-  }
-
-  void set_vacuum(amrex::Real in) { vacuum = in; }
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
 

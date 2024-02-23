@@ -83,24 +83,24 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("maxWeightRatio", maxWeightRatio);
     }
   } else if (command == "#FASTMERGE") {
-    param.read_var("fastMerge", fastMerge);
-    if (fastMerge) {
-      param.read_var("nMergeOld", nMergeOld);
-      param.read_var("nMergeNew", nMergeNew);
-      param.read_var("nMergeTry", nMergeTry);
-      param.read_var("mergeRatioMax", mergeRatioMax);
+    param.read_var("fastMerge", pInfo.fastMerge);
+    if (pInfo.fastMerge) {
+      param.read_var("nMergeOld", pInfo.nPartCombine);
+      param.read_var("nMergeNew", pInfo.nPartNew);
+      param.read_var("nMergeTry", pInfo.nMergeTry);
+      param.read_var("mergeRatioMax", pInfo.mergeRatioMax);
     }
   } else if (command == "#ADAPTIVESOURCEPPC") {
     param.read_var("adaptiveSourcePPC", adaptiveSourcePPC);
   } else if (command == "#MERGELIGHT") {
-    param.read_var("mergeLight", mergeLight);
-    if (mergeLight) {
-      param.read_var("mergePartRatioMax", mergePartRatioMax);
+    param.read_var("mergeLight", pInfo.mergeLight);
+    if (pInfo.mergeLight) {
+      param.read_var("mergePartRatioMax", pInfo.mergePartRatioMax);
     }
   } else if (command == "#VACUUM") {
-    param.read_var("vacuum", vacuum);
+    param.read_var("vacuum", pInfo.vacuumIO);
   } else if (command == "#PARTICLELEVRATIO") {
-    param.read_var("particleLevRatio", pLevRatio);
+    param.read_var("particleLevRatio", pInfo.pLevRatio);
 
   } else if (command == "#SUPID") {
     int n = 0;
@@ -251,21 +251,7 @@ void Pic::post_regrid() {
                            fi->get_species_mass(i), nPartPerCell, testCase));
 
       //----- Set parameters------------
-      if (particleMergeThreshold >= 0) {
-        ptr->set_merge_threshold(particleMergeThreshold);
-      }
-
-      if (particleMergeBinBuffer >= 0) {
-        ptr->set_merge_velocity_bin_buffer(particleMergeBinBuffer);
-      }
-
-      ptr->set_fast_merge(fastMerge, nMergeOld, nMergeNew, nMergeTry,
-                          mergeRatioMax, mergeLight, mergePartRatioMax);
-
-      const Real vacuumNO = vacuum * cProtonMassSI * 1e6 * fi->get_Si2NoRho();
-      ptr->set_vacuum(vacuumNO);
-
-      ptr->particle_lev_ratio(pLevRatio);
+      ptr->set_info(pInfo);
 
       ptr->set_bc(pBCs[i]);
 

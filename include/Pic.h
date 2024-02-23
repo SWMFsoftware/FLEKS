@@ -117,26 +117,16 @@ private:
 
   TestCase testCase = RegularSimulation;
 
-  amrex::Real particleMergeThreshold = -1, particleMergeBinBuffer = -1;
-  bool fastMerge = false;
-  int nMergeOld = 0, nMergeNew = 0;
-  int nMergeTry = 1;
-  amrex::Real mergeRatioMax = 1.5;
-  amrex::Real pLevRatio = 1.2;
-  bool mergeLight = false;
-  amrex::Real mergePartRatioMax = 0;  
-
-  // [amu/cc]
-  amrex::Real vacuum = 0;
-
-  bool doReport = false;
-
-  std::string logFile;
+  ParticlesInfo pInfo;
 
   // Boundary conditions for particles.
   amrex::Vector<BC> pBCs;
 
   amrex::Vector<int> supIDs;
+
+  bool doReport = false;
+
+  std::string logFile;
 
   // public methods
 public:
