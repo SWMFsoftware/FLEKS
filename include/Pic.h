@@ -124,9 +124,7 @@ private:
   amrex::Real mergeRatioMax = 1.5;
   amrex::Real pLevRatio = 1.2;
   bool mergeLight = false;
-  amrex::Real mergePartRatioMax = 0;
-
-  bool middlePointSource = false;
+  amrex::Real mergePartRatioMax = 0;  
 
   // [amu/cc]
   amrex::Real vacuum = 0;
