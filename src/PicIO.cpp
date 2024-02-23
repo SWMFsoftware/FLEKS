@@ -433,8 +433,8 @@ void Pic::save_restart_header(std::ofstream& headerFile) {
     headerFile << "\n";
 
     headerFile << "#PARTICLES" + command_suffix;
-    for(int i = 0; i < nDim; i++) {
-    headerFile << nPartPerCell[i] << "\t\t\tnParticle\n"; 
+    for (int i = 0; i < nDim; i++) {
+      headerFile << nPartPerCell[i] << "\t\t\tnParticle\n";
     }
     headerFile << "\n";
 
@@ -569,6 +569,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
   realCompNames[PicParticles::ivp_] = "velocity_y";
   realCompNames[PicParticles::iwp_] = "velocity_z";
   realCompNames[PicParticles::iqp_] = "weight";
+  realCompNames[PicParticles::imu_] = "mu";
 
   Vector<int> writeIntComp;
   for (int i = 0; i < nPicPartInt; ++i) {
@@ -629,7 +630,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
         bl.push_back(ba);
       }
     }
-    baIO.define(bl);    
+    baIO.define(bl);
 
   } else {
     baIO = cGrids[0];

@@ -216,6 +216,9 @@ public:
   static const int iwp_ = 2;
   static const int iqp_ = 3;
 
+  // mu = cos(theta), theta is the pitch angle.
+  static const int imu_ = 4;
+
   TestCase testCase;
 
   // Index of the integer data.

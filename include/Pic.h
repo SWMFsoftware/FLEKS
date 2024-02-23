@@ -29,6 +29,8 @@ public:
   }
 };
 
+enum class PicMode { PIC = 0, SEP };
+
 typedef amrex::Real (Pic::*GETVALUE)(amrex::MFIter &mfi, amrex::IntVect ijk,
                                      int iVar, const int iLev);
 
@@ -41,6 +43,8 @@ class Pic : public Grid {
   friend ParticleTracker;
   // private variables
 private:
+  PicMode mode = PicMode::PIC;
+
   bool usePIC = true;
   bool solveEM = true;
 
