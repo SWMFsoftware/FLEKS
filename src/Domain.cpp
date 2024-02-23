@@ -589,7 +589,7 @@ void Domain::save_restart_header() {
 
     // Geometry
     headerFile << "#GEOMETRY" + command_suffix;
-    for(int i = 0; i < nDim; i++) {
+    for (int i = 0; i < nDim; i++) {
       headerFile << domainRange.lo(i) << "\t\tmin\n";
       headerFile << domainRange.hi(i) << "\t\tmax\n";
     }
@@ -597,14 +597,14 @@ void Domain::save_restart_header() {
 
     // Cell
     headerFile << "#NCELL" + command_suffix;
-    for(int i = 0; i < nDim; i++) {
+    for (int i = 0; i < nDim; i++) {
       headerFile << nCell[i] << "\t\tnCell\n";
     }
     headerFile << "\n";
 
     // Block size
     headerFile << "#MAXBLOCKSIZE" << command_suffix;
-    for(int i = 0; i < nDim; i++) {
+    for (int i = 0; i < nDim; i++) {
       headerFile << maxBlockSize[i] << "\t\tmaxBlockSize\n";
     }
     headerFile << "\n";
@@ -738,7 +738,7 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#PARTICLELEVRATIO" || command == "#PIC" ||
         command == "#EXPLICITPIC" || command == "#SPLITJ" ||
         command == "#PARTICLEBOXBOUNDARY" || command == "#MIDDLEPOINTSOURCE" ||
-        command == "#SUPID") {
+        command == "#SUPID" || command == "#SOLVEEM") {
       pic->read_param(command, param);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||

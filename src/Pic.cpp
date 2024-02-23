@@ -16,6 +16,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 
   if (command == "#PIC") {
     param.read_var("usePIC", usePIC);
+  } else if (command == "#SOLVEEM") {
+    param.read_var("solveEM", solveEM);
   } else if (command == "#PARTICLEBOXBOUNDARY") {
     int iSpecies;
     std::string lo, hi;
@@ -245,16 +247,10 @@ void Pic::post_regrid() {
 
   //--------------particles-----------------------------------
   if (parts.empty()) {
-    solveEM = true;
     for (int i = 0; i < nSpecies; i++) {
       auto ptr = std::unique_ptr<PicParticles>(
           new PicParticles(this, fi, tc, i, fi->get_species_charge(i),
                            fi->get_species_mass(i), nPartPerCell, testCase));
-
-      // If contains neutrals, assume this is OH-PT coupling, and do not solve
-      // for EM fields.
-      if (ptr->is_neutral())
-        solveEM = false;
 
       //----- Set parameters------------
       if (particleMergeThreshold >= 0) {

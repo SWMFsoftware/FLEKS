@@ -42,12 +42,10 @@ class Pic : public Grid {
   // private variables
 private:
   bool usePIC = true;
-  
+  bool solveEM = true;
+
   bool useExplicitPIC = false;
   bool usenewElectricSolver = false;
-  // If there is neutral species (OH-PT coupling), do not solve for
-  // EM fields.
-  bool solveEM = true;
 
   FluidInterface *fi = nullptr;
   FluidInterface *stateOH = nullptr;
@@ -181,6 +179,7 @@ public:
 
 #ifdef _PT_COMPONENT_
     kineticSource = true;
+    solveEM = false;
 #endif
   };
   ~Pic(){};
@@ -263,11 +262,10 @@ public:
   void linearize_Ax_b(const amrex::MultiFab &inMF, amrex::MultiFab &outMF,
                       int iLev);
   void update_E_matvec_new(const double *vecIn, double *vecOut, int iLev,
-                       const bool useZeroBC = true);
-  
-  
+                           const bool useZeroBC = true);
+
   void update_E();
-    void update_E_impl();
+  void update_E_impl();
   void update_E_expl();
   void update_E_rhs(double *rhos, int iLev);
   void update_E_matvec(const double *vecIn, double *vecOut, int iLev,
