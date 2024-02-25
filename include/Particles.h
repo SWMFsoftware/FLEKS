@@ -315,6 +315,7 @@ public:
 
   void set_info(ParticlesInfo& pi) {
     fastMerge = pi.fastMerge;
+    mergeLight = pi.mergeLight;
     nPartCombine = pi.nPartCombine;
     nPartNew = pi.nPartNew;
     nMergeTry = pi.nMergeTry;
