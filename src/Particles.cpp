@@ -1656,7 +1656,9 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
 
     p3.rdata(iup_ + i) = u[i] + du2[i];
     p4.rdata(iup_ + i) = u[i] - du2[i];
+  }
 
+  for (int i = 0; i < nDim; i++) {
     p3.pos(i) = p1.pos(i);
     p4.pos(i) = p2.pos(i);
   }
@@ -2763,10 +2765,13 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 
             NeuPlasmaPair pair;
             pair.q = massExchange;
-            for (int i = 0; i < 3; i++) {
+            for (int i = 0; i < nDim3; i++) {
               pair.vh[i] = uNeu[i];
               pair.up[i] = uIon[i];
               pair.vth = sqrt(cs2Ion);
+            }
+
+            for (int i = 0; i < nDim; i++) {
               pair.xyz[i] = p.pos(ix_ + i);
             }
 
@@ -2837,15 +2842,18 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         for (auto& pair : newPairs) {
           sample_charge_exchange(pair.vp, pair.vh, pair.up, pair.vth,
                                  CrossSection::MT);
-          for (int i = 0; i < 3; i++) {
+          for (int i = 0; i < nDim3; i++) {
             pair.vp[i] *= stateOH->get_Si2NoV();
           }
 
           PicParticle newp;
           newp.rdata(iqp_) = pair.q * scale;
 
-          for (int i = 0; i < 3; i++) {
+          for (int i = 0; i < nDim3; i++) {
             newp.rdata(iup_ + i) = pair.vp[i];
+          }
+
+          for (int i = 0; i < nDim; i++) {
             newp.pos(ix_ + i) = pair.xyz[i];
           }
 
