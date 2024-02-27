@@ -414,7 +414,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
         if (isFake2D || nDim == 2) {
           dkMin = 0;
         }
-        // If this box is the owner of this node?
+        // Is the box the owner of this node?
         auto is_the_box_owner = [&](int i, int j, int k) {
           for (int dk = dkMax; dk >= dkMin; dk--)
             for (int dj = djMax; dj >= djMin; dj--)
@@ -436,7 +436,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
         ParallelFor(box, [&](int i, int j, int k) noexcept {
           if (!isFake2D || k == lo.z) {
             if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
-                (!isFake2D && (k == lo.z || k == hi.z))) {
+                (nDim == 3 && !isFake2D && (k == lo.z || k == hi.z))) {
               // Block boundary nodes.
               if (is_the_box_owner(i, j, k)) {
                 bit::set_owner(nodeArr(i, j, k));
