@@ -856,7 +856,7 @@ void Pic::update(bool doReportIn) {
   Real tStart = second();
 
   if (PicParticles::particlePosition == NonStaggered) {
-    update_part_loc_to_half_stage();
+  update_part_loc_to_half_stage();
   }
 
   calc_mass_matrix();
@@ -872,7 +872,7 @@ void Pic::update(bool doReportIn) {
   charge_exchange();
 
   if (source) {
-    fill_source_particles();
+  fill_source_particles();
   }
 
   inject_particles_for_boundary_cells();
@@ -882,7 +882,7 @@ void Pic::update(bool doReportIn) {
   update_B();
 
   if (doCorrectDivE) {
-    divE_correction();
+  divE_correction();
   }
 
   tc->set_dt(tc->get_next_dt());
@@ -1027,75 +1027,45 @@ void Pic::update_E_expl() {
 
 //==========================================================
 void Pic::update_E_new() {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
 
-  int iLev = 0;
-  eSolver.reset(get_local_node_or_cell_number(nodeE[iLev]));
-  // RHS-1
-  MultiFab tempNode(nGrids[iLev], DistributionMap(iLev), 3, nGst);
-  tempNode.setVal(0.0);
+    eSolver.reset(get_local_node_or_cell_number(nodeE[iLev]));
+    // RHS-1
+    MultiFab tempNode(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+    tempNode.setVal(0.0);
+    MultiFab tempNode2(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+    tempNode2.setVal(0.0);
 
-  MultiFab::Saxpy(tempNode, -fourPI, jHat[iLev], 0, 0, tempNode.nComp(),
+    MultiFab::Saxpy(tempNode, -fourPI, jHat[iLev], 0, 0, tempNode.nComp(),
+                    tempNode.nGrow());
+    curl_center_to_node(centerB[iLev], tempNode2, Geom(iLev).InvCellSize());
+    MultiFab::Add(tempNode, tempNode2, 0, 0, tempNode2.nComp(),
+                  tempNode2.nGrow());
+
+    tempNode.mult(fsolver.theta * tc->get_dt());
+    MultiFab::Add(tempNode, nodeE[iLev], 0, 0, tempNode.nComp(),
                   tempNode.nGrow());
-  tempNode.mult(fsolver.theta * tc->get_dt());
-  MultiFab::Add(tempNode, nodeE[iLev], 0, 0, tempNode.nComp(),
-                tempNode.nGrow());
 
-  convert_3d_to_1d(tempNode, eSolver.rhs, iLev);
+    convert_3d_to_1d(tempNode, eSolver.rhs, iLev);
 
-  ////////////
+    ////////////
 
-  for (int i = 0; i < eSolver.get_nSolve(); i++) {
-    eSolver.xLeft[i] = 0;
-  }
+    for (int i = 0; i < eSolver.get_nSolve(); i++) {
+      eSolver.xLeft[i] = 0;
+    }
 
-  update_E_matvec(eSolver.xLeft, eSolver.xLeft, iLev, false);
-  for (int i = 0; i < eSolver.get_nSolve(); i++) {
-    eSolver.rhs[i] = eSolver.rhs[i] - eSolver.xLeft[i];
-    eSolver.xLeft[i] = 0.0;
-  }
+    update_E_matvec(eSolver.xLeft, eSolver.xLeft, iLev, false);
+    for (int i = 0; i < eSolver.get_nSolve(); i++) {
+      eSolver.rhs[i] = eSolver.rhs[i] - eSolver.xLeft[i];
+      eSolver.xLeft[i] = 0.0;
+    }
 
-  eSolver.solve(iLev, doReport);
+    eSolver.solve(iLev, doReport);
 
-  nodeEth[iLev].setVal(0.0);
-  convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev], iLev);
-  nodeEth[iLev].SumBoundary(Geom(iLev).periodicity());
-  nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
-
-  ////////////////////////////////////// Lev1
-  iLev = 1;
-  eSolver.reset(get_local_node_or_cell_number(nodeE[iLev]));
-  // RHS-1
-  MultiFab temp2Node(nGrids[iLev], DistributionMap(iLev), 3, nGst);
-  temp2Node.setVal(0.0);
-
-  MultiFab::Saxpy(temp2Node, -fourPI, jHat[iLev], 0, 0, temp2Node.nComp(),
-                  temp2Node.nGrow());
-  temp2Node.mult(fsolver.theta * tc->get_dt());
-  MultiFab::Add(temp2Node, nodeE[iLev], 0, 0, tempNode.nComp(),
-                temp2Node.nGrow());
-
-  convert_3d_to_1d(temp2Node, eSolver.rhs, iLev);
-
-  for (int i = 0; i < eSolver.get_nSolve(); i++) {
-    eSolver.xLeft[i] = 0;
-  }
-
-  update_E_matvec(eSolver.xLeft, eSolver.xLeft, iLev, false);
-  for (int i = 0; i < eSolver.get_nSolve(); i++) {
-    eSolver.rhs[i] = eSolver.rhs[i] - eSolver.xLeft[i];
-    eSolver.xLeft[i] = 0.0;
-  }
-
-  eSolver.solve(iLev, doReport);
-
-  nodeEth[iLev].setVal(0.0);
-  convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev], iLev);
-  nodeEth[iLev].SumBoundary(Geom(iLev).periodicity());
-  nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
-
-  for (iLev = 0; iLev < n_lev(); iLev++) {
-    // MultiFab::Add(nodeEth[iLev], nodeE[iLev], 0, 0, nodeEth[iLev].nComp(),
-    //               nGst);
+    nodeEth[iLev].setVal(0.0);
+    convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev], iLev);
+    nodeEth[iLev].SumBoundary(Geom(iLev).periodicity());
+    nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
 
     MultiFab::LinComb(nodeE[iLev], -(1.0 - fsolver.theta) / fsolver.theta,
                       nodeE[iLev], 0, 1. / fsolver.theta, nodeEth[iLev], 0, 0,
