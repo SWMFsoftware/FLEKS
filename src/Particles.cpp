@@ -1602,12 +1602,20 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
   Real mt = p1.rdata(iqp_) + p2.rdata(iqp_);
   Real wavg = mt / 4.0;
 
+  Real et = 0, uavg2 = 0;
   Real u[nDim3], du1[nDim3], du2[nDim3];
   for (int i = 0; i < nDim3; i++) {
     u[i] = (p1.rdata(iqp_) * p1.rdata(iup_ + i) +
             p2.rdata(iqp_) * p2.rdata(iup_ + i)) /
            mt;
+
+    et += 0.5 * p1.rdata(iqp_) * pow(p1.rdata(iup_ + i), 2);
+    et += 0.5 * p2.rdata(iqp_) * pow(p2.rdata(iup_ + i), 2);
+
+    uavg2 += pow(u[i], 2);
   }
+
+  Real duAmp = sqrt(et / (2 * wavg) - uavg2);
 
   Real dSpeed = 0;
   const bool isP1Heavy = fabs(p1.rdata(iqp_)) > fabs(p2.rdata(iqp_));
@@ -1618,6 +1626,13 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
     dSpeed += pow(du1[i], 2);
   }
   dSpeed = sqrt(dSpeed);
+
+  {
+    Real scale = duAmp / dSpeed;
+    for (int i = 0; i < nDim3; i++) {
+      du1[i] *= scale;
+    }
+  }
 
   {
     Real utmp[nDim3];
@@ -1635,7 +1650,7 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
 
     Real scale = 0;
     if (du2Amp > 1e-16) {
-      scale = dSpeed / du2Amp;
+      scale = duAmp / du2Amp;
     }
     for (int i = 0; i < nDim3; i++) {
       du2[i] *= scale;
