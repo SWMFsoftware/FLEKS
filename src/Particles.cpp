@@ -1622,7 +1622,10 @@ bool Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
 
   Real du1Amp = l2_norm(du1, nDim3);
   if (du1Amp < 1e-16) {
-    // If p1 and p2 have essentially the same velocity, do not split them.
+    // If p1 and p2 have essentially the same velocity, do not split them. But
+    // why the velocity difference can be so small?
+    // A: with billions of particles, it can happen. I have done some
+    // investigation, and it does not look like a bug.
     return false;
   }
 
