@@ -50,6 +50,25 @@ template <class T> inline void zero_array(T* arr, int nSize) {
     arr[i] = 0;
 }
 
+// rand1, rand2, rand3 are random numbers in [0,1].
+inline void random_vector(amrex::Real rand1, amrex::Real rand2,
+                          amrex::Real rand3, amrex::Real (&vec)[nDim3]) {
+  amrex::Real lon = 2 * M_PI * rand1;
+  amrex::Real costheta = 2 * rand2 - 1;
+  amrex::Real sintheta = sqrt(1 - costheta * costheta);
+
+  vec[ix_] = sintheta * cos(lon);
+  vec[iy_] = sintheta * sin(lon);
+  vec[iz_] = costheta;
+}
+
+inline amrex::Real l2_norm(amrex::Real* vec, int n) {
+  amrex::Real sum = 0;
+  for (int i = 0; i < n; i++)
+    sum += vec[i] * vec[i];
+  return sqrt(sum);
+}
+
 inline void linear_interpolation_coef(amrex::RealVect& dx,
                                       amrex::Real (&coef)[2][2][2]) {
 
