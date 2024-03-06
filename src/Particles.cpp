@@ -1596,12 +1596,13 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
     ParticleType& p1, ParticleType& p2, ParticleType& p3, ParticleType& p4) {
-  // Print() << "Old: p1 = " << p1 << std::endl;
-  // Print() << "Old: p2 = " << p2 << std::endl;
+  // AllPrint() << "Old: p1 = " << p1 << std::endl;
+  // AllPrint() << "Old: p2 = " << p2 << std::endl;
 
   Real mt = p1.rdata(iqp_) + p2.rdata(iqp_);
   Real wavg = mt / 4.0;
 
+  // Calculate the average velocity and total energy.
   Real et = 0, uavg2 = 0;
   Real u[nDim3], du1[nDim3], du2[nDim3];
   for (int i = 0; i < nDim3; i++) {
@@ -1615,47 +1616,46 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
     uavg2 += pow(u[i], 2);
   }
 
+  // The amplitude of du1 and du2.
   Real duAmp = sqrt(et / (2 * wavg) - uavg2);
 
-  Real dSpeed = 0;
-  const bool isP1Heavy = fabs(p1.rdata(iqp_)) > fabs(p2.rdata(iqp_));
-  ParticleType* pHeavey = isP1Heavy ? &p1 : &p2;
-  Real cTmp = isP1Heavy ? 1 : -1;
+  // Get the direction of du1.
   for (int i = 0; i < nDim3; i++) {
-    du1[i] = cTmp * (pHeavey->rdata(iup_ + i) - u[i]);
-    dSpeed += pow(du1[i], 2);
+    du1[i] = p1.rdata(iup_ + i) - p2.rdata(iup_ + i);
   }
-  dSpeed = sqrt(dSpeed);
 
-  {
-    Real scale = duAmp / dSpeed;
-    for (int i = 0; i < nDim3; i++) {
-      du1[i] *= scale;
-    }
+  // Scale the amplitude of du1
+  Real du1Amp = l2_norm(du1, nDim3);
+  Real scale = du1Amp > 1e-16 ? duAmp / du1Amp : 0;
+  for (int i = 0; i < nDim3; i++) {
+    du1[i] *= scale;
   }
 
   {
+    // Get the direction of du2
     Real utmp[nDim3];
-    for (int i = 0; i < nDim3; i++) {
-      utmp[i] = randNum() - 0.5;
-    }
+    random_vector(randNum(), randNum(), randNum(), utmp);
 
-    a_cross_b(du1, utmp, du2);
-
-    Real du2Amp = 0;
+    // Correct the amplitide of du2
     for (int i = 0; i < nDim3; i++) {
-      du2Amp += pow(du2[i], 2);
-    }
-    du2Amp = sqrt(du2Amp);
-
-    Real scale = 0;
-    if (du2Amp > 1e-16) {
-      scale = duAmp / du2Amp;
-    }
-    for (int i = 0; i < nDim3; i++) {
-      du2[i] *= scale;
+      du2[i] = utmp[i] * duAmp;
     }
   }
+
+  // auto p_energy = [](const ParticleType& p) {
+  //   Real energy = 0;
+  //   for (int i = 0; i < nDim3; i++) {
+  //     energy += 0.5 * p.rdata(iqp_) * pow(p.rdata(iup_ + i), 2);
+  //   }
+  //   return energy;
+  // };
+
+  // Real eold = p_energy(p1) + p_energy(p2);
+  // Real mold[3];
+  // for (int i = 0; i < nDim3; i++) {
+  //   mold[i] = p1.rdata(iqp_) * p1.rdata(iup_ + i) +
+  //             p2.rdata(iqp_) * p2.rdata(iup_ + i);
+  // }
 
   set_ids(p3);
   set_ids(p4);
@@ -1678,10 +1678,24 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
     p4.pos(i) = p2.pos(i);
   }
 
-  // Print() << "New: p1 = " << p1 << std::endl;
-  // Print() << "New: p2 = " << p2 << std::endl;
-  // Print() << "New: p3 = " << p3 << std::endl;
-  // Print() << "New: p4 = " << p4 << std::endl;
+  // Real enew = p_energy(p1) + p_energy(p2) + p_energy(p3) + p_energy(p4);
+  // Real mnew[3];
+  // for (int i = 0; i < nDim3; i++) {
+  //   mnew[i] = p1.rdata(iqp_) * p1.rdata(iup_ + i) +
+  //             p2.rdata(iqp_) * p2.rdata(iup_ + i) +
+  //             p3.rdata(iqp_) * p3.rdata(iup_ + i) +
+  //             p4.rdata(iqp_) * p4.rdata(iup_ + i);
+  // }
+
+  // AllPrint() << "eold = " << eold << " enew = " << enew
+  //            << " eold - enew = " << eold - enew << " mold - mnew "
+  //            << mold[0] - mnew[0] << " " << mold[1] - mnew[1] << " "
+  //            << mold[2] - mnew[2] << std::endl;
+
+  // AllPrint() << "New: p1 = " << p1 << std::endl;
+  // AllPrint() << "New: p2 = " << p2 << std::endl;
+  // AllPrint() << "New: p3 = " << p3 << std::endl;
+  // AllPrint() << "New: p4 = " << p4 << std::endl;
 }
 
 //==========================================================
