@@ -163,9 +163,9 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
         wnp1 *= invGamma;
       }
 
-      p.rdata(ix_) = unp1;
-      p.rdata(iy_) = vnp1;
-      p.rdata(iz_) = wnp1;
+      p.rdata(iup_) = unp1;
+      p.rdata(ivp_) = vnp1;
+      p.rdata(iwp_) = wnp1;
 
       p.pos(ix_) = xp + unp1 * dtLoc;
       p.pos(iy_) = yp + vnp1 * dtLoc;

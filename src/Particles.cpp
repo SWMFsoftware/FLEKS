@@ -1167,9 +1167,9 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         const double vnp1 = 2.0 * vavg - vp;
         const double wnp1 = 2.0 * wavg - wp;
 
-        p.rdata(ix_) = unp1;
-        p.rdata(iy_) = vnp1;
-        p.rdata(iz_) = wnp1;
+        p.rdata(iup_) = unp1;
+        p.rdata(ivp_) = vnp1;
+        p.rdata(iwp_) = wnp1;
 
         p.pos(ix_) = xp + unp1 * dtLoc;
         p.pos(iy_) = yp + vnp1 * dtLoc;
@@ -2008,9 +2008,9 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
   //-----------Solve the new particle weights-------
   for (int ip = 0; ip < nPartCombine; ip++) {
     const Real qp = particles[idx_I[ip]].rdata(iqp_);
-    const Real up = particles[idx_I[ip]].rdata(ix_);
-    const Real vp = particles[idx_I[ip]].rdata(iy_);
-    const Real wp = particles[idx_I[ip]].rdata(iz_);
+    const Real up = particles[idx_I[ip]].rdata(iup_);
+    const Real vp = particles[idx_I[ip]].rdata(ivp_);
+    const Real wp = particles[idx_I[ip]].rdata(iwp_);
     const Real v2 = (pow(up, 2) + pow(vp, 2) + pow(wp, 2));
 
     if (ip < nVar) {
@@ -2129,9 +2129,9 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
   // Sum the moments of all the old particles.
   for (int ip = 0; ip < nPartCombine; ip++) {
     const Real qp = particles[idx_I[ip]].rdata(iqp_);
-    const Real up = particles[idx_I[ip]].rdata(ix_);
-    const Real vp = particles[idx_I[ip]].rdata(iy_);
-    const Real wp = particles[idx_I[ip]].rdata(iz_);
+    const Real up = particles[idx_I[ip]].rdata(iup_);
+    const Real vp = particles[idx_I[ip]].rdata(ivp_);
+    const Real wp = particles[idx_I[ip]].rdata(iwp_);
     const Real v2 = 0.5 * (pow(up, 2) + pow(vp, 2) + pow(wp, 2));
     a(nPartNew + iq_, nVar) += qp;
     a(nPartNew + iu_, nVar) += qp * up;
@@ -2143,9 +2143,9 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
   const Real invAvg = 2 * nPartNew / a(nPartNew + iq_, nVar);
   for (int ip = 0; ip < nPartNew; ip++) {
     const Real qp = particles[idx_I[ip]].rdata(iqp_);
-    const Real up = particles[idx_I[ip]].rdata(ix_);
-    const Real vp = particles[idx_I[ip]].rdata(iy_);
-    const Real wp = particles[idx_I[ip]].rdata(iz_);
+    const Real up = particles[idx_I[ip]].rdata(iup_);
+    const Real vp = particles[idx_I[ip]].rdata(ivp_);
+    const Real wp = particles[idx_I[ip]].rdata(iwp_);
     const Real v2 = 0.5 * (pow(up, 2) + pow(vp, 2) + pow(wp, 2));
 
     a(ip, nVar) = 2;
