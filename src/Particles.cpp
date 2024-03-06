@@ -1586,15 +1586,16 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
     if (dspeed / dvCell > 2)
       continue;
 
-    split_by_seperate_velocity(p1, p2, p3, p4);
-
-    newparticles.push_back(p3);
-    newparticles.push_back(p4);
+    bool doSucceed = split_by_seperate_velocity(p1, p2, p3, p4);
+    if (doSucceed) {
+      newparticles.push_back(p3);
+      newparticles.push_back(p4);
+    }
   }
 }
 
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
+bool Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
     ParticleType& p1, ParticleType& p2, ParticleType& p3, ParticleType& p4) {
   // AllPrint() << "Old: p1 = " << p1 << std::endl;
   // AllPrint() << "Old: p2 = " << p2 << std::endl;
@@ -1614,19 +1615,22 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
     et += 0.5 * p2.rdata(iqp_) * pow(p2.rdata(iup_ + i), 2);
 
     uavg2 += pow(u[i], 2);
+
+    // Get the direction of du1.
+    du1[i] = p1.rdata(iup_ + i) - p2.rdata(iup_ + i);
+  }
+
+  Real du1Amp = l2_norm(du1, nDim3);
+  if (du1Amp < 1e-16) {
+    // If p1 and p2 have essentially the same velocity, do not split them.
+    return false;
   }
 
   // The amplitude of du1 and du2.
   Real duAmp = sqrt(et / (2 * wavg) - uavg2);
 
-  // Get the direction of du1.
-  for (int i = 0; i < nDim3; i++) {
-    du1[i] = p1.rdata(iup_ + i) - p2.rdata(iup_ + i);
-  }
-
   // Scale the amplitude of du1
-  Real du1Amp = l2_norm(du1, nDim3);
-  Real scale = du1Amp > 1e-16 ? duAmp / du1Amp : 0;
+  Real scale = duAmp / du1Amp;
   for (int i = 0; i < nDim3; i++) {
     du1[i] *= scale;
   }
@@ -1696,6 +1700,8 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
   // AllPrint() << "New: p2 = " << p2 << std::endl;
   // AllPrint() << "New: p3 = " << p3 << std::endl;
   // AllPrint() << "New: p4 = " << p4 << std::endl;
+
+  return true;
 }
 
 //==========================================================

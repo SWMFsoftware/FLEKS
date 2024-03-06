@@ -486,7 +486,7 @@ public:
   void split(amrex::Real limit, bool seperateVelocity = false);
   void split_particles_by_velocity(amrex::Vector<ParticleType*>& plist,
                                    amrex::Vector<ParticleType>& newparticles);
-  void split_by_seperate_velocity(ParticleType& p1, ParticleType& p2,
+  bool split_by_seperate_velocity(ParticleType& p1, ParticleType& p2,
                                   ParticleType& p3, ParticleType& p4);
   void merge(amrex::Real limit);
   bool merge_particles_fast(int iLev, AoS& particles,
