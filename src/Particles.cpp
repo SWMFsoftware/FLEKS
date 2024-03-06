@@ -1634,7 +1634,7 @@ void Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
   {
     // Get the direction of du2
     Real utmp[nDim3];
-    random_vector(randNum(), randNum(), randNum(), utmp);
+    random_vector(randNum(), randNum(), utmp);
 
     // Correct the amplitide of du2
     for (int i = 0; i < nDim3; i++) {

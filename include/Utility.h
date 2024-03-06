@@ -50,9 +50,9 @@ template <class T> inline void zero_array(T* arr, int nSize) {
     arr[i] = 0;
 }
 
-// rand1, rand2, rand3 are random numbers in [0,1].
+// rand1, rand2 are random numbers in [0,1].
 inline void random_vector(amrex::Real rand1, amrex::Real rand2,
-                          amrex::Real rand3, amrex::Real (&vec)[nDim3]) {
+                          amrex::Real (&vec)[nDim3]) {
   amrex::Real lon = 2 * M_PI * rand1;
   amrex::Real costheta = 2 * rand2 - 1;
   amrex::Real sintheta = sqrt(1 - costheta * costheta);
