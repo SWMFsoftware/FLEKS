@@ -1630,7 +1630,13 @@ bool Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
   }
 
   // The amplitude of du1 and du2.
-  Real duAmp = sqrt(et / (2 * wavg) - uavg2);
+  Real duAmp2 = et / (2 * wavg) - uavg2;
+  if (duAmp2 < 0) {
+    // Q: Why duAmp2 can be negative?
+    // A: Rounding error.
+    return false;
+  }
+  Real duAmp = sqrt(duAmp2);
 
   // Scale the amplitude of du1
   Real scale = duAmp / du1Amp;
