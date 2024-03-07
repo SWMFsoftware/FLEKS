@@ -926,7 +926,12 @@ void Pic::update_U0_E0() {
       const Array4<const Real>& arrMoments =
           nodePlasma[nSpecies][iLev][mfi].array();
 
+      const auto& status = nodeStatus[iLev][mfi].array();
+
       ParallelFor(box, [&](int i, int j, int k) {
+        if (bit::is_domain_edge(status(i, j, k)))
+          return;
+
         const Real rho = arrMoments(i, j, k, iRho_);
         if (rho > 1e-99) {
           const Real invRho = 1. / rho;
@@ -952,7 +957,12 @@ void Pic::update_U0_E0() {
       const Array4<Real>& arrE = E0[iLev][mfi].array();
       const Array4<Real>& arrB = nodeB[iLev][mfi].array();
 
+      const auto& status = nodeStatus[iLev][mfi].array();
+
       ParallelFor(box, [&](int i, int j, int k) {
+        if (bit::is_domain_edge(status(i, j, k)))
+          return;
+
         const Real& bx = arrB(i, j, k, ix_);
         const Real& by = arrB(i, j, k, iy_);
         const Real& bz = arrB(i, j, k, iz_);
