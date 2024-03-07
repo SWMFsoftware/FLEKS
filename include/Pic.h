@@ -62,8 +62,9 @@ private:
   amrex::Vector<amrex::MultiFab> nodeB;
   amrex::Vector<amrex::MultiFab> centerB;
 
-  amrex::Vector<amrex::MultiFab> U0;
-  amrex::Vector<amrex::MultiFab> E0;
+  // Background velocity and electric field.
+  amrex::Vector<amrex::MultiFab> uBg;
+  amrex::Vector<amrex::MultiFab> eBg;
 
   amrex::Vector<amrex::UMultiFab<RealMM> > nodeMM;
 
@@ -153,8 +154,8 @@ public:
     nodeE.resize(n_lev_max());
     nodeEth.resize(n_lev_max());
 
-    E0.resize(n_lev_max());
-    U0.resize(n_lev_max());
+    eBg.resize(n_lev_max());
+    uBg.resize(n_lev_max());
 
     centerNetChargeOld.resize(n_lev_max());
     centerNetChargeN.resize(n_lev_max());

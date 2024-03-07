@@ -291,14 +291,14 @@ public:
 
   void mover(const amrex::Vector<amrex::MultiFab>& nodeE,
              const amrex::Vector<amrex::MultiFab>& nodeB,
-             const amrex::Vector<amrex::MultiFab>& E0,
-             const amrex::Vector<amrex::MultiFab>& U0, amrex::Real dt,
+             const amrex::Vector<amrex::MultiFab>& eBg,
+             const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
              amrex::Real dtNext);
 
   void charged_particle_mover(const amrex::Vector<amrex::MultiFab>& nodeE,
                               const amrex::Vector<amrex::MultiFab>& nodeB,
-                              const amrex::Vector<amrex::MultiFab>& E0,
-                              const amrex::Vector<amrex::MultiFab>& U0,
+                              const amrex::Vector<amrex::MultiFab>& eBg,
+                              const amrex::Vector<amrex::MultiFab>& uBg,
                               amrex::Real dt, amrex::Real dtNext);
 
   // Both the input are in the SI unit: m/s

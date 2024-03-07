@@ -193,10 +193,10 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           1, doMoveData);
     }
 
-    distribute_FabArray(E0[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst,
+    distribute_FabArray(eBg[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst,
                         doMoveData);
 
-    distribute_FabArray(U0[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst,
+    distribute_FabArray(uBg[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst,
                         doMoveData);
 
     distribute_FabArray(centerMM[iLev], cGrids[iLev], DistributionMap(iLev), 1,
@@ -473,7 +473,7 @@ void Pic::particle_mover() {
   Real dtnext = tc->get_next_dt();
 
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->mover(nodeEth, nodeB, E0, U0, dt, dtnext);
+    parts[i]->mover(nodeEth, nodeB, eBg, uBg, dt, dtnext);
   }
 
   for (int i = 0; i < nSpecies; i++) {
@@ -507,7 +507,7 @@ void Pic::calc_mass_matrix() {
         parts[i]->calc_jhat(jHat[iLev], nodeB[iLev], tc->get_dt());
       } else {
         parts[i]->calc_mass_matrix(nodeMM[iLev], jHat[iLev], nodeB[iLev],
-                                   U0[iLev], tc->get_dt(), iLev);
+                                   uBg[iLev], tc->get_dt(), iLev);
       }
     }
     Real invVol = 1;
@@ -918,11 +918,11 @@ void Pic::update_U0_E0() {
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    U0[iLev].setVal(0.0);
-    E0[iLev].setVal(0.0);
-    for (MFIter mfi(U0[iLev]); mfi.isValid(); ++mfi) {
+    uBg[iLev].setVal(0.0);
+    eBg[iLev].setVal(0.0);
+    for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
-      const Array4<Real>& arrU = U0[iLev][mfi].array();
+      const Array4<Real>& arrU = uBg[iLev][mfi].array();
       const Array4<const Real>& arrMoments =
           nodePlasma[nSpecies][iLev][mfi].array();
 
@@ -941,20 +941,20 @@ void Pic::update_U0_E0() {
       });
     }
 
-    U0[iLev].FillBoundary(Geom(iLev).periodicity());
+    uBg[iLev].FillBoundary(Geom(iLev).periodicity());
 
     for (int i = 0; i < nSmoothBackGround; i++)
-      smooth_multifab(U0[iLev], true, 0.5);
+      smooth_multifab(uBg[iLev], true, 0.5);
 
     // MultiFab::Copy(tempNode3, nodeB, 0, 0, nodeB.nComp(), nodeB.nGrow());
     // tempNode3.FillBoundary(Geom(0).periodicity());
     // for (int i = 0; i < 5; i++)
     //   smooth_multifab(tempNode3, true, 0.5);
 
-    for (MFIter mfi(U0[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
-      const Array4<Real>& arrU = U0[iLev][mfi].array();
-      const Array4<Real>& arrE = E0[iLev][mfi].array();
+      const Array4<Real>& arrU = uBg[iLev][mfi].array();
+      const Array4<Real>& arrE = eBg[iLev][mfi].array();
       const Array4<Real>& arrB = nodeB[iLev][mfi].array();
 
       const auto& status = nodeStatus[iLev][mfi].array();
@@ -977,10 +977,10 @@ void Pic::update_U0_E0() {
       });
     }
 
-    E0[iLev].FillBoundary(Geom(iLev).periodicity());
+    eBg[iLev].FillBoundary(Geom(iLev).periodicity());
 
     for (int i = 0; i < nSmoothBackGround; i++)
-      smooth_multifab(E0[iLev], true, 0.5);
+      smooth_multifab(eBg[iLev], true, 0.5);
 
     //
     // print_MultiFab(nodeU0, "nodeU0", 1);
@@ -1407,7 +1407,7 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
                 temp2Node.nGrow());
 
   tempNode.setVal(0.0);
-  update_E_M_dot_E(E0[iLev], tempNode, iLev);
+  update_E_M_dot_E(eBg[iLev], tempNode, iLev);
   MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), tempNode.nGrow());
 
   convert_3d_to_1d(temp2Node, rhs, iLev);

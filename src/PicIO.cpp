@@ -351,22 +351,22 @@ double Pic::get_var(std::string var, const int iLev, const IntVect ijk,
       value = (arr(ijk, iPxx_) + arr(ijk, iPyy_) + arr(ijk, iPzz_)) / 3.0;
 
     } else if (var.substr(0, 3) == "E0x") {
-      const Array4<Real const>& arr = E0[iLev][mfi].array();
+      const Array4<Real const>& arr = eBg[iLev][mfi].array();
       value = arr(ijk, ix_);
     } else if (var.substr(0, 3) == "E0y") {
-      const Array4<Real const>& arr = E0[iLev][mfi].array();
+      const Array4<Real const>& arr = eBg[iLev][mfi].array();
       value = arr(ijk, iy_);
     } else if (var.substr(0, 3) == "E0z") {
-      const Array4<Real const>& arr = E0[iLev][mfi].array();
+      const Array4<Real const>& arr = eBg[iLev][mfi].array();
       value = arr(ijk, iz_);
-    } else if (var.substr(0, 3) == "U0x") {
-      const Array4<Real const>& arr = U0[iLev][mfi].array();
+    } else if (var.substr(0, 3) == "u0x") {
+      const Array4<Real const>& arr = uBg[iLev][mfi].array();
       value = arr(ijk, ix_);
-    } else if (var.substr(0, 3) == "U0y") {
-      const Array4<Real const>& arr = U0[iLev][mfi].array();
+    } else if (var.substr(0, 3) == "u0y") {
+      const Array4<Real const>& arr = uBg[iLev][mfi].array();
       value = arr(ijk, iy_);
-    } else if (var.substr(0, 3) == "U0z") {
-      const Array4<Real const>& arr = U0[iLev][mfi].array();
+    } else if (var.substr(0, 3) == "u0z") {
+      const Array4<Real const>& arr = uBg[iLev][mfi].array();
       value = arr(ijk, iz_);
     } else if (var.substr(0, 2) == "qc") {
       const Array4<Real const>& arr = centerNetChargeN[iLev][mfi].array();

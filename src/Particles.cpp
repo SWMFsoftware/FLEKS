@@ -1068,13 +1068,13 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::mover(const Vector<MultiFab>& nodeE,
                                                const Vector<MultiFab>& nodeB,
-                                               const Vector<MultiFab>& E0,
-                                               const Vector<MultiFab>& U0,
+                                               const Vector<MultiFab>& eBg,
+                                               const Vector<MultiFab>& uBg,
                                                Real dt, Real dtNext) {
   if (is_neutral()) {
     neutral_mover(dt);
   } else {
-    charged_particle_mover(nodeE, nodeB, E0, U0, dt, dtNext);
+    charged_particle_mover(nodeE, nodeB, eBg, uBg, dt, dtNext);
   }
 }
 
@@ -1082,7 +1082,7 @@ void Particles<NStructReal, NStructInt>::mover(const Vector<MultiFab>& nodeE,
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover(
     const Vector<MultiFab>& nodeE, const Vector<MultiFab>& nodeB,
-    const Vector<MultiFab>& E0, const Vector<MultiFab>& U0, Real dt,
+    const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
     Real dtNext) {
   timing_func("Pts::charged_particle_mover");
 
@@ -1099,8 +1099,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       const Array4<Real const>& nodeEArr = nodeE[iLev][pti].array();
       const Array4<Real const>& nodeBArr = nodeB[iLev][pti].array();
 
-      const Array4<Real const>& E0Arr = E0[iLev][pti].array();
-      const Array4<Real const>& U0Arr = U0[iLev][pti].array();
+      const Array4<Real const>& E0Arr = eBg[iLev][pti].array();
+      const Array4<Real const>& U0Arr = uBg[iLev][pti].array();
 
       const Box& validBox = pti.validbox();
 
