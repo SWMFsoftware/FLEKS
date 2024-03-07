@@ -472,7 +472,7 @@ void Pic::particle_mover() {
   Real dtnext = tc->get_next_dt();
 
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->mover(nodeEth, nodeB, dt, dtnext);
+    parts[i]->mover(nodeEth, nodeB, E0, U0, dt, dtnext);
   }
 
   for (int i = 0; i < nSpecies; i++) {
@@ -856,7 +856,7 @@ void Pic::update(bool doReportIn) {
   Real tStart = second();
 
   if (PicParticles::particlePosition == NonStaggered) {
-  update_part_loc_to_half_stage();
+    update_part_loc_to_half_stage();
   }
 
   calc_mass_matrix();
@@ -872,7 +872,7 @@ void Pic::update(bool doReportIn) {
   charge_exchange();
 
   if (source) {
-  fill_source_particles();
+    fill_source_particles();
   }
 
   inject_particles_for_boundary_cells();
@@ -882,7 +882,7 @@ void Pic::update(bool doReportIn) {
   update_B();
 
   if (doCorrectDivE) {
-  divE_correction();
+    divE_correction();
   }
 
   tc->set_dt(tc->get_next_dt());

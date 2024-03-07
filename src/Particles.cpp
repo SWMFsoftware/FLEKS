@@ -1068,18 +1068,21 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::mover(const Vector<MultiFab>& nodeE,
                                                const Vector<MultiFab>& nodeB,
+                                               const Vector<MultiFab>& E0,
+                                               const Vector<MultiFab>& U0,
                                                Real dt, Real dtNext) {
   if (is_neutral()) {
     neutral_mover(dt);
   } else {
-    charged_particle_mover(nodeE, nodeB, dt, dtNext);
+    charged_particle_mover(nodeE, nodeB, E0, U0, dt, dtNext);
   }
 }
 
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover(
-    const Vector<MultiFab>& nodeE, const Vector<MultiFab>& nodeB, Real dt,
+    const Vector<MultiFab>& nodeE, const Vector<MultiFab>& nodeB,
+    const Vector<MultiFab>& E0, const Vector<MultiFab>& U0, Real dt,
     Real dtNext) {
   timing_func("Pts::charged_particle_mover");
 
@@ -1096,6 +1099,9 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       const Array4<Real const>& nodeEArr = nodeE[iLev][pti].array();
       const Array4<Real const>& nodeBArr = nodeB[iLev][pti].array();
 
+      const Array4<Real const>& E0Arr = E0[iLev][pti].array();
+      const Array4<Real const>& U0Arr = U0[iLev][pti].array();
+
       const Box& validBox = pti.validbox();
 
       AoS& particles = pti.GetArrayOfStructs();
@@ -1103,9 +1109,9 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         if (p.id() < 0)
           continue;
 
-        const Real up = p.rdata(iup_);
-        const Real vp = p.rdata(ivp_);
-        const Real wp = p.rdata(iwp_);
+        Real up = p.rdata(iup_);
+        Real vp = p.rdata(ivp_);
+        Real wp = p.rdata(iwp_);
         const Real xp = p.pos(ix_);
         const Real yp = p.pos(iy_);
         const Real zp = nDim > 2 ? p.pos(iz_) : 0;
@@ -1132,6 +1138,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 
         Real bp[3] = { 0, 0, 0 };
         Real ep[3] = { 0, 0, 0 };
+        Real u0p[3] = { 0, 0, 0 };
         for (int k = lo.z; k <= hi.z; ++k)
           for (int j = lo.y; j <= hi.y; ++j)
             for (int i = lo.x; i <= hi.x; ++i) {
@@ -1141,9 +1148,14 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
               const Real& c0 = coef[i][j][k];
               for (int iDim = 0; iDim < nDim3; iDim++) {
                 bp[iDim] += nodeBArr(ijk, iDim) * c0;
-                ep[iDim] += nodeEArr(ijk, iDim) * c0;
+                ep[iDim] += (nodeEArr(ijk, iDim) - E0Arr(ijk, iDim)) * c0;
+                u0p[iDim] += U0Arr(ijk, iDim) * c0;
               }
             }
+
+        up = up - u0p[ix_];
+        vp = vp - u0p[iy_];
+        wp = wp - u0p[iz_];
 
         const double Omx = qdto2mc * bp[ix_];
         const double Omy = qdto2mc * bp[iy_];
@@ -1167,9 +1179,9 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         const double vnp1 = 2.0 * vavg - vp;
         const double wnp1 = 2.0 * wavg - wp;
 
-        p.rdata(iup_) = unp1;
-        p.rdata(ivp_) = vnp1;
-        p.rdata(iwp_) = wnp1;
+        p.rdata(iup_) = unp1 + u0p[ix_];
+        p.rdata(ivp_) = vnp1 + u0p[iy_];
+        p.rdata(iwp_) = wnp1 + u0p[iz_];
 
         p.pos(ix_) = xp + unp1 * dtLoc;
         p.pos(iy_) = yp + vnp1 * dtLoc;
