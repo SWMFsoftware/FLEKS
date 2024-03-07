@@ -64,8 +64,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#DISCRETIZE" || command == "#DISCRETIZATION") {
     param.read_var("theta", fsolver.theta);
     param.read_var("coefDiff", fsolver.coefDiff);
-  } else if (command == "#SPLITJ") {
-    param.read_var("splitJ", doSplitJ);
+  } else if (command == "#COMOVING") {
+    param.read_var("doSolveCoMovFrame", doSolveCoMovFrame);
+    param.read_var("nSmoothBackGround", nSmoothBackGround);
   } else if (command == "#SMOOTHE") {
     param.read_var("doSmoothE", doSmoothE);
     if (doSmoothE) {
@@ -937,9 +938,7 @@ void Pic::update_U0_E0() {
 
     U0[iLev].FillBoundary(Geom(iLev).periodicity());
 
-    const int nSmooth = 5;
-
-    for (int i = 0; i < nSmooth; i++)
+    for (int i = 0; i < nSmoothBackGround; i++)
       smooth_multifab(U0[iLev], true, 0.5);
 
     // MultiFab::Copy(tempNode3, nodeB, 0, 0, nodeB.nComp(), nodeB.nGrow());
@@ -970,7 +969,7 @@ void Pic::update_U0_E0() {
 
     E0[iLev].FillBoundary(Geom(iLev).periodicity());
 
-    for (int i = 0; i < nSmooth; i++)
+    for (int i = 0; i < nSmoothBackGround; i++)
       smooth_multifab(E0[iLev], true, 0.5);
 
     //
@@ -1098,7 +1097,7 @@ void Pic::update_E_impl() {
 
   timing_func(nameFunc);
 
-  if (doSplitJ)
+  if (doSolveCoMovFrame)
     update_U0_E0();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {

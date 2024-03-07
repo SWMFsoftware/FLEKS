@@ -736,7 +736,7 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#FASTMERGE" || command == "#ADAPTIVESOURCEPPC" ||
         command == "#MERGELIGHT" || command == "#VACUUM" ||
         command == "#PARTICLELEVRATIO" || command == "#PIC" ||
-        command == "#EXPLICITPIC" || command == "#SPLITJ" ||
+        command == "#EXPLICITPIC" || command == "#COMOVING" ||
         command == "#PARTICLEBOXBOUNDARY" || command == "#SUPID" ||
         command == "#SOLVEEM") {
       pic->read_param(command, param);

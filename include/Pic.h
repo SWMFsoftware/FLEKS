@@ -109,7 +109,9 @@ private:
   amrex::Real reSamplingHighLimit = 1.5;
   amrex::Real maxWeightRatio = 1.0;
 
-  bool doSplitJ = false;
+  bool doSolveCoMovFrame = false;
+  int nSmoothBackGround = 0;
+
   bool doSmoothE = false;
   int nSmoothE = 1;
   amrex::Real coefStrongSmooth = 0.5;
