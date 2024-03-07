@@ -1260,7 +1260,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
         apply_BC(nodeStatus[iLev], vecMF, 0, nDim, &Pic::get_node_E, iLev);
       } else {
         fill_fine_lev_bny_from_coarse(
-            nodeE[iLev - 1], vecMF, 0, centerB[iLev - 1].nComp(),
+            nodeEth[iLev - 1], vecMF, 0, nodeEth[iLev - 1].nComp(),
             ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
             node_bilinear_interp);
       }
