@@ -926,12 +926,7 @@ void Pic::update_U0_E0() {
       const Array4<const Real>& arrMoments =
           nodePlasma[nSpecies][iLev][mfi].array();
 
-      const auto& status = nodeStatus[iLev][mfi].array();
-
       ParallelFor(box, [&](int i, int j, int k) {
-        if (bit::is_domain_edge(status(i, j, k)))
-          return;
-
         const Real rho = arrMoments(i, j, k, iRho_);
         if (rho > 1e-99) {
           const Real invRho = 1. / rho;
@@ -944,7 +939,7 @@ void Pic::update_U0_E0() {
     uBg[iLev].FillBoundary(Geom(iLev).periodicity());
 
     for (int i = 0; i < nSmoothBackGround; i++)
-      smooth_multifab(uBg[iLev], true, 0.5);
+      smooth_multifab(uBg[iLev], iLev, true, 0.5);
 
     // MultiFab::Copy(tempNode3, nodeB, 0, 0, nodeB.nComp(), nodeB.nGrow());
     // tempNode3.FillBoundary(Geom(0).periodicity());
@@ -957,12 +952,7 @@ void Pic::update_U0_E0() {
       const Array4<Real>& arrE = eBg[iLev][mfi].array();
       const Array4<Real>& arrB = nodeB[iLev][mfi].array();
 
-      const auto& status = nodeStatus[iLev][mfi].array();
-
       ParallelFor(box, [&](int i, int j, int k) {
-        if (bit::is_domain_edge(status(i, j, k)))
-          return;
-
         const Real& bx = arrB(i, j, k, ix_);
         const Real& by = arrB(i, j, k, iy_);
         const Real& bz = arrB(i, j, k, iz_);
@@ -980,7 +970,7 @@ void Pic::update_U0_E0() {
     eBg[iLev].FillBoundary(Geom(iLev).periodicity());
 
     for (int i = 0; i < nSmoothBackGround; i++)
-      smooth_multifab(eBg[iLev], true, 0.5);
+      smooth_multifab(eBg[iLev], iLev, true, 0.5);
 
     //
     // print_MultiFab(nodeU0, "nodeU0", 1);
@@ -1164,8 +1154,8 @@ void Pic::update_E_impl() {
 
     if (doSmoothE) {
       calc_smooth_coef();
-      smooth_E(nodeEth[iLev]);
-      smooth_E(nodeE[iLev]);
+      smooth_E(nodeEth[iLev], iLev);
+      smooth_E(nodeE[iLev], iLev);
     }
     div_node_to_center(nodeE[iLev], centerDivE[iLev], Geom(iLev).InvCellSize());
   }
@@ -1502,11 +1492,12 @@ void Pic::calc_smooth_coef() {
     });
   }
 
-  smooth_multifab(nodeSmoothCoef, true, 0.5);
+  smooth_multifab(nodeSmoothCoef, iLev, true, 0.5);
 }
 
 //==========================================================
-void Pic::smooth_multifab(MultiFab& mf, bool useFixedCoef, double coefIn) {
+void Pic::smooth_multifab(MultiFab& mf, int iLev, bool useFixedCoef,
+                          double coefIn) {
   std::string nameFunc = "Pic::smooth_multifab";
   timing_func(nameFunc);
 
@@ -1525,7 +1516,11 @@ void Pic::smooth_multifab(MultiFab& mf, bool useFixedCoef, double coefIn) {
       Array4<Real> const& arrTmp = mfOld[mfi].array();
       Array4<Real> const& arrCoef = nodeSmoothCoef[mfi].array();
 
+      const auto& status = nodeStatus[iLev][mfi].array();
       ParallelFor(box, mf.nComp(), [&](int i, int j, int k, int iVar) {
+        if (bit::is_domain_edge(status(i, j, k)))
+          return;
+
         Real coef = coefIn;
         if (!useFixedCoef) {
           coef = arrCoef(i, j, k);
@@ -1551,7 +1546,7 @@ void Pic::smooth_multifab(MultiFab& mf, bool useFixedCoef, double coefIn) {
 }
 
 //==========================================================
-void Pic::smooth_E(MultiFab& mfE) {
+void Pic::smooth_E(MultiFab& mfE, int iLev) {
   if (!doSmoothE)
     return;
 
@@ -1559,7 +1554,7 @@ void Pic::smooth_E(MultiFab& mfE) {
   timing_func(nameFunc);
 
   for (int icount = 0; icount < nSmoothE; icount++) {
-    smooth_multifab(mfE);
+    smooth_multifab(mfE, iLev);
   }
 }
 

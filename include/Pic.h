@@ -268,9 +268,9 @@ public:
   void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF,
                         int iLev);
 
-  void smooth_E(amrex::MultiFab &mfE);
+  void smooth_E(amrex::MultiFab &mfE, int iLev);
 
-  void smooth_multifab(amrex::MultiFab &mf, bool useFixedCoef = false,
+  void smooth_multifab(amrex::MultiFab &mf, int iLev, bool useFixedCoef = false,
                        double coefIn = 1);
 
   void calc_smooth_coef();
