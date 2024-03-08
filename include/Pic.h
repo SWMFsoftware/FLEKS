@@ -110,7 +110,8 @@ private:
   amrex::Real reSamplingHighLimit = 1.5;
   amrex::Real maxWeightRatio = 1.0;
 
-  bool doSolveCoMovFrame = false;
+  bool solveFieldInCoMov = false;
+  bool solvePartInCoMov = false;
   int nSmoothBackGround = 0;
 
   bool doSmoothE = false;

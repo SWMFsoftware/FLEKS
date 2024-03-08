@@ -269,7 +269,7 @@ public:
 
   void calc_mass_matrix(amrex::UMultiFab<RealMM>& nodeMM, amrex::MultiFab& jHat,
                         amrex::MultiFab& nodeBMF, amrex::MultiFab& u0MF,
-                        amrex::Real dt, int iLev);
+                        amrex::Real dt, int iLev, bool solveInCoMov);
 
   void calc_jhat(amrex::MultiFab& jHat, amrex::MultiFab& nodeBMF,
                  amrex::Real dt);
@@ -293,13 +293,14 @@ public:
              const amrex::Vector<amrex::MultiFab>& nodeB,
              const amrex::Vector<amrex::MultiFab>& eBg,
              const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
-             amrex::Real dtNext);
+             amrex::Real dtNext, bool solveInCoMov);
 
   void charged_particle_mover(const amrex::Vector<amrex::MultiFab>& nodeE,
                               const amrex::Vector<amrex::MultiFab>& nodeB,
                               const amrex::Vector<amrex::MultiFab>& eBg,
                               const amrex::Vector<amrex::MultiFab>& uBg,
-                              amrex::Real dt, amrex::Real dtNext);
+                              amrex::Real dt, amrex::Real dtNext,
+                              bool solveInCoMov);
 
   // Both the input are in the SI unit: m/s
   amrex::Real charge_exchange_dis(amrex::Real* vp, amrex::Real* vh,

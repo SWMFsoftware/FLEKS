@@ -685,7 +685,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     UMultiFab<RealMM>& nodeMM, MultiFab& jHat, MultiFab& nodeBMF,
-    MultiFab& u0MF, Real dt, int iLev) {
+    MultiFab& u0MF, Real dt, int iLev, bool solveInCoMov) {
   timing_func("Pts::calc_mass_matrix");
 
   Real qdto2mc = charge / mass * 0.5 * dt;
@@ -739,8 +739,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
             IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
                                          loIdx[iz_] + kk) };
             for (int iDim = 0; iDim < nDim3; iDim++) {
-              u0[iDim] += u0Arr(ijk, iDim) * coef[ii][jj][kk];
               bp[iDim] += nodeBArr(ijk, iDim) * coef[ii][jj][kk];
+
+              if (solveInCoMov)
+                u0[iDim] += u0Arr(ijk, iDim) * coef[ii][jj][kk];
             }
           }
 
@@ -1070,11 +1072,12 @@ void Particles<NStructReal, NStructInt>::mover(const Vector<MultiFab>& nodeE,
                                                const Vector<MultiFab>& nodeB,
                                                const Vector<MultiFab>& eBg,
                                                const Vector<MultiFab>& uBg,
-                                               Real dt, Real dtNext) {
+                                               Real dt, Real dtNext,
+                                               bool solveInCoMov) {
   if (is_neutral()) {
     neutral_mover(dt);
   } else {
-    charged_particle_mover(nodeE, nodeB, eBg, uBg, dt, dtNext);
+    charged_particle_mover(nodeE, nodeB, eBg, uBg, dt, dtNext, solveInCoMov);
   }
 }
 
@@ -1083,7 +1086,7 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover(
     const Vector<MultiFab>& nodeE, const Vector<MultiFab>& nodeB,
     const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
-    Real dtNext) {
+    Real dtNext, bool solveInCoMov) {
   timing_func("Pts::charged_particle_mover");
 
   const Real qdto2mc = charge / mass * 0.5 * dt;
@@ -1148,8 +1151,12 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
               const Real& c0 = coef[i][j][k];
               for (int iDim = 0; iDim < nDim3; iDim++) {
                 bp[iDim] += nodeBArr(ijk, iDim) * c0;
-                ep[iDim] += (nodeEArr(ijk, iDim) - E0Arr(ijk, iDim)) * c0;
-                u0p[iDim] += U0Arr(ijk, iDim) * c0;
+                ep[iDim] += nodeEArr(ijk, iDim) * c0;
+
+                if (solveInCoMov) {
+                  ep[iDim] += -E0Arr(ijk, iDim) * c0;
+                  u0p[iDim] += U0Arr(ijk, iDim) * c0;
+                }
               }
             }
 
@@ -1175,13 +1182,13 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         const Real vavg = (vt + (wt * Omx - ut * Omz + udotOm * Omy)) * denom;
         const Real wavg = (wt + (ut * Omy - vt * Omx + udotOm * Omz)) * denom;
 
-        const double unp1 = 2.0 * uavg - up;
-        const double vnp1 = 2.0 * vavg - vp;
-        const double wnp1 = 2.0 * wavg - wp;
+        const double unp1 = 2.0 * uavg - up + u0p[ix_];
+        const double vnp1 = 2.0 * vavg - vp + u0p[iy_];
+        const double wnp1 = 2.0 * wavg - wp + u0p[iz_];
 
-        p.rdata(iup_) = unp1 + u0p[ix_];
-        p.rdata(ivp_) = vnp1 + u0p[iy_];
-        p.rdata(iwp_) = wnp1 + u0p[iz_];
+        p.rdata(iup_) = unp1;
+        p.rdata(ivp_) = vnp1;
+        p.rdata(iwp_) = wnp1;
 
         p.pos(ix_) = xp + unp1 * dtLoc;
         p.pos(iy_) = yp + vnp1 * dtLoc;

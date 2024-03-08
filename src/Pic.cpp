@@ -65,7 +65,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("theta", fsolver.theta);
     param.read_var("coefDiff", fsolver.coefDiff);
   } else if (command == "#COMOVING") {
-    param.read_var("doSolveCoMovFrame", doSolveCoMovFrame);
+    param.read_var("solveFieldInCoMov", solveFieldInCoMov);
+    param.read_var("solvePartInCoMov", solvePartInCoMov);
     param.read_var("nSmoothBackGround", nSmoothBackGround);
   } else if (command == "#SMOOTHE") {
     param.read_var("doSmoothE", doSmoothE);
@@ -473,7 +474,7 @@ void Pic::particle_mover() {
   Real dtnext = tc->get_next_dt();
 
   for (int i = 0; i < nSpecies; i++) {
-    parts[i]->mover(nodeEth, nodeB, eBg, uBg, dt, dtnext);
+    parts[i]->mover(nodeEth, nodeB, eBg, uBg, dt, dtnext, solvePartInCoMov);
   }
 
   for (int i = 0; i < nSpecies; i++) {
@@ -507,7 +508,8 @@ void Pic::calc_mass_matrix() {
         parts[i]->calc_jhat(jHat[iLev], nodeB[iLev], tc->get_dt());
       } else {
         parts[i]->calc_mass_matrix(nodeMM[iLev], jHat[iLev], nodeB[iLev],
-                                   uBg[iLev], tc->get_dt(), iLev);
+                                   uBg[iLev], tc->get_dt(), iLev,
+                                   solveFieldInCoMov);
       }
     }
     Real invVol = 1;
@@ -1097,7 +1099,7 @@ void Pic::update_E_impl() {
 
   timing_func(nameFunc);
 
-  if (doSolveCoMovFrame)
+  if (solveFieldInCoMov || solvePartInCoMov)
     update_U0_E0();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -1396,9 +1398,12 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   MultiFab::Add(temp2Node, nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                 temp2Node.nGrow());
 
-  tempNode.setVal(0.0);
-  update_E_M_dot_E(eBg[iLev], tempNode, iLev);
-  MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(), tempNode.nGrow());
+  if (solveFieldInCoMov) {
+    tempNode.setVal(0.0);
+    update_E_M_dot_E(eBg[iLev], tempNode, iLev);
+    MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(),
+                  tempNode.nGrow());
+  }
 
   convert_3d_to_1d(temp2Node, rhs, iLev);
 }
