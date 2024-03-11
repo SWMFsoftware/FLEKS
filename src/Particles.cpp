@@ -2644,6 +2644,41 @@ Real Particles<NStructReal, NStructInt>::charge_exchange_dis(Real* vp, Real* vh,
   return dv * sigma * exp(-dvpup2 / (vth * vth));
 }
 
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::get_analytic_ion_fluid(
+    const RealVect xyz, Real& rhoIon, Real& cs2Ion,
+    amrex::Real (&uIon)[nDim3]) {
+
+  // The units of ionOH are assumed to be:
+  // r: AU
+  // rho: amu/cc
+  // T: K
+  // U: km/s
+
+  Real r = xyz.vectorLength();
+  Real rAU = r * fi->get_No2SiL() / cAUSI;
+
+  if (rAU > ionOH.rAnalytic) {
+    Abort("Error: rAU > ionOH.rAnalytic");
+  }
+
+  Real r0 = 0;
+  if (rAU < ionOH.rCutoff) {
+    r0 = ionOH.rAnalytic / ionOH.rCutoff;
+  } else {
+    r0 = ionOH.rAnalytic / rAU;
+  }
+
+  rhoIon = ionOH.swRho * pow(r0, 2) * 1e6; // amu/cc -> amu/m^3
+
+  // v_th = sqrt(2kT/m); m/s
+  cs2Ion = 2 * cBoltzmannSI * ionOH.swT / cProtonMassSI; // m^2/s^2
+
+  for (int i = 0; i < nDim; i++) {
+    uIon[i] = ionOH.swU * xyz[i] / r * 1e3; // km/s -> m/s
+  }
+}
+
 // Get the iFluid-th ion fluid properties at the location xyz
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::get_ion_fluid(
@@ -2651,6 +2686,11 @@ void Particles<NStructReal, NStructInt>::get_ion_fluid(
     const RealVect xyz, Real& rhoIon, Real& cs2Ion, Real (&uIon)[nDim3]) {
 
   Real rAU = xyz.vectorLength() * stateOH->get_No2SiL() / cAUSI;
+
+  if (rAU < ionOH.rAnalytic) {
+    get_analytic_ion_fluid(xyz, rhoIon, cs2Ion, uIon);
+    return;
+  }
 
   // amu/m^3
   rhoIon = stateOH->get_fluid_mass_density(pti, xyz, iFluid, iLev) *

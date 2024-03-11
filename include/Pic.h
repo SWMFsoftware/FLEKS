@@ -129,6 +129,8 @@ private:
 
   ParticlesInfo pInfo;
 
+  OHIon ionOH;
+
   // Boundary conditions for particles.
   amrex::Vector<BC> pBCs;
 

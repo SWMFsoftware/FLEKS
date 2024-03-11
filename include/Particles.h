@@ -55,6 +55,14 @@ struct Vel {
   }
 };
 
+struct OHIon {
+  amrex::Real rAnalytic = 0;
+  amrex::Real rCutoff = 0;
+  amrex::Real swRho = 0;
+  amrex::Real swT = 0;
+  amrex::Real swU = 0;
+};
+
 struct IDs {
   int id;
   int supID;
@@ -210,6 +218,8 @@ protected:
   // p.id() and p.idata(iSupID_).
   int supID = 1;
 
+  OHIon ionOH;
+
 public:
   static const int iup_ = 0;
   static const int ivp_ = 1;
@@ -291,6 +301,15 @@ public:
                      amrex::Real& rhoIon, amrex::Real& cs2Ion,
                      amrex::Real (&uIon)[nDim3]);
 
+  // Input:
+  // xyz in NO units.
+  // Output:
+  // rhoIon: amu/m^3
+  // cs2Ion: (m/s)^2
+  // uIon: m/s
+  void get_analytic_ion_fluid(const amrex::RealVect xyz, amrex::Real& rhoIon,
+                              amrex::Real& cs2Ion, amrex::Real (&uIon)[nDim3]);
+
   void add_source_particles(std::unique_ptr<PicParticles>& sourcePart,
                             amrex::IntVect ppc, const bool adaptivePPC);
 
@@ -322,6 +341,8 @@ public:
                                      amrex::Real dt);
 
   void convert_to_fluid_moments(amrex::Vector<amrex::MultiFab>& momentsMF);
+
+  void set_ion_fluid(const OHIon& in) { ionOH = in; }
 
   void set_info(ParticlesInfo& pi) {
     fastMerge = pi.fastMerge;

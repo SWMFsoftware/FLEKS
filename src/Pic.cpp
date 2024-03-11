@@ -105,7 +105,17 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("vacuum", pInfo.vacuumIO);
   } else if (command == "#PARTICLELEVRATIO") {
     param.read_var("particleLevRatio", pInfo.pLevRatio);
-
+  } else if (command == "#OHION") {
+    // The units are assumed to be:
+    // r: AU
+    // rho: amu/cc
+    // T: K
+    // U: km/s
+    param.read_var("rAnalytic", ionOH.rAnalytic);
+    param.read_var("rCutoff", ionOH.rCutoff);
+    param.read_var("swRho", ionOH.swRho);
+    param.read_var("swT", ionOH.swT);
+    param.read_var("swU", ionOH.swU);
   } else if (command == "#SUPID") {
     int n = 0;
     param.read_var("nSpecies", n);
@@ -256,6 +266,8 @@ void Pic::post_regrid() {
 
       //----- Set parameters------------
       ptr->set_info(pInfo);
+
+      ptr->set_ion_fluid(ionOH);
 
       ptr->set_bc(pBCs[i]);
 
@@ -963,8 +975,6 @@ void Pic::update_U0_E0_mhd() {
     for (int i = 0; i < nSmoothBackGroundE; i++) {
       smooth_multifab(eBg[iLev], iLev, true, 0.5);
     }
-
-
   }
 }
 
