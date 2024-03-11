@@ -2644,6 +2644,36 @@ Real Particles<NStructReal, NStructInt>::charge_exchange_dis(Real* vp, Real* vh,
   return dv * sigma * exp(-dvpup2 / (vth * vth));
 }
 
+// Get the iFluid-th ion fluid properties at the location xyz
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::get_ion_fluid(
+    FluidInterface* stateOH, PIter& pti, const int iLev, const int iFluid,
+    const RealVect xyz, Real& rhoIon, Real& cs2Ion, Real (&uIon)[nDim3]) {
+
+  Real rAU = xyz.vectorLength() * stateOH->get_No2SiL() / cAUSI;
+
+  // amu/m^3
+  rhoIon = stateOH->get_fluid_mass_density(pti, xyz, iFluid, iLev) *
+           stateOH->get_No2SiRho() / cProtonMassSI;
+
+  // cs = sqrt(P/n); m/s
+  // Assume p = pi + pe = 2pi, so divide by sqrt(2.0).
+  double cs = stateOH->get_fluid_uth(pti, xyz, iFluid, iLev) *
+              stateOH->get_No2SiV() / sqrt(2.0);
+
+  // cs2Ion = 2*P/n. The definition of thermal speed in get_uth_iso() is
+  // different from the requirement in OH_get_charge_exchange_wrapper().
+  // See page 92 of Adam Michael's thesis.
+  cs2Ion = 2 * pow(cs, 2);
+
+  uIon[ix_] =
+      stateOH->get_fluid_ux(pti, xyz, iFluid, iLev) * stateOH->get_No2SiV();
+  uIon[iy_] =
+      stateOH->get_fluid_uy(pti, xyz, iFluid, iLev) * stateOH->get_No2SiV();
+  uIon[iz_] =
+      stateOH->get_fluid_uz(pti, xyz, iFluid, iLev) * stateOH->get_No2SiV();
+}
+
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charge_exchange(
     Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH,
@@ -2731,26 +2761,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 
         // MHD fluid index.
         const int fluidID = 0;
-        // amu/m^3
-        rhoIon = stateOH->get_fluid_mass_density(pti, xyz, fluidID, iLev) *
-                 stateOH->get_No2SiRho() / cProtonMassSI;
-
-        // cs = sqrt(P/n); m/s
-        // Assume p = pi + pe = 2pi, so divide by sqrt(2.0).
-        double cs = stateOH->get_fluid_uth(pti, xyz, fluidID, iLev) *
-                    stateOH->get_No2SiV() / sqrt(2.0);
-
-        // cs2Ion = 2*P/n. The definition of thermal speed in get_uth_iso() is
-        // different from the requirement in OH_get_charge_exchange_wrapper().
-        // See page 92 of Adam Michael's thesis.
-        cs2Ion = 2 * pow(cs, 2);
-
-        uIon[ix_] = stateOH->get_fluid_ux(pti, xyz, fluidID, iLev) *
-                    stateOH->get_No2SiV();
-        uIon[iy_] = stateOH->get_fluid_uy(pti, xyz, fluidID, iLev) *
-                    stateOH->get_No2SiV();
-        uIon[iz_] = stateOH->get_fluid_uz(pti, xyz, fluidID, iLev) *
-                    stateOH->get_No2SiV();
+        get_ion_fluid(stateOH, pti, iLev, fluidID, xyz, rhoIon, cs2Ion, uIon);
 
         OH_get_charge_exchange_wrapper(&rhoIon, &cs2Ion, uIon, &rhoNeu, &cs2Neu,
                                        uNeu, ion2neu, neu2ion);

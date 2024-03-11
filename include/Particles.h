@@ -286,6 +286,11 @@ public:
       amrex::Vector<std::unique_ptr<PicParticles> >& sourceParts,
       bool doSelectRegion, int nppc);
 
+  void get_ion_fluid(FluidInterface* stateOH, PIter& pti, const int iLev,
+                     const int iFluid, const amrex::RealVect xyz,
+                     amrex::Real& rhoIon, amrex::Real& cs2Ion,
+                     amrex::Real (&uIon)[nDim3]);
+
   void add_source_particles(std::unique_ptr<PicParticles>& sourcePart,
                             amrex::IntVect ppc, const bool adaptivePPC);
 
