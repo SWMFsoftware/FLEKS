@@ -2677,6 +2677,11 @@ void Particles<NStructReal, NStructInt>::get_analytic_ion_fluid(
   for (int i = 0; i < nDim; i++) {
     uIon[i] = ionOH.swU * xyz[i] / r * 1e3; // km/s -> m/s
   }
+
+  // AllPrint() << "r = " << r << " xyz = " << xyz[0] << ", " << xyz[1] << ", "
+  //            << xyz[2] << " rhoIon = " << rhoIon << ", cs2Ion = " << cs2Ion
+  //            << ", uIon = " << uIon[0] << ", " << uIon[1] << ", " << uIon[2]
+  //            << std::endl;
 }
 
 // Get the iFluid-th ion fluid properties at the location xyz
