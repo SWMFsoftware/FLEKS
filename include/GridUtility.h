@@ -358,7 +358,7 @@ void fill_lev_bny_from_value(amrex::FabArray<FAB>& dst,
 
 template <class FAB>
 void fill_lev_from_value(amrex::FabArray<FAB>& dst, amrex::Real value,
-                         int startva = 0, int stopvar = -1) {
+                         int startvar = 0, int stopvar = -1) {
   if (stopvar == -1) {
     stopvar = dst.nComp();
   }
