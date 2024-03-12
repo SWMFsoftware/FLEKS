@@ -357,6 +357,28 @@ void fill_lev_bny_from_value(amrex::FabArray<FAB>& dst,
 }
 
 template <class FAB>
+void fill_lev_from_value(amrex::FabArray<FAB>& dst, amrex::Real value,
+                         int startva = 0, int stopvar = -1) {
+  if (stopvar == -1) {
+    stopvar = dst.nComp();
+  }
+  for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
+    FAB& fab = dst[mfi];
+    const auto& box = mfi.fabbox();
+    const auto& data = fab.array();
+    const auto lo = amrex::lbound(box);
+    const auto hi = amrex::ubound(box);
+
+    for (int iVar = startvar; iVar <= stopvar; iVar++)
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            data(i, j, k, iVar) = value;
+          }
+  }
+}
+
+template <class FAB>
 void fill_fine_lev_bny_from_coarse(amrex::FabArray<FAB>& coarse,
                                    amrex::FabArray<FAB>& fine, const int iStart,
                                    const int nComp, const amrex::IntVect ratio,
