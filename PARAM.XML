@@ -1023,22 +1023,33 @@ they will be changed to other units in the future.
 
 <command name="OHION" alias="OHION_FLEKS0,OHION_FLEKS1, OHION_FLEKS2" multiple="T">
   <parameter name="rAnalytic" type="real" min="0" default="0.0"/>
-  <parameter name="rCutoff" type="real" min="0" default="0.0"/>
-  <parameter name="swRho" type="real" min="0" default="0.0"/>
-  <parameter name="swT" type="real" min="0" default="0.0"/>
-  <parameter name="swU" type="real" min="0" default="0.0"/>
-  
+  <parameter name="doGetFromOH" type="logical" default="F"/>
+  <if expr="not($doGetFromOH)">
+    <parameter name="rCutoff" type="real" min="0" default="0.0"/>
+    <parameter name="swRho" type="real" min="0" default="0.0"/>
+    <parameter name="swT" type="real" min="0" default="0.0"/>
+    <parameter name="swU" type="real" min="0" default="0.0"/>
+  </if>
+
+#OHION 
+30			  rAnalytic [AU]
+T        doGetFromOH
+
+
 #OHION
 30			  rAnalytic [AU]
+F         doGetFromOH
 4			    rCutoff   [AU]
 0.00874		swRho [amu/cc]
 1.0e5			swT   [K]
 400			  swU   [km/s]
 
 This is only used for OH-PT coupling. The units of the parameters are
-shown in the example above. Inside the sphere of r .le. rAnalytic, the
-analytic expressions are used for obtainning the ion density, temperature, and 
-velocity. rho(r) = swRho * (rAnalytic/r)**2, T(r) = swT, and u(r) = swU 
+shown in the example above. Inside the sphere of r .le. rAnalytic, the 
+ion properties are obtained from the OH module if doGetFromOH is true. 
+Otherwise, the following analytic expressions are used for obtainning 
+the ion density, temperature, and velocity: 
+rho(r) = swRho * (rAnalytic/r)**2, T(r) = swT, and u(r) = swU 
 along the ratial direction. Inside r .le. rCutoff, the density is set 
 to rho(rCutoff). 
 </command>

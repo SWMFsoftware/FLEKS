@@ -112,10 +112,14 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     // T: K
     // U: km/s
     param.read_var("rAnalytic", ionOH.rAnalytic);
-    param.read_var("rCutoff", ionOH.rCutoff);
-    param.read_var("swRho", ionOH.swRho);
-    param.read_var("swT", ionOH.swT);
-    param.read_var("swU", ionOH.swU);
+    param.read_var("doGetFromOH", ionOH.doGetFromOH);
+
+    if (!ionOH.doGetFromOH) {
+      param.read_var("rCutoff", ionOH.rCutoff);
+      param.read_var("swRho", ionOH.swRho);
+      param.read_var("swT", ionOH.swT);
+      param.read_var("swU", ionOH.swU);
+    }
   } else if (command == "#SUPID") {
     int n = 0;
     param.read_var("nSpecies", n);

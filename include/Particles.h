@@ -61,6 +61,7 @@ struct OHIon {
   amrex::Real swRho = 0;
   amrex::Real swT = 0;
   amrex::Real swU = 0;
+  bool doGetFromOH = false;
 };
 
 struct IDs {

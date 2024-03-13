@@ -2662,20 +2662,36 @@ void Particles<NStructReal, NStructInt>::get_analytic_ion_fluid(
     Abort("Error: rAU > ionOH.rAnalytic");
   }
 
-  Real r0 = 0;
-  if (rAU < ionOH.rCutoff) {
-    r0 = ionOH.rAnalytic / ionOH.rCutoff;
+  if (ionOH.doGetFromOH) {
+    Real xSI = xyz[ix_] * fi->get_No2SiL();
+    Real ySI = xyz[iy_] * fi->get_No2SiL();
+    Real zSI = xyz[iz_] * fi->get_No2SiL();
+
+    Real temp, ur, b[nDim3];
+    OH_get_solar_wind(&xSI, &ySI, &zSI, &rhoIon, &ur, &temp, b);
+
+    // v_th = sqrt(2kT/m); m/s
+    cs2Ion = 2 * cBoltzmannSI * temp / cProtonMassSI; // m^2/s^2
+
+    for (int i = 0; i < nDim; i++) {
+      uIon[i] = ur * xyz[i] / r;
+    }
   } else {
-    r0 = ionOH.rAnalytic / rAU;
-  }
+    Real r0 = 0;
+    if (rAU < ionOH.rCutoff) {
+      r0 = ionOH.rAnalytic / ionOH.rCutoff;
+    } else {
+      r0 = ionOH.rAnalytic / rAU;
+    }
 
-  rhoIon = ionOH.swRho * pow(r0, 2) * 1e6; // amu/cc -> amu/m^3
+    rhoIon = ionOH.swRho * pow(r0, 2) * 1e6; // amu/cc -> amu/m^3
 
-  // v_th = sqrt(2kT/m); m/s
-  cs2Ion = 2 * cBoltzmannSI * ionOH.swT / cProtonMassSI; // m^2/s^2
+    // v_th = sqrt(2kT/m); m/s
+    cs2Ion = 2 * cBoltzmannSI * ionOH.swT / cProtonMassSI; // m^2/s^2
 
-  for (int i = 0; i < nDim; i++) {
-    uIon[i] = ionOH.swU * xyz[i] / r * 1e3; // km/s -> m/s
+    for (int i = 0; i < nDim; i++) {
+      uIon[i] = ionOH.swU * xyz[i] / r * 1e3; // km/s -> m/s
+    }
   }
 
   // AllPrint() << "r = " << r << " xyz = " << xyz[0] << ", " << xyz[1] << ", "
