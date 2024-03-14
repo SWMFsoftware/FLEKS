@@ -556,6 +556,12 @@ void Pic::calc_mass_matrix() {
         ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
   }
 
+  if (decoupleparticlesfromfield) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      nodeMM[iLev].setVal(0.0);
+      jHat[iLev].setVal(0.0);
+    }
+  }
   // WARNING: interp_from_coarse_to_fine_for_domain_edge might be needed here
 }
 
@@ -905,6 +911,12 @@ void Pic::update(bool doReportIn) {
   if (doCorrectDivE) {
     divE_correction();
   }
+
+  // for (int iLev=1;iLev<n_lev();iLev++) {
+  //   average_down_nodal(nodeE[iLev],nodeE[iLev-1],ref_ratio[iLev]);
+  //   average_down_nodal(nodeB[iLev],nodeB[iLev-1],ref_ratio[iLev]);
+  //   average_down(centerB[iLev],centerB[iLev-1],0,0,ref_ratio[iLev]);
+  // }
 
   tc->set_dt(tc->get_next_dt());
 

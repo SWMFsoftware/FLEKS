@@ -50,6 +50,7 @@ private:
 
   bool useExplicitPIC = false;
   bool usenewElectricSolver = false;
+  bool decoupleparticlesfromfield = false;
 
   FluidInterface *fi = nullptr;
   FluidInterface *stateOH = nullptr;

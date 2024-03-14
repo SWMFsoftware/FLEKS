@@ -360,7 +360,7 @@ template <class FAB>
 void fill_lev_from_value(amrex::FabArray<FAB>& dst, amrex::Real value,
                          int startvar = 0, int stopvar = -1) {
   if (stopvar == -1) {
-    stopvar = dst.nComp();
+    stopvar = dst.nComp()-1;
   }
   for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
     FAB& fab = dst[mfi];
