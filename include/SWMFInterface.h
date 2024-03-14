@@ -14,7 +14,7 @@ void OH_get_charge_exchange_wrapper(double *rhoIon, double *cs2Ion,
 
 void OH_get_charge_exchange_region(int *iRegion, double *r, double *rhoDim,
                                    double *u2Dim, double *tempDim,
-                                   double *mach2);
+                                   double *mach2, double *levHP);
 
 void OH_get_solar_wind(double *x, double *y, double *z, double *numDen,
                        double *ur, double *temp, double b[3]);
@@ -28,7 +28,8 @@ inline void OH_get_charge_exchange_wrapper(double *rhoIon, double *cs2Ion,
 
 inline void OH_get_charge_exchange_region(int *iRegion, double *r,
                                           double *rhoDim, double *u2Dim,
-                                          double *tempDim, double *mach2) {}
+                                          double *tempDim, double *mach2,
+                                          double *levHP) {}
 
 inline void OH_get_solar_wind(double *x, double *y, double *z, double *numDen,
                               double *ur, double *temp, double b[3]) {}

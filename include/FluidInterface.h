@@ -73,7 +73,7 @@ protected:
   amrex::Vector<int> iRho_I, iRhoUx_I, iRhoUy_I, iRhoUz_I, iPpar_I, iP_I, iUx_I,
       iUy_I, iUz_I;
 
-  int iBx, iBy, iBz, iEx, iEy, iEz, iPe, iJx, iJy, iJz, iRhoTotal;
+  int iBx, iBy, iBz, iEx, iEy, iEz, iPe, iJx, iJy, iJz, iRhoTotal, iLevSet;
 
   double rPlanetSi = 1;
 

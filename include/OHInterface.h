@@ -61,9 +61,9 @@ public:
     varNames.push_back("by");
     iBz = idx++;
     varNames.push_back("bz");
-
-    // Skip LevelHP_
-    idx++;
+    
+    iLevSet = idx++;
+    varNames.push_back("levHP");
 
     iP_I.push_back(idx);
     iPpar_I.push_back(idx++);
@@ -121,7 +121,10 @@ public:
     amrex::Real r = sqrt(x * x + y * y + z * z) * get_No2SiL() / cAUSI;
 
     int iRegion = -1;
-    OH_get_charge_exchange_region(&iRegion, &r, &n, &u2, &T, &mach2);
+
+    amrex::Real levHP = get_value(mfi, ijk, iLevSet, iLev);
+
+    OH_get_charge_exchange_region(&iRegion, &r, &n, &u2, &T, &mach2, &levHP);
 
     return iRegion;
   }
