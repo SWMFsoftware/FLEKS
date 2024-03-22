@@ -666,7 +666,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
   // reasons.
   write_amrex_field(pw, timeNow, iCycle, "E B", dirName, baIO);
 
-  particlesOut.WritePlotFile(dirName, "particle", writeRealComp, writeIntComp,
+  particlesOut.WritePlotFile(dirName, "particles", writeRealComp, writeIntComp,
                              realCompNames, intCompNames);
 }
 
