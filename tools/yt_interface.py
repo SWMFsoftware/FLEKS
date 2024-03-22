@@ -205,6 +205,9 @@ class FLEKSDataset(BoxlibDataset):
         setdefaultattr(self, "density_unit", self.quan(1, get_unit("rho", unit)))
         setdefaultattr(self, "pressure_unit", self.quan(1, get_unit("p", unit)))
 
+    def pvar(self,var):
+        return (self.particle_types[0], var)
+
     def get_slice(self, norm, cut_loc):
         r"""
         This method returns a dataContainer2D object that contains a slice along
@@ -372,24 +375,23 @@ class FLEKSDataset(BoxlibDataset):
         >>> phase = ds.plot_phase([8.75, -1, -1], [9.25, 0, 0],
                                 "p_ux", "p_uy", "p_w", (-1, 1, -1, 1))
         >>> phase.show()
-        """
-        var_type = "particle"
+        """        
 
         # The bins should be uniform instead of logarithmic
-        logs = {(var_type, x_field): False, (var_type, y_field): False}
+        logs = {self.pvar(x_field): False, self.pvar(y_field): False}
 
-        bin_fields = [(var_type, x_field), (var_type, y_field)]
+        bin_fields = [self.pvar(x_field), self.pvar(y_field)]
         if domain_size is not None:
             extrema = {
-                (var_type, x_field): (domain_size[0], domain_size[1]),
-                (var_type, y_field): (domain_size[2], domain_size[3]),
+                self.pvar(x_field): (domain_size[0], domain_size[1]),
+                self.pvar(y_field): (domain_size[2], domain_size[3]),
             }
         else:
             extrema = None
         profile = yt.create_profile(
             data_source=region,
             bin_fields=bin_fields,
-            fields=(var_type, z_field),
+            fields=self.pvar(z_field),
             n_bins=[x_bins, y_bins],
             weight_field=None,
             extrema=extrema,
@@ -398,9 +400,9 @@ class FLEKSDataset(BoxlibDataset):
 
         plot = yt.PhasePlot.from_profile(profile)
 
-        plot.set_unit((var_type, x_field), get_unit(x_field, unit_type))
-        plot.set_unit((var_type, y_field), get_unit(y_field, unit_type))
-        plot.set_unit((var_type, z_field), get_unit(z_field, unit_type))
+        plot.set_unit(self.pvar(x_field), get_unit(x_field, unit_type))
+        plot.set_unit(self.pvar(y_field), get_unit(y_field, unit_type))
+        plot.set_unit(self.pvar(z_field), get_unit(z_field, unit_type))
 
         return plot
 
@@ -492,7 +494,6 @@ class FLEKSDataset(BoxlibDataset):
                      "p_y", "p_w", unit_type="planet")
         >>> phase.show()
         """
-        var_type = "particle"
 
         nmap = {
             "p_x": "particle_position_x",
@@ -501,13 +502,13 @@ class FLEKSDataset(BoxlibDataset):
         }
         plot = yt.ParticlePlot(
             self,
-            (var_type, nmap[x_field]),
-            (var_type, nmap[y_field]),
-            (var_type, z_field),
+            self.pvar(nmap[x_field]),
+            self.pvar(nmap[y_field]),
+            self.pvar(z_field),
             data_source=region,
         )
         plot.set_axes_unit((get_unit(x_field, unit_type), get_unit(y_field, unit_type)))
-        plot.set_unit((var_type, z_field), get_unit(z_field, unit_type))
+        plot.set_unit(self.pvar(z_field), get_unit(z_field, unit_type))
 
         return plot
 
