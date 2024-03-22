@@ -158,6 +158,7 @@ public:
     //-----------------------------------------------------
     centerB.resize(n_lev_max());
     nodeB.resize(n_lev_max());
+    dBdt.resize(n_lev_max());
     nodeE.resize(n_lev_max());
     nodeEth.resize(n_lev_max());
 
