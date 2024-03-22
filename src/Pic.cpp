@@ -186,6 +186,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                         nGst);
     distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
+    distribute_FabArray(dBdt[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                        nGst);
     distribute_FabArray(nodeE[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
     distribute_FabArray(nodeEth[iLev], nGrids[iLev], DistributionMap(iLev), 3,
@@ -1513,8 +1515,17 @@ void Pic::update_B() {
           cell_bilinear_interp);
     }
 
+    MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
+                   dBdt[iLev].nGrow());
+
     average_center_to_node(centerB[iLev], nodeB[iLev]);
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    const Real invDt = 1. / tc->get_dt();
+    // dBdt = (B^{n+1} - B^n)/dt;
+    MultiFab::LinComb(dBdt[iLev], -invDt, dBdt[iLev], 0, invDt, nodeB[iLev], 0,
+                      0, dBdt[iLev].nComp(), dBdt[iLev].nGrow());
+
     if (iLev == 0) {
 
       apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),

@@ -62,6 +62,7 @@ private:
   amrex::Vector<amrex::MultiFab> nodeEth;
   amrex::Vector<amrex::MultiFab> nodeB;
   amrex::Vector<amrex::MultiFab> centerB;
+  amrex::Vector<amrex::MultiFab> dBdt;
 
   // Background velocity and electric field.
   amrex::Vector<amrex::MultiFab> uBg;

@@ -567,6 +567,11 @@ double PlotWriter::No2OutTable(std::string const& var) const {
   } else if (var.substr(0, 1) == "B") {
     // B field
     value = No2OutB;
+  } else if (var.substr(0, 5) == "dBxdt" || var.substr(0, 5) == "dBydt" ||
+             var.substr(0, 5) == "dBzdt") {
+    // dB/dt
+    double No2OutT = No2OutL / No2OutV;
+    value = No2OutB / No2OutT;
   } else if (var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
              var.substr(0, 1) == "Z" || var.substr(0, 2) == "dx") {
     // Location

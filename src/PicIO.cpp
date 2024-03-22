@@ -299,6 +299,15 @@ double Pic::get_var(std::string var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 2) == "Bz") {
       const Array4<Real const>& arr = nodeB[iLev][mfi].array();
       value = arr(ijk, iz_);
+    } else if (var.substr(0, 5) == "dBxdt") {
+      const Array4<Real const>& arr = dBdt[iLev][mfi].array();
+      value = arr(ijk, ix_);
+    } else if (var.substr(0, 5) == "dBydt") {
+      const Array4<Real const>& arr = dBdt[iLev][mfi].array();
+      value = arr(ijk, iy_);
+    } else if (var.substr(0, 5) == "dBzdt") {
+      const Array4<Real const>& arr = dBdt[iLev][mfi].array();
+      value = arr(ijk, iz_);
     } else if (var.substr(0, 4) == "rhoS" || var.substr(0, 3) == "uxS" ||
                var.substr(0, 3) == "uyS" || var.substr(0, 3) == "uzS" ||
                var.substr(0, 4) == "pXXS" || var.substr(0, 4) == "pYYS" ||
