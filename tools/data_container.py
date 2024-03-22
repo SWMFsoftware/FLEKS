@@ -361,7 +361,12 @@ class dataContainer2D(dataContainer):
             varMax.append(vmax)
 
         if plot:
-            f, axes = plot
+            f, axes = plot            
+            nRow = axes.shape[0]
+            if axes.ndim > 1:
+                nCol = axes.shape[1]
+            else:
+                nCol = 1
         else:
             f, axes = plt.subplots(nRow, nCol, figsize=figsize)
             axes = np.array(axes)  # in case nRow = nCol = 1
