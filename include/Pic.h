@@ -47,6 +47,7 @@ private:
 
   bool usePIC = true;
   bool solveEM = true;
+  bool initEM = true;
 
   bool useExplicitPIC = false;
   bool usenewElectricSolver = false;
@@ -182,6 +183,7 @@ public:
 
 #ifdef _PT_COMPONENT_
     kineticSource = true;
+    initEM = false;
     solveEM = false;
 #endif
   };

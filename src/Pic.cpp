@@ -163,7 +163,8 @@ void Pic::fill_new_cells() {
     update_grid_status();
   }
 
-  fill_E_B_fields();
+  if (initEM)
+    fill_E_B_fields();
 
   if (usePIC) {
     fill_particles();
@@ -379,9 +380,6 @@ void Pic::fill_new_center_B() {
 
 //==========================================================
 void Pic::fill_E_B_fields() {
-  if (!solveEM)
-    return;
-
   fill_new_node_E();
   fill_new_node_B();
   fill_new_center_B();
@@ -507,9 +505,6 @@ void Pic::calc_mass_matrix() {
   std::string nameFunc = "Pic::calc_mass_matrix";
 
   if (isGridEmpty)
-    return;
-
-  if (!solveEM)
     return;
 
   timing_func(nameFunc);
@@ -712,9 +707,6 @@ void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy) {
 
 //==========================================================
 void Pic::divE_correction() {
-  if (!solveEM)
-    return;
-
   std::string nameFunc = "Pic::divE_correction";
 
   timing_func(nameFunc);
@@ -888,9 +880,11 @@ void Pic::update(bool doReportIn) {
     update_part_loc_to_half_stage();
   }
 
-  calc_mass_matrix();
+  if (solveEM)
+    calc_mass_matrix();
 
-  update_E();
+  if (solveEM)
+    update_E();
 
   particle_mover();
 
@@ -908,9 +902,10 @@ void Pic::update(bool doReportIn) {
 
   isMomentsUpdated = false;
 
-  update_B();
+  if (solveEM)
+    update_B();
 
-  if (doCorrectDivE) {
+  if (solveEM && doCorrectDivE) {
     divE_correction();
   }
 
@@ -1064,9 +1059,6 @@ void Pic::update_U0_E0_smooth() {
 
 //==========================================================
 void Pic::update_E() {
-  if (!solveEM)
-    return;
-
   if (useExplicitPIC) {
     update_E_expl();
   } else {
@@ -1492,9 +1484,6 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
 
 //==========================================================
 void Pic::update_B() {
-  if (!solveEM)
-    return;
-
   std::string nameFunc = "Pic::update_B";
   timing_func(nameFunc);
 
