@@ -1021,7 +1021,7 @@ void Pic::update_U0_E0_smooth() {
     uBg[iLev].FillBoundary(Geom(iLev).periodicity());
 
     for (int i = 0; i < nSmoothBackGroundU; i++)
-      smooth_multifab(uBg[iLev], iLev, true, 0.5);
+      smooth_multifab(uBg[iLev], iLev, true, 0.5, i % 2 + 1);
 
     // MultiFab::Copy(tempNode3, nodeB, 0, 0, nodeB.nComp(), nodeB.nGrow());
     // tempNode3.FillBoundary(Geom(0).periodicity());
@@ -1052,7 +1052,7 @@ void Pic::update_U0_E0_smooth() {
     eBg[iLev].FillBoundary(Geom(iLev).periodicity());
 
     for (int i = 0; i < nSmoothBackGroundE; i++)
-      smooth_multifab(eBg[iLev], iLev, true, 0.5);
+      smooth_multifab(eBg[iLev], iLev, true, 0.5, i % 2 + 1);
 
     //
     // print_MultiFab(nodeU0, "nodeU0", 1);
@@ -1588,7 +1588,7 @@ void Pic::calc_smooth_coef() {
 
 //==========================================================
 void Pic::smooth_multifab(MultiFab& mf, int iLev, bool useFixedCoef,
-                          double coefIn) {
+                          double coefIn, int di) {
   std::string nameFunc = "Pic::smooth_multifab";
   timing_func(nameFunc);
 
@@ -1596,7 +1596,7 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, bool useFixedCoef,
 
   auto smooth_dir = [&](int iDir) {
     int dIdx[3] = { 0, 0, 0 };
-    dIdx[iDir] = 1;
+    dIdx[iDir] = di;
 
     MultiFab::Copy(mfOld, mf, 0, 0, mf.nComp(), mf.nGrow());
 
@@ -1623,8 +1623,9 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, bool useFixedCoef,
         const Real neiSum =
             arrTmp(i - dIdx[ix_], j - dIdx[iy_], k - dIdx[iz_], iVar) +
             arrTmp(i + dIdx[ix_], j + dIdx[iy_], k + dIdx[iz_], iVar);
+
         arrE(i, j, k, iVar) =
-            weightSelf * arrE(i, j, k, iVar) + WeightNei * neiSum;
+            weightSelf * arrTmp(i, j, k, iVar) + WeightNei * neiSum;
       });
     }
 
@@ -1632,8 +1633,10 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, bool useFixedCoef,
   };
 
   smooth_dir(ix_);
-  smooth_dir(iy_);
-  smooth_dir(iz_);
+  if (nDim > 1)
+    smooth_dir(iy_);
+  if (nDim > 2 && !isFake2D)
+    smooth_dir(iz_);
 }
 
 //==========================================================
@@ -1645,7 +1648,7 @@ void Pic::smooth_E(MultiFab& mfE, int iLev) {
   timing_func(nameFunc);
 
   for (int icount = 0; icount < nSmoothE; icount++) {
-    smooth_multifab(mfE, iLev);
+    smooth_multifab(mfE, iLev, false, 1, icount % 2 + 1);
   }
 }
 

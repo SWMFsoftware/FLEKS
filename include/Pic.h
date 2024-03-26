@@ -281,7 +281,7 @@ public:
   void smooth_E(amrex::MultiFab &mfE, int iLev);
 
   void smooth_multifab(amrex::MultiFab &mf, int iLev, bool useFixedCoef = false,
-                       double coefIn = 1);
+                       double coefIn = 1, int di = 1);
 
   void calc_smooth_coef();
 
