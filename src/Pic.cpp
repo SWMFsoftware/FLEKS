@@ -1609,7 +1609,10 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, bool useFixedCoef,
 
       const auto& status = nodeStatus[iLev][mfi].array();
       ParallelFor(box, mf.nComp(), [&](int i, int j, int k, int iVar) {
-        if (bit::is_domain_edge(status(i, j, k)))
+        if (bit::is_domain_boundary(
+                status(i - dIdx[ix_], j - dIdx[iy_], k - dIdx[iz_])) ||
+            bit::is_domain_boundary(
+                status(i + dIdx[ix_], j + dIdx[iy_], k + dIdx[iz_])))
           return;
 
         Real coef = coefIn;
