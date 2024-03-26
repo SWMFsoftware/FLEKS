@@ -880,6 +880,9 @@ void Pic::update(bool doReportIn) {
     update_part_loc_to_half_stage();
   }
 
+  if (solveFieldInCoMov || solvePartInCoMov)
+    update_U0_E0();
+
   if (solveEM)
     calc_mass_matrix();
 
@@ -1172,9 +1175,6 @@ void Pic::update_E_impl() {
   std::string nameFunc = "Pic::update_E_impl";
 
   timing_func(nameFunc);
-
-  if (solveFieldInCoMov || solvePartInCoMov)
-    update_U0_E0();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     eSolver.reset(get_local_node_or_cell_number(nodeE[iLev]));
