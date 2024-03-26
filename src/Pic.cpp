@@ -1202,6 +1202,12 @@ void Pic::update_E_impl() {
     convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev], iLev);
     nodeEth[iLev].SumBoundary(Geom(iLev).periodicity());
     nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    if (doSmoothE) {
+      calc_smooth_coef();
+      smooth_E(nodeEth[iLev], iLev);
+    }
+
     MultiFab::Add(nodeEth[iLev], nodeE[iLev], 0, 0, nodeEth[iLev].nComp(),
                   nGst);
 
@@ -1229,7 +1235,7 @@ void Pic::update_E_impl() {
     }
 
     if (doSmoothE) {
-      calc_smooth_coef();
+      // calc_smooth_coef();
       smooth_E(nodeEth[iLev], iLev);
       smooth_E(nodeE[iLev], iLev);
     }
