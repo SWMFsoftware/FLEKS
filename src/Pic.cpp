@@ -1003,28 +1003,31 @@ void Pic::update_U0_E0_smooth() {
     uBg[iLev].setVal(0.0);
     eBg[iLev].setVal(0.0);
     for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.validbox();
       const Array4<Real>& arrU = uBg[iLev][mfi].array();
       const Array4<const Real>& arrMoments =
           nodePlasma[nSpecies][iLev][mfi].array();
 
       const Array4<const int>& status = nodeStatus[iLev][mfi].array();
 
-      ParallelFor(box, [&](int i, int j, int k) {
+      // Fill in the physical nodes
+      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (bit::is_domain_edge(status(ijk))) {
+        const Real rho = arrMoments(i, j, k, iRho_);
+        if (rho > 1e-99) {
+          const Real invRho = 1. / rho;
+          for (int iu = iUx_; iu <= iUz_; iu++)
+            arrU(i, j, k, iu - iUx_) = arrMoments(i, j, k, iu) * invRho;
+        }
+      });
+
+      // Fill in ghost nodes
+      ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (bit::is_domain_boundary(status(ijk))) {
           const int iFluid = 0;
           for (int iDir = 0; iDir < nDim3; iDir++) {
             arrU(i, j, k, iDir) =
                 get_node_fluid_u(mfi, ijk, iDir, iLev, iFluid);
-          }
-        } else {
-
-          const Real rho = arrMoments(i, j, k, iRho_);
-          if (rho > 1e-99) {
-            const Real invRho = 1. / rho;
-            for (int iu = iUx_; iu <= iUz_; iu++)
-              arrU(i, j, k, iu - iUx_) = arrMoments(i, j, k, iu) * invRho;
           }
         }
       });
@@ -1041,31 +1044,33 @@ void Pic::update_U0_E0_smooth() {
     //   smooth_multifab(tempNode3, true, 0.5);
 
     for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.validbox();
       const Array4<Real>& arrU = uBg[iLev][mfi].array();
       const Array4<Real>& arrE = eBg[iLev][mfi].array();
       const Array4<Real>& arrB = nodeB[iLev][mfi].array();
 
       const Array4<const int>& status = nodeStatus[iLev][mfi].array();
 
-      ParallelFor(box, [&](int i, int j, int k) {
+      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (bit::is_domain_edge(status(ijk))) {
+        const Real& bx = arrB(i, j, k, ix_);
+        const Real& by = arrB(i, j, k, iy_);
+        const Real& bz = arrB(i, j, k, iz_);
+
+        const Real& ux = arrU(i, j, k, ix_);
+        const Real& uy = arrU(i, j, k, iy_);
+        const Real& uz = arrU(i, j, k, iz_);
+
+        arrE(i, j, k, ix_) = -uy * bz + uz * by;
+        arrE(i, j, k, iy_) = -uz * bx + ux * bz;
+        arrE(i, j, k, iz_) = -ux * by + uy * bx;
+      });
+
+      ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (bit::is_domain_boundary(status(ijk))) {
           arrE(i, j, k, ix_) = get_node_E(mfi, ijk, ix_, iLev);
           arrE(i, j, k, iy_) = get_node_E(mfi, ijk, iy_, iLev);
           arrE(i, j, k, iz_) = get_node_E(mfi, ijk, iz_, iLev);
-        } else {
-          const Real& bx = arrB(i, j, k, ix_);
-          const Real& by = arrB(i, j, k, iy_);
-          const Real& bz = arrB(i, j, k, iz_);
-
-          const Real& ux = arrU(i, j, k, ix_);
-          const Real& uy = arrU(i, j, k, iy_);
-          const Real& uz = arrU(i, j, k, iz_);
-
-          arrE(i, j, k, ix_) = -uy * bz + uz * by;
-          arrE(i, j, k, iy_) = -uz * bx + ux * bz;
-          arrE(i, j, k, iz_) = -ux * by + uy * bx;
         }
       });
     }
@@ -1630,12 +1635,6 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, bool useFixedCoef,
 
       const auto& status = nodeStatus[iLev][mfi].array();
       ParallelFor(box, mf.nComp(), [&](int i, int j, int k, int iVar) {
-        if (bit::is_domain_boundary(
-                status(i - dIdx[ix_], j - dIdx[iy_], k - dIdx[iz_])) ||
-            bit::is_domain_boundary(
-                status(i + dIdx[ix_], j + dIdx[iy_], k + dIdx[iz_])))
-          return;
-
         Real coef = coefIn;
         if (!useFixedCoef) {
           coef = arrCoef(i, j, k);
