@@ -348,6 +348,19 @@ public:
     return 0.0;
   }
 
+  inline amrex::Real get_node_fluid_u(amrex::MFIter &mfi, amrex::IntVect ijk,
+                                       int iVar, const int iLev, int iFluid) {
+    amrex::Real u;    
+    if (iVar == ix_)
+      u = fi->get_fluid_ux(mfi, ijk, iFluid, iLev);
+    if (iVar == iy_)
+      u = fi->get_fluid_uy(mfi, ijk, iFluid, iLev);
+    if (iVar == iz_)
+      u = fi->get_fluid_uz(mfi, ijk, iFluid, iLev);
+
+    return u;
+  }
+
   inline amrex::Real get_node_E(amrex::MFIter &mfi, amrex::IntVect ijk,
                                 int iVar, const int iLev) {
     amrex::Real e;
