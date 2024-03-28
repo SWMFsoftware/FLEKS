@@ -120,7 +120,9 @@ private:
   std::string backGroundType = "none";
 
   bool doSmoothE = false;
-  int nSmoothE = 1;
+  bool doSmoothB = false;
+  int nSmoothE = 0;
+  int nSmoothB = 0;
   amrex::Real coefStrongSmooth = 0.5;
   amrex::Real coefWeakSmooth = 0;
   amrex::Real strongSmoothMach = 0.8;
@@ -350,8 +352,8 @@ public:
   }
 
   inline amrex::Real get_node_fluid_u(amrex::MFIter &mfi, amrex::IntVect ijk,
-                                       int iVar, const int iLev, int iFluid) {
-    amrex::Real u;    
+                                      int iVar, const int iLev, int iFluid) {
+    amrex::Real u;
     if (iVar == ix_)
       u = fi->get_fluid_ux(mfi, ijk, iFluid, iLev);
     if (iVar == iy_)

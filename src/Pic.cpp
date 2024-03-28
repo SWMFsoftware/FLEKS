@@ -79,6 +79,11 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("strongSmoothMach", strongSmoothMach);
       param.read_var("weakSmoothMach", weakSmoothMach);
     }
+  } else if (command == "#SMOOTHB") {
+    param.read_var("doSmoothB", doSmoothB);
+    if (doSmoothB) {
+      param.read_var("nSmoothE", nSmoothB);
+    }
   } else if (command == "#RESAMPLING") {
     param.read_var("doReSampling", doReSampling);
     if (doReSampling) {
@@ -1558,6 +1563,14 @@ void Pic::update_B() {
           nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
           node_bilinear_interp);
+    }
+
+    if (doSmoothB) {
+      for (int i = 0; i < nSmoothB; i++) {
+        smooth_multifab(nodeB[iLev], iLev, true, 0.5, i % 2 + 1);
+      }
+      average_node_to_cellcenter(centerB[iLev], 0, nodeB[iLev], 0,
+                                 centerB[iLev].nComp(), centerB[iLev].nGrow());
     }
   }
 }
