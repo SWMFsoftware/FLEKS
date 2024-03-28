@@ -2071,3 +2071,60 @@ void Pic::charge_exchange() {
     source->convert_moment_to_velocity(true, false);
   }
 }
+
+void Pic::fill_lightwaves(amrex::Real wavelength) {
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+      FArrayBox& fab = nodeE[iLev][mfi];
+      FArrayBox& fab2 = nodeB[iLev][mfi];
+
+      const Box& box = mfi.fabbox();
+      const Array4<Real>& arrE = fab.array();
+      const Array4<Real>& arrB = fab2.array();
+      const auto& prob_lo = geom[iLev].ProbLo();
+      const auto& dx = geom[iLev].CellSize();
+      ParallelFor(box, [&](int i, int j, int k) {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+
+        arrE(ijk, iy_) =
+            sin((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * i)) / wavelength);
+        arrE(ijk, iz_) =
+            -cos((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * i)) / wavelength);
+        arrB(ijk, iy_) =
+            cos((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * i)) / wavelength);
+
+        arrB(ijk, iz_) =
+            sin((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * i)) / wavelength);
+      });
+    }
+
+    nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+
+      FArrayBox& fab = centerB[iLev][mfi];
+
+      const Box& box = mfi.fabbox();
+      const Array4<Real>& arrcB = fab.array();
+      const auto& prob_lo = geom[iLev].ProbLo();
+      const auto& dx = geom[iLev].CellSize();
+      ParallelFor(box, [&](int i, int j, int k) {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+
+        arrcB(ijk, iy_) =
+            cos((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * (i + 0.5))) /
+                wavelength);
+
+        arrcB(ijk, iz_) =
+            sin((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * (i + 0.5))) /
+                wavelength);
+      });
+    }
+
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+}
