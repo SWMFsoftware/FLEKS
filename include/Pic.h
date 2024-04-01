@@ -116,8 +116,6 @@ private:
   bool solveFieldInCoMov = false;
   bool solvePartInCoMov = false;
   int nSmoothBackGroundU = 0;
-  int nSmoothBackGroundE = 0;
-  std::string backGroundType = "none";
 
   bool doSmoothE = false;
   bool doSmoothB = false;
@@ -289,8 +287,6 @@ public:
   void calc_smooth_coef();
 
   void update_U0_E0();
-  void update_U0_E0_smooth();
-  void update_U0_E0_mhd();
   //-------------Electric field solver end-------------
 
   void update_B();

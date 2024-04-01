@@ -67,9 +67,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#COMOVING") {
     param.read_var("solveFieldInCoMov", solveFieldInCoMov);
     param.read_var("solvePartInCoMov", solvePartInCoMov);
-    param.read_var("backGroundType", backGroundType);
-    param.read_var("nSmoothBackGroundU", nSmoothBackGroundU);
-    param.read_var("nSmoothBackGroundE", nSmoothBackGroundE);
+    if (solveFieldInCoMov || solvePartInCoMov) {
+      param.read_var("nSmoothBackGroundU", nSmoothBackGroundU);
+    }
   } else if (command == "#SMOOTHE") {
     param.read_var("doSmoothE", doSmoothE);
     if (doSmoothE) {
@@ -951,57 +951,7 @@ void Pic::update(bool doReportIn) {
 
 //==========================================================
 void Pic::update_U0_E0() {
-  if (backGroundType == "smooth") {
-    update_U0_E0_smooth();
-  } else if (backGroundType == "mhd") {
-    update_U0_E0_mhd();
-  }
-}
-
-//==========================================================
-void Pic::update_U0_E0_mhd() {
-  std::string nameFunc = "Pic::update_U0_E0_mhd";
-  timing_func(nameFunc);
-
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    uBg[iLev].setVal(0.0);
-    eBg[iLev].setVal(0.0);
-    for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.fabbox();
-      const Array4<Real>& arrU = uBg[iLev][mfi].array();
-      const Array4<Real>& arrE = eBg[iLev][mfi].array();
-
-      const int iFluid = 0;
-
-      ParallelFor(box, [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-
-        arrU(i, j, k, ix_) = fi->get_fluid_ux(mfi, ijk, iFluid, iLev);
-        arrU(i, j, k, iy_) = fi->get_fluid_uy(mfi, ijk, iFluid, iLev);
-        arrU(i, j, k, iz_) = fi->get_fluid_uz(mfi, ijk, iFluid, iLev);
-
-        arrE(i, j, k, ix_) = fi->get_ex(mfi, ijk, iLev);
-        arrE(i, j, k, iy_) = fi->get_ey(mfi, ijk, iLev);
-        arrE(i, j, k, iz_) = fi->get_ez(mfi, ijk, iLev);
-      });
-    }
-
-    uBg[iLev].FillBoundary(Geom(iLev).periodicity());
-    eBg[iLev].FillBoundary(Geom(iLev).periodicity());
-
-    for (int i = 0; i < nSmoothBackGroundU; i++) {
-      smooth_multifab(uBg[iLev], iLev, true, 0.5);
-    }
-
-    for (int i = 0; i < nSmoothBackGroundE; i++) {
-      smooth_multifab(eBg[iLev], iLev, true, 0.5);
-    }
-  }
-}
-
-//==========================================================
-void Pic::update_U0_E0_smooth() {
-  std::string nameFunc = "Pic::update_U0_E0_smooth";
+  std::string nameFunc = "Pic::update_U0_E0";
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -1043,11 +993,6 @@ void Pic::update_U0_E0_smooth() {
     for (int i = 0; i < nSmoothBackGroundU; i++)
       smooth_multifab(uBg[iLev], iLev, true, 0.5, i % 2 + 1);
 
-    // MultiFab::Copy(tempNode3, nodeB, 0, 0, nodeB.nComp(), nodeB.nGrow());
-    // tempNode3.FillBoundary(Geom(0).periodicity());
-    // for (int i = 0; i < 5; i++)
-    //   smooth_multifab(tempNode3, true, 0.5);
-
     for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
       const Array4<Real>& arrU = uBg[iLev][mfi].array();
       const Array4<Real>& arrE = eBg[iLev][mfi].array();
@@ -1055,6 +1000,7 @@ void Pic::update_U0_E0_smooth() {
 
       const Array4<const int>& status = nodeStatus[iLev][mfi].array();
 
+      // Fill in the physical nodes
       ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         const Real& bx = arrB(i, j, k, ix_);
@@ -1070,6 +1016,7 @@ void Pic::update_U0_E0_smooth() {
         arrE(i, j, k, iz_) = -ux * by + uy * bx;
       });
 
+      // Fill in boundary nodes
       ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_domain_boundary(status(ijk))) {
@@ -1081,13 +1028,6 @@ void Pic::update_U0_E0_smooth() {
     }
 
     eBg[iLev].FillBoundary(Geom(iLev).periodicity());
-
-    for (int i = 0; i < nSmoothBackGroundE; i++)
-      smooth_multifab(eBg[iLev], iLev, true, 0.5, i % 2 + 1);
-
-    //
-    // print_MultiFab(nodeU0, "nodeU0", 1);
-    // print_MultiFab(nodeE0, "nodeE0", 1);
   }
 }
 
@@ -2101,14 +2041,18 @@ void Pic::fill_lightwaves(amrex::Real wavelength) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
 
         arrE(ijk, iy_) =
-            sin((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * i)) / wavelength);
+            sin((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * i)) /
+                wavelength);
         arrE(ijk, iz_) =
-            -cos((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * i)) / wavelength);
+            -cos((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * i)) /
+                 wavelength);
         arrB(ijk, iy_) =
-            cos((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * i)) / wavelength);
+            cos((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * i)) /
+                wavelength);
 
         arrB(ijk, iz_) =
-            sin((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * i)) / wavelength);
+            sin((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * i)) /
+                wavelength);
       });
     }
 
