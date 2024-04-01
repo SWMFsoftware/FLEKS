@@ -74,10 +74,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("doSmoothE", doSmoothE);
     if (doSmoothE) {
       param.read_var("nSmoothE", nSmoothE);
-      param.read_var("coefStrongSmooth", coefStrongSmooth);
-      param.read_var("coefWeakSmooth", coefWeakSmooth);
-      param.read_var("strongSmoothMach", strongSmoothMach);
-      param.read_var("weakSmoothMach", weakSmoothMach);
     }
   } else if (command == "#SMOOTHB") {
     param.read_var("doSmoothB", doSmoothB);
@@ -256,16 +252,11 @@ void Pic::post_regrid() {
 
   distribute_arrays(cGridsOld);
 
-  {
-    bool doMoveData = false;
-
+  {    
     iTot = nSpecies;
     if (plasmaEnergy.empty()) {
       plasmaEnergy.resize(nSpecies + 1);
     }
-
-    distribute_FabArray(nodeSmoothCoef, nGrids[0], DistributionMap(0), 1, nGst,
-                        doMoveData);
   }
   //===========Move field data around end====================
 
@@ -965,8 +956,7 @@ void Pic::update_U0_E0() {
       const Array4<const int>& status = nodeStatus[iLev][mfi].array();
 
       // Fill in the physical nodes
-      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {        
         const Real rho = arrMoments(i, j, k, iRho_);
         if (rho > 1e-99) {
           const Real invRho = 1. / rho;
@@ -991,7 +981,7 @@ void Pic::update_U0_E0() {
     uBg[iLev].FillBoundary(Geom(iLev).periodicity());
 
     for (int i = 0; i < nSmoothBackGroundU; i++)
-      smooth_multifab(uBg[iLev], iLev, true, 0.5, i % 2 + 1);
+      smooth_multifab(uBg[iLev], iLev, i % 2 + 1);
 
     for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
       const Array4<Real>& arrU = uBg[iLev][mfi].array();
@@ -1001,8 +991,7 @@ void Pic::update_U0_E0() {
       const Array4<const int>& status = nodeStatus[iLev][mfi].array();
 
       // Fill in the physical nodes
-      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {        
         const Real& bx = arrB(i, j, k, ix_);
         const Real& by = arrB(i, j, k, iy_);
         const Real& bz = arrB(i, j, k, iz_);
@@ -1175,7 +1164,6 @@ void Pic::update_E_impl() {
     nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
 
     if (doSmoothE) {
-      calc_smooth_coef();
       smooth_E(nodeEth[iLev], iLev);
     }
 
@@ -1206,7 +1194,6 @@ void Pic::update_E_impl() {
     }
 
     if (doSmoothE) {
-      // calc_smooth_coef();
       smooth_E(nodeEth[iLev], iLev);
       smooth_E(nodeE[iLev], iLev);
     }
@@ -1507,7 +1494,7 @@ void Pic::update_B() {
 
     if (doSmoothB) {
       for (int i = 0; i < nSmoothB; i++) {
-        smooth_multifab(nodeB[iLev], iLev, true, 0.5, i % 2 + 1);
+        smooth_multifab(nodeB[iLev], iLev, i % 2 + 1);
       }
       average_node_to_cellcenter(centerB[iLev], 0, nodeB[iLev], 0,
                                  centerB[iLev].nComp(), centerB[iLev].nGrow());
@@ -1516,60 +1503,11 @@ void Pic::update_B() {
 }
 
 //==========================================================
-void Pic::calc_smooth_coef() {
-  std::string nameFunc = "Pic::calc_smooth_coef";
-  timing_func(nameFunc);
-
-  nodeSmoothCoef.setVal(coefWeakSmooth);
-
-  if (fabs(coefStrongSmooth - coefWeakSmooth) < 1e-3)
-    return;
-
-  int iLev = 0;
-  Real gamma = 5. / 3;
-  for (MFIter mfi(nodePlasma[nSpecies][iLev]); mfi.isValid(); ++mfi) {
-    FArrayBox& fab = nodePlasma[nSpecies][iLev][mfi];
-    const Box& box = mfi.fabbox();
-    const Array4<Real>& arr = fab.array();
-
-    const Array4<Real>& arrCoef = nodeSmoothCoef[mfi].array();
-
-    ParallelFor(box, [&](int i, int j, int k) {
-      const Real rho = arr(i, j, k, iRho_);
-
-      if (rho > 1e-99) {
-        const Real uBulk =
-            sqrt(pow(arr(i, j, k, iUx_), 2) + pow(arr(i, j, k, iUy_), 2) +
-                 pow(arr(i, j, k, iUz_), 2)) /
-            rho;
-
-        const Real uth = sqrt(
-            gamma / 3.0 *
-            (arr(i, j, k, iPxx_) + arr(i, j, k, iPyy_) + arr(i, j, k, iPzz_)) /
-            rho);
-
-        const Real mach = uBulk / uth;
-
-        if (mach > strongSmoothMach) {
-          arrCoef(i, j, k) = coefStrongSmooth;
-        } else if (mach > weakSmoothMach) {
-          Real r0 =
-              (mach - weakSmoothMach) / (strongSmoothMach - weakSmoothMach);
-          arrCoef(i, j, k) =
-              coefWeakSmooth + (coefStrongSmooth - coefWeakSmooth) * r0;
-        }
-      }
-    });
-  }
-
-  smooth_multifab(nodeSmoothCoef, iLev, true, 0.5);
-}
-
-//==========================================================
-void Pic::smooth_multifab(MultiFab& mf, int iLev, bool useFixedCoef,
-                          double coefIn, int di) {
+void Pic::smooth_multifab(MultiFab& mf, int iLev, int di) {
   std::string nameFunc = "Pic::smooth_multifab";
   timing_func(nameFunc);
+
+  const Real coef = 0.5;
 
   MultiFab mfOld(mf.boxArray(), mf.DistributionMap(), mf.nComp(), mf.nGrow());
 
@@ -1584,15 +1522,8 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, bool useFixedCoef,
 
       Array4<Real> const& arrE = mf[mfi].array();
       Array4<Real> const& arrTmp = mfOld[mfi].array();
-      Array4<Real> const& arrCoef = nodeSmoothCoef[mfi].array();
-
-      const auto& status = nodeStatus[iLev][mfi].array();
+      
       ParallelFor(box, mf.nComp(), [&](int i, int j, int k, int iVar) {
-        Real coef = coefIn;
-        if (!useFixedCoef) {
-          coef = arrCoef(i, j, k);
-        }
-
         const Real weightSelf = 1 - coef;
         const Real WeightNei = coef / 2.0;
 
@@ -1617,14 +1548,11 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, bool useFixedCoef,
 
 //==========================================================
 void Pic::smooth_E(MultiFab& mfE, int iLev) {
-  if (!doSmoothE)
-    return;
-
   std::string nameFunc = "Pic::smooth_E";
   timing_func(nameFunc);
 
   for (int icount = 0; icount < nSmoothE; icount++) {
-    smooth_multifab(mfE, iLev, false, 1, icount % 2 + 1);
+    smooth_multifab(mfE, iLev, icount % 2 + 1);
   }
 }
 

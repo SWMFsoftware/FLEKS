@@ -386,9 +386,6 @@ double Pic::get_var(std::string var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 3) == "phi") {
       const Array4<Real const>& arr = centerPhi[iLev][mfi].array();
       value = arr(ijk);
-    } else if (var.substr(0, 7) == "smoothE") {
-      const Array4<Real const>& arr = nodeSmoothCoef[mfi].array();
-      value = arr(ijk);
     } else if (var.substr(0, 4) == "rank") {
       value = ParallelDescriptor::MyProc();
     } else if (var.substr(0, 5) == "block") {
