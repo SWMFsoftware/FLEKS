@@ -502,7 +502,13 @@ void Pic::calc_mass_matrix() {
 
   if (isGridEmpty)
     return;
-
+  if (decoupleparticlesfromfield) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      nodeMM[iLev].setVal(0.0);
+      jHat[iLev].setVal(0.0);
+    }
+    return;
+  }
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -549,12 +555,6 @@ void Pic::calc_mass_matrix() {
         ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
   }
 
-  if (decoupleparticlesfromfield) {
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      nodeMM[iLev].setVal(0.0);
-      jHat[iLev].setVal(0.0);
-    }
-  }
   // WARNING: interp_from_coarse_to_fine_for_domain_edge might be needed here
 }
 
