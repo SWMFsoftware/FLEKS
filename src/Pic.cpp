@@ -908,11 +908,11 @@ void Pic::update(bool doReportIn) {
     divE_correction();
   }
 
-  // for (int iLev=1;iLev<n_lev();iLev++) {
-  //   average_down_nodal(nodeE[iLev],nodeE[iLev-1],ref_ratio[iLev]);
-  //   average_down_nodal(nodeB[iLev],nodeB[iLev-1],ref_ratio[iLev]);
-  //   average_down(centerB[iLev],centerB[iLev-1],0,0,ref_ratio[iLev]);
-  // }
+  for (int iLev=1;iLev<n_lev();iLev++) {
+    average_down_nodal(nodeE[iLev],nodeE[iLev-1],ref_ratio[iLev]);
+    average_down_nodal(nodeB[iLev],nodeB[iLev-1],ref_ratio[iLev]);
+    average_down(centerB[iLev],centerB[iLev-1],0,0,ref_ratio[iLev]);
+  }
 
   tc->set_dt(tc->get_next_dt());
 
