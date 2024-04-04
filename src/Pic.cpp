@@ -79,6 +79,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("doSmoothB", doSmoothB);
     if (doSmoothB) {
       param.read_var("nSmoothE", nSmoothB);
+      param.read_var("coefSmoothB", coefSmoothB);
     }
   } else if (command == "#RESAMPLING") {
     param.read_var("doReSampling", doReSampling);
@@ -252,7 +253,7 @@ void Pic::post_regrid() {
 
   distribute_arrays(cGridsOld);
 
-  {    
+  {
     iTot = nSpecies;
     if (plasmaEnergy.empty()) {
       plasmaEnergy.resize(nSpecies + 1);
@@ -908,10 +909,10 @@ void Pic::update(bool doReportIn) {
     divE_correction();
   }
 
-  for (int iLev=1;iLev<n_lev();iLev++) {
-    average_down_nodal(nodeE[iLev],nodeE[iLev-1],ref_ratio[iLev]);
-    average_down_nodal(nodeB[iLev],nodeB[iLev-1],ref_ratio[iLev]);
-    average_down(centerB[iLev],centerB[iLev-1],0,0,ref_ratio[iLev]);
+  for (int iLev = 1; iLev < n_lev(); iLev++) {
+    average_down_nodal(nodeE[iLev], nodeE[iLev - 1], ref_ratio[iLev]);
+    average_down_nodal(nodeB[iLev], nodeB[iLev - 1], ref_ratio[iLev]);
+    average_down(centerB[iLev], centerB[iLev - 1], 0, 0, ref_ratio[iLev]);
   }
 
   tc->set_dt(tc->get_next_dt());
@@ -956,7 +957,7 @@ void Pic::update_U0_E0() {
       const Array4<const int>& status = nodeStatus[iLev][mfi].array();
 
       // Fill in the physical nodes
-      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {        
+      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
         const Real rho = arrMoments(i, j, k, iRho_);
         if (rho > 1e-99) {
           const Real invRho = 1. / rho;
@@ -991,7 +992,7 @@ void Pic::update_U0_E0() {
       const Array4<const int>& status = nodeStatus[iLev][mfi].array();
 
       // Fill in the physical nodes
-      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {        
+      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
         const Real& bx = arrB(i, j, k, ix_);
         const Real& by = arrB(i, j, k, iy_);
         const Real& bz = arrB(i, j, k, iz_);
@@ -1454,6 +1455,7 @@ void Pic::update_B() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab dB(cGrids[iLev], DistributionMap(iLev), 3, nGst);
     curl_node_to_center(nodeEth[iLev], dB, Geom(iLev).InvCellSize());
+
     MultiFab::Saxpy(centerB[iLev], -tc->get_dt(), dB, 0, 0,
                     centerB[iLev].nComp(), centerB[iLev].nGrow());
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -1470,6 +1472,12 @@ void Pic::update_B() {
 
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
                    dBdt[iLev].nGrow());
+
+    if (doSmoothB) {
+      for (int i = 0; i < nSmoothB; i++) {
+        smooth_multifab(centerB[iLev], iLev, i % 2 + 1, coefSmoothB);
+      }
+    }
 
     average_center_to_node(centerB[iLev], nodeB[iLev]);
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -1491,23 +1499,13 @@ void Pic::update_B() {
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
           node_bilinear_interp);
     }
-
-    if (doSmoothB) {
-      for (int i = 0; i < nSmoothB; i++) {
-        smooth_multifab(nodeB[iLev], iLev, i % 2 + 1);
-      }
-      average_node_to_cellcenter(centerB[iLev], 0, nodeB[iLev], 0,
-                                 centerB[iLev].nComp(), centerB[iLev].nGrow());
-    }
   }
 }
 
 //==========================================================
-void Pic::smooth_multifab(MultiFab& mf, int iLev, int di) {
+void Pic::smooth_multifab(MultiFab& mf, int iLev, int di, Real coef) {
   std::string nameFunc = "Pic::smooth_multifab";
   timing_func(nameFunc);
-
-  const Real coef = 0.5;
 
   MultiFab mfOld(mf.boxArray(), mf.DistributionMap(), mf.nComp(), mf.nGrow());
 
@@ -1522,7 +1520,7 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, int di) {
 
       Array4<Real> const& arrE = mf[mfi].array();
       Array4<Real> const& arrTmp = mfOld[mfi].array();
-      
+
       ParallelFor(box, mf.nComp(), [&](int i, int j, int k, int iVar) {
         const Real weightSelf = 1 - coef;
         const Real WeightNei = coef / 2.0;

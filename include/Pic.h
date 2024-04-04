@@ -120,7 +120,8 @@ private:
   bool doSmoothE = false;
   bool doSmoothB = false;
   int nSmoothE = 0;
-  int nSmoothB = 0;  
+  int nSmoothB = 0;
+  amrex::Real coefSmoothB = 0;
 
   TestCase testCase = RegularSimulation;
 
@@ -275,7 +276,8 @@ public:
 
   void smooth_E(amrex::MultiFab &mfE, int iLev);
 
-  void smooth_multifab(amrex::MultiFab &mf, int iLev, int di);
+  void smooth_multifab(amrex::MultiFab &mf, int iLev, int di,
+                       amrex::Real coef = 0.5);
 
   void update_U0_E0();
   //-------------Electric field solver end-------------
