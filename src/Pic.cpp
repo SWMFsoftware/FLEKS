@@ -78,7 +78,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#SMOOTHB") {
     param.read_var("doSmoothB", doSmoothB);
     if (doSmoothB) {
-      param.read_var("nSmoothE", nSmoothB);
+      param.read_var("nSmoothB", nSmoothB);
       param.read_var("coefSmoothB", coefSmoothB);
     }
   } else if (command == "#RESAMPLING") {
