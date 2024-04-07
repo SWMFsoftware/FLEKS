@@ -733,10 +733,11 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#ELECTRON" || command == "#DISCRETIZE" ||
         command == "#DISCRETIZATION" || command == "#RESAMPLING" ||
         command == "#SMOOTHE" || command == "#SMOOTHB" ||
-        command == "#TESTCASE" || command == "#FASTMERGE" ||
-        command == "#ADAPTIVESOURCEPPC" || command == "#MERGELIGHT" ||
-        command == "#VACUUM" || command == "#PARTICLELEVRATIO" ||
-        command == "#OHION" || command == "#PIC" || command == "#EXPLICITPIC" ||
+        command == "#HYPERRESISTIVITY" || command == "#TESTCASE" ||
+        command == "#FASTMERGE" || command == "#ADAPTIVESOURCEPPC" ||
+        command == "#MERGELIGHT" || command == "#VACUUM" ||
+        command == "#PARTICLELEVRATIO" || command == "#OHION" ||
+        command == "#PIC" || command == "#EXPLICITPIC" ||
         command == "#COMOVING" || command == "#PARTICLEBOXBOUNDARY" ||
         command == "#SUPID" || command == "#SOLVEEM") {
       pic->read_param(command, param);

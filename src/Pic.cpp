@@ -81,6 +81,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("nSmoothB", nSmoothB);
       param.read_var("coefSmoothB", coefSmoothB);
     }
+  } else if (command == "#HYPERRESISTIVITY") {
+    param.read_var("etaHypSI", etaHypSI);
   } else if (command == "#RESAMPLING") {
     param.read_var("doReSampling", doReSampling);
     if (doReSampling) {
@@ -143,6 +145,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 void Pic::post_process_param() {
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
+
+  etaHyp = etaHypSI * pow(fi->get_Si2NoL(), 4) / fi->get_Si2NoT();
 }
 
 //==========================================================
@@ -1458,6 +1462,14 @@ void Pic::update_B() {
 
     MultiFab::Saxpy(centerB[iLev], -tc->get_dt(), dB, 0, 0,
                     centerB[iLev].nComp(), centerB[iLev].nGrow());
+
+    if (etaHyp > 0) {
+      dB.setVal(0.0);
+      fourth_order_derivative(centerB[iLev], dB, iLev);
+      MultiFab::Saxpy(centerB[iLev], -tc->get_dt() * etaHyp, dB, 0, 0,
+                      centerB[iLev].nComp(), centerB[iLev].nGrow());
+    }
+
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
       apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
@@ -1500,6 +1512,51 @@ void Pic::update_B() {
           node_bilinear_interp);
     }
   }
+}
+
+//==========================================================
+void Pic::fourth_order_derivative(MultiFab& mf, MultiFab& derivative,
+                                  int iLev) {
+  std::string nameFunc = "Pic::fourth_order_derivative";
+  timing_func(nameFunc);
+
+  const Real* invDx = Geom(iLev).InvCellSize();
+  Real invDx4[nDim];
+  for (int i = 0; i < nDim; i++) {
+    invDx4[i] = pow(invDx[i], 4);
+  }
+
+  auto smooth_dir = [&](int iDir) {
+    int dIdx[nDim3] = { 0, 0, 0 };
+    dIdx[iDir] = 1;
+
+    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+
+      Array4<Real> const& der = derivative[mfi].array();
+      Array4<const Real> const& arr = mf[mfi].array();
+
+      ParallelFor(box, mf.nComp(), [&](int i, int j, int k, int iVar) {
+        der(i, j, k, iVar) +=
+            invDx4[iDir] *
+            (arr(i - 2 * dIdx[ix_], j - 2 * dIdx[iy_], k - 2 * dIdx[iz_],
+                 iVar) +
+             arr(i + 2 * dIdx[ix_], j + 2 * dIdx[iy_], k + 2 * dIdx[iz_],
+                 iVar) -
+             4 * arr(i - dIdx[ix_], j - dIdx[iy_], k - dIdx[iz_], iVar) -
+             4 * arr(i + dIdx[ix_], j + dIdx[iy_], k + dIdx[iz_], iVar) +
+             6 * arr(i, j, k, iVar));
+      });
+    }
+
+    derivative.FillBoundary(Geom(0).periodicity());
+  };
+
+  smooth_dir(ix_);
+  if (nDim > 1)
+    smooth_dir(iy_);
+  if (nDim > 2 && !isFake2D)
+    smooth_dir(iz_);
 }
 
 //==========================================================

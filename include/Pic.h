@@ -122,6 +122,8 @@ private:
   int nSmoothE = 0;
   int nSmoothB = 0;
   amrex::Real coefSmoothB = 0;
+  // Unit in SI: m^4/s
+  amrex::Real etaHypSI = 0, etaHyp = 0;
 
   TestCase testCase = RegularSimulation;
 
@@ -278,6 +280,9 @@ public:
 
   void smooth_multifab(amrex::MultiFab &mf, int iLev, int di,
                        amrex::Real coef = 0.5);
+
+  void fourth_order_derivative(amrex::MultiFab &mf, amrex::MultiFab &derivative,
+                               int iLev);
 
   void update_U0_E0();
   //-------------Electric field solver end-------------
