@@ -881,7 +881,7 @@ void Pic::update(bool doReportIn) {
     update_part_loc_to_half_stage();
   }
 
-  if (solveFieldInCoMov || solvePartInCoMov)
+  if (solveFieldInCoMov || solvePartInCoMov || doSmoothB)
     update_U0_E0();
 
   if (solveEM)
@@ -1486,9 +1486,7 @@ void Pic::update_B() {
                    dBdt[iLev].nGrow());
 
     if (doSmoothB) {
-      for (int i = 0; i < nSmoothB; i++) {
-        smooth_multifab(centerB[iLev], iLev, i % 2 + 1, coefSmoothB);
-      }
+      smooth_B(iLev);
     }
 
     average_center_to_node(centerB[iLev], nodeB[iLev]);
@@ -1512,6 +1510,107 @@ void Pic::update_B() {
           node_bilinear_interp);
     }
   }
+}
+
+//==========================================================
+void Pic::smooth_B(int iLev) {
+  std::string nameFunc = "Pic::smooth_B";
+  timing_func(nameFunc);
+
+  MultiFab centerDB(cGrids[iLev], DistributionMap(iLev), nDim3, nGst);
+  centerDB.setVal(0.0);
+
+  Real coef[nDim3];
+  for (int i = 0; i < nDim3; i++) {
+    coef[i] = 0.5 * tc->get_dt() * Geom(iLev).InvCellSize()[i];
+  }
+
+  for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+    Box box = mfi.validbox();
+
+    const Array4<Real>& nB = nodeB[iLev][mfi].array();
+    const Array4<Real>& cB = centerB[iLev][mfi].array();
+    const Array4<Real const>& nU = uBg[iLev][mfi].array();
+    const Array4<Real>& dB = centerDB[mfi].array();
+
+    // Get the face along the direction iDir for the cell (i,j,k) for the iVar
+    // component
+    auto get_face = [&](int iDir, int i, int j, int k, int iVar,
+                        Array4<Real const> const& arr, Real& l, Real& r) {
+      int kp1 = nDim > 2 ? k + 1 : k;
+      if (iDir == ix_) {
+        l = 0.25 * (arr(i, j, k, iVar) + arr(i, j + 1, k, iVar) +
+                    arr(i, j, kp1, iVar) + arr(i, j + 1, kp1, iVar));
+        r = 0.25 * (arr(i + 1, j, k, iVar) + arr(i + 1, j + 1, k, iVar) +
+                    arr(i + 1, j, kp1, iVar) + arr(i + 1, j + 1, kp1, iVar));
+      } else if (iDir == iy_) {
+        l = 0.25 * (arr(i, j, k, iVar) + arr(i + 1, j, k, iVar) +
+                    arr(i, j, kp1, iVar) + arr(i + 1, j, kp1, iVar));
+
+        r = 0.25 * (arr(i, j + 1, k, iVar) + arr(i + 1, j + 1, k, iVar) +
+                    arr(i, j + 1, kp1, iVar) + arr(i + 1, j + 1, kp1, iVar));
+
+      } else if (iDir == iz_) {
+        l = 0.25 * (arr(i, j, k, iVar) + arr(i, j + 1, k, iVar) +
+                    arr(i + 1, j, k, iVar) + arr(i + 1, j + 1, k, iVar));
+
+        r = 0.25 * (arr(i, j, kp1, iVar) + arr(i, j + 1, kp1, iVar) +
+                    arr(i + 1, j, kp1, iVar) + arr(i + 1, j + 1, kp1, iVar));
+      }
+    };
+
+    ParallelFor(box, nDim3, [&](int i, int j, int k, int iVar) {
+      Real ul, ur;
+      Real bl, br;
+
+      // Flux along x
+      get_face(ix_, i, j, k, ix_, nU, ul, ur);
+      ul = fabs(ul);
+      ur = fabs(ur);
+
+      // Print() << "coef[ix_] = " << coef[ix_] << " ul = " << ul << " ur = " <<
+      // ur
+      //         << "\n";
+
+      for (int iVar = 0; iVar < nDim3; iVar++) {
+        dB(i, j, k, iVar) +=
+            (ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar)) -
+             ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar))) *
+            coef[ix_];
+
+        // printf("x dB(%d, %d, %d, %d) = %f\n", i, j, k, iVar, dB(i, j, k,
+        // iVar)); printf("cB(%d, %d, %d, %d) = %f\n", i, j, k, iVar, cB(i, j,
+        // k, iVar));
+      }
+
+      // Flux along y
+      get_face(iy_, i, j, k, iy_, nU, ul, ur);
+      for (int iVar = 0; iVar < nDim3; iVar++) {
+        dB(i, j, k, iVar) +=
+            (ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar)) -
+             ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar))) *
+            coef[iy_];
+
+        // printf("y dB(%d, %d, %d, %d) = %f\n", i, j, k, iVar, dB(i, j, k,
+        // iVar));
+      }
+
+      if (nDim > 2 && !isFake2D) {
+        // Flux along z
+        get_face(iz_, i, j, k, iz_, nU, ul, ur);
+        for (int iVar = 0; iVar < nDim3; iVar++) {
+          dB(i, j, k, iVar) +=
+              (ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar)) -
+               ul * (cB(i, j, k, iVar) - cB(i, j, k - 1, iVar))) *
+              coef[iz_];
+        }
+      }
+    });
+  }
+
+  MultiFab::Add(centerB[iLev], centerDB, 0, 0, nDim3, 0);
+
+  centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 }
 
 //==========================================================

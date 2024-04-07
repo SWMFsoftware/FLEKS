@@ -289,6 +289,8 @@ public:
 
   void update_B();
 
+  void smooth_B(int iLev);
+
   //-------------div(E) correction begin----------------
   void divE_correction();
   void divE_accurate_matvec(const double *vecIn, double *vecOut);
