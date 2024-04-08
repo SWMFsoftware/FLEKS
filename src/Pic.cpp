@@ -67,9 +67,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#COMOVING") {
     param.read_var("solveFieldInCoMov", solveFieldInCoMov);
     param.read_var("solvePartInCoMov", solvePartInCoMov);
-    if (solveFieldInCoMov || solvePartInCoMov) {
-      param.read_var("nSmoothBackGroundU", nSmoothBackGroundU);
-    }
+    param.read_var("nSmoothBackGroundU", nSmoothBackGroundU);
   } else if (command == "#SMOOTHE") {
     param.read_var("doSmoothE", doSmoothE);
     if (doSmoothE) {
@@ -77,10 +75,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     }
   } else if (command == "#SMOOTHB") {
     param.read_var("doSmoothB", doSmoothB);
-    if (doSmoothB) {
-      param.read_var("nSmoothB", nSmoothB);
-      param.read_var("coefSmoothB", coefSmoothB);
-    }
   } else if (command == "#HYPERRESISTIVITY") {
     param.read_var("etaHypSI", etaHypSI);
   } else if (command == "#RESAMPLING") {

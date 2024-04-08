@@ -120,8 +120,7 @@ private:
   bool doSmoothE = false;
   bool doSmoothB = false;
   int nSmoothE = 0;
-  int nSmoothB = 0;
-  amrex::Real coefSmoothB = 0;
+
   // Unit in SI: m^4/s
   amrex::Real etaHypSI = 0, etaHyp = 0;
 
