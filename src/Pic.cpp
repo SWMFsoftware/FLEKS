@@ -1567,37 +1567,29 @@ void Pic::smooth_B(int iLev) {
       get_face(ix_, i, j, k, ix_, nU, ul, ur);
       ul = fabs(ul);
       ur = fabs(ur);
-
-      // Print() << "coef[ix_] = " << coef[ix_] << " ul = " << ul << " ur = " <<
-      // ur
-      //         << "\n";
-
       for (int iVar = 0; iVar < nDim3; iVar++) {
         dB(i, j, k, iVar) +=
             (ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar)) -
              ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar))) *
             coef[ix_];
-
-        // printf("x dB(%d, %d, %d, %d) = %f\n", i, j, k, iVar, dB(i, j, k,
-        // iVar)); printf("cB(%d, %d, %d, %d) = %f\n", i, j, k, iVar, cB(i, j,
-        // k, iVar));
       }
 
       // Flux along y
       get_face(iy_, i, j, k, iy_, nU, ul, ur);
+      ul = fabs(ul);
+      ur = fabs(ur);
       for (int iVar = 0; iVar < nDim3; iVar++) {
         dB(i, j, k, iVar) +=
             (ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar)) -
              ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar))) *
             coef[iy_];
-
-        // printf("y dB(%d, %d, %d, %d) = %f\n", i, j, k, iVar, dB(i, j, k,
-        // iVar));
       }
 
       if (nDim > 2 && !isFake2D) {
         // Flux along z
         get_face(iz_, i, j, k, iz_, nU, ul, ur);
+        ul = fabs(ul);
+        ur = fabs(ur);
         for (int iVar = 0; iVar < nDim3; iVar++) {
           dB(i, j, k, iVar) +=
               (ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar)) -
