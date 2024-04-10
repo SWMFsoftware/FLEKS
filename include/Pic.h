@@ -118,8 +118,9 @@ private:
   int nSmoothBackGroundU = 0;
 
   bool doSmoothE = false;
-  bool doSmoothB = false;
   int nSmoothE = 0;
+  bool doSmoothB = false;
+  amrex::Real limiterTheta = 0;
 
   TestCase testCase = RegularSimulation;
 

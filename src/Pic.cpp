@@ -1,5 +1,6 @@
 #include <math.h>
 
+#include <AMReX_Algorithm.H>
 #include <AMReX_MultiFabUtil.H>
 #include <AMReX_PlotFileUtil.H>
 
@@ -75,6 +76,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     }
   } else if (command == "#SMOOTHB") {
     param.read_var("doSmoothB", doSmoothB);
+    param.read_var("theta", limiterTheta);
   } else if (command == "#RESAMPLING") {
     param.read_var("doReSampling", doReSampling);
     if (doReSampling) {
@@ -1541,6 +1543,18 @@ void Pic::smooth_B(int iLev) {
       }
     };
 
+    auto limiter = [&](Real u0, Real u1, Real u2) -> Real {
+      Real du21 = u2 - u1;
+      if (du21 == 0)
+        du21 = 1e-99;
+
+      Real r = (u1 - u0) / du21;
+
+      Real phi = max(0.0, min(limiterTheta * r, 0.5 * (1 + r), limiterTheta));
+
+      return 1 - phi;
+    };
+
     ParallelFor(box, nDim3, [&](int i, int j, int k, int iVar) {
       Real ul, ur;
 
@@ -1549,9 +1563,13 @@ void Pic::smooth_B(int iLev) {
       ul = fabs(ul);
       ur = fabs(ur);
       for (int iVar = 0; iVar < nDim3; iVar++) {
+        Real cR = limiter(cB(i - 1, j, k, iVar), cB(i, j, k, iVar),
+                          cB(i + 1, j, k, iVar));
+        Real cL = limiter(cB(i - 2, j, k, iVar), cB(i - 1, j, k, iVar),
+                          cB(i, j, k, iVar));
         dB(i, j, k, iVar) +=
-            (ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar)) -
-             ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar))) *
+            (cR * ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar)) -
+             cL * ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar))) *
             coef[ix_];
       }
 
@@ -1560,9 +1578,14 @@ void Pic::smooth_B(int iLev) {
       ul = fabs(ul);
       ur = fabs(ur);
       for (int iVar = 0; iVar < nDim3; iVar++) {
+        Real cR = limiter(cB(i, j - 1, k, iVar), cB(i, j, k, iVar),
+                          cB(i, j + 1, k, iVar));
+        Real cL = limiter(cB(i, j - 2, k, iVar), cB(i, j - 1, k, iVar),
+                          cB(i, j, k, iVar));
+
         dB(i, j, k, iVar) +=
-            (ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar)) -
-             ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar))) *
+            (cR * ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar)) -
+             cL * ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar))) *
             coef[iy_];
       }
 
@@ -1572,9 +1595,14 @@ void Pic::smooth_B(int iLev) {
         ul = fabs(ul);
         ur = fabs(ur);
         for (int iVar = 0; iVar < nDim3; iVar++) {
+          Real cR = limiter(cB(i, j, k - 1, iVar), cB(i, j, k, iVar),
+                            cB(i, j, k + 1, iVar));
+          Real cL = limiter(cB(i, j, k - 2, iVar), cB(i, j, k - 1, iVar),
+                            cB(i, j, k, iVar));
+
           dB(i, j, k, iVar) +=
-              (ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar)) -
-               ul * (cB(i, j, k, iVar) - cB(i, j, k - 1, iVar))) *
+              (cR * ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar)) -
+               cL * ul * (cB(i, j, k, iVar) - cB(i, j, k - 1, iVar))) *
               coef[iz_];
         }
       }
