@@ -2540,8 +2540,8 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
 
       const AoS& aosOther = tileOther.GetArrayOfStructs();
 
-      const Box& bx = cell_status(iLev)[mfi].box();
-      const Array4<int const>& status = cell_status(iLev)[mfi].array();
+      const Box& bx = other.cell_status(iLev)[mfi].box();
+      const Array4<int const>& status = other.cell_status(iLev)[mfi].array();
 
       const IntVect lowCorner = bx.smallEnd();
       const IntVect highCorner = bx.bigEnd();
