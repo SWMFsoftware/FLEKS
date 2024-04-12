@@ -1517,6 +1517,8 @@ void Pic::smooth_B(int iLev) {
     const Array4<Real const>& nU = uBg[iLev][mfi].array();
     const Array4<Real>& dB = centerDB[mfi].array();
 
+    const auto& status = cellStatus[iLev][mfi].array();
+
     // Get the face along the direction iDir for the cell (i,j,k) for the iVar
     // component
     auto get_face = [&](int iDir, int i, int j, int k, int iVar,
@@ -1558,52 +1560,70 @@ void Pic::smooth_B(int iLev) {
     ParallelFor(box, nDim3, [&](int i, int j, int k, int iVar) {
       Real ul, ur;
 
-      // Flux along x
-      get_face(ix_, i, j, k, ix_, nU, ul, ur);
-      ul = fabs(ul);
-      ur = fabs(ur);
-      for (int iVar = 0; iVar < nDim3; iVar++) {
-        Real cR = limiter(cB(i - 1, j, k, iVar), cB(i, j, k, iVar),
-                          cB(i + 1, j, k, iVar));
-        Real cL = limiter(cB(i - 2, j, k, iVar), cB(i - 1, j, k, iVar),
-                          cB(i, j, k, iVar));
-        dB(i, j, k, iVar) +=
-            (cR * ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar)) -
-             cL * ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar))) *
-            coef[ix_];
-      }
+      bool nearBoundary;
+      nearBoundary = bit::is_lev_boundary(status(i + 1, j, k)) ||
+                     bit::is_lev_boundary(status(i - 1, j, k));
 
-      // Flux along y
-      get_face(iy_, i, j, k, iy_, nU, ul, ur);
-      ul = fabs(ul);
-      ur = fabs(ur);
-      for (int iVar = 0; iVar < nDim3; iVar++) {
-        Real cR = limiter(cB(i, j - 1, k, iVar), cB(i, j, k, iVar),
-                          cB(i, j + 1, k, iVar));
-        Real cL = limiter(cB(i, j - 2, k, iVar), cB(i, j - 1, k, iVar),
-                          cB(i, j, k, iVar));
-
-        dB(i, j, k, iVar) +=
-            (cR * ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar)) -
-             cL * ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar))) *
-            coef[iy_];
-      }
-
-      if (nDim > 2 && !isFake2D) {
-        // Flux along z
-        get_face(iz_, i, j, k, iz_, nU, ul, ur);
+      if (!nearBoundary) {
+        // Do not smooth the cell near the boundary. It is equivilent to
+        // assuming the flux gradient is zero. Help to avoid generating divB.
+        // Flux along  x
+        get_face(ix_, i, j, k, ix_, nU, ul, ur);
         ul = fabs(ul);
         ur = fabs(ur);
         for (int iVar = 0; iVar < nDim3; iVar++) {
-          Real cR = limiter(cB(i, j, k - 1, iVar), cB(i, j, k, iVar),
-                            cB(i, j, k + 1, iVar));
-          Real cL = limiter(cB(i, j, k - 2, iVar), cB(i, j, k - 1, iVar),
+          Real cR = limiter(cB(i - 1, j, k, iVar), cB(i, j, k, iVar),
+                            cB(i + 1, j, k, iVar));
+          Real cL = limiter(cB(i - 2, j, k, iVar), cB(i - 1, j, k, iVar),
+                            cB(i, j, k, iVar));
+          dB(i, j, k, iVar) +=
+              (cR * ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar)) -
+               cL * ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar))) *
+              coef[ix_];
+        }
+      }
+
+      nearBoundary = bit::is_lev_boundary(status(i, j + 1, k)) ||
+                     bit::is_lev_boundary(status(i, j - 1, k));
+
+      if (!nearBoundary) {
+        // Flux along y
+        get_face(iy_, i, j, k, iy_, nU, ul, ur);
+        ul = fabs(ul);
+        ur = fabs(ur);
+        for (int iVar = 0; iVar < nDim3; iVar++) {
+          Real cR = limiter(cB(i, j - 1, k, iVar), cB(i, j, k, iVar),
+                            cB(i, j + 1, k, iVar));
+          Real cL = limiter(cB(i, j - 2, k, iVar), cB(i, j - 1, k, iVar),
                             cB(i, j, k, iVar));
 
           dB(i, j, k, iVar) +=
-              (cR * ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar)) -
-               cL * ul * (cB(i, j, k, iVar) - cB(i, j, k - 1, iVar))) *
-              coef[iz_];
+              (cR * ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar)) -
+               cL * ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar))) *
+              coef[iy_];
+        }
+      }
+
+      if (nDim > 2 && !isFake2D) {
+        nearBoundary = bit::is_lev_boundary(status(i, j, k + 1)) ||
+                       bit::is_lev_boundary(status(i, j, k - 1));
+
+        if (!nearBoundary) {
+          // Flux along z
+          get_face(iz_, i, j, k, iz_, nU, ul, ur);
+          ul = fabs(ul);
+          ur = fabs(ur);
+          for (int iVar = 0; iVar < nDim3; iVar++) {
+            Real cR = limiter(cB(i, j, k - 1, iVar), cB(i, j, k, iVar),
+                              cB(i, j, k + 1, iVar));
+            Real cL = limiter(cB(i, j, k - 2, iVar), cB(i, j, k - 1, iVar),
+                              cB(i, j, k, iVar));
+
+            dB(i, j, k, iVar) +=
+                (cR * ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar)) -
+                 cL * ul * (cB(i, j, k, iVar) - cB(i, j, k - 1, iVar))) *
+                coef[iz_];
+          }
         }
       }
     });
