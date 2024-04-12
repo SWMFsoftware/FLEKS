@@ -247,9 +247,9 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
       const auto lo = lbound(tile_box);
       const auto hi = ubound(tile_box);
 
-      for (int i = lo.x; i <= hi.x; ++i)
+      for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
-          for (int k = lo.z; k <= hi.z; ++k) {
+          for (int i = lo.x; i <= hi.x; ++i) {
             const auto& status = cell_status(iLev)[mfi].array();
             if (bit::is_refined(status(i, j, k)))
               continue;
@@ -316,9 +316,9 @@ void Particles<NStructReal, NStructInt>::add_particles_domain() {
       const auto lo = lbound(bx);
       const auto hi = ubound(bx);
 
-      for (int i = lo.x; i <= hi.x; ++i)
+      for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
-          for (int k = lo.z; k <= hi.z; ++k) {
+          for (int i = lo.x; i <= hi.x; ++i) {
             IntVect ijk = { AMREX_D_DECL(i, j, k) };
             if (bit::is_new(status(ijk)) && !bit::is_refined(status(ijk))) {
               add_particles_cell(iLev, mfi, ijk, fi, true);
@@ -1277,9 +1277,9 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       // artificial oscillations, which are seen in Earth's magnetotail
       // simulations. So, it is better to skip the boundary physical cells.
       bool isBoundaryPhysicalCell = false;
-      for (int ix = 0; ix <= 1; ix++)
+      for (int iz = 0; iz <= 1; iz++)
         for (int iy = 0; iy <= 1; iy++)
-          for (int iz = 0; iz <= 1; iz++) {
+          for (int ix = 0; ix <= 1; ix++) {
             if (bit::is_lev_boundary(
                     status(loIdx[ix_] + ix, loIdx[iy_] + iy, loIdx[iz_] + iz)))
               isBoundaryPhysicalCell = true;
