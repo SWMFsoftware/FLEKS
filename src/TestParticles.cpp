@@ -57,7 +57,13 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
     const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
 
     auto& particles = pti.GetArrayOfStructs();
-    const Box& validBox = pti.validbox();
+
+    const Box& bx = cell_status(iLev)[pti].box();
+    const Array4<int const>& status = cell_status(iLev)[pti].array();
+
+    const IntVect lowCorner = bx.smallEnd();
+    const IntVect highCorner = bx.bigEnd();
+
     for (auto& p : particles) {
       if (p.idata(iRecordCount_) >= nPTRecord) {
         Abort("Error: there is not enough allocated memory to store the "
@@ -199,7 +205,7 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
       // Print() << "p = " << p << std::endl;
 
       // Mark for deletion
-      if (is_outside_active_region(p, iLev, validBox)) {
+      if (is_outside_active_region(p, status, lowCorner, highCorner)) {
         p.id() = -1;
       }
 
@@ -216,7 +222,13 @@ void TestParticles::move_and_save_neutrals(Real dt, Real tNowSI, bool doSave) {
   const int iLev = 0;
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     auto& particles = pti.GetArrayOfStructs();
-    const Box& validBox = pti.validbox();
+
+    const Box& bx = cell_status(iLev)[pti].box();
+    const Array4<int const>& status = cell_status(iLev)[pti].array();
+
+    const IntVect lowCorner = bx.smallEnd();
+    const IntVect highCorner = bx.bigEnd();
+
     for (auto& p : particles) {
       if (p.idata(iRecordCount_) >= nPTRecord) {
         Abort("Error: there is not enough allocated memory to store the "
@@ -249,7 +261,7 @@ void TestParticles::move_and_save_neutrals(Real dt, Real tNowSI, bool doSave) {
       }
 
       // Mark for deletion
-      if (is_outside_active_region(p, iLev, validBox)) {
+      if (is_outside_active_region(p, status, lowCorner, highCorner)) {
         p.id() = -1;
       }
     }
