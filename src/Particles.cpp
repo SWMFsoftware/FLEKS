@@ -392,6 +392,9 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
 
     const AoS& particles = pti.GetArrayOfStructs();
 
+    const Dim3 lo = init_dim3(0);
+    const Dim3 hi = init_dim3(1);
+
     for (const auto& p : particles) {
       /*
       Q: Why do not check p.id() < 0?
@@ -417,19 +420,12 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
       linear_interpolation_coef(dShift, coef);
       //-----calculate interpolate coef end-------------
 
-      Dim3 lo, hi;
-      {
-        Box bx(IntVect(0), IntVect(1));
-        lo = lbound(bx);
-        hi = ubound(bx);
-      }
-
       const Real cTmp = qp * invVol[iLev];
       for (int kk = lo.z; kk <= hi.z; kk++)
         for (int jj = lo.y; jj <= hi.y; jj++)
           for (int ii = lo.x; ii <= hi.x; ii++) {
-            IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
-                                         loIdx[iz_] + kk) };
+            const IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                               loIdx[iz_] + kk) };
             chargeArr(ijk) += coef[ii][jj][kk] * cTmp;
           }
 
@@ -585,6 +581,9 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 
       const AoS& particles = pti.GetArrayOfStructs();
 
+      const Dim3 lo = init_dim3(0);
+      const Dim3 hi = init_dim3(1);
+
       // Print() << "iLev = " << iLev << std::endl;
       for (const auto& p : particles) {
         if (p.id() < 0)
@@ -632,19 +631,12 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
           pMoments[iPyz_] = my * wp;
         }
 
-        Dim3 lo, hi;
-        {
-          Box bx(IntVect(0), IntVect(1));
-          lo = lbound(bx);
-          hi = ubound(bx);
-        }
-
         for (int iVar = 0; iVar < nMoments; iVar++)
           for (int kk = lo.z; kk <= hi.z; kk++)
             for (int jj = lo.y; jj <= hi.y; jj++)
               for (int ii = lo.x; ii <= hi.x; ii++) {
-                IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
-                                             loIdx[iz_] + kk) };
+                const IntVect ijk = { AMREX_D_DECL(
+                    loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) };
                 momentsArr(ijk, iVar) += coef[ii][jj][kk] * pMoments[iVar];
               }
 
@@ -699,6 +691,9 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
     const AoS& particles = pti.GetArrayOfStructs();
 
+    const Dim3 lo = init_dim3(0);
+    const Dim3 hi = init_dim3(1);
+
     for (const auto& p : particles) {
       if (p.id() < 0)
         continue;
@@ -726,18 +721,11 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       Real u0[3] = { 0, 0, 0 };
       Real bp[3] = { 0, 0, 0 };
 
-      Dim3 lo, hi;
-      {
-        Box bx(IntVect(0), IntVect(1));
-        lo = lbound(bx);
-        hi = ubound(bx);
-      }
-
       for (int kk = lo.z; kk <= hi.z; kk++)
         for (int jj = lo.y; jj <= hi.y; jj++)
           for (int ii = lo.x; ii <= hi.x; ii++) {
-            IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
-                                         loIdx[iz_] + kk) };
+            const IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                               loIdx[iz_] + kk) };
             for (int iDim = 0; iDim < nDim3; iDim++) {
               bp[iDim] += nodeBArr(ijk, iDim) * coef[ii][jj][kk];
 
@@ -1118,6 +1106,10 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       const IntVect highCorner = bx.bigEnd();
 
       AoS& particles = pti.GetArrayOfStructs();
+
+      const Dim3 lo = init_dim3(0);
+      const Dim3 hi = init_dim3(1);
+
       for (auto& p : particles) {
         if (p.id() < 0)
           continue;
@@ -1141,13 +1133,6 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         Real coef[2][2][2];
         linear_interpolation_coef(dShift, coef);
         //-----calculate interpolate coef end-------------
-
-        Dim3 lo, hi;
-        {
-          Box bx(IntVect(0), IntVect(1));
-          lo = lbound(bx);
-          hi = ubound(bx);
-        }
 
         Real bp[3] = { 0, 0, 0 };
         Real ep[3] = { 0, 0, 0 };

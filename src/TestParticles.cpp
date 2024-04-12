@@ -64,6 +64,9 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
 
+    const Dim3 lo = init_dim3(0);
+    const Dim3 hi = init_dim3(1);
+
     for (auto& p : particles) {
       if (p.idata(iRecordCount_) >= nPTRecord) {
         Abort("Error: there is not enough allocated memory to store the "
@@ -89,13 +92,6 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
       Real coef[2][2][2];
       linear_interpolation_coef(dShift, coef);
       //-----calculate interpolate coef end-------------
-
-      Dim3 lo, hi;
-      {
-        Box bx(IntVect(0), IntVect(1));
-        lo = lbound(bx);
-        hi = ubound(bx);
-      }
 
       Real bp[3] = { 0, 0, 0 };
       Real ep[3] = { 0, 0, 0 };

@@ -17,6 +17,14 @@ inline int product(const amrex::IntVect& vect) {
   return AMREX_D_TERM(vect[0], *vect[1], *vect[2]);
 }
 
+inline amrex::Dim3 init_dim3(const int i) {
+  amrex::Dim3 dim;
+  dim.x = i;
+  dim.y = i;
+  dim.z = nDim > 2 ? i : 0;
+  return dim;
+}
+
 // Return the firs integer in the string.
 // Example: "abc123def345b" -> 123
 inline int extract_int(std::string s) {
