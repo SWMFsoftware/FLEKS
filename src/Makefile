@@ -84,15 +84,15 @@ clean:
 distclean: clean
 
 
-FLAGCC_EXCEPTION =
+#FLAGCC_EXCEPTION =
 
-ifeq (${C_COMPILER_NAME},icc)
-	FLAGCC_EXCEPTION = -no-ip -no-vec -fno-inline
-endif
+#ifeq (${C_COMPILER_NAME},icc)
+#	FLAGCC_EXCEPTION = -no-ip -no-vec -fno-inline
+#endif
 
 # OH-PT simulations may fail with -O2 but without -no-ip -no-vec -fno-inline
 # on Pleiades (icc). It seems the failure is caused by the split_particles()
 # method. The crash can not be re-produced with -O1 or -O0 or with gcc. It
 # can be an icc bug.
-Particles.o: Particles.cpp
-	${COMPILE.mpicxx} ${FLAGCC} ${FLAGCC_EXCEPTION}  Particles.cpp
+#Particles.o: Particles.cpp
+#	${COMPILE.mpicxx} ${FLAGCC} ${FLAGCC_EXCEPTION}  Particles.cpp
