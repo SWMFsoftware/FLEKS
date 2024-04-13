@@ -1560,7 +1560,9 @@ void Pic::smooth_B(int iLev) {
     ParallelFor(box, nDim3, [&](int i, int j, int k, int iVar) {
       Real ul, ur;
 
-      bool nearBoundary = bit::is_domain_edge(status(i, j, k));
+      bool nearBoundary;
+      nearBoundary = bit::is_lev_boundary(status(i + 1, j, k)) ||
+                     bit::is_lev_boundary(status(i - 1, j, k));
 
       get_face(ix_, i, j, k, ix_, nU, ul, ur);
       ul = fabs(ul);
@@ -1581,6 +1583,9 @@ void Pic::smooth_B(int iLev) {
             coef[ix_];
       }
 
+      nearBoundary = bit::is_lev_boundary(status(i, j + 1, k)) ||
+                     bit::is_lev_boundary(status(i, j - 1, k));
+
       // Flux along y
       get_face(iy_, i, j, k, iy_, nU, ul, ur);
       ul = fabs(ul);
@@ -1600,6 +1605,9 @@ void Pic::smooth_B(int iLev) {
       }
 
       if (nDim > 2 && !isFake2D) {
+        nearBoundary = bit::is_lev_boundary(status(i, j, k + 1)) ||
+                       bit::is_lev_boundary(status(i, j, k - 1));
+
         // Flux along z
         get_face(iz_, i, j, k, iz_, nU, ul, ur);
         ul = fabs(ul);
