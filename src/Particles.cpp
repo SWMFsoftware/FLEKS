@@ -1415,6 +1415,7 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
 
       Vector<ParticleType> newparticles;
 
+      auto& pTile = get_particle_tile(iLev, pti);
       AoS& particles = pti.GetArrayOfStructs();
 
       // Sort the particles by the location first to make sure the results
@@ -1516,7 +1517,7 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
       }
 
       for (auto& p : newparticles) {
-        particles.push_back(p);
+        pTile.push_back(p);
       }
     }
   }
@@ -1763,7 +1764,8 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
 
       Vector<ParticleType> newparticles;
 
-      AoS& particles = pti.GetArrayOfStructs();
+      auto& pTile = get_particle_tile(iLev, pti);
+      AoS& particles = pTile.GetArrayOfStructs();
 
       const int nPartOrig = particles.size();
 
@@ -1913,7 +1915,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
       }
 
       for (auto& p : newparticles) {
-        particles.push_back(p);
+        pTile.push_back(p);
       }
     }
   }

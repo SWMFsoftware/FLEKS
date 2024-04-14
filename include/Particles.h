@@ -447,6 +447,11 @@ public:
     return GetParticles(iLev)[std::make_pair(mfi.index(), tileIdx)];
   }
 
+  ParticleTileType& get_particle_tile(int iLev, const amrex::MFIter& mfi) {
+    return GetParticles(
+        iLev)[std::make_pair(mfi.index(), mfi.LocalTileIndex())];
+  }
+
   void set_ppc(amrex::IntVect& in) { nPartPerCell = in; };
 
   void set_bc(BC& bcIn) { bc = bcIn; }
