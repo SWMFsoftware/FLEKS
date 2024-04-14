@@ -477,9 +477,9 @@ public:
     const int iLev = 0;
     // Contains ghost cells.
     bool isInsideBox = true;
-    int cellIdx[3];
-    amrex::Real dShift[3];
-    for (int i = 0; i < 3; i++) {
+    amrex::IntVect cellIdx;
+    amrex::RealVect dShift;
+    for (int i = 0; i < nDim; i++) {
       dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
       cellIdx[i] = fastfloor(dShift[i]);
       if (cellIdx[i] > high[i] || cellIdx[i] < low[i]) {
@@ -489,8 +489,7 @@ public:
     }
 
     if (isInsideBox) {
-      return bit::is_domain_boundary(
-          status(cellIdx[ix_], cellIdx[iy_], cellIdx[iz_]));
+      return bit::is_domain_boundary(status(cellIdx));
     } else {
       return is_outside_active_region(p);
     }
