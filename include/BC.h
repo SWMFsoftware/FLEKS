@@ -15,11 +15,11 @@ void apply_float_boundary(const amrex::iMultiFab& status, amrex::MultiFab& mf,
 
 class BC {
 public:
-  int unset = -1;
-  int periodic = 0;
-  int coupled = 1;
-  int outflow = 2;
-  int vacume = 3;
+  static const int unset = -1;
+  static const int periodic = 0;
+  static const int coupled = 1;
+  static const int outflow = 2;
+  static const int vacume = 3;
 
   amrex::IntVect lo;
   amrex::IntVect hi;

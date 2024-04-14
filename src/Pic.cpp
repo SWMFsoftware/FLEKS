@@ -19,6 +19,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("usePIC", usePIC);
   } else if (command == "#SOLVEEM") {
     param.read_var("solveEM", solveEM);
+
   } else if (command == "#PARTICLEBOXBOUNDARY") {
     int iSpecies;
     std::string lo, hi;
@@ -32,6 +33,14 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("particleBoxBoundaryHi", hi);
       pBCs[iSpecies].lo[i] = pBCs[iSpecies].num_type(lo);
       pBCs[iSpecies].hi[i] = pBCs[iSpecies].num_type(hi);
+    }
+  } else if (command == "#BFIELDBOXBOUNDARY") {
+    std::string lo, hi;
+    for (int i = 0; i < nDim; i++) {
+      param.read_var("BoxBoundaryLo", lo);
+      param.read_var("BoxBoundaryHi", hi);
+      bcBField.lo[i] = bcBField.num_type(lo);
+      bcBField.hi[i] = bcBField.num_type(hi);
     }
   } else if (command == "#RANDOMPARTICLESLOCATION") {
     param.read_var("isParticleLocationRandom", isParticleLocationRandom);
@@ -382,10 +391,10 @@ void Pic::fill_E_B_fields() {
   nodeE[0].FillBoundary(Geom(0).periodicity());
   nodeB[0].FillBoundary(Geom(0).periodicity());
   centerB[0].FillBoundary(Geom(0).periodicity());
-  apply_BC(nodeStatus[0], nodeB[0], 0, nDim, &Pic::get_node_B, 0);
+  apply_BC(nodeStatus[0], nodeB[0], 0, nDim, &Pic::get_node_B, 0, &bcBField);
   apply_BC(nodeStatus[0], nodeE[0], 0, nDim, &Pic::get_node_E, 0);
   apply_BC(cellStatus[0], centerB[0], 0, centerB[0].nComp(), &Pic::get_center_B,
-           0);
+           0, &bcBField);
 
   //-----Fine (iLev>0) grid boundary/internal ghost cells are filled----
   for (int iLev = 1; iLev <= finest_level; iLev++) {
@@ -1040,7 +1049,7 @@ void Pic::update_E_expl() {
     MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                    nodeE[iLev].nGrow());
     apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-             &Pic::get_center_B, iLev);
+             &Pic::get_center_B, iLev, &bcBField);
   }
   const Real dt = tc->get_dt();
   RealVect dt2dx;
@@ -1416,9 +1425,9 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   temp2Node.setVal(0.0);
 
   apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-           &Pic::get_center_B, iLev);
+           &Pic::get_center_B, iLev, &bcBField);
   apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
-           &Pic::get_node_B, iLev);
+           &Pic::get_node_B, iLev, &bcBField);
 
   const Real* invDx = Geom(iLev).InvCellSize();
 
@@ -1458,7 +1467,7 @@ void Pic::update_B() {
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
       apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-               &Pic::get_center_B, iLev);
+               &Pic::get_center_B, iLev, &bcBField);
 
     } else {
       fill_fine_lev_bny_from_coarse(
@@ -1485,7 +1494,7 @@ void Pic::update_B() {
     if (iLev == 0) {
 
       apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
-               &Pic::get_node_B, iLev);
+               &Pic::get_node_B, iLev, &bcBField);
 
     } else {
 
@@ -1688,7 +1697,8 @@ void Pic::smooth_E(MultiFab& mfE, int iLev) {
 
 //==========================================================
 void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
-                   const int nComp, GETVALUE func, const int iLev) {
+                   const int nComp, GETVALUE func, const int iLev,
+                   const BC* bc) {
   std::string nameFunc = "Pic::apply_BC";
   timing_func(nameFunc);
 
@@ -1705,6 +1715,72 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   const IntVect& ngrow = mf.nGrowVect();
   if (Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
     ba.grow(iz_, ngrow[iz_]);
+  }
+
+  if (bc != nullptr) {
+    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+      const Box& bxFab = mfi.fabbox();
+      Box bxValid = mfi.validbox();
+
+      //! if there are cells not in the valid + periodic grown box
+      //! we need to fill them here
+      if (!ba.contains(bxFab)) {
+        Array4<Real> const& arr = mf[mfi].array();
+
+        const Array4<const int>& statusArr = status[mfi].array();
+
+        ParallelFor(bxFab, [&](int i, int j, int k) {
+          if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
+
+            bool useFloat = false;
+            int ip = i, jp = j, kp = k;
+            if (i < bxValid.smallEnd(ix_) && bc->lo[ix_] == BC::outflow) {
+              useFloat = true;
+              ip = bxValid.smallEnd(ix_);
+            }
+            if (i > bxValid.bigEnd(ix_) && bc->hi[ix_] == BC::outflow) {
+              useFloat = true;
+              ip = bxValid.bigEnd(ix_);
+            }
+
+            if (j < bxValid.smallEnd(iy_) && bc->lo[iy_] == BC::outflow) {
+              useFloat = true;
+              jp = bxValid.smallEnd(iy_);
+            }
+
+            if (j > bxValid.bigEnd(iy_) && bc->hi[iy_] == BC::outflow) {
+              useFloat = true;
+              jp = bxValid.bigEnd(iy_);
+            }
+
+            if (nDim > 2) {
+              if (k < bxValid.smallEnd(iz_) && bc->lo[iz_] == BC::outflow) {
+                useFloat = true;
+                kp = bxValid.smallEnd(iz_);
+              }
+
+              if (k > bxValid.bigEnd(iz_) && bc->hi[iz_] == BC::outflow) {
+                useFloat = true;
+                kp = bxValid.bigEnd(iz_);
+              }
+            }
+
+            if (useFloat) {
+              for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
+                arr(i, j, k, iVar) = arr(ip, jp, kp, iVar);
+              }
+            } else {
+              for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
+                arr(i, j, k, iVar) = (this->*func)(
+                    mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar - iStart, iLev);
+              }
+            }
+          }
+        });
+      }
+    }
+
+    return;
   }
 
   if (useFloatBC) {
@@ -1967,9 +2043,9 @@ void Pic::report_load_balance(bool doReportSummary, bool doReportDetail) {
 
       printf("\n===============================Load balance "
              "report=============================\n");
-      printf(
-          "|     Value          |      Min      |     Avg      |      Max     "
-          "|where(max)|\n");
+      printf("|     Value          |      Min      |     Avg      |      Max "
+             "    "
+             "|where(max)|\n");
 
       Vector<std::string> varType = {
         "|Blocks # of",
@@ -2068,8 +2144,8 @@ void Pic::charge_exchange() {
   } else {
     // 'source' is applied to generate new particles every step, so
     // sum_boundary() is called here to correct boundary nodes. Boundary nodes
-    // of 'sourcePT2OH' should be corrected just before PT->OH coupling, instead
-    // of here.
+    // of 'sourcePT2OH' should be corrected just before PT->OH coupling,
+    // instead of here.
     source->sum_boundary();
 
 #ifdef _PT_COMPONENT_

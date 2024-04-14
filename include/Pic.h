@@ -131,6 +131,9 @@ private:
   // Boundary conditions for particles.
   amrex::Vector<BC> pBCs;
 
+  // Boundary conditions for fields.
+  BC bcBField;
+
   amrex::Vector<int> supIDs;
 
   bool doReport = false;
@@ -334,7 +337,7 @@ public:
   //--------------- Boundary begin ------------------------
   void apply_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                 const int iStart, const int nComp, GETVALUE func,
-                const int iLev);
+                const int iLev, const BC *bc = nullptr);
 
   amrex::Real get_zero(amrex::MFIter &mfi, amrex::IntVect ijk, int iVar,
                        int iLev) {
