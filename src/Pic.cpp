@@ -1568,14 +1568,27 @@ void Pic::smooth_B(int iLev) {
 
     ParallelFor(box, nDim3, [&](int i, int j, int k, int iVar) {
       Real ul, ur;
+      int i0, j0, k0;
 
-      bool nearBoundary;
+      bool nearBoundary, doSmooth;
       nearBoundary = bit::is_lev_boundary(status(i + 1, j, k)) ||
                      bit::is_lev_boundary(status(i - 1, j, k));
 
-      if (!nearBoundary) {
-        // Do not smooth the cell near the boundary. It is equivilent to
-        // assuming the flux gradient is zero. Help to avoid generating divB.
+      doSmooth = !nearBoundary ||
+                 use_float(i - 1, j, k, i0, j0, k0, bcBField, box) ||
+                 use_float(i + 1, j, k, i0, j0, k0, bcBField, box);
+
+      // Q: Why do not smooth the cell near the boundary?
+      // A: It is equivilent to assuming the flux gradient is zero. Help to
+      // avoid generating divB in coupled simulations.
+
+      // Q: Why is smoothing applied at boundary cells for floating boundary?
+      // A: If smoothing is skipped, the 'error' will accumulate at the
+      // boundary. In a coupled simulation, the error can be passed to MHD and
+      // be transported away from the boundary. However, the error will
+      // accumulate if it is not coupled.
+
+      if (doSmooth) {
         // Flux along  x
         get_face(ix_, i, j, k, ix_, nU, ul, ur);
         ul = fabs(ul);
@@ -1595,7 +1608,11 @@ void Pic::smooth_B(int iLev) {
       nearBoundary = bit::is_lev_boundary(status(i, j + 1, k)) ||
                      bit::is_lev_boundary(status(i, j - 1, k));
 
-      if (!nearBoundary) {
+      doSmooth = !nearBoundary ||
+                 use_float(i, j - 1, k, i0, j0, k0, bcBField, box) ||
+                 use_float(i, j + 1, k, i0, j0, k0, bcBField, box);
+
+      if (doSmooth) {
         // Flux along y
         get_face(iy_, i, j, k, iy_, nU, ul, ur);
         ul = fabs(ul);
@@ -1617,7 +1634,11 @@ void Pic::smooth_B(int iLev) {
         nearBoundary = bit::is_lev_boundary(status(i, j, k + 1)) ||
                        bit::is_lev_boundary(status(i, j, k - 1));
 
-        if (!nearBoundary) {
+        doSmooth = !nearBoundary ||
+                   use_float(i, j, k - 1, i0, j0, k0, bcBField, box) ||
+                   use_float(i, j, k + 1, i0, j0, k0, bcBField, box);
+
+        if (doSmooth) {
           // Flux along z
           get_face(iz_, i, j, k, iz_, nU, ul, ur);
           ul = fabs(ul);
@@ -1732,38 +1753,8 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
         ParallelFor(bxFab, [&](int i, int j, int k) {
           if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
 
-            bool useFloat = false;
-            int ip = i, jp = j, kp = k;
-            if (i < bxValid.smallEnd(ix_) && bc->lo[ix_] == BC::outflow) {
-              useFloat = true;
-              ip = bxValid.smallEnd(ix_);
-            }
-            if (i > bxValid.bigEnd(ix_) && bc->hi[ix_] == BC::outflow) {
-              useFloat = true;
-              ip = bxValid.bigEnd(ix_);
-            }
-
-            if (j < bxValid.smallEnd(iy_) && bc->lo[iy_] == BC::outflow) {
-              useFloat = true;
-              jp = bxValid.smallEnd(iy_);
-            }
-
-            if (j > bxValid.bigEnd(iy_) && bc->hi[iy_] == BC::outflow) {
-              useFloat = true;
-              jp = bxValid.bigEnd(iy_);
-            }
-
-            if (nDim > 2) {
-              if (k < bxValid.smallEnd(iz_) && bc->lo[iz_] == BC::outflow) {
-                useFloat = true;
-                kp = bxValid.smallEnd(iz_);
-              }
-
-              if (k > bxValid.bigEnd(iz_) && bc->hi[iz_] == BC::outflow) {
-                useFloat = true;
-                kp = bxValid.bigEnd(iz_);
-              }
-            }
+            int ip, jp, kp;
+            bool useFloat = use_float(i, j, k, ip, jp, kp, *bc, bxValid);
 
             if (useFloat) {
               for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
