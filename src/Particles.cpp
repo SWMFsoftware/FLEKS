@@ -1418,12 +1418,12 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
       auto& pTile = get_particle_tile(iLev, pti);
       AoS& particles = pti.GetArrayOfStructs();
 
-      // Sort the particles by the location first to make sure the results
+      // Sort the particles first to make sure the results
       // are the same for different number of processors
       std::sort(particles.begin(), particles.end(),
                 [](const ParticleType& pl, const ParticleType& pr) {
-                  return pl.pos(ix_) + pl.pos(iy_) + pl.pos(iz_) >
-                         pr.pos(ix_) + pr.pos(iy_) + pr.pos(iz_);
+                  return pl.pos(ix_) + pl.rdata(iup_) >
+                         pr.pos(ix_) + pr.rdata(iup_);
                 });
 
       Real totalMass = 0;
@@ -1792,7 +1792,8 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
       // are the same for different number of processors
       std::sort(particles.begin(), particles.end(),
                 [](const ParticleType& pl, const ParticleType& pr) {
-                  return pl.pos().sum() > pr.pos().sum();
+                  return pl.pos(ix_) + pl.rdata(iup_) >
+                         pr.pos(ix_) + pr.rdata(iup_);
                 });
 
       const Real invLx = 1. / (phi[iLev][ix_] - plo[iLev][ix_]);
@@ -2303,7 +2304,8 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
       // are the same for different number of processors
       std::sort(particles.begin(), particles.end(),
                 [](const ParticleType& pl, const ParticleType& pr) {
-                  return pl.pos().sum() > pr.pos().sum();
+                  return pl.pos(ix_) + pl.rdata(iup_) >
+                         pr.pos(ix_) + pr.rdata(iup_);
                 });
 
       // One particle may belong to more than one velocity bins, but it can be
@@ -2781,8 +2783,8 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
         // are the same for different number of processors
         std::sort(particles.begin(), particles.end(),
                   [](const ParticleType& pl, const ParticleType& pr) {
-                    return pl.pos(ix_) + pl.pos(iy_) + pl.pos(iz_) >
-                           pr.pos(ix_) + pr.pos(iy_) + pr.pos(iz_);
+                    return pl.pos(ix_) + pl.rdata(iup_) >
+                           pr.pos(ix_) + pr.rdata(iup_);
                   });
       }
 
