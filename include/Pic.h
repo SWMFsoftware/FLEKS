@@ -62,6 +62,7 @@ private:
   amrex::Vector<amrex::MultiFab> nodeE;
   amrex::Vector<amrex::MultiFab> nodeEth;
   amrex::Vector<amrex::MultiFab> nodeB;
+  amrex::Vector<amrex::MultiFab> divB;
   amrex::Vector<amrex::MultiFab> centerB;
   amrex::Vector<amrex::MultiFab> dBdt;
 
@@ -159,6 +160,7 @@ public:
     dBdt.resize(n_lev_max());
     nodeE.resize(n_lev_max());
     nodeEth.resize(n_lev_max());
+    divB.resize(n_lev_max());
 
     eBg.resize(n_lev_max());
     uBg.resize(n_lev_max());

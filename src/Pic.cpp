@@ -192,6 +192,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
+    distribute_FabArray(divB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
+                        nGst);
     distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
     distribute_FabArray(dBdt[iLev], nGrids[iLev], DistributionMap(iLev), 3,
@@ -1478,6 +1480,8 @@ void Pic::update_B() {
 
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
                    dBdt[iLev].nGrow());
+
+    div_center_to_center(centerB[iLev], divB[iLev], Geom(iLev).InvCellSize());
 
     if (doSmoothB) {
       smooth_B(iLev);

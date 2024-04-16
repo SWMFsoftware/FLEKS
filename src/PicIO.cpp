@@ -383,6 +383,9 @@ double Pic::get_var(std::string var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 5) == "divEc") {
       const Array4<Real const>& arr = centerDivE[iLev][mfi].array();
       value = arr(ijk);
+    } else if (var.substr(0, 4) == "divB") {
+      const Array4<Real const>& arr = divB[iLev][mfi].array();
+      value = arr(ijk);
     } else if (var.substr(0, 3) == "phi") {
       const Array4<Real const>& arr = centerPhi[iLev][mfi].array();
       value = arr(ijk);

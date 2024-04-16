@@ -561,6 +561,9 @@ double PlotWriter::No2OutTable(std::string const& var) const {
   } else if (var.substr(0, 5) == "divEc") {
     // div(E)
     value = No2OutV * No2OutB / No2OutL;
+  } else if (var.substr(0, 4) == "divB") {
+    // div(B)
+    value = No2OutB / No2OutL;
   } else if (var.substr(0, 1) == "E") {
     // E field
     value = No2OutV * No2OutB;
