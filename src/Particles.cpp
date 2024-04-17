@@ -1812,8 +1812,8 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
             // which is random,  if xl and xr are not applied.
             Real xl = pl.pos(ix_);
             Real xr = pr.pos(ix_);
-            xl = (xl - plox) * invLx * ql * 1e-9;
-            xr = (xr - plox) * invLx * qr * 1e-9;
+            xl = (xl - plox) * invLx * ql * 1e-6;
+            xr = (xr - plox) * invLx * qr * 1e-6;
 
             return ql + xl > qr + xr;
           });
@@ -2142,8 +2142,8 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
               // which is random,  if xl and xr are not applied.
               Real xl = particles[idLeft].pos(ix_);
               Real xr = particles[idRight].pos(ix_);
-              xl = (xl - plox) * invLx * ql * 1e-9;
-              xr = (xr - plox) * invLx * qr * 1e-9;
+              xl = (xl - plox) * invLx * ql * 1e-6;
+              xr = (xr - plox) * invLx * qr * 1e-6;
 
               return ql + xl < qr + xr;
             });

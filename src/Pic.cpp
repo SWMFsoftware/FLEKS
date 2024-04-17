@@ -1529,8 +1529,6 @@ void Pic::smooth_B(int iLev) {
     const Array4<Real>& dB = centerDB[mfi].array();
     const Array4<Real>& divBArr = divB[iLev][mfi].array();
 
-    const auto& status = cellStatus[iLev][mfi].array();
-
     // Get the face along the direction iDir for the cell (i,j,k) for the iVar
     // component
     auto get_face = [&](int iDir, int i, int j, int k, int iVar,
