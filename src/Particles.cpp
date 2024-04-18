@@ -411,12 +411,8 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
       //-----calculate interpolate coef begin-------------
       IntVect loIdx;
       RealVect dShift;
-      for (int i = 0; i < nDim; i++) {
-        // plo is the corner location => -0.5
-        dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i] - 0.5;
-        loIdx[i] = fastfloor(dShift[i]); // floor() is slow.
-        dShift[i] = dShift[i] - loIdx[i];
-      }
+      find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                      loIdx, dShift);
       Real coef[2][2][2];
       linear_interpolation_coef(dShift, coef);
       //-----calculate interpolate coef end-------------
@@ -599,12 +595,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
         //-----calculate interpolate coef begin-------------
         IntVect loIdx;
         RealVect dShift;
-        for (int i = 0; i < nDim; i++) {
-          dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
-          loIdx[i] = fastfloor(dShift[i]);
-          dShift[i] = dShift[i] - loIdx[i];
-        }
-
+        find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                        loIdx, dShift);
         Real coef[2][2][2];
         linear_interpolation_coef(dShift, coef);
         //-----calculate interpolate coef end-------------
@@ -708,11 +700,9 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       //-----calculate interpolate coef begin-------------
       IntVect loIdx;
       RealVect dShift;
-      for (int i = 0; i < nDim; i++) {
-        dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
-        loIdx[i] = fastfloor(dShift[i]);
-        dShift[i] = dShift[i] - loIdx[i];
-      }
+
+      find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                      loIdx, dShift);
 
       Real coef[2][2][2];
       linear_interpolation_coef(dShift, coef);
@@ -898,11 +888,9 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
       //-----calculate interpolate coef begin-------------
       IntVect loIdx;
       RealVect dShift;
-      for (int i = 0; i < nDim; i++) {
-        dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
-        loIdx[i] = fastfloor(dShift[i]);
-        dShift[i] = dShift[i] - loIdx[i];
-      }
+
+      find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                      loIdx, dShift);
 
       Real coef[2][2][2];
       linear_interpolation_coef(dShift, coef);
@@ -1125,11 +1113,9 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         //-----calculate interpolate coef begin-------------
         IntVect loIdx;
         RealVect dShift;
-        for (int i = 0; i < nDim; i++) {
-          dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
-          loIdx[i] = fastfloor(dShift[i]);
-          dShift[i] = dShift[i] - loIdx[i];
-        }
+
+        find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                        loIdx, dShift);
 
         Real coef[2][2][2];
         linear_interpolation_coef(dShift, coef);
@@ -1275,12 +1261,8 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 
       IntVect loIdx;
       RealVect dShift;
-      for (int i = 0; i < nDim; i++) {
-        // plo is the corner location => -0.5
-        dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i] - 0.5;
-        loIdx[i] = fastfloor(dShift[i]);
-        dShift[i] = dShift[i] - loIdx[i];
-      }
+      find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                      loIdx, dShift);
 
       // Since the boundary condition for solving phi is not perfect,
       // correcting particles that are close to the boundaries may produce

@@ -98,21 +98,36 @@ inline int get_local_node_or_cell_number(const amrex::MultiFab& MF) {
   return nTotal;
 }
 
+inline void find_node_index(const amrex::RealVect& xyz,
+                            const amrex::Real* const plo,
+                            const amrex::Real* const invDx,
+                            amrex::IntVect& loIdx, amrex::RealVect& dShift) {
+  for (int i = 0; i < nDim; i++) {
+    dShift[i] = (xyz[i] - plo[i]) * invDx[i];
+    loIdx[i] = fastfloor(dShift[i]);
+    dShift[i] = dShift[i] - loIdx[i];
+  }
+}
+
+inline void find_cell_index(const amrex::RealVect& xyz,
+                            const amrex::Real* const plo,
+                            const amrex::Real* const invDx,
+                            amrex::IntVect& loIdx, amrex::RealVect& dShift) {
+  for (int i = 0; i < nDim; i++) {
+    // plo is the corner location => -0.5
+    dShift[i] = (xyz[i] - plo[i]) * invDx[i] - 0.5;
+    loIdx[i] = fastfloor(dShift[i]);
+    dShift[i] = dShift[i] - loIdx[i];
+  }
+}
+
 inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
                                     const amrex::MFIter& mfi,
                                     const amrex::Geometry& gm,
                                     const amrex::RealVect xyz, const int iVar) {
-  const auto plo = gm.ProbLo();
-
-  const auto invDx = gm.InvCellSize();
-
-  int loIdx[nDim];
-  amrex::Real dx[nDim];
-  for (int i = 0; i < nDim; i++) {
-    dx[i] = (xyz[i] - plo[i]) * invDx[i];
-    loIdx[i] = fastfloor(dx[i]);
-    dx[i] = dx[i] - loIdx[i];
-  }
+  amrex::IntVect loIdx;
+  amrex::RealVect dx;
+  find_node_index(xyz, gm.ProbLo(), gm.InvCellSize(), loIdx, dx);
 
   amrex::Real coef[2][2][2];
   {
@@ -360,7 +375,7 @@ template <class FAB>
 void fill_lev_from_value(amrex::FabArray<FAB>& dst, amrex::Real value,
                          int startvar = 0, int stopvar = -1) {
   if (stopvar == -1) {
-    stopvar = dst.nComp()-1;
+    stopvar = dst.nComp() - 1;
   }
   for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
     FAB& fab = dst[mfi];

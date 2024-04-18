@@ -83,11 +83,8 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
       //-----calculate interpolate coef begin-------------
       IntVect loIdx;
       RealVect dShift;
-      for (int i = 0; i < nDim; i++) {
-        dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
-        loIdx[i] = fastfloor(dShift[i]);
-        dShift[i] = dShift[i] - loIdx[i];
-      }
+      find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                      loIdx, dShift);
 
       Real coef[2][2][2];
       linear_interpolation_coef(dShift, coef);
