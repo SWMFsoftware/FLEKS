@@ -8,7 +8,7 @@ TestParticles::TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
                              TimeCtr* const tcIn, const int speciesID,
                              const Real charge, const Real mass, int id)
     : Particles(gridIn, fluidIn, tcIn, speciesID, charge, mass,
-                IntVect(AMREX_D_DECL(1, 1, 1))) {
+                IntVect(AMREX_D_DECL(1, 1, 1)), PartMode::PIC) {
   gridID = id;
 
   gridName = std::string("FLEKS") + std::to_string(gridID);

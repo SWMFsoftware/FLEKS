@@ -29,8 +29,6 @@ public:
   }
 };
 
-enum class PicMode { PIC = 0, SEP };
-
 typedef amrex::Real (Pic::*GETVALUE)(amrex::MFIter &mfi, amrex::IntVect ijk,
                                      int iVar, const int iLev);
 
@@ -43,8 +41,6 @@ class Pic : public Grid {
   friend ParticleTracker;
   // private variables
 private:
-  PicMode mode = PicMode::PIC;
-
   bool usePIC = true;
   bool solveEM = true;
   bool initEM = true;
@@ -52,6 +48,8 @@ private:
   bool useExplicitPIC = false;
   bool usenewElectricSolver = false;
   bool decoupleparticlesfromfield = false;
+
+  PartMode pMode = PartMode::PIC;
 
   FluidInterface *fi = nullptr;
   FluidInterface *stateOH = nullptr;
@@ -123,6 +121,7 @@ private:
   bool doSmoothB = false;
   amrex::Real limiterTheta = 0;
 
+
   TestCase testCase = RegularSimulation;
 
   ParticlesInfo pInfo;
@@ -184,6 +183,8 @@ public:
     kineticSource = true;
     initEM = false;
     solveEM = false;
+
+    pMode = PartMode::Neutral;
 #endif
   };
   ~Pic(){};

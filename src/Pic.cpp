@@ -19,7 +19,15 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("usePIC", usePIC);
   } else if (command == "#SOLVEEM") {
     param.read_var("solveEM", solveEM);
-
+  } else if (command == "#PARTMODE") {
+    std::string s;
+    param.read_var("partMode", s);
+    if (s == "SEP")
+      pMode = PartMode::SEP;
+    else if (s == "PIC")
+      pMode = PartMode::PIC;
+    else
+      Abort("Error: wrong input for partMode.");
   } else if (command == "#PARTICLEBOXBOUNDARY") {
     int iSpecies;
     std::string lo, hi;
@@ -271,9 +279,9 @@ void Pic::post_regrid() {
   //--------------particles-----------------------------------
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; i++) {
-      auto ptr = std::unique_ptr<PicParticles>(
-          new PicParticles(this, fi, tc, i, fi->get_species_charge(i),
-                           fi->get_species_mass(i), nPartPerCell, testCase));
+      auto ptr = std::unique_ptr<PicParticles>(new PicParticles(
+          this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
+          nPartPerCell, pMode, testCase));
 
       //----- Set parameters------------
       ptr->set_info(pInfo);
@@ -288,9 +296,9 @@ void Pic::post_regrid() {
 
       parts.push_back(std::move(ptr));
 
-      auto ptrSource = std::unique_ptr<PicParticles>(
-          new PicParticles(this, fi, tc, i, fi->get_species_charge(i),
-                           fi->get_species_mass(i), nPartPerCell, testCase));
+      auto ptrSource = std::unique_ptr<PicParticles>(new PicParticles(
+          this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
+          nPartPerCell, pMode, testCase));
 
       sourceParts.push_back(std::move(ptrSource));
     }

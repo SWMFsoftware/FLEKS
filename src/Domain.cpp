@@ -739,7 +739,7 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#OHION" || command == "#PIC" || command == "#EXPLICITPIC" ||
         command == "#COMOVING" || command == "#PARTICLEBOXBOUNDARY" ||
         command == "#BFIELDBOXBOUNDARY" || command == "#SUPID" ||
-        command == "#SOLVEEM") {
+        command == "#SOLVEEM" || command == "#PARTMODE") {
       pic->read_param(command, param);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||

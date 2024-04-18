@@ -13,11 +13,12 @@ template <int NStructReal, int NStructInt>
 Particles<NStructReal, NStructInt>::Particles(
     Grid* gridIn, FluidInterface* const fluidIn, TimeCtr* const tcIn,
     const int speciesIDIn, const Real chargeIn, const Real massIn,
-    const IntVect& nPartPerCellIn, TestCase tcase)
+    const IntVect& nPartPerCellIn, const PartMode pModeIn, TestCase tcase)
     : AmrParticleContainer<NStructReal, NStructInt>(gridIn),
       grid(gridIn),
       fi(fluidIn),
       tc(tcIn),
+      pMode(pModeIn),
       speciesID(speciesIDIn),
       charge(chargeIn),
       mass(massIn),
@@ -1184,6 +1185,12 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         p.rdata(iup_) = unp1;
         p.rdata(ivp_) = vnp1;
         p.rdata(iwp_) = wnp1;
+
+        if (pMode == PartMode::PIC) {
+          // Note: bp should be calculated at the new position. Now, bp at the
+          // old position is used to save the calculation.
+          p.rdata(imu_) = cosine(p, bp);
+        }
 
         p.pos(ix_) = xp + unp1 * dtLoc;
         p.pos(iy_) = yp + vnp1 * dtLoc;
@@ -2522,7 +2529,7 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
                          Real no2outV, Real no2outM, RealBox IORange)
     : Particles(gridIn, nullptr, nullptr, other.get_speciesID(),
                 other.get_charge(), other.get_mass(),
-                IntVect(AMREX_D_DECL(-1, -1, -1))) {
+                IntVect(AMREX_D_DECL(-1, -1, -1)), other.part_mode()) {
 
   no2outM *= qomSign * get_mass();
 

@@ -20,6 +20,8 @@
 
 enum class CrossSection { LS = 0, MT };
 
+enum class PartMode { PIC = 0, Neutral, SEP };
+
 struct PID {
   int cpu;
   int id;
@@ -139,7 +141,6 @@ class Particles : public amrex::AmrParticleContainer<NStructReal, NStructInt> {
 public:
   static ParticleStaggering particlePosition;
 
-public:
   // Since this is a template, the compiler will not search names in the base
   // class by default, and the following 'using ' statements are required.
   using ParticleType = amrex::Particle<NStructReal, NStructInt>;
@@ -168,6 +169,8 @@ protected:
 
   FluidInterface* fi = nullptr;
   TimeCtr* tc = nullptr;
+
+  PartMode pMode = PartMode::PIC;
 
   int speciesID;
   RandNum randNum;
@@ -238,7 +241,7 @@ public:
   Particles(Grid* gridIn, FluidInterface* fluidIn, TimeCtr* tcIn,
             const int speciesIDIn, const amrex::Real chargeIn,
             const amrex::Real massIn, const amrex::IntVect& nPartPerCellIn,
-            TestCase tcase = RegularSimulation);
+            const PartMode pModeIn, TestCase tcase = RegularSimulation);
 
   int n_lev() const { return GetParGDB()->finestLevel() + 1; }
 
@@ -343,6 +346,8 @@ public:
 
   void convert_to_fluid_moments(amrex::Vector<amrex::MultiFab>& momentsMF);
 
+  PartMode part_mode() const { return pMode; }
+
   void set_ion_fluid(const OHIon& in) { ionOH = in; }
 
   void set_info(ParticlesInfo& pi) {
@@ -357,6 +362,26 @@ public:
     pLevRatio = pi.pLevRatio;
     mergePartRatioMax = pi.mergePartRatioMax;
     vacuum = pi.vacuumIO * cProtonMassSI * 1e6 * fi->get_Si2NoRho();
+  }
+
+  amrex::Real cosine(ParticleType& p, amrex::Real (&bIn)[nDim3]) {
+    amrex::Real u[nDim3];
+    amrex::Real b[nDim3];
+    for (int i = 0; i < nDim3; i++) {
+      u[i] = p.rdata(iup_ + i);
+      b[i] = bIn[i];
+    }
+    amrex::Real mu = 0;
+    for (int i = 0; i < nDim; i++)
+      mu += u[i] * b[i];
+
+    const amrex::Real bNorm = l2_norm(b, nDim3);
+    const amrex::Real uNorm = l2_norm(u, nDim3);
+
+    const amrex::Real invB = bNorm > 1e-99 ? 1.0 / bNorm : 0;
+    const amrex::Real invU = uNorm > 1e-99 ? 1.0 / uNorm : 0;
+
+    return mu * invB * invU;
   }
 
   IDs get_next_ids() {
@@ -608,9 +633,8 @@ class IOParticles : public PicParticles {
 public:
   IOParticles() = delete;
 
-  IOParticles(PicParticles& other, Grid* gridIn, amrex::Real no2outL = 1,
-              amrex::Real no2outV = 1, amrex::Real no2OutM = 1,
-              amrex::RealBox IORange = amrex::RealBox());
+  IOParticles(PicParticles& other, Grid* gridIn, amrex::Real no2outL,
+              amrex::Real no2outV, amrex::Real no2OutM, amrex::RealBox IORange);
   ~IOParticles() = default;
 };
 #endif
