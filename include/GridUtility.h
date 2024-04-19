@@ -136,10 +136,10 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
     amrex::Real zeta[2];
     xi[0] = dx[0];
     eta[0] = dx[1];
-    zeta[0] = dx[2];
+    zeta[0] = nDim > 2 ? dx[2] : 1;
     xi[1] = 1 - xi[0];
     eta[1] = 1 - eta[0];
-    zeta[1] = 1 - zeta[0];
+    zeta[1] = nDim > 2 ? 1 - zeta[0] : 1;
 
     amrex::Real multi[2][2];
     multi[0][0] = xi[0] * eta[0];
