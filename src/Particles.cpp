@@ -1403,11 +1403,7 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
 
       // Sort the particles first to make sure the results
       // are the same for different number of processors
-      std::sort(particles.begin(), particles.end(),
-                [](const ParticleType& pl, const ParticleType& pr) {
-                  return pl.pos(ix_) + pl.rdata(iup_) >
-                         pr.pos(ix_) + pr.rdata(iup_);
-                });
+      std::sort(particles.begin(), particles.end(), compare_two_parts);
 
       Real totalMass = 0;
       Real totalMoment[nDim3] = { 0, 0, 0 };
@@ -1773,11 +1769,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
 
       // Sort the particles by the location first to make sure the results
       // are the same for different number of processors
-      std::sort(particles.begin(), particles.end(),
-                [](const ParticleType& pl, const ParticleType& pr) {
-                  return pl.pos(ix_) + pl.rdata(iup_) >
-                         pr.pos(ix_) + pr.rdata(iup_);
-                });
+      std::sort(particles.begin(), particles.end(), compare_two_parts);
 
       const Real invLx = 1. / (phi[iLev][ix_] - plo[iLev][ix_]);
       const Real plox = plo[iLev][ix_];
@@ -1789,16 +1781,11 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
             const Real ql = fabs(pl.rdata(iqp_));
             const Real qr = fabs(pr.rdata(iqp_));
 
-            // Q: Why are xl and xr required here?
-            // A: If most particle weights are the same, then it
-            // compares the last a few digits of the weights,
-            // which is random,  if xl and xr are not applied.
-            Real xl = pl.pos(ix_);
-            Real xr = pr.pos(ix_);
-            xl = (xl - plox) * invLx * ql * 1e-6;
-            xr = (xr - plox) * invLx * qr * 1e-6;
+            if (fabs(ql - qr) > 1e-9 * fabs(ql + qr)) {
+              return ql > qr;
+            }
 
-            return ql + xl > qr + xr;
+            return pl.pos(ix_) > pr.pos(ix_);
           });
       //----------------------------------------------------------------
 
@@ -2119,16 +2106,14 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
               const Real ql = fabs(particles[idLeft].rdata(iqp_));
               const Real qr = fabs(particles[idRight].rdata(iqp_));
 
-              // Q: Why are xl and xr required here?
-              // A: If most particle weights are the same, then it
-              // compares the last a few digits of the weights,
-              // which is random,  if xl and xr are not applied.
+              if (fabs(ql - qr) > 1e-9 * fabs(ql + qr)) {
+                return ql < qr;
+              }
+
               Real xl = particles[idLeft].pos(ix_);
               Real xr = particles[idRight].pos(ix_);
-              xl = (xl - plox) * invLx * ql * 1e-6;
-              xr = (xr - plox) * invLx * qr * 1e-6;
 
-              return ql + xl < qr + xr;
+              return xl < xr;
             });
 
   if (mergeLight) {
@@ -2285,11 +2270,7 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
 
       // Sort the particles by the location first to make sure the results
       // are the same for different number of processors
-      std::sort(particles.begin(), particles.end(),
-                [](const ParticleType& pl, const ParticleType& pr) {
-                  return pl.pos(ix_) + pl.rdata(iup_) >
-                         pr.pos(ix_) + pr.rdata(iup_);
-                });
+      std::sort(particles.begin(), particles.end(), compare_two_parts);
 
       // One particle may belong to more than one velocity bins, but it can be
       // only merged at most once.
@@ -2764,11 +2745,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
       if (kineticSource) {
         // Sort the particles by the location first to make sure the results
         // are the same for different number of processors
-        std::sort(particles.begin(), particles.end(),
-                  [](const ParticleType& pl, const ParticleType& pr) {
-                    return pl.pos(ix_) + pl.rdata(iup_) >
-                           pr.pos(ix_) + pr.rdata(iup_);
-                  });
+        std::sort(particles.begin(), particles.end(), compare_two_parts);
       }
 
       // It is assumed the tile size is 1x1x1.

@@ -364,6 +364,16 @@ public:
     vacuum = pi.vacuumIO * cProtonMassSI * 1e6 * fi->get_Si2NoRho();
   }
 
+  static inline bool compare_two_parts(const ParticleType& pl,
+                                const ParticleType& pr) {
+    if (fabs(pl.pos(ix_) - pr.pos(ix_)) >
+        1e-9 * fabs(pl.pos(ix_) + pr.pos(ix_))) {
+      return pl.pos(ix_) > pr.pos(ix_);
+    }
+
+    return pl.rdata(iup_) > pr.rdata(iup_);
+  }
+
   amrex::Real cosine(ParticleType& p, amrex::Real (&bIn)[nDim3]) {
     amrex::Real u[nDim3];
     amrex::Real b[nDim3];
