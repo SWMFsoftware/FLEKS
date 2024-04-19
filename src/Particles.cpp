@@ -309,22 +309,16 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_domain() {
   timing_func("Pts::add_particles_domain");
-
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
-      const auto& status = cell_status(iLev)[mfi].array();
-      const Box& bx = mfi.validbox();
-      const auto lo = lbound(bx);
-      const auto hi = ubound(bx);
 
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            IntVect ijk = { AMREX_D_DECL(i, j, k) };
-            if (bit::is_new(status(ijk)) && !bit::is_refined(status(ijk))) {
-              add_particles_cell(iLev, mfi, ijk, fi, true);
-            }
-          }
+      const auto& status = cell_status(iLev)[mfi].array();
+      ParallelFor(mfi.validbox(), [&](int i, int j, int k) noexcept {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (bit::is_new(status(ijk)) && !bit::is_refined(status(ijk))) {
+          add_particles_cell(iLev, mfi, ijk, fi, true);
+        }
+      });
     }
   }
 }
