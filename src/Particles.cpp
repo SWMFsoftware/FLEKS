@@ -1780,12 +1780,15 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
           [&plox, &invLx](const ParticleType& pl, const ParticleType& pr) {
             const Real ql = fabs(pl.rdata(iqp_));
             const Real qr = fabs(pr.rdata(iqp_));
-
-            if (fabs(ql - qr) > 1e-9 * fabs(ql + qr)) {
+            if (fabs(ql - qr) > 1e-9 * (ql + qr)) {
               return ql > qr;
             }
 
-            return pl.pos(ix_) > pr.pos(ix_);
+            if (fabs(pl.pos(ix_) - pr.pos(ix_)) >
+                1e-9 * (fabs(pl.pos(ix_)) + fabs(pr.pos(ix_)))) {
+              return pl.pos(ix_) > pr.pos(ix_);
+            }
+            return compare_ids(pl, pr);
           });
       //----------------------------------------------------------------
 
@@ -1944,8 +1947,13 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
   std::sort(partIdx.begin(), partIdx.end(),
             [this, &particles, calc_distance2_to_center](const int& idl,
                                                          const int& idr) {
-              return calc_distance2_to_center(idl) <
-                     calc_distance2_to_center(idr);
+              Real dll = calc_distance2_to_center(idl);
+              Real dlr = calc_distance2_to_center(idr);
+
+              if (fabs(dll - dlr) > 1e-9 * (dll + dlr)) {
+                return dll < dlr;
+              }
+              return compare_ids(particles[idl], particles[idr]);
             });
 
   /*
@@ -2105,15 +2113,17 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
             [&particles, &invLx, &plox](int idLeft, int idRight) {
               const Real ql = fabs(particles[idLeft].rdata(iqp_));
               const Real qr = fabs(particles[idRight].rdata(iqp_));
-
-              if (fabs(ql - qr) > 1e-9 * fabs(ql + qr)) {
+              if (fabs(ql - qr) > 1e-9 * (ql + qr)) {
                 return ql < qr;
               }
 
               Real xl = particles[idLeft].pos(ix_);
               Real xr = particles[idRight].pos(ix_);
+              if (fabs(xl - xr) > 1e-9 * (fabs(xl) + fabs(xr))) {
+                return xl < xr;
+              }
 
-              return xl < xr;
+              return compare_ids(particles[idLeft], particles[idRight]);
             });
 
   if (mergeLight) {

@@ -364,14 +364,39 @@ public:
     vacuum = pi.vacuumIO * cProtonMassSI * 1e6 * fi->get_Si2NoRho();
   }
 
+  static inline bool compare_ids(const ParticleType& p1,
+                                 const ParticleType& p2) {
+    if (p1.cpu() != p2.cpu()) {
+      return p1.cpu() > p2.cpu();
+    } else if (p1.idata(iSupID_) != p2.idata(iSupID_)) {
+      return p1.idata(iSupID_) > p2.idata(iSupID_);
+    } else if (p1.id() != p2.id()) {
+      return p1.id() > p2.id();
+    }
+
+    return false;
+  }
+
   static inline bool compare_two_parts(const ParticleType& pl,
-                                const ParticleType& pr) {
+                                       const ParticleType& pr) {
+    // It is non-trivial to compare floating point numbers. If there is
+    // significant difference between the two floating point numbers, the
+    // comparison is based on the floating point numbers. Otherwise, the
+    // comparison is based on the integer numbers (particle ids). However,
+    // different number of processors may have different results for id
+    // comparison.
     if (fabs(pl.pos(ix_) - pr.pos(ix_)) >
-        1e-9 * fabs(pl.pos(ix_) + pr.pos(ix_))) {
+        1e-9 * (fabs(pl.pos(ix_)) + fabs(pr.pos(ix_)))) {
       return pl.pos(ix_) > pr.pos(ix_);
     }
 
-    return pl.rdata(iup_) > pr.rdata(iup_);
+    if (fabs(pl.rdata(iup_) - pr.rdata(iup_)) >
+        1e-9 * (fabs(pl.rdata(iup_)) + fabs(pr.rdata(iup_)))) {
+      return pl.rdata(iup_) > pr.rdata(iup_);
+    }
+
+    // Is this comparison necessary? Can we just return false? -- Yuxi
+    return compare_ids(pl, pr);
   }
 
   amrex::Real cosine(ParticleType& p, amrex::Real (&bIn)[nDim3]) {
