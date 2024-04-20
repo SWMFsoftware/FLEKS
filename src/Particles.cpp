@@ -2641,7 +2641,7 @@ void Particles<NStructReal, NStructInt>::get_analytic_ion_fluid(
   // T: K
   // U: km/s
 
-  Real r = min(xyz.vectorLength(), 1e-9 * Geom(0).CellSize(0));
+  Real r = max(xyz.vectorLength(), 1e-9 * Geom(0).CellSize(0));
 
   Real rAU = r * fi->get_No2SiL() / cAUSI;
 
