@@ -170,6 +170,94 @@ public:
   }
 };
 
+template <class T> class UNodeQuadratic : public UInterp<T> {
+public:
+  ~UNodeQuadratic() override {}
+
+  void interp(const BaseFab<T>& crse, int crse_comp, BaseFab<T>& fine,
+              int fine_comp, int ncomp, const Box& fine_region,
+              const IntVect& ratio, const Geometry& crse_geom,
+              const Geometry& fine_geom, Vector<BCRec> const& bcr,
+              int actual_comp, int actual_state, RunOn gpu_or_cpu) override {
+    Array4<T const> const& crsearr = crse.const_array();
+    Array4<T> const& finearr = fine.array();
+    AMREX_HOST_DEVICE_PARALLEL_FOR_4D_FLAG(
+        gpu_or_cpu, fine_region, ncomp, i, j, k, n, {
+          node_quadratic_interp(i, j, k, n, finearr, fine_comp, crsearr,
+                                crse_comp, ratio);
+        });
+  }
+
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void node_quadratic_interp(
+      int i, int j, int k, int n, Array4<T> const& fine, int fcomp,
+      Array4<T const> const& crse, int ccomp, IntVect const& ratio) noexcept {
+    if (SpaceDim == 2) {
+      int ic = amrex::coarsen(i, ratio[0]);
+      int jc = amrex::coarsen(j, ratio[1]);
+      int ioff = i - ic * ratio[0];
+      int joff = j - jc * ratio[1];
+      Real rxinv = Real(1.0) / Real(ratio[0]);
+      Real ryinv = Real(1.0) / Real(ratio[1]);
+      if (ioff != 0 && joff != 0) {
+        // Node on a X-Y face
+        fine(i, j, 0, n + fcomp) = (
+
+            (7.0 / 24.0) *
+                (crse(ic, jc, 0, n + ccomp) + crse(ic + 1, jc, 0, n + ccomp))
+
+            -
+
+            (1.0 / 24.0) * (crse(ic - 1, jc, 0, n + ccomp) +
+                            crse(ic + 2, jc, 0, n + ccomp))
+
+            +
+
+            (7.0 / 24.0) *
+                (crse(ic, jc, 0, n + ccomp) + crse(ic, jc + 1, 0, n + ccomp))
+
+            -
+
+            (1.0 / 24.0) * (crse(ic, jc - 1, 0, n + ccomp) +
+                            crse(ic, jc + 2, 0, n + ccomp))
+
+        );
+      } else if (ioff != 0) {
+        // Node on X line
+        fine(i, j, 0, n + fcomp) =
+
+            ((7.0 / 12.0) *
+                 (crse(ic, jc, 0, n + ccomp) + crse(ic + 1, jc, 0, n + ccomp))
+
+             -
+
+             (1.0 / 12.0) * (crse(ic - 1, jc, 0, n + ccomp) +
+                             crse(ic + 2, jc, 0, n + ccomp))
+
+            );
+
+      } else if (joff != 0) {
+        // Node on Y line
+
+        fine(i, j, 0, n + fcomp) =
+
+            ((7.0 / 12.0) *
+                 (crse(ic, jc, 0, n + ccomp) + crse(ic, jc + 1, 0, n + ccomp))
+
+             -
+
+             (1.0 / 12.0) * (crse(ic, jc - 1, 0, n + ccomp) +
+                             crse(ic, jc + 2, 0, n + ccomp))
+
+            );
+
+      } else {
+        // Node coincident with coarse node
+        fine(i, j, 0, n + fcomp) = crse(ic, jc, 0, n + ccomp);
+      }
+    } else if (SpaceDim == 3) {
+    }
+  }
+};
 } // namespace amrex
 
 #endif
