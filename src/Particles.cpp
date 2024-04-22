@@ -1788,7 +1788,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
                 1e-9 * (fabs(pl.pos(ix_)) + fabs(pr.pos(ix_)))) {
               return pl.pos(ix_) > pr.pos(ix_);
             }
-            return compare_ids(pl, pr);
+            return false;
           });
       //----------------------------------------------------------------
 
@@ -1953,7 +1953,7 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
               if (fabs(dll - dlr) > 1e-9 * (dll + dlr)) {
                 return dll < dlr;
               }
-              return compare_ids(particles[idl], particles[idr]);
+              return false;
             });
 
   /*
@@ -2122,8 +2122,7 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
               if (fabs(xl - xr) > 1e-9 * (fabs(xl) + fabs(xr))) {
                 return xl < xr;
               }
-
-              return compare_ids(particles[idLeft], particles[idRight]);
+              return false;
             });
 
   if (mergeLight) {

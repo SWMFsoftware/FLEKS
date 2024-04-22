@@ -364,19 +364,6 @@ public:
     vacuum = pi.vacuumIO * cProtonMassSI * 1e6 * fi->get_Si2NoRho();
   }
 
-  static inline bool compare_ids(const ParticleType& p1,
-                                 const ParticleType& p2) {
-    if (p1.cpu() != p2.cpu()) {
-      return p1.cpu() > p2.cpu();
-    } else if (p1.idata(iSupID_) != p2.idata(iSupID_)) {
-      return p1.idata(iSupID_) > p2.idata(iSupID_);
-    } else if (p1.id() != p2.id()) {
-      return p1.id() > p2.id();
-    }
-
-    return false;
-  }
-
   static inline bool compare_two_parts(const ParticleType& pl,
                                        const ParticleType& pr) {
     // It is non-trivial to compare floating point numbers. If there is
@@ -395,8 +382,7 @@ public:
       return pl.rdata(iup_) > pr.rdata(iup_);
     }
 
-    // Is this comparison necessary? Can we just return false? -- Yuxi
-    return compare_ids(pl, pr);
+    return false;
   }
 
   amrex::Real cosine(ParticleType& p, amrex::Real (&bIn)[nDim3]) {
