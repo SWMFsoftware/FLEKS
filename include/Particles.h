@@ -665,30 +665,20 @@ public:
       amrex::Real dx = Geom(iLev).CellSize(iLev);
       amrex::Real disp = dx * 0.25;
       for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-        // Vector<ParticleType> newparticles;
         auto& pTile = get_particle_tile(iLev, pti);
         AoS& particles = pti.GetArrayOfStructs();
         for (auto& p : particles) {
-          if (p.id() < 0)
+          if (p.id() < 0 || p.rdata(iqp_) < 1e-8)
             continue;
-
-          amrex::Real up = p.rdata(iup_);
-          amrex::Real vp = p.rdata(ivp_);
-          amrex::Real wp = p.rdata(iwp_);
-          amrex::Real qp = p.rdata(iqp_);
           const amrex::Real xp = p.pos(ix_);
           const amrex::Real yp = p.pos(iy_);
           const amrex::Real zp = nDim > 2 ? p.pos(iz_) : 0;
-
           if (abs(xp) < 16.0 && abs(yp) < 16.0) {
-            amrex::Print(amrex::Print::AllProcs)
-                << std::endl
-                << "Check this - " << p.id() << " " << xp << " " << yp
-                << std::endl;
+            amrex::Real up = p.rdata(iup_);
+            amrex::Real vp = p.rdata(ivp_);
+            amrex::Real wp = p.rdata(iwp_);
+            amrex::Real qp = p.rdata(iqp_);
             p.id() = -1;
-            amrex::Print(amrex::Print::AllProcs)
-                << "weight" << p.rdata(iqp_) << std::endl;
-
             ParticleType pnew1;
             ParticleType pnew2;
             ParticleType pnew3;
@@ -697,9 +687,6 @@ public:
             set_ids(pnew2);
             set_ids(pnew3);
             set_ids(pnew4);
-
-            // pnew1.id() = ParticleType::NextID();
-
             pnew1.pos(ix_) = xp + disp;
             pnew1.pos(iy_) = yp;
             pnew1.pos(iz_) = 0.0;
@@ -707,7 +694,6 @@ public:
             pnew1.rdata(ivp_) = vp;
             pnew1.rdata(iwp_) = wp;
             pnew1.rdata(iqp_) = qp / 4.0;
-
             pnew2.pos(ix_) = xp - disp;
             pnew2.pos(iy_) = yp;
             pnew2.pos(iz_) = 0.0;
@@ -715,7 +701,6 @@ public:
             pnew2.rdata(ivp_) = vp;
             pnew2.rdata(iwp_) = wp;
             pnew2.rdata(iqp_) = qp / 4.0;
-
             pnew3.pos(ix_) = xp;
             pnew3.pos(iy_) = yp + disp;
             pnew3.pos(iz_) = 0.0;
@@ -723,7 +708,6 @@ public:
             pnew3.rdata(ivp_) = vp;
             pnew3.rdata(iwp_) = wp;
             pnew3.rdata(iqp_) = qp / 4.0;
-
             pnew4.pos(ix_) = xp;
             pnew4.pos(iy_) = yp - disp;
             pnew4.pos(iz_) = 0.0;
@@ -731,7 +715,6 @@ public:
             pnew4.rdata(ivp_) = vp;
             pnew4.rdata(iwp_) = wp;
             pnew4.rdata(iqp_) = qp / 4.0;
-
             pTile.push_back(pnew1);
             pTile.push_back(pnew2);
             pTile.push_back(pnew3);
