@@ -1530,8 +1530,9 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
   Real dvMax = 0;
   for (int iDir = 0; iDir < nDim3; iDir++) {
     Real dv = velMax_D[iDir] - velMin_D[iDir];
-    if (dv < 1e-16)
-      dv = 1e-16;
+    const Real vref = 0.5 * (fabs(velMax_D[iDir]) + fabs(velMin_D[iDir]));
+    if (dv < 1e-6 * vref)
+      dv = 1e-6 * vref;
     velMax_D[iDir] += 1e-3 * dv;
     velMin_D[iDir] -= 1e-3 * dv;
     dv = velMax_D[iDir] - velMin_D[iDir];
