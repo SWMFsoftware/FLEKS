@@ -758,10 +758,10 @@ be reduced to as low as 1 if the source density is low.
     </for>
 
 #SUPID_FLEKS0                                                 
-3                       nSpecies                              
-1                       supID                                 
-1                       supID                                 
-1                       supID    
+3                       nSpecies
+1                       supID
+1                       supID
+1                       supID
 
 The starting supID for each species. This command should only exist in 
 a restart file.
@@ -794,12 +794,12 @@ domain (uniform) or only at the boundary.
   
 
 #TPSTATESI                                   
-1                       nState                
-1                       iSpecies             
+1                       nState
+1                       iSpecies
 0                       vth[m/s]
-1e5                     vx[m/s]             
-2e5                     vy[m/s]                   
-1e6                     vz[m/s] 
+1e5                     vx[m/s]
+2e5                     vy[m/s]
+1e6                     vz[m/s]
 
 Initializating test particles with user defined thermal velocity (vth) and 
 bulk velocities (vx, vy and vz) for iSpecies. The velocities are in SI unit. 
@@ -814,9 +814,9 @@ bulk velocities (vx, vy and vz) for iSpecies. The velocities are in SI unit.
   <parameter name="nParticleZ" type="integer" min="1" default="1"/>
 
 #TPPARTICLES
-1                  particles per cell in X 
-1                  particles per cell in Y 
-1                  particles per cell in Z 
+1                  particles per cell in X
+1                  particles per cell in Y
+1                  particles per cell in Z
 
 This command sets the number of test particles per cell. 
 
