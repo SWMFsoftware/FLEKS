@@ -1524,9 +1524,6 @@ void Pic::smooth_B(int iLev) {
   MultiFab centerDB(cGrids[iLev], DistributionMap(iLev), nDim3, nGst);
   centerDB.setVal(0.0);
 
-  MultiFab uPerp(nGrids[iLev], DistributionMap(iLev), nDim3, nGst);
-  uPerp.setVal(0.0);
-
   Real coef[nDim3];
   for (int i = 0; i < nDim3; i++) {
     coef[i] = 0.5 * tc->get_dt() * Geom(iLev).InvCellSize()[i];
@@ -1535,38 +1532,8 @@ void Pic::smooth_B(int iLev) {
   for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
     Box box = mfi.validbox();
 
-    const Array4<Real>& nB = nodeB[iLev][mfi].array();
-    const Array4<Real const>& nU = uBg[iLev][mfi].array();
-    const Array4<Real>& uP = uPerp[mfi].array();
-    ParallelFor(box, nDim3, [&](int i, int j, int k, int iVar) {
-      Real u[nDim3], uPar[nDim3];
-      for (int iDir = 0; iDir < nDim3; iDir++) {
-        u[iDir] = nU(i, j, k, iDir);
-      }
-
-      // uPar = (u dot B) B / |B|^2
-      Real uDotB = 0, b2 = 0;
-      for (int iDir = 0; iDir < nDim3; iDir++) {
-        uDotB += u[iDir] * nB(i, j, k, iDir);
-        b2 += nB(i, j, k, iDir) * nB(i, j, k, iDir);
-      }
-      b2 = max(b2, 1e-99);
-      for (int iDir = 0; iDir < nDim3; iDir++) {
-        uPar[iDir] = uDotB * nB(i, j, k, iDir) / b2;
-      }
-
-      // nP = u - uPar
-      for (int iDir = 0; iDir < nDim3; iDir++) {
-        uP(i, j, k, iDir) = u[iDir] - uPar[iDir];
-      }
-    });
-  }
-
-  for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
-    Box box = mfi.validbox();
-
     const Array4<Real>& cB = centerB[iLev][mfi].array();
-    const Array4<Real const>& nU = uPerp[mfi].array();
+    const Array4<Real const>& nU = uBg[iLev][mfi].array();
     const Array4<Real>& dB = centerDB[mfi].array();
     const Array4<Real>& divBArr = divB[iLev][mfi].array();
 
