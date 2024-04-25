@@ -330,94 +330,58 @@ class FLEKSTP(object):
         """
 
         data = self.read_particle_trajectory(partID)
-
-        plt.ion()
         t = data[:, FLEKSTP.it_]
-
         tNorm = (t-t[0])/(t[-1]-t[0])
 
-        f = plt.figure(figsize=(12, 6))
-
-        nrow = 3
-        ncol = 4
-
-        if self.nReal == 10:
-            # plot B field
+        ncol = 3
+        if self.nReal == 10: # additional B field
             nrow = 4
-        elif self.nReal == 13:
-            # plot B and E field
+        elif self.nReal == 13: # additional B and E field
             nrow = 5
+        else: # X, V 
+            nrow = 3
 
-        isub = 1
-        ax = f.add_subplot(nrow, ncol, isub)
-        ax.plot(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iy_], 'k')
-        ax.scatter(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iy_], c=plt.cm.winter(
-            tNorm), edgecolor='none', marker='o', s=20)
-        ax.set_xlabel('x')
-        ax.set_ylabel('y')
+        f, axs = plt.subplots(nrow, ncol, figsize=(12, 6), constrained_layout=True)
 
-        isub = isub + 1
-        ax = f.add_subplot(nrow, ncol, isub)
-        ax.plot(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iz_], 'k')
-        ax.scatter(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iz_], c=plt.cm.winter(
-            tNorm), edgecolor='none', marker='o', s=20)
-        ax.set_xlabel('x')
-        ax.set_ylabel('z')
+        axs[0,0].plot(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iy_], 'k')
+        axs[0,0].scatter(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iy_], c=plt.cm.winter(
+            tNorm), edgecolor='none', marker='o', s=10)
+        axs[0,0].set_xlabel('x')
+        axs[0,0].set_ylabel('y')
 
-        isub = isub + 1
-        ax = f.add_subplot(nrow, ncol, isub)
-        ax.plot(data[:, FLEKSTP.iy_], data[:, FLEKSTP.iz_], 'k')
-        ax.scatter(data[:, FLEKSTP.iy_], data[:, FLEKSTP.iz_], c=plt.cm.winter(
-            tNorm), edgecolor='none', marker='o', s=20)
-        ax.set_xlabel('y')
-        ax.set_ylabel('z')
+        axs[0,1].plot(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iz_], 'k')
+        axs[0,1].scatter(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iz_], c=plt.cm.winter(
+            tNorm), edgecolor='none', marker='o', s=10)
+        axs[0,1].set_xlabel('x')
+        axs[0,1].set_ylabel('z')
 
-        isub = isub + 1
-        ax = f.add_subplot(nrow, ncol, isub, projection='3d')
-        ax.plot3D(data[:, FLEKSTP.ix_],
-                  data[:, FLEKSTP.iy_], data[:, FLEKSTP.iz_])
-        ax.scatter(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iy_],
-                   data[:, FLEKSTP.iz_], c=plt.cm.winter(tNorm), marker='o', s=3)
-        ax.set_xlabel('x')
-        ax.set_ylabel('y')
-        ax.set_zlabel('z')
+        axs[0,2].plot(data[:, FLEKSTP.iy_], data[:, FLEKSTP.iz_], 'k')
+        axs[0,2].scatter(data[:, FLEKSTP.iy_], data[:, FLEKSTP.iz_], c=plt.cm.winter(
+            tNorm), edgecolor='none', marker='o', s=10)
+        axs[0,2].set_xlabel('y')
+        axs[0,2].set_ylabel('z')
 
-        def plot_data_(dd, label):
-            nonlocal isub
-            isub = isub + 1
-            ax = f.add_subplot(nrow, ncol, isub)
-            ax.plot(t, dd, label=label)
-            ax.scatter(t, dd, c=plt.cm.winter(tNorm),
-                       edgecolor='none', marker='o', s=20)
-            ax.set_xlabel('time')
-            ax.set_ylabel(label)
+        def plot_data_(dd, label, irow, icol):
+            axs[irow, icol].plot(t, dd, label=label)
+            axs[irow, icol].scatter(t, dd, c=plt.cm.winter(tNorm),
+                       edgecolor='none', marker='o', s=10)
+            axs[irow, icol].set_xlabel('time')
+            axs[irow, icol].set_ylabel(label)
 
-        def plot_vector_(idx, labels, norm_label=None):
-            v = 0
-            for i, label in zip(idx, labels):
-                dd = data[:, i]
-                plot_data_(dd, label)
-                if norm_label !=None: 
-                    v += dd**2
+        def plot_vector_(idx, labels, irow, colrange=range(0, 3)):
+            for i, (id, label) in enumerate(zip(idx, labels)):
+                dd = data[:, id]
+                plot_data_(dd, label, irow, colrange[i])
 
-            if norm_label != None:
-                v = np.sqrt(v)
-                plot_data_(v,norm_label)
-
-        plot_vector_([FLEKSTP.ix_, FLEKSTP.iy_, FLEKSTP.iz_], ['x', 'y', 'z'])
-
-        isub = isub + 1
-
-        plot_vector_([FLEKSTP.iu_, FLEKSTP.iv_, FLEKSTP.iw_], ['Vx', 'Vy', 'Vz'], norm_label="|V|")
+        plot_vector_([FLEKSTP.ix_, FLEKSTP.iy_, FLEKSTP.iz_], ['x', 'y', 'z'], 1)
+        plot_vector_([FLEKSTP.iu_, FLEKSTP.iv_, FLEKSTP.iw_], ['Vx', 'Vy', 'Vz'], 2)
 
         if self.nReal > FLEKSTP.iBx_:
-            plot_vector_([FLEKSTP.iBx_, FLEKSTP.iBy_, FLEKSTP.iBz_], ['Bx', 'By', 'Bz'], norm_label="|B|")
+            plot_vector_([FLEKSTP.iBx_, FLEKSTP.iBy_, FLEKSTP.iBz_], ['Bx', 'By', 'Bz'], 3)
 
         if self.nReal > FLEKSTP.iEx_:
-            plot_vector_([FLEKSTP.iEx_, FLEKSTP.iEy_, FLEKSTP.iEz_], ['Ex', 'Ey', 'Ez'], norm_label="|E|")
-
-        plt.tight_layout()
-
+            plot_vector_([FLEKSTP.iEx_, FLEKSTP.iEy_, FLEKSTP.iEz_], ['Ex', 'Ey', 'Ez'], 4)
+            
         return f
 
     def plot_loc(self, pData):
