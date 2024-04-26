@@ -281,8 +281,7 @@ double Pic::get_var(std::string var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 2) == "dx") {
       value = Geom(iLev).CellSize(ix_);
     } else if (var.substr(0, 2) == "Ex") {
-      const Array4<Real const>& arr =
-          nodeE[iLev][mfi].array(); // Talha- check // no loop
+      const Array4<Real const>& arr = nodeE[iLev][mfi].array();
       value = arr(ijk, ix_);
     } else if (var.substr(0, 2) == "Ey") {
       const Array4<Real const>& arr = nodeE[iLev][mfi].array();
