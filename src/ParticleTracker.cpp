@@ -89,10 +89,12 @@ void ParticleTracker::update(Pic& pic) {
   if (isGridEmpty)
     return;
 
-  Print() << printPrefix
-          << " updating test particles. t =  " << std::setprecision(6)
-          << tc->get_time_si() << " (s), cycle = " << tc->get_cycle()
-          << std::endl;
+  if (tc->ptLog.is_time_to()) {
+    Print() << printPrefix
+            << " updating test particles. t =  " << std::setprecision(6)
+            << tc->get_time_si() << " (s), cycle = " << tc->get_cycle()
+            << std::endl;
+  }
 
   update_field(pic);
 
