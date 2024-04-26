@@ -82,14 +82,14 @@ void ParticleTracker::write_log(bool doForce, bool doCreateFile) {
 }
 
 //==========================================================
-void ParticleTracker::update(Pic& pic) {
+void ParticleTracker::update(Pic& pic, bool doReport) {
   std::string funcName = "PTracker::update";
   timing_func(funcName);
 
   if (isGridEmpty)
     return;
 
-  if (tc->ptLog.is_time_to()) {
+  if (doReport) {
     Print() << printPrefix
             << " updating test particles. t =  " << std::setprecision(6)
             << tc->get_time_si() << " (s), cycle = " << tc->get_cycle()

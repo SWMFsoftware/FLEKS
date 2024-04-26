@@ -140,7 +140,7 @@ void Domain::update() {
   pic->write_log();
 
   if (pt)
-    pt->update(*pic);
+    pt->update(*pic, doReport);
 
   if (pt)
     pt->write_log();

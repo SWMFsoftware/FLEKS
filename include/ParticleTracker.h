@@ -34,7 +34,7 @@ public:
 
   void update_field(Pic &pic);
   void set_ic(Pic &pic);
-  void update(Pic &pic);
+  void update(Pic &pic, bool doReport = false);
 
   void complete_parameters();
 
