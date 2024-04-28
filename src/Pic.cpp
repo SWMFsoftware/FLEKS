@@ -1575,7 +1575,7 @@ void Pic::smooth_B(int iLev) {
       return 1 - phi;
     };
 
-    ParallelFor(box, nDim3, [&](int i, int j, int k, int iVar) {
+    ParallelFor(box, [&](int i, int j, int k) {
       Real ul, ur;
       // Flux along  x
       get_face(ix_, i, j, k, ix_, nU, ul, ur);
