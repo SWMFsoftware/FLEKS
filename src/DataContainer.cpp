@@ -60,7 +60,7 @@ void AMReXDataContainer::read_header(std::string& headerName, int& nVar,
     HeaderFile.ignore(100000, '\n');
   }
 
-  // Read the base grid and ignore refined leve grids.
+  // Read the base grid and ignore refined level grids.
   HeaderFile >> cellBox;
   HeaderFile.ignore(100000, '\n');
 
@@ -68,7 +68,6 @@ void AMReXDataContainer::read_header(std::string& headerName, int& nVar,
 }
 
 void AMReXDataContainer::read_header() {
-
   std::string headerName = filename + "/Header";
 
   int finestLev;
@@ -88,7 +87,7 @@ void AMReXDataContainer::read() {
 
   Grid grid(Geom(0), get_amr_info(), nGst);
 
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
     VisMF::Read(mf[iLev],
                 filename + "/Level_" + std::to_string(iLev) + "/Cell");
 
@@ -96,8 +95,6 @@ void AMReXDataContainer::read() {
     grid.SetDistributionMap(iLev, mf[iLev].DistributionMap());
   }
   grid.SetFinestLevel(n_lev() - 1);
-
-  // Print() << "grids.ba0 = " << grid.boxArray(0) << std::endl;
 
   regrid(grid.boxArray(0), &grid);
 }
@@ -111,7 +108,7 @@ size_t AMReXDataContainer::loop_cell(bool doStore, Vector<float>& vars,
     vars.clear();
 
   size_t iCount = 0;
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
     const int ncomp = mf[iLev].nComp();
     for (MFIter mfi(iCell[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
@@ -144,7 +141,7 @@ size_t AMReXDataContainer::loop_cell(bool doStore, Vector<float>& vars,
     iCell[iLev].FillBoundary();
   }
 
-  for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
+  for (int iLev = n_lev() - 2; iLev >= 0; --iLev) {
     fill_fine_lev_bny_from_coarse(
         iCell[iLev], iCell[iLev + 1], 0, iCell[iLev].nComp(), ref_ratio[iLev],
         Geom(iLev), Geom(iLev + 1), cell_status(iLev + 1), pc_interp);
@@ -161,7 +158,7 @@ size_t AMReXDataContainer::loop_zone(bool doStore, Vector<size_t>& zones) {
   if (doStore)
     zones.clear();
 
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
     for (MFIter mfi(iCell[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real>& cell = iCell[iLev][mfi].array();
@@ -170,7 +167,7 @@ size_t AMReXDataContainer::loop_zone(bool doStore, Vector<size_t>& zones) {
       const auto lo = lbound(box);
       const auto hi = ubound(box);
 
-      // Loop over valid cells + low end ghost cells
+      // Loop over valid cells + lower end ghost cells
       for (int k = lo.z - 1; k <= hi.z; ++k)
         for (int j = lo.y - 1; j <= hi.y; ++j)
           for (int i = lo.x - 1; i <= hi.x; ++i)
@@ -178,9 +175,9 @@ size_t AMReXDataContainer::loop_zone(bool doStore, Vector<size_t>& zones) {
                 (box.contains(i, j, k) && !bit::is_refined(status(i, j, k)))) {
               bool isBrick = true;
 
-              for (int kk = k; kk <= k + 1; kk++)
-                for (int jj = j; jj <= j + 1; jj++)
-                  for (int ii = i; ii <= i + 1; ii++) {
+              for (int kk = k; kk <= k + 1; ++kk)
+                for (int jj = j; jj <= j + 1; ++jj)
+                  for (int ii = i; ii <= i + 1; ++ii) {
                     if (cell(ii, jj, kk) == 0)
                       isBrick = false;
                   }
@@ -209,7 +206,7 @@ void AMReXDataContainer::smooth(int nSmooth) {
   BL_PROFILE(funcName);
 
   for (int iSmooth = 0; iSmooth < nSmooth; iSmooth++)
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
       const int ng = 1;
       MultiFab mfOld(mf[iLev].boxArray(), mf[iLev].DistributionMap(),
                      mf[iLev].nComp(), ng);
@@ -231,10 +228,10 @@ void AMReXDataContainer::smooth(int nSmooth) {
           const auto lo = IntVect(bx.loVect());
           const auto hi = IntVect(bx.hiVect());
 
-          for (int iVar = 0; iVar < mf[iLev].nComp(); iVar++)
-            for (int k = lo[iz_]; k <= hi[iz_]; k++)
-              for (int j = lo[iy_]; j <= hi[iy_]; j++)
-                for (int i = lo[ix_]; i <= hi[ix_]; i++) {
+          for (int iVar = 0; iVar < mf[iLev].nComp(); ++iVar)
+            for (int k = lo[iz_]; k <= hi[iz_]; ++k)
+              for (int j = lo[iy_]; j <= hi[iy_]; ++j)
+                for (int i = lo[ix_]; i <= hi[ix_]; ++i) {
 
                   if (bit::is_lev_edge(status(i, j, k))) {
                     // Do not understand why this is needed. It seems the
@@ -242,9 +239,9 @@ void AMReXDataContainer::smooth(int nSmooth) {
                     continue;
                   }
 
-                  for (int kk = k - dIdx[iz_]; kk <= k + dIdx[iz_]; kk++)
-                    for (int jj = j - dIdx[iy_]; jj <= j + dIdx[iy_]; jj++)
-                      for (int ii = i - dIdx[ix_]; ii <= i + dIdx[ix_]; ii++)
+                  for (int kk = k - dIdx[iz_]; kk <= k + dIdx[iz_]; ++kk)
+                    for (int jj = j - dIdx[iy_]; jj <= j + dIdx[iy_]; ++jj)
+                      for (int ii = i - dIdx[ix_]; ii <= i + dIdx[ix_]; ++ii)
                         if (bit::is_lev_boundary(status(ii, jj, kk)) ||
                             bit::is_refined(status(ii, jj, kk))) {
                           continue;

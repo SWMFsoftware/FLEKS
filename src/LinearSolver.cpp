@@ -209,12 +209,12 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
     // Krylov_II[1]:=A*sol
     if (isInit || its > 0) {
       matvec(sol, Krylov_II, iLev);
-      for (int i = 0; i < n; i++) {
+      for (int i = 0; i < n; ++i) {
         Krylov_II[i] = rhs[i] - Krylov_II[i];
       }
     } else {
       // Save a matvec when starting from zero initial condition
-      for (int i = 0; i < n; i++) {
+      for (int i = 0; i < n; ++i) {
         Krylov_II[i] = rhs[i];
       }
     }
@@ -255,7 +255,7 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
     }
 
     auto coef = 1.0 / ro;
-    for (int i = 0; i < n; i++) {
+    for (int i = 0; i < n; ++i) {
       Krylov_II[i] *= coef;
     }
 
@@ -272,11 +272,11 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
       matvec(&Krylov_II[i * n], &Krylov_II[i1 * n], iLev);
 
       // Modified Gram-Schmidt
-      for (int j = 0; j <= i; j++) {
+      for (int j = 0; j <= i; ++j) {
         double t =
             dot_product_mpi(&Krylov_II[j * n], &Krylov_II[i1 * n], n, iComm);
         hh[i * nKrylov1 + j] = t;
-        for (int k = 0; k < n; k++) {
+        for (int k = 0; k < n; ++k) {
           Krylov_II[i1 * n + k] -= t * Krylov_II[j * n + k];
         }
       }
@@ -285,14 +285,14 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
       hh[i * nKrylov1 + i1] = cDot;
       if (cDot != 0.0) {
         cDot = 1.0 / cDot;
-        for (int k = 0; k < n; k++) {
+        for (int k = 0; k < n; ++k) {
           Krylov_II[i1 * n + k] *= cDot;
         }
       }
       // Done with modified Gram-Schmidt and Arnoldi step.
       // Update factorization of hh.
       // Perform previous transformations on i-th column of h.
-      for (int k = 1; k <= i; k++) {
+      for (int k = 1; k <= i; ++k) {
         int k1 = k - 1;
         double t = hh[i * nKrylov1 + k1];
         hh[i * nKrylov1 + k1] = c[k1] * t + s[k1] * hh[i * nKrylov1 + k];
@@ -325,7 +325,7 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
 
     // Compute solution. First solve upper triangular system.
     // rs := hh(1:i,1:i) ^-1 * rs
-    for (int j = i - 1; j >= 0; j--) {
+    for (int j = i - 1; j >= 0; --j) {
       if (rs[j] != 0.0) {
         rs[j] /= hh[j * nKrylov1 + j];
         for (int k = j - 1; k >= 0; k--) {
@@ -336,8 +336,8 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
 
     // Done with back substitution.
     // Form linear combination to get solution.
-    for (int j = 0; j < i; j++) {
-      for (int k = 0; k < n; k++) {
+    for (int j = 0; j < i; ++j) {
+      for (int k = 0; k < n; ++k) {
         // sol[i] += rs[j] * Krylov_II[i][j];
         sol[k] += rs[j] * Krylov_II[j * n + k];
       }
