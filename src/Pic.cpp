@@ -1536,6 +1536,7 @@ void Pic::smooth_B(int iLev) {
     const Array4<Real const>& nU = uBg[iLev][mfi].array();
     const Array4<Real>& dB = centerDB[mfi].array();
     const Array4<Real>& divBArr = divB[iLev][mfi].array();
+    const auto& status = cellStatus[iLev][mfi].array();
 
     // Get the face along the direction iDir for the cell (i,j,k) for the iVar
     // component
@@ -1576,55 +1577,80 @@ void Pic::smooth_B(int iLev) {
     };
 
     ParallelFor(box, [&](int i, int j, int k) {
+      bool doDiffusion;
       Real ul, ur;
       // Flux along  x
       get_face(ix_, i, j, k, ix_, nU, ul, ur);
+
+      doDiffusion = true;
+      if ((ul > 0 && bit::is_domain_boundary(status(i - 1, j, k))) ||
+          (ur < 0 && bit::is_domain_boundary(status(i + 1, j, k)))) {
+        doDiffusion = false;
+      }
+
       ul = fabs(ul);
       ur = fabs(ur);
-      for (int iVar = 0; iVar < nDim3; iVar++) {
-        Real cR = limiter(cB(i - 1, j, k, iVar), cB(i, j, k, iVar),
-                          cB(i + 1, j, k, iVar));
-        Real cL = limiter(cB(i - 2, j, k, iVar), cB(i - 1, j, k, iVar),
-                          cB(i, j, k, iVar));
-        dB(i, j, k, iVar) +=
-            (cR * ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar)) -
-             cL * ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar))) *
-            coef[ix_];
-      }
+      if (doDiffusion)
+        for (int iVar = 0; iVar < nDim3; iVar++) {
+          Real cR = limiter(cB(i - 1, j, k, iVar), cB(i, j, k, iVar),
+                            cB(i + 1, j, k, iVar));
+          Real cL = limiter(cB(i - 2, j, k, iVar), cB(i - 1, j, k, iVar),
+                            cB(i, j, k, iVar));
+          dB(i, j, k, iVar) +=
+              (cR * ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar)) -
+               cL * ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar))) *
+              coef[ix_];
+        }
 
       // Flux along y
       get_face(iy_, i, j, k, iy_, nU, ul, ur);
+
+      doDiffusion = true;
+      if ((ul > 0 && bit::is_domain_boundary(status(i, j - 1, k))) ||
+          (ur < 0 && bit::is_domain_boundary(status(i, j + 1, k)))) {
+        doDiffusion = false;
+      }
+
       ul = fabs(ul);
       ur = fabs(ur);
-      for (int iVar = 0; iVar < nDim3; iVar++) {
-        Real cR = limiter(cB(i, j - 1, k, iVar), cB(i, j, k, iVar),
-                          cB(i, j + 1, k, iVar));
-        Real cL = limiter(cB(i, j - 2, k, iVar), cB(i, j - 1, k, iVar),
-                          cB(i, j, k, iVar));
+      if (doDiffusion)
+        for (int iVar = 0; iVar < nDim3; iVar++) {
+          Real cR = limiter(cB(i, j - 1, k, iVar), cB(i, j, k, iVar),
+                            cB(i, j + 1, k, iVar));
+          Real cL = limiter(cB(i, j - 2, k, iVar), cB(i, j - 1, k, iVar),
+                            cB(i, j, k, iVar));
 
-        dB(i, j, k, iVar) +=
-            (cR * ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar)) -
-             cL * ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar))) *
-            coef[iy_];
-      }
+          dB(i, j, k, iVar) +=
+              (cR * ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar)) -
+               cL * ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar))) *
+              coef[iy_];
+        }
 
       if (nDim > 2 && !isFake2D) {
 
         // Flux along z
         get_face(iz_, i, j, k, iz_, nU, ul, ur);
+
+        doDiffusion = true;
+        if ((ul > 0 && bit::is_domain_boundary(status(i, j, k - 1))) ||
+            (ur < 0 && bit::is_domain_boundary(status(i, j, k + 1)))) {
+          doDiffusion = false;
+        }
+
         ul = fabs(ul);
         ur = fabs(ur);
-        for (int iVar = 0; iVar < nDim3; iVar++) {
-          Real cR = limiter(cB(i, j, k - 1, iVar), cB(i, j, k, iVar),
-                            cB(i, j, k + 1, iVar));
-          Real cL = limiter(cB(i, j, k - 2, iVar), cB(i, j, k - 1, iVar),
-                            cB(i, j, k, iVar));
+        if (doDiffusion)
+          for (int iVar = 0; iVar < nDim3; iVar++) {
+            Real cR = limiter(cB(i, j, k - 1, iVar), cB(i, j, k, iVar),
+                              cB(i, j, k + 1, iVar));
+            Real cL = limiter(cB(i, j, k - 2, iVar), cB(i, j, k - 1, iVar),
+                              cB(i, j, k, iVar));
 
-          dB(i, j, k, iVar) +=
-              (cR * ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar)) -
-               cL * ul * (cB(i, j, k, iVar) - cB(i, j, k - 1, iVar))) *
-              coef[iz_];
-        }
+            dB(i, j, k, iVar) +=
+                (cR * ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar)) -
+                 cL * ul * (cB(i, j, k, iVar) - cB(i, j, k - 1, iVar))) *
+                coef[iz_];
+          }
       }
 
       {
