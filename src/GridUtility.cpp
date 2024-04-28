@@ -18,7 +18,7 @@ void lap_node_to_node(const MultiFab& srcMF, MultiFab& dstMF,
   MultiFab centerMF(centerBA, dm, 3, 1);
   centerMF.setVal(0.0);
 
-  for (int i = 0; i < srcMF.nComp(); i++) {
+  for (int i = 0; i < srcMF.nComp(); ++i) {
     MultiFab srcAliasMF(srcMF, make_alias, i, 1);
     grad_node_to_center(srcAliasMF, centerMF, invDx, status);
 
@@ -178,8 +178,8 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
       int km1 = nDim > 2 ? k - 1 : k;
       int kp1 = nDim > 2 ? k + 1 : k;
       Real compX = 0;
-      for (int jj = -1; jj < 2; jj++)
-        for (int kk = -1; kk < 2; kk++) {
+      for (int jj = -1; jj < 2; ++jj)
+        for (int kk = -1; kk < 2; ++kk) {
           int k0 = nDim > 2 ? k + kk : 0;
           compX +=
               srcArr(i + 1, j + jj, k0, ix_) - srcArr(i - 1, j + jj, k0, ix_);
@@ -187,8 +187,8 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
       compX *= 0.5 * invDx[ix_];
 
       Real compY = 0;
-      for (int ii = -1; ii < 2; ii++)
-        for (int kk = -1; kk < 2; kk++) {
+      for (int ii = -1; ii < 2; ++ii)
+        for (int kk = -1; kk < 2; ++kk) {
           int k0 = nDim > 2 ? k + kk : 0;
           compY +=
               srcArr(i + ii, j + 1, k0, iy_) - srcArr(i + ii, j - 1, k0, iy_);
@@ -196,8 +196,8 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
       compY *= 0.5 * invDx[iy_];
 
       Real compZ = 0;
-      for (int ii = -1; ii < 2; ii++)
-        for (int jj = -1; jj < 2; jj++) {
+      for (int ii = -1; ii < 2; ++ii)
+        for (int jj = -1; jj < 2; ++jj) {
           compZ += srcArr(i + ii, j + jj, kp1, iz_) -
                    srcArr(i + ii, j + jj, km1, iz_);
         }

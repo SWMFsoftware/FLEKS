@@ -258,7 +258,7 @@ public:
   //===========================================================================
   inline int find_mpi_rank_from_cell_index(int const iLev,
                                            const amrex::IntVect ijk) const {
-    for (int ii = 0, n = cGrids[iLev].size(); ii < n; ii++) {
+    for (int ii = 0, n = cGrids[iLev].size(); ii < n; ++ii) {
       const amrex::Box& bx = cGrids[iLev][ii];
       if (bx.contains(ijk))
         return DistributionMap(iLev)[ii];
@@ -456,11 +456,11 @@ public:
     }
     amrex::Vector<int> tmpVint;
     if (var.empty()) {
-      for (int i = 0; i < MF[0].nComp(); i++) {
+      for (int i = 0; i < MF[0].nComp(); ++i) {
         var.push_back(std::to_string(i + 1));
       }
     }
-    for (int i = 0; i <= nlev; i++) {
+    for (int i = 0; i <= nlev; ++i) {
       tmpVint.push_back(0);
     }
     amrex::WriteMultiLevelPlotfile(st, nlev, tMF, var, geom, 0.0, tmpVint,

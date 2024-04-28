@@ -51,7 +51,7 @@ void FluidInterface::analyze_var_names(bool useNeutralOnly) {
 
   iEx = -1;
   int iFluid = 0;
-  for (int i = 0; i < varNames.size(); i++) {
+  for (int i = 0; i < varNames.size(); ++i) {
     const auto& name = varNames[i];
     if (name.find("rho") != std::string::npos) {
       if (useNeutralOnly && name.compare(0, 2, "ne") != 0)
@@ -92,7 +92,7 @@ void FluidInterface::analyze_var_names(bool useNeutralOnly) {
 
   const bool doTest = false;
   if (doTest) {
-    for (int i = 0; i < nS; i++) {
+    for (int i = 0; i < nS; ++i) {
       printf("iFluid=%d, iRho_I=%i, iUx_I=%d, iUy_I=%d, iUz_I=%d, iP_I=%d\n", i,
              iRho_I[i], iUx_I[i], iUy_I[i], iUz_I[i], iP_I[i]);
     }
@@ -137,7 +137,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
   iEx = -1;
   if (varNames.size() > 0) {
     int iNeu = 0;
-    for (int i = 0; i < varNames.size(); i++) {
+    for (int i = 0; i < varNames.size(); ++i) {
       const auto& name = varNames[i];
       if (name.size() == 6) {
         if (name.compare(0, 2, "ne") == 0 && name.compare(3, 3, "rho") == 0) {
@@ -203,7 +203,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
   } else {
     // Assume the variables are set through command #UNIFORMSTATE
     int idx = 0;
-    for (int i = 0; i < nS; i++) {
+    for (int i = 0; i < nS; ++i) {
       iRho_I[i] = idx++;
       varNames.push_back("rho" + std::to_string(i));
       iUx_I[i] = idx++;
@@ -243,7 +243,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
 
   const bool doTest = false;
   if (doTest) {
-    for (int i = 0; i < nS; i++) {
+    for (int i = 0; i < nS; ++i) {
       printf("iFluid=%d, iRho_I=%i, iUx_I=%d, iUy_I=%d, iUz_I=%d, iP_I=%d\n", i,
              iRho_I[i], iUx_I[i], iUy_I[i], iUz_I[i], iP_I[i]);
     }
@@ -424,7 +424,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     int nVar;
     param.read_var("nVar", nVar);
     varNames.clear();
-    for (int i = 0; i < nVar; i++) {
+    for (int i = 0; i < nVar; ++i) {
       std::string name;
       param.read_var("name", name);
       varNames.push_back(name);
@@ -458,7 +458,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
       QoQi_S.resize(nS);
       MoMi_S.resize(nS);
 
-      for (int i = 0; i < nS; i++) {
+      for (int i = 0; i < nS; ++i) {
         QoQi_S[i] = 0.0;
         MoMi_S[i] = 1.0;
       }
@@ -468,7 +468,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     param.read_var("nS", nS);
     QoQi_S.resize(nS);
     MoMi_S.resize(nS);
-    for (int i = 0; i < nS; i++) {
+    for (int i = 0; i < nS; ++i) {
       param.read_var("mass", MoMi_S[i]);
       param.read_var("charge", QoQi_S[i]);
     }
@@ -482,7 +482,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
             "to set plasma species information.");
     }
     double tmp;
-    for (int i = 0; i < nS; i++) {
+    for (int i = 0; i < nS; ++i) {
       double rho;
       param.read_var("rho", rho);
       // amu/cc -> kg/m^3
@@ -553,7 +553,7 @@ void FluidInterface::find_mpi_rank_for_points(const int nPoint,
   int nDimGM = get_fluid_dimension();
   Real si2nol = get_Si2NoL();
   const RealBox& range = Geom(0).ProbDomain();
-  for (int i = 0; i < nPoint; i++) {
+  for (int i = 0; i < nPoint; ++i) {
     RealVect xyz;
     for (int iDim = 0; iDim < nDimGM; iDim++) {
       xyz[iDim] = xyz_I[i * nDimGM + iDim] * si2nol;
@@ -711,7 +711,7 @@ void FluidInterface::set_node_fluid() {
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (int i = 0; i < nVarFluid; i++)
+    for (int i = 0; i < nVarFluid; ++i)
       nodeFluid[iLev].setVal(uniformState[i], i, 1, nodeFluid[iLev].nGrow());
   }
 
@@ -868,7 +868,7 @@ void FluidInterface::calc_conversion_units() {
   Si2No_V.resize(nVar);
   No2Si_V.resize(nVar);
 
-  for (int i = 0; i < nVar; i++)
+  for (int i = 0; i < nVar; ++i)
     Si2No_V[i] = 1;
 
   Si2No_V[iBx] = Si2NoB;
@@ -1141,7 +1141,7 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
   int iBxPIC = nS * nVarSpecies, iByPIC = iBxPIC + 1, iBzPIC = iByPIC + 1,
       iExPIC = iBzPIC + 1, iEyPIC = iExPIC + 1, iEzPIC = iEyPIC + 1;
 
-  for (int i = 0; i < nVarFluid; i++) {
+  for (int i = 0; i < nVarFluid; ++i) {
     // The variable for hyperbolic clean, is not known by iPIC3D,
     // but it is needed to be passed back. So data_I need to be
     // initilized.
@@ -1354,7 +1354,7 @@ void FluidInterface::save_amrex_file() {
   std::string filename = component + "/plots/" + tag;
   Print() << "Writing FluidInterface file " << filename << std::endl;
 
-  // for (int i = 0; i < nodeFluid[0].nComp(); i++) {
+  // for (int i = 0; i < nodeFluid[0].nComp(); ++i) {
   //   Real no2out = No2Si_V[i];
   //   // nodeFluid[0].mult(no2out, i, 1, nodeFluid[0].nGrow());
   // }
@@ -1364,7 +1364,7 @@ void FluidInterface::save_amrex_file() {
   }
 
   if (varNames.empty()) {
-    for (int i = 0; i < nodeFluid[0].nComp(); i++) {
+    for (int i = 0; i < nodeFluid[0].nComp(); ++i) {
       varNames.push_back("var" + std::to_string(i));
     }
   }
@@ -1374,7 +1374,7 @@ void FluidInterface::save_amrex_file() {
                           varNames, geom, 0.0, Vector<int>(n_lev(), 0),
                           refRatio());
 
-  // for (int i = 0; i < nodeFluid[0].nComp(); i++) {
+  // for (int i = 0; i < nodeFluid[0].nComp(); ++i) {
   //   Real out2no = Si2No_V[i];
   //   // nodeFluid[0].mult(out2no, i, 1, nodeFluid[0].nGrow());
   // }
@@ -1398,7 +1398,7 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
       continue;
 
     if (idxMap.size() == 0) {
-      for (int i = 0; i < nVar; i++)
+      for (int i = 0; i < nVar; ++i)
         idxMap.push_back(i);
     }
 

@@ -40,7 +40,7 @@ public:
 
     data = new int[nInt];
 
-    for (int i = 0; i < nInt; i++) {
+    for (int i = 0; i < nInt; ++i) {
       data[i] = 0;
     }
   }
@@ -90,7 +90,7 @@ public:
   int* get() { return data; }
 
   void print() {
-    for (int i = 0; i < nBit; i++) {
+    for (int i = 0; i < nBit; ++i) {
       printf("i = %i, bit = %i \n", i, get(i));
     }
   }

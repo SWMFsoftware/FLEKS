@@ -46,7 +46,7 @@ int fleks_init_(double *time) {
   for (int iDomain = 0; iDomain < nDomain; iDomain++)
     fleksDomains.add_new_domain();
 
-  for (int i = 0; i < fleksDomains.size(); i++) {
+  for (int i = 0; i < fleksDomains.size(); ++i) {
     fleksDomains.select(i);
     fleksDomains(i).init(timeNow, i, paramString);
   }
@@ -66,7 +66,7 @@ int fleks_read_param_(char *paramIn, int *nlines, int *ncharline, int *iProc) {
   paramString = char_to_string(paramIn, (*nlines) * (*ncharline), *ncharline);
 
   if (!isFirstSession) {
-    for (int i = 0; i < fleksDomains.size(); i++) {
+    for (int i = 0; i < fleksDomains.size(); ++i) {
       fleksDomains.select(i);
       fleksDomains(i).update_param(paramString);
     }
@@ -95,7 +95,7 @@ int fleks_from_gm_init_(int *iParam, double *paramreal, char *NameVar) {
 
   const Vector<int> paramInt(iParam, iParam + nInt);
 
-  for (int i = 0; i < fleksDomains.size(); i++) {
+  for (int i = 0; i < fleksDomains.size(); ++i) {
     fleksDomains.select(i);
 
     const Vector<double> paramRegion(paramreal + i * nParamRegion,
@@ -115,7 +115,7 @@ int fleks_from_gm_init_(int *iParam, double *paramreal, char *NameVar) {
 
 //==========================================================
 int fleks_finalize_init_() {
-  for (int i = 0; i < fleksDomains.size(); i++) {
+  for (int i = 0; i < fleksDomains.size(); ++i) {
     fleksDomains.select(i);
     fleksDomains(i).set_ic();
   }
@@ -136,7 +136,7 @@ int fleks_run_(double *time) {
   while (mayNeedUpdata) {
     mayNeedUpdata = false;
 
-    for (int i = 0; i < fleksDomains.size(); i++) {
+    for (int i = 0; i < fleksDomains.size(); ++i) {
       if (!fleksDomains(i).receive_ic_only()) {
         double domainTime = (double)(fleksDomains(i).tc->get_time_si());
         double domainDt = (double)(fleksDomains(i).tc->get_dt_si());
@@ -174,7 +174,7 @@ int fleks_run_(double *time) {
 
 //==========================================================
 int fleks_save_restart_() {
-  for (int i = 0; i < fleksDomains.size(); i++)
+  for (int i = 0; i < fleksDomains.size(); ++i)
     fleksDomains(i).save_restart();
   return 0;
 }
@@ -182,7 +182,7 @@ int fleks_save_restart_() {
 //==========================================================
 int fleks_get_ngridpoints_(int *nPoint) {
   *nPoint = 0;
-  for (int i = 0; i < fleksDomains.size(); i++) {
+  for (int i = 0; i < fleksDomains.size(); ++i) {
     fleksDomains(i).couplerMarker = (*nPoint);
     *nPoint += fleksDomains(i).get_grid_nodes_number();
   }
@@ -191,7 +191,7 @@ int fleks_get_ngridpoints_(int *nPoint) {
 
 //==========================================================
 int fleks_get_grid_(double *Pos_DI, int *n) {
-  for (int i = 0; i < fleksDomains.size(); i++) {
+  for (int i = 0; i < fleksDomains.size(); ++i) {
     int idx = fleksDomains(i).couplerMarker *
               fleksDomains(i).fi->get_fluid_dimension();
     fleksDomains(i).get_grid(&Pos_DI[idx]);
@@ -205,7 +205,7 @@ int fleks_set_state_var_(double *Data_VI, int *iPoint_I, int *nVar,
 
   std::stringstream ss(std::string(nameVar, *nChar));
   std::vector<std::string> names;
-  for (int i = 0; i < (*nVar); i++) {
+  for (int i = 0; i < (*nVar); ++i) {
     std::string name;
     if (ss >> name) {
       names.push_back(name);
@@ -213,7 +213,7 @@ int fleks_set_state_var_(double *Data_VI, int *iPoint_I, int *nVar,
       Abort("Error: variable names are not set correctly!\n");
     }
   }
-  for (int i = 0; i < fleksDomains.size(); i++) {
+  for (int i = 0; i < fleksDomains.size(); ++i) {
     int idx = fleksDomains(i).couplerMarker;
     fleksDomains(i).set_state_var(Data_VI, &iPoint_I[idx], names);
   }
@@ -223,7 +223,7 @@ int fleks_set_state_var_(double *Data_VI, int *iPoint_I, int *nVar,
 //==========================================================
 int fleks_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
                          int *nVar) {
-  for (int i = 0; i < fleksDomains.size(); i++)
+  for (int i = 0; i < fleksDomains.size(); ++i)
     fleksDomains(i).get_fluid_state_for_points(*nDim, *nPoint, Xyz_I, data_I,
                                                *nVar);
   return 0;
@@ -232,28 +232,28 @@ int fleks_get_state_var_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
 //==========================================================
 int fleks_get_for_oh_(int *nDim, int *nPoint, double *Xyz_I, double *data_I,
                       int *nVar) {
-  for (int i = 0; i < fleksDomains.size(); i++)
+  for (int i = 0; i < fleksDomains.size(); ++i)
     fleksDomains(i).get_source_for_points(*nDim, *nPoint, Xyz_I, data_I, *nVar);
   return 0;
 }
 
 //==========================================================
 int fleks_find_points_(int *nPoint, double *Xyz_I, int *iProc_I) {
-  for (int i = 0; i < fleksDomains.size(); i++)
+  for (int i = 0; i < fleksDomains.size(); ++i)
     fleksDomains(i).find_mpi_rank_for_points(*nPoint, Xyz_I, iProc_I);
   return 0;
 }
 
 //==========================================================
 int fleks_set_dt_(double *DtSi) {
-  for (int i = 0; i < fleksDomains.size(); i++)
+  for (int i = 0; i < fleksDomains.size(); ++i)
     fleksDomains(i).tc->set_dt_si(*DtSi);
   return 0;
 }
 
 //==========================================================
 int fleks_cal_dt_(double *dtOut) {
-  for (int i = 0; i < fleksDomains.size(); i++)
+  for (int i = 0; i < fleksDomains.size(); ++i)
     *dtOut = fleksDomains(i).tc->get_dt_si();
   return 0;
 }
@@ -263,7 +263,7 @@ int fleks_get_grid_info_(int *fluidDim, int *iGrid, int *iDecomp) {
   (*iGrid) = 0;
   (*iDecomp) = 0;
   (*fluidDim) = 0;
-  for (int i = 0; i < fleksDomains.size(); i++) {
+  for (int i = 0; i < fleksDomains.size(); ++i) {
     (*iGrid) += fleksDomains(i).get_iGrid();
     (*iDecomp) += fleksDomains(i).get_iDecomp();
     (*fluidDim) = fleksDomains(i).fi->get_fluid_dimension();
@@ -275,7 +275,7 @@ int fleks_get_grid_info_(int *fluidDim, int *iGrid, int *iDecomp) {
 int fleks_end_() {
   {
     // Saving plots before exiting.
-    for (int i = 0; i < fleksDomains.size(); i++) {
+    for (int i = 0; i < fleksDomains.size(); ++i) {
       fleksDomains.select(i);
       fleksDomains(i).write_plots(true);
     }
@@ -295,7 +295,7 @@ int fleks_end_() {
 
 //==========================================================
 int fleks_set_grid_info_(int *nInt, int *accumulatedSize, int *status) {
-  for (int i = 0; i < fleksDomains.size(); i++) {
+  for (int i = 0; i < fleksDomains.size(); ++i) {
     int idxStart = 0;
     if (i > 0)
       idxStart = accumulatedSize[i - 1];
@@ -307,7 +307,7 @@ int fleks_set_grid_info_(int *nInt, int *accumulatedSize, int *status) {
 
 //==========================================================
 int fleks_turn_on_all_cells_() {
-  for (int i = 0; i < fleksDomains.size(); i++) {
+  for (int i = 0; i < fleksDomains.size(); ++i) {
     fleksDomains(i).receive_grid_info();
     fleksDomains(i).regrid();
   }

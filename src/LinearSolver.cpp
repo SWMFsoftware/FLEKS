@@ -140,7 +140,7 @@ void linear_solver_wrapper_hy(
 double dot_product_mpi(const double *a, const double *b, const int n,
                        const MPI_Comm iComm) {
   double c = 0.0;
-  for (int i = 0; i < n; i++) {
+  for (int i = 0; i < n; ++i) {
     c += a[i] * b[i];
   }
 

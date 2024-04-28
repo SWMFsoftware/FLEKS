@@ -49,7 +49,7 @@ inline double sum(const std::vector<double>& x) {
   double sum = x[0];
   double err = 0.0;
 
-  for (size_t i = 1; i < x.size(); i++) {
+  for (size_t i = 1; i < x.size(); ++i) {
     const double k = x[i];
     const double m = sum + k;
     err += std::fabs(sum) >= std::fabs(k) ? sum - m + k : k - m + sum;
@@ -209,7 +209,7 @@ public:
     std::vector<std::size_t> ids;
     ids.reserve(n);
 
-    for (std::size_t i = 0; i < n; i++) {
+    for (std::size_t i = 0; i < n; ++i) {
       const double x = coords[2 * i];
       const double y = coords[2 * i + 1];
 
@@ -233,7 +233,7 @@ public:
     std::size_t i2 = INVALID_INDEX;
 
     // pick a seed point close to the centroid
-    for (std::size_t i = 0; i < n; i++) {
+    for (std::size_t i = 0; i < n; ++i) {
       const double d = dist(cx, cy, coords[2 * i], coords[2 * i + 1]);
       if (d < min_dist) {
         i0 = i;
@@ -247,7 +247,7 @@ public:
     min_dist = std::numeric_limits<double>::max();
 
     // find the point closest to the seed
-    for (std::size_t i = 0; i < n; i++) {
+    for (std::size_t i = 0; i < n; ++i) {
       if (i == i0)
         continue;
       const double d = dist(i0x, i0y, coords[2 * i], coords[2 * i + 1]);
@@ -264,7 +264,7 @@ public:
 
     // find the third point which forms the smallest circumcircle with the first
     // two
-    for (std::size_t i = 0; i < n; i++) {
+    for (std::size_t i = 0; i < n; ++i) {
       if (i == i0 || i == i1)
         continue;
 
@@ -330,7 +330,7 @@ public:
     add_triangle(i0, i1, i2, INVALID_INDEX, INVALID_INDEX, INVALID_INDEX);
     double xp = std::numeric_limits<double>::quiet_NaN();
     double yp = std::numeric_limits<double>::quiet_NaN();
-    for (std::size_t k = 0; k < n; k++) {
+    for (std::size_t k = 0; k < n; ++k) {
       const std::size_t i = ids[k];
       const double x = coords[2 * i];
       const double y = coords[2 * i + 1];
@@ -350,7 +350,7 @@ public:
       std::size_t start = 0;
 
       size_t key = hash_key(x, y);
-      for (size_t j = 0; j < m_hash_size; j++) {
+      for (size_t j = 0; j < m_hash_size; ++j) {
         start = m_hash[fast_mod(key + j, m_hash_size)];
         if (start != INVALID_INDEX && start != hull_next[start])
           break;
@@ -519,7 +519,7 @@ private:
         } else {
           m_edge_stack.push_back(br);
         }
-        i++;
+        ++i;
 
       } else {
         if (i > 0) {

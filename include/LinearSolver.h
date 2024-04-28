@@ -100,7 +100,7 @@ public:
       }
     }
 
-    for (int i = 0; i < nSolve; i++) {
+    for (int i = 0; i < nSolve; ++i) {
       rhs[i] = 0;
       xLeft[i] = 0;
       matvec[i] = 0;

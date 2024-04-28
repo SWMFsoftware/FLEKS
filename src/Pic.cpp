@@ -36,7 +36,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       Abort("Error: wrong input or too may particle species.");
     }
 
-    for (int i = 0; i < nDim; i++) {
+    for (int i = 0; i < nDim; ++i) {
       param.read_var("particleBoxBoundaryLo", lo);
       param.read_var("particleBoxBoundaryHi", hi);
       pBCs[iSpecies].lo[i] = pBCs[iSpecies].num_type(lo);
@@ -44,7 +44,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     }
   } else if (command == "#BFIELDBOXBOUNDARY") {
     std::string lo, hi;
-    for (int i = 0; i < nDim; i++) {
+    for (int i = 0; i < nDim; ++i) {
       param.read_var("BoxBoundaryLo", lo);
       param.read_var("BoxBoundaryHi", hi);
       bcBField.lo[i] = bcBField.num_type(lo);
@@ -138,7 +138,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#SUPID") {
     int n = 0;
     param.read_var("nSpecies", n);
-    for (int i = 0; i < n; i++) {
+    for (int i = 0; i < n; ++i) {
       int supid;
       param.read_var("supid", supid);
       supIDs.push_back(supid);
@@ -256,7 +256,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 //==========================================================
 void Pic::pre_regrid() {
   if (!parts.empty()) {
-    for (int i = 0; i < nSpecies; i++) {
+    for (int i = 0; i < nSpecies; ++i) {
       // Label the particles outside the OLD PIC region. It should be called
       // before active region is updated.
       parts[i]->label_particles_outside_active_region();
@@ -278,7 +278,7 @@ void Pic::post_regrid() {
 
   //--------------particles-----------------------------------
   if (parts.empty()) {
-    for (int i = 0; i < nSpecies; i++) {
+    for (int i = 0; i < nSpecies; ++i) {
       auto ptr = std::unique_ptr<PicParticles>(new PicParticles(
           this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
           nPartPerCell, pMode, testCase));
@@ -303,7 +303,7 @@ void Pic::post_regrid() {
       sourceParts.push_back(std::move(ptrSource));
     }
   } else {
-    for (int i = 0; i < nSpecies; i++) {
+    for (int i = 0; i < nSpecies; ++i) {
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_active_region_general();
 
@@ -443,7 +443,7 @@ void Pic::fill_source_particles() {
 #ifdef _PT_COMPONENT_
   doSelectRegion = (nSpecies == 4);
 #endif
-  for (int i = 0; i < nSpecies; i++) {
+  for (int i = 0; i < nSpecies; ++i) {
     parts[i]->add_particles_source(source, stateOH, tc->get_dt(), nSourcePPC,
                                    doSelectRegion, adaptiveSourcePPC);
   }
@@ -456,7 +456,7 @@ void Pic::update_part_loc_to_half_stage() {
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (int i = 0; i < nSpecies; i++) {
+    for (int i = 0; i < nSpecies; ++i) {
       parts[i]->update_position_to_half_stage(nodeEth[iLev], nodeB[iLev],
                                               tc->get_dt());
     }
@@ -472,7 +472,7 @@ void Pic::re_sampling() {
   timing_func(nameFunc);
 
   if (doReSampling) {
-    for (int i = 0; i < nSpecies; i++) {
+    for (int i = 0; i < nSpecies; ++i) {
       if (maxWeightRatio > 1)
         parts[i]->limit_weight(maxWeightRatio, parts[i]->is_neutral());
       parts[i]->split(reSamplingLowLimit, parts[i]->is_neutral());
@@ -493,7 +493,7 @@ void Pic::particle_mover() {
   // // nodeE/nodeEth is at t_n/t_{n+1}, tmpE is at t_{n+0.5}
   // MultiFab::LinComb(tmpE, 0.5, nodeEth[iLev], 0, 0.5, nodeE[iLev], 0, 0,
   //                   nodeE[iLev].nComp(), nodeE[iLev].nGrow());
-  // for (int i = 0; i < nSpecies; i++) {
+  // for (int i = 0; i < nSpecies; ++i) {
   //   parts[i]->mover(tmpE, nodeB[iLev], iLev, tc->get_dt(),
   //                   tc->get_next_dt());
   // }
@@ -503,11 +503,11 @@ void Pic::particle_mover() {
   Real dt = tc->get_dt();
   Real dtnext = tc->get_next_dt();
 
-  for (int i = 0; i < nSpecies; i++) {
+  for (int i = 0; i < nSpecies; ++i) {
     parts[i]->mover(nodeEth, nodeB, eBg, uBg, dt, dtnext, solvePartInCoMov);
   }
 
-  for (int i = 0; i < nSpecies; i++) {
+  for (int i = 0; i < nSpecies; ++i) {
     parts[i]->redistribute_particles();
   }
 }
@@ -536,7 +536,7 @@ void Pic::calc_mass_matrix() {
       nodeMM[iLev].setVal(mm0);
     }
 
-    for (int i = 0; i < nSpecies; i++) {
+    for (int i = 0; i < nSpecies; ++i) {
       if (useExplicitPIC) {
         parts[i]->calc_jhat(jHat[iLev], nodeB[iLev], tc->get_dt());
       } else {
@@ -546,7 +546,7 @@ void Pic::calc_mass_matrix() {
       }
     }
     Real invVol = 1;
-    for (int i = 0; i < nDim; i++) {
+    for (int i = 0; i < nDim; ++i) {
       invVol *= Geom(iLev).InvCellSize(i);
     }
 
@@ -584,7 +584,7 @@ void Pic::sum_moments(bool updateDt) {
   timing_func(nameFunc);
 
   plasmaEnergy[iTot] = 0;
-  for (int i = 0; i < nSpecies; i++) {
+  for (int i = 0; i < nSpecies; ++i) {
     Real energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
     plasmaEnergy[i] = energy;
     plasmaEnergy[iTot] += energy;
@@ -600,7 +600,7 @@ void Pic::sum_moments(bool updateDt) {
 
     Real uMax = 0;
     if (tc->get_cfl() > 0 || doReport) {
-      for (int i = 0; i < nSpecies; i++) {
+      for (int i = 0; i < nSpecies; ++i) {
         const int iLev = 0;
         Real uMaxSpecies =
             parts[i]->calc_max_thermal_velocity(nodePlasma[i][iLev]);
@@ -647,11 +647,11 @@ void Pic::sum_moments(bool updateDt) {
     nodePlasma[nSpecies][iLev].setVal(0.0);
   }
 
-  for (int i = 0; i < nSpecies; i++) {
+  for (int i = 0; i < nSpecies; ++i) {
     parts[i]->convert_to_fluid_moments(nodePlasma[i]);
   }
 
-  for (int i = 0; i < nSpecies; i++) {
+  for (int i = 0; i < nSpecies; ++i) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       // Index of 'nSpecies' represents the sum of all species.
       MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
@@ -734,7 +734,7 @@ void Pic::divE_correction() {
     divE_correct_particle_position();
   }
 
-  for (int i = 0; i < nSpecies; i++) {
+  for (int i = 0; i < nSpecies; ++i) {
     // The particles outside the simulation domain is marked for deletion
     // inside divE_correct_particle_position(). redistribute_particles() deletes
     // these particles. In order to get correct moments, re-inject particles in
@@ -752,7 +752,7 @@ void Pic::divE_correct_particle_position() {
 
   timing_func(nameFunc);
 
-  for (int i = 0; i < nSpecies; i++) {
+  for (int i = 0; i < nSpecies; ++i) {
     parts[i]->divE_correct_position(centerPhi[0]);
   }
 }
@@ -843,7 +843,7 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
 
   bool doNetChargeOnly = !isBeforeCorrection;
 
-  for (int i = 0; i < nSpecies; i++) {
+  for (int i = 0; i < nSpecies; ++i) {
     parts[i]->sum_to_center(centerNetChargeNew[iLev], centerMM[iLev],
                             doNetChargeOnly);
   }
@@ -996,7 +996,7 @@ void Pic::update_U0_E0() {
 
     uBg[iLev].FillBoundary(Geom(iLev).periodicity());
 
-    for (int i = 0; i < nSmoothBackGroundU; i++)
+    for (int i = 0; i < nSmoothBackGroundU; ++i)
       smooth_multifab(uBg[iLev], iLev, i % 2 + 1);
 
     for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
@@ -1063,7 +1063,7 @@ void Pic::update_E_expl() {
   }
   const Real dt = tc->get_dt();
   RealVect dt2dx;
-  for (int i = 0; i < nDim; i++) {
+  for (int i = 0; i < nDim; ++i) {
     dt2dx[i] = dt * Geom(0).InvCellSize(i);
   }
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -1104,12 +1104,12 @@ void Pic::update_E_new() {
 
     ////////////
 
-    for (int i = 0; i < eSolver.get_nSolve(); i++) {
+    for (int i = 0; i < eSolver.get_nSolve(); ++i) {
       eSolver.xLeft[i] = 0;
     }
 
     update_E_matvec(eSolver.xLeft, eSolver.xLeft, iLev, false);
-    for (int i = 0; i < eSolver.get_nSolve(); i++) {
+    for (int i = 0; i < eSolver.get_nSolve(); ++i) {
       eSolver.rhs[i] = eSolver.rhs[i] - eSolver.xLeft[i];
       eSolver.xLeft[i] = 0.0;
     }
@@ -1161,7 +1161,7 @@ void Pic::update_E_impl() {
 
     update_E_matvec(eSolver.xLeft, eSolver.matvec, iLev, false);
 
-    for (int i = 0; i < eSolver.get_nSolve(); i++) {
+    for (int i = 0; i < eSolver.get_nSolve(); ++i) {
       eSolver.rhs[i] -= eSolver.matvec[i];
       eSolver.xLeft[i] = 0;
     }
@@ -1525,7 +1525,7 @@ void Pic::smooth_B(int iLev) {
   centerDB.setVal(0.0);
 
   Real coef[nDim3];
-  for (int i = 0; i < nDim3; i++) {
+  for (int i = 0; i < nDim3; ++i) {
     coef[i] = 0.5 * tc->get_dt() * Geom(iLev).InvCellSize()[i];
   }
 
@@ -1810,9 +1810,9 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
         const auto hi = IntVect(bx.hiVect());
 
         for (int iVar = iStart; iVar < iStart + nComp; iVar++)
-          for (int k = lo[iz_] + 1; k <= hi[iz_] - 1; k++)
-            for (int j = lo[iy_]; j <= hi[iy_]; j++)
-              for (int i = lo[ix_]; i <= hi[ix_]; i++)
+          for (int k = lo[iz_] + 1; k <= hi[iz_] - 1; ++k)
+            for (int j = lo[iy_]; j <= hi[iy_]; ++j)
+              for (int i = lo[ix_]; i <= hi[ix_]; ++i)
                 if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
                   arr(i, j, k, iVar) =
                       (this->*func)(mfi, IntVect{ AMREX_D_DECL(i, j, k) },
@@ -1953,7 +1953,7 @@ void Pic::report_load_balance(bool doReportSummary, bool doReportDetail) {
   int nProc = ParallelDescriptor::NProcs();
 
   Vector<int> rc(nProc, nLocal), disp(nProc, 0);
-  for (int i = 0; i < nProc; i++) {
+  for (int i = 0; i < nProc; ++i) {
     disp[i] = i * nLocal;
   }
 
@@ -2033,7 +2033,7 @@ void Pic::report_load_balance(bool doReportSummary, bool doReportDetail) {
       };
 
       for (int iLev = 0; iLev <= n_lev(); iLev++) {
-        for (int i = iNBlk_; i <= iNParts_; i++) {
+        for (int i = iNBlk_; i <= iNParts_; ++i) {
           int idx = iLev * 3 + i;
           if (iLev < n_lev()) {
             printf("%s lev  %d %s %13.1f |%13.1f |%13.1f | %9d|\n",
@@ -2106,14 +2106,14 @@ void Pic::charge_exchange() {
   doSelectRegion = (nSpecies == 4);
 #endif
 
-  for (int i = 0; i < nSpecies; i++) {
+  for (int i = 0; i < nSpecies; ++i) {
     parts[i]->charge_exchange(tc->get_dt(), stateOH, sourcePT2OH, source,
                               kineticSource, sourceParts, doSelectRegion,
                               product(nSourcePPC));
   }
 
   if (kineticSource) {
-    for (int i = 0; i < nSpecies; i++) {
+    for (int i = 0; i < nSpecies; ++i) {
       parts[i]->add_source_particles(sourceParts[i], nSourcePPC,
                                      adaptiveSourcePPC);
       sourceParts[i]->clearParticles();

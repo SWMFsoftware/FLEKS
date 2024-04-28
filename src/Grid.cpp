@@ -51,7 +51,7 @@ Vector<DistributionMapping> Grid::calc_balanced_maps(bool doSplitLevs) {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     Vector<int> ord(ParallelDescriptor::NProcs());
-    for (int i = 0; i < nProcEachLev[iLev]; i++) {
+    for (int i = 0; i < nProcEachLev[iLev]; ++i) {
       ord[i] = i + rankStart[iLev];
     }
 
@@ -89,7 +89,7 @@ Vector<DistributionMapping> Grid::calc_balanced_maps(bool doSplitLevs) {
     //               return lhs.first > rhs.first;
     //             });
 
-    //   for (int i = 0; i < pcost.size(); i++) {
+    //   for (int i = 0; i < pcost.size(); ++i) {
     //     ord[i] = pair[i].second;
     //   }
   }
@@ -199,7 +199,7 @@ void Grid::print_grid_info(bool printBoxes) {
   if (printBoxes) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       Print() << printPrefix << " Boxes of iLev = " << iLev << std::endl;
-      for (int ii = 0, n = cGrids[iLev].size(); ii < n; ii++) {
+      for (int ii = 0, n = cGrids[iLev].size(); ii < n; ++ii) {
         Print() << printPrefix << " box " << ii << " = " << cGrids[iLev][ii]
                 << std::endl;
       }

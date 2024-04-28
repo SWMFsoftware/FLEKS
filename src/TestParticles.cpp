@@ -270,7 +270,7 @@ void TestParticles::read_test_particle_list(
   timing_func(funcName);
 
   std::string listName;
-  for (int i = 0; i < listFiles.size(); i++) {
+  for (int i = 0; i < listFiles.size(); ++i) {
     // Assume the particle list file's name is *N.dat, where N is
     // the species ID (Usually 0 or 1).
     if (listFiles[i].find(std::to_string(speciesID) + ".dat") !=
@@ -362,7 +362,7 @@ void TestParticles::add_test_particles_from_pic(PicParticles* pts) {
     // this particle from the test particle list (vIDs). Use a bit array to do
     // mpi_allreduce to improve performance.
     BitArray ba(vIDs.size());
-    for (unsigned int i = 0; i < vIDs.size(); i++) {
+    for (unsigned int i = 0; i < vIDs.size(); ++i) {
       if (vIDs[i].flag) {
         ba.set(i, 1);
       }
@@ -371,7 +371,7 @@ void TestParticles::add_test_particles_from_pic(PicParticles* pts) {
     MPI_Allreduce(MPI_IN_PLACE, ba.get(), ba.size_int(), MPI_INT, MPI_BAND,
                   ParallelDescriptor::Communicator());
 
-    for (unsigned int i = 0; i < vIDs.size(); i++) {
+    for (unsigned int i = 0; i < vIDs.size(); ++i) {
       if (ba.get(i) == 0) {
         vIDs[i].flag = false;
       }
@@ -417,7 +417,7 @@ void TestParticles::add_test_particles_from_fluid(Vector<Vel> tpStates) {
 #if (AMREX_SPACEDIM > 2)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; k += nIntervalCell[iz_])
 #else
-        for (int k = 0; k <= 0; k++)
+        for (int k = 0; k <= 0; ++k)
 #endif
         {
           if (iPartRegion == iRegionUniform_ ||
@@ -563,7 +563,7 @@ unsigned long long int TestParticles::loop_particles(
         iCountLoc += sizeLoc;
 
         sizeLoc = sizeof(float) * ptRecordSize;
-        for (int i = 0; i < nRecord; i++) {
+        for (int i = 0; i < nRecord; ++i) {
           float recordData[ptRecordSize];
 
           const int i0 = record_var_index(i);
@@ -626,8 +626,8 @@ void TestParticles::print_record_buffer(char* buffer,
     AllPrint() << " weight = " << (*(float*)(buffer + count)) << std::endl;
     count += sizeof(float);
 
-    for (int i = 0; i < nRecord; i++) {
-      for (int ii = 0; ii < ptRecordSize; ii++) {
+    for (int i = 0; i < nRecord; ++i) {
+      for (int ii = 0; ii < ptRecordSize; ++ii) {
         AllPrint() << " data" << ii << " = " << (*(float*)(buffer + count));
         count += sizeof(float);
       }

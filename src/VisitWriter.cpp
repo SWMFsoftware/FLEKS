@@ -261,7 +261,7 @@ void write_variables(int nvars, int *vardim, int *centering,
    * stored.  They must all be grouped together at the end of the point
    * data.  So write out the primary scalars and vectors first.
    */
-  for (i = 0; i < nvars; i++) {
+  for (i = 0; i < nvars; ++i) {
     if (centering[i] == 0) {
       int num_to_write = 0;
       int should_write = 0;
@@ -291,7 +291,7 @@ void write_variables(int nvars, int *vardim, int *centering,
 
       if (should_write) {
         num_to_write = ncells * vardim[i];
-        for (j = 0; j < num_to_write; j++) {
+        for (j = 0; j < num_to_write; ++j) {
           write_float(vars[i][j]);
         }
         end_line();
@@ -303,7 +303,7 @@ void write_variables(int nvars, int *vardim, int *centering,
   if (num_scalars > 0) {
     snprintf(str, sizeof str, "FIELD FieldData %d\n", num_scalars);
     write_string(str);
-    for (i = 0; i < nvars; i++) {
+    for (i = 0; i < nvars; ++i) {
       int should_write = 0;
       if (centering[i] == 0) {
         if (vardim[i] == 1) {
@@ -319,7 +319,7 @@ void write_variables(int nvars, int *vardim, int *centering,
 
       if (should_write) {
         int num_to_write = ncells * vardim[i];
-        for (j = 0; j < num_to_write; j++) {
+        for (j = 0; j < num_to_write; ++j) {
           write_float(vars[i][j]);
         }
         end_line();
@@ -331,7 +331,7 @@ void write_variables(int nvars, int *vardim, int *centering,
   if (num_vectors > 0) {
     snprintf(str, sizeof str, "FIELD FieldData %d\n", num_vectors);
     write_string(str);
-    for (i = 0; i < nvars; i++) {
+    for (i = 0; i < nvars; ++i) {
       int should_write = 0;
       if (centering[i] == 0) {
         // int num_to_write = 0;
@@ -349,7 +349,7 @@ void write_variables(int nvars, int *vardim, int *centering,
 
       if (should_write) {
         int num_to_write = ncells * vardim[i];
-        for (j = 0; j < num_to_write; j++) {
+        for (j = 0; j < num_to_write; ++j) {
           write_float(vars[i][j]);
         }
         end_line();
@@ -369,7 +369,7 @@ void write_variables(int nvars, int *vardim, int *centering,
    * stored.  They must all be grouped together at the end of the point
    * data.  So write out the primary scalars and vectors first.
    */
-  for (i = 0; i < nvars; i++) {
+  for (i = 0; i < nvars; ++i) {
     if (centering[i] != 0) {
       int num_to_write = 0;
       int should_write = 0;
@@ -399,7 +399,7 @@ void write_variables(int nvars, int *vardim, int *centering,
 
       if (should_write) {
         num_to_write = npts * vardim[i];
-        for (j = 0; j < num_to_write; j++) {
+        for (j = 0; j < num_to_write; ++j) {
           write_float(vars[i][j]);
         }
         end_line();
@@ -411,7 +411,7 @@ void write_variables(int nvars, int *vardim, int *centering,
   if (num_scalars > 0) {
     snprintf(str, sizeof str, "FIELD FieldData %d\n", num_scalars);
     write_string(str);
-    for (i = 0; i < nvars; i++) {
+    for (i = 0; i < nvars; ++i) {
       int should_write = 0;
       if (centering[i] != 0) {
         if (vardim[i] == 1) {
@@ -427,7 +427,7 @@ void write_variables(int nvars, int *vardim, int *centering,
 
       if (should_write) {
         int num_to_write = npts * vardim[i];
-        for (j = 0; j < num_to_write; j++) {
+        for (j = 0; j < num_to_write; ++j) {
           write_float(vars[i][j]);
         }
         end_line();
@@ -439,7 +439,7 @@ void write_variables(int nvars, int *vardim, int *centering,
   if (num_vectors > 0) {
     snprintf(str, sizeof str, "FIELD FieldData %d\n", num_vectors);
     write_string(str);
-    for (i = 0; i < nvars; i++) {
+    for (i = 0; i < nvars; ++i) {
       int should_write = 0;
       if (centering[i] != 0) {
         // int num_to_write = 0;
@@ -457,7 +457,7 @@ void write_variables(int nvars, int *vardim, int *centering,
 
       if (should_write) {
         int num_to_write = npts * vardim[i];
-        for (j = 0; j < num_to_write; j++) {
+        for (j = 0; j < num_to_write; ++j) {
           write_float(vars[i][j]);
         }
         end_line();
@@ -506,14 +506,14 @@ void write_point_mesh(const char *filename, int ub, int npts, float *pts,
   write_string("DATASET UNSTRUCTURED_GRID\n");
   snprintf(str, sizeof str, "POINTS %d float\n", npts);
   write_string(str);
-  for (i = 0; i < 3 * npts; i++) {
+  for (i = 0; i < 3 * npts; ++i) {
     write_float(pts[i]);
   }
 
   new_section();
   snprintf(str, sizeof str, "CELLS %d %d\n", npts, 2 * npts);
   write_string(str);
-  for (i = 0; i < npts; i++) {
+  for (i = 0; i < npts; ++i) {
     write_int(1);
     write_int(i);
     end_line();
@@ -522,13 +522,13 @@ void write_point_mesh(const char *filename, int ub, int npts, float *pts,
   new_section();
   snprintf(str, sizeof str, "CELL_TYPES %d\n", npts);
   write_string(str);
-  for (i = 0; i < npts; i++) {
+  for (i = 0; i < npts; ++i) {
     write_int(VTK_VERTEX);
     end_line();
   }
 
   centering = (int *)malloc(nvars * sizeof(int));
-  for (i = 0; i < nvars; i++)
+  for (i = 0; i < nvars; ++i)
     centering[i] = 1;
   write_variables(nvars, vardim, centering, varnames, vars, npts, npts);
   free(centering);
@@ -639,22 +639,22 @@ void write_unstructured_mesh(const char *filename, int ub, int npts, float *pts,
   write_string("DATASET UNSTRUCTURED_GRID\n");
   snprintf(str, sizeof str, "POINTS %d float\n", npts);
   write_string(str);
-  for (i = 0; i < 3 * npts; i++) {
+  for (i = 0; i < 3 * npts; ++i) {
     write_float(pts[i]);
   }
 
   new_section();
-  for (i = 0; i < ncells; i++) {
+  for (i = 0; i < ncells; ++i) {
     int npts = num_points_for_cell(celltypes[i]);
 
     conn_size += npts + 1;
   }
   snprintf(str, sizeof str, "CELLS %d %d\n", ncells, conn_size);
   write_string(str);
-  for (i = 0; i < ncells; i++) {
+  for (i = 0; i < ncells; ++i) {
     int npts = num_points_for_cell(celltypes[i]);
     write_int(npts);
-    for (j = 0; j < npts; j++)
+    for (j = 0; j < npts; ++j)
       write_int(*curr_conn++);
     end_line();
   }
@@ -662,7 +662,7 @@ void write_unstructured_mesh(const char *filename, int ub, int npts, float *pts,
   new_section();
   snprintf(str, sizeof str, "CELL_TYPES %d\n", ncells);
   write_string(str);
-  for (i = 0; i < ncells; i++) {
+  for (i = 0; i < ncells; ++i) {
     write_int(celltypes[i]);
     end_line();
   }
@@ -731,17 +731,17 @@ void write_rectilinear_mesh(const char *filename, int ub, int *dims, float *x,
   write_string(str);
   snprintf(str, sizeof str, "X_COORDINATES %d float\n", dims[0]);
   write_string(str);
-  for (i = 0; i < dims[0]; i++)
+  for (i = 0; i < dims[0]; ++i)
     write_float(x[i]);
   new_section();
   snprintf(str, sizeof str, "Y_COORDINATES %d float\n", dims[1]);
   write_string(str);
-  for (i = 0; i < dims[1]; i++)
+  for (i = 0; i < dims[1]; ++i)
     write_float(y[i]);
   new_section();
   snprintf(str, sizeof str, "Z_COORDINATES %d float\n", dims[2]);
   write_string(str);
-  for (i = 0; i < dims[2]; i++)
+  for (i = 0; i < dims[2]; ++i)
     write_float(z[i]);
 
   write_variables(nvars, vardim, centering, varnames, vars, npts, ncells);
@@ -792,15 +792,15 @@ void write_regular_mesh(const char *filename, int ub, int *dims, int nvars,
   float *z = (float *)malloc(sizeof(float) * dims[2]);
 
   if (x != NULL) {
-    for (i = 0; i < dims[0]; i++)
+    for (i = 0; i < dims[0]; ++i)
       x[i] = (float)i;
   }
   if (y != NULL) {
-    for (i = 0; i < dims[1]; i++)
+    for (i = 0; i < dims[1]; ++i)
       y[i] = (float)i;
   }
   if (z != NULL) {
-    for (i = 0; i < dims[2]; i++)
+    for (i = 0; i < dims[2]; ++i)
       z[i] = (float)i;
   }
 
@@ -873,7 +873,7 @@ void write_curvilinear_mesh(const char *filename, int ub, int *dims, float *pts,
   write_string(str);
   snprintf(str, sizeof str, "POINTS %d float\n", npts);
   write_string(str);
-  for (i = 0; i < 3 * npts; i++) {
+  for (i = 0; i < 3 * npts; ++i) {
     write_float(pts[i]);
   }
 

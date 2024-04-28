@@ -388,12 +388,12 @@ public:
   amrex::Real cosine(ParticleType& p, amrex::Real (&bIn)[nDim3]) {
     amrex::Real u[nDim3];
     amrex::Real b[nDim3];
-    for (int i = 0; i < nDim3; i++) {
+    for (int i = 0; i < nDim3; ++i) {
       u[i] = p.rdata(iup_ + i);
       b[i] = bIn[i];
     }
     amrex::Real mu = 0;
-    for (int i = 0; i < nDim; i++)
+    for (int i = 0; i < nDim; ++i)
       mu += u[i] * b[i];
 
     const amrex::Real bNorm = l2_norm(b, nDim3);
@@ -530,7 +530,7 @@ public:
     bool isInsideBox = true;
     amrex::IntVect cellIdx;
     amrex::RealVect dShift;
-    for (int i = 0; i < nDim; i++) {
+    for (int i = 0; i < nDim; ++i) {
       dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
       cellIdx[i] = fastfloor(dShift[i]);
       if (cellIdx[i] > high[i] || cellIdx[i] < low[i]) {

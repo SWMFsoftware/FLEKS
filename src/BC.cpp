@@ -59,9 +59,9 @@ void apply_float_boundary(const iMultiFab& status, MultiFab& mf,
   //     // x left
   //     // if (bcr[0].lo(ix_) == BCType::foextrap)
   //     for (int iVar = iStart; iVar < nComp; iVar++)
-  //       for (int k = kMin; k <= kMax; k++)
-  //         for (int j = jMin; j <= jMax; j++)
-  //           for (int i = iMin; i <= iMin + nGst[ix_] - 1 + nshift; i++) {
+  //       for (int k = kMin; k <= kMax; ++k)
+  //         for (int j = jMin; j <= jMax; ++j)
+  //           for (int i = iMin; i <= iMin + nGst[ix_] - 1 + nshift; ++i) {
   //             if (statusArr(i, j, k) == iBoundary_)
   //               arr(i, j, k, iVar) = arr(iMin + nGst[ix_] + nshift, j, k,
   //               iVar);
@@ -70,9 +70,9 @@ void apply_float_boundary(const iMultiFab& status, MultiFab& mf,
   //     // x right
   //     // if (bcr[0].hi(ix_) == BCType::foextrap)
   //     for (int iVar = iStart; iVar < nComp; iVar++)
-  //       for (int k = kMin; k <= kMax; k++)
-  //         for (int j = jMin; j <= jMax; j++)
-  //           for (int i = iMax - nGst[ix_] + 1 - nshift; i <= iMax; i++) {
+  //       for (int k = kMin; k <= kMax; ++k)
+  //         for (int j = jMin; j <= jMax; ++j)
+  //           for (int i = iMax - nGst[ix_] + 1 - nshift; i <= iMax; ++i) {
   //             if (statusArr(i, j, k) == iBoundary_)
   //               arr(i, j, k, iVar) = arr(iMax - nGst[ix_] - nshift, j, k,
   //               iVar);
@@ -81,9 +81,9 @@ void apply_float_boundary(const iMultiFab& status, MultiFab& mf,
   //     // y left
   //     // if (bcr[0].lo(iy_) == BCType::foextrap)
   //     for (int iVar = iStart; iVar < nComp; iVar++)
-  //       for (int k = kMin; k <= kMax; k++)
-  //         for (int j = jMin; j <= jMin + nGst[iy_] - 1 + nshift; j++)
-  //           for (int i = iMin; i <= iMax; i++) {
+  //       for (int k = kMin; k <= kMax; ++k)
+  //         for (int j = jMin; j <= jMin + nGst[iy_] - 1 + nshift; ++j)
+  //           for (int i = iMin; i <= iMax; ++i) {
   //             if (statusArr(i, j, k) == iBoundary_)
   //               arr(i, j, k, iVar) = arr(i, jMin + nGst[iy_] + nshift, k,
   //               iVar);
@@ -92,9 +92,9 @@ void apply_float_boundary(const iMultiFab& status, MultiFab& mf,
   //     // y right
   //     // if (bcr[0].hi(iy_) == BCType::foextrap)
   //     for (int iVar = iStart; iVar < nComp; iVar++)
-  //       for (int k = kMin; k <= kMax; k++)
-  //         for (int j = jMax - nGst[iy_] + 1 - nshift; j <= jMax; j++)
-  //           for (int i = iMin; i <= iMax; i++) {
+  //       for (int k = kMin; k <= kMax; ++k)
+  //         for (int j = jMax - nGst[iy_] + 1 - nshift; j <= jMax; ++j)
+  //           for (int i = iMin; i <= iMax; ++i) {
   //             if (statusArr(i, j, k) == iBoundary_)
   //               arr(i, j, k, iVar) = arr(i, jMax - nGst[iy_] - nshift, k,
   //               iVar);
@@ -103,9 +103,9 @@ void apply_float_boundary(const iMultiFab& status, MultiFab& mf,
   //     // z left
   //     // if (bcr[0].lo(iz_) == BCType::foextrap)
   //     for (int iVar = iStart; iVar < nComp; iVar++)
-  //       for (int k = kMin; k <= kMin + nGst[iz_] - 1 + nshift; k++)
-  //         for (int j = jMin; j <= jMax; j++)
-  //           for (int i = iMin; i <= iMax; i++) {
+  //       for (int k = kMin; k <= kMin + nGst[iz_] - 1 + nshift; ++k)
+  //         for (int j = jMin; j <= jMax; ++j)
+  //           for (int i = iMin; i <= iMax; ++i) {
   //             if (statusArr(i, j, k) == iBoundary_)
   //               arr(i, j, k, iVar) = arr(i, j, kMin + nGst[iz_] + nshift,
   //               iVar);
@@ -114,9 +114,9 @@ void apply_float_boundary(const iMultiFab& status, MultiFab& mf,
   //     // z right
   //     // if (bcr[0].hi(iz_) == BCType::foextrap)
   //     for (int iVar = iStart; iVar < nComp; iVar++)
-  //       for (int k = kMax - nGst[iz_] + 1 - nshift; k <= kMax; k++)
-  //         for (int j = jMin; j <= jMax; j++)
-  //           for (int i = iMin; i <= iMax; i++) {
+  //       for (int k = kMax - nGst[iz_] + 1 - nshift; k <= kMax; ++k)
+  //         for (int j = jMin; j <= jMax; ++j)
+  //           for (int i = iMin; i <= iMax; ++i) {
   //             if (statusArr(i, j, k) == iBoundary_)
   //               arr(i, j, k, iVar) = arr(i, j, kMax - nGst[iz_] - nshift,
   //               iVar);

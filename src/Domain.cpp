@@ -171,7 +171,7 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
     Real si2noL = 1. / info[18];
 
     int n = 0;
-    for (int i = 0; i < nDim; i++) {
+    for (int i = 0; i < nDim; ++i) {
       Real phyMin = info[n++] * si2noL; // Lmin
       Real phyMax = phyMin + info[n++] * si2noL;
       Real dx = info[n++] * si2noL; // dx
@@ -187,7 +187,7 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
     }
   }
 
-  for (int i = 0; i < nDim; i++) {
+  for (int i = 0; i < nDim; ++i) {
     centerBoxLo[i] = 0;
     centerBoxHi[i] = nCell[i] - 1;
   }
@@ -555,7 +555,7 @@ void Domain::save_restart_header() {
     headerFile << "#FLUIDVARNAMES" + command_suffix;
     const Vector<std::string> names = fi->get_var_names();
     headerFile << names.size() << "\t\t\tnVar\n";
-    for (int i = 0; i < names.size(); i++) {
+    for (int i = 0; i < names.size(); ++i) {
       headerFile << names[i] << "\t\t\tvarName\n";
     }
     headerFile << "\n";
@@ -589,7 +589,7 @@ void Domain::save_restart_header() {
 
     // Geometry
     headerFile << "#GEOMETRY" + command_suffix;
-    for (int i = 0; i < nDim; i++) {
+    for (int i = 0; i < nDim; ++i) {
       headerFile << domainRange.lo(i) << "\t\tmin\n";
       headerFile << domainRange.hi(i) << "\t\tmax\n";
     }
@@ -597,14 +597,14 @@ void Domain::save_restart_header() {
 
     // Cell
     headerFile << "#NCELL" + command_suffix;
-    for (int i = 0; i < nDim; i++) {
+    for (int i = 0; i < nDim; ++i) {
       headerFile << nCell[i] << "\t\tnCell\n";
     }
     headerFile << "\n";
 
     // Block size
     headerFile << "#MAXBLOCKSIZE" << command_suffix;
-    for (int i = 0; i < nDim; i++) {
+    for (int i = 0; i < nDim; ++i) {
       headerFile << maxBlockSize[i] << "\t\tmaxBlockSize\n";
     }
     headerFile << "\n";
@@ -804,7 +804,7 @@ void Domain::read_param(const bool readGridInfo) {
 
       if (type == "box") {
         Real lo[nDim], hi[nDim];
-        for (int i = 0; i < nDim; i++) {
+        for (int i = 0; i < nDim; ++i) {
           param.read_var("min", lo[i]);
           param.read_var("max", hi[i]);
         }
@@ -818,7 +818,7 @@ void Domain::read_param(const bool readGridInfo) {
       } else if (type == "sphere") {
 
         Real center[nDim], radius;
-        for (int i = 0; i < nDim; i++) {
+        for (int i = 0; i < nDim; ++i) {
           param.read_var("center", center[i]);
         }
         param.read_var("radius", radius);
@@ -832,7 +832,7 @@ void Domain::read_param(const bool readGridInfo) {
       } else if (type == "shell") {
 
         Real center[nDim], rInner, rOuter;
-        for (int i = 0; i < nDim; i++) {
+        for (int i = 0; i < nDim; ++i) {
           param.read_var("center", center[i]);
         }
         param.read_var("rInner", rInner);
@@ -848,7 +848,7 @@ void Domain::read_param(const bool readGridInfo) {
         Real center[nDim], height, r1, r2;
 
         param.read_var("iAxis", iAxis);
-        for (int i = 0; i < nDim; i++) {
+        for (int i = 0; i < nDim; ++i) {
           param.read_var("center", center[i]);
         }
 
@@ -889,7 +889,7 @@ void Domain::read_param(const bool readGridInfo) {
     } else if (command == "#MAXBLOCKSIZE") {
       // The block size in each direction can not larger than maxBlockSize.
       int tmp;
-      for (int i = 0; i < nDim; i++) {
+      for (int i = 0; i < nDim; ++i) {
         param.read_var("maxBlockSize", tmp);
         maxBlockSize[i] = tmp;
       }
@@ -908,7 +908,7 @@ void Domain::read_param(const bool readGridInfo) {
         tc->set_cfl(cfl);
       }
     } else if (command == "#PERIODICITY") {
-      for (int i = 0; i < nDim; i++) {
+      for (int i = 0; i < nDim; ++i) {
         bool isPeriodic;
         param.read_var("isPeriodic", isPeriodic);
         set_periodicity(i, isPeriodic);

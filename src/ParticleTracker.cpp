@@ -11,7 +11,7 @@ void ParticleTracker::set_ic(Pic& pic) {
 
   update_field(pic);
 
-  for (int i = 0; i < parts.size(); i++) {
+  for (int i = 0; i < parts.size(); ++i) {
     auto& tps = parts[i];
     if (doInitFromPIC) {
       tps->read_test_particle_list(listFiles);
@@ -25,7 +25,7 @@ void ParticleTracker::set_ic(Pic& pic) {
             << tps->init_particle_number() << " for species " << i << std::endl;
   }
 
-  for (int i = 0; i < parts.size(); i++) {
+  for (int i = 0; i < parts.size(); ++i) {
     // The initial state is special. Here, we do a fake update with dt=0, and
     // write the initial state to disk.
     bool doSave = true;
@@ -50,7 +50,7 @@ void ParticleTracker::write_log(bool doForce, bool doCreateFile) {
     logFile = ss.str();
     std::ofstream of(logFile.c_str());
     of << "time nStep ";
-    for (int i = 0; i < nSpecies; i++)
+    for (int i = 0; i < nSpecies; ++i)
       of << " mass_" << i << " moment_x_" << i << " moment_y_" << i
          << " moment_z_" << i << " energy_" << i;
 
@@ -61,7 +61,7 @@ void ParticleTracker::write_log(bool doForce, bool doCreateFile) {
   if (tc->ptLog.is_time_to(doForce)) {
 
     Vector<std::array<Real, 5> > moments;
-    for (int i = 0; i < parts.size(); i++) {
+    for (int i = 0; i < parts.size(); ++i) {
       moments.push_back(parts[i]->total_moments());
     }
 
@@ -71,7 +71,7 @@ void ParticleTracker::write_log(bool doForce, bool doCreateFile) {
       of << std::scientific;
       of << tc->get_time_si() << "\t" << tc->get_cycle();
 
-      for (int i = 0; i < parts.size(); i++) {
+      for (int i = 0; i < parts.size(); ++i) {
         for (auto& m : moments[i])
           of << "\t" << m;
       }
@@ -99,7 +99,7 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
   update_field(pic);
 
   bool doSave = savectr->is_time_to();
-  for (int i = 0; i < parts.size(); i++) {
+  for (int i = 0; i < parts.size(); ++i) {
     auto& tps = parts[i];
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -146,7 +146,7 @@ void ParticleTracker::post_process_param() {
 
 void ParticleTracker::pre_regrid() {
   if (!parts.empty()) {
-    for (int i = 0; i < nSpecies; i++) {
+    for (int i = 0; i < nSpecies; ++i) {
       // Label the particles outside the OLD PIC region. It should be called
       // before active region is updated.
       parts[i]->label_particles_outside_active_region();
@@ -174,7 +174,7 @@ void ParticleTracker::post_regrid() {
 
   //--------------test particles-----------------------------------
   if (parts.empty()) {
-    for (int i = 0; i < nSpecies; i++) {
+    for (int i = 0; i < nSpecies; ++i) {
       auto ptr = std::unique_ptr<TestParticles>(
           new TestParticles(this, fi, tc, i, fi->get_species_charge(i),
                             fi->get_species_mass(i), gridID));
@@ -185,7 +185,7 @@ void ParticleTracker::post_regrid() {
       parts.push_back(std::move(ptr));
     }
   } else {
-    for (int i = 0; i < nSpecies; i++) {
+    for (int i = 0; i < nSpecies; ++i) {
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_active_region_general();
       parts[i]->redistribute_particles();
@@ -286,7 +286,7 @@ void ParticleTracker::read_param(const std::string& command, ReadParam& param) {
     double si2noV = fi->get_Si2NoV();
     int nState;
     param.read_var("nState", nState);
-    for (int i = 0; i < nState; i++) {
+    for (int i = 0; i < nState; ++i) {
       Vel state;
       param.read_var("iSpecies", state.tag);
       param.read_var("vth", state.vth);
@@ -304,7 +304,7 @@ void ParticleTracker::read_param(const std::string& command, ReadParam& param) {
     if (doInitFromPIC) {
       int nList;
       param.read_var("nList", nList);
-      for (int i = 0; i < nList; i++) {
+      for (int i = 0; i < nList; ++i) {
         std::string s;
         param.read_var("list", s);
         listFiles.push_back(s);

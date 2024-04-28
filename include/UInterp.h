@@ -10,7 +10,7 @@ public:
   // Copied from AMReX_Interpolater.cpp
   Box CoarseBox(const Box& fine, int ratio) override {
     Box b = amrex::coarsen(fine, ratio);
-    for (int i = 0; i < AMREX_SPACEDIM; i++) {
+    for (int i = 0; i < AMREX_SPACEDIM; ++i) {
       if (b.length(i) < 2) {
         b.growHi(i, 1);
       }
@@ -22,7 +22,7 @@ public:
   Box CoarseBox(const Box& fine, const IntVect& ratio) override {
     Box b = amrex::coarsen(fine, ratio);
 
-    for (int i = 0; i < AMREX_SPACEDIM; i++) {
+    for (int i = 0; i < AMREX_SPACEDIM; ++i) {
       if (b.length(i) < 2) {
         b.growHi(i, 1);
       }

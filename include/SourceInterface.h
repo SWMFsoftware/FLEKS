@@ -37,10 +37,10 @@ public:
 
                 auto sum_moment = [&, this](amrex::Vector<int>& idx) {
                   amrex::Real sum = 0;
-                  for (int ii = 0; ii < idx.size(); ii++) {
+                  for (int ii = 0; ii < idx.size(); ++ii) {
                     sum += arr(i, j, k, idx[ii]);
                   }
-                  for (int ii = 0; ii < idx.size(); ii++) {
+                  for (int ii = 0; ii < idx.size(); ++ii) {
                     arr(i, j, k, idx[ii]) = sum;
                   }
                 };
@@ -119,7 +119,7 @@ public:
                 }
 
                 amrex::Real r = 0;
-                for (int i = 0; i < 3; i++) {
+                for (int i = 0; i < 3; ++i) {
                   xyz[i] *= no2siL / rPlanetSi;
                   r += xyz[i] * xyz[i];
                 }

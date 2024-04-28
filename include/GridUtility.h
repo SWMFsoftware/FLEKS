@@ -102,7 +102,7 @@ inline void find_node_index(const amrex::RealVect& xyz,
                             const amrex::Real* const plo,
                             const amrex::Real* const invDx,
                             amrex::IntVect& loIdx, amrex::RealVect& dShift) {
-  for (int i = 0; i < nDim; i++) {
+  for (int i = 0; i < nDim; ++i) {
     dShift[i] = (xyz[i] - plo[i]) * invDx[i];
     loIdx[i] = fastfloor(dShift[i]);
     dShift[i] = dShift[i] - loIdx[i];
@@ -113,7 +113,7 @@ inline void find_cell_index(const amrex::RealVect& xyz,
                             const amrex::Real* const plo,
                             const amrex::Real* const invDx,
                             amrex::IntVect& loIdx, amrex::RealVect& dShift) {
-  for (int i = 0; i < nDim; i++) {
+  for (int i = 0; i < nDim; ++i) {
     // plo is the corner location => -0.5
     dShift[i] = (xyz[i] - plo[i]) * invDx[i] - 0.5;
     loIdx[i] = fastfloor(dShift[i]);
@@ -209,7 +209,7 @@ inline void add_to_mf(const amrex::Real& val, amrex::MultiFab& mf,
 
   int loIdx[3];
   amrex::Real dx[3] = { 0, 0, 0 };
-  for (int i = 0; i < nDim; i++) {
+  for (int i = 0; i < nDim; ++i) {
     dx[i] = (xyz[i] - plo[i]) * invDx[i];
     loIdx[i] = fastfloor(dx[i]);
     dx[i] = dx[i] - loIdx[i];
@@ -245,11 +245,11 @@ inline void add_to_mf(const amrex::Real& val, amrex::MultiFab& mf,
   }
 
   const amrex::Array4<amrex::Real>& arr = mf[mfi].array();
-  for (int kk = 0; kk < 2; kk++) {
+  for (int kk = 0; kk < 2; ++kk) {
     const int kIdx = loIdx[iz_] + kk;
-    for (int jj = 0; jj < 2; jj++) {
+    for (int jj = 0; jj < 2; ++jj) {
       const int jIdx = loIdx[iy_] + jj;
-      for (int ii = 0; ii < 2; ii++) {
+      for (int ii = 0; ii < 2; ++ii) {
         arr(loIdx[ix_] + ii, jIdx, kIdx, iVar) += val * coef[kk][jj][ii];
       }
     }
@@ -595,13 +595,13 @@ inline void get_boxlist_from_region(amrex::BoxList& bl, GridInfo& gridInfo,
                                     amrex::IntVect imin, amrex::IntVect imax) {
 
   amrex::IntVect patchSize;
-  for (int i = 0; i < nDim; i++) {
+  for (int i = 0; i < nDim; ++i) {
     patchSize[i] = gridInfo.get_patch_size(i);
   }
 
   amrex::IntVect patchLen = imax - imin + 1;
 
-  for (int i = 0; i < nDim; i++) {
+  for (int i = 0; i < nDim; ++i) {
     if ((patchLen[i] % patchSize[i]) != 0)
       amrex::Abort("Error: the sub-region range is wrong!");
     patchLen[i] /= patchSize[i];
@@ -616,7 +616,7 @@ inline void get_boxlist_from_region(amrex::BoxList& bl, GridInfo& gridInfo,
   }
 
   amrex::IntVect dhalf;
-  for (int i = 0; i < nDim; i++) {
+  for (int i = 0; i < nDim; ++i) {
     dhalf[i] = ceil(patchLen[i] / 2.0) * patchSize[i];
   }
 
@@ -627,7 +627,7 @@ inline void get_boxlist_from_region(amrex::BoxList& bl, GridInfo& gridInfo,
     amrex::IntVect iminsub = { AMREX_D_DECL(i, j, k) };
     amrex::IntVect imaxsub = iminsub + dhalf - 1;
 
-    for (int i = 0; i < nDim; i++) {
+    for (int i = 0; i < nDim; ++i) {
       if (imaxsub[i] > imax[i])
         imaxsub[i] = imax[i];
     }
@@ -635,12 +635,12 @@ inline void get_boxlist_from_region(amrex::BoxList& bl, GridInfo& gridInfo,
   }
 
   // The number '3' is chosen based on numerical experiments.
-  for (int i = 0; i < 3; i++)
+  for (int i = 0; i < 3; ++i)
     blLoc.simplify();
 
   bl.join(blLoc);
 
-  for (int i = 0; i < 3; i++)
+  for (int i = 0; i < 3; ++i)
     bl.simplify();
 }
 

@@ -416,7 +416,7 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
   outFile << "\n";
 
   outFile << "#PLOTRANGE\n";
-  for (int i = 0; i < nDim; i++) {
+  for (int i = 0; i < nDim; ++i) {
     outFile << plotMinCorrected_D[i] * No2OutL << "\t coord" << i << "Min\n";
     outFile << plotMaxCorrected_D[i] * No2OutL << "\t coord" << i << "Max\n";
   }
@@ -437,7 +437,7 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
   outFile << "\n";
 
   outFile << "#PLOTRESOLUTION\n";
-  for (int i = 0; i < nDim; i++) {
+  for (int i = 0; i < nDim; ++i) {
     if (plotDx >= 0) {
       outFile << plotDx * dx_D[i] * No2OutL << "\t plotDx\n";
     } else {

@@ -24,9 +24,9 @@ int main(int argc, char* argv[]) {
   size_t i = 1;
   while (i < cdl.size()) {
     if (cdl[i] == "-f") {
-      i++;
+      ++i;
       while (i < cdl.size() && cdl[i][0] != '-') {
-        fileNames.push_back(cdl[i++]);
+        fileNames.push_back(cdl[++i]);
       }
 
       if (fileNames.empty()) {
@@ -34,7 +34,7 @@ int main(int argc, char* argv[]) {
         return 0;
       }
     } else if (cdl[i] == "-h") {
-      i++;
+      ++i;
 
       printf("Convert FLEKS/BATSRUS data to other formats.\n\n");
       printf(" Usage:\n ");
@@ -60,30 +60,30 @@ int main(int argc, char* argv[]) {
 
       return 0;
     } else if (cdl[i] == "-s") {
-      i++;
+      ++i;
       if (i >= cdl.size()) {
         std::cout << "Error: -s option requires an argument.\n";
         return 0;
       } else {
-        sType = stringToFileType.at(cdl[i++]);
+        sType = stringToFileType.at(cdl[++i]);
       }
     } else if (cdl[i] == "-d") {
-      i++;
+      ++i;
       if (i >= cdl.size()) {
         std::cout << "Error: -d option requires an argument.\n";
         return 0;
       } else {
-        dType = stringToFileType.at(cdl[i++]);
+        dType = stringToFileType.at(cdl[++i]);
         std::cout << "dtype = " << cdl[i - 1] << " dtype = " << (int)dType
                   << "\n";
       }
     } else if (cdl[i] == "-smooth") {
-      i++;
+      ++i;
       if (i >= cdl.size()) {
         std::cout << "Error: -smooth option requires an argument.\n";
         return 0;
       } else {
-        nSmooth = std::stoi(cdl[i++]);
+        nSmooth = std::stoi(cdl[++i]);
       }
     }
   }
@@ -96,7 +96,7 @@ int main(int argc, char* argv[]) {
 
   Initialize(MPI_COMM_WORLD);
 
-  for (size_t i = 0; i < fileNames.size(); i++) {
+  for (size_t i = 0; i < fileNames.size(); ++i) {
     Converter cv(fileNames[i], sType, dType);
     cv.read();
     if (nSmooth > 0) {

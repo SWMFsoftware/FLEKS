@@ -72,7 +72,7 @@ protected:
 
 public:
   DomainGrid() {
-    for (int i = 0; i < nDim; i++) {
+    for (int i = 0; i < nDim; ++i) {
       periodicity[i] = 0;
       maxBlockSize[i] = 8;
     }

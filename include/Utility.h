@@ -54,7 +54,7 @@ template <class T> inline void a_cross_b(T (&a)[3], T (&b)[3], T (&c)[3]) {
 }
 
 template <class T> inline void zero_array(T* arr, int nSize) {
-  for (int i = 0; i < nSize; i++)
+  for (int i = 0; i < nSize; ++i)
     arr[i] = 0;
 }
 
@@ -72,7 +72,7 @@ inline void random_vector(amrex::Real rand1, amrex::Real rand2,
 
 inline amrex::Real l2_norm(amrex::Real* vec, int n) {
   amrex::Real sum = 0;
-  for (int i = 0; i < n; i++)
+  for (int i = 0; i < n; ++i)
     sum += vec[i] * vec[i];
   return sqrt(sum);
 }
@@ -129,25 +129,25 @@ bool linear_solver_Gauss_Elimination(
     amrex::Abort("Error: n>nCol in linear_solver_Gauss_Elimination");
   }
 
-  for (int i = 0; i < m - 1; i++) {
+  for (int i = 0; i < m - 1; ++i) {
     // Partial Pivoting
-    for (int k = i + 1; k < m; k++) {
+    for (int k = i + 1; k < m; ++k) {
       // If diagonal element(absolute vallue) is smaller than
       // any of the terms below it
       if (fabs(a(i, i)) < fabs(a(k, i))) {
         // Swap the rows
-        for (int j = 0; j < n; j++) {
+        for (int j = 0; j < n; ++j) {
           std::swap(a(i, j), a(k, j));
         }
       }
     }
     // Begin Gauss Elimination
-    for (int k = i + 1; k < m; k++) {
+    for (int k = i + 1; k < m; ++k) {
       if (fabs(a(i, i)) < ref[i]) {
         return false;
       }
       double term = a(k, i) / a(i, i);
-      for (int j = 0; j < n; j++) {
+      for (int j = 0; j < n; ++j) {
         a(k, j) = a(k, j) - term * a(i, j);
       }
     }
@@ -155,7 +155,7 @@ bool linear_solver_Gauss_Elimination(
   // Begin Back-substitution
   for (int i = m - 1; i >= 0; i--) {
     x[i] = a(i, n - 1);
-    for (int j = i + 1; j < n - 1; j++) {
+    for (int j = i + 1; j < n - 1; ++j) {
       x[i] = x[i] - a(i, j) * x[j];
     }
 
@@ -186,7 +186,7 @@ std::vector<int> random_select_weighted_n(Vec arr, int m, Rand& rd) {
   std::vector<int> idx;
 
   if (m >= n) {
-    for (int i = 0; i < n; i++)
+    for (int i = 0; i < n; ++i)
       idx.push_back(i);
     return idx;
   }
@@ -195,7 +195,7 @@ std::vector<int> random_select_weighted_n(Vec arr, int m, Rand& rd) {
   w1.resize(n);
 
   double wt = 0;
-  for (int i = 0; i < arr.size(); i++) {
+  for (int i = 0; i < arr.size(); ++i) {
     wt += arr[i];
     w1[i] = wt;
   }
@@ -207,7 +207,7 @@ std::vector<int> random_select_weighted_n(Vec arr, int m, Rand& rd) {
     double r = rd() * wt;
     int i = 0;
     while (w1[i] < r)
-      i++;
+      ++i;
 
     if (selected[i] == iNotSelected) {
       idx.push_back(i);
@@ -216,7 +216,7 @@ std::vector<int> random_select_weighted_n(Vec arr, int m, Rand& rd) {
       { // 'Remove' arr[i] so that it will not be selected again.
         arr[i] = 0;
         wt = 0;
-        for (int j = 0; j < arr.size(); j++) {
+        for (int j = 0; j < arr.size(); ++j) {
           wt += arr[j];
           w1[j] = wt;
         }

@@ -29,7 +29,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
           << std::endl;
 
   if (!usePIC) {
-    for (int i = 0; i < nVar * nPoint; i++) {
+    for (int i = 0; i < nVar * nPoint; ++i) {
       data_I[i] = 0;
     }
     return;
@@ -441,14 +441,14 @@ void Pic::save_restart_header(std::ofstream& headerFile) {
     headerFile << "\n";
 
     headerFile << "#PARTICLES" + command_suffix;
-    for (int i = 0; i < nDim; i++) {
+    for (int i = 0; i < nDim; ++i) {
       headerFile << nPartPerCell[i] << "\t\t\tnParticle\n";
     }
     headerFile << "\n";
 
     headerFile << "#SUPID" + command_suffix;
     headerFile << nSpecies << "\t\t\tnSpecies\n";
-    for (int i = 0; i < nSpecies; i++) {
+    for (int i = 0; i < nSpecies; ++i) {
       headerFile << parts[i]->sup_id() << "\t\t\tsupID\n";
     }
     headerFile << "\n";
@@ -497,7 +497,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
     logFile = ss.str();
     std::ofstream of(logFile.c_str());
     of << "time nStep Etot Ee Eb Epart ";
-    for (int i = 0; i < nSpecies; i++)
+    for (int i = 0; i < nSpecies; ++i)
       of << " Epart" << i;
     of << std::endl;
     of.close();
@@ -516,7 +516,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       of << tc->get_time_si() << "\t" << tc->get_cycle() << "\t"
          << "\t" << (eEnergy + bEnergy + plasmaEnergy[iTot]) << "\t" << eEnergy
          << "\t" << bEnergy << "\t" << plasmaEnergy[iTot];
-      for (int i = 0; i < nSpecies; i++)
+      for (int i = 0; i < nSpecies; ++i)
         of << "\t" << plasmaEnergy[i];
       of << std::endl;
       of.close();
@@ -615,7 +615,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
 
     IntVect cellLo, cellHi;
 
-    for (int i = 0; i < nDim; i++) {
+    for (int i = 0; i < nDim; ++i) {
       cellLo[i] = fastfloor((lo[i] / no2outL - plo[i]) / dx[i]);
       cellHi[i] = fastfloor((hi[i] / no2outL - plo[i]) / dx[i]);
       if (cellLo[i] < glo[i])
@@ -632,7 +632,7 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
     Box bxOut(cellLo, cellHi);
     BoxList bl;
     int iLev = 0;
-    for (long i = 0; i < cGrids[iLev].size(); i++) {
+    for (long i = 0; i < cGrids[iLev].size(); ++i) {
       Box ba = cGrids[iLev][i];
       if (ba.intersects(bxOut)) {
         bl.push_back(ba);
@@ -675,12 +675,12 @@ void Pic::set_IO_geom(Vector<Geometry>& geomIO, const PlotWriter& pw) {
     RealBox boxRangeOut;
     Real no2outL = pw.No2OutTable("X");
 
-    for (int i = 0; i < nDim; i++) {
+    for (int i = 0; i < nDim; ++i) {
       boxRangeOut.setLo(i, Geom(iLev).ProbLo(i) * no2outL);
       boxRangeOut.setHi(i, Geom(iLev).ProbHi(i) * no2outL);
     }
     Array<int, nDim> periodicity;
-    for (int i = 0; i < nDim; i++)
+    for (int i = 0; i < nDim; ++i)
       periodicity[i] = Geom(iLev).isPeriodic(i);
     geomIO[iLev].define(Geom(iLev).Domain(), boxRangeOut, Geom(iLev).Coord(),
                         periodicity);
@@ -878,7 +878,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
       }
     }
 
-    for (int i = 0; i < out[iLev].nComp(); i++) {
+    for (int i = 0; i < out[iLev].nComp(); ++i) {
       Real no2out = pw.No2OutTable(varNames[i]);
       out[iLev].mult(no2out, i, 1);
     }

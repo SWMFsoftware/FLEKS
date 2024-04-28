@@ -103,7 +103,7 @@ public:
         amrex::ParallelDescriptor::IOProcessorNumber());
 
     if (amrex::ParallelDescriptor::IOProcessor()) {
-      for (int i = 1; i < accumulated.size(); i++) {
+      for (int i = 1; i < accumulated.size(); ++i) {
         accumulated[i] = accumulated[i - 1] + perProc[i - 1];
       }
     }
