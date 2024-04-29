@@ -205,11 +205,9 @@ public:
       t = IDLFileType::ASCII;
     } else {
       // Read the length of the second line
-      std::array<char, i4> lenBuffer;
-      // Skip the rest of the first line
-      inFile.seekg(lenHead + 4, std::ios::cur);
-      inFile.read(lenBuffer.data(), lenBuffer.size());
-      int len = *reinterpret_cast<int*>(lenBuffer.data());
+      int len;
+      inFile.ignore(lenHead + 4); // Skip the rest of the first line
+      inFile.read(reinterpret_cast<char*>(&len), i4);
 
       switch (len) {
         case 20:
@@ -248,11 +246,13 @@ public:
 
   size_t count_zone() override {
     if (isStructured) {
+
       int n = 1;
       for (int i = 0; i < nDim; ++i) {
         n *= nSize[i] - 1;
       }
       return n;
+
     } else {
       return tri->triangles.size() / 3;
     }
@@ -275,22 +275,28 @@ public:
 
     const amrex::Array4<size_t>& cell = iCell.array();
 
+    const auto lo = amrex::lbound(box);
+    const auto hi = amrex::ubound(box);
+
     size_t iCount = 0;
-    amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
-      cell(i, j, k) = ++iCount;
-      if (doStoreLoc) {
-        for (int iDim = 0; iDim < 3; ++iDim) {
-          if (iDim < nDim) {
-            vars.push_back((T)data(i, j, k, iDim));
-          } else if (save3Dim) {
-            vars.push_back(0.0);
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          iCount++;
+          cell(i, j, k) = iCount;
+          if (doStoreLoc) {
+            for (int iDim = 0; iDim < 3; iDim++) {
+              if (iDim < nDim) {
+                vars.push_back((T)data(i, j, k, iDim));
+              } else if (save3Dim) {
+                vars.push_back(0.0);
+              }
+            }
+          } else {
+            for (int iVar = 0; iVar < fab.nComp(); iVar++)
+              vars.push_back((T)data(i, j, k, iVar));
           }
         }
-      } else {
-        for (int iVar = 0; iVar < fab.nComp(); ++iVar)
-          vars.push_back((T)data(i, j, k, iVar));
-      }
-    });
   }
 
   void get_zones(amrex::Vector<size_t>& zones) override {
