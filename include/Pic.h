@@ -120,7 +120,7 @@ private:
   int nSmoothE = 0;
   bool doSmoothB = false;
   amrex::Real limiterTheta = 0;
-
+  amrex::Real smoothBIso = 0.1;
 
   TestCase testCase = RegularSimulation;
 

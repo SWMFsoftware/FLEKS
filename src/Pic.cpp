@@ -94,6 +94,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#SMOOTHB") {
     param.read_var("doSmoothB", doSmoothB);
     param.read_var("theta", limiterTheta);
+    param.read_var("Isotropy", smoothBIso);
   } else if (command == "#RESAMPLING") {
     param.read_var("doReSampling", doReSampling);
     if (doReSampling) {
@@ -1578,18 +1579,26 @@ void Pic::smooth_B(int iLev) {
 
     ParallelFor(box, [&](int i, int j, int k) {
       bool doDiffusion;
+      Real lu[nDim3] = { 0, 0, 0 }, ru[nDim3] = { 0, 0, 0 }, lumin, rumin;
       Real ul, ur;
-      // Flux along  x
-      get_face(ix_, i, j, k, ix_, nU, ul, ur);
 
+      // Flux along  x
+      for (int iDir = 0; iDir < nDim; iDir++) {
+        get_face(iDir, i, j, k, iDir, nU, lu[iDir], ru[iDir]);
+      }
+      lumin = smoothBIso * max(fabs(lu[ix_]), fabs(lu[iy_]), fabs(lu[iz_]));
+      rumin = smoothBIso * max(fabs(ru[ix_]), fabs(ru[iy_]), fabs(ru[iz_]));
+
+      ul = lu[ix_];
+      ur = ru[ix_];
       doDiffusion = true;
       if ((ul > 0 && bit::is_domain_boundary(status(i - 1, j, k))) ||
           (ur < 0 && bit::is_domain_boundary(status(i + 1, j, k)))) {
         doDiffusion = false;
       }
 
-      ul = fabs(ul);
-      ur = fabs(ur);
+      ul = max(fabs(ul), lumin);
+      ur = max(fabs(ur), rumin);
       if (doDiffusion)
         for (int iVar = 0; iVar < nDim3; iVar++) {
           Real cR = limiter(cB(i - 1, j, k, iVar), cB(i, j, k, iVar),
@@ -1603,16 +1612,16 @@ void Pic::smooth_B(int iLev) {
         }
 
       // Flux along y
-      get_face(iy_, i, j, k, iy_, nU, ul, ur);
-
+      ul = lu[iy_];
+      ur = ru[iy_];
       doDiffusion = true;
       if ((ul > 0 && bit::is_domain_boundary(status(i, j - 1, k))) ||
           (ur < 0 && bit::is_domain_boundary(status(i, j + 1, k)))) {
         doDiffusion = false;
       }
 
-      ul = fabs(ul);
-      ur = fabs(ur);
+      ul = max(fabs(ul), lumin);
+      ur = max(fabs(ur), rumin);
       if (doDiffusion)
         for (int iVar = 0; iVar < nDim3; iVar++) {
           Real cR = limiter(cB(i, j - 1, k, iVar), cB(i, j, k, iVar),
@@ -1629,7 +1638,8 @@ void Pic::smooth_B(int iLev) {
       if (nDim > 2 && !isFake2D) {
 
         // Flux along z
-        get_face(iz_, i, j, k, iz_, nU, ul, ur);
+        ul = lu[iz_];
+        ur = ru[iz_];
 
         doDiffusion = true;
         if ((ul > 0 && bit::is_domain_boundary(status(i, j, k - 1))) ||
@@ -1637,8 +1647,8 @@ void Pic::smooth_B(int iLev) {
           doDiffusion = false;
         }
 
-        ul = fabs(ul);
-        ur = fabs(ur);
+        ul = max(fabs(ul), lumin);
+        ur = max(fabs(ur), rumin);
         if (doDiffusion)
           for (int iVar = 0; iVar < nDim3; iVar++) {
             Real cR = limiter(cB(i, j, k - 1, iVar), cB(i, j, k, iVar),
