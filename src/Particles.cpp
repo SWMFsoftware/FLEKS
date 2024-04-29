@@ -1166,7 +1166,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         p.rdata(ivp_) = vnp1;
         p.rdata(iwp_) = wnp1;
 
-        if (pMode == PartMode::PIC) {
+        if (pMode == PartMode::PIC && imu_ < NStructReal) {
           // Note: bp should be calculated at the new position. Now, bp at the
           // old position is used to save the calculation.
           p.rdata(imu_) = cosine(p, bp);

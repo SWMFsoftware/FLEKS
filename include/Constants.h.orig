@@ -41,7 +41,7 @@ constexpr static int iPxx_ = 4, iPyy_ = 5, iPzz_ = 6, iPxy_ = 7, iPxz_ = 8,
 
 constexpr static bool doTiling = false;                
 
-constexpr static int nPicPartReal = 5;
+constexpr static int nPicPartReal = 4;
 constexpr static int nPicPartInt = 1;
 
 constexpr static int nPTRecord = 20;

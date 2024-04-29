@@ -577,7 +577,9 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
   realCompNames[PicParticles::ivp_] = "velocity_y";
   realCompNames[PicParticles::iwp_] = "velocity_z";
   realCompNames[PicParticles::iqp_] = "weight";
-  realCompNames[PicParticles::imu_] = "mu";
+
+  if (PicParticles::imu_ < nPicPartReal)
+    realCompNames[PicParticles::imu_] = "mu";
 
   Vector<int> writeIntComp;
   for (int i = 0; i < nPicPartInt; ++i) {
