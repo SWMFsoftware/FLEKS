@@ -293,7 +293,6 @@ void TestParticles::read_test_particle_list(
     vIDs.push_back(id);
     id.flag = true;
   }
-  source.close();
 
   std::sort(vIDs.begin(), vIDs.end());
 }

@@ -506,9 +506,6 @@ public:
       delete[] w;
     }
 
-    if (inFile.is_open()) {
-      inFile.close();
-    }
   }
 
   void read_ascii() {
@@ -585,10 +582,6 @@ public:
             inFile >> data(i, j, k, iVar);
           }
         }
-
-    if (inFile.is_open()) {
-      inFile.close();
-    }
   }
   //===============================================================
 };

@@ -474,17 +474,10 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
   outFile << " \n";
   outFile << outputUnit << "\n";
   outFile << "\n";
-  // }
 
   outFile << "#OUTPUTFORMAT\n";
   outFile << outputFormat << "\n";
   outFile << "\n";
-
-  if (outFile.is_open())
-    outFile.close();
-  // if (doTestFunc) {
-  //   std::cout << nameSub << " :filename = " << filename << std::endl;
-  // }
 }
 
 // Set the values of No2Out.
@@ -656,9 +649,6 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
     }
 
   } // doSaveBinary:else
-
-  if (outFile.is_open())
-    outFile.close();
 }
 
 int PlotWriter::get_time_digits(double second) const {

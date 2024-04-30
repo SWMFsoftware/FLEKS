@@ -254,7 +254,6 @@ inline double read_mem_usage() {
         tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >>
         stime >> cutime >> cstime >> priority >> nice >> O >> itrealvalue >>
         starttime >> vsize >> rss; // Ignore the rest
-    stat_stream.close();
 
     rssMB = rss * sysconf(_SC_PAGE_SIZE) / 1024.0 / 1024.0;
   }

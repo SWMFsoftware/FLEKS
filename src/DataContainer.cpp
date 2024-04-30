@@ -63,8 +63,6 @@ void AMReXDataContainer::read_header(std::string& headerName, int& nVar,
   // Read the base grid and ignore refined level grids.
   HeaderFile >> cellBox;
   HeaderFile.ignore(100000, '\n');
-
-  HeaderFile.close();
 }
 
 void AMReXDataContainer::read_header() {
