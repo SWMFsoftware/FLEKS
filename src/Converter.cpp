@@ -26,7 +26,7 @@ int main(int argc, char* argv[]) {
     if (cdl[i] == "-f") {
       ++i;
       while (i < cdl.size() && cdl[i][0] != '-') {
-        fileNames.push_back(cdl[++i]);
+        fileNames.push_back(cdl[i++]);
       }
 
       if (fileNames.empty()) {
@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Error: -s option requires an argument.\n";
         return 0;
       } else {
-        sType = stringToFileType.at(cdl[++i]);
+        sType = stringToFileType.at(cdl[i++]);
       }
     } else if (cdl[i] == "-d") {
       ++i;
@@ -73,7 +73,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Error: -d option requires an argument.\n";
         return 0;
       } else {
-        dType = stringToFileType.at(cdl[++i]);
+        dType = stringToFileType.at(cdl[i++]);
         std::cout << "dtype = " << cdl[i - 1] << " dtype = " << (int)dType
                   << "\n";
       }
@@ -83,7 +83,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Error: -smooth option requires an argument.\n";
         return 0;
       } else {
-        nSmooth = std::stoi(cdl[++i]);
+        nSmooth = std::stoi(cdl[i++]);
       }
     }
   }
