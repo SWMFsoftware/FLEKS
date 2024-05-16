@@ -108,6 +108,56 @@ inline void linear_interpolation_coef(amrex::RealVect& dx,
   coef[1][1][1] = multi[0][0] * zeta[0];
 }
 
+inline void linear_interpolation_coef_finer(amrex::RealVect& dx,
+                                            amrex::Real (&coef)[2][2][2]) {
+
+  amrex::Real xi[2];
+  amrex::Real eta[2];
+  amrex::Real zeta[2];
+  xi[0] = dx[0];
+  xi[1] = 1 - xi[0];
+
+  eta[0] = dx[1];
+  eta[1] = 1 - eta[0];
+
+  zeta[0] = nDim > 2 ? dx[2] : 0;
+  zeta[1] = 1 - zeta[0];
+
+  // Shape fix
+  for (int ii = 0; ii <= 1; ii++) {
+    xi[ii] = 2.0*((2.0 * xi[ii]) - 1.0);
+    if (xi[ii] < 0.0) {
+      xi[ii] = 0.0;
+    }
+
+    eta[ii] = 2.0*((2.0 * eta[ii]) - 1.0);
+    if (eta[ii] < 0.0) {
+      eta[ii] = 0.0;
+    }
+
+    zeta[ii] = nDim > 2 ? 2.0*((2.0 * zeta[ii]) - 1.0) : ((2.0 * zeta[ii]) - 1.0);
+    if (zeta[ii] < 0.0) {
+      zeta[ii] = 0.0;
+    }
+  }
+  //
+
+  amrex::Real multi[2][2];
+  multi[0][0] = xi[0] * eta[0];
+  multi[0][1] = xi[0] * eta[1];
+  multi[1][0] = xi[1] * eta[0];
+  multi[1][1] = xi[1] * eta[1];
+
+  coef[0][0][0] = multi[1][1] * zeta[1];
+  coef[0][0][1] = multi[1][1] * zeta[0];
+  coef[0][1][0] = multi[1][0] * zeta[1];
+  coef[0][1][1] = multi[1][0] * zeta[0];
+  coef[1][0][0] = multi[0][1] * zeta[1];
+  coef[1][0][1] = multi[0][1] * zeta[0];
+  coef[1][1][0] = multi[0][0] * zeta[1];
+  coef[1][1][1] = multi[0][0] * zeta[0];
+}
+
 template <typename T>
 inline T bound(const T& val, const T& xmin, const T& xmax) {
   if (val < xmin)
