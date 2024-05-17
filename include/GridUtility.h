@@ -560,33 +560,33 @@ void sum_two_lev_interface_node(amrex::FabArray<FAB>& coarse,
                                 const amrex::Geometry& fgeom,
                                 const amrex::iMultiFab& fstatus) {
   BL_PROFILE("sum_two_lev_interface_node");
-  // sum_fine_to_coarse_lev_bny_node(coarse, fine, iStart, nComp, ratio);
-  // sum_coarse_to_fine_lev_bny_node(coarse, fine, iStart, nComp, ratio, cgeom,
-  //                                 fgeom, fstatus);
-  amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
-  amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
-  amrex::FabArray<FAB> ftmp(f.boxArray(), f.DistributionMap(), nComp, 0);
-  ftmp.setVal(0.0);
-  amrex::UNodeBilinear<typename FAB::value_type> mapper;
-  interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper);
-  for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
-    FAB& fab = f[mfi];
-    const auto& box = mfi.validbox();
-    const auto& data = fab.array();
-    const auto& statusArr = fstatus[mfi].array();
-    const auto& tmp = ftmp[mfi].array();
-    const auto lo = amrex::lbound(box);
-    const auto hi = amrex::ubound(box);
-    for (int iVar = 0; iVar < f.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_lev_edge(statusArr(i, j, k))) {
-              data(i, j, k, iVar) = data(i, j, k, iVar) + tmp(i, j, k, iVar);
-            }
-          }
-  }
-  average_down_nodal(f, c, ratio);
+  sum_fine_to_coarse_lev_bny_node(coarse, fine, iStart, nComp, ratio);
+  sum_coarse_to_fine_lev_bny_node(coarse, fine, iStart, nComp, ratio, cgeom,
+                                  fgeom, fstatus);
+  // amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
+  // amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
+  // amrex::FabArray<FAB> ftmp(f.boxArray(), f.DistributionMap(), nComp, 0);
+  // ftmp.setVal(0.0);
+  // amrex::UNodeBilinear<typename FAB::value_type> mapper;
+  // interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper);
+  // for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
+  //   FAB& fab = f[mfi];
+  //   const auto& box = mfi.validbox();
+  //   const auto& data = fab.array();
+  //   const auto& statusArr = fstatus[mfi].array();
+  //   const auto& tmp = ftmp[mfi].array();
+  //   const auto lo = amrex::lbound(box);
+  //   const auto hi = amrex::ubound(box);
+  //   for (int iVar = 0; iVar < f.nComp(); iVar++)
+  //     for (int k = lo.z; k <= hi.z; ++k)
+  //       for (int j = lo.y; j <= hi.y; ++j)
+  //         for (int i = lo.x; i <= hi.x; ++i) {
+  //           if (bit::is_lev_edge(statusArr(i, j, k))) {
+  //             data(i, j, k, iVar) = data(i, j, k, iVar) + tmp(i, j, k, iVar);
+  //           }
+  //         }
+  // }
+  // average_down_nodal(f, c, ratio);
 }
 
 // This function is called recursively to combine active patahces into larger
