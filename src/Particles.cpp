@@ -121,6 +121,8 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
     nPPC = ppc;
   }
 
+  // nPPC = nPPC / pow(2, iLev);
+
   set_random_seed(iLev, ijk, nPPC);
 
   const Real vol = dx[iLev].product();
