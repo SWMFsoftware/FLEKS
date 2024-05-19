@@ -661,15 +661,16 @@ public:
 
     for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
     amrex::Real dx = Geom(iLev).CellSize(iLev);
-      amrex::Real disp = dx * 0.05 / sqrt(2.0);
+    amrex::Real disp = dx * 0.25 * sqrt(2.0);
     amrex::Real theta = 45.0;
-    theta = theta * 3.14159265358979323846 / 180.0;
+    amrex::Real PI = 3.14159265358979323846;
+    theta = theta * PI / 180.0;
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       auto& pTile1 = get_particle_tile(iLev, pti);
       auto& pTile2 = get_particle_tile(iLev + 1, pti);
       AoS& particles = pti.GetArrayOfStructs();
       for (auto& p : particles) {
-          if (p.id() < 0)
+          if (p.id() < 0 || abs(p.rdata(iqp_)) < (4.5e-4)/1.0)
           continue;
         const amrex::Real xp = p.pos(ix_);
         const amrex::Real yp = p.pos(iy_);
@@ -703,15 +704,15 @@ public:
           pnew2.rdata(ivp_) = vp;
           pnew2.rdata(iwp_) = wp;
           pnew2.rdata(iqp_) = qp / 4.0;
-          pnew3.pos(ix_) = xp + (disp * cos(theta));
-          pnew3.pos(iy_) = yp - (disp * sin(theta));
+          pnew3.pos(ix_) = xp + (disp * cos(theta + PI/2));
+          pnew3.pos(iy_) = yp + (disp * sin(theta + PI/2));
           pnew3.pos(iz_) = 0.0;
           pnew3.rdata(iup_) = up;
           pnew3.rdata(ivp_) = vp;
           pnew3.rdata(iwp_) = wp;
           pnew3.rdata(iqp_) = qp / 4.0;
-          pnew4.pos(ix_) = xp - (disp * cos(theta));
-          pnew4.pos(iy_) = yp + (disp * sin(theta));
+          pnew4.pos(ix_) = xp - (disp * cos(theta + PI/2));
+          pnew4.pos(iy_) = yp - (disp * sin(theta + PI/2));
           pnew4.pos(iz_) = 0.0;
           pnew4.rdata(iup_) = up;
           pnew4.rdata(ivp_) = vp;
