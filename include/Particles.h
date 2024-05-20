@@ -661,6 +661,7 @@ public:
 
     for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
     amrex::Real dx = Geom(iLev).CellSize(iLev);
+    amrex::Real ratio=0.0;
     amrex::Real disp = dx * 0.25 * sqrt(2.0);
     amrex::Real theta = 45.0;
     amrex::Real PI = 3.14159265358979323846;
@@ -670,7 +671,7 @@ public:
       auto& pTile2 = get_particle_tile(iLev + 1, pti);
       AoS& particles = pti.GetArrayOfStructs();
       for (auto& p : particles) {
-          if (p.id() < 0 || abs(p.rdata(iqp_)) < (4.5e-4)/1.0)
+          if (p.id() < 0 || abs(p.rdata(iqp_)) < ((1-ratio))*(4.5e-4)/1.0)
           continue;
         const amrex::Real xp = p.pos(ix_);
         const amrex::Real yp = p.pos(iy_);
@@ -686,43 +687,52 @@ public:
           ParticleType pnew2;
           ParticleType pnew3;
           ParticleType pnew4;
+          ParticleType pnew5;
           set_ids(pnew1);
           set_ids(pnew2);
           set_ids(pnew3);
           set_ids(pnew4);
+          set_ids(pnew5);
           pnew1.pos(ix_) = xp + (disp * cos(theta));
           pnew1.pos(iy_) = yp + (disp * sin(theta));
           pnew1.pos(iz_) = 0.0;
           pnew1.rdata(iup_) = up;
           pnew1.rdata(ivp_) = vp;
           pnew1.rdata(iwp_) = wp;
-          pnew1.rdata(iqp_) = qp / 4.0;
+          pnew1.rdata(iqp_) = (1.0-ratio) * qp / 4.0;
           pnew2.pos(ix_) = xp - (disp * cos(theta));
           pnew2.pos(iy_) = yp - (disp * sin(theta));
           pnew2.pos(iz_) = 0.0;
           pnew2.rdata(iup_) = up;
           pnew2.rdata(ivp_) = vp;
           pnew2.rdata(iwp_) = wp;
-          pnew2.rdata(iqp_) = qp / 4.0;
+          pnew2.rdata(iqp_) = (1.0-ratio) * qp / 4.0;
           pnew3.pos(ix_) = xp + (disp * cos(theta + PI/2));
           pnew3.pos(iy_) = yp + (disp * sin(theta + PI/2));
           pnew3.pos(iz_) = 0.0;
           pnew3.rdata(iup_) = up;
           pnew3.rdata(ivp_) = vp;
           pnew3.rdata(iwp_) = wp;
-          pnew3.rdata(iqp_) = qp / 4.0;
+          pnew3.rdata(iqp_) = (1.0-ratio) * qp / 4.0;
           pnew4.pos(ix_) = xp - (disp * cos(theta + PI/2));
           pnew4.pos(iy_) = yp - (disp * sin(theta + PI/2));
           pnew4.pos(iz_) = 0.0;
           pnew4.rdata(iup_) = up;
           pnew4.rdata(ivp_) = vp;
           pnew4.rdata(iwp_) = wp;
-          pnew4.rdata(iqp_) = qp / 4.0;
-
+          pnew4.rdata(iqp_) = (1.0-ratio) * qp / 4.0;
+          pnew5.pos(ix_) = xp ;
+          pnew5.pos(iy_) = yp;
+          pnew5.pos(iz_) = 0.0;
+          pnew5.rdata(iup_) = up;
+          pnew5.rdata(ivp_) = vp;
+          pnew5.rdata(iwp_) = wp;
+          pnew5.rdata(iqp_) = ratio * qp ;
           newparticles.push_back(pnew1);
           newparticles.push_back(pnew2);
           newparticles.push_back(pnew3);
           newparticles.push_back(pnew4);
+          newparticles.push_back(pnew5);
 
           for (auto& p : newparticles) {
             pTile2.push_back(p);
