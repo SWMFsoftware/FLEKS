@@ -1229,16 +1229,16 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::divE_correct_position(
-    const MultiFab& phiMF) {
+    const amrex::Vector<MultiFab>& phiMF) {
   timing_func("Pts:divE_correct_position");
 
   const Real coef = charge / fabs(charge);
   const Real epsLimit = 0.1;
   Real epsMax = 0;
 
-  const int iLev = 0;
+  for (int iLev;iLev < n_lev();iLev++){
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    Array4<Real const> const& phiArr = phiMF[pti].array();
+    Array4<Real const> const& phiArr = phiMF[iLev][pti].array();
 
     const Array4<int const>& status = cell_status(iLev)[pti].array();
 
@@ -1268,8 +1268,9 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       for (int iz = 0; iz <= 1; iz++)
         for (int iy = 0; iy <= 1; iy++)
           for (int ix = 0; ix <= 1; ix++) {
+            IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ix, loIdx[iy_] + iy, loIdx[iz_] + iz) };
             if (bit::is_lev_boundary(
-                    status(loIdx[ix_] + ix, loIdx[iy_] + iy, loIdx[iz_] + iz)))
+                    status(ijk)))
               isBoundaryPhysicalCell = true;
           }
       if (isBoundaryPhysicalCell)
@@ -1292,43 +1293,59 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 
         weights_IIID[1][1][1][ix_] = eta0 * zeta02Vol;
         weights_IIID[1][1][1][iy_] = xi0 * zeta02Vol;
+        if (nDim > 2)
+        {
         weights_IIID[1][1][1][iz_] = xi0 * eta02Vol;
-
+        }
         // xi0*eta0*zeta1*invVol[iLev];
         weights_IIID[1][1][0][ix_] = eta0 * zeta12Vol;
         weights_IIID[1][1][0][iy_] = xi0 * zeta12Vol;
+        if (nDim > 2)
+        {
         weights_IIID[1][1][0][iz_] = -xi0 * eta02Vol;
-
+        }
         // xi0*eta1*zeta0*invVol[iLev];
         weights_IIID[1][0][1][ix_] = eta1 * zeta02Vol;
         weights_IIID[1][0][1][iy_] = -xi0 * zeta02Vol;
+        if (nDim > 2)
+        {
         weights_IIID[1][0][1][iz_] = xi0 * eta12Vol;
-
+        }
         // xi0*eta1*zeta1*invVol[iLev];
         weights_IIID[1][0][0][ix_] = eta1 * zeta12Vol;
         weights_IIID[1][0][0][iy_] = -xi0 * zeta12Vol;
+        if (nDim > 2)
+        {
         weights_IIID[1][0][0][iz_] = -xi0 * eta12Vol;
-
+        }
         // xi1*eta0*zeta0*invVol[iLev];
         weights_IIID[0][1][1][ix_] = -eta0 * zeta02Vol;
         weights_IIID[0][1][1][iy_] = xi1 * zeta02Vol;
+        if (nDim > 2)
+        {
         weights_IIID[0][1][1][iz_] = xi1 * eta02Vol;
-
+        }
         // xi1*eta0*zeta1*invVol[iLev];
         weights_IIID[0][1][0][ix_] = -eta0 * zeta12Vol;
         weights_IIID[0][1][0][iy_] = xi1 * zeta12Vol;
+        if (nDim > 2)
+        {
         weights_IIID[0][1][0][iz_] = -xi1 * eta02Vol;
-
+        }
         // xi1*eta1*zeta0*invVol[iLev];
         weights_IIID[0][0][1][ix_] = -eta1 * zeta02Vol;
         weights_IIID[0][0][1][iy_] = -xi1 * zeta02Vol;
+        if (nDim > 2)
+        {
         weights_IIID[0][0][1][iz_] = xi1 * eta12Vol;
-
+        }
         // xi1*eta1*zeta1*invVol[iLev];
         weights_IIID[0][0][0][ix_] = -eta1 * zeta12Vol;
         weights_IIID[0][0][0][iy_] = -xi1 * zeta12Vol;
+        if (nDim > 2)
+        {
         weights_IIID[0][0][0][iz_] = -xi1 * eta12Vol;
-
+        }
         const int iMin = loIdx[ix_];
         const int jMin = loIdx[iy_];
         const int kMin = loIdx[iz_];
@@ -1338,7 +1355,8 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         for (int k = 0; k < 2; ++k)
           for (int j = 0; j < 2; ++j)
             for (int i = 0; i < 2; ++i) {
-              const Real coef = phiArr(iMin + i, jMin + j, kMin + k);
+               IntVect ijk = { AMREX_D_DECL(iMin + i, jMin + j,kMin + k) };
+              const Real coef = phiArr(ijk);
               for (int iDim = 0; iDim < nDim; iDim++) {
                 eps_D[iDim] += coef * weights_IIID[i][j][k][iDim];
               }
@@ -1379,6 +1397,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       }
 
     } // for p
+  }
   }
 }
 
