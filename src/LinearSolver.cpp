@@ -9,9 +9,9 @@ void matvec_E_solver(const double *vecIn, double *vecOut, int iLev) {
       .pic->update_E_matvec(vecIn, vecOut, iLev);
 }
 
-void matvec_divE_accurate(const double *vecIn, double *vecOut, int iLev) {
+void matvec_divE_accurate(const double *vecIn, double *vecOut, int n) {
   fleksDomains(fleksDomains.selected())
-      .pic->divE_accurate_matvec(vecIn, vecOut,iLev);
+      .pic->divE_accurate_matvec(vecIn, vecOut);
 }
 
 void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,

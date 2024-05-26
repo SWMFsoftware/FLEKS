@@ -758,7 +758,7 @@ void Pic::divE_correct_particle_position() {
   timing_func(nameFunc);
 
   for (int i = 0; i < nSpecies; ++i) {
-    parts[i]->divE_correct_position(centerPhi);
+    parts[i]->divE_correct_position(centerPhi[0]);
   }
 }
 
@@ -768,35 +768,39 @@ void Pic::calculate_phi(LinearSolver& solver) {
 
   timing_func(nameFunc);
 
+  const int iLev = 0;
+  MultiFab residual(cGrids[iLev], DistributionMap(iLev), 1, nGst);
+
+  solver.reset(get_local_node_or_cell_number(centerDivE[iLev]));
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    MultiFab residual(cGrids[iLev], DistributionMap(iLev), 1, nGst);
-    solver.reset(get_local_node_or_cell_number(centerDivE[iLev]));
     div_node_to_center(nodeE[iLev], residual, Geom(iLev).InvCellSize());
-
-    Real coef = 1;
-    if (PicParticles::particlePosition == Staggered) {
-      coef = 1.0 / rhoTheta;
-    }
-
-    MultiFab::LinComb(residual, coef, residual, 0, -fourPI * coef,
-                      centerNetChargeN[iLev], 0, 0, residual.nComp(),
-                      residual.nGrow());
-
-    convert_3d_to_1d(residual, solver.rhs, iLev);
-
-    BL_PROFILE_VAR("Pic::phi_iterate", solve);
-    solver.solve(iLev, doReport);
-    BL_PROFILE_VAR_STOP(solve);
-
-    convert_1d_to_3d(solver.xLeft, centerPhi[iLev], iLev);
-    centerPhi[iLev].FillBoundary(Geom(iLev).periodicity());
   }
+
+  Real coef = 1;
+  if (PicParticles::particlePosition == Staggered) {
+    coef = 1.0 / rhoTheta;
+  }
+
+  MultiFab::LinComb(residual, coef, residual, 0, -fourPI * coef,
+                    centerNetChargeN[iLev], 0, 0, residual.nComp(),
+                    residual.nGrow());
+
+  convert_3d_to_1d(residual, solver.rhs, iLev);
+
+  BL_PROFILE_VAR("Pic::phi_iterate", solve);
+  solver.solve(iLev, doReport);
+  BL_PROFILE_VAR_STOP(solve);
+
+  convert_1d_to_3d(solver.xLeft, centerPhi[iLev], iLev);
+  centerPhi[iLev].FillBoundary(Geom(iLev).periodicity());
 }
 
 //==========================================================
-void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut, int iLev) {
+void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut) {
   std::string nameFunc = "Pic::divE_matvec";
   timing_func(nameFunc);
+
+  const int iLev = 0;
 
   zero_array(vecOut, divESolver.get_nSolve());
 

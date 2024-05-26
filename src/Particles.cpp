@@ -1229,16 +1229,16 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::divE_correct_position(
-    const amrex::Vector<MultiFab>& phiMF) {
+    const MultiFab& phiMF) {
   timing_func("Pts:divE_correct_position");
 
   const Real coef = charge / fabs(charge);
   const Real epsLimit = 0.1;
   Real epsMax = 0;
 
-  for (int iLev;iLev < n_lev();iLev++){
+  const int iLev = 0;
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    Array4<Real const> const& phiArr = phiMF[iLev][pti].array();
+    Array4<Real const> const& phiArr = phiMF[pti].array();
 
     const Array4<int const>& status = cell_status(iLev)[pti].array();
 
@@ -1293,59 +1293,43 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 
         weights_IIID[1][1][1][ix_] = eta0 * zeta02Vol;
         weights_IIID[1][1][1][iy_] = xi0 * zeta02Vol;
-        if (nDim > 2)
-        {
         weights_IIID[1][1][1][iz_] = xi0 * eta02Vol;
-        }
+
         // xi0*eta0*zeta1*invVol[iLev];
         weights_IIID[1][1][0][ix_] = eta0 * zeta12Vol;
         weights_IIID[1][1][0][iy_] = xi0 * zeta12Vol;
-        if (nDim > 2)
-        {
         weights_IIID[1][1][0][iz_] = -xi0 * eta02Vol;
-        }
+
         // xi0*eta1*zeta0*invVol[iLev];
         weights_IIID[1][0][1][ix_] = eta1 * zeta02Vol;
         weights_IIID[1][0][1][iy_] = -xi0 * zeta02Vol;
-        if (nDim > 2)
-        {
         weights_IIID[1][0][1][iz_] = xi0 * eta12Vol;
-        }
+
         // xi0*eta1*zeta1*invVol[iLev];
         weights_IIID[1][0][0][ix_] = eta1 * zeta12Vol;
         weights_IIID[1][0][0][iy_] = -xi0 * zeta12Vol;
-        if (nDim > 2)
-        {
         weights_IIID[1][0][0][iz_] = -xi0 * eta12Vol;
-        }
+
         // xi1*eta0*zeta0*invVol[iLev];
         weights_IIID[0][1][1][ix_] = -eta0 * zeta02Vol;
         weights_IIID[0][1][1][iy_] = xi1 * zeta02Vol;
-        if (nDim > 2)
-        {
         weights_IIID[0][1][1][iz_] = xi1 * eta02Vol;
-        }
+
         // xi1*eta0*zeta1*invVol[iLev];
         weights_IIID[0][1][0][ix_] = -eta0 * zeta12Vol;
         weights_IIID[0][1][0][iy_] = xi1 * zeta12Vol;
-        if (nDim > 2)
-        {
         weights_IIID[0][1][0][iz_] = -xi1 * eta02Vol;
-        }
+
         // xi1*eta1*zeta0*invVol[iLev];
         weights_IIID[0][0][1][ix_] = -eta1 * zeta02Vol;
         weights_IIID[0][0][1][iy_] = -xi1 * zeta02Vol;
-        if (nDim > 2)
-        {
         weights_IIID[0][0][1][iz_] = xi1 * eta12Vol;
-        }
+
         // xi1*eta1*zeta1*invVol[iLev];
         weights_IIID[0][0][0][ix_] = -eta1 * zeta12Vol;
         weights_IIID[0][0][0][iy_] = -xi1 * zeta12Vol;
-        if (nDim > 2)
-        {
         weights_IIID[0][0][0][iz_] = -xi1 * eta12Vol;
-        }
+
         const int iMin = loIdx[ix_];
         const int jMin = loIdx[iy_];
         const int kMin = loIdx[iz_];
@@ -1397,7 +1381,6 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       }
 
     } // for p
-  }
   }
 }
 
