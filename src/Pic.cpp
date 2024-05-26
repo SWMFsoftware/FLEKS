@@ -1719,7 +1719,7 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, int di, Real coef) {
       });
     }
 
-    mf.FillBoundary(Geom(0).periodicity());
+    mf.FillBoundary(Geom(iLev).periodicity());
   };
 
   smooth_dir(ix_);
