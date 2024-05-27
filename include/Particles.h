@@ -630,18 +630,18 @@ public:
     Checkpoint(folder, particletype);
     command = command + " " + folder + " " + particletype;
     if (amrex::ParallelDescriptor::IOProcessor()) {
-      int ierror = std::system(command.c_str());
+      std::system(command.c_str());
     }
     command = "mv";
     command = command + " " + folder + ".vtp" + " " + folder + "_" +
               particletype + ".vtp";
     if (amrex::ParallelDescriptor::IOProcessor()) {
-      int ierror = std::system(command.c_str());
+      std::system(command.c_str());
     }
     command = "rm -rf";
     command = command + " " + folder;
     if (amrex::ParallelDescriptor::IOProcessor()) {
-      int ierror = std::system(command.c_str());
+      std::system(command.c_str());
     }
   }
 
@@ -653,7 +653,6 @@ public:
   void Generate_GhostParticles(int iLev, int nGhost) {
     ParticleTileType ptile;
     CreateGhostParticles(iLev - 1, nGhost, ptile);
-    AoS& aos = ptile.GetArrayOfStructs();
     AddParticlesAtLevel(ptile, iLev, nGhost);
   }
 
@@ -667,7 +666,7 @@ public:
     amrex::Real PI = 3.14159265358979323846;
     theta = theta * PI / 180.0;
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      auto& pTile1 = get_particle_tile(iLev, pti);
+      // auto& pTile1 = get_particle_tile(iLev, pti);
       auto& pTile2 = get_particle_tile(iLev + 1, pti);
       AoS& particles = pti.GetArrayOfStructs();
       for (auto& p : particles) {
@@ -675,7 +674,7 @@ public:
           continue;
         const amrex::Real xp = p.pos(ix_);
         const amrex::Real yp = p.pos(iy_);
-        const amrex::Real zp = nDim > 2 ? p.pos(iz_) : 0;
+        // const amrex::Real zp = nDim > 2 ? p.pos(iz_) : 0;
           if (abs(xp) <= 20.0 && abs(yp) <= 20.0) {
           amrex::Real up = p.rdata(iup_);
           amrex::Real vp = p.rdata(ivp_);

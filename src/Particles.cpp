@@ -3110,7 +3110,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments_new(
     momentsMF[iLev].setVal(0.0);
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       Array4<Real> const& momentsArr = momentsMF[iLev][pti].array();
-      const auto& statusArr = nodestatus[iLev][pti].array();
+      // const auto& statusArr = nodestatus[iLev][pti].array();
       const auto& cstatus = ctmp[pti].array();
 
       const AoS& particles = pti.GetArrayOfStructs();
