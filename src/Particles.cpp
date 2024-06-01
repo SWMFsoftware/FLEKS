@@ -850,12 +850,245 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
               for (int idx = 0; idx < 9; idx++) {
                 datar[idx] = datas[idx];
               } // idx
-            }   // kp
-          }     // jp
-        }       // k1
+            } // kp
+          } // jp
+        } // k1
   }
 }
 
+//==========================================================
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
+    UMultiFab<RealMM>& nodeMM, MultiFab& jHat, MultiFab& nodeBMF,
+    MultiFab& u0MF, Real dt, int iLev, bool solveInCoMov,
+    amrex::Vector<amrex::iMultiFab>& nodestatus) {
+  timing_func("Pts::calc_mass_matrix");
+
+  //////////////////// This part will be removed when Nodestatus - bit :
+  /// is_lev_edge is fixed for coarse level
+  amrex::iMultiFab ctmp(nodestatus[0].boxArray(),
+                        nodestatus[0].DistributionMap(), 1, 0);
+  amrex::iMultiFab ftmp(nodestatus[1].boxArray(),
+                        nodestatus[1].DistributionMap(), 1, 0);
+  for (amrex::MFIter mfi(nodestatus[1]); mfi.isValid(); ++mfi) {
+    const auto& status = nodestatus[1][mfi].array();
+    const auto& ft = ftmp[mfi].array();
+
+    ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
+      const amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
+
+      if (bit::is_lev_edge(status(ijk))) {
+        ft(ijk) = 1;
+      } else {
+        ft(ijk) = 0;
+      }
+    });
+  }
+  ctmp.setVal(0);
+  amrex::IntVect ratio = { AMREX_D_DECL(2, 2, 2) };
+  average_down_nodal(ftmp, ctmp, ratio);
+  ///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  Real qdto2mc = charge / mass * 0.5 * dt;
+
+  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
+    Array4<Real> const& jArr = jHat[pti].array();
+    const auto& cstatus = ctmp[pti].array();
+
+    Array4<RealMM> const& mmArr = nodeMM[pti].array();
+
+    Array4<Real const> const& u0Arr = u0MF[pti].array();
+
+    const AoS& particles = pti.GetArrayOfStructs();
+
+    const Dim3 lo = init_dim3(0);
+    const Dim3 hi = init_dim3(1);
+
+    for (const auto& p : particles) {
+      if (p.id() < 0)
+        continue;
+
+      // Print()<<"p = "<<p<<std::endl;
+      const Real up = p.rdata(iup_);
+      const Real vp = p.rdata(ivp_);
+      const Real wp = p.rdata(iwp_);
+      const Real qp = p.rdata(iqp_);
+
+      //-----calculate interpolate coef begin-------------
+      IntVect loIdx;
+      RealVect dShift;
+
+      find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                      loIdx, dShift);
+
+      Real coef[2][2][2];
+      Real coef_finer[2][2][2];
+
+      linear_interpolation_coef(dShift, coef);
+      linear_interpolation_coef_finer(dShift, coef_finer);
+
+      //-----calculate interpolate coef end-------------
+
+      //----- Mass matrix calculation begin--------------
+      Real u0[3] = { 0, 0, 0 };
+      Real bp[3] = { 0, 0, 0 };
+
+      for (int kk = lo.z; kk <= hi.z; ++kk)
+        for (int jj = lo.y; jj <= hi.y; ++jj)
+          for (int ii = lo.x; ii <= hi.x; ++ii) {
+            const IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                               loIdx[iz_] + kk) };
+            for (int iDim = 0; iDim < nDim3; iDim++) {
+              bp[iDim] += nodeBArr(ijk, iDim) * coef[ii][jj][kk];
+
+              if (solveInCoMov)
+                u0[iDim] += u0Arr(ijk, iDim) * coef[ii][jj][kk];
+            }
+          }
+
+      const Real Omx = qdto2mc * bp[ix_];
+      const Real Omy = qdto2mc * bp[iy_];
+      const Real Omz = qdto2mc * bp[iz_];
+
+      // end interpolation
+      const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
+      const Real denom = 1.0 / (1.0 + omsq);
+
+      const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
+      Real alpha[9];
+      alpha[0] = (1 + Omx * Omx) * c0;
+      alpha[1] = (Omz + Omx * Omy) * c0;
+      alpha[2] = (-Omy + Omx * Omz) * c0;
+      alpha[3] = (-Omz + Omx * Omy) * c0;
+      alpha[4] = (1 + Omy * Omy) * c0;
+      alpha[5] = (Omx + Omy * Omz) * c0;
+      alpha[6] = (Omy + Omx * Omz) * c0;
+      alpha[7] = (-Omx + Omy * Omz) * c0;
+      alpha[8] = (1 + Omz * Omz) * c0;
+
+      {
+        // jHat
+        Real currents[3];
+
+        const Real up1 = up - u0[0];
+        const Real vp1 = vp - u0[1];
+        const Real wp1 = wp - u0[2];
+
+        const Real udotOm1 = up1 * Omx + vp1 * Omy + wp1 * Omz;
+
+        {
+          const Real coef1 = denom * qp;
+          currents[ix_] =
+              (up1 + (vp1 * Omz - wp1 * Omy + udotOm1 * Omx)) * coef1;
+          currents[iy_] =
+              (vp1 + (wp1 * Omx - up1 * Omz + udotOm1 * Omy)) * coef1;
+          currents[iz_] =
+              (wp1 + (up1 * Omy - vp1 * Omx + udotOm1 * Omz)) * coef1;
+        }
+
+        for (int iVar = 0; iVar < 3; iVar++)
+          for (int kk = lo.z; kk <= hi.z; ++kk)
+            for (int jj = lo.y; jj <= hi.y; ++jj)
+              for (int ii = lo.x; ii <= hi.x; ++ii) {
+                IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                             loIdx[iz_] + kk) };
+
+                if (iLev == 0 && cstatus(ijk) == 1)
+
+                {
+                  // coef[ii][jj][kk]=coef_finer[ii][jj][kk];
+                  jArr(ijk, iVar) += coef_finer[ii][jj][kk] * currents[iVar];
+                } else {
+                  jArr(ijk, iVar) += coef[ii][jj][kk] * currents[iVar];
+                }
+              }
+      }
+
+      const int iMin = loIdx[ix_];
+      const int jMin = loIdx[iy_];
+      const int kMin = nDim > 2 ? loIdx[iz_] : 0;
+      const int iMax = iMin + 1;
+      const int jMax = jMin + 1;
+      const int kMax = nDim > 2 ? kMin + 1 : 0;
+
+      for (int k1 = kMin; k1 <= kMax; k1++)
+        for (int j1 = jMin; j1 <= jMax; j1++)
+          for (int i1 = iMin; i1 <= iMax; i1++) {
+            const Real wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
+            auto& data0 = mmArr(i1, j1, k1);
+            for (int k2 = kMin; k2 <= kMax; k2++) {
+              const int kp = k2 - k1 + 1;
+              if (kp > 0) {
+                for (int j2 = jMin; j2 <= jMax; j2++) {
+                  const int jp = j2 - j1 + 1;
+                  for (int i2 = iMin; i2 <= iMax; i2++) {
+                    const Real weight =
+                        wg * coef[i2 - iMin][j2 - jMin][k2 - kMin];
+                    const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
+
+                    Real* const data = &(data0[idx0]);
+                    for (int idx = 0; idx < 9; idx++) {
+                      data[idx] += alpha[idx] * weight;
+                    }
+                  } // k2
+
+                } // j2
+              } // if (ip > 0)
+            } // i2
+          } // k1
+
+      //----- Mass matrix calculation end--------------
+
+    } // for p
+  }
+
+  for (MFIter mfi(nodeMM); mfi.isValid(); ++mfi) {
+    // Finalize the mass matrix calculation.
+    const Box box = mfi.validbox();
+    const auto lo = lbound(box);
+    const auto hi = ubound(box);
+
+    Array4<RealMM> const& mmArr = nodeMM[mfi].array();
+
+    // We only need the mass matrix on the physical nodes. But the first layer
+    // of the ghost nodes may contributes to the physical nodes below (ghost
+    // node constributes as a sender). So, we need the '-1' and '+1' staff.
+    const int iMin = lo.x - 1, jMin = lo.y - 1, kMin = nDim > 2 ? lo.z - 1 : 0;
+    const int iMax = hi.x + 1, jMax = hi.y + 1, kMax = nDim > 2 ? hi.z + 1 : 0;
+
+    int gps, gpr; // gp_send, gp_receive
+    for (int k1 = kMin; k1 <= kMax; k1++)
+      for (int j1 = jMin; j1 <= jMax; j1++)
+        for (int i1 = iMin; i1 <= iMax; i1++) {
+          const int kp = 2;
+          const int kr = nDim > 2 ? k1 + kp - 1 : 0;
+          if (kr > kMax || kr < kMin)
+            continue;
+          auto& datas0 = mmArr(i1, j1, k1);
+          for (int jp = 0; jp < 3; jp++) {
+            const int jr = j1 + jp - 1;
+            if (jr > jMax || jr < jMin)
+              continue;
+            const int jpr = 2 - jp;
+            for (int ip = 0; ip < 3; ip++) {
+              const int ir = i1 + ip - 1;
+              if (ir > iMax || ir < iMin)
+                continue;
+              const int ipr = 2 - ip;
+              gpr = jpr * 3 + ipr;
+              gps = 18 + jp * 3 + ip; // gps = kp*9+jp*3+kp
+
+              Real* const datar = &(mmArr(ir, jr, kr)[gpr * 9]);
+              const Real* const datas = &(datas0[gps * 9]);
+              for (int idx = 0; idx < 9; idx++) {
+                datar[idx] = datas[idx];
+              } // idx
+            } // kp
+          } // jp
+        } // k1
+  }
+}
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
