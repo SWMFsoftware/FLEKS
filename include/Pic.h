@@ -48,6 +48,8 @@ private:
   bool useExplicitPIC = false;
   bool usenewElectricSolver = false;
   bool decoupleparticlesfromfield = false;
+  bool usenewcalc_mass_matrix = false;
+  bool usenewsum_moments = false;
 
   PartMode pMode = PartMode::PIC;
 

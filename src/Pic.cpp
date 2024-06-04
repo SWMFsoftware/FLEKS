@@ -544,9 +544,15 @@ void Pic::calc_mass_matrix() {
       if (useExplicitPIC) {
         parts[i]->calc_jhat(jHat[iLev], nodeB[iLev], tc->get_dt());
       } else {
-        parts[i]->calc_mass_matrix(nodeMM[iLev], jHat[iLev], nodeB[iLev],
-                                   uBg[iLev], tc->get_dt(), iLev,
-                                   solveFieldInCoMov);
+        if (!usenewcalc_mass_matrix)
+          parts[i]->calc_mass_matrix(nodeMM[iLev], jHat[iLev], nodeB[iLev],
+                                     uBg[iLev], tc->get_dt(), iLev,
+                                     solveFieldInCoMov);
+        else {
+          parts[i]->calc_mass_matrix_new(nodeMM[iLev], jHat[iLev], nodeB[iLev],
+                                         uBg[iLev], tc->get_dt(), iLev,
+                                         solveFieldInCoMov, nodeStatus);
+        }
       }
     }
     Real invVol = 1;
@@ -589,8 +595,13 @@ void Pic::sum_moments(bool updateDt) {
 
   plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; ++i) {
-    Real energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
-// Real energy = parts[i]->sum_moments_new(nodePlasma[i], nodeB, tc->get_dt(),nodeStatus);
+    Real energy = 0.0;
+    if (!usenewsum_moments) {
+      energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
+    } else {
+      energy = parts[i]->sum_moments_new(nodePlasma[i], nodeB, tc->get_dt(),
+                                         nodeStatus);
+    }
     plasmaEnergy[i] = energy;
     plasmaEnergy[iTot] += energy;
   }
