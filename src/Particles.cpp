@@ -1510,14 +1510,14 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         continue;
 
       {
-        Real weights_IIID[2][2][2][nDim];
+        Real weights_IIID[2][2][2][nDim3];
         //----- Mass matrix calculation begin--------------
         const Real xi0 = dShift[ix_] * dx[iLev][ix_];
         const Real eta0 = dShift[iy_] * dx[iLev][iy_];
-        const Real zeta0 = dShift[iz_] * dx[iLev][iz_];
+        const Real zeta0 = nDim > 2 ? dShift[iz_] * dx[iLev][iz_] : 0;
         const Real xi1 = dx[iLev][ix_] - xi0;
         const Real eta1 = dx[iLev][iy_] - eta0;
-        const Real zeta1 = dx[iLev][iz_] - zeta0;
+        const Real zeta1 = nDim > 2 ? dx[iLev][iz_] - zeta0 : 1;
 
         const Real zeta02Vol = zeta0 * invVol[iLev];
         const Real zeta12Vol = zeta1 * invVol[iLev];
@@ -1565,7 +1565,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 
         const int iMin = loIdx[ix_];
         const int jMin = loIdx[iy_];
-        const int kMin = loIdx[iz_];
+        const int kMin = nDim > 2 ? loIdx[iz_] : 0;
 
         RealVect eps_D = { AMREX_D_DECL(0, 0, 0) };
 
