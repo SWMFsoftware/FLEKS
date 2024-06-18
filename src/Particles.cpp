@@ -918,15 +918,28 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
       //-----calculate interpolate coef begin-------------
       IntVect loIdx;
       RealVect dShift;
+      IntVect cloIdx;
+      IntVect floIdx;
+      RealVect cdShift;
+      RealVect fdShift;
 
       find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
                       loIdx, dShift);
+      if (iLev > 0) {
+        find_node_index(p.pos(), Geom(iLev - 1).ProbLo(),
+                        Geom(iLev - 1).InvCellSize(), cloIdx, cdShift);
+      }
 
       Real coef[2][2][2];
       Real coef_finer[2][2][2];
+      Real coef_coarser[2][2][2];
 
       linear_interpolation_coef(dShift, coef);
       linear_interpolation_coef_finer(dShift, coef_finer);
+
+      if (iLev > 0) {
+        linear_interpolation_coef(cdShift, coef_coarser);
+      }
 
       //-----calculate interpolate coef end-------------
 
@@ -1005,38 +1018,75 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
               }
       }
 
-      const int iMin = loIdx[ix_];
-      const int jMin = loIdx[iy_];
-      const int kMin = nDim > 2 ? loIdx[iz_] : 0;
-      const int iMax = iMin + 1;
-      const int jMax = jMin + 1;
-      const int kMax = nDim > 2 ? kMin + 1 : 0;
+      if (iLev == 0) {
+        const int iMin = loIdx[ix_];
+        const int jMin = loIdx[iy_];
+        const int kMin = nDim > 2 ? loIdx[iz_] : 0;
+        const int iMax = iMin + 1;
+        const int jMax = jMin + 1;
+        const int kMax = nDim > 2 ? kMin + 1 : 0;
 
-      for (int k1 = kMin; k1 <= kMax; k1++)
-        for (int j1 = jMin; j1 <= jMax; j1++)
-          for (int i1 = iMin; i1 <= iMax; i1++) {
-            const Real wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
-            auto& data0 = mmArr(i1, j1, k1);
-            for (int k2 = kMin; k2 <= kMax; k2++) {
-              const int kp = k2 - k1 + 1;
-              if (kp > 0) {
-                for (int j2 = jMin; j2 <= jMax; j2++) {
-                  const int jp = j2 - j1 + 1;
-                  for (int i2 = iMin; i2 <= iMax; i2++) {
-                    const Real weight =
-                        wg * coef[i2 - iMin][j2 - jMin][k2 - kMin];
-                    const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
+        for (int k1 = kMin; k1 <= kMax; k1++)
+          for (int j1 = jMin; j1 <= jMax; j1++)
+            for (int i1 = iMin; i1 <= iMax; i1++) {
+              const Real wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
+              auto& data0 = mmArr(i1, j1, k1);
+              for (int k2 = kMin; k2 <= kMax; k2++) {
+                const int kp = k2 - k1 + 1;
+                if (kp > 0) {
+                  for (int j2 = jMin; j2 <= jMax; j2++) {
+                    const int jp = j2 - j1 + 1;
+                    for (int i2 = iMin; i2 <= iMax; i2++) {
+                      const Real weight =
+                          wg * coef[i2 - iMin][j2 - jMin][k2 - kMin];
+                      const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
 
-                    Real* const data = &(data0[idx0]);
-                    for (int idx = 0; idx < 9; idx++) {
-                      data[idx] += alpha[idx] * weight;
-                    }
-                  } // k2
+                      Real* const data = &(data0[idx0]);
+                      for (int idx = 0; idx < 9; idx++) {
+                        data[idx] += alpha[idx] * weight;
+                      }
+                    } // k2
 
-                } // j2
-              } // if (ip > 0)
-            } // i2
-          } // k1
+                  } // j2
+                } // if (ip > 0)
+              } // i2
+            } // k1
+      }
+
+      if (iLev > 0) {
+        const int iMin = cloIdx[ix_];
+        const int jMin = cloIdx[iy_];
+        const int kMin = nDim > 2 ? cloIdx[iz_] : 0;
+        const int iMax = iMin + 1;
+        const int jMax = jMin + 1;
+        const int kMax = nDim > 2 ? kMin + 1 : 0;
+
+        for (int k1 = kMin; k1 <= kMax; k1++)
+          for (int j1 = jMin; j1 <= jMax; j1++)
+            for (int i1 = iMin; i1 <= iMax; i1++) {
+              const Real wg = coef_coarser[i1 - iMin][j1 - jMin][k1 - kMin];
+              auto& data0 = mmArr(2 * i1, 2 * j1, 2 * k1);
+              for (int k2 = kMin; k2 <= kMax; k2++) {
+                const int kp = k2 - k1 + 1;
+                if (kp > 0) {
+                  for (int j2 = jMin; j2 <= jMax; j2++) {
+                    const int jp = j2 - j1 + 1;
+                    for (int i2 = iMin; i2 <= iMax; i2++) {
+                      const Real weight =
+                          wg * coef_coarser[i2 - iMin][j2 - jMin][k2 - kMin];
+                      const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
+
+                      Real* const data = &(data0[idx0]);
+                      for (int idx = 0; idx < 9; idx++) {
+                        data[idx] += 0.25 * alpha[idx] * weight;
+                      }
+                    } // k2
+
+                  } // j2
+                } // if (ip > 0)
+              } // i2
+            } // k1
+      }
 
       //----- Mass matrix calculation end--------------
 
