@@ -1096,13 +1096,13 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
     } // for p
   }
 
-  for (MFIter mfi(nodeMM); mfi.isValid(); ++mfi) {
+  for (MFIter mfi(nodeMM[iLev]); mfi.isValid(); ++mfi) {
     // Finalize the mass matrix calculation.
     const Box box = mfi.validbox();
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
-    Array4<RealMM> const& mmArr = nodeMM[mfi].array();
+    Array4<RealMM> const& mmArr = nodeMM[iLev][mfi].array();
 
     // We only need the mass matrix on the physical nodes. But the first layer
     // of the ghost nodes may contributes to the physical nodes below (ghost
