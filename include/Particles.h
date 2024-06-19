@@ -290,7 +290,7 @@ public:
                         amrex::MultiFab& nodeBMF, amrex::MultiFab& u0MF,
                         amrex::Real dt, int iLev, bool solveInCoMov);
 
-  void calc_mass_matrix_new(amrex::UMultiFab<RealMM>& nodeMM, amrex::MultiFab& jHat,
+  void calc_mass_matrix_new(amrex::Vector<amrex::UMultiFab<RealMM>>& nodeMM, amrex::MultiFab& jHat,
                         amrex::MultiFab& nodeBMF, amrex::MultiFab& u0MF,
                         amrex::Real dt, int iLev, bool solveInCoMov ,amrex::Vector<amrex::iMultiFab>& nodestatus);
 
