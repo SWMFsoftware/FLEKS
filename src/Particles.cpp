@@ -859,55 +859,29 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
-    amrex::Vector<UMultiFab<RealMM> >& nodeMM, MultiFab& jHat,
-    MultiFab& nodeBMF, MultiFab& u0MF, Real dt, int iLev, bool solveInCoMov,
+    amrex::Vector<UMultiFab<RealMM> >& nodeMM,UMultiFab<RealMM>& nmmt, amrex::Vector<MultiFab>& jHat,
+    MultiFab& jht, amrex::Vector<MultiFab>& nodeBMF,
+    amrex::Vector<MultiFab>& u0MF, Real dt, int iLev, bool solveInCoMov,
     amrex::Vector<amrex::iMultiFab>& nodestatus) {
   timing_func("Pts::calc_mass_matrix");
-
-  UMultiFab<RealMM> tmp;
-  tmp.define(nodeMM[iLev].boxArray(), nodeMM[iLev].DistributionMap(), 1, 1);
-
-  //////////////////// This part will be removed when Nodestatus - bit :
-  /// is_lev_edge is fixed for coarse level
-  amrex::iMultiFab ctmp(nodestatus[0].boxArray(),
-                        nodestatus[0].DistributionMap(), 1, 0);
-  amrex::iMultiFab ftmp(nodestatus[1].boxArray(),
-                        nodestatus[1].DistributionMap(), 1, 0);
-  for (amrex::MFIter mfi(nodestatus[1]); mfi.isValid(); ++mfi) {
-    const auto& status = nodestatus[1][mfi].array();
-    const auto& ft = ftmp[mfi].array();
-
-    ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
-      const amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
-
-      if (bit::is_lev_edge(status(ijk))) {
-        ft(ijk) = 1;
-      } else {
-        ft(ijk) = 0;
-      }
-    });
-  }
-  ctmp.setVal(0);
-  amrex::IntVect ratio = { AMREX_D_DECL(2, 2, 2) };
-  average_down_nodal(ftmp, ctmp, ratio);
-  ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   Real qdto2mc = charge / mass * 0.5 * dt;
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
-    Array4<Real> const& jArr = jHat[pti].array();
-    const auto& cstatus = ctmp[pti].array();
-
+    Array4<Real const> const& nodeBArr = nodeBMF[iLev][pti].array();
+    Array4<Real> const& jArr = jHat[iLev][pti].array();
     Array4<RealMM> const& mmArr = nodeMM[iLev][pti].array();
-    Array4<RealMM> const& tmpmmArr = tmp[pti].array();
-
-    Array4<Real const> const& u0Arr = u0MF[pti].array();
+    Array4<Real const> const& u0Arr = u0MF[iLev][pti].array();
 
     const AoS& particles = pti.GetArrayOfStructs();
 
     const Dim3 lo = init_dim3(0);
     const Dim3 hi = init_dim3(1);
+
+    /////////////////////////////////////////////////////////////////
+    Array4<Real> const& jArrt = jht[pti].array();
+    Array4<RealMM> const& mmArrt = nmmt[pti].array();
+    /////////////////////////////////////////////////////////////////
 
     for (const auto& p : particles) {
       if (p.id() < 0)
@@ -921,28 +895,28 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
 
       //-----calculate interpolate coef begin-------------
       IntVect loIdx;
-      RealVect dShift;
       IntVect cloIdx;
       IntVect floIdx;
+      RealVect dShift;
       RealVect cdShift;
       RealVect fdShift;
-
-      find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                      loIdx, dShift);
-      if (iLev > 0) {
-        find_node_index(p.pos(), Geom(iLev - 1).ProbLo(),
-                        Geom(iLev - 1).InvCellSize(), cloIdx, cdShift);
-      }
-
       Real coef[2][2][2];
       Real coef_finer[2][2][2];
       Real coef_coarser[2][2][2];
 
+      find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                      loIdx, dShift);
       linear_interpolation_coef(dShift, coef);
-      linear_interpolation_coef_finer(dShift, coef_finer);
 
       if (iLev > 0) {
+        find_node_index(p.pos(), Geom(iLev - 1).ProbLo(),
+                        Geom(iLev - 1).InvCellSize(), cloIdx, cdShift);
         linear_interpolation_coef(cdShift, coef_coarser);
+      }
+      if (iLev == 0) {
+        find_node_index(p.pos(), Geom(iLev + 1).ProbLo(),
+                        Geom(iLev + 1).InvCellSize(), floIdx, fdShift);
+        linear_interpolation_coef(fdShift, coef_finer);
       }
 
       //-----calculate interpolate coef end-------------
@@ -1010,14 +984,21 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
               for (int ii = lo.x; ii <= hi.x; ++ii) {
                 IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
                                              loIdx[iz_] + kk) };
+                jArr(ijk, iVar) += coef[ii][jj][kk] * currents[iVar];
 
-                if (iLev == 0 && cstatus(ijk) == 1)
-
-                {
-                  // coef[ii][jj][kk]=coef_finer[ii][jj][kk];
-                  jArr(ijk, iVar) += coef_finer[ii][jj][kk] * currents[iVar];
-                } else {
-                  jArr(ijk, iVar) += coef[ii][jj][kk] * currents[iVar];
+                if (iLev > 0) {
+                  ijk = { AMREX_D_DECL(cloIdx[ix_] + ii, cloIdx[iy_] + jj,
+                                       cloIdx[iz_] + kk) };
+                  jArrt(ijk, iVar) += coef_coarser[ii][jj][kk] *
+                                      (invVol[iLev] / invVol[iLev]) *
+                                      currents[iVar];
+                }
+                if (iLev == 0) {
+                  ijk = { AMREX_D_DECL(floIdx[ix_] + ii, floIdx[iy_] + jj,
+                                       floIdx[iz_] + kk) };
+                  jArrt(ijk, iVar) += coef_finer[ii][jj][kk] *
+                                      (invVol[iLev+1] / invVol[iLev]) *
+                                      currents[iVar];
                 }
               }
       }
@@ -1067,7 +1048,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
           for (int j1 = jMin; j1 <= jMax; j1++)
             for (int i1 = iMin; i1 <= iMax; i1++) {
               const Real wg = coef_coarser[i1 - iMin][j1 - jMin][k1 - kMin];
-              auto& data0 = tmpmmArr(2 * i1, 2 * j1, 2 * k1);
+              auto& data0 = mmArrt(i1, j1, k1);
               for (int k2 = kMin; k2 <= kMax; k2++) {
                 const int kp = k2 - k1 + 1;
                 if (kp > 0) {
@@ -1081,7 +1062,45 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
                       Real* const data = &(data0[idx0]);
                       for (int idx = 0; idx < 9; idx++) {
                         data[idx] += alpha[idx] *
-                                     (invVol[iLev - 1] / invVol[iLev]) * weight;
+                                     (invVol[iLev - 1] / invVol[iLev]) *
+                                     weight;
+                      }
+                    } // k2
+
+                  } // j2
+                } // if (ip > 0)
+              } // i2
+            } // k1
+      }
+
+       if (iLev == 0) {
+        const int iMin = floIdx[ix_];
+        const int jMin = floIdx[iy_];
+        const int kMin = nDim > 2 ? floIdx[iz_] : 0;
+        const int iMax = iMin + 1;
+        const int jMax = jMin + 1;
+        const int kMax = nDim > 2 ? kMin + 1 : 0;
+
+        for (int k1 = kMin; k1 <= kMax; k1++)
+          for (int j1 = jMin; j1 <= jMax; j1++)
+            for (int i1 = iMin; i1 <= iMax; i1++) {
+              const Real wg = coef_finer[i1 - iMin][j1 - jMin][k1 - kMin];
+              auto& data0 = mmArrt(i1, j1, k1);
+              for (int k2 = kMin; k2 <= kMax; k2++) {
+                const int kp = k2 - k1 + 1;
+                if (kp > 0) {
+                  for (int j2 = jMin; j2 <= jMax; j2++) {
+                    const int jp = j2 - j1 + 1;
+                    for (int i2 = iMin; i2 <= iMax; i2++) {
+                      const Real weight =
+                          wg * coef_finer[i2 - iMin][j2 - jMin][k2 - kMin];
+                      const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
+
+                      Real* const data = &(data0[idx0]);
+                      for (int idx = 0; idx < 9; idx++) {
+                        data[idx] += alpha[idx] *
+                                     (invVol[iLev + 1] / invVol[iLev]) *
+                                     weight;
                       }
                     } // k2
 
@@ -1140,14 +1159,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
             } // kp
           } // jp
         } // k1
-  }
-
-  tmp.SumBoundary(Geom(iLev).periodicity());
-  tmp.FillBoundary(Geom(iLev).periodicity());
-  if (iLev > 0) {
-    sum_two_lev_interface_node(nodeMM[iLev - 1], tmp, 0,
-                               nodeMM[iLev - 1].nComp(), get_ref_ratio(iLev),
-                               Geom(iLev - 1), Geom(iLev), nodestatus[iLev]);
   }
 }
 //==========================================================

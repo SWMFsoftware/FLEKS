@@ -544,15 +544,9 @@ void Pic::calc_mass_matrix() {
       if (useExplicitPIC) {
         parts[i]->calc_jhat(jHat[iLev], nodeB[iLev], tc->get_dt());
       } else {
-        if (!usenewcalc_mass_matrix)
           parts[i]->calc_mass_matrix(nodeMM[iLev], jHat[iLev], nodeB[iLev],
                                      uBg[iLev], tc->get_dt(), iLev,
                                      solveFieldInCoMov);
-        else {
-          parts[i]->calc_mass_matrix_new(nodeMM, jHat[iLev], nodeB[iLev],
-                                         uBg[iLev], tc->get_dt(), iLev,
-                                         solveFieldInCoMov, nodeStatus);
-        }
       }
     }
     Real invVol = 1;
@@ -575,15 +569,82 @@ void Pic::calc_mass_matrix() {
                                Geom(iLev + 1), node_status(iLev + 1));
   }
 
-  // for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
-  //   sum_two_lev_interface_node(
-  //       nodeMM[iLev], nodeMM[iLev + 1], 0, nodeMM[iLev].nComp(),
-  //       ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
-  // }
+  for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
+    sum_two_lev_interface_node(
+        nodeMM[iLev], nodeMM[iLev + 1], 0, nodeMM[iLev].nComp(),
+        ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
+  }
 
   // WARNING: interp_from_coarse_to_fine_for_domain_edge might be needed here
 }
+//==========================================================
+void Pic::calc_mass_matrix_new() {
+  std::string nameFunc = "Pic::calc_mass_matrix";
 
+  if (isGridEmpty)
+    return;
+  if (decoupleparticlesfromfield) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      nodeMM[iLev].setVal(0.0);
+      jHat[iLev].setVal(0.0);
+    }
+    return;
+  }
+  timing_func(nameFunc);
+for (int iLev = 0; iLev < n_lev(); iLev++) {
+      nodeMM[iLev].setVal(0.0);
+      jHat[iLev].setVal(0.0);
+    }
+  //////////////////////////////////////////////////////////////////////
+  MultiFab jhc;
+  MultiFab jhf;
+  UMultiFab<RealMM> nmmc;
+  UMultiFab<RealMM> nmmf;
+
+  {
+    BoxArray bac = nodeB[1].boxArray();
+    bac.coarsen(2);
+    jhc.define(bac, nodeB[1].DistributionMap(), 3, 0);
+    jhc.setVal(0.0);
+    nmmc.define(bac, nodeB[1].DistributionMap(), 3, 0);
+    nmmc.setVal(0.0);
+    BoxArray baf = nodeB[0].boxArray();
+    baf.refine(2);
+    jhf.define(baf, nodeB[0].DistributionMap(), 3, 0);
+    jhf.setVal(0.0);
+    nmmf.define(baf, nodeB[0].DistributionMap(), 3, 0);
+    nmmf.setVal(0.0);
+  }
+  //////////////////////////////////////////////////////////////////////
+
+  for (int i = 0; i < nSpecies; ++i) {
+    parts[i]->calc_mass_matrix_new(nodeMM,nmmc, jHat, jhc, nodeB, uBg, tc->get_dt(),
+                                   1, solveFieldInCoMov, nodeStatus);
+    parts[i]->calc_mass_matrix_new(nodeMM,nmmf, jHat, jhf, nodeB, uBg, tc->get_dt(),
+                                   0, solveFieldInCoMov, nodeStatus);
+  }
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    Real invVol = 1;
+    for (int i = 0; i < nDim; ++i) {
+      invVol *= Geom(iLev).InvCellSize(i);
+    }
+
+    jHat[iLev].mult(invVol, 0, jHat[iLev].nComp(), jHat[iLev].nGrow());
+    jHat[iLev].SumBoundary(Geom(iLev).periodicity());
+
+
+    if (!useExplicitPIC) {
+      nodeMM[iLev].SumBoundary(Geom(iLev).periodicity());
+      nodeMM[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
+jHat[0].ParallelAdd(jhc);
+jHat[1].ParallelAdd(jhf);
+nodeMM[0].ParallelAdd(nmmc);
+nodeMM[1].ParallelAdd(nmmf);
+
+}
 //==========================================================
 void Pic::sum_moments(bool updateDt) {
   std::string nameFunc = "Pic::sum_moments";
