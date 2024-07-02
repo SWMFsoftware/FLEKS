@@ -214,6 +214,12 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           v += vBulk;
           w += wBulk;
 
+          if (moveparticleswithconstantvelocity) {
+            u = 0.0;
+            v = 0.4;
+            w = 0.0;
+          }
+
           ParticleType p;
           set_ids(p);
           for (int iDim = 0; iDim < nDim; iDim++) {
@@ -1463,9 +1469,11 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         const double vnp1 = 2.0 * vavg - vp + u0p[iy_];
         const double wnp1 = 2.0 * wavg - wp + u0p[iz_];
 
-        p.rdata(iup_) = unp1;
-        p.rdata(ivp_) = vnp1;
-        p.rdata(iwp_) = wnp1;
+        if (!moveparticleswithconstantvelocity) {
+          p.rdata(iup_) = unp1;
+          p.rdata(ivp_) = vnp1;
+          p.rdata(iwp_) = wnp1;
+        }
 
         if (pMode == PartMode::PIC && imu_ < NStructReal) {
           // Note: bp should be calculated at the new position. Now, bp at the

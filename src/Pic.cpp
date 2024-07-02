@@ -985,8 +985,13 @@ void Pic::update(bool doReportIn) {
   if (solveFieldInCoMov || solvePartInCoMov || doSmoothB)
     update_U0_E0();
 
-  if (solveEM)
-    calc_mass_matrix();
+  if (solveEM) {
+    if (!usenewcalc_mass_matrix) {
+      calc_mass_matrix();
+    } else {
+      calc_mass_matrix_new();
+    }
+  }
 
   if (solveEM)
     update_E();
