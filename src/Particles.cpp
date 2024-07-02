@@ -800,9 +800,9 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
                   } // k2
 
                 } // j2
-              }   // if (ip > 0)
-            }     // i2
-          }       // k1
+              } // if (ip > 0)
+            } // i2
+          } // k1
 
       //----- Mass matrix calculation end--------------
 
@@ -859,10 +859,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
-    amrex::Vector<UMultiFab<RealMM> >& nodeMM,UMultiFab<RealMM>& nmmt, amrex::Vector<MultiFab>& jHat,
-    MultiFab& jht, amrex::Vector<MultiFab>& nodeBMF,
-    amrex::Vector<MultiFab>& u0MF, Real dt, int iLev, bool solveInCoMov,
-    amrex::Vector<amrex::iMultiFab>& nodestatus) {
+    amrex::Vector<UMultiFab<RealMM> >& nodeMM, UMultiFab<RealMM>& nmmt,
+    amrex::Vector<MultiFab>& jHat, MultiFab& jht,
+    amrex::Vector<MultiFab>& nodeBMF, amrex::Vector<MultiFab>& u0MF, Real dt,
+    int iLev, bool solveInCoMov, amrex::Vector<amrex::iMultiFab>& nodestatus) {
   timing_func("Pts::calc_mass_matrix");
 
   Real qdto2mc = charge / mass * 0.5 * dt;
@@ -989,16 +989,12 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
                 if (iLev > 0) {
                   ijk = { AMREX_D_DECL(cloIdx[ix_] + ii, cloIdx[iy_] + jj,
                                        cloIdx[iz_] + kk) };
-                  jArrt(ijk, iVar) += coef_coarser[ii][jj][kk] *
-                                      (invVol[iLev] / invVol[iLev]) *
-                                      currents[iVar];
+                  jArrt(ijk, iVar) += coef_coarser[ii][jj][kk] * currents[iVar];
                 }
                 if (iLev == 0) {
                   ijk = { AMREX_D_DECL(floIdx[ix_] + ii, floIdx[iy_] + jj,
                                        floIdx[iz_] + kk) };
-                  jArrt(ijk, iVar) += coef_finer[ii][jj][kk] *
-                                      (invVol[iLev+1] / invVol[iLev]) *
-                                      currents[iVar];
+                  jArrt(ijk, iVar) += coef_finer[ii][jj][kk] * currents[iVar];
                 }
               }
       }
@@ -1062,8 +1058,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
                       Real* const data = &(data0[idx0]);
                       for (int idx = 0; idx < 9; idx++) {
                         data[idx] += alpha[idx] *
-                                     (invVol[iLev - 1] / invVol[iLev]) *
-                                     weight;
+                                     (invVol[iLev - 1] / invVol[iLev]) * weight;
                       }
                     } // k2
 
@@ -1073,7 +1068,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
             } // k1
       }
 
-       if (iLev == 0) {
+      if (iLev == 0) {
         const int iMin = floIdx[ix_];
         const int jMin = floIdx[iy_];
         const int kMin = nDim > 2 ? floIdx[iz_] : 0;
@@ -1099,8 +1094,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
                       Real* const data = &(data0[idx0]);
                       for (int idx = 0; idx < 9; idx++) {
                         data[idx] += alpha[idx] *
-                                     (invVol[iLev + 1] / invVol[iLev]) *
-                                     weight;
+                                     (invVol[iLev + 1] / invVol[iLev]) * weight;
                       }
                     } // k2
 
