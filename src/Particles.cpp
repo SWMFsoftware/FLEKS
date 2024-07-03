@@ -1345,7 +1345,7 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
         p.id() = -1;
       }
     } // for p
-  }   // for pti
+  } // for pti
 
   redistribute_particles();
 }
@@ -1465,15 +1465,18 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         const Real vavg = (vt + (wt * Omx - ut * Omz + udotOm * Omy)) * denom;
         const Real wavg = (wt + (ut * Omy - vt * Omx + udotOm * Omz)) * denom;
 
-        const double unp1 = 2.0 * uavg - up + u0p[ix_];
-        const double vnp1 = 2.0 * vavg - vp + u0p[iy_];
-        const double wnp1 = 2.0 * wavg - wp + u0p[iz_];
+        double unp1 = 2.0 * uavg - up + u0p[ix_];
+        double vnp1 = 2.0 * vavg - vp + u0p[iy_];
+        double wnp1 = 2.0 * wavg - wp + u0p[iz_];
 
-        if (!moveparticleswithconstantvelocity) {
-          p.rdata(iup_) = unp1;
-          p.rdata(ivp_) = vnp1;
-          p.rdata(iwp_) = wnp1;
+        if (moveparticleswithconstantvelocity) {
+          unp1 = up;
+          vnp1 = vp;
+          wnp1 = wp;
         }
+        p.rdata(iup_) = unp1;
+        p.rdata(ivp_) = vnp1;
+        p.rdata(iwp_) = wnp1;
 
         if (pMode == PartMode::PIC && imu_ < NStructReal) {
           // Note: bp should be calculated at the new position. Now, bp at the
@@ -1491,7 +1494,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
           p.id() = -1;
         }
       } // for p
-    }   // for pti
+    } // for pti
   }
 }
 
@@ -1529,7 +1532,7 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
           p.id() = -1;
         }
       } // for p
-    }   // for pti
+    } // for pti
   }
 }
 
@@ -1575,9 +1578,9 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
       for (int iz = 0; iz <= 1; iz++)
         for (int iy = 0; iy <= 1; iy++)
           for (int ix = 0; ix <= 1; ix++) {
-            IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ix, loIdx[iy_] + iy, loIdx[iz_] + iz) };
-            if (bit::is_lev_boundary(
-                    status(ijk)))
+            IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ix, loIdx[iy_] + iy,
+                                         loIdx[iz_] + iz) };
+            if (bit::is_lev_boundary(status(ijk)))
               isBoundaryPhysicalCell = true;
           }
       if (isBoundaryPhysicalCell)
@@ -1646,7 +1649,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         for (int k = 0; k < 2; ++k)
           for (int j = 0; j < 2; ++j)
             for (int i = 0; i < 2; ++i) {
-               IntVect ijk = { AMREX_D_DECL(iMin + i, jMin + j,kMin + k) };
+              IntVect ijk = { AMREX_D_DECL(iMin + i, jMin + j, kMin + k) };
               const Real coef = phiArr(ijk);
               for (int iDim = 0; iDim < nDim; iDim++) {
                 eps_D[iDim] += coef * weights_IIID[i][j][k][iDim];
