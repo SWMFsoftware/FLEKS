@@ -605,13 +605,13 @@ void Pic::calc_mass_matrix_new() {
     bac.coarsen(2);
     jhc.define(bac, nodeB[1].DistributionMap(), 3, 0);
     jhc.setVal(0.0);
-    nmmc.define(bac, nodeB[1].DistributionMap(), 3, 0);
+    nmmc.define(bac, nodeB[1].DistributionMap(), nodeMM[0].nComp(), 0);
     nmmc.setVal(0.0);
     BoxArray baf = nodeB[0].boxArray();
     baf.refine(2);
     jhf.define(baf, nodeB[0].DistributionMap(), 3, 0);
     jhf.setVal(0.0);
-    nmmf.define(baf, nodeB[0].DistributionMap(), 3, 0);
+    nmmf.define(baf, nodeB[0].DistributionMap(), nodeMM[1].nComp(), 0);
     nmmf.setVal(0.0);
   }
   //////////////////////////////////////////////////////////////////////
@@ -625,21 +625,33 @@ void Pic::calc_mass_matrix_new() {
   }
   //////////////////////////////////////////////////////////////////////
   amrex::MultiFab tmp;
-
   jhc.SumBoundary();
   jHat[0].SumBoundary(Geom(0).periodicity());
   tmp.define(jHat[0].boxArray(), jHat[0].DistributionMap(), 3, 0);
   tmp.setVal(0.0);
   tmp.ParallelCopy(jhc);
   MultiFab::Add(jHat[0], tmp, 0, 0, 3, 0);
-
   jhf.SumBoundary();
   jHat[1].SumBoundary(Geom(1).periodicity());
   tmp.define(jHat[1].boxArray(), jHat[1].DistributionMap(), 3, 0);
   tmp.setVal(0.0);
   tmp.ParallelCopy(jhf);
   MultiFab::Add(jHat[1], tmp, 0, 0, 3, 0);
+  UMultiFab<RealMM> tmpMM;
+  nmmc.SumBoundary();
+  nodeMM[0].SumBoundary(Geom(0).periodicity());
+  tmpMM.define(nodeMM[0].boxArray(), nodeMM[0].DistributionMap(),nodeMM[0].nComp(), 0);
+  tmpMM.setVal(0.0); 
+  tmpMM.ParallelCopy(nmmc);
+  amrex::Add(nodeMM[0], tmpMM, 0, 0, nodeMM[0].nComp(), 0);
+  nmmf.SumBoundary();
+  nodeMM[1].SumBoundary();
+  tmpMM.define(nodeMM[1].boxArray(), nodeMM[1].DistributionMap(),nodeMM[1].nComp(), 0);
+  tmpMM.setVal(0.0);
+  tmpMM.ParallelCopy(nmmf);
+  amrex::Add(nodeMM[1], tmpMM, 0, 0, nodeMM[0].nComp(), 0);
   //////////////////////////////////////////////////////////////////////
+
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     Real invVol = 1;
@@ -650,13 +662,10 @@ void Pic::calc_mass_matrix_new() {
     jHat[iLev].mult(invVol, 0, jHat[iLev].nComp(), jHat[iLev].nGrow());
 
     if (!useExplicitPIC) {
-      nodeMM[iLev].SumBoundary(Geom(iLev).periodicity());
+      jHat[iLev].FillBoundary(Geom(iLev).periodicity());
       nodeMM[iLev].FillBoundary(Geom(iLev).periodicity());
     }
   }
-
-  nodeMM[0].ParallelAdd(nmmc);
-  nodeMM[1].ParallelAdd(nmmf);
 }
 //==========================================================
 void Pic::sum_moments(bool updateDt) {
