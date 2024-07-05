@@ -392,6 +392,16 @@ public:
     }
   };
 
+  void WriteMF(amrex::UMultiFab<RealMM>& MF, std::string st = "WriteMF",
+               amrex::Vector<std::string> var = {}) {
+
+    amrex::Vector<amrex::MultiFab> tmf;
+
+    tmf.push_back(nodeMMtoMF(MF));
+    int nlev = 0;
+    WriteMF(tmf, nlev, st, var);
+  }
+
   void WriteMF(amrex::iMultiFab& MF, std::string st = "WriteMF",
                amrex::Vector<std::string> var = {}) {
 
