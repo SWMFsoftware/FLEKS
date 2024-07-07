@@ -207,7 +207,7 @@ public:
 
   void fill_new_cells();
   void fill_E_B_fields();
-  void fill_lightwaves(amrex::Real wavelength);
+  void fill_lightwaves(amrex::Real wavelength,int EorB=-1,amrex::Real time=0,int lev=-1);
 
   void fill_new_node_E();
 
