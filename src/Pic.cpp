@@ -2276,9 +2276,12 @@ void Pic::charge_exchange() {
   }
 }
 
-void Pic::fill_lightwaves(amrex::Real wavelength) {
+void Pic::fill_lightwaves(amrex::Real wavelength, int EorB, amrex::Real time,
+                          int lev) {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    if (lev != -1 && iLev != lev)
+      continue;
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
       FArrayBox& fab = nodeE[iLev][mfi];
       FArrayBox& fab2 = nodeB[iLev][mfi];
@@ -2291,19 +2294,24 @@ void Pic::fill_lightwaves(amrex::Real wavelength) {
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
 
-        arrE(ijk, iy_) =
-            sin((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * i)) /
-                wavelength);
-        arrE(ijk, iz_) =
-            -cos((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * i)) /
-                 wavelength);
-        arrB(ijk, iy_) =
-            cos((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * i)) /
-                wavelength);
+        if (EorB == -1 || EorB == 0) {
+          arrE(ijk, iy_) = sin(
+              (2.0 * (3.141592653589793) * ((prob_lo[0] + dx[0] * i) - time)) /
+              wavelength);
+          arrE(ijk, iz_) = -cos(
+              (2.0 * (3.141592653589793) * ((prob_lo[0] + dx[0] * i) - time)) /
+              wavelength);
+        }
 
-        arrB(ijk, iz_) =
-            sin((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * i)) /
-                wavelength);
+        if (EorB == -1 || EorB == 1) {
+          arrB(ijk, iy_) = cos(
+              (2.0 * (3.141592653589793) * ((prob_lo[0] + dx[0] * i) - time)) /
+              wavelength);
+
+          arrB(ijk, iz_) = sin(
+              (2.0 * (3.141592653589793) * ((prob_lo[0] + dx[0] * i) - time)) /
+              wavelength);
+        }
       });
     }
 
@@ -2322,14 +2330,15 @@ void Pic::fill_lightwaves(amrex::Real wavelength) {
       const auto& dx = geom[iLev].CellSize();
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (EorB == -1 || EorB == 1) {
+          arrcB(ijk, iy_) = cos((2.0 * (3.141592653589793) *
+                                 ((prob_lo[0] + dx[0] * (i + 0.5) - time))) /
+                                wavelength);
 
-        arrcB(ijk, iy_) =
-            cos((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * (i + 0.5))) /
-                wavelength);
-
-        arrcB(ijk, iz_) =
-            sin((2.0 * (3.141592653589793) * (prob_lo[0] + dx[0] * (i + 0.5))) /
-                wavelength);
+          arrcB(ijk, iz_) = sin((2.0 * (3.141592653589793) *
+                                 ((prob_lo[0] + dx[0] * (i + 0.5) - time))) /
+                                wavelength);
+        }
       });
     }
 
