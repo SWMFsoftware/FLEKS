@@ -65,12 +65,12 @@ private:
   amrex::Vector<amrex::MultiFab> divB;
   amrex::Vector<amrex::MultiFab> centerB;
   amrex::Vector<amrex::MultiFab> dBdt;
-  
-  bool useEightWave = true;
 
-  // Hyperbolic cleaning  
+  bool useEightWave = false;
+
+  // Hyperbolic cleaning
   bool useHyperbolicCleaning = false;
-  amrex::Vector<amrex::MultiFab> hypPhi; 
+  amrex::Vector<amrex::MultiFab> hypPhi;
   amrex::Real hypDecay = 0.1;
 
   // Background velocity and electric field.
@@ -197,7 +197,7 @@ public:
     pMode = PartMode::Neutral;
 #endif
   };
-  ~Pic(){};
+  ~Pic() {};
 
   void update(bool doReportIn = false);
 
@@ -215,7 +215,8 @@ public:
 
   void fill_new_cells();
   void fill_E_B_fields();
-  void fill_lightwaves(amrex::Real wavelength,int EorB=-1,amrex::Real time=0,int lev=-1);
+  void fill_lightwaves(amrex::Real wavelength, int EorB = -1,
+                       amrex::Real time = 0, int lev = -1);
 
   void fill_new_node_E();
 

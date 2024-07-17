@@ -91,16 +91,18 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (doSmoothE) {
       param.read_var("nSmoothE", nSmoothE);
     }
-  } else if (command == "#DIVB") {
-    param.read_var("useEightWave", useEightWave);
-    param.read_var("useHyperbolicCleaning", useHyperbolicCleaning);
-    if (useHyperbolicCleaning) {
-      param.read_var("hypDecay", hypDecay);
-    }
   } else if (command == "#SMOOTHB") {
     param.read_var("doSmoothB", doSmoothB);
     param.read_var("theta", limiterTheta);
     param.read_var("Isotropy", smoothBIso);
+    if (doSmoothB) {
+      useHyperbolicCleaning = true;
+    }
+  } else if (command == "#DIVB") {
+    param.read_var("useHyperbolicCleaning", useHyperbolicCleaning);
+    if (useHyperbolicCleaning) {
+      param.read_var("hypDecay", hypDecay);
+    }
   } else if (command == "#RESAMPLING") {
     param.read_var("doReSampling", doReSampling);
     if (doReSampling) {
@@ -1602,8 +1604,8 @@ void Pic::update_B() {
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
                    dBdt[iLev].nGrow());
 
-    div_center_to_center(centerB[iLev], divB[iLev], Geom(iLev).InvCellSize());
     if (doSmoothB) {
+      div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
       smooth_B(iLev);
     }
 
@@ -1839,9 +1841,9 @@ void Pic::smooth_B(int iLev) {
       }
 
       if (useHyperbolicCleaning) {
-        for(int iVar = 0; iVar < nDim3; iVar++) {
+        for (int iVar = 0; iVar < nDim3; iVar++) {
           dB(ijk, iVar) += -tc->get_dt() * gradPhiArr(ijk, iVar);
-        }        
+        }
       }
     });
   }
