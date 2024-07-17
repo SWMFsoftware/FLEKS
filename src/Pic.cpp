@@ -1593,6 +1593,7 @@ void Pic::update_B() {
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
                    dBdt[iLev].nGrow());
 
+    div_center_to_center(centerB[iLev], divB[iLev], Geom(iLev).InvCellSize());
     if (doSmoothB) {
       smooth_B(iLev);
     }
