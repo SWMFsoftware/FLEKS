@@ -1370,8 +1370,7 @@ void Pic::update_E_matvec_new(const double* vecIn, double* vecOut, int iLev,
 
   // apply_BC(nodeStatus[iLev], vecMF, 0, nDim, &Pic::get_value1, iLev);
 
-  lap_node_to_node(vecMF, matvecMF, DistributionMap(iLev), Geom(iLev),
-                   cellStatus[iLev]);
+  lap_node_to_node(vecMF, matvecMF, DistributionMap(iLev), Geom(iLev));
 
   Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
   matvecMF.mult(-delt2);
@@ -1436,8 +1435,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
       }
     }
 
-    lap_node_to_node(vecMF, matvecMF, DistributionMap(iLev), Geom(iLev),
-                     cellStatus[iLev]);
+    lap_node_to_node(vecMF, matvecMF, DistributionMap(iLev), Geom(iLev));
 
     Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
     matvecMF.mult(-delt2);

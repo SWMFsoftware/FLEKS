@@ -7,8 +7,7 @@
 using namespace amrex;
 
 void lap_node_to_node(const MultiFab& srcMF, MultiFab& dstMF,
-                      const DistributionMapping dm, const Geometry& gm,
-                      const iMultiFab& status) {
+                      const DistributionMapping dm, const Geometry& gm) {
   const Real* invDx = gm.InvCellSize();
 
   BoxArray centerBA =

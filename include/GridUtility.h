@@ -22,8 +22,7 @@ void curl_node_to_center(const amrex::MultiFab& nodeMF,
 
 void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
                       const amrex::DistributionMapping dm,
-                      const amrex::Geometry& gm,
-                      const amrex::iMultiFab& status);
+                      const amrex::Geometry& gm);
 
 void grad_node_to_center(const amrex::MultiFab& nodeMF,
                          amrex::MultiFab& centerMF, const amrex::Real* invDx);
