@@ -91,6 +91,12 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (doSmoothE) {
       param.read_var("nSmoothE", nSmoothE);
     }
+  } else if (command == "#DIVB") {
+    param.read_var("useEightWave", useEightWave);
+    param.read_var("useHyperbolicCleaning", useHyperbolicCleaning);
+    if (useHyperbolicCleaning) {
+      param.read_var("hypDecay", hypDecay);
+    }
   } else if (command == "#SMOOTHB") {
     param.read_var("doSmoothB", doSmoothB);
     param.read_var("theta", limiterTheta);
@@ -202,6 +208,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
     distribute_FabArray(divB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
+                        nGst);
+    distribute_FabArray(hypPhi[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
     distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
@@ -544,9 +552,9 @@ void Pic::calc_mass_matrix() {
       if (useExplicitPIC) {
         parts[i]->calc_jhat(jHat[iLev], nodeB[iLev], tc->get_dt());
       } else {
-          parts[i]->calc_mass_matrix(nodeMM[iLev], jHat[iLev], nodeB[iLev],
-                                     uBg[iLev], tc->get_dt(), iLev,
-                                     solveFieldInCoMov);
+        parts[i]->calc_mass_matrix(nodeMM[iLev], jHat[iLev], nodeB[iLev],
+                                   uBg[iLev], tc->get_dt(), iLev,
+                                   solveFieldInCoMov);
       }
     }
     Real invVol = 1;
@@ -640,18 +648,19 @@ void Pic::calc_mass_matrix_new() {
   UMultiFab<RealMM> tmpMM;
   nmmc.SumBoundary();
   nodeMM[0].SumBoundary(Geom(0).periodicity());
-  tmpMM.define(nodeMM[0].boxArray(), nodeMM[0].DistributionMap(),nodeMM[0].nComp(), 0);
-  tmpMM.setVal(0.0); 
+  tmpMM.define(nodeMM[0].boxArray(), nodeMM[0].DistributionMap(),
+               nodeMM[0].nComp(), 0);
+  tmpMM.setVal(0.0);
   tmpMM.ParallelCopy(nmmc);
   amrex::Add(nodeMM[0], tmpMM, 0, 0, nodeMM[0].nComp(), 0);
   nmmf.SumBoundary();
   nodeMM[1].SumBoundary();
-  tmpMM.define(nodeMM[1].boxArray(), nodeMM[1].DistributionMap(),nodeMM[1].nComp(), 0);
+  tmpMM.define(nodeMM[1].boxArray(), nodeMM[1].DistributionMap(),
+               nodeMM[1].nComp(), 0);
   tmpMM.setVal(0.0);
   tmpMM.ParallelCopy(nmmf);
   amrex::Add(nodeMM[1], tmpMM, 0, 0, nodeMM[0].nComp(), 0);
   //////////////////////////////////////////////////////////////////////
-
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     Real invVol = 1;
@@ -1622,9 +1631,52 @@ void Pic::update_B() {
 }
 
 //==========================================================
+void Pic::solve_hyp_phi(int iLev) {
+  std::string nameFunc = "Pic::solve_hyp_phi";
+  timing_func(nameFunc);
+
+  // divB error propagation speed
+  Real ch = 0.8 * Geom(iLev).CellSize()[ix_] / tc->get_dt();
+
+  Real coef = -tc->get_dt() * pow(ch, 2);
+  for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+    Box box = mfi.validbox();
+
+    const Array4<Real>& divBArr = divB[iLev][mfi].array();
+    const Array4<Real>& phiArr = hypPhi[iLev][mfi].array();
+    const auto& status = cellStatus[iLev][mfi].array();
+
+    ParallelFor(box, [&](int i, int j, int k) {
+      IntVect ijk = { AMREX_D_DECL(i, j, k) };
+      phiArr(ijk) += coef * divBArr(ijk);
+      phiArr(ijk) *= (1 - hypDecay);
+    });
+  }
+
+  hypPhi[iLev].FillBoundary(Geom(iLev).periodicity());
+
+  apply_BC(cellStatus[iLev], hypPhi[iLev], 0, hypPhi[iLev].nComp(), nullptr,
+           iLev);
+}
+//==========================================================
 void Pic::smooth_B(int iLev) {
   std::string nameFunc = "Pic::smooth_B";
   timing_func(nameFunc);
+
+  MultiFab gradPhi(cGrids[iLev], DistributionMap(iLev), nDim3, 0);
+  gradPhi.setVal(0.0);
+
+  if (useHyperbolicCleaning) {
+    solve_hyp_phi(iLev);
+
+    MultiFab gradPhiNode(nGrids[iLev], DistributionMap(iLev), nDim3, 0);
+    gradPhiNode.setVal(0.0);
+
+    grad_center_to_node(hypPhi[iLev], gradPhiNode, Geom(iLev).InvCellSize());
+
+    average_node_to_cellcenter(gradPhi, 0, gradPhiNode, 0, nDim3,
+                               gradPhi.nGrow());
+  }
 
   MultiFab centerDB(cGrids[iLev], DistributionMap(iLev), nDim3, nGst);
   centerDB.setVal(0.0);
@@ -1641,6 +1693,7 @@ void Pic::smooth_B(int iLev) {
     const Array4<Real const>& nU = uBg[iLev][mfi].array();
     const Array4<Real>& dB = centerDB[mfi].array();
     const Array4<Real>& divBArr = divB[iLev][mfi].array();
+    const Array4<Real>& gradPhiArr = gradPhi[mfi].array();
     const auto& status = cellStatus[iLev][mfi].array();
 
     // Get the face along the direction iDir for the cell (i,j,k) for the iVar
@@ -1685,6 +1738,8 @@ void Pic::smooth_B(int iLev) {
       bool doDiffusion;
       Real lu[nDim3] = { 0, 0, 0 }, ru[nDim3] = { 0, 0, 0 }, lumin, rumin;
       Real ul, ur;
+
+      IntVect ijk{ AMREX_D_DECL(i, j, k) };
 
       // Flux along  x
       for (int iDir = 0; iDir < nDim; iDir++) {
@@ -1767,11 +1822,10 @@ void Pic::smooth_B(int iLev) {
           }
       }
 
-      {
+      if (useEightWave) {
         // divB cleaning with 8-wave source. dB/dt += -U * div(B)
         Real u[nDim3] = { 0, 0, 0 };
 
-        IntVect ijk{ AMREX_D_DECL(i, j, k) };
         Box subBox(ijk, ijk + 1);
         const Real coef1 = 1. / pow(2, nDim);
         // Calculate velocity at the cell center
@@ -1782,6 +1836,12 @@ void Pic::smooth_B(int iLev) {
         for (int iVar = 0; iVar < nDim3; iVar++) {
           dB(ijk, iVar) -= tc->get_dt() * divBArr(ijk) * u[iVar];
         }
+      }
+
+      if (useHyperbolicCleaning) {
+        for(int iVar = 0; iVar < nDim3; iVar++) {
+          dB(ijk, iVar) += -tc->get_dt() * gradPhiArr(ijk, iVar);
+        }        
       }
     });
   }

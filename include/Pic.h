@@ -65,6 +65,13 @@ private:
   amrex::Vector<amrex::MultiFab> divB;
   amrex::Vector<amrex::MultiFab> centerB;
   amrex::Vector<amrex::MultiFab> dBdt;
+  
+  bool useEightWave = true;
+
+  // Hyperbolic cleaning  
+  bool useHyperbolicCleaning = false;
+  amrex::Vector<amrex::MultiFab> hypPhi; 
+  amrex::Real hypDecay = 0.1;
 
   // Background velocity and electric field.
   amrex::Vector<amrex::MultiFab> uBg;
@@ -162,6 +169,7 @@ public:
     nodeE.resize(n_lev_max());
     nodeEth.resize(n_lev_max());
     divB.resize(n_lev_max());
+    hypPhi.resize(n_lev_max());
 
     eBg.resize(n_lev_max());
     uBg.resize(n_lev_max());
@@ -293,6 +301,8 @@ public:
   void update_B();
 
   void smooth_B(int iLev);
+
+  void solve_hyp_phi(int iLev);
 
   //-------------div(E) correction begin----------------
   void divE_correction();
