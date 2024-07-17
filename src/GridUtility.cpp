@@ -20,7 +20,7 @@ void lap_node_to_node(const MultiFab& srcMF, MultiFab& dstMF,
 
   for (int i = 0; i < srcMF.nComp(); ++i) {
     MultiFab srcAliasMF(srcMF, make_alias, i, 1);
-    grad_node_to_center(srcAliasMF, centerMF, invDx, status);
+    grad_node_to_center(srcAliasMF, centerMF, invDx);
 
     // centerMF.FillBoundary(gm.periodicity());
     MultiFab dstAliasMF(dstMF, make_alias, i, 1);
@@ -29,7 +29,7 @@ void lap_node_to_node(const MultiFab& srcMF, MultiFab& dstMF,
 }
 
 void grad_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
-                         const Real* invDx, const iMultiFab& status) {
+                         const Real* invDx) {
   timing_func("grad_node_to_center");
 
   for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {

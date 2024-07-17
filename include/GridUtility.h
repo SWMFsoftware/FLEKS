@@ -26,8 +26,7 @@ void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
                       const amrex::iMultiFab& status);
 
 void grad_node_to_center(const amrex::MultiFab& nodeMF,
-                         amrex::MultiFab& centerMF, const amrex::Real* invDx,
-                         const amrex::iMultiFab& status);
+                         amrex::MultiFab& centerMF, const amrex::Real* invDx);
 
 void grad_center_to_node(const amrex::MultiFab& centerMF,
                          amrex::MultiFab& nodeMF, const amrex::Real* invDx);
@@ -436,13 +435,11 @@ void fill_fine_lev_bny_from_coarse(amrex::FabArray<FAB>& coarse,
 }
 
 template <class FAB>
-void fill_fine_lev_edge_from_coarse(amrex::FabArray<FAB>& coarse,
-                                   amrex::FabArray<FAB>& fine, const int iStart,
-                                   const int nComp, const amrex::IntVect ratio,
-                                   const amrex::Geometry& cgeom,
-                                   const amrex::Geometry& fgeom,
-                                   const amrex::iMultiFab& fstatus,
-                                   amrex::Interpolater& mapper) {
+void fill_fine_lev_edge_from_coarse(
+    amrex::FabArray<FAB>& coarse, amrex::FabArray<FAB>& fine, const int iStart,
+    const int nComp, const amrex::IntVect ratio, const amrex::Geometry& cgeom,
+    const amrex::Geometry& fgeom, const amrex::iMultiFab& fstatus,
+    amrex::Interpolater& mapper) {
   BL_PROFILE("fill_fine_lev_bny_from_coarse");
 
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
