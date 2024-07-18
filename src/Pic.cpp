@@ -209,13 +209,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
-    distribute_FabArray(divB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
-                        nGst);
-    distribute_FabArray(hypPhi[iLev], cGrids[iLev], DistributionMap(iLev), 3,
-                        nGst);
     distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                        nGst);
-    distribute_FabArray(dBdt[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
     distribute_FabArray(nodeE[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
@@ -240,6 +234,13 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(nodeMM[iLev], nGrids[iLev], DistributionMap(iLev), 1,
                           1, doMoveData);
     }
+
+    distribute_FabArray(divB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
+                        nGst, doMoveData);
+    distribute_FabArray(hypPhi[iLev], cGrids[iLev], DistributionMap(iLev), 3,
+                        nGst, doMoveData);
+    distribute_FabArray(dBdt[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                        nGst, doMoveData);
 
     distribute_FabArray(eBg[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst,
                         doMoveData);
