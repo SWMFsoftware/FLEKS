@@ -48,7 +48,7 @@ protected:
   // Number of species at the MHD side. One 'species' only has its own density.
   int nSpeciesFluid = 0;
 
-  // Total number of ion/electron species exit in the fluid code.
+  // Total number of ion/electron species exist in the fluid code.
   int nIon = -1;
 
   // These default flags are set for stand-alone PIC initialization
