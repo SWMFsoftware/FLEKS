@@ -1645,7 +1645,6 @@ void Pic::solve_hyp_phi(int iLev) {
 
     const Array4<Real>& divBArr = divB[iLev][mfi].array();
     const Array4<Real>& phiArr = hypPhi[iLev][mfi].array();
-    const auto& status = cellStatus[iLev][mfi].array();
 
     ParallelFor(box, [&](int i, int j, int k) {
       IntVect ijk = { AMREX_D_DECL(i, j, k) };
