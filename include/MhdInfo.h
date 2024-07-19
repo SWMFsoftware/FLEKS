@@ -1,6 +1,7 @@
 #ifndef _MHDINFO_H_
 #define _MHDINFO_H_
 
+#include <AMReX_Print.H>
 #include <AMReX_Vector.H>
 #include <string>
 
@@ -31,7 +32,9 @@ public:
   amrex::Vector<int> iRho_I, iRhoUx_I, iRhoUy_I, iRhoUz_I, iPpar_I, iP_I, iUx_I,
       iUy_I, iUz_I;
 
-  int iBx, iBy, iBz, iEx, iEy, iEz, iPe, iRhoTotal, iLevSet;
+  int iBx = -1, iBy = -1, iBz = -1;
+  int iEx = -1, iEy = -1, iEz = -1;
+  int iPe = -1, iRhoTotal = -1, iLevSet = -1;
 
   // Variable names of nodeFluid.
   amrex::Vector<std::string> varNames;
@@ -59,6 +62,8 @@ public:
     iUx_I.clear();
     iUy_I.clear();
     iUz_I.clear();
+
+    varNames.clear();
 
     int idx = 0;
     iRho_I.push_back(idx++);
@@ -103,6 +108,85 @@ public:
       iPpar_I.push_back(idx++);
       varNames.push_back("pu3p");
     }
+  }
+  void print_mhd_info(std::string tag = "") {
+    amrex::Print() << "===============MHD Info: " << tag
+                   << " ===============" << std::endl;
+    amrex::Print() << "nDimFluid: " << nDimFluid << std::endl;
+    amrex::Print() << "nVarFluid: " << nVarFluid << std::endl;
+    amrex::Print() << "nFluid: " << nFluid << std::endl;
+    amrex::Print() << "nSpeciesFluid: " << nSpeciesFluid << std::endl;
+    amrex::Print() << "nIon: " << nIon << std::endl;
+
+    amrex::Print() << "useMultiSpecies: " << (useMultiSpecies ? "T" : "F")
+                   << std::endl;
+    amrex::Print() << "useMultiFluid   : " << (useMultiFluid ? "T" : "F")
+                   << std::endl;
+    amrex::Print() << "useElectronFluid: " << (useElectronFluid ? "T" : "F")
+                   << std::endl;
+    amrex::Print() << "useAnisoP       : " << (useAnisoP ? "T" : "F")
+                   << std::endl;
+    amrex::Print() << "useMhdPe        : " << (useMhdPe ? "T" : "F")
+                   << std::endl;
+    amrex::Print() << "iRho_I: ";
+    for (const auto& i : iRho_I) {
+      amrex::Print() << i << " ";
+    }
+    amrex::Print() << std::endl;
+    amrex::Print() << "iRhoUx_I: ";
+    for (const auto& i : iRhoUx_I) {
+      amrex::Print() << i << " ";
+    }
+    amrex::Print() << std::endl;
+    amrex::Print() << "iRhoUy_I: ";
+    for (const auto& i : iRhoUy_I) {
+      amrex::Print() << i << " ";
+    }
+    amrex::Print() << std::endl;
+    amrex::Print() << "iRhoUz_I: ";
+    for (const auto& i : iRhoUz_I) {
+      amrex::Print() << i << " ";
+    }
+    amrex::Print() << std::endl;
+    amrex::Print() << "iPpar_I: ";
+    for (const auto& i : iPpar_I) {
+      amrex::Print() << i << " ";
+    }
+    amrex::Print() << std::endl;
+    amrex::Print() << "iP_I: ";
+    for (const auto& i : iP_I) {
+      amrex::Print() << i << " ";
+    }
+    amrex::Print() << std::endl;
+    amrex::Print() << "iUx_I: ";
+    for (const auto& i : iUx_I) {
+      amrex::Print() << i << " ";
+    }
+    amrex::Print() << std::endl;
+    amrex::Print() << "iUy_I: ";
+    for (const auto& i : iUy_I) {
+      amrex::Print() << i << " ";
+    }
+    amrex::Print() << std::endl;
+    amrex::Print() << "iUz_I: ";
+    for (const auto& i : iUz_I) {
+      amrex::Print() << i << " ";
+    }
+    amrex::Print() << std::endl;
+    amrex::Print() << "iBx: " << iBx << std::endl;
+    amrex::Print() << "iBy: " << iBy << std::endl;
+    amrex::Print() << "iBz: " << iBz << std::endl;
+    amrex::Print() << "iEx: " << iEx << std::endl;
+    amrex::Print() << "iEy: " << iEy << std::endl;
+    amrex::Print() << "iEz: " << iEz << std::endl;
+    amrex::Print() << "iPe: " << iPe << std::endl;
+    amrex::Print() << "iRhoTotal: " << iRhoTotal << std::endl;
+    amrex::Print() << "iLevSet: " << iLevSet << std::endl;
+    amrex::Print() << "varNames: ";
+    for (const auto& var : varNames) {
+      amrex::Print() << var << " ";
+    }
+    amrex::Print() << std::endl;
   }
 };
 
