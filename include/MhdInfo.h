@@ -14,7 +14,7 @@ public:
 
   // Number of fluid at the MHD side. One 'fluid' has its own density,
   // velocity and pressure. Electron can be one fluid.
-  int nFluid;
+  int nFluid = 1;
 
   // Number of species at the MHD side. One 'species' only has its own density.
   int nSpeciesFluid = 0;

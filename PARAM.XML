@@ -233,6 +233,20 @@ Number of files per AMREX format field or particle output.
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! SCHEME !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+<command name="MHDINFO"
+	 alias="MHDINFO_FLEKS0,MHDINFO_FLEKS1,MHDINFO_FLEKS2"
+	 multiple="T">
+  <parameter name="nFluid" type="integer" default="1"/>
+  
+
+#MHDINFO
+64                  nFluid
+
+Number of fluids in the MHD simulation. Only used for OH-PT simulations 
+so far. In MHD-AEPIC simulations, nFluid is send from MHD to FLEKS directly.
+
+</command>
+
 <command name="PIC"
 	 alias="PIC_FLEKS0,PIC_FLEKS1,PIC_FLEKS2"
 	 multiple="T">
