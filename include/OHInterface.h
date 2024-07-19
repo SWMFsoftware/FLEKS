@@ -7,7 +7,7 @@
 class OHInterface : public FluidInterface {
 public:
   OHInterface(const FluidInterface& other, int id, std::string tag,
-              FluidType typeIn = SourceFluid)
+              MhdInfo info, FluidType typeIn = SourceFluid)
       : FluidInterface(other, id, tag, typeIn) {
     initFromSWMF = false;
 
@@ -20,61 +20,16 @@ public:
       useCurrent = true;
     }
 
-    useMultiFluid = false;
-    useMultiSpecies = false;
-    useElectronFluid = false;
-    useMhdPe = false;
-    useAnisoP = false;
+    nFluid = info.nFluid;
 
-    // For BATSRUS MHD equations (+ LevelHP_)
-    nVarFluid = 5 + 3 + 1;
-
-    nFluid = 1;
-    nSpeciesFluid = 1;
-    nIon = 1;
-
-    iRho_I.clear();
-    iRhoUx_I.clear();
-    iRhoUy_I.clear();
-    iRhoUz_I.clear();
-    iPpar_I.clear();
-    iP_I.clear();
-    iUx_I.clear();
-    iUy_I.clear();
-    iUz_I.clear();
-
-    int idx = 0;
-    iRho_I.push_back(idx++);
-    varNames.push_back("rho");
-    iRhoUx_I.push_back(idx);
-    iUx_I.push_back(idx++);
-    varNames.push_back("ux");
-    iRhoUy_I.push_back(idx);
-    iUy_I.push_back(idx++);
-    varNames.push_back("uy");
-    iRhoUz_I.push_back(idx);
-    iUz_I.push_back(idx++);
-    varNames.push_back("uz");
-    iBx = idx++;
-    varNames.push_back("bx");
-    iBy = idx++;
-    varNames.push_back("by");
-    iBz = idx++;
-    varNames.push_back("bz");
-    
-    iLevSet = idx++;
-    varNames.push_back("levHP");
-
-    iP_I.push_back(idx);
-    iPpar_I.push_back(idx++);
-    varNames.push_back("p");
+    update_oh_info();
 
     if (useCurrent) {
-      iJx = idx++;
+      iJx = nVarFluid;
       varNames.push_back("jx");
-      iJy = idx++;
+      iJy = iJx + 1;
       varNames.push_back("jy");
-      iJz = idx++;
+      iJz = iJy + 1;
       varNames.push_back("jz");
     }
 

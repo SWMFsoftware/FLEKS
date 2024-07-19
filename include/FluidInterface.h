@@ -18,10 +18,11 @@
 #include "Grid.h"
 #include "GridUtility.h"
 #include "MDArray.h"
+#include "MhdInfo.h"
 #include "ReadParam.h"
 #include "Regions.h"
 
-class FluidInterfaceParameters {
+class FluidInterfaceParameters : public MhdInfo {
 public:
   FluidInterfaceParameters() = default;
   FluidInterfaceParameters(const FluidInterfaceParameters& fip) = default;
@@ -33,30 +34,8 @@ protected:
 
   int nCellPerPatch = 1;
 
-  int nDimFluid;
-
-  // Number of variables passing between MHD and PIC.
-  int nVarFluid;
-
   // If true, nodeFluid contains (Jx, Jy, Jz)
   bool useCurrent = true;
-
-  // Number of fluid at the MHD side. One 'fluid' has its own density,
-  // velocity and pressure. Electron can be one fluid.
-  int nFluid;
-
-  // Number of species at the MHD side. One 'species' only has its own density.
-  int nSpeciesFluid = 0;
-
-  // Total number of ion/electron species exist in the fluid code.
-  int nIon = -1;
-
-  // These default flags are set for stand-alone PIC initialization
-  bool useMultiSpecies = false;
-  bool useMultiFluid = false;
-  bool useElectronFluid = true;
-  bool useAnisoP = false;
-  bool useMhdPe = false;
 
   //-------------------------------------------------------------------
   int nS;                       // number of particle species
@@ -70,10 +49,7 @@ protected:
   // Sum of masses of each particle species
   double SumMass = 0, invSumMass = 0;
 
-  amrex::Vector<int> iRho_I, iRhoUx_I, iRhoUy_I, iRhoUz_I, iPpar_I, iP_I, iUx_I,
-      iUy_I, iUz_I;
-
-  int iBx, iBy, iBz, iEx, iEy, iEz, iPe, iJx, iJy, iJz, iRhoTotal, iLevSet;
+  int iJx, iJy, iJz;
 
   double rPlanetSi = 1;
 
@@ -87,9 +63,6 @@ protected:
   amrex::Vector<double> Si2No_V, No2Si_V;
   double Si2NoM, Si2NoV, Si2NoRho, Si2NoB, Si2NoP, Si2NoJ, Si2NoL, Si2NoE;
   double No2SiV, No2SiL;
-
-  // Variable names of nodeFluid.
-  amrex::Vector<std::string> varNames;
 
   amrex::Vector<double> uniformState;
 
@@ -141,7 +114,7 @@ public:
                  FluidType typeIn = PICFluid)
       : Grid(other.Geom(0), other.get_amr_info(), other.get_n_ghost(), id, tag),
         FluidInterfaceParameters(other),
-        myType(typeIn){};
+        myType(typeIn) {};
 
   ~FluidInterface() = default;
 
@@ -215,11 +188,16 @@ public:
 
   void get_moments_for_points(const int nDim, const int nPoint,
                               const double* const xyz_I, double* const data_I,
-                              const int nVar, const double coef = 1,
-                              const int iFluid = 0) {
-    amrex::Vector<int> idxMap = { iRho_I[iFluid], iRhoUx_I[iFluid],
-                                  iRhoUy_I[iFluid], iRhoUz_I[iFluid],
-                                  iP_I[iFluid] };
+                              const int nVar, const double coef) {
+    amrex::Vector<int> idxMap;
+    for (int i = 0; i < nFluid; i++) {
+      idxMap.push_back(iRho_I[i]);
+      idxMap.push_back(iRhoUx_I[i]);
+      idxMap.push_back(iRhoUy_I[i]);
+      idxMap.push_back(iRhoUz_I[i]);
+      idxMap.push_back(iP_I[i]);
+    }
+
     if (nVar != idxMap.size()) {
       amrex::Print() << "nVar = " << nVar
                      << " idxMap.size() = " << idxMap.size() << std::endl;

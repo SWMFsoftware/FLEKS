@@ -62,11 +62,11 @@ void Domain::init(double time, const int iDomain,
   bool useSource = false;
 #ifdef _PT_COMPONENT_
   useSource = true;
-  stateOH =
-      std::make_unique<OHInterface>(*fi, gridID, "stateOH", InteractionFluid);
+  stateOH = std::make_unique<OHInterface>(*fi, gridID, "stateOH", mhdInfo,
+                                          InteractionFluid);
 
-  sourcePT2OH =
-      std::make_unique<OHInterface>(*fi, gridID, "sourcePT2OH", SourceFluid);
+  sourcePT2OH = std::make_unique<OHInterface>(*fi, gridID, "sourcePT2OH",
+                                              mhdInfo, SourceFluid);
 
   sourcePT2OH->set_period_start_si(tc->get_time_si());
 
@@ -732,12 +732,11 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#KINETICSOURCE" || command == "#SOURCEPARTICLES" ||
         command == "#ELECTRON" || command == "#DISCRETIZE" ||
         command == "#DISCRETIZATION" || command == "#RESAMPLING" ||
-        command == "#SMOOTHE" || command == "#SMOOTHB" ||
-        command == "#DIVB" || command == "#TESTCASE" ||
-        command == "#FASTMERGE" || command == "#ADAPTIVESOURCEPPC" ||
-        command == "#MERGELIGHT" || command == "#VACUUM" ||
-        command == "#PARTICLELEVRATIO" || command == "#OHION" ||
-        command == "#PIC" || command == "#EXPLICITPIC" ||
+        command == "#SMOOTHE" || command == "#SMOOTHB" || command == "#DIVB" ||
+        command == "#TESTCASE" || command == "#FASTMERGE" ||
+        command == "#ADAPTIVESOURCEPPC" || command == "#MERGELIGHT" ||
+        command == "#VACUUM" || command == "#PARTICLELEVRATIO" ||
+        command == "#OHION" || command == "#PIC" || command == "#EXPLICITPIC" ||
         command == "#COMOVING" || command == "#PARTICLEBOXBOUNDARY" ||
         command == "#BFIELDBOXBOUNDARY" || command == "#SUPID" ||
         command == "#SOLVEEM" || command == "#PARTMODE") {
@@ -1034,6 +1033,8 @@ void Domain::read_param(const bool readGridInfo) {
       param.read_var("dtNextSI", dtNextSI);
       tc->set_dt_si(dtSI);
       tc->set_next_dt_si(dtNextSI);
+    } else if (command == "#MHDINFO") {
+      param.read_var("nFluid", mhdInfo.nFluid);
     } else {
       Print() << "Error: command = " << command << std::endl;
       Abort("Can not find this command!");
