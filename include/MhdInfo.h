@@ -39,6 +39,8 @@ public:
   // Variable names of nodeFluid.
   amrex::Vector<std::string> varNames;
 
+  int get_nFluid() const { return nFluid; }
+
   void update_oh_info() {
     useMultiFluid = nFluid > 1;
     useMultiSpecies = false;
