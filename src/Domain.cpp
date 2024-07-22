@@ -361,7 +361,12 @@ void Domain::set_state_var(double *data, int *index,
   } else {
     if (stateOH) {
       // PT mode
-      stateOH->set_node_fluid(data, index, names);
+      stateOH->set_node_fluid(data, index, names);      
+      if(sourcePT2OH->varNames.empty()){
+        sourcePT2OH->varNames = stateOH->varNames;
+        sourcePT2OH->analyze_var_names();
+        sourcePT2OH->distribute_arrays();
+      }        
     } else {
       fi->set_node_fluid(data, index, names);
       pic->update_cells_for_pt();
@@ -1033,8 +1038,6 @@ void Domain::read_param(const bool readGridInfo) {
       param.read_var("dtNextSI", dtNextSI);
       tc->set_dt_si(dtSI);
       tc->set_next_dt_si(dtNextSI);
-    } else if (command == "#MHDINFO") {
-      param.read_var("nFluid", mhdInfo.nFluid);
     } else {
       Print() << "Error: command = " << command << std::endl;
       Abort("Can not find this command!");

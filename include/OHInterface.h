@@ -20,22 +20,8 @@ public:
       useCurrent = true;
     }
 
-    nFluid = info.nFluid;
-
-    update_oh_info();
-
-    if (useCurrent) {
-      iJx = nVarFluid;
-      varNames.push_back("jx");
-      iJy = iJx + 1;
-      varNames.push_back("jy");
-      iJz = iJy + 1;
-      varNames.push_back("jz");
-    }
-
+    varNames.clear();
     calc_normalization_units();
-
-    calc_conversion_units();
   };
 
   virtual int get_neu_source_region(const amrex::MFIter& mfi,

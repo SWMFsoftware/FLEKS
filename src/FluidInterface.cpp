@@ -35,10 +35,6 @@ void FluidInterface::analyze_var_names(bool useNeutralOnly) {
   nFluid = nNeuFluid + nIonFluid;
   nS = nFluid;
 
-  // (rho, vx, vy, vz, p)*nFluid + B + LevelHP_
-  nVarFluid = 5 * nFluid + 3 + 1;
-  useCurrent = true;
-
   iRho_I.resize(nS);
   iRhoUx_I.resize(nS);
   iRhoUy_I.resize(nS);
@@ -77,10 +73,14 @@ void FluidInterface::analyze_var_names(bool useNeutralOnly) {
       iBy = i;
     } else if (name == "bz") {
       iBz = i;
+    } else if (name == "hplim") {
+      iLevSet = i;
     }
   }
 
+  nVarFluid = varNames.size();
   if (useCurrent) {
+    nVarFluid -= 3;
     iJx = nVarFluid;
     iJy = iJx + 1;
     iJz = iJx + 2;
@@ -90,15 +90,7 @@ void FluidInterface::analyze_var_names(bool useNeutralOnly) {
   iRhoUy_I = iUy_I;
   iRhoUz_I = iUz_I;
 
-  const bool doTest = false;
-  if (doTest) {
-    for (int i = 0; i < nS; ++i) {
-      printf("iFluid=%d, iRho_I=%i, iUx_I=%d, iUy_I=%d, iUz_I=%d, iP_I=%d\n", i,
-             iRho_I[i], iUx_I[i], iUy_I[i], iUz_I[i], iP_I[i]);
-    }
-    printf("iBx=%d, iBy=%d, iBz=%d, iJx=%d, iJy=%d, iJz=%d\n", iBx, iBy, iBz,
-           iJx, iJy, iJz);
-  }
+  calc_conversion_units();
 }
 
 void FluidInterface::post_process_param(bool receiveICOnly) {
@@ -679,12 +671,15 @@ void FluidInterface::set_node_fluid(const double* const data,
       varNames.push_back(name);
     }
 
-    varNames.push_back("jx");
-    varNames.push_back("jy");
-    varNames.push_back("jz");
+    if (useCurrent) {
+      varNames.push_back("jx");
+      varNames.push_back("jy");
+      varNames.push_back("jz");
+    }
 
 #ifdef _PT_COMPONENT_
     analyze_var_names();
+    distribute_arrays();
 #endif
   }
 
@@ -843,7 +838,7 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
               }
             }
           } // iFluid
-        }   // else
+        } // else
       });
     }
 }
@@ -1290,7 +1285,7 @@ void FluidInterface::calc_fluid_state(const double* dataPIC_I,
           data_I[iRhoUz_I[iIon]] += Miz;
         }
       } // if(iIon > 0)
-    }   // iSpecies
+    } // iSpecies
 
     if (!(useMultiFluid || useMultiSpecies)) {
       int iIon = 0;
