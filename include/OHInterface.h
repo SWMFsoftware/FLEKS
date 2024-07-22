@@ -7,7 +7,7 @@
 class OHInterface : public FluidInterface {
 public:
   OHInterface(const FluidInterface& other, int id, std::string tag,
-              MhdInfo info, FluidType typeIn = SourceFluid)
+              FluidType typeIn = SourceFluid)
       : FluidInterface(other, id, tag, typeIn) {
     initFromSWMF = false;
 

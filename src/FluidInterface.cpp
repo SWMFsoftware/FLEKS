@@ -1103,6 +1103,66 @@ void FluidInterface::print_info() const {
               << "\n etaSI (magnetic diffusivity with unit m^2/s) = " << etaSI
               << "\n etaNO (magnetic diffusivity)                 = " << etaNO
               << std::endl;
+
+    std::cout << "iRho_I: ";
+    for (const auto& i : iRho_I) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "iRhoUx_I: ";
+    for (const auto& i : iRhoUx_I) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "iRhoUy_I: ";
+    for (const auto& i : iRhoUy_I) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "iRhoUz_I: ";
+    for (const auto& i : iRhoUz_I) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "iPpar_I: ";
+    for (const auto& i : iPpar_I) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "iP_I: ";
+    for (const auto& i : iP_I) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "iUx_I: ";
+    for (const auto& i : iUx_I) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "iUy_I: ";
+    for (const auto& i : iUy_I) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "iUz_I: ";
+    for (const auto& i : iUz_I) {
+      std::cout << i << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "iBx: " << iBx << std::endl;
+    std::cout << "iBy: " << iBy << std::endl;
+    std::cout << "iBz: " << iBz << std::endl;
+    std::cout << "iEx: " << iEx << std::endl;
+    std::cout << "iEy: " << iEy << std::endl;
+    std::cout << "iEz: " << iEz << std::endl;
+    std::cout << "iPe: " << iPe << std::endl;
+    std::cout << "iRhoTotal: " << iRhoTotal << std::endl;
+    std::cout << "iLevSet: " << iLevSet << std::endl;
+    std::cout << "varNames: ";
+    for (const auto& var : varNames) {
+      std::cout << var << " ";
+    }
+    std::cout << std::endl;
   }
 }
 

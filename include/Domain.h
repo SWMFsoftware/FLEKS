@@ -2,7 +2,6 @@
 #define _DOMAIN_H_
 
 #include "DomainGrid.h"
-#include "MhdInfo.h"
 #include "OHInterface.h"
 #include "ParticleTracker.h"
 #include "Pic.h"
@@ -51,8 +50,6 @@ public:
 
   std::unique_ptr<TimeCtr> tc;
   //--------------------------------
-
-  MhdInfo mhdInfo;
 
   int couplerMarker;
 

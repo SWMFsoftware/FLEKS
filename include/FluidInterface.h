@@ -18,16 +18,14 @@
 #include "Grid.h"
 #include "GridUtility.h"
 #include "MDArray.h"
-#include "MhdInfo.h"
 #include "ReadParam.h"
 #include "Regions.h"
 
-class FluidInterfaceParameters : public MhdInfo {
+class FluidInterfaceParameters {
 public:
   FluidInterfaceParameters() = default;
   FluidInterfaceParameters(const FluidInterfaceParameters& fip) = default;
 
-protected:
   static const int OhmUe_ = 1, OhmUi_ = 2, OhmUMHD_ = 3;
 
   double tStartSI;
@@ -36,6 +34,38 @@ protected:
 
   // If true, nodeFluid contains (Jx, Jy, Jz)
   bool useCurrent = true;
+
+  int nDimFluid;
+
+  // Number of variables passing between MHD and PIC.
+  int nVarFluid;
+
+  // Number of fluid at the MHD side. One 'fluid' has its own density,
+  // velocity and pressure. Electron can be one fluid.
+  int nFluid = 1;
+
+  // Number of species at the MHD side. One 'species' only has its own density.
+  int nSpeciesFluid = 0;
+
+  // Total number of ion/electron species exist in the fluid code.
+  int nIon = -1;
+
+  // These default flags are set for stand-alone PIC initialization
+  bool useMultiSpecies = false;
+  bool useMultiFluid = false;
+  bool useElectronFluid = true;
+  bool useAnisoP = false;
+  bool useMhdPe = false;
+
+  amrex::Vector<int> iRho_I, iRhoUx_I, iRhoUy_I, iRhoUz_I, iPpar_I, iP_I, iUx_I,
+      iUy_I, iUz_I;
+
+  int iBx = -1, iBy = -1, iBz = -1;
+  int iEx = -1, iEy = -1, iEz = -1;
+  int iPe = -1, iRhoTotal = -1, iLevSet = -1;
+
+  // Variable names of nodeFluid.
+  amrex::Vector<std::string> varNames;
 
   //-------------------------------------------------------------------
   int nS;                       // number of particle species
@@ -216,6 +246,8 @@ public:
   int get_fluid_dimension() const { return (nDimFluid); }
 
   int get_nS() const { return nS; }
+
+  int get_nFluid() const { return nFluid; }
 
   const amrex::Vector<std::string>& get_var_names() const { return varNames; }
   double get_Si2No_V(int idx) const { return (Si2No_V[idx]); }

@@ -62,11 +62,11 @@ void Domain::init(double time, const int iDomain,
   bool useSource = false;
 #ifdef _PT_COMPONENT_
   useSource = true;
-  stateOH = std::make_unique<OHInterface>(*fi, gridID, "stateOH", mhdInfo,
-                                          InteractionFluid);
+  stateOH =
+      std::make_unique<OHInterface>(*fi, gridID, "stateOH", InteractionFluid);
 
-  sourcePT2OH = std::make_unique<OHInterface>(*fi, gridID, "sourcePT2OH",
-                                              mhdInfo, SourceFluid);
+  sourcePT2OH =
+      std::make_unique<OHInterface>(*fi, gridID, "sourcePT2OH", SourceFluid);
 
   sourcePT2OH->set_period_start_si(tc->get_time_si());
 
@@ -361,12 +361,12 @@ void Domain::set_state_var(double *data, int *index,
   } else {
     if (stateOH) {
       // PT mode
-      stateOH->set_node_fluid(data, index, names);      
-      if(sourcePT2OH->varNames.empty()){
+      stateOH->set_node_fluid(data, index, names);
+      if (sourcePT2OH->varNames.empty()) {
         sourcePT2OH->varNames = stateOH->varNames;
         sourcePT2OH->analyze_var_names();
         sourcePT2OH->distribute_arrays();
-      }        
+      }
     } else {
       fi->set_node_fluid(data, index, names);
       pic->update_cells_for_pt();
