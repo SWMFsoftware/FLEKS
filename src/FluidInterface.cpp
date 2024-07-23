@@ -91,6 +91,9 @@ void FluidInterface::analyze_var_names(bool useNeutralOnly) {
   iRhoUz_I = iUz_I;
 
   calc_conversion_units();
+  QoQi_S.resize(nS);
+  MoMi_S.resize(nS);
+  nodeFluid.clear();
 }
 
 void FluidInterface::post_process_param(bool receiveICOnly) {
@@ -427,17 +430,14 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
       int nNeuFluid = 0;
       int nIon = 0;
       for (auto& name : varNames) {
-        if (name.size() == 6) {
-          // Assume a neutral fluid's density is named as "ne*rho"
-          if (name.compare(0, 2, "ne") == 0 && name.compare(3, 3, "rho") == 0) {
+        if (name.find("rho") != std::string::npos) {
+          if (name.size() == 6 && name.compare(0, 2, "ne") == 0) {
+            // Assume a neutral fluid's density is named as "ne*rho"
             nNeuFluid++;
-            Print() << "name " << name << " size = " << name.size()
-                    << std::endl;
+          } else {
+            nIon++;
           }
         }
-
-        if (name == "rho")
-          nIon++;
       }
 
       nS = nNeuFluid;
