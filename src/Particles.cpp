@@ -3117,6 +3117,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
           uNeu[i] = p.rdata(iup_ + i) * stateOH->get_No2SiV();
         }
 
+        // A neutral particle interacts with all the ion fluids.
         for (int fluidID = 0; fluidID < stateOH->get_nFluid(); fluidID++) {
           get_ion_fluid(stateOH, pti, iLev, fluidID, xyz, rhoIon, cs2Ion, uIon);
 
@@ -3170,24 +3171,47 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
           }
 
           {
+            int iFluidAddTo;
+            Real rhoIonAddTo, cs2IonAddTo, uIonAddTo[3];
+
+            const int iSW = 2; // Pop3
+            switch (stateOH->get_nFluid()) {
+              case 1:
+                iFluidAddTo = fluidID;
+                rhoIonAddTo = rhoIon;
+                break;
+              case 2:
+                if (iRegion == iSW) {
+                  iFluidAddTo = 1; // Pu3
+                } else {
+                  iFluidAddTo = 0; // SW
+                }
+                get_ion_fluid(stateOH, pti, iLev, iFluidAddTo, xyz, rhoIonAddTo,
+                              cs2IonAddTo, uIonAddTo);
+                break;
+              default:
+                Abort("Error: nFluid > 2 is not supported yet.");
+            }
+
             // Q: Why is (neu2ion-ion2neu) divided by rhoIon?
             // A: What passed between PT and OH is 'source per ion density'
             // instead of source. The ion density will be multiplied back in OH
             // ModUser.f90
             sourcePT2OH->add_rho_to_loc((neu2ion[iRho_] - ion2neu[iRho_]) /
-                                            rhoIon,
-                                        pti, xyz, fluidID, iLev);
+                                            rhoIonAddTo,
+                                        pti, xyz, iFluidAddTo, iLev);
             sourcePT2OH->add_mx_to_loc((neu2ion[iRhoUx_] - ion2neu[iRhoUx_]) /
-                                           rhoIon,
-                                       pti, xyz, fluidID, iLev);
+                                           rhoIonAddTo,
+                                       pti, xyz, iFluidAddTo, iLev);
             sourcePT2OH->add_my_to_loc((neu2ion[iRhoUy_] - ion2neu[iRhoUy_]) /
-                                           rhoIon,
-                                       pti, xyz, fluidID, iLev);
+                                           rhoIonAddTo,
+                                       pti, xyz, iFluidAddTo, iLev);
             sourcePT2OH->add_mz_to_loc((neu2ion[iRhoUz_] - ion2neu[iRhoUz_]) /
-                                           rhoIon,
-                                       pti, xyz, fluidID, iLev);
-            sourcePT2OH->add_p_to_loc((neu2ion[iP_] - ion2neu[iP_]) / rhoIon,
-                                      pti, xyz, fluidID, iLev);
+                                           rhoIonAddTo,
+                                       pti, xyz, iFluidAddTo, iLev);
+            sourcePT2OH->add_p_to_loc((neu2ion[iP_] - ion2neu[iP_]) /
+                                          rhoIonAddTo,
+                                      pti, xyz, iFluidAddTo, iLev);
           }
 
           if (ion2neu[iRho_] > 0) { // Add source to nodes.
