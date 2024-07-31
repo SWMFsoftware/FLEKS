@@ -945,43 +945,43 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
 
   timing_func(nameFunc);
 
-  int iLev = 0;
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    centerNetChargeNew[iLev].setVal(0.0);
 
-  centerNetChargeNew[iLev].setVal(0.0);
+    const RealCMM mm0(0.0);
+    centerMM[iLev].setVal(mm0);
 
-  const RealCMM mm0(0.0);
-  centerMM[iLev].setVal(mm0);
+    bool doNetChargeOnly = !isBeforeCorrection;
 
-  bool doNetChargeOnly = !isBeforeCorrection;
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->sum_to_center(centerNetChargeNew[iLev], centerMM[iLev],
+                              doNetChargeOnly, iLev);
+    }
 
-  for (int i = 0; i < nSpecies; ++i) {
-    parts[i]->sum_to_center(centerNetChargeNew[iLev], centerMM[iLev],
-                            doNetChargeOnly);
-  }
+    if (!doNetChargeOnly) {
+      centerMM[iLev].SumBoundary(Geom(iLev).periodicity());
+    }
 
-  if (!doNetChargeOnly) {
-    centerMM[iLev].SumBoundary(Geom(iLev).periodicity());
-  }
+    centerNetChargeNew[iLev].SumBoundary(Geom(iLev).periodicity());
 
-  centerNetChargeNew[iLev].SumBoundary(Geom(iLev).periodicity());
+    apply_BC(cellStatus[iLev], centerNetChargeNew[iLev], 0,
+             centerNetChargeNew[iLev].nComp(), &Pic::get_zero, iLev);
 
-  apply_BC(cellStatus[iLev], centerNetChargeNew[iLev], 0,
-           centerNetChargeNew[iLev].nComp(), &Pic::get_zero, iLev);
+    if (PicParticles::particlePosition == NonStaggered) {
+      MultiFab::Copy(centerNetChargeN[iLev], centerNetChargeNew[iLev], 0, 0,
+                     centerNetChargeN[iLev].nComp(),
+                     centerNetChargeN[iLev].nGrow());
+    } else {
+      MultiFab::LinComb(
+          centerNetChargeN[iLev], 1 - rhoTheta, centerNetChargeOld[iLev], 0,
+          rhoTheta, centerNetChargeNew[iLev], 0, 0,
+          centerNetChargeN[iLev].nComp(), centerNetChargeN[iLev].nGrow());
 
-  if (PicParticles::particlePosition == NonStaggered) {
-    MultiFab::Copy(centerNetChargeN[iLev], centerNetChargeNew[iLev], 0, 0,
-                   centerNetChargeN[iLev].nComp(),
-                   centerNetChargeN[iLev].nGrow());
-  } else {
-    MultiFab::LinComb(
-        centerNetChargeN[iLev], 1 - rhoTheta, centerNetChargeOld[iLev], 0,
-        rhoTheta, centerNetChargeNew[iLev], 0, 0,
-        centerNetChargeN[iLev].nComp(), centerNetChargeN[iLev].nGrow());
-
-    if (!isBeforeCorrection) {
-      MultiFab::Copy(centerNetChargeOld[iLev], centerNetChargeNew[iLev], 0, 0,
-                     centerNetChargeOld[iLev].nComp(),
-                     centerNetChargeOld[iLev].nGrow());
+      if (!isBeforeCorrection) {
+        MultiFab::Copy(centerNetChargeOld[iLev], centerNetChargeNew[iLev], 0, 0,
+                       centerNetChargeOld[iLev].nComp(),
+                       centerNetChargeOld[iLev].nGrow());
+      }
     }
   }
 }

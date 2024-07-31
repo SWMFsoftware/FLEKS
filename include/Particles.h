@@ -301,7 +301,7 @@ public:
   amrex::Real calc_max_thermal_velocity(amrex::MultiFab& momentsMF);
 
   void sum_to_center(amrex::MultiFab& netChargeMF,
-                     amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly);
+                     amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly,int iLev);
 
   void charge_exchange(
       amrex::Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH,

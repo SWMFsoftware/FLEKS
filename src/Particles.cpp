@@ -385,10 +385,9 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::sum_to_center(
-    MultiFab& netChargeMF, UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly) {
+    MultiFab& netChargeMF, UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly,int iLev) {
   timing_func("Pts::sum_to_center");
 
-  const int iLev = 0;
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real> const& chargeArr = netChargeMF[pti].array();
     Array4<RealCMM> const& mmArr = centerMM[pti].array();
