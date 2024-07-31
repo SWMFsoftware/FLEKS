@@ -3196,21 +3196,31 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
             // A: What passed between PT and OH is 'source per ion density'
             // instead of source. The ion density will be multiplied back in OH
             // ModUser.f90
-            sourcePT2OH->add_rho_to_loc((neu2ion[iRho_] - ion2neu[iRho_]) /
-                                            rhoIonAddTo,
-                                        pti, xyz, iFluidAddTo, iLev);
-            sourcePT2OH->add_mx_to_loc((neu2ion[iRhoUx_] - ion2neu[iRhoUx_]) /
-                                           rhoIonAddTo,
-                                       pti, xyz, iFluidAddTo, iLev);
-            sourcePT2OH->add_my_to_loc((neu2ion[iRhoUy_] - ion2neu[iRhoUy_]) /
-                                           rhoIonAddTo,
-                                       pti, xyz, iFluidAddTo, iLev);
-            sourcePT2OH->add_mz_to_loc((neu2ion[iRhoUz_] - ion2neu[iRhoUz_]) /
-                                           rhoIonAddTo,
-                                       pti, xyz, iFluidAddTo, iLev);
-            sourcePT2OH->add_p_to_loc((neu2ion[iP_] - ion2neu[iP_]) /
-                                          rhoIonAddTo,
-                                      pti, xyz, iFluidAddTo, iLev);
+            { // Sources for ion fluid: Neu -> Ion
+              sourcePT2OH->add_rho_to_loc(neu2ion[iRho_] / rhoIonAddTo, pti,
+                                          xyz, iFluidAddTo, iLev);
+              sourcePT2OH->add_mx_to_loc(neu2ion[iRhoUx_] / rhoIonAddTo, pti,
+                                         xyz, iFluidAddTo, iLev);
+              sourcePT2OH->add_my_to_loc(neu2ion[iRhoUy_] / rhoIonAddTo, pti,
+                                         xyz, iFluidAddTo, iLev);
+              sourcePT2OH->add_mz_to_loc(neu2ion[iRhoUz_] / rhoIonAddTo, pti,
+                                         xyz, iFluidAddTo, iLev);
+              sourcePT2OH->add_p_to_loc(neu2ion[iP_] / rhoIonAddTo, pti, xyz,
+                                        iFluidAddTo, iLev);
+            }
+
+            { // Loses for ion fluid: Ion -> Neu
+              sourcePT2OH->add_rho_to_loc(-ion2neu[iRho_] / rhoIon, pti, xyz,
+                                          fluidID, iLev);
+              sourcePT2OH->add_mx_to_loc(-ion2neu[iRhoUx_] / rhoIon, pti, xyz,
+                                         fluidID, iLev);
+              sourcePT2OH->add_my_to_loc(-ion2neu[iRhoUy_] / rhoIon, pti, xyz,
+                                         fluidID, iLev);
+              sourcePT2OH->add_mz_to_loc(-ion2neu[iRhoUz_] / rhoIon, pti, xyz,
+                                         fluidID, iLev);
+              sourcePT2OH->add_p_to_loc(-ion2neu[iP_] / rhoIon, pti, xyz,
+                                        fluidID, iLev);
+            }
           }
 
           if (ion2neu[iRho_] > 0) { // Add source to nodes.
