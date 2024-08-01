@@ -413,8 +413,8 @@ void Pic::fill_E_B_fields() {
   nodeE[0].FillBoundary(Geom(0).periodicity());
   nodeB[0].FillBoundary(Geom(0).periodicity());
   centerB[0].FillBoundary(Geom(0).periodicity());
-  apply_BC(nodeStatus[0], nodeB[0], 0, nDim, &Pic::get_node_B, 0, &bcBField);
-  apply_BC(nodeStatus[0], nodeE[0], 0, nDim, &Pic::get_node_E, 0);
+  apply_BC(nodeStatus[0], nodeB[0], 0, nDim3, &Pic::get_node_B, 0, &bcBField);
+  apply_BC(nodeStatus[0], nodeE[0], 0, nDim3, &Pic::get_node_E, 0);
   apply_BC(cellStatus[0], centerB[0], 0, centerB[0].nComp(), &Pic::get_center_B,
            0, &bcBField);
 
@@ -1191,7 +1191,7 @@ void Pic::update_E_expl() {
                   nodeE[iLev].nGrow());
 
     nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E, iLev);
+    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
   }
 }
 
@@ -1243,8 +1243,8 @@ void Pic::update_E_new() {
 
     if (iLev == 0) {
 
-      apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E, iLev);
-      apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim, &Pic::get_node_E,
+      apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
+      apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, &Pic::get_node_E,
                iLev);
 
     } else {
@@ -1308,8 +1308,8 @@ void Pic::update_E_impl() {
 
     if (iLev == 0) {
 
-      apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim, &Pic::get_node_E, iLev);
-      apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim, &Pic::get_node_E,
+      apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
+      apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, &Pic::get_node_E,
                iLev);
 
     } else {
@@ -1365,11 +1365,11 @@ void Pic::update_E_matvec_new(const double* vecIn, double* vecOut, int iLev,
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
           node_bilinear_interp);
     } else {
-      apply_BC(nodeStatus[iLev], vecMF, 0, nDim, &Pic::get_node_E, iLev);
+      apply_BC(nodeStatus[iLev], vecMF, 0, nDim3, &Pic::get_node_E, iLev);
     }
   }
 
-  // apply_BC(nodeStatus[iLev], vecMF, 0, nDim, &Pic::get_value1, iLev);
+  // apply_BC(nodeStatus[iLev], vecMF, 0, nDim3, &Pic::get_value1, iLev);
 
   lap_node_to_node(vecMF, matvecMF, DistributionMap(iLev), Geom(iLev));
 
@@ -1427,7 +1427,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
       // Even after apply_BC(), the outmost layer node E is still
       // unknow. See FluidInterface::calc_current for detailed explaniation.
       if (iLev == 0) {
-        apply_BC(nodeStatus[iLev], vecMF, 0, nDim, &Pic::get_node_E, iLev);
+        apply_BC(nodeStatus[iLev], vecMF, 0, nDim3, &Pic::get_node_E, iLev);
       } else {
         fill_fine_lev_bny_from_coarse(
             nodeEth[iLev - 1], vecMF, 0, nodeEth[iLev - 1].nComp(),
@@ -1921,7 +1921,8 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
 
   const IntVect& ngrow = mf.nGrowVect();
-  if (Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+  if (nDim > 2 &&
+      Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
     ba.grow(iz_, ngrow[iz_]);
   }
 
@@ -2006,20 +2007,21 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
 
         const Array4<const int>& statusArr = status[mfi].array();
 
-        const auto lo = IntVect(bx.loVect());
-        const auto hi = IntVect(bx.hiVect());
+        auto lo = IntVect(bx.loVect());
+        auto hi = IntVect(bx.hiVect());
+        if (nDim > 2) {
+          lo[iz_]++;
+          hi[iz_]--;
+        }
 
-        for (int iVar = iStart; iVar < iStart + nComp; iVar++)
-          for (int k = lo[iz_] + 1; k <= hi[iz_] - 1; ++k)
-            for (int j = lo[iy_]; j <= hi[iy_]; ++j)
-              for (int i = lo[ix_]; i <= hi[ix_]; ++i)
-                if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
-                  arr(i, j, k, iVar) =
-                      (this->*func)(mfi, IntVect{ AMREX_D_DECL(i, j, k) },
-                                    iVar - iStart, iLev);
-                }
+        Box box0(lo, hi);
 
-        continue;
+        ParallelFor(box0, nComp, [&](int i, int j, int k, int iVar) {
+          if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
+            arr(i, j, k, iStart + iVar) = (this->*func)(
+                mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
+          }
+        });
       }
     }
   }

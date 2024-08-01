@@ -69,14 +69,15 @@ void print_fab(const amrex::FabArray<FAB>& mf, std::string tag,
     amrex::AllPrint() << "------ box = " << box << std::endl;
     for (int i = lo.x - nshift; i <= hi.x + nshift; ++i)
       for (int j = lo.y - nshift; j <= hi.y + nshift; ++j)
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
-            amrex::AllPrint() << " i = " << i << " j = " << j << " k = " << k
-                              << " iVar = " << iVar
-                              << " data = " << data(i, j, k, iVar) << std::endl;
-            sum += data(i, j, k, iVar);
-            sum2 += pow(data(i, j, k, iVar), 2);
-          }
+        // for (int k = lo.z; k <= hi.z; ++k)
+        for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
+          int k = 0;
+          amrex::AllPrint() << " i = " << i << " j = " << j << " k = " << k
+                            << " iVar = " << iVar
+                            << " data = " << data(i, j, k, iVar) << std::endl;
+          sum += data(i, j, k, iVar);
+          sum2 += pow(data(i, j, k, iVar), 2);
+        }
   }
   amrex::AllPrint() << "sum = " << sum << " sum2 = " << sqrt(sum2)
                     << " on proc = " << amrex::ParallelDescriptor::MyProc()
