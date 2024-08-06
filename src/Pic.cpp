@@ -678,6 +678,13 @@ void Pic::calc_mass_matrix_new() {
       nodeMM[iLev].FillBoundary(Geom(iLev).periodicity());
     }
   }
+
+  for (int iLev = 0; iLev < finest_level; iLev++) {
+    fill_fine_lev_edge_from_coarse(jHat[iLev], jHat[iLev + 1], 0,
+                                   jHat[iLev].nComp(), ref_ratio[iLev],
+                                   Geom(iLev), Geom(iLev + 1),
+                                   node_status(iLev + 1), node_bilinear_interp);
+  }
 }
 //==========================================================
 void Pic::sum_moments(bool updateDt) {
@@ -1965,16 +1972,16 @@ void Pic::smooth_E(MultiFab& mfE, int iLev) {
 //==========================================================
 void Pic::project_down_nodeE() {
   if (finest_level > 0) {
-    for (int iLev = 0; iLev < finest_level; iLev++) {
-      fill_fine_lev_edge_from_coarse(
-          nodeE[iLev], nodeE[iLev + 1], 0, nodeE[iLev].nComp(), ref_ratio[iLev],
-          Geom(iLev), Geom(iLev + 1), node_status(iLev + 1),
-          node_bilinear_interp);
-      fill_fine_lev_edge_from_coarse(
-          nodeEth[iLev], nodeEth[iLev + 1], 0, nodeEth[iLev].nComp(),
-          ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1),
-          node_bilinear_interp);
-    }
+    // for (int iLev = 0; iLev < finest_level; iLev++) {
+    //   fill_fine_lev_edge_from_coarse(
+    //       nodeE[iLev], nodeE[iLev + 1], 0, nodeE[iLev].nComp(),
+    //       ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1),
+    //       node_bilinear_interp);
+    //   fill_fine_lev_edge_from_coarse(
+    //       nodeEth[iLev], nodeEth[iLev + 1], 0, nodeEth[iLev].nComp(),
+    //       ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1),
+    //       node_bilinear_interp);
+    // }
     for (int iLev = finest_level; iLev > 0; iLev--) {
       average_down_nodal(nodeE[iLev], nodeE[iLev - 1], ref_ratio[iLev - 1]);
       average_down_nodal(nodeEth[iLev], nodeEth[iLev - 1], ref_ratio[iLev - 1]);
