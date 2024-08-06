@@ -1641,9 +1641,9 @@ void Pic::update_B_new() {
     dB[iLev].define(cGrids[iLev], DistributionMap(iLev), 3, nGst);
     curl_node_to_center(nodeEth[iLev], dB[iLev], Geom(iLev).InvCellSize());
   }
-
-  average_down(dB[1], dB[0], 0, 3, ref_ratio[0]);
-
+  for (int iLev = finest_level; iLev > 0; iLev--) {
+    average_down(dB[iLev], dB[iLev - 1], 0, 3, ref_ratio[0]);
+  }
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab::Saxpy(centerB[iLev], -tc->get_dt(), dB[iLev], 0, 0,
                     centerB[iLev].nComp(), centerB[iLev].nGrow());
