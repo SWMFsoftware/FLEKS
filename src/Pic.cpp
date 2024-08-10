@@ -699,7 +699,7 @@ void Pic::sum_moments(bool updateDt) {
   plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; ++i) {
     Real energy = 0.0;
-    if (!usenewsum_moments) {
+    if (finest_level == 0) {
       energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
     } else {
       energy = parts[i]->sum_moments_new(nodePlasma[i], nodeB, tc->get_dt(),
@@ -1024,7 +1024,6 @@ void Pic::update(bool doReportIn) {
 
   if (solveEM) {
     update_E();
-    project_down_nodeE();
   }
 
   particle_mover();
@@ -1044,10 +1043,12 @@ void Pic::update(bool doReportIn) {
   isMomentsUpdated = false;
 
   if (solveEM) {
-    if (!usenewupdate_B)
-      update_B();
-    else
-      update_B_new();
+    update_B();
+  }
+
+  if (project_down_EM) {
+    project_down_E();
+    project_down_B();
   }
 
   if (solveEM && doCorrectDivE) {
@@ -1971,7 +1972,7 @@ void Pic::smooth_E(MultiFab& mfE, int iLev) {
   }
 }
 //==========================================================
-void Pic::project_down_nodeE() {
+void Pic::project_down_E() {
   if (finest_level > 0) {
     for (int iLev = 0; iLev < finest_level; iLev++) {
       fill_fine_lev_edge_from_coarse(
@@ -1987,10 +1988,17 @@ void Pic::project_down_nodeE() {
       average_down_nodal(nodeE[iLev], nodeE[iLev - 1], ref_ratio[iLev - 1]);
       // average_down_nodal(nodeEth[iLev], nodeEth[iLev - 1], ref_ratio[iLev - 1]);
     }
-
   }
 }
-
+//==========================================================
+void Pic::project_down_B() {
+  if (finest_level > 0) {
+    for (int iLev = finest_level; iLev > 0; iLev--) {
+      average_down_nodal(nodeB[iLev], nodeB[iLev - 1], ref_ratio[iLev - 1]);
+      average_down(centerB[iLev], centerB[iLev - 1], 0, 3, ref_ratio[iLev - 1]);
+    }
+  }
+}
 //==========================================================
 void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
                    const int nComp, GETVALUE func, const int iLev,

@@ -48,9 +48,8 @@ private:
   bool useExplicitPIC = false;
   bool usenewElectricSolver = false;
   bool decoupleparticlesfromfield = false;
-  bool usenewcalc_mass_matrix = false;
-  bool usenewupdate_B = false;
-  bool usenewsum_moments = false;
+  bool usenewcalc_mass_matrix = true;
+  bool project_down_EM = true;
 
   PartMode pMode = PartMode::PIC;
 
@@ -293,7 +292,8 @@ public:
                         int iLev);
 
   void smooth_E(amrex::MultiFab &mfE, int iLev);
-  void project_down_nodeE();
+  void project_down_E();
+  void project_down_B();
 
   void smooth_multifab(amrex::MultiFab &mf, int iLev, int di,
                        amrex::Real coef = 0.5);
