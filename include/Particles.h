@@ -213,6 +213,8 @@ protected:
 
   bool isParticleLocationRandom = true;
 
+  bool isPPVconstant= false;
+
   BC bc; // boundary condition
 
   // AMREX uses 40 bits(it is 40! Not a typo. See AMReX_Particle.H) to store

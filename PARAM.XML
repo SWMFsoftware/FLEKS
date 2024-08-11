@@ -285,6 +285,18 @@ If isStaggered is true, the primitive particle locations are at $t_{n+1/2}$,
 otherwise, both locations and velocities are at $t_n$. 
 </command>
 
+<command name="CONSTANTPPV"
+	 alias="CONSTANTPPV_FLEKS0,CONSTANTPPV_FLEKS1,CONSTANTPPV_FLEKS2"
+	 multiple="T">
+  <parameter name="isPPVconstant" type="logical" default="F"/>
+
+#CONSTANTPPV
+F                   isPPVconstant 
+
+If isPPVconstant is true then particles per volume is constant across all refinement levels,
+otherwise particles per cell is constant.
+</command>
+
 <command name="RANDOMPARTICLESLOCATION"
 	 alias="RANDOMPARTICLESLOCATION_FLEKS0,RANDOMPARTICLESLOCATION_FLEKS1,RANDOMPARTICLESLOCATION_FLEKS2"
 	 multiple="T">

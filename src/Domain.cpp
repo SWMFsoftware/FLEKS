@@ -733,15 +733,16 @@ void Domain::read_param(const bool readGridInfo) {
             << component << ": " << command << " " << gridName << std::endl;
 
     if (command == "#DIVE" || command == "#EFIELDSOLVER" ||
-        command == "#RANDOMPARTICLESLOCATION" || command == "#PARTICLES" ||
-        command == "#KINETICSOURCE" || command == "#SOURCEPARTICLES" ||
-        command == "#ELECTRON" || command == "#DISCRETIZE" ||
-        command == "#DISCRETIZATION" || command == "#RESAMPLING" ||
-        command == "#SMOOTHE" || command == "#SMOOTHB" || command == "#DIVB" ||
-        command == "#TESTCASE" || command == "#FASTMERGE" ||
-        command == "#ADAPTIVESOURCEPPC" || command == "#MERGELIGHT" ||
-        command == "#VACUUM" || command == "#PARTICLELEVRATIO" ||
-        command == "#OHION" || command == "#PIC" || command == "#EXPLICITPIC" ||
+        command == "#RANDOMPARTICLESLOCATION" || command == "#CONSTANTPPV" ||
+        command == "#PARTICLES" || command == "#KINETICSOURCE" ||
+        command == "#SOURCEPARTICLES" || command == "#ELECTRON" ||
+        command == "#DISCRETIZE" || command == "#DISCRETIZATION" ||
+        command == "#RESAMPLING" || command == "#SMOOTHE" ||
+        command == "#SMOOTHB" || command == "#DIVB" || command == "#TESTCASE" ||
+        command == "#FASTMERGE" || command == "#ADAPTIVESOURCEPPC" ||
+        command == "#MERGELIGHT" || command == "#VACUUM" ||
+        command == "#PARTICLELEVRATIO" || command == "#OHION" ||
+        command == "#PIC" || command == "#EXPLICITPIC" ||
         command == "#COMOVING" || command == "#PARTICLEBOXBOUNDARY" ||
         command == "#BFIELDBOXBOUNDARY" || command == "#SUPID" ||
         command == "#SOLVEEM" || command == "#PARTMODE") {

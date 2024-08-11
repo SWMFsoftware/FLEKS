@@ -74,6 +74,8 @@ protected:
 
   bool isParticleLocationRandom = true;
 
+  bool isPPVconstant = false;
+
   std::string tag;
 
 private:
@@ -124,6 +126,8 @@ public:
   bool is_grid_empty() const { return isGridEmpty; }
 
   bool is_particle_location_random() { return isParticleLocationRandom; }
+
+  bool is_particles_per_volume_constant() { return isPPVconstant; }
 
   virtual void pre_regrid(){};
 

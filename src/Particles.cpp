@@ -26,6 +26,7 @@ Particles<NStructReal, NStructInt>::Particles(
       testCase(tcase) {
 
   isParticleLocationRandom = gridIn->is_particle_location_random();
+  isPPVconstant = gridIn->is_particles_per_volume_constant();
   do_tiling = true;
 
   qom = charge / mass;
@@ -121,7 +122,9 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
     nPPC = ppc;
   }
 
-  // nPPC = nPPC / pow(2, iLev);
+  if (isPPVconstant) {
+    nPPC = nPPC / pow(2, iLev);
+  }
 
   set_random_seed(iLev, ijk, nPPC);
 

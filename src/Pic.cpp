@@ -52,6 +52,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     }
   } else if (command == "#RANDOMPARTICLESLOCATION") {
     param.read_var("isParticleLocationRandom", isParticleLocationRandom);
+  } else if (command == "#CONSTANTPPV") {
+    param.read_var("isPPVconstant", isPPVconstant);
   } else if (command == "#DIVE") {
     param.read_var("doCorrectDivE", doCorrectDivE);
     if (doCorrectDivE) {
