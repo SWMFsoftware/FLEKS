@@ -843,9 +843,9 @@ public:
       abort();
     }
 
-    if (n_lev() > 1) {
-      amrex::Abort("setFluidanisoUth has not implemented for multilevel");
-    }
+    // if (n_lev() > 1) {
+    //   amrex::Abort("setFluidanisoUth has not implemented for multilevel");
+    // }
 
     Norm_ = 0;
     Perp1_ = 1;
