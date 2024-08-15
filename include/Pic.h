@@ -336,7 +336,7 @@ public:
   double get_var(std::string var, const int iLev, const amrex::IntVect ijk,
                  const amrex::MFIter &mfi, bool isValidMFI = true);
   void save_restart_header(std::ofstream &headerFile);
-  void save_restart_data();
+  void save_restart_data(std::string restartOurDir);
   void read_restart();
   void write_log(bool doForce = false, bool doCreateFile = false);
   void write_plots(bool doForce = false);

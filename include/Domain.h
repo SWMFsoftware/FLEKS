@@ -90,9 +90,9 @@ public:
 
   //--------------- IO begin--------------------------------
   void read_param(const bool readGridInfo);
-  void save_restart();
-  void save_restart_header();
-  void save_restart_data();
+  void save_restart(std::string restartOutDir);
+  void save_restart_header(std::string restartOutDir);
+  void save_restart_data(std::string restartOutDir);
   void read_restart();
   void write_plots(bool doForce = false);
   //--------------- IO end----------------------------------

@@ -116,12 +116,22 @@ contains
   !============================================================================
   subroutine PC_save_restart(TimeSimulation)
 
+    use CON_coupler, ONLY: NameRestartOutDirComp
+
     !INPUT PARAMETERS:
     real,     intent(in) :: TimeSimulation   ! seconds from start time
 
+    integer :: LenNameRestartOutDir = 0
+
     character(len=*), parameter :: NameSub='PC_save_restart'
     !--------------------------------------------------------------------------
-    call fleks_save_restart()
+    if( NameRestartOutDirComp /= '') then
+      LenNameRestartOutDir = len(NameRestartOutDirComp)
+    else
+      LenNameRestartOutDir = 0
+    end if
+
+    call fleks_save_restart(NameRestartOutDirComp, LenNameRestartOutDir)
 
   end subroutine PC_save_restart
   !============================================================================

@@ -337,11 +337,17 @@ public:
     }
   }
 
-  void save_restart_data() {
+  void save_restart_data(std::string restartOutDir) {
     if (isGridEmpty)
       return;
 
-    std::string restartDir = component + "/restartOUT/";
+    std::string restartDir;
+    if (restartOutDir.length() == 0) {
+      restartDir = component + "/restartOUT/";
+    }
+    else {
+      restartDir = restartOutDir;
+    }
 
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
       amrex::VisMF::Write(nodeFluid[iLev], restartDir + gridName +

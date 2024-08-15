@@ -9,7 +9,7 @@ int fleks_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc);
 int fleks_init_(double *timeNow);
 int fleks_finalize_init_();
 int fleks_run_(double *time);
-int fleks_save_restart_();
+int fleks_save_restart_(char *nameRestartOutDirComp, int *nChar);
 int fleks_end_();
 int fleks_read_param_(char *param, int *nlines, int *ncharline, int *iProc);
 int fleks_from_gm_init_(int *iParam, double *paramreal, char *NameVar);

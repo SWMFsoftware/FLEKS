@@ -487,22 +487,22 @@ void Domain::read_restart() {
 }
 
 //========================================================
-void Domain::save_restart() {
-  save_restart_header();
-  save_restart_data();
+void Domain::save_restart(std::string restartOutDir) {
+  save_restart_header(restartOutDir);
+  save_restart_data(restartOutDir);
 }
 
 //========================================================
-void Domain::save_restart_data() {
-  fi->save_restart_data();
+void Domain::save_restart_data(std::string restartOutDir) {
+  fi->save_restart_data(restartOutDir);
   if (pic)
-    pic->save_restart_data();
+    pic->save_restart_data(restartOutDir);
   if (pt)
-    pt->save_restart_data();
+    pt->save_restart_data(restartOutDir);
 }
 
 //========================================================
-void Domain::save_restart_header() {
+void Domain::save_restart_header(std::string restartOutDir) {
 
   if (ParallelDescriptor::IOProcessor()) {
     Print() << printPrefix
@@ -515,8 +515,10 @@ void Domain::save_restart_header() {
 
     headerFile.rdbuf()->pubsetbuf(ioBuffer.dataPtr(), ioBuffer.size());
 
-    std::string headerFileName(component + "/restartOUT/" + gridName +
-                               "_restart.H");
+    if (restartOutDir.length() == 0) {
+      restartOutDir = component + "/restartOUT/";
+    }
+    std::string headerFileName(restartOutDir + gridName + "_restart.H");
 
     headerFile.open(headerFileName.c_str(),
                     std::ofstream::out | std::ofstream::trunc);
