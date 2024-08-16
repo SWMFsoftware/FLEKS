@@ -633,8 +633,7 @@ void Domain::save_restart_header(std::string restartOutDir) {
 
     headerFile.rdbuf()->pubsetbuf(ioBuffer.dataPtr(), ioBuffer.size());
 
-    std::string headerFileName(component + "/restartOUT/" + gridName +
-                               "_amrex_restart.H");
+    std::string headerFileName(restartOutDir + gridName + "_amrex_restart.H");
 
     headerFile.open(headerFileName.c_str(),
                     std::ofstream::out | std::ofstream::trunc);
@@ -747,7 +746,8 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#PIC" || command == "#EXPLICITPIC" ||
         command == "#COMOVING" || command == "#PARTICLEBOXBOUNDARY" ||
         command == "#BFIELDBOXBOUNDARY" || command == "#SUPID" ||
-        command == "#SOLVEEM" || command == "#PARTMODE") {
+        command == "#SOLVEEM" || command == "#PARTMODE" ||
+        command == "#SELECTPARTICLE") {
       pic->read_param(command, param);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
