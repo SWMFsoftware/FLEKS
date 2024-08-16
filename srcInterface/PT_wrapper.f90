@@ -128,12 +128,20 @@ contains
   
   subroutine PT_save_restart(TimeSimulation)
 
+    use CON_coupler, ONLY: NameRestartOutDirComp
+
     !INPUT PARAMETERS:
     real,     intent(in) :: TimeSimulation   ! seconds from start time
 
+    integer :: nChar
+
     character(len=*), parameter :: NameSub='PT_save_restart'
     !--------------------------------------------------------------------------
-    call fleks_save_restart()
+    nChar = 0
+    if( NameRestartOutDirComp /= '') &
+         nChar = len(NameRestartOutDirComp)
+
+    call fleks_save_restart(NameRestartOutDirComp, nChar)
 
   end subroutine PT_save_restart
   !============================================================================
