@@ -145,6 +145,10 @@ private:
 
   amrex::Vector<int> supIDs;
 
+  // select particle params
+  bool doSelectParticle = false;
+  std::string selectParticleInputFile;
+
   bool doReport = false;
 
   std::string logFile;
@@ -337,6 +341,7 @@ public:
                  const amrex::MFIter &mfi, bool isValidMFI = true);
   void save_restart_header(std::ofstream &headerFile);
   void save_restart_data(std::string restartOurDir);
+  amrex::Vector<std::array<int, 2> > read_select_particle_input();
   void read_restart();
   void write_log(bool doForce = false, bool doCreateFile = false);
   void write_plots(bool doForce = false);

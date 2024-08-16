@@ -152,14 +152,17 @@ public:
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::GetParticles;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::MakeMFIter;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Redistribute;
-  using amrex::AmrParticleContainer<NStructReal, NStructInt>::NumberOfParticlesAtLevel;
+  using amrex::AmrParticleContainer<NStructReal,
+                                    NStructInt>::NumberOfParticlesAtLevel;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Checkpoint;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Index;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::ParticlesAt;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::maxLevel;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::GetParGDB;
-  using amrex::AmrParticleContainer<NStructReal, NStructInt>::CreateGhostParticles;
-  using amrex::AmrParticleContainer<NStructReal, NStructInt>::AddParticlesAtLevel;
+  using amrex::AmrParticleContainer<NStructReal,
+                                    NStructInt>::CreateGhostParticles;
+  using amrex::AmrParticleContainer<NStructReal,
+                                    NStructInt>::AddParticlesAtLevel;
 
   using AoS = amrex::ArrayOfStructs<NStructReal, NStructInt>;
 
@@ -213,7 +216,7 @@ protected:
 
   bool isParticleLocationRandom = true;
 
-  bool isPPVconstant= false;
+  bool isPPVconstant = false;
 
   BC bc; // boundary condition
 
@@ -283,8 +286,9 @@ public:
                           amrex::Real dt);
 
   amrex::Real sum_moments_new(amrex::Vector<amrex::MultiFab>& momentsMF,
-                          amrex::Vector<amrex::MultiFab>& nodeBMF,
-                          amrex::Real dt,amrex::Vector<amrex::iMultiFab>& nodestatus);
+                              amrex::Vector<amrex::MultiFab>& nodeBMF,
+                              amrex::Real dt,
+                              amrex::Vector<amrex::iMultiFab>& nodestatus);
 
   std::array<amrex::Real, 5> total_moments(bool localOnly = false);
 
@@ -292,9 +296,14 @@ public:
                         amrex::MultiFab& nodeBMF, amrex::MultiFab& u0MF,
                         amrex::Real dt, int iLev, bool solveInCoMov);
 
-  void calc_mass_matrix_new(amrex::Vector<amrex::UMultiFab<RealMM>>& nodeMM,amrex::UMultiFab<RealMM>& nmmt, amrex::Vector<amrex::MultiFab>& jHat,amrex::MultiFab& jhc,
-                        amrex::Vector<amrex::MultiFab>& nodeBMF, amrex::Vector<amrex::MultiFab>& u0MF,
-                        amrex::Real dt,int iLev, bool solveInCoMov ,amrex::Vector<amrex::iMultiFab>& nodestatus);
+  void calc_mass_matrix_new(amrex::Vector<amrex::UMultiFab<RealMM> >& nodeMM,
+                            amrex::UMultiFab<RealMM>& nmmt,
+                            amrex::Vector<amrex::MultiFab>& jHat,
+                            amrex::MultiFab& jhc,
+                            amrex::Vector<amrex::MultiFab>& nodeBMF,
+                            amrex::Vector<amrex::MultiFab>& u0MF,
+                            amrex::Real dt, int iLev, bool solveInCoMov,
+                            amrex::Vector<amrex::iMultiFab>& nodestatus);
 
   void calc_jhat(amrex::MultiFab& jHat, amrex::MultiFab& nodeBMF,
                  amrex::Real dt);
@@ -303,7 +312,8 @@ public:
   amrex::Real calc_max_thermal_velocity(amrex::MultiFab& momentsMF);
 
   void sum_to_center(amrex::MultiFab& netChargeMF,
-                     amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly,int iLev);
+                     amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly,
+                     int iLev);
 
   void charge_exchange(
       amrex::Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH,
@@ -340,6 +350,9 @@ public:
                               const amrex::Vector<amrex::MultiFab>& uBg,
                               amrex::Real dt, amrex::Real dtNext,
                               bool solveInCoMov);
+
+  // select particles based on input supid and id
+  void select_particle(amrex::Vector<std::array<int, 2> >& selectParticleIn);
 
   // Both the input are in the SI unit: m/s
   amrex::Real charge_exchange_dis(amrex::Real* vp, amrex::Real* vh,
@@ -655,7 +668,7 @@ public:
                     std::string particletype = "1") {
     Checkpoint(folder, particletype);
   }
-  
+
   void Generate_GhostParticles(int iLev, int nGhost) {
     ParticleTileType ptile;
     CreateGhostParticles(iLev - 1, nGhost, ptile);
@@ -665,88 +678,88 @@ public:
   void shape_fix_DisplaceEqually4() {
 
     for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
-    amrex::Real dx = Geom(iLev).CellSize(iLev);
+      amrex::Real dx = Geom(iLev).CellSize(iLev);
       amrex::Real ratio = 0.0;
-    amrex::Real disp = dx * 0.25 * sqrt(2.0);
-    amrex::Real theta = 45.0;
-    amrex::Real PI = 3.14159265358979323846;
-    theta = theta * PI / 180.0;
-    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      // auto& pTile1 = get_particle_tile(iLev, pti);
-      auto& pTile2 = get_particle_tile(iLev + 1, pti);
-      AoS& particles = pti.GetArrayOfStructs();
-      for (auto& p : particles) {
+      amrex::Real disp = dx * 0.25 * sqrt(2.0);
+      amrex::Real theta = 45.0;
+      amrex::Real PI = 3.14159265358979323846;
+      theta = theta * PI / 180.0;
+      for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+        // auto& pTile1 = get_particle_tile(iLev, pti);
+        auto& pTile2 = get_particle_tile(iLev + 1, pti);
+        AoS& particles = pti.GetArrayOfStructs();
+        for (auto& p : particles) {
           if (p.id() < 0 || abs(p.rdata(iqp_)) < ((1 - ratio)) * (3.5e-4) / 1.0)
-          continue;
-        const amrex::Real xp = p.pos(ix_);
-        const amrex::Real yp = p.pos(iy_);
-        // const amrex::Real zp = nDim > 2 ? p.pos(iz_) : 0;
+            continue;
+          const amrex::Real xp = p.pos(ix_);
+          const amrex::Real yp = p.pos(iy_);
+          // const amrex::Real zp = nDim > 2 ? p.pos(iz_) : 0;
           if (abs(xp) <= 20.0 && abs(yp) <= 20.0) {
-          amrex::Real up = p.rdata(iup_);
-          amrex::Real vp = p.rdata(ivp_);
-          amrex::Real wp = p.rdata(iwp_);
-          amrex::Real qp = p.rdata(iqp_);
-          p.id() = -1;
-          amrex::Vector<ParticleType> newparticles;
-          ParticleType pnew1;
-          ParticleType pnew2;
-          ParticleType pnew3;
-          ParticleType pnew4;
-          ParticleType pnew5;
-          set_ids(pnew1);
-          set_ids(pnew2);
-          set_ids(pnew3);
-          set_ids(pnew4);
-          set_ids(pnew5);
-          pnew1.pos(ix_) = xp + (disp * cos(theta));
-          pnew1.pos(iy_) = yp + (disp * sin(theta));
-          pnew1.pos(iz_) = 0.0;
-          pnew1.rdata(iup_) = up;
-          pnew1.rdata(ivp_) = vp;
-          pnew1.rdata(iwp_) = wp;
+            amrex::Real up = p.rdata(iup_);
+            amrex::Real vp = p.rdata(ivp_);
+            amrex::Real wp = p.rdata(iwp_);
+            amrex::Real qp = p.rdata(iqp_);
+            p.id() = -1;
+            amrex::Vector<ParticleType> newparticles;
+            ParticleType pnew1;
+            ParticleType pnew2;
+            ParticleType pnew3;
+            ParticleType pnew4;
+            ParticleType pnew5;
+            set_ids(pnew1);
+            set_ids(pnew2);
+            set_ids(pnew3);
+            set_ids(pnew4);
+            set_ids(pnew5);
+            pnew1.pos(ix_) = xp + (disp * cos(theta));
+            pnew1.pos(iy_) = yp + (disp * sin(theta));
+            pnew1.pos(iz_) = 0.0;
+            pnew1.rdata(iup_) = up;
+            pnew1.rdata(ivp_) = vp;
+            pnew1.rdata(iwp_) = wp;
             pnew1.rdata(iqp_) = (1.0 - ratio) * qp / 4.0;
-          pnew2.pos(ix_) = xp - (disp * cos(theta));
-          pnew2.pos(iy_) = yp - (disp * sin(theta));
-          pnew2.pos(iz_) = 0.0;
-          pnew2.rdata(iup_) = up;
-          pnew2.rdata(ivp_) = vp;
-          pnew2.rdata(iwp_) = wp;
+            pnew2.pos(ix_) = xp - (disp * cos(theta));
+            pnew2.pos(iy_) = yp - (disp * sin(theta));
+            pnew2.pos(iz_) = 0.0;
+            pnew2.rdata(iup_) = up;
+            pnew2.rdata(ivp_) = vp;
+            pnew2.rdata(iwp_) = wp;
             pnew2.rdata(iqp_) = (1.0 - ratio) * qp / 4.0;
             pnew3.pos(ix_) = xp + (disp * cos(theta + PI / 2));
             pnew3.pos(iy_) = yp + (disp * sin(theta + PI / 2));
-          pnew3.pos(iz_) = 0.0;
-          pnew3.rdata(iup_) = up;
-          pnew3.rdata(ivp_) = vp;
-          pnew3.rdata(iwp_) = wp;
+            pnew3.pos(iz_) = 0.0;
+            pnew3.rdata(iup_) = up;
+            pnew3.rdata(ivp_) = vp;
+            pnew3.rdata(iwp_) = wp;
             pnew3.rdata(iqp_) = (1.0 - ratio) * qp / 4.0;
             pnew4.pos(ix_) = xp - (disp * cos(theta + PI / 2));
             pnew4.pos(iy_) = yp - (disp * sin(theta + PI / 2));
-          pnew4.pos(iz_) = 0.0;
-          pnew4.rdata(iup_) = up;
-          pnew4.rdata(ivp_) = vp;
-          pnew4.rdata(iwp_) = wp;
+            pnew4.pos(iz_) = 0.0;
+            pnew4.rdata(iup_) = up;
+            pnew4.rdata(ivp_) = vp;
+            pnew4.rdata(iwp_) = wp;
             pnew4.rdata(iqp_) = (1.0 - ratio) * qp / 4.0;
             pnew5.pos(ix_) = xp;
-          pnew5.pos(iy_) = yp;
-          pnew5.pos(iz_) = 0.0;
-          pnew5.rdata(iup_) = up;
-          pnew5.rdata(ivp_) = vp;
-          pnew5.rdata(iwp_) = wp;
+            pnew5.pos(iy_) = yp;
+            pnew5.pos(iz_) = 0.0;
+            pnew5.rdata(iup_) = up;
+            pnew5.rdata(ivp_) = vp;
+            pnew5.rdata(iwp_) = wp;
             pnew5.rdata(iqp_) = ratio * qp;
-          newparticles.push_back(pnew1);
-          newparticles.push_back(pnew2);
-          newparticles.push_back(pnew3);
-          newparticles.push_back(pnew4);
+            newparticles.push_back(pnew1);
+            newparticles.push_back(pnew2);
+            newparticles.push_back(pnew3);
+            newparticles.push_back(pnew4);
             // newparticles.push_back(pnew5);
 
-          for (auto& p : newparticles) {
-            pTile2.push_back(p);
-          }
+            for (auto& p : newparticles) {
+              pTile2.push_back(p);
+            }
 
-          // pTile.push_back(pnew1);
-          // pTile.push_back(pnew2);
-          // pTile.push_back(pnew3);
-          // pTile.push_back(pnew4);
+            // pTile.push_back(pnew1);
+            // pTile.push_back(pnew2);
+            // pTile.push_back(pnew3);
+            // pTile.push_back(pnew4);
           }
         }
       }

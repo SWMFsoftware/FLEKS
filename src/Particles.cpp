@@ -388,7 +388,8 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::sum_to_center(
-    MultiFab& netChargeMF, UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly,int iLev) {
+    MultiFab& netChargeMF, UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly,
+    int iLev) {
   timing_func("Pts::sum_to_center");
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
@@ -1498,6 +1499,53 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       } // for p
     } // for pti
   }
+}
+
+//==========================================================
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::select_particle(
+    Vector<std::array<int, 2> >& selectParticleIn) {
+
+  timing_func("Pts::select_particle");
+
+  int numParticlesToTrace = selectParticleIn.size();
+  int numParticlesFound = 0;
+  std::array<int, 2> currentTargetParticle;
+
+  // output files
+  std::string filename = "select_particle_out_sp" + std::to_string(speciesID) +
+                         "_pe" + std::to_string(ParallelDescriptor::MyProc()) +
+                         ".dat";
+  std::ofstream outFile;
+  outFile.open(filename.c_str(), std::ofstream::out | std::ofstream::trunc);
+  outFile.precision(12);
+
+  // loop through particles
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      AoS& particles = pti.GetArrayOfStructs();
+      for (auto& p : particles) {
+        if (p.id() < 0)
+          continue;
+        if (p.idata(iSupID_) < 0)
+          continue;
+
+        for (auto& currentTargetParticle : selectParticleIn) {
+          if (p.idata(iSupID_) == currentTargetParticle[0] &&
+              p.id() == currentTargetParticle[1]) {
+            numParticlesFound++;
+            outFile << ParallelDescriptor::MyProc() << " " << p.idata(iSupID_)
+                    << " " << p.id() << " " << p.pos(ix_) << " " << p.pos(iy_)
+                    << " " << p.pos(iz_) << " " << p.rdata(iup_) << " "
+                    << p.rdata(ivp_) << " " << p.rdata(iwp_) << "\n";
+          }
+        }
+      }
+    }
+  }
+  outFile.close();
+  Print() << "select particle finished... " << numParticlesFound
+          << "particles found..." << std::endl;
 }
 
 //==========================================================

@@ -1159,6 +1159,20 @@ The last and the next time step.
 This command should only exist in the restart file FLEKSX_restart.H
 </command>
 
+<command name="SELECTPARTILCE">
+  <parameter name="doSelectParticle" type="boolean"/>
+  <parameter name="selectParticleInputFile" type="string"/>
+
+#SELECTPARTICLE                                                                   
+T                                                                                                         
+PC/select_particle.in
+
+This is the command to select particles with supid and id. The first line 
+of the input file PC/select_particle.in is the number of particles to select.
+Then each line is the supid and id separated by space.
+
+</command>
+
 </commandgroup>
 
 </commandList>

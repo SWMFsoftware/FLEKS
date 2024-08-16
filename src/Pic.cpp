@@ -160,6 +160,11 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (testcase == "TwoStream") {
       testCase = TwoStream;
     }
+  } else if (command == "#SELECTPARTICLE") {
+    param.read_var("doSelectParticle", doSelectParticle);
+    if (doSelectParticle) {
+      param.read_var("selectParticleInputFile", selectParticleInputFile);
+    }
   }
 }
 
@@ -1978,8 +1983,8 @@ void Pic::project_down_E() {
   if (finest_level > 0) {
     for (int iLev = 0; iLev < finest_level; iLev++) {
       fill_fine_lev_edge_from_coarse(
-          nodeE[iLev], nodeE[iLev + 1], 0, nodeE[iLev].nComp(),
-          ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1),
+          nodeE[iLev], nodeE[iLev + 1], 0, nodeE[iLev].nComp(), ref_ratio[iLev],
+          Geom(iLev), Geom(iLev + 1), node_status(iLev + 1),
           node_bilinear_interp);
       // fill_fine_lev_edge_from_coarse(
       //     nodeEth[iLev], nodeEth[iLev + 1], 0, nodeEth[iLev].nComp(),
@@ -1988,7 +1993,8 @@ void Pic::project_down_E() {
     }
     for (int iLev = finest_level; iLev > 0; iLev--) {
       average_down_nodal(nodeE[iLev], nodeE[iLev - 1], ref_ratio[iLev - 1]);
-      // average_down_nodal(nodeEth[iLev], nodeEth[iLev - 1], ref_ratio[iLev - 1]);
+      // average_down_nodal(nodeEth[iLev], nodeEth[iLev - 1], ref_ratio[iLev -
+      // 1]);
     }
   }
 }

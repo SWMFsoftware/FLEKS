@@ -501,6 +501,48 @@ void Pic::read_restart() {
   // The default of doNeedFillNewCell is true. The PIC cells have been filled in
   // here, so turn it of
   doNeedFillNewCell = false;
+
+  if (doSelectParticle) {
+    Vector<std::array<int, 2> > selectParticleInput =
+        read_select_particle_input();
+    for (int iPart = 0; iPart < parts.size(); iPart++) {
+      parts[iPart]->select_particle(selectParticleInput);
+    }
+  }
+}
+
+//==========================================================
+Vector<std::array<int, 2> > Pic::read_select_particle_input() {
+
+  Print() << "Pic::read_select_particel_input() started..... "
+          << selectParticleInputFile << "\n";
+
+  VisMF::IO_Buffer ioBuffer(VisMF::GetIOBufferSize());
+
+  Vector<char> fileCharPtr;
+  ParallelDescriptor::ReadAndBcastFile(selectParticleInputFile, fileCharPtr);
+  std::string fileCharPtrString(fileCharPtr.dataPtr());
+  std::istringstream is(fileCharPtrString, std::istringstream::in);
+
+  int numParticles;
+
+  is >> numParticles;
+
+  Vector<std::array<int, 2> > selectParticleInput;
+
+  int currentSupid, currentId;
+  for (int ip = 0; ip < numParticles; ip++) {
+    is >> currentSupid >> currentId;
+    std::array<int, 2> currentParticleIds{ { currentSupid, currentId } };
+    selectParticleInput.push_back(currentParticleIds);
+  }
+
+  Print() << std::endl;
+
+  Print() << "Pic::read_select_particel_input() finished..... " << numParticles
+          << " particles to trace." << std::endl;
+
+  return selectParticleInput;
 }
 
 //==========================================================
