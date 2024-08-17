@@ -1160,7 +1160,7 @@ This command should only exist in the restart file FLEKSX_restart.H
 </command>
 
 <command name="SELECTPARTILCE">
-  <parameter name="doSelectParticle" type="boolean"/>
+  <parameter name="doSelectParticle" type="logical"/>
   <parameter name="selectParticleInputFile" type="string"/>
 
 #SELECTPARTICLE                                                                   
