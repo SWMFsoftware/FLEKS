@@ -59,7 +59,7 @@ template <class T> inline void zero_array(T* arr, int nSize) {
 }
 
 // rand1, rand2 are random numbers in [0,1].
-inline void random_vector(amrex::Real rand1, amrex::Real rand2,
+inline void random_vector(const amrex::Real rand1, const amrex::Real rand2,
                           amrex::Real (&vec)[nDim3]) {
   amrex::Real lon = 2 * M_PI * rand1;
   amrex::Real costheta = 2 * rand2 - 1;
@@ -125,17 +125,18 @@ inline void linear_interpolation_coef_finer(amrex::RealVect& dx,
 
   // Shape fix
   for (int ii = 0; ii <= 1; ii++) {
-    xi[ii] = 2.0*((2.0 * xi[ii]) - 1.0);
+    xi[ii] = 2.0 * ((2.0 * xi[ii]) - 1.0);
     if (xi[ii] < 0.0) {
       xi[ii] = 0.0;
     }
 
-    eta[ii] = 2.0*((2.0 * eta[ii]) - 1.0);
+    eta[ii] = 2.0 * ((2.0 * eta[ii]) - 1.0);
     if (eta[ii] < 0.0) {
       eta[ii] = 0.0;
     }
 
-    zeta[ii] = nDim > 2 ? 2.0*((2.0 * zeta[ii]) - 1.0) : ((2.0 * zeta[ii]) - 1.0);
+    zeta[ii] =
+        nDim > 2 ? 2.0 * ((2.0 * zeta[ii]) - 1.0) : ((2.0 * zeta[ii]) - 1.0);
     if (zeta[ii] < 0.0) {
       zeta[ii] = 0.0;
     }
