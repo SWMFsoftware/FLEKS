@@ -129,7 +129,7 @@ public:
 
   bool is_particles_per_volume_constant() { return isPPVconstant; }
 
-  virtual void pre_regrid(){};
+  virtual void pre_regrid() {};
 
   amrex::Vector<Regions> get_refine_regions() const { return refineRegions; }
 

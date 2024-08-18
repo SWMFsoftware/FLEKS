@@ -344,8 +344,7 @@ public:
     std::string restartDir;
     if (restartOutDir.length() == 0) {
       restartDir = component + "/restartOUT/";
-    }
-    else {
+    } else {
       restartDir = restartOutDir;
     }
 

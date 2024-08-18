@@ -10,7 +10,7 @@ public:
     filename = filenameIn;
   };
 
-  virtual ~DataWriter(){};
+  virtual ~DataWriter() {};
 
   virtual void write() = 0;
 
@@ -40,7 +40,7 @@ public:
     filename = filenameIn + ".dat";
   };
 
-  ~TECWriter(){};
+  ~TECWriter() {};
 
   void write() override {
 
@@ -112,7 +112,7 @@ public:
     saveBinary = true;
   };
 
-  ~VTKWriter(){};
+  ~VTKWriter() {};
 
   void write() override {
     zoneType.set_type(dc->zone_type());

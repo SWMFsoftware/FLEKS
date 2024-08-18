@@ -203,7 +203,7 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
       }
 
     } // for p
-  }   // for pti
+  } // for pti
 
   redistribute_particles();
 }

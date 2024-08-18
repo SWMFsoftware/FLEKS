@@ -13,7 +13,7 @@
 // units
 class Shape {
 public:
-  virtual ~Shape(){};
+  virtual ~Shape() {};
   virtual bool is_inside(const amrex::Real* xyz) const = 0;
 
   std::string get_name() const { return name; };

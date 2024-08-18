@@ -10,7 +10,7 @@
 #include "Constants.h"
 #include "MDArray.h"
 
-class PlotWriter;                            // Forward declaration
+class PlotWriter; // Forward declaration
 
 typedef std::array<double, 8> ArrayPointLoc; // (i,j,k,x,y,z,iBlock, iLev)
 typedef std::vector<ArrayPointLoc> VectorPointList;

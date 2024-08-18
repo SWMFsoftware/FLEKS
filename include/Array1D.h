@@ -18,7 +18,7 @@ public:
   }
 
   T& operator[](const int i) { return data[i]; }
-  
+
   const T& operator[](const int i) const { return data[i]; }
 
   Arr1D<T, n>& operator=(const Arr1D<T, n>& b) {

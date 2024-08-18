@@ -41,5 +41,4 @@ inline uint32_t encode_morton_3d(uint32_t x, uint32_t y, uint32_t z) {
   return (Part1By2(z) << 2) + (Part1By2(y) << 1) + Part1By2(x);
 }
 
-
 #endif

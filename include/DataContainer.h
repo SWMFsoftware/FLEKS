@@ -505,7 +505,6 @@ public:
       }
       delete[] w;
     }
-
   }
 
   void read_ascii() {
@@ -604,7 +603,7 @@ public:
     mf.resize(n_lev_max());
     iCell.resize(n_lev_max());
   }
-  ~AMReXDataContainer(){};
+  ~AMReXDataContainer() {};
 
   static void read_header(std::string& headerName, int& nVar, int& nDim,
                           amrex::Real& time, int& finest_level,
