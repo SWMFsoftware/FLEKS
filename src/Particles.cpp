@@ -1508,9 +1508,7 @@ void Particles<NStructReal, NStructInt>::select_particle(
 
   timing_func("Pts::select_particle");
 
-  int numParticlesToTrace = selectParticleIn.size();
-  int numParticlesFound = 0;
-  std::array<int, 2> currentTargetParticle;
+  int numParticlesFound = 0;  
 
   // output files
   std::string filename = "select_particle_out_sp" + std::to_string(speciesID) +
