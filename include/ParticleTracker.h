@@ -38,7 +38,7 @@ public:
 
   void complete_parameters();
 
-  void save_restart_data(std::string restartOutDir);
+  void save_restart_data();
   void save_restart_header(std::ofstream &headerFile);
   void read_restart();
   void read_param(const std::string &command, ReadParam &param);

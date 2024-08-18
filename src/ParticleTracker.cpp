@@ -194,16 +194,9 @@ void ParticleTracker::post_regrid() {
   //--------------test particles-----------------------------------
 }
 
-void ParticleTracker::save_restart_data(std::string restartOutDir) {
+void ParticleTracker::save_restart_data() {
   if (isGridEmpty)
     return;
-
-  std::string restartDir;
-  if (restartOutDir.length() == 0) {
-    restartDir = component + "/restartOUT/";
-  } else {
-    restartDir = restartOutDir;
-  }
 
   bool doSavePlot = savectr->is_time_to(true);
   for (int iPart = 0; iPart < parts.size(); iPart++) {
@@ -215,8 +208,9 @@ void ParticleTracker::save_restart_data(std::string restartOutDir) {
       parts[iPart]->write_particles(tc->get_cycle());
     }
 
-    parts[iPart]->Checkpoint(restartDir, gridName + "_test_particles" +
-                                             std::to_string(iPart));
+    parts[iPart]->Checkpoint(fi->get_restart_out_dir(),
+                             gridName + "_test_particles" +
+                                 std::to_string(iPart));
   }
 }
 

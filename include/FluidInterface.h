@@ -22,7 +22,7 @@
 #include "Regions.h"
 
 class FluidInterfaceParameters {
-public:
+protected:
   FluidInterfaceParameters() = default;
   FluidInterfaceParameters(const FluidInterfaceParameters& fip) = default;
 
@@ -104,6 +104,19 @@ public:
   int OhmU = OhmUe_;
 
   bool initFromSWMF;
+
+  std::string restartOut = component + "/restartOUT/";
+
+public:
+  amrex::Vector<std::string> get_var_names() const { return varNames; }
+  void set_var_names(const amrex::Vector<std::string>& names) {
+    varNames = names;
+  }
+
+  void set_restart_out_dir(std::string dir) {
+    restartOut = dir.empty() ? component + "/restartOUT/" : dir;
+  }
+  std::string get_restart_out_dir() const { return restartOut; }
 };
 
 class FluidInterface : public Grid, public FluidInterfaceParameters {
@@ -337,16 +350,11 @@ public:
     }
   }
 
-  void save_restart_data(std::string restartOutDir) {
+  void save_restart_data() {
     if (isGridEmpty)
       return;
 
-    std::string restartDir;
-    if (restartOutDir.length() == 0) {
-      restartDir = component + "/restartOUT/";
-    } else {
-      restartDir = restartOutDir;
-    }
+    std::string restartDir = get_restart_out_dir();
 
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
       amrex::VisMF::Write(nodeFluid[iLev], restartDir + gridName +

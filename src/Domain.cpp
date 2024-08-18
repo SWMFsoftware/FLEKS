@@ -362,8 +362,8 @@ void Domain::set_state_var(double *data, int *index,
     if (stateOH) {
       // PT mode
       stateOH->set_node_fluid(data, index, names);
-      if (sourcePT2OH->varNames.empty()) {
-        sourcePT2OH->varNames = stateOH->varNames;
+      if (sourcePT2OH->get_var_names().empty()) {
+        sourcePT2OH->set_var_names(stateOH->get_var_names());
         sourcePT2OH->analyze_var_names();
         sourcePT2OH->distribute_arrays();
       }
@@ -488,21 +488,23 @@ void Domain::read_restart() {
 
 //========================================================
 void Domain::save_restart(std::string restartOutDir) {
-  save_restart_header(restartOutDir);
-  save_restart_data(restartOutDir);
+  fi->set_restart_out_dir(restartOutDir);
+
+  save_restart_header();
+  save_restart_data();
 }
 
 //========================================================
-void Domain::save_restart_data(std::string restartOutDir) {
-  fi->save_restart_data(restartOutDir);
+void Domain::save_restart_data() {
+  fi->save_restart_data();
   if (pic)
-    pic->save_restart_data(restartOutDir);
+    pic->save_restart_data();
   if (pt)
-    pt->save_restart_data(restartOutDir);
+    pt->save_restart_data();
 }
 
 //========================================================
-void Domain::save_restart_header(std::string restartOutDir) {
+void Domain::save_restart_header() {
 
   if (ParallelDescriptor::IOProcessor()) {
     Print() << printPrefix
@@ -515,10 +517,8 @@ void Domain::save_restart_header(std::string restartOutDir) {
 
     headerFile.rdbuf()->pubsetbuf(ioBuffer.dataPtr(), ioBuffer.size());
 
-    if (restartOutDir.length() == 0) {
-      restartOutDir = component + "/restartOUT/";
-    }
-    std::string headerFileName(restartOutDir + gridName + "_restart.H");
+    std::string headerFileName(fi->get_restart_out_dir() + gridName +
+                               "_restart.H");
 
     headerFile.open(headerFileName.c_str(),
                     std::ofstream::out | std::ofstream::trunc);
@@ -633,7 +633,8 @@ void Domain::save_restart_header(std::string restartOutDir) {
 
     headerFile.rdbuf()->pubsetbuf(ioBuffer.dataPtr(), ioBuffer.size());
 
-    std::string headerFileName(restartOutDir + gridName + "_amrex_restart.H");
+    std::string headerFileName(fi->get_restart_out_dir() + gridName +
+                               "_amrex_restart.H");
 
     headerFile.open(headerFileName.c_str(),
                     std::ofstream::out | std::ofstream::trunc);

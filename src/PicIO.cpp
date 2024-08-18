@@ -421,16 +421,11 @@ double Pic::get_var(std::string var, const int iLev, const IntVect ijk,
 }
 
 //==========================================================
-void Pic::save_restart_data(std::string restartOutDir) {
+void Pic::save_restart_data() {
   if (isGridEmpty)
     return;
 
-  std::string restartDir;
-  if (restartOutDir.length() == 0) {
-    restartDir = component + "/restartOUT/";
-  } else {
-    restartDir = restartOutDir;
-  }
+  std::string restartDir = fi->get_restart_out_dir();
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     VisMF::Write(nodeE[iLev],

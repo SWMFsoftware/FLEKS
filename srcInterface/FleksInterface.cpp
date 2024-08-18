@@ -176,10 +176,7 @@ int fleks_run_(double *time) {
 int fleks_save_restart_(char *nameRestartOutDirComp, int *nChar) {
   std::string restartOutDir;
   if ((*nChar) > 0) {
-    std::stringstream ss(std::string(nameRestartOutDirComp, *nChar));
-    ss >> restartOutDir;
-  } else {
-    restartOutDir = "";
+    restartOutDir = std::string(nameRestartOutDirComp, *nChar);
   }
 
   for (int i = 0; i < fleksDomains.size(); ++i)
