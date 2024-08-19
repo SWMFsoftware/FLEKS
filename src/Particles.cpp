@@ -1736,6 +1736,12 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 
           // p.id() = -1;
         }
+
+        if (is_outside_level(p, iLev, status, lowCorner, highCorner)) {
+          for (int iDim = 0; iDim < nDim; iDim++) {
+            p.pos(iDim) -= eps_D[iDim];
+          }
+        }
       }
 
     } // for p
