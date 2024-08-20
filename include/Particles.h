@@ -545,19 +545,13 @@ public:
 
   inline bool is_outside_level(const ParticleType& p, int iLev,
                                amrex::Array4<int const> const& status,
-                               const amrex::IntVect& low,
-                               const amrex::IntVect& high) {
+                               const amrex::IntVect cellIdx) {
     bool isOutsideLevel = false;
-    amrex::IntVect cellIdx;
-    amrex::RealVect dShift;
-    for (int i = 0; i < nDim; ++i) {
-      dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
-      cellIdx[i] = fastfloor(dShift[i]);
       if (bit::is_refined(status(cellIdx)) ||
           bit::is_lev_boundary(status(cellIdx))) {
         isOutsideLevel = true;
       }
-    }
+    
     return isOutsideLevel;
   }
 
