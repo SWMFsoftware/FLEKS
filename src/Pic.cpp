@@ -896,10 +896,7 @@ void Pic::calculate_phi(LinearSolver& solver) {
   MultiFab residual(cGrids[iLev], DistributionMap(iLev), 1, nGst);
 
   solver.reset(get_local_node_or_cell_number(centerDivE[iLev]));
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
     div_node_to_center(nodeE[iLev], residual, Geom(iLev).InvCellSize());
-  }
-
   Real coef = 1;
   if (PicParticles::particlePosition == Staggered) {
     coef = 1.0 / rhoTheta;
