@@ -687,6 +687,50 @@ public:
     AddParticlesAtLevel(ptile, iLev, nGhost);
   }
 
+  void Generate_VirtualParticles(int iLev) {
+    ParticleTileType ptile;
+    CreateVirtualParticles(iLev + 1, ptile);
+    AddParticlesAtLevel(ptile, iLev);
+  }
+
+  void delete_particles_from_refined_region(int iLev) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      AoS& particles = pti.GetArrayOfStructs();
+      const auto& status = cell_status(iLev)[pti].array();
+      for (auto& p : particles) {
+        amrex::IntVect loIdx;
+        amrex::RealVect dShift;
+        find_cell_index_exp(p.pos(), Geom(iLev).ProbLo(),
+                            Geom(iLev).InvCellSize(), loIdx, dShift);
+        if (bit::is_refined(status(loIdx))) {
+          amrex::Print() << std::endl
+                         << "Deleting particle at " << p.pos()
+                         << " cellindex= " << loIdx << std::endl;
+          p.id() = -1;
+        }
+      }
+    }
+  }
+
+  void delete_particles_from_ghost_cells(int iLev) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      AoS& particles = pti.GetArrayOfStructs();
+      const auto& status = cell_status(iLev)[pti].array();
+      for (auto& p : particles) {
+        amrex::IntVect loIdx;
+        amrex::RealVect dShift;
+        find_cell_index_exp(p.pos(), Geom(iLev).ProbLo(),
+                            Geom(iLev).InvCellSize(), loIdx, dShift);
+        if (bit::is_lev_boundary(status(loIdx))) {
+          amrex::Print() << std::endl
+                         << "Deleting particle at " << p.pos()
+                         << " cellindex= " << loIdx << std::endl;
+          p.id() = -1;
+        }
+      }
+    }
+  }
+
   void shape_fix_DisplaceEqually4() {
 
     for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
