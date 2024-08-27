@@ -481,6 +481,52 @@ public:
                                    ref_ratio);
   };
 
+  amrex::MultiFab centerMMtoMF(amrex::UMultiFab<RealCMM>& MFin) {
+    amrex::MultiFab MFout;
+    MFout.define(MFin.boxArray(), MFin.DistributionMap(), 27, MFin.nGrow());
+    for (amrex::MFIter mfi(MFout); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.fabbox();
+      const amrex::Array4<RealCMM>& fab = MFin[mfi].array();
+      const amrex::Array4<amrex::Real>& fab2 = MFout[mfi].array();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+
+      for (int k = lo.z; k <= hi.z; ++k) {
+        for (int j = lo.y; j <= hi.y; ++j) {
+          for (int i = lo.x; i <= hi.x; ++i) {
+            for (int nvar = 0; nvar < 27; ++nvar) {
+              fab2(i, j, k, nvar) = fab(i, j, k)[nvar];
+            }
+          }
+        }
+      }
+    }
+    return MFout;
+  };
+
+  amrex::UMultiFab<RealCMM> MFtocenterMM(amrex::MultiFab& MFin) {
+    amrex::UMultiFab<RealCMM> MFout;
+    MFout.define(MFin.boxArray(), MFin.DistributionMap(), 1, MFin.nGrow());
+    for (amrex::MFIter mfi(MFin); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.fabbox();
+      const amrex::Array4<RealCMM>& fab2 = MFout[mfi].array();
+      const amrex::Array4<amrex::Real>& fab = MFin[mfi].array();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+
+      for (int k = lo.z; k <= hi.z; ++k) {
+        for (int j = lo.y; j <= hi.y; ++j) {
+          for (int i = lo.x; i <= hi.x; ++i) {
+            for (int nvar = 0; nvar < 27; ++nvar) {
+              fab2(i, j, k)[nvar] = fab(i, j, k, nvar);
+            }
+          }
+        }
+      }
+    }
+    return MFout;
+  };
+
   amrex::MultiFab nodeMMtoMF(amrex::UMultiFab<RealMM>& MFin) {
     amrex::MultiFab MFout;
     MFout.define(MFin.boxArray(), MFin.DistributionMap(), 243, MFin.nGrow());
