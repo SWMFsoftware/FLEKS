@@ -120,6 +120,18 @@ inline void find_cell_index(const amrex::RealVect& xyz,
   }
 }
 
+inline void find_cell_index_exp(const amrex::RealVect& xyz,
+                                const amrex::Real* const plo,
+                                const amrex::Real* const invDx,
+                                amrex::IntVect& loIdx,
+                                amrex::RealVect& dShift) {
+  for (int i = 0; i < nDim; ++i) {
+    dShift[i] = (xyz[i] - plo[i]) * invDx[i];
+    loIdx[i] = fastfloor(dShift[i]);
+    dShift[i] = dShift[i] - loIdx[i];
+  }
+}
+
 inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
                                     const amrex::MFIter& mfi,
                                     const amrex::Geometry& gm,
