@@ -1058,6 +1058,13 @@ void Pic::update(bool doReportIn) {
     project_down_B();
   }
 
+  // Only to be turned on if DivE error needs to be visulaized when DivE cleaning is not turned on
+
+  // for (int i = 0; i < 2; i++) {
+  //   sum_moments(true);
+  //   sum_moments(false);
+  // }
+
   if (solveEM && doCorrectDivE) {
     divE_correction();
   }
