@@ -703,9 +703,6 @@ public:
         find_cell_index_exp(p.pos(), Geom(iLev).ProbLo(),
                             Geom(iLev).InvCellSize(), loIdx, dShift);
         if (bit::is_refined(status(loIdx))) {
-          amrex::Print() << std::endl
-                         << "Deleting particle at " << p.pos()
-                         << " cellindex= " << loIdx << std::endl;
           p.id() = -1;
         }
       }
@@ -722,9 +719,6 @@ public:
         find_cell_index_exp(p.pos(), Geom(iLev).ProbLo(),
                             Geom(iLev).InvCellSize(), loIdx, dShift);
         if (bit::is_lev_boundary(status(loIdx))) {
-          amrex::Print() << std::endl
-                         << "Deleting particle at " << p.pos()
-                         << " cellindex= " << loIdx << std::endl;
           p.id() = -1;
         }
       }
