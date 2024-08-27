@@ -162,6 +162,8 @@ public:
   using amrex::AmrParticleContainer<NStructReal,
                                     NStructInt>::CreateGhostParticles;
   using amrex::AmrParticleContainer<NStructReal,
+                                    NStructInt>::CreateVirtualParticles;
+  using amrex::AmrParticleContainer<NStructReal,
                                     NStructInt>::AddParticlesAtLevel;
 
   using AoS = amrex::ArrayOfStructs<NStructReal, NStructInt>;
@@ -691,6 +693,15 @@ public:
     ParticleTileType ptile;
     CreateVirtualParticles(iLev + 1, ptile);
     AddParticlesAtLevel(ptile, iLev);
+  }
+
+  void Exchange_VirtualParticles(int iLev) {
+    ParticleTileType ptile;
+    ParticleTileType ptile2;
+    CreateVirtualParticles(iLev + 1, ptile);
+    CreateGhostParticles(iLev, 1, ptile2);
+    AddParticlesAtLevel(ptile, iLev);
+    AddParticlesAtLevel(ptile2, iLev + 1, 1);
   }
 
   void delete_particles_from_refined_region(int iLev) {
