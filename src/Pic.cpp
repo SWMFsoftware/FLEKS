@@ -882,7 +882,7 @@ void Pic::divE_correct_particle_position() {
   timing_func(nameFunc);
 
   for (int i = 0; i < nSpecies; ++i) {
-    parts[i]->divE_correct_position(centerPhi[0]);
+    parts[i]->divE_correct_position(centerPhi);
   }
 }
 
@@ -892,8 +892,8 @@ void Pic::calculate_phi(LinearSolver& solver) {
 
   timing_func(nameFunc);
 
-  const int iLev = 0;
-  MultiFab residual(cGrids[iLev], DistributionMap(iLev), 1, nGst);
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    MultiFab residual(cGrids[iLev], DistributionMap(iLev), 1, nGst);
 
   solver.reset(get_local_node_or_cell_number(centerDivE[iLev]));
     div_node_to_center(nodeE[iLev], residual, Geom(iLev).InvCellSize());
@@ -912,17 +912,17 @@ void Pic::calculate_phi(LinearSolver& solver) {
   solver.solve(iLev, doReport);
   BL_PROFILE_VAR_STOP(solve);
 
-  convert_1d_to_3d(solver.xLeft, centerPhi[iLev], iLev);
-  centerPhi[iLev].FillBoundary(Geom(iLev).periodicity());
+    convert_1d_to_3d(solver.xLeft, centerPhi[iLev], iLev);
+    centerPhi[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
 }
 
 //==========================================================
-void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut) {
+void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut, int iLev) {
   std::string nameFunc = "Pic::divE_matvec";
   timing_func(nameFunc);
 
-  const int iLev = 0;
-
+  // const int iLev = 0;
   zero_array(vecOut, divESolver.get_nSolve());
 
   MultiFab inMF(cGrids[iLev], DistributionMap(iLev), 1, nGst);

@@ -1344,7 +1344,7 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
       }
 
       // Mark for deletion
-      if (is_outside_active_region(p, status, lowCorner, highCorner)) {
+      if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
         p.id() = -1;
       }
     } // for p
@@ -1493,7 +1493,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
           p.pos(iz_) = zp + wnp1 * dtLoc;
 
         // Mark for deletion
-        if (is_outside_active_region(p, status, lowCorner, highCorner)) {
+        if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
           p.id() = -1;
         }
       } // for p
@@ -1576,7 +1576,7 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
         p.pos(iz_) = zp + wp * dt;
 
         // Mark for deletion
-        if (is_outside_active_region(p, status, lowCorner, highCorner)) {
+        if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
           p.id() = -1;
         }
       } // for p
@@ -1587,16 +1587,18 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::divE_correct_position(
-    const MultiFab& phiMF) {
+    const amrex::Vector<MultiFab>& phiMF) {
   timing_func("Pts:divE_correct_position");
 
   const Real coef = charge / fabs(charge);
   const Real epsLimit = 0.1;
   Real epsMax = 0;
 
-  const int iLev = 0;
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    Array4<Real const> const& phiArr = phiMF[pti].array();
+  // const int iLev = 0;
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      Array4<Real const> const& phiArr = phiMF[iLev][pti].array();
 
     const Array4<int const>& status = cell_status(iLev)[pti].array();
 
@@ -1606,12 +1608,12 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
 
-    for (auto& p : particles) {
-      if (p.id() == -1 ||
-          is_outside_active_region(p, status, lowCorner, highCorner)) {
-        p.id() = -1;
-        continue;
-      }
+      for (auto& p : particles) {
+        if (p.id() == -1 ||
+            is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
+          p.id() = -1;
+          continue;
+        }
 
       IntVect loIdx;
       RealVect dShift;
@@ -1727,24 +1729,19 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
           p.pos(iDim) += eps_D[iDim];
         }
 
-        if (is_outside_active_region(p, status, lowCorner, highCorner)) {
-          // Do not allow moving particles from physical cells to ghost cells
-          // during divE correction.
-          for (int iDim = 0; iDim < nDim; iDim++) {
-            p.pos(iDim) -= eps_D[iDim];
-          }
+          if (is_outside_active_region(p, status, lowCorner, highCorner,
+                                       iLev)) {
+            // Do not allow moving particles from physical cells to ghost cells
+            // during divE correction.
+            for (int iDim = 0; iDim < nDim; iDim++) {
+              p.pos(iDim) -= eps_D[iDim];
+            }
 
-          // p.id() = -1;
-        }
-
-        if (is_outside_level(p, iLev, status,loIdx)) {
-          for (int iDim = 0; iDim < nDim; iDim++) {
-            p.pos(iDim) -= eps_D[iDim];
+            // p.id() = -1;
           }
         }
-      }
-
-    } // for p
+      } // for p
+    }
   }
 }
 
@@ -2895,7 +2892,8 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
       const IntVect highCorner = bx.bigEnd();
 
       for (auto p : aosOther) {
-        if (other.is_outside_active_region(p, status, lowCorner, highCorner)) {
+        if (other.is_outside_active_region(p, status, lowCorner, highCorner,
+                                           iLev)) {
           // redistribute_particles() may fail if the ghost cell particles'
           // IDs are not -1 (marked for deletion);
           p.id() = -1;

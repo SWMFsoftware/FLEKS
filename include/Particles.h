@@ -528,8 +528,11 @@ public:
 
   void set_bc(BC& bcIn) { bc = bcIn; }
 
-  inline bool is_outside_active_region(const ParticleType& p) {
-    int iLev = 0;
+  inline bool is_outside_active_region(const ParticleType& p, int iLev) {
+    if (iLev > 0) {
+      return false;
+    }
+    // int iLev = 0;
     amrex::RealVect loc;
     for (int iDim = 0; iDim < nDim; iDim++) {
       loc[iDim] = p.pos(iDim);
@@ -560,11 +563,13 @@ public:
   inline bool is_outside_active_region(const ParticleType& p,
                                        amrex::Array4<int const> const& status,
                                        const amrex::IntVect& low,
-                                       const amrex::IntVect& high) {
+                                       const amrex::IntVect& high, int iLev) {
 
     // TODO: It does not work with AMR.
-    const int iLev = 0;
     // Contains ghost cells.
+    if (iLev > 0) {
+      return false;
+    }
     bool isInsideBox = true;
     amrex::IntVect cellIdx;
     amrex::RealVect dShift;
@@ -580,7 +585,7 @@ public:
     if (isInsideBox) {
       return bit::is_domain_boundary(status(cellIdx));
     } else {
-      return is_outside_active_region(p);
+      return is_outside_active_region(p, iLev);
     }
   }
 
@@ -602,7 +607,8 @@ public:
             const amrex::IntVect highCorner = bx.bigEnd();
 
             for (auto& p : particles) {
-              if (is_outside_active_region(p, status, lowCorner, highCorner)) {
+              if (is_outside_active_region(p, status, lowCorner, highCorner,
+                                           iLev)) {
                 p.id() = -1;
               }
             }
@@ -617,7 +623,7 @@ public:
         for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
           AoS& particles = pti.GetArrayOfStructs();
           for (auto& p : particles) {
-            if (is_outside_active_region(p)) {
+            if (is_outside_active_region(p, iLev)) {
               p.id() = -1;
             }
           }
@@ -644,7 +650,7 @@ public:
                                 int nPartNew, amrex::Vector<amrex::Real>& x,
                                 amrex::Real velNorm);
 
-  void divE_correct_position(const amrex::MultiFab& phiMF);
+  void divE_correct_position(const amrex::Vector<amrex::MultiFab>& phiMF);
 
   bool is_neutral() const { return charge == 0; };
 
