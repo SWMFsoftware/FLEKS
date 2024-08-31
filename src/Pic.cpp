@@ -720,17 +720,21 @@ void Pic::sum_moments(bool updateDt) {
   }
 
   if (updateDt) {
-    const auto& dx = Geom(0).CellSize();
-    Real minDx = 1e99;
+    amrex::Vector<amrex::Real> vec_uMax(n_lev());
+    amrex::Vector<amrex::Real> vec_minDx(n_lev());
+    amrex::Vector<amrex::Real> vec_ratio(n_lev());
+    int min_iLev = 0;
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      vec_minDx[iLev] = 1e99;
+      const auto& dx = Geom(iLev).CellSize();
     for (int iDim = 0; iDim < nDim; iDim++) {
-      if (minDx > dx[iDim])
-        minDx = dx[iDim];
+        if (vec_minDx[iLev] > dx[iDim])
+          vec_minDx[iLev] = dx[iDim];
     }
 
-    Real uMax = 0;
     if (tc->get_cfl() > 0 || doReport) {
+        vec_uMax[iLev] = 0.0;
       for (int i = 0; i < nSpecies; ++i) {
-        const int iLev = 0;
         Real uMaxSpecies =
             parts[i]->calc_max_thermal_velocity(nodePlasma[i][iLev]);
         ParallelDescriptor::ReduceRealMax(uMaxSpecies);
@@ -739,10 +743,22 @@ void Pic::sum_moments(bool updateDt) {
           Print() << printPrefix << std::setprecision(5) << "Species " << i
                   << ": max(uth) = " << uMaxSpecies << std::endl;
 
-        if (uMaxSpecies > uMax)
-          uMax = uMaxSpecies;
+          if (uMaxSpecies > vec_uMax[iLev])
+            vec_uMax[iLev] = uMaxSpecies;
       }
     }
+      vec_ratio[iLev] = vec_minDx[iLev] / vec_uMax[iLev];
+    }
+
+    Real lowest_ratio = 1e99;
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      if (vec_ratio[iLev] < lowest_ratio) {
+        lowest_ratio = vec_ratio[iLev];
+        min_iLev = iLev;
+      }
+    }
+    Real minDx = vec_minDx[min_iLev];
+    Real uMax = vec_uMax[min_iLev];
 
     if (tc->get_cfl() > 0) {
       Real dt = tc->get_cfl() * minDx / uMax;
@@ -1101,7 +1117,8 @@ void Pic::update(bool doReportIn) {
     project_down_B();
   }
 
-  // Only to be turned on if DivE error needs to be visulaized when DivE cleaning is not turned on
+  // Only to be turned on if DivE error needs to be visulaized when DivE
+  // cleaning is not turned on
 
   // for (int i = 0; i < 2; i++) {
   //   sum_moments(true);
