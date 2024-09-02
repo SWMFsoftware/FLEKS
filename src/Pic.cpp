@@ -739,9 +739,10 @@ void Pic::sum_moments(bool updateDt) {
             parts[i]->calc_max_thermal_velocity(nodePlasma[i][iLev]);
         ParallelDescriptor::ReduceRealMax(uMaxSpecies);
 
-        if (doReport)
-          Print() << printPrefix << std::setprecision(5) << "Species " << i
-                  << ": max(uth) = " << uMaxSpecies << std::endl;
+          if (doReport) {
+            Print() << printPrefix << std::setprecision(5) << "Species " << i
+                    << ": max(uth) = " << uMaxSpecies << std::endl;
+          }
 
           if (uMaxSpecies > vec_uMax[iLev])
             vec_uMax[iLev] = uMaxSpecies;
