@@ -1036,10 +1036,12 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
       apply_BC(cellStatus[iLev], centerNetChargeNew[iLev], 0,
                centerNetChargeNew[iLev].nComp(), &Pic::get_zero, iLev);
     } else {
+#ifdef _PC_COMPONENT_
       fill_fine_lev_bny_from_coarse(
           centerNetChargeNew[iLev - 1], centerNetChargeNew[iLev], 0,
           centerNetChargeNew[iLev - 1].nComp(), ref_ratio[iLev - 1],
           Geom(iLev - 1), Geom(iLev), cell_status(iLev), cell_bilinear_interp);
+#endif
     }
 
     if (PicParticles::particlePosition == NonStaggered) {
