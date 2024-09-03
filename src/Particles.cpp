@@ -217,7 +217,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           v += vBulk;
           w += wBulk;
 
-          if (moveparticleswithconstantvelocity) {
+          if (moveParticlesWithConstantVelocity) {
             u = 0.0;
             v = 0.4;
             w = 0.0;
@@ -1472,7 +1472,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         double vnp1 = 2.0 * vavg - vp + u0p[iy_];
         double wnp1 = 2.0 * wavg - wp + u0p[iz_];
 
-        if (moveparticleswithconstantvelocity) {
+        if (moveParticlesWithConstantVelocity) {
           unp1 = up;
           vnp1 = vp;
           wnp1 = wp;

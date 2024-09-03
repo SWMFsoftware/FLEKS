@@ -540,7 +540,7 @@ void Pic::calc_mass_matrix() {
 
   if (isGridEmpty)
     return;
-  if (decoupleparticlesfromfield) {
+  if (decoupleParticlesFromField) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       nodeMM[iLev].setVal(0.0);
       jHat[iLev].setVal(0.0);
@@ -601,7 +601,7 @@ void Pic::calc_mass_matrix_new() {
 
   if (isGridEmpty)
     return;
-  if (decoupleparticlesfromfield) {
+  if (decoupleParticlesFromField) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       nodeMM[iLev].setVal(0.0);
       jHat[iLev].setVal(0.0);
@@ -720,20 +720,20 @@ void Pic::sum_moments(bool updateDt) {
   }
 
   if (updateDt) {
-    amrex::Vector<amrex::Real> vec_uMax(n_lev());
-    amrex::Vector<amrex::Real> vec_minDx(n_lev());
-    amrex::Vector<amrex::Real> vec_ratio(n_lev());
+    amrex::Vector<amrex::Real> vecUMax(n_lev());
+    amrex::Vector<amrex::Real> vecMinDx(n_lev());
+    amrex::Vector<amrex::Real> vecRatio(n_lev());
     int min_iLev = 0;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      vec_minDx[iLev] = 1e99;
+      vecMinDx[iLev] = 1e99;
       const auto& dx = Geom(iLev).CellSize();
     for (int iDim = 0; iDim < nDim; iDim++) {
-        if (vec_minDx[iLev] > dx[iDim])
-          vec_minDx[iLev] = dx[iDim];
+        if (vecMinDx[iLev] > dx[iDim])
+          vecMinDx[iLev] = dx[iDim];
     }
 
     if (tc->get_cfl() > 0 || doReport) {
-        vec_uMax[iLev] = 0.0;
+        vecUMax[iLev] = 0.0;
       for (int i = 0; i < nSpecies; ++i) {
         Real uMaxSpecies =
             parts[i]->calc_max_thermal_velocity(nodePlasma[i][iLev]);
@@ -744,23 +744,23 @@ void Pic::sum_moments(bool updateDt) {
                     << ": max(uth) = " << uMaxSpecies << std::endl;
           }
 
-          if (uMaxSpecies > vec_uMax[iLev]) {
-            vec_uMax[iLev] = uMaxSpecies;
+          if (uMaxSpecies > vecUMax[iLev]) {
+            vecUMax[iLev] = uMaxSpecies;
           }
-          vec_ratio[iLev] = vec_minDx[iLev] / vec_uMax[iLev];
+          vecRatio[iLev] = vecMinDx[iLev] / vecUMax[iLev];
         }
       }
     }
 
     Real lowest_ratio = 1e99;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      if (vec_ratio[iLev] < lowest_ratio) {
-        lowest_ratio = vec_ratio[iLev];
+      if (vecRatio[iLev] < lowest_ratio) {
+        lowest_ratio = vecRatio[iLev];
         min_iLev = iLev;
       }
     }
-    Real minDx = vec_minDx[min_iLev];
-    Real uMax = vec_uMax[min_iLev];
+    Real minDx = vecMinDx[min_iLev];
+    Real uMax = vecUMax[min_iLev];
 
     if (tc->get_cfl() > 0) {
       Real dt = tc->get_cfl() * minDx / uMax;
@@ -1085,7 +1085,7 @@ void Pic::update(bool doReportIn) {
     update_U0_E0();
 
   if (solveEM) {
-    if (!usenewcalc_mass_matrix || finest_level == 0) {
+    if (!useNewCalcMassMatrix || finest_level == 0) {
       calc_mass_matrix();
     } else {
       calc_mass_matrix_new();
@@ -1116,7 +1116,7 @@ void Pic::update(bool doReportIn) {
     update_B();
   }
 
-  if (project_down_EM) {
+  if (projectDownEmFields) {
     project_down_E();
     project_down_B();
   }
@@ -1244,7 +1244,7 @@ void Pic::update_E() {
   if (useExplicitPIC) {
     update_E_expl();
   } else {
-    if (!usenewElectricSolver) {
+    if (!useNewElectricSolver) {
       update_E_impl();
     } else {
       update_E_new();
@@ -1474,7 +1474,7 @@ void Pic::update_E_matvec_new(const double* vecIn, double* vecOut, int iLev,
 //==========================================================
 void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
                           const bool useZeroBC) {
-  if (!usenewElectricSolver) {
+  if (!useNewElectricSolver) {
     std::string nameFunc = "Pic::E_matvec";
     timing_func(nameFunc);
 

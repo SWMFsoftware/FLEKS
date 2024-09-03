@@ -180,7 +180,7 @@ protected:
 
   int speciesID;
   RandNum randNum;
-  bool moveparticleswithconstantvelocity = false;
+  bool moveParticlesWithConstantVelocity = false;
   amrex::Real charge;
   amrex::Real mass;
 

@@ -46,10 +46,10 @@ private:
   bool initEM = true;
 
   bool useExplicitPIC = false;
-  bool usenewElectricSolver = false;
-  bool decoupleparticlesfromfield = false;
-  bool usenewcalc_mass_matrix = true;
-  bool project_down_EM = true;
+  bool useNewElectricSolver = false;
+  bool decoupleParticlesFromField = false;
+  bool useNewCalcMassMatrix = true;
+  bool projectDownEmFields = true;
 
   PartMode pMode = PartMode::PIC;
 
