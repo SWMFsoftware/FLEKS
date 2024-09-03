@@ -744,11 +744,12 @@ void Pic::sum_moments(bool updateDt) {
                     << ": max(uth) = " << uMaxSpecies << std::endl;
           }
 
-          if (uMaxSpecies > vec_uMax[iLev])
+          if (uMaxSpecies > vec_uMax[iLev]) {
             vec_uMax[iLev] = uMaxSpecies;
+          }
+          vec_ratio[iLev] = vec_minDx[iLev] / vec_uMax[iLev];
+        }
       }
-    }
-      vec_ratio[iLev] = vec_minDx[iLev] / vec_uMax[iLev];
     }
 
     Real lowest_ratio = 1e99;
