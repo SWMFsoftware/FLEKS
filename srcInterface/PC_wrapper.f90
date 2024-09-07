@@ -126,7 +126,7 @@ contains
     character(len=*), parameter :: NameSub='PC_save_restart'
     !--------------------------------------------------------------------------
     if( NameRestartOutDirComp /= '') then
-      LenNameRestartOutDir = len(NameRestartOutDirComp)
+      LenNameRestartOutDir = len_trim(NameRestartOutDirComp)
     else
       LenNameRestartOutDir = 0
     end if
