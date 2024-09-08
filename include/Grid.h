@@ -406,6 +406,16 @@ public:
     WriteMF(tmf, nlev, st, var);
   }
 
+  void WriteMF(amrex::UMultiFab<RealCMM>& MF, std::string st = "WriteMF",
+               amrex::Vector<std::string> var = {}) {
+
+    amrex::Vector<amrex::MultiFab> tmf;
+
+    tmf.push_back(centerMMtoMF(MF));
+    int nlev = 0;
+    WriteMF(tmf, nlev, st, var);
+  }
+
   void WriteMF(amrex::iMultiFab& MF, std::string st = "WriteMF",
                amrex::Vector<std::string> var = {}) {
 
