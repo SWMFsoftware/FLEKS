@@ -354,7 +354,7 @@ public:
                               bool solveInCoMov);
 
   // select particles based on input supid and id
-  void select_particle(amrex::Vector<std::array<int, 2> >& selectParticleIn);
+  void select_particle(amrex::Vector<std::array<int, 3> >& selectParticleIn);
 
   // Both the input are in the SI unit: m/s
   amrex::Real charge_exchange_dis(amrex::Real* vp, amrex::Real* vh,

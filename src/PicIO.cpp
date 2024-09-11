@@ -498,7 +498,7 @@ void Pic::read_restart() {
   doNeedFillNewCell = false;
 
   if (doSelectParticle) {
-    Vector<std::array<int, 2> > selectParticleInput =
+    Vector<std::array<int, 3> > selectParticleInput =
         read_select_particle_input();
     for (int iPart = 0; iPart < parts.size(); iPart++) {
       parts[iPart]->select_particle(selectParticleInput);
@@ -507,7 +507,7 @@ void Pic::read_restart() {
 }
 
 //==========================================================
-Vector<std::array<int, 2> > Pic::read_select_particle_input() {
+Vector<std::array<int, 3> > Pic::read_select_particle_input() {
 
   Print() << "Pic::read_select_particel_input() started..... "
           << selectParticleInputFile << "\n";
@@ -523,12 +523,12 @@ Vector<std::array<int, 2> > Pic::read_select_particle_input() {
 
   is >> numParticles;
 
-  Vector<std::array<int, 2> > selectParticleInput;
+  Vector<std::array<int, 3> > selectParticleInput;
 
-  int currentSupid, currentId;
+  int currentCpu, currentSupid, currentId;
   for (int ip = 0; ip < numParticles; ip++) {
-    is >> currentSupid >> currentId;
-    std::array<int, 2> currentParticleIds{ { currentSupid, currentId } };
+    is >> currentCpu >> currentSupid >> currentId;
+    std::array<int, 3> currentParticleIds{ { currentCpu, currentSupid, currentId } };
     selectParticleInput.push_back(currentParticleIds);
   }
 

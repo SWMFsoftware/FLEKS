@@ -1504,11 +1504,11 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::select_particle(
-    Vector<std::array<int, 2> >& selectParticleIn) {
+    Vector<std::array<int, 3> >& selectParticleIn) {
 
   timing_func("Pts::select_particle");
 
-  int numParticlesFound = 0;  
+  int numParticlesFoundLocal = 0, numParticlesFoundTotal = 0;  
 
   // output files
   std::string filename = "select_particle_out_sp" + std::to_string(speciesID) +
@@ -1529,10 +1529,11 @@ void Particles<NStructReal, NStructInt>::select_particle(
           continue;
 
         for (auto& currentTargetParticle : selectParticleIn) {
-          if (p.idata(iSupID_) == currentTargetParticle[0] &&
-              p.id() == currentTargetParticle[1]) {
-            numParticlesFound++;
-            outFile << ParallelDescriptor::MyProc() << " " << p.idata(iSupID_)
+          if (p.cpu() == currentTargetParticle[0] &&
+              p.idata(iSupID_) == currentTargetParticle[1] &&
+              p.id() == currentTargetParticle[2]) {
+            numParticlesFoundLocal++;
+            outFile << p.cpu() << " " << p.idata(iSupID_)
                     << " " << p.id() << " " << p.pos(ix_) << " " << p.pos(iy_)
                     << " " << p.pos(iz_) << " " << p.rdata(iup_) << " "
                     << p.rdata(ivp_) << " " << p.rdata(iwp_) << "\n";
@@ -1542,8 +1543,12 @@ void Particles<NStructReal, NStructInt>::select_particle(
     }
   }
   outFile.close();
-  Print() << "select particle finished... " << numParticlesFound
+  MPI_Reduce(&numParticlesFoundLocal, &numParticlesFoundTotal, 1, MPI_INT,
+              MPI_SUM, ParallelDescriptor::IOProcessorNumber(),
+              ParallelDescriptor::Communicator());
+  Print() << "select particle finished... " << numParticlesFoundTotal
           << "particles found..." << std::endl;
+  amrex::Abort("Abort: select particle finished!");
 }
 
 //==========================================================
