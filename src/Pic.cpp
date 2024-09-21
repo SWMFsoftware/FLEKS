@@ -872,61 +872,34 @@ void Pic::divE_correction() {
 
   for (int iIter = 0; iIter < nDivECorrection; iIter++) {
 
-    if (finest_level > 0) {
-      for (int iLev = finest_level - 1; iLev >= 0; iLev--) {
-        for (int i = 0; i < nSpecies; ++i) {
-          parts[i]->Exchange_VirtualParticles(iLev);
-        }
-      }
-    }
     sum_to_center(true);
-    if (finest_level > 0) {
-      for (int iLev = 0; iLev < n_lev(); iLev++) {
-        for (int i = 0; i < nSpecies; ++i) {
-          parts[i]->delete_particles_from_ghost_cells(iLev);
-          parts[i]->delete_particles_from_refined_region(iLev);
-        }
-      }
-    }
+
     if (doReport)
       Print() << "\n-----" << printPrefix << " div(E) correction at iter "
               << iIter << "----------" << std::endl;
+
     calculate_phi(divESolver);
 
     divE_correct_particle_position();
+
     if (finest_level > 0) {
       for (int i = 0; i < nSpecies; ++i) {
-        parts[i]->redistribute_particles();
+        parts[i]->Redistribute();
       }
     }
   }
 
-  if (finest_level == 0) {
-    for (int i = 0; i < nSpecies; ++i) {
-      // The particles outside the simulation domain is marked for deletion
-      // inside divE_correct_particle_position(). redistribute_particles()
-      // deletes these particles. In order to get correct moments, re-inject
-      // particles in the ghost cells.
-      parts[i]->redistribute_particles();
-    }
+  for (int i = 0; i < nSpecies; ++i) {
+    // The particles outside the simulation domain is marked for deletion
+    // inside divE_correct_particle_position(). redistribute_particles()
+    // deletes these particles. In order to get correct moments, re-inject
+    // particles in the ghost cells.
+    parts[i]->redistribute_particles();
   }
+
   inject_particles_for_boundary_cells();
-  if (finest_level > 0) {
-    for (int iLev = finest_level - 1; iLev >= 0; iLev--) {
-      for (int i = 0; i < nSpecies; ++i) {
-        parts[i]->Exchange_VirtualParticles(iLev);
-      }
-    }
-  }
+
   sum_to_center(false);
-  if (finest_level > 0) {
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      for (int i = 0; i < nSpecies; ++i) {
-        parts[i]->delete_particles_from_ghost_cells(iLev);
-        parts[i]->delete_particles_from_refined_region(iLev);
-      }
-    }
-  }
 }
 
 //==========================================================
@@ -1011,7 +984,11 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut, int iLev) {
 //==========================================================
 void Pic::sum_to_center(bool isBeforeCorrection) {
   std::string nameFunc = "Pic::sum_to_center";
-
+  if (finest_level > 0) {
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->Exchange_VirtualParticles(0);
+    }
+  }
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -1060,6 +1037,13 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
                        centerNetChargeOld[iLev].nComp(),
                        centerNetChargeOld[iLev].nGrow());
       }
+    }
+  }
+  if (finest_level > 0) {
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->delete_particles_from_ghost_cells(1);
+      parts[i]->delete_particles_from_refined_region(0);
+      parts[i]->Redistribute();
     }
   }
 }

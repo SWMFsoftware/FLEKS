@@ -476,6 +476,32 @@ public:
                    << std::endl;
   };
 
+  void WriteDivEErrorToParaView() {
+    amrex::Vector<amrex::MultiFab> errorDivE;
+    errorDivE.resize(n_lev());
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      errorDivE[iLev].define(cGrids[iLev], DistributionMap(iLev), 1, nGst);
+      errorDivE[iLev].setVal(0.0);
+      for (amrex::MFIter mfi(errorDivE[iLev]); mfi.isValid(); ++mfi) {
+        const amrex::Box &box = mfi.validbox();
+        const amrex::Array4<amrex::Real> &error = errorDivE[iLev][mfi].array();
+        const amrex::Array4<amrex::Real const> divEcc =
+            centerDivE[iLev][mfi].array();
+        const amrex::Array4<amrex::Real const> qcc =
+            centerNetChargeN[iLev][mfi].array();
+        const auto &status = cell_status(iLev)[mfi].array();
+
+        amrex::ParallelFor(box, [&](int i, int j, int k) {
+          error(i, j, k) =
+              sqrt(pow((4.0 * dPI * qcc(i, j, k) - 1.0 * divEcc(i, j, k)), 2));
+          if (bit::is_refined(status(i, j, k))) {
+            error(i, j, k) = 0;
+          }
+        });
+      }
+    }
+    WriteMF(errorDivE, finest_level, "errorDivE");
+  }
   // private methods
 private:
   amrex::Real calc_E_field_energy();

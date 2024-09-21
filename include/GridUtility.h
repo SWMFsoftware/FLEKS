@@ -411,7 +411,7 @@ void fill_fine_lev_bny_from_coarse(amrex::FabArray<FAB>& coarse,
                                    const amrex::Geometry& cgeom,
                                    const amrex::Geometry& fgeom,
                                    const amrex::iMultiFab& fstatus,
-                                   amrex::Interpolater& mapper) {
+                                   amrex::Interpolater& mapper, amrex::Real mult=1.0) {
   BL_PROFILE("fill_fine_lev_bny_from_coarse");
 
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
@@ -440,7 +440,7 @@ void fill_fine_lev_bny_from_coarse(amrex::FabArray<FAB>& coarse,
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
             if (bit::is_lev_boundary(statusArr(i, j, k))) {
-              data(i, j, k, iVar) = tmp(i, j, k, iVar);
+              data(i, j, k, iVar) = mult*tmp(i, j, k, iVar);
             }
           }
   }
@@ -451,7 +451,7 @@ void fill_fine_lev_edge_from_coarse(
     amrex::FabArray<FAB>& coarse, amrex::FabArray<FAB>& fine, const int iStart,
     const int nComp, const amrex::IntVect ratio, const amrex::Geometry& cgeom,
     const amrex::Geometry& fgeom, const amrex::iMultiFab& fstatus,
-    amrex::Interpolater& mapper) {
+    amrex::Interpolater& mapper, amrex::Real mult= 1.0) {
   BL_PROFILE("fill_fine_lev_bny_from_coarse");
 
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
@@ -480,7 +480,7 @@ void fill_fine_lev_edge_from_coarse(
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
             if (bit::is_lev_edge(statusArr(i, j, k))) {
-              data(i, j, k, iVar) = tmp(i, j, k, iVar);
+              data(i, j, k, iVar) = mult*tmp(i, j, k, iVar);
             }
           }
   }
@@ -492,7 +492,7 @@ void fill_fine_lev_from_coarse(amrex::FabArray<FAB>& coarse,
                                const int nComp, const amrex::IntVect ratio,
                                const amrex::Geometry& cgeom,
                                const amrex::Geometry& fgeom,
-                               amrex::Interpolater& mapper) {
+                               amrex::Interpolater& mapper, amrex::Real mult=1.0) {
   BL_PROFILE("fill_fine_lev_from_coarse");
 
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
@@ -520,7 +520,7 @@ void fill_fine_lev_from_coarse(amrex::FabArray<FAB>& coarse,
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
 
-            data(i, j, k, iVar) = tmp(i, j, k, iVar);
+            data(i, j, k, iVar) = mult*tmp(i, j, k, iVar);
           }
   }
   fine.FillBoundary();
