@@ -6,6 +6,7 @@
 
 //========= Physical constants =====================
 constexpr static double fourPI = 3.14159265359 * 4;
+constexpr static double dPI = 3.14159265358979323846;
 
 constexpr static double cProtonMassSI = 1.67262192e-27; // kg
 constexpr static double cUnitChargeSI = 1.60217663e-19; // C
