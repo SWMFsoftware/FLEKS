@@ -1638,7 +1638,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
             if (bit::is_lev_boundary(status(ijk)))
               isBoundaryPhysicalCell = true;
           }
-      if (isBoundaryPhysicalCell)
+      if (isBoundaryPhysicalCell && iLev == 0)
         continue;
 
       {
