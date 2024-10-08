@@ -528,7 +528,8 @@ Vector<std::array<int, 3> > Pic::read_select_particle_input() {
   int currentCpu, currentSupid, currentId;
   for (int ip = 0; ip < numParticles; ip++) {
     is >> currentCpu >> currentSupid >> currentId;
-    std::array<int, 3> currentParticleIds{ { currentCpu, currentSupid, currentId } };
+    std::array<int, 3> currentParticleIds{ { currentCpu, currentSupid,
+                                             currentId } };
     selectParticleInput.push_back(currentParticleIds);
   }
 

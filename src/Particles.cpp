@@ -1508,7 +1508,7 @@ void Particles<NStructReal, NStructInt>::select_particle(
 
   timing_func("Pts::select_particle");
 
-  int numParticlesFoundLocal = 0, numParticlesFoundTotal = 0;  
+  int numParticlesFoundLocal = 0, numParticlesFoundTotal = 0;
 
   // output files
   std::string filename = "select_particle_out_sp" + std::to_string(speciesID) +
@@ -1533,9 +1533,9 @@ void Particles<NStructReal, NStructInt>::select_particle(
               p.idata(iSupID_) == currentTargetParticle[1] &&
               p.id() == currentTargetParticle[2]) {
             numParticlesFoundLocal++;
-            outFile << p.cpu() << " " << p.idata(iSupID_)
-                    << " " << p.id() << " " << p.pos(ix_) << " " << p.pos(iy_)
-                    << " " << p.pos(iz_) << " " << p.rdata(iup_) << " "
+            outFile << p.cpu() << " " << p.idata(iSupID_) << " " << p.id()
+                    << " " << p.pos(ix_) << " " << p.pos(iy_) << " "
+                    << p.pos(iz_) << " " << p.rdata(iup_) << " "
                     << p.rdata(ivp_) << " " << p.rdata(iwp_) << "\n";
           }
         }
@@ -1544,8 +1544,8 @@ void Particles<NStructReal, NStructInt>::select_particle(
   }
   outFile.close();
   MPI_Reduce(&numParticlesFoundLocal, &numParticlesFoundTotal, 1, MPI_INT,
-              MPI_SUM, ParallelDescriptor::IOProcessorNumber(),
-              ParallelDescriptor::Communicator());
+             MPI_SUM, ParallelDescriptor::IOProcessorNumber(),
+             ParallelDescriptor::Communicator());
   Print() << "select particle finished... " << numParticlesFoundTotal
           << "particles found..." << std::endl;
   amrex::Abort("Abort: select particle finished!");
@@ -1605,13 +1605,13 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       Array4<Real const> const& phiArr = phiMF[iLev][pti].array();
 
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
+      const Array4<int const>& status = cell_status(iLev)[pti].array();
 
-    AoS& particles = pti.GetArrayOfStructs();
+      AoS& particles = pti.GetArrayOfStructs();
 
-    const Box& bx = cell_status(iLev)[pti].box();
-    const IntVect lowCorner = bx.smallEnd();
-    const IntVect highCorner = bx.bigEnd();
+      const Box& bx = cell_status(iLev)[pti].box();
+      const IntVect lowCorner = bx.smallEnd();
+      const IntVect highCorner = bx.bigEnd();
 
       for (auto& p : particles) {
         if (p.id() == -1 ||
@@ -1620,119 +1620,119 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
           continue;
         }
 
-      IntVect loIdx;
-      RealVect dShift;
-      find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                      loIdx, dShift);
+        IntVect loIdx;
+        RealVect dShift;
+        find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                        loIdx, dShift);
 
-      // Since the boundary condition for solving phi is not perfect,
-      // correcting particles that are close to the boundaries may produce
-      // artificial oscillations, which are seen in Earth's magnetotail
-      // simulations. So, it is better to skip the boundary physical cells.
-      bool isBoundaryPhysicalCell = false;
-      for (int iz = 0; iz <= 1; iz++)
-        for (int iy = 0; iy <= 1; iy++)
-          for (int ix = 0; ix <= 1; ix++) {
-            IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ix, loIdx[iy_] + iy,
-                                         loIdx[iz_] + iz) };
-            if (bit::is_lev_boundary(status(ijk)))
-              isBoundaryPhysicalCell = true;
-          }
-      if (isBoundaryPhysicalCell && iLev == 0)
-        continue;
-
-      {
-        Real weights_IIID[2][2][2][nDim3];
-        //----- Mass matrix calculation begin--------------
-        const Real xi0 = dShift[ix_] * dx[iLev][ix_];
-        const Real eta0 = dShift[iy_] * dx[iLev][iy_];
-        const Real zeta0 = nDim > 2 ? dShift[iz_] * dx[iLev][iz_] : 0;
-        const Real xi1 = dx[iLev][ix_] - xi0;
-        const Real eta1 = dx[iLev][iy_] - eta0;
-        const Real zeta1 = nDim > 2 ? dx[iLev][iz_] - zeta0 : 1;
-
-        const Real zeta02Vol = zeta0 * invVol[iLev];
-        const Real zeta12Vol = zeta1 * invVol[iLev];
-        const Real eta02Vol = eta0 * invVol[iLev];
-        const Real eta12Vol = eta1 * invVol[iLev];
-
-        weights_IIID[1][1][1][ix_] = eta0 * zeta02Vol;
-        weights_IIID[1][1][1][iy_] = xi0 * zeta02Vol;
-        weights_IIID[1][1][1][iz_] = xi0 * eta02Vol;
-
-        // xi0*eta0*zeta1*invVol[iLev];
-        weights_IIID[1][1][0][ix_] = eta0 * zeta12Vol;
-        weights_IIID[1][1][0][iy_] = xi0 * zeta12Vol;
-        weights_IIID[1][1][0][iz_] = -xi0 * eta02Vol;
-
-        // xi0*eta1*zeta0*invVol[iLev];
-        weights_IIID[1][0][1][ix_] = eta1 * zeta02Vol;
-        weights_IIID[1][0][1][iy_] = -xi0 * zeta02Vol;
-        weights_IIID[1][0][1][iz_] = xi0 * eta12Vol;
-
-        // xi0*eta1*zeta1*invVol[iLev];
-        weights_IIID[1][0][0][ix_] = eta1 * zeta12Vol;
-        weights_IIID[1][0][0][iy_] = -xi0 * zeta12Vol;
-        weights_IIID[1][0][0][iz_] = -xi0 * eta12Vol;
-
-        // xi1*eta0*zeta0*invVol[iLev];
-        weights_IIID[0][1][1][ix_] = -eta0 * zeta02Vol;
-        weights_IIID[0][1][1][iy_] = xi1 * zeta02Vol;
-        weights_IIID[0][1][1][iz_] = xi1 * eta02Vol;
-
-        // xi1*eta0*zeta1*invVol[iLev];
-        weights_IIID[0][1][0][ix_] = -eta0 * zeta12Vol;
-        weights_IIID[0][1][0][iy_] = xi1 * zeta12Vol;
-        weights_IIID[0][1][0][iz_] = -xi1 * eta02Vol;
-
-        // xi1*eta1*zeta0*invVol[iLev];
-        weights_IIID[0][0][1][ix_] = -eta1 * zeta02Vol;
-        weights_IIID[0][0][1][iy_] = -xi1 * zeta02Vol;
-        weights_IIID[0][0][1][iz_] = xi1 * eta12Vol;
-
-        // xi1*eta1*zeta1*invVol[iLev];
-        weights_IIID[0][0][0][ix_] = -eta1 * zeta12Vol;
-        weights_IIID[0][0][0][iy_] = -xi1 * zeta12Vol;
-        weights_IIID[0][0][0][iz_] = -xi1 * eta12Vol;
-
-        const int iMin = loIdx[ix_];
-        const int jMin = loIdx[iy_];
-        const int kMin = nDim > 2 ? loIdx[iz_] : 0;
-
-        RealVect eps_D = { AMREX_D_DECL(0, 0, 0) };
-
-        for (int k = 0; k < 2; ++k)
-          for (int j = 0; j < 2; ++j)
-            for (int i = 0; i < 2; ++i) {
-              IntVect ijk = { AMREX_D_DECL(iMin + i, jMin + j, kMin + k) };
-              const Real coef = phiArr(ijk);
-              for (int iDim = 0; iDim < nDim; iDim++) {
-                eps_D[iDim] += coef * weights_IIID[i][j][k][iDim];
-              }
+        // Since the boundary condition for solving phi is not perfect,
+        // correcting particles that are close to the boundaries may produce
+        // artificial oscillations, which are seen in Earth's magnetotail
+        // simulations. So, it is better to skip the boundary physical cells.
+        bool isBoundaryPhysicalCell = false;
+        for (int iz = 0; iz <= 1; iz++)
+          for (int iy = 0; iy <= 1; iy++)
+            for (int ix = 0; ix <= 1; ix++) {
+              IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ix, loIdx[iy_] + iy,
+                                           loIdx[iz_] + iz) };
+              if (bit::is_lev_boundary(status(ijk)))
+                isBoundaryPhysicalCell = true;
             }
+        if (isBoundaryPhysicalCell && iLev == 0)
+          continue;
 
-        for (int iDim = 0; iDim < nDim; iDim++)
-          eps_D[iDim] *= coef * fourPI;
+        {
+          Real weights_IIID[2][2][2][nDim3];
+          //----- Mass matrix calculation begin--------------
+          const Real xi0 = dShift[ix_] * dx[iLev][ix_];
+          const Real eta0 = dShift[iy_] * dx[iLev][iy_];
+          const Real zeta0 = nDim > 2 ? dShift[iz_] * dx[iLev][iz_] : 0;
+          const Real xi1 = dx[iLev][ix_] - xi0;
+          const Real eta1 = dx[iLev][iy_] - eta0;
+          const Real zeta1 = nDim > 2 ? dx[iLev][iz_] - zeta0 : 1;
 
-        if (fabs(eps_D[ix_] * invDx[iLev][ix_]) > epsLimit ||
-            fabs(eps_D[iy_] * invDx[iLev][iy_]) > epsLimit ||
-            fabs(eps_D[iz_] * invDx[iLev][iz_]) > epsLimit) {
-          // If eps_D is too large, the underlying assumption of the particle
-          // correction method will be not valid. Comparing each exp_D
-          // component instead of the length dl saves the computational time.
-          const Real dl = sqrt(pow(eps_D[ix_], 2) + pow(eps_D[iy_], 2) +
-                               pow(eps_D[iz_], 2));
-          const Real ratio = epsLimit * dx[iLev][ix_] / dl;
+          const Real zeta02Vol = zeta0 * invVol[iLev];
+          const Real zeta12Vol = zeta1 * invVol[iLev];
+          const Real eta02Vol = eta0 * invVol[iLev];
+          const Real eta12Vol = eta1 * invVol[iLev];
+
+          weights_IIID[1][1][1][ix_] = eta0 * zeta02Vol;
+          weights_IIID[1][1][1][iy_] = xi0 * zeta02Vol;
+          weights_IIID[1][1][1][iz_] = xi0 * eta02Vol;
+
+          // xi0*eta0*zeta1*invVol[iLev];
+          weights_IIID[1][1][0][ix_] = eta0 * zeta12Vol;
+          weights_IIID[1][1][0][iy_] = xi0 * zeta12Vol;
+          weights_IIID[1][1][0][iz_] = -xi0 * eta02Vol;
+
+          // xi0*eta1*zeta0*invVol[iLev];
+          weights_IIID[1][0][1][ix_] = eta1 * zeta02Vol;
+          weights_IIID[1][0][1][iy_] = -xi0 * zeta02Vol;
+          weights_IIID[1][0][1][iz_] = xi0 * eta12Vol;
+
+          // xi0*eta1*zeta1*invVol[iLev];
+          weights_IIID[1][0][0][ix_] = eta1 * zeta12Vol;
+          weights_IIID[1][0][0][iy_] = -xi0 * zeta12Vol;
+          weights_IIID[1][0][0][iz_] = -xi0 * eta12Vol;
+
+          // xi1*eta0*zeta0*invVol[iLev];
+          weights_IIID[0][1][1][ix_] = -eta0 * zeta02Vol;
+          weights_IIID[0][1][1][iy_] = xi1 * zeta02Vol;
+          weights_IIID[0][1][1][iz_] = xi1 * eta02Vol;
+
+          // xi1*eta0*zeta1*invVol[iLev];
+          weights_IIID[0][1][0][ix_] = -eta0 * zeta12Vol;
+          weights_IIID[0][1][0][iy_] = xi1 * zeta12Vol;
+          weights_IIID[0][1][0][iz_] = -xi1 * eta02Vol;
+
+          // xi1*eta1*zeta0*invVol[iLev];
+          weights_IIID[0][0][1][ix_] = -eta1 * zeta02Vol;
+          weights_IIID[0][0][1][iy_] = -xi1 * zeta02Vol;
+          weights_IIID[0][0][1][iz_] = xi1 * eta12Vol;
+
+          // xi1*eta1*zeta1*invVol[iLev];
+          weights_IIID[0][0][0][ix_] = -eta1 * zeta12Vol;
+          weights_IIID[0][0][0][iy_] = -xi1 * zeta12Vol;
+          weights_IIID[0][0][0][iz_] = -xi1 * eta12Vol;
+
+          const int iMin = loIdx[ix_];
+          const int jMin = loIdx[iy_];
+          const int kMin = nDim > 2 ? loIdx[iz_] : 0;
+
+          RealVect eps_D = { AMREX_D_DECL(0, 0, 0) };
+
+          for (int k = 0; k < 2; ++k)
+            for (int j = 0; j < 2; ++j)
+              for (int i = 0; i < 2; ++i) {
+                IntVect ijk = { AMREX_D_DECL(iMin + i, jMin + j, kMin + k) };
+                const Real coef = phiArr(ijk);
+                for (int iDim = 0; iDim < nDim; iDim++) {
+                  eps_D[iDim] += coef * weights_IIID[i][j][k][iDim];
+                }
+              }
+
           for (int iDim = 0; iDim < nDim; iDim++)
-            eps_D[iDim] *= ratio;
-        }
+            eps_D[iDim] *= coef * fourPI;
 
-        for (int iDim = 0; iDim < nDim; iDim++) {
-          if (fabs(eps_D[iDim] * invDx[iLev][iDim]) > epsMax)
-            epsMax = fabs(eps_D[iDim] * invDx[iLev][iDim]);
+          if (fabs(eps_D[ix_] * invDx[iLev][ix_]) > epsLimit ||
+              fabs(eps_D[iy_] * invDx[iLev][iy_]) > epsLimit ||
+              fabs(eps_D[iz_] * invDx[iLev][iz_]) > epsLimit) {
+            // If eps_D is too large, the underlying assumption of the particle
+            // correction method will be not valid. Comparing each exp_D
+            // component instead of the length dl saves the computational time.
+            const Real dl = sqrt(pow(eps_D[ix_], 2) + pow(eps_D[iy_], 2) +
+                                 pow(eps_D[iz_], 2));
+            const Real ratio = epsLimit * dx[iLev][ix_] / dl;
+            for (int iDim = 0; iDim < nDim; iDim++)
+              eps_D[iDim] *= ratio;
+          }
 
-          p.pos(iDim) += eps_D[iDim];
-        }
+          for (int iDim = 0; iDim < nDim; iDim++) {
+            if (fabs(eps_D[iDim] * invDx[iLev][iDim]) > epsMax)
+              epsMax = fabs(eps_D[iDim] * invDx[iLev][iDim]);
+
+            p.pos(iDim) += eps_D[iDim];
+          }
 
           if (is_outside_active_region(p, status, lowCorner, highCorner,
                                        iLev)) {

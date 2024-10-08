@@ -727,17 +727,17 @@ void Pic::sum_moments(bool updateDt) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       vecMinDx[iLev] = 1e99;
       const auto& dx = Geom(iLev).CellSize();
-    for (int iDim = 0; iDim < nDim; iDim++) {
+      for (int iDim = 0; iDim < nDim; iDim++) {
         if (vecMinDx[iLev] > dx[iDim])
           vecMinDx[iLev] = dx[iDim];
-    }
+      }
 
-    if (tc->get_cfl() > 0 || doReport) {
+      if (tc->get_cfl() > 0 || doReport) {
         vecUMax[iLev] = 0.0;
-      for (int i = 0; i < nSpecies; ++i) {
-        Real uMaxSpecies =
-            parts[i]->calc_max_thermal_velocity(nodePlasma[i][iLev]);
-        ParallelDescriptor::ReduceRealMax(uMaxSpecies);
+        for (int i = 0; i < nSpecies; ++i) {
+          Real uMaxSpecies =
+              parts[i]->calc_max_thermal_velocity(nodePlasma[i][iLev]);
+          ParallelDescriptor::ReduceRealMax(uMaxSpecies);
 
           if (doReport) {
             Print() << printPrefix << std::setprecision(5) << "Species " << i
@@ -922,22 +922,22 @@ void Pic::calculate_phi(LinearSolver& solver) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab residual(cGrids[iLev], DistributionMap(iLev), 1, nGst);
 
-  solver.reset(get_local_node_or_cell_number(centerDivE[iLev]));
+    solver.reset(get_local_node_or_cell_number(centerDivE[iLev]));
     div_node_to_center(nodeE[iLev], residual, Geom(iLev).InvCellSize());
-  Real coef = 1;
-  if (PicParticles::particlePosition == Staggered) {
-    coef = 1.0 / rhoTheta;
-  }
+    Real coef = 1;
+    if (PicParticles::particlePosition == Staggered) {
+      coef = 1.0 / rhoTheta;
+    }
 
-  MultiFab::LinComb(residual, coef, residual, 0, -fourPI * coef,
-                    centerNetChargeN[iLev], 0, 0, residual.nComp(),
-                    residual.nGrow());
+    MultiFab::LinComb(residual, coef, residual, 0, -fourPI * coef,
+                      centerNetChargeN[iLev], 0, 0, residual.nComp(),
+                      residual.nGrow());
 
-  convert_3d_to_1d(residual, solver.rhs, iLev);
+    convert_3d_to_1d(residual, solver.rhs, iLev);
 
-  BL_PROFILE_VAR("Pic::phi_iterate", solve);
-  solver.solve(iLev, doReport);
-  BL_PROFILE_VAR_STOP(solve);
+    BL_PROFILE_VAR("Pic::phi_iterate", solve);
+    solver.solve(iLev, doReport);
+    BL_PROFILE_VAR_STOP(solve);
 
     convert_1d_to_3d(solver.xLeft, centerPhi[iLev], iLev);
     centerPhi[iLev].FillBoundary(Geom(iLev).periodicity());

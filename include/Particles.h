@@ -552,11 +552,11 @@ public:
                                amrex::Array4<int const> const& status,
                                const amrex::IntVect cellIdx) {
     bool isOutsideLevel = false;
-      if (bit::is_refined(status(cellIdx)) ||
-          bit::is_lev_boundary(status(cellIdx))) {
-        isOutsideLevel = true;
-      }
-    
+    if (bit::is_refined(status(cellIdx)) ||
+        bit::is_lev_boundary(status(cellIdx))) {
+      isOutsideLevel = true;
+    }
+
     return isOutsideLevel;
   }
 
