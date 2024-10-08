@@ -2574,7 +2574,8 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
     if (i < nPartNew) {
       ref[i] = tmp;
     } else {
-      ref[i] = fabs(a(i, nVar) * tmp);
+      // I do not have a good idea to set the reference value here. --Yuxi
+      ref[i] = fabs(a(i, nVar) * tmp * csmall);
     }
   }
 
