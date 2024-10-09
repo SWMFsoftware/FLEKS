@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <math.h>
 
 #include <AMReX_Algorithm.H>
@@ -720,72 +721,54 @@ void Pic::sum_moments(bool updateDt) {
   }
 
   if (updateDt) {
-    amrex::Vector<amrex::Real> vecUMax(n_lev());
-    amrex::Vector<amrex::Real> vecMinDx(n_lev());
-    amrex::Vector<amrex::Real> vecRatio(n_lev());
-    int min_iLev = 0;
+    amrex::Vector<amrex::Real> uMax(n_lev());
+    amrex::Vector<amrex::Real> dxMin(n_lev());
+    amrex::Vector<amrex::Real> dtMax(n_lev());
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      vecMinDx[iLev] = 1e99;
       const auto& dx = Geom(iLev).CellSize();
-      for (int iDim = 0; iDim < nDim; iDim++) {
-        if (vecMinDx[iLev] > dx[iDim])
-          vecMinDx[iLev] = dx[iDim];
-      }
+      dxMin[iLev] = min(AMREX_D_DECL(dx[ix_], dx[iy_], dx[iz_]));
 
       if (tc->get_cfl() > 0 || doReport) {
-        vecUMax[iLev] = 0.0;
+        uMax[iLev] = 0.0;
         for (int i = 0; i < nSpecies; ++i) {
           Real uMaxSpecies =
               parts[i]->calc_max_thermal_velocity(nodePlasma[i][iLev]);
           ParallelDescriptor::ReduceRealMax(uMaxSpecies);
 
           if (doReport) {
-            Print() << printPrefix << std::setprecision(5) << "Species " << i
-                    << ": max(uth) = " << uMaxSpecies << std::endl;
+            Print() << printPrefix << std::setprecision(5) << "lev " << iLev
+                    << " Species " << i << ": max(uth) = " << uMaxSpecies
+                    << std::endl;
           }
 
-          if (uMaxSpecies > vecUMax[iLev]) {
-            vecUMax[iLev] = uMaxSpecies;
+          if (uMaxSpecies > uMax[iLev]) {
+            uMax[iLev] = uMaxSpecies;
           }
-          vecRatio[iLev] = vecMinDx[iLev] / vecUMax[iLev];
         }
-      }
-    }
 
-    Real lowest_ratio = 1e99;
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      if (vecRatio[iLev] < lowest_ratio) {
-        lowest_ratio = vecRatio[iLev];
-        min_iLev = iLev;
+        dtMax[iLev] = dxMin[iLev] / uMax[iLev];
       }
     }
-    Real minDx = vecMinDx[min_iLev];
-    Real uMax = vecUMax[min_iLev];
 
     if (tc->get_cfl() > 0) {
-      Real dt = tc->get_cfl() * minDx / uMax;
+      Real dt0 = *std::min_element(dtMax.begin(), dtMax.end());
+      Real dt = tc->get_cfl() * dt0;
       tc->set_next_dt(dt);
 
       if (tc->get_dt() < 0) {
         tc->set_dt(dt);
       }
-
-      if (PicParticles::particlePosition == NonStaggered) {
-        tc->set_dt(dt);
-      }
     }
 
     if (doReport) {
-      if (PicParticles::particlePosition == Staggered) {
-        Print() << printPrefix << std::setprecision(5)
-                << "dt = " << tc->get_dt_si()
-                << " dtNext = " << tc->get_next_dt_si()
-                << " CFL(dtNext) = " << tc->get_next_dt() * uMax / minDx
+      Print() << printPrefix << std::setprecision(5)
+              << "dt = " << tc->get_dt_si()
+              << " dtNext = " << tc->get_next_dt_si() << std::endl;
+
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        Print() << printPrefix << std::setprecision(5) << "iLev = " << iLev
+                << " : CFL(dtNext) = " << tc->get_next_dt() / dtMax[iLev]
                 << std::endl;
-      } else {
-        Print() << printPrefix << std::setprecision(5)
-                << "dt = " << tc->get_dt_si()
-                << " CFL = " << tc->get_dt() * uMax / minDx << std::endl;
       }
     }
   }
