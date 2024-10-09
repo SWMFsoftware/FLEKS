@@ -2643,9 +2643,9 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
       // The const 0.5/0.8 is choosen by experiments.
       int nCell = 0;
       if (fastMerge) {
-        nCell = r0 * ceil(0.5 * pow(nPartOrig, 1. / nDim));
+        nCell = r0 * ceil(0.5 * pow(nPartOrig, 1. / nDim3));
       } else {
-        nCell = r0 * ceil(0.8 * pow(nPartOrig, 1. / nDim));
+        nCell = r0 * ceil(0.8 * pow(nPartOrig, 1. / nDim3));
       }
 
       if (nCell < 3)
