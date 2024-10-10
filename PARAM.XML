@@ -273,18 +273,6 @@ T                  useFixedDt
 Setting the CFL or fixed time step. The typical CFL number is 0.1~0.4.
 </command>
 
-<command name="PARTICLESTAGGERING"
-	 alias="PARTICLESTAGGERING_FLEKS0,PARTICLESTAGGERING_FLEKS1,PARTICLESTAGGERING_FLEKS2"
-	 multiple="T">
-  <parameter name="isStaggered" type="logical" default="T"/>
-
-#PARTICLESTAGGERING
-T                   isStaggered  
-
-If isStaggered is true, the primitive particle locations are at $t_{n+1/2}$,
-otherwise, both locations and velocities are at $t_n$. 
-</command>
-
 <command name="CONSTANTPPV"
 	 alias="CONSTANTPPV_FLEKS0,CONSTANTPPV_FLEKS1,CONSTANTPPV_FLEKS2"
 	 multiple="T">

@@ -55,8 +55,6 @@ static const std::string component = "PT";
 static const std::string component = "PC";
 #endif
 
-enum ParticleStaggering { Staggered, NonStaggered };
-
 enum TestCase { RegularSimulation, TwoStream };
 
 enum FluidType { PICFluid, InteractionFluid, SourceFluid };

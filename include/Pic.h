@@ -162,9 +162,7 @@ public:
     eSolver.set_nIter(200);
 
     divESolver.set_tol(0.01);
-    divESolver.set_nIter(20);
-
-    PicParticles::particlePosition = Staggered;
+    divESolver.set_nIter(20);    
 
     //-----------------------------------------------------
     centerB.resize(n_lev_max());

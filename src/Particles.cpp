@@ -1379,11 +1379,6 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
   const Real qdto2mc = charge / mass * 0.5 * dt;
   Real dtLoc = 0.5 * (dt + dtNext);
 
-  if (particlePosition == NonStaggered) {
-    // Update location from x^{n+1/2} to x^{n+1} for nonstaggered case.
-    dtLoc = 0.5 * dt;
-  }
-
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       const Array4<Real const>& nodeEArr = nodeE[iLev][pti].array();

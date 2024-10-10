@@ -44,11 +44,6 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
 
   Real dtLoc = 0.5 * (dt + dtNext);
 
-  if (particlePosition == NonStaggered) {
-    update_position_to_half_stage(nodeEMF, nodeBMF, dt);
-    dtLoc = 0.5 * dt;
-  }
-
   const Real qdto2mc = charge / mass * 0.5 * dt;
 
   const int iLev = 0;

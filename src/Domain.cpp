@@ -887,14 +887,6 @@ void Domain::read_param(const bool readGridInfo) {
     } else if (command == "#NOUTFILE") {
       param.read_var("nFileField", nFileField);
       param.read_var("nFileParticle", nFileParticle);
-    } else if (command == "#PARTICLESTAGGERING") {
-      bool doStaggering;
-      param.read_var("doStaggering", doStaggering);
-      ParticleStaggering ps = doStaggering ? Staggered : NonStaggered;
-
-      PicParticles::particlePosition = ps;
-      PTParticles::particlePosition = ps;
-
     } else if (command == "#MAXBLOCKSIZE") {
       // The block size in each direction can not larger than maxBlockSize.
       int tmp;

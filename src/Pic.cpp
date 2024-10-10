@@ -907,10 +907,7 @@ void Pic::calculate_phi(LinearSolver& solver) {
 
     solver.reset(get_local_node_or_cell_number(centerDivE[iLev]));
     div_node_to_center(nodeE[iLev], residual, Geom(iLev).InvCellSize());
-    Real coef = 1;
-    if (PicParticles::particlePosition == Staggered) {
-      coef = 1.0 / rhoTheta;
-    }
+    Real coef = 1.0 / rhoTheta;
 
     MultiFab::LinComb(residual, coef, residual, 0, -fourPI * coef,
                       centerNetChargeN[iLev], 0, 0, residual.nComp(),
@@ -1005,21 +1002,15 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
 #endif
     }
 
-    if (PicParticles::particlePosition == NonStaggered) {
-      MultiFab::Copy(centerNetChargeN[iLev], centerNetChargeNew[iLev], 0, 0,
-                     centerNetChargeN[iLev].nComp(),
-                     centerNetChargeN[iLev].nGrow());
-    } else {
-      MultiFab::LinComb(
-          centerNetChargeN[iLev], 1 - rhoTheta, centerNetChargeOld[iLev], 0,
-          rhoTheta, centerNetChargeNew[iLev], 0, 0,
-          centerNetChargeN[iLev].nComp(), centerNetChargeN[iLev].nGrow());
+    MultiFab::LinComb(
+        centerNetChargeN[iLev], 1 - rhoTheta, centerNetChargeOld[iLev], 0,
+        rhoTheta, centerNetChargeNew[iLev], 0, 0,
+        centerNetChargeN[iLev].nComp(), centerNetChargeN[iLev].nGrow());
 
-      if (!isBeforeCorrection) {
-        MultiFab::Copy(centerNetChargeOld[iLev], centerNetChargeNew[iLev], 0, 0,
-                       centerNetChargeOld[iLev].nComp(),
-                       centerNetChargeOld[iLev].nGrow());
-      }
+    if (!isBeforeCorrection) {
+      MultiFab::Copy(centerNetChargeOld[iLev], centerNetChargeNew[iLev], 0, 0,
+                     centerNetChargeOld[iLev].nComp(),
+                     centerNetChargeOld[iLev].nGrow());
     }
   }
   if (finest_level > 0) {
@@ -1043,10 +1034,6 @@ void Pic::update(bool doReportIn) {
   doReport = doReportIn;
 
   Real tStart = second();
-
-  if (PicParticles::particlePosition == NonStaggered) {
-    update_part_loc_to_half_stage();
-  }
 
   if (solveFieldInCoMov || solvePartInCoMov || doSmoothB)
     update_U0_E0();

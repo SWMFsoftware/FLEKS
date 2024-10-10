@@ -139,8 +139,6 @@ using PTParticles = Particles<nPTPartReal, nPTPartInt>;
 template <int NStructReal, int NStructInt>
 class Particles : public amrex::AmrParticleContainer<NStructReal, NStructInt> {
 public:
-  static ParticleStaggering particlePosition;
-
   // Since this is a template, the compiler will not search names in the base
   // class by default, and the following 'using ' statements are required.
   using ParticleType = amrex::Particle<NStructReal, NStructInt>;
@@ -833,10 +831,6 @@ public:
     }
   }
 };
-
-template <int NStructReal, int NStructInt>
-ParticleStaggering Particles<NStructReal, NStructInt>::particlePosition =
-    Staggered;
 
 class IOParticles : public PicParticles {
 public:
