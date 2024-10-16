@@ -33,6 +33,9 @@ constexpr static int iOwner_ = 5;
 
 // If a cell/node is refined or not.
 constexpr static int iRefined_ = 6;
+
+// If a cell is a neighbour to a refined cell.
+constexpr static int iRefinedNeighbour_ = 7;
 //=========================================================
 
 inline bool test_bit(const int& i, int pos) { return i & (1 << pos); }
@@ -77,6 +80,11 @@ inline bool is_owner(const int& i) { return test_bit(i, iOwner_); }
 inline void set_refined(int& i) { turn_on_bit(i, iRefined_); }
 inline void set_not_refined(int& i) { turn_off_bit(i, iRefined_); }
 inline bool is_refined(const int& i) { return test_bit(i, iRefined_); }
+
+//======= Neighbour to refined cell =======
+inline void set_refined_neighbour(int& i) { turn_on_bit(i, iRefinedNeighbour_); }
+inline void set_not_refined_neighbour(int& i) { turn_off_bit(i, iRefinedNeighbour_); }
+inline bool is_refined_neighbour(const int& i) { return test_bit(i, iRefinedNeighbour_); }
 
 } // namespace bit
 #endif

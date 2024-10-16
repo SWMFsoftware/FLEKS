@@ -320,6 +320,26 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
       });
     }
 
+    // Find cells with 'is_refined' neighbors
+    for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const auto& status = cellStatus[iLev][mfi].array();
+      ParallelFor(box, [&](int i, int j, int k) {
+        int kmin = nDim > 2 ? k - 1 : k;
+        int kmax = nDim > 2 ? k + 1 : k;
+        for (int ii = i - 1; ii <= i + 1; ii++) {
+          for (int jj = j - 1; jj <= j + 1; jj++) {
+            for (int kk = kmin; kk <= kmax; kk++) {
+              if (bit::is_refined(status(ii, jj, kk)) &&
+                  !bit::is_refined(status(i, j, k))) {
+                bit::set_refined_neighbour(status(i, j, k));
+              }
+            }
+          }
+        }
+      });
+    }
+
     if (isFake2D) {
       // For the fake 2D cases, in the z-direction, only the first layer
       // ghost cells are filled in correctly by the method FillBoundary.
