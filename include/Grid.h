@@ -654,5 +654,42 @@ public:
     int nlev = 0;
     WriteMFtoTXT(tmf, nlev, WriteGhost);
   };
+
+  void CheckRefinementProximity(bool b[3][3][3], amrex::IntVect iv,
+                                const amrex::Array4<int const> status) {
+
+    int i = iv[0];
+    int j = iv[1];
+    int k = (nDim > 2 ? iv[2] : 0);
+    int kmin = (nDim > 2 ? 0 : 1);
+    int kmax = (nDim > 2 ? 2 : 1);
+    for (int ii = 0; ii <= 2; ii++) {
+      for (int jj = 0; jj <= 2; jj++) {
+        for (int kk = kmin; kk <= kmax; kk++) {
+          if (bit::is_refined(status(i - 1 + ii, j - 1 + jj, k - 1 + kk)) &&
+              !bit::is_refined(status(i, j, k))) {
+            b[ii][jj][kk] = true;
+          }
+        }
+      }
+    }
+    // Talha - These cases need to be updated for 3D
+    if (b[2][1][1] == true) {
+      b[2][0][1] = true;
+      b[2][2][1] = true;
+    }
+    if (b[0][1][1] == true) {
+      b[0][0][1] = true;
+      b[0][2][1] = true;
+    }
+    if (b[1][2][1] == true) {
+      b[0][2][1] = true;
+      b[2][2][1] = true;
+    }
+    if (b[1][0][1] == true) {
+      b[0][0][1] = true;
+      b[2][0][1] = true;
+    }
+  };
 };
 #endif
