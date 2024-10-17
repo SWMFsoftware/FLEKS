@@ -303,7 +303,8 @@ public:
                             amrex::Vector<amrex::MultiFab>& nodeBMF,
                             amrex::Vector<amrex::MultiFab>& u0MF,
                             amrex::Real dt, int iLev, bool solveInCoMov,
-                            amrex::Vector<amrex::iMultiFab>& nodestatus,amrex::Vector<amrex::iMultiFab>& cellstatus);
+                            amrex::Vector<amrex::iMultiFab>& nodestatus,
+                            amrex::Vector<amrex::iMultiFab>& cellstatus);
 
   void calc_jhat(amrex::MultiFab& jHat, amrex::MultiFab& nodeBMF,
                  amrex::Real dt);
