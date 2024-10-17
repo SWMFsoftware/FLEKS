@@ -132,6 +132,75 @@ inline void find_cell_index_exp(const amrex::RealVect& xyz,
   }
 }
 
+inline void CheckRefinementProximity(bool b[3][3][3], amrex::IntVect iv,
+                                     const amrex::Array4<int const> status) {
+
+  int i = iv[0];
+  int j = iv[1];
+  int k = (nDim > 2 ? iv[2] : 0);
+  int kmin = (nDim > 2 ? 0 : 1);
+  int kmax = (nDim > 2 ? 2 : 1);
+  for (int ii = 0; ii <= 2; ii++) {
+    for (int jj = 0; jj <= 2; jj++) {
+      for (int kk = kmin; kk <= kmax; kk++) {
+        if (bit::is_refined(status(i - 1 + ii, j - 1 + jj, k - 1 + kk)) &&
+            !bit::is_refined(status(i, j, k))) {
+          b[ii][jj][kk] = true;
+        }
+      }
+    }
+  }
+  // Talha - These cases need to be updated for 3D
+  if (b[2][1][1] == true) {
+    b[2][0][1] = true;
+    b[2][2][1] = true;
+  }
+  if (b[0][1][1] == true) {
+    b[0][0][1] = true;
+    b[0][2][1] = true;
+  }
+  if (b[1][2][1] == true) {
+    b[0][2][1] = true;
+    b[2][2][1] = true;
+  }
+  if (b[1][0][1] == true) {
+    b[0][0][1] = true;
+    b[2][0][1] = true;
+  }
+}
+
+inline bool SkipParticleForDivECleaning(amrex::RealVect xyz, amrex::Geometry Geom,
+                             const amrex::Array4<int const>& status) {
+
+  bool skip = false;
+  amrex::IntVect iv;
+  amrex::RealVect rv;
+  find_cell_index_exp(xyz, Geom.ProbLo(), Geom.InvCellSize(), iv, rv);
+
+  if (bit::is_refined(status(iv)) || bit::is_lev_boundary(status(iv))) {
+    skip = true;
+  }
+  if (bit::is_refined_neighbour(status(iv))) {
+    bool b[3][3][3] = { false };
+    amrex::Real fac = 0.25;
+    CheckRefinementProximity(b, iv, status);
+    int prel[3] = { 1, 1, 1 };
+    for (int i = 0; i < nDim; i++) {
+      if (rv[i] >= (1.0 - fac)) {
+        prel[i] = 2;
+      }
+      if (rv[i] <= (fac)) {
+        prel[i] = 0;
+      }
+    }
+    if (b[prel[0]][prel[1]][prel[2]]) {
+      skip = true;
+    }
+  }
+
+  return skip;
+}
+
 inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
                                     const amrex::MFIter& mfi,
                                     const amrex::Geometry& gm,
