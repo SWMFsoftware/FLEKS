@@ -871,7 +871,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
     amrex::Vector<UMultiFab<RealMM> >& nodeMM, UMultiFab<RealMM>& nmmt,
     amrex::Vector<MultiFab>& jHat, MultiFab& jht,
     amrex::Vector<MultiFab>& nodeBMF, amrex::Vector<MultiFab>& u0MF, Real dt,
-    int iLev, bool solveInCoMov, amrex::Vector<amrex::iMultiFab>& nodestatus) {
+    int iLev, bool solveInCoMov, amrex::Vector<amrex::iMultiFab>& nodestatus,
+    amrex::Vector<amrex::iMultiFab>& cellstatus) {
   timing_func("Pts::calc_mass_matrix");
 
   Real qdto2mc = charge / mass * 0.5 * dt;
@@ -881,6 +882,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
     Array4<Real> const& jArr = jHat[iLev][pti].array();
     Array4<RealMM> const& mmArr = nodeMM[iLev][pti].array();
     Array4<Real const> const& u0Arr = u0MF[iLev][pti].array();
+    const Array4<int const>& status = cellstatus[iLev][pti].array();
 
     const AoS& particles = pti.GetArrayOfStructs();
 
@@ -909,9 +911,14 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
       RealVect dShift;
       RealVect cdShift;
       RealVect fdShift;
+      IntVect cellIdx;
+      RealVect celldShift;
       Real coef[2][2][2];
       Real coef_finer[2][2][2];
       Real coef_coarser[2][2][2];
+
+      find_cell_index_exp(p.pos(), Geom(iLev).ProbLo(),
+                          Geom(iLev).InvCellSize(), cellIdx, celldShift);
 
       find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
                       loIdx, dShift);
@@ -1000,7 +1007,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
                                        cloIdx[iz_] + kk) };
                   jArrt(ijk, iVar) += coef_coarser[ii][jj][kk] * currents[iVar];
                 }
-                if (iLev == 0) {
+                if (iLev == 0 && bit::is_refined_neighbour(status(cellIdx))) {
                   ijk = { AMREX_D_DECL(floIdx[ix_] + ii, floIdx[iy_] + jj,
                                        floIdx[iz_] + kk) };
                   jArrt(ijk, iVar) += coef_finer[ii][jj][kk] * currents[iVar];
@@ -1077,7 +1084,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
             } // k1
       }
 
-      if (iLev == 0) {
+      if (iLev == 0 && bit::is_refined_neighbour(status(cellIdx))) {
         const int iMin = floIdx[ix_];
         const int jMin = floIdx[iy_];
         const int kMin = nDim > 2 ? floIdx[iz_] : 0;
