@@ -637,10 +637,10 @@ void Pic::calc_mass_matrix_new() {
   for (int i = 0; i < nSpecies; ++i) {
     parts[i]->calc_mass_matrix_new(nodeMM, nmmc, jHat, jhc, nodeB, uBg,
                                    tc->get_dt(), 1, solveFieldInCoMov,
-                                   nodeStatus,cellStatus);
+                                   nodeStatus, cellStatus);
     parts[i]->calc_mass_matrix_new(nodeMM, nmmf, jHat, jhf, nodeB, uBg,
                                    tc->get_dt(), 0, solveFieldInCoMov,
-                                   nodeStatus,cellStatus);
+                                   nodeStatus, cellStatus);
   }
   //////////////////////////////////////////////////////////////////////
   amrex::MultiFab tmp;
@@ -1085,7 +1085,11 @@ void Pic::update(bool doReportIn) {
   // }
 
   if (solveEM && doCorrectDivE) {
-    divE_correction();
+    if (finest_level == 0) {
+      divE_correction();
+    } else {
+      amr_divE_correction();
+    }
   }
 
   tc->set_dt(tc->get_next_dt());
@@ -2522,15 +2526,52 @@ void Pic::fill_lightwaves(amrex::Real wavelength, int EorB, amrex::Real time,
         if (EorB == -1 || EorB == 1) {
           arrcB(ijk, iy_) =
               cos((2.0 * (dPI) * ((prob_lo[0] + dx[0] * (i + 0.5) - time))) /
-                                wavelength);
+                  wavelength);
 
           arrcB(ijk, iz_) =
               sin((2.0 * (dPI) * ((prob_lo[0] + dx[0] * (i + 0.5) - time))) /
-                                wavelength);
+                  wavelength);
         }
       });
     }
 
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
   }
+}
+
+void Pic::amr_divE_correction() {
+  std::string nameFunc = "Pic::divE_correction";
+
+  timing_func(nameFunc);
+
+  for (int iIter = 0; iIter < nDivECorrection; iIter++) {
+
+    sum_to_center(true);
+
+    if (doReport)
+      Print() << "\n-----" << printPrefix << " div(E) correction at iter "
+              << iIter << "----------" << std::endl;
+
+    calculate_phi(divESolver);
+
+    divE_correct_particle_position();
+
+    if (finest_level > 0) {
+      for (int i = 0; i < nSpecies; ++i) {
+        parts[i]->Redistribute();
+      }
+    }
+  }
+
+  for (int i = 0; i < nSpecies; ++i) {
+    // The particles outside the simulation domain is marked for deletion
+    // inside divE_correct_particle_position(). redistribute_particles()
+    // deletes these particles. In order to get correct moments, re-inject
+    // particles in the ghost cells.
+    parts[i]->redistribute_particles();
+  }
+
+  inject_particles_for_boundary_cells();
+
+  sum_to_center(false);
 }
