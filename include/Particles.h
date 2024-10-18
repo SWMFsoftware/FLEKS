@@ -649,7 +649,7 @@ public:
                                 int nPartNew, amrex::Vector<amrex::Real>& x,
                                 amrex::Real velNorm);
 
-  void divE_correct_position(const amrex::Vector<amrex::MultiFab>& phiMF);
+  void divE_correct_position(const amrex::Vector<amrex::MultiFab>& phiMF,int iLev);
 
   bool is_neutral() const { return charge == 0; };
 

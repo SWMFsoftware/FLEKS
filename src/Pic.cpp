@@ -890,9 +890,10 @@ void Pic::divE_correct_particle_position() {
   std::string nameFunc = "Pic::correct_position";
 
   timing_func(nameFunc);
-
-  for (int i = 0; i < nSpecies; ++i) {
-    parts[i]->divE_correct_position(centerPhi);
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->divE_correct_position(centerPhi, iLev);
+    }
   }
 }
 

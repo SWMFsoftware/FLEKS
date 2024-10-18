@@ -1594,15 +1594,12 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::divE_correct_position(
-    const amrex::Vector<MultiFab>& phiMF) {
+    const amrex::Vector<MultiFab>& phiMF,int iLev) {
   timing_func("Pts:divE_correct_position");
 
   const Real coef = charge / fabs(charge);
   const Real epsLimit = 0.1;
   Real epsMax = 0;
-
-  // const int iLev = 0;
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
 
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       Array4<Real const> const& phiArr = phiMF[iLev][pti].array();
@@ -1749,7 +1746,6 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         }
       } // for p
     }
-  }
 }
 
 //==========================================================
