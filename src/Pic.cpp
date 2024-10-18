@@ -913,6 +913,9 @@ void Pic::calculate_phi(LinearSolver& solver) {
     MultiFab::LinComb(residual, coef, residual, 0, -fourPI * coef,
                       centerNetChargeN[iLev], 0, 0, residual.nComp(),
                       residual.nGrow());
+    if (finest_level > 0) {
+      set_refined_and_bny_cells_zero(residual, cellStatus[iLev]);
+    }
 
     convert_3d_to_1d(residual, solver.rhs, iLev);
 
@@ -2545,33 +2548,29 @@ void Pic::amr_divE_correction() {
   timing_func(nameFunc);
 
   for (int iIter = 0; iIter < nDivECorrection; iIter++) {
+    for (int iLev = finest_level; iLev >= 0; iLev--) {
+      sum_to_center(true);
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        set_refined_and_bny_cells_zero(centerMM[iLev], cell_status(iLev));
+      }
+      calculate_phi(divESolver);
 
-    sum_to_center(true);
-
-    if (doReport)
-      Print() << "\n-----" << printPrefix << " div(E) correction at iter "
-              << iIter << "----------" << std::endl;
-
-    calculate_phi(divESolver);
-
-    divE_correct_particle_position();
-
-    if (finest_level > 0) {
       for (int i = 0; i < nSpecies; ++i) {
-        parts[i]->Redistribute();
+        parts[i]->divE_correct_position(centerPhi, iLev);
+      }
+      if (finest_level > 0) {
+        for (int i = 0; i < nSpecies; ++i) {
+          parts[i]->Redistribute();
+        }
       }
     }
   }
-
-  for (int i = 0; i < nSpecies; ++i) {
-    // The particles outside the simulation domain is marked for deletion
-    // inside divE_correct_particle_position(). redistribute_particles()
-    // deletes these particles. In order to get correct moments, re-inject
-    // particles in the ghost cells.
-    parts[i]->redistribute_particles();
-  }
-
   inject_particles_for_boundary_cells();
 
   sum_to_center(false);
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    set_refined_and_bny_cells_zero(centerNetChargeN[iLev], cell_status(iLev));
+    set_refined_and_bny_cells_zero(centerDivE[iLev], cell_status(iLev));
+  }
 }

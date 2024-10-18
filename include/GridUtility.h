@@ -169,8 +169,9 @@ inline void CheckRefinementProximity(bool b[3][3][3], amrex::IntVect iv,
   }
 }
 
-inline bool SkipParticleForDivECleaning(amrex::RealVect xyz, amrex::Geometry Geom,
-                             const amrex::Array4<int const>& status) {
+inline bool SkipParticleForDivECleaning(
+    amrex::RealVect xyz, amrex::Geometry Geom,
+    const amrex::Array4<int const>& status) {
 
   bool skip = false;
   amrex::IntVect iv;
@@ -446,6 +447,29 @@ void fill_lev_bny_from_value(amrex::FabArray<FAB>& dst,
           for (int i = lo.x; i <= hi.x; ++i) {
             if (bit::is_lev_boundary(statusArr(i, j, k))) {
               data(i, j, k, iVar) = value;
+            }
+          }
+  }
+}
+
+template <class FAB>
+void set_refined_and_bny_cells_zero(amrex::FabArray<FAB>& dst,
+                                    const amrex::iMultiFab& fstatus) {
+
+  for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
+    FAB& fab = dst[mfi];
+    const auto& box = mfi.fabbox();
+    const auto& data = fab.array();
+    const auto& statusArr = fstatus[mfi].array();
+    const auto lo = amrex::lbound(box);
+    const auto hi = amrex::ubound(box);
+    for (int iVar = 0; iVar < dst.nComp(); iVar++)
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (bit::is_lev_boundary(statusArr(i, j, k)) ||
+                bit::is_refined(statusArr(i, j, k))) {
+              data(i, j, k, iVar) = 0.0;
             }
           }
   }
