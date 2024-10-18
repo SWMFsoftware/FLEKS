@@ -1,3 +1,5 @@
+from typing import List, Tuple, Dict, Union, Callable
+
 import matplotlib.pyplot as plt
 import os
 import numpy as np
@@ -7,12 +9,14 @@ import struct
 
 class FLEKSTP(object):
     r"""
-    A class that is used to read and plot test particles.    
+    A class that is used to read and plot test particles. Each particle ID consists of
+    a CPU index, a particle index on each CPU, and a location index.
+    By default, 7 real numbers saved for each step: time + position + velocity.
 
     Parameters
     -----------
     outputDirs: String
-        The path to the test particle dataset. 
+        The path to the test particle dataset.
 
     Examples
     ----------
@@ -20,7 +24,7 @@ class FLEKSTP(object):
     >>> pIDs = list(tp.IDs())
     >>> tp.plot_trajectory(pIDs[3])
     >>> tp.save_trajectory_to_csv(pIDs[5])
-    >>> ids, pData = tp.read_particles_at_time(6500.8, doSave=True)    
+    >>> ids, pData = tp.read_particles_at_time(6500.8, doSave=True)
     >>> f = tp.plot_loc(pData)
     """
 
@@ -38,27 +42,37 @@ class FLEKSTP(object):
     iEy_ = 11
     iEz_ = 12
 
-    def __init__(self, outputDirs, iDomain=0, iSpecies=0, iListStart=0, iListEnd=-1, readAllFiles=False):
+    def __init__(
+        self,
+        outputDirs: Union[str, List[str]],
+        iDomain: int = 0,
+        iSpecies: int = 0,
+        iListStart: int = 0,
+        iListEnd: int = -1,
+        readAllFiles: bool = False,
+    ):
         if type(outputDirs) == str:
             outputDirs = [outputDirs]
 
-        header = outputDirs[0]+"/Header"
+        header = outputDirs[0] + "/Header"
         if os.path.exists(header):
-            with open(header, 'r') as f:
+            with open(header, "r") as f:
                 self.nReal = int(f.readline())
         else:
-            # By default, 7 real numbers saved for each step: time + position + velocity
-            self.nReal = 7
+            raise FileNotFoundError(f"Header file not found in {outputDirs[0]}")
 
         self.iSpecies = iSpecies
         self.plistfiles = list()
         self.pfiles = list()
-        for outputDir in outputDirs:
-            self.plistfiles = self.plistfiles+glob.glob(outputDir+"/FLEKS" +
-                                                        str(iDomain)+"_particle_list_species_"+str(iSpecies)+"_*")
 
-            self.pfiles = self.pfiles + glob.glob(outputDir+"/FLEKS" +
-                                                  str(iDomain)+"_particle_species_"+str(iSpecies)+"_*")
+        for outputDir in outputDirs:
+            self.plistfiles = self.plistfiles + glob.glob(
+                f"{outputDir}/FLEKS{iDomain}_particle_list_species_{iSpecies}_*"
+            )
+
+            self.pfiles = self.pfiles + glob.glob(
+                f"{outputDir}/FLEKS{iDomain}_particle_species_{iSpecies}_*"
+            )
 
         self.plistfiles.sort()
         self.pfiles.sort()
@@ -76,82 +90,82 @@ class FLEKSTP(object):
         self.plistfiles = self.plistfiles[iListStart:iListEnd]
         self.pfiles = self.pfiles[iListStart:iListEnd]
 
-        self.plists = []
+        self.plists: List[Dict[Tuple[int, int], int]] = []
         for fileName in self.plistfiles:
             self.plists.append(self.read_particle_list(fileName))
 
-        self.pset = set()
+        self.IDs = set()
         for plist in self.plists:
-            self.pset.update(plist.keys())
+            self.IDs.update(plist.keys())
 
         self.file_time = []
         for filename in self.pfiles:
             record = self._read_the_first_record(filename)
             if record == None:
-                    continue
+                continue
             self.file_time.append(record[FLEKSTP.it_])
 
-        print('Particles of species ', self.iSpecies,
-              ' are read from ', outputDirs)
-        print('Number of particles: ', len(self.pset))
+        print(f"Particles of species {self.iSpecies} are read from {outputDirs}")
+        print(f"Number of particles: {len(self.IDs)}")
 
-    def get_index_to_time(self):
+    def getIDs(self):
+        return list(sorted(self.IDs))
+
+    def get_index_to_time(self) -> List:
         r"""
-        Getter method for accessing get_index_to_time
+        Getter method for accessing list_index_to_time.
         """
         if len(self.list_index_to_time) == 0:
             print("Index to time mapping was not initialized")
         return self.list_index_to_time
 
-    def read_particle_list(self, fileName):
+    def read_particle_list(self, fileName: str) -> Dict[Tuple[int, int], int]:
         r"""
-        Read and return a list of the particle IDs.     
+        Read and return a list of the particle IDs.
         """
         # 2 integers + 1 unsigned long long
-        listUnitSize = 2*4+8
+        listUnitSize = 2 * 4 + 8
         nByte = os.path.getsize(fileName)
-        nPart = int(nByte/listUnitSize)
+        nPart = int(nByte / listUnitSize)
         plist = {}
-        with open(fileName, 'rb') as f:
+        with open(fileName, "rb") as f:
             for _ in range(nPart):
                 binaryData = f.read(listUnitSize)
-                (cpu, id, loc) = struct.unpack('iiQ', binaryData)
+                (cpu, id, loc) = struct.unpack("iiQ", binaryData)
                 plist.update({(cpu, id): loc})
         return plist
 
-    def _read_the_first_record(self, fileName):
+    def _read_the_first_record(self, fileName: str) -> Union[List[float], None]:
         r"""
-        Get the first record stored in one file. 
+        Get the first record stored in one file.
         """
         dataList = list()
-        with open(fileName, 'rb') as f:
+        with open(fileName, "rb") as f:
             while True:
-                binaryData = f.read(4*4)
+                binaryData = f.read(4 * 4)
 
                 if not binaryData:
                     break  # EOF
 
-                (cpu, idtmp, nRecord, weight) = struct.unpack(
-                    'iiif', binaryData)
+                (cpu, idtmp, nRecord, weight) = struct.unpack("iiif", binaryData)
                 if nRecord > 0:
-                    binaryData = f.read(4*self.nReal)
-                    dataList = dataList + \
-                        list(struct.unpack('f'*self.nReal, binaryData))
+                    binaryData = f.read(4 * self.nReal)
+                    dataList = dataList + list(
+                        struct.unpack("f" * self.nReal, binaryData)
+                    )
                     return dataList
 
-    def read_particles_at_time(self, time, doSave=False):
+    def read_particles_at_time(
+        self, time: float, doSave: bool = False
+    ) -> Tuple[np.ndarray, np.ndarray]:
         r"""
-        Get the information of all the particles at a given time, 
-        and save to a csv file with the name "particles_t***.csv" 
-        to the current directory if doSave is True. The location of 
-        these particles (the csv file) can be visualized with Paraview.
+        Get the information of all the particles at a given time, and save to a csv file
+        with the name "particles_t***.csv" in the current directory if doSave is True.
 
-        Parameters
+        Returns
         -----------
         ids: a numpy array of tuples contains the particle IDs.
-        pData: a numpy array real number. Contains the particle weight, 
-            location and velocity
-
+        pData: a numpy real array with the particle weight, location and velocity.
 
         Examples
         ----------
@@ -161,96 +175,100 @@ class FLEKSTP(object):
         nFile = len(self.pfiles)
         for iFile in range(nFile):
             if iFile == 0 and time < self.file_time[iFile]:
-                raise Exception(
-                    "Error: There is no particle at the given time")
+                raise Exception("Error: There is no particle at the given time")
 
             if iFile == nFile - 1:
                 break
-            if time >= self.file_time[iFile] and time < self.file_time[iFile+1]:
+            if time >= self.file_time[iFile] and time < self.file_time[iFile + 1]:
                 break
 
         fileName = self.pfiles[iFile]
 
         dataList = []
         idList = []
-        with open(fileName, 'rb') as f:
+        with open(fileName, "rb") as f:
             while True:
-                binaryData = f.read(4*4)
+                binaryData = f.read(4 * 4)
                 if not binaryData:
                     break  # EOF
 
-                (cpu, idtmp, nRecord, weight) = struct.unpack(
-                    'iiif', binaryData)
-                binaryData = f.read(4*self.nReal*nRecord)
-                allRecords = list(struct.unpack(
-                    'f'*nRecord*self.nReal, binaryData))
+                (cpu, idtmp, nRecord, weight) = struct.unpack("iiif", binaryData)
+                binaryData = f.read(4 * self.nReal * nRecord)
+                allRecords = list(struct.unpack("f" * nRecord * self.nReal, binaryData))
                 for i in range(nRecord):
-                    if(allRecords[self.nReal*i + FLEKSTP.it_] >= time or i == nRecord-1):
+                    if (
+                        allRecords[self.nReal * i + FLEKSTP.it_] >= time
+                        or i == nRecord - 1
+                    ):
                         dataList.append(
-                            allRecords[self.nReal*i:self.nReal*(i+1)])
+                            allRecords[self.nReal * i : self.nReal * (i + 1)]
+                        )
                         idList.append((cpu, idtmp))
                         break
 
         npData = np.array(dataList)
         idData = np.array(idList, dtype="i,i")
         if doSave:
-            fileName = "particles_t"+str(time)+".csv"
+            fileName = f"particles_t{time}.csv"
             header = "cpu,iid,time,x,y,z,ux,uy,uz"
             if self.nReal == 10:
                 header += ",bx,by,bz"
-            if self.nReal == 13:
+            elif self.nReal == 13:
                 header += ",bx,by,bz,ex,ey,ez"
 
             with open(fileName, "w") as f:
                 f.write(header + "\n")
-                for i in range(len(idData)):
-                    ss = ",".join([str(x) for x in idData[i]])
-                    ss +=","
-                    ss +=",".join([str(x) for x in npData[i,:]])
-                    ss += "\n"
-                    f.write(ss)
+                for id_row, data_row in zip(idData, npData):
+                    f.write(
+                        f"{id_row[0]},{id_row[1]},{','.join(str(x) for x in data_row)}\n"
+                    )
 
         return idData, npData
 
-    def IDs(self):
-        return self.pset
-
-    def save_trajectory_to_csv(self, partID, fileName=None, shiftTime=False, scaleTime=False):
-        r""" 
-        Save the trajectory of a particle to a csv file.  
+    def save_trajectory_to_csv(
+        self,
+        pID: Tuple[int, int],
+        fileName: str = None,
+        shiftTime: bool = False,
+        scaleTime: bool = False,
+    ) -> None:
+        r"""
+        Save the trajectory of a particle to a csv file.
 
         Parameters
         ----------
-        shiftTime: If set to True, set the initial time to be 0
+        pID: particle ID.
+        shiftTime: If set to True, set the initial time to be 0.
         scaleTime: If set to True, scale the time into [0,1] range, only scale time if
-                    shiftTime = True
+                    shiftTime = True.
 
         Example
         -----------------
         >>> tp.save_trajectory_to_csv((3,15))
         """
-        pData = self.read_particle_trajectory(partID)
+        pData = self.read_particle_trajectory(pID)
         if fileName == None:
-            fileName = "trajectory_"+str(partID[0])+"_"+str(partID[1])+".csv"
+            fileName = "trajectory_" + str(pID[0]) + "_" + str(pID[1]) + ".csv"
         header = "time [s], X [R], Y [R], Z [R], U_x [km/s], U_y [km/s], U_z [km/s]"
         if self.nReal == 10:
             header += ", B_x [nT], B_y [nT], B_z [nT]"
         if self.nReal == 13:
-            header += ", B_x [nT], B_y [nT], B_z [nT], E_x [uV/m], E_y [uV/m], E_z [uV/m]"
+            header += (
+                ", B_x [nT], B_y [nT], B_z [nT], E_x [uV/m], E_y [uV/m], E_z [uV/m]"
+            )
         if shiftTime:
-            pData[:,0] -= pData[0,0]
+            pData[:, 0] -= pData[0, 0]
             if scaleTime:
-                pData[:,0] /= pData[-1,0]
-        np.savetxt(fileName, pData, delimiter=",",
-                   header=header, comments="")
+                pData[:, 0] /= pData[-1, 0]
+        np.savetxt(fileName, pData, delimiter=",", header=header, comments="")
 
-    def read_particle_trajectory(self, partID):
+    def read_particle_trajectory(self, pID: Tuple[int, int]):
         r"""
-        Read and return the trajectory of a particle. 
+        Read and return the trajectory of a particle.
 
         Parameters
         ----------
-        partID: particle ID
+        pID: particle ID
 
         Examples
         ----------
@@ -258,135 +276,134 @@ class FLEKSTP(object):
         """
         dataList = list()
         for fileName, plist in zip(self.pfiles, self.plists):
-            if partID in plist:
-                ploc = plist[partID]
-                with open(fileName, 'rb') as f:
+            if pID in plist:
+                ploc = plist[pID]
+                with open(fileName, "rb") as f:
                     f.seek(ploc)
-                    binaryData = f.read(4*4)
-                    (cpu, idtmp, nRecord, weight) = struct.unpack(
-                        'iiif', binaryData)
-                    binaryData = f.read(4*self.nReal*nRecord)
-                    dataList = dataList + \
-                        list(struct.unpack('f'*nRecord*self.nReal, binaryData))
+                    binaryData = f.read(4 * 4)
+                    (cpu, idtmp, nRecord, weight) = struct.unpack("iiif", binaryData)
+                    binaryData = f.read(4 * self.nReal * nRecord)
+                    dataList = dataList + list(
+                        struct.unpack("f" * nRecord * self.nReal, binaryData)
+                    )
 
-        nRecord = int(len(dataList)/self.nReal)
+        nRecord = int(len(dataList) / self.nReal)
         return np.array(dataList).reshape(nRecord, self.nReal)
 
-    def read_initial_loc_with_ID(self, partID):
+    def read_initial_location(self, pID):
         r"""
         Read and return the initial location of a test particle
         """
 
         for fileName, plist in zip(self.pfiles, self.plists):
-            if partID in plist:
-                ploc = plist[partID]
-                with open(fileName, 'rb') as f:
+            if pID in plist:
+                ploc = plist[pID]
+                with open(fileName, "rb") as f:
                     f.seek(ploc)
-                    binaryData = f.read(4*4)
-                    (cpu, idtmp, nRecord, weight) = struct.unpack(
-                        'iiif', binaryData)
+                    binaryData = f.read(4 * 4)
+                    (cpu, idtmp, nRecord, weight) = struct.unpack("iiif", binaryData)
                     nRead = 1
-                    binaryData = f.read(4*self.nReal*nRead)
-                    dataList = list(struct.unpack(
-                        'f'*nRead*self.nReal, binaryData))
+                    binaryData = f.read(4 * self.nReal * nRead)
+                    dataList = list(struct.unpack("f" * nRead * self.nReal, binaryData))
                 return dataList
 
-    def select_particles(self, fSelect=None):
+    def select_particles(
+        self, fSelect: Callable[[Tuple[int, int], List[float]], bool] = None
+    ) -> List[Tuple[int, int]]:
         r"""
-        Select and return the particles that satisfy the requirement set by the 
-        user defined function fSelect. The first argument of fSelect is the particle
-        ID, and the second argument is the initial record (one record contains time,
-        location, velocity and weight of a particle) of a particle.
+        Select and return the particles whose initial condition satisfy the requirement
+        set by the user defined function fSelect. The first argument of fSelect is the
+        particle ID, and the second argument is the initial record (time, location,
+        velocity and weight of a particle) of a particle.
 
         Examples
         ----------
-        >>> def fselect(pid, pdata):
-        >>>     return pdata[FLEKSTP.it_] < 3601 and pdata[FLEKSTP.ix_] > 12 and abs(pdata[FLEKSTP.iy_])<1 and abs(pdata[FLEKSTP.iz_])<1
-
-        >>> pselected=tp.select_particles(fselect)  
+        >>> def fselect(tp, pid):
+        >>>     pdata = tp.read_initial_loc_with_ID(pid)
+        >>>     intime = pdata[FLEKSTP.it_] < 3601
+        >>>     inregion = pdata[FLEKSTP.ix_] > 20
+        >>>     return intime and inregion
+        >>>
+        >>> pselected = tp.select_particles(fselect)
         >>> tp.plot_trajectory(list(pselected.keys())[1])
         """
 
-        selected = {}
-        icount = 0
-
         if fSelect == None:
-            def fSelect(id, data): return True
+            def fSelect(id, data):
+                return True
 
-        for pid in self.pset:
-            pdata = self.read_initial_loc_with_ID(pid)
-            if(fSelect(pid, pdata)):
-                selected.update({pid: pdata})
-                icount = icount + 1
-        return selected
+        pselected = list(filter(fSelect, self.IDs))
 
-    def plot_trajectory(self, partID):
-        r""" 
-        Plots the trajectory and velocities of the particle partID. 
+        return pselected
+
+    def plot_trajectory(self, pID: Tuple[int, int]):
+        r"""
+        Plots the trajectory and velocities of the particle pID.
 
         Example
         -----------------
         >>> tp.plot_trajectory((3,15))
         """
 
-        data = self.read_particle_trajectory(partID)
+        data = self.read_particle_trajectory(pID)
         t = data[:, FLEKSTP.it_]
-        tNorm = (t-t[0])/(t[-1]-t[0])
+        tNorm = (t - t[0]) / (t[-1] - t[0])
 
         ncol = 3
-        if self.nReal == 10: # additional B field
+        nrow = 3  # Default for X, V
+        if self.nReal == 10:  # additional B field
             nrow = 4
-        elif self.nReal == 13: # additional B and E field
+        elif self.nReal == 13:  # additional B and E field
             nrow = 5
-        else: # X, V 
-            nrow = 3
 
         f, axs = plt.subplots(nrow, ncol, figsize=(12, 6), constrained_layout=True)
 
-        axs[0,0].plot(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iy_], 'k')
-        axs[0,0].scatter(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iy_], c=plt.cm.winter(
-            tNorm), edgecolor='none', marker='o', s=10)
-        axs[0,0].set_xlabel('x')
-        axs[0,0].set_ylabel('y')
+        # Plot trajectories
+        for i, ax in enumerate(axs[0, :]):
+            x_id = FLEKSTP.ix_ if i < 2 else FLEKSTP.iy_
+            y_id = FLEKSTP.iy_ if i == 0 else FLEKSTP.iz_
+            ax.plot(data[:, x_id], data[:, y_id], "k")
+            ax.scatter(
+                data[:, x_id],
+                data[:, y_id],
+                c=plt.cm.winter(tNorm),
+                edgecolor="none",
+                marker="o",
+                s=10,
+            )
+            ax.set_xlabel("x" if i < 2 else "y")
+            ax.set_ylabel("y" if i == 0 else "z")
 
-        axs[0,1].plot(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iz_], 'k')
-        axs[0,1].scatter(data[:, FLEKSTP.ix_], data[:, FLEKSTP.iz_], c=plt.cm.winter(
-            tNorm), edgecolor='none', marker='o', s=10)
-        axs[0,1].set_xlabel('x')
-        axs[0,1].set_ylabel('z')
-
-        axs[0,2].plot(data[:, FLEKSTP.iy_], data[:, FLEKSTP.iz_], 'k')
-        axs[0,2].scatter(data[:, FLEKSTP.iy_], data[:, FLEKSTP.iz_], c=plt.cm.winter(
-            tNorm), edgecolor='none', marker='o', s=10)
-        axs[0,2].set_xlabel('y')
-        axs[0,2].set_ylabel('z')
-
-        def plot_data_(dd, label, irow, icol):
+        def plot_data(dd, label, irow, icol):
             axs[irow, icol].plot(t, dd, label=label)
-            axs[irow, icol].scatter(t, dd, c=plt.cm.winter(tNorm),
-                       edgecolor='none', marker='o', s=10)
-            axs[irow, icol].set_xlabel('time')
+            axs[irow, icol].scatter(
+                t, dd, c=plt.cm.winter(tNorm), edgecolor="none", marker="o", s=10
+            )
+            axs[irow, icol].set_xlabel("time")
             axs[irow, icol].set_ylabel(label)
 
-        def plot_vector_(idx, labels, irow, colrange=range(0, 3)):
+        def plot_vector(idx, labels, irow):
             for i, (id, label) in enumerate(zip(idx, labels)):
-                dd = data[:, id]
-                plot_data_(dd, label, irow, colrange[i])
+                plot_data(data[:, id], label, irow, i)
 
-        plot_vector_([FLEKSTP.ix_, FLEKSTP.iy_, FLEKSTP.iz_], ['x', 'y', 'z'], 1)
-        plot_vector_([FLEKSTP.iu_, FLEKSTP.iv_, FLEKSTP.iw_], ['Vx', 'Vy', 'Vz'], 2)
+        plot_vector([FLEKSTP.ix_, FLEKSTP.iy_, FLEKSTP.iz_], ["x", "y", "z"], 1)
+        plot_vector([FLEKSTP.iu_, FLEKSTP.iv_, FLEKSTP.iw_], ["Vx", "Vy", "Vz"], 2)
 
         if self.nReal > FLEKSTP.iBx_:
-            plot_vector_([FLEKSTP.iBx_, FLEKSTP.iBy_, FLEKSTP.iBz_], ['Bx', 'By', 'Bz'], 3)
+            plot_vector(
+                [FLEKSTP.iBx_, FLEKSTP.iBy_, FLEKSTP.iBz_], ["Bx", "By", "Bz"], 3
+            )
 
         if self.nReal > FLEKSTP.iEx_:
-            plot_vector_([FLEKSTP.iEx_, FLEKSTP.iEy_, FLEKSTP.iEz_], ['Ex', 'Ey', 'Ez'], 4)
-            
-        return f
+            plot_vector(
+                [FLEKSTP.iEx_, FLEKSTP.iEy_, FLEKSTP.iEz_], ["Ex", "Ey", "Ez"], 4
+            )
 
-    def plot_loc(self, pData):
+        return
+
+    def plot_loc(self, pData: np.ndarray):
         r"""
-        Plot the location of particles pData
+        Plot the location of particles pData.
 
         Examples
         ----------
@@ -398,33 +415,28 @@ class FLEKSTP(object):
         py = pData[:, FLEKSTP.iy_]
         pz = pData[:, FLEKSTP.iz_]
 
-        f = plt.figure(figsize=(12, 12))
+        # create subplot mosaic with different keyword arguments
+        skeys = ["A", "B", "C", "D"]
+        f, axs = plt.subplot_mosaic(
+            "AB;CD",
+            per_subplot_kw={("D"): {"projection": "3d"}},
+            gridspec_kw={"width_ratios": [1, 1], "wspace": 0.1, "hspace": 0.1},
+            figsize=(10, 10),
+            constrained_layout=True,
+        )
 
-        nrow = 2
-        ncol = 2
-        isub = 1
-        ax = f.add_subplot(nrow, ncol, isub)
-        ax.scatter(px, py, s=1)
-        ax.set_xlabel('x')
-        ax.set_ylabel('y')
+        # Create 2D scatter plots
+        for i, (x, y, labels) in enumerate(
+            zip([px, px, py], [py, pz, pz], [("x", "y"), ("x", "z"), ("y", "z")])
+        ):
+            axs[skeys[i]].scatter(x, y, s=1)
+            axs[skeys[i]].set_xlabel(labels[0])
+            axs[skeys[i]].set_ylabel(labels[1])
 
-        isub = 2
-        ax = f.add_subplot(nrow, ncol, isub)
-        ax.scatter(px, pz, s=1)
-        ax.set_xlabel('x')
-        ax.set_ylabel('z')
+        # Create 3D scatter plot
+        axs[skeys[3]].scatter(px, py, pz, s=1)
+        axs[skeys[3]].set_xlabel("x")
+        axs[skeys[3]].set_ylabel("y")
+        axs[skeys[3]].set_zlabel("z")
 
-        isub = 3
-        ax = f.add_subplot(nrow, ncol, isub)
-        ax.scatter(py, pz, s=1)
-        ax.set_xlabel('y')
-        ax.set_ylabel('z')
-
-        isub = 4
-        ax = f.add_subplot(nrow, ncol, isub, projection='3d')
-        ax.scatter(px, py, pz, s=1)
-        ax.set_xlabel('x')
-        ax.set_ylabel('y')
-        ax.set_zlabel('z')
-
-        return f
+        return
