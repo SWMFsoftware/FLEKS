@@ -637,10 +637,10 @@ void Pic::calc_mass_matrix_new() {
   for (int i = 0; i < nSpecies; ++i) {
     parts[i]->calc_mass_matrix_new(nodeMM, nmmc, jHat, jhc, nodeB, uBg,
                                    tc->get_dt(), 1, solveFieldInCoMov,
-                                   nodeStatus);
+                                   nodeStatus,cellStatus);
     parts[i]->calc_mass_matrix_new(nodeMM, nmmf, jHat, jhf, nodeB, uBg,
                                    tc->get_dt(), 0, solveFieldInCoMov,
-                                   nodeStatus);
+                                   nodeStatus,cellStatus);
   }
   //////////////////////////////////////////////////////////////////////
   amrex::MultiFab tmp;
