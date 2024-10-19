@@ -1025,6 +1025,78 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
     }
   }
 }
+//==========================================================
+void Pic::sum_to_center_new(bool isBeforeCorrection) {
+  std::string nameFunc = "Pic::sum_to_center";
+
+  timing_func(nameFunc);
+  MultiFab jhc;
+  MultiFab jhf;
+  {
+    BoxArray bac = centerB[1].boxArray();
+    bac.coarsen(2);
+    bac.grow(1);
+    jhc.define(bac, centerB[1].DistributionMap(), 1, 1);
+    jhc.setVal(0.0);
+    BoxArray baf = centerB[0].boxArray();
+    baf.refine(2);
+    jhf.define(baf, centerB[0].DistributionMap(), 1, 1);
+    jhf.setVal(0.0);
+  }
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    centerNetChargeNew[iLev].setVal(0.0);
+
+    const RealCMM mm0(0.0);
+    centerMM[iLev].setVal(mm0);
+  }
+  bool doNetChargeOnly = !isBeforeCorrection;
+  for (int i = 0; i < nSpecies; ++i) {
+    parts[i]->sum_to_center_new(centerNetChargeNew[0], jhf, centerMM[0],
+                                doNetChargeOnly, 0);
+    parts[i]->sum_to_center_new(centerNetChargeNew[1], jhc, centerMM[1],
+                                doNetChargeOnly, 1);
+  }
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    if (!doNetChargeOnly) {
+      centerMM[iLev].SumBoundary(Geom(iLev).periodicity());
+    }
+
+    centerNetChargeNew[iLev].SumBoundary(Geom(iLev).periodicity());
+
+    if (iLev == 0) {
+      apply_BC(cellStatus[iLev], centerNetChargeNew[iLev], 0,
+               centerNetChargeNew[iLev].nComp(), &Pic::get_zero, iLev);
+    }
+  }
+
+  amrex::MultiFab tmp;
+  jhc.SumBoundary();
+  tmp.define(centerB[0].boxArray(), centerB[0].DistributionMap(), 1, 0);
+  tmp.setVal(0.0);
+  tmp.ParallelCopy(jhc);
+  MultiFab::Add(centerNetChargeNew[0], tmp, 0, 0, 1, 0);
+
+  jhf.SumBoundary();
+  tmp.define(centerB[1].boxArray(), centerB[1].DistributionMap(), 1, 0);
+  tmp.setVal(0.0);
+  tmp.ParallelCopy(jhf);
+  MultiFab::Add(centerNetChargeNew[1], tmp, 0, 0, 1, 0);
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    MultiFab::LinComb(
+        centerNetChargeN[iLev], 1 - rhoTheta, centerNetChargeOld[iLev], 0,
+        rhoTheta, centerNetChargeNew[iLev], 0, 0,
+        centerNetChargeN[iLev].nComp(), centerNetChargeN[iLev].nGrow());
+
+    if (!isBeforeCorrection) {
+      MultiFab::Copy(centerNetChargeOld[iLev], centerNetChargeNew[iLev], 0, 0,
+                     centerNetChargeOld[iLev].nComp(),
+                     centerNetChargeOld[iLev].nGrow());
+    }
+  }
+}
 
 //==========================================================
 void Pic::update(bool doReportIn) {
@@ -2549,7 +2621,8 @@ void Pic::amr_divE_correction() {
 
   for (int iIter = 0; iIter < nDivECorrection; iIter++) {
     for (int iLev = finest_level; iLev >= 0; iLev--) {
-      sum_to_center(true);
+      sum_to_center_new(true);
+      //
       for (int iLev = 0; iLev < n_lev(); iLev++) {
         set_refined_and_bny_cells_zero(centerMM[iLev], cell_status(iLev));
       }
@@ -2567,7 +2640,7 @@ void Pic::amr_divE_correction() {
   }
   inject_particles_for_boundary_cells();
 
-  sum_to_center(false);
+  sum_to_center_new(false);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     set_refined_and_bny_cells_zero(centerNetChargeN[iLev], cell_status(iLev));

@@ -315,6 +315,9 @@ public:
   void sum_to_center(amrex::MultiFab& netChargeMF,
                      amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly,
                      int iLev);
+  void sum_to_center_new(amrex::MultiFab& netChargeMF,amrex::MultiFab& jht,
+                         amrex::UMultiFab<RealCMM>& centerMM,
+                         bool doNetChargeOnly, int iLev);
 
   void charge_exchange(
       amrex::Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH,
@@ -649,7 +652,8 @@ public:
                                 int nPartNew, amrex::Vector<amrex::Real>& x,
                                 amrex::Real velNorm);
 
-  void divE_correct_position(const amrex::Vector<amrex::MultiFab>& phiMF,int iLev);
+  void divE_correct_position(const amrex::Vector<amrex::MultiFab>& phiMF,
+                             int iLev);
 
   bool is_neutral() const { return charge == 0; };
 

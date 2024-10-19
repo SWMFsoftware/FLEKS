@@ -531,6 +531,201 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::sum_to_center_new(
+    MultiFab& netChargeMF, MultiFab& jht, UMultiFab<RealCMM>& centerMM,
+    bool doNetChargeOnly, int iLev) {
+  timing_func("Pts::sum_to_center");
+
+  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    Array4<Real> const& chargeArr = netChargeMF[pti].array();
+    Array4<Real> const& chargeArrt = jht[pti].array();
+    Array4<RealCMM> const& mmArr = centerMM[pti].array();
+    const Array4<int const>& status = cell_status(iLev)[pti].array();
+    const AoS& particles = pti.GetArrayOfStructs();
+
+    const Dim3 lo = init_dim3(0);
+    const Dim3 hi = init_dim3(1);
+
+    for (const auto& p : particles) {
+      /*
+      Q: Why do not check p.id() < 0?
+      A: IDs of ghost cell particles are set to -1 inside
+      divE_correct_position(), but these particles should be take into account
+      here.
+      */
+
+      // Print() << "particle = " << p << std::endl;
+
+      const Real qp = p.rdata(iqp_);
+
+      //-----calculate interpolate coef begin-------------
+
+      IntVect loIdx;
+      RealVect dShift;
+      IntVect iv;
+      RealVect rv;
+      IntVect cloIdx;
+      RealVect cdShift;
+      IntVect floIdx;
+      RealVect fdShift;
+      Real coef[2][2][2];
+      Real coef_coarse[2][2][2];
+      Real coef_fine[2][2][2];
+
+      find_cell_index_exp(p.pos(), Geom(iLev).ProbLo(),
+                          Geom(iLev).InvCellSize(), iv, rv);
+
+      find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                      loIdx, dShift);
+
+      linear_interpolation_coef(dShift, coef);
+
+      if (iLev > 0) {
+        find_cell_index(p.pos(), Geom(iLev - 1).ProbLo(),
+                        Geom(iLev - 1).InvCellSize(), cloIdx, cdShift);
+        linear_interpolation_coef(cdShift, coef_coarse);
+      }
+
+      if (iLev == 0) {
+        find_cell_index(p.pos(), Geom(iLev + 1).ProbLo(),
+                        Geom(iLev + 1).InvCellSize(), floIdx, fdShift);
+        linear_interpolation_coef(fdShift, coef_fine);
+      }
+
+      //-----calculate interpolate coef end-------------
+
+      const Real cTmp = qp * invVol[iLev];
+      for (int kk = lo.z; kk <= hi.z; ++kk)
+        for (int jj = lo.y; jj <= hi.y; ++jj)
+          for (int ii = lo.x; ii <= hi.x; ++ii) {
+            const IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + ii, loIdx[iy_] + jj,
+                                               loIdx[iz_] + kk) };
+            chargeArr(ijk) += coef[ii][jj][kk] * cTmp;
+          }
+
+      if (iLev == 0 && bit::is_refined_neighbour(status(iv))) {
+        const Real cTmp = qp * invVol[iLev + 1];
+        for (int kk = lo.z; kk <= hi.z; ++kk)
+          for (int jj = lo.y; jj <= hi.y; ++jj)
+            for (int ii = lo.x; ii <= hi.x; ++ii) {
+              const IntVect ijk = { AMREX_D_DECL(
+                  floIdx[ix_] + ii, floIdx[iy_] + jj, floIdx[iz_] + kk) };
+              chargeArrt(ijk) += coef_fine[ii][jj][kk] * cTmp;
+            }
+      }
+
+      if (iLev > 0 && bit::is_lev_edge(status(iv))) {
+        const Real cTmp = qp * invVol[iLev - 1];
+        for (int kk = lo.z; kk <= hi.z; ++kk)
+          for (int jj = lo.y; jj <= hi.y; ++jj)
+            for (int ii = lo.x; ii <= hi.x; ++ii) {
+              const IntVect ijk = { AMREX_D_DECL(
+                  cloIdx[ix_] + ii, cloIdx[iy_] + jj, cloIdx[iz_] + kk) };
+              chargeArrt(ijk) += coef_coarse[ii][jj][kk] * cTmp;
+            }
+      }
+
+      bool skipParticle = false;
+      if (n_lev() > 1) {
+        skipParticle = SkipParticleForDivECleaning(p.pos(), Geom(iLev), status);
+      }
+      if (!doNetChargeOnly && !skipParticle) {
+        Real weights_IIID[2][2][2][nDim3];
+        //----- Mass matrix calculation begin--------------
+        const Real xi0 = dShift[ix_] * dx[iLev][ix_];
+        const Real eta0 = dShift[iy_] * dx[iLev][iy_];
+        const Real zeta0 = nDim > 2 ? dShift[iz_] * dx[iLev][iz_] : 0;
+        const Real xi1 = dx[iLev][ix_] - xi0;
+        const Real eta1 = dx[iLev][iy_] - eta0;
+        const Real zeta1 = nDim > 2 ? dx[iLev][iz_] - zeta0 : 1;
+
+        weights_IIID[1][1][1][ix_] = eta0 * zeta0 * invVol[iLev];
+        weights_IIID[1][1][1][iy_] = xi0 * zeta0 * invVol[iLev];
+        weights_IIID[1][1][1][iz_] = xi0 * eta0 * invVol[iLev];
+
+        // xi0*eta0*zeta1*invVol[iLev];
+        weights_IIID[1][1][0][ix_] = eta0 * zeta1 * invVol[iLev];
+        weights_IIID[1][1][0][iy_] = xi0 * zeta1 * invVol[iLev];
+        weights_IIID[1][1][0][iz_] = -xi0 * eta0 * invVol[iLev];
+
+        // xi0*eta1*zeta0*invVol[iLev];
+        weights_IIID[1][0][1][ix_] = eta1 * zeta0 * invVol[iLev];
+        weights_IIID[1][0][1][iy_] = -xi0 * zeta0 * invVol[iLev];
+        weights_IIID[1][0][1][iz_] = xi0 * eta1 * invVol[iLev];
+
+        // xi0*eta1*zeta1*invVol[iLev];
+        weights_IIID[1][0][0][ix_] = eta1 * zeta1 * invVol[iLev];
+        weights_IIID[1][0][0][iy_] = -xi0 * zeta1 * invVol[iLev];
+        weights_IIID[1][0][0][iz_] = -xi0 * eta1 * invVol[iLev];
+
+        // xi1*eta0*zeta0*invVol[iLev];
+        weights_IIID[0][1][1][ix_] = -eta0 * zeta0 * invVol[iLev];
+        weights_IIID[0][1][1][iy_] = xi1 * zeta0 * invVol[iLev];
+        weights_IIID[0][1][1][iz_] = xi1 * eta0 * invVol[iLev];
+
+        // xi1*eta0*zeta1*invVol[iLev];
+        weights_IIID[0][1][0][ix_] = -eta0 * zeta1 * invVol[iLev];
+        weights_IIID[0][1][0][iy_] = xi1 * zeta1 * invVol[iLev];
+        weights_IIID[0][1][0][iz_] = -xi1 * eta0 * invVol[iLev];
+
+        // xi1*eta1*zeta0*invVol[iLev];
+        weights_IIID[0][0][1][ix_] = -eta1 * zeta0 * invVol[iLev];
+        weights_IIID[0][0][1][iy_] = -xi1 * zeta0 * invVol[iLev];
+        weights_IIID[0][0][1][iz_] = xi1 * eta1 * invVol[iLev];
+
+        // xi1*eta1*zeta1*invVol[iLev];
+        weights_IIID[0][0][0][ix_] = -eta1 * zeta1 * invVol[iLev];
+        weights_IIID[0][0][0][iy_] = -xi1 * zeta1 * invVol[iLev];
+        weights_IIID[0][0][0][iz_] = -xi1 * eta1 * invVol[iLev];
+
+        const int iMin = loIdx[ix_];
+        const int jMin = loIdx[iy_];
+        const int kMin = nDim > 2 ? loIdx[iz_] : 0;
+        const int iMax = iMin + 1;
+        const int jMax = jMin + 1;
+        const int kMax = nDim > 2 ? kMin + 1 : 0;
+
+        const Real coef = fabs(qp) * invVol[iLev];
+        RealVect wg_D;
+        for (int k1 = kMin; k1 <= kMax; k1++)
+          for (int j1 = jMin; j1 <= jMax; j1++)
+            for (int i1 = iMin; i1 <= iMax; i1++) {
+
+              for (int iDim = 0; iDim < nDim; iDim++) {
+                wg_D[iDim] =
+                    coef * weights_IIID[i1 - iMin][j1 - jMin][k1 - kMin][iDim];
+              }
+
+              auto& data = mmArr(i1, j1, k1);
+              // Real weights[27] = { 0 };
+              for (int i2 = iMin; i2 <= iMax; i2++) {
+                int ip = i2 - i1 + 1;
+                const int gp0 = ip * 9;
+                for (int j2 = jMin; j2 <= jMax; j2++) {
+                  int jp = j2 - j1 + 1;
+                  const int gp1 = gp0 + jp * nDim3;
+                  for (int k2 = kMin; k2 <= kMax; k2++) {
+                    const Real(&wg1_D)[nDim3] =
+                        weights_IIID[i2 - iMin][j2 - jMin][k2 - kMin];
+
+                    // const int kp = k2 - k1 + 1;
+                    const int gp = gp1 + k2 - k1 + 1;
+
+                    data[gp] += wg_D[ix_] * wg1_D[ix_] +
+                                wg_D[iy_] * wg1_D[iy_] + wg_D[iz_] * wg1_D[iz_];
+                    ;
+                  }
+                }
+              }
+            }
+      } // if doChargeOnly
+
+    } // for p
+  }
+}
+
+//==========================================================
+template <int NStructReal, int NStructInt>
 std::array<Real, 5> Particles<NStructReal, NStructInt>::total_moments(
     bool localOnly) {
   timing_func("Pts::total_moments");

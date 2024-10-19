@@ -316,6 +316,7 @@ public:
   void divE_accurate_matvec(const double *vecIn, double *vecOut, int iLev);
   void divE_correct_particle_position();
   void sum_to_center(bool isBeforeCorrection);
+  void sum_to_center_new(bool isBeforeCorrection);
   void calculate_phi(LinearSolver &solver);
   //-------------div(E) correction end----------------
 
