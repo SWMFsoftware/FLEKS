@@ -430,11 +430,8 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
                                                loIdx[iz_] + kk) };
             chargeArr(ijk) += coef[ii][jj][kk] * cTmp;
           }
-      bool skipParticle = false;
-      if (n_lev() > 1) {
-        skipParticle = SkipParticleForDivECleaning(p.pos(), Geom(iLev), status);
-      }
-      if (!doNetChargeOnly && !skipParticle) {
+
+      if (!doNetChargeOnly) {
         Real weights_IIID[2][2][2][nDim3];
         //----- Mass matrix calculation begin--------------
         const Real xi0 = dShift[ix_] * dx[iLev][ix_];

@@ -864,12 +864,6 @@ void Pic::divE_correction() {
     calculate_phi(divESolver);
 
     divE_correct_particle_position();
-
-    if (finest_level > 0) {
-      for (int i = 0; i < nSpecies; ++i) {
-        parts[i]->Redistribute();
-      }
-    }
   }
 
   for (int i = 0; i < nSpecies; ++i) {
@@ -968,11 +962,7 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut, int iLev) {
 //==========================================================
 void Pic::sum_to_center(bool isBeforeCorrection) {
   std::string nameFunc = "Pic::sum_to_center";
-  if (finest_level > 0) {
-    for (int i = 0; i < nSpecies; ++i) {
-      parts[i]->Exchange_VirtualParticles(0);
-    }
-  }
+
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -997,13 +987,6 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
     if (iLev == 0) {
       apply_BC(cellStatus[iLev], centerNetChargeNew[iLev], 0,
                centerNetChargeNew[iLev].nComp(), &Pic::get_zero, iLev);
-    } else {
-#ifdef _PC_COMPONENT_
-      fill_fine_lev_bny_from_coarse(
-          centerNetChargeNew[iLev - 1], centerNetChargeNew[iLev], 0,
-          centerNetChargeNew[iLev - 1].nComp(), ref_ratio[iLev - 1],
-          Geom(iLev - 1), Geom(iLev), cell_status(iLev), cell_bilinear_interp);
-#endif
     }
 
     MultiFab::LinComb(
@@ -1015,13 +998,6 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
       MultiFab::Copy(centerNetChargeOld[iLev], centerNetChargeNew[iLev], 0, 0,
                      centerNetChargeOld[iLev].nComp(),
                      centerNetChargeOld[iLev].nGrow());
-    }
-  }
-  if (finest_level > 0) {
-    for (int i = 0; i < nSpecies; ++i) {
-      parts[i]->delete_particles_from_ghost_cells(1);
-      parts[i]->delete_particles_from_refined_region(0);
-      parts[i]->Redistribute();
     }
   }
 }
