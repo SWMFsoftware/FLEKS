@@ -1002,7 +1002,7 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
   }
 }
 //==========================================================
-void Pic::sum_to_center_new(bool isBeforeCorrection) {
+void Pic::sum_to_center_new(bool isBeforeCorrection, int iLev) {
   std::string nameFunc = "Pic::sum_to_center";
 
   timing_func(nameFunc);
@@ -1028,10 +1028,24 @@ void Pic::sum_to_center_new(bool isBeforeCorrection) {
   }
   bool doNetChargeOnly = !isBeforeCorrection;
   for (int i = 0; i < nSpecies; ++i) {
-    parts[i]->sum_to_center_new(centerNetChargeNew[0], jhf, centerMM[0],
-                                doNetChargeOnly, 0);
-    parts[i]->sum_to_center_new(centerNetChargeNew[1], jhc, centerMM[1],
-                                doNetChargeOnly, 1);
+    if (doNetChargeOnly) {
+      parts[i]->sum_to_center_new(centerNetChargeNew[0], jhf, centerMM[0],
+                                  doNetChargeOnly, 0);
+      parts[i]->sum_to_center_new(centerNetChargeNew[1], jhc, centerMM[1],
+                                  doNetChargeOnly, 1);
+    }
+    if (!doNetChargeOnly && iLev == 0) {
+      parts[i]->sum_to_center_new(centerNetChargeNew[0], jhf, centerMM[0],
+                                  doNetChargeOnly, 0);
+      parts[i]->sum_to_center_new(centerNetChargeNew[1], jhc, centerMM[1],
+                                  !doNetChargeOnly, 1);
+    }
+    if (!doNetChargeOnly && iLev == 1) {
+      parts[i]->sum_to_center_new(centerNetChargeNew[0], jhf, centerMM[0],
+                                  !doNetChargeOnly, 0);
+      parts[i]->sum_to_center_new(centerNetChargeNew[1], jhc, centerMM[1],
+                                  doNetChargeOnly, 1);
+    }
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -2597,8 +2611,7 @@ void Pic::amr_divE_correction() {
 
   for (int iIter = 0; iIter < nDivECorrection; iIter++) {
     for (int iLev = finest_level; iLev >= 0; iLev--) {
-      sum_to_center_new(true);
-      //
+      sum_to_center_new(true, iLev);
       for (int iLev = 0; iLev < n_lev(); iLev++) {
         set_refined_and_bny_cells_zero(centerMM[iLev], cell_status(iLev));
       }
@@ -2616,7 +2629,7 @@ void Pic::amr_divE_correction() {
   }
   inject_particles_for_boundary_cells();
 
-  sum_to_center_new(false);
+  sum_to_center_new(false, 0);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     set_refined_and_bny_cells_zero(centerNetChargeN[iLev], cell_status(iLev));
