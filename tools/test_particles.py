@@ -307,9 +307,7 @@ class FLEKSTP(object):
                     dataList = list(struct.unpack("f" * nRead * self.nReal, binaryData))
                 return dataList
 
-    def select_particles(
-        self, fSelect: Callable[[Tuple[int, int], List[float]], bool] = None
-    ) -> List[Tuple[int, int]]:
+    def select_particles(self, fSelect: Callable = None) -> List[Tuple[int, int]]:
         r"""
         Select and return the particles whose initial condition satisfy the requirement
         set by the user defined function fSelect. The first argument of fSelect is the
@@ -329,10 +327,11 @@ class FLEKSTP(object):
         """
 
         if fSelect == None:
-            def fSelect(id, data):
+
+            def fSelect(tp, pid):
                 return True
 
-        pselected = list(filter(fSelect, self.IDs))
+        pselected = list(filter(lambda pid: fSelect(self, pid), self.IDs))
 
         return pselected
 
