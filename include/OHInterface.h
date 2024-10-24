@@ -59,7 +59,8 @@ public:
           mach2 = u2 / cs2;
         };
 
-    const int iSW = 0, iPUI3 = 1, iPUI2 = 2, iTotal = 3, nSize = 4;
+    const int iSW = 0, iPUI3 = 1, iPUI2 = 2, iTotal = 3, iTotalPUI = 4,
+              nSize = 5;
 
     amrex::Real n[nSize] = { 0 }, u2[nSize] = { 0 }, m2[nSize] = { 0 },
                 mach2[nSize] = { 0 }, T[nSize] = { 0 }, p[nSize] = { 0 };
@@ -67,18 +68,37 @@ public:
     for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
       get_fluid_moments(mfi, ijk, iFluid, iLev, n[iFluid], u2[iFluid],
                         mach2[iFluid], T[iFluid], p[iFluid]);
-      n[iTotal] += n[iFluid];
-      m2[iTotal] += n[iFluid] * u2[iFluid];
-      p[iTotal] += p[iFluid];
-    }
-    // km/s
-    u2[iTotal] = m2[iTotal] / n[iTotal];
-    T[iTotal] = p[iTotal] / n[iTotal] / cBoltzmannSI;
 
-    // (km/s)^2
-    const amrex::Real cs2 =
-        gamma * p[iTotal] / n[iTotal] / cProtonMassSI * 1e-6;
-    mach2[iTotal] = u2[iTotal] / cs2;
+      // Get the sum/average of total fluids or total PUIs
+      for (int iT = iTotal; iT <= iTotalPUI; ++iT) {
+        bool doAdd = false;
+        if (iT == iTotal) {
+          doAdd = true;
+        } else if (iT == iTotalPUI) {
+          if (iFluid == iPUI3 || iFluid == iPUI2) {
+            doAdd = true;
+          }
+        }
+
+        if (doAdd) {
+          n[iT] += n[iFluid];
+          m2[iT] += n[iFluid] * u2[iFluid];
+          p[iT] += p[iFluid];
+        }
+      }
+    }
+
+    const int iTMax = iTotal; // nFluid > 1 ? iTotalPUI : iTotal;
+
+    for (int iT = iTotal; iT <= iTMax; ++iT) {
+      // km/s
+      u2[iT] = m2[iT] / n[iT];
+      T[iT] = p[iT] / n[iT] / cBoltzmannSI;
+
+      // (km/s)^2
+      const amrex::Real cs2 = gamma * p[iT] / n[iT] / cProtonMassSI * 1e-6;
+      mach2[iT] = u2[iT] / cs2;
+    }
 
     const amrex::Real x = Geom(iLev).CellCenter(ijk[ix_], ix_);
     const amrex::Real y = Geom(iLev).CellCenter(ijk[iy_], iy_);
@@ -91,8 +111,9 @@ public:
 
     amrex::Real levHP = get_value(mfi, ijk, iLevSet, iLev);
 
-    OH_get_charge_exchange_region(&iRegion, &r, &n[iTotal], &u2[iTotal],
-                                  &T[iTotal], &mach2[iTotal], &levHP);
+    OH_get_charge_exchange_region(
+        &iRegion, &r, &n[iTotal], &u2[iTotal], &u2[iSW], &T[iTotal],
+        &T[iTotalPUI], &mach2[iTotal], &mach2[iTotalPUI], &mach2[iSW], &levHP);
 
     return iRegion;
   }
