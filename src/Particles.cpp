@@ -3430,7 +3430,8 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
             int iFluidAddTo;
             Real rhoIonAddTo, cs2IonAddTo, uIonAddTo[3];
 
-            const int iSW = 2; // Pop3
+            const int iSW = 2;     // Pop3
+            const int iSheath = 1; // Pop2
             switch (stateOH->get_nFluid()) {
               case 1:
                 iFluidAddTo = fluidID;
@@ -3440,13 +3441,25 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
                 if (iRegion == iSW) {
                   iFluidAddTo = 1; // Pu3
                 } else {
-                  iFluidAddTo = 0; // SW
+                  iFluidAddTo = 0; // background
                 }
-                get_ion_fluid(stateOH, pti, iLev, iFluidAddTo, xyz, rhoIonAddTo,
-                              cs2IonAddTo, uIonAddTo);
+                break;
+              case 3:
+                if (iRegion == iSW) {
+                  iFluidAddTo = 1; // Pu3
+                } else if (iRegion == iSheath) {
+                  iFluidAddTo = 2; // Pu2
+                } else {
+                  iFluidAddTo = 0; // background
+                }
                 break;
               default:
-                Abort("Error: nFluid > 2 is not supported yet.");
+                Abort("Error: nFluid > 3 is not supported yet.");
+            }
+
+            if (stateOH->get_nFluid() > 1) {
+              get_ion_fluid(stateOH, pti, iLev, iFluidAddTo, xyz, rhoIonAddTo,
+                            cs2IonAddTo, uIonAddTo);
             }
 
             // Q: Why is (neu2ion-ion2neu) divided by rhoIon?
