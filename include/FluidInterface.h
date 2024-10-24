@@ -319,7 +319,7 @@ public:
   }
 
   virtual int get_neu_source_region(const amrex::MFIter& mfi,
-                                    const amrex::IntVect ijk, const int iFluid,
+                                    const amrex::IntVect ijk,
                                     const int iLev) const {
     return -1;
   }

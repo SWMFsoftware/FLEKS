@@ -25,10 +25,12 @@ public:
   };
 
   virtual int get_neu_source_region(const amrex::MFIter& mfi,
-                                    const amrex::IntVect ijk, const int iFluid,
+                                    const amrex::IntVect ijk,
                                     const int iLev) const override {
     if (!isnodeFluidReady)
       return -1;
+
+    const int iFluid = 0;
 
     // amu/m^3
     amrex::Real n = get_fluid_mass_density(mfi, ijk, iFluid, iLev) *

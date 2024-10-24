@@ -406,9 +406,8 @@ double Pic::get_var(std::string var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 5) == "block") {
       value = mfi.index();
     } else if (var.substr(0, 9) == "neuregion") {
-      if (stateOH) {
-        const int iFluid = 0;
-        value = stateOH->get_neu_source_region(mfi, ijk, iFluid, iLev);
+      if (stateOH) {        
+        value = stateOH->get_neu_source_region(mfi, ijk, iLev);
       } else {
         value = -1;
       }
