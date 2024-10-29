@@ -353,7 +353,12 @@ void Domain::set_state_var(double *data, int *index,
   std::string funcName = "Domain::set_state_var";
   timing_func(funcName);
 
-  Print() << printPrefix << " GM -> " << component
+  std::string sourceComp = "GM";
+#ifdef _PT_COMPONENT_
+  sourceComp = "OH";
+#endif
+
+  Print() << printPrefix << " " << sourceComp << " -> " << component
           << " coupling at t =" << tc->get_time_si() << " (s)" << std::endl;
 
   if (receiveICOnly) {
