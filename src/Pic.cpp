@@ -663,10 +663,11 @@ void Pic::calc_mass_matrix_new() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
 
     if (iLev > 0) {
-      tmp.define(jHat[iLev - 1].boxArray(), jHat[iLev - 1].DistributionMap(), 3,
-                 0);
-      tmpMM.define(jHat[iLev - 1].boxArray(), jHat[iLev - 1].DistributionMap(),
-                   3, 0);
+      tmp.define(jHat[iLev - 1].boxArray(), jHat[iLev - 1].DistributionMap(),
+                 jHat[iLev - 1].nComp(), 0);
+      tmpMM.define(nodeMM[iLev - 1].boxArray(),
+                   nodeMM[iLev - 1].DistributionMap(), nodeMM[iLev - 1].nComp(),
+                   0);
       tmp.setVal(0.0);
       tmpMM.setVal(0.0);
       tmp.ParallelCopy(jhc[iLev]);
@@ -676,10 +677,11 @@ void Pic::calc_mass_matrix_new() {
     }
 
     if (iLev < finest_level) {
-      tmp.define(jHat[iLev + 1].boxArray(), jHat[iLev + 1].DistributionMap(), 3,
-                 0);
-      tmpMM.define(jHat[iLev + 1].boxArray(), jHat[iLev + 1].DistributionMap(),
-                   3, 0);
+      tmp.define(jHat[iLev + 1].boxArray(), jHat[iLev + 1].DistributionMap(),
+                 jHat[iLev + 1].nComp(), 0);
+      tmpMM.define(nodeMM[iLev + 1].boxArray(),
+                   nodeMM[iLev + 1].DistributionMap(), nodeMM[iLev + 1].nComp(),
+                   0);
 
       tmp.setVal(0.0);
       tmpMM.setVal(0.0);
