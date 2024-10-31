@@ -297,9 +297,10 @@ public:
                         amrex::Real dt, int iLev, bool solveInCoMov);
 
   void calc_mass_matrix_new(amrex::Vector<amrex::UMultiFab<RealMM> >& nodeMM,
-                            amrex::UMultiFab<RealMM>& nmmt,
+                            amrex::UMultiFab<RealMM>& nmmc,
+                            amrex::UMultiFab<RealMM>& nmmf,
                             amrex::Vector<amrex::MultiFab>& jHat,
-                            amrex::MultiFab& jhc,
+                            amrex::MultiFab& jhc, amrex::MultiFab& jhf,
                             amrex::Vector<amrex::MultiFab>& nodeBMF,
                             amrex::Vector<amrex::MultiFab>& u0MF,
                             amrex::Real dt, int iLev, bool solveInCoMov,
@@ -315,7 +316,7 @@ public:
   void sum_to_center(amrex::MultiFab& netChargeMF,
                      amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly,
                      int iLev);
-  void sum_to_center_new(amrex::MultiFab& netChargeMF,amrex::MultiFab& jht,
+  void sum_to_center_new(amrex::MultiFab& netChargeMF, amrex::MultiFab& jht,
                          amrex::UMultiFab<RealCMM>& centerMM,
                          bool doNetChargeOnly, int iLev);
 

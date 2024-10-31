@@ -615,62 +615,83 @@ void Pic::calc_mass_matrix_new() {
     jHat[iLev].setVal(0.0);
   }
   //////////////////////////////////////////////////////////////////////
-  MultiFab jhc;
-  MultiFab jhf;
-  UMultiFab<RealMM> nmmc;
-  UMultiFab<RealMM> nmmf;
-  {
-    BoxArray bac = nodeB[1].boxArray();
+  amrex::Vector<amrex::MultiFab> jhc;
+  amrex::Vector<amrex::MultiFab> jhf;
+  amrex::Vector<UMultiFab<RealMM> > nmmc;
+  amrex::Vector<UMultiFab<RealMM> > nmmf;
+  jhc.resize(n_lev());
+  jhf.resize(n_lev());
+  nmmc.resize(n_lev());
+  nmmf.resize(n_lev());
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    BoxArray bac = nodeB[iLev].boxArray();
     bac.coarsen(2);
-    jhc.define(bac, nodeB[1].DistributionMap(), 3, 0);
-    jhc.setVal(0.0);
-    nmmc.define(bac, nodeB[1].DistributionMap(), nodeMM[0].nComp(), 0);
-    nmmc.setVal(0.0);
-    BoxArray baf = nodeB[0].boxArray();
+    BoxArray baf = nodeB[iLev].boxArray();
     baf.refine(2);
-    jhf.define(baf, nodeB[0].DistributionMap(), 3, 0);
-    jhf.setVal(0.0);
-    nmmf.define(baf, nodeB[0].DistributionMap(), nodeMM[1].nComp(), 0);
-    nmmf.setVal(0.0);
+    jhc[iLev].define(bac, nodeB[iLev].DistributionMap(), 3, 0);
+    jhf[iLev].define(baf, nodeB[iLev].DistributionMap(), 3, 0);
+    jhc[iLev].setVal(0.0);
+    jhf[iLev].setVal(0.0);
+    nmmc[iLev].define(bac, nodeB[iLev].DistributionMap(), nodeMM[iLev].nComp(),
+                      0);
+    nmmf[iLev].define(baf, nodeB[iLev].DistributionMap(), nodeMM[iLev].nComp(),
+                      0);
+    nmmc[iLev].setVal(0.0);
+    nmmf[iLev].setVal(0.0);
   }
   //////////////////////////////////////////////////////////////////////
-  for (int i = 0; i < nSpecies; ++i) {
-    parts[i]->calc_mass_matrix_new(nodeMM, nmmc, jHat, jhc, nodeB, uBg,
-                                   tc->get_dt(), 1, solveFieldInCoMov,
-                                   nodeStatus, cellStatus);
-    parts[i]->calc_mass_matrix_new(nodeMM, nmmf, jHat, jhf, nodeB, uBg,
-                                   tc->get_dt(), 0, solveFieldInCoMov,
-                                   nodeStatus, cellStatus);
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->calc_mass_matrix_new(
+          nodeMM, nmmc[iLev], nmmf[iLev], jHat, jhc[iLev], jhf[iLev], nodeB,
+          uBg, tc->get_dt(), iLev, solveFieldInCoMov, nodeStatus, cellStatus);
+    }
   }
   //////////////////////////////////////////////////////////////////////
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    jhc[iLev].SumBoundary();
+    jhf[iLev].SumBoundary();
+    nmmc[iLev].SumBoundary();
+    nmmf[iLev].SumBoundary();
+    jHat[iLev].SumBoundary(Geom(iLev).periodicity());
+    nodeMM[iLev].SumBoundary(Geom(iLev).periodicity());
+  }
+
   amrex::MultiFab tmp;
-  jhc.SumBoundary();
-  jHat[0].SumBoundary(Geom(0).periodicity());
-  tmp.define(jHat[0].boxArray(), jHat[0].DistributionMap(), 3, 0);
-  tmp.setVal(0.0);
-  tmp.ParallelCopy(jhc);
-  MultiFab::Add(jHat[0], tmp, 0, 0, 3, 0);
-  jhf.SumBoundary();
-  jHat[1].SumBoundary(Geom(1).periodicity());
-  tmp.define(jHat[1].boxArray(), jHat[1].DistributionMap(), 3, 0);
-  tmp.setVal(0.0);
-  tmp.ParallelCopy(jhf);
-  MultiFab::Add(jHat[1], tmp, 0, 0, 3, 0);
   UMultiFab<RealMM> tmpMM;
-  nmmc.SumBoundary();
-  nodeMM[0].SumBoundary(Geom(0).periodicity());
-  tmpMM.define(nodeMM[0].boxArray(), nodeMM[0].DistributionMap(),
-               nodeMM[0].nComp(), 0);
-  tmpMM.setVal(0.0);
-  tmpMM.ParallelCopy(nmmc);
-  amrex::Add(nodeMM[0], tmpMM, 0, 0, nodeMM[0].nComp(), 0);
-  nmmf.SumBoundary();
-  nodeMM[1].SumBoundary();
-  tmpMM.define(nodeMM[1].boxArray(), nodeMM[1].DistributionMap(),
-               nodeMM[1].nComp(), 0);
-  tmpMM.setVal(0.0);
-  tmpMM.ParallelCopy(nmmf);
-  amrex::Add(nodeMM[1], tmpMM, 0, 0, nodeMM[0].nComp(), 0);
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+
+    if (iLev > 0) {
+      tmp.define(jHat[iLev - 1].boxArray(), jHat[iLev - 1].DistributionMap(), 3,
+                 0);
+      tmpMM.define(jHat[iLev - 1].boxArray(), jHat[iLev - 1].DistributionMap(),
+                   3, 0);
+      tmp.setVal(0.0);
+      tmpMM.setVal(0.0);
+      tmp.ParallelCopy(jhc[iLev]);
+      tmpMM.ParallelCopy(nmmc[iLev]);
+      MultiFab::Add(jHat[iLev - 1], tmp, 0, 0, 3, 0);
+      amrex::Add(nodeMM[iLev - 1], tmpMM, 0, 0, nodeMM[iLev - 1].nComp(), 0);
+    }
+
+    if (iLev < finest_level) {
+      tmp.define(jHat[iLev + 1].boxArray(), jHat[iLev + 1].DistributionMap(), 3,
+                 0);
+      tmpMM.define(jHat[iLev + 1].boxArray(), jHat[iLev + 1].DistributionMap(),
+                   3, 0);
+
+      tmp.setVal(0.0);
+      tmpMM.setVal(0.0);
+
+      tmp.ParallelCopy(jhf[iLev]);
+      tmpMM.ParallelCopy(nmmf[iLev]);
+
+      MultiFab::Add(jHat[iLev + 1], tmp, 0, 0, 3, 0);
+      amrex::Add(nodeMM[iLev + 1], tmpMM, 0, 0, nodeMM[iLev + 1].nComp(), 0);
+    }
+  }
+
   //////////////////////////////////////////////////////////////////////
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {

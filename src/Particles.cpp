@@ -1062,10 +1062,11 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
-    amrex::Vector<UMultiFab<RealMM> >& nodeMM, UMultiFab<RealMM>& nmmt,
-    amrex::Vector<MultiFab>& jHat, MultiFab& jht,
-    amrex::Vector<MultiFab>& nodeBMF, amrex::Vector<MultiFab>& u0MF, Real dt,
-    int iLev, bool solveInCoMov, amrex::Vector<amrex::iMultiFab>& nodestatus,
+    amrex::Vector<UMultiFab<RealMM> >& nodeMM, UMultiFab<RealMM>& nmmc,
+    UMultiFab<RealMM>& nmmf, amrex::Vector<MultiFab>& jHat, MultiFab& jhc,
+    MultiFab& jhf, amrex::Vector<MultiFab>& nodeBMF,
+    amrex::Vector<MultiFab>& u0MF, Real dt, int iLev, bool solveInCoMov,
+    amrex::Vector<amrex::iMultiFab>& nodestatus,
     amrex::Vector<amrex::iMultiFab>& cellstatus) {
   timing_func("Pts::calc_mass_matrix");
 
@@ -1084,8 +1085,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
     const Dim3 hi = init_dim3(1);
 
     /////////////////////////////////////////////////////////////////
-    Array4<Real> const& jArrt = jht[pti].array();
-    Array4<RealMM> const& mmArrt = nmmt[pti].array();
+    Array4<Real> const& jArrc = jhc[pti].array();
+    Array4<RealMM> const& mmArrc = nmmc[pti].array();
+    Array4<Real> const& jArrf = jhf[pti].array();
+    Array4<RealMM> const& mmArrf = nmmf[pti].array();
     /////////////////////////////////////////////////////////////////
 
     for (const auto& p : particles) {
@@ -1123,7 +1126,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
                         Geom(iLev - 1).InvCellSize(), cloIdx, cdShift);
         linear_interpolation_coef(cdShift, coef_coarser);
       }
-      if (iLev == 0) {
+      if (iLev < (n_lev() - 1)) {
         find_node_index(p.pos(), Geom(iLev + 1).ProbLo(),
                         Geom(iLev + 1).InvCellSize(), floIdx, fdShift);
         linear_interpolation_coef(fdShift, coef_finer);
@@ -1199,12 +1202,13 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
                 if (iLev > 0) {
                   ijk = { AMREX_D_DECL(cloIdx[ix_] + ii, cloIdx[iy_] + jj,
                                        cloIdx[iz_] + kk) };
-                  jArrt(ijk, iVar) += coef_coarser[ii][jj][kk] * currents[iVar];
+                  jArrc(ijk, iVar) += coef_coarser[ii][jj][kk] * currents[iVar];
                 }
-                if (iLev == 0 && bit::is_refined_neighbour(status(cellIdx))) {
+                if (iLev < (n_lev() - 1) &&
+                    bit::is_refined_neighbour(status(cellIdx))) {
                   ijk = { AMREX_D_DECL(floIdx[ix_] + ii, floIdx[iy_] + jj,
                                        floIdx[iz_] + kk) };
-                  jArrt(ijk, iVar) += coef_finer[ii][jj][kk] * currents[iVar];
+                  jArrf(ijk, iVar) += coef_finer[ii][jj][kk] * currents[iVar];
                 }
               }
       }
@@ -1254,7 +1258,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
           for (int j1 = jMin; j1 <= jMax; j1++)
             for (int i1 = iMin; i1 <= iMax; i1++) {
               const Real wg = coef_coarser[i1 - iMin][j1 - jMin][k1 - kMin];
-              auto& data0 = mmArrt(i1, j1, k1);
+              auto& data0 = mmArrc(i1, j1, k1);
               for (int k2 = kMin; k2 <= kMax; k2++) {
                 const int kp = k2 - k1 + 1;
                 if (kp > 0) {
@@ -1278,7 +1282,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
             } // k1
       }
 
-      if (iLev == 0 && bit::is_refined_neighbour(status(cellIdx))) {
+      if (iLev < (n_lev() - 1) && bit::is_refined_neighbour(status(cellIdx))) {
         const int iMin = floIdx[ix_];
         const int jMin = floIdx[iy_];
         const int kMin = nDim > 2 ? floIdx[iz_] : 0;
@@ -1290,7 +1294,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
           for (int j1 = jMin; j1 <= jMax; j1++)
             for (int i1 = iMin; i1 <= iMax; i1++) {
               const Real wg = coef_finer[i1 - iMin][j1 - jMin][k1 - kMin];
-              auto& data0 = mmArrt(i1, j1, k1);
+              auto& data0 = mmArrf(i1, j1, k1);
               for (int k2 = kMin; k2 <= kMax; k2++) {
                 const int kp = k2 - k1 + 1;
                 if (kp > 0) {
