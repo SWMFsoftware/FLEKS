@@ -924,7 +924,8 @@ void Pic::calculate_phi(LinearSolver& solver) {
     MultiFab residual(cGrids[iLev], DistributionMap(iLev), 1, nGst);
 
     solver.reset(get_local_node_or_cell_number(centerDivE[iLev]));
-    div_node_to_center(nodeE[iLev], residual, Geom(iLev).InvCellSize());
+    // div_node_to_center(nodeE[iLev], residual, Geom(iLev).InvCellSize());
+    MultiFab::Copy(residual, centerDivE[iLev], 0, 0, 1, nGst);
     Real coef = 1.0 / rhoTheta;
 
     MultiFab::LinComb(residual, coef, residual, 0, -fourPI * coef,
