@@ -316,7 +316,9 @@ public:
   void sum_to_center(amrex::MultiFab& netChargeMF,
                      amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly,
                      int iLev);
-  void sum_to_center_new(amrex::MultiFab& netChargeMF, amrex::MultiFab& jht,
+
+  void sum_to_center_new(amrex::MultiFab& netChargeMF, amrex::MultiFab& jc,
+                         amrex::MultiFab& jf,
                          amrex::UMultiFab<RealCMM>& centerMM,
                          bool doNetChargeOnly, int iLev);
 
