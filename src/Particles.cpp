@@ -540,7 +540,6 @@ void Particles<NStructReal, NStructInt>::sum_to_center_new(
   if (iLev == (n_lev() - 1)) {
     finer_level = iLev;
   }
-  // Print()<<"Talha..."<<iLev<<" "<<finer_level<<" "<<coarser_level<<std::endl;
   for (int nLev = finer_level; nLev >= coarser_level; nLev--) {
 
     for (PIter pti(*this, nLev); pti.isValid(); ++pti) {
