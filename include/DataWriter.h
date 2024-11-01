@@ -12,7 +12,7 @@ public:
 
   virtual ~DataWriter() {};
 
-  virtual void write() = 0;
+  virtual int write() = 0;
 
   std::string type_string() { return fileTypeString.at(fType); }
 
@@ -42,7 +42,7 @@ public:
 
   ~TECWriter() {};
 
-  void write() override {
+  int write() override {
 
     zoneType.set_type(dc->zone_type());
 
@@ -99,6 +99,8 @@ public:
     if (outFile.is_open()) {
       outFile.close();
     }
+
+    return iSuccess;
   }
 };
 
@@ -114,7 +116,7 @@ public:
 
   ~VTKWriter() {};
 
-  void write() override {
+  int write() override {
     zoneType.set_type(dc->zone_type());
 
     size_t nCell = dc->count_cell();
@@ -175,6 +177,8 @@ public:
     }
     delete[] varnames;
     delete[] v;
+
+    return iSuccess;
   }
 
 private:

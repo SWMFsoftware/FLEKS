@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <vector>
@@ -18,6 +19,8 @@ int main(int argc, char* argv[]) {
   std::vector<std::string> fileNames;
   FileType sType = FileType::UNSET;
   FileType dType = FileType::UNSET;
+
+  bool deleteSource = false;
 
   int nSmooth = 0;
 
@@ -49,6 +52,7 @@ int main(int argc, char* argv[]) {
       printf("               Options : VTK, TEC\n");
       printf("  -s [optional]: Specify the source file format.\n");
       printf("               Options: AMReX, IDL\n");
+      printf("  -D        : Delete the source files\n");
       printf("  -smooth n : Smooth the data n times\n");
 
       printf("\n");
@@ -77,6 +81,9 @@ int main(int argc, char* argv[]) {
         std::cout << "dtype = " << cdl[i - 1] << " dtype = " << (int)dType
                   << "\n";
       }
+    } else if (cdl[i] == "-D") {
+      ++i;
+      deleteSource = true;
     } else if (cdl[i] == "-smooth") {
       ++i;
       if (i >= cdl.size()) {
@@ -98,11 +105,28 @@ int main(int argc, char* argv[]) {
 
   for (size_t i = 0; i < fileNames.size(); ++i) {
     Converter cv(fileNames[i], sType, dType);
-    cv.read();
+
+    int iStatusRead = iFail;
+    iStatusRead = cv.read();
+    if (iStatusRead == iFail) {
+      std::cout << "Error: reading file failed!" << std::endl;
+      continue;
+    }
     if (nSmooth > 0) {
       cv.smooth(nSmooth);
     }
-    cv.write();
+
+    int iStatusWrite = iFail;
+    iStatusWrite = cv.write();
+    if (iStatusWrite == iFail) {
+      std::cout << "Error: writing file failed!" << std::endl;
+      continue;
+    } else if (deleteSource) {
+      char command[2000];
+      std::snprintf(command, 2000, "\\rm -rf %s", fileNames[i].c_str());      
+      std::cout << "Deleting source file: " << fileNames[i] << std::endl;
+      std::system(command);      
+    }
   }
 
   Finalize();

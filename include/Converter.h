@@ -114,8 +114,8 @@ public:
 
     return FileType::UNKNOWN;
   }
-  void read() { dc->read(); }
-  void write() { writer->write(); }
+  int read() { return dc->read(); }
+  int write() { return writer->write(); }
 
   void smooth(int nSmooth) { dc->smooth(nSmooth); }
 

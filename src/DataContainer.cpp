@@ -75,7 +75,7 @@ void AMReXDataContainer::read_header() {
   SetFinestLevel(finestLev);
 }
 
-void AMReXDataContainer::read() {
+int AMReXDataContainer::read() {
   std::string funcName = "AMReXDataContainer::read()";
   BL_PROFILE(funcName);
 
@@ -95,6 +95,8 @@ void AMReXDataContainer::read() {
   grid.SetFinestLevel(n_lev() - 1);
 
   regrid(grid.boxArray(0), &grid);
+
+  return iSuccess;
 }
 
 size_t AMReXDataContainer::loop_cell(bool doStore, Vector<float>& vars,

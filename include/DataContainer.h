@@ -90,7 +90,7 @@ class DataContainer {
 public:
   virtual ~DataContainer() = default;
 
-  virtual void read() = 0;
+  virtual int read() = 0;
 
   virtual size_t count_cell() = 0;
 
@@ -224,7 +224,7 @@ public:
     return t;
   }
 
-  void read() override {
+  int read() override {
     if (idlType == IDLFileType::ASCII) {
       read_ascii();
     } else if (idlType == IDLFileType::REAL4) {
@@ -240,6 +240,8 @@ public:
       loop_cell(coords2d, true, false);
       tri = std::make_unique<delaunator::Delaunator>(coords2d);
     }
+
+    return iSuccess;
   };
 
   size_t count_cell() override { return nCell; }
@@ -624,7 +626,7 @@ public:
     update_cell_status(cGridsOld);
   }
 
-  void read() override;
+  int read() override;
 
   size_t count_cell() override {
     amrex::Vector<float> vars;

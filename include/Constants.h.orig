@@ -55,6 +55,9 @@ static const std::string component = "PT";
 static const std::string component = "PC";
 #endif
 
+constexpr static int iSuccess = 0; 
+constexpr static int iFail = 1; 
+
 enum TestCase { RegularSimulation, TwoStream };
 
 enum FluidType { PICFluid, InteractionFluid, SourceFluid };
