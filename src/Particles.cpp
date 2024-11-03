@@ -541,46 +541,39 @@ void Particles<NStructReal, NStructInt>::sum_to_center_new(
     finer_level = iLev;
   }
   for (int nLev = finer_level; nLev >= coarser_level; nLev--) {
+    if (iLev == nLev) {
+      for (PIter pti(*this, nLev); pti.isValid(); ++pti) {
+        Array4<Real> const& chargeArr = netChargeMF[pti].array();
 
-    for (PIter pti(*this, nLev); pti.isValid(); ++pti) {
-      Array4<Real> const& chargeArr = netChargeMF[pti].array();
-      Array4<Real> const& chargeArrf = jf[pti].array();
-      Array4<Real> const& chargeArrc = jc[pti].array();
-      Array4<RealCMM> const& mmArr = centerMM[pti].array();
-      const Array4<int const>& status = cell_status(nLev)[pti].array();
-      const AoS& particles = pti.GetArrayOfStructs();
-      const Dim3 lo = init_dim3(0);
-      const Dim3 hi = init_dim3(1);
-      for (const auto& p : particles) {
-        const Real qp = p.rdata(iqp_);
-        IntVect loIdx;
-        RealVect dShift;
-        IntVect realIdx;
-        RealVect tmprv;
-        find_cell_index_exp(p.pos(), Geom(nLev).ProbLo(),
-                            Geom(nLev).InvCellSize(), realIdx, tmprv);
-        if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
-                             bit::is_lev_edge(status(realIdx)))) {
-          find_cell_index(p.pos(), Geom(iLev).ProbLo(),
-                          Geom(iLev).InvCellSize(), loIdx, dShift);
-          Real coef[2][2][2];
-          linear_interpolation_coef(dShift, coef);
-          const Real cTmp = qp * invVol[iLev];
-          for (int kk = lo.z; kk <= hi.z; ++kk)
-            for (int jj = lo.y; jj <= hi.y; ++jj)
-              for (int ii = lo.x; ii <= hi.x; ++ii) {
-                const IntVect ijk = { AMREX_D_DECL(
-                    loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) };
-                if (nLev > iLev) {
-                  chargeArrf(ijk) += coef[ii][jj][kk] * cTmp;
-                } else if (nLev < iLev) {
-                  chargeArrc(ijk) += coef[ii][jj][kk] * cTmp;
-                } else {
+        Array4<RealCMM> const& mmArr = centerMM[pti].array();
+        const Array4<int const>& status = cell_status(nLev)[pti].array();
+        const AoS& particles = pti.GetArrayOfStructs();
+        const Dim3 lo = init_dim3(0);
+        const Dim3 hi = init_dim3(1);
+        for (const auto& p : particles) {
+          const Real qp = p.rdata(iqp_);
+          IntVect loIdx;
+          RealVect dShift;
+          IntVect realIdx;
+          RealVect tmprv;
+          find_cell_index_exp(p.pos(), Geom(nLev).ProbLo(),
+                              Geom(nLev).InvCellSize(), realIdx, tmprv);
+          if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
+                               bit::is_lev_edge(status(realIdx)))) {
+            find_cell_index(p.pos(), Geom(iLev).ProbLo(),
+                            Geom(iLev).InvCellSize(), loIdx, dShift);
+            Real coef[2][2][2];
+            linear_interpolation_coef(dShift, coef);
+            const Real cTmp = qp * invVol[iLev];
+            for (int kk = lo.z; kk <= hi.z; ++kk)
+              for (int jj = lo.y; jj <= hi.y; ++jj)
+                for (int ii = lo.x; ii <= hi.x; ++ii) {
+                  const IntVect ijk = { AMREX_D_DECL(
+                      loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) };
                   chargeArr(ijk) += coef[ii][jj][kk] * cTmp;
                 }
-              }
-        }
-        if (iLev == nLev) {
+          }
+
           bool skipParticle = false;
           if (n_lev() > 1) {
             skipParticle =
@@ -653,7 +646,6 @@ void Particles<NStructReal, NStructInt>::sum_to_center_new(
                         coef *
                         weights_IIID[i1 - iMin][j1 - jMin][k1 - kMin][iDim];
                   }
-
                   auto& data = mmArr(i1, j1, k1);
                   // Real weights[27] = { 0 };
                   for (int i2 = iMin; i2 <= iMax; i2++) {
@@ -676,6 +668,76 @@ void Particles<NStructReal, NStructInt>::sum_to_center_new(
                       }
                     }
                   }
+                }
+          }
+        }
+      }
+    }
+    if (nLev > iLev) {
+      for (PIter pti(*this, nLev); pti.isValid(); ++pti) {
+        Array4<Real> const& chargeArr = jf[pti].array();
+        Array4<RealCMM> const& mmArr = centerMM[pti].array();
+        const Array4<int const>& status = cell_status(nLev)[pti].array();
+        const AoS& particles = pti.GetArrayOfStructs();
+        const Dim3 lo = init_dim3(0);
+        const Dim3 hi = init_dim3(1);
+        for (const auto& p : particles) {
+          const Real qp = p.rdata(iqp_);
+          IntVect loIdx;
+          RealVect dShift;
+          IntVect realIdx;
+          RealVect tmprv;
+          find_cell_index_exp(p.pos(), Geom(nLev).ProbLo(),
+                              Geom(nLev).InvCellSize(), realIdx, tmprv);
+          if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
+                               bit::is_lev_edge(status(realIdx)))) {
+            find_cell_index(p.pos(), Geom(iLev).ProbLo(),
+                            Geom(iLev).InvCellSize(), loIdx, dShift);
+            Real coef[2][2][2];
+            linear_interpolation_coef(dShift, coef);
+            const Real cTmp = qp * invVol[iLev];
+            for (int kk = lo.z; kk <= hi.z; ++kk)
+              for (int jj = lo.y; jj <= hi.y; ++jj)
+                for (int ii = lo.x; ii <= hi.x; ++ii) {
+                  const IntVect ijk = { AMREX_D_DECL(
+                      loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) };
+
+                  chargeArr(ijk) += coef[ii][jj][kk] * cTmp;
+                }
+          }
+        }
+      }
+    }
+    if (nLev < iLev) {
+      for (PIter pti(*this, nLev); pti.isValid(); ++pti) {
+        Array4<Real> const& chargeArr = jc[pti].array();
+        Array4<RealCMM> const& mmArr = centerMM[pti].array();
+        const Array4<int const>& status = cell_status(nLev)[pti].array();
+        const AoS& particles = pti.GetArrayOfStructs();
+        const Dim3 lo = init_dim3(0);
+        const Dim3 hi = init_dim3(1);
+        for (const auto& p : particles) {
+          const Real qp = p.rdata(iqp_);
+          IntVect loIdx;
+          RealVect dShift;
+          IntVect realIdx;
+          RealVect tmprv;
+          find_cell_index_exp(p.pos(), Geom(nLev).ProbLo(),
+                              Geom(nLev).InvCellSize(), realIdx, tmprv);
+          if (nLev == iLev || (bit::is_refined_neighbour(status(realIdx)) ||
+                               bit::is_lev_edge(status(realIdx)))) {
+            find_cell_index(p.pos(), Geom(iLev).ProbLo(),
+                            Geom(iLev).InvCellSize(), loIdx, dShift);
+            Real coef[2][2][2];
+            linear_interpolation_coef(dShift, coef);
+            const Real cTmp = qp * invVol[iLev];
+            for (int kk = lo.z; kk <= hi.z; ++kk)
+              for (int jj = lo.y; jj <= hi.y; ++jj)
+                for (int ii = lo.x; ii <= hi.x; ++ii) {
+                  const IntVect ijk = { AMREX_D_DECL(
+                      loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) };
+
+                  chargeArr(ijk) += coef[ii][jj][kk] * cTmp;
                 }
           }
         }
