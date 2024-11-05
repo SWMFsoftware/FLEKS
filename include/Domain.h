@@ -12,6 +12,8 @@ class Domain : public DomainGrid {
 private:
   bool doRestart = false;
 
+  bool doRestartPT = false;
+
   bool doRestartFIOnly = false;
 
   ReadParam param;

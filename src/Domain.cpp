@@ -483,11 +483,10 @@ void Domain::read_restart() {
     write_plots(true);
     pic->write_log(true, true);
 
-    if (pt)
+    if (pt && doRestartPT) {
       pt->read_restart();
-
-    if (pt)
       pt->write_log(true, true);
+    }
   }
 }
 
@@ -783,6 +782,9 @@ void Domain::read_param(const bool readGridInfo) {
       param.read_var("usePT", usePT);
     } else if (command == "#RESTART") {
       param.read_var("doRestart", doRestart);
+      doRestartPT = doRestart;
+    } else if (command == "#TPRESTART") {
+      param.read_var("doTPRestart", doRestartPT);
     } else if (command == "#RESTARTFIONLY") {
       param.read_var("doRestartFIOnly", doRestartFIOnly);
     } else if (command == "#SOURCE") {
