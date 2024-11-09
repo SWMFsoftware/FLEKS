@@ -62,7 +62,7 @@ foreach (@Arguments){
      if(/^-tp=(.*)$/)           {$NewTPSave=$1; next};
      if(/^-lev=(.*)$/)          {$NewLevMax=$1; next};           
      warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
- }
+}
 
 die "$ERROR -tp input should be 'P', 'PB', or 'PBE'.\n" 
     if $NewTPSave and not exists $nTPSave{$NewTPSave};
@@ -86,38 +86,35 @@ exit 0;
 
 sub get_settings{
     my $AmrexMakefile = "${AmrexDir}/GNUmakefile";
-     open(FILE, $AmrexMakefile) or die "$ERROR could not open $AmrexMakefile \n";
-       while(<FILE>){
+    open(FILE, $AmrexMakefile) or warn "$WARNING could not open $AmrexMakefile \n";
+    while(<FILE>){
        	next if /^\s*!/; # skip commented out lines
        	$AmrexComp = $1 if/^COMP = (\S*)/i;
-       }
-    close $AmrexMakefile;
+    }
+    close FILE;
 
     $AmrexDebug = "False";
     $AmrexTinyProfile = "False";
     my $AmrexConfig = "${AmrexDir}/InstallDir/include/AMReX_Config.H";
-    open(FILE, $AmrexConfig) or die "$ERROR could not open $AmrexConfig \n";
-       while(<FILE>){
+    open(FILE, $AmrexConfig) or warn "$WARNING could not open $AmrexConfig \n";
+    while(<FILE>){
       	$AmrexDebug = "True" if/^#define AMREX_DEBUG/i; 
         $AmrexTinyProfile = "True" if/^#define AMREX_TINY_PROFILING/i; 
         $AmrexDim = $1 if/^#define AMREX_SPACEDIM (\S*)/i; 
-       }
-    close $AmrexMakefile;
-    
+    }
+    close FILE;
+
     my $NameConstFile = "include/Constants.h";
     `make $NameConstFile`;
     my $nSize;
     open(FILE, $NameConstFile) or die "$ERROR could not open $NameConstFile\n";   
     while(<FILE>){                                                                      
-        $nSize=$2           if /\b(ptRecordSize\s*=\s*)(\d+)/i;
-	    $nLevMax=$2        if /\b(nLevMax\s*=\s*)(\d+)/i;
-    }            
+        $nSize = $2   if /\b(ptRecordSize\s*=\s*)(\d+)/i;
+	$nLevMax = $2 if /\b(nLevMax\s*=\s*)(\d+)/i;
+    }
     $TPSave = $nTPString{$nSize};
     close FILE;
-
-    
 }
-
 ################################################################################
 sub set_grid{    
     $nLevMax = $NewLevMax if $NewLevMax;
@@ -129,7 +126,6 @@ sub set_grid{
         print;
     } 
 }
-
 ################################################################################
 sub set_test_particle{
     $TPSave = $NewTPSave if $NewTPSave;
@@ -141,9 +137,7 @@ sub set_test_particle{
         s/\b(ptRecordSize\s*=[^0-9]*)(\d+)/$1$nSize/i;
         print;
     } 
-
 }
-
 ################################################################################
 sub show_settings{
     &get_settings;    
@@ -156,7 +150,6 @@ sub show_settings{
     print "Test Particle info = $TPInfo{$TPSave} \n";
 }
 ################################################################################
-
 sub print_help{
 
     print "
