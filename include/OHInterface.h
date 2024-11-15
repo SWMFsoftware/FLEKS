@@ -36,7 +36,7 @@ public:
                        const int iFluid, const int iLev, amrex::Real &n,
                        amrex::Real &u2, amrex::Real &mach2, amrex::Real &T,
                        amrex::Real &p) {
-          // amu/m^3
+          // amu/m^3 or #/m^3
           n = get_fluid_mass_density(mfi, ijk, iFluid, iLev) * get_No2SiRho() /
               cProtonMassSI;
 
@@ -57,6 +57,9 @@ public:
           const amrex::Real cs2 = gamma * p / (n * cProtonMassSI) * 1e-6;
 
           mach2 = u2 / cs2;
+
+          // amu/cc
+          n = n * 1e-6;
         };
 
     const int iSW = 0, iPUI3 = 1, iPUI2 = 2, iTotal = 3, iTotalPUI = 4,
@@ -88,15 +91,16 @@ public:
       }
     }
 
-    const int iTMax = iTotal; // nFluid > 1 ? iTotalPUI : iTotal;
+    const int iTMax = nFluid > 1 ? iTotalPUI : iTotal;
 
     for (int iT = iTotal; iT <= iTMax; ++iT) {
       // km/s
       u2[iT] = m2[iT] / n[iT];
-      T[iT] = p[iT] / n[iT] / cBoltzmannSI;
+      T[iT] = p[iT] / (n[iT] * 1e6) / cBoltzmannSI;
 
       // (km/s)^2
-      const amrex::Real cs2 = gamma * p[iT] / n[iT] / cProtonMassSI * 1e-6;
+      const amrex::Real cs2 =
+          gamma * p[iT] / (n[iT] * 1e6) / cProtonMassSI * 1e-6;
       mach2[iT] = u2[iT] / cs2;
     }
 
