@@ -902,6 +902,9 @@ void FluidInterface::calc_conversion_units() {
       Si2No_V[iPpar_I[i]] = Si2NoP;
   }
 
+  if (iLevSet > 0)
+    Si2No_V[iLevSet] = Si2NoRho;
+
   // Get back to SI units
   for (int iVar = 0; iVar < nVar; iVar++)
     No2Si_V[iVar] = 1.0 / Si2No_V[iVar];

@@ -113,7 +113,9 @@ public:
 
     int iRegion = -1;
 
-    amrex::Real levHP = get_value(mfi, ijk, iLevSet, iLev);
+    amrex::Real rhoTotalNO = n[iTotal] * 1e6 * cProtonMassSI * get_Si2NoRho();
+
+    amrex::Real levHP = get_value(mfi, ijk, iLevSet, iLev) / rhoTotalNO;
 
     OH_get_charge_exchange_region(
         &iRegion, &r, &n[iTotal], &u2[iTotal], &u2[iSW], &T[iTotal],
