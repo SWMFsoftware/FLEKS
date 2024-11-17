@@ -636,7 +636,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center_new(
             const int kMax = nDim > 2 ? kMin + 1 : 0;
 
             const Real coef = fabs(qp) * invVol[iLev];
-            RealVect wg_D;
+            Real wg_D[nDim3];
             for (int k1 = kMin; k1 <= kMax; k1++)
               for (int j1 = jMin; j1 <= jMax; j1++)
                 for (int i1 = iMin; i1 <= iMax; i1++) {
@@ -1941,9 +1941,14 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         for (int iDim = 0; iDim < nDim; iDim++)
           eps_D[iDim] *= coef * fourPI;
 
-        if (fabs(eps_D[ix_] * invDx[iLev][ix_]) > epsLimit ||
-            fabs(eps_D[iy_] * invDx[iLev][iy_]) > epsLimit ||
-            fabs(eps_D[iz_] * invDx[iLev][iz_]) > epsLimit) {
+        Real eps_D_dot_invDx_Max = 0.0;
+        for (int iDim = 0; iDim < nDim; iDim++) {
+          if (fabs(eps_D[iDim] * invDx[iLev][iDim]) > eps_D_dot_invDx_Max) {
+            eps_D_dot_invDx_Max = fabs(eps_D[iDim] * invDx[iLev][iDim]);
+          }
+        }
+
+        if (eps_D_dot_invDx_Max > epsLimit) {
           // If eps_D is too large, the underlying assumption of the particle
           // correction method will be not valid. Comparing each exp_D
           // component instead of the length dl saves the computational time.
