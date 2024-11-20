@@ -129,8 +129,8 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid,
       SetGridEff(grid->gridEff());
     }
 
-    // Why need 'isGridInitialized'? See the explanation in Domain::regrid().
-    if (region == activeRegion && isGridInitialized)
+    // Why need 'isNewGrid'? See the explanation in Domain::regrid().
+    if (region == activeRegion && !isNewGrid)
       return;
 
     pre_regrid();
@@ -178,7 +178,7 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid,
     domainRange.push_back(rb);
   }
 
-  isGridInitialized = true;
+  isNewGrid = false;
 
   post_regrid();
 }

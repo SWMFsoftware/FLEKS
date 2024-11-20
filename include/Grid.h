@@ -66,7 +66,7 @@ protected:
 
   bool doNeedFillNewCell = true;
 
-  bool isGridInitialized = false;
+  bool isNewGrid = true;
 
   bool isGridEmpty = false;
 

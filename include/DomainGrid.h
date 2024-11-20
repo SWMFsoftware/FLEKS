@@ -64,11 +64,13 @@ protected:
   // online docs
   amrex::Real gridEfficiency = 0.7;
 
-  bool isGridInitialized = false;
+  // If the grid has not been initialized or the grid changed due to AMR,
+  // isNewGrid is true.
+  bool isNewGrid = true;
 
   BalanceStrategy balanceStrategy = BalanceStrategy::Cell;
 
-  bool doSplitLevs = false;
+  bool doSplitLevs = false;  
 
 public:
   DomainGrid() {

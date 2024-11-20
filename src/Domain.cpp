@@ -265,8 +265,8 @@ void Domain::regrid() {
   // If the PIC grid does not change, then return.
   // If the PIC grid is empty at the beginning, gridInfo.is_grid_new() is false,
   // but it is still required to run the rest of the function to initialize
-  // variables. That's why we need isGridInitialized here.
-  if (!gridInfo.is_grid_new() && isGridInitialized)
+  // variables. That's why we need isNewGrid here.
+  if (!gridInfo.is_grid_new() && !isNewGrid)
     return;
 
   Print() << printPrefix << nameFunc << " is called" << std::endl;
@@ -313,7 +313,7 @@ void Domain::regrid() {
   iGrid++;
   iDecomp++;
 
-  isGridInitialized = true;
+  isNewGrid = false;
 }
 
 //========================================================

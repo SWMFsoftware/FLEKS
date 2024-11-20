@@ -16,7 +16,7 @@ public:
   };
 
   ~ParticleTracker() {
-    if (!isGridInitialized)
+    if (isNewGrid)
       return;
 
     bool doSave = savectr->is_time_to(true);
