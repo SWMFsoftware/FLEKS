@@ -9,11 +9,12 @@ class Regions {
 public:
   Regions() = default;
 
-  Regions(amrex::Vector<std::unique_ptr<Shape> >& in, std::string list) {
+  Regions(amrex::Vector<std::shared_ptr<Shape> >& in, std::string list) {
     define(in, list);
   }
 
-  void define(amrex::Vector<std::unique_ptr<Shape> >& in, std::string list) {
+  void define(amrex::Vector<std::shared_ptr<Shape> >& in, std::string list) {
+    shapes.clear();
     for (auto& shape : in) {
       shapes.push_back(shape.get());
     }
@@ -61,7 +62,7 @@ public:
   // Is the point 'xyz' inside the include list but outside the exclude list?
   bool is_inside(amrex::Real* xyz) const {
     bool isIncluded = false;
-    for (auto& shape : shapes) {
+    for (auto& shape : shapes) {      
       if (is_include(shape))
         isIncluded = shape->is_inside(xyz);
 

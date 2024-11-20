@@ -104,11 +104,39 @@ void Domain::init(double time, const int iDomain,
 };
 
 //========================================================
+void Domain::calc_refine_region() {
+
+  shapes.clear();
+
+  std::string name = "lev0new";
+  Real lo[nDim], hi[nDim];
+  lo[ix_] = -5;
+  hi[ix_] = 5;
+  lo[iy_] = -5;
+  hi[iy_] = 5;
+
+  if (isFake2D) {
+    lo[iz_] = -10 * fabs(hi[ix_] - lo[ix_]);
+    hi[iz_] = 10 * fabs(hi[ix_] - lo[ix_]);
+  }
+
+  shapes.push_back(std::make_shared<BoxShape>(name, lo, hi));
+
+  refineRegions[0].define(shapes, "+" + name);
+
+  isNewGrid = true;
+}
+
+//========================================================
 void Domain::update() {
   std::string funcName = "Domain::update";
   timing_func(funcName);
 
   bool doReport = tc->monitor.is_time_to();
+
+  calc_refine_region();
+
+  regrid();
 
   if (tc->loadBalance.is_time_to()) {
     load_balance();
@@ -199,10 +227,10 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
 
   amrInfo.max_level = config::nLevMax - 1;
 
-  // The value of blocking_factor constrains grid creation in that in that each
-  // grid must be divisible by blocking_factor. Note that both the domain (at
-  // each level) and max_grid_size must be divisible by blocking_factor, and
-  // that blocking_factor must be either 1 or a power of 2 (otherwise the
+  // The value of blocking_factor constrains grid creation in that in that
+  // each grid must be divisible by blocking_factor. Note that both the domain
+  // (at each level) and max_grid_size must be divisible by blocking_factor,
+  // and that blocking_factor must be either 1 or a power of 2 (otherwise the
   // gridding algorithm would not in fact create grids divisible by
   // blocking_factor because of how blocking_factor is used in the gridding
   // algorithm).
@@ -263,9 +291,9 @@ void Domain::regrid() {
   std::string nameFunc = "Domain::regrid";
 
   // If the PIC grid does not change, then return.
-  // If the PIC grid is empty at the beginning, gridInfo.is_grid_new() is false,
-  // but it is still required to run the rest of the function to initialize
-  // variables. That's why we need isNewGrid here.
+  // If the PIC grid is empty at the beginning, gridInfo.is_grid_new() is
+  // false, but it is still required to run the rest of the function to
+  // initialize variables. That's why we need isNewGrid here.
   if (!gridInfo.is_grid_new() && !isNewGrid)
     return;
 
@@ -293,22 +321,32 @@ void Domain::regrid() {
           << "\n===================================================="
           << std::endl;
 
+  fi->is_new_grid(isNewGrid);
   fi->regrid(activeRegion, refineRegions, gridEfficiency);
 
-  if (source)
+  if (source) {
+    source->is_new_grid(isNewGrid);
     source->regrid(activeRegion, fi.get());
+  }
 
-  if (stateOH)
+  if (stateOH) {
+    stateOH->is_new_grid(isNewGrid);
     stateOH->regrid(activeRegion, fi.get());
-
-  if (sourcePT2OH)
+  }
+  if (sourcePT2OH) {
+    sourcePT2OH->is_new_grid(isNewGrid);
     sourcePT2OH->regrid(activeRegion, fi.get());
+  }
 
-  if (pic)
+  if (pic) {
+    pic->is_new_grid(isNewGrid);
     pic->regrid(activeRegion, fi.get());
+  }
 
-  if (pt)
+  if (pt) {
+    pt->is_new_grid(isNewGrid);
     pt->regrid(activeRegion, fi.get());
+  }
 
   iGrid++;
   iDecomp++;
@@ -322,8 +360,8 @@ void Domain::receive_grid_info(int *status) { gridInfo.set_status(status); }
 //========================================================
 void Domain::set_ic() {
 
-  // If it is restart, the values should have been restored before coupling with
-  // GM. See Domain::init().
+  // If it is restart, the values should have been restored before coupling
+  // with GM. See Domain::init().
   if (doRestart && !doRestartFIOnly)
     return;
 
@@ -542,8 +580,8 @@ void Domain::save_restart_header() {
     value TAB TAB [TAB] name
 
     The third TAB is added if the length of value is less than 8 characters.
-    Otherwise there are 2 TABS. The “name" should agree with the description in
-    the PARAM.XML file.
+    Otherwise there are 2 TABS. The “name" should agree with the description
+    in the PARAM.XML file.
     */
 
     headerFile << "Restart header\n\n";

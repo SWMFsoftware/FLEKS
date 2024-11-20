@@ -55,7 +55,7 @@ protected:
   std::string printPrefix;
   std::string gridName;
 
-  amrex::Vector<std::unique_ptr<Shape> > shapes;
+  amrex::Vector<std::shared_ptr<Shape> > shapes;
   amrex::Vector<std::string> refineRegionsStr;
   amrex::Vector<Regions> refineRegions;
 

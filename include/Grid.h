@@ -131,6 +131,9 @@ public:
 
   virtual void pre_regrid() {};
 
+  bool is_new_grid() const { return isNewGrid; }
+  void is_new_grid(bool in) { isNewGrid = in; }
+
   amrex::Vector<Regions> get_refine_regions() const { return refineRegions; }
 
   void set_refine_regions(const amrex::Vector<Regions>& in) {
@@ -180,6 +183,9 @@ public:
     SetFinestLevel(grid->finestLevel());
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       SetBoxArray(iLev, grid->boxArray(iLev));
+
+      amrex::Print() << printPrefix << " iLev = " << iLev
+                     << " box = " << grid->boxArray(iLev) << std::endl;
       SetDistributionMap(iLev, grid->DistributionMap(iLev));
     }
   }

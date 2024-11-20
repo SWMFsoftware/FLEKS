@@ -123,7 +123,7 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid,
   BL_PROFILE(nameFunc);
 
   if (!doLoadBalance) {
-
+    
     if (grid) {
       refineRegions = grid->get_refine_regions();
       SetGridEff(grid->gridEff());
