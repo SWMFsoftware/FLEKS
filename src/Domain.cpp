@@ -140,6 +140,7 @@ void Domain::calc_refine_region() {
   refineRegions[0].define(shapes, "+" + name);
 
   isNewGrid = true;
+  isNewRefinement = true;
 }
 
 //========================================================
@@ -356,6 +357,16 @@ void Domain::regrid() {
   if (pic) {
     pic->is_new_grid(isNewGrid);
     pic->regrid(activeRegion, fi.get());
+
+    if (isNewRefinement) {
+      // Add functions to fill in EM fields for new cells.
+      // Some thoughts:
+      // 1. We should probably fill in coarse level cells with EM fields from
+      // fine level cells before applying AMR
+      // 2. Fill in new cells by interpolating from coarse lev.
+      // 3. FluidInterface should be also filled in with similar methods.
+      // 4. use bit::is_new() to check if the cell is newly created.
+    }
   }
 
   if (pt) {
@@ -367,6 +378,7 @@ void Domain::regrid() {
   iDecomp++;
 
   isNewGrid = false;
+  isNewRefinement = false;
 }
 
 //========================================================

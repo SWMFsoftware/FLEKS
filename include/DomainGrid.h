@@ -67,6 +67,7 @@ protected:
   // If the grid has not been initialized or the grid changed due to AMR,
   // isNewGrid is true.
   bool isNewGrid = true;
+  bool isNewRefinement = false;
 
   BalanceStrategy balanceStrategy = BalanceStrategy::Cell;
 
