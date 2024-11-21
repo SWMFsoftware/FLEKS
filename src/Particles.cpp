@@ -3727,32 +3727,37 @@ Real Particles<NStructReal, NStructInt>::sum_moments_new(
     Vector<MultiFab>& momentsMF, Vector<MultiFab>& nodeBMF, Real dt,
     amrex::Vector<amrex::iMultiFab>& nodestatus) {
 
-  //////////////////// This part will be removed when Nodestatus - bit :
-  /// is_lev_edge is fixed for coarse level
-  amrex::iMultiFab ctmp(nodestatus[0].boxArray(),
-                        nodestatus[0].DistributionMap(), 1, 0);
-  amrex::iMultiFab ftmp(nodestatus[1].boxArray(),
-                        nodestatus[1].DistributionMap(), 1, 0);
-  for (amrex::MFIter mfi(nodestatus[1]); mfi.isValid(); ++mfi) {
-    const auto& status = nodestatus[1][mfi].array();
-    const auto& ft = ftmp[mfi].array();
-
-    ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
-      const amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
-
-      if (bit::is_lev_edge(status(ijk))) {
-        ft(ijk) = 1;
-      } else {
-        ft(ijk) = 0;
-      }
-    });
-  }
-  ctmp.setVal(0);
-  amrex::IntVect ratio = { AMREX_D_DECL(2, 2, 2) };
-  average_down_nodal(ftmp, ctmp, ratio);
   ///////////////////////////////////////////////////////////////////////////////////////////////////////////
   Real energy = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+
+    //////////////////// This part will be removed when Nodestatus - bit :
+    /// is_lev_edge is fixed for coarse level
+    amrex::iMultiFab ctmp(nodestatus[iLev].boxArray(),
+                          nodestatus[iLev].DistributionMap(), 1, 0);
+
+    if (iLev < n_lev() - 1) {
+      amrex::iMultiFab ftmp(nodestatus[iLev + 1].boxArray(),
+                            nodestatus[iLev + 1].DistributionMap(), 1, 0);
+      for (amrex::MFIter mfi(nodestatus[iLev + 1]); mfi.isValid(); ++mfi) {
+        const auto& status = nodestatus[iLev + 1][mfi].array();
+        const auto& ft = ftmp[mfi].array();
+
+        ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
+          const amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
+
+          if (bit::is_lev_edge(status(ijk))) {
+            ft(ijk) = 1;
+          } else {
+            ft(ijk) = 0;
+          }
+        });
+      }
+      ctmp.setVal(0);
+      amrex::IntVect ratio = { AMREX_D_DECL(2, 2, 2) };
+      average_down_nodal(ftmp, ctmp, ratio);
+    }
+
     momentsMF[iLev].setVal(0.0);
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       Array4<Real> const& momentsArr = momentsMF[iLev][pti].array();
