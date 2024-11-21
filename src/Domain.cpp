@@ -105,15 +105,30 @@ void Domain::init(double time, const int iDomain,
 
 //========================================================
 void Domain::calc_refine_region() {
+  bool doAMR = true;
+
+  if (!doAMR)
+    return;
+
+  int n = tc->get_cycle();
+  if (n % 10 != 0) {
+    return;
+  }
+  Print() << printPrefix << "Domain::calc_refine_region() is called"
+          << std::endl;
 
   shapes.clear();
 
   std::string name = "lev0new";
   Real lo[nDim], hi[nDim];
-  lo[ix_] = -5;
-  hi[ix_] = 5;
-  lo[iy_] = -5;
-  hi[iy_] = 5;
+
+  Real t = tc->get_time_si();
+  Real u = 0.1;
+
+  lo[ix_] = -16 + u * t;
+  hi[ix_] = 16 + u * t;
+  lo[iy_] = -16;
+  hi[iy_] = 16;
 
   if (isFake2D) {
     lo[iz_] = -10 * fabs(hi[ix_] - lo[ix_]);

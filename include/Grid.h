@@ -183,9 +183,6 @@ public:
     SetFinestLevel(grid->finestLevel());
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       SetBoxArray(iLev, grid->boxArray(iLev));
-
-      amrex::Print() << printPrefix << " iLev = " << iLev
-                     << " box = " << grid->boxArray(iLev) << std::endl;
       SetDistributionMap(iLev, grid->DistributionMap(iLev));
     }
   }
@@ -249,7 +246,6 @@ public:
         return iLev;
       }
     }
-    amrex::AllPrint() << "Error: xyz = " << xyz << " is out of the domain\n";
     amrex::Abort();
     return -1; // To suppress compiler warnings.
   }
