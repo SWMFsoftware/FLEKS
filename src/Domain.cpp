@@ -105,7 +105,7 @@ void Domain::init(double time, const int iDomain,
 
 //========================================================
 void Domain::calc_refine_region() {
-  bool doAMR = true;
+  bool doAMR = false;
 
   if (!doAMR)
     return;
