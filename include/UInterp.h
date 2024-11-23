@@ -201,40 +201,32 @@ public:
       Real ryinv = Real(1.0) / Real(ratio[1]);
       if (ioff != 0 && joff != 0) {
         // Node on a X-Y face
-        fine(i, j, 0, n + fcomp) = (
-
-            (9.0 / 32.0) *
-                (crse(ic, jc, 0, n + ccomp) + crse(ic + 1, jc, 0, n + ccomp))
-
-            -
-
-            (1.0 / 32.0) * (crse(ic - 1, jc, 0, n + ccomp) +
-                            crse(ic + 2, jc, 0, n + ccomp))
-
-            +
-
-            (9.0 / 32.0) *
-                (crse(ic, jc, 0, n + ccomp) + crse(ic, jc + 1, 0, n + ccomp))
-
-            -
-
-            (1.0 / 32.0) * (crse(ic, jc - 1, 0, n + ccomp) +
-                            crse(ic, jc + 2, 0, n + ccomp))
-
-        );
+        fine(i, j, 0, n + fcomp) = 0.0;
+        Real mult[2] = { 1.0, 1.0 };
+        for (int ii = -1; ii <= 2; ++ii) {
+          for (int jj = -1; jj <= 2; ++jj) {
+            if (ii == -1 || ii == 2) {
+              mult[0] = -1.0 / 16.0;
+            } else if (ii == 0 || ii == 1) {
+              mult[0] = 9.0 / 16.0;
+            }
+            if (jj == -1 || jj == 2) {
+              mult[1] = -1.0 / 16.0;
+            } else if (jj == 0 || jj == 1) {
+              mult[1] = 9.0 / 16.0;
+            }
+            fine(i, j, 0, n + fcomp) +=
+                mult[0] * mult[1] * crse(ic + ii, jc + jj, 0, n + ccomp);
+          }
+        }
       } else if (ioff != 0) {
         // Node on X line
         fine(i, j, 0, n + fcomp) =
 
             ((9.0 / 16.0) *
-                 (crse(ic, jc, 0, n + ccomp) + crse(ic + 1, jc, 0, n + ccomp))
-
-             -
-
+                 (crse(ic, jc, 0, n + ccomp) + crse(ic + 1, jc, 0, n + ccomp)) -
              (1.0 / 16.0) * (crse(ic - 1, jc, 0, n + ccomp) +
-                             crse(ic + 2, jc, 0, n + ccomp))
-
-            );
+                             crse(ic + 2, jc, 0, n + ccomp)));
 
       } else if (joff != 0) {
         // Node on Y line
@@ -242,14 +234,9 @@ public:
         fine(i, j, 0, n + fcomp) =
 
             ((9.0 / 16.0) *
-                 (crse(ic, jc, 0, n + ccomp) + crse(ic, jc + 1, 0, n + ccomp))
-
-             -
-
+                 (crse(ic, jc, 0, n + ccomp) + crse(ic, jc + 1, 0, n + ccomp)) -
              (1.0 / 16.0) * (crse(ic, jc - 1, 0, n + ccomp) +
-                             crse(ic, jc + 2, 0, n + ccomp))
-
-            );
+                             crse(ic, jc + 2, 0, n + ccomp)));
 
       } else {
         // Node coincident with coarse node
