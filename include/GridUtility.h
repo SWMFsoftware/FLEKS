@@ -497,12 +497,14 @@ void fill_lev_from_value(amrex::FabArray<FAB>& dst, amrex::Real value,
   }
 }
 
-template <class FAB>
-void fill_fine_lev_bny_from_coarse(
-    amrex::FabArray<FAB>& coarse, amrex::FabArray<FAB>& fine, const int iStart,
-    const int nComp, const amrex::IntVect ratio, const amrex::Geometry& cgeom,
-    const amrex::Geometry& fgeom, const amrex::iMultiFab& fstatus,
-    amrex::Interpolater& mapper, amrex::Real mult = 1.0) {
+template <class FAB, class Interp>
+void fill_fine_lev_bny_from_coarse(amrex::FabArray<FAB>& coarse,
+                                   amrex::FabArray<FAB>& fine, const int iStart,
+                                   const int nComp, const amrex::IntVect ratio,
+                                   const amrex::Geometry& cgeom,
+                                   const amrex::Geometry& fgeom,
+                                   const amrex::iMultiFab& fstatus,
+                                   Interp& mapper, amrex::Real mult = 1.0) {
   BL_PROFILE("fill_fine_lev_bny_from_coarse");
 
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
@@ -537,12 +539,12 @@ void fill_fine_lev_bny_from_coarse(
   }
 }
 
-template <class FAB>
+template <class FAB, class Interp>
 void fill_fine_lev_edge_from_coarse(
     amrex::FabArray<FAB>& coarse, amrex::FabArray<FAB>& fine, const int iStart,
     const int nComp, const amrex::IntVect ratio, const amrex::Geometry& cgeom,
     const amrex::Geometry& fgeom, const amrex::iMultiFab& fstatus,
-    amrex::Interpolater& mapper, amrex::Real mult = 1.0) {
+    Interp& mapper, amrex::Real mult = 1.0) {
   BL_PROFILE("fill_fine_lev_bny_from_coarse");
 
   amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
@@ -577,13 +579,12 @@ void fill_fine_lev_edge_from_coarse(
   }
 }
 
-template <class FAB>
+template <class FAB, class Interp>
 void fill_fine_lev_from_coarse(amrex::FabArray<FAB>& coarse,
                                amrex::FabArray<FAB>& fine, const int iStart,
                                const int nComp, const amrex::IntVect ratio,
                                const amrex::Geometry& cgeom,
-                               const amrex::Geometry& fgeom,
-                               amrex::Interpolater& mapper,
+                               const amrex::Geometry& fgeom, Interp& mapper,
                                amrex::Real mult = 1.0) {
   BL_PROFILE("fill_fine_lev_from_coarse");
 
