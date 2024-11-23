@@ -10,6 +10,7 @@ public:
   // Copied from AMReX_Interpolater.cpp
   Box CoarseBox(const Box& fine, int ratio) override {
     Box b = amrex::coarsen(fine, ratio);
+    b.grow(1);
     for (int i = 0; i < AMREX_SPACEDIM; ++i) {
       if (b.length(i) < 2) {
         b.growHi(i, 1);
@@ -21,7 +22,7 @@ public:
   // Copied from AMReX_Interpolater.cpp
   Box CoarseBox(const Box& fine, const IntVect& ratio) override {
     Box b = amrex::coarsen(fine, ratio);
-
+    b.grow(1);
     for (int i = 0; i < AMREX_SPACEDIM; ++i) {
       if (b.length(i) < 2) {
         b.growHi(i, 1);
@@ -170,9 +171,9 @@ public:
   }
 };
 
-template <class T> class UNodeQuadratic : public UInterp<T> {
+template <class T> class UNode_FourthOrder : public UInterp<T> {
 public:
-  ~UNodeQuadratic() override {}
+  ~UNode_FourthOrder() override {}
 
   void interp(const BaseFab<T>& crse, int crse_comp, BaseFab<T>& fine,
               int fine_comp, int ncomp, const Box& fine_region,
@@ -183,12 +184,12 @@ public:
     Array4<T> const& finearr = fine.array();
     AMREX_HOST_DEVICE_PARALLEL_FOR_4D_FLAG(
         gpu_or_cpu, fine_region, ncomp, i, j, k, n, {
-          node_quadratic_interp(i, j, k, n, finearr, fine_comp, crsearr,
-                                crse_comp, ratio);
+          node_fourth_order_interp(i, j, k, n, finearr, fine_comp, crsearr,
+                                   crse_comp, ratio);
         });
   }
 
-  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void node_quadratic_interp(
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void node_fourth_order_interp(
       int i, int j, int k, int n, Array4<T> const& fine, int fcomp,
       Array4<T const> const& crse, int ccomp, IntVect const& ratio) noexcept {
     if (SpaceDim == 2) {
@@ -202,22 +203,22 @@ public:
         // Node on a X-Y face
         fine(i, j, 0, n + fcomp) = (
 
-            (7.0 / 24.0) *
+            (9.0 / 32.0) *
                 (crse(ic, jc, 0, n + ccomp) + crse(ic + 1, jc, 0, n + ccomp))
 
             -
 
-            (1.0 / 24.0) * (crse(ic - 1, jc, 0, n + ccomp) +
+            (1.0 / 32.0) * (crse(ic - 1, jc, 0, n + ccomp) +
                             crse(ic + 2, jc, 0, n + ccomp))
 
             +
 
-            (7.0 / 24.0) *
+            (9.0 / 32.0) *
                 (crse(ic, jc, 0, n + ccomp) + crse(ic, jc + 1, 0, n + ccomp))
 
             -
 
-            (1.0 / 24.0) * (crse(ic, jc - 1, 0, n + ccomp) +
+            (1.0 / 32.0) * (crse(ic, jc - 1, 0, n + ccomp) +
                             crse(ic, jc + 2, 0, n + ccomp))
 
         );
@@ -225,12 +226,12 @@ public:
         // Node on X line
         fine(i, j, 0, n + fcomp) =
 
-            ((7.0 / 12.0) *
+            ((9.0 / 16.0) *
                  (crse(ic, jc, 0, n + ccomp) + crse(ic + 1, jc, 0, n + ccomp))
 
              -
 
-             (1.0 / 12.0) * (crse(ic - 1, jc, 0, n + ccomp) +
+             (1.0 / 16.0) * (crse(ic - 1, jc, 0, n + ccomp) +
                              crse(ic + 2, jc, 0, n + ccomp))
 
             );
@@ -240,12 +241,12 @@ public:
 
         fine(i, j, 0, n + fcomp) =
 
-            ((7.0 / 12.0) *
+            ((9.0 / 16.0) *
                  (crse(ic, jc, 0, n + ccomp) + crse(ic, jc + 1, 0, n + ccomp))
 
              -
 
-             (1.0 / 12.0) * (crse(ic, jc - 1, 0, n + ccomp) +
+             (1.0 / 16.0) * (crse(ic, jc - 1, 0, n + ccomp) +
                              crse(ic, jc + 2, 0, n + ccomp))
 
             );
