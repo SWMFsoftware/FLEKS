@@ -141,6 +141,27 @@ void Domain::calc_refine_region() {
 
   isNewGrid = true;
   isNewRefinement = true;
+
+  fi->is_new_grid(isNewGrid);
+
+  if (source) {
+    source->is_new_grid(isNewGrid);
+  }
+
+  if (stateOH) {
+    stateOH->is_new_grid(isNewGrid);
+  }
+  if (sourcePT2OH) {
+    sourcePT2OH->is_new_grid(isNewGrid);
+  }
+
+  if (pic) {
+    pic->is_new_grid(isNewGrid);
+  }
+
+  if (pt) {
+    pt->is_new_grid(isNewGrid);
+  }
 }
 
 //========================================================
@@ -337,25 +358,20 @@ void Domain::regrid() {
           << "\n===================================================="
           << std::endl;
 
-  fi->is_new_grid(isNewGrid);
   fi->regrid(activeRegion, refineRegions, gridEfficiency);
 
   if (source) {
-    source->is_new_grid(isNewGrid);
     source->regrid(activeRegion, fi.get());
   }
 
   if (stateOH) {
-    stateOH->is_new_grid(isNewGrid);
     stateOH->regrid(activeRegion, fi.get());
   }
   if (sourcePT2OH) {
-    sourcePT2OH->is_new_grid(isNewGrid);
     sourcePT2OH->regrid(activeRegion, fi.get());
   }
 
   if (pic) {
-    pic->is_new_grid(isNewGrid);
     pic->regrid(activeRegion, fi.get());
 
     if (isNewRefinement) {
@@ -370,7 +386,6 @@ void Domain::regrid() {
   }
 
   if (pt) {
-    pt->is_new_grid(isNewGrid);
     pt->regrid(activeRegion, fi.get());
   }
 
