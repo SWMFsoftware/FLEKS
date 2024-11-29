@@ -375,6 +375,7 @@ void Domain::regrid() {
     pic->regrid(activeRegion, fi.get());
 
     if (isNewRefinement) {
+      pic->fill_new_cells();
       // Add functions to fill in EM fields for new cells.
       // Some thoughts:
       // 1. We should probably fill in coarse level cells with EM fields from
