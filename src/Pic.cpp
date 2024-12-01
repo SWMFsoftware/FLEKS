@@ -344,7 +344,8 @@ void Pic::post_regrid() {
 
 //==========================================================
 void Pic::fill_new_node_E() {
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
+  {
+    int iLev = 0;
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
       FArrayBox& fab = nodeE[iLev][mfi];
       const Box& box = mfi.validbox();
@@ -361,11 +362,20 @@ void Pic::fill_new_node_E() {
       });
     }
   }
+  if (finest_level > 0) {
+    for (int iLev = 1; iLev < n_lev(); iLev++) {
+      fill_fine_lev_new_from_coarse(
+          nodeE[iLev - 1], nodeE[iLev], 0, nodeE[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          node_bilinear_interp);
+    }
+  }
 }
 
 //==========================================================
 void Pic::fill_new_node_B() {
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
+  {
+    int iLev = 0;
     for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real>& arrB = nodeB[iLev][mfi].array();
@@ -381,11 +391,21 @@ void Pic::fill_new_node_B() {
       });
     }
   }
+
+  if (finest_level > 0) {
+    for (int iLev = 1; iLev < n_lev(); iLev++) {
+      fill_fine_lev_new_from_coarse(
+          nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          node_bilinear_interp);
+    }
+  }
 }
 
 //==========================================================
 void Pic::fill_new_center_B() {
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
+  {
+    int iLev = 0;
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real>& centerArr = centerB[iLev][mfi].array();
@@ -406,6 +426,14 @@ void Pic::fill_new_center_B() {
               });
             }
           });
+    }
+  }
+  if (finest_level > 0) {
+    for (int iLev = 1; iLev < n_lev(); iLev++) {
+      fill_fine_lev_new_from_coarse(
+          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          cell_bilinear_interp);
     }
   }
 }

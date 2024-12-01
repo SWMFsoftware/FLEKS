@@ -319,7 +319,11 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_domain() {
   timing_func("Pts::add_particles_domain");
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
+  int iLevMax = 0;
+  if (tc->get_cycle() == 0) {
+    iLevMax = n_lev() - 1;
+  }
+  for (int iLev = 0; iLev <= iLevMax; iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
 
       const auto& status = cell_status(iLev)[mfi].array();
