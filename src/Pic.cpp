@@ -2118,15 +2118,9 @@ void Pic::project_down_E() {
           nodeE[iLev], nodeE[iLev + 1], 0, nodeE[iLev].nComp(), ref_ratio[iLev],
           Geom(iLev), Geom(iLev + 1), node_status(iLev + 1),
           node_bilinear_interp);
-      // fill_fine_lev_edge_from_coarse(
-      //     nodeEth[iLev], nodeEth[iLev + 1], 0, nodeEth[iLev].nComp(),
-      //     ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1),
-      //     node_bilinear_interp);
     }
     for (int iLev = finest_level; iLev > 0; iLev--) {
       average_down_nodal(nodeE[iLev], nodeE[iLev - 1], ref_ratio[iLev - 1]);
-      // average_down_nodal(nodeEth[iLev], nodeEth[iLev - 1], ref_ratio[iLev -
-      // 1]);
     }
   }
 }
