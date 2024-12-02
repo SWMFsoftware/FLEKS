@@ -2122,6 +2122,9 @@ void Pic::project_down_E() {
     for (int iLev = finest_level; iLev > 0; iLev--) {
       average_down_nodal(nodeE[iLev], nodeE[iLev - 1], ref_ratio[iLev - 1]);
     }
+    for (int iLev = 0; iLev <= finest_level; iLev++) {
+      nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
   }
 }
 //==========================================================
@@ -2131,6 +2134,10 @@ void Pic::project_down_B() {
       average_down_nodal(nodeB[iLev], nodeB[iLev - 1], ref_ratio[iLev - 1]);
       average_down(centerB[iLev], centerB[iLev - 1], 0, 3, ref_ratio[iLev - 1]);
     }
+  }
+  for (int iLev = 0; iLev <= finest_level; iLev++) {
+    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
   }
 }
 //==========================================================
