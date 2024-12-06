@@ -1696,11 +1696,22 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   MultiFab temp2Node(nGrids[iLev], DistributionMap(iLev), 3, nGst);
   temp2Node.setVal(0.0);
 
-  apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-           &Pic::get_center_B, iLev, &bcBField);
-  apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
-           &Pic::get_node_B, iLev, &bcBField);
+  if (iLev == 0) {
+    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+             &Pic::get_center_B, iLev, &bcBField);
+    apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+             &Pic::get_node_B, iLev, &bcBField);
+  } else {
+    fill_fine_lev_bny_from_coarse(
+        centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+        cell_bilinear_interp);
 
+    fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
+                                  nodeB[iLev - 1].nComp(), ref_ratio[iLev - 1],
+                                  Geom(iLev - 1), Geom(iLev), node_status(iLev),
+                                  node_bilinear_interp);
+  }
   const Real* invDx = Geom(iLev).InvCellSize();
 
   curl_center_to_node(centerB[iLev], tempNode, invDx);
@@ -2580,6 +2591,9 @@ void Pic::fill_lightwaves(amrex::Real wavelength, int EorB, amrex::Real time,
                           int lev) {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    nodeE[iLev].setVal(0.0);
+    nodeB[iLev].setVal(0.0);
+    centerB[iLev].setVal(0.0);
     if (lev != -1 && iLev != lev)
       continue;
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
