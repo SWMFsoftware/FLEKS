@@ -47,7 +47,7 @@ private:
 
   bool useExplicitPIC = false;
   bool useNewElectricSolver = false;
-  bool decoupleParticlesFromField = true;
+  bool decoupleParticlesFromField = false;
   bool useNewCalcMassMatrix = true;
   bool projectDownEmFields = true;
 
