@@ -1101,7 +1101,14 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
   timing_func("Pts::calc_mass_matrix");
 
   Real qdto2mc = charge / mass * 0.5 * dt;
-
+  Real volratioc = 1;
+  Real volratiof = 1;
+  if (iLev > 0) {
+    volratioc = invVol[iLev - 1] / invVol[iLev];
+  }
+  if (iLev < n_lev() - 1) {
+    volratiof = invVol[iLev + 1] / invVol[iLev];
+  }
   if (iLev == 0) {
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       const Array4<int const>& status = cellstatus[iLev][pti].array();
@@ -1430,9 +1437,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
 
                           Real* const data = &(data0[idx0]);
                           for (int idx = 0; idx < 9; idx++) {
-                            data[idx] += alpha[idx] *
-                                         (invVol[iLev + 1] / invVol[iLev]) *
-                                         weight;
+                            data[idx] += alpha[idx] * volratiof * weight;
                           }
                         } // k2
 
@@ -1633,9 +1638,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
 
                           Real* const data = &(data0[idx0]);
                           for (int idx = 0; idx < 9; idx++) {
-                            data[idx] += alpha[idx] *
-                                         (invVol[iLev - 1] / invVol[iLev]) *
-                                         weight;
+                            data[idx] += alpha[idx] * volratioc * weight;
                           }
                         } // k2
 
@@ -1842,9 +1845,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
 
                           Real* const data = &(data0[idx0]);
                           for (int idx = 0; idx < 9; idx++) {
-                            data[idx] += alpha[idx] *
-                                         (invVol[iLev - 1] / invVol[iLev]) *
-                                         weight;
+                            data[idx] += alpha[idx] * volratioc * weight;
                           }
                         } // k2
 
@@ -1880,9 +1881,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
 
                           Real* const data = &(data0[idx0]);
                           for (int idx = 0; idx < 9; idx++) {
-                            data[idx] += alpha[idx] *
-                                         (invVol[iLev + 1] / invVol[iLev]) *
-                                         weight;
+                            data[idx] += alpha[idx] * volratiof * weight;
                           }
                         } // k2
 
