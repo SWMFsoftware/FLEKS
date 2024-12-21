@@ -627,20 +627,15 @@ void Pic::calc_mass_matrix() {
 //==========================================================
 void Pic::calc_mass_matrix_new() {
   std::string nameFunc = "Pic::calc_mass_matrix";
-
   if (isGridEmpty)
     return;
+  timing_func(nameFunc);
   if (decoupleParticlesFromField) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       nodeMM[iLev].setVal(0.0);
       jHat[iLev].setVal(0.0);
     }
     return;
-  }
-  timing_func(nameFunc);
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    nodeMM[iLev].setVal(0.0);
-    jHat[iLev].setVal(0.0);
   }
   //////////////////////////////////////////////////////////////////////
   amrex::Vector<amrex::MultiFab> jhc;
@@ -652,25 +647,35 @@ void Pic::calc_mass_matrix_new() {
   nmmc.resize(n_lev());
   nmmf.resize(n_lev());
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    BoxArray bac = nodeB[iLev].boxArray();
-    bac.coarsen(2);
-    BoxArray baf = nodeB[iLev].boxArray();
-    baf.refine(2);
-    jhc[iLev].define(bac, nodeB[iLev].DistributionMap(), 3, 0);
-    jhf[iLev].define(baf, nodeB[iLev].DistributionMap(), 3, 0);
+    if (iLev > 0) {
+      BoxArray bac = nodeB[iLev].boxArray();
+      bac.coarsen(2);
+      jhc[iLev].define(bac, nodeB[iLev].DistributionMap(), 3, 0);
+      nmmc[iLev].define(bac, nodeB[iLev].DistributionMap(),
+                        nodeMM[iLev].nComp(), 0);
+    }
+    if (iLev < finest_level) {
+      BoxArray baf = nodeB[iLev].boxArray();
+      baf.refine(2);
+      jhf[iLev].define(baf, nodeB[iLev].DistributionMap(), 3, 0);
+
+      nmmf[iLev].define(baf, nodeB[iLev].DistributionMap(),
+                        nodeMM[iLev].nComp(), 0);
+    }
+  }
+  //////////////////////////////////////////////////////////////////////
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    nodeMM[iLev].setVal(0.0);
+    jHat[iLev].setVal(0.0);
     jhc[iLev].setVal(0.0);
-    jhf[iLev].setVal(0.0);
-    nmmc[iLev].define(bac, nodeB[iLev].DistributionMap(), nodeMM[iLev].nComp(),
-                      0);
-    nmmf[iLev].define(baf, nodeB[iLev].DistributionMap(), nodeMM[iLev].nComp(),
-                      0);
     nmmc[iLev].setVal(0.0);
+    jhf[iLev].setVal(0.0);
     nmmf[iLev].setVal(0.0);
   }
   //////////////////////////////////////////////////////////////////////
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (int i = 0; i < nSpecies; ++i) {
-      parts[i]->calc_mass_matrix_new(
+      parts[i]->calc_mass_matrix_new_optimized(
           nodeMM, nmmc[iLev], nmmf[iLev], jHat, jhc[iLev], jhf[iLev], nodeB,
           uBg, tc->get_dt(), iLev, solveFieldInCoMov, nodeStatus, cellStatus);
     }
@@ -678,12 +683,16 @@ void Pic::calc_mass_matrix_new() {
   //////////////////////////////////////////////////////////////////////
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    jhc[iLev].SumBoundary();
-    jhf[iLev].SumBoundary();
-    nmmc[iLev].SumBoundary();
-    nmmf[iLev].SumBoundary();
     jHat[iLev].SumBoundary(Geom(iLev).periodicity());
     nodeMM[iLev].SumBoundary(Geom(iLev).periodicity());
+    if (iLev > 0) {
+      jhc[iLev].SumBoundary();
+      nmmc[iLev].SumBoundary();
+    }
+    if (iLev < finest_level) {
+      jhf[iLev].SumBoundary();
+      nmmf[iLev].SumBoundary();
+    }
   }
 
   amrex::MultiFab tmp;
