@@ -506,6 +506,7 @@ public:
 private:
   amrex::Real calc_E_field_energy();
   amrex::Real calc_B_field_energy();
+  AMREX_EXPORT amrex::UNode_FourthOrder<amrex::Real> node_fourth_order_interp;
 };
 
 void find_output_list_caller(const PlotWriter &writerIn,
