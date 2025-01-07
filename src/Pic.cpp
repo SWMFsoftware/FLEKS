@@ -625,6 +625,87 @@ void Pic::calc_mass_matrix() {
   // WARNING: interp_from_coarse_to_fine_for_domain_edge might be needed here
 }
 //==========================================================
+void Pic::calc_mass_matrix_amr() {
+ std::string nameFunc = "Pic::calc_mass_matrix";
+
+  if (isGridEmpty)
+    return;
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    nodeMM[iLev].setVal(0.0);
+    jHat[iLev].setVal(0.0);
+  }
+  if (decoupleParticlesFromField) {
+    return;
+  }
+  timing_func(nameFunc);
+  //////////////////////////////////////////////////////////////////////
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > jhc;
+  amrex::Vector<amrex::MultiFab> jhf;
+  amrex::Vector<amrex::Vector<UMultiFab<RealMM> > > nmmc;
+  amrex::Vector<UMultiFab<RealMM> > nmmf;
+  jhc.resize(n_lev());
+  jhf.resize(n_lev());
+  nmmc.resize(n_lev());
+  nmmf.resize(n_lev());
+  for (int iLev = 1; iLev < n_lev(); iLev++) {
+    jhc[iLev].resize(iLev);
+    nmmc[iLev].resize(iLev);
+  }
+  for (int iLev = 1; iLev < n_lev(); iLev++) {
+    BoxArray bac = nodeB[iLev].boxArray();
+    for (int i = iLev - 1; i >= 0; i--) {
+      bac.coarsen(2);
+      jhc[iLev][i].define(bac, nodeB[iLev].DistributionMap(), 3, 0);
+      nmmc[iLev][i].define(bac, nodeB[iLev].DistributionMap(),
+                           nodeMM[iLev].nComp(), 0);
+      jhc[iLev][i].setVal(0.0);
+      nmmc[iLev][i].setVal(0.0);
+    }
+  }
+  for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
+    BoxArray baf = nodeB[iLev].boxArray();
+    baf.refine(2);
+    jhf[iLev].define(baf, nodeB[iLev].DistributionMap(), 3, 0);
+    nmmf[iLev].define(baf, nodeB[iLev].DistributionMap(), nodeMM[iLev].nComp(),
+                      0);
+    jhf[iLev].setVal(0.0);
+    nmmf[iLev].setVal(0.0);
+  }
+  //////////////////////////////////////////////////////////////////////
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->calc_mass_matrix_amr(nodeMM[iLev], nmmc, nmmf, jHat[iLev], jhc, jhf,
+                                 nodeB[iLev], uBg[iLev], tc->get_dt(), iLev,
+                                 solveFieldInCoMov, cellStatus);
+    }
+  }
+  //////////////////////////////////////////////////////////////////////
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    jHat[iLev].SumBoundary(Geom(iLev).periodicity());
+    nodeMM[iLev].SumBoundary(Geom(iLev).periodicity());
+  }
+  for (int iLev = finest_level - 1; iLev >= 0; iLev--) {
+    for (int i = finest_level; i > iLev; i--) {
+      jHat[iLev].ParallelAdd(jhc[i][iLev]);
+      nodeMM[iLev].ParallelAdd(nmmc[i][iLev]);
+    }
+  }
+  for (int iLev = finest_level; iLev > 0; iLev--) {
+    jHat[iLev].ParallelAdd(jhf[iLev - 1]);
+    nodeMM[iLev].ParallelAdd(nmmf[iLev - 1]);
+  }
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    Real invVol = 1;
+    for (int i = 0; i < nDim; ++i) {
+      invVol *= Geom(iLev).InvCellSize(i);
+    }
+    jHat[iLev].mult(invVol, 0, jHat[iLev].nComp(), jHat[iLev].nGrow());
+    jHat[iLev].FillBoundary(Geom(iLev).periodicity());
+    nodeMM[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+}
+//==========================================================
 void Pic::calc_mass_matrix_new() {
   std::string nameFunc = "Pic::calc_mass_matrix";
   if (isGridEmpty)

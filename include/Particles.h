@@ -296,6 +296,15 @@ public:
                         amrex::MultiFab& nodeBMF, amrex::MultiFab& u0MF,
                         amrex::Real dt, int iLev, bool solveInCoMov);
 
+  void calc_mass_matrix_amr(
+      amrex::UMultiFab<RealMM>& nodeMM,
+      amrex::Vector<amrex::Vector<amrex::UMultiFab<RealMM> > >& nmmc,
+      amrex::Vector<amrex::UMultiFab<RealMM> >& nmmf, amrex::MultiFab& jHat,
+      amrex::Vector<amrex::Vector<amrex::MultiFab> >& jhc,
+      amrex::Vector<amrex::MultiFab>& jhf, amrex::MultiFab& nodeBMF,
+      amrex::MultiFab& u0MF, amrex::Real dt, int iLev, bool solveInCoMov,
+      amrex::Vector<amrex::iMultiFab>& cellstatus);
+
   void calc_mass_matrix_new(amrex::Vector<amrex::UMultiFab<RealMM> >& nodeMM,
                             amrex::UMultiFab<RealMM>& nmmc,
                             amrex::UMultiFab<RealMM>& nmmf,

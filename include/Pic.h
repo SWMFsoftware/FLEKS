@@ -240,6 +240,7 @@ public:
   void sum_moments(bool updateDt = false);
 
   void calc_mass_matrix();
+  void calc_mass_matrix_amr();
   void calc_mass_matrix_new();
 
   void update_part_loc_to_half_stage();
