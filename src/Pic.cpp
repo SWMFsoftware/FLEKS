@@ -626,7 +626,7 @@ void Pic::calc_mass_matrix() {
 }
 //==========================================================
 void Pic::calc_mass_matrix_amr() {
- std::string nameFunc = "Pic::calc_mass_matrix";
+  std::string nameFunc = "Pic::calc_mass_matrix";
 
   if (isGridEmpty)
     return;
@@ -674,9 +674,9 @@ void Pic::calc_mass_matrix_amr() {
   //////////////////////////////////////////////////////////////////////
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (int i = 0; i < nSpecies; ++i) {
-      parts[i]->calc_mass_matrix_amr(nodeMM[iLev], nmmc, nmmf, jHat[iLev], jhc, jhf,
-                                 nodeB[iLev], uBg[iLev], tc->get_dt(), iLev,
-                                 solveFieldInCoMov, cellStatus);
+      parts[i]->calc_mass_matrix_amr(nodeMM[iLev], nmmc, nmmf, jHat[iLev], jhc,
+                                     jhf, nodeB[iLev], uBg[iLev], tc->get_dt(),
+                                     iLev, solveFieldInCoMov, cellStatus);
     }
   }
   //////////////////////////////////////////////////////////////////////
@@ -684,14 +684,24 @@ void Pic::calc_mass_matrix_amr() {
     jHat[iLev].SumBoundary(Geom(iLev).periodicity());
     nodeMM[iLev].SumBoundary(Geom(iLev).periodicity());
   }
+  Real invVol[finest_level + 1];
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    invVol[iLev] = 1.0;
+    for (int i = 0; i < nDim; ++i) {
+      invVol[iLev] *= Geom(iLev).InvCellSize(i);
+    }
+  }
+
   for (int iLev = finest_level - 1; iLev >= 0; iLev--) {
     for (int i = finest_level; i > iLev; i--) {
       jHat[iLev].ParallelAdd(jhc[i][iLev]);
+      nmmc[i][iLev].mult(invVol[iLev] / invVol[i]);
       nodeMM[iLev].ParallelAdd(nmmc[i][iLev]);
     }
   }
   for (int iLev = finest_level; iLev > 0; iLev--) {
     jHat[iLev].ParallelAdd(jhf[iLev - 1]);
+    nmmf[iLev - 1].mult(invVol[iLev] / invVol[iLev - 1]);
     nodeMM[iLev].ParallelAdd(nmmf[iLev - 1]);
   }
 
@@ -1235,7 +1245,7 @@ void Pic::update(bool doReportIn) {
     if (!useNewCalcMassMatrix || finest_level == 0) {
       calc_mass_matrix();
     } else {
-      calc_mass_matrix_new();
+      calc_mass_matrix_amr();
     }
   }
 
@@ -1798,9 +1808,9 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
     //     cell_bilinear_interp);
 
     // fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
-    //                               nodeB[iLev - 1].nComp(), ref_ratio[iLev - 1],
-    //                               Geom(iLev - 1), Geom(iLev), node_status(iLev),
-    //                               node_bilinear_interp);
+    //                               nodeB[iLev - 1].nComp(), ref_ratio[iLev -
+    //                               1], Geom(iLev - 1), Geom(iLev),
+    //                               node_status(iLev), node_bilinear_interp);
   }
   const Real* invDx = Geom(iLev).InvCellSize();
 

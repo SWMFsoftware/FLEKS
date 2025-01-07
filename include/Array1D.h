@@ -39,6 +39,12 @@ public:
     return *this;
   }
 
+  Arr1D<T, n>& operator*=(const Arr1D<T, n>& b) {
+    for (int i = 0; i < n; ++i)
+      data[i] *= b[i];
+    return *this;
+  }
+
   Arr1D<T, n>& operator<<(const Arr1D<T, n>& b) {
     for (int i = 0; i < n; ++i)
       data[i] += b[i];

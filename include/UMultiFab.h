@@ -56,6 +56,12 @@ public:
     SumBoundary(0, n_comp, IntVect(0), period);
   }
   //---------------------------------------------------------
+  void mult(double m) {
+    for (MFIter mfi(*this); mfi.isValid(); ++mfi) {
+      (*this)[mfi].mult(m);
+    }
+  }
+  //--------------------------------------------------------
 
   void SumBoundary(int scomp, int ncomp,
                    const Periodicity& period = Periodicity::NonPeriodic()) {

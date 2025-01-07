@@ -1102,15 +1102,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
 
   Real qdto2mc = charge / mass * 0.5 * dt;
 
-  Real volratioc[iLev - 1] = { 1.0 };
-  Real volratiof = 1.0;
-  for (int i = 0; i < iLev; i++) {
-    volratioc[i] = invVol[i] / invVol[iLev];
-  }
-  if (iLev < n_lev() - 1) {
-    volratiof = invVol[iLev + 1] / invVol[iLev];
-  }
-
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
     Array4<Real> const& jArr = jHat[pti].array();
@@ -1259,7 +1250,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
               }
       }
 
-
       {
         const int iMin = loIdx[ix_];
         const int jMin = loIdx[iy_];
@@ -1320,7 +1310,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
 
                       Real* const data = &(data0[idx0]);
                       for (int idx = 0; idx < 9; idx++) {
-                        data[idx] += alpha[idx] * volratioc[ii] * weight;
+                        data[idx] += alpha[idx] * weight;
                       }
                     } // k2
 
@@ -1355,7 +1345,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
 
                       Real* const data = &(data0[idx0]);
                       for (int idx = 0; idx < 9; idx++) {
-                        data[idx] += alpha[idx] * volratiof * weight;
+                        data[idx] += alpha[idx] * weight;
                       }
                     } // k2
 
