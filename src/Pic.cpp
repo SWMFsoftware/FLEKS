@@ -654,7 +654,7 @@ void Pic::calc_mass_matrix_amr() {
   for (int iLev = 1; iLev < n_lev(); iLev++) {
     BoxArray bac = nodeB[iLev].boxArray();
     for (int i = iLev - 1; i >= 0; i--) {
-      bac.coarsen(2);
+      bac.coarsen(ref_ratio[iLev]);
       jhc[iLev][i].define(bac, nodeB[iLev].DistributionMap(), 3, 0);
       nmmc[iLev][i].define(bac, nodeB[iLev].DistributionMap(),
                            nodeMM[iLev].nComp(), 0);
@@ -664,7 +664,7 @@ void Pic::calc_mass_matrix_amr() {
   }
   for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
     BoxArray baf = nodeB[iLev].boxArray();
-    baf.refine(2);
+    baf.refine(ref_ratio[iLev]);
     jhf[iLev].define(baf, nodeB[iLev].DistributionMap(), 3, 0);
     nmmf[iLev].define(baf, nodeB[iLev].DistributionMap(), nodeMM[iLev].nComp(),
                       0);
@@ -740,14 +740,14 @@ void Pic::calc_mass_matrix_new() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (iLev > 0) {
       BoxArray bac = nodeB[iLev].boxArray();
-      bac.coarsen(2);
+      bac.coarsen(ref_ratio[iLev]);
       jhc[iLev].define(bac, nodeB[iLev].DistributionMap(), 3, 0);
       nmmc[iLev].define(bac, nodeB[iLev].DistributionMap(),
                         nodeMM[iLev].nComp(), 0);
     }
     if (iLev < finest_level) {
       BoxArray baf = nodeB[iLev].boxArray();
-      baf.refine(2);
+      baf.refine(ref_ratio[iLev]);
       jhf[iLev].define(baf, nodeB[iLev].DistributionMap(), 3, 0);
 
       nmmf[iLev].define(baf, nodeB[iLev].DistributionMap(),
