@@ -285,6 +285,17 @@ If isPPVconstant is true then particles per volume is constant across all refine
 otherwise particles per cell is constant.
 </command>
 
+<command name="REFINEMENTRATIO"
+	 alias="REFINEMENTRATIO_FLEKS0,REFINEMENTRATIO_FLEKS1,REFINEMENTRATIO_FLEKS2"
+	 multiple="T">
+  <parameter name="refinementratio" type="integer" default="2"/>
+
+#REFINEMENTRATIO
+2                   refinementRatio
+
+Setting the refinement ratio for AMR. The default is 2.
+</command>
+
 <command name="RANDOMPARTICLESLOCATION"
 	 alias="RANDOMPARTICLESLOCATION_FLEKS0,RANDOMPARTICLESLOCATION_FLEKS1,RANDOMPARTICLESLOCATION_FLEKS2"
 	 multiple="T">

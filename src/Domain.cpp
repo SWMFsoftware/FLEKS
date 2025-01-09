@@ -809,7 +809,8 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#MAXBLOCKSIZE" || command == "#PERIODICITY" ||
         command == "#GEOMETRY" || command == "#NCELL" ||
         command == "#RESTART" || command == "#INITFROMSWMF" ||
-        command == "#RECEIVEICONLY" || command == "#PARTICLETRACKER";
+        command == "#RECEIVEICONLY" || command == "#PARTICLETRACKER" ||
+        command == "#REFINEMENTRATIO";
 
     // Skip this command
     if (readGridInfo != isGridCommand)
@@ -972,6 +973,11 @@ void Domain::read_param(const bool readGridInfo) {
       param.read_var("regions", s);
       refineRegionsStr[iLev] = s + " ";
 
+    } else if (command == "#REFINEMENTRATIO") {
+      int rr;
+      param.read_var("refineRatio", rr);
+      amrInfo.ref_ratio.clear();
+      amrInfo.ref_ratio.push_back(IntVect(rr));
     } else if (command == "#NOUTFILE") {
       param.read_var("nFileField", nFileField);
       param.read_var("nFileParticle", nFileParticle);
