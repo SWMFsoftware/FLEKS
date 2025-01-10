@@ -976,8 +976,11 @@ void Domain::read_param(const bool readGridInfo) {
     } else if (command == "#REFINEMENTRATIO") {
       int rr;
       param.read_var("refineRatio", rr);
+      int size = amrInfo.ref_ratio.size();
       amrInfo.ref_ratio.clear();
-      amrInfo.ref_ratio.push_back(IntVect(rr));
+      for (int i = 0; i < size; ++i) {
+        amrInfo.ref_ratio.push_back(IntVect(rr));
+      }
     } else if (command == "#NOUTFILE") {
       param.read_var("nFileField", nFileField);
       param.read_var("nFileParticle", nFileParticle);
@@ -1008,7 +1011,6 @@ void Domain::read_param(const bool readGridInfo) {
         param.read_var("isPeriodic", isPeriodic);
         set_periodicity(i, isPeriodic);
       }
-
     } else if (command == "#SAVELOG") {
       int dn;
       param.read_var("dnSavePic", dn);
