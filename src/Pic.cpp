@@ -201,7 +201,13 @@ void Pic::fill_new_cells() {
   if (usePIC) {
     fill_particles();
     sum_moments(true);
-    sum_to_center(false);
+    if (finest_level == 0) {
+      sum_to_center(false);
+    } else {
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        sum_to_center_new(false, iLev);
+      }
+    }
   }
 
   doNeedFillNewCell = false;
@@ -1802,15 +1808,15 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
     apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
              &Pic::get_node_B, iLev, &bcBField);
   } else {
-    // fill_fine_lev_bny_from_coarse(
-    //     centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-    //     ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-    //     cell_bilinear_interp);
+    fill_fine_lev_bny_from_coarse(
+        centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+        cell_bilinear_interp);
 
-    // fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
-    //                               nodeB[iLev - 1].nComp(), ref_ratio[iLev -
-    //                               1], Geom(iLev - 1), Geom(iLev),
-    //                               node_status(iLev), node_bilinear_interp);
+    fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
+                                  nodeB[iLev - 1].nComp(), ref_ratio[iLev - 1],
+                                  Geom(iLev - 1), Geom(iLev), node_status(iLev),
+                                  node_bilinear_interp);
   }
   const Real* invDx = Geom(iLev).InvCellSize();
 
