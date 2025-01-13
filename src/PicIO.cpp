@@ -570,7 +570,7 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       of.precision(15);
       of << std::scientific;
       of << tc->get_time_si() << "\t" << tc->get_cycle() << "\t"
-         << "\t" << (eEnergy + bEnergy + plasmaEnergy[iTot]) << "\t" << eEnergy
+         << (eEnergy + bEnergy + plasmaEnergy[iTot]) << "\t" << eEnergy
          << "\t" << bEnergy << "\t" << plasmaEnergy[iTot];
       for (int i = 0; i < nSpecies; ++i)
         of << "\t" << plasmaEnergy[i];
