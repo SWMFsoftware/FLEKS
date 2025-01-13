@@ -30,8 +30,7 @@ void PlotWriter::init() {
   }
   namePrefix = SaveDirName + "/" + subString;
 
-  // plotMin_ID is the range of the whole plot domain, it can
-  // be larger
+  // plotMin_ID is the range of the whole plot domain, it can be larger
   // than the simulation domain on this processor.
   if (subString.substr(0, 2) == "x=" || subString.substr(0, 2) == "y=" ||
       subString.substr(0, 2) == "z=") {
@@ -310,7 +309,7 @@ bool PlotWriter::is_inside_plot_region(int const ix, int const iy, int const iz,
 
   bool isInside = false;
 
-  // If plotDx is a 'interger', then check the cell index and
+  // If plotDx is a 'integer', then check the cell index and
   // output every plotDx cells. Otherwise, ignore the cell index check.
   int iPlotDx = plotDx;
   if ((iPlotDx - plotDx) == 0) {
