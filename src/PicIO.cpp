@@ -552,9 +552,9 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
        << tc->get_cycle() << ".log";
     logFile = ss.str();
     std::ofstream of(logFile.c_str());
-    of << "time nStep Etot Ee Eb Epart ";
+    of << "time\tnStep\tEtot\tEe\tEb\tEpart";
     for (int i = 0; i < nSpecies; ++i)
-      of << " Epart" << i;
+      of << "\tEpart" << i;
     of << std::endl;
     of.close();
   }
