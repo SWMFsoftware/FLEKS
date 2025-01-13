@@ -4542,8 +4542,9 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
             int iFluidAddTo;
             Real rhoIonAddTo, cs2IonAddTo, uIonAddTo[3];
 
-            const int iSW = 2;     // Pop3
-            const int iSheath = 1; // Pop2
+            const int iSW = 2;     
+            const int iSheath = 1; 
+            const int iOutSheath = 0; 
             switch (stateOH->get_nFluid()) {
               case 1:
                 iFluidAddTo = fluidID;
@@ -4559,7 +4560,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
               case 3:
                 if (iRegion == iSW) {
                   iFluidAddTo = 1; // Pu3
-                } else if (iRegion == iSheath) {
+                } else if (iRegion == iSheath || iRegion == iOutSheath) {
                   iFluidAddTo = 2; // Pu2
                 } else {
                   iFluidAddTo = 0; // background
