@@ -93,7 +93,7 @@ void Particles<NStructReal, NStructInt>::outflow_bc(const MFIter& mfi,
 
   // Q: Why do not push the new particles into pGst inside previous loop?
   // A: Sometimes, if not always, pPhy and pGst share the same tile. Previous
-  // for-loop loops through all particles in pPhy. If we push the new particles
+  // for-loop loops through al particles in pPhy. If we push the new particles
   // into pGst, which is the same as pPhy sometimes, the loop behavior is not
   // well defined.
   for (auto& p : pList) {
@@ -137,11 +137,11 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 
   int icount = 0;
   // Loop over particles inside grid cell i, j, k
-#if (AMREX_SPACEDIM == 2)
+
   int kmax = 1;
-#elif (AMREX_SPACEDIM == 3)
-  int kmax = nPPC[iz_];
-#endif
+  if (nDim > 2)
+    kmax = nPPC[iz_];
+
   for (int ii = 0; ii < nPPC[ix_]; ++ii)
     for (int jj = 0; jj < nPPC[iy_]; ++jj)
       for (int kk = 0; kk < kmax; ++kk) {
@@ -160,10 +160,12 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           xyz0[iDim] = (ijk0[iDim] + 0.5) * (dx[iLev][iDim] / nPPC[iDim]) +
                        ijk[iDim] * dx[iLev][iDim] + plo[iLev][iDim];
         }
-#if (AMREX_SPACEDIM == 2)
-        // For comparison with the 3D case only.
-        randNum();
-#endif
+
+        if (nDim == 2) {
+          // For comparison with the 3D case only.
+          randNum();
+        }
+
         if (!isParticleLocationRandom) {
           xyz = xyz0;
         }
@@ -208,6 +210,9 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
             vBulk = -vBulk;
             wBulk = -wBulk;
           }
+          // printf("p u=%e, v=%e, w=%e, ubulk=%e, vbulk=%e, wbulk=%e \n", u, v,
+          // w,
+          //        uBulk, vBulk, wBulk);
           u += uBulk;
           v += vBulk;
           w += wBulk;
@@ -235,6 +240,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           }
 
           particles.push_back(p);
+          // AllPrint() << "p=" << p << std::endl;
           icount++;
         }
       }
@@ -294,6 +300,11 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
                     ppc[iDim] = std::max(1, int(ppc[iDim] * ratio));
                   }
                 }
+
+                // Print() << "ppc = " << ppc << " rho = " << rho
+                //         << " rhoSource = " << rhoSource
+                //         << " rho/rhosource = " << (rho / rhoSource)
+                //         << " dt = " << dt << std::endl;
               }
 
               add_particles_cell(iLev, mfi, ijk, interface, false, ppc, Vel(),
@@ -401,6 +412,8 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
       here.
       */
 
+      // Print() << "particle = " << p << std::endl;
+
       const Real qp = p.rdata(iqp_);
 
       //-----calculate interpolate coef begin-------------
@@ -426,18 +439,10 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
         //----- Mass matrix calculation begin--------------
         const Real xi0 = dShift[ix_] * dx[iLev][ix_];
         const Real eta0 = dShift[iy_] * dx[iLev][iy_];
-#if (AMREX_SPACEDIM == 2)
-        const Real zeta0 = 0;
-#elif (AMREX_SPACEDIM == 3)
-        const Real zeta0 = dShift[iz_] * dx[iLev][iz_];
-#endif
+        const Real zeta0 = nDim > 2 ? dShift[iz_] * dx[iLev][iz_] : 0;
         const Real xi1 = dx[iLev][ix_] - xi0;
         const Real eta1 = dx[iLev][iy_] - eta0;
-#if (AMREX_SPACEDIM == 2)
-        const Real zeta1 = 1;
-#elif (AMREX_SPACEDIM == 3)
-        const Real zeta1 = dx[iLev][iz_] - zeta0;
-#endif
+        const Real zeta1 = nDim > 2 ? dx[iLev][iz_] - zeta0 : 1;
 
         weights_IIID[1][1][1][ix_] = eta0 * zeta0 * invVol[iLev];
         weights_IIID[1][1][1][iy_] = xi0 * zeta0 * invVol[iLev];
@@ -480,18 +485,10 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
 
         const int iMin = loIdx[ix_];
         const int jMin = loIdx[iy_];
-#if (AMREX_SPACEDIM == 2)
-        const int kMin = 0;
-#elif (AMREX_SPACEDIM == 3)
-        const int kMin = loIdx[iz_];
-#endif
+        const int kMin = nDim > 2 ? loIdx[iz_] : 0;
         const int iMax = iMin + 1;
         const int jMax = jMin + 1;
-#if (AMREX_SPACEDIM == 2)
-        const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-        const int kMax = kMin + 1;
-#endif
+        const int kMax = nDim > 2 ? kMin + 1 : 0;
 
         const Real coef = fabs(qp) * invVol[iLev];
         RealVect wg_D;
@@ -590,16 +587,11 @@ void Particles<NStructReal, NStructInt>::sum_to_center_new(
             Real weights_IIID[2][2][2][nDim3];
             //----- Mass matrix calculation begin--------------
             const Real xi0 = dShift[ix_] * dx[iLev][ix_];
-            const Real eta0 = dShift[iy_] * dx[iLev][iy_];            
+            const Real eta0 = dShift[iy_] * dx[iLev][iy_];
+            const Real zeta0 = nDim > 2 ? dShift[iz_] * dx[iLev][iz_] : 0;
             const Real xi1 = dx[iLev][ix_] - xi0;
             const Real eta1 = dx[iLev][iy_] - eta0;
-#if (AMREX_SPACEDIM == 2)
-            const Real zeta0 = 0;
-            const Real zeta1 = 1;
-#elif (AMREX_SPACEDIM == 3)
-            const Real zeta0 = dShift[iz_] * dx[iLev][iz_];
-            const Real zeta1 = dx[iLev][iz_] - zeta0;
-#endif
+            const Real zeta1 = nDim > 2 ? dx[iLev][iz_] - zeta0 : 1;
 
             weights_IIID[1][1][1][ix_] = eta0 * zeta0 * invVol[iLev];
             weights_IIID[1][1][1][iy_] = xi0 * zeta0 * invVol[iLev];
@@ -642,15 +634,10 @@ void Particles<NStructReal, NStructInt>::sum_to_center_new(
 
             const int iMin = loIdx[ix_];
             const int jMin = loIdx[iy_];
+            const int kMin = nDim > 2 ? loIdx[iz_] : 0;
             const int iMax = iMin + 1;
             const int jMax = jMin + 1;
-#if (AMREX_SPACEDIM == 2)
-            const int kMin = 0;
-            const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-            const int kMin = loIdx[iz_];
-            const int kMax = kMin + 1;
-#endif
+            const int kMax = nDim > 2 ? kMin + 1 : 0;
 
             const Real coef = fabs(qp) * invVol[iLev];
             Real wg_D[nDim3];
@@ -1019,15 +1006,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
       const int iMin = loIdx[ix_];
       const int jMin = loIdx[iy_];
+      const int kMin = nDim > 2 ? loIdx[iz_] : 0;
       const int iMax = iMin + 1;
       const int jMax = jMin + 1;
-#if (AMREX_SPACEDIM == 2)
-      const int kMin = 0;
-      const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-      const int kMin = loIdx[iz_];
-      const int kMax = kMin + 1;
-#endif
+      const int kMax = nDim > 2 ? kMin + 1 : 0;
 
       for (int k1 = kMin; k1 <= kMax; k1++)
         for (int j1 = jMin; j1 <= jMax; j1++)
@@ -1071,26 +1053,15 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     // We only need the mass matrix on the physical nodes. But the first layer
     // of the ghost nodes may contributes to the physical nodes below (ghost
     // node constributes as a sender). So, we need the '-1' and '+1' staff.
-    const int iMin = lo.x - 1, jMin = lo.y - 1;
-    const int iMax = hi.x + 1, jMax = hi.y + 1;
-#if (AMREX_SPACEDIM == 2)
-    const int kMin = 0;
-    const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-    const int kMin = lo.z - 1;
-    const int kMax = hi.z + 1;
-#endif
+    const int iMin = lo.x - 1, jMin = lo.y - 1, kMin = nDim > 2 ? lo.z - 1 : 0;
+    const int iMax = hi.x + 1, jMax = hi.y + 1, kMax = nDim > 2 ? hi.z + 1 : 0;
 
     int gps, gpr; // gp_send, gp_receive
     for (int k1 = kMin; k1 <= kMax; k1++)
       for (int j1 = jMin; j1 <= jMax; j1++)
         for (int i1 = iMin; i1 <= iMax; i1++) {
           const int kp = 2;
-#if (AMREX_SPACEDIM == 2)
-          const int kr = 0;
-#elif (AMREX_SPACEDIM == 3)
-          const int kr = k1 + kp - 1;
-#endif
+          const int kr = nDim > 2 ? k1 + kp - 1 : 0;
           if (kr > kMax || kr < kMin)
             continue;
           auto& datas0 = mmArr(i1, j1, k1);
@@ -1257,15 +1228,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       for (int i = 0; i < iLev + 1 + refinedneighbour; i++) {
         const int iMin = loIdx[i][ix_];
         const int jMin = loIdx[i][iy_];
+        const int kMin = nDim > 2 ? loIdx[i][iz_] : 0;
         const int iMax = iMin + 1;
         const int jMax = jMin + 1;
-#if (AMREX_SPACEDIM == 2)
-        const int kMin = 0;
-        const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-        const int kMin = loIdx[i][iz_];
-        const int kMax = kMin + 1;
-#endif
+        const int kMax = nDim > 2 ? kMin + 1 : 0;
 
         for (int k1 = kMin; k1 <= kMax; k1++)
           for (int j1 = jMin; j1 <= jMax; j1++)
@@ -1305,28 +1271,18 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
     Array4<RealMM> const& mmArr = nodeMM[mfi].array();
 
     // We only need the mass matrix on the physical nodes. But the first
-    // layer of the ghost nodes may contributes to the physical nodes below
-    // (ghost node constributes as a sender). So we need the '-1' and '+1' staff.
-    const int iMin = lo.x - 1, jMin = lo.y - 1;
-    const int iMax = hi.x + 1, jMax = hi.y + 1;
-#if (AMREX_SPACEDIM == 2)
-    const int kMin = 0;
-    const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-    const int kMin = lo.z - 1;
-    const int kMax = hi.z + 1;
-#endif
+    // layer
+    // of the ghost nodes may contributes to the physical nodes below (ghost
+    // node constributes as a sender). So, we need the '-1' and '+1' staff.
+    const int iMin = lo.x - 1, jMin = lo.y - 1, kMin = nDim > 2 ? lo.z - 1 : 0;
+    const int iMax = hi.x + 1, jMax = hi.y + 1, kMax = nDim > 2 ? hi.z + 1 : 0;
 
     int gps, gpr; // gp_send, gp_receive
     for (int k1 = kMin; k1 <= kMax; k1++)
       for (int j1 = jMin; j1 <= jMax; j1++)
         for (int i1 = iMin; i1 <= iMax; i1++) {
           const int kp = 2;
-#if (AMREX_SPACEDIM == 2)
-          const int kr = 0;
-#elif (AMREX_SPACEDIM == 3)
-          const int kr = k1 + kp - 1;
-#endif
+          const int kr = nDim > 2 ? k1 + kp - 1 : 0;
           if (kr > kMax || kr < kMin)
             continue;
           auto& datas0 = mmArr(i1, j1, k1);
@@ -1485,15 +1441,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
 
           const int iMin = loIdx[ix_];
           const int jMin = loIdx[iy_];
+          const int kMin = nDim > 2 ? loIdx[iz_] : 0;
           const int iMax = iMin + 1;
           const int jMax = jMin + 1;
-#if (AMREX_SPACEDIM == 2)
-          const int kMin = 0;
-          const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-          const int kMin = loIdx[iz_];
-          const int kMax = kMin + 1;
-#endif
+          const int kMax = nDim > 2 ? kMin + 1 : 0;
 
           for (int k1 = kMin; k1 <= kMax; k1++)
             for (int j1 = jMin; j1 <= jMax; j1++)
@@ -1649,15 +1600,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
 
           const int iMin = loIdx[ix_];
           const int jMin = loIdx[iy_];
+          const int kMin = nDim > 2 ? loIdx[iz_] : 0;
           const int iMax = iMin + 1;
           const int jMax = jMin + 1;
-#if (AMREX_SPACEDIM == 2)
-          const int kMin = 0;
-          const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-          const int kMin = loIdx[iz_];
-          const int kMax = kMin + 1;
-#endif
+          const int kMax = nDim > 2 ? kMin + 1 : 0;
 
           for (int k1 = kMin; k1 <= kMax; k1++)
             for (int j1 = jMin; j1 <= jMax; j1++)
@@ -1688,15 +1634,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
           if (iLev < (n_lev() - 1)) {
             const int iMin = floIdx[ix_];
             const int jMin = floIdx[iy_];
+            const int kMin = nDim > 2 ? floIdx[iz_] : 0;
             const int iMax = iMin + 1;
             const int jMax = jMin + 1;
-#if (AMREX_SPACEDIM == 2)
-            const int kMin = 0;
-            const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-            const int kMin = floIdx[iz_];
-            const int kMax = kMin + 1;
-#endif
+            const int kMax = nDim > 2 ? kMin + 1 : 0;
 
             for (int k1 = kMin; k1 <= kMax; k1++)
               for (int j1 = jMin; j1 <= jMax; j1++)
@@ -1858,16 +1799,11 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
           }
 
           const int iMin = loIdx[ix_];
-          const int jMin = loIdx[iy_];       
+          const int jMin = loIdx[iy_];
+          const int kMin = nDim > 2 ? loIdx[iz_] : 0;
           const int iMax = iMin + 1;
-          const int jMax = jMin + 1;  
-#if (AMREX_SPACEDIM == 2)
-          const int kMin = 0;
-          const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-          const int kMin = loIdx[iz_];
-          const int kMax = kMin + 1;
-#endif
+          const int jMax = jMin + 1;
+          const int kMax = nDim > 2 ? kMin + 1 : 0;
 
           for (int k1 = kMin; k1 <= kMax; k1++)
             for (int j1 = jMin; j1 <= jMax; j1++)
@@ -1898,15 +1834,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
           if (iLev > 0) {
             const int iMin = cloIdx[ix_];
             const int jMin = cloIdx[iy_];
+            const int kMin = nDim > 2 ? cloIdx[iz_] : 0;
             const int iMax = iMin + 1;
             const int jMax = jMin + 1;
-#if (AMREX_SPACEDIM == 2)
-            const int kMin = 0;
-            const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-            const int kMin = cloIdx[iz_];
-            const int kMax = kMin + 1;
-#endif
+            const int kMax = nDim > 2 ? kMin + 1 : 0;
 
             for (int k1 = kMin; k1 <= kMax; k1++)
               for (int j1 = jMin; j1 <= jMax; j1++)
@@ -2076,15 +2007,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
 
           const int iMin = loIdx[ix_];
           const int jMin = loIdx[iy_];
+          const int kMin = nDim > 2 ? loIdx[iz_] : 0;
           const int iMax = iMin + 1;
           const int jMax = jMin + 1;
-#if (AMREX_SPACEDIM == 2)
-          const int kMin = 0;
-          const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-          const int kMin = loIdx[iz_];
-          const int kMax = kMin + 1;
-#endif
+          const int kMax = nDim > 2 ? kMin + 1 : 0;
 
           for (int k1 = kMin; k1 <= kMax; k1++)
             for (int j1 = jMin; j1 <= jMax; j1++)
@@ -2115,15 +2041,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
           if (iLev > 0) {
             const int iMin = cloIdx[ix_];
             const int jMin = cloIdx[iy_];
+            const int kMin = nDim > 2 ? cloIdx[iz_] : 0;
             const int iMax = iMin + 1;
             const int jMax = jMin + 1;
-#if (AMREX_SPACEDIM == 2)
-            const int kMin = 0;
-            const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-            const int kMin = cloIdx[iz_];
-            const int kMax = kMin + 1;
-#endif
+            const int kMax = nDim > 2 ? kMin + 1 : 0;
 
             for (int k1 = kMin; k1 <= kMax; k1++)
               for (int j1 = jMin; j1 <= jMax; j1++)
@@ -2157,15 +2078,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
           if (iLev < (n_lev() - 1)) {
             const int iMin = floIdx[ix_];
             const int jMin = floIdx[iy_];
+            const int kMin = nDim > 2 ? floIdx[iz_] : 0;
             const int iMax = iMin + 1;
             const int jMax = jMin + 1;
-#if (AMREX_SPACEDIM == 2)
-            const int kMin = 0;
-            const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-            const int kMin = floIdx[iz_];
-            const int kMax = kMin + 1;
-#endif
+            const int kMax = nDim > 2 ? kMin + 1 : 0;
 
             for (int k1 = kMin; k1 <= kMax; k1++)
               for (int j1 = jMin; j1 <= jMax; j1++)
@@ -2212,26 +2128,15 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
     // We only need the mass matrix on the physical nodes. But the first layer
     // of the ghost nodes may contributes to the physical nodes below (ghost
     // node constributes as a sender). So, we need the '-1' and '+1' staff.
-    const int iMin = lo.x - 1, jMin = lo.y - 1;
-    const int iMax = hi.x + 1, jMax = hi.y + 1;
-#if (AMREX_SPACEDIM == 2)
-    const int kMin = 0;
-    const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-    const int kMin = lo.z - 1;
-    const int kMax = hi.z + 1;
-#endif
+    const int iMin = lo.x - 1, jMin = lo.y - 1, kMin = nDim > 2 ? lo.z - 1 : 0;
+    const int iMax = hi.x + 1, jMax = hi.y + 1, kMax = nDim > 2 ? hi.z + 1 : 0;
 
     int gps, gpr; // gp_send, gp_receive
     for (int k1 = kMin; k1 <= kMax; k1++)
       for (int j1 = jMin; j1 <= jMax; j1++)
         for (int i1 = iMin; i1 <= iMax; i1++) {
           const int kp = 2;
-#if (AMREX_SPACEDIM == 2)
-          const int kr = 0;
-#elif (AMREX_SPACEDIM == 3)
-          const int kr = k1 + kp - 1;
-#endif
+          const int kr = nDim > 2 ? k1 + kp - 1 : 0;
           if (kr > kMax || kr < kMin)
             continue;
           auto& datas0 = mmArr(i1, j1, k1);
@@ -2415,15 +2320,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
 
       const int iMin = loIdx[ix_];
       const int jMin = loIdx[iy_];
+      const int kMin = nDim > 2 ? loIdx[iz_] : 0;
       const int iMax = iMin + 1;
       const int jMax = jMin + 1;
-#if (AMREX_SPACEDIM == 2)
-      const int kMin = 0;
-      const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-      const int kMin = loIdx[iz_];
-      const int kMax = kMin + 1;
-#endif
+      const int kMax = nDim > 2 ? kMin + 1 : 0;
 
       for (int k1 = kMin; k1 <= kMax; k1++)
         for (int j1 = jMin; j1 <= jMax; j1++)
@@ -2454,15 +2354,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
       if (iLev > 0) {
         const int iMin = cloIdx[ix_];
         const int jMin = cloIdx[iy_];
+        const int kMin = nDim > 2 ? cloIdx[iz_] : 0;
         const int iMax = iMin + 1;
         const int jMax = jMin + 1;
-#if (AMREX_SPACEDIM == 2)
-        const int kMin = 0;
-        const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-        const int kMin = cloIdx[iz_];
-        const int kMax = kMin + 1;
-#endif
+        const int kMax = nDim > 2 ? kMin + 1 : 0;
 
         for (int k1 = kMin; k1 <= kMax; k1++)
           for (int j1 = jMin; j1 <= jMax; j1++)
@@ -2495,15 +2390,10 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
       if (iLev < (n_lev() - 1) && bit::is_refined_neighbour(status(cellIdx))) {
         const int iMin = floIdx[ix_];
         const int jMin = floIdx[iy_];
+        const int kMin = nDim > 2 ? floIdx[iz_] : 0;
         const int iMax = iMin + 1;
         const int jMax = jMin + 1;
-#if (AMREX_SPACEDIM == 2)
-        const int kMin = 0;
-        const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-        const int kMin = floIdx[iz_];
-        const int kMax = kMin + 1;
-#endif
+        const int kMax = nDim > 2 ? kMin + 1 : 0;
 
         for (int k1 = kMin; k1 <= kMax; k1++)
           for (int j1 = jMin; j1 <= jMax; j1++)
@@ -2549,26 +2439,15 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
     // We only need the mass matrix on the physical nodes. But the first layer
     // of the ghost nodes may contributes to the physical nodes below (ghost
     // node constributes as a sender). So, we need the '-1' and '+1' staff.
-    const int iMin = lo.x - 1, jMin = lo.y - 1;
-    const int iMax = hi.x + 1, jMax = hi.y + 1;
-#if (AMREX_SPACEDIM == 2)
-    const int kMin = 0;
-    const int kMax = 0;
-#elif (AMREX_SPACEDIM == 3)
-    const int kMin = lo.z - 1;
-    const int kMax = hi.z + 1;
-#endif
+    const int iMin = lo.x - 1, jMin = lo.y - 1, kMin = nDim > 2 ? lo.z - 1 : 0;
+    const int iMax = hi.x + 1, jMax = hi.y + 1, kMax = nDim > 2 ? hi.z + 1 : 0;
 
     int gps, gpr; // gp_send, gp_receive
     for (int k1 = kMin; k1 <= kMax; k1++)
       for (int j1 = jMin; j1 <= jMax; j1++)
         for (int i1 = iMin; i1 <= iMax; i1++) {
           const int kp = 2;
-#if (AMREX_SPACEDIM == 2)
-          const int kr = 0;
-#elif (AMREX_SPACEDIM == 3)
-          const int kr = k1 + kp - 1;
-#endif
+          const int kr = nDim > 2 ? k1 + kp - 1 : 0;
           if (kr > kMax || kr < kMin)
             continue;
           auto& datas0 = mmArr(i1, j1, k1);
@@ -2838,11 +2717,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         Real wp = p.rdata(iwp_);
         const Real xp = p.pos(ix_);
         const Real yp = p.pos(iy_);
-#if (AMREX_SPACEDIM == 2)
-        const Real zp = 0;
-#elif (AMREX_SPACEDIM == 3)
-        const Real zp = p.pos(iz_);
-#endif
+        const Real zp = nDim > 2 ? p.pos(iz_) : 0;
+
         //-----calculate interpolate coef begin-------------
         IntVect loIdx;
         RealVect dShift;
@@ -2918,9 +2794,9 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 
         p.pos(ix_) = xp + unp1 * dtLoc;
         p.pos(iy_) = yp + vnp1 * dtLoc;
-#if (AMREX_SPACEDIM == 3)
-        p.pos(iz_) = zp + wnp1 * dtLoc;
-#endif
+        if (nDim > 2)
+          p.pos(iz_) = zp + wnp1 * dtLoc;
+
         // Mark for deletion
         if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
           p.id() = -1;
@@ -3076,15 +2952,10 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         //----- Mass matrix calculation begin--------------
         const Real xi0 = dShift[ix_] * dx[iLev][ix_];
         const Real eta0 = dShift[iy_] * dx[iLev][iy_];
+        const Real zeta0 = nDim > 2 ? dShift[iz_] * dx[iLev][iz_] : 0;
         const Real xi1 = dx[iLev][ix_] - xi0;
         const Real eta1 = dx[iLev][iy_] - eta0;
-#if (AMREX_SPACEDIM == 2)
-        const Real zeta0 = 0;
-        const Real zeta1 = 1;
-#elif (AMREX_SPACEDIM == 3)
-        const Real zeta0 = dShift[iz_] * dx[iLev][iz_];
-        const Real zeta1 = dx[iLev][iz_] - zeta0;
-#endif
+        const Real zeta1 = nDim > 2 ? dx[iLev][iz_] - zeta0 : 1;
 
         const Real zeta02Vol = zeta0 * invVol[iLev];
         const Real zeta12Vol = zeta1 * invVol[iLev];
@@ -3132,11 +3003,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 
         const int iMin = loIdx[ix_];
         const int jMin = loIdx[iy_];
-#if (AMREX_SPACEDIM == 2)
-        const int kMin = 0;
-#elif (AMREX_SPACEDIM == 3)
-        const int kMin = loIdx[iz_];
-#endif
+        const int kMin = nDim > 2 ? loIdx[iz_] : 0;
 
         RealVect eps_D = { AMREX_D_DECL(0, 0, 0) };
 
@@ -3642,11 +3509,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
           Real qp1 = p.rdata(iqp_);
           Real xp1 = p.pos(ix_);
           Real yp1 = p.pos(iy_);
-#if (AMREX_SPACEDIM == 2)
-          Real zp1 = 0;
-#elif (AMREX_SPACEDIM == 3)
-          Real zp1 = p.pos(iz_);
-#endif
+          Real zp1 = nDim > 2 ? p.pos(iz_) : 0;
           Real up1 = p.rdata(iup_);
           Real vp1 = p.rdata(ivp_);
           Real wp1 = p.rdata(iwp_);
@@ -3682,10 +3545,11 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
               zp1 = bound(zp1, zMin, zMax);
               p.pos(ix_) = xp1;
               p.pos(iy_) = yp1;
-#if (AMREX_SPACEDIM == 3)
-              p.pos(iz_) = zp1;
-#endif
+
+              if (nDim > 2)
+                p.pos(iz_) = zp1;
             }
+
             xp2 = bound(xp2, xMin, xMax);
             yp2 = bound(yp2, yMin, yMax);
             zp2 = bound(zp2, zMin, zMax);
@@ -3695,9 +3559,8 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
 
             pnew.pos(ix_) = xp2;
             pnew.pos(iy_) = yp2;
-#if (AMREX_SPACEDIM == 3)
-            pnew.pos(iz_) = zp2;
-#endif
+            if (nDim > 2)
+              pnew.pos(iz_) = zp2;
             pnew.rdata(iup_) = up1;
             pnew.rdata(ivp_) = vp1;
             pnew.rdata(iwp_) = wp1;
@@ -4390,20 +4253,20 @@ void Particles<NStructReal, NStructInt>::sample_charge_exchange(
   while (!accepted) {
 
     {
-      Real prob, theta, uth;
+      Real prob, theta, Uth;
 
       // u = X velocity
       prob = sqrt(-2.0 * log(1.0 - .999999999 * randNum()));
       theta = 2.0 * M_PI * randNum();
-      uth = vth / sqrt(2.0);
-      vp[0] = uth * prob * cos(theta) + up[0];
+      Uth = vth / sqrt(2.0);
+      vp[0] = Uth * prob * cos(theta) + up[0];
       // v = Y velocity
-      vp[1] = uth * prob * sin(theta) + up[1];
+      vp[1] = Uth * prob * sin(theta) + up[1];
 
       // w = Z velocity
       prob = sqrt(-2.0 * log(1.0 - .999999999 * randNum()));
       theta = 2.0 * M_PI * randNum();
-      vp[2] = uth * prob * cos(theta) + up[2];
+      vp[2] = Uth * prob * cos(theta) + up[2];
     }
 
     if (randNum() < charge_exchange_dis(vp, vh, up, vth, cs) /
@@ -4500,6 +4363,11 @@ void Particles<NStructReal, NStructInt>::get_analytic_ion_fluid(
       uIon[i] = ionOH.swU * xyz[i] / r * 1e3; // km/s -> m/s
     }
   }
+
+  // AllPrint() << "r = " << r << " xyz = " << xyz[0] << ", " << xyz[1] << ", "
+  //            << xyz[2] << " rhoIon = " << rhoIon << ", cs2Ion = " << cs2Ion
+  //            << ", uIon = " << uIon[0] << ", " << uIon[1] << ", " << uIon[2]
+  //            << std::endl;
 }
 
 // Get the iFluid-th ion fluid properties at the location xyz

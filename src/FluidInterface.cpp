@@ -263,11 +263,7 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
   if (iParam.empty() || norm.empty() || paramComm.empty())
     Abort("Error: one of the input vector is empty!\n");
 
-#if (AMREX_SPACEDIM == 2)
-  nDimFluid = 2;
-#elif (AMREX_SPACEDIM == 3)
-  nDimFluid = (Geom(0).Domain().length(iz_) > 1) ? 3 : 2;
-#endif
+  nDimFluid = (nDim == 3 && Geom(0).Domain().length(iz_) > 1) ? 3 : 2;
 
   nVarFluid = iParam[2];
   nFluid = iParam[3];

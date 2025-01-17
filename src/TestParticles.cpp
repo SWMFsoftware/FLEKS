@@ -73,11 +73,7 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
       Real wp = p.rdata(iwp_);
       const Real xp = p.pos(ix_);
       const Real yp = p.pos(iy_);
-#if (AMREX_SPACEDIM == 2)
-      const Real zp = 0;
-#elif (AMREX_SPACEDIM == 3)
-      const Real zp = p.pos(iz_);
-#endif
+      const Real zp = nDim > 2 ? p.pos(iz_) : 0;
 
       //-----calculate interpolate coef begin-------------
       IntVect loIdx;
@@ -167,9 +163,8 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
 
       p.pos(ix_) = xp + unp1 * dtLoc;
       p.pos(iy_) = yp + vnp1 * dtLoc;
-#if (AMREX_SPACEDIM == 3)
-      p.pos(iz_) = zp + wnp1 * dtLoc;
-#endif
+      if (nDim > 2)
+        p.pos(iz_) = zp + wnp1 * dtLoc;
 
       if (doSave) {
         const int i0 = record_var_index(p.idata(iRecordCount_));
@@ -233,16 +228,12 @@ void TestParticles::move_and_save_neutrals(Real dt, Real tNowSI, bool doSave) {
       Real wp = p.rdata(iwp_);
       const Real xp = p.pos(ix_);
       const Real yp = p.pos(iy_);
-#if (AMREX_SPACEDIM == 2)
-      const Real zp = 0;
-#elif (AMREX_SPACEDIM == 3)
-      const Real zp = p.pos(iz_);
-#endif
+      const Real zp = nDim > 2 ? p.pos(iz_) : 0;
+
       p.pos(ix_) = xp + up * dt;
       p.pos(iy_) = yp + vp * dt;
-#if (AMREX_SPACEDIM == 3)
-      p.pos(iz_) = zp + wp * dt;
-#endif
+      if (nDim > 2)
+        p.pos(iz_) = zp + wp * dt;
 
       if (doSave) {
         const int i0 = record_var_index(p.idata(iRecordCount_));

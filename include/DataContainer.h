@@ -113,15 +113,16 @@ public:
   int n_dim() { return nDim; }
 
   ZoneType::Type zone_type() {
-#if (AMREX_SPACEDIM == 2)
-    if (isStructured) {
-      return ZoneType::Type::QUAD;
-    } else {
-      return ZoneType::Type::TRIANGLE;
+    if (nDim == 3) {
+      return ZoneType::Type::BRICK;
+    } else if (nDim == 2) {
+      if (isStructured) {
+        return ZoneType::Type::QUAD;
+      } else {
+        return ZoneType::Type::TRIANGLE;
+      }
     }
-#elif (AMREX_SPACEDIM == 3)
-    return ZoneType::Type::BRICK;
-#endif
+
     return ZoneType::Type::UNSET;
   }
 
@@ -313,29 +314,29 @@ public:
       const auto lo = amrex::lbound(box);
       const auto hi = amrex::ubound(box);
 
-#if (AMREX_SPACEDIM == 2)
-      for (int j = lo.y; j <= hi.y - 1; ++j)
-        for (int i = lo.x; i <= hi.x - 1; ++i) {
-          int k = lo.z;
-          zones.push_back(cell(i, j, k));
-          zones.push_back(cell(i + 1, j, k));
-          zones.push_back(cell(i + 1, j + 1, k));
-          zones.push_back(cell(i, j + 1, k));
-        }
-#elif (AMREX_SPACEDIM == 3)
-      for (int k = lo.z; k <= hi.z - 1; ++k)
+      if (nDim == 2) {
         for (int j = lo.y; j <= hi.y - 1; ++j)
           for (int i = lo.x; i <= hi.x - 1; ++i) {
+            int k = lo.z;
             zones.push_back(cell(i, j, k));
             zones.push_back(cell(i + 1, j, k));
             zones.push_back(cell(i + 1, j + 1, k));
             zones.push_back(cell(i, j + 1, k));
-            zones.push_back(cell(i, j, k + 1));
-            zones.push_back(cell(i + 1, j, k + 1));
-            zones.push_back(cell(i + 1, j + 1, k + 1));
-            zones.push_back(cell(i, j + 1, k + 1));
           }
-#endif
+      } else if (nDim == 3) {
+        for (int k = lo.z; k <= hi.z - 1; ++k)
+          for (int j = lo.y; j <= hi.y - 1; ++j)
+            for (int i = lo.x; i <= hi.x - 1; ++i) {
+              zones.push_back(cell(i, j, k));
+              zones.push_back(cell(i + 1, j, k));
+              zones.push_back(cell(i + 1, j + 1, k));
+              zones.push_back(cell(i, j + 1, k));
+              zones.push_back(cell(i, j, k + 1));
+              zones.push_back(cell(i + 1, j, k + 1));
+              zones.push_back(cell(i + 1, j + 1, k + 1));
+              zones.push_back(cell(i, j + 1, k + 1));
+            }
+      }
     } else {
       for (std::size_t i = 0; i < tri->triangles.size(); i += 3) {
         zones.push_back(tri->triangles[i] + 1);

@@ -131,16 +131,15 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
                 xMinL_D[ix_] = xp;
               if (yp < xMinL_D[iy_])
                 xMinL_D[iy_] = yp;
+              if (nDim > 2 && zp < xMinL_D[iz_])
+                xMinL_D[iz_] = zp;
+
               if (xp > xMaxL_D[ix_])
                 xMaxL_D[ix_] = xp;
               if (yp > xMaxL_D[iy_])
                 xMaxL_D[iy_] = yp;
-#if (AMREX_SPACEDIM == 3)
-              if (zp < xMinL_D[iz_])
-                xMinL_D[iz_] = zp;
-              if (zp > xMaxL_D[iz_])
+              if (nDim > 2 && zp > xMaxL_D[iz_])
                 xMaxL_D[iz_] = zp;
-#endif
             }
           }
         }
@@ -278,11 +277,7 @@ double Pic::get_var(std::string var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 1) == "Y") {
       value = Geom(iLev).LoEdge(ijk, iy_);
     } else if (var.substr(0, 1) == "Z") {
-#if (AMREX_SPACEDIM == 2)
-      value = 0;
-#elif (AMREX_SPACEDIM == 3)
-      value = Geom(iLev).LoEdge(ijk, iz_);
-#endif
+      value = nDim > 2 ? Geom(iLev).LoEdge(ijk, iz_) : 0;
     } else if (var.substr(0, 2) == "dx") {
       value = Geom(iLev).CellSize(ix_);
     } else if (var.substr(0, 2) == "Ex") {
