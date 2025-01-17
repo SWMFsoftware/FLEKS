@@ -544,12 +544,12 @@ public:
     // PV = nkT
     // kT/m = PV/(nm) = P/rho
     // So, uth = sqrt(P/rho)
-    amrex::Real Uth = 0, p, rho;
+    amrex::Real uth = 0, p, rho;
     p = get_fluid_p(mfi, xyz, is, iLev);
     rho = get_fluid_mass_density(mfi, xyz, is, iLev);
     if (rho > 0)
-      Uth = sqrt(p / rho);
-    return Uth;
+      uth = sqrt(p / rho);
+    return uth;
   }
 
   template <typename Type>
@@ -802,12 +802,12 @@ public:
   template <typename Type>
   amrex::Real get_uth_iso(const amrex::MFIter& mfi, const Type xyz,
                           const int is, const int iLev = 0) const {
-    amrex::Real Uth = 0, p, ni;
+    amrex::Real uth = 0, p, ni;
     p = get_p(mfi, xyz, is, iLev);
     ni = get_number_density(mfi, xyz, is, iLev);
     if (ni > 0)
-      Uth = sqrt(p / (ni * MoMi_S[is]));
-    return Uth;
+      uth = sqrt(p / (ni * MoMi_S[is]));
+    return uth;
   }
 
   template <typename Type>
@@ -816,24 +816,24 @@ public:
                             const double rand1, const double rand2,
                             const double rand3, const double rand4,
                             const int is, const double uthIn = -1) const {
-    double harvest, prob, theta, Uth;
+    double harvest, prob, theta, uth;
 
     // u = X velocity
     harvest = rand1;
     prob = sqrt(-2.0 * log(1.0 - .999999999 * harvest));
     harvest = rand2;
     theta = 2.0 * M_PI * harvest;
-    Uth = (uthIn >= 0 ? uthIn : get_uth_iso(mfi, xyz, is, iLev));
+    uth = (uthIn >= 0 ? uthIn : get_uth_iso(mfi, xyz, is, iLev));
 
-    (*u) = Uth * prob * cos(theta);
+    (*u) = uth * prob * cos(theta);
     // v = Y velocity
-    (*v) = Uth * prob * sin(theta);
+    (*v) = uth * prob * sin(theta);
     // w = Z velocity
     harvest = rand3;
     prob = sqrt(-2.0 * log(1.0 - .999999999 * harvest));
     harvest = rand4;
     theta = 2.0 * M_PI * harvest;
-    (*w) = Uth * prob * cos(theta);
+    (*w) = uth * prob * cos(theta);
   }
 
   template <typename Type>
