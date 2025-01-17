@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <AMReX_ParReduce.H>
 
 #include "Morton.h"
 #include "Particles.h"
@@ -2564,27 +2565,20 @@ template <int NStructReal, int NStructInt>
 Real Particles<NStructReal, NStructInt>::calc_max_thermal_velocity(
     MultiFab& momentsMF) {
 
-  Real uthMax = 0;
-  const Real c1over3 = 1. / 3;
-  for (MFIter mfi(momentsMF); mfi.isValid(); ++mfi) {
-    FArrayBox& fab = momentsMF[mfi];
-    const Box& box = mfi.validbox();
-    const Array4<Real>& arr = fab.array();
+  constexpr Real c1over3 = 1. / 3;
+  auto const& ma = momentsMF.const_arrays();
 
-    ParallelFor(box, [&](int i, int j, int k) {
-      Real rho = arr(i, j, k, iRho_);
-      if (rho == 0)
-        return;
+  Real uthMax = ParReduce(TypeList<ReduceOpMax>{}, TypeList<Real>{},
+      momentsMF, IntVect(0), // zero ghost cells
+      [=] AMREX_GPU_DEVICE (int box_no, int i, int j, int k) noexcept -> GpuTuple<Real> {
+        Array4<Real const> const& arr = ma[box_no];
+        Real rho = arr(i, j, k, iRho_);
+        if (rho == 0) return 0.0;
 
-      Real p =
-          (arr(i, j, k, iPxx_) + arr(i, j, k, iPyy_) + arr(i, j, k, iPzz_)) *
-          c1over3;
-
-      Real uth = sqrt(p / rho);
-      if (uth > uthMax)
-        uthMax = uth;
-    });
-  }
+        Real p = (arr(i, j, k, iPxx_) + arr(i, j, k, iPyy_) + arr(i, j, k, iPzz_)) * c1over3;
+        Real uth = sqrt(p / rho);
+        return uth;
+      });
 
   return uthMax;
 }
@@ -4251,22 +4245,19 @@ void Particles<NStructReal, NStructInt>::sample_charge_exchange(
 
   bool accepted = false;
   while (!accepted) {
-
     {
-      Real prob, theta, Uth;
-
+      Real prob, theta, uth;
       // u = X velocity
       prob = sqrt(-2.0 * log(1.0 - .999999999 * randNum()));
       theta = 2.0 * M_PI * randNum();
-      Uth = vth / sqrt(2.0);
-      vp[0] = Uth * prob * cos(theta) + up[0];
+      uth = vth / sqrt(2.0);
+      vp[0] = uth * prob * cos(theta) + up[0];
       // v = Y velocity
-      vp[1] = Uth * prob * sin(theta) + up[1];
-
+      vp[1] = uth * prob * sin(theta) + up[1];
       // w = Z velocity
       prob = sqrt(-2.0 * log(1.0 - .999999999 * randNum()));
       theta = 2.0 * M_PI * randNum();
-      vp[2] = Uth * prob * cos(theta) + up[2];
+      vp[2] = uth * prob * cos(theta) + up[2];
     }
 
     if (randNum() < charge_exchange_dis(vp, vh, up, vth, cs) /

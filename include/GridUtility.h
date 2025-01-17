@@ -252,7 +252,7 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
 
   amrex::Box box = amrex::Box(amrex::IntVect(0), amrex::IntVect(1));
 
-  amrex::ParallelFor(box, [&](int ii, int jj, int kk) noexcept {
+  amrex::ParallelFor(box, [&] AMREX_GPU_DEVICE (int ii, int jj, int kk) noexcept {
     int iIdx = loIdx[ix_] + ii;
     int jIdx = loIdx[iy_] + jj;
     int kIdx = nDim > 2 ? loIdx[iz_] + kk : 0;
