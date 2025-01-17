@@ -1189,11 +1189,11 @@ void Pic::sum_to_center_new(bool isBeforeCorrection, int iLev) {
   }
   {
     BoxArray bac = centerB[cLev].boxArray();
-    bac.refine(2);
+    bac.refine(ref_ratio[iLev]);
     jc.define(bac, centerB[cLev].DistributionMap(), 1, 1);
     jc.setVal(0.0);
     BoxArray baf = centerB[fLev].boxArray();
-    baf.coarsen(2);
+    baf.coarsen(ref_ratio[iLev]);
     baf.grow(1);
     jf.define(baf, centerB[fLev].DistributionMap(), 1, 1);
     jf.setVal(0.0);
