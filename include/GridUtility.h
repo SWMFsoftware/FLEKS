@@ -137,9 +137,16 @@ inline void CheckRefinementProximity(bool b[3][3][3], amrex::IntVect iv,
 
   int i = iv[0];
   int j = iv[1];
-  int k = (nDim > 2 ? iv[2] : 0);
-  int kmin = (nDim > 2 ? 0 : 1);
-  int kmax = (nDim > 2 ? 2 : 1);
+#if (AMREX_SPACEDIM == 2)
+  int k = 0;
+  int kmin = 1;
+  int kmax = 1;
+#elif (AMREX_SPACEDIM == 3)
+  int k = iv[2];
+  int kmin = 0;
+  int kmax = 2;
+#endif
+
   for (int ii = 0; ii <= 2; ii++) {
     for (int jj = 0; jj <= 2; jj++) {
       for (int kk = kmin; kk <= kmax; kk++) {
@@ -217,10 +224,15 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
     amrex::Real zeta[2];
     xi[0] = dx[0];
     eta[0] = dx[1];
-    zeta[0] = nDim > 2 ? dx[2] : 1;
     xi[1] = 1 - xi[0];
     eta[1] = 1 - eta[0];
-    zeta[1] = nDim > 2 ? 1 - zeta[0] : 1;
+#if (AMREX_SPACEDIM == 2)
+    zeta[0] = 1;
+    zeta[1] = 1;
+#elif (AMREX_SPACEDIM == 3)
+    zeta[0] = dx[2];
+    zeta[1] = 1 - zeta[0];
+#endif
 
     amrex::Real multi[2][2];
     multi[0][0] = xi[0] * eta[0];
@@ -228,23 +240,23 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
     multi[1][0] = xi[1] * eta[0];
     multi[1][1] = xi[1] * eta[1];
 
-    // coef[k][j][i]: This is so wired. But is may be faster since it matches
+    // coef[k][j][i]: This may be faster since it matches
     // the AMREX multifab data ordering.
-    if (nDim == 2) {
-      coef[0][0][0] = multi[1][1];
-      coef[0][0][1] = multi[0][1];
-      coef[0][1][0] = multi[1][0];
-      coef[0][1][1] = multi[0][0];
-    } else {
-      coef[0][0][0] = multi[1][1] * zeta[1];
-      coef[1][0][0] = multi[1][1] * zeta[0];
-      coef[0][1][0] = multi[1][0] * zeta[1];
-      coef[1][1][0] = multi[1][0] * zeta[0];
-      coef[0][0][1] = multi[0][1] * zeta[1];
-      coef[1][0][1] = multi[0][1] * zeta[0];
-      coef[0][1][1] = multi[0][0] * zeta[1];
-      coef[1][1][1] = multi[0][0] * zeta[0];
-    }
+#if (AMREX_SPACEDIM == 2)
+    coef[0][0][0] = multi[1][1];
+    coef[0][0][1] = multi[0][1];
+    coef[0][1][0] = multi[1][0];
+    coef[0][1][1] = multi[0][0];
+#elif (AMREX_SPACEDIM == 3)
+    coef[0][0][0] = multi[1][1] * zeta[1];
+    coef[1][0][0] = multi[1][1] * zeta[0];
+    coef[0][1][0] = multi[1][0] * zeta[1];
+    coef[1][1][0] = multi[1][0] * zeta[0];
+    coef[0][0][1] = multi[0][1] * zeta[1];
+    coef[1][0][1] = multi[0][1] * zeta[0];
+    coef[0][1][1] = multi[0][0] * zeta[1];
+    coef[1][1][1] = multi[0][0] * zeta[0];
+#endif
   }
 
   const auto& arr = mf[mfi].array();
@@ -255,7 +267,11 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
   amrex::ParallelFor(box, [&](int ii, int jj, int kk) noexcept {
     int iIdx = loIdx[ix_] + ii;
     int jIdx = loIdx[iy_] + jj;
-    int kIdx = nDim > 2 ? loIdx[iz_] + kk : 0;
+#if (AMREX_SPACEDIM == 2)
+    int kIdx = 0;
+#elif (AMREX_SPACEDIM == 3)
+    int kIdx = loIdx[iz_] + kk;
+#endif
     val += arr(iIdx, jIdx, kIdx, iVar) * coef[kk][jj][ii];
   });
 

@@ -389,18 +389,17 @@ public:
       useFloat = true;
       jp = bxValid.bigEnd(iy_);
     }
-
-    if (nDim > 2) {
-      if (k < bxValid.smallEnd(iz_) && bc.lo[iz_] == BC::outflow) {
-        useFloat = true;
-        kp = bxValid.smallEnd(iz_);
-      }
-
-      if (k > bxValid.bigEnd(iz_) && bc.hi[iz_] == BC::outflow) {
-        useFloat = true;
-        kp = bxValid.bigEnd(iz_);
-      }
+#if (AMREX_SPACEDIM == 3)
+    if (k < bxValid.smallEnd(iz_) && bc.lo[iz_] == BC::outflow) {
+      useFloat = true;
+      kp = bxValid.smallEnd(iz_);
     }
+
+    if (k > bxValid.bigEnd(iz_) && bc.hi[iz_] == BC::outflow) {
+      useFloat = true;
+      kp = bxValid.bigEnd(iz_);
+    }
+#endif
     return useFloat;
   }
 

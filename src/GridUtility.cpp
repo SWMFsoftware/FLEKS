@@ -39,7 +39,11 @@ void grad_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
     const Array4<Real const>& node = nodeMF[mfi].array();
 
     ParallelFor(box, [&](int i, int j, int k) {
-      int kp1 = nDim > 2 ? k + 1 : k;
+#if (AMREX_SPACEDIM == 2)
+      int kp1 = k;
+#elif (AMREX_SPACEDIM == 3)
+      int kp1 = k + 1;
+#endif
       center(i, j, k, ix_) =
           0.25 * invDx[ix_] *
           (node(i + 1, j, k) - node(i, j, k) + node(i + 1, j, kp1) -
@@ -69,7 +73,11 @@ void grad_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
     const Array4<Real const>& center = centerMF[mfi].array();
 
     ParallelFor(box, [&](int i, int j, int k) {
-      int km1 = nDim > 2 ? k - 1 : k;
+#if (AMREX_SPACEDIM == 2)
+      int km1 = k;
+#elif (AMREX_SPACEDIM == 3)
+      int km1 = k - 1;
+#endif
 
       node(i, j, k, ix_) = 0.25 * invDx[ix_] *
                            (center(i, j, k) - center(i - 1, j, k) +
@@ -100,7 +108,11 @@ void div_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
     const Array4<Real>& node = nodeMF[mfi].array();
 
     ParallelFor(box, [&](int i, int j, int k) {
-      int km1 = nDim > 2 ? k - 1 : k;
+#if (AMREX_SPACEDIM == 2)
+      int km1 = k;
+#elif (AMREX_SPACEDIM == 3)
+      int km1 = k - 1;
+#endif
       const Real compX =
           0.25 * invDx[ix_] *
           (center(i, j, k, ix_) - center(i - 1, j, k, ix_) +
@@ -136,7 +148,11 @@ void div_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
     const Array4<Real>& center = centerMF[mfi].array();
 
     ParallelFor(box, [&](int i, int j, int k) {
-      int kp1 = nDim > 2 ? k + 1 : k;
+#if (AMREX_SPACEDIM == 2)
+      int kp1 = k;
+#elif (AMREX_SPACEDIM == 3)
+      int kp1 = k + 1;
+#endif
 
       const Real compX =
           0.25 * invDx[ix_] *
@@ -174,12 +190,21 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
     const Array4<Real>& dstArr = dstMF[mfi].array();
 
     ParallelFor(box, [&](int i, int j, int k) {
-      int km1 = nDim > 2 ? k - 1 : k;
-      int kp1 = nDim > 2 ? k + 1 : k;
+#if (AMREX_SPACEDIM == 2)
+      int km1 = k;
+      int kp1 = k;
+#elif (AMREX_SPACEDIM == 3)
+      int km1 = k - 1;
+      int kp1 = k + 1;
+#endif
       Real compX = 0;
       for (int jj = -1; jj < 2; ++jj)
         for (int kk = -1; kk < 2; ++kk) {
-          int k0 = nDim > 2 ? k + kk : 0;
+#if (AMREX_SPACEDIM == 2)
+          int k0 = 0;
+#elif (AMREX_SPACEDIM == 3)
+          int k0 = k + kk;
+#endif
           compX +=
               srcArr(i + 1, j + jj, k0, ix_) - srcArr(i - 1, j + jj, k0, ix_);
         }
@@ -188,7 +213,11 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
       Real compY = 0;
       for (int ii = -1; ii < 2; ++ii)
         for (int kk = -1; kk < 2; ++kk) {
-          int k0 = nDim > 2 ? k + kk : 0;
+#if (AMREX_SPACEDIM == 2)
+          int k0 = 0;
+#elif (AMREX_SPACEDIM == 3)
+          int k0 = k + kk;
+#endif
           compY +=
               srcArr(i + ii, j + 1, k0, iy_) - srcArr(i + ii, j - 1, k0, iy_);
         }
@@ -361,7 +390,11 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
     const Array4<Real const>& centerArr = centerMF[mfi].array();
 
     ParallelFor(box, [&](int i, int j, int k) {
-      int km1 = nDim > 2 ? k - 1 : k;
+#if (AMREX_SPACEDIM == 2)
+      int km1 = k;
+#elif (AMREX_SPACEDIM == 3)
+      int km1 = k - 1;
+#endif
       cZDY =
           0.25 * invDx[iy_] *
           (centerArr(i, j, k, iz_) - centerArr(i, j - 1, k, iz_) +
@@ -424,7 +457,11 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
     const Array4<Real const>& nodeArr = nodeMF[mfi].array();
 
     ParallelFor(box, [&](int i, int j, int k) {
-      int kp1 = nDim > 2 ? k + 1 : k;
+#if (AMREX_SPACEDIM == 2)
+      int kp1 = k;
+#elif (AMREX_SPACEDIM == 3)
+      int kp1 = k + 1;
+#endif
       cZDY = 0.25 * invDx[iy_] *
              (nodeArr(i, j + 1, k, iz_) - nodeArr(i, j, k, iz_) +
               nodeArr(i, j + 1, kp1, iz_) - nodeArr(i, j, kp1, iz_) +
@@ -477,7 +514,11 @@ void average_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF) {
     const Array4<Real const>& centerArr = centerMF[mfi].array();
 
     ParallelFor(box, centerMF.nComp(), [&](int i, int j, int k, int iVar) {
-      int km1 = nDim > 2 ? k - 1 : k;
+#if (AMREX_SPACEDIM == 2)
+      int km1 = k;
+#elif (AMREX_SPACEDIM == 3)
+      int km1 = k - 1;
+#endif
       nodeArr(i, j, k, iVar) =
           0.125 *
           (centerArr(i - 1, j - 1, km1, iVar) +

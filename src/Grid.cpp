@@ -299,8 +299,8 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
 
     // Set the edge cells.
     // Q: But what is the edge cell?
-    // A: It is a physical cell that has one or more neighbor cells are
-    // boundary cell.
+    // A: It is a physical cell that one or more neighbor cells are
+    // boundary cells.
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<int>& cellArr = cellStatus[iLev][mfi].array();
@@ -325,8 +325,13 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
       const Box& box = mfi.validbox();
       const auto& status = cellStatus[iLev][mfi].array();
       ParallelFor(box, [&](int i, int j, int k) {
-        int kmin = nDim > 2 ? k - 1 : k;
-        int kmax = nDim > 2 ? k + 1 : k;
+#if (AMREX_SPACEDIM == 2)
+        int kmin = k;
+        int kmax = k;
+#elif (AMREX_SPACEDIM == 3)
+        int kmin = k - 1;
+        int kmax = k + 1;
+#endif
         for (int ii = i - 1; ii <= i + 1; ii++) {
           for (int jj = j - 1; jj <= j + 1; jj++) {
             for (int kk = kmin; kk <= kmax; kk++) {

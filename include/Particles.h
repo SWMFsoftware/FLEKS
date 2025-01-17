@@ -502,15 +502,20 @@ public:
 
     int nxcg = nCell[ix_];
     int nycg = nCell[iy_];
+#if (AMREX_SPACEDIM == 2)
     int nzcg = 1;
-    if (nDim > 2)
-      nzcg = nCell[iz_];
-
+#elif (AMREX_SPACEDIM == 3)
+    int nzcg = nCell[iz_];
+#endif
     int iCycle = tc->get_cycle();
 
     int i = ijk[0];
     int j = ijk[1];
-    int k = nDim > 2 ? ijk[2] : 0;
+#if (AMREX_SPACEDIM == 2)
+    int k = 0;
+#elif (AMREX_SPACEDIM == 3)
+    int k = ijk[2];
+#endif
 
     // What if the seed overflow?
     const long seed =

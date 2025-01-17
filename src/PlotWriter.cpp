@@ -426,8 +426,9 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
     outFile << "#CELLSIZE\n";
     outFile << nCell * dx_D[x_] * No2OutL << "\t dx\n";
     outFile << nCell * dx_D[y_] * No2OutL << "\t dy\n";
-    if (nDim > 2)
-      outFile << nCell * dx_D[z_] * No2OutL << "\t dz\n";
+#if (AMREX_SPACEDIM == 3)
+    outFile << nCell * dx_D[z_] * No2OutL << "\t dz\n";
+#endif
     outFile << "\n";
   }
 

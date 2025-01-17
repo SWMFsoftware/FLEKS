@@ -72,8 +72,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#PARTICLES") {
     param.read_var("npcelx", nPartPerCell[ix_]);
     param.read_var("npcely", nPartPerCell[iy_]);
-    if (nDim == 3)
-      param.read_var("npcelz", nPartPerCell[iz_]);
+#if (AMREX_SPACEDIM == 3)
+    param.read_var("npcelz", nPartPerCell[iz_]);
+#endif
   } else if (command == "#SOURCEPARTICLES") {
     param.read_var("npcelx", nSourcePPC[ix_]);
     param.read_var("npcely", nSourcePPC[iy_]);
@@ -427,7 +428,11 @@ void Pic::fill_new_center_B() {
 
               Box subBox(ijk, ijk + 1);
               ParallelFor(subBox, [&](int ii, int jj, int kk) {
-                const Real coef = (nDim == 2 ? 0.25 : 0.125);
+#if (AMREX_SPACEDIM == 2)
+                const Real coef = 0.25;
+#elif (AMREX_SPACEDIM == 3)
+                const Real coef = 0.125;
+#endif
                 centerArr(ijk, iVar) += coef * nodeArr(ii, jj, kk, iVar);
               });
             }
@@ -2025,7 +2030,11 @@ void Pic::smooth_B(int iLev) {
     // component
     auto get_face = [&](int iDir, int i, int j, int k, int iVar,
                         Array4<Real const> const& arr, Real& l, Real& r) {
-      int kp1 = nDim > 2 ? k + 1 : k;
+#if (AMREX_SPACEDIM == 2)                      
+      int kp1 = k;
+#elif (AMREX_SPACEDIM == 3)
+      int kp1 = k + 1;
+#endif
       if (iDir == ix_) {
         l = 0.25 * (arr(i, j, k, iVar) + arr(i, j + 1, k, iVar) +
                     arr(i, j, kp1, iVar) + arr(i, j + 1, kp1, iVar));
@@ -2118,8 +2127,8 @@ void Pic::smooth_B(int iLev) {
                cL * ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar))) *
               coef[iy_];
         }
-
-      if (nDim > 2 && !isFake2D) {
+#if (AMREX_SPACEDIM == 3)
+      if (!isFake2D) {
 
         // Flux along z
         ul = lu[iz_];
@@ -2146,7 +2155,7 @@ void Pic::smooth_B(int iLev) {
                 coef[iz_];
           }
       }
-
+#endif
       if (useEightWave) {
         // divB cleaning with 8-wave source. dB/dt += -U * div(B)
         Real u[nDim3] = { 0, 0, 0 };
@@ -2214,8 +2223,10 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, int di, Real coef) {
   smooth_dir(ix_);
   if (nDim > 1)
     smooth_dir(iy_);
-  if (nDim > 2 && !isFake2D)
+#if (AMREX_SPACEDIM == 3)
+  if (!isFake2D)
     smooth_dir(iz_);
+#endif
 }
 
 //==========================================================
@@ -2275,11 +2286,11 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
 
   const IntVect& ngrow = mf.nGrowVect();
-  if (nDim > 2 &&
-      Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+#if (AMREX_SPACEDIM == 3)
+  if (Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
     ba.grow(iz_, ngrow[iz_]);
   }
-
+#endif
   if (bc != nullptr) {
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& bxFab = mfi.fabbox();
@@ -2363,10 +2374,10 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
 
         auto lo = IntVect(bx.loVect());
         auto hi = IntVect(bx.hiVect());
-        if (nDim > 2) {
-          lo[iz_]++;
-          hi[iz_]--;
-        }
+#if (AMREX_SPACEDIM == 3)
+        lo[iz_]++;
+        hi[iz_]--;
+#endif
 
         Box box0(lo, hi);
 

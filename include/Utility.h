@@ -21,7 +21,11 @@ inline amrex::Dim3 init_dim3(const int i) {
   amrex::Dim3 dim;
   dim.x = i;
   dim.y = i;
-  dim.z = nDim > 2 ? i : 0;
+#if (AMREX_SPACEDIM == 2)
+  dim.z = 0;
+#elif (AMREX_SPACEDIM == 3)
+  dim.z = i;
+#endif
   return dim;
 }
 
@@ -89,7 +93,11 @@ inline void linear_interpolation_coef(amrex::RealVect& dx,
   eta[0] = dx[1];
   eta[1] = 1 - eta[0];
 
-  zeta[0] = nDim > 2 ? dx[2] : 0;
+#if (AMREX_SPACEDIM == 2)
+  zeta[0] = 0;
+#elif (AMREX_SPACEDIM == 3)
+  zeta[0] = dx[2];
+#endif
   zeta[1] = 1 - zeta[0];
 
   amrex::Real multi[2][2];
@@ -120,7 +128,11 @@ inline void linear_interpolation_coef_finer(amrex::RealVect& dx,
   eta[0] = dx[1];
   eta[1] = 1 - eta[0];
 
-  zeta[0] = nDim > 2 ? dx[2] : 0;
+#if (AMREX_SPACEDIM == 2)
+  zeta[0] = 0;
+#elif (AMREX_SPACEDIM == 3)
+  zeta[0] = dx[2];
+#endif
   zeta[1] = 1 - zeta[0];
 
   // Shape fix
@@ -134,14 +146,15 @@ inline void linear_interpolation_coef_finer(amrex::RealVect& dx,
     if (eta[ii] < 0.0) {
       eta[ii] = 0.0;
     }
-
-    zeta[ii] =
-        nDim > 2 ? 2.0 * ((2.0 * zeta[ii]) - 1.0) : ((2.0 * zeta[ii]) - 1.0);
+#if (AMREX_SPACEDIM == 2)
+    zeta[ii] = (2.0 * zeta[ii]) - 1.0;
+#elif (AMREX_SPACEDIM == 3)
+    zeta[ii] = 2.0 * ((2.0 * zeta[ii]) - 1.0);
+#endif
     if (zeta[ii] < 0.0) {
       zeta[ii] = 0.0;
     }
   }
-  //
 
   amrex::Real multi[2][2];
   multi[0][0] = xi[0] * eta[0];
