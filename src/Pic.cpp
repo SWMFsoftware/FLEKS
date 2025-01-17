@@ -204,7 +204,7 @@ void Pic::fill_new_cells() {
     sum_moments(true);
     if (finest_level == 0) {
       sum_to_center(false);
-    } else {
+    } else if (doCorrectDivE) {
       for (int iLev = 0; iLev < n_lev(); iLev++) {
         sum_to_center_new(false, iLev);
       }
@@ -2030,7 +2030,7 @@ void Pic::smooth_B(int iLev) {
     // component
     auto get_face = [&](int iDir, int i, int j, int k, int iVar,
                         Array4<Real const> const& arr, Real& l, Real& r) {
-#if (AMREX_SPACEDIM == 2)                      
+#if (AMREX_SPACEDIM == 2)
       int kp1 = k;
 #elif (AMREX_SPACEDIM == 3)
       int kp1 = k + 1;
