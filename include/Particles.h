@@ -693,18 +693,27 @@ public:
     Checkpoint(folder, particletype);
     command = command + " " + folder + " " + particletype;
     if (amrex::ParallelDescriptor::IOProcessor()) {
-      std::system(command.c_str());
+      int result = std::system(command.c_str());
+      if (result != 0) {
+        std::cerr << "Error executing command: " << command << std::endl;
+      }
     }
     command = "mv";
     command = command + " " + folder + ".vtp" + " " + folder + "_" +
               particletype + ".vtp";
     if (amrex::ParallelDescriptor::IOProcessor()) {
-      std::system(command.c_str());
+      int result = std::system(command.c_str());
+      if (result != 0) {
+        std::cerr << "Error executing command: " << command << std::endl;
+      }
     }
     command = "rm -rf";
     command = command + " " + folder;
     if (amrex::ParallelDescriptor::IOProcessor()) {
-      std::system(command.c_str());
+      int result = std::system(command.c_str());
+      if (result != 0) {
+        std::cerr << "Error executing command: " << command << std::endl;
+      }
     }
   }
 
