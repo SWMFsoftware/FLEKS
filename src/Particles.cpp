@@ -2573,8 +2573,6 @@ Real Particles<NStructReal, NStructInt>::calc_max_thermal_velocity(
       [=] AMREX_GPU_DEVICE (int box_no, int i, int j, int k) noexcept -> GpuTuple<Real> {
         Array4<Real const> const& arr = ma[box_no];
         Real rho = arr(i, j, k, iRho_);
-        if (rho == 0) return 0.0;
-
         Real p = (arr(i, j, k, iPxx_) + arr(i, j, k, iPyy_) + arr(i, j, k, iPzz_)) * c1over3;
         Real uth = sqrt(p / rho);
         return uth;
@@ -2604,7 +2602,6 @@ void Particles<NStructReal, NStructInt>::convert_to_fluid_moments(
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
             const Real rho = arr(i, j, k, iRho_);
-            if (rho > 1e-99) {
               const Real ux = arr(i, j, k, iUx_) / rho;
               const Real uy = arr(i, j, k, iUy_) / rho;
               const Real uz = arr(i, j, k, iUz_) / rho;
@@ -2615,7 +2612,6 @@ void Particles<NStructReal, NStructInt>::convert_to_fluid_moments(
               arr(i, j, k, iPxy_) = arr(i, j, k, iPxy_) - rho * ux * uy;
               arr(i, j, k, iPxz_) = arr(i, j, k, iPxz_) - rho * ux * uz;
               arr(i, j, k, iPyz_) = arr(i, j, k, iPyz_) - rho * uy * uz;
-            }
           }
     }
   }

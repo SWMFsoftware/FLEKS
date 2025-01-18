@@ -896,7 +896,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
             for (int j = lo.y; j <= hi.y; ++j)
               for (int i = lo.x; i <= hi.x; ++i) {
                 const Real rho = plasmaArr(i, j, k, iRho_);
-                if (rho > 1e-99) {
+                if (rho > 0) {
                   uxArr(i, j, k) = plasmaArr(i, j, k, iUx_) / rho;
                   uyArr(i, j, k) = plasmaArr(i, j, k, iUy_) / rho;
                   uzArr(i, j, k) = plasmaArr(i, j, k, iUz_) / rho;
