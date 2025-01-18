@@ -228,7 +228,7 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
     multi[1][0] = xi[1] * eta[0];
     multi[1][1] = xi[1] * eta[1];
 
-    // coef[k][j][i]: This is so wired. But is may be faster since it matches
+    // coef[k][j][i]: This may be faster since it matches
     // the AMREX multifab data ordering.
     if (nDim == 2) {
       coef[0][0][0] = multi[1][1];
@@ -247,7 +247,7 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
     }
   }
 
-  const auto& arr = mf[mfi].array();
+  const auto& arr = mf.array(mfi);
   amrex::Real val = 0;
 
   amrex::Box box = amrex::Box(amrex::IntVect(0), amrex::IntVect(1));
