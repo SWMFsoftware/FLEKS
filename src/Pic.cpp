@@ -1344,9 +1344,11 @@ void Pic::update_U0_E0() {
       // Fill in the physical nodes
       ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
         const Real rho = arrMoments(i, j, k, iRho_);
+        if (rho > 0) {
           const Real invRho = 1. / rho;
           for (int iu = iUx_; iu <= iUz_; iu++)
             arrU(i, j, k, iu - iUx_) = arrMoments(i, j, k, iu) * invRho;
+        }
       });
 
       // Fill in ghost nodes

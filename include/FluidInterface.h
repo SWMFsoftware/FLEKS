@@ -547,7 +547,8 @@ public:
     amrex::Real uth = 0, p, rho;
     p = get_fluid_p(mfi, xyz, is, iLev);
     rho = get_fluid_mass_density(mfi, xyz, is, iLev);
-    uth = sqrt(p / rho);
+    if (rho > 0)
+      uth = sqrt(p / rho);
     return uth;
   }
 
