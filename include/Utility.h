@@ -77,86 +77,62 @@ inline amrex::Real l2_norm(amrex::Real* vec, int n) {
   return sqrt(sum);
 }
 
-inline void linear_interpolation_coef(amrex::RealVect& dx,
+inline void linear_interpolation_coef(const amrex::RealVect& dx,
                                       amrex::Real (&coef)[2][2][2]) {
+  amrex::Real interp_x[2] = { dx[0], 1 - dx[0] };
+  amrex::Real interp_y[2] = { dx[1], 1 - dx[1] };
+  amrex::Real interp_z[2] = { nDim > 2 ? dx[2] : 0, nDim > 2 ? 1 - dx[2] : 1 };
 
-  amrex::Real xi[2];
-  amrex::Real eta[2];
-  amrex::Real zeta[2];
-  xi[0] = dx[0];
-  xi[1] = 1 - xi[0];
+  amrex::Real xy[2][2] = {
+    { interp_x[0] * interp_y[0], interp_x[0] * interp_y[1] },
+    { interp_x[1] * interp_y[0], interp_x[1] * interp_y[1] }
+  };
 
-  eta[0] = dx[1];
-  eta[1] = 1 - eta[0];
-
-  zeta[0] = nDim > 2 ? dx[2] : 0;
-  zeta[1] = 1 - zeta[0];
-
-  amrex::Real multi[2][2];
-  multi[0][0] = xi[0] * eta[0];
-  multi[0][1] = xi[0] * eta[1];
-  multi[1][0] = xi[1] * eta[0];
-  multi[1][1] = xi[1] * eta[1];
-
-  coef[0][0][0] = multi[1][1] * zeta[1];
-  coef[0][0][1] = multi[1][1] * zeta[0];
-  coef[0][1][0] = multi[1][0] * zeta[1];
-  coef[0][1][1] = multi[1][0] * zeta[0];
-  coef[1][0][0] = multi[0][1] * zeta[1];
-  coef[1][0][1] = multi[0][1] * zeta[0];
-  coef[1][1][0] = multi[0][0] * zeta[1];
-  coef[1][1][1] = multi[0][0] * zeta[0];
+  coef[0][0][0] = xy[1][1] * interp_z[1];
+  coef[0][0][1] = xy[1][1] * interp_z[0];
+  coef[0][1][0] = xy[1][0] * interp_z[1];
+  coef[0][1][1] = xy[1][0] * interp_z[0];
+  coef[1][0][0] = xy[0][1] * interp_z[1];
+  coef[1][0][1] = xy[0][1] * interp_z[0];
+  coef[1][1][0] = xy[0][0] * interp_z[1];
+  coef[1][1][1] = xy[0][0] * interp_z[0];
 }
 
-inline void linear_interpolation_coef_finer(amrex::RealVect& dx,
+inline void linear_interpolation_coef_finer(const amrex::RealVect& dx,
                                             amrex::Real (&coef)[2][2][2]) {
-
-  amrex::Real xi[2];
-  amrex::Real eta[2];
-  amrex::Real zeta[2];
-  xi[0] = dx[0];
-  xi[1] = 1 - xi[0];
-
-  eta[0] = dx[1];
-  eta[1] = 1 - eta[0];
-
-  zeta[0] = nDim > 2 ? dx[2] : 0;
-  zeta[1] = 1 - zeta[0];
+  amrex::Real interp_x[2] = { dx[0], 1 - dx[0] };
+  amrex::Real interp_y[2] = { dx[1], 1 - dx[1] };
+  amrex::Real interp_z[2] = { nDim > 2 ? dx[2] : 0, nDim > 2 ? 1 - dx[2] : 1 };
 
   // Shape fix
-  for (int ii = 0; ii <= 1; ii++) {
-    xi[ii] = 2.0 * ((2.0 * xi[ii]) - 1.0);
-    if (xi[ii] < 0.0) {
-      xi[ii] = 0.0;
-    }
+  for (int i = 0; i <= 1; i++) {
+    interp_x[i] = 2.0 * ((2.0 * interp_x[i]) - 1.0);
+    if (interp_x[i] < 0.0)
+      interp_x[i] = 0.0;
 
-    eta[ii] = 2.0 * ((2.0 * eta[ii]) - 1.0);
-    if (eta[ii] < 0.0) {
-      eta[ii] = 0.0;
-    }
+    interp_y[i] = 2.0 * ((2.0 * interp_y[i]) - 1.0);
+    if (interp_y[i] < 0.0)
+      interp_y[i] = 0.0;
 
-    zeta[ii] =
-        nDim > 2 ? 2.0 * ((2.0 * zeta[ii]) - 1.0) : ((2.0 * zeta[ii]) - 1.0);
-    if (zeta[ii] < 0.0) {
-      zeta[ii] = 0.0;
-    }
+    interp_z[i] =
+        nDim > 2 ? 2.0 * ((2.0 * interp_z[i]) - 1.0) : ((2.0 * interp_z[i]) - 1.0);
+    if (interp_z[i] < 0.0)
+      interp_z[i] = 0.0;
   }
-  //
 
-  amrex::Real multi[2][2];
-  multi[0][0] = xi[0] * eta[0];
-  multi[0][1] = xi[0] * eta[1];
-  multi[1][0] = xi[1] * eta[0];
-  multi[1][1] = xi[1] * eta[1];
+  amrex::Real xy[2][2] = {
+    { interp_x[0] * interp_y[0], interp_x[0] * interp_y[1] },
+    { interp_x[1] * interp_y[0], interp_x[1] * interp_y[1] }
+  };
 
-  coef[0][0][0] = multi[1][1] * zeta[1];
-  coef[0][0][1] = multi[1][1] * zeta[0];
-  coef[0][1][0] = multi[1][0] * zeta[1];
-  coef[0][1][1] = multi[1][0] * zeta[0];
-  coef[1][0][0] = multi[0][1] * zeta[1];
-  coef[1][0][1] = multi[0][1] * zeta[0];
-  coef[1][1][0] = multi[0][0] * zeta[1];
-  coef[1][1][1] = multi[0][0] * zeta[0];
+  coef[0][0][0] = xy[1][1] * interp_z[1];
+  coef[0][0][1] = xy[1][1] * interp_z[0];
+  coef[0][1][0] = xy[1][0] * interp_z[1];
+  coef[0][1][1] = xy[1][0] * interp_z[0];
+  coef[1][0][0] = xy[0][1] * interp_z[1];
+  coef[1][0][1] = xy[0][1] * interp_z[0];
+  coef[1][1][0] = xy[0][0] * interp_z[1];
+  coef[1][1][1] = xy[0][0] * interp_z[0];
 }
 
 template <typename T>
