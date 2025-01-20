@@ -438,70 +438,51 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
       if (!doNetChargeOnly) {
         Real weights_IIID[2][2][2][nDim3];
         //----- Mass matrix calculation begin--------------
-        // Precompute repeated values
         const Real xi0 = dShift[ix_] * dx[iLev][ix_];
         const Real eta0 = dShift[iy_] * dx[iLev][iy_];
         const Real zeta0 = nDim > 2 ? dShift[iz_] * dx[iLev][iz_] : 0;
         const Real xi1 = dx[iLev][ix_] - xi0;
         const Real eta1 = dx[iLev][iy_] - eta0;
         const Real zeta1 = nDim > 2 ? dx[iLev][iz_] - zeta0 : 1;
-        const Real invVolLev = invVol[iLev];
 
-        const Real xi0_eta0 = xi0 * eta0;
-        const Real xi0_eta1 = xi0 * eta1;
-        const Real xi1_eta0 = xi1 * eta0;
-        const Real xi1_eta1 = xi1 * eta1;
+        weights_IIID[1][1][1][ix_] = eta0 * zeta0 * invVol[iLev];
+        weights_IIID[1][1][1][iy_] = xi0 * zeta0 * invVol[iLev];
+        weights_IIID[1][1][1][iz_] = xi0 * eta0 * invVol[iLev];
 
-        const Real eta0_zeta0 = eta0 * zeta0;
-        const Real eta0_zeta1 = eta0 * zeta1;
-        const Real eta1_zeta0 = eta1 * zeta0;
-        const Real eta1_zeta1 = eta1 * zeta1;
+        // xi0*eta0*zeta1*invVol[iLev];
+        weights_IIID[1][1][0][ix_] = eta0 * zeta1 * invVol[iLev];
+        weights_IIID[1][1][0][iy_] = xi0 * zeta1 * invVol[iLev];
+        weights_IIID[1][1][0][iz_] = -xi0 * eta0 * invVol[iLev];
 
-        const Real xi0_zeta0 = xi0 * zeta0;
-        const Real xi0_zeta1 = xi0 * zeta1;
-        const Real xi1_zeta0 = xi1 * zeta0;
-        const Real xi1_zeta1 = xi1 * zeta1;
+        // xi0*eta1*zeta0*invVol[iLev];
+        weights_IIID[1][0][1][ix_] = eta1 * zeta0 * invVol[iLev];
+        weights_IIID[1][0][1][iy_] = -xi0 * zeta0 * invVol[iLev];
+        weights_IIID[1][0][1][iz_] = xi0 * eta1 * invVol[iLev];
 
-        // xi0 * eta0 * zeta0 * invVol[iLev];
-        weights_IIID[1][1][1][ix_] = eta0_zeta0 * invVolLev;
-        weights_IIID[1][1][1][iy_] = xi0_zeta0 * invVolLev;
-        weights_IIID[1][1][1][iz_] = xi0_eta0 * invVolLev;
+        // xi0*eta1*zeta1*invVol[iLev];
+        weights_IIID[1][0][0][ix_] = eta1 * zeta1 * invVol[iLev];
+        weights_IIID[1][0][0][iy_] = -xi0 * zeta1 * invVol[iLev];
+        weights_IIID[1][0][0][iz_] = -xi0 * eta1 * invVol[iLev];
 
-        // xi0 * eta0 * zeta1 * invVol[iLev];
-        weights_IIID[1][1][0][ix_] = eta0_zeta1 * invVolLev;
-        weights_IIID[1][1][0][iy_] = xi0_zeta1 * invVolLev;
-        weights_IIID[1][1][0][iz_] = -xi0_eta0 * invVolLev;
+        // xi1*eta0*zeta0*invVol[iLev];
+        weights_IIID[0][1][1][ix_] = -eta0 * zeta0 * invVol[iLev];
+        weights_IIID[0][1][1][iy_] = xi1 * zeta0 * invVol[iLev];
+        weights_IIID[0][1][1][iz_] = xi1 * eta0 * invVol[iLev];
 
-        // xi0 * eta1 * zeta0 * invVol[iLev];
-        weights_IIID[1][0][1][ix_] = eta1_zeta0 * invVolLev;
-        weights_IIID[1][0][1][iy_] = -xi0_zeta0 * invVolLev;
-        weights_IIID[1][0][1][iz_] = xi0_eta1 * invVolLev;
+        // xi1*eta0*zeta1*invVol[iLev];
+        weights_IIID[0][1][0][ix_] = -eta0 * zeta1 * invVol[iLev];
+        weights_IIID[0][1][0][iy_] = xi1 * zeta1 * invVol[iLev];
+        weights_IIID[0][1][0][iz_] = -xi1 * eta0 * invVol[iLev];
 
-        // xi0 * eta1 * zeta1 * invVol[iLev];
-        weights_IIID[1][0][0][ix_] = eta1_zeta1 * invVolLev;
-        weights_IIID[1][0][0][iy_] = -xi0_zeta1 * invVolLev;
-        weights_IIID[1][0][0][iz_] = -xi0_eta1 * invVolLev;
+        // xi1*eta1*zeta0*invVol[iLev];
+        weights_IIID[0][0][1][ix_] = -eta1 * zeta0 * invVol[iLev];
+        weights_IIID[0][0][1][iy_] = -xi1 * zeta0 * invVol[iLev];
+        weights_IIID[0][0][1][iz_] = xi1 * eta1 * invVol[iLev];
 
-        // xi1 * eta0 * zeta0 * invVol[iLev];
-        weights_IIID[0][1][1][ix_] = -eta0_zeta0 * invVolLev;
-        weights_IIID[0][1][1][iy_] = xi1_zeta0 * invVolLev;
-        weights_IIID[0][1][1][iz_] = xi1_eta0 * invVolLev;
-
-        // xi1 * eta0 * zeta1 * invVol[iLev];
-        weights_IIID[0][1][0][ix_] = -eta0_zeta1 * invVolLev;
-        weights_IIID[0][1][0][iy_] = xi1_zeta1 * invVolLev;
-        weights_IIID[0][1][0][iz_] = -xi1_eta0 * invVolLev;
-
-        // xi1 * eta1 * zeta0 * invVol[iLev];
-        weights_IIID[0][0][1][ix_] = -eta1_zeta0 * invVolLev;
-        weights_IIID[0][0][1][iy_] = -xi1_zeta0 * invVolLev;
-        weights_IIID[0][0][1][iz_] = xi1_eta1 * invVolLev;
-
-        // xi1 * eta1 * zeta1 * invVol[iLev];
-        weights_IIID[0][0][0][ix_] = -eta1_zeta1 * invVolLev;
-        weights_IIID[0][0][0][iy_] = -xi1_zeta1 * invVolLev;
-        weights_IIID[0][0][0][iz_] = xi1_eta1 * invVolLev;
-        //----- Mass matrix calculation end--------------
+        // xi1*eta1*zeta1*invVol[iLev];
+        weights_IIID[0][0][0][ix_] = -eta1 * zeta1 * invVol[iLev];
+        weights_IIID[0][0][0][iy_] = -xi1 * zeta1 * invVol[iLev];
+        weights_IIID[0][0][0][iz_] = -xi1 * eta1 * invVol[iLev];
 
         const int iMin = loIdx[ix_];
         const int jMin = loIdx[iy_];
@@ -922,7 +903,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     MultiFab& u0MF, Real dt, int iLev, bool solveInCoMov) {
   timing_func("Pts::calc_mass_matrix");
 
-  const Real qdto2mc = charge / mass * 0.5 * dt;
+  Real qdto2mc = charge / mass * 0.5 * dt;
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
@@ -940,12 +921,13 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       if (p.id() < 0)
         continue;
 
+      // Print()<<"p = "<<p<<std::endl;
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
       const Real wp = p.rdata(iwp_);
       const Real qp = p.rdata(iqp_);
 
-      //-----calculate interpolation coef begin-------------
+      //-----calculate interpolate coef begin-------------
       IntVect loIdx;
       RealVect dShift;
 
@@ -978,26 +960,20 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       const Real Omz = qdto2mc * bp[iz_];
 
       // end interpolation
-      const Real Omx2 = Omx * Omx;
-      const Real Omy2 = Omy * Omy;
-      const Real Omz2 = Omz * Omz;
-      const Real OmxOmy = Omx * Omy;
-      const Real OmxOmz = Omx * Omz;
-      const Real OmyOmz = Omy * Omz;
-      const Real omsq = Omx2 + Omy2 + Omz2;
+      const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
       const Real denom = 1.0 / (1.0 + omsq);
 
       const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
       Real alpha[9];
-      alpha[0] = (1 + Omx2) * c0;
-      alpha[1] = (Omz + OmxOmy) * c0;
-      alpha[2] = (-Omy + OmxOmz) * c0;
-      alpha[3] = (-Omz + OmxOmy) * c0;
-      alpha[4] = (1 + Omy2) * c0;
-      alpha[5] = (Omx + OmyOmz) * c0;
-      alpha[6] = (Omy + OmxOmz) * c0;
-      alpha[7] = (-Omx + OmyOmz) * c0;
-      alpha[8] = (1 + Omz2) * c0;
+      alpha[0] = (1 + Omx * Omx) * c0;
+      alpha[1] = (Omz + Omx * Omy) * c0;
+      alpha[2] = (-Omy + Omx * Omz) * c0;
+      alpha[3] = (-Omz + Omx * Omy) * c0;
+      alpha[4] = (1 + Omy * Omy) * c0;
+      alpha[5] = (Omx + Omy * Omz) * c0;
+      alpha[6] = (Omy + Omx * Omz) * c0;
+      alpha[7] = (-Omx + Omy * Omz) * c0;
+      alpha[8] = (1 + Omz * Omz) * c0;
 
       {
         // jHat
@@ -1209,26 +1185,20 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       const Real Omz = qdto2mc * bp[iz_];
 
       // end interpolation
-      const Real Omx2 = Omx * Omx;
-      const Real Omy2 = Omy * Omy;
-      const Real Omz2 = Omz * Omz;
-      const Real OmxOmy = Omx * Omy;
-      const Real OmxOmz = Omx * Omz;
-      const Real OmyOmz = Omy * Omz;
-      const Real omsq = Omx2 + Omy2 + Omz2;
+      const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
       const Real denom = 1.0 / (1.0 + omsq);
 
       const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
       Real alpha[9];
-      alpha[0] = (1 + Omx2) * c0;
-      alpha[1] = (Omz + OmxOmy) * c0;
-      alpha[2] = (-Omy + OmxOmz) * c0;
-      alpha[3] = (-Omz + OmxOmy) * c0;
-      alpha[4] = (1 + Omy2) * c0;
-      alpha[5] = (Omx + OmyOmz) * c0;
-      alpha[6] = (Omy + OmxOmz) * c0;
-      alpha[7] = (-Omx + OmyOmz) * c0;
-      alpha[8] = (1 + Omz2) * c0;
+      alpha[0] = (1 + Omx * Omx) * c0;
+      alpha[1] = (Omz + Omx * Omy) * c0;
+      alpha[2] = (-Omy + Omx * Omz) * c0;
+      alpha[3] = (-Omz + Omx * Omy) * c0;
+      alpha[4] = (1 + Omy * Omy) * c0;
+      alpha[5] = (Omx + Omy * Omz) * c0;
+      alpha[6] = (Omy + Omx * Omz) * c0;
+      alpha[7] = (-Omx + Omy * Omz) * c0;
+      alpha[8] = (1 + Omz * Omz) * c0;
 
       // jHat
       Real currents[3];
@@ -1425,26 +1395,20 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
           const Real Omz = qdto2mc * bp[iz_];
 
           // end interpolation
-          const Real Omx2 = Omx * Omx;
-          const Real Omy2 = Omy * Omy;
-          const Real Omz2 = Omz * Omz;
-          const Real OmxOmy = Omx * Omy;
-          const Real OmxOmz = Omx * Omz;
-          const Real OmyOmz = Omy * Omz;
-          const Real omsq = Omx2 + Omy2 + Omz2;
+          const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
           const Real denom = 1.0 / (1.0 + omsq);
 
           const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
           Real alpha[9];
-          alpha[0] = (1 + Omx2) * c0;
-          alpha[1] = (Omz + OmxOmy) * c0;
-          alpha[2] = (-Omy + OmxOmz) * c0;
-          alpha[3] = (-Omz + OmxOmy) * c0;
-          alpha[4] = (1 + Omy2) * c0;
-          alpha[5] = (Omx + OmyOmz) * c0;
-          alpha[6] = (Omy + OmxOmz) * c0;
-          alpha[7] = (-Omx + OmyOmz) * c0;
-          alpha[8] = (1 + Omz2) * c0;
+          alpha[0] = (1 + Omx * Omx) * c0;
+          alpha[1] = (Omz + Omx * Omy) * c0;
+          alpha[2] = (-Omy + Omx * Omz) * c0;
+          alpha[3] = (-Omz + Omx * Omy) * c0;
+          alpha[4] = (1 + Omy * Omy) * c0;
+          alpha[5] = (Omx + Omy * Omz) * c0;
+          alpha[6] = (Omy + Omx * Omz) * c0;
+          alpha[7] = (-Omx + Omy * Omz) * c0;
+          alpha[8] = (1 + Omz * Omz) * c0;
 
           {
             // jHat
@@ -1583,26 +1547,20 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
           const Real Omz = qdto2mc * bp[iz_];
 
           // end interpolation
-          const Real Omx2 = Omx * Omx;
-          const Real Omy2 = Omy * Omy;
-          const Real Omz2 = Omz * Omz;
-          const Real OmxOmy = Omx * Omy;
-          const Real OmxOmz = Omx * Omz;
-          const Real OmyOmz = Omy * Omz;
-          const Real omsq = Omx2 + Omy2 + Omz2;
+          const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
           const Real denom = 1.0 / (1.0 + omsq);
 
           const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
           Real alpha[9];
-          alpha[0] = (1 + Omx2) * c0;
-          alpha[1] = (Omz + OmxOmy) * c0;
-          alpha[2] = (-Omy + OmxOmz) * c0;
-          alpha[3] = (-Omz + OmxOmy) * c0;
-          alpha[4] = (1 + Omy2) * c0;
-          alpha[5] = (Omx + OmyOmz) * c0;
-          alpha[6] = (Omy + OmxOmz) * c0;
-          alpha[7] = (-Omx + OmyOmz) * c0;
-          alpha[8] = (1 + Omz2) * c0;
+          alpha[0] = (1 + Omx * Omx) * c0;
+          alpha[1] = (Omz + Omx * Omy) * c0;
+          alpha[2] = (-Omy + Omx * Omz) * c0;
+          alpha[3] = (-Omz + Omx * Omy) * c0;
+          alpha[4] = (1 + Omy * Omy) * c0;
+          alpha[5] = (Omx + Omy * Omz) * c0;
+          alpha[6] = (Omy + Omx * Omz) * c0;
+          alpha[7] = (-Omx + Omy * Omz) * c0;
+          alpha[8] = (1 + Omz * Omz) * c0;
 
           {
             // jHat
@@ -1790,26 +1748,20 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
           const Real Omz = qdto2mc * bp[iz_];
 
           // end interpolation
-          const Real Omx2 = Omx * Omx;
-          const Real Omy2 = Omy * Omy;
-          const Real Omz2 = Omz * Omz;
-          const Real OmxOmy = Omx * Omy;
-          const Real OmxOmz = Omx * Omz;
-          const Real OmyOmz = Omy * Omz;
-          const Real omsq = Omx2 + Omy2 + Omz2;
+          const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
           const Real denom = 1.0 / (1.0 + omsq);
 
           const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
           Real alpha[9];
-          alpha[0] = (1 + Omx2) * c0;
-          alpha[1] = (Omz + OmxOmy) * c0;
-          alpha[2] = (-Omy + OmxOmz) * c0;
-          alpha[3] = (-Omz + OmxOmy) * c0;
-          alpha[4] = (1 + Omy2) * c0;
-          alpha[5] = (Omx + OmyOmz) * c0;
-          alpha[6] = (Omy + OmxOmz) * c0;
-          alpha[7] = (-Omx + OmyOmz) * c0;
-          alpha[8] = (1 + Omz2) * c0;
+          alpha[0] = (1 + Omx * Omx) * c0;
+          alpha[1] = (Omz + Omx * Omy) * c0;
+          alpha[2] = (-Omy + Omx * Omz) * c0;
+          alpha[3] = (-Omz + Omx * Omy) * c0;
+          alpha[4] = (1 + Omy * Omy) * c0;
+          alpha[5] = (Omx + Omy * Omz) * c0;
+          alpha[6] = (Omy + Omx * Omz) * c0;
+          alpha[7] = (-Omx + Omy * Omz) * c0;
+          alpha[8] = (1 + Omz * Omz) * c0;
 
           {
             // jHat
@@ -1997,26 +1949,20 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
           const Real Omz = qdto2mc * bp[iz_];
 
           // end interpolation
-          const Real Omx2 = Omx * Omx;
-          const Real Omy2 = Omy * Omy;
-          const Real Omz2 = Omz * Omz;
-          const Real OmxOmy = Omx * Omy;
-          const Real OmxOmz = Omx * Omz;
-          const Real OmyOmz = Omy * Omz;
-          const Real omsq = Omx2 + Omy2 + Omz2;
+          const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
           const Real denom = 1.0 / (1.0 + omsq);
 
           const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
           Real alpha[9];
-          alpha[0] = (1 + Omx2) * c0;
-          alpha[1] = (Omz + OmxOmy) * c0;
-          alpha[2] = (-Omy + OmxOmz) * c0;
-          alpha[3] = (-Omz + OmxOmy) * c0;
-          alpha[4] = (1 + Omy2) * c0;
-          alpha[5] = (Omx + OmyOmz) * c0;
-          alpha[6] = (Omy + OmxOmz) * c0;
-          alpha[7] = (-Omx + OmyOmz) * c0;
-          alpha[8] = (1 + Omz2) * c0;
+          alpha[0] = (1 + Omx * Omx) * c0;
+          alpha[1] = (Omz + Omx * Omy) * c0;
+          alpha[2] = (-Omy + Omx * Omz) * c0;
+          alpha[3] = (-Omz + Omx * Omy) * c0;
+          alpha[4] = (1 + Omy * Omy) * c0;
+          alpha[5] = (Omx + Omy * Omz) * c0;
+          alpha[6] = (Omy + Omx * Omz) * c0;
+          alpha[7] = (-Omx + Omy * Omz) * c0;
+          alpha[8] = (1 + Omz * Omz) * c0;
 
           {
             // jHat
@@ -2316,26 +2262,20 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new(
       const Real Omz = qdto2mc * bp[iz_];
 
       // end interpolation
-      const Real Omx2 = Omx * Omx;
-      const Real Omy2 = Omy * Omy;
-      const Real Omz2 = Omz * Omz;
-      const Real OmxOmy = Omx * Omy;
-      const Real OmxOmz = Omx * Omz;
-      const Real OmyOmz = Omy * Omz;
-      const Real omsq = Omx2 + Omy2 + Omz2;
+      const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
       const Real denom = 1.0 / (1.0 + omsq);
 
       const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
       Real alpha[9];
-      alpha[0] = (1 + Omx2) * c0;
-      alpha[1] = (Omz + OmxOmy) * c0;
-      alpha[2] = (-Omy + OmxOmz) * c0;
-      alpha[3] = (-Omz + OmxOmy) * c0;
-      alpha[4] = (1 + Omy2) * c0;
-      alpha[5] = (Omx + OmyOmz) * c0;
-      alpha[6] = (Omy + OmxOmz) * c0;
-      alpha[7] = (-Omx + OmyOmz) * c0;
-      alpha[8] = (1 + Omz2) * c0;
+      alpha[0] = (1 + Omx * Omx) * c0;
+      alpha[1] = (Omz + Omx * Omy) * c0;
+      alpha[2] = (-Omy + Omx * Omz) * c0;
+      alpha[3] = (-Omz + Omx * Omy) * c0;
+      alpha[4] = (1 + Omy * Omy) * c0;
+      alpha[5] = (Omx + Omy * Omz) * c0;
+      alpha[6] = (Omy + Omx * Omz) * c0;
+      alpha[7] = (-Omx + Omy * Omz) * c0;
+      alpha[8] = (1 + Omz * Omz) * c0;
 
       {
         // jHat
