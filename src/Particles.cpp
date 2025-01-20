@@ -921,13 +921,12 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       if (p.id() < 0)
         continue;
 
-      // Print()<<"p = "<<p<<std::endl;
       const Real up = p.rdata(iup_);
       const Real vp = p.rdata(ivp_);
       const Real wp = p.rdata(iwp_);
       const Real qp = p.rdata(iqp_);
 
-      //-----calculate interpolate coef begin-------------
+      //-----calculate interpolation coef begin-------------
       IntVect loIdx;
       RealVect dShift;
 
@@ -960,20 +959,27 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       const Real Omz = qdto2mc * bp[iz_];
 
       // end interpolation
-      const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
+      const Real Omx2 = Omx * Omx;
+      const Real Omy2 = Omy * Omy;
+      const Real Omz2 = Omz * Omz;
+      const Real OmxOmy = Omx * Omy;
+      const Real OmxOmz = Omx * Omz;
+      const Real OmyOmz = Omy * Omz;
+      const Real omsq = Omx2 + Omy2 + Omz2;
       const Real denom = 1.0 / (1.0 + omsq);
 
       const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
+
       Real alpha[9];
-      alpha[0] = (1 + Omx * Omx) * c0;
-      alpha[1] = (Omz + Omx * Omy) * c0;
-      alpha[2] = (-Omy + Omx * Omz) * c0;
-      alpha[3] = (-Omz + Omx * Omy) * c0;
-      alpha[4] = (1 + Omy * Omy) * c0;
-      alpha[5] = (Omx + Omy * Omz) * c0;
-      alpha[6] = (Omy + Omx * Omz) * c0;
-      alpha[7] = (-Omx + Omy * Omz) * c0;
-      alpha[8] = (1 + Omz * Omz) * c0;
+      alpha[0] = (1 + Omx2) * c0;
+      alpha[1] = (Omz + OmxOmy) * c0;
+      alpha[2] = (-Omy + OmxOmz) * c0;
+      alpha[3] = (-Omz + OmxOmy) * c0;
+      alpha[4] = (1 + Omy2) * c0;
+      alpha[5] = (Omx + OmyOmz) * c0;
+      alpha[6] = (Omy + OmxOmz) * c0;
+      alpha[7] = (-Omx + OmyOmz) * c0;
+      alpha[8] = (1 + Omz2) * c0;
 
       {
         // jHat
@@ -1185,20 +1191,27 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       const Real Omz = qdto2mc * bp[iz_];
 
       // end interpolation
-      const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
+      const Real Omx2 = Omx * Omx;
+      const Real Omy2 = Omy * Omy;
+      const Real Omz2 = Omz * Omz;
+      const Real OmxOmy = Omx * Omy;
+      const Real OmxOmz = Omx * Omz;
+      const Real OmyOmz = Omy * Omz;
+      const Real omsq = Omx2 + Omy2 + Omz2;
       const Real denom = 1.0 / (1.0 + omsq);
 
       const Real c0 = denom * invVol[iLev] * qp * qdto2mc;
+
       Real alpha[9];
-      alpha[0] = (1 + Omx * Omx) * c0;
-      alpha[1] = (Omz + Omx * Omy) * c0;
-      alpha[2] = (-Omy + Omx * Omz) * c0;
-      alpha[3] = (-Omz + Omx * Omy) * c0;
-      alpha[4] = (1 + Omy * Omy) * c0;
-      alpha[5] = (Omx + Omy * Omz) * c0;
-      alpha[6] = (Omy + Omx * Omz) * c0;
-      alpha[7] = (-Omx + Omy * Omz) * c0;
-      alpha[8] = (1 + Omz * Omz) * c0;
+      alpha[0] = (1 + Omx2) * c0;
+      alpha[1] = (Omz + OmxOmy) * c0;
+      alpha[2] = (-Omy + OmxOmz) * c0;
+      alpha[3] = (-Omz + OmxOmy) * c0;
+      alpha[4] = (1 + Omy2) * c0;
+      alpha[5] = (Omx + OmyOmz) * c0;
+      alpha[6] = (Omy + OmxOmz) * c0;
+      alpha[7] = (-Omx + OmyOmz) * c0;
+      alpha[8] = (1 + Omz2) * c0;
 
       // jHat
       Real currents[3];
