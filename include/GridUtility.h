@@ -210,56 +210,33 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
   amrex::RealVect dx;
   find_node_index(xyz, gm.ProbLo(), gm.InvCellSize(), loIdx, dx);
 
-  amrex::Real coef[2][2][2];
-  {
-    amrex::Real xi[2];
-    amrex::Real eta[2];
-    amrex::Real zeta[2];
-    xi[0] = dx[0];
-    eta[0] = dx[1];
-    zeta[0] = nDim > 2 ? dx[2] : 1;
-    xi[1] = 1 - xi[0];
-    eta[1] = 1 - eta[0];
-    zeta[1] = nDim > 2 ? 1 - zeta[0] : 1;
-
-    amrex::Real multi[2][2];
-    multi[0][0] = xi[0] * eta[0];
-    multi[0][1] = xi[0] * eta[1];
-    multi[1][0] = xi[1] * eta[0];
-    multi[1][1] = xi[1] * eta[1];
-
-    // coef[k][j][i]: This may be faster since it matches
-    // the AMREX multifab data ordering.
-    if (nDim == 2) {
-      coef[0][0][0] = multi[1][1];
-      coef[0][0][1] = multi[0][1];
-      coef[0][1][0] = multi[1][0];
-      coef[0][1][1] = multi[0][0];
-    } else {
-      coef[0][0][0] = multi[1][1] * zeta[1];
-      coef[1][0][0] = multi[1][1] * zeta[0];
-      coef[0][1][0] = multi[1][0] * zeta[1];
-      coef[1][1][0] = multi[1][0] * zeta[0];
-      coef[0][0][1] = multi[0][1] * zeta[1];
-      coef[1][0][1] = multi[0][1] * zeta[0];
-      coef[0][1][1] = multi[0][0] * zeta[1];
-      coef[1][1][1] = multi[0][0] * zeta[0];
-    }
-  }
+  amrex::Real interp_x[2] = { dx[0], 1 - dx[0] };
+  amrex::Real interp_y[2] = { dx[1], 1 - dx[1] };
+  amrex::Real interp_z[2] = { nDim > 2 ? dx[2] : 1, nDim > 2 ? 1 - dx[2] : 1 };
 
   const auto& arr = mf.array(mfi);
-  amrex::Real val = 0;
 
-  amrex::Box box = amrex::Box(amrex::IntVect(0), amrex::IntVect(1));
+  amrex::Real c000 = arr(loIdx[ix_], loIdx[iy_], nDim > 2 ? loIdx[iz_] : 0, iVar);
+  amrex::Real c100 = arr(loIdx[ix_] + 1, loIdx[iy_], nDim > 2 ? loIdx[iz_] : 0, iVar);
+  amrex::Real c010 = arr(loIdx[ix_], loIdx[iy_] + 1, nDim > 2 ? loIdx[iz_] : 0, iVar);
+  amrex::Real c110 = arr(loIdx[ix_] + 1, loIdx[iy_] + 1, nDim > 2 ? loIdx[iz_] : 0, iVar);
+  amrex::Real c001 = nDim > 2 ? arr(loIdx[ix_], loIdx[iy_], loIdx[iz_] + 1, iVar) : 0;
+  amrex::Real c101 = nDim > 2 ? arr(loIdx[ix_] + 1, loIdx[iy_], loIdx[iz_] + 1, iVar) : 0;
+  amrex::Real c011 = nDim > 2 ? arr(loIdx[ix_], loIdx[iy_] + 1, loIdx[iz_] + 1, iVar) : 0;
+  amrex::Real c111 = nDim > 2 ? arr(loIdx[ix_] + 1, loIdx[iy_] + 1, loIdx[iz_] + 1, iVar) : 0;
 
-  amrex::ParallelFor(box, [&] AMREX_GPU_DEVICE (int ii, int jj, int kk) noexcept {
-    int iIdx = loIdx[ix_] + ii;
-    int jIdx = loIdx[iy_] + jj;
-    int kIdx = nDim > 2 ? loIdx[iz_] + kk : 0;
-    val += arr(iIdx, jIdx, kIdx, iVar) * coef[kk][jj][ii];
-  });
+  // Interpolate along x-axis
+  amrex::Real c00 = c000 * interp_x[1] + c100 * interp_x[0];
+  amrex::Real c01 = c010 * interp_x[1] + c110 * interp_x[0];
+  amrex::Real c10 = c001 * interp_x[1] + c101 * interp_x[0];
+  amrex::Real c11 = c011 * interp_x[1] + c111 * interp_x[0];
 
-  return val;
+  // Interpolate along y-axis
+  amrex::Real c0 = c00 * interp_y[1] + c01 * interp_y[0];
+  amrex::Real c1 = c10 * interp_y[1] + c11 * interp_y[0];
+
+  // Interpolate along z-axis
+  return c0 * interp_z[1] + c1 * interp_z[0];
 }
 
 inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
