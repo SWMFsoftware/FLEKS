@@ -273,45 +273,30 @@ inline void add_to_mf(const amrex::Real& val, amrex::MultiFab& mf,
     dx[i] = dx[i] - loIdx[i];
   }
 
+  amrex::Real interp_x[2] = { dx[0], 1 - dx[0] };
+  amrex::Real interp_y[2] = { dx[1], 1 - dx[1] };
+  amrex::Real interp_z[2] = { dx[2], 1 - dx[2] };
+
+  const auto& arr = mf.array(mfi);
+  // coef[k][j][i]
   amrex::Real coef[2][2][2];
-  {
-    amrex::Real xi[2];
-    amrex::Real eta[2];
-    amrex::Real zeta[2];
-    xi[0] = dx[0];
-    eta[0] = dx[1];
-    zeta[0] = dx[2];
-    xi[1] = 1 - xi[0];
-    eta[1] = 1 - eta[0];
-    zeta[1] = 1 - zeta[0];
+  coef[0][0][0] = interp_x[1] * interp_y[1] * interp_z[1] * val;
+  coef[0][0][1] = interp_x[0] * interp_y[1] * interp_z[1] * val;
+  coef[0][1][0] = interp_x[1] * interp_y[0] * interp_z[1] * val;
+  coef[0][1][1] = interp_x[0] * interp_y[0] * interp_z[1] * val;
+  coef[1][0][0] = interp_x[1] * interp_y[1] * interp_z[0] * val;
+  coef[1][0][1] = interp_x[0] * interp_y[1] * interp_z[0] * val;
+  coef[1][1][0] = interp_x[1] * interp_y[0] * interp_z[0] * val;
+  coef[1][1][1] = interp_x[0] * interp_y[0] * interp_z[0] * val;
 
-    amrex::Real multi[2][2];
-    multi[0][0] = xi[0] * eta[0];
-    multi[0][1] = xi[0] * eta[1];
-    multi[1][0] = xi[1] * eta[0];
-    multi[1][1] = xi[1] * eta[1];
-
-    // coef[k][j][i]
-    coef[0][0][0] = multi[1][1] * zeta[1];
-    coef[1][0][0] = multi[1][1] * zeta[0];
-    coef[0][1][0] = multi[1][0] * zeta[1];
-    coef[1][1][0] = multi[1][0] * zeta[0];
-    coef[0][0][1] = multi[0][1] * zeta[1];
-    coef[1][0][1] = multi[0][1] * zeta[0];
-    coef[0][1][1] = multi[0][0] * zeta[1];
-    coef[1][1][1] = multi[0][0] * zeta[0];
-  }
-
-  const amrex::Array4<amrex::Real>& arr = mf[mfi].array();
-  for (int kk = 0; kk < 2; ++kk) {
-    const int kIdx = loIdx[iz_] + kk;
-    for (int jj = 0; jj < 2; ++jj) {
-      const int jIdx = loIdx[iy_] + jj;
-      for (int ii = 0; ii < 2; ++ii) {
-        arr(loIdx[ix_] + ii, jIdx, kIdx, iVar) += val * coef[kk][jj][ii];
-      }
-    }
-  }
+  arr(loIdx[ix_], loIdx[iy_], loIdx[iz_], iVar) += coef[0][0][0];
+  arr(loIdx[ix_] + 1, loIdx[iy_], loIdx[iz_], iVar) += coef[0][0][1];
+  arr(loIdx[ix_], loIdx[iy_] + 1, loIdx[iz_], iVar) += coef[0][1][0];
+  arr(loIdx[ix_] + 1, loIdx[iy_] + 1, loIdx[iz_], iVar) += coef[0][1][1];
+  arr(loIdx[ix_], loIdx[iy_], loIdx[iz_] + 1, iVar) += coef[1][0][0];
+  arr(loIdx[ix_] + 1, loIdx[iy_], loIdx[iz_] + 1, iVar) += coef[1][0][1];
+  arr(loIdx[ix_], loIdx[iy_] + 1, loIdx[iz_] + 1, iVar) += coef[1][1][0];
+  arr(loIdx[ix_] + 1, loIdx[iy_] + 1, loIdx[iz_] + 1, iVar) += coef[1][1][1];
 
   return;
 }
