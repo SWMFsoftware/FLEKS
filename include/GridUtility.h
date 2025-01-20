@@ -210,9 +210,9 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
   amrex::RealVect dx;
   find_node_index(xyz, gm.ProbLo(), gm.InvCellSize(), loIdx, dx);
 
-  amrex::Real interp_x[2] = { dx[0], 1 - dx[0] };
-  amrex::Real interp_y[2] = { dx[1], 1 - dx[1] };
-  amrex::Real interp_z[2] = { nDim > 2 ? dx[2] : 1, nDim > 2 ? 1 - dx[2] : 1 };
+  amrex::Real interpX[2] = { dx[0], 1 - dx[0] };
+  amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
+  amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 1, nDim > 2 ? 1 - dx[2] : 1 };
 
   const auto& arr = mf.array(mfi);
 
@@ -226,17 +226,17 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
   amrex::Real c111 = nDim > 2 ? arr(loIdx[ix_] + 1, loIdx[iy_] + 1, loIdx[iz_] + 1, iVar) : 0;
 
   // Interpolate along x-axis
-  amrex::Real c00 = c000 * interp_x[1] + c100 * interp_x[0];
-  amrex::Real c01 = c010 * interp_x[1] + c110 * interp_x[0];
-  amrex::Real c10 = c001 * interp_x[1] + c101 * interp_x[0];
-  amrex::Real c11 = c011 * interp_x[1] + c111 * interp_x[0];
+  amrex::Real c00 = c000 * interpX[1] + c100 * interpX[0];
+  amrex::Real c01 = c010 * interpX[1] + c110 * interpX[0];
+  amrex::Real c10 = c001 * interpX[1] + c101 * interpX[0];
+  amrex::Real c11 = c011 * interpX[1] + c111 * interpX[0];
 
   // Interpolate along y-axis
-  amrex::Real c0 = c00 * interp_y[1] + c01 * interp_y[0];
-  amrex::Real c1 = c10 * interp_y[1] + c11 * interp_y[0];
+  amrex::Real c0 = c00 * interpY[1] + c01 * interpY[0];
+  amrex::Real c1 = c10 * interpY[1] + c11 * interpY[0];
 
   // Interpolate along z-axis
-  return c0 * interp_z[1] + c1 * interp_z[0];
+  return c0 * interpZ[1] + c1 * interpZ[0];
 }
 
 inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
@@ -273,21 +273,21 @@ inline void add_to_mf(const amrex::Real& val, amrex::MultiFab& mf,
     dx[i] = dx[i] - loIdx[i];
   }
 
-  amrex::Real interp_x[2] = { dx[0], 1 - dx[0] };
-  amrex::Real interp_y[2] = { dx[1], 1 - dx[1] };
-  amrex::Real interp_z[2] = { dx[2], 1 - dx[2] };
+  amrex::Real interpX[2] = { dx[0], 1 - dx[0] };
+  amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
+  amrex::Real interpZ[2] = { dx[2], 1 - dx[2] };
 
   const auto& arr = mf.array(mfi);
   // coef[k][j][i]
   amrex::Real coef[2][2][2];
-  coef[0][0][0] = interp_x[1] * interp_y[1] * interp_z[1] * val;
-  coef[0][0][1] = interp_x[0] * interp_y[1] * interp_z[1] * val;
-  coef[0][1][0] = interp_x[1] * interp_y[0] * interp_z[1] * val;
-  coef[0][1][1] = interp_x[0] * interp_y[0] * interp_z[1] * val;
-  coef[1][0][0] = interp_x[1] * interp_y[1] * interp_z[0] * val;
-  coef[1][0][1] = interp_x[0] * interp_y[1] * interp_z[0] * val;
-  coef[1][1][0] = interp_x[1] * interp_y[0] * interp_z[0] * val;
-  coef[1][1][1] = interp_x[0] * interp_y[0] * interp_z[0] * val;
+  coef[0][0][0] = interpX[1] * interpY[1] * interpZ[1] * val;
+  coef[0][0][1] = interpX[0] * interpY[1] * interpZ[1] * val;
+  coef[0][1][0] = interpX[1] * interpY[0] * interpZ[1] * val;
+  coef[0][1][1] = interpX[0] * interpY[0] * interpZ[1] * val;
+  coef[1][0][0] = interpX[1] * interpY[1] * interpZ[0] * val;
+  coef[1][0][1] = interpX[0] * interpY[1] * interpZ[0] * val;
+  coef[1][1][0] = interpX[1] * interpY[0] * interpZ[0] * val;
+  coef[1][1][1] = interpX[0] * interpY[0] * interpZ[0] * val;
 
   arr(loIdx[ix_], loIdx[iy_], loIdx[iz_], iVar) += coef[0][0][0];
   arr(loIdx[ix_] + 1, loIdx[iy_], loIdx[iz_], iVar) += coef[0][0][1];
