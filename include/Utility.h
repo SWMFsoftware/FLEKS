@@ -79,60 +79,60 @@ inline amrex::Real l2_norm(amrex::Real* vec, int n) {
 
 inline void linear_interpolation_coef(const amrex::RealVect& dx,
                                       amrex::Real (&coef)[2][2][2]) {
-  amrex::Real interp_x[2] = { dx[0], 1 - dx[0] };
-  amrex::Real interp_y[2] = { dx[1], 1 - dx[1] };
-  amrex::Real interp_z[2] = { nDim > 2 ? dx[2] : 0, nDim > 2 ? 1 - dx[2] : 1 };
+  amrex::Real interpX[2] = { dx[0], 1 - dx[0] };
+  amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
+  amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 0, nDim > 2 ? 1 - dx[2] : 1 };
 
   amrex::Real xy[2][2] = {
-    { interp_x[0] * interp_y[0], interp_x[0] * interp_y[1] },
-    { interp_x[1] * interp_y[0], interp_x[1] * interp_y[1] }
+    { interpX[0] * interpY[0], interpX[0] * interpY[1] },
+    { interpX[1] * interpY[0], interpX[1] * interpY[1] }
   };
 
-  coef[0][0][0] = xy[1][1] * interp_z[1];
-  coef[0][0][1] = xy[1][1] * interp_z[0];
-  coef[0][1][0] = xy[1][0] * interp_z[1];
-  coef[0][1][1] = xy[1][0] * interp_z[0];
-  coef[1][0][0] = xy[0][1] * interp_z[1];
-  coef[1][0][1] = xy[0][1] * interp_z[0];
-  coef[1][1][0] = xy[0][0] * interp_z[1];
-  coef[1][1][1] = xy[0][0] * interp_z[0];
+  coef[0][0][0] = xy[1][1] * interpZ[1];
+  coef[0][0][1] = xy[1][1] * interpZ[0];
+  coef[0][1][0] = xy[1][0] * interpZ[1];
+  coef[0][1][1] = xy[1][0] * interpZ[0];
+  coef[1][0][0] = xy[0][1] * interpZ[1];
+  coef[1][0][1] = xy[0][1] * interpZ[0];
+  coef[1][1][0] = xy[0][0] * interpZ[1];
+  coef[1][1][1] = xy[0][0] * interpZ[0];
 }
 
 inline void linear_interpolation_coef_finer(const amrex::RealVect& dx,
                                             amrex::Real (&coef)[2][2][2]) {
-  amrex::Real interp_x[2] = { dx[0], 1 - dx[0] };
-  amrex::Real interp_y[2] = { dx[1], 1 - dx[1] };
-  amrex::Real interp_z[2] = { nDim > 2 ? dx[2] : 0, nDim > 2 ? 1 - dx[2] : 1 };
+  amrex::Real interpX[2] = { dx[0], 1 - dx[0] };
+  amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
+  amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 0, nDim > 2 ? 1 - dx[2] : 1 };
 
   // Shape fix
   for (int i = 0; i <= 1; i++) {
-    interp_x[i] = 2.0 * ((2.0 * interp_x[i]) - 1.0);
-    if (interp_x[i] < 0.0)
-      interp_x[i] = 0.0;
+    interpX[i] = 2.0 * ((2.0 * interpX[i]) - 1.0);
+    if (interpX[i] < 0.0)
+      interpX[i] = 0.0;
 
-    interp_y[i] = 2.0 * ((2.0 * interp_y[i]) - 1.0);
-    if (interp_y[i] < 0.0)
-      interp_y[i] = 0.0;
+    interpY[i] = 2.0 * ((2.0 * interpY[i]) - 1.0);
+    if (interpY[i] < 0.0)
+      interpY[i] = 0.0;
 
-    interp_z[i] =
-        nDim > 2 ? 2.0 * ((2.0 * interp_z[i]) - 1.0) : ((2.0 * interp_z[i]) - 1.0);
-    if (interp_z[i] < 0.0)
-      interp_z[i] = 0.0;
+    interpZ[i] =
+        nDim > 2 ? 2.0 * ((2.0 * interpZ[i]) - 1.0) : ((2.0 * interpZ[i]) - 1.0);
+    if (interpZ[i] < 0.0)
+      interpZ[i] = 0.0;
   }
 
   amrex::Real xy[2][2] = {
-    { interp_x[0] * interp_y[0], interp_x[0] * interp_y[1] },
-    { interp_x[1] * interp_y[0], interp_x[1] * interp_y[1] }
+    { interpX[0] * interpY[0], interpX[0] * interpY[1] },
+    { interpX[1] * interpY[0], interpX[1] * interpY[1] }
   };
 
-  coef[0][0][0] = xy[1][1] * interp_z[1];
-  coef[0][0][1] = xy[1][1] * interp_z[0];
-  coef[0][1][0] = xy[1][0] * interp_z[1];
-  coef[0][1][1] = xy[1][0] * interp_z[0];
-  coef[1][0][0] = xy[0][1] * interp_z[1];
-  coef[1][0][1] = xy[0][1] * interp_z[0];
-  coef[1][1][0] = xy[0][0] * interp_z[1];
-  coef[1][1][1] = xy[0][0] * interp_z[0];
+  coef[0][0][0] = xy[1][1] * interpZ[1];
+  coef[0][0][1] = xy[1][1] * interpZ[0];
+  coef[0][1][0] = xy[1][0] * interpZ[1];
+  coef[0][1][1] = xy[1][0] * interpZ[0];
+  coef[1][0][0] = xy[0][1] * interpZ[1];
+  coef[1][0][1] = xy[0][1] * interpZ[0];
+  coef[1][1][0] = xy[0][0] * interpZ[1];
+  coef[1][1][1] = xy[0][0] * interpZ[0];
 }
 
 template <typename T>
