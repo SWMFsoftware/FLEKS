@@ -49,7 +49,7 @@ void ParticleTracker::write_log(bool doForce, bool doCreateFile) {
        << tc->get_cycle() << ".log";
     logFile = ss.str();
     std::ofstream of(logFile.c_str());
-    of << "time nStep ";
+    of << "time nStep";
     for (int i = 0; i < nSpecies; ++i)
       of << " mass_" << i << " moment_x_" << i << " moment_y_" << i
          << " moment_z_" << i << " energy_" << i;
