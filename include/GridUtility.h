@@ -216,14 +216,22 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
 
   const auto& arr = mf.array(mfi);
 
-  amrex::Real c000 = arr(loIdx[ix_], loIdx[iy_], nDim > 2 ? loIdx[iz_] : 0, iVar);
-  amrex::Real c100 = arr(loIdx[ix_] + 1, loIdx[iy_], nDim > 2 ? loIdx[iz_] : 0, iVar);
-  amrex::Real c010 = arr(loIdx[ix_], loIdx[iy_] + 1, nDim > 2 ? loIdx[iz_] : 0, iVar);
-  amrex::Real c110 = arr(loIdx[ix_] + 1, loIdx[iy_] + 1, nDim > 2 ? loIdx[iz_] : 0, iVar);
-  amrex::Real c001 = nDim > 2 ? arr(loIdx[ix_], loIdx[iy_], loIdx[iz_] + 1, iVar) : 0;
-  amrex::Real c101 = nDim > 2 ? arr(loIdx[ix_] + 1, loIdx[iy_], loIdx[iz_] + 1, iVar) : 0;
-  amrex::Real c011 = nDim > 2 ? arr(loIdx[ix_], loIdx[iy_] + 1, loIdx[iz_] + 1, iVar) : 0;
-  amrex::Real c111 = nDim > 2 ? arr(loIdx[ix_] + 1, loIdx[iy_] + 1, loIdx[iz_] + 1, iVar) : 0;
+  amrex::Real c000 =
+      arr(loIdx[ix_], loIdx[iy_], nDim > 2 ? loIdx[iz_] : 0, iVar);
+  amrex::Real c100 =
+      arr(loIdx[ix_] + 1, loIdx[iy_], nDim > 2 ? loIdx[iz_] : 0, iVar);
+  amrex::Real c010 =
+      arr(loIdx[ix_], loIdx[iy_] + 1, nDim > 2 ? loIdx[iz_] : 0, iVar);
+  amrex::Real c110 =
+      arr(loIdx[ix_] + 1, loIdx[iy_] + 1, nDim > 2 ? loIdx[iz_] : 0, iVar);
+  amrex::Real c001 =
+      nDim > 2 ? arr(loIdx[ix_], loIdx[iy_], loIdx[iz_] + 1, iVar) : 0;
+  amrex::Real c101 =
+      nDim > 2 ? arr(loIdx[ix_] + 1, loIdx[iy_], loIdx[iz_] + 1, iVar) : 0;
+  amrex::Real c011 =
+      nDim > 2 ? arr(loIdx[ix_], loIdx[iy_] + 1, loIdx[iz_] + 1, iVar) : 0;
+  amrex::Real c111 =
+      nDim > 2 ? arr(loIdx[ix_] + 1, loIdx[iy_] + 1, loIdx[iz_] + 1, iVar) : 0;
 
   // Interpolate along x-axis
   amrex::Real c00 = c000 * interpX[1] + c100 * interpX[0];

@@ -1,5 +1,5 @@
-#include <cstdlib>
 #include <AMReX_ParReduce.H>
+#include <cstdlib>
 
 #include "Morton.h"
 #include "Particles.h"
@@ -2581,16 +2581,21 @@ Real Particles<NStructReal, NStructInt>::calc_max_thermal_velocity(
   constexpr Real c1over3 = 1. / 3;
   auto const& ma = momentsMF.const_arrays();
 
-  Real uthMax = ParReduce(TypeList<ReduceOpMax>{}, TypeList<Real>{},
-      momentsMF, IntVect(0), // zero ghost cells
-      [=] AMREX_GPU_DEVICE (int box_no, int i, int j, int k) noexcept -> GpuTuple<Real> {
-        Array4<Real const> const& arr = ma[box_no];
-        Real rho = arr(i, j, k, iRho_);
-        if (rho == 0) return 0.0;
-        Real p = (arr(i, j, k, iPxx_) + arr(i, j, k, iPyy_) + arr(i, j, k, iPzz_)) * c1over3;
-        Real uth = sqrt(p / rho);
-        return uth;
-      });
+  Real uthMax = ParReduce(TypeList<ReduceOpMax>{}, TypeList<Real>{}, momentsMF,
+                          IntVect(0), // zero ghost cells
+                          [=] AMREX_GPU_DEVICE(int box_no, int i, int j, int k)
+                              noexcept -> GpuTuple<Real> {
+                                Array4<Real const> const& arr = ma[box_no];
+                                Real rho = arr(i, j, k, iRho_);
+                                if (rho == 0)
+                                  return 0.0;
+                                Real p =
+                                    (arr(i, j, k, iPxx_) + arr(i, j, k, iPyy_) +
+                                     arr(i, j, k, iPzz_)) *
+                                    c1over3;
+                                Real uth = sqrt(p / rho);
+                                return uth;
+                              });
 
   return uthMax;
 }
@@ -4545,9 +4550,9 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
             int iFluidAddTo;
             Real rhoIonAddTo, cs2IonAddTo, uIonAddTo[3];
 
-            const int iSW = 2;     
-            const int iSheath = 1; 
-            const int iOutSheath = 0; 
+            const int iSW = 2;
+            const int iSheath = 1;
+            const int iOutSheath = 0;
             switch (stateOH->get_nFluid()) {
               case 1:
                 iFluidAddTo = fluidID;

@@ -71,7 +71,7 @@ protected:
 
   BalanceStrategy balanceStrategy = BalanceStrategy::Cell;
 
-  bool doSplitLevs = false;  
+  bool doSplitLevs = false;
 
 public:
   DomainGrid() {
