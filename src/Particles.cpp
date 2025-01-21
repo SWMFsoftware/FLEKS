@@ -2583,9 +2583,9 @@ Real Particles<NStructReal, NStructInt>::calc_max_thermal_velocity(
 
   Real uthMax = ParReduce(TypeList<ReduceOpMax>{}, TypeList<Real>{}, momentsMF,
                           IntVect(0), // zero ghost cells
-                          [=] AMREX_GPU_DEVICE(int box_no, int i, int j, int k)
+                          [=] AMREX_GPU_DEVICE(int nb, int i, int j, int k)
                               noexcept -> GpuTuple<Real> {
-                                Array4<Real const> const& arr = ma[box_no];
+                                Array4<Real const> const& arr = ma[nb];
                                 Real rho = arr(i, j, k, iRho_);
                                 if (rho == 0)
                                   return 0.0;
