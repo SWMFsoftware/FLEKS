@@ -231,18 +231,18 @@ protected:
   OHIon ionOH;
 
 public:
-  static const int iup_ = 0;
-  static const int ivp_ = 1;
-  static const int iwp_ = 2;
-  static const int iqp_ = 3;
+  static constexpr int iup_ = 0;
+  static constexpr int ivp_ = 1;
+  static constexpr int iwp_ = 2;
+  static constexpr int iqp_ = 3;
 
   // mu = cos(theta), theta is the pitch angle.
-  static const int imu_ = 4;
+  static constexpr int imu_ = 4;
 
   TestCase testCase;
 
   // Index of the integer data.
-  static const int iRecordCount_ = 1;
+  static constexpr int iRecordCount_ = 1;
 
   Particles(Grid* gridIn, FluidInterface* fluidIn, TimeCtr* tcIn,
             const int speciesIDIn, const amrex::Real chargeIn,
