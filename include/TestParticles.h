@@ -6,23 +6,23 @@
 
 class TestParticles : public PTParticles {
 public:
-  static const int iTPt_ = 0;
-  static const int iTPx_ = 1;
-  static const int iTPy_ = 2;
-  static const int iTPz_ = 3;
-  static const int iTPu_ = 4;
-  static const int iTPv_ = 5;
-  static const int iTPw_ = 6;
-  static const int iTPBx_ = 7;
-  static const int iTPBy_ = 8;
-  static const int iTPBz_ = 9;
-  static const int iTPEx_ = 10;
-  static const int iTPEy_ = 11;
-  static const int iTPEz_ = 12;
+  static constexpr int iTPt_ = 0;
+  static constexpr int iTPx_ = 1;
+  static constexpr int iTPy_ = 2;
+  static constexpr int iTPz_ = 3;
+  static constexpr int iTPu_ = 4;
+  static constexpr int iTPv_ = 5;
+  static constexpr int iTPw_ = 6;
+  static constexpr int iTPBx_ = 7;
+  static constexpr int iTPBy_ = 8;
+  static constexpr int iTPBz_ = 9;
+  static constexpr int iTPEx_ = 10;
+  static constexpr int iTPEy_ = 11;
+  static constexpr int iTPEz_ = 12;
 
 private:
-  static const int iRegionBoundary_ = 1;
-  static const int iRegionUniform_ = 2;
+  static constexpr int iRegionBoundary_ = 1;
+  static constexpr int iRegionUniform_ = 2;
 
 public:
   TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
