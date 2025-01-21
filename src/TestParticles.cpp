@@ -42,7 +42,7 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
                                                     Real tNowSI, bool doSave) {
   timing_func("TestParticles::move_charged_particles");
 
-  Real dtLoc = 0.5 * (dt + dtNext);
+  const Real dtLoc = 0.5 * (dt + dtNext);
 
   const Real qdto2mc = charge / mass * 0.5 * dt;
 
@@ -75,7 +75,7 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
       const Real yp = p.pos(iy_);
       const Real zp = nDim > 2 ? p.pos(iz_) : 0;
 
-      //-----calculate interpolate coef begin-------------
+      //-----calculate interpolation coef begin-----------
       IntVect loIdx;
       RealVect dShift;
       find_node_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
@@ -83,7 +83,7 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
 
       Real coef[2][2][2];
       linear_interpolation_coef(dShift, coef);
-      //-----calculate interpolate coef end-------------
+      //-----calculate interpolation coef end-------------
 
       Real bp[3] = { 0, 0, 0 };
       Real ep[3] = { 0, 0, 0 };
@@ -92,11 +92,9 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
           for (int i = lo.x; i <= hi.x; ++i) {
             IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
                                          loIdx[iz_] + k) };
-
-            const Real& c0 = coef[i][j][k];
             for (int iDim = 0; iDim < nDim3; iDim++) {
-              bp[iDim] += nodeBArr(ijk, iDim) * c0;
-              ep[iDim] += nodeEArr(ijk, iDim) * c0;
+              bp[iDim] += nodeBArr(ijk, iDim) * coef[i][j][k];
+              ep[iDim] += nodeEArr(ijk, iDim) * coef[i][j][k];
             }
           }
 
@@ -127,24 +125,22 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
         invGamma = 1. / gamma;
       }
 
-      const double Omx = qdto2mc * bp[ix_] * invGamma;
-      const double Omy = qdto2mc * bp[iy_] * invGamma;
-      const double Omz = qdto2mc * bp[iz_] * invGamma;
+      const Real omx = qdto2mc * bp[ix_] * invGamma;
+      const Real omy = qdto2mc * bp[iy_] * invGamma;
+      const Real omz = qdto2mc * bp[iz_] * invGamma;
 
-      // end interpolation
-      const Real omsq = (Omx * Omx + Omy * Omy + Omz * Omz);
+      const Real omsq = (omx * omx + omy * omy + omz * omz);
       const Real denom = 1.0 / (1.0 + omsq);
 
-      // const pfloat udotb = ut * Bxl + vt * Byl + wt * Bzl;
-      const Real udotOm = ut * Omx + vt * Omy + wt * Omz;
+      const Real udotOm = ut * omx + vt * omy + wt * omz;
       // solve the velocity equation
-      const Real uavg = (ut + (vt * Omz - wt * Omy + udotOm * Omx)) * denom;
-      const Real vavg = (vt + (wt * Omx - ut * Omz + udotOm * Omy)) * denom;
-      const Real wavg = (wt + (ut * Omy - vt * Omx + udotOm * Omz)) * denom;
+      const Real uavg = (ut + (vt * omz - wt * omy + udotOm * omx)) * denom;
+      const Real vavg = (vt + (wt * omx - ut * omz + udotOm * omy)) * denom;
+      const Real wavg = (wt + (ut * omy - vt * omx + udotOm * omz)) * denom;
 
-      double unp1 = 2.0 * uavg - up;
-      double vnp1 = 2.0 * vavg - vp;
-      double wnp1 = 2.0 * wavg - wp;
+      Real unp1 = 2.0 * uavg - up;
+      Real vnp1 = 2.0 * vavg - vp;
+      Real wnp1 = 2.0 * wavg - wp;
 
       if (isRelativistic) {
         // Convert: gamma*vel -> vel
@@ -188,15 +184,12 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
           p.rdata(i0 + iTPEz_) = ep[iz_];
         }
 
-        p.idata(iRecordCount_) = p.idata(iRecordCount_) + 1;
+        p.idata(iRecordCount_) += 1;
       }
-      // Print() << "p = " << p << std::endl;
-
       // Mark for deletion
       if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
         p.id() = -1;
       }
-
     } // for p
   } // for pti
 
@@ -245,7 +238,7 @@ void TestParticles::move_and_save_neutrals(Real dt, Real tNowSI, bool doSave) {
         p.rdata(i0 + iTPy_) = p.pos(iy_);
         p.rdata(i0 + iTPz_) = p.pos(iz_);
 
-        p.idata(iRecordCount_) = p.idata(iRecordCount_) + 1;
+        p.idata(iRecordCount_) += 1;
       }
 
       // Mark for deletion
