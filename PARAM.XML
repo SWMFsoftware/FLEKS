@@ -845,9 +845,10 @@ This command sets the number of test particles per cell.
 1                  nIntervalY
 1                  nIntervalZ
 
-Generating test particles for every cell may be too much for some applications. 
+Generating test particles for every cell may be too much for large applications. 
 This command allows generating test particles for every nInterval cells in the
-region defined by command #TPREGION
+region defined by command #TPREGION. If the interval is larger than those
+defined in #MAXBLOCKSIZE, the interval is equivalent to the maximum block size.
 </command>
 
 

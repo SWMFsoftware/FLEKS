@@ -143,7 +143,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   }
 
   if (isPPVconstant) {
-    nPPC = nPPC / pow(2, iLev);
+    nPPC /= pow(2, iLev);
   }
 
   set_random_seed(iLev, ijk, nPPC);
