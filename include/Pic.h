@@ -162,7 +162,7 @@ public:
     eSolver.set_nIter(200);
 
     divESolver.set_tol(0.01);
-    divESolver.set_nIter(20);    
+    divESolver.set_nIter(20);
 
     //-----------------------------------------------------
     centerB.resize(n_lev_max());
@@ -195,6 +195,8 @@ public:
     kineticSource = true;
     initEM = false;
     solveEM = false;
+
+    doCorrectDivE = false;
 
     pMode = PartMode::Neutral;
 #endif
@@ -317,8 +319,8 @@ public:
   void divE_accurate_matvec(const double *vecIn, double *vecOut, int iLev);
   void divE_correct_particle_position();
   void sum_to_center(bool isBeforeCorrection);
-  void sum_to_center_new(bool isBeforeCorrection,int iLev);
-  void calculate_phi(LinearSolver &solver,int iLev);
+  void sum_to_center_new(bool isBeforeCorrection, int iLev);
+  void calculate_phi(LinearSolver &solver, int iLev);
   //-------------div(E) correction end----------------
 
   void report_load_balance(bool doReportSummary = true,
