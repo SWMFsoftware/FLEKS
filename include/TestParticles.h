@@ -23,6 +23,7 @@ public:
 private:
   static constexpr int iRegionBoundary_ = 1;
   static constexpr int iRegionUniform_ = 2;
+  static constexpr int iRegionSideXp_ = 3;
 
 public:
   TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
@@ -82,6 +83,8 @@ public:
         iPartRegion = iRegionBoundary_;
       } else if (sRegion.find("uniform") != std::string::npos) {
         iPartRegion = iRegionUniform_;
+      } else if (sRegion.find("sideX+") != std::string::npos) {
+        iPartRegion = iRegionSideXp_;
       } else {
         amrex::Abort("Error:Unknown test particle region!");
       }

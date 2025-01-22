@@ -129,11 +129,9 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
       const Real omy = qdto2mc * bp[iy_] * invGamma;
       const Real omz = qdto2mc * bp[iz_] * invGamma;
 
-      const Real omsq = (omx * omx + omy * omy + omz * omz);
-      const Real denom = 1.0 / (1.0 + omsq);
-
+      const Real denom = 1.0 / (1.0 + omx * omx + omy * omy + omz * omz);
       const Real udotOm = ut * omx + vt * omy + wt * omz;
-      // solve the velocity equation
+      // Solve the velocity equation
       const Real uavg = (ut + (vt * omz - wt * omy + udotOm * omx)) * denom;
       const Real vavg = (vt + (wt * omx - ut * omz + udotOm * omy)) * denom;
       const Real wavg = (wt + (ut * omy - vt * omx + udotOm * omz)) * denom;
@@ -184,7 +182,7 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
           p.rdata(i0 + iTPEz_) = ep[iz_];
         }
 
-        p.idata(iRecordCount_) += 1;
+        p.idata(iRecordCount_)++;
       }
       // Mark for deletion
       if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
@@ -238,7 +236,7 @@ void TestParticles::move_and_save_neutrals(Real dt, Real tNowSI, bool doSave) {
         p.rdata(i0 + iTPy_) = p.pos(iy_);
         p.rdata(i0 + iTPz_) = p.pos(iz_);
 
-        p.idata(iRecordCount_) += 1;
+        p.idata(iRecordCount_)++;
       }
 
       // Mark for deletion
@@ -286,7 +284,16 @@ void TestParticles::read_test_particle_list(
 }
 
 //======================================================================
-// Trace the PIC particles that are in the list (listFiles).
+/**
+ * @brief Trace the PIC particles that are in the list (listFiles).
+ *
+ * This function adds test particles from the given PIC particles object (`pts`)
+ * to the current test particles object. It traces the particles that are in the
+ * list of particle IDs (`vIDs`).
+ *
+ * @param pts Pointer to the PicParticles object containing the particles to be
+ * traced.
+ */
 void TestParticles::add_test_particles_from_pic(PicParticles* pts) {
   std::string funcName = "TP::add_test_particles_from_pic";
   timing_func(funcName);
@@ -345,9 +352,9 @@ void TestParticles::add_test_particles_from_pic(PicParticles* pts) {
     }
   }
 
-  { // If a test particle has been generated on one proc, all proc should remove
-    // this particle from the test particle list (vIDs). Use a bit array to do
-    // mpi_allreduce to improve performance.
+  { // If a test particle has been generated on one proc, all procs should
+    // remove this particle from the test particle list (vIDs). Use a bit array
+    // to do mpi_allreduce to improve performance.
     BitArray ba(vIDs.size());
     for (unsigned int i = 0; i < vIDs.size(); ++i) {
       if (vIDs[i].flag) {
@@ -375,6 +382,16 @@ void TestParticles::add_test_particles_from_pic(PicParticles* pts) {
 }
 
 //======================================================================
+/**
+ * @brief Add test particles from fluid states.
+ *
+ * This function adds test particles from the given fluid states (`tpStates`)
+ * to the current test particles object. It initializes the test particles
+ * based on the specified fluid states and the current cell status.
+ *
+ * @param tpStates Vector of fluid states from which test particles are to be
+ * added.
+ */
 void TestParticles::add_test_particles_from_fluid(Vector<Vel> tpStates) {
   std::string funcName = "TP::add_test_particles_from_fluid";
   timing_func(funcName);
@@ -394,14 +411,12 @@ void TestParticles::add_test_particles_from_fluid(Vector<Vel> tpStates) {
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
     const auto& status = cell_status(iLev)[mfi].array();
     const Box& bx = mfi.validbox();
-    const IntVect lo = IntVect(bx.loVect());
-    const IntVect hi = IntVect(bx.hiVect());
-
-    IntVect idxMin = lo, idxMax = hi;
+    const IntVect idxMin = IntVect(bx.loVect());
+    const IntVect idxMax = IntVect(bx.hiVect());
 
     for (int i = idxMin[ix_]; i <= idxMax[ix_]; i += nIntervalCell[ix_])
       for (int j = idxMin[iy_]; j <= idxMax[iy_]; j += nIntervalCell[iy_])
-#if (AMREX_SPACEDIM > 2)
+#if (AMREX_SPACEDIM == 3)
         for (int k = idxMin[iz_]; k <= idxMax[iz_]; k += nIntervalCell[iz_])
 #else
         for (int k = 0; k <= 0; ++k)
@@ -414,6 +429,16 @@ void TestParticles::add_test_particles_from_fluid(Vector<Vel> tpStates) {
                                false, IntVect(0), tpVel);
           }
         }
+
+    if (iPartRegion == iRegionSideXp_) {
+      for (int j = idxMin[iy_]; j <= idxMax[iy_]; j += nIntervalCell[iy_])
+        for (int k = idxMin[iz_]; k <= idxMax[iz_]; k += nIntervalCell[iz_]) {
+          const int i = idxMax[ix_];
+          if (bit::is_lev_edge(status(i, j, k)))
+            add_particles_cell(iLev, mfi, IntVect{ AMREX_D_DECL(i, j, k) }, fi,
+                               false, IntVect(0), tpVel);
+        }
+    }
   }
 }
 
@@ -436,7 +461,7 @@ bool TestParticles::write_particles(int cycle) {
   loop_particles("copy_record", dataBuffer.data(), dataBuffer.size());
 
   // cpu + id + loc;
-  const int listUnitSize = 2 * sizeof(int) + sizeof(unsigned long long);
+  constexpr int listUnitSize = 2 * sizeof(int) + sizeof(unsigned long long);
   Vector<char> partList;
   partList.resize(nPartLoc * listUnitSize);
   loop_particles("get_record_loc", partList.data(), partList.size(),
@@ -503,7 +528,7 @@ unsigned long long int TestParticles::loop_particles(
   bool doResetRecordCounter = (action == "reset_record_counter");
 
   int iPartCount = 0;
-  const int listUnitSize = 2 * sizeof(int) + sizeof(unsigned long long);
+  constexpr int listUnitSize = 2 * sizeof(int) + sizeof(unsigned long long);
 
   const int iLev = 0;
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {

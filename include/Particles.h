@@ -467,7 +467,14 @@ public:
     return ids;
   }
 
-  // set p.id(), p.cpu() and p.idata(iSupID_)
+  /**
+   * @brief Sets the IDs for a particle.
+   *
+   * This function sets the unique ID, supplementary ID, and CPU ID for the
+   * given particle.
+   *
+   * @param p The particle for which the IDs are to be set.
+   */
   void set_ids(ParticleType& p) {
     auto ids = get_next_ids();
     p.id() = ids.id;
@@ -555,7 +562,6 @@ public:
     if (iLev > 0) {
       return false;
     }
-    // int iLev = 0;
     amrex::RealVect loc;
     for (int iDim = 0; iDim < nDim; iDim++) {
       loc[iDim] = p.pos(iDim);
@@ -583,6 +589,17 @@ public:
     return isOutsideLevel;
   }
 
+  /**
+   * @brief Checks if a particle is outside the active region at a given level.
+   *
+   * This function determines whether a particle is outside the active region
+   * at a specified level (`iLev`). It takes into account periodic boundary
+   * conditions and adjusts the particle's position accordingly.
+   *
+   * @param p The particle to check.
+   * @param iLev The level at which to check the particle's position.
+   * @return True if the particle is outside the active region, false otherwise.
+   */
   inline bool is_outside_active_region(const ParticleType& p,
                                        amrex::Array4<int const> const& status,
                                        const amrex::IntVect& low,

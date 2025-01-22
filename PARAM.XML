@@ -790,7 +790,7 @@ boundary           region
 uniform           region
 
 Users can choose generating test particles either in the whole 
-domain (uniform) or only at the boundary. 
+domain (uniform), at all the boundaries, or on a single boundary (side).
 </command>
 
 <command name="TPSTATESI"

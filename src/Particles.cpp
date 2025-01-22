@@ -103,6 +103,25 @@ void Particles<NStructReal, NStructInt>::outflow_bc(const MFIter& mfi,
 }
 
 //==========================================================
+/**
+ * @brief Adds particles to a specific cell in the grid.
+ *
+ * This function adds particles to a specific cell in the grid at a given level
+ * (`iLev`). It initializes the particles based on the provided fluid interface,
+ * user-defined velocities, and other parameters.
+ *
+ * @tparam NStructReal Number of real components in the particle structure.
+ * @tparam NStructInt Number of integer components in the particle structure.
+ * @param iLev The level at which to add the particles.
+ * @param mfi The MultiFab iterator for the current tile.
+ * @param ijk The cell index where particles are to be added.
+ * @param interface Pointer to the fluid interface used for initializing
+ * particles.
+ * @param doVacuumLimit Flag indicating whether to apply vacuum limit.
+ * @param ppc Particles per cell.
+ * @param tpVel User-defined velocity for initializing test particles.
+ * @param dt Time step for density change rate.
+ */
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_cell(
     const int iLev, const MFIter& mfi, IntVect ijk,
@@ -139,9 +158,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   int icount = 0;
   // Loop over particles inside grid cell i, j, k
 
-  int kmax = 1;
-  if (nDim > 2)
-    kmax = nPPC[iz_];
+  const int kmax = nDim > 2 ? nPPC[iz_] : 1;
 
   for (int ii = 0; ii < nPPC[ix_]; ++ii)
     for (int jj = 0; jj < nPPC[iy_]; ++jj)
@@ -177,7 +194,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
         if (doVacuumLimit && nDens * dt < vacuum)
           continue;
 
-        Real q = vol2Npcel * nDens;
+        const Real q = vol2Npcel * nDens;
 
         if (q != 0) {
           Real u, v, w;
@@ -298,11 +315,6 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
                     ppc[iDim] = std::max(1, int(ppc[iDim] * ratio));
                   }
                 }
-
-                // Print() << "ppc = " << ppc << " rho = " << rho
-                //         << " rhoSource = " << rhoSource
-                //         << " rho/rhosource = " << (rho / rhoSource)
-                //         << " dt = " << dt << std::endl;
               }
 
               add_particles_cell(iLev, mfi, ijk, interface, false, ppc, Vel(),
@@ -961,7 +973,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
       const Real omz2 = omz * omz;
       const Real omxomy = omx * omy;
       const Real omxomz = omx * omz;
-      const Real omyomz = omy * omz; 
+      const Real omyomz = omy * omz;
       const Real omsq = omx2 + omy2 + omz2;
       const Real denom = 1.0 / (1.0 + omsq);
 
@@ -4125,8 +4137,6 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
               if (w > pheavy)
                 pheavy = w;
             }
-            // AllPrint() << "pheavy/plight = " << pheavy / plight <<
-            // std::endl;
 
             // Adjust weight.
             for (int ip = 0; ip < nPartNew; ip++) {
@@ -4395,7 +4405,7 @@ void Particles<NStructReal, NStructInt>::get_ion_fluid(
   // cs = sqrt(P/n); m/s
   // Assume p = pi + pe = 2pi, so divide by sqrt(2.0).
   Real cs = stateOH->get_fluid_uth(pti, xyz, iFluid, iLev) *
-              stateOH->get_No2SiV() / sqrt(2.0);
+            stateOH->get_No2SiV() / sqrt(2.0);
 
   // cs2Ion = 2*P/n. The definition of thermal speed in get_uth_iso() is
   // different from the requirement in OH_get_charge_exchange_wrapper().
