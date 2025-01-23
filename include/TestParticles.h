@@ -24,6 +24,7 @@ private:
   static constexpr int iRegionBoundary_ = 1;
   static constexpr int iRegionUniform_ = 2;
   static constexpr int iRegionSideXp_ = 3;
+  static constexpr int iRegionUser_ = 4;
 
 public:
   TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
@@ -77,7 +78,8 @@ public:
 
   void set_interval(amrex::IntVect in) { nIntervalCell = in; };
 
-  void set_particle_region(std::string& sRegion) {
+  void set_particle_region(std::string& sRegion, std::string& sTPRegion,
+                           amrex::Vector<std::shared_ptr<Shape> >& shapes) {
     if (!sRegion.empty()) {
       if (sRegion.find("boundary") != std::string::npos) {
         iPartRegion = iRegionBoundary_;
@@ -85,6 +87,9 @@ public:
         iPartRegion = iRegionUniform_;
       } else if (sRegion.find("sideX+") != std::string::npos) {
         iPartRegion = iRegionSideXp_;
+      } else if (sRegion.find("user") != std::string::npos) {
+        iPartRegion = iRegionUser_;
+        tpRegions = Regions(shapes, sTPRegion);
       } else {
         amrex::Abort("Error:Unknown test particle region!");
       }
@@ -139,6 +144,8 @@ private:
   unsigned long int nInitPart;
 
   std::vector<PID> vIDs;
+
+  Regions tpRegions;
 };
 
 #endif

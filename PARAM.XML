@@ -675,17 +675,30 @@ REFINEREGION_FLEKS2" multiple="T">
 
 #REFINEREGION
 0                         refineLev
-+box1 -sphere1		        StringHallRegion
++box1 -sphere1		        StringRegion
 
 #REFINEREGION
 1                         refineLev
-+box2 -sphere2		        StringHallRegion
++box2 -sphere2		        StringRegion
 
 This command is used to specify the regions of refinement for the 
 level refineLev. The cells inside the '+' shapes but outside the '-' 
 shapes will be refined.
 
 Multiple #REFINEREGION commands can be used for different levels.
+
+</command>
+
+<command name="REFINEREGION" alias="REFINEREGION_FLEKS0,REFINEREGION_FLEKS1,
+REFINEREGION_FLEKS2" multiple="T">
+  <parameter name="refineLev" type="integer" min="0"/>
+  <parameter name="refineArea" type="string" />
+
+#TPINITREGION
++box1         		        StringRegion
+
+This command is used to specify the regions of test particle seeds. The cells
+inside the '+' shapes but outside the '-' shapes will be selected.
 
 </command>
 
@@ -790,7 +803,9 @@ boundary           region
 uniform           region
 
 Users can choose generating test particles either in the whole 
-domain (uniform), at all the boundaries, or on a single boundary (side).
+domain, at all the boundaries, on a single boundary, or in a user
+defined region.
+Options of region are 'uniform', 'boundary', 'side', or 'user'.
 </command>
 
 <command name="TPSTATESI"

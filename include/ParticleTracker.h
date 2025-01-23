@@ -44,6 +44,8 @@ public:
   void read_param(const std::string &command, ReadParam &param);
   void write_log(bool doForce = false, bool doCreateFile = false);
 
+  void set_tp_init_shapes(amrex::Vector<std::shared_ptr<Shape>> shapes);
+
 private:
   TimeCtr *tc = nullptr;
   FluidInterface *fi = nullptr;
@@ -74,6 +76,10 @@ private:
   amrex::Vector<Vel> tpStates;
 
   std::string logFile;
+
+  // Test Particle initialization regions
+  std::string sTPRegion;
+  amrex::Vector<std::shared_ptr<Shape>> tpShapes;
 };
 
 #endif

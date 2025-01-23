@@ -345,7 +345,7 @@ public:
   // ‘fit” the data. (4) The algorithm should be fast.
 
   // 3. So, even the AMR buffer size is 0 (amrInfo.n_error_buf), the cells
-  // that are not tagged in ErrorEst() may still be refined du to the
+  // that are not tagged in ErrorEst() may still be refined due to the
   // clustering algorithm. Tests show the clustering is pretty smart.
   virtual void ErrorEst(int iLev, amrex::TagBoxArray& tags, amrex::Real time,
                         int ngrow) override {

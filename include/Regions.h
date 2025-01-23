@@ -34,7 +34,7 @@ public:
     }
   }
 
-  // Does the 'shape' in the 'list'?
+  // Is the 'shape' in the 'list'?
   bool contains(const Shape* shape,
                 const amrex::Vector<std::string>& list) const {
     bool doContain = false;
@@ -62,7 +62,7 @@ public:
   // Is the point 'xyz' inside the include list but outside the exclude list?
   bool is_inside(amrex::Real* xyz) const {
     bool isIncluded = false;
-    for (auto& shape : shapes) {      
+    for (auto& shape : shapes) {
       if (is_include(shape))
         isIncluded = shape->is_inside(xyz);
 

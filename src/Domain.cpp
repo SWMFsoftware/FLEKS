@@ -840,7 +840,8 @@ void Domain::read_param(const bool readGridInfo) {
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
                command == "#TPSAVE" || command == "#TPRELATIVISTIC" ||
-               command == "#TPINITFROMPIC" || command == "#TPSTATESI") {
+               command == "#TPINITFROMPIC" || command == "#TPSTATESI" ||
+               command == "#TPINITREGION") {
       if (pt)
         pt->read_param(command, param);
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
@@ -1152,8 +1153,10 @@ void Domain::read_param(const bool readGridInfo) {
     if (pic)
       pic->post_process_param();
 
-    if (pt)
+    if (pt) {
       pt->post_process_param();
+      pt->set_tp_init_shapes(shapes);
+    }
 
     if (fi)
       fi->post_process_param(receiveICOnly);
