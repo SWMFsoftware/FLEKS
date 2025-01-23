@@ -64,7 +64,7 @@ private:
   amrex::IntVect nTPPerCell = { AMREX_D_DECL(1, 1, 1) };
   amrex::IntVect nTPIntervalCell = { AMREX_D_DECL(1, 1, 1) };
 
-  std::string sPartRegion;
+  std::string sSeed;
 
   std::string sIOUnit = "planet";
 
@@ -78,7 +78,7 @@ private:
   std::string logFile;
 
   // Test Particle initialization regions
-  std::string sTPRegion;
+  std::string sRegion;
   amrex::Vector<std::shared_ptr<Shape>> tpShapes;
 };
 

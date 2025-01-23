@@ -694,7 +694,7 @@ REFINEREGION_FLEKS2" multiple="T">
   <parameter name="refineLev" type="integer" min="0"/>
   <parameter name="refineArea" type="string" />
 
-#TPINITREGION
+#TPREGION
 +box1         		        StringRegion
 
 This command is used to specify the regions of test particle seeds. The cells
@@ -791,15 +791,15 @@ The starting supID for each species. This command should only exist in
 a restart file.
 </command>
 
-<command name="TPREGION"
-	 alias="TPREGION_FLEKS0,TPREGION_FLEKS1,TPREGION_FLEKS2"
+<command name="TPSEED"
+	 alias="TPSEED_FLEKS0,TPSEED_FLEKS1,TPSEED_FLEKS2"
 	 multiple="T">
   <parameter name="region" type="string"/>     
 
-#TPREGION
+#TPSEED
 boundary           region
 
-#TPREGION_FLEKS0
+#TPSEED_FLEKS0
 uniform           region
 
 Users can choose generating test particles either in the whole 
@@ -862,7 +862,7 @@ This command sets the number of test particles per cell.
 
 Generating test particles for every cell may be too much for large applications. 
 This command allows generating test particles for every nInterval cells in the
-region defined by command #TPREGION. If the interval is larger than those
+region defined by command #TPSEED. If the interval is larger than those
 defined in #MAXBLOCKSIZE, the interval is equivalent to the maximum block size.
 </command>
 
