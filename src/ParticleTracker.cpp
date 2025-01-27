@@ -180,7 +180,7 @@ void ParticleTracker::post_regrid() {
                             fi->get_species_mass(i), gridID));
       ptr->set_ppc(nTPPerCell);
       ptr->set_interval(nTPIntervalCell);
-      ptr->set_particle_region(sPartRegion);
+      ptr->set_particle_region(sRegion, tpShapes);
       ptr->set_relativistic(isRelativistic);
       parts.push_back(std::move(ptr));
     }
@@ -192,6 +192,11 @@ void ParticleTracker::post_regrid() {
     }
   }
   //--------------test particles-----------------------------------
+}
+
+void ParticleTracker::set_tp_init_shapes(
+    amrex::Vector<std::shared_ptr<Shape> >& shapes) {
+  tpShapes = shapes;
 }
 
 void ParticleTracker::save_restart_data() {
@@ -275,7 +280,7 @@ void ParticleTracker::read_param(const std::string& command, ReadParam& param) {
     param.read_var("nIntervalY", nTPIntervalCell[iy_]);
     param.read_var("nIntervalZ", nTPIntervalCell[iz_]);
   } else if (command == "#TPREGION") {
-    param.read_var("region", sPartRegion);
+    param.read_var("region", sRegion);
   } else if (command == "#TPSAVE") {
     param.read_var("IOUnit", sIOUnit);
     param.read_var("dnSave", dnSave);

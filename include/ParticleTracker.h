@@ -44,6 +44,8 @@ public:
   void read_param(const std::string &command, ReadParam &param);
   void write_log(bool doForce = false, bool doCreateFile = false);
 
+  void set_tp_init_shapes(amrex::Vector<std::shared_ptr<Shape>>& shapes);
+
 private:
   TimeCtr *tc = nullptr;
   FluidInterface *fi = nullptr;
@@ -62,8 +64,6 @@ private:
   amrex::IntVect nTPPerCell = { AMREX_D_DECL(1, 1, 1) };
   amrex::IntVect nTPIntervalCell = { AMREX_D_DECL(1, 1, 1) };
 
-  std::string sPartRegion;
-
   std::string sIOUnit = "planet";
 
   bool isRelativistic = false;
@@ -74,6 +74,10 @@ private:
   amrex::Vector<Vel> tpStates;
 
   std::string logFile;
+
+  // Test Particle initialization regions
+  std::string sRegion;
+  amrex::Vector<std::shared_ptr<Shape>> tpShapes;
 };
 
 #endif

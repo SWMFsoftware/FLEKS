@@ -1152,8 +1152,10 @@ void Domain::read_param(const bool readGridInfo) {
     if (pic)
       pic->post_process_param();
 
-    if (pt)
+    if (pt) {
       pt->post_process_param();
+      pt->set_tp_init_shapes(shapes);
+    }
 
     if (fi)
       fi->post_process_param(receiveICOnly);

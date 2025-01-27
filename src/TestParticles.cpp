@@ -411,13 +411,13 @@ void TestParticles::add_test_particles_from_fluid(Vector<Vel> tpStates) {
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
     const auto& status = cell_status(iLev)[mfi].array();
     const Box& bx = mfi.validbox();
-    const IntVect idxMin = IntVect(bx.loVect());
-    const IntVect idxMax = IntVect(bx.hiVect());
+    const auto lo = lbound(bx);
+    const auto hi = ubound(bx);
 
-    for (int i = idxMin[ix_]; i <= idxMax[ix_]; i += nIntervalCell[ix_])
-      for (int j = idxMin[iy_]; j <= idxMax[iy_]; j += nIntervalCell[iy_])
+    for (int i = lo.x; i <= hi.x; i += nIntervalCell[ix_])
+      for (int j = lo.y; j <= hi.y; j += nIntervalCell[iy_])
 #if (AMREX_SPACEDIM == 3)
-        for (int k = idxMin[iz_]; k <= idxMax[iz_]; k += nIntervalCell[iz_])
+        for (int k = lo.z; k <= hi.z; k += nIntervalCell[iz_])
 #else
         for (int k = 0; k <= 0; ++k)
 #endif
@@ -427,13 +427,20 @@ void TestParticles::add_test_particles_from_fluid(Vector<Vel> tpStates) {
                bit::is_lev_edge(status(i, j, k)))) {
             add_particles_cell(iLev, mfi, IntVect{ AMREX_D_DECL(i, j, k) }, fi,
                                false, IntVect(0), tpVel);
+          } else if (iPartRegion == iRegionUser_) {
+            amrex::Real xyz[nDim];
+            Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
+            if (tpRegions.is_inside(xyz)) {
+              add_particles_cell(iLev, mfi, IntVect{ AMREX_D_DECL(i, j, k) },
+                                 fi, false, IntVect(0), tpVel);
+            }
           }
         }
 
     if (iPartRegion == iRegionSideXp_) {
-      for (int j = idxMin[iy_]; j <= idxMax[iy_]; j += nIntervalCell[iy_])
-        for (int k = idxMin[iz_]; k <= idxMax[iz_]; k += nIntervalCell[iz_]) {
-          const int i = idxMax[ix_];
+      for (int j = lo.y; j <= hi.y; j += nIntervalCell[iy_])
+        for (int k = lo.z; k <= hi.z; k += nIntervalCell[iz_]) {
+          const int i = hi.x;
           if (bit::is_lev_edge(status(i, j, k)))
             add_particles_cell(iLev, mfi, IntVect{ AMREX_D_DECL(i, j, k) }, fi,
                                false, IntVect(0), tpVel);
