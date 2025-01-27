@@ -44,7 +44,7 @@ public:
   void read_param(const std::string &command, ReadParam &param);
   void write_log(bool doForce = false, bool doCreateFile = false);
 
-  void set_tp_init_shapes(amrex::Vector<std::shared_ptr<Shape>> shapes);
+  void set_tp_init_shapes(amrex::Vector<std::shared_ptr<Shape>>& shapes);
 
 private:
   TimeCtr *tc = nullptr;

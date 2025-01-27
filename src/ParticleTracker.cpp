@@ -195,7 +195,7 @@ void ParticleTracker::post_regrid() {
 }
 
 void ParticleTracker::set_tp_init_shapes(
-    amrex::Vector<std::shared_ptr<Shape> > shapes) {
+    amrex::Vector<std::shared_ptr<Shape> >& shapes) {
   tpShapes = shapes;
 }
 
