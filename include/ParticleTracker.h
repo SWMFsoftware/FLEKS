@@ -64,8 +64,6 @@ private:
   amrex::IntVect nTPPerCell = { AMREX_D_DECL(1, 1, 1) };
   amrex::IntVect nTPIntervalCell = { AMREX_D_DECL(1, 1, 1) };
 
-  std::string sSeed;
-
   std::string sIOUnit = "planet";
 
   bool isRelativistic = false;

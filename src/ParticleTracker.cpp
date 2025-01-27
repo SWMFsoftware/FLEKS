@@ -180,7 +180,7 @@ void ParticleTracker::post_regrid() {
                             fi->get_species_mass(i), gridID));
       ptr->set_ppc(nTPPerCell);
       ptr->set_interval(nTPIntervalCell);
-      ptr->set_particle_region(sSeed, sRegion, tpShapes);
+      ptr->set_particle_region(sRegion, tpShapes);
       ptr->set_relativistic(isRelativistic);
       parts.push_back(std::move(ptr));
     }
@@ -279,8 +279,6 @@ void ParticleTracker::read_param(const std::string& command, ReadParam& param) {
     param.read_var("nIntervalX", nTPIntervalCell[ix_]);
     param.read_var("nIntervalY", nTPIntervalCell[iy_]);
     param.read_var("nIntervalZ", nTPIntervalCell[iz_]);
-  } else if (command == "#TPSEED") {
-    param.read_var("seedRegion", sSeed);
   } else if (command == "#TPREGION") {
     param.read_var("region", sRegion);
   } else if (command == "#TPSAVE") {

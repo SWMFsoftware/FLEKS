@@ -78,18 +78,19 @@ public:
 
   void set_interval(amrex::IntVect in) { nIntervalCell = in; };
 
-  void set_particle_region(std::string& sSeed, std::string& sRegion,
+  void set_particle_region(std::string& sRegion,
                            amrex::Vector<std::shared_ptr<Shape> >& shapes) {
-    if (!sSeed.empty()) {
-      if (sSeed.find("boundary") != std::string::npos) {
-        iPartRegion = iRegionBoundary_;
-      } else if (sSeed.find("uniform") != std::string::npos) {
-        iPartRegion = iRegionUniform_;
-      } else if (sSeed.find("sideX+") != std::string::npos) {
-        iPartRegion = iRegionSideXp_;
-      } else if (sSeed.find("user") != std::string::npos) {
+    if (!sRegion.empty()) {
+      //TODO: std::string::starts_with (C++20)
+      if (sRegion[0] == '+' || sRegion[0] == '-') {
         iPartRegion = iRegionUser_;
         tpRegions = Regions(shapes, sRegion);
+      } else if (sRegion == "boundary") {
+        iPartRegion = iRegionBoundary_;
+      } else if (sRegion == "uniform") {
+        iPartRegion = iRegionUniform_;
+      } else if (sRegion == "sideX+") {
+        iPartRegion = iRegionSideXp_;
       } else {
         amrex::Abort("Error:Unknown test particle region!");
       }

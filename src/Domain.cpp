@@ -838,10 +838,9 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#SELECTPARTICLE") {
       pic->read_param(command, param);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
-               command == "#TPCELLINTERVAL" || command == "#TPSEED" ||
+               command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
                command == "#TPSAVE" || command == "#TPRELATIVISTIC" ||
-               command == "#TPINITFROMPIC" || command == "#TPSTATESI" ||
-               command == "#TPREGION") {
+               command == "#TPINITFROMPIC" || command == "#TPSTATESI") {
       if (pt)
         pt->read_param(command, param);
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||

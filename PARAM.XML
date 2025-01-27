@@ -689,19 +689,6 @@ Multiple #REFINEREGION commands can be used for different levels.
 
 </command>
 
-<command name="REFINEREGION" alias="REFINEREGION_FLEKS0,REFINEREGION_FLEKS1,
-REFINEREGION_FLEKS2" multiple="T">
-  <parameter name="refineLev" type="integer" min="0"/>
-  <parameter name="refineArea" type="string" />
-
-#TPREGION
-+box1         		        StringRegion
-
-This command is used to specify the regions of test particle seeds. The cells
-inside the '+' shapes but outside the '-' shapes will be selected.
-
-</command>
-
 <command name="GRIDEFFICIENCY" alias="GRIDEFFICIENCY_FLEKS0,GRIDEFFICIENCY_FLEKS1,
 GRIDEFFICIENCY_FLEKS2" multiple="T">
   <parameter name="gridEfficiency" type="real" min="0" max="1" default="0.7"/>
@@ -791,21 +778,28 @@ The starting supID for each species. This command should only exist in
 a restart file.
 </command>
 
-<command name="TPSEED"
-	 alias="TPSEED_FLEKS0,TPSEED_FLEKS1,TPSEED_FLEKS2"
-	 multiple="T">
+<command name="TPREGION"
+	 alias="TPREGION_FLEKS0,TPREGION_FLEKS1,TPREGION_FLEKS2"
+	 multiple="F">
   <parameter name="region" type="string"/>     
 
-#TPSEED
+#TPREGION
 boundary           region
 
-#TPSEED_FLEKS0
-uniform           region
+#TPREGION_FLEKS0
+uniform            region
 
-Users can choose generating test particles either in the whole 
-domain, at all the boundaries, on a single boundary, or in a user
-defined region.
-Options of region are 'uniform', 'boundary', 'side', or 'user'.
+#TPREGION
++box1         		 region
+
+This command is used to specify the regions of test particle seeds. 
+Users can choose the option of generating test particles:
+* 'uniform': in the whole domain
+* 'boundary': at all the boundaries
+* 'sideX+': at the X+ boundary
+* '+/-region': in a user defined region, used together with #REGION.
+Cells inside the '+' shapes and outside the '-' shapes will be selected.
+
 </command>
 
 <command name="TPSTATESI"
@@ -862,7 +856,7 @@ This command sets the number of test particles per cell.
 
 Generating test particles for every cell may be too much for large applications. 
 This command allows generating test particles for every nInterval cells in the
-region defined by command #TPSEED. If the interval is larger than those
+region defined by command #TPREGION. If the interval is larger than those
 defined in #MAXBLOCKSIZE, the interval is equivalent to the maximum block size.
 </command>
 
