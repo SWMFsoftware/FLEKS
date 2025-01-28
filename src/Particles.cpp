@@ -408,7 +408,6 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real> const& chargeArr = netChargeMF[pti].array();
     Array4<RealCMM> const& mmArr = centerMM[pti].array();
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
     const AoS& particles = pti.GetArrayOfStructs();
 
     const Dim3 lo = init_dim3(0);
@@ -690,7 +689,6 @@ void Particles<NStructReal, NStructInt>::sum_to_center_new(
     if (nLev > iLev) {
       for (PIter pti(*this, nLev); pti.isValid(); ++pti) {
         Array4<Real> const& chargeArr = jf[pti].array();
-        Array4<RealCMM> const& mmArr = centerMM[pti].array();
         const Array4<int const>& status = cell_status(nLev)[pti].array();
         const AoS& particles = pti.GetArrayOfStructs();
         const Dim3 lo = init_dim3(0);
@@ -725,7 +723,6 @@ void Particles<NStructReal, NStructInt>::sum_to_center_new(
     if (nLev < iLev) {
       for (PIter pti(*this, nLev); pti.isValid(); ++pti) {
         Array4<Real> const& chargeArr = jc[pti].array();
-        Array4<RealCMM> const& mmArr = centerMM[pti].array();
         const Array4<int const>& status = cell_status(nLev)[pti].array();
         const AoS& particles = pti.GetArrayOfStructs();
         const Dim3 lo = init_dim3(0);
@@ -1388,7 +1385,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
           IntVect cloIdx;
           RealVect cdShift;
           Real coef[2][2][2];
-          Real coef_coarser[2][2][2];
           find_node_index(p.pos(), Geom(iLev).ProbLo(),
                           Geom(iLev).InvCellSize(), loIdx, dShift);
           linear_interpolation_coef(dShift, coef);
@@ -1534,7 +1530,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_new_optimized(
           IntVect floIdx;
           RealVect fdShift;
           Real coef[2][2][2];
-          Real coef_coarser[2][2][2];
           Real coef_finer[2][2][2];
           find_node_index(p.pos(), Geom(iLev).ProbLo(),
                           Geom(iLev).InvCellSize(), loIdx, dShift);

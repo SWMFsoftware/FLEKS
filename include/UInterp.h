@@ -197,8 +197,6 @@ public:
       int jc = amrex::coarsen(j, ratio[1]);
       int ioff = i - ic * ratio[0];
       int joff = j - jc * ratio[1];
-      Real rxinv = Real(1.0) / Real(ratio[0]);
-      Real ryinv = Real(1.0) / Real(ratio[1]);
       if (ioff != 0 && joff != 0) {
         // Node on a X-Y face
         fine(i, j, 0, n + fcomp) = 0.0;
