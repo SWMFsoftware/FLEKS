@@ -524,10 +524,9 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
 
                     // const int kp = k2 - k1 + 1;
                     const int gp = gp1 + k2 - k1 + 1;
-
-                    data[gp] += wg_D[ix_] * wg1_D[ix_] +
-                                wg_D[iy_] * wg1_D[iy_] + wg_D[iz_] * wg1_D[iz_];
-                    ;
+                    for (int iDim = 0; iDim < nDim; iDim++) {
+                      data[gp] += wg_D[iDim] * wg1_D[iDim];
+                    }
                   }
                 }
               }
