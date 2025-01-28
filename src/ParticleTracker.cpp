@@ -274,11 +274,13 @@ void ParticleTracker::read_param(const std::string& command, ReadParam& param) {
   if (command == "#TPPARTICLES") {
     param.read_var("npcelx", nTPPerCell[ix_]);
     param.read_var("npcely", nTPPerCell[iy_]);
-    param.read_var("npcelz", nTPPerCell[iz_]);
+    if (nDim == 3)
+      param.read_var("npcelz", nTPPerCell[iz_]);
   } else if (command == "#TPCELLINTERVAL") {
     param.read_var("nIntervalX", nTPIntervalCell[ix_]);
     param.read_var("nIntervalY", nTPIntervalCell[iy_]);
-    param.read_var("nIntervalZ", nTPIntervalCell[iz_]);
+    if (nDim == 3)
+      param.read_var("nIntervalZ", nTPIntervalCell[iz_]);
   } else if (command == "#TPREGION") {
     param.read_var("region", sRegion);
   } else if (command == "#TPSAVE") {
