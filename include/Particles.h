@@ -230,6 +230,8 @@ protected:
 
   OHIon ionOH;
 
+  bool isFake2D;
+
 public:
   static constexpr int iup_ = 0;
   static constexpr int ivp_ = 1;

@@ -50,6 +50,9 @@ Particles<NStructReal, NStructInt>::Particles(
     invVol[iLev] = invDx[iLev].product();
   }
 
+  isFake2D = (nDim == 3) &&
+             (Geom(0).Domain().bigEnd(iz_) == Geom(0).Domain().smallEnd(iz_));
+
   // The following line is used to avoid an MPI bug (feature?) on Frontera. It
   // should be removed after the bug being fixed.
   SetUseUnlink(false);
@@ -2914,7 +2917,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
     const amrex::Vector<MultiFab>& phiMF, int iLev) {
   timing_func("Pts:divE_correct_position");
 
-  const Real coef = charge / fabs(charge);
+  const Real sign = charge / fabs(charge);
   const Real epsLimit = 0.1;
   Real epsMax = 0;
 
@@ -3015,24 +3018,22 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         weights_IIID[0][0][0][iy_] = -xi1 * zeta12Vol;
         weights_IIID[0][0][0][iz_] = -xi1 * eta12Vol;
 
-        const int iMin = loIdx[ix_];
-        const int jMin = loIdx[iy_];
-        const int kMin = nDim > 2 ? loIdx[iz_] : 0;
-
         RealVect eps_D = { AMREX_D_DECL(0, 0, 0) };
 
-        for (int k = 0; k < 2; ++k)
-          for (int j = 0; j < 2; ++j)
-            for (int i = 0; i < 2; ++i) {
-              IntVect ijk = { AMREX_D_DECL(iMin + i, jMin + j, kMin + k) };
-              const Real coef = phiArr(ijk);
-              for (int iDim = 0; iDim < nDim; iDim++) {
-                eps_D[iDim] += coef * weights_IIID[i][j][k][iDim];
-              }
-            }
+        // Do not shift along z direction for both 2D and fake 2D cases.
+        int nD = isFake2D ? 2 : nDim;
+
+        Box subBox(IntVect(0), IntVect(1));
+        ParallelFor(subBox, [&](int i, int j, int k) noexcept {
+          IntVect ijk = { AMREX_D_DECL(i, j, k) };
+          const Real coef = phiArr(loIdx + ijk);
+          for (int iDim = 0; iDim < nD; iDim++) {
+            eps_D[iDim] += coef * weights_IIID[i][j][k][iDim];
+          }
+        });
 
         for (int iDim = 0; iDim < nDim; iDim++)
-          eps_D[iDim] *= coef * fourPI;
+          eps_D[iDim] *= sign * fourPI;
 
         Real eps_D_dot_invDx_Max = 0.0;
         for (int iDim = 0; iDim < nDim; iDim++) {
@@ -3045,8 +3046,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
           // If eps_D is too large, the underlying assumption of the particle
           // correction method will be not valid. Comparing each exp_D
           // component instead of the length dl saves the computational time.
-          const Real dl = sqrt(pow(eps_D[ix_], 2) + pow(eps_D[iy_], 2) +
-                               pow(eps_D[iz_], 2));
+          const Real dl = eps_D.vectorLength();
           const Real ratio = epsLimit * dx[iLev][ix_] / dl;
           for (int iDim = 0; iDim < nDim; iDim++)
             eps_D[iDim] *= ratio;
