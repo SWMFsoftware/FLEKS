@@ -393,7 +393,9 @@ void Domain::regrid() {
   iGrid++;
   iDecomp++;
 
-  // gridInfo.is_grid_new(false);
+  // Set gridInfo, which contains active PIC region information, to false,
+  // otherwise, Domain::regrid() will be executed every step.
+  gridInfo.is_grid_new(false);
   isNewGrid = false;
   isNewRefinement = false;
 }
