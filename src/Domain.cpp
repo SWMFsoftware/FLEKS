@@ -393,7 +393,7 @@ void Domain::regrid() {
   iGrid++;
   iDecomp++;
 
-  gridInfo.is_grid_new(false);
+  // gridInfo.is_grid_new(false);
   isNewGrid = false;
   isNewRefinement = false;
 }
