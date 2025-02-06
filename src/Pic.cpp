@@ -2232,8 +2232,8 @@ void Pic::project_down_E() {
   if (finest_level > 0) {
     for (int iLev = 0; iLev < finest_level; iLev++) {
       // fill_fine_lev_edge_from_coarse(
-      //     nodeE[iLev], nodeE[iLev + 1], 0, nodeE[iLev].nComp(), ref_ratio[iLev],
-      //     Geom(iLev), Geom(iLev + 1), node_status(iLev + 1),
+      //     nodeE[iLev], nodeE[iLev + 1], 0, nodeE[iLev].nComp(),
+      //     ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1),
       //     node_bilinear_interp);
     }
     for (int iLev = finest_level; iLev > 0; iLev--) {
@@ -2713,20 +2713,35 @@ void Pic::fill_lightwaves(amrex::Real wavelength, int EorB, amrex::Real time,
       const auto& dx = geom[iLev].CellSize();
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
-
         if (EorB == -1 || EorB == 0) {
-          arrE(ijk, iy_) = sin(
-              (2.0 * (dPI) * ((prob_lo[0] + dx[0] * i) - time)) / wavelength);
-          arrE(ijk, iz_) = -cos(
-              (2.0 * (dPI) * ((prob_lo[0] + dx[0] * i) - time)) / wavelength);
+          arrE(ijk, ix_) =
+              -0.8 * sin((2.0 * (dPI) *
+                          ((prob_lo[0] + dx[0] * i) * 0.6 +
+                           (prob_lo[1] + dx[1] * j) * 0.8 - time)) /
+                         wavelength);
+          arrE(ijk, iy_) = 0.6 * sin((2.0 * (dPI) *
+                                      ((prob_lo[0] + dx[0] * i) * 0.6 +
+                                       (prob_lo[1] + dx[1] * j) * 0.8 - time)) /
+                                     wavelength);
+          arrE(ijk, iz_) = -cos((2.0 * (dPI) *
+                                 ((prob_lo[0] + dx[0] * i) * 0.6 +
+                                  (prob_lo[1] + dx[1] * j) * 0.8 - time)) /
+                                wavelength);
         }
-
         if (EorB == -1 || EorB == 1) {
-          arrB(ijk, iy_) = cos(
-              (2.0 * (dPI) * ((prob_lo[0] + dx[0] * i) - time)) / wavelength);
-
-          arrB(ijk, iz_) = sin(
-              (2.0 * (dPI) * ((prob_lo[0] + dx[0] * i) - time)) / wavelength);
+          arrB(ijk, ix_) =
+              -0.8 * cos((2.0 * (dPI) *
+                          ((prob_lo[0] + dx[0] * i) * 0.6 +
+                           (prob_lo[1] + dx[1] * j) * 0.8 - time)) /
+                         wavelength);
+          arrB(ijk, iy_) = 0.6 * cos((2.0 * (dPI) *
+                                      ((prob_lo[0] + dx[0] * i) * 0.6 +
+                                       (prob_lo[1] + dx[1] * j) * 0.8 - time)) /
+                                     wavelength);
+          arrB(ijk, iz_) = sin((2.0 * (dPI) *
+                                ((prob_lo[0] + dx[0] * i) * 0.6 +
+                                 (prob_lo[1] + dx[1] * j) * 0.8 - time)) /
+                               wavelength);
         }
       });
     }
@@ -2747,12 +2762,20 @@ void Pic::fill_lightwaves(amrex::Real wavelength, int EorB, amrex::Real time,
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (EorB == -1 || EorB == 1) {
+          arrcB(ijk, ix_) =
+              -0.8 * cos((2.0 * (dPI) *
+                          (((prob_lo[0] + dx[0] * (i + 0.5)) * 0.6 +
+                            (prob_lo[1] + dx[1] * (j + 0.5)) * 0.8 - time))) /
+                         wavelength);
           arrcB(ijk, iy_) =
-              cos((2.0 * (dPI) * ((prob_lo[0] + dx[0] * (i + 0.5) - time))) /
-                  wavelength);
-
+              0.6 * cos((2.0 * (dPI) *
+                         (((prob_lo[0] + dx[0] * (i + 0.5)) * 0.6 +
+                           (prob_lo[1] + dx[1] * (j + 0.5)) * 0.8 - time))) /
+                        wavelength);
           arrcB(ijk, iz_) =
-              sin((2.0 * (dPI) * ((prob_lo[0] + dx[0] * (i + 0.5) - time))) /
+              sin((2.0 * (dPI) *
+                   (((prob_lo[0] + dx[0] * (i + 0.5)) * 0.6 +
+                     (prob_lo[1] + dx[1] * (j + 0.5)) * 0.8 - time))) /
                   wavelength);
         }
       });
