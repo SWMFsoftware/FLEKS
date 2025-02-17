@@ -4234,7 +4234,7 @@ IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
                            AMREX_D_DECL(p.pos(ix_), p.pos(iy_), p.pos(iz_)))))
           continue;
 
-        for (int iDim = 0; iDim < nDim; iDim++) {
+        for (int iDim = 0; iDim < nDim3; iDim++) {
           p.rdata(iup_ + iDim) = no2outV * p.rdata(iup_ + iDim);
         }
         p.rdata(iqp_) = no2outM * p.rdata(iqp_);
