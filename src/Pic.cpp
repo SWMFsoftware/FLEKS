@@ -2147,22 +2147,6 @@ void Pic::smooth_B(int iLev) {
           }
       }
 
-      if (useEightWave) {
-        // divB cleaning with 8-wave source. dB/dt += -U * div(B)
-        Real u[nDim3] = { 0, 0, 0 };
-
-        Box subBox(ijk, ijk + 1);
-        const Real coef1 = 1. / pow(2, nDim);
-        // Calculate velocity at the cell center
-        ParallelFor(subBox, nDim3,
-                    [&](int ii, int jj, int kk, int iVar)
-                        noexcept { u[iVar] += nU(ii, jj, kk, iVar) * coef1; });
-
-        for (int iVar = 0; iVar < nDim3; iVar++) {
-          dB(ijk, iVar) -= tc->get_dt() * divBArr(ijk) * u[iVar];
-        }
-      }
-
       if (useHyperbolicCleaning) {
         for (int iVar = 0; iVar < nDim3; iVar++) {
           dB(ijk, iVar) += -tc->get_dt() * gradPhiArr(ijk, iVar);

@@ -66,8 +66,6 @@ private:
   amrex::Vector<amrex::MultiFab> centerB;
   amrex::Vector<amrex::MultiFab> dBdt;
 
-  bool useEightWave = false;
-
   // Hyperbolic cleaning
   bool useHyperbolicCleaning = false;
   amrex::Vector<amrex::MultiFab> hypPhi;
