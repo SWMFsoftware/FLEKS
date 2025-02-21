@@ -113,7 +113,7 @@ FLEKS solves the same velocity equation, but the implementation is slightly diff
 
 \item Calculate $\bar{\mathbf{v}}$. 
 
-With the expressions of $\mathbf{v}^+$ and $\mathbf{v}^-$ above, it is easy (it is probably not straightforwad, but I do not know how to number equations in markdown) to obtain $\mathbf{v}^{n+1} - \mathbf{v}^{n-1} = \mathbf{v}^+ - \mathbf{v}^- + \frac{q\Delta t}{m} \mathbf{E}^{n+\theta}$. Substitute it into the velocity update equation to remove electric field from the expression $\frac{\mathbf{v}^{+} - \mathbf{v}^{-}}{\Delta t} = \frac{q}{m}\bar{\mathbf{v}}\times\mathbf{B}$. Since $\mathbf{v}^+ = 2\bar{\mathbf{v}} - \mathbf{v}^-$, we obtain the equation for $\bar{\mathbf{v}}$:
+With the expressions of $\mathbf{v}^+$ and $\mathbf{v}^-$ above, it is easy (it is probably not straightforwad, but I do not know how to number equations in markdown) to obtain $\mathbf{v}^{n+1} - \mathbf{v}^{n} = \mathbf{v}^+ - \mathbf{v}^- + \frac{q\Delta t}{m} \mathbf{E}^{n+\theta}$. Substitute it into the velocity update equation to remove electric field from the expression $\frac{\mathbf{v}^{+} - \mathbf{v}^{-}}{\Delta t} = \frac{q}{m}\bar{\mathbf{v}}\times\mathbf{B}$. Since $\mathbf{v}^+ = 2\bar{\mathbf{v}} - \mathbf{v}^-$, we obtain the equation for $\bar{\mathbf{v}}$:
 \begin{eqnarray}
   \bar{\mathbf{v}} = \mathbf{v}^- + \frac{q\Delta t}{2m} \bar{\mathbf{v}} \times \mathbf{B} = \mathbf{v}^- + \bar{\mathbf{v}} \times \mathbf{t}   
 \end{eqnarray}
