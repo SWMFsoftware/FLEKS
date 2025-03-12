@@ -98,7 +98,12 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 
   const Box& gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
 
+  const int iLevSave = writerIn.get_ilev_save();
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    if (iLevSave >= 0 && iLevSave != iLev) {
+      continue;
+    }
     int iBlock = 0;
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
@@ -122,7 +127,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
           for (int i = lo[ix_]; i <= hi[ix_]; ++i) {
             const double xp = Geom(iLev).LoEdge(i, ix_);
             if (bit::is_owner(typeArr(i, j, k)) &&
-                !bit::is_refined(typeArr(i, j, k)) &&
+                (!bit::is_refined(typeArr(i, j, k)) || iLevSave >= 0) &&
                 writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
 
               pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
@@ -406,7 +411,7 @@ double Pic::get_var(std::string var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 5) == "block") {
       value = mfi.index();
     } else if (var.substr(0, 9) == "neuregion") {
-      if (stateOH) {        
+      if (stateOH) {
         value = stateOH->get_neu_source_region(mfi, ijk, iLev);
       } else {
         value = -1;
@@ -570,8 +575,8 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
       of.precision(15);
       of << std::scientific;
       of << tc->get_time_si() << "\t" << tc->get_cycle() << "\t"
-         << (eEnergy + bEnergy + plasmaEnergy[iTot]) << "\t" << eEnergy
-         << "\t" << bEnergy << "\t" << plasmaEnergy[iTot];
+         << (eEnergy + bEnergy + plasmaEnergy[iTot]) << "\t" << eEnergy << "\t"
+         << bEnergy << "\t" << plasmaEnergy[iTot];
       for (int i = 0; i < nSpecies; ++i)
         of << "\t" << plasmaEnergy[i];
       of << std::endl;

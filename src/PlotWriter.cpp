@@ -107,6 +107,11 @@ void PlotWriter::init() {
     abort();
   }
 
+  if (plotString.find("ilev") != std::string::npos) {
+    std::string::size_type pos = plotString.find("ilev");
+    iLevSave = extract_int(plotString.substr(pos));
+  }
+
   // Analyze plot variables.
   var_I.push_back("X");
   var_I.push_back("Y");

@@ -93,6 +93,8 @@ private:
   std::vector<std::string> scalarName_I;
 
   int particleSpecies;
+
+  int iLevSave;
   //-----------------------------------------------------------------
 
 public:
@@ -131,7 +133,8 @@ public:
         No2SiJ(1),
         rPlanet(1),
         No2NoL(1),
-        particleSpecies(-1) {}
+        particleSpecies(-1),
+        iLevSave(-1) {}
 
   // Disabled the assignment operator to avoid potential mistake.
   PlotWriter& operator=(const PlotWriter&) = delete;
@@ -156,6 +159,7 @@ public:
     return plotString.find("node") != std::string::npos;
   }
   int get_particleSpecies() const { return particleSpecies; }
+  int get_ilev_save() const { return iLevSave; }
   double get_plotMin_D(int iDim) const { return plotMin_D[iDim]; }
   double get_plotMax_D(int iDim) const { return plotMax_D[iDim]; }
   /*----Get class member value end--------------------*/
