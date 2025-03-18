@@ -1329,12 +1329,10 @@ void Pic::update(bool doReportIn) {
   isMomentsUpdated = false;
 
   if (solveEM) {
+    if (projectDownEmFields) {
+      project_down_E();
+    }
     update_B();
-  }
-
-  if (projectDownEmFields) {
-    project_down_E();
-    project_down_B();
   }
 
   // Only to be turned on if DivE error needs to be visulaized when DivE
@@ -1907,6 +1905,14 @@ void Pic::update_B() {
                     centerB[iLev].nComp(), centerB[iLev].nGrow());
 
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+  if (projectDownEmFields && finest_level > 0) {
+    for (int iLev = finest_level; iLev > 0; iLev--) {
+      average_down(centerB[iLev], centerB[iLev - 1], 0, 3, ref_ratio[0]);
+    }
+  }
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
       apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
                &Pic::get_center_B, iLev, &bcBField);
@@ -1917,7 +1923,6 @@ void Pic::update_B() {
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
           cell_bilinear_interp);
     }
-
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
                    dBdt[iLev].nGrow());
 
@@ -1925,7 +1930,6 @@ void Pic::update_B() {
       div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
       smooth_B(iLev);
     }
-
     average_center_to_node(centerB[iLev], nodeB[iLev]);
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
 
@@ -2267,14 +2271,36 @@ void Pic::smooth_E(MultiFab& mfE, int iLev) {
 //==========================================================
 void Pic::project_down_E() {
   if (finest_level > 0) {
-    for (int iLev = 0; iLev < finest_level; iLev++) {
-      // fill_fine_lev_edge_from_coarse(
-      //     nodeE[iLev], nodeE[iLev + 1], 0, nodeE[iLev].nComp(),
-      //     ref_ratio[iLev], Geom(iLev), Geom(iLev + 1), node_status(iLev + 1),
-      //     node_bilinear_interp);
-    }
     for (int iLev = finest_level; iLev > 0; iLev--) {
-      average_down_nodal(nodeE[iLev], nodeE[iLev - 1], ref_ratio[iLev - 1]);
+      amrex::MultiFab tmp(nGrids[iLev], DistributionMap(iLev), 3, 0);
+      tmp.setVal(0.0);
+      for (MFIter mfi(tmp); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real>& arrE = nodeE[iLev][mfi].array();
+        const Array4<Real>& arrTmp = tmp[mfi].array();
+        ParallelFor(box, [&](int i, int j, int k) {
+          for (int iVar = 0; iVar < 3; iVar++) {
+            if (nDim == 3) {
+              arrTmp(i, j, k, iVar) =
+                  0.5 * arrE(i, j, k, iVar) +
+                  (1 / 12.0) *
+                      (arrE(i + 1, j, k, iVar) + arrE(i - 1, j, k, iVar) +
+                       arrE(i, j + 1, k, iVar) + arrE(i, j - 1, k, iVar) +
+                       arrE(i, j, k + 1, iVar) + arrE(i, j, k - 1, iVar));
+            } else {
+              arrTmp(i, j, k, iVar) =
+                  0.5 * arrE(i, j, k, iVar) +
+                  (1 / 8.0) *
+                      (arrE(i + 1, j, k, iVar) + arrE(i - 1, j, k, iVar) +
+                       arrE(i, j + 1, k, iVar) + arrE(i, j - 1, k, iVar));
+            }
+          }
+        });
+      }
+      fill_fine_lev_edge_from_coarse(
+          nodeE[iLev - 1], tmp, 0, nodeE[iLev].nComp(), ref_ratio[iLev],
+          Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
+      average_down_nodal(tmp, nodeE[iLev - 1], ref_ratio[iLev - 1]);
     }
     for (int iLev = 0; iLev <= finest_level; iLev++) {
       nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
