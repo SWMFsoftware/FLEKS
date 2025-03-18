@@ -1954,66 +1954,6 @@ void Pic::update_B() {
 }
 
 //==========================================================
-void Pic::update_B_new() {
-  std::string nameFunc = "Pic::update_B";
-  timing_func(nameFunc);
-  amrex::Vector<MultiFab> dB(n_lev());
-
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    dB[iLev].define(cGrids[iLev], DistributionMap(iLev), 3, nGst);
-    curl_node_to_center(nodeEth[iLev], dB[iLev], Geom(iLev).InvCellSize());
-  }
-  for (int iLev = finest_level; iLev > 0; iLev--) {
-    average_down(dB[iLev], dB[iLev - 1], 0, 3, ref_ratio[0]);
-  }
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    MultiFab::Saxpy(centerB[iLev], -tc->get_dt(), dB[iLev], 0, 0,
-                    centerB[iLev].nComp(), centerB[iLev].nGrow());
-
-    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-    if (iLev == 0) {
-      apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-               &Pic::get_center_B, iLev, &bcBField);
-
-    } else {
-      fill_fine_lev_bny_from_coarse(
-          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          cell_bilinear_interp);
-    }
-
-    MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
-                   dBdt[iLev].nGrow());
-
-    if (doSmoothB) {
-      div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
-      smooth_B(iLev);
-    }
-
-    average_center_to_node(centerB[iLev], nodeB[iLev]);
-    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
-
-    const Real invDt = 1. / tc->get_dt();
-    // dBdt = (B^{n+1} - B^n)/dt;
-    MultiFab::LinComb(dBdt[iLev], -invDt, dBdt[iLev], 0, invDt, nodeB[iLev], 0,
-                      0, dBdt[iLev].nComp(), dBdt[iLev].nGrow());
-
-    if (iLev == 0) {
-
-      apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
-               &Pic::get_node_B, iLev, &bcBField);
-
-    } else {
-
-      fill_fine_lev_bny_from_coarse(
-          nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
-          node_bilinear_interp);
-    }
-  }
-}
-
-//==========================================================
 void Pic::solve_hyp_phi(int iLev) {
   std::string nameFunc = "Pic::solve_hyp_phi";
   timing_func(nameFunc);
@@ -2305,19 +2245,6 @@ void Pic::project_down_E() {
     for (int iLev = 0; iLev <= finest_level; iLev++) {
       nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
     }
-  }
-}
-//==========================================================
-void Pic::project_down_B() {
-  if (finest_level > 0) {
-    for (int iLev = finest_level; iLev > 0; iLev--) {
-      average_down_nodal(nodeB[iLev], nodeB[iLev - 1], ref_ratio[iLev - 1]);
-      average_down(centerB[iLev], centerB[iLev - 1], 0, 3, ref_ratio[iLev - 1]);
-    }
-  }
-  for (int iLev = 0; iLev <= finest_level; iLev++) {
-    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
-    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
   }
 }
 //==========================================================

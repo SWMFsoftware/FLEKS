@@ -296,7 +296,6 @@ public:
 
   void smooth_E(amrex::MultiFab &mfE, int iLev);
   void project_down_E();
-  void project_down_B();
 
   void smooth_multifab(amrex::MultiFab &mf, int iLev, int di,
                        amrex::Real coef = 0.5);
@@ -305,7 +304,6 @@ public:
   //-------------Electric field solver end-------------
 
   void update_B();
-  void update_B_new();
 
   void smooth_B(int iLev);
 
