@@ -162,6 +162,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       testCase = TwoStream;
     } else if (testcase == "tophat") {
       testCase = TopHat;
+    } else if (testcase == "lightwave") {
+      testCase = LightWave;
     }
   } else if (command == "#SELECTPARTICLE") {
     param.read_var("doSelectParticle", doSelectParticle);
@@ -199,6 +201,12 @@ void Pic::fill_new_cells() {
 
   if (initEM)
     fill_E_B_fields();
+
+  if (testCase == LightWave) {
+    fill_lightwaves(48.0);
+    moveParticles = false;
+    decoupleParticlesFromField = true;
+  }
 
   if (usePIC) {
     fill_particles();
@@ -1345,9 +1353,9 @@ void Pic::update(bool doReportIn) {
   if (solveEM) {
     update_E();
   }
-
-  particle_mover();
-
+  if (moveParticles) {
+    particle_mover();
+  }
   // Calling re_sampling after particle mover so that all the particles outside
   // the domain have been deleted.
   re_sampling();
