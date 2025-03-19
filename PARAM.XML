@@ -35,7 +35,7 @@
 	<option value="real8" name="IDL double prec"/>
 	<option value="ascii" name="IDL ascii"/>
       </part>
-  <part name="plotlevel" type="string" input="select" required="T">
+  <part name="plotlevel" type="string" input="select" required="F">
 	<option value="ilev0" name="Level 0"/>
   <option value="ilev1" name="Level 1"/>
   <option value="ilev2" name="Level 2"/>
