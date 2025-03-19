@@ -35,6 +35,11 @@
 	<option value="real8" name="IDL double prec"/>
 	<option value="ascii" name="IDL ascii"/>
       </part>
+  <part name="plotlevel" type="string" input="select" required="T">
+	<option value="ilev0" name="Level 0"/>
+  <option value="ilev1" name="Level 1"/>
+  <option value="ilev2" name="Level 2"/>
+      </part>
       <part name="plotunit" type="string" input="select" required="T">
 	<option value="si"     name="SI units"/>
 	<option value="planet" name="planet units"/>
@@ -84,7 +89,7 @@ y=0 fluid real4 pic hour          plotString
 -1                                dn
 10                                dt
 1                                 dx
-cut fluid real8 si                plotString
+cut fluid real8 si ilev1          plotString
 -1                                dn
 100                               dt
 5                                 xMin
@@ -133,6 +138,10 @@ the fields. But they can not save particles. The 'amrex' format supports
 '3d' and 'cut' domains for saving particles, and '3d' domain for saving fields.
 'hdf5' supports '3d' domain for fields, if both AMReX and FLEKS are compiled with a 
  parallel HDF5 library.
+
+ The 'plotlevel' can be 'ilev0', 'ilev1', 'ilev2' .....
+ If plotlevel is not mentioned all levels are plotted.
+ If plotlevel is mentioned only that level is plotted.
  
  Paraview's 'contour' filter does not work well for both 'amrex' and 'hdf5' files. 
  Since Paraview contour each block individually, there are cracks across the block 
