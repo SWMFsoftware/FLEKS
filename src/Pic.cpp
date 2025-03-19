@@ -160,6 +160,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("testCase", testcase);
     if (testcase == "TwoStream") {
       testCase = TwoStream;
+    } else if (testcase == "tophat") {
+      testCase = TopHat;
     }
   } else if (command == "#SELECTPARTICLE") {
     param.read_var("doSelectParticle", doSelectParticle);
@@ -351,6 +353,12 @@ void Pic::post_regrid() {
 //==========================================================
 void Pic::fill_new_node_E() {
   {
+    Real xL = 0, xR = 0;
+    if (testCase == TopHat) {
+      xL = 0.75 * Geom(0).ProbLo()[ix_] + 0.25 * Geom(0).ProbHi()[ix_];
+      xR = 0.75 * Geom(0).ProbHi()[ix_] + 0.25 * Geom(0).ProbLo()[ix_];
+    }
+
     int iLev = 0;
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
       FArrayBox& fab = nodeE[iLev][mfi];
@@ -361,9 +369,17 @@ void Pic::fill_new_node_E() {
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_new(status(ijk))) {
-          arrE(ijk, ix_) = fi->get_ex(mfi, ijk, iLev);
-          arrE(ijk, iy_) = fi->get_ey(mfi, ijk, iLev);
-          arrE(ijk, iz_) = fi->get_ez(mfi, ijk, iLev);
+          if (testCase == TopHat) {
+            const Real x =
+                Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
+            if (x > xL && x < xR) {
+              arrE(ijk, iy_) = 1;
+            }
+          } else {
+            arrE(ijk, ix_) = fi->get_ex(mfi, ijk, iLev);
+            arrE(ijk, iy_) = fi->get_ey(mfi, ijk, iLev);
+            arrE(ijk, iz_) = fi->get_ez(mfi, ijk, iLev);
+          }
         }
       });
     }
@@ -381,6 +397,12 @@ void Pic::fill_new_node_E() {
 //==========================================================
 void Pic::fill_new_node_B() {
   {
+    Real xL = 0, xR = 0;
+    if (testCase == TopHat) {
+      xL = 0.75 * Geom(0).ProbLo()[ix_] + 0.25 * Geom(0).ProbHi()[ix_];
+      xR = 0.75 * Geom(0).ProbHi()[ix_] + 0.25 * Geom(0).ProbLo()[ix_];
+    }
+
     int iLev = 0;
     for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
@@ -390,9 +412,17 @@ void Pic::fill_new_node_B() {
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_new(status(ijk))) {
-          arrB(ijk, ix_) = fi->get_bx(mfi, ijk, iLev);
-          arrB(ijk, iy_) = fi->get_by(mfi, ijk, iLev);
-          arrB(ijk, iz_) = fi->get_bz(mfi, ijk, iLev);
+          if (testCase == TopHat) {
+            const Real x =
+                Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
+            if (x > xL && x < xR) {
+              arrB(ijk, iz_) = 1;
+            }
+          } else {
+            arrB(ijk, ix_) = fi->get_bx(mfi, ijk, iLev);
+            arrB(ijk, iy_) = fi->get_by(mfi, ijk, iLev);
+            arrB(ijk, iz_) = fi->get_bz(mfi, ijk, iLev);
+          }
         }
       });
     }
@@ -954,6 +984,10 @@ void Pic::sum_moments(bool updateDt) {
           if (uMaxSpecies > uMax[iLev]) {
             uMax[iLev] = uMaxSpecies;
           }
+
+          if (testCase == TopHat) {
+            uMax[iLev] = 1.0;
+          }
         }
 
         dtMax[iLev] = dxMin[iLev] / uMax[iLev];
@@ -1454,6 +1488,9 @@ void Pic::update_U0_E0() {
     }
 
     eBg[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    // for (int i = 0; i < nSmoothE; ++i)
+    //   smooth_multifab(eBg[iLev], iLev, i % 2 + 1);
   }
 }
 
@@ -2022,6 +2059,12 @@ void Pic::smooth_B(int iLev) {
     // component
     auto get_face = [&](int iDir, int i, int j, int k, int iVar,
                         Array4<Real const> const& arr, Real& l, Real& r) {
+      if (testCase == TopHat) {
+        l = 1;
+        r = 1;
+        return;
+      }
+
       int kp1 = nDim > 2 ? k + 1 : k;
       if (iDir == ix_) {
         l = 0.25 * (arr(i, j, k, iVar) + arr(i, j + 1, k, iVar) +
