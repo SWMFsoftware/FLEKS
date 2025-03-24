@@ -89,6 +89,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("solveFieldInCoMov", solveFieldInCoMov);
     param.read_var("solvePartInCoMov", solvePartInCoMov);
     param.read_var("nSmoothBackGroundU", nSmoothBackGroundU);
+  } else if (command == "#UPWIND") {
+    param.read_var("useUpwindE", useUpwindE);
+    param.read_var("useUpwindB", useUpwindB);
   } else if (command == "#SMOOTHE") {
     param.read_var("doSmoothE", doSmoothE);
     if (doSmoothE) {
@@ -1927,6 +1930,20 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   MultiFab::Add(temp2Node, nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                 temp2Node.nGrow());
 
+  if (useUpwindE) {
+    // Add the LF artificial viscosity term.
+    // vis_{i+0.5} = c_max/2*(E_i+1 - E_i)
+    // E_i += dt/dx*(vis_{i+0.5} - vis_{i-0.5}) = 0.5*c_max*dt*dx*lap(E_i)
+    tempNode.setVal(0.0);
+    lap_node_to_node(nodeE[iLev], tempNode, DistributionMap(iLev), Geom(iLev));
+
+    // Assume the maximum speed is light speed.
+    const Real cmax = 1.0;
+    const Real dx = Geom(iLev).CellSize()[0];
+    tempNode.mult(0.5 * cmax * fsolver.theta * tc->get_dt() * dx);
+    MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(),
+                  tempNode.nGrow());
+  }
   if (solveFieldInCoMov) {
     tempNode.setVal(0.0);
     update_E_M_dot_E(eBg[iLev], tempNode, iLev);

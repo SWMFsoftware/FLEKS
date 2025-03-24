@@ -124,6 +124,9 @@ private:
   bool solvePartInCoMov = false;
   int nSmoothBackGroundU = 0;
 
+  bool useUpwindE = false;
+  bool useUpwindB = false;  
+
   bool doSmoothE = false;
   int nSmoothE = 0;
   bool doSmoothB = false;

@@ -829,11 +829,11 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#SOURCEPARTICLES" || command == "#ELECTRON" ||
         command == "#DISCRETIZE" || command == "#DISCRETIZATION" ||
         command == "#RESAMPLING" || command == "#SMOOTHE" ||
-        command == "#SMOOTHB" || command == "#DIVB" || command == "#TESTCASE" ||
-        command == "#FASTMERGE" || command == "#ADAPTIVESOURCEPPC" ||
-        command == "#MERGELIGHT" || command == "#VACUUM" ||
-        command == "#PARTICLELEVRATIO" || command == "#OHION" ||
-        command == "#PIC" || command == "#EXPLICITPIC" ||
+        command == "#SMOOTHB" || command == "#UPWIND" || command == "#DIVB" ||
+        command == "#TESTCASE" || command == "#FASTMERGE" ||
+        command == "#ADAPTIVESOURCEPPC" || command == "#MERGELIGHT" ||
+        command == "#VACUUM" || command == "#PARTICLELEVRATIO" ||
+        command == "#OHION" || command == "#PIC" || command == "#EXPLICITPIC" ||
         command == "#COMOVING" || command == "#PARTICLEBOXBOUNDARY" ||
         command == "#BFIELDBOXBOUNDARY" || command == "#SUPID" ||
         command == "#SOLVEEM" || command == "#PARTMODE" ||
