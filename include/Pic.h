@@ -125,7 +125,10 @@ private:
   int nSmoothBackGroundU = 0;
 
   bool useUpwindE = false;
-  bool useUpwindB = false;  
+  bool useUpwindB = false;
+
+  bool doSmoothJ = false;
+  int nSmoothJ = 0;
 
   bool doSmoothE = false;
   int nSmoothE = 0;

@@ -97,6 +97,11 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (doSmoothE) {
       param.read_var("nSmoothE", nSmoothE);
     }
+  } else if (command == "#SMOOTHJ") {
+    param.read_var("doSmoothJ", doSmoothJ);
+    if (doSmoothJ) {
+      param.read_var("nSmoothJ", nSmoothJ);
+    }
   } else if (command == "#SMOOTHB") {
     param.read_var("doSmoothB", doSmoothB);
     param.read_var("theta", limiterTheta);
@@ -650,6 +655,12 @@ void Pic::calc_mass_matrix() {
 
     jHat[iLev].mult(invVol, 0, jHat[iLev].nComp(), jHat[iLev].nGrow());
     jHat[iLev].SumBoundary(Geom(iLev).periodicity());
+
+    if (doSmoothJ) {
+      for (int icount = 0; icount < nSmoothJ; icount++) {
+        smooth_multifab(jHat[iLev], iLev, icount % 2 + 1);
+      }
+    }
 
     if (!useExplicitPIC) {
       nodeMM[iLev].SumBoundary(Geom(iLev).periodicity());
@@ -1888,6 +1899,12 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
             (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
       });
     });
+  }
+
+  if (doSmoothJ) {
+    for (int icount = 0; icount < nSmoothJ; icount++) {
+      smooth_multifab(outMF, iLev, icount % 2 + 1);
+    }
   }
 }
 
