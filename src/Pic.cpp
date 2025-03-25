@@ -2091,11 +2091,13 @@ void Pic::smooth_B(int iLev) {
     Box box = mfi.validbox();
 
     const Array4<Real>& cB = centerB[iLev][mfi].array();
+    const Array4<Real>& nB = nodeB[iLev][mfi].array();
     const Array4<Real const>& nU = uBg[iLev][mfi].array();
     const Array4<Real>& dB = centerDB[mfi].array();
     const Array4<Real>& divBArr = divB[iLev][mfi].array();
     const Array4<Real>& gradPhiArr = gradPhi[mfi].array();
     const auto& status = cellStatus[iLev][mfi].array();
+    const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
 
     // Get the face along the direction iDir for the cell (i,j,k) for the iVar
     // component
@@ -2141,6 +2143,22 @@ void Pic::smooth_B(int iLev) {
       return 1 - phi;
     };
 
+    auto get_alfven = [&](int iDir, int i, int j, int k, Real& lAlfven,
+                          Real& rAlfven) {
+      // Left and right B
+      Real lB[nDim3] = { 0, 0, 0 }, rB[nDim3] = { 0, 0, 0 }, lBt, rBt;
+      Real lRho, rRho;
+      for (int ivar = 0; ivar < nDim3; ivar++) {
+        get_face(iDir, i, j, k, ivar, nB, lB[ivar], rB[ivar]);
+      }
+      lBt = l2_norm(lB, nDim3);
+      rBt = l2_norm(rB, nDim3);
+
+      get_face(iDir, i, j, k, iRho_, moments, lRho, rRho);
+      lAlfven = lBt / sqrt(lRho);
+      rAlfven = rBt / sqrt(rRho);
+    };
+
     ParallelFor(box, [&](int i, int j, int k) {
       bool doDiffusion;
       Real lu[nDim3] = { 0, 0, 0 }, ru[nDim3] = { 0, 0, 0 }, lumin, rumin;
@@ -2148,12 +2166,16 @@ void Pic::smooth_B(int iLev) {
 
       IntVect ijk{ AMREX_D_DECL(i, j, k) };
 
+      Real lAlfven = 0, rAlfven = 0;
+
       // Flux along  x
       for (int iDir = 0; iDir < nDim; iDir++) {
         get_face(iDir, i, j, k, iDir, nU, lu[iDir], ru[iDir]);
       }
       lumin = smoothBIso * max(fabs(lu[ix_]), fabs(lu[iy_]), fabs(lu[iz_]));
       rumin = smoothBIso * max(fabs(ru[ix_]), fabs(ru[iy_]), fabs(ru[iz_]));
+
+      get_alfven(ix_, i, j, k, lAlfven, rAlfven);
 
       ul = lu[ix_];
       ur = ru[ix_];
@@ -2163,8 +2185,14 @@ void Pic::smooth_B(int iLev) {
         doDiffusion = false;
       }
 
-      ul = max(fabs(ul), lumin);
-      ur = max(fabs(ur), rumin);
+      if (smoothBIso < 0) {
+        ul = fabs(ul) + lAlfven;
+        ur = fabs(ur) + rAlfven;
+      } else {
+        ul = max(fabs(ul), lumin);
+        ur = max(fabs(ur), rumin);
+      }
+
       if (doDiffusion)
         for (int iVar = 0; iVar < nDim3; iVar++) {
           Real cR = limiter(cB(i - 1, j, k, iVar), cB(i, j, k, iVar),
@@ -2186,8 +2214,16 @@ void Pic::smooth_B(int iLev) {
         doDiffusion = false;
       }
 
-      ul = max(fabs(ul), lumin);
-      ur = max(fabs(ur), rumin);
+      get_alfven(iy_, i, j, k, lAlfven, rAlfven);
+
+      if (smoothBIso < 0) {
+        ul = fabs(ul) + lAlfven;
+        ur = fabs(ur) + rAlfven;
+      } else {
+        ul = max(fabs(ul), lumin);
+        ur = max(fabs(ur), rumin);
+      }
+
       if (doDiffusion)
         for (int iVar = 0; iVar < nDim3; iVar++) {
           Real cR = limiter(cB(i, j - 1, k, iVar), cB(i, j, k, iVar),
@@ -2212,9 +2248,16 @@ void Pic::smooth_B(int iLev) {
             (ur < 0 && bit::is_domain_boundary(status(i, j, k + 1)))) {
           doDiffusion = false;
         }
+        get_alfven(iz_, i, j, k, lAlfven, rAlfven);
 
-        ul = max(fabs(ul), lumin);
-        ur = max(fabs(ur), rumin);
+        if (smoothBIso < 0) {
+          ul = fabs(ul) + lAlfven;
+          ur = fabs(ur) + rAlfven;
+        } else {
+          ul = max(fabs(ul), lumin);
+          ur = max(fabs(ur), rumin);
+        }
+
         if (doDiffusion)
           for (int iVar = 0; iVar < nDim3; iVar++) {
             Real cR = limiter(cB(i, j, k - 1, iVar), cB(i, j, k, iVar),
