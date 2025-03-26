@@ -1803,7 +1803,20 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     lap_node_to_node(vecMF, matvecMF, DistributionMap(iLev), Geom(iLev));
 
     Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
-    matvecMF.mult(-delt2);
+    Real coe1 = -delt2;
+
+    if (useUpwindE) {
+      // Explicit scheme: add the LF artificial viscosity term to the rhs
+      // vis_{i+0.5} = c_max/2*(E_i+1 - E_i)
+      // E_i += dt/dx*(vis_{i+0.5} - vis_{i-0.5}) = 0.5*c_max*dt*dx*lap(E_i)
+      // For implicit scheme, we add it to the lhs, so the sign changes.
+
+      // Assume the maximum speed is light speed.
+      const Real cmax = 1.0;
+      const Real dx = Geom(iLev).CellSize()[0];
+      coe1 += -0.5 * cmax * fsolver.theta * tc->get_dt() * dx;
+    }
+    matvecMF.mult(coe1);
 
     { // grad(divE)
       div_node_to_center(vecMF, centerDivE[iLev], Geom(iLev).InvCellSize());
@@ -1947,20 +1960,6 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   MultiFab::Add(temp2Node, nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                 temp2Node.nGrow());
 
-  if (useUpwindE) {
-    // Add the LF artificial viscosity term.
-    // vis_{i+0.5} = c_max/2*(E_i+1 - E_i)
-    // E_i += dt/dx*(vis_{i+0.5} - vis_{i-0.5}) = 0.5*c_max*dt*dx*lap(E_i)
-    tempNode.setVal(0.0);
-    lap_node_to_node(nodeE[iLev], tempNode, DistributionMap(iLev), Geom(iLev));
-
-    // Assume the maximum speed is light speed.
-    const Real cmax = 1.0;
-    const Real dx = Geom(iLev).CellSize()[0];
-    tempNode.mult(0.5 * cmax * fsolver.theta * tc->get_dt() * dx);
-    MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(),
-                  tempNode.nGrow());
-  }
   if (solveFieldInCoMov) {
     tempNode.setVal(0.0);
     update_E_M_dot_E(eBg[iLev], tempNode, iLev);
