@@ -89,9 +89,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("solveFieldInCoMov", solveFieldInCoMov);
     param.read_var("solvePartInCoMov", solvePartInCoMov);
     param.read_var("nSmoothBackGroundU", nSmoothBackGroundU);
-  } else if (command == "#UPWIND") {
+  } else if (command == "#UPWINDE") {
     param.read_var("useUpwindE", useUpwindE);
-    param.read_var("useUpwindB", useUpwindB);
+    param.read_var("limiterThetaE", limiterThetaE);
+    param.read_var("cMaxE", cMaxE);
   } else if (command == "#SMOOTHE") {
     param.read_var("doSmoothE", doSmoothE);
     if (doSmoothE) {
@@ -1803,20 +1804,51 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     lap_node_to_node(vecMF, matvecMF, DistributionMap(iLev), Geom(iLev));
 
     Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
-    Real coe1 = -delt2;
+    matvecMF.mult(-delt2);
 
     if (useUpwindE) {
       // Explicit scheme: add the LF artificial viscosity term to the rhs
       // vis_{i+0.5} = c_max/2*(E_i+1 - E_i)
       // E_i += dt/dx*(vis_{i+0.5} - vis_{i-0.5}) = 0.5*c_max*dt*dx*lap(E_i)
       // For implicit scheme, we add it to the lhs, so the sign changes.
-
-      // Assume the maximum speed is light speed.
-      const Real cmax = 1.0;
+      
       const Real dx = Geom(iLev).CellSize()[0];
-      coe1 += -0.5 * cmax * fsolver.theta * tc->get_dt() * dx;
+      const Real coe1 = -0.5 * cMaxE * fsolver.theta * tc->get_dt() / dx;
+
+      for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
+        const Array4<Real>& arrE = vecMF[mfi].array();
+        const Array4<Real>& res = matvecMF[mfi].array();
+
+        ParallelFor(box, vecMF.nComp(), [&](int i, int j, int k, int iVar) {
+          for (int iDir = 0; iDir < nDim; iDir++) {
+            Real dii[nDim3] = { 0, 0, 0 };
+            dii[iDir] = 1;
+
+            Real cR = limiter_theta(
+                limiterThetaE,
+                arrE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
+                arrE(i, j, k, iVar),
+                arrE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar));
+
+            Real cL = limiter_theta(
+                limiterThetaE,
+                arrE(i - 2 * dii[ix_], j - 2 * dii[iy_], k - 2 * dii[iz_],
+                     iVar),
+                arrE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
+                arrE(i, j, k, iVar));
+
+            Real dE =
+                cR * (arrE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar) -
+                      arrE(i, j, k, iVar)) -
+                cL * (arrE(i, j, k, iVar) -
+                      arrE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar));
+
+            res(i, j, k, iVar) += coe1 * dE;
+          }
+        });
+      }
     }
-    matvecMF.mult(coe1);
 
     { // grad(divE)
       div_node_to_center(vecMF, centerDivE[iLev], Geom(iLev).InvCellSize());
@@ -2130,18 +2162,6 @@ void Pic::smooth_B(int iLev) {
       }
     };
 
-    auto limiter = [&](Real u0, Real u1, Real u2) -> Real {
-      Real du21 = u2 - u1;
-      if (du21 == 0)
-        du21 = 1e-99;
-
-      Real r = (u1 - u0) / du21;
-
-      Real phi = max(0.0, min(limiterTheta * r, 0.5 * (1 + r), limiterTheta));
-
-      return 1 - phi;
-    };
-
     auto get_alfven = [&](int iDir, int i, int j, int k, Real& lAlfven,
                           Real& rAlfven) {
       // Left and right B
@@ -2194,10 +2214,10 @@ void Pic::smooth_B(int iLev) {
 
       if (doDiffusion)
         for (int iVar = 0; iVar < nDim3; iVar++) {
-          Real cR = limiter(cB(i - 1, j, k, iVar), cB(i, j, k, iVar),
-                            cB(i + 1, j, k, iVar));
-          Real cL = limiter(cB(i - 2, j, k, iVar), cB(i - 1, j, k, iVar),
-                            cB(i, j, k, iVar));
+          Real cR = limiter_theta(limiterTheta, cB(i - 1, j, k, iVar),
+                                  cB(i, j, k, iVar), cB(i + 1, j, k, iVar));
+          Real cL = limiter_theta(limiterTheta, cB(i - 2, j, k, iVar),
+                                  cB(i - 1, j, k, iVar), cB(i, j, k, iVar));
           dB(i, j, k, iVar) +=
               (cR * ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar)) -
                cL * ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar))) *
@@ -2225,10 +2245,10 @@ void Pic::smooth_B(int iLev) {
 
       if (doDiffusion)
         for (int iVar = 0; iVar < nDim3; iVar++) {
-          Real cR = limiter(cB(i, j - 1, k, iVar), cB(i, j, k, iVar),
-                            cB(i, j + 1, k, iVar));
-          Real cL = limiter(cB(i, j - 2, k, iVar), cB(i, j - 1, k, iVar),
-                            cB(i, j, k, iVar));
+          Real cR = limiter_theta(limiterTheta, cB(i, j - 1, k, iVar),
+                                  cB(i, j, k, iVar), cB(i, j + 1, k, iVar));
+          Real cL = limiter_theta(limiterTheta, cB(i, j - 2, k, iVar),
+                                  cB(i, j - 1, k, iVar), cB(i, j, k, iVar));
 
           dB(i, j, k, iVar) +=
               (cR * ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar)) -
@@ -2259,10 +2279,10 @@ void Pic::smooth_B(int iLev) {
 
         if (doDiffusion)
           for (int iVar = 0; iVar < nDim3; iVar++) {
-            Real cR = limiter(cB(i, j, k - 1, iVar), cB(i, j, k, iVar),
-                              cB(i, j, k + 1, iVar));
-            Real cL = limiter(cB(i, j, k - 2, iVar), cB(i, j, k - 1, iVar),
-                              cB(i, j, k, iVar));
+            Real cR = limiter_theta(limiterTheta, cB(i, j, k - 1, iVar),
+                                    cB(i, j, k, iVar), cB(i, j, k + 1, iVar));
+            Real cL = limiter_theta(limiterTheta, cB(i, j, k - 2, iVar),
+                                    cB(i, j, k - 1, iVar), cB(i, j, k, iVar));
 
             dB(i, j, k, iVar) +=
                 (cR * ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar)) -

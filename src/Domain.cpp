@@ -830,7 +830,7 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#DISCRETIZE" || command == "#DISCRETIZATION" ||
         command == "#RESAMPLING" || command == "#SMOOTHE" ||
         command == "#SMOOTHJ" || command == "#SMOOTHB" ||
-        command == "#UPWIND" || command == "#DIVB" || command == "#TESTCASE" ||
+        command == "#UPWINDE" || command == "#DIVB" || command == "#TESTCASE" ||
         command == "#FASTMERGE" || command == "#ADAPTIVESOURCEPPC" ||
         command == "#MERGELIGHT" || command == "#VACUUM" ||
         command == "#PARTICLELEVRATIO" || command == "#OHION" ||

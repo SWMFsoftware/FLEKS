@@ -13,6 +13,20 @@
 // Only works for x>-8;
 inline int fastfloor(amrex::Real x) { return (int)(x + 8) - 8; }
 
+inline amrex::Real limiter_theta(amrex::Real theta, amrex::Real u0,
+                                 amrex::Real u1, amrex::Real u2) {
+  amrex::Real du21 = u2 - u1;
+  if (du21 == 0)
+    du21 = 1e-99;
+
+  amrex::Real r = (u1 - u0) / du21;
+
+  amrex::Real phi =
+      amrex::max(0.0, amrex::min(theta * r, 0.5 * (1 + r), theta));
+
+  return 1 - phi;
+}
+
 inline int product(const amrex::IntVect& vect) {
   return AMREX_D_TERM(vect[0], *vect[1], *vect[2]);
 }
@@ -83,10 +97,9 @@ inline void linear_interpolation_coef(const amrex::RealVect& dx,
   amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
   amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 0, nDim > 2 ? 1 - dx[2] : 1 };
 
-  amrex::Real xy[2][2] = {
-    { interpX[0] * interpY[0], interpX[0] * interpY[1] },
-    { interpX[1] * interpY[0], interpX[1] * interpY[1] }
-  };
+  amrex::Real xy[2][2] = { { interpX[0] * interpY[0], interpX[0] * interpY[1] },
+                           { interpX[1] * interpY[0],
+                             interpX[1] * interpY[1] } };
 
   coef[0][0][0] = xy[1][1] * interpZ[1];
   coef[0][0][1] = xy[1][1] * interpZ[0];
@@ -114,16 +127,15 @@ inline void linear_interpolation_coef_finer(const amrex::RealVect& dx,
     if (interpY[i] < 0.0)
       interpY[i] = 0.0;
 
-    interpZ[i] =
-        nDim > 2 ? 2.0 * ((2.0 * interpZ[i]) - 1.0) : ((2.0 * interpZ[i]) - 1.0);
+    interpZ[i] = nDim > 2 ? 2.0 * ((2.0 * interpZ[i]) - 1.0)
+                          : ((2.0 * interpZ[i]) - 1.0);
     if (interpZ[i] < 0.0)
       interpZ[i] = 0.0;
   }
 
-  amrex::Real xy[2][2] = {
-    { interpX[0] * interpY[0], interpX[0] * interpY[1] },
-    { interpX[1] * interpY[0], interpX[1] * interpY[1] }
-  };
+  amrex::Real xy[2][2] = { { interpX[0] * interpY[0], interpX[0] * interpY[1] },
+                           { interpX[1] * interpY[0],
+                             interpX[1] * interpY[1] } };
 
   coef[0][0][0] = xy[1][1] * interpZ[1];
   coef[0][0][1] = xy[1][1] * interpZ[0];
