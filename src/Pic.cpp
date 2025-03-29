@@ -2219,6 +2219,8 @@ void Pic::smooth_B(int iLev) {
                                   cB(i, j, k, iVar), cB(i + 1, j, k, iVar));
           Real cL = limiter_theta(limiterTheta, cB(i - 2, j, k, iVar),
                                   cB(i - 1, j, k, iVar), cB(i, j, k, iVar));
+          ul = min(ul, 0.5 / coef[ix_]);
+          ur = min(ur, 0.5 / coef[ix_]);
           dB(i, j, k, iVar) +=
               (cR * ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar)) -
                cL * ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar))) *
@@ -2250,6 +2252,8 @@ void Pic::smooth_B(int iLev) {
                                   cB(i, j, k, iVar), cB(i, j + 1, k, iVar));
           Real cL = limiter_theta(limiterTheta, cB(i, j - 2, k, iVar),
                                   cB(i, j - 1, k, iVar), cB(i, j, k, iVar));
+          ul = min(ul, 0.5 / coef[iy_]);
+          ur = min(ur, 0.5 / coef[iy_]);
 
           dB(i, j, k, iVar) +=
               (cR * ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar)) -
@@ -2284,6 +2288,8 @@ void Pic::smooth_B(int iLev) {
                                     cB(i, j, k, iVar), cB(i, j, k + 1, iVar));
             Real cL = limiter_theta(limiterTheta, cB(i, j, k - 2, iVar),
                                     cB(i, j, k - 1, iVar), cB(i, j, k, iVar));
+            ul = min(ul, 0.5 / coef[iz_]);
+            ur = min(ur, 0.5 / coef[iz_]);
 
             dB(i, j, k, iVar) +=
                 (cR * ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar)) -
