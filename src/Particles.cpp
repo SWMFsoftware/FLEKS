@@ -1262,7 +1262,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
               auto& data0 = mmArrt[i](i1, j1, k1);
               for (int k2 = kMin; k2 <= kMax; k2++) {
                 const int kp = k2 - k1 + 1;
-                if (kp > 0) {
+                // if (kp > 0) 
+                if (true){
                   for (int j2 = jMin; j2 <= jMax; j2++) {
                     const int jp = j2 - j1 + 1;
                     for (int i2 = iMin; i2 <= iMax; i2++) {
