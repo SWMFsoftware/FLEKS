@@ -241,6 +241,132 @@ public:
         fine(i, j, 0, n + fcomp) = crse(ic, jc, 0, n + ccomp);
       }
     } else if (SpaceDim == 3) {
+
+      int ic = amrex::coarsen(i, ratio[0]);
+      int jc = amrex::coarsen(j, ratio[1]);
+      int kc = amrex::coarsen(k, ratio[2]);
+      int ioff = i - ic * ratio[0];
+      int joff = j - jc * ratio[1];
+      int koff = k - kc * ratio[2];
+
+      if (ioff != 0 && joff != 0 && koff != 0) {
+        // Fine node at center of cell
+        fine(i, j, k, n + fcomp) = 0.0;
+        Real mult[3] = { 1.0, 1.0, 1.0 };
+        for (int ii = -1; ii <= 2; ++ii) {
+          for (int jj = -1; jj <= 2; ++jj) {
+            for (int kk = -1; kk <= 2; ++kk) {
+              if (ii == -1 || ii == 2) {
+                mult[0] = -1.0 / 16.0;
+              } else if (ii == 0 || ii == 1) {
+                mult[0] = 9.0 / 16.0;
+              }
+              if (jj == -1 || jj == 2) {
+                mult[1] = -1.0 / 16.0;
+              } else if (jj == 0 || jj == 1) {
+                mult[1] = 9.0 / 16.0;
+              }
+              if (kk == -1 || kk == 2) {
+                mult[2] = -1.0 / 16.0;
+              } else if (kk == 0 || kk == 1) {
+                mult[2] = 9.0 / 16.0;
+              }
+              fine(i, j, k, n + fcomp) +=
+                  mult[0] * mult[1] * mult[2] *
+                  crse(ic + ii, jc + jj, kc + kk, n + ccomp);
+            }
+          }
+        }
+      }
+
+      else if (joff != 0 && koff != 0) {
+        // Node on a Y-Z face
+        fine(i, j, k, n + fcomp) = 0.0;
+        Real mult[2] = { 1.0, 1.0 };
+        for (int ii = -1; ii <= 2; ++ii) {
+          for (int jj = -1; jj <= 2; ++jj) {
+            if (ii == -1 || ii == 2) {
+              mult[0] = -1.0 / 16.0;
+            } else if (ii == 0 || ii == 1) {
+              mult[0] = 9.0 / 16.0;
+            }
+            if (jj == -1 || jj == 2) {
+              mult[1] = -1.0 / 16.0;
+            } else if (jj == 0 || jj == 1) {
+              mult[1] = 9.0 / 16.0;
+            }
+            fine(i, j, k, n + fcomp) +=
+                mult[0] * mult[1] * crse(ic, jc + jj, kc + ii, n + ccomp);
+          }
+        }
+      } else if (ioff != 0 && koff != 0) {
+        // Node on a Z-X face
+        fine(i, j, k, n + fcomp) = 0.0;
+        Real mult[2] = { 1.0, 1.0 };
+        for (int ii = -1; ii <= 2; ++ii) {
+          for (int jj = -1; jj <= 2; ++jj) {
+            if (ii == -1 || ii == 2) {
+              mult[0] = -1.0 / 16.0;
+            } else if (ii == 0 || ii == 1) {
+              mult[0] = 9.0 / 16.0;
+            }
+            if (jj == -1 || jj == 2) {
+              mult[1] = -1.0 / 16.0;
+            } else if (jj == 0 || jj == 1) {
+              mult[1] = 9.0 / 16.0;
+            }
+            fine(i, j, k, n + fcomp) +=
+                mult[0] * mult[1] * crse(ic + ii, jc, kc + jj, n + ccomp);
+          }
+        }
+      } else if (ioff != 0 && joff != 0) {
+        // Node on a X-Y face
+        fine(i, j, k, n + fcomp) = 0.0;
+        Real mult[2] = { 1.0, 1.0 };
+        for (int ii = -1; ii <= 2; ++ii) {
+          for (int jj = -1; jj <= 2; ++jj) {
+            if (ii == -1 || ii == 2) {
+              mult[0] = -1.0 / 16.0;
+            } else if (ii == 0 || ii == 1) {
+              mult[0] = 9.0 / 16.0;
+            }
+            if (jj == -1 || jj == 2) {
+              mult[1] = -1.0 / 16.0;
+            } else if (jj == 0 || jj == 1) {
+              mult[1] = 9.0 / 16.0;
+            }
+            fine(i, j, k, n + fcomp) +=
+                mult[0] * mult[1] * crse(ic + ii, jc + jj, kc, n + ccomp);
+          }
+        }
+      } else if (ioff != 0) {
+        // Node on X line
+        fine(i, j, k, n + fcomp) =
+
+            ((9.0 / 16.0) * (crse(ic, jc, kc, n + ccomp) +
+                             crse(ic + 1, jc, kc, n + ccomp)) -
+             (1.0 / 16.0) * (crse(ic - 1, jc, kc, n + ccomp) +
+                             crse(ic + 2, jc, kc, n + ccomp)));
+      } else if (joff != 0) {
+        // Node on Y line
+        fine(i, j, k, n + fcomp) =
+
+            ((9.0 / 16.0) * (crse(ic, jc, kc, n + ccomp) +
+                             crse(ic, jc + 1, kc, n + ccomp)) -
+             (1.0 / 16.0) * (crse(ic, jc - 1, kc, n + ccomp) +
+                             crse(ic, jc + 2, kc, n + ccomp)));
+      } else if (koff != 0) {
+        // Node on Z line
+        fine(i, j, k, n + fcomp) =
+
+            ((9.0 / 16.0) * (crse(ic, jc, kc, n + ccomp) +
+                             crse(ic, jc, kc + 1, n + ccomp)) -
+             (1.0 / 16.0) * (crse(ic, jc, kc - 1, n + ccomp) +
+                             crse(ic, jc, kc + 2, n + ccomp)));
+      } else {
+        // Node coincident with coarse node
+        fine(i, j, k, n + fcomp) = crse(ic, jc, kc, n + ccomp);
+      }
     }
   }
 };
