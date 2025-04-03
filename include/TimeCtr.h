@@ -46,15 +46,16 @@ public:
   PlotWriter writer;
 
 public:
-  PlotCtr(TimeCtr *tcIn, const int idIn = 0, const amrex::Real dtIn = -1,
-          const int dnIn = -1, const std::string plotStringIN = "",
-          const double dxIn = 1, const std::string plotVarIn = "",
+  PlotCtr(const MPI_Comm &ic, TimeCtr *tcIn, const int idIn = 0,
+          const amrex::Real dtIn = -1, const int dnIn = -1,
+          const std::string plotStringIN = "", const double dxIn = 1,
+          const std::string plotVarIn = "",
           const amrex::RealVect plotMinIn_D = { AMREX_D_DECL(1, 1, 1) },
           const amrex::RealVect plotMaxIn_D = { AMREX_D_DECL(-1, -1, -1) },
           const int nSpeciesIn = 2)
       : EventCtr(tcIn, dtIn, dnIn),
-        writer(idIn, plotStringIN, dxIn, plotVarIn, plotMinIn_D, plotMaxIn_D,
-               nSpeciesIn) {}
+        writer(ic, idIn, plotStringIN, dxIn, plotVarIn, plotMinIn_D,
+               plotMaxIn_D, nSpeciesIn) {}
 };
 
 class TimeCtr {

@@ -770,8 +770,6 @@ void Domain::init_time_ctr() {
       auto &writer = plot.writer;
 
       // Pass information to writers.
-      writer.set_rank(ParallelDescriptor::MyProc());
-      writer.set_nProcs(ParallelDescriptor::NProcs());
       writer.set_nDim(fi->get_fluid_dimension());
       writer.set_iRegion(gridID);
       writer.set_domainMin_D({ AMREX_D_DECL(
@@ -1106,8 +1104,9 @@ void Domain::read_param(const bool readGridInfo) {
           param.read_var("plotVar", plotVar);
         }
 
-        PlotCtr pcTmp(tc.get(), iPlot, dtSave, dnSave, plotString, dxSave,
-                      plotVar, plotMin_D, plotMax_D);
+        PlotCtr pcTmp(ParallelDescriptor::Communicator(), tc.get(), iPlot,
+                      dtSave, dnSave, plotString, dxSave, plotVar, plotMin_D,
+                      plotMax_D);
         tc->plots.push_back(pcTmp);
       }
     } else if (command == "#OHMSLAW") {

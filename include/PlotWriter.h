@@ -28,6 +28,7 @@ private:
   static bool doSaveBinary; // Save *.idl file in binary format or not.
 
   //----Input parameters--------------------------------------
+  MPI_Comm iComm;
   int nProcs;
   int nDim;
   int rank;
@@ -98,14 +99,13 @@ private:
   //-----------------------------------------------------------------
 
 public:
-  PlotWriter(const int idIn = 0, const std::string plotStringIN = "",
-             const double dxIn = 1, const std::string plotVarIn = "",
+  PlotWriter(const MPI_Comm& ic, const int idIn = 0,
+             const std::string plotStringIN = "", const double dxIn = 1,
+             const std::string plotVarIn = "",
              const amrex::RealVect& plotMinIn_D = { AMREX_D_DECL(1, 1, 1) },
              const amrex::RealVect& plotMaxIn_D = { AMREX_D_DECL(-1, -1, -1) },
              const int nSpeciesIn = 2)
-      : nProcs(0),
-        nDim(0),
-        rank(0),
+      : nDim(0),
         ID(idIn),
         iRegion(0),
         plotString(plotStringIN),
@@ -134,7 +134,11 @@ public:
         rPlanet(1),
         No2NoL(1),
         particleSpecies(-1),
-        iLevSave(-1) {}
+        iLevSave(-1) {
+    iComm = ic;
+    MPI_Comm_size(iComm, &nProcs);
+    MPI_Comm_rank(iComm, &rank);
+  }
 
   // Disabled the assignment operator to avoid potential mistake.
   PlotWriter& operator=(const PlotWriter&) = delete;
@@ -168,9 +172,7 @@ public:
   void set_plotString(std::string in) { plotString = in; }
   void set_plotVar(std::string in) { plotVar = in; }
   void set_plotDx(const double in) { plotDx = in; }
-  void set_nSpecies(const int in) { nSpecies = in; }
-  void set_nProcs(const int in) { nProcs = in; }
-  void set_rank(const int in) { rank = in; }
+  void set_nSpecies(const int in) { nSpecies = in; }    
   void set_nDim(const int in) { nDim = in; }
   void set_iRegion(const int in) { iRegion = in; }
   void set_No2NoL(const double& in) { No2NoL = in; }

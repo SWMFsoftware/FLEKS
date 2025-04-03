@@ -139,8 +139,8 @@ void ParticleTracker::update_field(Pic& pic) {
 }
 
 void ParticleTracker::post_process_param() {
-  savectr =
-      std::unique_ptr<PlotCtr>(new PlotCtr(tc, gridID, -1, nPTRecord * dnSave));
+  savectr = std::unique_ptr<PlotCtr>(new PlotCtr(
+      ParallelDescriptor::Communicator(), tc, gridID, -1, nPTRecord * dnSave));
   savectr->set_multiple(dnSave);
 }
 
@@ -240,8 +240,6 @@ void ParticleTracker::complete_parameters() {
 
   // Pass information to writers.
   writer.set_plotString("3d fluid test_particle real4 " + sIOUnit);
-  writer.set_rank(ParallelDescriptor::MyProc());
-  writer.set_nProcs(ParallelDescriptor::NProcs());
   writer.set_nDim(fi->get_fluid_dimension());
   writer.set_units(fi->get_No2SiL(), fi->get_No2SiV(), fi->get_No2SiB(),
                    fi->get_No2SiRho(), fi->get_No2SiP(), fi->get_No2SiJ(),
