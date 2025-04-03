@@ -81,7 +81,7 @@ public:
   void set_particle_region(std::string& sRegion,
                            amrex::Vector<std::shared_ptr<Shape> >& shapes) {
     if (!sRegion.empty()) {
-      //TODO: std::string::starts_with (C++20)
+      // TODO: std::string::starts_with (C++20)
       if (sRegion[0] == '+' || sRegion[0] == '-') {
         iPartRegion = iRegionUser_;
         tpRegions = Regions(shapes, sRegion);

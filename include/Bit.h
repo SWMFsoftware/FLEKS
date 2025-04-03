@@ -51,7 +51,8 @@ inline void set_not_lev_boundary(int& i) { turn_off_bit(i, iLevBny_); }
  * @brief Check if the input cell is a ghost cell on the current level.
  *
  * @param i The integer representing the cell status.
- * @return True if the cell is a ghost cell on the current level, false otherwise.
+ * @return True if the cell is a ghost cell on the current level, false
+ * otherwise.
  */
 inline bool is_lev_boundary(const int& i) { return test_bit(i, iLevBny_); }
 
@@ -62,7 +63,8 @@ inline void set_not_lev_edge(int& i) { turn_off_bit(i, iLevEdge_); }
  * @brief Check if the input cell is an edge physical cell on the current level.
  *
  * @param i The integer representing the cell status.
- * @return True if the cell is an edge cell on the current level, false otherwise.
+ * @return True if the cell is an edge cell on the current level, false
+ * otherwise.
  */
 inline bool is_lev_edge(const int& i) { return test_bit(i, iLevEdge_); }
 
@@ -94,9 +96,15 @@ inline void set_not_refined(int& i) { turn_off_bit(i, iRefined_); }
 inline bool is_refined(const int& i) { return test_bit(i, iRefined_); }
 
 //======= Neighbour to refined cell =======
-inline void set_refined_neighbour(int& i) { turn_on_bit(i, iRefinedNeighbour_); }
-inline void set_not_refined_neighbour(int& i) { turn_off_bit(i, iRefinedNeighbour_); }
-inline bool is_refined_neighbour(const int& i) { return test_bit(i, iRefinedNeighbour_); }
+inline void set_refined_neighbour(int& i) {
+  turn_on_bit(i, iRefinedNeighbour_);
+}
+inline void set_not_refined_neighbour(int& i) {
+  turn_off_bit(i, iRefinedNeighbour_);
+}
+inline bool is_refined_neighbour(const int& i) {
+  return test_bit(i, iRefinedNeighbour_);
+}
 
 } // namespace bit
 #endif

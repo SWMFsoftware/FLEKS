@@ -126,7 +126,7 @@ private:
 
   bool useUpwindE = false;
   amrex::Real limiterThetaE = 0;
-  amrex::Real cMaxE = 0.0; 
+  amrex::Real cMaxE = 0.0;
   bool useUpwindB = false;
 
   bool doSmoothJ = false;

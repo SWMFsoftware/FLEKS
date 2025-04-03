@@ -1262,8 +1262,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
               auto& data0 = mmArrt[i](i1, j1, k1);
               for (int k2 = kMin; k2 <= kMax; k2++) {
                 const int kp = k2 - k1 + 1;
-                // if (kp > 0) 
-                if (true){
+                // if (kp > 0)
+                if (true) {
                   for (int j2 = jMin; j2 <= jMax; j2++) {
                     const int jp = j2 - j1 + 1;
                     for (int i2 = iMin; i2 <= iMax; i2++) {
@@ -1297,8 +1297,9 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
   //   // layer
   //   // of the ghost nodes may contributes to the physical nodes below (ghost
   //   // node constributes as a sender). So, we need the '-1' and '+1' staff.
-  //   const int iMin = lo.x - 1, jMin = lo.y - 1, kMin = nDim > 2 ? lo.z - 1 : 0;
-  //   const int iMax = hi.x + 1, jMax = hi.y + 1, kMax = nDim > 2 ? hi.z + 1 : 0;
+  //   const int iMin = lo.x - 1, jMin = lo.y - 1, kMin = nDim > 2 ? lo.z - 1 :
+  //   0; const int iMax = hi.x + 1, jMax = hi.y + 1, kMax = nDim > 2 ? hi.z + 1
+  //   : 0;
 
   //   int gps, gpr; // gp_send, gp_receive
   //   for (int k1 = kMin; k1 <= kMax; k1++)

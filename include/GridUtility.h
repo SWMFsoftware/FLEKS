@@ -101,8 +101,8 @@ inline int get_local_node_or_cell_number(const amrex::MultiFab& MF) {
  * @brief Finds the node index and shift for a given position.
  *
  * This function calculates the node index (`loIdx`) and the shift (`dShift`)
- * for a given position (`xyz`) based on the provided problem lower bounds (`plo`)
- * and inverse cell size (`invDx`).
+ * for a given position (`xyz`) based on the provided problem lower bounds
+ * (`plo`) and inverse cell size (`invDx`).
  *
  * @param xyz The position vector.
  * @param plo The problem lower bounds.

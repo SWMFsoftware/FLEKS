@@ -123,9 +123,9 @@ int main(int argc, char* argv[]) {
       continue;
     } else if (deleteSource) {
       char command[2000];
-      std::snprintf(command, 2000, "\\rm -rf %s", fileNames[i].c_str());      
+      std::snprintf(command, 2000, "\\rm -rf %s", fileNames[i].c_str());
       std::cout << "Deleting source file: " << fileNames[i] << std::endl;
-      std::system(command);      
+      std::system(command);
     }
   }
 

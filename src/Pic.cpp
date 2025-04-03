@@ -787,7 +787,8 @@ void Pic::calc_mass_matrix_amr() {
 
   //     // We only need the mass matrix on the physical nodes. But the first
   //     // layer
-  //     // of the ghost nodes may contributes to the physical nodes below (ghost
+  //     // of the ghost nodes may contributes to the physical nodes below
+  //     (ghost
   //     // node constributes as a sender). So, we need the '-1' and '+1' staff.
   //     const int iMin = lo.x - 1, jMin = lo.y - 1,
   //               kMin = nDim > 2 ? lo.z - 1 : 0;
@@ -1812,7 +1813,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
       // vis_{i+0.5} = c_max/2*(E_i+1 - E_i)
       // E_i += dt/dx*(vis_{i+0.5} - vis_{i-0.5}) = 0.5*c_max*dt*dx*lap(E_i)
       // For implicit scheme, we add it to the lhs, so the sign changes.
-      
+
       const Real dx = Geom(iLev).CellSize()[0];
       const Real coe1 = -0.5 * cMaxE * fsolver.theta * tc->get_dt() / dx;
 
@@ -2125,7 +2126,7 @@ void Pic::smooth_B(int iLev) {
     const Array4<Real>& cB = centerB[iLev][mfi].array();
     const Array4<Real>& nB = nodeB[iLev][mfi].array();
     const Array4<Real const>& nU = uBg[iLev][mfi].array();
-    const Array4<Real>& dB = centerDB[mfi].array();    
+    const Array4<Real>& dB = centerDB[mfi].array();
     const Array4<Real>& gradPhiArr = gradPhi[mfi].array();
     const auto& status = cellStatus[iLev][mfi].array();
     const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
