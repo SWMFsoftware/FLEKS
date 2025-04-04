@@ -659,9 +659,22 @@ void Pic::calc_mass_matrix() {
     jHat[iLev].SumBoundary(Geom(iLev).periodicity());
 
     if (doSmoothJ) {
+      MultiFab curlB(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+      curlB.setVal(0.0);
+      const Real* invDx = Geom(iLev).InvCellSize();
+      curl_center_to_node(centerB[iLev], curlB, invDx);
+      curlB.mult(1. / fourPI);
+      curlB.FillBoundary(Geom(iLev).periodicity());
+
+      MultiFab::Saxpy(jHat[iLev], -1.0, curlB, 0, 0, jHat[iLev].nComp(),
+                      jHat[iLev].nGrow());
+
       for (int icount = 0; icount < nSmoothJ; icount++) {
         smooth_multifab(jHat[iLev], iLev, icount % 2 + 1);
       }
+
+      MultiFab::Saxpy(jHat[iLev], 1.0, curlB, 0, 0, jHat[iLev].nComp(),
+                      jHat[iLev].nGrow());
     }
 
     if (!useExplicitPIC) {
