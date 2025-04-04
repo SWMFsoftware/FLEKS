@@ -171,8 +171,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       testCase = TwoStream;
     } else if (testcase == "tophat") {
       testCase = TopHat;
+      nPartPerCell = IntVect::Zero;
     } else if (testcase == "lightwave") {
       testCase = LightWave;
+      nPartPerCell = IntVect::Zero;
     }
   } else if (command == "#SELECTPARTICLE") {
     param.read_var("doSelectParticle", doSelectParticle);
@@ -213,8 +215,6 @@ void Pic::fill_new_cells() {
 
   if (testCase == LightWave) {
     fill_lightwaves(48.0);
-    moveParticles = false;
-    decoupleParticlesFromField = true;
   }
 
   if (usePIC) {
@@ -623,13 +623,7 @@ void Pic::calc_mass_matrix() {
 
   if (isGridEmpty)
     return;
-  if (decoupleParticlesFromField) {
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      nodeMM[iLev].setVal(0.0);
-      jHat[iLev].setVal(0.0);
-    }
-    return;
-  }
+
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -707,9 +701,7 @@ void Pic::calc_mass_matrix_amr() {
     nodeMM[iLev].setVal(0.0);
     jHat[iLev].setVal(0.0);
   }
-  if (decoupleParticlesFromField) {
-    return;
-  }
+
   timing_func(nameFunc);
   //////////////////////////////////////////////////////////////////////
   amrex::Vector<amrex::Vector<amrex::MultiFab> > jhc;
@@ -848,13 +840,7 @@ void Pic::calc_mass_matrix_new() {
   if (isGridEmpty)
     return;
   timing_func(nameFunc);
-  if (decoupleParticlesFromField) {
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      nodeMM[iLev].setVal(0.0);
-      jHat[iLev].setVal(0.0);
-    }
-    return;
-  }
+
   //////////////////////////////////////////////////////////////////////
   amrex::Vector<amrex::MultiFab> jhc;
   amrex::Vector<amrex::MultiFab> jhf;
@@ -1023,7 +1009,7 @@ void Pic::sum_moments(bool updateDt) {
             uMax[iLev] = uMaxSpecies;
           }
 
-          if (testCase == TopHat) {
+          if (testCase == TopHat || testCase == LightWave) {
             uMax[iLev] = 1.0;
           }
         }
@@ -1383,9 +1369,9 @@ void Pic::update(bool doReportIn) {
   if (solveEM) {
     update_E();
   }
-  if (moveParticles) {
-    particle_mover();
-  }
+
+  particle_mover();
+
   // Calling re_sampling after particle mover so that all the particles outside
   // the domain have been deleted.
   re_sampling();

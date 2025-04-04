@@ -145,6 +145,9 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
     nPPC = ppc;
   }
 
+  if (nPPC == 0)
+    return;
+
   if (isPPVconstant) {
     nPPC /= pow(2, iLev);
   }
