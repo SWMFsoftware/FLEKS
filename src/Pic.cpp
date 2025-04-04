@@ -1948,11 +1948,11 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
     });
   }
 
-  if (doSmoothJ) {
-    for (int icount = 0; icount < nSmoothJ; icount++) {
-      smooth_multifab(outMF, iLev, icount % 2 + 1);
-    }
-  }
+  // if (doSmoothJ) {
+  //   for (int icount = 0; icount < nSmoothJ; icount++) {
+  //     smooth_multifab(outMF, iLev, icount % 2 + 1);
+  //   }
+  // }
 }
 
 //==========================================================
