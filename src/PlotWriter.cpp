@@ -1,3 +1,4 @@
+#include <AMReX_ParallelDescriptor.H>
 #include <AMReX_RealVect.H>
 #include <cctype>
 #include <cmath>
@@ -110,6 +111,10 @@ void PlotWriter::init() {
   if (plotString.find("ilev") != std::string::npos) {
     std::string::size_type pos = plotString.find("ilev");
     iLevSave = extract_int(plotString.substr(pos));
+  }
+
+  if (plotString.find("mpiio") != std::string::npos) {
+    useMpiIO = true;
   }
 
   // Analyze plot variables.
@@ -595,6 +600,14 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
   // 2D array.
   MDArray<double> value_II(nPoint, nVar);
   get_var(pointList_II, var_I, value_II);
+
+  for (int iPoint = 0; iPoint < nPoint; ++iPoint) {
+    for (int iVar = 0; iVar < nVar; ++iVar) {
+      value_II(iPoint, iVar) *= No2Out_I[iVar];
+    }
+  }
+
+  const double dx = dx_D[x_] * No2OutL;
   //------------Get values end-----------------------
 
   int nLength;
@@ -607,14 +620,13 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
   }
 
   std::stringstream ss;
-  ss << "_pe" << std::setfill('0') << std::setw(nLength) << rank << ".idl";
+  ss << "_pe" << std::setfill('0') << std::setw(nLength)
+     << (useMpiIO ? 0 : rank) << ".idl";
   std::string filename = get_filename(timeNow, iCycle) + ss.str();
 
   std::ofstream outFile;
+
   if (doSaveBinary) {
-    outFile.open(filename.c_str(),
-                 std::fstream::out | std::fstream::trunc |
-                     std::fstream::binary); // Write binary file.
     int nRecord, nSizeDouble, nSizeInt;
     nSizeInt = sizeof(int);
     assert(nSizeInt == 4);
@@ -622,22 +634,61 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
     // nVar + dx. nVar already includes X/Y/Z.
     nRecord = (nVar + 1) * nSizeDouble;
 
-    double data0;
-    for (long iPoint = 0; iPoint < nPoint; ++iPoint) {
-      // The PostIDL.f90 was originally designed for Fortran output. In order to
-      // use PostIDL.f90, we should follow the format of Fortran
-      // binary output. Each line is a record. Before and after
-      // each record, use 4 byte (nSizeInt)  to save the length of this record.
-      outFile.write(reinterpret_cast<char*>(&nRecord), nSizeInt);
+    long long int nSize = nPoint * (nSizeInt * 2 + nSizeDouble * (nVar + 1));
 
-      data0 = dx_D[x_] * No2OutL;
-      outFile.write(reinterpret_cast<char*>(&data0), nSizeDouble);
-      for (int iVar = 0; iVar < nVar; ++iVar) {
-        data0 = value_II(iPoint, iVar) * No2Out_I[iVar];
-        outFile.write(reinterpret_cast<char*>(&data0), nSizeDouble);
-      }
-      outFile.write(reinterpret_cast<char*>(&nRecord), nSizeInt);
+    Vector<char> buffer(nSize);
+    char* pos = buffer.data();
+    for (int iPoint = 0; iPoint < nPoint; ++iPoint) {
+      // The PostIDL.f90 was originally designed for Fortran output. In order
+      // to use PostIDL.f90, we should follow the format of Fortran binary
+      // output. Each line is a record. Before and after each record, use 4
+      // byte (nSizeInt)  to save the length of this record.
+
+      memcpy(pos, &nRecord, nSizeInt);
+      pos += nSizeInt;
+
+      memcpy(pos, &dx, nSizeDouble);
+      pos += nSizeDouble;
+
+      memcpy(pos, &value_II(iPoint, 0), nSizeDouble * nVar);
+      pos += nSizeDouble * nVar;
+
+      memcpy(pos, &nRecord, nSizeInt);
+      pos += nSizeInt;
     }
+
+    MPI_Offset offset = 0;
+    MPI_Comm iCommWrite = useMpiIO ? iComm : MPI_COMM_SELF;
+
+    if (useMpiIO) {
+      Vector<long long int> perProc, accumulated;
+      perProc.resize(nProcs, 0);
+      accumulated.resize(nProcs, 0);
+
+      long long int ahead;
+      ParallelDescriptor::Gather(&nSize, 1, &perProc[0], 1,
+                                 ParallelDescriptor::IOProcessorNumber());
+
+      if (ParallelDescriptor::IOProcessor()) {
+        for (int i = 1; i < accumulated.size(); ++i) {
+          accumulated[i] = accumulated[i - 1] + perProc[i - 1];
+        }
+      }
+
+      ParallelDescriptor::Scatter(&ahead, 1, &accumulated[0], 1,
+                                  ParallelDescriptor::IOProcessorNumber());
+      offset = ahead;
+    }
+
+    MPI_File fh;
+    MPI_Status status;
+
+    MPI_File_open(iCommWrite, filename.c_str(),
+                  MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fh);
+
+    MPI_File_write_at(fh, offset, buffer.data(), nSize, MPI_CHAR, &status);
+
+    MPI_File_close(&fh);
 
   } else {
 
@@ -645,9 +696,9 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
     outFile << std::scientific;
     outFile.precision(7);
     for (long iPoint = 0; iPoint < nPoint; ++iPoint) {
-      outFile << dx_D[x_] * No2OutL;
+      outFile << dx;
       for (int iVar = 0; iVar < nVar; ++iVar) {
-        outFile << "\t" << value_II(iPoint, iVar) * No2Out_I[iVar];
+        outFile << "\t" << value_II(iPoint, iVar);
       }
       outFile << "\n";
     }
