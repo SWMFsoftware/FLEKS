@@ -653,21 +653,26 @@ void Pic::calc_mass_matrix() {
     jHat[iLev].SumBoundary(Geom(iLev).periodicity());
 
     if (doSmoothJ) {
-      MultiFab curlB(nGrids[iLev], DistributionMap(iLev), 3, nGst);
-      curlB.setVal(0.0);
-      const Real* invDx = Geom(iLev).InvCellSize();
-      curl_center_to_node(centerB[iLev], curlB, invDx);
-      curlB.mult(1. / fourPI);
-      curlB.FillBoundary(Geom(iLev).periodicity());
+      MultiFab j0(nGrids[iLev], DistributionMap(iLev), 3, nGst);
 
-      MultiFab::Saxpy(jHat[iLev], -1.0, curlB, 0, 0, jHat[iLev].nComp(),
+      MultiFab::Copy(j0, jHat[iLev], 0, 0, jHat[iLev].nComp(),
+                     jHat[iLev].nGrow());
+
+      // Get low frequency part of jHat by smoothing
+      for (int icount = 0; icount < nSmoothJ; icount++) {
+        smooth_multifab(j0, iLev, icount % 2 + 1);
+      }
+
+      // Get high frequency part of jHat
+      MultiFab::Saxpy(jHat[iLev], -1.0, j0, 0, 0, jHat[iLev].nComp(),
                       jHat[iLev].nGrow());
 
+      // Smooth high frequency part of jHat
       for (int icount = 0; icount < nSmoothJ; icount++) {
         smooth_multifab(jHat[iLev], iLev, icount % 2 + 1);
       }
 
-      MultiFab::Saxpy(jHat[iLev], 1.0, curlB, 0, 0, jHat[iLev].nComp(),
+      MultiFab::Saxpy(jHat[iLev], 1.0, j0, 0, 0, jHat[iLev].nComp(),
                       jHat[iLev].nGrow());
     }
 
