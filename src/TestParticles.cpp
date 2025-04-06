@@ -494,14 +494,14 @@ bool TestParticles::write_particles(int cycle) {
 
   MPI_File_open(ParallelDescriptor::Communicator(), fileNamePartList.c_str(),
                 MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &listFile);
-  MPI_File_write_at(listFile, nPartAhead * listUnitSize, partList.data(),
-                    partList.size(), MPI_CHAR, &status);
+  MPI_File_write_at_all(listFile, nPartAhead * listUnitSize, partList.data(),
+                        partList.size(), MPI_CHAR, &status);
   MPI_File_close(&listFile);
 
   MPI_File_open(ParallelDescriptor::Communicator(), fileNamePartRecord.c_str(),
                 MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &recordFile);
-  MPI_File_write_at(recordFile, nByteAhead, dataBuffer.data(),
-                    dataBuffer.size(), MPI_CHAR, &status);
+  MPI_File_write_at_all(recordFile, nByteAhead, dataBuffer.data(),
+                        dataBuffer.size(), MPI_CHAR, &status);
   MPI_File_close(&recordFile);
 
   loop_particles("reset_record_counter", partList.data(), partList.size(),

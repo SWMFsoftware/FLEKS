@@ -686,7 +686,7 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
     MPI_File_open(iCommWrite, filename.c_str(),
                   MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fh);
 
-    MPI_File_write_at(fh, offset, buffer.data(), nSize, MPI_CHAR, &status);
+    MPI_File_write_at_all(fh, offset, buffer.data(), nSize, MPI_CHAR, &status);
 
     MPI_File_close(&fh);
 
