@@ -46,7 +46,6 @@ private:
   bool initEM = true;
 
   bool useExplicitPIC = false;
-  bool useNewElectricSolver = false;
   bool useNewCalcMassMatrix = true;
   bool projectDownEmFields = true;
 
@@ -286,12 +285,6 @@ public:
   //------------Coupler related end--------------
 
   //-------------Electric field solver begin-------------
-  void update_E_new();
-  void linearize_Ax_b(const amrex::MultiFab &inMF, amrex::MultiFab &outMF,
-                      int iLev);
-  void update_E_matvec_new(const double *vecIn, double *vecOut, int iLev,
-                           const bool useZeroBC = true);
-
   void update_E();
   void update_E_impl();
   void update_E_expl();
