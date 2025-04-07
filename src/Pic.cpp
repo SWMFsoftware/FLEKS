@@ -712,6 +712,8 @@ void Pic::calc_mass_matrix_amr() {
     nodeMM[iLev].setVal(0.0);
     jHat[iLev].setVal(0.0);
   }
+  if (SkipMassMatrix)
+    return;
 
   timing_func(nameFunc);
   //////////////////////////////////////////////////////////////////////
@@ -1370,7 +1372,7 @@ void Pic::update(bool doReportIn) {
     update_U0_E0();
 
   if (solveEM) {
-    if (!useNewCalcMassMatrix || finest_level == 0) {
+    if (finest_level == 0) {
       calc_mass_matrix();
     } else {
       calc_mass_matrix_amr();

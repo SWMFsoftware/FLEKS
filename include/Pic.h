@@ -46,8 +46,8 @@ private:
   bool initEM = true;
 
   bool useExplicitPIC = false;
-  bool useNewCalcMassMatrix = true;
   bool projectDownEmFields = true;
+  bool SkipMassMatrix = false;
 
   PartMode pMode = PartMode::PIC;
 
