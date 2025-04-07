@@ -659,27 +659,45 @@ void Pic::calc_mass_matrix() {
     jHat[iLev].SumBoundary(Geom(iLev).periodicity());
 
     if (doSmoothJ) {
-      MultiFab j0(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+      MultiFab jLow(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+      MultiFab jHigh(nGrids[iLev], DistributionMap(iLev), 3, nGst);
 
-      MultiFab::Copy(j0, jHat[iLev], 0, 0, jHat[iLev].nComp(),
+      MultiFab::Copy(jLow, jHat[iLev], 0, 0, jHat[iLev].nComp(),
+                     jHat[iLev].nGrow());
+
+      MultiFab::Copy(jHigh, jHat[iLev], 0, 0, jHat[iLev].nComp(),
                      jHat[iLev].nGrow());
 
       // Get low frequency part of jHat by smoothing
       for (int icount = 0; icount < nSmoothJ; icount++) {
-        smooth_multifab(j0, iLev, icount % 2 + 1);
+        smooth_multifab(jLow, iLev, icount % 2 + 1);
       }
 
       // Get high frequency part of jHat
-      MultiFab::Saxpy(jHat[iLev], -1.0, j0, 0, 0, jHat[iLev].nComp(),
-                      jHat[iLev].nGrow());
+      MultiFab::Saxpy(jHigh, -1.0, jLow, 0, 0, jHigh.nComp(), jHigh.nGrow());
 
       // Smooth high frequency part of jHat
       for (int icount = 0; icount < nSmoothJ; icount++) {
-        smooth_multifab(jHat[iLev], iLev, icount % 2 + 1);
+        smooth_multifab(jHigh, iLev, icount % 2 + 1);
       }
 
-      MultiFab::Saxpy(jHat[iLev], 1.0, j0, 0, 0, jHat[iLev].nComp(),
-                      jHat[iLev].nGrow());
+      MultiFab::Saxpy(jHigh, 1.0, jLow, 0, 0, jHigh.nComp(), jHigh.nGrow());
+
+      // MultiFab::Copy(jHat[iLev], jHigh, 0, 0, jHat[iLev].nComp(),
+      //                jHat[iLev].nGrow());
+
+      for (MFIter mfi(jHigh); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.fabbox();
+        const Array4<Real>& arrHigh = jHigh[mfi].array();
+        const Array4<Real>& arrLow = jLow[mfi].array();
+        const Array4<Real>& arrJ = jHat[iLev][mfi].array();
+
+        ParallelFor(box, jHigh.nComp(), [&](int i, int j, int k, int iVar) {
+          arrJ(i, j, k, iVar) = arrHigh(i, j, k, iVar);
+          median(arrHigh(i, j, k, iVar), arrLow(i, j, k, iVar),
+                 arrJ(i, j, k, iVar));
+        });
+      }
     }
 
     if (!useExplicitPIC) {
