@@ -28,6 +28,7 @@ Particles<NStructReal, NStructInt>::Particles(
 
   isParticleLocationRandom = gridIn->is_particle_location_random();
   isPPVconstant = gridIn->is_particles_per_volume_constant();
+  doPreSplitting = gridIn->do_pre_splitting();
   do_tiling = true;
 
   qom = charge / mass;
@@ -149,9 +150,13 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
     return;
 
   if (isPPVconstant) {
-    nPPC /= pow(2, iLev);
+    nPPC /= pow(get_ref_ratio(iLev).max(), iLev);
+  } else if (doPreSplitting) {
+    const Array4<int const>& status = cell_status(iLev)[mfi].array();
+    if (bit::is_refined_neighbour(status(ijk))) {
+      nPPC *= get_ref_ratio(iLev).max();
+    }
   }
-
   set_random_seed(iLev, ijk, nPPC);
 
   const Real vol = dx[iLev].product();
@@ -3415,6 +3420,190 @@ bool Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
 
   return true;
 }
+//==========================================================
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::split_new(Real limit,
+                                                   bool seperateVelocity) {
+  timing_func("Pts::split");
+
+  const int nInitial = product(nPartPerCell);
+
+  IntVect iv = { AMREX_D_DECL(1, 1, 1) };
+  if (!(do_tiling && tile_size == iv))
+    return;
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+
+    const Real vol = dx[iLev].product();
+    const Real vacuumMass = vacuum * vol;
+
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      Real dl = 0.1 * Geom(iLev).CellSize()[ix_] / (nPartPerCell.max());
+      int nLowerLimit = nInitial * limit;
+      int nGoal = nInitial;
+
+      if (doPreSplitting) {
+        const Array4<int const>& status = cell_status(iLev)[pti].array();
+        Box bx = pti.tilebox();
+        IntVect ibx = bx.smallEnd();
+        if (bit::is_refined_neighbour(status(ibx))) {
+          nLowerLimit = nLowerLimit * (pow(get_ref_ratio(iLev).max(), nDim));
+          nGoal = nGoal * (pow(get_ref_ratio(iLev).max(), nDim));
+          dl = dl / (get_ref_ratio(iLev).max());
+        }
+      }
+
+      Vector<ParticleType> newparticles;
+
+      auto& pTile = get_particle_tile(iLev, pti);
+      AoS& particles = pTile.GetArrayOfStructs();
+
+      const int nPartOrig = particles.size();
+      if (nPartOrig > nLowerLimit)
+        continue;
+
+      const int nSplit =
+          nGoal - nPartOrig > nPartOrig ? nPartOrig : nGoal - nPartOrig;
+      Real totalMass = 0;
+      for (auto& p : particles) {
+        // So far, the vacuum limit is designed for OH-PT neutrals only. It is
+        // not clear how should it be done for PIC, where electrons and ions
+        // have different mass. --Yuxi
+        totalMass += qomSign * p.rdata(iqp_);
+      }
+      if (totalMass < vacuumMass)
+        continue;
+
+      // Find the 'heaviest' nNew particles by sorting the weight
+      // (charge).-----
+
+      // Sort the particles by the location first to make sure the results
+      // are the same for different number of processors
+      std::sort(particles.begin(), particles.end(), compare_two_parts);
+
+      const Real invLx = 1. / (phi[iLev][ix_] - plo[iLev][ix_]);
+      const Real plox = plo[iLev][ix_];
+
+      // Sort the particles by the weight in decending order.
+      std::sort(
+          particles.begin(), particles.end(),
+          [&plox, &invLx](const ParticleType& pl, const ParticleType& pr) {
+            const Real ql = fabs(pl.rdata(iqp_));
+            const Real qr = fabs(pr.rdata(iqp_));
+            if (fabs(ql - qr) > 1e-9 * (ql + qr)) {
+              return ql > qr;
+            }
+
+            if (fabs(pl.pos(ix_) - pr.pos(ix_)) >
+                1e-9 * (fabs(pl.pos(ix_)) + fabs(pr.pos(ix_)))) {
+              return pl.pos(ix_) > pr.pos(ix_);
+            }
+            return false;
+          });
+      //----------------------------------------------------------------
+
+      const auto lo = lbound(pti.tilebox());
+      const auto hi = ubound(pti.tilebox());
+
+      const Real xMin = Geom(iLev).LoEdge(lo.x, ix_) +
+                        Geom(iLev).CellSize()[ix_] * 1e-10,
+                 xMax = Geom(iLev).HiEdge(hi.x, ix_) -
+                        Geom(iLev).CellSize()[ix_] * 1e-10;
+
+      const Real yMin = Geom(iLev).LoEdge(lo.y, iy_) +
+                        Geom(iLev).CellSize()[iy_] * 1e-10,
+                 yMax = Geom(iLev).HiEdge(hi.y, iy_) -
+                        Geom(iLev).CellSize()[iy_] * 1e-10;
+
+      const Real zMin = Geom(iLev).LoEdge(lo.z, iz_) +
+                        Geom(iLev).CellSize()[iz_] * 1e-10,
+                 zMax = Geom(iLev).HiEdge(hi.z, iz_) -
+                        Geom(iLev).CellSize()[iz_] * 1e-10;
+
+      if (is_neutral() || seperateVelocity) {
+        Box bx = pti.tilebox();
+        set_random_seed(iLev, bx.smallEnd(), IntVect(888));
+      }
+
+      if (seperateVelocity) {
+        Vector<ParticleType*> pold;
+        for (int ip = 0; ip < nSplit; ip++) {
+          pold.push_back(&(particles[ip]));
+        }
+        split_particles_by_velocity(pold, newparticles);
+      } else {
+        for (int ip = 0; ip < nSplit; ip++) {
+          auto& p = particles[ip];
+          Real qp1 = p.rdata(iqp_);
+          Real xp1 = p.pos(ix_);
+          Real yp1 = p.pos(iy_);
+          Real zp1 = nDim > 2 ? p.pos(iz_) : 0;
+          Real up1 = p.rdata(iup_);
+          Real vp1 = p.rdata(ivp_);
+          Real wp1 = p.rdata(iwp_);
+
+          const Real u2 = up1 * up1 + vp1 * vp1 + wp1 * wp1;
+
+          Real coef = (u2 < 1e-13) ? 0 : dl / sqrt(u2);
+          const Real dpx = coef * up1;
+          const Real dpy = coef * vp1;
+          const Real dpz = coef * wp1;
+
+          Real xp2 = xp1 + dpx;
+          Real yp2 = yp1 + dpy;
+          Real zp2 = zp1 + dpz;
+
+          int nNew = is_neutral() ? 7 : 1;
+
+          p.rdata(iqp_) = qp1 / (nNew + 1.0);
+
+          for (int iNew = 0; iNew < nNew; iNew++) {
+
+            if (is_neutral()) {
+              xp2 = xp1 + (xMax - xMin) * (randNum() - 0.5);
+              yp2 = yp1 + (yMax - yMin) * (randNum() - 0.5);
+              zp2 = zp1 + (zMax - zMin) * (randNum() - 0.5);
+            } else {
+              xp1 -= dpx;
+              yp1 -= dpy;
+              zp1 -= dpz;
+
+              xp1 = bound(xp1, xMin, xMax);
+              yp1 = bound(yp1, yMin, yMax);
+              zp1 = bound(zp1, zMin, zMax);
+              p.pos(ix_) = xp1;
+              p.pos(iy_) = yp1;
+
+              if (nDim > 2)
+                p.pos(iz_) = zp1;
+            }
+
+            xp2 = bound(xp2, xMin, xMax);
+            yp2 = bound(yp2, yMin, yMax);
+            zp2 = bound(zp2, zMin, zMax);
+
+            ParticleType pnew;
+            set_ids(pnew);
+
+            pnew.pos(ix_) = xp2;
+            pnew.pos(iy_) = yp2;
+            if (nDim > 2)
+              pnew.pos(iz_) = zp2;
+            pnew.rdata(iup_) = up1;
+            pnew.rdata(ivp_) = vp1;
+            pnew.rdata(iwp_) = wp1;
+            pnew.rdata(iqp_) = qp1 / (nNew + 1.0);
+            newparticles.push_back(pnew);
+          }
+        }
+      }
+
+      for (auto& p : newparticles) {
+        pTile.push_back(p);
+      }
+    }
+  }
+}
 
 //==========================================================
 template <int NStructReal, int NStructInt>
@@ -4848,8 +5037,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments_new(
         });
       }
       ctmp.setVal(0);
-      amrex::IntVect ratio = { AMREX_D_DECL(2, 2, 2) };
-      average_down_nodal(ftmp, ctmp, ratio);
+      average_down_nodal(ftmp, ctmp, get_ref_ratio(iLev));
     }
 
     momentsMF[iLev].setVal(0.0);

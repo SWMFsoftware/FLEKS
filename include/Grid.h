@@ -76,6 +76,8 @@ protected:
 
   bool isPPVconstant = false;
 
+  bool doPreSplitting = false;
+
   std::string tag;
 
 private:
@@ -128,6 +130,8 @@ public:
   bool is_particle_location_random() { return isParticleLocationRandom; }
 
   bool is_particles_per_volume_constant() { return isPPVconstant; }
+
+  bool do_pre_splitting() { return doPreSplitting; }
 
   virtual void pre_regrid() {};
 

@@ -55,6 +55,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("isParticleLocationRandom", isParticleLocationRandom);
   } else if (command == "#CONSTANTPPV") {
     param.read_var("isPPVconstant", isPPVconstant);
+  } else if (command == "#PRESPLITTING") {
+    param.read_var("doPreSplitting", doPreSplitting);
   } else if (command == "#DIVE") {
     param.read_var("doCorrectDivE", doCorrectDivE);
     if (doCorrectDivE) {
@@ -577,7 +579,11 @@ void Pic::re_sampling() {
       if (maxWeightRatio > 1) {
         parts[i]->limit_weight(maxWeightRatio, parts[i]->is_neutral());
       }
-      parts[i]->split(reSamplingLowLimit, parts[i]->is_neutral());
+      if (!doPreSplitting) {
+        parts[i]->split(reSamplingLowLimit, parts[i]->is_neutral());
+      } else {
+        parts[i]->split_new(reSamplingLowLimit, parts[i]->is_neutral());
+      }
       parts[i]->merge(reSamplingHighLimit);
     }
   }

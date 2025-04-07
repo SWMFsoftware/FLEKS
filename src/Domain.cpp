@@ -823,16 +823,16 @@ void Domain::read_param(const bool readGridInfo) {
 
     if (command == "#DIVE" || command == "#EFIELDSOLVER" ||
         command == "#RANDOMPARTICLESLOCATION" || command == "#CONSTANTPPV" ||
-        command == "#PARTICLES" || command == "#KINETICSOURCE" ||
-        command == "#SOURCEPARTICLES" || command == "#ELECTRON" ||
-        command == "#DISCRETIZE" || command == "#DISCRETIZATION" ||
-        command == "#RESAMPLING" || command == "#SMOOTHE" ||
-        command == "#SMOOTHJ" || command == "#SMOOTHB" ||
-        command == "#UPWINDE" || command == "#DIVB" || command == "#TESTCASE" ||
-        command == "#FASTMERGE" || command == "#ADAPTIVESOURCEPPC" ||
-        command == "#MERGELIGHT" || command == "#VACUUM" ||
-        command == "#PARTICLELEVRATIO" || command == "#OHION" ||
-        command == "#PIC" || command == "#EXPLICITPIC" ||
+        command == "#PRESPLITTING" || command == "#PARTICLES" ||
+        command == "#KINETICSOURCE" || command == "#SOURCEPARTICLES" ||
+        command == "#ELECTRON" || command == "#DISCRETIZE" ||
+        command == "#DISCRETIZATION" || command == "#RESAMPLING" ||
+        command == "#SMOOTHE" || command == "#SMOOTHJ" ||
+        command == "#SMOOTHB" || command == "#UPWINDE" || command == "#DIVB" ||
+        command == "#TESTCASE" || command == "#FASTMERGE" ||
+        command == "#ADAPTIVESOURCEPPC" || command == "#MERGELIGHT" ||
+        command == "#VACUUM" || command == "#PARTICLELEVRATIO" ||
+        command == "#OHION" || command == "#PIC" || command == "#EXPLICITPIC" ||
         command == "#COMOVING" || command == "#PARTICLEBOXBOUNDARY" ||
         command == "#BFIELDBOXBOUNDARY" || command == "#SUPID" ||
         command == "#SOLVEEM" || command == "#PARTMODE" ||

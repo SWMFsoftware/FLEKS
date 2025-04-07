@@ -218,6 +218,8 @@ protected:
 
   bool isPPVconstant = false;
 
+  bool doPreSplitting = false;
+
   BC bc; // boundary condition
 
   // AMREX uses 40 bits(it is 40! Not a typo. See AMReX_Particle.H) to store
@@ -675,6 +677,7 @@ public:
 
   void limit_weight(amrex::Real maxRatio, bool seperateVelocity = false);
   void split(amrex::Real limit, bool seperateVelocity = false);
+  void split_new(amrex::Real limit, bool seperateVelocity = false);
   void split_particles_by_velocity(amrex::Vector<ParticleType*>& plist,
                                    amrex::Vector<ParticleType>& newparticles);
   bool split_by_seperate_velocity(ParticleType& p1, ParticleType& p2,
