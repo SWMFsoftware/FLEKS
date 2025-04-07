@@ -13,6 +13,15 @@
 // Only works for x>-8;
 inline int fastfloor(amrex::Real x) { return (int)(x + 8) - 8; }
 
+inline amrex::Real median(amrex::Real a, amrex::Real b, amrex::Real c) {
+  if ((a > b) != (a > c))
+    return a;
+  else if ((b > a) != (b > c))
+    return b;
+  else
+    return c;
+}
+
 inline amrex::Real limiter_theta(amrex::Real theta, amrex::Real u0,
                                  amrex::Real u1, amrex::Real u2) {
   amrex::Real du21 = u2 - u1;
