@@ -1,6 +1,7 @@
 #ifndef _OHINTERFACE_H_
 #define _OHINTERFACE_H_
 
+#include "Constants.h"
 #include "FluidInterface.h"
 #include "SWMFInterface.h"
 
@@ -30,37 +31,36 @@ public:
     if (!isnodeFluidReady)
       return -1;
 
-    const amrex::Real gamma = 5. / 3;
-    auto get_fluid_moments =
-        [this, &gamma](const amrex::MFIter &mfi, const amrex::IntVect ijk,
-                       const int iFluid, const int iLev, amrex::Real &n,
-                       amrex::Real &u2, amrex::Real &mach2, amrex::Real &T,
-                       amrex::Real &p) {
-          // amu/m^3 or #/m^3
-          n = get_fluid_mass_density(mfi, ijk, iFluid, iLev) * get_No2SiRho() /
-              cProtonMassSI;
+    auto get_fluid_moments = [this](const amrex::MFIter &mfi,
+                                    const amrex::IntVect ijk, const int iFluid,
+                                    const int iLev, amrex::Real &n,
+                                    amrex::Real &u2, amrex::Real &mach2,
+                                    amrex::Real &T, amrex::Real &p) {
+      // amu/m^3 or #/m^3
+      n = get_fluid_mass_density(mfi, ijk, iFluid, iLev) * get_No2SiRho() /
+          cProtonMassSI;
 
-          // km/s
-          const amrex::Real ux =
-              get_fluid_ux(mfi, ijk, iFluid, iLev) * get_No2SiV() * 1e-3;
-          const amrex::Real uy =
-              get_fluid_uy(mfi, ijk, iFluid, iLev) * get_No2SiV() * 1e-3;
-          const amrex::Real uz =
-              get_fluid_uz(mfi, ijk, iFluid, iLev) * get_No2SiV() * 1e-3;
-          u2 = ux * ux + uy * uy + uz * uz;
+      // km/s
+      const amrex::Real ux =
+          get_fluid_ux(mfi, ijk, iFluid, iLev) * get_No2SiV() * 1e-3;
+      const amrex::Real uy =
+          get_fluid_uy(mfi, ijk, iFluid, iLev) * get_No2SiV() * 1e-3;
+      const amrex::Real uz =
+          get_fluid_uz(mfi, ijk, iFluid, iLev) * get_No2SiV() * 1e-3;
+      u2 = ux * ux + uy * uy + uz * uz;
 
-          // Pa
-          p = get_fluid_p(mfi, ijk, iFluid, iLev) * get_No2SiP();
-          T = p / n / cBoltzmannSI;
+      // Pa
+      p = get_fluid_p(mfi, ijk, iFluid, iLev) * get_No2SiP();
+      T = p / n / cBoltzmannSI;
 
-          // (km/s)^2
-          const amrex::Real cs2 = gamma * p / (n * cProtonMassSI) * 1e-6;
+      // (km/s)^2
+      const amrex::Real cs2 = gamma * p / (n * cProtonMassSI) * 1e-6;
 
-          mach2 = u2 / cs2;
+      mach2 = u2 / cs2;
 
-          // amu/cc
-          n = n * 1e-6;
-        };
+      // amu/cc
+      n = n * 1e-6;
+    };
 
     const int iSW = 0, iPUI3 = 1, iPUI2 = 2, iTotal = 3, iTotalPUI = 4,
               nSize = 5;

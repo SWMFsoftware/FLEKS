@@ -16,6 +16,9 @@ constexpr static double cBoltzmannSI = 1.380649e-23;
 constexpr static double mu0 = fourPI * 1e-7; // unit N/A^2
 
 constexpr static double cAUSI = 1.495978707e11; // m
+
+constexpr static double gamma = 5./3; 
+constexpr static double invGamma = 1./gamma;
 //===================================================
 
 //========= Numerical constants =====================
