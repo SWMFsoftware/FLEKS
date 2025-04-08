@@ -1125,7 +1125,7 @@ void Pic::calc_mach_number() {
         Real p = (moments(i, j, k, iPxx_) + moments(i, j, k, iPyy_) +
                   moments(i, j, k, iPzz_)) /
                  3.0;
-        Real vth = sqrt(gamma * p / rho);
+        Real vth = sqrt(gamma0 * p / rho);
 
         mach(i, j, k) = uBulk / max(vth, 1e-99);
       });

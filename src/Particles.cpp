@@ -4843,7 +4843,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 
               // P = (gamma-1)*(E - 0.5*rho*u2)
               ion2neu[iP_] =
-                  (gamma - 1) * (ion2neu[iE_] - 0.5 * m2 / ion2neu[iRho_]);
+                  (gamma0 - 1) * (ion2neu[iE_] - 0.5 * m2 / ion2neu[iRho_]);
 
               if (ion2neu[iP_] < 0) {
                 ion2neu[iP_] = 0;

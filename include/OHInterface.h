@@ -54,7 +54,7 @@ public:
       T = p / n / cBoltzmannSI;
 
       // (km/s)^2
-      const amrex::Real cs2 = gamma * p / (n * cProtonMassSI) * 1e-6;
+      const amrex::Real cs2 = gamma0 * p / (n * cProtonMassSI) * 1e-6;
 
       mach2 = u2 / cs2;
 
@@ -100,7 +100,7 @@ public:
 
       // (km/s)^2
       const amrex::Real cs2 =
-          gamma * p[iT] / (n[iT] * 1e6) / cProtonMassSI * 1e-6;
+          gamma0 * p[iT] / (n[iT] * 1e6) / cProtonMassSI * 1e-6;
       mach2[iT] = u2[iT] / cs2;
     }
 
