@@ -371,6 +371,8 @@ double Pic::get_var(std::string var, const int iLev, const IntVect ijk,
             value /= rho;
         }
       }
+    } else if (var.substr(0, 4) == "mach") {
+      value = mMach[iLev][mfi].array()(ijk);
     } else if (var.substr(0, 2) == "pS") {
       const Array4<Real const>& arr =
           nodePlasma[extract_int(var)][iLev][mfi].array();

@@ -73,6 +73,9 @@ private:
   amrex::Vector<amrex::MultiFab> uBg;
   amrex::Vector<amrex::MultiFab> eBg;
 
+  // Mach number: u/v_th
+  amrex::Vector<amrex::MultiFab> mMach;
+
   amrex::Vector<amrex::UMultiFab<RealMM> > nodeMM;
 
   // ------divE correction--------------
@@ -180,6 +183,8 @@ public:
     eBg.resize(n_lev_max());
     uBg.resize(n_lev_max());
 
+    mMach.resize(n_lev_max());
+
     centerNetChargeOld.resize(n_lev_max());
     centerNetChargeN.resize(n_lev_max());
     centerNetChargeNew.resize(n_lev_max());
@@ -244,6 +249,8 @@ public:
   void charge_exchange();
 
   void sum_moments(bool updateDt = false);
+
+  void calc_mach_number();
 
   void calc_mass_matrix();
   void calc_mass_matrix_amr();

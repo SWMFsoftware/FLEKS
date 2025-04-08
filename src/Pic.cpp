@@ -283,6 +283,9 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     distribute_FabArray(uBg[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst,
                         doMoveData);
 
+    distribute_FabArray(mMach[iLev], nGrids[iLev], DistributionMap(iLev), 1,
+                        nGst, doMoveData);
+
     distribute_FabArray(centerMM[iLev], cGrids[iLev], DistributionMap(iLev), 1,
                         nGst, doMoveData);
 
@@ -1088,7 +1091,42 @@ void Pic::sum_moments(bool updateDt) {
     }
   }
 
+  calc_mach_number();
+
   isMomentsUpdated = true;
+}
+
+//==========================================================
+// Ma = u/vth
+void Pic::calc_mach_number() {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+
+    for (MFIter mfi(nodePlasma[nSpecies][iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.fabbox();
+      const Array4<Real>& moments = nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real>& mach = mMach[iLev][mfi].array();
+
+      ParallelFor(box, [&](int i, int j, int k) {
+        Real rho = moments(i, j, k, iRho_);
+        if (rho <= 0) {
+          mach(i, j, k) = 0;
+          return;
+        }
+
+        Real u = moments(i, j, k, iUx_) / rho;
+        Real v = moments(i, j, k, iUy_) / rho;
+        Real w = moments(i, j, k, iUz_) / rho;
+        Real uBulk = sqrt(u * u + v * v + w * w);
+
+        Real p = (moments(i, j, k, iPxx_) + moments(i, j, k, iPyy_) +
+                  moments(i, j, k, iPzz_)) /
+                 3.0;
+        Real vth = sqrt(gamma * p / rho);
+
+        mach(i, j, k) = uBulk / max(vth, 1e-99);
+      });
+    }
+  }
 }
 
 //==========================================================
