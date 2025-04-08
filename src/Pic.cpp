@@ -671,7 +671,7 @@ void Pic::calc_mass_matrix() {
 
       // Get low frequency part of jHat by smoothing
       for (int icount = 0; icount < nSmoothJ; icount++) {
-        smooth_multifab(jLow, iLev, icount % 2 + 1);
+        smooth_multifab(jLow, iLev, 1);
       }
 
       // Get high frequency part of jHat
@@ -702,6 +702,8 @@ void Pic::calc_mass_matrix() {
                  arrJ(i, j, k, iVar));
         });
       }
+
+      smooth_multifab(jHat[iLev], iLev, 1);
     }
 
     if (!useExplicitPIC) {
