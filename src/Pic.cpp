@@ -104,6 +104,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("doSmoothJ", doSmoothJ);
     if (doSmoothJ) {
       param.read_var("nSmoothJ", nSmoothJ);
+      param.read_var("smoothJThreshold", smoothJThreshold);
     }
   } else if (command == "#SMOOTHB") {
     param.read_var("doSmoothB", doSmoothB);
@@ -694,8 +695,11 @@ void Pic::calc_mass_matrix() {
         const Array4<Real>& arrHigh = jHigh[mfi].array();
         const Array4<Real>& arrLow = jLow[mfi].array();
         const Array4<Real>& arrJ = jHat[iLev][mfi].array();
+        const Array4<Real>& arrMa = mMach[iLev][mfi].array();
 
         ParallelFor(box, jHigh.nComp(), [&](int i, int j, int k, int iVar) {
+          if (arrMa(i, j, k) < smoothJThreshold)
+            return;
           arrJ(i, j, k, iVar) = arrHigh(i, j, k, iVar);
           median(arrHigh(i, j, k, iVar), arrLow(i, j, k, iVar),
                  arrJ(i, j, k, iVar));

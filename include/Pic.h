@@ -131,6 +131,7 @@ private:
 
   bool doSmoothJ = false;
   int nSmoothJ = 0;
+  amrex::Real smoothJThreshold = 1;
 
   bool doSmoothE = false;
   int nSmoothE = 0;
