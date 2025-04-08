@@ -47,7 +47,7 @@ private:
 
   bool useExplicitPIC = false;
   bool projectDownEmFields = true;
-  bool SkipMassMatrix = false;
+  bool skipMassMatrix = false;
 
   PartMode pMode = PartMode::PIC;
 

@@ -737,7 +737,7 @@ void Pic::calc_mass_matrix_amr() {
     nodeMM[iLev].setVal(0.0);
     jHat[iLev].setVal(0.0);
   }
-  if (SkipMassMatrix)
+  if (skipMassMatrix)
     return;
 
   timing_func(nameFunc);
