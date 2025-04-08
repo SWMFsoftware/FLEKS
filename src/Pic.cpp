@@ -619,9 +619,6 @@ void Pic::particle_mover() {
     parts[i]->mover(nodeEth, nodeB, eBg, uBg, dt, dtnext, solvePartInCoMov);
   }
 
-  // parts[0]->shape_fix_DisplaceEqually4();
-  // parts[1]->shape_fix_DisplaceEqually4();
-
   for (int i = 0; i < nSpecies; ++i) {
     parts[i]->redistribute_particles();
   }
