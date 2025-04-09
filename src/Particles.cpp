@@ -149,13 +149,14 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   if (nPPC == 0)
     return;
 
-  const auto tppc = target_PPC(iLev)[mfi].array();
-  nPPC[ix_] = tppc(ijk, 1);
-  nPPC[iy_] = tppc(ijk, 2);
-  if (nDim == 3) {
-    nPPC[iz_] = tppc(ijk, 3);
+  if (isPPVconstant) {
+    nPPC /= pow(get_ref_ratio(iLev).max(), iLev);
+  } else if (doPreSplitting) {
+    const Array4<int const>& status = cell_status(iLev)[mfi].array();
+    if (bit::is_refined_neighbour(status(ijk))) {
+      nPPC *= get_ref_ratio(iLev).max();
+    }
   }
-
   set_random_seed(iLev, ijk, nPPC);
 
   const Real vol = dx[iLev].product();
@@ -3425,6 +3426,8 @@ void Particles<NStructReal, NStructInt>::split_new(Real limit,
                                                    bool seperateVelocity) {
   timing_func("Pts::split");
 
+  const int nInitial = product(nPartPerCell);
+
   IntVect iv = { AMREX_D_DECL(1, 1, 1) };
   if (!(do_tiling && tile_size == iv))
     return;
@@ -3435,20 +3438,20 @@ void Particles<NStructReal, NStructInt>::split_new(Real limit,
     const Real vacuumMass = vacuum * vol;
 
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-      const auto tppc = target_PPC(iLev)[pti].array();
-      IntVect nPPC = { AMREX_D_DECL(1, 1, 1) };
-      const Box& bx = pti.tilebox();
-      IntVect ibx = bx.smallEnd();
-      nPPC[ix_] = tppc(ibx, 2);
-      nPPC[iy_] = tppc(ibx, 2);
-      if (nDim == 3) {
-        nPPC[iz_] = tppc(ibx, 3);
-      }
-
-      const int nInitial = product(nPPC);
-      Real dl = 0.1 * Geom(iLev).CellSize()[ix_] / (nPPC.max());
+      Real dl = 0.1 * Geom(iLev).CellSize()[ix_] / (nPartPerCell.max());
       int nLowerLimit = nInitial * limit;
       int nGoal = nInitial;
+
+      if (doPreSplitting) {
+        const Array4<int const>& status = cell_status(iLev)[pti].array();
+        Box bx = pti.tilebox();
+        IntVect ibx = bx.smallEnd();
+        if (bit::is_refined_neighbour(status(ibx))) {
+          nLowerLimit = nLowerLimit * (pow(get_ref_ratio(iLev).max(), nDim));
+          nGoal = nGoal * (pow(get_ref_ratio(iLev).max(), nDim));
+          dl = dl / (get_ref_ratio(iLev).max());
+        }
+      }
 
       Vector<ParticleType> newparticles;
 

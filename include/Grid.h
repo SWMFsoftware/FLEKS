@@ -59,7 +59,6 @@ protected:
   // potential status.
   amrex::Vector<amrex::iMultiFab> cellStatus;
   amrex::Vector<amrex::iMultiFab> nodeStatus;
-  amrex::Vector<amrex::MultiFab> targetPPC;
 
   amrex::Vector<amrex::MultiFab> cellCost;
 
@@ -107,7 +106,6 @@ public:
 
     cellStatus.resize(n_lev_max());
     nodeStatus.resize(n_lev_max());
-    targetPPC.resize(n_lev_max());
     cellCost.resize(n_lev_max());
   };
 
@@ -234,8 +232,6 @@ public:
   const amrex::iMultiFab& node_status(int iLev) const {
     return nodeStatus[iLev];
   }
-
-  const amrex::MultiFab& target_PPC(int iLev) const { return targetPPC[iLev]; }
 
   std::string lev_string(int iLev) {
     std::string sLev = "_lev_" + std::to_string(iLev);

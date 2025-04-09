@@ -212,7 +212,7 @@ void Pic::fill_new_cells() {
     update_grid_status();
   }
 
-  SetTargetPPC(2);
+  SetTargetPPC(doPreSplitting, 2);
 
   if (initEM)
     fill_E_B_fields();

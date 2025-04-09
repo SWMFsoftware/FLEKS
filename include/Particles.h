@@ -545,10 +545,6 @@ public:
     return grid->node_status(iLev);
   }
 
-  const amrex::MultiFab& target_PPC(int iLev) const {
-    return grid->target_PPC(iLev);
-  }
-
   ParticleTileType& get_particle_tile(int iLev, const amrex::MFIter& mfi,
                                       const amrex::IntVect& iv) {
     amrex::Box tileBox;
