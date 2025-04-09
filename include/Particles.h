@@ -680,6 +680,7 @@ public:
   }
 
   void limit_weight(amrex::Real maxRatio, bool seperateVelocity = false);
+  void limit_weight_new(amrex::Real maxRatio, bool seperateVelocity = false);
   void split(amrex::Real limit, bool seperateVelocity = false);
   void split_new(amrex::Real limit, bool seperateVelocity = false);
   void split_particles_by_velocity(amrex::Vector<ParticleType*>& plist,
