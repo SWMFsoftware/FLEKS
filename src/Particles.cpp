@@ -3218,40 +3218,24 @@ void Particles<NStructReal, NStructInt>::limit_weight_new(
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-
+      const auto tppc = target_PPC(iLev)[pti].array();
+      const Box& bx = pti.tilebox();
+      IntVect ibx = bx.smallEnd();
+      int target = tppc(ibx, 0);
       Vector<ParticleType> newparticles;
-
       auto& pTile = get_particle_tile(iLev, pti);
       AoS& particles = pti.GetArrayOfStructs();
-
-      // Sort the particles first to make sure the results
-      // are the same for different number of processors
       std::sort(particles.begin(), particles.end(), compare_two_parts);
-
       Real totalMass = 0;
-      Real totalMoment[nDim3] = { 0, 0, 0 };
       for (auto& p : particles) {
         totalMass += fabs(p.rdata(iqp_));
-        for (int i = 0; i < nDim3; ++i)
-          totalMoment[i] += fabs(p.rdata(iqp_) * p.rdata(iup_ + i));
       }
-      Real avg = totalMass / particles.size();
+      Real avg = totalMass / target;
 
       // Real maxWeight = avg + maxRatio * vars;
       Real maxWeight = avg * maxRatio;
-
-      if (seperateVelocity) {
-        Box bx = pti.tilebox();
-        set_random_seed(iLev, bx.smallEnd(), IntVect(444));
-        Vector<ParticleType*> pold;
-        for (size_t ip = 0; ip < particles.size(); ip++) {
-          Real qp1 = particles[ip].rdata(iqp_);
-          if (fabs(qp1) < maxWeight)
-            continue;
-          pold.push_back(&(particles[ip]));
-        }
-        split_particles_by_velocity(pold, newparticles);
-      } else {
+      Real dl = 0.1 * Geom(iLev).CellSize()[ix_] / tppc(ibx, 1);
+      {
 
         const auto lo = lbound(pti.tilebox());
         const auto hi = ubound(pti.tilebox());
@@ -3271,53 +3255,62 @@ void Particles<NStructReal, NStructInt>::limit_weight_new(
                    zMax = Geom(iLev).HiEdge(hi.z, iz_) -
                           Geom(iLev).CellSize()[iz_] * 1e-10;
 
-        if (is_neutral()) {
-          Box bx = pti.tilebox();
-          set_random_seed(iLev, bx.smallEnd(), IntVect(999));
-        }
+        Box bx = pti.tilebox();
 
         for (auto& p : particles) {
           Real qp1 = p.rdata(iqp_);
           if (fabs(qp1) < maxWeight)
             continue;
 
+          Real xp1 = p.pos(ix_);
+          Real yp1 = p.pos(iy_);
+          Real zp1 = nDim > 2 ? p.pos(iz_) : 0;
           Real up1 = p.rdata(iup_);
           Real vp1 = p.rdata(ivp_);
           Real wp1 = p.rdata(iwp_);
+          const Real u2 = up1 * up1 + vp1 * vp1 + wp1 * wp1;
+          Real coef = (u2 < 1e-13) ? 0 : dl / sqrt(u2);
+          p.rdata(iqp_) = qp1 / (2.0);
+          const Real dpx = coef * up1;
+          const Real dpy = coef * vp1;
+          const Real dpz = coef * wp1;
 
-          Real xp1 = p.pos(ix_);
-          Real yp1 = p.pos(iy_);
-          Real zp1 = p.pos(iz_);
+          Real xp2 = xp1 + dpx;
+          Real yp2 = yp1 + dpy;
+          Real zp2 = zp1 + dpz;
 
-          int nNew = is_neutral() ? 7 : 1;
+          xp1 -= dpx;
+          yp1 -= dpy;
+          zp1 -= dpz;
 
-          p.rdata(iqp_) = qp1 / (nNew + 1);
+          xp1 = bound(xp1, xMin, xMax);
+          yp1 = bound(yp1, yMin, yMax);
+          zp1 = bound(zp1, zMin, zMax);
 
-          for (int iNew = 0; iNew < nNew; iNew++) {
-            ParticleType pnew;
-            set_ids(pnew);
+          p.pos(ix_) = xp1;
+          p.pos(iy_) = yp1;
 
-            Real xp2 = xp1 + (xMax - xMin) * (randNum() - 0.5);
-            Real yp2 = yp1 + (yMax - yMin) * (randNum() - 0.5);
-            Real zp2 = zp1 + (zMax - zMin) * (randNum() - 0.5);
+          if (nDim > 2)
+            p.pos(iz_) = zp1;
 
-            xp2 = bound(xp2, xMin, xMax);
-            yp2 = bound(yp2, yMin, yMax);
-            zp2 = bound(zp2, zMin, zMax);
+          xp2 = bound(xp2, xMin, xMax);
+          yp2 = bound(yp2, yMin, yMax);
+          zp2 = bound(zp2, zMin, zMax);
 
-            pnew.pos(ix_) = xp2;
-            pnew.pos(iy_) = yp2;
+          ParticleType pnew;
+          set_ids(pnew);
+
+          pnew.pos(ix_) = xp2;
+          pnew.pos(iy_) = yp2;
+          if (nDim > 2)
             pnew.pos(iz_) = zp2;
-            pnew.rdata(iup_) = up1;
-            pnew.rdata(ivp_) = vp1;
-            pnew.rdata(iwp_) = wp1;
-
-            pnew.rdata(iqp_) = qp1 / (nNew + 1);
-            newparticles.push_back(pnew);
-          }
+          pnew.rdata(iup_) = up1;
+          pnew.rdata(ivp_) = vp1;
+          pnew.rdata(iwp_) = wp1;
+          pnew.rdata(iqp_) = qp1 / (2.0);
+          newparticles.push_back(pnew);
         }
       }
-
       for (auto& p : newparticles) {
         pTile.push_back(p);
       }
