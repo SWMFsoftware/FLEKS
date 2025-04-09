@@ -62,7 +62,6 @@ private:
   amrex::Vector<amrex::MultiFab> nodeB;
   amrex::Vector<amrex::MultiFab> divB;
   amrex::Vector<amrex::MultiFab> centerB;
-  amrex::Vector<amrex::MultiFab> targetPPC;
   amrex::Vector<amrex::MultiFab> dBdt;
 
   // Hyperbolic cleaning
@@ -175,7 +174,6 @@ public:
 
     //-----------------------------------------------------
     centerB.resize(n_lev_max());
-    targetPPC.resize(n_lev_max());
     nodeB.resize(n_lev_max());
     dBdt.resize(n_lev_max());
     nodeE.resize(n_lev_max());
@@ -512,7 +510,7 @@ public:
     WriteMF(errorDivE, finest_level, "errorDivE");
   }
 
-  void SetTargetPPC(bool presplit, int npresplitcells) {
+  void SetTargetPPC(int npresplitcells) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       for (amrex::MFIter mfi(targetPPC[iLev]); mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.validbox();
@@ -527,7 +525,7 @@ public:
           if (nDim == 3) {
             ppcArr(ijk, 3) = nPartPerCell[iz_];
           }
-          if (presplit) {
+          if (doPreSplitting) {
             for (int ii = -npresplitcells; ii <= npresplitcells; ii++) {
               for (int jj = -npresplitcells; jj <= npresplitcells; jj++) {
                 for (int kk = -npresplitcells; kk <= npresplitcells; kk++) {
@@ -549,6 +547,13 @@ public:
             }
           }
         });
+      }
+      if (isPPVconstant) {
+        for (int iLev = 0; iLev < n_lev(); iLev++) {
+          targetPPC[iLev].mult(
+              1.0 / pow((pow(ref_ratio[iLev].max(), nDim)), iLev), 0, 1, 0);
+          targetPPC[iLev].mult(1.0 / pow(ref_ratio[iLev].max(), iLev), 1, 3, 0);
+        }
       }
     }
   }
