@@ -62,6 +62,7 @@ private:
   amrex::Vector<amrex::MultiFab> nodeB;
   amrex::Vector<amrex::MultiFab> divB;
   amrex::Vector<amrex::MultiFab> centerB;
+  amrex::Vector<amrex::MultiFab> targetPPC;
   amrex::Vector<amrex::MultiFab> dBdt;
 
   // Hyperbolic cleaning
@@ -174,6 +175,7 @@ public:
 
     //-----------------------------------------------------
     centerB.resize(n_lev_max());
+    targetPPC.resize(n_lev_max());
     nodeB.resize(n_lev_max());
     dBdt.resize(n_lev_max());
     nodeE.resize(n_lev_max());
@@ -508,6 +510,47 @@ public:
       }
     }
     WriteMF(errorDivE, finest_level, "errorDivE");
+  }
+
+  void SetTargetPPC(bool presplit, int npresplitcells) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      for (amrex::MFIter mfi(targetPPC[iLev]); mfi.isValid(); ++mfi) {
+        const amrex::Box &box = mfi.validbox();
+        const auto &ppcArr = targetPPC[iLev][mfi].array();
+        const auto &status = cell_status(iLev)[mfi].array();
+        amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
+          amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
+          ppcArr(ijk, 0) = product(nPartPerCell);
+          ppcArr(ijk, 1) = nPartPerCell[ix_];
+          ppcArr(ijk, 2) = nPartPerCell[iy_];
+          ppcArr(ijk, 3) = 0;
+          if (nDim == 3) {
+            ppcArr(ijk, 3) = nPartPerCell[iz_];
+          }
+          if (presplit) {
+            for (int ii = -npresplitcells; ii <= npresplitcells; ii++) {
+              for (int jj = -npresplitcells; jj <= npresplitcells; jj++) {
+                for (int kk = -npresplitcells; kk <= npresplitcells; kk++) {
+                  amrex::IntVect ijk2 =
+                      ijk + amrex::IntVect{ AMREX_D_DECL(ii, jj, kk) };
+                  if (bit::is_refined(status(ijk2)) &&
+                      !bit::is_refined(status(ijk))) {
+                    ppcArr(ijk, 0) = product(nPartPerCell) *
+                                     pow(ref_ratio[iLev].max(), nDim);
+                    ppcArr(ijk, 1) = nPartPerCell[ix_] * ref_ratio[iLev].max();
+                    ppcArr(ijk, 2) = nPartPerCell[iy_] * ref_ratio[iLev].max();
+                    if (nDim == 3) {
+                      ppcArr(ijk, 3) =
+                          nPartPerCell[iz_] * ref_ratio[iLev].max();
+                    }
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+    }
   }
   // private methods
 private:

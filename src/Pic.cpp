@@ -213,6 +213,8 @@ void Pic::fill_new_cells() {
     update_grid_status();
   }
 
+  SetTargetPPC(doPreSplitting, 2);
+
   if (initEM)
     fill_E_B_fields();
 
@@ -243,6 +245,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     nodePlasma.resize(nSpecies + 1);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    distribute_FabArray(targetPPC[iLev], cGrids[iLev], DistributionMap(iLev), 4,
+                        nGst);
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
     distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
