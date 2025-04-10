@@ -149,12 +149,12 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   if (nPPC == 0)
     return;
 
-  if (isPPVconstant) {
-    nPPC /= pow(get_ref_ratio(iLev).max(), iLev);
-  } else if (doPreSplitting) {
-    const Array4<int const>& status = cell_status(iLev)[mfi].array();
-    if (bit::is_refined_neighbour(status(ijk))) {
-      nPPC *= get_ref_ratio(iLev).max();
+  if (doPreSplitting) {
+    const Array4<int const>& tppc = target_PPC(iLev)[mfi].array();
+    nPPC[ix_] = tppc(ijk, ix_ + 1);
+    nPPC[iy_] = tppc(ijk, iy_ + 1);
+    if (nDim > 2) {
+      nPPC[iz_] = tppc(ijk, iz_ + 1);
     }
   }
   set_random_seed(iLev, ijk, nPPC);
