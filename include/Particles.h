@@ -545,6 +545,10 @@ public:
     return grid->node_status(iLev);
   }
 
+  const amrex::iMultiFab& target_PPC(int iLev) const {
+    return grid->target_PPC(iLev);
+  }
+
   ParticleTileType& get_particle_tile(int iLev, const amrex::MFIter& mfi,
                                       const amrex::IntVect& iv) {
     amrex::Box tileBox;
@@ -676,6 +680,7 @@ public:
   }
 
   void limit_weight(amrex::Real maxRatio, bool seperateVelocity = false);
+  void limit_weight_new(amrex::Real maxRatio, bool seperateVelocity = false);
   void split(amrex::Real limit, bool seperateVelocity = false);
   void split_new(amrex::Real limit, bool seperateVelocity = false);
   void split_particles_by_velocity(amrex::Vector<ParticleType*>& plist,

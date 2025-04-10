@@ -212,6 +212,8 @@ void Pic::fill_new_cells() {
     update_grid_status();
   }
 
+  SetTargetPPC(2);
+
   if (initEM)
     fill_E_B_fields();
 
@@ -580,7 +582,12 @@ void Pic::re_sampling() {
   if (doReSampling) {
     for (int i = 0; i < nSpecies; ++i) {
       if (maxWeightRatio > 1) {
-        parts[i]->limit_weight(maxWeightRatio, parts[i]->is_neutral());
+        if (!doPreSplitting) {
+          parts[i]->limit_weight(reSamplingLowLimit, parts[i]->is_neutral());
+        } else {
+          parts[i]->limit_weight_new(reSamplingLowLimit,
+                                     parts[i]->is_neutral());
+        }
       }
       if (!doPreSplitting) {
         parts[i]->split(reSamplingLowLimit, parts[i]->is_neutral());
