@@ -220,8 +220,6 @@ void Grid::distribute_grid_arrays(const Vector<BoxArray>& cGridsOld) {
 
     distribute_FabArray(cellCost[iLev], cGrids[iLev], DistributionMap(iLev), 1,
                         0, false);
-    distribute_FabArray(targetPPC[iLev], cGrids[iLev], DistributionMap(iLev), 4,
-                        10, false);
   }
 
   update_grid_status(cGridsOld);
