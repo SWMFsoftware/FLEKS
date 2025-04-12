@@ -212,6 +212,13 @@ void Pic::fill_new_cells() {
     update_grid_status();
   }
 
+  if (isPPVconstant || doPreSplitting) {
+    SetTargetPPC(2);
+    isTargetPPCDefined = true;
+    for (int i = 0; i < nSpecies; i++) {
+      parts[i]->set_is_target_ppc_defined(isTargetPPCDefined);
+    }
+  }
   if (initEM)
     fill_E_B_fields();
 
@@ -238,10 +245,13 @@ void Pic::fill_new_cells() {
 void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 
   // The last one is the sum of all species.
-  if (nodePlasma.empty())
+  if (nodePlasma.empty()) {
     nodePlasma.resize(nSpecies + 1);
+  }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    distribute_FabArray(targetPPC[iLev], cGrids[iLev], DistributionMap(iLev), 1,
+                        0);
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
     distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,

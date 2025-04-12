@@ -179,6 +179,7 @@ public:
     nodeEth.resize(n_lev_max());
     divB.resize(n_lev_max());
     hypPhi.resize(n_lev_max());
+    targetPPC.resize(n_lev_max());
 
     eBg.resize(n_lev_max());
     uBg.resize(n_lev_max());
@@ -488,6 +489,7 @@ public:
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       errorDivE[iLev].define(cGrids[iLev], DistributionMap(iLev), 1, nGst);
       errorDivE[iLev].setVal(0.0);
+
       for (amrex::MFIter mfi(errorDivE[iLev]); mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.validbox();
         const amrex::Array4<amrex::Real> &error = errorDivE[iLev][mfi].array();
@@ -508,6 +510,49 @@ public:
     }
     WriteMF(errorDivE, finest_level, "errorDivE");
   }
+
+  void SetTargetPPC(int npresplitcells) {
+    if (isPPVconstant && doPreSplitting) {
+      amrex::Abort(
+          "ConstantPPV and PreSplitting cannot be true at the same time");
+    }
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      for (amrex::MFIter mfi(targetPPC[iLev]); mfi.isValid(); ++mfi) {
+        const amrex::Box &box = mfi.validbox();
+        const auto &ppcArr = targetPPC[iLev][mfi].array();
+        const auto &status = cell_status(iLev)[mfi].array();
+        amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
+          amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
+          if (isPPVconstant) {
+            int tmp = 1;
+            for (int i = 0; i < nDim; i++) {
+              tmp *= (nPartPerCell[i] / pow((ref_ratio[iLev].max()), iLev));
+            }
+            ppcArr(ijk, 0) = tmp;
+          } else {
+            ppcArr(ijk, 0) = product(nPartPerCell);
+          }
+
+          if (doPreSplitting) {
+            for (int ii = -npresplitcells; ii <= npresplitcells; ii++) {
+              for (int jj = -npresplitcells; jj <= npresplitcells; jj++) {
+                for (int kk = -npresplitcells; kk <= npresplitcells; kk++) {
+                  amrex::IntVect ijk2 =
+                      ijk + amrex::IntVect{ AMREX_D_DECL(ii, jj, kk) };
+                  if (bit::is_refined(status(ijk2)) &&
+                      !bit::is_refined(status(ijk))) {
+                    ppcArr(ijk, 0) = product(nPartPerCell) *
+                                     pow(ref_ratio[iLev].max(), nDim);
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+    }
+  }
+
   // private methods
 private:
   amrex::Real calc_E_field_energy();

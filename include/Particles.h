@@ -220,6 +220,8 @@ protected:
 
   bool doPreSplitting = false;
 
+  bool isTargetPPCDefined = false;
+
   BC bc; // boundary condition
 
   // AMREX uses 40 bits(it is 40! Not a typo. See AMReX_Particle.H) to store
@@ -545,6 +547,10 @@ public:
     return grid->node_status(iLev);
   }
 
+  const amrex::iMultiFab& target_PPC(int iLev) const {
+    return grid->target_PPC(iLev);
+  }
+
   ParticleTileType& get_particle_tile(int iLev, const amrex::MFIter& mfi,
                                       const amrex::IntVect& iv) {
     amrex::Box tileBox;
@@ -561,6 +567,8 @@ public:
   void set_ppc(amrex::IntVect& in) { nPartPerCell = in; };
 
   void set_bc(BC& bcIn) { bc = bcIn; }
+
+  void set_is_target_ppc_defined(bool in) { isTargetPPCDefined = in; }
 
   inline bool is_outside_active_region(const ParticleType& p, int iLev) {
     if (iLev > 0) {
