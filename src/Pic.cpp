@@ -293,6 +293,9 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     distribute_FabArray(uBg[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst,
                         doMoveData);
 
+    distribute_FabArray(uExB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                        nGst, doMoveData);
+
     distribute_FabArray(mMach[iLev], nGrids[iLev], DistributionMap(iLev), 1,
                         nGst, doMoveData);
 
@@ -1515,6 +1518,44 @@ void Pic::update(bool doReportIn) {
 }
 
 //==========================================================
+void Pic::update_u_ExB() {
+  std::string nameFunc = "Pic::update_u_ExB";
+  timing_func(nameFunc);
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    uExB[iLev].setVal(0.0);
+    for (MFIter mfi(uExB[iLev]); mfi.isValid(); ++mfi) {
+      const Array4<Real>& arrU = uExB[iLev][mfi].array();
+      const Array4<const Real>& arrE = nodeE[iLev][mfi].array();
+      const Array4<const Real>& arrB = nodeB[iLev][mfi].array();
+
+      Box box = mfi.validbox();
+
+      // u = E x B / B^2
+      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
+        const Real& bx = arrB(i, j, k, ix_);
+        const Real& by = arrB(i, j, k, iy_);
+        const Real& bz = arrB(i, j, k, iz_);
+
+        const Real& ex = arrE(i, j, k, ix_);
+        const Real& ey = arrE(i, j, k, iy_);
+        const Real& ez = arrE(i, j, k, iz_);
+
+        const Real invB2 = 1. / max(bx * bx + by * by + bz * bz, 1e-99);
+
+        arrU(i, j, k, ix_) = median((ey * bz - ez * by) * invB2, 1, -1);
+        arrU(i, j, k, iy_) = median((ez * bx - ex * bz) * invB2, 1, -1);
+        arrU(i, j, k, iz_) = median((ex * by - ey * bx) * invB2, 1, -1);
+      });
+    }
+  }
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    uExB[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+}
+
+//==========================================================
 void Pic::update_U0_E0() {
   std::string nameFunc = "Pic::update_U0_E0";
   timing_func(nameFunc);
@@ -1649,6 +1690,10 @@ void Pic::update_E_impl() {
 
     convert_3d_to_1d(nodeE[iLev], eSolver.xLeft, iLev);
 
+    if (useUpwindE && cMaxE < 0) {
+      update_u_ExB();
+    }
+
     update_E_matvec(eSolver.xLeft, eSolver.matvec, iLev, false);
 
     for (int i = 0; i < eSolver.get_nSolve(); ++i) {
@@ -1769,12 +1814,13 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     // For implicit scheme, we add it to the lhs, so the sign changes.
 
     const Real dx = Geom(iLev).CellSize()[0];
-    const Real coe1 = -0.5 * cMaxE * fsolver.theta * tc->get_dt() / dx;
+    const Real coe1 = -0.5 * fsolver.theta * tc->get_dt() / dx;
 
     for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real>& arrE = vecMF[mfi].array();
       const Array4<Real>& res = matvecMF[mfi].array();
+      const Array4<Real>& arrU = uExB[iLev][mfi].array();
 
       ParallelFor(box, vecMF.nComp(), [&](int i, int j, int k, int iVar) {
         for (int iDir = 0; iDir < nDim; iDir++) {
@@ -1793,10 +1839,23 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
               arrE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
               arrE(i, j, k, iVar));
 
-          Real dE = cR * (arrE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar) -
-                          arrE(i, j, k, iVar)) -
-                    cL * (arrE(i, j, k, iVar) -
-                          arrE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar));
+          Real ur = cMaxE, ul = cMaxE;
+
+          if (cMaxE < 0) {
+            ul = fabs(0.5 *
+                      (arrU(i - dii[ix_], j - dii[iy_], k - dii[iz_], iDir) +
+                       arrU(i, j, k, iDir)));
+            ur = fabs(0.5 *
+                      (arrU(i, j, k, iDir) +
+                       arrU(i + dii[ix_], j + dii[iy_], k + dii[iz_], iDir)));
+          }
+
+          Real dE = cR * ur *
+                        (arrE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar) -
+                         arrE(i, j, k, iVar)) -
+                    cL * ul *
+                        (arrE(i, j, k, iVar) -
+                         arrE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar));
 
           res(i, j, k, iVar) += coe1 * dE;
         }

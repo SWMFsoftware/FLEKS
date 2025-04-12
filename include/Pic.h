@@ -73,6 +73,9 @@ private:
   amrex::Vector<amrex::MultiFab> uBg;
   amrex::Vector<amrex::MultiFab> eBg;
 
+  // uExB = ExB/B^2
+  amrex::Vector<amrex::MultiFab> uExB;
+
   // Mach number: u/v_th
   amrex::Vector<amrex::MultiFab> mMach;
 
@@ -183,6 +186,8 @@ public:
 
     eBg.resize(n_lev_max());
     uBg.resize(n_lev_max());
+
+    uExB.resize(n_lev_max());
 
     mMach.resize(n_lev_max());
 
@@ -309,6 +314,8 @@ public:
                        amrex::Real coef = 0.5);
 
   void update_U0_E0();
+
+  void update_u_ExB();
   //-------------Electric field solver end-------------
 
   void update_B();
