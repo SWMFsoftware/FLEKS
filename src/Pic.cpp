@@ -108,10 +108,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("nSmoothJ", nSmoothJ);
     }
   } else if (command == "#SMOOTHB") {
-    param.read_var("doSmoothB", doSmoothB);
+    param.read_var("useUpwindB", useUpwindB);
     param.read_var("theta", limiterTheta);
     param.read_var("Isotropy", smoothBIso);
-    if (doSmoothB) {
+    if (useUpwindB) {
       useHyperbolicCleaning = true;
     }
   } else if (command == "#DIVB") {
@@ -193,7 +193,7 @@ void Pic::post_process_param() {
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
 
-  if (useUpwindE || doSmoothB)
+  if (useUpwindE || useUpwindB)
     doCalcExB = true;
 }
 
@@ -1442,8 +1442,12 @@ void Pic::update(bool doReportIn) {
 
   Real tStart = second();
 
-  if (solveFieldInCoMov || solvePartInCoMov || doSmoothB)
+  if (solveFieldInCoMov || solvePartInCoMov)
     update_U0_E0();
+
+  if (doCalcExB) {
+    update_u_ExB();
+  }
 
   if (solveEM) {
     if (finest_level == 0) {
@@ -1700,10 +1704,6 @@ void Pic::update_E_impl() {
     update_E_rhs(eSolver.rhs, iLev);
 
     convert_3d_to_1d(nodeE[iLev], eSolver.xLeft, iLev);
-
-    if (doCalcExB) {
-      update_u_ExB();
-    }
 
     update_E_matvec(eSolver.xLeft, eSolver.matvec, iLev, false);
 
@@ -2055,7 +2055,7 @@ void Pic::update_B() {
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
                    dBdt[iLev].nGrow());
 
-    if (doSmoothB) {
+    if (useUpwindB) {
       div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
       smooth_B(iLev);
     }

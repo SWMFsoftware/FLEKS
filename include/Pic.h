@@ -133,15 +133,14 @@ private:
   amrex::Real limiterThetaE = 0;
   amrex::Real cMaxE = 0.0;
   bool useUpwindB = false;
+  amrex::Real limiterTheta = 0;
+  amrex::Real smoothBIso = 0.1;
 
   bool doSmoothJ = false;
   int nSmoothJ = 0;
 
   bool doSmoothE = false;
   int nSmoothE = 0;
-  bool doSmoothB = false;
-  amrex::Real limiterTheta = 0;
-  amrex::Real smoothBIso = 0.1;
 
   TestCase testCase = RegularSimulation;
 
