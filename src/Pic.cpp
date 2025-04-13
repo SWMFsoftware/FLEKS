@@ -2142,7 +2142,7 @@ void Pic::smooth_B(int iLev) {
 
     const Array4<Real>& cB = centerB[iLev][mfi].array();
     const Array4<Real>& nB = nodeB[iLev][mfi].array();
-    const Array4<Real const>& nU = uBg[iLev][mfi].array();
+    const Array4<Real const>& nU = uExB[iLev][mfi].array();
     const Array4<Real>& dB = centerDB[mfi].array();
     const Array4<Real>& gradPhiArr = gradPhi[mfi].array();
     const auto& status = cellStatus[iLev][mfi].array();
