@@ -95,8 +95,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("useUpwindE", useUpwindE);
     param.read_var("limiterThetaE", limiterThetaE);
     param.read_var("cMaxE", cMaxE);
-  } else if (command == "#SMOOTHEXB") {
-    param.read_var("nSmoothExB", nSmoothExB);
   } else if (command == "#SMOOTHE") {
     param.read_var("doSmoothE", doSmoothE);
     if (doSmoothE) {
@@ -192,9 +190,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 void Pic::post_process_param() {
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
-
-  if (useUpwindE || useUpwindB)
-    doCalcExB = true;
 }
 
 //==========================================================
@@ -297,9 +292,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 
     distribute_FabArray(uBg[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst,
                         doMoveData);
-
-    distribute_FabArray(uExB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                        nGst, doMoveData);
 
     distribute_FabArray(mMach[iLev], nGrids[iLev], DistributionMap(iLev), 1,
                         nGst, doMoveData);
@@ -1442,11 +1434,9 @@ void Pic::update(bool doReportIn) {
 
   Real tStart = second();
 
-  if (solveFieldInCoMov || solvePartInCoMov)
+  if (solveFieldInCoMov || solvePartInCoMov || useUpwindB ||
+      (useUpwindE && cMaxE < 0)) {
     update_U0_E0();
-
-  if (doCalcExB) {
-    update_u_ExB();
   }
 
   if (solveEM) {
@@ -1463,8 +1453,8 @@ void Pic::update(bool doReportIn) {
 
   particle_mover();
 
-  // Calling re_sampling after particle mover so that all the particles outside
-  // the domain have been deleted.
+  // Calling re_sampling after particle mover so that all the particles
+  // outside the domain have been deleted.
   re_sampling();
 
   charge_exchange();
@@ -1523,50 +1513,6 @@ void Pic::update(bool doReportIn) {
             << std::endl;
 
     report_load_balance();
-  }
-}
-
-//==========================================================
-void Pic::update_u_ExB() {
-  std::string nameFunc = "Pic::update_u_ExB";
-  timing_func(nameFunc);
-
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    uExB[iLev].setVal(0.0);
-    for (MFIter mfi(uExB[iLev]); mfi.isValid(); ++mfi) {
-      const Array4<Real>& arrU = uExB[iLev][mfi].array();
-      const Array4<const Real>& arrE = nodeE[iLev][mfi].array();
-      const Array4<const Real>& arrB = nodeB[iLev][mfi].array();
-
-      Box box = mfi.validbox();
-
-      // u = E x B / B^2
-      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
-        const Real& bx = arrB(i, j, k, ix_);
-        const Real& by = arrB(i, j, k, iy_);
-        const Real& bz = arrB(i, j, k, iz_);
-
-        const Real& ex = arrE(i, j, k, ix_);
-        const Real& ey = arrE(i, j, k, iy_);
-        const Real& ez = arrE(i, j, k, iz_);
-
-        const Real invB2 = 1. / max(bx * bx + by * by + bz * bz, 1e-99);
-
-        arrU(i, j, k, ix_) = median((ey * bz - ez * by) * invB2, 1, -1);
-        arrU(i, j, k, iy_) = median((ez * bx - ex * bz) * invB2, 1, -1);
-        arrU(i, j, k, iz_) = median((ex * by - ey * bx) * invB2, 1, -1);
-      });
-    }
-  }
-
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    uExB[iLev].FillBoundary(Geom(iLev).periodicity());
-  }
-
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (int i = 0; i < nSmoothExB; ++i) {
-      smooth_multifab(uExB[iLev], iLev, i % 2 + 1);
-    }
   }
 }
 
@@ -1831,7 +1777,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
       const Box& box = mfi.validbox();
       const Array4<Real>& arrE = vecMF[mfi].array();
       const Array4<Real>& res = matvecMF[mfi].array();
-      const Array4<Real>& arrU = uExB[iLev][mfi].array();
+      const Array4<Real>& arrU = uBg[iLev][mfi].array();
 
       ParallelFor(box, vecMF.nComp(), [&](int i, int j, int k, int iVar) {
         for (int iDir = 0; iDir < nDim; iDir++) {
@@ -2142,7 +2088,7 @@ void Pic::smooth_B(int iLev) {
 
     const Array4<Real>& cB = centerB[iLev][mfi].array();
     const Array4<Real>& nB = nodeB[iLev][mfi].array();
-    const Array4<Real const>& nU = uExB[iLev][mfi].array();
+    const Array4<Real const>& nU = uBg[iLev][mfi].array();
     const Array4<Real>& dB = centerDB[mfi].array();
     const Array4<Real>& gradPhiArr = gradPhi[mfi].array();
     const auto& status = cellStatus[iLev][mfi].array();
@@ -2856,7 +2802,6 @@ void Pic::charge_exchange() {
 
 void Pic::fill_lightwaves(amrex::Real wavelength, int EorB, amrex::Real time,
                           int lev) {
-
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     nodeE[iLev].setVal(0.0);
     nodeB[iLev].setVal(0.0);
