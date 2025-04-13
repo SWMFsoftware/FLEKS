@@ -75,6 +75,8 @@ private:
 
   // uExB = ExB/B^2
   amrex::Vector<amrex::MultiFab> uExB;
+  bool doCalcExB = false;
+  int nSmoothExB = 5;
 
   // Mach number: u/v_th
   amrex::Vector<amrex::MultiFab> mMach;

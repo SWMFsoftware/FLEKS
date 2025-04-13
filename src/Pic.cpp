@@ -95,6 +95,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("useUpwindE", useUpwindE);
     param.read_var("limiterThetaE", limiterThetaE);
     param.read_var("cMaxE", cMaxE);
+  } else if (command == "#SMOOTHEXB") {
+    param.read_var("nSmoothExB", nSmoothExB);
   } else if (command == "#SMOOTHE") {
     param.read_var("doSmoothE", doSmoothE);
     if (doSmoothE) {
@@ -190,6 +192,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 void Pic::post_process_param() {
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
+
+  if (useUpwindE || doSmoothB)
+    doCalcExB = true;
 }
 
 //==========================================================
@@ -1553,6 +1558,12 @@ void Pic::update_u_ExB() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     uExB[iLev].FillBoundary(Geom(iLev).periodicity());
   }
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    for (int i = 0; i < nSmoothExB; ++i) {
+      smooth_multifab(uExB[iLev], iLev, i % 2 + 1);
+    }
+  }
 }
 
 //==========================================================
@@ -1690,7 +1701,7 @@ void Pic::update_E_impl() {
 
     convert_3d_to_1d(nodeE[iLev], eSolver.xLeft, iLev);
 
-    if (useUpwindE && cMaxE < 0) {
+    if (doCalcExB) {
       update_u_ExB();
     }
 
