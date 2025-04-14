@@ -152,7 +152,11 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
   if (isTargetPPCDefined && !isFake2D) {
     const auto tppc = target_PPC(iLev)[mfi].array();
     for (int i = 0; i < nDim; ++i) {
-      nPPC[i] = cbrt(tppc(ijk));
+      if (nDim > 2) {
+        nPPC[i] = cbrt(tppc(ijk));
+      } else {
+        nPPC[i] = sqrt(tppc(ijk));
+      }
     }
   }
   set_random_seed(iLev, ijk, nPPC);
