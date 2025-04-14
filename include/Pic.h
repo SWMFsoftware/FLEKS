@@ -48,6 +48,7 @@ private:
   bool useExplicitPIC = false;
   bool projectDownEmFields = true;
   bool skipMassMatrix = false;
+  bool reportParticleQuality = false;
 
   PartMode pMode = PartMode::PIC;
 
@@ -63,6 +64,7 @@ private:
   amrex::Vector<amrex::MultiFab> divB;
   amrex::Vector<amrex::MultiFab> centerB;
   amrex::Vector<amrex::MultiFab> dBdt;
+  amrex::Vector<amrex::MultiFab> particleQuality;
 
   // Hyperbolic cleaning
   bool useHyperbolicCleaning = false;
@@ -179,9 +181,11 @@ public:
     divB.resize(n_lev_max());
     hypPhi.resize(n_lev_max());
     targetPPC.resize(n_lev_max());
-
+    if (reportParticleQuality) {
+      particleQuality.resize(n_lev_max());
+    }
     eBg.resize(n_lev_max());
-    uBg.resize(n_lev_max());    
+    uBg.resize(n_lev_max());
 
     mMach.resize(n_lev_max());
 
@@ -553,6 +557,12 @@ public:
     }
   }
 
+  void WriteParticleQualityToParaView() {
+    parts[0]->calculate_particle_quality(particleQuality);
+    WriteMF(particleQuality, finest_level, "particleQuality0");
+    parts[1]->calculate_particle_quality(particleQuality);
+    WriteMF(particleQuality, finest_level, "particleQuality1");
+  }
   // private methods
 private:
   amrex::Real calc_E_field_energy();

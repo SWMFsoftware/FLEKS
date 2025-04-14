@@ -804,6 +804,7 @@ public:
       }
     }
   }
+  void calculate_particle_quality(amrex::Vector<amrex::MultiFab>& quality);
 };
 
 class IOParticles : public PicParticles {

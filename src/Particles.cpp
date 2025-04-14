@@ -5148,6 +5148,41 @@ Real Particles<NStructReal, NStructInt>::sum_moments_new(
   return energy;
 }
 
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::calculate_particle_quality(
+    amrex::Vector<amrex::MultiFab>& quality) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const Real vol = dx[iLev].product();
+    quality[iLev].setVal(0.0);
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      Box bx = pti.tilebox();
+      IntVect ibx = bx.smallEnd();
+      const auto tppc = target_PPC(iLev)[pti].array();
+      const auto qArr = quality[iLev][pti].array();
+      auto& pTile = get_particle_tile(iLev, pti);
+      AoS& particles = pTile.GetArrayOfStructs();
+      Real totalMass = 0;
+      for (auto& p : particles) {
+        totalMass += fabs(p.rdata(iqp_));
+      }
+      Real perfectaverage = totalMass / tppc(ibx);
+
+      for (auto& p : particles) {
+        for (int aa = 0; aa <= 8; aa++) {
+          if (fabs(p.rdata(iqp_)) > pow(2, aa + 1) * perfectaverage) {
+            qArr(ibx, aa) += 1.0;
+          }
+        }
+        for (int aa = 9; aa <= 17; aa++) {
+          if (fabs(p.rdata(iqp_)) < perfectaverage / pow(2, aa - 8)) {
+            qArr(ibx, aa) += 1.0;
+          }
+        }
+      }
+    }
+  }
+}
+
 // Since Particles is a template, it is necessary to explicitly instantiate
 // with template arguments.
 template class Particles<nPicPartReal, nPicPartInt>;

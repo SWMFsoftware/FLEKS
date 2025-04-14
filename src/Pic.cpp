@@ -252,6 +252,10 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     distribute_FabArray(targetPPC[iLev], cGrids[iLev], DistributionMap(iLev), 1,
                         0);
+    if (reportParticleQuality) {
+      distribute_FabArray(particleQuality[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 18, 0);
+    }
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
     distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
@@ -1433,6 +1437,10 @@ void Pic::update(bool doReportIn) {
   doReport = doReportIn;
 
   Real tStart = second();
+
+  if (reportParticleQuality) {
+    WriteParticleQualityToParaView();
+  }
 
   if (solveFieldInCoMov || solvePartInCoMov || useUpwindB ||
       (useUpwindE && cMaxE < 0)) {
