@@ -105,7 +105,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (doSmoothJ) {
       param.read_var("nSmoothJ", nSmoothJ);
     }
-  } else if (command == "#SMOOTHB") {
+  } else if (command == "#UPWINDB") {
     param.read_var("useUpwindB", useUpwindB);
     param.read_var("theta", limiterTheta);
     param.read_var("Isotropy", smoothBIso);
