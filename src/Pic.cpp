@@ -594,7 +594,11 @@ void Pic::re_sampling() {
   if (doReSampling) {
     for (int i = 0; i < nSpecies; ++i) {
       if (maxWeightRatio > 1) {
-        parts[i]->limit_weight(maxWeightRatio, parts[i]->is_neutral());
+        if (!doPreSplitting) {
+          parts[i]->limit_weight(maxWeightRatio, parts[i]->is_neutral());
+        } else {
+          parts[i]->limit_weight_new(maxWeightRatio, parts[i]->is_neutral());
+        }
       }
       if (!doPreSplitting) {
         parts[i]->split(reSamplingLowLimit, parts[i]->is_neutral());
@@ -1439,7 +1443,9 @@ void Pic::update(bool doReportIn) {
   Real tStart = second();
 
   if (reportParticleQuality) {
-    WriteParticleQualityToParaView();
+    if (tc->get_cycle()%10 == 0) {
+      WriteParticleQualityToParaView();
+    }
   }
 
   if (solveFieldInCoMov || solvePartInCoMov || useUpwindB ||
