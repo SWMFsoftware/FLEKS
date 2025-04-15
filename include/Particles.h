@@ -692,6 +692,7 @@ public:
   bool split_by_seperate_velocity(ParticleType& p1, ParticleType& p2,
                                   ParticleType& p3, ParticleType& p4);
   void merge(amrex::Real limit);
+  void merge_new(amrex::Real limit);
   bool merge_particles_fast(int iLev, AoS& particles,
                             amrex::Vector<int>& partIdx,
                             amrex::Vector<int>& idx_I, int nPartCombine,

@@ -4347,6 +4347,226 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
 
 //==========================================================
 template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::merge_new(Real limit) {
+  timing_func("Pts::merge");
+  IntVect iv = { AMREX_D_DECL(1, 1, 1) };
+  if (!(do_tiling && tile_size == iv))
+    return;
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+
+    int nPartGoal = product(nPartPerCell) * limit * pow(pLevRatio, iLev);
+
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      const auto tppc = target_PPC(iLev)[pti].array();
+      const Box& bx = pti.tilebox();
+      IntVect ibx = bx.smallEnd();
+      int target = tppc(ibx);
+      int nPartGoal = target * limit;
+
+      // It is assumed the tile size is 1x1x1.
+      long seed = set_random_seed(iLev, bx.smallEnd(), IntVect(777));
+
+      AoS& particles = pti.GetArrayOfStructs();
+
+      const int nPartOrig = particles.size();
+
+      if (nPartOrig <= nPartGoal)
+        continue;
+
+      // The range of the velocity domain:
+      // [-r0,r0]*thermal_velocity+bulk_velocity
+      const Real r0 = fastMerge ? 2.0 : 1.0;
+
+      // Phase space cell number in one direction.
+      // The const 0.5/0.8 is choosen by experiments.
+      int nCell = 0;
+      if (fastMerge) {
+        nCell = r0 * ceil(0.5 * pow(nPartOrig, 1. / nDim3));
+      } else {
+        nCell = r0 * ceil(0.8 * pow(nPartOrig, 1. / nDim3));
+      }
+
+      if (nCell < 3)
+        continue;
+
+      // Sort the particles by the location first to make sure the results
+      // are the same for different number of processors
+      std::sort(particles.begin(), particles.end(), compare_two_parts);
+
+      // One particle may belong to more than one velocity bins, but it can be
+      // only merged at most once.
+      std::vector<bool> merged;
+      merged.resize(nPartOrig, false);
+
+      //----------------------------------------------------------------
+      // Estimate the bulk velocity and thermal velocity.
+      Real uBulk[nDim3] = { 0, 0, 0 };
+      for (int pid = 0; pid < nPartOrig; pid++) {
+        auto& pcl = particles[pid];
+        for (int iDir = 0; iDir < 3; iDir++) {
+          uBulk[iDir] += pcl.rdata(iDir);
+        }
+      }
+
+      for (int iDir = 0; iDir < nDim3; iDir++) {
+        uBulk[iDir] /= nPartOrig;
+      }
+
+      Real thVel = 0, thVel2 = 0;
+      for (int pid = 0; pid < nPartOrig; pid++) {
+        auto& pcl = particles[pid];
+        for (int iDir = 0; iDir < nDim3; iDir++) {
+          thVel2 += pow(pcl.rdata(iDir) - uBulk[iDir], 2);
+        }
+      }
+
+      thVel2 /= nPartOrig;
+      thVel = sqrt(thVel2);
+
+      // The coef 0.5 if choosen by experience.
+      const Real velNorm = (thVel < 1e-13) ? 0 : 1.0 / (0.5 * thVel);
+      //----------------------------------------------------------------
+
+      //----------------------------------------------------------------
+      // Assign the particle IDs to the corresponding velocity space cells.
+      Vector<int> phasePartIdx_III[nCell][nCell][nCell];
+
+      Real dv = (2.0 * r0 * thVel) / nCell;
+      Real invDv = (dv < 1e-13) ? 0 : 1.0 / dv;
+
+      // Velocity domain range.
+      Real velMin_D[nDim3], velMax_D[nDim3];
+      for (int iDir = 0; iDir < nDim3; iDir++) {
+        Real dvshift = (randNum() - 0.5) * dv;
+        velMin_D[iDir] = -r0 * thVel + uBulk[iDir] + dvshift;
+        velMax_D[iDir] = r0 * thVel + uBulk[iDir] + dvshift;
+      }
+
+      int iCell_D[nDim3];
+      for (int pid = 0; pid < nPartOrig; pid++) {
+        auto& pcl = particles[pid];
+
+        bool isOutside = false;
+        for (int iDim = 0; iDim < nDim3; iDim++) {
+          if (pcl.rdata(iDim) < velMin_D[iDim] ||
+              pcl.rdata(iDim) > velMax_D[iDim])
+            isOutside = true;
+        }
+        if (isOutside)
+          continue;
+
+        for (int iDim = 0; iDim < nDim3; iDim++) {
+          iCell_D[iDim] = fastfloor((pcl.rdata(iDim) - velMin_D[iDim]) * invDv);
+        }
+
+        // One particle may belong to multiple bins when each bin has a buffer
+        // region.
+        for (int xCell = iCell_D[ix_] - 1; xCell <= iCell_D[ix_] + 1; xCell++)
+          for (int yCell = iCell_D[iy_] - 1; yCell <= iCell_D[iy_] + 1; yCell++)
+            for (int zCell = iCell_D[iz_] - 1; zCell <= iCell_D[iz_] + 1;
+                 zCell++) {
+
+              if (xCell < 0 || xCell >= nCell || yCell < 0 || yCell >= nCell ||
+                  zCell < 0 || zCell >= nCell)
+                continue;
+
+              Vector<int> cellIdx = { xCell, yCell, zCell };
+
+              Real binMin_D[nDim3], binMax_D[nDim3];
+
+              for (int iDim = 0; iDim < nDim3; iDim++) {
+                binMin_D[iDim] =
+                    velMin_D[iDim] + (cellIdx[iDim] - velBinBufferSize) * dv;
+
+                binMax_D[iDim] = velMin_D[iDim] +
+                                 (cellIdx[iDim] + 1 + velBinBufferSize) * dv;
+              }
+
+              bool isInside = true;
+              for (int iDim = 0; iDim < nDim3; iDim++) {
+                if (pcl.rdata(iDim) < binMin_D[iDim] ||
+                    pcl.rdata(iDim) > binMax_D[iDim])
+                  isInside = false;
+              }
+
+              if (isInside) {
+                phasePartIdx_III[cellIdx[ix_]][cellIdx[iy_]][cellIdx[iz_]]
+                    .push_back(pid);
+              }
+            }
+      }
+      //----------------------------------------------------------------
+
+      for (int iu = 0; iu < nCell; iu++)
+        for (int iv = 0; iv < nCell; iv++)
+          for (int iw = 0; iw < nCell; iw++) {
+            Vector<int> partIdx;
+            for (int i = 0; i < phasePartIdx_III[iu][iv][iw].size(); ++i) {
+              auto& pIdx = phasePartIdx_III[iu][iv][iw];
+              int pid = pIdx[i];
+              if (!merged[pid]) {
+                partIdx.push_back(pid);
+              }
+            }
+
+            if (partIdx.size() < nPartNew + 1)
+              continue;
+
+            Vector<Real> x;
+            Vector<int> idx_I;
+
+            int nOld = nPartCombine;
+            bool isSolved;
+            if (fastMerge) {
+              if (nOld > partIdx.size())
+                nOld = partIdx.size();
+
+              for (int iTry = 0; iTry < nMergeTry; iTry++) {
+                long sd = seed + iu * 777 + iv * 77 + iw + iTry;
+                isSolved = merge_particles_fast(iLev, particles, partIdx, idx_I,
+                                                nOld, nPartNew, x, sd);
+                if (isSolved)
+                  break;
+              }
+            } else {
+              isSolved = merge_particles_accurate(
+                  iLev, particles, partIdx, idx_I, nOld, nPartNew, x, velNorm);
+            }
+            if (!isSolved)
+              continue;
+
+            //----------------------------------------------
+
+            Real plight = 1e99, pheavy = 0;
+            for (int ip = 0; ip < nOld; ip++) {
+              auto& p = particles[idx_I[ip]];
+              Real w = fabs(p.rdata(iqp_));
+              if (w < plight)
+                plight = w;
+              if (w > pheavy)
+                pheavy = w;
+            }
+
+            // Adjust weight.
+            for (int ip = 0; ip < nPartNew; ip++) {
+              auto& p = particles[idx_I[ip]];
+              p.rdata(iqp_) = x[ip];
+              merged[idx_I[ip]] = true;
+            }
+            // Mark for deletion
+            for (int ip = nPartNew; ip < nOld; ip++) {
+              particles[idx_I[ip]].id() = -1;
+              particles[idx_I[ip]].rdata(iqp_) = 0;
+              merged[idx_I[ip]] = true;
+            }
+          }
+    }
+  }
+}
+
+//==========================================================
+template <int NStructReal, int NStructInt>
 bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
     const Box& bx, const Array4<const int>& status, const IntVect ijk,
     IntVect& ijksrc) {

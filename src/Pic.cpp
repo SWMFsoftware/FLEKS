@@ -593,19 +593,19 @@ void Pic::re_sampling() {
 
   if (doReSampling) {
     for (int i = 0; i < nSpecies; ++i) {
-      if (maxWeightRatio > 1) {
-        if (!doPreSplitting) {
+      if (!doPreSplitting) {
+        if (maxWeightRatio > 1) {
           parts[i]->limit_weight(maxWeightRatio, parts[i]->is_neutral());
-        } else {
+        }
+        parts[i]->split(reSamplingLowLimit, parts[i]->is_neutral());
+        parts[i]->merge(reSamplingHighLimit);
+      } else {
+        if (maxWeightRatio > 1) {
           parts[i]->limit_weight_new(maxWeightRatio, parts[i]->is_neutral());
         }
-      }
-      if (!doPreSplitting) {
-        parts[i]->split(reSamplingLowLimit, parts[i]->is_neutral());
-      } else {
         parts[i]->split_new(reSamplingLowLimit, parts[i]->is_neutral());
+        parts[i]->merge_new(reSamplingHighLimit);
       }
-      parts[i]->merge(reSamplingHighLimit);
     }
   }
 }
@@ -1443,7 +1443,7 @@ void Pic::update(bool doReportIn) {
   Real tStart = second();
 
   if (reportParticleQuality) {
-    if (tc->get_cycle()%10 == 0) {
+    if (tc->get_cycle() % 20 == 0) {
       WriteParticleQualityToParaView();
     }
   }
