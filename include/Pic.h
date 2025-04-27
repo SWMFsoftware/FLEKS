@@ -135,6 +135,7 @@ private:
 
   bool doSmoothJ = false;
   int nSmoothJ = 0;
+  amrex::Real coefSmoothJ = 0.5;
 
   bool doSmoothE = false;
   int nSmoothE = 0;
