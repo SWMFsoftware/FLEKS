@@ -676,6 +676,7 @@ void Pic::calc_mass_matrix() {
 
     jHat[iLev].mult(invVol, 0, jHat[iLev].nComp(), jHat[iLev].nGrow());
     jHat[iLev].SumBoundary(Geom(iLev).periodicity());
+    jHat[iLev].FillBoundary(Geom(iLev).periodicity());
 
     if (doSmoothJ) {
       for (int icount = 0; icount < nSmoothJ; icount++) {
