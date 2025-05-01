@@ -782,7 +782,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
     nVarOut += nMoments * nSpecies;
 
   // Save cell-centered, instead of the nodal, values, because the AMReX
-  // document says some virtualiazaion tools assumes the AMReX format outputs
+  // document says some visualization tools assumes the AMReX format outputs
   // are cell-centered.
 
   Vector<MultiFab> out(n_lev());
