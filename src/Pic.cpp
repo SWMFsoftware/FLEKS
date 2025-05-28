@@ -2471,6 +2471,7 @@ Real Pic::calc_E_field_energy() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
       FArrayBox& fab = nodeE[iLev][mfi];
+      const auto& status = node_status(iLev)[mfi].array();
       Box box = mfi.validbox();
       const Array4<Real>& arr = fab.array();
 
@@ -2480,11 +2481,14 @@ Real Pic::calc_E_field_energy() {
 
       Real sumLoc = 0;
       ParallelFor(box, [&](int i, int j, int k) {
-        sumLoc += pow(arr(i, j, k, ix_), 2) + pow(arr(i, j, k, iy_), 2) +
-                  pow(arr(i, j, k, iz_), 2);
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (!bit::is_refined(status(ijk))) {
+          sumLoc += pow(arr(i, j, k, ix_), 2) + pow(arr(i, j, k, iy_), 2) +
+                    pow(arr(i, j, k, iz_), 2);
+        }
       });
 
-      const auto& dx = Geom(0).CellSize();
+      const auto& dx = Geom(iLev).CellSize();
       const Real coef = 0.5 * dx[ix_] * dx[iy_] * dx[iz_] / fourPI;
       sum += sumLoc * coef;
     }
@@ -2504,16 +2508,21 @@ Real Pic::calc_B_field_energy() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       FArrayBox& fab = centerB[iLev][mfi];
+      const auto& status = cell_status(iLev)[mfi].array();
+
       const Box& box = mfi.validbox();
       const Array4<Real>& arr = fab.array();
 
       Real sumLoc = 0;
       ParallelFor(box, [&](int i, int j, int k) {
-        sumLoc += pow(arr(i, j, k, ix_), 2) + pow(arr(i, j, k, iy_), 2) +
-                  pow(arr(i, j, k, iz_), 2);
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (!bit::is_refined(status(ijk))) {
+          sumLoc += pow(arr(i, j, k, ix_), 2) + pow(arr(i, j, k, iy_), 2) +
+                    pow(arr(i, j, k, iz_), 2);
+        }
       });
 
-      const auto& dx = Geom(0).CellSize();
+      const auto& dx = Geom(iLev).CellSize();
       const Real coef = 0.5 * dx[ix_] * dx[iy_] * dx[iz_] / fourPI;
       sum += sumLoc * coef;
     }
