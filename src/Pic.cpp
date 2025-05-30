@@ -2469,27 +2469,38 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
 Real Pic::calc_E_field_energy() {
   Real sum = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       FArrayBox& fab = nodeE[iLev][mfi];
-      const auto& status = node_status(iLev)[mfi].array();
+      const auto& status = cell_status(iLev)[mfi].array();
       Box box = mfi.validbox();
       const Array4<Real>& arr = fab.array();
 
       // Do not count the right edges.
-      for (int iDim = 0; iDim < nDim; iDim++)
-        box.growHi(iDim, -1);
-
       Real sumLoc = 0;
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (!bit::is_refined(status(ijk))) {
-          sumLoc += pow(arr(i, j, k, ix_), 2) + pow(arr(i, j, k, iy_), 2) +
-                    pow(arr(i, j, k, iz_), 2);
+          for (int ii = i; ii <= i + 1; ii++) {
+            for (int jj = j; jj <= j + 1; jj++) {
+              for (int kk = k; kk <= k + 1; kk++) {
+                sumLoc += pow(arr(ii, jj, kk, ix_), 2) + 
+                          pow(arr(ii, jj, kk, iy_), 2) +
+                          pow(arr(ii, jj, kk, iz_), 2);
+              }
+            }
+          }
         }
       });
 
       const auto& dx = Geom(iLev).CellSize();
-      const Real coef = 0.5 * dx[ix_] * dx[iy_] * dx[iz_] / fourPI;
+      Real avgFactor;
+      if (nDim == 3) {
+        avgFactor = 0.125;
+      } else {
+        avgFactor = 0.25;
+      }
+      const Real coef = 0.5 * avgFactor * dx[ix_] * dx[iy_] * dx[iz_] / fourPI;
+
       sum += sumLoc * coef;
     }
     ParallelDescriptor::ReduceRealSum(sum,
