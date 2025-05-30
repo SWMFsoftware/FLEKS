@@ -2482,8 +2482,8 @@ Real Pic::calc_E_field_energy() {
         if (!bit::is_refined(status(ijk))) {
           for (int ii = i; ii <= i + 1; ii++) {
             for (int jj = j; jj <= j + 1; jj++) {
-              for (int kk = k; kk <= k + 1; kk++) {
-                sumLoc += pow(arr(ii, jj, kk, ix_), 2) + 
+              for (int kk = k; kk <= k + (nDim-2); kk++) {
+                sumLoc += pow(arr(ii, jj, kk, ix_), 2) +
                           pow(arr(ii, jj, kk, iy_), 2) +
                           pow(arr(ii, jj, kk, iz_), 2);
               }
