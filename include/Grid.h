@@ -141,6 +141,14 @@ public:
   bool is_new_grid() const { return isNewGrid; }
   void is_new_grid(bool in) { isNewGrid = in; }
 
+  amrex::Real get_cell_volume(int iLev) const {
+    amrex::Real vol = 1;
+    for (int i = 0; i < nDim; i++) {
+      vol *= Geom(iLev).CellSize()[i];
+    }
+    return vol;
+  }
+
   amrex::Vector<Regions> get_refine_regions() const { return refineRegions; }
 
   void set_refine_regions(const amrex::Vector<Regions>& in) {

@@ -2469,39 +2469,37 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
 Real Pic::calc_E_field_energy() {
   Real sum = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    // Loop over cells instead of nodes!
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       FArrayBox& fab = nodeE[iLev][mfi];
       const auto& status = cell_status(iLev)[mfi].array();
       Box box = mfi.validbox();
       const Array4<Real>& arr = fab.array();
 
-      // Do not count the right edges.
       Real sumLoc = 0;
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (!bit::is_refined(status(ijk))) {
-          for (int ii = i; ii <= i + 1; ii++) {
-            for (int jj = j; jj <= j + 1; jj++) {
-              for (int kk = k; kk <= k + (nDim-2); kk++) {
-                sumLoc += pow(arr(ii, jj, kk, ix_), 2) +
-                          pow(arr(ii, jj, kk, iy_), 2) +
-                          pow(arr(ii, jj, kk, iz_), 2);
-              }
-            }
+
+        sumLoc += pow(arr(ijk, ix_), 2) + pow(arr(ijk, iy_), 2) +
+                  pow(arr(ijk, iz_), 2);
+
+        if (false) {
+          // For AMR mesh, the following average is needed. Somehow, I can not
+          // make it work. Left it for Talha to fix it.
+          if (!bit::is_refined(status(ijk))) {
+            Box subBox(ijk, ijk + 1);
+            ParallelFor(subBox, [&](int ii, int jj, int kk) {
+              IntVect ijk0 = { AMREX_D_DECL(ii, jj, kk) };
+              sumLoc += pow(arr(ijk0, ix_), 2) + pow(arr(ijk0, iy_), 2) +
+                        pow(arr(ijk0, iz_), 2);
+            });
           }
         }
       });
 
-      const auto& dx = Geom(iLev).CellSize();
-      Real avgFactor;
-      if (nDim == 3) {
-        avgFactor = 0.125;
-      } else {
-        avgFactor = 0.25;
-      }
-      const Real coef = 0.5 * avgFactor * dx[ix_] * dx[iy_] * dx[iz_] / fourPI;
+      Real avg = 1; //= nDim3 == 3 ? 0.125 : 0.25;
 
-      sum += sumLoc * coef;
+      sum += sumLoc * 0.5 * avg * get_cell_volume(iLev) / fourPI;
     }
     ParallelDescriptor::ReduceRealSum(sum,
                                       ParallelDescriptor::IOProcessorNumber());
@@ -2533,9 +2531,7 @@ Real Pic::calc_B_field_energy() {
         }
       });
 
-      const auto& dx = Geom(iLev).CellSize();
-      const Real coef = 0.5 * dx[ix_] * dx[iy_] * dx[iz_] / fourPI;
-      sum += sumLoc * coef;
+      sum += sumLoc * get_cell_volume(iLev) * 0.5 / fourPI;
     }
   }
   ParallelDescriptor::ReduceRealSum(sum,
