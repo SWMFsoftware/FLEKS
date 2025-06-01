@@ -2469,7 +2469,6 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
 Real Pic::calc_E_field_energy() {
   Real sum = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    // Loop over cells instead of nodes!
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       FArrayBox& fab = nodeE[iLev][mfi];
       const auto& status = cell_status(iLev)[mfi].array();
