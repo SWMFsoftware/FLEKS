@@ -2480,24 +2480,17 @@ Real Pic::calc_E_field_energy() {
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
 
-        sumLoc += pow(arr(ijk, ix_), 2) + pow(arr(ijk, iy_), 2) +
-                  pow(arr(ijk, iz_), 2);
-
-        if (false) {
-          // For AMR mesh, the following average is needed. Somehow, I can not
-          // make it work. Left it for Talha to fix it.
-          if (!bit::is_refined(status(ijk))) {
-            Box subBox(ijk, ijk + 1);
-            ParallelFor(subBox, [&](int ii, int jj, int kk) {
-              IntVect ijk0 = { AMREX_D_DECL(ii, jj, kk) };
-              sumLoc += pow(arr(ijk0, ix_), 2) + pow(arr(ijk0, iy_), 2) +
-                        pow(arr(ijk0, iz_), 2);
-            });
-          }
+        if (!bit::is_refined(status(ijk))) {
+          Box subBox(ijk, ijk + 1);
+          ParallelFor(subBox, [&](int ii, int jj, int kk) {
+            IntVect ijk0 = { AMREX_D_DECL(ii, jj, kk) };
+            sumLoc += pow(arr(ijk0, ix_), 2) + pow(arr(ijk0, iy_), 2) +
+                      pow(arr(ijk0, iz_), 2);
+          });
         }
       });
 
-      Real avg = 1; //= nDim3 == 3 ? 0.125 : 0.25;
+      Real avg = (nDim == 3) ? 0.125 : 0.25;
 
       sum += sumLoc * 0.5 * avg * get_cell_volume(iLev) / fourPI;
     }
