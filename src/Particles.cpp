@@ -4354,9 +4354,6 @@ void Particles<NStructReal, NStructInt>::merge_new(Real limit) {
     return;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-
-    int nPartGoal = product(nPartPerCell) * limit * pow(pLevRatio, iLev);
-
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       const auto tppc = target_PPC(iLev)[pti].array();
       const Box& bx = pti.tilebox();
@@ -5372,7 +5369,6 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calculate_particle_quality(
     amrex::Vector<amrex::MultiFab>& quality) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    const Real vol = dx[iLev].product();
     quality[iLev].setVal(0.0);
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       Box bx = pti.tilebox();
