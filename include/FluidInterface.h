@@ -811,6 +811,34 @@ public:
   }
 
   template <typename Type>
+  void override_particle_uth_aniso(const int iLev, const amrex::MFIter& mfi,
+                                   const Type xyz, double* u, double* v,
+                                   double* w, const double rand1,
+                                   const double rand2, const double rand3,
+                                   const double rand4, const int is,
+                                   amrex::Real A = 0,
+                                   const double uthIn = -1) const {
+    double harvest, prob, theta, uth;
+
+    harvest = rand1;
+    prob = sqrt(-2.0 * log(1.0 - .999999999 * harvest));
+    harvest = rand2;
+    theta = 2.0 * M_PI * harvest;
+
+    uth = (uthIn >= 0 ? uthIn : get_uth_iso(mfi, xyz, is, iLev));
+    uth = uth * sqrt((3.0) / (3.0 + 2.0 * A));
+    (*u) = uth * prob * cos(theta);
+    uth = uth * sqrt(A + 1);
+    (*v) = uth * prob * sin(theta);
+
+    harvest = rand3;
+    prob = sqrt(-2.0 * log(1.0 - .999999999 * harvest));
+    harvest = rand4;
+    theta = 2.0 * M_PI * harvest;
+    (*w) = uth * prob * cos(theta);
+  }
+
+  template <typename Type>
   void set_particle_uth_iso(const int iLev, const amrex::MFIter& mfi,
                             const Type xyz, double* u, double* v, double* w,
                             const double rand1, const double rand2,

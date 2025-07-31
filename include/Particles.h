@@ -220,6 +220,9 @@ protected:
 
   bool doPreSplitting = false;
 
+  bool doOverridePressureAnisotropy = false;
+  amrex::Vector<amrex::Real> initialAnisotropyRatios;
+
   bool isTargetPPCDefined = false;
 
   BC bc; // boundary condition

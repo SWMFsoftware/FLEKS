@@ -79,6 +79,9 @@ protected:
 
   bool doPreSplitting = false;
 
+  bool doOverridePressureAnisotropy = false;
+  amrex::Vector<amrex::Real> initialAnisotropyRatios;
+
   bool isTargetPPCDefined = false;
 
   std::string tag;
@@ -131,6 +134,14 @@ public:
   bool is_grid_empty() const { return isGridEmpty; }
 
   bool is_particle_location_random() { return isParticleLocationRandom; }
+
+  bool do_override_pressure_anisotropy() {
+    return doOverridePressureAnisotropy;
+  }
+
+  amrex::Vector<amrex::Real> get_initial_anisotropy_ratios() const {
+    return initialAnisotropyRatios;
+  }
 
   bool is_particles_per_volume_constant() { return isPPVconstant; }
 
