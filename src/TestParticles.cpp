@@ -182,6 +182,80 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
           p.rdata(i0 + iTPEz_) = ep[iz_];
         }
 
+        if (ptRecordSize >= 22) {
+          // The gradient calculation is based on the derivative of the trilinear
+          // interpolation shape functions.
+          // B(x,y,z) = sum_{i,j,k} B_{i,j,k} * W_i(x) * W_j(y) * W_k(z)
+          // dB/dx = sum_{i,j,k} B_{i,j,k} * (dW_i(x)/dx) * W_j(y) * W_k(z)
+          // dW_0/dx = -1/dx, dW_1/dx = 1/dx
+          // W_0(x) = 1-dShift.x, W_1(x) = dShift.x
+          RealVect invDx = Geom(iLev).InvCellSize();
+
+          // B at 8 nodes
+          Real b[3][2][2][2];
+          for (int k = 0; k < 2; ++k)
+            for (int j = 0; j < 2; ++j)
+              for (int i = 0; i < 2; ++i) {
+                IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
+                                             loIdx[iz_] + k) };
+                for (int iDim = 0; iDim < nDim3; iDim++) {
+                  b[iDim][i][j][k] = nodeBArr(ijk, iDim);
+                }
+              }
+
+          Real sx = dShift[ix_];
+          Real sy = dShift[iy_];
+          Real sz = dShift[iz_];
+
+          Real gradB[3][3];
+          // dB/dx
+          for (int iDim = 0; iDim < nDim3; iDim++) {
+            gradB[iDim][ix_] =
+                (((b[iDim][1][0][0] - b[iDim][0][0][0]) * (1 - sy) +
+                  (b[iDim][1][1][0] - b[iDim][0][1][0]) * sy) *
+                     (1 - sz) +
+                 ((b[iDim][1][0][1] - b[iDim][0][0][1]) * (1 - sy) +
+                  (b[iDim][1][1][1] - b[iDim][0][1][1]) * sy) *
+                     sz) *
+                invDx[ix_];
+          }
+          // dB/dy
+          for (int iDim = 0; iDim < nDim3; iDim++) {
+            gradB[iDim][iy_] =
+                (((b[iDim][0][1][0] - b[iDim][0][0][0]) * (1 - sx) +
+                  (b[iDim][1][1][0] - b[iDim][1][0][0]) * sx) *
+                     (1 - sz) +
+                 ((b[iDim][0][1][1] - b[iDim][0][0][1]) * (1 - sx) +
+                  (b[iDim][1][1][1] - b[iDim][1][0][1]) * sx) *
+                     sz) *
+                invDx[iy_];
+          }
+// dB/dz
+#if (AMREX_SPACEDIM == 3)
+          for (int iDim = 0; iDim < nDim3; iDim++) {
+            gradB[iDim][iz_] =
+                (((b[iDim][0][0][1] - b[iDim][0][0][0]) * (1 - sx) +
+                  (b[iDim][1][0][1] - b[iDim][1][0][0]) * sx) *
+                     (1 - sy) +
+                 ((b[iDim][0][1][1] - b[iDim][0][1][0]) * (1 - sx) +
+                  (b[iDim][1][1][1] - b[iDim][1][1][0]) * sx) *
+                     sy) *
+                invDx[iz_];
+          }
+#endif
+          p.rdata(i0 + iTPdBxdx_) = gradB[0][0];
+          p.rdata(i0 + iTPdBxdy_) = gradB[0][1];
+          p.rdata(i0 + iTPdBydx_) = gradB[1][0];
+          p.rdata(i0 + iTPdBydy_) = gradB[1][1];
+          p.rdata(i0 + iTPdBzdx_) = gradB[2][0];
+          p.rdata(i0 + iTPdBzdy_) = gradB[2][1];
+#if (AMREX_SPACEDIM == 3)
+          p.rdata(i0 + iTPdBxdz_) = gradB[0][2];
+          p.rdata(i0 + iTPdBydz_) = gradB[1][2];
+          p.rdata(i0 + iTPdBzdz_) = gradB[2][2];
+#endif
+        }
+
         p.idata(iRecordCount_)++;
       }
       // Mark for deletion
@@ -606,6 +680,22 @@ unsigned long long int TestParticles::loop_particles(
             recordData[iTPEx_] = (float)(p.rdata(i0 + iTPEx_) * no2outE);
             recordData[iTPEy_] = (float)(p.rdata(i0 + iTPEy_) * no2outE);
             recordData[iTPEz_] = (float)(p.rdata(i0 + iTPEz_) * no2outE);
+          }
+
+          if (ptRecordSize >= 22) {
+            // no2out for gradient is no2outB/no2outL
+            Real no2outG = no2outB / no2outL;
+            recordData[iTPdBxdx_] = (float)(p.rdata(i0 + iTPdBxdx_) * no2outG);
+            recordData[iTPdBxdy_] = (float)(p.rdata(i0 + iTPdBxdy_) * no2outG);
+            recordData[iTPdBydx_] = (float)(p.rdata(i0 + iTPdBydx_) * no2outG);
+            recordData[iTPdBydy_] = (float)(p.rdata(i0 + iTPdBydy_) * no2outG);
+            recordData[iTPdBzdx_] = (float)(p.rdata(i0 + iTPdBzdx_) * no2outG);
+            recordData[iTPdBzdy_] = (float)(p.rdata(i0 + iTPdBzdy_) * no2outG);
+#if (AMREX_SPACEDIM == 3)
+            recordData[iTPdBxdz_] = (float)(p.rdata(i0 + iTPdBxdz_) * no2outG);
+            recordData[iTPdBydz_] = (float)(p.rdata(i0 + iTPdBydz_) * no2outG);
+            recordData[iTPdBzdz_] = (float)(p.rdata(i0 + iTPdBzdz_) * no2outG);
+#endif
           }
 
           memcpy(buff + nByteCount + iCountLoc, &recordData, sizeLoc);

@@ -19,6 +19,15 @@ public:
   static constexpr int iTPEx_ = 10;
   static constexpr int iTPEy_ = 11;
   static constexpr int iTPEz_ = 12;
+  static constexpr int iTPdBxdx_ = 13;
+  static constexpr int iTPdBxdy_ = 14;
+  static constexpr int iTPdBxdz_ = 15;
+  static constexpr int iTPdBydx_ = 16;
+  static constexpr int iTPdBydy_ = 17;
+  static constexpr int iTPdBydz_ = 18;
+  static constexpr int iTPdBzdx_ = 19;
+  static constexpr int iTPdBzdy_ = 20;
+  static constexpr int iTPdBzdz_ = 21;
 
 private:
   static constexpr int iRegionBoundary_ = 1;
