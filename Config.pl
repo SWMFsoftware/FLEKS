@@ -47,7 +47,7 @@ our $WARNING;
 
 my $TPSave = "P";
 my $NewTPSave;
-my %nTPString=(7=>'P', 10=>'PB', 13=>'PBE', 22=>'PBEG');
+my %nTPString=(7=>'P', 10=>'PB', 13=>'PBE', 19=>'PBEG', 22=>'PBEG');
 my %nTPSave=('P' => 7, 'PB' => 10, 'PBE' => 13, 'PBEG' => 22);
 my %TPInfo=('P' => "Particle", 'PB' => "Particle+B", 'PBE' => "Particle+B+E", 'PBEG' => "Particle+B+E+GradB");
 
@@ -131,7 +131,14 @@ sub set_test_particle{
     $TPSave = $NewTPSave if $NewTPSave;
 
     my $NameConstFile = "include/Constants.h";
-    my $nSize = $nTPSave{$TPSave};     
+    my $nSize = $nTPSave{$TPSave};
+    if($TPSave eq 'PBEG'){
+        if($AmrexDim == 2){
+            $nSize = 19;
+        }else{
+            $nSize = 22;
+        }
+    }
     @ARGV = ($NameConstFile);
     while(<>){
         s/\b(ptRecordSize\s*=[^0-9]*)(\d+)/$1$nSize/i;
@@ -162,6 +169,7 @@ sub print_help{
               PB: particle + magnetic field. 
               PBE: particle + magnetic field + electric field
               PBEG: particle + B-field + E-field + gradient of B-field
+                    (size is 22 for 3D, 19 for 2D)
 
 \n";
     exit -0;
