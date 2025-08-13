@@ -191,7 +191,7 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
           // dB/dx = sum_{i,j,k} B_{i,j,k} * (dW_i(x)/dx) * W_j(y) * W_k(z)
           // dW_0/dx = -1/dx, dW_1/dx = 1/dx
           // W_0(x) = 1-dShift.x, W_1(x) = dShift.x
-          RealVect invDx = Geom(iLev).InvCellSize();
+          const Real* invDx = Geom(iLev).InvCellSize();
 
           // B at 8 nodes
           Real b[3][2][2][2];
