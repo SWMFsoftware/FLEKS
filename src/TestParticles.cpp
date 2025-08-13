@@ -182,9 +182,8 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
           p.rdata(i0 + iTPEz_) = ep[iz_];
         }
 
-        if (ptRecordSize >= 22) {
+        if (ptRecordSize > iTPdBxdx_) {
           Real gradB[3][3] = {{0.0}};
-#if (AMREX_SPACEDIM == 3)
           // The gradient calculation is based on the derivative of the trilinear
           // interpolation shape functions.
           // B(x,y,z) = sum_{i,j,k} B_{i,j,k} * W_i(x) * W_j(y) * W_k(z)
@@ -231,7 +230,8 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
                      sz) *
                 invDx[iy_];
           }
-// dB/dz
+#if (AMREX_SPACEDIM == 3)
+          // dB/dz
           for (int iDim = 0; iDim < nDim3; iDim++) {
             gradB[iDim][iz_] =
                 (((b[iDim][0][0][1] - b[iDim][0][0][0]) * (1 - sx) +
@@ -680,7 +680,7 @@ unsigned long long int TestParticles::loop_particles(
             recordData[iTPEz_] = (float)(p.rdata(i0 + iTPEz_) * no2outE);
           }
 
-          if (ptRecordSize >= 22) {
+          if (ptRecordSize >= iTPdBxdx_) {
             // no2out for gradient is no2outB/no2outL
             Real no2outG = no2outB / no2outL;
             recordData[iTPdBxdx_] = (float)(p.rdata(i0 + iTPdBxdx_) * no2outG);
