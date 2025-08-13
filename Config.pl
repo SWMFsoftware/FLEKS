@@ -47,9 +47,9 @@ our $WARNING;
 
 my $TPSave = "P";
 my $NewTPSave;
-my %nTPString=(7=>'P', 10=>'PB', 13=>'PBE');
-my %nTPSave=('P' => 7, 'PB' => 10, 'PBE' => 13);
-my %TPInfo=('P' => "Particle", 'PB' => "Particle+B", 'PBE' => "Particle+B+E");
+my %nTPString=(7=>'P', 10=>'PB', 13=>'PBE', 22=>'PBEG');
+my %nTPSave=('P' => 7, 'PB' => 10, 'PBE' => 13, 'PBEG' => 22);
+my %TPInfo=('P' => "Particle", 'PB' => "Particle+B", 'PBE' => "Particle+B+E", 'PBEG' => "Particle+B+E+GradB");
 
 my $AmrexDim;
 
@@ -64,7 +64,7 @@ foreach (@Arguments){
      warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
 }
 
-die "$ERROR -tp input should be 'P', 'PB', or 'PBE'.\n" 
+die "$ERROR -tp input should be 'P', 'PB', 'PBE', or 'PBEG'.\n"
     if $NewTPSave and not exists $nTPSave{$NewTPSave};
 
 my $AmrexComp;
@@ -131,7 +131,7 @@ sub set_test_particle{
     $TPSave = $NewTPSave if $NewTPSave;
 
     my $NameConstFile = "include/Constants.h";
-    my $nSize = $nTPSave{$TPSave};     
+    my $nSize = $nTPSave{$TPSave};
     @ARGV = ($NameConstFile);
     while(<>){
         s/\b(ptRecordSize\s*=[^0-9]*)(\d+)/$1$nSize/i;
@@ -157,10 +157,11 @@ sub print_help{
 
 -lev          Number of maximum grid levels. It is a uniform grid without AMR if lev=1.	
 
--tp=P,PB,PBE  Test particle output information. 
+-tp=P,PB,PBE,PBEG  Test particle output information.
               P: only save particle velocity + location
               PB: particle + magnetic field. 
               PBE: particle + magnetic field + electric field
+              PBEG: particle + B-field + E-field + gradient of B-field
 
 \n";
     exit -0;
