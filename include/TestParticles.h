@@ -3,7 +3,6 @@
 
 #include "BitArray.h"
 #include "Particles.h"
-#include "AMReX_Config.H"
 
 class TestParticles : public PTParticles {
 public:
@@ -20,7 +19,6 @@ public:
   static constexpr int iTPEx_ = 10;
   static constexpr int iTPEy_ = 11;
   static constexpr int iTPEz_ = 12;
-#if (AMREX_SPACEDIM == 3)
   static constexpr int iTPdBxdx_ = 13;
   static constexpr int iTPdBxdy_ = 14;
   static constexpr int iTPdBxdz_ = 15;
@@ -30,14 +28,6 @@ public:
   static constexpr int iTPdBzdx_ = 19;
   static constexpr int iTPdBzdy_ = 20;
   static constexpr int iTPdBzdz_ = 21;
-#else
-  static constexpr int iTPdBxdx_ = 13;
-  static constexpr int iTPdBxdy_ = 14;
-  static constexpr int iTPdBydx_ = 15;
-  static constexpr int iTPdBydy_ = 16;
-  static constexpr int iTPdBzdx_ = 17;
-  static constexpr int iTPdBzdy_ = 18;
-#endif
 
 private:
   static constexpr int iRegionBoundary_ = 1;
