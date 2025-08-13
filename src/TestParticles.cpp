@@ -183,12 +183,11 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
         }
 
         if (ptRecordSize > iTPdBxdx_) {
-          Real gradB[3][3] = {{0.0}};
-          // The gradient calculation is based on the derivative of the trilinear
-          // interpolation shape functions.
-          // B(x,y,z) = sum_{i,j,k} B_{i,j,k} * W_i(x) * W_j(y) * W_k(z)
-          // dB/dx = sum_{i,j,k} B_{i,j,k} * (dW_i(x)/dx) * W_j(y) * W_k(z)
-          // dW_0/dx = -1/dx, dW_1/dx = 1/dx
+          Real gradB[3][3] = { { 0.0 } };
+          // The gradient calculation is based on the derivative of the
+          // trilinear interpolation shape functions. B(x,y,z) = sum_{i,j,k}
+          // B_{i,j,k} * W_i(x) * W_j(y) * W_k(z) dB/dx = sum_{i,j,k} B_{i,j,k}
+          // * (dW_i(x)/dx) * W_j(y) * W_k(z) dW_0/dx = -1/dx, dW_1/dx = 1/dx
           // W_0(x) = 1-dShift.x, W_1(x) = dShift.x
           const Real* invDx = Geom(iLev).InvCellSize();
 
