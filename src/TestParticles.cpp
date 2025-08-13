@@ -182,7 +182,9 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
           p.rdata(i0 + iTPEz_) = ep[iz_];
         }
 
-        if (ptRecordSize > 13) {
+        if (ptRecordSize >= 22) {
+          Real gradB[3][3] = {{0.0}};
+#if (AMREX_SPACEDIM == 3)
           // The gradient calculation is based on the derivative of the trilinear
           // interpolation shape functions.
           // B(x,y,z) = sum_{i,j,k} B_{i,j,k} * W_i(x) * W_j(y) * W_k(z)
@@ -207,7 +209,6 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
           Real sy = dShift[iy_];
           Real sz = dShift[iz_];
 
-          Real gradB[3][3];
           // dB/dx
           for (int iDim = 0; iDim < nDim3; iDim++) {
             gradB[iDim][ix_] =
@@ -231,7 +232,6 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
                 invDx[iy_];
           }
 // dB/dz
-#if (AMREX_SPACEDIM == 3)
           for (int iDim = 0; iDim < nDim3; iDim++) {
             gradB[iDim][iz_] =
                 (((b[iDim][0][0][1] - b[iDim][0][0][0]) * (1 - sx) +
@@ -245,15 +245,13 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
 #endif
           p.rdata(i0 + iTPdBxdx_) = gradB[0][0];
           p.rdata(i0 + iTPdBxdy_) = gradB[0][1];
+          p.rdata(i0 + iTPdBxdz_) = gradB[0][2];
           p.rdata(i0 + iTPdBydx_) = gradB[1][0];
           p.rdata(i0 + iTPdBydy_) = gradB[1][1];
+          p.rdata(i0 + iTPdBydz_) = gradB[1][2];
           p.rdata(i0 + iTPdBzdx_) = gradB[2][0];
           p.rdata(i0 + iTPdBzdy_) = gradB[2][1];
-#if (AMREX_SPACEDIM == 3)
-          p.rdata(i0 + iTPdBxdz_) = gradB[0][2];
-          p.rdata(i0 + iTPdBydz_) = gradB[1][2];
           p.rdata(i0 + iTPdBzdz_) = gradB[2][2];
-#endif
         }
 
         p.idata(iRecordCount_)++;
@@ -682,20 +680,18 @@ unsigned long long int TestParticles::loop_particles(
             recordData[iTPEz_] = (float)(p.rdata(i0 + iTPEz_) * no2outE);
           }
 
-          if (ptRecordSize > 13) {
+          if (ptRecordSize >= 22) {
             // no2out for gradient is no2outB/no2outL
             Real no2outG = no2outB / no2outL;
             recordData[iTPdBxdx_] = (float)(p.rdata(i0 + iTPdBxdx_) * no2outG);
             recordData[iTPdBxdy_] = (float)(p.rdata(i0 + iTPdBxdy_) * no2outG);
+            recordData[iTPdBxdz_] = (float)(p.rdata(i0 + iTPdBxdz_) * no2outG);
             recordData[iTPdBydx_] = (float)(p.rdata(i0 + iTPdBydx_) * no2outG);
             recordData[iTPdBydy_] = (float)(p.rdata(i0 + iTPdBydy_) * no2outG);
+            recordData[iTPdBydz_] = (float)(p.rdata(i0 + iTPdBydz_) * no2outG);
             recordData[iTPdBzdx_] = (float)(p.rdata(i0 + iTPdBzdx_) * no2outG);
             recordData[iTPdBzdy_] = (float)(p.rdata(i0 + iTPdBzdy_) * no2outG);
-#if (AMREX_SPACEDIM == 3)
-            recordData[iTPdBxdz_] = (float)(p.rdata(i0 + iTPdBxdz_) * no2outG);
-            recordData[iTPdBydz_] = (float)(p.rdata(i0 + iTPdBydz_) * no2outG);
             recordData[iTPdBzdz_] = (float)(p.rdata(i0 + iTPdBzdz_) * no2outG);
-#endif
           }
 
           memcpy(buff + nByteCount + iCountLoc, &recordData, sizeLoc);
