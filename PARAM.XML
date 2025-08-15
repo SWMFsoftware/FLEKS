@@ -64,8 +64,8 @@
       <parameter name="xMaxCut" type="real" min="$xMinCut"/>
       <parameter name="yMinCut" type="real" />
       <parameter name="yMaxCut" type="real" min="$yMinCut"/>
-      <parameter name="zMinCut" type="real" />
-      <parameter name="zMaxCut" type="real" min="$zMinCut"/>
+      <parameter name="zMinCut" type="real" if="$nDim==3"/>
+      <parameter name="zMaxCut" type="real" min="$zMinCut" if="$nDim==3"/>
     </if>
     <parameter name="DxSavePlot" type="real" min="-1.0" default="-1.0" />
     <if expr="$plotvar =~ /\bvar\b/i">
@@ -609,15 +609,15 @@ this command should only exist in the restart file.
   <if expr="$shape !~ /box/">
     <parameter name="centerX" type="real" />
     <parameter name="centerY" type="real" />
-    <parameter name="centerZ" type="real" />
+    <parameter name="centerZ" type="real" if="$nDim==3"/>
   </if>
   <if expr="$shape =~ /box\b/">
     <parameter name="xMinBox" type="real" />
     <parameter name="xMaxBox" type="real" />
     <parameter name="yMinBox" type="real" />
     <parameter name="yMaxBox" type="real" />
-    <parameter name="zMinBox" type="real" />
-    <parameter name="zMaxBox" type="real" />
+    <parameter name="zMinBox" type="real" if="$nDim==3"/>
+    <parameter name="zMaxBox" type="real" if="$nDim==3"/>
   </if>
   <if expr="$shape =~ /sphere|shell/">
     <parameter name="radiusInner" type="real" min="0"
