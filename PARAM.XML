@@ -1,7 +1,7 @@
 <commandList name="FLexible Exascale Kinetic Simulator: PC and PT Components">
 
 <!-- Set variables for expressions and rules -->
-<set name="nDim" type="integer" value="$_Value{nVar}" />
+<set name="nDim" type="integer" value="$_Value{nDim}" />
 
 <commandgroup name="Output">
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
