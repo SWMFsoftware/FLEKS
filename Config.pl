@@ -142,11 +142,11 @@ sub set_test_particle{
 sub show_settings{
     &get_settings;    
 
-    print "AMReX compiler     = $AmrexComp \n";
-    print "AMReX debug        = $AmrexDebug \n";
-    print "AMReX nDim         = $AmrexDim \n";
-    print "AMReX nLevMax      = $nLevMax \n";    
-    print "AMReX tiny profile = $AmrexTinyProfile \n";    
+    print "AMReX: compiler     = $AmrexComp \n";
+    print "AMReX: debug        = $AmrexDebug \n";
+    print "AMReX: nDim         = $AmrexDim \n";
+    print "AMReX: nLevMax      = $nLevMax \n";
+    print "AMReX: tiny profile = $AmrexTinyProfile \n";
     print "Test Particle info = $TPInfo{$TPSave} \n";
 }
 ################################################################################
