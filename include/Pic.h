@@ -523,7 +523,7 @@ public:
     }
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       for (amrex::MFIter mfi(targetPPC[iLev]); mfi.isValid(); ++mfi) {
-        const amrex::Box &box = mfi.validbox();
+        const amrex::Box &box = mfi.fabbox();
         const auto &ppcArr = targetPPC[iLev][mfi].array();
         const auto &status = cell_status(iLev)[mfi].array();
         amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
