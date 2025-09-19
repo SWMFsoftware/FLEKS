@@ -263,12 +263,12 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    distribute_FabArray(targetPPC[iLev], cGrids[iLev], DistributionMap(iLev), 1,
-                        0);
     if (reportParticleQuality) {
       distribute_FabArray(particleQuality[iLev], cGrids[iLev],
                           DistributionMap(iLev), 18, 0);
     }
+    distribute_FabArray(targetPPC[iLev], cGrids[iLev], DistributionMap(iLev), 1,
+                        nGst);
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
     distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
@@ -277,17 +277,14 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                         nGst);
     distribute_FabArray(nodeEth[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
-
     distribute_FabArray(centerNetChargeOld[iLev], cGrids[iLev],
                         DistributionMap(iLev), 1, nGst);
     distribute_FabArray(centerNetChargeN[iLev], cGrids[iLev],
                         DistributionMap(iLev), 1, nGst);
     distribute_FabArray(centerNetChargeNew[iLev], cGrids[iLev],
                         DistributionMap(iLev), 1, nGst);
-
     distribute_FabArray(centerDivE[iLev], cGrids[iLev], DistributionMap(iLev),
                         1, nGst);
-
     distribute_FabArray(centerPhi[iLev], cGrids[iLev], DistributionMap(iLev), 1,
                         nGst);
 
