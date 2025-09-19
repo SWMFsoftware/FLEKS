@@ -105,7 +105,7 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       tps->move_and_save_particles(nodeE[iLev], nodeB[iLev], tc->get_dt(),
                                    tc->get_next_dt(), tc->get_time_si(),
-                                   tc->get_cycle() % dnSave == 0);
+                                   tc->get_cycle() % dnSave[i] == 0);
     }
 
     if (doSave) {
@@ -122,7 +122,7 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
       if (doInitFromPIC) {
         tps->add_test_particles_from_pic(pic.get_particle_pointer(i));
       } else if (tps->TotalNumberOfParticles() <
-                 0.5 * tps->init_particle_number()) {
+                 launchThreshold[i] * tps->init_particle_number()) {
         tps->add_test_particles_from_fluid(tpStates);
       }
     }
@@ -139,9 +139,16 @@ void ParticleTracker::update_field(Pic& pic) {
 }
 
 void ParticleTracker::post_process_param() {
+  int min_dnSave = dnSave[0];
+  for (int i = 1; i < nSpecies; ++i) {
+    if (dnSave[i] < min_dnSave) {
+      min_dnSave = dnSave[i];
+    }
+  }
   savectr = std::unique_ptr<PlotCtr>(new PlotCtr(
-      ParallelDescriptor::Communicator(), tc, gridID, -1, nPTRecord * dnSave));
-  savectr->set_multiple(dnSave);
+      ParallelDescriptor::Communicator(), tc, gridID, -1,
+      nPTRecord * min_dnSave));
+  savectr->set_multiple(min_dnSave);
 }
 
 void ParticleTracker::pre_regrid() {
@@ -282,8 +289,13 @@ void ParticleTracker::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#TPREGION") {
     param.read_var("region", sRegion);
   } else if (command == "#TPSAVE") {
+    int iSpecies;
+    param.read_var("iSpecies", iSpecies);
+    if (iSpecies >= nSpecies)
+      amrex::Abort("Error: iSpecies is out of bound in #TPSAVE.");
     param.read_var("IOUnit", sIOUnit);
-    param.read_var("dnSave", dnSave);
+    param.read_var("dnSave", dnSave[iSpecies]);
+    param.read_var("launchThreshold", launchThreshold[iSpecies]);
   } else if (command == "#TPRELATIVISTIC") {
     param.read_var("isRelativistic", isRelativistic);
   } else if (command == "#TPSTATESI") {

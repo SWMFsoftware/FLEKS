@@ -208,18 +208,22 @@ particle tracker components, respectively.
 <command name="TPSAVE"
 	 alias="TPSAVE_FLEKS0,TPSAVE_FLEKS1,TPSAVE_FLEKS2"
 	 multiple="T">
+  <parameter name="iSpecies" type="integer" required="T"/>
   <parameter name="unit" type="string" input="select">
     <option value="si"     name="SI units"/>
     <option value="planet" name="planet units" default="T"/>
     <option value="pic"    name="PIC normalized units"/>
   </parameter>
   <parameter name="dnSave" type="integer" default="1"/>
+  <parameter name="launchThreshold" type="real" min="0.0" max="1.0" default="0.5"/>
 
 #TPSAVE
+0                          iSpecies
 planet                     unit
 10                         dnSave
+0.5                        launchThreshold
 
-The unit and frequence of saving test particles.
+The unit and frequence of saving test particles, and the threshold for relaunching particles.
 
 </command>
 
