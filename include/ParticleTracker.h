@@ -13,6 +13,8 @@ public:
                   int nGst, FluidInterface *fluidIn, TimeCtr *tcIn, int id)
       : Grid(gm, amrInfo, nGst, id, "pt"), tc(tcIn), fi(fluidIn) {
     nSpecies = fi->get_nS();
+    dnSave.resize(nSpecies, 10);
+    launchThreshold.resize(nSpecies, 0.5);
   };
 
   ~ParticleTracker() {
@@ -59,7 +61,8 @@ private:
   amrex::Vector<unsigned long int> initPartNumber;
 
   std::unique_ptr<PlotCtr> savectr;
-  int dnSave = 1;
+  amrex::Vector<int> dnSave;
+  amrex::Vector<amrex::Real> launchThreshold;
 
   amrex::IntVect nTPPerCell = { AMREX_D_DECL(1, 1, 1) };
   amrex::IntVect nTPIntervalCell = { AMREX_D_DECL(1, 1, 1) };
