@@ -1236,7 +1236,7 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev) {
                       centerNetChargeN[iLev], 0, 0, residual.nComp(),
                       residual.nGrow());
     if (finest_level > 0) {
-      set_refined_and_bny_cells_zero(residual, cellStatus[iLev]);
+      skip_cells_divE_correction(residual, cellStatus[iLev], iLev);
     }
 
     convert_3d_to_1d(residual, solver.rhs, iLev);
@@ -2893,7 +2893,7 @@ void Pic::amr_divE_correction() {
   for (int iIter = 0; iIter < nDivECorrection; iIter++) {
     for (int iLev = finest_level; iLev >= 0; iLev--) {
       sum_to_center_new(true, iLev);
-      set_refined_and_bny_cells_zero(centerMM[iLev], cell_status(iLev));
+      skip_cells_divE_correction(centerMM[iLev], cell_status(iLev), iLev);
       calculate_phi(divESolver, iLev);
       for (int i = 0; i < nSpecies; ++i) {
         parts[i]->divE_correct_position(centerPhi, iLev);
@@ -2909,7 +2909,10 @@ void Pic::amr_divE_correction() {
   inject_particles_for_boundary_cells();
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     sum_to_center_new(false, iLev);
-    set_refined_and_bny_cells_zero(centerNetChargeN[iLev], cell_status(iLev));
-    set_refined_and_bny_cells_zero(centerDivE[iLev], cell_status(iLev));
+    if (iLev > 0) {
+      skip_cells_divE_correction(centerNetChargeN[iLev], cell_status(iLev),
+                                 iLev);
+      skip_cells_divE_correction(centerDivE[iLev], cell_status(iLev), iLev);
+    }
   }
 }
