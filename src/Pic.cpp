@@ -861,10 +861,6 @@ void Pic::calc_mass_matrix_amr() {
 //==========================================================
 void Pic::sum_moments(bool updateDt) {
   std::string nameFunc = "Pic::sum_moments";
-  bool isPT = false;
-#ifdef _PT_COMPONENT_
-  isPT = true;
-#endif
   if (isGridEmpty)
     return;
 
@@ -873,12 +869,7 @@ void Pic::sum_moments(bool updateDt) {
   plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; ++i) {
     Real energy = 0.0;
-    if (finest_level == 0 || isPT) {
-      energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
-    } else {
-      energy = parts[i]->sum_moments_new(nodePlasma[i], nodeB, tc->get_dt(),
-                                         nodeStatus);
-    }
+    energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
     plasmaEnergy[i] = energy;
     plasmaEnergy[iTot] += energy;
   }

@@ -294,11 +294,6 @@ public:
                           amrex::Vector<amrex::MultiFab>& nodeBMF,
                           amrex::Real dt);
 
-  amrex::Real sum_moments_new(amrex::Vector<amrex::MultiFab>& momentsMF,
-                              amrex::Vector<amrex::MultiFab>& nodeBMF,
-                              amrex::Real dt,
-                              amrex::Vector<amrex::iMultiFab>& nodestatus);
-
   std::array<amrex::Real, 5> total_moments(bool localOnly = false);
 
   void calc_mass_matrix(amrex::UMultiFab<RealMM>& nodeMM, amrex::MultiFab& jHat,
