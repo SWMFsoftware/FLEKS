@@ -301,6 +301,18 @@ If isPPVconstant is true then particles per volume is constant across all refine
 otherwise particles per cell is constant.
 </command>
 
+<command name="PRESPLITTING"
+	 alias="PRESPLITTING_FLEKS0,PRESPLITTING_FLEKS1,PRESPLITTING_FLEKS2"
+	 multiple="T">
+  <parameter name="doPreSplitting" type="logical" default="F"/>
+
+#PRESPLITTING
+F                   doPreSplitting
+
+If doPreSplitting is true then target particles-per-cell number in the near vicinity of refined
+regions is set such that the particles-per-volume number matches the refined level.
+</command>
+
 <command name="REFINEMENTRATIO"
 	 alias="REFINEMENTRATIO_FLEKS0,REFINEMENTRATIO_FLEKS1,REFINEMENTRATIO_FLEKS2"
 	 multiple="T">
