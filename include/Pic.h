@@ -524,6 +524,16 @@ public:
       for (amrex::MFIter mfi(targetPPC[iLev]); mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.fabbox();
         const auto &ppcArr = targetPPC[iLev][mfi].array();
+        amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
+          amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
+          ppcArr(ijk, 0) = product(nPartPerCell);
+        });
+      }
+    }
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      for (amrex::MFIter mfi(targetPPC[iLev]); mfi.isValid(); ++mfi) {
+        const amrex::Box &box = mfi.validbox();
+        const auto &ppcArr = targetPPC[iLev][mfi].array();
         const auto &status = cell_status(iLev)[mfi].array();
         amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
           amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
@@ -536,7 +546,6 @@ public:
           } else {
             ppcArr(ijk, 0) = product(nPartPerCell);
           }
-
           if (doPreSplitting) {
             for (int ii = -npresplitcells; ii <= npresplitcells; ii++) {
               for (int jj = -npresplitcells; jj <= npresplitcells; jj++) {
