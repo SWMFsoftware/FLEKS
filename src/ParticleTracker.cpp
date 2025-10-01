@@ -145,9 +145,9 @@ void ParticleTracker::post_process_param() {
       min_dnSave = dnSave[i];
     }
   }
-  savectr = std::unique_ptr<PlotCtr>(new PlotCtr(
-      ParallelDescriptor::Communicator(), tc, gridID, -1,
-      nPTRecord * min_dnSave));
+  savectr = std::unique_ptr<PlotCtr>(
+      new PlotCtr(ParallelDescriptor::Communicator(), tc, gridID, -1,
+                  nPTRecord * min_dnSave));
   savectr->set_multiple(min_dnSave);
 }
 
@@ -191,6 +191,12 @@ void ParticleTracker::post_regrid() {
       ptr->set_relativistic(isRelativistic);
       parts.push_back(std::move(ptr));
     }
+    Print() << gridName << " pt: Number of test particle species: " << nSpecies
+            << std::endl;
+    Print() << gridName
+            << " pt: TPSAVE parameters (nPTRecord, ptRecordSize): " << nPTRecord
+            << ", " << ptRecordSize << std::endl;
+    Print() << gridName << " pt: TPREGION: " << sRegion << std::endl;
   } else {
     for (int i = 0; i < nSpecies; ++i) {
       // Label the particles outside the NEW PIC region.
