@@ -406,29 +406,31 @@ void Domain::receive_grid_info(int *status) { gridInfo.set_status(status); }
 //========================================================
 void Domain::set_ic() {
 
-  // If it is restart, the values should have been restored before coupling
-  // with GM. See Domain::init().
-  if (doRestart && !doRestartFIOnly)
-    return;
-
   if (receiveICOnly)
     return;
 
+  // If it is restart, the values should have been restored before coupling
+  // with GM. See Domain::init().
+  if (!(doRestart && !doRestartFIOnly)) {
+
 #ifdef _PT_COMPONENT_
-  if (!doRestartFIOnly)
-    fi->set_node_fluid();
+    if (!doRestartFIOnly)
+      fi->set_node_fluid();
 #endif
 
-  pic->fill_new_cells();
+    pic->fill_new_cells();
 
-  write_plots(true);
-  pic->write_log(true, true);
+    write_plots(true);
+    pic->write_log(true, true);
+  }
 
-  if (pt)
-    pt->set_ic(*pic);
+  if (!doRestartPT) {
+    if (pt)
+      pt->set_ic(*pic);
 
-  if (pt)
-    pt->write_log(true, true);
+    if (pt)
+      pt->write_log(true, true);
+  }
 }
 
 //========================================================
