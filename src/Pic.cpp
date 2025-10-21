@@ -105,6 +105,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#UPWINDE") {
     param.read_var("useUpwindE", useUpwindE);
     param.read_var("limiterThetaE", limiterThetaE);
+  } else if (command == "#CMAXE") {
     param.read_var("cMaxE", cMaxE);
   } else if (command == "#SMOOTHE") {
     param.read_var("doSmoothE", doSmoothE);
@@ -1284,7 +1285,7 @@ void Pic::update(bool doReportIn) {
     }
   }
 
-  if (solveFieldInCoMov || useUpwindB || (useUpwindE && cMaxE < 0)) {
+  if (solveFieldInCoMov || useUpwindB || (useUpwindE && cMaxE <= 0)) {
     update_U0_E0();
   }
 
@@ -1647,7 +1648,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
 
           Real ur = cMaxE, ul = cMaxE;
 
-          if (cMaxE < 0) {
+          if (cMaxE <= 0) {
             ul = fabs(0.5 *
                       (arrU(i - dii[ix_], j - dii[iy_], k - dii[iz_], iDir) +
                        arrU(i, j, k, iDir)));
