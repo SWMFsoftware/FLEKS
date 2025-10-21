@@ -315,7 +315,7 @@ public:
 
   void update_B();
 
-  void smooth_B(int iLev);
+  void correct_B(int iLev);
 
   void solve_hyp_phi(int iLev);
 

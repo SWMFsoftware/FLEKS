@@ -1851,10 +1851,14 @@ void Pic::update_B() {
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
                    dBdt[iLev].nGrow());
 
-    if (useUpwindB) {
+    if (useHyperbolicCleaning) {
       div_node_to_center(nodeB[iLev], divB[iLev], Geom(iLev).InvCellSize());
-      smooth_B(iLev);
     }
+
+    if (useUpwindB || useHyperbolicCleaning) {
+      correct_B(iLev);
+    }
+
     average_center_to_node(centerB[iLev], nodeB[iLev]);
     nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
 
@@ -1906,14 +1910,172 @@ void Pic::solve_hyp_phi(int iLev) {
            iLev);
 }
 //==========================================================
-void Pic::smooth_B(int iLev) {
-  std::string nameFunc = "Pic::smooth_B";
+void Pic::correct_B(int iLev) {
+  std::string nameFunc = "Pic::correct_B";
   timing_func(nameFunc);
 
-  MultiFab gradPhi(cGrids[iLev], DistributionMap(iLev), nDim3, 0);
-  gradPhi.setVal(0.0);
+  if (!useUpwindB && !useHyperbolicCleaning) {
+    return;
+  }
+
+  MultiFab centerDB(cGrids[iLev], DistributionMap(iLev), nDim3, nGst);
+  centerDB.setVal(0.0);
+
+  if (useUpwindB) {
+    Real coef[nDim3];
+    for (int i = 0; i < nDim3; ++i) {
+      coef[i] = 0.5 * tc->get_dt() * Geom(iLev).InvCellSize()[i];
+    }
+
+    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+      Box box = mfi.validbox();
+
+      const Array4<Real>& cB = centerB[iLev][mfi].array();
+      const Array4<Real>& nB = nodeB[iLev][mfi].array();
+      const Array4<Real const>& nU = uBg[iLev][mfi].array();
+      const Array4<Real>& dB = centerDB[mfi].array();
+      const auto& status = cellStatus[iLev][mfi].array();
+      const Array4<Real const>& moments =
+          nodePlasma[nSpecies][iLev][mfi].array();
+
+      // Get the face along the direction iDir for the cell (i,j,k) for the iVar
+      // component
+      auto get_face = [&](int iDir, int i, int j, int k, int iVar,
+                          Array4<Real const> const& arr, Real& l, Real& r) {
+        if (testCase == TopHat) {
+          l = 1;
+          r = 1;
+          return;
+        }
+
+        int kp1 = nDim > 2 ? k + 1 : k;
+        if (iDir == ix_) {
+          l = 0.25 * (arr(i, j, k, iVar) + arr(i, j + 1, k, iVar) +
+                      arr(i, j, kp1, iVar) + arr(i, j + 1, kp1, iVar));
+          r = 0.25 * (arr(i + 1, j, k, iVar) + arr(i + 1, j + 1, k, iVar) +
+                      arr(i + 1, j, kp1, iVar) + arr(i + 1, j + 1, kp1, iVar));
+        } else if (iDir == iy_) {
+          l = 0.25 * (arr(i, j, k, iVar) + arr(i + 1, j, k, iVar) +
+                      arr(i, j, kp1, iVar) + arr(i + 1, j, kp1, iVar));
+
+          r = 0.25 * (arr(i, j + 1, k, iVar) + arr(i + 1, j + 1, k, iVar) +
+                      arr(i, j + 1, kp1, iVar) + arr(i + 1, j + 1, kp1, iVar));
+
+        } else if (iDir == iz_) {
+          l = 0.25 * (arr(i, j, k, iVar) + arr(i, j + 1, k, iVar) +
+                      arr(i + 1, j, k, iVar) + arr(i + 1, j + 1, k, iVar));
+
+          r = 0.25 * (arr(i, j, kp1, iVar) + arr(i, j + 1, kp1, iVar) +
+                      arr(i + 1, j, kp1, iVar) + arr(i + 1, j + 1, kp1, iVar));
+        }
+      };
+
+      ParallelFor(box, [&](int i, int j, int k) {
+        bool doDiffusion;
+        Real lu[nDim3] = { 0, 0, 0 }, ru[nDim3] = { 0, 0, 0 };
+        Real ul, ur;
+
+        IntVect ijk{ AMREX_D_DECL(i, j, k) };
+
+        Real lAlfven = 0, rAlfven = 0;
+
+        // Flux along  x
+        for (int iDir = 0; iDir < nDim; iDir++) {
+          get_face(iDir, i, j, k, iDir, nU, lu[iDir], ru[iDir]);
+        }
+
+        ul = lu[ix_];
+        ur = ru[ix_];
+        doDiffusion = true;
+        if ((ul > 0 && bit::is_domain_boundary(status(i - 1, j, k))) ||
+            (ur < 0 && bit::is_domain_boundary(status(i + 1, j, k)))) {
+          doDiffusion = false;
+        }
+
+        if (doDiffusion) {
+          ul = fabs(ul);
+          ur = fabs(ur);
+          for (int iVar = 0; iVar < nDim3; iVar++) {
+            Real cR = limiter_theta(limiterTheta, cB(i - 1, j, k, iVar),
+                                    cB(i, j, k, iVar), cB(i + 1, j, k, iVar));
+            Real cL = limiter_theta(limiterTheta, cB(i - 2, j, k, iVar),
+                                    cB(i - 1, j, k, iVar), cB(i, j, k, iVar));
+            ul = min(ul, 0.5 / coef[ix_]);
+            ur = min(ur, 0.5 / coef[ix_]);
+            dB(i, j, k, iVar) +=
+                (cR * ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar)) -
+                 cL * ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar))) *
+                coef[ix_];
+          }
+        }
+
+        // Flux along y
+        ul = lu[iy_];
+        ur = ru[iy_];
+        doDiffusion = true;
+        if ((ul > 0 && bit::is_domain_boundary(status(i, j - 1, k))) ||
+            (ur < 0 && bit::is_domain_boundary(status(i, j + 1, k)))) {
+          doDiffusion = false;
+        }
+
+        if (doDiffusion) {
+          ul = fabs(ul);
+          ur = fabs(ur);
+
+          for (int iVar = 0; iVar < nDim3; iVar++) {
+            Real cR = limiter_theta(limiterTheta, cB(i, j - 1, k, iVar),
+                                    cB(i, j, k, iVar), cB(i, j + 1, k, iVar));
+            Real cL = limiter_theta(limiterTheta, cB(i, j - 2, k, iVar),
+                                    cB(i, j - 1, k, iVar), cB(i, j, k, iVar));
+            ul = min(ul, 0.5 / coef[iy_]);
+            ur = min(ur, 0.5 / coef[iy_]);
+
+            dB(i, j, k, iVar) +=
+                (cR * ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar)) -
+                 cL * ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar))) *
+                coef[iy_];
+          }
+        }
+
+        if (nDim > 2 && !isFake2D) {
+
+          // Flux along z
+          ul = lu[iz_];
+          ur = ru[iz_];
+
+          doDiffusion = true;
+          if ((ul > 0 && bit::is_domain_boundary(status(i, j, k - 1))) ||
+              (ur < 0 && bit::is_domain_boundary(status(i, j, k + 1)))) {
+            doDiffusion = false;
+          }
+
+          if (doDiffusion) {
+            ul = fabs(ul);
+            ur = fabs(ur);
+
+            for (int iVar = 0; iVar < nDim3; iVar++) {
+              Real cR = limiter_theta(limiterTheta, cB(i, j, k - 1, iVar),
+                                      cB(i, j, k, iVar), cB(i, j, k + 1, iVar));
+              Real cL = limiter_theta(limiterTheta, cB(i, j, k - 2, iVar),
+                                      cB(i, j, k - 1, iVar), cB(i, j, k, iVar));
+              ul = min(ul, 0.5 / coef[iz_]);
+              ur = min(ur, 0.5 / coef[iz_]);
+
+              dB(i, j, k, iVar) +=
+                  (cR * ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar)) -
+                   cL * ul * (cB(i, j, k, iVar) - cB(i, j, k - 1, iVar))) *
+                  coef[iz_];
+            }
+          }
+        }
+      });
+    } // end MFIter
+  } // end useUpwindB
 
   if (useHyperbolicCleaning) {
+    MultiFab gradPhi(cGrids[iLev], DistributionMap(iLev), nDim3, 0);
+    gradPhi.setVal(0.0);
+
     solve_hyp_phi(iLev);
 
     MultiFab gradPhiNode(nGrids[iLev], DistributionMap(iLev), nDim3, 0);
@@ -1923,165 +2085,21 @@ void Pic::smooth_B(int iLev) {
 
     average_node_to_cellcenter(gradPhi, 0, gradPhiNode, 0, nDim3,
                                gradPhi.nGrow());
-  }
 
-  MultiFab centerDB(cGrids[iLev], DistributionMap(iLev), nDim3, nGst);
-  centerDB.setVal(0.0);
+    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+      Box box = mfi.validbox();
 
-  Real coef[nDim3];
-  for (int i = 0; i < nDim3; ++i) {
-    coef[i] = 0.5 * tc->get_dt() * Geom(iLev).InvCellSize()[i];
-  }
+      const Array4<Real>& dB = centerDB[mfi].array();
+      const Array4<Real>& gradPhiArr = gradPhi[mfi].array();
 
-  for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
-    Box box = mfi.validbox();
-
-    const Array4<Real>& cB = centerB[iLev][mfi].array();
-    const Array4<Real>& nB = nodeB[iLev][mfi].array();
-    const Array4<Real const>& nU = uBg[iLev][mfi].array();
-    const Array4<Real>& dB = centerDB[mfi].array();
-    const Array4<Real>& gradPhiArr = gradPhi[mfi].array();
-    const auto& status = cellStatus[iLev][mfi].array();
-    const Array4<Real const>& moments = nodePlasma[nSpecies][iLev][mfi].array();
-
-    // Get the face along the direction iDir for the cell (i,j,k) for the iVar
-    // component
-    auto get_face = [&](int iDir, int i, int j, int k, int iVar,
-                        Array4<Real const> const& arr, Real& l, Real& r) {
-      if (testCase == TopHat) {
-        l = 1;
-        r = 1;
-        return;
-      }
-
-      int kp1 = nDim > 2 ? k + 1 : k;
-      if (iDir == ix_) {
-        l = 0.25 * (arr(i, j, k, iVar) + arr(i, j + 1, k, iVar) +
-                    arr(i, j, kp1, iVar) + arr(i, j + 1, kp1, iVar));
-        r = 0.25 * (arr(i + 1, j, k, iVar) + arr(i + 1, j + 1, k, iVar) +
-                    arr(i + 1, j, kp1, iVar) + arr(i + 1, j + 1, kp1, iVar));
-      } else if (iDir == iy_) {
-        l = 0.25 * (arr(i, j, k, iVar) + arr(i + 1, j, k, iVar) +
-                    arr(i, j, kp1, iVar) + arr(i + 1, j, kp1, iVar));
-
-        r = 0.25 * (arr(i, j + 1, k, iVar) + arr(i + 1, j + 1, k, iVar) +
-                    arr(i, j + 1, kp1, iVar) + arr(i + 1, j + 1, kp1, iVar));
-
-      } else if (iDir == iz_) {
-        l = 0.25 * (arr(i, j, k, iVar) + arr(i, j + 1, k, iVar) +
-                    arr(i + 1, j, k, iVar) + arr(i + 1, j + 1, k, iVar));
-
-        r = 0.25 * (arr(i, j, kp1, iVar) + arr(i, j + 1, kp1, iVar) +
-                    arr(i + 1, j, kp1, iVar) + arr(i + 1, j + 1, kp1, iVar));
-      }
-    };
-
-    ParallelFor(box, [&](int i, int j, int k) {
-      bool doDiffusion;
-      Real lu[nDim3] = { 0, 0, 0 }, ru[nDim3] = { 0, 0, 0 };
-      Real ul, ur;
-
-      IntVect ijk{ AMREX_D_DECL(i, j, k) };
-
-      Real lAlfven = 0, rAlfven = 0;
-
-      // Flux along  x
-      for (int iDir = 0; iDir < nDim; iDir++) {
-        get_face(iDir, i, j, k, iDir, nU, lu[iDir], ru[iDir]);
-      }
-
-      ul = lu[ix_];
-      ur = ru[ix_];
-      doDiffusion = true;
-      if ((ul > 0 && bit::is_domain_boundary(status(i - 1, j, k))) ||
-          (ur < 0 && bit::is_domain_boundary(status(i + 1, j, k)))) {
-        doDiffusion = false;
-      }
-
-      if (doDiffusion) {
-        ul = fabs(ul);
-        ur = fabs(ur);
-        for (int iVar = 0; iVar < nDim3; iVar++) {
-          Real cR = limiter_theta(limiterTheta, cB(i - 1, j, k, iVar),
-                                  cB(i, j, k, iVar), cB(i + 1, j, k, iVar));
-          Real cL = limiter_theta(limiterTheta, cB(i - 2, j, k, iVar),
-                                  cB(i - 1, j, k, iVar), cB(i, j, k, iVar));
-          ul = min(ul, 0.5 / coef[ix_]);
-          ur = min(ur, 0.5 / coef[ix_]);
-          dB(i, j, k, iVar) +=
-              (cR * ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar)) -
-               cL * ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar))) *
-              coef[ix_];
-        }
-      }
-
-      // Flux along y
-      ul = lu[iy_];
-      ur = ru[iy_];
-      doDiffusion = true;
-      if ((ul > 0 && bit::is_domain_boundary(status(i, j - 1, k))) ||
-          (ur < 0 && bit::is_domain_boundary(status(i, j + 1, k)))) {
-        doDiffusion = false;
-      }
-
-      if (doDiffusion) {
-        ul = fabs(ul);
-        ur = fabs(ur);
-
-        for (int iVar = 0; iVar < nDim3; iVar++) {
-          Real cR = limiter_theta(limiterTheta, cB(i, j - 1, k, iVar),
-                                  cB(i, j, k, iVar), cB(i, j + 1, k, iVar));
-          Real cL = limiter_theta(limiterTheta, cB(i, j - 2, k, iVar),
-                                  cB(i, j - 1, k, iVar), cB(i, j, k, iVar));
-          ul = min(ul, 0.5 / coef[iy_]);
-          ur = min(ur, 0.5 / coef[iy_]);
-
-          dB(i, j, k, iVar) +=
-              (cR * ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar)) -
-               cL * ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar))) *
-              coef[iy_];
-        }
-      }
-
-      if (nDim > 2 && !isFake2D) {
-
-        // Flux along z
-        ul = lu[iz_];
-        ur = ru[iz_];
-
-        doDiffusion = true;
-        if ((ul > 0 && bit::is_domain_boundary(status(i, j, k - 1))) ||
-            (ur < 0 && bit::is_domain_boundary(status(i, j, k + 1)))) {
-          doDiffusion = false;
-        }
-
-        if (doDiffusion) {
-          ul = fabs(ul);
-          ur = fabs(ur);
-
-          for (int iVar = 0; iVar < nDim3; iVar++) {
-            Real cR = limiter_theta(limiterTheta, cB(i, j, k - 1, iVar),
-                                    cB(i, j, k, iVar), cB(i, j, k + 1, iVar));
-            Real cL = limiter_theta(limiterTheta, cB(i, j, k - 2, iVar),
-                                    cB(i, j, k - 1, iVar), cB(i, j, k, iVar));
-            ul = min(ul, 0.5 / coef[iz_]);
-            ur = min(ur, 0.5 / coef[iz_]);
-
-            dB(i, j, k, iVar) +=
-                (cR * ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar)) -
-                 cL * ul * (cB(i, j, k, iVar) - cB(i, j, k - 1, iVar))) *
-                coef[iz_];
-          }
-        }
-      }
-
-      if (useHyperbolicCleaning) {
+      ParallelFor(box, [&](int i, int j, int k) {
+        IntVect ijk{ AMREX_D_DECL(i, j, k) };
         for (int iVar = 0; iVar < nDim3; iVar++) {
           dB(ijk, iVar) += -tc->get_dt() * gradPhiArr(ijk, iVar);
         }
-      }
-    });
-  }
+      });
+    } // end MFIter
+  } // end useHyperbolicCleaning
 
   MultiFab::Add(centerB[iLev], centerDB, 0, 0, nDim3, 0);
 
