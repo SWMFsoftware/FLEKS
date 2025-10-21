@@ -121,7 +121,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#UPWINDB") {
     param.read_var("useUpwindB", useUpwindB);
     param.read_var("theta", limiterTheta);
-    param.read_var("Isotropy", smoothBIso);
     if (useUpwindB) {
       useHyperbolicCleaning = true;
     }
@@ -1996,7 +1995,7 @@ void Pic::smooth_B(int iLev) {
 
     ParallelFor(box, [&](int i, int j, int k) {
       bool doDiffusion;
-      Real lu[nDim3] = { 0, 0, 0 }, ru[nDim3] = { 0, 0, 0 }, lumin, rumin;
+      Real lu[nDim3] = { 0, 0, 0 }, ru[nDim3] = { 0, 0, 0 };
       Real ul, ur;
 
       IntVect ijk{ AMREX_D_DECL(i, j, k) };
@@ -2007,8 +2006,6 @@ void Pic::smooth_B(int iLev) {
       for (int iDir = 0; iDir < nDim; iDir++) {
         get_face(iDir, i, j, k, iDir, nU, lu[iDir], ru[iDir]);
       }
-      lumin = smoothBIso * max(fabs(lu[ix_]), fabs(lu[iy_]), fabs(lu[iz_]));
-      rumin = smoothBIso * max(fabs(ru[ix_]), fabs(ru[iy_]), fabs(ru[iz_]));
 
       get_alfven(ix_, i, j, k, lAlfven, rAlfven);
 
@@ -2020,13 +2017,8 @@ void Pic::smooth_B(int iLev) {
         doDiffusion = false;
       }
 
-      if (smoothBIso < 0) {
-        ul = fabs(ul) + lAlfven;
-        ur = fabs(ur) + rAlfven;
-      } else {
-        ul = max(fabs(ul), lumin);
-        ur = max(fabs(ur), rumin);
-      }
+      ul = fabs(ul);
+      ur = fabs(ur);
 
       if (doDiffusion)
         for (int iVar = 0; iVar < nDim3; iVar++) {
@@ -2053,13 +2045,8 @@ void Pic::smooth_B(int iLev) {
 
       get_alfven(iy_, i, j, k, lAlfven, rAlfven);
 
-      if (smoothBIso < 0) {
-        ul = fabs(ul) + lAlfven;
-        ur = fabs(ur) + rAlfven;
-      } else {
-        ul = max(fabs(ul), lumin);
-        ur = max(fabs(ur), rumin);
-      }
+      ul = fabs(ul);
+      ur = fabs(ur);
 
       if (doDiffusion)
         for (int iVar = 0; iVar < nDim3; iVar++) {
@@ -2089,13 +2076,8 @@ void Pic::smooth_B(int iLev) {
         }
         get_alfven(iz_, i, j, k, lAlfven, rAlfven);
 
-        if (smoothBIso < 0) {
-          ul = fabs(ul) + lAlfven;
-          ur = fabs(ur) + rAlfven;
-        } else {
-          ul = max(fabs(ul), lumin);
-          ur = max(fabs(ur), rumin);
-        }
+        ul = fabs(ul);
+        ur = fabs(ur);
 
         if (doDiffusion)
           for (int iVar = 0; iVar < nDim3; iVar++) {
