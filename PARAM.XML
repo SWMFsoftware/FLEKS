@@ -526,6 +526,20 @@ correction repeats nDivECorrection (default is 3) times. If the divE
 cleaning is time consuming, reducing nDivECorrection to 1 may also work.
 </command>
 
+<command name="DIVB"
+	 alias="DIVB_FLEKS0,DIVB_FLEKS1,DIVB_FLEKS2"
+	 multiple="T">
+  <parameter name="useHyperbolicCleaning" type="logical" default="F"/>
+  <parameter name="hypDecay" type="real" default="0.1" if="$useHyperbolicCleaning"/>
+
+#DIVB
+T                         useHyperbolicCleaning
+0.1                       hypDecay (read if useHyperbolicCleaning=T)
+
+This command enables hyperbolic divergence cleaning for the magnetic field.
+
+</command>
+
 <command name="SMOOTHE"
 	 alias="SMOOTHE_FLEKS0,SMOOTHE_FLEKS1,SMOOTHE_FLEKS2"
 	 multiple="T">
@@ -552,6 +566,75 @@ transform the short-wavelength oscillations into long-wavelength oscillations,
 and the long-wavelength field aligned electric field would accelerate electrons. 
 
 </command>
+
+<command name="SMOOTHJ"
+	 alias="SMOOTHJ_FLEKS0,SMOOTHJ_FLEKS1,SMOOTHJ_FLEKS2"
+	 multiple="T">
+  <parameter name="doSmoothJ" type="logical" default="F"/>
+  <if expr="$doSmoothJ">
+    <parameter name="nSmoothJ" type="integer" default="0"/>
+    <parameter name="coefSmoothJ" type="real" default="0.5"/>
+  </if>
+
+#SMOOTHJ
+T                         doSmoothJ (rest is read if true)
+5                         nSmoothJ
+0.5                       coefSmoothJ
+
+This command applies digital filtering smoothing to the current density J
+to reduce numerical noise. The coefSmoothJ parameter controls the smoothing
+strength through the formula:
+J_new = (1-coef) * J_old + (coef/2) * (J_left + J_right)
+
+It is recommended to apply the smoothing 1-3 times (nSmoothJ).
+</command>
+
+<command name="UPWINDE"
+	 alias="UPWINDE_FLEKS0,UPWINDE_FLEKS1,UPWINDE_FLEKS2"
+	 multiple="T">
+  <parameter name="useUpwindE" type="logical" default="F"/>
+  <parameter name="limiterThetaE" type="real" default="0.0"/>  
+
+#UPWINDE
+F                         useUpwindE
+0.0                       limiterThetaE
+
+When useUpwindE is true, a Lax-Friedrichs artificial viscosity term is added
+to the electric field equation to suppress numerical oscillations and 
+improve stability.
+
+The limiterThetaE parameter controls the limiter used in the upwind scheme.
+A value of 0 gives a fully diffusive first-order upwind scheme, while a value
+of 1 leads to the minmod limiter, and a value of 2 gives the least diffusive limiter.
+
+</command>
+
+<command name="UPWINDB"
+	 alias="UPWINDB_FLEKS0,UPWINDB_FLEKS1,UPWINDB_FLEKS2"
+	 multiple="T">
+  <parameter name="useUpwindB" type="logical" default="F"/>
+  <parameter name="limiterThetaB" type="real" default="0.0"/>
+
+#UPWINDB
+F                         useUpwindB
+0.0                       limiterThetaB
+
+Similar to the #UPWINDE command, but for the magnetic field equation.
+
+</command>
+
+<command name="CMAXE"
+	 alias="CMAXE_FLEKS0,CMAXE_FLEKS1,CMAXE_FLEKS2"
+	 multiple="T">
+  <parameter name="cMaxE" type="real" default="-1.0"/>
+
+#CMAXE
+-1.0                      cMaxE
+
+This command sets the diffusion speed for the upwind electric field correction.
+If cMaxE is negative, the local plasma speed is used, otherwise cMaxE is used.
+</command>
+
 
 <command name="TPRELATIVISTIC"
 	 alias="TPRELATIVISTIC_FLEKS0,TPRELATIVISTIC_FLEKS1,TPRELATIVISTIC_FLEKS2"
