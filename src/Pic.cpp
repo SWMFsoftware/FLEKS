@@ -1976,22 +1976,6 @@ void Pic::smooth_B(int iLev) {
       }
     };
 
-    auto get_alfven = [&](int iDir, int i, int j, int k, Real& lAlfven,
-                          Real& rAlfven) {
-      // Left and right B
-      Real lB[nDim3] = { 0, 0, 0 }, rB[nDim3] = { 0, 0, 0 }, lBt, rBt;
-      Real lRho, rRho;
-      for (int ivar = 0; ivar < nDim3; ivar++) {
-        get_face(iDir, i, j, k, ivar, nB, lB[ivar], rB[ivar]);
-      }
-      lBt = l2_norm(lB, nDim3);
-      rBt = l2_norm(rB, nDim3);
-
-      get_face(iDir, i, j, k, iRho_, moments, lRho, rRho);
-      lAlfven = lBt / sqrt(lRho);
-      rAlfven = rBt / sqrt(rRho);
-    };
-
     ParallelFor(box, [&](int i, int j, int k) {
       bool doDiffusion;
       Real lu[nDim3] = { 0, 0, 0 }, ru[nDim3] = { 0, 0, 0 };
@@ -2006,8 +1990,6 @@ void Pic::smooth_B(int iLev) {
         get_face(iDir, i, j, k, iDir, nU, lu[iDir], ru[iDir]);
       }
 
-      get_alfven(ix_, i, j, k, lAlfven, rAlfven);
-
       ul = lu[ix_];
       ur = ru[ix_];
       doDiffusion = true;
@@ -2016,10 +1998,9 @@ void Pic::smooth_B(int iLev) {
         doDiffusion = false;
       }
 
-      ul = fabs(ul);
-      ur = fabs(ur);
-
-      if (doDiffusion)
+      if (doDiffusion) {
+        ul = fabs(ul);
+        ur = fabs(ur);
         for (int iVar = 0; iVar < nDim3; iVar++) {
           Real cR = limiter_theta(limiterTheta, cB(i - 1, j, k, iVar),
                                   cB(i, j, k, iVar), cB(i + 1, j, k, iVar));
@@ -2032,6 +2013,7 @@ void Pic::smooth_B(int iLev) {
                cL * ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar))) *
               coef[ix_];
         }
+      }
 
       // Flux along y
       ul = lu[iy_];
@@ -2042,12 +2024,10 @@ void Pic::smooth_B(int iLev) {
         doDiffusion = false;
       }
 
-      get_alfven(iy_, i, j, k, lAlfven, rAlfven);
+      if (doDiffusion) {
+        ul = fabs(ul);
+        ur = fabs(ur);
 
-      ul = fabs(ul);
-      ur = fabs(ur);
-
-      if (doDiffusion)
         for (int iVar = 0; iVar < nDim3; iVar++) {
           Real cR = limiter_theta(limiterTheta, cB(i, j - 1, k, iVar),
                                   cB(i, j, k, iVar), cB(i, j + 1, k, iVar));
@@ -2061,6 +2041,7 @@ void Pic::smooth_B(int iLev) {
                cL * ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar))) *
               coef[iy_];
         }
+      }
 
       if (nDim > 2 && !isFake2D) {
 
@@ -2073,12 +2054,11 @@ void Pic::smooth_B(int iLev) {
             (ur < 0 && bit::is_domain_boundary(status(i, j, k + 1)))) {
           doDiffusion = false;
         }
-        get_alfven(iz_, i, j, k, lAlfven, rAlfven);
 
-        ul = fabs(ul);
-        ur = fabs(ur);
+        if (doDiffusion) {
+          ul = fabs(ul);
+          ur = fabs(ur);
 
-        if (doDiffusion)
           for (int iVar = 0; iVar < nDim3; iVar++) {
             Real cR = limiter_theta(limiterTheta, cB(i, j, k - 1, iVar),
                                     cB(i, j, k, iVar), cB(i, j, k + 1, iVar));
@@ -2092,6 +2072,7 @@ void Pic::smooth_B(int iLev) {
                  cL * ul * (cB(i, j, k, iVar) - cB(i, j, k - 1, iVar))) *
                 coef[iz_];
           }
+        }
       }
 
       if (useHyperbolicCleaning) {
