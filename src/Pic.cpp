@@ -120,7 +120,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     }
   } else if (command == "#UPWINDB") {
     param.read_var("useUpwindB", useUpwindB);
-    param.read_var("theta", limiterTheta);
+    param.read_var("theta", limiterThetaB);
     if (useUpwindB) {
       useHyperbolicCleaning = true;
     }
@@ -1996,9 +1996,9 @@ void Pic::correct_B(int iLev) {
           ul = fabs(ul);
           ur = fabs(ur);
           for (int iVar = 0; iVar < nDim3; iVar++) {
-            Real cR = limiter_theta(limiterTheta, cB(i - 1, j, k, iVar),
+            Real cR = limiter_theta(limiterThetaB, cB(i - 1, j, k, iVar),
                                     cB(i, j, k, iVar), cB(i + 1, j, k, iVar));
-            Real cL = limiter_theta(limiterTheta, cB(i - 2, j, k, iVar),
+            Real cL = limiter_theta(limiterThetaB, cB(i - 2, j, k, iVar),
                                     cB(i - 1, j, k, iVar), cB(i, j, k, iVar));
             ul = min(ul, 0.5 / coef[ix_]);
             ur = min(ur, 0.5 / coef[ix_]);
@@ -2023,9 +2023,9 @@ void Pic::correct_B(int iLev) {
           ur = fabs(ur);
 
           for (int iVar = 0; iVar < nDim3; iVar++) {
-            Real cR = limiter_theta(limiterTheta, cB(i, j - 1, k, iVar),
+            Real cR = limiter_theta(limiterThetaB, cB(i, j - 1, k, iVar),
                                     cB(i, j, k, iVar), cB(i, j + 1, k, iVar));
-            Real cL = limiter_theta(limiterTheta, cB(i, j - 2, k, iVar),
+            Real cL = limiter_theta(limiterThetaB, cB(i, j - 2, k, iVar),
                                     cB(i, j - 1, k, iVar), cB(i, j, k, iVar));
             ul = min(ul, 0.5 / coef[iy_]);
             ur = min(ur, 0.5 / coef[iy_]);
@@ -2054,9 +2054,9 @@ void Pic::correct_B(int iLev) {
             ur = fabs(ur);
 
             for (int iVar = 0; iVar < nDim3; iVar++) {
-              Real cR = limiter_theta(limiterTheta, cB(i, j, k - 1, iVar),
+              Real cR = limiter_theta(limiterThetaB, cB(i, j, k - 1, iVar),
                                       cB(i, j, k, iVar), cB(i, j, k + 1, iVar));
-              Real cL = limiter_theta(limiterTheta, cB(i, j, k - 2, iVar),
+              Real cL = limiter_theta(limiterThetaB, cB(i, j, k - 2, iVar),
                                       cB(i, j, k - 1, iVar), cB(i, j, k, iVar));
               ul = min(ul, 0.5 / coef[iz_]);
               ur = min(ur, 0.5 / coef[iz_]);

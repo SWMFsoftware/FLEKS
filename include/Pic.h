@@ -129,7 +129,7 @@ private:
   amrex::Real limiterThetaE = 0;
   amrex::Real cMaxE = -1;
   bool useUpwindB = false;
-  amrex::Real limiterTheta = 0;
+  amrex::Real limiterThetaB = 0;
 
   bool doSmoothJ = false;
   int nSmoothJ = 0;
