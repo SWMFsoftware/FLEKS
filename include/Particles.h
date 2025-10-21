@@ -351,14 +351,13 @@ public:
              const amrex::Vector<amrex::MultiFab>& nodeB,
              const amrex::Vector<amrex::MultiFab>& eBg,
              const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
-             amrex::Real dtNext, bool solveInCoMov);
+             amrex::Real dtNext);
 
   void charged_particle_mover(const amrex::Vector<amrex::MultiFab>& nodeE,
                               const amrex::Vector<amrex::MultiFab>& nodeB,
                               const amrex::Vector<amrex::MultiFab>& eBg,
                               const amrex::Vector<amrex::MultiFab>& uBg,
-                              amrex::Real dt, amrex::Real dtNext,
-                              bool solveInCoMov);
+                              amrex::Real dt, amrex::Real dtNext);
 
   // select particles based on input supid and id
   void select_particle(amrex::Vector<std::array<int, 3> >& selectParticleIn);

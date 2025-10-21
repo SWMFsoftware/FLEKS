@@ -101,7 +101,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("coefDiff", fsolver.coefDiff);
   } else if (command == "#COMOVING") {
     param.read_var("solveFieldInCoMov", solveFieldInCoMov);
-    param.read_var("solvePartInCoMov", solvePartInCoMov);
     param.read_var("nSmoothBackGroundU", nSmoothBackGroundU);
   } else if (command == "#UPWINDE") {
     param.read_var("useUpwindE", useUpwindE);
@@ -642,7 +641,7 @@ void Pic::particle_mover() {
   Real dtnext = tc->get_next_dt();
 
   for (int i = 0; i < nSpecies; ++i) {
-    parts[i]->mover(nodeEth, nodeB, eBg, uBg, dt, dtnext, solvePartInCoMov);
+    parts[i]->mover(nodeEth, nodeB, eBg, uBg, dt, dtnext);
   }
 
   for (int i = 0; i < nSpecies; ++i) {
@@ -1285,8 +1284,7 @@ void Pic::update(bool doReportIn) {
     }
   }
 
-  if (solveFieldInCoMov || solvePartInCoMov || useUpwindB ||
-      (useUpwindE && cMaxE < 0)) {
+  if (solveFieldInCoMov || useUpwindB || (useUpwindE && cMaxE < 0)) {
     update_U0_E0();
   }
 
