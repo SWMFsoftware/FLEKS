@@ -541,6 +541,159 @@ and the long-wavelength field aligned electric field would accelerate electrons.
 
 </command>
 
+<command name="UPWINDE"
+   alias="UPWINDE_FLEKS0,UPWINDE_FLEKS1,UPWINDE_FLEKS2"
+   multiple="T">
+  <parameter name="useUpwindE" type="logical" default="F"/>
+  <if expr="$useUpwindE">
+    <parameter name="limiterThetaE" type="real" default="1.0"/>
+    <parameter name="cMaxE" type="real" default="1.0"/>
+  </if>
+
+#UPWINDE
+F                  useUpwindE (rest is read if true)
+1.0                limiterThetaE
+1.0                cMaxE
+
+This command enables upwinding for the electric field update.
+`limiterThetaE` controls the flux limiter, and `cMaxE` is the maximum wave speed.
+</command>
+
+<command name="UPWINDB"
+   alias="UPWINDB_FLEKS0,UPWINDB_FLEKS1,UPWINDB_FLEKS2"
+   multiple="T">
+  <parameter name="useUpwindB" type="logical" default="F"/>
+  <if expr="$useUpwindB">
+    <parameter name="theta" type="real" default="1.0"/>
+    <parameter name="Isotropy" type="real" default="1.0"/>
+  </if>
+
+#UPWINDB
+F                  useUpwindB (rest is read if true)
+1.0                theta
+1.0                Isotropy
+
+This command enables upwinding for the magnetic field update.
+`theta` controls the flux limiter, and `Isotropy` controls the smoothing.
+</command>
+
+<command name="DIVB"
+   alias="DIVB_FLEKS0,DIVB_FLEKS1,DIVB_FLEKS2"
+   multiple="T">
+  <parameter name="useHyperbolicCleaning" type="logical" default="F"/>
+  <if expr="$useHyperbolicCleaning">
+    <parameter name="hypDecay" type="real" default="0.1"/>
+  </if>
+
+#DIVB
+F                  useHyperbolicCleaning (rest is read if true)
+0.1                hypDecay
+
+This command enables hyperbolic cleaning for the divergence of the magnetic field.
+`hypDecay` is the decay rate for the cleaning.
+</command>
+
+<command name="SMOOTHJ"
+	 alias="SMOOTHJ_FLEKS0,SMOOTHJ_FLEKS1,SMOOTHJ_FLEKS2"
+	 multiple="T">
+  <parameter name="doSmoothJ" type="logical" default="F"/>
+  <if expr="$doSmoothJ">
+    <parameter name="nSmoothJ" type="integer" default="1"/>
+    <parameter name="coefSmoothJ" type="real" default="0.5"/>
+  </if>
+
+#SMOOTHJ
+F                  doSmoothJ (rest is read if true)
+1                  nSmoothJ
+0.5                coefSmoothJ
+
+This command enables smoothing of the current density.
+`nSmoothJ` is the number of smoothing iterations, and `coefSmoothJ` is the smoothing coefficient.
+</command>
+
+<command name="PRESPLITTING"
+	 alias="PRESPLITTING_FLEKS0,PRESPLITTING_FLEKS1,PRESPLITTING_FLEKS2"
+	 multiple="T">
+  <parameter name="doPreSplitting" type="logical" default="F"/>
+
+#PRESPLITTING
+F                   doPreSplitting
+
+This command enables particle pre-splitting.
+</command>
+
+<command name="EXPLICITPIC"
+	 alias="EXPLICITPIC_FLEKS0,EXPLICITPIC_FLEKS1,EXPLICITPIC_FLEKS2"
+	 multiple="T">
+  <parameter name="useExplicitPIC" type="logical" default="F"/>
+
+#EXPLICITPIC
+F                   useExplicitPIC
+
+This command enables the explicit PIC algorithm.
+</command>
+
+<command name="COMOVING"
+	 alias="COMOVING_FLEKS0,COMOVING_FLEKS1,COMOVING_FLEKS2"
+	 multiple="T">
+  <parameter name="solveFieldInCoMov" type="logical" default="F"/>
+  <parameter name="solvePartInCoMov" type="logical" default="F"/>
+  <parameter name="nSmoothBackGroundU" type="integer" default="0"/>
+
+
+#COMOVING
+F                  solveFieldInCoMov
+F                  solvePartInCoMov
+0                  nSmoothBackGroundU
+
+This command enables the co-moving frame for the field and particle solvers.
+`nSmoothBackGroundU` is the number of smoothing iterations for the background velocity.
+</command>
+
+<command name="SOLVEEM"
+	 alias="SOLVEEM_FLEKS0,SOLVEEM_FLEKS1,SOLVEEM_FLEKS2"
+	 multiple="T">
+  <parameter name="solveEM" type="logical" default="T"/>
+
+#SOLVEEM
+T                   solveEM
+
+This command enables the electromagnetic field solver.
+</command>
+
+<command name="PARTMODE"
+	 alias="PARTMODE_FLEKS0,PARTMODE_FLEKS1,PARTMODE_FLEKS2"
+	 multiple="T">
+  <parameter name="partMode" type="string" default="SEP"/>
+
+#PARTMODE
+SEP                   partMode
+
+This command sets the particle mode. Can be "SEP" or "PIC".
+</command>
+
+<command name="KINETICSOURCE"
+	 alias="KINETICSOURCE_FLEKS0,KINETICSOURCE_FLEKS1,KINETICSOURCE_FLEKS2"
+	 multiple="T">
+  <parameter name="kineticSource" type="logical" default="F"/>
+
+#KINETICSOURCE
+F                  kineticSource
+
+This command enables the kinetic source.
+</command>
+
+<command name="TPINITFROMPIC"
+	 alias="TPINITFROMPIC_FLEKS0,TPINITFROMPIC_FLEKS1,TPINITFROMPIC_FLEKS2"
+	 multiple="T">
+  <parameter name="initFromPIC" type="logical" default="F"/>
+
+#TPINITFROMPIC
+F                  initFromPIC
+
+This command enables initialization of test particles from the PIC simulation.
+</command>
+
 <command name="TPRELATIVISTIC"
 	 alias="TPRELATIVISTIC_FLEKS0,TPRELATIVISTIC_FLEKS1,TPRELATIVISTIC_FLEKS2"
 	 multiple="T">
@@ -550,6 +703,66 @@ and the long-wavelength field aligned electric field would accelerate electrons.
 T                         isRelativistic
 
 If it is true, the test particle velocity update will be relativistic.
+</command>
+
+<command name="PARTICLEBOXBOUNDARY"
+   alias="PARTICLEBOXBOUNDARY_FLEKS0,PARTICLEBOXBOUNDARY_FLEKS1,PARTICLEBOXBOUNDARY_FLEKS2"
+   multiple="T">
+  <parameter name="iSpecies" type="integer"/>
+  <for from="1" to="$nDim">
+    <parameter name="particleBoxBoundaryLo" type="string"/>
+    <parameter name="particleBoxBoundaryHi" type="string"/>
+  </for>
+
+#PARTICLEBOXBOUNDARY
+0                  iSpecies
+periodic           particleBoxBoundaryLo
+periodic           particleBoxBoundaryHi
+periodic           particleBoxBoundaryLo
+periodic           particleBoxBoundaryHi
+periodic           particleBoxBoundaryLo
+periodic           particleBoxBoundaryHi
+
+This command sets the boundary conditions for the particles for each dimension.
+</command>
+
+<command name="BFIELDBOXBOUNDARY"
+   alias="BFIELDBOXBOUNDARY_FLEKS0,BFIELDBOXBOUNDARY_FLEKS1,BFIELDBOXBOUNDARY_FLEKS2"
+   multiple="T">
+  <for from="1" to="$nDim">
+    <parameter name="BoxBoundaryLo" type="string"/>
+    <parameter name="BoxBoundaryHi" type="string"/>
+  </for>
+
+#BFIELDBOXBOUNDARY
+periodic           BoxBoundaryLo
+periodic           BoxBoundaryHi
+periodic           BoxBoundaryLo
+periodic           BoxBoundaryHi
+periodic           BoxBoundaryLo
+periodic           BoxBoundaryHi
+
+This command sets the boundary conditions for the magnetic field for each dimension.
+</command>
+
+<command name="OVERRIDEPRESSUREANISOTROPY"
+	 alias="OVERRIDEPRESSUREANISOTROPY_FLEKS0,OVERRIDEPRESSUREANISOTROPY_FLEKS1,OVERRIDEPRESSUREANISOTROPY_FLEKS2"
+	 multiple="T">
+  <parameter name="doOverridePressureAnisotropy" type="logical" default="F"/>
+  <if expr="$doOverridePressureAnisotropy">
+    <parameter name="nSpecies" type="integer" default="2"/>
+    <for from="1" to="$nSpecies">
+      <parameter name="initialAnisotropyRatio" type="real" default="1.0"/>
+    </for>
+  </if>
+
+#OVERRIDEPRESSUREANISOTROPY
+F                  doOverridePressureAnisotropy (rest is read if true)
+2                  nSpecies
+1.0                initialAnisotropyRatio
+1.0                initialAnisotropyRatio
+
+This command overrides the pressure anisotropy.
 </command>
 
 </commandgroup>
