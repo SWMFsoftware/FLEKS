@@ -260,6 +260,75 @@ T                   usePIC
 Turning on/off the PIC module. 
 </command>
 
+<command name="EXPLICITPIC"
+   alias="EXPLICITPIC_FLEKS0,EXPLICITPIC_FLEKS1,EXPLICITPIC_FLEKS2"
+   multiple="T">
+  <parameter name="useExplicitPIC" type="logical" default="F"/>
+
+#EXPLICITPIC
+F                 useExplicitPIC
+
+When this flag is true, the simulation will use an explicit PIC solver.
+</command>
+
+<command name="COMOVING"
+   alias="COMOVING_FLEKS0,COMOVING_FLEKS1,COMOVING_FLEKS2"
+   multiple="T">
+  <parameter name="solveFieldInCoMov" type="logical" default="F"/>
+  <parameter name="nSmoothBackGroundU" type="integer" default="0"/>
+
+#COMOVING
+F                 solveFieldInCoMov
+0                 nSmoothBackGroundU
+
+This command enables solving the electromagnetic fields in a co-moving frame of reference.
+</command>
+
+<command name="OVERRIDEPRESSUREANISOTROPY"
+   alias="OVERRIDEPRESSUREANISOTROPY_FLEKS0,OVERRIDEPRESSUREANISOTROPY_FLEKS1,OVERRIDEPRESSUREANISOTROPY_FLEKS2"
+   multiple="T">
+  <parameter name="doOverridePressureAnisotropy" type="logical" default="F"/>
+  <if expr="$doOverridePressureAnisotropy">
+    <parameter name="nSpecies" type="integer" default="2"/>
+    <for from="1" to="$nSpecies">
+      <parameter name="initialAnisotropyRatio" type="real" default="1.0"/>
+    </for>
+  </if>
+
+#OVERRIDEPRESSUREANISOTROPY
+F                 doOverridePressureAnisotropy (rest is read if true)
+2                 nSpecies
+1.0               initialAnisotropyRatio
+1.0               initialAnisotropyRatio
+
+This command allows overriding the pressure anisotropy for each species.
+</command>
+
+<command name="SOLVEEM"
+   alias="SOLVEEM_FLEKS0,SOLVEEM_FLEKS1,SOLVEEM_FLEKS2"
+   multiple="T">
+  <parameter name="solveEM" type="logical" default="T"/>
+
+#SOLVEEM
+T                 solveEM
+
+This command enables or disables the electromagnetic field solver.
+</command>
+
+<command name="PARTMODE"
+   alias="PARTMODE_FLEKS0,PARTMODE_FLEKS1,PARTMODE_FLEKS2"
+   multiple="T">
+  <parameter name="partMode" type="string" input="select" required="T">
+    <option value="SEP"/>
+    <option value="PIC"/>
+  </parameter>
+
+#PARTMODE
+SEP               partMode
+
+This command sets the particle mode to either SEP (Solar Energetic Particles) or PIC (Particle-In-Cell).
+</command>
+
 <command name="PARTICLETRACKER"
 	 alias="PARTICLETRACKER_FLEKS0,PARTICLETRACKER_FLEKS1,PARTICLETRACKER_FLEKS2"
 	 multiple="T">
@@ -1066,6 +1135,28 @@ If PIC is not initialized from SWMF (#INITFROMSWMF), length and speed
 normalization should be set here. Both lNorm and uNorm are in SI units.
 </command>
 
+<command name="SCALINGFACTOR"
+   alias="SCALINGFACTOR_FLEKS0,SCALINGFACTOR_FLEKS1,SCALINGFACTOR_FLEKS2"
+   multiple="T">
+  <parameter name="scaling" type="real" default="1.0"/>
+
+#SCALINGFACTOR
+1.0               scaling
+
+This command sets the scaling factor for the simulation.
+</command>
+
+<command name="BODYSIZE"
+   alias="BODYSIZE_FLEKS0,BODYSIZE_FLEKS1,BODYSIZE_FLEKS2"
+   multiple="T">
+  <parameter name="radius" type="real" default="1.0"/>
+
+#BODYSIZE
+1.0               radius
+
+This command sets the size of the planet or other body in the simulation.
+</command>
+
 <command name="PLASMA"
 	 alias="PLASMA_FLEKS0,PLASMA_FLEKS1,PLASMA_FLEKS2"
 	 multiple="T">
@@ -1166,7 +1257,57 @@ along the ratial direction. Inside r .le. rCutoff, the density is set
 to rho(rCutoff). 
 </command>
 
+<command name="PARTICLEBOXBOUNDARY"
+   alias="PARTICLEBOXBOUNDARY_FLEKS0,PARTICLEBOXBOUNDARY_FLEKS1,PARTICLEBOXBOUNDARY_FLEKS2"
+   multiple="T">
+  <parameter name="iSpecies" type="integer" required="T"/>
+  <for from="1" to="$nDim">
+    <parameter name="particleBoxBoundaryLo" type="string" input="select" required="T">
+      <option value="periodic"/>
+      <option value="open"/>
+    </parameter>
+    <parameter name="particleBoxBoundaryHi" type="string" input="select" required="T">
+      <option value="periodic"/>
+      <option value="open"/>
+    </parameter>
+  </for>
 
+#PARTICLEBOXBOUNDARY
+0                 iSpecies
+periodic          particleBoxBoundaryLo
+periodic          particleBoxBoundaryHi
+open              particleBoxBoundaryLo
+open              particleBoxBoundaryHi
+open              particleBoxBoundaryLo
+open              particleBoxBoundaryHi
+
+This command defines the boundary conditions for particles of a given species.
+</command>
+
+<command name="BFIELDBOXBOUNDARY"
+   alias="BFIELDBOXBOUNDARY_FLEKS0,BFIELDBOXBOUNDARY_FLEKS1,BFIELDBOXBOUNDARY_FLEKS2"
+   multiple="T">
+  <for from="1" to="$nDim">
+    <parameter name="BoxBoundaryLo" type="string" input="select" required="T">
+      <option value="periodic"/>
+      <option value="open"/>
+    </parameter>
+    <parameter name="BoxBoundaryHi" type="string" input="select" required="T">
+      <option value="periodic"/>
+      <option value="open"/>
+    </parameter>
+  </for>
+
+#BFIELDBOXBOUNDARY
+periodic          BoxBoundaryLo
+periodic          BoxBoundaryHi
+open              BoxBoundaryLo
+open              BoxBoundaryHi
+open              BoxBoundaryLo
+open              BoxBoundaryHi
+
+This command defines the boundary conditions for the magnetic field.
+</command>
 </commandgroup>
 
 <commandgroup name="SCRIPT COMMANDS">
@@ -1225,6 +1366,19 @@ F                 doRestartFIOnly
 
 This command should only exist in the restart file FLEKSX_restart.H. If 
 it is true, only the fluid interface restarts.
+</command>
+
+<command name="TPRESTART"
+   alias="TPRESTART_FLEKS0,TPRESTART_FLEKS1,TPRESTART_FLEKS2"
+   multiple="T">
+  <parameter name="doTPRestart" type="logical" default="F"/>
+
+#TPRESTART
+F                 doTPRestart
+
+This command should only exist in the restart file FLEKSX_restart.H
+to indicate that the test particle information of the FLEKS region is
+restarted from a file.
 </command>
 
 <command name="FLUIDVARNAMES"

@@ -414,7 +414,7 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#SCALINGFACTOR") {
     param.read_var("scaling", ScalingFactor);
   } else if (command == "#BODYSIZE") {
-    param.read_var("scaling", rPlanetSi);
+    param.read_var("radius", rPlanetSi);
   } else if (command == "#FLUIDVARNAMES") {
     int nVar;
     param.read_var("nVar", nVar);
