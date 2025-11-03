@@ -29,7 +29,7 @@ private:
 
   //----Input parameters--------------------------------------
   MPI_Comm iComm;
-  bool useMpiIO = false;
+  bool useMpiIO = true;
   int nProcs;
   int nDim;
   int rank;
