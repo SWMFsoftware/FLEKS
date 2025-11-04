@@ -379,8 +379,7 @@ void PlotWriter::write_idl(double const timeNow, int const iCycle,
   if (doWriteHeader)
     write_header(timeNow, iCycle);
 
-  if (pointList_II.size() > 0)
-    write_field(timeNow, iCycle, pointList_II, get_var);
+  write_field(timeNow, iCycle, pointList_II, get_var);
 
   // std::cout << "After write_header \n" << (*this) << std::endl;
 }
