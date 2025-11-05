@@ -170,14 +170,14 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
       --iMax;
     if (Geom(iLev).isPeriodic(iy_))
       --jMax;
-    if (Geom(iLev).isPeriodic(iz_))
+    if (nDim > 2 && Geom(iLev).isPeriodic(iz_))
       --kMax;
 
     if (isFake2D)
       kMax = lo.z;
 
     for (int k = lo.z; k <= kMax; ++k) {
-      const double zp = Geom(iLev).LoEdge(k, iz_);
+      const double zp = nDim > 2 ? Geom(iLev).LoEdge(k, iz_) : 0.0;
       for (int j = lo.y; j <= jMax; ++j) {
         const double yp = Geom(iLev).LoEdge(j, iy_);
         for (int i = lo.x; i <= iMax; ++i) {
@@ -191,14 +191,14 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
               xMinL_D[ix_] = xp;
             if (yp < xMinL_D[iy_])
               xMinL_D[iy_] = yp;
-            if (zp < xMinL_D[iz_])
+            if (nDim > 2 && zp < xMinL_D[iz_])
               xMinL_D[iz_] = zp;
 
             if (xp > xMaxL_D[ix_])
               xMaxL_D[ix_] = xp;
             if (yp > xMaxL_D[iy_])
               xMaxL_D[iy_] = yp;
-            if (zp > xMaxL_D[iz_])
+            if (nDim > 2 && zp > xMaxL_D[iz_])
               xMaxL_D[iz_] = zp;
           }
         }
