@@ -1,6 +1,7 @@
 #include <AMReX_ParallelDescriptor.H>
 #include <AMReX_RealVect.H>
 #include <cctype>
+#include <climits>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -685,7 +686,24 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
     MPI_File_open(iCommWrite, filename.c_str(),
                   MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fh);
 
-    MPI_File_write_at_all(fh, offset, buffer.data(), nSize, MPI_CHAR, &status);
+    // The 'count' parameter in MPI_File_write_at is an 'int' with maximum
+    // value of INT_MAX (2^31-1 ≈ 2GB)
+    const long long int maxChunk = static_cast<long long int>(INT_MAX);
+    long long int remainingSize = nSize;
+    long long int currentOffset = offset;
+    char* currentPos = buffer.data();
+
+    while (remainingSize > 0) {
+      // Calculate chunk size ensuring it fits in an int
+      int chunkSize = static_cast<int>(std::min(remainingSize, maxChunk));
+
+      MPI_File_write_at(fh, static_cast<MPI_Offset>(currentOffset), currentPos,
+                        chunkSize, MPI_CHAR, &status);
+
+      remainingSize -= chunkSize;
+      currentOffset += chunkSize;
+      currentPos += chunkSize;
+    }
 
     MPI_File_close(&fh);
 
