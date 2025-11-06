@@ -399,8 +399,13 @@ void PlotWriter::write_header(double const timeNow, int const iCycle) {
           << "nProc\n";
   outFile << (doSaveBinary ? 'T' : 'F') << "\t save_binary\n";
   int nByte = 0;
-  if (doSaveBinary)
-    nByte = sizeof(double);
+  if (doSaveBinary) {
+    if (outputFormat == "real4") {
+      nByte = sizeof(float);
+    } else {
+      nByte = sizeof(double);
+    }
+  }
   outFile << nByte << "\t nByte\n";
   outFile << "\n";
 
@@ -627,34 +632,71 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
   std::ofstream outFile;
 
   if (doSaveBinary) {
-    int nRecord, nSizeDouble, nSizeInt;
-    nSizeInt = sizeof(int);
-    assert(nSizeInt == 4);
-    nSizeDouble = sizeof(double);
-    // nVar + dx. nVar already includes X/Y/Z.
-    nRecord = (nVar + 1) * nSizeDouble;
+    long long int nSize;
+    Vector<char> buffer;
 
-    long long int nSize = nPoint * (nSizeInt * 2 + nSizeDouble * (nVar + 1));
+    if (outputFormat == "real4") {
+      int nRecord, nSizeFloat, nSizeInt;
+      nSizeInt = sizeof(int);
+      assert(nSizeInt == 4);
+      nSizeFloat = sizeof(float);
+      // nVar + dx. nVar already includes X/Y/Z.
+      nRecord = (nVar + 1) * nSizeFloat;
 
-    Vector<char> buffer(nSize);
-    char* pos = buffer.data();
-    for (int iPoint = 0; iPoint < nPoint; ++iPoint) {
-      // The PostIDL.f90 was originally designed for Fortran output. In order
-      // to use PostIDL.f90, we should follow the format of Fortran binary
-      // output. Each line is a record. Before and after each record, use 4
-      // byte (nSizeInt)  to save the length of this record.
+      nSize = nPoint * (nSizeInt * 2 + (nVar + 1) * nSizeFloat);
 
-      memcpy(pos, &nRecord, nSizeInt);
-      pos += nSizeInt;
+      buffer.resize(nSize);
+      char* pos = buffer.data();
+      Vector<float> value_f(nVar);
 
-      memcpy(pos, &dx, nSizeDouble);
-      pos += nSizeDouble;
+      for (int iPoint = 0; iPoint < nPoint; ++iPoint) {
+        memcpy(pos, &nRecord, nSizeInt);
+        pos += nSizeInt;
 
-      memcpy(pos, &value_II(iPoint, 0), nSizeDouble * nVar);
-      pos += nSizeDouble * nVar;
+        const float dx_f = dx;
+        memcpy(pos, &dx_f, nSizeFloat);
+        pos += nSizeFloat;
 
-      memcpy(pos, &nRecord, nSizeInt);
-      pos += nSizeInt;
+        for (int iVar = 0; iVar < nVar; ++iVar) {
+          value_f[iVar] = static_cast<float>(value_II(iPoint, iVar));
+        }
+        memcpy(pos, value_f.data(), nSizeFloat * nVar);
+        pos += nSizeFloat * nVar;
+
+        memcpy(pos, &nRecord, nSizeInt);
+        pos += nSizeInt;
+      }
+
+    } else { // for "real8"
+      int nRecord, nSizeDouble, nSizeInt;
+      nSizeInt = sizeof(int);
+      assert(nSizeInt == 4);
+      nSizeDouble = sizeof(double);
+      // nVar + dx. nVar already includes X/Y/Z.
+      nRecord = (nVar + 1) * nSizeDouble;
+
+      nSize = nPoint * (nSizeInt * 2 + nSizeDouble * (nVar + 1));
+
+      buffer.resize(nSize);
+      char* pos = buffer.data();
+      for (int iPoint = 0; iPoint < nPoint; ++iPoint) {
+        // The PostIDL.f90 was originally designed for Fortran output. In order
+        // to use PostIDL.f90, we should follow the format of Fortran binary
+        // output. Each line is a record. Before and after each record, use 4
+        // byte (nSizeInt)  to save the length of this record.
+
+        memcpy(pos, &nRecord, nSizeInt);
+        pos += nSizeInt;
+
+        memcpy(pos, &dx, nSizeDouble);
+        pos += nSizeDouble;
+
+        memcpy(pos, &value_II(iPoint, 0), nSizeDouble * nVar);
+        pos += nSizeDouble * nVar;
+
+        memcpy(pos, &nRecord, nSizeInt);
+        pos += nSizeInt;
+      }
     }
 
     MPI_Offset offset = 0;
