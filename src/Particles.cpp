@@ -1568,9 +1568,6 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
       const Array4<Real const>& nodeEArr = nodeE[iLev][pti].array();
       const Array4<Real const>& nodeBArr = nodeB[iLev][pti].array();
 
-      const Array4<Real const>& E0Arr = eBg[iLev][pti].array();
-      const Array4<Real const>& U0Arr = uBg[iLev][pti].array();
-
       const Box& bx = cell_status(iLev)[pti].box();
       const Array4<int const>& status = cell_status(iLev)[pti].array();
 

@@ -1931,12 +1931,9 @@ void Pic::correct_B(int iLev) {
       Box box = mfi.validbox();
 
       const Array4<Real>& cB = centerB[iLev][mfi].array();
-      const Array4<Real>& nB = nodeB[iLev][mfi].array();
       const Array4<Real const>& nU = uBg[iLev][mfi].array();
       const Array4<Real>& dB = centerDB[mfi].array();
       const auto& status = cellStatus[iLev][mfi].array();
-      const Array4<Real const>& moments =
-          nodePlasma[nSpecies][iLev][mfi].array();
 
       // Get the face along the direction iDir for the cell (i,j,k) for the iVar
       // component
@@ -1976,8 +1973,6 @@ void Pic::correct_B(int iLev) {
         Real ul, ur;
 
         IntVect ijk{ AMREX_D_DECL(i, j, k) };
-
-        Real lAlfven = 0, rAlfven = 0;
 
         // Flux along  x
         for (int iDir = 0; iDir < nDim; iDir++) {
