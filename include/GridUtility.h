@@ -183,7 +183,7 @@ inline void CheckRefinementProximity(bool b[3][3][3], amrex::IntVect iv,
 }
 
 inline bool SkipParticleForDivECleaning(
-    amrex::RealVect xyz, amrex::Geometry Geom,
+    amrex::RealVect xyz, amrex::Geometry Geom,int iLev,
     const amrex::Array4<int const>& status) {
 
   bool skip = false;
@@ -194,6 +194,11 @@ inline bool SkipParticleForDivECleaning(
   if (bit::is_refined(status(iv)) || bit::is_lev_boundary(status(iv))) {
     skip = true;
   }
+  if (iLev==0 && bit::is_lev_edge(status(iv)))
+  {
+    skip = true;
+  }
+
   if (bit::is_refined_neighbour(status(iv))) {
     bool b[3][3][3] = { false };
     amrex::Real fac = 0.25;
@@ -469,7 +474,7 @@ void skip_cells_divE_correction(amrex::FabArray<FAB>& dst,
         for (int k = lo.z; k <= hi.z; ++k)
           for (int j = lo.y; j <= hi.y; ++j)
             for (int i = lo.x; i <= hi.x; ++i) {
-              if (bit::is_lev_edge(statusArr(i, j, k)) ||
+              if (//bit::is_lev_edge(statusArr(i, j, k)) ||
                   bit::is_refined(statusArr(i, j, k))) {
                 data(i, j, k, iVar) = 0.0;
               }
