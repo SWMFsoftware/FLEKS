@@ -220,6 +220,53 @@ inline bool SkipParticleForDivECleaning(
   return skip;
 }
 
+inline void smooth_mf_exp(amrex::MultiFab& mf, const amrex::iMultiFab& status) {
+  BL_PROFILE("smoothMF");
+  if (mf.empty())
+    return;
+
+  int nComp = mf.nComp();
+  // Create a temporary copy with one layer of ghost cells so neighbors are
+  // available.
+  amrex::MultiFab tmp(mf.boxArray(), mf.DistributionMap(), nComp, 1);
+  tmp.setVal(0.0);
+  // ParallelCopy from mf into tmp, filling one ghost layer
+  tmp.ParallelCopy(mf, 0, 0, nComp, 0, 1);
+  // Also fill physical boundary ghosts if present
+  tmp.FillBoundary();
+
+  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const auto& box = mfi.validbox(); // include ghosts in tmp access
+    const auto& lo = amrex::lbound(box);
+    const auto& hi = amrex::ubound(box);
+
+    const auto arr = mf.array(mfi);
+    const auto t = tmp.array(mfi);
+    const auto s = status[mfi].array();
+
+    for (int j = lo.y; j <= hi.y; ++j) {
+      for (int i = lo.x; i <= hi.x; ++i) {
+        for (int comp = 0; comp < nComp; ++comp) {
+          amrex::Real sum = 0.0;
+          int count = 0;
+          for (int jj = j - 1; jj <= j + 1; ++jj) {
+            for (int ii = i - 1; ii <= i + 1; ++ii) {
+              if (!bit::is_lev_boundary(s(ii, jj, 0))) {
+                sum += t(ii, jj, 0, comp);
+                ++count;
+              }
+            }
+          }
+          if (count > 0) {
+            sum = sum / static_cast<amrex::Real>(count);
+            arr(i, j, 0, comp) = 0.5 * (sum + t(i, j, 0, comp));
+          }
+        }
+      }
+    }
+  }
+}
+
 inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
                                     const amrex::MFIter& mfi,
                                     const amrex::Geometry& gm,
