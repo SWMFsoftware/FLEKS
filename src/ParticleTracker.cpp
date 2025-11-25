@@ -109,12 +109,11 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
     }
 
     if (doSave) {
+      auto nt = tps->TotalNumberOfParticles();
+      auto n0 = tps->init_particle_number();
       Print() << printPrefix << "particle number of species " << i
-              << ": initial = " << tps->init_particle_number()
-              << ". current = " << tps->TotalNumberOfParticles() << ". ratio = "
-              << (double)tps->TotalNumberOfParticles() /
-                     tps->init_particle_number()
-              << std::endl;
+              << ": initial = " << n0 << ". current = " << nt
+              << ". ratio = " << (n0 > 0 ? (double)nt / n0 : 0.0) << std::endl;
 
       tps->write_particles(tc->get_cycle());
 
