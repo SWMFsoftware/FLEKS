@@ -716,6 +716,17 @@ T                         isRelativistic
 If it is true, the test particle velocity update will be relativistic.
 </command>
 
+<command name="JACOBIAN"
+	 alias="JACOBIAN_FLEKS0,JACOBIAN_FLEKS1,JACOBIAN_FLEKS2"
+	 multiple="T">
+  <parameter name="use_grad_center_to_node_jacobian" type="logical" default="F"/>
+
+#JACOBIAN
+F                         use_grad_center_to_node_jacobian
+
+If it is true, the Jacobian will be calculated by calling grad_center_to_node.
+</command>
+
 </commandgroup>
 
 <commandgroup name="Inital and boundary conditions">
