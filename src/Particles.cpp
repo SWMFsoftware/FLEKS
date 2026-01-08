@@ -14,7 +14,8 @@ template <int NStructReal, int NStructInt>
 Particles<NStructReal, NStructInt>::Particles(
     Grid* gridIn, FluidInterface* const fluidIn, TimeCtr* const tcIn,
     const int speciesIDIn, const Real chargeIn, const Real massIn,
-    const IntVect& nPartPerCellIn, const PartMode pModeIn, TestCase tcase)
+    const IntVect& nPartPerCellIn, const PartMode pModeIn, TestCase tcase,
+    BeamInfo beamIn)
     : AmrParticleContainer<NStructReal, NStructInt>(gridIn),
       grid(gridIn),
       fi(fluidIn),
@@ -24,7 +25,8 @@ Particles<NStructReal, NStructInt>::Particles(
       charge(chargeIn),
       mass(massIn),
       nPartPerCell(nPartPerCellIn),
-      testCase(tcase) {
+      testCase(tcase),
+      beam(beamIn) {
 
   isParticleLocationRandom = gridIn->is_particle_location_random();
   isPPVconstant = gridIn->is_particles_per_volume_constant();
@@ -209,7 +211,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
         if (doVacuumLimit && nDens * dt < vacuum)
           continue;
 
-        const Real q = vol2Npcel * nDens;
+        Real q = vol2Npcel * nDens;
 
         if (q != 0) {
           Real u, v, w;
@@ -244,11 +246,25 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           Real wBulk = userState ? tpVel.vz
                                  : interface->get_uz(mfi, xyz, speciesID, iLev);
 
-          if (testCase == TwoStream && qom < 0 && icount % 2 == 0) {
-            // Electron only (qom<0)
-            uBulk = -uBulk;
-            vBulk = -vBulk;
-            wBulk = -wBulk;
+          if (testCase == Beam && speciesID == beam.iSpecies) {
+            const int nBeam = npcel * beam.ratio;
+            const int nBackground = npcel - nBeam;
+
+            // Assume all the particle weights q are the same inside a cell.
+            Real weightScale = 1;
+
+            if (icount < nBeam) {
+              // Beam particles
+              uBulk = beam.vel[0];
+              vBulk = beam.vel[1];
+              wBulk = beam.vel[2];
+              weightScale = beam.ratio * Real(npcel) / Real(nBeam);
+            } else {
+              // Background particles
+              weightScale = (1 - beam.ratio) * Real(npcel) / Real(nBackground);
+            }
+
+            q *= weightScale;
           }
           u += uBulk;
           v += vBulk;
@@ -611,7 +627,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center_new(
           bool skipParticle = false;
           if (n_lev() > 1) {
             skipParticle =
-                SkipParticleForDivECleaning(p.pos(), Geom(iLev),iLev, status);
+                SkipParticleForDivECleaning(p.pos(), Geom(iLev), iLev, status);
           }
           if (!doNetChargeOnly && !skipParticle) {
             Real weights_IIID[2][2][2][nDim3];
@@ -1787,7 +1803,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         continue;
       }
 
-      if (SkipParticleForDivECleaning(p.pos(), Geom(iLev),iLev, status) &&
+      if (SkipParticleForDivECleaning(p.pos(), Geom(iLev), iLev, status) &&
           n_lev() > 1) {
         continue;
       }

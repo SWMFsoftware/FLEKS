@@ -40,6 +40,12 @@ struct PID {
   bool operator==(const PID& t) const { return cpu == t.cpu && id == t.id; }
 };
 
+struct BeamInfo {
+  int iSpecies = -1;
+  amrex::Real vel[nDim3] = { 0, 0, 0 };
+  amrex::Real ratio = 0; 
+};
+
 struct Vel {
   amrex::Real vth;
   amrex::Real vx;
@@ -250,13 +256,15 @@ public:
 
   TestCase testCase;
 
+  BeamInfo beam;
+
   // Index of the integer data.
   static constexpr int iRecordCount_ = 1;
 
   Particles(Grid* gridIn, FluidInterface* fluidIn, TimeCtr* tcIn,
             const int speciesIDIn, const amrex::Real chargeIn,
             const amrex::Real massIn, const amrex::IntVect& nPartPerCellIn,
-            const PartMode pModeIn, TestCase tcase = RegularSimulation);
+            const PartMode pModeIn, TestCase tcase = RegularSimulation, BeamInfo beamIn = BeamInfo());
 
   int n_lev() const { return GetParGDB()->finestLevel() + 1; }
 

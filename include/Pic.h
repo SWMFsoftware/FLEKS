@@ -140,6 +140,8 @@ private:
 
   TestCase testCase = RegularSimulation;
 
+  BeamInfo beam;
+
   ParticlesInfo pInfo;
 
   OHIon ionOH;

@@ -181,8 +181,13 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#TESTCASE") {
     std::string testcase;
     param.read_var("testCase", testcase);
-    if (testcase == "TwoStream") {
-      testCase = TwoStream;
+    if (testcase == "Beam") {
+      testCase = Beam;
+      param.read_var("iSpecies", beam.iSpecies);
+      param.read_var("ratio", beam.ratio);
+      for (int iDim = 0; iDim < nDim3; iDim++) {
+        param.read_var("vel", beam.vel[iDim]);
+      }
     } else if (testcase == "tophat") {
       testCase = TopHat;
       nPartPerCell = IntVect::Zero;
@@ -354,7 +359,7 @@ void Pic::post_regrid() {
     for (int i = 0; i < nSpecies; ++i) {
       auto ptr = std::unique_ptr<PicParticles>(new PicParticles(
           this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
-          nPartPerCell, pMode, testCase));
+          nPartPerCell, pMode, testCase, beam));
 
       //----- Set parameters------------
       ptr->set_info(pInfo);
@@ -371,7 +376,7 @@ void Pic::post_regrid() {
 
       auto ptrSource = std::unique_ptr<PicParticles>(new PicParticles(
           this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
-          nPartPerCell, pMode, testCase));
+          nPartPerCell, pMode, testCase, beam));
 
       sourceParts.push_back(std::move(ptrSource));
     }

@@ -1065,7 +1065,7 @@ Default value is shown.
   <parameter name="testCase" type="string"/>
 
 #TESTCASE 
-TwoStream			testCase
+Beam		testCase
 
 It will set the initial conditions for a specific test case.
 </command>
