@@ -207,7 +207,7 @@ public:
     double min_x = std::numeric_limits<double>::max();
     double min_y = std::numeric_limits<double>::max();
     std::vector<std::size_t> ids;
-    ids.reserve(n);
+    ids.resize(n);
 
     for (std::size_t i = 0; i < n; ++i) {
       const double x = coords[2 * i];
@@ -325,8 +325,8 @@ public:
     m_hash[hash_key(i2x, i2y)] = i2;
 
     std::size_t max_triangles = n < 3 ? 1 : 2 * n - 5;
-    triangles.reserve(max_triangles * 3);
-    halfedges.reserve(max_triangles * 3);
+    triangles.resize(max_triangles * 3);
+    halfedges.resize(max_triangles * 3);
     add_triangle(i0, i1, i2, INVALID_INDEX, INVALID_INDEX, INVALID_INDEX);
     double xp = std::numeric_limits<double>::quiet_NaN();
     double yp = std::numeric_limits<double>::quiet_NaN();

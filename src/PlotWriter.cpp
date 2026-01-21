@@ -530,7 +530,7 @@ void PlotWriter::set_output_unit() {
     abort();
   }
 
-  No2Out_I.reserve(var_I.size());
+  No2Out_I.resize(var_I.size());
   for (std::vector<std::string>::size_type iVar = 0; iVar < var_I.size();
        ++iVar) {
     No2Out_I[iVar] = No2OutTable(var_I[iVar]);
