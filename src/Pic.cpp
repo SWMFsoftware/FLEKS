@@ -3,12 +3,10 @@
 
 #include <AMReX_Algorithm.H>
 #include <AMReX_MultiFabUtil.H>
-#include <AMReX_PlotFileUtil.H>
 
 #include "GridUtility.h"
 #include "LinearSolver.h"
 #include "Pic.h"
-#include "SimDomains.h"
 #include "Timer.h"
 
 using namespace amrex;

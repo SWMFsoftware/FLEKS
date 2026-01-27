@@ -16,7 +16,7 @@
 #include <AMReX_Vector.H>
 
 #include "Constants.h"
-#include "Grid.h"
+#include "FleksDistributionMap.h"
 #include "GridInfo.h"
 #include "Regions.h"
 

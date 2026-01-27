@@ -1,5 +1,4 @@
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
 #include <vector>
 
@@ -7,7 +6,6 @@
 #include <AMReX_Print.H>
 
 #include "Converter.h"
-#include "GridUtility.h"
 
 using namespace amrex;
 int main(int argc, char* argv[]) {

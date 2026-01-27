@@ -7,8 +7,8 @@
 #include <iomanip>
 #include <sstream>
 
-#include "Pic.h"
 #include "PlotWriter.h"
+#include "Utility.h"
 
 using namespace amrex;
 

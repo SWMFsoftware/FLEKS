@@ -1,5 +1,4 @@
 #include "ParticleTracker.h"
-#include "GridUtility.h"
 
 using namespace amrex;
 

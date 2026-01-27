@@ -1,7 +1,5 @@
 
 #include <fstream>
-#include <iostream>
-#include <vector>
 
 #include <AMReX.H>
 #include <AMReX_Print.H>

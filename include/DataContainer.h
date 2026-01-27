@@ -16,6 +16,7 @@
 
 #include "Delauator.h"
 #include "Grid.h"
+#include "GridUtility.h"
 #include "VisitWriter.h"
 
 enum class FileType { AMREX = 0, IDL, TEC, VTK, UNSET, UNKNOWN };

@@ -1,5 +1,4 @@
 #include <AMReX_MultiFabUtil.H>
-#include <AMReX_PlotFileUtil.H>
 
 #include "Bit.h"
 #include "FluidInterface.h"

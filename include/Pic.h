@@ -4,10 +4,11 @@
 #include <iostream>
 
 #include "Array1D.h"
+#include "Bit.h"
 #include "Constants.h"
+#include "FleksDistributionMap.h"
 #include "FluidInterface.h"
 #include "Grid.h"
-#include "GridUtility.h"
 #include "LinearSolver.h"
 #include "OHInterface.h"
 #include "Particles.h"

@@ -3,7 +3,6 @@
 
 #include <AMReX_Vector.H>
 #include <mpi.h>
-#include <vector>
 
 #include "Domains.h"
 

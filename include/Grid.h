@@ -20,10 +20,7 @@
 #include <AMReX_iMultiFab.H>
 
 #include "Array1D.h"
-#include "Bit.h"
 #include "Constants.h"
-#include "FleksDistributionMap.h"
-#include "GridUtility.h"
 #include "Regions.h"
 #include "TimeCtr.h"
 #include "UMultiFab.h"
