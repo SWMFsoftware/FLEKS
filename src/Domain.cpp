@@ -130,7 +130,7 @@ void Domain::calc_refine_region() {
   lo[iy_] = -16;
   hi[iy_] = 16;
 
-  if (isFake2D) {
+  if (SpaceDim > 2 && isFake2D) {
     lo[iz_] = -10 * fabs(hi[ix_] - lo[ix_]);
     hi[iz_] = 10 * fabs(hi[ix_] - lo[ix_]);
   }
@@ -913,7 +913,7 @@ void Domain::read_param(const bool readGridInfo) {
           param.read_var("max", hi[i]);
         }
 
-        if (isFake2D) {
+        if (SpaceDim > 2 && isFake2D) {
           lo[iz_] = -10 * fabs(hi[ix_] - lo[ix_]);
           hi[iz_] = 10 * fabs(hi[ix_] - lo[ix_]);
         }
@@ -927,7 +927,7 @@ void Domain::read_param(const bool readGridInfo) {
         }
         param.read_var("radius", radius);
 
-        if (isFake2D) {
+        if (SpaceDim > 2 && isFake2D) {
           center[iz_] = 0;
         }
 
@@ -942,7 +942,7 @@ void Domain::read_param(const bool readGridInfo) {
         param.read_var("rInner", rInner);
         param.read_var("rOuter", rOuter);
 
-        if (isFake2D) {
+        if (SpaceDim > 2 && isFake2D) {
           center[iz_] = 0;
         }
 
@@ -960,7 +960,7 @@ void Domain::read_param(const bool readGridInfo) {
         param.read_var("r1", r1);
         param.read_var("r2", r2);
 
-        if (isFake2D) {
+        if (SpaceDim > 2 && isFake2D) {
           center[iz_] = 0;
         }
 
