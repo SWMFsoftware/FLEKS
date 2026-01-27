@@ -146,6 +146,9 @@ public:
 
   virtual void pre_regrid() {};
 
+  // Tells the compiler to consider the base class version of the function
+  using amrex::AmrCore::regrid;
+
   bool is_new_grid() const { return isNewGrid; }
   void is_new_grid(bool in) { isNewGrid = in; }
 
