@@ -521,7 +521,7 @@ void skip_cells_divE_correction(amrex::FabArray<FAB>& dst,
         for (int k = lo.z; k <= hi.z; ++k)
           for (int j = lo.y; j <= hi.y; ++j)
             for (int i = lo.x; i <= hi.x; ++i) {
-              if (//bit::is_lev_edge(statusArr(i, j, k)) ||
+              if (bit::is_lev_edge(statusArr(i, j, k)) ||
                   bit::is_refined(statusArr(i, j, k))) {
                 data(i, j, k, iVar) = 0.0;
               }
