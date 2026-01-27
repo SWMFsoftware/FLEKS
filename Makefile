@@ -27,7 +27,7 @@ FLEKS: GITINFO
 bin:
 	mkdir bin
 
-install: bin include/Constants.h
+install: bin include/Constants.h compile_commands
 
 LIB: include/Constants.h
 	cd src; $(MAKE) LIB
@@ -59,4 +59,8 @@ allclean:
 	-@(cd srcInterface; $(MAKE) distclean)
 	-@(rm -rf *~ ./bin lib ${TESTDIR} include/Constants.h)
 	-@(rm -f test*.diff)
+
+compile_commands:
+	-rm -f compile_commands.json
+	-python3 tools/generate_compile_commands.py
 
