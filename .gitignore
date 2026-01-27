@@ -27,3 +27,5 @@ gitinfo.txt
 Backtrace.*
 tools/.ipynb*
 tools/*user.py
+compile_commands.json
+.cache/*
