@@ -183,7 +183,7 @@ inline void CheckRefinementProximity(bool b[3][3][3], amrex::IntVect iv,
 }
 
 inline bool SkipParticleForDivECleaning(
-    amrex::RealVect xyz, amrex::Geometry Geom,int iLev,
+    amrex::RealVect xyz, amrex::Geometry Geom, int iLev,
     const amrex::Array4<int const>& status) {
 
   bool skip = false;
@@ -194,8 +194,7 @@ inline bool SkipParticleForDivECleaning(
   if (bit::is_refined(status(iv)) || bit::is_lev_boundary(status(iv))) {
     skip = true;
   }
-  if (iLev==0 && bit::is_lev_edge(status(iv)))
-  {
+  if (iLev == 0 && bit::is_lev_edge(status(iv))) {
     skip = true;
   }
 

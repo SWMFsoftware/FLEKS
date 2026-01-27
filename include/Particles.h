@@ -43,7 +43,7 @@ struct PID {
 struct BeamInfo {
   int iSpecies = -1;
   amrex::Real vel[nDim3] = { 0, 0, 0 };
-  amrex::Real ratio = 0; 
+  amrex::Real ratio = 0;
 };
 
 struct Vel {
@@ -264,7 +264,8 @@ public:
   Particles(Grid* gridIn, FluidInterface* fluidIn, TimeCtr* tcIn,
             const int speciesIDIn, const amrex::Real chargeIn,
             const amrex::Real massIn, const amrex::IntVect& nPartPerCellIn,
-            const PartMode pModeIn, TestCase tcase = RegularSimulation, BeamInfo beamIn = BeamInfo());
+            const PartMode pModeIn, TestCase tcase = RegularSimulation,
+            BeamInfo beamIn = BeamInfo());
 
   int n_lev() const { return GetParGDB()->finestLevel() + 1; }
 
