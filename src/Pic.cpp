@@ -89,7 +89,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#SOURCEPARTICLES") {
     param.read_var("npcelx", nSourcePPC[ix_]);
     param.read_var("npcely", nSourcePPC[iy_]);
-    param.read_var("npcelz", nSourcePPC[iz_]);
+    if (nDim == 3)
+      param.read_var("npcelz", nSourcePPC[iz_]);
   } else if (command == "#KINETICSOURCE") {
     param.read_var("kineticSource", kineticSource);
   } else if (command == "#ELECTRON") {
