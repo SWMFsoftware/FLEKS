@@ -108,14 +108,12 @@ void linear_solver_wrapper_hy(
               << " nMatVec, Error: " << param.nMatvec << " " << param.error
               << std::endl;
 
-  int iError;
-
   // Solve linear problem
   switch (param.typeKrylov) {
     case GMRES:
-      iError = gmres(matvec, iLev, rhs_I, x_I, param.useInitialGuess, nImpl,
-                     param.nKrylovVector, param.error, param.typeStop,
-                     param.nMatvec, DoTest, iComm);
+      gmres(matvec, iLev, rhs_I, x_I, param.useInitialGuess, nImpl,
+            param.nKrylovVector, param.error, param.typeStop, param.nMatvec,
+            DoTest, iComm);
       break;
     case BICGSTAB:
       // bicgstab(matvec, rhs_I, x_I, param.useInitialGuess, nImpl,
@@ -132,8 +130,8 @@ void linear_solver_wrapper_hy(
   }
 
   if (DoTest)
-    std::cout << "After nMatVec, Error, iError = " << param.nMatvec << " "
-              << param.error << " " << iError << std::endl;
+    std::cout << "After nMatVec, Error = " << param.nMatvec << " "
+              << param.error << std::endl;
 }
 
 // In C++20, use span

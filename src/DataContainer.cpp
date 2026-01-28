@@ -245,7 +245,7 @@ void AMReXDataContainer::smooth(int nSmooth) {
                           continue;
                         }
 
-                  Real coef = 0.5;
+                  const Real coef = 0.5;
 
                   const Real weightSelf = 1 - coef;
                   const Real WeightNei = coef / 2.0;

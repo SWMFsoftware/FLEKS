@@ -616,9 +616,9 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
   //------------Get values end-----------------------
 
   int nLength;
-  if (nProcs > 10000) {
-    nLength = 5;
-  } else if (nProcs > 100000) {
+  if (nProcs > 100000) {
+    nLength = 6;
+  } else if (nProcs > 10000) {
     nLength = 5;
   } else {
     nLength = 4;

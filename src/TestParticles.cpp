@@ -347,8 +347,8 @@ void TestParticles::read_test_particle_list(
   source.open(listName, std::ifstream::in);
   PID id;
   while (source >> id.cpu >> id.id) {
-    vIDs.push_back(id);
     id.flag = true;
+    vIDs.push_back(id);
   }
 
   std::sort(vIDs.begin(), vIDs.end());
