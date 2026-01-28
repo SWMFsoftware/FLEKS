@@ -6,11 +6,11 @@ def generate():
     compiler = shutil.which("mpicxx") or "/opt/local/bin/mpicxx"
 
     # Get MPI flags
-    mpi_out = subprocess.check_output([compiler, "-show"], text=True)
+    mpi_out = subprocess.check_output([compiler, "-show"]).decode('utf-8')
     includes = [p for p in mpi_out.split() if p.startswith("-I")]
     
     # Get COMPONENT flag
-    comp_out = subprocess.check_output(["grep", "^COMPONENT", os.path.join(root, "Makefile.def")], text=True).strip()
+    comp_out = subprocess.check_output(["grep", "^COMPONENT", os.path.join(root, "Makefile.def")]).decode('utf-8').strip()
     flags = [f"-D_{comp_out.split('=')[1].strip()}_COMPONENT_"]
 
     includes += ["-I../include", 
