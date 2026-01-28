@@ -145,8 +145,8 @@ inline void find_cell_index_exp(const amrex::RealVect& xyz,
   }
 }
 
-inline void CheckRefinementProximity(bool b[3][3][3], amrex::IntVect iv,
-                                     const amrex::Array4<int const> status) {
+inline void check_refinement_proximity(bool b[3][3][3], amrex::IntVect iv,
+                                       const amrex::Array4<int const> status) {
 
   int i = iv[0];
   int j = iv[1];
@@ -182,7 +182,7 @@ inline void CheckRefinementProximity(bool b[3][3][3], amrex::IntVect iv,
   }
 }
 
-inline bool SkipParticleForDivECleaning(
+inline bool skip_particle_for_dive_cleaning(
     amrex::RealVect xyz, amrex::Geometry Geom, int iLev,
     const amrex::Array4<int const>& status) {
 
@@ -201,7 +201,7 @@ inline bool SkipParticleForDivECleaning(
   if (bit::is_refined_neighbour(status(iv))) {
     bool b[3][3][3] = { false };
     amrex::Real fac = 0.25;
-    CheckRefinementProximity(b, iv, status);
+    check_refinement_proximity(b, iv, status);
     int prel[3] = { 1, 1, 1 };
     for (int i = 0; i < nDim; i++) {
       if (rv[i] >= (1.0 - fac)) {

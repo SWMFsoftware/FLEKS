@@ -628,7 +628,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center_new(
           bool skipParticle = false;
           if (n_lev() > 1) {
             skipParticle =
-                SkipParticleForDivECleaning(p.pos(), Geom(iLev), iLev, status);
+                skip_particle_for_dive_cleaning(p.pos(), Geom(iLev), iLev, status);
           }
           if (!doNetChargeOnly && !skipParticle) {
             Real weights_IIID[2][2][2][nDim3];
@@ -1804,7 +1804,7 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         continue;
       }
 
-      if (SkipParticleForDivECleaning(p.pos(), Geom(iLev), iLev, status) &&
+      if (skip_particle_for_dive_cleaning(p.pos(), Geom(iLev), iLev, status) &&
           n_lev() > 1) {
         continue;
       }
