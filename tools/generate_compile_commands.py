@@ -1,9 +1,13 @@
 import json, os, glob, subprocess, shutil
 
 def generate():
+    compiler = shutil.which("mpicxx")
+    if not compiler:
+        print("Warning: mpicxx not found in PATH. Skipping compile_commands.json generation.")
+        return
+    
     root = os.getcwd()
     swmf = os.path.abspath(os.path.join(root, "../../"))
-    compiler = shutil.which("mpicxx") or "/opt/local/bin/mpicxx"
 
     # Get MPI flags
     mpi_out = subprocess.check_output([compiler, "-show"]).decode('utf-8')
