@@ -21,15 +21,15 @@ include/Constants.h: include/Constants.h.orig
 GITINFO: include/show_git_info.h
 	${SCRIPTDIR}/gitall -r=c > include/show_git_info.h
 
-FLEKS: GITINFO 
+FLEKS: GITINFO compile_commands
 	cd src; ${MAKE} EXE
 
 bin:
 	mkdir bin
 
-install: bin include/Constants.h compile_commands
+install: bin include/Constants.h 
 
-LIB: include/Constants.h
+LIB: include/Constants.h compile_commands
 	cd src; $(MAKE) LIB
 	cd srcInterface; $(MAKE) LIB
 
