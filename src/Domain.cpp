@@ -75,8 +75,12 @@ void Domain::init(double time, const int iDomain,
 #endif
 
   if (useFluidSource || useSource) {
+#ifdef _PT_COMPONENT_
+    source = std::make_unique<OHSource>(*fi, gridID, "picSource", SourceFluid);
+#else
     source = std::make_unique<SourceInterface>(*fi, gridID, "picSource",
                                                SourceFluid);
+#endif
   }
   if (source)
     pic->set_fluid_source(source.get());
@@ -464,7 +468,7 @@ void Domain::set_state_var(double *data, int *index,
     }
 
     if (source && useFluidSource)
-      source->get_source_from_fluid(*fi);
+      source->set_source(*fi);
   }
 }
 

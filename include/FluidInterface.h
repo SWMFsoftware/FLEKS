@@ -19,7 +19,6 @@
 #include "GridUtility.h"
 #include "MDArray.h"
 #include "ReadParam.h"
-#include "Regions.h"
 
 class FluidInterfaceParameters {
 protected:
@@ -195,7 +194,7 @@ public:
 
   void set_node_fluid();
 
-  virtual void set_node_fluid(const FluidInterface& other);
+  void set_node_fluid(const FluidInterface& other);
 
   void set_node_fluid_to_zero() {
     for (int iLev = 0; iLev < n_lev(); ++iLev)
