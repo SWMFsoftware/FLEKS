@@ -13,11 +13,13 @@ void get_source_wrapper(double xyzSI[3], double sourceSI[6]);
 inline void get_source_wrapper(double xyzSI[3], double sourceSI[6]) {}
 #endif
 
-class OHSource : public SourceInterface {
+class UserSource : public SourceInterface {
 public:
-  OHSource(const FluidInterface& other, int id, std::string tag,
-           FluidType typeIn = SourceFluid)
-      : SourceInterface(other, id, tag, typeIn) {}
+  UserSource(const FluidInterface& other, int id, std::string tag,
+             FluidType typeIn = SourceFluid)
+      : SourceInterface(other, id, tag, typeIn) {
+    info = "OH Source class";
+  }
 
   void sum_to_single_source() override {
     for (int iLev = 0; iLev < n_lev(); iLev++) {

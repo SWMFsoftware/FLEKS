@@ -2,6 +2,8 @@
 #include "GridUtility.h"
 #ifdef _PT_COMPONENT_
 #include "OHSource.h"
+#else
+#include "UserSource.h"
 #endif
 #include "Shape.h"
 
@@ -78,12 +80,9 @@ void Domain::init(double time, const int iDomain,
 #endif
 
   if (useFluidSource || useSource) {
-#ifdef _PT_COMPONENT_
-    source = std::make_unique<OHSource>(*fi, gridID, "picSource", SourceFluid);
-#else
-    source = std::make_unique<SourceInterface>(*fi, gridID, "picSource",
-                                               SourceFluid);
-#endif
+    source =
+        std::make_unique<UserSource>(*fi, gridID, "picSource", SourceFluid);
+    amrex::Print() << source->get_info() << " is used for source" << std::endl;
   }
   if (source)
     pic->set_fluid_source(source.get());
