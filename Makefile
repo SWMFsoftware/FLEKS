@@ -16,7 +16,10 @@ include/show_git_info.h: include/show_git_info.h.orig
 	cp -f include/show_git_info.h.orig include/show_git_info.h
 
 include/Constants.h: include/Constants.h.orig
-	cp -f include/Constants.h.orig include/Constants.h
+	cp -f include/Constants.h.orig include/Constants.h 
+
+include/UserSource.h: include/UserSource.h.orig
+	cp -f include/UserSource.h.orig include/UserSource.h
 
 GITINFO: include/show_git_info.h
 	${SCRIPTDIR}/gitall -r=c > include/show_git_info.h
@@ -27,7 +30,7 @@ FLEKS: GITINFO compile_commands
 bin:
 	mkdir bin
 
-install: bin include/Constants.h 
+install: bin include/Constants.h include/UserSource.h
 
 LIB: include/Constants.h compile_commands
 	cd src; $(MAKE) LIB
