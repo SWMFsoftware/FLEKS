@@ -16,7 +16,7 @@
  * Globals.
  */
 
-static FILE *fp = NULL;
+static FILE *fp = nullptr;
 static int useBinary = 0;
 static int numInColumn = 0;
 
@@ -54,7 +54,7 @@ static void end_line(void) {
 
 static void open_file(const char *filename) {
   char full_filename[1024];
-  if (strstr(filename, ".vtk") != NULL) {
+  if (strstr(filename, ".vtk") != nullptr) {
     strcpy(full_filename, filename);
   } else {
     snprintf(full_filename, sizeof full_filename, "%s.vtk", filename);
@@ -77,7 +77,7 @@ static void open_file(const char *filename) {
 static void close_file(void) {
   end_line();
   fclose(fp);
-  fp = NULL;
+  fp = nullptr;
 }
 
 /* ****************************************************************************
@@ -497,7 +497,7 @@ void write_point_mesh(const char *filename, int ub, int npts, float *pts,
                       float **vars) {
   int i;
   char str[128];
-  int *centering = NULL;
+  int *centering = nullptr;
 
   useBinary = ub;
   open_file(filename);
@@ -791,15 +791,15 @@ void write_regular_mesh(const char *filename, int ub, int *dims, int nvars,
   float *y = (float *)malloc(sizeof(float) * dims[1]);
   float *z = (float *)malloc(sizeof(float) * dims[2]);
 
-  if (x != NULL) {
+  if (x != nullptr) {
     for (i = 0; i < dims[0]; ++i)
       x[i] = (float)i;
   }
-  if (y != NULL) {
+  if (y != nullptr) {
     for (i = 0; i < dims[1]; ++i)
       y[i] = (float)i;
   }
-  if (z != NULL) {
+  if (z != nullptr) {
     for (i = 0; i < dims[2]; ++i)
       z[i] = (float)i;
   }
@@ -807,11 +807,11 @@ void write_regular_mesh(const char *filename, int ub, int *dims, int nvars,
   write_rectilinear_mesh(filename, ub, dims, x, y, z, nvars, vardim, centering,
                          varnames, vars);
 
-  if (x != NULL)
+  if (x != nullptr)
     free(x);
-  if (y != NULL)
+  if (y != nullptr)
     free(y);
-  if (z != NULL)
+  if (z != nullptr)
     free(z);
 }
 
