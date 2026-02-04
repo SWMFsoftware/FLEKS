@@ -328,7 +328,7 @@ public:
                      amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly,
                      int iLev);
 
-  void sum_to_center_new(amrex::MultiFab& netChargeMF, amrex::MultiFab& jc,
+  void sum_to_center_amr(amrex::MultiFab& netChargeMF, amrex::MultiFab& jc,
                          amrex::MultiFab& jf,
                          amrex::UMultiFab<RealCMM>& centerMM,
                          bool doNetChargeOnly, int iLev);
@@ -338,6 +338,11 @@ public:
       SourceInterface* source, bool kineticSource,
       amrex::Vector<std::unique_ptr<PicParticles> >& sourceParts,
       bool doSelectRegion, int nppc);
+
+  void accumulate_mass_matrix_contribution(int iLev, const amrex::IntVect& loIdx,
+                                           const amrex::RealVect& dShift,
+                                           amrex::Real qp,
+                                           amrex::Array4<RealCMM> const& mmArr);
 
   void get_ion_fluid(FluidInterface* stateOH, PIter& pti, const int iLev,
                      const int iFluid, const amrex::RealVect xyz,

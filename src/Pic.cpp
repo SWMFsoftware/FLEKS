@@ -249,7 +249,7 @@ void Pic::fill_new_cells() {
       sum_to_center(false);
     } else if (doCorrectDivE) {
       for (int iLev = 0; iLev < n_lev(); iLev++) {
-        sum_to_center_new(false, iLev);
+        sum_to_center_amr(false, iLev);
       }
     }
   }
@@ -1174,7 +1174,6 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
       parts[i]->sum_to_center(centerNetChargeNew[iLev], centerMM[iLev],
                               doNetChargeOnly, iLev);
     }
-
     if (!doNetChargeOnly) {
       centerMM[iLev].SumBoundary(Geom(iLev).periodicity());
     }
@@ -1200,7 +1199,7 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
 }
 
 //==========================================================
-void Pic::sum_to_center_new(bool isBeforeCorrection, int iLev) {
+void Pic::sum_to_center_amr(bool isBeforeCorrection, int iLev) {
 
   std::string nameFunc = "Pic::sum_to_center";
   timing_func(nameFunc);
@@ -1233,7 +1232,7 @@ void Pic::sum_to_center_new(bool isBeforeCorrection, int iLev) {
     jf.setVal(0.0);
   }
   for (int i = 0; i < nSpecies; ++i) {
-    parts[i]->sum_to_center_new(centerNetChargeNew[iLev], jc, jf,
+    parts[i]->sum_to_center_amr(centerNetChargeNew[iLev], jc, jf,
                                 centerMM[iLev], doNetChargeOnly, iLev);
   }
 
@@ -2737,7 +2736,7 @@ void Pic::amr_divE_correction() {
 
   for (int iIter = 0; iIter < nDivECorrection; iIter++) {
     for (int iLev = finest_level; iLev >= 0; iLev--) {
-      sum_to_center_new(true, iLev);
+      sum_to_center_amr(true, iLev);
       skip_cells_divE_correction(centerMM[iLev], cell_status(iLev), iLev);
       calculate_phi(divESolver, iLev);
       for (int i = 0; i < nSpecies; ++i) {
@@ -2753,7 +2752,7 @@ void Pic::amr_divE_correction() {
 
   inject_particles_for_boundary_cells();
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    sum_to_center_new(false, iLev);
+    sum_to_center_amr(false, iLev);
     if (iLev > 0) {
       skip_cells_divE_correction(centerNetChargeN[iLev], cell_status(iLev),
                                  iLev);
