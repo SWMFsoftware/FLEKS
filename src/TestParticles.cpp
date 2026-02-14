@@ -1,6 +1,8 @@
 #include <AMReX_Utility.H>
 
+#include "GridUtility.h"
 #include "TestParticles.h"
+#include "Utility.h"
 
 using namespace amrex;
 
@@ -20,6 +22,10 @@ TestParticles::TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
   outputDir = component + "/plots/test_particles";
 
   nInitPart = 0;
+
+  amrex::ParmParse pp("JACOBIAN");
+  pp.query("use_grad_center_to_node_jacobian",
+           use_grad_center_to_node_jacobian_);
 }
 
 //==========================================================
@@ -47,6 +53,33 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
   const Real qdto2mc = charge / mass * 0.5 * dt;
 
   const int iLev = 0;
+
+  MultiFab gradB_at_nodes;
+  if (use_grad_center_to_node_jacobian_) {
+    MultiFab B_cc;
+    fi->get_B(B_cc);
+    const BoxArray& nba = nodeBMF.boxArray();
+    const DistributionMapping& dm = nodeBMF.DistributionMap();
+    gradB_at_nodes.define(nba, dm, 9, 0);
+
+    MultiFab Bx_cc(B_cc, amrex::make_alias, 0, 1);
+    MultiFab By_cc(B_cc, amrex::make_alias, 1, 1);
+    MultiFab Bz_cc(B_cc, amrex::make_alias, 2, 1);
+
+    MultiFab gradBx_nd(nba, dm, nDim, 0);
+    MultiFab gradBy_nd(nba, dm, nDim, 0);
+    MultiFab gradBz_nd(nba, dm, nDim, 0);
+
+    const Real* invDx = Geom(iLev).InvCellSize();
+    grad_center_to_node(Bx_cc, gradBx_nd, invDx);
+    grad_center_to_node(By_cc, gradBy_nd, invDx);
+    grad_center_to_node(Bz_cc, gradBz_nd, invDx);
+
+    MultiFab::Copy(gradB_at_nodes, gradBx_nd, 0, 0, nDim, 0);
+    MultiFab::Copy(gradB_at_nodes, gradBy_nd, 0, nDim, nDim, 0);
+    MultiFab::Copy(gradB_at_nodes, gradBz_nd, 0, 2 * nDim, nDim, 0);
+  }
+
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
     const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
@@ -184,64 +217,90 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
 
         if (ptRecordSize > iTPdBxdx_) {
           Real gradB[3][3] = { { 0.0 } };
-          // The gradient calculation is based on the derivative of the
-          // trilinear interpolation shape functions. B(x,y,z) = sum_{i,j,k}
-          // B_{i,j,k} * W_i(x) * W_j(y) * W_k(z) dB/dx = sum_{i,j,k} B_{i,j,k}
-          // * (dW_i(x)/dx) * W_j(y) * W_k(z) dW_0/dx = -1/dx, dW_1/dx = 1/dx
-          // W_0(x) = 1-dShift.x, W_1(x) = dShift.x
-          const Real* invDx = Geom(iLev).InvCellSize();
-
-          // B at 8 nodes
-          Real b[3][2][2][2];
-          for (int k = 0; k < 2; ++k)
-            for (int j = 0; j < 2; ++j)
-              for (int i = 0; i < 2; ++i) {
-                IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
-                                             loIdx[iz_] + k) };
-                for (int iDim = 0; iDim < nDim3; iDim++) {
-                  b[iDim][i][j][k] = nodeBArr(ijk, iDim);
+          if (use_grad_center_to_node_jacobian_) {
+            const Array4<Real const>& gradBArr = gradB_at_nodes[pti].array();
+            Real gradB_p[9] = { 0.0 };
+            for (int k = lo.z; k <= hi.z; ++k) {
+              for (int j = lo.y; j <= hi.y; ++j) {
+                for (int i = lo.x; i <= hi.x; ++i) {
+                  IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
+                                               loIdx[iz_] + k) };
+                  for (int iDim = 0; iDim < 9; iDim++) {
+                    gradB_p[iDim] += gradBArr(ijk, iDim) * coef[i][j][k];
+                  }
                 }
               }
+            }
+            gradB[0][0] = gradB_p[0];
+            gradB[0][1] = gradB_p[1];
+            gradB[0][2] = gradB_p[2];
+            gradB[1][0] = gradB_p[3];
+            gradB[1][1] = gradB_p[4];
+            gradB[1][2] = gradB_p[5];
+            gradB[2][0] = gradB_p[6];
+            gradB[2][1] = gradB_p[7];
+            gradB[2][2] = gradB_p[8];
+          } else {
+            // The gradient calculation is based on the derivative of the
+            // trilinear interpolation shape functions. B(x,y,z) = sum_{i,j,k}
+            // B_{i,j,k} * W_i(x) * W_j(y) * W_k(z) dB/dx = sum_{i,j,k}
+            // B_{i,j,k}
+            // * (dW_i(x)/dx) * W_j(y) * W_k(z) dW_0/dx = -1/dx, dW_1/dx = 1/dx
+            // W_0(x) = 1-dShift.x, W_1(x) = dShift.x
+            const Real* invDx = Geom(iLev).InvCellSize();
 
-          Real sx = dShift[ix_];
-          Real sy = dShift[iy_];
-          Real sz = dShift[iz_];
+            // B at 8 nodes
+            Real b[3][2][2][2];
+            for (int k = 0; k < 2; ++k)
+              for (int j = 0; j < 2; ++j)
+                for (int i = 0; i < 2; ++i) {
+                  IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
+                                               loIdx[iz_] + k) };
+                  for (int iDim = 0; iDim < nDim3; iDim++) {
+                    b[iDim][i][j][k] = nodeBArr(ijk, iDim);
+                  }
+                }
 
-          // dB/dx
-          for (int iDim = 0; iDim < nDim3; iDim++) {
-            gradB[iDim][ix_] =
-                (((b[iDim][1][0][0] - b[iDim][0][0][0]) * (1 - sy) +
-                  (b[iDim][1][1][0] - b[iDim][0][1][0]) * sy) *
-                     (1 - sz) +
-                 ((b[iDim][1][0][1] - b[iDim][0][0][1]) * (1 - sy) +
-                  (b[iDim][1][1][1] - b[iDim][0][1][1]) * sy) *
-                     sz) *
-                invDx[ix_];
-          }
-          // dB/dy
-          for (int iDim = 0; iDim < nDim3; iDim++) {
-            gradB[iDim][iy_] =
-                (((b[iDim][0][1][0] - b[iDim][0][0][0]) * (1 - sx) +
-                  (b[iDim][1][1][0] - b[iDim][1][0][0]) * sx) *
-                     (1 - sz) +
-                 ((b[iDim][0][1][1] - b[iDim][0][0][1]) * (1 - sx) +
-                  (b[iDim][1][1][1] - b[iDim][1][0][1]) * sx) *
-                     sz) *
-                invDx[iy_];
-          }
+            Real sx = dShift[ix_];
+            Real sy = dShift[iy_];
+            Real sz = dShift[iz_];
+
+            // dB/dx
+            for (int iDim = 0; iDim < nDim3; iDim++) {
+              gradB[iDim][ix_] =
+                  (((b[iDim][1][0][0] - b[iDim][0][0][0]) * (1 - sy) +
+                    (b[iDim][1][1][0] - b[iDim][0][1][0]) * sy) *
+                       (1 - sz) +
+                   ((b[iDim][1][0][1] - b[iDim][0][0][1]) * (1 - sy) +
+                    (b[iDim][1][1][1] - b[iDim][0][1][1]) * sy) *
+                       sz) *
+                  invDx[ix_];
+            }
+            // dB/dy
+            for (int iDim = 0; iDim < nDim3; iDim++) {
+              gradB[iDim][iy_] =
+                  (((b[iDim][0][1][0] - b[iDim][0][0][0]) * (1 - sx) +
+                    (b[iDim][1][1][0] - b[iDim][1][0][0]) * sx) *
+                       (1 - sz) +
+                   ((b[iDim][0][1][1] - b[iDim][0][0][1]) * (1 - sx) +
+                    (b[iDim][1][1][1] - b[iDim][1][0][1]) * sx) *
+                       sz) *
+                  invDx[iy_];
+            }
 #if (AMREX_SPACEDIM == 3)
-          // dB/dz
-          for (int iDim = 0; iDim < nDim3; iDim++) {
-            gradB[iDim][iz_] =
-                (((b[iDim][0][0][1] - b[iDim][0][0][0]) * (1 - sx) +
-                  (b[iDim][1][0][1] - b[iDim][1][0][0]) * sx) *
-                     (1 - sy) +
-                 ((b[iDim][0][1][1] - b[iDim][0][1][0]) * (1 - sx) +
-                  (b[iDim][1][1][1] - b[iDim][1][1][0]) * sx) *
-                     sy) *
-                invDx[iz_];
-          }
+            // dB/dz
+            for (int iDim = 0; iDim < nDim3; iDim++) {
+              gradB[iDim][iz_] =
+                  (((b[iDim][0][0][1] - b[iDim][0][0][0]) * (1 - sx) +
+                    (b[iDim][1][0][1] - b[iDim][1][0][0]) * sx) *
+                       (1 - sy) +
+                   ((b[iDim][0][1][1] - b[iDim][0][1][0]) * (1 - sx) +
+                    (b[iDim][1][1][1] - b[iDim][1][1][0]) * sx) *
+                       sy) *
+                  invDx[iz_];
+            }
 #endif
+          }
           p.rdata(i0 + iTPdBxdx_) = gradB[0][0];
           p.rdata(i0 + iTPdBxdy_) = gradB[0][1];
           p.rdata(i0 + iTPdBxdz_) = gradB[0][2];
