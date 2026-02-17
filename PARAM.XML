@@ -1257,6 +1257,21 @@ along the ratial direction. Inside r .le. rCutoff, the density is set
 to rho(rCutoff). 
 </command>
 
+<command name="MAXCHARGEEXCHANGERATE"
+   alias="MAXCHARGEEXCHANGERATE_FLEKS0,MAXCHARGEEXCHANGERATE_FLEKS1,MAXCHARGEEXCHANGERATE_FLEKS2"
+   multiple="T">
+  <parameter name="maxChargeExchangeRate" type="real" default="1"/>
+
+#MAXCHARGEEXCHANGERATE
+0.2              maxChargeExchangeRate
+
+This command sets the maximum allowed fraction of a particle's weight that 
+can be exchanged in one time step during charge exchange. If the actual 
+exchange ratio exceeds this limit, the time step will be reduced 
+accordingly for the next step. This is only used for OH-PT coupling.
+</command>
+
+
 <command name="PARTICLEBOXBOUNDARY"
    alias="PARTICLEBOXBOUNDARY_FLEKS0,PARTICLEBOXBOUNDARY_FLEKS1,PARTICLEBOXBOUNDARY_FLEKS2"
    multiple="T">
