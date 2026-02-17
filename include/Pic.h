@@ -43,6 +43,7 @@ class Pic : public Grid {
   // private variables
 private:
   bool usePIC = true;
+  bool useHybridPIC = false;
   bool solveEM = true;
   bool initEM = true;
 
@@ -94,6 +95,7 @@ private:
   LinearSolver divESolver;
 
   int nSpecies;
+  std::vector<int> activeSpecies;
   int iTot;
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasma;
   amrex::Vector<amrex::Real> plasmaEnergy;
@@ -138,6 +140,12 @@ private:
 
   bool doSmoothE = false;
   int nSmoothE = 0;
+
+  amrex::Real etaResistivity = 0.0;
+  amrex::Real electronTemperature = 0.0;
+  amrex::Real electronGamma = 1.0;   // 1.0 = isothermal
+  amrex::Real electronDensity0 = 1.0; // reference electron density
+  int nHallSubcycle = 1;              // 1 = no subcycling
 
   TestCase testCase = RegularSimulation;
 
@@ -274,7 +282,7 @@ public:
       return;
 
     for (auto &pts : parts) {
-      pts->add_particles_domain();
+      if (pts) pts->add_particles_domain();
     }
   }
 
@@ -283,7 +291,7 @@ public:
       return;
 
     for (auto &pts : parts) {
-      pts->inject_particles_at_boundary();
+      if (pts) pts->inject_particles_at_boundary();
     }
   }
 
@@ -298,6 +306,7 @@ public:
 
   //-------------Electric field solver begin-------------
   void update_E();
+  void update_E_hybrid();
   void update_E_impl();
   void update_E_expl();
   void update_E_rhs(double *rhos, int iLev);
@@ -317,6 +326,7 @@ public:
   //-------------Electric field solver end-------------
 
   void update_B();
+  void update_B_hybrid();
 
   void correct_B(int iLev);
 
@@ -568,16 +578,24 @@ public:
   }
 
   void WriteParticleQualityToParaView() {
-    parts[0]->calculate_particle_quality(particleQuality);
-    WriteMF(particleQuality, finest_level, "particleQuality0");
-    parts[1]->calculate_particle_quality(particleQuality);
-    WriteMF(particleQuality, finest_level, "particleQuality1");
+    if (parts.size() > 0 && parts[0]) {
+      parts[0]->calculate_particle_quality(particleQuality);
+      WriteMF(particleQuality, finest_level, "particleQuality0");
+    }
+    if (parts.size() > 1 && parts[1]) {
+      parts[1]->calculate_particle_quality(particleQuality);
+      WriteMF(particleQuality, finest_level, "particleQuality1");
+    }
   }
   // private methods
 private:
   amrex::Real calc_E_field_energy();
   amrex::Real calc_B_field_energy();
   AMREX_EXPORT amrex::UNode_FourthOrder<amrex::Real> node_fourth_order_interp;
+
+  amrex::Real get_internal_energy(int iLev) {
+    return plasmaEnergy[iTot];
+  }
 };
 
 void find_output_list_caller(const PlotWriter &writerIn,

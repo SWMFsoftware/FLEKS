@@ -260,6 +260,17 @@ T                   usePIC
 Turning on/off the PIC module. 
 </command>
 
+<command name="HYBRIDPIC"
+	 alias="HYBRIDPIC_FLEKS0,HYBRIDPIC_FLEKS1,HYBRIDPIC_FLEKS2"
+	 multiple="T">
+  <parameter name="useHybridPIC" type="logical" default="F"/>
+
+#HYBRIDPIC
+F                   useHybridPIC
+
+Turning on/off the Hybrid PIC module.
+</command>
+
 <command name="EXPLICITPIC"
    alias="EXPLICITPIC_FLEKS0,EXPLICITPIC_FLEKS1,EXPLICITPIC_FLEKS2"
    multiple="T">
@@ -1070,6 +1081,25 @@ Beam		testCase
 It will set the initial conditions for a specific test case.
 </command>
 
+  <command name="HYBRIDPIC">
+    <parameter name="useHybridPIC" type="logical" default="F" />
+  </command>
+
+  <command name="RESISTIVITY">
+    <parameter name="etaResistivity" type="real" default="0.0" />
+  </command>
+
+  <command name="ELECTRONTEMPERATURE">
+    <parameter name="electronTemperature" type="real" default="0.0" />
+    <parameter name="electronGamma" type="real" default="1.0" />
+    <parameter name="electronDensity0" type="real" default="1.0" />
+  </command>
+
+  <command name="HALLSUBCYCLE">
+    <parameter name="nHallSubcycle" type="integer" default="1" />
+  </command>
+
+  <command name="SOLVEEM">
 <command name="PERIODICITY">
   <parameter name="isPeriodicX" type="logical" default="F" />
   <parameter name="isPeriodicY" type="logical" default="F" />

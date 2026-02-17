@@ -845,7 +845,10 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#COMOVING" || command == "#PARTICLEBOXBOUNDARY" ||
         command == "#BFIELDBOXBOUNDARY" || command == "#SUPID" ||
         command == "#SOLVEEM" || command == "#PARTMODE" ||
-        command == "#SELECTPARTICLE" ||
+        command == "#SELECTPARTICLE" || command == "#HYBRIDPIC" ||
+        command == "#RESISTIVITY" ||
+        command == "#ELECTRONTEMPERATURE" ||
+        command == "#HALLSUBCYCLE" ||
         command == "#OVERRIDEPRESSUREANISOTROPY") {
       pic->read_param(command, param);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
