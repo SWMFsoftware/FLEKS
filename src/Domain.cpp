@@ -846,7 +846,8 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#BFIELDBOXBOUNDARY" || command == "#SUPID" ||
         command == "#SOLVEEM" || command == "#PARTMODE" ||
         command == "#SELECTPARTICLE" ||
-        command == "#OVERRIDEPRESSUREANISOTROPY") {
+        command == "#OVERRIDEPRESSUREANISOTROPY" ||
+        command == "#MAXCHARGEEXCHANGERATE") {
       pic->read_param(command, param);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
@@ -1012,6 +1013,7 @@ void Domain::read_param(const bool readGridInfo) {
         tc->set_dt_si(dtSI);
         tc->set_next_dt_si(dtSI);
         tc->set_cfl(-1);
+        tc->set_dt_max(dtSI);
       } else {
         Real cfl;
         param.read_var("cfl", cfl);

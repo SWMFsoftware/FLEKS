@@ -61,7 +61,7 @@ public:
 class TimeCtr {
 private:
   amrex::Real timeNowSI;
-  amrex::Real dtSI;
+  amrex::Real dtSI, dtMaxSI;
   amrex::Real nextDtSI;
 
   // The time step when the grid is empty.
@@ -90,6 +90,7 @@ public:
   TimeCtr()
       : timeNowSI(0),
         dtSI(-1),
+        dtMaxSI(-1),
         nextDtSI(-1),
         dummyDtSI(1),
         cfl(0.2),
@@ -122,6 +123,11 @@ public:
   void set_dt_si(const amrex::Real dtIn) { dtSI = dtIn; }
   amrex::Real get_dt() const { return dtSI * si2no; }
   amrex::Real get_dt_si() const { return dtSI; }
+
+  void set_dt_max(const amrex::Real dtIn) { dtMaxSI = dtIn * no2si; }
+  void set_dt_max_si(const amrex::Real dtIn) { dtMaxSI = dtIn; }
+  amrex::Real get_dt_max() const { return dtMaxSI * si2no; }
+  amrex::Real get_dt_max_si() const { return dtMaxSI; }
 
   void set_next_dt(amrex::Real in) { nextDtSI = in * no2si; }
   void set_next_dt_si(amrex::Real in) { nextDtSI = in; }

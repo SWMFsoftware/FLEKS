@@ -337,9 +337,10 @@ public:
       amrex::Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH,
       SourceInterface* source, bool kineticSource,
       amrex::Vector<std::unique_ptr<PicParticles> >& sourceParts,
-      bool doSelectRegion, int nppc);
+      bool doSelectRegion, int nppc, amrex::Real& maxExchangeRatio);
 
-  void accumulate_mass_matrix_contribution(int iLev, const amrex::IntVect& loIdx,
+  void accumulate_mass_matrix_contribution(int iLev,
+                                           const amrex::IntVect& loIdx,
                                            const amrex::RealVect& dShift,
                                            amrex::Real qp,
                                            amrex::Array4<RealCMM> const& mmArr);

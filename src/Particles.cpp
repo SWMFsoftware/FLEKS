@@ -3607,7 +3607,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
     Real dt, FluidInterface* stateOH, FluidInterface* sourcePT2OH,
     SourceInterface* source, bool kineticSource,
     Vector<std::unique_ptr<PicParticles> >& sourceParts, bool doSelectRegion,
-    int nppc) {
+    int nppc, Real& maxExchangeRatio) {
   std::string nameFunc = "Pts::charge_exchange";
 
   timing_func(nameFunc);
@@ -3628,7 +3628,6 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
     Real vth;
   };
 
-  Real maxExchangeRatio = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       AoS& particles = pti.GetArrayOfStructs();

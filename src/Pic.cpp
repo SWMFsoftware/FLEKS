@@ -177,6 +177,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("supid", supid);
       supIDs.push_back(supid);
     }
+  } else if (command == "#MAXCHARGEEXCHANGERATE") {
+    param.read_var("maxChargeExchangeRate", maxExchangeRatioLimit);
   } else if (command == "#TESTCASE") {
     std::string testcase;
     param.read_var("testCase", testcase);
@@ -1349,6 +1351,32 @@ void Pic::update(bool doReportIn) {
   //  For PT simulations, moments are only useful for output. So, there is no
   //  need to call sum_moments() for every step.
   sum_moments(true);
+#endif
+
+#ifdef _PT_COMPONENT_
+  if (maxExchangeRatio > maxExchangeRatioLimit) {
+    Real dtNew = tc->get_dt() * maxExchangeRatioLimit / maxExchangeRatio;
+    tc->set_dt(dtNew);
+    tc->set_next_dt(dtNew);
+    Print() << printPrefix << " maxExchangeRatio = " << maxExchangeRatio
+            << " maxExchangeRatioLimit = " << maxExchangeRatioLimit
+            << " dt is reduced to " << tc->get_dt_si() << std::endl;
+  } else {
+    if (tc->get_dt() < tc->get_dt_max()) {
+      // Increase dt if allowed.
+      Real dtnow = tc->get_dt();
+      Real dtNew = min(dtnow * maxExchangeRatioLimit / maxExchangeRatio,
+                       tc->get_dt_max());
+
+      if (dtNew > dtnow * (1 + 1e-6)) {
+        tc->set_dt(dtNew);
+        tc->set_next_dt(dtNew);
+        Print() << printPrefix << " maxExchangeRatio = " << maxExchangeRatio
+                << " maxExchangeRatioLimit = " << maxExchangeRatioLimit
+                << " dt is increased to " << tc->get_dt_si() << std::endl;
+      }
+    }
+  }
 #endif
 
   if (doReport) {
@@ -2607,10 +2635,14 @@ void Pic::charge_exchange() {
   doSelectRegion = (nSpecies == 4);
 #endif
 
+  maxExchangeRatio = 0;
   for (int i = 0; i < nSpecies; ++i) {
+    Real rate = 0;
     parts[i]->charge_exchange(tc->get_dt(), stateOH, sourcePT2OH, source,
                               kineticSource, sourceParts, doSelectRegion,
-                              product(nSourcePPC));
+                              product(nSourcePPC), rate);
+    if (rate > maxExchangeRatio)
+      maxExchangeRatio = rate;
   }
 
   if (kineticSource) {

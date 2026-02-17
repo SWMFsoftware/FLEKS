@@ -112,6 +112,8 @@ private:
   amrex::IntVect nSourcePPC = { AMREX_D_DECL(0, 0, 0) };
   bool adaptiveSourcePPC = false;
   bool kineticSource = false;
+  amrex::Real maxExchangeRatio = 0;
+  amrex::Real maxExchangeRatioLimit = 1;
 
   FieldSolver fsolver;
 
