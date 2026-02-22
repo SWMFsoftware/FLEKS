@@ -1,5 +1,5 @@
-!  Copyright (C) 2002 Regents of the University of Michigan, 
-!  portions used with permission 
+!  Copyright (C) 2002 Regents of the University of Michigan,
+!  portions used with permission
 !  For more information, see http://csem.engin.umich.edu/tools/swmf
 
 module PT_wrapper
@@ -33,15 +33,15 @@ module PT_wrapper
   public:: PT_put_from_ih
   public:: PT_put_from_gm
 
-  ! Provides interfaces, but the following functions are empty. 
+  ! Provides interfaces, but the following functions are empty.
   public:: PT_do_extract_lines
   public:: PT_put_coupling_param
   public:: PT_adjust_lines
 
-  
+
   ! Local variables
   integer:: nDim
-  integer:: iProc  
+  integer:: iProc
 
 contains
   !==========================================================================
@@ -55,7 +55,7 @@ contains
     character (len=*), intent(in)    :: TypeAction ! What to do
 
     ! The PARAM.in segment for FLEKS
-    character(len=lStringLine), allocatable :: StringLineF_I(:) 
+    character(len=lStringLine), allocatable :: StringLineF_I(:)
 
     integer:: iComm, nProc
 
@@ -99,7 +99,7 @@ contains
 
   end subroutine PT_set_param
   !============================================================================
-  
+
   subroutine PT_init_session(iSession, TimeSimulation)
 
     !INPUT PARAMETERS:
@@ -113,7 +113,7 @@ contains
 
   end subroutine PT_init_session
   !============================================================================
-  
+
   subroutine PT_finalize(TimeSimulation)
 
     !INPUT PARAMETERS:
@@ -125,7 +125,7 @@ contains
 
   end subroutine PT_finalize
   !============================================================================
-  
+
   subroutine PT_save_restart(TimeSimulation)
 
     use CON_coupler, ONLY: NameRestartOutDirComp
@@ -145,7 +145,7 @@ contains
 
   end subroutine PT_save_restart
   !============================================================================
-  
+
   subroutine PT_run(TimeSimulation, TimeSimulationLimit)
 
     !INPUT/OUTPUT ARGUMENTS:
@@ -166,7 +166,7 @@ contains
          TimeSimulation, TimeSimulationLimit
 
     PicTime = TimeSimulationLimit
-    
+
     call fleks_run(PicTime)
 
     TimeSimulation = PicTime
@@ -177,7 +177,7 @@ contains
 
   end subroutine PT_run
   !============================================================================
-  
+
   subroutine PT_get_grid_info(nDimOut, iGridOut, iDecompOut)
 
     integer, intent(out):: nDimOut    ! grid dimensionality
@@ -188,11 +188,11 @@ contains
 
     logical:: DoTest, DoTestMe
     character(len=*), parameter :: NameSub = 'PT_get_grid_info'
-    !--------------------------------------------------------------------------    
+    !--------------------------------------------------------------------------
     call CON_set_do_test(NameSub, DoTest, DoTestMe)
 
-    call fleks_get_grid_info(nDim, iGridOut, iDecompOut); 
-    nDimOut = nDim;    
+    call fleks_get_grid_info(nDim, iGridOut, iDecompOut);
+    nDimOut = nDim;
   end subroutine PT_get_grid_info
   !============================================================================
   subroutine PT_find_points(nDimIn, nPoint, Xyz_DI, iProc_I)
@@ -215,7 +215,7 @@ contains
 
   end subroutine PT_find_points
   !============================================================================
-  
+
   subroutine PT_put_from_oh( &
        NameVar, nVar, nPoint, Data_VI, iPoint_I, Pos_DI)
 
@@ -230,11 +230,11 @@ contains
     logical:: IsFirstTime = .true.
 
     integer:: nChar
-    
+
     logical:: DoTest, DoTestMe
     character(len=*), parameter :: NameSub='PT_put_from_oh'
     !--------------------------------------------------------------------------
-    call CON_set_do_test(NameSub, DoTest, DoTestMe)    
+    call CON_set_do_test(NameSub, DoTest, DoTestMe)
     if(.not. present(Data_VI))then
        call fleks_get_ngridpoints(nPoint)
 
@@ -244,11 +244,11 @@ contains
        allocate(Pos_DI(nDim,nPoint))
 
        call fleks_get_grid(Pos_DI,nDim*nPoint)
-              
+
        RETURN
     end if
     nChar = len(NameVar)
-    call fleks_set_state_var(Data_VI, iPoint_I, nVar, NameVar, nChar)    
+    call fleks_set_state_var(Data_VI, iPoint_I, nVar, NameVar, nChar)
 
     if(IsFirstTime)  then
        IsFirstTime = .false.
@@ -259,7 +259,7 @@ contains
 
   end subroutine PT_put_from_oh
   !============================================================================
-  
+
   subroutine PT_get_for_oh(IsNew, NameVar, nVarIn, nDimIn, nPoint, Xyz_DI, &
        Data_VI)
     logical,          intent(in):: IsNew   ! true for new point array
@@ -281,7 +281,7 @@ contains
     ! may be outside of the FLEKS domain for PT->OH coupling.
     Data_VI = 0.0
     call fleks_get_for_oh( &
-         nDimIn, nPoint, Xyz_DI, Data_VI, nVarIn)    
+         nDimIn, nPoint, Xyz_DI, Data_VI, nVarIn)
   end subroutine PT_get_for_oh
   !============================================================================
 
@@ -314,7 +314,7 @@ contains
     call CON_stop(NameSub//' has not been implemented!')
   end subroutine PT_put_from_sc
   !============================================================================
-    subroutine PT_put_from_ih(NameVar, nVar, nPoint, Data_VI, iPoint_I, Pos_DI)
+  subroutine PT_put_from_ih(NameVar, nVar, nPoint, Data_VI, iPoint_I, Pos_DI)
     character(len=*), intent(inout):: NameVar ! List of variables
     integer,          intent(inout):: nVar    ! Number of variables in Data_VI
     integer,          intent(inout):: nPoint  ! Number of points in Pos_DI

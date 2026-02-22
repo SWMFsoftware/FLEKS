@@ -1,5 +1,5 @@
-!  Copyright (C) 2002 Regents of the University of Michigan, 
-!  portions used with permission 
+!  Copyright (C) 2002 Regents of the University of Michigan,
+!  portions used with permission
 !  For more information, see http://csem.engin.umich.edu/tools/swmf
 
 module PC_wrapper
@@ -33,7 +33,7 @@ module PC_wrapper
 
   ! Local variables
   integer:: nDim
-  integer:: iProc  
+  integer:: iProc
 
 contains
   !==========================================================================
@@ -47,7 +47,7 @@ contains
     character (len=*), intent(in)    :: TypeAction ! What to do
 
     ! The PARAM.in segment for FLEKS
-    character(len=lStringLine), allocatable :: StringLineF_I(:) 
+    character(len=lStringLine), allocatable :: StringLineF_I(:)
 
     integer:: iComm, nProc
 
@@ -126,9 +126,9 @@ contains
     character(len=*), parameter :: NameSub='PC_save_restart'
     !--------------------------------------------------------------------------
     if( NameRestartOutDirComp /= '') then
-      LenNameRestartOutDir = len_trim(NameRestartOutDirComp)
+       LenNameRestartOutDir = len_trim(NameRestartOutDirComp)
     else
-      LenNameRestartOutDir = 0
+       LenNameRestartOutDir = 0
     end if
 
     call fleks_save_restart(NameRestartOutDirComp, LenNameRestartOutDir)
@@ -173,8 +173,8 @@ contains
     logical:: IsFirstTime = .true.
 
     character(len=*), parameter :: NameSub = 'PC_get_grid_info'
-    !--------------------------------------------------------------------------    
-    call fleks_get_grid_info(nDimOut, iGridOut, iDecompOut); 
+    !--------------------------------------------------------------------------
+    call fleks_get_grid_info(nDimOut, iGridOut, iDecompOut);
     nDimOut    = nDim
   end subroutine PC_get_grid_info
   !============================================================================
@@ -206,7 +206,7 @@ contains
     character(len=*), parameter :: NameSub = 'PC_put_from_gm_init'
     !--------------------------------------------------------------------------
     ! store GM's nDim, so it is reported as PC's nDim for the point coupler
-    nDim = iParam_I(1) 
+    nDim = iParam_I(1)
     call fleks_from_gm_init(iParam_I, Param_I, NameVar)
 
   end subroutine PC_put_from_gm_init
@@ -243,7 +243,7 @@ contains
     logical:: IsFirstTime = .true.
 
     integer:: nChar
-    
+
     logical:: DoTest, DoTestMe
     character(len=*), parameter :: NameSub='PC_put_from_gm'
     !--------------------------------------------------------------------------
@@ -257,7 +257,7 @@ contains
        allocate(Pos_DI(nDim,nPoint))
 
        call fleks_get_grid(Pos_DI,nDim*nPoint)
-              
+
        RETURN
     end if
     nChar = len(NameVar)
