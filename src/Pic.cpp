@@ -15,7 +15,7 @@ using namespace amrex;
 void Pic::read_param(const std::string& command, ReadParam& param) {
 
   if (command == "#PIC") {
-           param.read_var("usePIC", usePIC);
+    param.read_var("usePIC", usePIC);
   } else if (command == "#SOLVEEM") {
     param.read_var("solveEM", solveEM);
   } else if (command == "#PARTMODE") {
