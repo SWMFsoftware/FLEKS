@@ -14,6 +14,7 @@ This skill handles documentation generation for FLEKS.
 | Algorithm documentation | `documents/Algorithm.tex` |
 | Coding standards | `documents/Coding_standards.md` |
 | Parameter documentation | `PARAM.XML` |
+| Project overview (agent) | `AGENT.md` (root and subdirectories) |
 
 ## LaTeX Documentation
 
@@ -37,6 +38,13 @@ pdflatex Algorithm.tex  # Run twice for references
 open documents/Algorithm.pdf  # macOS
 ```
 
+### Algorithm Document Contents
+
+The `Algorithm.tex` covers:
+- **Unit conversion** — CGS/SI normalization, mass/length/velocity/charge units
+- **Boris particle mover** — Standard and relativistic versions
+- **Pressure tensor** — Calculating total pressure from sub-groups
+
 ## Code Documentation with Doxygen
 
 If you want to add Doxygen-style documentation:
@@ -50,7 +58,7 @@ brew install doxygen  # macOS
 ### 2. Create Doxyfile
 
 ```bash
-cd /Users/yuxichen/shock/SWMF/PC/FLEKS
+# Run from FLEKS project root
 doxygen -g
 ```
 
@@ -80,7 +88,7 @@ Output will be in `html/index.html`.
 ```cpp
 /**
  * @brief A brief description of the class.
- * 
+ *
  * A more detailed description of what this class does,
  * its purpose, and usage patterns.
  */
@@ -92,11 +100,11 @@ class MyClass {
 ```cpp
 /**
  * @brief Brief description of the function.
- * 
+ *
  * @param param1 Description of first parameter
  * @param param2 Description of second parameter
  * @return Description of return value
- * 
+ *
  * @note Any important notes about usage
  * @warning Any warnings about side effects
  */
@@ -115,40 +123,44 @@ private:
 
 ## PARAM.XML Documentation
 
-The `PARAM.XML` file contains input parameter documentation. Format:
+The `PARAM.XML` file documents all input parameter commands. It uses
+SWMF's XML schema with `<command>`, `<parameter>`, `<for>`, and inline
+description text. Example structure:
 
 ```xml
-<command name="PARAMETER_NAME">
-  <parameter name="Value" type="real" default="1.0"/>
-  <description>
-    Description of what this parameter does.
-  </description>
+<command name="TIMESTEPPING"
+     alias="TIMESTEPPING_FLEKS0,TIMESTEPPING_FLEKS1"
+     multiple="T">
+  <parameter name="useFixedDt" type="logical" default="F"/>
+  <parameter name="dt" type="real" if="$useFixedDt"/>
+  <parameter name="cfl" type="real" default="0.2" if="not $useFixedDt"/>
+
+#TIMESTEPPING
+F                  useFixedDt
+0.1                cfl (if useFixedDt is false)
+
+Setting the CFL or fixed time step. The typical CFL number is 0.1~0.4.
 </command>
 ```
 
-## README Updates
+When adding a new parameter command:
+1. Add the `<command>` block to `PARAM.XML`
+2. Implement parsing in the corresponding `read_param()` method
+   (typically `Domain.cpp` or `Pic.cpp`)
+3. Add the member variable to the appropriate class header
 
-### Adding Usage Examples
+## AGENT.md Files
 
-```markdown
-## Quick Start
+The project maintains `AGENT.md` files in key directories:
 
-1. Configure the simulation:
-   ```bash
-   ./Config.pl -install
-   ```
+| File | Purpose |
+|------|---------|
+| `AGENT.md` | Root project overview, architecture, build system |
+| `include/AGENT.md` | Header file catalog and conventions |
+| `src/AGENT.md` | Implementation file guide and Makefile details |
+| `srcInterface/AGENT.md` | SWMF coupling layer documentation |
 
-2. Build FLEKS:
-   ```bash
-   make FLEKS -j8
-   ```
-
-3. Run:
-   ```bash
-   cd ../run
-   ./SWMF.exe
-   ```
-```
+Update these when adding new classes, files, or changing architecture.
 
 ## Documentation Checklist
 
@@ -157,4 +169,4 @@ The `PARAM.XML` file contains input parameter documentation. Format:
 - [ ] Complex algorithms have detailed comments
 - [ ] `PARAM.XML` is up-to-date with new parameters
 - [ ] `Algorithm.tex` reflects current implementation
-- [ ] README has updated build/run instructions
+- [ ] `AGENT.md` files updated for new files/classes

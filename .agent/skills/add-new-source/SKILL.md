@@ -17,10 +17,11 @@ This skill creates new source files following FLEKS conventions.
 
 ## Naming Conventions
 
-- **File names**: `PascalCase` (e.g., `NewFeature.cpp`, `NewFeature.h`)
-- **Class names**: `PascalCase` (e.g., `class NewFeature`)
-- **Function names**: `snake_case` (e.g., `void do_something()`)
-- **Variable names**: `camelCase` (e.g., `int myVariable`)
+- **File names**: `PascalCase` (e.g., `FluidInterface.cpp`, `GridUtility.h`)
+- **Class names**: `PascalCase` (e.g., `class FluidInterface`)
+- **Function names**: `snake_case` (e.g., `void apply_float_boundary()`)
+- **Variable names**: `camelCase` (e.g., `int nCellPerPatch`)
+- **Private members**: `camelCase` (e.g., `bool doRestart`)
 
 ## Header File Template
 
@@ -53,7 +54,7 @@ public:
   int get_value() const { return value_; }
 
 private:
-  // Member variables (trailing underscore)
+  // Member variables (trailing underscore for truly private state)
   int value_ = 0;
 };
 
@@ -86,28 +87,32 @@ void NewFeature::do_something() {
 
 ### 1. Create Header File
 
-```bash
-touch include/NewFeature.h
-```
-
-Add the header template with proper include guards.
+Create `include/NewFeature.h` with the template above. Ensure proper
+include guards (`#ifndef _NEWFEATURE_H_`).
 
 ### 2. Create Implementation File
 
-```bash
-touch src/NewFeature.cpp
+Create `src/NewFeature.cpp` with the template above.
+
+### 3. Register in Makefile
+
+**Important:** Add the new `.cpp` file to the `SRCS` variable in
+`src/Makefile`. The source list starts at line 5:
+
+```makefile
+SRCS := \
+	Domain.cpp \
+	...
+	FleksDistributionMap.cpp \
+	NewFeature.cpp           # <-- add here
 ```
 
-Add the implementation template.
-
-### 3. Update Makefile Dependencies
-
-The `Makefile.DEPEND` files are auto-generated, but ensure your `.cpp` file is in `src/`.
+This is required — files in `src/` are NOT auto-discovered.
 
 ### 4. Rebuild and Verify
 
 ```bash
-make FLEKS -j8
+make LIB -j8
 ```
 
 ### 5. Regenerate compile_commands.json
@@ -142,7 +147,7 @@ Always order includes as:
 2. **Use smart pointers** (`unique_ptr`, `shared_ptr`) for ownership
 3. **Use `const`** wherever possible
 4. **No `using namespace`** in header files
-5. **Follow 80-column limit** (enforced by `.clang-format`)
+5. **80-column limit** (enforced by `.clang-format`)
 
 ## Integrating with Existing Classes
 
@@ -151,17 +156,19 @@ If your new class needs to work with existing code:
 1. Check if there's a base class or interface to inherit from
 2. Look at similar classes for patterns (e.g., `Grid.h`, `Domain.h`)
 3. Common base classes:
-   - `FluidInterface` - for fluid coupling
-   - `SourceInterface` - for source terms
+   - `Grid` — for classes that need AMR grid access (inherits `AmrCore`)
+   - `FluidInterface` — for fluid coupling data
+   - `SourceInterface` — for source terms
 
 ## Verification Checklist
 
-- [ ] Header has include guards
+- [ ] Header has include guards (`#ifndef _FILENAME_H_`)
 - [ ] File names follow `PascalCase`
 - [ ] Class name matches file name
 - [ ] Header order is correct (std → AMReX → user)
 - [ ] No `using namespace` in header
 - [ ] `const` used where applicable
 - [ ] Smart pointers for ownership
+- [ ] **File added to `SRCS` in `src/Makefile`**
 - [ ] Code compiles without warnings
 - [ ] `compile_commands.json` updated

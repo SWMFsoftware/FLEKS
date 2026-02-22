@@ -13,10 +13,10 @@ From `documents/Coding_standards.md`:
 
 1. **Memory Management**: Use `shared_ptr` or `unique_ptr`, avoid raw `new`
 2. **Naming Conventions**:
-   - Files: `FileName.cpp`, `HeaderName.h`
-   - Classes: `ClassName`
-   - Variables: `variableName`
-   - Functions: `this_is_a_function_name`
+   - Files: `PascalCase` (e.g., `GridUtility.cpp`)
+   - Classes: `PascalCase` (e.g., `FluidInterface`)
+   - Variables: `camelCase` (e.g., `nCellPerPatch`)
+   - Functions: `snake_case` (e.g., `apply_float_boundary`)
 3. **Namespace**: `using namespace amrex` allowed only in `.cpp` files
 4. **Header Order**: std headers → AMReX headers → user headers
 5. **Pointers**: Use `nullptr`, not `NULL`
@@ -24,9 +24,10 @@ From `documents/Coding_standards.md`:
 7. **Lambdas**: Prefer regular functions for universal or long functions
 8. **Commits**: Follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
 
-## Clang-Format
+## Clang-Format (C++ files)
 
-The project uses `.clang-format` with Mozilla-based style (2-space indent, 80-column limit).
+The project uses `.clang-format` with Mozilla-based style (2-space indent,
+80-column limit).
 
 ### Format Single File
 
@@ -46,38 +47,48 @@ find src include -name "*.cpp" -o -name "*.h" | xargs clang-format -i
 clang-format --dry-run -Werror src/FileName.cpp
 ```
 
+## Fortran Formatting (srcInterface files)
+
+For `.f90`/`.F90` files in `srcInterface/`, use `findent` configured
+to match Emacs' `f90-mode` indentation:
+
+```bash
+findent < srcInterface/PC_wrapper.f90 > /tmp/formatted.f90
+diff srcInterface/PC_wrapper.f90 /tmp/formatted.f90
+```
+
 ## Finding Issues
 
 ### 1. Unused Variables
 
-Use compiler warnings:
+The default C++ flags already include `-Wall -Wextra -Wno-unused-parameter`.
+Build and review compiler warnings:
+
 ```bash
-# Add to compile command
--Wall -Wextra -Wunused-variable -Wunused-parameter
+make LIB -j8 2>&1 | grep -i 'warning.*unused'
 ```
 
-Or use clang-tidy:
+Or use clang-tidy on a specific file:
 ```bash
-clang-tidy src/FileName.cpp -- -I../include -I../../util/AMREX/InstallDir/include
+clang-tidy src/FileName.cpp -p compile_commands.json
 ```
 
 ### 2. Find Raw `new` Usage
 
+Use the `grep_search` tool with `Query: \bnew\b`, searching in `src/` and
+`include/`. In a terminal:
 ```bash
-grep -rn "\bnew\b" src/ include/ --include="*.cpp" --include="*.h"
+grep -rn '\bnew\b' src/ include/ --include="*.cpp" --include="*.h"
 ```
 
 ### 3. Find `NULL` Usage (should be `nullptr`)
 
-```bash
-grep -rn "\bNULL\b" src/ include/ --include="*.cpp" --include="*.h"
-```
+Use the `grep_search` tool with `Query: NULL`, `Includes: ["*.cpp", "*.h"]`.
 
 ### 4. Find `using namespace` in Headers
 
-```bash
-grep -rn "using namespace" include/ --include="*.h"
-```
+Use the `grep_search` tool with `Query: using namespace`,
+searching `include/`, includes `*.h`.
 
 ### 5. Check Naming Conventions
 
@@ -92,16 +103,16 @@ Look for:
 
 ```bash
 # Preview changes
-grep -rn "\bNULL\b" src/ include/
+grep -rn '\bNULL\b' src/ include/ --include="*.cpp" --include="*.h"
 
 # Apply fix (carefully review first!)
-find src include -name "*.cpp" -o -name "*.h" | xargs sed -i '' 's/\bNULL\b/nullptr/g'
+find src include \( -name "*.cpp" -o -name "*.h" \) -exec sed -i '' 's/\bNULL\b/nullptr/g' {} +
 ```
 
 ### Task 2: Remove Trailing Whitespace
 
 ```bash
-find src include -name "*.cpp" -o -name "*.h" | xargs sed -i '' 's/[[:space:]]*$//'
+find src include \( -name "*.cpp" -o -name "*.h" \) -exec sed -i '' 's/[[:space:]]*$//' {} +
 ```
 
 ### Task 3: Ensure Newline at End of File
@@ -117,12 +128,13 @@ done
 When reviewing cleanup changes:
 
 - [ ] No functional changes introduced
-- [ ] All files still compile
+- [ ] All files still compile (`make LIB -j8`)
 - [ ] Naming conventions followed
 - [ ] No new warnings introduced
 - [ ] Header order is correct (std → AMReX → user)
 - [ ] `const` used where applicable
 - [ ] No raw pointers managing ownership
+- [ ] Fortran files in `srcInterface/` are also properly indented
 
 ## Commit Message Format
 
