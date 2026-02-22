@@ -52,7 +52,7 @@ FLEKS/
 | `include/`       | All `.h` header files — class declarations, inline methods  |
 | `src/`           | All `.cpp` files — implementations, `main.cpp`, src Makefile|
 | `srcInterface/`  | SWMF coupling: `PC_wrapper.f90`, `PT_wrapper.f90`, `FleksInterface.cpp` |
-| `documents/`     | `Algorithm.tex` (math/physics), `Coding_standards.md`       |
+| `docs/`          | Internal documentation: coding standards, algorithms, agent docs |
 | `tools/`         | `amrex2tec.py`, `amrex2vtk.sh`, `converter.py`, `generate_compile_commands.py` |
 
 ---

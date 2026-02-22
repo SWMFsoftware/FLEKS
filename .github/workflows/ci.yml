@@ -1,0 +1,30 @@
+---
+name: Format Check and Build
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
+jobs:
+  style:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-format findent
+
+    - name: Run format script
+      run: python3 tools/format_all.py
+
+    - name: Check for formatting violations
+      run: |
+        if [[ `git status --porcelain` ]]; then
+          echo "Code formatting issue detected! Please run 'python3 tools/format_all.py' locally and push."
+          git diff
+          exit 1
+        fi

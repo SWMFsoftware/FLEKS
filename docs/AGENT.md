@@ -1,4 +1,4 @@
-# documents/ — Algorithm & Standards Documentation
+# docs/ — Algorithm & Standards Documentation
 
 ## Files
 

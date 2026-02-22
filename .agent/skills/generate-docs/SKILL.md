@@ -11,8 +11,8 @@ This skill handles documentation generation for FLEKS.
 
 | Type | Location |
 |------|----------|
-| Algorithm documentation | `documents/Algorithm.tex` |
-| Coding standards | `documents/Coding_standards.md` |
+| Algorithm documentation | `docs/AGENT.md` | `Algorithm.tex` overview |
+| Coding standards | `docs/Coding_standards.md` |
 | Parameter documentation | `PARAM.XML` |
 | Project overview (agent) | `AGENT.md` (root and subdirectories) |
 
@@ -21,13 +21,13 @@ This skill handles documentation generation for FLEKS.
 ### Build Algorithm PDF
 
 ```bash
-cd documents
+cd docs
 pdflatex Algorithm.tex
 ```
 
 For full build with references:
 ```bash
-cd documents
+cd docs
 pdflatex Algorithm.tex
 pdflatex Algorithm.tex  # Run twice for references
 ```
@@ -35,7 +35,7 @@ pdflatex Algorithm.tex  # Run twice for references
 ### View Generated PDF
 
 ```bash
-open documents/Algorithm.pdf  # macOS
+open docs/Algorithm.pdf  # macOS
 ```
 
 ### Algorithm Document Contents

@@ -9,7 +9,7 @@ This skill performs code cleanup tasks following FLEKS coding standards.
 
 ## Coding Standards Reference
 
-From `documents/Coding_standards.md`:
+From `docs/Coding_standards.md`:
 
 1. **Memory Management**: Use `shared_ptr` or `unique_ptr`, avoid raw `new`
 2. **Naming Conventions**:
