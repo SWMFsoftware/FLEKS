@@ -1,19 +1,67 @@
 {
+    "version": "2.0.0",
     "tasks": [
         {
-            "type": "shell",
             "label": "cpp build active file",
-            "command": "/usr/bin/cpp",
+            "type": "shell",
+            "command": "make",
             "args": [
-                "-g",
-                "${file}",
-                "-o",
-                "${fileDirname}/${fileBasenameNoExtension}"
+                "LIB",
+                "-j8"
             ],
             "options": {
-                "cwd": "/usr/bin"
-            }
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Build the FLEKS library."
+        },
+        {
+            "label": "Build SWMF + test16_3d",
+            "type": "shell",
+            "command": "make",
+            "args": [
+                "test16_3d_compile"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/../../"
+            },
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Compile SWMF and FLEKS for test16_3d."
+        },
+        {
+            "label": "Run test16_3d",
+            "type": "shell",
+            "command": "make",
+            "args": [
+                "test16_3d"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/../../"
+            },
+            "group": "test",
+            "problemMatcher": [],
+            "detail": "Run the entire test16_3d cycle."
+        },
+        {
+            "label": "Regenerate compile_commands.json",
+            "type": "shell",
+            "command": "make",
+            "args": [
+                "compile_commands"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
         }
-    ],
-    "version": "2.0.0"
+    ]
 }

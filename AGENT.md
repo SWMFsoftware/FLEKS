@@ -249,7 +249,7 @@ run/PC/
 | `tools/converter.py`       | General data conversion                |
 | `tools/generate_compile_commands.py` | Generate `compile_commands.json` |
 
-**Visualization:** While ParaView can read AMReX/HDF5 data, it may struggle with continuous rendering of AMR block boundaries. Converting to `.vtm` or Tecplot formats is often preferred. Furthermore, Python scripts utilizing `xarray` (with custom accessors like `fleks`) and `matplotlib` are frequently used in this project to parse and plot NetCDF output data.
+**Visualization:** While ParaView can read HDF5 data natively, it may struggle with continuous rendering of AMReX block boundaries unless you use the `BATSRUSReader` ParaView plugin provided by the `flekspy` Python toolkit. Alternatively, converting output to `.vtm` or Tecplot formats using the tools above is often preferred. For Python scripting, the official tool is the **`flekspy`** package (`pip install flekspy`), which natively parses FLEKS AMReX data and integrates with Matplotlib and YT.
 
 ---
 
