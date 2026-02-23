@@ -34,6 +34,7 @@ Implementation files are in `src/`. Headers should never contain
 | `FleksInterface.h`   | Function declarations           | C-callable interface functions for SWMF Fortran wrappers.|
 | `SWMFInterface.h`    | SWMF helpers                    | SWMF-specific coupling utilities.                        |
 | `OHInterface.h`      | `OHInterface`                   | Outer-heliosphere (OH) coupling data container.          |
+| `OHSource.h`         | OH source terms                | Helper interfaces for outer-heliosphere source handling. |
 | `SourceInterface.h`  | `SourceInterface`               | Source term interface for coupled simulations.            |
 | `UserSource.h`       | User source hooks                | User-customizable source terms. **Auto-generated from `.orig`.** |
 
@@ -107,3 +108,8 @@ Implementation files are in `src/`. Headers should never contain
 // ...
 #endif
 ```
+
+## Validation
+
+- After header edits, run `make LIB -j8` from repo root to catch signature or include-order issues.
+- If generated headers are involved (`Constants.h`, `UserSource.h`), validate the corresponding `.orig` source before rebuilding.

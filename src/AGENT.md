@@ -8,9 +8,9 @@ Headers are in `include/`.
 | File                        | Implements            | Description                                                  |
 |-----------------------------|-----------------------|--------------------------------------------------------------|
 | `main.cpp`                  | `main()`              | Standalone entry point. Initializes AMReX, prints git info. Currently the `Domain` init is commented out — FLEKS is primarily run via the SWMF coupler. |
-| `Pic.cpp`                   | `Pic`                 | Core PIC solver: field update loop, particle push, moment deposition, E-field solve (GMRES), div(E) cleaning, field smoothing. **Largest file (~93 KB).** |
+| `Pic.cpp`                   | `Pic`                 | Core PIC solver: field update loop, particle push, moment deposition, E-field solve (GMRES), div(E) cleaning, field smoothing. |
 | `PicIO.cpp`                 | `Pic` (I/O methods)   | Plot output, restart save/read, AMReX/IDL/HDF5 writing for `Pic`. |
-| `Particles.cpp`             | `Particles<N,M>`      | Particle operations: injection, movement (Boris pusher), splitting, merging, fast merge, charge exchange, boundary handling. **Second largest (~141 KB).** |
+| `Particles.cpp`             | `Particles<N,M>`      | Particle operations: injection, movement (Boris pusher), splitting, merging, fast merge, charge exchange, boundary handling. |
 | `TestParticles.cpp`         | `TestParticles`       | Test particle movement, trajectory recording, I/O.           |
 | `ParticleTracker.cpp`       | `ParticleTracker`     | Test particle manager: initialization, stepping, output scheduling. |
 | `Domain.cpp`                | `Domain`              | Top-level simulation flow: `init()`, `update()`, parameter reading, restart, regridding, coupling data exchange. |
@@ -59,3 +59,9 @@ The `src/Makefile` compiles all `.cpp` files listed in `SRCS` into
 ## Development Note
 
 - **Environment:** The primary development environment is **macOS**. Keep this in mind when troubleshooting build steps or configuring debug sessions (e.g., standardize on `lldb` for debugging in terminal or VS Code).
+
+## Validation
+
+- Fast compile check after source edits: `make LIB -j8`
+- Executable link check (when touching `main.cpp` or top-level linking): `make FLEKS -j8`
+- If new files are added, confirm `src/Makefile` `SRCS` is updated before rebuilding.

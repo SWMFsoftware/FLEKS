@@ -32,10 +32,12 @@ FLEKS/
 ├── include/              ← All header files (.h)
 ├── src/                  ← All implementation files (.cpp) and src Makefile
 ├── srcInterface/         ← SWMF coupling layer (Fortran wrappers + C++ interface)
-├── documents/            ← Algorithm docs (LaTeX) and coding standards
+├── docs/                 ← Algorithm docs (LaTeX) and coding standards
 ├── tools/                ← Post-processing and conversion scripts (Python/bash)
+├── tests/                ← Unit-test sandbox (currently placeholder)
 ├── bin/                  ← Built executables (created by build)
-├── .agent/skills/        ← AI agent skills (build, add-source, etc.)
+├── .agent/skills/        ← Agent skills
+├── .agent/workflows/     ← Agent workflows
 ├── Config.pl             ← Perl configuration script (AMReX, test particles, etc.)
 ├── configure.py          ← Standalone configure (writes Makefile.def)
 ├── Makefile              ← Top-level Makefile
@@ -44,6 +46,14 @@ FLEKS/
 ├── .clang-format         ← Clang-format configuration (Mozilla-based, 80-col)
 └── .gitignore
 ```
+
+## Agent Quickstart
+
+Use this workflow for most code changes:
+1. Read this file and the nearest subdirectory `AGENT.md` first.
+2. If a header changes, inspect matching implementation files and rebuild `LIB`.
+3. Run `make LIB -j8` for fast validation; run `make FLEKS -j8` only when executable behavior is affected.
+4. Run `make compile_commands` after include-path or build-flag changes.
 
 ### Key directories
 
@@ -158,18 +168,18 @@ make distclean   # Full reset
 
 ### Build Artifacts
 
-| File                    | Description                         |
-|-------------------------|-------------------------------------|
-| `src/libFLEKS.a`       | Static library                      |
-| `bin/FLEKS.exe`         | Standalone executable               |
-| `bin/converter.exe`     | Data format converter               |
-| `compile_commands.json` | Compilation database for IDE        |
+Typical outputs after building:
+- `bin/FLEKS` or `bin/FLEKS.exe` (standalone executable)
+- `src/libFLEKS.a` (static library for linking)
+- `compile_commands.json` (IDE index)
+
+If these are missing, run the build targets in the **Build Targets** section above.
 
 ---
 
 ## Coding Conventions
 
-See `documents/Coding_standards.md` for the full list. Key points:
+See `docs/Coding_standards.md` for the full list. Key points:
 
 ### Naming
 
@@ -264,6 +274,17 @@ To assist with common tasks, specialized instructions (skills) are defined in `.
 | **Code Cleanup**  | Formatting, unused variables, standard checks        | `.agent/skills/code-cleanup/SKILL.md`          |
 | **Debug Session** | Setup and launch a debug session (lldb / VS Code)    | `.agent/skills/debug-session/SKILL.md`         |
 | **Generate Docs** | Build HTML/PDF documentation                         | `.agent/skills/generate-docs/SKILL.md`         |
+| **Run Test**      | Run regression tests via SWMF test infrastructure    | `.agent/skills/run-test/SKILL.md`              |
+
+## Agent Workflows
+
+Composite step-by-step guides for multi-stage tasks are in `.agent/workflows/`:
+
+| Workflow                  | Description                                          | Path                                        |
+|---------------------------|------------------------------------------------------|---------------------------------------------|
+| **Run Test**              | Run test16_3d regression test end-to-end             | `.agent/workflows/run-test.md`              |
+| **Add Parameter Command** | Add a new `#COMMANDNAME` from PARAM.XML to code      | `.agent/workflows/add-param.md`             |
+| **Add Coupling Variable** | Add a new GM↔PC exchange variable for SWMF coupling  | `.agent/workflows/add-coupling-var.md`      |
 
 ---
 

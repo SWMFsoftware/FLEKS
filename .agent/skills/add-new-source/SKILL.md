@@ -51,11 +51,11 @@ public:
   void do_something();
 
   // Getters (use const)
-  int get_value() const { return value_; }
+  int get_value() const { return value; }
 
 private:
-  // Member variables (trailing underscore for truly private state)
-  int value_ = 0;
+  // Member variables (camelCase, matching project style)
+  int value = 0;
 };
 
 #endif // _NEWFEATURE_H_

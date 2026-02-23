@@ -11,7 +11,7 @@ This skill handles documentation generation for FLEKS.
 
 | Type | Location |
 |------|----------|
-| Algorithm documentation | `docs/AGENT.md` | `Algorithm.tex` overview |
+| Algorithm documentation | `docs/Algorithm.tex` |
 | Coding standards | `docs/Coding_standards.md` |
 | Parameter documentation | `PARAM.XML` |
 | Project overview (agent) | `AGENT.md` (root and subdirectories) |

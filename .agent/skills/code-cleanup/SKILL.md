@@ -35,7 +35,17 @@ The project uses `.clang-format` with Mozilla-based style (2-space indent,
 clang-format -i src/FileName.cpp
 ```
 
-### Format All Source Files
+### Format All Source Files (Preferred)
+
+Use the project's formatting script, which handles both C++ and Fortran in one pass:
+
+```bash
+python3 tools/format_all.py
+```
+
+This is also required before submitting a PR (see `CONTRIBUTING.md`).
+
+### Format All Source Files (Manual)
 
 ```bash
 find src include -name "*.cpp" -o -name "*.h" | xargs clang-format -i
@@ -75,20 +85,21 @@ clang-tidy src/FileName.cpp -p compile_commands.json
 
 ### 2. Find Raw `new` Usage
 
-Use the `grep_search` tool with `Query: \bnew\b`, searching in `src/` and
-`include/`. In a terminal:
 ```bash
 grep -rn '\bnew\b' src/ include/ --include="*.cpp" --include="*.h"
 ```
 
 ### 3. Find `NULL` Usage (should be `nullptr`)
 
-Use the `grep_search` tool with `Query: NULL`, `Includes: ["*.cpp", "*.h"]`.
+```bash
+grep -rn '\bNULL\b' src/ include/ --include="*.cpp" --include="*.h"
+```
 
 ### 4. Find `using namespace` in Headers
 
-Use the `grep_search` tool with `Query: using namespace`,
-searching `include/`, includes `*.h`.
+```bash
+grep -rn 'using namespace' include/ --include="*.h"
+```
 
 ### 5. Check Naming Conventions
 

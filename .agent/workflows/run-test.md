@@ -7,18 +7,14 @@ description: How to run the most common FLEKS test (test16_3d) via SWMF
 All commands are run from the **SWMF root** directory (`../../` from FLEKS).
 
 ## Full automated run
-// turbo
+
 1. `cd ../../ && make test16_3d`
 
 ## Step-by-step run
 
-// turbo
 1. Compile: `cd ../../ && make test16_3d_compile`
-// turbo
 2. Create run directory: `make test16_3d_rundir`
-// turbo
 3. Run simulation: `make test16_3d_run`
-// turbo
 4. Check results: `make test16_3d_check`
 
 ## Verify

@@ -63,6 +63,8 @@ When dealing with the Fortran/C++ interface in SWMF (such as `PC_wrapper.f90`), 
 1. **Array indexing & Slicing:** C++ is 0-indexed and row-major; Fortran is 1-indexed and column-major. Be careful when passing multi-dimensional arrays `Data_VI` or grid sizes.
 2. **Type Mismatches:** Watch out for "Possible change of value in conversion from REAL(8) to REAL(4)" warnings. Always use compatible types (e.g., `double` in C++ matching `real(8)` in Fortran).
 3. **Array Rank Remapping:** Passing multidimensional arrays to routines expecting 1D/contiguous memory requires explicit contiguity or rank-1 array slicing, otherwise gfortran/ifort will throw runtime or compile-time rank mismatch errors.
+4. **Name Mangling:** C functions intended for Fortran should use `extern "C"` and end with a trailing underscore (e.g., `fleks_run_`) unless `bind(C, name="...")` is used explicitly.
+5. **ISO_C_BINDING:** Prefer `use iso_c_binding` in Fortran interface blocks when adding new C bindings to keep types explicit.
 
 ## Adding a New Interface Function
 
@@ -77,9 +79,15 @@ When dealing with the Fortran/C++ interface in SWMF (such as `PC_wrapper.f90`), 
 2. Declare in `FleksInterface.h`
 3. Add Fortran interface block and wrapper subroutine in `PC_wrapper.f90`:
    ```fortran
+   use iso_c_binding, only: c_int
    interface
-     integer function fleks_new_function(param) bind(C)
-       integer, intent(in) :: param
+     integer(c_int) function fleks_new_function(param) bind(C)
+       integer(c_int), intent(in) :: param
      end function
    end interface
    ```
+
+## Validation
+
+- Build interface-linked library from repo root: `make LIB -j8`
+- If interface signatures changed, check both declaration and call sites in `include/FleksInterface.h`, `srcInterface/FleksInterface.cpp`, and `srcInterface/PC_wrapper.f90`.
