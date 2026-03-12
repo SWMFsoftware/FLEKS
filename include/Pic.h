@@ -354,7 +354,7 @@ public:
   void get_field_var(const VectorPointList &pointList_II,
                      const std::vector<std::string> &sVar_I,
                      MDArray<double> &var_II);
-  double get_var(std::string var, const int iLev, const amrex::IntVect ijk,
+  double get_var(std::string_view var, const int iLev, const amrex::IntVect ijk,
                  const amrex::MFIter &mfi, bool isValidMFI = true);
   void save_restart_header(std::ofstream &headerFile);
   void save_restart_data();

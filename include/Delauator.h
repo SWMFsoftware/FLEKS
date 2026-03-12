@@ -296,6 +296,8 @@ public:
     // sort the points by distance from the seed triangle circumcenter
     std::sort(ids.begin(), ids.end(),
               compare{ coords, m_center_x, m_center_y });
+    //TODO: C++20 support with better syntax
+    // std::ranges::sort(ids, compare{ coords, m_center_x, m_center_y });
 
     // initialize a hash table for storing edges of the advancing convex hull
     m_hash_size =

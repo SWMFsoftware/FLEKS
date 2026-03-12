@@ -1,10 +1,14 @@
 #ifndef _PLOTWRITER_H_
 #define _PLOTWRITER_H_
 
+
 #include <AMReX_RealVect.H>
 #include <array>
+//TODO C++20 support with better syntax
+// #include <format>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "Constants.h"
@@ -232,7 +236,7 @@ public:
 
   /* Calculate the unit conversion coef for var_I. */
   void set_output_unit();
-  double No2OutTable(std::string const& var) const;
+  double No2OutTable(std::string_view var) const;
 
   /* Decide if the input point should be saved or not based on plotMin_D,
      plotMax_D and plotDx. ix, iy and iz are global indices.*/
@@ -266,6 +270,9 @@ public:
        << std::setfill('0') << std::setw(8) << iCycle;
 
     return ss.str();
+    //TODO C++20 support with better syntax
+    // return std::format("{}_region{}_{}_t{:08d}_n{:08d}", namePrefix, iRegion,
+                      //  ID, get_time_digits(time), iCycle);
   };
 };
 

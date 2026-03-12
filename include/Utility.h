@@ -1,6 +1,8 @@
 #ifndef _UTILITY_H_
 #define _UTILITY_H_
 
+#include <algorithm>
+#include <string_view>
 #include <unistd.h>
 
 #include <AMReX_MultiFab.H>
@@ -14,12 +16,7 @@
 inline int fastfloor(amrex::Real x) { return (int)(x + 8) - 8; }
 
 inline amrex::Real median(amrex::Real a, amrex::Real b, amrex::Real c) {
-  if ((a > b) != (a > c))
-    return a;
-  else if ((b > a) != (b > c))
-    return b;
-  else
-    return c;
+  return std::clamp(a, std::min(b, c), std::max(b, c));
 }
 
 inline amrex::Real limiter_theta(amrex::Real theta, amrex::Real u0,
@@ -48,12 +45,14 @@ inline amrex::Dim3 init_dim3(const int i) {
   return dim;
 }
 
-// Return the firs integer in the string.
+// Return the first integer in the string.
 // Example: "abc123def345b" -> 123
-inline int extract_int(std::string s) {
+inline int extract_int(std::string_view s) {
   std::size_t i0 = s.find_first_of("0123456789");
   std::size_t i1 = s.find_last_of("0123456789");
-  return std::stoi(s.substr(i0, i1 - i0 + 1));
+  if (i0 == std::string_view::npos || i1 == std::string_view::npos)
+    return 0;
+  return std::stoi(std::string(s.substr(i0, i1 - i0 + 1)));
 };
 
 inline int shift_periodic_index(int idx, int lo, int hi) {
@@ -154,15 +153,6 @@ inline void linear_interpolation_coef_finer(const amrex::RealVect& dx,
   coef[1][0][1] = xy[0][1] * interpZ[0];
   coef[1][1][0] = xy[0][0] * interpZ[1];
   coef[1][1][1] = xy[0][0] * interpZ[0];
-}
-
-template <typename T>
-inline T bound(const T& val, const T& xmin, const T& xmax) {
-  if (val < xmin)
-    return xmin;
-  if (val > xmax)
-    return xmax;
-  return val;
 }
 
 template <typename T, int nRow, int nCol>
