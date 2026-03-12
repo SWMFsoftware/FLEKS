@@ -270,7 +270,7 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
 }
 
 //==========================================================
-double Pic::get_var(std::string var, const int iLev, const IntVect ijk,
+double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
                     const MFIter& mfi, bool isValidMFI) {
   double value = 0;
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||

@@ -537,7 +537,7 @@ void PlotWriter::set_output_unit() {
   }
 }
 
-double PlotWriter::No2OutTable(std::string const& var) const {
+double PlotWriter::No2OutTable(std::string_view var) const {
   double value = 0;
 
   // The order of the following if-else statements matter. For example,

@@ -1883,6 +1883,8 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
 
       // Sort the particles first to make sure the results
       // are the same for different number of processors
+      //TODO C++20 support with better syntax:
+      // std::ranges::sort(particles, compare_two_parts);
       std::sort(particles.begin(), particles.end(), compare_two_parts);
 
       Real totalMass = 0;
@@ -1958,9 +1960,9 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
             Real yp2 = yp1 + (yMax - yMin) * (randNum() - 0.5);
             Real zp2 = zp1 + (zMax - zMin) * (randNum() - 0.5);
 
-            xp2 = bound(xp2, xMin, xMax);
-            yp2 = bound(yp2, yMin, yMax);
-            zp2 = bound(zp2, zMin, zMax);
+            xp2 = std::clamp(xp2, xMin, xMax);
+            yp2 = std::clamp(yp2, yMin, yMax);
+            zp2 = std::clamp(zp2, zMin, zMax);
 
             pnew.pos(ix_) = xp2;
             pnew.pos(iy_) = yp2;
@@ -2345,9 +2347,9 @@ void Particles<NStructReal, NStructInt>::split_new(Real limit,
               yp1 -= dpy;
               zp1 -= dpz;
 
-              xp1 = bound(xp1, xMin, xMax);
-              yp1 = bound(yp1, yMin, yMax);
-              zp1 = bound(zp1, zMin, zMax);
+              xp1 = std::clamp(xp1, xMin, xMax);
+              yp1 = std::clamp(yp1, yMin, yMax);
+              zp1 = std::clamp(zp1, zMin, zMax);
               p.pos(ix_) = xp1;
               p.pos(iy_) = yp1;
 
@@ -2355,9 +2357,9 @@ void Particles<NStructReal, NStructInt>::split_new(Real limit,
                 p.pos(iz_) = zp1;
             }
 
-            xp2 = bound(xp2, xMin, xMax);
-            yp2 = bound(yp2, yMin, yMax);
-            zp2 = bound(zp2, zMin, zMax);
+            xp2 = std::clamp(xp2, xMin, xMax);
+            yp2 = std::clamp(yp2, yMin, yMax);
+            zp2 = std::clamp(zp2, zMin, zMax);
 
             ParticleType pnew;
             set_ids(pnew);
@@ -2525,9 +2527,9 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
               yp1 -= dpy;
               zp1 -= dpz;
 
-              xp1 = bound(xp1, xMin, xMax);
-              yp1 = bound(yp1, yMin, yMax);
-              zp1 = bound(zp1, zMin, zMax);
+              xp1 = std::clamp(xp1, xMin, xMax);
+              yp1 = std::clamp(yp1, yMin, yMax);
+              zp1 = std::clamp(zp1, zMin, zMax);
               p.pos(ix_) = xp1;
               p.pos(iy_) = yp1;
 
@@ -2535,9 +2537,9 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
                 p.pos(iz_) = zp1;
             }
 
-            xp2 = bound(xp2, xMin, xMax);
-            yp2 = bound(yp2, yMin, yMax);
-            zp2 = bound(zp2, zMin, zMax);
+            xp2 = std::clamp(xp2, xMin, xMax);
+            yp2 = std::clamp(yp2, yMin, yMax);
+            zp2 = std::clamp(zp2, zMin, zMax);
 
             ParticleType pnew;
             set_ids(pnew);
@@ -4108,9 +4110,9 @@ void Particles<NStructReal, NStructInt>::limit_weight_new(
           yp1 -= dpy;
           zp1 -= dpz;
 
-          xp1 = bound(xp1, xMin, xMax);
-          yp1 = bound(yp1, yMin, yMax);
-          zp1 = bound(zp1, zMin, zMax);
+          xp1 = std::clamp(xp1, xMin, xMax);
+          yp1 = std::clamp(yp1, yMin, yMax);
+          zp1 = std::clamp(zp1, zMin, zMax);
 
           p.pos(ix_) = xp1;
           p.pos(iy_) = yp1;
@@ -4118,9 +4120,9 @@ void Particles<NStructReal, NStructInt>::limit_weight_new(
           if (nDim > 2)
             p.pos(iz_) = zp1;
 
-          xp2 = bound(xp2, xMin, xMax);
-          yp2 = bound(yp2, yMin, yMax);
-          zp2 = bound(zp2, zMin, zMax);
+          xp2 = std::clamp(xp2, xMin, xMax);
+          yp2 = std::clamp(yp2, yMin, yMax);
+          zp2 = std::clamp(zp2, zMin, zMax);
 
           ParticleType pnew;
           set_ids(pnew);

@@ -5,52 +5,52 @@
 #include <AMReX_SPACE.H>
 
 //========= Physical constants =====================
-constexpr static double fourPI = 3.14159265359 * 4;
-constexpr static double dPI = 3.14159265358979323846;
+inline constexpr double fourPI = 3.14159265359 * 4;
+inline constexpr double dPI = 3.14159265358979323846;
 
-constexpr static double cProtonMassSI = 1.67262192e-27; // kg
-constexpr static double cUnitChargeSI = 1.60217663e-19; // C
+inline constexpr double cProtonMassSI = 1.67262192e-27; // kg
+inline constexpr double cUnitChargeSI = 1.60217663e-19; // C
 
-constexpr static double cBoltzmannSI = 1.380649e-23;
+inline constexpr double cBoltzmannSI = 1.380649e-23;
 
-constexpr static double mu0 = fourPI * 1e-7; // unit N/A^2
+inline constexpr double mu0 = fourPI * 1e-7; // unit N/A^2
 
-constexpr static double cAUSI = 1.495978707e11; // m
+inline constexpr double cAUSI = 1.495978707e11; // m
 
-constexpr static double gamma0 = 5./3; 
-constexpr static double invGamma = 1./gamma0;
+inline constexpr double gamma0 = 5./3; 
+inline constexpr double invGamma = 1./gamma0;
 //===================================================
 
 //========= Numerical constants =====================
 // FLEKS is always 3D. But it can be fake 2D with one cell in the z-direction.
-constexpr static int nDim = amrex::SpaceDim;
+inline constexpr int nDim = amrex::SpaceDim;
 
 // Always contains 3 velocity components.
-constexpr static int nDim3 = 3; 
+inline constexpr int nDim3 = 3; 
 
 namespace config{
 // Level of grids. 
-constexpr static int nLevMax = 1; 
+inline constexpr int nLevMax = 1; 
 }
 
-constexpr static int ix_ = 0, iy_ = 1, iz_ = 2;
-constexpr static int iSupID_ = 0; 
+inline constexpr int ix_ = 0, iy_ = 1, iz_ = 2;
+inline constexpr int iSupID_ = 0; 
 
-constexpr static int nMoments = 11;
-constexpr static int iRho_ = 0;
-constexpr static int iUx_ = 1, iUy_ = 2, iUz_ = 3;
-constexpr static int iMx_ = 1, iMy_ = 2, iMz_ = 3;
-constexpr static int iPxx_ = 4, iPyy_ = 5, iPzz_ = 6, iPxy_ = 7, iPxz_ = 8,
+inline constexpr int nMoments = 11;
+inline constexpr int iRho_ = 0;
+inline constexpr int iUx_ = 1, iUy_ = 2, iUz_ = 3;
+inline constexpr int iMx_ = 1, iMy_ = 2, iMz_ = 3;
+inline constexpr int iPxx_ = 4, iPyy_ = 5, iPzz_ = 6, iPxy_ = 7, iPxz_ = 8,
                      iPyz_ = 9, iNum_ = 10;
 
-constexpr static bool doTiling = false;                
+inline constexpr bool doTiling = false;                
 
-constexpr static int nPicPartReal = 4;
-constexpr static int nPicPartInt = 1;
+inline constexpr int nPicPartReal = 4;
+inline constexpr int nPicPartInt = 1;
 
-constexpr static int nPTRecord = 20;
-constexpr static int ptRecordSize = 7;
-constexpr static int nPTPartReal = nPicPartReal + ptRecordSize * nPTRecord,
+inline constexpr int nPTRecord = 20;
+inline constexpr int ptRecordSize = 7;
+inline constexpr int nPTPartReal = nPicPartReal + ptRecordSize * nPTRecord,
                      nPTPartInt = 2;
 #ifdef _PT_COMPONENT_
 static const std::string component = "PT";
@@ -58,8 +58,8 @@ static const std::string component = "PT";
 static const std::string component = "PC";
 #endif
 
-constexpr static int iSuccess = 0; 
-constexpr static int iFail = 1; 
+inline constexpr int iSuccess = 0; 
+inline constexpr int iFail = 1; 
 
 enum TestCase { RegularSimulation, Beam, TopHat, LightWave};
 
