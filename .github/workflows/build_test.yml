@@ -10,6 +10,9 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
+      - name: Force HTTPS for GitHub
+        run: git config --global url."https://github.com/".insteadOf git@github.com:
+
       - name: Install Dependencies
         run: |
           sudo apt-get update
