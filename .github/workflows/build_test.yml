@@ -9,6 +9,7 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    
     steps:
       - name: Force HTTPS for GitHub
         run: git config --global url."https://github.com/".insteadOf git@github.com:
@@ -16,11 +17,13 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gfortran libopenmpi-dev openmpi-bin perl make git python3
+          sudo apt-get install -y gfortran g++ libopenmpi-dev openmpi-bin perl python3
 
-      - name: Checkout SWMF
-        run: |
-          git clone --depth 1 https://github.com/SWMFsoftware/SWMF.git SWMF
+      - name: Checkout SWMF Framework
+        uses: actions/checkout@v4
+        with:
+          repository: SWMFsoftware/SWMF
+          path: SWMF
 
       - name: Checkout FLEKS (Current Commit)
         uses: actions/checkout@v4
