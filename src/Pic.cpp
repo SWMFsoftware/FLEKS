@@ -2,7 +2,13 @@
 #include <math.h>
 
 #include <AMReX_Algorithm.H>
+#include <AMReX_CArena.H>
+#include <AMReX_FabArrayBase.H>
 #include <AMReX_MultiFabUtil.H>
+
+#if defined(__linux__)
+#include <malloc.h>
+#endif
 
 #include "GridUtility.h"
 #include "LinearSolver.h"
@@ -49,6 +55,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       bcBField.lo[i] = bcBField.num_type(lo);
       bcBField.hi[i] = bcBField.num_type(hi);
     }
+  } else if (command == "#MEMORY") {
+    param.read_var("dnMemory", dnMemory);
   } else if (command == "#RANDOMPARTICLESLOCATION") {
     param.read_var("isParticleLocationRandom", isParticleLocationRandom);
   } else if (command == "#CONSTANTPPV") {
@@ -1395,6 +1403,48 @@ void Pic::update(bool doReportIn) {
 
     report_load_balance();
   }
+
+  if (dnMemory > 0 && tc->get_cycle() % dnMemory == 0) {
+    Print() << printPrefix << "Load balance before freeing memory:\n";
+    report_load_balance();
+    Print() << printPrefix << "Freeing memory...\n";
+    free_memory();
+    Print() << printPrefix << "Load balance after freeing memory:\n";
+    report_load_balance();
+  }
+}
+
+//==========================================================
+void Pic::free_memory() {
+  std::string nameFunc = "Pic::free_memory";
+  timing_func(nameFunc);
+
+  if (auto* p = dynamic_cast<amrex::CArena*>(amrex::The_Arena())) {
+    p->freeUnused();
+  }
+  if (auto* p = dynamic_cast<amrex::CArena*>(amrex::The_Pinned_Arena())) {
+    p->freeUnused();
+  }
+
+  amrex::FabArrayBase::flushFBCache();
+  amrex::FabArrayBase::flushCPCache();
+  amrex::FabArrayBase::flushTileArrayCache();
+
+  amrex::Arena::PrintUsage();
+
+  for (int i = 0; i < nSpecies; ++i) {
+    amrex::Print() << "[Particles " << i << " Before ShrinkToFit]: ";
+    parts[i]->PrintCapacity();
+    parts[i]->ShrinkToFit();
+    amrex::Print() << "[Particles " << i << " After ShrinkToFit]: ";
+    parts[i]->PrintCapacity();
+  }
+
+#if defined(__linux__)
+  // Force glibc to return free pages on the heap to the OS.
+  // This is necessary because glibc often holds onto freed blocks internally.
+  malloc_trim(0);
+#endif
 }
 
 //==========================================================

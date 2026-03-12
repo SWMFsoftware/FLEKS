@@ -162,6 +162,7 @@ private:
   std::string selectParticleInputFile;
 
   bool doReport = false;
+  int dnMemory = 100;
 
   std::string logFile;
 
@@ -219,6 +220,8 @@ public:
 #endif
   };
   ~Pic() {};
+
+  void free_memory();
 
   void update(bool doReportIn = false);
 
