@@ -1,11 +1,10 @@
 #ifndef _PLOTWRITER_H_
 #define _PLOTWRITER_H_
 
-
 #include <AMReX_RealVect.H>
 #include <array>
-//TODO C++20 support with better syntax
-// #include <format>
+// TODO C++20 support with better syntax
+//  #include <format>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -270,9 +269,10 @@ public:
        << std::setfill('0') << std::setw(8) << iCycle;
 
     return ss.str();
-    //TODO C++20 support with better syntax
-    // return std::format("{}_region{}_{}_t{:08d}_n{:08d}", namePrefix, iRegion,
-                      //  ID, get_time_digits(time), iCycle);
+    // TODO C++20 support with better syntax
+    //  return std::format("{}_region{}_{}_t{:08d}_n{:08d}", namePrefix,
+    //  iRegion,
+    //   ID, get_time_digits(time), iCycle);
   };
 };
 

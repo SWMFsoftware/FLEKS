@@ -1883,7 +1883,7 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
 
       // Sort the particles first to make sure the results
       // are the same for different number of processors
-      //TODO C++20 support with better syntax:
+      // TODO C++20 support with better syntax:
       // std::ranges::sort(particles, compare_two_parts);
       std::sort(particles.begin(), particles.end(), compare_two_parts);
 
