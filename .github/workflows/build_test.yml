@@ -1,0 +1,35 @@
+name: FLEKS SWMF Integration Test
+
+on:
+  # push:
+  #   branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran libopenmpi-dev openmpi-bin perl make git python3
+
+      - name: Checkout SWMF
+        run: |
+          git clone --depth 1 https://github.com/SWMFsoftware/SWMF.git SWMF
+
+      - name: Checkout FLEKS (Current Commit)
+        uses: actions/checkout@v4
+        with:
+          path: SWMF/PC/FLEKS
+
+      - name: Configure and Install SWMF Components
+        working-directory: SWMF
+        run: |
+          ./Config.pl -install
+
+      - name: Build and Run test16_2d
+        working-directory: SWMF
+        run: |
+          make -j$(nproc) test16_2d
