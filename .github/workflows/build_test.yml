@@ -83,11 +83,39 @@ jobs:
         run: |
           make -j$(nproc) test16_3d
 
+      - name: Build and Run test17
+        working-directory: SWMF
+        run: |
+          make -j$(nproc) test17
+
+      - name: Build and Run test18
+        working-directory: SWMF
+        run: |
+          make -j$(nproc) test18
+
+      - name: Build and Run test23_2d
+        working-directory: SWMF
+        run: |
+          make -j$(nproc) test23_2d
+
+      - name: Build and Run test23_3d
+        working-directory: SWMF
+        run: |
+          make -j$(nproc) test23_3d
+
+      - name: Build and Run test25
+        working-directory: SWMF
+        run: |
+          make -j$(nproc) test25
+
       - name: Verify Test Results
         working-directory: SWMF
         run: |
           FAILED=0
-          for diff_file in test16_2d_gmpc.diff test16_3d_gmpc.diff; do
+          for diff_file in test16_2d_gmpc.diff test16_3d_gmpc.diff \
+                           test17_gmpc.diff test18_gmpc.diff \
+                           test23_2d_gmpc.diff test23_3d_gmpc.diff \
+                           test25_gmpc.diff; do
             if [ -s "$diff_file" ]; then
               echo "::error::Test verification failed! Non-zero diff detected in $diff_file"
               cat "$diff_file"
