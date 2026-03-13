@@ -26,17 +26,47 @@ jobs:
           repository: SWMFsoftware/SWMF
           path: SWMF
 
+      - name: Cache SWMF Components
+        id: cache-swmf
+        uses: actions/cache@v4
+        with:
+          path: |
+            SWMF/GM
+            SWMF/IE
+            SWMF/IM
+            SWMF/RB
+            SWMF/UA
+            SWMF/util
+            SWMF/share
+          key: ${{ runner.os }}-swmf-components-v1-${{ hashFiles('SWMF/Config.pl') }}
+
+      - name: Install or Update SWMF Components
+        working-directory: SWMF
+        run: |
+          if [ "${{ steps.cache-swmf.outputs.cache-hit }}" == "true" ]; then
+            echo "Cache hit. Updating components..."
+            ./share/Scripts/gitall pull
+          else
+            echo "Cache miss. Installing components..."
+            ./Config.pl -install
+          fi
+
       - name: Checkout FLEKS (Current Commit)
         uses: actions/checkout@v4
         with:
           path: SWMF/PC/FLEKS
 
-      - name: Configure and Install SWMF Components
-        working-directory: SWMF
-        run: |
-          ./Config.pl -install
-
       - name: Build and Run test16_2d
         working-directory: SWMF
         run: |
           make -j$(nproc) test16_2d
+
+      - name: Verify Test Results
+        working-directory: SWMF
+        run: |
+          if [ -s test16_2d_gmpc.diff ]; then
+            echo "::error::Test verification failed! Non-zero diff detected in test16_2d_gmpc.diff"
+            cat test16_2d_gmpc.diff
+            exit 1
+          fi
+          echo "Test verification successful! Diff is empty."
