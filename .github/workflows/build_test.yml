@@ -15,16 +15,36 @@ jobs:
         run: |
           git config --global url."https://github.com/".insteadOf git@github.com:
 
+      - name: Cache apt packages
+        uses: actions/cache@v5
+        with:
+          path: /var/cache/apt/archives
+          key: ${{ runner.os }}-apt-${{ hashFiles('**/build_test.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-
+
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gfortran g++ libopenmpi-dev openmpi-bin perl python3
+          sudo apt-get install -y libopenmpi-dev openmpi-bin
 
       - name: Checkout SWMF Framework
         uses: actions/checkout@v6
         with:
           repository: SWMFsoftware/SWMF
           path: SWMF
+
+      - name: Get AMReX Hash
+        id: amrex-hash
+        run: |
+          echo "hash=$(git ls-remote https://github.com/SWMFsoftware/AMREX.git master | awk '{print $1}')" >> $GITHUB_OUTPUT
+
+      - name: Cache AMReX
+        id: cache-amrex
+        uses: actions/cache@v5
+        with:
+          path: SWMF/util/AMREX
+          key: ${{ runner.os }}-amrex-${{ steps.amrex-hash.outputs.hash }}
 
       - name: Cache SWMF
         id: cache-swmf
@@ -33,7 +53,8 @@ jobs:
           path: |
             SWMF
             !SWMF/PC/FLEKS
-          key: ${{ runner.os }}-swmf-v3-${{ hashFiles('SWMF/Config.pl') }}
+            !SWMF/util/AMREX
+          key: ${{ runner.os }}-swmf-v5-${{ hashFiles('SWMF/Config.pl') }}
 
       - name: Checkout FLEKS (Current Commit)
         uses: actions/checkout@v6
@@ -50,7 +71,7 @@ jobs:
             echo "Cache miss. Installing components..."
           fi
           # Ensure FLEKS is configured, use -o for component options
-          ./Config.pl -install -v=Empty,PC/FLEKS,GM/BATSRUS -o=PC:tp=PBEG
+          ./Config.pl -install=BATSRUS -v=Empty,PC/FLEKS,GM/BATSRUS -o=PC:tp=PBEG
 
       - name: Build and Run test16_2d
         working-directory: SWMF
