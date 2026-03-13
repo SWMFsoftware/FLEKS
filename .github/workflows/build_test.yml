@@ -1,0 +1,130 @@
+name: FLEKS SWMF Integration Test
+
+on:
+  # push:
+  #   branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Force HTTPS for GitHub
+        run: |
+          git config --global url."https://github.com/".insteadOf git@github.com:
+
+      - name: Cache apt packages
+        uses: actions/cache@v5
+        with:
+          path: /var/cache/apt/archives
+          key: ${{ runner.os }}-apt-${{ hashFiles('**/build_test.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenmpi-dev openmpi-bin
+
+      - name: Checkout SWMF Framework
+        uses: actions/checkout@v6
+        with:
+          repository: SWMFsoftware/SWMF
+          path: SWMF
+
+      - name: Get AMReX Hash
+        id: amrex-hash
+        run: |
+          echo "hash=$(git ls-remote https://github.com/SWMFsoftware/AMREX.git master | awk '{print $1}')" >> $GITHUB_OUTPUT
+
+      - name: Cache AMReX
+        id: cache-amrex
+        uses: actions/cache@v5
+        with:
+          path: SWMF/util/AMREX
+          key: ${{ runner.os }}-amrex-${{ steps.amrex-hash.outputs.hash }}
+
+      - name: Cache SWMF
+        id: cache-swmf
+        uses: actions/cache@v5
+        with:
+          path: |
+            SWMF
+            !SWMF/PC/FLEKS
+            !SWMF/util/AMREX
+          key: ${{ runner.os }}-swmf-v5-${{ hashFiles('SWMF/Config.pl') }}
+
+      - name: Checkout FLEKS (Current Commit)
+        uses: actions/checkout@v6
+        with:
+          path: SWMF/PC/FLEKS
+
+      - name: Install or Update SWMF Components
+        working-directory: SWMF
+        run: |
+          if [ "${{ steps.cache-swmf.outputs.cache-hit }}" == "true" ]; then
+            echo "Cache hit. Updating components..."
+            ./share/Scripts/gitall pull
+          else
+            echo "Cache miss. Installing components..."
+          fi
+          # Ensure FLEKS is configured, use -o for component options
+          ./Config.pl -install=BATSRUS -v=Empty,PC/FLEKS,GM/BATSRUS -o=PC:tp=PBEG
+
+      - name: Build and Run test16_2d
+        working-directory: SWMF
+        run: |
+          make -j$(nproc) test16_2d
+
+      - name: Build and Run test16_3d
+        working-directory: SWMF
+        run: |
+          make -j$(nproc) test16_3d
+
+      - name: Build and Run test17
+        working-directory: SWMF
+        run: |
+          make -j$(nproc) test17
+
+      - name: Build and Run test18
+        working-directory: SWMF
+        run: |
+          make -j$(nproc) test18
+
+      - name: Build and Run test23_2d
+        working-directory: SWMF
+        run: |
+          make -j$(nproc) test23_2d
+
+      - name: Build and Run test23_3d
+        working-directory: SWMF
+        run: |
+          make -j$(nproc) test23_3d
+
+      - name: Build and Run test25
+        working-directory: SWMF
+        run: |
+          make -j$(nproc) test25
+
+      - name: Verify Test Results
+        working-directory: SWMF
+        run: |
+          FAILED=0
+          for diff_file in test16_2d_gmpc.diff test16_3d_gmpc.diff \
+                           test17_gmpc.diff test18_gmpc.diff \
+                           test23_2d_gmpc.diff test23_3d_gmpc.diff \
+                           test25_gmpc.diff; do
+            if [ -s "$diff_file" ]; then
+              echo "::error::Test verification failed! Non-zero diff detected in $diff_file"
+              cat "$diff_file"
+              FAILED=1
+            else
+              echo "Test verification successful for $diff_file! Diff is empty."
+            fi
+          done
+          
+          if [ $FAILED -ne 0 ]; then
+            exit 1
+          fi
