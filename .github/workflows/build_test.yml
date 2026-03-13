@@ -26,19 +26,19 @@ jobs:
           repository: SWMFsoftware/SWMF
           path: SWMF
 
-      - name: Cache SWMF Components
+      - name: Cache SWMF
         id: cache-swmf
         uses: actions/cache@v4
         with:
           path: |
-            SWMF/GM
-            SWMF/IE
-            SWMF/IM
-            SWMF/RB
-            SWMF/UA
-            SWMF/util
-            SWMF/share
-          key: ${{ runner.os }}-swmf-components-v1-${{ hashFiles('SWMF/Config.pl') }}
+            SWMF
+            !SWMF/PC/FLEKS
+          key: ${{ runner.os }}-swmf-v3-${{ hashFiles('SWMF/Config.pl') }}
+
+      - name: Checkout FLEKS (Current Commit)
+        uses: actions/checkout@v4
+        with:
+          path: SWMF/PC/FLEKS
 
       - name: Install or Update SWMF Components
         working-directory: SWMF
@@ -46,15 +46,12 @@ jobs:
           if [ "${{ steps.cache-swmf.outputs.cache-hit }}" == "true" ]; then
             echo "Cache hit. Updating components..."
             ./share/Scripts/gitall pull
+            # Ensure FLEKS is configured even on cache hit
+            ./Config.pl -v=Empty,PC/FLEKS,GM/BATSRUS -tp=PBEG
           else
             echo "Cache miss. Installing components..."
             ./Config.pl -install
           fi
-
-      - name: Checkout FLEKS (Current Commit)
-        uses: actions/checkout@v4
-        with:
-          path: SWMF/PC/FLEKS
 
       - name: Build and Run test16_2d
         working-directory: SWMF
