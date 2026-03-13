@@ -58,12 +58,25 @@ jobs:
         run: |
           make -j$(nproc) test16_2d
 
+      - name: Build and Run test16_3d
+        working-directory: SWMF
+        run: |
+          make -j$(nproc) test16_3d
+
       - name: Verify Test Results
         working-directory: SWMF
         run: |
-          if [ -s test16_2d_gmpc.diff ]; then
-            echo "::error::Test verification failed! Non-zero diff detected in test16_2d_gmpc.diff"
-            cat test16_2d_gmpc.diff
+          FAILED=0
+          for diff_file in test16_2d_gmpc.diff test16_3d_gmpc.diff; do
+            if [ -s "$diff_file" ]; then
+              echo "::error::Test verification failed! Non-zero diff detected in $diff_file"
+              cat "$diff_file"
+              FAILED=1
+            else
+              echo "Test verification successful for $diff_file! Diff is empty."
+            fi
+          done
+          
+          if [ $FAILED -ne 0 ]; then
             exit 1
           fi
-          echo "Test verification successful! Diff is empty."
