@@ -46,12 +46,11 @@ jobs:
           if [ "${{ steps.cache-swmf.outputs.cache-hit }}" == "true" ]; then
             echo "Cache hit. Updating components..."
             ./share/Scripts/gitall pull
-            # Ensure FLEKS is configured even on cache hit
-            ./Config.pl -v=Empty,PC/FLEKS,GM/BATSRUS -tp=PBEG
           else
             echo "Cache miss. Installing components..."
-            ./Config.pl -install
           fi
+          # Ensure FLEKS is configured, use -o for component options
+          ./Config.pl -install -v=Empty,PC/FLEKS,GM/BATSRUS -o=PC:tp=PBEG
 
       - name: Build and Run test16_2d
         working-directory: SWMF
