@@ -300,7 +300,7 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
 void Domain::load_balance() {
   timing_func("Domain::load_balance");
 
-  pic->calc_cost_per_cell(balanceStrategy);
+  pic->calc_cost_per_cell(balanceStrategy, cellWeight);
 
   fi->set_cost(pic->get_cost());
 
@@ -865,7 +865,9 @@ void Domain::read_param(const bool readGridInfo) {
       strategy[0] = toupper(strategy[0]);
       balanceStrategy = stringToBalanceStrategy.at(strategy);
 
-      // param.read_var("doSplitLevs", doSplitLevs);
+      if (balanceStrategy == BalanceStrategy::Hybrid) {
+        param.read_var("cellWeight", cellWeight);
+      }
 
       int dn;
       param.read_var("dn", dn);

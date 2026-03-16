@@ -999,28 +999,19 @@ void Pic::calc_mach_number() {
 }
 
 //==========================================================
-void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy) {
+void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight) {
   if (!isMomentsUpdated && balanceStrategy == BalanceStrategy::Particle) {
     sum_moments(false);
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    switch (balanceStrategy) {
-      case BalanceStrategy::Cell: {
-        cellCost[iLev].setVal(1.0);
-        break;
-      }
-      case BalanceStrategy::Particle: {
-        average_node_to_cellcenter(
-            cellCost[iLev], 0, nodePlasma[nSpecies][iLev], iNum_,
-            cellCost[iLev].nComp(), cellCost[iLev].nGrow());
-        break;
-      }
-      case BalanceStrategy::Hybrid: {
-        break;
-      }
-      default:
-        break;
+    if (balanceStrategy == BalanceStrategy::Cell) {
+      cellCost[iLev].setVal(1.0);
+    } else {
+      // Balance by particles or hybrid
+      average_node_to_cellcenter(cellCost[iLev], 0, nodePlasma[nSpecies][iLev],
+                                 iNum_, cellCost[iLev].nComp(),
+                                 cellCost[iLev].nGrow());
     }
 
     for (MFIter mfi(cellCost[iLev]); mfi.isValid(); ++mfi) {
@@ -1041,12 +1032,13 @@ void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy) {
           cost(i, j, k) *= 2;
         }
 
-        if (balanceStrategy == BalanceStrategy::Particle) {
+        if (balanceStrategy == BalanceStrategy::Particle ||
+            balanceStrategy == BalanceStrategy::Hybrid) {
           // 1. The cells have been refined also allocated and use memory.
           // 2. It looks like these cells need calculations when
           // interpolating between levels.
           // 3. The number 10 is chosen by experience.
-          cost(i, j, k) += 10;
+          cost(i, j, k) += cellWeight;
         }
       });
     }

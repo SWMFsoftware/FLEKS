@@ -525,7 +525,11 @@ for the levels of higher resolution.
   <parameter name="loadBalanceStrategy" type="string" input="select" required="T">
     <option value="particle" />
     <option value="cell"   />
+    <option value="hybrid" />
   </parameter>
+  <if expr="$loadBalanceStrategy =~ /hybrid/">
+    <parameter name="cellWeight" type="integer" default="100" />
+  </if>
   <parameter name="dn" type="integer" default="-1" required="T" />
   <parameter name="dt" type="real" default="-1" required="T" />
 
@@ -539,10 +543,22 @@ cell                        loadBalanceStrategy
 -1                          dn 
 8.0                         dt
 
+#LOADBALANCE
+hybrid                      loadBalanceStrategy
+100                         cellWeight
+20                          dn
+-1.0                        dt
+
 Load balancing the blocks based on the work load of each cell. The work load
 is measured by the particle number per cell (ppc) when loadBalanceStrategy
-is 'particle', which is recommended for OH-PT simulations. If loadBalanceStrategy is 'cell', the work loads of all active cells (do not 
-including cells have been refined) are assumed to be the same. 
+is 'particle', which is recommended for OH-PT simulations. If loadBalanceStrategy
+is 'cell', the work loads of all active cells (excluding refined cells) are
+assumed to be the same. 
+
+If 'hybrid' is selected, the work load of a cell is calculated as the sum of
+the particle count and a fixed 'cellWeight'. This ensures cells
+without particles still contribute to the load balance, accounting for the
+overhead of interpolation and memory management.
 
 'dn' and 'dt' control the load balancing frequency.
 </command>
