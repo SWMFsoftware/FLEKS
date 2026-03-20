@@ -679,7 +679,7 @@ unsigned long long int TestParticles::loop_particles(
             recordData[iTPEz_] = (float)(p.rdata(i0 + iTPEz_) * no2outE);
           }
 
-          if (ptRecordSize >= iTPdBxdx_) {
+          if (ptRecordSize > iTPdBxdx_) {
             // no2out for gradient is no2outB/no2outL
             Real no2outG = no2outB / no2outL;
             recordData[iTPdBxdx_] = (float)(p.rdata(i0 + iTPdBxdx_) * no2outG);
