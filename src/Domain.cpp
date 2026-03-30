@@ -21,6 +21,14 @@ void Domain::init(double time, const int iDomain,
   gridName = std::string("FLEKS") + std::to_string(gridID);
   printPrefix = gridName + ": ";
 
+  { // It looks like the file saving may crash if the size of a single file is
+    // too large. The numbers 64 and 2048 are chosen empirically.
+    const int nFileBase = 64;
+    int np = floor(ParallelDescriptor::NProcs() / 2048.0) + 1;
+    nFileField = np * nFileBase;
+    nFileParticle = np * nFileBase * 4;
+  }
+
   param = paramString;
 
   if (!paramInt.empty())
