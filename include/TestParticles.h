@@ -156,6 +156,8 @@ private:
   std::vector<PID> vIDs;
 
   Regions tpRegions;
+
+  bool use_grad_center_to_node_jacobian_ = false;
 };
 
 #endif
