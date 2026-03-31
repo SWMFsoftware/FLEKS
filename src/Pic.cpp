@@ -1418,8 +1418,6 @@ void Pic::free_memory() {
     p->freeUnused();
   }
 
-  amrex::FabArrayBase::flushFBCache();
-  amrex::FabArrayBase::flushCPCache();
   amrex::FabArrayBase::flushTileArrayCache();
 
   amrex::Arena::PrintUsage();
