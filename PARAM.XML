@@ -696,12 +696,12 @@ solver uses Newton-Krylov. Otherwise, it uses GMRES.
 
 </command>
 
-<command name="LAGGEDLIMITERE"
-	 alias="LAGGEDLIMITERE_FLEKS0,LAGGEDLIMITERE_FLEKS1,LAGGEDLIMITERE_FLEKS2"
+<command name="LAGGEDLIMITER"
+	 alias="LAGGEDLIMITER_FLEKS0,LAGGEDLIMITER_FLEKS1,LAGGEDLIMITER_FLEKS2"
 	 multiple="T">
   <parameter name="useLaggedLimiter" type="logical" default="F"/>
 
-#LAGGEDLIMITERE
+#LAGGEDLIMITER
 F                         useLaggedLimiter
 
 When useLaggedLimiter is true, the limiter for the upwind electric field

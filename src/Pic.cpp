@@ -113,7 +113,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#UPWINDE") {
     param.read_var("useUpwindE", useUpwindE);
     param.read_var("limiterThetaE", limiterThetaE);
-  } else if (command == "#LAGGEDLIMITERE") {
+  } else if (command == "#LAGGEDLIMITER") {
     param.read_var("useLaggedLimiter", fsolver.useLaggedLimiter);
   } else if (command == "#CMAXE") {
     param.read_var("cMaxE", cMaxE);
