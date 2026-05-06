@@ -27,22 +27,22 @@ enum PrecondSideType { LEFT };
 
 namespace fleks_jfnk {
 
-inline double finite_difference_epsilon(double normBase,
-                                        double normDirection) {
+inline double finite_difference_epsilon(double normBase, double normDirection) {
   if (normDirection <= 0.0) {
     return 0.0;
   }
 
-  // Scale the finite-difference step with the base state and perturbation norms.
-  return std::sqrt(std::numeric_limits<double>::epsilon()) *
-         (1.0 + normBase) / normDirection;
+  // Scale the finite-difference step with the base state and perturbation
+  // norms.
+  return std::sqrt(std::numeric_limits<double>::epsilon()) * (1.0 + normBase) /
+         normDirection;
 }
 
 template <typename NonlinearMatvec>
-void jacobian_free_matvec(NonlinearMatvec nonlinearMatvec,
-                          const double* base, const double* baseMatvec,
-                          const double* direction, double* out, double* work,
-                          const int n, const int iLev, const double epsilon) {
+void jacobian_free_matvec(NonlinearMatvec nonlinearMatvec, const double *base,
+                          const double *baseMatvec, const double *direction,
+                          double *out, double *work, const int n,
+                          const int iLev, const double epsilon) {
   if (epsilon == 0.0) {
     std::fill(out, out + n, 0.0);
     return;

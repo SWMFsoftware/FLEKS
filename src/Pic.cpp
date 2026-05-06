@@ -1765,8 +1765,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
       const Box& box = mfi.validbox();
       const Array4<Real>& arrE = vecMF[mfi].array();
       const Array4<Real>& arrE0 = nodeE[iLev][mfi].array();
-      const Array4<Real>& limitE =
-          fsolver.useLaggedLimiter ? arrE0 : arrE;
+      const Array4<Real>& limitE = fsolver.useLaggedLimiter ? arrE0 : arrE;
       const Array4<Real>& res = matvecMF[mfi].array();
       const Array4<Real>& arrU = uBg[iLev][mfi].array();
 
