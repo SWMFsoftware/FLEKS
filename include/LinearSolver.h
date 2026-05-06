@@ -1,6 +1,11 @@
 #ifndef _LINEARSOLVER_H_
 #define _LINEARSOLVER_H_
 
+#include <algorithm>
+#include <cmath>
+#include <functional>
+#include <limits>
+
 #include <AMReX_ParallelDescriptor.H>
 
 typedef void (*MATVEC)(const double *vecIn, double *vecOut, int n);
@@ -12,12 +17,51 @@ enum PrecondType {
   BILU,  // LU for diagonal, premultiply U with D^-1
 };
 enum KrylovType { GMRES, BICGSTAB, CG };
+enum class FieldSolverMode { GMRES, NewtonKrylov };
 enum StopType { // (||.|| denotes the 2-norm):
   REL,          // relative stopping crit.:||res|| <= Tol*||res0||
   ABS,          // absolute stopping crit.:||res|| <= Tol
   MAX           // maximum  stopping crit.: max(abs(res)) <= Tol
 };
 enum PrecondSideType { LEFT };
+
+namespace fleks_jfnk {
+
+inline double finite_difference_epsilon(double normBase,
+                                        double normDirection) {
+  if (normDirection <= 0.0) {
+    return 0.0;
+  }
+
+  // Scale the finite-difference step with the base state and perturbation norms.
+  return std::sqrt(std::numeric_limits<double>::epsilon()) *
+         (1.0 + normBase) / normDirection;
+}
+
+template <typename NonlinearMatvec>
+void jacobian_free_matvec(NonlinearMatvec nonlinearMatvec,
+                          const double* base, const double* baseMatvec,
+                          const double* direction, double* out, double* work,
+                          const int n, const int iLev, const double epsilon) {
+  if (epsilon == 0.0) {
+    std::fill(out, out + n, 0.0);
+    return;
+  }
+
+  // Evaluate (F(base + epsilon * direction) - F(base)) / epsilon.
+  for (int i = 0; i < n; ++i) {
+    work[i] = base[i] + epsilon * direction[i];
+  }
+
+  nonlinearMatvec(work, out, iLev);
+
+  const double invEpsilon = 1.0 / epsilon;
+  for (int i = 0; i < n; ++i) {
+    out[i] = (out[i] - baseMatvec[i]) * invEpsilon;
+  }
+}
+
+} // namespace fleks_jfnk
 
 struct LinearSolverParam {
   bool doPrecond;                  // Do preconditioning
@@ -47,6 +91,13 @@ void matvec_divE_accurate(const double *vecIn, double *vecOut, int iLev);
 void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
                          int nDim, int nGrid, double *rhs, double *xLeft,
                          MATVEC fMatvec, int iLev, bool doReport = true);
+
+void linear_solver_wrapper_hy(
+    std::function<void(const double *, double *, const int)> matvec, int iLev,
+    const KrylovType solverType, const double tolerance, const int nIteration,
+    const int nVar, const int nDim, const int nI, const int nJ, const int nK,
+    const int nBlock, MPI_Comm iComm, double *Rhs_I, double *x_I,
+    const PrecondType TypePrecond, double *precond_matrix, const int lTest);
 
 // hyzhou: eventually we should use this and merge the above into this class!
 class LinearSolver {
@@ -122,15 +173,20 @@ public:
                         iLev, doReport);
   }
 
+  void solve(std::function<void(const double *, double *, const int)> matvec,
+             int iLev, bool doReport = true) {
+    int nJ = 1, nK = 1, nBlock = 1;
+    double precondMatrix[1] = { 0.0 };
+    int lTest = (doReport && amrex::ParallelDescriptor::MyProc() == 0);
+
+    linear_solver_wrapper_hy(matvec, iLev, GMRES, tol, nIter, nVar, nDim, nGrid,
+                             nJ, nK, nBlock,
+                             amrex::ParallelDescriptor::Communicator(), rhs,
+                             xLeft, NONE, precondMatrix, lTest);
+  }
+
   int get_nSolve() const { return nSolve; }
 };
-
-void linear_solver_wrapper_hy(
-    std::function<void(const double *, double *, const int)> matvec, int iLev,
-    const KrylovType solverType, const double tolerance, const int nIteration,
-    const int nVar, const int nDim, const int nI, const int nJ, const int nK,
-    const int nBlock, MPI_Comm iComm, double *Rhs_I, double *x_I,
-    const PrecondType TypePrecond, double *precond_matrix, const int lTest);
 
 int gmres(std::function<void(const double *, double *, const int)> matvec,
           int iLev,                // Func for matrix vector multiplication

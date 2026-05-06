@@ -134,23 +134,6 @@ void linear_solver_wrapper_hy(
               << param.error << std::endl;
 }
 
-// In C++20, use span
-double dot_product_mpi(const double *a, const double *b, const int n,
-                       const MPI_Comm iComm) {
-  double c = 0.0;
-  for (int i = 0; i < n; ++i) {
-    c += a[i] * b[i];
-  }
-
-  if (iComm == MPI_COMM_SELF) {
-    return c;
-  } else {
-    double cMpi = 0.0;
-    MPI_Allreduce(&c, &cMpi, 1, MPI_DOUBLE, MPI_SUM, iComm);
-    return cMpi;
-  }
-}
-
 /*
 Initially written by Youcef Saad (May 23, 1985)
 Revised by Henk A. van der Vorst and Mike Botchev (Oct 1996)

@@ -593,7 +593,7 @@ Default values are shown.
 200                      EFieldIter
 
 The tolerance and the maximum iteration number of the electric field 
-GMRES solver. The default values are shown above. 
+solver. The default values are shown above.
 </command>
 
 <command name="DIVE">
@@ -691,6 +691,22 @@ improve stability.
 The limiterThetaE parameter controls the limiter used in the upwind scheme.
 A value of 0 gives a fully diffusive first-order upwind scheme, while a value
 of 1 leads to the minmod limiter, and a value of 2 gives the least diffusive limiter.
+When useLaggedLimiter is false and limiterThetaE is not 0, the electric field
+solver uses Newton-Krylov. Otherwise, it uses GMRES.
+
+</command>
+
+<command name="LAGGEDLIMITERE"
+	 alias="LAGGEDLIMITERE_FLEKS0,LAGGEDLIMITERE_FLEKS1,LAGGEDLIMITERE_FLEKS2"
+	 multiple="T">
+  <parameter name="useLaggedLimiter" type="logical" default="F"/>
+
+#LAGGEDLIMITERE
+F                         useLaggedLimiter
+
+When useLaggedLimiter is true, the limiter for the upwind electric field
+correction is calculated from the lagged node electric field. Otherwise, it is
+calculated from the current electric field solve vector.
 
 </command>
 

@@ -844,7 +844,8 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#ELECTRON" || command == "#DISCRETIZE" ||
         command == "#DISCRETIZATION" || command == "#RESAMPLING" ||
         command == "#SMOOTHE" || command == "#SMOOTHJ" ||
-        command == "#UPWINDB" || command == "#UPWINDE" || command == "#DIVB" ||
+        command == "#UPWINDB" || command == "#UPWINDE" ||
+        command == "#LAGGEDLIMITERE" || command == "#DIVB" ||
         command == "#CMAXE" || command == "#TESTCASE" ||
         command == "#FASTMERGE" || command == "#ADAPTIVESOURCEPPC" ||
         command == "#MERGELIGHT" || command == "#VACUUM" ||
