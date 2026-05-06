@@ -151,6 +151,7 @@ private:
 
   ParticlesInfo pInfo;
 
+
   OHIon ionOH;
 
   // Boundary conditions for particles.
@@ -209,6 +210,7 @@ public:
     centerMM.resize(n_lev_max());
 
     jHat.resize(n_lev_max());
+    exoDensity.resize(n_lev_max());
 
     // At most 10 species.
     pBCs.resize(10);
@@ -252,6 +254,8 @@ public:
   void fill_new_center_B();
 
   void fill_particles();
+
+  void init_exosphere();
 
   void init_source(const FluidInterface &interfaceIn) {
     // To be implemented
@@ -590,6 +594,10 @@ private:
   amrex::Real calc_E_field_energy();
   amrex::Real calc_B_field_energy();
   AMREX_EXPORT amrex::UNode_FourthOrder<amrex::Real> node_fourth_order_interp;
+
+  std::vector<ExosphereInfo> exoInfos;
+  bool useExosphere = false;
+  amrex::Vector<amrex::MultiFab> exoDensity;
 };
 
 void find_output_list_caller(const PlotWriter &writerIn,

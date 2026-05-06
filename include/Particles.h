@@ -97,6 +97,22 @@ struct ParticlesInfo {
   amrex::Real vacuumIO = 0;
 };
 
+struct ExosphereInfo {
+  bool useExosphere = false;
+  int iSpecies = 1;
+  std::string neutralProfile = "exponential";
+  amrex::Real r0 = 0.0;
+  amrex::Vector<amrex::Real> n0;
+  amrex::Vector<amrex::Real> H0;
+  amrex::Vector<amrex::Real> T0;
+  amrex::Vector<amrex::Real> k0;
+  amrex::Real exobaseRadius = 0.0;
+  amrex::Real shadowRadius = 0.0;
+  amrex::Real totalProductionRate = 0.0;
+  amrex::Real nMacroParticlesPerDt = 1000.0;
+};
+
+
 template <int NStructReal, int NStructInt>
 class ParticlesIter : public amrex::ParIter<NStructReal, NStructInt> {
 public:
@@ -285,6 +301,10 @@ public:
                             amrex::IntVect ppc = amrex::IntVect(),
                             const bool doSelectRegion = false,
                             const bool adaptivePPC = false);
+
+  void add_particles_exosphere(const amrex::MultiFab& exoDensity,
+                               amrex::Real dt, int iLev,
+                               amrex::Real weightMacro, int iComp);
 
   // Copy particles from (ip,jp,kp) to (ig, jg, kg) and shift boundary
   // particle's coordinates accordingly.

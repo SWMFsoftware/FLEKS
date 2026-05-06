@@ -15,6 +15,7 @@
 #include "LinearSolver.h"
 #include "Pic.h"
 #include "Timer.h"
+#include <sstream>
 
 using namespace amrex;
 
@@ -212,6 +213,32 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (doSelectParticle) {
       param.read_var("selectParticleInputFile", selectParticleInputFile);
     }
+  } else if (command == "#EXOSPHERE") {
+    useExosphere = true;
+    ExosphereInfo info;
+    param.read_var("iSpecies", info.iSpecies);
+    param.read_var("NeutralProfile", info.neutralProfile);
+    param.read_var("r0", info.r0);
+    param.read_var("ExobaseRadius", info.exobaseRadius);
+    param.read_var("ShadowRadius", info.shadowRadius);
+    param.read_var("TotalProductionRate", info.totalProductionRate);
+    param.read_var("nMacroParticlesPerDt", info.nMacroParticlesPerDt);
+
+    auto parse_real_array = [&](const std::string& name,
+                                amrex::Vector<amrex::Real>& vec) {
+      std::string str;
+      param.read_var(name, str);
+      std::stringstream ss(str);
+      amrex::Real val;
+      while (ss >> val) {
+        vec.push_back(val);
+      }
+    };
+    parse_real_array("n0", info.n0);
+    parse_real_array("H0", info.H0);
+    parse_real_array("T0", info.T0);
+    parse_real_array("k0", info.k0);
+    exoInfos.push_back(info);
   }
 }
 
@@ -345,7 +372,108 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   }
 
   distribute_grid_arrays(cGridsOld);
+  init_exosphere();
 }
+
+//==========================================================
+Real neutralDensityExponential(Real r, Real r0, const Vector<Real>& n0,
+                               const Vector<Real>& H0) {
+  Real n = 0.0;
+  for (int i = 0; i < n0.size(); i++) {
+    n += n0[i] * exp(-(r - r0) / H0[i]);
+  }
+  return n;
+}
+
+Real neutralDensityPowerLaw(Real r, Real r0, const Vector<Real>& n0,
+                            const Vector<Real>& k0) {
+  Real n = 0.0;
+  for (int i = 0; i < n0.size(); i++) {
+    n += n0[i] * pow(r0 / r, k0[i]);
+  }
+  return n;
+}
+
+Real neutralDensityChamberlainH(Real r, Real r0, const Vector<Real>& n0,
+                                const Vector<Real>& H0) {
+  Real n = 0.0;
+  for (int i = 0; i < n0.size(); i++) {
+    n += n0[i] * exp(-H0[i] * (1.0 / r0 - 1.0 / r));
+  }
+  return n;
+}
+
+void Pic::init_exosphere() {
+  if (exoInfos.empty())
+    return;
+  timing_func("Pic::init_exosphere");
+
+  if (nSpecies <= 0)
+    return;
+
+  exoDensity.resize(n_lev());
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    exoDensity[iLev].define(cGrids[iLev], DistributionMap(iLev), nSpecies, 0);
+    exoDensity[iLev].setVal(0.0);
+  }
+
+  for (auto& info : exoInfos) {
+    Real sumLocal = 0;
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      const Real* dx = Geom(iLev).CellSize();
+      const Real* plo = Geom(iLev).ProbLo();
+      const Real vol = AMREX_D_TERM(dx[0], *dx[1], *dx[2]);
+
+      for (MFIter mfi(exoDensity[iLev]); mfi.isValid(); ++mfi) {
+        const Box& bx = mfi.validbox();
+        auto const& exo_arr = exoDensity[iLev].array(mfi);
+
+        int iSpeciesComp = info.iSpecies - 1;
+        ParallelFor(bx, [=](int i, int j, int k) {
+          RealVect pos;
+          AMREX_D_TERM(pos[0] = (i + 0.5) * dx[0] + plo[0];
+                       , pos[1] = (j + 0.5) * dx[1] + plo[1];
+                       , pos[2] = (k + 0.5) * dx[2] + plo[2];)
+          Real r = sqrt(AMREX_D_TERM(pos[0] * pos[0], +pos[1] * pos[1],
+                                     +pos[2] * pos[2]));
+          Real dens = 0;
+          if (r >= info.exobaseRadius) {
+            bool inShadow = false;
+            if (info.shadowRadius > 0) {
+              inShadow = (pos[ix_] < 0 && (pos[iy_] * pos[iy_] +
+                                           (nDim > 2 ? pos[iz_] * pos[iz_] : 0)) <
+                                              info.shadowRadius *
+                                                  info.shadowRadius);
+            }
+            if (!inShadow) {
+              if (info.neutralProfile == "exponential") {
+                dens = neutralDensityExponential(r, info.r0, info.n0, info.H0);
+              } else if (info.neutralProfile == "power-law" ||
+                         info.neutralProfile == "PowerLaw") {
+                dens = neutralDensityPowerLaw(r, info.r0, info.n0, info.k0);
+              } else if (info.neutralProfile == "ChamberlainH") {
+                dens = neutralDensityChamberlainH(r, info.r0, info.n0, info.H0);
+              }
+            }
+          }
+          exo_arr(i, j, k, iSpeciesComp) = dens * vol;
+        });
+      }
+      sumLocal += exoDensity[iLev].sum(info.iSpecies - 1, true);
+    }
+
+    Real sumGlobal = sumLocal;
+    ParallelDescriptor::ReduceRealSum(sumGlobal);
+
+    if (sumGlobal > 0) {
+      Real norm = info.totalProductionRate / sumGlobal;
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        exoDensity[iLev].mult(norm, info.iSpecies - 1, 1, 0);
+      }
+    }
+  }
+}
+
 
 //==========================================================
 void Pic::pre_regrid() {
@@ -583,6 +711,8 @@ void Pic::fill_E_B_fields() {
 void Pic::fill_particles() {
   inject_particles_for_new_cells();
   inject_particles_for_boundary_cells();
+  if (useExosphere)
+    fill_source_particles();
 }
 
 void Pic::fill_source_particles() {
@@ -593,9 +723,27 @@ void Pic::fill_source_particles() {
 #ifdef _PT_COMPONENT_
   doSelectRegion = (nSpecies == 4);
 #endif
-  for (int i = 0; i < nSpecies; ++i) {
-    parts[i]->add_particles_source(source, stateOH, tc->get_dt(), nSourcePPC,
-                                   doSelectRegion, adaptiveSourcePPC);
+  if (useExosphere) {
+    for (auto& info : exoInfos) {
+      if (info.iSpecies > 0 && info.iSpecies <= nSpecies) {
+        Real dt = tc->get_dt();
+        Real weightMacro = (info.nMacroParticlesPerDt > 0)
+                               ? (info.totalProductionRate * dt /
+                                  info.nMacroParticlesPerDt)
+                               : 1.0;
+        for (int iLev = 0; iLev < n_lev(); iLev++) {
+          parts[info.iSpecies - 1]->add_particles_exosphere(
+              exoDensity[iLev], dt, iLev, weightMacro, info.iSpecies - 1);
+        }
+      }
+    }
+  }
+
+  if (source) {
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->add_particles_source(source, stateOH, tc->get_dt(), nSourcePPC,
+                                     doSelectRegion, adaptiveSourcePPC);
+    }
   }
 }
 
@@ -886,6 +1034,12 @@ void Pic::sum_moments(bool updateDt) {
 
   timing_func(nameFunc);
 
+  for (int i = 0; i <= nSpecies; ++i) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      nodePlasma[i][iLev].setVal(0.0);
+    }
+  }
+
   plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; ++i) {
     Real energy = 0.0;
@@ -964,6 +1118,14 @@ void Pic::sum_moments(bool updateDt) {
       // Index of 'nSpecies' represents the sum of all species.
       MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
                     nMoments, nGst);
+    }
+  }
+
+  // Fill ghost cells so that interpolation in PC->GM coupling does not
+  // read uninitialized sentinel values (-7777) from ghost regions.
+  for (int i = 0; i <= nSpecies; ++i) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      nodePlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
     }
   }
 

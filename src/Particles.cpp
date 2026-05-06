@@ -366,6 +366,58 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::add_particles_exosphere(
+    const amrex::MultiFab& exoDensity, amrex::Real dt, int iLev,
+    amrex::Real weightMacro, int iComp) {
+  timing_func("Pts::add_particles_exosphere");
+
+  for (MFIter mfi(exoDensity); mfi.isValid(); ++mfi) {
+    const Box& bx = mfi.validbox();
+    const auto& exo_arr = exoDensity[mfi].array();
+
+    const auto lo = lbound(bx);
+    const auto hi = ubound(bx);
+
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          Real nPhysical = exo_arr(i, j, k, iComp) * dt;
+          if (nPhysical <= 0)
+            continue;
+
+          int nMacro = (int)(nPhysical / weightMacro);
+          if (randNum() < (nPhysical / weightMacro - nMacro))
+            nMacro++;
+
+          if (nMacro > 0) {
+            Real q = qomSign * nPhysical / nMacro;
+            ParticleTileType& particles =
+                get_particle_tile(iLev, mfi, {AMREX_D_DECL(i, j, k)});
+            for (int im = 0; im < nMacro; ++im) {
+              RealVect xyz;
+              for (int d = 0; d < nDim; ++d) {
+                xyz[d] = (i + randNum()) * dx[iLev][d] + plo[iLev][d];
+              }
+
+              ParticleType p;
+              set_ids(p);
+              for (int d = 0; d < nDim; ++d)
+                p.pos(d) = xyz[d];
+              p.rdata(iup_) = 0;
+              p.rdata(ivp_) = 0;
+              p.rdata(iwp_) = 0;
+              p.rdata(iqp_) = q;
+
+              particles.push_back(p);
+            }
+          }
+        }
+  }
+}
+
+
+//==========================================================
+template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_domain() {
   timing_func("Pts::add_particles_domain");
   int iLevMax = 0;

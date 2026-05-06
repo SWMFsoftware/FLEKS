@@ -960,6 +960,40 @@ condition and ghost cells for a FLEKS region.
 The command sets particle number per cell for plasma sources.
 </command>
 
+<command name="EXOSPHERE" multiple="T">
+  <parameter name="iSpecies" type="integer" default="1" />
+  <parameter name="NeutralProfile" type="string" default="exponential" />
+  <parameter name="r0" type="real" default="0.0" />
+  <parameter name="ExobaseRadius" type="real" default="0.0" />
+  <parameter name="ShadowRadius" type="real" default="0.0" />
+  <parameter name="TotalProductionRate" type="real" default="0.0" />
+  <parameter name="nMacroParticlesPerDt" type="real" default="-1.0" />
+  <parameter name="n0" type="string" default="" />
+  <parameter name="H0" type="string" default="" />
+  <parameter name="T0" type="string" default="" />
+  <parameter name="k0" type="string" default="" />
+
+#EXOSPHERE
+1                       iSpecies
+exponential             NeutralProfile
+1.0                     r0
+1.0                     ExobaseRadius
+0.0                     ShadowRadius
+1.0e24                  TotalProductionRate
+1000.0                  nMacroParticlesPerDt
+1.0e11                  n0
+0.03                    H0
+200.0                   T0
+0.0                     k0
+
+This command defines an exospheric neutral density profile and its photoionization rate.
+The neutral density is calculated analytically based on the profile type.
+Supported profiles: 'exponential', 'power-law', 'ChamberlainH'.
+The parameters n0, H0, T0, k0 are read as strings of space-separated values to support multi-component profiles.
+Note: r0, H0, ExobaseRadius, and ShadowRadius must be in simulation units (normalized if xUnitPicSi > 1.0).
+TotalProductionRate is always in SI units [s^-1].
+</command>
+
 <command name="ADAPTIVESOURCEPPC"
 	 alias="ADAPTIVESOURCEPPC_FLEKS0,ADAPTIVESOURCEPPC_FLEKS1,ADAPTIVESOURCEPPC_FLEKS2"
 	 multiple="T">

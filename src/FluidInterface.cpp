@@ -606,34 +606,39 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
       const Array4<Real>& arr = fluid[mfi].array();
       const auto& status = nodeStatus[iLev][mfi].array();
 
-      ParallelFor(box, [&](int i, int j, int k) noexcept {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (bit::is_lev_boundary(status(ijk)) || validBox.contains(ijk)) {
-          // If this node is the boundary or inside the valid box.
+      for (int k = box.smallEnd(2); k <= box.bigEnd(2); ++k) {
+        for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
+          for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
+            IntVect ijk = { AMREX_D_DECL(i, j, k) };
+            if (bit::is_lev_boundary(status(ijk)) || validBox.contains(ijk)) {
+              // If this node is the boundary or inside the valid box.
 
-          if (doCount) {
-            nCount++;
-          } else if (doGetLoc) {
-            for (int iDim = 0; iDim < nDim; iDim++) {
-              if (Geom(iLev).isPeriodic(iDim)) {
-                ijk[iDim] = shift_periodic_index(ijk[iDim], gbx.smallEnd(iDim),
-                                                 gbx.bigEnd(iDim));
+              if (doCount) {
+                nCount++;
+              } else if (doGetLoc) {
+                for (int iDim = 0; iDim < nDim; iDim++) {
+                  int ijk_shifted = ijk[iDim];
+                  if (Geom(iLev).isPeriodic(iDim)) {
+                    ijk_shifted = shift_periodic_index(
+                        ijk_shifted, gbx.smallEnd(iDim), gbx.bigEnd(iDim));
+                  }
+                  pos_DI[nCount++] =
+                      (ijk_shifted * dx[iDim] + plo[iDim]) * no2siL;
+                }
+              } else if (doFill) {
+                if (index[nIdxCount] > 0) {
+                  for (int iVar = 0; iVar < nVarFluid; iVar++) {
+                    int idx;
+                    idx = iVar + nVarFluid * (index[nIdxCount] - 1);
+                    arr(ijk, iVar) = data[idx];
+                  }
+                }
+                nIdxCount++;
               }
             }
-
-            for (int iDim = 0; iDim < get_fluid_dimension(); iDim++) {
-              pos_DI[nCount++] = (ijk[iDim] * dx[iDim] + plo[iDim]) * no2siL;
-            }
-          } else if (doFill) {
-            for (int iVar = 0; iVar < nVarFluid; iVar++) {
-              int idx;
-              idx = iVar + nVarFluid * (index[nIdxCount] - 1);
-              arr(ijk, iVar) = data[idx];
-            }
-            nIdxCount++;
           }
         }
-      });
+      }
     }
 
     fluid.FillBoundary(Geom(iLev).periodicity());
@@ -814,9 +819,15 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
                 arr(i, j, k, iRho_I[iIon]) * (1 + MoMi_S[0] / MoMi_S[iIon + 1]);
           } // iIon
 
-          arr(i, j, k, iUx_I[0]) /= Rhot;
-          arr(i, j, k, iUy_I[0]) /= Rhot;
-          arr(i, j, k, iUz_I[0]) /= Rhot;
+          if (Rhot > 0) {
+            arr(i, j, k, iUx_I[0]) /= Rhot;
+            arr(i, j, k, iUy_I[0]) /= Rhot;
+            arr(i, j, k, iUz_I[0]) /= Rhot;
+          } else {
+            arr(i, j, k, iUx_I[0]) = 0;
+            arr(i, j, k, iUy_I[0]) = 0;
+            arr(i, j, k, iUz_I[0]) = 0;
+          }
         } else {
           for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
             const double& rho = arr(i, j, k, iRho_I[iFluid]);
