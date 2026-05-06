@@ -1697,6 +1697,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real>& arrE = vecMF[mfi].array();
+      const Array4<Real>& arrE0 = nodeE[iLev][mfi].array();
       const Array4<Real>& res = matvecMF[mfi].array();
       const Array4<Real>& arrU = uBg[iLev][mfi].array();
 
@@ -1707,15 +1708,15 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
 
           Real cR = limiter_theta(
               limiterThetaE,
-              arrE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
-              arrE(i, j, k, iVar),
-              arrE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar));
+              arrE0(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
+              arrE0(i, j, k, iVar),
+              arrE0(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar));
 
           Real cL = limiter_theta(
               limiterThetaE,
-              arrE(i - 2 * dii[ix_], j - 2 * dii[iy_], k - 2 * dii[iz_], iVar),
-              arrE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
-              arrE(i, j, k, iVar));
+              arrE0(i - 2 * dii[ix_], j - 2 * dii[iy_], k - 2 * dii[iz_], iVar),
+              arrE0(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
+              arrE0(i, j, k, iVar));
 
           Real ur = cMaxE, ul = cMaxE;
 
