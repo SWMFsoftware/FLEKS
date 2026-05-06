@@ -2,12 +2,15 @@
 #define _UTILITY_H_
 
 #include <algorithm>
+#include <cctype>
+#include <string>
 #include <string_view>
 #include <unistd.h>
 
 #include <AMReX_MultiFab.H>
 #include <AMReX_REAL.H>
 #include <AMReX_iMultiFab.H>
+#include <mpi.h>
 
 #include "Constants.h"
 #include "Timer.h"
@@ -54,6 +57,45 @@ inline int extract_int(std::string_view s) {
     return 0;
   return std::stoi(std::string(s.substr(i0, i1 - i0 + 1)));
 };
+
+// Normalize option strings before comparing user-facing mode names.
+// Examples with the default removed characters:
+//   "NewtonKrylov"   -> "newtonkrylov"
+//   "newton-krylov"  -> "newtonkrylov"
+//   "Newton_Krylov"  -> "newtonkrylov"
+//   "GMRES"          -> "gmres"
+// The second argument can choose a different removal set:
+//   normalize_string_token("A+B-C", "+-") -> "abc"
+inline std::string normalize_string_token(std::string name,
+                                          std::string_view removeChars = "-_") {
+  name.erase(std::remove_if(name.begin(), name.end(),
+                            [removeChars](char c) {
+                              return removeChars.find(c) !=
+                                     std::string_view::npos;
+                            }),
+             name.end());
+  std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  return name;
+}
+
+// Local dot product followed by an optional communicator-wide sum.
+inline double dot_product_mpi(const double* a, const double* b, const int n,
+                              const MPI_Comm iComm) {
+  double c = 0.0;
+  for (int i = 0; i < n; ++i) {
+    c += a[i] * b[i];
+  }
+
+  if (iComm == MPI_COMM_SELF) {
+    return c;
+  }
+
+  double cMpi = 0.0;
+  MPI_Allreduce(&c, &cMpi, 1, MPI_DOUBLE, MPI_SUM, iComm);
+  return cMpi;
+}
 
 inline int shift_periodic_index(int idx, int lo, int hi) {
   if (idx > hi)
