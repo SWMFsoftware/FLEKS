@@ -368,9 +368,9 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_exosphere(
     const amrex::MultiFab& exoDensity, amrex::Real dt, int iLev,
-    amrex::Real weightMacro, int iComp) {
+    amrex::Real weightMacro, int iComp, amrex::Real uth) {
   timing_func("Pts::add_particles_exosphere");
-
+  
   for (MFIter mfi(exoDensity); mfi.isValid(); ++mfi) {
     const Box& bx = mfi.validbox();
     const auto& exo_arr = exoDensity[mfi].array();
@@ -392,20 +392,33 @@ void Particles<NStructReal, NStructInt>::add_particles_exosphere(
           if (nMacro > 0) {
             Real q = qomSign * nPhysical / nMacro;
             ParticleTileType& particles =
-                get_particle_tile(iLev, mfi, {AMREX_D_DECL(i, j, k)});
+                get_particle_tile(iLev, mfi, { AMREX_D_DECL(i, j, k) });
             for (int im = 0; im < nMacro; ++im) {
+              // Sample thermal velocity using Box-Muller transform
+              Real u = 0, v = 0, w = 0;
+              if (uth > 0) {
+                Real prob1 = sqrt(-2.0 * log(1.0 - 0.999999 * randNum()));
+                Real theta1 = 2.0 * M_PI * randNum();
+                Real prob2 = sqrt(-2.0 * log(1.0 - 0.999999 * randNum()));
+                Real theta2 = 2.0 * M_PI * randNum();
+                u = uth * prob1 * cos(theta1);
+                v = uth * prob1 * sin(theta1);
+                w = uth * prob2 * cos(theta2);
+              }
+
               RealVect xyz;
+              IntVect ijk_coord = { AMREX_D_DECL(i, j, k) };
               for (int d = 0; d < nDim; ++d) {
-                xyz[d] = (i + randNum()) * dx[iLev][d] + plo[iLev][d];
+                xyz[d] = (ijk_coord[d] + randNum()) * dx[iLev][d] + plo[iLev][d];
               }
 
               ParticleType p;
               set_ids(p);
               for (int d = 0; d < nDim; ++d)
                 p.pos(d) = xyz[d];
-              p.rdata(iup_) = 0;
-              p.rdata(ivp_) = 0;
-              p.rdata(iwp_) = 0;
+              p.rdata(iup_) = u;
+              p.rdata(ivp_) = v;
+              p.rdata(iwp_) = w;
               p.rdata(iqp_) = q;
 
               particles.push_back(p);

@@ -732,8 +732,18 @@ void Pic::fill_source_particles() {
                                   info.nMacroParticlesPerDt)
                                : 1.0;
         for (int iLev = 0; iLev < n_lev(); iLev++) {
+          if (info.iSpecies - 1 >= parts.size() || !parts[info.iSpecies - 1])
+            continue;
+
+          Real T0_K = info.T0.empty() ? 0.0 : info.T0[0];
+          Real mass_kg = parts[info.iSpecies - 1]->get_mass() *
+                         fi->get_No2SiM(); // PIC mass unit -> kg
+          Real uth_SI = (T0_K > 0 && mass_kg > 0)
+                            ? sqrt(cBoltzmannSI * T0_K / mass_kg)
+                            : 0.0;
+          Real uth = uth_SI * fi->get_Si2NoV(); // SI -> PIC normalized
           parts[info.iSpecies - 1]->add_particles_exosphere(
-              exoDensity[iLev], dt, iLev, weightMacro, info.iSpecies - 1);
+              exoDensity[iLev], dt, iLev, weightMacro, info.iSpecies - 1, uth);
         }
       }
     }
