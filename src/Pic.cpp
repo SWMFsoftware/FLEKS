@@ -413,11 +413,13 @@ void Pic::init_exosphere() {
 
   exoDensity.resize(n_lev());
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    exoDensity[iLev].define(cGrids[iLev], DistributionMap(iLev), nSpecies, 0);
+    exoDensity[iLev].define(cGrids[iLev], DistributionMap(iLev),
+                            exoInfos.size(), 0);
     exoDensity[iLev].setVal(0.0);
   }
 
-  for (auto& info : exoInfos) {
+  for (int iInfo = 0; iInfo < exoInfos.size(); ++iInfo) {
+    auto& info = exoInfos[iInfo];
     Real sumLocal = 0;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       const Real* dx = Geom(iLev).CellSize();
@@ -428,7 +430,6 @@ void Pic::init_exosphere() {
         const Box& bx = mfi.validbox();
         auto const& exo_arr = exoDensity[iLev].array(mfi);
 
-        int iSpeciesComp = info.iSpecies - 1;
         ParallelFor(bx, [=](int i, int j, int k) {
           RealVect pos;
           AMREX_D_TERM(pos[0] = (i + 0.5) * dx[0] + plo[0];
@@ -456,10 +457,10 @@ void Pic::init_exosphere() {
               }
             }
           }
-          exo_arr(i, j, k, iSpeciesComp) = dens * vol;
+          exo_arr(i, j, k, iInfo) = dens * vol;
         });
       }
-      sumLocal += exoDensity[iLev].sum(info.iSpecies - 1, true);
+      sumLocal += exoDensity[iLev].sum(iInfo, true);
     }
 
     Real sumGlobal = sumLocal;
@@ -468,7 +469,7 @@ void Pic::init_exosphere() {
     if (sumGlobal > 0) {
       Real norm = info.totalProductionRate / sumGlobal;
       for (int iLev = 0; iLev < n_lev(); iLev++) {
-        exoDensity[iLev].mult(norm, info.iSpecies - 1, 1, 0);
+        exoDensity[iLev].mult(norm, iInfo, 1, 0);
       }
     }
   }
@@ -724,7 +725,8 @@ void Pic::fill_source_particles() {
   doSelectRegion = (nSpecies == 4);
 #endif
   if (useExosphere) {
-    for (auto& info : exoInfos) {
+    for (int iInfo = 0; iInfo < exoInfos.size(); ++iInfo) {
+      auto& info = exoInfos[iInfo];
       if (info.iSpecies > 0 && info.iSpecies <= nSpecies) {
         Real dt = tc->get_dt();
         Real weightMacro = (info.nMacroParticlesPerDt > 0)
@@ -743,7 +745,7 @@ void Pic::fill_source_particles() {
                             : 0.0;
           Real uth = uth_SI * fi->get_Si2NoV(); // SI -> PIC normalized
           parts[info.iSpecies - 1]->add_particles_exosphere(
-              exoDensity[iLev], dt, iLev, weightMacro, info.iSpecies - 1, uth);
+              exoDensity[iLev], dt, iLev, weightMacro, iInfo, uth);
         }
       }
     }
