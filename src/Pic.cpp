@@ -1606,7 +1606,8 @@ void Pic::update_E_impl() {
                iLev);
 
     } else {
-      // Talha: Remove this step if Coarse NodeEth at fine(is_lev_edge) does not work
+      // Talha: Remove this step if Coarse NodeEth at fine(is_lev_edge) does not
+      // work
       fill_fine_lev_edge_from_coarse(nodeEth[iLev - 1], nodeEth[iLev], 0,
                                      nodeEth[iLev].nComp(), ref_ratio[iLev],
                                      Geom(iLev - 1), Geom(iLev),
