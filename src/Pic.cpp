@@ -1606,16 +1606,11 @@ void Pic::update_E_impl() {
                iLev);
 
     } else {
-
-      fill_fine_lev_bny_from_coarse(
-          nodeE[iLev - 1], nodeE[iLev], 0, nodeE[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
-          node_bilinear_interp);
-
-      fill_fine_lev_bny_from_coarse(
-          nodeEth[iLev - 1], nodeEth[iLev], 0, nodeEth[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
-          node_bilinear_interp);
+      fill_fine_lev_edge_from_coarse(nodeEth[iLev - 1], nodeEth[iLev], 0,
+                                     nodeEth[iLev].nComp(), ref_ratio[iLev],
+                                     Geom(iLev - 1), Geom(iLev),
+                                     node_status(iLev), node_bilinear_interp);
+      nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
     }
 
     if (doSmoothE) {
