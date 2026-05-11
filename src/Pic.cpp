@@ -1604,15 +1604,6 @@ void Pic::update_E_impl() {
       apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
       apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, &Pic::get_node_E,
                iLev);
-
-    } else {
-      // Talha: Remove this step if Coarse NodeEth at fine(is_lev_edge) does not
-      // work
-      fill_fine_lev_edge_from_coarse(nodeEth[iLev - 1], nodeEth[iLev], 0,
-                                     nodeEth[iLev].nComp(), ref_ratio[iLev],
-                                     Geom(iLev - 1), Geom(iLev),
-                                     node_status(iLev), node_bilinear_interp);
-      nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
     }
 
     if (doSmoothE) {
