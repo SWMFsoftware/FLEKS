@@ -4,7 +4,7 @@ name: Format Check and Build
 on:
   push:
     branches: [ "master" ]
-  pull_request:
+  pull_request_target:
     branches: [ "master" ]
 
 jobs:
@@ -18,6 +18,7 @@ jobs:
       with:
         repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
         ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Set up tools
       run: |
@@ -28,7 +29,7 @@ jobs:
       run: python3 tools/format_all.py
 
     - name: Auto-commit formatting changes
-      uses: stefanzweifel/git-auto-commit-action@v5
+      uses: stefanzweifel/git-auto-commit-action@v7
       with:
         commit_message: "style: Auto-format code using format_all.py"
         commit_user_name: "github-actions[bot]"
