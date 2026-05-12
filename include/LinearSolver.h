@@ -164,7 +164,6 @@ public:
   amrex::Real get_tol() const { return tol; }
   int get_nIter() const { return nIter; }
 
-
   void init(int nGridIn, int nVarIn, int nDimIn, MATVEC fIn) {
     nVar = nVarIn;
     nDim = nDimIn;

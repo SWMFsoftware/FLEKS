@@ -26,9 +26,10 @@ void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
   if (true) {
     MPI_Comm iComm = ParallelDescriptor::Communicator();
     PrecondType TypePrecond = NONE;
-    linear_solver_wrapper_hy(fMatvec, iLev, KrylovType::GMRES, tolerance, nIteration,
-                             nVarSolve, nDim, nGrid, nJ, nK, nBlock, iComm, rhs,
-                             xLeft, TypePrecond, precond_matrix_II[0], lTest);
+    linear_solver_wrapper_hy(fMatvec, iLev, KrylovType::GMRES, tolerance,
+                             nIteration, nVarSolve, nDim, nGrid, nJ, nK, nBlock,
+                             iComm, rhs, xLeft, TypePrecond,
+                             precond_matrix_II[0], lTest);
   } else { // Fortran solver
     /*
     // The shared library matvec requires non-const vecIn due to compatibility

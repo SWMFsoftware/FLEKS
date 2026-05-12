@@ -259,7 +259,6 @@ public:
 
   const amrex::iMultiFab& target_PPC(int iLev) const { return targetPPC[iLev]; }
 
-
   std::string lev_string(int iLev) {
     std::string sLev = "_lev_" + std::to_string(iLev);
     if (n_lev_max() == 1) {

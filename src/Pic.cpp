@@ -1643,8 +1643,8 @@ void Pic::solve_E_gmres(int iLev) {
   deltaE.setVal(0.0);
 
   if (doReport)
-    Print() << "\n-------" << printPrefix << " AMReX E solver ------------------"
-            << std::endl;
+    Print() << "\n-------" << printPrefix
+            << " AMReX E solver ------------------" << std::endl;
 
   // 3. Solve using AMReX GMRES
   AmrexLinearSolver amrexOp(this, iLev);
@@ -1892,7 +1892,6 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
   MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
 }
 
-
 //==========================================================
 void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
   std::string nameFunc = "Pic::update_E_M_dot_E";
@@ -1997,7 +1996,6 @@ void Pic::update_E_rhs(MultiFab& temp2Node, int iLev) {
                   tempNode.nGrow());
   }
 }
-
 
 //==========================================================
 void Pic::update_B() {
