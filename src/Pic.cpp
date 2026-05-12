@@ -251,8 +251,9 @@ void Pic::fill_new_cells() {
       parts[i]->set_is_target_ppc_defined(isTargetPPCDefined);
     }
   }
-  if (initEM)
+  if (initEM) {
     fill_E_B_fields();
+  }
 
   if (testCase == LightWave) {
     fill_lightwaves(48.0);

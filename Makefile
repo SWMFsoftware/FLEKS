@@ -32,9 +32,20 @@ bin:
 
 install: bin include/Constants.h include/UserSource.h
 
-LIB: include/Constants.h compile_commands
+ifeq ($(STANDALONE), YES)
+  export FLEKS_DIR = $(PWD)
+
+  LIB: include/Constants.h
+	if [ ! -f Makefile.conf ]; then cp Makefile.conf.standalone.template Makefile.conf; fi
+	cd src;   $(MAKE) LIB STANDALONE=YES
+
+  EXE: LIB
+	cd src;   $(MAKE) EXE STANDALONE=YES
+else
+  LIB: include/Constants.h compile_commands
 	cd src; $(MAKE) LIB
 	cd srcInterface; $(MAKE) LIB
+endif
 
 CONVERTER:
 	cd src; $(MAKE) CONVERTER

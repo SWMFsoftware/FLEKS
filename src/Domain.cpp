@@ -115,6 +115,16 @@ void Domain::init(double time, const int iDomain,
     // may change again during coupling.
     read_restart();
   }
+
+#ifdef FLEKS_STANDALONE
+  if (!initFromSWMF) {
+    fi->set_base_grid(BoxArray(centerBox));
+    pic->set_base_grid(BoxArray(centerBox));
+
+    fi->regrid(fi->get_base_grid(), nullptr);
+    pic->regrid(pic->get_base_grid(), nullptr);
+  }
+#endif
 };
 
 //========================================================
@@ -833,6 +843,15 @@ void Domain::read_param(const bool readGridInfo) {
     if (readGridInfo != isGridCommand)
       continue;
 
+#ifdef FLEKS_STANDALONE
+    if (command == "#DESCRIPTION" || command == "#STOP" ||
+        command == "#RUN") {
+      // These commands are processed by the components or ignored.
+      // In standalone mode, we skip them for the Domain.
+      continue;
+    }
+#endif
+
     param.set_verbose(ParallelDescriptor::IOProcessor());
     Print() << "\n"
             << component << ": " << command << " " << gridName << std::endl;
@@ -857,7 +876,8 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#SELECTPARTICLE" ||
         command == "#OVERRIDEPRESSUREANISOTROPY" ||
         command == "#MAXCHARGEEXCHANGERATE" || command == "#MEMORY") {
-      pic->read_param(command, param);
+      if (pic)
+        pic->read_param(command, param);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
                command == "#TPSAVE" || command == "#TPRELATIVISTIC" ||
