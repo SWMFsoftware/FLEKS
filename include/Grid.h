@@ -255,7 +255,10 @@ public:
     return nodeStatus[iLev];
   }
 
+  const amrex::BoxArray& get_n_grids(int iLev) const { return nGrids[iLev]; }
+
   const amrex::iMultiFab& target_PPC(int iLev) const { return targetPPC[iLev]; }
+
 
   std::string lev_string(int iLev) {
     std::string sLev = "_lev_" + std::to_string(iLev);

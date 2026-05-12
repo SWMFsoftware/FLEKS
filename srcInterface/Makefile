@@ -1,7 +1,8 @@
 include ../Makefile.def
 -include Makefile.DEPEND
 
-SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
+SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH} -I${UTILDIR}/AMREX/Src/LinearSolvers
+
 
 # source files
 SRCS := \

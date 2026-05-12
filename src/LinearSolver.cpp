@@ -26,7 +26,7 @@ void linear_solver_gmres(double tolerance, int nIteration, int nVarSolve,
   if (true) {
     MPI_Comm iComm = ParallelDescriptor::Communicator();
     PrecondType TypePrecond = NONE;
-    linear_solver_wrapper_hy(fMatvec, iLev, GMRES, tolerance, nIteration,
+    linear_solver_wrapper_hy(fMatvec, iLev, KrylovType::GMRES, tolerance, nIteration,
                              nVarSolve, nDim, nGrid, nJ, nK, nBlock, iComm, rhs,
                              xLeft, TypePrecond, precond_matrix_II[0], lTest);
   } else { // Fortran solver
@@ -110,21 +110,22 @@ void linear_solver_wrapper_hy(
 
   // Solve linear problem
   switch (param.typeKrylov) {
-    case GMRES:
+    case KrylovType::GMRES:
       gmres(matvec, iLev, rhs_I, x_I, param.useInitialGuess, nImpl,
             param.nKrylovVector, param.error, param.typeStop, param.nMatvec,
             DoTest, iComm);
       break;
-    case BICGSTAB:
+    case KrylovType::BICGSTAB:
       // bicgstab(matvec, rhs_I, x_I, param.useInitialGuess, nImpl,
       //         param.error, param.typeStop, param.nMatvec,
       //         DoTest, iComm);
       break;
-    case CG:
+    case KrylovType::CG:
       // cg(matvec, rhs_I, x_I, param.useInitialGuess, nImpl,
       //   param.error, param.typeStop, param.nMatvec,
       //   DoTest, iComm);
       break;
+
     default:
       std::cout << "Unknown solver type = " << param.typeKrylov << std::endl;
   }

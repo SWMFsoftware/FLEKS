@@ -18,7 +18,9 @@ SRCS := \
 	Grid.cpp  \
 	DataContainer.cpp \
 	VisitWriter.cpp  \
-	FleksDistributionMap.cpp
+	FleksDistributionMap.cpp \
+	AmrexLinearSolver.cpp
+
 
 OBJECTS := $(patsubst %, %.o,$(basename $(SRCS)))
 
@@ -32,7 +34,8 @@ CONVERTER_OBJECTS = Converter.o
 
 CONVERTEREXE = ../bin/converter.exe
 
-SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
+SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH} -I${UTILDIR}/AMREX/Src/LinearSolvers
+
 
 FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_
 # FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_ -D_AMR_DEV_
@@ -64,7 +67,7 @@ CONVERTER:	${CONVERTER_OBJECTS}
 	@echo
 
 DEPEND:
-	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJECTS} ${OBJECTS_EXE}
+	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJECTS} ${OBJECTS_EXE} ${CONVERTER_OBJECTS}
 
 LIB: DEPEND
 	$(MAKE) ${LIBFLEKS}

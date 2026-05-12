@@ -110,6 +110,10 @@ public:
   void set_tol(amrex::Real in) { tol = in; }
   void set_nIter(int in) { nIter = in; }
 
+  amrex::Real get_tol() const { return tol; }
+  int get_nIter() const { return nIter; }
+
+
   void init(int nGridIn, int nVarIn, int nDimIn, MATVEC fIn) {
     nVar = nVarIn;
     nDim = nDimIn;
