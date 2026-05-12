@@ -3,7 +3,9 @@
 
 #include <iostream>
 
+#include "AmrexLinearSolver.h"
 #include "Array1D.h"
+
 #include "Bit.h"
 #include "Constants.h"
 #include "FleksDistributionMap.h"
@@ -312,8 +314,13 @@ public:
   void solve_E_gmres(int iLev);
   void solve_E_newton_krylov(int iLev);
   void update_E_rhs(double *rhos, int iLev);
+  void update_E_rhs(amrex::MultiFab &rhs, int iLev);
+
   void update_E_matvec(const double *vecIn, double *vecOut, int iLev,
                        const bool useZeroBC = true);
+  void update_E_matvec(const amrex::MultiFab &vecIn, amrex::MultiFab &vecOut,
+                       int iLev, const bool useZeroBC = true);
+
   void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF,
                         int iLev);
 

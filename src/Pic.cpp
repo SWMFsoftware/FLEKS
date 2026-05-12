@@ -1576,7 +1576,6 @@ void Pic::update_E_impl() {
 
     update_E_rhs(eSolver.rhs, iLev);
 
-    // Both solver modes compute one correction in eSolver.xLeft.
     if (fsolver.mode == FieldSolverMode::NewtonKrylov) {
       solve_E_newton_krylov(iLev);
     } else {
@@ -1592,18 +1591,30 @@ void Pic::update_E_impl() {
       smooth_E(nodeEth[iLev], iLev);
     }
 
-    MultiFab::Add(nodeEth[iLev], nodeE[iLev], 0, 0, nodeEth[iLev].nComp(),
-                  nGst);
+    MultiFab::Add(nodeEth[iLev], nodeE[iLev], 0, 0, 3, nGst);
 
     MultiFab::LinComb(nodeE[iLev], -(1.0 - fsolver.theta) / fsolver.theta,
                       nodeE[iLev], 0, 1. / fsolver.theta, nodeEth[iLev], 0, 0,
-                      nodeE[iLev].nComp(), nGst);
+                      3, nGst);
 
     if (iLev == 0) {
 
       apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
       apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, &Pic::get_node_E,
                iLev);
+
+    } else {
+
+      fill_fine_lev_bny_from_coarse(
+          nodeE[iLev - 1], nodeE[iLev], 0, nodeE[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          node_bilinear_interp);
+
+      fill_fine_lev_bny_from_coarse(
+          nodeEth[iLev - 1], nodeEth[iLev], 0, nodeEth[iLev - 1].nComp(),
+
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          node_bilinear_interp);
     }
 
     if (doSmoothE) {
@@ -1616,23 +1627,39 @@ void Pic::update_E_impl() {
 
 //==========================================================
 void Pic::solve_E_gmres(int iLev) {
-  convert_3d_to_1d(nodeE[iLev], eSolver.xLeft, iLev);
+  // 1. Prepare RHS MultiFab: rhs = rhs_full - A(nodeE)
+  MultiFab rhsMF(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+  rhsMF.setVal(0.0);
+  update_E_rhs(rhsMF, iLev);
 
-  update_E_matvec(eSolver.xLeft, eSolver.matvec, iLev, false);
+  MultiFab matvecMF(nGrids[iLev], DistributionMap(iLev), 3, 1);
+  matvecMF.setVal(0.0);
+  update_E_matvec(nodeE[iLev], matvecMF, iLev, false);
 
-  // Original linear solve: A * delta = rhs - A(E_old).
-  for (int i = 0; i < eSolver.get_nSolve(); ++i) {
-    eSolver.rhs[i] -= eSolver.matvec[i];
-    eSolver.xLeft[i] = 0;
-  }
+  MultiFab::Saxpy(rhsMF, -1.0, matvecMF, 0, 0, 3, 0);
+
+  // 2. Prepare Delta E (initial guess = 0)
+  MultiFab deltaE(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+  deltaE.setVal(0.0);
 
   if (doReport)
     Print() << "\n-------" << printPrefix
-            << " GMRES E solver ------------------" << std::endl;
+            << " AMReX E solver ------------------" << std::endl;
 
-  BL_PROFILE_VAR("Pic::E_iterate", eSolver);
-  eSolver.solve(iLev, doReport);
-  BL_PROFILE_VAR_STOP(eSolver);
+  // 3. Solve using AMReX GMRES
+  AmrexLinearSolver amrexOp(this, iLev);
+  amrex::GMRES<MultiFab, AmrexLinearSolver> gmres;
+  gmres.define(amrexOp);
+  gmres.setVerbose(doReport ? 2 : 0);
+  gmres.setMaxIters(eSolver.get_nIter());
+
+  BL_PROFILE_VAR("Pic::E_iterate", amrex_gmres);
+  gmres.solve(deltaE, rhsMF, eSolver.get_tol(), 0.0);
+  BL_PROFILE_VAR_STOP(amrex_gmres);
+
+  // 4. Copy result back to eSolver.xLeft for compatibility with update_E_impl
+  zero_array(eSolver.xLeft, eSolver.get_nSolve());
+  convert_3d_to_1d(deltaE, eSolver.xLeft, iLev);
 }
 
 //==========================================================
@@ -1687,16 +1714,30 @@ void Pic::solve_E_newton_krylov(int iLev) {
 //==========================================================
 void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
                           const bool useZeroBC) {
-  std::string nameFunc = "Pic::E_matvec";
+  std::string nameFunc = "Pic::E_matvec_1d";
   timing_func(nameFunc);
-
-  zero_array(vecOut, eSolver.get_nSolve());
 
   MultiFab vecMF(nGrids[iLev], DistributionMap(iLev), 3, nGst);
   vecMF.setVal(0.0);
+  convert_1d_to_3d(vecIn, vecMF, iLev);
+
+  // convert_1d_to_3d only sets owner nodes; propagate to shared copies.
+  vecMF.SumBoundary(Geom(iLev).periodicity());
 
   MultiFab matvecMF(nGrids[iLev], DistributionMap(iLev), 3, 1);
   matvecMF.setVal(0.0);
+
+  update_E_matvec(vecMF, matvecMF, iLev, useZeroBC);
+
+  zero_array(vecOut, eSolver.get_nSolve());
+  convert_3d_to_1d(matvecMF, vecOut, iLev);
+}
+
+//==========================================================
+void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
+                          const bool useZeroBC) {
+  std::string nameFunc = "Pic::E_matvec";
+  timing_func(nameFunc);
 
   MultiFab tempCenter3(cGrids[iLev], DistributionMap(iLev), 3, nGst);
 
@@ -1705,10 +1746,13 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
 
   MultiFab tempCenter1(cGrids[iLev], DistributionMap(iLev), 1, nGst);
 
-  convert_1d_to_3d(vecIn, vecMF, iLev);
-
-  // The right side edges should be filled in.
-  vecMF.SumBoundary(Geom(iLev).periodicity());
+  // Per AMReX GMRES docs: x in apply(Ax, x) is made by makeVecLHS(),
+  // so const_cast is safe for ghost cell exchange.
+  // Note: SumBoundary is NOT called here. When called from amrex::GMRES,
+  // all valid nodes (including shared boundary nodes) already have correct
+  // values. SumBoundary would incorrectly double shared-node values.
+  // When called from the 1D wrapper, SumBoundary is done before this call.
+  MultiFab& vecMF = const_cast<MultiFab&>(vecIn);
 
   // M*E needs ghost cell information.
   vecMF.FillBoundary(Geom(iLev).periodicity());
@@ -1846,8 +1890,6 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
   MultiFab::Add(matvecMF, tempNode3, 0, 0, matvecMF.nComp(), 0);
 
   MultiFab::Add(matvecMF, vecMF, 0, 0, matvecMF.nComp(), 0);
-
-  convert_3d_to_1d(matvecMF, vecOut, iLev);
 }
 
 //==========================================================
@@ -1899,13 +1941,24 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
 
 //==========================================================
 void Pic::update_E_rhs(double* rhs, int iLev) {
+  std::string nameFunc = "Pic::update_E_rhs_1d";
+  timing_func(nameFunc);
+
+  MultiFab rhsMF(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+  rhsMF.setVal(0.0);
+
+  update_E_rhs(rhsMF, iLev);
+
+  convert_3d_to_1d(rhsMF, rhs, iLev);
+}
+
+//==========================================================
+void Pic::update_E_rhs(MultiFab& temp2Node, int iLev) {
   std::string nameFunc = "Pic::update_E_rhs";
   timing_func(nameFunc);
 
   MultiFab tempNode(nGrids[iLev], DistributionMap(iLev), 3, nGst);
   tempNode.setVal(0.0);
-  MultiFab temp2Node(nGrids[iLev], DistributionMap(iLev), 3, nGst);
-  temp2Node.setVal(0.0);
 
   if (iLev == 0) {
     apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
@@ -1942,8 +1995,6 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
     MultiFab::Add(temp2Node, tempNode, 0, 0, tempNode.nComp(),
                   tempNode.nGrow());
   }
-
-  convert_3d_to_1d(temp2Node, rhs, iLev);
 }
 
 //==========================================================
