@@ -11,14 +11,17 @@ void AmrexLinearSolver::apply(V& Ax, V const& x) {
 
 MultiFab AmrexLinearSolver::makeVecRHS() {
   // Vector for RHS usually doesn't need ghost cells.
-  return MultiFab(m_pic->get_n_grids(m_iLev), m_pic->DistributionMap(m_iLev), 3,
-                  0);
+  MultiFab mf(m_pic->get_n_grids(m_iLev), m_pic->DistributionMap(m_iLev), 3, 0);
+  mf.setVal(0.0);
+  return mf;
 }
 
 MultiFab AmrexLinearSolver::makeVecLHS() {
   // Vector for LHS (solution) needs ghost cells for matrix-vector product.
-  return MultiFab(m_pic->get_n_grids(m_iLev), m_pic->DistributionMap(m_iLev), 3,
-                  m_pic->get_n_ghost());
+  MultiFab mf(m_pic->get_n_grids(m_iLev), m_pic->DistributionMap(m_iLev), 3,
+              m_pic->get_n_ghost());
+  mf.setVal(0.0);
+  return mf;
 }
 
 } // namespace amrex
