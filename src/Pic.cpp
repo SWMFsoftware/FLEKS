@@ -1572,40 +1572,19 @@ void Pic::update_E_impl() {
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    // 1. Prepare RHS MultiFab: rhs = rhs_full - A(nodeE)
-    MultiFab rhsMF(nGrids[iLev], DistributionMap(iLev), 3, nGst);
-    rhsMF.setVal(0.0);
-    update_E_rhs(rhsMF, iLev);
+    eSolver.reset(get_local_node_or_cell_number(nodeE[iLev]));
 
-    MultiFab matvecMF(nGrids[iLev], DistributionMap(iLev), 3, 1);
-    matvecMF.setVal(0.0);
-    update_E_matvec(nodeE[iLev], matvecMF, iLev, false);
+    update_E_rhs(eSolver.rhs, iLev);
 
-    MultiFab::Saxpy(rhsMF, -1.0, matvecMF, 0, 0, 3, 0);
+    if (fsolver.mode == FieldSolverMode::NewtonKrylov) {
+      solve_E_newton_krylov(iLev);
+    } else {
+      solve_E_gmres(iLev);
+    }
 
-    // 2. Prepare Delta E (initial guess = 0)
-    MultiFab deltaE(nGrids[iLev], DistributionMap(iLev), 3, nGst);
-    deltaE.setVal(0.0);
-
-    if (doReport)
-      Print() << "\n-------" << printPrefix << " AMReX E solver ------------------"
-              << std::endl;
-
-    // 3. Solve using AMReX GMRES
-    AmrexLinearSolver amrexOp(this, iLev);
-    amrex::GMRES<MultiFab, AmrexLinearSolver> gmres;
-    gmres.define(amrexOp);
-    gmres.setVerbose(doReport ? 2 : 0);
-    gmres.setMaxIters(eSolver.get_nIter());
-    
-    BL_PROFILE_VAR("Pic::E_iterate", amrex_gmres);
-    gmres.solve(deltaE, rhsMF, eSolver.get_tol(), 0.0);
-    BL_PROFILE_VAR_STOP(amrex_gmres);
-
-    // 4. Update fields: deltaE has correct values on all valid nodes
-    // from GMRES. No SumBoundary needed — shared nodes already correct.
     nodeEth[iLev].setVal(0.0);
-    MultiFab::Copy(nodeEth[iLev], deltaE, 0, 0, 3, 0);
+    convert_1d_to_3d(eSolver.xLeft, nodeEth[iLev], iLev);
+    nodeEth[iLev].SumBoundary(Geom(iLev).periodicity());
     nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
 
     if (doSmoothE) {
@@ -1648,23 +1627,39 @@ void Pic::update_E_impl() {
 
 //==========================================================
 void Pic::solve_E_gmres(int iLev) {
-  convert_3d_to_1d(nodeE[iLev], eSolver.xLeft, iLev);
+  // 1. Prepare RHS MultiFab: rhs = rhs_full - A(nodeE)
+  MultiFab rhsMF(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+  rhsMF.setVal(0.0);
+  update_E_rhs(rhsMF, iLev);
 
-  update_E_matvec(eSolver.xLeft, eSolver.matvec, iLev, false);
+  MultiFab matvecMF(nGrids[iLev], DistributionMap(iLev), 3, 1);
+  matvecMF.setVal(0.0);
+  update_E_matvec(nodeE[iLev], matvecMF, iLev, false);
 
-  // Original linear solve: A * delta = rhs - A(E_old).
-  for (int i = 0; i < eSolver.get_nSolve(); ++i) {
-    eSolver.rhs[i] -= eSolver.matvec[i];
-    eSolver.xLeft[i] = 0;
-  }
+  MultiFab::Saxpy(rhsMF, -1.0, matvecMF, 0, 0, 3, 0);
+
+  // 2. Prepare Delta E (initial guess = 0)
+  MultiFab deltaE(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+  deltaE.setVal(0.0);
 
   if (doReport)
-    Print() << "\n-------" << printPrefix
-            << " GMRES E solver ------------------" << std::endl;
+    Print() << "\n-------" << printPrefix << " AMReX E solver ------------------"
+            << std::endl;
 
-  BL_PROFILE_VAR("Pic::E_iterate", eSolver);
-  eSolver.solve(iLev, doReport);
-  BL_PROFILE_VAR_STOP(eSolver);
+  // 3. Solve using AMReX GMRES
+  AmrexLinearSolver amrexOp(this, iLev);
+  amrex::GMRES<MultiFab, AmrexLinearSolver> gmres;
+  gmres.define(amrexOp);
+  gmres.setVerbose(doReport ? 2 : 0);
+  gmres.setMaxIters(eSolver.get_nIter());
+
+  BL_PROFILE_VAR("Pic::E_iterate", amrex_gmres);
+  gmres.solve(deltaE, rhsMF, eSolver.get_tol(), 0.0);
+  BL_PROFILE_VAR_STOP(amrex_gmres);
+
+  // 4. Copy result back to eSolver.xLeft for compatibility with update_E_impl
+  zero_array(eSolver.xLeft, eSolver.get_nSolve());
+  convert_3d_to_1d(deltaE, eSolver.xLeft, iLev);
 }
 
 //==========================================================
