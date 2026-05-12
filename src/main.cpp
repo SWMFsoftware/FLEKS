@@ -11,11 +11,11 @@
 Domains fleksDomains;
 
 extern "C" {
-  void timing_start_c(size_t* nameLen, char* name) {}
-  void timing_stop_c(size_t* nameLen, char* name) {}
+void timing_start_c(size_t* nameLen, char* name) {}
+void timing_stop_c(size_t* nameLen, char* name) {}
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
   using namespace amrex;
 
   Initialize(argc, argv);
@@ -49,8 +49,8 @@ int main(int argc, char *argv[]) {
 
     // Create output directories
     if (ParallelDescriptor::IOProcessor()) {
-        ::system("mkdir -p FLEKS1/plots");
-        ::system("mkdir -p FLEKS1/restartOUT");
+      ::system("mkdir -p FLEKS1/plots");
+      ::system("mkdir -p FLEKS1/restartOUT");
     }
 
     // 2. Initialize Domain
