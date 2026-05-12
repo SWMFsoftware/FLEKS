@@ -26,9 +26,13 @@ class FieldSolver {
 public:
   amrex::Real theta;
   amrex::Real coefDiff;
+  bool useLaggedLimiter;
+  FieldSolverMode mode;
   FieldSolver() {
     theta = 0.51;
     coefDiff = 0.1;
+    useLaggedLimiter = false;
+    mode = FieldSolverMode::GMRES;
   }
 };
 
@@ -307,6 +311,8 @@ public:
   void update_E();
   void update_E_impl();
   void update_E_expl();
+  void solve_E_gmres(int iLev);
+  void solve_E_newton_krylov(int iLev);
   void update_E_rhs(double *rhos, int iLev);
   void update_E_rhs(amrex::MultiFab &rhs, int iLev);
 

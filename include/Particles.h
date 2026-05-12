@@ -148,7 +148,7 @@ public:
   // Since this is a template, the compiler will not search names in the base
   // class by default, and the following 'using ' statements are required.
   using ParticleType = amrex::Particle<NStructReal, NStructInt>;
-  using ParticleTileType = amrex::ParticleTile<NStructReal, NStructInt, 0, 0>;
+  using ParticleTileType = amrex::ParticleTile<ParticleType, 0, 0>;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::Geom;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::do_tiling;
   using amrex::AmrParticleContainer<NStructReal, NStructInt>::tile_size;
@@ -170,7 +170,7 @@ public:
   using amrex::AmrParticleContainer<NStructReal,
                                     NStructInt>::AddParticlesAtLevel;
 
-  using AoS = amrex::ArrayOfStructs<NStructReal, NStructInt>;
+  using AoS = amrex::ArrayOfStructs<ParticleType>;
 
   using PIter = ParticlesIter<NStructReal, NStructInt>;
 

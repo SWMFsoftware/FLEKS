@@ -21,6 +21,14 @@ void Domain::init(double time, const int iDomain,
   gridName = std::string("FLEKS") + std::to_string(gridID);
   printPrefix = gridName + ": ";
 
+  { // It looks like the file saving may crash if the size of a single file is
+    // too large. The numbers 64 and 2048 are chosen empirically.
+    const int nFileBase = 64;
+    int np = floor(ParallelDescriptor::NProcs() / 2048.0) + 1;
+    nFileField = np * nFileBase;
+    nFileParticle = np * nFileBase * 4;
+  }
+
   param = paramString;
 
   if (!paramInt.empty())
@@ -300,7 +308,7 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
 void Domain::load_balance() {
   timing_func("Domain::load_balance");
 
-  pic->calc_cost_per_cell(balanceStrategy);
+  pic->calc_cost_per_cell(balanceStrategy, cellWeight);
 
   fi->set_cost(pic->get_cost());
 
@@ -836,7 +844,8 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#ELECTRON" || command == "#DISCRETIZE" ||
         command == "#DISCRETIZATION" || command == "#RESAMPLING" ||
         command == "#SMOOTHE" || command == "#SMOOTHJ" ||
-        command == "#UPWINDB" || command == "#UPWINDE" || command == "#DIVB" ||
+        command == "#UPWINDB" || command == "#UPWINDE" ||
+        command == "#LAGGEDLIMITER" || command == "#DIVB" ||
         command == "#CMAXE" || command == "#TESTCASE" ||
         command == "#FASTMERGE" || command == "#ADAPTIVESOURCEPPC" ||
         command == "#MERGELIGHT" || command == "#VACUUM" ||
@@ -865,7 +874,9 @@ void Domain::read_param(const bool readGridInfo) {
       strategy[0] = toupper(strategy[0]);
       balanceStrategy = stringToBalanceStrategy.at(strategy);
 
-      // param.read_var("doSplitLevs", doSplitLevs);
+      if (balanceStrategy == BalanceStrategy::Hybrid) {
+        param.read_var("cellWeight", cellWeight);
+      }
 
       int dn;
       param.read_var("dn", dn);

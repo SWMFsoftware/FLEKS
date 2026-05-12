@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <math.h>
+#include <vector>
 
 #include <AMReX_Algorithm.H>
 #include <AMReX_CArena.H>
@@ -112,6 +113,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#UPWINDE") {
     param.read_var("useUpwindE", useUpwindE);
     param.read_var("limiterThetaE", limiterThetaE);
+  } else if (command == "#LAGGEDLIMITER") {
+    param.read_var("useLaggedLimiter", fsolver.useLaggedLimiter);
   } else if (command == "#CMAXE") {
     param.read_var("cMaxE", cMaxE);
   } else if (command == "#SMOOTHE") {
@@ -216,6 +219,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 void Pic::post_process_param() {
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
+  fsolver.mode = (!fsolver.useLaggedLimiter && limiterThetaE != 0)
+                     ? FieldSolverMode::NewtonKrylov
+                     : FieldSolverMode::GMRES;
 }
 
 //==========================================================
@@ -1639,6 +1645,77 @@ void Pic::update_E_impl() {
     div_node_to_center(nodeE[iLev], centerDivE[iLev], Geom(iLev).InvCellSize());
   }
 }
+
+//==========================================================
+void Pic::solve_E_gmres(int iLev) {
+  convert_3d_to_1d(nodeE[iLev], eSolver.xLeft, iLev);
+
+  update_E_matvec(eSolver.xLeft, eSolver.matvec, iLev, false);
+
+  // Original linear solve: A * delta = rhs - A(E_old).
+  for (int i = 0; i < eSolver.get_nSolve(); ++i) {
+    eSolver.rhs[i] -= eSolver.matvec[i];
+    eSolver.xLeft[i] = 0;
+  }
+
+  if (doReport)
+    Print() << "\n-------" << printPrefix
+            << " GMRES E solver ------------------" << std::endl;
+
+  BL_PROFILE_VAR("Pic::E_iterate", eSolver);
+  eSolver.solve(iLev, doReport);
+  BL_PROFILE_VAR_STOP(eSolver);
+}
+
+//==========================================================
+void Pic::solve_E_newton_krylov(int iLev) {
+  const int nSolve = eSolver.get_nSolve();
+
+  std::vector<double> base(nSolve);
+  std::vector<double> baseMatvec(nSolve);
+  std::vector<double> work(nSolve);
+
+  convert_3d_to_1d(nodeE[iLev], base.data(), iLev);
+
+  update_E_matvec(base.data(), baseMatvec.data(), iLev, false);
+
+  // One Newton step: J(E_old) * delta = rhs - F(E_old).
+  for (int i = 0; i < nSolve; ++i) {
+    eSolver.rhs[i] -= baseMatvec[i];
+    eSolver.xLeft[i] = 0;
+  }
+
+  if (doReport)
+    Print() << "\n-------" << printPrefix
+            << " Newton-Krylov E solver ------------------" << std::endl;
+
+  BL_PROFILE_VAR("Pic::E_iterate", eSolver);
+  const MPI_Comm iComm = ParallelDescriptor::Communicator();
+  const double normBase =
+      sqrt(dot_product_mpi(base.data(), base.data(), nSolve, iComm));
+
+  // GMRES only sees this linearized Jacobian-vector product.
+  auto jacobianFreeMatvec = [this, &base, &baseMatvec, &work, nSolve, normBase,
+                             iComm](const double* vecIn, double* vecOut,
+                                    const int iLevIn) {
+    const double normDirection =
+        sqrt(dot_product_mpi(vecIn, vecIn, nSolve, iComm));
+    const double epsilon =
+        fleks_jfnk::finite_difference_epsilon(normBase, normDirection);
+
+    auto nonlinearMatvec = [this](const double* in, double* out,
+                                  const int iLevMatvec) {
+      update_E_matvec(in, out, iLevMatvec, false);
+    };
+
+    fleks_jfnk::jacobian_free_matvec(nonlinearMatvec, base.data(),
+                                     baseMatvec.data(), vecIn, vecOut,
+                                     work.data(), nSolve, iLevIn, epsilon);
+  };
+
+  eSolver.solve(jacobianFreeMatvec, iLev, doReport);
+  BL_PROFILE_VAR_STOP(eSolver);
+}
 //==========================================================
 void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
                           const bool useZeroBC) {
@@ -1724,6 +1801,8 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
     for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real>& arrE = vecMF[mfi].array();
+      const Array4<Real>& arrE0 = nodeE[iLev][mfi].array();
+      const Array4<Real>& limitE = fsolver.useLaggedLimiter ? arrE0 : arrE;
       const Array4<Real>& res = matvecMF[mfi].array();
       const Array4<Real>& arrU = uBg[iLev][mfi].array();
 
@@ -1734,15 +1813,16 @@ void Pic::update_E_matvec(const MultiFab& vecIn, MultiFab& matvecMF, int iLev,
 
           Real cR = limiter_theta(
               limiterThetaE,
-              arrE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
-              arrE(i, j, k, iVar),
-              arrE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar));
+              limitE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
+              limitE(i, j, k, iVar),
+              limitE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar));
 
           Real cL = limiter_theta(
               limiterThetaE,
-              arrE(i - 2 * dii[ix_], j - 2 * dii[iy_], k - 2 * dii[iz_], iVar),
-              arrE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
-              arrE(i, j, k, iVar));
+              limitE(i - 2 * dii[ix_], j - 2 * dii[iy_], k - 2 * dii[iz_],
+                     iVar),
+              limitE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
+              limitE(i, j, k, iVar));
 
           Real ur = cMaxE, ul = cMaxE;
 

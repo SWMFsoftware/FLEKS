@@ -118,6 +118,10 @@ void PlotWriter::init() {
     useMpiIO = true;
   }
 
+  if (plotString.find("nompiio") != std::string::npos) {
+    useMpiIO = false;
+  }
+
   // Analyze plot variables.
   var_I.push_back("X");
   var_I.push_back("Y");
