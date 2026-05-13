@@ -1,4 +1,4 @@
-default: FLEKS
+default: EXE
 
 -include Makefile.conf
 -include Makefile.def
@@ -6,7 +6,7 @@ default: FLEKS
 help:
 	@echo Makefile targets:
 	@echo
-	#@echo 'make FLEKS                  - compile standalone executable'
+	@echo 'make EXE                    - compile standalone executable'
 	@echo 'make LIB                    - compile libPC.a for SWMF'
 	@echo 'make clean                  - remove object files'
 	@echo 'make distclean              - remove all files not part of CVS'
@@ -24,8 +24,8 @@ include/UserSource.h: include/UserSource.h.orig
 GITINFO: include/show_git_info.h
 	${SCRIPTDIR}/gitall -r=c > include/show_git_info.h
 
-FLEKS: GITINFO compile_commands
-	cd src; ${MAKE} EXE
+EXE: GITINFO compile_commands
+	cd src; $(MAKE) EXE STANDALONE=YES FLEKS_DIR=$(CURDIR)
 
 bin:
 	mkdir bin
@@ -36,11 +36,12 @@ ifeq ($(STANDALONE), YES)
   export FLEKS_DIR = $(PWD)
 
   LIB: include/Constants.h
+	@if [ -f Makefile.conf ] && ! grep -q "standalone" Makefile.conf; then \
+		echo "Moving existing SWMF Makefile.conf to Makefile.conf.swmf"; \
+		mv Makefile.conf Makefile.conf.swmf; \
+	fi
 	if [ ! -f Makefile.conf ]; then cp Makefile.conf.standalone.template Makefile.conf; fi
 	cd src;   $(MAKE) LIB STANDALONE=YES
-
-  EXE: LIB
-	cd src;   $(MAKE) EXE STANDALONE=YES
 else
   LIB: include/Constants.h compile_commands
 	cd src; $(MAKE) LIB
