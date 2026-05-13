@@ -123,7 +123,8 @@ int main(int argc, char* argv[]) {
       char command[2000];
       std::snprintf(command, 2000, "\\rm -rf %s", fileNames[i].c_str());
       std::cout << "Deleting source file: " << fileNames[i] << std::endl;
-      std::system(command);
+      int res = std::system(command);
+      (void)res;
     }
   }
 

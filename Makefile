@@ -24,7 +24,38 @@ include/UserSource.h: include/UserSource.h.orig
 GITINFO: include/show_git_info.h
 	${SCRIPTDIR}/gitall -r=c > include/show_git_info.h
 
+# Detect whether FLEKS lives inside the SWMF tree or is a pure standalone checkout.
+# If ../../share/Library/src exists we are inside SWMF; otherwise pure standalone.
+_SWMF_SHARE := $(abspath $(CURDIR)/../../share)
+ifneq ($(wildcard $(_SWMF_SHARE)/Library/src),)
+  # Inside SWMF tree: reuse SWMF's share and lib directories.
+  SHARE_ROOT = $(_SWMF_SHARE)
+  SHARE_SRC  = $(SHARE_ROOT)/Library/src
+  SHARE_LIB  = $(abspath $(CURDIR)/../../lib/libSHARE.a)
+else
+  # Pure standalone: use share/ cloned under the FLEKS directory.
+  SHARE_ROOT = $(abspath $(CURDIR)/share)
+  SHARE_SRC  = $(SHARE_ROOT)/Library/src
+  SHARE_LIB  = $(abspath $(CURDIR)/lib/libSHARE.a)
+endif
+
+GITCLONE_SHARE  = git clone git@github.com:SWMFsoftware/share $(CURDIR)/share
+BUILD_MODE_FILE = src/.build_mode
+
 EXE: GITINFO compile_commands
+	@if [ ! -d $(SHARE_ROOT)/Library/src ]; then \
+		echo "--- Cloning SWMFsoftware/share (not found at $(SHARE_ROOT)) ---"; \
+		$(GITCLONE_SHARE); \
+	fi
+	@if [ ! -f $(SHARE_LIB) ]; then \
+		echo "--- Building libSHARE.a ---"; \
+		$(MAKE) -C $(SHARE_SRC) LIB; \
+	fi
+	@if [ -f $(BUILD_MODE_FILE) ] && [ "$$(cat $(BUILD_MODE_FILE))" != "STANDALONE" ]; then \
+		echo "--- Switching from component to standalone mode: auto-cleaning src/ ---"; \
+		cd src; $(MAKE) clean; \
+	fi
+	@echo STANDALONE > $(BUILD_MODE_FILE)
 	cd src; $(MAKE) EXE STANDALONE=YES FLEKS_DIR=$(CURDIR)
 
 bin:
@@ -32,21 +63,37 @@ bin:
 
 install: bin include/Constants.h include/UserSource.h
 
-ifeq ($(STANDALONE), YES)
-  export FLEKS_DIR = $(PWD)
-
-  LIB: include/Constants.h
-	@if [ -f Makefile.conf ] && ! grep -q "standalone" Makefile.conf; then \
-		echo "Moving existing SWMF Makefile.conf to Makefile.conf.swmf"; \
-		mv Makefile.conf Makefile.conf.swmf; \
+LIB: include/Constants.h compile_commands
+	@if [ ! -d $(_SWMF_SHARE)/Library/src ]; then \
+		echo ""; \
+		echo "ERROR: 'make LIB' is for SWMF component builds only."; \
+		echo "       Use 'make EXE' to build the standalone executable."; \
+		echo ""; \
+		exit 1; \
 	fi
-	if [ ! -f Makefile.conf ]; then cp Makefile.conf.standalone.template Makefile.conf; fi
-	cd src;   $(MAKE) LIB STANDALONE=YES
-else
-  LIB: include/Constants.h compile_commands
+	@if [ ! -f $(SHARE_LIB) ]; then \
+		echo ""; \
+		echo "ERROR: $(SHARE_LIB) not found."; \
+		echo "       The SWMF share library must be built before 'make LIB'."; \
+		echo "       Please run the top-level SWMF build first."; \
+		echo ""; \
+		exit 1; \
+	fi
+	@if [ ! -f $(_SWMF_SHARE)/include/con_comp_param.mod ]; then \
+		echo ""; \
+		echo "ERROR: CON Fortran modules not found in $(_SWMF_SHARE)/include/."; \
+		echo "       The SWMF CON library must be built before 'make LIB'."; \
+		echo "       Please run the top-level SWMF build first."; \
+		echo ""; \
+		exit 1; \
+	fi
+	@if [ -f $(BUILD_MODE_FILE) ] && [ "$$(cat $(BUILD_MODE_FILE))" != "COMPONENT" ]; then \
+		echo "--- Switching from standalone to component mode: auto-cleaning src/ ---"; \
+		cd src; $(MAKE) clean; \
+	fi
+	@echo COMPONENT > $(BUILD_MODE_FILE)
 	cd src; $(MAKE) LIB
 	cd srcInterface; $(MAKE) LIB
-endif
 
 CONVERTER:
 	cd src; $(MAKE) CONVERTER
@@ -65,6 +112,7 @@ clean:
 	cd src; $(MAKE) clean
 	cd srcInterface; $(MAKE) clean
 	rm -rf bin/*
+	rm -f $(BUILD_MODE_FILE)
 
 distclean:	
 	-@(./Config.pl -uninstall)
