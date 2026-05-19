@@ -20,7 +20,7 @@ our @Arguments       = @ARGV;
 my $config     = "share/Scripts/Config.pl";
 
 my $GITCLONE = "git clone"; 
-my $GITDIR = "git@github.com:SWMFsoftware";
+my $GITDIR = "git\@github.com:SWMFsoftware";
 
 if (not -f $config and not -f "../../$config"){
     # Stand-alone
