@@ -47,6 +47,10 @@ EXE: GITINFO compile_commands
 		echo "--- Cloning SWMFsoftware/share (not found at $(SHARE_ROOT)) ---"; \
 		$(GITCLONE_SHARE); \
 	fi
+	@if [ ! -f Makefile.conf ]; then \
+		echo "--- Configuring FLEKS ---"; \
+		./Config.pl -install; \
+	fi
 	@if [ ! -f $(SHARE_LIB) ]; then \
 		echo "--- Building libSHARE.a ---"; \
 		$(MAKE) -C $(SHARE_SRC) LIB; \
