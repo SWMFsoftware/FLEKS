@@ -1,0 +1,46 @@
+#DESCRIPTION
+Standalone FLEKS test
+
+#GEOMETRY
+-1.0            min x
+ 1.0            max x
+-1.0            min y
+ 1.0            max y
+-1.0            min z
+ 1.0            max z
+
+#NCELL
+8               nx
+8               ny
+8               nz
+
+#TIMESTEP
+T               useFixedDt
+1.0             dtSI
+
+#PARTICLES
+1               npcelx
+1               npcely
+1               npcelz
+
+#PLASMA
+1               nSpecies
+1.0             mass
+1.0             charge
+
+#UNIFORMSTATE
+1.0             rho
+0.0             ux
+0.0             uy
+0.0             uz
+1.0             T
+0.0             bx
+0.0             by
+1.0             bz
+0.0             ex
+0.0             ey
+0.0             ez
+
+#STOP
+-1              MaxIter
+2.0             TimeMax

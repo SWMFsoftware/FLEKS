@@ -5,6 +5,7 @@
 *.exe
 *.in
 *.out
+!tests/**/*.in
 *~
 *.d
 *.aux
