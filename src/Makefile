@@ -1,9 +1,12 @@
 ifeq ($(STANDALONE), YES)
   include ../Makefile.conf
-  SHARE_DIR ?= $(FLEKS_DIR)/share/Library/src
-  AMREX_DIR ?= $(FLEKS_DIR)/util/AMREX/InstallDir
-  FLEKS_SCRIPTDIR ?= $(FLEKS_DIR)/share/Scripts
-  LDFS ?= -L$(FLEKS_DIR)/lib -lSHARE
+  SHARE_ROOT ?= $(FLEKS_DIR)/share
+  UTIL_ROOT ?= $(FLEKS_DIR)/util
+  LIB_ROOT ?= $(FLEKS_DIR)/lib
+  SHARE_DIR ?= $(SHARE_ROOT)/Library/src
+  AMREX_DIR ?= $(UTIL_ROOT)/AMREX/InstallDir
+  FLEKS_SCRIPTDIR ?= $(SHARE_ROOT)/Scripts
+  LDFS ?= -L$(LIB_ROOT) -lSHARE
   LDFLAGS ?= -L$(AMREX_DIR)/lib -lamrex -lgfortran -lm
   SEARCH_C = -I../include -I${SHARE_DIR} -I${AMREX_DIR}/include
   FLAGC_EXTRA = -D_PC_COMPONENT_ -DFLEKS_STANDALONE

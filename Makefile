@@ -31,12 +31,16 @@ ifneq ($(wildcard $(_SWMF_SHARE)/Library/src),)
   # Inside SWMF tree: reuse SWMF's share and lib directories.
   SHARE_ROOT = $(_SWMF_SHARE)
   SHARE_SRC  = $(SHARE_ROOT)/Library/src
-  SHARE_LIB  = $(abspath $(CURDIR)/../../lib/libSHARE.a)
+  LIB_ROOT   = $(abspath $(CURDIR)/../../lib)
+  SHARE_LIB  = $(LIB_ROOT)/libSHARE.a
+  UTIL_ROOT  = $(abspath $(CURDIR)/../../util)
 else
   # Pure standalone: use share/ cloned under the FLEKS directory.
   SHARE_ROOT = $(abspath $(CURDIR)/share)
   SHARE_SRC  = $(SHARE_ROOT)/Library/src
-  SHARE_LIB  = $(abspath $(CURDIR)/lib/libSHARE.a)
+  LIB_ROOT   = $(abspath $(CURDIR)/lib)
+  SHARE_LIB  = $(LIB_ROOT)/libSHARE.a
+  UTIL_ROOT  = $(abspath $(CURDIR)/util)
 endif
 
 GITCLONE_SHARE  = git clone git@github.com:SWMFsoftware/share $(CURDIR)/share
@@ -57,10 +61,11 @@ EXE: GITINFO compile_commands
 	fi
 	@if [ -f $(BUILD_MODE_FILE) ] && [ "$$(cat $(BUILD_MODE_FILE))" != "STANDALONE" ]; then \
 		echo "--- Switching from component to standalone mode: auto-cleaning src/ ---"; \
-		cd src; $(MAKE) clean; \
+		(cd src; $(MAKE) clean); \
 	fi
 	@echo STANDALONE > $(BUILD_MODE_FILE)
-	cd src; $(MAKE) EXE STANDALONE=YES FLEKS_DIR=$(CURDIR)
+	cd src; $(MAKE) EXE STANDALONE=YES FLEKS_DIR=$(CURDIR) \
+		SHARE_ROOT=$(SHARE_ROOT) UTIL_ROOT=$(UTIL_ROOT) LIB_ROOT=$(LIB_ROOT)
 
 bin:
 	mkdir bin
@@ -72,10 +77,11 @@ LIB: bin include/Constants.h include/UserSource.h compile_commands
 		echo "--- Building FLEKS library in standalone mode ---"; \
 		if [ -f $(BUILD_MODE_FILE) ] && [ "$$(cat $(BUILD_MODE_FILE))" != "STANDALONE" ]; then \
 			echo "--- Switching from component to standalone mode: auto-cleaning src/ ---"; \
-			cd src; $(MAKE) clean; \
+			(cd src; $(MAKE) clean); \
 		fi; \
 		echo STANDALONE > $(BUILD_MODE_FILE); \
-		cd src; $(MAKE) LIB STANDALONE=YES FLEKS_DIR=$(CURDIR); \
+		cd src; $(MAKE) LIB STANDALONE=YES FLEKS_DIR=$(CURDIR) \
+			SHARE_ROOT=$(SHARE_ROOT) UTIL_ROOT=$(UTIL_ROOT) LIB_ROOT=$(LIB_ROOT); \
 	else \
 		if [ ! -f $(SHARE_LIB) ]; then \
 			echo ""; \
@@ -95,7 +101,7 @@ LIB: bin include/Constants.h include/UserSource.h compile_commands
 		fi; \
 		if [ -f $(BUILD_MODE_FILE) ] && [ "$$(cat $(BUILD_MODE_FILE))" != "COMPONENT" ]; then \
 			echo "--- Switching from standalone to component mode: auto-cleaning src/ ---"; \
-			cd src; $(MAKE) clean; \
+			(cd src; $(MAKE) clean); \
 		fi; \
 		echo COMPONENT > $(BUILD_MODE_FILE); \
 		(cd src; $(MAKE) LIB) && \
@@ -103,34 +109,33 @@ LIB: bin include/Constants.h include/UserSource.h compile_commands
 	fi
 
 CONVERTER:
-	cd src; $(MAKE) CONVERTER
+	(cd src; $(MAKE) CONVERTER)
 
 rundir:
 	mkdir -p ${RUNDIR}/${COMPONENT}
-	cd ${RUNDIR}/${COMPONENT}; \
+	(cd ${RUNDIR}/${COMPONENT}; \
 		mkdir restartIN restartOUT plots;\
 		ln -s ${BINDIR}/PostIDL.exe .; \
-		cp    ${SCRIPTDIR}/pIDL .
-	cd ${RUNDIR}; \
-		(if [ -f ${BINDIR}/FLEKS.exe ]; then ln -s ${BINDIR}/FLEKS.exe .; fi)
+		cp    ${SCRIPTDIR}/pIDL .)
+	(cd ${RUNDIR}; \
+		if [ -f ${BINDIR}/FLEKS.exe ]; then ln -s ${BINDIR}/FLEKS.exe .; fi)
 
 
 clean:
-	cd src; $(MAKE) clean
-	cd srcInterface; $(MAKE) clean
+	(cd src; $(MAKE) clean)
+	(cd srcInterface; $(MAKE) clean)
 	rm -rf bin/*
 	rm -f $(BUILD_MODE_FILE)
 
-distclean:	
-	-@(./Config.pl -uninstall)
+distclean:
+	-@./Config.pl -uninstall
 
 allclean:
 	-@(cd src; $(MAKE) distclean)
 	-@(cd srcInterface; $(MAKE) distclean)
-	-@(rm -rf *~ ./bin lib ${TESTDIR} include/Constants.h)
-	-@(rm -f test*.diff)
+	-@rm -rf *~ ./bin lib ${TESTDIR} include/Constants.h
+	-@rm -f test*.diff
 
 compile_commands:
 	-rm -f compile_commands.json
 	-python3 tools/generate_compile_commands.py
-
