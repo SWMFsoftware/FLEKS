@@ -32,4 +32,5 @@ Backtrace.*
 tools/.ipynb*
 tools/*user.py
 compile_commands.json
+src/.build_mode
 .cache/*
