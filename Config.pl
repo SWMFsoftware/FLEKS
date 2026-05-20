@@ -46,6 +46,7 @@ my $AmrexDir = "util/AMREX";
 if(-f $config){
     #Stand-alone FLEKS. Turn on amrex automatically. 
     push @Arguments, "-amrex";
+    push @Arguments, "-show" unless @ARGV;
     push @Arguments, "-nodebug", "-install" unless -f "Makefile.conf";
     require $config;
 
