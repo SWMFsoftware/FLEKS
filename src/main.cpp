@@ -1,6 +1,7 @@
 #include "show_git_info.h"
 #include <AMReX.H>
 #include <AMReX_Print.H>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -49,8 +50,8 @@ int main(int argc, char* argv[]) {
 
     // Create output directories
     if (ParallelDescriptor::IOProcessor()) {
-      ::system("mkdir -p FLEKS1/plots");
-      ::system("mkdir -p FLEKS1/restartOUT");
+      std::filesystem::create_directories("FLEKS1/plots");
+      std::filesystem::create_directories("FLEKS1/restartOUT");
     }
 
     // 2. Initialize Domain
