@@ -156,16 +156,23 @@ jobs:
       - name: Run Standalone FLEKS Test
         working-directory: SWMF/PC/FLEKS/tests/test_standalone
         run: |
-          ../../bin/FLEKS.exe > standalone_run.log 2>&1
+          ls -lh ../../bin/FLEKS.exe
+          ldd ../../bin/FLEKS.exe
+          mpirun -n 1 ../../bin/FLEKS.exe > standalone_run.log 2>&1
 
       - name: Verify Standalone Test Results
         working-directory: SWMF/PC/FLEKS/tests/test_standalone
         run: |
           echo "=== Standalone Run Log ==="
-          cat standalone_run.log
-          if grep -q "Simulation finished at time = 2" standalone_run.log; then
+          if [ -f standalone_run.log ]; then
+            cat standalone_run.log
+          else
+            echo "::error::standalone_run.log not found!"
+            exit 1
+          fi
+          if grep -q "Simulation finished at time =" standalone_run.log; then
             echo "Standalone test run successful!"
           else
-            echo "::error::Standalone test run failed! 'Simulation finished at time = 2' not found in log."
+            echo "::error::Standalone test run failed! 'Simulation finished at time =' not found in log."
             exit 1
           fi

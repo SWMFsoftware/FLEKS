@@ -1,46 +1,55 @@
 #DESCRIPTION
-Standalone FLEKS test
+Standalone smoke test: 3D light wave
+
+#INITFROMSWMF
+F                       initFromSWMF
 
 #GEOMETRY
--1.0            min x
- 1.0            max x
--1.0            min y
- 1.0            max y
--1.0            min z
- 1.0            max z
+-1.0                    xMin
+ 1.0                    xMax
+-1.0                    yMin
+ 1.0                    yMax
+ -1.0                   zMin
+  1.0                   zMax
 
 #NCELL
-8               nx
-8               ny
-8               nz
+8                       nCellX
+8                       nCellY
+ 8                      nCellZ
 
-#TIMESTEP
-T               useFixedDt
-1.0             dtSI
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+8                       maxBlockSizeZ
 
-#PARTICLES
-1               npcelx
-1               npcely
-1               npcelz
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#TESTCASE
+lightwave               testCase
 
 #PLASMA
-1               nSpecies
-1.0             mass
-1.0             charge
+2                       nSpecies
+100.0                   mass
+1.0                     charge
+1.0                     mass
+-1.0                    charge
 
-#UNIFORMSTATE
-1.0             rho
-0.0             ux
-0.0             uy
-0.0             uz
-1.0             T
-0.0             bx
-0.0             by
-1.0             bz
-0.0             ex
-0.0             ey
-0.0             ez
+#TIMESTEPPING
+T                       useFixedDt
+0.1                     dt
+
+#NORMALIZATION
+1.0                     lNormSI
+1.0                     uNormSI
+
+#MONITOR
+1                       dnReport
 
 #STOP
--1              MaxIter
-2.0             TimeMax
+-1                      MaxIter
+0.5                     TimeMax
+
+#RUN
