@@ -128,3 +128,44 @@ jobs:
           if [ $FAILED -ne 0 ]; then
             exit 1
           fi
+
+      - name: Cache Standalone Build
+        id: cache-standalone
+        uses: actions/cache@v5
+        with:
+          path: SWMF/PC/FLEKS/bin/FLEKS.exe
+          key: ${{ runner.os }}-fleks-standalone-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h') }}
+          restore-keys: |
+            ${{ runner.os }}-fleks-standalone-
+
+      - name: Build Standalone FLEKS
+        if: steps.cache-standalone.outputs.cache-hit != 'true'
+        working-directory: SWMF/PC/FLEKS
+        run: |
+          python3 configure.py
+          cp Makefile.conf.standalone.template Makefile.conf
+          make EXE -j$(nproc)
+
+      - name: Upload Standalone Executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: fleks-standalone-exe
+          path: SWMF/PC/FLEKS/bin/FLEKS.exe
+          retention-days: 7
+
+      - name: Run Standalone FLEKS Test
+        working-directory: SWMF/PC/FLEKS/tests/test_standalone
+        run: |
+          ../../bin/FLEKS.exe > standalone_run.log 2>&1
+
+      - name: Verify Standalone Test Results
+        working-directory: SWMF/PC/FLEKS/tests/test_standalone
+        run: |
+          echo "=== Standalone Run Log ==="
+          cat standalone_run.log
+          if grep -q "Simulation finished at time = 2" standalone_run.log; then
+            echo "Standalone test run successful!"
+          else
+            echo "::error::Standalone test run failed! 'Simulation finished at time = 2' not found in log."
+            exit 1
+          fi
