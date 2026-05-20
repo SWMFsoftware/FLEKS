@@ -60,6 +60,7 @@ if(-f $config){
     die "Error: AMReX doest not exist!\n" unless -d $AmrexDir;
 }else{
 
+    push @Arguments, "-install=c" unless -f "Makefile.conf";
     require "../../$config";
     $AmrexDir = "../../util/AMREX"; 
 }

@@ -67,7 +67,7 @@ bin:
 
 install: bin include/Constants.h include/UserSource.h
 
-LIB: include/Constants.h compile_commands
+LIB: bin include/Constants.h include/UserSource.h compile_commands
 	@if [ ! -d $(_SWMF_SHARE)/Library/src ]; then \
 		echo "--- Building FLEKS library in standalone mode ---"; \
 		if [ -f $(BUILD_MODE_FILE) ] && [ "$$(cat $(BUILD_MODE_FILE))" != "STANDALONE" ]; then \
@@ -98,8 +98,8 @@ LIB: include/Constants.h compile_commands
 			cd src; $(MAKE) clean; \
 		fi; \
 		echo COMPONENT > $(BUILD_MODE_FILE); \
-		cd src; $(MAKE) LIB; \
-		cd srcInterface; $(MAKE) LIB; \
+		(cd src; $(MAKE) LIB) && \
+		(cd srcInterface; $(MAKE) LIB); \
 	fi
 
 CONVERTER:
