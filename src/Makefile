@@ -13,6 +13,7 @@ ifeq ($(STANDALONE), YES)
   LIBFLEKS = libFLEKS.a
   OBJECTS_STANDALONE = GridInfo.o
   BINDIR = ../bin
+  COMPILE.mpicxx = $(CXX) $(CXXFLAGS) $(SEARCH_C) $(FLAGC_EXTRA) -c
 else
   include ../Makefile.def
   -include Makefile.DEPEND
@@ -48,6 +49,9 @@ OBJECTS_EXE = \
 
 FLEKSEXE = ${BINDIR}/FLEKS.exe
 
+%.o: %.cpp
+	$(COMPILE.mpicxx) $< -o $@
+
 CONVERTER_OBJECTS = Converter.o
 
 CONVERTEREXE = ../bin/converter.exe
@@ -58,7 +62,8 @@ EXE:
 ifeq ($(STANDALONE), YES)
 	$(MAKE) LIB STANDALONE=YES
 	$(MAKE) main.o STANDALONE=YES
-	$(COMPILE.mpicxx) -o ${FLEKSEXE} main.o \
+	mkdir -p ${BINDIR}
+	$(CXX) $(CXXFLAGS) -o ${FLEKSEXE} main.o \
 		-L. -lFLEKS ${LDFS} $(LDFLAGS)
 else
 	$(MAKE) LIB
@@ -70,7 +75,8 @@ endif
 CONVERTER:	${CONVERTER_OBJECTS}	
 	$(MAKE) ${LIBFLEKS}
 ifeq ($(STANDALONE), YES)
-	$(COMPILE.mpicxx) -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
+	mkdir -p ${BINDIR}
+	$(CXX) $(CXXFLAGS) -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
 		-L. -lFLEKS ${LDFS} $(LDFLAGS)
 else
 	${LINK.f90} ${NOMAINFLAG} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \

@@ -78,7 +78,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: SWMF/PC/FLEKS/bin/FLEKS.exe
-          key: ${{ runner.os }}-fleks-standalone-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h') }}
+          key: ${{ runner.os }}-fleks-standalone-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PC/FLEKS/**/Makefile*') }}
           restore-keys: |
             ${{ runner.os }}-fleks-standalone-
 
