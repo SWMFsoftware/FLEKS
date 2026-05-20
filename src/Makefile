@@ -1,5 +1,10 @@
 ifeq ($(STANDALONE), YES)
   include ../Makefile.conf
+  SHARE_DIR ?= $(FLEKS_DIR)/share/Library/src
+  AMREX_DIR ?= $(FLEKS_DIR)/util/AMREX/InstallDir
+  FLEKS_SCRIPTDIR ?= $(FLEKS_DIR)/share/Scripts
+  LDFS ?= -L$(FLEKS_DIR)/lib -lSHARE
+  LDFLAGS ?= -L$(AMREX_DIR)/lib -lamrex -lgfortran -lm
   SEARCH_C = -I../include -I${SHARE_DIR} -I${AMREX_DIR}/include
   FLAGC_EXTRA = -D_PC_COMPONENT_ -DFLEKS_STANDALONE
   LIBFLEKS = libFLEKS.a
@@ -49,8 +54,8 @@ default: EXE
 EXE:
 ifeq ($(STANDALONE), YES)
 	$(MAKE) LIB STANDALONE=YES
-	$(MAKE) main.o GridInfo.o STANDALONE=YES
-	$(CXX) -o ${FLEKSEXE} main.o GridInfo.o \
+	$(MAKE) main.o STANDALONE=YES
+	$(COMPILE.mpicxx) -o ${FLEKSEXE} main.o \
 		-L. -lFLEKS ${LDFS} $(LDFLAGS)
 else
 	$(MAKE) LIB
@@ -62,12 +67,13 @@ endif
 CONVERTER:	${CONVERTER_OBJECTS}	
 	$(MAKE) ${LIBFLEKS}
 ifeq ($(STANDALONE), YES)
-	$(CXX)  -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
-		-L. -lFLEKS $(LDFLAGS)
+	$(COMPILE.mpicxx) -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
+		-L. -lFLEKS ${LDFS} $(LDFLAGS)
 else
 	${LINK.f90} ${NOMAINFLAG} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
 		-L. -lFLEKS ${LflagMpi}
 endif
+
 	@echo
 	@echo ${CONVERTEREXE} has been brought up to date.
 	@echo

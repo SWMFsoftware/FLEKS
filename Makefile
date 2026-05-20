@@ -69,35 +69,38 @@ install: bin include/Constants.h include/UserSource.h
 
 LIB: include/Constants.h compile_commands
 	@if [ ! -d $(_SWMF_SHARE)/Library/src ]; then \
-		echo ""; \
-		echo "ERROR: 'make LIB' is for SWMF component builds only."; \
-		echo "       Use 'make EXE' to build the standalone executable."; \
-		echo ""; \
-		exit 1; \
+		echo "--- Building FLEKS library in standalone mode ---"; \
+		if [ -f $(BUILD_MODE_FILE) ] && [ "$$(cat $(BUILD_MODE_FILE))" != "STANDALONE" ]; then \
+			echo "--- Switching from component to standalone mode: auto-cleaning src/ ---"; \
+			cd src; $(MAKE) clean; \
+		fi; \
+		echo STANDALONE > $(BUILD_MODE_FILE); \
+		cd src; $(MAKE) LIB STANDALONE=YES FLEKS_DIR=$(CURDIR); \
+	else \
+		if [ ! -f $(SHARE_LIB) ]; then \
+			echo ""; \
+			echo "ERROR: $(SHARE_LIB) not found."; \
+			echo "       The SWMF share library must be built before 'make LIB'."; \
+			echo "       Please run the top-level SWMF build first."; \
+			echo ""; \
+			exit 1; \
+		fi; \
+		if [ ! -f $(_SWMF_SHARE)/include/con_comp_param.mod ]; then \
+			echo ""; \
+			echo "ERROR: CON Fortran modules not found in $(_SWMF_SHARE)/include/."; \
+			echo "       The SWMF CON library must be built before 'make LIB'."; \
+			echo "       Please run the top-level SWMF build first."; \
+			echo ""; \
+			exit 1; \
+		fi; \
+		if [ -f $(BUILD_MODE_FILE) ] && [ "$$(cat $(BUILD_MODE_FILE))" != "COMPONENT" ]; then \
+			echo "--- Switching from standalone to component mode: auto-cleaning src/ ---"; \
+			cd src; $(MAKE) clean; \
+		fi; \
+		echo COMPONENT > $(BUILD_MODE_FILE); \
+		cd src; $(MAKE) LIB; \
+		cd srcInterface; $(MAKE) LIB; \
 	fi
-	@if [ ! -f $(SHARE_LIB) ]; then \
-		echo ""; \
-		echo "ERROR: $(SHARE_LIB) not found."; \
-		echo "       The SWMF share library must be built before 'make LIB'."; \
-		echo "       Please run the top-level SWMF build first."; \
-		echo ""; \
-		exit 1; \
-	fi
-	@if [ ! -f $(_SWMF_SHARE)/include/con_comp_param.mod ]; then \
-		echo ""; \
-		echo "ERROR: CON Fortran modules not found in $(_SWMF_SHARE)/include/."; \
-		echo "       The SWMF CON library must be built before 'make LIB'."; \
-		echo "       Please run the top-level SWMF build first."; \
-		echo ""; \
-		exit 1; \
-	fi
-	@if [ -f $(BUILD_MODE_FILE) ] && [ "$$(cat $(BUILD_MODE_FILE))" != "COMPONENT" ]; then \
-		echo "--- Switching from standalone to component mode: auto-cleaning src/ ---"; \
-		cd src; $(MAKE) clean; \
-	fi
-	@echo COMPONENT > $(BUILD_MODE_FILE)
-	cd src; $(MAKE) LIB
-	cd srcInterface; $(MAKE) LIB
 
 CONVERTER:
 	cd src; $(MAKE) CONVERTER
