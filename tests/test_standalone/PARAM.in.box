@@ -15,7 +15,7 @@ F                       initFromSWMF
 #NCELL
 8                       nCellX
 8                       nCellY
- 8                      nCellZ
+8                       nCellZ
 
 #MAXBLOCKSIZE
 8                       maxBlockSizeX
@@ -69,7 +69,7 @@ T                       useFixedDt
 -1                                dn
 0.5                               dt
 1                                 dx
-y=0 fluid real4 pic               plotString
+z=0 fluid real4 pic               plotString
 -1                                dn
 0.5                               dt
 -1                                dx
