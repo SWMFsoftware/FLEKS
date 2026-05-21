@@ -65,7 +65,7 @@ T                       useFixedDt
 1                       dnReport
 
 #SAVEPLOT
-2                                 nPlot
+3                                 nPlot
 3d fluid amrex pic                plotString
 -1                                dn
 0.5                               dt
@@ -74,6 +74,10 @@ T                       useFixedDt
 -1                                dn
 0.5                               dt
 1                                 dx
+y=0 fluid real4 pic               plotString
+-1                                dn
+1                                 dt
+-1                                dx
 
 #STOP
 -1                      MaxIter

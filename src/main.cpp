@@ -58,7 +58,9 @@ int main(int argc, char* argv[]) {
     }
 
     // 2. Initialize Domain
-    Domain domain;
+    fleksDomains.add_new_domain();
+    fleksDomains.select(0);
+    Domain& domain = fleksDomains(0);
     domain.init(0.0, 1, paramString);
 
     // 3. Set Initial Conditions
@@ -163,6 +165,7 @@ int main(int argc, char* argv[]) {
     domain.write_plots(true);
   }
 
+  fleksDomains.clear();
   Finalize();
   return 0;
 }
