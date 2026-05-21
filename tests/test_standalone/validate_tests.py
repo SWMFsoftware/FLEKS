@@ -6,19 +6,51 @@ import re
 import math
 import sys
 
+def safe_symlink(src, dst):
+    if os.path.lexists(dst):
+        if os.path.islink(dst) or os.path.isfile(dst):
+            os.remove(dst)
+        elif os.path.isdir(dst):
+            shutil.rmtree(dst)
+    os.symlink(src, dst)
+
+def prepare_run_dir():
+    run_dir = "run_test"
+    os.makedirs(run_dir, exist_ok=True)
+    
+    # Symlinks in run directory
+    safe_symlink("../bin/FLEKS.exe", os.path.join(run_dir, "FLEKS.exe"))
+    safe_symlink("../../../share/Scripts/PostProc.pl", os.path.join(run_dir, "PostProc.pl"))
+    
+    # Component plot and restart directories
+    pc_dir = os.path.join(run_dir, "PC")
+    os.makedirs(pc_dir, exist_ok=True)
+    os.makedirs(os.path.join(pc_dir, "plots"), exist_ok=True)
+    os.makedirs(os.path.join(pc_dir, "restartOUT"), exist_ok=True)
+    
+    # Symlinks in component directory
+    safe_symlink("../../../../share/Scripts/pIDL", os.path.join(pc_dir, "pIDL"))
+    safe_symlink("../../../../bin/PostIDL.exe", os.path.join(pc_dir, "PostIDL.exe"))
+
 def run_test(param_file):
     print(f"Running test with config {param_file}...")
-    # Copy param_file to PARAM.in in the root directory
-    shutil.copy(param_file, "PARAM.in")
+    prepare_run_dir()
     
-    # Run bin/FLEKS.exe
-    result = subprocess.run(["bin/FLEKS.exe"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    # Copy param_file to run_test/PARAM.in
+    shutil.copy(param_file, "run_test/PARAM.in")
+    
+    # Run ./FLEKS.exe inside run_test/
+    result = subprocess.run(["./FLEKS.exe"], cwd="run_test", stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         print(f"Error running FLEKS.exe for {param_file}:")
         print(result.stderr)
         return None, result.returncode
+        
+    # Automatically run post-processing on the generated plots
+    subprocess.run(["./PostProc.pl", "-v"], cwd="run_test", stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     
     return result.stdout, 0
+
 
 def parse_diagnostics(stdout):
     diagnostics = []
