@@ -413,10 +413,10 @@ void Pic::init_exosphere() {
 
   exoDensity.resize(n_lev());
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    exoDensity[iLev].define(cGrids[iLev], DistributionMap(iLev),
-                            exoInfos.size(), 0);
-    exoDensity[iLev].setVal(0.0);
+    distribute_FabArray(exoDensity[iLev], cGrids[iLev], DistributionMap(iLev),
+                        exoInfos.size(), 0, false);
   }
+
 
   for (int iInfo = 0; iInfo < exoInfos.size(); ++iInfo) {
     auto& info = exoInfos[iInfo];
