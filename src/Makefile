@@ -13,6 +13,10 @@ ifeq ($(STANDALONE), YES)
   LIBFLEKS = libFLEKS.a
   OBJECTS_STANDALONE = GridInfo.o
   BINDIR = ../bin
+  ifeq ($(origin CXX), default)
+    CXX = mpicxx
+  endif
+  CXXFLAGS ?= -O3 -std=c++17
   COMPILE.mpicxx = $(CXX) $(CXXFLAGS) $(SEARCH_C) $(FLAGC_EXTRA)
 
   %.o: %.cpp
