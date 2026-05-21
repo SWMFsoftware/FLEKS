@@ -59,6 +59,17 @@ T                       useFixedDt
 #MONITOR
 1                       dnReport
 
+#SAVEPLOT
+2                                 nPlot
+3d fluid amrex pic                plotString
+-1                                dn
+1.0                               dt
+1                                 dx
+3d particles0 amrex pic           plotString
+-1                                dn
+1.0                               dt
+1                                 dx
+
 #STOP
 -1                      MaxIter
 5.0                     TimeMax

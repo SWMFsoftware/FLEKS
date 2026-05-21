@@ -1,4 +1,5 @@
 #include "Domain.h"
+#include <AMReX_Utility.H>
 #include "GridUtility.h"
 #ifdef _PT_COMPONENT_
 #include "OHSource.h"
@@ -608,6 +609,9 @@ void Domain::read_restart() {
 
 //========================================================
 void Domain::save_restart(std::string restartOutDir) {
+  if (ParallelDescriptor::IOProcessor()) {
+    UtilCreateDirectory(restartOutDir, 0755);
+  }
   fi->set_restart_out_dir(restartOutDir);
 
   save_restart_header();

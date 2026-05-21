@@ -1010,6 +1010,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   }
 
 #ifdef _PC_COMPONENT_
+#ifndef FLEKS_STANDALONE
   if (isDensityZero) {
     AllPrint()
         << "\n==========" << printPrefix
@@ -1025,6 +1026,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
         << std::endl;
     Abort();
   }
+#endif
 #endif
 }
 

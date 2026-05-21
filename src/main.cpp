@@ -8,6 +8,7 @@
 #include <iostream>
 #include <string>
 
+#include "Constants.h"
 #include "Domain.h"
 #include "SimDomains.h"
 
@@ -52,8 +53,8 @@ int main(int argc, char* argv[]) {
 
     // Create output directories
     if (ParallelDescriptor::IOProcessor()) {
-      std::filesystem::create_directories("FLEKS1/plots");
-      std::filesystem::create_directories("FLEKS1/restartOUT");
+      std::filesystem::create_directories(component + "/plots");
+      std::filesystem::create_directories(component + "/restartOUT");
     }
 
     // 2. Initialize Domain
