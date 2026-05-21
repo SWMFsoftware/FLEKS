@@ -348,6 +348,12 @@ void Domain::load_balance() {
 
 //========================================================
 void Domain::regrid() {
+  if (!initFromSWMF) {
+    gridInfo.is_grid_new(false);
+    isNewGrid = false;
+    isNewRefinement = false;
+    return;
+  }
 
   std::string nameFunc = "Domain::regrid";
 

@@ -1,5 +1,5 @@
 #DESCRIPTION
-Standalone exosphere test: 3D exosphere injection
+0D "Box" Equilibrium Test (Chemical/Kinetic Balance)
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -9,8 +9,8 @@ F                       initFromSWMF
  1.0                    xMax
 -1.0                    yMin
  1.0                    yMax
- -1.0                   zMin
-  1.0                   zMax
+-1.0                    zMin
+ 1.0                    zMax
 
 #NCELL
 8                       nCellX
@@ -27,15 +27,13 @@ T                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-#TESTCASE
-lightwave               testCase
+#SOLVEEM
+F                       solveEM
 
 #PLASMA
-2                       nSpecies
-100.0                   mass
-1.0                     charge
+1                       nSpecies
 1.0                     mass
--1.0                    charge
+1.0                     charge
 
 #EXOSPHERE
 1                       iSpecies
@@ -63,6 +61,6 @@ T                       useFixedDt
 
 #STOP
 -1                      MaxIter
-0.5                     TimeMax
+1.0                     TimeMax
 
 #RUN

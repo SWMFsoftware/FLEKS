@@ -1,6 +1,8 @@
 #include "show_git_info.h"
 #include <AMReX.H>
 #include <AMReX_Print.H>
+#include <AMReX_ParmParse.H>
+#include <iomanip>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -85,6 +87,72 @@ int main(int argc, char* argv[]) {
         break;
 
       domain.update();
+
+      // Species diagnostics loop
+      if (domain.pic && domain.pic->has_particles()) {
+        int nSpecies = domain.pic->get_nSpecies();
+        for (int iS = 0; iS < nSpecies; iS++) {
+          if (!domain.pic->get_particle_pointer(iS)) continue;
+          double local_weight = 0;
+          double local_vx = 0, local_vy = 0, local_vz = 0;
+          double local_ke = 0;
+          long local_macro = 0;
+
+          for (int iLev = 0; iLev < domain.pic->n_lev(); iLev++) {
+            for (amrex::ParIter<nPicPartReal, nPicPartInt> pti(*domain.pic->get_particle_pointer(iS), iLev); pti.isValid(); ++pti) {
+              const auto& tile = pti.GetArrayOfStructs();
+              for (const auto& p : tile) {
+                if (p.id() < 0) continue;
+                double q = p.rdata(PicParticles::iqp_); // weight
+                double vx = p.rdata(PicParticles::iup_);
+                double vy = p.rdata(PicParticles::ivp_);
+                double wp = p.rdata(PicParticles::iwp_);
+                local_macro++;
+                local_weight += std::abs(q);
+                local_vx += vx * std::abs(q);
+                local_vy += vy * std::abs(q);
+                local_vz += wp * std::abs(q);
+                local_ke += 0.5 * (vx*vx + vy*vy + wp*wp) * std::abs(q);
+              }
+            }
+          }
+
+          double global_weight = local_weight;
+          double global_vx = local_vx;
+          double global_vy = local_vy;
+          double global_vz = local_vz;
+          double global_ke = local_ke;
+          long global_macro = local_macro;
+
+          amrex::ParallelDescriptor::ReduceRealSum(global_weight);
+          amrex::ParallelDescriptor::ReduceRealSum(global_vx);
+          amrex::ParallelDescriptor::ReduceRealSum(global_vy);
+          amrex::ParallelDescriptor::ReduceRealSum(global_vz);
+          amrex::ParallelDescriptor::ReduceRealSum(global_ke);
+          amrex::ParallelDescriptor::ReduceLongSum(global_macro);
+
+          if (global_weight > 0) {
+            global_vx /= global_weight;
+            global_vy /= global_weight;
+            global_vz /= global_weight;
+          }
+
+          if (amrex::ParallelDescriptor::IOProcessor()) {
+            std::cout << std::scientific << std::setprecision(6)
+                      << "DIAGNOSTIC:"
+                      << " Species=" << iS
+                      << " Time=" << domain.tc->get_time_si()
+                      << " Cycle=" << domain.tc->get_cycle()
+                      << " MacroParticles=" << global_macro
+                      << " PhysParticles=" << global_weight
+                      << " MeanVx=" << global_vx
+                      << " MeanVy=" << global_vy
+                      << " MeanVz=" << global_vz
+                      << " KineticEnergy=" << global_ke
+                      << "\n";
+          }
+        }
+      }
     }
 
     amrex::Print() << "\nSimulation finished at time = "

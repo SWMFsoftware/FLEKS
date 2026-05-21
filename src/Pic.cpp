@@ -207,6 +207,11 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     } else if (testcase == "lightwave") {
       testCase = LightWave;
       nPartPerCell = IntVect::Zero;
+    } else if (testcase == "pickup") {
+      testCase = Pickup;
+      nPartPerCell = IntVect::Zero;
+      param.read_var("Ey", pickup_Ey);
+      param.read_var("Bz", pickup_Bz);
     }
   } else if (command == "#SELECTPARTICLE") {
     param.read_var("doSelectParticle", doSelectParticle);
@@ -417,43 +422,73 @@ void Pic::init_exosphere() {
                         exoInfos.size(), 0, false);
   }
 
-
   for (int iInfo = 0; iInfo < exoInfos.size(); ++iInfo) {
     auto& info = exoInfos[iInfo];
+    std::string profile = info.neutralProfile;
+    Real r0 = info.r0;
+    Real exobaseRadius = info.exobaseRadius;
+    Real shadowRadius = info.shadowRadius;
+    int n0_size = info.n0.size();
+    const Real* n0_ptr = info.n0.data();
+    const Real* H0_ptr = info.H0.data();
+    const Real* k0_ptr = info.k0.data();
+
     Real sumLocal = 0;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       const Real* dx = Geom(iLev).CellSize();
       const Real* plo = Geom(iLev).ProbLo();
       const Real vol = AMREX_D_TERM(dx[0], *dx[1], *dx[2]);
 
+      Real dx_local[3] = {0.0, 0.0, 0.0};
+      Real plo_local[3] = {0.0, 0.0, 0.0};
+      for (int d = 0; d < nDim; ++d) {
+        dx_local[d] = dx[d];
+        plo_local[d] = plo[d];
+      }
+
       for (MFIter mfi(exoDensity[iLev]); mfi.isValid(); ++mfi) {
         const Box& bx = mfi.validbox();
         auto const& exo_arr = exoDensity[iLev].array(mfi);
 
         ParallelFor(bx, [=](int i, int j, int k) {
-          RealVect pos;
-          AMREX_D_TERM(pos[0] = (i + 0.5) * dx[0] + plo[0];
-                       , pos[1] = (j + 0.5) * dx[1] + plo[1];
-                       , pos[2] = (k + 0.5) * dx[2] + plo[2];)
-          Real r = sqrt(AMREX_D_TERM(pos[0] * pos[0], +pos[1] * pos[1],
-                                     +pos[2] * pos[2]));
+          Real pos[3] = {0.0, 0.0, 0.0};
+          pos[0] = (i + 0.5) * dx_local[0] + plo_local[0];
+          if (nDim > 1) pos[1] = (j + 0.5) * dx_local[1] + plo_local[1];
+          if (nDim > 2) pos[2] = (k + 0.5) * dx_local[2] + plo_local[2];
+
+          Real r2 = 0;
+          for (int d = 0; d < nDim; ++d) {
+            r2 += pos[d] * pos[d];
+          }
+          Real r = sqrt(r2);
           Real dens = 0;
-          if (r >= info.exobaseRadius) {
+          if (r >= exobaseRadius) {
             bool inShadow = false;
-            if (info.shadowRadius > 0) {
-              inShadow = (pos[ix_] < 0 && (pos[iy_] * pos[iy_] +
-                                           (nDim > 2 ? pos[iz_] * pos[iz_] : 0)) <
-                                              info.shadowRadius *
-                                                  info.shadowRadius);
+            if (shadowRadius > 0) {
+              inShadow = (pos[0] < 0 && (pos[1] * pos[1] +
+                                           (nDim > 2 ? pos[2] * pos[2] : 0)) <
+                                              shadowRadius *
+                                                  shadowRadius);
             }
             if (!inShadow) {
-              if (info.neutralProfile == "exponential") {
-                dens = neutralDensityExponential(r, info.r0, info.n0, info.H0);
-              } else if (info.neutralProfile == "power-law" ||
-                         info.neutralProfile == "PowerLaw") {
-                dens = neutralDensityPowerLaw(r, info.r0, info.n0, info.k0);
-              } else if (info.neutralProfile == "ChamberlainH") {
-                dens = neutralDensityChamberlainH(r, info.r0, info.n0, info.H0);
+              if (profile == "exponential") {
+                Real n_val = 0.0;
+                for (int idx = 0; idx < n0_size; idx++) {
+                  n_val += n0_ptr[idx] * exp(-(r - r0) / H0_ptr[idx]);
+                }
+                dens = n_val;
+              } else if (profile == "power-law" || profile == "PowerLaw") {
+                Real n_val = 0.0;
+                for (int idx = 0; idx < n0_size; idx++) {
+                  n_val += n0_ptr[idx] * pow(r0 / r, k0_ptr[idx]);
+                }
+                dens = n_val;
+              } else if (profile == "ChamberlainH") {
+                Real n_val = 0.0;
+                for (int idx = 0; idx < n0_size; idx++) {
+                  n_val += n0_ptr[idx] * exp(-H0_ptr[idx] * (1.0 / r0 - 1.0 / r));
+                }
+                dens = n_val;
               }
             }
           }
@@ -570,6 +605,10 @@ void Pic::fill_new_node_E() {
             if (x > xL && x < xR) {
               arrE(ijk, iy_) = 1;
             }
+          } else if (testCase == Pickup) {
+            arrE(ijk, ix_) = 0.0;
+            arrE(ijk, iy_) = pickup_Ey;
+            arrE(ijk, iz_) = 0.0;
           } else {
             arrE(ijk, ix_) = fi->get_ex(mfi, ijk, iLev);
             arrE(ijk, iy_) = fi->get_ey(mfi, ijk, iLev);
@@ -613,6 +652,10 @@ void Pic::fill_new_node_B() {
             if (x > xL && x < xR) {
               arrB(ijk, iz_) = 1;
             }
+          } else if (testCase == Pickup) {
+            arrB(ijk, ix_) = 0.0;
+            arrB(ijk, iy_) = 0.0;
+            arrB(ijk, iz_) = pickup_Bz;
           } else {
             arrB(ijk, ix_) = fi->get_bx(mfi, ijk, iLev);
             arrB(ijk, iy_) = fi->get_by(mfi, ijk, iLev);
@@ -705,6 +748,10 @@ void Pic::fill_E_B_fields() {
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
         ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
         cell_bilinear_interp);
+  }
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(), 0);
   }
 }
 
@@ -1495,7 +1542,7 @@ void Pic::update(bool doReportIn) {
 
   charge_exchange();
 
-  if (source) {
+  if (source || useExosphere) {
     fill_source_particles();
   }
 

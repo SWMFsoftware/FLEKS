@@ -146,6 +146,8 @@ private:
   int nSmoothE = 0;
 
   TestCase testCase = RegularSimulation;
+  amrex::Real pickup_Ey = 0.0;
+  amrex::Real pickup_Bz = 0.0;
 
   BeamInfo beam;
 
@@ -232,6 +234,8 @@ public:
   void update(bool doReportIn = false);
 
   PicParticles *get_particle_pointer(int i) { return parts[i].get(); }
+  int get_nSpecies() const { return nSpecies; }
+  bool has_particles() const { return !parts.empty(); }
 
   void set_stateOH(OHInterface *in) { stateOH = in; }
   void set_sourceOH(OHInterface *in) { sourcePT2OH = in; }
