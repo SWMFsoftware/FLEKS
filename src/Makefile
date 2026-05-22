@@ -1,3 +1,9 @@
+FLEKS_DIR ?= $(abspath ..)
+
+ifeq ($(STANDALONE),)
+  STANDALONE := $(if $(wildcard $(FLEKS_DIR)/../../share/Library/src),,YES)
+endif
+
 ifeq ($(STANDALONE), YES)
   include ../Makefile.conf
   # The parent Makefile overrides these when FLEKS is inside an SWMF tree.
@@ -26,6 +32,7 @@ else
   include ../Makefile.conf
   SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
   FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_
+  LDFS ?= -L${LIBDIR} -lSHARE
 endif
 
 LIBFLEKS = libFLEKS.a
@@ -84,7 +91,7 @@ ifeq ($(STANDALONE), YES)
 		-L. -lFLEKS ${LDFS} $(LDFLAGS)
 else
 	${LINK.f90} ${NOMAINFLAG} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
-		-L. -lFLEKS ${LflagMpi}
+		-L. -lFLEKS ${LDFS} ${LflagMpi}
 endif
 
 	@echo

@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <cstddef>
 #include <iostream>
 #include <vector>
 
@@ -6,8 +7,18 @@
 #include <AMReX_Print.H>
 
 #include "Converter.h"
+#include "SimDomains.h"
 
 using namespace amrex;
+
+// Converter links libFLEKS without the normal FLEKS driver.
+Domains fleksDomains;
+
+extern "C" {
+void timing_start_c(size_t*, char*) {}
+void timing_stop_c(size_t*, char*) {}
+}
+
 int main(int argc, char* argv[]) {
   std::vector<std::string> cdl;
   for (int i = 0; i < argc; ++i) {
