@@ -148,6 +148,8 @@ private:
   TestCase testCase = RegularSimulation;
   amrex::Real pickup_Ey = 0.0;
   amrex::Real pickup_Bz = 0.0;
+  amrex::Real pickup_xMin = -1.0;
+  amrex::Real pickup_xMax = 1.0;
 
   BeamInfo beam;
 

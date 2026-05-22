@@ -13,12 +13,12 @@ F                       initFromSWMF
  1.0                    zMax
 
 #NCELL
-8                       nCellX
+20                      nCellX
 8                       nCellY
 8                       nCellZ
 
 #MAXBLOCKSIZE
-8                       maxBlockSizeX
+20                      maxBlockSizeX
 8                       maxBlockSizeY
 8                       maxBlockSizeZ
 
@@ -34,6 +34,8 @@ F                       solveEM
 pickup                  testCase
 1.0                     Ey
 1.0                     Bz
+-0.1                    xMin
+ 0.1                    xMax
 
 #PLASMA
 1                       nSpecies
@@ -47,7 +49,7 @@ exponential             NeutralProfile
 0.0                     ExobaseRadius
 0.0                     ShadowRadius
 1.0e24                  TotalProductionRate
-1000.0                  nMacroParticlesPerDt
+100.0                   nMacroParticlesPerDt
 1.0e11                  n0
 0.03                    H0
 0.0                     T0
@@ -68,11 +70,11 @@ T                       useFixedDt
 3                                 nPlot
 3d fluid amrex pic                plotString
 -1                                dn
-0.5                               dt
+1                                 dt
 1                                 dx
 3d particles0 amrex pic           plotString
 -1                                dn
-0.5                               dt
+1                                 dt
 1                                 dx
 z=0 fluid real4 pic               plotString
 -1                                dn
@@ -81,6 +83,6 @@ z=0 fluid real4 pic               plotString
 
 #STOP
 -1                      MaxIter
-1.0                     TimeMax
+0.2                     TimeMax
 
 #RUN

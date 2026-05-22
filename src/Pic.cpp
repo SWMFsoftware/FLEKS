@@ -212,6 +212,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       nPartPerCell = IntVect::Zero;
       param.read_var("Ey", pickup_Ey);
       param.read_var("Bz", pickup_Bz);
+      param.read_var("xMin", pickup_xMin);
+      param.read_var("xMax", pickup_xMax);
     }
   } else if (command == "#SELECTPARTICLE") {
     param.read_var("doSelectParticle", doSelectParticle);
@@ -433,6 +435,9 @@ void Pic::init_exosphere() {
     const Real* H0_ptr = info.H0.data();
     const Real* k0_ptr = info.k0.data();
 
+    TestCase tCase = testCase;
+    Real xMin_pickup = pickup_xMin;
+    Real xMax_pickup = pickup_xMax;
     Real sumLocal = 0;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       const Real* dx = Geom(iLev).CellSize();
@@ -462,33 +467,35 @@ void Pic::init_exosphere() {
           }
           Real r = sqrt(r2);
           Real dens = 0;
-          if (r >= exobaseRadius) {
-            bool inShadow = false;
-            if (shadowRadius > 0) {
-              inShadow = (pos[0] < 0 && (pos[1] * pos[1] +
-                                           (nDim > 2 ? pos[2] * pos[2] : 0)) <
-                                              shadowRadius *
-                                                  shadowRadius);
-            }
-            if (!inShadow) {
-              if (profile == "exponential") {
-                Real n_val = 0.0;
-                for (int idx = 0; idx < n0_size; idx++) {
-                  n_val += n0_ptr[idx] * exp(-(r - r0) / H0_ptr[idx]);
+          if (tCase != Pickup || (pos[0] >= xMin_pickup && pos[0] <= xMax_pickup)) {
+            if (r >= exobaseRadius) {
+              bool inShadow = false;
+              if (shadowRadius > 0) {
+                inShadow = (pos[0] < 0 && (pos[1] * pos[1] +
+                                             (nDim > 2 ? pos[2] * pos[2] : 0)) <
+                                                 shadowRadius *
+                                                     shadowRadius);
+              }
+              if (!inShadow) {
+                if (profile == "exponential") {
+                  Real n_val = 0.0;
+                  for (int idx = 0; idx < n0_size; idx++) {
+                    n_val += n0_ptr[idx] * exp(-(r - r0) / H0_ptr[idx]);
+                  }
+                  dens = n_val;
+                } else if (profile == "power-law" || profile == "PowerLaw") {
+                  Real n_val = 0.0;
+                  for (int idx = 0; idx < n0_size; idx++) {
+                    n_val += n0_ptr[idx] * pow(r0 / r, k0_ptr[idx]);
+                  }
+                  dens = n_val;
+                } else if (profile == "ChamberlainH") {
+                  Real n_val = 0.0;
+                  for (int idx = 0; idx < n0_size; idx++) {
+                    n_val += n0_ptr[idx] * exp(-H0_ptr[idx] * (1.0 / r0 - 1.0 / r));
+                  }
+                  dens = n_val;
                 }
-                dens = n_val;
-              } else if (profile == "power-law" || profile == "PowerLaw") {
-                Real n_val = 0.0;
-                for (int idx = 0; idx < n0_size; idx++) {
-                  n_val += n0_ptr[idx] * pow(r0 / r, k0_ptr[idx]);
-                }
-                dens = n_val;
-              } else if (profile == "ChamberlainH") {
-                Real n_val = 0.0;
-                for (int idx = 0; idx < n0_size; idx++) {
-                  n_val += n0_ptr[idx] * exp(-H0_ptr[idx] * (1.0 / r0 - 1.0 / r));
-                }
-                dens = n_val;
               }
             }
           }
