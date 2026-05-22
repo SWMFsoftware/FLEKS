@@ -38,9 +38,13 @@ pickup                  testCase
  0.1                    xMax
 
 #PLASMA
-1                       nSpecies
+3                       nSpecies
 1.0                     mass
 1.0                     charge
+16.0                    mass
+1.0                     charge
+0.01                    mass
+-1.0                    charge
 
 #EXOSPHERE
 1                       iSpecies
@@ -48,8 +52,34 @@ exponential             NeutralProfile
 1.0                     r0
 0.0                     ExobaseRadius
 0.0                     ShadowRadius
-1.0e24                  TotalProductionRate
+8.0e23                  TotalProductionRate
 100.0                   nMacroParticlesPerDt
+1.0e11                  n0
+0.03                    H0
+0.0                     T0
+0.0                     k0
+
+#EXOSPHERE
+2                       iSpecies
+exponential             NeutralProfile
+1.0                     r0
+0.0                     ExobaseRadius
+0.0                     ShadowRadius
+2.0e23                  TotalProductionRate
+100.0                   nMacroParticlesPerDt
+1.0e11                  n0
+0.03                    H0
+0.0                     T0
+0.0                     k0
+
+#EXOSPHERE
+3                       iSpecies
+exponential             NeutralProfile
+1.0                     r0
+0.0                     ExobaseRadius
+0.0                     ShadowRadius
+1.0e24                  TotalProductionRate
+200.0                   nMacroParticlesPerDt
 1.0e11                  n0
 0.03                    H0
 0.0                     T0
@@ -67,12 +97,20 @@ T                       useFixedDt
 1                       dnReport
 
 #SAVEPLOT
-3                                 nPlot
+5                                 nPlot
 3d fluid amrex pic                plotString
 -1                                dn
 1                                 dt
 1                                 dx
 3d particles0 amrex pic           plotString
+-1                                dn
+1                                 dt
+1                                 dx
+3d particles1 amrex pic           plotString
+-1                                dn
+1                                 dt
+1                                 dx
+3d particles2 amrex pic           plotString
 -1                                dn
 1                                 dt
 1                                 dx

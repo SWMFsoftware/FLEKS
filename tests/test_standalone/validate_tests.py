@@ -32,8 +32,9 @@ def prepare_run_dir():
     safe_symlink("../../../../share/Scripts/pIDL", os.path.join(pc_dir, "pIDL"))
     safe_symlink("../../../../bin/PostIDL.exe", os.path.join(pc_dir, "PostIDL.exe"))
 
-def run_test(param_file):
-    print(f"Running test with config {param_file}...")
+def run_test(test_dir):
+    param_file = os.path.join(test_dir, "PARAM.in")
+    print(f"Running test in {test_dir} with config {param_file}...")
     prepare_run_dir()
     
     # Copy param_file to run_test/PARAM.in
@@ -42,7 +43,7 @@ def run_test(param_file):
     # Run ./FLEKS.exe inside run_test/
     result = subprocess.run(["./FLEKS.exe"], cwd="run_test", stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
-        print(f"Error running FLEKS.exe for {param_file}:")
+        print(f"Error running FLEKS.exe for {test_dir}:")
         print(result.stderr)
         return None, result.returncode
         
@@ -106,41 +107,101 @@ def validate_pickup(diags):
         print("FAIL: No diagnostic outputs parsed.")
         return False
     
+    # Group diagnostics by species (0-indexed in FLEKS diagnostic outputs: 0=H+, 1=O+, 2=e-)
+    species_diags = {0: [], 1: [], 2: []}
+    for diag in diags:
+        sp = diag["species"]
+        if sp in species_diags:
+            species_diags[sp].append(diag)
+            
     passed = True
     dt = 0.1
-    for diag in diags:
+    
+    # Expected production rates mapped to 0-indexed species
+    prod_rates = {
+        0: 8.0e23,  # H+ (Species 0)
+        1: 2.0e23,  # O+ (Species 1)
+        2: 1.0e24   # e- (Species 2)
+    }
+    
+    # 1. Validate particle counts (charge neutrality verification)
+    print("  --- Validating Particle Production Rates & Charge Neutrality ---")
+    for sp in [0, 1, 2]:
+        diags_sp = species_diags[sp]
+        if not diags_sp:
+            print(f"  FAIL: No diagnostics found for species {sp}")
+            passed = False
+            continue
+            
+        rate = prod_rates[sp]
+        for diag in diags_sp:
+            t = diag["time"]
+            expected_phys = rate * (t + dt)
+            actual_phys = diag["phys"]
+            relative_diff = abs(actual_phys - expected_phys) / expected_phys
+            print(f"    Species {sp} (H+, O+, e-) at t={t:.2f}: expected={expected_phys:.2e}, actual={actual_phys:.2e} (diff={relative_diff*100:.3f}%)")
+            if relative_diff > 0.02: # 2% tolerance
+                print(f"    FAIL: species {sp} count difference exceeds tolerance")
+                passed = False
+
+    # 2. Validate velocities for H+ (Species 0, omega_c = 1.0)
+    print("  --- Validating H+ (Species 0) Velocity History ---")
+    diags_h = species_diags[0]
+    for diag in diags_h:
         t = diag["time"]
-        
-        # Calculate discrete sums for continuously injected species
-        # N is the number of steps taken. At time t, N = round(t / dt)
         N = int(round(t / dt))
         sum_vy = 0.0
         sum_vx = 0.0
+        omega_c = 1.0
         for k in range(N + 1):
-            tau = k * dt
+            tau = omega_c * k * dt
             sum_vy += math.sin(tau)
             sum_vx += 1.0 - math.cos(tau)
-            
         expected_vy = sum_vy / (N + 1)
         expected_vx = sum_vx / (N + 1)
         
         actual_vy = diag["vy"]
         actual_vx = diag["vx"]
-        
-        diff_vy = abs(actual_vy - expected_vy)
         diff_vx = abs(actual_vx - expected_vx)
+        diff_vy = abs(actual_vy - expected_vy)
         
-        print(f"  t={t:.2f}: Vx expected={expected_vx:.4f}, actual={actual_vx:.4f} (diff={diff_vx:.4f})")
-        print(f"          Vy expected={expected_vy:.4f}, actual={actual_vy:.4f} (diff={diff_vy:.4f})")
+        print(f"    t={t:.2f}: Vx expected={expected_vx:.4f}, actual={actual_vx:.4f} (diff={diff_vx:.4f})")
+        print(f"            Vy expected={expected_vy:.4f}, actual={actual_vy:.4f} (diff={diff_vy:.4f})")
+        if diff_vx > 0.02 or diff_vy > 0.02:
+            print(f"    FAIL: H+ velocity difference exceeds tolerance (0.02)")
+            passed = False
+
+    # 3. Validate velocities for O+ (Species 1, omega_c = 0.0625)
+    print("  --- Validating O+ (Species 1) Velocity History ---")
+    diags_o = species_diags[1]
+    for diag in diags_o:
+        t = diag["time"]
+        N = int(round(t / dt))
+        sum_vy = 0.0
+        sum_vx = 0.0
+        omega_c = 0.0625
+        for k in range(N + 1):
+            tau = omega_c * k * dt
+            sum_vy += math.sin(tau)
+            sum_vx += 1.0 - math.cos(tau)
+        expected_vy = sum_vy / (N + 1)
+        expected_vx = sum_vx / (N + 1)
         
-        # Check tolerance (since particles are sampled, allow up to 0.02 absolute diff)
-        if diff_vy > 0.02 or diff_vx > 0.02:
-            print(f"  FAIL: difference exceeds tolerance (0.02)")
+        actual_vy = diag["vy"]
+        actual_vx = diag["vx"]
+        diff_vx = abs(actual_vx - expected_vx)
+        diff_vy = abs(actual_vy - expected_vy)
+        
+        print(f"    t={t:.2f}: Vx expected={expected_vx:.4f}, actual={actual_vx:.4f} (diff={diff_vx:.4f})")
+        print(f"            Vy expected={expected_vy:.4f}, actual={actual_vy:.4f} (diff={diff_vy:.4f})")
+        if diff_vx > 0.02 or diff_vy > 0.02:
+            print(f"    FAIL: O+ velocity difference exceeds tolerance (0.02)")
             passed = False
             
     if passed:
         print("Pickup Test: PASSED")
     return passed
+
 
 def validate_chamber(diags):
     print("Validating Chamber Test...")
@@ -181,25 +242,61 @@ def validate_chamber(diags):
         return False
 
 def main():
-    os.chdir(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(os.path.dirname(os.path.dirname(script_dir)))
     print(f"Working directory set to: {os.getcwd()}")
     
-    tests = [
-        ("tests/test_standalone/PARAM.in.box", validate_box),
-        ("tests/test_standalone/PARAM.in.pickup", validate_pickup),
-        ("tests/test_standalone/PARAM.in.chamber", validate_chamber)
-    ]
+    # Define mapping from folder name to specific validator
+    validators = {
+        "box": validate_box,
+        "pickup": validate_pickup,
+        "chamber": validate_chamber
+    }
     
+    # Discover test subdirectories under tests/test_standalone
+    test_standalone_dir = os.path.join("tests", "test_standalone")
+    
+    # Iterate through sorted subdirectories (excluding exosphere which is merged into pickup)
+    subdirs = sorted([d for d in os.listdir(test_standalone_dir) 
+                      if os.path.isdir(os.path.join(test_standalone_dir, d)) and d != "exosphere"])
+    
+    tests = []
+    for d in subdirs:
+        test_dir = os.path.join(test_standalone_dir, d)
+        param_file = os.path.join(test_dir, "PARAM.in")
+        if os.path.exists(param_file):
+            validator = validators.get(d, None)
+            tests.append((test_dir, d, validator))
+            
+    if not tests:
+        print("No tests found in tests/test_standalone/ subdirectories!")
+        sys.exit(1)
+        
     all_passed = True
-    for param_file, validator in tests:
-        stdout, code = run_test(param_file)
+    for test_dir, name, validator in tests:
+        print(f"\n==========================================")
+        print(f"Starting test: {name.upper()}")
+        print(f"==========================================")
+        stdout, code = run_test(test_dir)
         if code != 0 or stdout is None:
+            print(f"FAIL: {name.upper()} execution failed with exit code {code}")
             all_passed = False
             continue
-        diags = parse_diagnostics(stdout)
-        if not validator(diags):
-            all_passed = False
             
+        diags = parse_diagnostics(stdout)
+        if validator:
+            if not validator(diags):
+                print("FLEKS execution output:")
+                print(stdout)
+                all_passed = False
+        else:
+            print(f"Validating {name.upper()} (generic check)...")
+            if not diags:
+                print("FAIL: No diagnostic outputs parsed.")
+                all_passed = False
+            else:
+                print(f"{name.upper()} (generic check): PASSED")
+                
     if all_passed:
         print("\nALL STANDALONE EXOSPHERE TESTS PASSED SUCCESSFULLY!")
         sys.exit(0)
