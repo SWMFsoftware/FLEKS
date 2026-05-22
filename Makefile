@@ -47,17 +47,8 @@ BUILD_MODE_FILE = src/.build_mode
 STANDALONE_SRC_MAKE = $(MAKE) -C src STANDALONE=YES FLEKS_DIR=$(CURDIR) \
 	SHARE_ROOT=$(SHARE_ROOT) UTIL_ROOT=$(UTIL_ROOT) LIB_ROOT=$(LIB_ROOT)
 
-# Source objects cannot be reused across standalone/component preprocessor flags.
-define set_build_mode
-	@if [ -f $(BUILD_MODE_FILE) ] && [ "$$(cat $(BUILD_MODE_FILE))" != "$(1)" ]; then \
-		echo "--- Switching to $(2) mode: auto-cleaning src/ ---"; \
-		$(MAKE) -C src clean; \
-	fi
-	@echo $(1) > $(BUILD_MODE_FILE)
-endef
-
-EXE: GITINFO compile_commands
-	@if [ ! -d $(SHARE_ROOT)/Library/src ]; then \
+define prepare_standalone
+	@if [ ! -d $(SHARE_SRC) ]; then \
 		echo "--- Cloning SWMFsoftware/share (not found at $(SHARE_ROOT)) ---"; \
 		$(GITCLONE_SHARE); \
 	fi
@@ -69,6 +60,19 @@ EXE: GITINFO compile_commands
 		echo "--- Building libSHARE.a ---"; \
 		$(MAKE) -C $(SHARE_SRC) LIB; \
 	fi
+endef
+
+# Source objects cannot be reused across standalone/component preprocessor flags.
+define set_build_mode
+	@if [ -f $(BUILD_MODE_FILE) ] && [ "$$(cat $(BUILD_MODE_FILE))" != "$(1)" ]; then \
+		echo "--- Switching to $(2) mode: auto-cleaning src/ ---"; \
+		$(MAKE) -C src clean; \
+	fi
+	@echo $(1) > $(BUILD_MODE_FILE)
+endef
+
+EXE: GITINFO compile_commands
+	$(call prepare_standalone)
 	$(call set_build_mode,STANDALONE,standalone)
 	$(STANDALONE_SRC_MAKE) EXE
 
@@ -104,8 +108,15 @@ else
 	$(MAKE) -C srcInterface LIB
 endif
 
-CONVERTER:
+CONVERTER: bin
+ifeq ($(IN_SWMF_TREE),)
+	$(call prepare_standalone)
+	$(call set_build_mode,STANDALONE,standalone)
+	$(STANDALONE_SRC_MAKE) CONVERTER
+else
+	$(call set_build_mode,COMPONENT,component)
 	$(MAKE) -C src CONVERTER
+endif
 
 rundir:
 	mkdir -p ${RUNDIR}/${COMPONENT}
