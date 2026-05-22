@@ -156,6 +156,24 @@ int main(int argc, char* argv[]) {
           }
         }
       }
+
+      if (domain.pic) {
+        if (amrex::ParallelDescriptor::IOProcessor()) {
+          double max_By = 0.0;
+          double max_Bz = 0.0;
+          for (int iLev = 0; iLev < domain.pic->n_lev(); iLev++) {
+            max_By = std::max(max_By, domain.pic->get_nodeB()[iLev].norm0(1));
+            max_Bz = std::max(max_Bz, domain.pic->get_nodeB()[iLev].norm0(2));
+          }
+          std::cout << std::scientific << std::setprecision(6)
+                    << "DIAGNOSTIC_FIELD:"
+                    << " Time=" << domain.tc->get_time_si()
+                    << " Cycle=" << domain.tc->get_cycle()
+                    << " MaxBy=" << max_By
+                    << " MaxBz=" << max_Bz
+                    << "\n";
+        }
+      }
     }
 
     amrex::Print() << "\nSimulation finished at time = "

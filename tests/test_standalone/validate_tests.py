@@ -241,6 +241,82 @@ def validate_chamber(diags):
         print("FAIL: Chamber did not reach steady-state (relative change >= 5%)")
         return False
 
+
+def validate_beam(diags, stdout=None):
+    print("Validating Beam Instability Test...")
+    if not diags:
+        print("FAIL: No diagnostic outputs parsed.")
+        return False
+
+    passed = True
+    
+    # 1. Total particle count conservation check
+    initial_phys = diags[0]["phys"]
+    for diag in diags:
+        t = diag["time"]
+        actual_phys = diag["phys"]
+        if abs(actual_phys - initial_phys) > 1e-5 * initial_phys:
+            print(f"  FAIL at t={t:.2f}: Particle number changed! Expected={initial_phys:.2e}, Actual={actual_phys:.2e}")
+            passed = False
+
+    # 2. Mean velocity conservation check
+    # Expected MeanVx is -0.392 (due to 99% background at -0.4 and 1% beam at +0.4)
+    expected_vx = -0.392
+    for diag in diags:
+        t = diag["time"]
+        actual_vx = diag["vx"]
+        relative_diff = abs(actual_vx - expected_vx)
+        print(f"  t={t:.2f}: MeanVx expected={expected_vx:.4f}, actual={actual_vx:.4f} (diff={relative_diff:.4f})")
+        if relative_diff > 0.01:
+            print(f"  FAIL: MeanVx exceeds tolerance of 0.01")
+            passed = False
+
+    # 3. Transverse magnetic field cyclotron wave growth check
+    if stdout:
+        print("  --- Validating Cyclotron Wave Growth (Transverse B-field) ---")
+        field_diags = []
+        field_pattern = re.compile(
+            r"DIAGNOSTIC_FIELD:\s+Time=([+\-\d.e]+)\s+Cycle=(\d+)\s+MaxBy=([+\-\d.e]+)\s+MaxBz=([+\-\d.e]+)"
+        )
+        for line in stdout.splitlines():
+            match = field_pattern.search(line)
+            if match:
+                field_diag = {
+                    "time": float(match.group(1)),
+                    "cycle": int(match.group(2)),
+                    "max_by": float(match.group(3)),
+                    "max_bz": float(match.group(4))
+                }
+                field_diags.append(field_diag)
+
+        if not field_diags:
+            print("  FAIL: No DIAGNOSTIC_FIELD outputs parsed.")
+            passed = False
+        else:
+            initial_by = field_diags[0]["max_by"]
+            initial_bz = field_diags[0]["max_bz"]
+            final_by = field_diags[-1]["max_by"]
+            final_bz = field_diags[-1]["max_bz"]
+
+            print(f"    Initial Transverse B-field (noise level): MaxBy={initial_by:.4e}, MaxBz={initial_bz:.4e}")
+            print(f"    Final Transverse B-field (after growth):  MaxBy={final_by:.4e}, MaxBz={final_bz:.4e}")
+
+            growth_y = final_by / initial_by if initial_by > 0 else 0
+            growth_z = final_bz / initial_bz if initial_bz > 0 else 0
+            
+            print(f"    Transverse B-field growth factors: By growth={growth_y:.2f}x, Bz growth={growth_z:.2f}x")
+            
+            if growth_y < 1.2 and growth_z < 1.2:
+                print("    FAIL: No significant growth of cyclotron waves detected (growth < 1.2x)")
+                passed = False
+            else:
+                print("    SUCCESS: Cyclotron wave growth validated!")
+
+    if passed:
+        print("Beam Instability Test: PASSED")
+    return passed
+
+
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(os.path.dirname(os.path.dirname(script_dir)))
@@ -250,7 +326,8 @@ def main():
     validators = {
         "box": validate_box,
         "pickup": validate_pickup,
-        "chamber": validate_chamber
+        "chamber": validate_chamber,
+        "beam": validate_beam
     }
     
     # Discover test subdirectories under tests/test_standalone
@@ -285,7 +362,13 @@ def main():
             
         diags = parse_diagnostics(stdout)
         if validator:
-            if not validator(diags):
+            import inspect
+            sig = inspect.signature(validator)
+            if "stdout" in sig.parameters:
+                val_res = validator(diags, stdout=stdout)
+            else:
+                val_res = validator(diags)
+            if not val_res:
                 print("FLEKS execution output:")
                 print(stdout)
                 all_passed = False

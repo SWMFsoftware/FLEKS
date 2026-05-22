@@ -444,10 +444,15 @@ void Domain::set_ic() {
   // with GM. See Domain::init().
   if (!(doRestart && !doRestartFIOnly)) {
 
+    if (!doRestartFIOnly) {
 #ifdef _PT_COMPONENT_
-    if (!doRestartFIOnly)
       fi->set_node_fluid();
+#else
+      if (!initFromSWMF && fi->has_uniform_state()) {
+        fi->set_node_fluid();
+      }
 #endif
+    }
 
     pic->fill_new_cells();
 

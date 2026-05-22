@@ -238,6 +238,7 @@ public:
   PicParticles *get_particle_pointer(int i) { return parts[i].get(); }
   int get_nSpecies() const { return nSpecies; }
   bool has_particles() const { return !parts.empty(); }
+  const amrex::Vector<amrex::MultiFab>& get_nodeB() const { return nodeB; }
 
   void set_stateOH(OHInterface *in) { stateOH = in; }
   void set_sourceOH(OHInterface *in) { sourcePT2OH = in; }
