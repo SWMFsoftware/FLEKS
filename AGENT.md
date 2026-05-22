@@ -6,9 +6,9 @@ FLEKS is a Particle-In-Cell (PIC) and particle tracker code built on top of the
 [AMReX](https://amrex-codes.github.io/) framework. It serves as the **PC**
 (Particle-in-Cell) and **PT** (Particle Tracker) components within the
 [SWMF](https://github.com/SWMFsoftware) (Space Weather Modeling Framework),
-coupling with BATS-R-US (the MHD solver) via the MHD-AEPIC algorithm. FLEKS can
-also be built and run as a standalone AMReX/MPI executable for kinetic plasma
-simulations that do not need the SWMF coupler.
+coupling with BATS-R-US (the MHD solver) via the MHD-AEPIC algorithm. It can
+also run as a standalone AMReX/MPI executable when the SWMF coupler is not
+needed.
 
 **Primary use cases:**
 - Implicit Particle-In-Cell simulations (semi-implicit θ-scheme with GMRES
@@ -35,7 +35,7 @@ FLEKS/
 ├── srcInterface/         ← SWMF coupling layer (Fortran wrappers + C++ interface)
 ├── docs/                 ← Algorithm docs (LaTeX) and coding standards
 ├── tools/                ← Post-processing and conversion scripts (Python/bash)
-├── tests/                ← Standalone and future unit/regression tests
+├── tests/                ← Standalone fixtures and future unit/regression tests
 ├── bin/                  ← Built executables (created by build)
 ├── .agent/skills/        ← Agent skills
 ├── .agent/workflows/     ← Agent workflows
@@ -54,7 +54,8 @@ FLEKS/
 Use this workflow for most code changes:
 1. Read this file and the nearest subdirectory `AGENT.md` first.
 2. If a header changes, inspect matching implementation files and rebuild `LIB`.
-3. Run `make LIB -j8` for SWMF component validation; run `make EXE -j8` when standalone executable behavior is affected.
+3. Run `make LIB -j8` for SWMF component validation; run `make EXE -j8`
+   when standalone executable behavior is affected.
 4. Run `make compile_commands` after include-path or build-flag changes.
 
 ### Key directories
@@ -130,28 +131,20 @@ The interface layer follows a pattern:
 
 ## Build System
 
-FLEKS has two supported build modes:
+FLEKS has two build modes. `make LIB` builds the SWMF component library and
+wrappers; `make EXE` builds the standalone `bin/FLEKS.exe` driver.
 
-- **SWMF component mode:** builds `src/libFLEKS.a` and the `srcInterface/`
-  wrappers so SWMF can drive FLEKS as PC/PT.
-- **Standalone executable mode:** builds `bin/FLEKS.exe`, links directly against
-  AMReX and `libSHARE.a`, and uses `src/main.cpp` as the driver.
-
-The top-level `Makefile` detects whether FLEKS is under an SWMF tree by looking
-for `../../share/Library/src`. If that exists, standalone builds reuse SWMF's
-`../../share`, `../../util`, and `../../lib`. In a pure FLEKS checkout,
-`Config.pl` can clone missing `share/`, `util/`, and `util/AMREX` dependencies
-under the FLEKS directory.
-
-The file `src/.build_mode` records whether the last build used `STANDALONE` or
-`COMPONENT` mode. Switching modes automatically cleans `src/` to avoid mixing
-objects compiled with different preprocessor flags.
+Standalone builds reuse `../../share`, `../../util`, and `../../lib` when FLEKS
+is checked out under `SWMF/PC/FLEKS`. In a pure FLEKS checkout, `Config.pl` can
+clone the same dependencies under the FLEKS directory. `src/.build_mode` records
+the last build mode and triggers a `src/` clean when switching modes, since the
+two modes use different preprocessor flags.
 
 ### Dependencies
 
 | Dependency | Required | Notes                                      |
 |------------|----------|--------------------------------------------|
-| AMReX      | Yes      | `../../util/AMREX/InstallDir/` in SWMF, or `util/AMREX/InstallDir/` in pure standalone |
+| AMReX      | Yes      | `../../util/AMREX/InstallDir/` in SWMF, or `util/AMREX/InstallDir/` standalone |
 | MPI        | Yes      | `mpicxx`/`mpif90` must be in PATH          |
 | SWMF share | Yes      | Provides `share/Scripts`, `share/Library`, and `libSHARE.a` |
 | HDF5       | Optional | Parallel HDF5 for HDF5 output support      |
@@ -187,9 +180,8 @@ make distclean   # Full reset
 ./Config.pl -lev=2               # Set max AMR levels
 ```
 
-For CI or manual standalone builds inside an SWMF tree, copy
-`Makefile.conf.standalone.template` to `Makefile.conf` before running `make EXE`
-if the normal SWMF/FLEKS configuration step has not already generated one.
+Inside an SWMF tree, run the normal SWMF/FLEKS configuration first so
+`Makefile.conf` is generated before `make EXE`.
 
 ### Build Artifacts
 
@@ -265,43 +257,19 @@ parameter reading system. All supported commands are documented in `PARAM.XML`.
 ## Testing & Running
 
 When coupled with SWMF, FLEKS is initialized and driven by the SWMF framework.
-For standalone use, `src/main.cpp` sets up AMReX, reads `PARAM.in`, broadcasts
-the parameter string to all MPI ranks, creates a `Domain`, calls `set_ic()`,
-then advances until `#STOP` criteria are met.
+For standalone use, `src/main.cpp` initializes AMReX, reads `PARAM.in`, creates
+a `Domain`, calls `set_ic()`, and advances until `#STOP` criteria are met.
+Standalone inputs that do not use SWMF should set `#INITFROMSWMF` to `F` and
+provide initial state commands such as `#NORMALIZATION`, `#PLASMA`, and
+`#UNIFORMSTATE`.
 
-Standalone `PARAM.in` files should include the usual grid, plasma, particle,
-timestep, output, and stop commands. For runs that are not initialized by the
-SWMF coupler, include `#INITFROMSWMF` with `F` and provide standalone initial
-state commands such as `#NORMALIZATION`, `#PLASMA`, and `#UNIFORMSTATE`.
-
-The current standalone driver uses domain name `FLEKS1`, writes plots under
-`FLEKS1/plots`, writes restarts under `FLEKS1/restartOUT`, and stops based on
-`#STOP` values `MaxIter` and/or `TimeMax`.
-
-### Run Directory Structure
-
-SWMF-coupled runs normally use:
-
-```
-run/PC/
-├── restartIN/
-├── restartOUT/
-└── plots/
-```
-
-Standalone runs currently use:
-
-```
-FLEKS1/
-├── restartOUT/
-└── plots/
-```
+The standalone driver currently uses domain name `FLEKS1`; plots and restarts
+are written under `FLEKS1/`.
 
 ### CI
 
-The GitHub Actions workflow builds and runs SWMF regression tests, then builds
-the standalone `bin/FLEKS.exe` and runs the standalone smoke test from
-`tests/test_standalone` when that fixture is present.
+The GitHub Actions workflow runs the SWMF regression tests, builds standalone
+`bin/FLEKS.exe`, and runs `tests/test_standalone` when that fixture is present.
 
 ### Tools & Post-Processing
 
