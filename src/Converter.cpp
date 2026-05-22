@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <cstdlib>
 #include <iostream>
 #include <vector>
@@ -6,8 +7,18 @@
 #include <AMReX_Print.H>
 
 #include "Converter.h"
+#include "SimDomains.h"
 
 using namespace amrex;
+
+// Converter links libFLEKS without the normal FLEKS driver.
+Domains fleksDomains;
+
+extern "C" {
+void timing_start_c(size_t*, char*) {}
+void timing_stop_c(size_t*, char*) {}
+}
+
 int main(int argc, char* argv[]) {
   std::vector<std::string> cdl;
   for (int i = 0; i < argc; ++i) {
@@ -123,7 +134,8 @@ int main(int argc, char* argv[]) {
       char command[2000];
       std::snprintf(command, 2000, "\\rm -rf %s", fileNames[i].c_str());
       std::cout << "Deleting source file: " << fileNames[i] << std::endl;
-      std::system(command);
+      int res = std::system(command);
+      (void)res;
     }
   }
 

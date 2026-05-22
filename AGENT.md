@@ -7,7 +7,8 @@ FLEKS is a Particle-In-Cell (PIC) and particle tracker code built on top of the
 (Particle-in-Cell) and **PT** (Particle Tracker) components within the
 [SWMF](https://github.com/SWMFsoftware) (Space Weather Modeling Framework),
 coupling with BATS-R-US (the MHD solver) via the MHD-AEPIC algorithm. It can
-also run standalone for kinetic plasma simulations.
+also run as a standalone AMReX/MPI executable when the SWMF coupler is not
+needed.
 
 **Primary use cases:**
 - Implicit Particle-In-Cell simulations (semi-implicit θ-scheme with GMRES
@@ -34,13 +35,14 @@ FLEKS/
 ├── srcInterface/         ← SWMF coupling layer (Fortran wrappers + C++ interface)
 ├── docs/                 ← Algorithm docs (LaTeX) and coding standards
 ├── tools/                ← Post-processing and conversion scripts (Python/bash)
-├── tests/                ← Unit-test sandbox (currently placeholder)
+├── tests/                ← Standalone fixtures and future unit/regression tests
 ├── bin/                  ← Built executables (created by build)
 ├── .agent/skills/        ← Agent skills
 ├── .agent/workflows/     ← Agent workflows
 ├── Config.pl             ← Perl configuration script (AMReX, test particles, etc.)
 ├── configure.py          ← Standalone configure (writes Makefile.def)
 ├── Makefile              ← Top-level Makefile
+├── Makefile.conf.standalone.template ← Template config for standalone builds
 ├── Makefile.def.FLEKS    ← Default Makefile definitions for standalone
 ├── PARAM.XML             ← Parameter command documentation (XML, ~1500 lines)
 ├── .clang-format         ← Clang-format configuration (Mozilla-based, 80-col)
@@ -52,7 +54,8 @@ FLEKS/
 Use this workflow for most code changes:
 1. Read this file and the nearest subdirectory `AGENT.md` first.
 2. If a header changes, inspect matching implementation files and rebuild `LIB`.
-3. Run `make LIB -j8` for fast validation; run `make FLEKS -j8` only when executable behavior is affected.
+3. Run `make LIB -j8` for SWMF component validation; run `make EXE -j8`
+   when standalone executable behavior is affected.
 4. Run `make compile_commands` after include-path or build-flag changes.
 
 ### Key directories
@@ -128,20 +131,30 @@ The interface layer follows a pattern:
 
 ## Build System
 
+FLEKS has two build modes. `make LIB` builds the SWMF component library and
+wrappers; `make EXE` builds the standalone `bin/FLEKS.exe` driver.
+
+Standalone builds reuse `../../share`, `../../util`, and `../../lib` when FLEKS
+is checked out under `SWMF/PC/FLEKS`. In a pure FLEKS checkout, `Config.pl` can
+clone the same dependencies under the FLEKS directory. `src/.build_mode` records
+the last build mode and triggers a `src/` clean when switching modes, since the
+two modes use different preprocessor flags.
+
 ### Dependencies
 
-| Dependency | Required | Notes                                    |
-|------------|----------|------------------------------------------|
-| AMReX      | Yes      | At `../../util/AMREX/InstallDir/`        |
-| MPI        | Yes      | `mpicxx` must be in PATH                 |
-| HDF5       | Optional | Parallel HDF5 for HDF5 output support    |
-| Perl       | Yes      | For `Config.pl` and `share/Scripts/`      |
+| Dependency | Required | Notes                                      |
+|------------|----------|--------------------------------------------|
+| AMReX      | Yes      | `../../util/AMREX/InstallDir/` in SWMF, or `util/AMREX/InstallDir/` standalone |
+| MPI        | Yes      | `mpicxx`/`mpif90` must be in PATH          |
+| SWMF share | Yes      | Provides `share/Scripts`, `share/Library`, and `libSHARE.a` |
+| HDF5       | Optional | Parallel HDF5 for HDF5 output support      |
+| Perl       | Yes      | For `Config.pl` and `share/Scripts/`        |
 
 ### Build Targets
 
 ```bash
 # Standalone executable
-make FLEKS -j8
+make EXE -j8
 
 # Library for SWMF integration
 make LIB -j8
@@ -160,17 +173,22 @@ make distclean   # Full reset
 ### Configuration
 
 ```bash
-# Standalone setup (clones share/ and util/ if missing)
-./Config.pl -s                    # Show current settings
+# Standalone setup/configuration
+./Config.pl                       # Show current settings when no args are given
+./Config.pl -install              # Generate Makefile.conf if needed
 ./Config.pl -tp=PBE              # Set test particle output (P, PB, PBE, PBEG)
 ./Config.pl -lev=2               # Set max AMR levels
 ```
 
+Inside an SWMF tree, run the normal SWMF/FLEKS configuration first so
+`Makefile.conf` is generated before `make EXE`.
+
 ### Build Artifacts
 
 Typical outputs after building:
-- `bin/FLEKS` or `bin/FLEKS.exe` (standalone executable)
+- `bin/FLEKS.exe` (standalone executable)
 - `src/libFLEKS.a` (static library for linking)
+- `srcInterface/lib*.a` / wrapper objects for SWMF component mode
 - `compile_commands.json` (IDE index)
 
 If these are missing, run the build targets in the **Build Targets** section above.
@@ -239,16 +257,19 @@ parameter reading system. All supported commands are documented in `PARAM.XML`.
 ## Testing & Running
 
 When coupled with SWMF, FLEKS is initialized and driven by the SWMF framework.
-For standalone use, the `main.cpp` sets up AMReX and a `Domain` object.
+For standalone use, `src/main.cpp` initializes AMReX, reads `PARAM.in`, creates
+a `Domain`, calls `set_ic()`, and advances until `#STOP` criteria are met.
+Standalone inputs that do not use SWMF should set `#INITFROMSWMF` to `F` and
+provide initial state commands such as `#NORMALIZATION`, `#PLASMA`, and
+`#UNIFORMSTATE`.
 
-### Run Directory Structure
+The standalone driver currently uses domain name `FLEKS1`; plots and restarts
+are written under `FLEKS1/`.
 
-```
-run/PC/
-├── restartIN/
-├── restartOUT/
-└── plots/
-```
+### CI
+
+The GitHub Actions workflow runs the SWMF regression tests, builds standalone
+`bin/FLEKS.exe`, and runs `tests/test_standalone` when that fixture is present.
 
 ### Tools & Post-Processing
 
@@ -296,6 +317,7 @@ Composite step-by-step guides for multi-stage tasks are in `.agent/workflows/`:
 2. Create `src/NewFeature.cpp`
 3. Add `NewFeature.cpp` to `SRCS` in `src/Makefile`
 4. Build: `make LIB -j8`
+5. If the standalone executable needs the new code path, also run `make EXE -j8`
 
 ### Adding a New Parameter Command
 
@@ -308,6 +330,14 @@ Composite step-by-step guides for multi-stage tasks are in `.agent/workflows/`:
 1. Add C++ function in `srcInterface/FleksInterface.cpp`
 2. Add Fortran wrapper in `PC_wrapper.f90` or `PT_wrapper.f90`
 3. Ensure C-compatible calling convention (`extern "C"` or `bind(C)`)
+
+### Modifying Standalone Behavior
+
+1. Update `src/main.cpp` for driver-level behavior.
+2. Keep `Domain` logic shared with SWMF whenever possible.
+3. Build with `make EXE -j8`.
+4. Run from a directory containing `PARAM.in`, or from the standalone test
+   directory if adding/changing a test fixture.
 
 ---
 
@@ -322,3 +352,5 @@ Composite step-by-step guides for multi-stage tasks are in `.agent/workflows/`:
   for user-customizable source terms.
 - The `show_git_info.h` file is auto-generated at build time with git revision
   information.
+- Standalone builds define `_PC_COMPONENT_` and `FLEKS_STANDALONE`; SWMF
+  component builds define `_<COMPONENT>_COMPONENT_`.

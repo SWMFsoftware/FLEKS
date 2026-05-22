@@ -567,6 +567,10 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
   }
 
   if (tc->picLog.is_time_to(doForce)) {
+    if (plasmaEnergy.empty()) {
+      plasmaEnergy.resize(nSpecies + 1, 0.0);
+      iTot = nSpecies;
+    }
     ParallelDescriptor::ReduceRealSum(plasmaEnergy.data(), plasmaEnergy.size(),
                                       ParallelDescriptor::IOProcessorNumber());
 

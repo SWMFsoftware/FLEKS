@@ -10,12 +10,27 @@ def generate():
     swmf = os.path.abspath(os.path.join(root, "../../"))
 
     # Get MPI flags
-    mpi_out = subprocess.check_output([compiler, "-show"]).decode('utf-8')
-    includes = [p for p in mpi_out.split() if p.startswith("-I")]
+    try:
+        mpi_out = subprocess.check_output([compiler, "-show"]).decode('utf-8')
+        includes = [p for p in mpi_out.split() if p.startswith("-I")]
+    except subprocess.CalledProcessError:
+        print("Warning: could not get MPI flags. Skipping compile_commands.json generation.")
+        return
     
     # Get COMPONENT flag
-    comp_out = subprocess.check_output(["grep", "^COMPONENT", os.path.join(root, "Makefile.def")]).decode('utf-8').strip()
-    flags = [f"-D_{comp_out.split('=')[1].strip()}_COMPONENT_"]
+    comp_name = "PC" # Default for FLEKS
+    makefile_def = os.path.join(root, "Makefile.def")
+    if os.path.exists(makefile_def):
+        try:
+            with open(makefile_def, 'r') as f:
+                for line in f:
+                    if line.startswith("COMPONENT"):
+                        comp_name = line.split('=')[1].strip()
+                        break
+        except Exception:
+            pass
+
+    flags = [f"-D_{comp_name}_COMPONENT_"]
 
     includes += ["-I../include", 
                  f"-I{os.path.join(swmf, 'share/Library/src')}",

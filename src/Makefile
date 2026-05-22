@@ -1,5 +1,41 @@
-include ../Makefile.def
--include Makefile.DEPEND
+FLEKS_DIR ?= $(abspath ..)
+
+ifeq ($(STANDALONE),)
+  STANDALONE := $(if $(wildcard $(FLEKS_DIR)/../../share/Library/src),,YES)
+endif
+
+ifeq ($(STANDALONE), YES)
+  include ../Makefile.conf
+  # The parent Makefile overrides these when FLEKS is inside an SWMF tree.
+  SHARE_ROOT ?= $(FLEKS_DIR)/share
+  UTIL_ROOT  ?= $(FLEKS_DIR)/util
+  LIB_ROOT   ?= $(FLEKS_DIR)/lib
+  SHARE_DIR ?= $(SHARE_ROOT)/Library/src
+  AMREX_DIR ?= $(UTIL_ROOT)/AMREX/InstallDir
+  FLEKS_SCRIPTDIR ?= $(SHARE_ROOT)/Scripts
+  LDFS ?= -L$(LIB_ROOT) -lSHARE
+  LDFLAGS ?= -L$(AMREX_DIR)/lib -lamrex -lgfortran -lm
+  SEARCH_C = -I../include -I${SHARE_DIR} -I${AMREX_DIR}/include
+  FLAGC_EXTRA = -D_PC_COMPONENT_ -DFLEKS_STANDALONE
+  BINDIR = ../bin
+  ifeq ($(origin CXX), default)
+    CXX = mpicxx
+  endif
+  CXXFLAGS ?= -O3 -std=c++17
+  COMPILE.mpicxx = $(CXX) $(CXXFLAGS) $(SEARCH_C) $(FLAGC_EXTRA)
+
+  %.o: %.cpp
+	$(COMPILE.mpicxx) -c $< -o $@
+else
+  include ../Makefile.def
+  -include Makefile.DEPEND
+  include ../Makefile.conf
+  SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
+  FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_
+  LDFS ?= -L${LIBDIR} -lSHARE
+endif
+
+LIBFLEKS = libFLEKS.a
 
 # source files
 SRCS := \
@@ -27,44 +63,47 @@ OBJECTS_EXE = \
 
 FLEKSEXE = ${BINDIR}/FLEKS.exe
 
-CONVERTER_OBJECTS = Converter.o 	
-	
+CONVERTER_OBJECTS = Converter.o
 
 CONVERTEREXE = ../bin/converter.exe
-
-SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
-
-FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_
-# FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_ -D_AMR_DEV_
-
-
-# If hdf5.h exists, assume AMReX is built with HDF5 support.
-ifneq ("$(wildcard $(UTILDIR)/AMREX/InstallDir/include/hdf5.h)","")
-    FLAGC_EXTRA := ${FLAGC_EXTRA} -D_USE_HDF5_
-endif
-
-LIBFLEKS  = libFLEKS.a
-
-include ../Makefile.conf
 
 default: EXE
 
 EXE:
+ifeq ($(STANDALONE), YES)
+	$(MAKE) LIB STANDALONE=YES
+	$(MAKE) main.o STANDALONE=YES
+	mkdir -p ${BINDIR}
+	$(COMPILE.mpicxx) -o ${FLEKSEXE} main.o \
+		-L. -lFLEKS ${LDFS} $(LDFLAGS)
+else
 	$(MAKE) LIB
 	$(MAKE) ${OBJECTS_EXE}
 	${LINK.f90} -o ${FLEKSEXE} ${OBJECTS_EXE} \
 		-L. -lFLEKS ${LflagMpi}
+endif
 
 CONVERTER:	${CONVERTER_OBJECTS}	
 	$(MAKE) ${LIBFLEKS}
+ifeq ($(STANDALONE), YES)
+	mkdir -p ${BINDIR}
+	$(COMPILE.mpicxx) -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
+		-L. -lFLEKS ${LDFS} $(LDFLAGS)
+else
 	${LINK.f90} ${NOMAINFLAG} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
-		-L. -lFLEKS ${LflagMpi}
+		-L. -lFLEKS ${LDFS} ${LflagMpi}
+endif
+
 	@echo
 	@echo ${CONVERTEREXE} has been brought up to date.
 	@echo
 
 DEPEND:
+ifeq ($(STANDALONE), YES)
+	@perl ${FLEKS_SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJECTS} main.cpp ${CONVERTER_OBJECTS}
+else
 	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJECTS} ${OBJECTS_EXE} ${CONVERTER_OBJECTS}
+endif
 
 LIB: DEPEND
 	$(MAKE) ${LIBFLEKS}

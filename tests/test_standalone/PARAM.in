@@ -1,0 +1,55 @@
+#DESCRIPTION
+Standalone smoke test: 3D light wave
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-1.0                    xMin
+ 1.0                    xMax
+-1.0                    yMin
+ 1.0                    yMax
+ -1.0                   zMin
+  1.0                   zMax
+
+#NCELL
+8                       nCellX
+8                       nCellY
+ 8                      nCellZ
+
+#MAXBLOCKSIZE
+8                       maxBlockSizeX
+8                       maxBlockSizeY
+8                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#TESTCASE
+lightwave               testCase
+
+#PLASMA
+2                       nSpecies
+100.0                   mass
+1.0                     charge
+1.0                     mass
+-1.0                    charge
+
+#TIMESTEPPING
+T                       useFixedDt
+0.1                     dt
+
+#NORMALIZATION
+1.0                     lNormSI
+1.0                     uNormSI
+
+#MONITOR
+1                       dnReport
+
+#STOP
+-1                      MaxIter
+0.5                     TimeMax
+
+#RUN

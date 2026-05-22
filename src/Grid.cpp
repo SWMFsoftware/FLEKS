@@ -132,6 +132,10 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid,
       SetGridEff(grid->gridEff());
     }
 
+    if (refineRegions.empty()) {
+      refineRegions.resize(n_lev_max());
+    }
+
     // Why need 'isNewGrid'? See the explanation in Domain::regrid().
     if (region == activeRegion && !isNewGrid)
       return;

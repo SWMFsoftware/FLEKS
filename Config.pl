@@ -19,20 +19,48 @@ our @Arguments       = @ARGV;
 
 my $config     = "share/Scripts/Config.pl";
 
-my $GITCLONE = "git clone"; my $GITDIR = "git\@github.com:SWMFsoftware";
+my $GITCLONE = "git clone"; 
+my $GITDIR = "git\@github.com:SWMFsoftware";
 
 if (not -f $config and not -f "../../$config"){
     # Stand-alone
-    `$GITCLONE $GITDIR/share; $GITCLONE $GITDIR/util`;    
+    if (not -f $config) {
+        print "--- Cloning SWMFsoftware/share ---\n";
+        if (-d "share") {
+            system("git clone $GITDIR/share share_tmp && cp -rp share_tmp/. share/ && rm -rf share_tmp") == 0 or die "Error: could not clone share\n";
+        } else {
+            system("$GITCLONE $GITDIR/share") == 0 or die "Error: could not clone share\n";
+        }
+    }
+    if (not -d "util") {
+        print "--- Cloning SWMFsoftware/util ---\n";
+        system("$GITCLONE $GITDIR/util") == 0 or die "Error: could not clone util\n";
+    }
+    if (not -d "util/AMREX") {
+        print "--- Cloning SWMFsoftware/AMREX ---\n";
+        system("$GITCLONE $GITDIR/AMREX util/AMREX") == 0 or die "Error: could not clone AMREX\n";
+    }
 }
 
 my $AmrexDir = "util/AMREX";
 if(-f $config){
     #Stand-alone FLEKS. Turn on amrex automatically. 
     push @Arguments, "-amrex";
+    push @Arguments, "-show" unless @ARGV;
+    push @Arguments, "-nodebug", "-install" unless -f "Makefile.conf";
     require $config;
+
+    # Compile share lib if it's not there
+    if (not -f "lib/libSHARE.a") {
+        print "Building libSHARE.a...\n";
+        mkdir "lib" unless -d "lib";
+        system("cd share/Library/src; make LIB") == 0 or die "Error: could not build libSHARE.a\n";
+    }
+
     die "Error: AMReX doest not exist!\n" unless -d $AmrexDir;
 }else{
+
+    push @Arguments, "-install=c" unless -f "Makefile.conf";
     require "../../$config";
     $AmrexDir = "../../util/AMREX"; 
 }
