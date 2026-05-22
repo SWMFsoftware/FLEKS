@@ -24,27 +24,37 @@ include/UserSource.h: include/UserSource.h.orig
 GITINFO: include/show_git_info.h
 	${SCRIPTDIR}/gitall -r=c > include/show_git_info.h
 
-# Detect whether FLEKS lives inside the SWMF tree or is a pure standalone checkout.
-# If ../../share/Library/src exists we are inside SWMF; otherwise pure standalone.
-_SWMF_SHARE := $(abspath $(CURDIR)/../../share)
-ifneq ($(wildcard $(_SWMF_SHARE)/Library/src),)
-  # Inside SWMF tree: reuse SWMF's share and lib directories.
-  SHARE_ROOT = $(_SWMF_SHARE)
-  SHARE_SRC  = $(SHARE_ROOT)/Library/src
-  LIB_ROOT   = $(abspath $(CURDIR)/../../lib)
-  SHARE_LIB  = $(LIB_ROOT)/libSHARE.a
-  UTIL_ROOT  = $(abspath $(CURDIR)/../../util)
+# Standalone builds can run from SWMF/PC/FLEKS or from a pure FLEKS checkout.
+SWMF_ROOT  := $(abspath $(CURDIR)/../..)
+SWMF_SHARE := $(SWMF_ROOT)/share
+IN_SWMF_TREE := $(wildcard $(SWMF_SHARE)/Library/src)
+
+ifneq ($(IN_SWMF_TREE),)
+  SHARE_ROOT = $(SWMF_SHARE)
+  UTIL_ROOT  = $(SWMF_ROOT)/util
+  LIB_ROOT   = $(SWMF_ROOT)/lib
 else
-  # Pure standalone: use share/ cloned under the FLEKS directory.
   SHARE_ROOT = $(abspath $(CURDIR)/share)
-  SHARE_SRC  = $(SHARE_ROOT)/Library/src
-  LIB_ROOT   = $(abspath $(CURDIR)/lib)
-  SHARE_LIB  = $(LIB_ROOT)/libSHARE.a
   UTIL_ROOT  = $(abspath $(CURDIR)/util)
+  LIB_ROOT   = $(abspath $(CURDIR)/lib)
 endif
+
+SHARE_SRC = $(SHARE_ROOT)/Library/src
+SHARE_LIB = $(LIB_ROOT)/libSHARE.a
 
 GITCLONE_SHARE  = git clone git@github.com:SWMFsoftware/share $(CURDIR)/share
 BUILD_MODE_FILE = src/.build_mode
+STANDALONE_SRC_MAKE = $(MAKE) -C src STANDALONE=YES FLEKS_DIR=$(CURDIR) \
+	SHARE_ROOT=$(SHARE_ROOT) UTIL_ROOT=$(UTIL_ROOT) LIB_ROOT=$(LIB_ROOT)
+
+# Source objects cannot be reused across standalone/component preprocessor flags.
+define set_build_mode
+	@if [ -f $(BUILD_MODE_FILE) ] && [ "$$(cat $(BUILD_MODE_FILE))" != "$(1)" ]; then \
+		echo "--- Switching to $(2) mode: auto-cleaning src/ ---"; \
+		$(MAKE) -C src clean; \
+	fi
+	@echo $(1) > $(BUILD_MODE_FILE)
+endef
 
 EXE: GITINFO compile_commands
 	@if [ ! -d $(SHARE_ROOT)/Library/src ]; then \
@@ -59,13 +69,8 @@ EXE: GITINFO compile_commands
 		echo "--- Building libSHARE.a ---"; \
 		$(MAKE) -C $(SHARE_SRC) LIB; \
 	fi
-	@if [ -f $(BUILD_MODE_FILE) ] && [ "$$(cat $(BUILD_MODE_FILE))" != "STANDALONE" ]; then \
-		echo "--- Switching from component to standalone mode: auto-cleaning src/ ---"; \
-		(cd src; $(MAKE) clean); \
-	fi
-	@echo STANDALONE > $(BUILD_MODE_FILE)
-	cd src; $(MAKE) EXE STANDALONE=YES FLEKS_DIR=$(CURDIR) \
-		SHARE_ROOT=$(SHARE_ROOT) UTIL_ROOT=$(UTIL_ROOT) LIB_ROOT=$(LIB_ROOT)
+	$(call set_build_mode,STANDALONE,standalone)
+	$(STANDALONE_SRC_MAKE) EXE
 
 bin:
 	mkdir bin
@@ -73,43 +78,34 @@ bin:
 install: bin include/Constants.h include/UserSource.h
 
 LIB: bin include/Constants.h include/UserSource.h compile_commands
-	@if [ ! -d $(_SWMF_SHARE)/Library/src ]; then \
-		echo "--- Building FLEKS library in standalone mode ---"; \
-		if [ -f $(BUILD_MODE_FILE) ] && [ "$$(cat $(BUILD_MODE_FILE))" != "STANDALONE" ]; then \
-			echo "--- Switching from component to standalone mode: auto-cleaning src/ ---"; \
-			(cd src; $(MAKE) clean); \
-		fi; \
-		echo STANDALONE > $(BUILD_MODE_FILE); \
-		cd src; $(MAKE) LIB STANDALONE=YES FLEKS_DIR=$(CURDIR) \
-			SHARE_ROOT=$(SHARE_ROOT) UTIL_ROOT=$(UTIL_ROOT) LIB_ROOT=$(LIB_ROOT); \
-	else \
-		if [ ! -f $(SHARE_LIB) ]; then \
-			echo ""; \
-			echo "ERROR: $(SHARE_LIB) not found."; \
-			echo "       The SWMF share library must be built before 'make LIB'."; \
-			echo "       Please run the top-level SWMF build first."; \
-			echo ""; \
-			exit 1; \
-		fi; \
-		if [ ! -f $(_SWMF_SHARE)/include/con_comp_param.mod ]; then \
-			echo ""; \
-			echo "ERROR: CON Fortran modules not found in $(_SWMF_SHARE)/include/."; \
-			echo "       The SWMF CON library must be built before 'make LIB'."; \
-			echo "       Please run the top-level SWMF build first."; \
-			echo ""; \
-			exit 1; \
-		fi; \
-		if [ -f $(BUILD_MODE_FILE) ] && [ "$$(cat $(BUILD_MODE_FILE))" != "COMPONENT" ]; then \
-			echo "--- Switching from standalone to component mode: auto-cleaning src/ ---"; \
-			(cd src; $(MAKE) clean); \
-		fi; \
-		echo COMPONENT > $(BUILD_MODE_FILE); \
-		(cd src; $(MAKE) LIB) && \
-		(cd srcInterface; $(MAKE) LIB); \
+ifeq ($(IN_SWMF_TREE),)
+	@echo "--- Building FLEKS library in standalone mode ---"
+	$(call set_build_mode,STANDALONE,standalone)
+	$(STANDALONE_SRC_MAKE) LIB
+else
+	@if [ ! -f $(SHARE_LIB) ]; then \
+		echo ""; \
+		echo "ERROR: $(SHARE_LIB) not found."; \
+		echo "       The SWMF share library must be built before 'make LIB'."; \
+		echo "       Please run the top-level SWMF build first."; \
+		echo ""; \
+		exit 1; \
 	fi
+	@if [ ! -f $(SWMF_SHARE)/include/con_comp_param.mod ]; then \
+		echo ""; \
+		echo "ERROR: CON Fortran modules not found in $(SWMF_SHARE)/include/."; \
+		echo "       The SWMF CON library must be built before 'make LIB'."; \
+		echo "       Please run the top-level SWMF build first."; \
+		echo ""; \
+		exit 1; \
+	fi
+	$(call set_build_mode,COMPONENT,component)
+	$(MAKE) -C src LIB
+	$(MAKE) -C srcInterface LIB
+endif
 
 CONVERTER:
-	(cd src; $(MAKE) CONVERTER)
+	$(MAKE) -C src CONVERTER
 
 rundir:
 	mkdir -p ${RUNDIR}/${COMPONENT}
@@ -122,8 +118,8 @@ rundir:
 
 
 clean:
-	(cd src; $(MAKE) clean)
-	(cd srcInterface; $(MAKE) clean)
+	$(MAKE) -C src clean
+	$(MAKE) -C srcInterface clean
 	rm -rf bin/*
 	rm -f $(BUILD_MODE_FILE)
 

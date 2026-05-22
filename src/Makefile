@@ -1,8 +1,9 @@
 ifeq ($(STANDALONE), YES)
   include ../Makefile.conf
+  # The parent Makefile overrides these when FLEKS is inside an SWMF tree.
   SHARE_ROOT ?= $(FLEKS_DIR)/share
-  UTIL_ROOT ?= $(FLEKS_DIR)/util
-  LIB_ROOT ?= $(FLEKS_DIR)/lib
+  UTIL_ROOT  ?= $(FLEKS_DIR)/util
+  LIB_ROOT   ?= $(FLEKS_DIR)/lib
   SHARE_DIR ?= $(SHARE_ROOT)/Library/src
   AMREX_DIR ?= $(UTIL_ROOT)/AMREX/InstallDir
   FLEKS_SCRIPTDIR ?= $(SHARE_ROOT)/Scripts
@@ -10,8 +11,6 @@ ifeq ($(STANDALONE), YES)
   LDFLAGS ?= -L$(AMREX_DIR)/lib -lamrex -lgfortran -lm
   SEARCH_C = -I../include -I${SHARE_DIR} -I${AMREX_DIR}/include
   FLAGC_EXTRA = -D_PC_COMPONENT_ -DFLEKS_STANDALONE
-  LIBFLEKS = libFLEKS.a
-  OBJECTS_STANDALONE = GridInfo.o
   BINDIR = ../bin
   ifeq ($(origin CXX), default)
     CXX = mpicxx
@@ -28,8 +27,9 @@ else
   include ../Makefile.conf
   SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
   FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_
-  LIBFLEKS = libFLEKS.a
 endif
+
+LIBFLEKS = libFLEKS.a
 
 # source files
 SRCS := \
