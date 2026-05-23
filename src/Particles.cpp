@@ -369,10 +369,9 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_exosphere(
     const amrex::MultiFab& exoDensity, amrex::Real dt, int iLev,
     amrex::Real weightMacro, int iComp, amrex::Real uth,
-    Particles<NStructReal, NStructInt>* electronParts,
-    amrex::Real uth_elec) {
+    Particles<NStructReal, NStructInt>* electronParts, amrex::Real uth_elec) {
   timing_func("Pts::add_particles_exosphere");
-  
+
   for (MFIter mfi(exoDensity); mfi.isValid(); ++mfi) {
     const Box& bx = mfi.validbox();
     const auto& exo_arr = exoDensity[mfi].array();
@@ -401,7 +400,8 @@ void Particles<NStructReal, NStructInt>::add_particles_exosphere(
             ParticleTileType* elec_tile = nullptr;
             if (electronParts) {
               q_elec = electronParts->get_qomSign() * weight;
-              elec_tile = &(electronParts->get_particle_tile(iLev, mfi, { AMREX_D_DECL(i, j, k) }));
+              elec_tile = &(electronParts->get_particle_tile(
+                  iLev, mfi, { AMREX_D_DECL(i, j, k) }));
             }
 
             for (int im = 0; im < nMacro; ++im) {
@@ -420,7 +420,8 @@ void Particles<NStructReal, NStructInt>::add_particles_exosphere(
               RealVect xyz;
               IntVect ijk_coord = { AMREX_D_DECL(i, j, k) };
               for (int d = 0; d < nDim; ++d) {
-                xyz[d] = (ijk_coord[d] + randNum()) * dx[iLev][d] + plo[iLev][d];
+                xyz[d] =
+                    (ijk_coord[d] + randNum()) * dx[iLev][d] + plo[iLev][d];
               }
 
               // Spawn Ion
@@ -464,7 +465,6 @@ void Particles<NStructReal, NStructInt>::add_particles_exosphere(
         }
   }
 }
-
 
 //==========================================================
 template <int NStructReal, int NStructInt>

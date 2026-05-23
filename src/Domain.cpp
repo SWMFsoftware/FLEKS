@@ -1,6 +1,6 @@
 #include "Domain.h"
-#include <AMReX_Utility.H>
 #include "GridUtility.h"
+#include <AMReX_Utility.H>
 #ifdef _PT_COMPONENT_
 #include "OHSource.h"
 #else

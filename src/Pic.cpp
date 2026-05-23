@@ -452,8 +452,8 @@ void Pic::init_exosphere() {
       const Real* plo = Geom(iLev).ProbLo();
       const Real vol = AMREX_D_TERM(dx[0], *dx[1], *dx[2]);
 
-      Real dx_local[3] = {0.0, 0.0, 0.0};
-      Real plo_local[3] = {0.0, 0.0, 0.0};
+      Real dx_local[3] = { 0.0, 0.0, 0.0 };
+      Real plo_local[3] = { 0.0, 0.0, 0.0 };
       for (int d = 0; d < nDim; ++d) {
         dx_local[d] = dx[d];
         plo_local[d] = plo[d];
@@ -464,10 +464,12 @@ void Pic::init_exosphere() {
         auto const& exo_arr = exoDensity[iLev].array(mfi);
 
         ParallelFor(bx, [=](int i, int j, int k) {
-          Real pos[3] = {0.0, 0.0, 0.0};
+          Real pos[3] = { 0.0, 0.0, 0.0 };
           pos[0] = (i + 0.5) * dx_local[0] + plo_local[0];
-          if (nDim > 1) pos[1] = (j + 0.5) * dx_local[1] + plo_local[1];
-          if (nDim > 2) pos[2] = (k + 0.5) * dx_local[2] + plo_local[2];
+          if (nDim > 1)
+            pos[1] = (j + 0.5) * dx_local[1] + plo_local[1];
+          if (nDim > 2)
+            pos[2] = (k + 0.5) * dx_local[2] + plo_local[2];
 
           Real r2 = 0;
           for (int d = 0; d < nDim; ++d) {
@@ -475,14 +477,14 @@ void Pic::init_exosphere() {
           }
           Real r = sqrt(r2);
           Real dens = 0;
-          if (tCase != Pickup || (pos[0] >= xMin_pickup && pos[0] <= xMax_pickup)) {
+          if (tCase != Pickup ||
+              (pos[0] >= xMin_pickup && pos[0] <= xMax_pickup)) {
             if (r >= exobaseRadius) {
               bool inShadow = false;
               if (shadowRadius > 0) {
                 inShadow = (pos[0] < 0 && (pos[1] * pos[1] +
-                                             (nDim > 2 ? pos[2] * pos[2] : 0)) <
-                                                 shadowRadius *
-                                                     shadowRadius);
+                                           (nDim > 2 ? pos[2] * pos[2] : 0)) <
+                                              shadowRadius * shadowRadius);
               }
               if (!inShadow) {
                 if (profile == "exponential") {
@@ -500,7 +502,8 @@ void Pic::init_exosphere() {
                 } else if (profile == "ChamberlainH") {
                   Real n_val = 0.0;
                   for (int idx = 0; idx < n0_size; idx++) {
-                    n_val += n0_ptr[idx] * exp(-H0_ptr[idx] * (1.0 / r0 - 1.0 / r));
+                    n_val +=
+                        n0_ptr[idx] * exp(-H0_ptr[idx] * (1.0 / r0 - 1.0 / r));
                   }
                   dens = n_val;
                 }
@@ -524,7 +527,6 @@ void Pic::init_exosphere() {
     }
   }
 }
-
 
 //==========================================================
 void Pic::pre_regrid() {
@@ -805,17 +807,17 @@ void Pic::fill_source_particles() {
         }
 
         Real dt = tc->get_dt();
-        Real weightMacro = (info.nMacroParticlesPerDt > 0)
-                               ? (info.totalProductionRate * dt /
-                                  info.nMacroParticlesPerDt)
-                               : 1.0;
+        Real weightMacro =
+            (info.nMacroParticlesPerDt > 0)
+                ? (info.totalProductionRate * dt / info.nMacroParticlesPerDt)
+                : 1.0;
         for (int iLev = 0; iLev < n_lev(); iLev++) {
           if (iSp >= parts.size() || !parts[iSp])
             continue;
 
           Real T0_K = info.T0.empty() ? 0.0 : info.T0[0];
-          Real mass_kg = parts[iSp]->get_mass() *
-                         fi->get_No2SiM(); // PIC mass unit -> kg
+          Real mass_kg =
+              parts[iSp]->get_mass() * fi->get_No2SiM(); // PIC mass unit -> kg
           Real uth_SI = (T0_K > 0 && mass_kg > 0)
                             ? sqrt(cBoltzmannSI * T0_K / mass_kg)
                             : 0.0;
@@ -832,8 +834,9 @@ void Pic::fill_source_particles() {
             uth_elec = uth_elec_SI * fi->get_Si2NoV();
           }
 
-          parts[iSp]->add_particles_exosphere(
-              exoDensity[iLev], dt, iLev, weightMacro, iInfo, uth, elec_ptr, uth_elec);
+          parts[iSp]->add_particles_exosphere(exoDensity[iLev], dt, iLev,
+                                              weightMacro, iInfo, uth, elec_ptr,
+                                              uth_elec);
         }
       }
     }
@@ -887,17 +890,19 @@ void Pic::electron_impact_ionization() {
   Real No2SiV = fi->get_No2SiV();
   Real Si2NoV = fi->get_Si2NoV();
 
-  auto get_neutral_density = [&](const ExosphereInfo& info, const Real* pos) -> Real {
+  auto get_neutral_density = [&](const ExosphereInfo& info,
+                                 const Real* pos) -> Real {
     Real r2 = 0;
     for (int d = 0; d < nDim; ++d) {
       r2 += pos[d] * pos[d];
     }
     Real r = sqrt(r2);
-    if (r < info.exobaseRadius) return 0.0;
+    if (r < info.exobaseRadius)
+      return 0.0;
 
     // Shadow check
     if (info.shadowRadius > 0 && pos[0] < 0) {
-      Real perp2 = pos[1]*pos[1] + (nDim > 2 ? pos[2]*pos[2] : 0.0);
+      Real perp2 = pos[1] * pos[1] + (nDim > 2 ? pos[2] * pos[2] : 0.0);
       if (perp2 < info.shadowRadius * info.shadowRadius) {
         return 0.0;
       }
@@ -909,7 +914,8 @@ void Pic::electron_impact_ionization() {
       for (int idx = 0; idx < n0_size; idx++) {
         dens += info.n0[idx] * exp(-(r - info.r0) / info.H0[idx]);
       }
-    } else if (info.neutralProfile == "power-law" || info.neutralProfile == "PowerLaw") {
+    } else if (info.neutralProfile == "power-law" ||
+               info.neutralProfile == "PowerLaw") {
       for (int idx = 0; idx < n0_size; idx++) {
         dens += info.n0[idx] * pow(info.r0 / r, info.k0[idx]);
       }
@@ -922,8 +928,8 @@ void Pic::electron_impact_ionization() {
   };
 
   auto get_cross_section = [&](Real Ek_eV, Real mass_neutral) -> Real {
-    Real Eiz = ionizationThresholdEnergy; // Default
-    Real ac = 4.5e-18; // Default to H: m^2 eV^2
+    Real Eiz = ionizationThresholdEnergy;      // Default
+    Real ac = 4.5e-18;                         // Default to H: m^2 eV^2
     if (std::abs(mass_neutral - 16.0) < 1.0) { // Oxygen
       Eiz = 13.62;
       ac = 9.0e-18;
@@ -931,25 +937,29 @@ void Pic::electron_impact_ionization() {
       Eiz = 13.6;
       ac = 4.5e-18;
     }
-    if (Ek_eV <= Eiz) return 0.0;
+    if (Ek_eV <= Eiz)
+      return 0.0;
     return ac * log(Ek_eV / Eiz) / (Ek_eV * Eiz);
   };
 
   auto& elec_container = *parts[iElec];
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (typename PicParticles::PIter pti(elec_container, iLev); pti.isValid(); ++pti) {
+    for (typename PicParticles::PIter pti(elec_container, iLev); pti.isValid();
+         ++pti) {
       auto& particles = pti.GetArrayOfStructs();
       const int nPart = particles.size();
 
       std::vector<typename PicParticles::ParticleType> new_electrons;
-      std::vector<std::vector<typename PicParticles::ParticleType>> new_ions(nSpecies);
+      std::vector<std::vector<typename PicParticles::ParticleType> > new_ions(
+          nSpecies);
 
       for (int ip = 0; ip < nPart; ++ip) {
         auto& p = particles[ip];
-        if (p.id() < 0) continue;
+        if (p.id() < 0)
+          continue;
 
-        Real pos[3] = {0.0, 0.0, 0.0};
+        Real pos[3] = { 0.0, 0.0, 0.0 };
         for (int d = 0; d < nDim; ++d) {
           pos[d] = p.pos(d);
         }
@@ -957,8 +967,9 @@ void Pic::electron_impact_ionization() {
         Real vx = p.rdata(PicParticles::iup_);
         Real vy = p.rdata(PicParticles::ivp_);
         Real vz = p.rdata(PicParticles::iwp_);
-        Real v2 = vx*vx + vy*vy + vz*vz;
-        if (v2 <= 0.0) continue;
+        Real v2 = vx * vx + vy * vy + vz * vz;
+        if (v2 <= 0.0)
+          continue;
         Real v_norm = sqrt(v2);
         Real ve_SI = v_norm * No2SiV;
         Real Ek_eV = (0.5 * mass_elec_kg * ve_SI * ve_SI) / cUnitChargeSI;
@@ -967,10 +978,12 @@ void Pic::electron_impact_ionization() {
         Real sum_P = 0.0;
         for (size_t j = 0; j < exoInfos.size(); ++j) {
           const auto& info = exoInfos[j];
-          if (info.iSpecies <= 0 || info.iSpecies > nSpecies) continue;
-          
+          if (info.iSpecies <= 0 || info.iSpecies > nSpecies)
+            continue;
+
           Real nn = get_neutral_density(info, pos);
-          if (nn <= 0.0) continue;
+          if (nn <= 0.0)
+            continue;
 
           Real mass_neutral = parts[info.iSpecies - 1]->get_mass();
           Real sigma = get_cross_section(Ek_eV, mass_neutral);
@@ -978,7 +991,8 @@ void Pic::electron_impact_ionization() {
           sum_P += P_j[j];
         }
 
-        if (sum_P <= 0.0) continue;
+        if (sum_P <= 0.0)
+          continue;
 
         Real P_total = 1.0 - exp(-sum_P);
         if (elec_container.getRandomNumber() < P_total) {
@@ -999,10 +1013,13 @@ void Pic::electron_impact_ionization() {
           Real W = p.rdata(PicParticles::iqp_) / parts[iElec]->get_qomSign();
 
           Real Emax = Ek_eV - ionizationThresholdEnergy;
-          if (Emax < 0.0) Emax = 0.0;
-          Real E_sec = OpalBeatyBarE * tan(elec_container.getRandomNumber() * atan(Emax / OpalBeatyBarE));
+          if (Emax < 0.0)
+            Emax = 0.0;
+          Real E_sec = OpalBeatyBarE * tan(elec_container.getRandomNumber() *
+                                           atan(Emax / OpalBeatyBarE));
           Real E_pri = Ek_eV - ionizationThresholdEnergy - E_sec;
-          if (E_pri < 0.0) E_pri = 0.0;
+          if (E_pri < 0.0)
+            E_pri = 0.0;
 
           Real v_pri_SI = sqrt(2.0 * E_pri * cUnitChargeSI / mass_elec_kg);
           Real v_sec_SI = sqrt(2.0 * E_sec * cUnitChargeSI / mass_elec_kg);
@@ -1016,14 +1033,15 @@ void Pic::electron_impact_ionization() {
 
           Real theta = 2.0 * M_PI * elec_container.getRandomNumber();
           Real cos_phi = 2.0 * elec_container.getRandomNumber() - 1.0;
-          Real sin_phi = sqrt(std::max(0.0, 1.0 - cos_phi*cos_phi));
+          Real sin_phi = sqrt(std::max(0.0, 1.0 - cos_phi * cos_phi));
           Real u_sec = v_sec_sim * sin_phi * cos(theta);
           Real v_sec = v_sec_sim * sin_phi * sin(theta);
           Real w_sec = v_sec_sim * cos_phi;
 
           typename PicParticles::ParticleType p_sec;
           parts[iElec]->set_ids(p_sec);
-          for (int d = 0; d < nDim; ++d) p_sec.pos(d) = pos[d];
+          for (int d = 0; d < nDim; ++d)
+            p_sec.pos(d) = pos[d];
           p_sec.rdata(PicParticles::iup_) = u_sec;
           p_sec.rdata(PicParticles::ivp_) = v_sec;
           p_sec.rdata(PicParticles::iwp_) = w_sec;
@@ -1039,9 +1057,11 @@ void Pic::electron_impact_ionization() {
 
           Real u_ion = 0, v_ion = 0, w_ion = 0;
           if (uth_ion > 0) {
-            Real prob1 = sqrt(-2.0 * log(1.0 - 0.999999 * elec_container.getRandomNumber()));
+            Real prob1 = sqrt(
+                -2.0 * log(1.0 - 0.999999 * elec_container.getRandomNumber()));
             Real theta1 = 2.0 * M_PI * elec_container.getRandomNumber();
-            Real prob2 = sqrt(-2.0 * log(1.0 - 0.999999 * elec_container.getRandomNumber()));
+            Real prob2 = sqrt(
+                -2.0 * log(1.0 - 0.999999 * elec_container.getRandomNumber()));
             Real theta2 = 2.0 * M_PI * elec_container.getRandomNumber();
             u_ion = uth_ion * prob1 * cos(theta1);
             v_ion = uth_ion * prob1 * sin(theta1);
@@ -1050,7 +1070,8 @@ void Pic::electron_impact_ionization() {
 
           typename PicParticles::ParticleType p_ion;
           parts[iIon]->set_ids(p_ion);
-          for (int d = 0; d < nDim; ++d) p_ion.pos(d) = pos[d];
+          for (int d = 0; d < nDim; ++d)
+            p_ion.pos(d) = pos[d];
           p_ion.rdata(PicParticles::iup_) = u_ion;
           p_ion.rdata(PicParticles::ivp_) = v_ion;
           p_ion.rdata(PicParticles::iwp_) = w_ion;
@@ -1059,14 +1080,17 @@ void Pic::electron_impact_ionization() {
         }
       }
 
-      auto& elec_tile = elec_container.get_particle_tile(iLev, static_cast<const amrex::MFIter&>(pti));
+      auto& elec_tile = elec_container.get_particle_tile(
+          iLev, static_cast<const amrex::MFIter&>(pti));
       for (const auto& p : new_electrons) {
         elec_tile.push_back(p);
       }
 
       for (int iIon = 0; iIon < nSpecies; ++iIon) {
-        if (new_ions[iIon].empty()) continue;
-        auto& ion_tile = parts[iIon]->get_particle_tile(iLev, static_cast<const amrex::MFIter&>(pti));
+        if (new_ions[iIon].empty())
+          continue;
+        auto& ion_tile = parts[iIon]->get_particle_tile(
+            iLev, static_cast<const amrex::MFIter&>(pti));
         for (const auto& p : new_ions[iIon]) {
           ion_tile.push_back(p);
         }
@@ -1076,7 +1100,8 @@ void Pic::electron_impact_ionization() {
 
   // Blowout mitigation: trigger conservative moment-preserving merge
   for (int i = 0; i < nSpecies; ++i) {
-    if (!parts[i]) continue;
+    if (!parts[i])
+      continue;
     if (!doPreSplitting) {
       parts[i]->merge(blowoutLimitRatio);
     } else {
@@ -1100,17 +1125,19 @@ void Pic::exosphere_charge_exchange() {
   Real No2SiV = fi->get_No2SiV();
   Real Si2NoV = fi->get_Si2NoV();
 
-  auto get_neutral_density = [&](const ExosphereInfo& info, const Real* pos) -> Real {
+  auto get_neutral_density = [&](const ExosphereInfo& info,
+                                 const Real* pos) -> Real {
     Real r2 = 0;
     for (int d = 0; d < nDim; ++d) {
       r2 += pos[d] * pos[d];
     }
     Real r = sqrt(r2);
-    if (r < info.exobaseRadius) return 0.0;
+    if (r < info.exobaseRadius)
+      return 0.0;
 
     // Shadow check
     if (info.shadowRadius > 0 && pos[0] < 0) {
-      Real perp2 = pos[1]*pos[1] + (nDim > 2 ? pos[2]*pos[2] : 0.0);
+      Real perp2 = pos[1] * pos[1] + (nDim > 2 ? pos[2] * pos[2] : 0.0);
       if (perp2 < info.shadowRadius * info.shadowRadius) {
         return 0.0;
       }
@@ -1122,7 +1149,8 @@ void Pic::exosphere_charge_exchange() {
       for (int idx = 0; idx < n0_size; idx++) {
         dens += info.n0[idx] * exp(-(r - info.r0) / info.H0[idx]);
       }
-    } else if (info.neutralProfile == "power-law" || info.neutralProfile == "PowerLaw") {
+    } else if (info.neutralProfile == "power-law" ||
+               info.neutralProfile == "PowerLaw") {
       for (int idx = 0; idx < n0_size; idx++) {
         dens += info.n0[idx] * pow(info.r0 / r, info.k0[idx]);
       }
@@ -1135,10 +1163,13 @@ void Pic::exosphere_charge_exchange() {
   };
 
   auto get_cx_cross_section = [&](Real v_rel_SI, Real mass_ion_amu) -> Real {
-    Real erel = 0.5 * (mass_ion_amu * cProtonMassSI) * (v_rel_SI * v_rel_SI) * 6.2415e15; // relative energy in keV
-    if (erel <= 0.0) return 0.0;
+    Real erel = 0.5 * (mass_ion_amu * cProtonMassSI) * (v_rel_SI * v_rel_SI) *
+                6.2415e15; // relative energy in keV
+    if (erel <= 0.0)
+      return 0.0;
     Real sigma = (4.15 - 0.531 * log(erel)) * (4.15 - 0.531 * log(erel)) *
-                 pow(1 - exp(-67.3 / erel), 4.5) * 1e-20; // cross section in m^2
+                 pow(1 - exp(-67.3 / erel), 4.5) *
+                 1e-20; // cross section in m^2
     return sigma;
   };
 
@@ -1150,15 +1181,17 @@ void Pic::exosphere_charge_exchange() {
     Real mass_ion_amu = ion_container.get_mass(); // in AMU
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      for (typename PicParticles::PIter pti(ion_container, iLev); pti.isValid(); ++pti) {
+      for (typename PicParticles::PIter pti(ion_container, iLev); pti.isValid();
+           ++pti) {
         auto& particles = pti.GetArrayOfStructs();
         const int nPart = particles.size();
 
         for (int ip = 0; ip < nPart; ++ip) {
           auto& p = particles[ip];
-          if (p.id() < 0) continue;
+          if (p.id() < 0)
+            continue;
 
-          Real pos[3] = {0.0, 0.0, 0.0};
+          Real pos[3] = { 0.0, 0.0, 0.0 };
           for (int d = 0; d < nDim; ++d) {
             pos[d] = p.pos(d);
           }
@@ -1166,8 +1199,9 @@ void Pic::exosphere_charge_exchange() {
           Real vx = p.rdata(PicParticles::iup_);
           Real vy = p.rdata(PicParticles::ivp_);
           Real vz = p.rdata(PicParticles::iwp_);
-          Real v2 = vx*vx + vy*vy + vz*vz;
-          if (v2 <= 0.0) continue;
+          Real v2 = vx * vx + vy * vy + vz * vz;
+          if (v2 <= 0.0)
+            continue;
           Real v_norm = sqrt(v2);
           Real v_rel_SI = v_norm * No2SiV;
 
@@ -1175,17 +1209,20 @@ void Pic::exosphere_charge_exchange() {
           Real sum_P = 0.0;
           for (size_t j = 0; j < exoInfos.size(); ++j) {
             const auto& info = exoInfos[j];
-            if (info.iSpecies <= 0 || info.iSpecies > nSpecies) continue;
-            
+            if (info.iSpecies <= 0 || info.iSpecies > nSpecies)
+              continue;
+
             Real nn = get_neutral_density(info, pos);
-            if (nn <= 0.0) continue;
+            if (nn <= 0.0)
+              continue;
 
             Real sigma = get_cx_cross_section(v_rel_SI, mass_ion_amu);
             P_j[j] = nn * sigma * v_rel_SI * dt_SI;
             sum_P += P_j[j];
           }
 
-          if (sum_P <= 0.0) continue;
+          if (sum_P <= 0.0)
+            continue;
 
           Real P_total = 1.0 - exp(-sum_P);
           if (ion_container.getRandomNumber() < P_total) {
@@ -1213,9 +1250,11 @@ void Pic::exosphere_charge_exchange() {
 
             Real u_cold = 0, v_cold = 0, w_cold = 0;
             if (uth_ion > 0) {
-              Real prob1 = sqrt(-2.0 * log(1.0 - 0.999999 * ion_container.getRandomNumber()));
+              Real prob1 = sqrt(
+                  -2.0 * log(1.0 - 0.999999 * ion_container.getRandomNumber()));
               Real theta1 = 2.0 * M_PI * ion_container.getRandomNumber();
-              Real prob2 = sqrt(-2.0 * log(1.0 - 0.999999 * ion_container.getRandomNumber()));
+              Real prob2 = sqrt(
+                  -2.0 * log(1.0 - 0.999999 * ion_container.getRandomNumber()));
               Real theta2 = 2.0 * M_PI * ion_container.getRandomNumber();
               u_cold = uth_ion * prob1 * cos(theta1);
               v_cold = uth_ion * prob1 * sin(theta1);
@@ -1234,7 +1273,8 @@ void Pic::exosphere_charge_exchange() {
 
   // Blowout mitigation
   for (int i = 0; i < nSpecies; ++i) {
-    if (!parts[i]) continue;
+    if (!parts[i])
+      continue;
     if (!doPreSplitting) {
       parts[i]->merge(cxBlowoutLimitRatio);
     } else {
