@@ -206,8 +206,11 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           xyz = xyz0;
         }
 
-        const Real nDens =
+        Real nDens =
             interface->get_number_density(mfi, xyz0, speciesID, iLev);
+        if (testCase == AlfvenWave) {
+          nDens = 1.0 + 0.1 * sin(2.0 * dPI * xyz0[ix_] / 32.0);
+        }
 
         if (doVacuumLimit && nDens * dt < vacuum)
           continue;
@@ -246,6 +249,12 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
                                  : interface->get_uy(mfi, xyz, speciesID, iLev);
           Real wBulk = userState ? tpVel.vz
                                  : interface->get_uz(mfi, xyz, speciesID, iLev);
+
+          if (testCase == AlfvenWave) {
+            uBulk = 0.005 * sin(2.0 * dPI * xyz[ix_] / 32.0);
+            vBulk = 0.0;
+            wBulk = 0.0;
+          }
 
           if (testCase == Beam && speciesID == beam.iSpecies) {
             const int nBeam = npcel * beam.ratio;

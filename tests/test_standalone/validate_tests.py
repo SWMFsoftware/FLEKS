@@ -473,6 +473,64 @@ def validate_beam(diags, stdout=None):
     return passed
 
 
+def validate_hybrid_wave(diags, stdout=None):
+    print("Validating Hybrid Wave Propagation Test...")
+    if not diags:
+        print("FAIL: No diagnostic outputs parsed.")
+        return False
+
+    passed = True
+    
+    # 1. Total particle count conservation check
+    initial_phys = diags[0]["phys"]
+    for diag in diags:
+        t = diag["time"]
+        actual_phys = diag["phys"]
+        if abs(actual_phys - initial_phys) > 1e-5 * initial_phys:
+            print(f"  FAIL at t={t:.2f}: Particle number changed! Expected={initial_phys:.2e}, Actual={actual_phys:.2e}")
+            passed = False
+
+    # 2. Check for stable run (no NaN values in the diagnostics)
+    for diag in diags:
+        for key, val in diag.items():
+            if val is not None and isinstance(val, (int, float)) and math.isnan(val):
+                print(f"  FAIL at t={diag['time']:.2f}: Diagnostic '{key}' is NaN!")
+                passed = False
+
+    if passed:
+        print("Hybrid Wave Propagation Test: PASSED")
+    return passed
+
+
+def validate_alfven_wave(diags, stdout=None):
+    print("Validating Alfven Wave Propagation Test...")
+    if not diags:
+        print("FAIL: No diagnostic outputs parsed.")
+        return False
+
+    passed = True
+    
+    # 1. Total particle count conservation check
+    initial_phys = diags[0]["phys"]
+    for diag in diags:
+        t = diag["time"]
+        actual_phys = diag["phys"]
+        if abs(actual_phys - initial_phys) > 1e-5 * initial_phys:
+            print(f"  FAIL at t={t:.2f}: Particle number changed! Expected={initial_phys:.2e}, Actual={actual_phys:.2e}")
+            passed = False
+
+    # 2. Check for stable run (no NaN values in the diagnostics)
+    for diag in diags:
+        for key, val in diag.items():
+            if val is not None and isinstance(val, (int, float)) and math.isnan(val):
+                print(f"  FAIL at t={diag['time']:.2f}: Diagnostic '{key}' is NaN!")
+                passed = False
+
+    if passed:
+        print("Alfven Wave Propagation Test: PASSED")
+    return passed
+
+
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(os.path.dirname(os.path.dirname(script_dir)))
@@ -487,7 +545,10 @@ def main():
         "charge_exchange": validate_exosphere_charge_exchange,
         "exosphere": validate_exosphere,
         "chamber": validate_chamber,
-        "beam": validate_beam
+        "beam": validate_beam,
+        "hybrid_wave": validate_hybrid_wave,
+        "alfven_wave_pic": validate_alfven_wave,
+        "alfven_wave_hybrid": validate_alfven_wave
     }
     
     # Discover test subdirectories under tests/test_standalone

@@ -61,7 +61,7 @@ static const std::string component = "PC";
 inline constexpr int iSuccess = 0; 
 inline constexpr int iFail = 1; 
 
-enum TestCase { RegularSimulation, Beam, TopHat, LightWave, Pickup };
+enum TestCase { RegularSimulation, Beam, TopHat, LightWave, Pickup, AlfvenWave };
 
 enum FluidType { PICFluid, InteractionFluid, SourceFluid };
 #endif
