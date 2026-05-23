@@ -994,6 +994,32 @@ Note: r0, H0, ExobaseRadius, and ShadowRadius must be in simulation units (norma
 TotalProductionRate is always in SI units [s^-1].
 </command>
 
+<command name="ELECTRONIMPACT" multiple="T">
+  <parameter name="useElectronImpactIonization" type="logical" default="F" />
+  <parameter name="ionizationThresholdEnergy" type="real" default="13.6" />
+  <parameter name="OpalBeatyBarE" type="real" default="10.0" />
+  <parameter name="blowoutLimitRatio" type="real" default="2.0" />
+
+#ELECTRONIMPACT
+F                       useElectronImpactIonization
+13.6                    ionizationThresholdEnergy
+10.0                    OpalBeatyBarE
+2.0                     blowoutLimitRatio
+
+This command enables and configures the electron impact ionization Monte Carlo Collision (MCC) module.
+</command>
+
+<command name="CHARGEEXCHANGE" multiple="T">
+  <parameter name="useExosphereChargeExchange" type="logical" default="F" />
+  <parameter name="blowoutLimitRatio" type="real" default="2.0" />
+
+#CHARGEEXCHANGE
+F                       useExosphereChargeExchange
+2.0                     blowoutLimitRatio
+
+This command enables and configures the exospheric charge exchange Monte Carlo Collision (MCC) module.
+</command>
+
 <command name="ADAPTIVESOURCEPPC"
 	 alias="ADAPTIVESOURCEPPC_FLEKS0,ADAPTIVESOURCEPPC_FLEKS1,ADAPTIVESOURCEPPC_FLEKS2"
 	 multiple="T">

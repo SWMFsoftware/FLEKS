@@ -368,7 +368,9 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_exosphere(
     const amrex::MultiFab& exoDensity, amrex::Real dt, int iLev,
-    amrex::Real weightMacro, int iComp, amrex::Real uth) {
+    amrex::Real weightMacro, int iComp, amrex::Real uth,
+    Particles<NStructReal, NStructInt>* electronParts,
+    amrex::Real uth_elec) {
   timing_func("Pts::add_particles_exosphere");
   
   for (MFIter mfi(exoDensity); mfi.isValid(); ++mfi) {
@@ -390,11 +392,20 @@ void Particles<NStructReal, NStructInt>::add_particles_exosphere(
             nMacro++;
 
           if (nMacro > 0) {
-            Real q = qomSign * nPhysical / nMacro;
+            Real weight = nPhysical / nMacro;
+            Real q = qomSign * weight;
             ParticleTileType& particles =
                 get_particle_tile(iLev, mfi, { AMREX_D_DECL(i, j, k) });
+
+            Real q_elec = 0.0;
+            ParticleTileType* elec_tile = nullptr;
+            if (electronParts) {
+              q_elec = electronParts->get_qomSign() * weight;
+              elec_tile = &(electronParts->get_particle_tile(iLev, mfi, { AMREX_D_DECL(i, j, k) }));
+            }
+
             for (int im = 0; im < nMacro; ++im) {
-              // Sample thermal velocity using Box-Muller transform
+              // Sample thermal velocity using Box-Muller transform for ion
               Real u = 0, v = 0, w = 0;
               if (uth > 0) {
                 Real prob1 = sqrt(-2.0 * log(1.0 - 0.999999 * randNum()));
@@ -412,6 +423,7 @@ void Particles<NStructReal, NStructInt>::add_particles_exosphere(
                 xyz[d] = (ijk_coord[d] + randNum()) * dx[iLev][d] + plo[iLev][d];
               }
 
+              // Spawn Ion
               ParticleType p;
               set_ids(p);
               for (int d = 0; d < nDim; ++d)
@@ -422,6 +434,31 @@ void Particles<NStructReal, NStructInt>::add_particles_exosphere(
               p.rdata(iqp_) = q;
 
               particles.push_back(p);
+
+              // Spawn neutralizing Electron at exact same coordinate and weight
+              if (elec_tile) {
+                Real ue = 0, ve = 0, we = 0;
+                if (uth_elec > 0) {
+                  Real prob1 = sqrt(-2.0 * log(1.0 - 0.999999 * randNum()));
+                  Real theta1 = 2.0 * M_PI * randNum();
+                  Real prob2 = sqrt(-2.0 * log(1.0 - 0.999999 * randNum()));
+                  Real theta2 = 2.0 * M_PI * randNum();
+                  ue = uth_elec * prob1 * cos(theta1);
+                  ve = uth_elec * prob1 * sin(theta1);
+                  we = uth_elec * prob2 * cos(theta2);
+                }
+
+                ParticleType p_elec;
+                electronParts->set_ids(p_elec);
+                for (int d = 0; d < nDim; ++d)
+                  p_elec.pos(d) = xyz[d];
+                p_elec.rdata(iup_) = ue;
+                p_elec.rdata(ivp_) = ve;
+                p_elec.rdata(iwp_) = we;
+                p_elec.rdata(iqp_) = q_elec;
+
+                elec_tile->push_back(p_elec);
+              }
             }
           }
         }

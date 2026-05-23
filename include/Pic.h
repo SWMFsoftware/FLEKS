@@ -273,6 +273,8 @@ public:
   //----------------Initialization end-------------------------------
 
   void charge_exchange();
+  void electron_impact_ionization();
+  void exosphere_charge_exchange();
 
   void sum_moments(bool updateDt = false);
 
@@ -605,6 +607,13 @@ private:
   std::vector<ExosphereInfo> exoInfos;
   bool useExosphere = false;
   amrex::Vector<amrex::MultiFab> exoDensity;
+
+  bool doElectronImpactIonization = false;
+  amrex::Real ionizationThresholdEnergy = 13.6;
+  amrex::Real OpalBeatyBarE = 10.0;
+  amrex::Real blowoutLimitRatio = 2.0;
+  bool doExosphereChargeExchange = false;
+  amrex::Real cxBlowoutLimitRatio = 2.0;
 };
 
 void find_output_list_caller(const PlotWriter &writerIn,

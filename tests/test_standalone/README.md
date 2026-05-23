@@ -10,7 +10,12 @@ Each test case is contained within its own dedicated subdirectory containing a `
 
 *   **[box/](file:///home/hyzhou/simulation/SWMF/PC/FLEKS_myversion/tests/test_standalone/box/)**: 0D equilibrium test validating spatial injection rates, particle population growth, and grid cell uniform loading.
 *   **[chamber/](file:///home/hyzhou/simulation/SWMF/PC/FLEKS_myversion/tests/test_standalone/chamber/)**: 1D chamber flow test checking inflow boundary, free outflow boundary, and convergence to a steady-state particle count.
-*   **[pickup/](file:///home/hyzhou/simulation/SWMF/PC/FLEKS_myversion/tests/test_standalone/pickup/)**: Multi-species pickup ion acceleration test verifying leapfrog mover physics ($E \times B$ drift) for H+ and O+ alongside charge-neutralizing electrons under constant perpendicular background fields.
+*   **[photoionization/](file:///home/hyzhou/simulation/SWMF/PC/FLEKS_myversion/tests/test_standalone/photoionization/)**: Exospheric photoionization test validating automatic pair-injection of ions and neutralizing electrons to ensure strict local and global charge conservation.
+*   **[electron_impact/](file:///home/hyzhou/simulation/SWMF/PC/FLEKS_myversion/tests/test_standalone/electron_impact/)**: Exospheric electron impact ionization test verifying collision probabilities, Lotz cross-sections, and Opal-Beaty energy partitioning using a Monte Carlo Collision (MCC) algorithm.
+*   **[charge_exchange/](file:///home/hyzhou/simulation/SWMF/PC/FLEKS_myversion/tests/test_standalone/charge_exchange/)**: Exospheric charge exchange test validating ion drift deceleration and thermal cooling through in-place velocity replacements using a Monte Carlo Collision (MCC) algorithm.
+*   **[exosphere/](file:///home/hyzhou/simulation/SWMF/PC/FLEKS_myversion/tests/test_standalone/exosphere/)**: Combined exosphere processes test validating exospheric photoionization pair-injection, electron impact ionization MCC, and exospheric charge exchange MCC running concurrently.
+*   **[beam/](file:///home/hyzhou/simulation/SWMF/PC/FLEKS_myversion/tests/test_standalone/beam/)**: 1D ion beam electromagnetic instability test validating cyclotron wave growth, transverse magnetic field amplification, and energy conservation.
+
 
 ## Running the Tests
 

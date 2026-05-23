@@ -203,6 +203,162 @@ def validate_pickup(diags):
     return passed
 
 
+def validate_photoionization(diags):
+    print("Validating Photoionization Test...")
+    return validate_pickup(diags)
+
+
+def validate_electron_impact(diags):
+    print("Validating Electron Impact Ionization (MCC) Test...")
+    if not diags:
+        print("FAIL: No diagnostic outputs parsed.")
+        return False
+        
+    species_diags = {0: [], 1: [], 2: []}
+    for diag in diags:
+        sp = diag["species"]
+        if sp in species_diags:
+            species_diags[sp].append(diag)
+            
+    passed = True
+    dt = 0.1
+    
+    # Exospheric nominal rates
+    nom_rates = {
+        0: 8.0e23,  # H+ nominal exosphere
+        1: 2.0e23,  # O+ nominal exosphere
+        2: 1.0e24   # e- nominal exosphere
+    }
+    
+    # We expect the actual counts to be HIGHER than nominal due to electron impact ionization!
+    print("  --- Checking Electron Impact Ionization Yield ---")
+    for sp in [0, 1, 2]:
+        diags_sp = species_diags[sp]
+        if not diags_sp:
+            print(f"  FAIL: No diagnostics found for species {sp}")
+            passed = False
+            continue
+            
+        # Check last diagnostic step
+        last_diag = diags_sp[-1]
+        t = last_diag["time"]
+        nominal = nom_rates[sp] * (t + dt)
+        actual = last_diag["phys"]
+        
+        diff = actual - nominal
+        print(f"    Species {sp} at t={t:.2f}: nominal_exosphere={nominal:.2e}, actual_with_mcc={actual:.2e} (MCC yield={diff:.2e})")
+        if diff <= 0.0:
+            print(f"    FAIL: Species {sp} has no electron impact ionization yield (actual {actual:.2e} <= nominal exosphere {nominal:.2e})")
+            passed = False
+            
+    if passed:
+        print("Electron Impact Ionization Test: PASSED")
+    return passed
+
+
+def validate_exosphere_charge_exchange(diags):
+    print("Validating Exospheric Charge Exchange (MCC) Test...")
+    if not diags:
+        print("FAIL: No diagnostic outputs parsed.")
+        return False
+        
+    species_diags = {0: [], 1: [], 2: []}
+    for diag in diags:
+        sp = diag["species"]
+        if sp in species_diags:
+            species_diags[sp].append(diag)
+            
+    passed = True
+    
+    print("  --- Checking Charge Exchange cooling effect ---")
+    for sp in [0, 1]:
+        diags_sp = species_diags[sp]
+        if not diags_sp:
+            print(f"  FAIL: No diagnostics found for species {sp}")
+            passed = False
+            continue
+            
+        last_diag = diags_sp[-1]
+        t = last_diag["time"]
+        actual_vx = last_diag["vx"]
+        
+        initial_vx = 400.0
+        print(f"    Species {sp} at t={t:.2f}: initial_drift_vx={initial_vx:.1f}, cooled_vx={actual_vx:.2f}")
+        if actual_vx >= initial_vx:
+            print(f"    FAIL: Species {sp} did not experience any charge exchange cooling (vx {actual_vx:.2f} >= initial vx {initial_vx:.2f})")
+            passed = False
+            
+    if passed:
+        print("Exospheric Charge Exchange Test: PASSED")
+    return passed
+
+
+def validate_exosphere(diags):
+    print("Validating Combined Exosphere Test (Photoionization, Electron Impact MCC, and Charge Exchange MCC)...")
+    if not diags:
+        print("FAIL: No diagnostic outputs parsed.")
+        return False
+        
+    species_diags = {0: [], 1: [], 2: []}
+    for diag in diags:
+        sp = diag["species"]
+        if sp in species_diags:
+            species_diags[sp].append(diag)
+            
+    passed = True
+    dt = 0.1
+    
+    # Exospheric nominal rates
+    nom_rates = {
+        0: 8.0e23,  # H+
+        1: 2.0e23,  # O+
+        2: 1.0e24   # e-
+    }
+    
+    # 1. Verify Electron Impact yield (actual > nominal exosphere)
+    print("  --- Checking Electron Impact Ionization Yield ---")
+    for sp in [0, 1, 2]:
+        diags_sp = species_diags[sp]
+        if not diags_sp:
+            print(f"  FAIL: No diagnostics found for species {sp}")
+            passed = False
+            continue
+            
+        last_diag = diags_sp[-1]
+        t = last_diag["time"]
+        nominal = nom_rates[sp] * (t + dt)
+        actual = last_diag["phys"]
+        
+        diff = actual - nominal
+        print(f"    Species {sp} at t={t:.2f}: nominal_exosphere={nominal:.2e}, actual={actual:.2e} (diff={diff:.2e})")
+        if diff <= 0.0:
+            print(f"    FAIL: Species {sp} has no combined process yield (actual {actual:.2e} <= nominal exosphere {nominal:.2e})")
+            passed = False
+
+    # 2. Verify Charge Exchange cooling (final Vx < initial Vx = 400.0)
+    print("  --- Checking Charge Exchange cooling effect ---")
+    for sp in [0, 1]:
+        diags_sp = species_diags[sp]
+        if not diags_sp:
+            print(f"  FAIL: No diagnostics found for species {sp}")
+            passed = False
+            continue
+            
+        last_diag = diags_sp[-1]
+        t = last_diag["time"]
+        actual_vx = last_diag["vx"]
+        
+        initial_vx = 400.0
+        print(f"    Species {sp} at t={t:.2f}: initial_drift_vx={initial_vx:.1f}, cooled_vx={actual_vx:.2f}")
+        if actual_vx >= initial_vx:
+            print(f"    FAIL: Species {sp} did not experience any charge exchange cooling (vx {actual_vx:.2f} >= initial vx {initial_vx:.2f})")
+            passed = False
+            
+    if passed:
+        print("Combined Exosphere Test: PASSED")
+    return passed
+
+
 def validate_chamber(diags):
     print("Validating Chamber Test...")
     if not diags:
@@ -326,6 +482,10 @@ def main():
     validators = {
         "box": validate_box,
         "pickup": validate_pickup,
+        "photoionization": validate_photoionization,
+        "electron_impact": validate_electron_impact,
+        "charge_exchange": validate_exosphere_charge_exchange,
+        "exosphere": validate_exosphere,
         "chamber": validate_chamber,
         "beam": validate_beam
     }
@@ -333,9 +493,9 @@ def main():
     # Discover test subdirectories under tests/test_standalone
     test_standalone_dir = os.path.join("tests", "test_standalone")
     
-    # Iterate through sorted subdirectories (excluding exosphere which is merged into pickup)
+    # Iterate through sorted subdirectories (excluding legacy pickup)
     subdirs = sorted([d for d in os.listdir(test_standalone_dir) 
-                      if os.path.isdir(os.path.join(test_standalone_dir, d)) and d != "exosphere"])
+                      if os.path.isdir(os.path.join(test_standalone_dir, d)) and d not in ["pickup"]])
     
     tests = []
     for d in subdirs:

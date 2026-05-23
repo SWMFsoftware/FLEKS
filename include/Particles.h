@@ -305,7 +305,9 @@ public:
   void add_particles_exosphere(const amrex::MultiFab& exoDensity,
                                amrex::Real dt, int iLev,
                                amrex::Real weightMacro, int iComp,
-                               amrex::Real uth = 0.0);
+                               amrex::Real uth = 0.0,
+                               Particles<NStructReal, NStructInt>* electronParts = nullptr,
+                               amrex::Real uth_elec = 0.0);
 
   // Copy particles from (ip,jp,kp) to (ig, jg, kg) and shift boundary
   // particle's coordinates accordingly.
@@ -726,6 +728,8 @@ public:
   int get_speciesID() const { return speciesID; }
   amrex::Real get_charge() const { return charge; }
   amrex::Real get_mass() const { return mass; }
+  int get_qomSign() const { return qomSign; }
+  amrex::Real getRandomNumber() { return randNum(); }
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
 
