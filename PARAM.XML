@@ -271,6 +271,54 @@ F                 useExplicitPIC
 When this flag is true, the simulation will use an explicit PIC solver.
 </command>
 
+<command name="HYBRIDPIC"
+   alias="HYBRIDPIC_FLEKS0,HYBRIDPIC_FLEKS1,HYBRIDPIC_FLEKS2"
+   multiple="T">
+  <parameter name="useHybridPIC" type="logical" default="F"/>
+
+#HYBRIDPIC
+F                   useHybridPIC
+
+Turning on/off the Hybrid PIC module.
+</command>
+
+<command name="RESISTIVITY"
+   alias="RESISTIVITY_FLEKS0,RESISTIVITY_FLEKS1,RESISTIVITY_FLEKS2"
+   multiple="T">
+  <parameter name="etaResistivity" type="real" default="0.0"/>
+
+#RESISTIVITY
+0.0                 etaResistivity
+
+Setting constant plasma resistivity for Hybrid PIC.
+</command>
+
+<command name="ELECTRONTEMPERATURE"
+   alias="ELECTRONTEMPERATURE_FLEKS0,ELECTRONTEMPERATURE_FLEKS1,ELECTRONTEMPERATURE_FLEKS2"
+   multiple="T">
+  <parameter name="electronTemperature" type="real" default="0.0"/>
+  <parameter name="electronGamma" type="real" default="1.0"/>
+  <parameter name="electronDensity0" type="real" default="1.0"/>
+
+#ELECTRONTEMPERATURE
+0.0                 electronTemperature
+1.0                 electronGamma
+1.0                 electronDensity0
+
+Setting electron temperature parameters for Hybrid PIC fluid model.
+</command>
+
+<command name="HALLSUBCYCLE"
+   alias="HALLSUBCYCLE_FLEKS0,HALLSUBCYCLE_FLEKS1,HALLSUBCYCLE_FLEKS2"
+   multiple="T">
+  <parameter name="nHallSubcycle" type="integer" default="1"/>
+
+#HALLSUBCYCLE
+1                   nHallSubcycle
+
+Setting the number of subcycles for B-field update in the Hall term to prevent whistler instability.
+</command>
+
 <command name="COMOVING"
    alias="COMOVING_FLEKS0,COMOVING_FLEKS1,COMOVING_FLEKS2"
    multiple="T">

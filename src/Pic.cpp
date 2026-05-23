@@ -26,6 +26,16 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("usePIC", usePIC);
   } else if (command == "#SOLVEEM") {
     param.read_var("solveEM", solveEM);
+  } else if (command == "#HYBRIDPIC") {
+    param.read_var("useHybridPIC", useHybridPIC);
+  } else if (command == "#RESISTIVITY") {
+    param.read_var("etaResistivity", etaResistivity);
+  } else if (command == "#ELECTRONTEMPERATURE") {
+    param.read_var("electronTemperature", electronTemperature);
+    param.read_var("electronGamma", electronGamma);
+    param.read_var("electronDensity0", electronDensity0);
+  } else if (command == "#HALLSUBCYCLE") {
+    param.read_var("nHallSubcycle", nHallSubcycle);
   } else if (command == "#PARTMODE") {
     std::string s;
     param.read_var("partMode", s);
@@ -261,6 +271,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 void Pic::post_process_param() {
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
+  if (useHybridPIC) {
+    solveEM = false;
+  }
   fsolver.mode = (!fsolver.useLaggedLimiter && limiterThetaE != 0)
                      ? FieldSolverMode::NewtonKrylov
                      : FieldSolverMode::GMRES;
@@ -844,6 +857,8 @@ void Pic::fill_source_particles() {
 
   if (source) {
     for (int i = 0; i < nSpecies; ++i) {
+      if (useHybridPIC && parts[i]->get_charge() < 0)
+        continue;
       parts[i]->add_particles_source(source, stateOH, tc->get_dt(), nSourcePPC,
                                      doSelectRegion, adaptiveSourcePPC);
     }
@@ -858,7 +873,9 @@ void Pic::update_part_loc_to_half_stage() {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (int i = 0; i < nSpecies; ++i) {
-      parts[i]->update_position_to_half_stage(nodeEth[iLev], nodeB[iLev],
+      if (useHybridPIC && parts[i]->get_charge() < 0)
+        continue;
+      parts[i]->update_position_to_half_stage(nodeE[iLev], nodeB[iLev],
                                               tc->get_dt());
     }
   }
@@ -1331,10 +1348,14 @@ void Pic::particle_mover() {
   Real dtnext = tc->get_next_dt();
 
   for (int i = 0; i < nSpecies; ++i) {
+    if (useHybridPIC && parts[i]->get_charge() < 0)
+      continue;
     parts[i]->mover(nodeEth, nodeB, eBg, uBg, dt, dtnext);
   }
 
   for (int i = 0; i < nSpecies; ++i) {
+    if (useHybridPIC && parts[i]->get_charge() < 0)
+      continue;
     parts[i]->redistribute_particles();
   }
 }
@@ -1993,6 +2014,8 @@ void Pic::update(bool doReportIn) {
 
   if (solveEM) {
     update_E();
+  } else if (useHybridPIC) {
+    update_E_hybrid();
   }
 
   particle_mover();
@@ -2019,6 +2042,8 @@ void Pic::update(bool doReportIn) {
       project_down_E();
     }
     update_B();
+  } else if (useHybridPIC) {
+    update_B_hybrid();
   }
 
   // Only to be turned on if DivE error needs to be visulaized when DivE
@@ -3573,6 +3598,185 @@ void Pic::amr_divE_correction() {
       skip_cells_divE_correction(centerNetChargeN[iLev], cell_status(iLev),
                                  iLev);
       skip_cells_divE_correction(centerDivE[iLev], cell_status(iLev), iLev);
+    }
+  }
+}
+
+//==========================================================
+void Pic::update_E_hybrid() {
+  std::string nameFunc = "Pic::update_E_hybrid";
+  timing_func(nameFunc);
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const auto dx = Geom(iLev).CellSizeArray();
+    const Real dxInv = 1.0 / (2.0 * dx[0]);
+    const Real dyInv = 1.0 / (2.0 * dx[1]);
+    const Real dzInv = 1.0 / (2.0 * dx[2]);
+
+    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arrE = nodeE[iLev][mfi].array();
+      const Array4<Real>& arrEth = nodeEth[iLev][mfi].array();
+      const Array4<Real const>& arrB = nodeB[iLev][mfi].array();
+      const Array4<Real const>& moments =
+          nodePlasma[nSpecies][iLev][mfi].array();
+
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        Real rho = moments(i, j, k, iRho_);
+        Real ui = 0, vi = 0, wi = 0;
+
+        if (rho > 0) {
+          ui = moments(i, j, k, iUx_) / rho;
+          vi = moments(i, j, k, iUy_) / rho;
+          wi = moments(i, j, k, iUz_) / rho;
+        }
+
+        Real bx = arrB(i, j, k, ix_);
+        Real by = arrB(i, j, k, iy_);
+        Real bz = arrB(i, j, k, iz_);
+
+        // 1. Convection term: E_conv = - U_i x B
+        Real ex = -(vi * bz - wi * by);
+        Real ey = -(wi * bx - ui * bz);
+        Real ez = -(ui * by - vi * bx);
+
+        // 2. Resistivity and Hall / Pressure terms (if enabled)
+        // J = curl(B) using central differences on node-centered B field
+        Real jx = 0.0, jy = 0.0, jz = 0.0;
+        
+        Real dBz_dy = (arrB(i, j+1, k, iz_) - arrB(i, j-1, k, iz_)) * dyInv;
+        Real dBy_dz = (arrB(i, j, k+1, iy_) - arrB(i, j, k-1, iy_)) * dzInv;
+        jx = dBz_dy - dBy_dz;
+
+        Real dBx_dz = (arrB(i, j, k+1, ix_) - arrB(i, j, k-1, ix_)) * dzInv;
+        Real dBz_dx = (arrB(i+1, j, k, iz_) - arrB(i-1, j, k, iz_)) * dxInv;
+        jy = dBx_dz - dBz_dx;
+
+        Real dBy_dx = (arrB(i+1, j, k, iy_) - arrB(i-1, j, k, iy_)) * dxInv;
+        Real dBx_dy = (arrB(i, j+1, k, ix_) - arrB(i, j-1, k, ix_)) * dyInv;
+        jz = dBy_dx - dBx_dy;
+
+        // Add eta * J term
+        if (etaResistivity > 0) {
+          ex += etaResistivity * jx;
+          ey += etaResistivity * jy;
+          ez += etaResistivity * jz;
+        }
+
+        // Add Electron pressure gradient and Hall term
+        if (rho > 0) {
+          // Electron pressure gradient term
+          Real dPe_dx = 0.0, dPe_dy = 0.0, dPe_dz = 0.0;
+          if (electronTemperature > 0) {
+            if (electronGamma == 1.0) {
+              // Isothermal: Pe = rho * Te -> grad(Pe) = Te * grad(rho)
+              dPe_dx = electronTemperature * (moments(i+1, j, k, iRho_) - moments(i-1, j, k, iRho_)) * dxInv;
+              dPe_dy = electronTemperature * (moments(i, j+1, k, iRho_) - moments(i, j-1, k, iRho_)) * dyInv;
+              dPe_dz = electronTemperature * (moments(i, j, k+1, iRho_) - moments(i, j, k-1, iRho_)) * dzInv;
+            } else {
+              // Adiabatic: Pe = P0 * (rho / rho0)^gamma
+              Real p0 = electronDensity0 * electronTemperature;
+              Real invRho0 = 1.0 / electronDensity0;
+              
+              auto calc_Pe = [=](Real r) {
+                return (r > 0) ? p0 * std::pow(r * invRho0, electronGamma) : 0.0;
+              };
+              
+              dPe_dx = (calc_Pe(moments(i+1, j, k, iRho_)) - calc_Pe(moments(i-1, j, k, iRho_))) * dxInv;
+              dPe_dy = (calc_Pe(moments(i, j+1, k, iRho_)) - calc_Pe(moments(i, j-1, k, iRho_))) * dyInv;
+              dPe_dz = (calc_Pe(moments(i, j, k+1, iRho_)) - calc_Pe(moments(i, j, k-1, iRho_))) * dzInv;
+            }
+            
+            ex -= dPe_dx / rho;
+            ey -= dPe_dy / rho;
+            ez -= dPe_dz / rho;
+          }
+
+          // Hall term: (J x B) / rho
+          Real hall_x = (jy * bz - jz * by) / rho;
+          Real hall_y = (jz * bx - jx * bz) / rho;
+          Real hall_z = (jx * by - jy * bx) / rho;
+          
+          ex += hall_x;
+          ey += hall_y;
+          ez += hall_z;
+        }
+
+        arrE(i, j, k, ix_) = ex;
+        arrE(i, j, k, iy_) = ey;
+        arrE(i, j, k, iz_) = ez;
+
+        // Copy to Eth
+        arrEth(i, j, k, ix_) = ex;
+        arrEth(i, j, k, iy_) = ey;
+        arrEth(i, j, k, iz_) = ez;
+      });
+    }
+
+    nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+    nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
+    apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, &Pic::get_node_E, iLev);
+  }
+}
+
+//==========================================================
+void Pic::update_B_hybrid() {
+  std::string nameFunc = "Pic::update_B_hybrid";
+  timing_func(nameFunc);
+
+  Real dt = tc->get_dt();
+  Real subDt = dt / nHallSubcycle;
+
+  for (int subStep = 0; subStep < nHallSubcycle; ++subStep) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      MultiFab dB(cGrids[iLev], DistributionMap(iLev), 3, nGst);
+      curl_node_to_center(nodeEth[iLev], dB, Geom(iLev).InvCellSize());
+
+      MultiFab::Saxpy(centerB[iLev], -subDt, dB, 0, 0,
+                      centerB[iLev].nComp(), centerB[iLev].nGrow());
+
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
+
+  if (projectDownEmFields && finest_level > 0) {
+    for (int iLev = finest_level; iLev > 0; iLev--) {
+      average_down(centerB[iLev], centerB[iLev - 1], 0, 3, ref_ratio[0]);
+    }
+  }
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iLev == 0) {
+      apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+               &Pic::get_center_B, iLev, &bcBField);
+    } else {
+      fill_fine_lev_bny_from_coarse(
+          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          cell_bilinear_interp);
+    }
+
+    MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
+                   dBdt[iLev].nGrow());
+
+    average_center_to_node(centerB[iLev], nodeB[iLev]);
+    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    const Real invDt = 1. / dt;
+    MultiFab::LinComb(dBdt[iLev], -invDt, dBdt[iLev], 0, invDt, nodeB[iLev], 0,
+                      0, dBdt[iLev].nComp(), dBdt[iLev].nGrow());
+
+    if (iLev == 0) {
+      apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+               &Pic::get_node_B, iLev, &bcBField);
+    } else {
+      fill_fine_lev_bny_from_coarse(
+          nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          node_bilinear_interp);
     }
   }
 }
