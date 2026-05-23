@@ -82,12 +82,15 @@ T                       useFixedDt
 
 #COMOVING
 F                       solvePartInCoMov
+0                       nSmoothBackGroundU
 
 #UPWINDE
 F                       useUpwindE
+0.0                     limiterThetaE
 
 #UPWINDB
 F                       doSmoothB
+0.0                     theta
 
 #SAVEPLOT
 1                                 nPlot
