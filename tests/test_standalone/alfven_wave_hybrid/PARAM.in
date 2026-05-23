@@ -50,10 +50,11 @@ T                       useHybridPIC
 1.0                     charge
 
 #UNIFORMSTATE
-1.0                     rho
+1.0                     rho (species 0 - ions)
 0.0                     ux
 0.0                     uy
 0.0                     uz
+10000.0                 T
 0.0                     bx
 0.04                    by
 0.0                     bz
