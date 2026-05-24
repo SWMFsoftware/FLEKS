@@ -1,10 +1,8 @@
 name: Standalone Test
 
 on:
-  push:
-    branches: [ "master", "hybrid" ]
-  pull_request_target:
-    branches: [ "master", "hybrid" ]
+  pull_request:
+    branches: [ "master" ]
 
 jobs:
   build-and-test:
@@ -55,8 +53,6 @@ jobs:
       - name: Checkout FLEKS (Current Commit)
         uses: actions/checkout@v6
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
           path: SWMF/PC/FLEKS
 
       - name: Install or Update SWMF Components
