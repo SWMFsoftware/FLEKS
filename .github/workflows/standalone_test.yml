@@ -9,6 +9,9 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     
     steps:
       - name: Force HTTPS for GitHub
@@ -88,3 +91,52 @@ jobs:
           ls -lh ../../bin/FLEKS.exe
           ldd ../../bin/FLEKS.exe
           python3 validate_tests.py
+
+      - name: Write Job Summary
+        if: always()
+        run: |
+          if [ -f SWMF/PC/FLEKS/tests/test_standalone/summary.md ]; then
+            cat SWMF/PC/FLEKS/tests/test_standalone/summary.md >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Post PR Comment
+        uses: actions/github-script@v7
+        if: always() && github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+            const summaryPath = 'SWMF/PC/FLEKS/tests/test_standalone/summary.md';
+            if (fs.existsSync(summaryPath)) {
+              const summary = fs.readFileSync(summaryPath, 'utf8');
+              
+              // 1. List existing comments to find one matching our summary prefix
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+              });
+              
+              const prComment = comments.find(comment => 
+                comment.body.includes('### 🧪 Standalone FLEKS Test Results')
+              );
+              
+              if (prComment) {
+                // 2. Update existing comment in place
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: prComment.id,
+                  body: summary
+                });
+                console.log('Successfully updated existing PR comment.');
+              } else {
+                // 3. Create a new comment if none exists
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: summary
+                });
+                console.log('Successfully created new PR comment.');
+              }
+            }

@@ -606,6 +606,20 @@ def main():
         
     print("=" * 80)
     
+    # Write Markdown Summary to summary.md for CI / PR integration
+    try:
+        summary_file = os.path.join(test_standalone_dir, "summary.md")
+        with open(summary_file, "w") as f:
+            f.write("### 🧪 Standalone FLEKS Test Results\n\n")
+            f.write("| Test Name | Status | Failure Reason / Details |\n")
+            f.write("| :--- | :--- | :--- |\n")
+            for name_str, status, reason in results:
+                status_md = "🟢 **PASSED**" if status == "PASSED" else "🔴 **FAILED**"
+                reason_md = reason if status != "PASSED" else ""
+                f.write(f"| {name_str} | {status_md} | {reason_md} |\n")
+    except Exception as e:
+        print(f"Warning: Could not write summary.md: {e}")
+    
     if all_passed:
         if sys.stdout.isatty():
             print("\033[92;1m\nALL STANDALONE FLEKS TESTS PASSED SUCCESSFULLY!\033[0m\n")
