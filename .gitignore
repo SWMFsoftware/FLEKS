@@ -37,3 +37,4 @@ src/.build_mode
 .cache/*
 PC/
 PostProc.pl
+summary.md

@@ -108,7 +108,7 @@ T
 1                                 dx
 3d particles0 amrex pic           plotString
 -1                                dn
-0.2                               dt
+1.0                               dt
 1                                 dx
 
 #STOP

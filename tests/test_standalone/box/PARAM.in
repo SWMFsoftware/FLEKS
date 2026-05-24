@@ -63,11 +63,11 @@ T                       useFixedDt
 3                                 nPlot
 3d fluid amrex pic                plotString
 -1                                dn
-0.5                               dt
+1.0                               dt
 1                                 dx
 3d particles0 amrex pic           plotString
 -1                                dn
-0.5                               dt
+1.0                               dt
 1                                 dx
 z=0 fluid real4 pic               plotString
 -1                                dn

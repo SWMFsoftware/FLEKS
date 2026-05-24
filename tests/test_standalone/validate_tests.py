@@ -621,9 +621,9 @@ def main():
     # Discover test subdirectories under tests/test_standalone
     test_standalone_dir = os.path.join("tests", "test_standalone")
     
-    # Iterate through sorted subdirectories (excluding legacy pickup)
+    # Iterate through sorted subdirectories
     subdirs = sorted([d for d in os.listdir(test_standalone_dir) 
-                      if os.path.isdir(os.path.join(test_standalone_dir, d)) and d not in ["pickup"]])
+                      if os.path.isdir(os.path.join(test_standalone_dir, d)) and d not in ["performance"]])
     
     tests = []
     for d in subdirs:
