@@ -66,11 +66,13 @@ int main(int argc, char* argv[]) {
     // 3. Set Initial Conditions
     domain.set_ic();
 
-    // 4. Run Loop
+    // 4. Parse stop criteria and diagnostic options from PARAM.in
     double timeMax = 0.0;
     int maxIter = -1;
+    bool doDiagParticle = false;
+    bool doDiagField = false;
+    bool hasDiagCommand = false;
 
-    // Extract stop criteria from PARAM.in
     {
       ReadParam reader;
       reader = paramString;
@@ -79,10 +81,21 @@ int main(int argc, char* argv[]) {
         if (command == "#STOP") {
           reader.read_var("MaxIter", maxIter);
           reader.read_var("TimeMax", timeMax);
+        } else if (command == "#DIAGNOSTIC") {
+          hasDiagCommand = true;
+          reader.read_var("doParticleDiag", doDiagParticle);
+          reader.read_var("doFieldDiag", doDiagField);
         }
       }
     }
 
+    // Configure and initialise the diagnostic log (if #DIAGNOSTIC present).
+    if (hasDiagCommand && domain.pic) {
+      domain.pic->set_diag_options(doDiagParticle, doDiagField);
+      domain.pic->write_diag_log(false, true); // create file with header
+    }
+
+    // 5. Run Loop
     while (true) {
       if (maxIter >= 0 && domain.tc->get_cycle() >= maxIter)
         break;
@@ -91,96 +104,17 @@ int main(int argc, char* argv[]) {
 
       domain.update();
 
-      bool doReport = (domain.pic && domain.pic->get_doReport());
-      // Species diagnostics loop
-      if (doReport && domain.pic && domain.pic->has_particles()) {
-        int nSpecies = domain.pic->get_nSpecies();
-        for (int iS = 0; iS < nSpecies; iS++) {
-          if (!domain.pic->get_particle_pointer(iS))
-            continue;
-          double local_weight = 0;
-          double local_vx = 0, local_vy = 0, local_vz = 0;
-          double local_ke = 0;
-          long local_macro = 0;
-
-          for (int iLev = 0; iLev < domain.pic->n_lev(); iLev++) {
-            for (amrex::ParIter<nPicPartReal, nPicPartInt> pti(
-                     *domain.pic->get_particle_pointer(iS), iLev);
-                 pti.isValid(); ++pti) {
-              const auto& tile = pti.GetArrayOfStructs();
-              for (const auto& p : tile) {
-                if (p.id() < 0)
-                  continue;
-                double q = p.rdata(PicParticles::iqp_); // weight
-                double vx = p.rdata(PicParticles::iup_);
-                double vy = p.rdata(PicParticles::ivp_);
-                double wp = p.rdata(PicParticles::iwp_);
-                local_macro++;
-                local_weight += std::abs(q);
-                local_vx += vx * std::abs(q);
-                local_vy += vy * std::abs(q);
-                local_vz += wp * std::abs(q);
-                local_ke += 0.5 * (vx * vx + vy * vy + wp * wp) * std::abs(q);
-              }
-            }
-          }
-
-          double global_weight = local_weight;
-          double global_vx = local_vx;
-          double global_vy = local_vy;
-          double global_vz = local_vz;
-          double global_ke = local_ke;
-          long global_macro = local_macro;
-
-          amrex::ParallelDescriptor::ReduceRealSum(global_weight);
-          amrex::ParallelDescriptor::ReduceRealSum(global_vx);
-          amrex::ParallelDescriptor::ReduceRealSum(global_vy);
-          amrex::ParallelDescriptor::ReduceRealSum(global_vz);
-          amrex::ParallelDescriptor::ReduceRealSum(global_ke);
-          amrex::ParallelDescriptor::ReduceLongSum(global_macro);
-
-          if (global_weight > 0) {
-            global_vx /= global_weight;
-            global_vy /= global_weight;
-            global_vz /= global_weight;
-          }
-
-          if (amrex::ParallelDescriptor::IOProcessor()) {
-            std::cout << std::scientific << std::setprecision(6)
-                      << "DIAGNOSTIC:"
-                      << " Species=" << iS
-                      << " Time=" << domain.tc->get_time_si()
-                      << " Cycle=" << domain.tc->get_cycle()
-                      << " MacroParticles=" << global_macro
-                      << " PhysParticles=" << global_weight
-                      << " MeanVx=" << global_vx << " MeanVy=" << global_vy
-                      << " MeanVz=" << global_vz
-                      << " KineticEnergy=" << global_ke << "\n";
-          }
-        }
-      }
-
-      if (doReport && domain.pic) {
-        if (amrex::ParallelDescriptor::IOProcessor()) {
-          double max_By = 0.0;
-          double max_Bz = 0.0;
-          for (int iLev = 0; iLev < domain.pic->n_lev(); iLev++) {
-            max_By = std::max(max_By, domain.pic->get_nodeB()[iLev].norm0(1));
-            max_Bz = std::max(max_Bz, domain.pic->get_nodeB()[iLev].norm0(2));
-          }
-          std::cout << std::scientific << std::setprecision(6)
-                    << "DIAGNOSTIC_FIELD:"
-                    << " Time=" << domain.tc->get_time_si()
-                    << " Cycle=" << domain.tc->get_cycle()
-                    << " MaxBy=" << max_By << " MaxBz=" << max_Bz << "\n";
-        }
-      }
+      if (hasDiagCommand && domain.pic)
+        domain.pic->write_diag_log();
     }
 
     amrex::Print() << "\nSimulation finished at time = "
                    << domain.tc->get_time_si() << std::endl;
 
-    // 5. Final output
+    // 6. Final output
+    if (hasDiagCommand && domain.pic)
+      domain.pic->write_diag_log(true); // force-write final step
+
     domain.write_plots(true);
   }
 

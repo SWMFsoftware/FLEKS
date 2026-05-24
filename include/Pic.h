@@ -174,6 +174,11 @@ private:
 
   std::string logFile;
 
+  // Standalone diagnostic log
+  std::string diagLogFile;
+  bool doDiagParticle = false;
+  bool doDiagField = false;
+
   // public methods
 public:
   bool get_doReport() const { return doReport; }
@@ -382,6 +387,8 @@ public:
   amrex::Vector<std::array<int, 3> > read_select_particle_input();
   void read_restart();
   void write_log(bool doForce = false, bool doCreateFile = false);
+  void set_diag_options(bool doParticle, bool doField);
+  void write_diag_log(bool doForce = false, bool doCreateFile = false);
   void write_plots(bool doForce = false);
   void write_amrex(const PlotWriter &pw, double const timeNow,
                    int const iCycle);

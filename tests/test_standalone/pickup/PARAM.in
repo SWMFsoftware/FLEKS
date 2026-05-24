@@ -119,6 +119,10 @@ z=0 fluid real4 pic               plotString
 1                                 dt
 -1                                dx
 
+#DIAGNOSTIC
+T                    doParticleDiag
+F                    doFieldDiag
+
 #STOP
 -1                      MaxIter
 0.2                     TimeMax
