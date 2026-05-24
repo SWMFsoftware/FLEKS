@@ -1,0 +1,90 @@
+name: FLEKS Standalone Test
+
+on:
+  push:
+    branches: [ "master", "hybrid" ]
+  pull_request:
+    branches: [ "master", "hybrid" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Force HTTPS for GitHub
+        run: |
+          git config --global url."https://github.com/".insteadOf git@github.com:
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenmpi-dev openmpi-bin
+
+      - name: Checkout SWMF Framework
+        uses: actions/checkout@v6
+        with:
+          repository: SWMFsoftware/SWMF
+          path: SWMF
+
+      - name: Get AMReX Hash
+        id: amrex-hash
+        run: |
+          echo "hash=$(git ls-remote https://github.com/SWMFsoftware/AMREX.git master | awk '{print $1}')" >> $GITHUB_OUTPUT
+
+      - name: Cache AMReX
+        id: cache-amrex
+        uses: actions/cache@v5
+        with:
+          path: SWMF/util/AMREX
+          key: ${{ runner.os }}-amrex-${{ steps.amrex-hash.outputs.hash }}
+
+      - name: Cache SWMF
+        id: cache-swmf
+        uses: actions/cache@v5
+        with:
+          path: |
+            SWMF
+            !SWMF/PC/FLEKS
+            !SWMF/util/AMREX
+          key: ${{ runner.os }}-swmf-v5-${{ hashFiles('SWMF/Config.pl') }}
+
+      - name: Checkout FLEKS (Current Commit)
+        uses: actions/checkout@v6
+        with:
+          path: SWMF/PC/FLEKS
+
+      - name: Install or Update SWMF Components
+        working-directory: SWMF
+        run: |
+          if [ "${{ steps.cache-swmf.outputs.cache-hit }}" == "true" ]; then
+            echo "Cache hit. Updating components..."
+            ./share/Scripts/gitall pull
+          else
+            echo "Cache miss. Installing components..."
+          fi
+          # Ensure FLEKS is configured, use -o for component options
+          ./Config.pl -install=BATSRUS -v=Empty,PC/FLEKS,GM/BATSRUS -o=PC:tp=PBEG
+
+      - name: Cache Standalone Build
+        id: cache-standalone
+        uses: actions/cache@v5
+        with:
+          path: SWMF/PC/FLEKS/bin/FLEKS.exe
+          key: ${{ runner.os }}-fleks-standalone-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PC/FLEKS/**/Makefile*') }}
+          restore-keys: |
+            ${{ runner.os }}-fleks-standalone-
+
+      - name: Build Standalone FLEKS
+        if: steps.cache-standalone.outputs.cache-hit != 'true'
+        working-directory: SWMF/PC/FLEKS
+        run: |
+          python3 configure.py
+          cp Makefile.conf.standalone.template Makefile.conf
+          make EXE -j$(nproc)
+
+      - name: Run and Verify Standalone FLEKS Tests
+        working-directory: SWMF/PC/FLEKS/tests/test_standalone
+        run: |
+          ls -lh ../../bin/FLEKS.exe
+          ldd ../../bin/FLEKS.exe
+          python3 validate_tests.py

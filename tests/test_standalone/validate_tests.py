@@ -81,9 +81,10 @@ def validate_box(diags):
     print("Validating Box Test...")
     if not diags:
         print("FAIL: No diagnostic outputs parsed.")
-        return False
+        return False, "No diagnostic outputs parsed"
     
     passed = True
+    reasons = []
     prod_rate = 1.0e24
     dt = 0.1
     for diag in diags:
@@ -96,16 +97,20 @@ def validate_box(diags):
         if relative_diff > 0.02: # 2% tolerance
             print(f"  FAIL: relative difference {relative_diff*100:.2f}% exceeds 2%")
             passed = False
+            reasons.append(f"relative diff {relative_diff*100:.2f}% at t={t:.2f} > 2%")
     
     if passed:
         print("Box Test: PASSED")
-    return passed
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
+
 
 def validate_pickup(diags):
     print("Validating Pickup Test...")
     if not diags:
         print("FAIL: No diagnostic outputs parsed.")
-        return False
+        return False, "No diagnostic outputs parsed"
     
     # Group diagnostics by species (0-indexed in FLEKS diagnostic outputs: 0=H+, 1=O+, 2=e-)
     species_diags = {0: [], 1: [], 2: []}
@@ -115,6 +120,7 @@ def validate_pickup(diags):
             species_diags[sp].append(diag)
             
     passed = True
+    reasons = []
     dt = 0.1
     
     # Expected production rates mapped to 0-indexed species
@@ -131,6 +137,7 @@ def validate_pickup(diags):
         if not diags_sp:
             print(f"  FAIL: No diagnostics found for species {sp}")
             passed = False
+            reasons.append(f"No diagnostics for species {sp}")
             continue
             
         rate = prod_rates[sp]
@@ -143,6 +150,7 @@ def validate_pickup(diags):
             if relative_diff > 0.02: # 2% tolerance
                 print(f"    FAIL: species {sp} count difference exceeds tolerance")
                 passed = False
+                reasons.append(f"Species {sp} count diff {relative_diff*100:.2f}% > 2% at t={t:.2f}")
 
     # 2. Validate velocities for H+ (Species 0, omega_c = 1.0)
     print("  --- Validating H+ (Species 0) Velocity History ---")
@@ -170,6 +178,7 @@ def validate_pickup(diags):
         if diff_vx > 0.02 or diff_vy > 0.02:
             print(f"    FAIL: H+ velocity difference exceeds tolerance (0.02)")
             passed = False
+            reasons.append(f"H+ vel diff (Vx diff={diff_vx:.4f}, Vy diff={diff_vy:.4f}) > 0.02 at t={t:.2f}")
 
     # 3. Validate velocities for O+ (Species 1, omega_c = 0.0625)
     print("  --- Validating O+ (Species 1) Velocity History ---")
@@ -197,10 +206,13 @@ def validate_pickup(diags):
         if diff_vx > 0.02 or diff_vy > 0.02:
             print(f"    FAIL: O+ velocity difference exceeds tolerance (0.02)")
             passed = False
+            reasons.append(f"O+ vel diff (Vx diff={diff_vx:.4f}, Vy diff={diff_vy:.4f}) > 0.02 at t={t:.2f}")
             
     if passed:
         print("Pickup Test: PASSED")
-    return passed
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
 
 
 def validate_photoionization(diags):
@@ -212,7 +224,7 @@ def validate_electron_impact(diags):
     print("Validating Electron Impact Ionization (MCC) Test...")
     if not diags:
         print("FAIL: No diagnostic outputs parsed.")
-        return False
+        return False, "No diagnostic outputs parsed"
         
     species_diags = {0: [], 1: [], 2: []}
     for diag in diags:
@@ -221,6 +233,7 @@ def validate_electron_impact(diags):
             species_diags[sp].append(diag)
             
     passed = True
+    reasons = []
     dt = 0.1
     
     # Exospheric nominal rates
@@ -237,6 +250,7 @@ def validate_electron_impact(diags):
         if not diags_sp:
             print(f"  FAIL: No diagnostics found for species {sp}")
             passed = False
+            reasons.append(f"No diagnostics for species {sp}")
             continue
             
         # Check last diagnostic step
@@ -250,17 +264,20 @@ def validate_electron_impact(diags):
         if diff <= 0.0:
             print(f"    FAIL: Species {sp} has no electron impact ionization yield (actual {actual:.2e} <= nominal exosphere {nominal:.2e})")
             passed = False
+            reasons.append(f"Species {sp} has no MCC yield (actual {actual:.2e} <= nominal {nominal:.2e})")
             
     if passed:
         print("Electron Impact Ionization Test: PASSED")
-    return passed
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
 
 
 def validate_exosphere_charge_exchange(diags):
     print("Validating Exospheric Charge Exchange (MCC) Test...")
     if not diags:
         print("FAIL: No diagnostic outputs parsed.")
-        return False
+        return False, "No diagnostic outputs parsed"
         
     species_diags = {0: [], 1: [], 2: []}
     for diag in diags:
@@ -269,6 +286,7 @@ def validate_exosphere_charge_exchange(diags):
             species_diags[sp].append(diag)
             
     passed = True
+    reasons = []
     
     print("  --- Checking Charge Exchange cooling effect ---")
     for sp in [0, 1]:
@@ -276,6 +294,7 @@ def validate_exosphere_charge_exchange(diags):
         if not diags_sp:
             print(f"  FAIL: No diagnostics found for species {sp}")
             passed = False
+            reasons.append(f"No diagnostics for species {sp}")
             continue
             
         last_diag = diags_sp[-1]
@@ -287,17 +306,20 @@ def validate_exosphere_charge_exchange(diags):
         if actual_vx >= initial_vx:
             print(f"    FAIL: Species {sp} did not experience any charge exchange cooling (vx {actual_vx:.2f} >= initial vx {initial_vx:.2f})")
             passed = False
+            reasons.append(f"Species {sp} did not experience charge exchange cooling (vx {actual_vx:.2f} >= {initial_vx:.2f})")
             
     if passed:
         print("Exospheric Charge Exchange Test: PASSED")
-    return passed
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
 
 
 def validate_exosphere(diags):
     print("Validating Combined Exosphere Test (Photoionization, Electron Impact MCC, and Charge Exchange MCC)...")
     if not diags:
         print("FAIL: No diagnostic outputs parsed.")
-        return False
+        return False, "No diagnostic outputs parsed"
         
     species_diags = {0: [], 1: [], 2: []}
     for diag in diags:
@@ -306,6 +328,7 @@ def validate_exosphere(diags):
             species_diags[sp].append(diag)
             
     passed = True
+    reasons = []
     dt = 0.1
     
     # Exospheric nominal rates
@@ -322,6 +345,7 @@ def validate_exosphere(diags):
         if not diags_sp:
             print(f"  FAIL: No diagnostics found for species {sp}")
             passed = False
+            reasons.append(f"No diagnostics for species {sp}")
             continue
             
         last_diag = diags_sp[-1]
@@ -334,6 +358,7 @@ def validate_exosphere(diags):
         if diff <= 0.0:
             print(f"    FAIL: Species {sp} has no combined process yield (actual {actual:.2e} <= nominal exosphere {nominal:.2e})")
             passed = False
+            reasons.append(f"Species {sp} has no combined process yield (actual {actual:.2e} <= nominal {nominal:.2e})")
 
     # 2. Verify Charge Exchange cooling (final Vx < initial Vx = 400.0)
     print("  --- Checking Charge Exchange cooling effect ---")
@@ -342,6 +367,7 @@ def validate_exosphere(diags):
         if not diags_sp:
             print(f"  FAIL: No diagnostics found for species {sp}")
             passed = False
+            reasons.append(f"No diagnostics for species {sp}")
             continue
             
         last_diag = diags_sp[-1]
@@ -353,24 +379,27 @@ def validate_exosphere(diags):
         if actual_vx >= initial_vx:
             print(f"    FAIL: Species {sp} did not experience any charge exchange cooling (vx {actual_vx:.2f} >= initial vx {initial_vx:.2f})")
             passed = False
+            reasons.append(f"Species {sp} did not experience charge exchange cooling (vx {actual_vx:.2f} >= {initial_vx:.2f})")
             
     if passed:
         print("Combined Exosphere Test: PASSED")
-    return passed
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
 
 
 def validate_chamber(diags):
     print("Validating Chamber Test...")
     if not diags:
         print("FAIL: No diagnostic outputs parsed.")
-        return False
+        return False, "No diagnostic outputs parsed"
     
     times = [d["time"] for d in diags]
     phys_particles = [d["phys"] for d in diags]
     
     if len(phys_particles) < 5:
         print("FAIL: Too few data points.")
-        return False
+        return False, "Too few data points"
     
     # Check that in the last 1.5 seconds, the relative change in particle number is very small
     last_idx = len(phys_particles) - 1
@@ -392,19 +421,20 @@ def validate_chamber(diags):
     # If the relative change is < 5%, we have reached a steady state balancing injection and escape.
     if relative_change < 0.05:
         print("Chamber Test: PASSED")
-        return True
+        return True, "Passed"
     else:
         print("FAIL: Chamber did not reach steady-state (relative change >= 5%)")
-        return False
+        return False, f"Chamber relative change {relative_change*100:.2f}% >= 5%"
 
 
 def validate_beam(diags, stdout=None):
     print("Validating Beam Instability Test...")
     if not diags:
         print("FAIL: No diagnostic outputs parsed.")
-        return False
+        return False, "No diagnostic outputs parsed"
 
     passed = True
+    reasons = []
     
     # 1. Total particle count conservation check
     initial_phys = diags[0]["phys"]
@@ -414,6 +444,7 @@ def validate_beam(diags, stdout=None):
         if abs(actual_phys - initial_phys) > 1e-5 * initial_phys:
             print(f"  FAIL at t={t:.2f}: Particle number changed! Expected={initial_phys:.2e}, Actual={actual_phys:.2e}")
             passed = False
+            reasons.append(f"Particle number changed at t={t:.2f} (expected {initial_phys:.2e}, actual {actual_phys:.2e})")
 
     # 2. Mean velocity conservation check
     # Expected MeanVx is -0.392 (due to 99% background at -0.4 and 1% beam at +0.4)
@@ -426,6 +457,7 @@ def validate_beam(diags, stdout=None):
         if relative_diff > 0.01:
             print(f"  FAIL: MeanVx exceeds tolerance of 0.01")
             passed = False
+            reasons.append(f"MeanVx diff {relative_diff:.4f} > 0.01 at t={t:.2f}")
 
     # 3. Transverse magnetic field cyclotron wave growth check
     if stdout:
@@ -448,6 +480,7 @@ def validate_beam(diags, stdout=None):
         if not field_diags:
             print("  FAIL: No DIAGNOSTIC_FIELD outputs parsed.")
             passed = False
+            reasons.append("No DIAGNOSTIC_FIELD outputs parsed")
         else:
             initial_by = field_diags[0]["max_by"]
             initial_bz = field_diags[0]["max_bz"]
@@ -465,12 +498,15 @@ def validate_beam(diags, stdout=None):
             if growth_y < 1.2 and growth_z < 1.2:
                 print("    FAIL: No significant growth of cyclotron waves detected (growth < 1.2x)")
                 passed = False
+                reasons.append(f"No wave growth (By growth={growth_y:.2f}x, Bz growth={growth_z:.2f}x < 1.2x)")
             else:
                 print("    SUCCESS: Cyclotron wave growth validated!")
 
     if passed:
         print("Beam Instability Test: PASSED")
-    return passed
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
 
 
 def main():
@@ -509,7 +545,8 @@ def main():
         print("No tests found in tests/test_standalone/ subdirectories!")
         sys.exit(1)
         
-    all_passed = True
+    results = [] # Collect results for summary table
+    
     for test_dir, name, validator in tests:
         print(f"\n==========================================")
         print(f"Starting test: {name.upper()}")
@@ -517,7 +554,7 @@ def main():
         stdout, code = run_test(test_dir)
         if code != 0 or stdout is None:
             print(f"FAIL: {name.upper()} execution failed with exit code {code}")
-            all_passed = False
+            results.append((name.upper(), "FAILED", f"Execution failed (code {code})"))
             continue
             
         diags = parse_diagnostics(stdout)
@@ -525,26 +562,61 @@ def main():
             import inspect
             sig = inspect.signature(validator)
             if "stdout" in sig.parameters:
-                val_res = validator(diags, stdout=stdout)
+                val_res, reason = validator(diags, stdout=stdout)
             else:
-                val_res = validator(diags)
+                val_res, reason = validator(diags)
             if not val_res:
                 print("FLEKS execution output:")
                 print(stdout)
-                all_passed = False
+                results.append((name.upper(), "FAILED", reason))
+            else:
+                results.append((name.upper(), "PASSED", "Passed"))
         else:
             print(f"Validating {name.upper()} (generic check)...")
             if not diags:
                 print("FAIL: No diagnostic outputs parsed.")
-                all_passed = False
+                results.append((name.upper(), "FAILED", "No diagnostics parsed"))
             else:
                 print(f"{name.upper()} (generic check): PASSED")
+                results.append((name.upper(), "PASSED", "Passed"))
                 
+    # ----------------------------------------------------
+    # Print Summary Table
+    # ----------------------------------------------------
+    print("\n" + "=" * 80)
+    print(" " * 32 + "TEST SUMMARY")
+    print("=" * 80)
+    print(f" {'Test Name':<28} | {'Status':<8} | {'Failure Reason / Details':<38}")
+    print("-" * 80)
+    
+    all_passed = True
+    for name_str, status, reason in results:
+        status_display = f"{status:<8}"
+        if sys.stdout.isatty():
+            if status == "PASSED":
+                status_display = f"\033[92;1m{status:<8}\033[0m" # Green Bold
+            else:
+                status_display = f"\033[91;1m{status:<8}\033[0m" # Red Bold
+                
+        if status != "PASSED":
+            all_passed = False
+            
+        reason_display = reason if status != "PASSED" else ""
+        print(f" {name_str:<28} | {status_display} | {reason_display:<38}")
+        
+    print("=" * 80)
+    
     if all_passed:
-        print("\nALL STANDALONE EXOSPHERE TESTS PASSED SUCCESSFULLY!")
+        if sys.stdout.isatty():
+            print("\033[92;1m\nALL STANDALONE FLEKS TESTS PASSED SUCCESSFULLY!\033[0m\n")
+        else:
+            print("\nALL STANDALONE FLEKS TESTS PASSED SUCCESSFULLY!\n")
         sys.exit(0)
     else:
-        print("\nSOME TESTS FAILED.")
+        if sys.stdout.isatty():
+            print("\033[91;1m\nSOME TESTS FAILED.\033[0m\n")
+        else:
+            print("\nSOME TESTS FAILED.\n")
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -176,6 +176,8 @@ private:
 
   // public methods
 public:
+  bool get_doReport() const { return doReport; }
+
   Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo, int nGst,
       FluidInterface *fluidIn, TimeCtr *tcIn, int id = 0)
       : Grid(gm, amrInfo, nGst, id, "pic"), fi(fluidIn), tc(tcIn) {

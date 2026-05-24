@@ -91,8 +91,9 @@ int main(int argc, char* argv[]) {
 
       domain.update();
 
+      bool doReport = (domain.pic && domain.pic->get_doReport());
       // Species diagnostics loop
-      if (domain.pic && domain.pic->has_particles()) {
+      if (doReport && domain.pic && domain.pic->has_particles()) {
         int nSpecies = domain.pic->get_nSpecies();
         for (int iS = 0; iS < nSpecies; iS++) {
           if (!domain.pic->get_particle_pointer(iS))
@@ -159,7 +160,7 @@ int main(int argc, char* argv[]) {
         }
       }
 
-      if (domain.pic) {
+      if (doReport && domain.pic) {
         if (amrex::ParallelDescriptor::IOProcessor()) {
           double max_By = 0.0;
           double max_Bz = 0.0;
