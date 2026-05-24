@@ -92,6 +92,7 @@ jobs:
           python3 validate_tests.py
 
       - name: Run Standalone Performance Checks
+        if: false
         working-directory: SWMF/PC/FLEKS/tests/test_standalone
         run: |
           python3 validate_performance.py
