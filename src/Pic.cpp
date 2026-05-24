@@ -217,8 +217,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     } else if (testcase == "lightwave") {
       testCase = LightWave;
       nPartPerCell = IntVect::Zero;
-    } else if (testcase == "AlfvenWave") {
-      testCase = AlfvenWave;
+    } else if (testcase == "FastWave") {
+      testCase = FastWave;
     } else if (testcase == "pickup") {
       testCase = Pickup;
       nPartPerCell = IntVect::Zero;
@@ -641,7 +641,7 @@ void Pic::fill_new_node_E() {
             arrE(ijk, ix_) = 0.0;
             arrE(ijk, iy_) = pickup_Ey;
             arrE(ijk, iz_) = 0.0;
-          } else if (testCase == AlfvenWave) {
+          } else if (testCase == FastWave) {
             const Real x =
                 Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
             Real ux = 0.005 * sin(2.0 * dPI * x / 32.0);
@@ -696,7 +696,7 @@ void Pic::fill_new_node_B() {
             arrB(ijk, ix_) = 0.0;
             arrB(ijk, iy_) = 0.0;
             arrB(ijk, iz_) = pickup_Bz;
-          } else if (testCase == AlfvenWave) {
+          } else if (testCase == FastWave) {
             const Real x =
                 Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
             arrB(ijk, ix_) = 0.0;

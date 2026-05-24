@@ -208,7 +208,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 
         Real nDens =
             interface->get_number_density(mfi, xyz0, speciesID, iLev);
-        if (testCase == AlfvenWave) {
+        if (testCase == FastWave) {
           nDens = 1.0 + 0.1 * sin(2.0 * dPI * xyz0[ix_] / 32.0);
         }
 
@@ -250,7 +250,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           Real wBulk = userState ? tpVel.vz
                                  : interface->get_uz(mfi, xyz, speciesID, iLev);
 
-          if (testCase == AlfvenWave) {
+          if (testCase == FastWave) {
             uBulk = 0.005 * sin(2.0 * dPI * xyz[ix_] / 32.0);
             vBulk = 0.0;
             wBulk = 0.0;

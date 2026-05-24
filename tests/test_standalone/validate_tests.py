@@ -14,6 +14,19 @@ def safe_symlink(src, dst):
             shutil.rmtree(dst)
     os.symlink(src, dst)
 
+def save_output_files(test_dir):
+    plots_dir = os.path.join("run_test", "PC", "plots")
+    if not os.path.exists(plots_dir):
+        return
+    dest_dir = os.path.join(test_dir, "output")
+    if os.path.exists(dest_dir):
+        shutil.rmtree(dest_dir)
+    os.makedirs(dest_dir, exist_ok=True)
+    for f in os.listdir(plots_dir):
+        src_file = os.path.join(plots_dir, f)
+        if os.path.isfile(src_file):
+            shutil.copy(src_file, dest_dir)
+
 def prepare_run_dir():
     run_dir = "run_test"
     os.makedirs(run_dir, exist_ok=True)
@@ -25,7 +38,13 @@ def prepare_run_dir():
     # Component plot and restart directories
     pc_dir = os.path.join(run_dir, "PC")
     os.makedirs(pc_dir, exist_ok=True)
-    os.makedirs(os.path.join(pc_dir, "plots"), exist_ok=True)
+    
+    # Clean plots directory to avoid mixing results
+    plots_dir = os.path.join(pc_dir, "plots")
+    if os.path.exists(plots_dir):
+        shutil.rmtree(plots_dir)
+    os.makedirs(plots_dir, exist_ok=True)
+    
     os.makedirs(os.path.join(pc_dir, "restartOUT"), exist_ok=True)
     
     # Symlinks in component directory
@@ -502,8 +521,8 @@ def validate_hybrid_wave(diags, stdout=None):
     return passed
 
 
-def validate_alfven_wave(diags, stdout=None):
-    print("Validating Alfven Wave Propagation Test...")
+def validate_fast_wave(diags, stdout=None):
+    print("Validating Fast Wave Propagation Test...")
     if not diags:
         print("FAIL: No diagnostic outputs parsed.")
         return False
@@ -527,7 +546,7 @@ def validate_alfven_wave(diags, stdout=None):
                 passed = False
 
     if passed:
-        print("Alfven Wave Propagation Test: PASSED")
+        print("Fast Wave Propagation Test: PASSED")
     return passed
 
 
@@ -547,8 +566,8 @@ def main():
         "chamber": validate_chamber,
         "beam": validate_beam,
         "hybrid_wave": validate_hybrid_wave,
-        "alfven_wave_pic": validate_alfven_wave,
-        "alfven_wave_hybrid": validate_alfven_wave
+        "fast_wave_pic": validate_fast_wave,
+        "fast_wave_hybrid": validate_fast_wave
     }
     
     # Discover test subdirectories under tests/test_standalone
@@ -581,6 +600,7 @@ def main():
             all_passed = False
             continue
             
+        save_output_files(test_dir)
         diags = parse_diagnostics(stdout)
         if validator:
             import inspect

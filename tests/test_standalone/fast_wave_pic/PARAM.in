@@ -1,12 +1,12 @@
 #DESCRIPTION
-2D Alfven Wave Propagation Standalone Test - Hybrid PIC
+2D Alfven Wave Propagation Standalone Test - Full PIC
 
 #INITFROMSWMF
 F                       initFromSWMF
 
 #GEOMETRY
--53.333                 xMin
- 53.333                 xMax
+-32.0                   xMin
+ 32.0                   xMax
 -40.0                   yMin
  40.0                   yMax
 -0.5                    zMin
@@ -28,29 +28,28 @@ T                       isPeriodicY
 T                       isPeriodicZ
 
 #SOLVEEM
-F                       solveEM
+T                       solveEM
 
 #HYBRIDPIC
-T                       useHybridPIC
+F                       useHybridPIC
 
-#RESISTIVITY
-0.0                     etaResistivity
-
-#ELECTRONTEMPERATURE
-1.5                     electronTemperature
-1.0                     electronGamma
-1.0                     electronDensity0
-
-#HALLSUBCYCLE
-1                       nHallSubcycle
+#ELECTRON
+-25.0                   electronChargePerMass
 
 #PLASMA
-1                       nSpecies
+2                       nSpecies
 1.0                     mass
 1.0                     charge
+0.04                    mass
+-1.0                    charge
 
 #UNIFORMSTATE
 1.0                     rho (species 0 - ions)
+0.0                     ux
+0.0                     uy
+0.0                     uz
+10000.0                 T
+0.04                    rho (species 1 - electrons)
 0.0                     ux
 0.0                     uy
 0.0                     uz
@@ -63,7 +62,7 @@ T                       useHybridPIC
 0.0                     ez
 
 #TESTCASE
-AlfvenWave
+FastWave
 
 #TIMESTEPPING
 T                       useFixedDt
@@ -94,14 +93,18 @@ F                       doSmoothB
 0.0                     theta
 
 #SAVEPLOT
-1                                 nPlot
+2                                 nPlot
 3d fluid amrex pic                plotString
 -1                                dn
-0.5                               dt
+80.0                              dt
 1                                 dx
+z=0 fluid real4 pic               plotString
+-1                                dn
+80.0                              dt
+-1                                dx
 
 #STOP
 -1                      MaxIter
-1.0                     TimeMax
+640.0                   TimeMax
 
 #RUN
