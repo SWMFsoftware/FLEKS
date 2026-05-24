@@ -1,4 +1,4 @@
-name: FLEKS Standalone Test
+name: Standalone Test
 
 on:
   push:

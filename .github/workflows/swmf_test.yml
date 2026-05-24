@@ -1,4 +1,4 @@
-name: FLEKS SWMF Integration Test
+name: SWMF Integration Test
 
 on:
   push:
