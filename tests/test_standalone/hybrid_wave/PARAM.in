@@ -1,0 +1,112 @@
+#DESCRIPTION
+Hybrid Wave Propagation Standalone Test
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-1.0                    xMin
+ 1.0                    xMax
+-1.0                    yMin
+ 1.0                    yMax
+-1.0                    zMin
+ 1.0                    zMax
+
+#NCELL
+64                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+64                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#RESISTIVITY
+0.01                    etaResistivity
+
+#ELECTRONTEMPERATURE
+1.5                     electronTemperature
+1.0                     electronGamma
+5.0                     electronDensity0
+
+#HALLSUBCYCLE
+2                       nHallSubcycle
+
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#UNIFORMSTATE
+5.0                     rho [amu/cc]
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.0e-9                  bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+Beam
+0                       iSpecies
+0.0                     ratio
+0.0                     vel
+0.0                     vel
+0.0                     vel
+
+#TIMESTEPPING
+T                       useFixedDt
+0.05                    dt
+
+#NORMALIZATION
+1000.0                  lNormSI
+1.0e6                   uNormSI
+
+#MONITOR
+1                       dnReport
+
+#PARTICLES
+100                     nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#COMOVING
+F                       solvePartInCoMov
+0                       nSmoothBackGroundU
+
+#UPWINDE
+F                       useUpwindE
+0                       limiterTheta
+
+#UPWINDB
+F                       doSmoothB
+0                       theta
+
+#SAVEPLOT
+1                                 nPlot
+3d fluid amrex pic                plotString
+-1                                dn
+0.1                               dt
+1                                 dx
+
+#STOP
+-1                      MaxIter
+0.3                     TimeMax
+
+#RUN

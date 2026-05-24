@@ -443,10 +443,12 @@ void Pic::save_restart_data() {
   }
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
-    parts[iPart]->label_particles_outside_active_region();
-    parts[iPart]->redistribute_particles();
-    parts[iPart]->Checkpoint(restartDir,
-                             gridName + "_particles" + std::to_string(iPart));
+    if (parts[iPart]) {
+      parts[iPart]->label_particles_outside_active_region();
+      parts[iPart]->redistribute_particles();
+      parts[iPart]->Checkpoint(restartDir,
+                               gridName + "_particles" + std::to_string(iPart));
+    }
   }
   inject_particles_for_boundary_cells();
 }
@@ -469,7 +471,12 @@ void Pic::save_restart_header(std::ofstream& headerFile) {
     headerFile << "#SUPID" + command_suffix;
     headerFile << nSpecies << "\t\t\tnSpecies\n";
     for (int i = 0; i < nSpecies; ++i) {
-      headerFile << parts[i]->sup_id() << "\t\t\tsupID\n";
+      int sid = i;
+      if (parts[i])
+        sid = parts[i]->sup_id();
+      else if (i < supIDs.size())
+        sid = supIDs[i];
+      headerFile << sid << "\t\t\tsupID\n";
     }
     headerFile << "\n";
   }
@@ -491,8 +498,10 @@ void Pic::read_restart() {
   }
 
   for (int iPart = 0; iPart < parts.size(); iPart++) {
-    parts[iPart]->Restart(restartDir,
-                          gridName + "_particles" + std::to_string(iPart));
+    if (parts[iPart]) {
+      parts[iPart]->Restart(restartDir,
+                            gridName + "_particles" + std::to_string(iPart));
+    }
   }
   inject_particles_for_boundary_cells();
 
@@ -507,7 +516,9 @@ void Pic::read_restart() {
     Vector<std::array<int, 3> > selectParticleInput =
         read_select_particle_input();
     for (int iPart = 0; iPart < parts.size(); iPart++) {
-      parts[iPart]->select_particle(selectParticleInput);
+      if (parts[iPart]) {
+        parts[iPart]->select_particle(selectParticleInput);
+      }
     }
   }
 }
@@ -630,6 +641,9 @@ void Pic::write_amrex(const PlotWriter& pw, double const timeNow,
 void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
                                int const iCycle) {
   int iSpecies = pw.get_particleSpecies();
+
+  if (iSpecies >= parts.size() || !parts[iSpecies])
+    return;
 
   std::string dirName = pw.get_amrex_filename(timeNow, iCycle);
 
@@ -1010,6 +1024,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   }
 
 #ifdef _PC_COMPONENT_
+#ifndef FLEKS_STANDALONE
   if (isDensityZero) {
     AllPrint()
         << "\n==========" << printPrefix
@@ -1025,6 +1040,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
         << std::endl;
     Abort();
   }
+#endif
 #endif
 }
 

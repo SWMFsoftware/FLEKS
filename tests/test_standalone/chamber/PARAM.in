@@ -1,0 +1,81 @@
+#DESCRIPTION
+Fake 1D Chamber Asymmetric Inflow/Outflow Test
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-1.0                    xMin
+ 1.0                    xMax
+-0.1                    yMin
+ 0.1                    yMax
+-0.1                    zMin
+ 0.1                    zMax
+
+#NCELL
+16                      nCellX
+2                       nCellY
+2                       nCellZ
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+2                       maxBlockSizeY
+2                       maxBlockSizeZ
+
+#PERIODICITY
+F                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+F                       solveEM
+
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#EXOSPHERE
+1                       iSpecies
+exponential             NeutralProfile
+0.0                     r0
+0.0                     ExobaseRadius
+0.0                     ShadowRadius
+1.0e24                  TotalProductionRate
+1000.0                  nMacroParticlesPerDt
+1.0e11                  n0
+0.5                     H0
+1.26e18                 T0
+0.0                     k0
+
+#TIMESTEPPING
+T                       useFixedDt
+0.1                     dt
+
+#NORMALIZATION
+1.0                     lNormSI
+1.0                     uNormSI
+
+#MONITOR
+1                       dnReport
+
+#SAVEPLOT
+3                                 nPlot
+3d fluid amrex pic                plotString
+-1                                dn
+1.0                               dt
+1                                 dx
+3d particles0 amrex pic           plotString
+-1                                dn
+1.0                               dt
+1                                 dx
+z=0 fluid real4 pic               plotString
+-1                                dn
+1.0                               dt
+-1                                dx
+
+#STOP
+-1                      MaxIter
+5.0                     TimeMax
+
+#RUN

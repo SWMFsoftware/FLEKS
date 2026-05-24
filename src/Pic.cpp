@@ -15,6 +15,7 @@
 #include "LinearSolver.h"
 #include "Pic.h"
 #include "Timer.h"
+#include <sstream>
 
 using namespace amrex;
 
@@ -25,6 +26,16 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("usePIC", usePIC);
   } else if (command == "#SOLVEEM") {
     param.read_var("solveEM", solveEM);
+  } else if (command == "#HYBRIDPIC") {
+    param.read_var("useHybridPIC", useHybridPIC);
+  } else if (command == "#RESISTIVITY") {
+    param.read_var("etaResistivity", etaResistivity);
+  } else if (command == "#ELECTRONTEMPERATURE") {
+    param.read_var("electronTemperature", electronTemperature);
+    param.read_var("electronGamma", electronGamma);
+    param.read_var("electronDensity0", electronDensity0);
+  } else if (command == "#HALLSUBCYCLE") {
+    param.read_var("nHallSubcycle", nHallSubcycle);
   } else if (command == "#PARTMODE") {
     std::string s;
     param.read_var("partMode", s);
@@ -206,12 +217,55 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     } else if (testcase == "lightwave") {
       testCase = LightWave;
       nPartPerCell = IntVect::Zero;
+    } else if (testcase == "FastWave") {
+      testCase = FastWave;
+    } else if (testcase == "pickup") {
+      testCase = Pickup;
+      nPartPerCell = IntVect::Zero;
+      param.read_var("Ey", pickup_Ey);
+      param.read_var("Bz", pickup_Bz);
+      param.read_var("xMin", pickup_xMin);
+      param.read_var("xMax", pickup_xMax);
     }
   } else if (command == "#SELECTPARTICLE") {
     param.read_var("doSelectParticle", doSelectParticle);
     if (doSelectParticle) {
       param.read_var("selectParticleInputFile", selectParticleInputFile);
     }
+  } else if (command == "#EXOSPHERE") {
+    useExosphere = true;
+    ExosphereInfo info;
+    param.read_var("iSpecies", info.iSpecies);
+    param.read_var("NeutralProfile", info.neutralProfile);
+    param.read_var("r0", info.r0);
+    param.read_var("ExobaseRadius", info.exobaseRadius);
+    param.read_var("ShadowRadius", info.shadowRadius);
+    param.read_var("TotalProductionRate", info.totalProductionRate);
+    param.read_var("nMacroParticlesPerDt", info.nMacroParticlesPerDt);
+
+    auto parse_real_array = [&](const std::string& name,
+                                amrex::Vector<amrex::Real>& vec) {
+      std::string str;
+      param.read_var(name, str);
+      std::stringstream ss(str);
+      amrex::Real val;
+      while (ss >> val) {
+        vec.push_back(val);
+      }
+    };
+    parse_real_array("n0", info.n0);
+    parse_real_array("H0", info.H0);
+    parse_real_array("T0", info.T0);
+    parse_real_array("k0", info.k0);
+    exoInfos.push_back(info);
+  } else if (command == "#ELECTRONIMPACT") {
+    param.read_var("useElectronImpactIonization", doElectronImpactIonization);
+    param.read_var("ionizationThresholdEnergy", ionizationThresholdEnergy);
+    param.read_var("OpalBeatyBarE", OpalBeatyBarE);
+    param.read_var("blowoutLimitRatio", blowoutLimitRatio);
+  } else if (command == "#CHARGEEXCHANGE") {
+    param.read_var("useExosphereChargeExchange", doExosphereChargeExchange);
+    param.read_var("blowoutLimitRatio", cxBlowoutLimitRatio);
   }
 }
 
@@ -219,6 +273,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 void Pic::post_process_param() {
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
+  if (useHybridPIC) {
+    solveEM = false;
+  }
   fsolver.mode = (!fsolver.useLaggedLimiter && limiterThetaE != 0)
                      ? FieldSolverMode::NewtonKrylov
                      : FieldSolverMode::GMRES;
@@ -345,6 +402,145 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   }
 
   distribute_grid_arrays(cGridsOld);
+  init_exosphere();
+}
+
+//==========================================================
+Real neutralDensityExponential(Real r, Real r0, const Vector<Real>& n0,
+                               const Vector<Real>& H0) {
+  Real n = 0.0;
+  for (int i = 0; i < n0.size(); i++) {
+    n += n0[i] * exp(-(r - r0) / H0[i]);
+  }
+  return n;
+}
+
+Real neutralDensityPowerLaw(Real r, Real r0, const Vector<Real>& n0,
+                            const Vector<Real>& k0) {
+  Real n = 0.0;
+  for (int i = 0; i < n0.size(); i++) {
+    n += n0[i] * pow(r0 / r, k0[i]);
+  }
+  return n;
+}
+
+Real neutralDensityChamberlainH(Real r, Real r0, const Vector<Real>& n0,
+                                const Vector<Real>& H0) {
+  Real n = 0.0;
+  for (int i = 0; i < n0.size(); i++) {
+    n += n0[i] * exp(-H0[i] * (1.0 / r0 - 1.0 / r));
+  }
+  return n;
+}
+
+void Pic::init_exosphere() {
+  if (exoInfos.empty())
+    return;
+  timing_func("Pic::init_exosphere");
+
+  if (nSpecies <= 0)
+    return;
+
+  exoDensity.resize(n_lev());
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    distribute_FabArray(exoDensity[iLev], cGrids[iLev], DistributionMap(iLev),
+                        exoInfos.size(), 0, false);
+  }
+
+  for (int iInfo = 0; iInfo < exoInfos.size(); ++iInfo) {
+    auto& info = exoInfos[iInfo];
+    std::string profile = info.neutralProfile;
+    Real r0 = info.r0;
+    Real exobaseRadius = info.exobaseRadius;
+    Real shadowRadius = info.shadowRadius;
+    int n0_size = info.n0.size();
+    const Real* n0_ptr = info.n0.data();
+    const Real* H0_ptr = info.H0.data();
+    const Real* k0_ptr = info.k0.data();
+
+    TestCase tCase = testCase;
+    Real xMin_pickup = pickup_xMin;
+    Real xMax_pickup = pickup_xMax;
+    Real sumLocal = 0;
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      const Real* dx = Geom(iLev).CellSize();
+      const Real* plo = Geom(iLev).ProbLo();
+      const Real vol = AMREX_D_TERM(dx[0], *dx[1], *dx[2]);
+
+      Real dx_local[3] = { 0.0, 0.0, 0.0 };
+      Real plo_local[3] = { 0.0, 0.0, 0.0 };
+      for (int d = 0; d < nDim; ++d) {
+        dx_local[d] = dx[d];
+        plo_local[d] = plo[d];
+      }
+
+      for (MFIter mfi(exoDensity[iLev]); mfi.isValid(); ++mfi) {
+        const Box& bx = mfi.validbox();
+        auto const& exo_arr = exoDensity[iLev].array(mfi);
+
+        ParallelFor(bx, [=](int i, int j, int k) {
+          Real pos[3] = { 0.0, 0.0, 0.0 };
+          pos[0] = (i + 0.5) * dx_local[0] + plo_local[0];
+          if (nDim > 1)
+            pos[1] = (j + 0.5) * dx_local[1] + plo_local[1];
+          if (nDim > 2)
+            pos[2] = (k + 0.5) * dx_local[2] + plo_local[2];
+
+          Real r2 = 0;
+          for (int d = 0; d < nDim; ++d) {
+            r2 += pos[d] * pos[d];
+          }
+          Real r = sqrt(r2);
+          Real dens = 0;
+          if (tCase != Pickup ||
+              (pos[0] >= xMin_pickup && pos[0] <= xMax_pickup)) {
+            if (r >= exobaseRadius) {
+              bool inShadow = false;
+              if (shadowRadius > 0) {
+                inShadow = (pos[0] < 0 && (pos[1] * pos[1] +
+                                           (nDim > 2 ? pos[2] * pos[2] : 0)) <
+                                              shadowRadius * shadowRadius);
+              }
+              if (!inShadow) {
+                if (profile == "exponential") {
+                  Real n_val = 0.0;
+                  for (int idx = 0; idx < n0_size; idx++) {
+                    n_val += n0_ptr[idx] * exp(-(r - r0) / H0_ptr[idx]);
+                  }
+                  dens = n_val;
+                } else if (profile == "power-law" || profile == "PowerLaw") {
+                  Real n_val = 0.0;
+                  for (int idx = 0; idx < n0_size; idx++) {
+                    n_val += n0_ptr[idx] * pow(r0 / r, k0_ptr[idx]);
+                  }
+                  dens = n_val;
+                } else if (profile == "ChamberlainH") {
+                  Real n_val = 0.0;
+                  for (int idx = 0; idx < n0_size; idx++) {
+                    n_val +=
+                        n0_ptr[idx] * exp(-H0_ptr[idx] * (1.0 / r0 - 1.0 / r));
+                  }
+                  dens = n_val;
+                }
+              }
+            }
+          }
+          exo_arr(i, j, k, iInfo) = dens * vol;
+        });
+      }
+      sumLocal += exoDensity[iLev].sum(iInfo, true);
+    }
+
+    Real sumGlobal = sumLocal;
+    ParallelDescriptor::ReduceRealSum(sumGlobal);
+
+    if (sumGlobal > 0) {
+      Real norm = info.totalProductionRate / sumGlobal;
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        exoDensity[iLev].mult(norm, iInfo, 1, 0);
+      }
+    }
+  }
 }
 
 //==========================================================
@@ -441,6 +637,18 @@ void Pic::fill_new_node_E() {
             if (x > xL && x < xR) {
               arrE(ijk, iy_) = 1;
             }
+          } else if (testCase == Pickup) {
+            arrE(ijk, ix_) = 0.0;
+            arrE(ijk, iy_) = pickup_Ey;
+            arrE(ijk, iz_) = 0.0;
+          } else if (testCase == FastWave) {
+            const Real x =
+                Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
+            Real ux = 0.005 * sin(2.0 * dPI * x / 32.0);
+            Real by = 0.04 + 0.004 * sin(2.0 * dPI * x / 32.0);
+            arrE(ijk, ix_) = 0.0;
+            arrE(ijk, iy_) = 0.0;
+            arrE(ijk, iz_) = -ux * by;
           } else {
             arrE(ijk, ix_) = fi->get_ex(mfi, ijk, iLev);
             arrE(ijk, iy_) = fi->get_ey(mfi, ijk, iLev);
@@ -484,6 +692,16 @@ void Pic::fill_new_node_B() {
             if (x > xL && x < xR) {
               arrB(ijk, iz_) = 1;
             }
+          } else if (testCase == Pickup) {
+            arrB(ijk, ix_) = 0.0;
+            arrB(ijk, iy_) = 0.0;
+            arrB(ijk, iz_) = pickup_Bz;
+          } else if (testCase == FastWave) {
+            const Real x =
+                Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
+            arrB(ijk, ix_) = 0.0;
+            arrB(ijk, iy_) = 0.04 + 0.004 * sin(2.0 * dPI * x / 32.0);
+            arrB(ijk, iz_) = 0.0;
           } else {
             arrB(ijk, ix_) = fi->get_bx(mfi, ijk, iLev);
             arrB(ijk, iy_) = fi->get_by(mfi, ijk, iLev);
@@ -577,12 +795,18 @@ void Pic::fill_E_B_fields() {
         ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
         cell_bilinear_interp);
   }
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(), 0);
+  }
 }
 
 //==========================================================
 void Pic::fill_particles() {
   inject_particles_for_new_cells();
   inject_particles_for_boundary_cells();
+  if (useExosphere)
+    fill_source_particles();
 }
 
 void Pic::fill_source_particles() {
@@ -593,9 +817,67 @@ void Pic::fill_source_particles() {
 #ifdef _PT_COMPONENT_
   doSelectRegion = (nSpecies == 4);
 #endif
-  for (int i = 0; i < nSpecies; ++i) {
-    parts[i]->add_particles_source(source, stateOH, tc->get_dt(), nSourcePPC,
-                                   doSelectRegion, adaptiveSourcePPC);
+  if (useExosphere) {
+    int iElec = -1;
+    for (int i = 0; i < nSpecies; ++i) {
+      if (parts[i] && parts[i]->get_charge() < 0) {
+        iElec = i;
+        break;
+      }
+    }
+
+    for (int iInfo = 0; iInfo < exoInfos.size(); ++iInfo) {
+      auto& info = exoInfos[iInfo];
+      if (info.iSpecies > 0 && info.iSpecies <= nSpecies) {
+        int iSp = info.iSpecies - 1;
+        if (iSp == iElec) {
+          // Electrons are handled automatically in pair-injection with ions.
+          continue;
+        }
+
+        Real dt = tc->get_dt();
+        Real weightMacro =
+            (info.nMacroParticlesPerDt > 0)
+                ? (info.totalProductionRate * dt / info.nMacroParticlesPerDt)
+                : 1.0;
+        for (int iLev = 0; iLev < n_lev(); iLev++) {
+          if (iSp >= parts.size() || !parts[iSp])
+            continue;
+
+          Real T0_K = info.T0.empty() ? 0.0 : info.T0[0];
+          Real mass_kg =
+              parts[iSp]->get_mass() * fi->get_No2SiM(); // PIC mass unit -> kg
+          Real uth_SI = (T0_K > 0 && mass_kg > 0)
+                            ? sqrt(cBoltzmannSI * T0_K / mass_kg)
+                            : 0.0;
+          Real uth = uth_SI * fi->get_Si2NoV(); // SI -> PIC normalized
+
+          Real uth_elec = 0.0;
+          PicParticles* elec_ptr = nullptr;
+          if (iElec >= 0 && parts[iSp]->get_charge() > 0) {
+            elec_ptr = parts[iElec].get();
+            Real m_elec_kg = elec_ptr->get_mass() * fi->get_No2SiM();
+            Real uth_elec_SI = (T0_K > 0 && m_elec_kg > 0)
+                                   ? sqrt(cBoltzmannSI * T0_K / m_elec_kg)
+                                   : 0.0;
+            uth_elec = uth_elec_SI * fi->get_Si2NoV();
+          }
+
+          parts[iSp]->add_particles_exosphere(exoDensity[iLev], dt, iLev,
+                                              weightMacro, iInfo, uth, elec_ptr,
+                                              uth_elec);
+        }
+      }
+    }
+  }
+
+  if (source) {
+    for (int i = 0; i < nSpecies; ++i) {
+      if (useHybridPIC && parts[i]->get_charge() < 0)
+        continue;
+      parts[i]->add_particles_source(source, stateOH, tc->get_dt(), nSourcePPC,
+                                     doSelectRegion, adaptiveSourcePPC);
+    }
   }
 }
 
@@ -607,12 +889,431 @@ void Pic::update_part_loc_to_half_stage() {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (int i = 0; i < nSpecies; ++i) {
-      parts[i]->update_position_to_half_stage(nodeEth[iLev], nodeB[iLev],
+      if (useHybridPIC && parts[i]->get_charge() < 0)
+        continue;
+      parts[i]->update_position_to_half_stage(nodeE[iLev], nodeB[iLev],
                                               tc->get_dt());
     }
   }
 
   inject_particles_for_boundary_cells();
+}
+
+//==========================================================
+void Pic::electron_impact_ionization() {
+  if (!doElectronImpactIonization)
+    return;
+
+  timing_func("Pic::electron_impact_ionization");
+
+  int iElec = -1;
+  for (int i = 0; i < nSpecies; ++i) {
+    if (parts[i] && parts[i]->get_charge() < 0) {
+      iElec = i;
+      break;
+    }
+  }
+  if (iElec < 0 || exoInfos.empty())
+    return;
+
+  Real mass_elec = parts[iElec]->get_mass();
+  Real mass_elec_kg = mass_elec * fi->get_No2SiM();
+  Real dt = tc->get_dt();
+  Real dt_SI = dt * fi->get_No2SiT();
+  Real No2SiV = fi->get_No2SiV();
+  Real Si2NoV = fi->get_Si2NoV();
+
+  auto get_neutral_density = [&](const ExosphereInfo& info,
+                                 const Real* pos) -> Real {
+    Real r2 = 0;
+    for (int d = 0; d < nDim; ++d) {
+      r2 += pos[d] * pos[d];
+    }
+    Real r = sqrt(r2);
+    if (r < info.exobaseRadius)
+      return 0.0;
+
+    // Shadow check
+    if (info.shadowRadius > 0 && pos[0] < 0) {
+      Real perp2 = pos[1] * pos[1] + (nDim > 2 ? pos[2] * pos[2] : 0.0);
+      if (perp2 < info.shadowRadius * info.shadowRadius) {
+        return 0.0;
+      }
+    }
+
+    Real dens = 0.0;
+    int n0_size = info.n0.size();
+    if (info.neutralProfile == "exponential") {
+      for (int idx = 0; idx < n0_size; idx++) {
+        dens += info.n0[idx] * exp(-(r - info.r0) / info.H0[idx]);
+      }
+    } else if (info.neutralProfile == "power-law" ||
+               info.neutralProfile == "PowerLaw") {
+      for (int idx = 0; idx < n0_size; idx++) {
+        dens += info.n0[idx] * pow(info.r0 / r, info.k0[idx]);
+      }
+    } else if (info.neutralProfile == "ChamberlainH") {
+      for (int idx = 0; idx < n0_size; idx++) {
+        dens += info.n0[idx] * exp(-info.H0[idx] * (1.0 / info.r0 - 1.0 / r));
+      }
+    }
+    return dens;
+  };
+
+  auto get_cross_section = [&](Real Ek_eV, Real mass_neutral) -> Real {
+    Real Eiz = ionizationThresholdEnergy;      // Default
+    Real ac = 4.5e-18;                         // Default to H: m^2 eV^2
+    if (std::abs(mass_neutral - 16.0) < 1.0) { // Oxygen
+      Eiz = 13.62;
+      ac = 9.0e-18;
+    } else if (std::abs(mass_neutral - 1.0) < 0.2) { // Hydrogen
+      Eiz = 13.6;
+      ac = 4.5e-18;
+    }
+    if (Ek_eV <= Eiz)
+      return 0.0;
+    return ac * log(Ek_eV / Eiz) / (Ek_eV * Eiz);
+  };
+
+  auto& elec_container = *parts[iElec];
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    for (typename PicParticles::PIter pti(elec_container, iLev); pti.isValid();
+         ++pti) {
+      auto& particles = pti.GetArrayOfStructs();
+      const int nPart = particles.size();
+
+      std::vector<typename PicParticles::ParticleType> new_electrons;
+      std::vector<std::vector<typename PicParticles::ParticleType> > new_ions(
+          nSpecies);
+
+      for (int ip = 0; ip < nPart; ++ip) {
+        auto& p = particles[ip];
+        if (p.id() < 0)
+          continue;
+
+        Real pos[3] = { 0.0, 0.0, 0.0 };
+        for (int d = 0; d < nDim; ++d) {
+          pos[d] = p.pos(d);
+        }
+
+        Real vx = p.rdata(PicParticles::iup_);
+        Real vy = p.rdata(PicParticles::ivp_);
+        Real vz = p.rdata(PicParticles::iwp_);
+        Real v2 = vx * vx + vy * vy + vz * vz;
+        if (v2 <= 0.0)
+          continue;
+        Real v_norm = sqrt(v2);
+        Real ve_SI = v_norm * No2SiV;
+        Real Ek_eV = (0.5 * mass_elec_kg * ve_SI * ve_SI) / cUnitChargeSI;
+
+        std::vector<Real> P_j(exoInfos.size(), 0.0);
+        Real sum_P = 0.0;
+        for (size_t j = 0; j < exoInfos.size(); ++j) {
+          const auto& info = exoInfos[j];
+          if (info.iSpecies <= 0 || info.iSpecies > nSpecies)
+            continue;
+
+          Real nn = get_neutral_density(info, pos);
+          if (nn <= 0.0)
+            continue;
+
+          Real mass_neutral = parts[info.iSpecies - 1]->get_mass();
+          Real sigma = get_cross_section(Ek_eV, mass_neutral);
+          P_j[j] = nn * sigma * ve_SI * dt_SI;
+          sum_P += P_j[j];
+        }
+
+        if (sum_P <= 0.0)
+          continue;
+
+        Real P_total = 1.0 - exp(-sum_P);
+        if (elec_container.getRandomNumber() < P_total) {
+          Real R_sel = elec_container.getRandomNumber() * sum_P;
+          Real accum = 0.0;
+          size_t jSel = 0;
+          for (size_t j = 0; j < exoInfos.size(); ++j) {
+            accum += P_j[j];
+            if (R_sel <= accum) {
+              jSel = j;
+              break;
+            }
+          }
+
+          const auto& info = exoInfos[jSel];
+          int iIon = info.iSpecies - 1;
+
+          Real W = p.rdata(PicParticles::iqp_) / parts[iElec]->get_qomSign();
+
+          Real Emax = Ek_eV - ionizationThresholdEnergy;
+          if (Emax < 0.0)
+            Emax = 0.0;
+          Real E_sec = OpalBeatyBarE * tan(elec_container.getRandomNumber() *
+                                           atan(Emax / OpalBeatyBarE));
+          Real E_pri = Ek_eV - ionizationThresholdEnergy - E_sec;
+          if (E_pri < 0.0)
+            E_pri = 0.0;
+
+          Real v_pri_SI = sqrt(2.0 * E_pri * cUnitChargeSI / mass_elec_kg);
+          Real v_sec_SI = sqrt(2.0 * E_sec * cUnitChargeSI / mass_elec_kg);
+
+          Real v_pri_sim = v_pri_SI * Si2NoV;
+          Real v_sec_sim = v_sec_SI * Si2NoV;
+
+          p.rdata(PicParticles::iup_) = v_pri_sim * (vx / v_norm);
+          p.rdata(PicParticles::ivp_) = v_pri_sim * (vy / v_norm);
+          p.rdata(PicParticles::iwp_) = v_pri_sim * (vz / v_norm);
+
+          Real theta = 2.0 * M_PI * elec_container.getRandomNumber();
+          Real cos_phi = 2.0 * elec_container.getRandomNumber() - 1.0;
+          Real sin_phi = sqrt(std::max(0.0, 1.0 - cos_phi * cos_phi));
+          Real u_sec = v_sec_sim * sin_phi * cos(theta);
+          Real v_sec = v_sec_sim * sin_phi * sin(theta);
+          Real w_sec = v_sec_sim * cos_phi;
+
+          typename PicParticles::ParticleType p_sec;
+          parts[iElec]->set_ids(p_sec);
+          for (int d = 0; d < nDim; ++d)
+            p_sec.pos(d) = pos[d];
+          p_sec.rdata(PicParticles::iup_) = u_sec;
+          p_sec.rdata(PicParticles::ivp_) = v_sec;
+          p_sec.rdata(PicParticles::iwp_) = w_sec;
+          p_sec.rdata(PicParticles::iqp_) = parts[iElec]->get_qomSign() * W;
+          new_electrons.push_back(p_sec);
+
+          Real T0_K = info.T0.empty() ? 0.0 : info.T0[0];
+          Real mass_ion_kg = parts[iIon]->get_mass() * fi->get_No2SiM();
+          Real uth_ion_SI = (T0_K > 0 && mass_ion_kg > 0)
+                                ? sqrt(cBoltzmannSI * T0_K / mass_ion_kg)
+                                : 0.0;
+          Real uth_ion = uth_ion_SI * fi->get_Si2NoV();
+
+          Real u_ion = 0, v_ion = 0, w_ion = 0;
+          if (uth_ion > 0) {
+            Real prob1 = sqrt(
+                -2.0 * log(1.0 - 0.999999 * elec_container.getRandomNumber()));
+            Real theta1 = 2.0 * M_PI * elec_container.getRandomNumber();
+            Real prob2 = sqrt(
+                -2.0 * log(1.0 - 0.999999 * elec_container.getRandomNumber()));
+            Real theta2 = 2.0 * M_PI * elec_container.getRandomNumber();
+            u_ion = uth_ion * prob1 * cos(theta1);
+            v_ion = uth_ion * prob1 * sin(theta1);
+            w_ion = uth_ion * prob2 * cos(theta2);
+          }
+
+          typename PicParticles::ParticleType p_ion;
+          parts[iIon]->set_ids(p_ion);
+          for (int d = 0; d < nDim; ++d)
+            p_ion.pos(d) = pos[d];
+          p_ion.rdata(PicParticles::iup_) = u_ion;
+          p_ion.rdata(PicParticles::ivp_) = v_ion;
+          p_ion.rdata(PicParticles::iwp_) = w_ion;
+          p_ion.rdata(PicParticles::iqp_) = parts[iIon]->get_qomSign() * W;
+          new_ions[iIon].push_back(p_ion);
+        }
+      }
+
+      auto& elec_tile = elec_container.get_particle_tile(
+          iLev, static_cast<const amrex::MFIter&>(pti));
+      for (const auto& p : new_electrons) {
+        elec_tile.push_back(p);
+      }
+
+      for (int iIon = 0; iIon < nSpecies; ++iIon) {
+        if (new_ions[iIon].empty())
+          continue;
+        auto& ion_tile = parts[iIon]->get_particle_tile(
+            iLev, static_cast<const amrex::MFIter&>(pti));
+        for (const auto& p : new_ions[iIon]) {
+          ion_tile.push_back(p);
+        }
+      }
+    }
+  }
+
+  // Blowout mitigation: trigger conservative moment-preserving merge
+  for (int i = 0; i < nSpecies; ++i) {
+    if (!parts[i])
+      continue;
+    if (!doPreSplitting) {
+      parts[i]->merge(blowoutLimitRatio);
+    } else {
+      parts[i]->merge_new(blowoutLimitRatio);
+    }
+  }
+}
+
+//==========================================================
+void Pic::exosphere_charge_exchange() {
+  if (!doExosphereChargeExchange)
+    return;
+
+  timing_func("Pic::exosphere_charge_exchange");
+
+  if (exoInfos.empty())
+    return;
+
+  Real dt = tc->get_dt();
+  Real dt_SI = dt * fi->get_No2SiT();
+  Real No2SiV = fi->get_No2SiV();
+  Real Si2NoV = fi->get_Si2NoV();
+
+  auto get_neutral_density = [&](const ExosphereInfo& info,
+                                 const Real* pos) -> Real {
+    Real r2 = 0;
+    for (int d = 0; d < nDim; ++d) {
+      r2 += pos[d] * pos[d];
+    }
+    Real r = sqrt(r2);
+    if (r < info.exobaseRadius)
+      return 0.0;
+
+    // Shadow check
+    if (info.shadowRadius > 0 && pos[0] < 0) {
+      Real perp2 = pos[1] * pos[1] + (nDim > 2 ? pos[2] * pos[2] : 0.0);
+      if (perp2 < info.shadowRadius * info.shadowRadius) {
+        return 0.0;
+      }
+    }
+
+    Real dens = 0.0;
+    int n0_size = info.n0.size();
+    if (info.neutralProfile == "exponential") {
+      for (int idx = 0; idx < n0_size; idx++) {
+        dens += info.n0[idx] * exp(-(r - info.r0) / info.H0[idx]);
+      }
+    } else if (info.neutralProfile == "power-law" ||
+               info.neutralProfile == "PowerLaw") {
+      for (int idx = 0; idx < n0_size; idx++) {
+        dens += info.n0[idx] * pow(info.r0 / r, info.k0[idx]);
+      }
+    } else if (info.neutralProfile == "ChamberlainH") {
+      for (int idx = 0; idx < n0_size; idx++) {
+        dens += info.n0[idx] * exp(-info.H0[idx] * (1.0 / info.r0 - 1.0 / r));
+      }
+    }
+    return dens;
+  };
+
+  auto get_cx_cross_section = [&](Real v_rel_SI, Real mass_ion_amu) -> Real {
+    Real erel = 0.5 * (mass_ion_amu * cProtonMassSI) * (v_rel_SI * v_rel_SI) *
+                6.2415e15; // relative energy in keV
+    if (erel <= 0.0)
+      return 0.0;
+    Real sigma = (4.15 - 0.531 * log(erel)) * (4.15 - 0.531 * log(erel)) *
+                 pow(1 - exp(-67.3 / erel), 4.5) *
+                 1e-20; // cross section in m^2
+    return sigma;
+  };
+
+  for (int iSp = 0; iSp < nSpecies; ++iSp) {
+    if (!parts[iSp] || parts[iSp]->get_charge() <= 0)
+      continue; // Exclude electrons and neutral species
+
+    auto& ion_container = *parts[iSp];
+    Real mass_ion_amu = ion_container.get_mass(); // in AMU
+
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      for (typename PicParticles::PIter pti(ion_container, iLev); pti.isValid();
+           ++pti) {
+        auto& particles = pti.GetArrayOfStructs();
+        const int nPart = particles.size();
+
+        for (int ip = 0; ip < nPart; ++ip) {
+          auto& p = particles[ip];
+          if (p.id() < 0)
+            continue;
+
+          Real pos[3] = { 0.0, 0.0, 0.0 };
+          for (int d = 0; d < nDim; ++d) {
+            pos[d] = p.pos(d);
+          }
+
+          Real vx = p.rdata(PicParticles::iup_);
+          Real vy = p.rdata(PicParticles::ivp_);
+          Real vz = p.rdata(PicParticles::iwp_);
+          Real v2 = vx * vx + vy * vy + vz * vz;
+          if (v2 <= 0.0)
+            continue;
+          Real v_norm = sqrt(v2);
+          Real v_rel_SI = v_norm * No2SiV;
+
+          std::vector<Real> P_j(exoInfos.size(), 0.0);
+          Real sum_P = 0.0;
+          for (size_t j = 0; j < exoInfos.size(); ++j) {
+            const auto& info = exoInfos[j];
+            if (info.iSpecies <= 0 || info.iSpecies > nSpecies)
+              continue;
+
+            Real nn = get_neutral_density(info, pos);
+            if (nn <= 0.0)
+              continue;
+
+            Real sigma = get_cx_cross_section(v_rel_SI, mass_ion_amu);
+            P_j[j] = nn * sigma * v_rel_SI * dt_SI;
+            sum_P += P_j[j];
+          }
+
+          if (sum_P <= 0.0)
+            continue;
+
+          Real P_total = 1.0 - exp(-sum_P);
+          if (ion_container.getRandomNumber() < P_total) {
+            // Charge exchange event triggered!
+            Real R_sel = ion_container.getRandomNumber() * sum_P;
+            Real accum = 0.0;
+            size_t jSel = 0;
+            for (size_t j = 0; j < exoInfos.size(); ++j) {
+              accum += P_j[j];
+              if (R_sel <= accum) {
+                jSel = j;
+                break;
+              }
+            }
+
+            const auto& info = exoInfos[jSel];
+
+            // Sample cold neutral exosphere velocity
+            Real T0_K = info.T0.empty() ? 0.0 : info.T0[0];
+            Real mass_ion_kg = parts[iSp]->get_mass() * fi->get_No2SiM();
+            Real uth_ion_SI = (T0_K > 0 && mass_ion_kg > 0)
+                                  ? sqrt(cBoltzmannSI * T0_K / mass_ion_kg)
+                                  : 0.0;
+            Real uth_ion = uth_ion_SI * fi->get_Si2NoV();
+
+            Real u_cold = 0, v_cold = 0, w_cold = 0;
+            if (uth_ion > 0) {
+              Real prob1 = sqrt(
+                  -2.0 * log(1.0 - 0.999999 * ion_container.getRandomNumber()));
+              Real theta1 = 2.0 * M_PI * ion_container.getRandomNumber();
+              Real prob2 = sqrt(
+                  -2.0 * log(1.0 - 0.999999 * ion_container.getRandomNumber()));
+              Real theta2 = 2.0 * M_PI * ion_container.getRandomNumber();
+              u_cold = uth_ion * prob1 * cos(theta1);
+              v_cold = uth_ion * prob1 * sin(theta1);
+              w_cold = uth_ion * prob2 * cos(theta2);
+            }
+
+            // Convert hot ion to cold exospheric pickup ion in-place!
+            p.rdata(PicParticles::iup_) = u_cold;
+            p.rdata(PicParticles::ivp_) = v_cold;
+            p.rdata(PicParticles::iwp_) = w_cold;
+          }
+        }
+      }
+    }
+  }
+
+  // Blowout mitigation
+  for (int i = 0; i < nSpecies; ++i) {
+    if (!parts[i])
+      continue;
+    if (!doPreSplitting) {
+      parts[i]->merge(cxBlowoutLimitRatio);
+    } else {
+      parts[i]->merge_new(cxBlowoutLimitRatio);
+    }
+  }
 }
 
 //==========================================================
@@ -663,10 +1364,14 @@ void Pic::particle_mover() {
   Real dtnext = tc->get_next_dt();
 
   for (int i = 0; i < nSpecies; ++i) {
+    if (useHybridPIC && parts[i]->get_charge() < 0)
+      continue;
     parts[i]->mover(nodeEth, nodeB, eBg, uBg, dt, dtnext);
   }
 
   for (int i = 0; i < nSpecies; ++i) {
+    if (useHybridPIC && parts[i]->get_charge() < 0)
+      continue;
     parts[i]->redistribute_particles();
   }
 }
@@ -886,6 +1591,12 @@ void Pic::sum_moments(bool updateDt) {
 
   timing_func(nameFunc);
 
+  for (int i = 0; i <= nSpecies; ++i) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      nodePlasma[i][iLev].setVal(0.0);
+    }
+  }
+
   plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; ++i) {
     Real energy = 0.0;
@@ -964,6 +1675,14 @@ void Pic::sum_moments(bool updateDt) {
       // Index of 'nSpecies' represents the sum of all species.
       MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
                     nMoments, nGst);
+    }
+  }
+
+  // Fill ghost cells so that interpolation in PC->GM coupling does not
+  // read uninitialized sentinel values (-7777) from ghost regions.
+  for (int i = 0; i <= nSpecies; ++i) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      nodePlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
     }
   }
 
@@ -1311,9 +2030,14 @@ void Pic::update(bool doReportIn) {
 
   if (solveEM) {
     update_E();
+  } else if (useHybridPIC) {
+    update_E_hybrid();
   }
 
   particle_mover();
+
+  electron_impact_ionization();
+  exosphere_charge_exchange();
 
   // Calling re_sampling after particle mover so that all the particles
   // outside the domain have been deleted.
@@ -1321,7 +2045,7 @@ void Pic::update(bool doReportIn) {
 
   charge_exchange();
 
-  if (source) {
+  if (source || useExosphere) {
     fill_source_particles();
   }
 
@@ -1334,6 +2058,8 @@ void Pic::update(bool doReportIn) {
       project_down_E();
     }
     update_B();
+  } else if (useHybridPIC) {
+    update_B_hybrid();
   }
 
   // Only to be turned on if DivE error needs to be visulaized when DivE
@@ -2888,6 +3614,201 @@ void Pic::amr_divE_correction() {
       skip_cells_divE_correction(centerNetChargeN[iLev], cell_status(iLev),
                                  iLev);
       skip_cells_divE_correction(centerDivE[iLev], cell_status(iLev), iLev);
+    }
+  }
+}
+
+//==========================================================
+void Pic::update_E_hybrid() {
+  std::string nameFunc = "Pic::update_E_hybrid";
+  timing_func(nameFunc);
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const auto dx = Geom(iLev).CellSizeArray();
+    const Real dxInv = 1.0 / (2.0 * dx[0]);
+    const Real dyInv = 1.0 / (2.0 * dx[1]);
+    const Real dzInv = 1.0 / (2.0 * dx[2]);
+
+    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arrE = nodeE[iLev][mfi].array();
+      const Array4<Real>& arrEth = nodeEth[iLev][mfi].array();
+      const Array4<Real const>& arrB = nodeB[iLev][mfi].array();
+      const Array4<Real const>& moments =
+          nodePlasma[nSpecies][iLev][mfi].array();
+
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        Real rho = moments(i, j, k, iRho_);
+        Real ui = 0, vi = 0, wi = 0;
+
+        if (rho > 0) {
+          ui = moments(i, j, k, iUx_) / rho;
+          vi = moments(i, j, k, iUy_) / rho;
+          wi = moments(i, j, k, iUz_) / rho;
+        }
+
+        Real bx = arrB(i, j, k, ix_);
+        Real by = arrB(i, j, k, iy_);
+        Real bz = arrB(i, j, k, iz_);
+
+        // 1. Convection term: E_conv = - U_i x B
+        Real ex = -(vi * bz - wi * by);
+        Real ey = -(wi * bx - ui * bz);
+        Real ez = -(ui * by - vi * bx);
+
+        // 2. Resistivity and Hall / Pressure terms (if enabled)
+        // J = curl(B) using central differences on node-centered B field
+        Real jx = 0.0, jy = 0.0, jz = 0.0;
+
+        Real dBz_dy = (arrB(i, j + 1, k, iz_) - arrB(i, j - 1, k, iz_)) * dyInv;
+        Real dBy_dz = (arrB(i, j, k + 1, iy_) - arrB(i, j, k - 1, iy_)) * dzInv;
+        jx = dBz_dy - dBy_dz;
+
+        Real dBx_dz = (arrB(i, j, k + 1, ix_) - arrB(i, j, k - 1, ix_)) * dzInv;
+        Real dBz_dx = (arrB(i + 1, j, k, iz_) - arrB(i - 1, j, k, iz_)) * dxInv;
+        jy = dBx_dz - dBz_dx;
+
+        Real dBy_dx = (arrB(i + 1, j, k, iy_) - arrB(i - 1, j, k, iy_)) * dxInv;
+        Real dBx_dy = (arrB(i, j + 1, k, ix_) - arrB(i, j - 1, k, ix_)) * dyInv;
+        jz = dBy_dx - dBx_dy;
+
+        // Add eta * J term
+        if (etaResistivity > 0) {
+          ex += etaResistivity * jx;
+          ey += etaResistivity * jy;
+          ez += etaResistivity * jz;
+        }
+
+        // Add Electron pressure gradient and Hall term
+        if (rho > 0) {
+          // Electron pressure gradient term
+          Real dPe_dx = 0.0, dPe_dy = 0.0, dPe_dz = 0.0;
+          if (electronTemperature > 0) {
+            if (electronGamma == 1.0) {
+              // Isothermal: Pe = rho * Te -> grad(Pe) = Te * grad(rho)
+              dPe_dx =
+                  electronTemperature *
+                  (moments(i + 1, j, k, iRho_) - moments(i - 1, j, k, iRho_)) *
+                  dxInv;
+              dPe_dy =
+                  electronTemperature *
+                  (moments(i, j + 1, k, iRho_) - moments(i, j - 1, k, iRho_)) *
+                  dyInv;
+              dPe_dz =
+                  electronTemperature *
+                  (moments(i, j, k + 1, iRho_) - moments(i, j, k - 1, iRho_)) *
+                  dzInv;
+            } else {
+              // Adiabatic: Pe = P0 * (rho / rho0)^gamma
+              Real p0 = electronDensity0 * electronTemperature;
+              Real invRho0 = 1.0 / electronDensity0;
+
+              auto calc_Pe = [=](Real r) {
+                return (r > 0) ? p0 * std::pow(r * invRho0, electronGamma)
+                               : 0.0;
+              };
+
+              dPe_dx = (calc_Pe(moments(i + 1, j, k, iRho_)) -
+                        calc_Pe(moments(i - 1, j, k, iRho_))) *
+                       dxInv;
+              dPe_dy = (calc_Pe(moments(i, j + 1, k, iRho_)) -
+                        calc_Pe(moments(i, j - 1, k, iRho_))) *
+                       dyInv;
+              dPe_dz = (calc_Pe(moments(i, j, k + 1, iRho_)) -
+                        calc_Pe(moments(i, j, k - 1, iRho_))) *
+                       dzInv;
+            }
+
+            ex -= dPe_dx / rho;
+            ey -= dPe_dy / rho;
+            ez -= dPe_dz / rho;
+          }
+
+          // Hall term: (J x B) / rho
+          Real hall_x = (jy * bz - jz * by) / rho;
+          Real hall_y = (jz * bx - jx * bz) / rho;
+          Real hall_z = (jx * by - jy * bx) / rho;
+
+          ex += hall_x;
+          ey += hall_y;
+          ez += hall_z;
+        }
+
+        arrE(i, j, k, ix_) = ex;
+        arrE(i, j, k, iy_) = ey;
+        arrE(i, j, k, iz_) = ez;
+
+        // Copy to Eth
+        arrEth(i, j, k, ix_) = ex;
+        arrEth(i, j, k, iy_) = ey;
+        arrEth(i, j, k, iz_) = ez;
+      });
+    }
+
+    nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+    nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
+    apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, &Pic::get_node_E, iLev);
+  }
+}
+
+//==========================================================
+void Pic::update_B_hybrid() {
+  std::string nameFunc = "Pic::update_B_hybrid";
+  timing_func(nameFunc);
+
+  Real dt = tc->get_dt();
+  Real subDt = dt / nHallSubcycle;
+
+  for (int subStep = 0; subStep < nHallSubcycle; ++subStep) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      MultiFab dB(cGrids[iLev], DistributionMap(iLev), 3, nGst);
+      curl_node_to_center(nodeEth[iLev], dB, Geom(iLev).InvCellSize());
+
+      MultiFab::Saxpy(centerB[iLev], -subDt, dB, 0, 0, centerB[iLev].nComp(),
+                      centerB[iLev].nGrow());
+
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
+
+  if (projectDownEmFields && finest_level > 0) {
+    for (int iLev = finest_level; iLev > 0; iLev--) {
+      average_down(centerB[iLev], centerB[iLev - 1], 0, 3, ref_ratio[0]);
+    }
+  }
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iLev == 0) {
+      apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+               &Pic::get_center_B, iLev, &bcBField);
+    } else {
+      fill_fine_lev_bny_from_coarse(
+          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          cell_bilinear_interp);
+    }
+
+    MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
+                   dBdt[iLev].nGrow());
+
+    average_center_to_node(centerB[iLev], nodeB[iLev]);
+    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    const Real invDt = 1. / dt;
+    MultiFab::LinComb(dBdt[iLev], -invDt, dBdt[iLev], 0, invDt, nodeB[iLev], 0,
+                      0, dBdt[iLev].nComp(), dBdt[iLev].nGrow());
+
+    if (iLev == 0) {
+      apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+               &Pic::get_node_B, iLev, &bcBField);
+    } else {
+      fill_fine_lev_bny_from_coarse(
+          nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          node_bilinear_interp);
     }
   }
 }

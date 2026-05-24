@@ -1,0 +1,111 @@
+#DESCRIPTION
+2D Alfven Wave Propagation Standalone Test - Hybrid PIC
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-32.0                   xMin
+ 32.0                   xMax
+-40.0                   yMin
+ 40.0                   yMax
+-0.5                    zMin
+ 0.5                    zMax
+
+#NCELL
+32                      nCellX
+24                      nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+32                      maxBlockSizeX
+24                      maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+1.5                     electronTemperature
+1.0                     electronGamma
+1.0                     electronDensity0
+
+#HALLSUBCYCLE
+1                       nHallSubcycle
+
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#UNIFORMSTATE
+1.0                     rho (species 0 - ions)
+0.0                     ux
+0.0                     uy
+0.0                     uz
+10000.0                 T
+0.0                     bx
+0.04                    by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+0.0                     ez
+
+#TESTCASE
+FastWave
+
+#TIMESTEPPING
+T                       useFixedDt
+0.2                     dt
+
+#NORMALIZATION
+1.0                     lNormSI
+1.0                     uNormSI
+
+#MONITOR
+1                       dnReport
+
+#PARTICLES
+10                      nParticle per cell in X
+10                      nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#COMOVING
+F                       solvePartInCoMov
+0                       nSmoothBackGroundU
+
+#UPWINDE
+F                       useUpwindE
+0.0                     limiterThetaE
+
+#UPWINDB
+F                       doSmoothB
+0.0                     theta
+
+#SAVEPLOT
+2                                 nPlot
+3d fluid amrex pic                plotString
+-1                                dn
+80.0                              dt
+1                                 dx
+z=0 fluid real4 pic               plotString
+-1                                dn
+80.0                              dt
+-1                                dx
+
+#STOP
+-1                      MaxIter
+640.0                   TimeMax
+
+#RUN

@@ -47,6 +47,7 @@ class Pic : public Grid {
   // private variables
 private:
   bool usePIC = true;
+  bool useHybridPIC = false;
   bool solveEM = true;
   bool initEM = true;
 
@@ -145,7 +146,17 @@ private:
   bool doSmoothE = false;
   int nSmoothE = 0;
 
+  amrex::Real etaResistivity = 0.0;
+  amrex::Real electronTemperature = 0.0;
+  amrex::Real electronGamma = 1.0;    // 1.0 = isothermal
+  amrex::Real electronDensity0 = 1.0; // reference electron density
+  int nHallSubcycle = 1;              // 1 = no subcycling
+
   TestCase testCase = RegularSimulation;
+  amrex::Real pickup_Ey = 0.0;
+  amrex::Real pickup_Bz = 0.0;
+  amrex::Real pickup_xMin = -1.0;
+  amrex::Real pickup_xMax = 1.0;
 
   BeamInfo beam;
 
@@ -209,6 +220,7 @@ public:
     centerMM.resize(n_lev_max());
 
     jHat.resize(n_lev_max());
+    exoDensity.resize(n_lev_max());
 
     // At most 10 species.
     pBCs.resize(10);
@@ -230,6 +242,9 @@ public:
   void update(bool doReportIn = false);
 
   PicParticles *get_particle_pointer(int i) { return parts[i].get(); }
+  int get_nSpecies() const { return nSpecies; }
+  bool has_particles() const { return !parts.empty(); }
+  const amrex::Vector<amrex::MultiFab> &get_nodeB() const { return nodeB; }
 
   void set_stateOH(OHInterface *in) { stateOH = in; }
   void set_sourceOH(OHInterface *in) { sourcePT2OH = in; }
@@ -253,6 +268,8 @@ public:
 
   void fill_particles();
 
+  void init_exosphere();
+
   void init_source(const FluidInterface &interfaceIn) {
     // To be implemented
 
@@ -262,6 +279,8 @@ public:
   //----------------Initialization end-------------------------------
 
   void charge_exchange();
+  void electron_impact_ionization();
+  void exosphere_charge_exchange();
 
   void sum_moments(bool updateDt = false);
 
@@ -283,7 +302,8 @@ public:
       return;
 
     for (auto &pts : parts) {
-      pts->add_particles_domain();
+      if (pts && (!useHybridPIC || pts->get_charge() >= 0))
+        pts->add_particles_domain();
     }
   }
 
@@ -292,7 +312,8 @@ public:
       return;
 
     for (auto &pts : parts) {
-      pts->inject_particles_at_boundary();
+      if (pts && (!useHybridPIC || pts->get_charge() >= 0))
+        pts->inject_particles_at_boundary();
     }
   }
 
@@ -307,6 +328,7 @@ public:
 
   //-------------Electric field solver begin-------------
   void update_E();
+  void update_E_hybrid();
   void update_E_impl();
   void update_E_expl();
   void solve_E_gmres(int iLev);
@@ -328,6 +350,7 @@ public:
   //-------------Electric field solver end-------------
 
   void update_B();
+  void update_B_hybrid();
 
   void correct_B(int iLev);
 
@@ -580,16 +603,33 @@ public:
   }
 
   void WriteParticleQualityToParaView() {
-    parts[0]->calculate_particle_quality(particleQuality);
-    WriteMF(particleQuality, finest_level, "particleQuality0");
-    parts[1]->calculate_particle_quality(particleQuality);
-    WriteMF(particleQuality, finest_level, "particleQuality1");
+    if (parts.size() > 0 && parts[0]) {
+      parts[0]->calculate_particle_quality(particleQuality);
+      WriteMF(particleQuality, finest_level, "particleQuality0");
+    }
+    if (parts.size() > 1 && parts[1]) {
+      parts[1]->calculate_particle_quality(particleQuality);
+      WriteMF(particleQuality, finest_level, "particleQuality1");
+    }
   }
+
+  amrex::Real get_internal_energy(int iLev) { return plasmaEnergy[iTot]; }
   // private methods
 private:
   amrex::Real calc_E_field_energy();
   amrex::Real calc_B_field_energy();
   AMREX_EXPORT amrex::UNode_FourthOrder<amrex::Real> node_fourth_order_interp;
+
+  std::vector<ExosphereInfo> exoInfos;
+  bool useExosphere = false;
+  amrex::Vector<amrex::MultiFab> exoDensity;
+
+  bool doElectronImpactIonization = false;
+  amrex::Real ionizationThresholdEnergy = 13.6;
+  amrex::Real OpalBeatyBarE = 10.0;
+  amrex::Real blowoutLimitRatio = 2.0;
+  bool doExosphereChargeExchange = false;
+  amrex::Real cxBlowoutLimitRatio = 2.0;
 };
 
 void find_output_list_caller(const PlotWriter &writerIn,
