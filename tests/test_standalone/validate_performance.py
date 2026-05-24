@@ -16,7 +16,7 @@ def safe_symlink(src, dst):
 
 def prepare_run_dir(run_dir):
     os.makedirs(run_dir, exist_ok=True)
-    safe_symlink("../bin/FLEKS.exe", os.path.join(run_dir, "FLEKS.exe"))
+    safe_symlink("../../bin/FLEKS.exe", os.path.join(run_dir, "FLEKS.exe"))
     
     # Component plots and restart directories
     pc_dir = os.path.join(run_dir, "PC")
@@ -68,7 +68,7 @@ def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(script_dir)
     
-    if not os.path.exists("../bin/FLEKS.exe"):
+    if not os.path.exists("../../bin/FLEKS.exe"):
         print("Error: Standalone FLEKS.exe not found. Please compile it first.")
         sys.exit(1)
         
