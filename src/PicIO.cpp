@@ -472,8 +472,10 @@ void Pic::save_restart_header(std::ofstream& headerFile) {
     headerFile << nSpecies << "\t\t\tnSpecies\n";
     for (int i = 0; i < nSpecies; ++i) {
       int sid = i;
-      if (parts[i]) sid = parts[i]->sup_id();
-      else if (i < supIDs.size()) sid = supIDs[i];
+      if (parts[i])
+        sid = parts[i]->sup_id();
+      else if (i < supIDs.size())
+        sid = supIDs[i];
       headerFile << sid << "\t\t\tsupID\n";
     }
     headerFile << "\n";
@@ -640,7 +642,8 @@ void Pic::write_amrex_particle(const PlotWriter& pw, double const timeNow,
                                int const iCycle) {
   int iSpecies = pw.get_particleSpecies();
 
-  if (iSpecies >= parts.size() || !parts[iSpecies]) return;
+  if (iSpecies >= parts.size() || !parts[iSpecies])
+    return;
 
   std::string dirName = pw.get_amrex_filename(timeNow, iCycle);
 

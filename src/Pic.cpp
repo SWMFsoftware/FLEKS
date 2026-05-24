@@ -3659,17 +3659,17 @@ void Pic::update_E_hybrid() {
         // 2. Resistivity and Hall / Pressure terms (if enabled)
         // J = curl(B) using central differences on node-centered B field
         Real jx = 0.0, jy = 0.0, jz = 0.0;
-        
-        Real dBz_dy = (arrB(i, j+1, k, iz_) - arrB(i, j-1, k, iz_)) * dyInv;
-        Real dBy_dz = (arrB(i, j, k+1, iy_) - arrB(i, j, k-1, iy_)) * dzInv;
+
+        Real dBz_dy = (arrB(i, j + 1, k, iz_) - arrB(i, j - 1, k, iz_)) * dyInv;
+        Real dBy_dz = (arrB(i, j, k + 1, iy_) - arrB(i, j, k - 1, iy_)) * dzInv;
         jx = dBz_dy - dBy_dz;
 
-        Real dBx_dz = (arrB(i, j, k+1, ix_) - arrB(i, j, k-1, ix_)) * dzInv;
-        Real dBz_dx = (arrB(i+1, j, k, iz_) - arrB(i-1, j, k, iz_)) * dxInv;
+        Real dBx_dz = (arrB(i, j, k + 1, ix_) - arrB(i, j, k - 1, ix_)) * dzInv;
+        Real dBz_dx = (arrB(i + 1, j, k, iz_) - arrB(i - 1, j, k, iz_)) * dxInv;
         jy = dBx_dz - dBz_dx;
 
-        Real dBy_dx = (arrB(i+1, j, k, iy_) - arrB(i-1, j, k, iy_)) * dxInv;
-        Real dBx_dy = (arrB(i, j+1, k, ix_) - arrB(i, j-1, k, ix_)) * dyInv;
+        Real dBy_dx = (arrB(i + 1, j, k, iy_) - arrB(i - 1, j, k, iy_)) * dxInv;
+        Real dBx_dy = (arrB(i, j + 1, k, ix_) - arrB(i, j - 1, k, ix_)) * dyInv;
         jz = dBy_dx - dBx_dy;
 
         // Add eta * J term
@@ -3686,23 +3686,39 @@ void Pic::update_E_hybrid() {
           if (electronTemperature > 0) {
             if (electronGamma == 1.0) {
               // Isothermal: Pe = rho * Te -> grad(Pe) = Te * grad(rho)
-              dPe_dx = electronTemperature * (moments(i+1, j, k, iRho_) - moments(i-1, j, k, iRho_)) * dxInv;
-              dPe_dy = electronTemperature * (moments(i, j+1, k, iRho_) - moments(i, j-1, k, iRho_)) * dyInv;
-              dPe_dz = electronTemperature * (moments(i, j, k+1, iRho_) - moments(i, j, k-1, iRho_)) * dzInv;
+              dPe_dx =
+                  electronTemperature *
+                  (moments(i + 1, j, k, iRho_) - moments(i - 1, j, k, iRho_)) *
+                  dxInv;
+              dPe_dy =
+                  electronTemperature *
+                  (moments(i, j + 1, k, iRho_) - moments(i, j - 1, k, iRho_)) *
+                  dyInv;
+              dPe_dz =
+                  electronTemperature *
+                  (moments(i, j, k + 1, iRho_) - moments(i, j, k - 1, iRho_)) *
+                  dzInv;
             } else {
               // Adiabatic: Pe = P0 * (rho / rho0)^gamma
               Real p0 = electronDensity0 * electronTemperature;
               Real invRho0 = 1.0 / electronDensity0;
-              
+
               auto calc_Pe = [=](Real r) {
-                return (r > 0) ? p0 * std::pow(r * invRho0, electronGamma) : 0.0;
+                return (r > 0) ? p0 * std::pow(r * invRho0, electronGamma)
+                               : 0.0;
               };
-              
-              dPe_dx = (calc_Pe(moments(i+1, j, k, iRho_)) - calc_Pe(moments(i-1, j, k, iRho_))) * dxInv;
-              dPe_dy = (calc_Pe(moments(i, j+1, k, iRho_)) - calc_Pe(moments(i, j-1, k, iRho_))) * dyInv;
-              dPe_dz = (calc_Pe(moments(i, j, k+1, iRho_)) - calc_Pe(moments(i, j, k-1, iRho_))) * dzInv;
+
+              dPe_dx = (calc_Pe(moments(i + 1, j, k, iRho_)) -
+                        calc_Pe(moments(i - 1, j, k, iRho_))) *
+                       dxInv;
+              dPe_dy = (calc_Pe(moments(i, j + 1, k, iRho_)) -
+                        calc_Pe(moments(i, j - 1, k, iRho_))) *
+                       dyInv;
+              dPe_dz = (calc_Pe(moments(i, j, k + 1, iRho_)) -
+                        calc_Pe(moments(i, j, k - 1, iRho_))) *
+                       dzInv;
             }
-            
+
             ex -= dPe_dx / rho;
             ey -= dPe_dy / rho;
             ez -= dPe_dz / rho;
@@ -3712,7 +3728,7 @@ void Pic::update_E_hybrid() {
           Real hall_x = (jy * bz - jz * by) / rho;
           Real hall_y = (jz * bx - jx * bz) / rho;
           Real hall_z = (jx * by - jy * bx) / rho;
-          
+
           ex += hall_x;
           ey += hall_y;
           ez += hall_z;
@@ -3750,8 +3766,8 @@ void Pic::update_B_hybrid() {
       MultiFab dB(cGrids[iLev], DistributionMap(iLev), 3, nGst);
       curl_node_to_center(nodeEth[iLev], dB, Geom(iLev).InvCellSize());
 
-      MultiFab::Saxpy(centerB[iLev], -subDt, dB, 0, 0,
-                      centerB[iLev].nComp(), centerB[iLev].nGrow());
+      MultiFab::Saxpy(centerB[iLev], -subDt, dB, 0, 0, centerB[iLev].nComp(),
+                      centerB[iLev].nGrow());
 
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
     }

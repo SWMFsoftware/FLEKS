@@ -148,7 +148,7 @@ private:
 
   amrex::Real etaResistivity = 0.0;
   amrex::Real electronTemperature = 0.0;
-  amrex::Real electronGamma = 1.0;   // 1.0 = isothermal
+  amrex::Real electronGamma = 1.0;    // 1.0 = isothermal
   amrex::Real electronDensity0 = 1.0; // reference electron density
   int nHallSubcycle = 1;              // 1 = no subcycling
 
@@ -613,9 +613,7 @@ public:
     }
   }
 
-  amrex::Real get_internal_energy(int iLev) {
-    return plasmaEnergy[iTot];
-  }
+  amrex::Real get_internal_energy(int iLev) { return plasmaEnergy[iTot]; }
   // private methods
 private:
   amrex::Real calc_E_field_energy();

@@ -868,10 +868,16 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
             } else {
               const Real* dx = Geom(iLev).CellSize();
               const auto plo = Geom(iLev).ProbLo();
-              const Real x = rPlanetSi > 0 ? (i * dx[ix_] + plo[ix_]) * No2SiL / rPlanetSi : 0.0;
-              const Real y = rPlanetSi > 0 ? (j * dx[iy_] + plo[iy_]) * No2SiL / rPlanetSi : 0.0;
-              const Real z = (rPlanetSi > 0 && nDim > 2) ? (k * dx[iz_] + plo[iz_]) * No2SiL / rPlanetSi : 0.0;
-              Real r2 = x*x + y*y + (nDim > 2 ? z*z : 0.0);
+              const Real x = rPlanetSi > 0
+                                 ? (i * dx[ix_] + plo[ix_]) * No2SiL / rPlanetSi
+                                 : 0.0;
+              const Real y = rPlanetSi > 0
+                                 ? (j * dx[iy_] + plo[iy_]) * No2SiL / rPlanetSi
+                                 : 0.0;
+              const Real z = (rPlanetSi > 0 && nDim > 2)
+                                 ? (k * dx[iz_] + plo[iz_]) * No2SiL / rPlanetSi
+                                 : 0.0;
+              Real r2 = x * x + y * y + (nDim > 2 ? z * z : 0.0);
               if (rPlanetSi > 0 && r2 < 1.01) {
                 arr(i, j, k, iUx_I[iFluid]) = 0.0;
                 arr(i, j, k, iUy_I[iFluid]) = 0.0;

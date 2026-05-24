@@ -206,8 +206,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           xyz = xyz0;
         }
 
-        Real nDens =
-            interface->get_number_density(mfi, xyz0, speciesID, iLev);
+        Real nDens = interface->get_number_density(mfi, xyz0, speciesID, iLev);
         if (testCase == FastWave) {
           nDens = 1.0 + 0.1 * sin(2.0 * dPI * xyz0[ix_] / 32.0);
         }
