@@ -16,7 +16,7 @@ def safe_symlink(src, dst):
 
 def prepare_run_dir(run_dir):
     os.makedirs(run_dir, exist_ok=True)
-    safe_symlink("../../bin/FLEKS.exe", os.path.join(run_dir, "FLEKS.exe"))
+    safe_symlink(os.path.abspath("../../bin/FLEKS.exe"), os.path.join(run_dir, "FLEKS.exe"))
     
     # Component plots and restart directories
     pc_dir = os.path.join(run_dir, "PC")
