@@ -647,20 +647,28 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
                   }
                 }
               } else if (doFill) {
-                if (index[nIdxCount] > 0) {
-                  lastValidIdx = index[nIdxCount];
-                  for (int iVar = 0; iVar < nVarFluid; iVar++) {
-                    int idx = iVar + nVarFluid * (index[nIdxCount] - 1);
-                    arr(ijk, iVar) = data[idx];
-                  }
-                } else if (lastValidIdx > 0) {
-                  for (int iVar = 0; iVar < nVarFluid; iVar++) {
-                    int idx = iVar + nVarFluid * (lastValidIdx - 1);
-                    arr(ijk, iVar) = data[idx];
+                if (index != nullptr) {
+                  if (index[nIdxCount] > 0) {
+                    lastValidIdx = index[nIdxCount];
+                    for (int iVar = 0; iVar < nVarFluid; iVar++) {
+                      int idx = iVar + nVarFluid * (index[nIdxCount] - 1);
+                      arr(ijk, iVar) = data[idx];
+                    }
+                  } else if (lastValidIdx > 0) {
+                    for (int iVar = 0; iVar < nVarFluid; iVar++) {
+                      int idx = iVar + nVarFluid * (lastValidIdx - 1);
+                      arr(ijk, iVar) = data[idx];
+                    }
+                  } else {
+                    for (int iVar = 0; iVar < nVarFluid; iVar++) {
+                      arr(ijk, iVar) = 0.0;
+                    }
                   }
                 } else {
+                  // Direct 1-to-1 mapping
                   for (int iVar = 0; iVar < nVarFluid; iVar++) {
-                    arr(ijk, iVar) = 0.0;
+                    int idx = iVar + nVarFluid * nIdxCount;
+                    arr(ijk, iVar) = data[idx];
                   }
                 }
                 nIdxCount++;
@@ -1513,7 +1521,17 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
         idxMap.push_back(i);
     }
 
-    int iLev = get_finest_lev(xyz);
+    int iLev = -1;
+    for (int il = finest_level; il >= 0; il--) {
+      auto idx = Geom(il).CellIndex(xyz.begin());
+      if (cGrids[il].contains(idx)) {
+        iLev = il;
+        break;
+      }
+    }
+    if (iLev < 0)
+      continue;
+
     const int iStart = iPoint * nVar;
     for (int iVar = 0; iVar < nVar; iVar++) {
       data_I[iStart + iVar] =

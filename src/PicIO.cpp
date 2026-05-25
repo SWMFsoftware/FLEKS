@@ -54,7 +54,16 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     if (!range.contains(xyz, 1e-10))
       continue;
 
-    const int iLev = get_finest_lev(xyz);
+    int iLev = -1;
+    for (int il = finest_level; il >= 0; il--) {
+      auto idx = Geom(il).CellIndex(xyz.begin());
+      if (cGrids[il].contains(idx)) {
+        iLev = il;
+        break;
+      }
+    }
+    if (iLev < 0)
+      continue;
 
     for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++) {
       for (int iVar = iRho_; iVar <= iPyz_; iVar++) {

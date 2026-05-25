@@ -269,12 +269,51 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
                                     const amrex::RealVect xyz, const int iVar) {
   auto idx = gm.CellIndex(xyz.begin());
 
-  for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
+  for (int K : mf.IndexArray()) {
     // Cell box
     const amrex::Box& bx =
-        amrex::convert(mfi.validbox(), { AMREX_D_DECL(0, 0, 0) });
-    if (bx.contains(idx))
-      return get_value_at_loc(mf, mfi, gm, xyz, iVar);
+        amrex::convert(mf.box(K), { AMREX_D_DECL(0, 0, 0) });
+    if (bx.contains(idx)) {
+      amrex::IntVect loIdx;
+      amrex::RealVect dx;
+      find_node_index(xyz, gm.ProbLo(), gm.InvCellSize(), loIdx, dx);
+
+      amrex::Real interpX[2] = { dx[0], 1 - dx[0] };
+      amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
+      amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 1, nDim > 2 ? 1 - dx[2] : 1 };
+
+      const auto& arr = mf.const_array(K);
+
+      amrex::Real c000 =
+          arr(loIdx[ix_], loIdx[iy_], nDim > 2 ? loIdx[iz_] : 0, iVar);
+      amrex::Real c100 =
+          arr(loIdx[ix_] + 1, loIdx[iy_], nDim > 2 ? loIdx[iz_] : 0, iVar);
+      amrex::Real c010 =
+          arr(loIdx[ix_], loIdx[iy_] + 1, nDim > 2 ? loIdx[iz_] : 0, iVar);
+      amrex::Real c110 =
+          arr(loIdx[ix_] + 1, loIdx[iy_] + 1, nDim > 2 ? loIdx[iz_] : 0, iVar);
+      amrex::Real c001 =
+          nDim > 2 ? arr(loIdx[ix_], loIdx[iy_], loIdx[iz_] + 1, iVar) : 0;
+      amrex::Real c101 =
+          nDim > 2 ? arr(loIdx[ix_] + 1, loIdx[iy_], loIdx[iz_] + 1, iVar) : 0;
+      amrex::Real c011 =
+          nDim > 2 ? arr(loIdx[ix_], loIdx[iy_] + 1, loIdx[iz_] + 1, iVar) : 0;
+      amrex::Real c111 =
+          nDim > 2 ? arr(loIdx[ix_] + 1, loIdx[iy_] + 1, loIdx[iz_] + 1, iVar) : 0;
+
+      // Interpolate along x-axis
+      amrex::Real c00 = c000 * interpX[1] + c100 * interpX[0];
+      amrex::Real c01 = c010 * interpX[1] + c110 * interpX[0];
+      amrex::Real c10 = c001 * interpX[1] + c101 * interpX[0];
+      amrex::Real c11 = c011 * interpX[1] + c111 * interpX[0];
+
+      // Interpolate along y-axis
+      amrex::Real c0 = c00 * interpY[1] + c01 * interpY[0];
+      amrex::Real c1 = c10 * interpY[1] + c11 * interpY[0];
+
+      // Interpolate along z-axis
+      return c0 * interpZ[1] + c1 * interpZ[0];
+    }
   }
 
   amrex::AllPrint() << "xyz = " << xyz << std::endl;
