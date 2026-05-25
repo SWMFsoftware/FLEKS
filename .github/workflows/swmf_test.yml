@@ -67,6 +67,10 @@ jobs:
           ln -s ../PC/FLEKS PT/FLEKS
           # Remove empty HYPRE directory to avoid make install failure
           rm -rf util/HYPRE
+          # Remove empty/incomplete AMREX folder to force Config.pl to clone it cleanly
+          if [ ! -f util/AMREX/GNUmakefile ]; then
+            rm -rf util/AMREX
+          fi
           # Ensure FLEKS is configured, use -o for component options
           ./Config.pl -install=BATSRUS -v=Empty,PC/FLEKS,GM/BATSRUS -o=PC:tp=PBEG
 
