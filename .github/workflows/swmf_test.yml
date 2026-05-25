@@ -65,6 +65,8 @@ jobs:
           mkdir -p PT
           rm -rf PT/FLEKS
           ln -s ../PC/FLEKS PT/FLEKS
+          # Remove empty HYPRE directory to avoid make install failure
+          rm -rf util/HYPRE
           # Ensure FLEKS is configured, use -o for component options
           ./Config.pl -install=BATSRUS -v=Empty,PC/FLEKS,GM/BATSRUS -o=PC:tp=PBEG
 
