@@ -43,6 +43,7 @@ jobs:
           path: |
             SWMF
             !SWMF/PC/FLEKS
+            !SWMF/PT/FLEKS
             !SWMF/util/AMREX
           key: ${{ runner.os }}-swmf-v5-${{ hashFiles('SWMF/Config.pl') }}
 
@@ -60,6 +61,10 @@ jobs:
           else
             echo "Cache miss. Installing components..."
           fi
+          # Create symbolic link for PT/FLEKS pointing to PC/FLEKS
+          mkdir -p PT
+          rm -rf PT/FLEKS
+          ln -s ../PC/FLEKS PT/FLEKS
           # Ensure FLEKS is configured, use -o for component options
           ./Config.pl -install=BATSRUS -v=Empty,PC/FLEKS,GM/BATSRUS -o=PC:tp=PBEG
 
