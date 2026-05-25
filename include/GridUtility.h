@@ -271,8 +271,7 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
 
   for (int K : mf.IndexArray()) {
     // Cell box
-    const amrex::Box& bx =
-        amrex::convert(mf.box(K), { AMREX_D_DECL(0, 0, 0) });
+    const amrex::Box& bx = amrex::convert(mf.box(K), { AMREX_D_DECL(0, 0, 0) });
     if (bx.contains(idx)) {
       amrex::IntVect loIdx;
       amrex::RealVect dx;
@@ -280,7 +279,8 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
 
       amrex::Real interpX[2] = { dx[0], 1 - dx[0] };
       amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
-      amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 1, nDim > 2 ? 1 - dx[2] : 1 };
+      amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 1,
+                                 nDim > 2 ? 1 - dx[2] : 1 };
 
       const auto& arr = mf.const_array(K);
 
@@ -299,7 +299,8 @@ inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,
       amrex::Real c011 =
           nDim > 2 ? arr(loIdx[ix_], loIdx[iy_] + 1, loIdx[iz_] + 1, iVar) : 0;
       amrex::Real c111 =
-          nDim > 2 ? arr(loIdx[ix_] + 1, loIdx[iy_] + 1, loIdx[iz_] + 1, iVar) : 0;
+          nDim > 2 ? arr(loIdx[ix_] + 1, loIdx[iy_] + 1, loIdx[iz_] + 1, iVar)
+                   : 0;
 
       // Interpolate along x-axis
       amrex::Real c00 = c000 * interpX[1] + c100 * interpX[0];
