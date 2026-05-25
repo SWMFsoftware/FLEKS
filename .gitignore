@@ -35,3 +35,6 @@ tools/*user.py
 compile_commands.json
 src/.build_mode
 .cache/*
+PC/
+PostProc.pl
+summary.md

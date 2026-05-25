@@ -1,5 +1,6 @@
 #include "Domain.h"
 #include "GridUtility.h"
+#include <AMReX_Utility.H>
 #ifdef _PT_COMPONENT_
 #include "OHSource.h"
 #else
@@ -348,6 +349,12 @@ void Domain::load_balance() {
 
 //========================================================
 void Domain::regrid() {
+  if (!initFromSWMF) {
+    gridInfo.is_grid_new(false);
+    isNewGrid = false;
+    isNewRefinement = false;
+    return;
+  }
 
   std::string nameFunc = "Domain::regrid";
 
@@ -437,10 +444,15 @@ void Domain::set_ic() {
   // with GM. See Domain::init().
   if (!(doRestart && !doRestartFIOnly)) {
 
+    if (!doRestartFIOnly) {
 #ifdef _PT_COMPONENT_
-    if (!doRestartFIOnly)
       fi->set_node_fluid();
+#else
+      if (!initFromSWMF && fi->has_uniform_state()) {
+        fi->set_node_fluid();
+      }
 #endif
+    }
 
     pic->fill_new_cells();
 
@@ -602,6 +614,9 @@ void Domain::read_restart() {
 
 //========================================================
 void Domain::save_restart(std::string restartOutDir) {
+  if (ParallelDescriptor::IOProcessor()) {
+    UtilCreateDirectory(restartOutDir, 0755);
+  }
   fi->set_restart_out_dir(restartOutDir);
 
   save_restart_header();
@@ -844,8 +859,9 @@ void Domain::read_param(const bool readGridInfo) {
       continue;
 
 #ifdef FLEKS_STANDALONE
-    if (command == "#DESCRIPTION" || command == "#STOP" || command == "#RUN") {
-      // These commands are processed by the components or ignored.
+    if (command == "#DESCRIPTION" || command == "#STOP" || command == "#RUN" ||
+        command == "#DIAGNOSTIC") {
+      // These commands are processed by main.cpp or ignored.
       // In standalone mode, we skip them for the Domain.
       continue;
     }
@@ -872,7 +888,8 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#COMOVING" || command == "#PARTICLEBOXBOUNDARY" ||
         command == "#BFIELDBOXBOUNDARY" || command == "#SUPID" ||
         command == "#SOLVEEM" || command == "#PARTMODE" ||
-        command == "#SELECTPARTICLE" ||
+        command == "#SELECTPARTICLE" || command == "#EXOSPHERE" ||
+        command == "#ELECTRONIMPACT" || command == "#CHARGEEXCHANGE" ||
         command == "#OVERRIDEPRESSUREANISOTROPY" ||
         command == "#MAXCHARGEEXCHANGERATE" || command == "#MEMORY") {
       if (pic)

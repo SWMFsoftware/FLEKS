@@ -162,6 +162,8 @@ public:
 
   FluidType my_type() { return myType; };
 
+  bool has_uniform_state() const { return !uniformState.empty(); }
+
   void set_period_start_si(double t) { tStartSI = t; }
 
   double get_period_start_si() const { return tStartSI; }

@@ -24,6 +24,7 @@ ifeq ($(STANDALONE), YES)
   CXXFLAGS ?= -O3 -std=c++17
   COMPILE.mpicxx = $(CXX) $(CXXFLAGS) $(SEARCH_C) $(FLAGC_EXTRA)
 
+
   %.o: %.cpp
 	$(COMPILE.mpicxx) -c $< -o $@
 else

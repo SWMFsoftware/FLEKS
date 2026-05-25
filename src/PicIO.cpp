@@ -593,6 +593,138 @@ void Pic::write_log(bool doForce, bool doCreateFile) {
 }
 
 //==========================================================
+void Pic::set_diag_options(bool doParticle, bool doField) {
+  doDiagParticle = doParticle;
+  doDiagField = doField;
+}
+
+//==========================================================
+void Pic::write_diag_log(bool doForce, bool doCreateFile) {
+  if (!doDiagParticle && !doDiagField)
+    return;
+
+  // Create the log file with a header row on the first call.
+  if (doCreateFile && ParallelDescriptor::IOProcessor()) {
+    std::stringstream ss;
+    ss << component << "/plots/log_diag_n" << std::setfill('0') << std::setw(8)
+       << tc->get_cycle() << ".log";
+    diagLogFile = ss.str();
+
+    std::ofstream of(diagLogFile.c_str());
+    of << "time\tcycle";
+    if (doDiagParticle) {
+      int nS = has_particles() ? nSpecies : 0;
+      for (int iS = 0; iS < nS; ++iS) {
+        std::string s = std::to_string(iS);
+        of << "\tmacro" << s << "\tphys" << s << "\tVx" << s << "\tVy" << s
+           << "\tVz" << s << "\tKE" << s;
+      }
+    }
+    if (doDiagField) {
+      of << "\tmaxBy\tmaxBz";
+    }
+    of << "\n";
+    of.close();
+  }
+
+  if (!tc->monitor.is_time_to(doForce))
+    return;
+
+  // Collect per-species particle statistics.
+  int nS = (doDiagParticle && has_particles()) ? nSpecies : 0;
+  // Layout: for each species: macro, weight, vx, vy, vz, ke  (6 values)
+  const int nValsPerSpecies = 6;
+  std::vector<double> local_vals(nS * nValsPerSpecies, 0.0);
+  std::vector<long> local_macro(nS, 0);
+
+  if (doDiagParticle && has_particles()) {
+    for (int iS = 0; iS < nS; ++iS) {
+      if (!get_particle_pointer(iS))
+        continue;
+      double lw = 0, lvx = 0, lvy = 0, lvz = 0, lke = 0;
+      long lmac = 0;
+
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        for (amrex::ParIter<nPicPartReal, nPicPartInt> pti(
+                 *get_particle_pointer(iS), iLev);
+             pti.isValid(); ++pti) {
+          const auto& tile = pti.GetArrayOfStructs();
+          for (const auto& p : tile) {
+            if (p.id() < 0)
+              continue;
+            double q = p.rdata(PicParticles::iqp_);
+            double vx = p.rdata(PicParticles::iup_);
+            double vy = p.rdata(PicParticles::ivp_);
+            double vz = p.rdata(PicParticles::iwp_);
+            double aq = std::abs(q);
+            lmac++;
+            lw += aq;
+            lvx += vx * aq;
+            lvy += vy * aq;
+            lvz += vz * aq;
+            lke += 0.5 * (vx * vx + vy * vy + vz * vz) * aq;
+          }
+        }
+      }
+
+      local_macro[iS] = lmac;
+      int base = iS * nValsPerSpecies;
+      local_vals[base + 0] = lw;
+      local_vals[base + 1] = lvx;
+      local_vals[base + 2] = lvy;
+      local_vals[base + 3] = lvz;
+      local_vals[base + 4] = lke;
+    }
+  }
+
+  // MPI reductions — all ranks participate.
+  if (!local_vals.empty())
+    amrex::ParallelDescriptor::ReduceRealSum(local_vals.data(),
+                                             local_vals.size());
+  if (!local_macro.empty())
+    amrex::ParallelDescriptor::ReduceLongSum(local_macro.data(),
+                                             local_macro.size());
+
+  // Collect field statistics (IO-only, no MPI needed beyond the data already
+  // on the IO processor for nodeB).
+  double max_By = 0.0, max_Bz = 0.0;
+  if (doDiagField) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      max_By = std::max(max_By, nodeB[iLev].norm0(1));
+      max_Bz = std::max(max_Bz, nodeB[iLev].norm0(2));
+    }
+  }
+
+  // Only the IO processor writes.
+  if (ParallelDescriptor::IOProcessor() && !diagLogFile.empty()) {
+    std::ofstream of(diagLogFile.c_str(), std::fstream::app);
+    of.precision(6);
+    of << std::scientific;
+    of << tc->get_time_si() << "\t" << tc->get_cycle();
+
+    if (doDiagParticle && has_particles()) {
+      for (int iS = 0; iS < nS; ++iS) {
+        int base = iS * nValsPerSpecies;
+        double gw = local_vals[base + 0];
+        double gvx = (gw > 0) ? local_vals[base + 1] / gw : 0.0;
+        double gvy = (gw > 0) ? local_vals[base + 2] / gw : 0.0;
+        double gvz = (gw > 0) ? local_vals[base + 3] / gw : 0.0;
+        double gke = local_vals[base + 4];
+        of << "\t" << local_macro[iS] << "\t" << gw << "\t" << gvx << "\t"
+           << gvy << "\t" << gvz << "\t" << gke;
+      }
+    }
+
+    if (doDiagField) {
+      of << "\t" << max_By << "\t" << max_Bz;
+    }
+
+    of << "\n";
+    of.close();
+  }
+}
+
+//==========================================================
 void Pic::write_plots(bool doForce) {
   if (isGridEmpty)
     return;
@@ -1010,6 +1142,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   }
 
 #ifdef _PC_COMPONENT_
+#ifndef FLEKS_STANDALONE
   if (isDensityZero) {
     AllPrint()
         << "\n==========" << printPrefix
@@ -1025,6 +1158,7 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
         << std::endl;
     Abort();
   }
+#endif
 #endif
 }
 
