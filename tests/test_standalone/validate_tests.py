@@ -63,7 +63,11 @@ def run_test(test_dir):
     shutil.copy(param_file, "run_test/PARAM.in")
     
     # Run ./FLEKS.exe inside run_test/
-    result = subprocess.run(["./FLEKS.exe"], cwd="run_test", stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    cmd = ["./FLEKS.exe"]
+    if "sound_wave" in test_dir:
+        cmd = ["mpiexec", "-n", "2", "./FLEKS.exe"]
+        
+    result = subprocess.run(cmd, cwd="run_test", stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         print(f"Error running FLEKS.exe for {test_dir}:")
         print(result.stderr)
