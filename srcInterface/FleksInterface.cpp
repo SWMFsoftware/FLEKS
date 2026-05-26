@@ -220,7 +220,8 @@ int fleks_set_state_var_(double *Data_VI, int *iPoint_I, int *nVar,
   }
   for (int i = 0; i < fleksDomains.size(); ++i) {
     int idx = fleksDomains(i).couplerMarker;
-    fleksDomains(i).set_state_var(Data_VI, &iPoint_I[idx], names);
+    int *index_ptr = (iPoint_I != nullptr) ? &iPoint_I[idx] : nullptr;
+    fleksDomains(i).set_state_var(Data_VI, index_ptr, names);
   }
   return 0;
 }

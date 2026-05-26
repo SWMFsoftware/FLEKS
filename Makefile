@@ -109,14 +109,9 @@ else
 endif
 
 CONVERTER: bin
-ifeq ($(IN_SWMF_TREE),)
 	$(call prepare_standalone)
 	$(call set_build_mode,STANDALONE,standalone)
 	$(STANDALONE_SRC_MAKE) CONVERTER
-else
-	$(call set_build_mode,COMPONENT,component)
-	$(MAKE) -C src CONVERTER
-endif
 
 rundir:
 	mkdir -p ${RUNDIR}/${COMPONENT}

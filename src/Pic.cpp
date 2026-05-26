@@ -432,7 +432,7 @@ void Pic::init_exosphere() {
                         exoInfos.size(), 0, false);
   }
 
-  for (int iInfo = 0; iInfo < exoInfos.size(); ++iInfo) {
+  for (size_t iInfo = 0; iInfo < exoInfos.size(); ++iInfo) {
     auto& info = exoInfos[iInfo];
     std::string profile = info.neutralProfile;
     Real r0 = info.r0;
@@ -797,7 +797,7 @@ void Pic::fill_source_particles() {
       }
     }
 
-    for (int iInfo = 0; iInfo < exoInfos.size(); ++iInfo) {
+    for (size_t iInfo = 0; iInfo < exoInfos.size(); ++iInfo) {
       auto& info = exoInfos[iInfo];
       if (info.iSpecies > 0 && info.iSpecies <= nSpecies) {
         int iSp = info.iSpecies - 1;
@@ -1123,7 +1123,6 @@ void Pic::exosphere_charge_exchange() {
   Real dt = tc->get_dt();
   Real dt_SI = dt * fi->get_No2SiT();
   Real No2SiV = fi->get_No2SiV();
-  Real Si2NoV = fi->get_Si2NoV();
 
   auto get_neutral_density = [&](const ExosphereInfo& info,
                                  const Real* pos) -> Real {
