@@ -1,11 +1,12 @@
-name: Standalone Test
+name: Performance Test
 
 on:
   pull_request:
     branches: [ "master" ]
+  workflow_dispatch:
 
 jobs:
-  build-and-test:
+  performance-check:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -84,18 +85,18 @@ jobs:
           cp Makefile.conf.standalone.template Makefile.conf
           make EXE -j$(nproc)
 
-      - name: Run and Verify Standalone FLEKS Tests
+      - name: Run Standalone Performance Checks
         working-directory: SWMF/PC/FLEKS/tests/test_standalone
         run: |
           ls -lh ../../bin/FLEKS.exe
           ldd ../../bin/FLEKS.exe
-          python3 validate_tests.py
+          python3 validate_performance.py
 
       - name: Write Job Summary
         if: always()
         run: |
-          if [ -f SWMF/PC/FLEKS/tests/test_standalone/summary.md ]; then
-            cat SWMF/PC/FLEKS/tests/test_standalone/summary.md >> $GITHUB_STEP_SUMMARY
+          if [ -f SWMF/PC/FLEKS/tests/test_standalone/performance_summary.md ]; then
+            cat SWMF/PC/FLEKS/tests/test_standalone/performance_summary.md >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Post PR Comment
@@ -104,15 +105,15 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const summaryPath = 'SWMF/PC/FLEKS/tests/test_standalone/summary.md';
+            const perfPath = 'SWMF/PC/FLEKS/tests/test_standalone/performance_summary.md';
             let body = '';
             
-            if (fs.existsSync(summaryPath)) {
-              body += fs.readFileSync(summaryPath, 'utf8') + '\n';
+            if (fs.existsSync(perfPath)) {
+              body += fs.readFileSync(perfPath, 'utf8') + '\n';
             }
             
             if (body) {
-              // 1. List existing comments to find one matching our summary prefix
+              // 1. List existing comments to find one matching our performance report
               const { data: comments } = await github.rest.issues.listComments({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -120,7 +121,7 @@ jobs:
               });
               
               const prComment = comments.find(comment => 
-                comment.body.includes('### 🧪 Standalone FLEKS Test Results')
+                comment.body.includes('### ⚡ Standalone FLEKS Performance Report')
               );
               
               if (prComment) {
@@ -131,7 +132,7 @@ jobs:
                   comment_id: prComment.id,
                   body: body
                 });
-                console.log('Successfully updated existing PR comment with correctness results.');
+                console.log('Successfully updated existing PR comment with performance results.');
               } else {
                 // 3. Create a new comment if none exists
                 await github.rest.issues.createComment({
@@ -140,6 +141,6 @@ jobs:
                   issue_number: context.issue.number,
                   body: body
                 });
-                console.log('Successfully created new PR comment with correctness results.');
+                console.log('Successfully created new PR comment with performance results.');
               }
             }
