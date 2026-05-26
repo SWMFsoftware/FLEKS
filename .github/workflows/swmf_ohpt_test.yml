@@ -59,6 +59,19 @@ jobs:
             ./share/Scripts/gitall pull
           else
             echo "Cache miss. Installing components..."
+            # If util directory exists but is not a git repo (e.g. due to AMREX cache restore),
+            # restore the util repository while preserving the cached AMREX folder.
+            if [ -d util ] && [ ! -d util/.git ]; then
+              echo "util directory exists but is not a git repository. Preserving AMREX cache..."
+              if [ -d util/AMREX ]; then
+                mv util/AMREX ../AMREX_temp
+              fi
+              rm -rf util
+              git clone --depth 1 https://github.com/SWMFsoftware/util.git util
+              if [ -d ../AMREX_temp ]; then
+                mv ../AMREX_temp util/AMREX
+              fi
+            fi
           fi
           # Remove empty HYPRE directory to avoid make install failure
           rm -rf util/HYPRE
