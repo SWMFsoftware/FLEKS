@@ -1,0 +1,89 @@
+#DESCRIPTION
+1D Adiabatic MHD Alfven Wave Standalone Test
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+0.0                    xMin
+1.0                    xMax
+0.0                    yMin
+1.0                    yMax
+0.0                    zMin
+1.0                    zMax
+
+#NCELL
+64                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+64                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+T                       solveEM
+
+#ELECTRON
+-100                    electronChargePerMass
+
+#PLASMA
+2                       nSpecies
+0.01                    mass
+-1.0                    charge
+1.0                     mass
+1.0                     charge
+
+#UNIFORMSTATE
+0.01                    rho [amu/cc] (Species 0)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1000.0                  T [K]
+1.0                     rho [amu/cc] (Species 1)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+1000.0                  T [K]
+1.0                     bx [T]
+1.4142135623730951      by [T]
+0.5                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#WAVE
+alfven                  waveType
+1.0                       waveAmp
+1.0                     waveLength
+0.0                     waveAngle
+
+#TIMESTEPPING
+T                       useFixedDt
+0.01                    dt
+
+#NORMALIZATION
+1.0                     lNormSI
+1.0                     uNormSI
+
+#MONITOR
+1                       dnReport
+
+#PARTICLES
+100                     nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#DIAGNOSTIC
+T                       doParticleDiag
+T                       doFieldDiag
+
+#STOP
+-1                      MaxIter
+1.0                     TimeMax

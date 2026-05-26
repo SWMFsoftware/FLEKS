@@ -410,6 +410,11 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
   if (command == "#NORMALIZATION") {
     param.read_var("lNorm", lNormSI);
     param.read_var("uNorm", uNormSI);
+  } else if (command == "#WAVE") {
+    param.read_var("waveType", waveType);
+    param.read_var("waveAmp", waveAmp);
+    param.read_var("waveLength", waveLength);
+    param.read_var("waveAngle", waveAngle);
   } else if (command == "#SCALINGFACTOR") {
     param.read_var("scaling", ScalingFactor);
   } else if (command == "#BODYSIZE") {
@@ -756,6 +761,101 @@ void FluidInterface::set_node_fluid() {
 
   calc_current();
   normalize_fluid_variables();
+
+  if (waveType != "none") {
+    // Check if cold plasma is requested via PARAM.in (T = 0)
+    bool isColdPlasma = false;
+    if (uniformState.size() > 4) {
+      isColdPlasma = (uniformState[4] == 0.0);
+    }
+
+    Real rho0 = 1.0;
+    Real p0 = isColdPlasma ? 0.0 : 0.6;
+    Real ux0 = 0.0, uy0 = 0.0, uz0 = 0.0;
+    Real bx0 = 0.0, by0 = 0.0, bz0 = 0.0;
+
+    if (waveType != "sound") {
+      bx0 = 1.0;
+      by0 = sqrt(2.0);
+      bz0 = 0.5;
+    }
+
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      const auto& dx = Geom(iLev).CellSize();
+      const auto plo = Geom(iLev).ProbLo();
+
+      for (MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.fabbox();
+        const Array4<Real>& arr = nodeFluid[iLev][mfi].array();
+
+        ParallelFor(box, [=](int i, int j, int k) noexcept {
+          const Real x = i * dx[ix_] + plo[ix_];
+          const Real k_wave = 2.0 * dPI / waveLength;
+          const Real phase = k_wave * x;
+          const Real S = sin(phase);
+
+          // 2. Set wave eigenfunctions/perturbations
+          Real dRho = 0.0, dUx = 0.0, dUy = 0.0, dUz = 0.0, dP = 0.0;
+          Real dBx = 0.0, dBy = 0.0, dBz = 0.0;
+
+          if (waveType == "sound") {
+            dRho = 1.0 * S;
+            dUx  = -1.0 * S;
+            dP   = 1.0 * S;
+          } else if (waveType == "fast") {
+            dRho = 0.4472135954999580 * S;
+            dUx  = -0.8944271909999160 * S;
+            dUy  = 0.4216370213557840 * S;
+            dUz  = 0.1490711984999860 * S;
+            dP   = 0.4472135954999580 * S;
+            dBy  = 0.8432740427115680 * S;
+            dBz  = 0.2981423969999720 * S;
+          } else if (waveType == "alfven") {
+            dUy  = -0.3333333333333333 * S;
+            dUz  = 0.9428090415820634 * S;
+            dBy  = -0.3333333333333333 * S;
+            dBz  = 0.9428090415820634 * S;
+          } else if (waveType == "slow") {
+            dRho = 0.8944271909999159 * S;
+            dUx  = -0.4472135954999579 * S;
+            dUy  = -0.8432740427115680 * S;
+            dUz  = -0.2981423969999720 * S;
+            dP   = 0.8944271909999159 * S;
+            dBy  = -0.4216370213557841 * S;
+            dBz  = -0.1490711984999860 * S;
+          }
+
+          // Apply background + perturbations to all fluids/species, scaled by mass
+          for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
+            const Real m = MoMi_S[iFluid];
+            const Real rho = (rho0 + waveAmp * dRho) * m;
+            
+            // Physically scale pressure perturbation by background pressure ratio
+            const Real dP_scaled = dP * (p0 / 0.6);
+            
+            arr(i, j, k, iRho_I[iFluid]) = rho;
+            arr(i, j, k, iRhoUx_I[iFluid]) = rho * (ux0 + waveAmp * dUx);
+            arr(i, j, k, iRhoUy_I[iFluid]) = rho * (uy0 + waveAmp * dUy);
+            arr(i, j, k, iRhoUz_I[iFluid]) = rho * (uz0 + waveAmp * dUz);
+            arr(i, j, k, iP_I[iFluid]) = (p0 + waveAmp * dP_scaled) * m;
+          }
+
+          // Apply background + perturbations to magnetic fields
+          arr(i, j, k, iBx) = bx0 + waveAmp * dBx;
+          arr(i, j, k, iBy) = by0 + waveAmp * dBy;
+          arr(i, j, k, iBz) = bz0 + waveAmp * dBz;
+        });
+      }
+
+      nodeFluid[iLev].FillBoundary(Geom(iLev).periodicity());
+      
+      // Recalculate cell-centered centerB from nodeFluid
+      average_node_to_cellcenter(centerB[iLev], 0, nodeFluid[iLev], iBx,
+                                 centerB[iLev].nComp(), centerB[iLev].nGrow());
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
+
   convert_moment_to_velocity();
 
   // save_amrex_file();
