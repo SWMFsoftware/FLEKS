@@ -103,8 +103,13 @@ T
 #SAVEPLOT
 0                                 nPlot
 
+#DIAGNOSTIC
+T                    doParticleDiag
+F                    doFieldDiag
+
 #STOP
 -1                      MaxIter
 3.0                     TimeMax
 
 #RUN
+
