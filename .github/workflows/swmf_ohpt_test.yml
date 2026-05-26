@@ -1,4 +1,4 @@
-name: SWMF Integration Test
+name: SWMF OH-PT Integration Test
 
 on:
   pull_request:
@@ -42,7 +42,6 @@ jobs:
         with:
           path: |
             SWMF
-            !SWMF/PC/FLEKS
             !SWMF/PT/FLEKS
             !SWMF/util/AMREX
           key: ${{ runner.os }}-swmf-v5-${{ hashFiles('SWMF/Config.pl') }}
@@ -50,7 +49,7 @@ jobs:
       - name: Checkout FLEKS (Current Commit)
         uses: actions/checkout@v6
         with:
-          path: SWMF/PC/FLEKS
+          path: SWMF/PT/FLEKS
 
       - name: Install or Update SWMF Components
         working-directory: SWMF
@@ -61,53 +60,14 @@ jobs:
           else
             echo "Cache miss. Installing components..."
           fi
-          # Create symbolic link for PT/FLEKS pointing to PC/FLEKS
-          mkdir -p PT
-          rm -rf PT/FLEKS
-          ln -s ../PC/FLEKS PT/FLEKS
           # Remove empty HYPRE directory to avoid make install failure
           rm -rf util/HYPRE
           # Remove empty/incomplete AMREX folder to force Config.pl to clone it cleanly
           if [ ! -f util/AMREX/GNUmakefile ]; then
             rm -rf util/AMREX
           fi
-          # Ensure FLEKS is configured, use -o for component options
-          ./Config.pl -install=BATSRUS -v=Empty,PC/FLEKS,GM/BATSRUS -o=PC:tp=PBEG
-
-      - name: Build and Run test16_2d
-        working-directory: SWMF
-        run: |
-          make -j$(nproc) test16_2d
-
-      - name: Build and Run test16_3d
-        working-directory: SWMF
-        run: |
-          make -j$(nproc) test16_3d
-
-      - name: Build and Run test17
-        working-directory: SWMF
-        run: |
-          make -j$(nproc) test17
-
-      - name: Build and Run test18
-        working-directory: SWMF
-        run: |
-          make -j$(nproc) test18
-
-      - name: Build and Run test23_2d
-        working-directory: SWMF
-        run: |
-          make -j$(nproc) test23_2d
-
-      - name: Build and Run test23_3d
-        working-directory: SWMF
-        run: |
-          make -j$(nproc) test23_3d
-
-      - name: Build and Run test25
-        working-directory: SWMF
-        run: |
-          make -j$(nproc) test25
+          # Ensure FLEKS is configured for OH-PT
+          ./Config.pl -install=BATSRUS -v=Empty,OH/BATSRUS,PT/FLEKS
 
       - name: Build and Run test20
         working-directory: SWMF
@@ -128,12 +88,7 @@ jobs:
         working-directory: SWMF
         run: |
           FAILED=0
-          for diff_file in test16_2d_gmpc.diff test16_3d_gmpc.diff \
-                           test17_gmpc.diff test18_gmpc.diff \
-                           test23_2d_gmpc.diff test23_3d_gmpc.diff \
-                           test25_gmpc.diff \
-                           test20_ohpt.diff test21_oh_pt.diff \
-                           test22_ohpt.diff; do
+          for diff_file in test20_ohpt.diff test21_oh_pt.diff test22_ohpt.diff; do
             if [ -s "$diff_file" ]; then
               echo "::error::Test verification failed! Non-zero diff detected in $diff_file"
               cat "$diff_file"
