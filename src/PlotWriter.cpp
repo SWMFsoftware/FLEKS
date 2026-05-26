@@ -159,20 +159,29 @@ void PlotWriter::init() {
   // Find out output format.
   if (plotString.find("ascii") != std::string::npos) {
     outputFormat = "ascii";
+    doSaveBinary = false;
   } else if (plotString.find("real4") != std::string::npos) {
     outputFormat = "real4";
+    doSaveBinary = true;
   } else if (plotString.find("real8") != std::string::npos) {
     outputFormat = "real8";
+    doSaveBinary = true;
   } else if (plotString.find("amrex") != std::string::npos) {
     outputFormat = "amrex";
+    doSaveBinary = true;
   } else if (plotString.find("hdf5") != std::string::npos) {
     outputFormat = "hdf5";
+    doSaveBinary = true;
   } else {
     if (isVerbose)
       std::cout << errorPrefix
                 << "Unknown plot output format!! plotString = " << plotString
                 << std::endl;
     abort();
+  }
+
+  if (outputFormat == "ascii") {
+    useMpiIO = false;
   }
 
   // Find out output unit.

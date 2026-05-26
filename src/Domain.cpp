@@ -123,7 +123,9 @@ void Domain::init(double time, const int iDomain,
       pic->set_base_grid(BoxArray(centerBox));
 
       fi->regrid(fi->get_base_grid(), nullptr);
-      pic->regrid(pic->get_base_grid(), nullptr);
+      pic->regrid(pic->get_base_grid(), fi.get());
+      if (pt)
+        pt->regrid(fi->boxArray(0), fi.get());
     }
 
     if (stateOH)
@@ -913,7 +915,8 @@ void Domain::read_param(const bool readGridInfo) {
         pt->read_param(command, param);
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
                command == "#BODYSIZE" || command == "#PLASMA" ||
-               command == "#UNIFORMSTATE" || command == "#FLUIDVARNAMES") {
+               command == "#UNIFORMSTATE" || command == "#FLUIDVARNAMES" ||
+               command == "#WAVE") {
       fi->read_param(command, param);
     } else if (command == "#LOADBALANCE") {
       std::string strategy;
