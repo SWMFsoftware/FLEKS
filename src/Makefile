@@ -111,7 +111,6 @@ LIB: DEPEND
 	@echo
 	@echo ${LIBFLEKS} has been brought up to date.
 	@echo
-	$(MAKE) CONVERTER
 
 ${LIBFLEKS}:${OBJECTS}	
 	${AR} ${LIBFLEKS} ${OBJECTS}

@@ -18,20 +18,6 @@ Domains fleksDomains;
 extern "C" {
 void timing_start_c(size_t*, char*) {}
 void timing_stop_c(size_t*, char*) {}
-
-// The converter links the PT-built FLEKS library, but it does not link or use
-// the OH component. Provide local shims for PT/OH coupling hooks pulled in by
-// static library objects.
-void OH_get_charge_exchange_wrapper(double*, double*, double[3], double*,
-                                    double*, double[3], double sourceIon[5],
-                                    double sourceNeu[5]) {}
-
-void OH_get_charge_exchange_region(int* iRegion, double*, double*, double*,
-                                   double*, double*, double*, double*, double*,
-                                   double*, double*) {}
-
-void OH_get_solar_wind(double*, double*, double*, double* numDen, double* ur,
-                       double* temp, double b[3]) {}
 }
 
 int main(int argc, char* argv[]) {
