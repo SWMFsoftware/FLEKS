@@ -156,12 +156,15 @@ def read_diag_log(run_dir):
 
         if has_field and col + 1 < len(vals):
             try:
-                field_diags.append({
+                diag_dict = {
                     "time":   t,
                     "cycle":  cycle,
                     "max_by": float(vals[col]),
                     "max_bz": float(vals[col + 1]),
-                })
+                }
+                if col + 2 < len(vals):
+                    diag_dict["max_ey"] = float(vals[col + 2])
+                field_diags.append(diag_dict)
             except ValueError:
                 pass
 
@@ -713,6 +716,55 @@ def validate_slow_wave(diags):
     return validate_sound_wave(diags)
 
 
+def validate_tophat(diags, field_diags=None):
+    print("Validating TopHat Test...")
+    if not field_diags:
+        print("FAIL: No field diagnostic outputs parsed.")
+        return False, "No field diagnostics parsed"
+    
+    passed = True
+    reasons = []
+    
+    for diag in field_diags:
+        t = diag["time"]
+        max_bz = diag["max_bz"]
+        max_by = diag["max_by"]
+        max_ey = diag.get("max_ey", None)
+        
+        # max_bz should remain close to 1.0 (allow [0.8, 1.2])
+        if max_bz < 0.8 or max_bz > 1.2:
+            print(f"  FAIL at t={t:.2f}: maxBz is outside acceptable range [0.8, 1.2]! Actual={max_bz:.3f}")
+            passed = False
+            reasons.append(f"maxBz outside range at t={t:.2f}")
+
+        # max_ey should remain close to 1.0 (allow [0.8, 1.2])
+        if max_ey is not None and (max_ey < 0.8 or max_ey > 1.2):
+            print(f"  FAIL at t={t:.2f}: maxEy is outside acceptable range [0.8, 1.2]! Actual={max_ey:.3f}")
+            passed = False
+            reasons.append(f"maxEy outside range at t={t:.2f}")
+            
+        # max_by should remain near 0.0 (allow <= 0.05)
+        if max_by > 0.05:
+            print(f"  FAIL at t={t:.2f}: maxBy is too high! Actual={max_by:.3f}")
+            passed = False
+            reasons.append(f"maxBy too high at t={t:.2f}")
+            
+    if passed:
+        # Print actual initial/final values to confirm validation
+        if len(field_diags) > 0:
+            init_bz = field_diags[0]["max_bz"]
+            init_ey = field_diags[0].get("max_ey", 0.0)
+            final_bz = field_diags[-1]["max_bz"]
+            final_ey = field_diags[-1].get("max_ey", 0.0)
+            print(f"  Initial Fields: maxBz={init_bz:.3f}, maxEy={init_ey:.3f}")
+            print(f"  Final Fields:   maxBz={final_bz:.3f}, maxEy={final_ey:.3f}")
+        print("TopHat Test: PASSED")
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
+
+
+
 def ensure_flekspy_installed():
     try:
         import flekspy
@@ -823,7 +875,8 @@ def main():
         "sound_wave": validate_sound_wave,
         "fast_wave": validate_fast_wave,
         "alfven_wave": validate_alfven_wave,
-        "slow_wave": validate_slow_wave
+        "slow_wave": validate_slow_wave,
+        "tophat": validate_tophat
     }
     
     # Discover test subdirectories under tests/test_standalone
@@ -867,7 +920,7 @@ def main():
             # Read diagnostics from the structured log file (preferred) or fall back
             # to parsing stdout for backward compatibility.
             particle_diags, field_diags = read_diag_log("run_test")
-            if not particle_diags:
+            if not particle_diags and not field_diags:
                 print("  [INFO] No log file found; falling back to stdout parsing.")
                 particle_diags, field_diags = parse_diagnostics(stdout)
 

@@ -844,6 +844,17 @@ void FluidInterface::set_node_fluid() {
           arr(i, j, k, iBx) = bx0 + waveAmp * dBx;
           arr(i, j, k, iBy) = by0 + waveAmp * dBy;
           arr(i, j, k, iBz) = bz0 + waveAmp * dBz;
+
+          // Apply background + perturbations to electric fields if defined
+          if (iEx >= 0 && iEy >= 0 && iEz >= 0) {
+            const Real dux = waveAmp * dUx;
+            const Real duy = waveAmp * dUy;
+            const Real duz = waveAmp * dUz;
+
+            arr(i, j, k, iEx) = -(duy * bz0 - duz * by0);
+            arr(i, j, k, iEy) = -(duz * bx0 - dux * bz0);
+            arr(i, j, k, iEz) = -(dux * by0 - duy * bx0);
+          }
         });
       }
 
