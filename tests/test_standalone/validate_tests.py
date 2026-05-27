@@ -716,6 +716,75 @@ def validate_slow_wave(diags):
     return validate_sound_wave(diags)
 
 
+def validate_langmuir(diags):
+    print("Validating Langmuir Wave Electrostatic Oscillation Test...")
+    if not diags:
+        print("FAIL: No diagnostic outputs parsed.")
+        return False, "No diagnostic outputs parsed"
+
+    passed = True
+    reasons = []
+
+    from collections import defaultdict
+    by_species = defaultdict(list)
+    for d in diags:
+        by_species[d["species"]].append(d)
+
+    for iS, species_diags in sorted(by_species.items()):
+        if not species_diags:
+            continue
+
+        # 1. Particle count conservation
+        initial_phys = species_diags[0]["phys"]
+        for diag in species_diags:
+            t = diag["time"]
+            actual_phys = diag["phys"]
+            if initial_phys > 0 and abs(actual_phys - initial_phys) > 1e-5 * initial_phys:
+                print(f"  FAIL species {iS} at t={t:.2f}: Particle count changed! "
+                      f"Expected={initial_phys:.2e}, Actual={actual_phys:.2e}")
+                passed = False
+                reasons.append(f"Species {iS} particle count changed at t={t:.2f}")
+
+        # 2. Bulk velocity for heavy protons (species 1) should stay near zero
+        if iS == 1:
+            for diag in species_diags:
+                t = diag["time"]
+                vx = diag["vx"]
+                if abs(vx) > 0.01:
+                    print(f"  FAIL species {iS} (protons) at t={t:.2f}: Bulk vx deviated! "
+                          f"Expected ~0.0, Actual={vx:.4f}")
+                    passed = False
+                    reasons.append(f"Species {iS} proton vx deviated at t={t:.2f}")
+
+    # 3. Check electron KE oscillates but stays bounded
+    electron_diags = by_species.get(0, [])
+    if electron_diags:
+        ke_vals = [d["ke"] for d in electron_diags]
+        max_ke = max(ke_vals)
+        min_ke = min(ke_vals)
+        # KE should oscillate between 0 and initial electrostatic energy
+        # Initial E field energy ~ 0.5 * (0.02)^2 * L / 2 = 0.5 * 4e-4 * pi ~ 6.3e-4
+        # In normalized units, check KE stays bounded (not growing = no numerical heating)
+        # Check that max_ke is bounded (e.g., < 0.01) to ensure no numerical heating/explosion,
+        # but also oscillates (reaches at least 1e-4) to ensure the wave is active.
+        if max_ke > 0.01:
+            print(f"  FAIL electrons: KE grew too large! Max KE={max_ke:.4e}")
+            passed = False
+            reasons.append(f"Electron KE grew too large: {max_ke:.4e}")
+        elif max_ke < 1e-4:
+            print(f"  FAIL electrons: KE too small, wave might be dead! Max KE={max_ke:.4e}")
+            passed = False
+            reasons.append(f"Electron KE too small: {max_ke:.4e}")
+        else:
+            print(f"  SUCCESS: Electron KE bounded and active [{min_ke:.4e}, {max_ke:.4e}]")
+
+    if passed:
+        print("Langmuir Wave Test: PASSED")
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
+
+
 def validate_tophat(diags, field_diags=None):
     print("Validating TopHat Test...")
     if not field_diags:
@@ -876,7 +945,8 @@ def main():
         "fast_wave": validate_fast_wave,
         "alfven_wave": validate_alfven_wave,
         "slow_wave": validate_slow_wave,
-        "tophat": validate_tophat
+        "tophat": validate_tophat,
+        "langmuir": validate_langmuir
     }
     
     # Discover test subdirectories under tests/test_standalone

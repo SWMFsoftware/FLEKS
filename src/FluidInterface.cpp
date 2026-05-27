@@ -768,13 +768,14 @@ void FluidInterface::set_node_fluid() {
     if (uniformState.size() > 4) {
       isColdPlasma = (uniformState[4] == 0.0);
     }
-
     Real rho0 = 1.0;
     Real p0 = isColdPlasma ? 0.0 : 0.6;
     Real ux0 = 0.0, uy0 = 0.0, uz0 = 0.0;
     Real bx0 = 0.0, by0 = 0.0, bz0 = 0.0;
 
-    if (waveType != "sound") {
+    if (waveType == "langmuir") {
+      // Langmuir wave background is 0
+    } else if (waveType != "sound") {
       bx0 = 1.0;
       by0 = sqrt(2.0);
       bz0 = 0.5;
@@ -802,6 +803,8 @@ void FluidInterface::set_node_fluid() {
             dRho = 1.0 * S;
             dUx = -1.0 * S;
             dP = 1.0 * S;
+          } else if (waveType == "langmuir") {
+            // Handled specifically inside the species and field assignments
           } else if (waveType == "fast") {
             dRho = 0.4472135954999580 * S;
             dUx = -0.8944271909999160 * S;
@@ -829,17 +832,27 @@ void FluidInterface::set_node_fluid() {
           // mass
           for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
             const Real m = MoMi_S[iFluid];
-            const Real rho = (rho0 + waveAmp * dRho) * m;
+            Real rho = rho0 * m;
+            Real ux = ux0;
+            Real p = p0 * m;
 
-            // Physically scale pressure perturbation by background pressure
-            // ratio
-            const Real dP_scaled = dP * (p0 / 0.6);
+            if (waveType == "langmuir") {
+              if (iFluid == 0) { // Electrons
+                rho = (rho0 + 0.02 * cos(x)) * m;
+              }
+              p = 0.0; // Cold plasma
+            } else {
+              rho = (rho0 + waveAmp * dRho) * m;
+              const Real dP_scaled = dP * (p0 / 0.6);
+              ux = ux0 + waveAmp * dUx;
+              p = (p0 + waveAmp * dP_scaled) * m;
+            }
 
             arr(i, j, k, iRho_I[iFluid]) = rho;
-            arr(i, j, k, iRhoUx_I[iFluid]) = rho * (ux0 + waveAmp * dUx);
+            arr(i, j, k, iRhoUx_I[iFluid]) = rho * ux;
             arr(i, j, k, iRhoUy_I[iFluid]) = rho * (uy0 + waveAmp * dUy);
             arr(i, j, k, iRhoUz_I[iFluid]) = rho * (uz0 + waveAmp * dUz);
-            arr(i, j, k, iP_I[iFluid]) = (p0 + waveAmp * dP_scaled) * m;
+            arr(i, j, k, iP_I[iFluid]) = p;
           }
 
           // Apply background + perturbations to magnetic fields
@@ -849,13 +862,19 @@ void FluidInterface::set_node_fluid() {
 
           // Apply background + perturbations to electric fields if defined
           if (iEx >= 0 && iEy >= 0 && iEz >= 0) {
-            const Real dux = waveAmp * dUx;
-            const Real duy = waveAmp * dUy;
-            const Real duz = waveAmp * dUz;
+            if (waveType == "langmuir") {
+              arr(i, j, k, iEx) = -0.02 * sin(x);
+              arr(i, j, k, iEy) = 0.0;
+              arr(i, j, k, iEz) = 0.0;
+            } else {
+              const Real ux = ux0 + waveAmp * dUx;
+              const Real uy = uy0 + waveAmp * dUy;
+              const Real uz = uz0 + waveAmp * dUz;
 
-            arr(i, j, k, iEx) = -(duy * bz0 - duz * by0);
-            arr(i, j, k, iEy) = -(duz * bx0 - dux * bz0);
-            arr(i, j, k, iEz) = -(dux * by0 - duy * bx0);
+              arr(i, j, k, iEx) = -(uy * bz0 - uz * by0);
+              arr(i, j, k, iEy) = -(uz * bx0 - ux * bz0);
+              arr(i, j, k, iEz) = -(ux * by0 - uy * bx0);
+            }
           }
         });
       }
@@ -963,21 +982,61 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
 
       ParallelFor(box, [&](int i, int j, int k) noexcept {
         if (useMultiSpecies) {
+          const bool isStandalone = (iRho_I.size() == nS);
           double Rhot = 0;
-          for (int iIon = 0; iIon < nIon; ++iIon) {
-            // Rho = sum(Rhoi) + Rhoe;
-            Rhot +=
-                arr(i, j, k, iRho_I[iIon]) * (1 + MoMi_S[0] / MoMi_S[iIon + 1]);
-          } // iIon
-
-          if (Rhot > 0) {
-            arr(i, j, k, iUx_I[0]) /= Rhot;
-            arr(i, j, k, iUy_I[0]) /= Rhot;
-            arr(i, j, k, iUz_I[0]) /= Rhot;
+          if (isStandalone) {
+            // Standalone mode: iRho_I has size nS (electrons at index 0, ions starting at index 1)
+            double Rhoe = arr(i, j, k, iRho_I[0]);
+            double Rhoi_sum = 0;
+            for (int iIon = 0; iIon < nIon; ++iIon) {
+              Rhoi_sum += arr(i, j, k, iRho_I[iIon + 1]);
+            }
+            Rhot = Rhoi_sum + Rhoe;
           } else {
-            arr(i, j, k, iUx_I[0]) = 0;
-            arr(i, j, k, iUy_I[0]) = 0;
-            arr(i, j, k, iUz_I[0]) = 0;
+            // SWMF coupling mode: iRho_I only contains ion densities
+            for (int iIon = 0; iIon < nIon; ++iIon) {
+              Rhot +=
+                  arr(i, j, k, iRho_I[iIon]) * (1 + MoMi_S[0] / MoMi_S[iIon + 1]);
+            } // iIon
+          }
+
+          if (isStandalone) {
+            double Rhoe = arr(i, j, k, iRho_I[0]);
+            if (Rhoe > 0) {
+              arr(i, j, k, iUx_I[0]) /= Rhoe;
+              arr(i, j, k, iUy_I[0]) /= Rhoe;
+              arr(i, j, k, iUz_I[0]) /= Rhoe;
+            } else {
+              arr(i, j, k, iUx_I[0]) = 0;
+              arr(i, j, k, iUy_I[0]) = 0;
+              arr(i, j, k, iUz_I[0]) = 0;
+            }
+          } else {
+            if (Rhot > 0) {
+              arr(i, j, k, iUx_I[0]) /= Rhot;
+              arr(i, j, k, iUy_I[0]) /= Rhot;
+              arr(i, j, k, iUz_I[0]) /= Rhot;
+            } else {
+              arr(i, j, k, iUx_I[0]) = 0;
+              arr(i, j, k, iUy_I[0]) = 0;
+              arr(i, j, k, iUz_I[0]) = 0;
+            }
+          }
+
+          // Convert ion momenta to velocities in standalone mode
+          if (isStandalone) {
+            for (int iIon = 0; iIon < nIon; ++iIon) {
+              const double& rho = arr(i, j, k, iRho_I[iIon + 1]);
+              if (rho > 0) {
+                arr(i, j, k, iUx_I[iIon + 1]) /= rho;
+                arr(i, j, k, iUy_I[iIon + 1]) /= rho;
+                arr(i, j, k, iUz_I[iIon + 1]) /= rho;
+              } else {
+                arr(i, j, k, iUx_I[iIon + 1]) = 0;
+                arr(i, j, k, iUy_I[iIon + 1]) = 0;
+                arr(i, j, k, iUz_I[iIon + 1]) = 0;
+              }
+            }
           }
         } else {
           for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
