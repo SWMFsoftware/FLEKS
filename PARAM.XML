@@ -1009,7 +1009,7 @@ The neutral density is calculated analytically based on the profile type.
 Supported profiles: 'exponential', 'power-law', 'ChamberlainH'.
 The parameters n0, H0, T0, k0 are read as strings of space-separated values to support multi-component profiles.
 Note: r0, H0, ExobaseRadius, and ShadowRadius must be in simulation units (normalized if xUnitPicSi > 1.0).
-TotalProductionRate is always in SI units [s^-1].
+TotalProductionRate is always in SI units [1/s].
 </command>
 
 <command name="ELECTRONIMPACT" multiple="T">
