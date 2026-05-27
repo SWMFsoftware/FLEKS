@@ -800,39 +800,41 @@ void FluidInterface::set_node_fluid() {
 
           if (waveType == "sound") {
             dRho = 1.0 * S;
-            dUx  = -1.0 * S;
-            dP   = 1.0 * S;
+            dUx = -1.0 * S;
+            dP = 1.0 * S;
           } else if (waveType == "fast") {
             dRho = 0.4472135954999580 * S;
-            dUx  = -0.8944271909999160 * S;
-            dUy  = 0.4216370213557840 * S;
-            dUz  = 0.1490711984999860 * S;
-            dP   = 0.4472135954999580 * S;
-            dBy  = 0.8432740427115680 * S;
-            dBz  = 0.2981423969999720 * S;
+            dUx = -0.8944271909999160 * S;
+            dUy = 0.4216370213557840 * S;
+            dUz = 0.1490711984999860 * S;
+            dP = 0.4472135954999580 * S;
+            dBy = 0.8432740427115680 * S;
+            dBz = 0.2981423969999720 * S;
           } else if (waveType == "alfven") {
-            dUy  = -0.3333333333333333 * S;
-            dUz  = 0.9428090415820634 * S;
-            dBy  = -0.3333333333333333 * S;
-            dBz  = 0.9428090415820634 * S;
+            dUy = -0.3333333333333333 * S;
+            dUz = 0.9428090415820634 * S;
+            dBy = -0.3333333333333333 * S;
+            dBz = 0.9428090415820634 * S;
           } else if (waveType == "slow") {
             dRho = 0.8944271909999159 * S;
-            dUx  = -0.4472135954999579 * S;
-            dUy  = -0.8432740427115680 * S;
-            dUz  = -0.2981423969999720 * S;
-            dP   = 0.8944271909999159 * S;
-            dBy  = -0.4216370213557841 * S;
-            dBz  = -0.1490711984999860 * S;
+            dUx = -0.4472135954999579 * S;
+            dUy = -0.8432740427115680 * S;
+            dUz = -0.2981423969999720 * S;
+            dP = 0.8944271909999159 * S;
+            dBy = -0.4216370213557841 * S;
+            dBz = -0.1490711984999860 * S;
           }
 
-          // Apply background + perturbations to all fluids/species, scaled by mass
+          // Apply background + perturbations to all fluids/species, scaled by
+          // mass
           for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
             const Real m = MoMi_S[iFluid];
             const Real rho = (rho0 + waveAmp * dRho) * m;
-            
-            // Physically scale pressure perturbation by background pressure ratio
+
+            // Physically scale pressure perturbation by background pressure
+            // ratio
             const Real dP_scaled = dP * (p0 / 0.6);
-            
+
             arr(i, j, k, iRho_I[iFluid]) = rho;
             arr(i, j, k, iRhoUx_I[iFluid]) = rho * (ux0 + waveAmp * dUx);
             arr(i, j, k, iRhoUy_I[iFluid]) = rho * (uy0 + waveAmp * dUy);
@@ -859,7 +861,7 @@ void FluidInterface::set_node_fluid() {
       }
 
       nodeFluid[iLev].FillBoundary(Geom(iLev).periodicity());
-      
+
       // Recalculate cell-centered centerB from nodeFluid
       average_node_to_cellcenter(centerB[iLev], 0, nodeFluid[iLev], iBx,
                                  centerB[iLev].nComp(), centerB[iLev].nGrow());
