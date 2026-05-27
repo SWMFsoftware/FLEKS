@@ -13,7 +13,7 @@ This is a standalone test designed to verify the propagation of a 1D linear adia
   - $\delta \rho = \text{amp} \sin(kx)$
   - $\delta u_x = -\text{amp} \sin(kx)$
   - $\delta p = \text{amp} \sin(kx)$
-- **Solver Setup**: Treated in hybrid PIC mode with kinetic ion particles ($nSpecies = 1$) and background electron fluid. Field solver is enabled (`solveEM = T`).
+- **Solver Setup**: Treated in full PIC mode with kinetic electrons (Species 0) and kinetic ions (Species 1). Field solver is enabled (`solveEM = T`).
 - **Wave Propagation**: The phase speed is $v_{\text{phase}} = \sqrt{\gamma p_0 / \rho_0} = 1.0$, meaning the wave travels exactly one period at $T_{\text{max}} = 1.0$.
 
 ## Expected Results

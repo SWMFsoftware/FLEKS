@@ -15,7 +15,7 @@ This is a standalone test designed to verify the propagation of a 1D linear adia
   - $\delta B_y = -0.3333333\,\text{amp} \sin(kx)$
   - $\delta B_z = 0.9428090\,\text{amp} \sin(kx)$
   - $\delta \rho = 0.0$, $\delta u_x = 0.0$, $\delta p = 0.0$.
-- **Solver Setup**: Treated in hybrid PIC mode with kinetic ion particles ($nSpecies = 1$) and background electron fluid. Field solver is enabled (`solveEM = T`).
+- **Solver Setup**: Treated in full PIC mode with kinetic electrons (Species 0) and kinetic ions (Species 1). Field solver is enabled (`solveEM = T`).
 - **Wave Propagation**: The Alfvén speed is $v_A = B_{0x} / \sqrt{\rho_0} = 1.0$. For wavelength $\lambda = 1.0$, the wave period is exactly $T_{\text{max}} = 1.0$.
 
 ## Expected Results

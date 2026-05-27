@@ -17,7 +17,7 @@ This is a standalone test designed to verify the propagation of a 1D linear adia
   - $\delta p = 0.4472136\,\text{amp} \sin(kx)$
   - $\delta B_y = 0.8432740\,\text{amp} \sin(kx)$
   - $\delta B_z = 0.2981424\,\text{amp} \sin(kx)$
-- **Solver Setup**: Treated in hybrid PIC mode with kinetic ion particles ($nSpecies = 1$) and background electron fluid. Field solver is enabled (`solveEM = T`).
+- **Solver Setup**: Treated in full PIC mode with kinetic electrons (Species 0) and kinetic ions (Species 1). Field solver is enabled (`solveEM = T`).
 - **Wave Propagation**: The fast magnetosonic speed is $v_{\text{fast}} = 2.0$. For wavelength $\lambda = 1.0$, the wave period is exactly $T_{\text{max}} = 0.5$.
 
 ## Expected Results
