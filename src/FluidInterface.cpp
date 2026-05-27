@@ -985,7 +985,8 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
           const bool isStandalone = (iRho_I.size() == nS);
           double Rhot = 0;
           if (isStandalone) {
-            // Standalone mode: iRho_I has size nS (electrons at index 0, ions starting at index 1)
+            // Standalone mode: iRho_I has size nS (electrons at index 0, ions
+            // starting at index 1)
             double Rhoe = arr(i, j, k, iRho_I[0]);
             double Rhoi_sum = 0;
             for (int iIon = 0; iIon < nIon; ++iIon) {
@@ -995,8 +996,8 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
           } else {
             // SWMF coupling mode: iRho_I only contains ion densities
             for (int iIon = 0; iIon < nIon; ++iIon) {
-              Rhot +=
-                  arr(i, j, k, iRho_I[iIon]) * (1 + MoMi_S[0] / MoMi_S[iIon + 1]);
+              Rhot += arr(i, j, k, iRho_I[iIon]) *
+                      (1 + MoMi_S[0] / MoMi_S[iIon + 1]);
             } // iIon
           }
 
