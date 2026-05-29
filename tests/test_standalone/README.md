@@ -15,6 +15,7 @@ Each test case is contained within its own dedicated subdirectory containing a `
 *   **[charge_exchange/](file:///home/hyzhou/simulation/SWMF/PC/FLEKS_myversion/tests/test_standalone/charge_exchange/)**: Exospheric charge exchange test validating ion drift deceleration and thermal cooling through in-place velocity replacements using a Monte Carlo Collision (MCC) algorithm.
 *   **[exosphere/](file:///home/hyzhou/simulation/SWMF/PC/FLEKS_myversion/tests/test_standalone/exosphere/)**: Combined exosphere processes test validating exospheric photoionization pair-injection, electron impact ionization MCC, and exospheric charge exchange MCC running concurrently.
 *   **[beam/](file:///home/hyzhou/simulation/SWMF/PC/FLEKS_myversion/tests/test_standalone/beam/)**: 1D ion beam electromagnetic instability test validating cyclotron wave growth, transverse magnetic field amplification, and energy conservation.
+*   **[tophat/](file:///home/hyzhou/simulation/SWMF/PC/FLEKS_myversion/tests/test_standalone/tophat/)**: 1D electromagnetic top-hat wave propagation test validating $B_z$ and $E_y$ field dynamics under the EM solver with zero particles.
 
 
 ## Running the Tests

@@ -630,7 +630,7 @@ void Pic::write_diag_log(bool doForce, bool doCreateFile) {
       }
     }
     if (doDiagField) {
-      of << "\tmaxBy\tmaxBz";
+      of << "\tmaxBy\tmaxBz\tmaxEy";
     }
     of << "\n";
     of.close();
@@ -696,11 +696,12 @@ void Pic::write_diag_log(bool doForce, bool doCreateFile) {
 
   // Collect field statistics (IO-only, no MPI needed beyond the data already
   // on the IO processor for nodeB).
-  double max_By = 0.0, max_Bz = 0.0;
+  double max_By = 0.0, max_Bz = 0.0, max_Ey = 0.0;
   if (doDiagField) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       max_By = std::max(max_By, nodeB[iLev].norm0(1));
       max_Bz = std::max(max_Bz, nodeB[iLev].norm0(2));
+      max_Ey = std::max(max_Ey, nodeE[iLev].norm0(1));
     }
   }
 
@@ -725,7 +726,7 @@ void Pic::write_diag_log(bool doForce, bool doCreateFile) {
     }
 
     if (doDiagField) {
-      of << "\t" << max_By << "\t" << max_Bz;
+      of << "\t" << max_By << "\t" << max_Bz << "\t" << max_Ey;
     }
 
     of << "\n";

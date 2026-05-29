@@ -1,0 +1,109 @@
+#DESCRIPTION
+1D Langmuir Wave Standalone Test
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+0.0                    xMin
+6.283185307179586      xMax
+0.0                    yMin
+1.0                    yMax
+0.0                    zMin
+1.0                    zMax
+
+#NCELL
+512                     nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+512                     maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+T                       solveEM
+
+#ELECTRON
+-100                    electronChargePerMass
+
+#PLASMA
+2                       nSpecies
+0.01                    mass
+-1.0                    charge
+1.0                     mass
+1.0                     charge
+
+#UNIFORMSTATE
+1.0e-6                  rho [amu/cc] (Species 0, Electrons)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+0.0                     T [K]
+1.0e-4                  rho [amu/cc] (Species 1, Protons)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+0.0                     T [K]
+0.0                     bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#WAVE
+langmuir                waveType
+1.0                     waveAmp
+6.283185307179586       waveLength
+0.0                     waveAngle
+
+#TIMESTEPPING
+T                       useFixedDt
+0.01                    dt
+
+#DISCRETIZATION
+0.5                     theta
+0.0                     coefDiff
+
+#NORMALIZATION
+1.0                     lNormSI
+1.0                     uNormSI
+
+#MONITOR
+100                     dnReport
+
+#PARTICLES
+100                     nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#RANDOMPARTICLESLOCATION
+F                       isParticleLocationRandom
+
+#DIVE
+F                       doCorrectDivE
+
+#RESAMPLING
+F                       doReSampling
+
+#DIAGNOSTIC
+T                       doParticleDiag
+T                       doFieldDiag
+
+#SAVEPLOT
+1                                 nPlot
+z=0 fluid ascii pic               plotString
+-1                                dn
+0.1                               dt
+1                                 dx
+
+#STOP
+-1                      MaxIter
+0.9                      TimeMax

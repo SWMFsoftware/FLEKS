@@ -1,0 +1,86 @@
+#DESCRIPTION
+1D Electromagnetic TopHat Wave Standalone Test
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-1.0                    xMin
+ 1.0                    xMax
+-1.0                    yMin
+ 1.0                    yMax
+-1.0                    zMin
+ 1.0                    zMax
+
+#NCELL
+64                      nCellX
+ 1                      nCellY
+ 1                      nCellZ
+
+#MAXBLOCKSIZE
+64                      maxBlockSizeX
+ 1                      maxBlockSizeY
+ 1                      maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+T                       solveEM
+
+#PLASMA
+2                       nSpecies
+0.01                    mass
+-1.0                    charge
+1.0                     mass
+1.0                     charge
+
+#TESTCASE
+tophat                  testCase
+
+#TIMESTEPPING
+T                       useFixedDt
+0.01                    dt
+
+#NORMALIZATION
+1.0                     lNormSI
+1.0                     uNormSI
+
+#MONITOR
+1                       dnReport
+
+#UPWINDE
+T                       useUpwindE
+1                       limiterTheta
+
+#UPWINDB
+T                       doSmoothB
+1                       theta
+
+#EFIELDSOLVER
+1.0e-6                  EFieldTol
+200                     EFieldIter
+
+#DIVE
+T
+1
+
+#SAVEPLOT
+1                                 nPlot
+z=0 fluid ascii pic               plotString
+-1                                dn
+2.0                               dt
+1                                 dx
+
+#DIAGNOSTIC
+F                    doParticleDiag
+T                    doFieldDiag
+
+#STOP
+-1                      MaxIter
+2.0                     TimeMax
+
+#RUN
+

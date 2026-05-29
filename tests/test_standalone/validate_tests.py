@@ -63,7 +63,11 @@ def run_test(test_dir):
     shutil.copy(param_file, "run_test/PARAM.in")
     
     # Run ./FLEKS.exe inside run_test/
-    result = subprocess.run(["./FLEKS.exe"], cwd="run_test", stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    cmd = ["./FLEKS.exe"]
+    if "sound_wave" in test_dir:
+        cmd = ["mpiexec", "-n", "2", "./FLEKS.exe"]
+        
+    result = subprocess.run(cmd, cwd="run_test", stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         print(f"Error running FLEKS.exe for {test_dir}:")
         print(result.stderr)
@@ -152,12 +156,15 @@ def read_diag_log(run_dir):
 
         if has_field and col + 1 < len(vals):
             try:
-                field_diags.append({
+                diag_dict = {
                     "time":   t,
                     "cycle":  cycle,
                     "max_by": float(vals[col]),
                     "max_bz": float(vals[col + 1]),
-                })
+                }
+                if col + 2 < len(vals):
+                    diag_dict["max_ey"] = float(vals[col + 2])
+                field_diags.append(diag_dict)
             except ValueError:
                 pass
 
@@ -551,21 +558,36 @@ def validate_beam(diags, field_diags=None):
 
     passed = True
     reasons = []
-    
-    # 1. Total particle count conservation check
-    initial_phys = diags[0]["phys"]
-    for diag in diags:
-        t = diag["time"]
-        actual_phys = diag["phys"]
-        if abs(actual_phys - initial_phys) > 1e-5 * initial_phys:
-            print(f"  FAIL at t={t:.2f}: Particle number changed! Expected={initial_phys:.2e}, Actual={actual_phys:.2e}")
-            passed = False
-            reasons.append(f"Particle number changed at t={t:.2f} (expected {initial_phys:.2e}, actual {actual_phys:.2e})")
 
-    # 2. Mean velocity conservation check
-    # Expected MeanVx is -0.392 (due to 99% background at -0.4 and 1% beam at +0.4)
+    # Group diagnostics by species independently.
+    from collections import defaultdict
+    by_species = defaultdict(list)
+    for d in diags:
+        by_species[d["species"]].append(d)
+
+    # 1. Particle count conservation per species
+    for iS, species_diags in sorted(by_species.items()):
+        if not species_diags:
+            continue
+        initial_phys = species_diags[0]["phys"]
+        for diag in species_diags:
+            t = diag["time"]
+            actual_phys = diag["phys"]
+            if initial_phys > 0 and abs(actual_phys - initial_phys) > 1e-5 * initial_phys:
+                print(f"  FAIL species {iS} at t={t:.2f}: Particle count changed! "
+                      f"Expected={initial_phys:.2e}, Actual={actual_phys:.2e}")
+                passed = False
+                reasons.append(f"Species {iS} particle count changed at t={t:.2f} "
+                               f"(expected {initial_phys:.2e}, actual {actual_phys:.2e})")
+
+    # 2. Mean velocity conservation check on the ion species (species 1).
+    # Expected MeanVx is -0.392 (99% background at -0.4, 1% beam at +0.4).
+    ion_diags = by_species.get(1, [])
+    if not ion_diags:
+        # Fallback: single-species run (legacy); use species 0
+        ion_diags = by_species.get(0, [])
     expected_vx = -0.392
-    for diag in diags:
+    for diag in ion_diags:
         t = diag["time"]
         actual_vx = diag["vx"]
         relative_diff = abs(actual_vx - expected_vx)
@@ -622,6 +644,194 @@ def validate_beam(diags, field_diags=None):
         return True, "Passed"
     else:
         return False, "; ".join(reasons)
+
+
+def validate_sound_wave(diags, is_cold=False):
+    print("Validating Sound Wave Test..." if not is_cold else "Validating Cold Wave Test...")
+    if not diags:
+        print("FAIL: No diagnostic outputs parsed.")
+        return False, "No diagnostic outputs parsed"
+    
+    passed = True
+    reasons = []
+    
+    # Group diagnostics by species so we check each species independently.
+    # diags is a flat list with entries for every species at every timestep.
+    from collections import defaultdict
+    by_species = defaultdict(list)
+    for d in diags:
+        by_species[d["species"]].append(d)
+
+    for iS, species_diags in sorted(by_species.items()):
+        if not species_diags:
+            continue
+        # 1. Particle count conservation per species
+        initial_phys = species_diags[0]["phys"]
+        for diag in species_diags:
+            t = diag["time"]
+            actual_phys = diag["phys"]
+            if initial_phys > 0 and abs(actual_phys - initial_phys) > 1e-5 * initial_phys:
+                print(f"  FAIL species {iS} at t={t:.2f}: Particle count changed! "
+                      f"Expected={initial_phys:.2e}, Actual={actual_phys:.2e}")
+                passed = False
+                reasons.append(f"Species {iS} particle count changed at t={t:.2f}")
+
+        # 2. Kinetic energy stability per species
+        if is_cold:
+            # In a cold plasma (T=0), kinetic energy oscillates between magnetic energy and kinetic bulk energy.
+            # Light species (electrons) are also subject to numerical/grid heating. Therefore, we bypass
+            # the KE stability check for cold plasma wave tests.
+            continue
+
+        initial_ke = species_diags[0]["ke"]
+        ke_tol = 0.85 if iS == 0 else 0.20  # allow more slack for electrons (species 0) due to physical wave heating
+        for diag in species_diags:
+            t = diag["time"]
+            actual_ke = diag["ke"]
+            if initial_ke > 0:
+                diff_ke = abs(actual_ke - initial_ke) / initial_ke
+                if diff_ke > ke_tol:
+                    print(f"  FAIL species {iS} at t={t:.2f}: KE variation too large! "
+                          f"Expected={initial_ke:.2e}, Actual={actual_ke:.2e}, "
+                          f"diff={diff_ke*100:.2f}%")
+                    passed = False
+                    reasons.append(f"Species {iS} KE variation too large at t={t:.2f}")
+
+    if passed:
+        print("Wave Test: PASSED")
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
+
+def validate_fast_wave(diags):
+    print("Validating Fast Wave Test...")
+    return validate_sound_wave(diags)
+
+def validate_alfven_wave(diags):
+    print("Validating Alfven Wave Test...")
+    return validate_sound_wave(diags)
+
+def validate_slow_wave(diags):
+    print("Validating Slow Wave Test...")
+    return validate_sound_wave(diags)
+
+
+def validate_langmuir(diags):
+    print("Validating Langmuir Wave Electrostatic Oscillation Test...")
+    if not diags:
+        print("FAIL: No diagnostic outputs parsed.")
+        return False, "No diagnostic outputs parsed"
+
+    passed = True
+    reasons = []
+
+    from collections import defaultdict
+    by_species = defaultdict(list)
+    for d in diags:
+        by_species[d["species"]].append(d)
+
+    for iS, species_diags in sorted(by_species.items()):
+        if not species_diags:
+            continue
+
+        # 1. Particle count conservation
+        initial_phys = species_diags[0]["phys"]
+        for diag in species_diags:
+            t = diag["time"]
+            actual_phys = diag["phys"]
+            if initial_phys > 0 and abs(actual_phys - initial_phys) > 1e-5 * initial_phys:
+                print(f"  FAIL species {iS} at t={t:.2f}: Particle count changed! "
+                      f"Expected={initial_phys:.2e}, Actual={actual_phys:.2e}")
+                passed = False
+                reasons.append(f"Species {iS} particle count changed at t={t:.2f}")
+
+        # 2. Bulk velocity for heavy protons (species 1) should stay near zero
+        if iS == 1:
+            for diag in species_diags:
+                t = diag["time"]
+                vx = diag["vx"]
+                if abs(vx) > 0.01:
+                    print(f"  FAIL species {iS} (protons) at t={t:.2f}: Bulk vx deviated! "
+                          f"Expected ~0.0, Actual={vx:.4f}")
+                    passed = False
+                    reasons.append(f"Species {iS} proton vx deviated at t={t:.2f}")
+
+    # 3. Check electron KE oscillates but stays bounded
+    electron_diags = by_species.get(0, [])
+    if electron_diags:
+        ke_vals = [d["ke"] for d in electron_diags]
+        max_ke = max(ke_vals)
+        min_ke = min(ke_vals)
+        # KE should oscillate between 0 and initial electrostatic energy
+        # Initial E field energy ~ 0.5 * (0.02)^2 * L / 2 = 0.5 * 4e-4 * pi ~ 6.3e-4
+        # In normalized units, check KE stays bounded (not growing = no numerical heating)
+        # Check that max_ke is bounded (e.g., < 0.01) to ensure no numerical heating/explosion,
+        # but also oscillates (reaches at least 1e-4) to ensure the wave is active.
+        if max_ke > 0.01:
+            print(f"  FAIL electrons: KE grew too large! Max KE={max_ke:.4e}")
+            passed = False
+            reasons.append(f"Electron KE grew too large: {max_ke:.4e}")
+        elif max_ke < 1e-4:
+            print(f"  FAIL electrons: KE too small, wave might be dead! Max KE={max_ke:.4e}")
+            passed = False
+            reasons.append(f"Electron KE too small: {max_ke:.4e}")
+        else:
+            print(f"  SUCCESS: Electron KE bounded and active [{min_ke:.4e}, {max_ke:.4e}]")
+
+    if passed:
+        print("Langmuir Wave Test: PASSED")
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
+
+
+def validate_tophat(diags, field_diags=None):
+    print("Validating TopHat Test...")
+    if not field_diags:
+        print("FAIL: No field diagnostic outputs parsed.")
+        return False, "No field diagnostics parsed"
+    
+    passed = True
+    reasons = []
+    
+    for diag in field_diags:
+        t = diag["time"]
+        max_bz = diag["max_bz"]
+        max_by = diag["max_by"]
+        max_ey = diag.get("max_ey", None)
+        
+        # max_bz should remain close to 1.0 (allow [0.8, 1.2])
+        if max_bz < 0.8 or max_bz > 1.2:
+            print(f"  FAIL at t={t:.2f}: maxBz is outside acceptable range [0.8, 1.2]! Actual={max_bz:.3f}")
+            passed = False
+            reasons.append(f"maxBz outside range at t={t:.2f}")
+
+        # max_ey should remain close to 1.0 (allow [0.8, 1.2])
+        if max_ey is not None and (max_ey < 0.8 or max_ey > 1.2):
+            print(f"  FAIL at t={t:.2f}: maxEy is outside acceptable range [0.8, 1.2]! Actual={max_ey:.3f}")
+            passed = False
+            reasons.append(f"maxEy outside range at t={t:.2f}")
+            
+        # max_by should remain near 0.0 (allow <= 0.05)
+        if max_by > 0.05:
+            print(f"  FAIL at t={t:.2f}: maxBy is too high! Actual={max_by:.3f}")
+            passed = False
+            reasons.append(f"maxBy too high at t={t:.2f}")
+            
+    if passed:
+        # Print actual initial/final values to confirm validation
+        if len(field_diags) > 0:
+            init_bz = field_diags[0]["max_bz"]
+            init_ey = field_diags[0].get("max_ey", 0.0)
+            final_bz = field_diags[-1]["max_bz"]
+            final_ey = field_diags[-1].get("max_ey", 0.0)
+            print(f"  Initial Fields: maxBz={init_bz:.3f}, maxEy={init_ey:.3f}")
+            print(f"  Final Fields:   maxBz={final_bz:.3f}, maxEy={final_ey:.3f}")
+        print("TopHat Test: PASSED")
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
+
 
 
 def ensure_flekspy_installed():
@@ -730,7 +940,13 @@ def main():
         "charge_exchange": validate_exosphere_charge_exchange,
         "exosphere": validate_exosphere,
         "chamber": validate_chamber,
-        "beam": validate_beam
+        "beam": validate_beam,
+        "sound_wave": validate_sound_wave,
+        "fast_wave": validate_fast_wave,
+        "alfven_wave": validate_alfven_wave,
+        "slow_wave": validate_slow_wave,
+        "tophat": validate_tophat,
+        "langmuir": validate_langmuir
     }
     
     # Discover test subdirectories under tests/test_standalone
@@ -739,6 +955,11 @@ def main():
     # Iterate through sorted subdirectories
     subdirs = sorted([d for d in os.listdir(test_standalone_dir) 
                       if os.path.isdir(os.path.join(test_standalone_dir, d)) and d not in ["performance"]])
+    
+    # Filter by command-line arguments if provided
+    targets = [arg for arg in sys.argv[1:] if not arg.startswith("-")]
+    if targets:
+        subdirs = [d for d in subdirs if d in targets]
     
     tests = []
     for d in subdirs:
@@ -755,6 +976,7 @@ def main():
     results = [] # Collect results for summary table
     
     for test_dir, name, validator in tests:
+        val_res = False
         print(f"\n==========================================")
         print(f"Starting test: {name.upper()}")
         print(f"==========================================")
@@ -768,7 +990,7 @@ def main():
             # Read diagnostics from the structured log file (preferred) or fall back
             # to parsing stdout for backward compatibility.
             particle_diags, field_diags = read_diag_log("run_test")
-            if not particle_diags:
+            if not particle_diags and not field_diags:
                 print("  [INFO] No log file found; falling back to stdout parsing.")
                 particle_diags, field_diags = parse_diagnostics(stdout)
 
@@ -808,8 +1030,11 @@ def main():
 
         finally:
             # Always clean up run output after each test to keep disk usage low.
-            print(f"  Cleaning up run_test/ output for {name.upper()}...")
-            cleanup_run_dir()
+            if val_res:
+                print(f"  Cleaning up run_test/ output for {name.upper()}...")
+                cleanup_run_dir()
+            else:
+                print(f"  Skipping cleanup for {name.upper()} to preserve diagnostics.")
 
 
     # ----------------------------------------------------

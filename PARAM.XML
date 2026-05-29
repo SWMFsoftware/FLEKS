@@ -1180,6 +1180,24 @@ Beam		testCase
 It will set the initial conditions for a specific test case.
 </command>
 
+<command name="WAVE"
+	 alias="WAVE_FLEKS0,WAVE_FLEKS1,WAVE_FLEKS2" multiple="T">
+  <parameter name="waveType" type="string" default="none"/>
+  <parameter name="waveAmp" type="real" default="1.0e-4"/>
+  <parameter name="waveLength" type="real" default="1.0"/>
+  <parameter name="waveAngle" type="real" default="0.0"/>
+
+#WAVE
+none            waveType
+1.0e-4          waveAmp
+1.0             waveLength
+0.0             waveAngle
+
+Initialize wave perturbation tests (adiabatic hydrodynamic or MHD waves).
+waveType can be: sound, fast, alfven, slow.
+</command>
+
+
 <command name="PERIODICITY">
   <parameter name="isPeriodicX" type="logical" default="F" />
   <parameter name="isPeriodicY" type="logical" default="F" />
