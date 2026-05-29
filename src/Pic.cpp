@@ -1161,16 +1161,7 @@ void Pic::exosphere_charge_exchange() {
     return dens;
   };
 
-  auto get_cx_cross_section = [&](Real v_rel_SI, Real mass_ion_amu) -> Real {
-    Real erel = 0.5 * (mass_ion_amu * cProtonMassSI) * (v_rel_SI * v_rel_SI) *
-                6.2415e15; // relative energy in keV
-    if (erel <= 0.0)
-      return 0.0;
-    Real sigma = (4.15 - 0.531 * log(erel)) * (4.15 - 0.531 * log(erel)) *
-                 pow(1 - exp(-67.3 / erel), 4.5) *
-                 1e-20; // cross section in m^2
-    return sigma;
-  };
+
 
   for (int iSp = 0; iSp < nSpecies; ++iSp) {
     if (!parts[iSp] || parts[iSp]->get_charge() <= 0)
@@ -1215,7 +1206,7 @@ void Pic::exosphere_charge_exchange() {
             if (nn <= 0.0)
               continue;
 
-            Real sigma = get_cx_cross_section(v_rel_SI, mass_ion_amu);
+            Real sigma = calculate_charge_exchange_cross_section(v_rel_SI, mass_ion_amu, CrossSection::LS);
             P_j[j] = nn * sigma * v_rel_SI * dt_SI;
             sum_P += P_j[j];
           }
@@ -2003,7 +1994,7 @@ void Pic::update(bool doReportIn) {
   // outside the domain have been deleted.
   re_sampling();
 
-  charge_exchange();
+  coupling_charge_exchange();
 
   if (source || useExosphere) {
     fill_source_particles();
@@ -3404,8 +3395,8 @@ void Pic::report_load_balance(bool doReportSummary, bool doReportDetail) {
   }
 }
 
-void Pic::charge_exchange() {
-  timing_func("Pic::charge_exchange");
+void Pic::coupling_charge_exchange() {
+  timing_func("Pic::coupling_charge_exchange");
 
   if (!stateOH || !sourcePT2OH || !source)
     return;

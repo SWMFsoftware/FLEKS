@@ -18,9 +18,21 @@ def prepare_run_dir():
     run_dir = "run_test"
     os.makedirs(run_dir, exist_ok=True)
     
+    # Determine the location of the share and bin directories relative to FLEKS root.
+    # In a standalone FLEKS repository, 'share/Scripts/PostProc.pl' is directly inside the working directory.
+    # In SWMF integrated environment, 'share' and 'bin' are located in SWMF root, i.e., two levels above FLEKS root.
+    if os.path.isfile("share/Scripts/PostProc.pl"):
+        postproc_target = "../share/Scripts/PostProc.pl"
+        pidl_target = "../../share/Scripts/pIDL"
+        postidl_target = "../../bin/PostIDL.exe"
+    else:
+        postproc_target = "../../../share/Scripts/PostProc.pl"
+        pidl_target = "../../../../share/Scripts/pIDL"
+        postidl_target = "../../../../bin/PostIDL.exe"
+
     # Symlinks in run directory
     safe_symlink("../bin/FLEKS.exe", os.path.join(run_dir, "FLEKS.exe"))
-    safe_symlink("../../../share/Scripts/PostProc.pl", os.path.join(run_dir, "PostProc.pl"))
+    safe_symlink(postproc_target, os.path.join(run_dir, "PostProc.pl"))
     
     # Component plot and restart directories
     pc_dir = os.path.join(run_dir, "PC")
@@ -29,8 +41,8 @@ def prepare_run_dir():
     os.makedirs(os.path.join(pc_dir, "restartOUT"), exist_ok=True)
     
     # Symlinks in component directory
-    safe_symlink("../../../../share/Scripts/pIDL", os.path.join(pc_dir, "pIDL"))
-    safe_symlink("../../../../bin/PostIDL.exe", os.path.join(pc_dir, "PostIDL.exe"))
+    safe_symlink(pidl_target, os.path.join(pc_dir, "pIDL"))
+    safe_symlink(postidl_target, os.path.join(pc_dir, "PostIDL.exe"))
 
 def cleanup_run_dir():
     """Remove simulation output files from run_test/ after each test.

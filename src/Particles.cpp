@@ -3595,16 +3595,7 @@ Real Particles<NStructReal, NStructInt>::charge_exchange_dis(Real* vp, Real* vh,
 
   dv = sqrt(dv2);
 
-  Real erel = 0.5 * 1.674E-27 * dv2 * 6.2415E15; // in keV
-
-  Real sigma = 0;
-  if (cs == CrossSection::LS) {
-    sigma = (4.15 - 0.531 * log(erel)) * (4.15 - 0.531 * log(erel)) *
-            pow(1 - exp(-67.3 / erel), 4.5) * 1E-20; // cross section in m^2
-  } else if (cs == CrossSection::MT) {
-    Real dvcm = dv * 1E2;                             // velocity in cm/s
-    sigma = pow(1.6 - 0.0695 * log(dvcm), 2) * 1e-18; // cross section in m^2
-  }
+  Real sigma = calculate_charge_exchange_cross_section(dv, 1.0, cs);
 
   Real dvpup2 = 0;
   for (int i = 0; i < 3; ++i) {
@@ -3712,6 +3703,9 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
   std::string nameFunc = "Pts::charge_exchange";
 
   timing_func(nameFunc);
+
+  if (!is_neutral())
+    return;
 
   if (dt <= 0)
     return;

@@ -278,7 +278,7 @@ public:
 
   //----------------Initialization end-------------------------------
 
-  void charge_exchange();
+  void coupling_charge_exchange();
   void electron_impact_ionization();
   void exosphere_charge_exchange();
 

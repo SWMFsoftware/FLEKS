@@ -18,7 +18,31 @@
 #include "TimeCtr.h"
 #include "UMultiFab.h"
 
+#include <cmath>
+
 enum class CrossSection { LS = 0, MT };
+
+inline amrex::Real calculate_charge_exchange_cross_section(
+    amrex::Real v_rel_SI, amrex::Real mass_ion_amu, CrossSection cs) {
+  if (v_rel_SI <= 0.0)
+    return 0.0;
+
+  amrex::Real sigma = 0.0;
+  if (cs == CrossSection::LS) {
+    amrex::Real erel = 0.5 * (mass_ion_amu * cProtonMassSI) * (v_rel_SI * v_rel_SI) *
+                       6.2415e15; // relative energy in keV
+    if (erel <= 0.0)
+      return 0.0;
+    sigma = (4.15 - 0.531 * std::log(erel)) * (4.15 - 0.531 * std::log(erel)) *
+            std::pow(1.0 - std::exp(-67.3 / erel), 4.5) *
+            1e-20; // cross section in m^2
+  } else if (cs == CrossSection::MT) {
+    amrex::Real dvcm = v_rel_SI * 1e2; // velocity in cm/s
+    sigma = std::pow(1.6 - 0.0695 * std::log(dvcm), 2) * 1e-18; // cross section in m^2
+  }
+  return sigma;
+}
+
 
 enum class PartMode { PIC = 0, Neutral, SEP };
 
