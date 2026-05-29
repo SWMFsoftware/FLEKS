@@ -1161,8 +1161,6 @@ void Pic::exosphere_charge_exchange() {
     return dens;
   };
 
-
-
   for (int iSp = 0; iSp < nSpecies; ++iSp) {
     if (!parts[iSp] || parts[iSp]->get_charge() <= 0)
       continue; // Exclude electrons and neutral species
@@ -1206,7 +1204,8 @@ void Pic::exosphere_charge_exchange() {
             if (nn <= 0.0)
               continue;
 
-            Real sigma = calculate_charge_exchange_cross_section(v_rel_SI, mass_ion_amu, CrossSection::LS);
+            Real sigma = calculate_charge_exchange_cross_section(
+                v_rel_SI, mass_ion_amu, CrossSection::LS);
             P_j[j] = nn * sigma * v_rel_SI * dt_SI;
             sum_P += P_j[j];
           }
