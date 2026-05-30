@@ -389,8 +389,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   distribute_grid_arrays(cGridsOld);
 }
 
-
-
 //==========================================================
 void Pic::pre_regrid() {
   if (!parts.empty()) {

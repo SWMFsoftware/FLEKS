@@ -1,8 +1,8 @@
 #ifndef _EXOSPHERESOURCE_H_
 #define _EXOSPHERESOURCE_H_
 
-#include "SourceInterface.h"
 #include "Particles.h"
+#include "SourceInterface.h"
 
 class ExosphereSource : public SourceInterface {
 private:
@@ -39,7 +39,8 @@ public:
   }
 
   void set_source_standalone() {
-    amrex::Print() << "ExosphereSource::set_source_standalone() is called!" << std::endl;
+    amrex::Print() << "ExosphereSource::set_source_standalone() is called!"
+                   << std::endl;
 
     // 1. Find electron species if any
     int iElec = -1;
@@ -52,17 +53,20 @@ public:
 
     // 2. Initialize all nodeFluid rates to 0
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      if (nodeFluid[iLev].empty()) continue;
+      if (nodeFluid[iLev].empty())
+        continue;
       nodeFluid[iLev].setVal(0.0);
     }
 
     // 3. Write un-normalized analytical density and pressure shapes to nodes
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      if (nodeFluid[iLev].empty()) continue;
+      if (nodeFluid[iLev].empty())
+        continue;
 
       const amrex::Real* dx = Geom(iLev).CellSize();
       const auto plo = Geom(iLev).ProbLo();
-      const amrex::Box gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
+      const amrex::Box gbx =
+          convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
 
       for (amrex::MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
         const amrex::Box& box = mfi.fabbox();
@@ -73,7 +77,7 @@ public:
         for (int k = lo.z; k <= hi.z; ++k) {
           for (int j = lo.y; j <= hi.y; ++j) {
             for (int i = lo.x; i <= hi.x; ++i) {
-              
+
               amrex::IntVect idx = { AMREX_D_DECL(i, j, k) };
               for (int iDim = 0; iDim < nDim; iDim++) {
                 if (Geom(iLev).isPeriodic(iDim)) {
@@ -92,41 +96,55 @@ public:
               for (size_t iInfo = 0; iInfo < exoParams.size(); ++iInfo) {
                 const auto& param = exoParams[iInfo];
                 int iSp = param.iSpecies - 1;
-                if (iSp < 0 || iSp >= nFluid) continue;
+                if (iSp < 0 || iSp >= nFluid)
+                  continue;
 
-                double r = sqrt(xyz[0]*xyz[0] + xyz[1]*xyz[1] + xyz[2]*xyz[2]);
-                if (r < param.exobaseRadius) continue;
+                double r =
+                    sqrt(xyz[0] * xyz[0] + xyz[1] * xyz[1] + xyz[2] * xyz[2]);
+                if (r < param.exobaseRadius)
+                  continue;
 
-                if (testCase == Pickup && (xyz[0] < pickup_xMin || xyz[0] > pickup_xMax)) continue;
+                if (testCase == Pickup &&
+                    (xyz[0] < pickup_xMin || xyz[0] > pickup_xMax))
+                  continue;
 
                 if (param.shadowRadius > 0 && xyz[0] < 0) {
-                  double perp2 = xyz[1]*xyz[1] + (get_fluid_dimension() > 2 ? xyz[2]*xyz[2] : 0.0);
-                  if (perp2 < param.shadowRadius * param.shadowRadius) continue;
+                  double perp2 =
+                      xyz[1] * xyz[1] +
+                      (get_fluid_dimension() > 2 ? xyz[2] * xyz[2] : 0.0);
+                  if (perp2 < param.shadowRadius * param.shadowRadius)
+                    continue;
                 }
 
                 double dens = 0.0;
                 int n0_size = param.n0.size();
                 if (param.neutralProfile == "exponential") {
                   for (int idx_p = 0; idx_p < n0_size; idx_p++) {
-                    dens += param.n0[idx_p] * exp(-(r - param.r0) / param.H0[idx_p]);
+                    dens += param.n0[idx_p] *
+                            exp(-(r - param.r0) / param.H0[idx_p]);
                   }
-                } else if (param.neutralProfile == "power-law" || param.neutralProfile == "PowerLaw") {
+                } else if (param.neutralProfile == "power-law" ||
+                           param.neutralProfile == "PowerLaw") {
                   for (int idx_p = 0; idx_p < n0_size; idx_p++) {
-                    dens += param.n0[idx_p] * pow(param.r0 / r, param.k0[idx_p]);
+                    dens +=
+                        param.n0[idx_p] * pow(param.r0 / r, param.k0[idx_p]);
                   }
                 } else if (param.neutralProfile == "ChamberlainH") {
                   for (int idx_p = 0; idx_p < n0_size; idx_p++) {
-                    dens += param.n0[idx_p] * exp(-param.H0[idx_p] * (1.0 / param.r0 - 1.0 / r));
+                    dens += param.n0[idx_p] *
+                            exp(-param.H0[idx_p] * (1.0 / param.r0 - 1.0 / r));
                   }
                 }
 
                 arr(i, j, k, iRho_I[iSp]) += dens;
-                
+
                 double T0_K = param.T0.empty() ? 0.0 : param.T0[0];
                 double mass_kg = MoMi_S[iSp] * get_No2SiM();
-                double uth_SI = (T0_K > 0 && mass_kg > 0) ? sqrt(cBoltzmannSI * T0_K / mass_kg) : 0.0;
+                double uth_SI = (T0_K > 0 && mass_kg > 0)
+                                    ? sqrt(cBoltzmannSI * T0_K / mass_kg)
+                                    : 0.0;
                 double uth = uth_SI * get_Si2NoV();
-                
+
                 arr(i, j, k, iP_I[iSp]) += dens * uth * uth;
                 if (useMhdPe) {
                   arr(i, j, k, iPe) += dens * uth * uth * 1e-2;
@@ -142,11 +160,13 @@ public:
     std::vector<double> sumGlobal(exoParams.size(), 0.0);
     for (size_t iInfo = 0; iInfo < exoParams.size(); ++iInfo) {
       int iSp = exoParams[iInfo].iSpecies - 1;
-      if (iSp < 0 || iSp >= nFluid) continue;
+      if (iSp < 0 || iSp >= nFluid)
+        continue;
 
       double sumLocal = 0.0;
       for (int iLev = 0; iLev < n_lev(); iLev++) {
-        if (nodeFluid[iLev].empty()) continue;
+        if (nodeFluid[iLev].empty())
+          continue;
 
         const amrex::Real* dx = Geom(iLev).CellSize();
         const double vol = AMREX_D_TERM(dx[0], *dx[1], *dx[2]);
@@ -162,7 +182,8 @@ public:
           for (int k = lo.z; k <= hi.z; ++k) {
             for (int j = lo.y; j <= hi.y; ++j) {
               for (int i = lo.x; i <= hi.x; ++i) {
-                // Direct trilinear/bilinear node average to cell center to match evaluation exactly
+                // Direct trilinear/bilinear node average to cell center to
+                // match evaluation exactly
                 double sum_node = 0.0;
                 int i_max = i + 1;
                 int j_max = (get_fluid_dimension() > 1) ? j + 1 : j;
@@ -175,8 +196,9 @@ public:
                     }
                   }
                 }
-                
-                int n_corners = (i_max - i + 1) * (j_max - j + 1) * (k_max - k + 1);
+
+                int n_corners =
+                    (i_max - i + 1) * (j_max - j + 1) * (k_max - k + 1);
                 double dens = sum_node / n_corners;
                 sumLocal += dens * vol;
               }
@@ -192,18 +214,21 @@ public:
     // 5. Scale components by norm_factor
     for (size_t iInfo = 0; iInfo < exoParams.size(); ++iInfo) {
       int iSp = exoParams[iInfo].iSpecies - 1;
-      if (iSp < 0 || iSp >= nFluid) continue;
+      if (iSp < 0 || iSp >= nFluid)
+        continue;
 
       if (sumGlobal[iInfo] > 0.0) {
-        double norm_factor = (exoParams[iInfo].totalProductionRate / sumGlobal[iInfo])
-                             * (MoMi_S[iSp] / get_Si2NoT());
+        double norm_factor =
+            (exoParams[iInfo].totalProductionRate / sumGlobal[iInfo]) *
+            (MoMi_S[iSp] / get_Si2NoT());
 
-        amrex::Print() << "  Species Info " << iInfo 
-                       << ": sumGlobal = " << sumGlobal[iInfo] 
+        amrex::Print() << "  Species Info " << iInfo
+                       << ": sumGlobal = " << sumGlobal[iInfo]
                        << ", norm_factor = " << norm_factor << std::endl;
 
         for (int iLev = 0; iLev < n_lev(); iLev++) {
-          if (nodeFluid[iLev].empty()) continue;
+          if (nodeFluid[iLev].empty())
+            continue;
           nodeFluid[iLev].mult(norm_factor, iRho_I[iSp], 1, 0);
           nodeFluid[iLev].mult(norm_factor, iP_I[iSp], 1, 0);
           if (useMhdPe) {
@@ -216,7 +241,8 @@ public:
     // 6. Compute neutralizing electron rates for charge neutrality
     if (iElec >= 0) {
       for (int iLev = 0; iLev < n_lev(); iLev++) {
-        if (nodeFluid[iLev].empty()) continue;
+        if (nodeFluid[iLev].empty())
+          continue;
 
         for (amrex::MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
           const amrex::Box& box = mfi.fabbox();
@@ -241,14 +267,19 @@ public:
                     double T0_K = 0.0;
                     for (size_t iInfo = 0; iInfo < exoParams.size(); ++iInfo) {
                       if (exoParams[iInfo].iSpecies - 1 == iSp) {
-                        T0_K = exoParams[iInfo].T0.empty() ? 0.0 : exoParams[iInfo].T0[0];
+                        T0_K = exoParams[iInfo].T0.empty()
+                                   ? 0.0
+                                   : exoParams[iInfo].T0[0];
                         break;
                       }
                     }
                     double mass_kg = MoMi_S[iElec] * get_No2SiM();
-                    double uth_SI = (T0_K > 0 && mass_kg > 0) ? sqrt(cBoltzmannSI * T0_K / mass_kg) : 0.0;
+                    double uth_SI = (T0_K > 0 && mass_kg > 0)
+                                        ? sqrt(cBoltzmannSI * T0_K / mass_kg)
+                                        : 0.0;
                     double uth = uth_SI * get_Si2NoV();
-                    sum_p += (arr(i, j, k, iRho_I[iSp]) / MoMi_S[iSp]) * MoMi_S[iElec] * uth * uth;
+                    sum_p += (arr(i, j, k, iRho_I[iSp]) / MoMi_S[iSp]) *
+                             MoMi_S[iElec] * uth * uth;
                   }
                 }
                 arr(i, j, k, iP_I[iElec]) = sum_p;
@@ -273,7 +304,8 @@ public:
           sumVal += nodeFluid[iLev].sum(iRho_I[iSp]);
         }
       }
-      amrex::Print() << "  Species " << iSp << " nodeFluid mass rate sum = " << sumVal << std::endl;
+      amrex::Print() << "  Species " << iSp
+                     << " nodeFluid mass rate sum = " << sumVal << std::endl;
     }
   }
 };

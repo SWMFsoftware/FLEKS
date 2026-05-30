@@ -246,7 +246,7 @@ public:
   const amrex::Vector<amrex::MultiFab> &get_nodeB() const { return nodeB; }
 
   bool get_useExosphere() const { return useExosphere; }
-  const std::vector<ExosphereInfo>& get_exoInfos() const { return exoInfos; }
+  const std::vector<ExosphereInfo> &get_exoInfos() const { return exoInfos; }
   TestCase get_testCase() const { return testCase; }
   amrex::Real get_pickup_xMin() const { return pickup_xMin; }
   amrex::Real get_pickup_xMax() const { return pickup_xMax; }

@@ -367,7 +367,6 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
   }
 }
 
-
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_domain() {

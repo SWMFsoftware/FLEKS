@@ -326,7 +326,6 @@ public:
                             const bool doSelectRegion = false,
                             const bool adaptivePPC = false);
 
-
   // Copy particles from (ip,jp,kp) to (ig, jg, kg) and shift boundary
   // particle's coordinates accordingly.
   void outflow_bc(const amrex::MFIter& mfi, const amrex::IntVect ijkGst,
