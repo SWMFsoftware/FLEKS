@@ -151,8 +151,11 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
     nPPC = ppc;
   }
 
-  if (nPPC == 0)
-    return;
+  if (nPPC == 0) {
+    for (int iDim = 0; iDim < nDim; iDim++) {
+      nPPC[iDim] = 2;
+    }
+  }
 
   if (isTargetPPCDefined && !isFake2D) {
     const auto tppc = target_PPC(iLev)[mfi].array();
@@ -364,107 +367,6 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
   }
 }
 
-//==========================================================
-template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::add_particles_exosphere(
-    const amrex::MultiFab& exoDensity, amrex::Real dt, int iLev,
-    amrex::Real weightMacro, int iComp, amrex::Real uth,
-    Particles<NStructReal, NStructInt>* electronParts, amrex::Real uth_elec) {
-  timing_func("Pts::add_particles_exosphere");
-
-  for (MFIter mfi(exoDensity); mfi.isValid(); ++mfi) {
-    const Box& bx = mfi.validbox();
-    const auto& exo_arr = exoDensity[mfi].array();
-
-    const auto lo = lbound(bx);
-    const auto hi = ubound(bx);
-
-    for (int k = lo.z; k <= hi.z; ++k)
-      for (int j = lo.y; j <= hi.y; ++j)
-        for (int i = lo.x; i <= hi.x; ++i) {
-          Real nPhysical = exo_arr(i, j, k, iComp) * dt;
-          if (nPhysical <= 0)
-            continue;
-
-          int nMacro = (int)(nPhysical / weightMacro);
-          if (randNum() < (nPhysical / weightMacro - nMacro))
-            nMacro++;
-
-          if (nMacro > 0) {
-            Real weight = nPhysical / nMacro;
-            Real q = qomSign * weight;
-            ParticleTileType& particles =
-                get_particle_tile(iLev, mfi, { AMREX_D_DECL(i, j, k) });
-
-            Real q_elec = 0.0;
-            ParticleTileType* elec_tile = nullptr;
-            if (electronParts) {
-              q_elec = electronParts->get_qomSign() * weight;
-              elec_tile = &(electronParts->get_particle_tile(
-                  iLev, mfi, { AMREX_D_DECL(i, j, k) }));
-            }
-
-            for (int im = 0; im < nMacro; ++im) {
-              // Sample thermal velocity using Box-Muller transform for ion
-              Real u = 0, v = 0, w = 0;
-              if (uth > 0) {
-                Real prob1 = sqrt(-2.0 * log(1.0 - 0.999999 * randNum()));
-                Real theta1 = 2.0 * M_PI * randNum();
-                Real prob2 = sqrt(-2.0 * log(1.0 - 0.999999 * randNum()));
-                Real theta2 = 2.0 * M_PI * randNum();
-                u = uth * prob1 * cos(theta1);
-                v = uth * prob1 * sin(theta1);
-                w = uth * prob2 * cos(theta2);
-              }
-
-              RealVect xyz;
-              IntVect ijk_coord = { AMREX_D_DECL(i, j, k) };
-              for (int d = 0; d < nDim; ++d) {
-                xyz[d] =
-                    (ijk_coord[d] + randNum()) * dx[iLev][d] + plo[iLev][d];
-              }
-
-              // Spawn Ion
-              ParticleType p;
-              set_ids(p);
-              for (int d = 0; d < nDim; ++d)
-                p.pos(d) = xyz[d];
-              p.rdata(iup_) = u;
-              p.rdata(ivp_) = v;
-              p.rdata(iwp_) = w;
-              p.rdata(iqp_) = q;
-
-              particles.push_back(p);
-
-              // Spawn neutralizing Electron at exact same coordinate and weight
-              if (elec_tile) {
-                Real ue = 0, ve = 0, we = 0;
-                if (uth_elec > 0) {
-                  Real prob1 = sqrt(-2.0 * log(1.0 - 0.999999 * randNum()));
-                  Real theta1 = 2.0 * M_PI * randNum();
-                  Real prob2 = sqrt(-2.0 * log(1.0 - 0.999999 * randNum()));
-                  Real theta2 = 2.0 * M_PI * randNum();
-                  ue = uth_elec * prob1 * cos(theta1);
-                  ve = uth_elec * prob1 * sin(theta1);
-                  we = uth_elec * prob2 * cos(theta2);
-                }
-
-                ParticleType p_elec;
-                electronParts->set_ids(p_elec);
-                for (int d = 0; d < nDim; ++d)
-                  p_elec.pos(d) = xyz[d];
-                p_elec.rdata(iup_) = ue;
-                p_elec.rdata(ivp_) = ve;
-                p_elec.rdata(iwp_) = we;
-                p_elec.rdata(iqp_) = q_elec;
-
-                elec_tile->push_back(p_elec);
-              }
-            }
-          }
-        }
-  }
-}
 
 //==========================================================
 template <int NStructReal, int NStructInt>

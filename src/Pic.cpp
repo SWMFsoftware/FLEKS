@@ -387,146 +387,9 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   }
 
   distribute_grid_arrays(cGridsOld);
-  init_exosphere();
 }
 
-//==========================================================
-Real neutralDensityExponential(Real r, Real r0, const Vector<Real>& n0,
-                               const Vector<Real>& H0) {
-  Real n = 0.0;
-  for (int i = 0; i < n0.size(); i++) {
-    n += n0[i] * exp(-(r - r0) / H0[i]);
-  }
-  return n;
-}
 
-Real neutralDensityPowerLaw(Real r, Real r0, const Vector<Real>& n0,
-                            const Vector<Real>& k0) {
-  Real n = 0.0;
-  for (int i = 0; i < n0.size(); i++) {
-    n += n0[i] * pow(r0 / r, k0[i]);
-  }
-  return n;
-}
-
-Real neutralDensityChamberlainH(Real r, Real r0, const Vector<Real>& n0,
-                                const Vector<Real>& H0) {
-  Real n = 0.0;
-  for (int i = 0; i < n0.size(); i++) {
-    n += n0[i] * exp(-H0[i] * (1.0 / r0 - 1.0 / r));
-  }
-  return n;
-}
-
-void Pic::init_exosphere() {
-  if (exoInfos.empty())
-    return;
-  timing_func("Pic::init_exosphere");
-
-  if (nSpecies <= 0)
-    return;
-
-  exoDensity.resize(n_lev());
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    distribute_FabArray(exoDensity[iLev], cGrids[iLev], DistributionMap(iLev),
-                        exoInfos.size(), 0, false);
-  }
-
-  for (size_t iInfo = 0; iInfo < exoInfos.size(); ++iInfo) {
-    auto& info = exoInfos[iInfo];
-    std::string profile = info.neutralProfile;
-    Real r0 = info.r0;
-    Real exobaseRadius = info.exobaseRadius;
-    Real shadowRadius = info.shadowRadius;
-    int n0_size = info.n0.size();
-    const Real* n0_ptr = info.n0.data();
-    const Real* H0_ptr = info.H0.data();
-    const Real* k0_ptr = info.k0.data();
-
-    TestCase tCase = testCase;
-    Real xMin_pickup = pickup_xMin;
-    Real xMax_pickup = pickup_xMax;
-    Real sumLocal = 0;
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      const Real* dx = Geom(iLev).CellSize();
-      const Real* plo = Geom(iLev).ProbLo();
-      const Real vol = AMREX_D_TERM(dx[0], *dx[1], *dx[2]);
-
-      Real dx_local[3] = { 0.0, 0.0, 0.0 };
-      Real plo_local[3] = { 0.0, 0.0, 0.0 };
-      for (int d = 0; d < nDim; ++d) {
-        dx_local[d] = dx[d];
-        plo_local[d] = plo[d];
-      }
-
-      for (MFIter mfi(exoDensity[iLev]); mfi.isValid(); ++mfi) {
-        const Box& bx = mfi.validbox();
-        auto const& exo_arr = exoDensity[iLev].array(mfi);
-
-        ParallelFor(bx, [=](int i, int j, int k) {
-          Real pos[3] = { 0.0, 0.0, 0.0 };
-          pos[0] = (i + 0.5) * dx_local[0] + plo_local[0];
-          if (nDim > 1)
-            pos[1] = (j + 0.5) * dx_local[1] + plo_local[1];
-          if (nDim > 2)
-            pos[2] = (k + 0.5) * dx_local[2] + plo_local[2];
-
-          Real r2 = 0;
-          for (int d = 0; d < nDim; ++d) {
-            r2 += pos[d] * pos[d];
-          }
-          Real r = sqrt(r2);
-          Real dens = 0;
-          if (tCase != Pickup ||
-              (pos[0] >= xMin_pickup && pos[0] <= xMax_pickup)) {
-            if (r >= exobaseRadius) {
-              bool inShadow = false;
-              if (shadowRadius > 0) {
-                inShadow = (pos[0] < 0 && (pos[1] * pos[1] +
-                                           (nDim > 2 ? pos[2] * pos[2] : 0)) <
-                                              shadowRadius * shadowRadius);
-              }
-              if (!inShadow) {
-                if (profile == "exponential") {
-                  Real n_val = 0.0;
-                  for (int idx = 0; idx < n0_size; idx++) {
-                    n_val += n0_ptr[idx] * exp(-(r - r0) / H0_ptr[idx]);
-                  }
-                  dens = n_val;
-                } else if (profile == "power-law" || profile == "PowerLaw") {
-                  Real n_val = 0.0;
-                  for (int idx = 0; idx < n0_size; idx++) {
-                    n_val += n0_ptr[idx] * pow(r0 / r, k0_ptr[idx]);
-                  }
-                  dens = n_val;
-                } else if (profile == "ChamberlainH") {
-                  Real n_val = 0.0;
-                  for (int idx = 0; idx < n0_size; idx++) {
-                    n_val +=
-                        n0_ptr[idx] * exp(-H0_ptr[idx] * (1.0 / r0 - 1.0 / r));
-                  }
-                  dens = n_val;
-                }
-              }
-            }
-          }
-          exo_arr(i, j, k, iInfo) = dens * vol;
-        });
-      }
-      sumLocal += exoDensity[iLev].sum(iInfo, true);
-    }
-
-    Real sumGlobal = sumLocal;
-    ParallelDescriptor::ReduceRealSum(sumGlobal);
-
-    if (sumGlobal > 0) {
-      Real norm = info.totalProductionRate / sumGlobal;
-      for (int iLev = 0; iLev < n_lev(); iLev++) {
-        exoDensity[iLev].mult(norm, iInfo, 1, 0);
-      }
-    }
-  }
-}
 
 //==========================================================
 void Pic::pre_regrid() {
@@ -776,7 +639,7 @@ void Pic::fill_E_B_fields() {
 void Pic::fill_particles() {
   inject_particles_for_new_cells();
   inject_particles_for_boundary_cells();
-  if (useExosphere)
+  if (source || useExosphere)
     fill_source_particles();
 }
 
@@ -788,59 +651,6 @@ void Pic::fill_source_particles() {
 #ifdef _PT_COMPONENT_
   doSelectRegion = (nSpecies == 4);
 #endif
-  if (useExosphere) {
-    int iElec = -1;
-    for (int i = 0; i < nSpecies; ++i) {
-      if (parts[i] && parts[i]->get_charge() < 0) {
-        iElec = i;
-        break;
-      }
-    }
-
-    for (size_t iInfo = 0; iInfo < exoInfos.size(); ++iInfo) {
-      auto& info = exoInfos[iInfo];
-      if (info.iSpecies > 0 && info.iSpecies <= nSpecies) {
-        int iSp = info.iSpecies - 1;
-        if (iSp == iElec) {
-          // Electrons are handled automatically in pair-injection with ions.
-          continue;
-        }
-
-        Real dt = tc->get_dt();
-        Real weightMacro =
-            (info.nMacroParticlesPerDt > 0)
-                ? (info.totalProductionRate * dt / info.nMacroParticlesPerDt)
-                : 1.0;
-        for (int iLev = 0; iLev < n_lev(); iLev++) {
-          if (iSp >= parts.size() || !parts[iSp])
-            continue;
-
-          Real T0_K = info.T0.empty() ? 0.0 : info.T0[0];
-          Real mass_kg =
-              parts[iSp]->get_mass() * fi->get_No2SiM(); // PIC mass unit -> kg
-          Real uth_SI = (T0_K > 0 && mass_kg > 0)
-                            ? sqrt(cBoltzmannSI * T0_K / mass_kg)
-                            : 0.0;
-          Real uth = uth_SI * fi->get_Si2NoV(); // SI -> PIC normalized
-
-          Real uth_elec = 0.0;
-          PicParticles* elec_ptr = nullptr;
-          if (iElec >= 0 && parts[iSp]->get_charge() > 0) {
-            elec_ptr = parts[iElec].get();
-            Real m_elec_kg = elec_ptr->get_mass() * fi->get_No2SiM();
-            Real uth_elec_SI = (T0_K > 0 && m_elec_kg > 0)
-                                   ? sqrt(cBoltzmannSI * T0_K / m_elec_kg)
-                                   : 0.0;
-            uth_elec = uth_elec_SI * fi->get_Si2NoV();
-          }
-
-          parts[iSp]->add_particles_exosphere(exoDensity[iLev], dt, iLev,
-                                              weightMacro, iInfo, uth, elec_ptr,
-                                              uth_elec);
-        }
-      }
-    }
-  }
 
   if (source) {
     for (int i = 0; i < nSpecies; ++i) {

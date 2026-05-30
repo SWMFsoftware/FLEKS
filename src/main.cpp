@@ -118,7 +118,6 @@ int main(int argc, char* argv[]) {
     domain.write_plots(true);
   }
 
-  fleksDomains.clear();
   Finalize();
-  return 0;
+  std::_Exit(0);
 }

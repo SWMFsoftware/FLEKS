@@ -326,11 +326,6 @@ public:
                             const bool doSelectRegion = false,
                             const bool adaptivePPC = false);
 
-  void add_particles_exosphere(
-      const amrex::MultiFab& exoDensity, amrex::Real dt, int iLev,
-      amrex::Real weightMacro, int iComp, amrex::Real uth = 0.0,
-      Particles<NStructReal, NStructInt>* electronParts = nullptr,
-      amrex::Real uth_elec = 0.0);
 
   // Copy particles from (ip,jp,kp) to (ig, jg, kg) and shift boundary
   // particle's coordinates accordingly.

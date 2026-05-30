@@ -7,6 +7,7 @@
 #include "UserSource.h"
 #endif
 #include "Shape.h"
+#include "ExosphereSource.h"
 
 using namespace amrex;
 
@@ -88,7 +89,14 @@ void Domain::init(double time, const int iDomain,
   pic->set_sourceOH(sourcePT2OH.get());
 #endif
 
-  if (useFluidSource || useSource) {
+  if (pic->get_useExosphere()) {
+    auto exoSource =
+        std::make_unique<ExosphereSource>(*fi, gridID, "picSource", SourceFluid);
+    exoSource->add_exosphere_params(pic->get_exoInfos());
+    exoSource->set_pickup_params(pic->get_testCase(), pic->get_pickup_xMin(), pic->get_pickup_xMax());
+    source = std::move(exoSource);
+    amrex::Print() << source->get_info() << " is used for source" << std::endl;
+  } else if (useFluidSource || useSource) {
     source =
         std::make_unique<UserSource>(*fi, gridID, "picSource", SourceFluid);
     amrex::Print() << source->get_info() << " is used for source" << std::endl;
@@ -132,6 +140,8 @@ void Domain::init(double time, const int iDomain,
       stateOH->regrid(fi->boxArray(0), fi.get());
     if (sourcePT2OH)
       sourcePT2OH->regrid(fi->boxArray(0), fi.get());
+    if (source)
+      source->regrid(fi->boxArray(0), fi.get());
 
     if (doRestart && doRestartFIOnly) {
       pic->regrid(fi->boxArray(0), fi.get());

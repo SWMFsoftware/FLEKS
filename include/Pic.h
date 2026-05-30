@@ -220,7 +220,6 @@ public:
     centerMM.resize(n_lev_max());
 
     jHat.resize(n_lev_max());
-    exoDensity.resize(n_lev_max());
 
     // At most 10 species.
     pBCs.resize(10);
@@ -246,6 +245,12 @@ public:
   bool has_particles() const { return !parts.empty(); }
   const amrex::Vector<amrex::MultiFab> &get_nodeB() const { return nodeB; }
 
+  bool get_useExosphere() const { return useExosphere; }
+  const std::vector<ExosphereInfo>& get_exoInfos() const { return exoInfos; }
+  TestCase get_testCase() const { return testCase; }
+  amrex::Real get_pickup_xMin() const { return pickup_xMin; }
+  amrex::Real get_pickup_xMax() const { return pickup_xMax; }
+
   void set_stateOH(OHInterface *in) { stateOH = in; }
   void set_sourceOH(OHInterface *in) { sourcePT2OH = in; }
   void set_fluid_source(SourceInterface *in) { source = in; }
@@ -267,8 +272,6 @@ public:
   void fill_new_center_B();
 
   void fill_particles();
-
-  void init_exosphere();
 
   void init_source(const FluidInterface &interfaceIn) {
     // To be implemented
@@ -614,7 +617,6 @@ private:
 
   std::vector<ExosphereInfo> exoInfos;
   bool useExosphere = false;
-  amrex::Vector<amrex::MultiFab> exoDensity;
 
   bool doElectronImpactIonization = false;
   amrex::Real ionizationThresholdEnergy = 13.6;
