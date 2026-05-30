@@ -195,6 +195,9 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
       iJz = iJx + 2;
     }
   } else {
+    if (waveType == "anisotropic") {
+      useAnisoP = true;
+    }
     // Assume the variables are set through command #UNIFORMSTATE
     int idx = 0;
     for (int i = 0; i < nS; ++i) {
@@ -206,6 +209,12 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
       varNames.push_back("uy" + std::to_string(i));
       iUz_I[i] = idx++;
       varNames.push_back("uz" + std::to_string(i));
+      if (useAnisoP) {
+        iPpar_I[i] = idx++;
+        varNames.push_back("ppar" + std::to_string(i));
+      } else {
+        iPpar_I[i] = -1;
+      }
       iP_I[i] = idx++;
       varNames.push_back("p" + std::to_string(i));
     }
@@ -775,6 +784,12 @@ void FluidInterface::set_node_fluid() {
 
     if (waveType == "langmuir") {
       // Langmuir wave background is 0
+    } else if (waveType == "anisotropic") {
+      rho0 = 1.0;
+      p0 = 4.5e-4;
+      bx0 = 0.0;
+      by0 = 0.04;
+      bz0 = 0.0;
     } else if (waveType != "sound") {
       bx0 = 1.0;
       by0 = sqrt(2.0);
@@ -826,6 +841,14 @@ void FluidInterface::set_node_fluid() {
             dP = 0.8944271909999159 * S;
             dBy = -0.4216370213557841 * S;
             dBz = -0.1490711984999860 * S;
+          } else if (waveType == "anisotropic") {
+            const Real B0 = 0.04;
+            const Real V_f = sqrt((B0 * B0 + 2.0 * p0) / rho0);
+            const Real gamma = 5.0 / 3.0;
+            dRho = 1.0 * S;
+            dUx = V_f * S;
+            dP = 0.6 * gamma * S;
+            dBy = B0 * S;
           }
 
           // Apply background + perturbations to all fluids/species, scaled by
@@ -853,6 +876,14 @@ void FluidInterface::set_node_fluid() {
             arr(i, j, k, iRhoUy_I[iFluid]) = rho * (uy0 + waveAmp * dUy);
             arr(i, j, k, iRhoUz_I[iFluid]) = rho * (uz0 + waveAmp * dUz);
             arr(i, j, k, iP_I[iFluid]) = p;
+
+            if (iPpar_I[iFluid] >= 0) {
+              if (waveType == "anisotropic") {
+                arr(i, j, k, iPpar_I[iFluid]) = (p0 * (1.0 + waveAmp * S)) * m;
+              } else {
+                arr(i, j, k, iPpar_I[iFluid]) = p;
+              }
+            }
           }
 
           // Apply background + perturbations to magnetic fields

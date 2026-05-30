@@ -1194,7 +1194,7 @@ none            waveType
 0.0             waveAngle
 
 Initialize wave perturbation tests (adiabatic hydrodynamic or MHD waves).
-waveType can be: sound, fast, alfven, slow.
+waveType can be: sound, fast, alfven, slow, anisotropic.
 </command>
 
 

@@ -20,7 +20,10 @@ def prepare_run_dir():
     
     # Symlinks in run directory
     safe_symlink("../bin/FLEKS.exe", os.path.join(run_dir, "FLEKS.exe"))
-    safe_symlink("../../../share/Scripts/PostProc.pl", os.path.join(run_dir, "PostProc.pl"))
+    if os.path.exists("share/Scripts/PostProc.pl"):
+        safe_symlink("../share/Scripts/PostProc.pl", os.path.join(run_dir, "PostProc.pl"))
+    else:
+        safe_symlink("../../../share/Scripts/PostProc.pl", os.path.join(run_dir, "PostProc.pl"))
     
     # Component plot and restart directories
     pc_dir = os.path.join(run_dir, "PC")
@@ -29,8 +32,15 @@ def prepare_run_dir():
     os.makedirs(os.path.join(pc_dir, "restartOUT"), exist_ok=True)
     
     # Symlinks in component directory
-    safe_symlink("../../../../share/Scripts/pIDL", os.path.join(pc_dir, "pIDL"))
-    safe_symlink("../../../../bin/PostIDL.exe", os.path.join(pc_dir, "PostIDL.exe"))
+    if os.path.exists("share/Scripts/pIDL"):
+        safe_symlink("../../share/Scripts/pIDL", os.path.join(pc_dir, "pIDL"))
+    else:
+        safe_symlink("../../../../share/Scripts/pIDL", os.path.join(pc_dir, "pIDL"))
+        
+    if os.path.exists("bin/PostIDL.exe"):
+        safe_symlink("../../bin/PostIDL.exe", os.path.join(pc_dir, "PostIDL.exe"))
+    else:
+        safe_symlink("../../../../bin/PostIDL.exe", os.path.join(pc_dir, "PostIDL.exe"))
 
 def cleanup_run_dir():
     """Remove simulation output files from run_test/ after each test.
@@ -715,6 +725,10 @@ def validate_slow_wave(diags):
     print("Validating Slow Wave Test...")
     return validate_sound_wave(diags)
 
+def validate_anisotropic_wave(diags):
+    print("Validating Anisotropic MHD Wave Test...")
+    return validate_sound_wave(diags)
+
 
 def validate_langmuir(diags):
     print("Validating Langmuir Wave Electrostatic Oscillation Test...")
@@ -945,6 +959,7 @@ def main():
         "fast_wave": validate_fast_wave,
         "alfven_wave": validate_alfven_wave,
         "slow_wave": validate_slow_wave,
+        "anisotropic_wave": validate_anisotropic_wave,
         "tophat": validate_tophat,
         "langmuir": validate_langmuir
     }
