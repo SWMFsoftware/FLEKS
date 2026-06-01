@@ -422,8 +422,9 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#WAVE") {
     param.read_var("waveType", waveType);
     param.read_var("waveAmp", waveAmp);
-    param.read_var("waveLength", waveLength);
-    param.read_var("waveAngle", waveAngle);
+    param.read_var("LambdaX", LambdaX);
+    param.read_var("LambdaY", LambdaY);
+    param.read_var("LambdaZ", LambdaZ);
   } else if (command == "#SCALINGFACTOR") {
     param.read_var("scaling", ScalingFactor);
   } else if (command == "#BODYSIZE") {
@@ -780,21 +781,59 @@ void FluidInterface::set_node_fluid() {
     Real rho0 = 1.0;
     Real p0 = isColdPlasma ? 0.0 : 0.6;
     Real ux0 = 0.0, uy0 = 0.0, uz0 = 0.0;
-    Real bx0 = 0.0, by0 = 0.0, bz0 = 0.0;
 
+    // Parse wave vector based on LambdaX, LambdaY, LambdaZ
+    Real kx = (LambdaX > 0.0) ? (2.0 * dPI / LambdaX) : 0.0;
+    Real ky = (LambdaY > 0.0) ? (2.0 * dPI / LambdaY) : 0.0;
+    Real kz = (LambdaZ > 0.0) ? (2.0 * dPI / LambdaZ) : 0.0;
+    Real k_mag = sqrt(kx * kx + ky * ky + kz * kz);
+
+    if (k_mag == 0.0) {
+      // Default fallback if no valid wavelength is set: wave along X with wavelength 1.0
+      kx = 2.0 * dPI;
+      k_mag = kx;
+    }
+
+    Real nx = kx / k_mag;
+    Real ny = ky / k_mag;
+    Real nz = kz / k_mag;
+
+    // Build 3D orthonormal basis vectors ex', ey', ez' for wave coordinate system
+    Real ex_x = nx, ex_y = ny, ex_z = nz;
+    Real ey_x = 0.0, ey_y = 0.0, ey_z = 0.0;
+    Real ez_x = 0.0, ez_y = 0.0, ez_z = 0.0;
+
+    if (std::abs(ex_x) < 1.0e-10 && std::abs(ex_y) < 1.0e-10) {
+      ey_y = 1.0;
+      ez_x = -ex_z;
+    } else {
+      Real norm = sqrt(ex_x * ex_x + ex_y * ex_y);
+      ey_x = -ex_y / norm;
+      ey_y = ex_x / norm;
+      ey_z = 0.0;
+
+      ez_x = ex_y * ey_z - ex_z * ey_y;
+      ez_y = ex_z * ey_x - ex_x * ey_z;
+      ez_z = ex_x * ey_y - ex_y * ey_x;
+    }
+
+    Real bx0_wave = 0.0, by0_wave = 0.0, bz0_wave = 0.0;
     if (waveType == "langmuir") {
       // Langmuir wave background is 0
     } else if (waveType == "anisotropic") {
       rho0 = 1.0;
       p0 = 4.5e-4;
-      bx0 = 0.0;
-      by0 = 0.04;
-      bz0 = 0.0;
+      by0_wave = 0.04;
     } else if (waveType != "sound") {
-      bx0 = 1.0;
-      by0 = sqrt(2.0);
-      bz0 = 0.5;
+      bx0_wave = 1.0;
+      by0_wave = sqrt(2.0);
+      bz0_wave = 0.5;
     }
+
+    // Rotate background magnetic field from wave frame to simulation frame
+    Real bx0 = bx0_wave * ex_x + by0_wave * ey_x + bz0_wave * ez_x;
+    Real by0 = bx0_wave * ex_y + by0_wave * ey_y + bz0_wave * ez_y;
+    Real bz0 = bx0_wave * ex_z + by0_wave * ez_z + bz0_wave * ez_z;
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       const auto& dx = Geom(iLev).CellSize();
@@ -806,75 +845,88 @@ void FluidInterface::set_node_fluid() {
 
         ParallelFor(box, [=](int i, int j, int k) noexcept {
           const Real x = i * dx[ix_] + plo[ix_];
-          const Real k_wave = 2.0 * dPI / waveLength;
-          const Real phase = k_wave * x;
+          const Real y = j * dx[iy_] + plo[iy_];
+          const Real z = k * dx[iz_] + plo[iz_];
+          const Real phase = kx * x + ky * y + kz * z;
           const Real S = sin(phase);
 
-          // 2. Set wave eigenfunctions/perturbations
-          Real dRho = 0.0, dUx = 0.0, dUy = 0.0, dUz = 0.0, dP = 0.0;
-          Real dBx = 0.0, dBy = 0.0, dBz = 0.0;
+          // 2. Set wave eigenfunctions/perturbations in wave coordinate system
+          Real dRho = 0.0, dUx_w = 0.0, dUy_w = 0.0, dUz_w = 0.0, dP = 0.0;
+          Real dBx_w = 0.0, dBy_w = 0.0, dBz_w = 0.0;
 
           if (waveType == "sound") {
             dRho = 1.0 * S;
-            dUx = -1.0 * S;
+            dUx_w = -1.0 * S;
             dP = 1.0 * S;
           } else if (waveType == "langmuir") {
             // Handled specifically inside the species and field assignments
           } else if (waveType == "fast") {
             dRho = 0.4472135954999580 * S;
-            dUx = -0.8944271909999160 * S;
-            dUy = 0.4216370213557840 * S;
-            dUz = 0.1490711984999860 * S;
+            dUx_w = -0.8944271909999160 * S;
+            dUy_w = 0.4216370213557840 * S;
+            dUz_w = 0.1490711984999860 * S;
             dP = 0.4472135954999580 * S;
-            dBy = 0.8432740427115680 * S;
-            dBz = 0.2981423969999720 * S;
+            dBy_w = 0.8432740427115680 * S;
+            dBz_w = 0.2981423969999720 * S;
           } else if (waveType == "alfven") {
-            dUy = -0.3333333333333333 * S;
-            dUz = 0.9428090415820634 * S;
-            dBy = -0.3333333333333333 * S;
-            dBz = 0.9428090415820634 * S;
+            dUy_w = -0.3333333333333333 * S;
+            dUz_w = 0.9428090415820634 * S;
+            dBy_w = -0.3333333333333333 * S;
+            dBz_w = 0.9428090415820634 * S;
           } else if (waveType == "slow") {
             dRho = 0.8944271909999159 * S;
-            dUx = -0.4472135954999579 * S;
-            dUy = -0.8432740427115680 * S;
-            dUz = -0.2981423969999720 * S;
+            dUx_w = -0.4472135954999579 * S;
+            dUy_w = -0.8432740427115680 * S;
+            dUz_w = -0.2981423969999720 * S;
             dP = 0.8944271909999159 * S;
-            dBy = -0.4216370213557841 * S;
-            dBz = -0.1490711984999860 * S;
+            dBy_w = -0.4216370213557841 * S;
+            dBz_w = -0.1490711984999860 * S;
           } else if (waveType == "anisotropic") {
             const Real B0 = 0.04;
             const Real V_f = sqrt((B0 * B0 + 2.0 * p0) / rho0);
             const Real gamma = 5.0 / 3.0;
             dRho = 1.0 * S;
-            dUx = V_f * S;
+            dUx_w = V_f * S;
             dP = 0.6 * gamma * S;
-            dBy = B0 * S;
+            dBy_w = B0 * S;
           }
 
-          // Apply background + perturbations to all fluids/species, scaled by
-          // mass
+          // Rotate perturbations to simulation/grid frame
+          Real dUx = dUx_w * ex_x + dUy_w * ey_x + dUz_w * ez_x;
+          Real dUy = dUx_w * ex_y + dUy_w * ey_y + dUz_w * ez_y;
+          Real dUz = dUx_w * ex_z + dUy_w * ey_z + dUz_w * ez_z;
+
+          Real dBx = dBx_w * ex_x + dBy_w * ey_x + dBz_w * ez_x;
+          Real dBy = dBx_w * ex_y + dBy_w * ey_y + dBz_w * ez_y;
+          Real dBz = dBx_w * ex_z + dBy_w * ez_z + dBz_w * ez_z;
+
+          // Apply background + perturbations to all fluids/species, scaled by mass
           for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
             const Real m = MoMi_S[iFluid];
             Real rho = rho0 * m;
             Real ux = ux0;
+            Real uy = uy0;
+            Real uz = uz0;
             Real p = p0 * m;
 
             if (waveType == "langmuir") {
               if (iFluid == 0) { // Electrons
-                rho = (rho0 + waveAmp * cos(x)) * m;
+                rho = (rho0 + waveAmp * cos(phase)) * m;
               }
               p = 0.0; // Cold plasma
             } else {
               rho = (rho0 + waveAmp * dRho) * m;
               const Real dP_scaled = dP * (p0 / 0.6);
               ux = ux0 + waveAmp * dUx;
+              uy = uy0 + waveAmp * dUy;
+              uz = uz0 + waveAmp * dUz;
               p = (p0 + waveAmp * dP_scaled) * m;
             }
 
             arr(i, j, k, iRho_I[iFluid]) = rho;
             arr(i, j, k, iRhoUx_I[iFluid]) = rho * ux;
-            arr(i, j, k, iRhoUy_I[iFluid]) = rho * (uy0 + waveAmp * dUy);
-            arr(i, j, k, iRhoUz_I[iFluid]) = rho * (uz0 + waveAmp * dUz);
+            arr(i, j, k, iRhoUy_I[iFluid]) = rho * uy;
+            arr(i, j, k, iRhoUz_I[iFluid]) = rho * uz;
             arr(i, j, k, iP_I[iFluid]) = p;
 
             if (iPpar_I[iFluid] >= 0) {
@@ -894,9 +946,10 @@ void FluidInterface::set_node_fluid() {
           // Apply background + perturbations to electric fields if defined
           if (iEx >= 0 && iEy >= 0 && iEz >= 0) {
             if (waveType == "langmuir") {
-              arr(i, j, k, iEx) = -waveAmp * 4.0 * dPI * sin(x);
-              arr(i, j, k, iEy) = 0.0;
-              arr(i, j, k, iEz) = 0.0;
+              Real E_amp = -waveAmp * 4.0 * dPI / k_mag;
+              arr(i, j, k, iEx) = nx * E_amp * sin(phase);
+              arr(i, j, k, iEy) = ny * E_amp * sin(phase);
+              arr(i, j, k, iEz) = nz * E_amp * sin(phase);
             } else {
               const Real ux = ux0 + waveAmp * dUx;
               const Real uy = uy0 + waveAmp * dUy;

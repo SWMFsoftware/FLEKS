@@ -1184,17 +1184,20 @@ It will set the initial conditions for a specific test case.
 	 alias="WAVE_FLEKS0,WAVE_FLEKS1,WAVE_FLEKS2" multiple="T">
   <parameter name="waveType" type="string" default="none"/>
   <parameter name="waveAmp" type="real" default="1.0e-4"/>
-  <parameter name="waveLength" type="real" default="1.0"/>
-  <parameter name="waveAngle" type="real" default="0.0"/>
+  <parameter name="LambdaX" type="real" default="-1.0"/>
+  <parameter name="LambdaY" type="real" default="-1.0"/>
+  <parameter name="LambdaZ" type="real" default="-1.0"/>
 
 #WAVE
 none            waveType
 1.0e-4          waveAmp
-1.0             waveLength
-0.0             waveAngle
+-1.0            LambdaX
+-1.0            LambdaY
+-1.0            LambdaZ
 
-Initialize wave perturbation tests (adiabatic hydrodynamic or MHD waves).
-waveType can be: sound, fast, alfven, slow, anisotropic.
+Initialize wave perturbation tests (adiabatic hydrodynamic, MHD, or Langmuir waves) with arbitrary wave vector orientation.
+waveType can be: sound, fast, alfven, slow, anisotropic, langmuir.
+LambdaX, LambdaY, LambdaZ specify wavelengths along each axis. A negative or zero wavelength sets the corresponding wave number component to zero.
 </command>
 
 

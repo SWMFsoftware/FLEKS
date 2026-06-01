@@ -61,8 +61,9 @@ T                       solveEM
 #WAVE
 anisotropic             waveType
 0.1                     waveAmp
-32.0                    waveLength
-0.0                     waveAngle
+32.0                    LambdaX
+-1.0                    LambdaY
+-1.0                    LambdaZ
 
 #TIMESTEPPING
 T                       useFixedDt

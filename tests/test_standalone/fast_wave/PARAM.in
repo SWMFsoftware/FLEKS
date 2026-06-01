@@ -61,8 +61,9 @@ T                       solveEM
 #WAVE
 fast                    waveType
 1.0                      waveAmp
-1.0                     waveLength
-0.0                     waveAngle
+1.0                     LambdaX
+-1.0                    LambdaY
+-1.0                    LambdaZ
 
 #TIMESTEPPING
 T                       useFixedDt

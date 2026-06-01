@@ -61,8 +61,9 @@ T                       solveEM
 #WAVE
 langmuir                waveType
 0.1                     waveAmp
-6.283185307179586       waveLength
-0.0                     waveAngle
+6.283185307179586       LambdaX
+-1.0                    LambdaY
+-1.0                    LambdaZ
 
 #TIMESTEPPING
 T                       useFixedDt

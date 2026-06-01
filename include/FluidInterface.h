@@ -98,8 +98,9 @@ protected:
   // Wave initialization parameters
   std::string waveType = "none";
   double waveAmp = 1.0e-4;
-  double waveLength = 1.0;
-  double waveAngle = 0.0;
+  double LambdaX = -1.0;
+  double LambdaY = -1.0;
+  double LambdaZ = -1.0;
 
   // Length in BATSRUS normalized unit -> Si
   double MhdNo2SiL;
