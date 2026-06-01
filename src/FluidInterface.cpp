@@ -428,8 +428,8 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
   if (command == "#NORMALIZATION") {
     param.read_var("lNorm", lNormSI);
     param.read_var("uNorm", uNormSI);
-  } else if (command == "#WAVE" || command == "#WAVE2" || command == "#WAVE4" || command == "#WAVE6" ||
-             command.rfind("#WAVE_FLEKS", 0) == 0) {
+  } else if (command == "#WAVE" || command == "#WAVE2" || command == "#WAVE4" ||
+             command == "#WAVE6" || command.rfind("#WAVE_FLEKS", 0) == 0) {
     WaveInfo info;
     param.read_var("NameVar", info.nameVar);
     param.read_var("Width", info.width);
@@ -798,10 +798,14 @@ void FluidInterface::set_node_fluid() {
   normalize_fluid_variables();
 
   if (!waveInfos.empty()) {
-    // Use the wavevector of the first wave command to define the main coordinate rotation.
-    Real kx = (waveInfos[0].lambdaX > 0.0) ? (2.0 * dPI / waveInfos[0].lambdaX) : 0.0;
-    Real ky = (waveInfos[0].lambdaY > 0.0) ? (2.0 * dPI / waveInfos[0].lambdaY) : 0.0;
-    Real kz = (waveInfos[0].lambdaZ > 0.0) ? (2.0 * dPI / waveInfos[0].lambdaZ) : 0.0;
+    // Use the wavevector of the first wave command to define the main
+    // coordinate rotation.
+    Real kx =
+        (waveInfos[0].lambdaX > 0.0) ? (2.0 * dPI / waveInfos[0].lambdaX) : 0.0;
+    Real ky =
+        (waveInfos[0].lambdaY > 0.0) ? (2.0 * dPI / waveInfos[0].lambdaY) : 0.0;
+    Real kz =
+        (waveInfos[0].lambdaZ > 0.0) ? (2.0 * dPI / waveInfos[0].lambdaZ) : 0.0;
     Real k_mag = sqrt(kx * kx + ky * ky + kz * kz);
 
     if (k_mag == 0.0) {
@@ -845,7 +849,7 @@ void FluidInterface::set_node_fluid() {
     bool isMHD = false;
 
     auto str_eq_det = [](const std::string& a, const char* b) {
-      char var[20] = {0};
+      char var[20] = { 0 };
       for (size_t c = 0; c < a.size() && c < 19; ++c) {
         char ch = a[c];
         if (ch >= 'A' && ch <= 'Z') {
@@ -855,26 +859,30 @@ void FluidInterface::set_node_fluid() {
         }
       }
       int len = 0;
-      while (var[len] != '\0') len++;
+      while (var[len] != '\0')
+        len++;
       if (len > 0 && var[len - 1] >= '0' && var[len - 1] <= '9') {
         var[len - 1] = '\0';
       }
       int idx = 0;
       while (var[idx] != '\0' || b[idx] != '\0') {
-        if (var[idx] != b[idx]) return false;
+        if (var[idx] != b[idx])
+          return false;
         idx++;
       }
       return true;
     };
 
     for (const auto& wave : waveInfos) {
-      if (str_eq_det(wave.nameVar, "ppar")) isAnisotropic = true;
+      if (str_eq_det(wave.nameVar, "ppar"))
+        isAnisotropic = true;
       if (str_eq_det(wave.nameVar, "ex") || str_eq_det(wave.nameVar, "rho")) {
         if (str_eq_det(wave.nameVar, "ex") || wave.nameVar == "rho0") {
           isLangmuir = true;
         }
       }
-      if (str_eq_det(wave.nameVar, "by") || str_eq_det(wave.nameVar, "bz")) isMHD = true;
+      if (str_eq_det(wave.nameVar, "by") || str_eq_det(wave.nameVar, "bz"))
+        isMHD = true;
     }
 
     if (isAnisotropic) {
@@ -915,10 +923,10 @@ void FluidInterface::set_node_fluid() {
           const Real z = k * dx[iz_] + plo[iz_];
 
           // Initialize wave-frame perturbations for nS species
-          Real dRho[3] = {0.0};
-          Real dUx_w[3] = {0.0}, dUy_w[3] = {0.0}, dUz_w[3] = {0.0};
-          Real dP[3] = {0.0};
-          Real dPpar[3] = {0.0};
+          Real dRho[3] = { 0.0 };
+          Real dUx_w[3] = { 0.0 }, dUy_w[3] = { 0.0 }, dUz_w[3] = { 0.0 };
+          Real dP[3] = { 0.0 };
+          Real dPpar[3] = { 0.0 };
           bool hasPparPert = false;
 
           Real dBx_w = 0.0, dBy_w = 0.0, dBz_w = 0.0;
@@ -956,7 +964,7 @@ void FluidInterface::set_node_fluid() {
             Real S = pow(term, wave.exponent);
 
             // Match variable name (case insensitive manually or via check)
-            char var[20] = {0};
+            char var[20] = { 0 };
             for (size_t c = 0; c < wave.nameVar.size() && c < 19; ++c) {
               char ch = wave.nameVar[c];
               if (ch >= 'A' && ch <= 'Z') {
@@ -981,7 +989,8 @@ void FluidInterface::set_node_fluid() {
             auto str_eq = [](const char* a, const char* b) {
               int idx = 0;
               while (a[idx] != '\0' || b[idx] != '\0') {
-                if (a[idx] != b[idx]) return false;
+                if (a[idx] != b[idx])
+                  return false;
                 idx++;
               }
               return true;
@@ -1040,7 +1049,7 @@ void FluidInterface::set_node_fluid() {
           }
 
           // Rotate perturbations to simulation/grid frame
-          Real dUx[3] = {0.0}, dUy[3] = {0.0}, dUz[3] = {0.0};
+          Real dUx[3] = { 0.0 }, dUy[3] = { 0.0 }, dUz[3] = { 0.0 };
           for (int iS = 0; iS < nS; ++iS) {
             dUx[iS] = dUx_w[iS] * ex_x + dUy_w[iS] * ey_x + dUz_w[iS] * ez_x;
             dUy[iS] = dUx_w[iS] * ex_y + dUy_w[iS] * ey_y + dUz_w[iS] * ez_y;

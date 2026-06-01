@@ -95,19 +95,20 @@ protected:
 
   amrex::Vector<double> uniformState;
 
-  public:
-    struct WaveInfo {
-      std::string nameVar;
-      double width = 0.0;
-      double amplitude = 0.0;
-      double lambdaX = -1.0;
-      double lambdaY = -1.0;
-      double lambdaZ = -1.0;
-      double phase = 0.0;
-      int exponent = 1;
-    };
-  protected:
-    std::vector<WaveInfo> waveInfos;
+public:
+  struct WaveInfo {
+    std::string nameVar;
+    double width = 0.0;
+    double amplitude = 0.0;
+    double lambdaX = -1.0;
+    double lambdaY = -1.0;
+    double lambdaZ = -1.0;
+    double phase = 0.0;
+    int exponent = 1;
+  };
+
+protected:
+  std::vector<WaveInfo> waveInfos;
 
   // Length in BATSRUS normalized unit -> Si
   double MhdNo2SiL;
