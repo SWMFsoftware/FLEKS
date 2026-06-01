@@ -739,6 +739,24 @@ def validate_langmuir(diags):
     passed = True
     reasons = []
 
+    # Parse waveAmp and electron mass dynamically from run_test/PARAM.in
+    wave_amp = 0.02  # default fallback
+    m_e = 0.01       # default fallback
+    try:
+        with open("run_test/PARAM.in", "r") as f:
+            lines = f.readlines()
+            for idx, line in enumerate(lines):
+                if "waveAmp" in line:
+                    wave_amp = float(line.split()[0])
+                if "#PLASMA" in line:
+                    m_e = float(lines[idx + 2].split()[0])
+    except Exception:
+        pass
+
+    # Total electrostatic energy in Gaussian units: W_E = 2 * pi^2 * waveAmp^2
+    # The logged KE is sum(0.5 * v^2 * weight), which is equivalent to total physical KE / mass.
+    expected_max_ke = 2.0 * (math.pi**2) * (wave_amp**2) / m_e
+
     from collections import defaultdict
     by_species = defaultdict(list)
     for d in diags:
@@ -776,21 +794,17 @@ def validate_langmuir(diags):
         ke_vals = [d["ke"] for d in electron_diags]
         max_ke = max(ke_vals)
         min_ke = min(ke_vals)
-        # KE should oscillate between 0 and initial electrostatic energy
-        # Initial E field energy ~ 0.5 * (0.02)^2 * L / 2 = 0.5 * 4e-4 * pi ~ 6.3e-4
-        # In normalized units, check KE stays bounded (not growing = no numerical heating)
-        # Check that max_ke is bounded (e.g., < 0.01) to ensure no numerical heating/explosion,
-        # but also oscillates (reaches at least 1e-4) to ensure the wave is active.
-        if max_ke > 0.01:
-            print(f"  FAIL electrons: KE grew too large! Max KE={max_ke:.4e}")
+        # Verify KE stays bounded and oscillates dynamically
+        if max_ke > 2.0 * expected_max_ke:
+            print(f"  FAIL electrons: KE grew too large! Max KE={max_ke:.4e} (expected ~{expected_max_ke:.4e})")
             passed = False
             reasons.append(f"Electron KE grew too large: {max_ke:.4e}")
-        elif max_ke < 1e-4:
-            print(f"  FAIL electrons: KE too small, wave might be dead! Max KE={max_ke:.4e}")
+        elif max_ke < 0.5 * expected_max_ke:
+            print(f"  FAIL electrons: KE too small, wave might be dead! Max KE={max_ke:.4e} (expected ~{expected_max_ke:.4e})")
             passed = False
             reasons.append(f"Electron KE too small: {max_ke:.4e}")
         else:
-            print(f"  SUCCESS: Electron KE bounded and active [{min_ke:.4e}, {max_ke:.4e}]")
+            print(f"  SUCCESS: Electron KE bounded and active [{min_ke:.4e}, {max_ke:.4e}] (expected max ~{expected_max_ke:.4e})")
 
     if passed:
         print("Langmuir Wave Test: PASSED")

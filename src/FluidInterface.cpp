@@ -861,7 +861,7 @@ void FluidInterface::set_node_fluid() {
 
             if (waveType == "langmuir") {
               if (iFluid == 0) { // Electrons
-                rho = (rho0 + 0.02 * cos(x)) * m;
+                rho = (rho0 + waveAmp * cos(x)) * m;
               }
               p = 0.0; // Cold plasma
             } else {
@@ -894,7 +894,7 @@ void FluidInterface::set_node_fluid() {
           // Apply background + perturbations to electric fields if defined
           if (iEx >= 0 && iEy >= 0 && iEz >= 0) {
             if (waveType == "langmuir") {
-              arr(i, j, k, iEx) = -0.02 * sin(x);
+              arr(i, j, k, iEx) = -waveAmp * 4.0 * dPI * sin(x);
               arr(i, j, k, iEy) = 0.0;
               arr(i, j, k, iEz) = 0.0;
             } else {

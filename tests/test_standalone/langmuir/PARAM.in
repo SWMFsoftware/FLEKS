@@ -60,7 +60,7 @@ T                       solveEM
 
 #WAVE
 langmuir                waveType
-1.0                     waveAmp
+0.1                     waveAmp
 6.283185307179586       waveLength
 0.0                     waveAngle
 
@@ -77,15 +77,20 @@ T                       useFixedDt
 1.0                     uNormSI
 
 #MONITOR
-100                     dnReport
+2                       dnReport
 
 #PARTICLES
-100                     nParticle per cell in X
+1000                    nParticle per cell in X
 1                       nParticle per cell in Y
 1                       nParticle per cell in Z
 
 #RANDOMPARTICLESLOCATION
 F                       isParticleLocationRandom
+
+#SMOOTHJ
+T                       doSmoothJ
+1                       nSmoothJ
+0.5                     coefSmoothJ
 
 #DIVE
 F                       doCorrectDivE
@@ -101,9 +106,9 @@ T                       doFieldDiag
 1                                 nPlot
 z=0 fluid ascii pic               plotString
 -1                                dn
-0.1                               dt
+0.08862269                        dt
 1                                 dx
 
 #STOP
 -1                      MaxIter
-0.9                      TimeMax
+0.70898154                      TimeMax
