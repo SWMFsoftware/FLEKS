@@ -789,7 +789,8 @@ void FluidInterface::set_node_fluid() {
     Real k_mag = sqrt(kx * kx + ky * ky + kz * kz);
 
     if (k_mag == 0.0) {
-      // Default fallback if no valid wavelength is set: wave along X with wavelength 1.0
+      // Default fallback if no valid wavelength is set: wave along X with
+      // wavelength 1.0
       kx = 2.0 * dPI;
       k_mag = kx;
     }
@@ -798,7 +799,8 @@ void FluidInterface::set_node_fluid() {
     Real ny = ky / k_mag;
     Real nz = kz / k_mag;
 
-    // Build 3D orthonormal basis vectors ex', ey', ez' for wave coordinate system
+    // Build 3D orthonormal basis vectors ex', ey', ez' for wave coordinate
+    // system
     Real ex_x = nx, ex_y = ny, ex_z = nz;
     Real ey_x = 0.0, ey_y = 0.0, ey_z = 0.0;
     Real ez_x = 0.0, ez_y = 0.0, ez_z = 0.0;
@@ -900,7 +902,8 @@ void FluidInterface::set_node_fluid() {
           Real dBy = dBx_w * ex_y + dBy_w * ey_y + dBz_w * ez_y;
           Real dBz = dBx_w * ex_z + dBy_w * ez_z + dBz_w * ez_z;
 
-          // Apply background + perturbations to all fluids/species, scaled by mass
+          // Apply background + perturbations to all fluids/species, scaled by
+          // mass
           for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
             const Real m = MoMi_S[iFluid];
             Real rho = rho0 * m;
