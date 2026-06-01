@@ -746,8 +746,10 @@ def validate_langmuir(diags):
         with open("run_test/PARAM.in", "r") as f:
             lines = f.readlines()
             for idx, line in enumerate(lines):
-                if "waveAmp" in line:
-                    wave_amp = float(line.split()[0])
+                if "waveAmp" in line or ("Amplitude" in line and wave_amp == 0.02):
+                    val = float(line.split()[0])
+                    if abs(val) > 0.001:  # ignore extremely small perturbations
+                        wave_amp = abs(val)
                 if "#PLASMA" in line:
                     m_e = float(lines[idx + 2].split()[0])
     except Exception:

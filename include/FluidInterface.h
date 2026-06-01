@@ -95,12 +95,19 @@ protected:
 
   amrex::Vector<double> uniformState;
 
-  // Wave initialization parameters
-  std::string waveType = "none";
-  double waveAmp = 1.0e-4;
-  double LambdaX = -1.0;
-  double LambdaY = -1.0;
-  double LambdaZ = -1.0;
+  public:
+    struct WaveInfo {
+      std::string nameVar;
+      double width = 0.0;
+      double amplitude = 0.0;
+      double lambdaX = -1.0;
+      double lambdaY = -1.0;
+      double lambdaZ = -1.0;
+      double phase = 0.0;
+      int exponent = 1;
+    };
+  protected:
+    std::vector<WaveInfo> waveInfos;
 
   // Length in BATSRUS normalized unit -> Si
   double MhdNo2SiL;

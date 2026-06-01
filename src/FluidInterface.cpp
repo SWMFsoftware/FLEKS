@@ -195,7 +195,16 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
       iJz = iJx + 2;
     }
   } else {
-    if (waveType == "anisotropic") {
+    bool hasPpar = false;
+    for (const auto& wave : waveInfos) {
+      std::string var = wave.nameVar;
+      std::transform(var.begin(), var.end(), var.begin(), ::tolower);
+      if (var.rfind("ppar", 0) == 0) {
+        hasPpar = true;
+        break;
+      }
+    }
+    if (hasPpar) {
       useAnisoP = true;
     }
     // Assume the variables are set through command #UNIFORMSTATE
@@ -419,12 +428,28 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
   if (command == "#NORMALIZATION") {
     param.read_var("lNorm", lNormSI);
     param.read_var("uNorm", uNormSI);
-  } else if (command == "#WAVE") {
-    param.read_var("waveType", waveType);
-    param.read_var("waveAmp", waveAmp);
-    param.read_var("LambdaX", LambdaX);
-    param.read_var("LambdaY", LambdaY);
-    param.read_var("LambdaZ", LambdaZ);
+  } else if (command == "#WAVE" || command == "#WAVE2" || command == "#WAVE4" || command == "#WAVE6" ||
+             command.rfind("#WAVE_FLEKS", 0) == 0) {
+    WaveInfo info;
+    param.read_var("NameVar", info.nameVar);
+    param.read_var("Width", info.width);
+    param.read_var("Amplitude", info.amplitude);
+    param.read_var("LambdaX", info.lambdaX);
+    param.read_var("LambdaY", info.lambdaY);
+    param.read_var("LambdaZ", info.lambdaZ);
+    param.read_var("Phase", info.phase);
+
+    if (command == "#WAVE6") {
+      info.exponent = 6;
+    } else if (command == "#WAVE4") {
+      info.exponent = 4;
+    } else if (command == "#WAVE2") {
+      info.exponent = 2;
+    } else {
+      info.exponent = 1;
+    }
+
+    waveInfos.push_back(info);
   } else if (command == "#SCALINGFACTOR") {
     param.read_var("scaling", ScalingFactor);
   } else if (command == "#BODYSIZE") {
@@ -772,20 +797,11 @@ void FluidInterface::set_node_fluid() {
   calc_current();
   normalize_fluid_variables();
 
-  if (waveType != "none") {
-    // Check if cold plasma is requested via PARAM.in (T = 0)
-    bool isColdPlasma = false;
-    if (uniformState.size() > 4) {
-      isColdPlasma = (uniformState[4] == 0.0);
-    }
-    Real rho0 = 1.0;
-    Real p0 = isColdPlasma ? 0.0 : 0.6;
-    Real ux0 = 0.0, uy0 = 0.0, uz0 = 0.0;
-
-    // Parse wave vector based on LambdaX, LambdaY, LambdaZ
-    Real kx = (LambdaX > 0.0) ? (2.0 * dPI / LambdaX) : 0.0;
-    Real ky = (LambdaY > 0.0) ? (2.0 * dPI / LambdaY) : 0.0;
-    Real kz = (LambdaZ > 0.0) ? (2.0 * dPI / LambdaZ) : 0.0;
+  if (!waveInfos.empty()) {
+    // Use the wavevector of the first wave command to define the main coordinate rotation.
+    Real kx = (waveInfos[0].lambdaX > 0.0) ? (2.0 * dPI / waveInfos[0].lambdaX) : 0.0;
+    Real ky = (waveInfos[0].lambdaY > 0.0) ? (2.0 * dPI / waveInfos[0].lambdaY) : 0.0;
+    Real kz = (waveInfos[0].lambdaZ > 0.0) ? (2.0 * dPI / waveInfos[0].lambdaZ) : 0.0;
     Real k_mag = sqrt(kx * kx + ky * ky + kz * kz);
 
     if (k_mag == 0.0) {
@@ -819,14 +835,54 @@ void FluidInterface::set_node_fluid() {
       ez_z = ex_x * ey_y - ex_y * ey_x;
     }
 
+    Real rho0 = 1.0;
+    Real p0 = 0.6;
     Real bx0_wave = 0.0, by0_wave = 0.0, bz0_wave = 0.0;
-    if (waveType == "langmuir") {
-      // Langmuir wave background is 0
-    } else if (waveType == "anisotropic") {
-      rho0 = 1.0;
+
+    // Detect wave test type based on waveInfos
+    bool isAnisotropic = false;
+    bool isLangmuir = false;
+    bool isMHD = false;
+
+    auto str_eq_det = [](const std::string& a, const char* b) {
+      char var[20] = {0};
+      for (size_t c = 0; c < a.size() && c < 19; ++c) {
+        char ch = a[c];
+        if (ch >= 'A' && ch <= 'Z') {
+          var[c] = ch - 'A' + 'a';
+        } else {
+          var[c] = ch;
+        }
+      }
+      int len = 0;
+      while (var[len] != '\0') len++;
+      if (len > 0 && var[len - 1] >= '0' && var[len - 1] <= '9') {
+        var[len - 1] = '\0';
+      }
+      int idx = 0;
+      while (var[idx] != '\0' || b[idx] != '\0') {
+        if (var[idx] != b[idx]) return false;
+        idx++;
+      }
+      return true;
+    };
+
+    for (const auto& wave : waveInfos) {
+      if (str_eq_det(wave.nameVar, "ppar")) isAnisotropic = true;
+      if (str_eq_det(wave.nameVar, "ex") || str_eq_det(wave.nameVar, "rho")) {
+        if (str_eq_det(wave.nameVar, "ex") || wave.nameVar == "rho0") {
+          isLangmuir = true;
+        }
+      }
+      if (str_eq_det(wave.nameVar, "by") || str_eq_det(wave.nameVar, "bz")) isMHD = true;
+    }
+
+    if (isAnisotropic) {
       p0 = 4.5e-4;
       by0_wave = 0.04;
-    } else if (waveType != "sound") {
+    } else if (isLangmuir) {
+      p0 = 0.0;
+    } else if (isMHD) {
       bx0_wave = 1.0;
       by0_wave = sqrt(2.0);
       bz0_wave = 0.5;
@@ -836,6 +892,14 @@ void FluidInterface::set_node_fluid() {
     Real bx0 = bx0_wave * ex_x + by0_wave * ey_x + bz0_wave * ez_x;
     Real by0 = bx0_wave * ex_y + by0_wave * ey_y + bz0_wave * ez_y;
     Real bz0 = bx0_wave * ex_z + by0_wave * ez_z + bz0_wave * ez_z;
+
+    Real ux0 = 0.0, uy0 = 0.0, uz0 = 0.0;
+
+    // Copy waveInfos to a local Amrex Vector so it can be captured by lambda
+    amrex::Vector<WaveInfo> waveList;
+    for (const auto& w : waveInfos) {
+      waveList.push_back(w);
+    }
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       const auto& dx = Geom(iLev).CellSize();
@@ -849,82 +913,157 @@ void FluidInterface::set_node_fluid() {
           const Real x = i * dx[ix_] + plo[ix_];
           const Real y = j * dx[iy_] + plo[iy_];
           const Real z = k * dx[iz_] + plo[iz_];
-          const Real phase = kx * x + ky * y + kz * z;
-          const Real S = sin(phase);
 
-          // 2. Set wave eigenfunctions/perturbations in wave coordinate system
-          Real dRho = 0.0, dUx_w = 0.0, dUy_w = 0.0, dUz_w = 0.0, dP = 0.0;
+          // Initialize wave-frame perturbations for nS species
+          Real dRho[3] = {0.0};
+          Real dUx_w[3] = {0.0}, dUy_w[3] = {0.0}, dUz_w[3] = {0.0};
+          Real dP[3] = {0.0};
+          Real dPpar[3] = {0.0};
+          bool hasPparPert = false;
+
           Real dBx_w = 0.0, dBy_w = 0.0, dBz_w = 0.0;
+          Real dEx_w = 0.0, dEy_w = 0.0, dEz_w = 0.0;
 
-          if (waveType == "sound") {
-            dRho = 1.0 * S;
-            dUx_w = -1.0 * S;
-            dP = 1.0 * S;
-          } else if (waveType == "langmuir") {
-            // Handled specifically inside the species and field assignments
-          } else if (waveType == "fast") {
-            dRho = 0.4472135954999580 * S;
-            dUx_w = -0.8944271909999160 * S;
-            dUy_w = 0.4216370213557840 * S;
-            dUz_w = 0.1490711984999860 * S;
-            dP = 0.4472135954999580 * S;
-            dBy_w = 0.8432740427115680 * S;
-            dBz_w = 0.2981423969999720 * S;
-          } else if (waveType == "alfven") {
-            dUy_w = -0.3333333333333333 * S;
-            dUz_w = 0.9428090415820634 * S;
-            dBy_w = -0.3333333333333333 * S;
-            dBz_w = 0.9428090415820634 * S;
-          } else if (waveType == "slow") {
-            dRho = 0.8944271909999159 * S;
-            dUx_w = -0.4472135954999579 * S;
-            dUy_w = -0.8432740427115680 * S;
-            dUz_w = -0.2981423969999720 * S;
-            dP = 0.8944271909999159 * S;
-            dBy_w = -0.4216370213557841 * S;
-            dBz_w = -0.1490711984999860 * S;
-          } else if (waveType == "anisotropic") {
-            const Real B0 = 0.04;
-            const Real V_f = sqrt((B0 * B0 + 2.0 * p0) / rho0);
-            const Real gamma = 5.0 / 3.0;
-            dRho = 1.0 * S;
-            dUx_w = V_f * S;
-            dP = 0.6 * gamma * S;
-            dBy_w = B0 * S;
+          // Loop over all #WAVE commands to sum up perturbations
+          for (int iW = 0; iW < waveList.size(); ++iW) {
+            const auto& wave = waveList[iW];
+
+            Real kx_w = (wave.lambdaX > 0.0) ? (2.0 * dPI / wave.lambdaX) : 0.0;
+            Real ky_w = (wave.lambdaY > 0.0) ? (2.0 * dPI / wave.lambdaY) : 0.0;
+            Real kz_w = (wave.lambdaZ > 0.0) ? (2.0 * dPI / wave.lambdaZ) : 0.0;
+            Real k_mag_w = sqrt(kx_w * kx_w + ky_w * ky_w + kz_w * kz_w);
+
+            if (k_mag_w == 0.0) {
+              kx_w = 2.0 * dPI;
+              k_mag_w = kx_w;
+            }
+
+            Real nx_w = kx_w / k_mag_w;
+            Real ny_w = ky_w / k_mag_w;
+            Real nz_w = kz_w / k_mag_w;
+
+            // Check width if specified
+            if (wave.width > 0.0) {
+              Real r_dot_n = x * nx_w + y * ny_w + z * nz_w;
+              if (std::abs(r_dot_n) > wave.width) {
+                continue;
+              }
+            }
+
+            Real phase_w = kx_w * x + ky_w * y + kz_w * z;
+            Real phase_rad = wave.phase * dPI / 180.0;
+            Real term = cos(phase_w + phase_rad);
+            Real S = pow(term, wave.exponent);
+
+            // Match variable name (case insensitive manually or via check)
+            char var[20] = {0};
+            for (size_t c = 0; c < wave.nameVar.size() && c < 19; ++c) {
+              char ch = wave.nameVar[c];
+              if (ch >= 'A' && ch <= 'Z') {
+                var[c] = ch - 'A' + 'a';
+              } else {
+                var[c] = ch;
+              }
+            }
+
+            // Extract trailing digit if any
+            int len = 0;
+            while (var[len] != '\0') {
+              len++;
+            }
+            int targetS = -1;
+            if (len > 0 && var[len - 1] >= '0' && var[len - 1] <= '9') {
+              targetS = var[len - 1] - '0';
+              var[len - 1] = '\0';
+            }
+
+            // Map string to variables
+            auto str_eq = [](const char* a, const char* b) {
+              int idx = 0;
+              while (a[idx] != '\0' || b[idx] != '\0') {
+                if (a[idx] != b[idx]) return false;
+                idx++;
+              }
+              return true;
+            };
+
+            if (str_eq(var, "rho")) {
+              for (int iS = 0; iS < nS; ++iS) {
+                if (targetS == -1 || targetS == iS) {
+                  dRho[iS] += wave.amplitude * S;
+                }
+              }
+            } else if (str_eq(var, "ux")) {
+              for (int iS = 0; iS < nS; ++iS) {
+                if (targetS == -1 || targetS == iS) {
+                  dUx_w[iS] += wave.amplitude * S;
+                }
+              }
+            } else if (str_eq(var, "uy")) {
+              for (int iS = 0; iS < nS; ++iS) {
+                if (targetS == -1 || targetS == iS) {
+                  dUy_w[iS] += wave.amplitude * S;
+                }
+              }
+            } else if (str_eq(var, "uz")) {
+              for (int iS = 0; iS < nS; ++iS) {
+                if (targetS == -1 || targetS == iS) {
+                  dUz_w[iS] += wave.amplitude * S;
+                }
+              }
+            } else if (str_eq(var, "p")) {
+              for (int iS = 0; iS < nS; ++iS) {
+                if (targetS == -1 || targetS == iS) {
+                  dP[iS] += wave.amplitude * S;
+                }
+              }
+            } else if (str_eq(var, "ppar")) {
+              for (int iS = 0; iS < nS; ++iS) {
+                if (targetS == -1 || targetS == iS) {
+                  dPpar[iS] += wave.amplitude * S;
+                  hasPparPert = true;
+                }
+              }
+            } else if (str_eq(var, "bx")) {
+              dBx_w += wave.amplitude * S;
+            } else if (str_eq(var, "by")) {
+              dBy_w += wave.amplitude * S;
+            } else if (str_eq(var, "bz")) {
+              dBz_w += wave.amplitude * S;
+            } else if (str_eq(var, "ex")) {
+              dEx_w += wave.amplitude * S;
+            } else if (str_eq(var, "ey")) {
+              dEy_w += wave.amplitude * S;
+            } else if (str_eq(var, "ez")) {
+              dEz_w += wave.amplitude * S;
+            }
           }
 
           // Rotate perturbations to simulation/grid frame
-          Real dUx = dUx_w * ex_x + dUy_w * ey_x + dUz_w * ez_x;
-          Real dUy = dUx_w * ex_y + dUy_w * ey_y + dUz_w * ez_y;
-          Real dUz = dUx_w * ex_z + dUy_w * ey_z + dUz_w * ez_z;
+          Real dUx[3] = {0.0}, dUy[3] = {0.0}, dUz[3] = {0.0};
+          for (int iS = 0; iS < nS; ++iS) {
+            dUx[iS] = dUx_w[iS] * ex_x + dUy_w[iS] * ey_x + dUz_w[iS] * ez_x;
+            dUy[iS] = dUx_w[iS] * ex_y + dUy_w[iS] * ey_y + dUz_w[iS] * ez_y;
+            dUz[iS] = dUx_w[iS] * ex_z + dUy_w[iS] * ey_z + dUz_w[iS] * ez_z;
+          }
 
           Real dBx = dBx_w * ex_x + dBy_w * ey_x + dBz_w * ez_x;
           Real dBy = dBx_w * ex_y + dBy_w * ey_y + dBz_w * ez_y;
-          Real dBz = dBx_w * ex_z + dBy_w * ez_z + dBz_w * ez_z;
+          Real dBz = dBx_w * ex_z + dBy_w * ey_z + dBz_w * ez_z;
+
+          Real dEx = dEx_w * ex_x + dEy_w * ey_x + dEz_w * ez_x;
+          Real dEy = dEx_w * ex_y + dEy_w * ey_y + dEz_w * ez_y;
+          Real dEz = dEx_w * ex_z + dEy_w * ey_z + dEz_w * ez_z;
 
           // Apply background + perturbations to all fluids/species, scaled by
           // mass
           for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
             const Real m = MoMi_S[iFluid];
-            Real rho = rho0 * m;
-            Real ux = ux0;
-            Real uy = uy0;
-            Real uz = uz0;
-            Real p = p0 * m;
-
-            if (waveType == "langmuir") {
-              if (iFluid == 0) { // Electrons
-                rho = (rho0 + waveAmp * cos(phase)) * m;
-              }
-              p = 0.0; // Cold plasma
-            } else {
-              rho = (rho0 + waveAmp * dRho) * m;
-              const Real dP_scaled = dP * (p0 / 0.6);
-              ux = ux0 + waveAmp * dUx;
-              uy = uy0 + waveAmp * dUy;
-              uz = uz0 + waveAmp * dUz;
-              p = (p0 + waveAmp * dP_scaled) * m;
-            }
+            Real rho = (rho0 + dRho[iFluid]) * m;
+            Real ux = ux0 + dUx[iFluid];
+            Real uy = uy0 + dUy[iFluid];
+            Real uz = uz0 + dUz[iFluid];
+            Real p = (p0 + dP[iFluid]) * m;
 
             arr(i, j, k, iRho_I[iFluid]) = rho;
             arr(i, j, k, iRhoUx_I[iFluid]) = rho * ux;
@@ -933,8 +1072,8 @@ void FluidInterface::set_node_fluid() {
             arr(i, j, k, iP_I[iFluid]) = p;
 
             if (iPpar_I[iFluid] >= 0) {
-              if (waveType == "anisotropic") {
-                arr(i, j, k, iPpar_I[iFluid]) = (p0 * (1.0 + waveAmp * S)) * m;
+              if (hasPparPert) {
+                arr(i, j, k, iPpar_I[iFluid]) = (p0 + dPpar[iFluid]) * m;
               } else {
                 arr(i, j, k, iPpar_I[iFluid]) = p;
               }
@@ -942,26 +1081,19 @@ void FluidInterface::set_node_fluid() {
           }
 
           // Apply background + perturbations to magnetic fields
-          arr(i, j, k, iBx) = bx0 + waveAmp * dBx;
-          arr(i, j, k, iBy) = by0 + waveAmp * dBy;
-          arr(i, j, k, iBz) = bz0 + waveAmp * dBz;
+          arr(i, j, k, iBx) = bx0 + dBx;
+          arr(i, j, k, iBy) = by0 + dBy;
+          arr(i, j, k, iBz) = bz0 + dBz;
 
           // Apply background + perturbations to electric fields if defined
           if (iEx >= 0 && iEy >= 0 && iEz >= 0) {
-            if (waveType == "langmuir") {
-              Real E_amp = -waveAmp * 4.0 * dPI / k_mag;
-              arr(i, j, k, iEx) = nx * E_amp * sin(phase);
-              arr(i, j, k, iEy) = ny * E_amp * sin(phase);
-              arr(i, j, k, iEz) = nz * E_amp * sin(phase);
-            } else {
-              const Real ux = ux0 + waveAmp * dUx;
-              const Real uy = uy0 + waveAmp * dUy;
-              const Real uz = uz0 + waveAmp * dUz;
+            const Real ux = ux0 + dUx[0];
+            const Real uy = uy0 + dUy[0];
+            const Real uz = uz0 + dUz[0];
 
-              arr(i, j, k, iEx) = -(uy * bz0 - uz * by0);
-              arr(i, j, k, iEy) = -(uz * bx0 - ux * bz0);
-              arr(i, j, k, iEz) = -(ux * by0 - uy * bx0);
-            }
+            arr(i, j, k, iEx) = -(uy * bz0 - uz * by0) + dEx;
+            arr(i, j, k, iEy) = -(uz * bx0 - ux * bz0) + dEy;
+            arr(i, j, k, iEz) = -(ux * by0 - uy * bx0) + dEz;
           }
         });
       }

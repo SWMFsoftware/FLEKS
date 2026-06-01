@@ -59,11 +59,23 @@ T                       solveEM
 0.0                     ez [V/m]
 
 #WAVE
-langmuir                waveType
-0.1                     waveAmp
+rho0                    NameVar
+0.0                     Width
+0.1                     Amplitude
 6.283185307179586       LambdaX
 -1.0                    LambdaY
 -1.0                    LambdaZ
+0.0                     Phase
+
+#WAVE
+ex                      NameVar
+0.0                     Width
+-1.2566370614359172     Amplitude
+6.283185307179586       LambdaX
+-1.0                    LambdaY
+-1.0                    LambdaZ
+-90.0                   Phase
+
 
 #TIMESTEPPING
 T                       useFixedDt

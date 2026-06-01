@@ -59,11 +59,32 @@ T                       solveEM
 0.0                     ez [V/m]
 
 #WAVE
-sound                   waveType
-0.1                     waveAmp
+rho                     NameVar
+0.0                     Width
+0.1                     Amplitude
 1.0                     LambdaX
 -1.0                    LambdaY
 -1.0                    LambdaZ
+-90.0                   Phase
+
+#WAVE
+ux                      NameVar
+0.0                     Width
+-0.1                    Amplitude
+1.0                     LambdaX
+-1.0                    LambdaY
+-1.0                    LambdaZ
+-90.0                   Phase
+
+#WAVE
+p                       NameVar
+0.0                     Width
+0.1                     Amplitude
+1.0                     LambdaX
+-1.0                    LambdaY
+-1.0                    LambdaZ
+-90.0                   Phase
+
 
 #TIMESTEPPING
 T                       useFixedDt

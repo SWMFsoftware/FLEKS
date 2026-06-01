@@ -59,11 +59,50 @@ T                       solveEM
 0.0                     ez [V/m]
 
 #WAVE
-anisotropic             waveType
-0.1                     waveAmp
+rho                     NameVar
+0.0                     Width
+0.1                     Amplitude
 32.0                    LambdaX
 -1.0                    LambdaY
 -1.0                    LambdaZ
+-90.0                   Phase
+
+#WAVE
+ux                      NameVar
+0.0                     Width
+0.005                   Amplitude
+32.0                    LambdaX
+-1.0                    LambdaY
+-1.0                    LambdaZ
+-90.0                   Phase
+
+#WAVE
+p                       NameVar
+0.0                     Width
+7.5e-5                  Amplitude
+32.0                    LambdaX
+-1.0                    LambdaY
+-1.0                    LambdaZ
+-90.0                   Phase
+
+#WAVE
+ppar                    NameVar
+0.0                     Width
+4.5e-5                  Amplitude
+32.0                    LambdaX
+-1.0                    LambdaY
+-1.0                    LambdaZ
+-90.0                   Phase
+
+#WAVE
+by                      NameVar
+0.0                     Width
+0.004                   Amplitude
+32.0                    LambdaX
+-1.0                    LambdaY
+-1.0                    LambdaZ
+-90.0                   Phase
+
 
 #TIMESTEPPING
 T                       useFixedDt

@@ -59,11 +59,41 @@ T                       solveEM
 0.0                     ez [V/m]
 
 #WAVE
-alfven                  waveType
-1.0                       waveAmp
+uy                      NameVar
+0.0                     Width
+-0.3333333333333333     Amplitude
 1.0                     LambdaX
 -1.0                    LambdaY
 -1.0                    LambdaZ
+-90.0                   Phase
+
+#WAVE
+uz                      NameVar
+0.0                     Width
+0.9428090415820634      Amplitude
+1.0                     LambdaX
+-1.0                    LambdaY
+-1.0                    LambdaZ
+-90.0                   Phase
+
+#WAVE
+by                      NameVar
+0.0                     Width
+-0.3333333333333333     Amplitude
+1.0                     LambdaX
+-1.0                    LambdaY
+-1.0                    LambdaZ
+-90.0                   Phase
+
+#WAVE
+bz                      NameVar
+0.0                     Width
+0.9428090415820634      Amplitude
+1.0                     LambdaX
+-1.0                    LambdaY
+-1.0                    LambdaZ
+-90.0                   Phase
+
 
 #TIMESTEPPING
 T                       useFixedDt
