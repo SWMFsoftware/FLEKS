@@ -113,6 +113,11 @@ CONVERTER: bin
 	$(call set_build_mode,STANDALONE,standalone)
 	$(STANDALONE_SRC_MAKE) CONVERTER
 
+PIDL:
+	$(call prepare_standalone)
+	$(MAKE) -C $(SHARE_SRC) PIDL
+
+
 rundir:
 	mkdir -p ${RUNDIR}/${COMPONENT}
 	(cd ${RUNDIR}/${COMPONENT}; \
