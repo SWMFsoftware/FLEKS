@@ -577,10 +577,6 @@ void Pic::fill_E_B_fields() {
         ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
         cell_bilinear_interp);
   }
-
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(), 0);
-  }
 }
 
 //==========================================================

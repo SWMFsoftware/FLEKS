@@ -117,6 +117,7 @@ void Domain::init(double time, const int iDomain,
   }
 
   if (!initFromSWMF) {
+    // YC: Why don't we just call Domain::regrid() here? To be resolved.
     if (!doRestart) {
       fi->set_base_grid(BoxArray(centerBox));
       pic->set_base_grid(BoxArray(centerBox));
