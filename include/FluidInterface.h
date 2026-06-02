@@ -162,8 +162,6 @@ public:
 
   FluidType my_type() { return myType; };
 
-  bool has_uniform_state() const { return !uniformState.empty(); }
-
   void set_period_start_si(double t) { tStartSI = t; }
 
   double get_period_start_si() const { return tStartSI; }
@@ -432,11 +430,6 @@ public:
     return get_value_at_loc(nodeFluid[iLev], mfi, Geom(iLev), xyz, iVar);
   }
 
-  amrex::Real get_value(const amrex::RealVect xyz, const int iVar,
-                        const int iLev = 0) const {
-    return get_value_at_loc(nodeFluid[iLev], Geom(iLev), xyz, iVar);
-  }
-
   template <typename T>
   amrex::Real get_number_density(const amrex::MFIter& mfi, const T xyz,
                                  const int is, const int iLev = 0) const {
@@ -537,21 +530,10 @@ public:
     return get_value(mfi, xyz, iRho_I[is], iLev);
   }
 
-  template <typename T>
-  amrex::Real get_fluid_mass_density(const T xyz, const int is,
-                                     const int iLev) const {
-    return get_value(xyz, iRho_I[is], iLev);
-  }
-
   template <typename Type>
   amrex::Real get_fluid_p(const amrex::MFIter& mfi, const Type xyz,
                           const int is, const int iLev) const {
     return get_value(mfi, xyz, iP_I[is], iLev);
-  }
-
-  template <typename Type>
-  amrex::Real get_fluid_p(const Type xyz, const int is, const int iLev) const {
-    return get_value(xyz, iP_I[is], iLev);
   }
 
   template <typename Type>
@@ -570,25 +552,9 @@ public:
   }
 
   template <typename Type>
-  amrex::Real get_fluid_uth(const Type xyz, const int is,
-                            const int iLev) const {
-    amrex::Real uth = 0, p, rho;
-    p = get_fluid_p(xyz, is, iLev);
-    rho = get_fluid_mass_density(xyz, is, iLev);
-    if (rho > 0)
-      uth = sqrt(p / rho);
-    return uth;
-  }
-
-  template <typename Type>
   amrex::Real get_fluid_ux(const amrex::MFIter& mfi, const Type xyz,
                            const int is, const int iLev) const {
     return get_value(mfi, xyz, iUx_I[is], iLev);
-  }
-
-  template <typename Type>
-  amrex::Real get_fluid_ux(const Type xyz, const int is, const int iLev) const {
-    return get_value(xyz, iUx_I[is], iLev);
   }
 
   template <typename Type>
@@ -598,19 +564,9 @@ public:
   }
 
   template <typename Type>
-  amrex::Real get_fluid_uy(const Type xyz, const int is, const int iLev) const {
-    return get_value(xyz, iUy_I[is], iLev);
-  }
-
-  template <typename Type>
   amrex::Real get_fluid_uz(const amrex::MFIter& mfi, const Type xyz,
                            const int is, const int iLev) const {
     return get_value(mfi, xyz, iUz_I[is], iLev);
-  }
-
-  template <typename Type>
-  amrex::Real get_fluid_uz(const Type xyz, const int is, const int iLev) const {
-    return get_value(xyz, iUz_I[is], iLev);
   }
 
   template <typename Type>

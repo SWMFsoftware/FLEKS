@@ -1,6 +1,5 @@
 #include <AMReX_ParallelDescriptor.H>
 #include <AMReX_RealVect.H>
-#include <AMReX_Utility.H>
 #include <cctype>
 #include <climits>
 #include <cmath>
@@ -18,10 +17,6 @@ bool PlotWriter::doSaveBinary = true;
 void PlotWriter::init() {
   isVerbose = rank == 0;
   doWriteHeader = rank == 0;
-
-  if (rank == 0) {
-    UtilCreateDirectory(SaveDirName, 0755);
-  }
 
   std::string errorPrefix = "Error in #SAVEPLOT command: ";
 

@@ -97,21 +97,6 @@ struct ParticlesInfo {
   amrex::Real vacuumIO = 0;
 };
 
-struct ExosphereInfo {
-  bool useExosphere = false;
-  int iSpecies = 1;
-  std::string neutralProfile = "exponential";
-  amrex::Real r0 = 0.0;
-  amrex::Vector<amrex::Real> n0;
-  amrex::Vector<amrex::Real> H0;
-  amrex::Vector<amrex::Real> T0;
-  amrex::Vector<amrex::Real> k0;
-  amrex::Real exobaseRadius = 0.0;
-  amrex::Real shadowRadius = 0.0;
-  amrex::Real totalProductionRate = 0.0;
-  amrex::Real nMacroParticlesPerDt = 1000.0;
-};
-
 template <int NStructReal, int NStructInt>
 class ParticlesIter : public amrex::ParIter<NStructReal, NStructInt> {
 public:
@@ -300,12 +285,6 @@ public:
                             amrex::IntVect ppc = amrex::IntVect(),
                             const bool doSelectRegion = false,
                             const bool adaptivePPC = false);
-
-  void add_particles_exosphere(
-      const amrex::MultiFab& exoDensity, amrex::Real dt, int iLev,
-      amrex::Real weightMacro, int iComp, amrex::Real uth = 0.0,
-      Particles<NStructReal, NStructInt>* electronParts = nullptr,
-      amrex::Real uth_elec = 0.0);
 
   // Copy particles from (ip,jp,kp) to (ig, jg, kg) and shift boundary
   // particle's coordinates accordingly.
@@ -726,8 +705,6 @@ public:
   int get_speciesID() const { return speciesID; }
   amrex::Real get_charge() const { return charge; }
   amrex::Real get_mass() const { return mass; }
-  int get_qomSign() const { return qomSign; }
-  amrex::Real getRandomNumber() { return randNum(); }
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
 

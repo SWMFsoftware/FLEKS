@@ -257,8 +257,8 @@ def main():
     pps_solver_serial_median = (serial_stats["solver_median"] * 1e6) / total_steps
     
     print(f"\nSerial Median Wall-Clock: {t_serial_median:.3f} s (Rate: {pps_serial_median:.3f} μs/part-step)")
-    print(f"Serial Median Mover:      {serial_stats["mover_median"]:.3f} s (Rate: {pps_mover_serial_median:.3f} μs/part-step)")
-    print(f"Serial Median Solver:     {serial_stats["solver_median"]:.3f} s (Rate: {pps_solver_serial_median:.3f} μs/part-step)")
+    print(f"Serial Median Mover:      {serial_stats['mover_median']:.3f} s (Rate: {pps_mover_serial_median:.3f} μs/part-step)")
+    print(f"Serial Median Solver:     {serial_stats['solver_median']:.3f} s (Rate: {pps_solver_serial_median:.3f} μs/part-step)")
     
     # Run parallel benchmark suite
     parallel_stats, code = run_benchmark_suite(2, "run_perf_parallel", count=3)

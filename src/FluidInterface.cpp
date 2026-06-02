@@ -529,10 +529,8 @@ void FluidInterface::distribute_arrays() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     distribute_FabArray(nodeFluid[iLev], nGrids[iLev], DistributionMap(iLev),
                         nVarNode, nGst, doCopy);
-    nodeFluid[iLev].setVal(0.0);
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst, doCopy);
-    centerB[iLev].setVal(0.0);
   }
 
   distribute_grid_arrays();
@@ -589,18 +587,6 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
   int nIdxCount = 0;
   int nCount = 0;
 
-  int firstValidIdx = -1;
-  if (doFill && index != nullptr) {
-    int totalNodes = loop_through_node("count");
-    for (int i = 0; i < totalNodes; i++) {
-      if (index[i] > 0) {
-        firstValidIdx = index[i];
-        break;
-      }
-    }
-  }
-  int lastValidIdx = firstValidIdx;
-
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     // Global NODE box.
     const Box gbx = convert(Geom(iLev).Domain(), { AMREX_D_DECL(1, 1, 1) });
@@ -620,63 +606,34 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
       const Array4<Real>& arr = fluid[mfi].array();
       const auto& status = nodeStatus[iLev][mfi].array();
 
-      int kmin = nDim > 2 ? box.smallEnd(2) : 0;
-      int kmax = nDim > 2 ? box.bigEnd(2) : 0;
-      for (int k = kmin; k <= kmax; ++k) {
-        for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
-          for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
-            IntVect ijk = { AMREX_D_DECL(i, j, k) };
-            if (bit::is_lev_boundary(status(ijk)) || validBox.contains(ijk)) {
-              // If this node is the boundary or inside the valid box.
+      ParallelFor(box, [&](int i, int j, int k) noexcept {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (bit::is_lev_boundary(status(ijk)) || validBox.contains(ijk)) {
+          // If this node is the boundary or inside the valid box.
 
-              if (doCount) {
-                nCount++;
-              } else if (doGetLoc) {
-                int nDimGM = get_fluid_dimension();
-                for (int iDim = 0; iDim < nDimGM; iDim++) {
-                  if (iDim < nDim) {
-                    int ijk_shifted = ijk[iDim];
-                    if (Geom(iLev).isPeriodic(iDim)) {
-                      ijk_shifted = shift_periodic_index(
-                          ijk_shifted, gbx.smallEnd(iDim), gbx.bigEnd(iDim));
-                    }
-                    pos_DI[nCount++] =
-                        (ijk_shifted * dx[iDim] + plo[iDim]) * no2siL;
-                  } else {
-                    pos_DI[nCount++] = 0.0;
-                  }
-                }
-              } else if (doFill) {
-                if (index != nullptr) {
-                  if (index[nIdxCount] > 0) {
-                    lastValidIdx = index[nIdxCount];
-                    for (int iVar = 0; iVar < nVarFluid; iVar++) {
-                      int idx = iVar + nVarFluid * (index[nIdxCount] - 1);
-                      arr(ijk, iVar) = data[idx];
-                    }
-                  } else if (lastValidIdx > 0) {
-                    for (int iVar = 0; iVar < nVarFluid; iVar++) {
-                      int idx = iVar + nVarFluid * (lastValidIdx - 1);
-                      arr(ijk, iVar) = data[idx];
-                    }
-                  } else {
-                    for (int iVar = 0; iVar < nVarFluid; iVar++) {
-                      arr(ijk, iVar) = 0.0;
-                    }
-                  }
-                } else {
-                  // Direct 1-to-1 mapping
-                  for (int iVar = 0; iVar < nVarFluid; iVar++) {
-                    int idx = iVar + nVarFluid * nIdxCount;
-                    arr(ijk, iVar) = data[idx];
-                  }
-                }
-                nIdxCount++;
+          if (doCount) {
+            nCount++;
+          } else if (doGetLoc) {
+            for (int iDim = 0; iDim < nDim; iDim++) {
+              if (Geom(iLev).isPeriodic(iDim)) {
+                ijk[iDim] = shift_periodic_index(ijk[iDim], gbx.smallEnd(iDim),
+                                                 gbx.bigEnd(iDim));
               }
             }
+
+            for (int iDim = 0; iDim < get_fluid_dimension(); iDim++) {
+              pos_DI[nCount++] = (ijk[iDim] * dx[iDim] + plo[iDim]) * no2siL;
+            }
+          } else if (doFill) {
+            for (int iVar = 0; iVar < nVarFluid; iVar++) {
+              int idx;
+              idx = iVar + nVarFluid * (index[nIdxCount] - 1);
+              arr(ijk, iVar) = data[idx];
+            }
+            nIdxCount++;
           }
         }
-      }
+      });
     }
 
     fluid.FillBoundary(Geom(iLev).periodicity());
@@ -857,15 +814,9 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
                 arr(i, j, k, iRho_I[iIon]) * (1 + MoMi_S[0] / MoMi_S[iIon + 1]);
           } // iIon
 
-          if (Rhot > 0) {
-            arr(i, j, k, iUx_I[0]) /= Rhot;
-            arr(i, j, k, iUy_I[0]) /= Rhot;
-            arr(i, j, k, iUz_I[0]) /= Rhot;
-          } else {
-            arr(i, j, k, iUx_I[0]) = 0;
-            arr(i, j, k, iUy_I[0]) = 0;
-            arr(i, j, k, iUz_I[0]) = 0;
-          }
+          arr(i, j, k, iUx_I[0]) /= Rhot;
+          arr(i, j, k, iUy_I[0]) /= Rhot;
+          arr(i, j, k, iUz_I[0]) /= Rhot;
         } else {
           for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
             const double& rho = arr(i, j, k, iRho_I[iFluid]);
@@ -876,26 +827,13 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
             } else {
               const Real* dx = Geom(iLev).CellSize();
               const auto plo = Geom(iLev).ProbLo();
-              const Real x = rPlanetSi > 0
-                                 ? (i * dx[ix_] + plo[ix_]) * No2SiL / rPlanetSi
-                                 : 0.0;
-              const Real y = rPlanetSi > 0
-                                 ? (j * dx[iy_] + plo[iy_]) * No2SiL / rPlanetSi
-                                 : 0.0;
-              const Real z = (rPlanetSi > 0 && nDim > 2)
-                                 ? (k * dx[iz_] + plo[iz_]) * No2SiL / rPlanetSi
-                                 : 0.0;
-              Real r2 = x * x + y * y + (nDim > 2 ? z * z : 0.0);
-              if (rPlanetSi > 0 && r2 < 1.01) {
-                arr(i, j, k, iUx_I[iFluid]) = 0.0;
-                arr(i, j, k, iUy_I[iFluid]) = 0.0;
-                arr(i, j, k, iUz_I[iFluid]) = 0.0;
-              } else {
-                if (doWarn) {
-                  printf("Warning: ZERO density at x = %e, y = %e, z = %e\n", x,
-                         y, z);
-                  Abort("Error: ZERO density!");
-                }
+              const Real x = (i * dx[ix_] + plo[ix_]) * No2SiL / rPlanetSi;
+              const Real y = (j * dx[iy_] + plo[iy_]) * No2SiL / rPlanetSi;
+              const Real z = (k * dx[iz_] + plo[iz_]) * No2SiL / rPlanetSi;
+              if (doWarn) {
+                printf("Warning: ZERO density at x = %e, y = %e, z = %e\n", x,
+                       y, z);
+                Abort("Error: ZERO density!");
               }
             }
           } // iFluid
@@ -1521,17 +1459,7 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
         idxMap.push_back(i);
     }
 
-    int iLev = -1;
-    for (int il = finest_level; il >= 0; il--) {
-      auto idx = Geom(il).CellIndex(xyz.begin());
-      if (cGrids[il].contains(idx)) {
-        iLev = il;
-        break;
-      }
-    }
-    if (iLev < 0)
-      continue;
-
+    int iLev = get_finest_lev(xyz);
     const int iStart = iPoint * nVar;
     for (int iVar = 0; iVar < nVar; iVar++) {
       data_I[iStart + iVar] =

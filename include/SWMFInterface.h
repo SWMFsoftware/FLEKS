@@ -4,7 +4,7 @@
 #include <mpi.h>
 #include <sstream>
 
-#if defined(_PT_COMPONENT_) || defined(_CONVERTER_)
+#ifdef _PT_COMPONENT_
 extern "C" {
 void OH_get_charge_exchange_wrapper(double *rhoIon, double *cs2Ion,
                                     double uIon_D[3], double *rhoNeu,

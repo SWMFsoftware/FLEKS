@@ -146,10 +146,6 @@ private:
   int nSmoothE = 0;
 
   TestCase testCase = RegularSimulation;
-  amrex::Real pickup_Ey = 0.0;
-  amrex::Real pickup_Bz = 0.0;
-  amrex::Real pickup_xMin = -1.0;
-  amrex::Real pickup_xMax = 1.0;
 
   BeamInfo beam;
 
@@ -174,15 +170,8 @@ private:
 
   std::string logFile;
 
-  // Standalone diagnostic log
-  std::string diagLogFile;
-  bool doDiagParticle = false;
-  bool doDiagField = false;
-
   // public methods
 public:
-  bool get_doReport() const { return doReport; }
-
   Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo, int nGst,
       FluidInterface *fluidIn, TimeCtr *tcIn, int id = 0)
       : Grid(gm, amrInfo, nGst, id, "pic"), fi(fluidIn), tc(tcIn) {
@@ -220,7 +209,6 @@ public:
     centerMM.resize(n_lev_max());
 
     jHat.resize(n_lev_max());
-    exoDensity.resize(n_lev_max());
 
     // At most 10 species.
     pBCs.resize(10);
@@ -242,9 +230,6 @@ public:
   void update(bool doReportIn = false);
 
   PicParticles *get_particle_pointer(int i) { return parts[i].get(); }
-  int get_nSpecies() const { return nSpecies; }
-  bool has_particles() const { return !parts.empty(); }
-  const amrex::Vector<amrex::MultiFab> &get_nodeB() const { return nodeB; }
 
   void set_stateOH(OHInterface *in) { stateOH = in; }
   void set_sourceOH(OHInterface *in) { sourcePT2OH = in; }
@@ -268,8 +253,6 @@ public:
 
   void fill_particles();
 
-  void init_exosphere();
-
   void init_source(const FluidInterface &interfaceIn) {
     // To be implemented
 
@@ -279,8 +262,6 @@ public:
   //----------------Initialization end-------------------------------
 
   void charge_exchange();
-  void electron_impact_ionization();
-  void exosphere_charge_exchange();
 
   void sum_moments(bool updateDt = false);
 
@@ -387,8 +368,6 @@ public:
   amrex::Vector<std::array<int, 3> > read_select_particle_input();
   void read_restart();
   void write_log(bool doForce = false, bool doCreateFile = false);
-  void set_diag_options(bool doParticle, bool doField);
-  void write_diag_log(bool doForce = false, bool doCreateFile = false);
   void write_plots(bool doForce = false);
   void write_amrex(const PlotWriter &pw, double const timeNow,
                    int const iCycle);
@@ -612,16 +591,6 @@ private:
   amrex::Real calc_B_field_energy();
   AMREX_EXPORT amrex::UNode_FourthOrder<amrex::Real> node_fourth_order_interp;
 
-  std::vector<ExosphereInfo> exoInfos;
-  bool useExosphere = false;
-  amrex::Vector<amrex::MultiFab> exoDensity;
-
-  bool doElectronImpactIonization = false;
-  amrex::Real ionizationThresholdEnergy = 13.6;
-  amrex::Real OpalBeatyBarE = 10.0;
-  amrex::Real blowoutLimitRatio = 2.0;
-  bool doExosphereChargeExchange = false;
-  amrex::Real cxBlowoutLimitRatio = 2.0;
 };
 
 void find_output_list_caller(const PlotWriter &writerIn,

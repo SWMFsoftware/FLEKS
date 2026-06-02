@@ -1,4 +1,3 @@
-#define _CONVERTER_
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
