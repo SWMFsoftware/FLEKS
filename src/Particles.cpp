@@ -365,8 +365,8 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
                 }
               }
 
-              add_particles_cell(iLev, mfi, ijk, interface, false, cell_ppc, Vel(),
-                                 dt);
+              add_particles_cell(iLev, mfi, ijk, interface, false, cell_ppc,
+                                 Vel(), dt);
             }
           }
     }
