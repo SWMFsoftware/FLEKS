@@ -99,7 +99,10 @@ void PlotWriter::init() {
     std::string::size_type pos = plotString.find("particle");
     particleSpecies = extract_int(plotString.substr(pos));
     if (plotString.find("Pop") != std::string::npos) {
+      namePrefix += "Pop" + std::to_string(particleSpecies);
       particleSpecies--;
+    } else {
+      namePrefix += "S" + std::to_string(particleSpecies);
     }
   } else {
     if (isVerbose)
