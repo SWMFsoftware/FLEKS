@@ -151,11 +151,8 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
     nPPC = ppc;
   }
 
-  if (nPPC == 0) {
-    for (int iDim = 0; iDim < nDim; iDim++) {
-      nPPC[iDim] = 2;
-    }
-  }
+  if (nPPC == 0)
+    return;
 
   if (isTargetPPCDefined && !isFake2D) {
     const auto tppc = target_PPC(iLev)[mfi].array();
@@ -334,32 +331,41 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
             }
 #endif
             if (doAdd) {
+              IntVect cell_ppc = ppc;
+              if (cell_ppc == 0 && nPartPerCell == 0) {
+                for (int iDim = 0; iDim < nDim; iDim++) {
+                  cell_ppc[iDim] = 2;
+                }
+              }
+
               if (adaptivePPC) {
-                // Adjust ppc so that the weight of the
+                // Adjust cell_ppc so that the weight of the
                 // source particles is not too small.
                 const int initPPC = product(nPartPerCell);
-                const int sourcePPC = product(ppc);
+                const int sourcePPC = product(cell_ppc);
 
-                Real rho = fi->get_number_density(mfi, ijk, speciesID, iLev);
-                Real rhoSource =
-                    interface->get_number_density(mfi, ijk, speciesID, iLev);
-                if (dt > 0)
-                  rhoSource *= dt;
+                if (initPPC > 0 && sourcePPC > 0) {
+                  Real rho = fi->get_number_density(mfi, ijk, speciesID, iLev);
+                  Real rhoSource =
+                      interface->get_number_density(mfi, ijk, speciesID, iLev);
+                  if (dt > 0)
+                    rhoSource *= dt;
 
-                Real avgInitW = rho / initPPC;
-                Real avgSourceW = rhoSource / sourcePPC;
+                  Real avgInitW = rho / initPPC;
+                  Real avgSourceW = rhoSource / sourcePPC;
 
-                Real targetSourceW = avgInitW * 0.1;
+                  Real targetSourceW = avgInitW * 0.1;
 
-                if (avgSourceW < targetSourceW) {
-                  Real ratio = pow(avgSourceW / targetSourceW, 1.0 / nDim);
-                  for (int iDim = 0; iDim < nDim; iDim++) {
-                    ppc[iDim] = std::max(1, int(ppc[iDim] * ratio));
+                  if (avgSourceW < targetSourceW) {
+                    Real ratio = pow(avgSourceW / targetSourceW, 1.0 / nDim);
+                    for (int iDim = 0; iDim < nDim; iDim++) {
+                      cell_ppc[iDim] = std::max(1, int(cell_ppc[iDim] * ratio));
+                    }
                   }
                 }
               }
 
-              add_particles_cell(iLev, mfi, ijk, interface, false, ppc, Vel(),
+              add_particles_cell(iLev, mfi, ijk, interface, false, cell_ppc, Vel(),
                                  dt);
             }
           }
