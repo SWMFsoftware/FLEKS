@@ -857,13 +857,11 @@ void Domain::read_param(const bool readGridInfo) {
     if (readGridInfo != isGridCommand)
       continue;
 
-#ifdef FLEKS_STANDALONE
     if (command == "#DESCRIPTION" || command == "#STOP" || command == "#RUN") {
       // These commands are processed by the components or ignored.
       // In standalone mode, we skip them for the Domain.
       continue;
     }
-#endif
 
     param.set_verbose(ParallelDescriptor::IOProcessor());
     Print() << "\n"

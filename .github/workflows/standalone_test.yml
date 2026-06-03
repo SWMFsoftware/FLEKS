@@ -80,8 +80,7 @@ jobs:
         if: steps.cache-standalone.outputs.cache-hit != 'true'
         working-directory: SWMF/PC/FLEKS
         run: |
-          python3 configure.py
-          cp Makefile.conf.standalone.template Makefile.conf
+          ./Config.pl -install=c
           make EXE -j$(nproc)
 
       - name: Run and Verify Standalone FLEKS Tests

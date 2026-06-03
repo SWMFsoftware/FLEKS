@@ -40,10 +40,8 @@ FLEKS/
 ├── .agent/skills/        ← Agent skills
 ├── .agent/workflows/     ← Agent workflows
 ├── Config.pl             ← Perl configuration script (AMReX, test particles, etc.)
-├── configure.py          ← Standalone configure (writes Makefile.def)
 ├── Makefile              ← Top-level Makefile
-├── Makefile.conf.standalone.template ← Template config for standalone builds
-├── Makefile.def.FLEKS    ← Default Makefile definitions for standalone
+├── Makefile.def.FLEKS    ← Default FLEKS Makefile definitions
 ├── PARAM.XML             ← Parameter command documentation (XML, ~1500 lines)
 ├── .clang-format         ← Clang-format configuration (Mozilla-based, 80-col)
 └── .gitignore
@@ -131,14 +129,14 @@ The interface layer follows a pattern:
 
 ## Build System
 
-FLEKS has two build modes. `make LIB` builds the SWMF component library and
-wrappers; `make EXE` builds the standalone `bin/FLEKS.exe` driver.
+FLEKS has two main build targets. `make LIB` builds the SWMF component library
+and wrappers; `make EXE` builds the standalone `bin/FLEKS.exe` driver.
 
-Standalone builds reuse `../../share`, `../../util`, and `../../lib` when FLEKS
-is checked out under `SWMF/PC/FLEKS`. In a pure FLEKS checkout, `Config.pl` can
-clone the same dependencies under the FLEKS directory. `src/.build_mode` records
-the last build mode and triggers a `src/` clean when switching modes, since the
-two modes use different preprocessor flags.
+`Config.pl` chooses the locations of `share`, `util`, `lib`, and AMReX. When
+FLEKS is checked out under `SWMF/PC/FLEKS`, these normally come from the parent
+SWMF tree; in a pure FLEKS checkout, `Config.pl` can clone/use local
+dependencies. Only `make EXE` links the standalone driver; source compilation
+uses the same component preprocessor flag as `make LIB`.
 
 ### Dependencies
 
@@ -173,15 +171,15 @@ make distclean   # Full reset
 ### Configuration
 
 ```bash
-# Standalone setup/configuration
+# Setup/configuration
 ./Config.pl                       # Show current settings when no args are given
 ./Config.pl -install              # Generate Makefile.conf if needed
 ./Config.pl -tp=PBE              # Set test particle output (P, PB, PBE, PBEG)
 ./Config.pl -lev=2               # Set max AMR levels
 ```
 
-Inside an SWMF tree, run the normal SWMF/FLEKS configuration first so
-`Makefile.conf` is generated before `make EXE`.
+Inside an SWMF tree, bare `./Config.pl -install` configures FLEKS to reuse the
+parent SWMF paths.
 
 ### Build Artifacts
 
@@ -352,5 +350,5 @@ Composite step-by-step guides for multi-stage tasks are in `.agent/workflows/`:
   for user-customizable source terms.
 - The `show_git_info.h` file is auto-generated at build time with git revision
   information.
-- Standalone builds define `_PC_COMPONENT_` and `FLEKS_STANDALONE`; SWMF
-  component builds define `_<COMPONENT>_COMPONENT_`.
+- Source builds define `_<COMPONENT>_COMPONENT_`; for FLEKS this is
+  `_PC_COMPONENT_`.

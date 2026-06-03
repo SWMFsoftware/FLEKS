@@ -25,7 +25,7 @@ LIBFLEKS = ../src/libFLEKS.a
 MYLIB    = ${LIBDIR}/lib${COMPONENT}.a
 
 DEPEND:
-	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJS} ${OBJECTS_EXE}
+	@perl ${SCRIPTDIR}/depend.pl ${SEARCH_C} ${OBJS}
 
 LIB:    ${LIBFLEKS} DEPEND
 	make ${MYLIB}

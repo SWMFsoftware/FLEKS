@@ -18,8 +18,8 @@ our $MakefileConf    = 'Makefile.conf';
 our @Arguments       = @ARGV;
 
 my $config     = "share/Scripts/Config.pl";
+my $ConstantsFile = "include/Constants.h";
 
-my $GITCLONE = "git clone"; 
 my $GITDIR = "git\@github.com:SWMFsoftware";
 
 if (not -f $config and not -f "../../$config"){
@@ -29,25 +29,25 @@ if (not -f $config and not -f "../../$config"){
         if (-d "share") {
             system("git clone $GITDIR/share share_tmp && cp -rp share_tmp/. share/ && rm -rf share_tmp") == 0 or die "Error: could not clone share\n";
         } else {
-            system("$GITCLONE $GITDIR/share") == 0 or die "Error: could not clone share\n";
+            system("git clone $GITDIR/share") == 0 or die "Error: could not clone share\n";
         }
     }
     if (not -d "util") {
         print "--- Cloning SWMFsoftware/util ---\n";
-        system("$GITCLONE $GITDIR/util") == 0 or die "Error: could not clone util\n";
+        system("git clone $GITDIR/util") == 0 or die "Error: could not clone util\n";
     }
     if (not -d "util/AMREX") {
         print "--- Cloning SWMFsoftware/AMREX ---\n";
-        system("$GITCLONE $GITDIR/AMREX util/AMREX") == 0 or die "Error: could not clone AMREX\n";
+        system("git clone $GITDIR/AMREX util/AMREX") == 0 or die "Error: could not clone AMREX\n";
     }
 }
 
 my $AmrexDir = "util/AMREX";
 if(-f $config){
-    #Stand-alone FLEKS. Turn on amrex automatically. 
+    # Local FLEKS dependency tree. Turn on AMReX automatically.
     push @Arguments, "-amrex";
     push @Arguments, "-show" unless @ARGV;
-    push @Arguments, "-nodebug", "-install" unless -f "Makefile.conf";
+    push @Arguments, "-nodebug", "-install" unless -f $MakefileConf;
     require $config;
 
     # Compile share lib if it's not there
@@ -57,14 +57,20 @@ if(-f $config){
         system("cd share/Library/src; make LIB") == 0 or die "Error: could not build libSHARE.a\n";
     }
 
-    die "Error: AMReX doest not exist!\n" unless -d $AmrexDir;
+    die "Error: AMReX does not exist!\n" unless -d $AmrexDir;
 }else{
 
-    push @Arguments, "-install=c" unless -f "Makefile.conf";
+    my $IsInstall = 0;
+    foreach (@Arguments) {
+        if (/^-install$/) {
+            $_ = "-install=c";
+        }
+        $IsInstall = 1 if /^-install(=.*)?$/;
+    }
+    push @Arguments, "-install=c" unless -f $MakefileConf or $IsInstall;
     require "../../$config";
     $AmrexDir = "../../util/AMREX"; 
 }
-
 
 # These are inherited from $config
 our %Remaining;   # Arguments not handled by share/Scripts/Config.pl
@@ -132,10 +138,10 @@ sub get_settings{
     }
     close FILE;
 
-    my $NameConstFile = "include/Constants.h";
-    `make $NameConstFile`;
+    system("make", $ConstantsFile) == 0
+        or die "$ERROR could not create $ConstantsFile\n";
     my $nSize;
-    open(FILE, $NameConstFile) or die "$ERROR could not open $NameConstFile\n";   
+    open(FILE, $ConstantsFile) or die "$ERROR could not open $ConstantsFile\n";   
     while(<FILE>){                                                                      
         $nSize = $2   if /\b(ptRecordSize\s*=\s*)(\d+)/i;
 	$nLevMax = $2 if /\b(nLevMax\s*=\s*)(\d+)/i;
@@ -147,8 +153,7 @@ sub get_settings{
 sub set_grid{    
     $nLevMax = $NewLevMax if $NewLevMax;
 
-    my $NameConstFile = "include/Constants.h";
-    @ARGV = ($NameConstFile);
+    @ARGV = ($ConstantsFile);
     while(<>){
         s/\b(nLevMax\s*=[^0-9]*)(\d+)/$1$nLevMax/i;
         print;
@@ -158,9 +163,8 @@ sub set_grid{
 sub set_test_particle{
     $TPSave = $NewTPSave if $NewTPSave;
 
-    my $NameConstFile = "include/Constants.h";
     my $nSize = $nTPSave{$TPSave};
-    @ARGV = ($NameConstFile);
+    @ARGV = ($ConstantsFile);
     while(<>){
         s/\b(ptRecordSize\s*=[^0-9]*)(\d+)/$1$nSize/i;
         print;
