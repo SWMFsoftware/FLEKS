@@ -42,9 +42,8 @@ The `src/Makefile` compiles all `.cpp` files listed in `SRCS` into
 | Variable       | Value                     | Purpose                    |
 |----------------|---------------------------|----------------------------|
 | `SRCS`         | List of `.cpp` files      | Source files for `libFLEKS.a` |
-| `OBJECTS_EXE`  | `main.o`                  | Standalone executable objects |
 | `SEARCH_C`     | `-I../include -I... `     | Include search paths       |
-| `FLAGC_EXTRA`  | `-D_PC_COMPONENT_`        | Component preprocessor flag|
+| `FLAGC_EXTRA`  | `-D_${COMPONENT}_COMPONENT_` | Component preprocessor flag|
 | `LIBFLEKS`     | `libFLEKS.a`              | Output library name        |
 
 ## Preprocessor Flags

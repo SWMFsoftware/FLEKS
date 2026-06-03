@@ -81,8 +81,6 @@ jobs:
         if: steps.cache-standalone.outputs.cache-hit != 'true'
         working-directory: SWMF/PC/FLEKS
         run: |
-          python3 configure.py
-          cp Makefile.conf.standalone.template Makefile.conf
           make EXE -j$(nproc)
 
       - name: Run Standalone Performance Checks
