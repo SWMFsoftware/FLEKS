@@ -79,6 +79,7 @@ LIB: bin include/Constants.h include/UserSource.h compile_commands
 	$(MAKE) -C srcInterface LIB
 
 CONVERTER: bin
+	$(call prepare_exe)
 	$(MAKE) -C src CONVERTER
 
 rundir:
