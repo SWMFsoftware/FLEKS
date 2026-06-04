@@ -16,6 +16,58 @@ void timing_start_c(size_t* nameLen, char* name) {}
 void timing_stop_c(size_t* nameLen, char* name) {}
 }
 
+namespace {
+
+std::string prepare_standalone_run() {
+  std::string paramString;
+
+  if (amrex::ParallelDescriptor::MyProc() == 0) {
+    std::ifstream infile("PARAM.in");
+    if (!infile.is_open()) {
+      std::cerr << "Error: Could not open PARAM.in" << std::endl;
+      amrex::ParallelDescriptor::Abort();
+    }
+
+    std::string line;
+    while (std::getline(infile, line)) {
+      paramString += line + "\n";
+    }
+  }
+
+  int paramLen = static_cast<int>(paramString.length());
+  amrex::ParallelDescriptor::Bcast(&paramLen, 1, 0);
+  if (amrex::ParallelDescriptor::MyProc() != 0) {
+    paramString.resize(paramLen);
+  }
+  if (paramLen > 0) {
+    amrex::ParallelDescriptor::Bcast(paramString.data(), paramLen, 0);
+  }
+
+  if (amrex::ParallelDescriptor::IOProcessor()) {
+    std::filesystem::create_directories("FLEKS1/plots");
+    std::filesystem::create_directories("FLEKS1/restartOUT");
+  }
+
+  return paramString;
+}
+
+void read_stop_criteria(const std::string& paramString, int& maxIter,
+                        double& timeMax) {
+  ReadParam reader;
+  reader = paramString;
+
+  std::string command;
+  while (reader.get_next_command(command)) {
+    if (command == "#STOP") {
+      reader.read_var("MaxIter", maxIter);
+      reader.read_var("TimeMax", timeMax);
+      break;
+    }
+  }
+}
+
+} // namespace
+
 int main(int argc, char* argv[]) {
   using namespace amrex;
 
@@ -24,66 +76,31 @@ int main(int argc, char* argv[]) {
     if (ParallelDescriptor::MyProc() == 0)
       print_git_info();
 
-    // 1. Read PARAM.in into a string
-    std::string paramString;
-    if (ParallelDescriptor::MyProc() == 0) {
-      std::ifstream infile("PARAM.in");
-      if (infile.is_open()) {
-        std::string line;
-        while (std::getline(infile, line)) {
-          paramString += line + "\n";
-        }
-        infile.close();
-      } else {
-        std::cerr << "Error: Could not open PARAM.in" << std::endl;
-        ParallelDescriptor::Abort();
-      }
-    }
-
-    // Broadcast paramString to all processors
-    int paramLen = paramString.length();
-    ParallelDescriptor::Bcast(&paramLen, 1, 0);
-    if (ParallelDescriptor::MyProc() != 0) {
-      paramString.resize(paramLen);
-    }
-    ParallelDescriptor::Bcast(&paramString[0], paramLen, 0);
-
-    // Create output directories
-    if (ParallelDescriptor::IOProcessor()) {
-      std::filesystem::create_directories("FLEKS1/plots");
-      std::filesystem::create_directories("FLEKS1/restartOUT");
-    }
+    // 1. Read PARAM.in, broadcast it, and create standalone output directories.
+    std::string paramString = prepare_standalone_run();
 
     // 2. Initialize Domain
-    Domain domain;
+    fleksDomains.add_new_domain();
+    fleksDomains.select(0);
+    Domain& domain = fleksDomains(0);
     domain.init(0.0, 1, paramString);
+
+    // Turn on all cells.
+    domain.receive_grid_info();
+
+    // Create grids for all components.
+    domain.regrid();
 
     // 3. Set Initial Conditions
     domain.set_ic();
 
     // 4. Run Loop
-    double timeMax = 0.0;
     int maxIter = -1;
+    double timeMax = 0.0;
+    read_stop_criteria(paramString, maxIter, timeMax);
 
-    // Extract stop criteria from PARAM.in
-    {
-      ReadParam reader;
-      reader = paramString;
-      std::string command;
-      while (reader.get_next_command(command)) {
-        if (command == "#STOP") {
-          reader.read_var("MaxIter", maxIter);
-          reader.read_var("TimeMax", timeMax);
-        }
-      }
-    }
-
-    while (true) {
-      if (maxIter >= 0 && domain.tc->get_cycle() >= maxIter)
-        break;
-      if (timeMax > 0 && domain.tc->get_time_si() >= timeMax - 1e-10)
-        break;
-
+    while ((maxIter < 0 || domain.tc->get_cycle() < maxIter) &&
+           (timeMax <= 0.0 || domain.tc->get_time_si() < timeMax - 1e-10)) {
       domain.update();
     }
 
@@ -92,6 +109,7 @@ int main(int argc, char* argv[]) {
 
     // 5. Final output
     domain.write_plots(true);
+    fleksDomains.clear();
   }
 
   Finalize();

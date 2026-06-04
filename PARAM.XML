@@ -190,24 +190,6 @@ such as the GMRES convergence history, to STDOUT. The default frequency
 is every 10 steps. 
 </command>
 
-<command name="DIAGNOSTIC"
-	 alias="DIAGNOSTIC_FLEKS0,DIAGNOSTIC_FLEKS1,DIAGNOSTIC_FLEKS2"
-	 multiple="T">
-  <parameter name="doParticleDiag" type="logical" default="T"/>
-  <parameter name="doFieldDiag"    type="logical" default="T"/>
-#DIAGNOSTIC
-T                    doParticleDiag
-T                    doFieldDiag
-
-Controls which quantities are written to the standalone diagnostic log file
-(PC/plots/log_diag_n&lt;cycle&gt;.log). When doParticleDiag is T, per-species
-particle statistics (macro-particle count, physical particle weight, mean
-velocities Vx/Vy/Vz, and kinetic energy) are logged. When doFieldDiag is T,
-field extrema (max |By| and max |Bz|) are logged. The log is written at the
-frequency controlled by #MONITOR's dnReport parameter. This command only has
-an effect in standalone (non-SWMF) mode.
-</command>
-
 <command name="SAVELOG"
 	 alias="SAVELOG_FLEKS0,SAVELOG_FLEKS1,SAVELOG_FLEKS2"
 	 multiple="T">

@@ -700,9 +700,8 @@ void FluidInterface::set_node_fluid() {
   if (isGridEmpty)
     return;
 
-  if (uniformState.empty()) {
-    Abort("Error: use #UNIFORMSTATE command to set the initail state.");
-  }
+  if (uniformState.empty())
+    return;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (int i = 0; i < nVarFluid; ++i)
