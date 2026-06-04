@@ -111,10 +111,6 @@ T
 1.0                               dt
 1                                 dx
 
-#DIAGNOSTIC
-T                    doParticleDiag
-T                    doFieldDiag
-
 #STOP
 -1                      MaxIter
 1.0                     TimeMax
