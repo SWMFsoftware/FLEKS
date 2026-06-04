@@ -847,6 +847,7 @@ void FluidInterface::set_node_fluid() {
     bool isAnisotropic = false;
     bool isLangmuir = false;
     bool isMHD = false;
+    bool isIAW = false;
 
     auto str_eq_det = [](const std::string& a, const char* b) {
       char var[20] = { 0 };
@@ -873,16 +874,22 @@ void FluidInterface::set_node_fluid() {
       return true;
     };
 
+    bool hasRho0 = false;
+    bool hasRho1 = false;
     for (const auto& wave : waveInfos) {
-      if (str_eq_det(wave.nameVar, "ppar"))
-        isAnisotropic = true;
-      if (str_eq_det(wave.nameVar, "ex") || str_eq_det(wave.nameVar, "rho")) {
-        if (str_eq_det(wave.nameVar, "ex") || wave.nameVar == "rho0") {
-          isLangmuir = true;
-        }
-      }
-      if (str_eq_det(wave.nameVar, "by") || str_eq_det(wave.nameVar, "bz"))
-        isMHD = true;
+      if (str_eq_det(wave.nameVar, "ppar")) isAnisotropic = true;
+      if (str_eq_det(wave.nameVar, "ex")) isLangmuir = true;
+      if (wave.nameVar == "rho0" || wave.nameVar == "rho_e") hasRho0 = true;
+      if (wave.nameVar == "rho1" || wave.nameVar == "rho_i") hasRho1 = true;
+      if (str_eq_det(wave.nameVar, "by") || str_eq_det(wave.nameVar, "bz")) isMHD = true;
+    }
+
+    if (hasRho0 && hasRho1) {
+      isIAW = true;
+    } else if (hasRho0 && isLangmuir) {
+      isLangmuir = true;
+    } else if (hasRho0 && !isMHD && !isAnisotropic) {
+      isLangmuir = true;
     }
 
     if (isAnisotropic) {
@@ -890,6 +897,8 @@ void FluidInterface::set_node_fluid() {
       by0_wave = 0.04;
     } else if (isLangmuir) {
       p0 = 0.0;
+    } else if (isIAW) {
+      p0 = 1.0;
     } else if (isMHD) {
       bx0_wave = 1.0;
       by0_wave = sqrt(2.0);
@@ -1064,15 +1073,20 @@ void FluidInterface::set_node_fluid() {
           Real dEy = dEx_w * ex_y + dEy_w * ey_y + dEz_w * ez_y;
           Real dEz = dEx_w * ex_z + dEy_w * ey_z + dEz_w * ez_z;
 
-          // Apply background + perturbations to all fluids/species, scaled by
-          // mass
+          // Apply background + perturbations to all fluids/species, scaled by mass
           for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
             const Real m = MoMi_S[iFluid];
             Real rho = (rho0 + dRho[iFluid]) * m;
             Real ux = ux0 + dUx[iFluid];
             Real uy = uy0 + dUy[iFluid];
             Real uz = uz0 + dUz[iFluid];
-            Real p = (p0 + dP[iFluid]) * m;
+
+            Real species_p0 = p0;
+            if (isIAW) {
+              if (iFluid == 0) species_p0 = 1.0;
+              else species_p0 = 0.05;
+            }
+            Real p = (species_p0 + dP[iFluid]) * m;
 
             arr(i, j, k, iRho_I[iFluid]) = rho;
             arr(i, j, k, iRhoUx_I[iFluid]) = rho * ux;

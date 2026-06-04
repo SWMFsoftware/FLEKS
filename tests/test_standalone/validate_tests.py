@@ -815,6 +815,62 @@ def validate_langmuir(diags):
         return False, "; ".join(reasons)
 
 
+def validate_ion_acoustic(diags):
+    print("Validating Ion Acoustic Wave (IAW) Test...")
+    if not diags:
+        print("FAIL: No diagnostic outputs parsed.")
+        return False, "No diagnostic outputs parsed"
+
+    passed = True
+    reasons = []
+
+    from collections import defaultdict
+    by_species = defaultdict(list)
+    for d in diags:
+        by_species[d["species"]].append(d)
+
+    for iS, species_diags in sorted(by_species.items()):
+        if not species_diags:
+            continue
+
+        # 1. Particle count conservation
+        initial_phys = species_diags[0]["phys"]
+        for diag in species_diags:
+            t = diag["time"]
+            actual_phys = diag["phys"]
+            if initial_phys > 0 and abs(actual_phys - initial_phys) > 1e-5 * initial_phys:
+                print(f"  FAIL species {iS} at t={t:.2f}: Particle count changed! "
+                      f"Expected={initial_phys:.2e}, Actual={actual_phys:.2e}")
+                passed = False
+                reasons.append(f"Species {iS} particle count changed at t={t:.2f}")
+
+        # 2. Check that bulk velocity vx oscillates (non-zero and bounded)
+        vx_vals = [d["vx"] for d in species_diags]
+        max_abs_vx = max(abs(vx) for vx in vx_vals)
+        print(f"  Species {iS} max|vx| = {max_abs_vx:.6f}")
+
+        min_limit = 0.002 if iS == 0 else 0.0001
+        max_limit = 0.05 if iS == 0 else 0.005
+
+        if max_abs_vx < min_limit:
+            print(f"  FAIL species {iS}: Wave is dead or bulk velocity did not oscillate! Max |vx|={max_abs_vx:.6f} (expected > {min_limit:.6f})")
+            passed = False
+            reasons.append(f"Species {iS} wave is inactive/dead (max |vx| too small)")
+        elif max_abs_vx > max_limit:
+            print(f"  FAIL species {iS}: Wave bulk velocity blew up! Max |vx|={max_abs_vx:.6f} (expected < {max_limit:.6f})")
+            passed = False
+            reasons.append(f"Species {iS} wave blew up (max |vx| too large)")
+        else:
+            print(f"  SUCCESS: Species {iS} wave active and bounded.")
+
+    if passed:
+        print("Ion Acoustic Wave Test: PASSED")
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
+
+
+
 def validate_tophat(diags, field_diags=None):
     print("Validating TopHat Test...")
     if not field_diags:
@@ -977,7 +1033,8 @@ def main():
         "slow_wave": validate_slow_wave,
         "anisotropic_wave": validate_anisotropic_wave,
         "tophat": validate_tophat,
-        "langmuir": validate_langmuir
+        "langmuir": validate_langmuir,
+        "ion_acoustic": validate_ion_acoustic
     }
     
     # Discover test subdirectories under tests/test_standalone
