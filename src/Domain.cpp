@@ -451,10 +451,7 @@ void Domain::set_ic() {
   // with GM. See Domain::init().
   if (!(doRestart && !doRestartFIOnly)) {
 
-#ifdef _PT_COMPONENT_
-    if (!doRestartFIOnly)
-      fi->set_node_fluid();
-#endif
+    fi->set_node_fluid();
 
     pic->fill_new_cells();
 
