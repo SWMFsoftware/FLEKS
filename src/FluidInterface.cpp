@@ -877,11 +877,16 @@ void FluidInterface::set_node_fluid() {
     bool hasRho0 = false;
     bool hasRho1 = false;
     for (const auto& wave : waveInfos) {
-      if (str_eq_det(wave.nameVar, "ppar")) isAnisotropic = true;
-      if (str_eq_det(wave.nameVar, "ex")) isLangmuir = true;
-      if (wave.nameVar == "rho0" || wave.nameVar == "rho_e") hasRho0 = true;
-      if (wave.nameVar == "rho1" || wave.nameVar == "rho_i") hasRho1 = true;
-      if (str_eq_det(wave.nameVar, "by") || str_eq_det(wave.nameVar, "bz")) isMHD = true;
+      if (str_eq_det(wave.nameVar, "ppar"))
+        isAnisotropic = true;
+      if (str_eq_det(wave.nameVar, "ex"))
+        isLangmuir = true;
+      if (wave.nameVar == "rho0" || wave.nameVar == "rho_e")
+        hasRho0 = true;
+      if (wave.nameVar == "rho1" || wave.nameVar == "rho_i")
+        hasRho1 = true;
+      if (str_eq_det(wave.nameVar, "by") || str_eq_det(wave.nameVar, "bz"))
+        isMHD = true;
     }
 
     if (hasRho0 && hasRho1) {
@@ -1073,7 +1078,8 @@ void FluidInterface::set_node_fluid() {
           Real dEy = dEx_w * ex_y + dEy_w * ey_y + dEz_w * ez_y;
           Real dEz = dEx_w * ex_z + dEy_w * ey_z + dEz_w * ez_z;
 
-          // Apply background + perturbations to all fluids/species, scaled by mass
+          // Apply background + perturbations to all fluids/species, scaled by
+          // mass
           for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
             const Real m = MoMi_S[iFluid];
             Real rho = (rho0 + dRho[iFluid]) * m;
@@ -1083,8 +1089,10 @@ void FluidInterface::set_node_fluid() {
 
             Real species_p0 = p0;
             if (isIAW) {
-              if (iFluid == 0) species_p0 = 1.0;
-              else species_p0 = 0.05;
+              if (iFluid == 0)
+                species_p0 = 1.0;
+              else
+                species_p0 = 0.05;
             }
             Real p = (species_p0 + dP[iFluid]) * m;
 
