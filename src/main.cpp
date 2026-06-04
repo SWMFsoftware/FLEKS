@@ -18,16 +18,6 @@ void timing_stop_c(size_t* nameLen, char* name) {}
 
 namespace {
 
-struct StopCriteria {
-  double timeMax = 0.0;
-  int maxIter = -1;
-
-  bool reached(const Domain& domain) const {
-    return (maxIter >= 0 && domain.tc->get_cycle() >= maxIter) ||
-           (timeMax > 0.0 && domain.tc->get_time_si() >= timeMax - 1e-10);
-  }
-};
-
 std::string prepare_standalone_run() {
   std::string paramString;
 
@@ -61,20 +51,19 @@ std::string prepare_standalone_run() {
   return paramString;
 }
 
-StopCriteria read_stop_criteria(const std::string& paramString) {
-  StopCriteria stopCriteria;
+void read_stop_criteria(const std::string& paramString, int& maxIter,
+                        double& timeMax) {
   ReadParam reader;
   reader = paramString;
 
   std::string command;
   while (reader.get_next_command(command)) {
     if (command == "#STOP") {
-      reader.read_var("MaxIter", stopCriteria.maxIter);
-      reader.read_var("TimeMax", stopCriteria.timeMax);
+      reader.read_var("MaxIter", maxIter);
+      reader.read_var("TimeMax", timeMax);
+      break;
     }
   }
-
-  return stopCriteria;
 }
 
 } // namespace
@@ -106,8 +95,12 @@ int main(int argc, char* argv[]) {
     domain.set_ic();
 
     // 4. Run Loop
-    const StopCriteria stopCriteria = read_stop_criteria(paramString);
-    while (!stopCriteria.reached(domain)) {
+    int maxIter = -1;
+    double timeMax = 0.0;
+    read_stop_criteria(paramString, maxIter, timeMax);
+
+    while ((maxIter < 0 || domain.tc->get_cycle() < maxIter) &&
+           (timeMax <= 0.0 || domain.tc->get_time_si() < timeMax - 1e-10)) {
       domain.update();
     }
 
@@ -116,6 +109,7 @@ int main(int argc, char* argv[]) {
 
     // 5. Final output
     domain.write_plots(true);
+    fleksDomains.clear();
   }
 
   Finalize();
