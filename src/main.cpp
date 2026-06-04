@@ -58,6 +58,12 @@ int main(int argc, char* argv[]) {
     Domain domain;
     domain.init(0.0, 1, paramString);
 
+    // Turn on all cells. 
+    domain.receive_grid_info();
+
+    // Create grids for all components.
+    domain.regrid();
+
     // 3. Set Initial Conditions
     domain.set_ic();
 

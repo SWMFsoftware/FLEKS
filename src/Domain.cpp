@@ -115,30 +115,6 @@ void Domain::init(double time, const int iDomain,
     // may change again during coupling.
     read_restart();
   }
-
-  if (!initFromSWMF) {
-    // YC: Why don't we just call Domain::regrid() here? To be resolved.
-    if (!doRestart) {
-      fi->set_base_grid(BoxArray(centerBox));
-      pic->set_base_grid(BoxArray(centerBox));
-
-      fi->regrid(fi->get_base_grid(), nullptr);
-      pic->regrid(pic->get_base_grid(), fi.get());
-      if (pt)
-        pt->regrid(fi->boxArray(0), fi.get());
-    }
-
-    if (stateOH)
-      stateOH->regrid(fi->boxArray(0), fi.get());
-    if (sourcePT2OH)
-      sourcePT2OH->regrid(fi->boxArray(0), fi.get());
-
-    if (doRestart && doRestartFIOnly) {
-      pic->regrid(fi->boxArray(0), fi.get());
-      if (pt)
-        pt->regrid(fi->boxArray(0), fi.get());
-    }
-  }
 };
 
 //========================================================
