@@ -16,6 +16,69 @@ void timing_start_c(size_t* nameLen, char* name) {}
 void timing_stop_c(size_t* nameLen, char* name) {}
 }
 
+namespace {
+
+struct StopCriteria {
+  double timeMax = 0.0;
+  int maxIter = -1;
+
+  bool reached(const Domain& domain) const {
+    return (maxIter >= 0 && domain.tc->get_cycle() >= maxIter) ||
+           (timeMax > 0.0 && domain.tc->get_time_si() >= timeMax - 1e-10);
+  }
+};
+
+std::string prepare_standalone_run() {
+  std::string paramString;
+
+  if (amrex::ParallelDescriptor::MyProc() == 0) {
+    std::ifstream infile("PARAM.in");
+    if (!infile.is_open()) {
+      std::cerr << "Error: Could not open PARAM.in" << std::endl;
+      amrex::ParallelDescriptor::Abort();
+    }
+
+    std::string line;
+    while (std::getline(infile, line)) {
+      paramString += line + "\n";
+    }
+  }
+
+  int paramLen = static_cast<int>(paramString.length());
+  amrex::ParallelDescriptor::Bcast(&paramLen, 1, 0);
+  if (amrex::ParallelDescriptor::MyProc() != 0) {
+    paramString.resize(paramLen);
+  }
+  if (paramLen > 0) {
+    amrex::ParallelDescriptor::Bcast(paramString.data(), paramLen, 0);
+  }
+
+  if (amrex::ParallelDescriptor::IOProcessor()) {
+    std::filesystem::create_directories("FLEKS1/plots");
+    std::filesystem::create_directories("FLEKS1/restartOUT");
+  }
+
+  return paramString;
+}
+
+StopCriteria read_stop_criteria(const std::string& paramString) {
+  StopCriteria stopCriteria;
+  ReadParam reader;
+  reader = paramString;
+
+  std::string command;
+  while (reader.get_next_command(command)) {
+    if (command == "#STOP") {
+      reader.read_var("MaxIter", stopCriteria.maxIter);
+      reader.read_var("TimeMax", stopCriteria.timeMax);
+    }
+  }
+
+  return stopCriteria;
+}
+
+} // namespace
+
 int main(int argc, char* argv[]) {
   using namespace amrex;
 
@@ -24,35 +87,8 @@ int main(int argc, char* argv[]) {
     if (ParallelDescriptor::MyProc() == 0)
       print_git_info();
 
-    // 1. Read PARAM.in into a string
-    std::string paramString;
-    if (ParallelDescriptor::MyProc() == 0) {
-      std::ifstream infile("PARAM.in");
-      if (infile.is_open()) {
-        std::string line;
-        while (std::getline(infile, line)) {
-          paramString += line + "\n";
-        }
-        infile.close();
-      } else {
-        std::cerr << "Error: Could not open PARAM.in" << std::endl;
-        ParallelDescriptor::Abort();
-      }
-    }
-
-    // Broadcast paramString to all processors
-    int paramLen = paramString.length();
-    ParallelDescriptor::Bcast(&paramLen, 1, 0);
-    if (ParallelDescriptor::MyProc() != 0) {
-      paramString.resize(paramLen);
-    }
-    ParallelDescriptor::Bcast(&paramString[0], paramLen, 0);
-
-    // Create output directories
-    if (ParallelDescriptor::IOProcessor()) {
-      std::filesystem::create_directories("FLEKS1/plots");
-      std::filesystem::create_directories("FLEKS1/restartOUT");
-    }
+    // 1. Read PARAM.in, broadcast it, and create standalone output directories.
+    std::string paramString = prepare_standalone_run();
 
     // 2. Initialize Domain
     fleksDomains.add_new_domain();
@@ -70,28 +106,8 @@ int main(int argc, char* argv[]) {
     domain.set_ic();
 
     // 4. Run Loop
-    double timeMax = 0.0;
-    int maxIter = -1;
-
-    // Extract stop criteria from PARAM.in
-    {
-      ReadParam reader;
-      reader = paramString;
-      std::string command;
-      while (reader.get_next_command(command)) {
-        if (command == "#STOP") {
-          reader.read_var("MaxIter", maxIter);
-          reader.read_var("TimeMax", timeMax);
-        }
-      }
-    }
-
-    while (true) {
-      if (maxIter >= 0 && domain.tc->get_cycle() >= maxIter)
-        break;
-      if (timeMax > 0 && domain.tc->get_time_si() >= timeMax - 1e-10)
-        break;
-
+    const StopCriteria stopCriteria = read_stop_criteria(paramString);
+    while (!stopCriteria.reached(domain)) {
       domain.update();
     }
 
