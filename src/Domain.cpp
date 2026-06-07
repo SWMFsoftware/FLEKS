@@ -1,10 +1,6 @@
 #include "Domain.h"
 #include "GridUtility.h"
-#ifdef _PT_COMPONENT_
-#include "OHSource.h"
-#else
 #include "UserSource.h"
-#endif
 #include "Shape.h"
 
 using namespace amrex;
