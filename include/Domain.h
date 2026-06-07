@@ -27,6 +27,8 @@ private:
 
   bool usePT = false;
 
+  bool useSource = false;
+
 public:
   // Q: Why are pic and pt defined as pointers?
   // A: Pic and particleTracker are derived from AmrCore, whose initialization

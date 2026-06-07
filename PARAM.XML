@@ -340,6 +340,18 @@ T                   useParticleTracker
 Turning on/off the test particle module. 
 </command>
 
+<command name="SOURCE"
+	 alias="SOURCE_FLEKS0,SOURCE_FLEKS1,SOURCE_FLEKS2"
+	 multiple="T">
+  <parameter name="useSource" type="logical" default="F"/>
+
+#SOURCE
+F                   useSource
+
+Turning on/off the user source. PT builds use source by default unless
+this command sets useSource to false.
+</command>
+
 <command name="TIMESTEPPING"
 	 alias="TIMESTEPPING_FLEKS0,TIMESTEPPING_FLEKS1,TIMESTEP,TIMESTEP_FLEKS2,TIMESTEP_FLEKS0,TIMESTEP_FLEKS1,TIMESTEP_FLEKS2"
 	 multiple="T">
