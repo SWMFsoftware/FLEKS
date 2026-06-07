@@ -42,7 +42,6 @@ public:
   std::unique_ptr<FluidInterface> fi;
 
   std::unique_ptr<SourceInterface> source;
-  bool useFluidSource = false;
 
   // So far, stateOH is only used for OH-PT coupling. It stores the plasma
   // variables obtained from OH.

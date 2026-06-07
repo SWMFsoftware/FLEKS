@@ -83,7 +83,7 @@ void Domain::init(double time, const int iDomain,
   pic->set_sourceOH(sourcePT2OH.get());
 #endif
 
-  if (useFluidSource || useSource) {
+  if (useSource) {
     source =
         std::make_unique<UserSource>(*fi, gridID, "picSource", SourceFluid);
     amrex::Print() << source->get_info() << " is used for source" << std::endl;
@@ -470,7 +470,7 @@ void Domain::set_state_var(double *data, int *index,
       pic->update_cells_for_pt();
     }
 
-    if (source && useFluidSource)
+    if (source)
       source->set_source(*fi);
   }
 }
@@ -894,8 +894,6 @@ void Domain::read_param(const bool readGridInfo) {
       param.read_var("doTPRestart", doRestartPT);
     } else if (command == "#RESTARTFIONLY") {
       param.read_var("doRestartFIOnly", doRestartFIOnly);
-    } else if (command == "#SOURCE") {
-      param.read_var("useFluidSource", useFluidSource);
     } else if (command == "#INITFROMSWMF") {
       param.read_var("initFromSWMF", initFromSWMF);
     } else if (command == "#RECEIVEICONLY") {
