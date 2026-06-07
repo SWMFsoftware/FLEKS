@@ -19,6 +19,7 @@ our @Arguments       = @ARGV;
 
 my $config     = "share/Scripts/Config.pl";
 my $ConstantsFile = "include/Constants.h";
+my $UserSourceFile = "include/UserSource.h";
 
 my $GITDIR = "git\@github.com:SWMFsoftware";
 
@@ -179,7 +180,25 @@ sub show_settings{
     print "AMReX: nDim         = $AmrexDim \n";
     print "AMReX: nLevMax      = $nLevMax \n";
     print "AMReX: tiny profile = $AmrexTinyProfile \n";
-    print "Test Particle info = $TPInfo{$TPSave} \n";
+    print "Test Particle info  = $TPInfo{$TPSave} \n";
+    print "User Source         = " . &get_user_source_info . " \n";
+}
+################################################################################
+sub get_user_source_info{
+    open(my $file, "<", $UserSourceFile)
+        or return "Unavailable ($UserSourceFile not found)";
+
+    local $/;
+    my $content = <$file>;
+    close $file;
+
+    if($content =~ /\binfo\s*=\s*"((?:\\.|[^"\\])*)"\s*;/s){
+        my $info = $1;
+        $info =~ s/\\(["\\])/$1/g;
+        return $info;
+    }
+
+    return "Unavailable (info not set in $UserSourceFile)";
 }
 ################################################################################
 sub print_help{
