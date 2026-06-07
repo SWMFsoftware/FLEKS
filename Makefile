@@ -22,9 +22,6 @@ include/show_git_info.h: include/show_git_info.h.orig
 include/Constants.h: include/Constants.h.orig
 	cp -f include/Constants.h.orig include/Constants.h 
 
-include/UserSource.h: include/UserSource.h.orig
-	cp -f include/UserSource.h.orig include/UserSource.h
-
 Makefile.def Makefile.conf:
 	./Config.pl -install
 
@@ -58,9 +55,9 @@ FLEKS: EXE
 bin:
 	mkdir -p bin
 
-install: bin include/Constants.h include/UserSource.h
+install: bin include/Constants.h
 
-LIB: bin include/Constants.h include/UserSource.h compile_commands
+LIB: bin include/Constants.h compile_commands
 	@if [ ! -f $(SHARE_LIB) ]; then \
 		echo ""; \
 		echo "ERROR: Cannot make LIB outside a built SWMF tree."; \

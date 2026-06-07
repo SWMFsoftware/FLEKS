@@ -10,6 +10,7 @@ $^I = "";
 push @INC, ".";
 
 use strict;
+use File::Copy qw(copy);
 
 our $Component       = 'PC';
 our $Code            = 'FLEKS';
@@ -19,6 +20,13 @@ our @Arguments       = @ARGV;
 
 my $config     = "share/Scripts/Config.pl";
 my $ConstantsFile = "include/Constants.h";
+my $UserSourceFile = "include/UserSource.h";
+my $UserSourceDir = "userfiles";
+
+if (@Arguments == 1 and $Arguments[0] eq "-u") {
+    &print_user_source_options;
+    exit 0;
+}
 
 my $GITDIR = "git\@github.com:SWMFsoftware";
 
@@ -89,23 +97,38 @@ my $AmrexDim;
 
 my $nLevMax=1;
 my $NewLevMax;
+my $NewUserSource;
+my $ListUserSources;
 
 foreach (@Arguments){
      if(/^-s$/)                 {$Show=1;       next};
      if(/^-h$/)                 {$Help=1;       next};     
      if(/^-tp=(.*)$/)           {$NewTPSave=$1; next};
-     if(/^-lev=(.*)$/)          {$NewLevMax=$1; next};           
+     if(/^-lev=(.*)$/)          {$NewLevMax=$1; next};
+     if(/^-u$/)                 {$ListUserSources=1; next};
+     if(/^-u=(.*)$/)            {$NewUserSource=$1; next};
      warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
 }
 
 die "$ERROR -tp input should be 'P', 'PB', 'PBE', or 'PBEG'.\n"
     if $NewTPSave and not exists $nTPSave{$NewTPSave};
 
+die "$ERROR -u input should use letters, numbers, or underscores.\n"
+    . &get_user_source_options_text
+    if defined $NewUserSource and $NewUserSource !~ /^[A-Za-z0-9_]+$/;
+
 my $AmrexComp;
 my $AmrexDebug;
 my $AmrexTinyProfile; 
 
+if ($ListUserSources) {
+    &print_user_source_options;
+    exit 0;
+}
+
 &get_settings;
+
+&set_user_source if defined $NewUserSource;
 
 &set_test_particle if $NewTPSave and $NewTPSave ne $TPSave;
 
@@ -171,6 +194,38 @@ sub set_test_particle{
     } 
 }
 ################################################################################
+sub set_user_source{
+    my $sourceFile = "$UserSourceDir/${NewUserSource}Source.h";
+
+    die "$ERROR could not find $sourceFile\n" . &get_user_source_options_text
+        unless -f $sourceFile;
+
+    copy($sourceFile, $UserSourceFile)
+        or die "$ERROR could not copy $sourceFile to $UserSourceFile: $!\n";
+}
+################################################################################
+sub print_user_source_options{
+    print &get_user_source_options_text;
+}
+################################################################################
+sub get_user_source_options_text{
+    my $text = "Available user source options:\n";
+
+    my @sourceFiles = sort glob("$UserSourceDir/*Source.h");
+    unless (@sourceFiles) {
+        return $text . "  None found in $UserSourceDir\n";
+    }
+
+    foreach my $sourceFile (@sourceFiles) {
+        my $name = $sourceFile;
+        $name =~ s#^\Q$UserSourceDir\E/##;
+        $name =~ s/Source\.h$//;
+        $text .= "  $name\n";
+    }
+
+    return $text;
+}
+################################################################################
 sub show_settings{
     &get_settings;    
 
@@ -179,7 +234,25 @@ sub show_settings{
     print "AMReX: nDim         = $AmrexDim \n";
     print "AMReX: nLevMax      = $nLevMax \n";
     print "AMReX: tiny profile = $AmrexTinyProfile \n";
-    print "Test Particle info = $TPInfo{$TPSave} \n";
+    print "Test Particle info  = $TPInfo{$TPSave} \n";
+    print "User Source         = " . &get_user_source_info . " \n";
+}
+################################################################################
+sub get_user_source_info{
+    open(my $file, "<", $UserSourceFile)
+        or return "Unavailable ($UserSourceFile not found)";
+
+    local $/;
+    my $content = <$file>;
+    close $file;
+
+    if($content =~ /\binfo\s*=\s*"((?:\\.|[^"\\])*)"\s*;/s){
+        my $info = $1;
+        $info =~ s/\\(["\\])/$1/g;
+        return $info;
+    }
+
+    return "Unavailable (info not set in $UserSourceFile)";
 }
 ################################################################################
 sub print_help{
@@ -188,6 +261,10 @@ sub print_help{
 -s            Show the configuration for AMReX.
 
 -lev          Number of maximum grid levels. It is a uniform grid without AMR if lev=1.	
+
+-u            Show available user source options.
+
+-u=NAME       Select user source file userfiles/NAMESource.h.
 
 -tp=P,PB,PBE,PBEG  Test particle output information.
               P: only save particle velocity + location

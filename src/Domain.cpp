@@ -1,11 +1,7 @@
 #include "Domain.h"
 #include "GridUtility.h"
-#ifdef _PT_COMPONENT_
-#include "OHSource.h"
-#else
-#include "UserSource.h"
-#endif
 #include "Shape.h"
+#include "UserSource.h"
 
 using namespace amrex;
 
@@ -20,6 +16,10 @@ void Domain::init(double time, const int iDomain,
   gridID = iDomain;
   gridName = std::string("FLEKS") + std::to_string(gridID);
   printPrefix = gridName + ": ";
+
+#ifdef _PT_COMPONENT_
+  useSource = true;
+#endif
 
   { // It looks like the file saving may crash if the size of a single file is
     // too large. The numbers 64 and 2048 are chosen empirically.
@@ -72,9 +72,7 @@ void Domain::init(double time, const int iDomain,
 
   init_time_ctr();
 
-  bool useSource = false;
 #ifdef _PT_COMPONENT_
-  useSource = true;
   stateOH =
       std::make_unique<OHInterface>(*fi, gridID, "stateOH", InteractionFluid);
 
@@ -87,7 +85,7 @@ void Domain::init(double time, const int iDomain,
   pic->set_sourceOH(sourcePT2OH.get());
 #endif
 
-  if (useFluidSource || useSource) {
+  if (useSource) {
     source =
         std::make_unique<UserSource>(*fi, gridID, "picSource", SourceFluid);
     amrex::Print() << source->get_info() << " is used for source" << std::endl;
@@ -474,7 +472,7 @@ void Domain::set_state_var(double *data, int *index,
       pic->update_cells_for_pt();
     }
 
-    if (source && useFluidSource)
+    if (source)
       source->set_source(*fi);
   }
 }
@@ -891,6 +889,8 @@ void Domain::read_param(const bool readGridInfo) {
 
     } else if (command == "#PARTICLETRACKER") {
       param.read_var("usePT", usePT);
+    } else if (command == "#SOURCE") {
+      param.read_var("useSource", useSource);
     } else if (command == "#RESTART") {
       param.read_var("doRestart", doRestart);
       doRestartPT = doRestart;
@@ -898,8 +898,6 @@ void Domain::read_param(const bool readGridInfo) {
       param.read_var("doTPRestart", doRestartPT);
     } else if (command == "#RESTARTFIONLY") {
       param.read_var("doRestartFIOnly", doRestartFIOnly);
-    } else if (command == "#SOURCE") {
-      param.read_var("useFluidSource", useFluidSource);
     } else if (command == "#INITFROMSWMF") {
       param.read_var("initFromSWMF", initFromSWMF);
     } else if (command == "#RECEIVEICONLY") {

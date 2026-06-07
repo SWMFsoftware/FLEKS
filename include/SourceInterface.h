@@ -7,6 +7,7 @@
 class SourceInterface : public FluidInterface {
 protected:
   std::string info = "SourceInterface class";
+  bool useFluidSource = false;
 
 public:
   SourceInterface(const FluidInterface& other, int id, std::string tag,
@@ -27,6 +28,9 @@ public:
   };
 
   virtual void set_source(const FluidInterface& other) {
+    if (!useFluidSource)
+      return;
+
     amrex::Print() << "Warning: SourceInterface::set_source is called but not "
                       "implemented."
                    << std::endl;

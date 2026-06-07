@@ -27,6 +27,8 @@ private:
 
   bool usePT = false;
 
+  bool useSource = false;
+
 public:
   // Q: Why are pic and pt defined as pointers?
   // A: Pic and particleTracker are derived from AmrCore, whose initialization
@@ -42,7 +44,6 @@ public:
   std::unique_ptr<FluidInterface> fi;
 
   std::unique_ptr<SourceInterface> source;
-  bool useFluidSource = false;
 
   // So far, stateOH is only used for OH-PT coupling. It stores the plasma
   // variables obtained from OH.
