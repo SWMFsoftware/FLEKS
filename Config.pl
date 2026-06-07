@@ -161,7 +161,7 @@ sub get_settings{
     }
     close FILE;
 
-    system("make", $ConstantsFile) == 0
+    system("make", "-s", $ConstantsFile) == 0
         or die "$ERROR could not create $ConstantsFile\n";
     my $nSize;
     open(FILE, $ConstantsFile) or die "$ERROR could not open $ConstantsFile\n";   
