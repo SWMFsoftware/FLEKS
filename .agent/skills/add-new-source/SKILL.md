@@ -1,6 +1,6 @@
 ---
-name: Add New Source
-description: Create new .cpp/.h files following FLEKS project conventions and coding standards
+name: add-new-source
+description: Create new compiled .cpp/.h files or selectable FLEKS user source templates following project conventions
 ---
 
 # Add New Source
@@ -14,6 +14,12 @@ This skill creates new source files following FLEKS conventions.
 | Headers (`.h`) | `include/` |
 | Implementation (`.cpp`) | `src/` |
 | Interface code | `srcInterface/` |
+| Selectable user source templates | `userfiles/*Source.h` |
+| Active generated user source | `include/UserSource.h` |
+
+`include/UserSource.h` is the selected local copy used by `Domain.cpp`. Add
+reusable user source implementations under `userfiles/` and select them with
+`./Config.pl -u=<Name>` instead of editing `include/UserSource.h` directly.
 
 ## Naming Conventions
 
@@ -83,7 +89,7 @@ void NewFeature::do_something() {
 }
 ```
 
-## Steps to Add a New File
+## Steps to Add a Compiled File
 
 ### 1. Create Header File
 
@@ -121,6 +127,67 @@ This happens automatically with the build, but you can force it:
 ```bash
 make compile_commands
 ```
+
+## Steps to Add a User Source Template
+
+Use this workflow when adding a selectable source-term implementation for
+`#SOURCE`, not a normal compiled `.cpp` file.
+
+### 1. Create Template Header
+
+Create `userfiles/NewSource.h`. The filename must end in `Source.h`; the
+selection name is the prefix before `Source.h` (`New` in this example).
+
+```cpp
+#ifndef _NEWSOURCE_H_
+#define _NEWSOURCE_H_
+
+#include "SourceInterface.h"
+
+class UserSource : public SourceInterface {
+public:
+  UserSource(const FluidInterface& other, int id, std::string tag,
+             FluidType typeIn = SourceFluid)
+      : SourceInterface(other, id, tag, typeIn) {
+    info = "New Source";
+  }
+};
+
+#endif
+```
+
+### 2. Override Source Hooks as Needed
+
+For sources that depend on fluid fields, set `useFluidSource = true` in the
+constructor and override `set_source(const FluidInterface& other)`. Override
+`sum_to_single_source()` only when the source needs post-processing before
+particle injection. Use `userfiles/ExoSource.h` as the current detailed pattern.
+
+### 3. Select and Inspect the Source
+
+List available templates:
+```bash
+./Config.pl -u
+```
+
+Select one template:
+```bash
+./Config.pl -u=New
+```
+
+This copies `userfiles/NewSource.h` to `include/UserSource.h`. A plain install
+seeds `include/UserSource.h` from `userfiles/DefaultSource.h` when no selected
+copy exists.
+
+### 4. Enable the Source in Parameters
+
+Set `#SOURCE` in `PARAM.in` when the source should be active:
+```text
+#SOURCE
+T                   useSource
+```
+
+PT builds enable source use by default unless `#SOURCE` sets it to false.
 
 ## Header Order Standard
 
@@ -172,3 +239,6 @@ If your new class needs to work with existing code:
 - [ ] **File added to `SRCS` in `src/Makefile`**
 - [ ] Code compiles without warnings
 - [ ] `compile_commands.json` updated
+- [ ] User source templates live in `userfiles/*Source.h`
+- [ ] `./Config.pl -u` lists any new user source option
+- [ ] `PARAM.XML` documents any new parameter needed by the source
