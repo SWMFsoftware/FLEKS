@@ -38,15 +38,15 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     int iSpecies;
     std::string lo, hi;
     param.read_var("iSpecies", iSpecies);
-    if (iSpecies >= pBCs.size()) {
+    if (iSpecies < 0 || iSpecies >= static_cast<int>(pInfo.pBCs.size())) {
       Abort("Error: wrong input or too may particle species.");
     }
 
     for (int i = 0; i < nDim; ++i) {
       param.read_var("particleBoxBoundaryLo", lo);
       param.read_var("particleBoxBoundaryHi", hi);
-      pBCs[iSpecies].lo[i] = pBCs[iSpecies].num_type(lo);
-      pBCs[iSpecies].hi[i] = pBCs[iSpecies].num_type(hi);
+      pInfo.pBCs[iSpecies].lo[i] = pInfo.pBCs[iSpecies].num_type(lo);
+      pInfo.pBCs[iSpecies].hi[i] = pInfo.pBCs[iSpecies].num_type(hi);
     }
   } else if (command == "#BFIELDBOXBOUNDARY") {
     std::string lo, hi;
@@ -59,21 +59,21 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#MEMORY") {
     param.read_var("dnMemory", dnMemory);
   } else if (command == "#RANDOMPARTICLESLOCATION") {
-    param.read_var("isParticleLocationRandom", isParticleLocationRandom);
+    param.read_var("isParticleLocationRandom", pInfo.isParticleLocationRandom);
   } else if (command == "#CONSTANTPPV") {
-    param.read_var("isPPVconstant", isPPVconstant);
+    param.read_var("isPPVconstant", pInfo.isPPVconstant);
   } else if (command == "#PRESPLITTING") {
-    param.read_var("doPreSplitting", doPreSplitting);
+    param.read_var("doPreSplitting", pInfo.doPreSplitting);
   } else if (command == "#OVERRIDEPRESSUREANISOTROPY") {
     param.read_var("doOverridePressureAnisotropy",
-                   doOverridePressureAnisotropy);
-    if (doOverridePressureAnisotropy) {
+                   pInfo.doOverridePressureAnisotropy);
+    if (pInfo.doOverridePressureAnisotropy) {
       int nspec = 2;
       param.read_var("nSpecies", nspec);
       for (int i = 0; i < nspec; ++i) {
         amrex::Real ratio = 1.0;
         param.read_var("initialAnisotropyRatio", ratio);
-        initialAnisotropyRatios.push_back(ratio);
+        pInfo.initialAnisotropyRatios.push_back(ratio);
       }
     }
   } else if (command == "#DIVE") {
@@ -91,10 +91,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     eSolver.set_tol(tol);
     eSolver.set_nIter(nIter);
   } else if (command == "#PARTICLES") {
-    param.read_var("npcelx", nPartPerCell[ix_]);
-    param.read_var("npcely", nPartPerCell[iy_]);
+    param.read_var("npcelx", pInfo.nPartPerCell[ix_]);
+    param.read_var("npcely", pInfo.nPartPerCell[iy_]);
     if (nDim == 3)
-      param.read_var("npcelz", nPartPerCell[iz_]);
+      param.read_var("npcelz", pInfo.nPartPerCell[iz_]);
   } else if (command == "#SOURCEPARTICLES") {
     param.read_var("npcelx", nSourcePPC[ix_]);
     param.read_var("npcely", nSourcePPC[iy_]);
@@ -171,14 +171,14 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     // rho: amu/cc
     // T: K
     // U: km/s
-    param.read_var("rAnalytic", ionOH.rAnalytic);
-    param.read_var("doGetFromOH", ionOH.doGetFromOH);
+    param.read_var("rAnalytic", pInfo.ionOH.rAnalytic);
+    param.read_var("doGetFromOH", pInfo.ionOH.doGetFromOH);
 
-    if (!ionOH.doGetFromOH) {
-      param.read_var("rCutoff", ionOH.rCutoff);
-      param.read_var("swRho", ionOH.swRho);
-      param.read_var("swT", ionOH.swT);
-      param.read_var("swU", ionOH.swU);
+    if (!pInfo.ionOH.doGetFromOH) {
+      param.read_var("rCutoff", pInfo.ionOH.rCutoff);
+      param.read_var("swRho", pInfo.ionOH.swRho);
+      param.read_var("swT", pInfo.ionOH.swT);
+      param.read_var("swU", pInfo.ionOH.swU);
     }
   } else if (command == "#SUPID") {
     int n = 0;
@@ -186,7 +186,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     for (int i = 0; i < n; ++i) {
       int supid;
       param.read_var("supid", supid);
-      supIDs.push_back(supid);
+      pInfo.supIDs.push_back(supid);
     }
   } else if (command == "#MAXCHARGEEXCHANGERATE") {
     param.read_var("maxChargeExchangeRate", maxExchangeRatioLimit);
@@ -202,10 +202,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       }
     } else if (testcase == "tophat") {
       testCase = TopHat;
-      nPartPerCell = IntVect::Zero;
+      pInfo.nPartPerCell = IntVect::Zero;
     } else if (testcase == "lightwave") {
       testCase = LightWave;
-      nPartPerCell = IntVect::Zero;
+      pInfo.nPartPerCell = IntVect::Zero;
     }
   } else if (command == "#SELECTPARTICLE") {
     param.read_var("doSelectParticle", doSelectParticle);
@@ -244,7 +244,7 @@ void Pic::fill_new_cells() {
     update_grid_status();
   }
 
-  if (isPPVconstant || doPreSplitting) {
+  if (pInfo.isPPVconstant || pInfo.doPreSplitting) {
     SetTargetPPC(2);
     isTargetPPCDefined = true;
     for (int i = 0; i < nSpecies; i++) {
@@ -375,24 +375,13 @@ void Pic::post_regrid() {
     for (int i = 0; i < nSpecies; ++i) {
       auto ptr = std::make_unique<PicParticles>(
           this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
-          nPartPerCell, pMode, testCase, beam);
-
-      //----- Set parameters------------
-      ptr->set_info(pInfo);
-
-      ptr->set_ion_fluid(ionOH);
-
-      ptr->set_bc(pBCs[i]);
-
-      if (!supIDs.empty())
-        ptr->set_sup_id(supIDs[i]);
-      //----------------------------------
+          pInfo, pMode, testCase, beam);
 
       parts.push_back(std::move(ptr));
 
       auto ptrSource = std::make_unique<PicParticles>(
           this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
-          nPartPerCell, pMode, testCase, beam);
+          pInfo, pMode, testCase, beam);
 
       sourceParts.push_back(std::move(ptrSource));
     }
@@ -626,7 +615,7 @@ void Pic::re_sampling() {
 
   if (doReSampling) {
     for (int i = 0; i < nSpecies; ++i) {
-      if (!doPreSplitting) {
+      if (!pInfo.doPreSplitting) {
         if (maxWeightRatio > 1) {
           parts[i]->limit_weight(maxWeightRatio, parts[i]->is_neutral());
         }
