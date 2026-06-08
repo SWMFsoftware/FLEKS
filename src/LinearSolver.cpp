@@ -169,8 +169,10 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
   std::vector<double> c(nKrylov);
   std::vector<double> s(nKrylov);
   std::vector<double> rs(nKrylov1);
-  auto *Krylov_II = new double[n * (nKrylov + 2)];
-  auto *hh = new double[nKrylov1 * nKrylov];
+  std::vector<double> krylovBuffer(n * (nKrylov + 2));
+  std::vector<double> hhBuffer(nKrylov1 * nKrylov);
+  auto *Krylov_II = krylovBuffer.data();
+  auto *hh = hhBuffer.data();
 
   double epsmac;
   if (true) // double precision by default
@@ -210,8 +212,6 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
 
       tol = ro;
       nIter = its;
-      delete[] Krylov_II;
-      delete[] hh;
       return info;
     }
 
@@ -341,9 +341,6 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
   } else {
     info = -2;
   }
-
-  delete[] Krylov_II;
-  delete[] hh;
 
   return info;
 }

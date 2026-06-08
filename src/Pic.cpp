@@ -373,9 +373,9 @@ void Pic::post_regrid() {
   //--------------particles-----------------------------------
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; ++i) {
-      auto ptr = std::unique_ptr<PicParticles>(new PicParticles(
+      auto ptr = std::make_unique<PicParticles>(
           this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
-          nPartPerCell, pMode, testCase, beam));
+          nPartPerCell, pMode, testCase, beam);
 
       //----- Set parameters------------
       ptr->set_info(pInfo);
@@ -390,9 +390,9 @@ void Pic::post_regrid() {
 
       parts.push_back(std::move(ptr));
 
-      auto ptrSource = std::unique_ptr<PicParticles>(new PicParticles(
+      auto ptrSource = std::make_unique<PicParticles>(
           this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
-          nPartPerCell, pMode, testCase, beam));
+          nPartPerCell, pMode, testCase, beam);
 
       sourceParts.push_back(std::move(ptrSource));
     }

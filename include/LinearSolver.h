@@ -5,6 +5,7 @@
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <vector>
 
 #include <AMReX_ParallelDescriptor.H>
 
@@ -108,6 +109,9 @@ class LinearSolver {
   double tol;
   int nIter;
   MATVEC fMatvec;
+  std::vector<double> rhsBuffer;
+  std::vector<double> xLeftBuffer;
+  std::vector<double> matvecBuffer;
 
 public:
   double *rhs;
@@ -126,28 +130,31 @@ public:
         xLeft(nullptr),
         matvec(nullptr) {}
 
-  ~LinearSolver() { de_alloc(); }
+  LinearSolver(const LinearSolver &) = delete;
+  LinearSolver &operator=(const LinearSolver &) = delete;
 
   void de_alloc() {
-    if (rhs != nullptr) {
-      delete[] rhs;
-      delete[] xLeft;
-      delete[] matvec;
-      rhs = nullptr;
-      xLeft = nullptr;
-      matvec = nullptr;
-    }
+    rhsBuffer.clear();
+    xLeftBuffer.clear();
+    matvecBuffer.clear();
+    rhs = nullptr;
+    xLeft = nullptr;
+    matvec = nullptr;
   }
 
   void reset(int in) {
-    if (in != nGrid) {
+    const int nSolveNew = in * nVar;
+    if (in != nGrid || nSolveNew != nSolve) {
       nGrid = in;
       de_alloc();
-      nSolve = nGrid * nVar;
+      nSolve = nSolveNew;
       if (nSolve > 0) {
-        rhs = new double[nSolve];
-        xLeft = new double[nSolve];
-        matvec = new double[nSolve];
+        rhsBuffer.assign(nSolve, 0.0);
+        xLeftBuffer.assign(nSolve, 0.0);
+        matvecBuffer.assign(nSolve, 0.0);
+        rhs = rhsBuffer.data();
+        xLeft = xLeftBuffer.data();
+        matvec = matvecBuffer.data();
       }
     }
 

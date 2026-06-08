@@ -143,9 +143,8 @@ void ParticleTracker::post_process_param() {
       min_dnSave = dnSave[i];
     }
   }
-  savectr = std::unique_ptr<PlotCtr>(
-      new PlotCtr(ParallelDescriptor::Communicator(), tc, gridID, -1,
-                  nPTRecord * min_dnSave));
+  savectr = std::make_unique<PlotCtr>(ParallelDescriptor::Communicator(), tc,
+                                      gridID, -1, nPTRecord * min_dnSave);
   savectr->set_multiple(min_dnSave);
 }
 
@@ -180,9 +179,9 @@ void ParticleTracker::post_regrid() {
   //--------------test particles-----------------------------------
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; ++i) {
-      auto ptr = std::unique_ptr<TestParticles>(
-          new TestParticles(this, fi, tc, i, fi->get_species_charge(i),
-                            fi->get_species_mass(i), gridID));
+      auto ptr = std::make_unique<TestParticles>(
+          this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
+          gridID);
       ptr->set_ppc(nTPPerCell);
       ptr->set_interval(nTPIntervalCell);
       ptr->set_particle_region(sRegion, tpShapes);

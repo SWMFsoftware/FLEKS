@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <string>
+#include <vector>
 
 #include <AMReX_Box.H>
 #include <AMReX_DistributionMapping.H>
@@ -371,14 +372,13 @@ public:
     { // Read unit.
 
       nRec = read_int();
-      auto* unitTmp = new char[nRec];
-      inFile.read(unitTmp, nRec);
+      std::vector<char> unitTmp(nRec);
+      inFile.read(unitTmp.data(), nRec);
 
-      std::string sTmp(unitTmp);
+      std::string sTmp(unitTmp.data(), unitTmp.size());
       std::stringstream ss;
       ss << sTmp;
       ss >> unit;
-      delete[] unitTmp;
 
       nRec = read_int();
     }
@@ -439,12 +439,10 @@ public:
     {
       nRec = read_int();
 
-      char* tmp;
-      tmp = new char[nRec];
-      inFile.read(tmp, nRec);
+      std::vector<char> tmp(nRec);
+      inFile.read(tmp.data(), nRec);
       std::stringstream ss;
-      ss << tmp;
-      delete[] tmp;
+      ss << std::string(tmp.data(), tmp.size());
 
       for (int i = 0; i < nVar; ++i) {
         std::string sVar;
@@ -472,10 +470,9 @@ public:
       nRec = read_int();
       assert(nRec / nDim / nReal == (int)nCell);
 
-      real* x;
-      x = new real[nCell];
+      std::vector<real> x(nCell);
       for (int iDim = 0; iDim < nDim; ++iDim) {
-        inFile.read(reinterpret_cast<char*>(x), nRec / nDim);
+        inFile.read(reinterpret_cast<char*>(x.data()), nRec / nDim);
         int iPoint = 0;
         for (int k = lo.z; k <= hi.z; ++k)
           for (int j = lo.y; j <= hi.y; ++j)
@@ -485,17 +482,15 @@ public:
             }
       }
 
-      delete[] x;
       nRec = read_int();
     }
 
     {
-      real* w;
-      w = new real[nCell];
+      std::vector<real> w(nCell);
 
       for (int iVar = nDim; iVar < nVar; ++iVar) {
         nRec = read_int();
-        inFile.read(reinterpret_cast<char*>(w), nRec);
+        inFile.read(reinterpret_cast<char*>(w.data()), nRec);
 
         int iPoint = 0;
         for (int k = lo.z; k <= hi.z; ++k)
@@ -506,7 +501,6 @@ public:
             }
         nRec = read_int();
       }
-      delete[] w;
     }
   }
 

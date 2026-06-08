@@ -151,17 +151,21 @@ public:
     // Point-based: 1
     amrex::Vector<int> centering(dc->n_var(), 1);
 
-    char** varnames;
-    varnames = new char*[dc->n_var()];
+    amrex::Vector<amrex::Vector<char> > varnameStorage(dc->n_var());
+    amrex::Vector<char*> varnames(dc->n_var());
+    const auto varNames = dc->var_names();
     for (int i = 0; i < dc->n_var(); ++i) {
-      varnames[i] = new char[dc->var_names()[i].size() + 1];
-      strcpy(varnames[i], dc->var_names()[i].c_str());
+      const auto& name = varNames[i];
+      varnameStorage[i].assign(name.begin(), name.end());
+      varnameStorage[i].push_back('\0');
+      varnames[i] = varnameStorage[i].data();
     }
 
-    float** v;
-    v = new float*[dc->n_var()];
+    amrex::Vector<amrex::Vector<float> > valueStorage(
+        dc->n_var(), amrex::Vector<float>(nCell));
+    amrex::Vector<float*> v(dc->n_var());
     for (int i = 0; i < dc->n_var(); ++i) {
-      v[i] = new float[nCell];
+      v[i] = valueStorage[i].data();
       for (size_t j = 0; j < nCell; ++j) {
         v[i][j] = vars[j * dc->n_var() + i];
       }
@@ -169,14 +173,8 @@ public:
 
     write_unstructured_mesh(filename.c_str(), saveBinary, nCell, xyz.data(),
                             nBrick, brickType.data(), brickData, dc->n_var(),
-                            vardim.data(), centering.data(), varnames, v);
-
-    for (int i = 0; i < dc->n_var(); ++i) {
-      delete[] varnames[i];
-      delete[] v[i];
-    }
-    delete[] varnames;
-    delete[] v;
+                            vardim.data(), centering.data(), varnames.data(),
+                            v.data());
 
     return iSuccess;
   }

@@ -1,34 +1,28 @@
 #ifndef _BITARRAY_H_
 #define _BITARRAY_H_
 
-#include <cmath>
-#include <stdio.h>
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
 
 class BitArray {
 
 private:
-  int* data;
-  int nInt, nBit;
+  std::vector<int> data;
+  int nInt = 0;
+  int nBit = 0;
 
 public:
-  BitArray() {
-    data = nullptr;
-    nInt = 0;
-    nBit = 0;
-  }
+  BitArray() = default;
 
   BitArray(int nBitIn) { init(nBitIn); }
 
-  ~BitArray() { clear(); }
-
-  int size_int() { return nInt; }
-  int size_bit() { return nBit; }
+  int size_int() const { return nInt; }
+  int size_bit() const { return nBit; }
 
   //====================================================
   void clear() {
-    if (data != nullptr) {
-      delete[] data;
-    }
+    data.clear();
     nInt = 0;
     nBit = 0;
   }
@@ -36,19 +30,15 @@ public:
   //====================================================
   void init(int nBitIn) {
     nBit = nBitIn;
-    nInt = ceil(nBit / 8.0 / sizeof(int));
-
-    data = new int[nInt];
-
-    for (int i = 0; i < nInt; ++i) {
-      data[i] = 0;
-    }
+    const int intSize = sizeof(int) * 8;
+    nInt = (nBit + intSize - 1) / intSize;
+    data.assign(nInt, 0);
   }
 
   //====================================================
   void set(int i, int val) {
-    if (i > nBit)
-      abort();
+    if (i < 0 || i >= nBit)
+      std::abort();
 
     const int intSize = sizeof(int) * 8;
 
@@ -63,14 +53,14 @@ public:
     } else if (val == 0) {
       number &= ~(1 << iBit);
     } else {
-      abort();
+      std::abort();
     }
   }
 
   //====================================================
-  int get(int i) {
-    if (i > nBit)
-      abort();
+  int get(int i) const {
+    if (i < 0 || i >= nBit)
+      std::abort();
 
     const int intSize = sizeof(int) * 8;
 
@@ -86,10 +76,10 @@ public:
   }
 
   //====================================================
-  // Return an interger pointer
-  int* get() { return data; }
+  // Return an integer pointer.
+  int* get() { return data.data(); }
 
-  void print() {
+  void print() const {
     for (int i = 0; i < nBit; ++i) {
       printf("i = %i, bit = %i \n", i, get(i));
     }
