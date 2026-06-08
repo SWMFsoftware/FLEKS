@@ -1,8 +1,9 @@
 #ifndef _PLOTWRITER_H_
 #define _PLOTWRITER_H_
 
-#include <AMReX_RealVect.H>
 #include <array>
+
+#include <AMReX_RealVect.H>
 // TODO C++20 support with better syntax
 //  #include <format>
 #include <iostream>

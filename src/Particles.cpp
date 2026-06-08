@@ -1,10 +1,10 @@
-#include <AMReX_ParReduce.H>
 #include <cstdlib>
+
+#include <AMReX_ParReduce.H>
 
 #include "Morton.h"
 #include "Particles.h"
 #include "SWMFInterface.h"
-
 #include "Timer.h"
 #include "Utility.h"
 

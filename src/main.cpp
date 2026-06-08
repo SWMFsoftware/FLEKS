@@ -1,13 +1,14 @@
-#include "show_git_info.h"
-#include <AMReX.H>
-#include <AMReX_Print.H>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
 
+#include <AMReX.H>
+#include <AMReX_Print.H>
+
 #include "Domain.h"
 #include "SimDomains.h"
+#include "show_git_info.h"
 
 Domains fleksDomains;
 

@@ -1,6 +1,7 @@
+#include <Constants.h>
+
 #include <AMReX_BC_TYPES.H>
 #include <AMReX_PhysBCFunct.H>
-#include <Constants.h>
 
 #include "BC.h"
 

@@ -1,6 +1,6 @@
-#include "Grid.h"
 #include "Bit.h"
 #include "FleksDistributionMap.h"
+#include "Grid.h"
 #include "GridUtility.h"
 
 using namespace amrex;

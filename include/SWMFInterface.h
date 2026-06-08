@@ -1,8 +1,9 @@
 #ifndef _SWMFINTERFACE_H_
 #define _SWMFINTERFACE_H_
 
-#include <mpi.h>
 #include <sstream>
+
+#include <mpi.h>
 
 #ifdef _PT_COMPONENT_
 extern "C" {
