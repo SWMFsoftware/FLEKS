@@ -128,6 +128,13 @@ if ($ListUserSources) {
 
 &get_settings;
 
+# During install, seed a local UserSource.h from the default template only if
+# the user did not select one and no local UserSource.h exists yet.
+if (!defined $NewUserSource && !-f $UserSourceFile &&
+    scalar grep { /^-install(=.*)?$/ } @Arguments) {
+    $NewUserSource = "Default";
+}
+
 &set_user_source if defined $NewUserSource;
 
 &set_test_particle if $NewTPSave and $NewTPSave ne $TPSave;
