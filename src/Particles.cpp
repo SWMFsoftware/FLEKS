@@ -42,8 +42,6 @@ Particles<NStructReal, NStructInt>::Particles(
   isParticleLocationRandom = pInfo.isParticleLocationRandom;
   isPPVconstant = pInfo.isPPVconstant;
   doPreSplitting = pInfo.doPreSplitting;
-  doOverridePressureAnisotropy = pInfo.doOverridePressureAnisotropy;
-  initialAnisotropyRatios = pInfo.initialAnisotropyRatios;
   fastMerge = pInfo.fastMerge;
   mergeLight = pInfo.mergeLight;
   nPartCombine = pInfo.nPartCombine;
@@ -249,22 +247,16 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           Real rand4 = randNum();
 
           Real uth = (userState ? tpVel.vth : -1);
-          if (!doOverridePressureAnisotropy) {
 
-            if (!is_neutral() && interface->get_UseAnisoP() &&
-                (speciesID > 0 || interface->get_useElectronFluid())) {
-              interface->set_particle_uth_aniso(iLev, mfi, xyz, &u, &v, &w,
-                                                rand1, rand2, rand3, rand4,
-                                                speciesID, uth, uth);
-            } else {
-              interface->set_particle_uth_iso(iLev, mfi, xyz, &u, &v, &w, rand1,
+          if (!is_neutral() && interface->get_UseAnisoP() &&
+              (speciesID > 0 || interface->get_useElectronFluid())) {
+            interface->set_particle_uth_aniso(iLev, mfi, xyz, &u, &v, &w, rand1,
                                               rand2, rand3, rand4, speciesID,
-                                              uth);
-            }
+                                              uth, uth);
           } else {
-            interface->override_particle_uth_aniso(
-                iLev, mfi, xyz, &u, &v, &w, rand1, rand2, rand3, rand4,
-                speciesID, initialAnisotropyRatios[speciesID], uth);
+            interface->set_particle_uth_iso(iLev, mfi, xyz, &u, &v, &w, rand1,
+                                            rand2, rand3, rand4, speciesID,
+                                            uth);
           }
 
           Real uBulk = userState ? tpVel.vx

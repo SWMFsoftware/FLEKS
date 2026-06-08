@@ -64,18 +64,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("isPPVconstant", pInfo.isPPVconstant);
   } else if (command == "#PRESPLITTING") {
     param.read_var("doPreSplitting", pInfo.doPreSplitting);
-  } else if (command == "#OVERRIDEPRESSUREANISOTROPY") {
-    param.read_var("doOverridePressureAnisotropy",
-                   pInfo.doOverridePressureAnisotropy);
-    if (pInfo.doOverridePressureAnisotropy) {
-      int nspec = 2;
-      param.read_var("nSpecies", nspec);
-      for (int i = 0; i < nspec; ++i) {
-        amrex::Real ratio = 1.0;
-        param.read_var("initialAnisotropyRatio", ratio);
-        pInfo.initialAnisotropyRatios.push_back(ratio);
-      }
-    }
   } else if (command == "#DIVE") {
     param.read_var("doCorrectDivE", doCorrectDivE);
     if (doCorrectDivE) {

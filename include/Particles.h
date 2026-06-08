@@ -84,8 +84,6 @@ public:
   bool isParticleLocationRandom = true;
   bool isPPVconstant = false;
   bool doPreSplitting = false;
-  bool doOverridePressureAnisotropy = false;
-  amrex::Vector<amrex::Real> initialAnisotropyRatios;
 
   bool fastMerge = false;
   bool mergeLight = false;
@@ -247,9 +245,6 @@ protected:
   bool isPPVconstant = false;
 
   bool doPreSplitting = false;
-
-  bool doOverridePressureAnisotropy = false;
-  amrex::Vector<amrex::Real> initialAnisotropyRatios;
 
   bool isTargetPPCDefined = false;
 
