@@ -462,7 +462,7 @@ void Pic::save_restart_header(std::ofstream& headerFile) {
 
     headerFile << "#PARTICLES" + command_suffix;
     for (int i = 0; i < nDim; ++i) {
-      headerFile << nPartPerCell[i] << "\t\t\tnParticle\n";
+      headerFile << pInfo.nPartPerCell[i] << "\t\t\tnParticle\n";
     }
     headerFile << "\n";
 

@@ -109,7 +109,6 @@ private:
   amrex::Vector<std::unique_ptr<PicParticles> > parts;
   amrex::Vector<std::unique_ptr<PicParticles> > sourceParts;
 
-  amrex::IntVect nPartPerCell = { AMREX_D_DECL(6, 6, 6) };
   amrex::Real qomEl = -100;
 
   // Particle Per Cell (PPC) of source particles.
@@ -151,15 +150,8 @@ private:
 
   ParticlesInfo pInfo;
 
-  OHIon ionOH;
-
-  // Boundary conditions for particles.
-  amrex::Vector<BC> pBCs;
-
   // Boundary conditions for fields.
   BC bcBField;
-
-  amrex::Vector<int> supIDs;
 
   // select particle params
   bool doSelectParticle = false;
@@ -209,9 +201,6 @@ public:
     centerMM.resize(n_lev_max());
 
     jHat.resize(n_lev_max());
-
-    // At most 10 species.
-    pBCs.resize(10);
 
 #ifdef _PT_COMPONENT_
     kineticSource = true;
@@ -529,7 +518,7 @@ public:
   }
 
   void SetTargetPPC(int npresplitcells) {
-    if (isPPVconstant && doPreSplitting) {
+    if (pInfo.isPPVconstant && pInfo.doPreSplitting) {
       amrex::Abort(
           "ConstantPPV and PreSplitting cannot be true at the same time");
     }
@@ -539,7 +528,7 @@ public:
         const auto &ppcArr = targetPPC[iLev][mfi].array();
         amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
           amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
-          ppcArr(ijk, 0) = product(nPartPerCell);
+          ppcArr(ijk, 0) = product(pInfo.nPartPerCell);
         });
       }
     }
@@ -550,16 +539,17 @@ public:
         const auto &status = cell_status(iLev)[mfi].array();
         amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
           amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
-          if (isPPVconstant) {
+          if (pInfo.isPPVconstant) {
             int tmp = 1;
             for (int i = 0; i < nDim; i++) {
-              tmp *= (nPartPerCell[i] / pow((ref_ratio[iLev].max()), iLev));
+              tmp *=
+                  (pInfo.nPartPerCell[i] / pow((ref_ratio[iLev].max()), iLev));
             }
             ppcArr(ijk, 0) = tmp;
           } else {
-            ppcArr(ijk, 0) = product(nPartPerCell);
+            ppcArr(ijk, 0) = product(pInfo.nPartPerCell);
           }
-          if (doPreSplitting) {
+          if (pInfo.doPreSplitting) {
             for (int ii = -npresplitcells; ii <= npresplitcells; ii++) {
               for (int jj = -npresplitcells; jj <= npresplitcells; jj++) {
                 for (int kk = -npresplitcells; kk <= npresplitcells; kk++) {
@@ -567,7 +557,7 @@ public:
                       ijk + amrex::IntVect{ AMREX_D_DECL(ii, jj, kk) };
                   if (bit::is_refined(status(ijk2)) &&
                       !bit::is_refined(status(ijk))) {
-                    ppcArr(ijk, 0) = product(nPartPerCell) *
+                    ppcArr(ijk, 0) = product(pInfo.nPartPerCell) *
                                      pow(ref_ratio[iLev].max(), nDim);
                   }
                 }

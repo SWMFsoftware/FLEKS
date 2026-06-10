@@ -284,26 +284,6 @@ F                 solveFieldInCoMov
 This command enables solving the electromagnetic fields in a co-moving frame of reference.
 </command>
 
-<command name="OVERRIDEPRESSUREANISOTROPY"
-   alias="OVERRIDEPRESSUREANISOTROPY_FLEKS0,OVERRIDEPRESSUREANISOTROPY_FLEKS1,OVERRIDEPRESSUREANISOTROPY_FLEKS2"
-   multiple="T">
-  <parameter name="doOverridePressureAnisotropy" type="logical" default="F"/>
-  <if expr="$doOverridePressureAnisotropy">
-    <parameter name="nSpecies" type="integer" default="2"/>
-    <for from="1" to="$nSpecies">
-      <parameter name="initialAnisotropyRatio" type="real" default="1.0"/>
-    </for>
-  </if>
-
-#OVERRIDEPRESSUREANISOTROPY
-F                 doOverridePressureAnisotropy (rest is read if true)
-2                 nSpecies
-1.0               initialAnisotropyRatio
-1.0               initialAnisotropyRatio
-
-This command allows overriding the pressure anisotropy for each species.
-</command>
-
 <command name="SOLVEEM"
    alias="SOLVEEM_FLEKS0,SOLVEEM_FLEKS1,SOLVEEM_FLEKS2"
    multiple="T">

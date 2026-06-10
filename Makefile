@@ -49,6 +49,7 @@ EXE: include/show_git_info.h compile_commands
 	$(call prepare_exe)
 	$(MAKE) GITINFO
 	$(MAKE) -C src EXE
+	$(MAKE) CONVERTER
 
 FLEKS: EXE
 
@@ -74,6 +75,7 @@ LIB: bin include/Constants.h compile_commands
 	fi
 	$(MAKE) -C src LIB
 	$(MAKE) -C srcInterface LIB
+	$(MAKE) CONVERTER
 
 CONVERTER: bin
 	$(call prepare_exe)

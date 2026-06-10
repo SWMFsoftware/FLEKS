@@ -77,7 +77,14 @@ struct IDs {
   int supID;
 };
 
-struct ParticlesInfo {
+class ParticlesInfo {
+public:
+  amrex::IntVect nPartPerCell = { AMREX_D_DECL(6, 6, 6) };
+
+  bool isParticleLocationRandom = true;
+  bool isPPVconstant = false;
+  bool doPreSplitting = false;
+
   bool fastMerge = false;
   bool mergeLight = false;
 
@@ -95,6 +102,19 @@ struct ParticlesInfo {
 
   // [amu/cc]
   amrex::Real vacuumIO = 0;
+
+  OHIon ionOH;
+
+  amrex::Vector<BC> pBCs = amrex::Vector<BC>(10);
+  amrex::Vector<int> supIDs;
+
+  int initial_sup_id(const int speciesID) const {
+    if (speciesID >= 0 && speciesID < static_cast<int>(supIDs.size()))
+      return supIDs[speciesID];
+    return 1;
+  }
+
+  const BC& particle_bc(const int speciesID) const { return pBCs[speciesID]; }
 };
 
 template <int NStructReal, int NStructInt>
@@ -226,9 +246,6 @@ protected:
 
   bool doPreSplitting = false;
 
-  bool doOverridePressureAnisotropy = false;
-  amrex::Vector<amrex::Real> initialAnisotropyRatios;
-
   bool isTargetPPCDefined = false;
 
   BC bc; // boundary condition
@@ -263,7 +280,7 @@ public:
 
   Particles(Grid* gridIn, FluidInterface* fluidIn, TimeCtr* tcIn,
             const int speciesIDIn, const amrex::Real chargeIn,
-            const amrex::Real massIn, const amrex::IntVect& nPartPerCellIn,
+            const amrex::Real massIn, const ParticlesInfo& pInfo,
             const PartMode pModeIn, TestCase tcase = RegularSimulation,
             BeamInfo beamIn = BeamInfo());
 
@@ -394,22 +411,6 @@ public:
   void convert_to_fluid_moments(amrex::Vector<amrex::MultiFab>& momentsMF);
 
   PartMode part_mode() const { return pMode; }
-
-  void set_ion_fluid(const OHIon& in) { ionOH = in; }
-
-  void set_info(ParticlesInfo& pi) {
-    fastMerge = pi.fastMerge;
-    mergeLight = pi.mergeLight;
-    nPartCombine = pi.nPartCombine;
-    nPartNew = pi.nPartNew;
-    nMergeTry = pi.nMergeTry;
-    mergeThresholdDistance = pi.mergeThresholdDistance;
-    velBinBufferSize = pi.velBinBufferSize;
-    mergeRatioMax = pi.mergeRatioMax;
-    pLevRatio = pi.pLevRatio;
-    mergePartRatioMax = pi.mergePartRatioMax;
-    vacuum = pi.vacuumIO * cProtonMassSI * 1e6 * fi->get_Si2NoRho();
-  }
 
   static inline bool compare_two_parts(const ParticleType& pl,
                                        const ParticleType& pr) {

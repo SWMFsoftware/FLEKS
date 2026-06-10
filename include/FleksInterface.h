@@ -1,8 +1,9 @@
 #ifndef _FLEKSINTERFACE_H_
 #define _FLEKSINTERFACE_H_
 
-#include <mpi.h>
 #include <sstream>
+
+#include <mpi.h>
 
 extern "C" {
 int fleks_init_mpi_(MPI_Fint *iComm, signed int *iProc, signed int *nProc);

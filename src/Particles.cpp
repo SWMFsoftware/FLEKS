@@ -1,21 +1,31 @@
-#include <AMReX_ParReduce.H>
 #include <cstdlib>
+
+#include <AMReX_ParReduce.H>
 
 #include "Morton.h"
 #include "Particles.h"
 #include "SWMFInterface.h"
-
 #include "Timer.h"
 #include "Utility.h"
 
 using namespace amrex;
+
+namespace {
+
+ParticlesInfo make_io_particles_info() {
+  ParticlesInfo info;
+  info.nPartPerCell = IntVect(AMREX_D_DECL(-1, -1, -1));
+  return info;
+}
+
+} // namespace
 
 //==========================================================
 template <int NStructReal, int NStructInt>
 Particles<NStructReal, NStructInt>::Particles(
     Grid* gridIn, FluidInterface* const fluidIn, TimeCtr* const tcIn,
     const int speciesIDIn, const Real chargeIn, const Real massIn,
-    const IntVect& nPartPerCellIn, const PartMode pModeIn, TestCase tcase,
+    const ParticlesInfo& pInfo, const PartMode pModeIn, TestCase tcase,
     BeamInfo beamIn)
     : AmrParticleContainer<NStructReal, NStructInt>(gridIn),
       grid(gridIn),
@@ -25,15 +35,30 @@ Particles<NStructReal, NStructInt>::Particles(
       speciesID(speciesIDIn),
       charge(chargeIn),
       mass(massIn),
-      nPartPerCell(nPartPerCellIn),
+      nPartPerCell(pInfo.nPartPerCell),
       testCase(tcase),
       beam(beamIn) {
 
-  isParticleLocationRandom = gridIn->is_particle_location_random();
-  isPPVconstant = gridIn->is_particles_per_volume_constant();
-  doPreSplitting = gridIn->do_pre_splitting();
-  doOverridePressureAnisotropy = gridIn->do_override_pressure_anisotropy();
-  initialAnisotropyRatios = gridIn->get_initial_anisotropy_ratios();
+  isParticleLocationRandom = pInfo.isParticleLocationRandom;
+  isPPVconstant = pInfo.isPPVconstant;
+  doPreSplitting = pInfo.doPreSplitting;
+  fastMerge = pInfo.fastMerge;
+  mergeLight = pInfo.mergeLight;
+  nPartCombine = pInfo.nPartCombine;
+  nPartNew = pInfo.nPartNew;
+  nMergeTry = pInfo.nMergeTry;
+  mergeThresholdDistance = pInfo.mergeThresholdDistance;
+  velBinBufferSize = pInfo.velBinBufferSize;
+  mergeRatioMax = pInfo.mergeRatioMax;
+  pLevRatio = pInfo.pLevRatio;
+  mergePartRatioMax = pInfo.mergePartRatioMax;
+  if (fi)
+    vacuum = pInfo.vacuumIO * cProtonMassSI * 1e6 * fi->get_Si2NoRho();
+  else
+    vacuum = pInfo.vacuumIO;
+  ionOH = pInfo.ionOH;
+  bc = pInfo.particle_bc(speciesID);
+  supID = pInfo.initial_sup_id(speciesID);
   do_tiling = true;
 
   qom = charge / mass;
@@ -222,22 +247,16 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           Real rand4 = randNum();
 
           Real uth = (userState ? tpVel.vth : -1);
-          if (!doOverridePressureAnisotropy) {
 
-            if (!is_neutral() && interface->get_UseAnisoP() &&
-                (speciesID > 0 || interface->get_useElectronFluid())) {
-              interface->set_particle_uth_aniso(iLev, mfi, xyz, &u, &v, &w,
-                                                rand1, rand2, rand3, rand4,
-                                                speciesID, uth, uth);
-            } else {
-              interface->set_particle_uth_iso(iLev, mfi, xyz, &u, &v, &w, rand1,
+          if (!is_neutral() && interface->get_UseAnisoP() &&
+              (speciesID > 0 || interface->get_useElectronFluid())) {
+            interface->set_particle_uth_aniso(iLev, mfi, xyz, &u, &v, &w, rand1,
                                               rand2, rand3, rand4, speciesID,
-                                              uth);
-            }
+                                              uth, uth);
           } else {
-            interface->override_particle_uth_aniso(
-                iLev, mfi, xyz, &u, &v, &w, rand1, rand2, rand3, rand4,
-                speciesID, initialAnisotropyRatios[speciesID], uth);
+            interface->set_particle_uth_iso(iLev, mfi, xyz, &u, &v, &w, rand1,
+                                            rand2, rand3, rand4, speciesID,
+                                            uth);
           }
 
           Real uBulk = userState ? tpVel.vx
@@ -3379,8 +3398,8 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
 IOParticles::IOParticles(Particles& other, Grid* gridIn, Real no2outL,
                          Real no2outV, Real no2outM, RealBox IORange)
     : Particles(gridIn, nullptr, nullptr, other.get_speciesID(),
-                other.get_charge(), other.get_mass(),
-                IntVect(AMREX_D_DECL(-1, -1, -1)), other.part_mode()) {
+                other.get_charge(), other.get_mass(), make_io_particles_info(),
+                other.part_mode()) {
 
   no2outM *= qomSign * get_mass();
 

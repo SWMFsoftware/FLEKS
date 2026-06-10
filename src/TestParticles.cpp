@@ -4,18 +4,25 @@
 
 using namespace amrex;
 
+namespace {
+
+ParticlesInfo make_test_particles_info() {
+  ParticlesInfo info;
+  info.nPartPerCell = IntVect(AMREX_D_DECL(2, 2, 2));
+  return info;
+}
+
+} // namespace
+
 TestParticles::TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
                              TimeCtr* const tcIn, const int speciesID,
                              const Real charge, const Real mass, int id)
     : Particles(gridIn, fluidIn, tcIn, speciesID, charge, mass,
-                IntVect(AMREX_D_DECL(1, 1, 1)), PartMode::PIC) {
+                make_test_particles_info(), PartMode::PIC) {
   gridID = id;
 
   gridName = std::string("FLEKS") + std::to_string(gridID);
   printPrefix = gridName + ": ";
-
-  for (int iDim = 0; iDim < nDim; iDim++)
-    nPartPerCell[iDim] = 2;
 
   outputDir = component + "/plots/test_particles";
 
