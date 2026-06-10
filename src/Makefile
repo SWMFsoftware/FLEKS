@@ -29,7 +29,14 @@ SRCS := \
 
 OBJECTS := $(patsubst %, %.o,$(basename $(SRCS)))
 
-CONVERTER_OBJECTS = Converter.o
+# Keep converter independent of libFLEKS.a: the full archive includes PT/OH
+# coupling objects that require SWMF-only OH symbols.
+CONVERTER_OBJECTS = \
+	Converter.o \
+	DataContainer.o \
+	Grid.o \
+	VisitWriter.o \
+	FleksDistributionMap.o
 
 CONVERTEREXE = ../bin/converter.exe
 
@@ -42,10 +49,9 @@ EXE:
 	${LINK.f90} -o ../bin/FLEKS.exe main.o \
 		-L. -lFLEKS -L${LIBDIR} -lSHARE ${LflagMpi}
 
-CONVERTER:	${CONVERTER_OBJECTS}	
-	$(MAKE) ${LIBFLEKS}
-	${LINK.f90} ${NOMAINFLAG} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
-		-L. -lFLEKS -L${LIBDIR} -lSHARE ${LflagMpi}
+CONVERTER:	${CONVERTER_OBJECTS}
+	${LINK.f90} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
+		-L${LIBDIR} -lSHARE ${LflagMpi}
 
 	@echo
 	@echo ${CONVERTEREXE} has been brought up to date.
