@@ -7,12 +7,8 @@
 #include <AMReX_Print.H>
 
 #include "Converter.h"
-#include "SimDomains.h"
 
 using namespace amrex;
-
-// Converter links libFLEKS without the normal FLEKS driver.
-Domains fleksDomains;
 
 extern "C" {
 void timing_start_c(size_t*, char*) {}
