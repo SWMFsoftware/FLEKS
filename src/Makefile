@@ -47,11 +47,11 @@ EXE:
 	$(MAKE) main.o
 	mkdir -p ../bin
 	${LINK.f90} -o ../bin/FLEKS.exe main.o \
-		-L. -lFLEKS -L${LIBDIR} -lSHARE ${LflagMpi}
+		-L. -lFLEKS -L${LIBDIR} -lSHARE ${LflagMpi} ${NOMAINFLAG}
 
 CONVERTER:	${CONVERTER_OBJECTS}
 	${LINK.f90} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
-		-L${LIBDIR} -lSHARE ${LflagMpi}
+		-L${LIBDIR} -lSHARE ${LflagMpi} ${NOMAINFLAG}
 
 	@echo
 	@echo ${CONVERTEREXE} has been brought up to date.
