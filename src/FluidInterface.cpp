@@ -401,9 +401,10 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
       nS = nNeuFluid;
       nFluid = nS;
 
-      // Ion fluid is useless for this case.
-      nVarFluid = 5 * (nFluid + nIon) + 3 + 1;
+      // Assume jx/jy/jz are included in varNames.
       useCurrent = true;
+      if (useCurrent)
+        nVarFluid = nVar - 3;
 
       QoQi_S.resize(nS);
       MoMi_S.resize(nS);
@@ -1119,6 +1120,8 @@ void FluidInterface::print_info() const {
     std::cout << "iPe: " << iPe << std::endl;
     std::cout << "iRhoTotal: " << iRhoTotal << std::endl;
     std::cout << "iLevSet: " << iLevSet << std::endl;
+    std::cout << "nVarFluid: " << nVarFluid << std::endl;
+    std::cout << "# of Vars: " << varNames.size() << std::endl;
     std::cout << "varNames: ";
     for (const auto& var : varNames) {
       std::cout << var << " ";
