@@ -48,8 +48,6 @@ void Domain::init(double time, const int iDomain,
 
     init_time_ctr();
 
-    fi->print_info();
-
     return;
   }
 

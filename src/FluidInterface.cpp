@@ -110,13 +110,10 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
   // This is just a guess. To be improved.
   MhdNo2SiL = rPlanetSi;
 
-  if (receiveICOnly) {
-    nS = 5;
-    nFluid = nS;
-    // (rho, vx, vy, vz, p)*nFluid + B
-    nVarFluid = 5 * nFluid + 3 + 1;
-    useCurrent = true;
-  }
+  calc_normalization_units();
+
+  if (receiveICOnly)
+    return;
 
   iRho_I.resize(nS);
   iRhoUx_I.resize(nS);
@@ -152,42 +149,6 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
         iBz = i;
       }
     }
-
-    if (useCurrent) {
-      iJx = nVarFluid;
-      iJy = iJx + 1;
-      iJz = iJx + 2;
-    }
-
-  } else if (receiveICOnly) {
-    if (nS != 5) {
-      Abort("Error: nS != 5");
-    }
-
-    MoMi_S.resize(nS);
-    QoQi_S.resize(nS);
-
-    int iFluidStart[5] = { 0, 9, 14, 19, 24 };
-
-    for (int iFluid = 0; iFluid < nS; iFluid++) {
-      iRho_I[iFluid] = iFluidStart[iFluid];
-      iUx_I[iFluid] = iFluidStart[iFluid] + 1;
-      iUy_I[iFluid] = iFluidStart[iFluid] + 2;
-      iUz_I[iFluid] = iFluidStart[iFluid] + 3;
-
-      MoMi_S[iFluid] = 0;
-      if (iFluid == 0) {
-        iP_I[iFluid] = iFluidStart[iFluid] + 8;
-        QoQi_S[iFluid] = 1.0;
-      } else {
-        iP_I[iFluid] = iFluidStart[iFluid] + 4;
-        QoQi_S[iFluid] = 0.0;
-      }
-    }
-
-    iBx = 4;
-    iBy = iBx + 1;
-    iBz = iBy + 1;
 
     if (useCurrent) {
       iJx = nVarFluid;
@@ -244,8 +205,6 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
     printf("iBx=%d, iBy=%d, iBz=%d, iJx=%d, iJy=%d, iJz=%d\n", iBx, iBy, iBz,
            iJx, iJy, iJz);
   }
-
-  calc_normalization_units();
 
   calc_conversion_units();
 }
@@ -678,6 +637,7 @@ void FluidInterface::set_node_fluid(const double* const data,
 
 #ifdef _PT_COMPONENT_
     analyze_var_names();
+    print_info();
     distribute_arrays();
 #endif
   }
