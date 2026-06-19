@@ -37,7 +37,7 @@ protected:
   int nDimFluid;
 
   // Number of variables passing between MHD and PIC.
-  int nVarFluid;
+  int nVarFluid = 0;
 
   // Number of fluid at the MHD side. One 'fluid' has its own density,
   // velocity and pressure. Electron can be one fluid.
@@ -67,7 +67,7 @@ protected:
   amrex::Vector<std::string> varNames;
 
   //-------------------------------------------------------------------
-  int nS;                       // number of particle species
+  int nS = 0;                   // number of particle species
   amrex::Vector<double> MoMi_S; // masses for the particles species
   amrex::Vector<double> QoQi_S; // charge for each particle species
   //-------------------------------------------------------------------

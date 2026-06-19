@@ -46,8 +46,6 @@ void Domain::init(double time, const int iDomain,
 
     gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
 
-    init_time_ctr();
-
     return;
   }
 
@@ -456,6 +454,10 @@ void Domain::set_state_var(double *data, int *index,
 
   if (receiveICOnly) {
     fi->set_node_fluid(data, index, names);
+    // For some cases, the variables information is not unknown until the first
+    // couping is called.
+    init_time_ctr();
+
   } else {
     if (stateOH) {
       // PT mode
@@ -753,6 +755,14 @@ void Domain::save_restart_header() {
 
 //========================================================
 void Domain::init_time_ctr() {
+  if (isTCInitialized)
+    return;
+
+  // There is not enought information for initialize the time ctr at this
+  // moment.
+  if (fi->get_nS() < 1)
+    return;
+
   tc->set_si2no(fi->get_Si2NoT());
 
   { //----------Init plot data------------------------
@@ -802,6 +812,8 @@ void Domain::init_time_ctr() {
       // writer.print();
     }
   }
+
+  isTCInitialized = true;
 }
 
 //========================================================
