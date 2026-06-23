@@ -106,6 +106,21 @@ protected:
 
   std::string restartOut = component + "/restartOUT/";
 
+  // Exosphere neutral profile parameters
+  std::string exosphereType = "None";
+  bool usePhotoIonization = false;
+  bool useElectronImpact = false;
+  bool useChargeExchange = false;
+  int nExoComponent = 0;
+  amrex::Vector<double> exoN0;
+  amrex::Vector<double> exoH0;
+  amrex::Vector<double> exoT0;
+  amrex::Vector<double> exoK0;
+  // Per-component ionization rates for each process
+  amrex::Vector<double> exoNuPhoto;
+  amrex::Vector<double> exoNuImpact;
+  amrex::Vector<double> exoNuCX;
+
 public:
   amrex::Vector<std::string> get_var_names() const { return varNames; }
   void set_var_names(const amrex::Vector<std::string>& names) {
@@ -167,6 +182,9 @@ public:
   double get_period_start_si() const { return tStartSI; }
 
   void save_amrex_file();
+
+  double get_exosphere_density(double r) const;
+  double get_exosphere_component_density(double r, int iC) const;
 
   void read_param(const std::string& command, ReadParam& param);
 

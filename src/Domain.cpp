@@ -876,7 +876,8 @@ void Domain::read_param(const bool readGridInfo) {
       if (pt)
         pt->read_param(command, param);
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
-               command == "#BODYSIZE" || command == "#PLASMA" ||
+               command == "#BODYSIZE" || command == "#EXOSPHERE" ||
+               command == "#PLASMA" ||
                command == "#UNIFORMSTATE" || command == "#FLUIDVARNAMES" ||
                command == "#WAVE") {
       fi->read_param(command, param);

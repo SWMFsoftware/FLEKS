@@ -373,6 +373,28 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     param.read_var("scaling", ScalingFactor);
   } else if (command == "#BODYSIZE") {
     param.read_var("radius", rPlanetSi);
+  } else if (command == "#EXOSPHERE") {
+    param.read_var("typeProfile", exosphereType);
+    param.read_var("usePhotoIonization", usePhotoIonization);
+    param.read_var("useElectronImpact", useElectronImpact);
+    param.read_var("useChargeExchange", useChargeExchange);
+    param.read_var("nComponent", nExoComponent);
+    exoN0.resize(nExoComponent);
+    exoH0.resize(nExoComponent);
+    exoT0.resize(nExoComponent);
+    exoK0.resize(nExoComponent);
+    exoNuPhoto.resize(nExoComponent, 0.0);
+    exoNuImpact.resize(nExoComponent, 0.0);
+    exoNuCX.resize(nExoComponent, 0.0);
+    for (int i = 0; i < nExoComponent; ++i) {
+      param.read_var("n0", exoN0[i]);
+      param.read_var("H0", exoH0[i]);
+      param.read_var("T0", exoT0[i]);
+      param.read_var("k0", exoK0[i]);
+      param.read_var("nuPhoto", exoNuPhoto[i]);
+      param.read_var("nuImpact", exoNuImpact[i]);
+      param.read_var("nuCX", exoNuCX[i]);
+    }
   } else if (command == "#FLUIDVARNAMES") {
     int nVar;
     param.read_var("nVar", nVar);
@@ -1422,11 +1444,61 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
     }
 
     int iLev = get_finest_lev(xyz);
-    const int iStart = iPoint * nVar;
+    int iStart = iPoint * nVar;
     for (int iVar = 0; iVar < nVar; iVar++) {
       data_I[iStart + iVar] =
           get_value_at_loc(nodeFluid[iLev], Geom(iLev), xyz, idxMap[iVar]) *
           coef;
     }
   }
+}
+
+//==========================================================
+double FluidInterface::get_exosphere_density(double r) const {
+  if (exosphereType == "None") return 0.0;
+  if (r < rPlanetSi) return 0.0; // Density is zero inside the planet
+
+  double sum = 0.0;
+  if (exosphereType == "Exponential") {
+    for (int i = 0; i < nExoComponent; ++i) {
+      if (exoH0[i] > 0.0) {
+        sum += exoN0[i] * exp(-(r - rPlanetSi) / exoH0[i]);
+      }
+    }
+  } else if (exosphereType == "Power-Law") {
+    for (int i = 0; i < nExoComponent; ++i) {
+      if (r > 0.0) {
+        sum += exoN0[i] * pow(rPlanetSi / r, exoK0[i]);
+      }
+    }
+  } else if (exosphereType == "Chamberlain") {
+    for (int i = 0; i < nExoComponent; ++i) {
+      if (rPlanetSi > 0.0 && r > 0.0) {
+        sum += exoN0[i] * exp(-exoH0[i] * (1.0 / rPlanetSi - 1.0 / r));
+      }
+    }
+  }
+  return sum;
+}
+
+double FluidInterface::get_exosphere_component_density(double r,
+                                                       int iC) const {
+  if (exosphereType == "None") return 0.0;
+  if (iC < 0 || iC >= nExoComponent) return 0.0;
+  if (r < rPlanetSi) return 0.0;
+
+  if (exosphereType == "Exponential") {
+    if (exoH0[iC] > 0.0) {
+      return exoN0[iC] * exp(-(r - rPlanetSi) / exoH0[iC]);
+    }
+  } else if (exosphereType == "Power-Law") {
+    if (r > 0.0) {
+      return exoN0[iC] * pow(rPlanetSi / r, exoK0[iC]);
+    }
+  } else if (exosphereType == "Chamberlain") {
+    if (rPlanetSi > 0.0 && r > 0.0) {
+      return exoN0[iC] * exp(-exoH0[iC] * (1.0 / rPlanetSi - 1.0 / r));
+    }
+  }
+  return 0.0;
 }

@@ -1181,6 +1181,45 @@ This command sets the scaling factor for the simulation.
 This command sets the size of the planet or other body in the simulation.
 </command>
 
+<command name="EXOSPHERE"
+	 alias="EXOSPHERE_FLEKS0,EXOSPHERE_FLEKS1,EXOSPHERE_FLEKS2"
+	 multiple="T">
+  <parameter name="typeProfile" type="string"/>
+  <parameter name="usePhotoIonization" type="logical"/>
+  <parameter name="useElectronImpact" type="logical"/>
+  <parameter name="useChargeExchange" type="logical"/>
+  <parameter name="nComponent" type="integer"/>
+  <parameter name="n0" type="real"/>
+  <parameter name="H0" type="real"/>
+  <parameter name="T0" type="real"/>
+  <parameter name="k0" type="real"/>
+  <parameter name="nuPhoto" type="real"/>
+  <parameter name="nuImpact" type="real"/>
+  <parameter name="nuCX" type="real"/>
+
+#EXOSPHERE
+Exponential      typeProfile
+T                usePhotoIonization
+F                useElectronImpact
+F                useChargeExchange
+1                nComponent
+1.0e6            n0
+100e3            H0
+100.0            T0
+0.0              k0
+1.0e-6           nuPhoto
+0.0              nuImpact
+0.0              nuCX
+
+This command configures exospheric neutral density profile distributions.
+The typeProfile can be "Exponential", "Power-Law", or "Chamberlain".
+usePhotoIonization, useElectronImpact, useChargeExchange enable/disable
+individual ionization processes. Currently only photoionization is functional.
+nuPhoto, nuImpact, nuCX are per-component ionization rates [s^-1].
+The coefficients n0, H0, T0, k0, nuPhoto, nuImpact, nuCX can be specified
+as multi-component arrays.
+</command>
+
 <command name="PLASMA"
 	 alias="PLASMA_FLEKS0,PLASMA_FLEKS1,PLASMA_FLEKS2"
 	 multiple="T">

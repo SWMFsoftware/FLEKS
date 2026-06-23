@@ -11,7 +11,9 @@ extern "C" {
 void get_source_wrapper(double xyzSI[3], double sourceSI[6]);
 }
 #else
-inline void get_source_wrapper(double xyzSI[3], double sourceSI[6]) {}
+inline void get_source_wrapper(double xyzSI[3], double sourceSI[6]) {
+  for (int i = 0; i < 6; ++i) sourceSI[i] = 0.0;
+}
 #endif
 
 class UserSource : public SourceInterface {
@@ -98,8 +100,33 @@ public:
                   xyz[iDim] = (idx[iDim] * dx[iDim] + plo[iDim]) * no2siL;
                 }
 
-                double source[6];
+                double source[6] = {0.0};
+#ifdef _EXOSPHERE_
                 get_source_wrapper(xyz, source);
+#else
+                double r_val = 0.0;
+                for (int d = 0; d < 3; ++d) {
+                  r_val += xyz[d] * xyz[d];
+                }
+                r_val = sqrt(r_val);
+                source[0] = 0.0;
+                for (int iC = 0; iC < other.nExoComponent; ++iC) {
+                  double dens_i =
+                      other.get_exosphere_component_density(r_val, iC);
+                  double nu_tot = 0.0;
+                  if (other.usePhotoIonization) nu_tot += other.exoNuPhoto[iC];
+                  if (other.useElectronImpact)
+                    nu_tot += other.exoNuImpact[iC];
+                  if (other.useChargeExchange)
+                    nu_tot += other.exoNuCX[iC];
+                  source[0] += dens_i * nu_tot;
+                }
+                source[1] = 0.0;
+                source[2] = 0.0;
+                source[3] = 0.0;
+                source[4] = source[0] * cBoltzmannSI * 100.0;
+                source[5] = source[0] * cBoltzmannSI * 100.0;
+#endif
 
                 for (int iFluid = 0; iFluid < nFluid; iFluid++) {
                   arr(i, j, k, iRho_I[iFluid]) = 0;
@@ -122,7 +149,7 @@ public:
 
                 amrex::Real r = 0;
                 for (int i = 0; i < 3; ++i) {
-                  xyz[i] *= no2siL / rPlanetSi;
+                  xyz[i] /= rPlanetSi;
                   r += xyz[i] * xyz[i];
                 }
                 r = sqrt(r);
