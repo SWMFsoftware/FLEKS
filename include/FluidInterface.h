@@ -183,9 +183,6 @@ public:
 
   void save_amrex_file();
 
-  double get_exosphere_density(double r) const;
-  double get_exosphere_component_density(double r, int iC) const;
-
   void read_param(const std::string& command, ReadParam& param);
 
   void post_process_param(bool receiveICOnly = false);

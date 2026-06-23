@@ -60,6 +60,57 @@ public:
   //   }
   // }
 
+  // ---- Exosphere density profiles ----
+
+  double get_exosphere_density(double r) const override {
+    if (exosphereType == "None") return 0.0;
+    if (r < rPlanetSi) return 0.0;
+
+    double sum = 0.0;
+    if (exosphereType == "Exponential") {
+      for (int i = 0; i < nExoComponent; ++i) {
+        if (exoH0[i] > 0.0) {
+          sum += exoN0[i] * exp(-(r - rPlanetSi) / exoH0[i]);
+        }
+      }
+    } else if (exosphereType == "Power-Law") {
+      for (int i = 0; i < nExoComponent; ++i) {
+        if (r > 0.0) {
+          sum += exoN0[i] * pow(rPlanetSi / r, exoK0[i]);
+        }
+      }
+    } else if (exosphereType == "Chamberlain") {
+      for (int i = 0; i < nExoComponent; ++i) {
+        if (rPlanetSi > 0.0 && r > 0.0) {
+          sum += exoN0[i] * exp(-exoH0[i] * (1.0 / rPlanetSi - 1.0 / r));
+        }
+      }
+    }
+    return sum;
+  }
+
+  double get_exosphere_component_density(double r,
+                                         int iC) const override {
+    if (exosphereType == "None") return 0.0;
+    if (iC < 0 || iC >= nExoComponent) return 0.0;
+    if (r < rPlanetSi) return 0.0;
+
+    if (exosphereType == "Exponential") {
+      if (exoH0[iC] > 0.0) {
+        return exoN0[iC] * exp(-(r - rPlanetSi) / exoH0[iC]);
+      }
+    } else if (exosphereType == "Power-Law") {
+      if (r > 0.0) {
+        return exoN0[iC] * pow(rPlanetSi / r, exoK0[iC]);
+      }
+    } else if (exosphereType == "Chamberlain") {
+      if (rPlanetSi > 0.0 && r > 0.0) {
+        return exoN0[iC] * exp(-exoH0[iC] * (1.0 / rPlanetSi - 1.0 / r));
+      }
+    }
+    return 0.0;
+  }
+
   // Set nodeFluid from get_source_wrapper.
   void set_source(const FluidInterface& other) override {
     std::string nameFunc = "FS:get_source_from_fluid";
@@ -110,15 +161,15 @@ public:
                 }
                 r_val = sqrt(r_val);
                 source[0] = 0.0;
-                for (int iC = 0; iC < other.nExoComponent; ++iC) {
+                for (int iC = 0; iC < nExoComponent; ++iC) {
                   double dens_i =
-                      other.get_exosphere_component_density(r_val, iC);
+                      get_exosphere_component_density(r_val, iC);
                   double nu_tot = 0.0;
-                  if (other.usePhotoIonization) nu_tot += other.exoNuPhoto[iC];
-                  if (other.useElectronImpact)
-                    nu_tot += other.exoNuImpact[iC];
-                  if (other.useChargeExchange)
-                    nu_tot += other.exoNuCX[iC];
+                  if (usePhotoIonization) nu_tot += exoNuPhoto[iC];
+                  if (useElectronImpact)
+                    nu_tot += exoNuImpact[iC];
+                  if (useChargeExchange)
+                    nu_tot += exoNuCX[iC];
                   source[0] += dens_i * nu_tot;
                 }
                 source[1] = 0.0;
