@@ -877,9 +877,8 @@ void Domain::read_param(const bool readGridInfo) {
         pt->read_param(command, param);
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
                command == "#BODYSIZE" || command == "#EXOSPHERE" ||
-               command == "#PLASMA" ||
-               command == "#UNIFORMSTATE" || command == "#FLUIDVARNAMES" ||
-               command == "#WAVE") {
+               command == "#PLASMA" || command == "#UNIFORMSTATE" ||
+               command == "#FLUIDVARNAMES" || command == "#WAVE") {
       fi->read_param(command, param);
     } else if (command == "#LOADBALANCE") {
       std::string strategy;

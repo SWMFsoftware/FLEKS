@@ -1455,8 +1455,10 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
 
 //==========================================================
 double FluidInterface::get_exosphere_density(double r) const {
-  if (exosphereType == "None") return 0.0;
-  if (r < rPlanetSi) return 0.0; // Density is zero inside the planet
+  if (exosphereType == "None")
+    return 0.0;
+  if (r < rPlanetSi)
+    return 0.0; // Density is zero inside the planet
 
   double sum = 0.0;
   if (exosphereType == "Exponential") {
@@ -1481,11 +1483,13 @@ double FluidInterface::get_exosphere_density(double r) const {
   return sum;
 }
 
-double FluidInterface::get_exosphere_component_density(double r,
-                                                       int iC) const {
-  if (exosphereType == "None") return 0.0;
-  if (iC < 0 || iC >= nExoComponent) return 0.0;
-  if (r < rPlanetSi) return 0.0;
+double FluidInterface::get_exosphere_component_density(double r, int iC) const {
+  if (exosphereType == "None")
+    return 0.0;
+  if (iC < 0 || iC >= nExoComponent)
+    return 0.0;
+  if (r < rPlanetSi)
+    return 0.0;
 
   if (exosphereType == "Exponential") {
     if (exoH0[iC] > 0.0) {
