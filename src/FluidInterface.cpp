@@ -1452,4 +1452,3 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
     }
   }
 }
-
