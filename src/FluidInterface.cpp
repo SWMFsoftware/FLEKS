@@ -1444,7 +1444,7 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
     }
 
     int iLev = get_finest_lev(xyz);
-    int iStart = iPoint * nVar;
+    const int iStart = iPoint * nVar;
     for (int iVar = 0; iVar < nVar; iVar++) {
       data_I[iStart + iVar] =
           get_value_at_loc(nodeFluid[iLev], Geom(iLev), xyz, idxMap[iVar]) *
