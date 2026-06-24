@@ -11,7 +11,9 @@ extern "C" {
 void get_source_wrapper(double xyzSI[3], double sourceSI[6]);
 }
 #else
-inline void get_source_wrapper(double xyzSI[3], double sourceSI[6]) {}
+inline void get_source_wrapper(double xyzSI[3], double sourceSI[6]) {
+  for (int i = 0; i < 6; ++i) sourceSI[i] = 0.0;
+}
 #endif
 
 class UserSource : public SourceInterface {
@@ -58,6 +60,57 @@ public:
   //   }
   // }
 
+  // ---- Exosphere density profiles ----
+
+  double get_exosphere_density(double r) const override {
+    if (exosphereType == "None") return 0.0;
+    if (r < rPlanetSi) return 0.0;
+
+    double sum = 0.0;
+    if (exosphereType == "Exponential") {
+      for (int i = 0; i < nExoComponent; ++i) {
+        if (exoH0[i] > 0.0) {
+          sum += exoN0[i] * exp(-(r - rPlanetSi) / exoH0[i]);
+        }
+      }
+    } else if (exosphereType == "Power-Law") {
+      for (int i = 0; i < nExoComponent; ++i) {
+        if (r > 0.0) {
+          sum += exoN0[i] * pow(rPlanetSi / r, exoK0[i]);
+        }
+      }
+    } else if (exosphereType == "Chamberlain") {
+      for (int i = 0; i < nExoComponent; ++i) {
+        if (rPlanetSi > 0.0 && r > 0.0) {
+          sum += exoN0[i] * exp(-exoH0[i] * (1.0 / rPlanetSi - 1.0 / r));
+        }
+      }
+    }
+    return sum;
+  }
+
+  double get_exosphere_component_density(double r,
+                                         int iC) const override {
+    if (exosphereType == "None") return 0.0;
+    if (iC < 0 || iC >= nExoComponent) return 0.0;
+    if (r < rPlanetSi) return 0.0;
+
+    if (exosphereType == "Exponential") {
+      if (exoH0[iC] > 0.0) {
+        return exoN0[iC] * exp(-(r - rPlanetSi) / exoH0[iC]);
+      }
+    } else if (exosphereType == "Power-Law") {
+      if (r > 0.0) {
+        return exoN0[iC] * pow(rPlanetSi / r, exoK0[iC]);
+      }
+    } else if (exosphereType == "Chamberlain") {
+      if (rPlanetSi > 0.0 && r > 0.0) {
+        return exoN0[iC] * exp(-exoH0[iC] * (1.0 / rPlanetSi - 1.0 / r));
+      }
+    }
+    return 0.0;
+  }
+
   // Set nodeFluid from get_source_wrapper.
   void set_source(const FluidInterface& other) override {
     std::string nameFunc = "FS:get_source_from_fluid";
@@ -98,8 +151,33 @@ public:
                   xyz[iDim] = (idx[iDim] * dx[iDim] + plo[iDim]) * no2siL;
                 }
 
-                double source[6];
+                double source[6] = {0.0};
+#ifdef _EXOSPHERE_
                 get_source_wrapper(xyz, source);
+#else
+                double r_val = 0.0;
+                for (int d = 0; d < 3; ++d) {
+                  r_val += xyz[d] * xyz[d];
+                }
+                r_val = sqrt(r_val);
+                source[0] = 0.0;
+                for (int iC = 0; iC < nExoComponent; ++iC) {
+                  double dens_i =
+                      get_exosphere_component_density(r_val, iC);
+                  double nu_tot = 0.0;
+                  if (usePhotoIonization) nu_tot += exoNuPhoto[iC];
+                  if (useElectronImpact)
+                    nu_tot += exoNuImpact[iC];
+                  if (useChargeExchange)
+                    nu_tot += exoNuCX[iC];
+                  source[0] += dens_i * nu_tot;
+                }
+                source[1] = 0.0;
+                source[2] = 0.0;
+                source[3] = 0.0;
+                source[4] = source[0] * cBoltzmannSI * 100.0;
+                source[5] = source[0] * cBoltzmannSI * 100.0;
+#endif
 
                 for (int iFluid = 0; iFluid < nFluid; iFluid++) {
                   arr(i, j, k, iRho_I[iFluid]) = 0;
@@ -122,7 +200,7 @@ public:
 
                 amrex::Real r = 0;
                 for (int i = 0; i < 3; ++i) {
-                  xyz[i] *= no2siL / rPlanetSi;
+                  xyz[i] /= rPlanetSi;
                   r += xyz[i] * xyz[i];
                 }
                 r = sqrt(r);

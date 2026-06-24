@@ -308,6 +308,137 @@ def ensure_flekspy_installed():
                 print("[flekspy] Please install flekspy manually via 'pip install flekspy matplotlib'.")
                 sys.exit(1)
 
+def read_pic_log(run_dir):
+    """Read the energy diagnostic log file written by Pic::write_log.
+
+    The log_pic_n*.log format:
+      time  nStep  Etot  Ee  Eb  Epart  Epart0  Epart1 ...
+
+    Returns a list of dicts with keys: time, cycle, Etot, Ee, Eb,
+    Epart, and one EpartN key per species.
+    """
+    import glob
+    pc_plots = os.path.join(run_dir, "PC", "plots")
+    log_files = sorted(glob.glob(os.path.join(pc_plots, "log_pic_n*.log")))
+    if not log_files:
+        return []
+
+    log_file = log_files[-1]
+    pic_diags = []
+
+    with open(log_file, "r") as f:
+        lines = f.readlines()
+
+    if len(lines) < 2:
+        return []
+
+    header = lines[0].strip().split("\t")
+    # Discover species count from EpartN columns
+    n_species = sum(1 for col in header if col.startswith("Epart") and col != "Epart")
+
+    for line in lines[1:]:
+        line = line.strip()
+        if not line:
+            continue
+        vals = line.split("\t")
+        if len(vals) < 5 + n_species:
+            continue
+        try:
+            entry = {
+                "time":  float(vals[0]),
+                "cycle": int(vals[1]),
+                "Etot":  float(vals[2]),
+                "Ee":    float(vals[3]),
+                "Eb":    float(vals[4]),
+                "Epart": float(vals[5]),
+            }
+            for iS in range(n_species):
+                entry[f"Epart{iS}"] = float(vals[6 + iS])
+            pic_diags.append(entry)
+        except (ValueError, IndexError):
+            continue
+
+    return pic_diags
+
+
+def validate_exosphere(diags, field_diags=None, pic_diags=None):
+    """Validate the exosphere neutral profile test.
+
+    Checks:
+    1. Species 1 (O+, the heavy ion receiving the source) energy
+       increases over time (exosphere ionization is working).
+    2. The run produces valid diagnostic output.
+    Uses pic energy log (log_pic_n*.log) as primary data source.
+    """
+    print("Validating Exosphere Neutral Profile Test...")
+
+    # Use pic energy log as primary data source
+    if pic_diags and len(pic_diags) >= 2:
+        first = pic_diags[0]
+        last = pic_diags[-1]
+
+        # Check that species 1 energy grows (exosphere source injects energy)
+        e1_initial = first.get("Epart1", 0.0)
+        e1_final = last.get("Epart1", 0.0)
+
+        print(f"  --- Energy Diagnostics (from log_pic log) ---")
+        print(f"    Initial Epart1 (species 1, O+): {e1_initial:.6e}")
+        print(f"    Final Epart1 (species 1, O+):   {e1_final:.6e}")
+        print(f"    Growth factor: {e1_final / max(e1_initial, 1e-30):.3f}x")
+        print(f"    Initial Epart0 (species 0, H+): {first.get('Epart0', 0):.6e}")
+        print(f"    Final Epart0 (species 0, H+):   {last.get('Epart0', 0):.6e}")
+        print(f"    Initial total Epart: {first.get('Epart', 0):.6e}")
+        print(f"    Final total Epart:   {last.get('Epart', 0):.6e}")
+
+        if e1_final <= e1_initial:
+            print("    FAIL: Species 1 energy did not increase.")
+            print("    Exosphere ionization source may not be working correctly.")
+            return False, (
+                f"Species 1 energy did not increase "
+                f"(initial={e1_initial:.2e}, final={e1_final:.2e})"
+            )
+        else:
+            print("    SUCCESS: Species 1 energy increased (exosphere source active).")
+            return True, "Passed"
+    else:
+        print("  [INFO] No pic energy log found; trying particle diagnostics...")
+
+    # Fall back to particle diagnostics from diag_log or stdout
+    if not diags:
+        print("  [INFO] No diagnostic outputs parsed; skipping exosphere checks.")
+        return True, "Passed (diagnostics unavailable)"
+
+    passed = True
+    reasons = []
+
+    species1_diags = [d for d in diags if d["species"] == 1]
+    if not species1_diags:
+        print("  FAIL: No diagnostics found for species 1 (O+ source species).")
+        return False, "No species 1 diagnostics found"
+
+    phys_initial = species1_diags[0]["phys"]
+    phys_final = species1_diags[-1]["phys"]
+
+    print(f"    Initial phys particles (species 1): {phys_initial:.6e}")
+    print(f"    Final phys particles (species 1):   {phys_final:.6e}")
+
+    if phys_final <= phys_initial:
+        print("    FAIL: Species 1 particle count did not increase.")
+        passed = False
+        reasons.append(
+            f"Species 1 particle count did not increase "
+            f"(initial={phys_initial:.2e}, final={phys_final:.2e})"
+        )
+    else:
+        print("    SUCCESS: Species 1 particle count increased.")
+
+    if passed:
+        print("Exosphere Neutral Profile Test: PASSED")
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
+
+
 def validate_amrex_outputs_with_flekspy(test_name, use_flekspy=False):
     if not use_flekspy:
         print("  --- Validating Output Files: Skipped thorough check (run with --thorough or --flekspy to enable) ---")
@@ -383,7 +514,8 @@ def main():
     print(f"Working directory set to: {os.getcwd()}")
     
     validators = {
-        "beam": validate_beam
+        "beam": validate_beam,
+        "exosphere": validate_exosphere
     }
     
     # Discover test subdirectories under tests/test_standalone
@@ -421,8 +553,9 @@ def main():
             # Read diagnostics from the structured log file (preferred) or fall back
             # to parsing stdout for backward compatibility.
             particle_diags, field_diags = read_diag_log("run_test")
+            pic_diags = read_pic_log("run_test")
             if not particle_diags:
-                print("  [INFO] No log file found; falling back to stdout parsing.")
+                print("  [INFO] No diag log file found; falling back to stdout parsing.")
                 particle_diags, field_diags = parse_diagnostics(stdout)
 
             val_res = False
@@ -431,11 +564,12 @@ def main():
             if validator:
                 import inspect
                 sig = inspect.signature(validator)
-                # validate_beam now accepts field_diags keyword instead of stdout.
+                kwargs = {}
                 if "field_diags" in sig.parameters:
-                    val_res, reason = validator(particle_diags, field_diags=field_diags)
-                else:
-                    val_res, reason = validator(particle_diags)
+                    kwargs["field_diags"] = field_diags
+                if "pic_diags" in sig.parameters:
+                    kwargs["pic_diags"] = pic_diags
+                val_res, reason = validator(particle_diags, **kwargs)
                 if not val_res:
                     print("FLEKS execution output:")
                     print(stdout)

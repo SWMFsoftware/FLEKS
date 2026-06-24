@@ -35,6 +35,16 @@ public:
                       "implemented."
                    << std::endl;
   };
+
+  /// Get total neutral exosphere density at radial distance r (SI units).
+  /// Default returns 0.0 — override in UserSource for exosphere profiles.
+  virtual double get_exosphere_density(double r) const { return 0.0; }
+
+  /// Get single-component neutral exosphere density at radial distance r.
+  /// Default returns 0.0 — override in UserSource for exosphere profiles.
+  virtual double get_exosphere_component_density(double r, int iC) const {
+    return 0.0;
+  }
 };
 
 #endif
