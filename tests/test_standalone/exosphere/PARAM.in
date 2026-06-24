@@ -74,16 +74,15 @@ F                       useChargeExchange
 1000.0                  H0   # H component: scale height parameter (large)
 100.0                   T0
 0.0                     k0
-1.0e-6                  nuPhoto
-0.0                     nuImpact
-0.0                     nuCX
 3.0e10                  n0   # O component: base density
 100.0                   H0   # O component: scale height parameter (small)
 150.0                   T0
 0.0                     k0
-1.0e-6                  nuPhoto
-0.0                     nuImpact
-0.0                     nuCX
+
+#PHOTOIONIZATION
+2                       nComponent
+1.0e-6                  nuPhoto0
+1.0e-6                  nuPhoto0
 
 #TIMESTEPPING
 T                       useFixedDt

@@ -12,11 +12,6 @@ protected:
   std::string info = "SourceInterface class";
   bool useFluidSource = false;
 
-  // ---- Ionization process flags ----
-  bool usePhotoIonization = false;
-  bool useElectronImpact = false;
-  bool useChargeExchange = false;
-
   // ---- Photoionization (#PHOTOIONIZATION command) ----
   int nPhotoComponent = 0;
   amrex::Vector<double> photoNu0; // ionization rate at planet surface [s^-1]
