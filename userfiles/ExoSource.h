@@ -111,7 +111,112 @@ public:
     return 0.0;
   }
 
-  // Set nodeFluid from get_source_wrapper.
+  //-------------------------------------------------------------------
+  // Voronov 1997 electron impact ionization rate coefficient.
+  // Input: Te in eV.  Returns <sigma*v> in [m^3/s].
+  amrex::Real impact_rate(amrex::Real Te_eV, int iC) const {
+    if (Te_eV <= 0.0) return 0.0;
+    double Ei = impactEIon[iC];  // ionization energy [eV]
+    double A = impactA[iC];      // Voronov A [cm^3/s]
+    double K = impactK[iC];      // Voronov K
+    double X = impactX[iC];      // Voronov X
+    double t = Te_eV / Ei;
+    // <sigma v> in cm^3/s, convert to m^3/s
+    return A * pow(t, K) / (X + t) * exp(-Ei / Te_eV) * 1e-6;
+  }
+
+  //-------------------------------------------------------------------
+  // Charge exchange rate coefficient (constant cross-section model).
+  // u_mag_SI: relative ion-neutral speed in [m/s].
+  // Returns <sigma*v> in [m^3/s].
+  amrex::Real cx_rate(amrex::Real u_mag_SI, int iC) const {
+    // sigmaCX in [cm^2], convert to [m^2]
+    return cxSigma[iC] * 1e-4 * u_mag_SI;
+  }
+
+  //-------------------------------------------------------------------
+  // Photoionation rate at distance r [m] from planet center.
+  amrex::Real photo_rate(amrex::Real r_m, int iC) const {
+    // nuPhoto0[iC] is the rate at planet surface [s^-1]
+    // Geometric dilution: ~ 1/r^2
+    double ratio = rPlanetSi / r_m;
+    return photoNu0[iC] * ratio * ratio;
+  }
+
+  //-------------------------------------------------------------------
+  // Compute electron temperature in eV from PIC-normalized pressure
+  // and number density.  pe: electron pressure (PIC units).
+  // ne: electron number density (PIC units).
+  amrex::Real electron_temperature(amrex::Real pe, amrex::Real ne) const {
+    if (ne <= 0.0) return 0.0;
+    // T_eV = (m_p/e) * uNorm^2 * (pe/ne)
+    const amrex::Real protonMassPerCharge =
+        cProtonMassSI / cUnitChargeSI;   // [kg/C]
+    const amrex::Real ur2 =
+        get_unorm_si() * get_unorm_si(); // [m^2/s^2]
+    return protonMassPerCharge * ur2 * pe / ne;
+  }
+
+  //-------------------------------------------------------------------
+  // Read ionization-related parameter commands from PARAM.in.
+  void read_param(const std::string& command, ReadParam& param) override {
+    if (command == "#PHOTOIONIZATION") {
+      usePhotoIonization = true;
+      param.read_var("nComponent", nPhotoComponent);
+      photoNu0.resize(nPhotoComponent);
+      for (int i = 0; i < nPhotoComponent; ++i) {
+        param.read_var("nuPhoto0", photoNu0[i]);
+      }
+    } else if (command == "#ELECTRONIMPACT") {
+      useElectronImpact = true;
+      param.read_var("nComponent", nImpactComponent);
+      impactEIon.resize(nImpactComponent);
+      impactA.resize(nImpactComponent);
+      impactK.resize(nImpactComponent);
+      impactX.resize(nImpactComponent);
+      for (int i = 0; i < nImpactComponent; ++i) {
+        param.read_var("eIon", impactEIon[i]);
+        param.read_var("Acoeff", impactA[i]);
+        param.read_var("Kcoeff", impactK[i]);
+        param.read_var("Xcoeff", impactX[i]);
+      }
+    } else if (command == "#CHARGEEXCHANGE") {
+      useChargeExchange = true;
+      param.read_var("nComponent", nCXComponent);
+      cxSigma.resize(nCXComponent);
+      for (int i = 0; i < nCXComponent; ++i) {
+        param.read_var("sigmaCX", cxSigma[i]);
+      }
+    }
+  }
+
+  //-------------------------------------------------------------------
+  // Validate consistency between exosphere and ionization commands.
+  void post_process_param() override {
+    if (exosphereType == "None") return;
+
+    if (usePhotoIonization && nPhotoComponent != nExoComponent) {
+      amrex::Print() << printPrefix << "Error: #PHOTOIONIZATION nComponent ("
+                     << nPhotoComponent << ") != #EXOSPHERE nComponent ("
+                     << nExoComponent << ")\n";
+      std::abort();
+    }
+    if (useElectronImpact && nImpactComponent != nExoComponent) {
+      amrex::Print() << printPrefix << "Error: #ELECTRONIMPACT nComponent ("
+                     << nImpactComponent << ") != #EXOSPHERE nComponent ("
+                     << nExoComponent << ")\n";
+      std::abort();
+    }
+    if (useChargeExchange && nCXComponent != nExoComponent) {
+      amrex::Print() << printPrefix << "Error: #CHARGEEXCHANGE nComponent ("
+                     << nCXComponent << ") != #EXOSPHERE nComponent ("
+                     << nExoComponent << ")\n";
+      std::abort();
+    }
+  }
+
+  //-------------------------------------------------------------------
+  // Set nodeFluid from plasma-state-dependent ionization processes.
   void set_source(const FluidInterface& other) override {
     std::string nameFunc = "FS:get_source_from_fluid";
     amrex::Print() << nameFunc << " is called.";
@@ -122,6 +227,10 @@ public:
     const amrex::Box gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
 
     const double no2siL = get_No2SiL();
+
+    const bool doPhoto = usePhotoIonization;
+    const bool doImpact = useElectronImpact;
+    const bool doCX = useChargeExchange;
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (!nodeFluid[iLev].empty()) {
@@ -161,15 +270,54 @@ public:
                 }
                 r_val = sqrt(r_val);
                 source[0] = 0.0;
+                // Pre-fetch plasma state once per cell (lazy evaluation)
+                double ne = 0, pe = 0, Te_eV = 0;
+                bool plasmaFetched = false;
+                auto fetch_electron_plasma = [&, &other=other]() {
+                  if (plasmaFetched) return;
+                  ne = other.get_number_density(mfi, idx, 0, iLev);
+                  pe = other.get_p(mfi, idx, 0, iLev);
+                  Te_eV = electron_temperature(pe, ne);
+                  plasmaFetched = true;
+                };
+
+                double ni = 0, u_mag_SI = 0;
+                bool ionFetched = false;
+                auto fetch_ion_plasma = [&, &other=other]() {
+                  if (ionFetched) return;
+                  ni = other.get_number_density(mfi, idx, 1, iLev);
+                  double ux = other.get_ux(mfi, idx, 1, iLev);
+                  double uy = other.get_uy(mfi, idx, 1, iLev);
+                  double uz = other.get_uz(mfi, idx, 1, iLev);
+                  // PIC velocity -> SI [m/s]
+                  u_mag_SI = sqrt(ux * ux + uy * uy + uz * uz) * get_unorm_si();
+                  ionFetched = true;
+                };
+
                 for (int iC = 0; iC < nExoComponent; ++iC) {
                   double dens_i =
                       get_exosphere_component_density(r_val, iC);
                   double nu_tot = 0.0;
-                  if (usePhotoIonization) nu_tot += exoNuPhoto[iC];
-                  if (useElectronImpact)
-                    nu_tot += exoNuImpact[iC];
-                  if (useChargeExchange)
-                    nu_tot += exoNuCX[iC];
+                  // ---- Photoionization ----
+                  if (doPhoto) {
+                    nu_tot += photo_rate(r_val, iC);
+                  }
+
+                  // ---- Electron impact ionization ----
+                  if (doImpact) {
+                    fetch_electron_plasma();
+                    if (ne > 0 && Te_eV > 0) {
+                      nu_tot += ne * impact_rate(Te_eV, iC);
+                    }
+                  }
+
+                  // ---- Charge exchange ----
+                  if (doCX) {
+                    fetch_ion_plasma();
+                    if (ni > 0 && u_mag_SI > 0) {
+                      nu_tot += ni * cx_rate(u_mag_SI, iC);
+                    }
+                  }
                   source[0] += dens_i * nu_tot;
                 }
                 source[1] = 0.0;

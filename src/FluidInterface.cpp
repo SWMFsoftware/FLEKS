@@ -383,17 +383,11 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     exoH0.resize(nExoComponent);
     exoT0.resize(nExoComponent);
     exoK0.resize(nExoComponent);
-    exoNuPhoto.resize(nExoComponent, 0.0);
-    exoNuImpact.resize(nExoComponent, 0.0);
-    exoNuCX.resize(nExoComponent, 0.0);
     for (int i = 0; i < nExoComponent; ++i) {
       param.read_var("n0", exoN0[i]);
       param.read_var("H0", exoH0[i]);
       param.read_var("T0", exoT0[i]);
       param.read_var("k0", exoK0[i]);
-      param.read_var("nuPhoto", exoNuPhoto[i]);
-      param.read_var("nuImpact", exoNuImpact[i]);
-      param.read_var("nuCX", exoNuCX[i]);
     }
   } else if (command == "#FLUIDVARNAMES") {
     int nVar;

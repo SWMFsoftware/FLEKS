@@ -116,10 +116,6 @@ protected:
   amrex::Vector<double> exoH0;
   amrex::Vector<double> exoT0;
   amrex::Vector<double> exoK0;
-  // Per-component ionization rates for each process
-  amrex::Vector<double> exoNuPhoto;
-  amrex::Vector<double> exoNuImpact;
-  amrex::Vector<double> exoNuCX;
 
 public:
   amrex::Vector<std::string> get_var_names() const { return varNames; }

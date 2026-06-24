@@ -875,6 +875,10 @@ void Domain::read_param(const bool readGridInfo) {
                command == "#TPINITFROMPIC" || command == "#TPSTATESI") {
       if (pt)
         pt->read_param(command, param);
+    } else if (command == "#PHOTOIONIZATION" || command == "#ELECTRONIMPACT" ||
+               command == "#CHARGEEXCHANGE") {
+      if (source)
+        source->read_param(command, param);
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
                command == "#BODYSIZE" || command == "#EXOSPHERE" ||
                command == "#PLASMA" || command == "#UNIFORMSTATE" ||
@@ -1196,6 +1200,9 @@ void Domain::read_param(const bool readGridInfo) {
 
     if (fi)
       fi->post_process_param(receiveICOnly);
+
+    if (source)
+      source->post_process_param();
   }
 
   VisMF::SetNOutFiles(nFileField);
