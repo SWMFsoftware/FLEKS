@@ -1208,6 +1208,14 @@ void Domain::read_param(const bool readGridInfo) {
     if (fi)
       fi->post_process_param(receiveICOnly);
 
+    // source was created before read_param with a stale copy of *fi.
+    // Copy the now-fully-populated FluidInterfaceParameters from fi to
+    // source so that source has correct exosphere, plasma, and
+    // normalization data.
+    if (source)
+      static_cast<FluidInterfaceParameters&>(*source) =
+          static_cast<const FluidInterfaceParameters&>(*fi);
+
     if (source)
       source->post_process_param();
   }
