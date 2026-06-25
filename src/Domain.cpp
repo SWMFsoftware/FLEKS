@@ -1213,8 +1213,8 @@ void Domain::read_param(const bool readGridInfo) {
     // source so that source has correct exosphere, plasma, and
     // normalization data.
     if (source)
-      static_cast<FluidInterfaceParameters&>(*source) =
-          static_cast<const FluidInterfaceParameters&>(*fi);
+      static_cast<FluidInterfaceParameters &>(*source) =
+          static_cast<const FluidInterfaceParameters &>(*fi);
 
     if (source)
       source->post_process_param();
