@@ -82,19 +82,38 @@ jobs:
         run: |
           make EXE -j$(nproc)
 
-      - name: Run and Verify Standalone FLEKS Tests
-        working-directory: SWMF/PC/FLEKS/tests/test_standalone
+      - name: Run Standalone FLEKS Tests (Serial)
+        id: test-serial
+        working-directory: SWMF/PC/FLEKS/tests
         run: |
-          ls -lh ../../bin/FLEKS.exe
-          ldd ../../bin/FLEKS.exe
-          python3 validate_tests.py
+          ls -lh ../bin/FLEKS.exe
+          ldd ../bin/FLEKS.exe
+          python3 validate_tests.py --summary-file summary_serial.md
+
+      - name: Run Standalone FLEKS Tests (Parallel, 2 Procs)
+        id: test-parallel
+        if: always() && steps.test-serial.outcome != 'skipped'
+        working-directory: SWMF/PC/FLEKS/tests
+        run: |
+          python3 validate_tests.py -n 2 --summary-file summary_parallel.md
 
       - name: Write Job Summary
         if: always()
         run: |
-          if [ -f SWMF/PC/FLEKS/tests/test_standalone/summary.md ]; then
-            cat SWMF/PC/FLEKS/tests/test_standalone/summary.md >> $GITHUB_STEP_SUMMARY
-          fi
+          {
+            echo "### 🧪 Standalone FLEKS Test Results"
+            echo ""
+            if [ -f SWMF/PC/FLEKS/tests/summary_serial.md ]; then
+              echo "#### Serial (1 proc)"
+              cat SWMF/PC/FLEKS/tests/summary_serial.md
+              echo ""
+            fi
+            if [ -f SWMF/PC/FLEKS/tests/summary_parallel.md ]; then
+              echo "#### Parallel (2 procs)"
+              cat SWMF/PC/FLEKS/tests/summary_parallel.md
+              echo ""
+            fi
+          } >> $GITHUB_STEP_SUMMARY
 
       - name: Post PR Comment
         uses: actions/github-script@v7
@@ -102,11 +121,19 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const summaryPath = 'SWMF/PC/FLEKS/tests/test_standalone/summary.md';
+            const serialPath = 'SWMF/PC/FLEKS/tests/summary_serial.md';
+            const parallelPath = 'SWMF/PC/FLEKS/tests/summary_parallel.md';
             let body = '';
             
-            if (fs.existsSync(summaryPath)) {
-              body += fs.readFileSync(summaryPath, 'utf8') + '\n';
+            if (fs.existsSync(serialPath) || fs.existsSync(parallelPath)) {
+              body += '### 🧪 Standalone FLEKS Test Results\n\n';
+              
+              if (fs.existsSync(serialPath)) {
+                body += fs.readFileSync(serialPath, 'utf8') + '\n';
+              }
+              if (fs.existsSync(parallelPath)) {
+                body += fs.readFileSync(parallelPath, 'utf8') + '\n';
+              }
             }
             
             if (body) {

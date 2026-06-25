@@ -65,7 +65,7 @@ def cleanup_run_dir():
                 except Exception as e:
                     print(f"  [WARN] Could not remove {entry_path}: {e}")
 
-def run_test(test_dir):
+def run_test(test_dir, nprocs=1):
     param_file = os.path.join(test_dir, "PARAM.in")
     print(f"Running test in {test_dir} with config {param_file}...")
     prepare_run_dir()
@@ -73,8 +73,16 @@ def run_test(test_dir):
     # Copy param_file to run_test/PARAM.in
     shutil.copy(param_file, "run_test/PARAM.in")
     
-    # Run ./FLEKS.exe inside run_test/
-    result = subprocess.run(["./FLEKS.exe"], cwd="run_test", stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    # Build the command: serial for nprocs==1, mpirun otherwise
+    if nprocs <= 1:
+        cmd = ["./FLEKS.exe"]
+        print(f"  Running in serial mode (no MPI)...")
+    else:
+        cmd = ["mpirun", "-n", str(nprocs), "./FLEKS.exe"]
+        print(f"  Running with {nprocs} MPI processes...")
+    
+    # Run the command inside run_test/
+    result = subprocess.run(cmd, cwd="run_test", stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         print(f"Error running FLEKS.exe for {test_dir}:")
         print(result.stderr)
@@ -501,15 +509,41 @@ def validate_amrex_outputs_with_flekspy(test_name, use_flekspy=False):
         return False, f"flekspy load error: {e}"
 
 def main():
-    # Check if thorough validation is requested
+    # Parse command-line arguments
     use_flekspy = "--thorough" in sys.argv or "--flekspy" in sys.argv
+    
+    # Parse nprocs: -n N or --nprocs N
+    nprocs = 1
+    for i, arg in enumerate(sys.argv):
+        if arg in ("-n", "--nprocs"):
+            try:
+                nprocs = int(sys.argv[i + 1])
+            except (IndexError, ValueError):
+                print(f"Error: {arg} requires an integer argument (number of MPI processes).")
+                sys.exit(1)
+            break
+    
+    if nprocs < 1:
+        print("Error: Number of processes must be >= 1.")
+        sys.exit(1)
+    
+    # Parse --summary-file PATH (custom output path for CI serial/parallel split)
+    summary_file = "tests/summary.md"
+    for i, arg in enumerate(sys.argv):
+        if arg == "--summary-file":
+            try:
+                summary_file = sys.argv[i + 1]
+            except IndexError:
+                print("Error: --summary-file requires a path argument.")
+                sys.exit(1)
+            break
     
     # Ensure flekspy is installed first if thorough validation is enabled
     if use_flekspy:
         ensure_flekspy_installed()
     
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    os.chdir(os.path.dirname(os.path.dirname(script_dir)))
+    os.chdir(os.path.dirname(script_dir))
     print(f"Working directory set to: {os.getcwd()}")
     
     validators = {
@@ -519,23 +553,23 @@ def main():
         "chargeexchange": validate_ionization_source,
     }
     
-    # Discover test subdirectories under tests/test_standalone
-    test_standalone_dir = os.path.join("tests", "test_standalone")
+    # Discover test subdirectories under tests/
+    tests_dir = "tests"
     
     # Iterate through sorted subdirectories
-    subdirs = sorted([d for d in os.listdir(test_standalone_dir) 
-                      if os.path.isdir(os.path.join(test_standalone_dir, d)) and d not in ["performance"]])
+    subdirs = sorted([d for d in os.listdir(tests_dir) 
+                      if os.path.isdir(os.path.join(tests_dir, d)) and d not in ["performance"]])
     
     tests = []
     for d in subdirs:
-        test_dir = os.path.join(test_standalone_dir, d)
+        test_dir = os.path.join(tests_dir, d)
         param_file = os.path.join(test_dir, "PARAM.in")
         if os.path.exists(param_file):
             validator = validators.get(d, None)
             tests.append((test_dir, d, validator))
             
     if not tests:
-        print("No tests found in tests/test_standalone/ subdirectories!")
+        print("No tests found in tests/ subdirectories!")
         sys.exit(1)
         
     results = [] # Collect results for summary table
@@ -545,7 +579,7 @@ def main():
         print(f"Starting test: {name.upper()}")
         print(f"==========================================")
         try:
-            stdout, code = run_test(test_dir)
+            stdout, code = run_test(test_dir, nprocs=nprocs)
             if code != 0 or stdout is None:
                 print(f"FAIL: {name.upper()} execution failed with exit code {code}")
                 results.append((name.upper(), "FAILED", f"Execution failed (code {code})"))
@@ -628,7 +662,6 @@ def main():
     
     # Write Markdown Summary to summary.md for CI / PR integration
     try:
-        summary_file = os.path.join(test_standalone_dir, "summary.md")
         with open(summary_file, "w") as f:
             f.write("### 🧪 Standalone FLEKS Test Results\n\n")
             f.write("| Test Name | Status | Failure Reason / Details |\n")

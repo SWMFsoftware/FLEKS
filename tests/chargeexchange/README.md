@@ -1,10 +1,10 @@
-# Electron Impact Ionization Test (H + O, Chamberlain Neutral Profile)
+# Charge Exchange Source Test (H + O, Chamberlain Neutral Profile)
 
 ## Description
 
-This standalone test verifies the `#ELECTRONIMPACT` command for electron impact
+This standalone test verifies the `#CHARGEEXCHANGE` command for charge exchange
 ionization of analytical neutral exosphere density profiles with **two species**
-(H and O) using the **Chamberlain model**. The impact ionization source injects
+(H and O) using the **Chamberlain model**. The charge exchange source injects
 heavy ions (species 1) into the PIC simulation domain.
 
 ## Physics & Solver Setup
@@ -20,24 +20,24 @@ heavy ions (species 1) into the PIC simulation domain.
   Density: \( n(r) = n_0 \exp\left[-H_0\left(\frac{1}{R_p} - \frac{1}{r}\right)\right] \) for \( r \geq R_p \).
   Planet radius \( R_p = 500 \) m.
 
-- **Ionization**: Electron impact ionization, enabled via `#ELECTRONIMPACT`
-  command. Uses the Voronov 1997 rate coefficient:
-  \( \langle\sigma v\rangle = A \cdot t^K / (X + t) \cdot \exp(-E_i/T_e) \),
-  where \( t = T_e / E_i \).
-  | Component | eIon [eV] | A [cm^3/s] | K     | X    |
-  |-----------|-----------|------------|-------|------|
-  | H         | 13.6      | 3.0×10^-8  | 0.39  | 0.23 |
-  | O         | 13.6      | 1.0×10^-8  | 0.5   | 0.3  |
+- **Ionization**: Charge exchange, enabled via `#CHARGEEXCHANGE` command.
+  Uses a constant cross-section model:
+  \( \langle\sigma v\rangle = \sigma_{\text{CX}} \cdot u_{\text{rel}} \),
+  where \( u_{\text{rel}} \) is the ion-neutral relative speed.
+  | Component | sigmaCX [cm^2] |
+  |-----------|---------------|
+  | H         | 2.0×10^-15    |
+  | O         | 1.0×10^-15    |
   Source mass rate per component:
-  \( S_{\rho,i} = n_i(r) \cdot n_e \cdot \langle\sigma v\rangle_i(T_e) \).
-- **Other Processes**: `#PHOTOIONIZATION` and `#CHARGEEXCHANGE` commands are not
+  \( S_{\rho,i} = n_i(r) \cdot n_{\text{ion}} \cdot \sigma_{\text{CX},i} \cdot u_{\text{rel}} \).
+- **Other Processes**: `#PHOTOIONIZATION` and `#ELECTRONIMPACT` commands are not
   present, so those source processes are skipped.
 
 - **Plasma Species**:
   | Species | Mass [amu] | Charge [e] | Role                       |
   |---------|------------|------------|----------------------------|
-  | 0 (H+)  | 1.0        | +1         | Hot background (T=100 kK) for electron supply |
-  | 1 (O+)  | 16.0       | +1         | Heavy ions (gets exosphere source) |
+  | 0 (H+)  | 1.0        | +1         | Background ions            |
+  | 1 (O+)  | 16.0       | +1         | Ion species for CX (ux=100 km/s), gets exosphere source |
 
 - **Electromagnetic Fields**: Enabled (`solveEM = T`) with guiding field
   \( B_x = 5.0 \times 10^{-9} \) T.
@@ -45,7 +45,7 @@ heavy ions (species 1) into the PIC simulation domain.
 ## Expected Results
 
 1. **Particle Count Growth**: Species 1 (O+) particle count increases monotonically
-   over time due to continuous electron impact ionization of the exosphere neutrals.
+   over time due to continuous charge exchange of the exosphere neutrals.
 
 2. **Total Energy Growth**: Kinetic energy of species 1 increases as more
    particles are injected.
@@ -57,7 +57,7 @@ heavy ions (species 1) into the PIC simulation domain.
 From the FLEKS root directory (requires compiled `bin/FLEKS.exe`):
 
 ```bash
-python3 tests/test_standalone/validate_tests.py
+python3 tests/validate_tests.py
 ```
 
 Or manually:
@@ -65,6 +65,6 @@ Or manually:
 ```bash
 mkdir -p run_test/PC/plots run_test/PC/restartOUT
 ln -sf ../bin/FLEKS.exe run_test/FLEKS.exe
-cp tests/test_standalone/electronimpact/PARAM.in run_test/PARAM.in
+cp tests/chargeexchange/PARAM.in run_test/PARAM.in
 cd run_test && ./FLEKS.exe
 ```

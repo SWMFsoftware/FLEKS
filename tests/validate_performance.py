@@ -17,7 +17,7 @@ def safe_symlink(src, dst):
 
 def prepare_run_dir(run_dir):
     os.makedirs(run_dir, exist_ok=True)
-    safe_symlink(os.path.abspath("../../bin/FLEKS.exe"), os.path.join(run_dir, "FLEKS.exe"))
+    safe_symlink(os.path.abspath("../bin/FLEKS.exe"), os.path.join(run_dir, "FLEKS.exe"))
     
     # Component plots and restart directories
     pc_dir = os.path.join(run_dir, "PC")
@@ -229,7 +229,7 @@ def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(script_dir)
     
-    if not os.path.exists("../../bin/FLEKS.exe"):
+    if not os.path.exists("../bin/FLEKS.exe"):
         print("Error: Standalone FLEKS.exe not found. Please compile it first.")
         sys.exit(1)
         
@@ -342,6 +342,12 @@ def main():
     except Exception as e:
         print(f"Warning: Could not write performance_summary.md: {e}")
         
+    # Clean up temporary run directories
+    for d in ("run_perf_serial", "run_perf_parallel"):
+        if os.path.exists(d):
+            shutil.rmtree(d)
+            print(f"Cleaned up {d}")
+    
     all_passed = total_passed and mover_passed and solver_passed and speedup_passed
     if all_passed:
         if sys.stdout.isatty():
