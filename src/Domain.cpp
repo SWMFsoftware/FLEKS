@@ -64,6 +64,12 @@ void Domain::init(double time, const int iDomain,
     pt = std::make_unique<ParticleTracker>(gm, amrInfo, nGst, fi.get(),
                                            tc.get(), gridID);
 
+  // Create the source object before read_param so that ionization
+  // commands (#PHOTOIONIZATION, #ELECTRONIMPACT, #CHARGEEXCHANGE)
+  // can be dispatched to source->read_param().
+  source =
+      std::make_unique<UserSource>(*fi, gridID, "picSource", SourceFluid);
+
   read_param(false);
 
   init_time_ctr();
@@ -81,9 +87,11 @@ void Domain::init(double time, const int iDomain,
   pic->set_sourceOH(sourcePT2OH.get());
 #endif
 
-  if (useSource) {
-    source =
-        std::make_unique<UserSource>(*fi, gridID, "picSource", SourceFluid);
+  // #SOURCE command sets useSource during read_param; discard the
+  // source object if user did not request a source.
+  if (!useSource) {
+    source.reset();
+  } else {
     amrex::Print() << source->get_info() << " is used for source" << std::endl;
   }
   if (source)

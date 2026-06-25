@@ -1185,39 +1185,91 @@ This command sets the size of the planet or other body in the simulation.
 	 alias="EXOSPHERE_FLEKS0,EXOSPHERE_FLEKS1,EXOSPHERE_FLEKS2"
 	 multiple="T">
   <parameter name="typeProfile" type="string"/>
-  <parameter name="usePhotoIonization" type="logical"/>
-  <parameter name="useElectronImpact" type="logical"/>
-  <parameter name="useChargeExchange" type="logical"/>
   <parameter name="nComponent" type="integer"/>
   <parameter name="n0" type="real"/>
   <parameter name="H0" type="real"/>
   <parameter name="T0" type="real"/>
   <parameter name="k0" type="real"/>
-  <parameter name="nuPhoto" type="real"/>
-  <parameter name="nuImpact" type="real"/>
-  <parameter name="nuCX" type="real"/>
 
 #EXOSPHERE
 Exponential      typeProfile
-T                usePhotoIonization
-F                useElectronImpact
-F                useChargeExchange
 1                nComponent
 1.0e6            n0
 100e3            H0
 100.0            T0
 0.0              k0
-1.0e-6           nuPhoto
-0.0              nuImpact
-0.0              nuCX
 
-This command configures exospheric neutral density profile distributions.
+This command configures the static exospheric neutral density profile.
 The typeProfile can be "Exponential", "Power-Law", or "Chamberlain".
-usePhotoIonization, useElectronImpact, useChargeExchange enable/disable
-individual ionization processes. Currently only photoionization is functional.
-nuPhoto, nuImpact, nuCX are per-component ionization rates [s^-1].
-The coefficients n0, H0, T0, k0, nuPhoto, nuImpact, nuCX can be specified
-as multi-component arrays.
+The coefficients n0, H0, T0, k0 are specified as multi-component arrays
+for each neutral species. To enable ionization source processes, use the
+separate #PHOTOIONIZATION, #ELECTRONIMPACT, and/or #CHARGEEXCHANGE
+commands below. If none of those commands are present, no ionization
+source is applied.
+</command>
+
+<command name="PHOTOIONIZATION"
+	 alias="PHOTOIONIZATION_FLEKS0,PHOTOIONIZATION_FLEKS1,PHOTOIONIZATION_FLEKS2"
+	 multiple="T">
+  <parameter name="nComponent" type="integer"/>
+  <parameter name="nuPhoto0" type="real"/>
+
+#PHOTOIONIZATION
+2                       nComponent
+1.0e-6                  nuPhoto0
+1.0e-6                  nuPhoto0
+
+This command enables photoionization as an exosphere source process.
+nComponent must match the nComponent in #EXOSPHERE.
+nuPhoto0 is the photoionization rate [s^-1] at the planet surface,
+specified as a multi-component array. The rate at distance r follows
+geometric dilution: nu(r) = nuPhoto0 * (r_planet / r)^2.
+</command>
+
+<command name="ELECTRONIMPACT"
+	 alias="ELECTRONIMPACT_FLEKS0,ELECTRONIMPACT_FLEKS1,ELECTRONIMPACT_FLEKS2"
+	 multiple="T">
+  <parameter name="nComponent" type="integer"/>
+  <parameter name="eIon" type="real"/>
+  <parameter name="Acoeff" type="real"/>
+  <parameter name="Kcoeff" type="real"/>
+  <parameter name="Xcoeff" type="real"/>
+
+#ELECTRONIMPACT
+2                       nComponent
+13.6                    eIon
+1.0e-8                  Acoeff
+0.5                     Kcoeff
+0.8                     Xcoeff
+13.6                    eIon
+1.0e-8                  Acoeff
+0.5                     Kcoeff
+0.8                     Xcoeff
+
+This command enables electron impact ionization as an exosphere source
+process. nComponent must match the nComponent in #EXOSPHERE.
+Uses the Voronov 1997 rate coefficient: <sigma*v> = A * t^K / (X + t)
+* exp(-Ei/Te), where t = Te/Ei.  eIon is the ionization energy [eV],
+Acoeff is the Voronov A coefficient [cm^3/s], Kcoeff is K, Xcoeff is X.
+Each parameter is specified as a multi-component array.
+</command>
+
+<command name="CHARGEEXCHANGE"
+	 alias="CHARGEEXCHANGE_FLEKS0,CHARGEEXCHANGE_FLEKS1,CHARGEEXCHANGE_FLEKS2"
+	 multiple="T">
+  <parameter name="nComponent" type="integer"/>
+  <parameter name="sigmaCX" type="real"/>
+
+#CHARGEEXCHANGE
+2                       nComponent
+1.0e-15                 sigmaCX
+1.0e-15                 sigmaCX
+
+This command enables charge exchange as an exosphere source process.
+nComponent must match the nComponent in #EXOSPHERE.
+Uses a constant cross-section model: <sigma*v> = sigmaCX * u_rel.
+sigmaCX is the charge exchange cross section [cm^2], specified as a
+multi-component array.
 </command>
 
 <command name="PLASMA"

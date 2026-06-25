@@ -375,9 +375,6 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     param.read_var("radius", rPlanetSi);
   } else if (command == "#EXOSPHERE") {
     param.read_var("typeProfile", exosphereType);
-    param.read_var("usePhotoIonization", usePhotoIonization);
-    param.read_var("useElectronImpact", useElectronImpact);
-    param.read_var("useChargeExchange", useChargeExchange);
     param.read_var("nComponent", nExoComponent);
     exoN0.resize(nExoComponent);
     exoH0.resize(nExoComponent);

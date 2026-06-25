@@ -1,5 +1,5 @@
 #DESCRIPTION
-Exosphere Neutral Profile Test for H+O with Chamberlain Model
+Photoionization Source Test for H+O with Chamberlain Neutral Profile
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -35,18 +35,18 @@ T                       solveEM
 
 #PLASMA
 2                       nSpecies
-1.0                     mass       # Species 0: H+ (light)
+1.0                     mass        Species 0: H+ (light)
 1.0                     charge
-16.0                    mass       # Species 1: O+ (heavy, gets exosphere source)
+16.0                    mass        Species 1: O+ (heavy, gets exosphere source)
 1.0                     charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]  # Species 0 background
+5.0                     rho [amu/cc]   Species 0 background
 -400.0                  ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-0.1                     rho [amu/cc]  # Species 1 background (low density seed)
+0.1                     rho [amu/cc]   Species 1 background (low density seed)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -66,16 +66,13 @@ T                       useSource
 
 #EXOSPHERE
 Chamberlain             typeProfile
-T                       usePhotoIonization
-F                       useElectronImpact
-F                       useChargeExchange
 2                       nComponent
-1.0e10                  n0   # H component: base density
-1000.0                  H0   # H component: scale height parameter (large)
+1.0e10                  n0            H component: base density
+1000.0                  H0            H component: scale height parameter (large)
 100.0                   T0
 0.0                     k0
-3.0e10                  n0   # O component: base density
-100.0                   H0   # O component: scale height parameter (small)
+3.0e10                  n0            O component: base density
+100.0                   H0            O component: scale height parameter (small)
 150.0                   T0
 0.0                     k0
 

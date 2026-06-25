@@ -361,16 +361,15 @@ def read_pic_log(run_dir):
     return pic_diags
 
 
-def validate_exosphere(diags, field_diags=None, pic_diags=None):
-    """Validate the exosphere neutral profile test.
+def validate_ionization_source(diags, field_diags=None, pic_diags=None):
+    """Validate an ionization source test (photoionization, electron impact,
+    or charge exchange).
 
-    Checks:
-    1. Species 1 (O+, the heavy ion receiving the source) energy
-       increases over time (exosphere ionization is working).
-    2. The run produces valid diagnostic output.
-    Uses pic energy log (log_pic_n*.log) as primary data source.
+    Checks that Species 1 (O+, the heavy ion receiving the exosphere source)
+    energy increases over time, confirming the ionization source is active.
+    Uses the PIC energy log (log_pic_n*.log) as the primary data source.
     """
-    print("Validating Exosphere Neutral Profile Test...")
+    print("Validating Ionization Source Test...")
 
     # Use pic energy log as primary data source
     if pic_diags and len(pic_diags) >= 2:
@@ -392,13 +391,13 @@ def validate_exosphere(diags, field_diags=None, pic_diags=None):
 
         if e1_final <= e1_initial:
             print("    FAIL: Species 1 energy did not increase.")
-            print("    Exosphere ionization source may not be working correctly.")
+            print("    Ionization source may not be working correctly.")
             return False, (
                 f"Species 1 energy did not increase "
                 f"(initial={e1_initial:.2e}, final={e1_final:.2e})"
             )
         else:
-            print("    SUCCESS: Species 1 energy increased (exosphere source active).")
+            print("    SUCCESS: Species 1 energy increased (ionization source active).")
             return True, "Passed"
     else:
         print("  [INFO] No pic energy log found; trying particle diagnostics...")
@@ -433,7 +432,7 @@ def validate_exosphere(diags, field_diags=None, pic_diags=None):
         print("    SUCCESS: Species 1 particle count increased.")
 
     if passed:
-        print("Exosphere Neutral Profile Test: PASSED")
+        print("Ionization Source Test: PASSED")
         return True, "Passed"
     else:
         return False, "; ".join(reasons)
@@ -515,7 +514,9 @@ def main():
     
     validators = {
         "beam": validate_beam,
-        "exosphere": validate_exosphere
+        "photoionization": validate_ionization_source,
+        "electronimpact": validate_ionization_source,
+        "chargeexchange": validate_ionization_source,
     }
     
     # Discover test subdirectories under tests/test_standalone

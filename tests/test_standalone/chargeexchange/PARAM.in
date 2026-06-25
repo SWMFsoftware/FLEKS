@@ -1,0 +1,132 @@
+#DESCRIPTION
+Charge Exchange Source Test for H+O with Chamberlain Neutral Profile
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-1e3                    xMin
+ 1e3                    xMax
+-1.0                    yMin
+ 1.0                    yMax
+-1.0                    zMin
+ 1.0                    zMax
+
+#NCELL
+32                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+32                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+T                       solveEM
+
+#ELECTRON
+-100                    electronChargePerMass
+
+#PLASMA
+2                       nSpecies
+1.0                     mass        Species 0: H+ (light background)
+1.0                     charge
+16.0                    mass        Species 1: O+ (heavy, ion species for CX & gets source)
+1.0                     charge
+
+#UNIFORMSTATE
+5.0                     rho [amu/cc]   Species 0 background
+-400.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+0.1                     rho [amu/cc]   Species 1 background (low density seed, needs velocity for CX)
+100.0                   ux [km/s]      Non-zero velocity required for charge exchange
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.0e-9                  bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#SOURCE
+T                       useSource
+
+#BODYSIZE
+500.0                   radius
+
+#EXOSPHERE
+Chamberlain             typeProfile
+2                       nComponent
+1.0e10                  n0            H component: base density
+1000.0                  H0            H component: scale height parameter (large)
+100.0                   T0
+0.0                     k0
+3.0e10                  n0            O component: base density
+100.0                   H0            O component: scale height parameter (small)
+150.0                   T0
+0.0                     k0
+
+#CHARGEEXCHANGE
+2                       nComponent
+2.0e-15                 sigmaCX       H: cross section [cm^2]
+1.0e-15                 sigmaCX       O: cross section [cm^2]
+
+#TIMESTEPPING
+T                       useFixedDt
+0.1                     dt
+
+#NORMALIZATION
+1000.0                  lNormSI
+1.0e6                   uNormSI
+
+#MONITOR
+1                       dnReport
+
+#PARTICLES
+4                       nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#COMOVING
+T                       solvePartInCoMov
+5                       nSmoothBackGroundU
+
+#UPWINDE
+T                       useUpwindE
+1                       limiterTheta
+
+#UPWINDB
+T                       doSmoothB
+1                       theta
+
+#SMOOTHJ
+T
+1
+0.5
+
+#EFIELDSOLVER
+1.0e-6                  EFieldTol
+200                     EFieldIter
+
+#DIVE
+T
+1
+
+#SAVEPLOT
+0                       nPlot
+
+#STOP
+10                      MaxIter
+1.0                     TimeMax
+
+#RUN

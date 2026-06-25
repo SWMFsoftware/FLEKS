@@ -108,9 +108,6 @@ protected:
 
   // Exosphere neutral profile parameters
   std::string exosphereType = "None";
-  bool usePhotoIonization = false;
-  bool useElectronImpact = false;
-  bool useChargeExchange = false;
   int nExoComponent = 0;
   amrex::Vector<double> exoN0;
   amrex::Vector<double> exoH0;
