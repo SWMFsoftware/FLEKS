@@ -1215,7 +1215,7 @@ This command configures exospheric neutral density profile distributions.
 The typeProfile can be "Exponential", "Power-Law", or "Chamberlain".
 usePhotoIonization, useElectronImpact, useChargeExchange enable/disable
 individual ionization processes. Currently only photoionization is functional.
-nuPhoto, nuImpact, nuCX are per-component ionization rates [s^-1].
+nuPhoto, nuImpact, nuCX are per-component ionization rates [1/s].
 The coefficients n0, H0, T0, k0, nuPhoto, nuImpact, nuCX can be specified
 as multi-component arrays.
 </command>
