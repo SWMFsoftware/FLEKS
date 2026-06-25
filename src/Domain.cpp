@@ -67,8 +67,7 @@ void Domain::init(double time, const int iDomain,
   // Create the source object before read_param so that ionization
   // commands (#PHOTOIONIZATION, #ELECTRONIMPACT, #CHARGEEXCHANGE)
   // can be dispatched to source->read_param().
-  source =
-      std::make_unique<UserSource>(*fi, gridID, "picSource", SourceFluid);
+  source = std::make_unique<UserSource>(*fi, gridID, "picSource", SourceFluid);
 
   read_param(false);
 
