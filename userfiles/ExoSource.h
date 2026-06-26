@@ -135,10 +135,30 @@ public:
   }
 
   //-------------------------------------------------------------------
-  // Photoionation rate at distance r [m] from planet center.
-  amrex::Real photo_rate(amrex::Real r_m, int iC) const {
-    // nuPhoto0[iC] is the rate at planet surface [s^-1]
-    // Geometric dilution: ~ 1/r^2
+  // Check whether a point at (x, y, z) [m] relative to planet center
+  // lies inside the planetary shadow cylinder.
+  bool is_in_shadow(double x, double y, double z) const {
+    if (!useShadowCylinder) return false;
+    // Project position vector onto solar direction.
+    // solarDir points from planet center toward the Sun.
+    double proj = x * solarDir[0] + y * solarDir[1] + z * solarDir[2];
+    if (proj >= 0.0) return false;  // dayside — not in shadow
+    // Finite-height check: only shadow points within the cylinder height.
+    if (-proj > shadowCylinderHalfHeight)
+      return false;
+    // Perpendicular distance from the sun–planet axis.
+    double r2 = x * x + y * y + z * z;
+    double perp2 = r2 - proj * proj;
+    return perp2 <= shadowCylinderRadius * shadowCylinderRadius;
+  }
+
+  //-------------------------------------------------------------------
+  // Photoionation rate at position (x, y, z) [m] from planet center.
+  // Returns zero inside the shadow cylinder (nightside).
+  amrex::Real photo_rate(double x, double y, double z, int iC) const {
+    if (is_in_shadow(x, y, z)) return 0.0;
+    double r2 = x * x + y * y + z * z;
+    double r_m = sqrt(r2);
     double ratio = rPlanetSi / r_m;
     return photoNu0[iC] * ratio * ratio;
   }
@@ -187,6 +207,22 @@ public:
       for (int i = 0; i < nCXComponent; ++i) {
         param.read_var("sigmaCX", cxSigma[i]);
       }
+    } else if (command == "#SHADOWCYLINDER") {
+      useShadowCylinder = true;
+      param.read_var("solarDirX", solarDir[0]);
+      param.read_var("solarDirY", solarDir[1]);
+      param.read_var("solarDirZ", solarDir[2]);
+      param.read_var("radius", shadowCylinderRadius);
+      param.read_var("halfHeight", shadowCylinderHalfHeight);
+      // Normalize the solar direction vector.
+      double norm = sqrt(solarDir[0] * solarDir[0] +
+                         solarDir[1] * solarDir[1] +
+                         solarDir[2] * solarDir[2]);
+      if (norm > 0.0) {
+        solarDir[0] /= norm;
+        solarDir[1] /= norm;
+        solarDir[2] /= norm;
+      }
     }
   }
 
@@ -226,8 +262,6 @@ public:
     // Global NODE box.
     const amrex::Box gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
 
-    const double no2siL = get_No2SiL();
-
     const bool doPhoto = usePhotoIonization;
     const bool doImpact = useElectronImpact;
     const bool doCX = useChargeExchange;
@@ -257,7 +291,7 @@ public:
                 }
                 double xyz[3] = { 0, 0, 0 };
                 for (int iDim = 0; iDim < get_fluid_dimension(); iDim++) {
-                  xyz[iDim] = (idx[iDim] * dx[iDim] + plo[iDim]) * no2siL;
+                  xyz[iDim] = idx[iDim] * dx[iDim] + plo[iDim];
                 }
 
                 double source[6] = {0.0};
@@ -300,7 +334,7 @@ public:
                   double nu_tot = 0.0;
                   // ---- Photoionization ----
                   if (doPhoto) {
-                    nu_tot += photo_rate(r_val, iC);
+                    nu_tot += photo_rate(xyz[0], xyz[1], xyz[2], iC);
                   }
 
                   // ---- Electron impact ionization ----
@@ -320,6 +354,10 @@ public:
                   }
                   source[0] += dens_i * nu_tot;
                 }
+                // Convert number density production rate [m^-3 s^-1] to
+                // mass density production rate [kg m^-3 s^-1].
+                // All exosphere components map to ion species 1 (O+).
+                source[0] *= get_species_mass(1) * cProtonMassSI;
                 source[1] = 0.0;
                 source[2] = 0.0;
                 source[3] = 0.0;
@@ -337,13 +375,22 @@ public:
 
                 if (source[0] > 0) {
                   const int iNa = 1;
-                  arr(i, j, k, iRho_I[iNa]) =
+                  // Write MOMENTUM (ρu) to iUx_I, not velocity. This follows
+                  // the same convention as Particles::charge_exchange, so
+                  // convert_moment_to_velocity() works correctly for both
+                  // code paths.
+                  const double rhoNo =
                       source[0] * Si2NoRho / get_Si2NoT();
-                  arr(i, j, k, iUx_I[iNa]) = source[1] / source[0] * Si2NoV;
-                  arr(i, j, k, iUy_I[iNa]) = source[2] / source[0] * Si2NoV;
-                  arr(i, j, k, iUz_I[iNa]) = source[3] / source[0] * Si2NoV;
+                  arr(i, j, k, iRho_I[iNa]) = rhoNo;
+                  arr(i, j, k, iUx_I[iNa]) =
+                      source[1] * Si2NoRho / get_Si2NoT();
+                  arr(i, j, k, iUy_I[iNa]) =
+                      source[2] * Si2NoRho / get_Si2NoT();
+                  arr(i, j, k, iUz_I[iNa]) =
+                      source[3] * Si2NoRho / get_Si2NoT();
                   arr(i, j, k, iP_I[iNa]) = source[4] * Si2NoP / get_Si2NoT();
-                  arr(i, j, k, iPe) = source[5] * Si2NoP / get_Si2NoT();
+                  if (iPe >= 0)
+                    arr(i, j, k, iPe) = source[5] * Si2NoP / get_Si2NoT();
                 }
 
                 amrex::Real r = 0;

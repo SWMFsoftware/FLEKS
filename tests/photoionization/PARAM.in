@@ -1,25 +1,25 @@
 #DESCRIPTION
-Photoionization Source Test for H+O with Chamberlain Neutral Profile
+2D Photoionization Shadow Cylinder for Mars with Chamberlain Exosphere
 
 #INITFROMSWMF
 F                       initFromSWMF
 
 #GEOMETRY
--1e3                    xMin
- 1e3                    xMax
--1.0                    yMin
- 1.0                    yMax
--1.0                    zMin
- 1.0                    zMax
+-9.0e6                  xMin
+ 9.0e6                  xMax
+-9.0e6                  yMin
+ 9.0e6                  yMax
+-0.5                    zMin
+ 0.5                    zMax
 
 #NCELL
 32                      nCellX
-1                       nCellY
+32                      nCellY
 1                       nCellZ
 
 #MAXBLOCKSIZE
 32                      maxBlockSizeX
-1                       maxBlockSizeY
+32                      maxBlockSizeY
 1                       maxBlockSizeZ
 
 #PERIODICITY
@@ -35,18 +35,18 @@ T                       solveEM
 
 #PLASMA
 2                       nSpecies
-1.0                     mass        Species 0: H+ (light)
+1.0                     mass        Species 0: H+ (light background)
 1.0                     charge
 16.0                    mass        Species 1: O+ (heavy, gets exosphere source)
 1.0                     charge
 
 #UNIFORMSTATE
 5.0                     rho [amu/cc]   Species 0 background
--400.0                  ux [km/s]
+0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-0.1                     rho [amu/cc]   Species 1 background (low density seed)
+1.0e-12                 rho [amu/cc]   Species 1 background (tiny seed, < photoionization)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -62,24 +62,31 @@ T                       solveEM
 T                       useSource
 
 #BODYSIZE
-500.0                   radius
+3.0e6                   radius        Mars-like planet radius
 
 #EXOSPHERE
 Chamberlain             typeProfile
 2                       nComponent
-1.0e10                  n0            H component: base density
-1000.0                  H0            H component: scale height parameter (large)
-100.0                   T0
+1.0e10                  n0            H component: light species, large scale height
+2000.0e3                H0
+300.0                   T0
 0.0                     k0
-3.0e10                  n0            O component: base density
-100.0                   H0            O component: scale height parameter (small)
-150.0                   T0
+5.0e10                  n0            O component: heavy species, small scale height
+300.0e3                 H0
+300.0                   T0
 0.0                     k0
 
 #PHOTOIONIZATION
 2                       nComponent
-1.0e-6                  nuPhoto0
-1.0e-6                  nuPhoto0
+1.0e-4                  nuPhoto0      H photoionization rate at surface
+1.0e-4                  nuPhoto0      O photoionization rate at surface
+
+#SHADOWCYLINDER
+1.0                     solarDirX     Sun in +X direction (dayside)
+0.0                     solarDirY
+0.0                     solarDirZ
+8.0e6                   radius        shadow cylinder = large, covers ~entire nightside
+6.0e6                   halfHeight    finite height along anti-solar dir (2x Rp)
 
 #TIMESTEPPING
 T                       useFixedDt
@@ -94,7 +101,7 @@ T                       useFixedDt
 
 #PARTICLES
 4                       nParticle per cell in X
-1                       nParticle per cell in Y
+4                       nParticle per cell in Y
 1                       nParticle per cell in Z
 
 #COMOVING
@@ -123,10 +130,15 @@ T
 1
 
 #SAVEPLOT
-0                       nPlot
+1                       nPlot
+z=0 var ascii planet    plotString
+-1                      dn
+5.0                     dt           save once at end (t = TimeMax)
+-1                      dx
+rhoS1                   NameVars
 
 #STOP
-10                      MaxIter
-1.0                     TimeMax
+50                      MaxIter
+5.0                     TimeMax
 
 #RUN

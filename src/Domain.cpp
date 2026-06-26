@@ -213,6 +213,17 @@ void Domain::update() {
             << " (s) ====" << std::endl;
   }
 
+  // Compute exosphere source terms every step in standalone mode.
+  // - Standalone: called here (no SWMF coupling).
+  // - GM-PC: called from set_state_var() at coupling intervals; fi is
+  //   unchanged between couplings, so skip here.
+  // - OH-PT: not applicable; charge_exchange() handles source terms.
+  if (source && !initFromSWMF) {
+    source->set_source(*fi);
+    source->sum_boundary();
+    source->convert_moment_to_velocity(true, false);
+  }
+
   pic->update(doReport);
 
   write_plots();
@@ -479,8 +490,16 @@ void Domain::set_state_var(double *data, int *index,
       pic->update_cells_for_pt();
     }
 
-    if (source)
+    // Compute exosphere source terms (photoionization, electron impact,
+    // exosphere charge exchange) for standalone and GM-PC modes. In OH-PT
+    // mode (stateOH exists), the source is handled entirely by
+    // Pic::charge_exchange() using OH-PT charge exchange physics, so
+    // set_source must not be called here.
+    if (source && !stateOH) {
       source->set_source(*fi);
+      source->sum_boundary();
+      source->convert_moment_to_velocity(true, false);
+    }
   }
 }
 
@@ -883,7 +902,7 @@ void Domain::read_param(const bool readGridInfo) {
       if (pt)
         pt->read_param(command, param);
     } else if (command == "#PHOTOIONIZATION" || command == "#ELECTRONIMPACT" ||
-               command == "#CHARGEEXCHANGE") {
+               command == "#CHARGEEXCHANGE" || command == "#SHADOWCYLINDER") {
       if (source)
         source->read_param(command, param);
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||

@@ -21,6 +21,12 @@ protected:
   int nPhotoComponent = 0;
   amrex::Vector<double> photoNu0; // ionization rate at planet surface [s^-1]
 
+  // ---- Shadow cylinder (#SHADOWCYLINDER command) ----
+  bool useShadowCylinder = false;
+  double solarDir[3] = {0.0, 0.0, 0.0};  // unit vector from planet center toward the Sun
+  double shadowCylinderRadius = 0.0;       // radius of planetary shadow cylinder [m]
+  double shadowCylinderHalfHeight = 0.0;   // half-height along anti-solar direction [m]
+
   // ---- Electron impact ionization (#ELECTRONIMPACT command) ----
   int nImpactComponent = 0;
   amrex::Vector<double> impactEIon; // ionization energy [eV]

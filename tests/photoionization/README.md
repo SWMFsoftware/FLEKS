@@ -1,73 +1,98 @@
-# Photoionization Source Test (H + O, Chamberlain Neutral Profile)
+# 2D Photoionization Shadow Cylinder Test (Mars-like Planet)
 
 ## Description
 
-This standalone test verifies the `#PHOTOIONIZATION` command for photoionization
-of analytical neutral exosphere density profiles with **two species** (H and O)
-using the **Chamberlain model**. The photoionization source injects heavy ions
-(species 1) into the PIC simulation domain.
+This test verifies the `#PHOTOIONIZATION` + `#SHADOWCYLINDER` commands on a 2D
+grid with a Mars-like planet at the domain center.  The planet casts a shadow
+cylinder on the **nightside (−X)**, creating a clear day/night asymmetry in the
+photoionization source.
 
-## Physics & Solver Setup
+## Geometry & Grid
 
-- **Geometry & Boundaries**: Quasi-1D periodic grid (32 cells in X, 1 in Y, Z),
-  domain spans [-1000, 1000] m.
-- **Exosphere Model**: Chamberlain profile with 2 neutral components:
-  | Component | n0 [m^-3] | H0 [m] | Description                  |
-  |-----------|-----------|--------|------------------------------|
-  | H         | 1.0×10^10 | 1000   | Light species, large scale height |
-  | O         | 3.0×10^10 | 100    | Heavy species, small scale height |
+```
+              Y ↑
+                |
+       +9e6 m ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+                |       (dayside +X)
+                |          ☀  Sun
+                |    ·  ·  ·  ·  ·  ·  ·
+                |    ·  ●═══════════●  ·
+                |    ·  ║  Planet  ║  ·  ·
+                |    ·  ║ R=3e6 m ║  ·  ·
+       ─────────┼──────╬───●─────╬────────── X
+                |    ·  ║  Shadow  ║  ·
+     -9e6 m ─   |    ·  ║ (ν=0)   ║  ·
+                |    ·  ╚══════════╝  ·
+                |       (nightside −X)
+       -9e6 m ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+                |
+```
 
-  Density: \( n(r) = n_0 \exp\left[-H_0\left(\frac{1}{R_p} - \frac{1}{r}\right)\right] \) for \( r \geq R_p \).
-  Planet radius \( R_p = 500 \) m.
+| Parameter | Value | Note |
+|-----------|-------|------|
+| X range | [−9×10⁶, 9×10⁶] m | ±3 Rₚ |
+| Y range | [−9×10⁶, 9×10⁶] m | ±3 Rₚ |
+| Z range | [−0.5, 0.5] m | quasi-2D (1 cell) |
+| Grid | 32×32×1 | dx ≈ 562 km |
+| Planet radius Rₚ | 3.0×10⁶ m | Mars-like |
+| Sun direction | +X | dayside = +X, nightside = −X |
+| Shadow radius | 3.0×10⁶ m | = Rₚ |
 
-- **Ionization**: Photoionization only, enabled via `#PHOTOIONIZATION` command,
-  rate \( \nu_{\text{photo}} = 1.0 \times 10^{-6} \) s^-1 per component.
-  Source mass rate per component:
-  \( S_{\rho,i} = n_i(r) \cdot \nu_{\text{photo},i} \cdot (R_p/r)^2 \).
-- **Other Processes**: `#ELECTRONIMPACT` and `#CHARGEEXCHANGE` commands are not
-  present, so those source processes are skipped.
+## Exosphere (Chamberlain Model)
 
-- **Plasma Species**:
-  | Species | Mass [amu] | Charge [e] | Role                       |
-  |---------|------------|------------|----------------------------|
-  | 0 (H+)  | 1.0        | +1         | Background light ions      |
-  | 1 (O+)  | 16.0       | +1         | Heavy ions (gets exosphere source) |
+Two neutral components with Mars-like scale heights:
 
-- **Electromagnetic Fields**: Enabled (`solveEM = T`) with guiding field
-  \( B_x = 5.0 \times 10^{-9} \) T.
+| Component | n₀ [m⁻³] | H₀ [m] | T₀ [K] | Description |
+|-----------|----------|--------|--------|-------------|
+| H | 1.0×10¹⁰ | 2.0×10⁶ | 300 | Light, large scale height |
+| O | 5.0×10¹⁰ | 3.0×10⁵ | 300 | Heavy, small scale height |
+
+Density profile: \( n(r) = n_0 \exp\left[-H_0\left(\frac{1}{R_p} - \frac{1}{r}\right)\right] \) for \( r \geq R_p \).
+
+## Ionization
+
+| Parameter | Value |
+|-----------|-------|
+| ν_photo₀ (H, O) | 1.0×10⁻⁶ s⁻¹ |
+| Shadow cylinder | enabled, R = 3.0×10⁶ m |
+
+Photoionization rate at distance r (outside shadow):
+
+\[ \nu(r) = \nu_0 \left(\frac{R_p}{r}\right)^2 \]
+
+Inside the shadow cylinder (x < 0 and proj·(−solarDir) > 0 and perp < R_shadow):
+ν = 0.
+
+## Plasma Species
+
+| Species | Mass [amu] | Charge [e] | Role |
+|---------|------------|------------|------|
+| 0 (H⁺) | 1.0 | +1 | Background ions |
+| 1 (O⁺) | 16.0 | +1 | Heavy ions (receives source) |
 
 ## Expected Results
 
-1. **Particle Count Growth**: Species 1 (O+) particle count increases monotonically
-   over time due to continuous photoionization of the exosphere neutrals.
+1. **Energy growth**: Species 1 (O⁺) energy increases over time → source active.
 
-2. **Total Energy Growth**: Kinetic energy of species 1 increases as more
-   particles are injected.
+2. **Day/night asymmetry** (verified with `--thorough`):
+   - Output format: **IDL ASCII** (`z=0` slice, `.out` file) — human-readable,
+     easy to load for inspection.
+   - **Dayside (+X)**: `ppcS1` > 0 — photoionization produces O⁺ particles.
+   - **Nightside shadow (−X, |y| < Rₚ)**: `ppcS1` ≈ 0 — zero photoionization
+     inside the shadow cylinder.
 
-3. **No Crashes**: The simulation completes all 10 iterations without errors.
-
-## Photoionization Rate Profile
-
-At planet surface (r = 500 m):
-- \( n_H = 1.0 \times 10^{10} \) m^-3, source rate: \( 1.0 \times 10^4 \) m^-3 s^-1
-- \( n_O = 3.0 \times 10^{10} \) m^-3, source rate: \( 3.0 \times 10^4 \) m^-3 s^-1
-- \( S_{\rho,\text{total}} = 4.0 \times 10^4 \) m^-3 s^-1
-
-At domain boundary (r ≈ 1414 m):
-- \( n_H \approx 2.75 \times 10^9 \) m^-3, source: \( \approx 2.75 \times 10^3 \) m^-3 s^-1
-- \( n_O \approx 2.64 \times 10^{10} \) m^-3, source: \( \approx 2.64 \times 10^4 \) m^-3 s^-1
+3. **No crashes**: Simulation completes all 10 iterations.
 
 ## Running
 
-From the FLEKS root directory (requires compiled `bin/FLEKS.exe`):
-
 ```bash
+# Basic (energy growth check only)
 python3 tests/validate_tests.py
-```
 
-Or manually:
+# Thorough (includes day/night asymmetry check via flekspy)
+python3 tests/validate_tests.py --thorough
 
-```bash
+# Manual
 mkdir -p run_test/PC/plots run_test/PC/restartOUT
 ln -sf ../bin/FLEKS.exe run_test/FLEKS.exe
 cp tests/photoionization/PARAM.in run_test/PARAM.in

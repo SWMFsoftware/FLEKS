@@ -1226,6 +1226,33 @@ specified as a multi-component array. The rate at distance r follows
 geometric dilution: nu(r) = nuPhoto0 * (r_planet / r)^2.
 </command>
 
+<command name="SHADOWCYLINDER"
+	 alias="SHADOWCYLINDER_FLEKS0,SHADOWCYLINDER_FLEKS1,SHADOWCYLINDER_FLEKS2"
+	 multiple="T">
+  <parameter name="solarDirX" type="real"/>
+  <parameter name="solarDirY" type="real"/>
+  <parameter name="solarDirZ" type="real"/>
+  <parameter name="radius" type="real"/>
+
+#SHADOWCYLINDER
+1.0                     solarDirX
+0.0                     solarDirY
+0.0                     solarDirZ
+6.371e6                 radius [m]
+
+This command defines a planetary shadow cylinder on the nightside
+(anti-sunward direction). Photoionization production is set to zero
+for all grid points inside this cylinder.
+
+solarDirX/Y/Z are the components of the unit vector pointing from
+the planet center toward the Sun. They will be normalized automatically.
+radius is the radius of the shadow cylinder [m], typically the
+planetary radius.
+
+If this command is absent, photoionization is applied spherically
+symmetrically (no shadow).
+</command>
+
 <command name="ELECTRONIMPACT"
 	 alias="ELECTRONIMPACT_FLEKS0,ELECTRONIMPACT_FLEKS1,ELECTRONIMPACT_FLEKS2"
 	 multiple="T">
