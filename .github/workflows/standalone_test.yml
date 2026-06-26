@@ -89,7 +89,6 @@ jobs:
         id: test-serial
         working-directory: SWMF/PC/FLEKS/tests
         run: |
-          ls -lh ../bin/FLEKS.exe ../bin/PostIDL.exe
           ldd ../bin/FLEKS.exe
           python3 validate_tests.py --summary-file summary_serial.md
 
