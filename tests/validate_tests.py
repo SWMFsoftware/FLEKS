@@ -70,6 +70,14 @@ def run_test(test_dir, nprocs=1):
     print(f"Running test in {test_dir} with config {param_file}...")
     prepare_run_dir()
     
+    # Verify that PostIDL.exe exists; PostProc.pl needs it to produce .out files.
+    postidl_link = os.path.join("run_test", "PC", "PostIDL.exe")
+    if os.path.islink(postidl_link) and not os.path.exists(postidl_link):
+        real = os.path.realpath(postidl_link)
+        print(f"  [WARN] Broken symlink: {postidl_link} -> {real}")
+        print(f"  [WARN] PostIDL.exe is missing. Build it with 'make PIDL' "
+              f"before running tests that check plot output (.out files).")
+    
     # Copy param_file to run_test/PARAM.in
     shutil.copy(param_file, "run_test/PARAM.in")
     
@@ -89,7 +97,14 @@ def run_test(test_dir, nprocs=1):
         return None, result.returncode
         
     # Automatically run post-processing on the generated plots
-    subprocess.run(["./PostProc.pl", "-v"], cwd="run_test", stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    pp = subprocess.run(["./PostProc.pl", "-v"], cwd="run_test",
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if pp.returncode != 0:
+        print(f"  [WARN] PostProc.pl exited with code {pp.returncode}:")
+        if pp.stdout:
+            print(pp.stdout)
+        if pp.stderr:
+            print(pp.stderr)
     
     return result.stdout, 0
 
