@@ -1221,7 +1221,7 @@ source is applied.
 
 This command enables photoionization as an exosphere source process.
 nComponent must match the nComponent in #EXOSPHERE.
-nuPhoto0 is the photoionization rate [s^-1] at the planet surface,
+nuPhoto0 is the photoionization rate [1/s] at the planet surface,
 specified as a multi-component array. The rate at distance r follows
 geometric dilution: nu(r) = nuPhoto0 * (r_planet / r)^2.
 </command>
