@@ -23,9 +23,11 @@ protected:
 
   // ---- Shadow cylinder (#SHADOWCYLINDER command) ----
   bool useShadowCylinder = false;
-  double solarDir[3] = {0.0, 0.0, 0.0};  // unit vector from planet center toward the Sun
-  double shadowCylinderRadius = 0.0;       // radius of planetary shadow cylinder [m]
-  double shadowCylinderHalfHeight = 0.0;   // half-height along anti-solar direction [m]
+  double solarDir[3] = { 0.0, 0.0,
+                         0.0 }; // unit vector from planet center toward the Sun
+  double shadowCylinderRadius = 0.0; // radius of planetary shadow cylinder [m]
+  double shadowCylinderHalfHeight =
+      0.0; // half-height along anti-solar direction [m]
 
   // ---- Electron impact ionization (#ELECTRONIMPACT command) ----
   int nImpactComponent = 0;
