@@ -53,6 +53,12 @@ the standalone tests:
 # Run all tests in serial mode (no MPI):
 python3 tests/validate_tests.py
 
+# Run a single test by name (e.g. beam):
+python3 tests/validate_tests.py --test=beam
+
+# Equivalently, with a space:
+python3 tests/validate_tests.py --test beam
+
 # Run with N MPI processes:
 python3 tests/validate_tests.py -n 4
 
@@ -63,6 +69,12 @@ python3 tests/validate_tests.py --nprocs 4
 When `-n 1` (or the flag is omitted), the executable is invoked directly as
 `./FLEKS.exe` without `mpirun`. When `-n N` with `N > 1`, it uses
 `mpirun -n N ./FLEKS.exe`.
+
+The `--test NAME` (or `--test=NAME`) option selects a single test to run from
+the available test subdirectories (`beam`, `photoionization`, `electronimpact`,
+`chargeexchange`). If the given name does not match any test, the script exits
+with an error listing the available tests. When the flag is omitted, all tests
+are run (the default behavior). The flag may be combined with `-n`/`--nprocs`.
 
 The script:
 1. Scans subdirectories of `tests/` for a `PARAM.in` file, excluding `performance/`.

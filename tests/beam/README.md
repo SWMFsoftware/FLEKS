@@ -16,3 +16,11 @@ This is a standalone test designed to verify the simulation of the ion beam-beam
   $$\text{MeanVx} = 0.01 \times (0.4) + 0.99 \times (-0.4) = -0.392$$
   which must be conserved within $1\%$ tolerance.
 - **Wave Growth**: Transverse components $B_y$ and $B_z$ grow over time due to the instability seeding from thermal noise, indicating the successful propagation and growth of cyclotron waves.
+
+## Running
+
+From the FLEKS root directory (requires compiled `bin/FLEKS.exe`):
+
+```bash
+python3 tests/validate_tests.py --test=beam
+```

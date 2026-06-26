@@ -87,14 +87,8 @@ Inside the shadow cylinder (x < 0 and proj·(−solarDir) > 0 and perp < R_shado
 
 ```bash
 # Basic (energy growth check only)
-python3 tests/validate_tests.py
+python3 tests/validate_tests.py --test=photoionization
 
 # Thorough (includes day/night asymmetry check via flekspy)
 python3 tests/validate_tests.py --thorough
-
-# Manual
-mkdir -p run_test/PC/plots run_test/PC/restartOUT
-ln -sf ../bin/FLEKS.exe run_test/FLEKS.exe
-cp tests/photoionization/PARAM.in run_test/PARAM.in
-cd run_test && ./FLEKS.exe
 ```

@@ -657,7 +657,22 @@ def main():
                 print("Error: --summary-file requires a path argument.")
                 sys.exit(1)
             break
-    
+
+    # Parse --test NAME (select a specific test to run; default: run all)
+    # Accepts both "--test=NAME" and "--test NAME" forms.
+    selected_test = None
+    for i, arg in enumerate(sys.argv):
+        if arg.startswith("--test="):
+            selected_test = arg[len("--test="):]
+            break
+        if arg == "--test":
+            try:
+                selected_test = sys.argv[i + 1]
+            except IndexError:
+                print("Error: --test requires a test name argument.")
+                sys.exit(1)
+            break
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(os.path.dirname(script_dir))
     print(f"Working directory set to: {os.getcwd()}")
@@ -687,6 +702,17 @@ def main():
     if not tests:
         print("No tests found in tests/ subdirectories!")
         sys.exit(1)
+
+    # Filter to a single test if --test was given.
+    if selected_test is not None:
+        matching = [t for t in tests if t[1] == selected_test]
+        if not matching:
+            available = ", ".join(t[1] for t in tests)
+            print(f"Error: test '{selected_test}' not found.")
+            print(f"Available tests: {available}")
+            sys.exit(1)
+        tests = matching
+        print(f"Selected test: {selected_test}")
         
     results = [] # Collect results for summary table
     

@@ -57,14 +57,5 @@ heavy ions (species 1) into the PIC simulation domain.
 From the FLEKS root directory (requires compiled `bin/FLEKS.exe`):
 
 ```bash
-python3 tests/validate_tests.py
-```
-
-Or manually:
-
-```bash
-mkdir -p run_test/PC/plots run_test/PC/restartOUT
-ln -sf ../bin/FLEKS.exe run_test/FLEKS.exe
-cp tests/electronimpact/PARAM.in run_test/PARAM.in
-cd run_test && ./FLEKS.exe
+python3 tests/validate_tests.py --test=electronimpact
 ```
