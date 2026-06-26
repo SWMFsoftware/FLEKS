@@ -73,12 +73,6 @@ The script:
 4. Parses diagnostic outputs and validates the physics checks for each test.
 5. Writes a summary table to `tests/summary.md`.
 
-For thorough output validation with flekspy:
-
-```bash
-python3 tests/validate_tests.py --thorough
-```
-
 ### Performance Benchmark
 
 ```bash

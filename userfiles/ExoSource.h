@@ -392,17 +392,6 @@ public:
                   if (iPe >= 0)
                     arr(i, j, k, iPe) = source[5] * Si2NoP / get_Si2NoT();
                 }
-
-                amrex::Real r = 0;
-                for (int i = 0; i < 3; ++i) {
-                  xyz[i] /= rPlanetSi;
-                  r += xyz[i] * xyz[i];
-                }
-                r = sqrt(r);
-                if (r <= 1) {
-                  printf("Warning: x=%e, y=%e, z=%e, r=%e < 1.0 !\n", xyz[0],
-                         xyz[1], xyz[2], r);
-                }
               } // for k
         }
       }

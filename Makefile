@@ -1,6 +1,6 @@
 default: EXE
 
-.PHONY: default help GITINFO EXE FLEKS install LIB CONVERTER rundir clean \
+.PHONY: default help GITINFO EXE FLEKS install LIB CONVERTER PIDL rundir clean \
 	distclean allclean compile_commands
 
 -include Makefile.conf
@@ -12,6 +12,7 @@ help:
 	@echo 'make EXE                    - compile standalone executable'
 	@echo 'make FLEKS                  - same as make EXE'
 	@echo 'make LIB                    - compile libPC.a for SWMF'
+	@echo 'make PIDL                   - compile PostIDL.exe for post-processing'
 	@echo 'make clean                  - remove object files'
 	@echo 'make distclean              - remove all files not part of CVS'
 	@echo
@@ -81,6 +82,12 @@ CONVERTER: bin
 	$(call prepare_exe)
 	$(MAKE) -C src CONVERTER
 
+PIDL:
+	cd ${SHAREDIR}; $(MAKE) PIDL
+	@echo ' '
+	@echo Program PostIDL has been brought up to date.
+	@echo ' '
+
 rundir:
 	mkdir -p ${RUNDIR}/${COMPONENT}
 	(cd ${RUNDIR}/${COMPONENT}; \
@@ -88,7 +95,8 @@ rundir:
 		ln -s ${BINDIR}/PostIDL.exe .; \
 		cp    ${SCRIPTDIR}/pIDL .)
 	(cd ${RUNDIR}; \
-		if [ -f ${BINDIR}/FLEKS.exe ]; then ln -s ${BINDIR}/FLEKS.exe .; fi)
+		if [ -f ${BINDIR}/FLEKS.exe ]; then ln -s ${BINDIR}/FLEKS.exe .; fi; \
+		cp    ${SCRIPTDIR}/PostProc.pl .)
 
 
 clean:

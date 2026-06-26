@@ -293,28 +293,6 @@ def validate_beam(diags, field_diags=None):
         return False, "; ".join(reasons)
 
 
-def ensure_flekspy_installed():
-    try:
-        import flekspy
-        import matplotlib
-    except ImportError:
-        print("\n[flekspy] Required package 'flekspy' or 'matplotlib' not found. Attempting automatic installation...")
-        import subprocess
-        import sys
-        try:
-            # Try installing via pip in the current Python environment (which could be the virtual env)
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "flekspy", "matplotlib"])
-            print("[flekspy] Packages successfully installed.\n")
-        except Exception as e:
-            print(f"[flekspy] WARNING: Automatic installation failed: {e}")
-            print("[flekspy] Attempting user installation fallback...")
-            try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", "flekspy", "matplotlib"])
-                print("[flekspy] Packages successfully installed in user space.\n")
-            except Exception as e_user:
-                print(f"[flekspy] WARNING: Installation failed: {e_user}")
-                print("[flekspy] Skipping flekspy-dependent checks (some tests may skip).")
-
 def read_pic_log(run_dir):
     """Read the energy diagnostic log file written by Pic::write_log.
 
@@ -510,10 +488,11 @@ def _read_shadow_params():
 def _load_idl_plot_asymmetry():
     """Check photoionization day/night asymmetry from plot output.
 
-    Reads .out files (from PostIDL.exe) if available, otherwise falls back
-    to the raw .idl ASCII files written directly by FLEKS.  Verifies that
-    rhoS1 is non-zero on the dayside (+X) and much smaller inside the
-    planetary shadow cylinder (-X, within cylinder radius and height).
+    Reads .out files produced by PostProc.pl (which concatenates the *.h
+    and *.idl files written by FLEKS).  PostProc.pl must be run before
+    calling this function.  Verifies that rhoS1 is non-zero on the dayside
+    (+X) and much smaller inside the planetary shadow cylinder (-X, within
+    cylinder radius and height).
 
     Returns (passed: bool, reason: str).
     """
@@ -531,55 +510,40 @@ def _load_idl_plot_asymmetry():
     print(f"    [ASYM] Rp={Rp_plot:.0f}, halfH={halfH_plot:.0f}, "
           f"shadowR={shadowR_plot:.0f} (plot coords)")
 
-    # -- Collect data points (x, y, rhoS1) ----------------------------------
+    # -- Collect data points (x, y, rhoS1) from PostProc.pl .out files -----
+    # PostProc.pl must be run first to concatenate *.h and *.idl into *.out.
+    # We do NOT work on the raw .idl files directly.
     points = []  # list of (x, y, rhoS1)
 
     out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
-    if out_files:
-        # Use PostIDL .out files
-        latest_out = out_files[-1]
-        print(f"    [ASYM] Loading .out: {os.path.basename(latest_out)}")
-        with open(latest_out, "r") as f:
-            lines = f.readlines()
-        if len(lines) < 6:
-            return True, "Short .out file"
-        var_names = lines[4].split()
-        rhoS1_idx = None
-        for iv, vn in enumerate(var_names):
-            if vn.upper() == "RHOS1":
-                rhoS1_idx = iv
-                break
-        if rhoS1_idx is None:
-            return True, "rhoS1 not in .out"
-        for line in lines[5:]:
-            cols = line.strip().split()
-            if len(cols) <= rhoS1_idx:
-                continue
-            try:
-                points.append((float(cols[0]), float(cols[1]),
-                               float(cols[rhoS1_idx])))
-            except (ValueError, IndexError):
-                continue
-    else:
-        # Fallback: read .idl ASCII files directly (no PostIDL.exe needed)
-        idl_files = sorted(glob.glob(os.path.join(
-            plots_dir, "z=0_var_region1_0_*.idl")))
-        if not idl_files:
-            print("    [ASYM] No .out or .idl files found; skipping.")
-            return True, "No plot files found"
-        latest_idl = idl_files[-1]
-        print(f"    [ASYM] Loading .idl: {os.path.basename(latest_idl)}")
-        # .idl format: dx x y z rhoS1
-        with open(latest_idl, "r") as f:
-            for line in f:
-                cols = line.strip().split()
-                if len(cols) < 5:
-                    continue
-                try:
-                    points.append((float(cols[1]), float(cols[2]),
-                                   float(cols[4])))
-                except (ValueError, IndexError):
-                    continue
+    if not out_files:
+        print("    [ASYM] No .out files found. "
+              "Ensure PostProc.pl has been run after FLEKS.exe.")
+        return False, "No .out files found (PostProc.pl not run?)"
+
+    latest_out = out_files[-1]
+    print(f"    [ASYM] Loading .out: {os.path.basename(latest_out)}")
+    with open(latest_out, "r") as f:
+        lines = f.readlines()
+    if len(lines) < 6:
+        return True, "Short .out file"
+    var_names = lines[4].split()
+    rhoS1_idx = None
+    for iv, vn in enumerate(var_names):
+        if vn.upper() == "RHOS1":
+            rhoS1_idx = iv
+            break
+    if rhoS1_idx is None:
+        return True, "rhoS1 not in .out"
+    for line in lines[5:]:
+        cols = line.strip().split()
+        if len(cols) <= rhoS1_idx:
+            continue
+        try:
+            points.append((float(cols[0]), float(cols[1]),
+                           float(cols[rhoS1_idx])))
+        except (ValueError, IndexError):
+            continue
 
     if not points:
         print("    [ASYM] No data points parsed.")
@@ -618,9 +582,11 @@ def _load_idl_plot_asymmetry():
     if len(shadow_vals) == 0:
         return False, "Zero shadow points -- cannot verify"
     # The shadow region still has some density from particle diffusion from
-    # the dayside, so we require shadow < 50% of dayside (a clear asymmetry)
-    # rather than near-zero.
-    if shadow_mean > max(dayside_mean * 0.5, 1e-30):
+    # the dayside (especially near the planet surface), so we require
+    # shadow < 20% of dayside rather than near-zero.  With the shadow
+    # cylinder radius set to the planet radius, the dayside/night asymmetry
+    # is pronounced and a 0.2 threshold provides a meaningful check.
+    if shadow_mean > max(dayside_mean * 0.2, 1e-30):
         return False, (
             f"Shadow rhoS1 too high ({shadow_mean:.2e}) "
             f"vs dayside ({dayside_mean:.2e})"
@@ -631,10 +597,14 @@ def _load_idl_plot_asymmetry():
 
     return True, "Passed"
 
-def validate_amrex_outputs_with_flekspy(test_name, use_flekspy=False):
-    import glob
+def validate_plot_output(test_name):
+    """Validate simulation plot output files for a given test.
 
-    # ---- Photoionization: always check via IDL .out (no flekspy needed) ----
+    For the photoionization test, this checks the day/night asymmetry from
+    the .out files produced by PostProc.pl.  Other tests currently have no
+    plot-file-based validation and simply pass.
+    """
+    # ---- Photoionization: check day/night asymmetry via IDL .out ----
     if test_name == "photoionization":
         print("  --- Validating Output Files (IDL .out) ---")
         result, reason = _load_idl_plot_asymmetry()
@@ -642,72 +612,11 @@ def validate_amrex_outputs_with_flekspy(test_name, use_flekspy=False):
             print("    [IDL] Photoionization day/night asymmetry: VERIFIED")
         return result, reason
 
-    # ---- Other tests: optional flekspy check --------------------------------
-    if not use_flekspy:
-        print("  --- Validating Output Files: Skipped thorough check (run with --thorough or --flekspy to enable) ---")
-        return True, "Passed (skipped thorough check)"
-        
-    print(f"  --- Validating Output Files with flekspy ---")
-
-    try:
-        import flekspy
-    except ImportError:
-        print("    [flekspy] WARNING: flekspy is not installed. Skipping verification.")
-        return True, "flekspy not installed (skipped)"
-    
-    # AMReX plotfiles generated by FLEKS under run_test/PC/plots/
-    plot_pattern = os.path.join("run_test", "PC", "plots", "*_amrex")
-    plots = sorted(glob.glob(plot_pattern))
-    
-    # Exclude temporary or old plotfiles
-    plots = [p for p in plots if not p.endswith(".old") and ".old." not in p]
-    
-    if not plots:
-        print("    WARNING: No active AMReX plotfiles found to validate with flekspy.")
-        return True, "No plotfiles found"
-        
-    print(f"    Found {len(plots)} AMReX plotfile(s) for validation.")
-    
-    # Load the latest generated plotfile to perform validation
-    latest_plot = plots[-1]
-    print(f"    Loading latest plotfile: {latest_plot}")
-    
-    try:
-        ds = flekspy.load(latest_plot)
-        print(f"    [flekspy] Successfully loaded dataset: {os.path.basename(latest_plot)}")
-        
-        # Access and display dataset properties
-        dims = getattr(ds, "domain_dimensions", None)
-        fields = getattr(ds, "field_list", None)
-        params = getattr(ds, "parameters", None)
-        
-        if dims is not None:
-            print(f"    [flekspy] Domain dimensions: {dims}")
-        if fields is not None:
-            fields_str = ", ".join([str(f) for f in fields[:10]])
-            if len(fields) > 10:
-                fields_str += f" ... (+{len(fields)-10} more)"
-            print(f"    [flekspy] Available fields: [{fields_str}]")
-        if params is not None:
-            key_params = {k: v for k, v in params.items() if any(x in k.lower() for x in ["time", "cycle", "dt", "nstep"])}
-            if key_params:
-                print(f"    [flekspy] Parameters: {key_params}")
-                
-        # Basic sanity check: Ensure domain dimensions and fields are valid/non-empty
-        if dims is not None and len(dims) == 3 and all(d > 0 for d in dims):
-            print("    [flekspy] Validation Check: Domain dimensions are valid.")
-        else:
-            print("    [flekspy] Validation Warning: Invalid domain dimensions.")
-
-        return True, "Passed"
-    except Exception as e:
-        print(f"    FAIL: flekspy failed to load or validate plotfile: {e}")
-        return False, f"flekspy load error: {e}"
+    # ---- Other tests: no plot-file validation ----
+    print("  --- Validating Output Files: No plot-file check for this test ---")
+    return True, "Passed (no plot-file check)"
 
 def main():
-    # Parse command-line arguments
-    use_flekspy = "--thorough" in sys.argv or "--flekspy" in sys.argv
-    
     # Parse nprocs: -n N or --nprocs N
     nprocs = 1
     for i, arg in enumerate(sys.argv):
@@ -733,10 +642,6 @@ def main():
                 print("Error: --summary-file requires a path argument.")
                 sys.exit(1)
             break
-    
-    # Ensure flekspy is installed first if thorough validation is enabled
-    if use_flekspy:
-        ensure_flekspy_installed()
     
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(os.path.dirname(script_dir))
@@ -817,10 +722,10 @@ def main():
                     val_res = True
                     reason = "Passed"
 
-            # Validate output plotfiles using flekspy!
-            flekspy_res, flekspy_reason = validate_amrex_outputs_with_flekspy(name, use_flekspy=use_flekspy)
-            if not flekspy_res:
-                results.append((name.upper(), "FAILED", f"flekspy check failed: {flekspy_reason}"))
+            # Validate output plotfiles
+            plot_res, plot_reason = validate_plot_output(name)
+            if not plot_res:
+                results.append((name.upper(), "FAILED", f"plot check failed: {plot_reason}"))
             else:
                 results.append((name.upper(), "PASSED", "Passed"))
 

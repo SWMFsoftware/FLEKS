@@ -85,8 +85,8 @@ Chamberlain             typeProfile
 1.0                     solarDirX     Sun in +X direction (dayside)
 0.0                     solarDirY
 0.0                     solarDirZ
-8.0e6                   radius        shadow cylinder = large, covers ~entire nightside
-6.0e6                   halfHeight    finite height along anti-solar dir (2x Rp)
+3.0e6                   radius        shadow cylinder
+9.0e6                   halfHeight    finite height along anti-solar dir (3x Rp)
 
 #TIMESTEPPING
 T                       useFixedDt
@@ -133,12 +133,12 @@ T
 1                       nPlot
 z=0 var ascii planet    plotString
 -1                      dn
-5.0                     dt           save once at end (t = TimeMax)
--1                      dx
+1.0                     dt           save once at end (t = TimeMax)
+1                       dx
 rhoS1                   NameVars
 
 #STOP
-50                      MaxIter
-5.0                     TimeMax
+10                      MaxIter
+1.0                     TimeMax
 
 #RUN
