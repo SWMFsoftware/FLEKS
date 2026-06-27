@@ -30,9 +30,6 @@ T                       isPeriodicZ
 #SOLVEEM
 T                       solveEM
 
-#ELECTRON
--100                    electronChargePerMass
-
 #PLASMA
 1                       nSpecies
 1.0                     mass
