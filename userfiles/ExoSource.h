@@ -231,6 +231,27 @@ public:
   void post_process_param() override {
     if (exosphereType == "None") return;
 
+    // The source code assumes species 0 is the electron (used for ne and Te
+    // in electron impact ionization, and skipped in the exosphere-to-ion
+    // mapping where component iC -> species iC+1).  Enforce this here.
+    if (nS < 1) {
+      amrex::Print() << printPrefix << "Error: no plasma species defined. "
+                     << "Use #PLASMA to set species.\n";
+      std::abort();
+    }
+    if (QoQi_S[0] >= 0.0) {
+      amrex::Print() << printPrefix << "Error: species 0 must be the electron "
+                     << "(negative charge). Got Q/Qi[0] = " << QoQi_S[0]
+                     << ". Reorder #PLASMA so the electron is first.\n";
+      std::abort();
+    }
+    if (nExoComponent > nS - 1) {
+      amrex::Print() << printPrefix << "Error: #EXOSPHERE nComponent ("
+                     << nExoComponent << ") exceeds the number of ion species ("
+                     << nS - 1 << "). Add more ion species in #PLASMA.\n";
+      std::abort();
+    }
+
     if (usePhotoIonization && nPhotoComponent != nExoComponent) {
       amrex::Print() << printPrefix << "Error: #PHOTOIONIZATION nComponent ("
                      << nPhotoComponent << ") != #EXOSPHERE nComponent ("
@@ -303,7 +324,7 @@ public:
                   r_val += xyz[d] * xyz[d];
                 }
                 r_val = sqrt(r_val);
-                source[0] = 0.0;
+
                 // Pre-fetch plasma state once per cell (lazy evaluation)
                 double ne = 0, pe = 0, Te_eV = 0;
                 bool plasmaFetched = false;
@@ -315,23 +336,24 @@ public:
                   plasmaFetched = true;
                 };
 
-                double ni = 0, u_mag_SI = 0;
-                bool ionFetched = false;
-                auto fetch_ion_plasma = [&, &other=other]() {
-                  if (ionFetched) return;
-                  ni = other.get_number_density(mfi, idx, 1, iLev);
-                  double ux = other.get_ux(mfi, idx, 1, iLev);
-                  double uy = other.get_uy(mfi, idx, 1, iLev);
-                  double uz = other.get_uz(mfi, idx, 1, iLev);
-                  // PIC velocity -> SI [m/s]
-                  u_mag_SI = sqrt(ux * ux + uy * uy + uz * uz) * get_unorm_si();
-                  ionFetched = true;
-                };
+                // Per-ion-species source accumulators.
+                // Species 0 = electron (skipped), 1 = H+, 2 = O+, ...
+                // Exosphere component iC maps to ion species (iC + 1).
+                // srcRho[iS], srcP[iS] in SI [kg m^-3 s^-1, Pa s^-1].
+                const int nIonS = nS - 1;  // number of ion species
+                std::vector<double> srcRho(nIonS + 1, 0.0);
+                std::vector<double> srcP(nIonS + 1, 0.0);
 
                 for (int iC = 0; iC < nExoComponent; ++iC) {
+                  // Map exosphere component iC to ion species (iC + 1).
+                  // Species 0 = electron, so ion species index = iC + 1.
+                  const int iSp = iC + 1;
+                  if (iSp > nIonS) break;  // safety: not enough ion species
+
                   double dens_i =
                       get_exosphere_component_density(r_val, iC);
                   double nu_tot = 0.0;
+
                   // ---- Photoionization ----
                   if (doPhoto) {
                     nu_tot += photo_rate(xyz[0], xyz[1], xyz[2], iC);
@@ -346,23 +368,30 @@ public:
                   }
 
                   // ---- Charge exchange ----
+                  // Use the *same* ion species that this component maps to.
                   if (doCX) {
-                    fetch_ion_plasma();
-                    if (ni > 0 && u_mag_SI > 0) {
-                      nu_tot += ni * cx_rate(u_mag_SI, iC);
+                    double ni_i = other.get_number_density(mfi, idx, iSp, iLev);
+                    double ux_i = other.get_ux(mfi, idx, iSp, iLev);
+                    double uy_i = other.get_uy(mfi, idx, iSp, iLev);
+                    double uz_i = other.get_uz(mfi, idx, iSp, iLev);
+                    double u_mag_SI =
+                        sqrt(ux_i * ux_i + uy_i * uy_i + uz_i * uz_i) *
+                        get_unorm_si();
+                    if (ni_i > 0 && u_mag_SI > 0) {
+                      nu_tot += ni_i * cx_rate(u_mag_SI, iC);
                     }
                   }
-                  source[0] += dens_i * nu_tot;
+
+                  // Number density production rate [m^-3 s^-1]
+                  double S_n = dens_i * nu_tot;
+                  // Convert to mass density production rate [kg m^-3 s^-1]
+                  // using the mass of the corresponding ion species.
+                  double mass_amu = get_species_mass(iSp);
+                  srcRho[iSp] += S_n * mass_amu * cProtonMassSI;
+                  // Pressure source at T_source = 100 K
+                  srcP[iSp] += S_n * mass_amu * cProtonMassSI * cBoltzmannSI * 100.0;
                 }
-                // Convert number density production rate [m^-3 s^-1] to
-                // mass density production rate [kg m^-3 s^-1].
-                // All exosphere components map to ion species 1 (O+).
-                source[0] *= get_species_mass(1) * cProtonMassSI;
-                source[1] = 0.0;
-                source[2] = 0.0;
-                source[3] = 0.0;
-                source[4] = source[0] * cBoltzmannSI * 100.0;
-                source[5] = source[0] * cBoltzmannSI * 100.0;
+
 #endif
 
                 for (int iFluid = 0; iFluid < nFluid; iFluid++) {
@@ -373,24 +402,27 @@ public:
                   arr(i, j, k, iP_I[iFluid]) = 0;
                 }
 
-                if (source[0] > 0) {
-                  const int iNa = 1;
-                  // Write MOMENTUM (ρu) to iUx_I, not velocity. This follows
-                  // the same convention as Particles::charge_exchange, so
-                  // convert_moment_to_velocity() works correctly for both
-                  // code paths.
-                  const double rhoNo =
-                      source[0] * Si2NoRho / get_Si2NoT();
-                  arr(i, j, k, iRho_I[iNa]) = rhoNo;
-                  arr(i, j, k, iUx_I[iNa]) =
-                      source[1] * Si2NoRho / get_Si2NoT();
-                  arr(i, j, k, iUy_I[iNa]) =
-                      source[2] * Si2NoRho / get_Si2NoT();
-                  arr(i, j, k, iUz_I[iNa]) =
-                      source[3] * Si2NoRho / get_Si2NoT();
-                  arr(i, j, k, iP_I[iNa]) = source[4] * Si2NoP / get_Si2NoT();
-                  if (iPe >= 0)
-                    arr(i, j, k, iPe) = source[5] * Si2NoP / get_Si2NoT();
+                // Write per-species source terms.  Zero momentum (source
+                // particles are born at rest in the planet frame).
+                bool anySource = false;
+                for (int iSp = 1; iSp <= nIonS; ++iSp) {
+                  if (srcRho[iSp] > 0) {
+                    anySource = true;
+                    arr(i, j, k, iRho_I[iSp]) =
+                        srcRho[iSp] * Si2NoRho / get_Si2NoT();
+                    arr(i, j, k, iUx_I[iSp]) = 0.0;
+                    arr(i, j, k, iUy_I[iSp]) = 0.0;
+                    arr(i, j, k, iUz_I[iSp]) = 0.0;
+                    arr(i, j, k, iP_I[iSp]) =
+                        srcP[iSp] * Si2NoP / get_Si2NoT();
+                  }
+                }
+                // Electron pressure source: sum of all ion sources.
+                if (anySource && iPe >= 0) {
+                  double srcPe = 0.0;
+                  for (int iSp = 1; iSp <= nIonS; ++iSp)
+                    srcPe += srcP[iSp];
+                  arr(i, j, k, iPe) = srcPe * Si2NoP / get_Si2NoT();
                 }
               } // for k
         }

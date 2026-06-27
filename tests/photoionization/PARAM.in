@@ -34,19 +34,26 @@ T                       solveEM
 -100                    electronChargePerMass
 
 #PLASMA
-2                       nSpecies
-1.0                     mass        Species 0: H+ (light background)
+3                       nSpecies
+0.01                    mass        Species 0: electron
+-1.0                    charge
+1.0                     mass        Species 1: H+ (light background)
 1.0                     charge
-16.0                    mass        Species 1: O+ (heavy, gets exosphere source)
+16.0                    mass        Species 2: O+ (heavy, gets exosphere source)
 1.0                     charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0 background
+0.05                    rho [amu/cc]   Species 0: electron (quasi-neutral)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-1.0e-12                 rho [amu/cc]   Species 1 background (tiny seed, < photoionization)
+5.0                     rho [amu/cc]   Species 1: H+ background
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+1.0e-12                 rho [amu/cc]   Species 2: O+ background (tiny seed)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -135,7 +142,7 @@ z=0 var ascii planet    plotString
 -1                      dn
 1.0                     dt           save once at end (t = TimeMax)
 1                       dx
-rhoS1                   NameVars
+rhoS2                   NameVars
 
 #STOP
 10                      MaxIter

@@ -235,25 +235,38 @@ def validate_beam(diags, field_diags=None):
 
     passed = True
     reasons = []
-    
-    # 1. Total particle count conservation check
-    initial_phys = diags[0]["phys"]
-    for diag in diags:
-        t = diag["time"]
-        actual_phys = diag["phys"]
-        if abs(actual_phys - initial_phys) > 1e-5 * initial_phys:
-            print(f"  FAIL at t={t:.2f}: Particle number changed! Expected={initial_phys:.2e}, Actual={actual_phys:.2e}")
-            passed = False
-            reasons.append(f"Particle number changed at t={t:.2f} (expected {initial_phys:.2e}, actual {actual_phys:.2e})")
+
+    # Group diagnostics by species so per-species checks don't compare
+    # different species against each other.
+    all_species = sorted(set(d["species"] for d in diags))
+    by_species = {s: [d for d in diags if d["species"] == s] for s in all_species}
+
+    # 1. Particle count conservation check (per species)
+    for s in all_species:
+        sdiags = by_species[s]
+        initial_phys = sdiags[0]["phys"]
+        for diag in sdiags:
+            t = diag["time"]
+            actual_phys = diag["phys"]
+            if abs(actual_phys - initial_phys) > 1e-5 * initial_phys:
+                print(f"  FAIL (species {s}) at t={t:.2f}: Particle number changed! "
+                      f"Expected={initial_phys:.2e}, Actual={actual_phys:.2e}")
+                passed = False
+                reasons.append(f"Species {s} particle number changed at t={t:.2f} "
+                               f"(expected {initial_phys:.2e}, actual {actual_phys:.2e})")
 
     # 2. Mean velocity conservation check
-    # Expected MeanVx is -0.392 (due to 99% background at -0.4 and 1% beam at +0.4)
+    # The beam is applied to the heaviest ion species (species 1 = H+ in the
+    # 2-species layout, or species 0 in the old 1-species layout).
+    beam_species = all_species[-1]  # last species = H+ (beam target)
     expected_vx = -0.392
-    for diag in diags:
+    sdiags = by_species[beam_species]
+    for diag in sdiags:
         t = diag["time"]
         actual_vx = diag["vx"]
         relative_diff = abs(actual_vx - expected_vx)
-        print(f"  t={t:.2f}: MeanVx expected={expected_vx:.4f}, actual={actual_vx:.4f} (diff={relative_diff:.4f})")
+        print(f"  t={t:.2f} (sp {beam_species}): MeanVx expected={expected_vx:.4f}, "
+              f"actual={actual_vx:.4f} (diff={relative_diff:.4f})")
         if relative_diff > 0.01:
             print(f"  FAIL: MeanVx exceeds tolerance of 0.01")
             passed = False
@@ -365,9 +378,13 @@ def validate_ionization_source(diags, field_diags=None, pic_diags=None):
     """Validate an ionization source test (photoionization, electron impact,
     or charge exchange).
 
-    Checks that Species 1 (O+, the heavy ion receiving the exosphere source)
-    energy increases over time, confirming the ionization source is active.
-    Uses the PIC energy log (log_pic_n*.log) as the primary data source.
+    Checks that the heaviest ion species (O+, which receives the exosphere
+    source) energy increases over time, confirming the ionization source is
+    active.  Uses the PIC energy log (log_pic_n*.log) as the primary data
+    source.
+
+    With the full-PIC species layout (species 0 = electron, 1 = H+, 2 = O+),
+    the source is injected into the last ion species.
     """
     print("Validating Ionization Source Test...")
 
@@ -376,28 +393,38 @@ def validate_ionization_source(diags, field_diags=None, pic_diags=None):
         first = pic_diags[0]
         last = pic_diags[-1]
 
-        # Check that species 1 energy grows (exosphere source injects energy)
-        e1_initial = first.get("Epart1", 0.0)
-        e1_final = last.get("Epart1", 0.0)
+        # Determine the source (heaviest ion) species index from available
+        # EpartN keys.  The last EpartN column is the heaviest ion.
+        epart_keys = sorted(
+            k for k in first.keys() if k.startswith("Epart") and k != "Epart"
+        )
+        if not epart_keys:
+            print("  [INFO] No per-species energy columns; skipping.")
+            return True, "Passed (no Epart columns)"
+        source_key = epart_keys[-1]  # e.g. "Epart2" for O+
+        source_idx = source_key.replace("Epart", "")
+
+        e_src_initial = first.get(source_key, 0.0)
+        e_src_final = last.get(source_key, 0.0)
 
         print(f"  --- Energy Diagnostics (from log_pic log) ---")
-        print(f"    Initial Epart1 (species 1, O+): {e1_initial:.6e}")
-        print(f"    Final Epart1 (species 1, O+):   {e1_final:.6e}")
-        print(f"    Growth factor: {e1_final / max(e1_initial, 1e-30):.3f}x")
-        print(f"    Initial Epart0 (species 0, H+): {first.get('Epart0', 0):.6e}")
-        print(f"    Final Epart0 (species 0, H+):   {last.get('Epart0', 0):.6e}")
+        print(f"    Initial {source_key} (species {source_idx}, O+): {e_src_initial:.6e}")
+        print(f"    Final   {source_key} (species {source_idx}, O+): {e_src_final:.6e}")
+        print(f"    Growth factor: {e_src_final / max(e_src_initial, 1e-30):.3f}x")
+        for k in epart_keys:
+            print(f"    {k}: {first.get(k, 0):.6e} -> {last.get(k, 0):.6e}")
         print(f"    Initial total Epart: {first.get('Epart', 0):.6e}")
         print(f"    Final total Epart:   {last.get('Epart', 0):.6e}")
 
-        if e1_final <= e1_initial:
-            print("    FAIL: Species 1 energy did not increase.")
+        if e_src_final <= e_src_initial:
+            print(f"    FAIL: {source_key} energy did not increase.")
             print("    Ionization source may not be working correctly.")
             return False, (
-                f"Species 1 energy did not increase "
-                f"(initial={e1_initial:.2e}, final={e1_final:.2e})"
+                f"{source_key} energy did not increase "
+                f"(initial={e_src_initial:.2e}, final={e_src_final:.2e})"
             )
         else:
-            print("    SUCCESS: Species 1 energy increased (ionization source active).")
+            print(f"    SUCCESS: {source_key} energy increased (ionization source active).")
             return True, "Passed"
     else:
         print("  [INFO] No pic energy log found; trying particle diagnostics...")
@@ -410,26 +437,32 @@ def validate_ionization_source(diags, field_diags=None, pic_diags=None):
     passed = True
     reasons = []
 
-    species1_diags = [d for d in diags if d["species"] == 1]
-    if not species1_diags:
-        print("  FAIL: No diagnostics found for species 1 (O+ source species).")
-        return False, "No species 1 diagnostics found"
+    # Find the highest species index (the source/heavy ion species).
+    all_species = sorted(set(d["species"] for d in diags))
+    if not all_species:
+        return True, "Passed (no species data)"
+    source_species = all_species[-1]
 
-    phys_initial = species1_diags[0]["phys"]
-    phys_final = species1_diags[-1]["phys"]
+    src_diags = [d for d in diags if d["species"] == source_species]
+    if not src_diags:
+        print(f"  FAIL: No diagnostics found for species {source_species} (source species).")
+        return False, f"No species {source_species} diagnostics found"
 
-    print(f"    Initial phys particles (species 1): {phys_initial:.6e}")
-    print(f"    Final phys particles (species 1):   {phys_final:.6e}")
+    phys_initial = src_diags[0]["phys"]
+    phys_final = src_diags[-1]["phys"]
+
+    print(f"    Initial phys particles (species {source_species}): {phys_initial:.6e}")
+    print(f"    Final phys particles (species {source_species}):   {phys_final:.6e}")
 
     if phys_final <= phys_initial:
-        print("    FAIL: Species 1 particle count did not increase.")
+        print(f"    FAIL: Species {source_species} particle count did not increase.")
         passed = False
         reasons.append(
-            f"Species 1 particle count did not increase "
+            f"Species {source_species} particle count did not increase "
             f"(initial={phys_initial:.2e}, final={phys_final:.2e})"
         )
     else:
-        print("    SUCCESS: Species 1 particle count increased.")
+        print(f"    SUCCESS: Species {source_species} particle count increased.")
 
     if passed:
         print("Ionization Source Test: PASSED")
@@ -543,20 +576,25 @@ def _load_idl_plot_asymmetry():
     if len(lines) < 6:
         return True, "Short .out file"
     var_names = lines[4].split()
-    rhoS1_idx = None
-    for iv, vn in enumerate(var_names):
-        if vn.upper() == "RHOS1":
-            rhoS1_idx = iv
+    # Look for the heaviest ion species density (rhoS2 = O+ with 3-species
+    # layout: 0=e, 1=H+, 2=O+).  Fall back to rhoS1 for 2-species layouts.
+    rho_idx = None
+    for target in ("RHOS2", "RHOS1"):
+        for iv, vn in enumerate(var_names):
+            if vn.upper() == target:
+                rho_idx = iv
+                break
+        if rho_idx is not None:
             break
-    if rhoS1_idx is None:
-        return True, "rhoS1 not in .out"
+    if rho_idx is None:
+        return True, "rhoS2/rhoS1 not in .out"
     for line in lines[5:]:
         cols = line.strip().split()
-        if len(cols) <= rhoS1_idx:
+        if len(cols) <= rho_idx:
             continue
         try:
             points.append((float(cols[0]), float(cols[1]),
-                           float(cols[rhoS1_idx])))
+                           float(cols[rho_idx])))
         except (ValueError, IndexError):
             continue
 
