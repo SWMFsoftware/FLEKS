@@ -105,18 +105,15 @@ T
 1
 
 #SAVEPLOT
-2                                 nPlot
-3d fluid amrex pic                plotString
--1                                dn
-0.2                               dt
-1                                 dx
-3d particles0 amrex pic           plotString
--1                                dn
-1.0                               dt
-1                                 dx
+1                       nPlot
+z=0 var ascii planet    plotString
+-1                      dn
+0.1                     dt
+1                       dx
+rhoS1 Bx By Bz          varName
 
 #STOP
 -1                      MaxIter
-0.1                    TimeMax
+0.1                     TimeMax
 
 #RUN

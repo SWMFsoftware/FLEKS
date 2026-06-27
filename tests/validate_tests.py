@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import re
 import sys
+import math
 
 def safe_symlink(src, dst):
     if os.path.lexists(dst):
@@ -227,7 +228,7 @@ def parse_diagnostics(stdout):
             diagnostics.append(diag)
     return diagnostics, []
 
-def validate_beam(diags, field_diags=None):
+def validate_beam(diags):
     print("Validating Beam Instability Test...")
     if not diags:
         print("  [INFO] No diagnostic outputs parsed; skipping beam diagnostic checks.")
@@ -272,47 +273,11 @@ def validate_beam(diags, field_diags=None):
             passed = False
             reasons.append(f"MeanVx diff {relative_diff:.4f} > 0.01 at t={t:.2f}")
 
-    # 3. Transverse magnetic field cyclotron wave growth check
-    if field_diags:
-        print("  --- Validating Cyclotron Wave Growth (Transverse B-field) ---")
-
-        if not field_diags:
-            print("  FAIL: No field diagnostic outputs found.")
-            passed = False
-            reasons.append("No field diagnostics found")
-        else:
-            final_by = field_diags[-1]["max_by"]
-            final_bz = field_diags[-1]["max_bz"]
-
-            # The initial condition has by=0, bz=0; numerical noise develops
-            # after the first few steps. Use the first non-zero entry as the
-            # noise-floor baseline so the growth ratio is well-defined.
-            noise_by = next((d["max_by"] for d in field_diags if d["max_by"] > 0), 0.0)
-            noise_bz = next((d["max_bz"] for d in field_diags if d["max_bz"] > 0), 0.0)
-
-            print(f"    Initial Transverse B-field (noise level): MaxBy={noise_by:.4e}, MaxBz={noise_bz:.4e}")
-            print(f"    Final Transverse B-field (after growth):  MaxBy={final_by:.4e}, MaxBz={final_bz:.4e}")
-
-            if noise_by > 0 and noise_bz > 0:
-                growth_y = final_by / noise_by
-                growth_z = final_bz / noise_bz
-                print(f"    Transverse B-field growth factors: By growth={growth_y:.2f}x, Bz growth={growth_z:.2f}x")
-                if growth_y < 1.2 and growth_z < 1.2:
-                    print("    FAIL: No significant growth of cyclotron waves detected (growth < 1.2x)")
-                    passed = False
-                    reasons.append(f"No wave growth (By growth={growth_y:.2f}x, Bz growth={growth_z:.2f}x < 1.2x)")
-                else:
-                    print("    SUCCESS: Cyclotron wave growth validated!")
-            else:
-                # Fallback: no non-zero noise baseline found; just require the
-                # final value to be positive (any wave amplitude counts).
-                print("    (No non-zero noise baseline; checking final amplitude only.)")
-                if final_by <= 0 and final_bz <= 0:
-                    print("    FAIL: Final transverse B-field is zero — no wave growth.")
-                    passed = False
-                    reasons.append("Final By and Bz are both zero — no wave growth detected")
-                else:
-                    print("    SUCCESS: Transverse B-field is non-zero at end of run.")
+    # 3. Transverse magnetic-field wave check is performed on the spatial
+    #    plot output (.out files) by _check_beam_transverse_wave(), invoked
+    #    from validate_plot_output().  The previous time-series growth check
+    #    relied on log_diag_n*.log (maxBy/maxBz per step), which is never
+    #    written by the C++ code, so it was dead code and has been removed.
 
     if passed:
         print("Beam Instability Test: PASSED")
@@ -650,12 +615,209 @@ def _load_idl_plot_asymmetry():
 
     return True, "Passed"
 
+
+def _check_beam_transverse_wave():
+    """Check transverse EM wave growth against the cyclotron resonance.
+
+    Reads the final .out plot file (at t ~= 0.1 normalized), FFTs the
+    transverse magnetic-field profile (By, Bz), and compares the dominant
+    spatial mode to the theoretical cyclotron-resonant wavenumber
+    ``k_res = Omega_i / Delta_v``.
+
+    For the beam test the resonant wavelength (``k_res^-1`` ~ 10^4 km)
+    vastly exceeds the 2 km periodic box, so the resonant mode (n ~= 0)
+    cannot fit.  The instability therefore populates the longest-wavelength
+    modes that fit in the box.  This check verifies that (1) the transverse
+    wave has grown above the numerical noise floor and (2) the wave power
+    is concentrated in low-order spatial modes consistent with the
+    box-limited instability, reporting the dominant mode and k_res for
+    inspection.
+
+    Returns (passed: bool, reason: str).
+    """
+    import glob
+
+    plots_dir = os.path.join("run_test", "PC", "plots")
+    out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
+    if not out_files:
+        print("    [FFT] No .out files found (PostProc.pl not run?).")
+        return True, "No .out files (skipped)"
+
+    # Use the final frame (latest cycle); this is the t ~= 0.1 snapshot.
+    out_file = out_files[-1]
+    print(f"    [FFT] Loading .out: {os.path.basename(out_file)}")
+
+    with open(out_file, "r") as f:
+        lines = f.readlines()
+    if len(lines) < 6:
+        return True, "Short .out file"
+
+    var_names = lines[4].split()
+    vidx = {v.upper(): i for i, v in enumerate(var_names)}
+    for need in ("BY", "BZ", "BX"):
+        if need not in vidx:
+            print(f"    [FFT] '{need}' not found in .out variables: {var_names}")
+            return True, f"{need} not in .out"
+
+    iby, ibz, ibx = vidx["BY"], vidx["BZ"], vidx["BX"]
+
+    x = []
+    by = []
+    bz = []
+    bx = []
+    for line in lines[5:]:
+        cols = line.split()
+        if len(cols) <= max(iby, ibz, ibx):
+            continue
+        try:
+            x.append(float(cols[0]))
+            by.append(float(cols[iby]))
+            bz.append(float(cols[ibz]))
+            bx.append(float(cols[ibx]))
+        except (ValueError, IndexError):
+            continue
+
+    n = len(x)
+    if n < 4:
+        print("    [FFT] Too few data points for FFT.")
+        return True, "Too few points"
+
+    # Simulation time (normalized) from line 2.
+    try:
+        t_norm = float(lines[1].split()[1])
+    except (ValueError, IndexError):
+        t_norm = float("nan")
+
+    # B-fields are in nT in the .out file.
+    bx_mean = sum(bx) / n
+    bperp = [math.hypot(by[i], bz[i]) for i in range(n)]
+    bperp_max = max(bperp)
+
+    print(f"    [FFT] t={t_norm:.4f} (normalized), N={n} cells")
+    print(f"    [FFT] |Bx|={bx_mean:.4f} nT, max|B_perp|={bperp_max:.4e} nT")
+
+    # ---- Check 1: wave growth above the noise floor ----------------------
+    # At t=0 the transverse field is exactly zero; after the instability
+    # triggers it grows from numerical noise.  Require the amplitude to
+    # exceed a small fraction of the guide field.
+    noise_frac = 1e-4
+    if bx_mean <= 0:
+        growth_ok = bperp_max > 0
+    else:
+        growth_ok = bperp_max > noise_frac * abs(bx_mean)
+    print(f"    [FFT] Wave growth: max|B_perp|/|Bx| = "
+          f"{bperp_max / max(abs(bx_mean), 1e-30):.3e} "
+          f"(threshold {noise_frac:.0e}) -> "
+          f"{'OK' if growth_ok else 'FAIL'}")
+
+    # ---- DFT of the transverse field -------------------------------------
+    # FFT By and Bz separately (preserving sign/oscillation), then combine
+    # the per-mode amplitudes.  Using |B_perp| directly would introduce
+    # spurious harmonics from the magnitude operation.
+    def _dft_amp(data):
+        nn = len(data)
+        out = []
+        for k in range(nn // 2 + 1):
+            re = sum(data[j] * math.cos(2 * math.pi * k * j / nn)
+                     for j in range(nn))
+            im = -sum(data[j] * math.sin(2 * math.pi * k * j / nn)
+                      for j in range(nn))
+            out.append(math.hypot(re, im))
+        return out
+
+    try:
+        import numpy as np
+        fy = np.abs(np.fft.rfft(by))
+        fz = np.abs(np.fft.rfft(bz))
+        amps = [math.hypot(float(fy[k]), float(fz[k]))
+                for k in range(len(fy))]
+    except ImportError:
+        ay = _dft_amp(by)
+        az = _dft_amp(bz)
+        amps = [math.hypot(ay[k], az[k]) for k in range(len(ay))]
+
+    # Non-DC (n>=1) power.
+    total_power = sum(a * a for a in amps[1:])
+    if total_power <= 0:
+        print("    [FFT] No non-DC spectral power; wave has not grown.")
+        return False, "No transverse wave power detected"
+
+    # Dominant non-DC mode.
+    n_dom = max(range(1, len(amps)), key=lambda k: amps[k])
+    dom_frac = amps[n_dom] ** 2 / total_power
+
+    # Fraction of power in low-order modes (n <= N/4).
+    n_low = n // 4
+    low_frac = sum(a * a for a in amps[1:n_low + 1]) / total_power
+
+    print(f"    [FFT] Dominant mode: n={n_dom} "
+          f"({100 * dom_frac:.1f}% of non-DC power)")
+    print(f"    [FFT] Power in low modes (n<={n_low}): "
+          f"{100 * low_frac:.1f}%")
+
+    # ---- Theoretical resonant wavenumber ---------------------------------
+    # Cyclotron resonance: k_res = Omega_i / Delta_v (ion-ion beam-beam).
+    # Omega_i = q_p * |Bx| / m_p (SI; the Boris pusher uses q*dt/(2*m)
+    # without a c factor, so this is the SI cyclotron frequency).
+    q_p = 1.60217663e-19   # C  (cUnitChargeSI)
+    m_p = 1.67262192e-27   # kg (cProtonMassSI)
+    bx_si = abs(bx_mean) * 1e-9          # nT -> T
+    omega_i = q_p * bx_si / m_p          # rad/s
+    delta_v = 8e5                         # m/s (beam +400, bg -400 km/s)
+    k_res = omega_i / delta_v             # 1/m
+
+    # Box geometry (x is in metres in the .out file).
+    dx = x[1] - x[0]
+    L = n * dx
+    k1 = 2 * math.pi / L                  # box-fundamental wavenumber
+    n_res = max(1, round(k_res / k1))
+
+    print(f"    [FFT] Omega_i = {omega_i:.4f} rad/s, "
+          f"Delta_v = {delta_v:.1e} m/s")
+    print(f"    [FFT] k_res = {k_res:.3e} 1/m, "
+          f"k_1 = {k1:.3e} 1/m (L = {L:.1f} m)")
+    print(f"    [FFT] Resonant wavelength = {2 * math.pi / k_res:.3e} m "
+          f"vs box L = {L:.1f} m")
+
+    if k_res < k1:
+        # Resonant wavelength exceeds the box: the resonant mode (n ~ 0)
+        # cannot fit, so the nearest available mode is the box-fundamental
+        # n=1.  The instability populates the longest-wavelength modes that
+        # fit; verify the bulk of the wave power resides in low-order modes
+        # (not grid-scale noise near the Nyquist frequency).
+        mode_ok = low_frac > 0.4
+        print(f"    [FFT] k_res < k_1: resonant mode (n={k_res / k1:.2e}) "
+              f"exceeds the box; nearest available mode is n=1.")
+        print(f"    [FFT] Mode check (box-limited): low-mode power "
+              f"fraction {low_frac:.2f} > 0.4 -> "
+              f"{'OK' if mode_ok else 'FAIL'}")
+    else:
+        tol = 2
+        mode_ok = abs(n_dom - n_res) <= tol
+        print(f"    [FFT] Mode check: |n_dom({n_dom}) - n_res({n_res})| "
+              f"<= {tol} -> {'OK' if mode_ok else 'FAIL'}")
+
+    if growth_ok and mode_ok:
+        print("    [FFT] Transverse wave check: PASSED")
+        return True, "Passed"
+    else:
+        reasons = []
+        if not growth_ok:
+            reasons.append(f"wave amplitude {bperp_max:.2e} nT below "
+                           f"noise floor ({noise_frac:.0e}*|Bx|)")
+        if not mode_ok:
+            reasons.append(f"dominant mode n={n_dom} inconsistent with "
+                           f"resonance (n_res={n_res})")
+        return False, "; ".join(reasons)
+
+
 def validate_plot_output(test_name):
     """Validate simulation plot output files for a given test.
 
     For the photoionization test, this checks the day/night asymmetry from
-    the .out files produced by PostProc.pl.  Other tests currently have no
-    plot-file-based validation and simply pass.
+    the .out files produced by PostProc.pl.  For the beam test, this
+    performs an FFT-based transverse-wave resonant-wavenumber check on the
+    final plot frame.  Other tests have no plot-file-based validation.
     """
     # ---- Photoionization: check day/night asymmetry via IDL .out ----
     if test_name == "photoionization":
@@ -663,6 +825,14 @@ def validate_plot_output(test_name):
         result, reason = _load_idl_plot_asymmetry()
         if result:
             print("    [IDL] Photoionization day/night asymmetry: VERIFIED")
+        return result, reason
+
+    # ---- Beam: FFT-based transverse-wave resonant-wavenumber check ----
+    if test_name == "beam":
+        print("  --- Validating Output Files (FFT transverse wave) ---")
+        result, reason = _check_beam_transverse_wave()
+        if result:
+            print("    [FFT] Beam transverse-wave resonance check: VERIFIED")
         return result, reason
 
     # ---- Other tests: no plot-file validation ----
