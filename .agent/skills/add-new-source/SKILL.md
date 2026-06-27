@@ -161,7 +161,7 @@ public:
 For sources that depend on fluid fields, set `useFluidSource = true` in the
 constructor and override `set_source(const FluidInterface& other)`. Override
 `sum_to_single_source()` only when the source needs post-processing before
-particle injection. Use `userfiles/ExoSource.h` as the current detailed pattern.
+particle injection (e.g., region-split mode with `_PT_COMPONENT_`).
 
 ### 3. Select and Inspect the Source
 
