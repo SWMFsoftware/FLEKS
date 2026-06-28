@@ -1301,6 +1301,15 @@ void Pic::update(bool doReportIn) {
 
   charge_exchange();
 
+  // Apply chemical loss (recombination, etc.) by reducing particle
+  // weights.  Must come before fill_source_particles() so that loss
+  // and source are applied in the correct order within one step.
+  if (source && source->use_loss_source()) {
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->apply_loss(source, tc->get_dt());
+    }
+  }
+
   if (source) {
     fill_source_particles();
   }

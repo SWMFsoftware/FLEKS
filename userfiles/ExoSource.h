@@ -226,12 +226,57 @@ public:
         solarDir[1] /= norm;
         solarDir[2] /= norm;
       }
+    } else if (command == "#RECOMBINATION") {
+      useRecombination = true;
+      useLossSource = true;
+      int nRecomb;
+      param.read_var("nReactions", nRecomb);
+      recombIonIndex.resize(nRecomb);
+      recombRate0.resize(nRecomb);
+      recombTempExp.resize(nRecomb);
+      recombRefTemp.resize(nRecomb);
+      for (int i = 0; i < nRecomb; ++i) {
+        param.read_var("ionSpecies", recombIonIndex[i]);
+        param.read_var("rateCoef", recombRate0[i]);
+        param.read_var("tempExponent", recombTempExp[i]);
+        param.read_var("refTemp", recombRefTemp[i]);
+      }
     }
   }
 
   //-------------------------------------------------------------------
   // Validate consistency between exosphere and ionization commands.
   void post_process_param() override {
+    // ---- Recombination validation (always executed, even without
+    // exosphere, since recombination does not depend on neutrals). ----
+    if (useRecombination) {
+      if (nS < 1) {
+        amrex::Abort(printPrefix + "Error: #RECOMBINATION requires "
+                     + "plasma species. Use #PLASMA to set species.");
+      }
+      // Recombination requires electron density and temperature, which
+      // are only available in useElectronFluid mode (species 0 = electron).
+      if (!useElectronFluid) {
+        amrex::Abort(printPrefix + "Error: #RECOMBINATION requires "
+                     + "useElectronFluid = true (species 0 must be the "
+                     + "electron). Set #PLASMA with an electron species.");
+      }
+      const int nIonS = nS - 1;
+      for (int i = 0; i < static_cast<int>(recombIonIndex.size()); ++i) {
+        int iSp = recombIonIndex[i];
+        if (iSp < 1 || iSp > nIonS) {
+          amrex::Abort(printPrefix + "Error: #RECOMBINATION ionSpecies "
+                       + std::to_string(iSp) + " is out of range [1, "
+                       + std::to_string(nIonS) + "].");
+        }
+        if (recombRate0[i] <= 0.0) {
+          amrex::Abort(printPrefix + "Error: #RECOMBINATION rateCoef must "
+                       + "be positive (got "
+                       + std::to_string(recombRate0[i]) + ").");
+        }
+      }
+    }
+
     if (exosphereType == "None") return;
 
     // The source code assumes species 0 is the electron (used for ne and Te
@@ -287,6 +332,7 @@ public:
     amrex::Print() << nameFunc << " is called.";
 
     set_node_fluid(other);
+    set_node_loss_fluid_to_zero();
 
     // Global NODE box.
     const amrex::Box gbx = convert(Geom(0).Domain(), { AMREX_D_DECL(1, 1, 1) });
@@ -294,6 +340,7 @@ public:
     const bool doPhoto = usePhotoIonization;
     const bool doImpact = useElectronImpact;
     const bool doCX = useChargeExchange;
+    const bool doRecomb = useRecombination;
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (!nodeFluid[iLev].empty()) {
@@ -307,6 +354,14 @@ public:
           const auto hi = ubound(box);
 
           const amrex::Array4<amrex::Real>& arr = nodeFluid[iLev][mfi].array();
+
+          // Loss array (only if loss processes are enabled).
+          amrex::Array4<amrex::Real> lossArr;
+          bool hasLossArr = false;
+          if (doRecomb && !nodeLossFluid[iLev].empty()) {
+            lossArr = nodeLossFluid[iLev][mfi].array();
+            hasLossArr = true;
+          }
 
           for (int k = lo.z; k <= hi.z; ++k)
             for (int j = lo.y; j <= hi.y; ++j)
@@ -418,6 +473,46 @@ public:
                   for (int iSp = 1; iSp <= nIonS; ++iSp)
                     srcPe += srcP[iSp];
                   arr(i, j, k, iPe) = srcPe * Si2NoP / get_Si2NoT();
+                }
+
+                // ---- Recombination loss terms ----
+                // Dissociative recombination: ion+ + e- -> neutrals.
+                // Loss rate L_rho = k(Te) * ne * rho_ion [kg/m^3/s].
+                // Written to nodeLossFluid as normalized mass-density rate.
+                // apply_loss() will reduce particle weights by the
+                // fraction L_rho * dt / rho_existing.
+                if (hasLossArr) {
+                  fetch_electron_plasma();
+                  for (int iR = 0; iR < static_cast<int>(recombIonIndex.size());
+                       ++iR) {
+                    int iSp = recombIonIndex[iR];
+                    if (iSp < 1 || iSp > nIonS)
+                      continue;
+                    int iIon = iSp - 1; // 0-based index in nodeLossFluid
+
+                    // k(Te) [cm^3/s] -> [m^3/s]
+                    double k_si = recombRate0[iR] * 1e-6;
+                    if (Te_eV > 0.0 && recombTempExp[iR] != 0.0) {
+                      // Te in Kelvin: Te_K = Te_eV * (e/k_B)
+                      double Te_K = Te_eV * cUnitChargeSI / cBoltzmannSI;
+                      k_si *= pow(recombRefTemp[iR] / Te_K,
+                                  recombTempExp[iR]);
+                    }
+
+                    // rho_ion in normalized mass density (from plasma state).
+                    double rho_ion_norm =
+                        other.get_value(mfi, idx, iRho_I[iSp], iLev);
+                    if (rho_ion_norm <= 0.0)
+                      continue;
+
+                    // Compute the loss rate entirely in SI, then convert
+                    // to normalized units (same as source terms).
+                    double lossRho_norm = k_si * ne * rho_ion_norm /
+                        (Si2NoRho * cProtonMassSI * get_Si2NoT());
+                    if (lossRho_norm > 0.0) {
+                      lossArr(i, j, k, iIon) = lossRho_norm;
+                    }
+                  }
                 }
               } // for k
         }

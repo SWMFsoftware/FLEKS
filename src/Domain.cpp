@@ -221,6 +221,7 @@ void Domain::update() {
   if (source && !initFromSWMF) {
     source->set_source(*fi);
     source->sum_boundary();
+    source->sum_loss_boundary();
     source->convert_moment_to_velocity(true, false);
   }
 
@@ -498,6 +499,7 @@ void Domain::set_state_var(double *data, int *index,
     if (source && !stateOH) {
       source->set_source(*fi);
       source->sum_boundary();
+      source->sum_loss_boundary();
       source->convert_moment_to_velocity(true, false);
     }
   }
@@ -902,7 +904,8 @@ void Domain::read_param(const bool readGridInfo) {
       if (pt)
         pt->read_param(command, param);
     } else if (command == "#PHOTOIONIZATION" || command == "#ELECTRONIMPACT" ||
-               command == "#CHARGEEXCHANGE" || command == "#SHADOWCYLINDER") {
+               command == "#CHARGEEXCHANGE" || command == "#SHADOWCYLINDER" ||
+               command == "#RECOMBINATION") {
       if (source) {
         // Sync exosphere/plasma parameters from fi to source so that
         // source->read_param() can access nExoComponent (set by #EXOSPHERE)

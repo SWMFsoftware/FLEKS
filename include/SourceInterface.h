@@ -49,6 +49,26 @@ protected:
   // the fluid index).
   amrex::Vector<double> cxSigma;
 
+  // ---- Recombination (#RECOMBINATION command) ----
+  // Dissociative recombination: ion+ + e- -> neutrals.
+  // Requires useElectronFluid = true (species 0 = electron).
+  bool useRecombination = false;
+  // Per-reaction parameters (parallel arrays, size = nRecombReactions):
+  amrex::Vector<int> recombIonIndex;   // 1-based ion species index (iSp)
+  amrex::Vector<double> recombRate0;   // base rate coefficient k0 [cm^3/s]
+  amrex::Vector<double> recombTempExp; // temperature exponent alpha
+  amrex::Vector<double> recombRefTemp; // reference temperature T_ref [K]
+  // k(Te) = k0 * (T_ref / Te_K)^alpha
+
+  // ---- Loss term storage ----
+  // nodeLossFluid stores the mass-density LOSS RATE (positive = loss)
+  // for each ion species, in PIC-normalized units.  It is parallel to
+  // nodeFluid but only has nS-1 components (one per ion species, 0-based:
+  // component i = ion species i+1).  Particles::apply_loss() reads this
+  // to reduce existing particle weights proportionally.
+  amrex::Vector<amrex::MultiFab> nodeLossFluid;
+  bool useLossSource = false; // true when any loss process is enabled
+
 public:
   SourceInterface(const FluidInterface& other, int id, std::string tag,
                   FluidType typeIn = SourceFluid)
@@ -95,6 +115,71 @@ public:
   /// Default returns 0.0 — override in UserSource for exosphere profiles.
   virtual double get_exosphere_component_density(double r, int iC) const {
     return 0.0;
+  }
+
+  // ---- Loss term management ----
+  // These methods manage nodeLossFluid, which stores per-ion mass-density
+  // loss rates for apply_loss() to consume.  The layout and distribution
+  // parallel nodeFluid but with only nS-1 components (ions only).
+
+  void post_regrid() override {
+    FluidInterface::post_regrid(); // distributes nodeFluid
+    distribute_loss_arrays();
+  }
+
+  void distribute_loss_arrays() {
+    if (!useLossSource)
+      return;
+    if (nodeLossFluid.empty())
+      nodeLossFluid.resize(n_lev_max());
+    const int nIon = nS > 1 ? nS - 1 : 0;
+    if (nIon == 0)
+      return;
+    const bool doCopy = true;
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      distribute_FabArray(nodeLossFluid[iLev], nGrids[iLev],
+                          DistributionMap(iLev), nIon, nGst, doCopy);
+    }
+  }
+
+  void set_node_loss_fluid_to_zero() {
+    if (!useLossSource)
+      return;
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      if (!nodeLossFluid[iLev].empty())
+        nodeLossFluid[iLev].setVal(0.0);
+    }
+  }
+
+  void sum_loss_boundary() {
+    if (!useLossSource)
+      return;
+    // Use FillBoundary (copy) instead of SumBoundary (sum) for loss rates.
+    // Each node's loss rate is computed independently and should NOT be
+    // summed across shared/periodic nodes.  FillBoundary fills ghost cells
+    // with the correct values from the interior, handling periodic BCs.
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      if (!nodeLossFluid[iLev].empty())
+        nodeLossFluid[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
+
+  /// Read loss rate for ion species iIon (0-based) at cell ijk.
+  /// Returns the normalized mass-density loss rate (positive = loss).
+  amrex::Real get_loss_value(const amrex::MFIter& mfi,
+                             const amrex::IntVect ijk, const int iIon,
+                             const int iLev = 0) const {
+    const auto& arr = nodeLossFluid[iLev][mfi].const_array();
+    return arr(ijk, iIon);
+  }
+
+  bool use_loss_source() const { return useLossSource; }
+
+  /// Check whether nodeLossFluid is allocated and non-empty at iLev.
+  bool has_loss_array(int iLev) const {
+    return useLossSource &&
+           iLev < static_cast<int>(nodeLossFluid.size()) &&
+           !nodeLossFluid[iLev].empty();
   }
 };
 

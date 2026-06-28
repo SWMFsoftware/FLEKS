@@ -175,6 +175,78 @@ def read_pic_log(run_dir):
     return pic_diags
 
 
+def validate_recombination(pic_diags=None, test_name=None):
+    """Validate the recombination loss test (O2+ + e- -> O + O).
+
+    Checks that O2+ (species 2, Epart2) energy decreases over time due
+    to recombination loss, while H+ (species 1, Epart1) energy remains
+    stable since H+ does not participate in recombination.
+    """
+    print("Validating Recombination Loss Test...")
+
+    if not pic_diags or len(pic_diags) < 2:
+        print("  [INFO] No PIC energy log found; skipping energy checks.")
+        return True, "Passed (no pic log)"
+
+    first = pic_diags[0]
+    last = pic_diags[-1]
+
+    epart_keys = sorted(
+        k for k in first.keys() if k.startswith("Epart") and k != "Epart"
+    )
+    if not epart_keys:
+        print("  [INFO] No per-species energy columns; skipping.")
+        return True, "Passed (no Epart columns)"
+
+    print(f"  --- Energy Diagnostics (from log_pic log) ---")
+    for k in epart_keys:
+        print(f"    {k}: {first.get(k, 0):.6e} -> {last.get(k, 0):.6e}")
+
+    passed = True
+    reasons = []
+
+    # O2+ (species 2) should decrease due to recombination.
+    o2_key = "Epart2" if "Epart2" in first else (epart_keys[-1] if len(epart_keys) >= 2 else None)
+    if o2_key:
+        e_o2_initial = first.get(o2_key, 0.0)
+        e_o2_final = last.get(o2_key, 0.0)
+        print(f"    {o2_key} (O2+): {e_o2_initial:.6e} -> {e_o2_final:.6e}")
+        if e_o2_initial <= 0:
+            print(f"    FAIL: {o2_key} initial energy is zero.")
+            passed = False
+            reasons.append("O2+ initial energy is zero")
+        elif e_o2_final >= e_o2_initial:
+            print(f"    FAIL: {o2_key} energy did not decrease (recombination not active).")
+            passed = False
+            reasons.append("O2+ energy did not decrease")
+        else:
+            ratio = e_o2_final / e_o2_initial
+            print(f"    SUCCESS: {o2_key} energy decreased to {ratio:.3f} of initial.")
+
+    # H+ (species 1) should remain stable.
+    h_key = "Epart1" if "Epart1" in first else None
+    if h_key:
+        e_h_initial = first.get(h_key, 0.0)
+        e_h_final = last.get(h_key, 0.0)
+        h_tolerance = 0.10  # allow up to 10% variation (numerical noise)
+        print(f"    {h_key} (H+): {e_h_initial:.6e} -> {e_h_final:.6e}")
+        if e_h_initial > 0:
+            h_ratio = abs(e_h_final - e_h_initial) / e_h_initial
+            if h_ratio > h_tolerance:
+                print(f"    FAIL: {h_key} energy changed by {h_ratio*100:.1f}% "
+                      f"(threshold {h_tolerance*100:.0f}%).")
+                passed = False
+                reasons.append(f"H+ energy changed by {h_ratio*100:.1f}%")
+            else:
+                print(f"    SUCCESS: {h_key} energy stable ({h_ratio*100:.1f}% change).")
+
+    if passed:
+        print("Recombination Loss Test: PASSED")
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
+
+
 def validate_ionization_source(pic_diags=None, test_name=None):
     """Validate an ionization source test (photoionization, electron impact,
     or charge exchange).
@@ -898,6 +970,7 @@ def main():
         "photoionization": validate_ionization_source,
         "electronimpact": validate_ionization_source,
         "chargeexchange": validate_ionization_source,
+        "recombination": validate_recombination,
     }
     
     # Discover test subdirectories under tests/
