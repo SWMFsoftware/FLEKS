@@ -1185,39 +1185,151 @@ This command sets the size of the planet or other body in the simulation.
 	 alias="EXOSPHERE_FLEKS0,EXOSPHERE_FLEKS1,EXOSPHERE_FLEKS2"
 	 multiple="T">
   <parameter name="typeProfile" type="string"/>
-  <parameter name="usePhotoIonization" type="logical"/>
-  <parameter name="useElectronImpact" type="logical"/>
-  <parameter name="useChargeExchange" type="logical"/>
   <parameter name="nComponent" type="integer"/>
   <parameter name="n0" type="real"/>
   <parameter name="H0" type="real"/>
   <parameter name="T0" type="real"/>
   <parameter name="k0" type="real"/>
-  <parameter name="nuPhoto" type="real"/>
-  <parameter name="nuImpact" type="real"/>
-  <parameter name="nuCX" type="real"/>
 
 #EXOSPHERE
 Exponential      typeProfile
-T                usePhotoIonization
-F                useElectronImpact
-F                useChargeExchange
 1                nComponent
 1.0e6            n0
 100e3            H0
 100.0            T0
 0.0              k0
-1.0e-6           nuPhoto
-0.0              nuImpact
-0.0              nuCX
 
-This command configures exospheric neutral density profile distributions.
+This command configures the static exospheric neutral density profile.
 The typeProfile can be "Exponential", "Power-Law", or "Chamberlain".
-usePhotoIonization, useElectronImpact, useChargeExchange enable/disable
-individual ionization processes. Currently only photoionization is functional.
-nuPhoto, nuImpact, nuCX are per-component ionization rates [1/s].
-The coefficients n0, H0, T0, k0, nuPhoto, nuImpact, nuCX can be specified
-as multi-component arrays.
+The coefficients n0, H0, T0, k0 are specified as multi-component arrays
+for each neutral species. The total neutral density at radius r (measured
+from the planet center, with r >= r_planet) is the sum over all
+nComponent species:
+
+  n(r) = sum_i n_i(r)
+
+where each component density n_i(r) depends on typeProfile:
+
+  Exponential (uses n0, H0):
+    n_i(r) = n0_i * exp(-(r - r_planet) / H0_i)
+
+  Power-Law (uses n0, k0):
+    n_i(r) = n0_i * (r_planet / r)^k0_i
+
+  Chamberlain (uses n0, H0):
+    n_i(r) = n0_i * exp(-H0_i * (1/r_planet - 1/r))
+
+Here r_planet is the body radius set by #BODYSIZE, n0_i is the surface
+number density [m^-3] at r = r_planet, H0_i is the scale height [m],
+and k0_i is the power-law index. T0_i is the neutral temperature [K] of
+the exosphere component. It is used as the ionization source temperature:
+the pressure of newly created ions is set to n * k_B * T0_i. T0_i must
+be positive whenever any ionization source process is enabled. To enable
+ionization source processes, use the separate #PHOTOIONIZATION,
+#ELECTRONIMPACT, and/or #CHARGEEXCHANGE commands below. If none of those
+commands are present, no ionization source is applied.
+</command>
+
+<command name="PHOTOIONIZATION"
+	 alias="PHOTOIONIZATION_FLEKS0,PHOTOIONIZATION_FLEKS1,PHOTOIONIZATION_FLEKS2"
+	 multiple="T">
+  <parameter name="nuPhoto0" type="real"/>
+
+#PHOTOIONIZATION
+1.0e-6                  nuPhoto0
+1.0e-6                  nuPhoto0
+
+This command enables photoionization as an exosphere source process.
+The number of neutral components is taken from #EXOSPHERE (nComponent);
+#EXOSPHERE must appear before #PHOTOIONIZATION in PARAM.in.
+nuPhoto0 is the photoionization rate [1/s] at the planet surface,
+specified as a multi-component array (one value per #EXOSPHERE component,
+in the same order). The rate at distance r follows geometric dilution:
+nu(r) = nuPhoto0 * (r_planet / r)^2.
+</command>
+
+<command name="SHADOWCYLINDER"
+	 alias="SHADOWCYLINDER_FLEKS0,SHADOWCYLINDER_FLEKS1,SHADOWCYLINDER_FLEKS2"
+	 multiple="T">
+  <parameter name="solarDirX" type="real"/>
+  <parameter name="solarDirY" type="real"/>
+  <parameter name="solarDirZ" type="real"/>
+  <parameter name="radius" type="real"/>
+
+#SHADOWCYLINDER
+1.0                     solarDirX
+0.0                     solarDirY
+0.0                     solarDirZ
+6.371e6                 radius [m]
+
+This command defines a planetary shadow cylinder on the nightside
+(anti-sunward direction). Photoionization production is set to zero
+for all grid points inside this cylinder.
+
+solarDirX/Y/Z are the components of the unit vector pointing from
+the planet center toward the Sun. They will be normalized automatically.
+radius is the radius of the shadow cylinder [m], typically the
+planetary radius.
+
+If this command is absent, photoionization is applied spherically
+symmetrically (no shadow).
+</command>
+
+<command name="ELECTRONIMPACT"
+	 alias="ELECTRONIMPACT_FLEKS0,ELECTRONIMPACT_FLEKS1,ELECTRONIMPACT_FLEKS2"
+	 multiple="T">
+  <parameter name="eIon" type="real"/>
+  <parameter name="Acoeff" type="real"/>
+  <parameter name="Kcoeff" type="real"/>
+  <parameter name="Xcoeff" type="real"/>
+
+#ELECTRONIMPACT
+13.6                    eIon
+1.0e-8                  Acoeff
+0.5                     Kcoeff
+0.8                     Xcoeff
+13.6                    eIon
+1.0e-8                  Acoeff
+0.5                     Kcoeff
+0.8                     Xcoeff
+
+This command enables electron impact ionization as an exosphere source
+process. The number of neutral components is taken from #EXOSPHERE
+(nComponent); #EXOSPHERE must appear before #ELECTRONIMPACT in PARAM.in.
+Uses the Voronov 1997 rate coefficient: <sigma*v> = A * t^K / (X + t)
+* exp(-Ei/Te), where t = Te/Ei.  eIon is the ionization energy [eV],
+Acoeff is the Voronov A coefficient [cm^3/s], Kcoeff is K, Xcoeff is X.
+Each parameter is specified as a multi-component array (one set per
+#EXOSPHERE component, in the same order).
+</command>
+
+<command name="CHARGEEXCHANGE"
+	 alias="CHARGEEXCHANGE_FLEKS0,CHARGEEXCHANGE_FLEKS1,CHARGEEXCHANGE_FLEKS2"
+	 multiple="T">
+  <parameter name="nIonSpecies" type="integer"/>
+  <parameter name="sigmaCX" type="real"/>
+
+#CHARGEEXCHANGE
+2                       nIonSpecies
+2.0e-15                 sigmaCX       H neutral - H+ ion [cm^2]
+1.0e-15                 sigmaCX       H neutral - O+ ion [cm^2]
+1.5e-15                 sigmaCX       O neutral - H+ ion [cm^2]
+1.0e-15                 sigmaCX       O neutral - O+ ion [cm^2]
+
+This command enables charge exchange as an exosphere source process.
+The number of neutral components is taken from #EXOSPHERE (nComponent);
+#EXOSPHERE must appear before #CHARGEEXCHANGE in PARAM.in.
+nIonSpecies must match the number of ion species (nS - 1 from #PLASMA,
+since species 0 is the electron); #PLASMA must also appear before
+#CHARGEEXCHANGE.
+Uses a constant cross-section model: <sigma*v> = sigmaCX * u_ion.
+sigmaCX is the charge exchange cross section [cm^2], specified as a
+matrix with one row per neutral component (in #EXOSPHERE order) and one
+column per ion species, in row-major order.  Each neutral component
+exchanges charge with every ion species, and the total charge-exchange
+frequency for a neutral component is the sum over all ion species:
+nu_CX(iC) = sum_{iSp} n_{iSp} * sigmaCX(iC, iSp) * u_{iSp}.
+The resulting source is deposited into the mapped ion species (iC + 1).
 </command>
 
 <command name="PLASMA"

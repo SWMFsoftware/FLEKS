@@ -4,10 +4,50 @@
 #include "FluidInterface.h"
 
 // An abstract class for source implementations.
+// Ionization parameters are stored here (not in FluidInterface) so that
+// FluidInterface is only touched for neutral-profile data that the MHD
+// coupling layer needs.
 class SourceInterface : public FluidInterface {
 protected:
   std::string info = "SourceInterface class";
   bool useFluidSource = false;
+
+  // ---- Ionization process flags (set by #PHOTOIONIZATION, etc.) ----
+  bool usePhotoIonization = false;
+  bool useElectronImpact = false;
+  bool useChargeExchange = false;
+
+  // ---- Photoionization (#PHOTOIONIZATION command) ----
+  // The neutral component count is nExoComponent (from #EXOSPHERE);
+  // #EXOSPHERE must appear before #PHOTOIONIZATION in PARAM.in.
+  amrex::Vector<double> photoNu0; // ionization rate at planet surface [s^-1]
+
+  // ---- Shadow cylinder (#SHADOWCYLINDER command) ----
+  bool useShadowCylinder = false;
+  double solarDir[3] = { 0.0, 0.0,
+                         0.0 }; // unit vector from planet center toward the Sun
+  double shadowCylinderRadius = 0.0; // radius of planetary shadow cylinder [m]
+  double shadowCylinderHalfHeight =
+      0.0; // half-height along anti-solar direction [m]
+
+  // ---- Electron impact ionization (#ELECTRONIMPACT command) ----
+  // The neutral component count is nExoComponent (from #EXOSPHERE);
+  // #EXOSPHERE must appear before #ELECTRONIMPACT in PARAM.in.
+  amrex::Vector<double> impactEIon; // ionization energy [eV]
+  amrex::Vector<double> impactA;    // Voronov A coefficient [cm^3/s]
+  amrex::Vector<double> impactK;    // Voronov K coefficient
+  amrex::Vector<double> impactX;    // Voronov X coefficient
+
+  // ---- Charge exchange (#CHARGEEXCHANGE command) ----
+  // The number of neutral components is nExoComponent (from #EXOSPHERE);
+  // #EXOSPHERE must appear before #CHARGEEXCHANGE in PARAM.in so that
+  // nExoComponent is available.
+  int nCXIonSpecies = 0; // number of ion species that exchange charge
+  // Cross-section matrix [cm^2], flattened as [iC * nCXIonSpecies + iIon].
+  // Row iC is the neutral component (0..nExoComponent-1); column iIon is
+  // the ion species (0-based among ions, i.e. iIon = iSp - 1 where iSp is
+  // the fluid index).
+  amrex::Vector<double> cxSigma;
 
 public:
   SourceInterface(const FluidInterface& other, int id, std::string tag,
@@ -35,6 +75,17 @@ public:
                       "implemented."
                    << std::endl;
   };
+
+  /// Read ionization-related parameter commands.
+  /// Override in UserSource to handle #PHOTOIONIZATION, #ELECTRONIMPACT,
+  /// #CHARGEEXCHANGE.
+  virtual void read_param(const std::string& command, ReadParam& param) {
+    amrex::ignore_unused(command, param);
+  }
+
+  /// Validate consistency across ionization commands after all parameters
+  /// have been read.  Called after read_param() for all commands.
+  virtual void post_process_param() {}
 
   /// Get total neutral exosphere density at radial distance r (SI units).
   /// Default returns 0.0 — override in UserSource for exosphere profiles.

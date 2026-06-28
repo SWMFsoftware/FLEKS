@@ -30,16 +30,20 @@ T                       isPeriodicZ
 #SOLVEEM
 T                       solveEM
 
-#ELECTRON
--100                    electronChargePerMass
-
 #PLASMA
-1                       nSpecies
-1.0                     mass
+2                       nSpecies
+0.01                    mass        Species 0: electron
+-1.0                    charge
+1.0                     mass        Species 1: H+
 1.0                     charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]
+0.05                    rho [amu/cc]   Species 0: electron (quasi-neutral)
+-400.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.0                     rho [amu/cc]   Species 1: H+
 -400.0                  ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
@@ -53,7 +57,7 @@ T                       solveEM
 
 #TESTCASE
 Beam
-0                       iSpecies
+1                       iSpecies
 0.01                    ratio
 0.4                     vel
 0.0                     vel
@@ -101,18 +105,15 @@ T
 1
 
 #SAVEPLOT
-2                                 nPlot
-3d fluid amrex pic                plotString
--1                                dn
-0.2                               dt
-1                                 dx
-3d particles0 amrex pic           plotString
--1                                dn
-1.0                               dt
-1                                 dx
+1                       nPlot
+z=0 var ascii planet    plotString
+-1                      dn
+0.1                     dt
+1                       dx
+rhoS1 Bx By Bz          varName
 
 #STOP
 -1                      MaxIter
-0.1                    TimeMax
+0.1                     TimeMax
 
 #RUN

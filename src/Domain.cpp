@@ -64,6 +64,11 @@ void Domain::init(double time, const int iDomain,
     pt = std::make_unique<ParticleTracker>(gm, amrInfo, nGst, fi.get(),
                                            tc.get(), gridID);
 
+  // Create the source object before read_param so that ionization
+  // commands (#PHOTOIONIZATION, #ELECTRONIMPACT, #CHARGEEXCHANGE)
+  // can be dispatched to source->read_param().
+  source = std::make_unique<UserSource>(*fi, gridID, "picSource", SourceFluid);
+
   read_param(false);
 
   init_time_ctr();
@@ -81,9 +86,11 @@ void Domain::init(double time, const int iDomain,
   pic->set_sourceOH(sourcePT2OH.get());
 #endif
 
-  if (useSource) {
-    source =
-        std::make_unique<UserSource>(*fi, gridID, "picSource", SourceFluid);
+  // #SOURCE command sets useSource during read_param; discard the
+  // source object if user did not request a source.
+  if (!useSource) {
+    source.reset();
+  } else {
     amrex::Print() << source->get_info() << " is used for source" << std::endl;
   }
   if (source)
@@ -204,6 +211,17 @@ void Domain::update() {
             << " (s) to t = " << std::setprecision(6) << t1
             << " (s) with dt = " << std::setprecision(6) << tc->get_dt_si()
             << " (s) ====" << std::endl;
+  }
+
+  // Compute exosphere source terms every step in standalone mode.
+  // - Standalone: called here (no SWMF coupling).
+  // - GM-PC: called from set_state_var() at coupling intervals; fi is
+  //   unchanged between couplings, so skip here.
+  // - OH-PT: not applicable; charge_exchange() handles source terms.
+  if (source && !initFromSWMF) {
+    source->set_source(*fi);
+    source->sum_boundary();
+    source->convert_moment_to_velocity(true, false);
   }
 
   pic->update(doReport);
@@ -472,8 +490,16 @@ void Domain::set_state_var(double *data, int *index,
       pic->update_cells_for_pt();
     }
 
-    if (source)
+    // Compute exosphere source terms (photoionization, electron impact,
+    // exosphere charge exchange) for standalone and GM-PC modes. In OH-PT
+    // mode (stateOH exists), the source is handled entirely by
+    // Pic::charge_exchange() using OH-PT charge exchange physics, so
+    // set_source must not be called here.
+    if (source && !stateOH) {
       source->set_source(*fi);
+      source->sum_boundary();
+      source->convert_moment_to_velocity(true, false);
+    }
   }
 }
 
@@ -875,6 +901,20 @@ void Domain::read_param(const bool readGridInfo) {
                command == "#TPINITFROMPIC" || command == "#TPSTATESI") {
       if (pt)
         pt->read_param(command, param);
+    } else if (command == "#PHOTOIONIZATION" || command == "#ELECTRONIMPACT" ||
+               command == "#CHARGEEXCHANGE" || command == "#SHADOWCYLINDER") {
+      if (source) {
+        // Sync exosphere/plasma parameters from fi to source so that
+        // source->read_param() can access nExoComponent (set by #EXOSPHERE)
+        // and nS (set by #PLASMA) without each ionization command
+        // redundantly re-declaring the component count.  #EXOSPHERE and
+        // #PLASMA must therefore appear before the ionization commands in
+        // PARAM.in.  Only the FluidInterfaceParameters slice is copied;
+        // SourceInterface members (e.g. cxSigma) are preserved.
+        static_cast<FluidInterfaceParameters &>(*source) =
+            static_cast<const FluidInterfaceParameters &>(*fi);
+        source->read_param(command, param);
+      }
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
                command == "#BODYSIZE" || command == "#EXOSPHERE" ||
                command == "#PLASMA" || command == "#UNIFORMSTATE" ||
@@ -1196,6 +1236,17 @@ void Domain::read_param(const bool readGridInfo) {
 
     if (fi)
       fi->post_process_param(receiveICOnly);
+
+    // source was created before read_param with a stale copy of *fi.
+    // Copy the now-fully-populated FluidInterfaceParameters from fi to
+    // source so that source has correct exosphere, plasma, and
+    // normalization data.
+    if (source)
+      static_cast<FluidInterfaceParameters &>(*source) =
+          static_cast<const FluidInterfaceParameters &>(*fi);
+
+    if (source)
+      source->post_process_param();
   }
 
   VisMF::SetNOutFiles(nFileField);

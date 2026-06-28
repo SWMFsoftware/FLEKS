@@ -78,12 +78,17 @@ Domain                        — Top-level simulation manager
  ├── Pic : Grid : AmrCore     — PIC solver (fields + particle push on AMR grid)
  ├── ParticleTracker : Grid   — Test particle tracker
  ├── FluidInterface : Grid    — MHD/fluid state on grid (coupling data)
- ├── SourceInterface          — Source terms for coupling
+ ├── SourceInterface          — Source terms + ionization parameters
+ │    └── UserSource          — User-defined source (exosphere ionization)
  ├── OHInterface              — Outer-heliosphere coupling data
  └── TimeCtr                  — Time stepping, event control, plot scheduling
       ├── EventCtr            — Periodic event trigger (dn or dt based)
       └── PlotCtr             — Plot scheduling (combines EventCtr + PlotWriter)
 ```
+
+Key design principle: ionization parameters live in **SourceInterface** (not
+FluidInterface), and the physics is implemented in **UserSource** (ExoSource.h).
+This keeps FluidInterface uncluttered for MHD coupling data only.
 
 ### Core Classes
 
@@ -267,7 +272,29 @@ are written under `FLEKS1/`.
 ### CI
 
 The GitHub Actions workflow runs the SWMF regression tests, builds standalone
-`bin/FLEKS.exe`, and runs `tests/test_standalone` when that fixture is present.
+`bin/FLEKS.exe`, and runs the test suite under `tests/` via
+`python3 tests/validate_tests.py`.
+
+### Standalone Test Suite (`tests/`)
+
+The standalone test suite is organized by physics scenario:
+
+| Test                  | Directory                | Physics                              |
+|-----------------------|--------------------------|--------------------------------------|
+| Beam instability      | `tests/beam/`            | Ion beam cyclotron wave growth       |
+| Exosphere profile     | `tests/exosphere/`       | Chamberlain profile, all 3 ionization|
+| Electron impact       | `tests/electron_impact/` | Voronov-1997 impact rate, e- only    |
+| Charge exchange       | `tests/charge_exchange/` | Constant CX cross section, ions only |
+| Performance benchmark | `tests/performance/`     | Beam-based scaling benchmark         |
+
+Each test directory contains a `PARAM.in` and a `README.md`. The unified runner
+`tests/validate_tests.py` dynamically discovers, runs, and validates all tests
+(except `performance/`). Results are written to `tests/summary.md`.
+
+Ionization processes are configured via separate parameter commands:
+- `#PHOTOIONIZATION` — geometric \\(1/r^2\\) dilution
+- `#ELECTRONIMPACT` — Voronov 1997 rate coefficient
+- `#CHARGEEXCHANGE` — constant cross-section model
 
 ### Tools & Post-Processing
 

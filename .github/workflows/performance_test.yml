@@ -84,17 +84,17 @@ jobs:
           make EXE -j$(nproc)
 
       - name: Run Standalone Performance Checks
-        working-directory: SWMF/PC/FLEKS/tests/test_standalone
+        working-directory: SWMF/PC/FLEKS/tests
         run: |
-          ls -lh ../../bin/FLEKS.exe
-          ldd ../../bin/FLEKS.exe
+          ls -lh ../bin/FLEKS.exe
+          ldd ../bin/FLEKS.exe
           python3 validate_performance.py
 
       - name: Write Job Summary
         if: always()
         run: |
-          if [ -f SWMF/PC/FLEKS/tests/test_standalone/performance_summary.md ]; then
-            cat SWMF/PC/FLEKS/tests/test_standalone/performance_summary.md >> $GITHUB_STEP_SUMMARY
+          if [ -f SWMF/PC/FLEKS/tests/performance_summary.md ]; then
+            cat SWMF/PC/FLEKS/tests/performance_summary.md >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Post PR Comment
@@ -103,7 +103,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const perfPath = 'SWMF/PC/FLEKS/tests/test_standalone/performance_summary.md';
+            const perfPath = 'SWMF/PC/FLEKS/tests/performance_summary.md';
             let body = '';
             
             if (fs.existsSync(perfPath)) {
