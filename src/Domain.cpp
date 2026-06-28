@@ -911,8 +911,8 @@ void Domain::read_param(const bool readGridInfo) {
         // #PLASMA must therefore appear before the ionization commands in
         // PARAM.in.  Only the FluidInterfaceParameters slice is copied;
         // SourceInterface members (e.g. cxSigma) are preserved.
-        static_cast<FluidInterfaceParameters&>(*source) =
-            static_cast<const FluidInterfaceParameters&>(*fi);
+        static_cast<FluidInterfaceParameters &>(*source) =
+            static_cast<const FluidInterfaceParameters &>(*fi);
         source->read_param(command, param);
       }
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
