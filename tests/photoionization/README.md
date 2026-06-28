@@ -81,8 +81,6 @@ Inside the shadow cylinder (x < 0 and proj·(−solarDir) > 0 and perp < R_shado
    - **Nightside shadow (−X, |y| < Rₚ)**: `ppcS1` ≈ 0 — zero photoionization
      inside the shadow cylinder.
 
-3. **No crashes**: Simulation completes all 10 iterations.
-
 ## Running
 
 ```bash

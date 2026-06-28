@@ -18,7 +18,8 @@ protected:
   bool useChargeExchange = false;
 
   // ---- Photoionization (#PHOTOIONIZATION command) ----
-  int nPhotoComponent = 0;
+  // The neutral component count is nExoComponent (from #EXOSPHERE);
+  // #EXOSPHERE must appear before #PHOTOIONIZATION in PARAM.in.
   amrex::Vector<double> photoNu0; // ionization rate at planet surface [s^-1]
 
   // ---- Shadow cylinder (#SHADOWCYLINDER command) ----
@@ -30,15 +31,23 @@ protected:
       0.0; // half-height along anti-solar direction [m]
 
   // ---- Electron impact ionization (#ELECTRONIMPACT command) ----
-  int nImpactComponent = 0;
+  // The neutral component count is nExoComponent (from #EXOSPHERE);
+  // #EXOSPHERE must appear before #ELECTRONIMPACT in PARAM.in.
   amrex::Vector<double> impactEIon; // ionization energy [eV]
   amrex::Vector<double> impactA;    // Voronov A coefficient [cm^3/s]
   amrex::Vector<double> impactK;    // Voronov K coefficient
   amrex::Vector<double> impactX;    // Voronov X coefficient
 
   // ---- Charge exchange (#CHARGEEXCHANGE command) ----
-  int nCXComponent = 0;
-  amrex::Vector<double> cxSigma; // cross section [cm^2]
+  // The number of neutral components is nExoComponent (from #EXOSPHERE);
+  // #EXOSPHERE must appear before #CHARGEEXCHANGE in PARAM.in so that
+  // nExoComponent is available.
+  int nCXIonSpecies = 0; // number of ion species that exchange charge
+  // Cross-section matrix [cm^2], flattened as [iC * nCXIonSpecies + iIon].
+  // Row iC is the neutral component (0..nExoComponent-1); column iIon is
+  // the ion species (0-based among ions, i.e. iIon = iSp - 1 where iSp is
+  // the fluid index).
+  amrex::Vector<double> cxSigma;
 
 public:
   SourceInterface(const FluidInterface& other, int id, std::string tag,

@@ -903,8 +903,18 @@ void Domain::read_param(const bool readGridInfo) {
         pt->read_param(command, param);
     } else if (command == "#PHOTOIONIZATION" || command == "#ELECTRONIMPACT" ||
                command == "#CHARGEEXCHANGE" || command == "#SHADOWCYLINDER") {
-      if (source)
+      if (source) {
+        // Sync exosphere/plasma parameters from fi to source so that
+        // source->read_param() can access nExoComponent (set by #EXOSPHERE)
+        // and nS (set by #PLASMA) without each ionization command
+        // redundantly re-declaring the component count.  #EXOSPHERE and
+        // #PLASMA must therefore appear before the ionization commands in
+        // PARAM.in.  Only the FluidInterfaceParameters slice is copied;
+        // SourceInterface members (e.g. cxSigma) are preserved.
+        static_cast<FluidInterfaceParameters&>(*source) =
+            static_cast<const FluidInterfaceParameters&>(*fi);
         source->read_param(command, param);
+      }
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
                command == "#BODYSIZE" || command == "#EXOSPHERE" ||
                command == "#PLASMA" || command == "#UNIFORMSTATE" ||

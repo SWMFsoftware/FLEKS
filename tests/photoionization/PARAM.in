@@ -81,7 +81,6 @@ Chamberlain             typeProfile
 0.0                     k0
 
 #PHOTOIONIZATION
-2                       nComponent
 1.0e-4                  nuPhoto0      H photoionization rate at surface
 1.0e-4                  nuPhoto0      O photoionization rate at surface
 

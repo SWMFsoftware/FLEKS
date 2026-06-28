@@ -26,21 +26,14 @@ Each ionization process is enabled via a dedicated command in PARAM.in:
 
 - **`#PHOTOIONIZATION`**: per-component rates at planet surface [s^-1],
   diluted geometrically as `(rPlanet / r)^2`
-- **`#ELECTRONIMPACT`**: Voronov 1997 formula: `sigmav(T) = A*(T/EI)^K /
-  [X+(T/EI)] * exp(-EI/T)` [cm^3/s], parameters per component
-- **`#CHARGEEXCHANGE`**: constant cross-section: `sigmav(u) = sigmaCX * |u_i|`
-  [cm^3/s], per-component sigmaCX [cm^2]
+- **`#ELECTRONIMPACT`**: Voronov 1997 formula: `sigmav(T) = A*(T/EI)^K / [X+(T/EI)] * exp(-EI/T)` [cm^3/s], parameters per component
+- **`#CHARGEEXCHANGE`**: constant cross-section: `sigmav(u) = sigmaCX * |u_i|` [cm^3/s], cross-section matrix `sigmaCX(neutral, ion)` [cm^2]; each neutral component exchanges with all ion species and the frequency is summed over ions
 
-All three can be combined (as in `tests/photoionization/`) or tested individually
-(as in `tests/electronimpact/` and `tests/chargeexchange/`).
+All three can be combined (as in `tests/photoionization/`) or tested individually (as in `tests/electronimpact/` and `tests/chargeexchange/`).
 
 ## Architecture
 
-Ionization parameters are stored in `SourceInterface` (not `FluidInterface`)
-and read by `UserSource::read_param()` in `userfiles/ExoSource.h`. The Domain
-routes `#PHOTOIONIZATION`, `#ELECTRONIMPACT`, and `#CHARGEEXCHANGE` commands
-to the source object rather than to `FluidInterface`. This keeps the MHD
-coupling layer uncluttered by ionization-specific data.
+Ionization parameters are stored in `SourceInterface` (not `FluidInterface`) and read by `UserSource::read_param()` in `userfiles/ExoSource.h`. The Domain routes `#PHOTOIONIZATION`, `#ELECTRONIMPACT`, and `#CHARGEEXCHANGE` commands to the source object rather than to `FluidInterface`. This keeps the MHD coupling layer uncluttered by ionization-specific data.
 
 ## Running the Tests
 

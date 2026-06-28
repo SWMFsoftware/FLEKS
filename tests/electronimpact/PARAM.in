@@ -81,7 +81,6 @@ Chamberlain             typeProfile
 0.0                     k0
 
 #ELECTRONIMPACT
-2                       nComponent
 13.6                    eIon          H: ionization energy [eV]
 3.0e-8                  Acoeff        H: Voronov A [cm^3/s]
 0.39                    Kcoeff        H: Voronov K

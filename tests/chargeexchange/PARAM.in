@@ -81,9 +81,11 @@ Chamberlain             typeProfile
 0.0                     k0
 
 #CHARGEEXCHANGE
-2                       nComponent
-2.0e-15                 sigmaCX       H: cross section [cm^2]
-1.0e-15                 sigmaCX       O: cross section [cm^2]
+2                       nIonSpecies
+2.0e-15                 sigmaCX       H neutral - H+ ion [cm^2]
+1.0e-15                 sigmaCX       H neutral - O+ ion [cm^2]
+1.5e-15                 sigmaCX       O neutral - H+ ion [cm^2]
+1.0e-15                 sigmaCX       O neutral - O+ ion [cm^2]
 
 #TIMESTEPPING
 T                       useFixedDt

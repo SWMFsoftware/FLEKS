@@ -3,9 +3,10 @@
 ## Description
 
 This standalone test verifies the `#CHARGEEXCHANGE` command for charge exchange
-ionization of analytical neutral exosphere density profiles with **two species**
-(H and O) using the **Chamberlain model**. The charge exchange source injects
-heavy ions (species 1) into the PIC simulation domain.
+ionization of analytical neutral exosphere density profiles with **two neutral
+components** (H and O) using the **Chamberlain model**. Each neutral component
+exchanges charge with **all ion species** (H+ and O+); the resulting source
+injects ions into the PIC simulation domain.
 
 ## Physics & Solver Setup
 
@@ -21,36 +22,44 @@ heavy ions (species 1) into the PIC simulation domain.
   Planet radius \( R_p = 500 \) m.
 
 - **Ionization**: Charge exchange, enabled via `#CHARGEEXCHANGE` command.
-  Uses a constant cross-section model:
+  The number of neutral components is inherited from `#EXOSPHERE`
+  (so `#EXOSPHERE` must precede `#CHARGEEXCHANGE`); the command declares
+  only `nIonSpecies` and the `nComponent × nIonSpecies` cross-section
+  matrix.  Uses a constant cross-section model:
   \( \langle\sigma v\rangle = \sigma_{\text{CX}} \cdot u_{\text{rel}} \),
-  where \( u_{\text{rel}} \) is the ion-neutral relative speed.
-  | Component | sigmaCX [cm^2] |
-  |-----------|---------------|
-  | H         | 2.0×10^-15    |
-  | O         | 1.0×10^-15    |
-  Source mass rate per component:
-  \( S_{\rho,i} = n_i(r) \cdot n_{\text{ion}} \cdot \sigma_{\text{CX},i} \cdot u_{\text{rel}} \).
+  where \( u_{\text{rel}} \) is the ion-neutral relative speed.  Each neutral
+  component can exchange charge with **every** ion species; the total
+  charge-exchange frequency for neutral component \(i_C\) is summed over all
+  ion species:
+  \( \nu_{\text{CX}}(i_C) = \sum_{iSp} n_{iSp} \cdot \sigma_{\text{CX}}(i_C, iSp) \cdot u_{iSp} \).
+  The cross-section matrix (rows = neutral component, columns = ion species):
+  | Neutral \ Ion | H+ (sp 1)    | O+ (sp 2)    |
+  |---------------|--------------|--------------|
+  | H (comp 1)    | 2.0×10^-15   | 1.0×10^-15   |
+  | O (comp 2)    | 1.5×10^-15   | 1.0×10^-15   |
+  Source mass rate per mapped ion species \(i_C+1\):
+  \( S_{\rho,i_C+1} = n_{i_C}(r) \cdot \nu_{\text{CX}}(i_C) \).
 - **Other Processes**: `#PHOTOIONIZATION` and `#ELECTRONIMPACT` commands are not
   present, so those source processes are skipped.
 
 - **Plasma Species**:
   | Species | Mass [amu] | Charge [e] | Role                       |
   |---------|------------|------------|----------------------------|
-  | 0 (H+)  | 1.0        | +1         | Background ions            |
-  | 1 (O+)  | 16.0       | +1         | Ion species for CX (ux=100 km/s), gets exosphere source |
+  | 0 (e-)  | 0.01       | -1         | Electron (quasi-neutral)   |
+  | 1 (H+)  | 1.0        | +1         | Background ion (ux=-400 km/s) |
+  | 2 (O+)  | 16.0       | +1         | Background ion (ux=100 km/s, low density seed) |
 
 - **Electromagnetic Fields**: Enabled (`solveEM = T`) with guiding field
   \( B_x = 5.0 \times 10^{-9} \) T.
 
 ## Expected Results
 
-1. **Particle Count Growth**: Species 1 (O+) particle count increases monotonically
-   over time due to continuous charge exchange of the exosphere neutrals.
+1. **Particle Count Growth**: Both ion species (H+ and O+) particle counts
+   increase monotonically over time due to continuous charge exchange of the
+   exosphere neutrals with all ion species.
 
-2. **Total Energy Growth**: Kinetic energy of species 1 increases as more
+2. **Total Energy Growth**: Kinetic energy of the ion species increases as more
    particles are injected.
-
-3. **No Crashes**: The simulation completes all 10 iterations without errors.
 
 ## Running
 

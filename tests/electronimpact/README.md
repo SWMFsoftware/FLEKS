@@ -36,21 +36,19 @@ heavy ions (species 1) into the PIC simulation domain.
 - **Plasma Species**:
   | Species | Mass [amu] | Charge [e] | Role                       |
   |---------|------------|------------|----------------------------|
-  | 0 (H+)  | 1.0        | +1         | Hot background (T=100 kK) for electron supply |
-  | 1 (O+)  | 16.0       | +1         | Heavy ions (gets exosphere source) |
+  | 1 (H+)  | 1.0        | +1         | Hot background (T=100 kK) for electron supply |
+  | 2 (O+)  | 16.0       | +1         | Heavy ions (gets exosphere source) |
 
 - **Electromagnetic Fields**: Enabled (`solveEM = T`) with guiding field
   \( B_x = 5.0 \times 10^{-9} \) T.
 
 ## Expected Results
 
-1. **Particle Count Growth**: Species 1 (O+) particle count increases monotonically
+1. **Particle Count Growth**: Species 2 (O+) particle count increases monotonically
    over time due to continuous electron impact ionization of the exosphere neutrals.
 
-2. **Total Energy Growth**: Kinetic energy of species 1 increases as more
+2. **Total Energy Growth**: Kinetic energy of species 2 increases as more
    particles are injected.
-
-3. **No Crashes**: The simulation completes all 10 iterations without errors.
 
 ## Running
 

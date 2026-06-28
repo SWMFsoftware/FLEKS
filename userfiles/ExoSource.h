@@ -139,22 +139,17 @@ public:
   //-------------------------------------------------------------------
   // Charge-exchange frequency [s^-1] for neutral component iC reacting
   // with ion species iSp.  The ion density and bulk velocity are fetched
-  // from the plasma state (other) at cell (mfi, idx, iLev).
+  // from the plasma state (other) at cell (mfi, idx, iLev).  The
+  // cross-section is looked up from the matrix cxSigma[iC, iIon] where
+  // iIon = iSp - 1 is the 0-based ion index.
   //
-  // TODO: Improve the charge-exchange implementation.  The current model
-  // reacts each neutral component only with its own mapped ion species
-  // (iSp = iC + 1) using a single cross-section per component.  A
-  // physically complete treatment should:
-  //   1. Use a cross-section matrix sigmaCX(iC_neutral, iSp_ion) so that
-  //      each neutral can exchange charge with every ion species.
-  //   2. Sum the charge-exchange frequency over all ion species rather
-  //      than only the mapped one.
-  //   3. Use the ion-neutral *relative* velocity (accounting for the
-  //      neutral bulk flow) instead of the ion speed alone.
+  // TODO: Use the ion-neutral *relative* velocity (accounting for the
+  // neutral bulk flow) instead of the ion speed alone.
   amrex::Real charge_exchange_rate(const FluidInterface& other,
                                    const amrex::MFIter& mfi,
                                    const amrex::IntVect& idx, int iLev,
                                    int iSp, int iC) const {
+    int iIon = iSp - 1;  // 0-based ion index for matrix lookup
     double ni = other.get_number_density(mfi, idx, iSp, iLev);
     double ux_i = other.get_ux(mfi, idx, iSp, iLev);
     double uy_i = other.get_uy(mfi, idx, iSp, iLev);
@@ -163,7 +158,20 @@ public:
         sqrt(ux_i * ux_i + uy_i * uy_i + uz_i * uz_i) * get_unorm_si();
     if (ni <= 0.0 || u_mag_SI <= 0.0) return 0.0;
     // Constant cross-section model: sigmaCX in [cm^2], convert to [m^2].
-    return ni * cxSigma[iC] * 1e-4 * u_mag_SI;
+    double sigma = cxSigma[iC * nCXIonSpecies + iIon];
+    return ni * sigma * 1e-4 * u_mag_SI;
+  }
+
+  //-------------------------------------------------------------------
+  // Require #EXOSPHERE to have been read (with nComponent > 0) before an
+  // ionization command is parsed.  Domain syncs nExoComponent from fi into
+  // this object just before dispatching ionization commands, so a missing or
+  // out-of-order #EXOSPHERE leaves nExoComponent == 0 and is caught here.
+  void require_exosphere(const std::string& command) const {
+    if (nExoComponent > 0) return;
+    amrex::Abort(printPrefix + "Error: " + command + " requires "
+                 + "#EXOSPHERE with nComponent > 0 to be specified before "
+                 + command + ".");
   }
 
   //-------------------------------------------------------------------
@@ -171,19 +179,21 @@ public:
   void read_param(const std::string& command, ReadParam& param) override {
     if (command == "#PHOTOIONIZATION") {
       usePhotoIonization = true;
-      param.read_var("nComponent", nPhotoComponent);
-      photoNu0.resize(nPhotoComponent);
-      for (int i = 0; i < nPhotoComponent; ++i) {
+      // The neutral component count is inherited from #EXOSPHERE.
+      require_exosphere(command);
+      photoNu0.resize(nExoComponent);
+      for (int i = 0; i < nExoComponent; ++i) {
         param.read_var("nuPhoto0", photoNu0[i]);
       }
     } else if (command == "#ELECTRONIMPACT") {
       useElectronImpact = true;
-      param.read_var("nComponent", nImpactComponent);
-      impactEIon.resize(nImpactComponent);
-      impactA.resize(nImpactComponent);
-      impactK.resize(nImpactComponent);
-      impactX.resize(nImpactComponent);
-      for (int i = 0; i < nImpactComponent; ++i) {
+      // The neutral component count is inherited from #EXOSPHERE.
+      require_exosphere(command);
+      impactEIon.resize(nExoComponent);
+      impactA.resize(nExoComponent);
+      impactK.resize(nExoComponent);
+      impactX.resize(nExoComponent);
+      for (int i = 0; i < nExoComponent; ++i) {
         param.read_var("eIon", impactEIon[i]);
         param.read_var("Acoeff", impactA[i]);
         param.read_var("Kcoeff", impactK[i]);
@@ -191,15 +201,14 @@ public:
       }
     } else if (command == "#CHARGEEXCHANGE") {
       useChargeExchange = true;
-      // TODO: currently only one cross-section per neutral component is
-      // read, and each neutral reacts only with its mapped ion species.
-      // Improve to a cross-section matrix sigmaCX(iC_neutral, iSp_ion)
-      // so every neutral can exchange with every ion species.  See also
-      // charge_exchange_rate().
-      param.read_var("nComponent", nCXComponent);
-      cxSigma.resize(nCXComponent);
-      for (int i = 0; i < nCXComponent; ++i) {
-        param.read_var("sigmaCX", cxSigma[i]);
+      // The neutral component count is inherited from #EXOSPHERE.
+      require_exosphere(command);
+      param.read_var("nIonSpecies", nCXIonSpecies);
+      cxSigma.resize(nExoComponent * nCXIonSpecies);
+      for (int iC = 0; iC < nExoComponent; ++iC) {
+        for (int iIon = 0; iIon < nCXIonSpecies; ++iIon) {
+          param.read_var("sigmaCX", cxSigma[iC * nCXIonSpecies + iIon]);
+        }
       }
     } else if (command == "#SHADOWCYLINDER") {
       useShadowCylinder = true;
@@ -229,53 +238,44 @@ public:
     // in electron impact ionization, and skipped in the exosphere-to-ion
     // mapping where component iC -> species iC+1).  Enforce this here.
     if (nS < 1) {
-      amrex::Print() << printPrefix << "Error: no plasma species defined. "
-                     << "Use #PLASMA to set species.\n";
-      std::abort();
+      amrex::Abort(printPrefix + "Error: no plasma species defined. "
+                   + "Use #PLASMA to set species.");
     }
     if (QoQi_S[0] >= 0.0) {
-      amrex::Print() << printPrefix << "Error: species 0 must be the electron "
-                     << "(negative charge). Got Q/Qi[0] = " << QoQi_S[0]
-                     << ". Reorder #PLASMA so the electron is first.\n";
-      std::abort();
+      amrex::Abort(printPrefix + "Error: species 0 must be the electron "
+                   + "(negative charge). Got Q/Qi[0] = "
+                   + std::to_string(QoQi_S[0])
+                   + ". Reorder #PLASMA so the electron is first.");
     }
     if (nExoComponent > nS - 1) {
-      amrex::Print() << printPrefix << "Error: #EXOSPHERE nComponent ("
-                     << nExoComponent << ") exceeds the number of ion species ("
-                     << nS - 1 << "). Add more ion species in #PLASMA.\n";
-      std::abort();
+      amrex::Abort(printPrefix + "Error: #EXOSPHERE nComponent ("
+                   + std::to_string(nExoComponent)
+                   + ") exceeds the number of ion species ("
+                   + std::to_string(nS - 1)
+                   + "). Add more ion species in #PLASMA.");
     }
 
-    if (usePhotoIonization && nPhotoComponent != nExoComponent) {
-      amrex::Print() << printPrefix << "Error: #PHOTOIONIZATION nComponent ("
-                     << nPhotoComponent << ") != #EXOSPHERE nComponent ("
-                     << nExoComponent << ")\n";
-      std::abort();
-    }
-    if (useElectronImpact && nImpactComponent != nExoComponent) {
-      amrex::Print() << printPrefix << "Error: #ELECTRONIMPACT nComponent ("
-                     << nImpactComponent << ") != #EXOSPHERE nComponent ("
-                     << nExoComponent << ")\n";
-      std::abort();
-    }
-    if (useChargeExchange && nCXComponent != nExoComponent) {
-      amrex::Print() << printPrefix << "Error: #CHARGEEXCHANGE nComponent ("
-                     << nCXComponent << ") != #EXOSPHERE nComponent ("
-                     << nExoComponent << ")\n";
-      std::abort();
+    if (useChargeExchange) {
+      // nExoComponent is used directly as the neutral component count for
+      // charge exchange (no separate nComponent in #CHARGEEXCHANGE).  The
+      // cross-section matrix was sized to nExoComponent * nCXIonSpecies in
+      // read_param; only the ion-species count needs validating here.
+      if (nCXIonSpecies != nS - 1) {
+        amrex::Abort(printPrefix + "Error: #CHARGEEXCHANGE nIonSpecies ("
+                     + std::to_string(nCXIonSpecies)
+                     + ") != number of ion species ("
+                     + std::to_string(nS - 1) + ")");
+      }
     }
 
     // The neutral temperature exoT0[iC] is used as the source temperature
-    // for the pressure source term in set_source.  Enforce a positive
-    // value for every exosphere component.
+    // for the pressure source term in set_source.
     for (int iC = 0; iC < nExoComponent; ++iC) {
       if (exoT0[iC] <= 0.0) {
-        amrex::Print() << printPrefix
-                       << "Error: #EXOSPHERE T0 for component " << iC
-                       << " must be positive (got " << exoT0[iC]
-                       << " K). It is used as the ionization source "
-                       << "temperature.\n";
-        std::abort();
+        amrex::Abort(printPrefix + "Error: #EXOSPHERE T0 for component "
+                     + std::to_string(iC) + " must be positive (got "
+                     + std::to_string(exoT0[iC])
+                     + " K). It is used as the ionization source temperature.");
       }
     }
   }
@@ -367,9 +367,14 @@ public:
                     fetch_electron_plasma();
                     nu_tot += impact_ionization_rate(ne, Te_eV, iC);
                   }
-                  if (doCX)
-                    nu_tot += charge_exchange_rate(other, mfi, idx, iLev,
-                                                   iSp, iC);
+                  if (doCX) {
+                    // Sum the charge-exchange frequency over all ion
+                    // species; each neutral can exchange with every ion.
+                    for (int iSpCX = 1; iSpCX <= nIonS; ++iSpCX) {
+                      nu_tot += charge_exchange_rate(other, mfi, idx, iLev,
+                                                     iSpCX, iC);
+                    }
+                  }
 
                   // Number density production rate [m^-3 s^-1]
                   double S_n = dens_i * nu_tot;

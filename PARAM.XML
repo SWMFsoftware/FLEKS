@@ -1233,19 +1233,19 @@ commands are present, no ionization source is applied.
 <command name="PHOTOIONIZATION"
 	 alias="PHOTOIONIZATION_FLEKS0,PHOTOIONIZATION_FLEKS1,PHOTOIONIZATION_FLEKS2"
 	 multiple="T">
-  <parameter name="nComponent" type="integer"/>
   <parameter name="nuPhoto0" type="real"/>
 
 #PHOTOIONIZATION
-2                       nComponent
 1.0e-6                  nuPhoto0
 1.0e-6                  nuPhoto0
 
 This command enables photoionization as an exosphere source process.
-nComponent must match the nComponent in #EXOSPHERE.
+The number of neutral components is taken from #EXOSPHERE (nComponent);
+#EXOSPHERE must appear before #PHOTOIONIZATION in PARAM.in.
 nuPhoto0 is the photoionization rate [1/s] at the planet surface,
-specified as a multi-component array. The rate at distance r follows
-geometric dilution: nu(r) = nuPhoto0 * (r_planet / r)^2.
+specified as a multi-component array (one value per #EXOSPHERE component,
+in the same order). The rate at distance r follows geometric dilution:
+nu(r) = nuPhoto0 * (r_planet / r)^2.
 </command>
 
 <command name="SHADOWCYLINDER"
@@ -1278,14 +1278,12 @@ symmetrically (no shadow).
 <command name="ELECTRONIMPACT"
 	 alias="ELECTRONIMPACT_FLEKS0,ELECTRONIMPACT_FLEKS1,ELECTRONIMPACT_FLEKS2"
 	 multiple="T">
-  <parameter name="nComponent" type="integer"/>
   <parameter name="eIon" type="real"/>
   <parameter name="Acoeff" type="real"/>
   <parameter name="Kcoeff" type="real"/>
   <parameter name="Xcoeff" type="real"/>
 
 #ELECTRONIMPACT
-2                       nComponent
 13.6                    eIon
 1.0e-8                  Acoeff
 0.5                     Kcoeff
@@ -1296,29 +1294,42 @@ symmetrically (no shadow).
 0.8                     Xcoeff
 
 This command enables electron impact ionization as an exosphere source
-process. nComponent must match the nComponent in #EXOSPHERE.
+process. The number of neutral components is taken from #EXOSPHERE
+(nComponent); #EXOSPHERE must appear before #ELECTRONIMPACT in PARAM.in.
 Uses the Voronov 1997 rate coefficient: <sigma*v> = A * t^K / (X + t)
 * exp(-Ei/Te), where t = Te/Ei.  eIon is the ionization energy [eV],
 Acoeff is the Voronov A coefficient [cm^3/s], Kcoeff is K, Xcoeff is X.
-Each parameter is specified as a multi-component array.
+Each parameter is specified as a multi-component array (one set per
+#EXOSPHERE component, in the same order).
 </command>
 
 <command name="CHARGEEXCHANGE"
 	 alias="CHARGEEXCHANGE_FLEKS0,CHARGEEXCHANGE_FLEKS1,CHARGEEXCHANGE_FLEKS2"
 	 multiple="T">
-  <parameter name="nComponent" type="integer"/>
+  <parameter name="nIonSpecies" type="integer"/>
   <parameter name="sigmaCX" type="real"/>
 
 #CHARGEEXCHANGE
-2                       nComponent
-1.0e-15                 sigmaCX
-1.0e-15                 sigmaCX
+2                       nIonSpecies
+2.0e-15                 sigmaCX       H neutral - H+ ion [cm^2]
+1.0e-15                 sigmaCX       H neutral - O+ ion [cm^2]
+1.5e-15                 sigmaCX       O neutral - H+ ion [cm^2]
+1.0e-15                 sigmaCX       O neutral - O+ ion [cm^2]
 
 This command enables charge exchange as an exosphere source process.
-nComponent must match the nComponent in #EXOSPHERE.
-Uses a constant cross-section model: <sigma*v> = sigmaCX * u_rel.
+The number of neutral components is taken from #EXOSPHERE (nComponent);
+#EXOSPHERE must appear before #CHARGEEXCHANGE in PARAM.in.
+nIonSpecies must match the number of ion species (nS - 1 from #PLASMA,
+since species 0 is the electron); #PLASMA must also appear before
+#CHARGEEXCHANGE.
+Uses a constant cross-section model: <sigma*v> = sigmaCX * u_ion.
 sigmaCX is the charge exchange cross section [cm^2], specified as a
-multi-component array.
+matrix with one row per neutral component (in #EXOSPHERE order) and one
+column per ion species, in row-major order.  Each neutral component
+exchanges charge with every ion species, and the total charge-exchange
+frequency for a neutral component is the sum over all ion species:
+nu_CX(iC) = sum_{iSp} n_{iSp} * sigmaCX(iC, iSp) * u_{iSp}.
+The resulting source is deposited into the mapped ion species (iC + 1).
 </command>
 
 <command name="PLASMA"
