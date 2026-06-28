@@ -143,8 +143,8 @@ public:
   // cross-section is looked up from the matrix cxSigma[iC, iIon] where
   // iIon = iSp - 1 is the 0-based ion index.
   //
-  // TODO: Use the ion-neutral *relative* velocity (accounting for the
-  // neutral bulk flow) instead of the ion speed alone.
+  // The neutrals are assumed to be at rest (zero bulk velocity), so the
+  // ion speed alone is used as the ion-neutral relative speed.
   amrex::Real charge_exchange_rate(const FluidInterface& other,
                                    const amrex::MFIter& mfi,
                                    const amrex::IntVect& idx, int iLev,

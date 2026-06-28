@@ -9,7 +9,7 @@ heavy ions (species 1) into the PIC simulation domain.
 
 ## Physics & Solver Setup
 
-- **Geometry & Boundaries**: Quasi-1D periodic grid (32 cells in X, 1 in Y, Z),
+- **Geometry & Boundaries**: 1D periodic grid (32 cells in X, 1 in Y, Z),
   domain spans [-1000, 1000] m.
 - **Exosphere Model**: Chamberlain profile with 2 neutral components:
   | Component | n0 [m^-3] | H0 [m] | Description                  |
@@ -30,8 +30,6 @@ heavy ions (species 1) into the PIC simulation domain.
   | O         | 13.6      | 1.0×10^-8  | 0.5   | 0.3  |
   Source mass rate per component:
   \( S_{\rho,i} = n_i(r) \cdot n_e \cdot \langle\sigma v\rangle_i(T_e) \).
-- **Other Processes**: `#PHOTOIONIZATION` and `#CHARGEEXCHANGE` commands are not
-  present, so those source processes are skipped.
 
 - **Plasma Species**:
   | Species | Mass [amu] | Charge [e] | Role                       |
