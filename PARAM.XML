@@ -1202,10 +1202,32 @@ Exponential      typeProfile
 This command configures the static exospheric neutral density profile.
 The typeProfile can be "Exponential", "Power-Law", or "Chamberlain".
 The coefficients n0, H0, T0, k0 are specified as multi-component arrays
-for each neutral species. To enable ionization source processes, use the
-separate #PHOTOIONIZATION, #ELECTRONIMPACT, and/or #CHARGEEXCHANGE
-commands below. If none of those commands are present, no ionization
-source is applied.
+for each neutral species. The total neutral density at radius r (measured
+from the planet center, with r >= r_planet) is the sum over all
+nComponent species:
+
+  n(r) = sum_i n_i(r)
+
+where each component density n_i(r) depends on typeProfile:
+
+  Exponential (uses n0, H0):
+    n_i(r) = n0_i * exp(-(r - r_planet) / H0_i)
+
+  Power-Law (uses n0, k0):
+    n_i(r) = n0_i * (r_planet / r)^k0_i
+
+  Chamberlain (uses n0, H0):
+    n_i(r) = n0_i * exp(-H0_i * (1/r_planet - 1/r))
+
+Here r_planet is the body radius set by #BODYSIZE, n0_i is the surface
+number density [m^-3] at r = r_planet, H0_i is the scale height [m],
+and k0_i is the power-law index. T0_i is the neutral temperature [K] of
+the exosphere component. It is used as the ionization source temperature:
+the pressure of newly created ions is set to n * k_B * T0_i. T0_i must
+be positive whenever any ionization source process is enabled. To enable
+ionization source processes, use the separate #PHOTOIONIZATION,
+#ELECTRONIMPACT, and/or #CHARGEEXCHANGE commands below. If none of those
+commands are present, no ionization source is applied.
 </command>
 
 <command name="PHOTOIONIZATION"

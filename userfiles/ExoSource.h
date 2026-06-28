@@ -3,19 +3,6 @@
 
 #include "SourceInterface.h"
 
-// #define _EXOSPHERE_
-
-#ifdef _EXOSPHERE_
-// Get source from MHD side.
-extern "C" {
-void get_source_wrapper(double xyzSI[3], double sourceSI[6]);
-}
-#else
-inline void get_source_wrapper(double xyzSI[3], double sourceSI[6]) {
-  for (int i = 0; i < 6; ++i) sourceSI[i] = 0.0;
-}
-#endif
-
 class UserSource : public SourceInterface {
 public:
   UserSource(const FluidInterface& other, int id, std::string tag,
@@ -77,29 +64,6 @@ public:
   }
 
   //-------------------------------------------------------------------
-  // Voronov 1997 electron impact ionization rate coefficient.
-  // Input: Te in eV.  Returns <sigma*v> in [m^3/s].
-  amrex::Real impact_rate(amrex::Real Te_eV, int iC) const {
-    if (Te_eV <= 0.0) return 0.0;
-    double Ei = impactEIon[iC];  // ionization energy [eV]
-    double A = impactA[iC];      // Voronov A [cm^3/s]
-    double K = impactK[iC];      // Voronov K
-    double X = impactX[iC];      // Voronov X
-    double t = Te_eV / Ei;
-    // <sigma v> in cm^3/s, convert to m^3/s
-    return A * pow(t, K) / (X + t) * exp(-Ei / Te_eV) * 1e-6;
-  }
-
-  //-------------------------------------------------------------------
-  // Charge exchange rate coefficient (constant cross-section model).
-  // u_mag_SI: relative ion-neutral speed in [m/s].
-  // Returns <sigma*v> in [m^3/s].
-  amrex::Real cx_rate(amrex::Real u_mag_SI, int iC) const {
-    // sigmaCX in [cm^2], convert to [m^2]
-    return cxSigma[iC] * 1e-4 * u_mag_SI;
-  }
-
-  //-------------------------------------------------------------------
   // Check whether a point at (x, y, z) [m] relative to planet center
   // lies inside the planetary shadow cylinder.
   bool is_in_shadow(double x, double y, double z) const {
@@ -118,17 +82,6 @@ public:
   }
 
   //-------------------------------------------------------------------
-  // Photoionation rate at position (x, y, z) [m] from planet center.
-  // Returns zero inside the shadow cylinder (nightside).
-  amrex::Real photo_rate(double x, double y, double z, int iC) const {
-    if (is_in_shadow(x, y, z)) return 0.0;
-    double r2 = x * x + y * y + z * z;
-    double r_m = sqrt(r2);
-    double ratio = rPlanetSi / r_m;
-    return photoNu0[iC] * ratio * ratio;
-  }
-
-  //-------------------------------------------------------------------
   // Compute electron temperature in eV from PIC-normalized pressure
   // and number density.  pe: electron pressure (PIC units).
   // ne: electron number density (PIC units).
@@ -140,6 +93,77 @@ public:
     const amrex::Real ur2 =
         get_unorm_si() * get_unorm_si(); // [m^2/s^2]
     return protonMassPerCharge * ur2 * pe / ne;
+  }
+
+  //=================================================================
+  // Per-cell source term functions.
+  //
+  // Each of the three ionization processes is implemented as a function
+  // operating on a single spatial cell.  They return the ionization
+  // frequency nu [s^-1] contributed by that process; multiplying by the
+  // neutral number density gives the production rate S_n [m^-3 s^-1].
+  //=================================================================
+
+  //-------------------------------------------------------------------
+  // Photoionization frequency [s^-1] at position xyz [m] (measured from
+  // the planet center) for neutral component iC.  Returns zero inside
+  // the planetary shadow cylinder (nightside).
+  amrex::Real photoionization_rate(const double xyz[3], int iC) const {
+    // Zero inside the planetary shadow cylinder (nightside).
+    if (is_in_shadow(xyz[0], xyz[1], xyz[2])) return 0.0;
+    double r2 = xyz[0] * xyz[0] + xyz[1] * xyz[1] + xyz[2] * xyz[2];
+    double r_m = sqrt(r2);
+    double ratio = rPlanetSi / r_m;
+    // Geometric dilution: nu = nu0 * (r_planet / r)^2
+    return photoNu0[iC] * ratio * ratio;
+  }
+
+  //-------------------------------------------------------------------
+  // Electron-impact ionization frequency [s^-1] for neutral component
+  // iC.  ne: electron number density [m^-3]; Te_eV: electron temperature
+  // [eV].  Returns ne * <sigma*v>_impact, or zero when the plasma state
+  // is not positive.
+  amrex::Real impact_ionization_rate(amrex::Real ne, amrex::Real Te_eV,
+                                     int iC) const {
+    if (ne <= 0.0 || Te_eV <= 0.0) return 0.0;
+    // Voronov 1997 fit: <sigma*v> in cm^3/s, converted to m^3/s.
+    double Ei = impactEIon[iC];  // ionization energy [eV]
+    double A = impactA[iC];      // Voronov A [cm^3/s]
+    double K = impactK[iC];      // Voronov K
+    double X = impactX[iC];      // Voronov X
+    double t = Te_eV / Ei;
+    double sigma_v = A * pow(t, K) / (X + t) * exp(-Ei / Te_eV) * 1e-6;
+    return ne * sigma_v;
+  }
+
+  //-------------------------------------------------------------------
+  // Charge-exchange frequency [s^-1] for neutral component iC reacting
+  // with ion species iSp.  The ion density and bulk velocity are fetched
+  // from the plasma state (other) at cell (mfi, idx, iLev).
+  //
+  // TODO: Improve the charge-exchange implementation.  The current model
+  // reacts each neutral component only with its own mapped ion species
+  // (iSp = iC + 1) using a single cross-section per component.  A
+  // physically complete treatment should:
+  //   1. Use a cross-section matrix sigmaCX(iC_neutral, iSp_ion) so that
+  //      each neutral can exchange charge with every ion species.
+  //   2. Sum the charge-exchange frequency over all ion species rather
+  //      than only the mapped one.
+  //   3. Use the ion-neutral *relative* velocity (accounting for the
+  //      neutral bulk flow) instead of the ion speed alone.
+  amrex::Real charge_exchange_rate(const FluidInterface& other,
+                                   const amrex::MFIter& mfi,
+                                   const amrex::IntVect& idx, int iLev,
+                                   int iSp, int iC) const {
+    double ni = other.get_number_density(mfi, idx, iSp, iLev);
+    double ux_i = other.get_ux(mfi, idx, iSp, iLev);
+    double uy_i = other.get_uy(mfi, idx, iSp, iLev);
+    double uz_i = other.get_uz(mfi, idx, iSp, iLev);
+    double u_mag_SI =
+        sqrt(ux_i * ux_i + uy_i * uy_i + uz_i * uz_i) * get_unorm_si();
+    if (ni <= 0.0 || u_mag_SI <= 0.0) return 0.0;
+    // Constant cross-section model: sigmaCX in [cm^2], convert to [m^2].
+    return ni * cxSigma[iC] * 1e-4 * u_mag_SI;
   }
 
   //-------------------------------------------------------------------
@@ -167,6 +191,11 @@ public:
       }
     } else if (command == "#CHARGEEXCHANGE") {
       useChargeExchange = true;
+      // TODO: currently only one cross-section per neutral component is
+      // read, and each neutral reacts only with its mapped ion species.
+      // Improve to a cross-section matrix sigmaCX(iC_neutral, iSp_ion)
+      // so every neutral can exchange with every ion species.  See also
+      // charge_exchange_rate().
       param.read_var("nComponent", nCXComponent);
       cxSigma.resize(nCXComponent);
       for (int i = 0; i < nCXComponent; ++i) {
@@ -235,6 +264,20 @@ public:
                      << nExoComponent << ")\n";
       std::abort();
     }
+
+    // The neutral temperature exoT0[iC] is used as the source temperature
+    // for the pressure source term in set_source.  Enforce a positive
+    // value for every exosphere component.
+    for (int iC = 0; iC < nExoComponent; ++iC) {
+      if (exoT0[iC] <= 0.0) {
+        amrex::Print() << printPrefix
+                       << "Error: #EXOSPHERE T0 for component " << iC
+                       << " must be positive (got " << exoT0[iC]
+                       << " K). It is used as the ionization source "
+                       << "temperature.\n";
+        std::abort();
+      }
+    }
   }
 
   //-------------------------------------------------------------------
@@ -280,10 +323,6 @@ public:
                   xyz[iDim] = idx[iDim] * dx[iDim] + plo[iDim];
                 }
 
-                double source[6] = {0.0};
-#ifdef _EXOSPHERE_
-                get_source_wrapper(xyz, source);
-#else
                 double r_val = 0.0;
                 for (int d = 0; d < 3; ++d) {
                   r_val += xyz[d] * xyz[d];
@@ -317,35 +356,20 @@ public:
 
                   double dens_i =
                       get_exosphere_component_density(r_val, iC);
+
+                  // Sum the per-cell ionization frequency nu [s^-1] from
+                  // each enabled process.  Each *_rate() below operates on
+                  // this single spatial cell.
                   double nu_tot = 0.0;
-
-                  // ---- Photoionization ----
-                  if (doPhoto) {
-                    nu_tot += photo_rate(xyz[0], xyz[1], xyz[2], iC);
-                  }
-
-                  // ---- Electron impact ionization ----
+                  if (doPhoto)
+                    nu_tot += photoionization_rate(xyz, iC);
                   if (doImpact) {
                     fetch_electron_plasma();
-                    if (ne > 0 && Te_eV > 0) {
-                      nu_tot += ne * impact_rate(Te_eV, iC);
-                    }
+                    nu_tot += impact_ionization_rate(ne, Te_eV, iC);
                   }
-
-                  // ---- Charge exchange ----
-                  // Use the *same* ion species that this component maps to.
-                  if (doCX) {
-                    double ni_i = other.get_number_density(mfi, idx, iSp, iLev);
-                    double ux_i = other.get_ux(mfi, idx, iSp, iLev);
-                    double uy_i = other.get_uy(mfi, idx, iSp, iLev);
-                    double uz_i = other.get_uz(mfi, idx, iSp, iLev);
-                    double u_mag_SI =
-                        sqrt(ux_i * ux_i + uy_i * uy_i + uz_i * uz_i) *
-                        get_unorm_si();
-                    if (ni_i > 0 && u_mag_SI > 0) {
-                      nu_tot += ni_i * cx_rate(u_mag_SI, iC);
-                    }
-                  }
+                  if (doCX)
+                    nu_tot += charge_exchange_rate(other, mfi, idx, iLev,
+                                                   iSp, iC);
 
                   // Number density production rate [m^-3 s^-1]
                   double S_n = dens_i * nu_tot;
@@ -353,11 +377,12 @@ public:
                   // using the mass of the corresponding ion species.
                   double mass_amu = get_species_mass(iSp);
                   srcRho[iSp] += S_n * mass_amu * cProtonMassSI;
-                  // Pressure source at T_source = 100 K
-                  srcP[iSp] += S_n * mass_amu * cProtonMassSI * cBoltzmannSI * 100.0;
+                  // Pressure source using the neutral temperature
+                  // exoT0[iC] [K] from the #EXOSPHERE profile.
+                  srcP[iSp] +=
+                      S_n * mass_amu * cProtonMassSI * cBoltzmannSI *
+                      exoT0[iC];
                 }
-
-#endif
 
                 for (int iFluid = 0; iFluid < nFluid; iFluid++) {
                   arr(i, j, k, iRho_I[iFluid]) = 0;
