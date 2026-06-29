@@ -69,13 +69,13 @@ protected:
   // neutralComp=-1 means no neutral needed (recombination).
   bool useChemistry = false;
   struct ChemistryReaction {
-    int reactantIon;  // 0 = none, 1+ = ion species index
-    int productIon;   // 0 = none, 1+ = ion species index
-    int neutralComp;  // -1 = none, 0+ = exosphere component
-    int rateType;     // 0 = thermal k(T), 1 = photoionization (1/r^2)
-    double rateCoef;  // k0 [cm^3/s] for thermal, nu0 [s^-1] for photo
-    double tempExp;   // alpha: k = k0 * (Tref/Te)^alpha
-    double refTemp;   // T_ref [K]
+    int reactantIon; // 0 = none, 1+ = ion species index
+    int productIon;  // 0 = none, 1+ = ion species index
+    int neutralComp; // -1 = none, 0+ = exosphere component
+    int rateType;    // 0 = thermal k(T), 1 = photoionization (1/r^2)
+    double rateCoef; // k0 [cm^3/s] for thermal, nu0 [s^-1] for photo
+    double tempExp;  // alpha: k = k0 * (Tref/Te)^alpha
+    double refTemp;  // T_ref [K]
   };
   amrex::Vector<ChemistryReaction> chemReactions;
 
@@ -185,9 +185,8 @@ public:
 
   /// Read loss rate for ion species iIon (0-based) at cell ijk.
   /// Returns the normalized mass-density loss rate (positive = loss).
-  amrex::Real get_loss_value(const amrex::MFIter& mfi,
-                             const amrex::IntVect ijk, const int iIon,
-                             const int iLev = 0) const {
+  amrex::Real get_loss_value(const amrex::MFIter& mfi, const amrex::IntVect ijk,
+                             const int iIon, const int iLev = 0) const {
     const auto& arr = nodeLossFluid[iLev][mfi].const_array();
     return arr(ijk, iIon);
   }
@@ -196,8 +195,7 @@ public:
 
   /// Check whether nodeLossFluid is allocated and non-empty at iLev.
   bool has_loss_array(int iLev) const {
-    return useLossSource &&
-           iLev < static_cast<int>(nodeLossFluid.size()) &&
+    return useLossSource && iLev < static_cast<int>(nodeLossFluid.size()) &&
            !nodeLossFluid[iLev].empty();
   }
 };

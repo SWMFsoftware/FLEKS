@@ -3988,8 +3988,8 @@ void Particles<NStructReal, NStructInt>::apply_loss(
         // Find the cell index for this particle.
         IntVect ijk;
         for (int iDim = 0; iDim < nDim; ++iDim) {
-          ijk[iDim] = static_cast<int>(std::floor(
-              (p.pos(iDim) - plo[iDim]) * inv_dx[iDim]));
+          ijk[iDim] = static_cast<int>(
+              std::floor((p.pos(iDim) - plo[iDim]) * inv_dx[iDim]));
         }
 
         // Existing ion mass density (normalized) from the plasma state.
