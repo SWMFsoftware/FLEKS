@@ -82,7 +82,7 @@ jobs:
         if: steps.cache-standalone.outputs.cache-hit != 'true'
         working-directory: SWMF/PC/FLEKS
         run: |
-          Config.pl -u=Exo
+          ./Config.pl -u=Exo
           make EXE -j$(nproc)
           make PIDL
 
