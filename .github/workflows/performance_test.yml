@@ -81,9 +81,7 @@ jobs:
         if: steps.cache-standalone.outputs.cache-hit != 'true'
         working-directory: SWMF/PC/FLEKS
         run: |
-          ./Config.pl -u=exo
           make EXE -j$(nproc)
-          make PIDL
 
       - name: Run Standalone Performance Checks
         working-directory: SWMF/PC/FLEKS/tests
