@@ -85,8 +85,8 @@ protected:
   // nodeFluid but only has nS-1 components (one per ion species, 0-based:
   // component i = ion species i+1).  Particles::apply_loss() reads this
   // to reduce existing particle weights proportionally.
+  // Allocated whenever useRecombination or useChemistry is true.
   amrex::Vector<amrex::MultiFab> nodeLossFluid;
-  bool useLossSource = false; // true when any loss process is enabled
 
 public:
   SourceInterface(const FluidInterface& other, int id, std::string tag,
@@ -147,7 +147,7 @@ public:
   }
 
   void distribute_loss_arrays() {
-    if (!useLossSource)
+    if (!(useRecombination || useChemistry))
       return;
     if (nodeLossFluid.empty())
       nodeLossFluid.resize(n_lev_max());
@@ -162,7 +162,7 @@ public:
   }
 
   void set_node_loss_fluid_to_zero() {
-    if (!useLossSource)
+    if (!(useRecombination || useChemistry))
       return;
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
       if (!nodeLossFluid[iLev].empty())
@@ -171,7 +171,7 @@ public:
   }
 
   void sum_loss_boundary() {
-    if (!useLossSource)
+    if (!(useRecombination || useChemistry))
       return;
     // Use FillBoundary (copy) instead of SumBoundary (sum) for loss rates.
     // Each node's loss rate is computed independently and should NOT be
@@ -191,11 +191,12 @@ public:
     return arr(ijk, iIon);
   }
 
-  bool use_loss_source() const { return useLossSource; }
+  bool use_loss_source() const { return useRecombination || useChemistry; }
 
   /// Check whether nodeLossFluid is allocated and non-empty at iLev.
   bool has_loss_array(int iLev) const {
-    return useLossSource && iLev < static_cast<int>(nodeLossFluid.size()) &&
+    return (useRecombination || useChemistry) &&
+           iLev < static_cast<int>(nodeLossFluid.size()) &&
            !nodeLossFluid[iLev].empty();
   }
 };
