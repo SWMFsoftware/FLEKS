@@ -40,7 +40,7 @@ T                       solveEM
 1.0                     charge
 
 #UNIFORMSTATE
-0.05                    rho [amu/cc]   Species 0: electron (quasi-neutral, hot for Te)
+0.0500625               rho [amu/cc]   Species 0: electron (quasi-neutral, hot for Te)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]

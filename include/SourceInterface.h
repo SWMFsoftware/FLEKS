@@ -60,6 +60,25 @@ protected:
   amrex::Vector<double> recombRefTemp; // reference temperature T_ref [K]
   // k(Te) = k0 * (T_ref / Te_K)^alpha
 
+  // ---- General chemistry (#CHEMISTRY command) ----
+  // Supports cross-species ion conversion, photoionization, and
+  // recombination through a unified reaction format.
+  //   reactantIon + neutral -> productIon + neutral'
+  // reactantIon=0 means no reactant ion (photoionization).
+  // productIon=0 means no product ion (recombination).
+  // neutralComp=-1 means no neutral needed (recombination).
+  bool useChemistry = false;
+  struct ChemistryReaction {
+    int reactantIon;  // 0 = none, 1+ = ion species index
+    int productIon;   // 0 = none, 1+ = ion species index
+    int neutralComp;  // -1 = none, 0+ = exosphere component
+    int rateType;     // 0 = thermal k(T), 1 = photoionization (1/r^2)
+    double rateCoef;  // k0 [cm^3/s] for thermal, nu0 [s^-1] for photo
+    double tempExp;   // alpha: k = k0 * (Tref/Te)^alpha
+    double refTemp;   // T_ref [K]
+  };
+  amrex::Vector<ChemistryReaction> chemReactions;
+
   // ---- Loss term storage ----
   // nodeLossFluid stores the mass-density LOSS RATE (positive = loss)
   // for each ion species, in PIC-normalized units.  It is parallel to

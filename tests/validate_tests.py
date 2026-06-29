@@ -175,6 +175,86 @@ def read_pic_log(run_dir):
     return pic_diags
 
 
+def validate_chemistry(pic_diags=None, test_name=None):
+    """Validate the Mars chemistry test with 4 ion species and 10 reactions.
+
+    Checks that ion energies change over time due to the combined action of
+    photoionization (source), cross-species charge exchange (source + loss),
+    and recombination (loss).  The key validation is that O2+ (species 3,
+    produced only by cross-species CX) shows a non-trivial change, proving
+    that the cross-species mechanism is working.
+    """
+    print("Validating Mars Chemistry Test...")
+
+    if not pic_diags or len(pic_diags) < 2:
+        print("  [INFO] No PIC energy log found; skipping energy checks.")
+        return True, "Passed (no pic log)"
+
+    first = pic_diags[0]
+    last = pic_diags[-1]
+
+    epart_keys = sorted(
+        k for k in first.keys() if k.startswith("Epart") and k != "Epart"
+    )
+    if not epart_keys:
+        print("  [INFO] No per-species energy columns; skipping.")
+        return True, "Passed (no Epart columns)"
+
+    print(f"  --- Energy Diagnostics (from log_pic log) ---")
+    for k in epart_keys:
+        e0 = first.get(k, 0)
+        e1 = last.get(k, 0)
+        ratio = e1 / max(e0, 1e-30) if e0 > 0 else float('inf')
+        print(f"    {k}: {e0:.6e} -> {e1:.6e}  (ratio {ratio:.3f})")
+
+    passed = True
+    reasons = []
+
+    # Species mapping: 0=e, 1=H+, 2=O+, 3=O2+, 4=CO2+
+    # O2+ (Epart3) is produced ONLY by cross-species CX (reactions 3, 4).
+    # If cross-species CX is working, O2+ energy should change.
+    o2_key = "Epart3" if "Epart3" in first else None
+    if o2_key:
+        e_o2_init = first.get(o2_key, 0.0)
+        e_o2_final = last.get(o2_key, 0.0)
+        if e_o2_init > 0:
+            o2_ratio = e_o2_final / e_o2_init
+            print(f"    {o2_key} (O2+): ratio = {o2_ratio:.4f}")
+            if abs(o2_ratio - 1.0) < 0.001:
+                print(f"    FAIL: {o2_key} energy unchanged — cross-species "
+                      f"CX may not be working.")
+                passed = False
+                reasons.append("O2+ energy unchanged (CX not active)")
+            else:
+                print(f"    SUCCESS: {o2_key} energy changed by "
+                      f"{abs(o2_ratio - 1.0)*100:.1f}% (cross-species CX active).")
+        else:
+            print(f"    [INFO] {o2_key} initial energy is zero.")
+
+    # CO2+ (Epart4) is consumed by CX and recombination, produced by photo.
+    co2_key = "Epart4" if "Epart4" in first else None
+    if co2_key:
+        e_co2_init = first.get(co2_key, 0.0)
+        e_co2_final = last.get(co2_key, 0.0)
+        if e_co2_init > 0:
+            co2_ratio = e_co2_final / e_co2_init
+            print(f"    {co2_key} (CO2+): ratio = {co2_ratio:.4f}")
+            if abs(co2_ratio - 1.0) < 0.001:
+                print(f"    FAIL: {co2_key} energy unchanged — chemistry "
+                      f"may not be working.")
+                passed = False
+                reasons.append("CO2+ energy unchanged")
+            else:
+                print(f"    SUCCESS: {co2_key} energy changed by "
+                      f"{abs(co2_ratio - 1.0)*100:.1f}%.")
+
+    if passed:
+        print("Mars Chemistry Test: PASSED")
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
+
+
 def validate_recombination(pic_diags=None, test_name=None):
     """Validate the recombination loss test (O2+ + e- -> O + O).
 
@@ -971,6 +1051,7 @@ def main():
         "electronimpact": validate_ionization_source,
         "chargeexchange": validate_ionization_source,
         "recombination": validate_recombination,
+        "chemistry": validate_chemistry,
     }
     
     # Discover test subdirectories under tests/

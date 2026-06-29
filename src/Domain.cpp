@@ -905,7 +905,7 @@ void Domain::read_param(const bool readGridInfo) {
         pt->read_param(command, param);
     } else if (command == "#PHOTOIONIZATION" || command == "#ELECTRONIMPACT" ||
                command == "#CHARGEEXCHANGE" || command == "#SHADOWCYLINDER" ||
-               command == "#RECOMBINATION") {
+               command == "#RECOMBINATION" || command == "#CHEMISTRY") {
       if (source) {
         // Sync exosphere/plasma parameters from fi to source so that
         // source->read_param() can access nExoComponent (set by #EXOSPHERE)
