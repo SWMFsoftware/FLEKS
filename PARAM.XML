@@ -1206,7 +1206,7 @@ for each neutral species. The total neutral density at radius $r$ (measured
 from the planet center, with $r \geq r_{planet}$) is the sum over all
 nComponent species:
 
-$ n(r) = \sum_i n_i(r) $
+\[ n(r) = \sum_i n_i(r) \]
 
 where each component density $n_i(r)$ depends on typeProfile:
 
