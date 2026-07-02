@@ -71,12 +71,17 @@ jobs:
         id: cache-standalone
         uses: actions/cache@v5
         with:
+          # In the CI, FLEKS is built inside the SWMF tree (not standalone).
+          # make PIDL installs PostIDL.exe to the SWMF-level bin directory
+          # (SWMF/bin/), not the component-level bin (SWMF/PC/FLEKS/bin/).
+          # The test script (validate_tests.py) searches candidate locations
+          # and finds PostIDL.exe at SWMF/bin/PostIDL.exe.
           path: |
             SWMF/PC/FLEKS/bin/FLEKS.exe
-            SWMF/PC/FLEKS/bin/PostIDL.exe
-          key: ${{ runner.os }}-fleks-standalone-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PC/FLEKS/**/Makefile*') }}
+            SWMF/bin/PostIDL.exe
+          key: ${{ runner.os }}-fleks-standalone-v2-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PC/FLEKS/**/Makefile*') }}
           restore-keys: |
-            ${{ runner.os }}-fleks-standalone-
+            ${{ runner.os }}-fleks-standalone-v2-
 
       - name: Build Standalone FLEKS
         if: steps.cache-standalone.outputs.cache-hit != 'true'
