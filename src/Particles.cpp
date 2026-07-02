@@ -3938,6 +3938,89 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
   }
 }
 
+//==========================================================
+// Apply chemical loss (recombination, etc.) by proportionally
+// reducing particle weights.  For each cell, reads the ion loss
+// rate from source->nodeLossFluid and the existing ion mass density
+// from fi, then reduces every particle's weight by the fraction
+//   fraction = min(lossRate * dt / rhoExisting, 1.0).
+// Only ion species (charge > 0) are affected; electrons are handled
+// by quasi-neutrality.
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::apply_loss(
+    const SourceInterface* source, Real dt) {
+  std::string nameFunc = "Pts::apply_loss";
+  timing_func(nameFunc);
+
+  // Only apply to positively charged ions.
+  if (charge <= 0.0)
+    return;
+
+  if (!source || !source->use_loss_source())
+    return;
+
+  // 0-based ion index in nodeLossFluid: speciesID - 1 (species 0 = electron).
+  const int iIon = speciesID - 1;
+  if (iIon < 0)
+    return;
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    if (NumberOfParticlesAtLevel(iLev, true, true) == 0)
+      continue;
+
+    if (!source->has_loss_array(iLev))
+      continue;
+
+    const Real* plo = Geom(iLev).ProbLo();
+    const Real* inv_dx = Geom(iLev).InvCellSize();
+
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      AoS& particles = pti.GetArrayOfStructs();
+      const int np = particles.numParticles();
+      if (np == 0)
+        continue;
+
+      for (int ip = 0; ip < np; ++ip) {
+        ParticleType& p = particles[ip];
+        if (p.id() < 0)
+          continue;
+
+        // Find the cell index for this particle.
+        IntVect ijk;
+        for (int iDim = 0; iDim < nDim; ++iDim) {
+          ijk[iDim] = static_cast<int>(
+              std::floor((p.pos(iDim) - plo[iDim]) * inv_dx[iDim]));
+        }
+
+        // Existing ion mass density (normalized) from the plasma state.
+        Real rhoExisting =
+            fi->get_fluid_mass_density(pti, ijk, speciesID, iLev);
+        if (rhoExisting <= 0.0)
+          continue;
+
+        // Loss rate (normalized mass-density rate) from nodeLossFluid.
+        Real lossRate = source->get_loss_value(pti, ijk, iIon, iLev);
+        if (lossRate <= 0.0)
+          continue;
+
+        // Fraction of mass to remove in this step.
+        Real fraction = lossRate * dt / rhoExisting;
+        if (fraction > 1.0)
+          fraction = 1.0;
+        if (fraction <= 0.0)
+          continue;
+
+        // Reduce particle weight proportionally.  The sign is preserved
+        // (ions have positive weight, electrons negative).
+        p.rdata(iqp_) *= (1.0 - fraction);
+      }
+    }
+  }
+
+  // Remove particles whose weight has been driven to (near) zero.
+  redistribute_particles();
+}
+
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_source_particles(
     std::unique_ptr<PicParticles>& sourcePart, IntVect ppc,

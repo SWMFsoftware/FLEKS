@@ -1202,30 +1202,32 @@ Exponential      typeProfile
 This command configures the static exospheric neutral density profile.
 The typeProfile can be "Exponential", "Power-Law", or "Chamberlain".
 The coefficients n0, H0, T0, k0 are specified as multi-component arrays
-for each neutral species. The total neutral density at radius r (measured
-from the planet center, with r >= r_planet) is the sum over all
+for each neutral species. The total neutral density at radius $r$ (measured
+from the planet center, with $r \geq r_{planet}$) is the sum over all
 nComponent species:
 $$
   n(r) = \sum_i n_i(r)
 $$
-where each component density n_i(r) depends on typeProfile:
+where each component density $n_i(r)$ depends on typeProfile:
+
 \begin{verbatim}
   Exponential (uses n0, H0):
     n_i(r) = n0_i * exp(-(r - r_planet) / H0_i)
 
   Power-Law (uses n0, k0):
-    n_i(r) = n0_i * (r_planet / r)\^k0_i
+    n_i(r) = n0_i * (r_planet / r)^k0_i
 
   Chamberlain (uses n0, H0):
     n_i(r) = n0_i * exp(-H0_i * (1/r_planet - 1/r))
-\end{verbatim{
-Here r\_planet is the body radius set by #BODYSIZE, n0_i is the surface
-number density [m\^-3] at r = r_planet, H0_i is the scale height [m],
-and k0_i is the power-law index. T0_i is the neutral temperature [K] of
+\end{verbatim}
+
+Here $r_{planet}$ is the body radius set by #BODYSIZE, $n0_i$ is the surface
+number density [m$^{-3}$] at $r = r_{planet}$, $H0_i$ is the scale height [m],
+and $k0_i$ is the power-law index. $T0_i$ is the neutral temperature [K] of
 the exosphere component. It is used as the ionization source temperature:
-the pressure of newly created ions is set to n * k_B * T0_i. T0_i must
-be positive whenever any ionization source process is enabled. To enable
-ionization source processes, use the separate #PHOTOIONIZATION,
+the pressure of newly created ions is set to $n \times k_B \times T0_i$. $T0_i$
+must be positive whenever any ionization source process is enabled. To
+enable ionization source processes, use the separate #PHOTOIONIZATION,
 #ELECTRONIMPACT, and/or #CHARGEEXCHANGE commands below. If none of those
 commands are present, no ionization source is applied.
 </command>
@@ -1244,8 +1246,10 @@ The number of neutral components is taken from #EXOSPHERE (nComponent);
 #EXOSPHERE must appear before #PHOTOIONIZATION in PARAM.in.
 nuPhoto0 is the photoionization rate [1/s] at the planet surface,
 specified as a multi-component array (one value per #EXOSPHERE component,
-in the same order). The rate at distance r follows geometric dilution:
-nu(r) = nuPhoto0 * (r_planet / r)\^2.
+in the same order). The rate at distance $r$ follows geometric dilution:
+\begin{verbatim}
+nu(r) = nuPhoto0 * (r_planet / r)^2
+\end{verbatim}
 </command>
 
 <command name="SHADOWCYLINDER"
@@ -1297,9 +1301,11 @@ This command enables electron impact ionization as an exosphere source
 process. The number of neutral components is taken from #EXOSPHERE
 (nComponent); #EXOSPHERE must appear before #ELECTRONIMPACT in PARAM.in.
 Uses the Voronov 1997 rate coefficient:
-$<\sigma*v> = A * t^K / (X + t)*\exp(-Ei/Te)$,
-where t = Te/Ei.  eIon is the ionization energy [eV],
-Acoeff is the Voronov A coefficient [cm\^3/s], Kcoeff is K, Xcoeff is X.
+\begin{verbatim}
+<sigma*v> = A * t^K / (X + t) * exp(-Ei/Te),  where t = Te/Ei
+\end{verbatim}
+eIon is the ionization energy [eV], Acoeff is the Voronov A coefficient
+[cm$^3$/s], Kcoeff is K, Xcoeff is X.
 Each parameter is specified as a multi-component array (one set per
 #EXOSPHERE component, in the same order).
 </command>
@@ -1323,14 +1329,158 @@ The number of neutral components is taken from #EXOSPHERE (nComponent);
 nIonSpecies must match the number of ion species (nS - 1 from #PLASMA,
 since species 0 is the electron); #PLASMA must also appear before
 #CHARGEEXCHANGE.
-Uses a constant cross-section model: <sigma*v> = sigmaCX * u_ion.
+Uses a constant cross-section model:
+\begin{verbatim}
+<sigma*v> = sigmaCX * u_ion
+\end{verbatim}
 sigmaCX is the charge exchange cross section [cm\^2], specified as a
 matrix with one row per neutral component (in #EXOSPHERE order) and one
 column per ion species, in row-major order.  Each neutral component
 exchanges charge with every ion species, and the total charge-exchange
 frequency for a neutral component is the sum over all ion species:
-nu_CX(iC) = sum_{iSp} n_{iSp} * sigmaCX(iC, iSp) * u_{iSp}.
+\begin{verbatim}
+nu_CX(iC) = sum_{iSp} n_{iSp} * sigmaCX(iC, iSp) * u_{iSp}
+\end{verbatim}
 The resulting source is deposited into the mapped ion species (iC + 1).
+</command>
+
+<command name="RECOMBINATION"
+	 alias="RECOMBINATION_FLEKS0,RECOMBINATION_FLEKS1,RECOMBINATION_FLEKS2"
+	 multiple="T">
+  <parameter name="nReactions" type="integer"/>
+  <parameter name="ionSpecies" type="integer"/>
+  <parameter name="rateCoef" type="real"/>
+  <parameter name="tempExponent" type="real"/>
+  <parameter name="refTemp" type="real"/>
+
+#RECOMBINATION
+1                       nReactions
+2                       ionSpecies    O2+ (species 2)
+7.38e-3                 rateCoef      [cm^3/s]
+0.56                    tempExponent
+300.0                   refTemp       [K]
+
+This command enables dissociative recombination as a source process:
+ion+ + e- -> neutrals.  It requires useElectronFluid = true, i.e. species 0
+must be the electron (set via #PLASMA with a negative charge).  The electron
+density $n_e$ and temperature $T_e$ are taken from the electron fluid.  The
+recombing ion is consumed (a loss term written to the particle loss array),
+and the neutral products are not tracked as fluids.  The electron density
+decrease is handled implicitly by the quasi-neutrality condition, so only
+the ion species needs to be listed.
+
+nReactions is the number of recombination reactions.  For each reaction,
+the following 4 parameters are read:
+  ionSpecies    - 1-based ion species index (1..nS-1).  Species 0 (the
+                  electron) cannot recombine with itself.
+  rateCoef      - Base rate coefficient k0 [cm\^3/s].
+  tempExponent  - Temperature exponent alpha.  When 0, k = k0 (constant,
+                  independent of temperature).  When non-zero, refTemp
+                  must be positive.
+  refTemp       - Reference temperature $T_{ref}$ [K].
+
+The temperature-dependent rate coefficient is:
+\begin{verbatim}
+  k(T_e) = k0 * (T_ref / T_e)^alpha
+\end{verbatim}
+where $T_e$ is the electron temperature in Kelvin.
+
+#RECOMBINATION does not require #EXOSPHERE because recombination depends
+on the electron and ion fluids, not on the neutral exosphere.  #PLASMA
+must appear before #RECOMBINATION so that the ion species indices and the
+electron fluid flag can be validated.
+</command>
+
+<command name="CHEMISTRY"
+	 alias="CHEMISTRY_FLEKS0,CHEMISTRY_FLEKS1,CHEMISTRY_FLEKS2"
+	 multiple="T">
+  <parameter name="nReactions" type="integer"/>
+  <parameter name="reactantIon" type="integer"/>
+  <parameter name="productIon" type="integer"/>
+  <parameter name="neutralComp" type="integer"/>
+  <parameter name="rateType" type="integer"/>
+  <parameter name="rateCoef" type="real"/>
+  <parameter name="tempExp" type="real"/>
+  <parameter name="refTemp" type="real"/>
+
+#CHEMISTRY
+3                       nReactions
+0                       reactantIon   R1: CO2 + hv   -> CO2+ + e-  (photoionization)
+4                       productIon
+2                       neutralComp
+1                       rateType
+2.47e-2                 rateCoef      nu0 [s^-1]
+0.0                     tempExp
+0.0                     refTemp
+4                       reactantIon   R2: CO2+ + O   -> O2+  + CO   (charge exchange)
+3                       productIon
+1                       neutralComp
+0                       rateType
+1.64e-5                 rateCoef      k0 [cm^3/s]
+0.0                     tempExp
+0.0                     refTemp
+3                       reactantIon   R3: O2+ + e-   -> O    + O    (recombination)
+0                       productIon
+-1                      neutralComp
+0                       rateType
+7.38e-3                 rateCoef      k0 [cm^3/s]
+0.56                    tempExp
+300.0                   refTemp
+
+This command provides a unified chemistry framework that supports
+photoionization, charge exchange (cross-species ion conversion), and
+recombination through a single reaction table.  It requires
+useElectronFluid = true (species 0 = electron, set via #PLASMA).  The
+electron density $n_e$ and temperature $T_e$ are taken from the electron
+fluid, and electron density changes are handled implicitly by the
+quasi-neutrality condition — only ion species need to be listed as
+reactants or products.
+
+nReactions is the number of reactions.  For each reaction, the following
+7 parameters are read:
+  reactantIon  - Consumed ion species index: 0 = none (photoionization),
+                 1..nS-1 = ion species.
+  productIon   - Produced ion species index: 0 = none (recombination),
+                 1..nS-1 = ion species.
+  neutralComp  - Exosphere neutral component: -1 = none (recombination),
+                 0..nComponent-1 = #EXOSPHERE component index.
+  rateType     - 0 = thermal rate $k(T_e)$; 1 = photoionization $(1/r^2)$.
+  rateCoef     - k0 [cm$^3$/s] for thermal; nu0 [s$^{-1}$] at the planet
+                 surface for photoionization.
+  tempExp      - Temperature exponent alpha (thermal only).  When 0,
+                 k = k0 (constant).  When non-zero, refTemp > 0 is
+                 required.
+  refTemp      - Reference temperature $T_{ref}$ [K] (thermal only).
+
+The rate coefficient for thermal reactions (rateType = 0) is:
+\begin{verbatim}
+  k(T_e) = k0 * (T_ref / T_e)^alpha
+\end{verbatim}
+For photoionization (rateType = 1), the rate follows geometric dilution:
+\begin{verbatim}
+  nu(r) = nu0 * (r_planet / r)^2
+\end{verbatim}
+and is set to zero inside the shadow cylinder defined by #SHADOWCYLINDER
+(if present).
+
+Three reaction categories are supported:
+  1. Photoionization (reactantIon = 0, rateType = 1):
+     neutral + hv -> ion+ + e-.  The neutral is at rest; the produced ion
+     inherits the neutral temperature (T0 from #EXOSPHERE).  neutralComp
+     must be >= 0.
+  2. Charge exchange / ion conversion (reactantIon > 0, productIon > 0,
+     rateType = 0): ion1+ + neutral -> ion2+ + neutral'.  The product ion
+     inherits the reactant ion's velocity and temperature.  neutralComp
+     must be >= 0.
+  3. Recombination (reactantIon > 0, productIon = 0, neutralComp = -1,
+     rateType = 0): ion+ + e- -> neutrals.  The ion is consumed; the rate
+     is $k \times n_e$.  No neutral component is needed.
+
+#EXOSPHERE must appear before #CHEMISTRY if any reaction uses
+neutralComp >= 0.  #PLASMA must also appear before #CHEMISTRY.  #CHEMISTRY
+supersedes the simpler #PHOTOIONIZATION, #CHARGEEXCHANGE, and
+#RECOMBINATION commands; use either the unified #CHEMISTRY table or the
+individual commands, not both.
 </command>
 
 <command name="PLASMA"
@@ -1394,9 +1544,15 @@ neutral species.
 0.0                 Ez [?]
 
 If PIC is not initialized from SWMF (#INITFROMSWMF), set uniform initial
-conditions here. This command has only been tested with neutral particles
-(OH-PT coupling) so far. The units of B and E are SI, and it is likely
-they will be changed to other units in the future.
+conditions here. For each plasma species, provide rho [amu/cc], ux/uy/uz
+[km/s], and T [K]. The background electromagnetic fields B [T] and E [V/m]
+are specified once at the end (in SI units).
+
+When useElectronFluid is enabled, the electron species (species 0) density
+is read directly from its rho value rather than being computed from a
+quasi-neutrality condition. The user is responsible for ensuring charge
+neutrality, i.e. rho_e = (sum_i rho_i / m_i) * m_e, where m_e and m_i are
+the species masses declared in #PLASMA.
 </command>
 
 

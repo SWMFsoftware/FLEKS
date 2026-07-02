@@ -356,6 +356,12 @@ public:
       amrex::Vector<std::unique_ptr<PicParticles> >& sourceParts,
       bool doSelectRegion, int nppc, amrex::Real& maxExchangeRatio);
 
+  /// Apply chemical loss (recombination, etc.) by reducing particle
+  /// weights proportionally.  Reads per-ion loss rates from
+  /// source->nodeLossFluid and reduces each particle's weight by
+  /// fraction = min(lossRate * dt / rhoExisting, 1).
+  void apply_loss(const SourceInterface* source, amrex::Real dt);
+
   void accumulate_mass_matrix_contribution(int iLev,
                                            const amrex::IntVect& loIdx,
                                            const amrex::RealVect& dShift,

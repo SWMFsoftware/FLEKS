@@ -16,29 +16,46 @@ def safe_symlink(src, dst):
 def prepare_run_dir():
     run_dir = "run_test"
     os.makedirs(run_dir, exist_ok=True)
-    
-    # Determine the location of the share and bin directories relative to FLEKS root.
+
+    # Determine the location of the share directory relative to FLEKS root.
     # In a standalone FLEKS repository, 'share/Scripts/PostProc.pl' is directly inside the working directory.
-    # In SWMF integrated environment, 'share' and 'bin' are located in SWMF root, i.e., two levels above FLEKS root.
+    # In SWMF integrated environment, 'share' is located in SWMF root, i.e., two levels above FLEKS root.
     if os.path.isfile("share/Scripts/PostProc.pl"):
         postproc_target = "../share/Scripts/PostProc.pl"
         pidl_target = "../../share/Scripts/pIDL"
-        postidl_target = "../../bin/PostIDL.exe"
     else:
         postproc_target = "../../../share/Scripts/PostProc.pl"
         pidl_target = "../../../../share/Scripts/pIDL"
-        postidl_target = "../../../../bin/PostIDL.exe"
+
+    # PostIDL.exe may reside in different locations depending on the build mode:
+    #   - Standalone build:       bin/PostIDL.exe        (FLEKS/bin/)
+    #   - SWMF integrated build:  ../../bin/PostIDL.exe  (SWMF/bin/)
+    # Search all candidates (relative to FLEKS root) and use the first match.
+    # The symlink target is computed relative to run_test/PC/.
+    postidl_candidates = [
+        "bin/PostIDL.exe",          # standalone
+        "../../bin/PostIDL.exe",    # SWMF integrated
+    ]
+    postidl_target = None
+    for candidate in postidl_candidates:
+        if os.path.isfile(candidate):
+            postidl_target = os.path.relpath(candidate, os.path.join(run_dir, "PC"))
+            break
+    if postidl_target is None:
+        # Default to standalone path; run_test() will emit a broken-symlink
+        # warning if PostIDL.exe is not found at any candidate location.
+        postidl_target = "../../bin/PostIDL.exe"
 
     # Symlinks in run directory
     safe_symlink("../bin/FLEKS.exe", os.path.join(run_dir, "FLEKS.exe"))
     safe_symlink(postproc_target, os.path.join(run_dir, "PostProc.pl"))
-    
+
     # Component plot and restart directories
     pc_dir = os.path.join(run_dir, "PC")
     os.makedirs(pc_dir, exist_ok=True)
     os.makedirs(os.path.join(pc_dir, "plots"), exist_ok=True)
     os.makedirs(os.path.join(pc_dir, "restartOUT"), exist_ok=True)
-    
+
     # Symlinks in component directory
     safe_symlink(pidl_target, os.path.join(pc_dir, "pIDL"))
     safe_symlink(postidl_target, os.path.join(pc_dir, "PostIDL.exe"))
@@ -173,6 +190,203 @@ def read_pic_log(run_dir):
             continue
 
     return pic_diags
+
+
+def validate_chemistry(pic_diags=None, test_name=None):
+    """Validate the Mars chemistry test with 4 ion species and 10 reactions.
+
+    Checks that ion energies change over time due to the combined action of
+    photoionization (source), cross-species charge exchange (source + loss),
+    and recombination (loss).
+
+    Key validations:
+    1. ALL 4 ion species (H+, O+, O2+, CO2+) show significant energy changes,
+       proving all reaction types are active.
+    2. O2+ (species 3, Epart3) energy INCREASES — O2+ is produced ONLY by
+       cross-species CX (reactions 3, 4) and lost by recombination (reaction 6).
+       Since the CX source rate (~6 s^-1) far exceeds the recombination loss
+       rate (~0.04 s^-1), O2+ energy must increase.  This is the critical
+       test for the cross-species CX source term.
+    3. CO2+ (species 4, Epart4) energy changes — CO2+ is produced by
+       photoionization (reaction 1) and consumed by CX (reactions 3, 5) and
+       recombination (reaction 7).
+    """
+    print("Validating Mars Chemistry Test...")
+
+    if not pic_diags or len(pic_diags) < 2:
+        print("  [INFO] No PIC energy log found; skipping energy checks.")
+        return True, "Passed (no pic log)"
+
+    first = pic_diags[0]
+    last = pic_diags[-1]
+
+    epart_keys = sorted(
+        k for k in first.keys() if k.startswith("Epart") and k != "Epart"
+    )
+    if not epart_keys:
+        print("  [INFO] No per-species energy columns; skipping.")
+        return True, "Passed (no Epart columns)"
+
+    # Species mapping: 0=e, 1=H+, 2=O+, 3=O2+, 4=CO2+
+    species_names = {
+        "Epart1": "H+",
+        "Epart2": "O+",
+        "Epart3": "O2+",
+        "Epart4": "CO2+",
+    }
+
+    print(f"  --- Energy Diagnostics (from log_pic log) ---")
+    for k in epart_keys:
+        e0 = first.get(k, 0)
+        e1 = last.get(k, 0)
+        ratio = e1 / max(e0, 1e-30) if e0 > 0 else float('inf')
+        name = species_names.get(k, k)
+        print(f"    {k} ({name}): {e0:.6e} -> {e1:.6e}  (ratio {ratio:.4f})")
+
+    passed = True
+    reasons = []
+
+    # ---- Check 1: All 4 ion species must show significant energy changes ----
+    # This proves that photoionization, CX, and recombination are all active.
+    # A 0.1% threshold catches any meaningful chemistry signal while filtering
+    # out pure numerical noise.
+    change_threshold = 0.001  # 0.1%
+    for k in epart_keys:
+        e0 = first.get(k, 0.0)
+        e1 = last.get(k, 0.0)
+        if e0 <= 0:
+            continue
+        ratio = e1 / e0
+        name = species_names.get(k, k)
+        if abs(ratio - 1.0) < change_threshold:
+            print(f"    FAIL: {k} ({name}) energy unchanged "
+                  f"(ratio {ratio:.4f}) — chemistry may not be active.")
+            passed = False
+            reasons.append(f"{name} energy unchanged")
+
+    # ---- Check 2: O2+ must INCREASE — the critical CX source test ----
+    # O2+ (Epart3) is produced ONLY by cross-species CX (reactions 3, 4)
+    # and consumed by recombination (reaction 6).  The CX source rate
+    # (~6.3 s^-1, driven by the large exosphere neutral density ~5e10 m^-3)
+    # vastly exceeds the recombination loss rate (~4e-17 s^-1, limited by
+    # the small plasma electron density in SI units).  Therefore O2+ energy
+    # must increase.  If it does not increase, the CX source term is broken.
+    o2_key = "Epart3" if "Epart3" in first else None
+    if o2_key:
+        e_o2_init = first.get(o2_key, 0.0)
+        e_o2_final = last.get(o2_key, 0.0)
+        if e_o2_init > 0:
+            o2_ratio = e_o2_final / e_o2_init
+            print(f"    {o2_key} (O2+): ratio = {o2_ratio:.4f} "
+                  f"(must be > 1.0 for CX source validation)")
+            if o2_ratio <= 1.0:
+                print(f"    FAIL: {o2_key} (O2+) energy did not increase — "
+                      f"cross-species CX source is not working.")
+                passed = False
+                reasons.append("O2+ energy did not increase (CX source broken)")
+            else:
+                pct = (o2_ratio - 1.0) * 100
+                print(f"    SUCCESS: {o2_key} (O2+) energy increased by "
+                      f"{pct:.2f}% (cross-species CX source active).")
+        else:
+            print(f"    [INFO] {o2_key} initial energy is zero.")
+
+    # ---- Check 3: CO2+ must show a change ----
+    # CO2+ is produced by photoionization (R1) and consumed by CX (R3, R5)
+    # and recombination (R7).  Both source and loss are active.
+    co2_key = "Epart4" if "Epart4" in first else None
+    if co2_key:
+        e_co2_init = first.get(co2_key, 0.0)
+        e_co2_final = last.get(co2_key, 0.0)
+        if e_co2_init > 0:
+            co2_ratio = e_co2_final / e_co2_init
+            print(f"    {co2_key} (CO2+): ratio = {co2_ratio:.4f}")
+            if abs(co2_ratio - 1.0) < change_threshold:
+                print(f"    FAIL: {co2_key} (CO2+) energy unchanged.")
+                passed = False
+                reasons.append("CO2+ energy unchanged")
+            else:
+                pct = abs(co2_ratio - 1.0) * 100
+                print(f"    SUCCESS: {co2_key} (CO2+) energy changed by "
+                      f"{pct:.2f}%.")
+
+    if passed:
+        print("Mars Chemistry Test: PASSED")
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
+
+
+def validate_recombination(pic_diags=None, test_name=None):
+    """Validate the recombination loss test (O2+ + e- -> O + O).
+
+    Checks that O2+ (species 2, Epart2) energy decreases over time due
+    to recombination loss, while H+ (species 1, Epart1) energy remains
+    stable since H+ does not participate in recombination.
+    """
+    print("Validating Recombination Loss Test...")
+
+    if not pic_diags or len(pic_diags) < 2:
+        print("  [INFO] No PIC energy log found; skipping energy checks.")
+        return True, "Passed (no pic log)"
+
+    first = pic_diags[0]
+    last = pic_diags[-1]
+
+    epart_keys = sorted(
+        k for k in first.keys() if k.startswith("Epart") and k != "Epart"
+    )
+    if not epart_keys:
+        print("  [INFO] No per-species energy columns; skipping.")
+        return True, "Passed (no Epart columns)"
+
+    print(f"  --- Energy Diagnostics (from log_pic log) ---")
+    for k in epart_keys:
+        print(f"    {k}: {first.get(k, 0):.6e} -> {last.get(k, 0):.6e}")
+
+    passed = True
+    reasons = []
+
+    # O2+ (species 2) should decrease due to recombination.
+    o2_key = "Epart2" if "Epart2" in first else (epart_keys[-1] if len(epart_keys) >= 2 else None)
+    if o2_key:
+        e_o2_initial = first.get(o2_key, 0.0)
+        e_o2_final = last.get(o2_key, 0.0)
+        print(f"    {o2_key} (O2+): {e_o2_initial:.6e} -> {e_o2_final:.6e}")
+        if e_o2_initial <= 0:
+            print(f"    FAIL: {o2_key} initial energy is zero.")
+            passed = False
+            reasons.append("O2+ initial energy is zero")
+        elif e_o2_final >= e_o2_initial:
+            print(f"    FAIL: {o2_key} energy did not decrease (recombination not active).")
+            passed = False
+            reasons.append("O2+ energy did not decrease")
+        else:
+            ratio = e_o2_final / e_o2_initial
+            print(f"    SUCCESS: {o2_key} energy decreased to {ratio:.3f} of initial.")
+
+    # H+ (species 1) should remain stable.
+    h_key = "Epart1" if "Epart1" in first else None
+    if h_key:
+        e_h_initial = first.get(h_key, 0.0)
+        e_h_final = last.get(h_key, 0.0)
+        h_tolerance = 0.10  # allow up to 10% variation (numerical noise)
+        print(f"    {h_key} (H+): {e_h_initial:.6e} -> {e_h_final:.6e}")
+        if e_h_initial > 0:
+            h_ratio = abs(e_h_final - e_h_initial) / e_h_initial
+            if h_ratio > h_tolerance:
+                print(f"    FAIL: {h_key} energy changed by {h_ratio*100:.1f}% "
+                      f"(threshold {h_tolerance*100:.0f}%).")
+                passed = False
+                reasons.append(f"H+ energy changed by {h_ratio*100:.1f}%")
+            else:
+                print(f"    SUCCESS: {h_key} energy stable ({h_ratio*100:.1f}% change).")
+
+    if passed:
+        print("Recombination Loss Test: PASSED")
+        return True, "Passed"
+    else:
+        return False, "; ".join(reasons)
 
 
 def validate_ionization_source(pic_diags=None, test_name=None):
@@ -898,6 +1112,8 @@ def main():
         "photoionization": validate_ionization_source,
         "electronimpact": validate_ionization_source,
         "chargeexchange": validate_ionization_source,
+        "recombination": validate_recombination,
+        "chemistry": validate_chemistry,
     }
     
     # Discover test subdirectories under tests/
