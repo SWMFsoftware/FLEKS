@@ -1205,22 +1205,22 @@ The coefficients n0, H0, T0, k0 are specified as multi-component arrays
 for each neutral species. The total neutral density at radius r (measured
 from the planet center, with r >= r_planet) is the sum over all
 nComponent species:
-
-  n(r) = sum_i n_i(r)
-
+$$
+  n(r) = \sum_i n_i(r)
+$$
 where each component density n_i(r) depends on typeProfile:
-
+\begin{verbatim}
   Exponential (uses n0, H0):
     n_i(r) = n0_i * exp(-(r - r_planet) / H0_i)
 
   Power-Law (uses n0, k0):
-    n_i(r) = n0_i * (r_planet / r)^k0_i
+    n_i(r) = n0_i * (r_planet / r)\^k0_i
 
   Chamberlain (uses n0, H0):
     n_i(r) = n0_i * exp(-H0_i * (1/r_planet - 1/r))
-
-Here r_planet is the body radius set by #BODYSIZE, n0_i is the surface
-number density [m^-3] at r = r_planet, H0_i is the scale height [m],
+\end{verbatim{
+Here r\_planet is the body radius set by #BODYSIZE, n0_i is the surface
+number density [m\^-3] at r = r_planet, H0_i is the scale height [m],
 and k0_i is the power-law index. T0_i is the neutral temperature [K] of
 the exosphere component. It is used as the ionization source temperature:
 the pressure of newly created ions is set to n * k_B * T0_i. T0_i must
@@ -1245,7 +1245,7 @@ The number of neutral components is taken from #EXOSPHERE (nComponent);
 nuPhoto0 is the photoionization rate [1/s] at the planet surface,
 specified as a multi-component array (one value per #EXOSPHERE component,
 in the same order). The rate at distance r follows geometric dilution:
-nu(r) = nuPhoto0 * (r_planet / r)^2.
+nu(r) = nuPhoto0 * (r_planet / r)\^2.
 </command>
 
 <command name="SHADOWCYLINDER"
@@ -1296,9 +1296,10 @@ symmetrically (no shadow).
 This command enables electron impact ionization as an exosphere source
 process. The number of neutral components is taken from #EXOSPHERE
 (nComponent); #EXOSPHERE must appear before #ELECTRONIMPACT in PARAM.in.
-Uses the Voronov 1997 rate coefficient: <sigma*v> = A * t^K / (X + t)
-* exp(-Ei/Te), where t = Te/Ei.  eIon is the ionization energy [eV],
-Acoeff is the Voronov A coefficient [cm^3/s], Kcoeff is K, Xcoeff is X.
+Uses the Voronov 1997 rate coefficient:
+$<\sigma*v> = A * t^K / (X + t)*\exp(-Ei/Te)$,
+where t = Te/Ei.  eIon is the ionization energy [eV],
+Acoeff is the Voronov A coefficient [cm\^3/s], Kcoeff is K, Xcoeff is X.
 Each parameter is specified as a multi-component array (one set per
 #EXOSPHERE component, in the same order).
 </command>
@@ -1323,7 +1324,7 @@ nIonSpecies must match the number of ion species (nS - 1 from #PLASMA,
 since species 0 is the electron); #PLASMA must also appear before
 #CHARGEEXCHANGE.
 Uses a constant cross-section model: <sigma*v> = sigmaCX * u_ion.
-sigmaCX is the charge exchange cross section [cm^2], specified as a
+sigmaCX is the charge exchange cross section [cm\^2], specified as a
 matrix with one row per neutral component (in #EXOSPHERE order) and one
 column per ion species, in row-major order.  Each neutral component
 exchanges charge with every ion species, and the total charge-exchange
