@@ -1205,9 +1205,9 @@ The coefficients n0, H0, T0, k0 are specified as multi-component arrays
 for each neutral species. The total neutral density at radius $r$ (measured
 from the planet center, with $r \geq r_{planet}$) is the sum over all
 nComponent species:
-
-\[ n(r) = \sum_i n_i(r) \]
-
+$$
+  n(r) = \sum_i n_i(r)
+$$
 where each component density $n_i(r)$ depends on typeProfile:
 
 \begin{verbatim}
@@ -1333,7 +1333,7 @@ Uses a constant cross-section model:
 \begin{verbatim}
 <sigma*v> = sigmaCX * u_ion
 \end{verbatim}
-sigmaCX is the charge exchange cross section [cm$^2$], specified as a
+sigmaCX is the charge exchange cross section [cm\^2], specified as a
 matrix with one row per neutral component (in #EXOSPHERE order) and one
 column per ion species, in row-major order.  Each neutral component
 exchanges charge with every ion species, and the total charge-exchange
@@ -1373,7 +1373,7 @@ nReactions is the number of recombination reactions.  For each reaction,
 the following 4 parameters are read:
   ionSpecies    - 1-based ion species index (1..nS-1).  Species 0 (the
                   electron) cannot recombine with itself.
-  rateCoef      - Base rate coefficient k0 [cm$^3$/s].
+  rateCoef      - Base rate coefficient k0 [cm\^3/s].
   tempExponent  - Temperature exponent alpha.  When 0, k = k0 (constant,
                   independent of temperature).  When non-zero, refTemp
                   must be positive.
