@@ -1247,9 +1247,9 @@ The number of neutral components is taken from #EXOSPHERE (nComponent);
 nuPhoto0 is the photoionization rate [1/s] at the planet surface,
 specified as a multi-component array (one value per #EXOSPHERE component,
 in the same order). The rate at distance $r$ follows geometric dilution:
-\begin{verbatim}
-nu(r) = nuPhoto0 * (r_planet / r)^2
-\end{verbatim}
+$$
+  \nu(r) = \nu_{photo,0} \, (r_{planet} / r)^2
+$$
 </command>
 
 <command name="SHADOWCYLINDER"
@@ -1301,9 +1301,9 @@ This command enables electron impact ionization as an exosphere source
 process. The number of neutral components is taken from #EXOSPHERE
 (nComponent); #EXOSPHERE must appear before #ELECTRONIMPACT in PARAM.in.
 Uses the Voronov 1997 rate coefficient:
-\begin{verbatim}
-<sigma*v> = A * t^K / (X + t) * exp(-Ei/Te),  where t = Te/Ei
-\end{verbatim}
+$$
+  \langle \sigma v \rangle = \frac{A \, t^K}{X + t} \, \exp(-E_i/T_e), \quad t = T_e/E_i
+$$
 eIon is the ionization energy [eV], Acoeff is the Voronov A coefficient
 [cm$^3$/s], Kcoeff is K, Xcoeff is X.
 Each parameter is specified as a multi-component array (one set per
@@ -1330,17 +1330,17 @@ nIonSpecies must match the number of ion species (nS - 1 from #PLASMA,
 since species 0 is the electron); #PLASMA must also appear before
 #CHARGEEXCHANGE.
 Uses a constant cross-section model:
-\begin{verbatim}
-<sigma*v> = sigmaCX * u_ion
-\end{verbatim}
+$$
+  \langle \sigma v \rangle = \sigma_{CX} \, u_{ion}
+$$
 sigmaCX is the charge exchange cross section [cm\^2], specified as a
 matrix with one row per neutral component (in #EXOSPHERE order) and one
 column per ion species, in row-major order.  Each neutral component
 exchanges charge with every ion species, and the total charge-exchange
 frequency for a neutral component is the sum over all ion species:
-\begin{verbatim}
-nu_CX(iC) = sum_{iSp} n_{iSp} * sigmaCX(iC, iSp) * u_{iSp}
-\end{verbatim}
+$$
+  \nu_{CX}(iC) = \sum_{iSp} n_{iSp} \, \sigma_{CX}(iC, iSp) \, u_{iSp}
+$$
 The resulting source is deposited into the mapped ion species (iC + 1).
 </command>
 
@@ -1380,9 +1380,9 @@ the following 4 parameters are read:
   refTemp       - Reference temperature $T_{ref}$ [K].
 
 The temperature-dependent rate coefficient is:
-\begin{verbatim}
-  k(T_e) = k0 * (T_ref / T_e)^alpha
-\end{verbatim}
+$$
+  k(T_e) = k_0 \, (T_{ref} / T_e)^{\alpha}
+$$
 where $T_e$ is the electron temperature in Kelvin.
 
 #RECOMBINATION does not require #EXOSPHERE because recombination depends
@@ -1453,13 +1453,13 @@ nReactions is the number of reactions.  For each reaction, the following
   refTemp      - Reference temperature $T_{ref}$ [K] (thermal only).
 
 The rate coefficient for thermal reactions (rateType = 0) is:
-\begin{verbatim}
-  k(T_e) = k0 * (T_ref / T_e)^alpha
-\end{verbatim}
+$$
+  k(T_e) = k_0 \, (T_{ref} / T_e)^{\alpha}
+$$
 For photoionization (rateType = 1), the rate follows geometric dilution:
-\begin{verbatim}
-  nu(r) = nu0 * (r_planet / r)^2
-\end{verbatim}
+$$
+  \nu(r) = \nu_0 \, (r_{planet} / r)^2
+$$
 and is set to zero inside the shadow cylinder defined by #SHADOWCYLINDER
 (if present).
 
