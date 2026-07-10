@@ -6,6 +6,8 @@
 
 #include "Domains.h"
 
-extern Domains fleksDomains;
+// Domains own AMReX objects and must not be destroyed during static teardown,
+// after AMReX has finalized its allocators.
+extern Domains& fleksDomains;
 
 #endif
