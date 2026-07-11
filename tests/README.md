@@ -18,6 +18,8 @@ Each test case is contained within its own dedicated subdirectory containing a
 |                   |                    | (T ~ 100,000 K), only electron impact enabled            |
 | Charge exchange   | `chargeexchange/`  | Constant CX cross-section with flowing solar wind ions,  |
 |                   |                    | only charge exchange enabled                             |
+| Hybrid wave       | `hybrid_wave/`     | Hybrid PIC (kinetic ions / fluid electrons) whistler–     |
+|                   |                    | Alfven wave; validates the Hall term & CGS units          |
 | Light wave        | `lightwave/`       | 3D vacuum transverse EM (light) wave on a periodic AMR  |
 |                   |                    | grid; energy-conservation check (needs `nLevMax >= 2`)   |
 | Performance       | `performance/`     | Beam-based scaling benchmark (excluded from CI suite)    |

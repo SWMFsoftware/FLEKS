@@ -1,0 +1,123 @@
+#DESCRIPTION
+Hybrid PIC (kinetic ions / fluid electrons) parallel whistler-Alfven wave test.
+Validates the generalized Ohm's law with the Hall term in normalized CGS units.
+
+Parameters are chosen so that in CODE (normalized) units the ion scales are
+O(1) and the ion cyclotron motion is resolved by the timestep:
+  The geometry is in code units; the box is Lx = 6.4 d_i.
+  Normalization: lNormSI = ion inertial length d_i, uNormSI = Alfven speed v_A,
+  so that d_i ~ 1, v_A ~ 1, and (with q/(m c)=1 for the proton) B = Omega_i ~ 1.
+  With dt = 0.02, dt*Omega_i = 0.02 << 1, so the Hall/whistler mode
+  (bounded by Omega_i, since omega/Omega_i = (k d_i)^2 / (1+(k d_i)^2)) is
+  numerically stable.  Physical inputs (n = 5 amu/cc, B = 5.22 nT,
+  v_A ~ 51 km/s, d_i ~ 102 km) are solar-wind-like.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-3.2                    xMin  [code units; Lx = 6.4 d_i]
+ 3.2                    xMax
+-0.05                   yMin
+ 0.05                   yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+64                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+64                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#RESISTIVITY
+0.0                     etaResistivity
+
+#ELECTRONTEMPERATURE
+0.0                     electronTemperature
+1.0                     electronGamma
+1.0                     electronDensity0
+
+#HALLSUBCYCLE
+32                      nHallSubcycle   subDt=dt/32=6.25e-4 satisfies Hall CFL dx^2/(6 v_A d_i)
+
+#PLASMA
+1                       nSpecies
+1.0                     mass        Species 0: kinetic ion (electron is implicit fluid)
+1.0                     charge
+
+#UNIFORMSTATE
+5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.2195e-9               bx [T]       uniform guide field Bx0 (B_code ~ 1)
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+HybridWave
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
+5.0e4                   uNormSI   [m/s] ~ v_A so v_A ~ 1 in code units
+
+#MONITOR
+1                       dnReport
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#PARTICLES
+2000                    nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#COMOVING
+F                       solvePartInCoMov
+0                       nSmoothBackGroundU
+
+#UPWINDE
+F                       useUpwindE
+0.0                     limiterThetaE
+
+#UPWINDB
+F                       doSmoothB
+0.0                     theta
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+-1                      dn
+0.5                     dt
+1                       dx
+Bx By Bz Ex Ey Ez       varName
+
+#STOP
+-1                      MaxIter
+6.25                    TimeMax
+
+#RUN
