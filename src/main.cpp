@@ -87,6 +87,7 @@ int main(int argc, char* argv[]) {
     fleksDomains.add_new_domain();
     fleksDomains.select(0);
     Domain& domain = fleksDomains(0);
+
     domain.init(0.0, 1, paramString);
 
     // Turn on all cells.

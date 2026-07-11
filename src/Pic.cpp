@@ -194,7 +194,30 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     } else if (testcase == "lightwave") {
       testCase = LightWave;
       pInfo.nPartPerCell = IntVect::Zero;
+    } else if (testcase == "HybridWave") {
+      testCase = HybridWave;
+      // Unlike LightWave, the hybrid solver requires kinetic ion particles
+      // for the fluid moments.  Do NOT zero nPartPerCell here -- let it be
+      // set by the #PARTICLES command so the test is robust to PARAM.in
+      // command ordering.
     }
+  } else if (command == "#HYBRIDPIC") {
+    // Enable the hybrid PIC (kinetic ions + fluid electrons) solver. When set,
+    // the generalized Ohm's law field solver replaces the implicit GM-PC
+    // (SOLVEEM) solver.
+    param.read_var("useHybridPIC", useHybridPIC);
+  } else if (command == "#RESISTIVITY") {
+    // Resistive term eta * J in the Ohm's law (CGS code resistivity).
+    param.read_var("etaResistivity", etaResistivity);
+  } else if (command == "#ELECTRONTEMPERATURE") {
+    // Electron pressure gradient term: Pe = Te * rho (isothermal, gamma=1) or
+    // Pe = P0 (rho/rho0)^gamma (adiabatic). 0 disables the term.
+    param.read_var("electronTemperature", electronTemperature);
+    param.read_var("electronGamma", electronGamma);
+    param.read_var("electronDensity0", electronDensity0);
+  } else if (command == "#HALLSUBCYCLE") {
+    // Number of B-field sub-steps per coarse dt for the Hall-term update.
+    param.read_var("nHallSubcycle", nHallSubcycle);
   } else if (command == "#SELECTPARTICLE") {
     param.read_var("doSelectParticle", doSelectParticle);
     if (doSelectParticle) {
@@ -210,6 +233,29 @@ void Pic::post_process_param() {
   fsolver.mode = (!fsolver.useLaggedLimiter && limiterThetaE != 0)
                      ? FieldSolverMode::NewtonKrylov
                      : FieldSolverMode::GMRES;
+
+  // Identify electron vs. kinetic-ion species for the hybrid solver.
+  // get_charge() < 0 marks an (explicit) electron species; everything else is
+  // a kinetic ion. In standard PIC runs there is no electron particle species,
+  // so kineticSpecies_ equals all species and existing behaviour is unchanged.
+  kineticSpecies_.clear();
+  iElectron_ = -1;
+  for (int i = 0; i < nSpecies; ++i) {
+    // parts may not be fully populated when this runs; guard the access.
+    // If the species table is unavailable we conservatively treat every
+    // species as a kinetic ion (iElectron_ stays -1), which matches standard
+    // PIC behaviour and is also correct for the single-ion hybrid setup.
+    if (i < (int)parts.size() && parts[i] && parts[i]->get_charge() < 0) {
+      if (iElectron_ < 0)
+        iElectron_ = i;
+    } else {
+      kineticSpecies_.push_back(i);
+    }
+  }
+
+  // The hybrid solver is mutually exclusive with the implicit GM-PC solver.
+  if (useHybridPIC)
+    solveEM = false;
 }
 
 //==========================================================
@@ -247,8 +293,14 @@ void Pic::fill_new_cells() {
     fill_lightwaves(48.0);
   }
 
+  if (testCase == HybridWave) {
+    fill_hybrid_wave();
+  }
+
   if (usePIC) {
     fill_particles();
+    if (testCase == HybridWave)
+      perturb_hybrid_wave_velocities();
     sum_moments(true);
     if (finest_level == 0) {
       sum_to_center(false);
@@ -572,7 +624,7 @@ void Pic::fill_source_particles() {
 #endif
 
   if (source) {
-    for (int i = 0; i < nSpecies; ++i) {
+    for (int i : kineticSpecies_) {
       parts[i]->add_particles_source(source, stateOH, tc->get_dt(), nSourcePPC,
                                      doSelectRegion, adaptiveSourcePPC);
     }
@@ -587,6 +639,8 @@ void Pic::update_part_loc_to_half_stage() {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (int i = 0; i < nSpecies; ++i) {
+      if (useHybridPIC && parts[i]->get_charge() < 0)
+        continue;
       parts[i]->update_position_to_half_stage(nodeEth[iLev], nodeB[iLev],
                                               tc->get_dt());
     }
@@ -642,11 +696,11 @@ void Pic::particle_mover() {
   Real dt = tc->get_dt();
   Real dtnext = tc->get_next_dt();
 
-  for (int i = 0; i < nSpecies; ++i) {
+  for (int i : kineticSpecies_) {
     parts[i]->mover(nodeEth, nodeB, eBg, uBg, dt, dtnext);
   }
 
-  for (int i = 0; i < nSpecies; ++i) {
+  for (int i : kineticSpecies_) {
     parts[i]->redistribute_particles();
   }
 }
@@ -939,9 +993,11 @@ void Pic::sum_moments(bool updateDt) {
     parts[i]->convert_to_fluid_moments(nodePlasma[i]);
   }
 
-  for (int i = 0; i < nSpecies; ++i) {
+  for (int i : kineticSpecies_) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      // Index of 'nSpecies' represents the sum of all species.
+      // nodePlasma[nSpecies] holds the sum of all kinetic-ion species.
+      // kineticSpecies_ excludes the (implicit fluid) electron, so in standard
+      // PIC runs (iElectron_ = -1) this sums every species exactly as before.
       MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
                     nMoments, nGst);
     }
@@ -1291,6 +1347,10 @@ void Pic::update(bool doReportIn) {
 
   if (solveEM) {
     update_E();
+  } else if (useHybridPIC) {
+    // The hybrid Ohm's law needs fresh ion fluid moments at time n.
+    sum_moments(false);
+    update_E_hybrid();
   }
 
   particle_mover();
@@ -1323,6 +1383,8 @@ void Pic::update(bool doReportIn) {
       project_down_E();
     }
     update_B();
+  } else if (useHybridPIC) {
+    update_B_hybrid();
   }
 
   // Only to be turned on if DivE error needs to be visulaized when DivE
@@ -1993,6 +2055,251 @@ void Pic::update_B() {
 
     } else {
 
+      fill_fine_lev_bny_from_coarse(
+          nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+          node_bilinear_interp);
+    }
+  }
+}
+
+//==========================================================
+//==========================================================
+void Pic::update_E_hybrid() {
+  std::string nameFunc = "Pic::update_E_hybrid";
+  timing_func(nameFunc);
+
+  // Particle weights are initialized with dt = 1 during the initial condition
+  // (add_particles_cell is called with dt = -1 -> dt = 1), so the charge density
+  // nodePlasma[...].iRho_ is the TRUE charge density rho_q = sum(qp)/V_cell.
+  // The Hall and electron-pressure-gradient terms therefore divide by iRho_
+  // directly (no dt rescaling needed).
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const auto dx = Geom(iLev).CellSizeArray();
+    const Real dxInv = 1.0 / (2.0 * dx[0]);
+    const Real dyInv = 1.0 / (2.0 * dx[1]);
+    const Real dzInv = 1.0 / (2.0 * dx[2]);
+
+    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const Array4<Real>& arrE = nodeE[iLev][mfi].array();
+      const Array4<Real>& arrEth = nodeEth[iLev][mfi].array();
+      const Array4<Real const>& arrB = nodeB[iLev][mfi].array();
+      const Array4<Real const>& moments =
+          nodePlasma[nSpecies][iLev][mfi].array();
+
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        Real rho = moments(i, j, k, iRho_);
+        Real ui = 0, vi = 0, wi = 0;
+
+        if (rho > 0) {
+          ui = moments(i, j, k, iUx_) / rho;
+          vi = moments(i, j, k, iUy_) / rho;
+          wi = moments(i, j, k, iUz_) / rho;
+        }
+
+        Real bx = arrB(i, j, k, ix_);
+        Real by = arrB(i, j, k, iy_);
+        Real bz = arrB(i, j, k, iz_);
+
+        // 1. Convection term: E_conv = - U_i x B
+        Real ex = -(vi * bz - wi * by);
+        Real ey = -(wi * bx - ui * bz);
+        Real ez = -(ui * by - vi * bx);
+
+        // 2. Resistivity and Hall / Pressure terms (if enabled)
+        // J = curl(B) / (4*pi) in CGS code units (see ROADMAP_HYBRID_PIC.md §8).
+        Real jx = 0.0, jy = 0.0, jz = 0.0;
+
+        Real dBz_dy = (arrB(i, j + 1, k, iz_) - arrB(i, j - 1, k, iz_)) * dyInv;
+        Real dBy_dz = (arrB(i, j, k + 1, iy_) - arrB(i, j, k - 1, iy_)) * dzInv;
+        jx = (dBz_dy - dBy_dz) / fourPI;
+
+        Real dBx_dz = (arrB(i, j, k + 1, ix_) - arrB(i, j, k - 1, ix_)) * dzInv;
+        Real dBz_dx = (arrB(i + 1, j, k, iz_) - arrB(i - 1, j, k, iz_)) * dxInv;
+        jy = (dBx_dz - dBz_dx) / fourPI;
+
+        Real dBy_dx = (arrB(i + 1, j, k, iy_) - arrB(i - 1, j, k, iy_)) * dxInv;
+        Real dBx_dy = (arrB(i, j + 1, k, ix_) - arrB(i, j - 1, k, ix_)) * dxInv;
+        jz = (dBy_dx - dBx_dy) / fourPI;
+
+        // Add eta * J term
+        if (etaResistivity > 0) {
+          ex += etaResistivity * jx;
+          ey += etaResistivity * jy;
+          ez += etaResistivity * jz;
+        }
+
+        // Add Electron pressure gradient and Hall term
+        if (rho > 0) {
+          const Real invRhoEff = 1.0 / rho;
+
+          // Electron pressure gradient term
+          Real dPe_dx = 0.0, dPe_dy = 0.0, dPe_dz = 0.0;
+          if (electronTemperature > 0) {
+            if (electronGamma == 1.0) {
+              // Isothermal: Pe = rho * Te -> grad(Pe) = Te * grad(rho)
+              dPe_dx =
+                  electronTemperature *
+                  (moments(i + 1, j, k, iRho_) - moments(i - 1, j, k, iRho_)) *
+                  dxInv;
+              dPe_dy =
+                  electronTemperature *
+                  (moments(i, j + 1, k, iRho_) - moments(i, j - 1, k, iRho_)) *
+                  dyInv;
+              dPe_dz =
+                  electronTemperature *
+                  (moments(i, j, k + 1, iRho_) - moments(i, j, k - 1, iRho_)) *
+                  dzInv;
+            } else {
+              // Adiabatic: Pe = P0 * (rho / rho0)^gamma
+              Real p0 = electronDensity0 * electronTemperature;
+              Real invRho0 = 1.0 / electronDensity0;
+
+              auto calc_Pe = [=](Real r) {
+                return (r > 0) ? p0 * std::pow(r * invRho0, electronGamma)
+                               : 0.0;
+              };
+
+              dPe_dx = (calc_Pe(moments(i + 1, j, k, iRho_)) -
+                        calc_Pe(moments(i - 1, j, k, iRho_))) *
+                       dxInv;
+              dPe_dy = (calc_Pe(moments(i, j + 1, k, iRho_)) -
+                        calc_Pe(moments(i, j - 1, k, iRho_))) *
+                       dyInv;
+              dPe_dz = (calc_Pe(moments(i, j, k + 1, iRho_)) -
+                        calc_Pe(moments(i, j, k - 1, iRho_))) *
+                       dzInv;
+            }
+
+            ex -= dPe_dx * invRhoEff;
+            ey -= dPe_dy * invRhoEff;
+            ez -= dPe_dz * invRhoEff;
+          }
+
+          // Hall term: (J x B) / rho_q  (rho = iRho_ = charge density).
+          // No dt factor -- weights are initialized with dt=1, so iRho_ is
+          // the true charge density (see block comment at top of this method).
+          Real hall_x = (jy * bz - jz * by) * invRhoEff;
+          Real hall_y = (jz * bx - jx * bz) * invRhoEff;
+          Real hall_z = (jx * by - jy * bx) * invRhoEff;
+
+          ex += hall_x;
+          ey += hall_y;
+          ez += hall_z;
+        }
+
+        arrE(i, j, k, ix_) = ex;
+        arrE(i, j, k, iy_) = ey;
+        arrE(i, j, k, iz_) = ez;
+
+        // Copy to Eth
+        arrEth(i, j, k, ix_) = ex;
+        arrEth(i, j, k, iy_) = ey;
+        arrEth(i, j, k, iz_) = ez;
+      });
+    }
+
+    nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+    nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
+    apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, &Pic::get_node_E, iLev);
+  }
+}
+
+//==========================================================
+void Pic::update_B_hybrid() {
+  std::string nameFunc = "Pic::update_B_hybrid";
+  timing_func(nameFunc);
+
+  Real dt = tc->get_dt();
+  Real subDt = dt / nHallSubcycle;
+
+  // Save the pre-update nodeB so dBdt can be computed as (B^{n+1} - B^n)/dt
+  // after the sub-cycle loop.  (Mirrors the master update_B, which copies
+  // nodeB into dBdt before the Faraday advance.)
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
+                   dBdt[iLev].nGrow());
+  }
+
+  for (int subStep = 0; subStep < nHallSubcycle; ++subStep) {
+    // Recompute the hybrid electric field from the CURRENT B every sub-step so
+    // that the Hall-driven whistler is advanced with the genuine sub-step dt.
+    // (Computing E once and holding it fixed over the sub-steps leaves the
+    // explicit forward-Euler advance of the oscillatory whistler unstable.)
+    update_E_hybrid();
+
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      MultiFab dB(cGrids[iLev], DistributionMap(iLev), 3, nGst);
+      curl_node_to_center(nodeEth[iLev], dB, Geom(iLev).InvCellSize());
+
+      MultiFab::Saxpy(centerB[iLev], -subDt, dB, 0, 0, centerB[iLev].nComp(),
+                      centerB[iLev].nGrow());
+
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+
+    // Project the advanced center-B back to the node-B used by the Ohm's law so
+    // the next sub-step's E recompute sees the updated field.
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (iLev == 0) {
+        apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+                 &Pic::get_center_B, iLev, &bcBField);
+      } else {
+        fill_fine_lev_bny_from_coarse(
+            centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+            ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+            cell_bilinear_interp);
+      }
+      average_center_to_node(centerB[iLev], nodeB[iLev]);
+      nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (iLev == 0) {
+        apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+                 &Pic::get_node_B, iLev, &bcBField);
+      } else {
+        fill_fine_lev_bny_from_coarse(
+            nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
+            ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+            node_bilinear_interp);
+      }
+    }
+  }
+
+  if (projectDownEmFields && finest_level > 0) {
+    for (int iLev = finest_level; iLev > 0; iLev--) {
+      average_down(centerB[iLev], centerB[iLev - 1], 0, 3, ref_ratio[0]);
+    }
+  }
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+    if (iLev == 0) {
+      apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+               &Pic::get_center_B, iLev, &bcBField);
+    } else {
+      fill_fine_lev_bny_from_coarse(
+          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          cell_bilinear_interp);
+    }
+
+    // dBdt still holds nodeB^n (saved before the sub-cycle loop above).
+    average_center_to_node(centerB[iLev], nodeB[iLev]);
+    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    // dBdt = (nodeB^{n+1} - nodeB^n) / dt
+    const Real invDt = 1. / dt;
+    MultiFab::LinComb(dBdt[iLev], -invDt, dBdt[iLev], 0, invDt, nodeB[iLev], 0,
+                      0, dBdt[iLev].nComp(), dBdt[iLev].nGrow());
+
+    if (iLev == 0) {
+      apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+               &Pic::get_node_B, iLev, &bcBField);
+    } else {
       fill_fine_lev_bny_from_coarse(
           nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
@@ -2846,6 +3153,102 @@ void Pic::fill_lightwaves(amrex::Real wavelength, int EorB, amrex::Real time,
     }
 
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+}
+
+//==========================================================
+void Pic::fill_hybrid_wave() {
+  std::string nameFunc = "Pic::fill_hybrid_wave";
+
+  // Perturbation amplitude as a fraction of the uniform guide field Bx0.
+  // Kept small (linear regime) so the wave is a clean normal mode and the
+  // ion kinetic-energy exchange with the field stays modest; the decisive
+  // whistler-dispersion test (Section 4 of the README) uses time-resolved
+  // B output and is done manually.
+  const Real waveFrac = 0.02;
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    // Guide field Bx0 already deposited by fill_E_B_fields() from #UNIFORMSTATE.
+    Real Bx0 = 1.0;
+    {
+      MFIter mfi(nodeB[iLev]);
+      if (mfi.isValid()) {
+        const Array4<Real const>& a = nodeB[iLev][mfi].array();
+        const Box& b = mfi.validbox();
+        Bx0 = a(b.smallEnd(), ix_);
+      }
+    }
+
+    const Real B1 = waveFrac * Bx0;
+    const auto& prob_lo = geom[iLev].ProbLo();
+    const auto& dx = geom[iLev].CellSize();
+    const Real Lx = (geom[iLev].ProbHi())[0] - prob_lo[0];
+    const Real kx = (Lx > 0) ? 2.0 * (dPI) / Lx : 0.0;
+
+    nodeB[iLev].setVal(0.0);
+    centerB[iLev].setVal(0.0);
+
+    for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
+      FArrayBox& fab = nodeB[iLev][mfi];
+      const Box& box = mfi.fabbox();
+      const Array4<Real>& arrB = fab.array();
+      ParallelFor(box, [&](int i, int j, int k) {
+        IntVect ijk = {AMREX_D_DECL(i, j, k)};
+        Real x = prob_lo[0] + dx[0] * i;
+        arrB(ijk, ix_) = Bx0;
+        arrB(ijk, iy_) = B1 * cos(kx * x);
+        arrB(ijk, iz_) = B1 * sin(kx * x);
+      });
+    }
+    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+      FArrayBox& fab = centerB[iLev][mfi];
+      const Box& box = mfi.fabbox();
+      const Array4<Real>& arrcB = fab.array();
+      ParallelFor(box, [&](int i, int j, int k) {
+        IntVect ijk = {AMREX_D_DECL(i, j, k)};
+        Real x = prob_lo[0] + dx[0] * (i + 0.5);
+        arrcB(ijk, ix_) = Bx0;
+        arrcB(ijk, iy_) = B1 * cos(kx * x);
+        arrcB(ijk, iz_) = B1 * sin(kx * x);
+      });
+    }
+    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+  }
+}
+
+void Pic::perturb_hybrid_wave_velocities() {
+  std::string nameFunc = "Pic::perturb_hybrid_wave_velocities";
+
+  // Alfvén-wave eigenmode velocity perturbation matching the B-field
+  // perturbation seeded by fill_hybrid_wave().  For a parallel-propagating
+  // wave with δB = (0, B1 cos kx, B1 sin kx) on guide field B0, the MHD /
+  // Alfvén limit gives δU_⊥ = -v_A * δB_⊥ / B0.  In code units (v_A = B0 =
+  // 1):  δU_y = -B1 cos kx,  δU_z = -B1 sin kx.
+  // This removes the large transient caused by seeding B without a matching
+  // ion velocity perturbation (which previously caused ~180x amplitude growth).
+
+  const Real waveFrac = 0.02;
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    Real Bx0 = 1.0;
+    {
+      MFIter mfi(nodeB[iLev]);
+      if (mfi.isValid()) {
+        const Array4<Real const>& a = nodeB[iLev][mfi].array();
+        const Box& b = mfi.validbox();
+        Bx0 = a(b.smallEnd(), ix_);
+      }
+    }
+
+    const Real B1 = waveFrac * Bx0;
+    const Real Lx = (geom[iLev].ProbHi())[0] - geom[iLev].ProbLo()[0];
+    const Real kx = (Lx > 0) ? 2.0 * (dPI) / Lx : 0.0;
+
+    for (int i : kineticSpecies_) {
+      parts[i]->add_velocity_perturbation(-B1, -B1, kx);
+    }
   }
 }
 

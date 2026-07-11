@@ -693,6 +693,13 @@ public:
                                   ParticleType& p3, ParticleType& p4);
   void merge(amrex::Real limit);
   void merge_new(amrex::Real limit);
+
+  // Add a circularly-polarized velocity perturbation to every particle:
+  //   dv_y += ampY * cos(kx * x),   dv_z += ampZ * sin(kx * x).
+  // Used by the HybridWave test case to seed the Alfvén-wave eigenmode ion
+  // velocity that matches the B-field perturbation from fill_hybrid_wave().
+  void add_velocity_perturbation(amrex::Real ampY, amrex::Real ampZ,
+                                 amrex::Real kx);
   bool merge_particles_fast(int iLev, AoS& particles,
                             amrex::Vector<int>& partIdx,
                             amrex::Vector<int>& idx_I, int nPartCombine,
