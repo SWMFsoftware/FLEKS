@@ -32,6 +32,8 @@ private:
   bool isTCInitialized = false;
 
 public:
+  std::unique_ptr<TimeCtr> tc;
+
   // Q: Why are pic and pt defined as pointers?
   // A: Pic and particleTracker are derived from AmrCore, whose initialization
   // requires the informaion of the domain, such as the domain range and cell
@@ -52,8 +54,6 @@ public:
   std::unique_ptr<OHInterface> stateOH;
   // The Neu->Ion source for PT->OH coupling.
   std::unique_ptr<OHInterface> sourcePT2OH;
-
-  std::unique_ptr<TimeCtr> tc;
   //--------------------------------
 
   int couplerMarker;
