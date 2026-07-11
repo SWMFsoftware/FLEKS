@@ -4258,8 +4258,9 @@ void Particles<NStructReal, NStructInt>::limit_weight_new(
 // with template arguments.
 
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::add_velocity_perturbation(
-    Real ampY, Real ampZ, Real kx) {
+void Particles<NStructReal, NStructInt>::add_velocity_perturbation(Real ampY,
+                                                                   Real ampZ,
+                                                                   Real kx) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       AoS& particles = pti.GetArrayOfStructs();

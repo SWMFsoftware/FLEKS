@@ -2070,10 +2070,10 @@ void Pic::update_E_hybrid() {
   timing_func(nameFunc);
 
   // Particle weights are initialized with dt = 1 during the initial condition
-  // (add_particles_cell is called with dt = -1 -> dt = 1), so the charge density
-  // nodePlasma[...].iRho_ is the TRUE charge density rho_q = sum(qp)/V_cell.
-  // The Hall and electron-pressure-gradient terms therefore divide by iRho_
-  // directly (no dt rescaling needed).
+  // (add_particles_cell is called with dt = -1 -> dt = 1), so the charge
+  // density nodePlasma[...].iRho_ is the TRUE charge density rho_q =
+  // sum(qp)/V_cell. The Hall and electron-pressure-gradient terms therefore
+  // divide by iRho_ directly (no dt rescaling needed).
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const auto dx = Geom(iLev).CellSizeArray();
@@ -2109,7 +2109,8 @@ void Pic::update_E_hybrid() {
         Real ez = -(ui * by - vi * bx);
 
         // 2. Resistivity and Hall / Pressure terms (if enabled)
-        // J = curl(B) / (4*pi) in CGS code units (see ROADMAP_HYBRID_PIC.md §8).
+        // J = curl(B) / (4*pi) in CGS code units (see ROADMAP_HYBRID_PIC.md
+        // §8).
         Real jx = 0.0, jy = 0.0, jz = 0.0;
 
         Real dBz_dy = (arrB(i, j + 1, k, iz_) - arrB(i, j - 1, k, iz_)) * dyInv;
@@ -3168,7 +3169,8 @@ void Pic::fill_hybrid_wave() {
   const Real waveFrac = 0.02;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    // Guide field Bx0 already deposited by fill_E_B_fields() from #UNIFORMSTATE.
+    // Guide field Bx0 already deposited by fill_E_B_fields() from
+    // #UNIFORMSTATE.
     Real Bx0 = 1.0;
     {
       MFIter mfi(nodeB[iLev]);
@@ -3193,7 +3195,7 @@ void Pic::fill_hybrid_wave() {
       const Box& box = mfi.fabbox();
       const Array4<Real>& arrB = fab.array();
       ParallelFor(box, [&](int i, int j, int k) {
-        IntVect ijk = {AMREX_D_DECL(i, j, k)};
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
         Real x = prob_lo[0] + dx[0] * i;
         arrB(ijk, ix_) = Bx0;
         arrB(ijk, iy_) = B1 * cos(kx * x);
@@ -3207,7 +3209,7 @@ void Pic::fill_hybrid_wave() {
       const Box& box = mfi.fabbox();
       const Array4<Real>& arrcB = fab.array();
       ParallelFor(box, [&](int i, int j, int k) {
-        IntVect ijk = {AMREX_D_DECL(i, j, k)};
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
         Real x = prob_lo[0] + dx[0] * (i + 0.5);
         arrcB(ijk, ix_) = Bx0;
         arrcB(ijk, iy_) = B1 * cos(kx * x);
