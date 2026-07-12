@@ -316,7 +316,9 @@ Mutually exclusive with SOLVEEM.
 #RESISTIVITY
 0.0               etaResistivity
 
-Resistive term eta * J in the generalized Ohm's law (normalized CGS units).
+Resistive term eta * J in the generalized Ohm's law.
+etaResistivity is the SI magnetic diffusivity [m^2/s]; it is converted to
+code units internally (etaCode = 4*pi*etaSI*Si2NoV*Si2NoL).
 0 disables the resistive term.
 </command>
 
@@ -332,9 +334,12 @@ Resistive term eta * J in the generalized Ohm's law (normalized CGS units).
 1.0               electronGamma
 1.0               electronDensity0
 
-Electron temperature (normalized units) for the electron pressure gradient
-term in the Ohm's law. 0 disables the term (Hall-only mode). gamma=1 is
-isothermal (Pe = Te * rho), otherwise adiabatic Pe = P0 (rho/rho0)^gamma.
+Electron temperature [eV] for the electron pressure gradient term in the
+Ohm's law. Converted to code units internally
+(TeCode = TeEV * e / (mp * uNormSI^2)).
+0 disables the term (Hall-only mode). gamma=1 is isothermal (Pe = Te * rho),
+otherwise adiabatic Pe = P0 (rho/rho0)^gamma. electronDensity0 is in code
+units (default 1.0 = reference charge density).
 </command>
 
 <command name="HALLSUBCYCLE"

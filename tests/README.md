@@ -18,8 +18,10 @@ Each test case is contained within its own dedicated subdirectory containing a
 |                   |                    | (T ~ 100,000 K), only electron impact enabled            |
 | Charge exchange   | `chargeexchange/`  | Constant CX cross-section with flowing solar wind ions,  |
 |                   |                    | only charge exchange enabled                             |
-| Hybrid wave       | `hybrid_wave/`     | Hybrid PIC (kinetic ions / fluid electrons) whistler–     |
-|                   |                    | Alfven wave; validates the Hall term & CGS units          |
+| Hybrid whistler  | `hybrid_whistler/` | Hybrid PIC (kinetic ions / fluid electrons) whistler–     |
+|                   |                    | Alfven wave; Hall term only (resistivity & e-pressure off)|
+| Hybrid Ohm's law | `hybrid_ohm/`      | Hybrid PIC full generalized Ohm's law: convection + Hall  |
+|                   |                    | + resistive + electron-pressure-gradient, all active       |
 | Light wave        | `lightwave/`       | 3D vacuum transverse EM (light) wave on a periodic AMR  |
 |                   |                    | grid; energy-conservation check (needs `nLevMax >= 2`)   |
 | Performance       | `performance/`     | Beam-based scaling benchmark (excluded from CI suite)    |
@@ -130,5 +132,7 @@ expected results, and instructions for manual execution:
 | `photoionization/` | [README](photoionization/README.md)  |
 | `electronimpact/`  | [README](electronimpact/README.md)   |
 | `chargeexchange/`  | [README](chargeexchange/README.md)   |
+| `hybrid_whistler/` | [README](hybrid_whistler/README.md)  |
+| `hybrid_ohm/`      | [README](hybrid_ohm/README.md)       |
 | `lightwave/`       | [README](lightwave/README.md)        |
 | `performance/`     | — (see `validate_performance.py`)    |
