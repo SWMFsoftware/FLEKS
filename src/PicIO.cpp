@@ -28,10 +28,10 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
           << " -> GM coupling at t =" << tc->get_time_si() << " (s)"
           << std::endl;
 
+  for (int i = 0; i < nVar * nPoint; ++i)
+    data_I[i] = 0.0;
+
   if (!usePIC) {
-    for (int i = 0; i < nVar * nPoint; ++i) {
-      data_I[i] = 0;
-    }
     return;
   }
 
@@ -45,7 +45,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
 
   const RealBox& range = Geom(0).ProbDomain();
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
-    RealVect xyz;
+    RealVect xyz(0.0);
     for (int iDim = 0; iDim < nDim; iDim++) {
       xyz[iDim] = xyz_I[iPoint * nDim + iDim] * fi->get_Si2NoL();
     }
@@ -121,7 +121,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
       }
 
       for (int k = lo[iz_]; k <= hi[iz_]; ++k) {
-        const double zp = Geom(iLev).LoEdge(k, iz_);
+        const double zp = nDim > 2 ? Geom(iLev).LoEdge(k, iz_) : 0.0;
         for (int j = lo[iy_]; j <= hi[iy_]; ++j) {
           const double yp = Geom(iLev).LoEdge(j, iy_);
           for (int i = lo[ix_]; i <= hi[ix_]; ++i) {

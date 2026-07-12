@@ -12,7 +12,10 @@
 
 using namespace amrex;
 
-Domains fleksDomains;
+// fleks_end_() clears this registry before Finalize(). Keep the empty registry
+// alive on abnormal process termination to avoid static destruction after
+// AMReX has finalized its allocators.
+Domains &fleksDomains = *new Domains;
 
 // What does 'static' means?
 // A 'static' variable is only visible in this translation unit.

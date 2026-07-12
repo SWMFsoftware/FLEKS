@@ -524,10 +524,11 @@ public:
     int j = ijk[1];
     int k = nDim > 2 ? ijk[2] : 0;
 
-    // What if the seed overflow?
-    const long seed =
-        (speciesID + 3) * nRandom * product(nPPC) *
-        (nxcg * nycg * nzcg * iCycle + nycg * nzcg * i + nzcg * j + k);
+    const long nCellOffset = static_cast<long>(nxcg) * nycg * nzcg * iCycle +
+                             static_cast<long>(nycg) * nzcg * i +
+                             static_cast<long>(nzcg) * j + k;
+    const long seed = static_cast<long>(speciesID + 3) * nRandom *
+                      product(nPPC) * nCellOffset;
     return seed;
   }
 

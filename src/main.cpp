@@ -10,7 +10,10 @@
 #include "SimDomains.h"
 #include "show_git_info.h"
 
-Domains fleksDomains;
+// Normal completion clears this registry before Finalize(). Keep the empty
+// registry alive on abnormal process termination to avoid static destruction
+// after AMReX has finalized its allocators.
+Domains& fleksDomains = *new Domains;
 
 extern "C" {
 void timing_start_c(size_t* nameLen, char* name) {}

@@ -1944,10 +1944,12 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
                    yMax = Geom(iLev).HiEdge(hi.y, iy_) -
                           Geom(iLev).CellSize()[iy_] * 1e-10;
 
-        const Real zMin = Geom(iLev).LoEdge(lo.z, iz_) +
-                          Geom(iLev).CellSize()[iz_] * 1e-10,
-                   zMax = Geom(iLev).HiEdge(hi.z, iz_) -
-                          Geom(iLev).CellSize()[iz_] * 1e-10;
+        const Real zMin = nDim > 2 ? Geom(iLev).LoEdge(lo.z, iz_) +
+                                         Geom(iLev).CellSize()[iz_] * 1e-10
+                                   : 0.0,
+                   zMax = nDim > 2 ? Geom(iLev).HiEdge(hi.z, iz_) -
+                                         Geom(iLev).CellSize()[iz_] * 1e-10
+                                   : 0.0;
 
         if (is_neutral()) {
           Box bx = pti.tilebox();
@@ -2313,10 +2315,12 @@ void Particles<NStructReal, NStructInt>::split_new(Real limit,
                  yMax = Geom(iLev).HiEdge(hi.y, iy_) -
                         Geom(iLev).CellSize()[iy_] * 1e-10;
 
-      const Real zMin = Geom(iLev).LoEdge(lo.z, iz_) +
-                        Geom(iLev).CellSize()[iz_] * 1e-10,
-                 zMax = Geom(iLev).HiEdge(hi.z, iz_) -
-                        Geom(iLev).CellSize()[iz_] * 1e-10;
+      const Real zMin = nDim > 2 ? Geom(iLev).LoEdge(lo.z, iz_) +
+                                       Geom(iLev).CellSize()[iz_] * 1e-10
+                                 : 0.0,
+                 zMax = nDim > 2 ? Geom(iLev).HiEdge(hi.z, iz_) -
+                                       Geom(iLev).CellSize()[iz_] * 1e-10
+                                 : 0.0;
 
       if (is_neutral() || seperateVelocity) {
         Box bx = pti.tilebox();
@@ -2493,10 +2497,12 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
                  yMax = Geom(iLev).HiEdge(hi.y, iy_) -
                         Geom(iLev).CellSize()[iy_] * 1e-10;
 
-      const Real zMin = Geom(iLev).LoEdge(lo.z, iz_) +
-                        Geom(iLev).CellSize()[iz_] * 1e-10,
-                 zMax = Geom(iLev).HiEdge(hi.z, iz_) -
-                        Geom(iLev).CellSize()[iz_] * 1e-10;
+      const Real zMin = nDim > 2 ? Geom(iLev).LoEdge(lo.z, iz_) +
+                                       Geom(iLev).CellSize()[iz_] * 1e-10
+                                 : 0.0,
+                 zMax = nDim > 2 ? Geom(iLev).HiEdge(hi.z, iz_) -
+                                       Geom(iLev).CellSize()[iz_] * 1e-10
+                                 : 0.0;
 
       if (is_neutral() || seperateVelocity) {
         Box bx = pti.tilebox();
@@ -4181,10 +4187,12 @@ void Particles<NStructReal, NStructInt>::limit_weight_new(
                    yMax = Geom(iLev).HiEdge(hi.y, iy_) -
                           Geom(iLev).CellSize()[iy_] * 1e-10;
 
-        const Real zMin = Geom(iLev).LoEdge(lo.z, iz_) +
-                          Geom(iLev).CellSize()[iz_] * 1e-10,
-                   zMax = Geom(iLev).HiEdge(hi.z, iz_) -
-                          Geom(iLev).CellSize()[iz_] * 1e-10;
+        const Real zMin = nDim > 2 ? Geom(iLev).LoEdge(lo.z, iz_) +
+                                         Geom(iLev).CellSize()[iz_] * 1e-10
+                                   : 0.0,
+                   zMax = nDim > 2 ? Geom(iLev).HiEdge(hi.z, iz_) -
+                                         Geom(iLev).CellSize()[iz_] * 1e-10
+                                   : 0.0;
 
         for (auto& p : particles) {
           Real qp1 = p.rdata(iqp_);
