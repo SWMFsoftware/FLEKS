@@ -54,10 +54,11 @@ private:
   // When true, the generalized Ohm's law field solver is used instead of the
   // implicit GM-PC (solveEM) solver. Mutually exclusive with solveEM.
   bool useHybridPIC = false;
-  // Resistive term eta * J in the Ohm's law (CGS code resistivity).
+  // Resistive term eta * J. SI input [m^2/s], converted to code units.
+  amrex::Real etaResistivitySI = 0.0;
   amrex::Real etaResistivity = 0.0;
-  // Electron temperature (code units) for the electron pressure gradient term.
-  // 0 disables the pressure-gradient term (Hall-only mode).
+  // Electron pressure gradient. Input [eV], converted to code units.
+  amrex::Real electronTemperatureEV = 0.0;
   amrex::Real electronTemperature = 0.0;
   // Polytropic index for the adiabatic electron pressure closure.
   amrex::Real electronGamma = 1.0;

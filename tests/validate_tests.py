@@ -397,7 +397,7 @@ def validate_recombination(pic_diags=None, test_name=None):
         return False, "; ".join(reasons)
 
 
-def validate_hybrid_wave(pic_diags=None, test_name=None):
+def validate_hybrid(pic_diags=None, test_name=None):
     """Validate the Hybrid PIC (kinetic ion / fluid electron) wave test.
 
     Success criteria:
@@ -1259,7 +1259,7 @@ def validate_plot_output(test_name):
         return result, reason
 
     # ---- Hybrid wave: transverse-wave launch + bounded-amplitude check ----
-    if test_name == "hybrid_wave":
+    if test_name in ("hybrid_whistler", "hybrid_ohm"):
         print("  --- Validating Output Files (Hybrid wave) ---")
         result, reason = _check_hybrid_wave_dispersion()
         if result:
@@ -1331,7 +1331,8 @@ def main():
         "chargeexchange": validate_ionization_source,
         "recombination": validate_recombination,
         "chemistry": validate_chemistry,
-        "hybrid_wave": validate_hybrid_wave,
+        "hybrid_whistler": validate_hybrid,
+        "hybrid_ohm": validate_hybrid,
     }
     
     # Discover test subdirectories under tests/

@@ -1231,6 +1231,9 @@ void Domain::read_param(const bool readGridInfo) {
       }
     } //==========================================
 
+    if (fi)
+      fi->post_process_param(receiveICOnly);
+
     if (pic)
       pic->post_process_param();
 
@@ -1238,9 +1241,6 @@ void Domain::read_param(const bool readGridInfo) {
       pt->post_process_param();
       pt->set_tp_init_shapes(shapes);
     }
-
-    if (fi)
-      fi->post_process_param(receiveICOnly);
 
     // source was created before read_param with a stale copy of *fi.
     // Copy the now-fully-populated FluidInterfaceParameters from fi to

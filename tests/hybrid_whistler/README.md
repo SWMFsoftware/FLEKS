@@ -1,9 +1,15 @@
-# Hybrid PIC Whistler–Alfven Wave Standalone Test
+# Hybrid PIC Whistler–Alfven Wave Standalone Test (Hall-only)
 
 This test validates the **Hybrid PIC (kinetic ions, massless fluid electrons)**
 solver in standalone FLEKS, with emphasis on the **Hall term** of the
 generalized Ohm's law and its consistency with FLEKS's normalized CGS units
 (see `docs/Algorithm.tex`).
+
+It is the **Hall-only** member of the hybrid-PIC wave test family: the
+resistive (`#RESISTIVITY`) and electron-pressure-gradient
+(`#ELECTRONTEMPERATURE`) terms are disabled (`0.0`), so only the convection
+(`-U_i×B`) and Hall (`(J×B)/(en_e)`) terms are active. The companion
+[`hybrid_ohm`](../hybrid_ohm/README.md) test enables *all* four terms.
 
 ## Physics & Configuration
 
@@ -20,8 +26,8 @@ transient that a B-only seed would produce.
 ### Active solvers (require the hybrid port on `feature/hybrid-pic`)
 - `#SOLVEEM = F` — standard Maxwell/GMRES solver disabled.
 - `#HYBRIDPIC = T` — Ohm's-law + Faraday hybrid field advance.
-- `#RESISTIVITY = 0.0` — Hall-only (isolates dispersion).
-- `#ELECTRONTEMPERATURE = 0.0` — no electron-pressure-gradient term.
+- `#RESISTIVITY = 0.0` [m²/s] — Hall-only (isolates dispersion).
+- `#ELECTRONTEMPERATURE = 0.0` [eV] — no electron-pressure-gradient term.
 - `#HALLSUBCYCLE = 32` — sub-cycles the B update so `dt_sub = dt/32`
   satisfies the Hall (whistler) CFL; see *Implementation notes* below.
 

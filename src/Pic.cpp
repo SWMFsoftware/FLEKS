@@ -196,23 +196,16 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       pInfo.nPartPerCell = IntVect::Zero;
     } else if (testcase == "HybridWave") {
       testCase = HybridWave;
-      // Unlike LightWave, the hybrid solver requires kinetic ion particles
-      // for the fluid moments.  Do NOT zero nPartPerCell here -- let it be
-      // set by the #PARTICLES command so the test is robust to PARAM.in
-      // command ordering.
+      // Hybrid solver needs kinetic ions; let #PARTICLES set nPartPerCell.
     }
   } else if (command == "#HYBRIDPIC") {
-    // Enable the hybrid PIC (kinetic ions + fluid electrons) solver. When set,
-    // the generalized Ohm's law field solver replaces the implicit GM-PC
-    // (SOLVEEM) solver.
     param.read_var("useHybridPIC", useHybridPIC);
   } else if (command == "#RESISTIVITY") {
-    // Resistive term eta * J in the Ohm's law (CGS code resistivity).
-    param.read_var("etaResistivity", etaResistivity);
+    // etaResistivity in [m^2/s]; converted to code units in post_process_param.
+    param.read_var("etaResistivity", etaResistivitySI);
   } else if (command == "#ELECTRONTEMPERATURE") {
-    // Electron pressure gradient term: Pe = Te * rho (isothermal, gamma=1) or
-    // Pe = P0 (rho/rho0)^gamma (adiabatic). 0 disables the term.
-    param.read_var("electronTemperature", electronTemperature);
+    // electronTemperature in [eV]; converted in post_process_param.
+    param.read_var("electronTemperature", electronTemperatureEV);
     param.read_var("electronGamma", electronGamma);
     param.read_var("electronDensity0", electronDensity0);
   } else if (command == "#HALLSUBCYCLE") {
@@ -256,6 +249,27 @@ void Pic::post_process_param() {
   // The hybrid solver is mutually exclusive with the implicit GM-PC solver.
   if (useHybridPIC)
     solveEM = false;
+
+  // Convert user-supplied SI / eV values to code (normalized CGS) units.
+  // fi->post_process_param() must have already been called so that
+  // calc_normalization_units() has populated Si2NoV, Si2NoL, uNormSI, etc.
+  if (useHybridPIC) {
+    if (etaResistivitySI > 0) {
+      etaResistivity =
+          fourPI * etaResistivitySI * fi->get_Si2NoV() * fi->get_Si2NoL();
+      amrex::Print() << "  etaResistivity: " << etaResistivitySI
+                     << " [m^2/s] -> " << etaResistivity << " [code units]\n";
+    }
+    if (electronTemperatureEV > 0) {
+      // Te_code = Te_eV * e / (mp * uNorm_SI^2)
+      // (same relation as in ExoSource.h::electron_temperature, inverted)
+      double unormSI = fi->get_unorm_si();
+      electronTemperature = electronTemperatureEV * cUnitChargeSI /
+                            (cProtonMassSI * unormSI * unormSI);
+      amrex::Print() << "  electronTemperature: " << electronTemperatureEV
+                     << " [eV] -> " << electronTemperature << " [code units]\n";
+    }
+  }
 }
 
 //==========================================================
