@@ -121,7 +121,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
       }
 
       for (int k = lo[iz_]; k <= hi[iz_]; ++k) {
-        const double zp = Geom(iLev).LoEdge(k, iz_);
+        const double zp = nDim > 2 ? Geom(iLev).LoEdge(k, iz_) : 0.0;
         for (int j = lo[iy_]; j <= hi[iy_]; ++j) {
           const double yp = Geom(iLev).LoEdge(j, iy_);
           for (int i = lo[ix_]; i <= hi[ix_]; ++i) {
