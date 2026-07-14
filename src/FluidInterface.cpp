@@ -1421,9 +1421,6 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
                                     const double coef, Vector<int> idxMap) {
   std::string nameFunc = "FI::get_for_points";
 
-  for (int i = 0; i < nVar * nPoint; ++i)
-    data_I[i] = 0.0;
-
   const RealBox& range = Geom(0).ProbDomain();
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     RealVect xyz(0.0);

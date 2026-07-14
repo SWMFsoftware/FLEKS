@@ -28,10 +28,10 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
           << " -> GM coupling at t =" << tc->get_time_si() << " (s)"
           << std::endl;
 
-  for (int i = 0; i < nVar * nPoint; ++i)
-    data_I[i] = 0.0;
-
   if (!usePIC) {
+    for (int i = 0; i < nVar * nPoint; ++i) {
+      data_I[i] = 0;
+    }
     return;
   }
 
