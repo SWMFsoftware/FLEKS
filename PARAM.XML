@@ -295,6 +295,65 @@ T                 solveEM
 This command enables or disables the electromagnetic field solver.
 </command>
 
+<command name="HYBRIDPIC"
+   alias="HYBRIDPIC_FLEKS0,HYBRIDPIC_FLEKS1,HYBRIDPIC_FLEKS2"
+   multiple="T">
+  <parameter name="useHybridPIC" type="logical" default="F"/>
+
+#HYBRIDPIC
+F                 useHybridPIC
+
+When true, the hybrid PIC field solver (generalized Ohm's law with kinetic
+ions and a fluid electron) is used instead of the full PIC field solver.
+Mutually exclusive with SOLVEEM.
+</command>
+
+<command name="RESISTIVITY"
+   alias="RESISTIVITY_FLEKS0,RESISTIVITY_FLEKS1,RESISTIVITY_FLEKS2"
+   multiple="T">
+  <parameter name="etaResistivity" type="real" default="0.0"/>
+
+#RESISTIVITY
+0.0               etaResistivity
+
+Resistive term eta * J in the generalized Ohm's law.
+etaResistivity is the SI magnetic diffusivity [m^2/s]; it is converted to
+code units internally (etaCode = 4*pi*etaSI*Si2NoV*Si2NoL).
+0 disables the resistive term.
+</command>
+
+<command name="ELECTRONTEMPERATURE"
+   alias="ELECTRONTEMPERATURE_FLEKS0,ELECTRONTEMPERATURE_FLEKS1,ELECTRONTEMPERATURE_FLEKS2"
+   multiple="T">
+  <parameter name="electronTemperature" type="real" default="0.0"/>
+  <parameter name="electronGamma" type="real" default="1.0"/>
+  <parameter name="electronDensity0" type="real" default="1.0"/>
+
+#ELECTRONTEMPERATURE
+0.0               electronTemperature
+1.0               electronGamma
+1.0               electronDensity0
+
+Electron temperature [eV] for the electron pressure gradient term in the
+Ohm's law. Converted to code units internally
+(TeCode = TeEV * e / (mp * uNormSI^2)).
+0 disables the term (Hall-only mode). gamma=1 is isothermal (Pe = Te * rho),
+otherwise adiabatic Pe = P0 (rho/rho0)^gamma. electronDensity0 is in code
+units (default 1.0 = reference charge density).
+</command>
+
+<command name="HALLSUBCYCLE"
+   alias="HALLSUBCYCLE_FLEKS0,HALLSUBCYCLE_FLEKS1,HALLSUBCYCLE_FLEKS2"
+   multiple="T">
+  <parameter name="nHallSubcycle" type="integer" min="1" default="1"/>
+
+#HALLSUBCYCLE
+1                 nHallSubcycle
+
+Number of sub-steps used to advance the magnetic field within one coarse time
+step in the hybrid solver (refines the Hall-term integration).
+</command>
+
 <command name="PARTMODE"
    alias="PARTMODE_FLEKS0,PARTMODE_FLEKS1,PARTMODE_FLEKS2"
    multiple="T">

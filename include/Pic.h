@@ -50,6 +50,23 @@ private:
   bool solveEM = true;
   bool initEM = true;
 
+  // ---- Hybrid PIC (kinetic ions + fluid electrons) solver ----
+  // When true, the generalized Ohm's law field solver is used instead of the
+  // implicit GM-PC (solveEM) solver. Mutually exclusive with solveEM.
+  bool useHybridPIC = false;
+  // Resistive term eta * J. SI input [m^2/s], converted to code units.
+  amrex::Real etaResistivitySI = 0.0;
+  amrex::Real etaResistivity = 0.0;
+  // Electron pressure gradient. Input [eV], converted to code units.
+  amrex::Real electronTemperatureEV = 0.0;
+  amrex::Real electronTemperature = 0.0;
+  // Polytropic index for the adiabatic electron pressure closure.
+  amrex::Real electronGamma = 1.0;
+  // Reference (upstream) charge density for the adiabatic closure.
+  amrex::Real electronDensity0 = 1.0;
+  // Number of sub-steps for the B-field update within one coarse dt.
+  int nHallSubcycle = 1;
+
   bool useExplicitPIC = false;
   bool projectDownEmFields = true;
   bool skipMassMatrix = false;
@@ -99,6 +116,14 @@ private:
 
   int nSpecies;
   int iTot;
+
+  // Electron / kinetic-ion identification for the hybrid solver.
+  // iElectron_ is the index of the (explicit) electron species, or -1 if none.
+  // kineticSpecies_ lists the indices of all non-electron (kinetic ion)
+  // species; in standard PIC runs (no electron particle species) this equals
+  // all species, so existing behaviour is unchanged.
+  int iElectron_ = -1;
+  std::vector<int> kineticSpecies_;
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasma;
   amrex::Vector<amrex::Real> plasmaEnergy;
 
@@ -234,6 +259,16 @@ public:
   void fill_E_B_fields();
   void fill_lightwaves(amrex::Real wavelength, int EorB = -1,
                        amrex::Real time = 0, int lev = -1);
+  // Initialize a left/right-hand circularly polarized transverse wave on top of
+  // the uniform guide field for the HybridWave test case (see
+  // ROADMAP_HYBRID_PIC.md §9). The guide field Bx0 is taken from the uniform
+  // state already deposited by fill_E_B_fields().
+  void fill_hybrid_wave();
+
+  // Add the Alfvén-wave ion velocity perturbation matching the B-field
+  // perturbation seeded by fill_hybrid_wave().  Called after fill_particles()
+  // so the moments deposited by sum_moments include the perturbation.
+  void perturb_hybrid_wave_velocities();
 
   void fill_new_node_E();
 
@@ -313,6 +348,14 @@ public:
                        amrex::Real coef = 0.5);
 
   void update_U0_E0();
+
+  //-------------Hybrid PIC solver (kinetic ions + fluid electrons)-------------
+  // Generalized Ohm's law electric field: E = -U_i x B + eta J + (J x B)/rho_q
+  //                                        - grad(Pe)/rho_q
+  // where J = curl(B)/(4*pi) in CGS code units (see ROADMAP_HYBRID_PIC.md §8).
+  void update_E_hybrid();
+  // Faraday update of B with sub-cycling of the Hall term.
+  void update_B_hybrid();
 
   //-------------Electric field solver end-------------
 

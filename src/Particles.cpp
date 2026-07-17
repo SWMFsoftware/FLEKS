@@ -4256,5 +4256,23 @@ void Particles<NStructReal, NStructInt>::limit_weight_new(
 }
 // Since Particles is a template, it is necessary to explicitly instantiate
 // with template arguments.
+
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::add_velocity_perturbation(Real ampY,
+                                                                   Real ampZ,
+                                                                   Real kx) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      AoS& particles = pti.GetArrayOfStructs();
+      for (auto& p : particles) {
+        if (p.id() < 0)
+          continue;
+        Real x = p.pos(ix_);
+        p.rdata(ivp_) += ampY * std::cos(kx * x);
+        p.rdata(iwp_) += ampZ * std::sin(kx * x);
+      }
+    }
+  }
+}
 template class Particles<nPicPartReal, nPicPartInt>;
 template class Particles<nPTPartReal, nPTPartInt>;
