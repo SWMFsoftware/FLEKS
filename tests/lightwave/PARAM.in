@@ -61,7 +61,9 @@ T                       useFixedDt
 
 #DISCRETIZATION
 0.50                    theta
-0.0                     coefDiff
+0.0                     ratioDivC2C
+
+legacy keyword, mirrors SWMF test25 byte-for-byte. FieldSolver reads #DISCRETIZATION POSITIONALLY (theta, then coefDiff), so the name is cosmetic; 0.0 disables the divergence-blending diffusion (coefDiff) for the energy-conserving wave.
 
 #MONITOR
 10                      dnReport
