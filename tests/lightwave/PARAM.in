@@ -63,7 +63,11 @@ T                       useFixedDt
 0.50                    theta
 0.0                     ratioDivC2C
 
-legacy keyword, mirrors SWMF test25 byte-for-byte. FieldSolver reads #DISCRETIZATION POSITIONALLY (theta, then coefDiff), so the name is cosmetic; 0.0 disables the divergence-blending diffusion (coefDiff) for the energy-conserving wave.
+CAVEAT: line mirrors SWMF test25 (PARAM.in.test.FLEKS.AMR.LightWave.3D) for
+        byte-for-byte parity. The FieldSolver reads DISCRETIZATION values
+        POSITIONALLY (theta, then coefDiff); the keyword name is cosmetic.
+        0.0 disables the divergence-blending diffusion (coefDiff), giving the
+        intended energy-conserving transverse wave.
 
 #MONITOR
 10                      dnReport
