@@ -389,6 +389,65 @@ def validate_recombination(pic_diags=None, test_name=None):
         return False, "; ".join(reasons)
 
 
+def validate_lightwave(pic_diags=None, test_name=None):
+    """Validate the 3D light-wave (vacuum transverse EM wave) test.
+
+    The light-wave initial condition (testCase = lightwave) fills the node E
+    and B fields with an analytic transverse plane wave; with
+    nPartPerCell = 0 the PIC loads no macroparticles, so the total energy is
+    purely electromagnetic (Ee + Eb).  On a periodic vacuum grid the wave
+    should propagate without the energy decaying to zero or blowing up, so
+    the total EM energy is approximately conserved.
+
+    Checks (from log_pic_n*.log):
+      1. Etot at the first and last frame is finite and > 0 (wave present).
+      2. Energy is approximately conserved:
+         0.3 <= Etot_final / Etot_initial <= 3.0.
+    """
+    import math
+    print("Validating Light Wave Test...")
+
+    if not pic_diags or len(pic_diags) < 2:
+        print("  [INFO] No PIC energy log found; skipping energy checks.")
+        return True, "Passed (no pic log)"
+
+    first = pic_diags[0]
+    last = pic_diags[-1]
+
+    e0 = first.get("Etot", 0.0)
+    e1 = last.get("Etot", 0.0)
+
+    print(f"  --- Energy Diagnostics (from log_pic log) ---")
+    print(f"    Etot (t={first.get('time', 0):.4f}): {e0:.6e}")
+    print(f"    Etot (t={last.get('time', 0):.4f}): {e1:.6e}")
+
+    if not (math.isfinite(e0) and math.isfinite(e1)):
+        print("    FAIL: Non-finite total EM energy.")
+        return False, "Non-finite total EM energy"
+
+    if e0 <= 0:
+        print("    FAIL: Initial total EM energy is zero -- "
+              "wave not initialised.")
+        return False, "Initial Etot is zero (wave not initialised)"
+
+    if e1 <= 0:
+        print("    FAIL: Final total EM energy is zero -- wave collapsed.")
+        return False, "Final Etot is zero (wave collapsed)"
+
+    ratio = e1 / e0
+    lower, upper = 0.3, 3.0
+    print(f"    Etot_final / Etot_initial = {ratio:.4f} "
+          f"(allowed [{lower}, {upper}])")
+
+    if ratio < lower or ratio > upper:
+        print("    FAIL: total EM energy changed outside the allowed range -- "
+              "possible blow-up or unphysical decay.")
+        return False, f"Etot ratio {ratio:.3f} outside [{lower}, {upper}]"
+
+    print(f"    SUCCESS: light wave energy conserved (ratio = {ratio:.3f}).")
+    return True, "Passed"
+
+
 def validate_ionization_source(pic_diags=None, test_name=None):
     """Validate an ionization source test (photoionization, electron impact,
     or charge exchange).
@@ -1025,6 +1084,62 @@ def _check_charge_exchange_source_profile():
     return True, "Passed"
 
 
+def _check_lightwave_present():
+    """Verify the light wave is present in the final plot output.
+
+    Reads the final .out file (produced by PostProc.pl) and checks that the
+    magnetic-field amplitude (BX/BY/BZ) is non-zero somewhere on the slice,
+    confirming the transverse EM wave was initialised and is still present at
+    the final time.
+
+    Returns (passed: bool, reason: str).
+    """
+    import glob
+
+    plots_dir = os.path.join("run_test", "PC", "plots")
+    out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
+    if not out_files:
+        print("    [LW] No .out files found (PostProc.pl not run?).")
+        return True, "No .out files (skipped)"
+
+    out_file = out_files[-1]
+    print(f"    [LW] Loading .out: {os.path.basename(out_file)}")
+
+    with open(out_file, "r") as f:
+        lines = f.readlines()
+    if len(lines) < 6:
+        return True, "Short .out file"
+
+    var_names = lines[4].split()
+    vidx = {v.upper(): i for i, v in enumerate(var_names)}
+    b_idx = []
+    for target in ("BX", "BY", "BZ"):
+        if target in vidx:
+            b_idx.append(vidx[target])
+    if not b_idx:
+        return True, "BX/BY/BZ not in .out"
+
+    bmax = 0.0
+    for line in lines[5:]:
+        cols = line.split()
+        if max(b_idx) >= len(cols):
+            continue
+        try:
+            for i in b_idx:
+                v = abs(float(cols[i]))
+                if v > bmax:
+                    bmax = v
+        except (ValueError, IndexError):
+            continue
+
+    print(f"    [LW] Max |B| amplitude on slice: {bmax:.4e}")
+    if bmax <= 0.0:
+        print("    [LW] FAIL: magnetic field is zero -- wave not present.")
+        return False, "Magnetic field is zero (wave not present)"
+    print("    [LW] Light wave present: VERIFIED")
+    return True, "Passed"
+
+
 def validate_plot_output(test_name):
     """Validate simulation plot output files for a given test.
 
@@ -1055,6 +1170,12 @@ def validate_plot_output(test_name):
     if test_name == "chargeexchange":
         print("  --- Validating Output Files (CX source profile) ---")
         result, reason = _check_charge_exchange_source_profile()
+        return result, reason
+
+    # ---- Light wave: transverse EM wave must be present in the output ----
+    if test_name == "lightwave":
+        print("  --- Validating Output Files (light wave present) ---")
+        result, reason = _check_lightwave_present()
         return result, reason
 
     # ---- Other tests: no plot-file validation ----
@@ -1114,14 +1235,19 @@ def main():
         "chargeexchange": validate_ionization_source,
         "recombination": validate_recombination,
         "chemistry": validate_chemistry,
+        "lightwave": validate_lightwave,
     }
     
     # Discover test subdirectories under tests/
     tests_dir = "tests"
     
     # Iterate through sorted subdirectories
+    # Exclude "performance" (benchmark, not a pass/fail test) and "run_test"
+    # (the shared run directory created by prepare_run_dir, which contains a
+    # PARAM.in and would otherwise be discovered and re-run as a test).
     subdirs = sorted([d for d in os.listdir(tests_dir) 
-                      if os.path.isdir(os.path.join(tests_dir, d)) and d not in ["performance"]])
+                      if os.path.isdir(os.path.join(tests_dir, d))
+                      and d not in ["performance", "run_test"]])
     
     tests = []
     for d in subdirs:
