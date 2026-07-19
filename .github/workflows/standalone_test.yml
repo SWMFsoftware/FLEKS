@@ -79,15 +79,21 @@ jobs:
           path: |
             SWMF/PC/FLEKS/bin/FLEKS.exe
             SWMF/bin/PostIDL.exe
-          key: ${{ runner.os }}-fleks-standalone-v2-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PC/FLEKS/**/Makefile*') }}
+          # Bumped v2 -> v3 because the build now requires nLevMax=2 (-lev=2),
+          # and the source-hash-only key would otherwise restore a stale
+          # nLevMax=1 binary and skip the rebuild (cache-hit).
+          key: ${{ runner.os }}-fleks-standalone-v3-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PC/FLEKS/**/Makefile*') }}
           restore-keys: |
-            ${{ runner.os }}-fleks-standalone-v2-
+            ${{ runner.os }}-fleks-standalone-v3-
 
       - name: Build Standalone FLEKS
         if: steps.cache-standalone.outputs.cache-hit != 'true'
         working-directory: SWMF/PC/FLEKS
         run: |
-          ./Config.pl -u=Exo
+          # Build with two grid levels (nLevMax>=2): the lightwave test uses
+          # #REFINEREGION, which requires max_level > 0 and aborts at startup
+          # (MPI_ABORT errorcode 6) when built with the default nLevMax=1.
+          ./Config.pl -u=Exo -lev=2
           make EXE -j$(nproc)
           make PIDL
 
