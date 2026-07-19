@@ -18,6 +18,8 @@ Each test case is contained within its own dedicated subdirectory containing a
 |                   |                    | (T ~ 100,000 K), only electron impact enabled            |
 | Charge exchange   | `chargeexchange/`  | Constant CX cross-section with flowing solar wind ions,  |
 |                   |                    | only charge exchange enabled                             |
+| Light wave        | `lightwave/`       | 3D vacuum transverse EM (light) wave on a periodic AMR  |
+|                   |                    | grid; energy-conservation check (needs `nLevMax >= 2`)   |
 | Performance       | `performance/`     | Beam-based scaling benchmark (excluded from CI suite)    |
 
 ### Ionization Parameter Commands
@@ -34,6 +36,27 @@ All three can be combined (as in `tests/photoionization/`) or tested individuall
 ## Architecture
 
 Ionization parameters are stored in `SourceInterface` (not `FluidInterface`) and read by `UserSource::read_param()` in `userfiles/ExoSource.h`. The Domain routes `#PHOTOIONIZATION`, `#ELECTRONIMPACT`, and `#CHARGEEXCHANGE` commands to the source object rather than to `FluidInterface`. This keeps the MHD coupling layer uncluttered by ionization-specific data.
+
+## Building the Test Executable
+
+All standalone tests, including the `lightwave` AMR test, run with a **single
+FLEKS executable built with two grid levels** (`nLevMax >= 2`):
+
+```bash
+cd PC/FLEKS            # (or the FLEKS root)
+./Config.pl -lev=2
+make -j4
+```
+
+The AMR machinery is always compiled in; with `nLevMax = 2` the binary can run
+both refinement-based tests (e.g. `lightwave`) and the non-refinement tests
+(`beam`, ionization cases, etc.). For the latter no `#REFINEREGION` is defined,
+so the run stays at the base level (`n_lev() == 1`) and behaves identically to
+a `nLevMax = 1` build. A plain `nLevMax = 1` build will **abort at start-up** on
+`lightwave` because its `#REFINEREGION` command requires `max_level > 0`.
+
+> Note: the test runner uses `bin/FLEKS.exe` for every test, so one `-lev=2`
+> build serves the entire suite. There is no need for a separate AMR binary.
 
 ## Running the Tests
 
@@ -70,7 +93,8 @@ with an error listing the available tests. When the flag is omitted, all tests
 are run (the default behavior). The flag may be combined with `-n`/`--nprocs`.
 
 The script:
-1. Scans subdirectories of `tests/` for a `PARAM.in` file, excluding `performance/`.
+1. Scans subdirectories of `tests/` for a `PARAM.in` file, excluding `performance/`
+   and the shared `run_test/` execution directory.
 2. Creates the execution directory `run_test/` with necessary symlinks to the
    FLEKS executable and post-processing tools.
 3. Copies `PARAM.in` from the test folder, executes `./FLEKS.exe` (or via
@@ -104,4 +128,5 @@ expected results, and instructions for manual execution:
 | `photoionization/` | [README](photoionization/README.md)  |
 | `electronimpact/`  | [README](electronimpact/README.md)   |
 | `chargeexchange/`  | [README](chargeexchange/README.md)   |
+| `lightwave/`       | [README](lightwave/README.md)        |
 | `performance/`     | — (see `validate_performance.py`)    |
