@@ -402,14 +402,11 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     if (varNames.size() > 0) {
       // Assume only use neutral fluids
       int nNeuFluid = 0;
-      int nIon = 0;
       for (auto& name : varNames) {
         if (name.find("rho") != std::string::npos) {
           if (name.size() == 6 && name.compare(0, 2, "ne") == 0) {
             // Assume a neutral fluid's density is named as "ne*rho"
             nNeuFluid++;
-          } else {
-            nIon++;
           }
         }
       }

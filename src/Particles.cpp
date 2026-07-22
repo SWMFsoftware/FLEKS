@@ -2283,13 +2283,10 @@ void Particles<NStructReal, NStructInt>::split_new(Real limit,
       // are the same for different number of processors
       std::sort(particles.begin(), particles.end(), compare_two_parts);
 
-      const Real invLx = 1. / (phi[iLev][ix_] - plo[iLev][ix_]);
-      const Real plox = plo[iLev][ix_];
-
       // Sort the particles by the weight in decending order.
       std::sort(
           particles.begin(), particles.end(),
-          [&plox, &invLx](const ParticleType& pl, const ParticleType& pr) {
+          [](const ParticleType& pl, const ParticleType& pr) {
             const Real ql = fabs(pl.rdata(iqp_));
             const Real qr = fabs(pr.rdata(iqp_));
             if (fabs(ql - qr) > 1e-9 * (ql + qr)) {
@@ -2465,13 +2462,10 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
       // are the same for different number of processors
       std::sort(particles.begin(), particles.end(), compare_two_parts);
 
-      const Real invLx = 1. / (phi[iLev][ix_] - plo[iLev][ix_]);
-      const Real plox = plo[iLev][ix_];
-
       // Sort the particles by the weight in decending order.
       std::sort(
           particles.begin(), particles.end(),
-          [&plox, &invLx](const ParticleType& pl, const ParticleType& pr) {
+          [](const ParticleType& pl, const ParticleType& pr) {
             const Real ql = fabs(pl.rdata(iqp_));
             const Real qr = fabs(pr.rdata(iqp_));
             if (fabs(ql - qr) > 1e-9 * (ql + qr)) {
@@ -2641,8 +2635,7 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
   };
 
   std::sort(partIdx.begin(), partIdx.end(),
-            [this, &particles, calc_distance2_to_center](const int& idl,
-                                                         const int& idr) {
+            [calc_distance2_to_center](const int& idl, const int& idr) {
               Real dll = calc_distance2_to_center(idl);
               Real dlr = calc_distance2_to_center(idr);
 
@@ -2800,13 +2793,11 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
       a(i, j) = 0;
     }
 
-  const Real invLx = 1. / (phi[iLev][ix_] - plo[iLev][ix_]);
-  const Real plox = plo[iLev][ix_];
   // Q: Sort the particles by weights in ascending order.
   // But, why is it required here?
   // A: Eliminate randomness.
   std::sort(partIdx.begin(), partIdx.end(),
-            [&particles, &invLx, &plox](int idLeft, int idRight) {
+            [&particles](int idLeft, int idRight) {
               const Real ql = fabs(particles[idLeft].rdata(iqp_));
               const Real qr = fabs(particles[idRight].rdata(iqp_));
               if (fabs(ql - qr) > 1e-9 * (ql + qr)) {
@@ -3772,7 +3763,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
           }
 
           {
-            int iFluidAddTo;
+            int iFluidAddTo = 0;
             Real rhoIonAddTo, cs2IonAddTo, uIonAddTo[3];
 
             const int iSW = 2;
