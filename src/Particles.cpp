@@ -1123,9 +1123,11 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
 
     amrex::Vector<IntVect> loIdx;
     amrex::Vector<RealVect> dShift;
-    loIdx.resize(iLev + 1 + refinedneighbour);
-    dShift.resize(iLev + 1 + refinedneighbour);
-    Real coef[iLev + 1 + refinedneighbour][2][2][2];
+    const int nCoef = iLev + 1 + refinedneighbour;
+    loIdx.resize(nCoef);
+    dShift.resize(nCoef);
+    using InterpolationCoef = Real[2][2][2];
+    auto coef = std::make_unique<InterpolationCoef[]>(nCoef);
 
     const AoS& particles = pti.GetArrayOfStructs();
 
@@ -1143,7 +1145,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       const Real qp = p.rdata(iqp_);
 
       //-----calculate interpolate coef begin-------------
-      for (int i = 0; i < iLev + 1 + refinedneighbour; i++) {
+      for (int i = 0; i < nCoef; i++) {
         find_node_index(p.pos(), Geom(i).ProbLo(), Geom(i).InvCellSize(),
                         loIdx[i], dShift[i]);
 
@@ -1215,7 +1217,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
         for (int kk = lo.z; kk <= hi.z; ++kk)
           for (int jj = lo.y; jj <= hi.y; ++jj)
             for (int ii = lo.x; ii <= hi.x; ++ii) {
-              for (int i = 0; i < iLev + 1 + refinedneighbour; i++) {
+              for (int i = 0; i < nCoef; i++) {
                 IntVect ijk = { AMREX_D_DECL(loIdx[i][ix_] + ii,
                                              loIdx[i][iy_] + jj,
                                              loIdx[i][iz_] + kk) };
@@ -1223,7 +1225,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
               }
             }
 
-      for (int i = 0; i < iLev + 1 + refinedneighbour; i++) {
+      for (int i = 0; i < nCoef; i++) {
         const int iMin = loIdx[i][ix_];
         const int jMin = loIdx[i][iy_];
         const int kMin = nDim > 2 ? loIdx[i][iz_] : 0;
@@ -2012,7 +2014,7 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
   if (plist.size() < 2)
     return;
 
-  const int nCell = pow(2, 3);
+  const int nCell = 8;
   // Assign the particle IDs to the corresponding velocity space cells.
   Vector<int> phasePartIdx_III[nCell][nCell][nCell];
 
@@ -3012,7 +3014,10 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
 
       //----------------------------------------------------------------
       // Assign the particle IDs to the corresponding velocity space cells.
-      Vector<int> phasePartIdx_III[nCell][nCell][nCell];
+      Vector<Vector<int> > phasePartIdx_I(nCell * nCell * nCell);
+      const auto bin_index = [nCell](int i, int j, int k) {
+        return (i * nCell + j) * nCell + k;
+      };
 
       Real dv = (2.0 * r0 * thVel) / nCell;
       Real invDv = (dv < 1e-13) ? 0 : 1.0 / dv;
@@ -3073,7 +3078,8 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
               }
 
               if (isInside) {
-                phasePartIdx_III[cellIdx[ix_]][cellIdx[iy_]][cellIdx[iz_]]
+                phasePartIdx_I[bin_index(cellIdx[ix_], cellIdx[iy_],
+                                         cellIdx[iz_])]
                     .push_back(pid);
               }
             }
@@ -3084,8 +3090,8 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
         for (int iv = 0; iv < nCell; iv++)
           for (int iw = 0; iw < nCell; iw++) {
             Vector<int> partIdx;
-            for (int i = 0; i < phasePartIdx_III[iu][iv][iw].size(); ++i) {
-              auto& pIdx = phasePartIdx_III[iu][iv][iw];
+            auto& pIdx = phasePartIdx_I[bin_index(iu, iv, iw)];
+            for (int i = 0; i < pIdx.size(); ++i) {
               int pid = pIdx[i];
               if (!merged[pid]) {
                 partIdx.push_back(pid);
@@ -3229,7 +3235,10 @@ void Particles<NStructReal, NStructInt>::merge_new(Real limit) {
 
       //----------------------------------------------------------------
       // Assign the particle IDs to the corresponding velocity space cells.
-      Vector<int> phasePartIdx_III[nCell][nCell][nCell];
+      Vector<Vector<int> > phasePartIdx_I(nCell * nCell * nCell);
+      const auto bin_index = [nCell](int i, int j, int k) {
+        return (i * nCell + j) * nCell + k;
+      };
 
       Real dv = (2.0 * r0 * thVel) / nCell;
       Real invDv = (dv < 1e-13) ? 0 : 1.0 / dv;
@@ -3290,7 +3299,8 @@ void Particles<NStructReal, NStructInt>::merge_new(Real limit) {
               }
 
               if (isInside) {
-                phasePartIdx_III[cellIdx[ix_]][cellIdx[iy_]][cellIdx[iz_]]
+                phasePartIdx_I[bin_index(cellIdx[ix_], cellIdx[iy_],
+                                         cellIdx[iz_])]
                     .push_back(pid);
               }
             }
@@ -3301,8 +3311,8 @@ void Particles<NStructReal, NStructInt>::merge_new(Real limit) {
         for (int iv = 0; iv < nCell; iv++)
           for (int iw = 0; iw < nCell; iw++) {
             Vector<int> partIdx;
-            for (int i = 0; i < phasePartIdx_III[iu][iv][iw].size(); ++i) {
-              auto& pIdx = phasePartIdx_III[iu][iv][iw];
+            auto& pIdx = phasePartIdx_I[bin_index(iu, iv, iw)];
+            for (int i = 0; i < pIdx.size(); ++i) {
               int pid = pIdx[i];
               if (!merged[pid]) {
                 partIdx.push_back(pid);
