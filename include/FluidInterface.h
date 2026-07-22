@@ -19,6 +19,42 @@
 #include "GridUtility.h"
 #include "MDArray.h"
 #include "ReadParam.h"
+#include <memory>
+
+// Shared normalization / conversion parameters.
+//
+// These quantities are derived solely from lNormSI / uNormSI / mNormSI /
+// rPlanetSi (set in FluidInterface::read_param / post_process_param) and are
+// frozen once the *primary* FluidInterface (fi) calls post_process_param().
+//
+// Secondary interfaces (UserSource, OHInterface) do NOT copy these values;
+// they hold a shared_ptr to fi's NormalizationParams instance.  Because the
+// pointer is shared, the secondary interfaces automatically observe fi's
+// finalized values after post_process_param() -- no slice-sync or stale-copy
+// is possible.  This replaces the previous sync_fluid_interface_params /
+// sync_normalization_params pattern and removes the stale-copy class of bugs.
+class NormalizationParams {
+public:
+  NormalizationParams() = default;
+
+  void calc_normalization_units();
+
+  double rPlanetSi = 1;
+  int    ScalingFactor = 1;
+
+  // normalization units for length, velocity, mass and charge
+  // Normalized q/m == 1 for proton in CGS units
+  double Lnorm = 1, Unorm = 1, lNormSI = 1, uNormSI = 1;
+  double Mnorm = 0, Qnorm = 0, mNormSI = 0;
+
+  amrex::Vector<double> Si2No_V, No2Si_V;
+  double Si2NoM = 0, Si2NoV = 0, Si2NoRho = 0, Si2NoB = 0, Si2NoP = 0,
+         Si2NoJ = 0, Si2NoL = 0, Si2NoE = 0;
+  double No2SiV = 0, No2SiL = 0;
+
+  // Length in BATSRUS normalized unit -> Si
+  double MhdNo2SiL = 1;
+};
 
 class FluidInterfaceParameters {
 protected:
@@ -80,23 +116,15 @@ protected:
 
   int iJx, iJy, iJz;
 
-  double rPlanetSi = 1;
-
-  int ScalingFactor = 1;
-
-  // normalization units for length, velocity, mass and charge
-  // Normalized q/m ==1 for proton in CGS units
-  double Lnorm, Unorm, lNormSI = 1, uNormSI = 1;
-  double Mnorm, Qnorm, mNormSI;
-
-  amrex::Vector<double> Si2No_V, No2Si_V;
-  double Si2NoM, Si2NoV, Si2NoRho, Si2NoB, Si2NoP, Si2NoJ, Si2NoL, Si2NoE;
-  double No2SiV, No2SiL;
+  // Shared normalization / conversion parameters.  Owned by the primary
+  // FluidInterface (fi); secondary interfaces (UserSource, OHInterface) share
+  // fi's instance via the defaulted copy constructor, so they always read the
+  // finalized values after fi->post_process_param() -- no slice sync or
+  // stale-copy is possible.
+  std::shared_ptr<NormalizationParams> normParams =
+      std::make_shared<NormalizationParams>();
 
   amrex::Vector<double> uniformState;
-
-  // Length in BATSRUS normalized unit -> Si
-  double MhdNo2SiL;
 
   bool useResist = false;
   double etaSI = 0, etaNO = 0;
@@ -180,18 +208,6 @@ public:
     static_cast<FluidInterfaceParameters&>(*this) =
         static_cast<const FluidInterfaceParameters&>(other);
   }
-
-  // Refresh ONLY the normalization-related parameters from another
-  // FluidInterface and recompute the normalization units.  Unlike
-  // sync_fluid_interface_params(), this does NOT copy nS / MoMi_S / QoQi_S /
-  // varNames / iRho_I, so it is safe for secondary interfaces (OHInterface)
-  // whose constructors deliberately reset those members.  Used by Domain for
-  // the OH-PT stateOH / sourcePT2OH grids, which are copy-constructed from
-  // *fi *before* fi->post_process_param() finalizes the derived normalization
-  // (mNormSI, rPlanetSi override).  Without this, stateOH->get_Si2NoRho() etc.
-  // would reflect a stale mNormSI / rPlanetSi and produce a wrong OH-PT charge
-  // exchange rate.
-  void sync_normalization_params(const FluidInterface& other);
 
   void set_period_start_si(double t) { tStartSI = t; }
 
@@ -293,41 +309,41 @@ public:
   int get_nFluid() const { return nFluid; }
 
   const amrex::Vector<std::string>& get_var_names() const { return varNames; }
-  double get_Si2No_V(int idx) const { return (Si2No_V[idx]); }
-  double get_Si2NoL() const { return (Si2NoL); }
-  double get_Si2NoT() const { return Si2NoL / Si2NoV; }
-  double get_Si2NoM() const { return 1. / mNormSI; }
-  double get_Si2NoRho() const { return Si2NoRho; }
-  double get_Si2NoV() const { return Si2NoV; }
-  double get_Si2NoP() const { return Si2NoP; }
+  double get_Si2No_V(int idx) const { return (normParams->Si2No_V[idx]); }
+  double get_Si2NoL() const { return (normParams->Si2NoL); }
+  double get_Si2NoT() const { return normParams->Si2NoL / normParams->Si2NoV; }
+  double get_Si2NoM() const { return 1. / normParams->mNormSI; }
+  double get_Si2NoRho() const { return normParams->Si2NoRho; }
+  double get_Si2NoV() const { return normParams->Si2NoV; }
+  double get_Si2NoP() const { return normParams->Si2NoP; }
 
-  double get_No2Si_V(int idx) const { return (No2Si_V[idx]); }
-  double get_No2SiL() const { return (No2SiL); }
-  double get_No2SiRho() const { return (1. / Si2NoRho); }
-  double get_No2SiV() const { return (1. / Si2NoV); }
-  double get_No2SiB() const { return (1. / Si2NoB); }
-  double get_No2SiP() const { return (1. / Si2NoP); }
-  double get_No2SiJ() const { return (1. / Si2NoJ); }
-  double get_No2SiT() const { return Si2NoV / Si2NoL; }
-  double get_No2SiM() const { return mNormSI; }
+  double get_No2Si_V(int idx) const { return (normParams->No2Si_V[idx]); }
+  double get_No2SiL() const { return (normParams->No2SiL); }
+  double get_No2SiRho() const { return (1. / normParams->Si2NoRho); }
+  double get_No2SiV() const { return (1. / normParams->Si2NoV); }
+  double get_No2SiB() const { return (1. / normParams->Si2NoB); }
+  double get_No2SiP() const { return (1. / normParams->Si2NoP); }
+  double get_No2SiJ() const { return (1. / normParams->Si2NoJ); }
+  double get_No2SiT() const { return normParams->Si2NoV / normParams->Si2NoL; }
+  double get_No2SiM() const { return normParams->mNormSI; }
 
   double get_species_mass(int i) const { return MoMi_S[i]; };
   double get_species_charge(int i) const { return QoQi_S[i]; };
 
-  double get_lnorm_si() const { return lNormSI; }
-  double get_unorm_si() const { return uNormSI; }
-  double get_mnorm_si() const { return mNormSI; };
+  double get_lnorm_si() const { return normParams->lNormSI; }
+  double get_unorm_si() const { return normParams->uNormSI; }
+  double get_mnorm_si() const { return normParams->mNormSI; };
 
-  double get_cLight_SI() const { return uNormSI; }
+  double get_cLight_SI() const { return normParams->uNormSI; }
 
-  double get_rPlanet_SI() const { return rPlanetSi; }
+  double get_rPlanet_SI() const { return normParams->rPlanetSi; }
 
-  int get_scaling_factor() const { return ScalingFactor; }
+  int get_scaling_factor() const { return normParams->ScalingFactor; }
 
   // return MhdNo2SiL
-  double get_MhdNo2SiL() const { return (MhdNo2SiL); }
+  double get_MhdNo2SiL() const { return (normParams->MhdNo2SiL); }
   // BATSRUS normalized unit -> PIC normalized unit;
-  double get_MhdNo2NoL() const { return (MhdNo2SiL * Si2NoL); }
+  double get_MhdNo2NoL() const { return (normParams->MhdNo2SiL * normParams->Si2NoL); }
 
   void sum_boundary() {
     timing_func("FI::sum_boundary");
@@ -363,7 +379,7 @@ public:
     etaSI = etaSIIn;
     useResist = etaSI > 0;
     if (useResist)
-      etaNO = fourPI * etaSI * Si2NoV * Si2NoL;
+      etaNO = fourPI * etaSI * normParams->Si2NoV * normParams->Si2NoL;
   }
 
   void set_ohm_u(std::string ss) {

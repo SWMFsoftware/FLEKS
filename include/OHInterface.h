@@ -22,7 +22,6 @@ public:
     }
 
     varNames.clear();
-    calc_normalization_units();
   };
 
   virtual int get_neu_source_region(const amrex::MFIter &mfi,
