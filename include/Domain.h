@@ -29,6 +29,11 @@ private:
 
   bool useSource = false;
 
+  // Parameter container for the test-particle (ParticleTracker) component.
+  // Populated by Domain::read_param (#TP* commands) and resolved in
+  // ParticleTrackerInfo::post_process_param(); consumed by ParticleTracker.
+  ParticleTrackerInfo ptInfo;
+
   bool isTCInitialized = false;
 
 public:

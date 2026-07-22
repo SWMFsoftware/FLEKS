@@ -42,6 +42,7 @@ void Domain::init(double time, const int iDomain,
 
   if (receiveICOnly) {
     fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
+    ptInfo.set_fluid_interface(fi.get());
     read_param(false);
 
     gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
@@ -58,11 +59,12 @@ void Domain::init(double time, const int iDomain,
     fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
   }
 
+  ptInfo.set_fluid_interface(fi.get());
   pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi.get(), tc.get(), gridID);
 
   if (usePT)
     pt = std::make_unique<ParticleTracker>(gm, amrInfo, nGst, fi.get(),
-                                           tc.get(), gridID);
+                                           tc.get(), gridID, ptInfo);
 
   // Create the source object before read_param so that ionization
   // commands (#PHOTOIONIZATION, #ELECTRONIMPACT, #CHARGEEXCHANGE)
@@ -897,13 +899,12 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#MEMORY") {
       if (pic)
         pic->read_param(command, param);
-    } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
-               command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
-               command == "#TPSAVE" || command == "#TPRELATIVISTIC" ||
-               command == "#TPINITFROMPIC" || command == "#TPSTATESI") {
-      if (pt)
-        pt->read_param(command, param);
-    } else if (command == "#PHOTOIONIZATION" || command == "#ELECTRONIMPACT" ||
+  } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
+             command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
+             command == "#TPSAVE" || command == "#TPRELATIVISTIC" ||
+             command == "#TPINITFROMPIC" || command == "#TPSTATESI") {
+    ptInfo.read_param(command, param);
+  } else if (command == "#PHOTOIONIZATION" || command == "#ELECTRONIMPACT" ||
                command == "#CHARGEEXCHANGE" || command == "#SHADOWCYLINDER" ||
                command == "#RECOMBINATION" || command == "#CHEMISTRY") {
       if (source) {
@@ -1232,11 +1233,6 @@ void Domain::read_param(const bool readGridInfo) {
     if (pic)
       pic->post_process_param();
 
-    if (pt) {
-      pt->post_process_param();
-      pt->set_tp_init_shapes(shapes);
-    }
-
     if (fi)
       fi->post_process_param(receiveICOnly);
 
@@ -1250,6 +1246,15 @@ void Domain::read_param(const bool readGridInfo) {
 
     if (source)
       source->post_process_param();
+
+    if (pt) {
+      // Resolve species-dependent quantities (dnSave / launchThreshold
+      // sizes) only after fi has been fully processed, then refresh the
+      // tracker so it no longer relies on any constructor-time snapshot.
+      ptInfo.post_process_param();
+      pt->post_process_param();
+      pt->set_tp_init_shapes(shapes);
+    }
   }
 
   VisMF::SetNOutFiles(nFileField);

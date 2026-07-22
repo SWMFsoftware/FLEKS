@@ -12,11 +12,11 @@ void ParticleTracker::set_ic(Pic& pic) {
 
   for (int i = 0; i < parts.size(); ++i) {
     auto& tps = parts[i];
-    if (doInitFromPIC) {
-      tps->read_test_particle_list(listFiles);
+    if (pInfo->doInitFromPIC) {
+      tps->read_test_particle_list(pInfo->listFiles);
       tps->add_test_particles_from_pic(pic.get_particle_pointer(i));
     } else {
-      tps->add_test_particles_from_fluid(tpStates);
+      tps->add_test_particles_from_fluid(pInfo->tpStates);
     }
     tps->update_initial_particle_number();
 
@@ -104,7 +104,7 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       tps->move_and_save_particles(nodeE[iLev], nodeB[iLev], tc->get_dt(),
                                    tc->get_next_dt(), tc->get_time_si(),
-                                   tc->get_cycle() % dnSave[i] == 0);
+                                   tc->get_cycle() % pInfo->dnSave[i] == 0);
     }
 
     if (doSave) {
@@ -117,11 +117,11 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
       tps->write_particles(tc->get_cycle());
 
       // Refill test particles if necessary.
-      if (doInitFromPIC) {
+      if (pInfo->doInitFromPIC) {
         tps->add_test_particles_from_pic(pic.get_particle_pointer(i));
       } else if (tps->TotalNumberOfParticles() <
-                 launchThreshold[i] * tps->init_particle_number()) {
-        tps->add_test_particles_from_fluid(tpStates);
+                 pInfo->launchThreshold[i] * tps->init_particle_number()) {
+        tps->add_test_particles_from_fluid(pInfo->tpStates);
       }
     }
   }
@@ -137,10 +137,11 @@ void ParticleTracker::update_field(Pic& pic) {
 }
 
 void ParticleTracker::post_process_param() {
-  int min_dnSave = dnSave[0];
+  nSpecies = fi->get_nS();
+  int min_dnSave = pInfo->dnSave[0];
   for (int i = 1; i < nSpecies; ++i) {
-    if (dnSave[i] < min_dnSave) {
-      min_dnSave = dnSave[i];
+    if (pInfo->dnSave[i] < min_dnSave) {
+      min_dnSave = pInfo->dnSave[i];
     }
   }
   savectr = std::make_unique<PlotCtr>(ParallelDescriptor::Communicator(), tc,
@@ -177,15 +178,17 @@ void ParticleTracker::post_regrid() {
   distribute_grid_arrays();
 
   //--------------test particles-----------------------------------
+  nSpecies = fi->get_nS();
+
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; ++i) {
       auto ptr = std::make_unique<TestParticles>(
           this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
           gridID);
-      ptr->set_ppc(nTPPerCell);
-      ptr->set_interval(nTPIntervalCell);
-      ptr->set_particle_region(sRegion, tpShapes);
-      ptr->set_relativistic(isRelativistic);
+      ptr->set_ppc(pInfo->nTPPerCell);
+      ptr->set_interval(pInfo->nTPIntervalCell);
+      ptr->set_particle_region(pInfo->sRegion, tpShapes);
+      ptr->set_relativistic(pInfo->isRelativistic);
       parts.push_back(std::move(ptr));
     }
     Print() << gridName << " pt: Number of test particle species: " << nSpecies
@@ -193,7 +196,7 @@ void ParticleTracker::post_regrid() {
     Print() << gridName
             << " pt: TPSAVE parameters (nPTRecord, ptRecordSize): " << nPTRecord
             << ", " << ptRecordSize << std::endl;
-    Print() << gridName << " pt: TPREGION: " << sRegion << std::endl;
+    Print() << gridName << " pt: TPREGION: " << pInfo->sRegion << std::endl;
   } else {
     for (int i = 0; i < nSpecies; ++i) {
       // Label the particles outside the NEW PIC region.
@@ -235,7 +238,10 @@ void ParticleTracker::read_restart() {
     parts[iPart]->Restart(restartDir,
                           gridName + "_test_particles" + std::to_string(iPart));
     parts[iPart]->reset_record_counter();
-    parts[iPart]->init_particle_number(initPartNumber[iPart]);
+    if (iPart < (int)pInfo->initPartNumber.size())
+      parts[iPart]->init_particle_number(pInfo->initPartNumber[iPart]);
+    else
+      parts[iPart]->init_particle_number(0);
   }
   complete_parameters();
 }
@@ -249,7 +255,7 @@ void ParticleTracker::complete_parameters() {
   }
 
   // Pass information to writers.
-  writer.set_plotString("3d fluid test_particle real4 " + sIOUnit);
+  writer.set_plotString("3d fluid test_particle real4 " + pInfo->sIOUnit);
   writer.set_nDim(fi->get_fluid_dimension());
   writer.set_units(fi->get_No2SiL(), fi->get_No2SiV(), fi->get_No2SiB(),
                    fi->get_No2SiRho(), fi->get_No2SiP(), fi->get_No2SiJ(),
@@ -277,64 +283,4 @@ void ParticleTracker::save_restart_header(std::ofstream& headerFile) {
   }
 }
 
-void ParticleTracker::read_param(const std::string& command, ReadParam& param) {
 
-  if (command == "#TPPARTICLES") {
-    param.read_var("npcelx", nTPPerCell[ix_]);
-    param.read_var("npcely", nTPPerCell[iy_]);
-    if (nDim == 3)
-      param.read_var("npcelz", nTPPerCell[iz_]);
-  } else if (command == "#TPCELLINTERVAL") {
-    param.read_var("nIntervalX", nTPIntervalCell[ix_]);
-    param.read_var("nIntervalY", nTPIntervalCell[iy_]);
-    if (nDim == 3)
-      param.read_var("nIntervalZ", nTPIntervalCell[iz_]);
-  } else if (command == "#TPREGION") {
-    param.read_var("region", sRegion);
-  } else if (command == "#TPSAVE") {
-    int iSpecies;
-    param.read_var("iSpecies", iSpecies);
-    if (iSpecies >= nSpecies)
-      amrex::Abort("Error: iSpecies is out of bound in #TPSAVE.");
-    param.read_var("IOUnit", sIOUnit);
-    param.read_var("dnSave", dnSave[iSpecies]);
-    param.read_var("launchThreshold", launchThreshold[iSpecies]);
-  } else if (command == "#TPRELATIVISTIC") {
-    param.read_var("isRelativistic", isRelativistic);
-  } else if (command == "#TPSTATESI") {
-    double si2noV = fi->get_Si2NoV();
-    int nState;
-    param.read_var("nState", nState);
-    for (int i = 0; i < nState; ++i) {
-      Vel state;
-      param.read_var("iSpecies", state.tag);
-      param.read_var("vth", state.vth);
-      param.read_var("vx", state.vx);
-      param.read_var("vy", state.vy);
-      param.read_var("vz", state.vz);
-      state.vth *= si2noV;
-      state.vx *= si2noV;
-      state.vy *= si2noV;
-      state.vz *= si2noV;
-      tpStates.push_back(state);
-    }
-  } else if (command == "#TPINITFROMPIC") {
-    param.read_var("doInitFromPIC", doInitFromPIC);
-    if (doInitFromPIC) {
-      int nList;
-      param.read_var("nList", nList);
-      for (int i = 0; i < nList; ++i) {
-        std::string s;
-        param.read_var("list", s);
-        listFiles.push_back(s);
-      }
-    }
-  } else if (command == "#TESTPARTICLENUMBER") {
-    initPartNumber.clear();
-    unsigned long int num;
-    for (int iPart = 0; iPart < nSpecies; iPart++) {
-      param.read_var("Number", num);
-      initPartNumber.push_back(num);
-    }
-  }
-}

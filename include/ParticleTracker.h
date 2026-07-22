@@ -6,16 +6,14 @@
 #include "Grid.h"
 #include "Pic.h"
 #include "TestParticles.h"
+#include "Particles.h"
 
 class ParticleTracker : public Grid {
 public:
   ParticleTracker(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo,
-                  int nGst, FluidInterface *fluidIn, TimeCtr *tcIn, int id)
-      : Grid(gm, amrInfo, nGst, id, "pt"), tc(tcIn), fi(fluidIn) {
-    nSpecies = fi->get_nS();
-    dnSave.resize(nSpecies, 10);
-    launchThreshold.resize(nSpecies, 0.5);
-  };
+                  int nGst, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
+                  ParticleTrackerInfo& info)
+      : Grid(gm, amrInfo, nGst, id, "pt"), tc(tcIn), fi(fluidIn), pInfo(&info) {}
 
   ~ParticleTracker() {
     if (isNewGrid)
@@ -43,7 +41,6 @@ public:
   void save_restart_data();
   void save_restart_header(std::ofstream &headerFile);
   void read_restart();
-  void read_param(const std::string &command, ReadParam &param);
   void write_log(bool doForce = false, bool doCreateFile = false);
 
   void set_tp_init_shapes(amrex::Vector<std::shared_ptr<Shape> > &shapes);
@@ -52,34 +49,21 @@ private:
   TimeCtr *tc = nullptr;
   FluidInterface *fi = nullptr;
 
-  int nSpecies;
+  // Parameter container populated by Domain during read_param and resolved in
+  // ParticleTrackerInfo::post_process_param (after fi is fully processed).
+  ParticleTrackerInfo* pInfo = nullptr;
+
+  int nSpecies = 0;
   amrex::Vector<std::unique_ptr<TestParticles> > parts;
   amrex::Vector<amrex::MultiFab> nodeE;
 
   amrex::Vector<amrex::MultiFab> nodeB;
 
-  amrex::Vector<unsigned long int> initPartNumber;
-
   std::unique_ptr<PlotCtr> savectr;
-  amrex::Vector<int> dnSave;
-  amrex::Vector<amrex::Real> launchThreshold;
-
-  amrex::IntVect nTPPerCell = { AMREX_D_DECL(1, 1, 1) };
-  amrex::IntVect nTPIntervalCell = { AMREX_D_DECL(1, 1, 1) };
-
-  std::string sIOUnit = "planet";
-
-  bool isRelativistic = false;
-
-  amrex::Vector<std::string> listFiles;
-  bool doInitFromPIC = false;
-
-  amrex::Vector<Vel> tpStates;
 
   std::string logFile;
 
-  // Test Particle initialization regions
-  std::string sRegion;
+  // Test Particle initialization regions (set from the domain #REGION blocks).
   amrex::Vector<std::shared_ptr<Shape> > tpShapes;
 };
 

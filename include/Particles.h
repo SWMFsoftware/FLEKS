@@ -117,6 +117,149 @@ public:
   const BC& particle_bc(const int speciesID) const { return pBCs[speciesID]; }
 };
 
+//===========================================================================
+/// Parameter container for the test-particle (ParticleTracker) component.
+///
+/// All of the #TP* / #TESTPARTICLENUMBER settings previously lived as plain
+/// members of the Grid-derived ParticleTracker object and were therefore
+/// snapshotted in its constructor -- before the number of species (read by
+/// #PLASMA into FluidInterface) was known.  That premature snapshot made
+/// standalone test-particle setups unusable (nSpecies was read as 0).
+///
+/// Collecting those parameters here decouples "what is configured" from the
+/// heavy AMReX Grid object, exactly as ParticlesInfo already does for Pic.
+/// Domain parses the #TP* commands into this object during read_param, and
+/// ParticleTracker reads its settings back from it.  Species-dependent
+/// quantities (dnSave / launchThreshold sizes, velocity-unit conversion) are
+/// resolved in post_process_param(), which is called only after fi has been
+/// fully processed.
+//===========================================================================
+class ParticleTrackerInfo {
+public:
+  amrex::IntVect nTPPerCell = {AMREX_D_DECL(1, 1, 1)};
+  amrex::IntVect nTPIntervalCell = {AMREX_D_DECL(1, 1, 1)};
+
+  std::string sIOUnit = "planet";
+  bool isRelativistic = false;
+
+  amrex::Vector<std::string> listFiles;
+  bool doInitFromPIC = false;
+
+  // Test-particle velocity states.  Optionally given in SI units and
+  // converted to normalized units during read_param() via fi->get_Si2NoV().
+  amrex::Vector<Vel> tpStates;
+
+  std::string sRegion = "";
+
+  // Sized to the number of species in post_process_param(); filled by #TPSAVE.
+  amrex::Vector<int> dnSave;
+  amrex::Vector<amrex::Real> launchThreshold;
+
+  // Per-species particle counts used by restart (#TESTPARTICLENUMBER).
+  amrex::Vector<unsigned long int> initPartNumber;
+
+  void set_fluid_interface(FluidInterface* in) { fi = in; }
+
+  void read_param(const std::string& command, ReadParam& param) {
+    if (command == "#TPPARTICLES") {
+      param.read_var("npcelx", nTPPerCell[ix_]);
+      param.read_var("npcely", nTPPerCell[iy_]);
+      if (nDim == 3) param.read_var("npcelz", nTPPerCell[iz_]);
+    } else if (command == "#TPCELLINTERVAL") {
+      param.read_var("nIntervalX", nTPIntervalCell[ix_]);
+      param.read_var("nIntervalY", nTPIntervalCell[iy_]);
+      if (nDim == 3) param.read_var("nIntervalZ", nTPIntervalCell[iz_]);
+    } else if (command == "#TPREGION") {
+      param.read_var("region", sRegion);
+    } else if (command == "#TPSAVE") {
+      int iSpecies;
+      param.read_var("iSpecies", iSpecies);
+      if (iSpecies < 0)
+        amrex::Abort("Error [ParticleTrackerInfo]: iSpecies must be >= 0 in #TPSAVE.");
+      // Defer the final bounds check against nSpecies to post_process_param();
+      // grow the vectors here so #TPSAVE may appear before #PLASMA.
+      if (iSpecies >= (int)dnSave.size())
+        dnSave.resize(iSpecies + 1, 10);
+      if (iSpecies >= (int)launchThreshold.size())
+        launchThreshold.resize(iSpecies + 1, 0.5);
+      param.read_var("IOUnit", sIOUnit);
+      param.read_var("dnSave", dnSave[iSpecies]);
+      param.read_var("launchThreshold", launchThreshold[iSpecies]);
+    } else if (command == "#TPRELATIVISTIC") {
+      param.read_var("isRelativistic", isRelativistic);
+    } else if (command == "#TPSTATESI") {
+      if (!fi)
+        amrex::Abort("Error [ParticleTrackerInfo]: #TPSTATESI requires a FluidInterface to be set.");
+      double si2noV = fi->get_Si2NoV();
+      int nState;
+      param.read_var("nState", nState);
+      tpStates.clear();
+      tpStates.reserve(nState);
+      for (int i = 0; i < nState; ++i) {
+        Vel state;
+        param.read_var("iSpecies", state.tag);
+        param.read_var("vth", state.vth);
+        param.read_var("vx", state.vx);
+        param.read_var("vy", state.vy);
+        param.read_var("vz", state.vz);
+        state.vth *= si2noV;
+        state.vx *= si2noV;
+        state.vy *= si2noV;
+        state.vz *= si2noV;
+        tpStates.push_back(state);
+      }
+    } else if (command == "#TPINITFROMPIC") {
+      param.read_var("doInitFromPIC", doInitFromPIC);
+      if (doInitFromPIC) {
+        int nList;
+        param.read_var("nList", nList);
+        listFiles.clear();
+        listFiles.reserve(nList);
+        for (int i = 0; i < nList; ++i) {
+          std::string s;
+          param.read_var("list", s);
+          listFiles.push_back(s);
+        }
+      }
+    } else if (command == "#TESTPARTICLENUMBER") {
+      initPartNumber.clear();
+      int nS = fi ? fi->get_nS() : 0;
+      for (int iPart = 0; iPart < nS; iPart++) {
+        unsigned long int num;
+        param.read_var("Number", num);
+        initPartNumber.push_back(num);
+      }
+    }
+  }
+
+  // Resolve species-dependent quantities.  MUST be called after fi has been
+  // fully processed (fi->post_process_param) so fi->get_nS() is final.
+  void post_process_param() {
+    if (!fi)
+      amrex::Abort("Error [ParticleTrackerInfo]: post_process_param called before the FluidInterface was set.");
+    const int nS = fi->get_nS();
+
+    if (dnSave.empty()) {
+      dnSave.assign(nS, 10);
+    } else if ((int)dnSave.size() < nS) {
+      dnSave.resize(nS, 10);
+    } else if ((int)dnSave.size() > nS) {
+      amrex::Abort("Error [ParticleTrackerInfo]: #TPSAVE iSpecies exceeds the number of species.");
+    }
+
+    if (launchThreshold.empty()) {
+      launchThreshold.assign(nS, 0.5);
+    } else if ((int)launchThreshold.size() < nS) {
+      launchThreshold.resize(nS, 0.5);
+    } else if ((int)launchThreshold.size() > nS) {
+      amrex::Abort("Error [ParticleTrackerInfo]: #TPSAVE iSpecies exceeds the number of species.");
+    }
+  }
+
+private:
+  FluidInterface* fi = nullptr;
+};
+
 template <int NStructReal, int NStructInt>
 class ParticlesIter : public amrex::ParIter<NStructReal, NStructInt> {
 public:
