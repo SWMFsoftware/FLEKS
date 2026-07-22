@@ -170,6 +170,17 @@ public:
 
   FluidType my_type() { return myType; };
 
+  // Copy the FluidInterfaceParameters slice from another FluidInterface.
+  // Used by Domain to keep the source / test-particle grids' parameters in
+  // sync with the primary fluid interface: they are copy-constructed from
+  // *fi before read_param populates *fi, so their snapshot is stale until
+  // this sync runs.  Only the FluidInterfaceParameters members are copied;
+  // the Grid data and SourceInterface / UserSource members are preserved.
+  void sync_fluid_interface_params(const FluidInterface& other) {
+    static_cast<FluidInterfaceParameters&>(*this) =
+        static_cast<const FluidInterfaceParameters&>(other);
+  }
+
   void set_period_start_si(double t) { tStartSI = t; }
 
   double get_period_start_si() const { return tStartSI; }

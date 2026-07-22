@@ -853,6 +853,7 @@ void Domain::read_param(const bool readGridInfo) {
   std::string command;
 
   param.set_verbose(false);
+  bool sourceParamsSynced = false;
   param.set_command_suffix(gridName);
   param.set_component(component);
   while (param.get_next_command(command)) {
@@ -908,15 +909,18 @@ void Domain::read_param(const bool readGridInfo) {
                command == "#CHARGEEXCHANGE" || command == "#SHADOWCYLINDER" ||
                command == "#RECOMBINATION" || command == "#CHEMISTRY") {
       if (source) {
-        // Sync exosphere/plasma parameters from fi to source so that
-        // source->read_param() can access nExoComponent (set by #EXOSPHERE)
-        // and nS (set by #PLASMA) without each ionization command
-        // redundantly re-declaring the component count.  #EXOSPHERE and
-        // #PLASMA must therefore appear before the ionization commands in
-        // PARAM.in.  Only the FluidInterfaceParameters slice is copied;
-        // SourceInterface members (e.g. cxSigma) are preserved.
-        static_cast<FluidInterfaceParameters &>(*source) =
-            static_cast<const FluidInterfaceParameters &>(*fi);
+        // The source grid is copy-constructed from *fi before read_param
+        // populates *fi, so its neutral/plasma parameters are a stale
+        // snapshot.  Synchronize them from fi ONCE, just before the first
+        // ionization command is parsed.  By the (required) convention
+        // #EXOSPHERE and #PLASMA precede the ionization commands, fi's
+        // nExoComponent / nS / etc. are already final at this point.  Only
+        // the FluidInterfaceParameters slice is copied; SourceInterface
+        // members (e.g. cxSigma) are preserved.
+        if (!sourceParamsSynced) {
+          source->sync_fluid_interface_params(*fi);
+          sourceParamsSynced = true;
+        }
         source->read_param(command, param);
       }
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
@@ -1236,13 +1240,15 @@ void Domain::read_param(const bool readGridInfo) {
     if (fi)
       fi->post_process_param(receiveICOnly);
 
-    // source was created before read_param with a stale copy of *fi.
-    // Copy the now-fully-populated FluidInterfaceParameters from fi to
-    // source so that source has correct exosphere, plasma, and
-    // normalization data.
+    // Synchronize source's parameters from fi one final time, now that
+    // fi->post_process_param() has finalized the derived arrays (MoMi_S,
+    // QoQi_S, iRho_I, Si2NoRho, Si2NoP, ...).  This makes source->post_
+    // process_param() and base FluidInterface methods (e.g.
+    // convert_moment_to_velocity) operate on correct, locally-owned data.
+    // The lazy one-time sync above handled the read_param-phase reads
+    // (nExoComponent / nS set by #EXOSPHERE / #PLASMA).
     if (source)
-      static_cast<FluidInterfaceParameters &>(*source) =
-          static_cast<const FluidInterfaceParameters &>(*fi);
+      source->sync_fluid_interface_params(*fi);
 
     if (source)
       source->post_process_param();
