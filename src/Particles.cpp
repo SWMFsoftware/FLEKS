@@ -2284,21 +2284,20 @@ void Particles<NStructReal, NStructInt>::split_new(Real limit,
       std::sort(particles.begin(), particles.end(), compare_two_parts);
 
       // Sort the particles by the weight in decending order.
-      std::sort(
-          particles.begin(), particles.end(),
-          [](const ParticleType& pl, const ParticleType& pr) {
-            const Real ql = fabs(pl.rdata(iqp_));
-            const Real qr = fabs(pr.rdata(iqp_));
-            if (fabs(ql - qr) > 1e-9 * (ql + qr)) {
-              return ql > qr;
-            }
+      std::sort(particles.begin(), particles.end(),
+                [](const ParticleType& pl, const ParticleType& pr) {
+                  const Real ql = fabs(pl.rdata(iqp_));
+                  const Real qr = fabs(pr.rdata(iqp_));
+                  if (fabs(ql - qr) > 1e-9 * (ql + qr)) {
+                    return ql > qr;
+                  }
 
-            if (fabs(pl.pos(ix_) - pr.pos(ix_)) >
-                1e-9 * (fabs(pl.pos(ix_)) + fabs(pr.pos(ix_)))) {
-              return pl.pos(ix_) > pr.pos(ix_);
-            }
-            return false;
-          });
+                  if (fabs(pl.pos(ix_) - pr.pos(ix_)) >
+                      1e-9 * (fabs(pl.pos(ix_)) + fabs(pr.pos(ix_)))) {
+                    return pl.pos(ix_) > pr.pos(ix_);
+                  }
+                  return false;
+                });
       //----------------------------------------------------------------
 
       const auto lo = lbound(pti.tilebox());
@@ -2463,21 +2462,20 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
       std::sort(particles.begin(), particles.end(), compare_two_parts);
 
       // Sort the particles by the weight in decending order.
-      std::sort(
-          particles.begin(), particles.end(),
-          [](const ParticleType& pl, const ParticleType& pr) {
-            const Real ql = fabs(pl.rdata(iqp_));
-            const Real qr = fabs(pr.rdata(iqp_));
-            if (fabs(ql - qr) > 1e-9 * (ql + qr)) {
-              return ql > qr;
-            }
+      std::sort(particles.begin(), particles.end(),
+                [](const ParticleType& pl, const ParticleType& pr) {
+                  const Real ql = fabs(pl.rdata(iqp_));
+                  const Real qr = fabs(pr.rdata(iqp_));
+                  if (fabs(ql - qr) > 1e-9 * (ql + qr)) {
+                    return ql > qr;
+                  }
 
-            if (fabs(pl.pos(ix_) - pr.pos(ix_)) >
-                1e-9 * (fabs(pl.pos(ix_)) + fabs(pr.pos(ix_)))) {
-              return pl.pos(ix_) > pr.pos(ix_);
-            }
-            return false;
-          });
+                  if (fabs(pl.pos(ix_) - pr.pos(ix_)) >
+                      1e-9 * (fabs(pl.pos(ix_)) + fabs(pr.pos(ix_)))) {
+                    return pl.pos(ix_) > pr.pos(ix_);
+                  }
+                  return false;
+                });
       //----------------------------------------------------------------
 
       const auto lo = lbound(pti.tilebox());

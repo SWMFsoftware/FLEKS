@@ -26,8 +26,8 @@ protected:
   FluidInterfaceParameters(const FluidInterfaceParameters& fip) = default;
 
 public:
-  FluidInterfaceParameters&
-  operator=(const FluidInterfaceParameters& fip) = default;
+  FluidInterfaceParameters& operator=(const FluidInterfaceParameters& fip) =
+      default;
 
 protected:
   static const int OhmUe_ = 1, OhmUi_ = 2, OhmUMHD_ = 3;
