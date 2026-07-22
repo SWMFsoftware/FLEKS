@@ -68,12 +68,6 @@ private:
   // Output variable list. Include X/Y/Z.
   std::vector<std::string> var_I;
 
-  // Output control.
-  long int nextWriteCycle;
-  double nextWriteTime;
-  long int lastWriteCycle;
-  double lastWriteTime;
-
   // The output point number of ALL the processors.
   long int nCellAllProc;
 
@@ -119,10 +113,6 @@ public:
         plotMin_D(plotMinIn_D),
         plotMax_D(plotMaxIn_D),
         nSpecies(nSpeciesIn),
-        nextWriteCycle(0),
-        nextWriteTime(0),
-        lastWriteCycle(-1),
-        lastWriteTime(-1),
         nCellAllProc(0),
         No2OutL(1),
         No2OutV(1),

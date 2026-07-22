@@ -25,6 +25,11 @@ protected:
   FluidInterfaceParameters() = default;
   FluidInterfaceParameters(const FluidInterfaceParameters& fip) = default;
 
+public:
+  FluidInterfaceParameters& operator=(const FluidInterfaceParameters& fip) =
+      default;
+
+protected:
   static const int OhmUe_ = 1, OhmUi_ = 2, OhmUMHD_ = 3;
 
   double tStartSI;
@@ -938,7 +943,7 @@ public:
     } else {
       const bool UseGradPe = false;
 
-      amrex::Real uz, uy;
+      amrex::Real uz = 0, uy = 0;
 
       if (OhmU == OhmUe_) {
         uz = get_uz(mfi, xyz, 0, iLev);
@@ -977,7 +982,7 @@ public:
     } else {
       const bool UseGradPe = false;
 
-      amrex::Real ux, uz;
+      amrex::Real ux = 0, uz = 0;
 
       if (OhmU == OhmUe_) {
         uz = get_uz(mfi, xyz, 0, iLev);
@@ -1017,7 +1022,7 @@ public:
     } else {
       const bool UseGradPe = false;
 
-      amrex::Real ux, uy;
+      amrex::Real ux = 0, uy = 0;
 
       if (OhmU == OhmUe_) {
         ux = get_ux(mfi, xyz, 0, iLev);
