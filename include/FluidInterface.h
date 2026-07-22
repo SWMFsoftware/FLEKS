@@ -181,6 +181,18 @@ public:
         static_cast<const FluidInterfaceParameters&>(other);
   }
 
+  // Refresh ONLY the normalization-related parameters from another
+  // FluidInterface and recompute the normalization units.  Unlike
+  // sync_fluid_interface_params(), this does NOT copy nS / MoMi_S / QoQi_S /
+  // varNames / iRho_I, so it is safe for secondary interfaces (OHInterface)
+  // whose constructors deliberately reset those members.  Used by Domain for
+  // the OH-PT stateOH / sourcePT2OH grids, which are copy-constructed from
+  // *fi *before* fi->post_process_param() finalizes the derived normalization
+  // (mNormSI, rPlanetSi override).  Without this, stateOH->get_Si2NoRho() etc.
+  // would reflect a stale mNormSI / rPlanetSi and produce a wrong OH-PT charge
+  // exchange rate.
+  void sync_normalization_params(const FluidInterface& other);
+
   void set_period_start_si(double t) { tStartSI = t; }
 
   double get_period_start_si() const { return tStartSI; }

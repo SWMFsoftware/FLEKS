@@ -1253,6 +1253,22 @@ void Domain::read_param(const bool readGridInfo) {
     if (source)
       source->post_process_param();
 
+    // OH-PT secondary interfaces (stateOH / sourcePT2OH) are copy-constructed
+    // from *fi *before* fi->post_process_param() finalizes the derived
+    // normalization (mNormSI, rPlanetSi override).  Their OHInterface
+    // constructors re-derive the normalization units immediately at
+    // construction (i.e. from stale mNormSI / rPlanetSi), so refresh only the
+    // normalization parameters now that fi's are final.  This is intentionally
+    // NOT a full sync_fluid_interface_params(): OHInterface's nS / MoMi_S /
+    // QoQi_S / varNames / iRho_I are managed separately (constructor resets
+    // and set_node_fluid -> analyze_var_names) and must not be clobbered.
+#ifdef _PT_COMPONENT_
+    if (stateOH)
+      stateOH->sync_normalization_params(*fi);
+    if (sourcePT2OH)
+      sourcePT2OH->sync_normalization_params(*fi);
+#endif
+
     if (pt) {
       // Resolve species-dependent quantities (dnSave / launchThreshold
       // sizes) only after fi has been fully processed, then refresh the

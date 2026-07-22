@@ -887,6 +887,22 @@ void FluidInterface::calc_conversion_units() {
 
 //-------------------------------------------------------------------------
 
+void FluidInterface::sync_normalization_params(const FluidInterface& other) {
+  // Copy only the normalization base parameters (those that
+  // calc_normalization_units() reads and that fi->post_process_param()
+  // finalizes) and recompute the derived normalization units.  Deliberately
+  // leave nS / MoMi_S / QoQi_S / varNames / iRho_I untouched: secondary
+  // interfaces (OHInterface) manage those themselves (constructor resets
+  // and set_node_fluid -> analyze_var_names).
+  lNormSI = other.lNormSI;
+  uNormSI = other.uNormSI;
+  mNormSI = other.mNormSI;
+  rPlanetSi = other.rPlanetSi;
+  calc_normalization_units();
+}
+
+//-------------------------------------------------------------------------
+
 void FluidInterface::calc_normalization_units() {
 
   // Normalization units converted [SI] -> [cgs]
