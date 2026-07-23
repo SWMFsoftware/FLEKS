@@ -473,6 +473,17 @@ public:
   }
 
   /**
+   * @brief Creates a particle with a fully initialized object representation.
+   *
+   * AMReX serializes the complete particle object during redistribution,
+   * including any alignment padding. Value initialization prevents undefined
+   * padding bytes from entering MPI send buffers.
+   */
+  [[nodiscard]] static ParticleType make_particle() noexcept {
+    return ParticleType{};
+  }
+
+  /**
    * @brief Sets the IDs for a particle.
    *
    * This function sets the unique ID, supplementary ID, and CPU ID for the
