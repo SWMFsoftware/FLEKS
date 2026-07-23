@@ -53,7 +53,6 @@ private:
   // ParticleTrackerInfo::post_process_param (after fi is fully processed).
   ParticleTrackerInfo* pInfo = nullptr;
 
-  int nSpecies = 0;
   amrex::Vector<std::unique_ptr<TestParticles> > parts;
   amrex::Vector<amrex::MultiFab> nodeE;
 

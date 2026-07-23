@@ -49,7 +49,7 @@ void ParticleTracker::write_log(bool doForce, bool doCreateFile) {
     logFile = ss.str();
     std::ofstream of(logFile.c_str());
     of << "time nStep";
-    for (int i = 0; i < nSpecies; ++i)
+    for (int i = 0; i < parts.size(); ++i)
       of << " mass_" << i << " moment_x_" << i << " moment_y_" << i
          << " moment_z_" << i << " energy_" << i;
 
@@ -137,7 +137,7 @@ void ParticleTracker::update_field(Pic& pic) {
 }
 
 void ParticleTracker::post_process_param() {
-  nSpecies = fi->get_nS();
+  const int nSpecies = fi->get_nS();
   int min_dnSave = pInfo->dnSave[0];
   for (int i = 1; i < nSpecies; ++i) {
     if (pInfo->dnSave[i] < min_dnSave) {
@@ -151,7 +151,7 @@ void ParticleTracker::post_process_param() {
 
 void ParticleTracker::pre_regrid() {
   if (!parts.empty()) {
-    for (int i = 0; i < nSpecies; ++i) {
+    for (int i = 0; i < parts.size(); ++i) {
       // Label the particles outside the OLD PIC region. It should be called
       // before active region is updated.
       parts[i]->label_particles_outside_active_region();
@@ -178,7 +178,7 @@ void ParticleTracker::post_regrid() {
   distribute_grid_arrays();
 
   //--------------test particles-----------------------------------
-  nSpecies = fi->get_nS();
+  const int nSpecies = fi->get_nS();
 
   if (parts.empty()) {
     for (int i = 0; i < nSpecies; ++i) {
