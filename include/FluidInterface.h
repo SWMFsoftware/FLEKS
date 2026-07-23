@@ -21,18 +21,11 @@
 #include "ReadParam.h"
 #include <memory>
 
-// Shared normalization / conversion parameters.
+// Normalization parameters.
 //
-// These quantities are derived solely from lNormSI / uNormSI / mNormSI /
-// rPlanetSi (set in FluidInterface::read_param / post_process_param) and are
-// frozen once the *primary* FluidInterface (fi) calls post_process_param().
-//
-// Secondary interfaces (UserSource, OHInterface) do NOT copy these values;
-// they hold a shared_ptr to fi's NormalizationParams instance.  Because the
-// pointer is shared, the secondary interfaces automatically observe fi's
-// finalized values after post_process_param() -- no slice-sync or stale-copy
-// is possible.  This replaces the previous sync_fluid_interface_params /
-// sync_normalization_params pattern and removes the stale-copy class of bugs.
+// Derived solely from variables in FluidInterface.
+// The fi interface owns the instance and freezes it.
+// UserSource, OHInterface share fi's instance via a shared_ptr.
 class NormalizationParams {
 public:
   NormalizationParams() = default;

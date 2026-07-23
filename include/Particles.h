@@ -120,19 +120,10 @@ public:
 //===========================================================================
 /// Parameter container for the test-particle (ParticleTracker) component.
 ///
-/// All of the #TP* / #TESTPARTICLENUMBER settings previously lived as plain
-/// members of the Grid-derived ParticleTracker object and were therefore
-/// snapshotted in its constructor -- before the number of species (read by
-/// #PLASMA into FluidInterface) was known.  That premature snapshot made
-/// standalone test-particle setups unusable (nSpecies was read as 0).
-///
-/// Collecting those parameters here decouples "what is configured" from the
-/// heavy AMReX Grid object, exactly as ParticlesInfo already does for Pic.
-/// Domain parses the #TP* commands into this object during read_param, and
-/// ParticleTracker reads its settings back from it.  Species-dependent
-/// quantities (dnSave / launchThreshold sizes, velocity-unit conversion) are
-/// resolved in post_process_param(), which is called only after fi has been
-/// fully processed.
+/// Holds all test particle settings parsed by Domain during read_param();
+/// ParticleTracker reads its configuration back from this object.
+/// Species-dependent quantities (dnSave / launchThreshold sizes, velocity-unit
+/// conversion) are resolved in post_process_param(), called processing fi.
 //===========================================================================
 class ParticleTrackerInfo {
 public:

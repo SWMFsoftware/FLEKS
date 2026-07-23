@@ -23,19 +23,13 @@ public:
 
     varNames.clear();
 
-    // Restore pre-refactor (master) OH<->PT normalization behavior so the
-    // output matches the existing test20 reference.  In the parameter-loading
-    // redesign, secondary interfaces (incl. OHInterface) were made to share
-    // fi's normParams.  For SWMF OH-PT runs, fi's Si2No_* are computed
-    // from the SWMF-supplied base values inside the FluidInterface ctor, but
-    // the PT component PARAM.in then re-specifies those base values via
-    // #NORMALIZATION in read_param(); because post_process_param() early-
-    // returns in SWMF mode, fi's Si2No_* are never recomputed.  master's
-    // OHInterface ctor re-derived its own normalization here (from fi's
-    // parameters at construction time, i.e. after #NORMALIZATION), which is
-    // exactly what the test20 reference was generated with.  We reproduce
-    // that, but first detach from the shared normParams (deep copy) so the
-    // recompute does not mutate fi's normalization.
+    // TODO: In SWMF OH-PT mode fi->post_process_param() early-returns, so the
+    // #NORMALIZATION base values from the PT PARAM.in are never applied to fi.
+    // We detach and re-derive our own normalization here only to reproduce the
+    // test20 reference -- this silent divergence from fi's normalization is
+    // fragile and may be physically inconsistent. Investigate unifying fi's and
+    // OH's normalization so both reflect the same base values instead of this
+    // deep-copy workaround.
     normParams = std::make_shared<NormalizationParams>(*normParams);
     normParams->calc_normalization_units();
   };
