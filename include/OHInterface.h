@@ -23,15 +23,10 @@ public:
 
     varNames.clear();
 
-    // TODO: In SWMF OH-PT mode fi->post_process_param() early-returns, so the
-    // #NORMALIZATION base values from the PT PARAM.in are never applied to fi.
-    // We detach and re-derive our own normalization here only to reproduce the
-    // test20 reference -- this silent divergence from fi's normalization is
-    // fragile and may be physically inconsistent. Investigate unifying fi's and
-    // OH's normalization so both reflect the same base values instead of this
-    // deep-copy workaround.
-    normParams = std::make_shared<NormalizationParams>(*normParams);
-    normParams->calc_normalization_units();
+    // Shares fi's frozen normalization instance via the FluidInterfaceParameters
+    // copy constructor. fi re-derives its normalization from explicit
+    // #NORMALIZATION base values (when present) in Domain::read_param, so this
+    // is always consistent with fi -- no silent detach required.
   };
 
   virtual int get_neu_source_region(const amrex::MFIter &mfi,

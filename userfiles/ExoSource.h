@@ -16,25 +16,25 @@ public:
 
   double get_exosphere_density(double r) const override {
     if (exosphereType == "None") return 0.0;
-    if (r < normParams->rPlanetSi) return 0.0;
+    if (r < get_rPlanet_SI()) return 0.0;
 
     double sum = 0.0;
     if (exosphereType == "Exponential") {
       for (int i = 0; i < nExoComponent; ++i) {
         if (exoH0[i] > 0.0) {
-          sum += exoN0[i] * exp(-(r - normParams->rPlanetSi) / exoH0[i]);
+          sum += exoN0[i] * exp(-(r - get_rPlanet_SI()) / exoH0[i]);
         }
       }
     } else if (exosphereType == "Power-Law") {
       for (int i = 0; i < nExoComponent; ++i) {
         if (r > 0.0) {
-          sum += exoN0[i] * pow(normParams->rPlanetSi / r, exoK0[i]);
+          sum += exoN0[i] * pow(get_rPlanet_SI() / r, exoK0[i]);
         }
       }
     } else if (exosphereType == "Chamberlain") {
       for (int i = 0; i < nExoComponent; ++i) {
-        if (normParams->rPlanetSi > 0.0 && r > 0.0) {
-          sum += exoN0[i] * exp(-exoH0[i] * (1.0 / normParams->rPlanetSi - 1.0 / r));
+        if (get_rPlanet_SI() > 0.0 && r > 0.0) {
+          sum += exoN0[i] * exp(-exoH0[i] * (1.0 / get_rPlanet_SI() - 1.0 / r));
         }
       }
     }
@@ -45,19 +45,19 @@ public:
                                          int iC) const override {
     if (exosphereType == "None") return 0.0;
     if (iC < 0 || iC >= nExoComponent) return 0.0;
-    if (r < normParams->rPlanetSi) return 0.0;
+    if (r < get_rPlanet_SI()) return 0.0;
 
     if (exosphereType == "Exponential") {
       if (exoH0[iC] > 0.0) {
-        return exoN0[iC] * exp(-(r - normParams->rPlanetSi) / exoH0[iC]);
+        return exoN0[iC] * exp(-(r - get_rPlanet_SI()) / exoH0[iC]);
       }
     } else if (exosphereType == "Power-Law") {
       if (r > 0.0) {
-        return exoN0[iC] * pow(normParams->rPlanetSi / r, exoK0[iC]);
+        return exoN0[iC] * pow(get_rPlanet_SI() / r, exoK0[iC]);
       }
     } else if (exosphereType == "Chamberlain") {
-      if (normParams->rPlanetSi > 0.0 && r > 0.0) {
-        return exoN0[iC] * exp(-exoH0[iC] * (1.0 / normParams->rPlanetSi - 1.0 / r));
+      if (get_rPlanet_SI() > 0.0 && r > 0.0) {
+        return exoN0[iC] * exp(-exoH0[iC] * (1.0 / get_rPlanet_SI() - 1.0 / r));
       }
     }
     return 0.0;
@@ -113,7 +113,7 @@ public:
     if (is_in_shadow(xyz[0], xyz[1], xyz[2])) return 0.0;
     double r2 = xyz[0] * xyz[0] + xyz[1] * xyz[1] + xyz[2] * xyz[2];
     double r_m = sqrt(r2);
-    double ratio = normParams->rPlanetSi / r_m;
+    double ratio = get_rPlanet_SI() / r_m;
     // Geometric dilution: nu = nu0 * (r_planet / r)^2
     return photoNu0[iC] * ratio * ratio;
   }
@@ -391,7 +391,7 @@ public:
     if (rxn.rateType == 1) {
       // Photoionization: rate = nu0 * (Rp/r)^2 [s^-1]
       if (is_in_shadow(xyz[0], xyz[1], xyz[2])) return 0.0;
-      double ratio = normParams->rPlanetSi / r_val;
+      double ratio = get_rPlanet_SI() / r_val;
       return rxn.rateCoef * ratio * ratio;
     }
 
@@ -410,8 +410,8 @@ public:
     }
 
     // Recombination: rate = k * n_e [s^-1]
-    // ne is normalized; convert to SI: n_si = n_norm / (normParams->Si2NoRho * mp)
-    return k_si * ne / (normParams->Si2NoRho * cProtonMassSI);
+    // ne is normalized; convert to SI: n_si = n_norm / (get_Si2NoRho() * mp)
+    return k_si * ne / (get_Si2NoRho() * cProtonMassSI);
   }
 
   //-------------------------------------------------------------------
@@ -444,9 +444,9 @@ public:
       double mass_reac = get_species_mass(iSpReac);
       // Normalized number density: n_norm = rho_norm / mass_amu
       double n_reac_norm = rho_reac_norm / mass_reac;
-      // Convert to SI: n_si = n_norm / (normParams->Si2NoRho * cProtonMassSI)
+      // Convert to SI: n_si = n_norm / (get_Si2NoRho() * cProtonMassSI)
       double n_reac_si =
-          n_reac_norm / (normParams->Si2NoRho * cProtonMassSI);
+          n_reac_norm / (get_Si2NoRho() * cProtonMassSI);
 
       // Source mass density rate (SI): srcRho = rate * n_si * m_prod * mp
       double srcRho_si =
@@ -466,7 +466,7 @@ public:
       // product: srcP = rate * P_reac (SI) [Pa/s].
       double p_reac_norm =
           other.get_value(mfi, idx, iP_I[iSpReac], iLev);
-      double p_reac_si = p_reac_norm / normParams->Si2NoP;
+      double p_reac_si = p_reac_norm / get_Si2NoP();
       srcP[iSpProd] += rate * p_reac_si;
     } else {
       // Photoionization: source from neutral at rest (zero velocity).
@@ -534,12 +534,12 @@ public:
 
       // Loss rate (normalized):
       // lossRho_si = k_si * ne_si * rho_ion_si
-      // lossRho_norm = lossRho_si * normParams->Si2NoRho / Si2NoT
-      //             = k_si * [ne/(normParams->Si2NoRho*mp)] * [rho_norm/normParams->Si2NoRho] *
-      //               normParams->Si2NoRho / Si2NoT
-      //             = k_si * ne * rho_norm / (normParams->Si2NoRho * mp * Si2NoT)
+      // lossRho_norm = lossRho_si * get_Si2NoRho() / Si2NoT
+      //             = k_si * [ne/(get_Si2NoRho()*mp)] * [rho_norm/get_Si2NoRho()] *
+      //               get_Si2NoRho() / Si2NoT
+      //             = k_si * ne * rho_norm / (get_Si2NoRho() * mp * Si2NoT)
       double lossRho_norm = k_si * ne * rho_ion_norm /
-          (normParams->Si2NoRho * cProtonMassSI * get_Si2NoT());
+          (get_Si2NoRho() * cProtonMassSI * get_Si2NoT());
       if (lossRho_norm > 0.0) {
         lossArr(i, j, k, iIon) = lossRho_norm;
       }
@@ -696,23 +696,23 @@ public:
                 for (int iSp = 1; iSp <= nIonS; ++iSp) {
                   if (srcRho[iSp] > 0) {
                     anySource = true;
-                    double rho_norm = srcRho[iSp] * normParams->Si2NoRho / get_Si2NoT();
+                    double rho_norm = srcRho[iSp] * get_Si2NoRho() / get_Si2NoT();
                     arr(i, j, k, iRho_I[iSp]) = rho_norm;
                     arr(i, j, k, iUx_I[iSp]) =
-                        srcRhoUx[iSp] * normParams->Si2NoRho / get_Si2NoT();
+                        srcRhoUx[iSp] * get_Si2NoRho() / get_Si2NoT();
                     arr(i, j, k, iUy_I[iSp]) =
-                        srcRhoUy[iSp] * normParams->Si2NoRho / get_Si2NoT();
+                        srcRhoUy[iSp] * get_Si2NoRho() / get_Si2NoT();
                     arr(i, j, k, iUz_I[iSp]) =
-                        srcRhoUz[iSp] * normParams->Si2NoRho / get_Si2NoT();
+                        srcRhoUz[iSp] * get_Si2NoRho() / get_Si2NoT();
                     arr(i, j, k, iP_I[iSp]) =
-                        srcP[iSp] * normParams->Si2NoP / get_Si2NoT();
+                        srcP[iSp] * get_Si2NoP() / get_Si2NoT();
                   }
                 }
                 if (anySource && iPe >= 0) {
                   double srcPe = 0.0;
                   for (int iSp = 1; iSp <= nIonS; ++iSp)
                     srcPe += srcP[iSp];
-                  arr(i, j, k, iPe) = srcPe * normParams->Si2NoP / get_Si2NoT();
+                  arr(i, j, k, iPe) = srcPe * get_Si2NoP() / get_Si2NoT();
                 }
 
                 // ---- Compute ALL loss terms (after nodeFluid write) ----
