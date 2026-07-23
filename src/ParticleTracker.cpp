@@ -282,5 +282,3 @@ void ParticleTracker::save_restart_header(std::ofstream& headerFile) {
     headerFile << "\n";
   }
 }
-
-

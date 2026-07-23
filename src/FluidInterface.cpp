@@ -104,7 +104,8 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
   const Real protonMassPerChargeSI = cProtonMassSI / cUnitChargeSI;
 
   normParams->mNormSI =
-      1e7 * normParams->lNormSI * pow(protonMassPerChargeSI * normParams->ScalingFactor, 2);
+      1e7 * normParams->lNormSI *
+      pow(protonMassPerChargeSI * normParams->ScalingFactor, 2);
 
   // rPlanetSi default set in #NORMALIZATION read_param; only override
   // if it was not already set by #BODYSIZE.
@@ -804,9 +805,12 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
             } else {
               const Real* dx = Geom(iLev).CellSize();
               const auto plo = Geom(iLev).ProbLo();
-              const Real x = (i * dx[ix_] + plo[ix_]) * normParams->No2SiL / normParams->rPlanetSi;
-              const Real y = (j * dx[iy_] + plo[iy_]) * normParams->No2SiL / normParams->rPlanetSi;
-              const Real z = (k * dx[iz_] + plo[iz_]) * normParams->No2SiL / normParams->rPlanetSi;
+              const Real x = (i * dx[ix_] + plo[ix_]) * normParams->No2SiL /
+                             normParams->rPlanetSi;
+              const Real y = (j * dx[iy_] + plo[iy_]) * normParams->No2SiL /
+                             normParams->rPlanetSi;
+              const Real z = (k * dx[iz_] + plo[iz_]) * normParams->No2SiL /
+                             normParams->rPlanetSi;
               if (doWarn) {
                 printf("Warning: ZERO density at x = %e, y = %e, z = %e\n", x,
                        y, z);
@@ -1066,13 +1070,20 @@ void FluidInterface::print_info() const {
     std::cout << printPrefix
               << "========== Unit conversion factors =============="
               << std::endl;
-    std::cout << printPrefix << "Si2NoRho = " << normParams->Si2NoRho << std::endl;
-    std::cout << printPrefix << "Si2NoV   = " << normParams->Si2NoV << std::endl;
-    std::cout << printPrefix << "Si2NoB   = " << normParams->Si2NoB << std::endl;
-    std::cout << printPrefix << "Si2NoE   = " << normParams->Si2NoE << std::endl;
-    std::cout << printPrefix << "Si2NoP   = " << normParams->Si2NoP << std::endl;
-    std::cout << printPrefix << "Si2NoJ   = " << normParams->Si2NoJ << std::endl;
-    std::cout << printPrefix << "Si2NoL   = " << normParams->Si2NoL << std::endl;
+    std::cout << printPrefix << "Si2NoRho = " << normParams->Si2NoRho
+              << std::endl;
+    std::cout << printPrefix << "Si2NoV   = " << normParams->Si2NoV
+              << std::endl;
+    std::cout << printPrefix << "Si2NoB   = " << normParams->Si2NoB
+              << std::endl;
+    std::cout << printPrefix << "Si2NoE   = " << normParams->Si2NoE
+              << std::endl;
+    std::cout << printPrefix << "Si2NoP   = " << normParams->Si2NoP
+              << std::endl;
+    std::cout << printPrefix << "Si2NoJ   = " << normParams->Si2NoJ
+              << std::endl;
+    std::cout << printPrefix << "Si2NoL   = " << normParams->Si2NoL
+              << std::endl;
     std::cout << printPrefix
               << "==================================================="
               << std::endl;

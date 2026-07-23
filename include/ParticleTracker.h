@@ -4,16 +4,19 @@
 #include <AMReX_Vector.H>
 
 #include "Grid.h"
+#include "Particles.h"
 #include "Pic.h"
 #include "TestParticles.h"
-#include "Particles.h"
 
 class ParticleTracker : public Grid {
 public:
   ParticleTracker(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo,
                   int nGst, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
-                  ParticleTrackerInfo& info)
-      : Grid(gm, amrInfo, nGst, id, "pt"), tc(tcIn), fi(fluidIn), pInfo(&info) {}
+                  ParticleTrackerInfo &info)
+      : Grid(gm, amrInfo, nGst, id, "pt"),
+        tc(tcIn),
+        fi(fluidIn),
+        pInfo(&info) {}
 
   ~ParticleTracker() {
     if (isNewGrid)
@@ -51,7 +54,7 @@ private:
 
   // Parameter container populated by Domain during read_param and resolved in
   // ParticleTrackerInfo::post_process_param (after fi is fully processed).
-  ParticleTrackerInfo* pInfo = nullptr;
+  ParticleTrackerInfo *pInfo = nullptr;
 
   amrex::Vector<std::unique_ptr<TestParticles> > parts;
   amrex::Vector<amrex::MultiFab> nodeE;

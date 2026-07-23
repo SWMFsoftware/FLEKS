@@ -900,23 +900,19 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#MEMORY") {
       if (pic)
         pic->read_param(command, param);
-  } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
-             command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
-             command == "#TPSAVE" || command == "#TPRELATIVISTIC" ||
-             command == "#TPINITFROMPIC" || command == "#TPSTATESI") {
-    ptInfo.read_param(command, param);
-  } else if (command == "#PHOTOIONIZATION" || command == "#ELECTRONIMPACT" ||
+    } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
+               command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
+               command == "#TPSAVE" || command == "#TPRELATIVISTIC" ||
+               command == "#TPINITFROMPIC" || command == "#TPSTATESI") {
+      ptInfo.read_param(command, param);
+    } else if (command == "#PHOTOIONIZATION" || command == "#ELECTRONIMPACT" ||
                command == "#CHARGEEXCHANGE" || command == "#SHADOWCYLINDER" ||
                command == "#RECOMBINATION" || command == "#CHEMISTRY") {
       if (source) {
-        // The source grid is copy-constructed from *fi before read_param
-        // populates *fi, so its neutral/plasma parameters are a stale
-        // snapshot.  Synchronize them from fi ONCE, just before the first
-        // ionization command is parsed.  By the (required) convention
-        // #EXOSPHERE and #PLASMA precede the ionization commands, fi's
-        // nExoComponent / nS / etc. are already final at this point.  Only
-        // the FluidInterfaceParameters slice is copied; SourceInterface
-        // members (e.g. cxSigma) are preserved.
+        // Sync source's FluidInterfaceParameters from fi ONCE, just before the
+        // first ionization command. By convention #EXOSPHERE/#PLASMA precede
+        // the ionization commands, so fi's nExoComponent / nS are already
+        // final; SourceInterface members (e.g. cxSigma) are preserved.
         if (!sourceParamsSynced) {
           source->sync_fluid_interface_params(*fi);
           sourceParamsSynced = true;
@@ -1240,13 +1236,10 @@ void Domain::read_param(const bool readGridInfo) {
     if (fi)
       fi->post_process_param(receiveICOnly);
 
-    // Synchronize source's parameters from fi one final time, now that
+    // Final sync of source's FluidInterfaceParameters from fi, now that
     // fi->post_process_param() has finalized the derived arrays (MoMi_S,
-    // QoQi_S, iRho_I, Si2NoRho, Si2NoP, ...).  This makes source->post_
-    // process_param() and base FluidInterface methods (e.g.
-    // convert_moment_to_velocity) operate on correct, locally-owned data.
-    // The lazy one-time sync above handled the read_param-phase reads
-    // (nExoComponent / nS set by #EXOSPHERE / #PLASMA).
+    // QoQi_S, iRho_I, Si2NoRho, Si2NoP, ...), so source->post_process_param()
+    // and base FluidInterface methods use correct, locally-owned data.
     if (source)
       source->sync_fluid_interface_params(*fi);
 
@@ -1254,9 +1247,8 @@ void Domain::read_param(const bool readGridInfo) {
       source->post_process_param();
 
     if (pt) {
-      // Resolve species-dependent quantities (dnSave / launchThreshold
-      // sizes) only after fi has been fully processed, then refresh the
-      // tracker so it no longer relies on any constructor-time snapshot.
+      // Resolve species-dependent sizes (dnSave / launchThreshold) now that
+      // fi is final, then refresh the tracker from the resolved config.
       ptInfo.post_process_param();
       pt->post_process_param();
       pt->set_tp_init_shapes(shapes);

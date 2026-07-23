@@ -127,8 +127,8 @@ public:
 //===========================================================================
 class ParticleTrackerInfo {
 public:
-  amrex::IntVect nTPPerCell = {AMREX_D_DECL(1, 1, 1)};
-  amrex::IntVect nTPIntervalCell = {AMREX_D_DECL(1, 1, 1)};
+  amrex::IntVect nTPPerCell = { AMREX_D_DECL(1, 1, 1) };
+  amrex::IntVect nTPIntervalCell = { AMREX_D_DECL(1, 1, 1) };
 
   std::string sIOUnit = "planet";
   bool isRelativistic = false;
@@ -155,18 +155,21 @@ public:
     if (command == "#TPPARTICLES") {
       param.read_var("npcelx", nTPPerCell[ix_]);
       param.read_var("npcely", nTPPerCell[iy_]);
-      if (nDim == 3) param.read_var("npcelz", nTPPerCell[iz_]);
+      if (nDim == 3)
+        param.read_var("npcelz", nTPPerCell[iz_]);
     } else if (command == "#TPCELLINTERVAL") {
       param.read_var("nIntervalX", nTPIntervalCell[ix_]);
       param.read_var("nIntervalY", nTPIntervalCell[iy_]);
-      if (nDim == 3) param.read_var("nIntervalZ", nTPIntervalCell[iz_]);
+      if (nDim == 3)
+        param.read_var("nIntervalZ", nTPIntervalCell[iz_]);
     } else if (command == "#TPREGION") {
       param.read_var("region", sRegion);
     } else if (command == "#TPSAVE") {
       int iSpecies;
       param.read_var("iSpecies", iSpecies);
       if (iSpecies < 0)
-        amrex::Abort("Error [ParticleTrackerInfo]: iSpecies must be >= 0 in #TPSAVE.");
+        amrex::Abort(
+            "Error [ParticleTrackerInfo]: iSpecies must be >= 0 in #TPSAVE.");
       // Defer the final bounds check against nSpecies to post_process_param();
       // grow the vectors here so #TPSAVE may appear before #PLASMA.
       if (iSpecies >= (int)dnSave.size())
@@ -180,7 +183,8 @@ public:
       param.read_var("isRelativistic", isRelativistic);
     } else if (command == "#TPSTATESI") {
       if (!fi)
-        amrex::Abort("Error [ParticleTrackerInfo]: #TPSTATESI requires a FluidInterface to be set.");
+        amrex::Abort("Error [ParticleTrackerInfo]: #TPSTATESI requires a "
+                     "FluidInterface to be set.");
       double si2noV = fi->get_Si2NoV();
       int nState;
       param.read_var("nState", nState);
@@ -227,7 +231,8 @@ public:
   // fully processed (fi->post_process_param) so fi->get_nS() is final.
   void post_process_param() {
     if (!fi)
-      amrex::Abort("Error [ParticleTrackerInfo]: post_process_param called before the FluidInterface was set.");
+      amrex::Abort("Error [ParticleTrackerInfo]: post_process_param called "
+                   "before the FluidInterface was set.");
     const int nS = fi->get_nS();
 
     if (dnSave.empty()) {
@@ -235,7 +240,8 @@ public:
     } else if ((int)dnSave.size() < nS) {
       dnSave.resize(nS, 10);
     } else if ((int)dnSave.size() > nS) {
-      amrex::Abort("Error [ParticleTrackerInfo]: #TPSAVE iSpecies exceeds the number of species.");
+      amrex::Abort("Error [ParticleTrackerInfo]: #TPSAVE iSpecies exceeds the "
+                   "number of species.");
     }
 
     if (launchThreshold.empty()) {
@@ -243,7 +249,8 @@ public:
     } else if ((int)launchThreshold.size() < nS) {
       launchThreshold.resize(nS, 0.5);
     } else if ((int)launchThreshold.size() > nS) {
-      amrex::Abort("Error [ParticleTrackerInfo]: #TPSAVE iSpecies exceeds the number of species.");
+      amrex::Abort("Error [ParticleTrackerInfo]: #TPSAVE iSpecies exceeds the "
+                   "number of species.");
     }
   }
 

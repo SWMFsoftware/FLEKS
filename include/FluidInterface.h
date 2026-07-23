@@ -1,6 +1,8 @@
 #ifndef _FLUIDINTERFACE_H_
 #define _FLUIDINTERFACE_H_
 
+#include <memory>
+
 #include <AMReX_Box.H>
 #include <AMReX_BoxArray.H>
 #include <AMReX_DistributionMapping.H>
@@ -19,7 +21,6 @@
 #include "GridUtility.h"
 #include "MDArray.h"
 #include "ReadParam.h"
-#include <memory>
 
 // Normalization parameters.
 //
@@ -33,7 +34,7 @@ public:
   void calc_normalization_units();
 
   double rPlanetSi = 1;
-  int    ScalingFactor = 1;
+  int ScalingFactor = 1;
 
   // normalization units for length, velocity, mass and charge
   // Normalized q/m == 1 for proton in CGS units
@@ -336,7 +337,9 @@ public:
   // return MhdNo2SiL
   double get_MhdNo2SiL() const { return (normParams->MhdNo2SiL); }
   // BATSRUS normalized unit -> PIC normalized unit;
-  double get_MhdNo2NoL() const { return (normParams->MhdNo2SiL * normParams->Si2NoL); }
+  double get_MhdNo2NoL() const {
+    return (normParams->MhdNo2SiL * normParams->Si2NoL);
+  }
 
   void sum_boundary() {
     timing_func("FI::sum_boundary");
