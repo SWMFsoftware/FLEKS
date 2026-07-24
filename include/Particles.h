@@ -153,9 +153,6 @@ In short, once the grids or distributions maps of Pic or ParticleTracker change,
 the particle contains aware of the changes through the m_gdb pointer.
 */
 
-using PicParticle = amrex::Particle<nPicPartReal, nPicPartInt>;
-using nPTParticle = amrex::Particle<nPTPartReal, nPTPartInt>;
-
 // Forward declaration.
 template <int NStructReal, int NStructInt> class Particles;
 

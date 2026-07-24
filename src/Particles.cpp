@@ -3915,8 +3915,8 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
           for (int i = 0; i < nDim3; ++i) {
             pair.vp[i] *= stateOH->get_Si2NoV();
           }
-
-          PicParticle newp;
+          
+          auto newp = sourceParts[iRegion]->make_particle();
           newp.rdata(iqp_) = pair.q * scale;
 
           for (int i = 0; i < nDim3; ++i) {
