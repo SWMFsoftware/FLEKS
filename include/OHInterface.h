@@ -23,10 +23,11 @@ public:
 
     varNames.clear();
 
-    // Shares fi's frozen normalization instance via the FluidInterfaceParameters
-    // copy constructor. fi re-derives its normalization from explicit
-    // #NORMALIZATION base values (when present) in Domain::read_param, so this
-    // is always consistent with fi -- no silent detach required.
+    // Shares fi's frozen normalization instance via the
+    // FluidInterfaceParameters copy constructor. fi re-derives its
+    // normalization from explicit #NORMALIZATION base values (when present) in
+    // Domain::read_param, so this is always consistent with fi -- no silent
+    // detach required.
   };
 
   virtual int get_neu_source_region(const amrex::MFIter &mfi,

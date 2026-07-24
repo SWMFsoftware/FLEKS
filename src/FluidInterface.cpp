@@ -105,8 +105,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
 
   const Real protonMassPerChargeSI = cProtonMassSI / cUnitChargeSI;
 
-  mNormSI =
-      1e7 * lNormSI * pow(protonMassPerChargeSI * ScalingFactor, 2);
+  mNormSI = 1e7 * lNormSI * pow(protonMassPerChargeSI * ScalingFactor, 2);
 
   // rPlanetSi default set in #NORMALIZATION read_param; only override
   // if it was not already set by #BODYSIZE.
@@ -117,7 +116,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
   MhdNo2SiL = rPlanetSi;
 
   if (receiveICOnly) {
-    finalize_normalization(true);   // publish scalars only (vectors not yet set)
+    finalize_normalization(true); // publish scalars only (vectors not yet set)
     return;
   }
 
@@ -913,8 +912,11 @@ void FluidInterface::finalize_normalization(bool scalarOnly) {
 //-----------------------------------------------------------------------
 NormalizationParams::NormalizationParams(const FluidInterface& fi,
                                          bool scalarOnly)
-    : rPlanetSi(fi.rPlanetSi), ScalingFactor(fi.ScalingFactor),
-      uNormSI(fi.uNormSI), mNormSI(fi.mNormSI), MhdNo2SiL(fi.MhdNo2SiL) {
+    : rPlanetSi(fi.rPlanetSi),
+      ScalingFactor(fi.ScalingFactor),
+      uNormSI(fi.uNormSI),
+      mNormSI(fi.mNormSI),
+      MhdNo2SiL(fi.MhdNo2SiL) {
   calc_normalization_units(fi.lNormSI, fi.uNormSI, fi.mNormSI);
   if (!scalarOnly)
     compute_var_conversions(fi);
@@ -922,7 +924,8 @@ NormalizationParams::NormalizationParams(const FluidInterface& fi,
 
 //-------------------------------------------------------------------------
 
-void NormalizationParams::calc_normalization_units(double lNormSI, double uNormSI,
+void NormalizationParams::calc_normalization_units(double lNormSI,
+                                                   double uNormSI,
                                                    double mNormSI) {
   // Normalization units converted [SI] -> [cgs]
   if (lNormSI > 0) {

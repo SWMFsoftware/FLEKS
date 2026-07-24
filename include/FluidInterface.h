@@ -24,7 +24,7 @@
 
 // Immutable SI<->normalized conversion factors, computed once from a
 // FluidInterface and shared read-only (shared_ptr<const>) by all interfaces.
-class FluidInterface;  // forward declaration; defined later in this header
+class FluidInterface; // forward declaration; defined later in this header
 
 class NormalizationParams {
 public:
@@ -117,6 +117,12 @@ protected:
 
   int iJx, iJy, iJz;
 
+  // Normalization base scalars, read from SWMF iParam/norm or from
+  // #NORMALIZATION/#SCALINGFACTOR/#BODYSIZE. Declared here so secondary
+  // interfaces (UserSource, OHInterface) inherit fi's finalized values.
+  double lNormSI = 1.0, uNormSI = 1.0, mNormSI = 1.0;
+  double rPlanetSi = 1.0, ScalingFactor = 1.0, MhdNo2SiL = 1.0;
+
   // Shared, FROZEN normalization / conversion parameters.  Owned and published
   // by the primary FluidInterface (fi) via finalize_normalization(); secondary
   // interfaces (UserSource, OHInterface) share fi's instance through the
@@ -170,11 +176,6 @@ protected:
 
   amrex::Vector<amrex::MultiFab> nodeFluid;
   amrex::Vector<amrex::MultiFab> centerB;
-
-  // Normalization base scalars, read from SWMF iParam/norm or from
-  // #NORMALIZATION/#SCALINGFACTOR/#BODYSIZE.
-  double lNormSI = 1.0, uNormSI = 1.0, mNormSI = 1.0;
-  double rPlanetSi = 1.0, ScalingFactor = 1.0, MhdNo2SiL = 1.0;
 
   bool isnodeFluidReady = false;
 
