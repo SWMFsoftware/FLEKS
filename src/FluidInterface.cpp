@@ -97,7 +97,7 @@ void FluidInterface::analyze_var_names(bool useNeutralOnly) {
   nodeFluid.clear();
 }
 
-void FluidInterface::post_process_param(bool receiveICOnly) {
+void FluidInterface::post_process_param(const DomainParameters &parameters) {
   if (initFromSWMF)
     return;
 
@@ -115,7 +115,7 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
   // This is just a guess. To be improved.
   MhdNo2SiL = rPlanetSi;
 
-  if (receiveICOnly) {
+  if (parameters.receiveICOnly) {
     finalize_normalization(true); // publish scalars only (vectors not yet set)
     return;
   }

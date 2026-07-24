@@ -18,15 +18,15 @@ void Domain::init(double time, const int iDomain,
   printPrefix = gridName + ": ";
 
 #ifdef _PT_COMPONENT_
-  useSource = true;
+  parameters_.useSource = true;
 #endif
 
   { // It looks like the file saving may crash if the size of a single file is
     // too large. The numbers 64 and 2048 are chosen empirically.
     const int nFileBase = 64;
     int np = floor(ParallelDescriptor::NProcs() / 2048.0) + 1;
-    nFileField = np * nFileBase;
-    nFileParticle = np * nFileBase * 4;
+    parameters_.nFileField = np * nFileBase;
+    parameters_.nFileParticle = np * nFileBase * 4;
   }
 
   param = paramString;
@@ -40,7 +40,7 @@ void Domain::init(double time, const int iDomain,
   refineRegionsStr.resize(amrInfo.max_level + 1);
   refineRegions.resize(amrInfo.max_level + 1);
 
-  if (receiveICOnly) {
+  if (parameters_.receiveICOnly) {
     fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
     ptInfo.set_fluid_interface(fi.get());
     read_param(false);
@@ -50,7 +50,7 @@ void Domain::init(double time, const int iDomain,
     return;
   }
 
-  if (initFromSWMF && !receiveICOnly) {
+  if (parameters_.initFromSWMF && !parameters_.receiveICOnly) {
     fi = std::make_unique<FluidInterface>(
         gm, amrInfo, nGst, gridID, "fi", paramInt,
         Vector<double>(paramRegion.begin() + 18, paramRegion.end()), paramComm);
@@ -62,7 +62,7 @@ void Domain::init(double time, const int iDomain,
   ptInfo.set_fluid_interface(fi.get());
   pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi.get(), tc.get(), gridID);
 
-  if (usePT)
+  if (parameters_.usePT)
     pt = std::make_unique<ParticleTracker>(gm, amrInfo, nGst, fi.get(),
                                            tc.get(), gridID, ptInfo);
 
@@ -90,7 +90,7 @@ void Domain::init(double time, const int iDomain,
 
   // #SOURCE command sets useSource during read_param; discard the
   // source object if user did not request a source.
-  if (!useSource) {
+  if (!parameters_.useSource) {
     source.reset();
   } else {
     amrex::Print() << source->get_info() << " is used for source" << std::endl;
@@ -113,7 +113,7 @@ void Domain::init(double time, const int iDomain,
 
   pic->init_source(*fi);
 
-  if (doRestart) {
+  if (parameters_.doRestart) {
     // Restoring the restart data before coupling with GM, because the PIC grid
     // may change again during coupling.
     read_restart();
@@ -220,7 +220,7 @@ void Domain::update() {
   // - GM-PC: called from set_state_var() at coupling intervals; fi is
   //   unchanged between couplings, so skip here.
   // - OH-PT: not applicable; charge_exchange() handles source terms.
-  if (source && !initFromSWMF) {
+  if (source && !parameters_.initFromSWMF) {
     source->set_source(*fi);
     source->sum_boundary();
     source->sum_loss_boundary();
@@ -257,7 +257,7 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
   if (isFake2D)
     set_periodicity(iz_, true);
 
-  bool setGridFromSWMF = !doRestart && initFromSWMF && !receiveICOnly;
+  bool setGridFromSWMF = !parameters_.doRestart && parameters_.initFromSWMF && !parameters_.receiveICOnly;
 
   if (setGridFromSWMF) {
     // If restart, the grid info will be read from restart.H
@@ -323,7 +323,7 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
 void Domain::load_balance() {
   timing_func("Domain::load_balance");
 
-  pic->calc_cost_per_cell(balanceStrategy, cellWeight);
+  pic->calc_cost_per_cell(parameters_);
 
   fi->set_cost(pic->get_cost());
 
@@ -435,12 +435,12 @@ void Domain::receive_grid_info(int *status) { gridInfo.set_status(status); }
 //========================================================
 void Domain::set_ic() {
 
-  if (receiveICOnly)
+  if (parameters_.receiveICOnly)
     return;
 
   // If it is restart, the values should have been restored before coupling
   // with GM. See Domain::init().
-  if (!(doRestart && !doRestartFIOnly)) {
+  if (!(parameters_.doRestart && !parameters_.doRestartFIOnly)) {
 
     fi->set_node_fluid();
 
@@ -450,7 +450,7 @@ void Domain::set_ic() {
     pic->write_log(true, true);
   }
 
-  if (!doRestartPT) {
+  if (!parameters_.doRestartPT) {
     if (pt)
       pt->set_ic(*pic);
 
@@ -473,7 +473,7 @@ void Domain::set_state_var(double *data, int *index,
   Print() << printPrefix << " " << sourceComp << " -> " << component
           << " coupling at t =" << tc->get_time_si() << " (s)" << std::endl;
 
-  if (receiveICOnly) {
+  if (parameters_.receiveICOnly) {
     fi->set_node_fluid(data, index, names);
     // For some cases, the variables information is not unknown until the first
     // couping is called.
@@ -598,7 +598,7 @@ void Domain::read_restart() {
   fi->regrid(grid.boxArray(0), &grid);
   fi->read_restart();
 
-  if (!doRestartFIOnly) {
+  if (!parameters_.doRestartFIOnly) {
     pic->regrid(grid.boxArray(0), fi.get());
 
     if (pt)
@@ -608,7 +608,7 @@ void Domain::read_restart() {
     write_plots(true);
     pic->write_log(true, true);
 
-    if (pt && doRestartPT) {
+    if (pt && parameters_.doRestartPT) {
       pt->read_restart();
       pt->write_log(true, true);
     }
@@ -675,12 +675,12 @@ void Domain::save_restart_header() {
 
     std::string command_suffix = "_" + gridName + "\n";
 
-    doRestart = !fi->is_grid_empty();
+    parameters_.doRestart = !fi->is_grid_empty();
     headerFile << "#RESTART" + command_suffix;
-    headerFile << (doRestart ? "T" : "F") << "\t\t\tdoRestart\n";
+    headerFile << (parameters_.doRestart ? "T" : "F") << "\t\t\tdoRestart\n";
     headerFile << "\n";
 
-    if (receiveICOnly) {
+    if (parameters_.receiveICOnly) {
       headerFile << "#RESTARTFIONLY" + command_suffix;
       headerFile << "T"
                  << "\t\t\tdoRestartFIOnly\n";
@@ -928,10 +928,10 @@ void Domain::read_param(const bool readGridInfo) {
       std::string strategy;
       param.read_var("loadBalanceStrategy", strategy);
       strategy[0] = toupper(strategy[0]);
-      balanceStrategy = stringToBalanceStrategy.at(strategy);
+      parameters_.balanceStrategy = stringToBalanceStrategy.at(strategy);
 
-      if (balanceStrategy == BalanceStrategy::Hybrid) {
-        param.read_var("cellWeight", cellWeight);
+      if (parameters_.balanceStrategy == BalanceStrategy::Hybrid) {
+        param.read_var("cellWeight", parameters_.cellWeight);
       }
 
       int dn;
@@ -941,20 +941,20 @@ void Domain::read_param(const bool readGridInfo) {
       tc->loadBalance.init(dt, dn);
 
     } else if (command == "#PARTICLETRACKER") {
-      param.read_var("usePT", usePT);
+      param.read_var("usePT", parameters_.usePT);
     } else if (command == "#SOURCE") {
-      param.read_var("useSource", useSource);
+      param.read_var("useSource", parameters_.useSource);
     } else if (command == "#RESTART") {
-      param.read_var("doRestart", doRestart);
-      doRestartPT = doRestart;
+      param.read_var("doRestart", parameters_.doRestart);
+      parameters_.doRestartPT = parameters_.doRestart;
     } else if (command == "#TPRESTART") {
-      param.read_var("doTPRestart", doRestartPT);
+      param.read_var("doTPRestart", parameters_.doRestartPT);
     } else if (command == "#RESTARTFIONLY") {
-      param.read_var("doRestartFIOnly", doRestartFIOnly);
+      param.read_var("doRestartFIOnly", parameters_.doRestartFIOnly);
     } else if (command == "#INITFROMSWMF") {
-      param.read_var("initFromSWMF", initFromSWMF);
+      param.read_var("initFromSWMF", parameters_.initFromSWMF);
     } else if (command == "#RECEIVEICONLY") {
-      param.read_var("receiveICOnly", receiveICOnly);
+      param.read_var("receiveICOnly", parameters_.receiveICOnly);
     } else if (command == "#GEOMETRY") {
       for (int i = 0; i < nDim; ++i) {
         Real lo, hi;
@@ -1062,8 +1062,8 @@ void Domain::read_param(const bool readGridInfo) {
         amrInfo.ref_ratio.push_back(IntVect(rr));
       }
     } else if (command == "#NOUTFILE") {
-      param.read_var("nFileField", nFileField);
-      param.read_var("nFileParticle", nFileParticle);
+      param.read_var("nFileField", parameters_.nFileField);
+      param.read_var("nFileParticle", parameters_.nFileParticle);
     } else if (command == "#MAXBLOCKSIZE") {
       // The block size in each direction can not larger than maxBlockSize.
       int tmp;
@@ -1234,7 +1234,7 @@ void Domain::read_param(const bool readGridInfo) {
       pic->post_process_param();
 
     if (fi)
-      fi->post_process_param(receiveICOnly);
+      fi->post_process_param(parameters_);
 
     // Final sync of source's FluidInterfaceParameters from fi, now that
     // fi->post_process_param() has finalized the derived arrays (MoMi_S,
@@ -1255,10 +1255,10 @@ void Domain::read_param(const bool readGridInfo) {
     }
   }
 
-  VisMF::SetNOutFiles(nFileField);
+  VisMF::SetNOutFiles(parameters_.nFileField);
 
   ParmParse pp("particles");
-  pp.add("particles_nfiles", nFileParticle);
+  pp.add("particles_nfiles", parameters_.nFileParticle);
 }
 
 //========================================================

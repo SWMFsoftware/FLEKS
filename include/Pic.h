@@ -6,6 +6,7 @@
 #include "Array1D.h"
 #include "Bit.h"
 #include "Constants.h"
+#include "DomainParameters.h"
 #include "FleksDistributionMap.h"
 #include "FluidInterface.h"
 #include "Grid.h"
@@ -335,8 +336,7 @@ public:
   void report_load_balance(bool doReportSummary = true,
                            bool doReportDetail = false);
 
-  void calc_cost_per_cell(BalanceStrategy balanceStrategy,
-                          int cellWeight = 100);
+  void calc_cost_per_cell(const DomainParameters &parameters);
 
   void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF, int iLev);
 

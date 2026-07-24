@@ -17,6 +17,7 @@
 #include <AMReX_VisMF.H>
 
 #include "Constants.h"
+#include "DomainParameters.h"
 #include "Grid.h"
 #include "GridUtility.h"
 #include "MDArray.h"
@@ -227,7 +228,7 @@ public:
 
   void read_param(const std::string& command, ReadParam& param);
 
-  void post_process_param(bool receiveICOnly = false);
+  void post_process_param(const DomainParameters &parameters);
 
   void set_var_idx();
 

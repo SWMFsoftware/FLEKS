@@ -986,7 +986,9 @@ void Pic::calc_mach_number() {
 }
 
 //==========================================================
-void Pic::calc_cost_per_cell(BalanceStrategy balanceStrategy, int cellWeight) {
+void Pic::calc_cost_per_cell(const DomainParameters &parameters) {
+  const BalanceStrategy balanceStrategy = parameters.balanceStrategy;
+  const int cellWeight = parameters.cellWeight;
   if (!isMomentsUpdated && balanceStrategy == BalanceStrategy::Particle) {
     sum_moments(false);
   }

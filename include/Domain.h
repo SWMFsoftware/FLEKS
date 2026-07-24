@@ -2,6 +2,7 @@
 #define _DOMAIN_H_
 
 #include "DomainGrid.h"
+#include "DomainParameters.h"
 #include "OHInterface.h"
 #include "ParticleTracker.h"
 #include "Pic.h"
@@ -10,24 +11,11 @@
 
 class Domain : public DomainGrid {
 private:
-  bool doRestart = false;
-
-  bool doRestartPT = false;
-
-  bool doRestartFIOnly = false;
+  // Shared, rarely-changing configuration. Declared before the dependent
+  // objects (fi/pic/pt/source) so it always outlives them.
+  DomainParameters parameters_;
 
   ReadParam param;
-
-  // Number of files per AMREX output.
-  int nFileField = 64, nFileParticle = 256;
-
-  bool initFromSWMF = true;
-
-  bool receiveICOnly = false;
-
-  bool usePT = false;
-
-  bool useSource = false;
 
   ParticleTrackerInfo ptInfo;
 
@@ -118,7 +106,7 @@ public:
   // void make_data();
   void init_time_ctr();
 
-  bool receive_ic_only() { return receiveICOnly; };
+  bool receive_ic_only() { return parameters_.receiveICOnly; };
 };
 
 #endif
