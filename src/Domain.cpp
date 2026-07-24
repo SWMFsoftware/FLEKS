@@ -42,6 +42,7 @@ void Domain::init(double time, const int iDomain,
 
   if (receiveICOnly) {
     fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
+    ptInfo.set_fluid_interface(fi.get());
     read_param(false);
 
     gridInfo.init(nCell[ix_], nCell[iy_], nCell[iz_], fi->get_nCellPerPatch());
@@ -58,11 +59,12 @@ void Domain::init(double time, const int iDomain,
     fi = std::make_unique<FluidInterface>(gm, amrInfo, nGst, gridID, "fi");
   }
 
+  ptInfo.set_fluid_interface(fi.get());
   pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi.get(), tc.get(), gridID);
 
   if (usePT)
     pt = std::make_unique<ParticleTracker>(gm, amrInfo, nGst, fi.get(),
-                                           tc.get(), gridID);
+                                           tc.get(), gridID, ptInfo);
 
   // Create the source object before read_param so that ionization
   // commands (#PHOTOIONIZATION, #ELECTRONIMPACT, #CHARGEEXCHANGE)
@@ -851,6 +853,7 @@ void Domain::read_param(const bool readGridInfo) {
   std::string command;
 
   param.set_verbose(false);
+  bool sourceParamsSynced = false;
   param.set_command_suffix(gridName);
   param.set_component(component);
   while (param.get_next_command(command)) {
@@ -901,21 +904,19 @@ void Domain::read_param(const bool readGridInfo) {
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
                command == "#TPSAVE" || command == "#TPRELATIVISTIC" ||
                command == "#TPINITFROMPIC" || command == "#TPSTATESI") {
-      if (pt)
-        pt->read_param(command, param);
+      ptInfo.read_param(command, param);
     } else if (command == "#PHOTOIONIZATION" || command == "#ELECTRONIMPACT" ||
                command == "#CHARGEEXCHANGE" || command == "#SHADOWCYLINDER" ||
                command == "#RECOMBINATION" || command == "#CHEMISTRY") {
       if (source) {
-        // Sync exosphere/plasma parameters from fi to source so that
-        // source->read_param() can access nExoComponent (set by #EXOSPHERE)
-        // and nS (set by #PLASMA) without each ionization command
-        // redundantly re-declaring the component count.  #EXOSPHERE and
-        // #PLASMA must therefore appear before the ionization commands in
-        // PARAM.in.  Only the FluidInterfaceParameters slice is copied;
-        // SourceInterface members (e.g. cxSigma) are preserved.
-        static_cast<FluidInterfaceParameters &>(*source) =
-            static_cast<const FluidInterfaceParameters &>(*fi);
+        // Sync source's FluidInterfaceParameters from fi ONCE, just before the
+        // first ionization command. By convention #EXOSPHERE/#PLASMA precede
+        // the ionization commands, so fi's nExoComponent / nS are already
+        // final; SourceInterface members (e.g. cxSigma) are preserved.
+        if (!sourceParamsSynced) {
+          source->sync_fluid_interface_params(*fi);
+          sourceParamsSynced = true;
+        }
         source->read_param(command, param);
       }
     } else if (command == "#NORMALIZATION" || command == "#SCALINGFACTOR" ||
@@ -1232,24 +1233,26 @@ void Domain::read_param(const bool readGridInfo) {
     if (pic)
       pic->post_process_param();
 
-    if (pt) {
-      pt->post_process_param();
-      pt->set_tp_init_shapes(shapes);
-    }
-
     if (fi)
       fi->post_process_param(receiveICOnly);
 
-    // source was created before read_param with a stale copy of *fi.
-    // Copy the now-fully-populated FluidInterfaceParameters from fi to
-    // source so that source has correct exosphere, plasma, and
-    // normalization data.
+    // Final sync of source's FluidInterfaceParameters from fi, now that
+    // fi->post_process_param() has finalized the derived arrays (MoMi_S,
+    // QoQi_S, iRho_I, Si2NoRho, Si2NoP, ...), so source->post_process_param()
+    // and base FluidInterface methods use correct, locally-owned data.
     if (source)
-      static_cast<FluidInterfaceParameters &>(*source) =
-          static_cast<const FluidInterfaceParameters &>(*fi);
+      source->sync_fluid_interface_params(*fi);
 
     if (source)
       source->post_process_param();
+
+    if (pt) {
+      // Resolve species-dependent sizes (dnSave / launchThreshold) now that
+      // fi is final, then refresh the tracker from the resolved config.
+      ptInfo.post_process_param();
+      pt->post_process_param();
+      pt->set_tp_init_shapes(shapes);
+    }
   }
 
   VisMF::SetNOutFiles(nFileField);

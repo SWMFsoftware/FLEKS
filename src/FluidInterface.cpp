@@ -89,7 +89,9 @@ void FluidInterface::analyze_var_names(bool useNeutralOnly) {
   iRhoUy_I = iUy_I;
   iRhoUz_I = iUz_I;
 
-  calc_conversion_units();
+  // Variable indices are now known; (re)build the immutable normalization
+  // instance with the per-variable conversion vectors filled in.
+  finalize_normalization();
   QoQi_S.resize(nS);
   MoMi_S.resize(nS);
   nodeFluid.clear();
@@ -113,10 +115,10 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
   // This is just a guess. To be improved.
   MhdNo2SiL = rPlanetSi;
 
-  calc_normalization_units();
-
-  if (receiveICOnly)
+  if (receiveICOnly) {
+    finalize_normalization(true); // publish scalars only (vectors not yet set)
     return;
+  }
 
   iRho_I.resize(nS);
   iRhoUx_I.resize(nS);
@@ -209,7 +211,9 @@ void FluidInterface::post_process_param(bool receiveICOnly) {
            iJx, iJy, iJz);
   }
 
-  calc_conversion_units();
+  // Compute derived normalization + per-variable conversion factors and
+  // publish the frozen instance shared by all secondary interfaces.
+  finalize_normalization();
 }
 
 FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
@@ -353,9 +357,9 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
   MhdNo2SiL = paramComm[n++];
   /** Do not change the order of above lines. */
 
-  calc_normalization_units();
-
-  calc_conversion_units();
+  // Publish the frozen normalization instance shared by all secondary
+  // interfaces (source, OHInterface, ...).
+  finalize_normalization();
 
   if (useMultiFluid && !useMhdPe) {
     std::cout << printPrefix
@@ -370,12 +374,25 @@ FluidInterface::FluidInterface(Geometry const& gm, AmrInfo const& amrInfo,
 //==========================================================
 void FluidInterface::read_param(const std::string& command, ReadParam& param) {
   if (command == "#NORMALIZATION") {
+    const double lOld = lNormSI, uOld = uNormSI;
     param.read_var("lNorm", lNormSI);
     param.read_var("uNorm", uNormSI);
+    // In SWMF/OH-PT mode the variable indices are already known (set in the
+    // ctor), so an explicit override can be re-finalized immediately; the OH
+    // interfaces then share a consistent instance via the
+    // FluidInterfaceParameters copy constructor.
+    if ((lNormSI != lOld || uNormSI != uOld) && initFromSWMF)
+      finalize_normalization();
   } else if (command == "#SCALINGFACTOR") {
+    const int sOld = ScalingFactor;
     param.read_var("scaling", ScalingFactor);
+    if (ScalingFactor != sOld && initFromSWMF)
+      finalize_normalization();
   } else if (command == "#BODYSIZE") {
+    const double rOld = rPlanetSi;
     param.read_var("radius", rPlanetSi);
+    if (rPlanetSi != rOld && initFromSWMF)
+      finalize_normalization();
   } else if (command == "#EXOSPHERE") {
     param.read_var("typeProfile", exosphereType);
     param.read_var("nComponent", nExoComponent);
@@ -759,10 +776,10 @@ void FluidInterface::normalize_fluid_variables() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (int i = 0; i < nodeFluid[iLev].nComp(); ++i) {
       MultiFab tmpMF(nodeFluid[iLev], make_alias, i, 1);
-      tmpMF.mult(Si2No_V[i], tmpMF.nGrow());
+      tmpMF.mult(normParams->Si2No_V[i], tmpMF.nGrow());
     }
 
-    centerB[iLev].mult(Si2NoB, centerB[iLev].nGrow());
+    centerB[iLev].mult(normParams->Si2NoB, centerB[iLev].nGrow());
   }
 }
 
@@ -800,9 +817,12 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
             } else {
               const Real* dx = Geom(iLev).CellSize();
               const auto plo = Geom(iLev).ProbLo();
-              const Real x = (i * dx[ix_] + plo[ix_]) * No2SiL / rPlanetSi;
-              const Real y = (j * dx[iy_] + plo[iy_]) * No2SiL / rPlanetSi;
-              const Real z = (k * dx[iz_] + plo[iz_]) * No2SiL / rPlanetSi;
+              const Real x = (i * dx[ix_] + plo[ix_]) * normParams->No2SiL /
+                             normParams->rPlanetSi;
+              const Real y = (j * dx[iy_] + plo[iy_]) * normParams->No2SiL /
+                             normParams->rPlanetSi;
+              const Real z = (k * dx[iz_] + plo[iz_]) * normParams->No2SiL /
+                             normParams->rPlanetSi;
               if (doWarn) {
                 printf("Warning: ZERO density at x = %e, y = %e, z = %e\n", x,
                        y, z);
@@ -829,63 +849,81 @@ void FluidInterface::set_plasma_charge_and_mass(Real qomEl) {
 }
 
 //-----------------------------------------------------------------------
-void FluidInterface::calc_conversion_units() {
-  const int nVar = (useCurrent ? nVarFluid + 3 : nVarFluid);
-
+void NormalizationParams::compute_var_conversions(const FluidInterface& fi) {
+  const int nVar = (fi.useCurrent ? fi.nVarFluid + 3 : fi.nVarFluid);
   Si2No_V.resize(nVar);
   No2Si_V.resize(nVar);
 
   for (int i = 0; i < nVar; ++i)
     Si2No_V[i] = 1;
 
-  Si2No_V[iBx] = Si2NoB;
-  Si2No_V[iBy] = Si2NoB;
-  Si2No_V[iBz] = Si2NoB;
+  Si2No_V[fi.iBx] = Si2NoB;
+  Si2No_V[fi.iBy] = Si2NoB;
+  Si2No_V[fi.iBz] = Si2NoB;
 
-  if (Si2No_V.size() > iJz) {
-    Si2No_V[iJx] = Si2NoJ;
-    Si2No_V[iJy] = Si2NoJ;
-    Si2No_V[iJz] = Si2NoJ;
+  if (Si2No_V.size() > fi.iJz) {
+    Si2No_V[fi.iJx] = Si2NoJ;
+    Si2No_V[fi.iJy] = Si2NoJ;
+    Si2No_V[fi.iJz] = Si2NoJ;
   }
 
-  if (useElectronFluid && iEx >= 0) {
-    Si2No_V[iEx] = Si2NoE;
-    Si2No_V[iEy] = Si2NoE;
-    Si2No_V[iEz] = Si2NoE;
+  if (fi.useElectronFluid && fi.iEx >= 0) {
+    Si2No_V[fi.iEx] = Si2NoE;
+    Si2No_V[fi.iEy] = Si2NoE;
+    Si2No_V[fi.iEz] = Si2NoE;
   }
 
-  if (useMhdPe)
-    Si2No_V[iPe] = Si2NoP;
-  if (useMultiSpecies)
-    Si2No_V[iRhoTotal] = Si2NoRho;
+  if (fi.useMhdPe)
+    Si2No_V[fi.iPe] = Si2NoP;
+  if (fi.useMultiSpecies)
+    Si2No_V[fi.iRhoTotal] = Si2NoRho;
 
   int iMax;
-  iMax = nFluid;
-  if (useMultiSpecies)
-    iMax = nIon;
+  iMax = fi.nFluid;
+  if (fi.useMultiSpecies)
+    iMax = fi.nIon;
 
   for (int i = 0; i < iMax; ++i) {
-    Si2No_V[iRho_I[i]] = Si2NoRho;
-    Si2No_V[iRhoUx_I[i]] = Si2NoM;
-    Si2No_V[iRhoUy_I[i]] = Si2NoM;
-    Si2No_V[iRhoUz_I[i]] = Si2NoM;
-    Si2No_V[iP_I[i]] = Si2NoP;
-    if (useAnisoP)
-      Si2No_V[iPpar_I[i]] = Si2NoP;
+    Si2No_V[fi.iRho_I[i]] = Si2NoRho;
+    Si2No_V[fi.iRhoUx_I[i]] = Si2NoM;
+    Si2No_V[fi.iRhoUy_I[i]] = Si2NoM;
+    Si2No_V[fi.iRhoUz_I[i]] = Si2NoM;
+    Si2No_V[fi.iP_I[i]] = Si2NoP;
+    if (fi.useAnisoP)
+      Si2No_V[fi.iPpar_I[i]] = Si2NoP;
   }
 
-  if (iLevSet > 0)
-    Si2No_V[iLevSet] = Si2NoRho;
+  if (fi.iLevSet > 0)
+    Si2No_V[fi.iLevSet] = Si2NoRho;
 
   // Get back to SI units
   for (int iVar = 0; iVar < nVar; iVar++)
     No2Si_V[iVar] = 1.0 / Si2No_V[iVar];
 }
 
+//-----------------------------------------------------------------------
+void FluidInterface::finalize_normalization(bool scalarOnly) {
+  normParams = std::make_shared<const NormalizationParams>(*this, scalarOnly);
+}
+
+//-----------------------------------------------------------------------
+NormalizationParams::NormalizationParams(const FluidInterface& fi,
+                                         bool scalarOnly)
+    : rPlanetSi(fi.rPlanetSi),
+      ScalingFactor(fi.ScalingFactor),
+      uNormSI(fi.uNormSI),
+      mNormSI(fi.mNormSI),
+      MhdNo2SiL(fi.MhdNo2SiL) {
+  calc_normalization_units(fi.lNormSI, fi.uNormSI, fi.mNormSI);
+  if (!scalarOnly)
+    compute_var_conversions(fi);
+}
+
 //-------------------------------------------------------------------------
 
-void FluidInterface::calc_normalization_units() {
-
+void NormalizationParams::calc_normalization_units(double lNormSI,
+                                                   double uNormSI,
+                                                   double mNormSI) {
   // Normalization units converted [SI] -> [cgs]
   if (lNormSI > 0) {
     Lnorm = 100.0 * lNormSI;
@@ -1056,20 +1094,27 @@ void FluidInterface::print_info() const {
     std::cout << printPrefix
               << "============= Normalization factors ============="
               << std::endl;
-    std::cout << printPrefix << "Mnorm    = " << Mnorm << std::endl;
-    std::cout << printPrefix << "Unorm    = " << Unorm << std::endl;
-    std::cout << printPrefix << "Qnorm    = " << Qnorm << std::endl;
-    std::cout << printPrefix << "Lnorm    = " << Lnorm << std::endl;
+    std::cout << printPrefix << "Mnorm    = " << normParams->Mnorm << std::endl;
+    std::cout << printPrefix << "Unorm    = " << normParams->Unorm << std::endl;
+    std::cout << printPrefix << "Qnorm    = " << normParams->Qnorm << std::endl;
+    std::cout << printPrefix << "Lnorm    = " << normParams->Lnorm << std::endl;
     std::cout << printPrefix
               << "========== Unit conversion factors =============="
               << std::endl;
-    std::cout << printPrefix << "Si2NoRho = " << Si2NoRho << std::endl;
-    std::cout << printPrefix << "Si2NoV   = " << Si2NoV << std::endl;
-    std::cout << printPrefix << "Si2NoB   = " << Si2NoB << std::endl;
-    std::cout << printPrefix << "Si2NoE   = " << Si2NoE << std::endl;
-    std::cout << printPrefix << "Si2NoP   = " << Si2NoP << std::endl;
-    std::cout << printPrefix << "Si2NoJ   = " << Si2NoJ << std::endl;
-    std::cout << printPrefix << "Si2NoL   = " << Si2NoL << std::endl;
+    std::cout << printPrefix << "Si2NoRho = " << normParams->Si2NoRho
+              << std::endl;
+    std::cout << printPrefix << "Si2NoV   = " << normParams->Si2NoV
+              << std::endl;
+    std::cout << printPrefix << "Si2NoB   = " << normParams->Si2NoB
+              << std::endl;
+    std::cout << printPrefix << "Si2NoE   = " << normParams->Si2NoE
+              << std::endl;
+    std::cout << printPrefix << "Si2NoP   = " << normParams->Si2NoP
+              << std::endl;
+    std::cout << printPrefix << "Si2NoJ   = " << normParams->Si2NoJ
+              << std::endl;
+    std::cout << printPrefix << "Si2NoL   = " << normParams->Si2NoL
+              << std::endl;
     std::cout << printPrefix
               << "==================================================="
               << std::endl;

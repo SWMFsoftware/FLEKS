@@ -29,6 +29,8 @@ private:
 
   bool useSource = false;
 
+  ParticleTrackerInfo ptInfo;
+
   bool isTCInitialized = false;
 
 public:

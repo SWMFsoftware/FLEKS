@@ -1,6 +1,8 @@
 #ifndef _FLUIDINTERFACE_H_
 #define _FLUIDINTERFACE_H_
 
+#include <memory>
+
 #include <AMReX_Box.H>
 #include <AMReX_BoxArray.H>
 #include <AMReX_DistributionMapping.H>
@@ -19,6 +21,41 @@
 #include "GridUtility.h"
 #include "MDArray.h"
 #include "ReadParam.h"
+
+// Immutable SI<->normalized conversion factors, computed once from a
+// FluidInterface and shared read-only (shared_ptr<const>) by all interfaces.
+class FluidInterface; // forward declaration; defined later in this header
+
+class NormalizationParams {
+public:
+  NormalizationParams() = default;
+  // Build the derived normalization from fi.
+  NormalizationParams(const FluidInterface& fi, bool scalarOnly = false);
+
+  // Derived temperature conversions.
+  double si2noT() const { return Si2NoL / Si2NoV; }
+  double no2siT() const { return Si2NoV / Si2NoL; }
+
+  double rPlanetSi = 1;
+  int ScalingFactor = 1;
+
+  // normalization units for length, velocity, mass and charge
+  // Normalized q/m == 1 for proton in CGS units
+  double Lnorm = 1, Unorm = 1, uNormSI = 1;
+  double Mnorm = 0, Qnorm = 0, mNormSI = 0;
+
+  amrex::Vector<double> Si2No_V, No2Si_V;
+  double Si2NoM = 0, Si2NoV = 0, Si2NoRho = 0, Si2NoB = 0, Si2NoP = 0,
+         Si2NoJ = 0, Si2NoL = 0, Si2NoE = 0;
+  double No2SiV = 0, No2SiL = 0;
+
+  // Length in BATSRUS normalized unit -> Si
+  double MhdNo2SiL = 1;
+
+private:
+  void calc_normalization_units(double lNormSI, double uNormSI, double mNormSI);
+  void compute_var_conversions(const FluidInterface& fi);
+};
 
 class FluidInterfaceParameters {
 protected:
@@ -85,23 +122,21 @@ protected:
 
   int iJx, iJy, iJz;
 
-  double rPlanetSi = 1;
+  // Normalization base scalars, read from SWMF iParam/norm or from
+  // #NORMALIZATION/#SCALINGFACTOR/#BODYSIZE. Declared here so secondary
+  // interfaces (UserSource, OHInterface) inherit fi's finalized values.
+  double lNormSI = 1.0, uNormSI = 1.0, mNormSI = 1.0;
+  double rPlanetSi = 1.0, ScalingFactor = 1.0, MhdNo2SiL = 1.0;
 
-  int ScalingFactor = 1;
-
-  // normalization units for length, velocity, mass and charge
-  // Normalized q/m ==1 for proton in CGS units
-  double Lnorm, Unorm, lNormSI = 1, uNormSI = 1;
-  double Mnorm, Qnorm, mNormSI;
-
-  amrex::Vector<double> Si2No_V, No2Si_V;
-  double Si2NoM, Si2NoV, Si2NoRho, Si2NoB, Si2NoP, Si2NoJ, Si2NoL, Si2NoE;
-  double No2SiV, No2SiL;
+  // Shared, FROZEN normalization / conversion parameters.  Owned and published
+  // by the primary FluidInterface (fi) via finalize_normalization(); secondary
+  // interfaces (UserSource, OHInterface) share fi's instance through the
+  // FluidInterfaceParameters copy constructor and MUST NOT mutate it (it is a
+  // shared_ptr<const>).
+  std::shared_ptr<const NormalizationParams> normParams =
+      std::make_shared<const NormalizationParams>();
 
   amrex::Vector<double> uniformState;
-
-  // Length in BATSRUS normalized unit -> Si
-  double MhdNo2SiL;
 
   bool useResist = false;
   double etaSI = 0, etaNO = 0;
@@ -132,6 +167,8 @@ public:
 };
 
 class FluidInterface : public Grid, public FluidInterfaceParameters {
+  // NormalizationParams is a derived, immutable snapshot of fi's parameters.
+  friend class NormalizationParams;
   /*
   Q: It is preferable to declare copyable variables in
     FluidInterfaceParameters. Why?
@@ -174,6 +211,17 @@ public:
   ~FluidInterface() = default;
 
   FluidType my_type() { return myType; };
+
+  // Copy the FluidInterfaceParameters slice from another FluidInterface.
+  // Used by Domain to keep the source / test-particle grids' parameters in
+  // sync with the primary fluid interface: they are copy-constructed from
+  // *fi before read_param populates *fi, so their snapshot is stale until
+  // this sync runs.  Only the FluidInterfaceParameters members are copied;
+  // the Grid data and SourceInterface / UserSource members are preserved.
+  void sync_fluid_interface_params(const FluidInterface& other) {
+    static_cast<FluidInterfaceParameters&>(*this) =
+        static_cast<const FluidInterfaceParameters&>(other);
+  }
 
   void set_period_start_si(double t) { tStartSI = t; }
 
@@ -222,9 +270,12 @@ public:
 
   void set_plasma_charge_and_mass(amrex::Real qomEl);
 
-  void calc_normalization_units();
-
-  void calc_conversion_units();
+  // Compute all derived normalization + per-variable conversion factors and
+  // publish an immutable instance into normParams. When scalarOnly is true only
+  // the scalar SI<->normalized factors are derived (used for the early
+  // "initial-condition-only" publish before variable indices are known);
+  // otherwise the per-variable conversion vectors are filled as well.
+  void finalize_normalization(bool scalarOnly = false);
 
   void analyze_var_names(bool useNeutral = false);
 
@@ -275,41 +326,49 @@ public:
   int get_nFluid() const { return nFluid; }
 
   const amrex::Vector<std::string>& get_var_names() const { return varNames; }
-  double get_Si2No_V(int idx) const { return (Si2No_V[idx]); }
-  double get_Si2NoL() const { return (Si2NoL); }
-  double get_Si2NoT() const { return Si2NoL / Si2NoV; }
-  double get_Si2NoM() const { return 1. / mNormSI; }
-  double get_Si2NoRho() const { return Si2NoRho; }
-  double get_Si2NoV() const { return Si2NoV; }
-  double get_Si2NoP() const { return Si2NoP; }
 
-  double get_No2Si_V(int idx) const { return (No2Si_V[idx]); }
-  double get_No2SiL() const { return (No2SiL); }
-  double get_No2SiRho() const { return (1. / Si2NoRho); }
-  double get_No2SiV() const { return (1. / Si2NoV); }
-  double get_No2SiB() const { return (1. / Si2NoB); }
-  double get_No2SiP() const { return (1. / Si2NoP); }
-  double get_No2SiJ() const { return (1. / Si2NoJ); }
-  double get_No2SiT() const { return Si2NoV / Si2NoL; }
-  double get_No2SiM() const { return mNormSI; }
+  // Named accessors for the frozen normalization state. They present a stable,
+  // self-documenting API; callers must not reach into the NormalizationParams
+  // object directly. The instance is shared read-only with all secondary
+  // interfaces.
+  double get_Si2NoL() const { return (normParams->Si2NoL); }
+  double get_Si2NoM() const { return (1. / normParams->mNormSI); }
+  double get_Si2NoRho() const { return normParams->Si2NoRho; }
+  double get_Si2NoV() const { return normParams->Si2NoV; }
+  double get_Si2NoP() const { return normParams->Si2NoP; }
+
+  double get_lnorm_si() const { return lNormSI; }
+  double get_unorm_si() const { return normParams->uNormSI; }
+  double get_mnorm_si() const { return normParams->mNormSI; };
+
+  double get_cLight_SI() const { return normParams->uNormSI; }
+
+  double get_rPlanet_SI() const { return normParams->rPlanetSi; }
+
+  int get_scaling_factor() const { return normParams->ScalingFactor; }
+
+  double get_MhdNo2SiL() const { return (normParams->MhdNo2SiL); }
+
+  double get_Si2No_V(int idx) const { return normParams->Si2No_V[idx]; }
+
+  double get_No2Si_V(int idx) const { return normParams->No2Si_V[idx]; }
+  double get_No2SiL() const { return (normParams->No2SiL); }
+  double get_No2SiRho() const { return (1. / normParams->Si2NoRho); }
+  double get_No2SiV() const { return (1. / normParams->Si2NoV); }
+  double get_No2SiB() const { return (1. / normParams->Si2NoB); }
+  double get_No2SiP() const { return (1. / normParams->Si2NoP); }
+  double get_No2SiJ() const { return (1. / normParams->Si2NoJ); }
+  double get_No2SiM() const { return normParams->mNormSI; }
 
   double get_species_mass(int i) const { return MoMi_S[i]; };
   double get_species_charge(int i) const { return QoQi_S[i]; };
 
-  double get_lnorm_si() const { return lNormSI; }
-  double get_unorm_si() const { return uNormSI; }
-  double get_mnorm_si() const { return mNormSI; };
-
-  double get_cLight_SI() const { return uNormSI; }
-
-  double get_rPlanet_SI() const { return rPlanetSi; }
-
-  int get_scaling_factor() const { return ScalingFactor; }
-
-  // return MhdNo2SiL
-  double get_MhdNo2SiL() const { return (MhdNo2SiL); }
-  // BATSRUS normalized unit -> PIC normalized unit;
-  double get_MhdNo2NoL() const { return (MhdNo2SiL * Si2NoL); }
+  // Derived temperature + MHD-length conversions.
+  double get_Si2NoT() const { return normParams->si2noT(); }
+  double get_No2SiT() const { return normParams->no2siT(); }
+  double get_MhdNo2NoL() const {
+    return (normParams->MhdNo2SiL * normParams->Si2NoL);
+  }
 
   void sum_boundary() {
     timing_func("FI::sum_boundary");
@@ -345,7 +404,7 @@ public:
     etaSI = etaSIIn;
     useResist = etaSI > 0;
     if (useResist)
-      etaNO = fourPI * etaSI * Si2NoV * Si2NoL;
+      etaNO = fourPI * etaSI * normParams->Si2NoV * normParams->Si2NoL;
   }
 
   void set_ohm_u(std::string ss) {
