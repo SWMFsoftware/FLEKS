@@ -127,13 +127,11 @@ void div_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
 
       Real compZ = 0.0;
       if (nDim > 2) {
-        compZ =
-            0.25 * invDx[iz_] *
-            (center(i, j, k, iz_) - center(i, j, km1, iz_) +
-             center(i - 1, j, k, iz_) - center(i - 1, j, km1, iz_) +
-             center(i, j - 1, k, iz_) - center(i, j - 1, km1, iz_) +
-             center(i - 1, j - 1, k, iz_) -
-             center(i - 1, j - 1, km1, iz_));
+        compZ = 0.25 * invDx[iz_] *
+                (center(i, j, k, iz_) - center(i, j, km1, iz_) +
+                 center(i - 1, j, k, iz_) - center(i - 1, j, km1, iz_) +
+                 center(i, j - 1, k, iz_) - center(i, j - 1, km1, iz_) +
+                 center(i - 1, j - 1, k, iz_) - center(i - 1, j - 1, km1, iz_));
       }
       node(i, j, k) = compX + compY + compZ;
     });
@@ -168,13 +166,11 @@ void div_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
 
       Real compZ = 0.0;
       if (nDim > 2) {
-        compZ =
-            0.25 * invDx[iz_] *
-            (node(i, j, kp1, iz_) - node(i, j, k, iz_) +
-             node(i + 1, j, kp1, iz_) - node(i + 1, j, k, iz_) +
-             node(i, j + 1, kp1, iz_) - node(i, j + 1, k, iz_) +
-             node(i + 1, j + 1, kp1, iz_) -
-             node(i + 1, j + 1, k, iz_));
+        compZ = 0.25 * invDx[iz_] *
+                (node(i, j, kp1, iz_) - node(i, j, k, iz_) +
+                 node(i + 1, j, kp1, iz_) - node(i + 1, j, k, iz_) +
+                 node(i, j + 1, kp1, iz_) - node(i, j + 1, k, iz_) +
+                 node(i + 1, j + 1, kp1, iz_) - node(i + 1, j + 1, k, iz_));
       }
       center(i, j, k) = compX + compY + compZ;
     });
@@ -385,24 +381,22 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
            centerArr(i - 1, j, km1, iz_) - centerArr(i - 1, j - 1, km1, iz_));
       Real cYDZ = 0.0;
       if (nDim > 2) {
-        cYDZ =
-            0.25 * invDx[iz_] *
-            (centerArr(i, j, k, iy_) - centerArr(i, j, km1, iy_) +
-             centerArr(i - 1, j, k, iy_) - centerArr(i - 1, j, km1, iy_) +
-             centerArr(i, j - 1, k, iy_) - centerArr(i, j - 1, km1, iy_) +
-             centerArr(i - 1, j - 1, k, iy_) -
-             centerArr(i - 1, j - 1, km1, iy_));
+        cYDZ = 0.25 * invDx[iz_] *
+               (centerArr(i, j, k, iy_) - centerArr(i, j, km1, iy_) +
+                centerArr(i - 1, j, k, iy_) - centerArr(i - 1, j, km1, iy_) +
+                centerArr(i, j - 1, k, iy_) - centerArr(i, j - 1, km1, iy_) +
+                centerArr(i - 1, j - 1, k, iy_) -
+                centerArr(i - 1, j - 1, km1, iy_));
       }
       // curl - Y
       Real cXDZ = 0.0;
       if (nDim > 2) {
-        cXDZ =
-            0.25 * invDx[iz_] *
-            (centerArr(i, j, k, ix_) - centerArr(i, j, km1, ix_) +
-             centerArr(i - 1, j, k, ix_) - centerArr(i - 1, j, km1, ix_) +
-             centerArr(i, j - 1, k, ix_) - centerArr(i, j - 1, km1, ix_) +
-             centerArr(i - 1, j - 1, k, ix_) -
-             centerArr(i - 1, j - 1, km1, ix_));
+        cXDZ = 0.25 * invDx[iz_] *
+               (centerArr(i, j, k, ix_) - centerArr(i, j, km1, ix_) +
+                centerArr(i - 1, j, k, ix_) - centerArr(i - 1, j, km1, ix_) +
+                centerArr(i, j - 1, k, ix_) - centerArr(i, j - 1, km1, ix_) +
+                centerArr(i - 1, j - 1, k, ix_) -
+                centerArr(i - 1, j - 1, km1, ix_));
       }
 
       const Real cZDX =
@@ -456,8 +450,7 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
             (nodeArr(i, j, kp1, iy_) - nodeArr(i, j, k, iy_) +
              nodeArr(i + 1, j, kp1, iy_) - nodeArr(i + 1, j, k, iy_) +
              nodeArr(i, j + 1, kp1, iy_) - nodeArr(i, j + 1, k, iy_) +
-             nodeArr(i + 1, j + 1, kp1, iy_) -
-             nodeArr(i + 1, j + 1, k, iy_));
+             nodeArr(i + 1, j + 1, kp1, iy_) - nodeArr(i + 1, j + 1, k, iy_));
       }
       // curl - Y
       Real cXDZ = 0.0;
@@ -467,8 +460,7 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
             (nodeArr(i, j, kp1, ix_) - nodeArr(i, j, k, ix_) +
              nodeArr(i + 1, j, kp1, ix_) - nodeArr(i + 1, j, k, ix_) +
              nodeArr(i, j + 1, kp1, ix_) - nodeArr(i, j + 1, k, ix_) +
-             nodeArr(i + 1, j + 1, kp1, ix_) -
-             nodeArr(i + 1, j + 1, k, ix_));
+             nodeArr(i + 1, j + 1, kp1, ix_) - nodeArr(i + 1, j + 1, k, ix_));
       }
 
       const Real cZDX =
