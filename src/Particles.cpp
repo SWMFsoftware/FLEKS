@@ -296,7 +296,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
             w = 0.0;
           }
 
-          ParticleType p;
+          auto p = make_particle();
           set_ids(p);
           for (int iDim = 0; iDim < nDim; iDim++) {
             p.pos(iDim) = xyz[iDim];
@@ -1976,7 +1976,7 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
           p.rdata(iqp_) = qp1 / (nNew + 1);
 
           for (int iNew = 0; iNew < nNew; iNew++) {
-            ParticleType pnew;
+            auto pnew = make_particle();
             set_ids(pnew);
 
             Real xp2 = xp1 + (xMax - xMin) * (randNum() - 0.5);
@@ -2084,7 +2084,8 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
   for (int ip = 0; ip < nPair * 2; ip += 2) {
     ParticleType& p1 = *p_morton[ip];
     ParticleType& p2 = *p_morton[ip + 1];
-    ParticleType p3, p4;
+    auto p3 = make_particle();
+    auto p4 = make_particle();
 
     Real du = p1.rdata(iup_) - p2.rdata(iup_);
     Real dv = p1.rdata(ivp_) - p2.rdata(ivp_);
@@ -2382,7 +2383,7 @@ void Particles<NStructReal, NStructInt>::split_new(Real limit,
             yp2 = std::clamp(yp2, yMin, yMax);
             zp2 = std::clamp(zp2, zMin, zMax);
 
-            ParticleType pnew;
+            auto pnew = make_particle();
             set_ids(pnew);
 
             pnew.pos(ix_) = xp2;
@@ -2560,7 +2561,7 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
             yp2 = std::clamp(yp2, yMin, yMax);
             zp2 = std::clamp(zp2, zMin, zMax);
 
-            ParticleType pnew;
+            auto pnew = make_particle();
             set_ids(pnew);
 
             pnew.pos(ix_) = xp2;
@@ -3915,7 +3916,7 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
             pair.vp[i] *= stateOH->get_Si2NoV();
           }
 
-          PicParticle newp;
+          auto newp = sourceParts[iRegion]->make_particle();
           newp.rdata(iqp_) = pair.q * scale;
 
           for (int i = 0; i < nDim3; ++i) {
@@ -4092,7 +4093,7 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
       Real scale = rhoSource / wTmp;
 
       for (int i : idx) {
-        ParticleType newp;
+        auto newp = make_particle();
         set_ids(newp);
 
         newp.rdata(iqp_) = sps[i].rdata(iqp_) * scale;
@@ -4233,7 +4234,7 @@ void Particles<NStructReal, NStructInt>::limit_weight_new(
           yp2 = std::clamp(yp2, yMin, yMax);
           zp2 = std::clamp(zp2, zMin, zMax);
 
-          ParticleType pnew;
+          auto pnew = make_particle();
           set_ids(pnew);
 
           pnew.pos(ix_) = xp2;

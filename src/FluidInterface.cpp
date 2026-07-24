@@ -802,7 +802,9 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
               const auto plo = Geom(iLev).ProbLo();
               const Real x = (i * dx[ix_] + plo[ix_]) * No2SiL / rPlanetSi;
               const Real y = (j * dx[iy_] + plo[iy_]) * No2SiL / rPlanetSi;
-              const Real z = (k * dx[iz_] + plo[iz_]) * No2SiL / rPlanetSi;
+              const Real z = nDim > 2
+                                 ? (k * dx[iz_] + plo[iz_]) * No2SiL / rPlanetSi
+                                 : 0.0;
               if (doWarn) {
                 printf("Warning: ZERO density at x = %e, y = %e, z = %e\n", x,
                        y, z);

@@ -153,9 +153,6 @@ In short, once the grids or distributions maps of Pic or ParticleTracker change,
 the particle contains aware of the changes through the m_gdb pointer.
 */
 
-using PicParticle = amrex::Particle<nPicPartReal, nPicPartInt>;
-using nPTParticle = amrex::Particle<nPTPartReal, nPTPartInt>;
-
 // Forward declaration.
 template <int NStructReal, int NStructInt> class Particles;
 
@@ -470,6 +467,17 @@ public:
 
     IDs ids = { static_cast<int>(id), supID };
     return ids;
+  }
+
+  /**
+   * @brief Creates a particle with a fully initialized object representation.
+   *
+   * AMReX serializes the complete particle object during redistribution,
+   * including any alignment padding. Value initialization prevents undefined
+   * padding bytes from entering MPI send buffers.
+   */
+  [[nodiscard]] static ParticleType make_particle() noexcept {
+    return ParticleType{};
   }
 
   /**
