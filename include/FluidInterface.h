@@ -123,11 +123,7 @@ protected:
   double lNormSI = 1.0, uNormSI = 1.0, mNormSI = 1.0;
   double rPlanetSi = 1.0, ScalingFactor = 1.0, MhdNo2SiL = 1.0;
 
-  // Shared, FROZEN normalization / conversion parameters.  Owned and published
-  // by the primary FluidInterface (fi) via finalize_normalization(); secondary
-  // interfaces (UserSource, OHInterface) share fi's instance through the
-  // FluidInterfaceParameters copy constructor and MUST NOT mutate it (it is a
-  // shared_ptr<const>).
+  // Read-only once published; changable via finalize_normalization().
   std::shared_ptr<const NormalizationParams> normParams =
       std::make_shared<const NormalizationParams>();
 
@@ -265,11 +261,7 @@ public:
 
   void set_plasma_charge_and_mass(amrex::Real qomEl);
 
-  // Compute all derived normalization + per-variable conversion factors and
-  // publish an immutable instance into normParams. When scalarOnly is true only
-  // the scalar SI<->normalized factors are derived (used for the early
-  // "initial-condition-only" publish before variable indices are known);
-  // otherwise the per-variable conversion vectors are filled as well.
+  // Publish the immutable normParams; scalarOnly skips per-variable factors.
   void finalize_normalization(bool scalarOnly = false);
 
   void analyze_var_names(bool useNeutral = false);
@@ -322,10 +314,7 @@ public:
 
   const amrex::Vector<std::string>& get_var_names() const { return varNames; }
 
-  // Named accessors for the frozen normalization state. They present a stable,
-  // self-documenting API; callers must not reach into the NormalizationParams
-  // object directly. The instance is shared read-only with all secondary
-  // interfaces.
+  // Read-only accessors for the shared, frozen normalization state.
   double get_Si2NoL() const { return (normParams->Si2NoL); }
   double get_Si2NoM() const { return (1. / normParams->mNormSI); }
   double get_Si2NoRho() const { return normParams->Si2NoRho; }
