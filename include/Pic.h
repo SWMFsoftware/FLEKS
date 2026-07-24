@@ -158,7 +158,7 @@ private:
   std::string selectParticleInputFile;
 
   bool doReport = false;
-  int dnMemory = 100;
+  int dnMemory = -1;
 
   std::string logFile;
 

@@ -1674,7 +1674,7 @@ The default is to use a single PARAM.in file.
 </command>
 
 <command name="MEMORY" alias="MEMORY_FLEKS0,MEMORY_FLEKS1,MEMORY_FLEKS2" multiple="T">
-  <parameter name="dnMemory" type="integer" default="100"/>
+  <parameter name="dnMemory" type="integer" default="-1"/>
 
 #MEMORY
 100            dnMemory

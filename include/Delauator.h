@@ -312,8 +312,6 @@ public:
 
     hull_start = i0;
 
-    size_t hull_size = 3;
-
     hull_next[i0] = hull_prev[i2] = i1;
     hull_next[i1] = hull_prev[i0] = i2;
     hull_next[i2] = hull_prev[i1] = i0;
@@ -382,8 +380,6 @@ public:
 
       hull_tri[i] = legalize(t + 2);
       hull_tri[e] = t;
-      hull_size++;
-
       // walk forward through the hull, adding more triangles and flipping
       // recursively
       std::size_t next = hull_next[e];
@@ -394,7 +390,6 @@ public:
                          hull_tri[next]);
         hull_tri[i] = legalize(t + 2);
         hull_next[next] = next; // mark as removed
-        hull_size--;
         next = q;
       }
 
@@ -406,7 +401,6 @@ public:
           legalize(t + 2);
           hull_tri[q] = t;
           hull_next[e] = e; // mark as removed
-          hull_size--;
           e = q;
         }
       }

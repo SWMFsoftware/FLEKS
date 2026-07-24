@@ -419,14 +419,11 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
     if (varNames.size() > 0) {
       // Assume only use neutral fluids
       int nNeuFluid = 0;
-      int nIon = 0;
       for (auto& name : varNames) {
         if (name.find("rho") != std::string::npos) {
           if (name.size() == 6 && name.compare(0, 2, "ne") == 0) {
             // Assume a neutral fluid's density is named as "ne*rho"
             nNeuFluid++;
-          } else {
-            nIon++;
           }
         }
       }
@@ -824,8 +821,10 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
                              normParams->rPlanetSi;
               const Real y = (j * dx[iy_] + plo[iy_]) * normParams->No2SiL /
                              normParams->rPlanetSi;
-              const Real z = (k * dx[iz_] + plo[iz_]) * normParams->No2SiL /
-                             normParams->rPlanetSi;
+              const Real z = nDimFluid > 2
+                                 ? (k * dx[iz_] + plo[iz_]) * normParams->No2SiL /
+                                       normParams->rPlanetSi
+                                 : 0.0;
               if (doWarn) {
                 printf("Warning: ZERO density at x = %e, y = %e, z = %e\n", x,
                        y, z);

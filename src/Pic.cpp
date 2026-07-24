@@ -773,7 +773,7 @@ void Pic::calc_mass_matrix_amr() {
     jHat[iLev].SumBoundary(Geom(iLev).periodicity());
     nodeMM[iLev].SumBoundary(Geom(iLev).periodicity());
   }
-  Real invVol[finest_level + 1];
+  Vector<Real> invVol(n_lev());
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     invVol[iLev] = 1.0;
     for (int i = 0; i < nDim; ++i) {

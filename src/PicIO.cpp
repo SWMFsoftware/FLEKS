@@ -37,8 +37,8 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
 
   // (rho + 3*Moment + 6*p)*nSpecies+ 3*E + 3*B;
   const int nVarPerSpecies = 10;
-  int nVarPIC = nSpecies * nVarPerSpecies + 6;
-  double dataPIC_I[nVarPIC];
+  const int nVarPIC = nSpecies * nVarPerSpecies + 6;
+  Vector<double> dataPIC_I(nVarPIC);
 
   const int iBx_ = nSpecies * nVarPerSpecies, iBy_ = iBx_ + 1, iBz_ = iBy_ + 1;
   const int iEx_ = iBz_ + 1;
@@ -74,7 +74,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     }
 
     // Combine PIC plasma data into MHD fluid data.
-    fi->calc_fluid_state(dataPIC_I, &data_I[iPoint * nVar]);
+    fi->calc_fluid_state(dataPIC_I.data(), &data_I[iPoint * nVar]);
   }
 }
 

@@ -409,7 +409,7 @@ void TestParticles::add_test_particles_from_pic(PicParticles* pts) {
       // This particle is on the test particle list. Generate a new test
       // particle.
       if (*it == id) {
-        ParticleType p;
+        auto p = make_particle();
         p.cpu() = pOther.cpu();
         p.id() = pOther.id();
         p.pos(ix_) = pOther.pos(ix_);

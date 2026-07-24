@@ -783,7 +783,7 @@ void PlotWriter::write_field(double const timeNow, int const iCycle,
 }
 
 int PlotWriter::get_time_digits(double second) const {
-  int digits;
+  int digits = 0;
 
   if (maxTimeUnit.find("hour") != std::string::npos) {
     /*Example: For the input second = 3668 = 1hour + 1min + 8s,

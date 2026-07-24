@@ -199,7 +199,7 @@ inline bool skip_particle_for_dive_cleaning(
   }
 
   if (bit::is_refined_neighbour(status(iv))) {
-    bool b[3][3][3] = { false };
+    bool b[3][3][3] = {};
     amrex::Real fac = 0.25;
     check_refinement_proximity(b, iv, status);
     int prel[3] = { 1, 1, 1 };
