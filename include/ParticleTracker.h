@@ -12,10 +12,11 @@ class ParticleTracker : public Grid {
 public:
   ParticleTracker(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo,
                   int nGst, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
-                  ParticleTrackerInfo &info)
+                  ParticleTrackerInfo &info, const DomainParameters &dp)
       : Grid(gm, amrInfo, nGst, id, "pt"),
         tc(tcIn),
         fi(fluidIn),
+        parameters_(dp),
         pInfo(&info) {}
 
   ~ParticleTracker() {
@@ -51,6 +52,10 @@ public:
 private:
   TimeCtr *tc = nullptr;
   FluidInterface *fi = nullptr;
+
+  // Non-owning reference to Domain's shared, rarely-changing configuration.
+  // Domain always out-lives ParticleTracker, so a reference is safe.
+  const DomainParameters &parameters_;
 
   // Parameter container populated by Domain during read_param and resolved in
   // ParticleTrackerInfo::post_process_param (after fi is fully processed).

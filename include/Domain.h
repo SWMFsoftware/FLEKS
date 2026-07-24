@@ -87,6 +87,13 @@ public:
 
   //--------------- IO begin--------------------------------
   void read_param(const bool readGridInfo);
+
+  // Pre-pass: parse the Domain-level configuration (restart/init/source/PT
+  // toggles and load-balance settings) into parameters_ so that child
+  // components can be constructed gated on the correct values (e.g. usePT
+  // gates the ParticleTracker, useSource gates the source object). The stream
+  // is left mid-file; callers must roll_back() afterward.
+  void read_domain_parameters(ReadParam &param);
   void save_restart(std::string restartOutDir);
   void save_restart_header();
   void save_restart_data();

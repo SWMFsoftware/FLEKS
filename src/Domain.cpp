@@ -37,6 +37,14 @@ void Domain::init(double time, const int iDomain,
 
   prepare_grid_info(paramRegion);
 
+  // Pre-pass: finalize Domain-level configuration BEFORE constructing child
+  // components, so construction can be gated on the correct values
+  // (usePT gates the ParticleTracker; useSource/usePT gate the source).
+  {
+    read_domain_parameters(param);
+    param.roll_back();
+  }
+
   refineRegionsStr.resize(amrInfo.max_level + 1);
   refineRegions.resize(amrInfo.max_level + 1);
 
@@ -60,16 +68,19 @@ void Domain::init(double time, const int iDomain,
   }
 
   ptInfo.set_fluid_interface(fi.get());
-  pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi.get(), tc.get(), gridID);
+  pic = std::make_unique<Pic>(gm, amrInfo, nGst, fi.get(), tc.get(),
+                                 gridID, parameters_);
 
   if (parameters_.usePT)
     pt = std::make_unique<ParticleTracker>(gm, amrInfo, nGst, fi.get(),
-                                           tc.get(), gridID, ptInfo);
+                                           tc.get(), gridID, ptInfo,
+                                           parameters_);
 
   // Create the source object before read_param so that ionization
   // commands (#PHOTOIONIZATION, #ELECTRONIMPACT, #CHARGEEXCHANGE)
   // can be dispatched to source->read_param().
-  source = std::make_unique<UserSource>(*fi, gridID, "picSource", SourceFluid);
+  source = std::make_unique<UserSource>(*fi, gridID, "picSource", SourceFluid,
+                                       parameters_);
 
   read_param(false);
 
@@ -323,7 +334,7 @@ void Domain::prepare_grid_info(const Vector<double> &info) {
 void Domain::load_balance() {
   timing_func("Domain::load_balance");
 
-  pic->calc_cost_per_cell(parameters_);
+  pic->calc_cost_per_cell();
 
   fi->set_cost(pic->get_cost());
 
@@ -844,6 +855,48 @@ void Domain::init_time_ctr() {
   }
 
   isTCInitialized = true;
+}
+
+//========================================================
+void Domain::read_domain_parameters(ReadParam &param) {
+  // Parse only the Domain-level configuration (restart/init/source/PT toggles
+  // and load-balance settings), so that child components can be constructed
+  // gated on the correct values. All other commands are left for the
+  // subsequent read_param(false) pass; because the caller rolls back the
+  // stream afterward, the cursor position reached here does not matter.
+  std::string command;
+  while (param.get_next_command(command)) {
+    if (command == "#RESTART") {
+      param.read_var("doRestart", parameters_.doRestart);
+      parameters_.doRestartPT = parameters_.doRestart;
+    } else if (command == "#TPRESTART") {
+      param.read_var("doTPRestart", parameters_.doRestartPT);
+    } else if (command == "#RESTARTFIONLY") {
+      param.read_var("doRestartFIOnly", parameters_.doRestartFIOnly);
+    } else if (command == "#INITFROMSWMF") {
+      param.read_var("initFromSWMF", parameters_.initFromSWMF);
+    } else if (command == "#RECEIVEICONLY") {
+      param.read_var("receiveICOnly", parameters_.receiveICOnly);
+    } else if (command == "#NOUTFILE") {
+      param.read_var("nFileField", parameters_.nFileField);
+      param.read_var("nFileParticle", parameters_.nFileParticle);
+    } else if (command == "#PARTICLETRACKER") {
+      param.read_var("usePT", parameters_.usePT);
+    } else if (command == "#SOURCE") {
+      param.read_var("useSource", parameters_.useSource);
+    } else if (command == "#LOADBALANCE") {
+      std::string strategy;
+      param.read_var("loadBalanceStrategy", strategy);
+      strategy[0] = toupper(strategy[0]);
+      parameters_.balanceStrategy = stringToBalanceStrategy.at(strategy);
+
+      if (parameters_.balanceStrategy == BalanceStrategy::Hybrid) {
+        param.read_var("cellWeight", parameters_.cellWeight);
+      }
+    }
+    // Non-Domain commands are skipped: get_next_command advances to the next
+    // command line, ignoring their value lines.
+  }
 }
 
 //========================================================
