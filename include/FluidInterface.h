@@ -228,7 +228,7 @@ public:
 
   void read_param(const std::string& command, ReadParam& param);
 
-  void post_process_param(const DomainParameters &parameters);
+  void post_process_param(const DomainParameters& parameters);
 
   void set_var_idx();
 

@@ -88,14 +88,12 @@ protected:
   // Allocated whenever useRecombination or useChemistry is true.
   amrex::Vector<amrex::MultiFab> nodeLossFluid;
 
-  // Non-owning reference to Domain's shared, rarely-changing configuration.
-  // Domain always out-lives the source, so a reference is safe.
-  const DomainParameters &parameters_;
+  const DomainParameters& domainParameters;
 
 public:
   SourceInterface(const FluidInterface& other, int id, std::string tag,
-                 FluidType typeIn, const DomainParameters &dp)
-      : FluidInterface(other, id, tag, typeIn), parameters_(dp) {
+                  FluidType typeIn, const DomainParameters& dp)
+      : FluidInterface(other, id, tag, typeIn), domainParameters(dp) {
     initFromSWMF = false;
   }
 

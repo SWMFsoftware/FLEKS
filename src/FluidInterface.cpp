@@ -97,7 +97,7 @@ void FluidInterface::analyze_var_names(bool useNeutralOnly) {
   nodeFluid.clear();
 }
 
-void FluidInterface::post_process_param(const DomainParameters &parameters) {
+void FluidInterface::post_process_param(const DomainParameters& parameters) {
   if (initFromSWMF)
     return;
 
@@ -821,10 +821,10 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
                              normParams->rPlanetSi;
               const Real y = (j * dx[iy_] + plo[iy_]) * normParams->No2SiL /
                              normParams->rPlanetSi;
-              const Real z = nDimFluid > 2
-                                 ? (k * dx[iz_] + plo[iz_]) * normParams->No2SiL /
-                                       normParams->rPlanetSi
-                                 : 0.0;
+              const Real z = nDimFluid > 2 ? (k * dx[iz_] + plo[iz_]) *
+                                                 normParams->No2SiL /
+                                                 normParams->rPlanetSi
+                                           : 0.0;
               if (doWarn) {
                 printf("Warning: ZERO density at x = %e, y = %e, z = %e\n", x,
                        y, z);

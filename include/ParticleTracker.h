@@ -16,7 +16,7 @@ public:
       : Grid(gm, amrInfo, nGst, id, "pt"),
         tc(tcIn),
         fi(fluidIn),
-        parameters_(dp),
+        domainParameters(dp),
         pInfo(&info) {}
 
   ~ParticleTracker() {
@@ -53,9 +53,7 @@ private:
   TimeCtr *tc = nullptr;
   FluidInterface *fi = nullptr;
 
-  // Non-owning reference to Domain's shared, rarely-changing configuration.
-  // Domain always out-lives ParticleTracker, so a reference is safe.
-  const DomainParameters &parameters_;
+  const DomainParameters &domainParameters;
 
   // Parameter container populated by Domain during read_param and resolved in
   // ParticleTrackerInfo::post_process_param (after fi is fully processed).

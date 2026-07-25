@@ -64,9 +64,7 @@ private:
   SourceInterface *source = nullptr;
   TimeCtr *tc = nullptr;
 
-  // Non-owning reference to Domain's shared, rarely-changing configuration.
-  // Domain always out-lives Pic, so a reference (not a copy) is safe.
-  const DomainParameters &parameters_;
+  const DomainParameters &domainParameters;
 
   amrex::Vector<amrex::MultiFab> nodeE;
   amrex::Vector<amrex::MultiFab> nodeEth;
@@ -172,8 +170,10 @@ public:
   Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo, int nGst,
       FluidInterface *fluidIn, TimeCtr *tcIn, int id,
       const DomainParameters &parameters)
-      : Grid(gm, amrInfo, nGst, id, "pic"), fi(fluidIn), tc(tcIn),
-        parameters_(parameters) {
+      : Grid(gm, amrInfo, nGst, id, "pic"),
+        fi(fluidIn),
+        tc(tcIn),
+        domainParameters(parameters) {
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 

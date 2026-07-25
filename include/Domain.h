@@ -13,7 +13,7 @@ class Domain : public DomainGrid {
 private:
   // Shared, rarely-changing configuration. Declared before the dependent
   // objects (fi/pic/pt/source) so it always outlives them.
-  DomainParameters parameters_;
+  DomainParameters domainParameters;
 
   ReadParam param;
 
@@ -88,11 +88,8 @@ public:
   //--------------- IO begin--------------------------------
   void read_param(const bool readGridInfo);
 
-  // Pre-pass: parse the Domain-level configuration (restart/init/source/PT
-  // toggles and load-balance settings) into parameters_ so that child
-  // components can be constructed gated on the correct values (e.g. usePT
-  // gates the ParticleTracker, useSource gates the source object). The stream
-  // is left mid-file; callers must roll_back() afterward.
+  // Parse Domain-level switches before constructing children; caller rolls
+  // back.
   void read_domain_parameters(ReadParam &param);
   void save_restart(std::string restartOutDir);
   void save_restart_header();
@@ -113,7 +110,7 @@ public:
   // void make_data();
   void init_time_ctr();
 
-  bool receive_ic_only() { return parameters_.receiveICOnly; };
+  bool receive_ic_only() { return domainParameters.receiveICOnly; };
 };
 
 #endif

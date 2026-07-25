@@ -3,12 +3,8 @@
 
 #include "FleksDistributionMap.h"
 
-// Shared, rarely-changing configuration for a FLEKS Domain.
-//
-// Owned privately by Domain (see Domain.h); only Domain mutates it, via
-// Domain::read_param(). Children (pic/pt/fi/source) never own or copy it.
-// Future step: inject a narrow const reference into the consumers that need a
-// slice, instead of reaching through Domain.
+// Rarely-changing configuration for a FLEKS Domain, owned by Domain and
+// shared (by const reference) with its child components.
 struct DomainParameters {
   // Restart control.
   bool doRestart = false;
