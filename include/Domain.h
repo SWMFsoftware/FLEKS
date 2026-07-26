@@ -11,8 +11,6 @@
 
 class Domain : public DomainGrid {
 private:
-  // Shared, rarely-changing configuration. Declared before the dependent
-  // objects (fi/pic/pt/source) so it always outlives them.
   DomainParameters domainParameters;
 
   ReadParam param;
@@ -27,9 +25,9 @@ public:
   // Q: Why are pic and pt defined as pointers?
   // A: Pic and particleTracker are derived from AmrCore, whose initialization
   // requires the informaion of the domain, such as the domain range and cell
-  // size. Such information is not known untill Domain received information from
+  // size. Such information is not known until Domain received information from
   // GM and read the input parameters. pic and pt are used as pointers so that
-  // their initialization is defered until the grid information is obtained.
+  // their initialization is deferred until the grid information is obtained.
   std::unique_ptr<Pic> pic;
   std::unique_ptr<ParticleTracker> pt;
 
@@ -88,8 +86,7 @@ public:
   //--------------- IO begin--------------------------------
   void read_param(const bool readGridInfo);
 
-  // Parse Domain-level switches before constructing children; caller rolls
-  // back.
+  // Parse Domain-level switches before constructing children, then roll back.
   void read_domain_parameters(ReadParam &param);
   void save_restart(std::string restartOutDir);
   void save_restart_header();

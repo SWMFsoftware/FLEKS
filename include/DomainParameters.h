@@ -3,8 +3,8 @@
 
 #include "FleksDistributionMap.h"
 
-// Rarely-changing configuration for a FLEKS Domain, owned by Domain and
-// shared (by const reference) with its child components.
+// Configuration for a FLEKS Domain, owned by Domain and shared
+// with its child components.
 struct DomainParameters {
   // Restart control.
   bool doRestart = false;

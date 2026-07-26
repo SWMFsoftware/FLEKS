@@ -122,8 +122,7 @@ public:
 ///
 /// Holds all test particle settings parsed by Domain during read_param();
 /// ParticleTracker reads its configuration back from this object.
-/// Species-dependent quantities (dnSave / launchThreshold sizes, velocity-unit
-/// conversion) are resolved in post_process_param(), called processing fi.
+/// Species-dependent quantities are resolved in post_process_param().
 //===========================================================================
 class ParticleTrackerInfo {
 public:
