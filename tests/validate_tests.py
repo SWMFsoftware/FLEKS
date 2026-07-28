@@ -1498,13 +1498,13 @@ def main():
             # Read the test-particle tracer log (log_pt_n*.log) and validate
             # it for tests that enable #PARTICLETRACKER T.
             pt_diags = read_pt_log("run_test")
-            pt_tests = {"beam", "lightwave"}
+            pt_tests = {"beam", "photoionization"}
             if name in pt_tests:
                 pt_tol = {
                     "beam":   {"expected_active_species": [0],
                                "launch_threshold": 0.5, "max_speed": 10.0},
-                    "lightwave": {"expected_active_species": [0],
-                                  "launch_threshold": 0.5, "max_speed": 10.0},
+                    "photoionization": {"expected_active_species": [0, 1, 2],
+                                        "launch_threshold": 0.5, "max_speed": 10.0},
                 }.get(name, {})
                 pt_res, pt_reason = validate_test_particles(
                     pt_diags, test_name=name, tol=pt_tol)

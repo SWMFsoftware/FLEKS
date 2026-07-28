@@ -144,4 +144,39 @@ rhoS2                   NameVars
 10                      MaxIter
 1.0                     TimeMax
 
+#PARTICLETRACKER
+T                       usePT
+
+#TPRELATIVISTIC
+T                       isRelativistic
+
+#TPPARTICLES
+1                       particles per cell in X
+1                       particles per cell in Y
+1                       particles per cell in Z
+
+#REGION
+sphere1                 nameRegion
+sphere                  shape
+5.0e6                   centerX
+0.0                     centerY
+0.0                     centerZ
+3.0e6                   radius
+
+#TPREGION
++sphere1                region
+
+#TPCELLINTERVAL
+8                       nIntervalX
+4                       nIntervalY
+1                       nIntervalZ
+
+#TPSTATESI
+1                       nState
+0                       iSpecies
+0                       vth[m/s]
+1                       vx[m/s]
+0                       vy[m/s]
+0                       vz[m/s]
+
 #RUN
