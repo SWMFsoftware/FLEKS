@@ -69,9 +69,6 @@ protected:
   bool isNewGrid = true;
   bool isNewRefinement = false;
 
-  BalanceStrategy balanceStrategy = BalanceStrategy::Cell;
-  int cellWeight = 10;
-
   bool doSplitLevs = false;
 
 public:

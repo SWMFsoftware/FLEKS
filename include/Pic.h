@@ -6,6 +6,7 @@
 #include "Array1D.h"
 #include "Bit.h"
 #include "Constants.h"
+#include "DomainParameters.h"
 #include "FleksDistributionMap.h"
 #include "FluidInterface.h"
 #include "Grid.h"
@@ -62,6 +63,8 @@ private:
   FluidInterface *sourcePT2OH = nullptr;
   SourceInterface *source = nullptr;
   TimeCtr *tc = nullptr;
+
+  const DomainParameters &domainParameters;
 
   amrex::Vector<amrex::MultiFab> nodeE;
   amrex::Vector<amrex::MultiFab> nodeEth;
@@ -165,8 +168,12 @@ private:
   // public methods
 public:
   Pic(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo, int nGst,
-      FluidInterface *fluidIn, TimeCtr *tcIn, int id = 0)
-      : Grid(gm, amrInfo, nGst, id, "pic"), fi(fluidIn), tc(tcIn) {
+      FluidInterface *fluidIn, TimeCtr *tcIn, int id,
+      const DomainParameters &parameters)
+      : Grid(gm, amrInfo, nGst, id, "pic"),
+        fi(fluidIn),
+        tc(tcIn),
+        domainParameters(parameters) {
     eSolver.set_tol(1e-6);
     eSolver.set_nIter(200);
 
@@ -335,8 +342,7 @@ public:
   void report_load_balance(bool doReportSummary = true,
                            bool doReportDetail = false);
 
-  void calc_cost_per_cell(BalanceStrategy balanceStrategy,
-                          int cellWeight = 100);
+  void calc_cost_per_cell();
 
   void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF, int iLev);
 

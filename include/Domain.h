@@ -2,6 +2,7 @@
 #define _DOMAIN_H_
 
 #include "DomainGrid.h"
+#include "DomainParameters.h"
 #include "OHInterface.h"
 #include "ParticleTracker.h"
 #include "Pic.h"
@@ -10,24 +11,11 @@
 
 class Domain : public DomainGrid {
 private:
-  bool doRestart = false;
+  DomainParameters domainParameters;
 
-  bool doRestartPT = false;
+  ReadParam readParam;
 
-  bool doRestartFIOnly = false;
-
-  ReadParam param;
-
-  // Number of files per AMREX output.
-  int nFileField = 64, nFileParticle = 256;
-
-  bool initFromSWMF = true;
-
-  bool receiveICOnly = false;
-
-  bool usePT = false;
-
-  bool useSource = false;
+  ParticleTrackerInfo ptInfo;
 
   bool isTCInitialized = false;
 
@@ -37,9 +25,9 @@ public:
   // Q: Why are pic and pt defined as pointers?
   // A: Pic and particleTracker are derived from AmrCore, whose initialization
   // requires the informaion of the domain, such as the domain range and cell
-  // size. Such information is not known untill Domain received information from
+  // size. Such information is not known until Domain received information from
   // GM and read the input parameters. pic and pt are used as pointers so that
-  // their initialization is defered until the grid information is obtained.
+  // their initialization is deferred until the grid information is obtained.
   std::unique_ptr<Pic> pic;
   std::unique_ptr<ParticleTracker> pt;
 
@@ -97,6 +85,9 @@ public:
 
   //--------------- IO begin--------------------------------
   void read_param(const bool readGridInfo);
+
+  // Parse Domain-level switches before constructing children, then roll back.
+  void read_domain_parameters(ReadParam &param);
   void save_restart(std::string restartOutDir);
   void save_restart_header();
   void save_restart_data();
@@ -116,7 +107,7 @@ public:
   // void make_data();
   void init_time_ctr();
 
-  bool receive_ic_only() { return receiveICOnly; };
+  bool receive_ic_only() { return domainParameters.receiveICOnly; };
 };
 
 #endif
