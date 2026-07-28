@@ -37,21 +37,15 @@ public:
   double si2noT() const { return Si2NoL / Si2NoV; }
   double no2siT() const { return Si2NoV / Si2NoL; }
 
-  double rPlanetSi = 1;
-  int ScalingFactor = 1;
-
   // normalization units for length, velocity, mass and charge
   // Normalized q/m == 1 for proton in CGS units
-  double Lnorm = 1, Unorm = 1, uNormSI = 1;
-  double Mnorm = 0, Qnorm = 0, mNormSI = 0;
+  double Lnorm = 1, Unorm = 1;
+  double Mnorm = 0, Qnorm = 0;
 
   amrex::Vector<double> Si2No_V, No2Si_V;
   double Si2NoM = 0, Si2NoV = 0, Si2NoRho = 0, Si2NoB = 0, Si2NoP = 0,
          Si2NoJ = 0, Si2NoL = 0, Si2NoE = 0;
   double No2SiV = 0, No2SiL = 0;
-
-  // Length in BATSRUS normalized unit -> Si
-  double MhdNo2SiL = 1;
 
 private:
   void calc_normalization_units(double lNormSI, double uNormSI, double mNormSI);
@@ -124,8 +118,7 @@ protected:
   int iJx, iJy, iJz;
 
   // Normalization base scalars, read from SWMF iParam/norm or from
-  // #NORMALIZATION/#SCALINGFACTOR/#BODYSIZE. Declared here so secondary
-  // interfaces (UserSource, OHInterface) inherit fi's finalized values.
+  // #NORMALIZATION/#SCALINGFACTOR/#BODYSIZE.
   double lNormSI = 1.0, uNormSI = 1.0, mNormSI = 1.0;
   double rPlanetSi = 1.0, ScalingFactor = 1.0, MhdNo2SiL = 1.0;
 
@@ -322,22 +315,22 @@ public:
 
   // Read-only accessors for the shared, frozen normalization state.
   double get_Si2NoL() const { return (normParams->Si2NoL); }
-  double get_Si2NoM() const { return (1. / normParams->mNormSI); }
+  double get_Si2NoM() const { return (1. / mNormSI); }
   double get_Si2NoRho() const { return normParams->Si2NoRho; }
   double get_Si2NoV() const { return normParams->Si2NoV; }
   double get_Si2NoP() const { return normParams->Si2NoP; }
 
   double get_lnorm_si() const { return lNormSI; }
-  double get_unorm_si() const { return normParams->uNormSI; }
-  double get_mnorm_si() const { return normParams->mNormSI; };
+  double get_unorm_si() const { return uNormSI; }
+  double get_mnorm_si() const { return mNormSI; };
 
-  double get_cLight_SI() const { return normParams->uNormSI; }
+  double get_cLight_SI() const { return uNormSI; }
 
-  double get_rPlanet_SI() const { return normParams->rPlanetSi; }
+  double get_rPlanet_SI() const { return rPlanetSi; }
 
-  int get_scaling_factor() const { return normParams->ScalingFactor; }
+  int get_scaling_factor() const { return ScalingFactor; }
 
-  double get_MhdNo2SiL() const { return (normParams->MhdNo2SiL); }
+  double get_MhdNo2SiL() const { return (MhdNo2SiL); }
 
   double get_Si2No_V(int idx) const { return normParams->Si2No_V[idx]; }
 
@@ -348,7 +341,7 @@ public:
   double get_No2SiB() const { return (1. / normParams->Si2NoB); }
   double get_No2SiP() const { return (1. / normParams->Si2NoP); }
   double get_No2SiJ() const { return (1. / normParams->Si2NoJ); }
-  double get_No2SiM() const { return normParams->mNormSI; }
+  double get_No2SiM() const { return mNormSI; }
 
   double get_species_mass(int i) const { return MoMi_S[i]; };
   double get_species_charge(int i) const { return QoQi_S[i]; };
@@ -356,9 +349,7 @@ public:
   // Derived temperature + MHD-length conversions.
   double get_Si2NoT() const { return normParams->si2noT(); }
   double get_No2SiT() const { return normParams->no2siT(); }
-  double get_MhdNo2NoL() const {
-    return (normParams->MhdNo2SiL * normParams->Si2NoL);
-  }
+  double get_MhdNo2NoL() const { return (MhdNo2SiL * normParams->Si2NoL); }
 
   void sum_boundary() {
     timing_func("FI::sum_boundary");

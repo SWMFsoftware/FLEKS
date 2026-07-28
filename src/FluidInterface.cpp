@@ -817,13 +817,12 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
             } else {
               const Real* dx = Geom(iLev).CellSize();
               const auto plo = Geom(iLev).ProbLo();
-              const Real x = (i * dx[ix_] + plo[ix_]) * normParams->No2SiL /
-                             normParams->rPlanetSi;
-              const Real y = (j * dx[iy_] + plo[iy_]) * normParams->No2SiL /
-                             normParams->rPlanetSi;
+              const Real x =
+                  (i * dx[ix_] + plo[ix_]) * normParams->No2SiL / rPlanetSi;
+              const Real y =
+                  (j * dx[iy_] + plo[iy_]) * normParams->No2SiL / rPlanetSi;
               const Real z = nDimFluid > 2 ? (k * dx[iz_] + plo[iz_]) *
-                                                 normParams->No2SiL /
-                                                 normParams->rPlanetSi
+                                                 normParams->No2SiL / rPlanetSi
                                            : 0.0;
               if (doWarn) {
                 printf("Warning: ZERO density at x = %e, y = %e, z = %e\n", x,
@@ -910,12 +909,7 @@ void FluidInterface::finalize_normalization(bool scalarOnly) {
 
 //-----------------------------------------------------------------------
 NormalizationParams::NormalizationParams(const FluidInterface& fi,
-                                         bool scalarOnly)
-    : rPlanetSi(fi.rPlanetSi),
-      ScalingFactor(fi.ScalingFactor),
-      uNormSI(fi.uNormSI),
-      mNormSI(fi.mNormSI),
-      MhdNo2SiL(fi.MhdNo2SiL) {
+                                         bool scalarOnly) {
   calc_normalization_units(fi.lNormSI, fi.uNormSI, fi.mNormSI);
   if (!scalarOnly)
     compute_var_conversions(fi);
