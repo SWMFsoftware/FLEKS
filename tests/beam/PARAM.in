@@ -124,17 +124,17 @@ rhoS1 Bx By Bz          varName
 T           usePT
 
 #TPPARTICLES
-4
-4
-1
+4           particles per cell in X
+4           particles per cell in Y
+1           particles per cell in Z
 
 #TPREGION
 uniform         region
 
 #TPCELLINTERVAL
-64
-1
-1
+64          nIntervalX
+1           nIntervalY
+1           nIntervalZ
 
 #TPSAVE
 0           iSpecies

@@ -192,6 +192,192 @@ def read_pic_log(run_dir):
     return pic_diags
 
 
+def read_pt_log(run_dir):
+    """Read the test-particle tracer diagnostic log (log_pt_n*.log).
+
+    Written by ParticleTracker::write_log.  Format (whitespace separated):
+        time nStep mass_0 moment_x_0 moment_y_0 moment_z_0 energy_0 \
+                     mass_1 moment_x_1 ... energy_1 ...
+    One data row is appended per ptLog interval (defaults to every 10 cycles).
+    mass_i is the total charge-weighted mass of test particles for species i;
+    moment_*/mass_i gives the mean velocity (normalized units), so the log is
+    self-describing and needs no external package (flekspy/Batsrus.jl) to load.
+
+    Returns a list of dicts with keys: time, cycle, and per species
+    mass{i}, moment_x{i}, moment_y{i}, moment_z{i}, energy{i}.
+    """
+    import glob
+    pc_plots = os.path.join(run_dir, "PC", "plots")
+    log_files = sorted(glob.glob(os.path.join(pc_plots, "log_pt_n*.log")))
+    if not log_files:
+        return []
+
+    log_file = log_files[-1]
+    diags = []
+    with open(log_file, "r") as f:
+        lines = f.readlines()
+
+    if len(lines) < 2:
+        return []
+
+    header = lines[0].strip().split()
+    n_species = sum(1 for col in header if col.startswith("mass_"))
+    if n_species == 0 or "time" not in header or "nStep" not in header:
+        return []
+
+    for line in lines[1:]:
+        line = line.strip()
+        if not line:
+            continue
+        vals = line.split()
+        if len(vals) < 2 + 5 * n_species:
+            continue
+        try:
+            entry = {
+                "time":  float(vals[0]),
+                "cycle": int(vals[1]),
+            }
+            idx = 2
+            for iS in range(n_species):
+                entry[f"mass{iS}"]     = float(vals[idx]); idx += 1
+                entry[f"moment_x{iS}"] = float(vals[idx]); idx += 1
+                entry[f"moment_y{iS}"] = float(vals[idx]); idx += 1
+                entry[f"moment_z{iS}"] = float(vals[idx]); idx += 1
+                entry[f"energy{iS}"]   = float(vals[idx]); idx += 1
+            diags.append(entry)
+        except (ValueError, IndexError):
+            continue
+
+    return diags
+
+
+def validate_test_particles(pt_diags, test_name=None, tol=None):
+    """Validate test-particle tracer output from log_pt_n*.log.
+
+    Pure-Python checks (no external packages):
+      1. Log exists with >= min_rows data rows.
+      2. Header parses into time, cycle, and n_species*5 columns.
+      3. Activity: species listed in expected_active_species must have
+         mass > 0 at t=0 -- catches "test particles not seeded".
+      4. Sanity: for active species, all masses/moments/energies finite and
+         mass > 0 in every row.
+      5. Time: time non-decreasing, cycle strictly increasing (>=2 rows).
+      6. Conservation: mass_i / mass_i[0] in [launch_threshold, 1] (periodic
+         BC: particles only deplete, refilled at the launch threshold).
+      7. Bounded speed: sqrt(vx^2+vy^2+vz^2) < max_speed (catches runaways/NaN).
+
+    tol keys: min_rows (int, default 1), launch_threshold (float, default 0.5),
+              max_speed (float, default 10.0),
+              expected_active_species (list[int], default []).
+    """
+    tol = tol or {}
+    min_rows = int(tol.get("min_rows", 1))
+    launch_threshold = float(tol.get("launch_threshold", 0.5))
+    max_speed = float(tol.get("max_speed", 10.0))
+    expected_active = set(int(s) for s in tol.get("expected_active_species", []))
+
+    print("Validating Test-Particle Tracer Output...")
+
+    if not pt_diags:
+        print("  [PT] No test-particle log (log_pt_n*.log) found.")
+        return False, "No test-particle log file"
+
+    n_rows = len(pt_diags)
+    n_species = sum(1 for k in pt_diags[0] if k.startswith("mass"))
+    print(f"  [PT] {n_rows} log rows, {n_species} species "
+          f"(from log_pt_n*.log).")
+
+    passed = True
+    reasons = []
+
+    if n_rows < min_rows:
+        passed = False
+        reasons.append(f"only {n_rows} data rows (< {min_rows})")
+
+    # Active = species seeded at t=0 (mass[0] > 0) or explicitly expected.
+    active = set()
+    for iS in range(n_species):
+        if iS in expected_active:
+            active.add(iS)
+        elif math.isfinite(pt_diags[0].get(f"mass{iS}", 0.0)) \
+                and pt_diags[0].get(f"mass{iS}", 0.0) > 0:
+            active.add(iS)
+    print(f"  [PT] active (seeded) species: {sorted(active)}")
+
+    if expected_active and not expected_active.issubset(active):
+        missing = sorted(expected_active - active)
+        passed = False
+        reasons.append(f"expected active species {missing} not seeded (mass<=0)")
+
+    # Sanity: finite + mass>0 for every active species in every row.
+    for iS in sorted(active):
+        for r in pt_diags:
+            cyc = r.get("cycle", "?")
+            m = r.get(f"mass{iS}", float("nan"))
+            if not math.isfinite(m) or m <= 0:
+                passed = False
+                reasons.append(f"species {iS} non-finite/non-positive mass "
+                               f"at cycle {cyc}")
+                break
+            for ax in ("x", "y", "z"):
+                mv = r.get(f"moment_{ax}{iS}", float("nan"))
+                if not math.isfinite(mv):
+                    passed = False
+                    reasons.append(f"species {iS} non-finite moment_{ax} "
+                                   f"at cycle {cyc}")
+            if not math.isfinite(r.get(f"energy{iS}", float("nan"))):
+                passed = False
+                reasons.append(f"species {iS} non-finite energy at cycle {cyc}")
+
+    # Time / cycle monotonicity (needs >=2 rows).
+    if n_rows >= 2:
+        times = [r["time"] for r in pt_diags]
+        cycles = [r["cycle"] for r in pt_diags]
+        if any(times[i + 1] < times[i] for i in range(n_rows - 1)):
+            passed = False
+            reasons.append("time not monotonically increasing")
+        if any(cycles[i + 1] <= cycles[i] for i in range(n_rows - 1)):
+            passed = False
+            reasons.append("cycle not strictly increasing")
+
+        # Conservation: mass ratio within [launch_threshold, 1].
+        for iS in sorted(active):
+            m0 = pt_diags[0].get(f"mass{iS}", 0.0)
+            if m0 <= 0:
+                continue
+            for r in pt_diags:
+                mr = r.get(f"mass{iS}", 0.0)
+                ratio = mr / m0
+                if ratio < launch_threshold - 1e-6 or ratio > 1.0 + 1e-6:
+                    passed = False
+                    reasons.append(
+                        f"species {iS} mass ratio {ratio:.3f} outside "
+                        f"[{launch_threshold:g}, 1] at cycle {r.get('cycle', '?')}")
+                    break
+
+    # Bounded speed for active species.
+    for iS in sorted(active):
+        for r in pt_diags:
+            m = r.get(f"mass{iS}", 0.0)
+            if m <= 0:
+                continue
+            vx = r.get(f"moment_x{iS}", 0.0) / m
+            vy = r.get(f"moment_y{iS}", 0.0) / m
+            vz = r.get(f"moment_z{iS}", 0.0) / m
+            speed = math.sqrt(vx * vx + vy * vy + vz * vz)
+            if not math.isfinite(speed) or speed > max_speed:
+                passed = False
+                reasons.append(
+                    f"species {iS} speed {speed:.3f} exceeds max_speed "
+                    f"{max_speed:g} at cycle {r.get('cycle', '?')}")
+                break
+
+    if passed:
+        print("Test-Particle Tracer Output: PASSED")
+        return True, "Passed"
+    return False, "; ".join(reasons)
+
+
 def validate_chemistry(pic_diags=None, test_name=None):
     """Validate the Mars chemistry test with 4 ion species and 10 reactions.
 
@@ -1308,6 +1494,24 @@ def main():
                 print(f"{name.upper()} (generic check): PASSED")
                 val_res = True
                 reason = "Passed"
+
+            # Read the test-particle tracer log (log_pt_n*.log) and validate
+            # it for tests that enable #PARTICLETRACKER T.
+            pt_diags = read_pt_log("run_test")
+            pt_tests = {"beam", "lightwave"}
+            if name in pt_tests:
+                pt_tol = {
+                    "beam":   {"expected_active_species": [0],
+                               "launch_threshold": 0.5, "max_speed": 10.0},
+                    "lightwave": {"expected_active_species": [0],
+                                  "launch_threshold": 0.5, "max_speed": 10.0},
+                }.get(name, {})
+                pt_res, pt_reason = validate_test_particles(
+                    pt_diags, test_name=name, tol=pt_tol)
+                if not pt_res:
+                    results.append((name.upper(), "FAILED",
+                                    f"test-particle check failed: {pt_reason}"))
+                    continue
 
             # Validate output plotfiles
             plot_res, plot_reason = validate_plot_output(name)

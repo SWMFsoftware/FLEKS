@@ -107,4 +107,39 @@ Ex Ey Ez Bx By Bz       plotVar
 -1                      MaxIter
 10.0                    TimeMax
 
+#PARTICLETRACKER
+T                       usePT
+
+#TPRELATIVISTIC
+T                       isRelativistic
+
+#TPPARTICLES
+1                       particles per cell in X
+1                       particles per cell in Y
+1                       particles per cell in Z
+
+#REGION
+sphere1		        nameRegion
+sphere  	        shape
+0.0                     centerX
+0.0                     centerY
+0.0                     centerZ
+5.0                     radius
+
+#TPREGION
++sphere1                region
+
+#TPCELLINTERVAL
+16                      nIntervalX
+8                       nIntervalY
+2                       nIntervalZ
+
+#TPSTATESI                                   
+1                       nState
+0                       iSpecies
+0                       vth[m/s]
+1                       vx[m/s]
+0                       vy[m/s]
+0                       vz[m/s]
+
 #RUN
