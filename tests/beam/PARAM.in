@@ -116,4 +116,30 @@ rhoS1 Bx By Bz          varName
 -1                      MaxIter
 0.1                     TimeMax
 
+#STOP
+-1                      MaxIter
+0.1                     TimeMax
+
+#PARTICLETRACKER
+T           usePT
+
+#TPPARTICLES
+4           particles per cell in X
+4           particles per cell in Y
+1           particles per cell in Z
+
+#TPREGION
+uniform         region
+
+#TPCELLINTERVAL
+64          nIntervalX
+1           nIntervalY
+1           nIntervalZ
+
+#TPSAVE
+0           iSpecies
+planet      IOUnit
+10          dnSave
+0.5         launchThreshold
+
 #RUN
