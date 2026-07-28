@@ -13,7 +13,7 @@ class Domain : public DomainGrid {
 private:
   DomainParameters domainParameters;
 
-  ReadParam param;
+  ReadParam readParam;
 
   ParticleTrackerInfo ptInfo;
 
