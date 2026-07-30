@@ -131,8 +131,27 @@ private:
   amrex::Vector<amrex::MultiFab> nodeJ;        // J = curl(B)/(4*pi) at nodes (compact)
   amrex::Vector<amrex::MultiFab> centerLapB;   // nabla^2 B  (hyper stage A)
   amrex::Vector<amrex::MultiFab> nodeHyperE;   // nabla x (nabla^2 B) (hyper stage B)
+  // RK4 (fieldIntegrator="rk4") scratch fields (allocated when useHybridPIC).
+  // centerB_RK4 / nodeB_RK4 hold trial B states at the sub-stages; nodeE_RK4 is
+  // the electric field evaluated at a trial B; kRK4[0..3] are the four stage
+  // curls curl(E_stage). All reused per sub-step; only level 0 is advanced (fine
+  // levels follow from projection, exactly as in the euler/heun paths).
+  amrex::Vector<amrex::MultiFab> centerB_RK4;
+  amrex::Vector<amrex::MultiFab> nodeB_RK4;
+  amrex::Vector<amrex::MultiFab> nodeE_RK4;
+  // kRK4[iLev][0..3]: the four stage curls curl(E_stage) for the level-iLev RK4
+  // sub-step (4 stages per level).
+  amrex::Vector<amrex::Vector<amrex::MultiFab>> kRK4;
   amrex::Vector<amrex::MultiFab> dBdt;
   amrex::Vector<amrex::MultiFab> particleQuality;
+
+  // Phase 3.4: running time-averaged magnetic field (EMA). Allocated when
+  // useHybridPIC; only used when useAvgFieldB is set. B_avg is NOT
+  // divergence-clean and is never fed into the Faraday update -- it is used
+  // only inside the generalized Ohm's law and in the particle Boris push.
+  amrex::Vector<amrex::MultiFab> centerBavg;  // cell-centred <B>
+  amrex::Vector<amrex::MultiFab> nodeBavg;    // node-centred <B>
+  bool isBavgInit = false;     // first-step copy flag for the EMA
 
   // Hyperbolic cleaning
   bool useHyperbolicCleaning = false;
@@ -229,6 +248,42 @@ private:
   bool useCenteredB = false;
   amrex::Real thetaB = 0.5;
 
+  // Field integrator for the hybrid Faraday update. Selects how B is advanced
+  // from the electric field given by the generalized Ohm's law:
+  //   "euler" -> classic explicit forward Euler (sub-cycled Hall-whistler);
+  //   "heun"  -> trapezoidal / Crank-Nicolson predictor-corrector (time-centred
+  //              B/E coupling, neutral for oscillatory modes, damps PIC shot
+  //              noise that forward Euler accumulates);
+  //   "rk4"   -> classic 4th-order Runge-Kutta on B, evaluating the Ohm's law at
+  //              four trial B states. Largest stability region of the three; the
+  //              default (replaces forward Euler as the standard integrator).
+  // Default "rk4". The useRK4 flag is set from this in post_process_param and is
+  // what update_B_hybrid actually dispatches on.
+  std::string fieldIntegrator = "rk4";
+  bool useRK4 = false;
+
+  // Phase 3.3 -- time-centring of the Ohm's law in B.
+  // The ion moments are ALREADY deposited at t^{n+1/2} because the Boris
+  // half-stage position push (update_position_to_half_stage) runs before
+  // sum_moments. What is NOT yet centred is the magnetic field used inside the
+  // Ohm's law: E_Ohm is evaluated with B^n. When this flag is set we predict
+  //     B^{n+1/2} = B^n - (dt/2) curl(E_Ohm(U_i^{n+1/2}, B^n))
+  // and re-evaluate E_Ohm at B^{n+1/2}, so the live electric field used for the
+  // particle push and as the starting point of the B integrator is centred in
+  // B as well as in the moments -> the hybrid scheme is fully 2nd order in time.
+  // Default false (use B^n in the Ohm's law, as before).
+  bool useMomentTimeCentering = false;
+
+  // Phase 3.4 -- time-averaged (EMA) magnetic field.
+  // B_avg = alpha * B_avg + (1 - alpha) * B^{n+1}, alpha = 1 - 1/nAvgFieldB.
+  // B_avg is used inside the generalized Ohm's law (convection / Hall terms)
+  // and in the particle Boris push in place of the instantaneous B, damping the
+  // high-frequency PIC shot noise that pollutes the Hall term and the particle
+  // orbits. B_avg is NOT divergence-clean and is never fed to the Faraday
+  // update, so no projection is needed. Default false (use instantaneous B).
+  bool useAvgFieldB = false;
+  int nAvgFieldB = 10;
+
   bool doSmoothE = false;
   int nSmoothE = 0;
 
@@ -276,6 +331,13 @@ public:
     nodeJ.resize(n_lev_max());
     centerLapB.resize(n_lev_max());
     nodeHyperE.resize(n_lev_max());
+    centerB_RK4.resize(n_lev_max());
+    nodeB_RK4.resize(n_lev_max());
+    nodeE_RK4.resize(n_lev_max());
+    centerBavg.resize(n_lev_max());
+    nodeBavg.resize(n_lev_max());
+    kRK4.resize(n_lev_max());
+    for (int iL = 0; iL < n_lev_max(); ++iL) kRK4[iL].resize(4);
     etaHyperLev.resize(n_lev_max(), 0.0);
     targetPPC.resize(n_lev_max());
     if (reportParticleQuality) {
@@ -439,6 +501,20 @@ public:
   // with boundary conditions -- used between sub-steps of the hybrid Faraday
   // update so the next Ohm's-law evaluation sees the advanced field.
   void project_centerB_to_nodeB(int iLev);
+  // Project the cell-centred B in `centerIn` to the node grid `nodeOut` with
+  // boundary conditions, WITHOUT touching member state. Used by the RK4 stages
+  // to build the node B at a trial (off-member) center-B state.
+  void project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
+                                        amrex::MultiFab& nodeOut, int iLev);
+  // Evaluate the generalized Ohm's law at an arbitrary (off-member) B state and
+  // write the node electric field into `Eout`. Unlike update_E_hybrid, this does
+  // NOT overwrite member nodeE/nodeEth, so it can be called repeatedly at trial
+  // B states during RK4. `centerBin` is the cell-centred B, `nodeBin` the
+  // node-averaged B (convection term); the ion moments are taken from the
+  // member nodePlasma (frozen at time n, as in all integrators).
+  void assemble_ohm_E(const amrex::MultiFab& centerBin,
+                      const amrex::MultiFab& nodeBin, amrex::MultiFab& Eout,
+                      int iLev);
 
   //-------------Electric field solver end-------------
 

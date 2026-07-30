@@ -435,6 +435,64 @@ its own (hyper-resistivity OFF) the compact current can blow up, so the default 
 F. Only used when #HYBRIDPIC is T.
 </command>
 
+<command name="FIELDINTEGRATOR"
+   alias="FIELDINTEGRATOR_FLEKS0,FIELDINTEGRATOR_FLEKS1,FIELDINTEGRATOR_FLEKS2"
+   multiple="T">
+  <parameter name="fieldIntegrator" type="string" input="select" required="T">
+    <option value="euler"/>
+    <option value="heun"/>
+    <option value="rk4"/>
+  </parameter>
+
+#FIELDINTEGRATOR
+rk4               fieldIntegrator
+
+Time integrator for the hybrid Faraday (B) update driven by the generalized Ohm's
+law. "euler" is the classic explicit forward Euler, sub-cycled against the
+Hall-whistler CFL; "heun" is the trapezoidal predictor-corrector that time-centres
+the B/E coupling (neutral for oscillatory modes, damps PIC shot noise); "rk4" is
+the classic 4th-order Runge-Kutta on B, evaluating the Ohm's law at four trial B
+states. rk4 has the largest linear-stability region of the three and is the
+default; it replaces forward Euler as the standard integrator. Only used when
+HYBRIDPIC is T.
+</command>
+
+<command name="MOMENTTIMECENTERING"
+   alias="MOMENTTIMECENTERING_FLEKS0,MOMENTTIMECENTERING_FLEKS1,MOMENTTIMECENTERING_FLEKS2"
+   multiple="T">
+  <parameter name="useMomentTimeCentering" type="logical" default="F"/>
+
+#MOMENTTIMECENTERING
+F                   useMomentTimeCentering
+
+Time-centre the magnetic field used inside the generalized Ohm's law. The ion
+moments are already deposited at t^{n+1/2} (the Boris half-stage position push
+runs before sum_moments); this flag additionally predicts B^{n+1/2} =
+B^n - (dt/2)*curl(E_Ohm(U_i^{n+1/2}, B^n)) and re-evaluates the Ohm's law there,
+so the live electric field (particle push + B-integrator start point) is centred
+in B as well as in the moments, making the hybrid scheme fully 2nd order in time.
+Only used when HYBRIDPIC is T.
+</command>
+
+<command name="AVGFIELDB"
+   alias="AVGFIELDB_FLEKS0,AVGFIELDB_FLEKS1,AVGFIELDB_FLEKS2,BAVERAGE"
+   multiple="T">
+  <parameter name="useAvgFieldB" type="logical" default="F"/>
+  <parameter name="nAvgFieldB" type="integer" default="10"/>
+
+#AVGFIELDB
+F                    useAvgFieldB
+10                   nAvgFieldB
+
+Time-averaged (exponential moving average) magnetic field. B_avg =
+alpha*B_avg + (1-alpha)*B^{n+1} with alpha = 1 - 1/nAvgFieldB. B_avg replaces
+the instantaneous B inside the generalized Ohm's law (convection / Hall terms)
+and in the particle Boris push, damping the high-frequency PIC shot noise that
+pollutes the Hall term and particle orbits. B_avg is NOT divergence-clean and is
+never used in the Faraday update, so no projection is required. Only used when
+HYBRIDPIC is T.
+</command>
+
 <command name="PARTMODE"
    alias="PARTMODE_FLEKS0,PARTMODE_FLEKS1,PARTMODE_FLEKS2"
    multiple="T">

@@ -952,6 +952,9 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#HALLTERM" ||
         command == "#HYPERRESISTIVITY" || command == "#DENSITYFLOOR" ||
         command == "#HYBRIDCURL" ||
+        command == "#FIELDINTEGRATOR" ||
+        command == "#MOMENTTIMECENTERING" ||
+        command == "#AVGFIELDB" ||
         command == "#SMOOTHMOMENTS" ||
         command == "#CENTEREDB" ||
         command == "#MEMORY") {

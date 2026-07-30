@@ -245,6 +245,22 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     // If true (default), compute J with the compact staggered curl_center_to_node
     // operator; if false, use the legacy 2*dx central difference of node B.
     param.read_var("useCompactCurl", useCompactCurl);
+  } else if (command == "#FIELDINTEGRATOR") {
+    // Select the time integrator for the hybrid Faraday (B) update:
+    //   "euler" (forward Euler, sub-cycled Hall-whistler),
+    //   "heun"  (trapezoidal predictor-corrector, time-centred B/E coupling),
+    //   "rk4"   (4th-order Runge-Kutta on B, default).
+    param.read_var("fieldIntegrator", fieldIntegrator);
+  } else if (command == "#MOMENTTIMECENTERING") {
+    // Phase 3.3: time-centre the magnetic field used in the generalized Ohm's
+    // law (predict B^{n+1/2} and re-evaluate E_Ohm there). The ion moments are
+    // already at t^{n+1/2} via the Boris half-stage precede sum_moments.
+    param.read_var("useMomentTimeCentering", useMomentTimeCentering);
+  } else if (command == "#AVGFIELDB") {
+    // Phase 3.4: time-averaged (EMA) magnetic field for the Ohm's law and the
+    // particle Boris push, damping high-frequency PIC shot noise.
+    param.read_var("useAvgFieldB", useAvgFieldB);
+    param.read_var("nAvgFieldB", nAvgFieldB);
   } else if (command == "#SELECTPARTICLE") {
     param.read_var("doSelectParticle", doSelectParticle);
     if (doSelectParticle) {
@@ -313,6 +329,30 @@ void Pic::post_process_param() {
     // the hyper term would be blind to exactly the grid-scale noise it targets.
     if (etaHyperSI > 0 || (etaHyperMode == "grid" && etaHyperCh > 0))
       useCompactCurl = true;
+
+    // Field integrator selection for the hybrid Faraday update. Map the
+    // string to the concrete dispatch flags used by update_B_hybrid. "heun"
+    // implies the time-centred (useCenteredB) path; "euler" forces the
+    // forward-Euler path; "rk4" sets useRK4. Default "rk4" if unspecified or
+    // unrecognised.
+    useRK4 = false;
+    if (fieldIntegrator == "euler") {
+      useCenteredB = false;
+    } else if (fieldIntegrator == "heun") {
+      useCenteredB = true;
+    } else if (fieldIntegrator == "rk4") {
+      useRK4 = true;
+    } else {
+      amrex::Print() << "  WARNING: unknown #FIELDINTEGRATOR '" << fieldIntegrator
+                     << "'; defaulting to 'rk4'\n";
+      fieldIntegrator = "rk4";
+      useRK4 = true;
+    }
+    amrex::Print() << "  fieldIntegrator: " << fieldIntegrator << "\n";
+    amrex::Print() << "  useMomentTimeCentering: " << useMomentTimeCentering << "\n";
+    amrex::Print() << "  useAvgFieldB: " << useAvgFieldB
+                   << "   nAvgFieldB: " << nAvgFieldB << "\n";
+    if (nAvgFieldB < 1) nAvgFieldB = 1;
     if (electronTemperatureEV > 0) {
       // Te_code = Te_eV * e / (mp * uNorm_SI^2)
       // (same relation as in ExoSource.h::electron_temperature, inverted)
@@ -440,6 +480,28 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           3, nGst, doMoveData);
       distribute_FabArray(nodeHyperE[iLev], nGrids[iLev], DistributionMap(iLev),
                           3, nGst, doMoveData);
+
+      // RK4 (fieldIntegrator="rk4") scratch fields. centerB_RK4 / nodeB_RK4 hold
+      // the trial B states; nodeE_RK4 the E at a trial B; kRK4[0..3] the four
+      // stage curls. They mirror the node/center grids and nGst of the live
+      // fields, with doMoveData=false (scratch, no regrid persistence needed).
+      distribute_FabArray(centerB_RK4[iLev], cGrids[iLev], DistributionMap(iLev),
+                          3, nGst, doMoveData);
+      distribute_FabArray(nodeB_RK4[iLev], nGrids[iLev], DistributionMap(iLev),
+                          3, nGst, doMoveData);
+      distribute_FabArray(nodeE_RK4[iLev], nGrids[iLev], DistributionMap(iLev),
+                          3, nGst, doMoveData);
+      for (int kk = 0; kk < 4; ++kk)
+        distribute_FabArray(kRK4[iLev][kk], cGrids[iLev], DistributionMap(iLev),
+                            3, nGst, doMoveData);
+
+      // Phase 3.4: time-averaged B scratch (cell + node). Only used when
+      // useAvgFieldB is set; allocated whenever hybrid so the flag can be
+      // toggled without re-allocation. B_avg mirrors the live B grids.
+      distribute_FabArray(centerBavg[iLev], cGrids[iLev], DistributionMap(iLev),
+                          3, nGst, doMoveData);
+      distribute_FabArray(nodeBavg[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                          nGst, doMoveData);
     }
     distribute_FabArray(dBdt[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst, doMoveData);
@@ -724,7 +786,11 @@ void Pic::update_part_loc_to_half_stage() {
     for (int i = 0; i < nSpecies; ++i) {
       if (useHybridPIC && parts[i]->get_charge() < 0)
         continue;
-      parts[i]->update_position_to_half_stage(nodeEth[iLev], nodeB[iLev],
+      // Phase 3.4: use the time-averaged B in the Boris half-stage position
+      // push when enabled (falls back to the instantaneous B before the first
+      // average is initialised).
+      const auto& nodeBhalf = (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
+      parts[i]->update_position_to_half_stage(nodeEth[iLev], nodeBhalf,
                                               tc->get_dt());
     }
   }
@@ -779,8 +845,11 @@ void Pic::particle_mover() {
   Real dt = tc->get_dt();
   Real dtnext = tc->get_next_dt();
 
+  // Phase 3.4: use the time-averaged B in the Boris push when enabled.
+  const Vector<MultiFab>& nodeBpush =
+      (useAvgFieldB && isBavgInit) ? nodeBavg : nodeB;
   for (int i : kineticSpecies_) {
-    parts[i]->mover(nodeEth, nodeB, eBg, uBg, dt, dtnext);
+    parts[i]->mover(nodeEth, nodeBpush, eBg, uBg, dt, dtnext);
   }
 
   for (int i : kineticSpecies_) {
@@ -2161,197 +2230,230 @@ void Pic::update_E_hybrid() {
   // sum(qp)/V_cell. The Hall and electron-pressure-gradient terms therefore
   // divide by iRho_ directly (no dt rescaling needed).
 
+  // Evaluate the generalized Ohm's law at the live field on every level
+  // (assemble_ohm_E also serves the RK4 sub-stages of update_B_hybrid), then
+  // mirror the result into nodeEth (the E used by the field advance and the
+  // particle half-step).
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    const auto dx = Geom(iLev).CellSizeArray();
-    const Real dxInv = 1.0 / (2.0 * dx[0]);
-    const Real dyInv = 1.0 / (2.0 * dx[1]);
-    // 2D safety: AMReX keeps a (dummy) z extent, so guard the z inverse and all
-    // z-derivatives below with nDim > 2.
-    const Real dzInv = (nDim > 2) ? 1.0 / (2.0 * dx[2]) : 0.0;
+    const auto& cBin = (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
+    const auto& nBin = (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
 
-    // Phase 1: consistent compact current J = nabla x centerB / (4*pi),
-    // computed once per level from the cell-centred B with the staggered
-    // curl_center_to_node operator. It does NOT annihilate the Nyquist mode the
-    // way a 2*dx difference of the node-collocated B does, so a hyper-resistive
-    // term built on it actually damps grid-scale noise.
-    const bool needJ = useCompactCurl &&
-                       (etaResistivity > 0 || useHallTerm || etaHyperLev[iLev] > 0);
-    if (needJ)
-      calc_hybrid_current(iLev);
-
-    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.validbox();
-      const Array4<Real>& arrE = nodeE[iLev][mfi].array();
-      const Array4<Real>& arrEth = nodeEth[iLev][mfi].array();
-      const Array4<Real const>& arrB = nodeB[iLev][mfi].array();
-      const Array4<Real const>& moments =
-          nodePlasma[nSpecies][iLev][mfi].array();
-      const Array4<Real const> arrJ =
-          needJ ? nodeJ[iLev][mfi].array() : Array4<Real const>();
-
-      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-        Real rho = moments(i, j, k, iRho_);
-        Real ui = 0, vi = 0, wi = 0;
-
-        if (rho > 0) {
-          ui = moments(i, j, k, iUx_) / rho;
-          vi = moments(i, j, k, iUy_) / rho;
-          wi = moments(i, j, k, iUz_) / rho;
-        }
-
-        Real bx = arrB(i, j, k, ix_);
-        Real by = arrB(i, j, k, iy_);
-        Real bz = arrB(i, j, k, iz_);
-
-        // 1. Convection term: E_conv = - U_i x B
-        Real ex = -(vi * bz - wi * by);
-        Real ey = -(wi * bx - ui * bz);
-        Real ez = -(ui * by - vi * bx);
-
-        // 2. Resistivity and Hall / Pressure terms (if enabled).
-        // J = curl(B) / (4*pi) in CGS code units.
-        Real jx = 0.0, jy = 0.0, jz = 0.0;
-        if (needJ) {
-          // Compact staggered current from centerB (Phase 1).
-          jx = arrJ(i, j, k, ix_) / fourPI;
-          jy = arrJ(i, j, k, iy_) / fourPI;
-          jz = arrJ(i, j, k, iz_) / fourPI;
-        } else if (!useCompactCurl && (etaResistivity > 0 || useHallTerm)) {
-          // Legacy 2*dx central difference of the node-collocated B. FIXED:
-          // dBx_dy now uses dyInv (was dxInv). z-derivatives guarded for 2D.
-          Real dBz_dy = (arrB(i, j + 1, k, iz_) - arrB(i, j - 1, k, iz_)) * dyInv;
-          Real dBy_dz = (nDim > 2)
-                            ? (arrB(i, j, k + 1, iy_) - arrB(i, j, k - 1, iy_)) * dzInv
-                            : 0.0;
-          jx = (dBz_dy - dBy_dz) / fourPI;
-
-          Real dBx_dz = (nDim > 2)
-                            ? (arrB(i, j, k + 1, ix_) - arrB(i, j, k - 1, ix_)) * dzInv
-                            : 0.0;
-          Real dBz_dx = (arrB(i + 1, j, k, iz_) - arrB(i - 1, j, k, iz_)) * dxInv;
-          jy = (dBx_dz - dBz_dx) / fourPI;
-
-          Real dBy_dx = (arrB(i + 1, j, k, iy_) - arrB(i - 1, j, k, iy_)) * dxInv;
-          Real dBx_dy = (arrB(i, j + 1, k, ix_) - arrB(i, j - 1, k, ix_)) * dyInv;
-          jz = (dBy_dx - dBx_dy) / fourPI;
-        }
-
-        // Add eta * J term
-        if (etaResistivity > 0) {
-          ex += etaResistivity * jx;
-          ey += etaResistivity * jy;
-          ez += etaResistivity * jz;
-        }
-
-        // Add Electron pressure gradient and Hall term.
-        // Phase 0.3: density floor caps 1/rho so a tiny but positive charge
-        // density does not blow up these terms; the pressure closure still uses
-        // the TRUE rho. Cells with rho == 0 are left inert (as before) to avoid
-        // injecting a spurious force into empty regions.
-        if (rho > 0) {
-          const Real invRhoEff = 1.0 / amrex::max(rho, rhoFloorHybrid);
-
-          // Electron pressure gradient term
-          Real dPe_dx = 0.0, dPe_dy = 0.0, dPe_dz = 0.0;
-          if (electronTemperature > 0) {
-            if (electronGamma == 1.0) {
-              // Isothermal: Pe = rho * Te -> grad(Pe) = Te * grad(rho)
-              dPe_dx =
-                  electronTemperature *
-                  (moments(i + 1, j, k, iRho_) - moments(i - 1, j, k, iRho_)) *
-                  dxInv;
-              dPe_dy =
-                  electronTemperature *
-                  (moments(i, j + 1, k, iRho_) - moments(i, j - 1, k, iRho_)) *
-                  dyInv;
-              dPe_dz = (nDim > 2)
-                           ? electronTemperature *
-                                 (moments(i, j, k + 1, iRho_) -
-                                  moments(i, j, k - 1, iRho_)) *
-                                 dzInv
-                           : 0.0;
-            } else {
-              // Adiabatic: Pe = P0 * (rho / rho0)^gamma
-              Real p0 = electronDensity0 * electronTemperature;
-              Real invRho0 = 1.0 / electronDensity0;
-
-              auto calc_Pe = [=](Real r) {
-                return (r > 0) ? p0 * std::pow(r * invRho0, electronGamma)
-                               : 0.0;
-              };
-
-              dPe_dx = (calc_Pe(moments(i + 1, j, k, iRho_)) -
-                        calc_Pe(moments(i - 1, j, k, iRho_))) *
-                       dxInv;
-              dPe_dy = (calc_Pe(moments(i, j + 1, k, iRho_)) -
-                        calc_Pe(moments(i, j - 1, k, iRho_))) *
-                       dyInv;
-              dPe_dz = (nDim > 2)
-                           ? (calc_Pe(moments(i, j, k + 1, iRho_)) -
-                              calc_Pe(moments(i, j, k - 1, iRho_))) *
-                                 dzInv
-                           : 0.0;
-            }
-
-            ex -= dPe_dx * invRhoEff;
-            ey -= dPe_dy * invRhoEff;
-            ez -= dPe_dz * invRhoEff;
-          }
-
-          // Hall term: (J x B) / rho_q  (rho = iRho_ = charge density).
-          // No dt factor -- weights are initialized with dt=1, so iRho_ is
-          // the true charge density (see block comment at top of this method).
-          if (useHallTerm) {
-            Real hall_x = (jy * bz - jz * by) * invRhoEff;
-            Real hall_y = (jz * bx - jx * bz) * invRhoEff;
-            Real hall_z = (jx * by - jy * bx) * invRhoEff;
-
-            ex += hall_x;
-            ey += hall_y;
-            ez += hall_z;
-          }
-        }
-
-        arrE(i, j, k, ix_) = ex;
-        arrE(i, j, k, iy_) = ey;
-        arrE(i, j, k, iz_) = ez;
-
-        // Copy to Eth
-        arrEth(i, j, k, ix_) = ex;
-        arrEth(i, j, k, iy_) = ey;
-        arrEth(i, j, k, iz_) = ez;
-      });
+    // Phase 3.3: the ion moments are already at t^{n+1/2} (the Boris half-stage
+    // precedes sum_moments). To also centre the magnetic field used in the
+    // Ohm's law, predict B^{n+1/2} = B^n - (dt/2) curl(E_Ohm(U_i^{n+1/2}, B^n))
+    // and re-evaluate the Ohm's law there. The result is a fully time-centred
+    // live E (used for the particle push and as the B-integrator start point).
+    if (useMomentTimeCentering) {
+      const Real dt = tc->get_dt();
+      assemble_ohm_E(cBin, nBin, nodeE[iLev], iLev);
+      MultiFab centerBtmp(cGrids[iLev], DistributionMap(iLev), 3, nGst);
+      MultiFab dBtmp(cGrids[iLev], DistributionMap(iLev), 3, nGst);
+      MultiFab::Copy(centerBtmp, cBin, 0, 0, 3, nGst);
+      curl_node_to_center(nodeE[iLev], dBtmp, Geom(iLev).InvCellSize());
+      MultiFab::Saxpy(centerBtmp, -0.5 * dt, dBtmp, 0, 0, 3, nGst);
+      centerBtmp.FillBoundary(Geom(iLev).periodicity());
+      MultiFab nodeBtmp(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+      average_center_to_node(centerBtmp, nodeBtmp);
+      nodeBtmp.FillBoundary(Geom(iLev).periodicity());
+      assemble_ohm_E(centerBtmp, nodeBtmp, nodeE[iLev], iLev);
+    } else {
+      assemble_ohm_E(cBin, nBin, nodeE[iLev], iLev);
     }
 
-    nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
-    nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
+    MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, 3, nodeE[iLev].nGrow());
+  }
+}
 
-    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
-    apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, &Pic::get_node_E, iLev);
+//==========================================================
+void Pic::assemble_ohm_E(const MultiFab& centerBin, const MultiFab& nodeBin,
+                         MultiFab& Eout, int iLev) {
+  BL_PROFILE("Pic::assemble_ohm_E");
 
-    // Phase 2: hyper-resistivity.
-    //   E -= eta_h * nabla^2 J = -(eta_h / 4*pi) * nabla x (nabla^2 B).
-    // Stage A: centerLapB = nabla^2(centerB) (cell-centred Laplacian).
-    // Stage B: nodeHyperE = nabla x (centerLapB) (staggered curl). The two-stage
-    // composition makes nabla^2(nabla x B) = nabla x (nabla^2 B) hold
-    // discretely, so the term damps the same mode it is meant to.
-    if (etaHyperLev[iLev] > 0) {
-      lap_center_to_center(centerB[iLev], centerLapB[iLev],
-                           Geom(iLev).InvCellSize());
-      centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
-      apply_BC(cellStatus[iLev], centerLapB[iLev], 0, centerLapB[iLev].nComp(),
-               &Pic::get_center_B, iLev, &bcBField);
+  // Evaluate the generalized Ohm's law
+  //   E = -U_i x B + eta J + (J x B)/rho_q - grad(Pe)/rho_q
+  // at an ARBITRARY (off-member) B state. Unlike update_E_hybrid this does not
+  // touch member nodeE/nodeEth, so it can be called repeatedly at the four RK4
+  // trial B states. centerBin is the cell-centred B, nodeBin the node-averaged
+  // B (convection term); the ion moments come from the member nodePlasma
+  // (frozen at time n, as in every integrator).
+  const auto dx = Geom(iLev).CellSizeArray();
+  const Real dxInv = 1.0 / (2.0 * dx[0]);
+  const Real dyInv = 1.0 / (2.0 * dx[1]);
+  // 2D safety: AMReX keeps a (dummy) z extent, so guard the z inverse and all
+  // z-derivatives below with nDim > 2.
+  const Real dzInv = (nDim > 2) ? 1.0 / (2.0 * dx[2]) : 0.0;
 
-      curl_center_to_node(centerLapB[iLev], nodeHyperE[iLev],
-                          Geom(iLev).InvCellSize());
-      nodeHyperE[iLev].FillBoundary(Geom(iLev).periodicity());
-      apply_BC(nodeStatus[iLev], nodeHyperE[iLev], 0, nodeHyperE[iLev].nComp(),
-               &Pic::get_node_E, iLev, &bcBField);
+  // Phase 1: consistent compact current J = nabla x centerB / (4*pi). Computed
+  // from the TRIAL center B; it does NOT annihilate the Nyquist mode the way a
+  // 2*dx difference of the node-collocated B does.
+  const bool needJ =
+      useCompactCurl &&
+      (etaResistivity > 0 || useHallTerm || etaHyperLev[iLev] > 0);
+  if (needJ) {
+    curl_center_to_node(centerBin, nodeJ[iLev], Geom(iLev).InvCellSize());
+  }
 
-      const Real f = etaHyperLev[iLev] / fourPI;
-      MultiFab::Saxpy(nodeE[iLev], -f, nodeHyperE[iLev], 0, 0, 3, 0);
-      MultiFab::Saxpy(nodeEth[iLev], -f, nodeHyperE[iLev], 0, 0, 3, 0);
-    }
+  for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
+    const Box& box = mfi.validbox();
+    const Array4<Real>& arrE = Eout[mfi].array();
+    const Array4<Real const>& arrB = nodeBin[mfi].array();
+    const Array4<Real const>& moments =
+        nodePlasma[nSpecies][iLev][mfi].array();
+    const Array4<Real const> arrJ =
+        needJ ? nodeJ[iLev][mfi].array() : Array4<Real const>();
+
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      Real rho = moments(i, j, k, iRho_);
+      Real ui = 0, vi = 0, wi = 0;
+
+      if (rho > 0) {
+        ui = moments(i, j, k, iUx_) / rho;
+        vi = moments(i, j, k, iUy_) / rho;
+        wi = moments(i, j, k, iUz_) / rho;
+      }
+
+      Real bx = arrB(i, j, k, ix_);
+      Real by = arrB(i, j, k, iy_);
+      Real bz = arrB(i, j, k, iz_);
+
+      // 1. Convection term: E_conv = - U_i x B
+      Real ex = -(vi * bz - wi * by);
+      Real ey = -(wi * bx - ui * bz);
+      Real ez = -(ui * by - vi * bx);
+
+      // 2. Resistivity and Hall / Pressure terms (if enabled).
+      // J = curl(B) / (4*pi) in CGS code units.
+      Real jx = 0.0, jy = 0.0, jz = 0.0;
+      if (needJ) {
+        // Compact staggered current from centerBin (Phase 1).
+        jx = arrJ(i, j, k, ix_) / fourPI;
+        jy = arrJ(i, j, k, iy_) / fourPI;
+        jz = arrJ(i, j, k, iz_) / fourPI;
+      } else if (!useCompactCurl && (etaResistivity > 0 || useHallTerm)) {
+        // Legacy 2*dx central difference of the node-collocated B. FIXED:
+        // dBx_dy now uses dyInv (was dxInv). z-derivatives guarded for 2D.
+        Real dBz_dy = (arrB(i, j + 1, k, iz_) - arrB(i, j - 1, k, iz_)) * dyInv;
+        Real dBy_dz = (nDim > 2)
+                          ? (arrB(i, j, k + 1, iy_) - arrB(i, j, k - 1, iy_)) * dzInv
+                          : 0.0;
+        jx = (dBz_dy - dBy_dz) / fourPI;
+
+        Real dBx_dz = (nDim > 2)
+                          ? (arrB(i, j, k + 1, ix_) - arrB(i, j, k - 1, ix_)) * dzInv
+                          : 0.0;
+        Real dBz_dx = (arrB(i + 1, j, k, iz_) - arrB(i - 1, j, k, iz_)) * dxInv;
+        jy = (dBx_dz - dBz_dx) / fourPI;
+
+        Real dBy_dx = (arrB(i + 1, j, k, iy_) - arrB(i - 1, j, k, iy_)) * dxInv;
+        Real dBx_dy = (arrB(i, j + 1, k, ix_) - arrB(i, j - 1, k, ix_)) * dyInv;
+        jz = (dBy_dx - dBx_dy) / fourPI;
+      }
+
+      // Add eta * J term
+      if (etaResistivity > 0) {
+        ex += etaResistivity * jx;
+        ey += etaResistivity * jy;
+        ez += etaResistivity * jz;
+      }
+
+      // Add Electron pressure gradient and Hall term.
+      // Phase 0.3: density floor caps 1/rho so a tiny but positive charge
+      // density does not blow up these terms; the pressure closure still uses
+      // the TRUE rho. Cells with rho == 0 are left inert (as before) to avoid
+      // injecting a spurious force into empty regions.
+      if (rho > 0) {
+        const Real invRhoEff = 1.0 / amrex::max(rho, rhoFloorHybrid);
+
+        // Electron pressure gradient term
+        Real dPe_dx = 0.0, dPe_dy = 0.0, dPe_dz = 0.0;
+        if (electronTemperature > 0) {
+          if (electronGamma == 1.0) {
+            // Isothermal: Pe = rho * Te -> grad(Pe) = Te * grad(rho)
+            dPe_dx =
+                electronTemperature *
+                (moments(i + 1, j, k, iRho_) - moments(i - 1, j, k, iRho_)) *
+                dxInv;
+            dPe_dy =
+                electronTemperature *
+                (moments(i, j + 1, k, iRho_) - moments(i, j - 1, k, iRho_)) *
+                dyInv;
+            dPe_dz = (nDim > 2)
+                         ? electronTemperature *
+                               (moments(i, j, k + 1, iRho_) -
+                                moments(i, j, k - 1, iRho_)) *
+                               dzInv
+                         : 0.0;
+          } else {
+            // Adiabatic: Pe = P0 * (rho / rho0)^gamma
+            Real p0 = electronDensity0 * electronTemperature;
+            Real invRho0 = 1.0 / electronDensity0;
+
+            auto calc_Pe = [=](Real r) {
+              return (r > 0) ? p0 * std::pow(r * invRho0, electronGamma)
+                             : 0.0;
+            };
+
+            dPe_dx = (calc_Pe(moments(i + 1, j, k, iRho_)) -
+                      calc_Pe(moments(i - 1, j, k, iRho_))) *
+                     dxInv;
+            dPe_dy = (calc_Pe(moments(i, j + 1, k, iRho_)) -
+                      calc_Pe(moments(i, j - 1, k, iRho_))) *
+                     dyInv;
+            dPe_dz = (nDim > 2)
+                         ? (calc_Pe(moments(i, j, k + 1, iRho_)) -
+                            calc_Pe(moments(i, j, k - 1, iRho_))) *
+                               dzInv
+                         : 0.0;
+          }
+
+          ex -= dPe_dx * invRhoEff;
+          ey -= dPe_dy * invRhoEff;
+          ez -= dPe_dz * invRhoEff;
+        }
+
+        // Hall term: (J x B) / rho_q  (rho = iRho_ = charge density).
+        // No dt factor -- weights are initialized with dt=1, so iRho_ is
+        // the true charge density (see block comment at top of this method).
+        if (useHallTerm) {
+          Real hall_x = (jy * bz - jz * by) * invRhoEff;
+          Real hall_y = (jz * bx - jx * bz) * invRhoEff;
+          Real hall_z = (jx * by - jy * bx) * invRhoEff;
+
+          ex += hall_x;
+          ey += hall_y;
+          ez += hall_z;
+        }
+      }
+
+      arrE(i, j, k, ix_) = ex;
+      arrE(i, j, k, iy_) = ey;
+      arrE(i, j, k, iz_) = ez;
+    });
+  }
+
+  Eout.FillBoundary(Geom(iLev).periodicity());
+  apply_BC(nodeStatus[iLev], Eout, 0, nDim3, &Pic::get_node_E, iLev);
+
+  // Phase 2: hyper-resistivity.
+  //   E -= eta_h * nabla^2 J = -(eta_h / 4*pi) * nabla x (nabla^2 B).
+  // Stage A: centerLapB = nabla^2(centerBin) (cell-centred Laplacian).
+  // Stage B: nodeHyperE = nabla x (centerLapB) (staggered curl). The two-stage
+  // composition makes nabla^2(nabla x B) = nabla x (nabla^2 B) hold
+  // discretely, so the term damps the same mode it is meant to.
+  if (etaHyperLev[iLev] > 0) {
+    lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
+    centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
+    apply_BC(cellStatus[iLev], centerLapB[iLev], 0, centerLapB[iLev].nComp(),
+             &Pic::get_center_B, iLev, &bcBField);
+
+    curl_center_to_node(centerLapB[iLev], nodeHyperE[iLev],
+                        Geom(iLev).InvCellSize());
+    nodeHyperE[iLev].FillBoundary(Geom(iLev).periodicity());
+    apply_BC(nodeStatus[iLev], nodeHyperE[iLev], 0, nodeHyperE[iLev].nComp(),
+             &Pic::get_node_E, iLev, &bcBField);
+
+    const Real f = etaHyperLev[iLev] / fourPI;
+    MultiFab::Saxpy(Eout, -f, nodeHyperE[iLev], 0, 0, 3, 0);
   }
 }
 
@@ -2399,6 +2501,37 @@ void Pic::project_centerB_to_nodeB(int iLev) {
         nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
         ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
         node_bilinear_interp);
+  }
+}
+
+//==========================================================
+void Pic::project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
+                                           amrex::MultiFab& nodeOut, int iLev) {
+  // Same projection as project_centerB_to_nodeB but on caller-owned scratch
+  // fields (centerIn -> nodeOut) rather than the member centerB/nodeB. Used by
+  // the RK4 sub-stages to build the node B at a trial (off-member) center-B
+  // state. On fine levels the coarse fill reads the MEMBER centerB/nodeB (which
+  // are already at the correct coarse state), so it is valid.
+  centerIn.FillBoundary(Geom(iLev).periodicity());
+  if (iLev == 0) {
+    apply_BC(cellStatus[iLev], centerIn, 0, centerIn.nComp(), &Pic::get_center_B,
+             iLev, &bcBField);
+  } else {
+    fill_fine_lev_bny_from_coarse(centerB[iLev - 1], centerIn, 0,
+                                  centerIn.nComp(), ref_ratio[iLev - 1],
+                                  Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+                                  cell_bilinear_interp);
+  }
+  average_center_to_node(centerIn, nodeOut);
+  nodeOut.FillBoundary(Geom(iLev).periodicity());
+  if (iLev == 0) {
+    apply_BC(nodeStatus[iLev], nodeOut, 0, nodeOut.nComp(), &Pic::get_node_B,
+             iLev, &bcBField);
+  } else {
+    fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeOut, 0, nodeOut.nComp(),
+                                  ref_ratio[iLev - 1], Geom(iLev - 1),
+                                  Geom(iLev), node_status(iLev),
+                                  node_bilinear_interp);
   }
 }
 
@@ -2469,6 +2602,73 @@ void Pic::update_B_hybrid() {
   }
 
   for (int subStep = 0; subStep < nHallSubcycle; ++subStep) {
+
+    if (useRK4) {
+      // --- 4th-order Runge-Kutta sub-step on level 0 ---
+      // B is advanced by the classical RK4 on the Faraday equation
+      //     dB/dt = -curl(E),   E = E_Ohm(B)
+      // with the ion moments frozen at time n (as in all integrators). The four
+      // stages evaluate the generalized Ohm's law at trial B states:
+      //   k1 = curl(E(B^n))
+      //   k2 = curl(E(B^n - 0.5 dt k1))
+      //   k3 = curl(E(B^n - 0.5 dt k2))
+      //   k4 = curl(E(B^n - dt k3))
+      //   B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4)
+      // Fine levels follow from projection of the advanced level-0 B (exactly
+      // as in the euler/heun paths), so only level 0 is advanced here.
+      const int iLev = 0;
+
+      // Stage 1: k1 = curl(E(B^n)). centerB[0] itself is B^n (untouched until
+      // the final combine), nodeB[0] is its node-average.
+      assemble_ohm_E(centerB[iLev], nodeB[iLev], nodeE_RK4[iLev], iLev);
+      curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][0],
+                          Geom(iLev).InvCellSize());
+
+      // Stage 2: B2 = B^n - 0.5 dt k1.
+      MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB_RK4[iLev], -0.5 * subDt, kRK4[iLev][0], 0, 0, 3,
+                      nGst);
+      project_centerB_to_nodeB_scratch(centerB_RK4[iLev], nodeB_RK4[iLev], iLev);
+      assemble_ohm_E(centerB_RK4[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev], iLev);
+      curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][1],
+                          Geom(iLev).InvCellSize());
+
+      // Stage 3: B3 = B^n - 0.5 dt k2.
+      MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB_RK4[iLev], -0.5 * subDt, kRK4[iLev][1], 0, 0, 3,
+                      nGst);
+      project_centerB_to_nodeB_scratch(centerB_RK4[iLev], nodeB_RK4[iLev], iLev);
+      assemble_ohm_E(centerB_RK4[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev], iLev);
+      curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][2],
+                          Geom(iLev).InvCellSize());
+
+      // Stage 4: B4 = B^n - dt k3.
+      MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB_RK4[iLev], -subDt, kRK4[iLev][2], 0, 0, 3, nGst);
+      project_centerB_to_nodeB_scratch(centerB_RK4[iLev], nodeB_RK4[iLev], iLev);
+      assemble_ohm_E(centerB_RK4[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev], iLev);
+      curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][3],
+                          Geom(iLev).InvCellSize());
+
+      // Combine: B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4).
+      MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kRK4[iLev][0], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB[iLev], -2.0 * subDt / 6.0, kRK4[iLev][1], 0, 0, 3,
+                      nGst);
+      MultiFab::Saxpy(centerB[iLev], -2.0 * subDt / 6.0, kRK4[iLev][2], 0, 0, 3,
+                      nGst);
+      MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kRK4[iLev][3], 0, 0, 3, nGst);
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+
+      // Sync the advanced level-0 B to nodeB[0] and to the fine levels. Calling
+      // project_centerB_to_nodeB on each fine level internally fills the fine
+      // centerB from the (now advanced) coarse centerB and recomputes its node B
+      // -- exactly the projection that the euler/heun paths use.
+      project_centerB_to_nodeB(0);
+      for (int iLevF = 1; iLevF < n_lev(); ++iLevF) {
+        project_centerB_to_nodeB(iLevF);
+      }
+      continue;
+    }
 
     if (!useCenteredB) {
       // --- Forward-Euler sub-step (original behaviour) ---
@@ -2578,6 +2778,30 @@ void Pic::update_B_hybrid() {
           nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
           node_bilinear_interp);
+    }
+  }
+
+  // Phase 3.4: update the running time-averaged magnetic field used inside the
+  // generalized Ohm's law and in the particle Boris push. B_avg is NOT
+  // divergence-clean and is never fed to the Faraday update, so no projection
+  // is needed here. The final (post-BC) B^{n+1} is used as the new sample.
+  if (useAvgFieldB) {
+    const Real alpha = (nAvgFieldB > 1) ? (1.0 - 1.0 / nAvgFieldB) : 0.0;
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      if (!isBavgInit) {
+        MultiFab::Copy(centerBavg[iLev], centerB[iLev], 0, 0, 3, centerBavg[iLev].nGrow());
+        MultiFab::Copy(nodeBavg[iLev], nodeB[iLev], 0, 0, 3, nodeBavg[iLev].nGrow());
+        isBavgInit = true;
+      } else {
+        centerBavg[iLev].mult(alpha);
+        MultiFab::Saxpy(centerBavg[iLev], 1.0 - alpha, centerB[iLev], 0, 0, 3,
+                        centerBavg[iLev].nGrow());
+        nodeBavg[iLev].mult(alpha);
+        MultiFab::Saxpy(nodeBavg[iLev], 1.0 - alpha, nodeB[iLev], 0, 0, 3,
+                        nodeBavg[iLev].nGrow());
+      }
+      centerBavg[iLev].FillBoundary(Geom(iLev).periodicity());
+      nodeBavg[iLev].FillBoundary(Geom(iLev).periodicity());
     }
   }
 }

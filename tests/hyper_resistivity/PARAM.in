@@ -71,6 +71,19 @@ T                       useCompactCurl
 #HALLSUBCYCLE
 32                      nHallSubcycle
 
+Fourth-order Runge-Kutta field integrator (default). Replaces forward Euler as
+the standard B update; evaluates the generalized Ohm's law at four trial B states.
+Use "heun" for the trapezoidal predictor-corrector or "euler" for forward Euler.
+#FIELDINTEGRATOR
+rk4                     fieldIntegrator
+
+#MOMENTTIMECENTERING
+T                       useMomentTimeCentering
+
+#AVGFIELDB
+T                       useAvgFieldB
+20                      nAvgFieldB
+
 #PLASMA
 1                       nSpecies
 1.0                     mass
