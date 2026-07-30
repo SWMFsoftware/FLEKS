@@ -14,20 +14,13 @@ This is the companion to [`hybrid_whistler`](../hybrid_whistler/README.md),
 which disables terms 3 and 4. Both share the same geometry, ion-scale
 normalization (`lNormSI ≈ d_i`, `uNormSI ≈ v_A` so `d_i ≈ v_A ≈ 1`), and the
 circularly-polarized `HybridWave` seed. See the `hybrid_whistler` README for
-the full unit-convention, Hall-CFL, and normalization discussion.
+the unit-convention discussion; the Hall-CFL sub-cycling rationale is
+documented in the `PARAM.in` comments.
 
-## Active solvers (require the hybrid port on `feature/hybrid-pic`)
-- `#SOLVEEM = F` — standard Maxwell/GMRES solver disabled.
-- `#HYBRIDPIC = T` — Ohm's-law + Faraday hybrid field advance.
-- `#RESISTIVITY = 1.0e6` [m²/s] — resistive term ON. Converted internally to
-  code units (`etaCode = 4π·etaSI·Si2NoV·Si2NoL`, ≈ 2.5e-3 here); damps the
-  whistler so the late-time transverse amplitude stays well below the seed.
-- `#ELECTRONTEMPERATURE = 5.0` [eV] — electron-pressure-gradient term ON
-  (isothermal, `gamma = 1`, `electronDensity0 = 1.0`). Converted internally
-  to code units (`TeCode = TeEV·e/(mp·uNormSI²)`, ≈ 0.19 here); acts on the
-  charge-density fluctuations carried by particle noise.
-- `#HALLSUBCYCLE = 32` — sub-cycles the B update so `dt_sub = dt/32`
-  satisfies the Hall (whistler) CFL.
+The solver-selection commands (`#SOLVEEM`, `#HYBRIDPIC`, `#RESISTIVITY`,
+`#ELECTRONTEMPERATURE`, `#HALLSUBCYCLE`) and the conversion of the SI/eV
+inputs to code units are documented as comments directly in
+[`PARAM.in`](PARAM.in).
 
 ## Purpose & Success Criteria
 

@@ -1,17 +1,13 @@
 #DESCRIPTION
-Hybrid PIC (kinetic ions / fluid electrons) parallel whistler-Alfven wave test.
-Hall-only: validates the Hall term of the generalized Ohm's law in normalized
-CGS units (resistivity and electron-pressure-gradient terms disabled).
+Free-stream (uniform-equilibrium) regression test of the FULL PIC
+electromagnetic field solver (implicit Maxwell/GMRES): solveEM=T,
+useHybridPIC=F.
 
-Parameters are chosen so that in CODE (normalized) units the ion scales are
-O(1) and the ion cyclotron motion is resolved by the timestep:
-  The geometry is in code units; the box is Lx = 6.4 d_i.
-  Normalization: lNormSI = ion inertial length d_i, uNormSI = Alfven speed v_A,
-  so that d_i ~ 1, v_A ~ 1, and (with q/(m c)=1 for the proton) B = Omega_i ~ 1.
-  With dt = 0.02, dt*Omega_i = 0.02 << 1, so the Hall/whistler mode
-  (bounded by Omega_i, since omega/Omega_i = (k d_i)^2 / (1+(k d_i)^2)) is
-  numerically stable.  Physical inputs (n = 5 amu/cc, B = 5.22 nT,
-  v_A ~ 51 km/s, d_i ~ 102 km) are solar-wind-like.
+The initial condition is a perfectly uniform plasma (zero bulk velocity,
+uniform guide field Bx0) -- the exact steady solution -- so any growth of
+non-uniform structure indicates a solver bug.  The hybrid Hall-OFF counterpart
+(PARAM.in.hybrid) shares the identical grid, plasma, normalization,
+timestepping, and output, differing only in the field-solver block.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -25,7 +21,7 @@ F                       initFromSWMF
  0.05                   zMax
 
 #NCELL
-64                      nCellX
+32                      nCellX
 1                       nCellY
 1                       nCellZ
 
@@ -39,34 +35,35 @@ T                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-Standard Maxwell/GMRES solver disabled; use the Ohm's-law + Faraday hybrid
-field advance instead.
+Full PIC electromagnetic field solver ON (implicit Maxwell/GMRES); the
+Hybrid-PIC Ohm's-law solver is OFF. The two are mutually exclusive.
 #SOLVEEM
-F                       solveEM
+T                       solveEM
 
 #HYBRIDPIC
-T                       useHybridPIC
+F                       useHybridPIC
 
-Hall-only: resistive and electron-pressure-gradient terms are turned off
-(both 0.0) to isolate the whistler dispersion.
-#RESISTIVITY
-0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
+The implicit GMRES solver advances E and B with the displacement current, so it
+is not limited by an explicit light-speed CFL; no Hall sub-cycling is needed.
+#DIVE
+T                       doCorrectDivE
+3                       nDivECorrection
 
-#ELECTRONTEMPERATURE
-0.0                     electronTemperature  [eV]
-1.0                     electronGamma
-1.0                     electronDensity0
+#EFIELDSOLVER
+1.0e-8                  tol        GMRES relative tolerance
+30                      nIter      GMRES max iterations
 
-Sub-cycle the B update: the explicit Hall advance is limited by the discrete
-grid-scale modes, dt_sub < dx^2/(6 v_A d_i) ~ 1.7e-3 (dx = 0.1, v_A = d_i = 1),
-so dt = 0.02 needs nHallSubcycle >= 12; 32 gives dt_sub = 6.25e-4 with margin.
-#HALLSUBCYCLE
-32                      nHallSubcycle
+Field time-discretization for the implicit Maxwell solver (theta-scheme).
+theta = 1 is fully implicit, 0.5 is Crank-Nicolson. coefDiff is the
+diffusion coefficient (0 = none).
+#DISCRETIZATION
+0.5                     theta
+0.0                     coefDiff
 
 Single kinetic ion species (q = m = 1); the electron is an implicit
 neutralizing massless fluid, so no electron particle species is present.
 #PLASMA
-1                       nSpecies
+1                       nS
 1.0                     mass
 1.0                     charge
 
@@ -82,9 +79,6 @@ neutralizing massless fluid, so no electron particle species is present.
 0.0                     ex [V/m]
 0.0                     ey [V/m]
 0.0                     ez [V/m]
-
-#TESTCASE
-HybridWave
 
 #TIMESTEPPING
 T                       useFixedDt
@@ -102,12 +96,12 @@ T                       useFixedDt
 1                       dnSavePT
 
 #PARTICLES
-2000                    nParticle per cell in X
-1                       nParticle per cell in Y
-1                       nParticle per cell in Z
+2000                    npcelx
+1                       npcely
+1                       npcelz
 
 #COMOVING
-F                       solvePartInCoMov
+F                       solveFieldInCoMov
 0                       nSmoothBackGroundU
 
 #UPWINDE
@@ -128,6 +122,6 @@ Bx By Bz Ex Ey Ez       varName
 
 #STOP
 -1                      MaxIter
-6.25                    TimeMax
+10.0                    TimeMax
 
 #RUN

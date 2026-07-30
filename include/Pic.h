@@ -67,6 +67,10 @@ private:
   amrex::Real electronDensity0 = 1.0;
   // Number of sub-steps for the B-field update within one coarse dt.
   int nHallSubcycle = 1;
+  // Hall term (J x B) / rho in the generalized Ohm's law. Default on; set to
+  // false to advance with the convection term only (plus any resistivity /
+  // electron-pressure gradient that is independently enabled).
+  bool useHallTerm = true;
 
   bool useExplicitPIC = false;
   bool projectDownEmFields = true;
@@ -169,6 +173,23 @@ private:
   int nSmoothJ = 0;
   amrex::Real coefSmoothJ = 0.5;
 
+  // Digital-filter smoothing of the ion fluid moments (density + momentum
+  // density) before the generalized Ohm's law. Low-pass filters the PIC shot
+  // noise in U_i / rho that the explicit Ohm-Faraday loop otherwise
+  // accumulates into B (see hybrid free-stream drift study).
+  bool doSmoothMoments = false;
+  int nSmoothMoments = 0;
+  amrex::Real coefSmoothMoments = 0.5;
+
+  // Time-centred (predictor-corrector / trapezoidal) advance of B in the
+  // sub-cycled hybrid Faraday update. With thetaB = 0.5 this is the
+  // Crank-Nicolson / Heun scheme, neutral for oscillatory modes, which does
+  // not accumulate PIC shot noise the way the explicit forward-Euler step
+  // does. The ion moments stay frozen at time n (as in the forward-Euler
+  // path); only the B/E coupling is time-centred.
+  bool useCenteredB = false;
+  amrex::Real thetaB = 0.5;
+
   bool doSmoothE = false;
   int nSmoothE = 0;
 
@@ -267,10 +288,10 @@ public:
   void fill_lightwaves(amrex::Real wavelength, int EorB = -1,
                        amrex::Real time = 0, int lev = -1);
   // Initialize a left/right-hand circularly polarized transverse wave on top of
-  // the uniform guide field for the HybridWave test case (see
-  // ROADMAP_HYBRID_PIC.md §9). The guide field Bx0 is taken from the uniform
-  // state already deposited by fill_E_B_fields().
-  void fill_hybrid_wave();
+  // the uniform guide field for the HybridWave test case. The guide field Bx0
+  // is taken from the uniform state already deposited by fill_E_B_fields().
+  void fill_hybrid_wave(amrex::Real frac = 0.02);
+  void fill_convection_wave();
 
   // Add the Alfvén-wave ion velocity perturbation matching the B-field
   // perturbation seeded by fill_hybrid_wave().  Called after fill_particles()
@@ -361,8 +382,16 @@ public:
   //                                        - grad(Pe)/rho_q
   // where J = curl(B)/(4*pi) in CGS code units (see ROADMAP_HYBRID_PIC.md §8).
   void update_E_hybrid();
+  // Digital-filter smoothing of the total ion moments (nodePlasma[nSpecies])
+  // prior to the Ohm's law, to suppress PIC shot noise. No-op unless
+  // doSmoothMoments is set.
+  void smooth_moments();
   // Faraday update of B with sub-cycling of the Hall term.
   void update_B_hybrid();
+  // Project the cell-centred B (centerB[iLev]) to the node grid (nodeB[iLev])
+  // with boundary conditions -- used between sub-steps of the hybrid Faraday
+  // update so the next Ohm's-law evaluation sees the advanced field.
+  void project_centerB_to_nodeB(int iLev);
 
   //-------------Electric field solver end-------------
 

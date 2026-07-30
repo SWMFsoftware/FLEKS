@@ -354,6 +354,22 @@ Number of sub-steps used to advance the magnetic field within one coarse time
 step in the hybrid solver (refines the Hall-term integration).
 </command>
 
+<command name="HALLTERM"
+   alias="HALLTERM_FLEKS0,HALLTERM_FLEKS1,HALLTERM_FLEKS2"
+   multiple="T">
+  <parameter name="useHallTerm" type="logical" default="T"/>
+
+#HALLTERM
+T                 useHallTerm
+
+Enable (default) or disable the Hall term (J x B) / rho in the generalized Ohm's
+law used by the hybrid (HYBRIDPIC) field solver. Set to F to advance the field
+with the convection term only (E = -U_i x B, plus any resistivity / electron
+pressure gradient that is independently enabled). With the Hall term off the
+explicit Hall-whistler CFL no longer applies, so #HALLSUBCYCLE 1 (no sub-cycling)
+is sufficient.
+</command>
+
 <command name="PARTMODE"
    alias="PARTMODE_FLEKS0,PARTMODE_FLEKS1,PARTMODE_FLEKS2"
    multiple="T">
@@ -723,6 +739,56 @@ strength through the formula:
 J_new = (1-coef) * J_old + (coef/2) * (J_left + J_right)
 
 It is recommended to apply the smoothing 1-3 times (nSmoothJ).
+</command>
+
+<command name="SMOOTHMOMENTS"
+	 alias="SMOOTHMOMENTS_FLEKS0,SMOOTHMOMENTS_FLEKS1,SMOOTHMOMENTS_FLEKS2"
+	 multiple="T">
+  <parameter name="doSmoothMoments" type="logical" default="F"/>
+  <if expr="$doSmoothMoments">
+    <parameter name="nSmoothMoments" type="integer" default="0"/>
+    <parameter name="coefSmoothMoments" type="real" default="0.5"/>
+  </if>
+
+#SMOOTHMOMENTS
+T                         doSmoothMoments (rest is read if true)
+3                         nSmoothMoments
+0.5                       coefSmoothMoments
+
+This command applies digital-filter smoothing to the ion fluid moments
+(density rho and momentum density rho*U) before the generalized Ohm's law
+in the hybrid PIC solver. It is a low-pass filter on the PIC shot noise that
+otherwise accumulates un-damped through the explicit Ohm-Faraday loop and
+appears as a spurious magnetic-energy drift in a quiescent free-stream. The
+coefSmoothMoments parameter controls the smoothing strength through:
+m_new = (1-coef) * m_old + (coef/2) * (m_left + m_right)
+applied in each direction; the filter conserves the domain mean, so a uniform
+equilibrium is preserved. It is recommended to apply the smoothing a few times
+(nSmoothMoments = 1-4). Only used when #HYBRIDPIC is T.
+</command>
+
+<command name="CENTEREDB"
+	 alias="CENTEREDB_FLEKS0,CENTEREDB_FLEKS1,CENTEREDB_FLEKS2"
+	 multiple="T">
+  <parameter name="useCenteredB" type="logical" default="F"/>
+  <if expr="$useCenteredB">
+    <parameter name="thetaB" type="real" default="0.5"/>
+  </if>
+
+#CENTEREDB
+T                         useCenteredB (rest is read if true)
+0.5                       thetaB
+
+Time-centred (predictor-corrector / trapezoidal) advance of the magnetic field
+in the sub-cycled hybrid Faraday update. Each sub-step first takes a forward-
+Euler predictor (B* = B^n - dt*curl(E^n)) and then recomputes the Ohm's-law
+electric field on the projected B* to form the corrector; the final update is
+the weighted average B^{n+1} = B^n - dt*[(1-thetaB)*curl(E^n) + thetaB*curl(E*)].
+With thetaB = 0.5 this is the Crank-Nicolson / Heun scheme, which is neutral for
+oscillatory modes and therefore does not accumulate PIC shot noise the way the
+default explicit forward-Euler sub-step does. The ion moments stay frozen at
+time n (as in the forward-Euler path); only the B/E coupling is time-centred.
+Only used when #HYBRIDPIC is T.
 </command>
 
 <command name="UPWINDE"

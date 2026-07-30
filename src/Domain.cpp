@@ -949,6 +949,9 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#SELECTPARTICLE" || command == "#MAXCHARGEEXCHANGERATE" ||
         command == "#HYBRIDPIC" || command == "#RESISTIVITY" ||
         command == "#ELECTRONTEMPERATURE" || command == "#HALLSUBCYCLE" ||
+        command == "#HALLTERM" ||
+        command == "#SMOOTHMOMENTS" ||
+        command == "#CENTEREDB" ||
         command == "#MEMORY") {
       if (pic)
         pic->read_param(command, readParam);

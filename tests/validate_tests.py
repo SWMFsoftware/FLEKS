@@ -87,9 +87,89 @@ def cleanup_run_dir():
                 except Exception as e:
                     print(f"  [WARN] Could not remove {entry_path}: {e}")
 
-def run_test(test_dir, nprocs=1):
+# ---------------------------------------------------------------------------
+# Free-stream test: tests/freestream/ holds TWO parameter files that differ only
+# in the field-solver block -- PARAM.in (full PIC implicit Maxwell/GMRES) and
+# PARAM.in.hybrid (hybrid Ohm's-law solver with the Hall term OFF).  The runner
+# exercises BOTH solvers by running the single directory twice, once per file,
+# so one shared setup validates both field solvers head-to-head.
+
+
+def run_and_validate(test_dir, display_name, validator, nprocs, results,
+                     param_text=None, base_name=None):
+    """Run one FLEKS test (optionally with a patched PARAM.in) and record the
+    outcome in *results* as (name, status, reason). Mirrors the former main
+    loop body so a single test can be run with several PARAM variants."""
+    if base_name is None:
+        base_name = display_name
+    print(f"\n==========================================")
+    print(f"Starting test: {display_name}")
+    print(f"==========================================")
+    try:
+        stdout, code = run_test(test_dir, nprocs=nprocs, param_text=param_text)
+        if code != 0 or stdout is None:
+            print(f"FAIL: {display_name} execution failed with exit code {code}")
+            results.append((display_name, "FAILED", f"Execution failed (code {code})"))
+            return
+
+        # Read the PIC energy log (the only diagnostic log produced by FLEKS).
+        pic_diags = read_pic_log(RUN_DIR)
+
+        val_res = False
+        reason = "Validation skipped"
+
+        if validator:
+            import inspect
+            sig = inspect.signature(validator)
+            kwargs = {}
+            if "pic_diags" in sig.parameters:
+                kwargs["pic_diags"] = pic_diags
+            if "test_name" in sig.parameters:
+                kwargs["test_name"] = base_name
+            val_res, reason = validator(**kwargs)
+            if not val_res:
+                results.append((display_name, "FAILED", reason))
+                return
+        else:
+            print(f"Validating {display_name} (generic check)...")
+            print(f"{display_name} (generic check): PASSED")
+            val_res = True
+            reason = "Passed"
+
+        # Read the test-particle tracer log (log_pt_n*.log) and validate
+        # it for tests that enable #PARTICLETRACKER T.
+        pt_diags = read_pt_log("run_test")
+        pt_tests = {"beam", "photoionization"}
+        if base_name in pt_tests:
+            pt_tol = {
+                "beam":   {"expected_active_species": [0],
+                           "launch_threshold": 0.5, "max_speed": 10.0},
+                "photoionization": {"expected_active_species": [0, 1, 2],
+                                    "launch_threshold": 0.5, "max_speed": 10.0},
+            }.get(base_name, {})
+            pt_res, pt_reason = validate_test_particles(
+                pt_diags, test_name=base_name, tol=pt_tol)
+            if not pt_res:
+                results.append((display_name, "FAILED",
+                                f"test-particle check failed: {pt_reason}"))
+                return
+
+        # Validate output plotfiles
+        plot_res, plot_reason = validate_plot_output(base_name)
+        if not plot_res:
+            results.append((display_name, "FAILED", f"plot check failed: {plot_reason}"))
+        else:
+            results.append((display_name, "PASSED", "Passed"))
+
+    finally:
+        # Always clean up run output after each test to keep disk usage low.
+        print(f"  Cleaning up run_test/ output for {display_name}...")
+        cleanup_run_dir()
+
+
+def run_test(test_dir, nprocs=1, param_text=None):
     param_file = os.path.join(test_dir, "PARAM.in")
-    print(f"Running test in {test_dir} with config {param_file}...")
+    print(f"Running test in {test_dir}...")
     prepare_run_dir()
     
     # Verify that PostIDL.exe exists; PostProc.pl needs it to produce .out files.
@@ -100,8 +180,14 @@ def run_test(test_dir, nprocs=1):
         print(f"  [WARN] PostIDL.exe is missing. Build it with 'make PIDL' "
               f"before running tests that check plot output (.out files).")
     
-    # Copy param_file to run_test/PARAM.in
-    shutil.copy(param_file, RUN_DIR + "/PARAM.in")
+    # Write run_test/PARAM.in: use the supplied text (e.g. a patched solver
+    # variant) if given, otherwise copy the test directory's PARAM.in.
+    if param_text is not None:
+        with open(RUN_DIR + "/PARAM.in", "w") as f:
+            f.write(param_text)
+    else:
+        param_file = os.path.join(test_dir, "PARAM.in")
+        shutil.copy(param_file, RUN_DIR + "/PARAM.in")
     
     # Build the command: serial for nprocs==1, mpirun otherwise
     if nprocs <= 1:
@@ -1573,9 +1659,246 @@ def validate_plot_output(test_name):
         result, reason = _check_lightwave_present()
         return result, reason
 
+    # ---- Convection wave: rigid advection of the transverse wave ----
+    if test_name == "hybrid_convection_wave":
+        print("  --- Validating Output Files (convection advection) ---")
+        result, reason = _check_convection_advection(test_name)
+        if result:
+            print("    [CNV] Convection advection check: VERIFIED")
+        return result, reason
+
     # ---- Other tests: no plot-file validation ----
     print("  --- Validating Output Files: No plot-file check for this test ---")
     return True, "Passed (no plot-file check)"
+
+def _dft_mode(c, k):
+    """Complex DFT coefficient C_k = (1/N) sum_i c_i exp(-2*pi*i*k*i/N)."""
+    import cmath
+    n = len(c)
+    s = 0.0 + 0.0j
+    for i in range(n):
+        s += c[i] * cmath.exp(-2j * math.pi * k * i / n)
+    return s / n
+
+
+def _conv_read_params(test_name):
+    """Read bulk ux [km/s], uNormSI/lNormSI [m/s, m], Lx [code], TimeMax [s]."""
+    p = os.path.join("tests", test_name, "PARAM.in")
+
+    def numeric_after(command):
+        toks = []
+        capture = False
+        with open(p) as f:
+            for line in f:
+                s = line.strip()
+                if not s:
+                    continue
+                tok = s.split()[0]
+                if tok.startswith("#"):
+                    capture = (tok == command)
+                    continue
+                if capture:
+                    try:
+                        toks.append(float(tok))
+                    except ValueError:
+                        pass
+        return toks
+
+    uxs = numeric_after("#UNIFORMSTATE")
+    norms = numeric_after("#NORMALIZATION")
+    geoms = numeric_after("#GEOMETRY")
+    stops = numeric_after("#STOP")
+    ux = uxs[1] if len(uxs) > 1 else 0.0
+    lNormSI = norms[0] if len(norms) > 0 else 1.0e5
+    uNormSI = norms[1] if len(norms) > 1 else 5.0e4
+    Lx = (geoms[1] - geoms[0]) if len(geoms) >= 2 else 6.4
+    # TimeMax lives in #STOP (MaxIter, TimeMax), not #TIMESTEPPING.
+    TimeMax = stops[1] if len(stops) > 1 else 10.0
+    return ux, uNormSI, lNormSI, Lx, TimeMax
+
+
+def _load_convection_profile(out_file):
+    """Load the x-sorted transverse field (By, Bz) profile from a hybrid .out plot.
+
+    The 2D ascii plot writes one row per (ix, iy) cell with a header line of
+    variable names (which may include X and Y coordinate columns).  We group the
+    cells by their x coordinate and average By, Bz over y (the wave is uniform in
+    y) to recover the 1D x-profile needed for the advection-phase check.
+    Returns (by_list, bz_list) sorted by x, or None if the frame is degenerate.
+    """
+    try:
+        with open(out_file, "r", encoding="latin-1") as f:
+            lines = f.readlines()
+    except OSError:
+        return None
+    vidx = None
+    data_start = None
+    for li, line in enumerate(lines):
+        toks = line.split()
+        up = [t.upper() for t in toks]
+        if "BY" in up and "BZ" in up:
+            vidx = {t: i for i, t in enumerate(up)}
+            data_start = li + 1
+            break
+    if vidx is None:
+        return None
+    iby, ibz = vidx["BY"], vidx["BZ"]
+    ix = vidx.get("X")
+    prof = {}
+    for line in lines[data_start:]:
+        c = line.split()
+        if len(c) <= max(iby, ibz):
+            continue
+        try:
+            by = float(c[iby])
+            bz = float(c[ibz])
+            xv = float(c[ix]) if ix is not None else None
+        except (ValueError, IndexError, TypeError):
+            continue
+        if xv is None:
+            xv = float(len(prof))
+        prof.setdefault(round(xv, 8), []).append((by, bz))
+    if len(prof) < 4:
+        return None
+    xs = sorted(prof.keys())
+    by = [sum(p[0] for p in prof[x]) / len(prof[x]) for x in xs]
+    bz = [sum(p[1] for p in prof[x]) / len(prof[x]) for x in xs]
+    return by, bz
+
+
+def _frame_time(out_file):
+    """Read the simulation time from a hybrid .out header (line 1, 2nd token)."""
+    try:
+        with open(out_file, "r", encoding="latin-1") as f:
+            f.readline()
+            nxt = f.readline()
+        return float(nxt.split()[1])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def _convection_phase_shift(by_e, bz_e, by_l, bz_l):
+    """Phase shift (rad) of the k=1 transverse DFT mode between early/late."""
+    import cmath
+    def c1(by, bz):
+        n = len(by)
+        c = [complex(by[i], bz[i]) for i in range(n)]
+        return sum(c[i] * cmath.exp(-2j * math.pi * 1 * i / n)
+                   for i in range(n)) / n
+    C1_e = c1(by_e, bz_e)
+    C1_l = c1(by_l, bz_l)
+    if abs(C1_e) < 1e-9 or abs(C1_l) < 1e-9:
+        return None, None
+    dphi = cmath.phase(C1_l) - cmath.phase(C1_e)
+    dphi = dphi - 2.0 * math.pi * round(dphi / (2.0 * math.pi))
+    return dphi, abs(C1_l) / abs(C1_e)
+
+
+def _check_convection_advection(test_name):
+    """Verify the transverse wave is advected rigidly at the bulk-flow speed.
+
+    With the Hall term OFF the only E-field source is the convection term
+    E = -U_i x B, so the induction equation reduces to dB/dt = -U . grad B and a
+    transverse wave must translate rigidly at speed U.  We seed the wave with
+    #TESTCASE ConvectionWave (fill_hybrid_wave(0.2), no velocity perturbation) and
+    impose a uniform bulk flow ux in #UNIFORMSTATE on a true 1D grid (32x1x1).
+    The run lasts exactly ONE advection period (TimeMax = Lx*lNormSI/ux) with
+    plots at quarter periods, and two complementary checks are applied:
+
+    1. RATE: the spatial Fourier k=1 phase of the (By, Bz) profile advances by
+       -kx * Ux_code * dt_code between the two consecutive plot frames with the
+       SHORTEST time gap (frame times are SI seconds; dt_code = dt_SI / tNorm
+       with tNorm = lNormSI/uNormSI).  With quarter-period frames this is a
+       well-resolved -pi/2 that cannot wrap.
+    2. RETURN: between the FIRST and LAST frames the wave has translated one
+       full wavelength, so the wrapped phase shift must be ~0 and the pattern
+       must coincide with the initial one.  This closes the loop the rate check
+       alone leaves open (any per-frame rate error accumulates 4x here).
+
+    Both checks require the transverse amplitude to be conserved (no damping
+    or growth).
+    """
+    import glob
+    out_dir = os.path.join(RUN_DIR, "PC", "plots")
+    if not os.path.isdir(out_dir):
+        return False, "no plots dir (%s)" % out_dir
+    out_files = sorted(glob.glob(os.path.join(out_dir, "*.out")))
+    valid = []
+    for f in out_files:
+        prof = _load_convection_profile(f)
+        if prof is None:
+            continue
+        t = _frame_time(f)
+        if t is None:
+            continue
+        valid.append((t, prof[0], prof[1], f))
+    if len(valid) < 2:
+        return False, "need >=2 valid profile frames, found %d" % len(valid)
+    valid.sort(key=lambda v: v[0])
+    # Measure the phase shift over the SHORTEST consecutive-frame gap. This is
+    # robust to 2*pi phase wrapping over long runs (e.g. a full-period run where
+    # the first and last frames would wrap back to ~0) and keeps the shift
+    # well-resolved. The shift is scaled to code time via tNorm below.
+    best = None  # (gap, index)
+    for i in range(1, len(valid)):
+        gap = valid[i][0] - valid[i - 1][0]
+        if gap > 0 and (best is None or gap < best[0]):
+            best = (gap, i)
+    if best is None:
+        return False, "need >=2 distinct-time frames, found %d" % len(valid)
+    gap, i = best
+    t_e, by_e, bz_e, fe = valid[i - 1]
+    t_l, by_l, bz_l, fl = valid[i]
+    if len(by_e) != len(by_l):
+        return False, "profile length mismatch between frames"
+    dphi, amp_ratio = _convection_phase_shift(by_e, bz_e, by_l, bz_l)
+    if dphi is None:
+        return False, "no coherent transverse wave (|C1|~0)"
+    ux_kms, uNormSI, lNormSI, Lx, _ = _conv_read_params(test_name)
+    # Plot-header times are in SI seconds; kx*ux_code is per CODE time unit.
+    # Convert the frame separation to code units via tNorm = lNormSI/uNormSI.
+    tNorm = lNormSI / uNormSI
+    dt = (t_l - t_e) / tNorm
+    ux_code = ux_kms * 1000.0 / uNormSI
+    kx = 2.0 * math.pi / Lx
+    expected = -kx * ux_code * dt
+    tol = max(0.15, 0.1 * abs(expected))
+    ok_phase = abs(dphi - expected) <= tol
+    ok_amp = 0.7 <= amp_ratio <= 1.3
+    msg = ("phase shift dphi=%.4f rad (expected %.4f over dt_code=%.2f, tol %.3f); "
+           "amp ratio=%.3f; ux=%.3f km/s -> ux_code=%.4f, Lx=%.3f"
+           % (dphi, expected, dt, tol, amp_ratio, ux_kms, ux_code, Lx))
+    if not ok_phase:
+        msg += " [PHASE MISMATCH]"
+    if not ok_amp:
+        msg += " [AMPLITUDE OUT OF RANGE]"
+
+    # RETURN check: over the whole run (first vs last frame) the WRAPPED phase
+    # shift must match the wrapped expectation.  For the standard one-period
+    # run (TimeMax = Lx*lNormSI/ux) the expected total is -2*pi, which wraps to
+    # 0: the wave must have returned to its initial pattern.
+    t_0, by_0, bz_0, f0 = valid[0]
+    t_n, by_n, bz_n, fn = valid[-1]
+    ok_ret = True
+    if t_n > t_0 and len(by_0) == len(by_n):
+        dphi_full, amp_full = _convection_phase_shift(by_0, bz_0, by_n, bz_n)
+        if dphi_full is None:
+            return False, msg + "; RETURN: no coherent wave in first/last frame"
+        exp_full = -kx * ux_code * (t_n - t_0) / tNorm
+        exp_wrap = exp_full - 2.0 * math.pi * round(exp_full / (2.0 * math.pi))
+        derr = dphi_full - exp_wrap
+        derr = derr - 2.0 * math.pi * round(derr / (2.0 * math.pi))
+        tol_ret = max(0.15, 0.1 * abs(exp_full))
+        ok_ret = abs(derr) <= tol_ret and 0.7 <= amp_full <= 1.3
+        msg += ("; RETURN over [%.1f, %.1f]s: wrapped dphi=%.4f rad "
+                "(expected %.4f, total %.4f, tol %.3f), amp ratio=%.3f"
+                % (t_0, t_n, dphi_full, exp_wrap, exp_full, tol_ret, amp_full))
+        if not ok_ret:
+            msg += " [RETURN-TO-START FAILED]"
+
+    ok = ok_phase and ok_amp and ok_ret
+    return ok, msg
+
 
 def main():
     # Parse nprocs: -n N or --nprocs N
@@ -1641,6 +1964,8 @@ def main():
         "lightwave": validate_lightwave,
         "hybrid_whistler": validate_hybrid,
         "hybrid_ohm": validate_hybrid,
+        "freestream": validate_hybrid,
+        "hybrid_convection_wave": validate_hybrid,
     }
     
     # Discover test subdirectories under tests/
@@ -1678,71 +2003,30 @@ def main():
         print(f"Selected test: {selected_test}")
         
     results = [] # Collect results for summary table
-    
+
     for test_dir, name, validator in tests:
-        print(f"\n==========================================")
-        print(f"Starting test: {name.upper()}")
-        print(f"==========================================")
-        try:
-            stdout, code = run_test(test_dir, nprocs=nprocs)
-            if code != 0 or stdout is None:
-                print(f"FAIL: {name.upper()} execution failed with exit code {code}")
-                results.append((name.upper(), "FAILED", f"Execution failed (code {code})"))
-                continue
-
-            # Read the PIC energy log (the only diagnostic log produced by FLEKS).
-            pic_diags = read_pic_log(RUN_DIR)
-
-            val_res = False
-            reason = "Validation skipped"
-
-            if validator:
-                import inspect
-                sig = inspect.signature(validator)
-                kwargs = {}
-                if "pic_diags" in sig.parameters:
-                    kwargs["pic_diags"] = pic_diags
-                if "test_name" in sig.parameters:
-                    kwargs["test_name"] = name
-                val_res, reason = validator(**kwargs)
-                if not val_res:
-                    results.append((name.upper(), "FAILED", reason))
-                    continue
-            else:
-                print(f"Validating {name.upper()} (generic check)...")
-                print(f"{name.upper()} (generic check): PASSED")
-                val_res = True
-                reason = "Passed"
-
-            # Read the test-particle tracer log (log_pt_n*.log) and validate
-            # it for tests that enable #PARTICLETRACKER T.
-            pt_diags = read_pt_log("run_test")
-            pt_tests = {"beam", "photoionization"}
-            if name in pt_tests:
-                pt_tol = {
-                    "beam":   {"expected_active_species": [0],
-                               "launch_threshold": 0.5, "max_speed": 10.0},
-                    "photoionization": {"expected_active_species": [0, 1, 2],
-                                        "launch_threshold": 0.5, "max_speed": 10.0},
-                }.get(name, {})
-                pt_res, pt_reason = validate_test_particles(
-                    pt_diags, test_name=name, tol=pt_tol)
-                if not pt_res:
-                    results.append((name.upper(), "FAILED",
-                                    f"test-particle check failed: {pt_reason}"))
-                    continue
-
-            # Validate output plotfiles
-            plot_res, plot_reason = validate_plot_output(name)
-            if not plot_res:
-                results.append((name.upper(), "FAILED", f"plot check failed: {plot_reason}"))
-            else:
-                results.append((name.upper(), "PASSED", "Passed"))
-
-        finally:
-            # Always clean up run output after each test to keep disk usage low.
-            print(f"  Cleaning up run_test/ output for {name.upper()}...")
-            cleanup_run_dir()
+        # The free-stream test is a single directory holding two parameter files
+        # (PARAM.in and PARAM.in.hybrid); the runner exercises both field solvers
+        # by running it once per file. All other tests run once as written.
+        if name == "freestream":
+            # Variant 1: the full-PIC parameter file (PARAM.in).
+            with open(os.path.join(test_dir, "PARAM.in")) as _f:
+                _fullpic = _f.read()
+            run_and_validate(test_dir, "FREESTREAM (FULL PIC)", validator,
+                             nprocs, results, param_text=_fullpic,
+                             base_name="freestream")
+            # Variant 2: the hybrid Hall-OFF parameter file (PARAM.in.hybrid).
+            # It shares the same grid/plasma/normalization/timestepping as
+            # PARAM.in and differs only in the field-solver block.
+            _hybrid_path = os.path.join(test_dir, "PARAM.in.hybrid")
+            with open(_hybrid_path) as _f:
+                _hybrid = _f.read()
+            run_and_validate(test_dir, "FREESTREAM (HYBRID HALL-OFF)", validator,
+                             nprocs, results, param_text=_hybrid,
+                             base_name="freestream")
+        else:
+            run_and_validate(test_dir, name.upper(), validator, nprocs, results,
+                             base_name=name)
 
 
     # ----------------------------------------------------

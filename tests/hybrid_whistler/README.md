@@ -23,16 +23,9 @@ initializer). A matching **Alfvén-wave ion velocity perturbation**
 before `sum_moments`. This self-consistent eigenmode IC avoids the large
 transient that a B-only seed would produce.
 
-### Active solvers (require the hybrid port on `feature/hybrid-pic`)
-- `#SOLVEEM = F` — standard Maxwell/GMRES solver disabled.
-- `#HYBRIDPIC = T` — Ohm's-law + Faraday hybrid field advance.
-- `#RESISTIVITY = 0.0` [m²/s] — Hall-only (isolates dispersion).
-- `#ELECTRONTEMPERATURE = 0.0` [eV] — no electron-pressure-gradient term.
-- `#HALLSUBCYCLE = 32` — sub-cycles the B update so `dt_sub = dt/32`
-  satisfies the Hall (whistler) CFL; see *Implementation notes* below.
-
-`#PLASMA` declares a single kinetic ion species (`q = m = 1`); the electron is
-an implicit neutralizing fluid, so no electron particle species is present.
+The solver-selection commands (`#SOLVEEM`, `#HYBRIDPIC`, `#RESISTIVITY`,
+`#ELECTRONTEMPERATURE`, `#HALLSUBCYCLE`, `#PLASMA`) are documented as comments
+directly in [`PARAM.in`](PARAM.in).
 
 ## Unit conventions (verified against `docs/Algorithm.tex` and master code)
 
@@ -91,51 +84,3 @@ unit-consistent and need no change.
    early-time `n=1` check validates the solver physics, while the late-time
    bound catches genuine instabilities. The `ω(k)` fit remains the reference
    discriminator for manual validation.
-
-## Implementation notes
-
-- `#TESTCASE HybridWave` must be added to the `TestCase` enum and an initializer
-  (circularly-polarized `By,Bz` perturbation on `Bx0`) implemented in
-  `Pic::fill_new_cells`, mirroring `Pic::fill_lightwaves`. The `#TESTCASE`
-  string in `PARAM.in` must match the code comparison **exactly**
-  (`"HybridWave"`, case-sensitive) — a mismatch silently falls through to
-  `RegularSimulation` and the wave is never seeded.
-- **Particle count (PPC).** The test uses 2000 particles per cell in X. At
-  lower PPC (e.g. 100) the Hall term amplifies grid-scale density noise into a
-  noisy instability that can dominate the seeded `n=1` wave at late times.
-  2000 PPC keeps the growth factor to ~16× (vs ~190× at 100 PPC) and ion-energy
-  conservation to ~0.4%.
-- The `HYBRIDPIC` / `RESISTIVITY` / `ELECTRONTEMPERATURE` / `HALLSUBCYCLE`
-  commands must be present in `PARAM.XML` (added during the hybrid port).
-- **Stability / Hall CFL (the binding constraint).** The Hall term in Faraday,
-  `∂B/∂t = -∇×(J×B)/ρ`, is a *dispersive* term whose explicit forward-Euler
-  advance is limited by the **discrete** operator, not the continuous
-  `ω ≤ Ω_i` bound.  The grid-scale (short-wavelength) modes behave like a
-  magnetic diffusion with coefficient `D_H = v_A·d_i`, which gives the 3-D
-  stability limit
-  ```
-  dt_sub ≲ dx² / (6 · v_A · d_i)        with  dt_sub = dt / nHallSubcycle
-  ```
-  With `dx = 6.4/64 = 0.1` and `v_A = d_i = 1` this requires
-  `dt_sub ≲ 1.7e-3`; for `dt = 0.02` that means `nHallSubcycle ≥ 12`.  The test
-  uses `nHallSubcycle = 32` (`dt_sub = 6.25e-4`, comfortable margin).  Note this
-  is **independent of the physics frequency** `ω ≤ Ω_i`: even though
-  `dt·Ω_i ≪ 1` is satisfied, too few sub-cycles still makes the whistler blow
-  up.  (The per-sub-step `update_E_hybrid()` only re-curls `B` to refresh `J`;
-  the ion moments `U_i, ρ_q, P_e` are held fixed during the sub-cycle, so extra
-  sub-cycles add negligible cost.)
-- **Normalization (critical).** The standalone test MUST use *ion-scale*
-  normalization so that in CODE (normalized) units the ion scales are `O(1)`:
-  set `#NORMALIZATION lNormSI ≈ d_i` and `uNormSI ≈ v_A`.  Then
-  `B_code ≈ Ω_i ≈ d_i ≈ v_A ≈ 1`, `dt·Ω_i ≈ 0.02 ≪ 1`, and the Hall CFL above is
-  achievable.  If instead a naive `lNormSI = uNormSI = 1` (SI) normalization is
-  used, `Si2NoB ≈ 9.6e7` makes `B_code ≈ 1e8` and `Ω_i_code ≈ 1e8`, so
-  `dt·Ω_i ≈ 1e6` and the explicit scheme diverges in a **single** step — no
-  amount of sub-cycling can cure it.  The GM-PC `beam` test avoids this by using
-  realistic SI inputs (`B = 5 nT`, `n = 5 /cc`, `lNormSI = 1000 m`,
-  `uNormSI = 1e6 m/s`) so its code units are also ion-scale `O(1)`.
-- **Plot format.** The `#SAVEPLOT` plot string must use the **ascii** format
-  (e.g. `z=0 fluid ascii pic`), **not** `real4`/`real8`: `validate_tests.py`
-  reads the text `.out` header to extract `By`/`Bz` for the bounded-wave check,
-  and the manual `ω(k)` fit also needs text `.out`.  Binary plot formats write
-  Fortran-record `.h` files that the harness cannot parse.

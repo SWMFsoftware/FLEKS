@@ -1,0 +1,192 @@
+#DESCRIPTION
+Hybrid PIC (kinetic ions / fluid electrons) 1D PERIODIC CONVECTION-TERM test
+on a TRUE 1D grid (32x1x1 cells), run for exactly ONE ADVECTION PERIOD.
+Isolates the convection term of the generalized Ohm's law, E = -U_i x B.
+The Hall term, resistivity, and electron-pressure-gradient are OFF, so with a
+uniform bulk flow U the induction equation reduces to ideal advection,
+  dB/dt = -U . grad B,
+and a seeded transverse (By, Bz) wave is advected rigidly at the bulk speed.
+
+TESTCASE ConvectionWave seeds the transverse wave via fill_hybrid_wave(0.2)
+(B1 = 0.2*Bx0) with NO velocity perturbation, and UNIFORMSTATE sets a uniform
+bulk flow ux = 10 km/s. The guide field Bx0 = 5.2195e-11 T (~0.01 in code
+units) is chosen DELIBERATELY WEAK so the field is dynamically PASSIVE:
+v_A_code ~ 0.01 << U_code = 0.2 and Omega_i*T_code ~ 0.05 << 1, so the kinetic
+ions cannot react on the run time scale (a delta-B seed with no matching
+delta-u on a strong field would instead split into counter-propagating
+Alfven/cyclotron branches and NOT advect rigidly).
+
+NOTE ON TIME UNITS: TIMESTEPPING dt, SAVEPLOT dt and STOP TimeMax are in SI
+seconds, while phase speeds are per CODE time unit; tNorm = lNormSI/uNormSI =
+1.0e5/5.0e4 = 2.0 s, so TimeMax = 64 s -> T_code = 32.0. The advection period
+is ONE WAVELENGTH: lambda = Lx * lNormSI = 6.4 * 1.0e5 m = 640 km, and
+  T_period = lambda / ux = 640 km / 10 km/s = 64 s,
+exactly TimeMax, so after the run the wave has translated one full wavelength
+and the (By, Bz) pattern returns to its initial shape. With Ux_code =
+ux_SI/uNormSI = 1.0e4/5.0e4 = 0.2 and kx = 2*pi/Lx (Lx = 6.4), the phase at a
+fixed x advances by
+  Delta(phi) = -kx * Ux_code * T_code = -2*pi/6.4 * 0.2 * 32.0 = -2*pi rad
+over the full run (residual Alfven contamination O(1-cos(kx*vA*T_code)) ~ 1%);
+the transverse amplitude is conserved (no damping). Plots are written every
+16 s (SAVEPLOT dt = 16.0), i.e. at QUARTER PERIODS (t = 0, 16, 32, 48, 64 s):
+the k=1 phase advances by exactly -pi/2 between consecutive frames. The
+quarter-period sampling is what makes the one-period check non-degenerate --
+with only the first/last frames a full -2*pi turn wraps to 0 and would be
+indistinguishable from a wave that never moved.
+
+Validated by tests/validate_tests.py :: _check_convection_advection, which
+checks (1) the -pi/2 phase advance over the shortest consecutive-frame gap
+(advection at U), (2) that after the full period the first/last patterns
+coincide (wrapped phase shift ~ 0), and (3) amplitude ratio in [0.7, 1.3]
+(no damping or growth).
+
+Normalization matches hybrid_whistler (lNormSI = 1.0e5 m, uNormSI = 5.0e4
+m/s), but with B 100x weaker than the d_i ~ v_A ~ 1 scaling: n = 5 /cc,
+B = 0.0522 nT, so v_A_code ~ 0.01 and the advection CFL is
+U_code*dt_code/dx = 0.2*0.01/0.2 = 0.01.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-3.2                    xMin  [code units; Lx = 6.4 d_i]
+ 3.2                    xMax
+-0.4                    yMin  (single cell -- true 1D; only x is resolved)
+ 0.4                    yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+32                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+64                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+Standard Maxwell/GMRES solver disabled; use the Ohm's-law + Faraday hybrid
+field advance instead.
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+Hall term OFF -- the SIMPLEST Ohm's law (E = -U_i x B only). With this flag the
+(J x B)/rho term in update_E_hybrid is skipped entirely.
+#HALLTERM
+F                       useHallTerm
+
+Resistive and electron-pressure-gradient terms OFF (0.0) so the only remaining
+E-field source is the convection term -U_i x B.
+#RESISTIVITY
+0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
+
+#ELECTRONTEMPERATURE
+0.0                     electronTemperature  [eV]
+1.0                     electronGamma
+1.0                     electronDensity0
+
+NO sub-cycling: with the Hall term off there is no stiff Hall-whistler mode, so a
+single field update per coarse dt is stable and sufficient. nHallSubcycle = 1
+keeps the field solver at its cheapest.
+#HALLSUBCYCLE
+1                       nHallSubcycle
+
+Digital-filter smoothing of the ion moments (rho, rho*U) before the Ohm's law.
+This low-passes the PIC shot noise whose time-integration by Faraday produces
+the spurious uniform-equilibrium magnetic-energy drift seen without it. The
+filter conserves the domain mean, so the uniform free-stream is preserved.
+#SMOOTHMOMENTS
+T                       doSmoothMoments
+3                       nSmoothMoments
+0.5                     coefSmoothMoments
+
+Time-centred (predictor-corrector / Crank-Nicolson) Faraday sub-step. Combined
+with the moment smoothing this removes the spurious noise drift: the trapezoidal
+B update is neutral for oscillatory modes, so the PIC shot noise is no longer
+integrated un-damped. thetaB = 0.5 is the standard Crank-Nicolson / Heun scheme.
+#CENTEREDB
+T                       useCenteredB
+0.5                     thetaB
+
+Single kinetic ion species (q = m = 1); the electron is an implicit
+neutralizing massless fluid, so no electron particle species is present.
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#TESTCASE
+ConvectionWave
+
+#UNIFORMSTATE
+5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
+10.0                    ux [km/s]      bulk flow that advects the transverse wave (U_code = 0.2)
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.2195e-11              bx [T]       weak PASSIVE guide field Bx0 (B_code ~ 0.01, v_A << U)
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+TESTCASE ConvectionWave -- seeds a transverse (By, Bz) wave via
+fill_hybrid_wave(0.2) (B1 = 0.2*Bx0) with NO velocity perturbation, so the
+initial field is a rigid transverse wave that is advected by the uniform bulk
+flow ux (convection term only; Hall/resistivity/electron-PG are OFF).
+
+#TIMESTEPPING
+T                       useFixedDt
+0.1                     dt
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]   (tNorm = lNormSI/uNormSI = 2.0 s)
+5.0e4                   uNormSI   [m/s] (weak-B test: v_A_code ~ 0.01, NOT 1)
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#PARTICLES
+1000                    nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#COMOVING
+F                       solvePartInCoMov
+0                       nSmoothBackGroundU
+
+#UPWINDE
+F                       useUpwindE
+0.0                     limiterThetaE
+
+#UPWINDB
+F                       doSmoothB
+0.0                     theta
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+-1                      dn          step-based saving disabled (time-based only)
+16.0                    dt
+1                       dx
+Bx By Bz Ex Ey Ez       varName
+
+#STOP
+-1                      MaxIter
+64.0                    TimeMax
+
+#RUN

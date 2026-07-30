@@ -116,6 +116,17 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("nSmoothJ", nSmoothJ);
       param.read_var("coefSmoothJ", coefSmoothJ);
     }
+  } else if (command == "#SMOOTHMOMENTS") {
+    param.read_var("doSmoothMoments", doSmoothMoments);
+    if (doSmoothMoments) {
+      param.read_var("nSmoothMoments", nSmoothMoments);
+      param.read_var("coefSmoothMoments", coefSmoothMoments);
+    }
+  } else if (command == "#CENTEREDB") {
+    param.read_var("useCenteredB", useCenteredB);
+    if (useCenteredB) {
+      param.read_var("thetaB", thetaB);
+    }
   } else if (command == "#UPWINDB") {
     param.read_var("useUpwindB", useUpwindB);
     param.read_var("theta", limiterThetaB);
@@ -197,6 +208,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     } else if (testcase == "HybridWave") {
       testCase = HybridWave;
       // Hybrid solver needs kinetic ions; let #PARTICLES set nPartPerCell.
+    } else if (testcase == "ConvectionWave") {
+      testCase = ConvectionWave;
+      // Convection-term test: seed a transverse wave, advected by a bulk flow.
     }
   } else if (command == "#HYBRIDPIC") {
     param.read_var("useHybridPIC", useHybridPIC);
@@ -211,6 +225,10 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#HALLSUBCYCLE") {
     // Number of B-field sub-steps per coarse dt for the Hall-term update.
     param.read_var("nHallSubcycle", nHallSubcycle);
+  } else if (command == "#HALLTERM") {
+    // Enable/disable the Hall term (J x B) / rho in the generalized Ohm's law.
+    // Default true; set false for a convection-only field advance.
+    param.read_var("useHallTerm", useHallTerm);
   } else if (command == "#SELECTPARTICLE") {
     param.read_var("doSelectParticle", doSelectParticle);
     if (doSelectParticle) {
@@ -309,6 +327,10 @@ void Pic::fill_new_cells() {
 
   if (testCase == HybridWave) {
     fill_hybrid_wave();
+  }
+
+  if (testCase == ConvectionWave) {
+    fill_convection_wave();
   }
 
   if (usePIC) {
@@ -1366,6 +1388,7 @@ void Pic::update(bool doReportIn) {
   } else if (useHybridPIC) {
     // The hybrid Ohm's law needs fresh ion fluid moments at time n.
     sum_moments(false);
+    smooth_moments();
     update_E_hybrid();
   }
 
@@ -2198,13 +2221,15 @@ void Pic::update_E_hybrid() {
           // Hall term: (J x B) / rho_q  (rho = iRho_ = charge density).
           // No dt factor -- weights are initialized with dt=1, so iRho_ is
           // the true charge density (see block comment at top of this method).
-          Real hall_x = (jy * bz - jz * by) * invRhoEff;
-          Real hall_y = (jz * bx - jx * bz) * invRhoEff;
-          Real hall_z = (jx * by - jy * bx) * invRhoEff;
+          if (useHallTerm) {
+            Real hall_x = (jy * bz - jz * by) * invRhoEff;
+            Real hall_y = (jz * bx - jx * bz) * invRhoEff;
+            Real hall_z = (jx * by - jy * bx) * invRhoEff;
 
-          ex += hall_x;
-          ey += hall_y;
-          ez += hall_z;
+            ex += hall_x;
+            ey += hall_y;
+            ez += hall_z;
+          }
         }
 
         arrE(i, j, k, ix_) = ex;
@@ -2227,6 +2252,53 @@ void Pic::update_E_hybrid() {
 }
 
 //==========================================================
+void Pic::smooth_moments() {
+  std::string nameFunc = "Pic::smooth_moments";
+  timing_func(nameFunc);
+
+  if (!doSmoothMoments || nSmoothMoments <= 0)
+    return;
+
+  // Smooth the TOTAL ion moment MultiFab (density + momentum density + ...)
+  // that the Ohm's law reads. Periodic FillBoundary first so the edge cells
+  // see correct wrapped neighbours, then apply the same digital-filter kernel
+  // used for J/E (smooth_multifab). The filter conserves the domain mean, so
+  // the uniform free-stream equilibrium is preserved.
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    MultiFab& moments = nodePlasma[nSpecies][iLev];
+    moments.FillBoundary(Geom(iLev).periodicity());
+    for (int icount = 0; icount < nSmoothMoments; ++icount) {
+      smooth_multifab(moments, iLev, icount % 2 + 1, coefSmoothMoments);
+    }
+  }
+}
+
+//==========================================================
+void Pic::project_centerB_to_nodeB(int iLev) {
+  centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+  if (iLev == 0) {
+    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+             &Pic::get_center_B, iLev, &bcBField);
+  } else {
+    fill_fine_lev_bny_from_coarse(
+        centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+        cell_bilinear_interp);
+  }
+  average_center_to_node(centerB[iLev], nodeB[iLev]);
+  nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
+  if (iLev == 0) {
+    apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+             &Pic::get_node_B, iLev, &bcBField);
+  } else {
+    fill_fine_lev_bny_from_coarse(
+        nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
+        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
+        node_bilinear_interp);
+  }
+}
+
+//==========================================================
 void Pic::update_B_hybrid() {
   std::string nameFunc = "Pic::update_B_hybrid";
   timing_func(nameFunc);
@@ -2243,46 +2315,77 @@ void Pic::update_B_hybrid() {
   }
 
   for (int subStep = 0; subStep < nHallSubcycle; ++subStep) {
-    // Recompute the hybrid electric field from the CURRENT B every sub-step so
-    // that the Hall-driven whistler is advanced with the genuine sub-step dt.
-    // (Computing E once and holding it fixed over the sub-steps leaves the
-    // explicit forward-Euler advance of the oscillatory whistler unstable.)
-    update_E_hybrid();
 
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      MultiFab dB(cGrids[iLev], DistributionMap(iLev), 3, nGst);
-      curl_node_to_center(nodeEth[iLev], dB, Geom(iLev).InvCellSize());
+    if (!useCenteredB) {
+      // --- Forward-Euler sub-step (original behaviour) ---
+      // Recompute the hybrid electric field from the CURRENT B every sub-step
+      // so that the Hall-driven whistler is advanced with the genuine sub-step
+      // dt. (Computing E once and holding it fixed over the sub-steps leaves
+      // the explicit forward-Euler advance of the oscillatory whistler
+      // unstable.)
+      update_E_hybrid();
 
-      MultiFab::Saxpy(centerB[iLev], -subDt, dB, 0, 0, centerB[iLev].nComp(),
-                      centerB[iLev].nGrow());
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        MultiFab dB(cGrids[iLev], DistributionMap(iLev), 3, nGst);
+        curl_node_to_center(nodeEth[iLev], dB, Geom(iLev).InvCellSize());
 
-      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+        MultiFab::Saxpy(centerB[iLev], -subDt, dB, 0, 0, centerB[iLev].nComp(),
+                        centerB[iLev].nGrow());
+
+        centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+      }
+
+      // Project the advanced center-B back to the node-B used by the Ohm's law
+      // so the next sub-step's E recompute sees the updated field.
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        project_centerB_to_nodeB(iLev);
+      }
+      continue;
     }
 
-    // Project the advanced center-B back to the node-B used by the Ohm's law so
-    // the next sub-step's E recompute sees the updated field.
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-      if (iLev == 0) {
-        apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-                 &Pic::get_center_B, iLev, &bcBField);
-      } else {
-        fill_fine_lev_bny_from_coarse(
-            centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-            ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-            cell_bilinear_interp);
-      }
-      average_center_to_node(centerB[iLev], nodeB[iLev]);
-      nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
-      if (iLev == 0) {
-        apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
-                 &Pic::get_node_B, iLev, &bcBField);
-      } else {
-        fill_fine_lev_bny_from_coarse(
-            nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
-            ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
-            node_bilinear_interp);
-      }
+    // --- Time-centred (predictor-corrector / trapezoidal) sub-step ---
+    // Stage 1 (predictor): E^n from the CURRENT B (nodeB); advance a predicted
+    //     B* = B^n - subDt * curl(E^n).
+    // Stage 2 (corrector): E* from B* (recompute the Ohm's law on the
+    //     projected B*), then
+    //     B^{n+1} = B^n - subDt * [(1-thetaB) curl(E^n) + thetaB curl(E*)].
+    // The ion moments are frozen at time n (as in the forward-Euler path), so
+    // only the B/E coupling is time-centred. With thetaB = 0.5 this is the
+    // Crank-Nicolson / Heun scheme: neutral for oscillatory modes, so it does
+    // not accumulate PIC shot noise the way forward Euler does.
+    update_E_hybrid();
+
+    std::vector<MultiFab> dBpred(n_lev()), centerBstart(n_lev()),
+        centerBstar(n_lev());
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      dBpred[iLev].define(cGrids[iLev], DistributionMap(iLev), 3, nGst);
+      centerBstart[iLev].define(cGrids[iLev], DistributionMap(iLev), 3, nGst);
+      centerBstar[iLev].define(cGrids[iLev], DistributionMap(iLev), 3, nGst);
+      MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, 3, nGst);
+      curl_node_to_center(nodeEth[iLev], dBpred[iLev], Geom(iLev).InvCellSize());
+      MultiFab::Copy(centerBstar[iLev], centerB[iLev], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerBstar[iLev], -subDt, dBpred[iLev], 0, 0, 3, nGst);
+    }
+
+    // Corrector stage: project B* to the node grid and recompute E*.
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      MultiFab::Copy(centerB[iLev], centerBstar[iLev], 0, 0, 3, nGst);
+      project_centerB_to_nodeB(iLev);
+    }
+    update_E_hybrid();
+
+    std::vector<MultiFab> dBcorr(n_lev());
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      dBcorr[iLev].define(cGrids[iLev], DistributionMap(iLev), 3, nGst);
+      curl_node_to_center(nodeEth[iLev], dBcorr[iLev], Geom(iLev).InvCellSize());
+
+      // Trapezoidal combine around the saved B^n.
+      MultiFab::Copy(centerB[iLev], centerBstart[iLev], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB[iLev], -(1.0 - thetaB) * subDt, dBpred[iLev], 0, 0,
+                      3, nGst);
+      MultiFab::Saxpy(centerB[iLev], -thetaB * subDt, dBcorr[iLev], 0, 0, 3,
+                      nGst);
+      project_centerB_to_nodeB(iLev);
     }
   }
 
@@ -3174,7 +3277,7 @@ void Pic::fill_lightwaves(amrex::Real wavelength, int EorB, amrex::Real time,
 }
 
 //==========================================================
-void Pic::fill_hybrid_wave() {
+void Pic::fill_hybrid_wave(Real frac) {
   std::string nameFunc = "Pic::fill_hybrid_wave";
 
   // Perturbation amplitude as a fraction of the uniform guide field Bx0.
@@ -3182,7 +3285,7 @@ void Pic::fill_hybrid_wave() {
   // ion kinetic-energy exchange with the field stays modest; the decisive
   // whistler-dispersion test (Section 4 of the README) uses time-resolved
   // B output and is done manually.
-  const Real waveFrac = 0.02;
+  const Real waveFrac = frac;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     // Guide field Bx0 already deposited by fill_E_B_fields() from
@@ -3235,6 +3338,8 @@ void Pic::fill_hybrid_wave() {
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
   }
 }
+
+void Pic::fill_convection_wave() { fill_hybrid_wave(0.2); }
 
 void Pic::perturb_hybrid_wave_velocities() {
   std::string nameFunc = "Pic::perturb_hybrid_wave_velocities";

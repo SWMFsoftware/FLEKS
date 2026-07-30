@@ -22,6 +22,8 @@ Each test case is contained within its own dedicated subdirectory containing a
 |                   |                    | Alfven wave; Hall term only (resistivity & e-pressure off)|
 | Hybrid Ohm's law | `hybrid_ohm/`      | Hybrid PIC full generalized Ohm's law: convection + Hall  |
 |                   |                    | + resistive + electron-pressure-gradient, all active       |
+| Free-stream | `freestream/` | 1D uniform free-stream, run with both solvers (full PIC and hybrid Hall-off) |
+| Convection wave | `hybrid_convection_wave/` | Hybrid PIC convection-only (`#HALLTERM F`) transverse wave advected by uniform flow; checks phase advance and amplitude conservation |
 | Light wave        | `lightwave/`       | 3D vacuum transverse EM (light) wave on a periodic AMR  |
 |                   |                    | grid; energy-conservation check (needs `nLevMax >= 2`)   |
 | Performance       | `performance/`     | Beam-based scaling benchmark (excluded from CI suite)    |
@@ -134,5 +136,7 @@ expected results, and instructions for manual execution:
 | `chargeexchange/`  | [README](chargeexchange/README.md)   |
 | `hybrid_whistler/` | [README](hybrid_whistler/README.md)  |
 | `hybrid_ohm/`      | [README](hybrid_ohm/README.md)       |
+| `freestream/`| [README](freestream/README.md) |
+| `hybrid_convection_wave/`| [README](hybrid_convection_wave/README.md) |
 | `lightwave/`       | [README](lightwave/README.md)        |
 | `performance/`     | — (see `validate_performance.py`)    |
