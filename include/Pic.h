@@ -240,20 +240,21 @@ private:
   amrex::Real coefSmoothMoments = 0.5;
 
   // Time-centred (predictor-corrector / trapezoidal) advance of B in the
-  // sub-cycled hybrid Faraday update. With thetaB = 0.5 this is the
-  // Crank-Nicolson / Heun scheme, neutral for oscillatory modes, which does
-  // not accumulate PIC shot noise the way the explicit forward-Euler step
-  // does. The ion moments stay frozen at time n (as in the forward-Euler
-  // path); only the B/E coupling is time-centred.
+  // sub-cycled hybrid Faraday update. With thetaB = 0.5 this is the explicit
+  // trapezoidal (Heun) scheme. Unlike the implicit Crank-Nicolson, the explicit
+  // trapezoid is weakly unstable on purely oscillatory modes (|R(iy)|^2 = 1 +
+  // y^4/4 > 1), though far less so than forward Euler. RK4 (the default
+  // integrator) has a non-degenerate imaginary-axis stability interval.
+  // The ion moments stay frozen at time n (as in the forward-Euler path);
+  // only the B/E coupling is time-centred.
   bool useCenteredB = false;
   amrex::Real thetaB = 0.5;
 
   // Field integrator for the hybrid Faraday update. Selects how B is advanced
   // from the electric field given by the generalized Ohm's law:
   //   "euler" -> classic explicit forward Euler (sub-cycled Hall-whistler);
-  //   "heun"  -> trapezoidal / Crank-Nicolson predictor-corrector (time-centred
-  //              B/E coupling, neutral for oscillatory modes, damps PIC shot
-  //              noise that forward Euler accumulates);
+  //   "heun"  -> explicit trapezoidal predictor-corrector (time-centred
+  //              B/E coupling, but weakly unstable on oscillatory modes);
   //   "rk4"   -> classic 4th-order Runge-Kutta on B, evaluating the Ohm's law at
   //              four trial B states. Largest stability region of the three; the
   //              default (replaces forward Euler as the standard integrator).
@@ -262,16 +263,16 @@ private:
   std::string fieldIntegrator = "rk4";
   bool useRK4 = false;
 
-  // Phase 3.3 -- time-centring of the Ohm's law in B.
-  // The ion moments are ALREADY deposited at t^{n+1/2} because the Boris
-  // half-stage position push (update_position_to_half_stage) runs before
-  // sum_moments. What is NOT yet centred is the magnetic field used inside the
-  // Ohm's law: E_Ohm is evaluated with B^n. When this flag is set we predict
-  //     B^{n+1/2} = B^n - (dt/2) curl(E_Ohm(U_i^{n+1/2}, B^n))
-  // and re-evaluate E_Ohm at B^{n+1/2}, so the live electric field used for the
-  // particle push and as the starting point of the B integrator is centred in
-  // B as well as in the moments -> the hybrid scheme is fully 2nd order in time.
-  // Default false (use B^n in the Ohm's law, as before).
+  // B-field predictor for the Ohm's law.
+  // The ion moments are deposited at the leapfrog state (x^n, v^{n-1/2}) --
+  // the Boris half-stage position push (update_position_to_half_stage) is
+  // defined but not currently called before sum_moments. E_Ohm is normally
+  // evaluated with B^n. When this flag is set we predict
+  //     B^{n+1/2} = B^n - (dt/2) curl(E_Ohm(U_i, B^n))
+  // and re-evaluate E_Ohm at B^{n+1/2}. This advances the B used in the Ohm's
+  // law by half a step, partially compensating for the moment lag and improving
+  // stability. The scheme becomes fully 2nd-order time-centred only once the
+  // half-stage deposit is wired in. Default false.
   bool useMomentTimeCentering = false;
 
   // Phase 3.4 -- time-averaged (EMA) magnetic field.
@@ -485,12 +486,8 @@ public:
   //-------------Hybrid PIC solver (kinetic ions + fluid electrons)-------------
   // Generalized Ohm's law electric field: E = -U_i x B + eta J + (J x B)/rho_q
   //                                        - grad(Pe)/rho_q
-  // where J = curl(B)/(4*pi) in CGS code units (see ROADMAP_HYBRID_PIC.md §8).
+  // where J = curl(B)/(4*pi) in CGS code units.
   void update_E_hybrid();
-  // Fill nodeJ[iLev] = nabla x centerB[iLev] (UN-normalized; the 1/(4*pi)
-  // factor is applied where J is read). Uses the staggered curl_center_to_node
-  // operator so the discrete current does not annihilate the Nyquist mode.
-  void calc_hybrid_current(int iLev);
   // Digital-filter smoothing of the total ion moments (nodePlasma[nSpecies])
   // prior to the Ohm's law, to suppress PIC shot noise. No-op unless
   // doSmoothMoments is set.

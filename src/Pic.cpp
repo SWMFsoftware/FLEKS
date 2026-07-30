@@ -252,9 +252,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     //   "rk4"   (4th-order Runge-Kutta on B, default).
     param.read_var("fieldIntegrator", fieldIntegrator);
   } else if (command == "#MOMENTTIMECENTERING") {
-    // Phase 3.3: time-centre the magnetic field used in the generalized Ohm's
-    // law (predict B^{n+1/2} and re-evaluate E_Ohm there). The ion moments are
-    // already at t^{n+1/2} via the Boris half-stage precede sum_moments.
+    // B-field predictor for the Ohm's law: predict B^{n+1/2} from B^n and
+    // re-evaluate E_Ohm there. The ion moments are at the leapfrog state
+    // (x^n, v^{n-1/2}); the Boris half-stage is not currently wired in.
     param.read_var("useMomentTimeCentering", useMomentTimeCentering);
   } else if (command == "#AVGFIELDB") {
     // Phase 3.4: time-averaged (EMA) magnetic field for the Ohm's law and the
@@ -342,11 +342,13 @@ void Pic::post_process_param() {
       useCenteredB = true;
     } else if (fieldIntegrator == "rk4") {
       useRK4 = true;
+      useCenteredB = false;
     } else {
       amrex::Print() << "  WARNING: unknown #FIELDINTEGRATOR '" << fieldIntegrator
                      << "'; defaulting to 'rk4'\n";
       fieldIntegrator = "rk4";
       useRK4 = true;
+      useCenteredB = false;
     }
     amrex::Print() << "  fieldIntegrator: " << fieldIntegrator << "\n";
     amrex::Print() << "  useMomentTimeCentering: " << useMomentTimeCentering << "\n";
@@ -2224,6 +2226,22 @@ void Pic::update_E_hybrid() {
   std::string nameFunc = "Pic::update_E_hybrid";
   timing_func(nameFunc);
 
+  // Grid-mode hyper-resistivity: eta_h is CFL-scaled to the sub-step dt, so it
+  // must be (re)computed here before the Ohm's law is assembled. This ensures
+  // the E field used for the particle Boris push (this function is called
+  // before particle_mover in Pic::update) includes the hyper-resistive term.
+  // For "si" mode etaHyperLev was already set in post_process_param.
+  if (etaHyperMode == "grid" && etaHyperCh > 0) {
+    const Real subDt = tc->get_dt() / nHallSubcycle;
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      const auto dx = Geom(iLev).CellSizeArray();
+      Real dxMin = amrex::min(dx[0], dx[1]);
+      if (nDim > 2)
+        dxMin = amrex::min(dxMin, dx[2]);
+      etaHyperLev[iLev] = fourPI * etaHyperCh * std::pow(dxMin, 4) / subDt;
+    }
+  }
+
   // Particle weights are initialized with dt = 1 during the initial condition
   // (add_particles_cell is called with dt = -1 -> dt = 1), so the charge
   // density nodePlasma[...].iRho_ is the TRUE charge density rho_q =
@@ -2238,11 +2256,14 @@ void Pic::update_E_hybrid() {
     const auto& cBin = (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
     const auto& nBin = (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
 
-    // Phase 3.3: the ion moments are already at t^{n+1/2} (the Boris half-stage
-    // precedes sum_moments). To also centre the magnetic field used in the
-    // Ohm's law, predict B^{n+1/2} = B^n - (dt/2) curl(E_Ohm(U_i^{n+1/2}, B^n))
-    // and re-evaluate the Ohm's law there. The result is a fully time-centred
-    // live E (used for the particle push and as the B-integrator start point).
+    // B-field predictor for the Ohm's law. The ion moments are deposited at
+    // the leapfrog state (x^n, v^{n-1/2}) -- the Boris half-stage
+    // (update_part_loc_to_half_stage) is defined but not currently called.
+    // This predictor advances the magnetic field used inside the Ohm's law by
+    // half a step: B^{n+1/2} = B^n - (dt/2) curl(E_Ohm(U_i, B^n)), then
+    // re-evaluates E_Ohm at B^{n+1/2}. This partially compensates for the
+    // lag in the moments and improves stability, though the scheme is not
+    // fully 2nd-order time-centred until the half-stage deposit is wired in.
     if (useMomentTimeCentering) {
       const Real dt = tc->get_dt();
       assemble_ohm_E(cBin, nBin, nodeE[iLev], iLev);
@@ -2536,20 +2557,6 @@ void Pic::project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
 }
 
 //==========================================================
-void Pic::calc_hybrid_current(int iLev) {
-  // Fill nodeJ[iLev] = nabla x centerB[iLev] (NOT divided by 4*pi; the caller
-  // applies 1/(4*pi)). Uses the staggered curl_center_to_node operator, which
-  // is the dual of curl_node_to_center (the Faraday curl) and -- crucially --
-  // does NOT average out the Nyquist (checkerboard) mode the way a 2*dx central
-  // difference of the node-collocated B does. This makes
-  //   nabla^2 (nabla x B) = nabla x (nabla^2 B)
-  // hold discretely, so a hyper-resistive term built on this J actually damps
-  // grid-scale noise.
-  BL_PROFILE("Pic::calc_hybrid_current");
-  curl_center_to_node(centerB[iLev], nodeJ[iLev], Geom(iLev).InvCellSize());
-}
-
-//==========================================================
 void Pic::update_B_hybrid() {
   std::string nameFunc = "Pic::update_B_hybrid";
   timing_func(nameFunc);
@@ -2571,10 +2578,10 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // Phase 2.4: CFL guard for the explicit diffusive terms. The resistive term
-  // adds a diffusion ~ eta * k^2 and the hyper-resistive term ~ eta_h * k^4 to
-  // the update; if these exceed the explicit stability bound the scheme blows
-  // up. Warn (do not abort) so pathological inputs are caught early.
+  // CFL guard for the explicit diffusive terms. The effective diffusion
+  // coefficients in the B equation are eta/(4*pi) and eta_h/(4*pi) because
+  // J = curl(B)/(4*pi) in CGS code units. The stability bound is
+  // D * k^2 * dt < S (S ~ 2 for Euler, ~2.78 for RK4).
   {
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
       const auto dx = Geom(iLev).CellSizeArray();
@@ -2582,14 +2589,14 @@ void Pic::update_B_hybrid() {
       if (nDim > 2)
         k2 += 4.0 / (dx[2] * dx[2]);
       const Real k4 = k2 * k2;
-      const Real cflEta = etaResistivity * k2 * subDt;
-      const Real cflHyper = etaHyperLev[iLev] * k4 * subDt;
-      if (cflEta > 0.5)
-        amrex::Print() << "  [CFL warning] resistivity: eta*kmax^2*dt_sub = "
-                       << cflEta << " (> 0.5, explicit diffusion may be unstable)\n";
-      if (cflHyper > 1.0)
-        amrex::Print() << "  [CFL warning] hyper-resistivity: eta_h*kmax^4*dt_sub = "
-                       << cflHyper << " (> 1.0, explicit 4th-order diffusion may be unstable)\n";
+      const Real cflEta = (etaResistivity / fourPI) * k2 * subDt;
+      const Real cflHyper = (etaHyperLev[iLev] / fourPI) * k4 * subDt;
+      if (cflEta > 2.0)
+        amrex::Print() << "  [CFL warning] resistivity: eta*kmax^2*dt_sub/(4pi) = "
+                       << cflEta << " (> 2.0, explicit diffusion may be unstable)\n";
+      if (cflHyper > 2.78)
+        amrex::Print() << "  [CFL warning] hyper-resistivity: eta_h*kmax^4*dt_sub/(4pi) = "
+                       << cflHyper << " (> 2.78, explicit 4th-order diffusion may be unstable)\n";
     }
   }
 
@@ -2705,8 +2712,10 @@ void Pic::update_B_hybrid() {
     //     B^{n+1} = B^n - subDt * [(1-thetaB) curl(E^n) + thetaB curl(E*)].
     // The ion moments are frozen at time n (as in the forward-Euler path), so
     // only the B/E coupling is time-centred. With thetaB = 0.5 this is the
-    // Crank-Nicolson / Heun scheme: neutral for oscillatory modes, so it does
-    // not accumulate PIC shot noise the way forward Euler does.
+    // explicit trapezoidal (Heun) scheme. Unlike the implicit Crank-Nicolson,
+    // the explicit trapezoid is weakly unstable on purely oscillatory modes
+    // (|R(iy)|^2 = 1 + y^4/4 > 1), though far less so than forward Euler.
+    // RK4 (the default) is the preferred integrator.
     update_E_hybrid();
 
     std::vector<MultiFab> dBpred(n_lev()), centerBstart(n_lev()),
