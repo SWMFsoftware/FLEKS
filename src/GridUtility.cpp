@@ -512,3 +512,30 @@ void average_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF) {
     });
   }
 }
+
+void lap_center_to_center(const MultiFab& centerMF, MultiFab& centerMFout,
+                          const Real* invDx) {
+  for (MFIter mfi(centerMFout, doTiling); mfi.isValid(); ++mfi) {
+    Box box = mfi.fabbox();
+    box.grow(-1);
+
+    const Array4<Real>& outArr = centerMFout[mfi].array();
+    const Array4<Real const>& inArr = centerMF[mfi].array();
+
+    const Real ix2 = invDx[ix_] * invDx[ix_];
+    const Real iy2 = invDx[iy_] * invDx[iy_];
+
+    ParallelFor(box, centerMF.nComp(), [&](int i, int j, int k, int iVar) {
+      Real lap = ix2 * (inArr(i + 1, j, k, iVar) - 2.0 * inArr(i, j, k, iVar) +
+                        inArr(i - 1, j, k, iVar)) +
+                 iy2 * (inArr(i, j + 1, k, iVar) - 2.0 * inArr(i, j, k, iVar) +
+                        inArr(i, j - 1, k, iVar));
+      if (nDim > 2) {
+        const Real iz2 = invDx[iz_] * invDx[iz_];
+        lap += iz2 * (inArr(i, j, k + 1, iVar) - 2.0 * inArr(i, j, k, iVar) +
+                      inArr(i, j, k - 1, iVar));
+      }
+      outArr(i, j, k, iVar) = lap;
+    });
+  }
+}

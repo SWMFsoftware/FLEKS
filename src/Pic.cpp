@@ -229,6 +229,22 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     // Enable/disable the Hall term (J x B) / rho in the generalized Ohm's law.
     // Default true; set false for a convection-only field advance.
     param.read_var("useHallTerm", useHallTerm);
+  } else if (command == "#HYPERRESISTIVITY") {
+    // Hyper-resistivity eta_h [m^4/s] (SI), plus interpretation mode and the
+    // CFL-scaling coefficient C_h for mode="grid". All three values are always
+    // read so the parameter stream stays in sync; the mode only selects how
+    // eta_h is interpreted (post_process_param for "si", per sub-step for "grid").
+    param.read_var("etaHyperSI", etaHyperSI);
+    param.read_var("etaHyperMode", etaHyperMode);
+    param.read_var("etaHyperCh", etaHyperCh);
+  } else if (command == "#DENSITYFLOOR") {
+    // Minimum charge-density floor for the 1/rho factors in the Hall term and
+    // the electron-pressure-gradient term. <=0 means auto (1e-6*electronDensity0).
+    param.read_var("rhoFloorHybrid", rhoFloorHybrid);
+  } else if (command == "#HYBRIDCURL") {
+    // If true (default), compute J with the compact staggered curl_center_to_node
+    // operator; if false, use the legacy 2*dx central difference of node B.
+    param.read_var("useCompactCurl", useCompactCurl);
   } else if (command == "#SELECTPARTICLE") {
     param.read_var("doSelectParticle", doSelectParticle);
     if (doSelectParticle) {
@@ -278,6 +294,25 @@ void Pic::post_process_param() {
       amrex::Print() << "  etaResistivity: " << etaResistivitySI
                      << " [m^2/s] -> " << etaResistivity << " [code units]\n";
     }
+    // Hyper-resistivity (si mode): same conversion as resistivity, but the
+    // physical dimension is m^4/s so the length factor is Si2NoL^3.
+    if (etaHyperSI > 0 && etaHyperMode == "si") {
+      for (int iLev = 0; iLev < n_lev(); iLev++)
+        etaHyperLev[iLev] =
+            fourPI * etaHyperSI * fi->get_Si2NoV() * pow(fi->get_Si2NoL(), 3);
+      amrex::Print() << "  etaHyper: " << etaHyperSI
+                     << " [m^4/s, si] -> " << etaHyperLev[0] << " [code units]\n";
+    }
+    // Auto density floor: 1e-6 * reference charge density. electronDensity0 is
+    // in code units (#HYBRIDRHO), so scale it.
+    if (rhoFloorHybrid <= 0)
+      rhoFloorHybrid = 1.0e-6 * electronDensity0;
+
+    // The compact staggered current is mandatory when the hyper-resistive term
+    // is active: the legacy collocated current annihilates the Nyquist mode, so
+    // the hyper term would be blind to exactly the grid-scale noise it targets.
+    if (etaHyperSI > 0 || (etaHyperMode == "grid" && etaHyperCh > 0))
+      useCompactCurl = true;
     if (electronTemperatureEV > 0) {
       // Te_code = Te_eV * e / (mp * uNorm_SI^2)
       // (same relation as in ExoSource.h::electron_temperature, inverted)
@@ -394,6 +429,18 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                         nGst, doMoveData);
     distribute_FabArray(hypPhi[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst, doMoveData);
+
+    if (useHybridPIC) {
+      // Hyper-resistivity scratch fields. nodeJ is also used by the compact
+      // current (Phase 1). centerLapB is cell-centred (Laplacian of centerB);
+      // nodeJ/nodeHyperE are node-centred.
+      distribute_FabArray(nodeJ[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                          nGst);
+      distribute_FabArray(centerLapB[iLev], cGrids[iLev], DistributionMap(iLev),
+                          3, nGst, doMoveData);
+      distribute_FabArray(nodeHyperE[iLev], nGrids[iLev], DistributionMap(iLev),
+                          3, nGst, doMoveData);
+    }
     distribute_FabArray(dBdt[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst, doMoveData);
 
@@ -2118,7 +2165,19 @@ void Pic::update_E_hybrid() {
     const auto dx = Geom(iLev).CellSizeArray();
     const Real dxInv = 1.0 / (2.0 * dx[0]);
     const Real dyInv = 1.0 / (2.0 * dx[1]);
-    const Real dzInv = 1.0 / (2.0 * dx[2]);
+    // 2D safety: AMReX keeps a (dummy) z extent, so guard the z inverse and all
+    // z-derivatives below with nDim > 2.
+    const Real dzInv = (nDim > 2) ? 1.0 / (2.0 * dx[2]) : 0.0;
+
+    // Phase 1: consistent compact current J = nabla x centerB / (4*pi),
+    // computed once per level from the cell-centred B with the staggered
+    // curl_center_to_node operator. It does NOT annihilate the Nyquist mode the
+    // way a 2*dx difference of the node-collocated B does, so a hyper-resistive
+    // term built on it actually damps grid-scale noise.
+    const bool needJ = useCompactCurl &&
+                       (etaResistivity > 0 || useHallTerm || etaHyperLev[iLev] > 0);
+    if (needJ)
+      calc_hybrid_current(iLev);
 
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
@@ -2127,6 +2186,8 @@ void Pic::update_E_hybrid() {
       const Array4<Real const>& arrB = nodeB[iLev][mfi].array();
       const Array4<Real const>& moments =
           nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<Real const> arrJ =
+          needJ ? nodeJ[iLev][mfi].array() : Array4<Real const>();
 
       ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         Real rho = moments(i, j, k, iRho_);
@@ -2147,22 +2208,33 @@ void Pic::update_E_hybrid() {
         Real ey = -(wi * bx - ui * bz);
         Real ez = -(ui * by - vi * bx);
 
-        // 2. Resistivity and Hall / Pressure terms (if enabled)
-        // J = curl(B) / (4*pi) in CGS code units (see ROADMAP_HYBRID_PIC.md
-        // §8).
+        // 2. Resistivity and Hall / Pressure terms (if enabled).
+        // J = curl(B) / (4*pi) in CGS code units.
         Real jx = 0.0, jy = 0.0, jz = 0.0;
+        if (needJ) {
+          // Compact staggered current from centerB (Phase 1).
+          jx = arrJ(i, j, k, ix_) / fourPI;
+          jy = arrJ(i, j, k, iy_) / fourPI;
+          jz = arrJ(i, j, k, iz_) / fourPI;
+        } else if (!useCompactCurl && (etaResistivity > 0 || useHallTerm)) {
+          // Legacy 2*dx central difference of the node-collocated B. FIXED:
+          // dBx_dy now uses dyInv (was dxInv). z-derivatives guarded for 2D.
+          Real dBz_dy = (arrB(i, j + 1, k, iz_) - arrB(i, j - 1, k, iz_)) * dyInv;
+          Real dBy_dz = (nDim > 2)
+                            ? (arrB(i, j, k + 1, iy_) - arrB(i, j, k - 1, iy_)) * dzInv
+                            : 0.0;
+          jx = (dBz_dy - dBy_dz) / fourPI;
 
-        Real dBz_dy = (arrB(i, j + 1, k, iz_) - arrB(i, j - 1, k, iz_)) * dyInv;
-        Real dBy_dz = (arrB(i, j, k + 1, iy_) - arrB(i, j, k - 1, iy_)) * dzInv;
-        jx = (dBz_dy - dBy_dz) / fourPI;
+          Real dBx_dz = (nDim > 2)
+                            ? (arrB(i, j, k + 1, ix_) - arrB(i, j, k - 1, ix_)) * dzInv
+                            : 0.0;
+          Real dBz_dx = (arrB(i + 1, j, k, iz_) - arrB(i - 1, j, k, iz_)) * dxInv;
+          jy = (dBx_dz - dBz_dx) / fourPI;
 
-        Real dBx_dz = (arrB(i, j, k + 1, ix_) - arrB(i, j, k - 1, ix_)) * dzInv;
-        Real dBz_dx = (arrB(i + 1, j, k, iz_) - arrB(i - 1, j, k, iz_)) * dxInv;
-        jy = (dBx_dz - dBz_dx) / fourPI;
-
-        Real dBy_dx = (arrB(i + 1, j, k, iy_) - arrB(i - 1, j, k, iy_)) * dxInv;
-        Real dBx_dy = (arrB(i, j + 1, k, ix_) - arrB(i, j - 1, k, ix_)) * dxInv;
-        jz = (dBy_dx - dBx_dy) / fourPI;
+          Real dBy_dx = (arrB(i + 1, j, k, iy_) - arrB(i - 1, j, k, iy_)) * dxInv;
+          Real dBx_dy = (arrB(i, j + 1, k, ix_) - arrB(i, j - 1, k, ix_)) * dyInv;
+          jz = (dBy_dx - dBx_dy) / fourPI;
+        }
 
         // Add eta * J term
         if (etaResistivity > 0) {
@@ -2171,9 +2243,13 @@ void Pic::update_E_hybrid() {
           ez += etaResistivity * jz;
         }
 
-        // Add Electron pressure gradient and Hall term
+        // Add Electron pressure gradient and Hall term.
+        // Phase 0.3: density floor caps 1/rho so a tiny but positive charge
+        // density does not blow up these terms; the pressure closure still uses
+        // the TRUE rho. Cells with rho == 0 are left inert (as before) to avoid
+        // injecting a spurious force into empty regions.
         if (rho > 0) {
-          const Real invRhoEff = 1.0 / rho;
+          const Real invRhoEff = 1.0 / amrex::max(rho, rhoFloorHybrid);
 
           // Electron pressure gradient term
           Real dPe_dx = 0.0, dPe_dy = 0.0, dPe_dz = 0.0;
@@ -2188,10 +2264,12 @@ void Pic::update_E_hybrid() {
                   electronTemperature *
                   (moments(i, j + 1, k, iRho_) - moments(i, j - 1, k, iRho_)) *
                   dyInv;
-              dPe_dz =
-                  electronTemperature *
-                  (moments(i, j, k + 1, iRho_) - moments(i, j, k - 1, iRho_)) *
-                  dzInv;
+              dPe_dz = (nDim > 2)
+                           ? electronTemperature *
+                                 (moments(i, j, k + 1, iRho_) -
+                                  moments(i, j, k - 1, iRho_)) *
+                                 dzInv
+                           : 0.0;
             } else {
               // Adiabatic: Pe = P0 * (rho / rho0)^gamma
               Real p0 = electronDensity0 * electronTemperature;
@@ -2208,9 +2286,11 @@ void Pic::update_E_hybrid() {
               dPe_dy = (calc_Pe(moments(i, j + 1, k, iRho_)) -
                         calc_Pe(moments(i, j - 1, k, iRho_))) *
                        dyInv;
-              dPe_dz = (calc_Pe(moments(i, j, k + 1, iRho_)) -
-                        calc_Pe(moments(i, j, k - 1, iRho_))) *
-                       dzInv;
+              dPe_dz = (nDim > 2)
+                           ? (calc_Pe(moments(i, j, k + 1, iRho_)) -
+                              calc_Pe(moments(i, j, k - 1, iRho_))) *
+                                 dzInv
+                           : 0.0;
             }
 
             ex -= dPe_dx * invRhoEff;
@@ -2248,6 +2328,30 @@ void Pic::update_E_hybrid() {
 
     apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
     apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, &Pic::get_node_E, iLev);
+
+    // Phase 2: hyper-resistivity.
+    //   E -= eta_h * nabla^2 J = -(eta_h / 4*pi) * nabla x (nabla^2 B).
+    // Stage A: centerLapB = nabla^2(centerB) (cell-centred Laplacian).
+    // Stage B: nodeHyperE = nabla x (centerLapB) (staggered curl). The two-stage
+    // composition makes nabla^2(nabla x B) = nabla x (nabla^2 B) hold
+    // discretely, so the term damps the same mode it is meant to.
+    if (etaHyperLev[iLev] > 0) {
+      lap_center_to_center(centerB[iLev], centerLapB[iLev],
+                           Geom(iLev).InvCellSize());
+      centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
+      apply_BC(cellStatus[iLev], centerLapB[iLev], 0, centerLapB[iLev].nComp(),
+               &Pic::get_center_B, iLev, &bcBField);
+
+      curl_center_to_node(centerLapB[iLev], nodeHyperE[iLev],
+                          Geom(iLev).InvCellSize());
+      nodeHyperE[iLev].FillBoundary(Geom(iLev).periodicity());
+      apply_BC(nodeStatus[iLev], nodeHyperE[iLev], 0, nodeHyperE[iLev].nComp(),
+               &Pic::get_node_E, iLev, &bcBField);
+
+      const Real f = etaHyperLev[iLev] / fourPI;
+      MultiFab::Saxpy(nodeE[iLev], -f, nodeHyperE[iLev], 0, 0, 3, 0);
+      MultiFab::Saxpy(nodeEth[iLev], -f, nodeHyperE[iLev], 0, 0, 3, 0);
+    }
   }
 }
 
@@ -2299,12 +2403,62 @@ void Pic::project_centerB_to_nodeB(int iLev) {
 }
 
 //==========================================================
+void Pic::calc_hybrid_current(int iLev) {
+  // Fill nodeJ[iLev] = nabla x centerB[iLev] (NOT divided by 4*pi; the caller
+  // applies 1/(4*pi)). Uses the staggered curl_center_to_node operator, which
+  // is the dual of curl_node_to_center (the Faraday curl) and -- crucially --
+  // does NOT average out the Nyquist (checkerboard) mode the way a 2*dx central
+  // difference of the node-collocated B does. This makes
+  //   nabla^2 (nabla x B) = nabla x (nabla^2 B)
+  // hold discretely, so a hyper-resistive term built on this J actually damps
+  // grid-scale noise.
+  BL_PROFILE("Pic::calc_hybrid_current");
+  curl_center_to_node(centerB[iLev], nodeJ[iLev], Geom(iLev).InvCellSize());
+}
+
+//==========================================================
 void Pic::update_B_hybrid() {
   std::string nameFunc = "Pic::update_B_hybrid";
   timing_func(nameFunc);
 
   Real dt = tc->get_dt();
   Real subDt = dt / nHallSubcycle;
+
+  // Phase 2 (grid mode): fill the per-level applied hyper-resistivity from the
+  // CFL-scaled definition eta_h = 4*pi * C_h * dx_min^4 / dt_sub. (For "si" mode
+  // etaHyperLev was already set in post_process_param.) Recomputed each call
+  // because dt_sub can vary between time steps.
+  if (etaHyperMode == "grid" && etaHyperCh > 0) {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      const auto dx = Geom(iLev).CellSizeArray();
+      Real dxMin = amrex::min(dx[0], dx[1]);
+      if (nDim > 2)
+        dxMin = amrex::min(dxMin, dx[2]);
+      etaHyperLev[iLev] = fourPI * etaHyperCh * std::pow(dxMin, 4) / subDt;
+    }
+  }
+
+  // Phase 2.4: CFL guard for the explicit diffusive terms. The resistive term
+  // adds a diffusion ~ eta * k^2 and the hyper-resistive term ~ eta_h * k^4 to
+  // the update; if these exceed the explicit stability bound the scheme blows
+  // up. Warn (do not abort) so pathological inputs are caught early.
+  {
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      const auto dx = Geom(iLev).CellSizeArray();
+      Real k2 = 4.0 / (dx[0] * dx[0]) + 4.0 / (dx[1] * dx[1]);
+      if (nDim > 2)
+        k2 += 4.0 / (dx[2] * dx[2]);
+      const Real k4 = k2 * k2;
+      const Real cflEta = etaResistivity * k2 * subDt;
+      const Real cflHyper = etaHyperLev[iLev] * k4 * subDt;
+      if (cflEta > 0.5)
+        amrex::Print() << "  [CFL warning] resistivity: eta*kmax^2*dt_sub = "
+                       << cflEta << " (> 0.5, explicit diffusion may be unstable)\n";
+      if (cflHyper > 1.0)
+        amrex::Print() << "  [CFL warning] hyper-resistivity: eta_h*kmax^4*dt_sub = "
+                       << cflHyper << " (> 1.0, explicit 4th-order diffusion may be unstable)\n";
+    }
+  }
 
   // Save the pre-update nodeB so dBdt can be computed as (B^{n+1} - B^n)/dt
   // after the sub-cycle loop.  (Mirrors the master update_B, which copies

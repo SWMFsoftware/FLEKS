@@ -72,6 +72,41 @@ private:
   // electron-pressure gradient that is independently enabled).
   bool useHallTerm = true;
 
+  // Hyper-resistivity (fourth-order) term in the Ohm's law:
+  //   E -= eta_h * nabla^2 J = -(eta_h/4*pi) * nabla x (nabla^2 B).
+  // etaHyperSI is the SI hyper-diffusion [m^4/s]. etaHyperMode selects how it
+  // is interpreted:
+  //   "si"   -> direct physical value, converted to code units internally
+  //             (etaCode = 4*pi*etaSI*Si2NoV*Si2NoL^3); same semantics as #RESISTIVITY.
+  //   "grid" -> CFL-scaled: eta_h = C_h * dx^4 / dt_sub (stability-scaled,
+  //             dimless C_h in [~1e-3,~1e-2]); recomputed each sub-step because
+  //             dt_sub varies.
+  // etaHyperLev[iLev] (code units, 0 disables) is the value actually applied;
+  // it is filled each step (post_process sets the "si" value, update_B_hybrid
+  // fills the per-level "grid" value).
+  amrex::Real etaHyperSI = 0.0;
+  std::string etaHyperMode = "si";
+  amrex::Real etaHyperCh = 0.01;
+  amrex::Vector<amrex::Real> etaHyperLev;
+
+  // Minimum charge density floor for the 1/rho factors in the Hall term and
+  // the electron-pressure-gradient term. <= 0 means auto: 1e-6 * electronDensity0.
+  amrex::Real rhoFloorHybrid = 0.0;
+
+  // If true, J in the Ohm's law is computed with the compact staggered
+  // curl_center_to_node(centerB) operator -- the discrete current that does NOT
+  // annihilate the Nyquist (checkerboard) mode. If false (default), the legacy
+  // 2*dx central difference of the node-collocated B is used.
+  //
+  // NOTE: the compact current exposes the full grid-scale spectrum. Explicit
+  // Hall MHD is unstable at the grid scale, and the legacy collocated current
+  // only happened to be stable because it low-pass-filtered that mode. The
+  // compact current is therefore REQUIRED together with the hyper-resistive term
+  // (which damps exactly that mode); when #HYPERRESISTIVITY is active this flag
+  // is forced true in post_process_param. Used on its own (no hyper-resistivity)
+  // the compact current can blow up, so it defaults to false for stability.
+  bool useCompactCurl = false;
+
   bool useExplicitPIC = false;
   bool projectDownEmFields = true;
   bool skipMassMatrix = false;
@@ -92,6 +127,10 @@ private:
   amrex::Vector<amrex::MultiFab> nodeB;
   amrex::Vector<amrex::MultiFab> divB;
   amrex::Vector<amrex::MultiFab> centerB;
+  // Hyper-resistivity scratch fields (allocated when useHybridPIC).
+  amrex::Vector<amrex::MultiFab> nodeJ;        // J = curl(B)/(4*pi) at nodes (compact)
+  amrex::Vector<amrex::MultiFab> centerLapB;   // nabla^2 B  (hyper stage A)
+  amrex::Vector<amrex::MultiFab> nodeHyperE;   // nabla x (nabla^2 B) (hyper stage B)
   amrex::Vector<amrex::MultiFab> dBdt;
   amrex::Vector<amrex::MultiFab> particleQuality;
 
@@ -234,6 +273,10 @@ public:
     nodeEth.resize(n_lev_max());
     divB.resize(n_lev_max());
     hypPhi.resize(n_lev_max());
+    nodeJ.resize(n_lev_max());
+    centerLapB.resize(n_lev_max());
+    nodeHyperE.resize(n_lev_max());
+    etaHyperLev.resize(n_lev_max(), 0.0);
     targetPPC.resize(n_lev_max());
     if (reportParticleQuality) {
       particleQuality.resize(n_lev_max());
@@ -382,6 +425,10 @@ public:
   //                                        - grad(Pe)/rho_q
   // where J = curl(B)/(4*pi) in CGS code units (see ROADMAP_HYBRID_PIC.md §8).
   void update_E_hybrid();
+  // Fill nodeJ[iLev] = nabla x centerB[iLev] (UN-normalized; the 1/(4*pi)
+  // factor is applied where J is read). Uses the staggered curl_center_to_node
+  // operator so the discrete current does not annihilate the Nyquist mode.
+  void calc_hybrid_current(int iLev);
   // Digital-filter smoothing of the total ion moments (nodePlasma[nSpecies])
   // prior to the Ohm's law, to suppress PIC shot noise. No-op unless
   // doSmoothMoments is set.

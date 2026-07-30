@@ -950,6 +950,8 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#HYBRIDPIC" || command == "#RESISTIVITY" ||
         command == "#ELECTRONTEMPERATURE" || command == "#HALLSUBCYCLE" ||
         command == "#HALLTERM" ||
+        command == "#HYPERRESISTIVITY" || command == "#DENSITYFLOOR" ||
+        command == "#HYBRIDCURL" ||
         command == "#SMOOTHMOMENTS" ||
         command == "#CENTEREDB" ||
         command == "#MEMORY") {

@@ -39,6 +39,13 @@ void div_node_to_center(const amrex::MultiFab& nodeMF,
 void div_center_to_center(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
                           const amrex::Real* invDx);
 
+// Cell-centered 7-point (5-point in 2D) Laplacian on a cell-centered field.
+// Used by the hyper-resistive term: centerLapB = lap(centerB), after which
+// curl_center_to_node(centerLapB) gives nabla x (nabla^2 B) consistently with
+// the discrete curl (so nabla^2 (nabla x B) = nabla x (nabla^2 B) holds).
+void lap_center_to_center(const amrex::MultiFab& centerMF,
+                          amrex::MultiFab& centerMFout, const amrex::Real* invDx);
+
 void average_center_to_node(const amrex::MultiFab& centerMF,
                             amrex::MultiFab& nodeMF);
 

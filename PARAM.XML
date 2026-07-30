@@ -366,8 +366,73 @@ Enable (default) or disable the Hall term (J x B) / rho in the generalized Ohm's
 law used by the hybrid (HYBRIDPIC) field solver. Set to F to advance the field
 with the convection term only (E = -U_i x B, plus any resistivity / electron
 pressure gradient that is independently enabled). With the Hall term off the
-explicit Hall-whistler CFL no longer applies, so #HALLSUBCYCLE 1 (no sub-cycling)
+explicit Hall-whistler CFL no longer applies, so HALLSUBCYCLE 1 (no sub-cycling)
 is sufficient.
+</command>
+
+<command name="HYPERRESISTIVITY"
+   alias="HYPERRESISTIVITY_FLEKS0,HYPERRESISTIVITY_FLEKS1,HYPERRESISTIVITY_FLEKS2"
+   multiple="T">
+  <parameter name="etaHyperSI" type="real" default="0.0"/>
+  <parameter name="etaHyperMode" type="string" default="si"/>
+  <parameter name="etaHyperCh" type="real" default="0.01"/>
+
+#HYPERRESISTIVITY
+0.0               etaHyperSI
+si                etaHyperMode
+0.01              etaHyperCh
+
+Fourth-order hyper-resistivity eta_h * nabla^2 J in the generalized Ohm's law
+(equivalently -(eta_h/4*pi) * nabla x (nabla^2 B)). It damps grid-scale / PIC
+shot-noise that the second-order resistivity cannot reach. etaHyperSI is the SI
+value [m^4/s] (used when etaHyperMode = "si"; converted to code units as
+etaCode = 4*pi*etaSI*Si2NoV*Si2NoL^3). When etaHyperMode = "grid", eta_h is
+instead scaled to the CFL stability bound on each sub-step:
+   eta_h = 4*pi * C_h * dx_min^4 / dt_sub,
+where C_h is the dimensionless etaHyperCh (typical 1e-3 .. 1e-2). "grid" mode is
+robust to resolution and time-step changes and is the recommended setting for
+general production runs. 0 (either mode) disables the term. Only used when
+HYBRIDPIC is T.
+</command>
+
+<command name="DENSITYFLOOR"
+   alias="DENSITYFLOOR_FLEKS0,DENSITYFLOOR_FLEKS1,DENSITYFLOOR_FLEKS2"
+   multiple="T">
+  <parameter name="rhoFloorHybrid" type="real" default="0.0"/>
+
+#DENSITYFLOOR
+0.0               rhoFloorHybrid
+
+Minimum charge density for the 1/rho factors in the Hall term and the electron
+pressure gradient term of the hybrid Ohm's law. It caps 1/rho so that cells with
+tiny or zero charge density do not produce unbounded contributions. The electron
+pressure closure itself always uses the true density. A value <= 0 (default) means
+automatic: rhoFloor = 1e-6 * #ELECTRONTEMPERATURE electronDensity0. Only used when
+#HYBRIDPIC is T.
+</command>
+
+<command name="HYBRIDCURL"
+   alias="HYBRIDCURL_FLEKS0,HYBRIDCURL_FLEKS1,HYBRIDCURL_FLEKS2"
+   multiple="T">
+  <parameter name="useCompactCurl" type="logical" default="F"/>
+
+#HYBRIDCURL
+F                 useCompactCurl
+
+When true, the current J in the hybrid Ohm's law is computed with the compact
+staggered operator curl_center_to_node(centerB), which does NOT annihilate the
+Nyquist (checkerboard) mode the way the legacy 2*dx central difference of the
+node-collocated B does. This is important for the hyper-resistive term, which is
+otherwise blind to exactly the grid-scale noise it targets. Set to F (default) to
+use the legacy collocated curl, which is more stable on its own because it
+low-pass-filters the grid scale.
+
+IMPORTANT: explicit Hall MHD is unstable at the grid scale, and the legacy current
+is only stable by accident (its filtering hides that mode). The compact current is
+therefore REQUIRED together with #HYPERRESISTIVITY, which damps the grid scale;
+when #HYPERRESISTIVITY is active this flag is forced true automatically. Used on
+its own (hyper-resistivity OFF) the compact current can blow up, so the default is
+F. Only used when #HYBRIDPIC is T.
 </command>
 
 <command name="PARTMODE"
