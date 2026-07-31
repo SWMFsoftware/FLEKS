@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include <math.h>
 #include <vector>
 
@@ -133,6 +134,14 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (useUpwindB) {
       useHyperbolicCleaning = true;
     }
+    // Optional: only tests that need a constant upwind-B velocity (e.g. the
+    // old TopHat behaviour used 1.0) set it; default 0 keeps the normal
+    // plasma-background-velocity reconstruction.
+    param.read_optional("fixedUpwindVel", fixedUpwindVel);
+  } else if (command == "#FIXEDUMAX") {
+    // Optional: only tests that need a fixed CFL signal speed set it; default
+    // -1 keeps the particle-thermal-velocity estimate.
+    param.read_optional("fixedUMax", fixedUMax);
   } else if (command == "#DIVB") {
     param.read_var("useHyperbolicCleaning", useHyperbolicCleaning);
     if (useHyperbolicCleaning) {
@@ -190,36 +199,26 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#MAXCHARGEEXCHANGERATE") {
     param.read_var("maxChargeExchangeRate", maxExchangeRatioLimit);
   } else if (command == "#TESTCASE") {
+    // The kernel knows no test-case names: the name is resolved by the
+    // InitialCondition registry (case-insensitive), and the plug-in reads its
+    // own sub-parameters. An unknown name aborts loudly with the registered
+    // list -- previously a PARAM.in with "HybridWave" silently did nothing
+    // because the kernel compared against "hybridwave" (tests/iaw-setup.md).
     std::string testcase;
     param.read_var("testCase", testcase);
-    if (testcase == "Beam") {
-      testCase = Beam;
-      param.read_var("iSpecies", beam.iSpecies);
-      param.read_var("ratio", beam.ratio);
-      for (int iDim = 0; iDim < nDim3; iDim++) {
-        param.read_var("vel", beam.vel[iDim]);
+
+    ic_ = ICRegistry::instance().create(testcase);
+    if (!ic_) {
+      std::string known;
+      for (const auto& n : ICRegistry::instance().names()) {
+        if (!known.empty())
+          known += ", ";
+        known += n;
       }
-    } else if (testcase == "tophat") {
-      testCase = TopHat;
-      pInfo.nPartPerCell = IntVect::Zero;
-    } else if (testcase == "lightwave") {
-      testCase = LightWave;
-      pInfo.nPartPerCell = IntVect::Zero;
-    } else if (testcase == "HybridWave") {
-      testCase = HybridWave;
-      // Hybrid solver needs kinetic ions; let #PARTICLES set nPartPerCell.
-    } else if (testcase == "ConvectionWave") {
-      testCase = ConvectionWave;
-      // Convection-term test: seed a transverse wave, advected by a bulk flow.
-    } else if (testcase == "IonAcousticWave") {
-      testCase = IonAcousticWave;
-      // Ion-acoustic-wave test: seed a sinusoidal ion density perturbation
-      // n(x) = n0*(1 + pert*sin(kx*x)) with Maxwellian (zero-bulk) velocities
-      // and E = B = 0. The restoring force is the electron pressure gradient
-      // (electronTemperature > 0).
-      param.read_var("pert", iaw.pert);
-      param.read_var("waveMode", iaw.waveMode);
+      amrex::Abort("Unknown #TESTCASE name '" + testcase +
+                   "'. Registered names: " + known + ".");
     }
+    ic_->read_param(param);
   } else if (command == "#HYBRIDPIC") {
     param.read_var("useHybridPIC", useHybridPIC);
   } else if (command == "#RESISTIVITY") {
@@ -406,22 +405,20 @@ void Pic::fill_new_cells() {
     fill_E_B_fields();
   }
 
-  if (testCase == LightWave) {
-    fill_lightwaves(48.0);
-  }
-
-  if (testCase == HybridWave) {
-    fill_hybrid_wave();
-  }
-
-  if (testCase == ConvectionWave) {
-    fill_convection_wave();
+  // Phase 1+: every registered InitialCondition plug-in seeds its fields
+  // through the narrow PicICFields facade (LightWave, HybridWave, ConvectionWave,
+  // ...). The hybrid-wave velocity kick and all per-particle modifications are
+  // applied inside fill_particles() via the plugin.
+  if (ic_) {
+    PicICFields icf = ic_fields();
+    ic_->set_fields(icf);
   }
 
   if (usePIC) {
+    // Macroparticle seeding (and any per-particle modifications such as the
+    // beam bulk override or the hybrid-wave Alfven velocity kick) is routed
+    // through the InitialCondition plugin during fill_particles().
     fill_particles();
-    if (testCase == HybridWave)
-      perturb_hybrid_wave_velocities();
     sum_moments(true);
     if (finest_level == 0) {
       sum_to_center(false);
@@ -585,16 +582,21 @@ void Pic::post_regrid() {
 
   //--------------particles-----------------------------------
   if (parts.empty()) {
+    // Let the plugin apply any particle-count override (e.g. LightWave /
+    // TopHat force zero macroparticles) after #PARTICLES has been fully parsed
+    // so it always wins.
+    if (ic_) ic_->apply_particle_override(pInfo);
+
     for (int i = 0; i < nSpecies; ++i) {
       auto ptr = std::make_unique<PicParticles>(
           this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
-          pInfo, pMode, testCase, beam, iaw);
+          pInfo, pMode, ic_.get());
 
       parts.push_back(std::move(ptr));
 
       auto ptrSource = std::make_unique<PicParticles>(
           this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
-          pInfo, pMode, testCase, beam, iaw);
+          pInfo, pMode, ic_.get());
 
       sourceParts.push_back(std::move(ptrSource));
     }
@@ -622,7 +624,7 @@ void Pic::post_regrid() {
 void Pic::fill_new_node_E() {
   {
     Real xL = 0, xR = 0;
-    if (testCase == TopHat) {
+    if (ic_ && ic_->is_tophat()) {
       xL = 0.75 * Geom(0).ProbLo()[ix_] + 0.25 * Geom(0).ProbHi()[ix_];
       xR = 0.75 * Geom(0).ProbHi()[ix_] + 0.25 * Geom(0).ProbLo()[ix_];
     }
@@ -637,7 +639,7 @@ void Pic::fill_new_node_E() {
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_new(status(ijk))) {
-          if (testCase == TopHat) {
+          if (ic_ && ic_->is_tophat()) {
             const Real x =
                 Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
             if (x > xL && x < xR) {
@@ -666,7 +668,7 @@ void Pic::fill_new_node_E() {
 void Pic::fill_new_node_B() {
   {
     Real xL = 0, xR = 0;
-    if (testCase == TopHat) {
+    if (ic_ && ic_->is_tophat()) {
       xL = 0.75 * Geom(0).ProbLo()[ix_] + 0.25 * Geom(0).ProbHi()[ix_];
       xR = 0.75 * Geom(0).ProbHi()[ix_] + 0.25 * Geom(0).ProbLo()[ix_];
     }
@@ -680,7 +682,7 @@ void Pic::fill_new_node_B() {
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_new(status(ijk))) {
-          if (testCase == TopHat) {
+          if (ic_ && ic_->is_tophat()) {
             const Real x =
                 Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
             if (x > xL && x < xR) {
@@ -1132,10 +1134,13 @@ void Pic::sum_moments(bool updateDt) {
           if (uMaxSpecies > uMax[iLev]) {
             uMax[iLev] = uMaxSpecies;
           }
+        }
 
-          if (testCase == TopHat || testCase == LightWave) {
-            uMax[iLev] = 1.0;
-          }
+        // Generic override of the CFL signal speed (e.g. the old TopHat
+        // option used a fixed value of 1.0). A negative fixedUMax keeps the
+        // particle-thermal-velocity estimate.
+        if (fixedUMax >= 0) {
+          uMax[iLev] = fixedUMax;
         }
 
         dtMax[iLev] = dxMin[iLev] / uMax[iLev];
@@ -2891,9 +2896,12 @@ void Pic::correct_B(int iLev) {
       // component
       auto get_face = [&](int iDir, int i, int j, int k, int iVar,
                           Array4<Real const> const& arr, Real& l, Real& r) {
-        if (testCase == TopHat) {
-          l = 1;
-          r = 1;
+        // Generic fixed-upwind-velocity override (e.g. the old TopHat
+        // "bypass_limiter" used a constant speed of 1.0). Zero keeps the
+        // normal plasma-background-velocity reconstruction below.
+        if (fixedUpwindVel > 0) {
+          l = fixedUpwindVel;
+          r = fixedUpwindVel;
           return;
         }
 
@@ -3588,196 +3596,6 @@ void Pic::charge_exchange() {
 #endif
 
     source->convert_moment_to_velocity(true, false);
-  }
-}
-
-void Pic::fill_lightwaves(amrex::Real wavelength, int EorB, amrex::Real time,
-                          int lev) {
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    nodeE[iLev].setVal(0.0);
-    nodeB[iLev].setVal(0.0);
-    centerB[iLev].setVal(0.0);
-    if (lev != -1 && iLev != lev)
-      continue;
-    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = nodeE[iLev][mfi];
-      FArrayBox& fab2 = nodeB[iLev][mfi];
-
-      const Box& box = mfi.fabbox();
-      const Array4<Real>& arrE = fab.array();
-      const Array4<Real>& arrB = fab2.array();
-      const auto& prob_lo = geom[iLev].ProbLo();
-      const auto& dx = geom[iLev].CellSize();
-      ParallelFor(box, [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (EorB == -1 || EorB == 0) {
-          arrE(ijk, ix_) =
-              -0.8 * sin((2.0 * (dPI) *
-                          ((prob_lo[0] + dx[0] * i) * 0.6 +
-                           (prob_lo[1] + dx[1] * j) * 0.8 - time)) /
-                         wavelength);
-          arrE(ijk, iy_) = 0.6 * sin((2.0 * (dPI) *
-                                      ((prob_lo[0] + dx[0] * i) * 0.6 +
-                                       (prob_lo[1] + dx[1] * j) * 0.8 - time)) /
-                                     wavelength);
-          arrE(ijk, iz_) = -cos((2.0 * (dPI) *
-                                 ((prob_lo[0] + dx[0] * i) * 0.6 +
-                                  (prob_lo[1] + dx[1] * j) * 0.8 - time)) /
-                                wavelength);
-        }
-        if (EorB == -1 || EorB == 1) {
-          arrB(ijk, ix_) =
-              -0.8 * cos((2.0 * (dPI) *
-                          ((prob_lo[0] + dx[0] * i) * 0.6 +
-                           (prob_lo[1] + dx[1] * j) * 0.8 - time)) /
-                         wavelength);
-          arrB(ijk, iy_) = 0.6 * cos((2.0 * (dPI) *
-                                      ((prob_lo[0] + dx[0] * i) * 0.6 +
-                                       (prob_lo[1] + dx[1] * j) * 0.8 - time)) /
-                                     wavelength);
-          arrB(ijk, iz_) = sin((2.0 * (dPI) *
-                                ((prob_lo[0] + dx[0] * i) * 0.6 +
-                                 (prob_lo[1] + dx[1] * j) * 0.8 - time)) /
-                               wavelength);
-        }
-      });
-    }
-
-    nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
-    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
-  }
-
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
-
-      FArrayBox& fab = centerB[iLev][mfi];
-
-      const Box& box = mfi.fabbox();
-      const Array4<Real>& arrcB = fab.array();
-      const auto& prob_lo = geom[iLev].ProbLo();
-      const auto& dx = geom[iLev].CellSize();
-      ParallelFor(box, [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (EorB == -1 || EorB == 1) {
-          arrcB(ijk, ix_) =
-              -0.8 * cos((2.0 * (dPI) *
-                          (((prob_lo[0] + dx[0] * (i + 0.5)) * 0.6 +
-                            (prob_lo[1] + dx[1] * (j + 0.5)) * 0.8 - time))) /
-                         wavelength);
-          arrcB(ijk, iy_) =
-              0.6 * cos((2.0 * (dPI) *
-                         (((prob_lo[0] + dx[0] * (i + 0.5)) * 0.6 +
-                           (prob_lo[1] + dx[1] * (j + 0.5)) * 0.8 - time))) /
-                        wavelength);
-          arrcB(ijk, iz_) =
-              sin((2.0 * (dPI) *
-                   (((prob_lo[0] + dx[0] * (i + 0.5)) * 0.6 +
-                     (prob_lo[1] + dx[1] * (j + 0.5)) * 0.8 - time))) /
-                  wavelength);
-        }
-      });
-    }
-
-    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-  }
-}
-
-//==========================================================
-void Pic::fill_hybrid_wave(Real frac) {
-  std::string nameFunc = "Pic::fill_hybrid_wave";
-
-  // Perturbation amplitude as a fraction of the uniform guide field Bx0.
-  // Kept small (linear regime) so the wave is a clean normal mode and the
-  // ion kinetic-energy exchange with the field stays modest; the decisive
-  // whistler-dispersion test (Section 4 of the README) uses time-resolved
-  // B output and is done manually.
-  const Real waveFrac = frac;
-
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    // Guide field Bx0 already deposited by fill_E_B_fields() from
-    // #UNIFORMSTATE.
-    Real Bx0 = 1.0;
-    {
-      MFIter mfi(nodeB[iLev]);
-      if (mfi.isValid()) {
-        const Array4<Real const>& a = nodeB[iLev][mfi].array();
-        const Box& b = mfi.validbox();
-        Bx0 = a(b.smallEnd(), ix_);
-      }
-    }
-
-    const Real B1 = waveFrac * Bx0;
-    const auto& prob_lo = geom[iLev].ProbLo();
-    const auto& dx = geom[iLev].CellSize();
-    const Real Lx = (geom[iLev].ProbHi())[0] - prob_lo[0];
-    const Real kx = (Lx > 0) ? 2.0 * (dPI) / Lx : 0.0;
-
-    nodeB[iLev].setVal(0.0);
-    centerB[iLev].setVal(0.0);
-
-    for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = nodeB[iLev][mfi];
-      const Box& box = mfi.fabbox();
-      const Array4<Real>& arrB = fab.array();
-      ParallelFor(box, [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        Real x = prob_lo[0] + dx[0] * i;
-        arrB(ijk, ix_) = Bx0;
-        arrB(ijk, iy_) = B1 * cos(kx * x);
-        arrB(ijk, iz_) = B1 * sin(kx * x);
-      });
-    }
-    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
-
-    for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
-      FArrayBox& fab = centerB[iLev][mfi];
-      const Box& box = mfi.fabbox();
-      const Array4<Real>& arrcB = fab.array();
-      ParallelFor(box, [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        Real x = prob_lo[0] + dx[0] * (i + 0.5);
-        arrcB(ijk, ix_) = Bx0;
-        arrcB(ijk, iy_) = B1 * cos(kx * x);
-        arrcB(ijk, iz_) = B1 * sin(kx * x);
-      });
-    }
-    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-  }
-}
-
-void Pic::fill_convection_wave() { fill_hybrid_wave(0.2); }
-
-void Pic::perturb_hybrid_wave_velocities() {
-  std::string nameFunc = "Pic::perturb_hybrid_wave_velocities";
-
-  // Alfvén-wave eigenmode velocity perturbation matching the B-field
-  // perturbation seeded by fill_hybrid_wave().  For a parallel-propagating
-  // wave with δB = (0, B1 cos kx, B1 sin kx) on guide field B0, the MHD /
-  // Alfvén limit gives δU_⊥ = -v_A * δB_⊥ / B0.  In code units (v_A = B0 =
-  // 1):  δU_y = -B1 cos kx,  δU_z = -B1 sin kx.
-  // This removes the large transient caused by seeding B without a matching
-  // ion velocity perturbation (which previously caused ~180x amplitude growth).
-
-  const Real waveFrac = 0.02;
-
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    Real Bx0 = 1.0;
-    {
-      MFIter mfi(nodeB[iLev]);
-      if (mfi.isValid()) {
-        const Array4<Real const>& a = nodeB[iLev][mfi].array();
-        const Box& b = mfi.validbox();
-        Bx0 = a(b.smallEnd(), ix_);
-      }
-    }
-
-    const Real B1 = waveFrac * Bx0;
-    const Real Lx = (geom[iLev].ProbHi())[0] - geom[iLev].ProbLo()[0];
-    const Real kx = (Lx > 0) ? 2.0 * (dPI) / Lx : 0.0;
-
-    for (int i : kineticSpecies_) {
-      parts[i]->add_velocity_perturbation(-B1, -B1, kx);
-    }
   }
 }
 

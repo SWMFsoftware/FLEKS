@@ -25,7 +25,14 @@ SRCS := \
 	Grid.cpp  \
 	DataContainer.cpp \
 	VisitWriter.cpp  \
-	FleksDistributionMap.cpp
+	FleksDistributionMap.cpp \
+	InitialCondition.cpp \
+	ic/LightWaveIC.cpp \
+	ic/HybridWaveIC.cpp \
+	ic/IonAcousticWaveIC.cpp \
+	ic/BeamIC.cpp \
+	ic/TopHatIC.cpp \
+	ic/RegisterAll.cpp
 
 OBJECTS := $(patsubst %, %.o,$(basename $(SRCS)))
 

@@ -10,6 +10,7 @@
 #include "FleksDistributionMap.h"
 #include "FluidInterface.h"
 #include "Grid.h"
+#include "InitialCondition.h"
 #include "LinearSolver.h"
 #include "OHInterface.h"
 #include "Particles.h"
@@ -243,6 +244,20 @@ private:
   amrex::Real cMaxE = -1;
   bool useUpwindB = false;
   amrex::Real limiterThetaB = 0;
+  // Fixed upwind velocity (in the background-flow units) for the B upwind
+  // correction in correct_B(). Default 0 -> use the plasma background
+  // velocity (normal behaviour). A positive value forces the upwind flux to
+  // use this constant speed everywhere (the old TopHat "bypass_limiter"
+  // behaviour used 1.0). Promoted from a per-test hook to a generic option in
+  // Phase 4 of the test-case refactor.
+  amrex::Real fixedUpwindVel = 0.0;
+
+  // Fixed maximum signal speed (uMax) for the CFL time-step estimate, in the
+  // cell-units used by the rest of the code. Default < 0 -> estimate uMax from
+  // the particles' max thermal velocity (normal behaviour). A non-negative
+  // value overrides the estimate (the old TopHat "override_umax" used 1.0).
+  // Promoted from a per-test hook to a generic #FIXEDUMAX option in Phase 4.
+  amrex::Real fixedUMax = -1.0;
 
   bool doSmoothJ = false;
   int nSmoothJ = 0;
@@ -305,11 +320,11 @@ private:
   bool doSmoothE = false;
   int nSmoothE = 0;
 
-  TestCase testCase = RegularSimulation;
-
-  BeamInfo beam;
-
-  IawInfo iaw;
+  // Plug-in initial condition, created by the #TESTCASE registry lookup. The
+  // kernel names no test case: every test-specific field / particle seeding
+  // and solver override goes through this pointer (see
+  // plan-testcase-refactor.md). Null for a regular simulation.
+  std::unique_ptr<InitialCondition> ic_;
 
   ParticlesInfo pInfo;
 
@@ -417,18 +432,6 @@ public:
 
   void fill_new_cells();
   void fill_E_B_fields();
-  void fill_lightwaves(amrex::Real wavelength, int EorB = -1,
-                       amrex::Real time = 0, int lev = -1);
-  // Initialize a left/right-hand circularly polarized transverse wave on top of
-  // the uniform guide field for the HybridWave test case. The guide field Bx0
-  // is taken from the uniform state already deposited by fill_E_B_fields().
-  void fill_hybrid_wave(amrex::Real frac = 0.02);
-  void fill_convection_wave();
-
-  // Add the Alfvén-wave ion velocity perturbation matching the B-field
-  // perturbation seeded by fill_hybrid_wave().  Called after fill_particles()
-  // so the moments deposited by sum_moments include the perturbation.
-  void perturb_hybrid_wave_velocities();
 
   void fill_new_node_E();
 
@@ -436,6 +439,14 @@ public:
   void fill_new_center_B();
 
   void fill_particles();
+
+  // Narrow facade used by InitialCondition plug-ins (see InitialCondition.h).
+  // These expose only the field arrays an IC needs; the facade is NOT a friend
+  // of Pic.
+  amrex::MultiFab& get_node_E(int iLev) { return nodeE[iLev]; }
+  amrex::MultiFab& get_node_B(int iLev) { return nodeB[iLev]; }
+  amrex::MultiFab& get_center_B(int iLev) { return centerB[iLev]; }
+  PicICFields ic_fields() { return PicICFields(*this); }
 
   void init_source(const FluidInterface &interfaceIn) {
     // To be implemented

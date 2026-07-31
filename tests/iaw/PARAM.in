@@ -9,7 +9,7 @@ which gives the acoustic speed c_s = sqrt(Te/mi).
 
   n(x) = n0 * (1 + pert * sin(kx * x)),   kx = 2*pi*waveMode / Lx
 
-The seed is implemented by the C++ #TESTCASE IonAcousticWave, which scales each
+The seed is implemented by the C++ TESTCASE IonAcousticWave, which scales each
 particle's weight so the deposited ion density carries the sinusoidal profile
 while keeping the bulk velocity uniform.
 

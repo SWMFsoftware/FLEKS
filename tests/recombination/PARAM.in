@@ -72,7 +72,7 @@ T                       useSource
 1                       nReactions
 2                       ionSpecies    O2+ (species 2)
 7.38e-3                 rateCoef      [cm^3/s] inflated 1e5x for short test
-0.0                     tempExponent  0 = no T dependence (avoids #UNIFORMSTATE Te bug)
+0.0                     tempExponent  0 = no T dependence (avoids UNIFORMSTATE Te bug)
 1200.0                  refTemp       T_ref [K] (unused when tempExponent=0)
 
 #TIMESTEPPING

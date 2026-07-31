@@ -18,6 +18,8 @@
 #include "TimeCtr.h"
 #include "UMultiFab.h"
 
+class InitialCondition;  // forward: Particles only stores a non-owning pointer
+
 enum class CrossSection { LS = 0, MT };
 
 enum class PartMode { PIC = 0, Neutral, SEP };
@@ -38,25 +40,6 @@ struct PID {
   }
 
   bool operator==(const PID& t) const { return cpu == t.cpu && id == t.id; }
-};
-
-struct BeamInfo {
-  int iSpecies = -1;
-  amrex::Real vel[nDim3] = { 0, 0, 0 };
-  amrex::Real ratio = 0;
-};
-
-// Ion-acoustic-wave (IAW) initial condition.
-// Seeds a sinusoidal ion density perturbation
-//   n(x) = n0 * (1 + pert * sin(kx * x)),   kx = 2*pi*waveMode / Lx
-// with Maxwellian (zero-bulk-velocity) velocity distribution and E = B = 0
-// otherwise. The restoring force comes from the electron pressure-gradient
-// term in the generalized Ohm's law (electronTemperature > 0). The
-// perturbation is applied by scaling each particle's weight, which keeps the
-// bulk velocity uniform while perturbing density / charge / pressure moments.
-struct IawInfo {
-  amrex::Real pert = 0.0;  // density perturbation amplitude (< 1)
-  int waveMode = 1;        // number of wavelengths across the x-domain
 };
 
 struct Vel {
@@ -354,7 +337,6 @@ protected:
 
   int speciesID;
   RandNum randNum;
-  bool moveParticlesWithConstantVelocity = false;
   amrex::Real charge;
   amrex::Real mass;
 
@@ -421,11 +403,11 @@ public:
   // mu = cos(theta), theta is the pitch angle.
   static constexpr int imu_ = 4;
 
-  TestCase testCase;
-
-  BeamInfo beam;
-
-  IawInfo iaw;
+  // Non-owning pointer to the active initial condition (owned by Pic).
+  // add_particles_cell routes its per-particle weight / velocity modifications
+  // through this pointer; null means no modification. This is the ONE ctor
+  // tail parameter for every test -- it never grows.
+  const InitialCondition* ic_ = nullptr;
 
   // Index of the integer data.
   static constexpr int iRecordCount_ = 1;
@@ -433,8 +415,7 @@ public:
   Particles(Grid* gridIn, FluidInterface* fluidIn, TimeCtr* tcIn,
             const int speciesIDIn, const amrex::Real chargeIn,
             const amrex::Real massIn, const ParticlesInfo& pInfo,
-            const PartMode pModeIn, TestCase tcase = RegularSimulation,
-            BeamInfo beamIn = BeamInfo(), IawInfo iawIn = IawInfo());
+            const PartMode pModeIn, const InitialCondition* icIn = nullptr);
 
   int n_lev() const { return GetParGDB()->finestLevel() + 1; }
 
@@ -857,10 +838,12 @@ public:
   void merge(amrex::Real limit);
   void merge_new(amrex::Real limit);
 
-  // Add a circularly-polarized velocity perturbation to every particle:
+  // Generic tool: add a circularly-polarized velocity perturbation to every
+  // particle already in the container:
   //   dv_y += ampY * cos(kx * x),   dv_z += ampZ * sin(kx * x).
-  // Used by the HybridWave test case to seed the Alfvén-wave eigenmode ion
-  // velocity that matches the B-field perturbation from fill_hybrid_wave().
+  // Names no test case; an InitialCondition plug-in that needs to perturb an
+  // existing particle population (rather than seed it at creation time via the
+  // per-particle hooks) can call this.
   void add_velocity_perturbation(amrex::Real ampY, amrex::Real ampZ,
                                  amrex::Real kx);
   bool merge_particles_fast(int iLev, AoS& particles,

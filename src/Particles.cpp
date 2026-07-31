@@ -4,6 +4,7 @@
 
 #include "Morton.h"
 #include "Particles.h"
+#include "InitialCondition.h"
 #include "SWMFInterface.h"
 #include "Timer.h"
 #include "Utility.h"
@@ -25,8 +26,8 @@ template <int NStructReal, int NStructInt>
 Particles<NStructReal, NStructInt>::Particles(
     Grid* gridIn, FluidInterface* const fluidIn, TimeCtr* const tcIn,
     const int speciesIDIn, const Real chargeIn, const Real massIn,
-    const ParticlesInfo& pInfo, const PartMode pModeIn, TestCase tcase,
-    BeamInfo beamIn, IawInfo iawIn)
+    const ParticlesInfo& pInfo, const PartMode pModeIn,
+    const InitialCondition* icIn)
     : AmrParticleContainer<NStructReal, NStructInt>(gridIn),
       grid(gridIn),
       fi(fluidIn),
@@ -36,9 +37,7 @@ Particles<NStructReal, NStructInt>::Particles(
       charge(chargeIn),
       mass(massIn),
       nPartPerCell(pInfo.nPartPerCell),
-      testCase(tcase),
-      beam(beamIn),
-      iaw(iawIn) {
+      ic_(icIn) {
 
   isParticleLocationRandom = pInfo.isParticleLocationRandom;
   isPPVconstant = pInfo.isPPVconstant;
@@ -240,15 +239,21 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 
         Real q = vol2Npcel * nDens;
 
-        if (testCase == IonAcousticWave && iaw.pert != 0.0) {
-          // Ion-acoustic-wave seed: scale particle weight so the deposited
-          // ion density carries n(x) = n0 * (1 + pert*sin(kx*x)). Because all
-          // moments scale with q, the bulk velocity stays uniform while density
-          // / charge / pressure are perturbed. kx uses the x-domain length.
-          const Real Lx = Geom(iLev).ProbHi()[0] - Geom(iLev).ProbLo()[0];
-          const Real kx = (Lx > 0) ? 2.0 * dPI * amrex::Real(iaw.waveMode) / Lx : 0.0;
-          const Real factor = 1.0 + iaw.pert * std::sin(kx * xyz[0]);
-          q *= (factor > 0.0) ? factor : 0.0;
+        // Per-particle weight modification (e.g. ion-acoustic-wave density
+        // perturbation). Routed through the InitialCondition plugin; runs
+        // before the q != 0 guard so an IC can suppress a particle.
+        if (ic_ && ic_->modifies_weights()) {
+          ParticleICState pics;
+          pics.iLev = iLev;
+          pics.iSpec = speciesID;
+          pics.iCount = icount;
+          pics.nPerCell = npcel;
+          pics.x = xyz[0];
+          pics.y = xyz[1];
+          pics.z = xyz[2];
+          pics.q = q;
+          ic_->modify_particle_weight(pics);
+          q = pics.q;
         }
 
         if (q != 0) {
@@ -278,35 +283,32 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           Real wBulk = userState ? tpVel.vz
                                  : interface->get_uz(mfi, xyz, speciesID, iLev);
 
-          if (testCase == Beam && speciesID == beam.iSpecies) {
-            const int nBeam = npcel * beam.ratio;
-            const int nBackground = npcel - nBeam;
-
-            // Assume all the particle weights q are the same inside a cell.
-            Real weightScale = 1;
-
-            if (icount < nBeam) {
-              // Beam particles
-              uBulk = beam.vel[0];
-              vBulk = beam.vel[1];
-              wBulk = beam.vel[2];
-              weightScale = beam.ratio * Real(npcel) / Real(nBeam);
-            } else {
-              // Background particles
-              weightScale = (1 - beam.ratio) * Real(npcel) / Real(nBackground);
-            }
-
-            q *= weightScale;
+          // Per-particle velocity / weight modification (e.g. beam bulk
+          // override, or the hybrid-wave Alfven velocity kick). Routed through
+          // the InitialCondition plugin; runs after the bulk velocity is
+          // computed and before it is added to the thermal velocity.
+          if (ic_ && ic_->modifies_velocities()) {
+            ParticleICState pics;
+            pics.iLev = iLev;
+            pics.iSpec = speciesID;
+            pics.iCount = icount;
+            pics.nPerCell = npcel;
+            pics.x = xyz[0];
+            pics.y = xyz[1];
+            pics.z = xyz[2];
+            pics.uBulk = uBulk;
+            pics.vBulk = vBulk;
+            pics.wBulk = wBulk;
+            pics.qScale = 1.0;
+            ic_->modify_particle_velocity(pics);
+            uBulk = pics.uBulk;
+            vBulk = pics.vBulk;
+            wBulk = pics.wBulk;
+            q *= pics.qScale;
           }
           u += uBulk;
           v += vBulk;
           w += wBulk;
-
-          if (moveParticlesWithConstantVelocity) {
-            u = 0.0;
-            v = 0.4;
-            w = 0.0;
-          }
 
           auto p = make_particle();
           set_ids(p);
@@ -1614,11 +1616,6 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         Real vnp1 = 2.0 * vavg - vp + u0p[iy_];
         Real wnp1 = 2.0 * wavg - wp + u0p[iz_];
 
-        if (moveParticlesWithConstantVelocity) {
-          unp1 = up;
-          vnp1 = vp;
-          wnp1 = wp;
-        }
         p.rdata(iup_) = unp1;
         p.rdata(ivp_) = vnp1;
         p.rdata(iwp_) = wnp1;
