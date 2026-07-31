@@ -214,7 +214,7 @@ Phase 1  (interface + registry + LightWave)           -> DONE 2026-07-31 (builds
 Phase 2  (migrate remaining 5 ICs)                    -> DONE 2026-07-31 (builds + 15/15 tests PASS)
 Phase 3  (remove enum/structs/fill_* + rename tool)   -> DONE 2026-07-31 (builds + 15/15 tests PASS)
 Phase 4  (TopHat overrides -> PARAM options)          -> DONE 2026-07-31 (builds + 15/15 tests PASS)
-Phase 5  (#WAVEIC unification + docs)                 -> final cleanup, new wave tests = 0 C++
+Phase 5  (#WAVEIC unification + docs)                 -> DONE 2026-07-31 (builds + 15/15 tests PASS)
 ```
 
 ## 7. Acceptance (same bar as the Ohm plan)

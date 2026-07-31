@@ -27,9 +27,7 @@ SRCS := \
 	VisitWriter.cpp  \
 	FleksDistributionMap.cpp \
 	InitialCondition.cpp \
-	ic/LightWaveIC.cpp \
-	ic/HybridWaveIC.cpp \
-	ic/IonAcousticWaveIC.cpp \
+	ic/WaveIC.cpp \
 	ic/BeamIC.cpp \
 	ic/TopHatIC.cpp \
 	ic/RegisterAll.cpp

@@ -219,6 +219,19 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
                    "'. Registered names: " + known + ".");
     }
     ic_->read_param(param);
+  } else if (command == "#WAVEIC") {
+    // Generic wave sub-parameter block for a WaveIC plug-in (created by a
+    // #TESTCASE waveic / lightwave / hybridwave / convectionwave /
+    // ionacousticwave name). The plug-in reads the optional #WAVEIC parameters
+    // through read_optional, so the block is only needed for new / overridden
+    // wave configurations -- the presets reproduce the legacy behaviour when
+    // this block is absent.
+    if (!ic_) {
+      amrex::Abort("The #WAVEIC block must follow a #TESTCASE that selects a "
+                   "wave initial condition (waveic / lightwave / hybridwave / "
+                   "convectionwave / ionacousticwave).");
+    }
+    ic_->read_param(param);
   } else if (command == "#HYBRIDPIC") {
     param.read_var("useHybridPIC", useHybridPIC);
   } else if (command == "#RESISTIVITY") {

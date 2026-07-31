@@ -1339,7 +1339,50 @@ Default value is shown.
 #TESTCASE 
 Beam		testCase
 
-It will set the initial conditions for a specific test case.
+It will set the initial conditions for a specific test case. The kernel names no
+test case: the name is resolved by the InitialCondition registry (case-insensitive)
+and an unknown name aborts listing the registered names. Wave / sinusoidal tests
+are all ONE parameterized plug-in (WaveIC) registered as lightwave, hybridwave,
+convectionwave, ionacousticwave and a generic waveic; non-wave tests have
+dedicated plug-ins (beam, tophat). See the AGENT.md "Adding a New Test Case"
+workflow.
+</command>
+
+<command name="WAVEIC"
+	 alias="WAVEIC_FLEKS0,WAVEIC_FLEKS1,WAVEIC_FLEKS2" multiple="T">
+  <parameter name="seedE" type="logical" default="F"/>
+  <parameter name="seedB" type="logical" default="F"/>
+  <parameter name="seedWeight" type="logical" default="F"/>
+  <parameter name="oblique" type="logical" default="F"/>
+  <parameter name="guideField" type="logical" default="F"/>
+  <parameter name="velKick" type="logical" default="F"/>
+  <parameter name="dir" type="real" nvalues="3"/>
+  <parameter name="waveLength" type="real"/>
+  <parameter name="waveMode" type="integer"/>
+  <parameter name="frac" type="real"/>
+  <parameter name="pert" type="real"/>
+
+#WAVEIC 
+T		seedE
+T		seedB
+F		oblique
+T		guideField
+T		velKick
+0.6 0.8 0	dir
+48.0		waveLength
+1		waveMode
+0.02		frac
+0.1		pert
+
+Optional sub-parameters for a WaveIC wave initial condition (selected by a
+#TESTCASE name of waveic / lightwave / hybridwave / convectionwave /
+ionacousticwave). All parameters are optional: when absent the plug-in uses its
+preset for the selected name. seedE/seedB/seedWeight toggle E-field / B-field /
+sinusoidal-density-perturbation seeding; oblique + dir + waveLength give an
+oblique plane wave (wavelength in cells), otherwise the wave is x-aligned with
+kx = 2*pi*waveMode/Lx; guideField adds the uniform Bx0 guide field under the B
+perturbation (B1 = frac*Bx0); velKick adds the matching Alfven ion velocity
+kick; pert is the density perturbation amplitude.
 </command>
 
 <command name="PERIODICITY">

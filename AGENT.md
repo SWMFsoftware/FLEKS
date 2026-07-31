@@ -350,6 +350,41 @@ Composite step-by-step guides for multi-stage tasks are in `.agent/workflows/`:
 2. Parse in the relevant `read_param()` method (usually in `Domain.cpp` or `Pic.cpp`)
 3. Add the corresponding member variable
 
+### Adding a New Test Case (Initial Condition)
+
+Test-case initial conditions are plug-ins resolved by name from `#TESTCASE`
+through the `InitialCondition` registry (`include/InitialCondition.h`,
+`src/ic/RegisterAll.cpp`). The kernel names **zero** test cases — an unknown
+`#TESTCASE` name aborts loudly listing the registered names, so a typo can
+never silently fall back to a uniform plasma.
+
+**Wave / sinusoidal tests cost zero C++.** All transverse and sinusoidal wave
+seeds are ONE parameterized plug-in (`WaveIC`, `src/ic/WaveIC.cpp`), registered
+under the legacy aliases `lightwave`, `hybridwave`, `convectionwave`,
+`ionacousticwave` **and** a generic `waveic`. To add a new wave test, write a
+`#TESTCASE waveic` (or one of the aliases) plus a `#WAVEIC` block in the test's
+`PARAM.in` — no C++ needed. `#WAVEIC` sub-parameters (all optional;
+`read_optional` so absent ones keep the preset):
+
+- `seedE` / `seedB` / `seedWeight` (logical): seed E field / B field / sinusoidal
+  density perturbation (weight scaling `1 + pert*sin(kx*x)`).
+- `oblique` (logical) + `dir 0.6 0.8 0` + `waveLength 48`: oblique plane wave
+  with the given propagation direction and wavelength in cells (LightWave uses
+  this). Otherwise the wave is x-aligned with `kx = 2*pi*waveMode/Lx`.
+- `guideField` (logical): add the uniform guide field `Bx0` (from `#UNIFORMSTATE`)
+  under the B perturbation (`B = Bx0 + B1*cos kx, B1*sin kx`, `B1 = frac*Bx0`).
+- `velKick` (logical): matching Alfven ion velocity kick
+  (`delta U_y = -B1 cos kx`, `delta U_z = -B1 sin kx`).
+- `frac` (real): B perturbation amplitude `B1/Bx0`.
+- `pert` (real): density perturbation amplitude (`seedWeight`).
+- `waveMode` (int): mode number for the x-aligned wavenumber.
+
+**Non-wave tests** (beam, tophat) keep dedicated plug-ins in `src/ic/`. To add a
+brand-new *non-wave* test, subclass `InitialCondition` (override `read_param`,
+`set_fields`, the per-particle `modify_particle_weight` / `modify_particle_velocity`
+hooks, and `name()`), register it in `src/ic/RegisterAll.cpp`, and add the `.cpp`
+to `SRCS` in `src/Makefile`.
+
 ### Modifying the SWMF Interface
 
 1. Add C++ function in `srcInterface/FleksInterface.cpp`
