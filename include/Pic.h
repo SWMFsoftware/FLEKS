@@ -142,6 +142,23 @@ private:
   // kRK4[iLev][0..3]: the four stage curls curl(E_stage) for the level-iLev RK4
   // sub-step (4 stages per level).
   amrex::Vector<amrex::Vector<amrex::MultiFab>> kRK4;
+
+  // Euler/heun (fieldIntegrator="euler"/"heun") persistent scratch fields.
+  // Allocated when useHybridPIC; reused across sub-steps to avoid per-sub-step
+  // MultiFab define/destroy. dBpred is the predictor curl (also used as the
+  // single dB in the euler path); dBcorr the corrector curl; centerBstart the
+  // saved B^n; centerBstar the predicted B*.
+  amrex::Vector<amrex::MultiFab> dBpred_heun;
+  amrex::Vector<amrex::MultiFab> dBcorr_heun;
+  amrex::Vector<amrex::MultiFab> centerBstart_heun;
+  amrex::Vector<amrex::MultiFab> centerBstar_heun;
+
+  // Moment-time-centering (useMomentTimeCentering) persistent scratch. Avoids
+  // per-call MultiFab allocation in update_E_hybrid.
+  amrex::Vector<amrex::MultiFab> centerB_mtc;  // predicted B^{n+1/2} (center)
+  amrex::Vector<amrex::MultiFab> dB_mtc;       // curl(E) scratch (center)
+  amrex::Vector<amrex::MultiFab> nodeB_mtc;    // node-average of centerB_mtc
+
   amrex::Vector<amrex::MultiFab> dBdt;
   amrex::Vector<amrex::MultiFab> particleQuality;
 
@@ -337,6 +354,13 @@ public:
     nodeE_RK4.resize(n_lev_max());
     centerBavg.resize(n_lev_max());
     nodeBavg.resize(n_lev_max());
+    dBpred_heun.resize(n_lev_max());
+    dBcorr_heun.resize(n_lev_max());
+    centerBstart_heun.resize(n_lev_max());
+    centerBstar_heun.resize(n_lev_max());
+    centerB_mtc.resize(n_lev_max());
+    dB_mtc.resize(n_lev_max());
+    nodeB_mtc.resize(n_lev_max());
     kRK4.resize(n_lev_max());
     for (int iL = 0; iL < n_lev_max(); ++iL) kRK4[iL].resize(4);
     etaHyperLev.resize(n_lev_max(), 0.0);

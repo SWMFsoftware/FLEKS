@@ -114,7 +114,7 @@ T                       useFixedDt
 5.0e4                   uNormSI   [m/s] ~ v_A so v_A ~ 1 in code units
 
 #MONITOR
-1                       dnReport
+50                      dnReport
 
 #SAVELOG
 1                       dnSavePic
@@ -141,7 +141,7 @@ F                       doSmoothB
 1                       nPlot
 z=0 fluid ascii pic     plotString
 -1                      dn
-0.5                     dt
+6.25                    dt
 1                       dx
 Bx By Bz Ex Ey Ez       varName
 

@@ -504,6 +504,24 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           3, nGst, doMoveData);
       distribute_FabArray(nodeBavg[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                           nGst, doMoveData);
+
+      // Euler/heun persistent scratch (all cell-centred, 3 comps).
+      distribute_FabArray(dBpred_heun[iLev], cGrids[iLev], DistributionMap(iLev),
+                          3, nGst, doMoveData);
+      distribute_FabArray(dBcorr_heun[iLev], cGrids[iLev], DistributionMap(iLev),
+                          3, nGst, doMoveData);
+      distribute_FabArray(centerBstart_heun[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 3, nGst, doMoveData);
+      distribute_FabArray(centerBstar_heun[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 3, nGst, doMoveData);
+
+      // Moment-time-centering scratch.
+      distribute_FabArray(centerB_mtc[iLev], cGrids[iLev], DistributionMap(iLev),
+                          3, nGst, doMoveData);
+      distribute_FabArray(dB_mtc[iLev], cGrids[iLev], DistributionMap(iLev), 3,
+                          nGst, doMoveData);
+      distribute_FabArray(nodeB_mtc[iLev], nGrids[iLev], DistributionMap(iLev),
+                          3, nGst, doMoveData);
     }
     distribute_FabArray(dBdt[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst, doMoveData);
@@ -2267,16 +2285,13 @@ void Pic::update_E_hybrid() {
     if (useMomentTimeCentering) {
       const Real dt = tc->get_dt();
       assemble_ohm_E(cBin, nBin, nodeE[iLev], iLev);
-      MultiFab centerBtmp(cGrids[iLev], DistributionMap(iLev), 3, nGst);
-      MultiFab dBtmp(cGrids[iLev], DistributionMap(iLev), 3, nGst);
-      MultiFab::Copy(centerBtmp, cBin, 0, 0, 3, nGst);
-      curl_node_to_center(nodeE[iLev], dBtmp, Geom(iLev).InvCellSize());
-      MultiFab::Saxpy(centerBtmp, -0.5 * dt, dBtmp, 0, 0, 3, nGst);
-      centerBtmp.FillBoundary(Geom(iLev).periodicity());
-      MultiFab nodeBtmp(nGrids[iLev], DistributionMap(iLev), 3, nGst);
-      average_center_to_node(centerBtmp, nodeBtmp);
-      nodeBtmp.FillBoundary(Geom(iLev).periodicity());
-      assemble_ohm_E(centerBtmp, nodeBtmp, nodeE[iLev], iLev);
+      MultiFab::Copy(centerB_mtc[iLev], cBin, 0, 0, 3, nGst);
+      curl_node_to_center(nodeE[iLev], dB_mtc[iLev], Geom(iLev).InvCellSize());
+      MultiFab::Saxpy(centerB_mtc[iLev], -0.5 * dt, dB_mtc[iLev], 0, 0, 3, nGst);
+      centerB_mtc[iLev].FillBoundary(Geom(iLev).periodicity());
+      average_center_to_node(centerB_mtc[iLev], nodeB_mtc[iLev]);
+      nodeB_mtc[iLev].FillBoundary(Geom(iLev).periodicity());
+      assemble_ohm_E(centerB_mtc[iLev], nodeB_mtc[iLev], nodeE[iLev], iLev);
     } else {
       assemble_ohm_E(cBin, nBin, nodeE[iLev], iLev);
     }
@@ -2687,11 +2702,11 @@ void Pic::update_B_hybrid() {
       update_E_hybrid();
 
       for (int iLev = 0; iLev < n_lev(); iLev++) {
-        MultiFab dB(cGrids[iLev], DistributionMap(iLev), 3, nGst);
-        curl_node_to_center(nodeEth[iLev], dB, Geom(iLev).InvCellSize());
+        curl_node_to_center(nodeEth[iLev], dBpred_heun[iLev],
+                            Geom(iLev).InvCellSize());
 
-        MultiFab::Saxpy(centerB[iLev], -subDt, dB, 0, 0, centerB[iLev].nComp(),
-                        centerB[iLev].nGrow());
+        MultiFab::Saxpy(centerB[iLev], -subDt, dBpred_heun[iLev], 0, 0,
+                        centerB[iLev].nComp(), centerB[iLev].nGrow());
 
         centerB[iLev].FillBoundary(Geom(iLev).periodicity());
       }
@@ -2718,35 +2733,31 @@ void Pic::update_B_hybrid() {
     // RK4 (the default) is the preferred integrator.
     update_E_hybrid();
 
-    std::vector<MultiFab> dBpred(n_lev()), centerBstart(n_lev()),
-        centerBstar(n_lev());
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      dBpred[iLev].define(cGrids[iLev], DistributionMap(iLev), 3, nGst);
-      centerBstart[iLev].define(cGrids[iLev], DistributionMap(iLev), 3, nGst);
-      centerBstar[iLev].define(cGrids[iLev], DistributionMap(iLev), 3, nGst);
-      MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, 3, nGst);
-      curl_node_to_center(nodeEth[iLev], dBpred[iLev], Geom(iLev).InvCellSize());
-      MultiFab::Copy(centerBstar[iLev], centerB[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerBstar[iLev], -subDt, dBpred[iLev], 0, 0, 3, nGst);
+      MultiFab::Copy(centerBstart_heun[iLev], centerB[iLev], 0, 0, 3, nGst);
+      curl_node_to_center(nodeEth[iLev], dBpred_heun[iLev],
+                          Geom(iLev).InvCellSize());
+      MultiFab::Copy(centerBstar_heun[iLev], centerB[iLev], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerBstar_heun[iLev], -subDt, dBpred_heun[iLev], 0, 0, 3,
+                      nGst);
     }
 
     // Corrector stage: project B* to the node grid and recompute E*.
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      MultiFab::Copy(centerB[iLev], centerBstar[iLev], 0, 0, 3, nGst);
+      MultiFab::Copy(centerB[iLev], centerBstar_heun[iLev], 0, 0, 3, nGst);
       project_centerB_to_nodeB(iLev);
     }
     update_E_hybrid();
 
-    std::vector<MultiFab> dBcorr(n_lev());
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      dBcorr[iLev].define(cGrids[iLev], DistributionMap(iLev), 3, nGst);
-      curl_node_to_center(nodeEth[iLev], dBcorr[iLev], Geom(iLev).InvCellSize());
+      curl_node_to_center(nodeEth[iLev], dBcorr_heun[iLev],
+                          Geom(iLev).InvCellSize());
 
       // Trapezoidal combine around the saved B^n.
-      MultiFab::Copy(centerB[iLev], centerBstart[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerB[iLev], -(1.0 - thetaB) * subDt, dBpred[iLev], 0, 0,
-                      3, nGst);
-      MultiFab::Saxpy(centerB[iLev], -thetaB * subDt, dBcorr[iLev], 0, 0, 3,
+      MultiFab::Copy(centerB[iLev], centerBstart_heun[iLev], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB[iLev], -(1.0 - thetaB) * subDt, dBpred_heun[iLev],
+                      0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB[iLev], -thetaB * subDt, dBcorr_heun[iLev], 0, 0, 3,
                       nGst);
       project_centerB_to_nodeB(iLev);
     }

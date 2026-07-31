@@ -53,3 +53,9 @@ first to the last logged step. Expected: `Eb` and `Epart` constant to ~1e-6
   tests built on the same equilibrium.
 - `whistler_solveem/` — the full-PIC SOLVEEM *wave* test (seeded wave, not a
   free-stream).
+
+## Running
+
+```bash
+python3 tests/validate_tests.py --test=freestream
+```
