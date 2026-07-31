@@ -1,0 +1,144 @@
+#DESCRIPTION
+Hybrid PIC (kinetic ions / fluid electrons) ion acoustic wave (IAW) test.
+A single-wavelength ion density perturbation is seeded along x in a uniform,
+Maxwellian, zero-bulk-velocity proton plasma with a guide magnetic field along x
+(k || B, so the wave is a clean longitudinal ion-acoustic mode).  The electric
+field is initially zero; the restoring force is the electron pressure gradient
+in the generalized Ohm's law (electronTemperature > 0, isothermal gamma = 1),
+which gives the acoustic speed c_s = sqrt(Te/mi).
+
+  n(x) = n0 * (1 + pert * sin(kx * x)),   kx = 2*pi*waveMode / Lx
+
+The seed is implemented by the C++ #TESTCASE IonAcousticWave, which scales each
+particle's weight so the deposited ion density carries the sinusoidal profile
+while keeping the bulk velocity uniform.
+
+Parameters (modeled on tests/hybrid_whistler) put the ion scales at O(1) in
+CODE (normalized) units: Lx = 6.4 d_i, d_i ~ 1, v_A ~ 1, B ~ Omega_i ~ 1.
+With electronTemperature = 26 eV and uNorm = 5e4 m/s the acoustic speed is
+c_s ~ 1, and with T = 1e4 K the ion thermal speed is v_thi ~ 0.26, so
+c_s / v_thi ~ 4 (weak Landau damping: the wave oscillates and decays).
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-3.2                    xMin  [code units; Lx = 6.4 d_i]
+ 3.2                    xMax
+-0.05                   yMin
+ 0.05                   yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+64                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+64                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#RESISTIVITY
+0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
+
+#ELECTRONTEMPERATURE
+26.0                    electronTemperature  [eV]
+1.0                     electronGamma
+1.0                     electronDensity0
+
+Sub-cycle the B update: the explicit Hall advance is limited by the discrete
+grid-scale modes, dt_sub < dx^2/(6 v_A d_i) ~ 1.7e-3 (dx = 0.1, v_A = d_i = 1),
+so dt = 0.02 needs nHallSubcycle >= 12; 32 gives dt_sub = 6.25e-4 with margin.
+#HALLSUBCYCLE
+32                      nHallSubcycle
+
+Single kinetic ion species (q = m = 1); the electron is an implicit
+neutralizing massless fluid, so no electron particle species is present.
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#UNIFORMSTATE
+1.0                     rho [amu/cc]   Species 0: ions
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.2195e-9               bx [T]       uniform guide field Bx0 along x (B_code ~ 1, k || B)
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+IonAcousticWave
+0.1                     pert       relative density-perturbation amplitude (< 1)
+1                       waveMode   number of wavelengths across the x-domain
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
+5.0e4                   uNormSI   [m/s] ~ v_A so v_A ~ 1 in code units
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#PARTICLES
+2000                    nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#COMOVING
+F                       solvePartInCoMov
+0                       nSmoothBackGroundU
+
+#UPWINDE
+F                       useUpwindE
+0.0                     limiterThetaE
+
+#UPWINDB
+F                       doSmoothB
+0.0                     theta
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+25                      dn
+0.0                     dt
+1                       dx
+Bx By Bz Ex Ey Ez rhoS0  varName
+
+#STOP
+-1                      MaxIter
+25.0                    TimeMax
+
+#RUN
+
+#MOMENTTIMECENTERING
+T                       useMomentTimeCentering
+
+#AVGFIELDB
+T                       useAvgFieldB
+20                      nAvgFieldB

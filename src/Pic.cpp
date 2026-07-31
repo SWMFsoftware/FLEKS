@@ -211,6 +211,14 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     } else if (testcase == "ConvectionWave") {
       testCase = ConvectionWave;
       // Convection-term test: seed a transverse wave, advected by a bulk flow.
+    } else if (testcase == "IonAcousticWave") {
+      testCase = IonAcousticWave;
+      // Ion-acoustic-wave test: seed a sinusoidal ion density perturbation
+      // n(x) = n0*(1 + pert*sin(kx*x)) with Maxwellian (zero-bulk) velocities
+      // and E = B = 0. The restoring force is the electron pressure gradient
+      // (electronTemperature > 0).
+      param.read_var("pert", iaw.pert);
+      param.read_var("waveMode", iaw.waveMode);
     }
   } else if (command == "#HYBRIDPIC") {
     param.read_var("useHybridPIC", useHybridPIC);
@@ -580,13 +588,13 @@ void Pic::post_regrid() {
     for (int i = 0; i < nSpecies; ++i) {
       auto ptr = std::make_unique<PicParticles>(
           this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
-          pInfo, pMode, testCase, beam);
+          pInfo, pMode, testCase, beam, iaw);
 
       parts.push_back(std::move(ptr));
 
       auto ptrSource = std::make_unique<PicParticles>(
           this, fi, tc, i, fi->get_species_charge(i), fi->get_species_mass(i),
-          pInfo, pMode, testCase, beam);
+          pInfo, pMode, testCase, beam, iaw);
 
       sourceParts.push_back(std::move(ptrSource));
     }

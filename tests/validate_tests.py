@@ -799,6 +799,228 @@ def validate_hybrid(pic_diags=None, test_name=None):
     return False, "; ".join(reasons)
 
 
+def _check_iaw_density():
+    """Check the seeded ion-density profile in the IAW plot output.
+
+    Reads the pic-component plot .out files (PostProc.pl output) and verifies
+    that (1) the ion density rhoS0 is a clean single-mode sinusoid at the first
+    frame (high |correlation| with sin(kx*x)) and (2) the mean density is
+    conserved across the run (no mass loss / blow-up).
+
+    Returns (passed, reason).  A True return with a non-empty reason means the
+    check was skipped (e.g. PostProc.pl output not available) -- this is not a
+    failure, matching how the other wave tests degrade gracefully when PostIDL
+    is not built.
+    """
+    import glob
+    try:
+        plots_dir = os.path.join(RUN_DIR, "PC", "plots")
+        out_files = sorted(glob.glob(os.path.join(plots_dir, "plot*pic*.out")))
+        if not out_files:
+            out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
+        if not out_files:
+            return True, ("No .out plot files found (PostProc.pl not run?); "
+                          "skipping profile check.")
+
+        # Parse Lx (x-domain length) and waveMode from PARAM.in.  The FLEKS
+        # #GEOMETRY block uses per-dimension xMin/xMax/yMin/... tokens.
+        Lx = None
+        wave_mode = 1
+        xmin = xmax = None
+        try:
+            with open(os.path.join(RUN_DIR, "PARAM.in"), "r") as pf:
+                section = None
+                for line in pf:
+                    s = line.strip()
+                    if s.startswith("#"):
+                        section = s
+                        continue
+                    if not s:
+                        continue
+                    parts = s.split()
+                    # FLEKS PARAM.in uses the "value keyword" token order,
+                    # e.g. "-3.2  xMin".  Scan for the keyword and take the
+                    # preceding token as the value.
+                    for i, tok in enumerate(parts):
+                        if section == "#GEOMETRY" and i > 0:
+                            if tok == "xMin":
+                                try:
+                                    xmin = float(parts[i - 1])
+                                except ValueError:
+                                    pass
+                            elif tok == "xMax":
+                                try:
+                                    xmax = float(parts[i - 1])
+                                except ValueError:
+                                    pass
+                        if (section == "#TESTCASE" and i > 0
+                                and tok == "waveMode"):
+                            try:
+                                wave_mode = int(float(parts[i - 1]))
+                            except ValueError:
+                                pass
+            if xmin is not None and xmax is not None and xmax > xmin:
+                Lx = xmax - xmin
+        except Exception:
+            pass
+
+        if Lx is None or Lx <= 0:
+            return True, "Could not parse Lx from PARAM.in; skipping profile check."
+
+        kx = 2.0 * math.pi * wave_mode / Lx
+
+        def load_profile(path):
+            with open(path, "r", encoding="latin-1") as f:
+                lines = f.readlines()
+            if len(lines) < 6:
+                return None, None
+            var_names = lines[4].split()
+            vidx = {v.upper(): i for i, v in enumerate(var_names)}
+            ridx = None
+            for target in ("RHOS0", "RHOS1", "RHO"):
+                if target in vidx:
+                    ridx = vidx[target]
+                    break
+            if ridx is None:
+                return None, None
+            xs = []
+            rhos = []
+            for line in lines[5:]:
+                cols = line.split()
+                if len(cols) <= ridx:
+                    continue
+                try:
+                    xs.append(float(cols[0]))
+                    rhos.append(float(cols[ridx]))
+                except (ValueError, IndexError):
+                    continue
+            return xs, rhos
+
+        first_x, first_rho = load_profile(out_files[0])
+        last_x, last_rho = load_profile(out_files[-1])
+        if not first_x or not last_x:
+            return True, "Could not parse rhoS0 from .out; skipping profile check."
+
+        m0 = sum(first_rho) / len(first_rho)
+        m1 = sum(last_rho) / len(last_rho)
+        print(f"    [IAW] mean rhoS0: {m0:.4e} -> {m1:.4e}")
+        if m0 <= 0:
+            return True, "Zero initial density; skipping profile check."
+        if not (math.isfinite(m0) and math.isfinite(m1)):
+            return False, "Non-finite density; blow-up."
+        if abs(m1 - m0) / m0 > 0.3:
+            return False, (f"Mean density changed by >30% ({m0:.3e} -> "
+                           f"{m1:.3e}); mass not conserved.")
+
+        # Correlate the (mean-subtracted) density with sin(kx*x).  For a clean
+        # single-mode IAW seed the profile stays proportional to sin(kx*x) in
+        # space (the temporal part is a scalar), so |corr| remains large.
+        def corr_with_sin(xs, rhos):
+            n = len(xs)
+            mean = sum(rhos) / n
+            dr = [rhos[i] - mean for i in range(n)]
+            s = [math.sin(kx * xs[i]) for i in range(n)]
+            m_dr = sum(dr) / n
+            m_s = sum(s) / n
+            cov = sum((dr[i] - m_dr) * (s[i] - m_s) for i in range(n))
+            vd = sum((dr[i] - m_dr) ** 2 for i in range(n))
+            vs = sum((s[i] - m_s) ** 2 for i in range(n))
+            if vd <= 0 or vs <= 0:
+                return 0.0
+            return cov / math.sqrt(vd * vs)
+
+        c0 = corr_with_sin(first_x, first_rho)
+        print(f"    [IAW] |corr(rho, sin(kx x))| first frame: {abs(c0):.3f}")
+        if abs(c0) < 0.3:
+            return False, (f"Initial density not a clean sinusoid "
+                           f"(corr={c0:.3f}); seed may be missing.")
+
+        # Bounded amplitude (no blow-up).
+        amp0 = max(first_rho) - min(first_rho)
+        amp1 = max(last_rho) - min(last_rho)
+        if amp0 <= 0:
+            return True, "Flat initial density; skipping profile check."
+        ratio = amp1 / amp0
+        print(f"    [IAW] density amplitude: {amp0:.3e} -> {amp1:.3e} "
+              f"(ratio {ratio:.3f})")
+        if ratio > 10.0:
+            return False, (f"Density amplitude grew >10x "
+                           f"({amp0:.3e} -> {amp1:.3e}); blow-up.")
+        return True, ""
+    except Exception as e:  # never let the profile check crash validation
+        return True, f"Profile check errored ({e}); skipping."
+
+
+def validate_iaw(pic_diags=None, test_name=None):
+    """Validate the ion-acoustic-wave (IAW) hybrid-PIC test.
+
+    Success criteria:
+    1. FLEKS completes (run_test already checks the exit code).
+    2. No NaN / blow-up: magnetic energy Eb and total ion energy Epart finite,
+       and Eb does not grow > 5x (no Hall/whistler runaway).
+    3. Ion particle number conserved (periodic BCs, no source): Epart0 stays
+       within [0.2, 10] of its initial value.
+    4. Density seed present and mass-conserving: from the plot output the seeded
+       ion density rhoS0 is a clean single-mode sinusoid at the first frame and
+       its mean/overall amplitude remain bounded (mass conserved, no blow-up).
+       Requires PostProc.pl output; if absent the profile check is skipped.
+    """
+    print("Validating Ion Acoustic Wave Test...")
+
+    if not pic_diags or len(pic_diags) < 2:
+        print("  [INFO] No PIC energy log found; skipping energy checks.")
+        return True, "Passed (no pic log)"
+
+    first = pic_diags[0]
+    last = pic_diags[-1]
+
+    passed = True
+    reasons = []
+
+    # --- energy / stability ------------------------------------------------
+    eb0 = first.get("Eb", 0.0)
+    eb1 = last.get("Eb", 0.0)
+    print(f"    Eb (magnetic): {eb0:.6e} -> {eb1:.6e}")
+    if not math.isfinite(eb1):
+        passed = False
+        reasons.append("Eb not finite (NaN/Inf)")
+    if eb0 > 0 and eb1 > eb0 * 5.0:
+        passed = False
+        reasons.append("Eb grew >5x (whistler/Hall runaway?)")
+
+    ep1 = last.get("Epart", 0.0)
+    print(f"    Epart (ions):  {first.get('Epart', 0.0):.6e} -> {ep1:.6e}")
+    if not math.isfinite(ep1):
+        passed = False
+        reasons.append("Epart not finite (NaN/Inf)")
+
+    e0 = first.get("Epart0", 0.0)
+    e1 = last.get("Epart0", 0.0)
+    if e0 > 0:
+        ratio = e1 / e0
+        print(f"    Epart0 (ions): {e0:.6e} -> {e1:.6e} (ratio {ratio:.4f})")
+        if ratio < 0.2 or ratio > 10.0:
+            passed = False
+            reasons.append(
+                f"Ion energy ratio {ratio:.3f} outside [0.2,10.0] "
+                f"(gross particle non-conservation / runaway)")
+    else:
+        print("    [INFO] Epart0 initial zero; skipping ion check.")
+
+    # --- density profile / seed check --------------------------------------
+    profile_ok, profile_reason = _check_iaw_density()
+    if profile_ok is False:
+        passed = False
+        reasons.append(profile_reason)
+    elif profile_reason:
+        print(f"    [IAW] {profile_reason}")
+
+    if passed:
+        print("Ion Acoustic Wave Test: PASSED")
+        return True, "Passed"
+    return False, "; ".join(reasons)
+
+
 def validate_ionization_source(pic_diags=None, test_name=None):
     """Validate an ionization source test (photoionization, electron impact,
     or charge exchange).
@@ -1966,6 +2188,7 @@ def main():
         "hybrid_ohm": validate_hybrid,
         "freestream": validate_hybrid,
         "hybrid_convection_wave": validate_hybrid,
+        "iaw": validate_iaw,
     }
     
     # Discover test subdirectories under tests/

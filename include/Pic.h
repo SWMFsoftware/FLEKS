@@ -309,6 +309,8 @@ private:
 
   BeamInfo beam;
 
+  IawInfo iaw;
+
   ParticlesInfo pInfo;
 
   // Boundary conditions for fields.

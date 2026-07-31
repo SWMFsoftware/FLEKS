@@ -26,7 +26,7 @@ Particles<NStructReal, NStructInt>::Particles(
     Grid* gridIn, FluidInterface* const fluidIn, TimeCtr* const tcIn,
     const int speciesIDIn, const Real chargeIn, const Real massIn,
     const ParticlesInfo& pInfo, const PartMode pModeIn, TestCase tcase,
-    BeamInfo beamIn)
+    BeamInfo beamIn, IawInfo iawIn)
     : AmrParticleContainer<NStructReal, NStructInt>(gridIn),
       grid(gridIn),
       fi(fluidIn),
@@ -37,7 +37,8 @@ Particles<NStructReal, NStructInt>::Particles(
       mass(massIn),
       nPartPerCell(pInfo.nPartPerCell),
       testCase(tcase),
-      beam(beamIn) {
+      beam(beamIn),
+      iaw(iawIn) {
 
   isParticleLocationRandom = pInfo.isParticleLocationRandom;
   isPPVconstant = pInfo.isPPVconstant;
@@ -238,6 +239,17 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           continue;
 
         Real q = vol2Npcel * nDens;
+
+        if (testCase == IonAcousticWave && iaw.pert != 0.0) {
+          // Ion-acoustic-wave seed: scale particle weight so the deposited
+          // ion density carries n(x) = n0 * (1 + pert*sin(kx*x)). Because all
+          // moments scale with q, the bulk velocity stays uniform while density
+          // / charge / pressure are perturbed. kx uses the x-domain length.
+          const Real Lx = Geom(iLev).ProbHi()[0] - Geom(iLev).ProbLo()[0];
+          const Real kx = (Lx > 0) ? 2.0 * dPI * amrex::Real(iaw.waveMode) / Lx : 0.0;
+          const Real factor = 1.0 + iaw.pert * std::sin(kx * xyz[0]);
+          q *= (factor > 0.0) ? factor : 0.0;
+        }
 
         if (q != 0) {
           Real u, v, w;

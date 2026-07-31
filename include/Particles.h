@@ -46,6 +46,19 @@ struct BeamInfo {
   amrex::Real ratio = 0;
 };
 
+// Ion-acoustic-wave (IAW) initial condition.
+// Seeds a sinusoidal ion density perturbation
+//   n(x) = n0 * (1 + pert * sin(kx * x)),   kx = 2*pi*waveMode / Lx
+// with Maxwellian (zero-bulk-velocity) velocity distribution and E = B = 0
+// otherwise. The restoring force comes from the electron pressure-gradient
+// term in the generalized Ohm's law (electronTemperature > 0). The
+// perturbation is applied by scaling each particle's weight, which keeps the
+// bulk velocity uniform while perturbing density / charge / pressure moments.
+struct IawInfo {
+  amrex::Real pert = 0.0;  // density perturbation amplitude (< 1)
+  int waveMode = 1;        // number of wavelengths across the x-domain
+};
+
 struct Vel {
   amrex::Real vth;
   amrex::Real vx;
@@ -412,6 +425,8 @@ public:
 
   BeamInfo beam;
 
+  IawInfo iaw;
+
   // Index of the integer data.
   static constexpr int iRecordCount_ = 1;
 
@@ -419,7 +434,7 @@ public:
             const int speciesIDIn, const amrex::Real chargeIn,
             const amrex::Real massIn, const ParticlesInfo& pInfo,
             const PartMode pModeIn, TestCase tcase = RegularSimulation,
-            BeamInfo beamIn = BeamInfo());
+            BeamInfo beamIn = BeamInfo(), IawInfo iawIn = IawInfo());
 
   int n_lev() const { return GetParGDB()->finestLevel() + 1; }
 
