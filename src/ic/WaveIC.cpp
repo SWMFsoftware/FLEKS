@@ -5,7 +5,17 @@
 
 #include <cmath>
 
+#include "Particles.h"
 #include "ReadParam.h"
+
+// The pure-EM lightwave test seeds no macroparticles (the electron is a
+// background fluid exercised only by the field solver). Zero the per-cell count
+// so add_particles_domain() returns early and the PIC cost collapses to the
+// field solve. Other wave profiles keep their kinetic ions.
+void WaveIC::apply_particle_override(ParticlesInfo& pInfo) const {
+  if (profile_ == LightWave)
+    pInfo.nPartPerCell = amrex::IntVect::Zero;
+}
 
 using namespace amrex;
 

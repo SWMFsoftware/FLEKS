@@ -38,6 +38,11 @@ public:
   void read_param(ReadParam& param) override;
   void set_fields(PicICFields& fields) const override;
 
+  // The pure-EM lightwave test has no macroparticles: zero the per-cell count
+  // so the electron background remains a fluid. Wave tests with kinetic ions
+  // (hybridwave / convectionwave / ionacousticwave) keep their particles.
+  void apply_particle_override(class ParticlesInfo& pInfo) const override;
+
   bool modifies_weights() const override { return profile_ == IonAcousticWave; }
   void modify_particle_weight(ParticleICState& s) const override;
 

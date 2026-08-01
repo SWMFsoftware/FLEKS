@@ -30,7 +30,7 @@ inline constexpr int nDim3 = 3;
 
 namespace config{
 // Level of grids. 
-inline constexpr int nLevMax = 1; 
+inline constexpr int nLevMax = 2; 
 }
 
 inline constexpr int ix_ = 0, iy_ = 1, iz_ = 2;
