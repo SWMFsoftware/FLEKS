@@ -286,6 +286,8 @@ The standalone test suite is organized by physics scenario:
 | Electron impact       | `tests/electron_impact/` | Voronov-1997 impact rate, e- only    |
 | Charge exchange       | `tests/charge_exchange/` | Constant CX cross section, ions only |
 | Performance benchmark | `tests/performance/`     | Beam-based scaling benchmark         |
+| Single-cell Hall      | `tests/singlecell/`      | 1-cell periodic; curl B = 0 => Hall term exactly 0 |
+| Zero-current wave     | `tests/zerocurrent/`     | No particles (J=0); Hall term vanishes, wave frozen |
 
 Each test directory contains a `PARAM.in` and a `README.md`. The unified runner
 `tests/validate_tests.py` dynamically discovers, runs, and validates all tests

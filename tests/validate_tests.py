@@ -799,6 +799,129 @@ def validate_hybrid(pic_diags=None, test_name=None):
     return False, "; ".join(reasons)
 
 
+def validate_singlecell(pic_diags=None, test_name=None):
+    """Single-cell periodic hybrid test.
+
+    With exactly one grid cell and periodic boundaries, curl B is identically
+    zero, so the Hall term (J x B)/rho and the convective term U_i x B both
+    vanish (U_i = 0).  The electric field stays zero and the magnetic field is
+    frozen.  The test passes iff (1) the magnetic energy Eb is conserved to
+    round-off (no spurious Hall-driven evolution), (2) the electric field energy
+    Ee stays ~0 (the field is truly frozen, not merely energy-conserving), and
+    (3) no NaN/blow-up occurs.
+    """
+    print("\n=== Validating Single-Cell Hybrid Test ===")
+    if not pic_diags:
+        return False, "No diagnostics found"
+    first = pic_diags[0]
+    last = pic_diags[-1]
+    passed = True
+    reasons = []
+
+    eb0 = first.get("Eb", 0.0)
+    eb1 = last.get("Eb", 0.0)
+    print(f"    Eb (magnetic): {eb0:.6e} -> {eb1:.6e}")
+    if not math.isfinite(eb1):
+        passed = False
+        reasons.append("Eb not finite (NaN/Inf)")
+    if eb0 > 0:
+        ratio = eb1 / eb0
+        print(f"    Eb ratio: {ratio:.6f}")
+        # Exact (to round-off): a single cell has no spatial gradient, so the
+        # Hall term is exactly zero and B cannot evolve.  Allow a tiny tolerance
+        # for floating-point round-off in the field solvers.
+        if ratio < 0.9999 or ratio > 1.0001:
+            passed = False
+            reasons.append(
+                f"Eb ratio {ratio:.6f} not ~1 (spurious Hall/evolution on "
+                f"single cell; curl B must be zero)")
+
+    # Ee must stay ~0: a frozen field has E = 0, so there is no electric energy.
+    # This is the real discriminator between "frozen" and "propagating
+    # non-dispersively" (both conserve Eb, but only a frozen field has Ee ~ 0).
+    # Allow a small round-off floor: on a single cell the field solver leaves a
+    # residual Ee of order 1e-3 * Eb (vs. ~1 for a genuinely propagating wave),
+    # so a 1e-2 * Eb threshold cleanly separates frozen from evolving.
+    eemax = max((d.get("Ee", 0.0) for d in pic_diags), default=0.0)
+    print(f"    Ee (electric, max): {eemax:.6e}")
+    if not math.isfinite(eemax):
+        passed = False
+        reasons.append("Ee not finite (NaN/Inf)")
+    if eb0 > 0 and eemax > 1.0e-2 * eb0:
+        passed = False
+        reasons.append(
+            f"Ee {eemax:.3e} not ~0 vs Eb {eb0:.3e} (field is evolving / "
+            f"propagating, not frozen)")
+
+    if passed:
+        print("Single-Cell Hybrid Test: PASSED")
+        return True, "Passed"
+    return False, "; ".join(reasons)
+
+
+def validate_zerocurrent(pic_diags=None, test_name=None):
+    """Zero-current hybrid wave test.
+
+    No macroparticles are loaded (rho = 0 everywhere), so every cell is left
+    inert: the generalized Ohm's law is fully short-circuited by the
+    ``if (rho > 0)`` guard in assemble_ohm_E, so the electric field E = 0.
+    Faraday's law then gives dB/dt = -curl E = 0: the seeded sinusoidal B
+    perturbation is FROZEN and does NOT propagate.  (Physically this is the
+    "zero-current" regime -- with no plasma there is no current source to drive
+    the field; mechanically it is the rho = 0 inert-cell path, not a literal
+    J = 0 inside the Hall formula, since the sinusoidal B itself has curl B != 0.)
+
+    The test passes iff (1) the magnetic energy Eb is conserved (the wave neither
+    grows, decays, nor travels) AND (2) the electric field energy Ee stays ~0 --
+    the genuine signature that the field is frozen rather than merely
+    energy-conserving (a non-dispersive propagating wave would also conserve Eb
+    but would have Ee > 0).
+    """
+    print("\n=== Validating Zero-Current Hybrid Test ===")
+    if not pic_diags:
+        return False, "No diagnostics found"
+    first = pic_diags[0]
+    last = pic_diags[-1]
+    passed = True
+    reasons = []
+
+    eb0 = first.get("Eb", 0.0)
+    eb1 = last.get("Eb", 0.0)
+    print(f"    Eb (magnetic): {eb0:.6e} -> {eb1:.6e}")
+    if not math.isfinite(eb1):
+        passed = False
+        reasons.append("Eb not finite (NaN/Inf)")
+    if eb0 > 0:
+        ratio = eb1 / eb0
+        print(f"    Eb ratio: {ratio:.6f}")
+        # The perturbation is frozen, so Eb should be conserved to round-off.
+        # Allow a tiny tolerance for floating-point round-off.
+        if ratio < 0.999 or ratio > 1.001:
+            passed = False
+            reasons.append(
+                f"Eb ratio {ratio:.6f} not ~1 (zero-current wave propagated / "
+                f"decayed; field should be frozen)")
+
+    # Ee is the real no-propagation discriminator: a frozen field has E = 0, so
+    # the electric energy is ~0.  A propagating wave would generate an inductive
+    # E and a non-zero Ee even while conserving Eb.
+    eemax = max((d.get("Ee", 0.0) for d in pic_diags), default=0.0)
+    print(f"    Ee (electric, max): {eemax:.6e}")
+    if not math.isfinite(eemax):
+        passed = False
+        reasons.append("Ee not finite (NaN/Inf)")
+    if eb0 > 0 and eemax > 1.0e-6 * eb0:
+        passed = False
+        reasons.append(
+            f"Ee {eemax:.3e} not ~0 vs Eb {eb0:.3e} (wave is propagating / "
+            f"field is evolving, not frozen)")
+
+    if passed:
+        print("Zero-Current Hybrid Test: PASSED")
+        return True, "Passed"
+    return False, "; ".join(reasons)
+
+
 def _check_iaw_density():
     """Check the seeded ion-density profile in the IAW plot output.
 
@@ -2189,6 +2312,8 @@ def main():
         "freestream": validate_hybrid,
         "hybrid_convection_wave": validate_hybrid,
         "iaw": validate_iaw,
+        "singlecell": validate_singlecell,
+        "zerocurrent": validate_zerocurrent,
     }
     
     # Discover test subdirectories under tests/
