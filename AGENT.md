@@ -289,9 +289,17 @@ The standalone test suite is organized by physics scenario:
 | Single-cell Hall      | `tests/singlecell/`      | 1-cell periodic; curl B = 0 => Hall term exactly 0 |
 | Zero-current wave     | `tests/zerocurrent/`     | No particles (J=0); Hall term vanishes, wave frozen |
 
-Each test directory contains a `PARAM.in` and a `README.md`. The unified runner
-`tests/validate_tests.py` dynamically discovers, runs, and validates all tests
-(except `performance/`). Results are written to `tests/summary.md`.
+Each test directory contains a `PARAM.in`, a `README.md`, and (for most tests)
+its own `validate.py` module holding that test's validators (energy-log checks,
+plot-output checks, and optionally a `PARTICLE_TOL` dict enabling the
+test-particle tracer check). The unified runner `tests/validate_tests.py` keeps
+only the shared infrastructure (run-directory management, launching FLEKS and
+PostProc, reading the PIC/particle logs, the summary table) and dynamically
+loads the `validate.py` module for whichever test it is about to run, so a
+single test does not import the code for the others. Code shared by several
+tests (e.g. the hybrid family) lives in `tests/_shared/`. Output is controlled
+with the Python `logging` module (INFO by default; pass `--verbose`/`-v` for
+DEBUG diagnostics). Results are written to `tests/summary.md`.
 
 Ionization processes are configured via separate parameter commands:
 - `#PHOTOIONIZATION` — geometric \\(1/r^2\\) dilution
