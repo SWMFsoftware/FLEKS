@@ -454,8 +454,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                         nGst);
     distribute_FabArray(nodeEth[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
-    distribute_FabArray(nodeEthPrev[iLev], nGrids[iLev], DistributionMap(iLev),
-                        3, nGst);
     distribute_FabArray(centerNetChargeOld[iLev], cGrids[iLev],
                         DistributionMap(iLev), 1, nGst);
     distribute_FabArray(centerNetChargeN[iLev], cGrids[iLev],
@@ -548,8 +546,11 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     for (auto& pl : nodePlasmaPrev) {
       if (pl.empty())
         pl.resize(n_lev_max());
+      // nodePlasmaPrev stores only the rho + 3 momentum components used by the
+      // Ohm's-law time interpolation, not the full moment tensor, to save
+      // memory and copy bandwidth.
       distribute_FabArray(pl[iLev], nGrids[iLev], DistributionMap(iLev),
-                          nMoments, nGst, doMoveData);
+                          nHybridMomentsComps, nGst, doMoveData);
     }
   }
 
@@ -877,11 +878,13 @@ void Pic::particle_mover() {
   // Phase 3.4: use the time-averaged B in the Boris push when enabled.
   const Vector<MultiFab>& nodeBpush =
       (useAvgFieldB && isBavgInit) ? nodeBavg : nodeB;
-  // Full-PIC uses the E from this step's update_E (nodeEth). The hybrid solver
-  // pushes with the integer-step E computed in the previous field advance
-  // (nodeEthPrev, seeded from the initial E on the first step) -- the
-  // hybrid-VPIC convention.
-  const Vector<MultiFab>& nodeEpush = useHybridPIC ? nodeEthPrev : nodeEth;
+  // The Boris push uses nodeEth. For full PIC this is the E from this step's
+  // update_E. For the hybrid solver update_B_hybrid has already computed the
+  // integer-step E^{n+1} (hstep = 1) on the final B^{n+1} into nodeEth at the
+  // end of the previous field advance, so the push here reuses it (hybrid-VPIC
+  // convention: push with the integer-step E). nodeEth is not modified between
+  // the end of update_B_hybrid and this push.
+  const Vector<MultiFab>& nodeEpush = nodeEth;
   for (int i : kineticSpecies_) {
     parts[i]->mover(nodeEpush, nodeBpush, eBg, uBg, dt, dtnext);
   }
@@ -1542,9 +1545,10 @@ void Pic::update(bool doReportIn) {
 
   // Hybrid path: the particle Boris push happens BEFORE the moment deposit and
   // the Ohm's-law E computation (hybrid-VPIC convention). The push uses the
-  // integer-step E field (nodeEthPrev) and B^n computed in the previous step's
-  // update_B_hybrid. On the very first step these are seeded from the initial
-  // moments and the initial-condition E field below.
+  // integer-step E field (nodeEth) and B^n computed at the end of the previous
+  // step's update_B_hybrid. On the very first step the previous moments are
+  // seeded from the initial deposit below (the first push uses the
+  // initial-condition E in nodeEth).
   if (useHybridPIC && isFirstHybridStep) {
     seed_first_hybrid_step();
   }
@@ -2519,29 +2523,29 @@ void Pic::save_current_moments_to_prev() {
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    // Only the rho + 3 momentum components are needed for the Ohm's-law time
+    // interpolation; nodePlasmaPrev is a 4-component array (they are the first
+    // nHybridMomentsComps components of nodePlasma).
     MultiFab::Copy(nodePlasmaPrev[nSpecies][iLev], nodePlasma[nSpecies][iLev], 0,
-                   0, nodePlasma[nSpecies][iLev].nComp(),
-                   nodePlasma[nSpecies][iLev].nGrow());
+                   0, nHybridMomentsComps, nodePlasma[nSpecies][iLev].nGrow());
   }
 }
 
 //==========================================================
-// Seed the state needed for the particle Boris push on the very first hybrid
-// step, where there is no previous field advance:
-//   - nodePlasmaPrev is seeded from the initial moment deposit so the hstep
-//     interpolation degrades to the current value (the first step is a plain
-//     average);
-//   - nodeEthPrev is seeded from the initial-condition E field (set by
-//     fill_E_B_fields / the IC), which plays the role of E^0 for the first push.
+// Seed nodePlasmaPrev on the very first hybrid step, where there is no previous
+// deposit: it is initialised from the current moment deposit so the hstep
+// interpolation degrades to a plain average for that single step. The first
+// particle Boris push uses the initial-condition E field directly (nodeEth, set
+// by fill_E_B_fields / the IC), which plays the role of E^0.
 void Pic::seed_first_hybrid_step() {
   std::string nameFunc = "Pic::seed_first_hybrid_step";
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    // nodePlasmaPrev is a 4-component array (rho + 3 momentum); the first
+    // nHybridMomentsComps components of nodePlasma match its layout.
     MultiFab::Copy(nodePlasmaPrev[nSpecies][iLev], nodePlasma[nSpecies][iLev], 0,
-                   0, nodePlasma[nSpecies][iLev].nComp(),
-                   nodePlasma[nSpecies][iLev].nGrow());
-    MultiFab::Copy(nodeEthPrev[iLev], nodeE[iLev], 0, 0, 3, nodeE[iLev].nGrow());
+                   0, nHybridMomentsComps, nodePlasma[nSpecies][iLev].nGrow());
   }
 }
 
@@ -2884,21 +2888,30 @@ void Pic::update_B_hybrid() {
   }
 
   // Compute the E field at the end of the full magnetic advance (hstep = 1,
-  // i.e. E^{n+1}) and save it into nodeEthPrev for the next update()'s particle
-  // Boris push (hybrid-VPIC convention: push uses the integer-step E). This
-  // recomputation is done for every integrator because the RK4 path only writes
-  // the scratch nodeE_RK4, and the euler/heun paths write nodeEth at intermediate
-  // hstep values, so nodeEth must be freshly evaluated on the final B^{n+1}.
+  // i.e. E^{n+1}) into nodeEth, used by the next update()'s particle Boris push
+  // (hybrid-VPIC convention: push uses the integer-step E). This recomputation
+  // is done for every integrator because the RK4 path only writes the scratch
+  // nodeE_RK4, and the euler/heun paths write nodeEth at intermediate hstep
+  // values, so nodeEth must be freshly evaluated on the final B^{n+1}. Only
+  // levels holding kinetic particles need nodeEth (it is read solely by the
+  // Boris push), so levels without particles are skipped to avoid the wasted
+  // Ohm's-law evaluation.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    bool hasParticles = false;
+    for (int i : kineticSpecies_) {
+      if (parts[i]->NumberOfParticlesAtLevel(iLev, true, true) > 0) {
+        hasParticles = true;
+        break;
+      }
+    }
+    if (!hasParticles) {
+      continue;
+    }
     const auto& cBin =
         (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
     const auto& nBin =
         (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
     assemble_ohm_E(cBin, nBin, nodeEth[iLev], iLev, 1.0);
-  }
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    MultiFab::Copy(nodeEthPrev[iLev], nodeEth[iLev], 0, 0, 3,
-                   nodeEth[iLev].nGrow());
   }
 }
 

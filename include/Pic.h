@@ -154,13 +154,6 @@ private:
   amrex::Vector<amrex::MultiFab> centerBstart_heun;
   amrex::Vector<amrex::MultiFab> centerBstar_heun;
 
-  // Second-order hybrid: E field from the previous field advance, carried for
-  // the particle Boris push (the push happens at the START of each update(),
-  // before the Ohm's law is re-evaluated -- see Pic::update). Mirrors
-  // HybridVPIC, where particles are pushed with the integer-step E_n held in
-  // the interpolator from the previous step.
-  amrex::Vector<amrex::MultiFab> nodeEthPrev;
-
   amrex::Vector<amrex::MultiFab> dBdt;
   amrex::Vector<amrex::MultiFab> particleQuality;
 
@@ -292,10 +285,10 @@ private:
   std::string fieldIntegrator = "rk4";
   bool useRK4 = false;
 
-  // First-hybrid-step guard: nodePlasmaPrev / nodeEthPrev are seeded on the
-  // very first hybrid update (there is no previous deposit or previous E), and
-  // the current-interpolation hstep then degrades to a plain average (or the
-  // current value) for that single step.
+  // First-hybrid-step guard: nodePlasmaPrev is seeded on the very first hybrid
+  // update (there is no previous deposit), and the current-interpolation hstep
+  // then degrades to a plain average for that single step. The first particle
+  // push uses the initial-condition E (nodeEth) directly.
   bool isFirstHybridStep = true;
 
   // Phase 3.4 -- time-averaged (EMA) magnetic field.
@@ -366,7 +359,6 @@ public:
     dBcorr_heun.resize(n_lev_max());
     centerBstart_heun.resize(n_lev_max());
     centerBstar_heun.resize(n_lev_max());
-    nodeEthPrev.resize(n_lev_max());
     kRK4.resize(n_lev_max());
     for (int iL = 0; iL < n_lev_max(); ++iL) kRK4[iL].resize(4);
     etaHyperLev.resize(n_lev_max(), 0.0);
@@ -545,7 +537,10 @@ public:
   // Copy the current moment deposit into nodePlasmaPrev before a fresh deposit
   // (so nodePlasmaPrev = J^{n-1/2} and nodePlasma = J^{n+1/2}).
   void save_current_moments_to_prev();
-  // Seed nodePlasmaPrev and nodeEthPrev on the very first hybrid step.
+  // Seed nodePlasmaPrev on the very first hybrid step (there is no previous
+  // deposit), so the hstep interpolation degrades to a plain average for that
+  // single step. The first particle Boris push uses the initial-condition E
+  // field (nodeEth, set by fill_E_B_fields / the IC) directly.
   void seed_first_hybrid_step();
 
   //-------------Electric field solver end-------------
