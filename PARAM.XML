@@ -465,7 +465,7 @@ HYBRIDPIC is T.
 #MOMENTTIMECENTERING
 F                   useMomentTimeCentering
 
-Time-centre the magnetic field used inside the generalized Ohm's law. The ion
+Time-center the magnetic field used inside the generalized Ohm's law. The ion
 moments are already deposited at t^{n+1/2} (the Boris half-stage position push
 runs before sum_moments); this flag additionally predicts B^{n+1/2} =
 B^n - (dt/2)*curl(E_Ohm(U_i^{n+1/2}, B^n)) and re-evaluates the Ohm's law there,

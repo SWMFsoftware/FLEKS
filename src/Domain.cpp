@@ -939,6 +939,7 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#UPWINDB" || command == "#UPWINDE" ||
         command == "#LAGGEDLIMITER" || command == "#DIVB" ||
         command == "#CMAXE" || command == "#TESTCASE" ||
+        command == "#WAVEIC" ||
         command == "#FASTMERGE" || command == "#ADAPTIVESOURCEPPC" ||
         command == "#MERGELIGHT" || command == "#VACUUM" ||
         command == "#PARTICLELEVRATIO" || command == "#OHION" ||

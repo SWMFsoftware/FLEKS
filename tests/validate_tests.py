@@ -1881,6 +1881,153 @@ def _hyb_dft_dominant(by):
     return dominant_k, dominant_frac, nondc_power
 
 
+def _hyb_seeded_mode():
+    """Return the seeded spatial mode from the test PARAM's #WAVEIC waveMode.
+
+    Defaults to 1 (the HybridWave/ConvectionWave/IAW preset). Reads the
+    'waveMode <int>' line of the #WAVEIC block if present."""
+    p = os.path.join("tests", "hybrid_whistler", "PARAM.in")
+    try:
+        with open(p) as f:
+            for line in f:
+                s = line.strip()
+                toks = s.split()
+                if len(toks) >= 2 and toks[0] == "waveMode":
+                    return int(float(toks[1]))
+    except (OSError, ValueError):
+        pass
+    return 1
+
+
+def _hyb_whistler_dispersion(out_files):
+    """Measure the seeded-mode whistler frequency and compare with Hall-MHD.
+
+    Reads ALL time-resolved .out plot files, auto-detects the dominant spatial
+    mode n (the seeded wavelength), tracks the phase of its circularly-polarised
+    complex amplitude C(t) = (1/N) sum_j (By_j + i Bz_j) e^{-i k x_j},
+    fits phi(t) = omega*t + phi0, and returns the frequency in code units.
+    Compares it against the Hall-MHD whistler relation
+        omega / Omega_i = (k d_i)^2
+    (the implemented solver is Hall-MHD without electron inertia, so the
+    frequency is NOT bounded by Omega_i).  The box-mode wavenumber and the
+    time normalisation are read from the test's PARAM.in.
+
+    Returns:
+      True,  message  -> measured frequency matched theory
+      False, reason   -> measured frequency mismatched theory (fails the test)
+      None,  reason   -> not enough data to measure (skip)
+    """
+    import cmath
+    if not out_files or len(out_files) < 3:
+        return None, "need >=3 .out frames"
+
+    # Load the first usable frame to auto-detect the dominant spatial mode.
+    first = None
+    for f in out_files:
+        data = _hyb_load_out(f)
+        if data is not None and len(data[0]) >= 4:
+            first = (f, data)
+            break
+    if first is None:
+        return None, "no parseable frames"
+    _, (by0, bz0) = first
+    kdom, kfrac, _ = _hyb_dft_dominant(by0)
+    if kdom <= 0:
+        return None, "no dominant spatial mode (flat By)"
+    if kfrac < 0.3:
+        return None, "dominant mode too weak (%.2f)" % kfrac
+
+    # Collect (time_si, phase) samples for the dominant mode n = kdom.
+    samples = []
+    for f in out_files:
+        data = _hyb_load_out(f)
+        if data is None:
+            continue
+        by, bz = data
+        n = len(by)
+        if n < 4:
+            continue
+        t_si = _frame_time(f)
+        if t_si is None:
+            continue
+        c = complex(0.0, 0.0)
+        for i in range(n):
+            c += complex(by[i], bz[i]) * cmath.exp(-2j * math.pi * kdom * i / n)
+        C1 = c / n
+        if abs(C1) < 1e-12:
+            continue
+        samples.append((t_si, cmath.phase(C1)))
+    if len(samples) < 3:
+        return None, "too few usable frames"
+
+    samples.sort(key=lambda s: s[0])
+    unwrapped = [samples[0][1]]
+    for i in range(1, len(samples)):
+        dphi = samples[i][1] - samples[i - 1][1]
+        dphi -= 2.0 * math.pi * round(dphi / (2.0 * math.pi))
+        unwrapped.append(unwrapped[-1] + dphi)
+
+    # Linear fit  phi = omega_si * t + phi0  (t in SI seconds).
+    ts = [s[0] for s in samples]
+    nt = len(ts)
+    mean_t = sum(ts) / nt
+    mean_p = sum(unwrapped) / nt
+    cov = sum((ts[i] - mean_t) * (unwrapped[i] - mean_p) for i in range(nt))
+    var_t = sum((ts[i] - mean_t) ** 2 for i in range(nt))
+    if var_t <= 0:
+        return None, "no time spread in frames"
+    omega_si = cov / var_t
+    var_p = sum((unwrapped[i] - mean_p) ** 2 for i in range(nt))
+    r2 = (cov ** 2 / (var_t * var_p)) if var_p > 0 else 0.0
+
+    # Read Lx (code units) and tNorm from PARAM.in.
+    p = os.path.join("tests", "hybrid_whistler", "PARAM.in")
+    def numeric_after(command):
+        toks = []
+        capture = False
+        with open(p) as f:
+            for line in f:
+                s = line.strip()
+                if not s:
+                    continue
+                tok = s.split()[0]
+                if tok.startswith("#"):
+                    capture = (tok == command)
+                    continue
+                if capture:
+                    try:
+                        toks.append(float(tok))
+                    except ValueError:
+                        pass
+        return toks
+    geoms = numeric_after("#GEOMETRY")
+    norms = numeric_after("#NORMALIZATION")
+    if len(geoms) >= 2 and len(norms) >= 2:
+        Lx = abs(geoms[1] - geoms[0])
+        tNorm = norms[0] / norms[1] if norms[1] > 0 else 1.0
+    else:
+        Lx, tNorm = 6.4, 2.0
+
+    k = 2.0 * math.pi * kdom / Lx
+    omega_code = omega_si * tNorm
+    # Hall-MHD whistler branch: omega/Omega_i = (k d_i)^2 with d_i = 1 here.
+    # The tolerance is deliberately generous (50%): it must catch a missing
+    # 1/(4*pi) Hall current (which makes the measured omega a factor ~4*pi too
+    # large) while tolerating the kinetic-ion / near-cyclotron corrections that
+    # shift the n=1 box mode (k d_i ~ 1) off the cold Hall-MHD branch.
+    omega_theory = k * k
+    tol = 0.50 * max(omega_theory, 1e-9)
+
+    msg = ("whistler dispersion n=%d: measured |omega|/Omega_i = %.3f "
+           "(theory (k d_i)^2 = %.3f, k d_i = %.3f), fit r^2 = %.2f"
+           % (kdom, abs(omega_code), omega_theory, k, r2))
+    # The sign of omega_code is a phase-convention artifact (the n=1 fit tracks
+    # By+iBz); the dispersion check compares the frequency magnitude.
+    if abs(abs(omega_code) - omega_theory) <= tol:
+        return True, msg
+    return False, msg + " [DISPERSION MISMATCH]"
+
+
 def _check_hybrid_wave_dispersion():
     """Check the transverse wave launched by the HybridWave initializer.
 
@@ -1923,12 +2070,15 @@ def _check_hybrid_wave_dispersion():
     if nondc_e < 1e-30:
         return False, "No transverse wave power at early time (By is flat/zero)"
 
-    if dom_k_e != 1:
-        return False, (f"Early dominant mode n={dom_k_e} (expected n=1 for "
-                       f"seeded wavelength kx=2pi/Lx)")
+    # The seeded mode is the #WAVEIC waveMode (default 1 for the presets).
+    seeded_mode = _hyb_seeded_mode()
+    if dom_k_e != seeded_mode:
+        return False, (f"Early dominant mode n={dom_k_e} (expected n="
+                       f"{seeded_mode} for the seeded wavelength)")
     if dom_frac_e < 0.5:
-        return False, (f"Early mode n=1 carries only {dom_frac_e*100:.1f}% "
-                       f"of non-DC power (wave spectrum not clean at t=0)")
+        return False, (f"Early mode n={seeded_mode} carries only "
+                       f"{dom_frac_e*100:.1f}% of non-DC power "
+                       f"(wave spectrum not clean at t=0)")
 
     # --- Late-time check: amplitude must be bounded ---
     late_file = out_files[-1]
@@ -1953,6 +2103,20 @@ def _check_hybrid_wave_dispersion():
     if bperp_max_l > 10.0:
         return False, (f"Late amplitude {bperp_max_l:.2e} too large "
                        f"(unstable; seed was ~0.02)")
+
+    # --- Whistler dispersion: measure the n=1 frequency and compare to the
+    #     Hall-MHD branch omega/Omega_i = (k d_i)^2. This is the decisive check
+    #     of the Hall term: a missing/factor-4pi Hall current changes the
+    #     measured omega by the same factor. Requires >=3 time-resolved frames
+    #     (the hybrid_whistler PARAM saves every 10 steps). If fewer frames are
+    #     present this part is skipped (no false negative for other profiles). ---
+    disp_ok, disp_reason = _hyb_whistler_dispersion(out_files)
+    if disp_ok is False:
+        return False, disp_reason
+    if disp_ok is True:
+        print(f"    [HYB] {disp_reason}")
+    else:
+        print(f"    [HYB] Whistler-dispersion check skipped: {disp_reason}")
 
     print("    [HYB] Hybrid wave: early wavelength + late bounded-amplitude: VERIFIED")
     return True, "Passed"

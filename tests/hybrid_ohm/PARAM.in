@@ -60,10 +60,12 @@ the charge-density fluctuations carried by particle noise.
 1.0                     electronDensity0
 
 Sub-cycle the B update: the explicit Hall advance is limited by the discrete
-grid-scale modes, dt_sub < dx^2/(6 v_A d_i) ~ 1.7e-3 (dx = 0.1, v_A = d_i = 1),
-so dt = 0.02 needs nHallSubcycle >= 12; 32 gives dt_sub = 6.25e-4 with margin.
+grid-scale whistler mode. Because the compact curl operators annihilate the
+exact Nyquist mode, the effective omega_max is far below the naive continuum
+estimate and dt = 0.02 is RK4-stable even with nHallSubcycle = 1 (verified:
+identical whistler frequency for {1,4,8,16,32}).
 #HALLSUBCYCLE
-32                      nHallSubcycle
+8                       nHallSubcycle
 
 Single kinetic ion species (q = m = 1); the electron is an implicit
 neutralizing massless fluid, so no electron particle species is present.

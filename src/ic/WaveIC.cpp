@@ -211,8 +211,15 @@ void WaveIC::set_fields(PicICFields& fields) const {
         }
       }
     } else {
-      // x-aligned transverse wave (hybrid / convection): B = (Bx0 + B1 cos kx,
-      // B1 sin kx, 0). E is left as deposited by fill_E_B_fields (not zeroed).
+      // x-aligned transverse circularly-polarized wave (hybrid / convection):
+      // B = (Bx0, B1 cos kx, B1 sin kx), i.e. a pure transverse perturbation
+      // delta B = (0, B1 cos kx, B1 sin kx) on the guide field Bx0, matching
+      // the Alfven velocity kick in modify_particle_velocity(). This is the
+      // self-consistent right-hand-circularly-polarized whistler/ion-cyclotron
+      // eigenmode seed; it must NOT add any longitudinal delta Bx (a non-zero
+      // Bx perturbation would make the field non-transverse and break the
+      // circular polarization the velocity kick assumes). E is left as
+      // deposited by fill_E_B_fields (not zeroed).
       if (seedB_) {
         nodeB.setVal(0.0);
         centerB.setVal(0.0);
@@ -224,9 +231,9 @@ void WaveIC::set_fields(PicICFields& fields) const {
             const amrex::Real x = prob_lo[0] + dx[0] * i;
             const amrex::Real cphi = std::cos(kx_ * x);
             const amrex::Real sphi = std::sin(kx_ * x);
-            arrB(i, j, k, ix_) = Bx0 + B1 * cphi;
-            arrB(i, j, k, iy_) = B1 * sphi;
-            arrB(i, j, k, iz_) = 0.0;
+            arrB(i, j, k, ix_) = Bx0;
+            arrB(i, j, k, iy_) = B1 * cphi;
+            arrB(i, j, k, iz_) = B1 * sphi;
           });
         }
         for (MFIter mfi(centerB); mfi.isValid(); ++mfi) {
@@ -237,9 +244,9 @@ void WaveIC::set_fields(PicICFields& fields) const {
             const amrex::Real x = prob_lo[0] + dx[0] * (i + 0.5);
             const amrex::Real cphi = std::cos(kx_ * x);
             const amrex::Real sphi = std::sin(kx_ * x);
-            arrB(i, j, k, ix_) = Bx0 + B1 * cphi;
-            arrB(i, j, k, iy_) = B1 * sphi;
-            arrB(i, j, k, iz_) = 0.0;
+            arrB(i, j, k, ix_) = Bx0;
+            arrB(i, j, k, iy_) = B1 * cphi;
+            arrB(i, j, k, iz_) = B1 * sphi;
           });
         }
       }
