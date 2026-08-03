@@ -126,6 +126,95 @@ def run_test(test_dir, nprocs=1):
     return result.stdout, 0
 
 
+# ---------------------------------------------------------------------------
+# Build-configuration pre-flight checks
+#
+# The standalone suite expects a single binary built as:
+#     ./Config.pl -lev=2 -u=Exo && make
+# These helpers inspect the *configured* source (include/UserSource.h) and AMR
+# level (include/Constants.h) so that a misconfigured build is caught before a
+# test runs, instead of producing confusing physics failures (empty source) or
+# an abort at start-up (nLevMax = 1 on lightwave).
+# ---------------------------------------------------------------------------
+
+# Tests that exercise the Exosphere ionization source.  They require the Exo
+# user source (-u=Exo); with the default empty source they compile and run but
+# no ionization source term is applied, so the physics checks fail.
+EXO_SOURCE_TESTS = {
+    "chargeexchange", "photoionization", "electronimpact",
+    "recombination", "chemistry",
+}
+
+# Tests that require AMR (nLevMax >= 2).
+AMR_TESTS = {"lightwave"}
+
+
+def configured_user_source_is_exo():
+    """Return True if include/UserSource.h is the Exo source.
+
+    Reads the configured source file (the one copied by Config.pl -u=Exo from
+    userfiles/ExoSource.h).  Returns False for the default empty source and on
+    any I/O error (treat as "not Exo" so the check fails loudly).
+    """
+    try:
+        with open("include/UserSource.h", "r") as f:
+            content = f.read()
+    except (OSError, IOError):
+        return False
+    # The Exo source guard is _EXOSOURCE_H_ and it sets useFluidSource = true.
+    # The default empty source uses _USERSOURCE_H_ and leaves useFluidSource
+    # false.  Checking either marker is enough to distinguish them.
+    if "_EXOSOURCE_H_" in content or "useFluidSource = true" in content:
+        return True
+    return False
+
+
+def configured_nlevmax():
+    """Return the configured nLevMax from include/Constants.h (int).
+
+    Returns None if it cannot be determined (file missing / malformed).
+    """
+    try:
+        with open("include/Constants.h", "r") as f:
+            content = f.read()
+    except (OSError, IOError):
+        return None
+    import re
+    m = re.search(r"nLevMax\s*=\s*(\d+)", content)
+    return int(m.group(1)) if m else None
+
+
+def preflight_check(test_name):
+    """Fail fast if the configured binary cannot run `test_name`.
+
+    Returns (ok: bool, reason: str|None).  When ok is False the caller should
+    skip the test and report the reason (an actionable build instruction).
+    """
+    if test_name in EXO_SOURCE_TESTS and not configured_user_source_is_exo():
+        return False, (
+            f"Test '{test_name}' needs the Exosphere user source, but "
+            "include/UserSource.h is the default empty source.\n"
+            "  Rebuild with:  ./Config.pl -lev=2 -u=Exo && make"
+        )
+
+    if test_name in AMR_TESTS:
+        nlev = configured_nlevmax()
+        if nlev is None:
+            return False, (
+                f"Test '{test_name}' needs AMR (nLevMax >= 2), but "
+                "include/Constants.h could not be read.\n"
+                "  Rebuild with:  ./Config.pl -lev=2 -u=Exo && make"
+            )
+        if nlev < 2:
+            return False, (
+                f"Test '{test_name}' needs AMR (nLevMax >= 2), but the "
+                f"binary is configured with nLevMax = {nlev}.\n"
+                "  Rebuild with:  ./Config.pl -lev=2 -u=Exo && make"
+            )
+
+    return True, None
+
+
 def validate_beam():
     """Validate the beam instability test.
 
@@ -1464,6 +1553,17 @@ def main():
         print(f"\n==========================================")
         print(f"Starting test: {name.upper()}")
         print(f"==========================================")
+
+        # Fail fast if the configured binary cannot run this test (wrong user
+        # source or AMR level), before spending time executing it.
+        ok, preflight_reason = preflight_check(name)
+        if not ok:
+            print(f"SKIP: {name.upper()} cannot run with the configured build.")
+            print(preflight_reason)
+            results.append((name.upper(), "FAILED",
+                            f"build misconfigured: {preflight_reason}"))
+            continue
+
         try:
             stdout, code = run_test(test_dir, nprocs=nprocs)
             if code != 0 or stdout is None:

@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+"""
+The script:
+1. Runs the beam test with 1 and 2 MPI processes (3 runs each for statistical
+   robustness).
+2. Parses AMReX TinyProfiler output to extract particle mover and field solver
+   timings.
+3. Computes particle-step rates (μs/part-step) and parallel speedup.
+4. Validates against baseline targets and writes a report to
+   `tests/performance_summary.md`.
+"""
 import os
 import shutil
 import subprocess
