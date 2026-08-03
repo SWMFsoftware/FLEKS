@@ -306,6 +306,35 @@ F                 useHybridPIC
 When true, the hybrid PIC field solver (generalized Ohm's law with kinetic
 ions and a fluid electron) is used instead of the full PIC field solver.
 Mutually exclusive with SOLVEEM.
+
+=== Generalized Ohm's law: how each command controls a separate term ===
+
+The hybrid solver advances B from the electric field given by the generalized
+Ohm's law
+    E = -U_i x B                 (convection, always on)
+      + eta * J                  (resistivity,        controlled by #RESISTIVITY)
+      + (J x B)/rho_q            (Hall,               controlled by #HALLTERM)
+      - grad(Pe)/rho_q           (electron pressure / ambipolar,
+                                                       controlled by #ELECTRONTEMPERATURE)
+      - (eta_h/4pi) curl(nabla^2 B)  (hyper-resistivity,
+                                                       controlled by #HYPERRESISTIVITY)
+Each term is enabled/disabled and parametrised independently of #HYBRIDPIC, so
+you can build arbitrary subsets (e.g. Hall-only, resistive-MHD-like, with/without
+electron pressure). Time accuracy: the hybrid scheme is second order in time via
+a staggered leapfrog with linear time-interpolation of the ion moments. Within
+each magnetic sub-step the ion velocity moment and density used in the Ohm's law
+are interpolated between the previous deposit (J^{n-1/2}) and the current one
+(J^{n+1/2}) as
+    X(hstep) = (0.5 - hstep) X^{n-1/2} + (0.5 + hstep) X^{n+1/2},
+where hstep is the sub-step fraction (hstep=0 gives J^n = 1/2(J^{n-1/2}+J^{n+1/2});
+hstep=1 gives J^{n+1} = 3/2 J^{n+1/2} - 1/2 J^{n-1/2}). The particle Boris push
+uses the integer-step E field from the previous field advance. Related numerical
+controls:
+    #HALLSUBCYCLE    sub-steps for the explicit Hall-whistler CFL,
+    #DENSITYFLOOR    caps the 1/rho factors in the Hall and pressure terms,
+    #HYBRIDCURL      compact vs collocated current J = curl(B)/(4pi),
+    #FIELDINTEGRATOR time integrator for the Faraday (B) update,
+    #AVGFIELDB, #SMOOTHMOMENTS  damp PIC shot noise in the Ohm's law.
 </command>
 
 <command name="RESISTIVITY"
@@ -316,8 +345,8 @@ Mutually exclusive with SOLVEEM.
 #RESISTIVITY
 0.0               etaResistivity
 
-Resistive term eta * J in the generalized Ohm's law.
-etaResistivity is the SI magnetic diffusivity [m^2/s]; it is converted to
+[Ohm's-law term: resistivity] Resistive term eta * J in the generalized Ohm's
+law. etaResistivity is the SI magnetic diffusivity [m^2/s]; it is converted to
 code units internally (etaCode = 4*pi*etaSI*Si2NoV*Si2NoL).
 0 disables the resistive term.
 </command>
@@ -334,8 +363,9 @@ code units internally (etaCode = 4*pi*etaSI*Si2NoV*Si2NoL).
 1.0               electronGamma
 1.0               electronDensity0
 
-Electron temperature [eV] for the electron pressure gradient term in the
-Ohm's law. Converted to code units internally
+[Ohm's-law term: electron pressure / ambipolar] Electron temperature [eV] for
+the electron pressure gradient term -grad(Pe)/rho in the Ohm's law. Converted to
+code units internally
 (TeCode = TeEV * e / (mp * uNormSI^2)).
 0 disables the term (Hall-only mode). gamma=1 is isothermal (Pe = Te * rho),
 otherwise adiabatic Pe = P0 (rho/rho0)^gamma. electronDensity0 is in code
@@ -351,7 +381,15 @@ units (default 1.0 = reference charge density).
 1                 nHallSubcycle
 
 Number of sub-steps used to advance the magnetic field within one coarse time
-step in the hybrid solver (refines the Hall-term integration).
+step in the hybrid solver (refines the Hall-term integration). The total advance
+is always exactly one coarse step dt: nHallSubcycle full integrator steps of
+size dt/nHallSubcycle are taken (e.g. with #FIELDINTEGRATOR rk4, nHallSubcycle
+nested 4th-order Runge-Kutta steps). Because RK4 has a large linear-stability
+region along the imaginary axis (where the Hall-whistler oscillatory modes live),
+with rk4 a single sub-step (nHallSubcycle 1) is usually sufficient for stability;
+the forward-Euler integrator ("euler"), which is unstable on pure oscillatory
+modes for any step, needs a larger nHallSubcycle to resolve the explicit
+Hall-whistler CFL. Only used when #HYBRIDPIC is T.
 </command>
 
 <command name="HALLTERM"
@@ -362,12 +400,12 @@ step in the hybrid solver (refines the Hall-term integration).
 #HALLTERM
 T                 useHallTerm
 
-Enable (default) or disable the Hall term (J x B) / rho in the generalized Ohm's
-law used by the hybrid (HYBRIDPIC) field solver. Set to F to advance the field
-with the convection term only (E = -U_i x B, plus any resistivity / electron
-pressure gradient that is independently enabled). With the Hall term off the
-explicit Hall-whistler CFL no longer applies, so HALLSUBCYCLE 1 (no sub-cycling)
-is sufficient.
+[Ohm's-law term: Hall] Enable (default) or disable the Hall term (J x B) / rho
+in the generalized Ohm's law used by the hybrid (HYBRIDPIC) field solver. Set to
+F to advance the field with the convection term only (E = -U_i x B, plus any
+resistivity / electron pressure gradient that is independently enabled). With the
+Hall term off the explicit Hall-whistler CFL no longer applies, so HALLSUBCYCLE 1
+(no sub-cycling) is sufficient.
 </command>
 
 <command name="HYPERRESISTIVITY"
@@ -382,8 +420,9 @@ is sufficient.
 si                etaHyperMode
 0.01              etaHyperCh
 
-Fourth-order hyper-resistivity eta_h * nabla^2 J in the generalized Ohm's law
-(equivalently -(eta_h/4*pi) * nabla x (nabla^2 B)). It damps grid-scale / PIC
+[Ohm's-law term: hyper-resistivity] Fourth-order hyper-resistivity eta_h *
+nabla^2 J in the generalized Ohm's law (equivalently -(eta_h/4*pi) * nabla x
+(nabla^2 B)). It damps grid-scale / PIC
 shot-noise that the second-order resistivity cannot reach. etaHyperSI is the SI
 value [m^4/s] (used when etaHyperMode = "si"; converted to code units as
 etaCode = 4*pi*etaSI*Si2NoV*Si2NoL^3). When etaHyperMode = "grid", eta_h is
@@ -448,31 +487,16 @@ F. Only used when #HYBRIDPIC is T.
 rk4               fieldIntegrator
 
 Time integrator for the hybrid Faraday (B) update driven by the generalized Ohm's
-law. "euler" is the classic explicit forward Euler, sub-cycled against the
-Hall-whistler CFL; "heun" is the trapezoidal predictor-corrector that time-centres
-the B/E coupling (neutral for oscillatory modes, damps PIC shot noise); "rk4" is
-the classic 4th-order Runge-Kutta on B, evaluating the Ohm's law at four trial B
-states. rk4 has the largest linear-stability region of the three and is the
-default; it replaces forward Euler as the standard integrator. Only used when
-HYBRIDPIC is T.
-</command>
-
-<command name="MOMENTTIMECENTERING"
-   alias="MOMENTTIMECENTERING_FLEKS0,MOMENTTIMECENTERING_FLEKS1,MOMENTTIMECENTERING_FLEKS2"
-   multiple="T">
-  <parameter name="useMomentTimeCentering" type="logical" default="F"/>
-
-#MOMENTTIMECENTERING
-F                   useMomentTimeCentering
-
-Time-center the magnetic field used inside the generalized Ohm's law. The ion
-moments are already deposited at t^{n+1/2} (the Boris half-stage position push
-runs before sum_moments); this flag additionally predicts B^{n+1/2} =
-B^n - (dt/2)*curl(E_Ohm(U_i^{n+1/2}, B^n)) and re-evaluates the Ohm's law there,
-so the live electric field (particle push + B-integrator start point) is centred
-in B as well as in the moments, making the hybrid scheme fully 2nd order in time.
-Only used when HYBRIDPIC is T.
-</command>
+law. This is the single control for the time integration of B (there is no
+separate time-centring flag). "euler" is the classic explicit forward Euler,
+sub-cycled against the Hall-whistler CFL (see #HALLSUBCYCLE); "heun" is the
+trapezoidal predictor-corrector that time-centres the B/E coupling (thetaB = 0.5,
+neutral for oscillatory modes, damps PIC shot noise); "rk4" is the classic
+4th-order Runge-Kutta on B, evaluating the Ohm's law at four trial B states. rk4
+has the largest linear-stability region of the three and is the default; with rk4
+you typically do not need a large #HALLSUBCYCLE for stability (nHallSubcycle 1
+usually suffices). Only used when HYBRIDPIC is T.
+    </command>
 
 <command name="AVGFIELDB"
    alias="AVGFIELDB_FLEKS0,AVGFIELDB_FLEKS1,AVGFIELDB_FLEKS2,BAVERAGE"
@@ -890,29 +914,7 @@ equilibrium is preserved. It is recommended to apply the smoothing a few times
 (nSmoothMoments = 1-4). Only used when #HYBRIDPIC is T.
 </command>
 
-<command name="CENTEREDB"
-	 alias="CENTEREDB_FLEKS0,CENTEREDB_FLEKS1,CENTEREDB_FLEKS2"
-	 multiple="T">
-  <parameter name="useCenteredB" type="logical" default="F"/>
-  <if expr="$useCenteredB">
-    <parameter name="thetaB" type="real" default="0.5"/>
-  </if>
 
-#CENTEREDB
-T                         useCenteredB (rest is read if true)
-0.5                       thetaB
-
-Time-centred (predictor-corrector / trapezoidal) advance of the magnetic field
-in the sub-cycled hybrid Faraday update. Each sub-step first takes a forward-
-Euler predictor (B* = B^n - dt*curl(E^n)) and then recomputes the Ohm's-law
-electric field on the projected B* to form the corrector; the final update is
-the weighted average B^{n+1} = B^n - dt*[(1-thetaB)*curl(E^n) + thetaB*curl(E*)].
-With thetaB = 0.5 this is the Crank-Nicolson / Heun scheme, which is neutral for
-oscillatory modes and therefore does not accumulate PIC shot noise the way the
-default explicit forward-Euler sub-step does. The ion moments stay frozen at
-time n (as in the forward-Euler path); only the B/E coupling is time-centred.
-Only used when #HYBRIDPIC is T.
-</command>
 
 <command name="UPWINDE"
 	 alias="UPWINDE_FLEKS0,UPWINDE_FLEKS1,UPWINDE_FLEKS2"

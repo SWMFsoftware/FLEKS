@@ -2,7 +2,7 @@
 
 This test exercises the **complete** Hybrid PIC (kinetic ions, massless fluid
 electrons) field solver in standalone FLEKS: all four terms of the generalized
-Ohm's law are active in `Pic::update_E_hybrid` (see `docs/Algorithm.tex`):
+Ohm's law are active in `Pic::assemble_ohm_E` (see `docs/Algorithm.tex`):
 
 1. **Convection** — `E = -U_i × B` (always active).
 2. **Hall** — `(J × B) / (e n_e)`, sub-cycled (`#HALLSUBCYCLE`).

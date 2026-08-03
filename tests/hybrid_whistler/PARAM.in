@@ -47,9 +47,6 @@ F                       solveEM
 #HYBRIDPIC
 T                       useHybridPIC
 
-#MOMENTTIMECENTERING
-T                       useMomentTimeCentering
-
 #AVGFIELDB
 T                       useAvgFieldB
 20                      nAvgFieldB

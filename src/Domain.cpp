@@ -954,10 +954,9 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#HYPERRESISTIVITY" || command == "#DENSITYFLOOR" ||
         command == "#HYBRIDCURL" ||
         command == "#FIELDINTEGRATOR" ||
-        command == "#MOMENTTIMECENTERING" ||
+
         command == "#AVGFIELDB" ||
         command == "#SMOOTHMOMENTS" ||
-        command == "#CENTEREDB" ||
         command == "#MEMORY") {
       if (pic)
         pic->read_param(command, readParam);

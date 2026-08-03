@@ -80,7 +80,7 @@ F                       solveEM
 T                       useHybridPIC
 
 Hall term OFF -- the SIMPLEST Ohm's law (E = -U_i x B only). With this flag the
-(J x B)/rho term in update_E_hybrid is skipped entirely.
+(J x B)/rho term in the generalized Ohm's law is skipped entirely.
 #HALLTERM
 F                       useHallTerm
 
@@ -112,10 +112,9 @@ T                       doSmoothMoments
 Time-centred (predictor-corrector / Crank-Nicolson) Faraday sub-step. Combined
 with the moment smoothing this removes the spurious noise drift: the trapezoidal
 B update is neutral for oscillatory modes, so the PIC shot noise is no longer
-integrated un-damped. thetaB = 0.5 is the standard Crank-Nicolson / Heun scheme.
-#CENTEREDB
-T                       useCenteredB
-0.5                     thetaB
+integrated un-damped. "heun" is the standard trapezoidal / Crank-Nicolson scheme.
+#FIELDINTEGRATOR
+heun                    fieldIntegrator
 
 Single kinetic ion species (q = m = 1); the electron is an implicit
 neutralizing massless fluid, so no electron particle species is present.

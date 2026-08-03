@@ -123,11 +123,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       param.read_var("nSmoothMoments", nSmoothMoments);
       param.read_var("coefSmoothMoments", coefSmoothMoments);
     }
-  } else if (command == "#CENTEREDB") {
-    param.read_var("useCenteredB", useCenteredB);
-    if (useCenteredB) {
-      param.read_var("thetaB", thetaB);
-    }
   } else if (command == "#UPWINDB") {
     param.read_var("useUpwindB", useUpwindB);
     param.read_var("theta", limiterThetaB);
@@ -271,11 +266,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     //   "heun"  (trapezoidal predictor-corrector, time-centred B/E coupling),
     //   "rk4"   (4th-order Runge-Kutta on B, default).
     param.read_var("fieldIntegrator", fieldIntegrator);
-  } else if (command == "#MOMENTTIMECENTERING") {
-    // B-field predictor for the Ohm's law: predict B^{n+1/2} from B^n and
-    // re-evaluate E_Ohm there. The ion moments are at the leapfrog state
-    // (x^n, v^{n-1/2}); the Boris half-stage is not currently wired in.
-    param.read_var("useMomentTimeCentering", useMomentTimeCentering);
   } else if (command == "#AVGFIELDB") {
     // Phase 3.4: time-averaged (EMA) magnetic field for the Ohm's law and the
     // particle Boris push, damping high-frequency PIC shot noise.
@@ -350,28 +340,21 @@ void Pic::post_process_param() {
     if (etaHyperSI > 0 || (etaHyperMode == "grid" && etaHyperCh > 0))
       useCompactCurl = true;
 
-    // Field integrator selection for the hybrid Faraday update. Map the
-    // string to the concrete dispatch flags used by update_B_hybrid. "heun"
-    // implies the time-centred (useCenteredB) path; "euler" forces the
-    // forward-Euler path; "rk4" sets useRK4. Default "rk4" if unspecified or
-    // unrecognised.
-    useRK4 = false;
-    if (fieldIntegrator == "euler") {
-      useCenteredB = false;
-    } else if (fieldIntegrator == "heun") {
-      useCenteredB = true;
-    } else if (fieldIntegrator == "rk4") {
-      useRK4 = true;
-      useCenteredB = false;
-    } else {
+    // Field integrator selection for the hybrid Faraday update. #FIELDINTEGRATOR
+    // is the single control for the time integration of B:
+    //   "euler" -> forward-Euler sub-step;
+    //   "heun"  -> time-centred predictor-corrector (trapezoidal) sub-step;
+    //   "rk4"   -> 4th-order Runge-Kutta sub-step (default).
+    // dispatch on the string directly in update_B_hybrid.
+    useRK4 = (fieldIntegrator == "rk4");
+    if (fieldIntegrator != "euler" && fieldIntegrator != "heun" &&
+        fieldIntegrator != "rk4") {
       amrex::Print() << "  WARNING: unknown #FIELDINTEGRATOR '" << fieldIntegrator
                      << "'; defaulting to 'rk4'\n";
       fieldIntegrator = "rk4";
       useRK4 = true;
-      useCenteredB = false;
     }
     amrex::Print() << "  fieldIntegrator: " << fieldIntegrator << "\n";
-    amrex::Print() << "  useMomentTimeCentering: " << useMomentTimeCentering << "\n";
     amrex::Print() << "  useAvgFieldB: " << useAvgFieldB
                    << "   nAvgFieldB: " << nAvgFieldB << "\n";
     if (nAvgFieldB < 1) nAvgFieldB = 1;
@@ -452,6 +435,9 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   if (nodePlasma.empty()) {
     nodePlasma.resize(nSpecies + 1);
   }
+  if (nodePlasmaPrev.empty()) {
+    nodePlasmaPrev.resize(nSpecies + 1);
+  }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (reportParticleQuality) {
@@ -468,6 +454,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                         nGst);
     distribute_FabArray(nodeEth[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
+    distribute_FabArray(nodeEthPrev[iLev], nGrids[iLev], DistributionMap(iLev),
+                        3, nGst);
     distribute_FabArray(centerNetChargeOld[iLev], cGrids[iLev],
                         DistributionMap(iLev), 1, nGst);
     distribute_FabArray(centerNetChargeN[iLev], cGrids[iLev],
@@ -532,14 +520,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerBstar_heun[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
-
-      // Moment-time-centering scratch.
-      distribute_FabArray(centerB_mtc[iLev], cGrids[iLev], DistributionMap(iLev),
-                          3, nGst, doMoveData);
-      distribute_FabArray(dB_mtc[iLev], cGrids[iLev], DistributionMap(iLev), 3,
-                          nGst, doMoveData);
-      distribute_FabArray(nodeB_mtc[iLev], nGrids[iLev], DistributionMap(iLev),
-                          3, nGst, doMoveData);
     }
     distribute_FabArray(dBdt[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst, doMoveData);
@@ -560,6 +540,12 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                         nGst, doMoveData);
 
     for (auto& pl : nodePlasma) {
+      if (pl.empty())
+        pl.resize(n_lev_max());
+      distribute_FabArray(pl[iLev], nGrids[iLev], DistributionMap(iLev),
+                          nMoments, nGst, doMoveData);
+    }
+    for (auto& pl : nodePlasmaPrev) {
       if (pl.empty())
         pl.resize(n_lev_max());
       distribute_FabArray(pl[iLev], nGrids[iLev], DistributionMap(iLev),
@@ -891,8 +877,13 @@ void Pic::particle_mover() {
   // Phase 3.4: use the time-averaged B in the Boris push when enabled.
   const Vector<MultiFab>& nodeBpush =
       (useAvgFieldB && isBavgInit) ? nodeBavg : nodeB;
+  // Full-PIC uses the E from this step's update_E (nodeEth). The hybrid solver
+  // pushes with the integer-step E computed in the previous field advance
+  // (nodeEthPrev, seeded from the initial E on the first step) -- the
+  // hybrid-VPIC convention.
+  const Vector<MultiFab>& nodeEpush = useHybridPIC ? nodeEthPrev : nodeEth;
   for (int i : kineticSpecies_) {
-    parts[i]->mover(nodeEth, nodeBpush, eBg, uBg, dt, dtnext);
+    parts[i]->mover(nodeEpush, nodeBpush, eBg, uBg, dt, dtnext);
   }
 
   for (int i : kineticSpecies_) {
@@ -1547,11 +1538,15 @@ void Pic::update(bool doReportIn) {
 
   if (solveEM) {
     update_E();
-  } else if (useHybridPIC) {
-    // The hybrid Ohm's law needs fresh ion fluid moments at time n.
-    sum_moments(false);
-    smooth_moments();
-    update_E_hybrid();
+  }
+
+  // Hybrid path: the particle Boris push happens BEFORE the moment deposit and
+  // the Ohm's-law E computation (hybrid-VPIC convention). The push uses the
+  // integer-step E field (nodeEthPrev) and B^n computed in the previous step's
+  // update_B_hybrid. On the very first step these are seeded from the initial
+  // moments and the initial-condition E field below.
+  if (useHybridPIC && isFirstHybridStep) {
+    seed_first_hybrid_step();
   }
 
   particle_mover();
@@ -1585,7 +1580,14 @@ void Pic::update(bool doReportIn) {
     }
     update_B();
   } else if (useHybridPIC) {
+    // Deposit the fresh ion moments (J^{n+1/2}) AFTER the particle push. The
+    // previous deposit (J^{n-1/2}) is first saved into nodePlasmaPrev so the
+    // Ohm's law can time-interpolate between the two (hstep scheme).
+    save_current_moments_to_prev();
+    sum_moments(false);
+    smooth_moments();
     update_B_hybrid();
+    isFirstHybridStep = false;
   }
 
   // Only to be turned on if DivE error needs to be visulaized when DivE
@@ -2265,78 +2267,24 @@ void Pic::update_B() {
 }
 
 //==========================================================
-//==========================================================
-void Pic::update_E_hybrid() {
-  std::string nameFunc = "Pic::update_E_hybrid";
-  timing_func(nameFunc);
-
-  // Grid-mode hyper-resistivity: eta_h is CFL-scaled to the sub-step dt, so it
-  // must be (re)computed here before the Ohm's law is assembled. This ensures
-  // the E field used for the particle Boris push (this function is called
-  // before particle_mover in Pic::update) includes the hyper-resistive term.
-  // For "si" mode etaHyperLev was already set in post_process_param.
-  if (etaHyperMode == "grid" && etaHyperCh > 0) {
-    const Real subDt = tc->get_dt() / nHallSubcycle;
-    for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      const auto dx = Geom(iLev).CellSizeArray();
-      Real dxMin = amrex::min(dx[0], dx[1]);
-      if (nDim > 2)
-        dxMin = amrex::min(dxMin, dx[2]);
-      etaHyperLev[iLev] = fourPI * etaHyperCh * std::pow(dxMin, 4) / subDt;
-    }
-  }
-
-  // Particle weights are initialized with dt = 1 during the initial condition
-  // (add_particles_cell is called with dt = -1 -> dt = 1), so the charge
-  // density nodePlasma[...].iRho_ is the TRUE charge density rho_q =
-  // sum(qp)/V_cell. The Hall and electron-pressure-gradient terms therefore
-  // divide by iRho_ directly (no dt rescaling needed).
-
-  // Evaluate the generalized Ohm's law at the live field on every level
-  // (assemble_ohm_E also serves the RK4 sub-stages of update_B_hybrid), then
-  // mirror the result into nodeEth (the E used by the field advance and the
-  // particle half-step).
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    const auto& cBin = (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
-    const auto& nBin = (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
-
-    // B-field predictor for the Ohm's law. The ion moments are deposited at
-    // the leapfrog state (x^n, v^{n-1/2}) -- the Boris half-stage
-    // (update_part_loc_to_half_stage) is defined but not currently called.
-    // This predictor advances the magnetic field used inside the Ohm's law by
-    // half a step: B^{n+1/2} = B^n - (dt/2) curl(E_Ohm(U_i, B^n)), then
-    // re-evaluates E_Ohm at B^{n+1/2}. This partially compensates for the
-    // lag in the moments and improves stability, though the scheme is not
-    // fully 2nd-order time-centred until the half-stage deposit is wired in.
-    if (useMomentTimeCentering) {
-      const Real dt = tc->get_dt();
-      assemble_ohm_E(cBin, nBin, nodeE[iLev], iLev);
-      MultiFab::Copy(centerB_mtc[iLev], cBin, 0, 0, 3, nGst);
-      curl_node_to_center(nodeE[iLev], dB_mtc[iLev], Geom(iLev).InvCellSize());
-      MultiFab::Saxpy(centerB_mtc[iLev], -0.5 * dt, dB_mtc[iLev], 0, 0, 3, nGst);
-      centerB_mtc[iLev].FillBoundary(Geom(iLev).periodicity());
-      average_center_to_node(centerB_mtc[iLev], nodeB_mtc[iLev]);
-      nodeB_mtc[iLev].FillBoundary(Geom(iLev).periodicity());
-      assemble_ohm_E(centerB_mtc[iLev], nodeB_mtc[iLev], nodeE[iLev], iLev);
-    } else {
-      assemble_ohm_E(cBin, nBin, nodeE[iLev], iLev);
-    }
-
-    MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, 3, nodeE[iLev].nGrow());
-  }
-}
-
+// Particle weights are initialized with dt = 1 during the initial condition
+// (add_particles_cell is called with dt = -1 -> dt = 1), so the charge density
+// nodePlasma[...].iRho_ is the TRUE charge density rho_q = sum(qp)/V_cell. The
+// Hall and electron-pressure-gradient terms therefore divide by iRho_ directly
+// (no dt rescaling needed).
 //==========================================================
 void Pic::assemble_ohm_E(const MultiFab& centerBin, const MultiFab& nodeBin,
-                         MultiFab& Eout, int iLev) {
+                         MultiFab& Eout, int iLev, amrex::Real hstep) {
   BL_PROFILE("Pic::assemble_ohm_E");
 
   // Evaluate the generalized Ohm's law
   //   E = -U_i x B + eta J + (J x B)/rho_q - grad(Pe)/rho_q
-  // at an ARBITRARY (off-member) B state. Unlike update_E_hybrid this does not
-  // touch member nodeE/nodeEth, so it can be called repeatedly at the four RK4
-  // trial B states. centerBin is the cell-centred B, nodeBin the node-averaged
-  // B (convection term); the ion moments come from the member nodePlasma
+  // at an ARBITRARY (off-member) B state. This does not touch member nodeE, so
+  // it can be called repeatedly at the four RK4 trial B states. centerBin is the
+  // cell-centred B, nodeBin the node-averaged B (convection term); the ion
+  // moments are time-interpolated between nodePlasmaPrev (J^{n-1/2}) and
+  // nodePlasma (J^{n+1/2}) at hstep (see the interpolation at the top of the
+  // parallel loop). The node current comes from the member nodeJ
   // (frozen at time n, as in every integrator).
   const auto dx = Geom(iLev).CellSizeArray();
   const Real dxInv = 1.0 / (2.0 * dx[0]);
@@ -2361,18 +2309,43 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin, const MultiFab& nodeBin,
     const Array4<Real const>& arrB = nodeBin[mfi].array();
     const Array4<Real const>& moments =
         nodePlasma[nSpecies][iLev][mfi].array();
+    const Array4<Real const>& momentsPrev =
+        nodePlasmaPrev[nSpecies][iLev][mfi].array();
     const Array4<Real const> arrJ =
         needJ ? nodeJ[iLev][mfi].array() : Array4<Real const>();
 
+    // Time-interpolation weights for the ion moments. X(hstep) =
+    // (0.5-hstep)*X^{n-1/2} + (0.5+hstep)*X^{n+1/2}; hstep=0 gives the centred
+    // average (J^n) and hstep=1 the linear extrapolation (J^{n+1}).
+    const Real wPrev = 0.5 - hstep;
+    const Real wCur = 0.5 + hstep;
+
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      Real rho = moments(i, j, k, iRho_);
+      // Interpolated charge density and momentum density between the previous
+      // deposit (J^{n-1/2}, momentsPrev) and the current one (J^{n+1/2}).
+      const Real rhoPrev = momentsPrev(i, j, k, iRho_);
+      const Real rhoCur = moments(i, j, k, iRho_);
+      const Real rho = wPrev * rhoPrev + wCur * rhoCur;
+      const Real mx = wPrev * momentsPrev(i, j, k, iUx_) +
+                      wCur * moments(i, j, k, iUx_);
+      const Real my = wPrev * momentsPrev(i, j, k, iUy_) +
+                      wCur * moments(i, j, k, iUy_);
+      const Real mz = wPrev * momentsPrev(i, j, k, iUz_) +
+                      wCur * moments(i, j, k, iUz_);
       Real ui = 0, vi = 0, wi = 0;
 
       if (rho > 0) {
-        ui = moments(i, j, k, iUx_) / rho;
-        vi = moments(i, j, k, iUy_) / rho;
-        wi = moments(i, j, k, iUz_) / rho;
+        ui = mx / rho;
+        vi = my / rho;
+        wi = mz / rho;
       }
+
+      // Interpolated density at an arbitrary cell (same hstep weights), used
+      // for the electron-pressure gradient closure.
+      auto rho_at = [=](int ii, int jj, int kk) AMREX_GPU_DEVICE {
+        return wPrev * momentsPrev(ii, jj, kk, iRho_) +
+               wCur * moments(ii, jj, kk, iRho_);
+      };
 
       Real bx = arrB(i, j, k, ix_);
       Real by = arrB(i, j, k, iy_);
@@ -2431,18 +2404,13 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin, const MultiFab& nodeBin,
         if (electronTemperature > 0) {
           if (electronGamma == 1.0) {
             // Isothermal: Pe = rho * Te -> grad(Pe) = Te * grad(rho)
-            dPe_dx =
-                electronTemperature *
-                (moments(i + 1, j, k, iRho_) - moments(i - 1, j, k, iRho_)) *
-                dxInv;
-            dPe_dy =
-                electronTemperature *
-                (moments(i, j + 1, k, iRho_) - moments(i, j - 1, k, iRho_)) *
-                dyInv;
+            dPe_dx = electronTemperature *
+                     (rho_at(i + 1, j, k) - rho_at(i - 1, j, k)) * dxInv;
+            dPe_dy = electronTemperature *
+                     (rho_at(i, j + 1, k) - rho_at(i, j - 1, k)) * dyInv;
             dPe_dz = (nDim > 2)
                          ? electronTemperature *
-                               (moments(i, j, k + 1, iRho_) -
-                                moments(i, j, k - 1, iRho_)) *
+                               (rho_at(i, j, k + 1) - rho_at(i, j, k - 1)) *
                                dzInv
                          : 0.0;
           } else {
@@ -2455,15 +2423,15 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin, const MultiFab& nodeBin,
                              : 0.0;
             };
 
-            dPe_dx = (calc_Pe(moments(i + 1, j, k, iRho_)) -
-                      calc_Pe(moments(i - 1, j, k, iRho_))) *
+            dPe_dx = (calc_Pe(rho_at(i + 1, j, k)) -
+                      calc_Pe(rho_at(i - 1, j, k))) *
                      dxInv;
-            dPe_dy = (calc_Pe(moments(i, j + 1, k, iRho_)) -
-                      calc_Pe(moments(i, j - 1, k, iRho_))) *
+            dPe_dy = (calc_Pe(rho_at(i, j + 1, k)) -
+                      calc_Pe(rho_at(i, j - 1, k))) *
                      dyInv;
             dPe_dz = (nDim > 2)
-                         ? (calc_Pe(moments(i, j, k + 1, iRho_)) -
-                            calc_Pe(moments(i, j, k - 1, iRho_))) *
+                         ? (calc_Pe(rho_at(i, j, k + 1)) -
+                            calc_Pe(rho_at(i, j, k - 1))) *
                                dzInv
                          : 0.0;
           }
@@ -2538,6 +2506,42 @@ void Pic::smooth_moments() {
     for (int icount = 0; icount < nSmoothMoments; ++icount) {
       smooth_multifab(moments, iLev, icount % 2 + 1, coefSmoothMoments);
     }
+  }
+}
+
+//==========================================================
+// Copy the current moment deposit (nodePlasma) into nodePlasmaPrev before a
+// fresh deposit. This makes nodePlasmaPrev hold J^{n-1/2} and nodePlasma (after
+// the subsequent sum_moments) hold J^{n+1/2}, so assemble_ohm_E can linearly
+// time-interpolate the two at the magnetic sub-step fraction hstep.
+void Pic::save_current_moments_to_prev() {
+  std::string nameFunc = "Pic::save_current_moments_to_prev";
+  timing_func(nameFunc);
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    MultiFab::Copy(nodePlasmaPrev[nSpecies][iLev], nodePlasma[nSpecies][iLev], 0,
+                   0, nodePlasma[nSpecies][iLev].nComp(),
+                   nodePlasma[nSpecies][iLev].nGrow());
+  }
+}
+
+//==========================================================
+// Seed the state needed for the particle Boris push on the very first hybrid
+// step, where there is no previous field advance:
+//   - nodePlasmaPrev is seeded from the initial moment deposit so the hstep
+//     interpolation degrades to the current value (the first step is a plain
+//     average);
+//   - nodeEthPrev is seeded from the initial-condition E field (set by
+//     fill_E_B_fields / the IC), which plays the role of E^0 for the first push.
+void Pic::seed_first_hybrid_step() {
+  std::string nameFunc = "Pic::seed_first_hybrid_step";
+  timing_func(nameFunc);
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    MultiFab::Copy(nodePlasmaPrev[nSpecies][iLev], nodePlasma[nSpecies][iLev], 0,
+                   0, nodePlasma[nSpecies][iLev].nComp(),
+                   nodePlasma[nSpecies][iLev].nGrow());
+    MultiFab::Copy(nodeEthPrev[iLev], nodeE[iLev], 0, 0, 3, nodeE[iLev].nGrow());
   }
 }
 
@@ -2651,16 +2655,24 @@ void Pic::update_B_hybrid() {
 
   for (int subStep = 0; subStep < nHallSubcycle; ++subStep) {
 
+    // Global magnetic sub-step fraction g in [0, 1): the moment interpolation
+    // hstep for this sub-step. Within an RK4 sub-step of size subDt the Ohm's
+    // law is evaluated at g (stage 1), g + 0.5/nHallSubcycle (stages 2 and 3)
+    // and g + 1.0/nHallSubcycle (stage 4); the combined field after the full
+    // cycle is at hstep = 1.
+    const Real g = (Real)subStep / (Real)nHallSubcycle;
+    const Real hstepHalf = g + 0.5 / (Real)nHallSubcycle;
+
     if (useRK4) {
       // --- 4th-order Runge-Kutta sub-step on level 0 ---
       // B is advanced by the classical RK4 on the Faraday equation
       //     dB/dt = -curl(E),   E = E_Ohm(B)
-      // with the ion moments frozen at time n (as in all integrators). The four
-      // stages evaluate the generalized Ohm's law at trial B states:
-      //   k1 = curl(E(B^n))
-      //   k2 = curl(E(B^n - 0.5 dt k1))
-      //   k3 = curl(E(B^n - 0.5 dt k2))
-      //   k4 = curl(E(B^n - dt k3))
+      // The four stages evaluate the generalized Ohm's law at trial B states,
+      // with the ion moments time-interpolated at the corresponding hstep:
+      //   k1 = curl(E(B^n, hstep=g))
+      //   k2 = curl(E(B^n - 0.5 dt k1, hstep=g+0.5/nsub))
+      //   k3 = curl(E(B^n - 0.5 dt k2, hstep=g+0.5/nsub))
+      //   k4 = curl(E(B^n - dt k3, hstep=g+1.0/nsub))
       //   B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4)
       // Fine levels follow from projection of the advanced level-0 B (exactly
       // as in the euler/heun paths), so only level 0 is advanced here.
@@ -2668,7 +2680,7 @@ void Pic::update_B_hybrid() {
 
       // Stage 1: k1 = curl(E(B^n)). centerB[0] itself is B^n (untouched until
       // the final combine), nodeB[0] is its node-average.
-      assemble_ohm_E(centerB[iLev], nodeB[iLev], nodeE_RK4[iLev], iLev);
+      assemble_ohm_E(centerB[iLev], nodeB[iLev], nodeE_RK4[iLev], iLev, g);
       curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][0],
                           Geom(iLev).InvCellSize());
 
@@ -2677,7 +2689,8 @@ void Pic::update_B_hybrid() {
       MultiFab::Saxpy(centerB_RK4[iLev], -0.5 * subDt, kRK4[iLev][0], 0, 0, 3,
                       nGst);
       project_centerB_to_nodeB_scratch(centerB_RK4[iLev], nodeB_RK4[iLev], iLev);
-      assemble_ohm_E(centerB_RK4[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev], iLev);
+      assemble_ohm_E(centerB_RK4[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev], iLev,
+                     hstepHalf);
       curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][1],
                           Geom(iLev).InvCellSize());
 
@@ -2686,7 +2699,8 @@ void Pic::update_B_hybrid() {
       MultiFab::Saxpy(centerB_RK4[iLev], -0.5 * subDt, kRK4[iLev][1], 0, 0, 3,
                       nGst);
       project_centerB_to_nodeB_scratch(centerB_RK4[iLev], nodeB_RK4[iLev], iLev);
-      assemble_ohm_E(centerB_RK4[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev], iLev);
+      assemble_ohm_E(centerB_RK4[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev], iLev,
+                     hstepHalf);
       curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][2],
                           Geom(iLev).InvCellSize());
 
@@ -2694,7 +2708,8 @@ void Pic::update_B_hybrid() {
       MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
       MultiFab::Saxpy(centerB_RK4[iLev], -subDt, kRK4[iLev][2], 0, 0, 3, nGst);
       project_centerB_to_nodeB_scratch(centerB_RK4[iLev], nodeB_RK4[iLev], iLev);
-      assemble_ohm_E(centerB_RK4[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev], iLev);
+      assemble_ohm_E(centerB_RK4[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev], iLev,
+                     g + 1.0 / (Real)nHallSubcycle);
       curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][3],
                           Geom(iLev).InvCellSize());
 
@@ -2718,16 +2733,21 @@ void Pic::update_B_hybrid() {
       continue;
     }
 
-    if (!useCenteredB) {
-      // --- Forward-Euler sub-step (original behaviour) ---
+    if (fieldIntegrator == "euler") {
+      // --- Forward-Euler sub-step ---
       // Recompute the hybrid electric field from the CURRENT B every sub-step
       // so that the Hall-driven whistler is advanced with the genuine sub-step
       // dt. (Computing E once and holding it fixed over the sub-steps leaves
       // the explicit forward-Euler advance of the oscillatory whistler
-      // unstable.)
-      update_E_hybrid();
-
+      // unstable.) The ion moments are time-interpolated at the sub-step start
+      // (hstep = g).
       for (int iLev = 0; iLev < n_lev(); iLev++) {
+        const auto& cBin =
+            (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
+        const auto& nBin =
+            (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
+        assemble_ohm_E(cBin, nBin, nodeEth[iLev], iLev, g);
+
         curl_node_to_center(nodeEth[iLev], dBpred_heun[iLev],
                             Geom(iLev).InvCellSize());
 
@@ -2745,21 +2765,26 @@ void Pic::update_B_hybrid() {
       continue;
     }
 
-    // --- Time-centred (predictor-corrector / trapezoidal) sub-step ---
+    // --- Time-centred (predictor-corrector / trapezoidal, Heun) sub-step ---
     // Stage 1 (predictor): E^n from the CURRENT B (nodeB); advance a predicted
     //     B* = B^n - subDt * curl(E^n).
     // Stage 2 (corrector): E* from B* (recompute the Ohm's law on the
     //     projected B*), then
-    //     B^{n+1} = B^n - subDt * [(1-thetaB) curl(E^n) + thetaB curl(E*)].
-    // The ion moments are frozen at time n (as in the forward-Euler path), so
-    // only the B/E coupling is time-centred. With thetaB = 0.5 this is the
-    // explicit trapezoidal (Heun) scheme. Unlike the implicit Crank-Nicolson,
-    // the explicit trapezoid is weakly unstable on purely oscillatory modes
+    //     B^{n+1} = B^n - subDt * [0.5 curl(E^n) + 0.5 curl(E*)].
+    // The ion moments are time-interpolated at hstep = g (predictor) and
+    // g + 1/nHallSubcycle (corrector), so both the B/E coupling and the
+    // moment level are time-centred. thetaB = 0.5 is the standard explicit
+    // trapezoidal (Heun) scheme. Unlike the implicit Crank-Nicolson, the
+    // explicit trapezoid is weakly unstable on purely oscillatory modes
     // (|R(iy)|^2 = 1 + y^4/4 > 1), though far less so than forward Euler.
     // RK4 (the default) is the preferred integrator.
-    update_E_hybrid();
-
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      const auto& cBin =
+          (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
+      const auto& nBin =
+          (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
+      assemble_ohm_E(cBin, nBin, nodeEth[iLev], iLev, g);
+
       MultiFab::Copy(centerBstart_heun[iLev], centerB[iLev], 0, 0, 3, nGst);
       curl_node_to_center(nodeEth[iLev], dBpred_heun[iLev],
                           Geom(iLev).InvCellSize());
@@ -2773,17 +2798,24 @@ void Pic::update_B_hybrid() {
       MultiFab::Copy(centerB[iLev], centerBstar_heun[iLev], 0, 0, 3, nGst);
       project_centerB_to_nodeB(iLev);
     }
-    update_E_hybrid();
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      const auto& cBin =
+          (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
+      const auto& nBin =
+          (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
+      assemble_ohm_E(cBin, nBin, nodeEth[iLev], iLev,
+                     g + 1.0 / (Real)nHallSubcycle);
+    }
 
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
       curl_node_to_center(nodeEth[iLev], dBcorr_heun[iLev],
                           Geom(iLev).InvCellSize());
 
-      // Trapezoidal combine around the saved B^n.
+      // Trapezoidal combine around the saved B^n (thetaB = 0.5, standard Heun).
       MultiFab::Copy(centerB[iLev], centerBstart_heun[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerB[iLev], -(1.0 - thetaB) * subDt, dBpred_heun[iLev],
-                      0, 0, 3, nGst);
-      MultiFab::Saxpy(centerB[iLev], -thetaB * subDt, dBcorr_heun[iLev], 0, 0, 3,
+      MultiFab::Saxpy(centerB[iLev], -0.5 * subDt, dBpred_heun[iLev], 0, 0, 3,
+                      nGst);
+      MultiFab::Saxpy(centerB[iLev], -0.5 * subDt, dBcorr_heun[iLev], 0, 0, 3,
                       nGst);
       project_centerB_to_nodeB(iLev);
     }
@@ -2849,6 +2881,24 @@ void Pic::update_B_hybrid() {
       centerBavg[iLev].FillBoundary(Geom(iLev).periodicity());
       nodeBavg[iLev].FillBoundary(Geom(iLev).periodicity());
     }
+  }
+
+  // Compute the E field at the end of the full magnetic advance (hstep = 1,
+  // i.e. E^{n+1}) and save it into nodeEthPrev for the next update()'s particle
+  // Boris push (hybrid-VPIC convention: push uses the integer-step E). This
+  // recomputation is done for every integrator because the RK4 path only writes
+  // the scratch nodeE_RK4, and the euler/heun paths write nodeEth at intermediate
+  // hstep values, so nodeEth must be freshly evaluated on the final B^{n+1}.
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const auto& cBin =
+        (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
+    const auto& nBin =
+        (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
+    assemble_ohm_E(cBin, nBin, nodeEth[iLev], iLev, 1.0);
+  }
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    MultiFab::Copy(nodeEthPrev[iLev], nodeEth[iLev], 0, 0, 3,
+                   nodeEth[iLev].nGrow());
   }
 }
 

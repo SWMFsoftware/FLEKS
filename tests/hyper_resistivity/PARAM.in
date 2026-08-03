@@ -77,9 +77,6 @@ Use "heun" for the trapezoidal predictor-corrector or "euler" for forward Euler.
 #FIELDINTEGRATOR
 rk4                     fieldIntegrator
 
-#MOMENTTIMECENTERING
-T                       useMomentTimeCentering
-
 #AVGFIELDB
 T                       useAvgFieldB
 20                      nAvgFieldB

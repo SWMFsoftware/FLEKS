@@ -154,11 +154,12 @@ private:
   amrex::Vector<amrex::MultiFab> centerBstart_heun;
   amrex::Vector<amrex::MultiFab> centerBstar_heun;
 
-  // Moment-time-centering (useMomentTimeCentering) persistent scratch. Avoids
-  // per-call MultiFab allocation in update_E_hybrid.
-  amrex::Vector<amrex::MultiFab> centerB_mtc;  // predicted B^{n+1/2} (center)
-  amrex::Vector<amrex::MultiFab> dB_mtc;       // curl(E) scratch (center)
-  amrex::Vector<amrex::MultiFab> nodeB_mtc;    // node-average of centerB_mtc
+  // Second-order hybrid: E field from the previous field advance, carried for
+  // the particle Boris push (the push happens at the START of each update(),
+  // before the Ohm's law is re-evaluated -- see Pic::update). Mirrors
+  // HybridVPIC, where particles are pushed with the integer-step E_n held in
+  // the interpolator from the previous step.
+  amrex::Vector<amrex::MultiFab> nodeEthPrev;
 
   amrex::Vector<amrex::MultiFab> dBdt;
   amrex::Vector<amrex::MultiFab> particleQuality;
@@ -208,6 +209,13 @@ private:
   int iElectron_ = -1;
   std::vector<int> kineticSpecies_;
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasma;
+  // Second-order hybrid: previous-step ion moments (J^{n-1/2}, rho^{n-1/2})
+  // deposited BEFORE the particle push. Combined with the current deposit
+  // nodePlasma (J^{n+1/2}) by a linear time interpolation inside
+  // assemble_ohm_E, indexed by the magnetic sub-step fraction hstep
+  // (hstep=0 -> J^n = 1/2(J^{n-1/2}+J^{n+1/2}); hstep=1 -> J^{n+1} =
+  // 3/2 J^{n+1/2} - 1/2 J^{n-1/2}). Same layout as nodePlasma.
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasmaPrev;
   amrex::Vector<amrex::Real> plasmaEnergy;
 
   bool isMomentsUpdated = false;
@@ -271,17 +279,6 @@ private:
   int nSmoothMoments = 0;
   amrex::Real coefSmoothMoments = 0.5;
 
-  // Time-centred (predictor-corrector / trapezoidal) advance of B in the
-  // sub-cycled hybrid Faraday update. With thetaB = 0.5 this is the explicit
-  // trapezoidal (Heun) scheme. Unlike the implicit Crank-Nicolson, the explicit
-  // trapezoid is weakly unstable on purely oscillatory modes (|R(iy)|^2 = 1 +
-  // y^4/4 > 1), though far less so than forward Euler. RK4 (the default
-  // integrator) has a non-degenerate imaginary-axis stability interval.
-  // The ion moments stay frozen at time n (as in the forward-Euler path);
-  // only the B/E coupling is time-centred.
-  bool useCenteredB = false;
-  amrex::Real thetaB = 0.5;
-
   // Field integrator for the hybrid Faraday update. Selects how B is advanced
   // from the electric field given by the generalized Ohm's law:
   //   "euler" -> classic explicit forward Euler (sub-cycled Hall-whistler);
@@ -295,17 +292,11 @@ private:
   std::string fieldIntegrator = "rk4";
   bool useRK4 = false;
 
-  // B-field predictor for the Ohm's law.
-  // The ion moments are deposited at the leapfrog state (x^n, v^{n-1/2}) --
-  // the Boris half-stage position push (update_position_to_half_stage) is
-  // defined but not currently called before sum_moments. E_Ohm is normally
-  // evaluated with B^n. When this flag is set we predict
-  //     B^{n+1/2} = B^n - (dt/2) curl(E_Ohm(U_i, B^n))
-  // and re-evaluate E_Ohm at B^{n+1/2}. This advances the B used in the Ohm's
-  // law by half a step, partially compensating for the moment lag and improving
-  // stability. The scheme becomes fully 2nd-order time-centred only once the
-  // half-stage deposit is wired in. Default false.
-  bool useMomentTimeCentering = false;
+  // First-hybrid-step guard: nodePlasmaPrev / nodeEthPrev are seeded on the
+  // very first hybrid update (there is no previous deposit or previous E), and
+  // the current-interpolation hstep then degrades to a plain average (or the
+  // current value) for that single step.
+  bool isFirstHybridStep = true;
 
   // Phase 3.4 -- time-averaged (EMA) magnetic field.
   // B_avg = alpha * B_avg + (1 - alpha) * B^{n+1}, alpha = 1 - 1/nAvgFieldB.
@@ -375,9 +366,7 @@ public:
     dBcorr_heun.resize(n_lev_max());
     centerBstart_heun.resize(n_lev_max());
     centerBstar_heun.resize(n_lev_max());
-    centerB_mtc.resize(n_lev_max());
-    dB_mtc.resize(n_lev_max());
-    nodeB_mtc.resize(n_lev_max());
+    nodeEthPrev.resize(n_lev_max());
     kRK4.resize(n_lev_max());
     for (int iL = 0; iL < n_lev_max(); ++iL) kRK4[iL].resize(4);
     etaHyperLev.resize(n_lev_max(), 0.0);
@@ -523,8 +512,8 @@ public:
   //-------------Hybrid PIC solver (kinetic ions + fluid electrons)-------------
   // Generalized Ohm's law electric field: E = -U_i x B + eta J + (J x B)/rho_q
   //                                        - grad(Pe)/rho_q
-  // where J = curl(B)/(4*pi) in CGS code units.
-  void update_E_hybrid();
+  // where J = curl(B)/(4*pi) in CGS code units. The hybrid E field is computed
+  // directly from the Ohm's law (never time-advanced), at each magnetic sub-step.
   // Digital-filter smoothing of the total ion moments (nodePlasma[nSpecies])
   // prior to the Ohm's law, to suppress PIC shot noise. No-op unless
   // doSmoothMoments is set.
@@ -541,14 +530,23 @@ public:
   void project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
                                         amrex::MultiFab& nodeOut, int iLev);
   // Evaluate the generalized Ohm's law at an arbitrary (off-member) B state and
-  // write the node electric field into `Eout`. Unlike update_E_hybrid, this does
-  // NOT overwrite member nodeE/nodeEth, so it can be called repeatedly at trial
-  // B states during RK4. `centerBin` is the cell-centred B, `nodeBin` the
-  // node-averaged B (convection term); the ion moments are taken from the
-  // member nodePlasma (frozen at time n, as in all integrators).
+  // write the node electric field into `Eout`. This does NOT overwrite member
+  // nodeE/nodeEth, so it can be called repeatedly at trial B states during RK4.
+  // `centerBin` is the cell-centred B, `nodeBin` the node-averaged B (convection
+  // term). The ion velocity moment and density are time-interpolated between
+  // nodePlasmaPrev (J^{n-1/2}) and nodePlasma (J^{n+1/2}) at the magnetic
+  // sub-step fraction `hstep` (0..1):
+  //     X(hstep) = (0.5 - hstep) X^{n-1/2} + (0.5 + hstep) X^{n+1/2}
+  // so hstep=0 gives J^n = 1/2(J^{n-1/2}+J^{n+1/2}) and hstep=1 gives the
+  // extrapolation J^{n+1} = 3/2 J^{n+1/2} - 1/2 J^{n-1/2}.
   void assemble_ohm_E(const amrex::MultiFab& centerBin,
                       const amrex::MultiFab& nodeBin, amrex::MultiFab& Eout,
-                      int iLev);
+                      int iLev, amrex::Real hstep);
+  // Copy the current moment deposit into nodePlasmaPrev before a fresh deposit
+  // (so nodePlasmaPrev = J^{n-1/2} and nodePlasma = J^{n+1/2}).
+  void save_current_moments_to_prev();
+  // Seed nodePlasmaPrev and nodeEthPrev on the very first hybrid step.
+  void seed_first_hybrid_step();
 
   //-------------Electric field solver end-------------
 

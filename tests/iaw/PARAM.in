@@ -136,9 +136,6 @@ Bx By Bz Ex Ey Ez rhoS0  varName
 
 #RUN
 
-#MOMENTTIMECENTERING
-T                       useMomentTimeCentering
-
 #AVGFIELDB
 T                       useAvgFieldB
 20                      nAvgFieldB
