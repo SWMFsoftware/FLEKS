@@ -90,3 +90,6 @@ python3 tests/validate_tests.py --test=photoionization
 # Thorough (includes day/night asymmetry check via flekspy)
 python3 tests/validate_tests.py --thorough
 ```
+
+> **Requires the Exo user source** (`./Config.pl -u=Exo`); see
+> [tests/README.md](README.md#building-the-test-executable).

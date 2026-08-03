@@ -55,3 +55,6 @@ From the FLEKS root directory (requires compiled `bin/FLEKS.exe`):
 ```bash
 python3 tests/validate_tests.py --test=electronimpact
 ```
+
+> **Requires the Exo user source** (`./Config.pl -u=Exo`); see
+> [tests/README.md](README.md#building-the-test-executable).

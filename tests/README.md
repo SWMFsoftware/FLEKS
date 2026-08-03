@@ -8,19 +8,19 @@ Simulator) particle-in-cell (PIC) solver, independent of SWMF coupling.
 Each test case is contained within its own dedicated subdirectory containing a
 `PARAM.in` configuration file and a README describing the expected behavior:
 
-| Test              | Dir                | Description                                              |
-|-------------------|--------------------|----------------------------------------------------------|
-| Beam instability  | `beam/`            | 1D ion beam EM instability: cyclotron wave growth,       |
-|                   |                    | transverse B-field amplification, energy conservation    |
-| Photoionization   | `photoionization/` | Chamberlain neutral profile with photoionization of      |
-|                   |                    | H+O atmosphere                                           |
-| Electron impact   | `electronimpact/`  | Voronov 1997 e-impact rate with hot electrons            |
-|                   |                    | (T ~ 100,000 K), only electron impact enabled            |
-| Charge exchange   | `chargeexchange/`  | Constant CX cross-section with flowing solar wind ions,  |
-|                   |                    | only charge exchange enabled                             |
-| Light wave        | `lightwave/`       | 3D vacuum transverse EM (light) wave on a periodic AMR  |
-|                   |                    | grid; energy-conservation check (needs `nLevMax >= 2`)   |
-| Performance       | `performance/`     | Beam-based scaling benchmark (excluded from CI suite)    |
+| Test              | Dir                | Description                                              | Readme |
+|-------------------|--------------------|----------------------------------------------------------|--------|
+| Beam instability  | `beam/`            | 1D ion beam EM instability: cyclotron wave growth,       | [README](beam/README.md)            |
+|                   |                    | transverse B-field amplification, energy conservation    |        |
+| Photoionization   | `photoionization/` | Chamberlain neutral profile with photoionization of      | [README](photoionization/README.md)  |
+|                   |                    | H+O atmosphere                                           |        |
+| Electron impact   | `electronimpact/`  | Voronov 1997 e-impact rate with hot electrons            | [README](electronimpact/README.md)   |
+|                   |                    | (T ~ 100,000 K), only electron impact enabled            |        |
+| Charge exchange   | `chargeexchange/`  | Constant CX cross-section with flowing solar wind ions,  | [README](chargeexchange/README.md)   |
+|                   |                    | only charge exchange enabled                             |        |
+| Light wave        | `lightwave/`       | 3D vacuum transverse EM (light) wave on a periodic AMR  | [README](lightwave/README.md)        |
+|                   |                    | grid; energy-conservation check (needs `nLevMax >= 2`)   |        |
+| Performance       | `performance/`     | Beam-based scaling benchmark (excluded from CI suite)    | — (see `validate_performance.py`)    |
 
 ### Ionization Parameter Commands
 
@@ -39,24 +39,15 @@ Ionization parameters are stored in `SourceInterface` (not `FluidInterface`) and
 
 ## Building the Test Executable
 
-All standalone tests, including the `lightwave` AMR test, run with a **single
-FLEKS executable built with two grid levels** (`nLevMax >= 2`):
+All standalone tests run with a **single FLEKS executable** built with the
+Exosphere user source (`-u=Exo`, needed by the ionization tests) and two grid
+levels (`-lev=2`, needed by the `lightwave` AMR test):
 
 ```bash
 cd PC/FLEKS            # (or the FLEKS root)
-./Config.pl -lev=2
+./Config.pl -lev=2 -u=Exo
 make -j4
 ```
-
-The AMR machinery is always compiled in; with `nLevMax = 2` the binary can run
-both refinement-based tests (e.g. `lightwave`) and the non-refinement tests
-(`beam`, ionization cases, etc.). For the latter no `#REFINEREGION` is defined,
-so the run stays at the base level (`n_lev() == 1`) and behaves identically to
-a `nLevMax = 1` build. A plain `nLevMax = 1` build will **abort at start-up** on
-`lightwave` because its `#REFINEREGION` command requires `max_level > 0`.
-
-> Note: the test runner uses `bin/FLEKS.exe` for every test, so one `-lev=2`
-> build serves the entire suite. There is no need for a separate AMR binary.
 
 ## Running the Tests
 
@@ -76,10 +67,10 @@ python3 tests/validate_tests.py --test=beam
 python3 tests/validate_tests.py --test beam
 
 # Run with N MPI processes:
-python3 tests/validate_tests.py -n 4
+python3 tests/validate_tests.py -n 2
 
 # Or equivalently:
-python3 tests/validate_tests.py --nprocs 4
+python3 tests/validate_tests.py --nprocs 2
 ```
 
 When `-n 1` (or the flag is omitted), the executable is invoked directly as
@@ -92,41 +83,8 @@ the available test subdirectories (`beam`, `photoionization`, `electronimpact`,
 with an error listing the available tests. When the flag is omitted, all tests
 are run (the default behavior). The flag may be combined with `-n`/`--nprocs`.
 
-The script:
-1. Scans subdirectories of `tests/` for a `PARAM.in` file, excluding `performance/`
-   and the shared `run_test/` execution directory.
-2. Creates the execution directory `run_test/` with necessary symlinks to the
-   FLEKS executable and post-processing tools.
-3. Copies `PARAM.in` from the test folder, executes `./FLEKS.exe` (or via
-   `mpirun`), and runs `./PostProc.pl`.
-4. Parses diagnostic outputs and validates the physics checks for each test.
-5. Writes a summary table to `tests/summary.md`.
-
 ### Performance Benchmark
 
 ```bash
 python3 tests/validate_performance.py
 ```
-
-The script:
-1. Runs the beam test with 1 and 2 MPI processes (3 runs each for statistical
-   robustness).
-2. Parses AMReX TinyProfiler output to extract particle mover and field solver
-   timings.
-3. Computes particle-step rates (μs/part-step) and parallel speedup.
-4. Validates against baseline targets and writes a report to
-   `tests/performance_summary.md`.
-
-## Test Details
-
-Each test subdirectory contains its own README with detailed physics setup,
-expected results, and instructions for manual execution:
-
-| Subdirectory       | Readme |
-|--------------------|--------|
-| `beam/`            | [README](beam/README.md)             |
-| `photoionization/` | [README](photoionization/README.md)  |
-| `electronimpact/`  | [README](electronimpact/README.md)   |
-| `chargeexchange/`  | [README](chargeexchange/README.md)   |
-| `lightwave/`       | [README](lightwave/README.md)        |
-| `performance/`     | — (see `validate_performance.py`)    |
