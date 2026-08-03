@@ -74,9 +74,11 @@ python3 tests/validate_tests.py --test beam
 
 # Run with N MPI processes:
 python3 tests/validate_tests.py -n 2
-
-# Or equivalently:
 python3 tests/validate_tests.py --nprocs 2
+
+# Show detailed per-check diagnostics (energy numbers, ratios, etc.):
+python3 tests/validate_tests.py --verbose
+python3 tests/validate_tests.py -v
 ```
 
 When `-n 1` (or the flag is omitted), the executable is invoked directly as
@@ -85,9 +87,9 @@ When `-n 1` (or the flag is omitted), the executable is invoked directly as
 
 The `--test NAME` (or `--test=NAME`) option selects a single test to run from
 the available test subdirectories (`beam`, `photoionization`, `electronimpact`,
-`chargeexchange`). If the given name does not match any test, the script exits
-with an error listing the available tests. When the flag is omitted, all tests
-are run (the default behavior). The flag may be combined with `-n`/`--nprocs`.
+`chargeexchange`, ...). If the given name does not match any test, the script
+exits with an error listing the available tests. When the flag is omitted, all
+tests are run (the default behavior). The flag may be combined with `-n`/`--nprocs`.
 
 ### Performance Benchmark
 
