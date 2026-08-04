@@ -11,7 +11,8 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Test              | Dir                | Description                                              | Readme |
 |-------------------|--------------------|----------------------------------------------------------|--------|
 | Beam instability  | `beam/`            | 1D ion beam EM instability: cyclotron wave growth,       | [README](beam/README.md)            |
-|                   |                    | transverse B-field amplification, energy conservation    |        |
+|                   |                    | transverse B-field amplification, energy conservation.   |        |
+|                   |                    | Run with both solvers (full PIC and hybrid PIC)          |        |
 | Photoionization   | `photoionization/` | Chamberlain neutral profile with photoionization of      | [README](photoionization/README.md)  |
 |                   |                    | H+O atmosphere                                           |        |
 | Electron impact   | `electronimpact/`  | Voronov 1997 e-impact rate with hot electrons            | [README](electronimpact/README.md)   |
@@ -26,6 +27,9 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Convection wave   | `hybrid_convection_wave/` | Hybrid PIC convection-only (`#HALLTERM F`) transverse wave advected by uniform flow; checks phase advance and amplitude conservation | [README](hybrid_convection_wave/README.md) |
 | Light wave        | `lightwave/`       | 3D vacuum transverse EM (light) wave on a periodic AMR  | [README](lightwave/README.md)        |
 |                   |                    | grid; energy-conservation check (needs `nLevMax >= 2`)   |        |
+| PCAI              | `pcai/`            | Hybrid PIC proton-cyclotron anisotropy instability:     | [README](pcai/README.md)             |
+|                   |                    | bi-Maxwellian `T_perp/T_par = 3`, `beta_par = 1`;       |        |
+|                   |                    | transverse-wave growth rate `gamma/Omega_ci = 0.162`    |        |
 | Performance       | `performance/`     | Beam-based scaling benchmark (excluded from CI suite)    | — (see `validate_performance.py`)    |
 
 ### Ionization Parameter Commands
@@ -91,17 +95,16 @@ the available test subdirectories (`beam`, `photoionization`, `electronimpact`,
 exits with an error listing the available tests. When the flag is omitted, all
 tests are run (the default behavior). The flag may be combined with `-n`/`--nprocs`.
 
+When a test directory contains both `PARAM.in` and `PARAM.in.hybrid` (currently
+`beam/` and `freestream/`), the runner executes the test once per field solver,
+listing both variants in the summary table (e.g. `BEAM` and `BEAM (HYBRID)`).
+
 ### Performance Benchmark
 
 ```bash
 python3 tests/validate_performance.py
 ```
 
-The script:
-1. Runs the beam test with 1 and 2 MPI processes (3 runs each for statistical
-   robustness).
-2. Parses AMReX TinyProfiler output to extract particle mover and field solver
-   timings.
-3. Computes particle-step rates (μs/part-step) and parallel speedup.
-4. Validates against baseline targets and writes a report to
-   `tests/performance_summary.md`.
+The script benchmarks both the full-PIC beam test (`performance/PARAM.in`) and
+the hybrid-PIC whistler test (`performance/PARAM.in.hybrid`), and writes the
+results to `tests/performance_summary.md`.

@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
 The script:
-1. Runs the beam test with 1 and 2 MPI processes (3 runs each for statistical
-   robustness).
+1. Runs the beam benchmark (full PIC) and the hybrid-PIC benchmark with 1 and 2
+   MPI processes (3 runs each for statistical robustness).
 2. Parses AMReX TinyProfiler output to extract particle mover and field solver
-   timings.
+   timings.  The field-solver region differs by solver: full PIC uses
+   `Pic::E_iterate`/`Pic::E_matvec`, hybrid PIC uses
+   `Pic::update_B_hybrid`/`Pic::assemble_ohm_E`.
 3. Computes particle-step rates (μs/part-step) and parallel speedup.
-4. Validates against baseline targets and writes a report to
+4. Validates against baseline targets (per solver) and writes a report to
    `tests/performance_summary.md`.
 """
 import os
@@ -16,6 +18,31 @@ import re
 import sys
 import time
 import glob
+
+# TinyProfiler region names (BL_PROFILE / timing_func) for each field solver.
+# The particle mover name is shared by both solvers.
+MOVERS = ["Pts::charged_particle_mover"]
+FULLPIC_SOLVERS = ["Pic::E_iterate", "Pic::E_matvec"]
+HYBRID_SOLVERS = ["Pic::update_B_hybrid", "Pic::assemble_ohm_E"]
+
+# Baseline targets (μs/part-step) and 2-core speedup floor, one set per solver.
+# The hybrid field advance is an explicit (non-iterative) Ohm's-law + Faraday
+# update, so it is cheaper per field solve than the implicit GMRES E-solve; the
+# Hall sub-cycling keeps its per-step cost comparable to the full-PIC mover.
+BASELINES = {
+    "fullpic": {
+        "total_pps": 15.0,      # 15.0 μs/part-step total wall-clock (GHA VM)
+        "mover_pps": 1.0,       # isolated particle mover
+        "solver_pps": 5.0,      # isolated implicit field solver (E_iterate)
+        "speedup": 1.25,        # 2-core scaling floor in virtual environments
+    },
+    "hybrid": {
+        "total_pps": 15.0,      # total wall-clock (same budget as full PIC)
+        "mover_pps": 1.0,       # isolated particle mover
+        "solver_pps": 3.0,      # explicit hybrid field advance is cheaper
+        "speedup": 1.25,        # 2-core scaling floor
+    },
+}
 
 def safe_symlink(src, dst):
     if os.path.lexists(dst):
@@ -35,45 +62,79 @@ def prepare_run_dir(run_dir):
     os.makedirs(os.path.join(pc_dir, "plots"), exist_ok=True)
     os.makedirs(os.path.join(pc_dir, "restartOUT"), exist_ok=True)
 
-def read_diag_log(run_dir):
-    """Read the structured diagnostic log file written by Pic::write_diag_log.
-    Returns a dict with final cycle and total macroparticle count.
-    """
-    pc_plots = os.path.join(run_dir, "PC", "plots")
-    log_files = sorted(glob.glob(os.path.join(pc_plots, "log_diag_n*.log")))
-    if not log_files:
-        return None
-
-    # Use the most recent log file
-    log_file = log_files[-1]
-
+def _param_float(block, idx):
+    """Read the idx-th numeric token of a PARAM block (list of stripped lines)."""
     try:
-        with open(log_file, "r") as f:
-            lines = f.readlines()
-        if len(lines) < 2:
-            return None
-            
-        # Parse last data row
-        vals = lines[-1].strip().split("\t")
-        header = lines[0].strip().split("\t")
-        
-        cycle = int(vals[1])
-        
-        # Sum macroparticles over all species
-        n_species = sum(1 for col in header if col.startswith("macro"))
-        macro_particles = 0
-        col = 2
-        for iS in range(n_species):
-            macro_particles += int(vals[col])
-            col += 6
-            
-        return {
-            "cycle": cycle,
-            "macro_particles": macro_particles
-        }
-    except Exception as e:
-        print(f"Warning: Failed to parse diagnostic log {log_file}: {e}")
+        return float(block[idx].split()[0])
+    except (IndexError, ValueError):
         return None
+
+
+def _read_param_block(param_file, command):
+    """Return the (stripped) lines belonging to a #COMMAND block of a PARAM file."""
+    block = []
+    capture = False
+    with open(param_file) as f:
+        for line in f:
+            s = line.strip()
+            if not s:
+                continue
+            if s.startswith("#"):
+                capture = (s.split()[0].upper() == command.upper())
+                continue
+            if capture:
+                block.append(s)
+    return block
+
+
+def count_particles_from_param(param_file):
+    """Compute the seeded macroparticle count from a PARAM.in's #NCELL and
+    #PARTICLES blocks (total = prod(nCell*d * nPartPerCell*d)).
+
+    Particle seeding in FLEKS places `nPartPerCell` macroparticles in every cell
+    (the beam and wave initializers re-weight but never change the count), so
+    this gives an exact figure for both the full-PIC and hybrid benchmarks.
+    Returns None if the blocks are missing/malformed.
+    """
+    ncell = _read_param_block(param_file, "#NCELL")
+    ppc = _read_param_block(param_file, "#PARTICLES")
+    if len(ncell) < 3 or len(ppc) < 3:
+        return None
+    total = 1
+    for d in range(3):
+        nc = _param_float(ncell, d)
+        np = _param_float(ppc, d)
+        if nc is None or np is None:
+            return None
+        total *= int(nc) * int(np)
+    return total
+
+
+def cycles_from_param(param_file):
+    """Number of timesteps a fixed-dt run will take, from #TIMESTEPPING dt and
+    #STOP TimeMax (#STOP MaxIter < 0 means "run to TimeMax").  Returns None if
+    the needed values cannot be determined."""
+    dt_block = _read_param_block(param_file, "#TIMESTEPPING")
+    stop_block = _read_param_block(param_file, "#STOP")
+    # #TIMESTEPPING: useFixedDt, dt
+    use_fixed = None
+    dt = None
+    if len(dt_block) >= 1:
+        use_fixed = dt_block[0].split()[0]
+    if len(dt_block) >= 2:
+        dt = _param_float(dt_block, 1)
+    # #STOP: MaxIter, TimeMax
+    max_iter = None
+    time_max = None
+    if len(stop_block) >= 1:
+        max_iter = _param_float(stop_block, 0)
+    if len(stop_block) >= 2:
+        time_max = _param_float(stop_block, 1)
+    if max_iter is not None and int(max_iter) > 0:
+        return int(max_iter)
+    if use_fixed and use_fixed.upper() == "T" and dt and dt > 0 and time_max:
+        return int(round(time_max / dt))
+    return None
 
 def parse_tiny_profiler(stdout):
     """Parse AMReX's TinyProfiler exclusive and inclusive timing tables from stdout.
@@ -139,62 +200,72 @@ def parse_tiny_profiler(stdout):
         
     return profiler_data
 
-def run_benchmark_suite(n_proc, run_dir, count=3):
-    print(f"Running benchmark in {run_dir} with {n_proc} MPI process(es) ({count} runs)...")
+def run_benchmark_suite(n_proc, run_dir, param_file, solver_kind="fullpic",
+                        count=3):
+    """Run `count` benchmark runs of the given PARAM config on `n_proc` MPI
+    processes and collect timing statistics.
+
+    `param_file` is the benchmark PARAM.in (full PIC or hybrid) relative to the
+    tests/ directory.  `solver_kind` selects the field-solver TinyProfiler region
+    to report: "fullpic" -> Pic::E_iterate/Pic::E_matvec, "hybrid" ->
+    Pic::update_B_hybrid/Pic::assemble_ohm_E.  The particle mover region is the
+    same for both.
+    """
+    solver_names = HYBRID_SOLVERS if solver_kind == "hybrid" else FULLPIC_SOLVERS
+
+    print(f"Running benchmark in {run_dir} with {n_proc} MPI process(es) "
+          f"({count} runs, solver={solver_kind})...")
     runs = []
-    
+
+    # The seeded particle count and cycle count are fixed by the config; compute
+    # them once up front (FLEKS seeds exactly nPartPerCell macroparticles per
+    # cell, so this is exact for both benchmarks).
+    particles = count_particles_from_param(param_file)
+    cycles = cycles_from_param(param_file)
+    if particles is None or cycles is None:
+        print(f"Error: could not derive particle/cycle counts from {param_file}.")
+        return None, 1
+
     for i in range(count):
         print(f"  Run {i+1}/{count}...")
         prepare_run_dir(run_dir)
-        
-        # Clean up old log files in this dir
-        for log in glob.glob(os.path.join(run_dir, "PC", "plots", "log_diag_n*.log")):
-            try:
-                os.remove(log)
-            except Exception:
-                pass
-                
-        # Copy benchmark config
-        shutil.copy("performance/PARAM.in", os.path.join(run_dir, "PARAM.in"))
-        
+
+        # Copy benchmark config (full-PIC beam or hybrid PARAM.in.hybrid)
+        shutil.copy(param_file, os.path.join(run_dir, "PARAM.in"))
+
         # Setup MPI command line
         cmd = ["mpirun", "-n", str(n_proc), "./FLEKS.exe"]
-        
+
         start_time = time.perf_counter()
-        result = subprocess.run(cmd, cwd=run_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(cmd, cwd=run_dir, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True)
         end_time = time.perf_counter()
-        
+
         duration = end_time - start_time
-        
+
         if result.returncode != 0:
             print(f"Error executing benchmark in run {i+1}:")
             print(result.stderr)
             return None, result.returncode
-            
-        # Parse Diagnostic log file
-        diag_data = read_diag_log(run_dir)
-        cycles = 30
-        particles = 25906
-        if diag_data:
-            cycles = diag_data["cycle"]
-            particles = diag_data["macro_particles"]
-            
+
         # Parse TinyProfiler
         prof = parse_tiny_profiler(result.stdout)
-        
+
         # Extract hot path timings from TinyProfiler
-        # 1. Pts::charged_particle_mover (exclusive)
+        # 1. Particle mover (exclusive) -- shared by both solvers
         mover_excl_time = 0.0
-        if "exclusive" in prof and "Pts::charged_particle_mover" in prof["exclusive"]:
-            mover_excl_time = prof["exclusive"]["Pts::charged_particle_mover"]["avg"]
-            
-        # 2. Pic::E_iterate (inclusive)
+        for name in MOVERS:
+            if "exclusive" in prof and name in prof["exclusive"]:
+                mover_excl_time = prof["exclusive"][name]["avg"]
+                break
+
+        # 2. Field solver (inclusive) -- region name depends on the solver
         solver_incl_time = 0.0
-        if "inclusive" in prof and "Pic::E_iterate" in prof["inclusive"]:
-            solver_incl_time = prof["inclusive"]["Pic::E_iterate"]["avg"]
-        elif "inclusive" in prof and "Pic::E_matvec" in prof["inclusive"]:
-            solver_incl_time = prof["inclusive"]["Pic::E_matvec"]["avg"]
-            
+        for name in solver_names:
+            if "inclusive" in prof and name in prof["inclusive"]:
+                solver_incl_time = prof["inclusive"][name]["avg"]
+                break
+
         runs.append({
             "duration": duration,
             "cycles": cycles,
@@ -203,7 +274,7 @@ def run_benchmark_suite(n_proc, run_dir, count=3):
             "mover_time": mover_excl_time,
             "solver_time": solver_incl_time,
         })
-        
+
     # Calculate statistics across runs (median and min)
     def median(lst):
         sorted_lst = sorted(lst)
@@ -212,19 +283,16 @@ def run_benchmark_suite(n_proc, run_dir, count=3):
             return sorted_lst[n//2]
         else:
             return (sorted_lst[n//2 - 1] + sorted_lst[n//2]) / 2.0
-            
+
     durations = [r["duration"] for r in runs]
     movers = [r["mover_time"] for r in runs]
     solvers = [r["solver_time"] for r in runs]
-    
-    # We take the final run's cycles/particles (they are constant)
-    cycles = runs[-1]["cycles"]
-    particles = runs[-1]["particles"]
-    
+
+    # The cycle/particle counts are constant across runs
     stats = {
         "runs": runs,
-        "cycles": cycles,
-        "particles": particles,
+        "cycles": runs[-1]["cycles"],
+        "particles": runs[-1]["particles"],
         "duration_median": median(durations),
         "duration_min": min(durations),
         "mover_median": median(movers),
@@ -232,133 +300,213 @@ def run_benchmark_suite(n_proc, run_dir, count=3):
         "solver_median": median(solvers),
         "solver_min": min(solvers),
     }
-    
+
     return stats, 0
+
+def _evaluate_solver(solver_kind, param_file, serial_dir, parallel_dir, count=3):
+    """Run the serial+parallel benchmark suite for one solver kind and return
+    (stats, pass_flags dict, label).  Runs `count` runs per process count.
+    """
+    label = "FULL PIC" if solver_kind == "fullpic" else "HYBRID PIC"
+
+    serial_stats, code = run_benchmark_suite(
+        1, serial_dir, param_file, solver_kind=solver_kind, count=count)
+    if code != 0 or serial_stats is None:
+        print(f"FAIL: {label} serial benchmark runs failed.")
+        return None, None, label
+
+    parallel_stats, code = run_benchmark_suite(
+        2, parallel_dir, param_file, solver_kind=solver_kind, count=count)
+    if code != 0 or parallel_stats is None:
+        print(f"FAIL: {label} parallel benchmark runs failed.")
+        return None, None, label
+
+    t_serial_median = serial_stats["duration_median"]
+    t_parallel_median = parallel_stats["duration_median"]
+    p_count = serial_stats["particles"]
+    cycles = serial_stats["cycles"]
+    total_steps = p_count * cycles
+
+    # Particle-step rates (μs/part-step) = (T * 1e6) / (Particles * Cycles)
+    pps_total = (t_serial_median * 1e6) / total_steps
+    pps_mover = (serial_stats["mover_median"] * 1e6) / total_steps
+    pps_solver = (serial_stats["solver_median"] * 1e6) / total_steps
+    speedup = t_serial_median / t_parallel_median
+
+    base = BASELINES[solver_kind]
+    passed = {
+        "total": pps_total <= base["total_pps"],
+        "mover": pps_mover <= base["mover_pps"],
+        "solver": pps_solver <= base["solver_pps"],
+        "speedup": speedup >= base["speedup"],
+    }
+
+    stats = {
+        "serial_stats": serial_stats,
+        "parallel_stats": parallel_stats,
+        "total_steps": total_steps,
+        "pps_total": pps_total,
+        "pps_mover": pps_mover,
+        "pps_solver": pps_solver,
+        "speedup": speedup,
+    }
+
+    return stats, passed, label
+
+
+def _status_markdown(flag):
+    return "🟢 **PASSED**" if flag else "🔴 **FAILED**"
+
+
+def _status_console(flag):
+    return "PASSED" if flag else "FAILED"
+
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(script_dir)
-    
+
     if not os.path.exists("../bin/FLEKS.exe"):
         print("Error: Standalone FLEKS.exe not found. Please compile it first.")
         sys.exit(1)
-        
+
     print("================================================================================")
     print("                 FLEKS ROBUST PERFORMANCE REGRESSION TEST")
+    print("   (full-PIC beam benchmark + hybrid-PIC whistler benchmark)")
     print("================================================================================")
-    
-    # Run serial benchmark suite
-    serial_stats, code = run_benchmark_suite(1, "run_perf_serial", count=3)
-    if code != 0 or serial_stats is None:
-        print("FAIL: Serial benchmark runs failed.")
+
+    fullpic_param = os.path.join("performance", "PARAM.in")
+    hybrid_param = os.path.join("performance", "PARAM.in.hybrid")
+    if not os.path.exists(hybrid_param):
+        print(f"Error: Hybrid benchmark config {hybrid_param} not found.")
         sys.exit(1)
-        
-    t_serial_median = serial_stats["duration_median"]
-    p_count = serial_stats["particles"]
-    cycles = serial_stats["cycles"]
-    
-    # Calculate Particle-Step Rates (PPS in microseconds)
-    # PPS = (T * 1e6) / (Particles * Cycles)
-    total_steps = p_count * cycles
-    pps_serial_median = (t_serial_median * 1e6) / total_steps
-    
-    # TinyProfiler rates
-    pps_mover_serial_median = (serial_stats["mover_median"] * 1e6) / total_steps
-    pps_solver_serial_median = (serial_stats["solver_median"] * 1e6) / total_steps
-    
-    print(f"\nSerial Median Wall-Clock: {t_serial_median:.3f} s (Rate: {pps_serial_median:.3f} μs/part-step)")
-    print(f"Serial Median Mover:      {serial_stats['mover_median']:.3f} s (Rate: {pps_mover_serial_median:.3f} μs/part-step)")
-    print(f"Serial Median Solver:     {serial_stats['solver_median']:.3f} s (Rate: {pps_solver_serial_median:.3f} μs/part-step)")
-    
-    # Run parallel benchmark suite
-    parallel_stats, code = run_benchmark_suite(2, "run_perf_parallel", count=3)
-    if code != 0 or parallel_stats is None:
-        print("FAIL: Parallel benchmark runs failed.")
-        sys.exit(1)
-        
-    t_parallel_median = parallel_stats["duration_median"]
-    pps_parallel_median = (t_parallel_median * 1e6) / total_steps
-    
-    speedup = t_serial_median / t_parallel_median
-    print(f"\nParallel Median Wall-Clock: {t_parallel_median:.3f} s (Rate: {pps_parallel_median:.3f} μs/part-step)")
-    print(f"Median Speedup (2 Cores):   {speedup:.2f}x")
-    
-    # --- BASINES VERIFICATION ---
-    # Baseline Targets (Highly robust, statistically sound thresholds for virtualized GHA environment)
-    total_pps_baseline = 15.0      # 15.0 μs/part-step for total wall-clock (GHA VM baseline)
-    mover_pps_baseline = 1.0       # 1.0 μs/part-step for isolated particle mover
-    solver_pps_baseline = 5.0      # 5.0 μs/part-step for isolated field solver
-    speedup_baseline = 1.25        # 1.25x scaling target for 2 cores in virtual environments
-    
-    total_passed = pps_serial_median <= total_pps_baseline
-    mover_passed = pps_mover_serial_median <= mover_pps_baseline
-    solver_passed = pps_solver_serial_median <= solver_pps_baseline
-    speedup_passed = speedup >= speedup_baseline
-    
-    print("\n" + "=" * 85)
-    print(" " * 32 + "PERFORMANCE COMPARISON PROFILE")
-    print("=" * 85)
-    print(f" {'Metric / Component':<30} | {'Measured (Median)':<18} | {'Baseline Target':<18} | {'Status':<8}")
-    print("-" * 85)
-    
-    status_total = "PASSED" if total_passed else "FAILED"
-    status_mover = "PASSED" if mover_passed else "FAILED"
-    status_solver = "PASSED" if solver_passed else "FAILED"
-    status_speedup = "PASSED" if speedup_passed else "FAILED"
-    
-    status_total_disp = status_total
-    status_mover_disp = status_mover
-    status_solver_disp = status_solver
-    status_speedup_disp = status_speedup
-    
-    if sys.stdout.isatty():
-        status_total_disp = f"\033[92;1m{status_total}\033[0m" if total_passed else f"\033[91;1m{status_total}\033[0m"
-        status_mover_disp = f"\033[92;1m{status_mover}\033[0m" if mover_passed else f"\033[91;1m{status_mover}\033[0m"
-        status_solver_disp = f"\033[92;1m{status_solver}\033[0m" if solver_passed else f"\033[91;1m{status_solver}\033[0m"
-        status_speedup_disp = f"\033[92;1m{status_speedup}\033[0m" if speedup_passed else f"\033[91;1m{status_speedup}\033[0m"
-        
-    print(f" {'Total Runtime Rate (PPS)':<30} | {pps_serial_median:<13.3f} μs/pt | <={total_pps_baseline:<14.1f} μs | {status_total_disp}")
-    print(f" {'Particle Mover Rate (PPS)':<30} | {pps_mover_serial_median:<13.3f} μs/pt | <={mover_pps_baseline:<14.1f} μs | {status_mover_disp}")
-    print(f" {'Field Solver Rate (PPS)':<30} | {pps_solver_serial_median:<13.3f} μs/pt | <={solver_pps_baseline:<14.1f} μs | {status_solver_disp}")
-    print(f" {'Parallel Speedup (2 Cores)':<30} | {speedup:<16.2f} x  | >={speedup_baseline:<14.2f} x  | {status_speedup_disp}")
-    print("=" * 85)
-    
-    # 4. Generate markdown report
+
+    # Benchmark suites: (solver_kind, param_file)
+    suites = [
+        ("fullpic", fullpic_param),
+        ("hybrid", hybrid_param),
+    ]
+
+    results = {}
+    all_passed = True
+    for solver_kind, param_file in suites:
+        print("\n" + "#" * 85)
+        print(f"#  SOLVER: {'FULL PIC' if solver_kind == 'fullpic' else 'HYBRID PIC'}")
+        print("#" * 85)
+        stats, passed, label = _evaluate_solver(
+            solver_kind, param_file, "run_perf_serial", "run_perf_parallel")
+        if stats is None:
+            all_passed = False
+            continue
+        results[solver_kind] = (stats, passed, label)
+
+        base = BASELINES[solver_kind]
+        print(f"\nSerial Median Wall-Clock: "
+              f"{stats['serial_stats']['duration_median']:.3f} s "
+              f"(Rate: {stats['pps_total']:.3f} μs/part-step)")
+        print(f"Serial Median Mover:      "
+              f"{stats['serial_stats']['mover_median']:.3f} s "
+              f"(Rate: {stats['pps_mover']:.3f} μs/part-step)")
+        print(f"Serial Median Solver:     "
+              f"{stats['serial_stats']['solver_median']:.3f} s "
+              f"(Rate: {stats['pps_solver']:.3f} μs/part-step)")
+        print(f"Parallel Median Wall-Clock: "
+              f"{stats['parallel_stats']['duration_median']:.3f} s "
+              f"(Rate: "
+              f"{(stats['parallel_stats']['duration_median']*1e6)/stats['total_steps']:.3f} "
+              f"μs/part-step)")
+        print(f"Median Speedup (2 Cores):   {stats['speedup']:.2f}x")
+
+        # Console comparison profile for this solver
+        print("\n" + "=" * 85)
+        print(" " * 26 + f"PERFORMANCE PROFILE ({label})")
+        print("=" * 85)
+        print(f" {'Metric / Component':<30} | {'Measured':<18} | "
+              f"{'Baseline':<18} | {'Status':<8}")
+        print("-" * 85)
+        rows = [
+            ("Total Runtime Rate (PPS)", stats["pps_total"], base["total_pps"],
+             "μs", passed["total"]),
+            ("Particle Mover Rate (PPS)", stats["pps_mover"], base["mover_pps"],
+             "μs", passed["mover"]),
+            ("Field Solver Rate (PPS)", stats["pps_solver"], base["solver_pps"],
+             "μs", passed["solver"]),
+            ("Parallel Speedup (2 Cores)", stats["speedup"], base["speedup"],
+             "x", passed["speedup"]),
+        ]
+        for name, val, base_val, unit, flag in rows:
+            st = _status_console(flag)
+            if sys.stdout.isatty():
+                st = (f"\033[92;1m{st}\033[0m" if flag
+                      else f"\033[91;1m{st}\033[0m")
+            if unit == "x":
+                print(f" {name:<30} | {val:<16.2f} {unit}  | "
+                      f">={base_val:<14.2f} {unit} | {st}")
+            else:
+                print(f" {name:<30} | {val:<13.3f} {unit}/pt | "
+                      f"<={base_val:<14.1f} {unit} | {st}")
+        print("=" * 85)
+
+        all_passed = all_passed and all(passed.values())
+
+    # --- Generate markdown report ---
     summary_path = "performance_summary.md"
     try:
         with open(summary_path, "w") as f:
             f.write("### ⚡ Standalone FLEKS Performance Report\n\n")
-            f.write("A robust statistical check was executed on the runner to filter out virtualization noise (3 runs per benchmark):\n\n")
-            f.write("| Performance Metric | Measured (Median) | Target Baseline | Status |\n")
-            f.write("| :--- | :--- | :--- | :--- |\n")
-            
-            total_status_md = "🟢 **PASSED**" if total_passed else "🔴 **FAILED**"
-            mover_status_md = "🟢 **PASSED**" if mover_passed else "🔴 **FAILED**"
-            solver_status_md = "🟢 **PASSED**" if solver_passed else "🔴 **FAILED**"
-            speedup_status_md = "🟢 **PASSED**" if speedup_passed else "🔴 **FAILED**"
-            
-            f.write(f"| Total Wall-Clock Rate | {pps_serial_median:.3f} μs/pt | <= {total_pps_baseline:.1f} μs/pt | {total_status_md} |\n")
-            f.write(f"| Particle Mover Rate | {pps_mover_serial_median:.3f} μs/pt | <= {mover_pps_baseline:.1f} μs/pt | {mover_status_md} |\n")
-            f.write(f"| Field Solver Rate | {pps_solver_serial_median:.3f} μs/pt | <= {solver_pps_baseline:.1f} μs/pt | {solver_status_md} |\n")
-            f.write(f"| Parallel Speedup (2 Cores) | {speedup:.2f}x | >= {speedup_baseline:.2f}x | {speedup_status_md} |\n\n")
-            f.write(f"*Note: Benchmark ran on virtualized runner. Macroparticles: {p_count}, cycles: {cycles} (total steps: {total_steps}).*\n")
-            f.write("\n#### 📊 Detailed Runs (Wall-Clock Runtime)\n")
-            f.write("| Process Count | Run 1 | Run 2 | Run 3 | Median | Minimum |\n")
-            f.write("| :--- | :--- | :--- | :--- | :--- | :--- |\n")
-            s_runs = [f"{r['duration']:.3f}s" for r in serial_stats["runs"]]
-            p_runs = [f"{r['duration']:.3f}s" for r in parallel_stats["runs"]]
-            f.write(f"| 1 MPI Process (Serial) | {s_runs[0]} | {s_runs[1]} | {s_runs[2]} | {serial_stats['duration_median']:.3f}s | {serial_stats['duration_min']:.3f}s |\n")
-            f.write(f"| 2 MPI Processes (Parallel) | {p_runs[0]} | {p_runs[1]} | {p_runs[2]} | {parallel_stats['duration_median']:.3f}s | {parallel_stats['duration_min']:.3f}s |\n")
+            f.write("A robust statistical check was executed on the runner to "
+                    "filter out virtualization noise (3 runs per benchmark):\n\n")
+
+            for solver_kind in ("fullpic", "hybrid"):
+                if solver_kind not in results:
+                    continue
+                stats, passed, label = results[solver_kind]
+                base = BASELINES[solver_kind]
+                f.write(f"\n#### {label}\n\n")
+                f.write("| Performance Metric | Measured (Median) | Target "
+                        "Baseline | Status |\n")
+                f.write("| :--- | :--- | :--- | :--- |\n")
+                f.write(f"| Total Wall-Clock Rate | {stats['pps_total']:.3f} "
+                        f"μs/pt | <= {base['total_pps']:.1f} μs/pt | "
+                        f"{_status_markdown(passed['total'])} |\n")
+                f.write(f"| Particle Mover Rate | {stats['pps_mover']:.3f} "
+                        f"μs/pt | <= {base['mover_pps']:.1f} μs/pt | "
+                        f"{_status_markdown(passed['mover'])} |\n")
+                f.write(f"| Field Solver Rate | {stats['pps_solver']:.3f} "
+                        f"μs/pt | <= {base['solver_pps']:.1f} μs/pt | "
+                        f"{_status_markdown(passed['solver'])} |\n")
+                f.write(f"| Parallel Speedup (2 Cores) | {stats['speedup']:.2f}"
+                        f"x | >= {base['speedup']:.2f}x | "
+                        f"{_status_markdown(passed['speedup'])} |\n")
+                f.write(f"*Macroparticles: {stats['serial_stats']['particles']}, "
+                        f"cycles: {stats['serial_stats']['cycles']} "
+                        f"(total steps: {stats['total_steps']}).*\n")
+                f.write("\n**Detailed Runs (Wall-Clock Runtime)**\n")
+                f.write("| Process Count | Run 1 | Run 2 | Run 3 | Median | "
+                        "Minimum |\n")
+                f.write("| :--- | :--- | :--- | :--- | :--- | :--- |\n")
+                s_runs = [f"{r['duration']:.3f}s"
+                          for r in stats["serial_stats"]["runs"]]
+                p_runs = [f"{r['duration']:.3f}s"
+                          for r in stats["parallel_stats"]["runs"]]
+                f.write(f"| 1 MPI Process (Serial) | {s_runs[0]} | {s_runs[1]} "
+                        f"| {s_runs[2]} | "
+                        f"{stats['serial_stats']['duration_median']:.3f}s | "
+                        f"{stats['serial_stats']['duration_min']:.3f}s |\n")
+                f.write(f"| 2 MPI Processes (Parallel) | {p_runs[0]} | "
+                        f"{p_runs[1]} | {p_runs[2]} | "
+                        f"{stats['parallel_stats']['duration_median']:.3f}s | "
+                        f"{stats['parallel_stats']['duration_min']:.3f}s |\n")
+            f.write("\n*Note: Benchmark ran on virtualized runner.*\n")
     except Exception as e:
         print(f"Warning: Could not write performance_summary.md: {e}")
-        
+
     # Clean up temporary run directories
     for d in ("run_perf_serial", "run_perf_parallel"):
         if os.path.exists(d):
             shutil.rmtree(d)
             print(f"Cleaned up {d}")
-    
-    all_passed = total_passed and mover_passed and solver_passed and speedup_passed
+
     if all_passed:
         if sys.stdout.isatty():
             print("\033[92;1m\nALL PERFORMANCE TESTS PASSED SUCCESSFULLY!\033[0m\n")
