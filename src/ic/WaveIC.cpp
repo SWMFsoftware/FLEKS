@@ -112,6 +112,7 @@ void WaveIC::read_param(ReadParam& param) {
   param.read_optional("waveMode", waveMode_);
   param.read_optional("frac", frac_);
   param.read_optional("pert", pert_);
+  param.read_optional("anisoTPerpOverTPar", anisoTPerpOverTPar_);
 }
 
 void WaveIC::set_fields(PicICFields& fields) const {
@@ -275,4 +276,26 @@ void WaveIC::modify_particle_velocity(ParticleICState& s) const {
   const amrex::Real sphi = std::sin(kx_ * s.x);
   s.vBulk -= B1_ * cphi;
   s.wBulk -= B1_ * sphi;
+}
+
+// Bi-Maxwellian thermal seeding for the proton-cyclotron anisotropy
+// instability.  The #UNIFORMSTATE isotropic sampling draws every component with
+// the thermal speed v_th = sqrt(kB*T/m) where T is the #UNIFORMSTATE
+// temperature.  Here T is interpreted as the PARALLEL temperature T_par, so:
+//   * the component parallel to the guide field is left untouched (already v_th
+//     = v_th_par), and
+//   * the two perpendicular components are inflated by sqrt(T_perp/T_par).
+// The guide field (and hence the parallel direction) is x in all the hybrid
+// x-aligned wave presets (kx || B0 || x), so u_thermal is the parallel draw and
+// v_thermal / w_thermal are the perpendicular draws.  This gives a bi-Maxwellian
+// with T_perp/T_par = anisoTPerpOverTPar_ and beta_par unchanged from the
+// #UNIFORMSTATE (since the parallel temperature is unchanged), which drives the
+// proton-cyclotron anisotropy instability (PCAI).
+void WaveIC::modify_particle_thermal_velocity(ParticleICState& s) const {
+  if (anisoTPerpOverTPar_ <= 0.0)
+    return;
+  const amrex::Real scale = std::sqrt(anisoTPerpOverTPar_);
+  // Parallel (x) direction keeps the #UNIFORMSTATE T_par thermal speed.
+  s.vThermal *= scale;
+  s.wThermal *= scale;
 }

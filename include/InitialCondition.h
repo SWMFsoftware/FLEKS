@@ -30,6 +30,17 @@ struct ParticleICState {
   amrex::Real uBulk = 0.0, vBulk = 0.0, wBulk = 0.0;  // in/out: bulk velocity
   amrex::Real qScale = 1.0;        // out: extra weight multiplier (Beam)
   amrex::Real temperature = 0.0;
+
+  // --- Anisotropic (bi-Maxwellian) thermal seeding hook. ---
+  // When the IC declares modifies_thermal_velocity(), the isotropic thermal
+  // velocity sampled from #UNIFORMSTATE is handed back through these fields
+  // together with the four uniform [0,1) draws used to sample it.  The IC may
+  // overwrite uThermal/vThermal/wThermal with its own anisotropic sampling
+  // (e.g. distinct T_perp vs T_par along the guide field), and the overwritten
+  // values are used in place of the isotropic one before the bulk velocity is
+  // added.  rand[0..3] are the raw draws so the IC can run its own Box-Muller.
+  amrex::Real uThermal = 0.0, vThermal = 0.0, wThermal = 0.0;
+  amrex::Real rand[4] = {0.0, 0.0, 0.0, 0.0};
 };
 
 // Registry of named InitialCondition factories. Lookup is case-insensitive.
@@ -79,6 +90,19 @@ public:
   virtual void modify_particle_weight(ParticleICState& s) const { (void)s; }
   virtual bool modifies_velocities() const { return false; }
   virtual void modify_particle_velocity(ParticleICState& s) const { (void)s; }
+
+  // ---- Anisotropic (bi-Maxwellian) thermal-seeding hook. ----
+  // Runs right after the isotropic thermal velocity is sampled from
+  // #UNIFORMSTATE but BEFORE the bulk velocity is added.  An IC that declares
+  // modifies_thermal_velocity() may overwrite s.uThermal/vThermal/wThermal with
+  // a distribution with distinct perpendicular / parallel temperature (e.g.
+  // T_perp != T_par for the proton-cyclotron anisotropy instability), using the
+  // four uniform draws s.rand[0..3] for its own Box-Muller sampling.  The
+  // overwritten thermal velocity is added to the bulk velocity downstream.
+  virtual bool modifies_thermal_velocity() const { return false; }
+  virtual void modify_particle_thermal_velocity(ParticleICState& s) const {
+    (void)s;
+  }
 
   // Field-step seeding hook for tests that seed a discontinuous field in a
   // sub-region of new (refined) cells. Kept as a genuine IC hook (it is a

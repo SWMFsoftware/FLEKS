@@ -686,23 +686,33 @@ def run_one_test(test_dir, name, nprocs, results):
 
     validator = load_validator(name)
 
-    # The free-stream test is a single directory holding two parameter files
-    # (PARAM.in and PARAM.in.hybrid); the runner exercises both field solvers
-    # by running it once per file. All other tests run once as written.
+    # A test directory may hold two parameter files (PARAM.in and
+    # PARAM.in.hybrid) that exercise the same physics with the full-PIC and
+    # hybrid field solvers respectively.  When both exist the runner executes
+    # the test once per variant so each solver is validated independently.
+    # Each variant gets a distinct base_name (suffix "hybrid") so the per-test
+    # validator can apply solver-appropriate checks.  The free-stream test keeps
+    # its legacy display names.
+    hybrid_path = os.path.join(test_dir, "PARAM.in.hybrid")
+    variants = [
+        (os.path.join(test_dir, "PARAM.in"), name.upper(), name),
+    ]
+    if os.path.exists(hybrid_path):
+        variants.append((hybrid_path, f"{name.upper()} (HYBRID)",
+                         f"{name}_hybrid"))
     if name == "freestream":
-        with open(os.path.join(test_dir, "PARAM.in")) as _f:
-            _fullpic = _f.read()
-        run_and_validate(test_dir, "FREESTREAM (FULL PIC)", validator, nprocs,
-                         results, param_text=_fullpic, base_name="freestream")
-        _hybrid_path = os.path.join(test_dir, "PARAM.in.hybrid")
-        with open(_hybrid_path) as _f:
-            _hybrid = _f.read()
-        run_and_validate(test_dir, "FREESTREAM (HYBRID HALL-OFF)", validator,
-                         nprocs, results, param_text=_hybrid,
-                         base_name="freestream")
-    else:
-        run_and_validate(test_dir, name.upper(), validator, nprocs, results,
-                         base_name=name)
+        # Preserve the free-stream test's established display names.
+        variants = [
+            (os.path.join(test_dir, "PARAM.in"), "FREESTREAM (FULL PIC)",
+             "freestream"),
+            (hybrid_path, "FREESTREAM (HYBRID HALL-OFF)", "freestream"),
+        ]
+
+    for param_file, display_name, base_name in variants:
+        with open(param_file) as _f:
+            _param_text = _f.read()
+        run_and_validate(test_dir, display_name, validator, nprocs, results,
+                         param_text=_param_text, base_name=base_name)
 
 
 def main():

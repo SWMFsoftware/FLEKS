@@ -49,6 +49,17 @@ public:
   bool modifies_velocities() const override { return profile_ == HybridWave; }
   void modify_particle_velocity(ParticleICState& s) const override;
 
+  // Anisotropic (bi-Maxwellian) thermal seeding: when anisoTPerpOverTPar_ > 0
+  // the isotropic thermal velocity sampled from #UNIFORMSTATE is rescaled so
+  // the component along the guide field keeps the #UNIFORMSTATE temperature
+  // (interpreted as T_par) and the two perpendicular components are inflated by
+  // sqrt(T_perp/T_par).  This drives the proton-cyclotron anisotropy
+  // instability from an anisotropic free-energy source.
+  bool modifies_thermal_velocity() const override {
+    return anisoTPerpOverTPar_ > 0.0;
+  }
+  void modify_particle_thermal_velocity(ParticleICState& s) const override;
+
 private:
   // Apply the preset defaults for the active profile *before* any #WAVEIC
   // sub-parameters are read, so user overrides win.
@@ -69,6 +80,7 @@ private:
   int waveMode_ = 1;                    // mode number for x-aligned kx
   amrex::Real frac_ = 0.02;             // B perturbation amplitude (B1/Bx0)
   amrex::Real pert_ = 0.1;              // density perturbation amplitude (IAW)
+  amrex::Real anisoTPerpOverTPar_ = 0.0;  // T_perp/T_par ratio (0 = isotropic)
 
   // --- cached in set_fields from the domain / guide field. ---
   mutable amrex::Real B1_ = 0.0;   // B perturbation amplitude (code units)

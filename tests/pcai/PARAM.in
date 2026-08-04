@@ -1,0 +1,194 @@
+#DESCRIPTION
+Hybrid PIC (kinetic ions / fluid electrons) Proton Cyclotron Anisotropy
+Instability (PCAI) wave test.
+
+1D-3V: the ion temperature is anisotropic (bi-Maxwellian) with
+  T_perp/T_par = 3, beta_par = 1,
+so the plasma exceeds the proton-cyclotron anisotropy instability threshold
+  P_perp/P_par - 1 ~ S / beta_par^0.4   (S ~ 1)
+and a left-hand circularly-polarized (Alfven/ion-cyclotron) wave grows parallel
+to the guide field at the linear-theory rate gamma/Omega_ci = 0.162.  This
+validates the hybrid solver's capture of an electromagnetic anisotropy
+instability driven by ion free energy (no net current / beam).
+
+The anisotropic distribution is seeded by the WAVEIC anisoTPerpOverTPar option:
+the UNIFORMSTATE temperature T is interpreted as the PARALLEL temperature T_par,
+and the WaveIC thermal-velocity hook inflates the two components perpendicular
+to the guide field (x) by sqrt(T_perp/T_par) = sqrt(3), reproducing the
+Hybrid-VPIC reference seeding (ux~N(0,vthipar), uy,uz~N(0,vthiperp)).  A small
+transverse (B_y, B_z) wave at the box-fundamental mode (frac = 0.02, just above
+the ~1% thermal-noise floor) is seeded so the most-unstable mode is measured
+cleanly; the linear growth rate is unchanged by the seed.  The growth rate is
+measured from the total transverse-field norm sqrt(sum(By^2)) / sqrt(sum(Bz^2))
+in tests/pcai/validate.py, matching the reference diagnostic.
+
+Normalization matches hybrid_whistler: lNormSI = d_i, uNormSI = v_A, so
+  d_i ~ 1, v_A ~ 1, B = Omega_ci ~ 1 in code units.
+Physical inputs are solar-wind-like: n = 5 /cc, B = 5.125 nT, v_A ~ 50 km/s,
+T_par ~ 1.5e5 K (beta_par = 1), T_perp = 3 T_par.
+
+The box is Lx = 10.5 d_i (per the reference test: Lx/d_i = 10.5), 64 cells, so
+dx = 0.164 d_i and the box-fundamental wavenumber k d_i = 2*pi/10.5 = 0.598 lies
+in the unstable band of the parallel proton-cyclotron mode; the box contains ONE
+wavelength of the growing mode (waveMode = 1), matching the reference.  dt*Omega_ci
+= 0.01 matches the reference (dt = 0.02 s here).  Run for taui = 60 gyro-periods
+(T_code = 60, TimeMax = 120 s) with fields saved every 20 steps (fields_interval
+= 20 in pcai.cxx), following the Hybrid-VPIC setup.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-5.25                   xMin  [code units; Lx = 10.5 d_i]
+ 5.25                   xMax
+-0.05                   yMin
+ 0.05                   yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+64                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+64                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+Standard Maxwell/GMRES solver disabled; use the Ohm's-law + Faraday hybrid
+field advance instead.
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+#AVGFIELDB
+F                       useAvgFieldB
+20                      nAvgFieldB
+
+useAvgFieldB = F disables FLEKS's EMA time-averaging of B.  The Hybrid-VPIC
+reference uses no B time-averaging (and no smoothing: nsub=1, nsm=0, eta=0,
+damp=NULL); disabling the EMA matches the reference setup.
+
+Resistivity OFF (0.0): the instability is driven purely by the ion temperature
+anisotropy, so no extra dissipation is added.
+#RESISTIVITY
+0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
+
+Warm massless fluid electrons with T_e = T_par (13.06 eV = 151400 K), adiabatic
+index gamma = 5/3, matching the Hybrid-VPIC reference (Te = Tipar = 0.5 in
+mi*v_A^2 units).  Diagnostic found cold electrons (Te = 0) DO NOT produce the
+instability (the n=1 mode just oscillates), while warm electrons, whose
+pressure-gradient term couples to the parallel density perturbation of the
+parallel proton-cyclotron mode, DO drive the growth -- consistent with the
+reference.
+#ELECTRONTEMPERATURE
+13.06                   electronTemperature  [eV]  (T_e = T_par)
+1.6667                  electronGamma             (5/3)
+1.0                     electronDensity0
+
+Charge-density floor for the 1/rho factors in the Hall term and the
+electron-pressure-gradient term.  Hybrid-VPIC clamps rho at max(rho, 0.05) in
+its field advance (hyb_advance_e.cc), while FLEKS defaults to 1e-6; raising the
+floor to the reference value prevents (J x B)/rho and grad(Pe)/rho from blowing
+up if the density dips locally in the high-amplitude nonlinear phase.
+#DENSITYFLOOR
+0.05                    rhoFloorHybrid
+
+Sub-cycle the B update.  FLEKS's hybrid discretization requires sub-cycling for
+linear stability at the grid-scale (nsub = 1, as in Hybrid-VPIC, is linearly
+unstable here), so we sub-cycle the Hall-whistler term.  The rk4 integrator
+below uses the time-centred E (J from curl(B_stage), Hall/convection B from
+(B_stage+B^n)/2) matching Hybrid-VPIC, which is stable in the high-amplitude
+phase without over-damping the instability.
+#HALLSUBCYCLE
+32                      nHallSubcycle
+
+Time-integration for the hybrid Faraday (B) update.  "rk4" now evaluates E at
+the TIME-CENTRED B (B_stage + B^n)/2 in the generalized Ohm's law at each stage,
+exactly as Hybrid-VPIC's hyb_advance_e uses (cbx+cbx0)/2 (B_n is stored by
+STOREBOLD).  With nHallSubcycle = 1 this reproduces the Hybrid-VPIC field
+advance (RK4, no sub-cycling), which is stable in the high-amplitude nonlinear
+phase without over-damping the instability.
+#FIELDINTEGRATOR
+rk4                     fieldIntegrator
+
+Single kinetic ion species (q = m = 1); the electron is an implicit
+neutralizing massless fluid, so no electron particle species is present.
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#UNIFORMSTATE
+5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+151400.0                T [K]        T_par (beta_par = 1, v_A = 5e4 m/s)
+5.125e-9                bx [T]       uniform guide field Bx0 (B_code ~ 1)
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+hybridwave
+
+#WAVEIC
+1                       waveMode            box-fundamental unstable mode
+0.02                    frac                B perturbation amplitude
+3.0                     anisoTPerpOverTPar  T_perp/T_par anisotropy ratio
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt            dt*Omega_ci = 0.01
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
+5.0e4                   uNormSI   [m/s] ~ v_A so v_A ~ 1 in code units
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#PARTICLES
+5000                    nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#COMOVING
+F                       solvePartInCoMov
+0                       nSmoothBackGroundU
+
+#UPWINDE
+F                       useUpwindE
+0.0                     limiterThetaE
+
+#UPWINDB
+F                       doSmoothB
+0.0                     theta
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+20                      dn
+-1                      dt
+1                       dx
+
+#STOP
+-1                      MaxIter
+120.0                   TimeMax      ~60 ion gyro-periods (taui = 60 wci^-1, matching Hybrid-VPIC pcai.cxx)
+
+#RUN

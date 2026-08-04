@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Validator for the beam instability test (tests/beam).
 
-The primary validation is the FFT-based transverse-wave check performed on the
-plot output by _check_beam_transverse_wave().  The beam also tracks test
-particles, so a particle-log check is enabled via PARTICLE_TOL.
+The runner exercises the single directory twice -- full PIC (PARAM.in,
+base_name "beam") and hybrid PIC (PARAM.in.hybrid, base_name "beam_hybrid").
+
+The primary validation for BOTH variants is the FFT-based transverse-wave check
+performed on the plot output by _check_beam_transverse_wave().  The hybrid
+variant additionally runs the shared hybrid-family energy-log checks
+(validate_hybrid) to guard against NaN / field blow-up.  The beam also tracks
+test particles, so a particle-log check is enabled via PARTICLE_TOL.
 """
 import glob
 import logging
@@ -12,7 +17,7 @@ import os
 
 logger = logging.getLogger(__name__)
 
-from .._shared.hybrid import RUN_DIR  # noqa: E402
+from .._shared.hybrid import RUN_DIR, validate_hybrid
 
 # Particle-tracking tolerance passed to validate_test_particles() in the
 # common runner (validate_tests.py).
@@ -27,9 +32,15 @@ def validate_log(pic_diags=None, test_name=None):
     """Validate the beam instability test.
 
     The primary validation is the FFT-based transverse-wave check performed
-    on the plot output by _check_beam_transverse_wave().  No log-file-based
-    checks are performed here.
+    on the plot output by _check_beam_transverse_wave().  For the full-PIC
+    variant no log-file-based checks are performed here.  The hybrid variant
+    (test_name ends with "hybrid") additionally runs the shared hybrid energy
+    checks (finite energies, bounded magnetic-energy growth) to catch a NaN /
+    field blow-up before the plot check runs.
     """
+    if test_name and test_name.endswith("hybrid"):
+        return validate_hybrid(pic_diags=pic_diags, test_name=test_name)
+
     logger.debug("Validating Beam Instability Test...")
     logger.debug("  [INFO] Beam diagnostic checks rely on plot output (FFT).")
     logger.debug("Beam Instability Test: PASSED")
@@ -218,7 +229,17 @@ def _check_beam_transverse_wave():
         logger.debug("    [FFT] Mode check: |n_dom(%d) - n_res(%d)| <= %d -> %s",
                      n_dom, n_res, tol, 'OK' if mode_ok else 'FAIL')
 
-    if growth_ok and mode_ok:
+    # ---- Check 4: the transverse wave must GROW over time -----------------
+    # The instability grows from the seed noise, so max|B_perp| must increase
+    # monotonically (or at least not decrease) across the time-resolved frames.
+    # This is what distinguishes an actual beam-beam instability from static
+    # numerical seed.  Skips gracefully (not a failure) if fewer than 3 frames
+    # are available.
+    growth_ok2, growth_reason = _beam_growth_over_time(plots_dir)
+    if growth_reason is not None:
+        logger.debug("    [FFT] Time-growth: %s", growth_reason)
+
+    if growth_ok and mode_ok and growth_ok2:
         logger.debug("    [FFT] Transverse wave check: PASSED")
         return True, "Passed"
     else:
@@ -229,11 +250,69 @@ def _check_beam_transverse_wave():
         if not mode_ok:
             reasons.append(f"dominant mode n={n_dom} inconsistent with "
                            f"resonance (n_res={n_res})")
+        if not growth_ok2:
+            reasons.append(growth_reason or "transverse wave not growing over time")
         return False, "; ".join(reasons)
 
 
+def _beam_growth_over_time(plots_dir):
+    """Verify max|B_perp| grows across the time-resolved .out frames.
+
+    Reads the per-frame max transverse-field amplitude (max of hypot(By, Bz))
+    and requires it to be non-decreasing and to end at least 2x its early value,
+    confirming the seeded cyclotron wave is genuinely amplified by the
+    instability rather than being static seed noise.
+
+    Returns (passed: bool, reason: str|None).  reason is None when the check
+    could not be evaluated (too few frames) and should be skipped, not failed.
+    """
+    frames = []
+    for f in sorted(glob.glob(os.path.join(plots_dir, "*.out"))):
+        with open(f, "r", encoding="latin-1") as fh:
+            lines = fh.readlines()
+        if len(lines) < 6:
+            continue
+        var_names = lines[4].split()
+        vidx = {v.upper(): i for i, v in enumerate(var_names)}
+        if "BY" not in vidx or "BZ" not in vidx:
+            continue
+        iby, ibz = vidx["BY"], vidx["BZ"]
+        bperp = []
+        for line in lines[5:]:
+            cols = line.split()
+            if len(cols) <= max(iby, ibz):
+                continue
+            try:
+                bperp.append(math.hypot(float(cols[iby]), float(cols[ibz])))
+            except (ValueError, IndexError):
+                continue
+        if bperp:
+            frames.append(max(bperp))
+    if len(frames) < 3:
+        return True, None  # too few frames -> skip (not a failure)
+    if any(frames[i + 1] < frames[i] for i in range(len(frames) - 1)):
+        logger.debug("    [FFT] Non-monotonic max|B_perp| across frames: %s",
+                     ["%.2e" % v for v in frames])
+        return False, (f"max|B_perp| not non-decreasing across "
+                       f"{len(frames)} frames")
+    if frames[0] > 0 and frames[-1] <= 2.0 * frames[0]:
+        logger.debug("    [FFT] Transverse amplitude nearly static: %s",
+                     ["%.2e" % v for v in frames])
+        return False, (f"max|B_perp| {frames[0]:.2e} -> {frames[-1]:.2e} "
+                       f"nT (no instability growth)")
+    logger.debug("    [FFT] Time-growth: max|B_perp| %s",
+                 " -> ".join("%.2e" % v for v in frames))
+    return True, None
+
+
 def validate_plot(test_name):
-    """Plot-output check: FFT-based transverse-wave resonant-wavenumber check."""
+    """Plot-output check: FFT-based transverse-wave resonant-wavenumber check.
+
+    Applies to both the full-PIC and hybrid variants: the hybrid PARAM.in.hybrid
+    keeps the identical box, guide field, beam ratio/speeds and density, so the
+    FFT check (which reads the box size and Bx from the plot file itself) is
+    valid for both solvers.
+    """
     logger.debug("  --- Validating Output Files (FFT transverse wave) ---")
     result, reason = _check_beam_transverse_wave()
     if result:
