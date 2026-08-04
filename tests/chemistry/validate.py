@@ -132,7 +132,7 @@ def validate_log(pic_diags=None, test_name=None):
                              co2_key, pct)
 
     if passed:
-        logger.info("Mars Chemistry Test: PASSED")
+        logger.debug("Mars Chemistry Test: PASSED")
         return True, "Passed"
     else:
         return False, "; ".join(reasons)

@@ -95,7 +95,7 @@ def validate_log(pic_diags=None, test_name=None):
             logger.debug("    SUCCESS: %s (H+) energy stable or increasing.", h_key)
 
     if passed:
-        logger.info("Charge Exchange Source Test: PASSED")
+        logger.debug("Charge Exchange Source Test: PASSED")
         return True, "Passed"
     else:
         return False, "; ".join(reasons)

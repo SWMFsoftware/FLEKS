@@ -82,7 +82,7 @@ def validate_log(pic_diags=None, test_name=None):
         logger.debug("    [IAW] %s", profile_reason)
 
     if passed:
-        logger.info("Ion Acoustic Wave Test: PASSED")
+        logger.debug("Ion Acoustic Wave Test: PASSED")
         return True, "Passed"
     return False, "; ".join(reasons)
 

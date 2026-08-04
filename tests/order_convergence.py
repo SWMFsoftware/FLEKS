@@ -225,18 +225,22 @@ def main():
     args = ap.parse_args()
 
     if args.dt is not None:
-        # For a single dt, use the base subcycle count scaled for stability.
-        nsub = max(1, round(32 * 0.02 / args.dt))
+        # For a single dt, scale the subcycle count to keep the absolute
+        # sub-step size dt_sub = dt/nsub at the verified-stable minimum
+        # (nHallSubcycle = 2 at dt = 0.02, i.e. dt_sub ~ 0.01).
+        nsub = max(1, round(2 * 0.02 / args.dt))
         res = run_case(args.dt, nsub, args.nproc)
         if res is None:
             sys.exit("no frequency measured")
         print("dt=%-8s omega_code = %.6f" % (args.dt, res["omega_code"]))
         return
 
-    # dt refinement sequence (halving), subcycling scaled to keep the Hall CFL
-    # resolved. Grid is fixed (64 cells) so the temporal order is isolated.
+    # dt refinement sequence (halving), subcycling scaled to keep the absolute
+    # sub-step size (Hall CFL) at the verified-stable minimum for the IAW test
+    # (nHallSubcycle = 2 at dt = 0.02; see tests/iaw/PARAM.in). Grid is fixed
+    # (64 cells) so the temporal order is isolated.
     base_dt = 0.02
-    base_nsub = 32
+    base_nsub = 2
     dts = [base_dt / 2**r for r in range(4)]
     omegas = []
     print("%-10s %-12s %-16s" % ("dt", "nHallSubcycle", "omega_code"))

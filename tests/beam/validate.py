@@ -32,7 +32,7 @@ def validate_log(pic_diags=None, test_name=None):
     """
     logger.debug("Validating Beam Instability Test...")
     logger.debug("  [INFO] Beam diagnostic checks rely on plot output (FFT).")
-    logger.info("Beam Instability Test: PASSED")
+    logger.debug("Beam Instability Test: PASSED")
     return True, "Passed"
 
 

@@ -242,7 +242,7 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
                 return
         else:
             logger.debug("Validating %s (generic check)...", display_name)
-            logger.info("%s (generic check): PASSED", display_name)
+            logger.debug("%s (generic check): PASSED", display_name)
             val_res = True
             reason = "Passed"
 
@@ -605,7 +605,7 @@ def validate_test_particles(pt_diags, test_name=None, tol=None):
                 break
 
     if passed:
-        logger.info("Test-Particle Tracer Output: PASSED")
+        logger.debug("Test-Particle Tracer Output: PASSED")
         return True, "Passed"
     return False, "; ".join(reasons)
 

@@ -91,7 +91,7 @@ def validate_hybrid(pic_diags=None, test_name=None):
         logger.debug("    [INFO] Epart0 initial zero; skipping ion check.")
 
     if passed:
-        logger.info("Hybrid PIC Wave Test: PASSED")
+        logger.debug("Hybrid PIC Wave Test: PASSED")
         return True, "Passed"
     return False, "; ".join(reasons)
 

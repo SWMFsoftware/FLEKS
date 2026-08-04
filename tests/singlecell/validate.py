@@ -63,6 +63,6 @@ def validate_log(pic_diags=None, test_name=None):
             f"propagating, not frozen)")
 
     if passed:
-        logger.info("Single-Cell Hybrid Test: PASSED")
+        logger.debug("Single-Cell Hybrid Test: PASSED")
         return True, "Passed"
     return False, "; ".join(reasons)

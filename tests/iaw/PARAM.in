@@ -59,11 +59,16 @@ T                       useHybridPIC
 1.0                     electronGamma
 1.0                     electronDensity0
 
-Sub-cycle the B update: the explicit Hall advance is limited by the discrete
-grid-scale modes, dt_sub < dx^2/(6 v_A d_i) ~ 1.7e-3 (dx = 0.1, v_A = d_i = 1),
-so dt = 0.02 needs nHallSubcycle >= 12; 32 gives dt_sub = 6.25e-4 with margin.
+Sub-cycle the B update. The coherent IAW is a parallel (k || B) longitudinal
+mode, so the Hall term (J x B)/rho vanishes for the wave itself, and the RK4
+integrator resolves any resolved mode with a single sub-step. The only reason a
+sub-cycle is needed at all is that grid-scale perpendicular PIC noise drives an
+explicit Hall-whistler mode: nHallSubcycle = 1 is UNSTABLE (magnetic energy Eb
+blows up ~5e-5 -> ~2e11 within 7 steps), while nHallSubcycle = 2 is fully stable
+over the entire run (Eb ratio 1.006, identical acoustic frequency to nsub = 32,
+validated over TimeMax = 25).
 #HALLSUBCYCLE
-32                      nHallSubcycle
+4                       nHallSubcycle
 
 Single kinetic ion species (q = m = 1); the electron is an implicit
 neutralizing massless fluid, so no electron particle species is present.
@@ -110,25 +115,12 @@ T                       useFixedDt
 1                       nParticle per cell in Y
 1                       nParticle per cell in Z
 
-#COMOVING
-F                       solvePartInCoMov
-0                       nSmoothBackGroundU
-
-#UPWINDE
-F                       useUpwindE
-0.0                     limiterThetaE
-
-#UPWINDB
-F                       doSmoothB
-0.0                     theta
-
 #SAVEPLOT
 1                       nPlot
 z=0 fluid ascii pic     plotString
-25                      dn
+250                     dn
 0.0                     dt
 1                       dx
-Bx By Bz Ex Ey Ez rhoS0  varName
 
 #STOP
 -1                      MaxIter

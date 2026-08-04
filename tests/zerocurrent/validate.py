@@ -62,6 +62,6 @@ def validate_log(pic_diags=None, test_name=None):
             f"field is evolving, not frozen)")
 
     if passed:
-        logger.info("Zero-Current Hybrid Test: PASSED")
+        logger.debug("Zero-Current Hybrid Test: PASSED")
         return True, "Passed"
     return False, "; ".join(reasons)

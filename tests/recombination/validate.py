@@ -82,7 +82,7 @@ def validate_log(pic_diags=None, test_name=None):
                              h_key, h_ratio * 100)
 
     if passed:
-        logger.info("Recombination Loss Test: PASSED")
+        logger.debug("Recombination Loss Test: PASSED")
         return True, "Passed"
     else:
         return False, "; ".join(reasons)
