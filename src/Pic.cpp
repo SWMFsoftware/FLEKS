@@ -262,9 +262,14 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("useCompactCurl", useCompactCurl);
   } else if (command == "#FIELDINTEGRATOR") {
     // Select the time integrator for the hybrid Faraday (B) update:
-    //   "euler" (forward Euler, sub-cycled Hall-whistler),
-    //   "heun"  (trapezoidal predictor-corrector, time-centred B/E coupling),
-    //   "rk4"   (4th-order Runge-Kutta on B, default).
+    //   "euler"  (forward Euler, sub-cycled Hall-whistler),
+    //   "heun"   (trapezoidal predictor-corrector, time-centred B/E coupling),
+    //   "rk4"    (4th-order Runge-Kutta on B, default),
+    //   "ssprk3" (Hybrid-VPIC-style strong-stability-preserving RK3 with a
+    //             time-centred E: the Ohm's law uses the averaged B
+    //             (B_stage + B^n)/2 in the Hall/convection terms, exactly as
+    //             hyb_advance_e does; SSP-RK3 stays stable in the high-amplitude
+    //             nonlinear phase without over-damping the instability).
     param.read_var("fieldIntegrator", fieldIntegrator);
   } else if (command == "#AVGFIELDB") {
     // Phase 3.4: time-averaged (EMA) magnetic field for the Ohm's law and the
@@ -342,13 +347,14 @@ void Pic::post_process_param() {
 
     // Field integrator selection for the hybrid Faraday update. #FIELDINTEGRATOR
     // is the single control for the time integration of B:
-    //   "euler" -> forward-Euler sub-step;
-    //   "heun"  -> time-centred predictor-corrector (trapezoidal) sub-step;
-    //   "rk4"   -> 4th-order Runge-Kutta sub-step (default).
+    //   "euler"  -> forward-Euler sub-step;
+    //   "heun"   -> time-centred predictor-corrector (trapezoidal) sub-step;
+    //   "rk4"    -> 4th-order Runge-Kutta sub-step (default);
+    //   "ssprk3" -> Hybrid-VPIC-style SSP-RK3 with time-centred E (averaged B).
     // dispatch on the string directly in update_B_hybrid.
     useRK4 = (fieldIntegrator == "rk4");
     if (fieldIntegrator != "euler" && fieldIntegrator != "heun" &&
-        fieldIntegrator != "rk4") {
+        fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3") {
       amrex::Print() << "  WARNING: unknown #FIELDINTEGRATOR '" << fieldIntegrator
                      << "'; defaulting to 'rk4'\n";
       fieldIntegrator = "rk4";
@@ -2688,30 +2694,51 @@ void Pic::update_B_hybrid() {
       curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][0],
                           Geom(iLev).InvCellSize());
 
-      // Stage 2: B2 = B^n - 0.5 dt k1.
+      // Stages 2-4 evaluate E at the TIME-CENTRED B (B_stage + B^n)/2, exactly
+      // as Hybrid-VPIC's hyb_advance_e uses (cbx+cbx0)/2 (B_n is stored in
+      // cbxold by STOREBOLD).  FLEKS's default rk4 previously used the trial
+      // B_stage directly in the Ohm's law; the time-centred form matches the
+      // Hybrid-VPIC field advance and stays stable in the high-amplitude phase
+      // without over-damping the instability.
+      // Stages 2-4: the current J is computed from curl(B_stage) (the trial B),
+      // while the Hall/convection B is the TIME-AVERAGED B (B_stage + B^n)/2,
+      // exactly as Hybrid-VPIC's hyb_advance_e: J = curl(cbx) and the
+      // J x B / convection factors use (cbx + cbx0)/2.  So centerBin (for curl)
+      // is the trial B in centerB_RK4, and nodeBin (for the Hall/convection B)
+      // is the node-average of the averaged B stored in nodeB_RK4.
+      // Stage 2: B2 = B^n - 0.5 dt k1; E at (B2 + B^n)/2.
       MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
       MultiFab::Saxpy(centerB_RK4[iLev], -0.5 * subDt, kRK4[iLev][0], 0, 0, 3,
                       nGst);
-      project_centerB_to_nodeB_scratch(centerB_RK4[iLev], nodeB_RK4[iLev], iLev);
+      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                        centerB[iLev], 0, 0, 3, nGst);
+      project_centerB_to_nodeB_scratch(centerBstar_heun[iLev], nodeB_RK4[iLev],
+                                       iLev);
       assemble_ohm_E(centerB_RK4[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev], iLev,
                      hstepHalf);
       curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][1],
                           Geom(iLev).InvCellSize());
 
-      // Stage 3: B3 = B^n - 0.5 dt k2.
+      // Stage 3: B3 = B^n - 0.5 dt k2; E at (B3 + B^n)/2.
       MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
       MultiFab::Saxpy(centerB_RK4[iLev], -0.5 * subDt, kRK4[iLev][1], 0, 0, 3,
                       nGst);
-      project_centerB_to_nodeB_scratch(centerB_RK4[iLev], nodeB_RK4[iLev], iLev);
+      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                        centerB[iLev], 0, 0, 3, nGst);
+      project_centerB_to_nodeB_scratch(centerBstar_heun[iLev], nodeB_RK4[iLev],
+                                       iLev);
       assemble_ohm_E(centerB_RK4[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev], iLev,
                      hstepHalf);
       curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][2],
                           Geom(iLev).InvCellSize());
 
-      // Stage 4: B4 = B^n - dt k3.
+      // Stage 4: B4 = B^n - dt k3; E at (B4 + B^n)/2.
       MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
       MultiFab::Saxpy(centerB_RK4[iLev], -subDt, kRK4[iLev][2], 0, 0, 3, nGst);
-      project_centerB_to_nodeB_scratch(centerB_RK4[iLev], nodeB_RK4[iLev], iLev);
+      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                        centerB[iLev], 0, 0, 3, nGst);
+      project_centerB_to_nodeB_scratch(centerBstar_heun[iLev], nodeB_RK4[iLev],
+                                       iLev);
       assemble_ohm_E(centerB_RK4[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev], iLev,
                      g + 1.0 / (Real)nHallSubcycle);
       curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][3],
@@ -2765,6 +2792,67 @@ void Pic::update_B_hybrid() {
       // so the next sub-step's E recompute sees the updated field.
       for (int iLev = 0; iLev < n_lev(); iLev++) {
         project_centerB_to_nodeB(iLev);
+      }
+      continue;
+    }
+
+    if (fieldIntegrator == "ssprk3") {
+      // --- Hybrid-VPIC-style SSP-RK3 with time-centred E ---
+      // Replicates hyb_advance_b.rk3 / hyb_advance_e.cc: B is advanced by the
+      // strong-stability-preserving RK3
+      //   B1      = B_n - dt curl(E(B_n))
+      //   B2      = (3/4) B_n + (1/4)(B1 - dt curl(E((B1+B_n)/2)))
+      //   B^{n+1} = (1/3) B_n + (2/3)(B2 - dt curl(E((B2+B_n)/2)))
+      // with E evaluated at the TIME-CENTRED B (B_stage + B_n)/2 in the
+      // generalized Ohm's law, exactly as hyb_advance_e uses (cbx+cbx0)/2.
+      // SSP-RK3 keeps the high-amplitude nonlinear phase stable (unlike rk4,
+      // which goes NaN) without over-damping the instability (unlike heun).
+      const int iLev = 0;
+      // Save B_n (sub-step start) and its node projection.
+      MultiFab::Copy(centerBstart_heun[iLev], centerB[iLev], 0, 0, 3, nGst);
+      // nodeB[0] is already the node-average of centerB (= B_n).
+
+      // Stage 1: k1 = curl(E(B_n)); B1 = B_n - subDt k1.  The time-centred B at
+      // stage 1 is (B_n + B_n)/2 = B_n, so E uses the live B_n directly.
+      assemble_ohm_E(centerB[iLev], nodeB[iLev], nodeE_RK4[iLev], iLev, g);
+      curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][0], Geom(iLev).InvCellSize());
+      // B1 = B_n - subDt k1  (store in centerB_RK4)
+      MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB_RK4[iLev], -subDt, kRK4[iLev][0], 0, 0, 3, nGst);
+
+      // Stage 2: avgB2 = (B1+B_n)/2; k2 = curl(E(avgB2));
+      //   B2 = (3/4)B_n + (1/4)(B1 - subDt k2).
+      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                        centerBstart_heun[iLev], 0, 0, 3, nGst);
+      project_centerB_to_nodeB_scratch(centerBstar_heun[iLev], nodeB_RK4[iLev],
+                                       iLev);
+      assemble_ohm_E(centerBstar_heun[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev],
+                     iLev, g + 1.0 / (Real)nHallSubcycle);
+      curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][1], Geom(iLev).InvCellSize());
+      MultiFab::LinComb(centerB_RK4[iLev], 0.25, centerB_RK4[iLev], 0, 0.75,
+                        centerBstart_heun[iLev], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB_RK4[iLev], -0.25 * subDt, kRK4[iLev][1], 0, 0, 3,
+                      nGst);
+
+      // Stage 3: avgB3 = (B2+B_n)/2; k3 = curl(E(avgB3));
+      //   B^{n+1} = (1/3)B_n + (2/3)(B2 - subDt k3).
+      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                        centerBstart_heun[iLev], 0, 0, 3, nGst);
+      project_centerB_to_nodeB_scratch(centerBstar_heun[iLev], nodeB_RK4[iLev],
+                                       iLev);
+      assemble_ohm_E(centerBstar_heun[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev],
+                     iLev, g + 0.5 / (Real)nHallSubcycle);
+      curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][2], Geom(iLev).InvCellSize());
+      MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerB_RK4[iLev], 0,
+                        1.0 / 3.0, centerBstart_heun[iLev], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB[iLev], -2.0 / 3.0 * subDt, kRK4[iLev][2], 0, 0, 3,
+                      nGst);
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+
+      // Sync the advanced level-0 B to nodeB[0] and the fine levels.
+      project_centerB_to_nodeB(0);
+      for (int iLevF = 1; iLevF < n_lev(); ++iLevF) {
+        project_centerB_to_nodeB(iLevF);
       }
       continue;
     }

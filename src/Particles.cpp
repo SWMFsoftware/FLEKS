@@ -276,6 +276,34 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
                                             uth);
           }
 
+          // Per-particle THERMAL-velocity override (e.g. a bi-Maxwellian with
+          // distinct T_perp / T_par for the proton-cyclotron anisotropy
+          // instability). Routed through the InitialCondition plugin; runs
+          // AFTER the isotropic thermal velocity is sampled and BEFORE the bulk
+          // velocity is added, so the IC may fully replace the sampled thermal
+          // velocity with its own anisotropic draw.
+          if (ic_ && ic_->modifies_thermal_velocity()) {
+            ParticleICState pics;
+            pics.iLev = iLev;
+            pics.iSpec = speciesID;
+            pics.iCount = icount;
+            pics.nPerCell = npcel;
+            pics.x = xyz[0];
+            pics.y = xyz[1];
+            pics.z = xyz[2];
+            pics.uThermal = u;
+            pics.vThermal = v;
+            pics.wThermal = w;
+            pics.rand[0] = rand1;
+            pics.rand[1] = rand2;
+            pics.rand[2] = rand3;
+            pics.rand[3] = rand4;
+            ic_->modify_particle_thermal_velocity(pics);
+            u = pics.uThermal;
+            v = pics.vThermal;
+            w = pics.wThermal;
+          }
+
           Real uBulk = userState ? tpVel.vx
                                  : interface->get_ux(mfi, xyz, speciesID, iLev);
           Real vBulk = userState ? tpVel.vy
