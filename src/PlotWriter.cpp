@@ -268,17 +268,26 @@ std::string PlotWriter::expand_variables(std::string inVars) const {
     var0 = inVars.substr(pos1 + 1, pos2 - pos1 - 1);
     inVars.erase(pos1, pos2 - pos1 + 1);
     if (var0 == "fluid") {
-      for (int is = 0; is < nSpecies; is++) {
-        inVars += add_plasma_variables(
-            "rhoS uxS uyS uzS pS pXXS pYYS pZZS pXYS pXZS pYZS", is);
-      }
+      // TODO: This ordering is kept for backward test compatibility.
+      // A better ordering would be all species moments together.
+      for (int is = 0; is < nSpecies; is++)
+        inVars += add_plasma_variables("rhoS", is);
       inVars += " Bx By Bz Ex Ey Ez";
+      for (int is = 0; is < nSpecies; is++)
+        inVars += add_plasma_variables("uxS uyS uzS", is);
+      for (int is = 0; is < nSpecies; is++)
+        inVars += add_plasma_variables("pS", is);
+      for (int is = 0; is < nSpecies; is++)
+        inVars +=
+            add_plasma_variables("pXXS pYYS pZZS pXYS pXZS pYZS", is);
     } else if (var0 == "all") {
-      for (int is = 0; is < nSpecies; is++) {
-        inVars += add_plasma_variables(
-            "qS kXXS kYYS kZZS kXYS kXZS kYZS jxS jyS jzS", is);
-      }
+      for (int is = 0; is < nSpecies; is++)
+        inVars += add_plasma_variables("qS", is);
       inVars += " Bx By Bz Ex Ey Ez";
+      for (int is = 0; is < nSpecies; is++)
+        inVars += add_plasma_variables("kXXS kYYS kZZS kXYS kXZS kYZS", is);
+      for (int is = 0; is < nSpecies; is++)
+        inVars += add_plasma_variables("jxS jyS jzS", is);
     }
     pos1 = inVars.find_first_of("{");
   }
