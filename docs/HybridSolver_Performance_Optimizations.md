@@ -216,16 +216,30 @@ only the output path.
 5. This cuts the per-step `centerPlasmaPrev` copy width by 11/4 ≈ **2.75×**.
 - **Verified:** `pcai`, `beam` (full-PIC + hybrid) all PASS.
 
-> **On Items 5 and 6 (deferred):** slim the per-particle deposit to 4
-> components, and defer `convert_to_fluid_moments`. These do **not** yield a
-> clean win here: the deposit writes `centerPlasma[i]`, which feeds **both** the
-> field solve (`centerPlasmaSum` → `assemble_ohm_E`) **and** the output path
-> (`nodePlasma` bridge → structured plots, and `calc_mach_number` which reads the
-> pressure tensor every step). The full `nMoments` pressure tensor must therefore
-> be produced for output, so the deposit cannot be slimmed without decoupling the
-> field-solve moments (4 comps) from the output moments (full `nMoments`) into
-> separate buffers — a larger structural change. They are left as a follow-up if
-> the output path is later migrated to read cell-centred fields directly.
+> **On Items 5 and 6 (re-assessed after Item 2 + mach gating, 2026-08-05):**
+> slim the per-particle deposit to 4 components, and defer
+> `convert_to_fluid_moments`. With `calc_mach_number` now gated off (Item 2 /
+> mach-gating commit) and the `nodePlasma` bridge deferred, the full pressure
+> tensor (comps 4-10) is only needed at output time. **However, these still do
+> not yield a clean, low-risk win:**
+> 1. `convert_to_fluid_moments` (`src/Particles.cpp:1582`) **normalizes comps
+>    0-9 by `qomSign*mass`** (via an alias `mult`) *and* converts the deposited
+>    momentum+pressure into the thermal pressure tensor (comps 4-9). The
+>    normalization of comps 0-3 is required by the field solve, and it is
+>    entangled with the output-only pressure conversion in the same function, so
+>    `convert_to_fluid_moments` cannot simply be deferred without splitting it.
+> 2. The deposit (`sum_moments_cell_centered`) writes all 11 per-particle
+>    moments (incl. pressure) into `centerPlasma[i]`. The field solve reads only
+>    comps 0-3, but `centerPlasma[i]`/`centerPlasmaSum` must keep the full
+>    `nMoments` for the `nodePlasma` output (which needs the thermal pressure).
+>    Slimming the deposit to 4 comps therefore requires a **second, output-only
+>    deposit** (re-running `sum_moments` in a full-width mode at output time),
+>    since the pressure tensor cannot be reconstructed from `rho+3m` alone.
+> 3. The deposit is per-particle (88 `+=`/particle); slimming to 4 comps would
+>    save ~56 `+=`/particle on the field path but adds a full-width re-deposit at
+>    output. The reward is real but the double-buffer / double-deposit refactor
+>    risks the moment physics (normalization, thermal pressure), so it is left as
+>    a documented follow-up rather than implemented now.
 
 ---
 
