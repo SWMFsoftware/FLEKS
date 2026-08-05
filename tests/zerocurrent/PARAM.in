@@ -83,35 +83,19 @@ Uniform guide field Bx0 along x.
 
 Sinusoidal transverse B perturbation along x. With zero particles E stays 0 so
 this perturbation does not propagate (Hall term vanishes because J = 0). The wave
-sub-parameters live inside the test-case block (Pic.read_param forwards the rest
-of the block to the WaveIC plug-in). A standalone wave-command block is not
-recognized by the Domain dispatcher, so all wave options are listed here.
+sub-parameters are set in the wave initial-condition command block (value-first
+SWMF convention: value then name), read by the WaveIC plug-in through
+ReadParam::read_optional. The block must list its sub-parameters in the same order
+they are read in WaveIC::read_param; omitted ones keep the generic preset
+defaults.
 #TESTCASE
 waveic
-T                       seedB
-F                       seedE
-F                       seedWeight
-T                       guideField
-F                       alfvenKick
-0.0                     waveBx1
-0.5                     waveBy1
-0.5                     waveBz1
-1.0                     waveKx
-0.0                     waveKy
-0.0                     waveKz
-0.0                     waveKxShift
-0.0                     waveKyShift
-0.0                     waveKzShift
-0.5                     waveAmplitude
-0.0                     waveKxUp
-0.0                     waveKyUp
-0.0                     waveKzUp
-0.0                     waveUx
-0.0                     waveUy
-0.0                     waveUz
-0.0                     waveEx1
-0.0                     waveEy1
-0.0                     waveEz1
+
+#WAVEIC
+1       seedB
+1       guideField
+1       waveMode
+0.5     frac
 
 #TIMESTEPPING
 T                       useFixedDt

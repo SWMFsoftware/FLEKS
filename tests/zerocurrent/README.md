@@ -32,8 +32,10 @@ because `rho = 0`.
 
 * 64x1x1 periodic Cartesian grid (`Lx = 6.4 d_i`, `#NCELL 64 1 1`).
 * Hybrid PIC (`#SOLVEEM F`, `#HYBRIDPIC T`), Hall term **ON** (`#HALLTERM T`).
-* `#TESTCASE waveic` with `seedB=T`, `seedE=F`, `guideField=T`:
-  transverse `By,Bz = 0.5 * cos(kx x)` with `kx = 1`, guide field `Bx0 ~ 1`.
+* `#TESTCASE waveic` plus a `#WAVEIC` block that sets `seedB = 1`,
+  `guideField = 1`, `waveMode = 1`, `frac = 0.5`:
+  transverse `By,Bz = 0.5 * cos(kx x)` (kx = 2*pi/Lx, box fundamental) on a
+  uniform guide field `Bx0 ~ 1`.
 * **Zero particles** (`#PARTICLES 0 0 0`) => `rho = 0` everywhere => `E = 0`.
 * Fixed `dt = 0.02`, runs to `TimeMax = 6.25`.
 
