@@ -262,8 +262,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("useCompactCurl", useCompactCurl);
   } else if (command == "#FIELDINTEGRATOR") {
     // Select the time integrator for the hybrid Faraday (B) update:
-    //   "euler"  (forward Euler, sub-cycled Hall-whistler),
-    //   "heun"   (trapezoidal predictor-corrector, time-centred B/E coupling),
     //   "rk4"    (4th-order Runge-Kutta on B, default),
     //   "ssprk3" (Hybrid-VPIC-style strong-stability-preserving RK3 with a
     //             time-centred E: the Ohm's law uses the averaged B
@@ -347,14 +345,11 @@ void Pic::post_process_param() {
 
     // Field integrator selection for the hybrid Faraday update. #FIELDINTEGRATOR
     // is the single control for the time integration of B:
-    //   "euler"  -> forward-Euler sub-step;
-    //   "heun"   -> time-centred predictor-corrector (trapezoidal) sub-step;
     //   "rk4"    -> 4th-order Runge-Kutta sub-step (default);
     //   "ssprk3" -> Hybrid-VPIC-style SSP-RK3 with time-centred E (averaged B).
     // dispatch on the string directly in update_B_hybrid.
     useRK4 = (fieldIntegrator == "rk4");
-    if (fieldIntegrator != "euler" && fieldIntegrator != "heun" &&
-        fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3") {
+    if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3") {
       amrex::Print() << "  WARNING: unknown #FIELDINTEGRATOR '" << fieldIntegrator
                      << "'; defaulting to 'rk4'\n";
       fieldIntegrator = "rk4";
@@ -529,11 +524,9 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(nodeBavg[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                           nGst, doMoveData);
 
-      // Euler/heun persistent scratch (all cell-centred, 3 comps).
-      distribute_FabArray(dBpred_heun[iLev], cGrids[iLev], DistributionMap(iLev),
-                          3, nGst, doMoveData);
-      distribute_FabArray(dBcorr_heun[iLev], cGrids[iLev], DistributionMap(iLev),
-                          3, nGst, doMoveData);
+      // rk3/rk4 persistent scratch (all cell-centred, 3 comps). centerBstart
+      // holds the sub-step start B_n, and centerBstar holds the time-centred
+      // (trial + B_n)/2 state used by the rk3/rk4 time-centred-E stages.
       distribute_FabArray(centerBstart_heun[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerBstar_heun[iLev], cGrids[iLev],
@@ -2824,7 +2817,7 @@ void Pic::update_B_hybrid() {
       //   k4 = curl(E(B^n - dt k3, hstep=g+1.0/nsub))
       //   B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4)
       // Fine levels follow from projection of the advanced level-0 B (exactly
-      // as in the euler/heun paths), so only level 0 is advanced here.
+      // as in the ssprk3 path), so only level 0 is advanced here.
       const int iLev = 0;
 
      // Stage 1: k1 = curl(E(B^n)). centerB[0] itself is B^n (untouched until
@@ -2891,7 +2884,7 @@ void Pic::update_B_hybrid() {
       // Sync the advanced level-0 B to nodeB[0] and to the fine levels. Calling
       // project_centerB_to_nodeB on each fine level internally fills the fine
       // centerB from the (now advanced) coarse centerB and recomputes its node B
-      // -- exactly the projection that the euler/heun paths use.
+      // -- exactly the projection that the ssprk3 path uses.
       project_centerB_to_nodeB(0);
       for (int iLevF = 1; iLevF < n_lev(); ++iLevF) {
         project_centerB_to_nodeB(iLevF);
@@ -2899,34 +2892,7 @@ void Pic::update_B_hybrid() {
       continue;
     }
 
-    if (fieldIntegrator == "euler") {
-      // --- Forward-Euler sub-step ---
-      // Recompute the hybrid electric field from the CURRENT B every sub-step
-      // so that the Hall-driven whistler is advanced with the genuine sub-step
-      // dt. (Computing E once and holding it fixed over the sub-steps leaves
-      // the explicit forward-Euler advance of the oscillatory whistler
-      // unstable.) The ion moments are time-interpolated at the sub-step start
-      // (hstep = g).
-          for (int iLev = 0; iLev < n_lev(); iLev++) {
-       const auto& cBin =
-           (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
-       // Both the trial (for J) and the Hall/convection B are the same
-       // cell-centred state in the cell-centred solver (the euler path has no
-       // separate trial/time-averaged split; the stage advances from the live B).
-       assemble_ohm_E(cBin, cBin, centerEhybrid[iLev], iLev, g);
-
-       curl_center_to_center(centerEhybrid[iLev], dBpred_heun[iLev],
-                             Geom(iLev).InvCellSize());
-
-       MultiFab::Saxpy(centerB[iLev], -subDt, dBpred_heun[iLev], 0, 0,
-                       centerB[iLev].nComp(), centerB[iLev].nGrow());
-
-       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-     }
-     continue;
-   }
-
-    if (fieldIntegrator == "ssprk3") {
+   if (fieldIntegrator == "ssprk3") {
       // --- Hybrid-VPIC-style SSP-RK3 with time-centred E ---
       // Replicates hyb_advance_b.rk3 / hyb_advance_e.cc: B is advanced by the
       // strong-stability-preserving RK3
@@ -2936,7 +2902,7 @@ void Pic::update_B_hybrid() {
       // with E evaluated at the TIME-CENTRED B (B_stage + B_n)/2 in the
       // generalized Ohm's law, exactly as hyb_advance_e uses (cbx+cbx0)/2.
       // SSP-RK3 keeps the high-amplitude nonlinear phase stable (unlike rk4,
-      // which goes NaN) without over-damping the instability (unlike heun).
+      // which goes NaN) without over-damping the instability.
       const int iLev = 0;
       // Save B_n (sub-step start) and its node projection.
       MultiFab::Copy(centerBstart_heun[iLev], centerB[iLev], 0, 0, 3, nGst);
@@ -2984,58 +2950,8 @@ void Pic::update_B_hybrid() {
         project_centerB_to_nodeB(iLevF);
       }
       continue;
-    }
-
-    // --- Time-centred (predictor-corrector / trapezoidal, Heun) sub-step ---
-    // Stage 1 (predictor): E^n from the CURRENT B (nodeB); advance a predicted
-    //     B* = B^n - subDt * curl(E^n).
-    // Stage 2 (corrector): E* from B* (recompute the Ohm's law on the
-    //     projected B*), then
-    //     B^{n+1} = B^n - subDt * [0.5 curl(E^n) + 0.5 curl(E*)].
-    // The ion moments are time-interpolated at hstep = g (predictor) and
-    // g + 1/nHallSubcycle (corrector), so both the B/E coupling and the
-    // moment level are time-centred. thetaB = 0.5 is the standard explicit
-    // trapezoidal (Heun) scheme. Unlike the implicit Crank-Nicolson, the
-    // explicit trapezoid is weakly unstable on purely oscillatory modes
-    // (|R(iy)|^2 = 1 + y^4/4 > 1), though far less so than forward Euler.
-    // RK4 (the default) is the preferred integrator.
-    for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      const auto& cBin =
-          (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
-      // Cell-centred predictor: both the trial (for J) and the Hall/convection
-      // B are the live cell-centred state.
-      assemble_ohm_E(cBin, cBin, centerEhybrid[iLev], iLev, g);
-
-      MultiFab::Copy(centerBstart_heun[iLev], centerB[iLev], 0, 0, 3, nGst);
-      curl_center_to_center(centerEhybrid[iLev], dBpred_heun[iLev],
-                            Geom(iLev).InvCellSize());
-      MultiFab::Copy(centerBstar_heun[iLev], centerB[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerBstar_heun[iLev], -subDt, dBpred_heun[iLev], 0, 0, 3,
-                      nGst);
-    }
-
-    // Corrector stage: recompute E* from the predicted B* (both cell-centred).
-    for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      MultiFab::Copy(centerB[iLev], centerBstar_heun[iLev], 0, 0, 3, nGst);
-    }
-    for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      const auto& cBin =
-          (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
-      assemble_ohm_E(cBin, cBin, centerEhybrid[iLev], iLev,
-                     g + 1.0 / (Real)nHallSubcycle);
-    }
-
-    for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      curl_center_to_center(centerEhybrid[iLev], dBcorr_heun[iLev],
-                            Geom(iLev).InvCellSize());
-
-      // Trapezoidal combine around the saved B^n (thetaB = 0.5, standard Heun).
-      MultiFab::Copy(centerB[iLev], centerBstart_heun[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerB[iLev], -0.5 * subDt, dBpred_heun[iLev], 0, 0, 3,
-                      nGst);
-      MultiFab::Saxpy(centerB[iLev], -0.5 * subDt, dBcorr_heun[iLev], 0, 0, 3,
-                      nGst);
-    }
+     continue;
+   }
   }
 
   if (projectDownEmFields && finest_level > 0) {
@@ -3104,7 +3020,7 @@ void Pic::update_B_hybrid() {
   // i.e. E^{n+1}) into the cell-centred centerEhybrid, used by the next
   // update()'s particle Boris push (hybrid-VPIC convention: push uses the
   // integer-step E). This recomputation is done for every integrator because the
-  // RK4 path only writes the scratch centerE_RK4, and the euler/heun paths write
+  // RK4 path only writes the scratch centerE_RK4, and the ssprk3 path writes
   // centerEhybrid at intermediate hstep values, so centerEhybrid must be freshly
   // evaluated on the final B^{n+1}. Only levels holding kinetic particles need
   // centerEhybrid (it is read solely by the Boris push), so levels without

@@ -386,10 +386,8 @@ is always exactly one coarse step dt: nHallSubcycle full integrator steps of
 size dt/nHallSubcycle are taken (e.g. with #FIELDINTEGRATOR rk4, nHallSubcycle
 nested 4th-order Runge-Kutta steps). Because RK4 has a large linear-stability
 region along the imaginary axis (where the Hall-whistler oscillatory modes live),
-with rk4 a single sub-step (nHallSubcycle 1) is usually sufficient for stability;
-the forward-Euler integrator ("euler"), which is unstable on pure oscillatory
-modes for any step, needs a larger nHallSubcycle to resolve the explicit
-Hall-whistler CFL. Only used when #HYBRIDPIC is T.
+with rk4 a single sub-step (nHallSubcycle 1) is usually sufficient for stability.
+Only used when #HYBRIDPIC is T.
 </command>
 
 <command name="HALLTERM"
@@ -478,9 +476,8 @@ F. Only used when #HYBRIDPIC is T.
    alias="FIELDINTEGRATOR_FLEKS0,FIELDINTEGRATOR_FLEKS1,FIELDINTEGRATOR_FLEKS2"
    multiple="T">
   <parameter name="fieldIntegrator" type="string" input="select" required="T">
-    <option value="euler"/>
-    <option value="heun"/>
     <option value="rk4"/>
+    <option value="ssprk3"/>
   </parameter>
 
 #FIELDINTEGRATOR
@@ -488,14 +485,14 @@ rk4               fieldIntegrator
 
 Time integrator for the hybrid Faraday (B) update driven by the generalized Ohm's
 law. This is the single control for the time integration of B (there is no
-separate time-centring flag). "euler" is the classic explicit forward Euler,
-sub-cycled against the Hall-whistler CFL (see #HALLSUBCYCLE); "heun" is the
-trapezoidal predictor-corrector that time-centres the B/E coupling (thetaB = 0.5,
-neutral for oscillatory modes, damps PIC shot noise); "rk4" is the classic
-4th-order Runge-Kutta on B, evaluating the Ohm's law at four trial B states. rk4
-has the largest linear-stability region of the three and is the default; with rk4
-you typically do not need a large #HALLSUBCYCLE for stability (nHallSubcycle 1
-usually suffices). Only used when HYBRIDPIC is T.
+separate time-centring flag). "rk4" is the classic 4th-order Runge-Kutta on B,
+evaluating the Ohm's law at four trial B states; it is the default and has a
+large linear-stability region, so with rk4 you typically do not need a large
+#HALLSUBCYCLE for stability (nHallSubcycle 1 usually suffices). "ssprk3" is the
+Hybrid-VPIC-style strong-stability-preserving RK3 with a time-centred E (the Ohm's
+law uses the averaged B (B_stage + B^n)/2 in the Hall/convection terms); it stays
+stable in the high-amplitude nonlinear phase where rk4 goes NaN. Only used when
+HYBRIDPIC is T.
     </command>
 
 <command name="AVGFIELDB"

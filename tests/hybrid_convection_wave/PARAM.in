@@ -109,12 +109,11 @@ T                       doSmoothMoments
 3                       nSmoothMoments
 0.5                     coefSmoothMoments
 
-Time-centred (predictor-corrector / Crank-Nicolson) Faraday sub-step. Combined
-with the moment smoothing this removes the spurious noise drift: the trapezoidal
-B update is neutral for oscillatory modes, so the PIC shot noise is no longer
-integrated un-damped. "heun" is the standard trapezoidal / Crank-Nicolson scheme.
+Classic 4th-order Runge-Kutta Faraday sub-step (the default integrator). With
+the moment smoothing this keeps the spurious PIC shot noise from being
+integrated un-damped.
 #FIELDINTEGRATOR
-heun                    fieldIntegrator
+rk4                     fieldIntegrator
 
 Single kinetic ion species (q = m = 1); the electron is an implicit
 neutralizing massless fluid, so no electron particle species is present.

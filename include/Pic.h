@@ -136,7 +136,7 @@ private:
   // centerB_RK4 / nodeB_RK4 hold trial B states at the sub-stages; nodeE_RK4 is
   // the electric field evaluated at a trial B; kRK4[0..3] are the four stage
   // curls curl(E_stage). All reused per sub-step; only level 0 is advanced (fine
-  // levels follow from projection, exactly as in the euler/heun paths).
+  // levels follow from projection, exactly as in the ssprk3 path).
   amrex::Vector<amrex::MultiFab> centerB_RK4;
   amrex::Vector<amrex::MultiFab> nodeB_RK4;
   amrex::Vector<amrex::MultiFab> nodeE_RK4;
@@ -144,13 +144,9 @@ private:
   // sub-step (4 stages per level).
   amrex::Vector<amrex::Vector<amrex::MultiFab>> kRK4;
 
-  // Euler/heun (fieldIntegrator="euler"/"heun") persistent scratch fields.
-  // Allocated when useHybridPIC; reused across sub-steps to avoid per-sub-step
-  // MultiFab define/destroy. dBpred is the predictor curl (also used as the
-  // single dB in the euler path); dBcorr the corrector curl; centerBstart the
-  // saved B^n; centerBstar the predicted B*.
-  amrex::Vector<amrex::MultiFab> dBpred_heun;
-  amrex::Vector<amrex::MultiFab> dBcorr_heun;
+  // rk3/rk4 persistent scratch (allocated when useHybridPIC). centerBstart holds
+  // the sub-step start B_n; centerBstar holds the time-centred (trial + B_n)/2
+  // state used by the rk3/rk4 time-centred-E stages.
   amrex::Vector<amrex::MultiFab> centerBstart_heun;
   amrex::Vector<amrex::MultiFab> centerBstar_heun;
 
@@ -290,12 +286,11 @@ private:
 
   // Field integrator for the hybrid Faraday update. Selects how B is advanced
   // from the electric field given by the generalized Ohm's law:
-  //   "euler" -> classic explicit forward Euler (sub-cycled Hall-whistler);
-  //   "heun"  -> explicit trapezoidal predictor-corrector (time-centred
-  //              B/E coupling, but weakly unstable on oscillatory modes);
   //   "rk4"   -> classic 4th-order Runge-Kutta on B, evaluating the Ohm's law at
-  //              four trial B states. Largest stability region of the three; the
-  //              default (replaces forward Euler as the standard integrator).
+  //              four trial B states. The default.
+  //   "ssprk3" -> Hybrid-VPIC-style strong-stability-preserving RK3 with a
+  //              time-centred E (stays stable in the high-amplitude phase where
+  //              rk4 goes NaN).
   // Default "rk4". The useRK4 flag is set from this in post_process_param and is
   // what update_B_hybrid actually dispatches on.
   std::string fieldIntegrator = "rk4";
@@ -390,8 +385,6 @@ public:
     centerHyperE.resize(n_lev_max());
     centerBavg.resize(n_lev_max());
     nodeBavg.resize(n_lev_max());
-    dBpred_heun.resize(n_lev_max());
-    dBcorr_heun.resize(n_lev_max());
     centerBstart_heun.resize(n_lev_max());
     centerBstar_heun.resize(n_lev_max());
     kRK4.resize(n_lev_max());
