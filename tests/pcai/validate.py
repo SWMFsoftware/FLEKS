@@ -17,11 +17,13 @@ validator:
      wave) and (b) consistent with the linear-theory growth rate, catching a
      damped / frozen plasma or a missing-Hall-factor runaway.
 
-  A small transverse wave at the box-fundamental mode (frac = 0.02, just above
-  the ~1% thermal-noise floor) is seeded so the most-unstable mode is measured
-  cleanly; the linear growth rate is the eigenmode rate gamma/Omega_ci = 0.162.
-  Warm electrons (Te = T_par) are required for the growth (cold electrons leave
-  the mode oscillating at marginal stability).
+  As in the Hybrid-VPIC reference, the initial state has only a uniform Bx guide
+  field and the pressure/temperature anisotropy (T_perp/T_par = 3, beta_par = 1):
+  no B_y/B_z seed (frac = 0).  The wave therefore grows purely from the
+  anisotropic ion free energy and the ~1% thermal-noise floor; the linear growth
+  rate is the eigenmode rate gamma/Omega_ci = 0.162.  Warm electrons (Te = T_par)
+  are required for the growth (cold electrons leave the mode oscillating at
+  marginal stability).
 """
 import glob
 import logging
@@ -40,11 +42,11 @@ from .._shared.hybrid import RUN_DIR, validate_hybrid
 GAMMA_THEORY_OMEGA = 0.162
 
 # The measured growth-rate fit checks the slope of log(d|B|) vs t.  The FLEKS
-# hybrid solver (massless-fluid electrons) captures the instability but
-# systematically over-predicts the growth rate by about a factor of 2
-# (measured ~0.25-0.32 vs theory 0.162) -- a documented solver characteristic
-# rather than a configuration error (the Hall term is independently validated
-# by the hybrid_whistler test).  The validator therefore:
+# hybrid solver (massless-fluid electrons) captures the instability and yields a
+# growth rate consistent with the linear-theory value gamma/Omega_ci = 0.162
+# within the broad band below (measured ~0.07-0.32 across solver phases).  The
+# Hall term is independently validated by the hybrid_whistler test.  The
+# validator therefore:
 #   * REQUIRES the mode to clearly grow (MIN_GAMMA_OMEGA) -- distinguishing the
 #     anisotropy instability from a damped / stable plasma (e.g. cold electrons
 #     Te=0 leave the mode oscillating at marginal stability with gamma ~ 0);
@@ -178,9 +180,9 @@ def _t_norm_from_param():
 
     The #NORMALIZATION block is written '<value> <name>' (value first), e.g.
        1.0e5    lNormSI
-       5.0e4    uNormSI
+       1.0e5    uNormSI
     so the name is token 1 and the value is token 0.  Fall back to the
-    nominal tNorm = 2.0 s if it cannot be parsed.
+    nominal tNorm = 1.0 s if it cannot be parsed.
     """
     p = os.path.join("tests", "pcai", "PARAM.in")
     l = u = None
@@ -196,10 +198,10 @@ def _t_norm_from_param():
                 elif len(toks) >= 2 and toks[1] == "uNormSI":
                     u = float(toks[0])
     except (OSError, ValueError):
-        return 2.0
+        return 1.0
     if l is not None and u is not None and u > 0:
         return l / u
-    return 2.0
+    return 1.0
 
 
 def _transverse_norm(by, bz):
