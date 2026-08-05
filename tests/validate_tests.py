@@ -78,9 +78,54 @@ def safe_symlink(src, dst):
     os.symlink(src, dst)
 
 
+def ensure_postidl():
+    """Ensure PostIDL.exe is compiled before running any test.
+
+    PostProc.pl needs PostIDL.exe to convert .idl/.h plot files into the
+    .out frames that the validators compare against.  It is a build artifact,
+    so if it is not present at any candidate location we compile it with
+    ``make PIDL`` and re-search.  Returns True if PostIDL.exe is found.
+    """
+    postidl_candidates = [
+        "bin/PostIDL.exe",          # standalone build
+        "../../bin/PostIDL.exe",    # SWMF integrated build
+    ]
+
+    def _found():
+        return any(os.path.isfile(c) for c in postidl_candidates)
+
+    if _found():
+        return True
+
+    # Not built yet -- compile it. This keeps all tests (pcai, beam, ...) able
+    # to produce plot output regardless of how the tree was set up.
+    logger.warning("  [WARN] PostIDL.exe not found. Building it with 'make PIDL'...")
+    try:
+        build = subprocess.run(["make", "PIDL"], stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True, timeout=900)
+    except subprocess.TimeoutExpired:
+        logger.warning("  [WARN] 'make PIDL' timed out; PostIDL.exe may be missing.")
+        return False
+
+    if build.returncode != 0 or not _found():
+        logger.warning("  [WARN] 'make PIDL' failed; PostIDL.exe is missing. "
+                       "Tests that check plot output (.out files) will not "
+                       "produce frames.")
+        if build.stderr:
+            logger.warning(build.stderr)
+        return False
+
+    logger.info("  [INFO] PostIDL.exe built successfully.")
+    return True
+
+
 def prepare_run_dir():
     run_dir = RUN_DIR
     os.makedirs(run_dir, exist_ok=True)
+
+    # Make sure PostIDL.exe is compiled; PostProc.pl needs it to produce the
+    # .out plot frames that the test validators compare against.
+    ensure_postidl()
 
     # Determine the location of the share directory relative to FLEKS root.
     # In a standalone FLEKS repository, 'share/Scripts/PostProc.pl' is directly inside the working directory.
