@@ -1,8 +1,9 @@
 # Hybrid Solver: Performance Optimization Opportunities
 
-**Status:** Items 1, 3, 7 implemented; Item 8 partially implemented (8-C/D/E
-done; 8-A/B reverted); Items 2, 4–6 decided — instructions recorded; bridge
-removal deferred (see §8.6)
+**Status:** Items 1, 3, 4, 7 implemented; Item 8 partially implemented
+(8-C/D/E done; 8-A/B reverted); Items 2, 5, 6 decided — instructions recorded;
+Items 5/6 deferred (need output decoupling, see Item 4); bridge removal
+deferred (see §8.6)
 **Authors:** FLEKS team
 **Last updated:** 2026-08-05
 **Related docs:**
@@ -188,7 +189,7 @@ cell-centred `centerB` boundary condition so the next stage can read neighbours.
 - **Impact:** Medium–High (saves the per-step `centerPlasmaPrev` copy width)
 - **Regression risk:** Medium (touches layout) — must verify field solve reads
   the correct 4 components
-- **Status:** decided — implement
+- **Status:** implemented (2026-08-05)
 
 **Problem.** The hybrid Ohm's law reads only the **charge density + 3 momentum
 components** (`rho, mx, my, mz`) from `centerPlasmaSum` / `centerPlasmaPrev`
@@ -197,26 +198,32 @@ components** (`rho, mx, my, mz`) from `centerPlasmaSum` / `centerPlasmaPrev`
 only the output path.
 
 `nMoments = 11` (`include/Constants.h:39`) but `nHybridMomentsComps = 4`
-(`include/Constants.h:48`). `save_current_moments_to_prev` copies the **full
-`nMoments` (11)** summed array into `centerPlasmaPrev` (`src/Pic.cpp:2656`),
-and `seed_first_hybrid_step` does the same (`src/Pic.cpp:2684`). The full-PIC
-path already uses a slim 4-component `nodePlasmaPrev`.
+(`include/Constants.h:48`). `save_current_moments_to_prev` copied the **full
+`nMoments` (11)** summed array into `centerPlasmaPrev`, and
+`seed_first_hybrid_step` did the same. The full-PIC path already uses a slim
+4-component `nodePlasmaPrev`.
 
-**Implementation:**
-1. Change `centerPlasmaPrev` to hold `nHybridMomentsComps = 4` components
-   (`rho + 3·momentum`), mirroring `nodePlasmaPrev`. Update the allocation in
-   `Pic::init` (guarded by `useHybridPIC`).
-2. `save_current_moments_to_prev`: copy only the first 4 components from
-   `centerPlasmaSum` (components `0..3`, i.e. `iRho_..iUz_`) —
-   `MultiFab::Copy(centerPlasmaPrev[nSpecies][iLev], centerPlasmaSum[nSpecies][iLev], 0, 0, nHybridMomentsComps, nGrow)`.
-3. `seed_first_hybrid_step`: same 4-component copy.
-4. `assemble_ohm_E` (`src/Pic.cpp:2456-2459`): the `momentsPrev` Array4 already
-   reads components `iRho_..iUz_` (indices 0-3), which match the 4-component
-   layout — no index change needed, but confirm `nComp()` reflects 4.
-5. This saves the per-step `centerPlasmaPrev` copy width by 11/4 ≈ **2.75×**.
-6. Items 5 and 6 (slim the deposit / defer pressure) build on this — coordinate
-   them so the cell-centred field-solve moments are the 4-component subset and
-   the full `nMoments` pressure tensor is produced only for output.
+**Implementation (done):**
+1. `centerPlasmaPrev` is now allocated with `nHybridMomentsComps = 4`
+   components (`src/Pic.cpp:566-570`).
+2. `save_current_moments_to_prev` copies only `nHybridMomentsComps` (4) from
+   `centerPlasmaSum` (`src/Pic.cpp:2648-2653`).
+3. `seed_first_hybrid_step` does the same (`src/Pic.cpp:2676-2682`).
+4. `assemble_ohm_E` reads `momentsPrev` at `iRho_..iUz_` (indices 0-3), which
+   match the 4-component layout — no index change needed.
+5. This cuts the per-step `centerPlasmaPrev` copy width by 11/4 ≈ **2.75×**.
+- **Verified:** `pcai`, `beam` (full-PIC + hybrid) all PASS.
+
+> **On Items 5 and 6 (deferred):** slim the per-particle deposit to 4
+> components, and defer `convert_to_fluid_moments`. These do **not** yield a
+> clean win here: the deposit writes `centerPlasma[i]`, which feeds **both** the
+> field solve (`centerPlasmaSum` → `assemble_ohm_E`) **and** the output path
+> (`nodePlasma` bridge → structured plots, and `calc_mach_number` which reads the
+> pressure tensor every step). The full `nMoments` pressure tensor must therefore
+> be produced for output, so the deposit cannot be slimmed without decoupling the
+> field-solve moments (4 comps) from the output moments (full `nMoments`) into
+> separate buffers — a larger structural change. They are left as a follow-up if
+> the output path is later migrated to read cell-centred fields directly.
 
 ---
 
@@ -510,7 +517,7 @@ so every test has a valid `PostIDL.exe` for `PostProc.pl`. Verified: `pcai`,
 | 1 | Remove `euler` / `heun` integrators; keep `rk3`/`rk4`, `rk4` default | `src/Pic.cpp:2754-3143` | Medium–High | Low | **implemented** |
 | 2 | Lazy `nodePlasma` output mirror (sync only when output needed) | `src/Pic.cpp:1307` | High | Low | decided |
 | 3 | Drop per-sub-cycle `project_centerB_to_nodeB` (output mirror) | `src/Pic.cpp:2888`, `2948` | High | Low–Med | **implemented** |
-| 4 | Field solve only needs `ρ+3m`; shrink `centerPlasmaPrev` to 4 comps | `src/Pic.cpp:2656`, `Particles.cpp:1000` | Medium–High | Med | decided |
+| 4 | Field solve only needs `ρ+3m`; shrink `centerPlasmaPrev` to 4 comps | `src/Pic.cpp:2656` | Medium–High | Med | **implemented** |
 | 5 | Slim per-particle deposit to 4 field-needed components | `Particles.cpp:1000` | Medium | Med | decided |
 | 6 | Lazy `convert_to_fluid_moments` / pressure only at output | `src/Pic.cpp:1289` | Medium | Med | decided |
 | 7 | Skip `nodeBavg` sync when hybrid | `src/Pic.cpp:3012` | Low | Low | **implemented** |

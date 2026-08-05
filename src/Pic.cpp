@@ -563,8 +563,10 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       for (auto& pl : centerPlasmaPrev) {
         if (pl.empty())
           pl.resize(n_lev_max());
+        // The hybrid Ohm's law reads only rho + 3 momentum from centerPlasmaPrev,
+        // so it is stored with the slim 4-component layout (like nodePlasmaPrev).
         distribute_FabArray(pl[iLev], cGrids[iLev], DistributionMap(iLev),
-                            nMoments, nGst, doMoveData);
+                            nHybridMomentsComps, nGst, doMoveData);
       }
     }
     distribute_FabArray(dBdt[iLev], nGrids[iLev], DistributionMap(iLev), 3,
@@ -2643,11 +2645,12 @@ void Pic::save_current_moments_to_prev() {
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     if (useHybridPIC) {
-      // Cell-centred hybrid: copy the full summed moments into centerPlasmaPrev
-      // so the Ohm's-law time interpolation can use both the previous and
-      // current deposits. centerPlasmaPrev has the full nMoments layout.
+      // Cell-centred hybrid: copy only the rho + 3 momentum components into
+      // centerPlasmaPrev so the Ohm's-law time interpolation can use both the
+      // previous and current deposits. centerPlasmaPrev is a 4-component array
+      // (the first nHybridMomentsComps components of centerPlasmaSum).
       MultiFab::Copy(centerPlasmaPrev[nSpecies][iLev],
-                     centerPlasmaSum[nSpecies][iLev], 0, 0, nMoments,
+                     centerPlasmaSum[nSpecies][iLev], 0, 0, nHybridMomentsComps,
                      centerPlasmaSum[nSpecies][iLev].nGrow());
     } else {
       // Only the rho + 3 momentum components are needed for the Ohm's-law time
@@ -2673,9 +2676,9 @@ void Pic::seed_first_hybrid_step() {
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     if (useHybridPIC) {
       // Cell-centred hybrid: seed centerPlasmaPrev from the current summed
-      // centerPlasmaSum (full nMoments layout).
+      // centerPlasmaSum (4-component rho + 3 momentum layout).
       MultiFab::Copy(centerPlasmaPrev[nSpecies][iLev],
-                     centerPlasmaSum[nSpecies][iLev], 0, 0, nMoments,
+                     centerPlasmaSum[nSpecies][iLev], 0, 0, nHybridMomentsComps,
                      centerPlasmaSum[nSpecies][iLev].nGrow());
     } else {
       // nodePlasmaPrev is a 4-component array (rho + 3 momentum); the first
