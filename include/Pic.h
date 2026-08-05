@@ -209,6 +209,22 @@ private:
   // (hstep=0 -> J^n = 1/2(J^{n-1/2}+J^{n+1/2}); hstep=1 -> J^{n+1} =
   // 3/2 J^{n+1/2} - 1/2 J^{n-1/2}). Same layout as nodePlasma.
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasmaPrev;
+  // ---- Cell-centred hybrid solver fields (Hybrid-VPIC-style layout) ----
+  // When useHybridPIC is true the hybrid time step reads/writes only these
+  // cell-centred fields (B, E, J, moments). The node-centred nodeE/nodeB/
+  // nodePlasma are kept as write-only OUTPUT MIRRORS refreshed once per step
+  // (node-sync bridges) so the plot / restart / tracker path sees correct
+  // data. All six arrays are allocated only inside the useHybridPIC block of
+  // Pic::distribute_arrays.
+  amrex::Vector<amrex::MultiFab> centerEhybrid;   // cell-centred E (replaces nodeE)
+  amrex::Vector<amrex::MultiFab> centerJ;         // cell-centred J (replaces nodeJ)
+  amrex::Vector<amrex::MultiFab> centerEprev;     // cell-centred E^n (time-centring)
+  amrex::Vector<amrex::MultiFab> centerBprev;     // cell-centred B^n (time-centring)
+  amrex::Vector<amrex::MultiFab> centerE_RK4;     // cell-centred E trial (replaces nodeE_RK4)
+  amrex::Vector<amrex::MultiFab> centerHyperE;    // cell-centred hyper-resistivity E
+  amrex::Vector<amrex::Vector<amrex::MultiFab>> centerPlasma;      // per-species cell-centred moments
+  amrex::Vector<amrex::Vector<amrex::MultiFab>> centerPlasmaSum;  // summed cell-centred moments [nSpecies][iLev]
+  amrex::Vector<amrex::Vector<amrex::MultiFab>> centerPlasmaPrev; // per-species previous-step moments
   amrex::Vector<amrex::Real> plasmaEnergy;
 
   bool isMomentsUpdated = false;
@@ -291,6 +307,19 @@ private:
   // push uses the initial-condition E (nodeEth) directly.
   bool isFirstHybridStep = true;
 
+  // Use the Hybrid-VPIC Esirkepov trajectory-current deposit for the hybrid
+  // cell-centred moments (J and rho). False uses a plain cell-centred trilinear
+  // deposit. Currently FALSE (Phase A validated): the full Esirkepov trajectory
+  // current (Phase B) is not yet enabled.
+  bool useEsirkepovDeposit = false;
+
+  // Use the Hybrid-VPIC quadratic-spline (centered B-spline) gather for the
+  // hybrid cell-centred Boris push. False uses a cell-centred trilinear gather.
+  // Currently FALSE (Phase A validated): the quadratic gather (Phase B) is not
+  // yet enabled (it must be paired with the Esirkepov deposit to conserve
+  // charge in the nonlinear phase).
+  bool useQuadraticGather = false;
+
   // Phase 3.4 -- time-averaged (EMA) magnetic field.
   // B_avg = alpha * B_avg + (1 - alpha) * B^{n+1}, alpha = 1 - 1/nAvgFieldB.
   // B_avg is used inside the generalized Ohm's law (convection / Hall terms)
@@ -353,6 +382,12 @@ public:
     centerB_RK4.resize(n_lev_max());
     nodeB_RK4.resize(n_lev_max());
     nodeE_RK4.resize(n_lev_max());
+    centerEhybrid.resize(n_lev_max());
+    centerJ.resize(n_lev_max());
+    centerEprev.resize(n_lev_max());
+    centerBprev.resize(n_lev_max());
+    centerE_RK4.resize(n_lev_max());
+    centerHyperE.resize(n_lev_max());
     centerBavg.resize(n_lev_max());
     nodeBavg.resize(n_lev_max());
     dBpred_heun.resize(n_lev_max());
@@ -522,18 +557,22 @@ public:
   void project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
                                         amrex::MultiFab& nodeOut, int iLev);
   // Evaluate the generalized Ohm's law at an arbitrary (off-member) B state and
-  // write the node electric field into `Eout`. This does NOT overwrite member
-  // nodeE/nodeEth, so it can be called repeatedly at trial B states during RK4.
-  // `centerBin` is the cell-centred B, `nodeBin` the node-averaged B (convection
-  // term). The ion velocity moment and density are time-interpolated between
-  // nodePlasmaPrev (J^{n-1/2}) and nodePlasma (J^{n+1/2}) at the magnetic
-  // sub-step fraction `hstep` (0..1):
+  // write the CELL-CENTRED electric field into `Eout`. This does NOT overwrite
+  // the member centerEhybrid, so it can be called repeatedly at trial B states
+  // during RK4. `centerBin` is the cell-centred TRIAL B from which the current
+  // J = curl(B)/(4*pi) is built; `centerBtimeAvg` is the cell-centred
+  // time-averaged (B_trial + B^n)/2 used for the Hall/convection B factor. This
+  // two-state split matches Hybrid-VPIC's hyb_advance_e (J from the trial cbx,
+  // Hall/convection from (cbx+cbx0)/2), but now entirely in the cell-centred
+  // layout (no node projection). The ion velocity moment and density are
+  // time-interpolated between centerPlasmaPrev (J^{n-1/2}) and centerPlasmaSum
+  // (J^{n+1/2}) at the magnetic sub-step fraction `hstep` (0..1):
   //     X(hstep) = (0.5 - hstep) X^{n-1/2} + (0.5 + hstep) X^{n+1/2}
   // so hstep=0 gives J^n = 1/2(J^{n-1/2}+J^{n+1/2}) and hstep=1 gives the
   // extrapolation J^{n+1} = 3/2 J^{n+1/2} - 1/2 J^{n-1/2}.
   void assemble_ohm_E(const amrex::MultiFab& centerBin,
-                      const amrex::MultiFab& nodeBin, amrex::MultiFab& Eout,
-                      int iLev, amrex::Real hstep);
+                      const amrex::MultiFab& centerBtimeAvg,
+                      amrex::MultiFab& Eout, int iLev, amrex::Real hstep);
   // Copy the current moment deposit into nodePlasmaPrev before a fresh deposit
   // (so nodePlasmaPrev = J^{n-1/2} and nodePlasma = J^{n+1/2}).
   void save_current_moments_to_prev();
@@ -691,6 +730,19 @@ public:
   inline amrex::Real get_center_B(amrex::MFIter &mfi, amrex::IntVect ijk,
                                   int iVar, const int iLev) {
     return fi->get_center_b(mfi, ijk, iVar, iLev);
+  }
+
+  inline amrex::Real get_center_E(amrex::MFIter &mfi, amrex::IntVect ijk,
+                                  int iVar, const int iLev) {
+    amrex::Real e;
+    if (iVar == ix_)
+      e = fi->get_ex(mfi, ijk, iLev);
+    if (iVar == iy_)
+      e = fi->get_ey(mfi, ijk, iLev);
+    if (iVar == iz_)
+      e = fi->get_ez(mfi, ijk, iLev);
+
+    return e;
   }
 
   //--------------- Boundary end ------------------------

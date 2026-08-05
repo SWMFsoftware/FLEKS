@@ -20,6 +20,17 @@ void curl_center_to_node(const amrex::MultiFab& centerMF,
 void curl_node_to_center(const amrex::MultiFab& nodeMF,
                          amrex::MultiFab& centerMF, const amrex::Real* invDx);
 
+// Cell-centered collocated curl on a cell-centered field:
+//   (curl A)_x = dBz/dy - dBy/dz, etc., using a 2*dx central difference.
+// Its spectral response at the Nyquist wavenumber k*dx = pi is sin(pi) = 0, so
+// it exactly annihilates the grid-scale (checkerboard) mode -- the dominant
+// stability margin of the Hybrid-VPIC-style cell-centred hybrid solver. Used
+// for J = curl(B)/(4*pi) and for the cell-centred Faraday update
+// dB/dt = -curl(E).
+void curl_center_to_center(const amrex::MultiFab& centerInMF,
+                           amrex::MultiFab& centerOutMF,
+                           const amrex::Real* invDx);
+
 void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
                       const amrex::DistributionMapping dm,
                       const amrex::Geometry& gm);
@@ -48,6 +59,13 @@ void lap_center_to_center(const amrex::MultiFab& centerMF,
 
 void average_center_to_node(const amrex::MultiFab& centerMF,
                             amrex::MultiFab& nodeMF);
+
+// Average a node-centred field to the cell centres: the value at cell (i,j,k)
+// is the arithmetic average of its 2^nDim corner nodes. Used to seed the
+// cell-centred hybrid E from the node IC / restart E (Hybrid-VPIC-style layout
+// seed).
+void average_node_to_center(const amrex::MultiFab& nodeMF,
+                            amrex::MultiFab& centerMF);
 
 void print_MultiFab(const amrex::iMultiFab& data, std::string tag,
                     int nshift = 0);

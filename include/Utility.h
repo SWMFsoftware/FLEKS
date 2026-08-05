@@ -141,6 +141,41 @@ inline amrex::Real l2_norm(amrex::Real* vec, int n) {
   return sqrt(sum);
 }
 
+// Quadratic-spline (centered B-spline) interpolation weights for a cell-centred
+// field. `dx` is the fractional position within the containing cell (from
+// find_cell_index, so dx in [0,1) relative to the cell loIdx), and the returned
+// coef[i][j][k] weight the cells loIdx-1, loIdx, loIdx+1 (i,j,k in {0,1,2}):
+//   cell(loIdx-1) [i=0]: 0.5*(1 - dx)^2
+//   cell(loIdx  ) [i=1]: 0.75 - (dx - 0.5)^2
+//   cell(loIdx+1) [i=2]: 0.5*dx^2
+// These are the standard piecewise-quadratic (quadratic B-spline) weights
+// (sum to 1) used by Hybrid-VPIC's quadratic gather (hyb_advance_p.cc). The
+// shape has compact support over 3 cells and is C^1 smooth, so the interpolated
+// field has continuous first derivatives and filters grid-scale modes more
+// strongly than the trilinear shape.
+inline void quadratic_interpolation_coef(const amrex::RealVect& dx,
+                                         amrex::Real (&coef)[3][3][3]) {
+  amrex::Real q[3][3];  // [dim][cell offset 0,1,2] = {loIdx-1, loIdx, loIdx+1}
+  for (int dim = 0; dim < nDim; ++dim) {
+    const amrex::Real d = dx[dim];
+    const amrex::Real d0 = d - 0.5;  // position relative to cell loIdx's centre
+    q[dim][0] = 0.5 * (1.0 - d) * (1.0 - d);
+    q[dim][1] = 0.75 - d0 * d0;
+    q[dim][2] = 0.5 * d * d;
+  }
+  if (nDim < 3) {
+    // 2D: the z-direction weights reduce to the identity at the centre cell.
+    q[2][0] = 0.0;
+    q[2][1] = 1.0;
+    q[2][2] = 0.0;
+  }
+
+  for (int k = 0; k <= 2; ++k)
+    for (int j = 0; j <= 2; ++j)
+      for (int i = 0; i <= 2; ++i)
+        coef[i][j][k] = q[0][i] * q[1][j] * q[2][k];
+}
+
 inline void linear_interpolation_coef(const amrex::RealVect& dx,
                                       amrex::Real (&coef)[2][2][2]) {
   amrex::Real interpX[2] = { dx[0], 1 - dx[0] };

@@ -444,6 +444,20 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   if (nodePlasmaPrev.empty()) {
     nodePlasmaPrev.resize(nSpecies + 1);
   }
+  // Cell-centred hybrid moments (Hybrid-VPIC-style). centerPlasma is the
+  // per-species deposit target (last entry = sum of all kinetic-ion species),
+  // centerPlasmaPrev the previous-step deposit for the Ohm's-law time
+  // interpolation. Both have full nMoments layout (unlike nodePlasmaPrev,
+  // which stores only the first nHybridMomentsComps components).
+  if (centerPlasma.empty()) {
+    centerPlasma.resize(nSpecies + 1);
+  }
+  if (centerPlasmaPrev.empty()) {
+    centerPlasmaPrev.resize(nSpecies + 1);
+  }
+  if (centerPlasmaSum.empty()) {
+    centerPlasmaSum.resize(nSpecies + 1);
+  }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (reportParticleQuality) {
@@ -524,6 +538,41 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerBstar_heun[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
+
+      // Cell-centred hybrid solver fields (Hybrid-VPIC-style layout). All are
+      // cell-centred (cGrids), with the same nGst as the live centerB. These
+      // replace the node-centred nodeE/nodeJ/nodeE_RK4/nodeHyperE for the
+      // hybrid time step.
+      distribute_FabArray(centerEhybrid[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 3, nGst, doMoveData);
+      distribute_FabArray(centerJ[iLev], cGrids[iLev], DistributionMap(iLev), 3,
+                          nGst, doMoveData);
+      distribute_FabArray(centerEprev[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 3, nGst, doMoveData);
+      distribute_FabArray(centerBprev[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 3, nGst, doMoveData);
+      distribute_FabArray(centerE_RK4[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 3, nGst, doMoveData);
+      distribute_FabArray(centerHyperE[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 3, nGst, doMoveData);
+      for (auto& pl : centerPlasmaSum) {
+        if (pl.empty())
+          pl.resize(n_lev_max());
+        distribute_FabArray(pl[iLev], cGrids[iLev], DistributionMap(iLev),
+                            nMoments, nGst, doMoveData);
+      }
+      for (auto& pl : centerPlasma) {
+        if (pl.empty())
+          pl.resize(n_lev_max());
+        distribute_FabArray(pl[iLev], cGrids[iLev], DistributionMap(iLev),
+                            nMoments, nGst, doMoveData);
+      }
+      for (auto& pl : centerPlasmaPrev) {
+        if (pl.empty())
+          pl.resize(n_lev_max());
+        distribute_FabArray(pl[iLev], cGrids[iLev], DistributionMap(iLev),
+                            nMoments, nGst, doMoveData);
+      }
     }
     distribute_FabArray(dBdt[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst, doMoveData);
@@ -787,6 +836,25 @@ void Pic::fill_E_B_fields() {
         ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
         cell_bilinear_interp);
   }
+
+  // Hybrid-VPIC-style cell-centred seed: the initial-condition / restart E is
+  // node-centred (nodeE). The cell-centred hybrid E (centerEhybrid) is seeded
+  // from it by averaging the node values to the cell centres. This plays the
+  // role of E^0 for the very first hybrid particle Boris push. centerEprev and
+  // centerBprev are initialised to the same state so the Ohm's-law time
+  // interpolation and the RK4 time-centring are well-defined on the first step.
+  if (useHybridPIC) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      average_node_to_center(nodeE[iLev], centerEhybrid[iLev]);
+      centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
+      apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0,
+               centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev);
+      MultiFab::Copy(centerEprev[iLev], centerEhybrid[iLev], 0, 0, 3,
+                     centerEprev[iLev].nGrow());
+      MultiFab::Copy(centerBprev[iLev], centerB[iLev], 0, 0, 3,
+                     centerBprev[iLev].nGrow());
+    }
+  }
 }
 
 //==========================================================
@@ -884,6 +952,10 @@ void Pic::particle_mover() {
   // Phase 3.4: use the time-averaged B in the Boris push when enabled.
   const Vector<MultiFab>& nodeBpush =
       (useAvgFieldB && isBavgInit) ? nodeBavg : nodeB;
+  // Cell-centred B for the hybrid Boris push (the hybrid gather reads the
+  // cell-centred field directly, no node projection).
+  const Vector<MultiFab>& centerBpush =
+      (useAvgFieldB && isBavgInit) ? centerBavg : centerB;
   // The Boris push uses nodeEth. For full PIC this is the E from this step's
   // update_E. For the hybrid solver update_B_hybrid has already computed the
   // integer-step E^{n+1} (hstep = 1) on the final B^{n+1} into nodeEth at the
@@ -891,8 +963,20 @@ void Pic::particle_mover() {
   // convention: push with the integer-step E). nodeEth is not modified between
   // the end of update_B_hybrid and this push.
   const Vector<MultiFab>& nodeEpush = nodeEth;
-  for (int i : kineticSpecies_) {
-    parts[i]->mover(nodeEpush, nodeBpush, eBg, uBg, dt, dtnext);
+  if (useHybridPIC) {
+    // Hybrid-VPIC-style cell-centred Boris push: gather E and B from the
+    // cell-centred fields (centerEhybrid is the integer-step E^{n+1} computed at
+    // the end of the previous update_B_hybrid; centerB/centerBavg is B). Phase B
+    // uses the quadratic-spline (centered B-spline) gather of Hybrid-VPIC.
+    const bool useQuadratic = useQuadraticGather;
+    for (int i : kineticSpecies_) {
+      parts[i]->mover_cell_centered(centerEhybrid, centerBpush, eBg, uBg, dt,
+                                    dtnext, useQuadratic);
+    }
+  } else {
+    for (int i : kineticSpecies_) {
+      parts[i]->mover(nodeEpush, nodeBpush, eBg, uBg, dt, dtnext);
+    }
   }
 
   for (int i : kineticSpecies_) {
@@ -1118,7 +1202,15 @@ void Pic::sum_moments(bool updateDt) {
   plasmaEnergy[iTot] = 0;
   for (int i = 0; i < nSpecies; ++i) {
     Real energy = 0.0;
-    energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
+    if (useHybridPIC) {
+      // Hybrid-VPIC-style cell-centred moment deposit into centerPlasma[i]
+      // (trilinear cell-centred for Phase A; Esirkepov in Phase B).
+      energy = parts[i]->sum_moments_cell_centered(centerPlasma[i], centerB,
+                                                   tc->get_dt(),
+                                                   useEsirkepovDeposit);
+    } else {
+      energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
+    }
     plasmaEnergy[i] = energy;
     plasmaEnergy[iTot] += energy;
   }
@@ -1134,8 +1226,10 @@ void Pic::sum_moments(bool updateDt) {
       if (tc->get_cfl() > 0 || doReport) {
         uMax[iLev] = 0.0;
         for (int i = 0; i < nSpecies; ++i) {
+          amrex::MultiFab& momMF =
+              useHybridPIC ? centerPlasma[i][iLev] : nodePlasma[i][iLev];
           Real uMaxSpecies =
-              parts[i]->calc_max_thermal_velocity(nodePlasma[i][iLev]);
+              parts[i]->calc_max_thermal_velocity(momMF);
           ParallelDescriptor::ReduceRealMax(uMaxSpecies);
 
           if (doReport) {
@@ -1183,21 +1277,58 @@ void Pic::sum_moments(bool updateDt) {
     }
   }
 
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    nodePlasma[nSpecies][iLev].setVal(0.0);
-  }
-
-  for (int i = 0; i < nSpecies; ++i) {
-    parts[i]->convert_to_fluid_moments(nodePlasma[i]);
-  }
-
-  for (int i : kineticSpecies_) {
+  if (useHybridPIC) {
+    // Cell-centred hybrid moments: sum the per-species deposits into
+    // centerPlasmaSum and sync the nodePlasma output mirror (once per step,
+    // so the plot / restart / tracker path that reads nodePlasma sees correct
+    // data -- the node-sync bridge of the Hybrid-VPIC-style solver).
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      // nodePlasma[nSpecies] holds the sum of all kinetic-ion species.
-      // kineticSpecies_ excludes the (implicit fluid) electron, so in standard
-      // PIC runs (iElectron_ = -1) this sums every species exactly as before.
-      MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
-                    nMoments, nGst);
+      centerPlasmaSum[nSpecies][iLev].setVal(0.0);
+    }
+
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->convert_to_fluid_moments(centerPlasma[i]);
+    }
+
+    for (int i : kineticSpecies_) {
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        // centerPlasmaSum[nSpecies] holds the sum of all kinetic-ion species.
+        // kineticSpecies_ excludes the (implicit fluid) electron.
+        MultiFab::Add(centerPlasmaSum[nSpecies][iLev], centerPlasma[i][iLev], 0,
+                      0, nMoments, nGst);
+      }
+    }
+
+    // nodePlasma output bridge: average_center_to_node(centerPlasma ->
+    // nodePlasma) for every species and the summed entry. Runs once per full
+    // step (not inside the sub-cycling loop). This is a pure output mirror so
+    // the plot/restart/tracker path that reads nodePlasma sees the correct
+    // cell-centred moments; no field BC is applied here.
+    for (int i = 0; i < nSpecies + 1; ++i) {
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        centerPlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
+        average_center_to_node(centerPlasma[i][iLev], nodePlasma[i][iLev]);
+        nodePlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
+      }
+    }
+  } else {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      nodePlasma[nSpecies][iLev].setVal(0.0);
+    }
+
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->convert_to_fluid_moments(nodePlasma[i]);
+    }
+
+    for (int i : kineticSpecies_) {
+      for (int iLev = 0; iLev < n_lev(); iLev++) {
+        // nodePlasma[nSpecies] holds the sum of all kinetic-ion species.
+        // kineticSpecies_ excludes the (implicit fluid) electron, so in
+        // standard PIC runs (iElectron_ = -1) this sums every species exactly
+        // as before.
+        MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
+                      nMoments, nGst);
+      }
     }
   }
 
@@ -2283,19 +2414,24 @@ void Pic::update_B() {
 // Hall and electron-pressure-gradient terms therefore divide by iRho_ directly
 // (no dt rescaling needed).
 //==========================================================
-void Pic::assemble_ohm_E(const MultiFab& centerBin, const MultiFab& nodeBin,
-                         MultiFab& Eout, int iLev, amrex::Real hstep) {
+void Pic::assemble_ohm_E(const MultiFab& centerBin,
+                         const MultiFab& centerBtimeAvg, MultiFab& Eout,
+                         int iLev, amrex::Real hstep) {
   BL_PROFILE("Pic::assemble_ohm_E");
 
   // Evaluate the generalized Ohm's law
   //   E = -U_i x B + eta J + (J x B)/rho_q - grad(Pe)/rho_q
-  // at an ARBITRARY (off-member) B state. This does not touch member nodeE, so
-  // it can be called repeatedly at the four RK4 trial B states. centerBin is the
-  // cell-centred B, nodeBin the node-averaged B (convection term); the ion
-  // moments are time-interpolated between nodePlasmaPrev (J^{n-1/2}) and
-  // nodePlasma (J^{n+1/2}) at hstep (see the interpolation at the top of the
-  // parallel loop). The node current comes from the member nodeJ
-  // (frozen at time n, as in every integrator).
+  // at an ARBITRARY (off-member) B state in the CELL-CENTRED (Hybrid-VPIC-style)
+  // layout. This does not touch the member centerEhybrid, so it can be called
+  // repeatedly at the four RK4 trial B states. `centerBin` is the cell-centred
+  // TRIAL B from which the current J = curl(B)/(4*pi) is built; `centerBtimeAvg`
+  // is the cell-centred time-averaged (B_trial + B^n)/2 used for the
+  // Hall/convection B factor (the two-state split of Hybrid-VPIC's
+  // hyb_advance_e, but entirely in the cell-centred layout -- no node
+  // projection). The ion moments are time-interpolated between
+  // centerPlasmaPrev (J^{n-1/2}) and centerPlasmaSum (J^{n+1/2}) at hstep (see
+  // the interpolation at the top of the parallel loop). The current is written
+  // to the member centerJ[iLev] (cell-centred).
   const auto dx = Geom(iLev).CellSizeArray();
   const Real dxInv = 1.0 / (2.0 * dx[0]);
   const Real dyInv = 1.0 / (2.0 * dx[1]);
@@ -2303,26 +2439,26 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin, const MultiFab& nodeBin,
   // z-derivatives below with nDim > 2.
   const Real dzInv = (nDim > 2) ? 1.0 / (2.0 * dx[2]) : 0.0;
 
-  // Phase 1: consistent compact current J = nabla x centerB / (4*pi). Computed
-  // from the TRIAL center B; it does NOT annihilate the Nyquist mode the way a
-  // 2*dx difference of the node-collocated B does.
+  // Cell-centred collocated current J = nabla x centerB / (4*pi). Computed from
+  // the TRIAL center B with the 2*dx central difference curl_center_to_center,
+  // whose spectral response is zero at the Nyquist wavenumber -- the dominant
+  // stability margin of the cell-centred solver (matches Hybrid-VPIC's CURLE).
   const bool needJ =
-      useCompactCurl &&
       (etaResistivity > 0 || useHallTerm || etaHyperLev[iLev] > 0);
   if (needJ) {
-    curl_center_to_node(centerBin, nodeJ[iLev], Geom(iLev).InvCellSize());
+    curl_center_to_center(centerBin, centerJ[iLev], Geom(iLev).InvCellSize());
   }
 
   for (MFIter mfi(Eout); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
     const Array4<Real>& arrE = Eout[mfi].array();
-    const Array4<Real const>& arrB = nodeBin[mfi].array();
+    const Array4<Real const>& arrB = centerBtimeAvg[mfi].array();
     const Array4<Real const>& moments =
-        nodePlasma[nSpecies][iLev][mfi].array();
+        centerPlasmaSum[nSpecies][iLev][mfi].array();
     const Array4<Real const>& momentsPrev =
-        nodePlasmaPrev[nSpecies][iLev][mfi].array();
+        centerPlasmaPrev[nSpecies][iLev][mfi].array();
     const Array4<Real const> arrJ =
-        needJ ? nodeJ[iLev][mfi].array() : Array4<Real const>();
+        needJ ? centerJ[iLev][mfi].array() : Array4<Real const>();
 
     // Time-interpolation weights for the ion moments. X(hstep) =
     // (0.5-hstep)*X^{n-1/2} + (0.5+hstep)*X^{n+1/2}; hstep=0 gives the centred
@@ -2370,28 +2506,10 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin, const MultiFab& nodeBin,
       // J = curl(B) / (4*pi) in CGS code units.
       Real jx = 0.0, jy = 0.0, jz = 0.0;
       if (needJ) {
-        // Compact staggered current from centerBin (Phase 1).
+        // Cell-centred collocated current from centerBin (via centerJ).
         jx = arrJ(i, j, k, ix_) / fourPI;
         jy = arrJ(i, j, k, iy_) / fourPI;
         jz = arrJ(i, j, k, iz_) / fourPI;
-      } else if (!useCompactCurl && (etaResistivity > 0 || useHallTerm)) {
-        // Legacy 2*dx central difference of the node-collocated B. FIXED:
-        // dBx_dy now uses dyInv (was dxInv). z-derivatives guarded for 2D.
-        Real dBz_dy = (arrB(i, j + 1, k, iz_) - arrB(i, j - 1, k, iz_)) * dyInv;
-        Real dBy_dz = (nDim > 2)
-                          ? (arrB(i, j, k + 1, iy_) - arrB(i, j, k - 1, iy_)) * dzInv
-                          : 0.0;
-        jx = (dBz_dy - dBy_dz) / fourPI;
-
-        Real dBx_dz = (nDim > 2)
-                          ? (arrB(i, j, k + 1, ix_) - arrB(i, j, k - 1, ix_)) * dzInv
-                          : 0.0;
-        Real dBz_dx = (arrB(i + 1, j, k, iz_) - arrB(i - 1, j, k, iz_)) * dxInv;
-        jy = (dBx_dz - dBz_dx) / fourPI;
-
-        Real dBy_dx = (arrB(i + 1, j, k, iy_) - arrB(i - 1, j, k, iy_)) * dxInv;
-        Real dBx_dy = (arrB(i, j + 1, k, ix_) - arrB(i, j - 1, k, ix_)) * dyInv;
-        jz = (dBy_dx - dBx_dy) / fourPI;
       }
 
       // Add eta * J term
@@ -2472,28 +2590,29 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin, const MultiFab& nodeBin,
   }
 
   Eout.FillBoundary(Geom(iLev).periodicity());
-  apply_BC(nodeStatus[iLev], Eout, 0, nDim3, &Pic::get_node_E, iLev);
+  apply_BC(cellStatus[iLev], Eout, 0, nDim3, &Pic::get_center_E, iLev);
 
   // Phase 2: hyper-resistivity.
   //   E -= eta_h * nabla^2 J = -(eta_h / 4*pi) * nabla x (nabla^2 B).
   // Stage A: centerLapB = nabla^2(centerBin) (cell-centred Laplacian).
-  // Stage B: nodeHyperE = nabla x (centerLapB) (staggered curl). The two-stage
-  // composition makes nabla^2(nabla x B) = nabla x (nabla^2 B) hold
-  // discretely, so the term damps the same mode it is meant to.
+  // Stage B: centerHyperE = nabla x (centerLapB) (cell-centred collocated
+  // curl). The two-stage composition makes nabla^2(nabla x B) =
+  // nabla x (nabla^2 B) hold discretely, so the term damps the same mode it is
+  // meant to.
   if (etaHyperLev[iLev] > 0) {
     lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
     centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_BC(cellStatus[iLev], centerLapB[iLev], 0, centerLapB[iLev].nComp(),
              &Pic::get_center_B, iLev, &bcBField);
 
-    curl_center_to_node(centerLapB[iLev], nodeHyperE[iLev],
-                        Geom(iLev).InvCellSize());
-    nodeHyperE[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(nodeStatus[iLev], nodeHyperE[iLev], 0, nodeHyperE[iLev].nComp(),
-             &Pic::get_node_E, iLev, &bcBField);
+    curl_center_to_center(centerLapB[iLev], centerHyperE[iLev],
+                          Geom(iLev).InvCellSize());
+    centerHyperE[iLev].FillBoundary(Geom(iLev).periodicity());
+    apply_BC(cellStatus[iLev], centerHyperE[iLev], 0,
+             centerHyperE[iLev].nComp(), &Pic::get_center_E, iLev, &bcBField);
 
     const Real f = etaHyperLev[iLev] / fourPI;
-    MultiFab::Saxpy(Eout, -f, nodeHyperE[iLev], 0, 0, 3, 0);
+    MultiFab::Saxpy(Eout, -f, centerHyperE[iLev], 0, 0, 3, 0);
   }
 }
 
@@ -2511,7 +2630,8 @@ void Pic::smooth_moments() {
   // used for J/E (smooth_multifab). The filter conserves the domain mean, so
   // the uniform free-stream equilibrium is preserved.
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    MultiFab& moments = nodePlasma[nSpecies][iLev];
+    MultiFab& moments =
+        useHybridPIC ? centerPlasmaSum[nSpecies][iLev] : nodePlasma[nSpecies][iLev];
     moments.FillBoundary(Geom(iLev).periodicity());
     for (int icount = 0; icount < nSmoothMoments; ++icount) {
       smooth_multifab(moments, iLev, icount % 2 + 1, coefSmoothMoments);
@@ -2529,11 +2649,21 @@ void Pic::save_current_moments_to_prev() {
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    // Only the rho + 3 momentum components are needed for the Ohm's-law time
-    // interpolation; nodePlasmaPrev is a 4-component array (they are the first
-    // nHybridMomentsComps components of nodePlasma).
-    MultiFab::Copy(nodePlasmaPrev[nSpecies][iLev], nodePlasma[nSpecies][iLev], 0,
-                   0, nHybridMomentsComps, nodePlasma[nSpecies][iLev].nGrow());
+    if (useHybridPIC) {
+      // Cell-centred hybrid: copy the full summed moments into centerPlasmaPrev
+      // so the Ohm's-law time interpolation can use both the previous and
+      // current deposits. centerPlasmaPrev has the full nMoments layout.
+      MultiFab::Copy(centerPlasmaPrev[nSpecies][iLev],
+                     centerPlasmaSum[nSpecies][iLev], 0, 0, nMoments,
+                     centerPlasmaSum[nSpecies][iLev].nGrow());
+    } else {
+      // Only the rho + 3 momentum components are needed for the Ohm's-law time
+      // interpolation; nodePlasmaPrev is a 4-component array (they are the first
+      // nHybridMomentsComps components of nodePlasma).
+      MultiFab::Copy(nodePlasmaPrev[nSpecies][iLev], nodePlasma[nSpecies][iLev],
+                     0, 0, nHybridMomentsComps,
+                     nodePlasma[nSpecies][iLev].nGrow());
+    }
   }
 }
 
@@ -2548,10 +2678,19 @@ void Pic::seed_first_hybrid_step() {
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    // nodePlasmaPrev is a 4-component array (rho + 3 momentum); the first
-    // nHybridMomentsComps components of nodePlasma match its layout.
-    MultiFab::Copy(nodePlasmaPrev[nSpecies][iLev], nodePlasma[nSpecies][iLev], 0,
-                   0, nHybridMomentsComps, nodePlasma[nSpecies][iLev].nGrow());
+    if (useHybridPIC) {
+      // Cell-centred hybrid: seed centerPlasmaPrev from the current summed
+      // centerPlasmaSum (full nMoments layout).
+      MultiFab::Copy(centerPlasmaPrev[nSpecies][iLev],
+                     centerPlasmaSum[nSpecies][iLev], 0, 0, nMoments,
+                     centerPlasmaSum[nSpecies][iLev].nGrow());
+    } else {
+      // nodePlasmaPrev is a 4-component array (rho + 3 momentum); the first
+      // nHybridMomentsComps components of nodePlasma match its layout.
+      MultiFab::Copy(nodePlasmaPrev[nSpecies][iLev], nodePlasma[nSpecies][iLev],
+                     0, 0, nHybridMomentsComps,
+                     nodePlasma[nSpecies][iLev].nGrow());
+    }
   }
 }
 
@@ -2688,61 +2827,57 @@ void Pic::update_B_hybrid() {
       // as in the euler/heun paths), so only level 0 is advanced here.
       const int iLev = 0;
 
-      // Stage 1: k1 = curl(E(B^n)). centerB[0] itself is B^n (untouched until
-      // the final combine), nodeB[0] is its node-average.
-      assemble_ohm_E(centerB[iLev], nodeB[iLev], nodeE_RK4[iLev], iLev, g);
-      curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][0],
-                          Geom(iLev).InvCellSize());
+     // Stage 1: k1 = curl(E(B^n)). centerB[0] itself is B^n (untouched until
+     // the final combine); the time-centred B at stage 1 is (B^n + B^n)/2 = B^n,
+     // so both the trial (for J) and the Hall/convection B are the live centerB.
+     assemble_ohm_E(centerB[iLev], centerB[iLev], centerE_RK4[iLev], iLev, g);
+     curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][0],
+                           Geom(iLev).InvCellSize());
 
-      // Stages 2-4 evaluate E at the TIME-CENTRED B (B_stage + B^n)/2, exactly
-      // as Hybrid-VPIC's hyb_advance_e uses (cbx+cbx0)/2 (B_n is stored in
-      // cbxold by STOREBOLD).  FLEKS's default rk4 previously used the trial
-      // B_stage directly in the Ohm's law; the time-centred form matches the
-      // Hybrid-VPIC field advance and stays stable in the high-amplitude phase
-      // without over-damping the instability.
-      // Stages 2-4: the current J is computed from curl(B_stage) (the trial B),
-      // while the Hall/convection B is the TIME-AVERAGED B (B_stage + B^n)/2,
-      // exactly as Hybrid-VPIC's hyb_advance_e: J = curl(cbx) and the
-      // J x B / convection factors use (cbx + cbx0)/2.  So centerBin (for curl)
-      // is the trial B in centerB_RK4, and nodeBin (for the Hall/convection B)
-      // is the node-average of the averaged B stored in nodeB_RK4.
-      // Stage 2: B2 = B^n - 0.5 dt k1; E at (B2 + B^n)/2.
-      MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerB_RK4[iLev], -0.5 * subDt, kRK4[iLev][0], 0, 0, 3,
-                      nGst);
-      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
-                        centerB[iLev], 0, 0, 3, nGst);
-      project_centerB_to_nodeB_scratch(centerBstar_heun[iLev], nodeB_RK4[iLev],
-                                       iLev);
-      assemble_ohm_E(centerB_RK4[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev], iLev,
-                     hstepHalf);
-      curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][1],
-                          Geom(iLev).InvCellSize());
+     // Stages 2-4 evaluate E at the TIME-CENTRED B (B_stage + B^n)/2, exactly
+     // as Hybrid-VPIC's hyb_advance_e uses (cbx+cbx0)/2 (B_n is stored in
+     // cbxold by STOREBOLD).  FLEKS's default rk4 previously used the trial
+     // B_stage directly in the Ohm's law; the time-centred form matches the
+     // Hybrid-VPIC field advance and stays stable in the high-amplitude phase
+     // without over-damping the instability.
+     // Stages 2-4: the current J is computed from curl(B_stage) (the trial B),
+     // while the Hall/convection B is the TIME-AVERAGED B (B_stage + B^n)/2,
+     // exactly as Hybrid-VPIC's hyb_advance_e: J = curl(cbx) and the
+     // J x B / convection factors use (cbx + cbx0)/2.  In the cell-centred
+     // layout both are cell-centred -- centerBin (for curl) is the trial B in
+     // centerB_RK4, and the Hall/convection B is the time-averaged
+     // centerBstar_heun -- so NO node projection is needed.
+     // Stage 2: B2 = B^n - 0.5 dt k1; E at (B2 + B^n)/2.
+     MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
+     MultiFab::Saxpy(centerB_RK4[iLev], -0.5 * subDt, kRK4[iLev][0], 0, 0, 3,
+                     nGst);
+     MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                       centerB[iLev], 0, 0, 3, nGst);
+     assemble_ohm_E(centerB_RK4[iLev], centerBstar_heun[iLev],
+                    centerE_RK4[iLev], iLev, hstepHalf);
+     curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][1],
+                           Geom(iLev).InvCellSize());
 
-      // Stage 3: B3 = B^n - 0.5 dt k2; E at (B3 + B^n)/2.
-      MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerB_RK4[iLev], -0.5 * subDt, kRK4[iLev][1], 0, 0, 3,
-                      nGst);
-      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
-                        centerB[iLev], 0, 0, 3, nGst);
-      project_centerB_to_nodeB_scratch(centerBstar_heun[iLev], nodeB_RK4[iLev],
-                                       iLev);
-      assemble_ohm_E(centerB_RK4[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev], iLev,
-                     hstepHalf);
-      curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][2],
-                          Geom(iLev).InvCellSize());
+     // Stage 3: B3 = B^n - 0.5 dt k2; E at (B3 + B^n)/2.
+     MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
+     MultiFab::Saxpy(centerB_RK4[iLev], -0.5 * subDt, kRK4[iLev][1], 0, 0, 3,
+                     nGst);
+     MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                       centerB[iLev], 0, 0, 3, nGst);
+     assemble_ohm_E(centerB_RK4[iLev], centerBstar_heun[iLev],
+                    centerE_RK4[iLev], iLev, hstepHalf);
+     curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][2],
+                           Geom(iLev).InvCellSize());
 
-      // Stage 4: B4 = B^n - dt k3; E at (B4 + B^n)/2.
-      MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerB_RK4[iLev], -subDt, kRK4[iLev][2], 0, 0, 3, nGst);
-      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
-                        centerB[iLev], 0, 0, 3, nGst);
-      project_centerB_to_nodeB_scratch(centerBstar_heun[iLev], nodeB_RK4[iLev],
-                                       iLev);
-      assemble_ohm_E(centerB_RK4[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev], iLev,
-                     g + 1.0 / (Real)nHallSubcycle);
-      curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][3],
-                          Geom(iLev).InvCellSize());
+     // Stage 4: B4 = B^n - dt k3; E at (B4 + B^n)/2.
+     MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
+     MultiFab::Saxpy(centerB_RK4[iLev], -subDt, kRK4[iLev][2], 0, 0, 3, nGst);
+     MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                       centerB[iLev], 0, 0, 3, nGst);
+     assemble_ohm_E(centerB_RK4[iLev], centerBstar_heun[iLev],
+                    centerE_RK4[iLev], iLev, g + 1.0 / (Real)nHallSubcycle);
+     curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][3],
+                           Geom(iLev).InvCellSize());
 
       // Combine: B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4).
       MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kRK4[iLev][0], 0, 0, 3, nGst);
@@ -2772,29 +2907,24 @@ void Pic::update_B_hybrid() {
       // the explicit forward-Euler advance of the oscillatory whistler
       // unstable.) The ion moments are time-interpolated at the sub-step start
       // (hstep = g).
-      for (int iLev = 0; iLev < n_lev(); iLev++) {
-        const auto& cBin =
-            (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
-        const auto& nBin =
-            (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
-        assemble_ohm_E(cBin, nBin, nodeEth[iLev], iLev, g);
+          for (int iLev = 0; iLev < n_lev(); iLev++) {
+       const auto& cBin =
+           (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
+       // Both the trial (for J) and the Hall/convection B are the same
+       // cell-centred state in the cell-centred solver (the euler path has no
+       // separate trial/time-averaged split; the stage advances from the live B).
+       assemble_ohm_E(cBin, cBin, centerEhybrid[iLev], iLev, g);
 
-        curl_node_to_center(nodeEth[iLev], dBpred_heun[iLev],
-                            Geom(iLev).InvCellSize());
+       curl_center_to_center(centerEhybrid[iLev], dBpred_heun[iLev],
+                             Geom(iLev).InvCellSize());
 
-        MultiFab::Saxpy(centerB[iLev], -subDt, dBpred_heun[iLev], 0, 0,
-                        centerB[iLev].nComp(), centerB[iLev].nGrow());
+       MultiFab::Saxpy(centerB[iLev], -subDt, dBpred_heun[iLev], 0, 0,
+                       centerB[iLev].nComp(), centerB[iLev].nGrow());
 
-        centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-      }
-
-      // Project the advanced center-B back to the node-B used by the Ohm's law
-      // so the next sub-step's E recompute sees the updated field.
-      for (int iLev = 0; iLev < n_lev(); iLev++) {
-        project_centerB_to_nodeB(iLev);
-      }
-      continue;
-    }
+       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+     }
+     continue;
+   }
 
     if (fieldIntegrator == "ssprk3") {
       // --- Hybrid-VPIC-style SSP-RK3 with time-centred E ---
@@ -2812,42 +2942,41 @@ void Pic::update_B_hybrid() {
       MultiFab::Copy(centerBstart_heun[iLev], centerB[iLev], 0, 0, 3, nGst);
       // nodeB[0] is already the node-average of centerB (= B_n).
 
-      // Stage 1: k1 = curl(E(B_n)); B1 = B_n - subDt k1.  The time-centred B at
-      // stage 1 is (B_n + B_n)/2 = B_n, so E uses the live B_n directly.
-      assemble_ohm_E(centerB[iLev], nodeB[iLev], nodeE_RK4[iLev], iLev, g);
-      curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][0], Geom(iLev).InvCellSize());
-      // B1 = B_n - subDt k1  (store in centerB_RK4)
-      MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerB_RK4[iLev], -subDt, kRK4[iLev][0], 0, 0, 3, nGst);
+     // Stage 1: k1 = curl(E(B_n)); B1 = B_n - subDt k1.  The time-centred B at
+     // stage 1 is (B_n + B_n)/2 = B_n, so E uses the live B_n directly.
+     assemble_ohm_E(centerB[iLev], centerB[iLev], centerE_RK4[iLev], iLev, g);
+     curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][0],
+                           Geom(iLev).InvCellSize());
+     // B1 = B_n - subDt k1  (store in centerB_RK4)
+     MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
+     MultiFab::Saxpy(centerB_RK4[iLev], -subDt, kRK4[iLev][0], 0, 0, 3, nGst);
 
-      // Stage 2: avgB2 = (B1+B_n)/2; k2 = curl(E(avgB2));
-      //   B2 = (3/4)B_n + (1/4)(B1 - subDt k2).
-      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
-                        centerBstart_heun[iLev], 0, 0, 3, nGst);
-      project_centerB_to_nodeB_scratch(centerBstar_heun[iLev], nodeB_RK4[iLev],
-                                       iLev);
-      assemble_ohm_E(centerBstar_heun[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev],
-                     iLev, g + 1.0 / (Real)nHallSubcycle);
-      curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][1], Geom(iLev).InvCellSize());
-      MultiFab::LinComb(centerB_RK4[iLev], 0.25, centerB_RK4[iLev], 0, 0.75,
-                        centerBstart_heun[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerB_RK4[iLev], -0.25 * subDt, kRK4[iLev][1], 0, 0, 3,
-                      nGst);
+     // Stage 2: avgB2 = (B1+B_n)/2; k2 = curl(E(avgB2));
+     //   B2 = (3/4)B_n + (1/4)(B1 - subDt k2).
+     MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                       centerBstart_heun[iLev], 0, 0, 3, nGst);
+     assemble_ohm_E(centerBstar_heun[iLev], centerBstar_heun[iLev],
+                    centerE_RK4[iLev], iLev, g + 1.0 / (Real)nHallSubcycle);
+     curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][1],
+                           Geom(iLev).InvCellSize());
+     MultiFab::LinComb(centerB_RK4[iLev], 0.25, centerB_RK4[iLev], 0, 0.75,
+                       centerBstart_heun[iLev], 0, 0, 3, nGst);
+     MultiFab::Saxpy(centerB_RK4[iLev], -0.25 * subDt, kRK4[iLev][1], 0, 0, 3,
+                     nGst);
 
-      // Stage 3: avgB3 = (B2+B_n)/2; k3 = curl(E(avgB3));
-      //   B^{n+1} = (1/3)B_n + (2/3)(B2 - subDt k3).
-      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
-                        centerBstart_heun[iLev], 0, 0, 3, nGst);
-      project_centerB_to_nodeB_scratch(centerBstar_heun[iLev], nodeB_RK4[iLev],
-                                       iLev);
-      assemble_ohm_E(centerBstar_heun[iLev], nodeB_RK4[iLev], nodeE_RK4[iLev],
-                     iLev, g + 0.5 / (Real)nHallSubcycle);
-      curl_node_to_center(nodeE_RK4[iLev], kRK4[iLev][2], Geom(iLev).InvCellSize());
-      MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerB_RK4[iLev], 0,
-                        1.0 / 3.0, centerBstart_heun[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerB[iLev], -2.0 / 3.0 * subDt, kRK4[iLev][2], 0, 0, 3,
-                      nGst);
-      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+     // Stage 3: avgB3 = (B2+B_n)/2; k3 = curl(E(avgB3));
+     //   B^{n+1} = (1/3)B_n + (2/3)(B2 - subDt k3).
+     MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                       centerBstart_heun[iLev], 0, 0, 3, nGst);
+     assemble_ohm_E(centerBstar_heun[iLev], centerBstar_heun[iLev],
+                    centerE_RK4[iLev], iLev, g + 0.5 / (Real)nHallSubcycle);
+     curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][2],
+                           Geom(iLev).InvCellSize());
+     MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerB_RK4[iLev], 0,
+                       1.0 / 3.0, centerBstart_heun[iLev], 0, 0, 3, nGst);
+     MultiFab::Saxpy(centerB[iLev], -2.0 / 3.0 * subDt, kRK4[iLev][2], 0, 0, 3,
+                     nGst);
+     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
       // Sync the advanced level-0 B to nodeB[0] and the fine levels.
       project_centerB_to_nodeB(0);
@@ -2873,35 +3002,32 @@ void Pic::update_B_hybrid() {
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
       const auto& cBin =
           (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
-      const auto& nBin =
-          (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
-      assemble_ohm_E(cBin, nBin, nodeEth[iLev], iLev, g);
+      // Cell-centred predictor: both the trial (for J) and the Hall/convection
+      // B are the live cell-centred state.
+      assemble_ohm_E(cBin, cBin, centerEhybrid[iLev], iLev, g);
 
       MultiFab::Copy(centerBstart_heun[iLev], centerB[iLev], 0, 0, 3, nGst);
-      curl_node_to_center(nodeEth[iLev], dBpred_heun[iLev],
-                          Geom(iLev).InvCellSize());
+      curl_center_to_center(centerEhybrid[iLev], dBpred_heun[iLev],
+                            Geom(iLev).InvCellSize());
       MultiFab::Copy(centerBstar_heun[iLev], centerB[iLev], 0, 0, 3, nGst);
       MultiFab::Saxpy(centerBstar_heun[iLev], -subDt, dBpred_heun[iLev], 0, 0, 3,
                       nGst);
     }
 
-    // Corrector stage: project B* to the node grid and recompute E*.
+    // Corrector stage: recompute E* from the predicted B* (both cell-centred).
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
       MultiFab::Copy(centerB[iLev], centerBstar_heun[iLev], 0, 0, 3, nGst);
-      project_centerB_to_nodeB(iLev);
     }
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
       const auto& cBin =
           (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
-      const auto& nBin =
-          (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
-      assemble_ohm_E(cBin, nBin, nodeEth[iLev], iLev,
+      assemble_ohm_E(cBin, cBin, centerEhybrid[iLev], iLev,
                      g + 1.0 / (Real)nHallSubcycle);
     }
 
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      curl_node_to_center(nodeEth[iLev], dBcorr_heun[iLev],
-                          Geom(iLev).InvCellSize());
+      curl_center_to_center(centerEhybrid[iLev], dBcorr_heun[iLev],
+                            Geom(iLev).InvCellSize());
 
       // Trapezoidal combine around the saved B^n (thetaB = 0.5, standard Heun).
       MultiFab::Copy(centerB[iLev], centerBstart_heun[iLev], 0, 0, 3, nGst);
@@ -2909,7 +3035,6 @@ void Pic::update_B_hybrid() {
                       nGst);
       MultiFab::Saxpy(centerB[iLev], -0.5 * subDt, dBcorr_heun[iLev], 0, 0, 3,
                       nGst);
-      project_centerB_to_nodeB(iLev);
     }
   }
 
@@ -2976,14 +3101,16 @@ void Pic::update_B_hybrid() {
   }
 
   // Compute the E field at the end of the full magnetic advance (hstep = 1,
-  // i.e. E^{n+1}) into nodeEth, used by the next update()'s particle Boris push
-  // (hybrid-VPIC convention: push uses the integer-step E). This recomputation
-  // is done for every integrator because the RK4 path only writes the scratch
-  // nodeE_RK4, and the euler/heun paths write nodeEth at intermediate hstep
-  // values, so nodeEth must be freshly evaluated on the final B^{n+1}. Only
-  // levels holding kinetic particles need nodeEth (it is read solely by the
-  // Boris push), so levels without particles are skipped to avoid the wasted
-  // Ohm's-law evaluation.
+  // i.e. E^{n+1}) into the cell-centred centerEhybrid, used by the next
+  // update()'s particle Boris push (hybrid-VPIC convention: push uses the
+  // integer-step E). This recomputation is done for every integrator because the
+  // RK4 path only writes the scratch centerE_RK4, and the euler/heun paths write
+  // centerEhybrid at intermediate hstep values, so centerEhybrid must be freshly
+  // evaluated on the final B^{n+1}. Only levels holding kinetic particles need
+  // centerEhybrid (it is read solely by the Boris push), so levels without
+  // particles are skipped to avoid the wasted Ohm's-law evaluation. Afterwards
+  // the node-sync bridge projects centerEhybrid -> nodeEth so the plot/restart
+  // output that reads nodeEth sees the correct cell-centred E.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     bool hasParticles = false;
     for (int i : kineticSpecies_) {
@@ -2997,9 +3124,21 @@ void Pic::update_B_hybrid() {
     }
     const auto& cBin =
         (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
-    const auto& nBin =
-        (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
-    assemble_ohm_E(cBin, nBin, nodeEth[iLev], iLev, 1.0);
+    assemble_ohm_E(cBin, cBin, centerEhybrid[iLev], iLev, 1.0);
+  }
+
+  // Node-sync bridge (Phase A.5): mirror the cell-centred E into the node
+  // output array nodeEth (and nodeE if used by plots) once per full step. The
+  // full-PIC plot/restart path reads nodeEth/nodeE, so they must always reflect
+  // the freshly computed centerEhybrid.
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
+    apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0, centerEhybrid[iLev].nComp(),
+             &Pic::get_center_E, iLev);
+    average_center_to_node(centerEhybrid[iLev], nodeEth[iLev]);
+    nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
+    apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nodeEth[iLev].nComp(),
+             &Pic::get_node_E, iLev);
   }
 }
 

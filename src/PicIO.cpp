@@ -490,6 +490,26 @@ void Pic::read_restart() {
                 restartDir + gridName + "_centerB" + lev_string(iLev));
   }
 
+  // Hybrid-VPIC-style cell-centred restart seed (Phase A.8): the restart file
+  // stores the node-centred E (nodeE) and B (centerB). Reconstruct the
+  // cell-centred hybrid fields (centerEhybrid, centerEprev, centerBprev) from
+  // them so the first hybrid particle push / Ohm's-law evaluation after restart
+  // is well-defined. centerPlasma/centerPlasmaPrev are rebuilt by the
+  // sum_moments() deposit below and the seed_first_hybrid_step() hook on the
+  // first hybrid update.
+  if (useHybridPIC) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      average_node_to_center(nodeE[iLev], centerEhybrid[iLev]);
+      centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
+      apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0,
+               centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev);
+      MultiFab::Copy(centerEprev[iLev], centerEhybrid[iLev], 0, 0, 3,
+                     centerEprev[iLev].nGrow());
+      MultiFab::Copy(centerBprev[iLev], centerB[iLev], 0, 0, 3,
+                     centerBprev[iLev].nGrow());
+    }
+  }
+
   for (int iPart = 0; iPart < parts.size(); iPart++) {
     parts[iPart]->Restart(restartDir,
                           gridName + "_particles" + std::to_string(iPart));

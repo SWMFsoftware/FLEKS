@@ -923,6 +923,118 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 }
 
 //==========================================================
+// Hybrid-VPIC-style cell-centred moment deposit. The raw rho / momentum /
+// pressure-tensor moments are scattered to the cell-centred momentsMF
+// (centerPlasma[iSpecies]). Phase A (`useEsirkepov == false`) deposits with a
+// plain cell-centred trilinear scatter (find_cell_index + linear weights). The
+// Esirkepov trajectory-current form (Phase B) is enabled by `useEsirkepov`;
+// that path deposits J and rho via the current-decomposition method and the
+// pressure tensor trilinearly, but is selected only once Phase B is active.
+template <int NStructReal, int NStructInt>
+Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
+    Vector<MultiFab>& momentsMF, Vector<MultiFab>& centerBMF, Real dt,
+    bool useEsirkepov) {
+  timing_func("Pts::sum_moments_cell_centered");
+  // The cell-centred B and the Esirkepov flag are reserved for the Phase B
+  // trajectory-current deposit; the Phase A path (active) is a plain
+  // cell-centred trilinear deposit and does not read them.
+  (void)centerBMF;
+  (void)useEsirkepov;
+  (void)dt;
+
+  Real energy = 0;
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    timing_func("Pts::sum_moments_cell_centered_1");
+    momentsMF[iLev].setVal(0.0);
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      Array4<Real> const& momentsArr = momentsMF[iLev][pti].array();
+
+      const AoS& particles = pti.GetArrayOfStructs();
+
+      const Dim3 lo = init_dim3(0);
+      const Dim3 hi = init_dim3(1);
+
+      for (const auto& p : particles) {
+        if (p.id() < 0)
+          continue;
+
+        const Real up = p.rdata(iup_);
+        const Real vp = p.rdata(ivp_);
+        const Real wp = p.rdata(iwp_);
+        const Real qp = p.rdata(iqp_);
+
+        //-----calculate interpolate coef begin-------------
+        IntVect loIdx;
+        RealVect dShift;
+        // Cell-centred deposit: find the containing cell (find_cell_index) and
+        // interpolate between its centre and the next cell centre (trilinear).
+        find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                        loIdx, dShift);
+        Real coef[2][2][2];
+        linear_interpolation_coef(dShift, coef);
+        //-----calculate interpolate coef end-------------
+
+        //-------cell-centred moments begin---------
+        Real pMoments[nMoments];
+
+        pMoments[iNum_] = 1;
+        pMoments[iRho_] = qp;
+
+        {
+          const Real mx = qp * up;
+          const Real my = qp * vp;
+          const Real mz = qp * wp;
+          pMoments[iMx_] = mx;
+          pMoments[iMy_] = my;
+          pMoments[iMz_] = mz;
+
+          pMoments[iPxx_] = mx * up;
+          pMoments[iPyy_] = my * vp;
+          pMoments[iPzz_] = mz * wp;
+
+          pMoments[iPxy_] = mx * vp;
+          pMoments[iPxz_] = mx * wp;
+          pMoments[iPyz_] = my * wp;
+        }
+
+        for (int iVar = 0; iVar < nMoments; iVar++)
+          for (int kk = lo.z; kk <= hi.z; ++kk)
+            for (int jj = lo.y; jj <= hi.y; ++jj)
+              for (int ii = lo.x; ii <= hi.x; ++ii) {
+                const IntVect ijk = { AMREX_D_DECL(
+                    loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) };
+                momentsArr(ijk, iVar) += coef[ii][jj][kk] * pMoments[iVar];
+              }
+        //-------cell-centred moments end---------
+
+        energy += qp * (up * up + vp * vp + wp * wp);
+      } // for p
+    }
+
+    // Exclude the number density.
+    momentsMF[iLev].mult(invVol[iLev], 0, nMoments - 1,
+                         momentsMF[iLev].nGrow());
+
+    momentsMF[iLev].SumBoundary(Geom(iLev).periodicity());
+  }
+
+  // Cell-centred coarse-fine interface for AMR. The cell-centred coarse-fine
+  // routines (sum_two_lev_interface_cell / ..._for_domain_edge_cell) do not yet
+  // exist in FLEKS, so AMR hybrid moment summation is not supported; the hybrid
+  // target tests are single-level (n_lev() == 1). An assertion guards against an
+  // unsupported multilevel hybrid run.
+  if (n_lev() > 1) {
+    amrex::Abort(
+        "sum_moments_cell_centered: AMR (multi-level) hybrid moment summation "
+        "is not yet supported (needs cell-centred coarse-fine interface).");
+  }
+
+  energy *= 0.5 * qomSign * get_mass();
+
+  return energy;
+}
+
+//==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     UMultiFab<RealMM>& nodeMM, MultiFab& jHat, MultiFab& nodeBMF,
@@ -1555,6 +1667,20 @@ void Particles<NStructReal, NStructInt>::mover(const Vector<MultiFab>& nodeE,
 
 //==========================================================
 template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::mover_cell_centered(
+    const Vector<MultiFab>& centerE, const Vector<MultiFab>& centerB,
+    const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
+    Real dtNext, bool useQuadratic) {
+  if (is_neutral()) {
+    neutral_mover(dt);
+  } else {
+    charged_particle_mover_cell_centered(centerE, centerB, eBg, uBg, dt,
+                                         dtNext, useQuadratic);
+  }
+}
+
+//==========================================================
+template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover(
     const Vector<MultiFab>& nodeE, const Vector<MultiFab>& nodeB,
     const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
@@ -1615,6 +1741,151 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
               for (int iDim = 0; iDim < nDim3; iDim++) {
                 bp[iDim] += nodeBArr(ijk, iDim) * c0;
                 ep[iDim] += nodeEArr(ijk, iDim) * c0;
+              }
+            }
+
+        up = up - u0p[ix_];
+        vp = vp - u0p[iy_];
+        wp = wp - u0p[iz_];
+
+        const Real omx = qdto2mc * bp[ix_];
+        const Real omy = qdto2mc * bp[iy_];
+        const Real omz = qdto2mc * bp[iz_];
+
+        // end interpolation
+        const Real omsq = (omx * omx + omy * omy + omz * omz);
+        const Real denom = 1.0 / (1.0 + omsq);
+        // solve the position equation
+        const Real ut = up + qdto2mc * ep[ix_];
+        const Real vt = vp + qdto2mc * ep[iy_];
+        const Real wt = wp + qdto2mc * ep[iz_];
+        // const pfloat udotb = ut * Bxl + vt * Byl + wt * Bzl;
+        const Real udotOm = ut * omx + vt * omy + wt * omz;
+        // solve the velocity equation
+        const Real uavg = (ut + (vt * omz - wt * omy + udotOm * omx)) * denom;
+        const Real vavg = (vt + (wt * omx - ut * omz + udotOm * omy)) * denom;
+        const Real wavg = (wt + (ut * omy - vt * omx + udotOm * omz)) * denom;
+
+        Real unp1 = 2.0 * uavg - up + u0p[ix_];
+        Real vnp1 = 2.0 * vavg - vp + u0p[iy_];
+        Real wnp1 = 2.0 * wavg - wp + u0p[iz_];
+
+        p.rdata(iup_) = unp1;
+        p.rdata(ivp_) = vnp1;
+        p.rdata(iwp_) = wnp1;
+
+        if (pMode == PartMode::PIC && imu_ < NStructReal) {
+          // Note: bp should be calculated at the new position. Now, bp at the
+          // old position is used to save the calculation.
+          p.rdata(imu_) = cosine(p, bp);
+        }
+
+        p.pos(ix_) = xp + unp1 * dtLoc;
+        p.pos(iy_) = yp + vnp1 * dtLoc;
+        if (nDim > 2)
+          p.pos(iz_) = zp + wnp1 * dtLoc;
+
+        // Mark for deletion
+        if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
+          p.id() = -1;
+        }
+      } // for p
+    } // for pti
+  }
+}
+
+//==========================================================
+// Hybrid-VPIC-style cell-centred Boris push. The E and B are gathered from the
+// cell-centred fields (centerE / centerB) instead of the node fields. For Phase
+// A (`useQuadratic == false`) the gather is a plain cell-centred trilinear
+// interpolation (find_cell_index + linear_interpolation_coef). For Phase B
+// (`useQuadratic == true`) it uses the quadratic-spline (centered B-spline)
+// gather of Hybrid-VPIC with the (i-1,i,i+1) cell stencil.
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
+    const Vector<MultiFab>& centerE, const Vector<MultiFab>& centerB,
+    const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
+    Real dtNext, bool useQuadratic) {
+  timing_func("Pts::charged_particle_mover_cell_centered");
+
+  const Real qdto2mc = charge / mass * 0.5 * dt;
+  Real dtLoc = 0.5 * (dt + dtNext);
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      const Array4<Real const>& centerEArr = centerE[iLev][pti].array();
+      const Array4<Real const>& centerBArr = centerB[iLev][pti].array();
+
+      const Box& bx = cell_status(iLev)[pti].box();
+      const Array4<int const>& status = cell_status(iLev)[pti].array();
+
+      const IntVect lowCorner = bx.smallEnd();
+      const IntVect highCorner = bx.bigEnd();
+
+      AoS& particles = pti.GetArrayOfStructs();
+
+      const Dim3 lo = init_dim3(-(useQuadratic ? 1 : 0));
+      const Dim3 hi = init_dim3(1);
+
+      for (auto& p : particles) {
+        if (p.id() < 0)
+          continue;
+
+        Real up = p.rdata(iup_);
+        Real vp = p.rdata(ivp_);
+        Real wp = p.rdata(iwp_);
+        const Real xp = p.pos(ix_);
+        const Real yp = p.pos(iy_);
+        const Real zp = nDim > 2 ? p.pos(iz_) : 0;
+
+        //-----calculate interpolate coef begin-------------
+        IntVect loIdx;
+        RealVect dShift;
+
+        if (useQuadratic) {
+          // Phase B: quadratic-spline (centered B-spline) gather. The cell
+          // containing the particle is found with find_cell_index; the
+          // quadratic weights couple cells loIdx-1, loIdx, loIdx+1.
+          find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                          loIdx, dShift);
+        } else {
+          // Phase A: plain cell-centred trilinear gather (find_cell_index gives
+          // the two straddling cells loIdx, loIdx+1).
+          find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                          loIdx, dShift);
+        }
+
+        Real coef[3][3][3];
+        if (useQuadratic) {
+          quadratic_interpolation_coef(dShift, coef);
+        } else {
+          // Phase A: plain cell-centred trilinear gather. The linear weights
+          // couple cells loIdx and loIdx+1 (offsets 0 and 1); the 3x3x3 coef
+          // array is zero for the unused offset-2 entry.
+          Real coefLin[2][2][2];
+          linear_interpolation_coef(dShift, coefLin);
+          for (int k = 0; k <= 2; ++k)
+            for (int j = 0; j <= 2; ++j)
+              for (int i = 0; i <= 2; ++i)
+                coef[i][j][k] = (i <= 1 && j <= 1 && k <= 1)
+                                    ? coefLin[i][j][k]
+                                    : 0.0;
+        }
+        //-----calculate interpolate coef end-------------
+
+        Real bp[3] = { 0, 0, 0 };
+        Real ep[3] = { 0, 0, 0 };
+        Real u0p[3] = { 0, 0, 0 };
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i) {
+              IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
+                                           loIdx[iz_] + k) };
+
+              const Real& c0 = coef[i - lo.x][j - lo.y][k - lo.z];
+              for (int iDim = 0; iDim < nDim3; iDim++) {
+                bp[iDim] += centerBArr(ijk, iDim) * c0;
+                ep[iDim] += centerEArr(ijk, iDim) * c0;
               }
             }
 
