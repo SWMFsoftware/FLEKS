@@ -2712,6 +2712,24 @@ void Pic::project_centerB_to_nodeB(int iLev) {
   }
 }
 
+// Apply boundary conditions to the cell-centred B so the next field-advance
+// stage can read its neighbours. This is the cell-centred part of
+// project_centerB_to_nodeB. It is called at the end of each sub-step (where the
+// node mirrors and fine-level fills are *not* needed -- they are recomputed once
+// after the whole sub-cycle loop).
+void Pic::apply_centerB_BC(int iLev) {
+  centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+  if (iLev == 0) {
+    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+             &Pic::get_center_B, iLev, &bcBField);
+  } else {
+    fill_fine_lev_bny_from_coarse(
+        centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
+        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+        cell_bilinear_interp);
+  }
+}
+
 //==========================================================
 void Pic::project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
                                            amrex::MultiFab& nodeOut, int iLev) {
@@ -2881,14 +2899,11 @@ void Pic::update_B_hybrid() {
       MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kRK4[iLev][3], 0, 0, 3, nGst);
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
-      // Sync the advanced level-0 B to nodeB[0] and to the fine levels. Calling
-      // project_centerB_to_nodeB on each fine level internally fills the fine
-      // centerB from the (now advanced) coarse centerB and recomputes its node B
-      // -- exactly the projection that the ssprk3 path uses.
-      project_centerB_to_nodeB(0);
-      for (int iLevF = 1; iLevF < n_lev(); ++iLevF) {
-        project_centerB_to_nodeB(iLevF);
-      }
+      // Apply boundary conditions to the advanced cell-centred B so the next
+      // stage can read its neighbours. The node mirrors (nodeB) and the
+      // fine-level fills are NOT needed here -- they are recomputed once after
+      // the whole sub-cycle loop.
+      apply_centerB_BC(0);
       continue;
     }
 
@@ -2944,13 +2959,11 @@ void Pic::update_B_hybrid() {
                      nGst);
      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
-      // Sync the advanced level-0 B to nodeB[0] and the fine levels.
-      project_centerB_to_nodeB(0);
-      for (int iLevF = 1; iLevF < n_lev(); ++iLevF) {
-        project_centerB_to_nodeB(iLevF);
-      }
+      // Apply boundary conditions to the advanced cell-centred B so the next
+      // stage can read its neighbours. The node mirrors (nodeB) and the
+      // fine-level fills are recomputed once after the sub-cycle loop.
+      apply_centerB_BC(0);
       continue;
-     continue;
    }
   }
 

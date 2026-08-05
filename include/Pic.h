@@ -546,6 +546,12 @@ public:
   // with boundary conditions -- used between sub-steps of the hybrid Faraday
   // update so the next Ohm's-law evaluation sees the advanced field.
   void project_centerB_to_nodeB(int iLev);
+  // Apply boundary conditions to the cell-centred B so the next field-advance
+  // stage can read its neighbours. This is the cell-centred part of
+  // project_centerB_to_nodeB, used between sub-steps of the hybrid Faraday
+  // update (the node mirrors / fine-level fills are recomputed once after the
+  // whole sub-cycle loop).
+  void apply_centerB_BC(int iLev);
   // Project the cell-centred B in `centerIn` to the node grid `nodeOut` with
   // boundary conditions, WITHOUT touching member state. Used by the RK4 stages
   // to build the node B at a trial (off-member) center-B state.
