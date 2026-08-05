@@ -1,9 +1,8 @@
 # Hybrid Solver: Performance Optimization Opportunities
 
-**Status:** Items 1, 3, 4, 7 implemented; Item 8 partially implemented
-(8-C/D/E done; 8-A/B reverted); Items 2, 5, 6 decided — instructions recorded;
-Items 5/6 deferred (need output decoupling, see Item 4); bridge removal
-deferred (see §8.6)
+**Status:** Items 1, 2, 3, 4, 7 implemented; Item 8 partially implemented
+(8-C/D/E done; 8-A/B reverted); Items 5, 6 decided — deferred (need output
+decoupling, see Item 4); bridge removal deferred (see §8.6)
 **Authors:** FLEKS team
 **Last updated:** 2026-08-05
 **Related docs:**
@@ -95,55 +94,50 @@ the default** and retain `rk3` as the selectable alternative.
 
 ### Item 2 — Only sync `nodePlasma` when output actually needs it (lazy output mirror)
 
-- **Location:** `Pic::sum_moments`, `src/Pic.cpp:1307-1313`
+- **Location:** `Pic::sum_moments`, `src/Pic.cpp:1302-1308`
 - **Impact:** High (pure overhead every step)
 - **Regression risk:** Low
-- **Status:** decided — implement
+- **Status:** implemented (2026-08-05)
 
 **Problem.** In the hybrid path, `sum_moments(false)` is called **every step**
-(`src/Pic.cpp:1728`). After the cell-centred deposit it runs the **nodePlasma
+(`src/Pic.cpp:1728`). After the cell-centred deposit it ran the **nodePlasma
 output bridge** — `average_center_to_node(centerPlasma[i] → nodePlasma[i])` for
 every species **and** the summed entry `nSpecies+1`, each wrapped in
-`FillBoundary` (`src/Pic.cpp:1307-1313`). This is **pure output-sync work**:
-`nodePlasma` is read only by the plot / probe / tracker path. On steps with no
-output it is wasted.
+`FillBoundary` — **plus** `calc_mach_number()`, which reads `nodePlasma[nSpecies]`
+(including the pressure tensor). On steps with no node-plasma / mach output this
+is pure wasted work.
 
 **Verified facts that drive the design:**
 - `nodePlasma` is **plot-only** — it is **not** written to the checkpoint.
   `save_restart_data` writes only `nodeE`, `nodeB`, `centerB` and the particles
   (`src/PicIO.cpp:437-448`). On restart, `centerPlasma` is rebuilt by the
-  `sum_moments()` deposit (`src/PicIO.cpp:519`). So `nodePlasma` is never needed
-  for restart — only for in-memory plot / probe reads.
-- The plot check pattern already exists: `Domain::update` calls `write_plots()`
-  *after* `pic->update(doReport)` (`src/Domain.cpp:239, 241`), and
-  `Pic::write_plots` iterates `tc->plots` checking `plot.is_time_to(doForce)`
-  (`src/PicIO.cpp:619-620`). So the sync inside `sum_moments` runs *before* we
-  know a plot is due this step.
-- Plot/probe readers of `nodePlasma`: `get_field_var` (`src/PicIO.cpp:364-379`),
-  `get_data_from_tracker` probes (`src/PicIO.cpp:63`), and the plot write
-  (`src/PicIO.cpp:906, 948/950`).
+  `sum_moments()` deposit (`src/PicIO.cpp:519`).
+- The only **every-step** consumer of `nodePlasma[nSpecies]` is
+  `calc_mach_number` (`src/Pic.cpp:1330`), which produces the `mach` output
+  diagnostic (not requested in the pcai/beam hybrid tests). `calc_cost_per_cell`
+  reads `nodePlasma` only when balancing by Particle/Hybrid/Timing (default is
+  `Cell`, which does not).
+- `get_data_from_tracker` synthetic probes already read cell-centred fields in
+  hybrid mode (Item 8-D), so they do not need `nodePlasma`.
+- `get_field_var`/`get_var` read `nodePlasma`/`mMach` only via the structured
+  plot write, which is preceded by the sync.
 
-**Implementation:**
-1. Add a lazy-dirty pattern: keep `centerPlasma` (cell-centred) as the source of
-   truth. **Do not** run the `average_center_to_node` bridge in `sum_moments`.
-2. Add a member flag, e.g. `nodePlasmaStale = true`, set inside `sum_moments`
-   after the cell-centred deposit.
-3. Add a helper `void Pic::sync_node_plasma_output()` that, **only if
-   `nodePlasmaStale`**, runs the existing `average_center_to_node` bridge for
-   all `nSpecies+1` entries and clears the flag.
-4. Call `sync_node_plasma_output()` at the start of:
-   - `Pic::write_plots` (before the per-plot `is_time_to` loop, `src/PicIO.cpp:619`),
-   - the probe data path `get_data_from_tracker` (`src/PicIO.cpp:59-74`),
-   - `get_field_var` (`src/PicIO.cpp:364-379`) — or rely on it being called via
-     `write_plots`.
-   The lazy call only pays the sync cost when output is actually requested.
-5. Ensure `nodePlasmaStale` is cleared on any path that manually sets
-   `nodePlasma` (restart, IC) so a stale flag cannot skip a needed sync.
-
-> **Important ordering constraint.** Because `nodePlasma` is read inside
-> `get_data_from_tracker` / `get_field_var` / `write_amrex_field`, every such
-> entry point must sync first. Verify each reader in `src/PicIO.cpp` is covered
-> so no output reads stale `nodePlasma`.
+**Implementation (done):**
+1. Added `nodePlasmaStale` member (`src/Pic.h:228`).
+2. `sum_moments` hybrid branch: **skip** the `nodePlasma` bridge and
+   `calc_mach_number`; set `nodePlasmaStale = true` (`src/Pic.cpp:1302-1308`).
+   Full-PIC keeps the immediate `calc_mach_number`.
+3. Added `Pic::sync_node_plasma_output()` (`src/Pic.cpp:1333`): if
+   `nodePlasmaStale`, runs the `average_center_to_node` bridge for `nSpecies+1`
+   + `calc_mach_number`, then clears the flag.
+4. Call sites:
+   - `Pic::write_plots` structured (ascii/IDL) branch, before `plot.writer.write`
+     (`src/PicIO.cpp:658-662`).
+   - `Pic::calc_cost_per_cell`, when balancing by Particle/Hybrid/Timing
+     (`src/Pic.cpp:1376-1382`).
+   `get_data_from_tracker` needs no sync (it reads cell-centred fields in hybrid).
+- **Verified:** `pcai`, `beam` (full-PIC + hybrid), `hybrid_convection_wave` all
+  PASS.
 
 ---
 
@@ -515,7 +509,7 @@ so every test has a valid `PostIDL.exe` for `PostProc.pl`. Verified: `pcai`,
 | # | Opportunity | Where | Impact | Risk | Status |
 |---|---|---|---|---|---|
 | 1 | Remove `euler` / `heun` integrators; keep `rk3`/`rk4`, `rk4` default | `src/Pic.cpp:2754-3143` | Medium–High | Low | **implemented** |
-| 2 | Lazy `nodePlasma` output mirror (sync only when output needed) | `src/Pic.cpp:1307` | High | Low | decided |
+| 2 | Lazy `nodePlasma` output mirror (sync only when output needed) | `src/Pic.cpp:1302` | High | Low | **implemented** |
 | 3 | Drop per-sub-cycle `project_centerB_to_nodeB` (output mirror) | `src/Pic.cpp:2888`, `2948` | High | Low–Med | **implemented** |
 | 4 | Field solve only needs `ρ+3m`; shrink `centerPlasmaPrev` to 4 comps | `src/Pic.cpp:2656` | Medium–High | Med | **implemented** |
 | 5 | Slim per-particle deposit to 4 field-needed components | `Particles.cpp:1000` | Medium | Med | decided |

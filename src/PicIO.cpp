@@ -655,6 +655,10 @@ void Pic::write_plots(bool doForce) {
       if (plot.writer.is_amrex_format() || plot.writer.is_hdf5_format()) {
         write_amrex(plot.writer, tc->get_time_si(), tc->get_cycle());
       } else {
+        // Structured (ascii/IDL) plots read the nodePlasma / mMach output
+        // mirrors, which are now deferred for the hybrid solver. Materialize
+        // them before writing.
+        sync_node_plasma_output();
         plot.writer.write(tc->get_time_si(), tc->get_cycle(),
                           find_output_list_caller, get_field_var_caller);
       }

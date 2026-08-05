@@ -1295,17 +1295,12 @@ void Pic::sum_moments(bool updateDt) {
     }
 
     // nodePlasma output bridge: average_center_to_node(centerPlasma ->
-    // nodePlasma) for every species and the summed entry. Runs once per full
-    // step (not inside the sub-cycling loop). This is a pure output mirror so
-    // the plot/restart/tracker path that reads nodePlasma sees the correct
-    // cell-centred moments; no field BC is applied here.
-    for (int i = 0; i < nSpecies + 1; ++i) {
-      for (int iLev = 0; iLev < n_lev(); iLev++) {
-        centerPlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
-        average_center_to_node(centerPlasma[i][iLev], nodePlasma[i][iLev]);
-        nodePlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
-      }
-    }
+    // nodePlasma) for every species and the summed entry, plus calc_mach_number
+    // (which reads nodePlasma[nSpecies]). This is a pure output mirror. To avoid
+    // the per-step cost, the bridge + calc_mach_number are deferred and run
+    // lazily by sync_node_plasma_output() only when a plot/probe/load-balance
+    // actually reads nodePlasma / mMach.
+    nodePlasmaStale = true;
   } else {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       nodePlasma[nSpecies][iLev].setVal(0.0);
@@ -1327,9 +1322,33 @@ void Pic::sum_moments(bool updateDt) {
     }
   }
 
-  calc_mach_number();
+  if (!useHybridPIC) {
+    // Full-PIC deposits nodePlasma directly in the else-branch above, so
+    // calc_mach_number can run immediately. For hybrid, calc_mach_number is
+    // deferred to sync_node_plasma_output().
+    calc_mach_number();
+  }
 
   isMomentsUpdated = true;
+}
+
+//==========================================================
+void Pic::sync_node_plasma_output() {
+  if (!nodePlasmaStale)
+    return;
+  // nodePlasma output bridge: average_center_to_node(centerPlasma -> nodePlasma)
+  // for every species and the summed entry, then the Mach number (which reads
+  // nodePlasma[nSpecies]). Deferred from sum_moments so non-output steps do not
+  // pay this per-step cost.
+  for (int i = 0; i < nSpecies + 1; ++i) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      centerPlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
+      average_center_to_node(centerPlasma[i][iLev], nodePlasma[i][iLev]);
+      nodePlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
+  calc_mach_number();
+  nodePlasmaStale = false;
 }
 
 //==========================================================
@@ -1371,6 +1390,14 @@ void Pic::calc_cost_per_cell() {
   const int cellWeight = domainParameters.cellWeight;
   if (!isMomentsUpdated && balanceStrategy == BalanceStrategy::Particle) {
     sum_moments(false);
+  }
+  // Load-balancing by particle/hybrid/timing reads nodePlasma[nSpecies]; the
+  // hybrid nodePlasma mirror is deferred, so materialize it on demand.
+  if (useHybridPIC &&
+      (balanceStrategy == BalanceStrategy::Particle ||
+       balanceStrategy == BalanceStrategy::Hybrid ||
+       balanceStrategy == BalanceStrategy::Timing)) {
+    sync_node_plasma_output();
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {

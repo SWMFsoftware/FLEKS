@@ -224,6 +224,11 @@ private:
   amrex::Vector<amrex::Real> plasmaEnergy;
 
   bool isMomentsUpdated = false;
+  // When true, nodePlasma (and mMach) are stale: the per-step nodePlasma output
+  // bridge and calc_mach_number are skipped in sum_moments, and must be
+  // materialized on demand by sync_node_plasma_output() before any node-plasma /
+  // mach output or load-balancing is requested. Only used in the hybrid path.
+  bool nodePlasmaStale = false;
 
   amrex::Vector<amrex::MultiFab> jHat;
 
@@ -472,6 +477,10 @@ public:
   void sum_moments(bool updateDt = false);
 
   void calc_mach_number();
+  // Materialize the nodePlasma output mirror (and mMach) on demand, running the
+  // average_center_to_node bridge + calc_mach_number only if nodePlasmaStale.
+  // Called before any node-plasma / mach output or load-balancing request.
+  void sync_node_plasma_output();
 
   void calc_mass_matrix();
   void calc_mass_matrix_amr();
