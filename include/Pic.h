@@ -435,6 +435,8 @@ public:
   void update(bool doReportIn = false);
 
   PicParticles *get_particle_pointer(int i) { return parts[i].get(); }
+  //TODO: no longer needed if we fix the output variable ordering.
+  bool get_useHybridPIC() const { return useHybridPIC; }
 
   void set_stateOH(OHInterface *in) { stateOH = in; }
   void set_sourceOH(OHInterface *in) { sourcePT2OH = in; }

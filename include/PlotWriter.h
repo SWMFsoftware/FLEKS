@@ -56,6 +56,10 @@ private:
 
   // The species number used to generate output variable list.
   int nSpecies;
+  // TODO: This is workaround for the hybrid solver output, as the full PIC
+  // solver output does not follow a per-species order. We do not need this
+  // after updating the full PIC solver output variable ordering.
+  bool useHybridPIC = false;
   bool doWriteHeader = false; // Only one processor needs to write the header.
   bool isVerbose = false;
   //----Input parameters--------------------------------------
@@ -168,6 +172,7 @@ public:
   void set_plotVar(std::string in) { plotVar = in; }
   void set_plotDx(const double in) { plotDx = in; }
   void set_nSpecies(const int in) { nSpecies = in; }
+  void set_useHybridPIC(const bool in) { useHybridPIC = in; }
   void set_nDim(const int in) { nDim = in; }
   void set_iRegion(const int in) { iRegion = in; }
   void set_No2NoL(const double& in) { No2NoL = in; }

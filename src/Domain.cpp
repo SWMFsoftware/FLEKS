@@ -842,6 +842,8 @@ void Domain::init_time_ctr() {
       const Real *dx = gm.CellSize();
       writer.set_dx_D({ AMREX_D_DECL(dx[ix_], dx[iy_], dx[iz_]) });
       writer.set_nSpecies(nS);
+      // TODO: no longer needed if we fix the PIC output variable ordering
+      writer.set_useHybridPIC(pic->get_useHybridPIC());
       writer.set_units(fi->get_No2SiL(), fi->get_No2SiV(), fi->get_No2SiB(),
                        fi->get_No2SiRho(), fi->get_No2SiP(), fi->get_No2SiJ(),
                        fi->get_rPlanet_SI());
