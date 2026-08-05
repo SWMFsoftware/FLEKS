@@ -1,8 +1,8 @@
 # Hybrid Solver: Performance Optimization Opportunities
 
-**Status:** Items 1, 3 implemented; Item 8 partially implemented (8-C/D/E done;
-8-A/B reverted); Items 2, 4–7 decided — instructions recorded; bridge removal
-deferred (see §8.6)
+**Status:** Items 1, 3, 7 implemented; Item 8 partially implemented (8-C/D/E
+done; 8-A/B reverted); Items 2, 4–6 decided — instructions recorded; bridge
+removal deferred (see §8.6)
 **Authors:** FLEKS team
 **Last updated:** 2026-08-05
 **Related docs:**
@@ -292,29 +292,29 @@ call is also unnecessary on non-output steps.
 
 ### Item 7 — Skip `nodeBavg` sync when hybrid (hybrid gather uses only `centerBavg`)
 
-- **Location:** `update_B_hybrid`, `src/Pic.cpp:3083-3101`
+- **Location:** `update_B_hybrid`, `src/Pic.cpp:3012-3030`
 - **Impact:** Low
 - **Regression risk:** Low
-- **Status:** decided — implement
+- **Status:** implemented (2026-08-05)
 
 **Problem.** When `useAvgFieldB` is enabled (defaults off), the end-of-step
 averaging does `mult(alpha)` + `Saxpy` on both `centerBavg` **and** `nodeBavg`,
-plus `FillBoundary` on both (`src/Pic.cpp:3091-3099`). The hybrid gather reads
-`centerBavg` (`src/Pic.cpp:957-958`); `nodeBavg` is only used by the full-PIC
-node gather (`src/Pic.cpp:953-954`). Keeping `nodeBavg` in sync per-step is
-redundant for the hybrid path.
+plus `FillBoundary` on both. The hybrid gather reads `centerBavg`; `nodeBavg`
+is only used by the full-PIC node gather. Keeping `nodeBavg` in sync per-step
+is redundant for the hybrid path.
 
 **Implementation:**
-1. In the `useAvgFieldB` block (`src/Pic.cpp:3083-3101`), when `useHybridPIC`,
-   update only `centerBavg` (+ its `FillBoundary`) and **skip** the `nodeBavg`
-   `mult`/`Saxpy`/`FillBoundary`. Guard the `nodeBavg` updates with
-   `if (!useHybridPIC)`.
-2. Verify no hybrid-path code reads `nodeBavg` (the hybrid gather uses
-   `centerBavg`; the `!useHybridPIC` branch of `particle_mover` uses
-   `nodeBavg`). If `useAvgFieldB` is ever combined with hybrid and `nodeBavg`
-   is needed for some output, fall back to syncing it only at output time.
-3. `isBavgInit` handling must remain consistent for `centerBavg`; only the
-   `nodeBavg` mirror updates are skipped.
+1. Added `const bool syncNodeBavg = !useHybridPIC;` and guarded every
+   `nodeBavg` `Copy`/`mult`/`Saxpy`/`FillBoundary` in the `useAvgFieldB` block
+   (`src/Pic.cpp:3012-3030`) with `if (syncNodeBavg)`.
+2. Verified no live hybrid-path code reads `nodeBavg`: the hybrid gather and
+   Boris push read only `centerBavg` (`src/Pic.cpp:951`); the only `nodeBavg`
+   readers are the full-PIC gather (`src/Pic.cpp:947`) and the dead
+   `update_part_loc_to_half_stage` (`src/Pic.cpp:889`, never called).
+3. `isBavgInit` is still driven by the `centerBavg` branch, so it stays
+   consistent for `centerBavg`; only the `nodeBavg` mirror updates are skipped.
+- **Verified:** `pcai`, `beam` (full-PIC + hybrid) all PASS. (Full-PIC keeps
+  `nodeBavg` updated, so it is unaffected.)
 
 ---
 
@@ -513,7 +513,7 @@ so every test has a valid `PostIDL.exe` for `PostProc.pl`. Verified: `pcai`,
 | 4 | Field solve only needs `ρ+3m`; shrink `centerPlasmaPrev` to 4 comps | `src/Pic.cpp:2656`, `Particles.cpp:1000` | Medium–High | Med | decided |
 | 5 | Slim per-particle deposit to 4 field-needed components | `Particles.cpp:1000` | Medium | Med | decided |
 | 6 | Lazy `convert_to_fluid_moments` / pressure only at output | `src/Pic.cpp:1289` | Medium | Med | decided |
-| 7 | Skip `nodeBavg` sync when hybrid | `src/Pic.cpp:3083` | Low | Low | decided |
+| 7 | Skip `nodeBavg` sync when hybrid | `src/Pic.cpp:3012` | Low | Low | **implemented** |
 | 8 | Cell-centered output/restart for hybrid (8-C/D/E done; 8-A/B reverted — ascii is node-centric) | `src/PicIO.cpp`, `update_B_hybrid` | High (largest) | High | partial — 8-C/D/E done |
 
 ---

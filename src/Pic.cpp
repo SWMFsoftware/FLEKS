@@ -3011,21 +3011,31 @@ void Pic::update_B_hybrid() {
   // is needed here. The final (post-BC) B^{n+1} is used as the new sample.
   if (useAvgFieldB) {
     const Real alpha = (nAvgFieldB > 1) ? (1.0 - 1.0 / nAvgFieldB) : 0.0;
+    // The hybrid gather and particle Boris push read only centerBavg. nodeBavg
+    // is used only by the full-PIC node gather, so in hybrid mode we skip
+    // maintaining it (isBavgInit is still driven by the centerBavg branch).
+    const bool syncNodeBavg = !useHybridPIC;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (!isBavgInit) {
         MultiFab::Copy(centerBavg[iLev], centerB[iLev], 0, 0, 3, centerBavg[iLev].nGrow());
-        MultiFab::Copy(nodeBavg[iLev], nodeB[iLev], 0, 0, 3, nodeBavg[iLev].nGrow());
+        if (syncNodeBavg) {
+          MultiFab::Copy(nodeBavg[iLev], nodeB[iLev], 0, 0, 3, nodeBavg[iLev].nGrow());
+        }
         isBavgInit = true;
       } else {
         centerBavg[iLev].mult(alpha);
         MultiFab::Saxpy(centerBavg[iLev], 1.0 - alpha, centerB[iLev], 0, 0, 3,
                         centerBavg[iLev].nGrow());
-        nodeBavg[iLev].mult(alpha);
-        MultiFab::Saxpy(nodeBavg[iLev], 1.0 - alpha, nodeB[iLev], 0, 0, 3,
-                        nodeBavg[iLev].nGrow());
+        if (syncNodeBavg) {
+          nodeBavg[iLev].mult(alpha);
+          MultiFab::Saxpy(nodeBavg[iLev], 1.0 - alpha, nodeB[iLev], 0, 0, 3,
+                          nodeBavg[iLev].nGrow());
+        }
       }
       centerBavg[iLev].FillBoundary(Geom(iLev).periodicity());
-      nodeBavg[iLev].FillBoundary(Geom(iLev).periodicity());
+      if (syncNodeBavg) {
+        nodeBavg[iLev].FillBoundary(Geom(iLev).periodicity());
+      }
     }
   }
 
