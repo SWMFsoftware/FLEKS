@@ -1333,13 +1333,12 @@ void Pic::sum_moments(bool updateDt) {
 }
 
 //==========================================================
-void Pic::sync_node_plasma_output() {
+void Pic::sync_node_plasma_output(const bool needMach) {
   if (!nodePlasmaStale)
     return;
   // nodePlasma output bridge: average_center_to_node(centerPlasma -> nodePlasma)
-  // for every species and the summed entry, then the Mach number (which reads
-  // nodePlasma[nSpecies]). Deferred from sum_moments so non-output steps do not
-  // pay this per-step cost.
+  // for every species and the summed entry. Deferred from sum_moments so
+  // non-output steps do not pay this per-step cost.
   for (int i = 0; i < nSpecies + 1; ++i) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       centerPlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
@@ -1347,7 +1346,11 @@ void Pic::sync_node_plasma_output() {
       nodePlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
     }
   }
-  calc_mach_number();
+  // The Mach number is a pure output diagnostic: it is read only by the "mach"
+  // plot variable (get_var). Avoid it unless a plot actually requests it.
+  if (needMach) {
+    calc_mach_number();
+  }
   nodePlasmaStale = false;
 }
 
@@ -1392,12 +1395,13 @@ void Pic::calc_cost_per_cell() {
     sum_moments(false);
   }
   // Load-balancing by particle/hybrid/timing reads nodePlasma[nSpecies]; the
-  // hybrid nodePlasma mirror is deferred, so materialize it on demand.
+  // hybrid nodePlasma mirror is deferred, so materialize it on demand. The Mach
+  // number is not needed for load balancing.
   if (useHybridPIC &&
       (balanceStrategy == BalanceStrategy::Particle ||
        balanceStrategy == BalanceStrategy::Hybrid ||
        balanceStrategy == BalanceStrategy::Timing)) {
-    sync_node_plasma_output();
+    sync_node_plasma_output(false);
   }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {

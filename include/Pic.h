@@ -477,10 +477,12 @@ public:
   void sum_moments(bool updateDt = false);
 
   void calc_mach_number();
-  // Materialize the nodePlasma output mirror (and mMach) on demand, running the
-  // average_center_to_node bridge + calc_mach_number only if nodePlasmaStale.
-  // Called before any node-plasma / mach output or load-balancing request.
-  void sync_node_plasma_output();
+  // Materialize the nodePlasma output mirror on demand, running the
+  // average_center_to_node bridge only if nodePlasmaStale. calc_mach_number
+  // runs only when needMach is true (a plot requests the "mach" variable), since
+  // the Mach number is a pure output diagnostic. Called before any node-plasma /
+  // mach output or load-balancing request.
+  void sync_node_plasma_output(bool needMach = false);
 
   void calc_mass_matrix();
   void calc_mass_matrix_amr();

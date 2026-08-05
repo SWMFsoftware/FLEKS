@@ -136,6 +136,14 @@ is pure wasted work.
    - `Pic::calc_cost_per_cell`, when balancing by Particle/Hybrid/Timing
      (`src/Pic.cpp:1376-1382`).
    `get_data_from_tracker` needs no sync (it reads cell-centred fields in hybrid).
+5. **Mach gating:** `sync_node_plasma_output(bool needMach)` runs
+   `calc_mach_number()` only when `needMach` is true. `write_plots` sets
+   `needMach` from whether the plotString contains "mach"; `calc_cost_per_cell`
+   passes false. Since `mach` is a pure output diagnostic consumed only by the
+   `mach` plot variable (`src/PicIO.cpp:391`) and **not** by the GM coupling
+   (which computes its own `mach2` from fluid moments via `get_fluid_state_for_points`,
+   now cell-centred after Item 8-D), this fully eliminates `calc_mach_number`
+   from the hybrid solver's default operation.
 - **Verified:** `pcai`, `beam` (full-PIC + hybrid), `hybrid_convection_wave` all
   PASS.
 
