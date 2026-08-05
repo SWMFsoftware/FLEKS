@@ -1,8 +1,9 @@
 # Hybrid Solver: Performance Optimization Opportunities
 
 **Status:** Items 1, 2, 3, 4, 7 implemented; Item 8 partially implemented
-(8-C/D/E done; 8-A/B reverted); Items 5, 6 decided — deferred (need output
-decoupling, see Item 4); bridge removal deferred (see §8.6)
+(8-C/D/E done; 8-A/B reverted; 8-sync nodeEth bridge removed); Items 5, 6
+decided — deferred (need output decoupling, see Item 4); 8-sync `nodeB`+`dBdt`
+deferred (see §8.6)
 **Authors:** FLEKS team
 **Last updated:** 2026-08-05
 **Related docs:**
@@ -510,14 +511,20 @@ fall outside the region**, so a `z=0 fluid` plot emits only one (all-zero) point
 This regression was reproduced and reverted. The structured plot path is
 inherently node-centric and must keep reading the node mirrors.
 
-**Deferred — node-sync bridge removal (Item 8-sync):** the per-step
-`centerB→nodeB`, `centerEhybrid→nodeEth` and `centerPlasma→nodePlasma` bridges
-are **still needed** because the node-centric structured (ascii) output, the
-`nodeB`/`nodeE` tracker (`ParticleTracker`), `calc_mach_number`
-(`src/Pic.cpp:1347`) and `calc_cost_per_cell` (`src/Pic.cpp:1386`) all read the
-node fields every step. Removing them requires handling those consumers (Items
-2/6 lazy sync, plus a cell-centred `mMach`/cost path), which is tracked
-separately.
+**Deferred — node-sync bridge removal (Item 8-sync, status 2026-08-05):**
+- `centerEhybrid → nodeEth` bridge: **removed**. `nodeEth` has no live consumer
+  in the hybrid path (the hybrid Boris push reads `centerEhybrid`; the structured
+  plot reads `nodeE`, not `nodeEth`; `update_part_loc_to_half_stage` is dead
+  code). Removes the per-step `average_center_to_node` + `FillBoundary` +
+  `apply_BC` on `nodeEth`.
+- `centerPlasma → nodePlasma` bridge: **already deferred** (Item 2).
+- `centerB → nodeB` bridge + `dBdt`: **still per-step**. `nodeB` is read by the
+  structured (ascii) B output (`By/Bz` in the pcai test) and by the `dBdt`
+  computation, which is entangled: `dBdt = (B^{n+1} - B^n)/dt` needs a fresh
+  `nodeB^{n+1}` and the `B^n` saved at the start of `update_B_hybrid` (currently
+  copied from `nodeB`). Deferring both would require saving `B^n` into a new
+  cell-centred buffer (`centerB_n`) at the start of the update and computing
+  `nodeB`/`dBdt` lazily — a moderate-risk change, left as a follow-up.
 
 **Test runner change:** `tests/validate_tests.py` now auto-builds `PostIDL.exe`
 via `make PIDL` (new `ensure_postidl()` helper, called from `prepare_run_dir()`)
@@ -537,7 +544,7 @@ so every test has a valid `PostIDL.exe` for `PostProc.pl`. Verified: `pcai`,
 | 5 | Slim per-particle deposit to 4 field-needed components | `Particles.cpp:1000` | Medium | Med | decided |
 | 6 | Lazy `convert_to_fluid_moments` / pressure only at output | `src/Pic.cpp:1289` | Medium | Med | decided |
 | 7 | Skip `nodeBavg` sync when hybrid | `src/Pic.cpp:3012` | Low | Low | **implemented** |
-| 8 | Cell-centered output/restart for hybrid (8-C/D/E done; 8-A/B reverted — ascii is node-centric) | `src/PicIO.cpp`, `update_B_hybrid` | High (largest) | High | partial — 8-C/D/E done |
+| 8 | Cell-centered output/restart for hybrid (8-C/D/E done; 8-A/B reverted); 8-sync: `nodeEth` bridge removed, `nodeB`+`dBdt` deferred | `src/PicIO.cpp`, `update_B_hybrid` | High (largest) | High | partial — 8-C/D/E done; 8-sync nodeEth done |
 
 ---
 

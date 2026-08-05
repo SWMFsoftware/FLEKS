@@ -3081,9 +3081,7 @@ void Pic::update_B_hybrid() {
   // centerEhybrid at intermediate hstep values, so centerEhybrid must be freshly
   // evaluated on the final B^{n+1}. Only levels holding kinetic particles need
   // centerEhybrid (it is read solely by the Boris push), so levels without
-  // particles are skipped to avoid the wasted Ohm's-law evaluation. Afterwards
-  // the node-sync bridge projects centerEhybrid -> nodeEth so the plot/restart
-  // output that reads nodeEth sees the correct cell-centred E.
+  // particles are skipped to avoid the wasted Ohm's-law evaluation.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     bool hasParticles = false;
     for (int i : kineticSpecies_) {
@@ -3100,18 +3098,15 @@ void Pic::update_B_hybrid() {
     assemble_ohm_E(cBin, cBin, centerEhybrid[iLev], iLev, 1.0);
   }
 
-  // Node-sync bridge (Phase A.5): mirror the cell-centred E into the node
-  // output array nodeEth (and nodeE if used by plots) once per full step. The
-  // full-PIC plot/restart path reads nodeEth/nodeE, so they must always reflect
-  // the freshly computed centerEhybrid.
+  // Apply boundary conditions to the cell-centred E (the hybrid Boris push reads
+  // centerEhybrid). The node mirror nodeEth is no longer synced here: it has no
+  // live consumer in the hybrid path (the hybrid mover reads centerEhybrid, and
+  // the structured plot reads nodeE, not nodeEth). This removes the per-step
+  // average_center_to_node + FillBoundary + apply_BC on nodeEth.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0, centerEhybrid[iLev].nComp(),
              &Pic::get_center_E, iLev);
-    average_center_to_node(centerEhybrid[iLev], nodeEth[iLev]);
-    nodeEth[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nodeEth[iLev].nComp(),
-             &Pic::get_node_E, iLev);
   }
 }
 
