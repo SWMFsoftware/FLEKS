@@ -662,6 +662,11 @@ void Pic::write_plots(bool doForce) {
         const bool needMach = plot.writer.get_plotString().find("mach") !=
                               std::string::npos;
         sync_node_plasma_output(needMach);
+        // The structured (ascii/IDL) plot reads Ex/Ey/Ez from nodeE (get_var),
+        // which is only an output mirror for the hybrid solver (the mover reads
+        // centerEhybrid). Materialize nodeE from the live centerEhybrid before
+        // writing so the ambipolar / electron-pressure field appears in output.
+        sync_node_E_output();
         plot.writer.write(tc->get_time_si(), tc->get_cycle(),
                           find_output_list_caller, get_field_var_caller);
       }

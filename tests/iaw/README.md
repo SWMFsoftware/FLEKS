@@ -2,7 +2,8 @@
 
 A hybrid-PIC regression test for an ion acoustic wave seeded as a single
 sinusoidal ion density perturbation in a uniform, Maxwellian, zero-bulk-velocity
-proton plasma.
+proton plasma.  The setup is matched to the **Hybrid-VPIC** `examples/iaw`
+reference so the ion-Landau-damping decay rate can be compared directly.
 
 ## Physics
 
@@ -12,31 +13,51 @@ The initial condition is
   n(x) = n0 * (1 + pert * sin(kx * x)),    kx = 2*pi*waveMode / Lx
   u_i  = 0   (Maxwellian about zero)
   E    = 0
-  B    = B0  (constant guide field)
+  B    = 0   (unmagnetized)
 ```
 
-with `pert = 0.1` and one wavelength across the domain (`waveMode = 1`).  The
-restoring force is the electron pressure-gradient term in the generalized
-Ohm's law
+with `pert = 0.02` and one wavelength across the domain (`waveMode = 1`).  The
+restoring force is the electron pressure-gradient ("ambipolar") term in the
+generalized Ohm's law
 
 ```
-  E = -(1/rho) ∇P_e  =  -(T_e / rho) ∇n_e ,       (isothermal, gamma = 1)
+  E = -(1/rho) ∇P_e,        P_e = P0 (rho/rho0)^gamma   (adiabatic, gamma = 5/3)
 ```
 
-so the acoustic speed is `c_s = sqrt(T_e / m_i)`.  With the chosen
-normalization (`u_norm = 5e4 m/s`) the parameters give `c_s ≈ v_A ≈ ω_ci ≈ 1`
-in code units and `c_s / v_thi ≈ 4`, i.e. a weakly Landau-damped wave that
-oscillates and decays over the run.
+With `B = 0` the Hall term `(J x B)/rho` and the convection term `-u_i x B`
+both vanish, so this is the **only** electric-field source.  The wave is a
+purely electrostatic, collisionless ion acoustic wave whose only damping
+mechanism is **ion Landau damping** (`eta = 0`, `hypereta = 0`).
 
-The guide field is aligned with the propagation direction (`k || B`, `B` along
-`x`), which makes the mode a clean longitudinal ion-acoustic wave (the Hall and
-convective `u × B` terms vanish for a parallel perturbation).  This is a minor,
-physics-motivated deviation from setups that place `B` along `z`; the seeded
-density perturbation still lives along `x`.
+The parameters are matched to Hybrid-VPIC `examples/iaw`:
+
+| Quantity | Hybrid-VPIC | FLEKS (this test) |
+|---|---|---|
+| Magnetic field | `B = 0` (b0 is only a scale) | `B = 0` |
+| Electron polytropic index | `gamma = 5/3` | `5/3` |
+| Sound speed `c_s` | 1.0 | `~1` (`electronTemperature` = 15.7 eV) |
+| Ion thermal speed `v_thi` | `sqrt(1/3) = 0.577` | `~0.58` (T = 1e5 K) |
+| `c_s / v_thi` | 1.73 | 1.73 (same Landau damping) |
+| `Lx [d_i]` | 16 | 16 |
+| `k d_i` | `2*pi/16 = 0.393` | `2*pi/16 = 0.393` |
+| Density perturbation | 0.02 | 0.02 |
+| Run time [`omega_ci^-1`] | 50 | 5 (fast regression) |
+| `dt` | 0.02 | 0.02 |
+
+The time axis is in `omega_ci^-1` (the `#NORMALIZATION` reference scales set the
+reference `wci ~ 1`).
+
+> **Fast regression:** the standalone test runs to `TimeMax = 5` with
+> `nParticle = 2000` per cell so it finishes in ~1 minute on a single core
+> (48 cells x 2000 = 96k ions, 250 time steps). This is enough to exercise the
+> ambipolar field, the stability / mass conservation, and the
+> `centerPlasmaPrev` ghost-cell fix (no grid-scale checkerboard). A full
+> `TimeMax = 50`, `nParticle = 150000` run reproduces the Landau damping curve
+>  but is far too slow for a routine regression test.
 
 ## Implementation
 
-The density perturbation is seeded by the C++ `IonAcousticWave` test case (in
+The density perturbation is seeded by the `IonAcousticWave` test case (in
 `Pic` / `Particles`): each loaded particle's weight is multiplied by
 `(1 + pert * sin(kx * x))`, so the deposited ion density (charge/mass/pressure
 moments) carries the sinusoidal profile while the bulk velocity stays uniform.
@@ -46,7 +67,7 @@ Activate it in `PARAM.in` with
 ```
 #TESTCASE
 testCase  IonAcousticWave
-pert      0.1
+pert      0.02
 waveMode  1
 ```
 
@@ -60,10 +81,21 @@ python3 tests/validate_tests.py --test=iaw
 ```
 
 This builds and runs the test, then validates that the run is stable (no NaN;
-mass conserved) and that the seeded density profile is a clean single-mode
-sinusoid (`rhoS0` in the plot output).  Plot-file checks require `PostIDL.exe`
-(`make PIDL`) and `PostProc.pl`; if those are unavailable the profile check is
-skipped and only the stability checks are enforced.
+mass conserved) and that:
+
+1. the seeded density profile is a clean single-mode sinusoid (`rhoS0` in the
+   plot output);
+2. the **ambipolar electric field `Ex` is non-zero at the last plot frame**
+   (the initial `Ex` is zero by construction; a non-zero late-time `Ex` guards
+   against the structured plot reading a stale/zero node-centred E and against
+   the `centerPlasmaPrev` ghost-cell bug that seeded a spurious boundary
+   checkerboard);
+3. the density-perturbation amplitude stays bounded (the IAW damps rather than
+   blowing up).
+
+Plot-file checks require `PostIDL.exe` (`make PIDL`) and `PostProc.pl`; if those
+are unavailable the profile check is skipped and only the stability checks are
+enforced.
 
 ## Reference
 
@@ -71,3 +103,7 @@ Modeled on the hybrid-VPIC-style wave test (`tests/hybrid_whistler`), with the
 transverse-wave seeding (`HybridWave` test case) replaced by a longitudinal ion
 density perturbation (`IonAcousticWave` test case) and the electron
 pressure-gradient (`#ELECTRONTEMPERATURE`) providing the restoring force.
+Unlike `tests/hybrid_whistler`, the field is **unmagnetized** (`B = 0`) and the
+Hall term is switched off, so this test isolates the electron-pressure
+(ambipolar) branch of the Ohm's law and the ion-Landau-damping of a pure
+electrostatic IAW.

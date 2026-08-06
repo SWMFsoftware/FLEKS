@@ -234,9 +234,11 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("etaResistivity", etaResistivitySI);
   } else if (command == "#ELECTRONTEMPERATURE") {
     // electronTemperature in [eV]; converted in post_process_param.
+    // electronDensity0 in [amu/cc], same unit as #UNIFORMSTATE rho; converted to
+    // code units in post_process_param.
     param.read_var("electronTemperature", electronTemperatureEV);
     param.read_var("electronGamma", electronGamma);
-    param.read_var("electronDensity0", electronDensity0);
+    param.read_var("electronDensity0", electronDensity0EV);
   } else if (command == "#HALLSUBCYCLE") {
     // Number of B-field sub-steps per coarse dt for the Hall-term update.
     param.read_var("nHallSubcycle", nHallSubcycle);
@@ -244,6 +246,12 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     // Enable/disable the Hall term (J x B) / rho in the generalized Ohm's law.
     // Default true; set false for a convection-only field advance.
     param.read_var("useHallTerm", useHallTerm);
+  } else if (command == "#QUADRATICGATHER") {
+    // Use the Hybrid-VPIC quadratic-spline (centered B-spline) gather for the
+    // hybrid cell-centred Boris push. Default false (Phase A: trilinear gather).
+    // Phase B quadratic gather can be enabled independently of the Esirkepov
+    // deposit (charge conservation is then approximate in the nonlinear phase).
+    param.read_var("useQuadraticGather", useQuadraticGather);
   } else if (command == "#HYPERRESISTIVITY") {
     // Hyper-resistivity eta_h [m^4/s] (SI), plus interpretation mode and the
     // CFL-scaling coefficient C_h for mode="grid". All three values are always
@@ -332,11 +340,6 @@ void Pic::post_process_param() {
       amrex::Print() << "  etaHyper: " << etaHyperSI
                      << " [m^4/s, si] -> " << etaHyperLev[0] << " [code units]\n";
     }
-    // Auto density floor: 1e-6 * reference charge density. electronDensity0 is
-    // in code units (#HYBRIDRHO), so scale it.
-    if (rhoFloorHybrid <= 0)
-      rhoFloorHybrid = 1.0e-6 * electronDensity0;
-
     // The compact staggered current is mandatory when the hyper-resistive term
     // is active: the legacy collocated current annihilates the Nyquist mode, so
     // the hyper term would be blind to exactly the grid-scale noise it targets.
@@ -368,6 +371,20 @@ void Pic::post_process_param() {
       amrex::Print() << "  electronTemperature: " << electronTemperatureEV
                      << " [eV] -> " << electronTemperature << " [code units]\n";
     }
+
+    // electronDensity0 is specified in amu/cc (same unit as the #UNIFORMSTATE
+    // rho input), so the user never has to compute code units by hand. The
+    // conversion to code units is deferred to the first hybrid field advance
+    // (convert_electron_density0(), called from update_B_hybrid): it needs the
+    // Si2NoRho normalization factor, which is only published by
+    // fi->post_process_param() AFTER this function returns (Domain.cpp calls
+    // pic->post_process_param() before fi->post_process_param()). Doing the
+    // conversion here would read a default (zero/1.0) normalization.
+    //
+    // The auto density floor is also deferred: it depends on the code-unit
+    // electronDensity0, so it is set inside convert_electron_density0().
+    if (rhoFloorHybrid <= 0)
+      rhoFloorHybrid = 0.0; // resolved to 1e-6*electronDensity0 on first advance
   }
 }
 
@@ -1352,6 +1369,44 @@ void Pic::sync_node_plasma_output(const bool needMach) {
     calc_mach_number();
   }
   nodePlasmaStale = false;
+}
+
+//==========================================================
+void Pic::sync_node_E_output() {
+  if (!nodeEStale)
+    return;
+  // nodeE output bridge: materialize nodeE from the live centerEhybrid so the
+  // structured (ascii/IDL) plots see the hybrid E. nodeE is only an output
+  // mirror (the mover reads centerEhybrid), so it is synced here at plot time.
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
+    average_center_to_node(centerEhybrid[iLev], nodeE[iLev]);
+    nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
+    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
+  }
+  nodeEStale = false;
+}
+
+//==========================================================
+void Pic::convert_electron_density0() {
+  if (electronDensity0Converted_)
+    return;
+  electronDensity0Converted_ = true;
+
+  // electronDensity0EV is in amu/cc (same unit as #UNIFORMSTATE rho); convert to
+  // code units with the same factor #UNIFORMSTATE uses (amu/cc -> kg/m^3 via
+  // *1e6*cProtonMassSI, -> code via *Si2NoRho). get_Si2NoRho() is only valid here
+  // (first field advance) after fi->post_process_param() finalizes the normParams.
+  electronDensity0 =
+      electronDensity0EV * 1.0e6 * cProtonMassSI * fi->get_Si2NoRho();
+
+  // Auto density floor: 1e-6 * reference charge density, now in code units.
+  if (rhoFloorHybrid <= 0)
+    rhoFloorHybrid = 1.0e-6 * electronDensity0;
+
+  amrex::Print() << "  electronDensity0: " << electronDensity0EV
+                 << " [amu/cc] -> " << electronDensity0
+                 << " [code units]  (Si2NoRho = " << fi->get_Si2NoRho() << ")\n";
 }
 
 //==========================================================
@@ -2650,17 +2705,16 @@ void Pic::smooth_moments() {
   if (!doSmoothMoments || nSmoothMoments <= 0)
     return;
 
-  // Smooth the TOTAL ion moment MultiFab (density + momentum density + ...)
-  // that the Ohm's law reads. Periodic FillBoundary first so the edge cells
-  // see correct wrapped neighbours, then apply the same digital-filter kernel
-  // used for J/E (smooth_multifab). The filter conserves the domain mean, so
-  // the uniform free-stream equilibrium is preserved.
+  // Smooth the total ion moment MultiFab that the Ohm's law reads. FillBoundary
+  // first so edge cells see correct wrapped neighbours, then apply the binomial
+  // kernel with di = 1 (nearest neighbour) for every pass so all passes damp the
+  // grid-scale component of the moments. Called only from the hybrid path.
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     MultiFab& moments =
         useHybridPIC ? centerPlasmaSum[nSpecies][iLev] : nodePlasma[nSpecies][iLev];
     moments.FillBoundary(Geom(iLev).periodicity());
     for (int icount = 0; icount < nSmoothMoments; ++icount) {
-      smooth_multifab(moments, iLev, icount % 2 + 1, coefSmoothMoments);
+      smooth_multifab(moments, iLev, 1, coefSmoothMoments);
     }
   }
 }
@@ -2683,6 +2737,13 @@ void Pic::save_current_moments_to_prev() {
       MultiFab::Copy(centerPlasmaPrev[nSpecies][iLev],
                      centerPlasmaSum[nSpecies][iLev], 0, 0, nHybridMomentsComps,
                      centerPlasmaSum[nSpecies][iLev].nGrow());
+      // BUGFIX: the central-difference grad(Pe) in assemble_ohm_E reads
+      // rho_at(i-1) / rho_at(i+1), which can land in the ghost cells of
+      // centerPlasmaPrev at a box (MPI / periodic) boundary. If those ghosts are
+      // stale, the ambipolar gradient (and hence Ex) gets a spurious huge value
+      // there, which seeds the grid-scale checkerboard. Keep the previous-step
+      // moments' ghosts consistent by re-filling them after the copy.
+      centerPlasmaPrev[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
     } else {
       // Only the rho + 3 momentum components are needed for the Ohm's-law time
       // interpolation; nodePlasmaPrev is a 4-component array (they are the first
@@ -2711,6 +2772,10 @@ void Pic::seed_first_hybrid_step() {
       MultiFab::Copy(centerPlasmaPrev[nSpecies][iLev],
                      centerPlasmaSum[nSpecies][iLev], 0, 0, nHybridMomentsComps,
                      centerPlasmaSum[nSpecies][iLev].nGrow());
+      // Keep the seed's ghost cells consistent (same reason as in
+      // save_current_moments_to_prev) so the central-difference grad(Pe) does not
+      // read a stale boundary value on the first step.
+      centerPlasmaPrev[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
     } else {
       // nodePlasmaPrev is a 4-component array (rho + 3 momentum); the first
       // nHybridMomentsComps components of nodePlasma match its layout.
@@ -2799,6 +2864,10 @@ void Pic::project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
 void Pic::update_B_hybrid() {
   std::string nameFunc = "Pic::update_B_hybrid";
   timing_func(nameFunc);
+
+  // Convert electronDensity0 (amu/cc -> code) exactly once, here, where the
+  // normalization is finalized. See convert_electron_density0().
+  convert_electron_density0();
 
   Real dt = tc->get_dt();
   Real subDt = dt / nHallSubcycle;
@@ -3108,6 +3177,23 @@ void Pic::update_B_hybrid() {
     apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0, centerEhybrid[iLev].nComp(),
              &Pic::get_center_E, iLev);
   }
+
+  // Suppress the grid-scale (odd-even) component of E. The ambipolar term
+  // E = -grad(p_e)/rho uses a central difference that does not couple odd/even
+  // cells, so a cell-to-cell checkerboard can grow there (Hybrid-VPIC removes it
+  // via hyb_smooth_eb). Use the shared Pic::smooth_E() - identical to the
+  // full-PIC solver - when #SMOOTHE is enabled.
+  if (doSmoothE) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
+      smooth_E(centerEhybrid[iLev], iLev);
+    }
+  }
+
+  // The node-centred E is only an output mirror for the hybrid solver (the mover
+  // reads centerEhybrid). Mark it stale so sync_node_E_output() materializes it
+  // from centerEhybrid only when a structured plot is written.
+  nodeEStale = true;
 }
 
 //==========================================================

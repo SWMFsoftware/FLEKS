@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Validator for the ion-acoustic-wave (IAW) hybrid-PIC test (tests/iaw).
 
-Checks that the seeded ion-density profile in the plot output is a clean
-single-mode sinusoid and mass-conserving, and that no NaN / blow-up occurs in
-the energy log.
-"""
+    Checks that the seeded ion-density profile in the plot output is a clean
+    single-mode sinusoid and mass-conserving, that no NaN / blow-up occurs in
+    the energy log, and that the ambipolar (electron-pressure) electric field Ex
+    is present and bounded.
+    """
 import glob
 import logging
 import math
@@ -20,14 +21,17 @@ def validate_log(pic_diags=None, test_name=None):
 
     Success criteria:
     1. FLEKS completes (run_test already checks the exit code).
-    2. No NaN / blow-up: magnetic energy Eb and total ion energy Epart finite,
-       and Eb does not grow > 5x (no Hall/whistler runaway).
+    2. No NaN / blow-up: magnetic energy Eb and total ion energy Epart finite.
+       (This IAW test is unmagnetized, B = 0, so Eb ~ 0 throughout.)
     3. Ion particle number conserved (periodic BCs, no source): Epart0 stays
        within [0.2, 10] of its initial value.
     4. Density seed present and mass-conserving: from the plot output the seeded
        ion density rhoS0 is a clean single-mode sinusoid at the first frame and
        its mean/overall amplitude remain bounded (mass conserved, no blow-up).
        Requires PostProc.pl output; if absent the profile check is skipped.
+    5. Ambipolar electric field present: the electron pressure-gradient term
+       (-grad(P_e)/rho) must produce a non-zero Ex at the LAST plot frame (the
+       initial Ex is zero by construction).
     """
     logger.debug("Validating Ion Acoustic Wave Test...")
 
@@ -160,7 +164,7 @@ def _check_iaw_density():
             with open(path, "r", encoding="latin-1") as f:
                 lines = f.readlines()
             if len(lines) < 6:
-                return None, None
+                return None, None, None
             var_names = lines[4].split()
             vidx = {v.upper(): i for i, v in enumerate(var_names)}
             ridx = None
@@ -169,9 +173,11 @@ def _check_iaw_density():
                     ridx = vidx[target]
                     break
             if ridx is None:
-                return None, None
+                return None, None, None
+            eidx = vidx.get("EX")
             xs = []
             rhos = []
+            exs = []
             for line in lines[5:]:
                 cols = line.split()
                 if len(cols) <= ridx:
@@ -179,12 +185,13 @@ def _check_iaw_density():
                 try:
                     xs.append(float(cols[0]))
                     rhos.append(float(cols[ridx]))
+                    exs.append(float(cols[eidx]) if eidx is not None else 0.0)
                 except (ValueError, IndexError):
                     continue
-            return xs, rhos
+            return xs, rhos, exs
 
-        first_x, first_rho = load_profile(out_files[0])
-        last_x, last_rho = load_profile(out_files[-1])
+        first_x, first_rho, first_ex = load_profile(out_files[0])
+        last_x, last_rho, last_ex = load_profile(out_files[-1])
         if not first_x or not last_x:
             return True, "Could not parse rhoS0 from .out; skipping profile check."
 
@@ -233,6 +240,30 @@ def _check_iaw_density():
         if ratio > 10.0:
             return False, (f"Density amplitude grew >10x "
                            f"({amp0:.3e} -> {amp1:.3e}); blow-up.")
+
+        # Ambipolar electric field present. For the unmagnetized IAW the only
+        # E source is -grad(p_e)/rho, so Ex must be non-zero wherever the seeded
+        # density gradient is. The initial field is exactly zero (the seed has no
+        # EM field), so we check a LATER frame (the last one) where the ambipolar
+        # field has built up. A zero Ex at late times means the structured plot
+        # is reading a stale/zero node-centred E instead of the live centerEhybrid
+        # (the centerPlasmaPrev ghost-cell / nodeE-sync bug this test guards).
+        ex_max_last = max(abs(v) for v in last_ex)
+        ex_max_first = max(abs(v) for v in first_ex)
+        logger.debug("    [IAW] max |Ex|: first=%.3e last=%.3e",
+                     ex_max_first, ex_max_last)
+        # The initial Ex is zero by construction (the seed has no EM field); the
+        # ambipolar field builds up as the density gradient develops, so Ex must
+        # be non-zero at the last frame. The "growth" ratio is not meaningful here
+        # (Ex goes 0 -> non-zero), so only finiteness and non-zero-at-last-frame
+        # are enforced.
+        if not (math.isfinite(ex_max_first) and math.isfinite(ex_max_last)):
+            return False, "Ex not finite (NaN/Inf); blow-up."
+        if ex_max_last <= 1e-12:
+            return False, ("Ex is identically zero at the last frame "
+                           "(ambipolar / electron-pressure term not reaching the "
+                           "output; check the centerPlasmaPrev ghost-cell fix and "
+                           "nodeE sync).")
         return True, ""
     except Exception as e:  # never let the profile check crash validation
         return True, f"Profile check errored ({e}); skipping."

@@ -938,6 +938,7 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#ELECTRON" || command == "#DISCRETIZE" ||
         command == "#DISCRETIZATION" || command == "#RESAMPLING" ||
         command == "#SMOOTHE" || command == "#SMOOTHJ" ||
+        command == "#QUADRATICGATHER" ||
         command == "#UPWINDB" || command == "#UPWINDE" ||
         command == "#LAGGEDLIMITER" || command == "#DIVB" ||
         command == "#CMAXE" || command == "#TESTCASE" ||

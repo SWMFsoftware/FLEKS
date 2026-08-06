@@ -64,8 +64,16 @@ private:
   amrex::Real electronTemperature = 0.0;
   // Polytropic index for the adiabatic electron pressure closure.
   amrex::Real electronGamma = 1.0;
-  // Reference (upstream) charge density for the adiabatic closure.
-  amrex::Real electronDensity0 = 1.0;
+  // Reference (upstream) charge density for the adiabatic closure, input in
+  // amu/cc (same unit as the #UNIFORMSTATE rho input).
+  amrex::Real electronDensity0EV = 1.0;
+  // Reference (upstream) charge density in code units, used in the adiabatic
+  // closure p_e = electronDensity0*Te*(rho/electronDensity0)^gamma and as the
+  // auto density floor scale. Converted lazily from electronDensity0EV at the
+  // first hybrid field advance (Si2NoRho is not finalized until then).
+  amrex::Real electronDensity0 = 0.0;
+  // True once electronDensity0 (code units) has been converted from electronDensity0EV.
+  bool electronDensity0Converted_ = false;
   // Number of sub-steps for the B-field update within one coarse dt.
   int nHallSubcycle = 1;
   // Hall term (J x B) / rho in the generalized Ohm's law. Default on; set to
@@ -229,6 +237,11 @@ private:
   // materialized on demand by sync_node_plasma_output() before any node-plasma /
   // mach output or load-balancing is requested. Only used in the hybrid path.
   bool nodePlasmaStale = false;
+
+  // True when nodeE (an output mirror of the live centerEhybrid) is stale. Marked
+  // stale each update_B_hybrid and materialized by sync_node_E_output() at plot
+  // time, so the per-step average_center_to_node cost is deferred out of the loop.
+  bool nodeEStale = false;
 
   amrex::Vector<amrex::MultiFab> jHat;
 
@@ -483,6 +496,15 @@ public:
   // the Mach number is a pure output diagnostic. Called before any node-plasma /
   // mach output or load-balancing request.
   void sync_node_plasma_output(bool needMach = false);
+  // Materialize the nodeE output mirror (centerEhybrid -> nodeE) only if
+  // nodeEStale. nodeE is read by the structured plot but not the hybrid mover.
+  void sync_node_E_output();
+
+  // Convert electronDensity0 (amu/cc) to code units and set the auto density
+  // floor. Idempotent; called at the first hybrid field advance, after
+  // fi->post_process_param() finalizes Si2NoRho, so electronDensity0 (code)
+  // matches the background rho from #UNIFORMSTATE.
+  void convert_electron_density0();
 
   void calc_mass_matrix();
   void calc_mass_matrix_amr();
