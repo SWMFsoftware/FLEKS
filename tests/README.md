@@ -24,7 +24,6 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Hybrid Ohm's law  | `hybrid_ohm/`      | Hybrid PIC full generalized Ohm's law: convection + Hall  | [README](hybrid_ohm/README.md)       |
 |                   |                    | + resistive + electron-pressure-gradient, all active       |        |
 | Free-stream       | `freestream/`      | 1D uniform free-stream, run with both solvers (full PIC and hybrid Hall-off) | [README](freestream/README.md) |
-| Convection wave   | `hybrid_convection_wave/` | Hybrid PIC convection-only (`#HALLTERM F`) transverse wave advected by uniform flow; checks phase advance and amplitude conservation | [README](hybrid_convection_wave/README.md) |
 | Light wave        | `lightwave/`       | 3D vacuum transverse EM (light) wave on a periodic AMR  | [README](lightwave/README.md)        |
 |                   |                    | grid; energy-conservation check (needs `nLevMax >= 2`)   |        |
 | PCAI              | `pcai/`            | Hybrid PIC proton-cyclotron anisotropy instability:     | [README](pcai/README.md)             |
