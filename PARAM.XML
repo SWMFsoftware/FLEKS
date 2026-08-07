@@ -488,11 +488,8 @@ law. This is the single control for the time integration of B (there is no
 separate time-centring flag). "rk4" is the classic 4th-order Runge-Kutta on B,
 evaluating the Ohm's law at four trial B states; it is the default and has a
 large linear-stability region, so with rk4 you typically do not need a large
-#HALLSUBCYCLE for stability (nHallSubcycle 1 usually suffices). "ssprk3" is the
-Hybrid-VPIC-style strong-stability-preserving RK3 with a time-centred E (the Ohm's
-law uses the averaged B (B_stage + B^n)/2 in the Hall/convection terms); it stays
-stable in the high-amplitude nonlinear phase where rk4 goes NaN. Only used when
-HYBRIDPIC is T.
+#HALLSUBCYCLE for stability. "ssprk3" is the strong-stability-preserving RK3 with
+a time-centred E. Only used when HYBRIDPIC is T.
     </command>
 
 <command name="AVGFIELDB"

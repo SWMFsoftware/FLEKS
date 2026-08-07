@@ -67,7 +67,7 @@ neutralizing massless fluid, so no electron particle species is present.
 
 #UNIFORMSTATE
 5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
-0.0                     ux [km/s]
+10.0                    ux [km/s]      uniform bulk flow along guide field (U_code = 0.2)
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]

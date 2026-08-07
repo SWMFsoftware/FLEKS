@@ -1,13 +1,13 @@
 #DESCRIPTION
 Free-stream (uniform-equilibrium) regression test of the FULL PIC
-electromagnetic field solver (implicit Maxwell/GMRES): solveEM=T,
-useHybridPIC=F.
+electromagnetic field solver: solveEM=T, useHybridPIC=F.
 
-The initial condition is a perfectly uniform plasma (zero bulk velocity,
-uniform guide field Bx0) -- the exact steady solution -- so any growth of
-non-uniform structure indicates a solver bug.  The hybrid Hall-OFF counterpart
-(PARAM.in.hybrid) shares the identical grid, plasma, normalization,
-timestepping, and output, differing only in the field-solver block.
+The initial condition is a perfectly uniform plasma with a uniform bulk flow
+ux = 10 km/s (parallel to the guide field Bx0).
+
+The solver uses the comoving-frame current (CM=T, solveFieldInCoMov) plus the
+Lax-Friedrichs upwind scheme (UPWINDE/UPWINDB, minmod limiter theta=1) and
+current smoothing (SMOOTHJ), the recipe from (arXiv:2506.11320).
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -35,16 +35,13 @@ T                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-Full PIC electromagnetic field solver ON (implicit Maxwell/GMRES); the
-Hybrid-PIC Ohm's-law solver is OFF. The two are mutually exclusive.
+Full PIC electromagnetic field solver ON
 #SOLVEEM
 T                       solveEM
 
 #HYBRIDPIC
 F                       useHybridPIC
 
-The implicit GMRES solver advances E and B with the displacement current, so it
-is not limited by an explicit light-speed CFL; no Hall sub-cycling is needed.
 #DIVE
 F                       doCorrectDivE
 3                       nDivECorrection
@@ -60,6 +57,27 @@ diffusion coefficient (0 = none).
 0.5                     theta
 0.0                     coefDiff
 
+This is the key for maintaining stability in the freestream test!
+#COMOVING
+T                       solveFieldInCoMov
+5                       nSmoothBackGroundU
+
+Lax-Friedrichs upwind viscosity on the E equation (minmod limiter theta=1).
+#UPWINDE
+T                       useUpwindE
+1                       limiterTheta
+
+Lax-Friedrichs upwind viscosity on the B equation + hyperbolic div-B cleaning.
+#UPWINDB
+T                       doSmoothB
+1                       theta
+
+Digital-filter smoothing of the current density J.
+#SMOOTHJ
+T
+1
+0.5
+
 Single kinetic ion species (q = m = 1); the electron is an implicit
 neutralizing massless fluid, so no electron particle species is present.
 #PLASMA
@@ -69,7 +87,7 @@ neutralizing massless fluid, so no electron particle species is present.
 
 #UNIFORMSTATE
 5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
-0.0                     ux [km/s]
+10.0                    ux [km/s]      uniform bulk flow along guide field (U_code = 0.2)
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]

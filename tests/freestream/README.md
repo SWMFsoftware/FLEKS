@@ -4,15 +4,7 @@
 
 A 1D periodic **free-stream**: the initial condition is a *perfectly uniform*
 plasma (uniform number density, zero bulk velocity, uniform guide field `Bx0`
-along x) on a coarse 32-cell periodic grid. No `#TESTCASE` is set, so there is
-no wave seed — the only structure is PIC shot-noise. A correct field solver
-must keep this trivial state **exactly steady**: any growth in the magnetic or
-particle energy is purely numerical error or shot-noise.
-
-This is the cheapest regression test and the baseline for the seeded-wave
-tests (`hybrid_whistler`, `hybrid_ohm`, `hybrid_convection_wave`): those
-*seed* a perturbation on top of this same equilibrium, while the free-stream
-checks the equilibrium itself does not move.
+along x) on a coarse grid. The only structure is PIC noise. A correct field solver must keep this trivial state **exactly steady**: any growth in the magnetic or particle energy is purely numerical error or shot-noise.
 
 ## Both solvers, one test directory
 
