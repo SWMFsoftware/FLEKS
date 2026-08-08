@@ -1151,9 +1151,7 @@ void Pic::sum_moments(bool updateDt) {
     Real energy = 0.0;
     if (useHybridPIC) {
       // Cell-centred moment deposit into centerPlasma[i].
-      energy = parts[i]->sum_moments_cell_centered(centerPlasma[i], centerB,
-                                                   tc->get_dt(),
-                                                   useEsirkepovDeposit);
+      energy = parts[i]->sum_moments_cell_centered(centerPlasma[i]);
     } else {
       energy = parts[i]->sum_moments(nodePlasma[i], nodeB, tc->get_dt());
     }

@@ -453,9 +453,7 @@ public:
   // Cell-centred moment deposit: scatter rho/rhoU/Pi from particles to the
   // cell-centred momentsMF (centerPlasma[iSpecies]) with cell-centred trilinear
   // weights.
-  amrex::Real sum_moments_cell_centered(amrex::Vector<amrex::MultiFab>& momentsMF,
-                                        amrex::Vector<amrex::MultiFab>& centerBMF,
-                                        amrex::Real dt, bool useEsirkepov);
+  amrex::Real sum_moments_cell_centered(amrex::Vector<amrex::MultiFab>& momentsMF);
 
   std::array<amrex::Real, 5> total_moments(bool localOnly = false);
 

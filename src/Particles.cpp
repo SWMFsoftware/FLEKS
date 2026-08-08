@@ -928,15 +928,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 // plain cell-centred trilinear scatter (find_cell_index + linear weights).
 template <int NStructReal, int NStructInt>
 Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
-    Vector<MultiFab>& momentsMF, Vector<MultiFab>& centerBMF, Real dt,
-    bool useEsirkepov) {
+    Vector<MultiFab>& momentsMF) {
   timing_func("Pts::sum_moments_cell_centered");
-  // centerBMF, useEsirkepov and dt are reserved for an Esirkepov trajectory-
-  // current deposit that is not implemented; the active path is a plain
-  // cell-centred trilinear deposit and does not read them.
-  (void)centerBMF;
-  (void)useEsirkepov;
-  (void)dt;
 
   Real energy = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {

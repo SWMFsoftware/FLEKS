@@ -292,12 +292,6 @@ private:
   // push uses the initial-condition E (nodeEth) directly.
   bool isFirstHybridStep = true;
 
-  // Use the Hybrid-VPIC Esirkepov trajectory-current deposit for the hybrid
-  // cell-centred moments (J and rho). False uses a plain cell-centred trilinear
-  // deposit. Currently FALSE: the Esirkepov trajectory-current deposit is not
-  // yet implemented.
-  bool useEsirkepovDeposit = false;
-
   // Time-averaged (EMA) magnetic field.
   // B_avg = alpha * B_avg + (1 - alpha) * B^{n+1}, alpha = 1 - 1/nAvgFieldB.
   // B_avg is used inside the generalized Ohm's law (convection / Hall terms)
