@@ -99,11 +99,11 @@ enforced.
 
 ## Reference
 
-Modeled on the hybrid-VPIC-style wave test (`tests/hybrid_whistler`), with the
+Modeled on the hybrid-VPIC-style wave test (`tests/whistler`), with the
 transverse-wave seeding (`HybridWave` test case) replaced by a longitudinal ion
 density perturbation (`IonAcousticWave` test case) and the electron
 pressure-gradient (`#ELECTRONTEMPERATURE`) providing the restoring force.
-Unlike `tests/hybrid_whistler`, the field is **unmagnetized** (`B = 0`) and the
+Unlike `tests/whistler`, the field is **unmagnetized** (`B = 0`) and the
 Hall term is switched off, so this test isolates the electron-pressure
 (ambipolar) branch of the Ohm's law and the ion-Landau-damping of a pure
 electrostatic IAW.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared validators and plot helpers for the hybrid-PIC family of tests.
 
-Used by tests/hybrid_whistler, tests/hybrid_ohm and tests/freestream.
+Used by tests/whistler, tests/hybrid_ohm and tests/freestream.
 Keeping the common hybrid code here means each per-test ``validate.py`` only
 imports what it needs instead of duplicating it.
 """
@@ -144,7 +144,7 @@ def _hyb_seeded_mode():
 
     Defaults to 1 (the HybridWave/ConvectionWave/IAW preset). Reads the
     'waveMode <int>' line of the #WAVEIC block if present."""
-    p = os.path.join("tests", "hybrid_whistler", "PARAM.in")
+    p = os.path.join("tests", "whistler", "PARAM.in")
     try:
         with open(p) as f:
             for line in f:
@@ -243,7 +243,7 @@ def _hyb_whistler_dispersion(out_files):
     r2 = (cov ** 2 / (var_t * var_p)) if var_p > 0 else 0.0
 
     # Read Lx (code units) and tNorm from PARAM.in.
-    p = os.path.join("tests", "hybrid_whistler", "PARAM.in")
+    p = os.path.join("tests", "whistler", "PARAM.in")
     def numeric_after(command):
         toks = []
         capture = False
@@ -379,7 +379,7 @@ def _check_hybrid_wave_dispersion():
     #     finite-frequency whistler branch omega/Omega_i = (k d_i)^2/(1+(k d_i)^2)
     #     (see _hyb_whistler_dispersion). This is the decisive check of the Hall
     #     term: a missing/factor-4pi Hall current changes the measured omega by
-    #     the same factor. Requires >=3 time-resolved frames (the hybrid_whistler
+    #     the same factor. Requires >=3 time-resolved frames (the whistler
     #     PARAM saves every 10 steps). If fewer frames are present this part is
     #     skipped (no false negative for other profiles). ---
     disp_ok, disp_reason = _hyb_whistler_dispersion(out_files)
@@ -408,7 +408,7 @@ def _frame_time(out_file):
 def validate_plot(test_name):
     """Plot-output check shared by the hybrid-family tests.
 
-    hybrid_whistler / hybrid_ohm use the seeded-wavelength + dispersion check;
+    whistler / hybrid_ohm use the seeded-wavelength + dispersion check;
     freestream has no dedicated plot check (both variants use the hybrid energy
     log).
     """

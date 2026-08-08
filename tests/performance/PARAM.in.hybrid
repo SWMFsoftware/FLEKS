@@ -6,7 +6,7 @@ particle mover and the explicit Ohm's-law + Faraday field advance both dominate
 the wall-clock.  This is the hybrid counterpart of performance/PARAM.in (the
 full-PIC beam benchmark) and is exercised by tests/validate_performance.py.
 
-Normalization matches the hybrid test family (hybrid_whistler): lNormSI ~ d_i,
+Normalization matches the hybrid test family (whistler): lNormSI ~ d_i,
 uNormSI ~ v_A so d_i ~ v_A ~ 1 and (for the proton) B ~ Omega_i ~ 1 in code
 units.  The Hall/whistler mode is sub-cycled (nHallSubcycle = 8) so the explicit
 advance stays RK4-stable at dt = 0.02; this exercises the sub-cycling machinery

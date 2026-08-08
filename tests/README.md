@@ -19,7 +19,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 |                   |                    | (T ~ 100,000 K), only electron impact enabled            |        |
 | Charge exchange   | `chargeexchange/`  | Constant CX cross-section with flowing solar wind ions,  | [README](chargeexchange/README.md)   |
 |                   |                    | only charge exchange enabled                             |        |
-| Hybrid whistler   | `hybrid_whistler/` | Hybrid PIC (kinetic ions / fluid electrons) whistler–     | [README](hybrid_whistler/README.md)  |
+| Whistler wave     | `whistler/`        | Whistler–Alfven wave; full PIC (ions+electrons) + hybrid  | [README](whistler/README.md)         |
 |                   |                    | Alfven wave; Hall term only (resistivity & e-pressure off)|       |
 | Hybrid Ohm's law  | `hybrid_ohm/`      | Hybrid PIC full generalized Ohm's law: convection + Hall  | [README](hybrid_ohm/README.md)       |
 |                   |                    | + resistive + electron-pressure-gradient, all active       |        |

@@ -41,7 +41,7 @@ first to the last logged step. Expected: `Eb` and `Epart` constant to ~1e-6
 
 ## Relationship to other tests
 
-- `hybrid_whistler/`, `hybrid_ohm/` — seeded wave tests built on the same
+- `whistler/`, `hybrid_ohm/` — seeded wave tests built on the same
   equilibrium.
 - `whistler_solveem/` — the full-PIC SOLVEEM *wave* test (seeded wave, not a
   free-stream).

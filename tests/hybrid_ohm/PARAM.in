@@ -3,13 +3,12 @@ Hybrid PIC (kinetic ions / fluid electrons) parallel whistler-Alfven wave test.
 Full generalized Ohm's law: convection + Hall + resistive (eta*J) + electron
 pressure gradient (grad Pe / (e n_e)) terms ALL active, in normalized CGS units.
 
-Parameters match the Hall-only hybrid_whistler test (same ion-scale
-normalization so d_i ~ v_A ~ 1 in code units).  Here RESISTIVITY and
-ELECTRONTEMPERATURE are enabled so the complete Ohm's-law field solver is
-exercised.  A moderate resistivity damps the whistler, and the electron
-pressure gradient acts on the (weak) charge-density fluctuations produced by
-particle noise; the test is a STABILITY / no-blow-up regression check for the
-full solver, not a dispersion measurement.
+Parameters match the whistler test (same ion-scale normalization so d_i ~ v_A ~ 1
+in code units).  Here RESISTIVITY and ELECTRONTEMPERATURE are enabled so the
+complete Ohm's-law field solver is exercised.  A moderate resistivity damps the
+whistler, and the electron pressure gradient acts on the (weak) charge-density
+fluctuations produced by particle noise; the test is a STABILITY / no-blow-up
+regression check for the full solver, not a dispersion measurement.
 
 #INITFROMSWMF
 F                       initFromSWMF

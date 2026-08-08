@@ -42,7 +42,7 @@ The growth rate is measured from the total transverse-field norm
 
 The measured rate is near the linear-theory `γ/Ω_ci = 0.162` (the FLEKS hybrid
 model under-predicts somewhat). The Hall term is independently validated by the
-`hybrid_whistler` test.
+`whistler` test.
 
 ## Running
 
