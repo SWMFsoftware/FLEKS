@@ -129,13 +129,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     if (useUpwindB) {
       useHyperbolicCleaning = true;
     }
-    // Optional: only tests that need a constant upwind-B velocity (e.g. the
-    // old TopHat behaviour used 1.0) set it; default 0 keeps the normal
-    // plasma-background-velocity reconstruction.
     param.read_optional("fixedUpwindVel", fixedUpwindVel);
   } else if (command == "#FIXEDUMAX") {
-    // Optional: only tests that need a fixed CFL signal speed set it; default
-    // -1 keeps the particle-thermal-velocity estimate.
     param.read_optional("fixedUMax", fixedUMax);
   } else if (command == "#DIVB") {
     param.read_var("useHyperbolicCleaning", useHyperbolicCleaning);
@@ -169,11 +164,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#PARTICLELEVRATIO") {
     param.read_var("particleLevRatio", pInfo.pLevRatio);
   } else if (command == "#OHION") {
-    // The units are assumed to be:
-    // r: AU
-    // rho: amu/cc
-    // T: K
-    // U: km/s
     param.read_var("rAnalytic", pInfo.ionOH.rAnalytic);
     param.read_var("doGetFromOH", pInfo.ionOH.doGetFromOH);
 
@@ -194,11 +184,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#MAXCHARGEEXCHANGERATE") {
     param.read_var("maxChargeExchangeRate", maxExchangeRatioLimit);
   } else if (command == "#TESTCASE") {
-    // The kernel knows no test-case names: the name is resolved by the
-    // InitialCondition registry (case-insensitive), and the plug-in reads its
-    // own sub-parameters. An unknown name aborts loudly with the registered
-    // list -- previously a PARAM.in with "HybridWave" silently did nothing
-    // because the kernel compared against "hybridwave" (tests/iaw-setup.md).
     std::string testcase;
     param.read_var("testCase", testcase);
 
@@ -215,12 +200,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     }
     ic_->read_param(param);
   } else if (command == "#WAVEIC") {
-    // Generic wave sub-parameter block for a WaveIC plug-in (created by a
-    // #TESTCASE waveic / lightwave / hybridwave / convectionwave /
-    // ionacousticwave name). The plug-in reads the optional #WAVEIC parameters
-    // through read_optional, so the block is only needed for new / overridden
-    // wave configurations -- the presets reproduce the legacy behaviour when
-    // this block is absent.
     if (!ic_) {
       amrex::Abort("The #WAVEIC block must follow a #TESTCASE that selects a "
                    "wave initial condition (waveic / lightwave / hybridwave / "
@@ -230,52 +209,26 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#HYBRIDPIC") {
     param.read_var("useHybridPIC", useHybridPIC);
   } else if (command == "#RESISTIVITY") {
-    // etaResistivity in [m^2/s]; converted to code units in post_process_param.
     param.read_var("etaResistivity", etaResistivitySI);
   } else if (command == "#ELECTRONTEMPERATURE") {
-    // electronTemperature in [eV]; converted in post_process_param.
-    // electronDensity0 in [amu/cc], same unit as #UNIFORMSTATE rho; converted to
-    // code units in post_process_param.
     param.read_var("electronTemperature", electronTemperatureEV);
     param.read_var("electronGamma", electronGamma);
     param.read_var("electronDensity0", electronDensity0EV);
   } else if (command == "#HALLSUBCYCLE") {
-    // Number of B-field sub-steps per coarse dt for the Hall-term update.
     param.read_var("nHallSubcycle", nHallSubcycle);
   } else if (command == "#HALLTERM") {
-    // Enable/disable the Hall term (J x B) / rho in the generalized Ohm's law.
-    // Default true; set false for a convection-only field advance.
     param.read_var("useHallTerm", useHallTerm);
   } else if (command == "#QUADRATICGATHER") {
-    // Use the Hybrid-VPIC quadratic-spline (centered B-spline) gather for the
-    // hybrid cell-centred Boris push. Default false (Phase A: trilinear gather).
-    // Phase B quadratic gather can be enabled independently of the Esirkepov
-    // deposit (charge conservation is then approximate in the nonlinear phase).
     param.read_var("useQuadraticGather", useQuadraticGather);
   } else if (command == "#HYPERRESISTIVITY") {
-    // Hyper-resistivity eta_h [m^4/s] (SI), plus interpretation mode and the
-    // CFL-scaling coefficient C_h for mode="grid". All three values are always
-    // read so the parameter stream stays in sync; the mode only selects how
-    // eta_h is interpreted (post_process_param for "si", per sub-step for "grid").
     param.read_var("etaHyperSI", etaHyperSI);
     param.read_var("etaHyperMode", etaHyperMode);
     param.read_var("etaHyperCh", etaHyperCh);
   } else if (command == "#DENSITYFLOOR") {
-    // Minimum charge-density floor for the 1/rho factors in the Hall term and
-    // the electron-pressure-gradient term. <=0 means auto (1e-6*electronDensity0).
     param.read_var("rhoFloorHybrid", rhoFloorHybrid);
   } else if (command == "#FIELDINTEGRATOR") {
-    // Select the time integrator for the hybrid Faraday (B) update:
-    //   "rk4"    (4th-order Runge-Kutta on B, default),
-    //   "ssprk3" (Hybrid-VPIC-style strong-stability-preserving RK3 with a
-    //             time-centred E: the Ohm's law uses the averaged B
-    //             (B_stage + B^n)/2 in the Hall/convection terms, exactly as
-    //             hyb_advance_e does; SSP-RK3 stays stable in the high-amplitude
-    //             nonlinear phase without over-damping the instability).
     param.read_var("fieldIntegrator", fieldIntegrator);
   } else if (command == "#AVGFIELDB") {
-    // Phase 3.4: time-averaged (EMA) magnetic field for the Ohm's law and the
-    // particle Boris push, damping high-frequency PIC shot noise.
     param.read_var("useAvgFieldB", useAvgFieldB);
     param.read_var("nAvgFieldB", nAvgFieldB);
   } else if (command == "#SELECTPARTICLE") {

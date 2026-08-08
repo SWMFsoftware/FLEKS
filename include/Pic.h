@@ -462,20 +462,14 @@ public:
   void sum_moments(bool updateDt = false);
 
   void calc_mach_number();
-  // Materialize the nodePlasma output mirror on demand, running the
-  // average_center_to_node bridge only if nodePlasmaStale. calc_mach_number
-  // runs only when needMach is true (a plot requests the "mach" variable), since
-  // the Mach number is a pure output diagnostic. Called before any node-plasma /
-  // mach output or load-balancing request.
+  // Rebuild the stale nodePlasma/nodeE output mirrors; calc_mach_number only if
+  // needMach. Used by output / load balancing, not the hybrid solver.
   void sync_node_plasma_output(bool needMach = false);
-  // Materialize the nodeE output mirror (centerEhybrid -> nodeE) only if
-  // nodeEStale. nodeE is read by the structured plot but not the hybrid mover.
   void sync_node_E_output();
 
   // Convert electronDensity0 (amu/cc) to code units and set the auto density
-  // floor. Idempotent; called at the first hybrid field advance, after
-  // fi->post_process_param() finalizes Si2NoRho, so electronDensity0 (code)
-  // matches the background rho from #UNIFORMSTATE.
+  // floor. Idempotent; run at the first hybrid field advance after
+  // fi->post_process_param() finalizes Si2NoRho.
   void convert_electron_density0();
 
   void calc_mass_matrix();
@@ -537,55 +531,21 @@ public:
   void update_U0_E0();
 
   //-------------Hybrid PIC solver (kinetic ions + fluid electrons)-------------
-  // Generalized Ohm's law electric field: E = -U_i x B + eta J + (J x B)/rho_q
-  //                                        - grad(Pe)/rho_q
-  // where J = curl(B)/(4*pi) in CGS code units. The hybrid E field is computed
-  // directly from the Ohm's law (never time-advanced), at each magnetic sub-step.
-  // Digital-filter smoothing of the total ion moments (nodePlasma[nSpecies])
-  // prior to the Ohm's law, to suppress PIC shot noise. No-op unless
-  // doSmoothMoments is set.
   void smooth_moments();
-  // Faraday update of B with sub-cycling of the Hall term.
   void update_B_hybrid();
-  // Project the cell-centred B (centerB[iLev]) to the node grid (nodeB[iLev])
-  // with boundary conditions -- used between sub-steps of the hybrid Faraday
-  // update so the next Ohm's-law evaluation sees the advanced field.
   void project_centerB_to_nodeB(int iLev);
-  // Apply boundary conditions to the cell-centred B so the next field-advance
-  // stage can read its neighbours. This is the cell-centred part of
-  // project_centerB_to_nodeB, used between sub-steps of the hybrid Faraday
-  // update (the node mirrors / fine-level fills are recomputed once after the
-  // whole sub-cycle loop).
   void apply_centerB_BC(int iLev);
-  // Project the cell-centred B in `centerIn` to the node grid `nodeOut` with
-  // boundary conditions, WITHOUT touching member state. Used by the RK4 stages
-  // to build the node B at a trial (off-member) center-B state.
   void project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
                                         amrex::MultiFab& nodeOut, int iLev);
-  // Evaluate the generalized Ohm's law at an arbitrary (off-member) B state and
-  // write the CELL-CENTRED electric field into `Eout`. This does NOT overwrite
-  // the member centerEhybrid, so it can be called repeatedly at trial B states
-  // during RK4. `centerBin` is the cell-centred TRIAL B from which the current
-  // J = curl(B)/(4*pi) is built; `centerBtimeAvg` is the cell-centred
-  // time-averaged (B_trial + B^n)/2 used for the Hall/convection B factor. This
-  // two-state split matches Hybrid-VPIC's hyb_advance_e (J from the trial cbx,
-  // Hall/convection from (cbx+cbx0)/2), but now entirely in the cell-centred
-  // layout (no node projection). The ion velocity moment and density are
-  // time-interpolated between centerPlasmaPrev (J^{n-1/2}) and centerPlasmaSum
-  // (J^{n+1/2}) at the magnetic sub-step fraction `hstep` (0..1):
-  //     X(hstep) = (0.5 - hstep) X^{n-1/2} + (0.5 + hstep) X^{n+1/2}
-  // so hstep=0 gives J^n = 1/2(J^{n-1/2}+J^{n+1/2}) and hstep=1 gives the
-  // extrapolation J^{n+1} = 3/2 J^{n+1/2} - 1/2 J^{n-1/2}.
+  // Evaluate the Ohm's law E = -U_i x B + eta J + (J x B)/rho_q - grad(Pe)/rho_q
+  // at an off-member B state (J from `centerBin`, Hall/convection B from
+  // `centerBtimeAvg`), writing E into `Eout`. Ion moments are time-interpolated
+  // between centerPlasmaPrev (J^{n-1/2}) and centerPlasmaSum (J^{n+1/2}) at the
+  // sub-step fraction `hstep`: X = (0.5-hstep)X^{n-1/2} + (0.5+hstep)X^{n+1/2}.
   void assemble_ohm_E(const amrex::MultiFab& centerBin,
                       const amrex::MultiFab& centerBtimeAvg,
                       amrex::MultiFab& Eout, int iLev, amrex::Real hstep);
-  // Copy the current moment deposit into nodePlasmaPrev before a fresh deposit
-  // (so nodePlasmaPrev = J^{n-1/2} and nodePlasma = J^{n+1/2}).
   void save_current_moments_to_prev();
-  // Seed nodePlasmaPrev on the very first hybrid step (there is no previous
-  // deposit), so the hstep interpolation degrades to a plain average for that
-  // single step. The first particle Boris push uses the initial-condition E
-  // field (nodeEth, set by fill_E_B_fields / the IC) directly.
   void seed_first_hybrid_step();
 
   //-------------Electric field solver end-------------

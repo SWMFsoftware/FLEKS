@@ -927,12 +927,29 @@ calculated from the current electric field solve vector.
 	 multiple="T">
   <parameter name="useUpwindB" type="logical" default="F"/>
   <parameter name="limiterThetaB" type="real" default="0.0"/>
+  <parameter name="fixedUpwindVel" type="real" default="0.0"/>
 
 #UPWINDB
 F                         useUpwindB
 0.0                       limiterThetaB
+0.0                       fixedUpwindVel
 
-Similar to the #UPWINDE command, but for the magnetic field equation.
+Similar to the #UPWINDE command, but for the magnetic field equation. Optional
+fixedUpwindVel overrides the upwind reconstruction velocity with a constant;
+default 0.0 keeps the normal plasma-background-velocity reconstruction.
+
+</command>
+
+<command name="FIXEDUMAX" alias="FIXEDUMAX_FLEKS0,FIXEDUMAX_FLEKS1,FIXEDUMAX_FLEKS2"
+	 multiple="T">
+  <parameter name="fixedUMax" type="real" default="-1.0"/>
+
+#FIXEDUMAX
+-1.0                      fixedUMax
+
+Optional fixed CFL signal speed for the upwind scheme. Default -1.0 keeps the
+particle-thermal-velocity estimate; tests that need a constant signal speed set a
+non-negative value (e.g. the TopHat test uses 1.0).
 
 </command>
 
