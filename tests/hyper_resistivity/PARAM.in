@@ -63,11 +63,6 @@ Minimum charge-density floor for the 1/rho factors (auto = 1e-6*density here).
 #DENSITYFLOOR
 0.0                     rhoFloorHybrid
 
-Use the compact staggered current (default T). Set F to fall back to the legacy
-2*dx collocated curl (regression against pre-change baselines).
-#HYBRIDCURL
-T                       useCompactCurl
-
 #HALLSUBCYCLE
 32                      nHallSubcycle
 

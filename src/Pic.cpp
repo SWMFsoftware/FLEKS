@@ -264,10 +264,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     // Minimum charge-density floor for the 1/rho factors in the Hall term and
     // the electron-pressure-gradient term. <=0 means auto (1e-6*electronDensity0).
     param.read_var("rhoFloorHybrid", rhoFloorHybrid);
-  } else if (command == "#HYBRIDCURL") {
-    // If true (default), compute J with the compact staggered curl_center_to_node
-    // operator; if false, use the legacy 2*dx central difference of node B.
-    param.read_var("useCompactCurl", useCompactCurl);
   } else if (command == "#FIELDINTEGRATOR") {
     // Select the time integrator for the hybrid Faraday (B) update:
     //   "rk4"    (4th-order Runge-Kutta on B, default),
@@ -340,11 +336,6 @@ void Pic::post_process_param() {
       amrex::Print() << "  etaHyper: " << etaHyperSI
                      << " [m^4/s, si] -> " << etaHyperLev[0] << " [code units]\n";
     }
-    // The compact staggered current is mandatory when the hyper-resistive term
-    // is active: the legacy collocated current annihilates the Nyquist mode, so
-    // the hyper term would be blind to exactly the grid-scale noise it targets.
-    if (etaHyperSI > 0 || (etaHyperMode == "grid" && etaHyperCh > 0))
-      useCompactCurl = true;
 
     // Field integrator selection for the hybrid Faraday update. #FIELDINTEGRATOR
     // is the single control for the time integration of B:
@@ -509,11 +500,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                         nGst, doMoveData);
 
     if (useHybridPIC) {
-      // Hyper-resistivity scratch fields. nodeJ is also used by the compact
-      // current (Phase 1). centerLapB is cell-centred (Laplacian of centerB);
-      // nodeJ/nodeHyperE are node-centred.
-      distribute_FabArray(nodeJ[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                          nGst);
+      // Hyper-resistivity scratch fields. centerLapB is cell-centred (Laplacian
+      // of centerB); nodeHyperE is node-centred.
       distribute_FabArray(centerLapB[iLev], cGrids[iLev], DistributionMap(iLev),
                           3, nGst, doMoveData);
       distribute_FabArray(nodeHyperE[iLev], nGrids[iLev], DistributionMap(iLev),
@@ -550,9 +538,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           DistributionMap(iLev), 3, nGst, doMoveData);
 
       // Cell-centred hybrid solver fields (Hybrid-VPIC-style layout). All are
-      // cell-centred (cGrids), with the same nGst as the live centerB. These
-      // replace the node-centred nodeE/nodeJ/nodeE_RK4/nodeHyperE for the
-      // hybrid time step.
+      // cell-centred (cGrids), with the same nGst as the live centerB.
       distribute_FabArray(centerEhybrid[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerJ[iLev], cGrids[iLev], DistributionMap(iLev), 3,

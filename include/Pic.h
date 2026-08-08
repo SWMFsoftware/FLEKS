@@ -53,8 +53,7 @@ private:
   bool initEM = true;
 
   // ---- Hybrid PIC (kinetic ions + fluid electrons) solver ----
-  // When true, the generalized Ohm's law field solver is used instead of the
-  // implicit GM-PC (solveEM) solver. Mutually exclusive with solveEM.
+  // Generalized Ohm's law field solver instead of the implicit GM-PC (solveEM).
   bool useHybridPIC = false;
   // Resistive term eta * J. SI input [m^2/s], converted to code units.
   amrex::Real etaResistivitySI = 0.0;
@@ -64,35 +63,24 @@ private:
   amrex::Real electronTemperature = 0.0;
   // Polytropic index for the adiabatic electron pressure closure.
   amrex::Real electronGamma = 1.0;
-  // Reference (upstream) charge density for the adiabatic closure, input in
-  // amu/cc (same unit as the #UNIFORMSTATE rho input).
+  // Reference (upstream) charge density, input in amu/cc.
   amrex::Real electronDensity0EV = 1.0;
-  // Reference (upstream) charge density in code units, used in the adiabatic
-  // closure p_e = electronDensity0*Te*(rho/electronDensity0)^gamma and as the
-  // auto density floor scale. Converted lazily from electronDensity0EV at the
-  // first hybrid field advance (Si2NoRho is not finalized until then).
+  // Reference charge density in code units; converted lazily from
+  // electronDensity0EV at the first hybrid field advance.
   amrex::Real electronDensity0 = 0.0;
-  // True once electronDensity0 (code units) has been converted from electronDensity0EV.
+  // True once electronDensity0 (code units) has been converted.
   bool electronDensity0Converted_ = false;
   // Number of sub-steps for the B-field update within one coarse dt.
   int nHallSubcycle = 1;
-  // Hall term (J x B) / rho in the generalized Ohm's law. Default on; set to
-  // false to advance with the convection term only (plus any resistivity /
-  // electron-pressure gradient that is independently enabled).
+  // Hall term (J x B) / rho in the generalized Ohm's law. Default on.
   bool useHallTerm = true;
 
   // Hyper-resistivity (fourth-order) term in the Ohm's law:
   //   E -= eta_h * nabla^2 J = -(eta_h/4*pi) * nabla x (nabla^2 B).
-  // etaHyperSI is the SI hyper-diffusion [m^4/s]. etaHyperMode selects how it
-  // is interpreted:
-  //   "si"   -> direct physical value, converted to code units internally
-  //             (etaCode = 4*pi*etaSI*Si2NoV*Si2NoL^3); same semantics as #RESISTIVITY.
-  //   "grid" -> CFL-scaled: eta_h = C_h * dx^4 / dt_sub (stability-scaled,
-  //             dimless C_h in [~1e-3,~1e-2]); recomputed each sub-step because
-  //             dt_sub varies.
-  // etaHyperLev[iLev] (code units, 0 disables) is the value actually applied;
-  // it is filled each step (post_process sets the "si" value, update_B_hybrid
-  // fills the per-level "grid" value).
+  // etaHyperMode selects how etaHyperSI is interpreted:
+  //   "si"   -> direct physical value [m^4/s], converted to code units;
+  //   "grid" -> CFL-scaled eta_h = C_h * dx^4 / dt_sub (dimless C_h).
+  // etaHyperLev[iLev] (code units, 0 disables) is the value actually applied.
   amrex::Real etaHyperSI = 0.0;
   std::string etaHyperMode = "si";
   amrex::Real etaHyperCh = 0.01;
@@ -101,20 +89,6 @@ private:
   // Minimum charge density floor for the 1/rho factors in the Hall term and
   // the electron-pressure-gradient term. <= 0 means auto: 1e-6 * electronDensity0.
   amrex::Real rhoFloorHybrid = 0.0;
-
-  // If true, J in the Ohm's law is computed with the compact staggered
-  // curl_center_to_node(centerB) operator -- the discrete current that does NOT
-  // annihilate the Nyquist (checkerboard) mode. If false (default), the legacy
-  // 2*dx central difference of the node-collocated B is used.
-  //
-  // NOTE: the compact current exposes the full grid-scale spectrum. Explicit
-  // Hall MHD is unstable at the grid scale, and the legacy collocated current
-  // only happened to be stable because it low-pass-filtered that mode. The
-  // compact current is therefore REQUIRED together with the hyper-resistive term
-  // (which damps exactly that mode); when #HYPERRESISTIVITY is active this flag
-  // is forced true in post_process_param. Used on its own (no hyper-resistivity)
-  // the compact current can blow up, so it defaults to false for stability.
-  bool useCompactCurl = false;
 
   bool useExplicitPIC = false;
   bool projectDownEmFields = true;
@@ -137,7 +111,6 @@ private:
   amrex::Vector<amrex::MultiFab> divB;
   amrex::Vector<amrex::MultiFab> centerB;
   // Hyper-resistivity scratch fields (allocated when useHybridPIC).
-  amrex::Vector<amrex::MultiFab> nodeJ;        // J = curl(B)/(4*pi) at nodes (compact)
   amrex::Vector<amrex::MultiFab> centerLapB;   // nabla^2 B  (hyper stage A)
   amrex::Vector<amrex::MultiFab> nodeHyperE;   // nabla x (nabla^2 B) (hyper stage B)
   // RK4 (fieldIntegrator="rk4") scratch fields (allocated when useHybridPIC).
@@ -220,8 +193,8 @@ private:
   // (node-sync bridges) so the plot / restart / tracker path sees correct
   // data. All six arrays are allocated only inside the useHybridPIC block of
   // Pic::distribute_arrays.
-  amrex::Vector<amrex::MultiFab> centerEhybrid;   // cell-centred E (replaces nodeE)
-  amrex::Vector<amrex::MultiFab> centerJ;         // cell-centred J (replaces nodeJ)
+  amrex::Vector<amrex::MultiFab> centerEhybrid;   // cell-centred E
+  amrex::Vector<amrex::MultiFab> centerJ;         // cell-centred J
   amrex::Vector<amrex::MultiFab> centerEprev;     // cell-centred E^n (time-centring)
   amrex::Vector<amrex::MultiFab> centerBprev;     // cell-centred B^n (time-centring)
   amrex::Vector<amrex::MultiFab> centerE_RK4;     // cell-centred E trial (replaces nodeE_RK4)
@@ -389,7 +362,6 @@ public:
     nodeEth.resize(n_lev_max());
     divB.resize(n_lev_max());
     hypPhi.resize(n_lev_max());
-    nodeJ.resize(n_lev_max());
     centerLapB.resize(n_lev_max());
     nodeHyperE.resize(n_lev_max());
     centerB_RK4.resize(n_lev_max());

@@ -448,30 +448,6 @@ automatic: rhoFloor = 1e-6 * #ELECTRONTEMPERATURE electronDensity0. Only used wh
 #HYBRIDPIC is T.
 </command>
 
-<command name="HYBRIDCURL"
-   alias="HYBRIDCURL_FLEKS0,HYBRIDCURL_FLEKS1,HYBRIDCURL_FLEKS2"
-   multiple="T">
-  <parameter name="useCompactCurl" type="logical" default="F"/>
-
-#HYBRIDCURL
-F                 useCompactCurl
-
-When true, the current J in the hybrid Ohm's law is computed with the compact
-staggered operator curl_center_to_node(centerB), which does NOT annihilate the
-Nyquist (checkerboard) mode the way the legacy 2*dx central difference of the
-node-collocated B does. This is important for the hyper-resistive term, which is
-otherwise blind to exactly the grid-scale noise it targets. Set to F (default) to
-use the legacy collocated curl, which is more stable on its own because it
-low-pass-filters the grid scale.
-
-IMPORTANT: explicit Hall MHD is unstable at the grid scale, and the legacy current
-is only stable by accident (its filtering hides that mode). The compact current is
-therefore REQUIRED together with #HYPERRESISTIVITY, which damps the grid scale;
-when #HYPERRESISTIVITY is active this flag is forced true automatically. Used on
-its own (hyper-resistivity OFF) the compact current can blow up, so the default is
-F. Only used when #HYBRIDPIC is T.
-</command>
-
 <command name="FIELDINTEGRATOR"
    alias="FIELDINTEGRATOR_FLEKS0,FIELDINTEGRATOR_FLEKS1,FIELDINTEGRATOR_FLEKS2"
    multiple="T">
