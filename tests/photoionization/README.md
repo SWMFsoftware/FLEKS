@@ -70,16 +70,12 @@ Inside the shadow cylinder (x < 0 and proj·(−solarDir) > 0 and perp < R_shado
 | 0 (H⁺) | 1.0 | +1 | Background ions |
 | 1 (O⁺) | 16.0 | +1 | Heavy ions (receives source) |
 
-## Expected Results
+## Validation
 
-1. **Energy growth**: Species 1 (O⁺) energy increases over time → source active.
-
-2. **Day/night asymmetry** (verified with `--thorough`):
-   - Output format: **IDL ASCII** (`z=0` slice, `.out` file) — human-readable,
-     easy to load for inspection.
-   - **Dayside (+X)**: `ppcS1` > 0 — photoionization produces O⁺ particles.
-   - **Nightside shadow (−X, |y| < Rₚ)**: `ppcS1` ≈ 0 — zero photoionization
-     inside the shadow cylinder.
+The validator checks that species 1 (O⁺) energy grows over time (source active),
+and with `--thorough` checks the day/night asymmetry: O⁺ particles appear on the
+dayside (`+X`) but not inside the nightside shadow cylinder (`−X, |y| < Rₚ`).
+See `tests/photoionization/validate.py` for details.
 
 ## Running
 

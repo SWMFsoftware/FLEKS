@@ -59,22 +59,13 @@ injects ions into the PIC simulation domain.
 - **Electromagnetic Fields**: Enabled (`solveEM = T`) with guiding field
   \( B_x = 5.0 \times 10^{-9} \) T.
 
-## Expected Results
+## Validation
 
-1. **O+ Energy Growth**: The O+ kinetic energy (Epart2) increases by a large
-   factor (≥ 2×) over the simulation, since the O+ background is near-zero
-   and all O+ particles are produced by the charge exchange source.
-
-2. **H+ Energy Stability**: The H+ kinetic energy (Epart1) does not decrease,
-   confirming that the H+ source (from H neutral charge exchange) is active
-   without destabilizing the existing H+ population.  The H+ energy increase
-   is small relative to the large H+ bulk kinetic energy background.
-
-3. **Source Spatial Profile**: The O+ density (rhoS2) in the plot output
-   peaks near the planet surface (|x| ~ Rp) where the exosphere density is
-   highest, and is much smaller in the deep interior (|x| < 0.3*Rp) where
-   no neutrals exist.  The profile is approximately symmetric about the
-   planet center.
+The validator checks from the pic-log history that O+ energy grows strongly (the
+O+ background is near-zero, so all O+ comes from the source) while the H+
+population stays stable, and from the plot output that the O+ density peaks near
+the planet surface. See `tests/chargeexchange/validate.py` for the exact
+tolerances.
 
 ## Running
 

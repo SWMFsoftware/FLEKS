@@ -30,17 +30,9 @@ contribution that makes `Eb` drift or blow up).
 
 ## Validation
 
-`validate_singlecell` (in `tests/validate_tests.py`) reads the pic-log history
-and requires:
-
-1. **`Eb` conserved** to round-off (`0.9999 < ratio < 1.0001`) — no spurious
-   Hall/convective evolution.
-2. **`Ee` (electric field energy) ~ 0** throughout (`Ee < 1e-2 * Eb`) — confirms
-   the field is truly frozen, not merely energy-conserving (a non-dispersive
-   propagating wave would also conserve `Eb` but have `Ee ~ Eb`).  The 1e-2
-   relative floor accommodates single-cell round-off (residual Ee ~ 1e-3 * Eb).
-
-A passing run shows `Eb ratio: 1.000000` and `Ee (electric, max): ~0`.
+`validate_singlecell` checks from the pic-log history that `Eb` is conserved to
+round-off and that `Ee` stays ~ 0 (the field is frozen, not just energy-conserving).
+See `tests/validate_tests.py` for the exact tolerances.
 
 ## Run
 

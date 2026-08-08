@@ -25,15 +25,8 @@ inputs to code units are documented as comments directly in
 ## Purpose & Success Criteria
 
 This test is a **stability / no-blow-up regression check** for the *full*
-solver. The `HybridWave` seed only perturbs `B` and the ion velocity
-(eigenmode IC), so the pressure-gradient term has no large coherent source;
-the test instead verifies that enabling the resistive and pressure-gradient
-terms does not destabilize the coupled field advance. The automated check
-reuses `validate_hybrid`:
-
-1. **Stability** — FLEKS exits cleanly; `Eb` and `Epart` finite and bounded
-   (no NaN/Inf, no runaway from an active `η J` or `∇P_e` term).
-2. **Seeded wavelength** — early-time DFT of `By` still peaks at mode `n=1`
-   (the wave is correctly seeded, same as `whistler`).
-3. **Bounded amplitude** — late-time `|B_⊥|` stays below 10×`B₀`
-   (resistivity damps; a broken `∇P_e` or `η` term would blow up instead).
+solver: it verifies that enabling the resistive and electron-pressure-gradient
+terms does not destabilize the coupled field advance (which the `whistler` test
+disables). The automated check reuses the shared `validate_hybrid` checks:
+stable exit, finite `Eb`/`Epart`, seeded mode `n=1` at early time, and bounded
+late-time amplitude. See `tests/_shared/hybrid.py` for the exact tolerances.

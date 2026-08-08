@@ -116,18 +116,6 @@ T                       useFixedDt
 1                       nParticle per cell in Y
 1                       nParticle per cell in Z
 
-#COMOVING
-F                       solvePartInCoMov
-0                       nSmoothBackGroundU
-
-#UPWINDE
-F                       useUpwindE
-0.0                     limiterThetaE
-
-#UPWINDB
-F                       doSmoothB
-0.0                     theta
-
 #SAVEPLOT
 1                       nPlot
 z=0 fluid ascii pic     plotString

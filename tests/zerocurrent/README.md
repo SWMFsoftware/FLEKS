@@ -41,17 +41,10 @@ because `rho = 0`.
 
 ## Validation
 
-`validate_zerocurrent` (in `tests/validate_tests.py`) reads the pic-log history
-and requires:
-
-1. **`Eb` conserved** to round-off (`0.999 < ratio < 1.001`) — the perturbation
-   neither grows, decays, nor travels.
-2. **`Ee` (electric field energy) ~ 0** throughout (`Ee < 1e-6 * Eb`) — the
-   genuine no-propagation discriminator.  A *non-dispersive propagating* wave
-   would also conserve `Eb`, but would generate an inductive `E` and a non-zero
-   `Ee`; this check rules that out and proves the field is frozen.
-
-A passing run shows `Eb ratio: 1.000000` and `Ee (electric, max): ~0`.
+`validate_zerocurrent` checks from the pic-log history that `Eb` is conserved to
+round-off and that `Ee` stays ~ 0 (the perturbation is frozen, neither
+propagating nor decaying). See `tests/validate_tests.py` for the exact
+tolerances.
 
 ## Run
 

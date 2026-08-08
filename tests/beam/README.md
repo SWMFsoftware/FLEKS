@@ -17,14 +17,13 @@ Both variants share the identical grid, guide field, beam ratio/speeds, density,
   - Hybrid PIC: `useHybridPIC = T`, `solveEM = F`, Hall term ON (single sub-step), resistivity and electron-pressure-gradient OFF so the instability grows undamped; the guide field is dynamically weak ($v_A \ll u_{\mathrm{beam}}$) so the explicit hybrid advance is not stiff at this resolution.
 - **Purpose**: Verifies that the particle count and mean velocity are conserved, and tracks the growth of cyclotron waves in the transverse magnetic fields $B_y$ and $B_z$ from seed noise.
 
-## Expected Results
-- **Particle Count Conservation**: The total number of particles remains exactly constant.
-- **Mean Velocity**: The expected species mean velocity `MeanVx` is:
-  $$\text{MeanVx} = 0.01 \times (0.4) + 0.99 \times (-0.4) = -0.392$$
-  which must be conserved within $1\%$ tolerance.
-- **Wave Growth**: Transverse components $B_y$ and $B_z$ grow over time due to the instability seeding from thermal noise, indicating the successful propagation and growth of cyclotron waves.
-- **Transverse-Wave Resonance Check**: At the final output frame ($t \approx 0.1$), the validation performs a DFT of the spatial $B_y$/$B_z$ profile and compares the dominant mode to the theoretical cyclotron-resonant wavenumber $k_{\mathrm{res}} = \Omega_i / \Delta v$, where $\Omega_i = q_p B_x / m_p$ and $\Delta v = 800\,\text{km/s}$. For this test the resonant wavelength ($\sim 10^4\,\text{km}$) exceeds the $2\,\text{km}$ periodic box, so the resonant mode cannot fit; the check instead verifies that the wave has grown above the noise floor and that its power is concentrated in low-order spatial modes consistent with the box-limited instability.
-- **Hybrid stability (energy check)**: the hybrid variant additionally runs the shared hybrid-family energy checks — magnetic and ion energies stay finite and the magnetic energy does not blow up (catches a NaN / missing-Hall-factor runaway).
+## Validation
+
+The validator checks that the total particle count is conserved, the mean
+velocity `MeanVx ≈ -0.392` is conserved within 1%, and that transverse `By`/`Bz`
+waves grow from noise (power concentrated in low-order box-compatible modes). The
+hybrid variant additionally runs the shared hybrid energy checks. See
+`tests/beam/validate.py` for the exact tolerances and the FFT checks.
 
 ## Running
 

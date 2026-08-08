@@ -46,32 +46,12 @@ All 10 reactions from BATSRUS ModUserMars, with rate coefficients inflated
   (no Te dependence) to avoid the #UNIFORMSTATE pressure normalization issue
   in standalone tests.
 
-## Expected Results
+## Validation
 
-With the cross-species CX source term working correctly, the expected energy
-changes over the 20-step simulation are:
-
-1. **O2+ (Epart3) energy INCREASES significantly**: O2+ is produced by
-   cross-species CX (reactions 3, 4) and consumed by recombination
-   (reaction 6).  The CX source rate (~6.3 s^-1, driven by the large
-   exosphere neutral density ~5e10 m^-3) vastly exceeds the recombination
-   loss rate (~4e-17 s^-1, limited by the small plasma electron density
-   in SI units).  Therefore O2+ energy must increase.  This is the critical
-   validation for the cross-species CX source term.
-
-2. **CO2+ (Epart4) energy changes**: CO2+ is produced by photoionization
-   (reaction 1) and consumed by CX (reactions 3, 5) and recombination
-   (reaction 7).  Both source and loss are active.
-
-3. **H+ (Epart1) energy changes**: H+ is produced by photoionization
-   (reaction 10) and CX (reaction 9), and consumed by CX (reaction 8).
-
-4. **O+ (Epart2) energy changes**: O+ is produced by photoionization
-   (reaction 2) and CX (reactions 5, 8), and consumed by CX (reactions 4, 9).
-
-The validation checks that ALL 4 ion species show significant energy changes
-(> 0.1%), and specifically requires O2+ to increase — proving the
-cross-species CX source term is functional.
+The validator checks that all four ion species show significant energy changes
+over the run, and specifically that O2+ energy increases — proving the
+cross-species charge-exchange source is functional. See
+`tests/chemistry/validate.py` for the exact tolerances.
 
 ## Running
 

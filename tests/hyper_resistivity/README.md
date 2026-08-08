@@ -6,19 +6,13 @@ top of the full solver (convection + Hall + `eta J` + `grad P_e`). See
 `../hybrid_ohm/README.md` for the shared geometry / normalization and the
 success criteria inherited from that test.
 
-## What is validated
+## Validation
 
 1. **Stability** — FLEKS exits cleanly; `Eb`/`Epart` finite and bounded with the
    fourth-order term active (no NaN/Inf, no checkerboard blow-up).
 2. **Damping of grid-scale noise** — the hyper term damps the highest resolved
    modes (`k -> k_Nyquist`), so late-time `|B_⊥|` and the magnetic-energy drift
    stay below the no-hyper-resistivity baseline.
-3. **Compact-current requirement (Nyquist visibility)** — the term is built on the
-   staggered `curl_center_to_node(centerB)` current (enabled by `#HYBRIDCURL T`,
-   the default). That current does **not** annihilate the checkerboard mode, so
-   `nabla^2 (nabla x B) = nabla x (nabla^2 B)` holds discretely and the term
-   actually damps the grid-scale noise. With `#HYBRIDCURL F` (legacy 2*dx collocated
-   curl) the term would be blind to exactly the mode it targets.
 
 ## Parameters
 
@@ -30,7 +24,7 @@ success criteria inherited from that test.
   (`1e-6 * electronDensity0`).
 - `#HYBRIDCURL`: `T` = compact staggered current (recommended).
 
-## Dispersion validation (for a dedicated run, not the default)
+## Dispersion validation
 
 For a clean quantitative check use `etaHyperMode = "si"` with a known `eta_h` and
 measure the decay rate of an eigenmode:

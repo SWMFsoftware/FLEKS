@@ -32,6 +32,9 @@ In the full-PIC variant the kinetic electron species has
 `q = -1`, `m = 1/1836` (proton mass ratio), so the PIC Maxwell solve carries
 the full electron+ion whistler dispersion. The guide field and electron density
 match the ions (`n_e = n_i`).
+This real electron mass does **not** affect the timestepping in the test:
+the timestep here is fixed (`useFixedDt = T`, `dt = 0.02`) and is set by the
+ion-scale whistler frequency (`ω/Ω_i ≲ 1`, i.e. `dt·Ω_i ≪ 1`).
 
 ## Running
 
@@ -50,21 +53,8 @@ make -C <build> run PARAMPATH=tests/whistler/PARAM.in.hybrid
 
 ## Validation
 
-`validate.py` runs solver-agnostic field checks for **both** variants:
-
-1. **FFT of the transverse B perturbation** → measures the whistler frequency
-   `ω` and checks it against the analytic Hall/whistler dispersion
-   `ω/Ω_i = (k d_i)² / (1 + (k d_i)²)` (15% tolerance).
-2. **Conservation of action (CAA)**: the quantity
-   `(w - w_max) / |B1_max|²` should be conserved in the linear regime; the
-   measured `w` oscillation about its mean must stay within tolerance.
-3. **Alfvén-speed propagation**: the perturbation drift over the run must match
-   `v_A ~ 1` in code units.
-
-For the **HYBRID** variant only, it additionally runs the shared
-`tests/_shared/hybrid.py` checks: total-energy drift, Hall Ohm's-law residual,
-particle-flux conservation, and energy-component balances (see the
-[hybrid README](../_shared/hybrid.md)).
-
-The field checks read `b1y`, `b1z` from the final plot file
-`z=0 fluid ascii pic/step.000100.cdf`.
+`validate.py` runs the whistler field checks for **both** variants: it measures
+the whistler frequency from the transverse B perturbation and compares it with
+the analytic dispersion `ω/Ω_i = (k d_i)² / (1 + (k d_i)²)`, and checks the
+Alfvén-speed propagation. For the **hybrid** variant it additionally runs the
+shared hybrid energy-log checks (see the [hybrid README](../_shared/hybrid.md)).

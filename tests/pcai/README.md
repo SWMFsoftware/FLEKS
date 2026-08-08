@@ -31,18 +31,11 @@ code units.
 
 ## Validation
 
-The growth rate is measured from the total transverse-field norm
-`d|B| = sqrt(mean(By²) + mean(Bz²))` vs time. The validator:
-
-- Fits `log(d|B|)` vs `t` over the exponential window `[0.2, 0.85]×amp_max` and
-  requires `0.06 ≤ γ/Ω_ci ≤ 0.35` (must clearly grow — not damped/stable — and
-  not run away).
-- Checks clean exit, no NaN/Inf, bounded magnetic and ion energies, and strict
-  ion-energy conservation (`Epart0` ratio within `[0.5, 2.0]`).
-
-The measured rate is near the linear-theory `γ/Ω_ci = 0.162` (the FLEKS hybrid
-model under-predicts somewhat). The Hall term is independently validated by the
-`whistler` test.
+The validator fits the growth rate of the transverse-field norm
+`d|B| = sqrt(mean(By²) + mean(Bz²))` and requires it to be clearly growing
+(near the linear-theory `γ/Ω_ci = 0.162`) but not running away, plus clean exit
+and bounded ion energies. See `tests/pcai/validate.py` for the exact fit window
+and tolerances.
 
 ## Running
 

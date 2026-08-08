@@ -25,10 +25,9 @@ trivial equilibrium.
 
 ## Validation
 
-Both variants are checked by `validate_hybrid`: the magnetic energy `Eb` and ion
-energy `Epart` must be steady (within a small growth/tolerance factor) from the
-first to the last logged step. Expected: `Eb` and `Epart` constant to ~1e-6
-(full PIC) / ~1e-4 (hybrid, residual PIC shot-noise) relative.
+Both variants are checked by the shared `validate_hybrid`: the magnetic energy
+`Eb` and ion energy `Epart` must stay steady from the first to the last logged
+step. See `tests/_shared/hybrid.py` for the exact tolerances.
 
 ## Physics scales
 
