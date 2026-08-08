@@ -108,7 +108,7 @@ public:
   // sub-region of new (refined) cells. Kept as a genuine IC hook (it is a
   // field-seeding behaviour, not a solver override); the old solver overrides
   // uMax / upwind-velocity were promoted to #FIXEDUMAX / #UPWINDB fixedUpwindVel
-  // in Phase 4 and the override_umax()/bypass_limiter() hooks removed.
+  // options and the override_umax()/bypass_limiter() hooks removed.
   virtual bool is_tophat() const { return false; }
 
   virtual std::string name() const = 0;

@@ -450,10 +450,9 @@ public:
                           amrex::Vector<amrex::MultiFab>& nodeBMF,
                           amrex::Real dt);
 
-  // Hybrid-PIC cell-centred moment deposit: scatter rho/rhoU/Pi from particles
-  // to the cell-centred momentsMF (centerPlasma[iSpecies]). Phase A deposits
-  // with cell-centred trilinear weights; Phase B uses the Esirkepov
-  // trajectory-current form for J (and rho) with trilinear Pi.
+  // Cell-centred moment deposit: scatter rho/rhoU/Pi from particles to the
+  // cell-centred momentsMF (centerPlasma[iSpecies]) with cell-centred trilinear
+  // weights.
   amrex::Real sum_moments_cell_centered(amrex::Vector<amrex::MultiFab>& momentsMF,
                                         amrex::Vector<amrex::MultiFab>& centerBMF,
                                         amrex::Real dt, bool useEsirkepov);
@@ -529,16 +528,13 @@ public:
              const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
              amrex::Real dtNext);
 
-  // Hybrid-VPIC-style cell-centred mover dispatch (gathers from the
-  // cell-centred centerE/centerB rather than the node fields). `useQuadratic`
-  // selects the quadratic-spline gather (Phase B); false uses a plain
-  // cell-centred trilinear gather (Phase A).
+  // Cell-centred mover dispatch: gathers from the cell-centred centerE/centerB
+  // (rather than the node fields) using a trilinear gather.
   void mover_cell_centered(const amrex::Vector<amrex::MultiFab>& centerE,
                            const amrex::Vector<amrex::MultiFab>& centerB,
                            const amrex::Vector<amrex::MultiFab>& eBg,
                            const amrex::Vector<amrex::MultiFab>& uBg,
-                           amrex::Real dt, amrex::Real dtNext,
-                           bool useQuadratic);
+                           amrex::Real dt, amrex::Real dtNext);
 
   void charged_particle_mover(const amrex::Vector<amrex::MultiFab>& nodeE,
                               const amrex::Vector<amrex::MultiFab>& nodeB,
@@ -546,17 +542,14 @@ public:
                               const amrex::Vector<amrex::MultiFab>& uBg,
                               amrex::Real dt, amrex::Real dtNext);
 
-  // Hybrid-PIC (cell-centred) particle gather + Boris push. Reads E and B from
-  // the cell-centred fields (centerE / centerB) instead of the node fields,
-  // using the quadratic-spline (centered B-spline) gather of Hybrid-VPIC.
-  // `useQuadratic` selects the quadratic gather (Phase B); false uses a plain
-  // cell-centred trilinear gather (Phase A).
+  // Cell-centred particle gather + Boris push, reading E and B from the
+  // cell-centred fields (centerE / centerB) using a trilinear gather.
   void charged_particle_mover_cell_centered(
       const amrex::Vector<amrex::MultiFab>& centerE,
       const amrex::Vector<amrex::MultiFab>& centerB,
       const amrex::Vector<amrex::MultiFab>& eBg,
       const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
-      amrex::Real dtNext, bool useQuadratic);
+      amrex::Real dtNext);
 
   // select particles based on input supid and id
   void select_particle(amrex::Vector<std::array<int, 3> >& selectParticleIn);

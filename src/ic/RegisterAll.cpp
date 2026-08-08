@@ -5,10 +5,10 @@
 #include "WaveIC.h"
 
 void register_all_initial_conditions() {
-  // Phase 5: the four wave tests are now ONE parameterized WaveIC, registered
-  // under each legacy name with its preset profile (so existing PARAM.in files
-  // keep working unchanged), plus a generic "waveic" for brand-new wave tests
-  // configured entirely through a #WAVEIC block (zero C++ to add a wave test).
+  // The four wave tests are now ONE parameterized WaveIC, registered under each
+  // legacy name with its preset profile (so existing PARAM.in files keep working
+  // unchanged), plus a generic "waveic" for brand-new wave tests configured
+  // entirely through a #WAVEIC block (zero C++ to add a wave test).
   ICRegistry::instance().register_ic("lightwave", []() {
     return std::unique_ptr<InitialCondition>(new WaveIC(WaveIC::LightWave));
   });

@@ -5,11 +5,11 @@
 
 // Unified transverse / sinusoidal wave initial condition.
 //
-// Phase 5 of the test-case refactor folds the four former wave plugins
-// (LightWaveIC, HybridWaveIC, IonAcousticWaveIC) into this single class. Every
-// wave test now configures through ONE #WAVEIC parameter block, so adding a new
-// wave test costs zero C++: register nothing, just write a #TESTCASE waveic (or
-// one of the legacy aliases) plus a #WAVEIC block in the test's PARAM.in.
+// The four former wave plugins (LightWaveIC, HybridWaveIC, IonAcousticWaveIC)
+// were folded into this single class. Every wave test now configures through ONE
+// #WAVEIC parameter block, so adding a new wave test costs zero C++: register
+// nothing, just write a #TESTCASE waveic (or one of the legacy aliases) plus a
+// #WAVEIC block in the test's PARAM.in.
 //
 // The four legacy names are still registered (lightwave, hybridwave,
 // convectionwave, ionacousticwave); each maps to a preset that reproduces the

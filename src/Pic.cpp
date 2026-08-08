@@ -218,8 +218,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("nHallSubcycle", nHallSubcycle);
   } else if (command == "#HALLTERM") {
     param.read_var("useHallTerm", useHallTerm);
-  } else if (command == "#QUADRATICGATHER") {
-    param.read_var("useQuadraticGather", useQuadraticGather);
   } else if (command == "#HYPERRESISTIVITY") {
     param.read_var("etaHyperSI", etaHyperSI);
     param.read_var("etaHyperMode", etaHyperMode);
@@ -363,10 +361,10 @@ void Pic::fill_new_cells() {
     fill_E_B_fields();
   }
 
-  // Phase 1+: every registered InitialCondition plug-in seeds its fields
-  // through the narrow PicICFields facade (LightWave, HybridWave, ConvectionWave,
-  // ...). The hybrid-wave velocity kick and all per-particle modifications are
-  // applied inside fill_particles() via the plugin.
+  // Every registered InitialCondition plug-in seeds its fields through the
+  // narrow PicICFields facade (LightWave, HybridWave, ConvectionWave, ...). The
+  // hybrid-wave velocity kick and all per-particle modifications are applied
+  // inside fill_particles() via the plugin.
   if (ic_) {
     PicICFields icf = ic_fields();
     ic_->set_fields(icf);
@@ -474,9 +472,9 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
         distribute_FabArray(kRK4[iLev][kk], cGrids[iLev], DistributionMap(iLev),
                             3, nGst, doMoveData);
 
-      // Phase 3.4: time-averaged B scratch (cell + node). Only used when
-      // useAvgFieldB is set; allocated whenever hybrid so the flag can be
-      // toggled without re-allocation. B_avg mirrors the live B grids.
+      // Time-averaged B scratch (cell + node). Only used when useAvgFieldB is
+      // set; allocated whenever hybrid so the flag can be toggled without
+      // re-allocation. B_avg mirrors the live B grids.
       distribute_FabArray(centerBavg[iLev], cGrids[iLev], DistributionMap(iLev),
                           3, nGst, doMoveData);
       distribute_FabArray(nodeBavg[iLev], nGrids[iLev], DistributionMap(iLev), 3,
@@ -841,9 +839,9 @@ void Pic::update_part_loc_to_half_stage() {
     for (int i = 0; i < nSpecies; ++i) {
       if (useHybridPIC && parts[i]->get_charge() < 0)
         continue;
-      // Phase 3.4: use the time-averaged B in the Boris half-stage position
-      // push when enabled (falls back to the instantaneous B before the first
-      // average is initialised).
+      // Use the time-averaged B in the Boris half-stage position push when
+      // enabled (falls back to the instantaneous B before the first average is
+      // initialised).
       const auto& nodeBhalf = (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
       parts[i]->update_position_to_half_stage(nodeEth[iLev], nodeBhalf,
                                               tc->get_dt());
@@ -900,7 +898,7 @@ void Pic::particle_mover() {
   Real dt = tc->get_dt();
   Real dtnext = tc->get_next_dt();
 
-  // Phase 3.4: use the time-averaged B in the Boris push when enabled.
+  // Use the time-averaged B in the Boris push when enabled.
   const Vector<MultiFab>& nodeBpush =
       (useAvgFieldB && isBavgInit) ? nodeBavg : nodeB;
   // Cell-centred B for the hybrid Boris push (the hybrid gather reads the
@@ -917,12 +915,10 @@ void Pic::particle_mover() {
   if (useHybridPIC) {
     // Hybrid-VPIC-style cell-centred Boris push: gather E and B from the
     // cell-centred fields (centerEhybrid is the integer-step E^{n+1} computed at
-    // the end of the previous update_B_hybrid; centerB/centerBavg is B). Phase B
-    // uses the quadratic-spline (centered B-spline) gather of Hybrid-VPIC.
-    const bool useQuadratic = useQuadraticGather;
+    // the end of the previous update_B_hybrid; centerB/centerBavg is B).
     for (int i : kineticSpecies_) {
       parts[i]->mover_cell_centered(centerEhybrid, centerBpush, eBg, uBg, dt,
-                                    dtnext, useQuadratic);
+                                    dtnext);
     }
   } else {
     for (int i : kineticSpecies_) {
@@ -1154,8 +1150,7 @@ void Pic::sum_moments(bool updateDt) {
   for (int i = 0; i < nSpecies; ++i) {
     Real energy = 0.0;
     if (useHybridPIC) {
-      // Hybrid-VPIC-style cell-centred moment deposit into centerPlasma[i]
-      // (trilinear cell-centred for Phase A; Esirkepov in Phase B).
+      // Cell-centred moment deposit into centerPlasma[i].
       energy = parts[i]->sum_moments_cell_centered(centerPlasma[i], centerB,
                                                    tc->get_dt(),
                                                    useEsirkepovDeposit);
@@ -2539,11 +2534,11 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         ez += etaResistivity * jz;
       }
 
-      // Add Electron pressure gradient and Hall term.
-      // Phase 0.3: density floor caps 1/rho so a tiny but positive charge
-      // density does not blow up these terms; the pressure closure still uses
-      // the TRUE rho. Cells with rho == 0 are left inert (as before) to avoid
-      // injecting a spurious force into empty regions.
+      // Add Electron pressure gradient and Hall term. The density floor caps
+      // 1/rho so a tiny but positive charge density does not blow up these
+      // terms; the pressure closure still uses the TRUE rho. Cells with rho == 0
+      // are left inert (as before) to avoid injecting a spurious force into
+      // empty regions.
       if (rho > 0) {
         const Real invRhoEff = 1.0 / amrex::max(rho, rhoFloorHybrid);
 
@@ -2612,7 +2607,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   Eout.FillBoundary(Geom(iLev).periodicity());
   apply_BC(cellStatus[iLev], Eout, 0, nDim3, &Pic::get_center_E, iLev);
 
-  // Phase 2: hyper-resistivity.
+  // Hyper-resistivity.
   //   E -= eta_h * nabla^2 J = -(eta_h / 4*pi) * nabla x (nabla^2 B).
   // Stage A: centerLapB = nabla^2(centerBin) (cell-centred Laplacian).
   // Stage B: centerHyperE = nabla x (centerLapB) (cell-centred collocated
@@ -2811,8 +2806,8 @@ void Pic::update_B_hybrid() {
   Real dt = tc->get_dt();
   Real subDt = dt / nHallSubcycle;
 
-  // Phase 2 (grid mode): fill the per-level applied hyper-resistivity from the
-  // CFL-scaled definition eta_h = 4*pi * C_h * dx_min^4 / dt_sub. (For "si" mode
+  // Grid mode: fill the per-level applied hyper-resistivity from the CFL-scaled
+  // definition eta_h = 4*pi * C_h * dx_min^4 / dt_sub. (For "si" mode
   // etaHyperLev was already set in post_process_param.) Recomputed each call
   // because dt_sub can vary between time steps.
   if (etaHyperMode == "grid" && etaHyperCh > 0) {
@@ -3047,10 +3042,10 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // Phase 3.4: update the running time-averaged magnetic field used inside the
-  // generalized Ohm's law and in the particle Boris push. B_avg is NOT
-  // divergence-clean and is never fed to the Faraday update, so no projection
-  // is needed here. The final (post-BC) B^{n+1} is used as the new sample.
+  // Update the running time-averaged magnetic field used inside the generalized
+  // Ohm's law and in the particle Boris push. B_avg is NOT divergence-clean and
+  // is never fed to the Faraday update, so no projection is needed here. The
+  // final (post-BC) B^{n+1} is used as the new sample.
   if (useAvgFieldB) {
     const Real alpha = (nAvgFieldB > 1) ? (1.0 - 1.0 / nAvgFieldB) : 0.0;
     // The hybrid gather and particle Boris push read only centerBavg. nodeBavg

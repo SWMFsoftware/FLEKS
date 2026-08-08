@@ -134,10 +134,10 @@ private:
   amrex::Vector<amrex::MultiFab> dBdt;
   amrex::Vector<amrex::MultiFab> particleQuality;
 
-  // Phase 3.4: running time-averaged magnetic field (EMA). Allocated when
-  // useHybridPIC; only used when useAvgFieldB is set. B_avg is NOT
-  // divergence-clean and is never fed into the Faraday update -- it is used
-  // only inside the generalized Ohm's law and in the particle Boris push.
+  // Running time-averaged magnetic field (EMA). Allocated when useHybridPIC;
+  // only used when useAvgFieldB is set. B_avg is NOT divergence-clean and is
+  // never fed into the Faraday update -- it is used only inside the generalized
+  // Ohm's law and in the particle Boris push.
   amrex::Vector<amrex::MultiFab> centerBavg;  // cell-centred <B>
   amrex::Vector<amrex::MultiFab> nodeBavg;    // node-centred <B>
   bool isBavgInit = false;     // first-step copy flag for the EMA
@@ -252,15 +252,14 @@ private:
   // correction in correct_B(). Default 0 -> use the plasma background
   // velocity (normal behaviour). A positive value forces the upwind flux to
   // use this constant speed everywhere (the old TopHat "bypass_limiter"
-  // behaviour used 1.0). Promoted from a per-test hook to a generic option in
-  // Phase 4 of the test-case refactor.
+  // behaviour used 1.0). Promoted from a per-test hook to a generic option.
   amrex::Real fixedUpwindVel = 0.0;
 
   // Fixed maximum signal speed (uMax) for the CFL time-step estimate, in the
   // cell-units used by the rest of the code. Default < 0 -> estimate uMax from
   // the particles' max thermal velocity (normal behaviour). A non-negative
   // value overrides the estimate (the old TopHat "override_umax" used 1.0).
-  // Promoted from a per-test hook to a generic #FIXEDUMAX option in Phase 4.
+  // Promoted from a per-test hook to a generic #FIXEDUMAX option.
   amrex::Real fixedUMax = -1.0;
 
   bool doSmoothJ = false;
@@ -295,18 +294,11 @@ private:
 
   // Use the Hybrid-VPIC Esirkepov trajectory-current deposit for the hybrid
   // cell-centred moments (J and rho). False uses a plain cell-centred trilinear
-  // deposit. Currently FALSE (Phase A validated): the full Esirkepov trajectory
-  // current (Phase B) is not yet enabled.
+  // deposit. Currently FALSE: the Esirkepov trajectory-current deposit is not
+  // yet implemented.
   bool useEsirkepovDeposit = false;
 
-  // Use the Hybrid-VPIC quadratic-spline (centered B-spline) gather for the
-  // hybrid cell-centred Boris push. False uses a cell-centred trilinear gather.
-  // Currently FALSE (Phase A validated): the quadratic gather (Phase B) is not
-  // yet enabled (it must be paired with the Esirkepov deposit to conserve
-  // charge in the nonlinear phase).
-  bool useQuadraticGather = false;
-
-  // Phase 3.4 -- time-averaged (EMA) magnetic field.
+  // Time-averaged (EMA) magnetic field.
   // B_avg = alpha * B_avg + (1 - alpha) * B^{n+1}, alpha = 1 - 1/nAvgFieldB.
   // B_avg is used inside the generalized Ohm's law (convection / Hall terms)
   // and in the particle Boris push in place of the instantaneous B, damping the
@@ -321,8 +313,8 @@ private:
 
   // Plug-in initial condition, created by the #TESTCASE registry lookup. The
   // kernel names no test case: every test-specific field / particle seeding
-  // and solver override goes through this pointer (see
-  // plan-testcase-refactor.md). Null for a regular simulation.
+  // and solver override goes through this pointer. Null for a regular
+  // simulation.
   std::unique_ptr<InitialCondition> ic_;
 
   ParticlesInfo pInfo;

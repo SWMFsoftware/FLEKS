@@ -923,20 +923,16 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 }
 
 //==========================================================
-// Hybrid-VPIC-style cell-centred moment deposit. The raw rho / momentum /
-// pressure-tensor moments are scattered to the cell-centred momentsMF
-// (centerPlasma[iSpecies]). Phase A (`useEsirkepov == false`) deposits with a
-// plain cell-centred trilinear scatter (find_cell_index + linear weights). The
-// Esirkepov trajectory-current form (Phase B) is enabled by `useEsirkepov`;
-// that path deposits J and rho via the current-decomposition method and the
-// pressure tensor trilinearly, but is selected only once Phase B is active.
+// Cell-centred moment deposit. The raw rho / momentum / pressure-tensor moments
+// are scattered to the cell-centred momentsMF (centerPlasma[iSpecies]) with a
+// plain cell-centred trilinear scatter (find_cell_index + linear weights).
 template <int NStructReal, int NStructInt>
 Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
     Vector<MultiFab>& momentsMF, Vector<MultiFab>& centerBMF, Real dt,
     bool useEsirkepov) {
   timing_func("Pts::sum_moments_cell_centered");
-  // The cell-centred B and the Esirkepov flag are reserved for the Phase B
-  // trajectory-current deposit; the Phase A path (active) is a plain
+  // centerBMF, useEsirkepov and dt are reserved for an Esirkepov trajectory-
+  // current deposit that is not implemented; the active path is a plain
   // cell-centred trilinear deposit and does not read them.
   (void)centerBMF;
   (void)useEsirkepov;
@@ -1670,12 +1666,12 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::mover_cell_centered(
     const Vector<MultiFab>& centerE, const Vector<MultiFab>& centerB,
     const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
-    Real dtNext, bool useQuadratic) {
+    Real dtNext) {
   if (is_neutral()) {
     neutral_mover(dt);
   } else {
     charged_particle_mover_cell_centered(centerE, centerB, eBg, uBg, dt,
-                                         dtNext, useQuadratic);
+                                         dtNext);
   }
 }
 
@@ -1796,16 +1792,14 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 
 //==========================================================
 // Hybrid-VPIC-style cell-centred Boris push. The E and B are gathered from the
-// cell-centred fields (centerE / centerB) instead of the node fields. For Phase
-// A (`useQuadratic == false`) the gather is a plain cell-centred trilinear
-// interpolation (find_cell_index + linear_interpolation_coef). For Phase B
-// (`useQuadratic == true`) it uses the quadratic-spline (centered B-spline)
-// gather of Hybrid-VPIC with the (i-1,i,i+1) cell stencil.
+// cell-centred fields (centerE / centerB) instead of the node fields. The
+// gather is a plain cell-centred trilinear interpolation (find_cell_index +
+// linear_interpolation_coef).
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
     const Vector<MultiFab>& centerE, const Vector<MultiFab>& centerB,
     const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
-    Real dtNext, bool useQuadratic) {
+    Real dtNext) {
   timing_func("Pts::charged_particle_mover_cell_centered");
 
   const Real qdto2mc = charge / mass * 0.5 * dt;
@@ -1824,7 +1818,7 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
 
       AoS& particles = pti.GetArrayOfStructs();
 
-      const Dim3 lo = init_dim3(-(useQuadratic ? 1 : 0));
+      const Dim3 lo = init_dim3(0);
       const Dim3 hi = init_dim3(1);
 
       for (auto& p : particles) {
@@ -1841,36 +1835,21 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
         //-----calculate interpolate coef begin-------------
         IntVect loIdx;
         RealVect dShift;
+        find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                        loIdx, dShift);
 
-        if (useQuadratic) {
-          // Phase B: quadratic-spline (centered B-spline) gather. The cell
-          // containing the particle is found with find_cell_index; the
-          // quadratic weights couple cells loIdx-1, loIdx, loIdx+1.
-          find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                          loIdx, dShift);
-        } else {
-          // Phase A: plain cell-centred trilinear gather (find_cell_index gives
-          // the two straddling cells loIdx, loIdx+1).
-          find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
-                          loIdx, dShift);
-        }
-
+        // Plain cell-centred trilinear gather. The linear weights couple cells
+        // loIdx and loIdx+1 (offsets 0 and 1); the 3x3x3 coef array is zero for
+        // the unused offset-2 entry.
         Real coef[3][3][3];
-        if (useQuadratic) {
-          quadratic_interpolation_coef(dShift, coef);
-        } else {
-          // Phase A: plain cell-centred trilinear gather. The linear weights
-          // couple cells loIdx and loIdx+1 (offsets 0 and 1); the 3x3x3 coef
-          // array is zero for the unused offset-2 entry.
-          Real coefLin[2][2][2];
-          linear_interpolation_coef(dShift, coefLin);
-          for (int k = 0; k <= 2; ++k)
-            for (int j = 0; j <= 2; ++j)
-              for (int i = 0; i <= 2; ++i)
-                coef[i][j][k] = (i <= 1 && j <= 1 && k <= 1)
-                                    ? coefLin[i][j][k]
-                                    : 0.0;
-        }
+        Real coefLin[2][2][2];
+        linear_interpolation_coef(dShift, coefLin);
+        for (int k = 0; k <= 2; ++k)
+          for (int j = 0; j <= 2; ++j)
+            for (int i = 0; i <= 2; ++i)
+              coef[i][j][k] = (i <= 1 && j <= 1 && k <= 1)
+                                  ? coefLin[i][j][k]
+                                  : 0.0;
         //-----calculate interpolate coef end-------------
 
         Real bp[3] = { 0, 0, 0 };

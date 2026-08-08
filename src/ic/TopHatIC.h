@@ -9,10 +9,9 @@
 // the is_tophat() hook (Pic::fill_new_node_E/B performs the actual writing).
 //
 // The two solver-behaviour overrides it previously needed -- a fixed CFL signal
-// speed (uMax = 1.0) and a fixed upwind-B velocity (1.0) -- were promoted to
-// ordinary PARAM options in Phase 4: set #FIXEDUMAX 1.0 and #UPWINDB with
-// fixedUpwindVel 1.0 in the test's PARAM.in. The TopHat plugin no longer needs
-// to touch solver behaviour.
+// speed (uMax = 1.0) and a fixed upwind-B velocity (1.0) -- are now ordinary
+// PARAM options: set #FIXEDUMAX 1.0 and #UPWINDB with fixedUpwindVel 1.0 in the
+// test's PARAM.in. The TopHat plugin no longer needs to touch solver behaviour.
 class TopHatIC : public InitialCondition {
 public:
   std::string name() const override { return "tophat"; }

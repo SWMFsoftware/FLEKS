@@ -110,13 +110,6 @@ up if the density dips locally in the high-amplitude nonlinear phase.
 #DENSITYFLOOR
 0.05                    rhoFloorHybrid
 
-Sub-cycle the B update.  The cell-centred (Hybrid-VPIC-style) hybrid solver is
-stable at nHallSubcycle = 1 (no sub-cycling), matching the Hybrid-VPIC reference
-(nsub = 1): the cell-centred 2*dx curl annihilates the Nyquist mode and the
-quadratic-spline gather/scatter filters grid-scale modes, so the explicit Hall-
-whistler term does not need a compressed effective dt for linear stability.  The
-rk4 integrator below uses the time-centred E (J from curl(B_stage),
-Hall/convection B from (B_stage+B^n)/2) matching Hybrid-VPIC.
 #HALLSUBCYCLE
 1                       nHallSubcycle
 
