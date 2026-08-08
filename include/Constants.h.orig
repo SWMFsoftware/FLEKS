@@ -42,9 +42,7 @@ inline constexpr int iUx_ = 1, iUy_ = 2, iUz_ = 3;
 inline constexpr int iMx_ = 1, iMy_ = 2, iMz_ = 3;
 inline constexpr int iPxx_ = 4, iPyy_ = 5, iPzz_ = 6, iPxy_ = 7, iPxz_ = 8,
                      iPyz_ = 9, iNum_ = 10;
-// Number of ion moment components (rho + 3 momentum) used by the hybrid
-// Ohm's-law time interpolation. nodePlasmaPrev stores only these (iRho_..iUz_),
-// the first nHybridMomentsComps components of the full nodePlasma layout.
+// Number of ion moment components (rho + 3 momentum) used by the hybrid solver.
 inline constexpr int nHybridMomentsComps = 4;
 
 inline constexpr bool doTiling = false;                
