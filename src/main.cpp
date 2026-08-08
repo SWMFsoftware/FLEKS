@@ -48,8 +48,8 @@ std::string prepare_standalone_run() {
   }
 
   if (amrex::ParallelDescriptor::IOProcessor()) {
-    std::filesystem::create_directories("FLEKS1/plots");
-    std::filesystem::create_directories("FLEKS1/restartOUT");
+    std::filesystem::create_directories("PC/plots");
+    std::filesystem::create_directories("PC/restartOUT");
   }
 
   return paramString;
