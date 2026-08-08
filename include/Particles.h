@@ -404,9 +404,6 @@ public:
   static constexpr int imu_ = 4;
 
   // Non-owning pointer to the active initial condition (owned by Pic).
-  // add_particles_cell routes its per-particle weight / velocity modifications
-  // through this pointer; null means no modification. This is the ONE ctor
-  // tail parameter for every test -- it never grows.
   const InitialCondition* ic_ = nullptr;
 
   // Index of the integer data.
