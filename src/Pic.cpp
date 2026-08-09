@@ -245,17 +245,11 @@ void Pic::post_process_param() {
                      ? FieldSolverMode::NewtonKrylov
                      : FieldSolverMode::GMRES;
 
-  // Identify electron vs. kinetic-ion species for the hybrid solver.
-  // get_charge() < 0 marks an (explicit) electron species; everything else is
-  // a kinetic ion. In standard PIC runs there is no electron particle species,
-  // so kineticSpecies_ equals all species and existing behaviour is unchanged.
+  // Classify species: negative charge -> electron, otherwise kinetic ion.
   kineticSpecies_.clear();
   iElectron_ = -1;
   for (int i = 0; i < nSpecies; ++i) {
-    // parts may not be fully populated when this runs; guard the access.
-    // If the species table is unavailable we conservatively treat every
-    // species as a kinetic ion (iElectron_ stays -1), which matches standard
-    // PIC behaviour and is also correct for the single-ion hybrid setup.
+    // Guard: parts may not be fully populated yet.
     if (i < (int)parts.size() && parts[i] && parts[i]->get_charge() < 0) {
       if (iElectron_ < 0)
         iElectron_ = i;
@@ -264,13 +258,11 @@ void Pic::post_process_param() {
     }
   }
 
-  // The hybrid solver is mutually exclusive with the implicit GM-PC solver.
+  // Hybrid and implicit GM-PC are mutually exclusive.
   if (useHybridPIC)
     solveEM = false;
 
-  // Convert user-supplied SI / eV values to code (normalized CGS) units.
-  // fi->post_process_param() must have already been called so that
-  // calc_normalization_units() has populated Si2NoV, Si2NoL, uNormSI, etc.
+  // Convert SI/eV inputs to normalized code units.
   if (useHybridPIC) {
     if (etaResistivitySI > 0) {
       etaResistivity =
@@ -278,8 +270,7 @@ void Pic::post_process_param() {
       amrex::Print() << "  etaResistivity: " << etaResistivitySI
                      << " [m^2/s] -> " << etaResistivity << " [code units]\n";
     }
-    // Hyper-resistivity (si mode): same conversion as resistivity, but the
-    // physical dimension is m^4/s so the length factor is Si2NoL^3.
+    // Hyper-resistivity: unit conversion with length factor Si2NoL^3.
     if (etaHyperSI > 0 && etaHyperMode == "si") {
       for (int iLev = 0; iLev < n_lev(); iLev++)
         etaHyperLev[iLev] =
@@ -288,11 +279,7 @@ void Pic::post_process_param() {
                      << etaHyperLev[0] << " [code units]\n";
     }
 
-    // Field integrator selection for the hybrid Faraday update.
-    // #FIELDINTEGRATOR is the single control for the time integration of B:
-    //   "rk4"    -> 4th-order Runge-Kutta sub-step (default);
-    //   "ssprk3" -> Hybrid-VPIC-style SSP-RK3 with time-centred E (averaged B).
-    // dispatch on the string directly in update_B_hybrid.
+    // Field integrator: "rk4" or "ssprk3".
     useRK4 = (fieldIntegrator == "rk4");
     if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3") {
       amrex::Print() << "  WARNING: unknown #FIELDINTEGRATOR '"
@@ -307,7 +294,6 @@ void Pic::post_process_param() {
       nAvgFieldB = 1;
     if (electronTemperatureEV > 0) {
       // Te_code = Te_eV * e / (mp * uNorm_SI^2)
-      // (same relation as in ExoSource.h::electron_temperature, inverted)
       double unormSI = fi->get_unorm_si();
       electronTemperature = electronTemperatureEV * cUnitChargeSI /
                             (cProtonMassSI * unormSI * unormSI);
@@ -315,20 +301,10 @@ void Pic::post_process_param() {
                      << " [eV] -> " << electronTemperature << " [code units]\n";
     }
 
-    // electronDensity0 is specified in amu/cc (same unit as the #UNIFORMSTATE
-    // rho input), so the user never has to compute code units by hand. The
-    // conversion to code units is deferred to the first hybrid field advance
-    // (convert_electron_density0(), called from update_B_hybrid): it needs the
-    // Si2NoRho normalization factor, which is only published by
-    // fi->post_process_param() AFTER this function returns (Domain.cpp calls
-    // pic->post_process_param() before fi->post_process_param()). Doing the
-    // conversion here would read a default (zero/1.0) normalization.
-    //
-    // The auto density floor is also deferred: it depends on the code-unit
-    // electronDensity0, so it is set inside convert_electron_density0().
+    // Conversion to code units deferred until convert_electron_density0()
+    // (Si2NoRho is not yet available here).
     if (rhoFloorHybrid <= 0)
-      rhoFloorHybrid =
-          0.0; // resolved to 1e-6*electronDensity0 on first advance
+      rhoFloorHybrid = 0.0; // resolved to 1e-6*electronDensity0 on first advance
   }
 }
 

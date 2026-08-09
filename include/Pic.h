@@ -260,68 +260,36 @@ private:
   amrex::Real cMaxE = -1;
   bool useUpwindB = false;
   amrex::Real limiterThetaB = 0;
-  // Fixed upwind velocity (in the background-flow units) for the B upwind
-  // correction in correct_B(). Default 0 -> use the plasma background
-  // velocity (normal behaviour). A positive value forces the upwind flux to
-  // use this constant speed everywhere (the old TopHat "bypass_limiter"
-  // behaviour used 1.0). Promoted from a per-test hook to a generic option.
+  // Override upwind velocity in correct_B(). 0 = use plasma background velocity.
   amrex::Real fixedUpwindVel = 0.0;
 
-  // Fixed maximum signal speed (uMax) for the CFL time-step estimate, in the
-  // cell-units used by the rest of the code. Default < 0 -> estimate uMax from
-  // the particles' max thermal velocity (normal behaviour). A non-negative
-  // value overrides the estimate (the old TopHat "override_umax" used 1.0).
-  // Promoted from a per-test hook to a generic #FIXEDUMAX option.
+  // Override uMax for CFL estimate. < 0 = estimate from particle thermal velocity.
   amrex::Real fixedUMax = -1.0;
 
   bool doSmoothJ = false;
   int nSmoothJ = 0;
   amrex::Real coefSmoothJ = 0.5;
 
-  // Digital-filter smoothing of the ion fluid moments (density + momentum
-  // density) before the generalized Ohm's law. Low-pass filters the PIC shot
-  // noise in U_i / rho that the explicit Ohm-Faraday loop otherwise
-  // accumulates into B (see hybrid free-stream drift study).
+  // Digital-filter smoothing of ion moments before the generalized Ohm's law.
   bool doSmoothMoments = false;
   int nSmoothMoments = 0;
   amrex::Real coefSmoothMoments = 0.5;
 
-  // Field integrator for the hybrid Faraday update. Selects how B is advanced
-  // from the electric field given by the generalized Ohm's law:
-  //   "rk4"   -> classic 4th-order Runge-Kutta on B, evaluating the Ohm's law
-  //   at
-  //              four trial B states. The default.
-  //   "ssprk3" -> Hybrid-VPIC-style strong-stability-preserving RK3 with a
-  //              time-centred E (stays stable in the high-amplitude phase where
-  //              rk4 goes NaN).
-  // Default "rk4". The useRK4 flag is set from this in post_process_param and
-  // is what update_B_hybrid actually dispatches on.
+  // B integrator: "rk4" (default) or "ssprk3".
   std::string fieldIntegrator = "rk4";
   bool useRK4 = false;
 
-  // First-hybrid-step guard: nodePlasmaPrev is seeded on the very first hybrid
-  // update (there is no previous deposit), and the current-interpolation hstep
-  // then degrades to a plain average for that single step. The first particle
-  // push uses the initial-condition E (nodeEth) directly.
+  // Guard: true on the first hybrid step before nodePlasmaPrev is seeded.
   bool isFirstHybridStep = true;
 
-  // Time-averaged (EMA) magnetic field.
-  // B_avg = alpha * B_avg + (1 - alpha) * B^{n+1}, alpha = 1 - 1/nAvgFieldB.
-  // B_avg is used inside the generalized Ohm's law (convection / Hall terms)
-  // and in the particle Boris push in place of the instantaneous B, damping the
-  // high-frequency PIC shot noise that pollutes the Hall term and the particle
-  // orbits. B_avg is NOT divergence-clean and is never fed to the Faraday
-  // update, so no projection is needed. Default false (use instantaneous B).
+  // EMA-averaged B fed to Ohm's law and Boris push. Dampens shot noise.
   bool useAvgFieldB = false;
   int nAvgFieldB = 10;
 
   bool doSmoothE = false;
   int nSmoothE = 0;
 
-  // Plug-in initial condition, created by the #TESTCASE registry lookup. The
-  // kernel names no test case: every test-specific field / particle seeding
-  // and solver override goes through this pointer. Null for a regular
-  // simulation.
+  // Plug-in initial condition via #TESTCASE registry.
   std::unique_ptr<InitialCondition> ic_;
 
   ParticlesInfo pInfo;
