@@ -468,9 +468,9 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       // rk3/rk4 persistent scratch (all cell-centred, 3 comps). centerBstart
       // holds the sub-step start B_n, and centerBstar holds the time-centred
       // (trial + B_n)/2 state used by the rk3/rk4 time-centred-E stages.
-      distribute_FabArray(centerBstart_heun[iLev], cGrids[iLev],
+      distribute_FabArray(centerBstart[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
-      distribute_FabArray(centerBstar_heun[iLev], cGrids[iLev],
+      distribute_FabArray(centerBstar[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
 
       // Cell-centred hybrid solver fields (Hybrid-VPIC-style layout). All are
@@ -2786,9 +2786,9 @@ void Pic::update_B_hybrid() {
       MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
       MultiFab::Saxpy(centerB_RK4[iLev], -0.5 * subDt, kRK4[iLev][0], 0, 0, 3,
                       nGst);
-      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+      MultiFab::LinComb(centerBstar[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
                         centerB[iLev], 0, 0, 3, nGst);
-      assemble_ohm_E(centerB_RK4[iLev], centerBstar_heun[iLev],
+      assemble_ohm_E(centerB_RK4[iLev], centerBstar[iLev],
                      centerE_RK4[iLev], iLev, hstepHalf);
       curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][1],
                             Geom(iLev).InvCellSize());
@@ -2797,9 +2797,9 @@ void Pic::update_B_hybrid() {
       MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
       MultiFab::Saxpy(centerB_RK4[iLev], -0.5 * subDt, kRK4[iLev][1], 0, 0, 3,
                       nGst);
-      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+      MultiFab::LinComb(centerBstar[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
                         centerB[iLev], 0, 0, 3, nGst);
-      assemble_ohm_E(centerB_RK4[iLev], centerBstar_heun[iLev],
+      assemble_ohm_E(centerB_RK4[iLev], centerBstar[iLev],
                      centerE_RK4[iLev], iLev, hstepHalf);
       curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][2],
                             Geom(iLev).InvCellSize());
@@ -2807,9 +2807,9 @@ void Pic::update_B_hybrid() {
       // Stage 4: B4 = B^n - dt k3; E at (B4 + B^n)/2.
       MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
       MultiFab::Saxpy(centerB_RK4[iLev], -subDt, kRK4[iLev][2], 0, 0, 3, nGst);
-      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+      MultiFab::LinComb(centerBstar[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
                         centerB[iLev], 0, 0, 3, nGst);
-      assemble_ohm_E(centerB_RK4[iLev], centerBstar_heun[iLev],
+      assemble_ohm_E(centerB_RK4[iLev], centerBstar[iLev],
                      centerE_RK4[iLev], iLev, g + 1.0 / (Real)nBSubcycle);
       curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][3],
                             Geom(iLev).InvCellSize());
@@ -2836,7 +2836,7 @@ void Pic::update_B_hybrid() {
       //   B^{n+1} = (1/3) B_n + (2/3)(B2 - dt curl(E((B2+B_n)/2)))
       const int iLev = 0;
       // Save B_n (sub-step start).
-      MultiFab::Copy(centerBstart_heun[iLev], centerB[iLev], 0, 0, 3, nGst);
+      MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, 3, nGst);
 
       // Stage 1: k1 = curl(E(B_n)); B1 = B_n - subDt k1.
       assemble_ohm_E(centerB[iLev], centerB[iLev], centerE_RK4[iLev], iLev, g);
@@ -2847,27 +2847,27 @@ void Pic::update_B_hybrid() {
 
       // Stage 2: avgB2 = (B1+B_n)/2; k2 = curl(E(avgB2));
       //   B2 = (3/4)B_n + (1/4)(B1 - subDt k2).
-      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
-                        centerBstart_heun[iLev], 0, 0, 3, nGst);
-      assemble_ohm_E(centerBstar_heun[iLev], centerBstar_heun[iLev],
+      MultiFab::LinComb(centerBstar[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                        centerBstart[iLev], 0, 0, 3, nGst);
+      assemble_ohm_E(centerBstar[iLev], centerBstar[iLev],
                      centerE_RK4[iLev], iLev, g + 1.0 / (Real)nBSubcycle);
       curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][1],
                             Geom(iLev).InvCellSize());
       MultiFab::LinComb(centerB_RK4[iLev], 0.25, centerB_RK4[iLev], 0, 0.75,
-                        centerBstart_heun[iLev], 0, 0, 3, nGst);
+                        centerBstart[iLev], 0, 0, 3, nGst);
       MultiFab::Saxpy(centerB_RK4[iLev], -0.25 * subDt, kRK4[iLev][1], 0, 0, 3,
                       nGst);
 
       // Stage 3: avgB3 = (B2+B_n)/2; k3 = curl(E(avgB3));
       //   B^{n+1} = (1/3)B_n + (2/3)(B2 - subDt k3).
-      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
-                        centerBstart_heun[iLev], 0, 0, 3, nGst);
-      assemble_ohm_E(centerBstar_heun[iLev], centerBstar_heun[iLev],
+      MultiFab::LinComb(centerBstar[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                        centerBstart[iLev], 0, 0, 3, nGst);
+      assemble_ohm_E(centerBstar[iLev], centerBstar[iLev],
                      centerE_RK4[iLev], iLev, g + 0.5 / (Real)nBSubcycle);
       curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][2],
                             Geom(iLev).InvCellSize());
       MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerB_RK4[iLev], 0,
-                        1.0 / 3.0, centerBstart_heun[iLev], 0, 0, 3, nGst);
+                        1.0 / 3.0, centerBstart[iLev], 0, 0, 3, nGst);
       MultiFab::Saxpy(centerB[iLev], -2.0 / 3.0 * subDt, kRK4[iLev][2], 0, 0, 3,
                       nGst);
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());

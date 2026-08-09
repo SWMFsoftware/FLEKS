@@ -130,8 +130,8 @@ private:
   // rk3/rk4 persistent scratch (allocated when useHybridPIC). centerBstart
   // holds the sub-step start B_n; centerBstar holds the time-centred (trial +
   // B_n)/2 state used by the rk3/rk4 time-centred-E stages.
-  amrex::Vector<amrex::MultiFab> centerBstart_heun;
-  amrex::Vector<amrex::MultiFab> centerBstar_heun;
+  amrex::Vector<amrex::MultiFab> centerBstart;
+  amrex::Vector<amrex::MultiFab> centerBstar;
 
   amrex::Vector<amrex::MultiFab> dBdt;
   amrex::Vector<amrex::MultiFab> particleQuality;
@@ -321,8 +321,8 @@ public:
     centerHyperE.resize(n_lev_max());
     centerBavg.resize(n_lev_max());
     nodeBavg.resize(n_lev_max());
-    centerBstart_heun.resize(n_lev_max());
-    centerBstar_heun.resize(n_lev_max());
+    centerBstart.resize(n_lev_max());
+    centerBstar.resize(n_lev_max());
     kRK4.resize(n_lev_max());
     for (int iL = 0; iL < n_lev_max(); ++iL)
       kRK4[iL].resize(4);
