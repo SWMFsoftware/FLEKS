@@ -526,7 +526,7 @@ public:
              const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
              amrex::Real dtNext);
 
-  // Cell-centred mover dispatch: gathers from the cell-centred centerE/centerB
+  // Cell-centred mover dispatch: gathers from the centerE/centerB
   // (rather than the node fields) using a trilinear gather.
   void mover_cell_centered(const amrex::Vector<amrex::MultiFab>& centerE,
                            const amrex::Vector<amrex::MultiFab>& centerB,
@@ -541,7 +541,7 @@ public:
                               amrex::Real dt, amrex::Real dtNext);
 
   // Cell-centred particle gather + Boris push, reading E and B from the
-  // cell-centred fields (centerE / centerB) using a trilinear gather.
+  // fields (centerE / centerB) using a trilinear gather.
   void charged_particle_mover_cell_centered(
       const amrex::Vector<amrex::MultiFab>& centerE,
       const amrex::Vector<amrex::MultiFab>& centerB,

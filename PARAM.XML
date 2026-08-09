@@ -1623,6 +1623,37 @@ $$
 The resulting source is deposited into the mapped ion species (iC + 1).
 </command>
 
+<command name="KINETICSOURCE"
+	 alias="KINETICSOURCE_FLEKS0,KINETICSOURCE_FLEKS1,KINETICSOURCE_FLEKS2"
+	 multiple="T">
+  <parameter name="kineticSource" type="logical" default="F"/>
+
+#KINETICSOURCE
+T                 kineticSource
+
+This command toggles how source plasma is injected when coupled to the
+outer heliosphere (OH) module via charge exchange (#CHARGEEXCHANGE).
+
+When kineticSource is true, the charge-exchange-produced ions are added
+as macro particles. During #CHARGEEXCHANGE the mass removed from each
+neutral is collected into per-cell source particle tiles (sourceParts),
+which are then added to the particle array by add_source_particles using
+#SOURCEPARTICLES nppc and #ADAPTIVESOURCEPPC. The newly created particles
+inherit a sampled velocity distribution (the neutral bulk velocity and the
+ion thermal speed) rather than the fluid source fields, giving a proper
+kinetic treatment of the pickup-ion source.
+
+When kineticSource is false (the default), the ion source is deposited as
+a fluid (node fluid) source through the SourceInterface and is injected
+each step by fill_source_particles() from the fluid source moments
+(see #SOURCE and #SOURCEPARTICLES).
+
+The flag is set to true automatically in Particle-Tracker (PT) builds,
+where kinetic source injection is the expected behaviour. It is only
+relevant for OH-PT coupled runs that use charge exchange; it has no
+effect in standalone PIC runs.
+</command>
+
 <command name="RECOMBINATION"
 	 alias="RECOMBINATION_FLEKS0,RECOMBINATION_FLEKS1,RECOMBINATION_FLEKS2"
 	 multiple="T">
