@@ -71,7 +71,7 @@ private:
   // True once electronDensity0 (code units) has been converted.
   bool electronDensity0Converted_ = false;
   // Number of sub-steps for the B-field update within one coarse dt.
-  int nHallSubcycle = 1;
+  int nBSubcycle = 1;
   // Hall term (J x B) / rho in the generalized Ohm's law. Default on.
   bool useHallTerm = true;
 
@@ -89,7 +89,7 @@ private:
   // Minimum charge density floor for the 1/rho factors in the Hall term and
   // the electron-pressure-gradient term. <= 0 means auto: 1e-6 *
   // electronDensity0.
-  amrex::Real rhoFloorHybrid = 0.0;
+  amrex::Real rhoMinOhm = 0.0;
 
   bool useExplicitPIC = false;
   bool projectDownEmFields = true;

@@ -58,8 +58,8 @@ Hall term ON (this test confirms it is silent when J = 0 / rho = 0).
 #HALLTERM
 T                       useHallTerm
 
-#HALLSUBCYCLE
-1                       nHallSubcycle
+#BSUBCYCLE
+1                       nBSubcycle
 
 Single kinetic ion species (q = m = 1); no particles are actually loaded below.
 #PLASMA

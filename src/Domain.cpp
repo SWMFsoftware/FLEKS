@@ -950,9 +950,9 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#SOLVEEM" || command == "#PARTMODE" ||
         command == "#SELECTPARTICLE" || command == "#MAXCHARGEEXCHANGERATE" ||
         command == "#HYBRIDPIC" || command == "#RESISTIVITY" ||
-        command == "#ELECTRONTEMPERATURE" || command == "#HALLSUBCYCLE" ||
+        command == "#ELECTRONTEMPERATURE" || command == "#BSUBCYCLE" ||
         command == "#HALLTERM" || command == "#HYPERRESISTIVITY" ||
-        command == "#DENSITYFLOOR" || command == "#FIELDINTEGRATOR" ||
+        command == "#MINIMUMDENSITY" || command == "#FIELDINTEGRATOR" ||
 
         command == "#AVGFIELDB" || command == "#SMOOTHMOMENTS" ||
         command == "#MEMORY") {

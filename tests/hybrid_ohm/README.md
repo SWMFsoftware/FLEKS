@@ -5,7 +5,7 @@ electrons) field solver in standalone FLEKS: all four terms of the generalized
 Ohm's law are active in `Pic::assemble_ohm_E` (see `docs/Algorithm.tex`):
 
 1. **Convection** — `E = -U_i × B` (always active).
-2. **Hall** — `(J × B) / (e n_e)`, sub-cycled (`#HALLSUBCYCLE`).
+2. **Hall** — `(J × B) / (e n_e)`, sub-cycled (`#BSUBCYCLE`).
 3. **Resistive** — `η J`, enabled by `#RESISTIVITY > 0`.
 4. **Electron pressure gradient** — `∇P_e / (e n_e)`, enabled by
    `#ELECTRONTEMPERATURE > 0`.
@@ -18,7 +18,7 @@ the unit-convention discussion; the Hall-CFL sub-cycling rationale is
 documented in the `PARAM.in` comments.
 
 The solver-selection commands (`#SOLVEEM`, `#HYBRIDPIC`, `#RESISTIVITY`,
-`#ELECTRONTEMPERATURE`, `#HALLSUBCYCLE`) and the conversion of the SI/eV
+`#ELECTRONTEMPERATURE`, `#BSUBCYCLE`) and the conversion of the SI/eV
 inputs to code units are documented as comments directly in
 [`PARAM.in`](PARAM.in).
 

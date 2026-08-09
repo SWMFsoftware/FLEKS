@@ -88,8 +88,8 @@ no B sub-cycling is needed and the Hall term is switched OFF. The only remaining
 E source is the electron pressure gradient -grad(p_e)/rho.
 #HALLTERM
 F                       useHallTerm
-#HALLSUBCYCLE
-1                       nHallSubcycle
+#BSUBCYCLE
+1                       nBSubcycle
 
 Smoothing of the ion fluid moments (density and momentum) before the Ohm's law,
 matching Hybrid-VPIC's nsm binomial-style filter (nSmoothMoments = 2 passes).

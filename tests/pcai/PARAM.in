@@ -107,16 +107,16 @@ electron-pressure-gradient term.  Hybrid-VPIC clamps rho at max(rho, 0.05) in
 its field advance (hyb_advance_e.cc), while FLEKS defaults to 1e-6; raising the
 floor to the reference value prevents (J x B)/rho and grad(Pe)/rho from blowing
 up if the density dips locally in the high-amplitude nonlinear phase.
-#DENSITYFLOOR
-0.05                    rhoFloorHybrid
+#MINIMUMDENSITY
+0.05                    rhoMinOhm
 
-#HALLSUBCYCLE
-1                       nHallSubcycle
+#BSUBCYCLE
+1                       nBSubcycle
 
 Time-integration for the hybrid Faraday (B) update.  "rk4" now evaluates E at
 the TIME-CENTRED B (B_stage + B^n)/2 in the generalized Ohm's law at each stage,
 exactly as Hybrid-VPIC's hyb_advance_e uses (cbx+cbx0)/2 (B_n is stored by
-STOREBOLD).  With nHallSubcycle = 1 this reproduces the Hybrid-VPIC field
+STOREBOLD).  With nBSubcycle = 1 this reproduces the Hybrid-VPIC field
 advance (RK4, no sub-cycling), which is stable in the high-amplitude nonlinear
 phase without over-damping the instability.
 #FIELDINTEGRATOR

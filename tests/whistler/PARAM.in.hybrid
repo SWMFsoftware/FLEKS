@@ -66,12 +66,12 @@ grid-scale whistler mode, omega_max * dt_sub < S (S ~ 2.83 for RK4). Because the
 compact curl operators (curl_center_to_node / curl_node_to_center) annihilate
 the exact Nyquist mode and are far less stiff than the continuum estimate, the
 effective omega_max here is ~100/Omega_i, so even dt = 0.02 is within the RK4
-limit and nHallSubcycle = 1 is stable (verified: the measured whistler frequency
-is identical for nHallSubcycle in {1,4,8,16,32}). 8 is chosen as a conservative
+limit and nBSubcycle = 1 is stable (verified: the measured whistler frequency
+is identical for nBSubcycle in {1,4,8,16,32}). 8 is chosen as a conservative
 margin that is 4x cheaper than the previous 32 while still exercising the
 sub-cycling machinery.
-#HALLSUBCYCLE
-8                       nHallSubcycle
+#BSUBCYCLE
+8                       nBSubcycle
 
 Single kinetic ion species (q = m = 1); the electron is an implicit
 neutralizing massless fluid, so no electron particle species is present.

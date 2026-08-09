@@ -8,7 +8,7 @@ full-PIC beam benchmark) and is exercised by tests/validate_performance.py.
 
 Normalization matches the hybrid test family (whistler): lNormSI ~ d_i,
 uNormSI ~ v_A so d_i ~ v_A ~ 1 and (for the proton) B ~ Omega_i ~ 1 in code
-units.  The Hall/whistler mode is sub-cycled (nHallSubcycle = 8) so the explicit
+units.  The Hall/whistler mode is sub-cycled (nBSubcycle = 8) so the explicit
 advance stays RK4-stable at dt = 0.02; this exercises the sub-cycling machinery
 that dominates the hybrid field-solver cost.
 
@@ -61,10 +61,10 @@ Hall-only: resistive and electron-pressure-gradient terms are turned off
 1.0                     electronDensity0
 
 Sub-cycle the B update: the explicit Hall advance is limited by the discrete
-grid-scale whistler mode.  nHallSubcycle = 8 exercises the sub-cycling machinery
+grid-scale whistler mode.  nBSubcycle = 8 exercises the sub-cycling machinery
 (4x cheaper than 32 while still exercising it).
-#HALLSUBCYCLE
-8                       nHallSubcycle
+#BSUBCYCLE
+8                       nBSubcycle
 
 Single kinetic ion species (q = m = 1); the electron is an implicit
 neutralizing massless fluid, so no electron particle species is present.

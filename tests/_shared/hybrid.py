@@ -33,7 +33,7 @@ def validate_hybrid(pic_diags=None, test_name=None):
        kinetic-ion energy Epart0 stays within ~10% of its initial value.
     4. Magnetic energy stays bounded -- the Hall-driven whistler must not
        numerically blow up (this is the failure mode of the missing 1/(4*pi)
-       factor in the Hall current, or insufficient #HALLSUBCYCLE).
+       factor in the Hall current, or insufficient #BSUBCYCLE).
     The precise whistler dispersion omega/Omega_i = (k d_i)^2/(1+(k d_i)^2)
     is verified separately by _check_hybrid_wave_dispersion() / the README.
     """
@@ -308,7 +308,7 @@ def _check_hybrid_wave_dispersion():
        confirms the wave is correctly seeded and the solver propagates it.
     2. Late time: the transverse amplitude is bounded (no catastrophic
        blow-up from a missing 1/(4*pi) Hall factor or insufficient
-       #HALLSUBCYCLE).
+       #BSUBCYCLE).
 
     Note: at moderate PPC the Hall term amplifies grid-scale particle noise
     over long times (a well-known hybrid-PIC limitation).  The early-time

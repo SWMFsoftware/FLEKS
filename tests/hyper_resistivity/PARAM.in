@@ -60,11 +60,11 @@ grid                    etaHyperMode
 0.001                   etaHyperCh
 
 Minimum charge-density floor for the 1/rho factors (auto = 1e-6*density here).
-#DENSITYFLOOR
-0.0                     rhoFloorHybrid
+#MINIMUMDENSITY
+0.0                     rhoMinOhm
 
-#HALLSUBCYCLE
-32                      nHallSubcycle
+#BSUBCYCLE
+32                      nBSubcycle
 
 Fourth-order Runge-Kutta field integrator (default). Evaluates the generalized
 Ohm's law at four trial B states. "ssprk3" is the alternative SSP-RK3 integrator.

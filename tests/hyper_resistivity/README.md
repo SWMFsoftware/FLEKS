@@ -20,7 +20,7 @@ success criteria inherited from that test.
   `"grid"`), `etaHyperCh` (the dimensionless `C_h` for grid mode).
 - `"grid"` (default here) is robust to resolution/time-step changes:
   `eta_h = 4*pi * C_h * dx_min^4 / dt_sub`. `"si"` uses a direct physical value.
-- `#DENSITYFLOOR`: minimum `rho` for the `1/rho` factors; `<= 0` = auto
+- `#MINIMUMDENSITY`: minimum `rho` for the `1/rho` factors; `<= 0` = auto
   (`1e-6 * electronDensity0`).
 
 ## Dispersion validation

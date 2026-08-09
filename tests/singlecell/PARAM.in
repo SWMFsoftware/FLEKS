@@ -52,8 +52,8 @@ Hall term ON (this test confirms it contributes exactly zero on a single cell).
 #HALLTERM
 T                       useHallTerm
 
-#HALLSUBCYCLE
-1                       nHallSubcycle
+#BSUBCYCLE
+1                       nBSubcycle
 
 Single kinetic ion species (q = m = 1); electron is implicit neutralizing fluid.
 #PLASMA

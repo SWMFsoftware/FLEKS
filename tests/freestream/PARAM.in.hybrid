@@ -55,8 +55,8 @@ Hall-only: resistive and electron-pressure-gradient terms are turned off
 1.0                     electronGamma
 1.0                     electronDensity0
 
-#HALLSUBCYCLE
-1                       nHallSubcycle
+#BSUBCYCLE
+1                       nBSubcycle
 
 Single kinetic ion species (q = m = 1); the electron is an implicit
 neutralizing massless fluid, so no electron particle species is present.

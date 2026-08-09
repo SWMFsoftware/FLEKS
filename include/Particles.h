@@ -451,8 +451,7 @@ public:
                           amrex::Real dt);
 
   // Cell-centred moment deposit: scatter rho/rhoU/Pi from particles to the
-  // cell-centred momentsMF (centerPlasma[iSpecies]) with cell-centred trilinear
-  // weights.
+  // momentsMF (centerPlasma[iSpecies]) with trilinear weights.
   amrex::Real sum_moments_cell_centered(
       amrex::Vector<amrex::MultiFab>& momentsMF);
 

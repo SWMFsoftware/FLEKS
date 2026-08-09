@@ -50,8 +50,8 @@ Hall advance is not stiff at this resolution.
 #HALLTERM
 T                       useHallTerm
 
-#HALLSUBCYCLE
-1                       nHallSubcycle
+#BSUBCYCLE
+1                       nBSubcycle
 
 Resistive and electron-pressure-gradient terms OFF (0.0) so the instability
 grows undamped; the field advance keeps only the convection + Hall Ohm terms.

@@ -214,16 +214,16 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("electronTemperature", electronTemperatureEV);
     param.read_var("electronGamma", electronGamma);
     param.read_var("electronDensity0", electronDensity0EV);
-  } else if (command == "#HALLSUBCYCLE") {
-    param.read_var("nHallSubcycle", nHallSubcycle);
+  } else if (command == "#BSUBCYCLE") {
+    param.read_var("nBSubcycle", nBSubcycle);
   } else if (command == "#HALLTERM") {
     param.read_var("useHallTerm", useHallTerm);
   } else if (command == "#HYPERRESISTIVITY") {
     param.read_var("etaHyperSI", etaHyperSI);
     param.read_var("etaHyperMode", etaHyperMode);
     param.read_var("etaHyperCh", etaHyperCh);
-  } else if (command == "#DENSITYFLOOR") {
-    param.read_var("rhoFloorHybrid", rhoFloorHybrid);
+  } else if (command == "#MINIMUMDENSITY") {
+    param.read_var("rhoMinOhm", rhoMinOhm);
   } else if (command == "#FIELDINTEGRATOR") {
     param.read_var("fieldIntegrator", fieldIntegrator);
   } else if (command == "#AVGFIELDB") {
@@ -303,8 +303,8 @@ void Pic::post_process_param() {
 
     // Conversion to code units deferred until convert_electron_density0()
     // (Si2NoRho is not yet available here).
-    if (rhoFloorHybrid <= 0)
-      rhoFloorHybrid = 0.0; // resolved to 1e-6*electronDensity0 on first advance
+    if (rhoMinOhm <= 0)
+      rhoMinOhm = 0.0; // resolved to 1e-6*electronDensity0 on first advance
   }
 }
 
@@ -1322,8 +1322,8 @@ void Pic::convert_electron_density0() {
       electronDensity0EV * 1.0e6 * cProtonMassSI * fi->get_Si2NoRho();
 
   // Auto density floor: 1e-6 * reference charge density, now in code units.
-  if (rhoFloorHybrid <= 0)
-    rhoFloorHybrid = 1.0e-6 * electronDensity0;
+  if (rhoMinOhm <= 0)
+    rhoMinOhm = 1.0e-6 * electronDensity0;
 
   amrex::Print() << "  electronDensity0: " << electronDensity0EV
                  << " [amu/cc] -> " << electronDensity0
@@ -2507,7 +2507,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
       // pressure closure itself uses the true rho. Cells with rho == 0 are
       // left inert.
       if (rho > 0) {
-        const Real invRhoEff = 1.0 / amrex::max(rho, rhoFloorHybrid);
+        const Real invRhoEff = 1.0 / amrex::max(rho, rhoMinOhm);
 
         // Electron pressure gradient
         Real dPe_dx = 0.0, dPe_dy = 0.0, dPe_dz = 0.0;
@@ -2719,7 +2719,7 @@ void Pic::update_B_hybrid() {
   convert_electron_density0();
 
   Real dt = tc->get_dt();
-  Real subDt = dt / nHallSubcycle;
+  Real subDt = dt / nBSubcycle;
 
   // Grid-mode hyper-resistivity: eta_h = 4*pi * C_h * dx_min^4 / dt_sub.
   if (etaHyperMode == "grid" && etaHyperCh > 0) {
@@ -2758,11 +2758,11 @@ void Pic::update_B_hybrid() {
                    dBdt[iLev].nGrow());
   }
 
-  for (int subStep = 0; subStep < nHallSubcycle; ++subStep) {
+  for (int subStep = 0; subStep < nBSubcycle; ++subStep) {
 
     // Global sub-step fraction g in [0, 1); the moment interpolation hstep.
-    const Real g = (Real)subStep / (Real)nHallSubcycle;
-    const Real hstepHalf = g + 0.5 / (Real)nHallSubcycle;
+    const Real g = (Real)subStep / (Real)nBSubcycle;
+    const Real hstepHalf = g + 0.5 / (Real)nBSubcycle;
 
     if (useRK4) {
       // Classical RK4 on dB/dt = -curl(E), E = E_Ohm(B), on level 0:
@@ -2810,7 +2810,7 @@ void Pic::update_B_hybrid() {
       MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
                         centerB[iLev], 0, 0, 3, nGst);
       assemble_ohm_E(centerB_RK4[iLev], centerBstar_heun[iLev],
-                     centerE_RK4[iLev], iLev, g + 1.0 / (Real)nHallSubcycle);
+                     centerE_RK4[iLev], iLev, g + 1.0 / (Real)nBSubcycle);
       curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][3],
                             Geom(iLev).InvCellSize());
 
@@ -2850,7 +2850,7 @@ void Pic::update_B_hybrid() {
       MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
                         centerBstart_heun[iLev], 0, 0, 3, nGst);
       assemble_ohm_E(centerBstar_heun[iLev], centerBstar_heun[iLev],
-                     centerE_RK4[iLev], iLev, g + 1.0 / (Real)nHallSubcycle);
+                     centerE_RK4[iLev], iLev, g + 1.0 / (Real)nBSubcycle);
       curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][1],
                             Geom(iLev).InvCellSize());
       MultiFab::LinComb(centerB_RK4[iLev], 0.25, centerB_RK4[iLev], 0, 0.75,
@@ -2863,7 +2863,7 @@ void Pic::update_B_hybrid() {
       MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
                         centerBstart_heun[iLev], 0, 0, 3, nGst);
       assemble_ohm_E(centerBstar_heun[iLev], centerBstar_heun[iLev],
-                     centerE_RK4[iLev], iLev, g + 0.5 / (Real)nHallSubcycle);
+                     centerE_RK4[iLev], iLev, g + 0.5 / (Real)nBSubcycle);
       curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][2],
                             Geom(iLev).InvCellSize());
       MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerB_RK4[iLev], 0,

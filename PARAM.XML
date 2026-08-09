@@ -330,9 +330,8 @@ where hstep is the sub-step fraction (hstep=0 gives J^n = 1/2(J^{n-1/2}+J^{n+1/2
 hstep=1 gives J^{n+1} = 3/2 J^{n+1/2} - 1/2 J^{n-1/2}). The particle Boris push
 uses the integer-step E field from the previous field advance. Related numerical
 controls:
-    #HALLSUBCYCLE    sub-steps for the explicit Hall-whistler CFL,
-    #DENSITYFLOOR    caps the 1/rho factors in the Hall and pressure terms,
-    #HYBRIDCURL      compact vs collocated current J = curl(B)/(4pi),
+    #BSUBCYCLE    sub-steps for the explicit Hall-whistler CFL,
+    #MINIMUMDENSITY  caps the 1/rho factors in the Hall and pressure terms,
     #FIELDINTEGRATOR time integrator for the Faraday (B) update,
     #AVGFIELDB, #SMOOTHMOMENTS  damp PIC shot noise in the Ohm's law.
 </command>
@@ -372,21 +371,21 @@ otherwise adiabatic Pe = P0 (rho/rho0)^gamma. electronDensity0 is in code
 units (default 1.0 = reference charge density).
 </command>
 
-<command name="HALLSUBCYCLE"
-   alias="HALLSUBCYCLE_FLEKS0,HALLSUBCYCLE_FLEKS1,HALLSUBCYCLE_FLEKS2"
+<command name="BSUBCYCLE"
+   alias="BSUBCYCLE_FLEKS0,BSUBCYCLE_FLEKS1,BSUBCYCLE_FLEKS2"
    multiple="T">
-  <parameter name="nHallSubcycle" type="integer" min="1" default="1"/>
+  <parameter name="nBSubcycle" type="integer" min="1" default="1"/>
 
-#HALLSUBCYCLE
-1                 nHallSubcycle
+#BSUBCYCLE
+1                 nBSubcycle
 
 Number of sub-steps used to advance the magnetic field within one coarse time
-step in the hybrid solver (refines the Hall-term integration). The total advance
-is always exactly one coarse step dt: nHallSubcycle full integrator steps of
-size dt/nHallSubcycle are taken (e.g. with #FIELDINTEGRATOR rk4, nHallSubcycle
+step in the hybrid solver (refines the B-field integration). The total advance
+is always exactly one coarse step dt: nBSubcycle full integrator steps of
+size dt/nBSubcycle are taken (e.g. with #FIELDINTEGRATOR rk4, nBSubcycle
 nested 4th-order Runge-Kutta steps). Because RK4 has a large linear-stability
 region along the imaginary axis (where the Hall-whistler oscillatory modes live),
-with rk4 a single sub-step (nHallSubcycle 1) is usually sufficient for stability.
+with rk4 a single sub-step (nBSubcycle 1) is usually sufficient for stability.
 Only used when #HYBRIDPIC is T.
 </command>
 
@@ -402,7 +401,7 @@ T                 useHallTerm
 in the generalized Ohm's law used by the hybrid (HYBRIDPIC) field solver. Set to
 F to advance the field with the convection term only (E = -U_i x B, plus any
 resistivity / electron pressure gradient that is independently enabled). With the
-Hall term off the explicit Hall-whistler CFL no longer applies, so HALLSUBCYCLE 1
+Hall term off the explicit Hall-whistler CFL no longer applies, so BSUBCYCLE 1
 (no sub-cycling) is sufficient.
 </command>
 
@@ -432,13 +431,13 @@ general production runs. 0 (either mode) disables the term. Only used when
 HYBRIDPIC is T.
 </command>
 
-<command name="DENSITYFLOOR"
-   alias="DENSITYFLOOR_FLEKS0,DENSITYFLOOR_FLEKS1,DENSITYFLOOR_FLEKS2"
+<command name="MINIMUMDENSITY"
+   alias="MINIMUMDENSITY_FLEKS0,MINIMUMDENSITY_FLEKS1,MINIMUMDENSITY_FLEKS2"
    multiple="T">
-  <parameter name="rhoFloorHybrid" type="real" default="0.0"/>
+  <parameter name="rhoMinOhm" type="real" default="0.0"/>
 
-#DENSITYFLOOR
-0.0               rhoFloorHybrid
+#MINIMUMDENSITY
+0.0               rhoMinOhm
 
 Minimum charge density for the 1/rho factors in the Hall term and the electron
 pressure gradient term of the hybrid Ohm's law. It caps 1/rho so that cells with
@@ -464,7 +463,7 @@ law. This is the single control for the time integration of B (there is no
 separate time-centring flag). "rk4" is the classic 4th-order Runge-Kutta on B,
 evaluating the Ohm's law at four trial B states; it is the default and has a
 large linear-stability region, so with rk4 you typically do not need a large
-#HALLSUBCYCLE for stability. "ssprk3" is the strong-stability-preserving RK3 with
+#BSUBCYCLE for stability. "ssprk3" is the strong-stability-preserving RK3 with
 a time-centred E. Only used when HYBRIDPIC is T.
     </command>
 

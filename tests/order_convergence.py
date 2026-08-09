@@ -70,7 +70,7 @@ def run_case(dt, nsub, nprocs=1):
         text = f.read()
     # Time step + subcycling (smaller dt -> weaker Hall CFL, fewer sub-steps).
     text = _rewrite_param(text, "#TIMESTEPPING", {"dt": dt})
-    text = _rewrite_param(text, "#HALLSUBCYCLE", {"nHallSubcycle": nsub})
+    text = _rewrite_param(text, "#BSUBCYCLE", {"nBSubcycle": nsub})
     # Disable the EMA B-averaging: it is a time filter that would mask the
     # pure temporal convergence order.
     text = _rewrite_param(text, "#AVGFIELDB", {"useAvgFieldB": "F"})
@@ -227,7 +227,7 @@ def main():
     if args.dt is not None:
         # For a single dt, scale the subcycle count to keep the absolute
         # sub-step size dt_sub = dt/nsub at the verified-stable minimum
-        # (nHallSubcycle = 2 at dt = 0.02, i.e. dt_sub ~ 0.01).
+        # (nBSubcycle = 2 at dt = 0.02, i.e. dt_sub ~ 0.01).
         nsub = max(1, round(2 * 0.02 / args.dt))
         res = run_case(args.dt, nsub, args.nproc)
         if res is None:
@@ -237,13 +237,13 @@ def main():
 
     # dt refinement sequence (halving), subcycling scaled to keep the absolute
     # sub-step size (Hall CFL) at the verified-stable minimum for the IAW test
-    # (nHallSubcycle = 2 at dt = 0.02; see tests/iaw/PARAM.in). Grid is fixed
+    # (nBSubcycle = 2 at dt = 0.02; see tests/iaw/PARAM.in). Grid is fixed
     # (64 cells) so the temporal order is isolated.
     base_dt = 0.02
     base_nsub = 2
     dts = [base_dt / 2**r for r in range(4)]
     omegas = []
-    print("%-10s %-12s %-16s" % ("dt", "nHallSubcycle", "omega_code"))
+    print("%-10s %-12s %-16s" % ("dt", "nBSubcycle", "omega_code"))
     for dt in dts:
         nsub = max(1, round(base_nsub * base_dt / dt))
         res = run_case(dt, nsub, args.nproc)
