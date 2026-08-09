@@ -4,10 +4,8 @@
 #include "WaveIC.h"
 
 void register_all_initial_conditions() {
-  // The four wave tests are now ONE parameterized WaveIC, registered under each
-  // legacy name with its preset profile (so existing PARAM.in files keep
-  // working unchanged), plus a generic "waveic" for brand-new wave tests
-  // configured entirely through a #WAVEIC block (zero C++ to add a wave test).
+  // The four wave tests share one parameterized WaveIC (legacy names + generic
+  // "waveic" configured via #WAVEIC).
   ICRegistry::instance().register_ic("lightwave", []() {
     return std::unique_ptr<InitialCondition>(new WaveIC(WaveIC::LightWave));
   });
@@ -26,7 +24,6 @@ void register_all_initial_conditions() {
     return std::unique_ptr<InitialCondition>(new WaveIC(WaveIC::Generic));
   });
 
-  // Non-wave tests keep their dedicated plugins.
   ICRegistry::instance().register_ic(
       "beam", []() { return std::unique_ptr<InitialCondition>(new BeamIC()); });
   ICRegistry::instance().register_ic("tophat", []() {

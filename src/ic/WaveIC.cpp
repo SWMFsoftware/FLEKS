@@ -7,10 +7,7 @@
 #include "ReadParam.h"
 #include "WaveIC.h"
 
-// The pure-EM lightwave test seeds no macroparticles (the electron is a
-// background fluid exercised only by the field solver). Zero the per-cell count
-// so add_particles_domain() returns early and the PIC cost collapses to the
-// field solve. Other wave profiles keep their kinetic ions.
+// Pure-EM lightwave: zero particles so only the field solver runs.
 void WaveIC::apply_particle_override(ParticlesInfo& pInfo) const {
   if (profile_ == LightWave)
     pInfo.nPartPerCell = amrex::IntVect::Zero;
@@ -34,10 +31,7 @@ std::string WaveIC::name() const {
   return "waveic";
 }
 
-// Fill the preset defaults for the active profile. Called at the start of
-// read_param so that any #WAVEIC sub-parameter the user supplies overrides the
-// preset (whether the sub-params sit under #TESTCASE, as the legacy tests have
-// them, or under a dedicated #WAVEIC block).
+// Fill preset defaults for the active profile; #WAVEIC sub-params override.
 void WaveIC::apply_preset() {
   switch (profile_) {
     case LightWave:
@@ -85,8 +79,6 @@ void WaveIC::apply_preset() {
       pert_ = 0.1;
       break;
     case Generic:
-      // No behaviour by default: the user MUST supply the relevant #WAVEIC
-      // sub-parameters (seedE/seedB/seedWeight, frac/pert, waveMode, ...).
       seedE_ = false;
       seedB_ = false;
       oblique_ = false;
@@ -102,9 +94,7 @@ void WaveIC::apply_preset() {
 
 void WaveIC::read_param(ReadParam& param) {
   apply_preset();
-  // All sub-parameters are optional: legacy tests carry them under #TESTCASE,
-  // new tests carry them under #WAVEIC. read_optional returns false (without
-  // aborting) when the token is absent or is the start of the next #COMMAND.
+  // All sub-parameters are optional.
   param.read_optional("seedE", seedE_);
   param.read_optional("seedB", seedB_);
   param.read_optional("oblique", oblique_);
@@ -127,8 +117,7 @@ void WaveIC::set_fields(PicICFields& fields) const {
     return;
 
   for (int iLev = 0; iLev < nLev; ++iLev) {
-    // Guide field Bx0 already deposited by fill_E_B_fields() from
-    // #UNIFORMSTATE.
+    // Guide field Bx0 already deposited by fill_E_B_fields().
     amrex::Real Bx0 = 1.0;
     if (guideField_) {
       MFIter mfi(fields.node_B(iLev));
@@ -166,10 +155,6 @@ void WaveIC::set_fields(PicICFields& fields) const {
     MultiFab& centerB = fields.center_B(iLev);
 
     if (oblique_) {
-      // LightWave: zero then write E and B on the node grid; B also on the
-      // cell-centred grid. Phase uses node coordinates (i, j, k) on the node
-      // grid and (i+0.5, j+0.5, k+0.5) on the centre grid, exactly as the
-      // former fill_lightwaves(48.0).
       if (seedE_)
         nodeE.setVal(0.0);
       if (seedB_) {
@@ -225,15 +210,8 @@ void WaveIC::set_fields(PicICFields& fields) const {
         }
       }
     } else {
-      // x-aligned transverse circularly-polarized wave (hybrid / convection):
-      // B = (Bx0, B1 cos kx, B1 sin kx), i.e. a pure transverse perturbation
-      // delta B = (0, B1 cos kx, B1 sin kx) on the guide field Bx0, matching
-      // the Alfven velocity kick in modify_particle_velocity(). This is the
-      // self-consistent right-hand-circularly-polarized whistler/ion-cyclotron
-      // eigenmode seed; it must NOT add any longitudinal delta Bx (a non-zero
-      // Bx perturbation would make the field non-transverse and break the
-      // circular polarization the velocity kick assumes). E is left as
-      // deposited by fill_E_B_fields (not zeroed).
+      // x-aligned transverse circularly-polarized wave: B = (Bx0, B1 cos kx,
+      // B1 sin kx); transverse, matching the velocity kick below.
       if (seedB_) {
         nodeB.setVal(0.0);
         centerB.setVal(0.0);
@@ -280,35 +258,20 @@ void WaveIC::modify_particle_weight(ParticleICState& s) const {
 void WaveIC::modify_particle_velocity(ParticleICState& s) const {
   if (!velKick_)
     return;
-  // Matching Alfven ion velocity kick, reproducing the former HybridWave B
-  // perturbation delta B = (0, B1 cos kx, B1 sin kx) on guide field B0 with
-  // v_A = B0 = 1 in code units:
-  //   delta U_y = -B1 cos(kx*x),  delta U_z = -B1 sin(kx*x).
-  // The kick is purely transverse (y, z); the x-bulk is untouched.
+  // Transverse Alfven velocity kick matching delta B = (0, B1 cos kx, B1 sin kx).
   const amrex::Real cphi = std::cos(kx_ * s.x);
   const amrex::Real sphi = std::sin(kx_ * s.x);
   s.vBulk -= B1_ * cphi;
   s.wBulk -= B1_ * sphi;
 }
 
-// Bi-Maxwellian thermal seeding for the proton-cyclotron anisotropy
-// instability.  The #UNIFORMSTATE isotropic sampling draws every component with
-// the thermal speed v_th = sqrt(kB*T/m) where T is the #UNIFORMSTATE
-// temperature.  Here T is interpreted as the PARALLEL temperature T_par, so:
-//   * the component parallel to the guide field is left untouched (already v_th
-//     = v_th_par), and
-//   * the two perpendicular components are inflated by sqrt(T_perp/T_par).
-// The guide field (and hence the parallel direction) is x in all the hybrid
-// x-aligned wave presets (kx || B0 || x), so u_thermal is the parallel draw and
-// v_thermal / w_thermal are the perpendicular draws.  This gives a
-// bi-Maxwellian with T_perp/T_par = anisoTPerpOverTPar_ and beta_par unchanged
-// from the #UNIFORMSTATE (since the parallel temperature is unchanged), which
-// drives the proton-cyclotron anisotropy instability (PCAI).
+// Bi-Maxwellian seeding for proton-cyclotron instability: treat #UNIFORMSTATE
+// T as T_par (parallel draw, x, left untouched) and inflate the two
+// perpendicular draws by sqrt(T_perp/T_par).
 void WaveIC::modify_particle_thermal_velocity(ParticleICState& s) const {
   if (anisoTPerpOverTPar_ <= 0.0)
     return;
   const amrex::Real scale = std::sqrt(anisoTPerpOverTPar_);
-  // Parallel (x) direction keeps the #UNIFORMSTATE T_par thermal speed.
   s.vThermal *= scale;
   s.wThermal *= scale;
 }

@@ -10,9 +10,7 @@ void BeamIC::read_param(ReadParam& param) {
     param.read_var("vel", vel_[iDim]);
 }
 
-// Reproduces the add_particles_cell beam branch verbatim. Only the configured
-// beam species is modified; all other species are left untouched (qScale = 1,
-// bulk velocity unchanged).
+// Only the configured beam species is modified.
 void BeamIC::modify_particle_velocity(ParticleICState& s) const {
   if (s.iSpec != iSpecies_)
     return;
