@@ -173,59 +173,38 @@ private:
   int nSpecies;
   int iTot;
 
-  // Electron / kinetic-ion identification for the hybrid solver.
-  // iElectron_ is the index of the (explicit) electron species, or -1 if none.
-  // kineticSpecies_ lists the indices of all non-electron (kinetic ion)
-  // species; in standard PIC runs (no electron particle species) this equals
-  // all species, so existing behaviour is unchanged.
+  // Hybrid species IDs: iElectron_ (-1 if none); kineticSpecies_ = non-electron species.
   int iElectron_ = -1;
   std::vector<int> kineticSpecies_;
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasma;
-  // Second-order hybrid: previous-step ion moments (J^{n-1/2}, rho^{n-1/2})
-  // deposited BEFORE the particle push. Combined with the current deposit
-  // nodePlasma (J^{n+1/2}) by a linear time interpolation inside
-  // assemble_ohm_E, indexed by the magnetic sub-step fraction hstep
-  // (hstep=0 -> J^n = 1/2(J^{n-1/2}+J^{n+1/2}); hstep=1 -> J^{n+1} =
-  // 3/2 J^{n+1/2} - 1/2 J^{n-1/2}). Same layout as nodePlasma.
+  // Previous-step ion moments (J^{n-1/2}); interpolated with current nodePlasma
+  // by hstep inside assemble_ohm_E. Same layout.
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasmaPrev;
-  // ---- Cell-centred hybrid solver fields (Hybrid-VPIC-style layout) ----
-  // When useHybridPIC is true the hybrid time step reads/writes only these
-  // cell-centred fields (B, E, J, moments). The node-centred nodeE/nodeB/
-  // nodePlasma are kept as write-only OUTPUT MIRRORS refreshed once per step
-  // (node-sync bridges) so the plot / restart / tracker path sees correct
-  // data. All six arrays are allocated only inside the useHybridPIC block of
-  // Pic::distribute_arrays.
-  amrex::Vector<amrex::MultiFab> centerEhybrid; // cell-centred E
-  amrex::Vector<amrex::MultiFab> centerJ;       // cell-centred J
-  amrex::Vector<amrex::MultiFab> centerEprev;   // cell-centred E^n
-                                                // (time-centring)
-  amrex::Vector<amrex::MultiFab> centerBprev;   // cell-centred B^n
-                                                // (time-centring)
-  amrex::Vector<amrex::MultiFab> centerE_RK4;  // cell-centred E trial (replaces
-                                               // nodeE_RK4)
-  amrex::Vector<amrex::MultiFab> centerHyperE; // cell-centred hyper-resistivity
-                                               // E
+  // ---- Cell-centred hybrid fields (allocated only when useHybridPIC) ----
+  // The hybrid step reads/writes these; nodeE/nodeB/nodePlasma are write-only
+  // output mirrors refreshed once per step for plot/restart/tracker paths.
+  amrex::Vector<amrex::MultiFab> centerEhybrid;
+  amrex::Vector<amrex::MultiFab> centerJ;
+  amrex::Vector<amrex::MultiFab> centerEprev; // E^n (time-centring)
+  amrex::Vector<amrex::MultiFab> centerBprev; // B^n (time-centring)
+  amrex::Vector<amrex::MultiFab> centerE_RK4;  // E trial (replaces nodeE_RK4)
+  amrex::Vector<amrex::MultiFab> centerHyperE; // hyper-resistivity E
   amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasma; // per-species
-                                                               // cell-centred
                                                                // moments
   amrex::Vector<amrex::Vector<amrex::MultiFab> >
-      centerPlasmaSum; // summed cell-centred moments [nSpecies][iLev]
+      centerPlasmaSum; // summed moments [nSpecies][iLev]
   amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasmaPrev; // per-species
                                                                    // previous-step
                                                                    // moments
   amrex::Vector<amrex::Real> plasmaEnergy;
 
   bool isMomentsUpdated = false;
-  // When true, nodePlasma (and mMach) are stale: the per-step nodePlasma output
-  // bridge and calc_mach_number are skipped in sum_moments, and must be
-  // materialized on demand by sync_node_plasma_output() before any node-plasma
-  // / mach output or load-balancing is requested. Only used in the hybrid path.
+  // nodePlasma (and mMach) stale; materialized on demand by
+  // sync_node_plasma_output(). Hybrid path only.
   bool nodePlasmaStale = false;
 
-  // True when nodeE (an output mirror of the live centerEhybrid) is stale.
-  // Marked stale each update_B_hybrid and materialized by sync_node_E_output()
-  // at plot time, so the per-step average_center_to_node cost is deferred out
-  // of the loop.
+  // nodeE is a stale output mirror of centerEhybrid; materialized by
+  // sync_node_E_output() at plot time. Hybrid path only.
   bool nodeEStale = false;
 
   amrex::Vector<amrex::MultiFab> jHat;
