@@ -115,17 +115,15 @@ private:
   amrex::Vector<amrex::MultiFab> centerLapB; // nabla^2 B  (hyper stage A)
   amrex::Vector<amrex::MultiFab> nodeHyperE; // nabla x (nabla^2 B) (hyper stage
                                              // B)
-  // RK4 (fieldIntegrator="rk4") scratch fields (allocated when useHybridPIC).
-  // centerB_RK4 / nodeB_RK4 hold trial B states at the sub-stages; nodeE_RK4 is
-  // the electric field evaluated at a trial B; kRK4[0..3] are the four stage
-  // curls curl(E_stage). All reused per sub-step; only level 0 is advanced
-  // (fine levels follow from projection, exactly as in the ssprk3 path).
-  amrex::Vector<amrex::MultiFab> centerB_RK4;
-  amrex::Vector<amrex::MultiFab> nodeB_RK4;
-  amrex::Vector<amrex::MultiFab> nodeE_RK4;
-  // kRK4[iLev][0..3]: the four stage curls curl(E_stage) for the level-iLev RK4
-  // sub-step (4 stages per level).
-  amrex::Vector<amrex::Vector<amrex::MultiFab> > kRK4;
+  // RK4 / ssprk3 shared intermediate solver scratch (allocated when
+  // useHybridPIC). centerBstage holds the stage B states; centerEstage the E
+  // evaluated at a stage B; kStage[0..3] the up-to-four stage curls
+  // curl(E_stage). All reused per sub-step; only level 0 is advanced (fine
+  // levels follow from projection, exactly as in the ssprk3 path).
+  amrex::Vector<amrex::MultiFab> centerBstage;
+  // kStage[iLev][0..3]: the stage curls curl(E_stage) for the level-iLev RK4
+  // sub-step (up to 4 stages per level).
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > kStage;
 
   // rk3/rk4 persistent scratch (allocated when useHybridPIC). centerBstart
   // holds the sub-step start B_n; centerBstar holds the time-centred (trial +
@@ -187,7 +185,7 @@ private:
   amrex::Vector<amrex::MultiFab> centerJ;
   amrex::Vector<amrex::MultiFab> centerEprev; // E^n (time-centring)
   amrex::Vector<amrex::MultiFab> centerBprev; // B^n (time-centring)
-  amrex::Vector<amrex::MultiFab> centerE_RK4;  // E trial (replaces nodeE_RK4)
+  amrex::Vector<amrex::MultiFab> centerEstage; // E at a stage B (cell-centred)
   amrex::Vector<amrex::MultiFab> centerHyperE; // hyper-resistivity E
   amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasma; // per-species
                                                                // moments
@@ -310,22 +308,20 @@ public:
     hypPhi.resize(n_lev_max());
     centerLapB.resize(n_lev_max());
     nodeHyperE.resize(n_lev_max());
-    centerB_RK4.resize(n_lev_max());
-    nodeB_RK4.resize(n_lev_max());
-    nodeE_RK4.resize(n_lev_max());
+    centerBstage.resize(n_lev_max());
     centerEhybrid.resize(n_lev_max());
     centerJ.resize(n_lev_max());
     centerEprev.resize(n_lev_max());
     centerBprev.resize(n_lev_max());
-    centerE_RK4.resize(n_lev_max());
+    centerEstage.resize(n_lev_max());
     centerHyperE.resize(n_lev_max());
     centerBavg.resize(n_lev_max());
     nodeBavg.resize(n_lev_max());
     centerBstart.resize(n_lev_max());
     centerBstar.resize(n_lev_max());
-    kRK4.resize(n_lev_max());
+    kStage.resize(n_lev_max());
     for (int iL = 0; iL < n_lev_max(); ++iL)
-      kRK4[iL].resize(4);
+      kStage[iL].resize(4);
     etaHyperLev.resize(n_lev_max(), 0.0);
     targetPPC.resize(n_lev_max());
     if (reportParticleQuality) {
