@@ -1784,10 +1784,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
 }
 
 //==========================================================
-// Hybrid-VPIC-style cell-centred Boris push. The E and B are gathered from the
-// cell-centred fields (centerE / centerB) instead of the node fields. The
-// gather is a plain cell-centred trilinear interpolation (find_cell_index +
-// linear_interpolation_coef).
+// Cell-centred Boris push. The E and B are gathered from cell fields. The
+// gather is a plain cell-centred trilinear interpolation.
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
     const Vector<MultiFab>& centerE, const Vector<MultiFab>& centerB,

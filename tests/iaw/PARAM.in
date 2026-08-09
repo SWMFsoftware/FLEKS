@@ -1,13 +1,10 @@
 #DESCRIPTION
-Hybrid PIC (kinetic ions / fluid electrons) ion acoustic wave (IAW) test,
-matched to the Hybrid-VPIC examples/iaw reference setup.
+Hybrid PIC (kinetic ions / fluid electrons) ion acoustic wave (IAW) test.
 A single-wavelength ion density perturbation is seeded along x in a uniform,
 Maxwellian, zero-bulk-velocity proton plasma that is UNMAGNETIZED (B = 0
-everywhere, exactly as Hybrid-VPIC's set_region_field(everywhere, 0,0,0,0,0,0);
-the reference b0 is only a scale for unit normalization).  The electric field is
-initially zero; the restoring force is the electron pressure gradient in the
-generalized Ohm's law (electronTemperature > 0), which gives the acoustic speed
-c_s = sqrt(gamma*Te/mi).
+everywhere).  The electric field is initially zero; the restoring force is the
+electron pressure gradient in the generalized Ohm's law (electronTemperature > 0),
+which gives the acoustic speed c_s = sqrt(gamma*Te/mi).
 
   n(x) = n0 * (1 + pert * sin(kx * x)),   kx = 2*pi*waveMode / Lx
 
@@ -15,15 +12,13 @@ The seed is implemented by the C++ TESTCASE IonAcousticWave, which scales each
 particle's weight so the deposited ion density carries the sinusoidal profile
 while keeping the bulk velocity uniform.
 
-Matching parameters (see Hybrid-VPIC examples/iaw/iaw.cxx):
+Parameters:
   * gamma = 5/3 (adiabatic electrons);  electronTemperature = 15.7 eV gives
     c_s = sqrt(gamma*Te/mi) ~ 1 in code units (Te/mi = 0.6).
-  * T = 1e5 K gives v_thi = sqrt(2*kB*T/mi)/uNorm ~ 0.58, so c_s / v_thi ~ 1.73
-    (Hybrid-VPIC: c_s = 1, Ti = 1/3 -> v_thi = sqrt(1/3) = 0.577) -> SAME
-    ion-Landau-damping rate.
-  * Lx = 16 d_i, nx = 48 -> k d_i = 2*pi/16 = 0.393 (Hybrid-VPIC: Lx = 16).
-  * pert = 0.02 (Hybrid-VPIC: 2%).
-  * dt = 0.02 (Hybrid-VPIC: dt = 0.02).
+  * T = 1e5 K gives v_thi = sqrt(2*kB*T/mi)/uNorm ~ 0.58, so c_s / v_thi ~ 1.73.
+  * Lx = 16 d_i, nx = 48 -> k d_i = 2*pi/16 = 0.393.
+  * pert = 0.02.
+  * dt = 0.02.
   * eta = 0, no hyper-resistivity -> the only damping is collisionless ion
     Landau damping. With B = 0 the Hall and convection terms vanish, so the
     Ohm's law reduces to E = -grad(p_e)/rho (the ambipolar field).
@@ -35,8 +30,7 @@ field, the centerPlasmaPrev ghost-cell fix (no grid-scale checkerboard), and the
 stability/mass-conservation of the hybrid solver, which is what the validator
 checks.
 
-Time is in omega_ci^-1 (the normalization reference scales make wci ~ 1),
-matching the Hybrid-VPIC wci^-1 time axis of plotsIAW.py.
+Time is in omega_ci^-1 (the normalization reference scales make wci ~ 1).
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -91,19 +85,18 @@ F                       useHallTerm
 #BSUBCYCLE
 1                       nBSubcycle
 
-Smoothing of the ion fluid moments (density and momentum) before the Ohm's law,
-matching Hybrid-VPIC's nsm binomial-style filter (nSmoothMoments = 2 passes).
-Without it the PIC shot noise couples into the ambipolar field as spurious
-gradients and over-damps the seeded IAW mode.
+Smoothing of the ion fluid moments (density and momentum) before the Ohm's law
+(nSmoothMoments = 2 binomial passes). Without it the PIC shot noise couples into
+the ambipolar field as spurious gradients and over-damps the seeded IAW mode.
 #SMOOTHMOMENTS
 T                       doSmoothMoments
 2                       nSmoothMoments
 0.5                     coefSmoothMoments
 
-Smoothing of the cell-centred electric field after each hybrid field advance,
-matching Hybrid-VPIC's hyb_smooth_eb on E. The ambipolar term E = -grad(p_e)/rho
-uses a central difference that does not couple odd/even cells, so without this a
-grid-scale (Nyquist) checkerboard can grow in E and feed back into the ion push.
+Smoothing of the cell-centred electric field after each hybrid field advance.
+The ambipolar term E = -grad(p_e)/rho uses a central difference that does not
+couple odd/even cells, so without this a grid-scale (Nyquist) checkerboard can
+grow in E and feed back into the ion push.
 #SMOOTHE
 T                       doSmoothE
 2                       nSmoothE
@@ -121,7 +114,7 @@ neutralizing massless fluid, so no electron particle species is present.
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 100000.0                T [K]
-0.0                     bx [T]         UNMAGNETIZED Bx0 = 0 (Hybrid-VPIC reference)
+0.0                     bx [T]         UNMAGNETIZED Bx0 = 0
 0.0                     by [T]
 0.0                     bz [T]
 0.0                     ex [V/m]

@@ -2,8 +2,8 @@
 
 A hybrid-PIC regression test for an ion acoustic wave seeded as a single
 sinusoidal ion density perturbation in a uniform, Maxwellian, zero-bulk-velocity
-proton plasma.  The setup is matched to the **Hybrid-VPIC** `examples/iaw`
-reference so the ion-Landau-damping decay rate can be compared directly.
+proton plasma.  The setup is matched to the Hybrid-VPIC `examples/iaw`
+reference so the decay rate can be compared directly.
 
 ## Physics
 
@@ -31,7 +31,7 @@ mechanism is **ion Landau damping** (`eta = 0`, `hypereta = 0`).
 
 The parameters are matched to Hybrid-VPIC `examples/iaw`:
 
-| Quantity | Hybrid-VPIC | FLEKS (this test) |
+| Quantity | Reference | FLEKS (this test) |
 |---|---|---|
 | Magnetic field | `B = 0` (b0 is only a scale) | `B = 0` |
 | Electron polytropic index | `gamma = 5/3` | `5/3` |
@@ -99,10 +99,10 @@ enforced.
 
 ## Reference
 
-Modeled on the hybrid-VPIC-style wave test (`tests/whistler`), with the
-transverse-wave seeding (`HybridWave` test case) replaced by a longitudinal ion
-density perturbation (`IonAcousticWave` test case) and the electron
-pressure-gradient (`#ELECTRONTEMPERATURE`) providing the restoring force.
+Modeled on the whistler test (`tests/whistler`), with the transverse-wave
+seeding replaced by a longitudinal ion density perturbation (`IonAcousticWave`
+test case) and the electron pressure-gradient (`#ELECTRONTEMPERATURE`)
+providing the restoring force.
 Unlike `tests/whistler`, the field is **unmagnetized** (`B = 0`) and the
 Hall term is switched off, so this test isolates the electron-pressure
 (ambipolar) branch of the Ohm's law and the ion-Landau-damping of a pure

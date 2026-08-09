@@ -22,10 +22,9 @@ test is **1D-3V** (`k ∥ B0 ∥ x`) with a bi-Maxwellian ion distribution:
 | `nBSubcycle` | 1 | no B sub-cycling (stable with the cell-centred solver) |
 
 The anisotropy is seeded as a bi-Maxwellian (`T_perp = 3 T_par` via the
-`anisoTPerpOverTPar` option); as in the Hybrid-VPIC reference, there is **no
-initial `B_y`/`B_z` perturbation** (`frac = 0`), so the left-hand
-circularly-polarized wave grows from the thermal-noise floor at the linear-theory
-rate `γ/Ω_ci = 0.162`. Normalization is `lNormSI = uNormSI = 1e5` (`tNorm = 1 s`,
+`anisoTPerpOverTPar` option); there is **no initial `B_y`/`B_z` perturbation**
+(`frac = 0`), so the left-hand circularly-polarized wave grows from the
+thermal-noise floor at the linear-theory rate `γ/Ω_ci = 0.162`. Normalization is `lNormSI = uNormSI = 1e5` (`tNorm = 1 s`,
 so `TimeMax` directly equals `t·Ω_ci`), with `bx = 1.044e-8 T` for `Ω_ci = 1` in
 code units.
 

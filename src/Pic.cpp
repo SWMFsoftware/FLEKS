@@ -422,7 +422,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                         nGst, doMoveData);
 
     if (useHybridPIC) {
-      // Previous-step ion moments for the Ohm's-law interpolation (hybrid-only).
+      // Previous-step ion moments for the Ohm's-law interpolation.
       if (nodePlasmaPrev.empty()) {
         nodePlasmaPrev.resize(nSpecies + 1);
       }
@@ -859,24 +859,13 @@ void Pic::particle_mover() {
   Real dt = tc->get_dt();
   Real dtnext = tc->get_next_dt();
 
-  // Use the time-averaged B in the Boris push when enabled.
+  // Time-averaged B when enabled.
   const Vector<MultiFab>& nodeBpush =
       (useAvgFieldB && isBavgInit) ? nodeBavg : nodeB;
-  // Cell-centred B for the hybrid Boris push (the hybrid gather reads the
-  // cell-centred field directly, no node projection).
   const Vector<MultiFab>& centerBpush =
       (useAvgFieldB && isBavgInit) ? centerBavg : centerB;
-  // The Boris push uses nodeEth. For full PIC this is the E from this step's
-  // update_E. For the hybrid solver update_B_hybrid has already computed the
-  // integer-step E^{n+1} (hstep = 1) on the final B^{n+1} into nodeEth at the
-  // end of the previous field advance, so the push here reuses it (hybrid-VPIC
-  // convention: push with the integer-step E). nodeEth is not modified between
-  // the end of update_B_hybrid and this push.
   const Vector<MultiFab>& nodeEpush = nodeEth;
   if (useHybridPIC) {
-    // Hybrid-VPIC-style cell-centred Boris push: gather E and B from the
-    // cell-centred fields (centerEhybrid is the integer-step E^{n+1} computed
-    // at the end of the previous update_B_hybrid; centerB/centerBavg is B).
     for (int i : kineticSpecies_) {
       parts[i]->mover_cell_centered(centerEhybrid, centerBpush, eBg, uBg, dt,
                                     dtnext);
