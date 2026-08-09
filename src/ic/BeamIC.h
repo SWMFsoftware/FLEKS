@@ -3,9 +3,9 @@
 
 #include "InitialCondition.h"
 
-// Charged-particle beam: first nBeam = npcel*ratio macroparticles per cell get
-// the bulk velocity `vel` (weight scaled up); the rest are the background
-// (weight scaled down), preserving total count/mass with `ratio` of the charge.
+// First nBeam = npcel*ratio macroparticles per cell get the bulk velocity `vel`
+// (weight scaled up); the rest are the background (weight scaled down),
+// preserving total count/mass with `ratio` of the charge.
 class BeamIC : public InitialCondition {
 public:
   std::string name() const override { return "beam"; }

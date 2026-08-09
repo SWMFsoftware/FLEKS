@@ -4,8 +4,7 @@
 #include "WaveIC.h"
 
 void register_all_initial_conditions() {
-  // The four wave tests share one parameterized WaveIC (legacy names + generic
-  // "waveic" configured via #WAVEIC).
+  // The four wave tests share one parameterized WaveIC (names + generic config)
   ICRegistry::instance().register_ic("lightwave", []() {
     return std::unique_ptr<InitialCondition>(new WaveIC(WaveIC::LightWave));
   });

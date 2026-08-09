@@ -210,8 +210,7 @@ void WaveIC::set_fields(PicICFields& fields) const {
         }
       }
     } else {
-      // x-aligned transverse circularly-polarized wave: B = (Bx0, B1 cos kx,
-      // B1 sin kx); transverse, matching the velocity kick below.
+      // Transverse circularly-polarized wave: B = (Bx0, B1 cos kx, B1 sin kx)
       if (seedB_) {
         nodeB.setVal(0.0);
         centerB.setVal(0.0);
@@ -258,16 +257,15 @@ void WaveIC::modify_particle_weight(ParticleICState& s) const {
 void WaveIC::modify_particle_velocity(ParticleICState& s) const {
   if (!velKick_)
     return;
-  // Transverse Alfven velocity kick matching delta B = (0, B1 cos kx, B1 sin kx).
+  // Transverse Alfven velocity B = (0, B1 cos kx, B1 sin kx).
   const amrex::Real cphi = std::cos(kx_ * s.x);
   const amrex::Real sphi = std::sin(kx_ * s.x);
   s.vBulk -= B1_ * cphi;
   s.wBulk -= B1_ * sphi;
 }
 
-// Bi-Maxwellian seeding for proton-cyclotron instability: treat #UNIFORMSTATE
-// T as T_par (parallel draw, x, left untouched) and inflate the two
-// perpendicular draws by sqrt(T_perp/T_par).
+// Bi-Maxwellian seeding: treat #UNIFORMSTATE T as T_par (parallel draw, x)
+// and inflate the two perpendicular draws by sqrt(T_perp/T_par).
 void WaveIC::modify_particle_thermal_velocity(ParticleICState& s) const {
   if (anisoTPerpOverTPar_ <= 0.0)
     return;

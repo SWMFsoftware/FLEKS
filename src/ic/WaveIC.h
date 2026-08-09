@@ -3,14 +3,12 @@
 
 #include "InitialCondition.h"
 
-// Unified wave IC covering all four legacy wave tests via preset profiles,
-// configurable through a #WAVEIC parameter block.
+// Wave IC via preset profiles, configurable through #WAVEIC.
 //
 // Presets (overridable via #WAVEIC sub-parameters):
-//   lightwave       : E+B oblique circularly polarized plane wave.
+//   lightwave       : EM oblique circularly polarized plane wave.
 //   hybridwave      : transverse B perturbation B1*(cos kx, sin kx) on guide
-//                     field Bx0 (B1 = 0.02*Bx0) + matching Alfven velocity kick.
-//   convectionwave  : same B perturbation, B1 = 0.2*Bx0, no velocity kick.
+//                     field Bx0 + matching Alfven velocity kick.
 //   ionacousticwave : no field; sinusoidal density perturbation via weight
 //                     scaling 1 + pert*sin(kx*x).
 class WaveIC : public InitialCondition {
@@ -30,7 +28,7 @@ public:
   void read_param(ReadParam& param) override;
   void set_fields(PicICFields& fields) const override;
 
-  // Pure-EM lightwave has no macroparticles; others keep their kinetic ions.
+  // EM lightwave has no macroparticles; others keep their kinetic ions.
   void apply_particle_override(class ParticlesInfo& pInfo) const override;
 
   bool modifies_weights() const override { return profile_ == IonAcousticWave; }
@@ -52,7 +50,7 @@ private:
 
   Profile profile_;
 
-  // #WAVEIC sub-parameters (defaults filled by apply_preset).
+  // Sub-parameters (defaults filled by apply_preset).
   bool seedE_ = false;      // seed the E field
   bool seedB_ = false;      // seed the B field
   bool oblique_ = false;    // oblique plane wave vs x-aligned kx

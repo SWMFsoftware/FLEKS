@@ -213,7 +213,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#ELECTRONTEMPERATURE") {
     param.read_var("electronTemperature", electronTemperatureEV);
     param.read_var("electronGamma", electronGamma);
-    param.read_var("electronDensity0", electronDensity0EV);
+    param.read_var("electronDensity0", electronDensity0In);
   } else if (command == "#BSUBCYCLE") {
     param.read_var("nBSubcycle", nBSubcycle);
   } else if (command == "#HALLTERM") {
@@ -258,11 +258,11 @@ void Pic::post_process_param() {
     }
   }
 
-  // Hybrid and implicit GM-PC are mutually exclusive.
+  // Hybrid and implicit solver are mutually exclusive.
   if (useHybridPIC)
     solveEM = false;
 
-  // Convert SI/eV inputs to normalized code units.
+  // Convert input units to normalized code units.
   if (useHybridPIC) {
     if (etaResistivitySI > 0) {
       etaResistivity =
@@ -279,7 +279,6 @@ void Pic::post_process_param() {
                      << etaHyperLev[0] << " [code units]\n";
     }
 
-    // Field integrator: "rk4" or "ssprk3".
     useRK4 = (fieldIntegrator == "rk4");
     if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3") {
       amrex::Print() << "  WARNING: unknown #FIELDINTEGRATOR '"
@@ -746,12 +745,11 @@ void Pic::fill_E_B_fields() {
         cell_bilinear_interp);
   }
 
-  // Hybrid-VPIC-style cell-centred seed: the initial-condition / restart E is
-  // node-centred (nodeE). The cell-centred hybrid E (centerEhybrid) is seeded
-  // from it by averaging the node values to the cell centres. This plays the
-  // role of E^0 for the very first hybrid particle Boris push. centerEprev and
-  // centerBprev are initialised to the same state so the Ohm's-law time
-  // interpolation and the RK4 time-centring are well-defined on the first step.
+  // Initial-condition / restart E is node-centred (nodeE). centerEhybrid is
+  // seeded from it by averaging the node values to the cell centres, which
+  // plays the role of E0 for the very first hybrid particle Boris push.
+  // centerEprev and centerBprev are initialised to the same state so the
+  // time interpolation are defined on the first step.
   if (useHybridPIC) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       average_node_to_center(nodeE[iLev], centerEhybrid[iLev]);
@@ -1174,7 +1172,7 @@ void Pic::sum_moments(bool updateDt) {
     // Cell-centred hybrid moments: sum the per-species deposits into
     // centerPlasmaSum and sync the nodePlasma output mirror (once per step,
     // so the plot / restart / tracker path that reads nodePlasma sees correct
-    // data -- the node-sync bridge of the Hybrid-VPIC-style solver).
+    // data -- the node-sync bridge of the hybrid solver).
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       centerPlasmaSum[nSpecies][iLev].setVal(0.0);
     }
@@ -1192,8 +1190,8 @@ void Pic::sum_moments(bool updateDt) {
       }
     }
 
-    // nodePlasma output bridge: average_center_to_node(centerPlasma ->
-    // nodePlasma) for every species and the summed entry, plus calc_mach_number
+    // Output bridge: average_center_to_node(centerPlasma -> nodePlasma) for
+    // every species and the summed entry, plus calc_mach_number
     // (which reads nodePlasma[nSpecies]). This is a pure output mirror. To
     // avoid the per-step cost, the bridge + calc_mach_number are deferred and
     // run lazily by sync_node_plasma_output() only when a
@@ -1210,10 +1208,8 @@ void Pic::sum_moments(bool updateDt) {
 
     for (int i : kineticSpecies_) {
       for (int iLev = 0; iLev < n_lev(); iLev++) {
-        // nodePlasma[nSpecies] holds the sum of all kinetic-ion species.
-        // kineticSpecies_ excludes the (implicit fluid) electron, so in
-        // standard PIC runs (iElectron_ = -1) this sums every species exactly
-        // as before.
+        // nodePlasma[nSpecies] holds the sum of all ion species.
+        // kineticSpecies_ excludes the (implicit fluid) electron.
         MultiFab::Add(nodePlasma[nSpecies][iLev], nodePlasma[i][iLev], 0, 0,
                       nMoments, nGst);
       }
@@ -1234,9 +1230,9 @@ void Pic::sum_moments(bool updateDt) {
 void Pic::sync_node_plasma_output(const bool needMach) {
   if (!nodePlasmaStale)
     return;
-  // nodePlasma output bridge: average_center_to_node(centerPlasma ->
-  // nodePlasma) for every species and the summed entry. Deferred from
-  // sum_moments so non-output steps do not pay this per-step cost.
+  // Output bridge: average_center_to_node(centerPlasma -> nodePlasma)
+  // for every species and the summed entry. Deferred from sum_moments
+  // so non-output steps do not pay this per-step cost.
   for (int i = 0; i < nSpecies + 1; ++i) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       centerPlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
@@ -1256,9 +1252,9 @@ void Pic::sync_node_plasma_output(const bool needMach) {
 void Pic::sync_node_E_output() {
   if (!nodeEStale)
     return;
-  // nodeE output bridge: materialize nodeE from the live centerEhybrid so the
-  // structured (ascii/IDL) plots see the hybrid E. nodeE is only an output
-  // mirror (the mover reads centerEhybrid), so it is synced here at plot time.
+  // Output bridge: materialize nodeE from the live centerEhybrid so the
+  // ascii/IDL plots see the hybrid E. nodeE is only an output mirror, so
+  // it is synced here at plot time.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
     average_center_to_node(centerEhybrid[iLev], nodeE[iLev]);
@@ -1274,19 +1270,17 @@ void Pic::convert_electron_density0() {
     return;
   electronDensity0Converted_ = true;
 
-  // electronDensity0EV is in amu/cc (same unit as #UNIFORMSTATE rho); convert
-  // to code units with the same factor #UNIFORMSTATE uses (amu/cc -> kg/m^3 via
-  // *1e6*cProtonMassSI, -> code via *Si2NoRho). get_Si2NoRho() is only valid
-  // here (first field advance) after fi->post_process_param() finalizes the
-  // normParams.
+  // Input in amu/cc; convert to code units.
+  // get_Si2NoRho() is only valid here (first field advance) after
+  // fi->post_process_param() finalizes the normParams.
   electronDensity0 =
-      electronDensity0EV * 1.0e6 * cProtonMassSI * fi->get_Si2NoRho();
+      electronDensity0In * 1.0e6 * cProtonMassSI * fi->get_Si2NoRho();
 
-  // Auto density floor: 1e-6 * reference charge density, now in code units.
+  // Auto density floor in code units.
   if (rhoMinOhm <= 0)
     rhoMinOhm = 1.0e-6 * electronDensity0;
 
-  amrex::Print() << "  electronDensity0: " << electronDensity0EV
+  amrex::Print() << "  electronDensity0: " << electronDensity0In
                  << " [amu/cc] -> " << electronDensity0
                  << " [code units]  (Si2NoRho = " << fi->get_Si2NoRho()
                  << ")\n";
@@ -1644,11 +1638,8 @@ void Pic::update(bool doReportIn) {
   }
 
   // Hybrid path: the particle Boris push happens BEFORE the moment deposit and
-  // the Ohm's-law E computation (hybrid-VPIC convention). The push uses the
-  // integer-step E field (nodeEth) and B^n computed at the end of the previous
-  // step's update_B_hybrid. On the very first step the previous moments are
-  // seeded from the initial deposit below (the first push uses the
-  // initial-condition E in nodeEth).
+  // the Ohm's-law E computation. The push uses the nodeEth and B^n computed at
+  // the end of the previous step's B update.
   if (useHybridPIC && isFirstHybridStep) {
     seed_first_hybrid_step();
   }
@@ -2742,7 +2733,7 @@ void Pic::update_B_hybrid() {
 
       // Stages 2-4 evaluate E at the time-centred B (B_stage + B^n)/2: the
       // current J comes from curl(B_stage), while the Hall/convection B is the
-      // time-averaged (B_stage + B^n)/2 (as in Hybrid-VPIC's hyb_advance_e).
+      // time-averaged (B_stage + B^n)/2.
       // Stage 2: B2 = B^n - 0.5 dt k1; E at (B2 + B^n)/2.
       MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
       MultiFab::Saxpy(centerBstage[iLev], -0.5 * subDt, kStage[iLev][0], 0, 0, 3,

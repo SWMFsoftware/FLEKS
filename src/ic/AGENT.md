@@ -1,10 +1,10 @@
 # src/ic/ — FLEKS Initial-Condition Plugins
 
-This directory holds the concrete `InitialCondition` plugins. Each plugin is a
+This directory holds the `InitialCondition` plugins. Each plugin is a
 self-contained test-case seeding module, registered through `RegisterAll.cpp`
 into the `ICRegistry` (see `include/InitialCondition.h`).
 
-## Layout Convention (README FIRST)
+## Layout Convention
 
 **Unlike the rest of FLEKS, the plugin headers live here, not in `include/`.**
 

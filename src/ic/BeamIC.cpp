@@ -10,7 +10,6 @@ void BeamIC::read_param(ReadParam& param) {
     param.read_var("vel", vel_[iDim]);
 }
 
-// Only the configured beam species is modified.
 void BeamIC::modify_particle_velocity(ParticleICState& s) const {
   if (s.iSpec != iSpecies_)
     return;

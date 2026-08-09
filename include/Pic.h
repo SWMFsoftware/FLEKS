@@ -53,7 +53,6 @@ private:
   bool initEM = true;
 
   // ---- Hybrid PIC (kinetic ions + fluid electrons) solver ----
-  // Generalized Ohm's law field solver instead of the implicit GM-PC (solveEM).
   bool useHybridPIC = false;
   // Resistive term eta * J. SI input [m^2/s], converted to code units.
   amrex::Real etaResistivitySI = 0.0;
@@ -63,16 +62,14 @@ private:
   amrex::Real electronTemperature = 0.0;
   // Polytropic index for the adiabatic electron pressure closure.
   amrex::Real electronGamma = 1.0;
-  // Reference (upstream) charge density, input in amu/cc.
-  amrex::Real electronDensity0EV = 1.0;
-  // Reference charge density in code units; converted lazily from
-  // electronDensity0EV at the first hybrid field advance.
+  // Reference charge density. Input [amu/cc], converted to code units.
+  amrex::Real electronDensity0In = 1.0;
   amrex::Real electronDensity0 = 0.0;
   // True once electronDensity0 (code units) has been converted.
   bool electronDensity0Converted_ = false;
-  // Number of sub-steps for the B-field update within one coarse dt.
+  // Number of sub-steps for the B-field update within one dt.
   int nBSubcycle = 1;
-  // Hall term (J x B) / rho in the generalized Ohm's law. Default on.
+  // Hall term in the generalized Ohm's law.
   bool useHallTerm = true;
 
   // Hyper-resistivity (fourth-order) term in the Ohm's law:
@@ -86,9 +83,8 @@ private:
   amrex::Real etaHyperCh = 0.01;
   amrex::Vector<amrex::Real> etaHyperLev;
 
-  // Minimum charge density floor for the 1/rho factors in the Hall term and
-  // the electron-pressure-gradient term. <= 0 means auto: 1e-6 *
-  // electronDensity0.
+  // Minimum charge density in the Hall and electron pressure gradient term.
+  // <= 0 means auto: 1e-6 * electronDensity0.
   amrex::Real rhoMinOhm = 0.0;
 
   bool useExplicitPIC = false;
@@ -111,33 +107,24 @@ private:
   amrex::Vector<amrex::MultiFab> nodeB;
   amrex::Vector<amrex::MultiFab> divB;
   amrex::Vector<amrex::MultiFab> centerB;
-  // Hyper-resistivity scratch fields (allocated when useHybridPIC).
+  // Hyper-resistivity scratch fields (useHybridPIC = true).
   amrex::Vector<amrex::MultiFab> centerLapB; // nabla^2 B  (hyper stage A)
   amrex::Vector<amrex::MultiFab> nodeHyperE; // nabla x (nabla^2 B) (hyper stage
                                              // B)
-  // RK4 / ssprk3 shared intermediate solver scratch (allocated when
-  // useHybridPIC). centerBstage holds the stage B states; centerEstage the E
-  // evaluated at a stage B; kStage[0..3] the up-to-four stage curls
-  // curl(E_stage). All reused per sub-step; only level 0 is advanced (fine
-  // levels follow from projection, exactly as in the ssprk3 path).
+  // Hybrid RK method shared intermediate solver scratch.
   amrex::Vector<amrex::MultiFab> centerBstage;
-  // kStage[iLev][0..3]: the stage curls curl(E_stage) for the level-iLev RK4
-  // sub-step (up to 4 stages per level).
+  // kStage[iLev][0..3]: the stage curls curl(E_stage) for the level-iLev.
   amrex::Vector<amrex::Vector<amrex::MultiFab> > kStage;
 
-  // rk3/rk4 persistent scratch (allocated when useHybridPIC). centerBstart
-  // holds the sub-step start B_n; centerBstar holds the time-centred (trial +
-  // B_n)/2 state used by the rk3/rk4 time-centred-E stages.
+  // RK persistent scratch.
   amrex::Vector<amrex::MultiFab> centerBstart;
-  amrex::Vector<amrex::MultiFab> centerBstar;
+  amrex::Vector<amrex::MultiFab> centerBstar; // time-centered state used by E
 
   amrex::Vector<amrex::MultiFab> dBdt;
   amrex::Vector<amrex::MultiFab> particleQuality;
 
-  // Running time-averaged magnetic field (EMA). Allocated when useHybridPIC;
-  // only used when useAvgFieldB is set. B_avg is NOT divergence-clean and is
-  // never fed into the Faraday update -- it is used only inside the generalized
-  // Ohm's law and in the particle Boris push.
+  // Running time-averaged magnetic field for the hybrid solver, only used
+  // inside the generalized Ohm's law and the particle Boris push.
   amrex::Vector<amrex::MultiFab> centerBavg; // cell-centred <B>
   amrex::Vector<amrex::MultiFab> nodeBavg;   // node-centred <B>
   bool isBavgInit = false;                   // first-step copy flag for the EMA
@@ -171,29 +158,27 @@ private:
   int nSpecies;
   int iTot;
 
-  // Hybrid species IDs: iElectron_ (-1 if none); kineticSpecies_ = non-electron species.
+  // Hybrid species IDs
+  // iElectron_ (-1 if none); kineticSpecies_ = non-electron species.
   int iElectron_ = -1;
   std::vector<int> kineticSpecies_;
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasma;
-  // Previous-step ion moments (J^{n-1/2}); interpolated with current nodePlasma
-  // by hstep inside assemble_ohm_E. Same layout.
+  // Ion moments at J^{n-1/2}; interpolated with current nodePlasma
+  // by hstep inside assemble_ohm_E.
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasmaPrev;
-  // ---- Cell-centred hybrid fields (allocated only when useHybridPIC) ----
+  // ---- Hybrid cell-centred fields ----
   // The hybrid step reads/writes these; nodeE/nodeB/nodePlasma are write-only
   // output mirrors refreshed once per step for plot/restart/tracker paths.
   amrex::Vector<amrex::MultiFab> centerEhybrid;
   amrex::Vector<amrex::MultiFab> centerJ;
   amrex::Vector<amrex::MultiFab> centerEprev; // E^n (time-centring)
   amrex::Vector<amrex::MultiFab> centerBprev; // B^n (time-centring)
-  amrex::Vector<amrex::MultiFab> centerEstage; // E at a stage B (cell-centred)
+  amrex::Vector<amrex::MultiFab> centerEstage; // E at a stage B
   amrex::Vector<amrex::MultiFab> centerHyperE; // hyper-resistivity E
-  amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasma; // per-species
-                                                               // moments
-  amrex::Vector<amrex::Vector<amrex::MultiFab> >
-      centerPlasmaSum; // summed moments [nSpecies][iLev]
-  amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasmaPrev; // per-species
-                                                                   // previous-step
-                                                                   // moments
+  // Per-species moments
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasma;
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasmaSum;
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasmaPrev;
   amrex::Vector<amrex::Real> plasmaEnergy;
 
   bool isMomentsUpdated = false;
@@ -247,19 +232,18 @@ private:
   int nSmoothJ = 0;
   amrex::Real coefSmoothJ = 0.5;
 
-  // Digital-filter smoothing of ion moments before the generalized Ohm's law.
+  // Smoothing of ion moments before the generalized Ohm's law.
   bool doSmoothMoments = false;
   int nSmoothMoments = 0;
   amrex::Real coefSmoothMoments = 0.5;
 
-  // B integrator: "rk4" (default) or "ssprk3".
-  std::string fieldIntegrator = "rk4";
+  std::string fieldIntegrator = "rk4"; // B integrator
   bool useRK4 = false;
 
   // Guard: true on the first hybrid step before nodePlasmaPrev is seeded.
   bool isFirstHybridStep = true;
 
-  // EMA-averaged B fed to Ohm's law and Boris push. Dampens shot noise.
+  // EMA-averaged B fed to Ohm's law and Boris push.
   bool useAvgFieldB = false;
   int nAvgFieldB = 10;
 
