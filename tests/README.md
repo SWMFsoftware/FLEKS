@@ -6,7 +6,7 @@ Simulator) particle-in-cell (PIC) solver, independent of SWMF coupling.
 ## Directory Structure
 
 Each test case is contained within its own dedicated subdirectory containing a
-`PARAM.in` configuration file and a README describing the expected behavior:
+`PARAM.in` configuration file and a README file:
 
 | Test              | Dir                | Description                                              | Readme |
 |-------------------|--------------------|----------------------------------------------------------|--------|
@@ -21,7 +21,7 @@ Each test case is contained within its own dedicated subdirectory containing a
 |                   |                    | only charge exchange enabled                             |        |
 | Whistler wave     | `whistler/`        | Whistler–Alfven wave; full PIC (ions+electrons) + hybrid  | [README](whistler/README.md)         |
 |                   |                    | Alfven wave; Hall term only (resistivity & e-pressure off)|       |
-| Hybrid Ohm's law  | `hybrid_ohm/`      | Hybrid PIC full generalized Ohm's law: convection + Hall  | [README](hybrid_ohm/README.md)       |
+| Hybrid Ohm's law  | `ohm/`             | Hybrid PIC full generalized Ohm's law: convection + Hall  | [README](ohm/README.md)              |
 |                   |                    | + resistive + electron-pressure-gradient, all active       |        |
 | Free-stream       | `freestream/`      | 1D uniform free-stream, run with both solvers (full PIC and hybrid Hall-off) | [README](freestream/README.md) |
 | Light wave        | `lightwave/`       | 3D vacuum transverse EM (light) wave on a periodic AMR  | [README](lightwave/README.md)        |
@@ -40,11 +40,9 @@ Each ionization process is enabled via a dedicated command in PARAM.in:
 - **`#ELECTRONIMPACT`**: Voronov 1997 formula: `sigmav(T) = A*(T/EI)^K / [X+(T/EI)] * exp(-EI/T)` [cm^3/s], parameters per component
 - **`#CHARGEEXCHANGE`**: constant cross-section: `sigmav(u) = sigmaCX * |u_i|` [cm^3/s], cross-section matrix `sigmaCX(neutral, ion)` [cm^2]; each neutral component exchanges with all ion species and the frequency is summed over ions
 
-All three can be combined (as in `tests/photoionization/`) or tested individually (as in `tests/electronimpact/` and `tests/chargeexchange/`).
-
 ## Architecture
 
-Ionization parameters are stored in `SourceInterface` (not `FluidInterface`) and read by `UserSource::read_param()` in `userfiles/ExoSource.h`. The Domain routes `#PHOTOIONIZATION`, `#ELECTRONIMPACT`, and `#CHARGEEXCHANGE` commands to the source object rather than to `FluidInterface`. This keeps the MHD coupling layer uncluttered by ionization-specific data.
+Ionization parameters are stored in `SourceInterface` and read by `UserSource::read_param()` in `userfiles/ExoSource.h`. The Domain routes specific commands to the source object rather than to `FluidInterface`. This keeps the MHD coupling layer uncluttered by ionization-specific data.
 
 ## Building the Test Executable
 

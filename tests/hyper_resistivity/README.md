@@ -3,7 +3,7 @@
 Exercises the fourth-order hyper-resistive term `eta_h * nabla^2 J` (equivalently
 `-(eta_h/4*pi) * nabla x (nabla^2 B)`) in the Hybrid PIC generalized Ohm's law, on
 top of the full solver (convection + Hall + `eta J` + `grad P_e`). See
-`../hybrid_ohm/README.md` for the shared geometry / normalization and the
+`../ohm/README.md` for the shared geometry / normalization and the
 success criteria inherited from that test.
 
 ## Validation

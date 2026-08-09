@@ -65,8 +65,6 @@ T                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-Standard Maxwell/GMRES solver disabled; use the Ohm's-law + Faraday hybrid
-field advance instead.
 #SOLVEEM
 F                       solveEM
 
@@ -80,8 +78,6 @@ F                       useAvgFieldB
 useAvgFieldB = F disables FLEKS's EMA time-averaging of B (reference uses no
 B time-averaging).
 
-Resistivity OFF (0.0): the instability is driven purely by the ion temperature
-anisotropy, so no extra dissipation is added.
 #RESISTIVITY
 0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
 
@@ -108,8 +104,6 @@ nonlinear phase.
 
 Time-integration for the hybrid Faraday (B) update.  "rk4" evaluates E at the
 time-centred B (B_stage + B^n)/2 in the generalized Ohm's law at each stage.
-With nBSubcycle = 1 this reproduces the reference field advance (RK4, no
-sub-cycling).
 #FIELDINTEGRATOR
 rk4                     fieldIntegrator
 

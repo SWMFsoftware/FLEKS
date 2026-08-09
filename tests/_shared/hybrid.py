@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Shared validators and plot helpers for the hybrid-PIC family of tests.
 
-Used by tests/whistler, tests/hybrid_ohm and tests/freestream.
-Keeping the common hybrid code here means each per-test ``validate.py`` only
-imports what it needs instead of duplicating it.
+Keeping the common hybrid code here so each per-test ``validate.py`` only
+imports what it needs.
 """
 import logging
 import math
@@ -34,8 +33,8 @@ def validate_hybrid(pic_diags=None, test_name=None):
     4. Magnetic energy stays bounded -- the Hall-driven whistler must not
        numerically blow up (this is the failure mode of the missing 1/(4*pi)
        factor in the Hall current, or insufficient #BSUBCYCLE).
-    The precise whistler dispersion omega/Omega_i = (k d_i)^2/(1+(k d_i)^2)
-    is verified separately by _check_hybrid_wave_dispersion() / the README.
+    The precise whistler dispersion is verified separately by
+    _check_hybrid_wave_dispersion().
     """
     logger.debug("Validating Hybrid PIC Wave Test...")
 
@@ -67,15 +66,10 @@ def validate_hybrid(pic_diags=None, test_name=None):
         reasons.append("Epart not finite (NaN/Inf)")
 
     # Ion kinetic-energy conservation check.
-    # NOTE: in a hybrid (kinetic-ion / fluid-electron) wave the ion KINETIC
-    # ENERGY is NOT conserved -- it continuously exchanges with the
-    # electromagnetic field (only the particle *number* is conserved under
-    # periodic BCs with no source/loss).  The first-order E^n push (roadmap
-    # Step 5) adds a further small numerical drift.  We therefore do NOT
-    # require |Epart0 ratio - 1| < 0.1.  Instead we guard against *gross*
-    # non-conservation (particle loss/creation or a runaway blow-up) with a
-    # wide tolerance, while the decisive stability guards are the Eb blow-up
-    # check (Eb not > 5x) and the bounded transverse-wave check below.
+    # NOTE: in a hybrid (kinetic-ion / fluid-electron) wave we guard against
+    # *gross*  non-conservation (particle loss/creation or a runaway blow-up)
+    # with a wide tolerance, while the decisive stability guards are the Eb
+    # blow-up check and the bounded transverse-wave check below.
     e0 = first.get("Epart0", 0.0)
     e1 = last.get("Epart0", 0.0)
     if e0 > 0:
@@ -408,7 +402,7 @@ def _frame_time(out_file):
 def validate_plot(test_name):
     """Plot-output check shared by the hybrid-family tests.
 
-    whistler / hybrid_ohm use the seeded-wavelength + dispersion check;
+    whistler / ohm use the seeded-wavelength + dispersion check;
     freestream has no dedicated plot check (both variants use the hybrid energy
     log).
     """

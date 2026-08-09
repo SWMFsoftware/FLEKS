@@ -37,8 +37,6 @@ T                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-Full electromagnetic PIC: standard Maxwell/GMRES field solver advances E and B;
-no hybrid Ohm's-law advance.
 #SOLVEEM
 T                       solveEM
 

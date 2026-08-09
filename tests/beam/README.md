@@ -20,10 +20,8 @@ Both variants share the identical grid, guide field, beam ratio/speeds, density,
 ## Validation
 
 The validator checks that the total particle count is conserved, the mean
-velocity `MeanVx ≈ -0.392` is conserved within 1%, and that transverse `By`/`Bz`
-waves grow from noise (power concentrated in low-order box-compatible modes). The
-hybrid variant additionally runs the shared hybrid energy checks. See
-`tests/beam/validate.py` for the exact tolerances and the FFT checks.
+velocity `MeanVx` is conserved within 1%, and that transverse `By`/`Bz`
+waves grow from noise (power concentrated in low-order box-compatible modes). The hybrid variant additionally runs the shared hybrid energy checks.
 
 ## Running
 

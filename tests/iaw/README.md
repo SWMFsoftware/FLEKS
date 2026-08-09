@@ -53,7 +53,7 @@ reference `wci ~ 1`).
 > ambipolar field, the stability / mass conservation, and the
 > `centerPlasmaPrev` ghost-cell fix (no grid-scale checkerboard). A full
 > `TimeMax = 50`, `nParticle = 150000` run reproduces the Landau damping curve
->  but is far too slow for a routine regression test.
+>  in Hybrid-VPIC.
 
 ## Implementation
 
@@ -80,22 +80,15 @@ waveMode  1
 python3 tests/validate_tests.py --test=iaw
 ```
 
-This builds and runs the test, then validates that the run is stable (no NaN;
-mass conserved) and that:
+## Validation
 
-1. the seeded density profile is a clean single-mode sinusoid (`rhoS0` in the
+1. The seeded density profile is a clean single-mode sinusoid (`rhoS0` in the
    plot output);
-2. the **ambipolar electric field `Ex` is non-zero at the last plot frame**
+2. The **ambipolar electric field `Ex` is non-zero at the last plot frame**
    (the initial `Ex` is zero by construction; a non-zero late-time `Ex` guards
-   against the structured plot reading a stale/zero node-centred E and against
-   the `centerPlasmaPrev` ghost-cell bug that seeded a spurious boundary
-   checkerboard);
-3. the density-perturbation amplitude stays bounded (the IAW damps rather than
+   against the structured plot reading a stale/zero node-centred E)
+3. The density-perturbation amplitude stays bounded (the IAW damps rather than
    blowing up).
-
-Plot-file checks require `PostIDL.exe` (`make PIDL`) and `PostProc.pl`; if those
-are unavailable the profile check is skipped and only the stability checks are
-enforced.
 
 ## Reference
 

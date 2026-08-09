@@ -45,8 +45,6 @@ T                       useHybridPIC
 #HALLTERM
 F                       useHallTerm
 
-Hall-only: resistive and electron-pressure-gradient terms are turned off
-(both 0.0) to isolate the convection-only field advance.
 #RESISTIVITY
 0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
 

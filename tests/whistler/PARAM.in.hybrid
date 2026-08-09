@@ -39,8 +39,6 @@ T                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-Standard Maxwell/GMRES solver disabled; use the Ohm's-law + Faraday hybrid
-field advance instead.
 #SOLVEEM
 F                       solveEM
 
@@ -51,8 +49,6 @@ T                       useHybridPIC
 T                       useAvgFieldB
 20                      nAvgFieldB
 
-Hall-only: resistive and electron-pressure-gradient terms are turned off
-(both 0.0) to isolate the whistler dispersion.
 #RESISTIVITY
 0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validator for the hybrid-Ohm's-law test (tests/hybrid_ohm).
+"""Validator for the hybrid-Ohm's-law test (tests/ohm).
 
 Uses the shared hybrid-family validator (energy-log checks) plus the seeded
 wavelength / bounded-amplitude / whistler-dispersion plot check.

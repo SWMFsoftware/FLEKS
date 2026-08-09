@@ -308,10 +308,9 @@ def _beam_growth_over_time(plots_dir):
 def validate_plot(test_name):
     """Plot-output check: FFT-based transverse-wave resonant-wavenumber check.
 
-    Applies to both the full-PIC and hybrid variants: the hybrid PARAM.in.hybrid
-    keeps the identical box, guide field, beam ratio/speeds and density, so the
-    FFT check (which reads the box size and Bx from the plot file itself) is
-    valid for both solvers.
+    Applies to both the full-PIC and hybrid variants: the hybrid keeps the
+    identical box, guide field, beam ratio/speeds and density, so the FFT check
+    is valid for both solvers.
     """
     logger.debug("  --- Validating Output Files (FFT transverse wave) ---")
     result, reason = _check_beam_transverse_wave()

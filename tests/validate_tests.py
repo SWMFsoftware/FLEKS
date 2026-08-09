@@ -10,12 +10,11 @@ This module holds only the shared infrastructure:
   * build-configuration pre-flight checks,
   * the test-discovery + execution loop and the summary table.
 
-Each per-test validation (energy-log check, plot-output check, particle-log
-tolerance) lives in a small ``validate.py`` module inside that test's own
-directory (e.g. ``tests/beam/validate.py``).  This runner loads only the module
-for the test currently being run, so it does not have to import the code for
-every test up front.  Shared helpers (e.g. the hybrid family) live in
-``tests/_shared/``.
+Each per-test validation lives in a small ``validate.py`` module
+inside that test's own directory (e.g. ``tests/beam/validate.py``).
+This runner loads only the module for the test currently being run,
+so it does not have to import the code for every test up front.
+Shared helpers (e.g. the hybrid family) live in ``tests/_shared/``.
 
 Output is controlled with the standard :mod:`logging` levels:
   * INFO    -- essential per-test results and the summary (default),
@@ -29,9 +28,9 @@ import shutil
 import subprocess
 import sys
 
-# Directory used for simulation output. Defaults to "run_test" but can be
-# overridden with --run-dir so a second test can run without clobbering a
-# currently-running job that owns the default run_test/.
+# Directory used for simulation output. Defaults can be overridden with
+# --run-dir so a second test can run without clobbering a currently-running
+# job that owns the default run_test/.
 RUN_DIR = "run_test"
 
 logger = logging.getLogger("fleks.validate")

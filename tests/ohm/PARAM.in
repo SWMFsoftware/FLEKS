@@ -36,8 +36,6 @@ T                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-Standard Maxwell/GMRES solver disabled; use the Ohm's-law + Faraday hybrid
-field advance instead.
 #SOLVEEM
 F                       solveEM
 
@@ -51,20 +49,27 @@ late-time transverse amplitude stays well below the seed.
 1000000.0               etaResistivity  [m^2/s, SI magnetic diffusivity]
 
 Electron-pressure-gradient term ON (isothermal, gamma = 1). Converted
-internally to code units (TeCode = TeEV*e/(mp*uNormSI^2) ~ 0.19 here); acts on
-the charge-density fluctuations carried by particle noise.
+internally to code units (TeCode = TeEV*e/(mp*uNormSI^2) ~ 0.19 here).
 #ELECTRONTEMPERATURE
 5.0                     electronTemperature  [eV]
 1.0                     electronGamma
 1.0                     electronDensity0
 
-Sub-cycle the B update: the explicit Hall advance is limited by the discrete
-grid-scale whistler mode. Because the compact curl operators annihilate the
-exact Nyquist mode, the effective omega_max is far below the naive continuum
-estimate and dt = 0.02 is RK4-stable even with nBSubcycle = 1 (verified:
-identical whistler frequency for {1,4,8,16,32}).
+Sub-cycle the B update. The explicit Hall advance is limited by the discrete
+grid-scale whistler mode, omega_max * dt_sub < S (S ~ 2.83 for RK4). Because the
+compact curl operators (curl_center_to_node / curl_node_to_center) annihilate
+the exact Nyquist mode and are far less stiff than the continuum estimate, the
+effective omega_max here is ~100/Omega_i, so even dt = 0.02 is within the RK4
+limit and nBSubcycle = 1 is stable (verified: the measured whistler frequency
+is identical for nBSubcycle in {1,4,8,16,32}). nBSubcycle = 4 is chosen here
+(verified stable, whistler frequency identical to {1,8,16,32}); it is sufficient
+and provides a meaningful sub-cycling test without over-subcycling (4x cheaper
+than the previous 32). The resistive and
+electron-pressure-gradient terms are diffusive/stabilizing and do not stiffen
+the Hall update, so this rationale is unchanged from the Hall-only whistler
+case.
 #BSUBCYCLE
-8                       nBSubcycle
+4                       nBSubcycle
 
 Single kinetic ion species (q = m = 1); the electron is an implicit
 neutralizing massless fluid, so no electron particle species is present.

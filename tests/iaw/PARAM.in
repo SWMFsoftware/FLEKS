@@ -26,9 +26,7 @@ Parameters:
 FAST regression configuration: TimeMax = 5 omega_ci^-1 and nParticle = 2000/cell
 keep the standalone run small enough to finish in ~1 minute on a single core
 (48 cells x 2000 = 96k ions, 250 time steps). This still exercises the ambipolar
-field, the centerPlasmaPrev ghost-cell fix (no grid-scale checkerboard), and the
-stability/mass-conservation of the hybrid solver, which is what the validator
-checks.
+field, and the stability/mass-conservation of the hybrid solver.
 
 Time is in omega_ci^-1 (the normalization reference scales make wci ~ 1).
 
@@ -78,16 +76,14 @@ closure p_e = electronDensity0*Te*(rho/electronDensity0)^gamma stays consistent.
 1.0                     electronDensity0  [amu/cc, same as UNIFORMSTATE rho]
 
 B = 0 so the Hall term (J x B)/rho and the convection term -u_i x B both vanish;
-no B sub-cycling is needed and the Hall term is switched OFF. The only remaining
-E source is the electron pressure gradient -grad(p_e)/rho.
+The only remaining E source is the electron pressure gradient -grad(p_e)/rho.
 #HALLTERM
 F                       useHallTerm
 #BSUBCYCLE
 1                       nBSubcycle
 
 Smoothing of the ion fluid moments (density and momentum) before the Ohm's law
-(nSmoothMoments = 2 binomial passes). Without it the PIC shot noise couples into
-the ambipolar field as spurious gradients and over-damps the seeded IAW mode.
+(nSmoothMoments = 2 binomial passes).
 #SMOOTHMOMENTS
 T                       doSmoothMoments
 2                       nSmoothMoments
@@ -142,7 +138,7 @@ T                       useFixedDt
 1                       dnSavePT
 
 #PARTICLES
-2000                    nParticle per cell in X  (fast: ~1 min on 1 core)
+2000                    nParticle per cell in X
 1                       nParticle per cell in Y
 1                       nParticle per cell in Z
 

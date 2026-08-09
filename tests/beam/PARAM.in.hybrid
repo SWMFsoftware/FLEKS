@@ -43,18 +43,13 @@ F                       solveEM
 #HYBRIDPIC
 T                       useHybridPIC
 
-Hall term ON: the (J x B)/rho current term drives the ion-scale electromagnetic
-response of the beam-beam instability.  A single sub-step per coarse dt is used
-because the guide field is dynamically weak (v_A << u_beam) so the explicit
-Hall advance is not stiff at this resolution.
+Hall term drives the ion-scale electromagnetic beam-beam instability.
 #HALLTERM
 T                       useHallTerm
 
 #BSUBCYCLE
 1                       nBSubcycle
 
-Resistive and electron-pressure-gradient terms OFF (0.0) so the instability
-grows undamped; the field advance keeps only the convection + Hall Ohm terms.
 #RESISTIVITY
 0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
 

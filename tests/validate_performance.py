@@ -8,8 +8,7 @@ The script:
    `Pic::E_iterate`/`Pic::E_matvec`, hybrid PIC uses
    `Pic::update_B_hybrid`/`Pic::assemble_ohm_E`.
 3. Computes particle-step rates (μs/part-step) and parallel speedup.
-4. Validates against baseline targets (per solver) and writes a report to
-   `tests/performance_summary.md`.
+4. Validates against baseline targets and writes a report.
 """
 import os
 import shutil
@@ -26,9 +25,6 @@ FULLPIC_SOLVERS = ["Pic::E_iterate", "Pic::E_matvec"]
 HYBRID_SOLVERS = ["Pic::update_B_hybrid", "Pic::assemble_ohm_E"]
 
 # Baseline targets (μs/part-step) and 2-core speedup floor, one set per solver.
-# The hybrid field advance is an explicit (non-iterative) Ohm's-law + Faraday
-# update, so it is cheaper per field solve than the implicit GMRES E-solve; the
-# Hall sub-cycling keeps its per-step cost comparable to the full-PIC mover.
 BASELINES = {
     "fullpic": {
         "total_pps": 15.0,      # 15.0 μs/part-step total wall-clock (GHA VM)

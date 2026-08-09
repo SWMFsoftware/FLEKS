@@ -40,7 +40,7 @@ step. See `tests/_shared/hybrid.py` for the exact tolerances.
 
 ## Relationship to other tests
 
-- `whistler/`, `hybrid_ohm/` — seeded wave tests built on the same
+- `whistler/`, `ohm/` — seeded wave tests built on the same
   equilibrium.
 - `whistler_solveem/` — the full-PIC SOLVEEM *wave* test (seeded wave, not a
   free-stream).

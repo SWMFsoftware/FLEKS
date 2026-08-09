@@ -3,7 +3,7 @@ Hybrid PIC (kinetic ions / fluid electrons) test exercising the FOURTH-ORDER
 hyper-resistive term in the generalized Ohm's law, in addition to the full set of
 terms (convection + Hall + resistive eta*J + electron pressure gradient).
 
-This is the companion regression case to ../hybrid_ohm/PARAM.in. The same
+This is the companion regression case to ../ohm/PARAM.in. The same
 geometry and ion-scale normalization are used (d_i ~ v_A ~ 1 in code units). The
 hyper-resistivity (eta_h * nabla^2 J) is added to demonstrate damping of the
 grid-scale / PIC shot-noise that the second-order eta*J term cannot reach.
