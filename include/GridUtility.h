@@ -45,7 +45,8 @@ void div_center_to_center(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
 
 // Cell-centered 7-point (5-point in 2D) Laplacian on a cell-centered field.
 void lap_center_to_center(const amrex::MultiFab& centerMF,
-                          amrex::MultiFab& centerMFout, const amrex::Real* invDx);
+                          amrex::MultiFab& centerMFout,
+                          const amrex::Real* invDx);
 
 void average_center_to_node(const amrex::MultiFab& centerMF,
                             amrex::MultiFab& nodeMF);

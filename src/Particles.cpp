@@ -2,9 +2,9 @@
 
 #include <AMReX_ParReduce.H>
 
+#include "InitialCondition.h"
 #include "Morton.h"
 #include "Particles.h"
-#include "InitialCondition.h"
 #include "SWMFInterface.h"
 #include "Timer.h"
 #include "Utility.h"
@@ -1010,8 +1010,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
   // Cell-centred coarse-fine interface for AMR. The cell-centred coarse-fine
   // routines (sum_two_lev_interface_cell / ..._for_domain_edge_cell) do not yet
   // exist in FLEKS, so AMR hybrid moment summation is not supported; the hybrid
-  // target tests are single-level (n_lev() == 1). An assertion guards against an
-  // unsupported multilevel hybrid run.
+  // target tests are single-level (n_lev() == 1). An assertion guards against
+  // an unsupported multilevel hybrid run.
   if (n_lev() > 1) {
     amrex::Abort(
         "sum_moments_cell_centered: AMR (multi-level) hybrid moment summation "
@@ -1840,9 +1840,8 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
         for (int k = 0; k <= 2; ++k)
           for (int j = 0; j <= 2; ++j)
             for (int i = 0; i <= 2; ++i)
-              coef[i][j][k] = (i <= 1 && j <= 1 && k <= 1)
-                                  ? coefLin[i][j][k]
-                                  : 0.0;
+              coef[i][j][k] =
+                  (i <= 1 && j <= 1 && k <= 1) ? coefLin[i][j][k] : 0.0;
         //-----calculate interpolate coef end-------------
 
         Real bp[3] = { 0, 0, 0 };

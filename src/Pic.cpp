@@ -284,26 +284,27 @@ void Pic::post_process_param() {
       for (int iLev = 0; iLev < n_lev(); iLev++)
         etaHyperLev[iLev] =
             fourPI * etaHyperSI * fi->get_Si2NoV() * pow(fi->get_Si2NoL(), 3);
-      amrex::Print() << "  etaHyper: " << etaHyperSI
-                     << " [m^4/s, si] -> " << etaHyperLev[0] << " [code units]\n";
+      amrex::Print() << "  etaHyper: " << etaHyperSI << " [m^4/s, si] -> "
+                     << etaHyperLev[0] << " [code units]\n";
     }
 
-    // Field integrator selection for the hybrid Faraday update. #FIELDINTEGRATOR
-    // is the single control for the time integration of B:
+    // Field integrator selection for the hybrid Faraday update.
+    // #FIELDINTEGRATOR is the single control for the time integration of B:
     //   "rk4"    -> 4th-order Runge-Kutta sub-step (default);
     //   "ssprk3" -> Hybrid-VPIC-style SSP-RK3 with time-centred E (averaged B).
     // dispatch on the string directly in update_B_hybrid.
     useRK4 = (fieldIntegrator == "rk4");
     if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3") {
-      amrex::Print() << "  WARNING: unknown #FIELDINTEGRATOR '" << fieldIntegrator
-                     << "'; defaulting to 'rk4'\n";
+      amrex::Print() << "  WARNING: unknown #FIELDINTEGRATOR '"
+                     << fieldIntegrator << "'; defaulting to 'rk4'\n";
       fieldIntegrator = "rk4";
       useRK4 = true;
     }
     amrex::Print() << "  fieldIntegrator: " << fieldIntegrator << "\n";
     amrex::Print() << "  useAvgFieldB: " << useAvgFieldB
                    << "   nAvgFieldB: " << nAvgFieldB << "\n";
-    if (nAvgFieldB < 1) nAvgFieldB = 1;
+    if (nAvgFieldB < 1)
+      nAvgFieldB = 1;
     if (electronTemperatureEV > 0) {
       // Te_code = Te_eV * e / (mp * uNorm_SI^2)
       // (same relation as in ExoSource.h::electron_temperature, inverted)
@@ -326,7 +327,8 @@ void Pic::post_process_param() {
     // The auto density floor is also deferred: it depends on the code-unit
     // electronDensity0, so it is set inside convert_electron_density0().
     if (rhoFloorHybrid <= 0)
-      rhoFloorHybrid = 0.0; // resolved to 1e-6*electronDensity0 on first advance
+      rhoFloorHybrid =
+          0.0; // resolved to 1e-6*electronDensity0 on first advance
   }
 }
 
@@ -395,9 +397,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
   if (nodePlasma.empty()) {
     nodePlasma.resize(nSpecies + 1);
   }
-  if (nodePlasmaPrev.empty()) {
-    nodePlasmaPrev.resize(nSpecies + 1);
-  }
   // Cell-centred hybrid moments (Hybrid-VPIC-style). centerPlasma is the
   // per-species deposit target (last entry = sum of all kinetic-ion species),
   // centerPlasmaPrev the previous-step deposit for the Ohm's-law time
@@ -451,6 +450,15 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                         nGst, doMoveData);
 
     if (useHybridPIC) {
+      // nodePlasmaPrev (previous-step ion moments for the Ohm's-law time
+      // interpolation) is a hybrid-only array: only
+      // save_current_moments_to_prev and seed_first_hybrid_step write it, and
+      // both are hybrid-gated. Resize and allocate it here (rather than
+      // unconditionally) so full-PIC runs do not pay this extra node-grid
+      // memory allocation.
+      if (nodePlasmaPrev.empty()) {
+        nodePlasmaPrev.resize(nSpecies + 1);
+      }
       // Hyper-resistivity scratch fields. centerLapB is cell-centred (Laplacian
       // of centerB); nodeHyperE is node-centred.
       distribute_FabArray(centerLapB[iLev], cGrids[iLev], DistributionMap(iLev),
@@ -458,12 +466,13 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(nodeHyperE[iLev], nGrids[iLev], DistributionMap(iLev),
                           3, nGst, doMoveData);
 
-      // RK4 (fieldIntegrator="rk4") scratch fields. centerB_RK4 / nodeB_RK4 hold
-      // the trial B states; nodeE_RK4 the E at a trial B; kRK4[0..3] the four
-      // stage curls. They mirror the node/center grids and nGst of the live
-      // fields, with doMoveData=false (scratch, no regrid persistence needed).
-      distribute_FabArray(centerB_RK4[iLev], cGrids[iLev], DistributionMap(iLev),
-                          3, nGst, doMoveData);
+      // RK4 (fieldIntegrator="rk4") scratch fields. centerB_RK4 / nodeB_RK4
+      // hold the trial B states; nodeE_RK4 the E at a trial B; kRK4[0..3] the
+      // four stage curls. They mirror the node/center grids and nGst of the
+      // live fields, with doMoveData=false (scratch, no regrid persistence
+      // needed).
+      distribute_FabArray(centerB_RK4[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(nodeB_RK4[iLev], nGrids[iLev], DistributionMap(iLev),
                           3, nGst, doMoveData);
       distribute_FabArray(nodeE_RK4[iLev], nGrids[iLev], DistributionMap(iLev),
@@ -477,8 +486,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       // re-allocation. B_avg mirrors the live B grids.
       distribute_FabArray(centerBavg[iLev], cGrids[iLev], DistributionMap(iLev),
                           3, nGst, doMoveData);
-      distribute_FabArray(nodeBavg[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                          nGst, doMoveData);
+      distribute_FabArray(nodeBavg[iLev], nGrids[iLev], DistributionMap(iLev),
+                          3, nGst, doMoveData);
 
       // rk3/rk4 persistent scratch (all cell-centred, 3 comps). centerBstart
       // holds the sub-step start B_n, and centerBstar holds the time-centred
@@ -517,9 +526,20 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       for (auto& pl : centerPlasmaPrev) {
         if (pl.empty())
           pl.resize(n_lev_max());
-        // The hybrid Ohm's law reads only rho + 3 momentum from centerPlasmaPrev,
-        // so it is stored with the slim 4-component layout (like nodePlasmaPrev).
+        // The hybrid Ohm's law reads only rho + 3 momentum from
+        // centerPlasmaPrev, so it is stored with the slim 4-component layout
+        // (like nodePlasmaPrev).
         distribute_FabArray(pl[iLev], cGrids[iLev], DistributionMap(iLev),
+                            nHybridMomentsComps, nGst, doMoveData);
+      }
+      // nodePlasmaPrev is a hybrid-only node-grid array (previous-step ion
+      // moments, J^{n-1/2}, for the Ohm's-law time interpolation). It stores
+      // only the rho + 3 momentum components used by the interpolation, not the
+      // full moment tensor, to save memory and copy bandwidth.
+      for (auto& pl : nodePlasmaPrev) {
+        if (pl.empty())
+          pl.resize(n_lev_max());
+        distribute_FabArray(pl[iLev], nGrids[iLev], DistributionMap(iLev),
                             nHybridMomentsComps, nGst, doMoveData);
       }
     }
@@ -546,15 +566,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
         pl.resize(n_lev_max());
       distribute_FabArray(pl[iLev], nGrids[iLev], DistributionMap(iLev),
                           nMoments, nGst, doMoveData);
-    }
-    for (auto& pl : nodePlasmaPrev) {
-      if (pl.empty())
-        pl.resize(n_lev_max());
-      // nodePlasmaPrev stores only the rho + 3 momentum components used by the
-      // Ohm's-law time interpolation, not the full moment tensor, to save
-      // memory and copy bandwidth.
-      distribute_FabArray(pl[iLev], nGrids[iLev], DistributionMap(iLev),
-                          nHybridMomentsComps, nGst, doMoveData);
     }
   }
 
@@ -589,7 +600,8 @@ void Pic::post_regrid() {
     // Let the plugin apply any particle-count override (e.g. LightWave /
     // TopHat force zero macroparticles) after #PARTICLES has been fully parsed
     // so it always wins.
-    if (ic_) ic_->apply_particle_override(pInfo);
+    if (ic_)
+      ic_->apply_particle_override(pInfo);
 
     for (int i = 0; i < nSpecies; ++i) {
       auto ptr = std::make_unique<PicParticles>(
@@ -842,7 +854,8 @@ void Pic::update_part_loc_to_half_stage() {
       // Use the time-averaged B in the Boris half-stage position push when
       // enabled (falls back to the instantaneous B before the first average is
       // initialised).
-      const auto& nodeBhalf = (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
+      const auto& nodeBhalf =
+          (useAvgFieldB && isBavgInit) ? nodeBavg[iLev] : nodeB[iLev];
       parts[i]->update_position_to_half_stage(nodeEth[iLev], nodeBhalf,
                                               tc->get_dt());
     }
@@ -914,8 +927,8 @@ void Pic::particle_mover() {
   const Vector<MultiFab>& nodeEpush = nodeEth;
   if (useHybridPIC) {
     // Hybrid-VPIC-style cell-centred Boris push: gather E and B from the
-    // cell-centred fields (centerEhybrid is the integer-step E^{n+1} computed at
-    // the end of the previous update_B_hybrid; centerB/centerBavg is B).
+    // cell-centred fields (centerEhybrid is the integer-step E^{n+1} computed
+    // at the end of the previous update_B_hybrid; centerB/centerBavg is B).
     for (int i : kineticSpecies_) {
       parts[i]->mover_cell_centered(centerEhybrid, centerBpush, eBg, uBg, dt,
                                     dtnext);
@@ -1172,8 +1185,7 @@ void Pic::sum_moments(bool updateDt) {
         for (int i = 0; i < nSpecies; ++i) {
           amrex::MultiFab& momMF =
               useHybridPIC ? centerPlasma[i][iLev] : nodePlasma[i][iLev];
-          Real uMaxSpecies =
-              parts[i]->calc_max_thermal_velocity(momMF);
+          Real uMaxSpecies = parts[i]->calc_max_thermal_velocity(momMF);
           ParallelDescriptor::ReduceRealMax(uMaxSpecies);
 
           if (doReport) {
@@ -1245,10 +1257,10 @@ void Pic::sum_moments(bool updateDt) {
 
     // nodePlasma output bridge: average_center_to_node(centerPlasma ->
     // nodePlasma) for every species and the summed entry, plus calc_mach_number
-    // (which reads nodePlasma[nSpecies]). This is a pure output mirror. To avoid
-    // the per-step cost, the bridge + calc_mach_number are deferred and run
-    // lazily by sync_node_plasma_output() only when a plot/probe/load-balance
-    // actually reads nodePlasma / mMach.
+    // (which reads nodePlasma[nSpecies]). This is a pure output mirror. To
+    // avoid the per-step cost, the bridge + calc_mach_number are deferred and
+    // run lazily by sync_node_plasma_output() only when a
+    // plot/probe/load-balance actually reads nodePlasma / mMach.
     nodePlasmaStale = true;
   } else {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -1285,9 +1297,9 @@ void Pic::sum_moments(bool updateDt) {
 void Pic::sync_node_plasma_output(const bool needMach) {
   if (!nodePlasmaStale)
     return;
-  // nodePlasma output bridge: average_center_to_node(centerPlasma -> nodePlasma)
-  // for every species and the summed entry. Deferred from sum_moments so
-  // non-output steps do not pay this per-step cost.
+  // nodePlasma output bridge: average_center_to_node(centerPlasma ->
+  // nodePlasma) for every species and the summed entry. Deferred from
+  // sum_moments so non-output steps do not pay this per-step cost.
   for (int i = 0; i < nSpecies + 1; ++i) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       centerPlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
@@ -1325,10 +1337,11 @@ void Pic::convert_electron_density0() {
     return;
   electronDensity0Converted_ = true;
 
-  // electronDensity0EV is in amu/cc (same unit as #UNIFORMSTATE rho); convert to
-  // code units with the same factor #UNIFORMSTATE uses (amu/cc -> kg/m^3 via
-  // *1e6*cProtonMassSI, -> code via *Si2NoRho). get_Si2NoRho() is only valid here
-  // (first field advance) after fi->post_process_param() finalizes the normParams.
+  // electronDensity0EV is in amu/cc (same unit as #UNIFORMSTATE rho); convert
+  // to code units with the same factor #UNIFORMSTATE uses (amu/cc -> kg/m^3 via
+  // *1e6*cProtonMassSI, -> code via *Si2NoRho). get_Si2NoRho() is only valid
+  // here (first field advance) after fi->post_process_param() finalizes the
+  // normParams.
   electronDensity0 =
       electronDensity0EV * 1.0e6 * cProtonMassSI * fi->get_Si2NoRho();
 
@@ -1338,7 +1351,8 @@ void Pic::convert_electron_density0() {
 
   amrex::Print() << "  electronDensity0: " << electronDensity0EV
                  << " [amu/cc] -> " << electronDensity0
-                 << " [code units]  (Si2NoRho = " << fi->get_Si2NoRho() << ")\n";
+                 << " [code units]  (Si2NoRho = " << fi->get_Si2NoRho()
+                 << ")\n";
 }
 
 //==========================================================
@@ -1384,10 +1398,9 @@ void Pic::calc_cost_per_cell() {
   // Load-balancing by particle/hybrid/timing reads nodePlasma[nSpecies]; the
   // hybrid nodePlasma mirror is deferred, so materialize it on demand. The Mach
   // number is not needed for load balancing.
-  if (useHybridPIC &&
-      (balanceStrategy == BalanceStrategy::Particle ||
-       balanceStrategy == BalanceStrategy::Hybrid ||
-       balanceStrategy == BalanceStrategy::Timing)) {
+  if (useHybridPIC && (balanceStrategy == BalanceStrategy::Particle ||
+                       balanceStrategy == BalanceStrategy::Hybrid ||
+                       balanceStrategy == BalanceStrategy::Timing)) {
     sync_node_plasma_output(false);
   }
 
@@ -2421,41 +2434,28 @@ void Pic::update_B() {
 }
 
 //==========================================================
-// Particle weights are initialized with dt = 1 during the initial condition
-// (add_particles_cell is called with dt = -1 -> dt = 1), so the charge density
-// nodePlasma[...].iRho_ is the TRUE charge density rho_q = sum(qp)/V_cell. The
-// Hall and electron-pressure-gradient terms therefore divide by iRho_ directly
-// (no dt rescaling needed).
+// Generalized Ohm's law
+//   E = -U_i x B + eta J + (J x B)/rho_q - grad(Pe)/rho_q
+// on cell-centred fields at an arbitrary (off-member) B state. `centerBin` is
+// the trial B used for J = curl(B)/(4*pi); `centerBtimeAvg` is the
+// time-averaged B used for the Hall/convection factor. Ion moments are
+// time-interpolated between centerPlasmaPrev (J^{n-1/2}) and centerPlasmaSum
+// (J^{n+1/2}) at hstep. Particle weights are initialized with dt = 1, so iRho_
+// is the true charge density rho_q (the Hall / pressure terms divide by it
+// directly).
 //==========================================================
 void Pic::assemble_ohm_E(const MultiFab& centerBin,
                          const MultiFab& centerBtimeAvg, MultiFab& Eout,
                          int iLev, amrex::Real hstep) {
   BL_PROFILE("Pic::assemble_ohm_E");
 
-  // Evaluate the generalized Ohm's law
-  //   E = -U_i x B + eta J + (J x B)/rho_q - grad(Pe)/rho_q
-  // at an ARBITRARY (off-member) B state in the CELL-CENTRED (Hybrid-VPIC-style)
-  // layout. This does not touch the member centerEhybrid, so it can be called
-  // repeatedly at the four RK4 trial B states. `centerBin` is the cell-centred
-  // TRIAL B from which the current J = curl(B)/(4*pi) is built; `centerBtimeAvg`
-  // is the cell-centred time-averaged (B_trial + B^n)/2 used for the
-  // Hall/convection B factor (the two-state split of Hybrid-VPIC's
-  // hyb_advance_e, but entirely in the cell-centred layout -- no node
-  // projection). The ion moments are time-interpolated between
-  // centerPlasmaPrev (J^{n-1/2}) and centerPlasmaSum (J^{n+1/2}) at hstep (see
-  // the interpolation at the top of the parallel loop). The current is written
-  // to the member centerJ[iLev] (cell-centred).
   const auto dx = Geom(iLev).CellSizeArray();
   const Real dxInv = 1.0 / (2.0 * dx[0]);
   const Real dyInv = 1.0 / (2.0 * dx[1]);
-  // 2D safety: AMReX keeps a (dummy) z extent, so guard the z inverse and all
-  // z-derivatives below with nDim > 2.
   const Real dzInv = (nDim > 2) ? 1.0 / (2.0 * dx[2]) : 0.0;
 
-  // Cell-centred collocated current J = nabla x centerB / (4*pi). Computed from
-  // the TRIAL center B with the 2*dx central difference curl_center_to_center,
-  // whose spectral response is zero at the Nyquist wavenumber -- the dominant
-  // stability margin of the cell-centred solver (matches Hybrid-VPIC's CURLE).
+  // Cell-centred current J = curl(B)/(4*pi) from the trial B (2*dx central
+  // difference, zero at the Nyquist wavenumber).
   const bool needJ =
       (etaResistivity > 0 || useHallTerm || etaHyperLev[iLev] > 0);
   if (needJ) {
@@ -2473,24 +2473,21 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     const Array4<Real const> arrJ =
         needJ ? centerJ[iLev][mfi].array() : Array4<Real const>();
 
-    // Time-interpolation weights for the ion moments. X(hstep) =
-    // (0.5-hstep)*X^{n-1/2} + (0.5+hstep)*X^{n+1/2}; hstep=0 gives the centred
-    // average (J^n) and hstep=1 the linear extrapolation (J^{n+1}).
+    // Moment time-interpolation weights: X(hstep) =
+    // (0.5-hstep)*X^{n-1/2} + (0.5+hstep)*X^{n+1/2}.
     const Real wPrev = 0.5 - hstep;
     const Real wCur = 0.5 + hstep;
 
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      // Interpolated charge density and momentum density between the previous
-      // deposit (J^{n-1/2}, momentsPrev) and the current one (J^{n+1/2}).
       const Real rhoPrev = momentsPrev(i, j, k, iRho_);
       const Real rhoCur = moments(i, j, k, iRho_);
       const Real rho = wPrev * rhoPrev + wCur * rhoCur;
-      const Real mx = wPrev * momentsPrev(i, j, k, iUx_) +
-                      wCur * moments(i, j, k, iUx_);
-      const Real my = wPrev * momentsPrev(i, j, k, iUy_) +
-                      wCur * moments(i, j, k, iUy_);
-      const Real mz = wPrev * momentsPrev(i, j, k, iUz_) +
-                      wCur * moments(i, j, k, iUz_);
+      const Real mx =
+          wPrev * momentsPrev(i, j, k, iUx_) + wCur * moments(i, j, k, iUx_);
+      const Real my =
+          wPrev * momentsPrev(i, j, k, iUy_) + wCur * moments(i, j, k, iUy_);
+      const Real mz =
+          wPrev * momentsPrev(i, j, k, iUz_) + wCur * moments(i, j, k, iUz_);
       Real ui = 0, vi = 0, wi = 0;
 
       if (rho > 0) {
@@ -2510,41 +2507,37 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
       Real by = arrB(i, j, k, iy_);
       Real bz = arrB(i, j, k, iz_);
 
-      // 1. Convection term: E_conv = - U_i x B
+      // Convection term: E = -U_i x B
       Real ex = -(vi * bz - wi * by);
       Real ey = -(wi * bx - ui * bz);
       Real ez = -(ui * by - vi * bx);
 
-      // 2. Resistivity and Hall / Pressure terms (if enabled).
-      // J = curl(B) / (4*pi) in CGS code units.
+      // J = curl(B)/(4*pi) (CGS)
       Real jx = 0.0, jy = 0.0, jz = 0.0;
       if (needJ) {
-        // Cell-centred collocated current from centerBin (via centerJ).
         jx = arrJ(i, j, k, ix_) / fourPI;
         jy = arrJ(i, j, k, iy_) / fourPI;
         jz = arrJ(i, j, k, iz_) / fourPI;
       }
 
-      // Add eta * J term
+      // eta * J
       if (etaResistivity > 0) {
         ex += etaResistivity * jx;
         ey += etaResistivity * jy;
         ez += etaResistivity * jz;
       }
 
-      // Add Electron pressure gradient and Hall term. The density floor caps
-      // 1/rho so a tiny but positive charge density does not blow up these
-      // terms; the pressure closure still uses the TRUE rho. Cells with rho == 0
-      // are left inert (as before) to avoid injecting a spurious force into
-      // empty regions.
+      // Electron-pressure-gradient and Hall terms. The floor caps 1/rho; the
+      // pressure closure itself uses the true rho. Cells with rho == 0 are
+      // left inert.
       if (rho > 0) {
         const Real invRhoEff = 1.0 / amrex::max(rho, rhoFloorHybrid);
 
-        // Electron pressure gradient term
+        // Electron pressure gradient
         Real dPe_dx = 0.0, dPe_dy = 0.0, dPe_dz = 0.0;
         if (electronTemperature > 0) {
           if (electronGamma == 1.0) {
-            // Isothermal: Pe = rho * Te -> grad(Pe) = Te * grad(rho)
+            // Isothermal: grad(Pe) = Te * grad(rho)
             dPe_dx = electronTemperature *
                      (rho_at(i + 1, j, k) - rho_at(i - 1, j, k)) * dxInv;
             dPe_dy = electronTemperature *
@@ -2560,21 +2553,19 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
             Real invRho0 = 1.0 / electronDensity0;
 
             auto calc_Pe = [=](Real r) {
-              return (r > 0) ? p0 * std::pow(r * invRho0, electronGamma)
-                             : 0.0;
+              return (r > 0) ? p0 * std::pow(r * invRho0, electronGamma) : 0.0;
             };
 
-            dPe_dx = (calc_Pe(rho_at(i + 1, j, k)) -
-                      calc_Pe(rho_at(i - 1, j, k))) *
-                     dxInv;
-            dPe_dy = (calc_Pe(rho_at(i, j + 1, k)) -
-                      calc_Pe(rho_at(i, j - 1, k))) *
-                     dyInv;
-            dPe_dz = (nDim > 2)
-                         ? (calc_Pe(rho_at(i, j, k + 1)) -
-                            calc_Pe(rho_at(i, j, k - 1))) *
-                               dzInv
-                         : 0.0;
+            dPe_dx =
+                (calc_Pe(rho_at(i + 1, j, k)) - calc_Pe(rho_at(i - 1, j, k))) *
+                dxInv;
+            dPe_dy =
+                (calc_Pe(rho_at(i, j + 1, k)) - calc_Pe(rho_at(i, j - 1, k))) *
+                dyInv;
+            dPe_dz = (nDim > 2) ? (calc_Pe(rho_at(i, j, k + 1)) -
+                                   calc_Pe(rho_at(i, j, k - 1))) *
+                                      dzInv
+                                : 0.0;
           }
 
           ex -= dPe_dx * invRhoEff;
@@ -2582,9 +2573,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
           ez -= dPe_dz * invRhoEff;
         }
 
-        // Hall term: (J x B) / rho_q  (rho = iRho_ = charge density).
-        // No dt factor -- weights are initialized with dt=1, so iRho_ is
-        // the true charge density (see block comment at top of this method).
+        // Hall term: (J x B) / rho_q
         if (useHallTerm) {
           Real hall_x = (jy * bz - jz * by) * invRhoEff;
           Real hall_y = (jz * bx - jx * bz) * invRhoEff;
@@ -2605,13 +2594,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   Eout.FillBoundary(Geom(iLev).periodicity());
   apply_BC(cellStatus[iLev], Eout, 0, nDim3, &Pic::get_center_E, iLev);
 
-  // Hyper-resistivity.
-  //   E -= eta_h * nabla^2 J = -(eta_h / 4*pi) * nabla x (nabla^2 B).
-  // Stage A: centerLapB = nabla^2(centerBin) (cell-centred Laplacian).
-  // Stage B: centerHyperE = nabla x (centerLapB) (cell-centred collocated
-  // curl). The two-stage composition makes nabla^2(nabla x B) =
-  // nabla x (nabla^2 B) hold discretely, so the term damps the same mode it is
-  // meant to.
+  // Hyper-resistivity: E -= eta_h * nabla^2 J = -(eta_h/4*pi) * curl(nabla^2
+  // B), built as centerLapB = nabla^2 B then centerHyperE = curl(centerLapB).
   if (etaHyperLev[iLev] > 0) {
     lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
     centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -2637,13 +2621,10 @@ void Pic::smooth_moments() {
   if (!doSmoothMoments || nSmoothMoments <= 0)
     return;
 
-  // Smooth the total ion moment MultiFab that the Ohm's law reads. FillBoundary
-  // first so edge cells see correct wrapped neighbours, then apply the binomial
-  // kernel with di = 1 (nearest neighbour) for every pass so all passes damp the
-  // grid-scale component of the moments. Called only from the hybrid path.
+  // Smooth the total ion moments the Ohm's law reads. Hybrid-only.
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    MultiFab& moments =
-        useHybridPIC ? centerPlasmaSum[nSpecies][iLev] : nodePlasma[nSpecies][iLev];
+    MultiFab& moments = useHybridPIC ? centerPlasmaSum[nSpecies][iLev]
+                                     : nodePlasma[nSpecies][iLev];
     moments.FillBoundary(Geom(iLev).periodicity());
     for (int icount = 0; icount < nSmoothMoments; ++icount) {
       smooth_multifab(moments, iLev, 1, coefSmoothMoments);
@@ -2652,69 +2633,38 @@ void Pic::smooth_moments() {
 }
 
 //==========================================================
-// Copy the current moment deposit (nodePlasma) into nodePlasmaPrev before a
-// fresh deposit. This makes nodePlasmaPrev hold J^{n-1/2} and nodePlasma (after
-// the subsequent sum_moments) hold J^{n+1/2}, so assemble_ohm_E can linearly
-// time-interpolate the two at the magnetic sub-step fraction hstep.
+// Copy the current summed moment deposit into centerPlasmaPrev (J^{n-1/2})
+// before a fresh deposit (J^{n+1/2}), so assemble_ohm_E can time-interpolate
+// the two at the magnetic sub-step fraction hstep.
 void Pic::save_current_moments_to_prev() {
+  // Hybrid-only. Copy the rho + 3 momentum components of the current summed
+  // deposit into centerPlasmaPrev so the Ohm's law can time-interpolate the
+  // previous and current moments. Re-fill ghosts so grad(Pe) at box boundaries
+  // reads valid values.
   std::string nameFunc = "Pic::save_current_moments_to_prev";
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    if (useHybridPIC) {
-      // Cell-centred hybrid: copy only the rho + 3 momentum components into
-      // centerPlasmaPrev so the Ohm's-law time interpolation can use both the
-      // previous and current deposits. centerPlasmaPrev is a 4-component array
-      // (the first nHybridMomentsComps components of centerPlasmaSum).
-      MultiFab::Copy(centerPlasmaPrev[nSpecies][iLev],
-                     centerPlasmaSum[nSpecies][iLev], 0, 0, nHybridMomentsComps,
-                     centerPlasmaSum[nSpecies][iLev].nGrow());
-      // BUGFIX: the central-difference grad(Pe) in assemble_ohm_E reads
-      // rho_at(i-1) / rho_at(i+1), which can land in the ghost cells of
-      // centerPlasmaPrev at a box (MPI / periodic) boundary. If those ghosts are
-      // stale, the ambipolar gradient (and hence Ex) gets a spurious huge value
-      // there, which seeds the grid-scale checkerboard. Keep the previous-step
-      // moments' ghosts consistent by re-filling them after the copy.
-      centerPlasmaPrev[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
-    } else {
-      // Only the rho + 3 momentum components are needed for the Ohm's-law time
-      // interpolation; nodePlasmaPrev is a 4-component array (they are the first
-      // nHybridMomentsComps components of nodePlasma).
-      MultiFab::Copy(nodePlasmaPrev[nSpecies][iLev], nodePlasma[nSpecies][iLev],
-                     0, 0, nHybridMomentsComps,
-                     nodePlasma[nSpecies][iLev].nGrow());
-    }
+    MultiFab::Copy(centerPlasmaPrev[nSpecies][iLev],
+                   centerPlasmaSum[nSpecies][iLev], 0, 0, nHybridMomentsComps,
+                   centerPlasmaSum[nSpecies][iLev].nGrow());
+    centerPlasmaPrev[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
   }
 }
 
 //==========================================================
-// Seed nodePlasmaPrev on the very first hybrid step, where there is no previous
-// deposit: it is initialised from the current moment deposit so the hstep
-// interpolation degrades to a plain average for that single step. The first
-// particle Boris push uses the initial-condition E field directly (nodeEth, set
-// by fill_E_B_fields / the IC), which plays the role of E^0.
+// Seed centerPlasmaPrev on the first hybrid step, where there is no previous
+// deposit: initialise it from the current deposit so the time interpolation
+// degrades to a plain average for that single step. Hybrid-only.
 void Pic::seed_first_hybrid_step() {
   std::string nameFunc = "Pic::seed_first_hybrid_step";
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
-    if (useHybridPIC) {
-      // Cell-centred hybrid: seed centerPlasmaPrev from the current summed
-      // centerPlasmaSum (4-component rho + 3 momentum layout).
-      MultiFab::Copy(centerPlasmaPrev[nSpecies][iLev],
-                     centerPlasmaSum[nSpecies][iLev], 0, 0, nHybridMomentsComps,
-                     centerPlasmaSum[nSpecies][iLev].nGrow());
-      // Keep the seed's ghost cells consistent (same reason as in
-      // save_current_moments_to_prev) so the central-difference grad(Pe) does not
-      // read a stale boundary value on the first step.
-      centerPlasmaPrev[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
-    } else {
-      // nodePlasmaPrev is a 4-component array (rho + 3 momentum); the first
-      // nHybridMomentsComps components of nodePlasma match its layout.
-      MultiFab::Copy(nodePlasmaPrev[nSpecies][iLev], nodePlasma[nSpecies][iLev],
-                     0, 0, nHybridMomentsComps,
-                     nodePlasma[nSpecies][iLev].nGrow());
-    }
+    MultiFab::Copy(centerPlasmaPrev[nSpecies][iLev],
+                   centerPlasmaSum[nSpecies][iLev], 0, 0, nHybridMomentsComps,
+                   centerPlasmaSum[nSpecies][iLev].nGrow());
+    centerPlasmaPrev[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
   }
 }
 
@@ -2736,18 +2686,15 @@ void Pic::project_centerB_to_nodeB(int iLev) {
     apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
              &Pic::get_node_B, iLev, &bcBField);
   } else {
-    fill_fine_lev_bny_from_coarse(
-        nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
-        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
-        node_bilinear_interp);
+    fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
+                                  nodeB[iLev - 1].nComp(), ref_ratio[iLev - 1],
+                                  Geom(iLev - 1), Geom(iLev), node_status(iLev),
+                                  node_bilinear_interp);
   }
 }
 
-// Apply boundary conditions to the cell-centred B so the next field-advance
-// stage can read its neighbours. This is the cell-centred part of
-// project_centerB_to_nodeB. It is called at the end of each sub-step (where the
-// node mirrors and fine-level fills are *not* needed -- they are recomputed once
-// after the whole sub-cycle loop).
+// BCs for the cell-centred B (the cell-centred part of
+// project_centerB_to_nodeB), called at the end of each sub-step.
 void Pic::apply_centerB_BC(int iLev) {
   centerB[iLev].FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
@@ -2764,20 +2711,15 @@ void Pic::apply_centerB_BC(int iLev) {
 //==========================================================
 void Pic::project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
                                            amrex::MultiFab& nodeOut, int iLev) {
-  // Same projection as project_centerB_to_nodeB but on caller-owned scratch
-  // fields (centerIn -> nodeOut) rather than the member centerB/nodeB. Used by
-  // the RK4 sub-stages to build the node B at a trial (off-member) center-B
-  // state. On fine levels the coarse fill reads the MEMBER centerB/nodeB (which
-  // are already at the correct coarse state), so it is valid.
+  // Same projection as project_centerB_to_nodeB on caller-owned scratch fields.
   centerIn.FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
-    apply_BC(cellStatus[iLev], centerIn, 0, centerIn.nComp(), &Pic::get_center_B,
-             iLev, &bcBField);
+    apply_BC(cellStatus[iLev], centerIn, 0, centerIn.nComp(),
+             &Pic::get_center_B, iLev, &bcBField);
   } else {
-    fill_fine_lev_bny_from_coarse(centerB[iLev - 1], centerIn, 0,
-                                  centerIn.nComp(), ref_ratio[iLev - 1],
-                                  Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-                                  cell_bilinear_interp);
+    fill_fine_lev_bny_from_coarse(
+        centerB[iLev - 1], centerIn, 0, centerIn.nComp(), ref_ratio[iLev - 1],
+        Geom(iLev - 1), Geom(iLev), cell_status(iLev), cell_bilinear_interp);
   }
   average_center_to_node(centerIn, nodeOut);
   nodeOut.FillBoundary(Geom(iLev).periodicity());
@@ -2785,10 +2727,9 @@ void Pic::project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
     apply_BC(nodeStatus[iLev], nodeOut, 0, nodeOut.nComp(), &Pic::get_node_B,
              iLev, &bcBField);
   } else {
-    fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeOut, 0, nodeOut.nComp(),
-                                  ref_ratio[iLev - 1], Geom(iLev - 1),
-                                  Geom(iLev), node_status(iLev),
-                                  node_bilinear_interp);
+    fill_fine_lev_bny_from_coarse(
+        nodeB[iLev - 1], nodeOut, 0, nodeOut.nComp(), ref_ratio[iLev - 1],
+        Geom(iLev - 1), Geom(iLev), node_status(iLev), node_bilinear_interp);
   }
 }
 
@@ -2797,17 +2738,14 @@ void Pic::update_B_hybrid() {
   std::string nameFunc = "Pic::update_B_hybrid";
   timing_func(nameFunc);
 
-  // Convert electronDensity0 (amu/cc -> code) exactly once, here, where the
-  // normalization is finalized. See convert_electron_density0().
+  // Convert electronDensity0 (amu/cc -> code) exactly once, where the
+  // normalization is finalized.
   convert_electron_density0();
 
   Real dt = tc->get_dt();
   Real subDt = dt / nHallSubcycle;
 
-  // Grid mode: fill the per-level applied hyper-resistivity from the CFL-scaled
-  // definition eta_h = 4*pi * C_h * dx_min^4 / dt_sub. (For "si" mode
-  // etaHyperLev was already set in post_process_param.) Recomputed each call
-  // because dt_sub can vary between time steps.
+  // Grid-mode hyper-resistivity: eta_h = 4*pi * C_h * dx_min^4 / dt_sub.
   if (etaHyperMode == "grid" && etaHyperCh > 0) {
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
       const auto dx = Geom(iLev).CellSizeArray();
@@ -2818,31 +2756,27 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // CFL guard for the explicit diffusive terms. The effective diffusion
-  // coefficients in the B equation are eta/(4*pi) and eta_h/(4*pi) because
-  // J = curl(B)/(4*pi) in CGS code units. The stability bound is
-  // D * k^2 * dt < S (S ~ 2 for Euler, ~2.78 for RK4).
-  {
-    for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      const auto dx = Geom(iLev).CellSizeArray();
-      Real k2 = 4.0 / (dx[0] * dx[0]) + 4.0 / (dx[1] * dx[1]);
-      if (nDim > 2)
-        k2 += 4.0 / (dx[2] * dx[2]);
-      const Real k4 = k2 * k2;
-      const Real cflEta = (etaResistivity / fourPI) * k2 * subDt;
-      const Real cflHyper = (etaHyperLev[iLev] / fourPI) * k4 * subDt;
-      if (cflEta > 2.0)
-        amrex::Print() << "  [CFL warning] resistivity: eta*kmax^2*dt_sub/(4pi) = "
-                       << cflEta << " (> 2.0, explicit diffusion may be unstable)\n";
-      if (cflHyper > 2.78)
-        amrex::Print() << "  [CFL warning] hyper-resistivity: eta_h*kmax^4*dt_sub/(4pi) = "
-                       << cflHyper << " (> 2.78, explicit 4th-order diffusion may be unstable)\n";
-    }
+  // CFL guard for the explicit diffusive terms (J = curl(B)/(4*pi) in CGS).
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    const auto dx = Geom(iLev).CellSizeArray();
+    Real k2 = 4.0 / (dx[0] * dx[0]) + 4.0 / (dx[1] * dx[1]);
+    if (nDim > 2)
+      k2 += 4.0 / (dx[2] * dx[2]);
+    const Real k4 = k2 * k2;
+    const Real cflEta = (etaResistivity / fourPI) * k2 * subDt;
+    const Real cflHyper = (etaHyperLev[iLev] / fourPI) * k4 * subDt;
+    if (cflEta > 2.0)
+      amrex::Print()
+          << "  [CFL warning] resistivity: eta*kmax^2*dt_sub/(4pi) = " << cflEta
+          << " (> 2.0, explicit diffusion may be unstable)\n";
+    if (cflHyper > 2.78)
+      amrex::Print()
+          << "  [CFL warning] hyper-resistivity: eta_h*kmax^4*dt_sub/(4pi) = "
+          << cflHyper
+          << " (> 2.78, explicit 4th-order diffusion may be unstable)\n";
   }
 
-  // Save the pre-update nodeB so dBdt can be computed as (B^{n+1} - B^n)/dt
-  // after the sub-cycle loop.  (Mirrors the master update_B, which copies
-  // nodeB into dBdt before the Faraday advance.)
+  // Save the pre-update nodeB so dBdt can be computed as (B^{n+1} - B^n)/dt.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
                    dBdt[iLev].nGrow());
@@ -2850,156 +2784,121 @@ void Pic::update_B_hybrid() {
 
   for (int subStep = 0; subStep < nHallSubcycle; ++subStep) {
 
-    // Global magnetic sub-step fraction g in [0, 1): the moment interpolation
-    // hstep for this sub-step. Within an RK4 sub-step of size subDt the Ohm's
-    // law is evaluated at g (stage 1), g + 0.5/nHallSubcycle (stages 2 and 3)
-    // and g + 1.0/nHallSubcycle (stage 4); the combined field after the full
-    // cycle is at hstep = 1.
+    // Global sub-step fraction g in [0, 1); the moment interpolation hstep.
     const Real g = (Real)subStep / (Real)nHallSubcycle;
     const Real hstepHalf = g + 0.5 / (Real)nHallSubcycle;
 
     if (useRK4) {
-      // --- 4th-order Runge-Kutta sub-step on level 0 ---
-      // B is advanced by the classical RK4 on the Faraday equation
-      //     dB/dt = -curl(E),   E = E_Ohm(B)
-      // The four stages evaluate the generalized Ohm's law at trial B states,
-      // with the ion moments time-interpolated at the corresponding hstep:
+      // Classical RK4 on dB/dt = -curl(E), E = E_Ohm(B), on level 0:
       //   k1 = curl(E(B^n, hstep=g))
       //   k2 = curl(E(B^n - 0.5 dt k1, hstep=g+0.5/nsub))
       //   k3 = curl(E(B^n - 0.5 dt k2, hstep=g+0.5/nsub))
       //   k4 = curl(E(B^n - dt k3, hstep=g+1.0/nsub))
       //   B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4)
-      // Fine levels follow from projection of the advanced level-0 B (exactly
-      // as in the ssprk3 path), so only level 0 is advanced here.
+      // Fine levels follow from projection of the advanced level-0 B.
       const int iLev = 0;
 
-     // Stage 1: k1 = curl(E(B^n)). centerB[0] itself is B^n (untouched until
-     // the final combine); the time-centred B at stage 1 is (B^n + B^n)/2 = B^n,
-     // so both the trial (for J) and the Hall/convection B are the live centerB.
-     assemble_ohm_E(centerB[iLev], centerB[iLev], centerE_RK4[iLev], iLev, g);
-     curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][0],
-                           Geom(iLev).InvCellSize());
+      // Stage 1: k1 = curl(E(B^n)). The time-centred B at stage 1 is B^n.
+      assemble_ohm_E(centerB[iLev], centerB[iLev], centerE_RK4[iLev], iLev, g);
+      curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][0],
+                            Geom(iLev).InvCellSize());
 
-     // Stages 2-4 evaluate E at the TIME-CENTRED B (B_stage + B^n)/2, exactly
-     // as Hybrid-VPIC's hyb_advance_e uses (cbx+cbx0)/2 (B_n is stored in
-     // cbxold by STOREBOLD).  FLEKS's default rk4 previously used the trial
-     // B_stage directly in the Ohm's law; the time-centred form matches the
-     // Hybrid-VPIC field advance and stays stable in the high-amplitude phase
-     // without over-damping the instability.
-     // Stages 2-4: the current J is computed from curl(B_stage) (the trial B),
-     // while the Hall/convection B is the TIME-AVERAGED B (B_stage + B^n)/2,
-     // exactly as Hybrid-VPIC's hyb_advance_e: J = curl(cbx) and the
-     // J x B / convection factors use (cbx + cbx0)/2.  In the cell-centred
-     // layout both are cell-centred -- centerBin (for curl) is the trial B in
-     // centerB_RK4, and the Hall/convection B is the time-averaged
-     // centerBstar_heun -- so NO node projection is needed.
-     // Stage 2: B2 = B^n - 0.5 dt k1; E at (B2 + B^n)/2.
-     MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
-     MultiFab::Saxpy(centerB_RK4[iLev], -0.5 * subDt, kRK4[iLev][0], 0, 0, 3,
-                     nGst);
-     MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
-                       centerB[iLev], 0, 0, 3, nGst);
-     assemble_ohm_E(centerB_RK4[iLev], centerBstar_heun[iLev],
-                    centerE_RK4[iLev], iLev, hstepHalf);
-     curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][1],
-                           Geom(iLev).InvCellSize());
+      // Stages 2-4 evaluate E at the time-centred B (B_stage + B^n)/2: the
+      // current J comes from curl(B_stage), while the Hall/convection B is the
+      // time-averaged (B_stage + B^n)/2 (as in Hybrid-VPIC's hyb_advance_e).
+      // Stage 2: B2 = B^n - 0.5 dt k1; E at (B2 + B^n)/2.
+      MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB_RK4[iLev], -0.5 * subDt, kRK4[iLev][0], 0, 0, 3,
+                      nGst);
+      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                        centerB[iLev], 0, 0, 3, nGst);
+      assemble_ohm_E(centerB_RK4[iLev], centerBstar_heun[iLev],
+                     centerE_RK4[iLev], iLev, hstepHalf);
+      curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][1],
+                            Geom(iLev).InvCellSize());
 
-     // Stage 3: B3 = B^n - 0.5 dt k2; E at (B3 + B^n)/2.
-     MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
-     MultiFab::Saxpy(centerB_RK4[iLev], -0.5 * subDt, kRK4[iLev][1], 0, 0, 3,
-                     nGst);
-     MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
-                       centerB[iLev], 0, 0, 3, nGst);
-     assemble_ohm_E(centerB_RK4[iLev], centerBstar_heun[iLev],
-                    centerE_RK4[iLev], iLev, hstepHalf);
-     curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][2],
-                           Geom(iLev).InvCellSize());
+      // Stage 3: B3 = B^n - 0.5 dt k2; E at (B3 + B^n)/2.
+      MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB_RK4[iLev], -0.5 * subDt, kRK4[iLev][1], 0, 0, 3,
+                      nGst);
+      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                        centerB[iLev], 0, 0, 3, nGst);
+      assemble_ohm_E(centerB_RK4[iLev], centerBstar_heun[iLev],
+                     centerE_RK4[iLev], iLev, hstepHalf);
+      curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][2],
+                            Geom(iLev).InvCellSize());
 
-     // Stage 4: B4 = B^n - dt k3; E at (B4 + B^n)/2.
-     MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
-     MultiFab::Saxpy(centerB_RK4[iLev], -subDt, kRK4[iLev][2], 0, 0, 3, nGst);
-     MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
-                       centerB[iLev], 0, 0, 3, nGst);
-     assemble_ohm_E(centerB_RK4[iLev], centerBstar_heun[iLev],
-                    centerE_RK4[iLev], iLev, g + 1.0 / (Real)nHallSubcycle);
-     curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][3],
-                           Geom(iLev).InvCellSize());
+      // Stage 4: B4 = B^n - dt k3; E at (B4 + B^n)/2.
+      MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB_RK4[iLev], -subDt, kRK4[iLev][2], 0, 0, 3, nGst);
+      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                        centerB[iLev], 0, 0, 3, nGst);
+      assemble_ohm_E(centerB_RK4[iLev], centerBstar_heun[iLev],
+                     centerE_RK4[iLev], iLev, g + 1.0 / (Real)nHallSubcycle);
+      curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][3],
+                            Geom(iLev).InvCellSize());
 
-      // Combine: B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4).
-      MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kRK4[iLev][0], 0, 0, 3, nGst);
+      // B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4).
+      MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kRK4[iLev][0], 0, 0, 3,
+                      nGst);
       MultiFab::Saxpy(centerB[iLev], -2.0 * subDt / 6.0, kRK4[iLev][1], 0, 0, 3,
                       nGst);
       MultiFab::Saxpy(centerB[iLev], -2.0 * subDt / 6.0, kRK4[iLev][2], 0, 0, 3,
                       nGst);
-      MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kRK4[iLev][3], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kRK4[iLev][3], 0, 0, 3,
+                      nGst);
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
-      // Apply boundary conditions to the advanced cell-centred B so the next
-      // stage can read its neighbours. The node mirrors (nodeB) and the
-      // fine-level fills are NOT needed here -- they are recomputed once after
-      // the whole sub-cycle loop.
       apply_centerB_BC(0);
       continue;
     }
 
-   if (fieldIntegrator == "ssprk3") {
-      // --- Hybrid-VPIC-style SSP-RK3 with time-centred E ---
-      // Replicates hyb_advance_b.rk3 / hyb_advance_e.cc: B is advanced by the
-      // strong-stability-preserving RK3
+    if (fieldIntegrator == "ssprk3") {
+      // Strong-stability-preserving RK3 with time-centred E:
       //   B1      = B_n - dt curl(E(B_n))
       //   B2      = (3/4) B_n + (1/4)(B1 - dt curl(E((B1+B_n)/2)))
       //   B^{n+1} = (1/3) B_n + (2/3)(B2 - dt curl(E((B2+B_n)/2)))
-      // with E evaluated at the TIME-CENTRED B (B_stage + B_n)/2 in the
-      // generalized Ohm's law, exactly as hyb_advance_e uses (cbx+cbx0)/2.
-      // SSP-RK3 keeps the high-amplitude nonlinear phase stable (unlike rk4,
-      // which goes NaN) without over-damping the instability.
       const int iLev = 0;
-      // Save B_n (sub-step start) and its node projection.
+      // Save B_n (sub-step start).
       MultiFab::Copy(centerBstart_heun[iLev], centerB[iLev], 0, 0, 3, nGst);
-      // nodeB[0] is already the node-average of centerB (= B_n).
 
-     // Stage 1: k1 = curl(E(B_n)); B1 = B_n - subDt k1.  The time-centred B at
-     // stage 1 is (B_n + B_n)/2 = B_n, so E uses the live B_n directly.
-     assemble_ohm_E(centerB[iLev], centerB[iLev], centerE_RK4[iLev], iLev, g);
-     curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][0],
-                           Geom(iLev).InvCellSize());
-     // B1 = B_n - subDt k1  (store in centerB_RK4)
-     MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
-     MultiFab::Saxpy(centerB_RK4[iLev], -subDt, kRK4[iLev][0], 0, 0, 3, nGst);
+      // Stage 1: k1 = curl(E(B_n)); B1 = B_n - subDt k1.
+      assemble_ohm_E(centerB[iLev], centerB[iLev], centerE_RK4[iLev], iLev, g);
+      curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][0],
+                            Geom(iLev).InvCellSize());
+      MultiFab::Copy(centerB_RK4[iLev], centerB[iLev], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB_RK4[iLev], -subDt, kRK4[iLev][0], 0, 0, 3, nGst);
 
-     // Stage 2: avgB2 = (B1+B_n)/2; k2 = curl(E(avgB2));
-     //   B2 = (3/4)B_n + (1/4)(B1 - subDt k2).
-     MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
-                       centerBstart_heun[iLev], 0, 0, 3, nGst);
-     assemble_ohm_E(centerBstar_heun[iLev], centerBstar_heun[iLev],
-                    centerE_RK4[iLev], iLev, g + 1.0 / (Real)nHallSubcycle);
-     curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][1],
-                           Geom(iLev).InvCellSize());
-     MultiFab::LinComb(centerB_RK4[iLev], 0.25, centerB_RK4[iLev], 0, 0.75,
-                       centerBstart_heun[iLev], 0, 0, 3, nGst);
-     MultiFab::Saxpy(centerB_RK4[iLev], -0.25 * subDt, kRK4[iLev][1], 0, 0, 3,
-                     nGst);
+      // Stage 2: avgB2 = (B1+B_n)/2; k2 = curl(E(avgB2));
+      //   B2 = (3/4)B_n + (1/4)(B1 - subDt k2).
+      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                        centerBstart_heun[iLev], 0, 0, 3, nGst);
+      assemble_ohm_E(centerBstar_heun[iLev], centerBstar_heun[iLev],
+                     centerE_RK4[iLev], iLev, g + 1.0 / (Real)nHallSubcycle);
+      curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][1],
+                            Geom(iLev).InvCellSize());
+      MultiFab::LinComb(centerB_RK4[iLev], 0.25, centerB_RK4[iLev], 0, 0.75,
+                        centerBstart_heun[iLev], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB_RK4[iLev], -0.25 * subDt, kRK4[iLev][1], 0, 0, 3,
+                      nGst);
 
-     // Stage 3: avgB3 = (B2+B_n)/2; k3 = curl(E(avgB3));
-     //   B^{n+1} = (1/3)B_n + (2/3)(B2 - subDt k3).
-     MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
-                       centerBstart_heun[iLev], 0, 0, 3, nGst);
-     assemble_ohm_E(centerBstar_heun[iLev], centerBstar_heun[iLev],
-                    centerE_RK4[iLev], iLev, g + 0.5 / (Real)nHallSubcycle);
-     curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][2],
-                           Geom(iLev).InvCellSize());
-     MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerB_RK4[iLev], 0,
-                       1.0 / 3.0, centerBstart_heun[iLev], 0, 0, 3, nGst);
-     MultiFab::Saxpy(centerB[iLev], -2.0 / 3.0 * subDt, kRK4[iLev][2], 0, 0, 3,
-                     nGst);
-     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+      // Stage 3: avgB3 = (B2+B_n)/2; k3 = curl(E(avgB3));
+      //   B^{n+1} = (1/3)B_n + (2/3)(B2 - subDt k3).
+      MultiFab::LinComb(centerBstar_heun[iLev], 0.5, centerB_RK4[iLev], 0, 0.5,
+                        centerBstart_heun[iLev], 0, 0, 3, nGst);
+      assemble_ohm_E(centerBstar_heun[iLev], centerBstar_heun[iLev],
+                     centerE_RK4[iLev], iLev, g + 0.5 / (Real)nHallSubcycle);
+      curl_center_to_center(centerE_RK4[iLev], kRK4[iLev][2],
+                            Geom(iLev).InvCellSize());
+      MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerB_RK4[iLev], 0,
+                        1.0 / 3.0, centerBstart_heun[iLev], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerB[iLev], -2.0 / 3.0 * subDt, kRK4[iLev][2], 0, 0, 3,
+                      nGst);
+      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
-      // Apply boundary conditions to the advanced cell-centred B so the next
-      // stage can read its neighbours. The node mirrors (nodeB) and the
-      // fine-level fills are recomputed once after the sub-cycle loop.
       apply_centerB_BC(0);
       continue;
-   }
+    }
   }
 
   if (projectDownEmFields && finest_level > 0) {
@@ -3040,21 +2939,19 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // Update the running time-averaged magnetic field used inside the generalized
-  // Ohm's law and in the particle Boris push. B_avg is NOT divergence-clean and
-  // is never fed to the Faraday update, so no projection is needed here. The
-  // final (post-BC) B^{n+1} is used as the new sample.
+  // Running time-averaged B used in the Ohm's law and the Boris push.
   if (useAvgFieldB) {
     const Real alpha = (nAvgFieldB > 1) ? (1.0 - 1.0 / nAvgFieldB) : 0.0;
-    // The hybrid gather and particle Boris push read only centerBavg. nodeBavg
-    // is used only by the full-PIC node gather, so in hybrid mode we skip
-    // maintaining it (isBavgInit is still driven by the centerBavg branch).
+    // The hybrid gather reads only centerBavg; maintain nodeBavg only in
+    // full-PIC mode.
     const bool syncNodeBavg = !useHybridPIC;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (!isBavgInit) {
-        MultiFab::Copy(centerBavg[iLev], centerB[iLev], 0, 0, 3, centerBavg[iLev].nGrow());
+        MultiFab::Copy(centerBavg[iLev], centerB[iLev], 0, 0, 3,
+                       centerBavg[iLev].nGrow());
         if (syncNodeBavg) {
-          MultiFab::Copy(nodeBavg[iLev], nodeB[iLev], 0, 0, 3, nodeBavg[iLev].nGrow());
+          MultiFab::Copy(nodeBavg[iLev], nodeB[iLev], 0, 0, 3,
+                         nodeBavg[iLev].nGrow());
         }
         isBavgInit = true;
       } else {
@@ -3074,15 +2971,11 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // Compute the E field at the end of the full magnetic advance (hstep = 1,
-  // i.e. E^{n+1}) into the cell-centred centerEhybrid, used by the next
-  // update()'s particle Boris push (hybrid-VPIC convention: push uses the
-  // integer-step E). This recomputation is done for every integrator because the
-  // RK4 path only writes the scratch centerE_RK4, and the ssprk3 path writes
-  // centerEhybrid at intermediate hstep values, so centerEhybrid must be freshly
-  // evaluated on the final B^{n+1}. Only levels holding kinetic particles need
-  // centerEhybrid (it is read solely by the Boris push), so levels without
-  // particles are skipped to avoid the wasted Ohm's-law evaluation.
+  // Compute the integer-step E^{n+1} (hstep = 1) into centerEhybrid for the
+  // next Boris push. Freshly evaluated on the final B^{n+1} for every
+  // integrator (RK4 writes only the scratch centerE_RK4; ssprk3 writes
+  // intermediate hstep). Only levels with kinetic particles need it (it is read
+  // solely by the push).
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     bool hasParticles = false;
     for (int i : kineticSpecies_) {
@@ -3099,22 +2992,15 @@ void Pic::update_B_hybrid() {
     assemble_ohm_E(cBin, cBin, centerEhybrid[iLev], iLev, 1.0);
   }
 
-  // Apply boundary conditions to the cell-centred E (the hybrid Boris push reads
-  // centerEhybrid). The node mirror nodeEth is no longer synced here: it has no
-  // live consumer in the hybrid path (the hybrid mover reads centerEhybrid, and
-  // the structured plot reads nodeE, not nodeEth). This removes the per-step
-  // average_center_to_node + FillBoundary + apply_BC on nodeEth.
+  // BCs for the cell-centred E (read by the hybrid Boris push).
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0, centerEhybrid[iLev].nComp(),
-             &Pic::get_center_E, iLev);
+    apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0,
+             centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev);
   }
 
-  // Suppress the grid-scale (odd-even) component of E. The ambipolar term
-  // E = -grad(p_e)/rho uses a central difference that does not couple odd/even
-  // cells, so a cell-to-cell checkerboard can grow there (Hybrid-VPIC removes it
-  // via hyb_smooth_eb). Use the shared Pic::smooth_E() - identical to the
-  // full-PIC solver - when #SMOOTHE is enabled.
+  // Suppress the grid-scale (odd-even) E component (central-difference
+  // ambipolar term does not couple odd/even cells).
   if (doSmoothE) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -3122,9 +3008,7 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // The node-centred E is only an output mirror for the hybrid solver (the mover
-  // reads centerEhybrid). Mark it stale so sync_node_E_output() materializes it
-  // from centerEhybrid only when a structured plot is written.
+  // nodeE is only an output mirror; mark it stale for sync_node_E_output().
   nodeEStale = true;
 }
 

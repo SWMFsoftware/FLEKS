@@ -1,12 +1,11 @@
-#include "WaveIC.h"
+#include <cmath>
 
 #include <AMReX.H>
 #include <AMReX_MultiFab.H>
 
-#include <cmath>
-
 #include "Particles.h"
 #include "ReadParam.h"
+#include "WaveIC.h"
 
 // The pure-EM lightwave test seeds no macroparticles (the electron is a
 // background fluid exercised only by the field solver). Zero the per-cell count
@@ -21,11 +20,16 @@ using namespace amrex;
 
 std::string WaveIC::name() const {
   switch (profile_) {
-    case LightWave:        return "lightwave";
-    case HybridWave:       return "hybridwave";
-    case ConvectionWave:   return "convectionwave";
-    case IonAcousticWave:  return "ionacousticwave";
-    case Generic:          return "waveic";
+    case LightWave:
+      return "lightwave";
+    case HybridWave:
+      return "hybridwave";
+    case ConvectionWave:
+      return "convectionwave";
+    case IonAcousticWave:
+      return "ionacousticwave";
+    case Generic:
+      return "waveic";
   }
   return "waveic";
 }
@@ -43,9 +47,11 @@ void WaveIC::apply_preset() {
       guideField_ = false;
       velKick_ = false;
       seedWeight_ = false;
-      dir_[0] = 0.6; dir_[1] = 0.8; dir_[2] = 0.0;
+      dir_[0] = 0.6;
+      dir_[1] = 0.8;
+      dir_[2] = 0.0;
       waveLength_ = 48.0;
-      frac_ = 0.0;    // unused for lightwave
+      frac_ = 0.0; // unused for lightwave
       pert_ = 0.0;
       break;
     case HybridWave:
@@ -63,7 +69,7 @@ void WaveIC::apply_preset() {
       seedB_ = true;
       oblique_ = false;
       guideField_ = true;
-      velKick_ = false;   // the distinguishing flag vs hybridwave
+      velKick_ = false; // the distinguishing flag vs hybridwave
       seedWeight_ = false;
       waveMode_ = 1;
       frac_ = 0.20;
@@ -121,7 +127,8 @@ void WaveIC::set_fields(PicICFields& fields) const {
     return;
 
   for (int iLev = 0; iLev < nLev; ++iLev) {
-    // Guide field Bx0 already deposited by fill_E_B_fields() from #UNIFORMSTATE.
+    // Guide field Bx0 already deposited by fill_E_B_fields() from
+    // #UNIFORMSTATE.
     amrex::Real Bx0 = 1.0;
     if (guideField_) {
       MFIter mfi(fields.node_B(iLev));
@@ -149,7 +156,9 @@ void WaveIC::set_fields(PicICFields& fields) const {
       kx_ = kMag;
     } else {
       kx_ = (Lx > 0.0) ? 2.0 * dPI * waveMode_ / Lx : 0.0;
-      Kx = kx_; Ky = 0.0; Kz = 0.0;
+      Kx = kx_;
+      Ky = 0.0;
+      Kz = 0.0;
     }
 
     MultiFab& nodeE = fields.node_E(iLev);
@@ -161,8 +170,12 @@ void WaveIC::set_fields(PicICFields& fields) const {
       // cell-centred grid. Phase uses node coordinates (i, j, k) on the node
       // grid and (i+0.5, j+0.5, k+0.5) on the centre grid, exactly as the
       // former fill_lightwaves(48.0).
-      if (seedE_) nodeE.setVal(0.0);
-      if (seedB_) { nodeB.setVal(0.0); centerB.setVal(0.0); }
+      if (seedE_)
+        nodeE.setVal(0.0);
+      if (seedB_) {
+        nodeB.setVal(0.0);
+        centerB.setVal(0.0);
+      }
 
       const amrex::Real n0 = dir_[0], n1 = dir_[1];
 
@@ -287,10 +300,10 @@ void WaveIC::modify_particle_velocity(ParticleICState& s) const {
 //   * the two perpendicular components are inflated by sqrt(T_perp/T_par).
 // The guide field (and hence the parallel direction) is x in all the hybrid
 // x-aligned wave presets (kx || B0 || x), so u_thermal is the parallel draw and
-// v_thermal / w_thermal are the perpendicular draws.  This gives a bi-Maxwellian
-// with T_perp/T_par = anisoTPerpOverTPar_ and beta_par unchanged from the
-// #UNIFORMSTATE (since the parallel temperature is unchanged), which drives the
-// proton-cyclotron anisotropy instability (PCAI).
+// v_thermal / w_thermal are the perpendicular draws.  This gives a
+// bi-Maxwellian with T_perp/T_par = anisoTPerpOverTPar_ and beta_par unchanged
+// from the #UNIFORMSTATE (since the parallel temperature is unchanged), which
+// drives the proton-cyclotron anisotropy instability (PCAI).
 void WaveIC::modify_particle_thermal_velocity(ParticleICState& s) const {
   if (anisoTPerpOverTPar_ <= 0.0)
     return;

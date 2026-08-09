@@ -17,9 +17,9 @@ public:
   void modify_particle_velocity(ParticleICState& s) const override;
 
 private:
-  int iSpecies_ = -1;                      // species that carries the beam
-  amrex::Real vel_[nDim3] = {0, 0, 0};     // beam bulk velocity
-  amrex::Real ratio_ = 0.0;                // beam charge/mass fraction
+  int iSpecies_ = -1;                    // species that carries the beam
+  amrex::Real vel_[nDim3] = { 0, 0, 0 }; // beam bulk velocity
+  amrex::Real ratio_ = 0.0;              // beam charge/mass fraction
 };
 
 #endif

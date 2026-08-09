@@ -65,8 +65,8 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
           dataPIC_I[iStart + iVar] = get_value_at_loc(
               centerPlasma[iSpecies][iLev], Geom(iLev), xyz, iVar);
         } else {
-          dataPIC_I[iStart + iVar] =
-              get_value_at_loc(nodePlasma[iSpecies][iLev], Geom(iLev), xyz, iVar);
+          dataPIC_I[iStart + iVar] = get_value_at_loc(
+              nodePlasma[iSpecies][iLev], Geom(iLev), xyz, iVar);
         }
       }
     }
@@ -511,10 +511,10 @@ void Pic::read_restart() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (useHybridPIC) {
       // Hybrid solver: the restart file stores the live cell-centred fields
-      // directly. Read centerEhybrid and centerB; no node->center reconstruction
-      // is needed. centerPlasma/centerPlasmaPrev are rebuilt by the
-      // sum_moments() deposit below and the seed_first_hybrid_step() hook on
-      // the first hybrid update.
+      // directly. Read centerEhybrid and centerB; no node->center
+      // reconstruction is needed. centerPlasma/centerPlasmaPrev are rebuilt by
+      // the sum_moments() deposit below and the seed_first_hybrid_step() hook
+      // on the first hybrid update.
       VisMF::Read(centerEhybrid[iLev],
                   restartDir + gridName + "_centerE" + lev_string(iLev));
       VisMF::Read(centerB[iLev],
@@ -659,8 +659,8 @@ void Pic::write_plots(bool doForce) {
         // mirrors, which are now deferred for the hybrid solver. Materialize
         // them before writing; the Mach number is computed only if this plot
         // actually requests the "mach" variable.
-        const bool needMach = plot.writer.get_plotString().find("mach") !=
-                              std::string::npos;
+        const bool needMach =
+            plot.writer.get_plotString().find("mach") != std::string::npos;
         sync_node_plasma_output(needMach);
         // The structured (ascii/IDL) plot reads Ex/Ey/Ez from nodeE (get_var),
         // which is only an output mirror for the hybrid solver (the mover reads
@@ -924,8 +924,8 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
         MultiFab::Copy(out[iLev], nodeE[iLev], 0, iStart, nodeE[iLev].nComp(),
                        0);
       } else if (useHybridPIC) {
-        // Hybrid solver: E is cell-centred in centerEhybrid (the nodeE mirror is
-        // no longer maintained). Copy directly -- no node-to-cell average.
+        // Hybrid solver: E is cell-centred in centerEhybrid (the nodeE mirror
+        // is no longer maintained). Copy directly -- no node-to-cell average.
         MultiFab::Copy(out[iLev], centerEhybrid[iLev], 0, iStart,
                        centerEhybrid[iLev].nComp(), 0);
       } else {
@@ -948,10 +948,10 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
       for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++) {
         // Hybrid solver: moments are cell-centred in centerPlasma (the
-        // nodePlasma mirror is no longer maintained). Full-PIC reads nodePlasma.
-        MultiFab& plasma =
-            useHybridPIC ? centerPlasma[iSpecies][iLev]
-                         : nodePlasma[iSpecies][iLev];
+        // nodePlasma mirror is no longer maintained). Full-PIC reads
+        // nodePlasma.
+        MultiFab& plasma = useHybridPIC ? centerPlasma[iSpecies][iLev]
+                                        : nodePlasma[iSpecies][iLev];
 
         MultiFab rho(plasma, make_alias, iRho_, 1);
 

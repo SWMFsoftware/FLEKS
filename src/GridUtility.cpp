@@ -514,15 +514,17 @@ void curl_center_to_center(const MultiFab& centerInMF, MultiFab& centerOutMF,
       // curl X: (dBz/dy - dBy/dz)
       const Real dBz_dy =
           (inArr(i, j + 1, k, iz_) - inArr(i, j - 1, k, iz_)) * dyInv;
-      const Real dBy_dz = (nDim > 2)
-                              ? (inArr(i, j, k + 1, iy_) - inArr(i, j, k - 1, iy_)) * dzInv
-                              : 0.0;
+      const Real dBy_dz =
+          (nDim > 2)
+              ? (inArr(i, j, k + 1, iy_) - inArr(i, j, k - 1, iy_)) * dzInv
+              : 0.0;
       outArr(i, j, k, ix_) = dBz_dy - dBy_dz;
 
       // curl Y: (dBx/dz - dBz/dx)
-      const Real dBx_dz = (nDim > 2)
-                              ? (inArr(i, j, k + 1, ix_) - inArr(i, j, k - 1, ix_)) * dzInv
-                              : 0.0;
+      const Real dBx_dz =
+          (nDim > 2)
+              ? (inArr(i, j, k + 1, ix_) - inArr(i, j, k - 1, ix_)) * dzInv
+              : 0.0;
       const Real dBz_dx =
           (inArr(i + 1, j, k, iz_) - inArr(i - 1, j, k, iz_)) * dxInv;
       outArr(i, j, k, iy_) = dBx_dz - dBz_dx;
@@ -574,15 +576,17 @@ void average_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF) {
     ParallelFor(box, centerMF.nComp(), [&](int i, int j, int k, int iVar) {
       if (nDim > 2) {
         centerArr(i, j, k, iVar) =
-            inv2d * (nodeArr(i, j, k, iVar) + nodeArr(i + 1, j, k, iVar) +
-                     nodeArr(i, j + 1, k, iVar) + nodeArr(i + 1, j + 1, k, iVar) +
-                     nodeArr(i, j, k + 1, iVar) + nodeArr(i + 1, j, k + 1, iVar) +
-                     nodeArr(i, j + 1, k + 1, iVar) +
-                     nodeArr(i + 1, j + 1, k + 1, iVar));
+            inv2d *
+            (nodeArr(i, j, k, iVar) + nodeArr(i + 1, j, k, iVar) +
+             nodeArr(i, j + 1, k, iVar) + nodeArr(i + 1, j + 1, k, iVar) +
+             nodeArr(i, j, k + 1, iVar) + nodeArr(i + 1, j, k + 1, iVar) +
+             nodeArr(i, j + 1, k + 1, iVar) +
+             nodeArr(i + 1, j + 1, k + 1, iVar));
       } else {
         centerArr(i, j, k, iVar) =
-            inv2d * (nodeArr(i, j, k, iVar) + nodeArr(i + 1, j, k, iVar) +
-                     nodeArr(i, j + 1, k, iVar) + nodeArr(i + 1, j + 1, k, iVar));
+            inv2d *
+            (nodeArr(i, j, k, iVar) + nodeArr(i + 1, j, k, iVar) +
+             nodeArr(i, j + 1, k, iVar) + nodeArr(i + 1, j + 1, k, iVar));
       }
     });
   }

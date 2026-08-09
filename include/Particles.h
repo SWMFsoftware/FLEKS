@@ -18,7 +18,7 @@
 #include "TimeCtr.h"
 #include "UMultiFab.h"
 
-class InitialCondition;  // forward: Particles only stores a non-owning pointer
+class InitialCondition; // forward: Particles only stores a non-owning pointer
 
 enum class CrossSection { LS = 0, MT };
 
@@ -453,7 +453,8 @@ public:
   // Cell-centred moment deposit: scatter rho/rhoU/Pi from particles to the
   // cell-centred momentsMF (centerPlasma[iSpecies]) with cell-centred trilinear
   // weights.
-  amrex::Real sum_moments_cell_centered(amrex::Vector<amrex::MultiFab>& momentsMF);
+  amrex::Real sum_moments_cell_centered(
+      amrex::Vector<amrex::MultiFab>& momentsMF);
 
   std::array<amrex::Real, 5> total_moments(bool localOnly = false);
 

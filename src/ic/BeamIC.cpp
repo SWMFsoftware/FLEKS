@@ -1,7 +1,6 @@
-#include "BeamIC.h"
-
 #include <AMReX.H>
 
+#include "BeamIC.h"
 #include "ReadParam.h"
 
 void BeamIC::read_param(ReadParam& param) {

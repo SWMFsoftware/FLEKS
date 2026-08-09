@@ -940,8 +940,7 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#SMOOTHE" || command == "#SMOOTHJ" ||
         command == "#UPWINDB" || command == "#UPWINDE" ||
         command == "#LAGGEDLIMITER" || command == "#DIVB" ||
-        command == "#CMAXE" || command == "#TESTCASE" ||
-        command == "#WAVEIC" ||
+        command == "#CMAXE" || command == "#TESTCASE" || command == "#WAVEIC" ||
         command == "#FASTMERGE" || command == "#ADAPTIVESOURCEPPC" ||
         command == "#MERGELIGHT" || command == "#VACUUM" ||
         command == "#PARTICLELEVRATIO" || command == "#OHION" ||
@@ -952,12 +951,10 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#SELECTPARTICLE" || command == "#MAXCHARGEEXCHANGERATE" ||
         command == "#HYBRIDPIC" || command == "#RESISTIVITY" ||
         command == "#ELECTRONTEMPERATURE" || command == "#HALLSUBCYCLE" ||
-        command == "#HALLTERM" ||
-        command == "#HYPERRESISTIVITY" || command == "#DENSITYFLOOR" ||
-        command == "#FIELDINTEGRATOR" ||
+        command == "#HALLTERM" || command == "#HYPERRESISTIVITY" ||
+        command == "#DENSITYFLOOR" || command == "#FIELDINTEGRATOR" ||
 
-        command == "#AVGFIELDB" ||
-        command == "#SMOOTHMOMENTS" ||
+        command == "#AVGFIELDB" || command == "#SMOOTHMOMENTS" ||
         command == "#MEMORY") {
       if (pic)
         pic->read_param(command, readParam);

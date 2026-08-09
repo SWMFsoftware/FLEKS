@@ -87,7 +87,8 @@ private:
   amrex::Vector<amrex::Real> etaHyperLev;
 
   // Minimum charge density floor for the 1/rho factors in the Hall term and
-  // the electron-pressure-gradient term. <= 0 means auto: 1e-6 * electronDensity0.
+  // the electron-pressure-gradient term. <= 0 means auto: 1e-6 *
+  // electronDensity0.
   amrex::Real rhoFloorHybrid = 0.0;
 
   bool useExplicitPIC = false;
@@ -111,23 +112,24 @@ private:
   amrex::Vector<amrex::MultiFab> divB;
   amrex::Vector<amrex::MultiFab> centerB;
   // Hyper-resistivity scratch fields (allocated when useHybridPIC).
-  amrex::Vector<amrex::MultiFab> centerLapB;   // nabla^2 B  (hyper stage A)
-  amrex::Vector<amrex::MultiFab> nodeHyperE;   // nabla x (nabla^2 B) (hyper stage B)
+  amrex::Vector<amrex::MultiFab> centerLapB; // nabla^2 B  (hyper stage A)
+  amrex::Vector<amrex::MultiFab> nodeHyperE; // nabla x (nabla^2 B) (hyper stage
+                                             // B)
   // RK4 (fieldIntegrator="rk4") scratch fields (allocated when useHybridPIC).
   // centerB_RK4 / nodeB_RK4 hold trial B states at the sub-stages; nodeE_RK4 is
   // the electric field evaluated at a trial B; kRK4[0..3] are the four stage
-  // curls curl(E_stage). All reused per sub-step; only level 0 is advanced (fine
-  // levels follow from projection, exactly as in the ssprk3 path).
+  // curls curl(E_stage). All reused per sub-step; only level 0 is advanced
+  // (fine levels follow from projection, exactly as in the ssprk3 path).
   amrex::Vector<amrex::MultiFab> centerB_RK4;
   amrex::Vector<amrex::MultiFab> nodeB_RK4;
   amrex::Vector<amrex::MultiFab> nodeE_RK4;
   // kRK4[iLev][0..3]: the four stage curls curl(E_stage) for the level-iLev RK4
   // sub-step (4 stages per level).
-  amrex::Vector<amrex::Vector<amrex::MultiFab>> kRK4;
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > kRK4;
 
-  // rk3/rk4 persistent scratch (allocated when useHybridPIC). centerBstart holds
-  // the sub-step start B_n; centerBstar holds the time-centred (trial + B_n)/2
-  // state used by the rk3/rk4 time-centred-E stages.
+  // rk3/rk4 persistent scratch (allocated when useHybridPIC). centerBstart
+  // holds the sub-step start B_n; centerBstar holds the time-centred (trial +
+  // B_n)/2 state used by the rk3/rk4 time-centred-E stages.
   amrex::Vector<amrex::MultiFab> centerBstart_heun;
   amrex::Vector<amrex::MultiFab> centerBstar_heun;
 
@@ -138,9 +140,9 @@ private:
   // only used when useAvgFieldB is set. B_avg is NOT divergence-clean and is
   // never fed into the Faraday update -- it is used only inside the generalized
   // Ohm's law and in the particle Boris push.
-  amrex::Vector<amrex::MultiFab> centerBavg;  // cell-centred <B>
-  amrex::Vector<amrex::MultiFab> nodeBavg;    // node-centred <B>
-  bool isBavgInit = false;     // first-step copy flag for the EMA
+  amrex::Vector<amrex::MultiFab> centerBavg; // cell-centred <B>
+  amrex::Vector<amrex::MultiFab> nodeBavg;   // node-centred <B>
+  bool isBavgInit = false;                   // first-step copy flag for the EMA
 
   // Hyperbolic cleaning
   bool useHyperbolicCleaning = false;
@@ -193,27 +195,37 @@ private:
   // (node-sync bridges) so the plot / restart / tracker path sees correct
   // data. All six arrays are allocated only inside the useHybridPIC block of
   // Pic::distribute_arrays.
-  amrex::Vector<amrex::MultiFab> centerEhybrid;   // cell-centred E
-  amrex::Vector<amrex::MultiFab> centerJ;         // cell-centred J
-  amrex::Vector<amrex::MultiFab> centerEprev;     // cell-centred E^n (time-centring)
-  amrex::Vector<amrex::MultiFab> centerBprev;     // cell-centred B^n (time-centring)
-  amrex::Vector<amrex::MultiFab> centerE_RK4;     // cell-centred E trial (replaces nodeE_RK4)
-  amrex::Vector<amrex::MultiFab> centerHyperE;    // cell-centred hyper-resistivity E
-  amrex::Vector<amrex::Vector<amrex::MultiFab>> centerPlasma;      // per-species cell-centred moments
-  amrex::Vector<amrex::Vector<amrex::MultiFab>> centerPlasmaSum;  // summed cell-centred moments [nSpecies][iLev]
-  amrex::Vector<amrex::Vector<amrex::MultiFab>> centerPlasmaPrev; // per-species previous-step moments
+  amrex::Vector<amrex::MultiFab> centerEhybrid; // cell-centred E
+  amrex::Vector<amrex::MultiFab> centerJ;       // cell-centred J
+  amrex::Vector<amrex::MultiFab> centerEprev;   // cell-centred E^n
+                                                // (time-centring)
+  amrex::Vector<amrex::MultiFab> centerBprev;   // cell-centred B^n
+                                                // (time-centring)
+  amrex::Vector<amrex::MultiFab> centerE_RK4;  // cell-centred E trial (replaces
+                                               // nodeE_RK4)
+  amrex::Vector<amrex::MultiFab> centerHyperE; // cell-centred hyper-resistivity
+                                               // E
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasma; // per-species
+                                                               // cell-centred
+                                                               // moments
+  amrex::Vector<amrex::Vector<amrex::MultiFab> >
+      centerPlasmaSum; // summed cell-centred moments [nSpecies][iLev]
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasmaPrev; // per-species
+                                                                   // previous-step
+                                                                   // moments
   amrex::Vector<amrex::Real> plasmaEnergy;
 
   bool isMomentsUpdated = false;
   // When true, nodePlasma (and mMach) are stale: the per-step nodePlasma output
   // bridge and calc_mach_number are skipped in sum_moments, and must be
-  // materialized on demand by sync_node_plasma_output() before any node-plasma /
-  // mach output or load-balancing is requested. Only used in the hybrid path.
+  // materialized on demand by sync_node_plasma_output() before any node-plasma
+  // / mach output or load-balancing is requested. Only used in the hybrid path.
   bool nodePlasmaStale = false;
 
-  // True when nodeE (an output mirror of the live centerEhybrid) is stale. Marked
-  // stale each update_B_hybrid and materialized by sync_node_E_output() at plot
-  // time, so the per-step average_center_to_node cost is deferred out of the loop.
+  // True when nodeE (an output mirror of the live centerEhybrid) is stale.
+  // Marked stale each update_B_hybrid and materialized by sync_node_E_output()
+  // at plot time, so the per-step average_center_to_node cost is deferred out
+  // of the loop.
   bool nodeEStale = false;
 
   amrex::Vector<amrex::MultiFab> jHat;
@@ -276,13 +288,14 @@ private:
 
   // Field integrator for the hybrid Faraday update. Selects how B is advanced
   // from the electric field given by the generalized Ohm's law:
-  //   "rk4"   -> classic 4th-order Runge-Kutta on B, evaluating the Ohm's law at
+  //   "rk4"   -> classic 4th-order Runge-Kutta on B, evaluating the Ohm's law
+  //   at
   //              four trial B states. The default.
   //   "ssprk3" -> Hybrid-VPIC-style strong-stability-preserving RK3 with a
   //              time-centred E (stays stable in the high-amplitude phase where
   //              rk4 goes NaN).
-  // Default "rk4". The useRK4 flag is set from this in post_process_param and is
-  // what update_B_hybrid actually dispatches on.
+  // Default "rk4". The useRK4 flag is set from this in post_process_param and
+  // is what update_B_hybrid actually dispatches on.
   std::string fieldIntegrator = "rk4";
   bool useRK4 = false;
 
@@ -364,7 +377,8 @@ public:
     centerBstart_heun.resize(n_lev_max());
     centerBstar_heun.resize(n_lev_max());
     kRK4.resize(n_lev_max());
-    for (int iL = 0; iL < n_lev_max(); ++iL) kRK4[iL].resize(4);
+    for (int iL = 0; iL < n_lev_max(); ++iL)
+      kRK4[iL].resize(4);
     etaHyperLev.resize(n_lev_max(), 0.0);
     targetPPC.resize(n_lev_max());
     if (reportParticleQuality) {
@@ -404,7 +418,7 @@ public:
   void update(bool doReportIn = false);
 
   PicParticles *get_particle_pointer(int i) { return parts[i].get(); }
-  //TODO: no longer needed if we fix the output variable ordering.
+  // TODO: no longer needed if we fix the output variable ordering.
   bool get_useHybridPIC() const { return useHybridPIC; }
 
   void set_stateOH(OHInterface *in) { stateOH = in; }
@@ -430,9 +444,9 @@ public:
   // Narrow facade used by InitialCondition plug-ins (see InitialCondition.h).
   // These expose only the field arrays an IC needs; the facade is NOT a friend
   // of Pic.
-  amrex::MultiFab& get_node_E(int iLev) { return nodeE[iLev]; }
-  amrex::MultiFab& get_node_B(int iLev) { return nodeB[iLev]; }
-  amrex::MultiFab& get_center_B(int iLev) { return centerB[iLev]; }
+  amrex::MultiFab &get_node_E(int iLev) { return nodeE[iLev]; }
+  amrex::MultiFab &get_node_B(int iLev) { return nodeB[iLev]; }
+  amrex::MultiFab &get_center_B(int iLev) { return centerB[iLev]; }
   PicICFields ic_fields() { return PicICFields(*this); }
 
   void init_source(const FluidInterface &interfaceIn) {
@@ -521,16 +535,17 @@ public:
   void update_B_hybrid();
   void project_centerB_to_nodeB(int iLev);
   void apply_centerB_BC(int iLev);
-  void project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
-                                        amrex::MultiFab& nodeOut, int iLev);
-  // Evaluate the Ohm's law E = -U_i x B + eta J + (J x B)/rho_q - grad(Pe)/rho_q
-  // at an off-member B state (J from `centerBin`, Hall/convection B from
-  // `centerBtimeAvg`), writing E into `Eout`. Ion moments are time-interpolated
-  // between centerPlasmaPrev (J^{n-1/2}) and centerPlasmaSum (J^{n+1/2}) at the
-  // sub-step fraction `hstep`: X = (0.5-hstep)X^{n-1/2} + (0.5+hstep)X^{n+1/2}.
-  void assemble_ohm_E(const amrex::MultiFab& centerBin,
-                      const amrex::MultiFab& centerBtimeAvg,
-                      amrex::MultiFab& Eout, int iLev, amrex::Real hstep);
+  void project_centerB_to_nodeB_scratch(amrex::MultiFab &centerIn,
+                                        amrex::MultiFab &nodeOut, int iLev);
+  // Evaluate the Ohm's law E = -U_i x B + eta J + (J x B)/rho_q -
+  // grad(Pe)/rho_q at an off-member B state (J from `centerBin`,
+  // Hall/convection B from `centerBtimeAvg`), writing E into `Eout`. Ion
+  // moments are time-interpolated between centerPlasmaPrev (J^{n-1/2}) and
+  // centerPlasmaSum (J^{n+1/2}) at the sub-step fraction `hstep`: X =
+  // (0.5-hstep)X^{n-1/2} + (0.5+hstep)X^{n+1/2}.
+  void assemble_ohm_E(const amrex::MultiFab &centerBin,
+                      const amrex::MultiFab &centerBtimeAvg,
+                      amrex::MultiFab &Eout, int iLev, amrex::Real hstep);
   void save_current_moments_to_prev();
   void seed_first_hybrid_step();
 
