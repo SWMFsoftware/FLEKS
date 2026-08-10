@@ -128,6 +128,9 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
 }
 
 void ParticleTracker::update_field(Pic& pic) {
+  if (pic.useHybridPIC) {
+    pic.sync_node_E_output();
+  }
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab::Copy(nodeE[iLev], pic.nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                    nodeE[iLev].nGrow());

@@ -388,6 +388,14 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
             value /= rho;
         }
       }
+    } else if (var.substr(0, 2) == "jx" || var.substr(0, 2) == "jy" ||
+               var.substr(0, 2) == "jz") {
+      if (useHybridPIC) {
+        const int iDir = (var.substr(0, 2) == "jx") ? ix_
+                         : (var.substr(0, 2) == "jy") ? iy_ : iz_;
+        const Array4<Real const>& arr = centerJ[iLev][mfi].array();
+        value = arr(ijk, iDir);
+      }
     } else if (var.substr(0, 4) == "mach") {
       value = mMach[iLev][mfi].array()(ijk);
     } else if (var.substr(0, 2) == "pS") {
