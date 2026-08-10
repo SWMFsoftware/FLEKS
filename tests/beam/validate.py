@@ -21,10 +21,13 @@ from .._shared.hybrid import RUN_DIR, validate_hybrid
 
 # Particle-tracking tolerance passed to validate_test_particles() in the
 # common runner (validate_tests.py).
+# min_velocity_change: require >= 1% relative mean-velocity change (beam
+# gyration) to catch a silently disabled field gather.
 PARTICLE_TOL = {
     "expected_active_species": [0],
     "launch_threshold": 0.5,
     "max_speed": 10.0,
+    "min_velocity_change": 0.01,
 }
 
 

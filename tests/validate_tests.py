@@ -520,7 +520,8 @@ def validate_test_particles(pt_diags, test_name=None, tol=None):
 
     tol keys: min_rows (int, default 1), launch_threshold (float, default 0.5),
               max_speed (float, default 10.0),
-              expected_active_species (list[int], default []).
+              expected_active_species (list[int], default []),
+              min_velocity_change (float, default None = disabled).
     """
     import math
     tol = tol or {}
@@ -528,6 +529,11 @@ def validate_test_particles(pt_diags, test_name=None, tol=None):
     launch_threshold = float(tol.get("launch_threshold", 0.5))
     max_speed = float(tol.get("max_speed", 10.0))
     expected_active = set(int(s) for s in tol.get("expected_active_species", []))
+    # Optional: require an active species to show a relative mean-velocity
+    # change >= this (catches a silently disabled field gather).
+    min_velocity_change = tol.get("min_velocity_change", None)
+    if min_velocity_change is not None:
+        min_velocity_change = float(min_velocity_change)
 
     logger.debug("Validating Test-Particle Tracer Output...")
 
@@ -624,6 +630,30 @@ def validate_test_particles(pt_diags, test_name=None, tol=None):
                     f"species {iS} speed {speed:.3f} exceeds max_speed "
                     f"{max_speed:g} at cycle {r.get('cycle', '?')}")
                 break
+
+    # Field-interaction check: catch a zero-field gather (constant velocity).
+    if min_velocity_change is not None and n_rows >= 2:
+        got_change = False
+        for iS in sorted(active):
+            m0 = pt_diags[0].get(f"mass{iS}", 0.0)
+            m1 = pt_diags[-1].get(f"mass{iS}", 0.0)
+            if m0 <= 0 or m1 <= 0:
+                continue
+            v0 = [pt_diags[0].get(f"moment_{ax}{iS}", 0.0) / m0
+                  for ax in ("x", "y", "z")]
+            v1 = [pt_diags[-1].get(f"moment_{ax}{iS}", 0.0) / m1
+                  for ax in ("x", "y", "z")]
+            speed0 = math.sqrt(sum(c * c for c in v0))
+            dv = math.sqrt(sum((a - b) ** 2 for a, b in zip(v1, v0)))
+            if speed0 > 1e-30 and dv / speed0 >= min_velocity_change:
+                got_change = True
+                break
+        if not got_change:
+            passed = False
+            reasons.append(
+                f"no active species shows a mean-velocity change >= "
+                f"{min_velocity_change:g} (relative); field gather may be "
+                "silently disabled")
 
     if passed:
         logger.debug("Test-Particle Tracer Output: PASSED")
