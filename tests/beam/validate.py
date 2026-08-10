@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Validator for the beam instability test (tests/beam).
 
-The runner exercises the single directory twice -- full PIC (PARAM.in,
-base_name "beam") and hybrid PIC (PARAM.in.hybrid, base_name "beam_hybrid").
+The runner exercises the directory twice -- full PIC (PARAM.in, base_name
+"beam") and hybrid PIC (PARAM.in.hybrid, base_name "beam_hybrid").
 
 The primary validation for BOTH variants is the FFT-based transverse-wave check
-performed on the plot output by _check_beam_transverse_wave().  The hybrid
-variant additionally runs the shared hybrid-family energy-log checks
-(validate_hybrid) to guard against NaN / field blow-up.  The beam also tracks
-test particles, so a particle-log check is enabled via PARTICLE_TOL.
+on plot output (`_check_beam_transverse_wave`).  The hybrid variant additionally
+runs the shared hybrid-family energy-log checks (`validate_hybrid`) to guard
+against NaN / field blow-up.  The beam tracks test particles, so a particle-log
+check is enabled via `PARTICLE_TOL`.
 """
 import glob
 import logging
@@ -29,14 +29,11 @@ PARTICLE_TOL = {
 
 
 def validate_log(pic_diags=None, test_name=None):
-    """Validate the beam instability test.
+    """Energy-log validation for the beam test.
 
-    The primary validation is the FFT-based transverse-wave check performed
-    on the plot output by _check_beam_transverse_wave().  For the full-PIC
-    variant no log-file-based checks are performed here.  The hybrid variant
-    (test_name ends with "hybrid") additionally runs the shared hybrid energy
-    checks (finite energies, bounded magnetic-energy growth) to catch a NaN /
-    field blow-up before the plot check runs.
+    The hybrid variant (test_name ends with "hybrid") runs the shared hybrid
+    energy checks to catch NaN / field blow-up; the full-PIC variant performs no
+    log-file check here (validation is the plot-output FFT).
     """
     if test_name and test_name.endswith("hybrid"):
         return validate_hybrid(pic_diags=pic_diags, test_name=test_name)
@@ -142,7 +139,7 @@ def _check_beam_transverse_wave():
                  bperp_max / max(abs(bx_mean), 1e-30), noise_frac,
                  'OK' if growth_ok else 'FAIL')
 
-    # ---- DFT of the transverse field -------------------------------------
+    # ---- Check 2: dominant mode & power in low-order modes ----------------
     # FFT By and Bz separately (preserving sign/oscillation), then combine
     # the per-mode amplitudes.  Using |B_perp| directly would introduce
     # spurious harmonics from the magnitude operation.
@@ -229,12 +226,10 @@ def _check_beam_transverse_wave():
         logger.debug("    [FFT] Mode check: |n_dom(%d) - n_res(%d)| <= %d -> %s",
                      n_dom, n_res, tol, 'OK' if mode_ok else 'FAIL')
 
-    # ---- Check 4: the transverse wave must GROW over time -----------------
-    # The instability grows from the seed noise, so max|B_perp| must increase
-    # monotonically (or at least not decrease) across the time-resolved frames.
-    # This is what distinguishes an actual beam-beam instability from static
-    # numerical seed.  Skips gracefully (not a failure) if fewer than 3 frames
-    # are available.
+    # ---- Check 3: the transverse wave power must GROW over time ------------
+    # The instability grows from seed noise, so max|B_perp| must increase across
+    # the time-resolved frames -- distinguishing a real instability from static
+    # numerical seed.  Skips gracefully (not a failure) if < 3 frames exist.
     growth_ok2, growth_reason = _beam_growth_over_time(plots_dir)
     if growth_reason is not None:
         logger.debug("    [FFT] Time-growth: %s", growth_reason)

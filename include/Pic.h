@@ -107,10 +107,9 @@ private:
   amrex::Vector<amrex::MultiFab> nodeB;
   amrex::Vector<amrex::MultiFab> divB;
   amrex::Vector<amrex::MultiFab> centerB;
-  // Hyper-resistivity scratch fields (useHybridPIC = true).
-  amrex::Vector<amrex::MultiFab> centerLapB; // nabla^2 B  (hyper stage A)
-  amrex::Vector<amrex::MultiFab> nodeHyperE; // nabla x (nabla^2 B) (hyper stage
-                                             // B)
+  // Hybrid hyper-resistivity scratch fields.
+  amrex::Vector<amrex::MultiFab> centerLapB; // nabla^2 B  (stage A)
+  amrex::Vector<amrex::MultiFab> nodeHyperE; // nabla x (nabla^2 B) (stage B)
   // Hybrid RK method shared intermediate solver scratch.
   amrex::Vector<amrex::MultiFab> centerBstage;
   // kStage[iLev][0..3]: the stage curls curl(E_stage) for the level-iLev.

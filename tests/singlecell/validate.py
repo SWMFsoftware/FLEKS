@@ -36,21 +36,18 @@ def validate_log(pic_diags=None, test_name=None):
     if eb0 > 0:
         ratio = eb1 / eb0
         logger.debug("    Eb ratio: %.6f", ratio)
-        # Exact (to round-off): a single cell has no spatial gradient, so the
-        # Hall term is exactly zero and B cannot evolve.  Allow a tiny tolerance
-        # for floating-point round-off in the field solvers.
+        # A single cell has no spatial gradient, so the Hall term is exactly zero
+        # and B cannot evolve (round-off tolerance).
         if ratio < 0.9999 or ratio > 1.0001:
             passed = False
             reasons.append(
                 f"Eb ratio {ratio:.6f} not ~1 (spurious Hall/evolution on "
                 f"single cell; curl B must be zero)")
 
-    # Ee must stay ~0: a frozen field has E = 0, so there is no electric energy.
-    # This is the real discriminator between "frozen" and "propagating
-    # non-dispersively" (both conserve Eb, but only a frozen field has Ee ~ 0).
-    # Allow a small round-off floor: on a single cell the field solver leaves a
-    # residual Ee of order 1e-3 * Eb (vs. ~1 for a genuinely propagating wave),
-    # so a 1e-2 * Eb threshold cleanly separates frozen from evolving.
+    # Ee is the discriminator between "frozen" (E = 0) and "propagating
+    # non-dispersively" (both conserve Eb, but a propagating wave has Ee > 0).
+    # The single-cell solver leaves a residual Ee ~1e-3*Eb, so 1e-2*Eb separates
+    # frozen from evolving.
     eemax = max((d.get("Ee", 0.0) for d in pic_diags), default=0.0)
     logger.debug("    Ee (electric, max): %s", f"{eemax:.6e}")
     if not math.isfinite(eemax):

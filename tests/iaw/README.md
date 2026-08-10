@@ -2,8 +2,8 @@
 
 A hybrid-PIC regression test for an ion acoustic wave seeded as a single
 sinusoidal ion density perturbation in a uniform, Maxwellian, zero-bulk-velocity
-proton plasma.  The setup is matched to the Hybrid-VPIC `examples/iaw`
-reference so the decay rate can be compared directly.
+proton plasma.  The setup is matched to the Hybrid-VPIC `iaw` reference so the
+decay rate can be compared directly.
 
 ## Physics
 
@@ -27,7 +27,10 @@ generalized Ohm's law
 With `B = 0` the Hall term `(J x B)/rho` and the convection term `-u_i x B`
 both vanish, so this is the **only** electric-field source.  The wave is a
 purely electrostatic, collisionless ion acoustic wave whose only damping
-mechanism is **ion Landau damping** (`eta = 0`, `hypereta = 0`).
+mechanism is **ion Landau damping** (`eta = 0`, `hypereta = 0`).  Because the
+field is unmagnetized and the Hall term is switched off, this test isolates the
+electron-pressure (ambipolar) branch of the Ohm's law and the ion-Landau damping
+of a pure electrostatic IAW.
 
 The parameters are matched to Hybrid-VPIC `examples/iaw`:
 
@@ -89,14 +92,3 @@ python3 tests/validate_tests.py --test=iaw
    against the structured plot reading a stale/zero node-centred E)
 3. The density-perturbation amplitude stays bounded (the IAW damps rather than
    blowing up).
-
-## Reference
-
-Modeled on the whistler test (`tests/whistler`), with the transverse-wave
-seeding replaced by a longitudinal ion density perturbation (`IonAcousticWave`
-test case) and the electron pressure-gradient (`#ELECTRONTEMPERATURE`)
-providing the restoring force.
-Unlike `tests/whistler`, the field is **unmagnetized** (`B = 0`) and the
-Hall term is switched off, so this test isolates the electron-pressure
-(ambipolar) branch of the Ohm's law and the ion-Landau-damping of a pure
-electrostatic IAW.

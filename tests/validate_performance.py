@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""
-The script:
-1. Runs the beam benchmark (full PIC) and the hybrid-PIC benchmark with 1 and 2
-   MPI processes (3 runs each for statistical robustness).
-2. Parses AMReX TinyProfiler output to extract particle mover and field solver
-   timings.  The field-solver region differs by solver: full PIC uses
-   `Pic::E_iterate`/`Pic::E_matvec`, hybrid PIC uses
-   `Pic::update_B_hybrid`/`Pic::assemble_ohm_E`.
-3. Computes particle-step rates (μs/part-step) and parallel speedup.
-4. Validates against baseline targets and writes a report.
+"""Performance regression runner for standalone FLEKS.
+
+Runs the full-PIC beam and hybrid-PIC whistler benchmarks on 1 and 2 MPI
+processes (3 runs each for statistical robustness), parses AMReX
+TinyProfiler output to extract particle-mover and field-solver timings, and
+reports particle-step rates (μs/part-step) and parallel speedup against
+baseline targets.
 """
 import os
 import shutil
@@ -84,14 +81,10 @@ def _read_param_block(param_file, command):
 
 
 def count_particles_from_param(param_file):
-    """Compute the seeded macroparticle count from a PARAM.in's #NCELL and
-    #PARTICLES blocks (total = prod(nCell*d * nPartPerCell*d)).
-
-    Particle seeding in FLEKS places `nPartPerCell` macroparticles in every cell
-    (the beam and wave initializers re-weight but never change the count), so
-    this gives an exact figure for both the full-PIC and hybrid benchmarks.
-    Returns None if the blocks are missing/malformed.
-    """
+    """Total seeded macroparticles = prod(nCell_d * nPartPerCell_d) from the
+    #NCELL and #PARTICLES blocks.  FLEKS seeds exactly nPartPerCell particles
+    per cell, so this is exact for both benchmarks.  Returns None if the blocks
+    are missing/malformed."""
     ncell = _read_param_block(param_file, "#NCELL")
     ppc = _read_param_block(param_file, "#PARTICLES")
     if len(ncell) < 3 or len(ppc) < 3:
@@ -107,25 +100,15 @@ def count_particles_from_param(param_file):
 
 
 def cycles_from_param(param_file):
-    """Number of timesteps a fixed-dt run will take, from #TIMESTEPPING dt and
-    #STOP TimeMax (#STOP MaxIter < 0 means "run to TimeMax").  Returns None if
-    the needed values cannot be determined."""
+    """Number of timesteps for a fixed-dt run, from #TIMESTEPPING dt and
+    #STOP (MaxIter if > 0, else round(TimeMax / dt)).  Returns None if the
+    values cannot be determined."""
     dt_block = _read_param_block(param_file, "#TIMESTEPPING")
     stop_block = _read_param_block(param_file, "#STOP")
-    # #TIMESTEPPING: useFixedDt, dt
-    use_fixed = None
-    dt = None
-    if len(dt_block) >= 1:
-        use_fixed = dt_block[0].split()[0]
-    if len(dt_block) >= 2:
-        dt = _param_float(dt_block, 1)
-    # #STOP: MaxIter, TimeMax
-    max_iter = None
-    time_max = None
-    if len(stop_block) >= 1:
-        max_iter = _param_float(stop_block, 0)
-    if len(stop_block) >= 2:
-        time_max = _param_float(stop_block, 1)
+    use_fixed = dt_block[0].split()[0] if len(dt_block) >= 1 else None
+    dt = _param_float(dt_block, 1) if len(dt_block) >= 2 else None
+    max_iter = _param_float(stop_block, 0) if len(stop_block) >= 1 else None
+    time_max = _param_float(stop_block, 1) if len(stop_block) >= 2 else None
     if max_iter is not None and int(max_iter) > 0:
         return int(max_iter)
     if use_fixed and use_fixed.upper() == "T" and dt and dt > 0 and time_max:
@@ -133,11 +116,10 @@ def cycles_from_param(param_file):
     return None
 
 def parse_tiny_profiler(stdout):
-    """Parse AMReX's TinyProfiler exclusive and inclusive timing tables from stdout.
-    """
+    """Parse AMReX TinyProfiler total time, exclusive and inclusive timing
+    tables from FLEKS stdout into nested dicts."""
     profiler_data = {}
-    
-    # Parse total profile time
+
     total_time_match = re.search(r"TinyProfiler total time across processes\s+\[min\.\.\.avg\.\.\.max\]:\s+([\d.]+)", stdout)
     if total_time_match:
         profiler_data["total_time"] = float(total_time_match.group(1))
@@ -145,10 +127,9 @@ def parse_tiny_profiler(stdout):
         total_time_match2 = re.search(r"TinyProfiler total time across processes.*?:\s+([\d.]+)", stdout)
         if total_time_match2:
             profiler_data["total_time"] = float(total_time_match2.group(1))
-        
-    # Parse Exclusive Timing Table
+
     excl_section_match = re.search(
-        r"Name\s+NCalls\s+Excl\.\s+Min\s+Excl\.\s+Avg\s+Excl\.\s+Max\s+Max\s+%\n-+([\s\S]+?)-+", 
+        r"Name\s+NCalls\s+Excl\.\s+Min\s+Excl\.\s+Avg\s+Excl\.\s+Max\s+Max\s+%\n-+([\s\S]+?)-+",
         stdout
     )
     if excl_section_match:
@@ -170,9 +151,8 @@ def parse_tiny_profiler(stdout):
                 }
         profiler_data["exclusive"] = excl_entries
 
-    # Parse Inclusive Timing Table
     incl_section_match = re.search(
-        r"Name\s+NCalls\s+Incl\.\s+Min\s+Incl\.\s+Avg\s+Incl\.\s+Max\s+Max\s+%\n-+([\s\S]+?)-+", 
+        r"Name\s+NCalls\s+Incl\.\s+Min\s+Incl\.\s+Avg\s+Incl\.\s+Max\s+Max\s+%\n-+([\s\S]+?)-+",
         stdout
     )
     if incl_section_match:
@@ -193,29 +173,22 @@ def parse_tiny_profiler(stdout):
                     "percent": float(match.group(6))
                 }
         profiler_data["inclusive"] = incl_entries
-        
+
     return profiler_data
 
 def run_benchmark_suite(n_proc, run_dir, param_file, solver_kind="fullpic",
                         count=3):
-    """Run `count` benchmark runs of the given PARAM config on `n_proc` MPI
-    processes and collect timing statistics.
-
-    `param_file` is the benchmark PARAM.in (full PIC or hybrid) relative to the
-    tests/ directory.  `solver_kind` selects the field-solver TinyProfiler region
-    to report: "fullpic" -> Pic::E_iterate/Pic::E_matvec, "hybrid" ->
-    Pic::update_B_hybrid/Pic::assemble_ohm_E.  The particle mover region is the
-    same for both.
-    """
+    """Run `count` benchmark runs on `n_proc` MPI processes and collect timing
+    stats.  `solver_kind` selects the field-solver TinyProfiler region
+    ("fullpic" -> Pic::E_iterate/Pic::E_matvec; "hybrid" ->
+    Pic::update_B_hybrid/Pic::assemble_ohm_E); the particle mover is shared.
+    Returns (stats, 0) or (None, code) on failure."""
     solver_names = HYBRID_SOLVERS if solver_kind == "hybrid" else FULLPIC_SOLVERS
 
     print(f"Running benchmark in {run_dir} with {n_proc} MPI process(es) "
           f"({count} runs, solver={solver_kind})...")
     runs = []
 
-    # The seeded particle count and cycle count are fixed by the config; compute
-    # them once up front (FLEKS seeds exactly nPartPerCell macroparticles per
-    # cell, so this is exact for both benchmarks).
     particles = count_particles_from_param(param_file)
     cycles = cycles_from_param(param_file)
     if particles is None or cycles is None:
@@ -226,10 +199,8 @@ def run_benchmark_suite(n_proc, run_dir, param_file, solver_kind="fullpic",
         print(f"  Run {i+1}/{count}...")
         prepare_run_dir(run_dir)
 
-        # Copy benchmark config (full-PIC beam or hybrid PARAM.in.hybrid)
         shutil.copy(param_file, os.path.join(run_dir, "PARAM.in"))
 
-        # Setup MPI command line
         cmd = ["mpirun", "-n", str(n_proc), "./FLEKS.exe"]
 
         start_time = time.perf_counter()
@@ -244,18 +215,14 @@ def run_benchmark_suite(n_proc, run_dir, param_file, solver_kind="fullpic",
             print(result.stderr)
             return None, result.returncode
 
-        # Parse TinyProfiler
         prof = parse_tiny_profiler(result.stdout)
 
-        # Extract hot path timings from TinyProfiler
-        # 1. Particle mover (exclusive) -- shared by both solvers
         mover_excl_time = 0.0
         for name in MOVERS:
             if "exclusive" in prof and name in prof["exclusive"]:
                 mover_excl_time = prof["exclusive"][name]["avg"]
                 break
 
-        # 2. Field solver (inclusive) -- region name depends on the solver
         solver_incl_time = 0.0
         for name in solver_names:
             if "inclusive" in prof and name in prof["inclusive"]:
@@ -271,7 +238,6 @@ def run_benchmark_suite(n_proc, run_dir, param_file, solver_kind="fullpic",
             "solver_time": solver_incl_time,
         })
 
-    # Calculate statistics across runs (median and min)
     def median(lst):
         sorted_lst = sorted(lst)
         n = len(sorted_lst)
@@ -284,7 +250,6 @@ def run_benchmark_suite(n_proc, run_dir, param_file, solver_kind="fullpic",
     movers = [r["mover_time"] for r in runs]
     solvers = [r["solver_time"] for r in runs]
 
-    # The cycle/particle counts are constant across runs
     stats = {
         "runs": runs,
         "cycles": runs[-1]["cycles"],
@@ -300,9 +265,8 @@ def run_benchmark_suite(n_proc, run_dir, param_file, solver_kind="fullpic",
     return stats, 0
 
 def _evaluate_solver(solver_kind, param_file, serial_dir, parallel_dir, count=3):
-    """Run the serial+parallel benchmark suite for one solver kind and return
-    (stats, pass_flags dict, label).  Runs `count` runs per process count.
-    """
+    """Run the 1- and 2-process benchmark suites for one solver kind and return
+    (stats, pass_flags, label)."""
     label = "FULL PIC" if solver_kind == "fullpic" else "HYBRID PIC"
 
     serial_stats, code = run_benchmark_suite(

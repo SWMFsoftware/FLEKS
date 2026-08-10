@@ -22,11 +22,10 @@ The solver-selection commands (`#SOLVEEM`, `#HYBRIDPIC`, `#RESISTIVITY`,
 inputs to code units are documented as comments directly in
 [`PARAM.in`](PARAM.in).
 
-## Purpose & Success Criteria
+## Validation
 
-This test is a **stability / no-blow-up regression check** for the *full*
-solver: it verifies that enabling the resistive and electron-pressure-gradient
-terms does not destabilize the coupled field advance (which the `whistler` test
-disables). The automated check reuses the shared `validate_hybrid` checks:
-stable exit, finite `Eb`/`Epart`, seeded mode `n=1` at early time, and bounded
-late-time amplitude. See `tests/_shared/hybrid.py` for the exact tolerances.
+Stability / no-blow-up regression check for the *full* solver: enabling the
+resistive and electron-pressure-gradient terms must not destabilize the coupled
+field advance (the `whistler` test leaves both disabled). The automated check
+reuses `validate_hybrid` (`tests/_shared/hybrid.py`): stable exit, finite
+`Eb`/`Epart`, seeded mode `n=1` at early time, and bounded late-time amplitude.

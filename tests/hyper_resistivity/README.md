@@ -3,16 +3,11 @@
 Exercises the fourth-order hyper-resistive term `eta_h * nabla^2 J` (equivalently
 `-(eta_h/4*pi) * nabla x (nabla^2 B)`) in the Hybrid PIC generalized Ohm's law, on
 top of the full solver (convection + Hall + `eta J` + `grad P_e`). See
-`../ohm/README.md` for the shared geometry / normalization and the
-success criteria inherited from that test.
+`../ohm/README.md` for the shared geometry / normalization.
 
-## Validation
-
-1. **Stability** — FLEKS exits cleanly; `Eb`/`Epart` finite and bounded with the
-   fourth-order term active (no NaN/Inf, no checkerboard blow-up).
-2. **Damping of grid-scale noise** — the hyper term damps the highest resolved
-   modes (`k -> k_Nyquist`), so late-time `|B_⊥|` and the magnetic-energy drift
-   stay below the no-hyper-resistivity baseline.
+**Smoke test only.** There is no `validate.py`, so the runner falls back to a
+generic no-op check: it only confirms FLEKS runs and exits cleanly with the term
+active. Nothing is checked quantitatively.
 
 ## Parameters
 
@@ -23,14 +18,20 @@ success criteria inherited from that test.
 - `#MINIMUMDENSITY`: minimum `rho` for the `1/rho` factors; `<= 0` = auto
   (`1e-6 * electronDensity0`).
 
-## Dispersion validation
+## Implementation note
 
-For a clean quantitative check use `etaHyperMode = "si"` with a known `eta_h` and
-measure the decay rate of an eigenmode:
-- Resistive: `gamma = eta * k^2` (second order).
-- Hyper-resistive: `gamma = eta_h * k^4` (fourth order) — verify the `k^4` scaling
-  by repeating at two wavenumbers.
-- Checkerboard test: seed a `(-1)^i` Nyquist-mode B perturbation; with the compact
-  current it must decay, while a collocated-curl implementation would leave it
-  untouched — this is the direct demonstration of why Phase 1 (compact current) is
-  a prerequisite for the hyper-resistive term.
+The term is built in `Pic::assemble_ohm_E` as a compact Laplacian of `B` followed
+by the same `2*dx` curl that Faraday's law uses, mirroring Hybrid-VPIC
+(`hyb_hypereta.cc`). That curl vanishes at the Nyquist wavenumber, so the term is
+not expected to damp the pure `(-1)^i` checkerboard mode.
+
+## TODO
+
+1. Add a `validate.py`: check `Eb`/`Epart` stay finite and bounded, and compare
+   against a no-hyper-resistivity baseline run (requires adding the paired case).
+2. Add a quantitative check of the damping rate using `etaHyperMode = "si"` with
+   `#RESISTIVITY` disabled. This likely needs its own case rather than reusing
+   this `PARAM.in`, which is configured as a full-solver integration run.
+3. Verify the high-`k` behaviour noted above, and if grid-scale damping is needed,
+   consider an opt-in `nabla^4 B` stencil (keep it opt-in to preserve
+   comparability with Hybrid-VPIC).

@@ -8,11 +8,10 @@ geometry and ion-scale normalization are used (d_i ~ v_A ~ 1 in code units). The
 hyper-resistivity (eta_h * nabla^2 J) is added to demonstrate damping of the
 grid-scale / PIC shot-noise that the second-order eta*J term cannot reach.
 
-Use HYPERRESISTIVITY etaHyperMode = "grid" (the default) so eta_h is scaled to
-the CFL-stable bound on each sub-step:
-    eta_h = 4*pi * C_h * dx_min^4 / dt_sub
-with C_h = etaHyperCh (here 1e-3, a mild damping). "si" mode (direct SI [m^4/s])
-is also supported and is what a dispersion validation would use.
+Use HYPERRESISTIVITY etaHyperMode="grid" (default) so eta_h is set to the
+CFL-stable bound per sub-step: eta_h = 4*pi * C_h * dx_min^4 / dt_sub, with
+C_h = etaHyperCh = 1e-3 (mild damping). "si" mode (direct SI [m^4/s]) is also
+supported for a dispersion validation.
 
 #INITFROMSWMF
 F                       initFromSWMF

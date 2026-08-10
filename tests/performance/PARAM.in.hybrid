@@ -50,8 +50,8 @@ T                       useHybridPIC
 T                       useAvgFieldB
 20                      nAvgFieldB
 
-Hall-only: resistive and electron-pressure-gradient terms are turned off
-(both 0.0) to isolate the whistler dispersion (the standard hybrid workload).
+Hall-only: resistive and electron-pressure-gradient terms off (both 0.0) to
+isolate the whistler dispersion (the standard hybrid workload).
 #RESISTIVITY
 0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
 
@@ -60,9 +60,8 @@ Hall-only: resistive and electron-pressure-gradient terms are turned off
 1.0                     electronGamma
 1.0                     electronDensity0
 
-Sub-cycle the B update: the explicit Hall advance is limited by the discrete
-grid-scale whistler mode.  nBSubcycle = 8 exercises the sub-cycling machinery
-(4x cheaper than 32 while still exercising it).
+Sub-cycle the explicit Hall advance (limited by the grid-scale whistler mode).
+nBSubcycle = 8 exercises the sub-cycling machinery at 4x the cost of 32.
 #BSUBCYCLE
 8                       nBSubcycle
 

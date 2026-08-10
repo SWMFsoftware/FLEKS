@@ -237,11 +237,9 @@ def _load_idl_plot_asymmetry():
         return False, "Dayside rhoS1 is zero -- photoionization source not active"
     if len(shadow_vals) == 0:
         return False, "Zero shadow points -- cannot verify"
-    # The shadow region still has some density from particle diffusion from
-    # the dayside (especially near the planet surface), so we require
-    # shadow < 20% of dayside rather than near-zero.  With the shadow
-    # cylinder radius set to the planet radius, the dayside/night asymmetry
-    # is pronounced and a 0.2 threshold provides a meaningful check.
+    # The shadow region retains some density from dayside diffusion (especially
+    # near the surface), so require shadow < 20% of dayside rather than near-zero;
+    # a 0.2 threshold is a meaningful asymmetry check.
     if shadow_mean > max(dayside_mean * 0.2, 1e-30):
         return False, (
             f"Shadow rhoS1 too high ({shadow_mean:.2e}) "

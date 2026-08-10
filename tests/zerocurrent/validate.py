@@ -39,17 +39,15 @@ def validate_log(pic_diags=None, test_name=None):
     if eb0 > 0:
         ratio = eb1 / eb0
         logger.debug("    Eb ratio: %.6f", ratio)
-        # The perturbation is frozen, so Eb should be conserved to round-off.
-        # Allow a tiny tolerance for floating-point round-off.
+        # The perturbation is frozen, so Eb is conserved to round-off.
         if ratio < 0.999 or ratio > 1.001:
             passed = False
             reasons.append(
                 f"Eb ratio {ratio:.6f} not ~1 (zero-current wave propagated / "
                 f"decayed; field should be frozen)")
 
-    # Ee is the real no-propagation discriminator: a frozen field has E = 0, so
-    # the electric energy is ~0.  A propagating wave would generate an inductive
-    # E and a non-zero Ee even while conserving Eb.
+    # Ee is the no-propagation discriminator: a frozen field has E = 0, so the
+    # electric energy is ~0; a propagating wave keeps Ee > 0 even while conserving Eb.
     eemax = max((d.get("Ee", 0.0) for d in pic_diags), default=0.0)
     logger.debug("    Ee (electric, max): %s", f"{eemax:.6e}")
     if not math.isfinite(eemax):

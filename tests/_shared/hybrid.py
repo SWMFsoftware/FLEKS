@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Shared validators and plot helpers for the hybrid-PIC family of tests.
 
-Keeping the common hybrid code here so each per-test ``validate.py`` only
-imports what it needs.
+Each per-test ``validate.py`` imports only what it needs:
+  * ``validate_hybrid`` -- energy-log checks (finite energies, bounded magnetic
+    energy, conserved particle number under periodic BCs).
+  * ``validate_plot``    -- seeded-wavelength (n=1) check + whistler-dispersion
+    check measuring the transverse-wave frequency and comparing it against
+    omega/Omega_i = (k d_i)^2 / (1 + (k d_i)^2) from the .out plot frames.
 """
 import logging
 import math
@@ -236,7 +240,7 @@ def _hyb_whistler_dispersion(out_files):
     var_p = sum((unwrapped[i] - mean_p) ** 2 for i in range(nt))
     r2 = (cov ** 2 / (var_t * var_p)) if var_p > 0 else 0.0
 
-    # Read Lx (code units) and tNorm from PARAM.in.
+    # Read Lx (code units) and tNorm from the whistler PARAM.in.
     p = os.path.join("tests", "whistler", "PARAM.in")
     def numeric_after(command):
         toks = []
@@ -266,20 +270,15 @@ def _hyb_whistler_dispersion(out_files):
 
     k = 2.0 * math.pi * kdom / Lx
     omega_code = omega_si * tNorm
-    # Finite-frequency whistler branch for a hybrid (kinetic-ion) model:
-    #   omega/Omega_i = (k d_i)^2 / (1 + (k d_i)^2),  with d_i = 1 in code units
-    # so here (k d_i)^2 = k^2.  This is bounded by Omega_i and reduces to the
-    # cold Hall-MHD branch (k d_i)^2 for k d_i << 1.  For the seeded n=1 mode
-    # (k d_i ~ 1) it is the correct branch and matches the measurement to ~10%,
-    # whereas the cold form overpredicts omega by ~40% (see README).
-    #
-    # Tolerance: ~25% relative.  This is tight enough to be a meaningful check
-    # of the Hall term (a missing 1/(4*pi) Hall current makes the measured omega
-    # a factor ~4*pi too large, far outside the window) while still absorbing
-    # the residual kinetic-ion / finite-Larmor corrections at k d_i ~ 1 and the
-    # phase-fit noise (fit r^2 is typically ~0.9).
+    # Hybrid (kinetic-ion) whistler branch: omega/Omega_i = (k d_i)^2/(1+(k d_i)^2),
+    # with d_i = 1 in code units.  d_i = 1 makes (k d_i)^2 = k^2.  The cold
+    # Hall-MHD form (k d_i)^2 overpredicts by ~40% at k d_i ~ 1, so this branch
+    # is the correct comparison.
     k2 = k * k
     omega_theory = k2 / (1.0 + k2)
+    # ~25% tolerance: tight enough to catch a missing 1/(4*pi) Hall current
+    # (which shifts omega by ~4*pi) yet absorbs kinetic-ion corrections and
+    # phase-fit noise (r^2 ~ 0.9).
     tol = 0.25 * max(omega_theory, 1e-9)
 
     msg = ("whistler dispersion n=%d: measured |omega|/Omega_i = %.3f "

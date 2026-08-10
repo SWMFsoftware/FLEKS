@@ -2524,6 +2524,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
 
   // Hyper-resistivity: E -= eta_h * nabla^2 J = -(eta_h/4*pi) * curl(nabla^2
   // B), built as centerLapB = nabla^2 B then centerHyperE = curl(centerLapB).
+  // TODO: see tests/hyper_resistivity/README.md.
   if (etaHyperLev[iLev] > 0) {
     lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
     centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());

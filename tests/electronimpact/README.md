@@ -44,7 +44,7 @@ heavy ions (species 1) into the PIC simulation domain.
 
 The validator checks that species 2 (O+) particle count and kinetic energy grow
 monotonically over time, confirming the electron-impact ionization source is
-active. See `tests/electronimpact/validate.py` for the exact tolerances.
+active.
 
 ## Running
 

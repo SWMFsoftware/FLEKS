@@ -80,9 +80,7 @@ def safe_symlink(src, dst):
 def ensure_postidl():
     """Ensure PostIDL.exe is compiled before running any test.
 
-    PostProc.pl needs PostIDL.exe to convert .idl/.h plot files into the
-    .out frames that the validators compare against.  It is a build artifact,
-    so if it is not present at any candidate location we compile it with
+    If it is not present at any candidate location we compile it with
     ``make PIDL`` and re-search.  Returns True if PostIDL.exe is found.
     """
     postidl_candidates = [
@@ -122,13 +120,10 @@ def prepare_run_dir():
     run_dir = RUN_DIR
     os.makedirs(run_dir, exist_ok=True)
 
-    # Make sure PostIDL.exe is compiled; PostProc.pl needs it to produce the
-    # .out plot frames that the test validators compare against.
     ensure_postidl()
 
-    # Determine the location of the share directory relative to FLEKS root.
-    # In a standalone FLEKS repository, 'share/Scripts/PostProc.pl' is directly inside the working directory.
-    # In SWMF integrated environment, 'share' is located in SWMF root, i.e., two levels above FLEKS root.
+    # PostProc.pl / pIDL live in share/Scripts/; the standalone layout keeps
+    # "share" next to FLEKS root, the SWMF layout two levels up.
     if os.path.isfile("share/Scripts/PostProc.pl"):
         postproc_target = "../share/Scripts/PostProc.pl"
         pidl_target = "../../share/Scripts/pIDL"
@@ -136,11 +131,6 @@ def prepare_run_dir():
         postproc_target = "../../../share/Scripts/PostProc.pl"
         pidl_target = "../../../../share/Scripts/pIDL"
 
-    # PostIDL.exe may reside in different locations depending on the build mode:
-    #   - Standalone build:       bin/PostIDL.exe        (FLEKS/bin/)
-    #   - SWMF integrated build:  ../../bin/PostIDL.exe  (SWMF/bin/)
-    # Search all candidates (relative to FLEKS root) and use the first match.
-    # The symlink target is computed relative to run_test/PC/.
     postidl_candidates = [
         "bin/PostIDL.exe",          # standalone
         "../../bin/PostIDL.exe",    # SWMF integrated
@@ -151,32 +141,25 @@ def prepare_run_dir():
             postidl_target = os.path.relpath(candidate, os.path.join(run_dir, "PC"))
             continue
     if postidl_target is None:
-        # Default to standalone path; run_test() will emit a broken-symlink
-        # warning if PostIDL.exe is not found at any candidate location.
         postidl_target = "../../bin/PostIDL.exe"
 
-    # Symlinks in run directory
     safe_symlink("../bin/FLEKS.exe", os.path.join(run_dir, "FLEKS.exe"))
     safe_symlink(postproc_target, os.path.join(run_dir, "PostProc.pl"))
 
-    # Component plot and restart directories
     pc_dir = os.path.join(run_dir, "PC")
     os.makedirs(pc_dir, exist_ok=True)
     os.makedirs(os.path.join(pc_dir, "plots"), exist_ok=True)
     os.makedirs(os.path.join(pc_dir, "restartOUT"), exist_ok=True)
 
-    # Symlinks in component directory
     safe_symlink(pidl_target, os.path.join(pc_dir, "pIDL"))
     safe_symlink(postidl_target, os.path.join(pc_dir, "PostIDL.exe"))
 
 
 def cleanup_run_dir():
-    """Remove simulation output files from run_test/ after each test.
+    """Remove simulation output files from run directory after each test.
 
-    Deletes the contents of PC/plots/ and PC/restartOUT/ (the bulky per-run
-    outputs) so they do not accumulate between tests.  The directory structure
-    and symlinks are left in place so the next call to prepare_run_dir() is a
-    no-op.
+    Deletes the contents of PC/plots/ and PC/restartOUT/ while keeping the
+    directory structure and symlinks.
     """
     run_dir = RUN_DIR
     for subdir in [os.path.join(run_dir, "PC", "plots"),
@@ -201,7 +184,6 @@ def run_test(test_dir, nprocs=1, param_text=None):
     logger.debug("Running test in %s...", test_dir)
     prepare_run_dir()
 
-    # Verify that PostIDL.exe exists; PostProc.pl needs it to produce .out files.
     postidl_link = os.path.join(RUN_DIR, "PC", "PostIDL.exe")
     if os.path.islink(postidl_link) and not os.path.exists(postidl_link):
         real = os.path.realpath(postidl_link)
@@ -209,15 +191,14 @@ def run_test(test_dir, nprocs=1, param_text=None):
         logger.warning("  [WARN] PostIDL.exe is missing. Build it with 'make PIDL' "
                        "before running tests that check plot output (.out files).")
 
-    # Write run_test/PARAM.in: use the supplied text (e.g. a patched solver
-    # variant) if given, otherwise copy the test directory's PARAM.in.
+    # Use the supplied text (patched solver variant) when given, else the test's
+    # own PARAM.in.
     if param_text is not None:
         with open(RUN_DIR + "/PARAM.in", "w") as f:
             f.write(param_text)
     else:
         shutil.copy(param_file, RUN_DIR + "/PARAM.in")
 
-    # Build the command: serial for nprocs==1, mpirun otherwise
     if nprocs <= 1:
         cmd = ["./FLEKS.exe"]
         logger.debug("  Running in serial mode (no MPI)...")
@@ -225,7 +206,6 @@ def run_test(test_dir, nprocs=1, param_text=None):
         cmd = ["mpirun", "-n", str(nprocs), "./FLEKS.exe"]
         logger.debug("  Running with %d MPI processes...", nprocs)
 
-    # Run the command inside run_test/
     result = subprocess.run(cmd, cwd=RUN_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         logger.error("Error running FLEKS.exe for %s:", test_dir)
@@ -235,7 +215,6 @@ def run_test(test_dir, nprocs=1, param_text=None):
         logger.error(result.stderr)
         return None, result.returncode
 
-    # Automatically run post-processing on the generated plots
     pp = subprocess.run(["./PostProc.pl", "-v"], cwd=RUN_DIR,
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if pp.returncode != 0:
@@ -271,7 +250,7 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
             results.append((display_name, "FAILED", f"Execution failed (code {code})"))
             return
 
-        # Read the PIC energy log (the only diagnostic log produced by FLEKS).
+        # FLEKS's only diagnostic log is the PIC energy log.
         pic_diags = read_pic_log(RUN_DIR)
 
         val_res = False
@@ -290,8 +269,7 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
             val_res = True
             reason = "Passed"
 
-        # Read the test-particle tracer log (log_pt_n*.log) and validate it for
-        # tests that enable #PARTICLETRACKER T (declared via PARTICLE_TOL).
+        # Test-particle tracer log (log_pt_n*.log), validated when #PARTICLETRACKER T.
         if validator is not None and validator.particle_tol:
             pt_diags = read_pt_log(RUN_DIR)
             pt_res, pt_reason = validate_test_particles(
@@ -317,7 +295,6 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
             results.append((display_name, "PASSED", "Passed"))
 
     finally:
-        # Always clean up run output after each test to keep disk usage low.
         logger.debug("  Cleaning up run_test/ output for %s...", display_name)
         cleanup_run_dir()
 

@@ -14,7 +14,7 @@ Both variants share the identical grid, guide field, beam ratio/speeds, density,
 - **Beam setup**: $1\%$ of the particles have a beam velocity of $+400\,\text{km/s}$ ($u_x = +0.4$ in normalized units).
 - **Electromagnetic Fields**:
   - Full PIC: field solver enabled (`solveEM = T`) with a guiding magnetic field $B_x = 5\,\text{nT}$ ($5.0 \times 10^{-9}$ T).
-  - Hybrid PIC: `useHybridPIC = T`, `solveEM = F`, Hall term ON (single sub-step), resistivity and electron-pressure-gradient OFF so the instability grows undamped; the guide field is dynamically weak ($v_A \ll u_{\mathrm{beam}}$) so the explicit hybrid advance is not stiff at this resolution.
+  - Hybrid PIC: `useHybridPIC = T`, Hall term ON, resistivity and electron-pressure-gradient OFF so the instability grows undamped; the guide field is dynamically weak ($v_A \ll u_{\mathrm{beam}}$) so the explicit hybrid advance is not stiff at this resolution.
 - **Purpose**: Verifies that the particle count and mean velocity are conserved, and tracks the growth of cyclotron waves in the transverse magnetic fields $B_y$ and $B_z$ from seed noise.
 
 ## Validation

@@ -64,8 +64,7 @@ injects ions into the PIC simulation domain.
 The validator checks from the pic-log history that O+ energy grows strongly (the
 O+ background is near-zero, so all O+ comes from the source) while the H+
 population stays stable, and from the plot output that the O+ density peaks near
-the planet surface. See `tests/chargeexchange/validate.py` for the exact
-tolerances.
+the planet surface.
 
 ## Running
 

@@ -50,8 +50,7 @@ All 10 reactions from BATSRUS ModUserMars, with rate coefficients inflated
 
 The validator checks that all four ion species show significant energy changes
 over the run, and specifically that O2+ energy increases — proving the
-cross-species charge-exchange source is functional. See
-`tests/chemistry/validate.py` for the exact tolerances.
+cross-species charge-exchange source is functional.
 
 ## Running
 
