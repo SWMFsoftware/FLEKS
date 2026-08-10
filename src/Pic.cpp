@@ -422,8 +422,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           nGst, doMoveData);
 
       if (!useExplicitPIC) {
-        distribute_FabArray(nodeMM[iLev], nGrids[iLev], DistributionMap(iLev), 1,
-                            1, doMoveData);
+        distribute_FabArray(nodeMM[iLev], nGrids[iLev], DistributionMap(iLev),
+                            1, 1, doMoveData);
       }
     }
     if (useHybridPIC) {
@@ -431,7 +431,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       if (nodePlasmaPrev.empty()) {
         nodePlasmaPrev.resize(nSpecies + 1);
       }
-      // Hyper-resistivity scratch: centerLapB = Laplacian(B); nodeHyperE node-centred.
+      // Hyper-resistivity scratch: centerLapB = Laplacian(B); nodeHyperE
+      // node-centred.
       distribute_FabArray(centerLapB[iLev], cGrids[iLev], DistributionMap(iLev),
                           3, nGst, doMoveData);
       distribute_FabArray(nodeHyperE[iLev], nGrids[iLev], DistributionMap(iLev),
@@ -450,7 +451,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(nodeBavg[iLev], nGrids[iLev], DistributionMap(iLev),
                           3, nGst, doMoveData);
 
-      // rk3/rk4 persistent scratch: centerBstart = B_n; centerBstar = (trial+B_n)/2.
+      // rk3/rk4 persistent scratch: centerBstart = B_n; centerBstar =
+      // (trial+B_n)/2.
       distribute_FabArray(centerBstart[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerBstar[iLev], cGrids[iLev],
@@ -484,7 +486,8 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       for (auto& pl : centerPlasmaPrev) {
         if (pl.empty())
           pl.resize(n_lev_max());
-        // Ohm's law reads only rho + 3 momentum, so stored slim (like nodePlasmaPrev).
+        // Ohm's law reads only rho + 3 momentum, so stored slim (like
+        // nodePlasmaPrev).
         distribute_FabArray(pl[iLev], cGrids[iLev], DistributionMap(iLev),
                             nHybridMomentsComps, nGst, doMoveData);
       }
@@ -1352,9 +1355,8 @@ void Pic::calc_mach_number() {
     // Hybrid: Mach number from the live cell-centred summed ion moments
     // (centerPlasmaSum[nSpecies]). Full-PIC: from the node-centred
     // nodePlasma[nSpecies]. mMach is allocated on the matching grid.
-    const auto& momentsMF =
-        useHybridPIC ? centerPlasmaSum[nSpecies][iLev]
-                     : nodePlasma[nSpecies][iLev];
+    const auto& momentsMF = useHybridPIC ? centerPlasmaSum[nSpecies][iLev]
+                                         : nodePlasma[nSpecies][iLev];
     for (MFIter mfi(momentsMF); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
       const Array4<const Real>& moments = momentsMF[mfi].array();
@@ -1400,12 +1402,12 @@ void Pic::calc_cost_per_cell() {
       // mirror). Full-PIC: average the node-centred nodePlasma particle count
       // to the cell grid.
       if (useHybridPIC) {
-        MultiFab::Copy(cellCost[iLev], centerPlasmaSum[nSpecies][iLev], iNum_, 0,
-                       cellCost[iLev].nComp(), cellCost[iLev].nGrow());
+        MultiFab::Copy(cellCost[iLev], centerPlasmaSum[nSpecies][iLev], iNum_,
+                       0, cellCost[iLev].nComp(), cellCost[iLev].nGrow());
       } else {
-        average_node_to_cellcenter(cellCost[iLev], 0, nodePlasma[nSpecies][iLev],
-                                   iNum_, cellCost[iLev].nComp(),
-                                   cellCost[iLev].nGrow());
+        average_node_to_cellcenter(
+            cellCost[iLev], 0, nodePlasma[nSpecies][iLev], iNum_,
+            cellCost[iLev].nComp(), cellCost[iLev].nGrow());
       }
     }
 
@@ -2814,43 +2816,44 @@ void Pic::update_B_hybrid() {
       // time-averaged (B_stage + B^n)/2.
       // Stage 2: B2 = B^n - 0.5 dt k1; E at (B2 + B^n)/2.
       MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerBstage[iLev], -0.5 * subDt, kStage[iLev][0], 0, 0, 3,
-                      nGst);
+      MultiFab::Saxpy(centerBstage[iLev], -0.5 * subDt, kStage[iLev][0], 0, 0,
+                      3, nGst);
       MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                         centerB[iLev], 0, 0, 3, nGst);
-      assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
-                     centerEstage[iLev], iLev, hstepHalf);
+      assemble_ohm_E(centerBstage[iLev], centerBstar[iLev], centerEstage[iLev],
+                     iLev, hstepHalf);
       curl_center_to_center(centerEstage[iLev], kStage[iLev][1],
                             Geom(iLev).InvCellSize());
 
       // Stage 3: B3 = B^n - 0.5 dt k2; E at (B3 + B^n)/2.
       MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerBstage[iLev], -0.5 * subDt, kStage[iLev][1], 0, 0, 3,
-                      nGst);
+      MultiFab::Saxpy(centerBstage[iLev], -0.5 * subDt, kStage[iLev][1], 0, 0,
+                      3, nGst);
       MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                         centerB[iLev], 0, 0, 3, nGst);
-      assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
-                     centerEstage[iLev], iLev, hstepHalf);
+      assemble_ohm_E(centerBstage[iLev], centerBstar[iLev], centerEstage[iLev],
+                     iLev, hstepHalf);
       curl_center_to_center(centerEstage[iLev], kStage[iLev][2],
                             Geom(iLev).InvCellSize());
 
       // Stage 4: B4 = B^n - dt k3; E at (B4 + B^n)/2.
       MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerBstage[iLev], -subDt, kStage[iLev][2], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerBstage[iLev], -subDt, kStage[iLev][2], 0, 0, 3,
+                      nGst);
       MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                         centerB[iLev], 0, 0, 3, nGst);
-      assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
-                     centerEstage[iLev], iLev, g + 1.0 / (Real)nBSubcycle);
+      assemble_ohm_E(centerBstage[iLev], centerBstar[iLev], centerEstage[iLev],
+                     iLev, g + 1.0 / (Real)nBSubcycle);
       curl_center_to_center(centerEstage[iLev], kStage[iLev][3],
                             Geom(iLev).InvCellSize());
 
       // B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4).
       MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kStage[iLev][0], 0, 0, 3,
                       nGst);
-      MultiFab::Saxpy(centerB[iLev], -2.0 * subDt / 6.0, kStage[iLev][1], 0, 0, 3,
-                      nGst);
-      MultiFab::Saxpy(centerB[iLev], -2.0 * subDt / 6.0, kStage[iLev][2], 0, 0, 3,
-                      nGst);
+      MultiFab::Saxpy(centerB[iLev], -2.0 * subDt / 6.0, kStage[iLev][1], 0, 0,
+                      3, nGst);
+      MultiFab::Saxpy(centerB[iLev], -2.0 * subDt / 6.0, kStage[iLev][2], 0, 0,
+                      3, nGst);
       MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kStage[iLev][3], 0, 0, 3,
                       nGst);
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -2873,33 +2876,34 @@ void Pic::update_B_hybrid() {
       curl_center_to_center(centerEstage[iLev], kStage[iLev][0],
                             Geom(iLev).InvCellSize());
       MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerBstage[iLev], -subDt, kStage[iLev][0], 0, 0, 3, nGst);
+      MultiFab::Saxpy(centerBstage[iLev], -subDt, kStage[iLev][0], 0, 0, 3,
+                      nGst);
 
       // Stage 2: avgB2 = (B1+B_n)/2; k2 = curl(E(avgB2));
       //   B2 = (3/4)B_n + (1/4)(B1 - subDt k2).
       MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                         centerBstart[iLev], 0, 0, 3, nGst);
-      assemble_ohm_E(centerBstar[iLev], centerBstar[iLev],
-                     centerEstage[iLev], iLev, g + 1.0 / (Real)nBSubcycle);
+      assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
+                     iLev, g + 1.0 / (Real)nBSubcycle);
       curl_center_to_center(centerEstage[iLev], kStage[iLev][1],
                             Geom(iLev).InvCellSize());
       MultiFab::LinComb(centerBstage[iLev], 0.25, centerBstage[iLev], 0, 0.75,
                         centerBstart[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerBstage[iLev], -0.25 * subDt, kStage[iLev][1], 0, 0, 3,
-                      nGst);
+      MultiFab::Saxpy(centerBstage[iLev], -0.25 * subDt, kStage[iLev][1], 0, 0,
+                      3, nGst);
 
       // Stage 3: avgB3 = (B2+B_n)/2; k3 = curl(E(avgB3));
       //   B^{n+1} = (1/3)B_n + (2/3)(B2 - subDt k3).
       MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                         centerBstart[iLev], 0, 0, 3, nGst);
-      assemble_ohm_E(centerBstar[iLev], centerBstar[iLev],
-                     centerEstage[iLev], iLev, g + 0.5 / (Real)nBSubcycle);
+      assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
+                     iLev, g + 0.5 / (Real)nBSubcycle);
       curl_center_to_center(centerEstage[iLev], kStage[iLev][2],
                             Geom(iLev).InvCellSize());
       MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
                         1.0 / 3.0, centerBstart[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerB[iLev], -2.0 / 3.0 * subDt, kStage[iLev][2], 0, 0, 3,
-                      nGst);
+      MultiFab::Saxpy(centerB[iLev], -2.0 / 3.0 * subDt, kStage[iLev][2], 0, 0,
+                      3, nGst);
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
       apply_centerB_BC(0);
@@ -2929,9 +2933,10 @@ void Pic::update_B_hybrid() {
   // nodeB (and the node-centred dBdt diagnostic) are pure output mirrors for
   // the hybrid solver. Defer the centerB->nodeB projection and the dBdt
   // difference to sync_node_B_output() (called at plot / test-particle-tracker
-  // time) so we avoid the per-step projection + FillBoundary + boundary-condition
-  // cost when nothing consumes them. centerBprev holds B^n from the top of this
-  // function; lastHybridDt_ records this step's dt for the dBdt rebuild.
+  // time) so we avoid the per-step projection + FillBoundary +
+  // boundary-condition cost when nothing consumes them. centerBprev holds B^n
+  // from the top of this function; lastHybridDt_ records this step's dt for the
+  // dBdt rebuild.
   nodeBStale = true;
   lastHybridDt_ = dt;
 

@@ -170,8 +170,8 @@ private:
   // output mirrors refreshed once per step for plot/restart/tracker paths.
   amrex::Vector<amrex::MultiFab> centerEhybrid;
   amrex::Vector<amrex::MultiFab> centerJ;
-  amrex::Vector<amrex::MultiFab> centerEprev; // E^n (time-centring)
-  amrex::Vector<amrex::MultiFab> centerBprev; // B^n (time-centring)
+  amrex::Vector<amrex::MultiFab> centerEprev;  // E^n (time-centring)
+  amrex::Vector<amrex::MultiFab> centerBprev;  // B^n (time-centring)
   amrex::Vector<amrex::MultiFab> centerEstage; // E at a stage B
   amrex::Vector<amrex::MultiFab> centerHyperE; // hyper-resistivity E
   // Per-species moments
@@ -230,10 +230,12 @@ private:
   amrex::Real cMaxE = -1;
   bool useUpwindB = false;
   amrex::Real limiterThetaB = 0;
-  // Override upwind velocity in correct_B(). 0 = use plasma background velocity.
+  // Override upwind velocity in correct_B(). 0 = use plasma background
+  // velocity.
   amrex::Real fixedUpwindVel = 0.0;
 
-  // Override uMax for CFL estimate. < 0 = estimate from particle thermal velocity.
+  // Override uMax for CFL estimate. < 0 = estimate from particle thermal
+  // velocity.
   amrex::Real fixedUMax = -1.0;
 
   bool doSmoothJ = false;
@@ -408,7 +410,7 @@ public:
   // Cell-centred analogue of PlotWriter::is_inside_plot_region for the hybrid
   // structured output: 0.5*dx tolerance so a cut plane snaps to the nearest
   // cell-centre row. Single-level only (multi-level structured output aborts).
-  bool is_inside_cell_plot_region(const PlotWriter& writerIn, int const ix,
+  bool is_inside_cell_plot_region(const PlotWriter &writerIn, int const ix,
                                   int const iy, int const iz, double const x,
                                   double const y, double const z) const;
 

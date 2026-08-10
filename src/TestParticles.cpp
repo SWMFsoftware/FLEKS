@@ -44,13 +44,13 @@ void TestParticles::move_and_save_particles(const MultiFab& nodeEMF,
 
 //==========================================================
 void TestParticles::move_and_save_particles_cell_centered(
-    const MultiFab& centerEMF, const MultiFab& centerBMF, Real dt,
-    Real dtNext, Real tNowSI, bool doSave) {
+    const MultiFab& centerEMF, const MultiFab& centerBMF, Real dt, Real dtNext,
+    Real tNowSI, bool doSave) {
   if (is_neutral()) {
     move_and_save_neutrals(dt, tNowSI, doSave);
   } else {
-    move_and_save_charged_particles_cell_centered(
-        centerEMF, centerBMF, dt, dtNext, tNowSI, doSave);
+    move_and_save_charged_particles_cell_centered(centerEMF, centerBMF, dt,
+                                                  dtNext, tNowSI, doSave);
   }
 }
 

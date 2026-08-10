@@ -1,7 +1,7 @@
+#include <fstream>
+
 #include <AMReX_PlotFileUtil.H>
 #include <AMReX_RealVect.H>
-
-#include <fstream>
 
 #include "GridUtility.h"
 #include "Pic.h"
@@ -350,13 +350,13 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 // tolerance is widened to 0.5*dx so a cut plane (x=/y=/z=, a ~0-width slab)
 // selects the single nearest cell-centre row instead of matching nothing.
 bool Pic::is_inside_cell_plot_region(const PlotWriter& writerIn, int const ix,
-                                     int const iy, int const iz,
-                                     double const x, double const y,
-                                     double const z) const {
+                                     int const iy, int const iz, double const x,
+                                     double const y, double const z) const {
   bool isInside = true;
   int iPlotDx = writerIn.get_plotDx();
   if ((iPlotDx - iPlotDx) == 0) {
-    isInside = (ix % iPlotDx == 0) && (iy % iPlotDx == 0) && (iz % iPlotDx == 0);
+    isInside =
+        (ix % iPlotDx == 0) && (iy % iPlotDx == 0) && (iz % iPlotDx == 0);
   }
 
   RealVect x_D = { AMREX_D_DECL(x, y, z) };
@@ -459,10 +459,9 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
       value = useHybridPIC ? Geom(iLev).CellCenter(ijk[iy_], iy_)
                            : Geom(iLev).LoEdge(ijk, iy_);
     } else if (var.substr(0, 1) == "Z") {
-      value = nDim > 2
-                  ? (useHybridPIC ? Geom(iLev).CellCenter(ijk[iz_], iz_)
-                                  : Geom(iLev).LoEdge(ijk, iz_))
-                  : 0;
+      value = nDim > 2 ? (useHybridPIC ? Geom(iLev).CellCenter(ijk[iz_], iz_)
+                                       : Geom(iLev).LoEdge(ijk, iz_))
+                       : 0;
     } else if (var.substr(0, 2) == "dx") {
       value = Geom(iLev).CellSize(ix_);
     } else if (var.substr(0, 2) == "Ex") {
@@ -521,8 +520,7 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
       // The last element of nodePlasma/centerPlasma is the sum of all species.
       // Per-species vars map to index < size-1; the summed entry is not
       // emitted as a species-named variable.
-      const auto& plasma =
-          useHybridPIC ? centerPlasma : nodePlasma;
+      const auto& plasma = useHybridPIC ? centerPlasma : nodePlasma;
       if (extract_int(var) >= plasma.size() - 1) {
         value = 0;
       } else {
@@ -564,8 +562,9 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 2) == "jx" || var.substr(0, 2) == "jy" ||
                var.substr(0, 2) == "jz") {
       if (useHybridPIC) {
-        const int iDir = (var.substr(0, 2) == "jx") ? ix_
-                         : (var.substr(0, 2) == "jy") ? iy_ : iz_;
+        const int iDir = (var.substr(0, 2) == "jx")   ? ix_
+                         : (var.substr(0, 2) == "jy") ? iy_
+                                                      : iz_;
         const Array4<Real const>& arr = centerJ[iLev][mfi].array();
         value = arr(ijk, iDir);
       }

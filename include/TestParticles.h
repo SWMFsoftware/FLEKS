@@ -51,9 +51,10 @@ public:
                                amrex::Real dtNext, amrex::Real tNow,
                                bool doSave);
 
-  void move_and_save_particles_cell_centered(
-      const amrex::MultiFab& centerEMF, const amrex::MultiFab& centerBMF,
-      amrex::Real dt, amrex::Real dtNext, amrex::Real tNow, bool doSave);
+  void move_and_save_particles_cell_centered(const amrex::MultiFab& centerEMF,
+                                             const amrex::MultiFab& centerBMF,
+                                             amrex::Real dt, amrex::Real dtNext,
+                                             amrex::Real tNow, bool doSave);
 
   void move_and_save_charged_particles(const amrex::MultiFab& nodeEMF,
                                        const amrex::MultiFab& nodeBMF,
