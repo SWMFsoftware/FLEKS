@@ -15,11 +15,26 @@ import sys
 import time
 import glob
 
-# TinyProfiler region names (BL_PROFILE / timing_func) for each field solver.
-# The particle mover name is shared by both solvers.
-MOVERS = ["Pts::charged_particle_mover"]
-FULLPIC_SOLVERS = ["Pic::E_iterate", "Pic::E_matvec"]
-HYBRID_SOLVERS = ["Pic::update_B_hybrid", "Pic::assemble_ohm_E"]
+MOVERS = [
+    "Pts::charged_particle_mover",
+    "Pts::charged_particle_mover_cell_centered",
+]
+
+FULLPIC_SOLVERS = [
+    "Pic::update_E_impl",
+    "Pic::E_iterate",
+    "Pic::E_matvec",
+]
+
+HYBRID_SOLVERS = [
+    "Pic::update_B_hybrid",
+    "Pic::assemble_ohm_E",
+]
+
+_REQUIRED_MOVER = {
+    "fullpic": "Pts::charged_particle_mover",
+    "hybrid":  "Pts::charged_particle_mover_cell_centered",
+}
 
 # Baseline targets (μs/part-step) and 2-core speedup floor, one set per solver.
 BASELINES = {
@@ -179,9 +194,8 @@ def parse_tiny_profiler(stdout):
 def run_benchmark_suite(n_proc, run_dir, param_file, solver_kind="fullpic",
                         count=3):
     """Run `count` benchmark runs on `n_proc` MPI processes and collect timing
-    stats.  `solver_kind` selects the field-solver TinyProfiler region
-    ("fullpic" -> Pic::E_iterate/Pic::E_matvec; "hybrid" ->
-    Pic::update_B_hybrid/Pic::assemble_ohm_E); the particle mover is shared.
+    stats.  `solver_kind` selects the field-solver and mover TinyProfiler
+    region lists (FULLPIC_SOLVERS / HYBRID_SOLVERS; _REQUIRED_MOVER).
     Returns (stats, 0) or (None, code) on failure."""
     solver_names = HYBRID_SOLVERS if solver_kind == "hybrid" else FULLPIC_SOLVERS
 
@@ -217,17 +231,36 @@ def run_benchmark_suite(n_proc, run_dir, param_file, solver_kind="fullpic",
 
         prof = parse_tiny_profiler(result.stdout)
 
+        # Mover time (exclusive); warn if the required mover region is absent.
+        required_mover = _REQUIRED_MOVER[solver_kind]
         mover_excl_time = 0.0
+        mover_missing = True
         for name in MOVERS:
             if "exclusive" in prof and name in prof["exclusive"]:
                 mover_excl_time = prof["exclusive"][name]["avg"]
-                break
+                if name == required_mover:
+                    mover_missing = False
+                    break
 
+        if mover_missing and mover_excl_time == 0.0:
+            print(f"  ⚠ WARNING: Required mover region '{required_mover}' "
+                  f"NOT FOUND in TinyProfiler exclusive table. "
+                  f"Available regions: {sorted(prof.get('exclusive',{}).keys())}")
+
+        # Solver time (inclusive); warn if no solver region was found.
         solver_incl_time = 0.0
+        solver_missing = True
         for name in solver_names:
             if "inclusive" in prof and name in prof["inclusive"]:
                 solver_incl_time = prof["inclusive"][name]["avg"]
+                solver_missing = False
                 break
+
+        if solver_missing:
+            print(f"  ⚠ WARNING: No solver region in {solver_names} "
+                  f"found in TinyProfiler inclusive table. "
+                  f"Available inclusive regions: "
+                  f"{sorted(prof.get('inclusive',{}).keys())}")
 
         runs.append({
             "duration": duration,
@@ -287,7 +320,7 @@ def _evaluate_solver(solver_kind, param_file, serial_dir, parallel_dir, count=3)
     cycles = serial_stats["cycles"]
     total_steps = p_count * cycles
 
-    # Particle-step rates (μs/part-step) = (T * 1e6) / (Particles * Cycles)
+    # μs/part-step = (T * 1e6) / (Particles * Cycles)
     pps_total = (t_serial_median * 1e6) / total_steps
     pps_mover = (serial_stats["mover_median"] * 1e6) / total_steps
     pps_solver = (serial_stats["solver_median"] * 1e6) / total_steps
