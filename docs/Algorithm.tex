@@ -154,6 +154,85 @@ where $\mathbf{t} = \frac{q\Delta t}{2m} \mathbf{B}/\gamma^{n+1/2}$. From the de
 \item  Convert $\mathbf{u}$ back to $\mathbf{v}$
 \end{enumerate}
 
+\section{Hybrid PIC solver}
+
+FLEKS also provides a hybrid PIC field solver (\texttt{\#HYBRIDPIC},
+\texttt{useHybridPIC}) that treats ions as kinetic particles and electrons as a
+\emph{massless fluid} removed through a generalized Ohm's law. It is mutually
+exclusive with the full-PIC implicit solve (\texttt{\#SOLVEEM}).
+
+\subsection{The generalized Ohm's law}
+
+The electric field is assembled cell-centered from the ion moments and the magnetic field:
+\begin{equation}
+\mathbf{E} = -\mathbf{U}_i \times \mathbf{B}
+           + \eta\,\mathbf{J}
+           + \frac{\mathbf{J} \times \mathbf{B}}{\rho_q}
+           - \frac{\nabla P_e}{\rho_q}
+           - \frac{\eta_h}{4\pi}\,\nabla \times (\nabla^2 \mathbf{B}),
+\label{eq:ohmslaw}
+\end{equation}
+where
+\begin{itemize}
+  \item $-\mathbf{U}_i \times \mathbf{B}$ is the \emph{convection} term (always active),
+  \item $\eta\,\mathbf{J}$ is the \emph{resistive} term (controlled by \texttt{\#RESISTIVITY}),
+  \item $(\mathbf{J}\times\mathbf{B})/\rho_q$ is the \emph{Hall} term (\texttt{\#HALLTERM}),
+  \item $-\nabla P_e/\rho_q$ is the \emph{electron pressure / ambipolar} term
+        (\texttt{\#ELECTRONTEMPERATURE}),
+  \item $-(\eta_h/4\pi)\,\nabla\times(\nabla^2\mathbf{B})$ is the fourth-order
+        \emph{hyper-resistivity} term (\texttt{\#HYPERRESISTIVITY}).
+\end{itemize}
+The current is obtained from Amp\`ere's law (CGS), $\mathbf{J} = \nabla\times\mathbf{B}/(4\pi)$.
+The ion density and velocity used in the Ohm's law are the charge/mass moments deposited by the
+kinetic ions; the electron pressure gradient uses either an isothermal closure
+$P_e = T_e \rho$ ($\gamma=1$) or an adiabatic closure
+$P_e = P_0(\rho/\rho_0)^\gamma$. A minimum-density floor caps the $1/\rho_q$ factors in the
+Hall and pressure-gradient terms (\texttt{\#MINIMUMDENSITY}) so that cells with vanishing charge
+density do not produce unbounded contributions.
+
+\subsection{Cell-centered field layout}
+
+The hybrid path stores all fields \emph{cell-centered} ($\mathbf{B}$, $\mathbf{E}$, $\mathbf{J}$,
+and the ion moments) rather than node-collocated. The spatial curl and gradient operators use a
+$2\,dx$ central-difference stencil (\texttt{curl\_center\_to\_center}) whose discrete kernel
+annihilates the grid-scale Nyquist mode exactly, eliminating the grid-scale instability that
+otherwise forces heavy Hall sub-cycling. As a result the hybrid advance requires no
+center$\leftrightarrow$node round-trips.
+
+\subsection{Time integration of $\mathbf{B}$}
+
+The magnetic field is advanced by Faraday's law,
+\begin{equation}
+\frac{\partial \mathbf{B}}{\partial t} = -\nabla\times\mathbf{E},
+\end{equation}
+with $\mathbf{E}$ from eq.~\ref{eq:ohmslaw}. The Faraday update uses an explicit Runge--Kutta
+integrator on $\mathbf{B}$ --- classic fourth-order RK4 (default) or SSPRK3 --- selected with
+\texttt{\#FIELDINTEGRATOR}. Within one coarse step of size $\Delta t$, the total advance is always
+exactly one coarse step: \texttt{nBSubcycle} integrator steps of size
+$\Delta t/\texttt{nBSubcycle}$ are taken (\texttt{\#BSUBCYCLE}). Because RK4 has a large
+linear-stability region along the imaginary axis (where the oscillatory Hall--whistler modes live),
+a single sub-step is usually sufficient for stability.
+
+The scheme is second-order accurate in time via a staggered leapfrog with linear
+time-interpolation of the ion moments between the previous deposit $\mathbf{J}^{n-1/2}$ and the
+current one $\mathbf{J}^{n+1/2}$:
+\begin{equation}
+X(\texttt{hstep}) = (\tfrac{1}{2}-\texttt{hstep})\,X^{n-1/2}
+                  + (\tfrac{1}{2}+\texttt{hstep})\,X^{n+1/2},
+\end{equation}
+where \texttt{hstep} is the magnetic sub-step fraction. The particle Boris push (Section~2.1)
+uses the integer-step electric field from the previous field advance.
+
+\subsection{Noise control}
+
+The hybrid path offers two optional controls to damp PIC shot noise in the Ohm's law:
+an exponential moving average of $\mathbf{B}$ (\texttt{\#AVGFIELDB}) that replaces the
+instantaneous $\mathbf{B}$ inside the convection/Hall terms and in the Boris push, and
+digital-filter smoothing of the ion fluid moments before the Ohm's law (\texttt{\#SMOOTHMOMENTS}).
+The node-centred field mirrors are retained only as output bridges for the hybrid path: they are
+materialized lazily only when an explicit node-centered diagnostic (e.g.\ $dB/dt$) or plot output
+is requested.
+
 \section{Miscellaneous}
 \subsection{Calculate total pressure tensor from sub groups}
 Pressure tensor for each sub group is:

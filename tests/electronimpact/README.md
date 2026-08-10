@@ -40,13 +40,11 @@ heavy ions (species 1) into the PIC simulation domain.
 - **Electromagnetic Fields**: Enabled (`solveEM = T`) with guiding field
   \( B_x = 5.0 \times 10^{-9} \) T.
 
-## Expected Results
+## Validation
 
-1. **Particle Count Growth**: Species 2 (O+) particle count increases monotonically
-   over time due to continuous electron impact ionization of the exosphere neutrals.
-
-2. **Total Energy Growth**: Kinetic energy of species 2 increases as more
-   particles are injected.
+The validator checks that species 2 (O+) particle count and kinetic energy grow
+monotonically over time, confirming the electron-impact ionization source is
+active.
 
 ## Running
 

@@ -2,6 +2,7 @@
 
 #include <AMReX_ParReduce.H>
 
+#include "InitialCondition.h"
 #include "Morton.h"
 #include "Particles.h"
 #include "SWMFInterface.h"
@@ -25,8 +26,8 @@ template <int NStructReal, int NStructInt>
 Particles<NStructReal, NStructInt>::Particles(
     Grid* gridIn, FluidInterface* const fluidIn, TimeCtr* const tcIn,
     const int speciesIDIn, const Real chargeIn, const Real massIn,
-    const ParticlesInfo& pInfo, const PartMode pModeIn, TestCase tcase,
-    BeamInfo beamIn)
+    const ParticlesInfo& pInfo, const PartMode pModeIn,
+    const InitialCondition* icIn)
     : AmrParticleContainer<NStructReal, NStructInt>(gridIn),
       grid(gridIn),
       fi(fluidIn),
@@ -36,8 +37,7 @@ Particles<NStructReal, NStructInt>::Particles(
       charge(chargeIn),
       mass(massIn),
       nPartPerCell(pInfo.nPartPerCell),
-      testCase(tcase),
-      beam(beamIn) {
+      ic_(icIn) {
 
   isParticleLocationRandom = pInfo.isParticleLocationRandom;
   isPPVconstant = pInfo.isPPVconstant;
@@ -239,6 +239,23 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
 
         Real q = vol2Npcel * nDens;
 
+        // Per-particle weight modification (e.g. ion-acoustic-wave density
+        // perturbation). Routed through the InitialCondition plugin; runs
+        // before the q != 0 guard so an IC can suppress a particle.
+        if (ic_ && ic_->modifies_weights()) {
+          ParticleICState pics;
+          pics.iLev = iLev;
+          pics.iSpec = speciesID;
+          pics.iCount = icount;
+          pics.nPerCell = npcel;
+          pics.x = xyz[0];
+          pics.y = xyz[1];
+          pics.z = xyz[2];
+          pics.q = q;
+          ic_->modify_particle_weight(pics);
+          q = pics.q;
+        }
+
         if (q != 0) {
           Real u, v, w;
           Real rand1 = randNum();
@@ -259,6 +276,34 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
                                             uth);
           }
 
+          // Per-particle THERMAL-velocity override (e.g. a bi-Maxwellian with
+          // distinct T_perp / T_par for the proton-cyclotron anisotropy
+          // instability). Routed through the InitialCondition plugin; runs
+          // AFTER the isotropic thermal velocity is sampled and BEFORE the bulk
+          // velocity is added, so the IC may fully replace the sampled thermal
+          // velocity with its own anisotropic draw.
+          if (ic_ && ic_->modifies_thermal_velocity()) {
+            ParticleICState pics;
+            pics.iLev = iLev;
+            pics.iSpec = speciesID;
+            pics.iCount = icount;
+            pics.nPerCell = npcel;
+            pics.x = xyz[0];
+            pics.y = xyz[1];
+            pics.z = xyz[2];
+            pics.uThermal = u;
+            pics.vThermal = v;
+            pics.wThermal = w;
+            pics.rand[0] = rand1;
+            pics.rand[1] = rand2;
+            pics.rand[2] = rand3;
+            pics.rand[3] = rand4;
+            ic_->modify_particle_thermal_velocity(pics);
+            u = pics.uThermal;
+            v = pics.vThermal;
+            w = pics.wThermal;
+          }
+
           Real uBulk = userState ? tpVel.vx
                                  : interface->get_ux(mfi, xyz, speciesID, iLev);
           Real vBulk = userState ? tpVel.vy
@@ -266,35 +311,32 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           Real wBulk = userState ? tpVel.vz
                                  : interface->get_uz(mfi, xyz, speciesID, iLev);
 
-          if (testCase == Beam && speciesID == beam.iSpecies) {
-            const int nBeam = npcel * beam.ratio;
-            const int nBackground = npcel - nBeam;
-
-            // Assume all the particle weights q are the same inside a cell.
-            Real weightScale = 1;
-
-            if (icount < nBeam) {
-              // Beam particles
-              uBulk = beam.vel[0];
-              vBulk = beam.vel[1];
-              wBulk = beam.vel[2];
-              weightScale = beam.ratio * Real(npcel) / Real(nBeam);
-            } else {
-              // Background particles
-              weightScale = (1 - beam.ratio) * Real(npcel) / Real(nBackground);
-            }
-
-            q *= weightScale;
+          // Per-particle velocity / weight modification (e.g. beam bulk
+          // override, or the hybrid-wave Alfven velocity kick). Routed through
+          // the InitialCondition plugin; runs after the bulk velocity is
+          // computed and before it is added to the thermal velocity.
+          if (ic_ && ic_->modifies_velocities()) {
+            ParticleICState pics;
+            pics.iLev = iLev;
+            pics.iSpec = speciesID;
+            pics.iCount = icount;
+            pics.nPerCell = npcel;
+            pics.x = xyz[0];
+            pics.y = xyz[1];
+            pics.z = xyz[2];
+            pics.uBulk = uBulk;
+            pics.vBulk = vBulk;
+            pics.wBulk = wBulk;
+            pics.qScale = 1.0;
+            ic_->modify_particle_velocity(pics);
+            uBulk = pics.uBulk;
+            vBulk = pics.vBulk;
+            wBulk = pics.wBulk;
+            q *= pics.qScale;
           }
           u += uBulk;
           v += vBulk;
           w += wBulk;
-
-          if (moveParticlesWithConstantVelocity) {
-            u = 0.0;
-            v = 0.4;
-            w = 0.0;
-          }
 
           auto p = make_particle();
           set_ids(p);
@@ -785,7 +827,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 
   Real energy = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    timing_func("Pts::sum_moments_1");
+    timing_func("Pts::sum_moments_node_deposit");
     momentsMF[iLev].setVal(0.0);
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       Array4<Real> const& momentsArr = momentsMF[iLev][pti].array();
@@ -861,7 +903,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
   }
 
   for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
-    timing_func("Pts::sum_moments_2");
+    timing_func("Pts::sum_moments_coarse_fine_interface");
     sum_two_lev_interface_node(
         momentsMF[iLev], momentsMF[iLev + 1], 0, momentsMF[iLev].nComp(),
         get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
@@ -869,10 +911,110 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 
   // Correct domain edge nodes
   for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
-    timing_func("Pts::sum_moments_3");
+    timing_func("Pts::sum_moments_domain_edge_correction");
     interp_from_coarse_to_fine_for_domain_edge(
         momentsMF[iLev], momentsMF[iLev + 1], 0, momentsMF[iLev].nComp(),
         get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
+  }
+
+  energy *= 0.5 * qomSign * get_mass();
+
+  return energy;
+}
+
+//==========================================================
+// Cell-centred moment deposit. The raw rho / momentum / pressure-tensor moments
+// are scattered to the cell-centred momentsMF (centerPlasma[iSpecies]) with a
+// plain cell-centred trilinear scatter (find_cell_index + linear weights).
+template <int NStructReal, int NStructInt>
+Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
+    Vector<MultiFab>& momentsMF) {
+  timing_func("Pts::sum_moments_cell_centered");
+
+  Real energy = 0;
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    momentsMF[iLev].setVal(0.0);
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      Array4<Real> const& momentsArr = momentsMF[iLev][pti].array();
+
+      const AoS& particles = pti.GetArrayOfStructs();
+
+      const Dim3 lo = init_dim3(0);
+      const Dim3 hi = init_dim3(1);
+
+      for (const auto& p : particles) {
+        if (p.id() < 0)
+          continue;
+
+        const Real up = p.rdata(iup_);
+        const Real vp = p.rdata(ivp_);
+        const Real wp = p.rdata(iwp_);
+        const Real qp = p.rdata(iqp_);
+
+        //-----calculate interpolate coef begin-------------
+        IntVect loIdx;
+        RealVect dShift;
+        // Cell-centred deposit: find the containing cell (find_cell_index) and
+        // interpolate between its centre and the next cell centre (trilinear).
+        find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                        loIdx, dShift);
+        Real coef[2][2][2];
+        linear_interpolation_coef(dShift, coef);
+        //-----calculate interpolate coef end-------------
+
+        //-------cell-centred moments begin---------
+        Real pMoments[nMoments];
+
+        pMoments[iNum_] = 1;
+        pMoments[iRho_] = qp;
+
+        {
+          const Real mx = qp * up;
+          const Real my = qp * vp;
+          const Real mz = qp * wp;
+          pMoments[iMx_] = mx;
+          pMoments[iMy_] = my;
+          pMoments[iMz_] = mz;
+
+          pMoments[iPxx_] = mx * up;
+          pMoments[iPyy_] = my * vp;
+          pMoments[iPzz_] = mz * wp;
+
+          pMoments[iPxy_] = mx * vp;
+          pMoments[iPxz_] = mx * wp;
+          pMoments[iPyz_] = my * wp;
+        }
+
+        for (int iVar = 0; iVar < nMoments; iVar++)
+          for (int kk = lo.z; kk <= hi.z; ++kk)
+            for (int jj = lo.y; jj <= hi.y; ++jj)
+              for (int ii = lo.x; ii <= hi.x; ++ii) {
+                const IntVect ijk = { AMREX_D_DECL(
+                    loIdx[ix_] + ii, loIdx[iy_] + jj, loIdx[iz_] + kk) };
+                momentsArr(ijk, iVar) += coef[ii][jj][kk] * pMoments[iVar];
+              }
+        //-------cell-centred moments end---------
+
+        energy += qp * (up * up + vp * vp + wp * wp);
+      } // for p
+    }
+
+    // Exclude the number density.
+    momentsMF[iLev].mult(invVol[iLev], 0, nMoments - 1,
+                         momentsMF[iLev].nGrow());
+
+    momentsMF[iLev].SumBoundary(Geom(iLev).periodicity());
+  }
+
+  // Cell-centred coarse-fine interface for AMR. The cell-centred coarse-fine
+  // routines (sum_two_lev_interface_cell / ..._for_domain_edge_cell) do not yet
+  // exist in FLEKS, so AMR hybrid moment summation is not supported; the hybrid
+  // target tests are single-level (n_lev() == 1). An assertion guards against
+  // an unsupported multilevel hybrid run.
+  if (n_lev() > 1) {
+    amrex::Abort(
+        "sum_moments_cell_centered: AMR (multi-level) hybrid moment summation "
+        "is not yet supported (needs cell-centred coarse-fine interface).");
   }
 
   energy *= 0.5 * qomSign * get_mass();
@@ -1513,6 +1655,20 @@ void Particles<NStructReal, NStructInt>::mover(const Vector<MultiFab>& nodeE,
 
 //==========================================================
 template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::mover_cell_centered(
+    const Vector<MultiFab>& centerE, const Vector<MultiFab>& centerB,
+    const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
+    Real dtNext) {
+  if (is_neutral()) {
+    neutral_mover(dt);
+  } else {
+    charged_particle_mover_cell_centered(centerE, centerB, eBg, uBg, dt,
+                                         dtNext);
+  }
+}
+
+//==========================================================
+template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::charged_particle_mover(
     const Vector<MultiFab>& nodeE, const Vector<MultiFab>& nodeB,
     const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
@@ -1602,11 +1758,131 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         Real vnp1 = 2.0 * vavg - vp + u0p[iy_];
         Real wnp1 = 2.0 * wavg - wp + u0p[iz_];
 
-        if (moveParticlesWithConstantVelocity) {
-          unp1 = up;
-          vnp1 = vp;
-          wnp1 = wp;
+        p.rdata(iup_) = unp1;
+        p.rdata(ivp_) = vnp1;
+        p.rdata(iwp_) = wnp1;
+
+        if (pMode == PartMode::PIC && imu_ < NStructReal) {
+          // Note: bp should be calculated at the new position. Now, bp at the
+          // old position is used to save the calculation.
+          p.rdata(imu_) = cosine(p, bp);
         }
+
+        p.pos(ix_) = xp + unp1 * dtLoc;
+        p.pos(iy_) = yp + vnp1 * dtLoc;
+        if (nDim > 2)
+          p.pos(iz_) = zp + wnp1 * dtLoc;
+
+        // Mark for deletion
+        if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
+          p.id() = -1;
+        }
+      } // for p
+    } // for pti
+  }
+}
+
+//==========================================================
+// Cell-centred Boris push. The E and B are gathered from cell fields. The
+// gather is a plain cell-centred trilinear interpolation.
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
+    const Vector<MultiFab>& centerE, const Vector<MultiFab>& centerB,
+    const Vector<MultiFab>& eBg, const Vector<MultiFab>& uBg, Real dt,
+    Real dtNext) {
+  timing_func("Pts::charged_particle_mover_cell_centered");
+
+  const Real qdto2mc = charge / mass * 0.5 * dt;
+  Real dtLoc = 0.5 * (dt + dtNext);
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      const Array4<Real const>& centerEArr = centerE[iLev][pti].array();
+      const Array4<Real const>& centerBArr = centerB[iLev][pti].array();
+
+      const Box& bx = cell_status(iLev)[pti].box();
+      const Array4<int const>& status = cell_status(iLev)[pti].array();
+
+      const IntVect lowCorner = bx.smallEnd();
+      const IntVect highCorner = bx.bigEnd();
+
+      AoS& particles = pti.GetArrayOfStructs();
+
+      const Dim3 lo = init_dim3(0);
+      const Dim3 hi = init_dim3(1);
+
+      for (auto& p : particles) {
+        if (p.id() < 0)
+          continue;
+
+        Real up = p.rdata(iup_);
+        Real vp = p.rdata(ivp_);
+        Real wp = p.rdata(iwp_);
+        const Real xp = p.pos(ix_);
+        const Real yp = p.pos(iy_);
+        const Real zp = nDim > 2 ? p.pos(iz_) : 0;
+
+        //-----calculate interpolate coef begin-------------
+        IntVect loIdx;
+        RealVect dShift;
+        find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                        loIdx, dShift);
+
+        // Plain cell-centred trilinear gather. The linear weights couple cells
+        // loIdx and loIdx+1 (offsets 0 and 1); the 3x3x3 coef array is zero for
+        // the unused offset-2 entry.
+        Real coef[3][3][3];
+        Real coefLin[2][2][2];
+        linear_interpolation_coef(dShift, coefLin);
+        for (int k = 0; k <= 2; ++k)
+          for (int j = 0; j <= 2; ++j)
+            for (int i = 0; i <= 2; ++i)
+              coef[i][j][k] =
+                  (i <= 1 && j <= 1 && k <= 1) ? coefLin[i][j][k] : 0.0;
+        //-----calculate interpolate coef end-------------
+
+        Real bp[3] = { 0, 0, 0 };
+        Real ep[3] = { 0, 0, 0 };
+        Real u0p[3] = { 0, 0, 0 };
+        for (int k = lo.z; k <= hi.z; ++k)
+          for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i) {
+              IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
+                                           loIdx[iz_] + k) };
+
+              const Real& c0 = coef[i - lo.x][j - lo.y][k - lo.z];
+              for (int iDim = 0; iDim < nDim3; iDim++) {
+                bp[iDim] += centerBArr(ijk, iDim) * c0;
+                ep[iDim] += centerEArr(ijk, iDim) * c0;
+              }
+            }
+
+        up = up - u0p[ix_];
+        vp = vp - u0p[iy_];
+        wp = wp - u0p[iz_];
+
+        const Real omx = qdto2mc * bp[ix_];
+        const Real omy = qdto2mc * bp[iy_];
+        const Real omz = qdto2mc * bp[iz_];
+
+        // end interpolation
+        const Real omsq = (omx * omx + omy * omy + omz * omz);
+        const Real denom = 1.0 / (1.0 + omsq);
+        // solve the position equation
+        const Real ut = up + qdto2mc * ep[ix_];
+        const Real vt = vp + qdto2mc * ep[iy_];
+        const Real wt = wp + qdto2mc * ep[iz_];
+        // const pfloat udotb = ut * Bxl + vt * Byl + wt * Bzl;
+        const Real udotOm = ut * omx + vt * omy + wt * omz;
+        // solve the velocity equation
+        const Real uavg = (ut + (vt * omz - wt * omy + udotOm * omx)) * denom;
+        const Real vavg = (vt + (wt * omx - ut * omz + udotOm * omy)) * denom;
+        const Real wavg = (wt + (ut * omy - vt * omx + udotOm * omz)) * denom;
+
+        Real unp1 = 2.0 * uavg - up + u0p[ix_];
+        Real vnp1 = 2.0 * vavg - vp + u0p[iy_];
+        Real wnp1 = 2.0 * wavg - wp + u0p[iz_];
+
         p.rdata(iup_) = unp1;
         p.rdata(ivp_) = vnp1;
         p.rdata(iwp_) = wnp1;
@@ -4256,5 +4532,23 @@ void Particles<NStructReal, NStructInt>::limit_weight_new(
 }
 // Since Particles is a template, it is necessary to explicitly instantiate
 // with template arguments.
+
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::add_velocity_perturbation(Real ampY,
+                                                                   Real ampZ,
+                                                                   Real kx) {
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      AoS& particles = pti.GetArrayOfStructs();
+      for (auto& p : particles) {
+        if (p.id() < 0)
+          continue;
+        Real x = p.pos(ix_);
+        p.rdata(ivp_) += ampY * std::cos(kx * x);
+        p.rdata(iwp_) += ampZ * std::sin(kx * x);
+      }
+    }
+  }
+}
 template class Particles<nPicPartReal, nPicPartInt>;
 template class Particles<nPTPartReal, nPTPartInt>;

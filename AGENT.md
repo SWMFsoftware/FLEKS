@@ -13,6 +13,8 @@ needed.
 **Primary use cases:**
 - Implicit Particle-In-Cell simulations (semi-implicit θ-scheme with GMRES
   field solver)
+- Hybrid Particle-In-Cell simulations (kinetic ions + massless fluid
+  electrons via a generalized Ohm's law)
 - Test particle tracking in electromagnetic fields
 - Coupled MHD-PIC simulations within SWMF (MHD-AEPIC)
 - Outer-heliosphere pickup-ion simulations (OH-PT coupling)
@@ -21,7 +23,7 @@ needed.
 **Language:** C++ (C++14/17), with Fortran 90 interface wrappers for SWMF
 coupling.
 
-**License:** Apache 2.0 (University of Michigan)
+**License:** Apache 2.0
 
 ---
 
@@ -95,7 +97,7 @@ This keeps FluidInterface uncluttered for MHD coupling data only.
 | Class              | Header              | Purpose                                                   |
 |--------------------|----------------------|-----------------------------------------------------------|
 | `Domain`           | `Domain.h`           | Top-level orchestrator: owns Pic, FluidInterface, TimeCtr |
-| `Pic`              | `Pic.h`              | PIC solver: field solve, particle push, moments, I/O      |
+| `Pic`              | `Pic.h`              | PIC solver: field solve, particle push, moments, I/O; hybrid path uses cell-centered fields |
 | `Grid`             | `Grid.h`             | AMR grid management (inherits `AmrCore`)                  |
 | `Particles`        | `Particles.h`        | Templated particle container (PIC or PT particles)        |
 | `TestParticles`    | `TestParticles.h`    | Test particle class (trajectory recording, I/O)           |
@@ -124,7 +126,12 @@ The interface layer follows a pattern:
 ### Algorithm Summary
 
 - **PIC Method:** Semi-implicit θ-scheme with Boris particle mover
+- **Hybrid PIC Method:** Kinetic ions + massless fluid electrons, advanced via
+  a generalized Ohm's law and an explicit cell-centered Faraday update (RK4 or
+  SSPRK3), gated by `#HYBRIDPIC` (`useHybridPIC`). See `docs/Algorithm.tex`.
 - **Field Solver:** GMRES iterative solver for the implicit electric field
+  (full-PIC); the hybrid path instead assembles E from the generalized Ohm's law
+  (`Pic::assemble_ohm_E`).
 - **Time Stepping:** CFL-based or fixed Δt; configurable θ parameter (default 0.51)
 - **Divergence Cleaning:** Accurate div(E) correction via particle position adjustment; optional hyperbolic div(B) cleaning
 - **Particle Management:** Splitting, merging, fast merge algorithm with Lagrange multipliers
@@ -177,10 +184,10 @@ make distclean   # Full reset
 
 ```bash
 # Setup/configuration
-./Config.pl                       # Show current settings when no args are given
-./Config.pl -install              # Generate Makefile.conf if needed
-./Config.pl -tp=PBE              # Set test particle output (P, PB, PBE, PBEG)
-./Config.pl -lev=2               # Set max AMR levels
+./Config.pl             # Show current settings when no args are given
+./Config.pl -install    # Generate Makefile.conf if needed
+./Config.pl -tp=PBE     # Set test particle output (P, PB, PBE, PBEG)
+./Config.pl -lev=2      # Set max AMR levels
 ```
 
 Inside an SWMF tree, bare `./Config.pl -install` configures FLEKS to reuse the
@@ -209,9 +216,9 @@ See `docs/Coding_standards.md` for the full list. Key points:
 | Files          | PascalCase       | `GridUtility.cpp`          |
 | Classes        | PascalCase       | `FluidInterface`           |
 | Functions      | snake_case       | `apply_float_boundary()`   |
-| Variables      | camelCase         | `nCellPerPatch`            |
+| Variables      | camelCase        | `nCellPerPatch`            |
 | Constants      | camelCase/UPPER  | `cProtonMassSI`, `nDim3`   |
-| Private members| camelCase         | `doRestart`                |
+| Private members| camelCase        | `doRestart`                |
 
 ### Style Rules
 
@@ -251,6 +258,7 @@ parameter reading system. All supported commands are documented in `PARAM.XML`.
 |------------------------------|----------------------------------------------------|
 | **Output**                   | `#SAVEPLOT`, `#MONITOR`, `#SAVELOG`, `#NOUTFILE`   |
 | **Scheme**                   | `#PIC`, `#TIMESTEPPING`, `#DISCRETIZATION`, `#EFIELDSOLVER`, `#DIVE`, `#DIVB` |
+| **Hybrid PIC**               | `#HYBRIDPIC`, `#RESISTIVITY`, `#HALLTERM`, `#ELECTRONTEMPERATURE`, `#HYPERRESISTIVITY`, `#BSUBCYCLE`, `#MINIMUMDENSITY`, `#FIELDINTEGRATOR`, `#AVGFIELDB`, `#SMOOTHMOMENTS` |
 | **Particles**                | `#PARTICLES`, `#RESAMPLING`, `#FASTMERGE`, `#VACUUM`, `#PARTICLETRACKER` |
 | **Initial/Boundary Cond.**   | `#GEOMETRY`, `#NCELL`, `#REGION`, `#PARTICLES`, `#BC` |
 | **Coupling**                 | `#OHION`, `#CHARGEEXCHANGE`, `#MAXCHARGEEXCHANGERATE` |
@@ -275,21 +283,43 @@ The GitHub Actions workflow runs the SWMF regression tests, builds standalone
 `bin/FLEKS.exe`, and runs the test suite under `tests/` via
 `python3 tests/validate_tests.py`.
 
-### Standalone Test Suite (`tests/`)
+### Standalone Test Suite
 
 The standalone test suite is organized by physics scenario:
 
 | Test                  | Directory                | Physics                              |
 |-----------------------|--------------------------|--------------------------------------|
-| Beam instability      | `tests/beam/`            | Ion beam cyclotron wave growth       |
-| Exosphere profile     | `tests/exosphere/`       | Chamberlain profile, all 3 ionization|
-| Electron impact       | `tests/electron_impact/` | Voronov-1997 impact rate, e- only    |
-| Charge exchange       | `tests/charge_exchange/` | Constant CX cross section, ions only |
-| Performance benchmark | `tests/performance/`     | Beam-based scaling benchmark         |
+| Beam instability      | `tests/beam/`            | Ion beam cyclotron wave growth; run with both solvers (full PIC + hybrid) |
+| Photoionization       | `tests/photoionization/` | Chamberlain profile, photoionization |
+| Electron impact       | `tests/electronimpact/`  | Voronov-1997 impact rate, e- only    |
+| Charge exchange       | `tests/chargeexchange/`  | Constant CX cross section, ions only |
+| Whistler wave         | `tests/whistler/`        | Whistler-Alfven wave; full PIC + hybrid (Hall only) |
+| Hybrid Ohm's law      | `tests/ohm/`             | Full generalized Ohm's law (convection + Hall + resistive + e-pressure) |
+| Ion acoustic wave     | `tests/iaw/`             | IAW; electron-pressure (ambipolar) branch + ion Landau damping |
+| Free-stream           | `tests/freestream/`      | 1D uniform equilibrium; full PIC + hybrid (Hall off) |
+| Light wave            | `tests/lightwave/`       | 3D vacuum transverse wave on periodic AMR grid |
+| PCAI                  | `tests/pcai/`            | Proton-cyclotron anisotropy instability (hybrid benchmark) |
+| Hyper-resistivity     | `tests/hyper_resistivity/` | 4th-order `-eta_h nabla^2 J` Ohm term (smoke test) |
+| Single-cell Hall      | `tests/singlecell/`      | 1-cell periodic; curl B = 0 => Hall term exactly 0 |
+| Zero-current wave     | `tests/zerocurrent/`     | No particles (J=0); Hall term vanishes, wave frozen |
+| Performance benchmark | `tests/performance/`     | Beam-based scaling benchmark; hybrid variant included |
 
-Each test directory contains a `PARAM.in` and a `README.md`. The unified runner
-`tests/validate_tests.py` dynamically discovers, runs, and validates all tests
-(except `performance/`). Results are written to `tests/summary.md`.
+Each test directory contains a `PARAM.in`, a `README.md`, and (for most tests)
+its own `validate.py` module holding that test's validators (energy-log checks,
+plot-output checks, and optionally a `PARTICLE_TOL` dict enabling the
+test-particle tracer check). The unified runner `tests/validate_tests.py` keeps
+only the shared infrastructure (run-directory management, launching FLEKS and
+PostProc, reading the PIC/particle logs, the summary table) and dynamically
+loads the `validate.py` module for whichever test it is about to run, so a
+single test does not import the code for the others. Code shared by several
+tests (e.g. the hybrid family) lives in `tests/_shared/`. Output is controlled
+with the Python `logging` module (INFO by default; pass `--verbose`/`-v` for
+DEBUG diagnostics). Results are written to `tests/summary.md`.
+
+A test directory may ship a `PARAM.in.hybrid` variant (e.g. `beam/`,
+`freestream/`, `whistler/`, `performance/`). When present, the runner executes
+the test once per field solver and lists both variants in the summary table
+(e.g. `BEAM` and `BEAM (HYBRID)`).
 
 Ionization processes are configured via separate parameter commands:
 - `#PHOTOIONIZATION` — geometric \\(1/r^2\\) dilution
@@ -349,6 +379,41 @@ Composite step-by-step guides for multi-stage tasks are in `.agent/workflows/`:
 1. Document in `PARAM.XML`
 2. Parse in the relevant `read_param()` method (usually in `Domain.cpp` or `Pic.cpp`)
 3. Add the corresponding member variable
+
+### Adding a New Test Case (Initial Condition)
+
+Test-case initial conditions are plug-ins resolved by name from `#TESTCASE`
+through the `InitialCondition` registry (`include/InitialCondition.h`,
+`src/ic/RegisterAll.cpp`). The kernel names **zero** test cases — an unknown
+`#TESTCASE` name aborts loudly listing the registered names, so a typo can
+never silently fall back to a uniform plasma.
+
+**Wave / sinusoidal tests cost zero C++.** All transverse and sinusoidal wave
+seeds are ONE parameterized plug-in (`WaveIC`, `src/ic/WaveIC.cpp`), registered
+under the legacy aliases `lightwave`, `hybridwave`, `convectionwave`,
+`ionacousticwave` **and** a generic `waveic`. To add a new wave test, write a
+`#TESTCASE waveic` (or one of the aliases) plus a `#WAVEIC` block in the test's
+`PARAM.in` — no C++ needed. `#WAVEIC` sub-parameters (all optional;
+`read_optional` so absent ones keep the preset):
+
+- `seedE` / `seedB` / `seedWeight` (logical): seed E field / B field / sinusoidal
+  density perturbation (weight scaling `1 + pert*sin(kx*x)`).
+- `oblique` (logical) + `dir 0.6 0.8 0` + `waveLength 48`: oblique plane wave
+  with the given propagation direction and wavelength in cells (LightWave uses
+  this). Otherwise the wave is x-aligned with `kx = 2*pi*waveMode/Lx`.
+- `guideField` (logical): add the uniform guide field `Bx0` (from `#UNIFORMSTATE`)
+  under the B perturbation (`B = Bx0 + B1*cos kx, B1*sin kx`, `B1 = frac*Bx0`).
+- `velKick` (logical): matching Alfven ion velocity kick
+  (`delta U_y = -B1 cos kx`, `delta U_z = -B1 sin kx`).
+- `frac` (real): B perturbation amplitude `B1/Bx0`.
+- `pert` (real): density perturbation amplitude (`seedWeight`).
+- `waveMode` (int): mode number for the x-aligned wavenumber.
+
+**Non-wave tests** (beam, tophat) keep dedicated plug-ins in `src/ic/`. To add a
+brand-new *non-wave* test, subclass `InitialCondition` (override `read_param`,
+`set_fields`, the per-particle `modify_particle_weight` / `modify_particle_velocity`
+hooks, and `name()`), register it in `src/ic/RegisterAll.cpp`, and add the `.cpp`
+to `SRCS` in `src/Makefile`.
 
 ### Modifying the SWMF Interface
 

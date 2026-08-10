@@ -20,6 +20,10 @@ void curl_center_to_node(const amrex::MultiFab& centerMF,
 void curl_node_to_center(const amrex::MultiFab& nodeMF,
                          amrex::MultiFab& centerMF, const amrex::Real* invDx);
 
+void curl_center_to_center(const amrex::MultiFab& centerInMF,
+                           amrex::MultiFab& centerOutMF,
+                           const amrex::Real* invDx);
+
 void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
                       const amrex::DistributionMapping dm,
                       const amrex::Geometry& gm);
@@ -39,8 +43,16 @@ void div_node_to_center(const amrex::MultiFab& nodeMF,
 void div_center_to_center(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
                           const amrex::Real* invDx);
 
+// Cell-centered 7-point (5-point in 2D) Laplacian on a cell-centered field.
+void lap_center_to_center(const amrex::MultiFab& centerMF,
+                          amrex::MultiFab& centerMFout,
+                          const amrex::Real* invDx);
+
 void average_center_to_node(const amrex::MultiFab& centerMF,
                             amrex::MultiFab& nodeMF);
+
+void average_node_to_center(const amrex::MultiFab& nodeMF,
+                            amrex::MultiFab& centerMF);
 
 void print_MultiFab(const amrex::iMultiFab& data, std::string tag,
                     int nshift = 0);

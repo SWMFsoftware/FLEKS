@@ -842,6 +842,8 @@ void Domain::init_time_ctr() {
       const Real *dx = gm.CellSize();
       writer.set_dx_D({ AMREX_D_DECL(dx[ix_], dx[iy_], dx[iz_]) });
       writer.set_nSpecies(nS);
+      // TODO: no longer needed if we fix the PIC output variable ordering
+      writer.set_useHybridPIC(pic->get_useHybridPIC());
       writer.set_units(fi->get_No2SiL(), fi->get_No2SiV(), fi->get_No2SiB(),
                        fi->get_No2SiRho(), fi->get_No2SiP(), fi->get_No2SiJ(),
                        fi->get_rPlanet_SI());
@@ -937,8 +939,9 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#DISCRETIZATION" || command == "#RESAMPLING" ||
         command == "#SMOOTHE" || command == "#SMOOTHJ" ||
         command == "#UPWINDB" || command == "#UPWINDE" ||
+        command == "#FIXEDUMAX" ||
         command == "#LAGGEDLIMITER" || command == "#DIVB" ||
-        command == "#CMAXE" || command == "#TESTCASE" ||
+        command == "#CMAXE" || command == "#TESTCASE" || command == "#WAVEIC" ||
         command == "#FASTMERGE" || command == "#ADAPTIVESOURCEPPC" ||
         command == "#MERGELIGHT" || command == "#VACUUM" ||
         command == "#PARTICLELEVRATIO" || command == "#OHION" ||
@@ -947,6 +950,11 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#BFIELDBOXBOUNDARY" || command == "#SUPID" ||
         command == "#SOLVEEM" || command == "#PARTMODE" ||
         command == "#SELECTPARTICLE" || command == "#MAXCHARGEEXCHANGERATE" ||
+        command == "#HYBRIDPIC" || command == "#RESISTIVITY" ||
+        command == "#ELECTRONTEMPERATURE" || command == "#BSUBCYCLE" ||
+        command == "#HALLTERM" || command == "#HYPERRESISTIVITY" ||
+        command == "#MINIMUMDENSITY" || command == "#FIELDINTEGRATOR" ||
+        command == "#AVGFIELDB" || command == "#SMOOTHMOMENTS" ||
         command == "#MEMORY") {
       if (pic)
         pic->read_param(command, readParam);

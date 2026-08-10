@@ -295,6 +295,197 @@ T                 solveEM
 This command enables or disables the electromagnetic field solver.
 </command>
 
+<command name="HYBRIDPIC"
+   alias="HYBRIDPIC_FLEKS0,HYBRIDPIC_FLEKS1,HYBRIDPIC_FLEKS2"
+   multiple="T">
+  <parameter name="useHybridPIC" type="logical" default="F"/>
+
+#HYBRIDPIC
+F                 useHybridPIC
+
+When true, the hybrid PIC field solver (generalized Ohm's law with kinetic
+ions and a fluid electron) is used instead of the full PIC field solver.
+Mutually exclusive with SOLVEEM.
+
+=== Generalized Ohm's law: how each command controls a separate term ===
+
+The hybrid solver advances B from the electric field given by the generalized
+Ohm's law
+    E = -U_i x B                 (convection, always on)
+      + eta * J                  (resistivity,        controlled by #RESISTIVITY)
+      + (J x B)/rho_q            (Hall,               controlled by #HALLTERM)
+      - grad(Pe)/rho_q           (electron pressure / ambipolar,
+                                                       controlled by #ELECTRONTEMPERATURE)
+      - (eta_h/4pi) curl(nabla^2 B)  (hyper-resistivity,
+                                                       controlled by #HYPERRESISTIVITY)
+Each term is enabled/disabled and parametrised independently of #HYBRIDPIC, so
+you can build arbitrary subsets (e.g. Hall-only, resistive-MHD-like, with/without
+electron pressure). Time accuracy: the hybrid scheme is second order in time via
+a staggered leapfrog with linear time-interpolation of the ion moments. Within
+each magnetic sub-step the ion velocity moment and density used in the Ohm's law
+are interpolated between the previous deposit (J^{n-1/2}) and the current one
+(J^{n+1/2}) as
+    X(hstep) = (0.5 - hstep) X^{n-1/2} + (0.5 + hstep) X^{n+1/2},
+where hstep is the sub-step fraction (hstep=0 gives J^n = 1/2(J^{n-1/2}+J^{n+1/2});
+hstep=1 gives J^{n+1} = 3/2 J^{n+1/2} - 1/2 J^{n-1/2}). The particle Boris push
+uses the integer-step E field from the previous field advance. Related numerical
+controls:
+    #BSUBCYCLE    sub-steps for the explicit Hall-whistler CFL,
+    #MINIMUMDENSITY  caps the 1/rho factors in the Hall and pressure terms,
+    #FIELDINTEGRATOR time integrator for the Faraday (B) update,
+    #AVGFIELDB, #SMOOTHMOMENTS  damp PIC shot noise in the Ohm's law.
+</command>
+
+<command name="RESISTIVITY"
+   alias="RESISTIVITY_FLEKS0,RESISTIVITY_FLEKS1,RESISTIVITY_FLEKS2"
+   multiple="T">
+  <parameter name="etaResistivity" type="real" default="0.0"/>
+
+#RESISTIVITY
+0.0               etaResistivity
+
+[Ohm's-law term: resistivity] Resistive term eta * J in the generalized Ohm's
+law. etaResistivity is the SI magnetic diffusivity [m^2/s]; it is converted to
+code units internally (etaCode = 4*pi*etaSI*Si2NoV*Si2NoL).
+0 disables the resistive term.
+</command>
+
+<command name="ELECTRONTEMPERATURE"
+   alias="ELECTRONTEMPERATURE_FLEKS0,ELECTRONTEMPERATURE_FLEKS1,ELECTRONTEMPERATURE_FLEKS2"
+   multiple="T">
+  <parameter name="electronTemperature" type="real" default="0.0"/>
+  <parameter name="electronGamma" type="real" default="1.0"/>
+  <parameter name="electronDensity0" type="real" default="1.0"/>
+
+#ELECTRONTEMPERATURE
+0.0               electronTemperature
+1.0               electronGamma
+1.0               electronDensity0
+
+[Ohm's-law term: electron pressure / ambipolar] Electron temperature [eV] for
+the electron pressure gradient term -grad(Pe)/rho in the Ohm's law. Converted to
+code units internally
+(TeCode = TeEV * e / (mp * uNormSI^2)).
+0 disables the term (Hall-only mode). gamma=1 is isothermal (Pe = Te * rho),
+otherwise adiabatic Pe = P0 (rho/rho0)^gamma. electronDensity0 is in code
+units (default 1.0 = reference charge density).
+</command>
+
+<command name="BSUBCYCLE"
+   alias="BSUBCYCLE_FLEKS0,BSUBCYCLE_FLEKS1,BSUBCYCLE_FLEKS2"
+   multiple="T">
+  <parameter name="nBSubcycle" type="integer" min="1" default="1"/>
+
+#BSUBCYCLE
+1                 nBSubcycle
+
+Number of sub-steps used to advance the magnetic field within one coarse time
+step in the hybrid solver (refines the B-field integration). The total advance
+is always exactly one coarse step dt: nBSubcycle full integrator steps of
+size dt/nBSubcycle are taken (e.g. with #FIELDINTEGRATOR rk4, nBSubcycle
+nested 4th-order Runge-Kutta steps). Because RK4 has a large linear-stability
+region along the imaginary axis (where the Hall-whistler oscillatory modes live),
+with rk4 a single sub-step (nBSubcycle 1) is usually sufficient for stability.
+Only used when #HYBRIDPIC is T.
+</command>
+
+<command name="HALLTERM"
+   alias="HALLTERM_FLEKS0,HALLTERM_FLEKS1,HALLTERM_FLEKS2"
+   multiple="T">
+  <parameter name="useHallTerm" type="logical" default="T"/>
+
+#HALLTERM
+T                 useHallTerm
+
+[Ohm's-law term: Hall] Enable (default) or disable the Hall term (J x B) / rho
+in the generalized Ohm's law used by the hybrid (HYBRIDPIC) field solver. Set to
+F to advance the field with the convection term only (E = -U_i x B, plus any
+resistivity / electron pressure gradient that is independently enabled). With the
+Hall term off the explicit Hall-whistler CFL no longer applies, so BSUBCYCLE 1
+(no sub-cycling) is sufficient.
+</command>
+
+<command name="HYPERRESISTIVITY"
+   alias="HYPERRESISTIVITY_FLEKS0,HYPERRESISTIVITY_FLEKS1,HYPERRESISTIVITY_FLEKS2"
+   multiple="T">
+  <parameter name="etaHyperSI" type="real" default="0.0"/>
+  <parameter name="etaHyperMode" type="string" default="si"/>
+  <parameter name="etaHyperCh" type="real" default="0.01"/>
+
+#HYPERRESISTIVITY
+0.0               etaHyperSI
+si                etaHyperMode
+0.01              etaHyperCh
+
+[Ohm's-law term: hyper-resistivity] Fourth-order hyper-resistivity eta_h *
+nabla^2 J in the generalized Ohm's law (equivalently -(eta_h/4*pi) * nabla x
+(nabla^2 B)). It damps grid-scale / PIC
+shot-noise that the second-order resistivity cannot reach. etaHyperSI is the SI
+value [m^4/s] (used when etaHyperMode = "si"; converted to code units as
+etaCode = 4*pi*etaSI*Si2NoV*Si2NoL^3). When etaHyperMode = "grid", eta_h is
+instead scaled to the CFL stability bound on each sub-step:
+   eta_h = 4*pi * C_h * dx_min^4 / dt_sub,
+where C_h is the dimensionless etaHyperCh (typical 1e-3 .. 1e-2). "grid" mode is
+robust to resolution and time-step changes and is the recommended setting for
+general production runs. 0 (either mode) disables the term. Only used when
+HYBRIDPIC is T.
+</command>
+
+<command name="MINIMUMDENSITY"
+   alias="MINIMUMDENSITY_FLEKS0,MINIMUMDENSITY_FLEKS1,MINIMUMDENSITY_FLEKS2"
+   multiple="T">
+  <parameter name="rhoMinOhm" type="real" default="0.0"/>
+
+#MINIMUMDENSITY
+0.0               rhoMinOhm
+
+Minimum charge density for the 1/rho factors in the Hall term and the electron
+pressure gradient term of the hybrid Ohm's law. It caps 1/rho so that cells with
+tiny or zero charge density do not produce unbounded contributions. The electron
+pressure closure itself always uses the true density. A value <= 0 (default) means
+automatic: rhoFloor = 1e-6 * #ELECTRONTEMPERATURE electronDensity0. Only used when
+#HYBRIDPIC is T.
+</command>
+
+<command name="FIELDINTEGRATOR"
+   alias="FIELDINTEGRATOR_FLEKS0,FIELDINTEGRATOR_FLEKS1,FIELDINTEGRATOR_FLEKS2"
+   multiple="T">
+  <parameter name="fieldIntegrator" type="string" input="select" required="T">
+    <option value="rk4"/>
+    <option value="ssprk3"/>
+  </parameter>
+
+#FIELDINTEGRATOR
+rk4               fieldIntegrator
+
+Time integrator for the hybrid Faraday (B) update driven by the generalized Ohm's
+law. This is the single control for the time integration of B (there is no
+separate time-centring flag). "rk4" is the classic 4th-order Runge-Kutta on B,
+evaluating the Ohm's law at four trial B states; it is the default and has a
+large linear-stability region, so with rk4 you typically do not need a large
+#BSUBCYCLE for stability. "ssprk3" is the strong-stability-preserving RK3 with
+a time-centred E. Only used when HYBRIDPIC is T.
+    </command>
+
+<command name="AVGFIELDB"
+   alias="AVGFIELDB_FLEKS0,AVGFIELDB_FLEKS1,AVGFIELDB_FLEKS2,BAVERAGE"
+   multiple="T">
+  <parameter name="useAvgFieldB" type="logical" default="F"/>
+  <parameter name="nAvgFieldB" type="integer" default="10"/>
+
+#AVGFIELDB
+F                    useAvgFieldB
+10                   nAvgFieldB
+
+Time-averaged (exponential moving average) magnetic field. B_avg =
+alpha*B_avg + (1-alpha)*B^{n+1} with alpha = 1 - 1/nAvgFieldB. B_avg replaces
+the instantaneous B inside the generalized Ohm's law (convection / Hall terms)
+and in the particle Boris push, damping the high-frequency PIC shot noise that
+pollutes the Hall term and particle orbits. B_avg is NOT divergence-clean and is
+never used in the Faraday update, so no projection is required. Only used when
+HYBRIDPIC is T.
+</command>
+
 <command name="PARTMODE"
    alias="PARTMODE_FLEKS0,PARTMODE_FLEKS1,PARTMODE_FLEKS2"
    multiple="T">
@@ -666,6 +857,34 @@ J_new = (1-coef) * J_old + (coef/2) * (J_left + J_right)
 It is recommended to apply the smoothing 1-3 times (nSmoothJ).
 </command>
 
+<command name="SMOOTHMOMENTS"
+	 alias="SMOOTHMOMENTS_FLEKS0,SMOOTHMOMENTS_FLEKS1,SMOOTHMOMENTS_FLEKS2"
+	 multiple="T">
+  <parameter name="doSmoothMoments" type="logical" default="F"/>
+  <if expr="$doSmoothMoments">
+    <parameter name="nSmoothMoments" type="integer" default="0"/>
+    <parameter name="coefSmoothMoments" type="real" default="0.5"/>
+  </if>
+
+#SMOOTHMOMENTS
+T                         doSmoothMoments (rest is read if true)
+3                         nSmoothMoments
+0.5                       coefSmoothMoments
+
+This command applies digital-filter smoothing to the ion fluid moments
+(density rho and momentum density rho*U) before the generalized Ohm's law
+in the hybrid PIC solver. It is a low-pass filter on the PIC shot noise that
+otherwise accumulates un-damped through the explicit Ohm-Faraday loop and
+appears as a spurious magnetic-energy drift in a quiescent free-stream. The
+coefSmoothMoments parameter controls the smoothing strength through:
+m_new = (1-coef) * m_old + (coef/2) * (m_left + m_right)
+applied in each direction; the filter conserves the domain mean, so a uniform
+equilibrium is preserved. It is recommended to apply the smoothing a few times
+(nSmoothMoments = 1-4). Only used when #HYBRIDPIC is T.
+</command>
+
+
+
 <command name="UPWINDE"
 	 alias="UPWINDE_FLEKS0,UPWINDE_FLEKS1,UPWINDE_FLEKS2"
 	 multiple="T">
@@ -707,12 +926,29 @@ calculated from the current electric field solve vector.
 	 multiple="T">
   <parameter name="useUpwindB" type="logical" default="F"/>
   <parameter name="limiterThetaB" type="real" default="0.0"/>
+  <parameter name="fixedUpwindVel" type="real" default="0.0"/>
 
 #UPWINDB
 F                         useUpwindB
 0.0                       limiterThetaB
+0.0                       fixedUpwindVel
 
-Similar to the #UPWINDE command, but for the magnetic field equation.
+Similar to the #UPWINDE command, but for the magnetic field equation. Optional
+fixedUpwindVel overrides the upwind reconstruction velocity with a constant;
+default 0.0 keeps the normal plasma-background-velocity reconstruction.
+
+</command>
+
+<command name="FIXEDUMAX" alias="FIXEDUMAX_FLEKS0,FIXEDUMAX_FLEKS1,FIXEDUMAX_FLEKS2"
+	 multiple="T">
+  <parameter name="fixedUMax" type="real" default="-1.0"/>
+
+#FIXEDUMAX
+-1.0                      fixedUMax
+
+Optional fixed CFL signal speed for the upwind scheme. Default -1.0 keeps the
+particle-thermal-velocity estimate; tests that need a constant signal speed set a
+non-negative value (e.g. the TopHat test uses 1.0).
 
 </command>
 
@@ -1091,7 +1327,52 @@ Default value is shown.
 #TESTCASE 
 Beam		testCase
 
-It will set the initial conditions for a specific test case.
+It will set the initial conditions for a specific test case. The kernel names no
+test case: the name is resolved by the InitialCondition registry (case-insensitive)
+and an unknown name aborts listing the registered names. Wave / sinusoidal tests
+are all ONE parameterized plug-in (WaveIC) registered as lightwave, hybridwave,
+convectionwave, ionacousticwave and a generic waveic; non-wave tests have
+dedicated plug-ins (beam, tophat). See the AGENT.md "Adding a New Test Case"
+workflow.
+</command>
+
+<command name="WAVEIC"
+	 alias="WAVEIC_FLEKS0,WAVEIC_FLEKS1,WAVEIC_FLEKS2" multiple="T">
+  <parameter name="seedE" type="logical" default="F"/>
+  <parameter name="seedB" type="logical" default="F"/>
+  <parameter name="seedWeight" type="logical" default="F"/>
+  <parameter name="oblique" type="logical" default="F"/>
+  <parameter name="guideField" type="logical" default="F"/>
+  <parameter name="velKick" type="logical" default="F"/>
+  <parameter name="dir" type="real" nvalues="3"/>
+  <parameter name="waveLength" type="real"/>
+  <parameter name="waveMode" type="integer"/>
+  <parameter name="frac" type="real"/>
+  <parameter name="pert" type="real"/>
+
+#WAVEIC 
+T       seedE
+T       seedB
+F       oblique
+T       guideField
+T       velKick
+0.6     dir
+0.8     dir
+0.0     dir
+48.0    waveLength
+1       waveMode
+0.02    frac
+0.1     pert
+
+Optional sub-parameters for a WaveIC wave initial condition (selected by a
+#TESTCASE name of waveic / lightwave / hybridwave / convectionwave /
+ionacousticwave). All parameters are optional: when absent the plug-in uses its
+preset for the selected name. seedE/seedB/seedWeight toggle E-field / B-field /
+sinusoidal-density-perturbation seeding; oblique + dir + waveLength give an
+oblique plane wave (wavelength in cells), otherwise the wave is x-aligned with
+kx = 2*pi*waveMode/Lx; guideField adds the uniform Bx0 guide field under the B
+perturbation (B1 = frac*Bx0); velKick adds the matching Alfven ion velocity
+kick; pert is the density perturbation amplitude.
 </command>
 
 <command name="PERIODICITY">
@@ -1342,6 +1623,37 @@ $$
   \nu_{CX}(iC) = \sum_{iSp} n_{iSp} \, \sigma_{CX}(iC, iSp) \, u_{iSp}
 $$
 The resulting source is deposited into the mapped ion species (iC + 1).
+</command>
+
+<command name="KINETICSOURCE"
+	 alias="KINETICSOURCE_FLEKS0,KINETICSOURCE_FLEKS1,KINETICSOURCE_FLEKS2"
+	 multiple="T">
+  <parameter name="kineticSource" type="logical" default="F"/>
+
+#KINETICSOURCE
+T                 kineticSource
+
+This command toggles how source plasma is injected when coupled to the
+outer heliosphere (OH) module via charge exchange (#CHARGEEXCHANGE).
+
+When kineticSource is true, the charge-exchange-produced ions are added
+as macro particles. During #CHARGEEXCHANGE the mass removed from each
+neutral is collected into per-cell source particle tiles (sourceParts),
+which are then added to the particle array by add_source_particles using
+#SOURCEPARTICLES nppc and #ADAPTIVESOURCEPPC. The newly created particles
+inherit a sampled velocity distribution (the neutral bulk velocity and the
+ion thermal speed) rather than the fluid source fields, giving a proper
+kinetic treatment of the pickup-ion source.
+
+When kineticSource is false (the default), the ion source is deposited as
+a fluid (node fluid) source through the SourceInterface and is injected
+each step by fill_source_particles() from the fluid source moments
+(see #SOURCE and #SOURCEPARTICLES).
+
+The flag is set to true automatically in Particle-Tracker (PT) builds,
+where kinetic source injection is the expected behaviour. It is only
+relevant for OH-PT coupled runs that use charge exchange; it has no
+effect in standalone PIC runs.
 </command>
 
 <command name="RECOMBINATION"

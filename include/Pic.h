@@ -10,6 +10,7 @@
 #include "FleksDistributionMap.h"
 #include "FluidInterface.h"
 #include "Grid.h"
+#include "InitialCondition.h"
 #include "LinearSolver.h"
 #include "OHInterface.h"
 #include "Particles.h"
@@ -51,6 +52,41 @@ private:
   bool solveEM = true;
   bool initEM = true;
 
+  // ---- Hybrid PIC (kinetic ions + fluid electrons) solver ----
+  bool useHybridPIC = false;
+  // Resistive term eta * J. SI input [m^2/s], converted to code units.
+  amrex::Real etaResistivitySI = 0.0;
+  amrex::Real etaResistivity = 0.0;
+  // Electron pressure gradient. Input [eV], converted to code units.
+  amrex::Real electronTemperatureEV = 0.0;
+  amrex::Real electronTemperature = 0.0;
+  // Polytropic index for the adiabatic electron pressure closure.
+  amrex::Real electronGamma = 1.0;
+  // Reference charge density. Input [amu/cc], converted to code units.
+  amrex::Real electronDensity0In = 1.0;
+  amrex::Real electronDensity0 = 0.0;
+  // True once electronDensity0 (code units) has been converted.
+  bool electronDensity0Converted_ = false;
+  // Number of sub-steps for the B-field update within one dt.
+  int nBSubcycle = 1;
+  // Hall term in the generalized Ohm's law.
+  bool useHallTerm = true;
+
+  // Hyper-resistivity (fourth-order) term in the Ohm's law:
+  //   E -= eta_h * nabla^2 J = -(eta_h/4*pi) * nabla x (nabla^2 B).
+  // etaHyperMode selects how etaHyperSI is interpreted:
+  //   "si"   -> direct physical value [m^4/s], converted to code units;
+  //   "grid" -> CFL-scaled eta_h = C_h * dx^4 / dt_sub (dimless C_h).
+  // etaHyperLev[iLev] (code units, 0 disables) is the value actually applied.
+  amrex::Real etaHyperSI = 0.0;
+  std::string etaHyperMode = "si";
+  amrex::Real etaHyperCh = 0.01;
+  amrex::Vector<amrex::Real> etaHyperLev;
+
+  // Minimum charge density in the Hall and electron pressure gradient term.
+  // <= 0 means auto: 1e-6 * electronDensity0.
+  amrex::Real rhoMinOhm = 0.0;
+
   bool useExplicitPIC = false;
   bool projectDownEmFields = true;
   bool skipMassMatrix = false;
@@ -71,8 +107,26 @@ private:
   amrex::Vector<amrex::MultiFab> nodeB;
   amrex::Vector<amrex::MultiFab> divB;
   amrex::Vector<amrex::MultiFab> centerB;
+  // Hybrid hyper-resistivity scratch fields.
+  amrex::Vector<amrex::MultiFab> centerLapB; // nabla^2 B  (stage A)
+  amrex::Vector<amrex::MultiFab> nodeHyperE; // nabla x (nabla^2 B) (stage B)
+  // Hybrid RK method shared intermediate solver scratch.
+  amrex::Vector<amrex::MultiFab> centerBstage;
+  // kStage[iLev][0..3]: the stage curls curl(E_stage) for the level-iLev.
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > kStage;
+
+  // RK persistent scratch.
+  amrex::Vector<amrex::MultiFab> centerBstart;
+  amrex::Vector<amrex::MultiFab> centerBstar; // time-centered state used by E
+
   amrex::Vector<amrex::MultiFab> dBdt;
   amrex::Vector<amrex::MultiFab> particleQuality;
+
+  // Running time-averaged magnetic field for the hybrid solver, only used
+  // inside the generalized Ohm's law and the particle Boris push.
+  amrex::Vector<amrex::MultiFab> centerBavg; // cell-centred <B>
+  amrex::Vector<amrex::MultiFab> nodeBavg;   // node-centred <B>
+  bool isBavgInit = false;                   // first-step copy flag for the EMA
 
   // Hyperbolic cleaning
   bool useHyperbolicCleaning = false;
@@ -102,10 +156,47 @@ private:
 
   int nSpecies;
   int iTot;
+
+  // Hybrid species IDs
+  // iElectron_ (-1 if none); kineticSpecies_ = non-electron species.
+  int iElectron_ = -1;
+  std::vector<int> kineticSpecies_;
   amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasma;
+  // Ion moments at J^{n-1/2}; interpolated with current nodePlasma
+  // by hstep inside assemble_ohm_E.
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > nodePlasmaPrev;
+  // ---- Hybrid cell-centred fields ----
+  // The hybrid step reads/writes these; nodeE/nodeB/nodePlasma are write-only
+  // output mirrors refreshed once per step for plot/restart/tracker paths.
+  amrex::Vector<amrex::MultiFab> centerEhybrid;
+  amrex::Vector<amrex::MultiFab> centerJ;
+  amrex::Vector<amrex::MultiFab> centerEprev; // E^n (time-centring)
+  amrex::Vector<amrex::MultiFab> centerBprev; // B^n (time-centring)
+  amrex::Vector<amrex::MultiFab> centerEstage; // E at a stage B
+  amrex::Vector<amrex::MultiFab> centerHyperE; // hyper-resistivity E
+  // Per-species moments
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasma;
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasmaSum;
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > centerPlasmaPrev;
   amrex::Vector<amrex::Real> plasmaEnergy;
 
   bool isMomentsUpdated = false;
+  // nodePlasma (and mMach) stale; materialized on demand by
+  // sync_node_plasma_output(). Hybrid path only.
+  bool nodePlasmaStale = false;
+
+  // nodeE is a stale output mirror of centerEhybrid; materialized by
+  // sync_node_E_output() at plot time. Hybrid path only.
+  bool nodeEStale = false;
+
+  // nodeB (and the node-centred dBdt diagnostic) stale; the hybrid B update no
+  // longer projects centerB->nodeB every step. Materialized on demand by
+  // sync_node_B_output() for the test-particle tracker and dB*dt output.
+  // Hybrid path only.
+  bool nodeBStale = false;
+  // dt of the last hybrid B update, used by sync_node_B_output() to rebuild
+  // dBdt = (B^{n+1} - B^n)/dt from centerBprev.
+  amrex::Real lastHybridDt_ = 0.0;
 
   amrex::Vector<amrex::MultiFab> jHat;
 
@@ -139,17 +230,36 @@ private:
   amrex::Real cMaxE = -1;
   bool useUpwindB = false;
   amrex::Real limiterThetaB = 0;
+  // Override upwind velocity in correct_B(). 0 = use plasma background velocity.
+  amrex::Real fixedUpwindVel = 0.0;
+
+  // Override uMax for CFL estimate. < 0 = estimate from particle thermal velocity.
+  amrex::Real fixedUMax = -1.0;
 
   bool doSmoothJ = false;
   int nSmoothJ = 0;
   amrex::Real coefSmoothJ = 0.5;
 
+  // Smoothing of ion moments before the generalized Ohm's law.
+  bool doSmoothMoments = false;
+  int nSmoothMoments = 0;
+  amrex::Real coefSmoothMoments = 0.5;
+
+  std::string fieldIntegrator = "rk4"; // B integrator
+  bool useRK4 = false;
+
+  // Guard: true on the first hybrid step before nodePlasmaPrev is seeded.
+  bool isFirstHybridStep = true;
+
+  // EMA-averaged B fed to Ohm's law and Boris push.
+  bool useAvgFieldB = false;
+  int nAvgFieldB = 10;
+
   bool doSmoothE = false;
   int nSmoothE = 0;
 
-  TestCase testCase = RegularSimulation;
-
-  BeamInfo beam;
+  // Plug-in initial condition via #TESTCASE registry.
+  std::unique_ptr<InitialCondition> ic_;
 
   ParticlesInfo pInfo;
 
@@ -188,6 +298,23 @@ public:
     nodeEth.resize(n_lev_max());
     divB.resize(n_lev_max());
     hypPhi.resize(n_lev_max());
+    centerLapB.resize(n_lev_max());
+    nodeHyperE.resize(n_lev_max());
+    centerBstage.resize(n_lev_max());
+    centerEhybrid.resize(n_lev_max());
+    centerJ.resize(n_lev_max());
+    centerEprev.resize(n_lev_max());
+    centerBprev.resize(n_lev_max());
+    centerEstage.resize(n_lev_max());
+    centerHyperE.resize(n_lev_max());
+    centerBavg.resize(n_lev_max());
+    nodeBavg.resize(n_lev_max());
+    centerBstart.resize(n_lev_max());
+    centerBstar.resize(n_lev_max());
+    kStage.resize(n_lev_max());
+    for (int iL = 0; iL < n_lev_max(); ++iL)
+      kStage[iL].resize(4);
+    etaHyperLev.resize(n_lev_max(), 0.0);
     targetPPC.resize(n_lev_max());
     if (reportParticleQuality) {
       particleQuality.resize(n_lev_max());
@@ -226,6 +353,8 @@ public:
   void update(bool doReportIn = false);
 
   PicParticles *get_particle_pointer(int i) { return parts[i].get(); }
+  // TODO: no longer needed if we fix the output variable ordering.
+  bool get_useHybridPIC() const { return useHybridPIC; }
 
   void set_stateOH(OHInterface *in) { stateOH = in; }
   void set_sourceOH(OHInterface *in) { sourcePT2OH = in; }
@@ -239,8 +368,6 @@ public:
 
   void fill_new_cells();
   void fill_E_B_fields();
-  void fill_lightwaves(amrex::Real wavelength, int EorB = -1,
-                       amrex::Real time = 0, int lev = -1);
 
   void fill_new_node_E();
 
@@ -248,6 +375,14 @@ public:
   void fill_new_center_B();
 
   void fill_particles();
+
+  // Narrow facade used by InitialCondition plug-ins (see InitialCondition.h).
+  // These expose only the field arrays an IC needs; the facade is NOT a friend
+  // of Pic.
+  amrex::MultiFab &get_node_E(int iLev) { return nodeE[iLev]; }
+  amrex::MultiFab &get_node_B(int iLev) { return nodeB[iLev]; }
+  amrex::MultiFab &get_center_B(int iLev) { return centerB[iLev]; }
+  PicICFields ic_fields() { return PicICFields(*this); }
 
   void init_source(const FluidInterface &interfaceIn) {
     // To be implemented
@@ -262,6 +397,25 @@ public:
   void sum_moments(bool updateDt = false);
 
   void calc_mach_number();
+  // Rebuild the stale nodePlasma/nodeE output mirrors; calc_mach_number only if
+  // needMach. Used by output / load balancing, not the hybrid solver.
+  void sync_node_plasma_output(bool needMach = false);
+  void sync_node_E_output();
+  // Rebuild the stale nodeB output mirror (and the node-centred dBdt
+  // diagnostic) from the live centerB / centerBprev. Used by the test-particle
+  // tracker and dB*dt output, not the hybrid solver.
+  void sync_node_B_output();
+  // Cell-centred analogue of PlotWriter::is_inside_plot_region for the hybrid
+  // structured output: 0.5*dx tolerance so a cut plane snaps to the nearest
+  // cell-centre row. Single-level only (multi-level structured output aborts).
+  bool is_inside_cell_plot_region(const PlotWriter& writerIn, int const ix,
+                                  int const iy, int const iz, double const x,
+                                  double const y, double const z) const;
+
+  // Convert electronDensity0 (amu/cc) to code units and set the auto density
+  // floor. Idempotent; run at the first hybrid field advance after
+  // fi->post_process_param() finalizes Si2NoRho.
+  void convert_electron_density0();
 
   void calc_mass_matrix();
   void calc_mass_matrix_amr();
@@ -320,6 +474,25 @@ public:
                        amrex::Real coef = 0.5);
 
   void update_U0_E0();
+
+  //-------------Hybrid PIC solver (kinetic ions + fluid electrons)-------------
+  void smooth_moments();
+  void update_B_hybrid();
+  void project_centerB_to_nodeB(int iLev);
+  void apply_centerB_BC(int iLev);
+  void project_centerB_to_nodeB_scratch(amrex::MultiFab &centerIn,
+                                        amrex::MultiFab &nodeOut, int iLev);
+  // Evaluate the Ohm's law E = -U_i x B + eta J + (J x B)/rho_q -
+  // grad(Pe)/rho_q at an off-member B state (J from `centerBin`,
+  // Hall/convection B from `centerBtimeAvg`), writing E into `Eout`. Ion
+  // moments are time-interpolated between centerPlasmaPrev (J^{n-1/2}) and
+  // centerPlasmaSum (J^{n+1/2}) at the sub-step fraction `hstep`: X =
+  // (0.5-hstep)X^{n-1/2} + (0.5+hstep)X^{n+1/2}.
+  void assemble_ohm_E(const amrex::MultiFab &centerBin,
+                      const amrex::MultiFab &centerBtimeAvg,
+                      amrex::MultiFab &Eout, int iLev, amrex::Real hstep);
+  void save_current_moments_to_prev();
+  void seed_first_hybrid_step();
 
   //-------------Electric field solver end-------------
 
@@ -469,6 +642,19 @@ public:
   inline amrex::Real get_center_B(amrex::MFIter &mfi, amrex::IntVect ijk,
                                   int iVar, const int iLev) {
     return fi->get_center_b(mfi, ijk, iVar, iLev);
+  }
+
+  inline amrex::Real get_center_E(amrex::MFIter &mfi, amrex::IntVect ijk,
+                                  int iVar, const int iLev) {
+    amrex::Real e;
+    if (iVar == ix_)
+      e = fi->get_ex(mfi, ijk, iLev);
+    if (iVar == iy_)
+      e = fi->get_ey(mfi, ijk, iLev);
+    if (iVar == iz_)
+      e = fi->get_ez(mfi, ijk, iLev);
+
+    return e;
   }
 
   //--------------- Boundary end ------------------------

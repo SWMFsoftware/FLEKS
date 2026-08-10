@@ -268,20 +268,38 @@ std::string PlotWriter::expand_variables(std::string inVars) const {
     var0 = inVars.substr(pos1 + 1, pos2 - pos1 - 1);
     inVars.erase(pos1, pos2 - pos1 + 1);
     if (var0 == "fluid") {
-      inVars += " rhoS0 rhoS1 Bx By Bz Ex Ey Ez uxS0 uyS0 uzS0 uxS1 uyS1 "
-                "uzS1 pS0 pS1 pXXS0 pYYS0 pZZS0 pXYS0 pXZS0 pYZS0 pXXS1 "
-                "pYYS1 pZZS1 pXYS1 pXZS1 pYZS1";
-      for (int is = 2; is < nSpecies; is++) {
-        inVars += add_plasma_variables(
-            "rhoS uxS uyS uzS pS pXXS pYYS pZZS pXYS pXZS pYZS", is);
+      if (useHybridPIC) {
+        inVars += " Bx By Bz Ex Ey Ez";
+        for (int is = 0; is < nSpecies; is++) {
+          inVars += add_plasma_variables(
+              "rhoS uxS uyS uzS pS pXXS pYYS pZZS pXYS pXZS pYZS", is);
+        }
+      } else {
+        // TODO: These are hard-coded output orderings. We need to organize
+        // then properly and also update the reference data.
+        inVars += " rhoS0 rhoS1 Bx By Bz Ex Ey Ez uxS0 uyS0 uzS0 uxS1 uyS1 "
+                  "uzS1 pS0 pS1 pXXS0 pYYS0 pZZS0 pXYS0 pXZS0 pYZS0 pXXS1 "
+                  "pYYS1 pZZS1 pXYS1 pXZS1 pYZS1";
+        for (int is = 2; is < nSpecies; is++) {
+          inVars += add_plasma_variables(
+              "rhoS uxS uyS uzS pS pXXS pYYS pZZS pXYS pXZS pYZS", is);
+        }
       }
     } else if (var0 == "all") {
-      inVars += " qS0 qS1 Bx By Bz Ex Ey Ez kXXS0 kYYS0 kZZS0 kXYS0 kXZS0 "
-                "kYZS0 kXXS1 kYYS1 kZZS1 kXYS1 kXZS1 kYZS1 jxS0 jyS0 jzS0 "
-                "jxS1 jyS1 jzS1";
-      for (int is = 2; is < nSpecies; is++) {
-        inVars += add_plasma_variables(
-            "rhoS jxS jyS jzS kXXS kYYS kZZS kXYS kXZS kYZS", is);
+      if (useHybridPIC) {
+        inVars += " Bx By Bz Ex Ey Ez";
+        for (int is = 0; is < nSpecies; is++) {
+          inVars += add_plasma_variables(
+              "qS kXXS kYYS kZZS kXYS kXZS kYZS jxS jyS jzS", is);
+        }
+      } else {
+        inVars += " qS0 qS1 Bx By Bz Ex Ey Ez kXXS0 kYYS0 kZZS0 kXYS0 kXZS0 "
+                  "kYZS0 kXXS1 kYYS1 kZZS1 kXYS1 kXZS1 kYZS1 jxS0 jyS0 jzS0 "
+                  "jxS1 jyS1 jzS1";
+        for (int is = 2; is < nSpecies; is++) {
+          inVars += add_plasma_variables(
+              "rhoS jxS jyS jzS kXXS kYYS kZZS kXYS kXZS kYZS", is);
+        }
       }
     }
     pos1 = inVars.find_first_of("{");

@@ -1,10 +1,73 @@
 #!/usr/bin/env python3
+"""Common runner for the standalone FLEKS test suite.
+
+This module holds only the shared infrastructure:
+
+  * preparing / cleaning the run directory,
+  * launching FLEKS.exe and PostProc.pl,
+  * reading the PIC energy log and the test-particle tracer log,
+  * the generic test-particle validator,
+  * build-configuration pre-flight checks,
+  * the test-discovery + execution loop and the summary table.
+
+Each per-test validation lives in a small ``validate.py`` module
+inside that test's own directory (e.g. ``tests/beam/validate.py``).
+This runner loads only the module for the test currently being run,
+so it does not have to import the code for every test up front.
+Shared helpers (e.g. the hybrid family) live in ``tests/_shared/``.
+
+Output is controlled with the standard :mod:`logging` levels:
+  * INFO    -- essential per-test results and the summary (default),
+  * DEBUG   -- intermediate diagnostics (enable with --verbose / -v),
+  * WARNING / ERROR -- warnings and failures.
+"""
+import importlib
+import logging
 import os
 import shutil
 import subprocess
 import sys
-import math
 
+# Directory used for simulation output. Defaults can be overridden with
+# --run-dir so a second test can run without clobbering a currently-running
+# job that owns the default run_test/.
+RUN_DIR = "run_test"
+
+logger = logging.getLogger("fleks.validate")
+
+
+# ---------------------------------------------------------------------------
+# Logging setup
+# ---------------------------------------------------------------------------
+def setup_logging(verbose=False):
+    """Configure the root logger used by the runner and per-test modules.
+
+    Without *verbose* only INFO+ messages are shown (essential results, the
+    summary, warnings and errors).  With *verbose* DEBUG messages (per-check
+    diagnostics, energy numbers) are shown too.
+
+    The root logger is configured (rather than a named logger) so that the
+    per-test modules -- which each use ``logging.getLogger(__name__)`` -- print
+    through the same handler and level without needing explicit configuration.
+    """
+    level = logging.DEBUG if verbose else logging.INFO
+    root = logging.getLogger()
+    root.setLevel(level)
+    if not root.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        root.addHandler(handler)
+    else:
+        for h in root.handlers:
+            h.setLevel(level)
+    # Make sure child loggers propagate up to the configured root handler.
+    for lname in list(logging.Logger.manager.loggerDict):
+        logging.getLogger(lname).propagate = True
+
+
+# ---------------------------------------------------------------------------
+# Run-directory management
+# ---------------------------------------------------------------------------
 def safe_symlink(src, dst):
     if os.path.lexists(dst):
         if os.path.islink(dst) or os.path.isfile(dst):
@@ -13,13 +76,54 @@ def safe_symlink(src, dst):
             shutil.rmtree(dst)
     os.symlink(src, dst)
 
+
+def ensure_postidl():
+    """Ensure PostIDL.exe is compiled before running any test.
+
+    If it is not present at any candidate location we compile it with
+    ``make PIDL`` and re-search.  Returns True if PostIDL.exe is found.
+    """
+    postidl_candidates = [
+        "bin/PostIDL.exe",          # standalone build
+        "../../bin/PostIDL.exe",    # SWMF integrated build
+    ]
+
+    def _found():
+        return any(os.path.isfile(c) for c in postidl_candidates)
+
+    if _found():
+        return True
+
+    # Not built yet -- compile it. This keeps all tests (pcai, beam, ...) able
+    # to produce plot output regardless of how the tree was set up.
+    logger.warning("  [WARN] PostIDL.exe not found. Building it with 'make PIDL'...")
+    try:
+        build = subprocess.run(["make", "PIDL"], stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True, timeout=900)
+    except subprocess.TimeoutExpired:
+        logger.warning("  [WARN] 'make PIDL' timed out; PostIDL.exe may be missing.")
+        return False
+
+    if build.returncode != 0 or not _found():
+        logger.warning("  [WARN] 'make PIDL' failed; PostIDL.exe is missing. "
+                       "Tests that check plot output (.out files) will not "
+                       "produce frames.")
+        if build.stderr:
+            logger.warning(build.stderr)
+        return False
+
+    logger.info("  [INFO] PostIDL.exe built successfully.")
+    return True
+
+
 def prepare_run_dir():
-    run_dir = "run_test"
+    run_dir = RUN_DIR
     os.makedirs(run_dir, exist_ok=True)
 
-    # Determine the location of the share directory relative to FLEKS root.
-    # In a standalone FLEKS repository, 'share/Scripts/PostProc.pl' is directly inside the working directory.
-    # In SWMF integrated environment, 'share' is located in SWMF root, i.e., two levels above FLEKS root.
+    ensure_postidl()
+
+    # PostProc.pl / pIDL live in share/Scripts/; the standalone layout keeps
+    # "share" next to FLEKS root, the SWMF layout two levels up.
     if os.path.isfile("share/Scripts/PostProc.pl"):
         postproc_target = "../share/Scripts/PostProc.pl"
         pidl_target = "../../share/Scripts/pIDL"
@@ -27,11 +131,6 @@ def prepare_run_dir():
         postproc_target = "../../../share/Scripts/PostProc.pl"
         pidl_target = "../../../../share/Scripts/pIDL"
 
-    # PostIDL.exe may reside in different locations depending on the build mode:
-    #   - Standalone build:       bin/PostIDL.exe        (FLEKS/bin/)
-    #   - SWMF integrated build:  ../../bin/PostIDL.exe  (SWMF/bin/)
-    # Search all candidates (relative to FLEKS root) and use the first match.
-    # The symlink target is computed relative to run_test/PC/.
     postidl_candidates = [
         "bin/PostIDL.exe",          # standalone
         "../../bin/PostIDL.exe",    # SWMF integrated
@@ -40,35 +139,29 @@ def prepare_run_dir():
     for candidate in postidl_candidates:
         if os.path.isfile(candidate):
             postidl_target = os.path.relpath(candidate, os.path.join(run_dir, "PC"))
-            break
+            continue
     if postidl_target is None:
-        # Default to standalone path; run_test() will emit a broken-symlink
-        # warning if PostIDL.exe is not found at any candidate location.
         postidl_target = "../../bin/PostIDL.exe"
 
-    # Symlinks in run directory
     safe_symlink("../bin/FLEKS.exe", os.path.join(run_dir, "FLEKS.exe"))
     safe_symlink(postproc_target, os.path.join(run_dir, "PostProc.pl"))
 
-    # Component plot and restart directories
     pc_dir = os.path.join(run_dir, "PC")
     os.makedirs(pc_dir, exist_ok=True)
     os.makedirs(os.path.join(pc_dir, "plots"), exist_ok=True)
     os.makedirs(os.path.join(pc_dir, "restartOUT"), exist_ok=True)
 
-    # Symlinks in component directory
     safe_symlink(pidl_target, os.path.join(pc_dir, "pIDL"))
     safe_symlink(postidl_target, os.path.join(pc_dir, "PostIDL.exe"))
 
-def cleanup_run_dir():
-    """Remove simulation output files from run_test/ after each test.
 
-    Deletes the contents of PC/plots/ and PC/restartOUT/ (the bulky per-run
-    outputs) so they do not accumulate between tests.  The directory structure
-    and symlinks are left in place so the next call to prepare_run_dir() is a
-    no-op.
+def cleanup_run_dir():
+    """Remove simulation output files from run directory after each test.
+
+    Deletes the contents of PC/plots/ and PC/restartOUT/ while keeping the
+    directory structure and symlinks.
     """
-    run_dir = "run_test"
+    run_dir = RUN_DIR
     for subdir in [os.path.join(run_dir, "PC", "plots"),
                    os.path.join(run_dir, "PC", "restartOUT")]:
         if os.path.isdir(subdir):
@@ -80,50 +173,130 @@ def cleanup_run_dir():
                     elif os.path.isdir(entry_path):
                         shutil.rmtree(entry_path)
                 except Exception as e:
-                    print(f"  [WARN] Could not remove {entry_path}: {e}")
+                    logger.warning("  Could not remove %s: %s", entry_path, e)
 
-def run_test(test_dir, nprocs=1):
+
+# ---------------------------------------------------------------------------
+# Execution
+# ---------------------------------------------------------------------------
+def run_test(test_dir, nprocs=1, param_text=None):
     param_file = os.path.join(test_dir, "PARAM.in")
-    print(f"Running test in {test_dir} with config {param_file}...")
+    logger.debug("Running test in %s...", test_dir)
     prepare_run_dir()
-    
-    # Verify that PostIDL.exe exists; PostProc.pl needs it to produce .out files.
-    postidl_link = os.path.join("run_test", "PC", "PostIDL.exe")
+
+    postidl_link = os.path.join(RUN_DIR, "PC", "PostIDL.exe")
     if os.path.islink(postidl_link) and not os.path.exists(postidl_link):
         real = os.path.realpath(postidl_link)
-        print(f"  [WARN] Broken symlink: {postidl_link} -> {real}")
-        print(f"  [WARN] PostIDL.exe is missing. Build it with 'make PIDL' "
-              f"before running tests that check plot output (.out files).")
-    
-    # Copy param_file to run_test/PARAM.in
-    shutil.copy(param_file, "run_test/PARAM.in")
-    
-    # Build the command: serial for nprocs==1, mpirun otherwise
+        logger.warning("  [WARN] Broken symlink: %s -> %s", postidl_link, real)
+        logger.warning("  [WARN] PostIDL.exe is missing. Build it with 'make PIDL' "
+                       "before running tests that check plot output (.out files).")
+
+    # Use the supplied text (patched solver variant) when given, else the test's
+    # own PARAM.in.
+    if param_text is not None:
+        with open(RUN_DIR + "/PARAM.in", "w") as f:
+            f.write(param_text)
+    else:
+        shutil.copy(param_file, RUN_DIR + "/PARAM.in")
+
     if nprocs <= 1:
         cmd = ["./FLEKS.exe"]
-        print(f"  Running in serial mode (no MPI)...")
+        logger.debug("  Running in serial mode (no MPI)...")
     else:
         cmd = ["mpirun", "-n", str(nprocs), "./FLEKS.exe"]
-        print(f"  Running with {nprocs} MPI processes...")
-    
-    # Run the command inside run_test/
-    result = subprocess.run(cmd, cwd="run_test", stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        logger.debug("  Running with %d MPI processes...", nprocs)
+
+    result = subprocess.run(cmd, cwd=RUN_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
-        print(f"Error running FLEKS.exe for {test_dir}:")
-        print(result.stderr)
+        logger.error("Error running FLEKS.exe for %s:", test_dir)
+        logger.error("--- FLEKS stdout ---")
+        logger.error(result.stdout)
+        logger.error("--- FLEKS stderr ---")
+        logger.error(result.stderr)
         return None, result.returncode
-        
-    # Automatically run post-processing on the generated plots
-    pp = subprocess.run(["./PostProc.pl", "-v"], cwd="run_test",
+
+    pp = subprocess.run(["./PostProc.pl", "-v"], cwd=RUN_DIR,
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if pp.returncode != 0:
-        print(f"  [WARN] PostProc.pl exited with code {pp.returncode}:")
+        logger.warning("  [WARN] PostProc.pl exited with code %s:", pp.returncode)
         if pp.stdout:
-            print(pp.stdout)
+            logger.warning(pp.stdout)
         if pp.stderr:
-            print(pp.stderr)
-    
+            logger.warning(pp.stderr)
+
     return result.stdout, 0
+
+
+def run_and_validate(test_dir, display_name, validator, nprocs, results,
+                     param_text=None, base_name=None):
+    """Run one FLEKS test (optionally with a patched PARAM.in) and record the
+    outcome in *results* as (name, status, reason).  *validator* is the object
+    returned by load_validator() -- it exposes ``validate_log``, ``plot`` and
+    ``particle_tol`` -- or None for a generic completion check.
+
+    Mirrors the former main-loop body so a single test can be run with several
+    PARAM variants (used by the free-stream test)."""
+    if base_name is None:
+        base_name = display_name
+    logger.info("")
+    logger.info("=" * 50)
+    logger.info("Starting test: %s", display_name)
+    logger.info("=" * 50)
+    try:
+        stdout, code = run_test(test_dir, nprocs=nprocs, param_text=param_text)
+        if code != 0 or stdout is None:
+            logger.error("FAIL: %s execution failed with exit code %s",
+                         display_name, code)
+            results.append((display_name, "FAILED", f"Execution failed (code {code})"))
+            return
+
+        # FLEKS's only diagnostic log is the PIC energy log.
+        pic_diags = read_pic_log(RUN_DIR)
+
+        val_res = False
+        reason = "Validation skipped"
+
+        if validator is not None and validator.validate_log is not None:
+            val_res, reason = validator.validate_log(pic_diags=pic_diags,
+                                                     test_name=base_name)
+            if not val_res:
+                logger.error("%s: FAILED (%s)", display_name, reason)
+                results.append((display_name, "FAILED", reason))
+                return
+        else:
+            logger.debug("Validating %s (generic check)...", display_name)
+            logger.debug("%s (generic check): PASSED", display_name)
+            val_res = True
+            reason = "Passed"
+
+        # Test-particle tracer log (log_pt_n*.log), validated when #PARTICLETRACKER T.
+        if validator is not None and validator.particle_tol:
+            pt_diags = read_pt_log(RUN_DIR)
+            pt_res, pt_reason = validate_test_particles(
+                pt_diags, test_name=base_name, tol=validator.particle_tol)
+            if not pt_res:
+                logger.error("%s: test-particle check failed (%s)",
+                             display_name, pt_reason)
+                results.append((display_name, "FAILED",
+                                f"test-particle check failed: {pt_reason}"))
+                return
+
+        # Validate output plotfiles.
+        plot_validator = validator.plot if validator is not None else None
+        if plot_validator is None:
+            plot_res, plot_reason = True, "Passed (no plot-file check)"
+        else:
+            plot_res, plot_reason = plot_validator(base_name)
+        if not plot_res:
+            logger.error("%s: plot check failed (%s)", display_name, plot_reason)
+            results.append((display_name, "FAILED", f"plot check failed: {plot_reason}"))
+        else:
+            logger.info("%s: PASSED", display_name)
+            results.append((display_name, "PASSED", "Passed"))
+
+    finally:
+        logger.debug("  Cleaning up run_test/ output for %s...", display_name)
+        cleanup_run_dir()
 
 
 # ---------------------------------------------------------------------------
@@ -215,19 +388,9 @@ def preflight_check(test_name):
     return True, None
 
 
-def validate_beam():
-    """Validate the beam instability test.
-
-    The primary validation is the FFT-based transverse-wave check performed
-    on the plot output by _check_beam_transverse_wave(), invoked from
-    validate_plot_output().  No log-file-based checks are performed here.
-    """
-    print("Validating Beam Instability Test...")
-    print("  [INFO] Beam diagnostic checks rely on plot output (FFT).")
-    print("Beam Instability Test: PASSED")
-    return True, "Passed"
-
-
+# ---------------------------------------------------------------------------
+# Log readers
+# ---------------------------------------------------------------------------
 def read_pic_log(run_dir):
     """Read the energy diagnostic log file written by Pic::write_log.
 
@@ -357,24 +520,31 @@ def validate_test_particles(pt_diags, test_name=None, tol=None):
 
     tol keys: min_rows (int, default 1), launch_threshold (float, default 0.5),
               max_speed (float, default 10.0),
-              expected_active_species (list[int], default []).
+              expected_active_species (list[int], default []),
+              min_velocity_change (float, default None = disabled).
     """
+    import math
     tol = tol or {}
     min_rows = int(tol.get("min_rows", 1))
     launch_threshold = float(tol.get("launch_threshold", 0.5))
     max_speed = float(tol.get("max_speed", 10.0))
     expected_active = set(int(s) for s in tol.get("expected_active_species", []))
+    # Optional: require an active species to show a relative mean-velocity
+    # change >= this (catches a silently disabled field gather).
+    min_velocity_change = tol.get("min_velocity_change", None)
+    if min_velocity_change is not None:
+        min_velocity_change = float(min_velocity_change)
 
-    print("Validating Test-Particle Tracer Output...")
+    logger.debug("Validating Test-Particle Tracer Output...")
 
     if not pt_diags:
-        print("  [PT] No test-particle log (log_pt_n*.log) found.")
+        logger.debug("  [PT] No test-particle log (log_pt_n*.log) found.")
         return False, "No test-particle log file"
 
     n_rows = len(pt_diags)
     n_species = sum(1 for k in pt_diags[0] if k.startswith("mass"))
-    print(f"  [PT] {n_rows} log rows, {n_species} species "
-          f"(from log_pt_n*.log).")
+    logger.debug("  [PT] %d log rows, %d species (from log_pt_n*.log).",
+                 n_rows, n_species)
 
     passed = True
     reasons = []
@@ -391,7 +561,7 @@ def validate_test_particles(pt_diags, test_name=None, tol=None):
         elif math.isfinite(pt_diags[0].get(f"mass{iS}", 0.0)) \
                 and pt_diags[0].get(f"mass{iS}", 0.0) > 0:
             active.add(iS)
-    print(f"  [PT] active (seeded) species: {sorted(active)}")
+    logger.debug("  [PT] active (seeded) species: %s", sorted(active))
 
     if expected_active and not expected_active.issubset(active):
         missing = sorted(expected_active - active)
@@ -461,1001 +631,140 @@ def validate_test_particles(pt_diags, test_name=None, tol=None):
                     f"{max_speed:g} at cycle {r.get('cycle', '?')}")
                 break
 
+    # Field-interaction check: catch a zero-field gather (constant velocity).
+    if min_velocity_change is not None and n_rows >= 2:
+        got_change = False
+        for iS in sorted(active):
+            m0 = pt_diags[0].get(f"mass{iS}", 0.0)
+            m1 = pt_diags[-1].get(f"mass{iS}", 0.0)
+            if m0 <= 0 or m1 <= 0:
+                continue
+            v0 = [pt_diags[0].get(f"moment_{ax}{iS}", 0.0) / m0
+                  for ax in ("x", "y", "z")]
+            v1 = [pt_diags[-1].get(f"moment_{ax}{iS}", 0.0) / m1
+                  for ax in ("x", "y", "z")]
+            speed0 = math.sqrt(sum(c * c for c in v0))
+            dv = math.sqrt(sum((a - b) ** 2 for a, b in zip(v1, v0)))
+            if speed0 > 1e-30 and dv / speed0 >= min_velocity_change:
+                got_change = True
+                break
+        if not got_change:
+            passed = False
+            reasons.append(
+                f"no active species shows a mean-velocity change >= "
+                f"{min_velocity_change:g} (relative); field gather may be "
+                "silently disabled")
+
     if passed:
-        print("Test-Particle Tracer Output: PASSED")
+        logger.debug("Test-Particle Tracer Output: PASSED")
         return True, "Passed"
     return False, "; ".join(reasons)
 
 
-def validate_chemistry(pic_diags=None, test_name=None):
-    """Validate the Mars chemistry test with 4 ion species and 10 reactions.
+# ---------------------------------------------------------------------------
+# Per-test validator loading
+# ---------------------------------------------------------------------------
+def load_validator(test_name):
+    """Dynamically import the ``validate.py`` module for *test_name*.
 
-    Checks that ion energies change over time due to the combined action of
-    photoionization (source), cross-species charge exchange (source + loss),
-    and recombination (loss).
-
-    Key validations:
-    1. ALL 4 ion species (H+, O+, O2+, CO2+) show significant energy changes,
-       proving all reaction types are active.
-    2. O2+ (species 3, Epart3) energy INCREASES — O2+ is produced ONLY by
-       cross-species CX (reactions 3, 4) and lost by recombination (reaction 6).
-       Since the CX source rate (~6 s^-1) far exceeds the recombination loss
-       rate (~0.04 s^-1), O2+ energy must increase.  This is the critical
-       test for the cross-species CX source term.
-    3. CO2+ (species 4, Epart4) energy changes — CO2+ is produced by
-       photoionization (reaction 1) and consumed by CX (reactions 3, 5) and
-       recombination (reaction 7).
+    Returns a small object with attributes ``validate_log``, ``plot`` and
+    ``particle_tol`` (some may be None) so the runner can invoke it uniformly.
+    If the test has no ``validate.py`` (e.g. ``hyper_resistivity``), returns
+    None and the runner falls back to a generic no-op check.
     """
-    print("Validating Mars Chemistry Test...")
-
-    if not pic_diags or len(pic_diags) < 2:
-        print("  [INFO] No PIC energy log found; skipping energy checks.")
-        return True, "Passed (no pic log)"
-
-    first = pic_diags[0]
-    last = pic_diags[-1]
-
-    epart_keys = sorted(
-        k for k in first.keys() if k.startswith("Epart") and k != "Epart"
-    )
-    if not epart_keys:
-        print("  [INFO] No per-species energy columns; skipping.")
-        return True, "Passed (no Epart columns)"
-
-    # Species mapping: 0=e, 1=H+, 2=O+, 3=O2+, 4=CO2+
-    species_names = {
-        "Epart1": "H+",
-        "Epart2": "O+",
-        "Epart3": "O2+",
-        "Epart4": "CO2+",
-    }
-
-    print(f"  --- Energy Diagnostics (from log_pic log) ---")
-    for k in epart_keys:
-        e0 = first.get(k, 0)
-        e1 = last.get(k, 0)
-        ratio = e1 / max(e0, 1e-30) if e0 > 0 else float('inf')
-        name = species_names.get(k, k)
-        print(f"    {k} ({name}): {e0:.6e} -> {e1:.6e}  (ratio {ratio:.4f})")
-
-    passed = True
-    reasons = []
-
-    # ---- Check 1: All 4 ion species must show significant energy changes ----
-    # This proves that photoionization, CX, and recombination are all active.
-    # A 0.1% threshold catches any meaningful chemistry signal while filtering
-    # out pure numerical noise.
-    change_threshold = 0.001  # 0.1%
-    for k in epart_keys:
-        e0 = first.get(k, 0.0)
-        e1 = last.get(k, 0.0)
-        if e0 <= 0:
-            continue
-        ratio = e1 / e0
-        name = species_names.get(k, k)
-        if abs(ratio - 1.0) < change_threshold:
-            print(f"    FAIL: {k} ({name}) energy unchanged "
-                  f"(ratio {ratio:.4f}) — chemistry may not be active.")
-            passed = False
-            reasons.append(f"{name} energy unchanged")
-
-    # ---- Check 2: O2+ must INCREASE — the critical CX source test ----
-    # O2+ (Epart3) is produced ONLY by cross-species CX (reactions 3, 4)
-    # and consumed by recombination (reaction 6).  The CX source rate
-    # (~6.3 s^-1, driven by the large exosphere neutral density ~5e10 m^-3)
-    # vastly exceeds the recombination loss rate (~4e-17 s^-1, limited by
-    # the small plasma electron density in SI units).  Therefore O2+ energy
-    # must increase.  If it does not increase, the CX source term is broken.
-    o2_key = "Epart3" if "Epart3" in first else None
-    if o2_key:
-        e_o2_init = first.get(o2_key, 0.0)
-        e_o2_final = last.get(o2_key, 0.0)
-        if e_o2_init > 0:
-            o2_ratio = e_o2_final / e_o2_init
-            print(f"    {o2_key} (O2+): ratio = {o2_ratio:.4f} "
-                  f"(must be > 1.0 for CX source validation)")
-            if o2_ratio <= 1.0:
-                print(f"    FAIL: {o2_key} (O2+) energy did not increase — "
-                      f"cross-species CX source is not working.")
-                passed = False
-                reasons.append("O2+ energy did not increase (CX source broken)")
-            else:
-                pct = (o2_ratio - 1.0) * 100
-                print(f"    SUCCESS: {o2_key} (O2+) energy increased by "
-                      f"{pct:.2f}% (cross-species CX source active).")
-        else:
-            print(f"    [INFO] {o2_key} initial energy is zero.")
-
-    # ---- Check 3: CO2+ must show a change ----
-    # CO2+ is produced by photoionization (R1) and consumed by CX (R3, R5)
-    # and recombination (R7).  Both source and loss are active.
-    co2_key = "Epart4" if "Epart4" in first else None
-    if co2_key:
-        e_co2_init = first.get(co2_key, 0.0)
-        e_co2_final = last.get(co2_key, 0.0)
-        if e_co2_init > 0:
-            co2_ratio = e_co2_final / e_co2_init
-            print(f"    {co2_key} (CO2+): ratio = {co2_ratio:.4f}")
-            if abs(co2_ratio - 1.0) < change_threshold:
-                print(f"    FAIL: {co2_key} (CO2+) energy unchanged.")
-                passed = False
-                reasons.append("CO2+ energy unchanged")
-            else:
-                pct = abs(co2_ratio - 1.0) * 100
-                print(f"    SUCCESS: {co2_key} (CO2+) energy changed by "
-                      f"{pct:.2f}%.")
-
-    if passed:
-        print("Mars Chemistry Test: PASSED")
-        return True, "Passed"
-    else:
-        return False, "; ".join(reasons)
-
-
-def validate_recombination(pic_diags=None, test_name=None):
-    """Validate the recombination loss test (O2+ + e- -> O + O).
-
-    Checks that O2+ (species 2, Epart2) energy decreases over time due
-    to recombination loss, while H+ (species 1, Epart1) energy remains
-    stable since H+ does not participate in recombination.
-    """
-    print("Validating Recombination Loss Test...")
-
-    if not pic_diags or len(pic_diags) < 2:
-        print("  [INFO] No PIC energy log found; skipping energy checks.")
-        return True, "Passed (no pic log)"
-
-    first = pic_diags[0]
-    last = pic_diags[-1]
-
-    epart_keys = sorted(
-        k for k in first.keys() if k.startswith("Epart") and k != "Epart"
-    )
-    if not epart_keys:
-        print("  [INFO] No per-species energy columns; skipping.")
-        return True, "Passed (no Epart columns)"
-
-    print(f"  --- Energy Diagnostics (from log_pic log) ---")
-    for k in epart_keys:
-        print(f"    {k}: {first.get(k, 0):.6e} -> {last.get(k, 0):.6e}")
-
-    passed = True
-    reasons = []
-
-    # O2+ (species 2) should decrease due to recombination.
-    o2_key = "Epart2" if "Epart2" in first else (epart_keys[-1] if len(epart_keys) >= 2 else None)
-    if o2_key:
-        e_o2_initial = first.get(o2_key, 0.0)
-        e_o2_final = last.get(o2_key, 0.0)
-        print(f"    {o2_key} (O2+): {e_o2_initial:.6e} -> {e_o2_final:.6e}")
-        if e_o2_initial <= 0:
-            print(f"    FAIL: {o2_key} initial energy is zero.")
-            passed = False
-            reasons.append("O2+ initial energy is zero")
-        elif e_o2_final >= e_o2_initial:
-            print(f"    FAIL: {o2_key} energy did not decrease (recombination not active).")
-            passed = False
-            reasons.append("O2+ energy did not decrease")
-        else:
-            ratio = e_o2_final / e_o2_initial
-            print(f"    SUCCESS: {o2_key} energy decreased to {ratio:.3f} of initial.")
-
-    # H+ (species 1) should remain stable.
-    h_key = "Epart1" if "Epart1" in first else None
-    if h_key:
-        e_h_initial = first.get(h_key, 0.0)
-        e_h_final = last.get(h_key, 0.0)
-        h_tolerance = 0.10  # allow up to 10% variation (numerical noise)
-        print(f"    {h_key} (H+): {e_h_initial:.6e} -> {e_h_final:.6e}")
-        if e_h_initial > 0:
-            h_ratio = abs(e_h_final - e_h_initial) / e_h_initial
-            if h_ratio > h_tolerance:
-                print(f"    FAIL: {h_key} energy changed by {h_ratio*100:.1f}% "
-                      f"(threshold {h_tolerance*100:.0f}%).")
-                passed = False
-                reasons.append(f"H+ energy changed by {h_ratio*100:.1f}%")
-            else:
-                print(f"    SUCCESS: {h_key} energy stable ({h_ratio*100:.1f}% change).")
-
-    if passed:
-        print("Recombination Loss Test: PASSED")
-        return True, "Passed"
-    else:
-        return False, "; ".join(reasons)
-
-
-def validate_lightwave(pic_diags=None, test_name=None):
-    """Validate the 3D light-wave (vacuum transverse EM wave) test.
-
-    The light-wave initial condition (testCase = lightwave) fills the node E
-    and B fields with an analytic transverse plane wave; with
-    nPartPerCell = 0 the PIC loads no macroparticles, so the total energy is
-    purely electromagnetic (Ee + Eb).  On a periodic vacuum grid the wave
-    should propagate without the energy decaying to zero or blowing up, so
-    the total EM energy is approximately conserved.
-
-    Checks (from log_pic_n*.log):
-      1. Etot at the first and last frame is finite and > 0 (wave present).
-      2. Energy is approximately conserved:
-         0.3 <= Etot_final / Etot_initial <= 3.0.
-    """
-    import math
-    print("Validating Light Wave Test...")
-
-    if not pic_diags or len(pic_diags) < 2:
-        print("  [INFO] No PIC energy log found; skipping energy checks.")
-        return True, "Passed (no pic log)"
-
-    first = pic_diags[0]
-    last = pic_diags[-1]
-
-    e0 = first.get("Etot", 0.0)
-    e1 = last.get("Etot", 0.0)
-
-    print(f"  --- Energy Diagnostics (from log_pic log) ---")
-    print(f"    Etot (t={first.get('time', 0):.4f}): {e0:.6e}")
-    print(f"    Etot (t={last.get('time', 0):.4f}): {e1:.6e}")
-
-    if not (math.isfinite(e0) and math.isfinite(e1)):
-        print("    FAIL: Non-finite total EM energy.")
-        return False, "Non-finite total EM energy"
-
-    if e0 <= 0:
-        print("    FAIL: Initial total EM energy is zero -- "
-              "wave not initialised.")
-        return False, "Initial Etot is zero (wave not initialised)"
-
-    if e1 <= 0:
-        print("    FAIL: Final total EM energy is zero -- wave collapsed.")
-        return False, "Final Etot is zero (wave collapsed)"
-
-    ratio = e1 / e0
-    lower, upper = 0.3, 3.0
-    print(f"    Etot_final / Etot_initial = {ratio:.4f} "
-          f"(allowed [{lower}, {upper}])")
-
-    if ratio < lower or ratio > upper:
-        print("    FAIL: total EM energy changed outside the allowed range -- "
-              "possible blow-up or unphysical decay.")
-        return False, f"Etot ratio {ratio:.3f} outside [{lower}, {upper}]"
-
-    print(f"    SUCCESS: light wave energy conserved (ratio = {ratio:.3f}).")
-    return True, "Passed"
-
-
-def validate_ionization_source(pic_diags=None, test_name=None):
-    """Validate an ionization source test (photoionization, electron impact,
-    or charge exchange).
-
-    Checks that the heaviest ion species (O+, which receives the exosphere
-    source) energy increases over time, confirming the ionization source is
-    active.  Uses the PIC energy log (log_pic_n*.log) as the data source.
-
-    With the full-PIC species layout (species 0 = electron, 1 = H+, 2 = O+),
-    the source is injected into the last ion species.
-
-    For charge exchange (test_name="chargeexchange"), additionally verifies
-    H+ (Epart1) energy does not decrease and requires O+ (Epart2) energy to
-    grow by at least a minimum factor, since the O+ background is set to
-    near-zero so the source contribution dominates.
-    """
-    print("Validating Ionization Source Test...")
-
-    if not pic_diags or len(pic_diags) < 2:
-        print("  [INFO] No PIC energy log found; skipping energy checks.")
-        return True, "Passed (no pic log)"
-
-    first = pic_diags[0]
-    last = pic_diags[-1]
-
-    # Determine the source (heaviest ion) species index from available
-    # EpartN keys.  The last EpartN column is the heaviest ion.
-    epart_keys = sorted(
-        k for k in first.keys() if k.startswith("Epart") and k != "Epart"
-    )
-    if not epart_keys:
-        print("  [INFO] No per-species energy columns; skipping.")
-        return True, "Passed (no Epart columns)"
-    source_key = epart_keys[-1]  # e.g. "Epart2" for O+
-    source_idx = source_key.replace("Epart", "")
-
-    print(f"  --- Energy Diagnostics (from log_pic log) ---")
-    for k in epart_keys:
-        print(f"    {k}: {first.get(k, 0):.6e} -> {last.get(k, 0):.6e}")
-    print(f"    Initial total Epart: {first.get('Epart', 0):.6e}")
-    print(f"    Final total Epart:   {last.get('Epart', 0):.6e}")
-
-    if test_name == "chargeexchange":
-        # For charge exchange, verify both H+ (Epart1) and O+ (Epart2).
-        # O+ has a near-zero background, so its energy should increase
-        # by a large factor.  H+ has a large bulk-kinetic-energy
-        # background, so its energy increase is tiny; we only require
-        # that it does not decrease (allowing for numerical noise).
-        passed = True
-        reasons = []
-        min_factor_o = 2.0   # O+ must at least double
-        h_tolerance = 0.05   # H+ may decrease by up to 5% (numerical noise)
-
-        # --- O+ (heaviest ion, source species) ---
-        o_key = epart_keys[-1]  # e.g. "Epart2"
-        e_o_initial = first.get(o_key, 0.0)
-        e_o_final = last.get(o_key, 0.0)
-        factor_o = e_o_final / max(e_o_initial, 1e-30)
-        print(f"    {o_key} (O+): {e_o_initial:.6e} -> {e_o_final:.6e} "
-              f"(factor {factor_o:.3f}x, threshold {min_factor_o}x)")
-        if e_o_initial <= 0:
-            if e_o_final <= 0:
-                print(f"    FAIL: {o_key} (O+) energy is zero — source not active.")
-                passed = False
-                reasons.append("O+ energy is zero (source not active)")
-            else:
-                print(f"    SUCCESS: {o_key} (O+) energy became non-zero.")
-        elif factor_o < min_factor_o:
-            print(f"    FAIL: {o_key} (O+) growth factor {factor_o:.3f} < {min_factor_o}")
-            passed = False
-            reasons.append(f"O+ growth factor {factor_o:.3f} < {min_factor_o}")
-        else:
-            print(f"    SUCCESS: {o_key} (O+) energy increased by {factor_o:.1f}x.")
-
-        # --- H+ (light ion, also receives CX source) ---
-        h_key = "Epart1" if "Epart1" in first else None
-        if h_key:
-            e_h_initial = first.get(h_key, 0.0)
-            e_h_final = last.get(h_key, 0.0)
-            print(f"    {h_key} (H+): {e_h_initial:.6e} -> {e_h_final:.6e}")
-            if e_h_final < e_h_initial * (1.0 - h_tolerance):
-                print(f"    FAIL: {h_key} (H+) energy decreased by more than "
-                      f"{h_tolerance*100:.0f}% (numerical noise threshold).")
-                passed = False
-                reasons.append("H+ energy decreased beyond noise threshold")
-            else:
-                print(f"    SUCCESS: {h_key} (H+) energy stable or increasing.")
-
-        if passed:
-            print("Charge Exchange Source Test: PASSED")
-            return True, "Passed"
-        else:
-            return False, "; ".join(reasons)
-
-    else:
-        # Original behavior for photoionization and electronimpact:
-        # check that the heaviest ion (O+) energy increases.
-        e_src_initial = first.get(source_key, 0.0)
-        e_src_final = last.get(source_key, 0.0)
-        print(f"    Initial {source_key} (species {source_idx}, O+): {e_src_initial:.6e}")
-        print(f"    Final   {source_key} (species {source_idx}, O+): {e_src_final:.6e}")
-        print(f"    Growth factor: {e_src_final / max(e_src_initial, 1e-30):.3f}x")
-        if e_src_final <= e_src_initial:
-            print(f"    FAIL: {source_key} energy did not increase.")
-            print("    Ionization source may not be working correctly.")
-            return False, (
-                f"{source_key} energy did not increase "
-                f"(initial={e_src_initial:.2e}, final={e_src_final:.2e})"
-            )
-        else:
-            print(f"    SUCCESS: {source_key} energy increased (ionization source active).")
-            return True, "Passed"
-
-
-def _read_shadow_params():
-    """Read shadow-cylinder and normalization parameters from PARAM.in.
-
-    Returns (Rp_plot, halfH_plot, shadowR_plot) all in *plot* (normalized)
-    coordinates, or None if shadow cylinder is not enabled.
-    """
-    param_path = os.path.join("run_test", "PARAM.in")
-    Rp_si = 3.0e6
-    lNormSI = 1.0
-    halfH_si = 0.0
-    shadowR_si = 0.0
-    useShadow = False
-
-    # Track which line within #NORMALIZATION we're on.
-    norm_line_idx = 0
-
+    module_name = f"tests.{test_name}.validate"
     try:
-        with open(param_path, "r") as pf:
-            section = None
-            for line in pf:
-                line_s = line.strip()
-                if line_s.startswith("#"):
-                    section = line_s
-                    if section == "#NORMALIZATION":
-                        norm_line_idx = 0
-                    continue
-                if not line_s:
-                    continue
-                parts = line_s.split()
-                if section == "#BODYSIZE" and len(parts) >= 1:
-                    try:
-                        Rp_si = float(parts[0])
-                    except ValueError:
-                        pass
-                elif section == "#NORMALIZATION" and len(parts) >= 1:
-                    # First value is lNormSI, second is uNormSI.
-                    if norm_line_idx == 0:
-                        try:
-                            lNormSI = float(parts[0])
-                        except ValueError:
-                            pass
-                    norm_line_idx += 1
-                elif section == "#SHADOWCYLINDER":
-                    useShadow = True
-                    try:
-                        val = float(parts[0])
-                    except ValueError:
-                        continue
-                    if "radius" in line_s.lower():
-                        shadowR_si = val
-                    elif "halfheight" in line_s.lower():
-                        halfH_si = val
-    except Exception:
-        pass
-
-    if not useShadow:
+        module = importlib.import_module(module_name)
+    except ImportError as exc:
+        # Only swallow failures caused by a genuinely missing per-test module
+        # (hyper_resistivity and friends).  Any other import error (a bug in
+        # the module) should surface loudly.
+        if exc.name != module_name and not str(exc).startswith("No module named"):
+            raise
+        logger.debug("No per-test module %s; using generic check.", module_name)
         return None
 
-    # Plot coordinates = SI / lNormSI
-    return (Rp_si / lNormSI, halfH_si / lNormSI, shadowR_si / lNormSI)
-
-
-def _load_idl_plot_asymmetry():
-    """Check photoionization day/night asymmetry from plot output.
-
-    Reads .out files produced by PostProc.pl (which concatenates the *.h
-    and *.idl files written by FLEKS).  PostProc.pl must be run before
-    calling this function.  Verifies that rhoS1 is non-zero on the dayside
-    (+X) and much smaller inside the planetary shadow cylinder (-X, within
-    cylinder radius and height).
-
-    Returns (passed: bool, reason: str).
-    """
-    import glob
-
-    plots_dir = os.path.join("run_test", "PC", "plots")
-
-    # -- Get shadow cylinder geometry in plot coordinates -------------------
-    shadow_geom = _read_shadow_params()
-    if shadow_geom is None:
-        print("    [ASYM] Shadow cylinder not enabled; skipping asymmetry check.")
-        return True, "No shadow cylinder"
-
-    Rp_plot, halfH_plot, shadowR_plot = shadow_geom
-    print(f"    [ASYM] Rp={Rp_plot:.0f}, halfH={halfH_plot:.0f}, "
-          f"shadowR={shadowR_plot:.0f} (plot coords)")
-
-    # -- Collect data points (x, y, rhoS1) from PostProc.pl .out files -----
-    # PostProc.pl must be run first to concatenate *.h and *.idl into *.out.
-    # We do NOT work on the raw .idl files directly.
-    points = []  # list of (x, y, rhoS1)
-
-    out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
-    if not out_files:
-        print("    [ASYM] No .out files found. "
-              "Ensure PostProc.pl has been run after FLEKS.exe.")
-        return False, "No .out files found (PostProc.pl not run?)"
-
-    latest_out = out_files[-1]
-    print(f"    [ASYM] Loading .out: {os.path.basename(latest_out)}")
-    with open(latest_out, "r") as f:
-        lines = f.readlines()
-    if len(lines) < 6:
-        return True, "Short .out file"
-    var_names = lines[4].split()
-    # Look for the heaviest ion species density (rhoS2 = O+ with 3-species
-    # layout: 0=e, 1=H+, 2=O+).  Fall back to rhoS1 for 2-species layouts.
-    rho_idx = None
-    for target in ("RHOS2", "RHOS1"):
-        for iv, vn in enumerate(var_names):
-            if vn.upper() == target:
-                rho_idx = iv
-                break
-        if rho_idx is not None:
-            break
-    if rho_idx is None:
-        return True, "rhoS2/rhoS1 not in .out"
-    for line in lines[5:]:
-        cols = line.strip().split()
-        if len(cols) <= rho_idx:
-            continue
-        try:
-            points.append((float(cols[0]), float(cols[1]),
-                           float(cols[rho_idx])))
-        except (ValueError, IndexError):
-            continue
-
-    if not points:
-        print("    [ASYM] No data points parsed.")
-        return True, "Empty plot data"
-
-    # -- Classify points: dayside vs shadow ---------------------------------
-    # The shadow cylinder covers the nightside (x < 0 for solarDir=+X).
-    # The "planet" plot keyword limits output to ~[-Rp, +Rp], so we compare
-    # the dayside (x > 0) with the deep nightside (x < -Rp/2) where
-    # photoionization is suppressed and diffusion has less effect.
-    dayside_vals = []
-    shadow_vals = []
-    y_lim = min(Rp_plot / 2.0, shadowR_plot / 4.0)
-    for x, y, rho in points:
-        if abs(y) > y_lim:
-            continue
-        if x > 0:
-            dayside_vals.append(rho)
-        elif x < -Rp_plot * 0.5:
-            shadow_vals.append(rho)
-
-    dayside_mean = (sum(dayside_vals) / len(dayside_vals)
-                    if dayside_vals else 0.0)
-    shadow_mean = (sum(shadow_vals) / len(shadow_vals)
-                   if shadow_vals else 0.0)
-
-    print(f"    [ASYM] Parsed {len(points)} points: "
-          f"{len(dayside_vals)} dayside, {len(shadow_vals)} shadow")
-    print(f"    Dayside (+X) mean rhoS1:      {dayside_mean:.4e}")
-    print(f"    Shadow  (-X, cyl) mean:       {shadow_mean:.4e}")
-
-    if len(dayside_vals) == 0:
-        return False, "Zero dayside points -- cannot verify"
-    if dayside_mean <= 0.0:
-        return False, "Dayside rhoS1 is zero -- photoionization source not active"
-    if len(shadow_vals) == 0:
-        return False, "Zero shadow points -- cannot verify"
-    # The shadow region still has some density from particle diffusion from
-    # the dayside (especially near the planet surface), so we require
-    # shadow < 20% of dayside rather than near-zero.  With the shadow
-    # cylinder radius set to the planet radius, the dayside/night asymmetry
-    # is pronounced and a 0.2 threshold provides a meaningful check.
-    if shadow_mean > max(dayside_mean * 0.2, 1e-30):
-        return False, (
-            f"Shadow rhoS1 too high ({shadow_mean:.2e}) "
-            f"vs dayside ({dayside_mean:.2e})"
-        )
-
-    ratio = shadow_mean / max(dayside_mean, 1e-30)
-    print(f"    Shadow/dayside ratio:          {ratio:.2e}  (expected \u226a 1)")
-
-    return True, "Passed"
-
-
-def _check_beam_transverse_wave():
-    """Check transverse EM wave growth against the cyclotron resonance.
-
-    Reads the final .out plot file (at t ~= 0.1 normalized), FFTs the
-    transverse magnetic-field profile (By, Bz), and compares the dominant
-    spatial mode to the theoretical cyclotron-resonant wavenumber
-    ``k_res = Omega_i / Delta_v``.
-
-    For the beam test the resonant wavelength (``k_res^-1`` ~ 10^4 km)
-    vastly exceeds the 2 km periodic box, so the resonant mode (n ~= 0)
-    cannot fit.  The instability therefore populates the longest-wavelength
-    modes that fit in the box.  This check verifies that (1) the transverse
-    wave has grown above the numerical noise floor and (2) the wave power
-    is concentrated in low-order spatial modes consistent with the
-    box-limited instability, reporting the dominant mode and k_res for
-    inspection.
-
-    Returns (passed: bool, reason: str).
-    """
-    import glob
-
-    plots_dir = os.path.join("run_test", "PC", "plots")
-    out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
-    if not out_files:
-        print("    [FFT] No .out files found (PostProc.pl not run?).")
-        return True, "No .out files (skipped)"
-
-    # Use the final frame (latest cycle); this is the t ~= 0.1 snapshot.
-    out_file = out_files[-1]
-    print(f"    [FFT] Loading .out: {os.path.basename(out_file)}")
-
-    with open(out_file, "r") as f:
-        lines = f.readlines()
-    if len(lines) < 6:
-        return True, "Short .out file"
-
-    var_names = lines[4].split()
-    vidx = {v.upper(): i for i, v in enumerate(var_names)}
-    for need in ("BY", "BZ", "BX"):
-        if need not in vidx:
-            print(f"    [FFT] '{need}' not found in .out variables: {var_names}")
-            return True, f"{need} not in .out"
-
-    iby, ibz, ibx = vidx["BY"], vidx["BZ"], vidx["BX"]
-
-    x = []
-    by = []
-    bz = []
-    bx = []
-    for line in lines[5:]:
-        cols = line.split()
-        if len(cols) <= max(iby, ibz, ibx):
-            continue
-        try:
-            x.append(float(cols[0]))
-            by.append(float(cols[iby]))
-            bz.append(float(cols[ibz]))
-            bx.append(float(cols[ibx]))
-        except (ValueError, IndexError):
-            continue
-
-    n = len(x)
-    if n < 4:
-        print("    [FFT] Too few data points for FFT.")
-        return True, "Too few points"
-
-    # Simulation time (normalized) from line 2.
-    try:
-        t_norm = float(lines[1].split()[1])
-    except (ValueError, IndexError):
-        t_norm = float("nan")
-
-    # B-fields are in nT in the .out file.
-    bx_mean = sum(bx) / n
-    bperp = [math.hypot(by[i], bz[i]) for i in range(n)]
-    bperp_max = max(bperp)
-
-    print(f"    [FFT] t={t_norm:.4f} (normalized), N={n} cells")
-    print(f"    [FFT] |Bx|={bx_mean:.4f} nT, max|B_perp|={bperp_max:.4e} nT")
-
-    # ---- Check 1: wave growth above the noise floor ----------------------
-    # At t=0 the transverse field is exactly zero; after the instability
-    # triggers it grows from numerical noise.  Require the amplitude to
-    # exceed a small fraction of the guide field.
-    noise_frac = 1e-4
-    if bx_mean <= 0:
-        growth_ok = bperp_max > 0
-    else:
-        growth_ok = bperp_max > noise_frac * abs(bx_mean)
-    print(f"    [FFT] Wave growth: max|B_perp|/|Bx| = "
-          f"{bperp_max / max(abs(bx_mean), 1e-30):.3e} "
-          f"(threshold {noise_frac:.0e}) -> "
-          f"{'OK' if growth_ok else 'FAIL'}")
-
-    # ---- DFT of the transverse field -------------------------------------
-    # FFT By and Bz separately (preserving sign/oscillation), then combine
-    # the per-mode amplitudes.  Using |B_perp| directly would introduce
-    # spurious harmonics from the magnitude operation.
-    def _dft_amp(data):
-        nn = len(data)
-        out = []
-        for k in range(nn // 2 + 1):
-            re = sum(data[j] * math.cos(2 * math.pi * k * j / nn)
-                     for j in range(nn))
-            im = -sum(data[j] * math.sin(2 * math.pi * k * j / nn)
-                      for j in range(nn))
-            out.append(math.hypot(re, im))
-        return out
-
-    try:
-        import numpy as np
-        fy = np.abs(np.fft.rfft(by))
-        fz = np.abs(np.fft.rfft(bz))
-        amps = [math.hypot(float(fy[k]), float(fz[k]))
-                for k in range(len(fy))]
-    except ImportError:
-        ay = _dft_amp(by)
-        az = _dft_amp(bz)
-        amps = [math.hypot(ay[k], az[k]) for k in range(len(ay))]
-
-    # Non-DC (n>=1) power.
-    total_power = sum(a * a for a in amps[1:])
-    if total_power <= 0:
-        print("    [FFT] No non-DC spectral power; wave has not grown.")
-        return False, "No transverse wave power detected"
-
-    # Dominant non-DC mode.
-    n_dom = max(range(1, len(amps)), key=lambda k: amps[k])
-    dom_frac = amps[n_dom] ** 2 / total_power
-
-    # Fraction of power in low-order modes (n <= N/4).
-    n_low = n // 4
-    low_frac = sum(a * a for a in amps[1:n_low + 1]) / total_power
-
-    print(f"    [FFT] Dominant mode: n={n_dom} "
-          f"({100 * dom_frac:.1f}% of non-DC power)")
-    print(f"    [FFT] Power in low modes (n<={n_low}): "
-          f"{100 * low_frac:.1f}%")
-
-    # ---- Theoretical resonant wavenumber ---------------------------------
-    # Cyclotron resonance: k_res = Omega_i / Delta_v (ion-ion beam-beam).
-    # Omega_i = q_p * |Bx| / m_p (SI; the Boris pusher uses q*dt/(2*m)
-    # without a c factor, so this is the SI cyclotron frequency).
-    q_p = 1.60217663e-19   # C  (cUnitChargeSI)
-    m_p = 1.67262192e-27   # kg (cProtonMassSI)
-    bx_si = abs(bx_mean) * 1e-9          # nT -> T
-    omega_i = q_p * bx_si / m_p          # rad/s
-    delta_v = 8e5                         # m/s (beam +400, bg -400 km/s)
-    k_res = omega_i / delta_v             # 1/m
-
-    # Box geometry (x is in metres in the .out file).
-    dx = x[1] - x[0]
-    L = n * dx
-    k1 = 2 * math.pi / L                  # box-fundamental wavenumber
-    n_res = max(1, round(k_res / k1))
-
-    print(f"    [FFT] Omega_i = {omega_i:.4f} rad/s, "
-          f"Delta_v = {delta_v:.1e} m/s")
-    print(f"    [FFT] k_res = {k_res:.3e} 1/m, "
-          f"k_1 = {k1:.3e} 1/m (L = {L:.1f} m)")
-    print(f"    [FFT] Resonant wavelength = {2 * math.pi / k_res:.3e} m "
-          f"vs box L = {L:.1f} m")
-
-    if k_res < k1:
-        # Resonant wavelength exceeds the box: the resonant mode (n ~ 0)
-        # cannot fit, so the nearest available mode is the box-fundamental
-        # n=1.  The instability populates the longest-wavelength modes that
-        # fit; verify the bulk of the wave power resides in low-order modes
-        # (not grid-scale noise near the Nyquist frequency).
-        mode_ok = low_frac > 0.4
-        print(f"    [FFT] k_res < k_1: resonant mode (n={k_res / k1:.2e}) "
-              f"exceeds the box; nearest available mode is n=1.")
-        print(f"    [FFT] Mode check (box-limited): low-mode power "
-              f"fraction {low_frac:.2f} > 0.4 -> "
-              f"{'OK' if mode_ok else 'FAIL'}")
-    else:
-        tol = 2
-        mode_ok = abs(n_dom - n_res) <= tol
-        print(f"    [FFT] Mode check: |n_dom({n_dom}) - n_res({n_res})| "
-              f"<= {tol} -> {'OK' if mode_ok else 'FAIL'}")
-
-    if growth_ok and mode_ok:
-        print("    [FFT] Transverse wave check: PASSED")
-        return True, "Passed"
-    else:
-        reasons = []
-        if not growth_ok:
-            reasons.append(f"wave amplitude {bperp_max:.2e} nT below "
-                           f"noise floor ({noise_frac:.0e}*|Bx|)")
-        if not mode_ok:
-            reasons.append(f"dominant mode n={n_dom} inconsistent with "
-                           f"resonance (n_res={n_res})")
-        return False, "; ".join(reasons)
-
-
-def _check_charge_exchange_source_profile():
-    """Check charge exchange source spatial profile from plot output.
-
-    Reads .out files produced by PostProc.pl.  Verifies that the O+ density
-    (rhoS2) peaks near the planet surface (|x| ~ Rp) where the exosphere
-    density is highest, and is much smaller near the planet center where no
-    neutrals exist.  The exosphere density is zero inside the planet, so the
-    source (and resulting particle density) should be smallest at the center.
-
-    Returns (passed: bool, reason: str).
-    """
-    import glob
-
-    plots_dir = os.path.join("run_test", "PC", "plots")
-    out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
-    if not out_files:
-        print("    [CX] No .out files found (PostProc.pl not run?).")
-        return False, "No .out files found"
-
-    out_file = out_files[-1]
-    print(f"    [CX] Loading .out: {os.path.basename(out_file)}")
-
-    with open(out_file, "r") as f:
-        lines = f.readlines()
-    if len(lines) < 6:
-        return True, "Short .out file"
-
-    var_names = lines[4].split()
-    vidx = {v.upper(): i for i, v in enumerate(var_names)}
-
-    # Find rhoS2 (O+ density); fall back to rhoS1 for 2-species layouts.
-    rho_idx = None
-    rho_name = None
-    for target in ("RHOS2", "RHOS1"):
-        if target in vidx:
-            rho_idx = vidx[target]
-            rho_name = target
-            break
-    if rho_idx is None:
-        print(f"    [CX] rhoS2/rhoS1 not found in .out variables: {var_names}")
-        return True, "rhoS2/rhoS1 not in .out"
-
-    # Read planet radius and normalization from PARAM.in (plot coords = SI / lNormSI).
-    Rp_si = 3.0e6
-    lNormSI = 1000.0
-    try:
-        with open(os.path.join("run_test", "PARAM.in"), "r") as pf:
-            section = None
-            norm_idx = 0
-            for line in pf:
-                line_s = line.strip()
-                if line_s.startswith("#"):
-                    section = line_s
-                    if section == "#NORMALIZATION":
-                        norm_idx = 0
-                    continue
-                if not line_s:
-                    continue
-                parts = line_s.split()
-                if section == "#BODYSIZE" and len(parts) >= 1:
-                    try:
-                        Rp_si = float(parts[0])
-                    except ValueError:
-                        pass
-                elif section == "#NORMALIZATION" and len(parts) >= 1:
-                    if norm_idx == 0:
-                        try:
-                            lNormSI = float(parts[0])
-                        except ValueError:
-                            pass
-                    norm_idx += 1
-    except Exception:
+    class _Validator:
         pass
 
-    Rp_plot = Rp_si / lNormSI
-
-    # Parse data points (x, rhoS2).
-    points = []
-    for line in lines[5:]:
-        cols = line.strip().split()
-        if len(cols) <= rho_idx:
-            continue
-        try:
-            x = float(cols[0])
-            rho = float(cols[rho_idx])
-            points.append((x, rho))
-        except (ValueError, IndexError):
-            continue
-
-    if not points:
-        print("    [CX] No data points parsed from .out file.")
-        return False, "No data points parsed"
-
-    print(f"    [CX] Rp (plot coords): {Rp_plot:.1f}")
-    print(f"    [CX] Points: {len(points)}")
-
-    # Classify points by distance from planet center:
-    #   - "near surface": 0.5*Rp < |x| <= 1.5*Rp (exosphere active, source peaks)
-    #   - "deep interior": |x| < 0.3*Rp (no neutrals, source should be ~0)
-    near_surface = [(x, r) for x, r in points
-                    if 0.5 * Rp_plot < abs(x) <= 1.5 * Rp_plot]
-    deep_interior = [(x, r) for x, r in points if abs(x) < 0.3 * Rp_plot]
-
-    surface_mean = (sum(r for _, r in near_surface) / len(near_surface)
-                    if near_surface else 0.0)
-    surface_max = max((r for _, r in near_surface), default=0.0)
-    interior_mean = (sum(r for _, r in deep_interior) / len(deep_interior)
-                     if deep_interior else 0.0)
-    interior_max = max((r for _, r in deep_interior), default=0.0)
-
-    print(f"    [CX] {rho_name} near surface (mean): {surface_mean:.4e}")
-    print(f"    [CX] {rho_name} near surface (max):  {surface_max:.4e}")
-    print(f"    [CX] {rho_name} deep interior (mean): {interior_mean:.4e}")
-    print(f"    [CX] {rho_name} deep interior (max):  {interior_max:.4e}")
-
-    # Check 1: source non-zero near the planet surface.
-    if surface_max <= 0.0:
-        print("    [CX] FAIL: No source detected near planet surface.")
-        return False, "No source detected near planet surface"
-
-    # Check 2: density much smaller in the deep interior than near surface.
-    if interior_mean > surface_mean * 0.1:
-        print(f"    [CX] FAIL: Interior density too high "
-              f"({interior_mean:.2e} vs surface mean {surface_mean:.2e})")
-        return False, (f"Interior density too high "
-                       f"({interior_mean:.2e} vs {surface_mean:.2e})")
-
-    # Check 3: approximately symmetric (left vs right near surface).
-    left = [r for x, r in near_surface if x < 0]
-    right = [r for x, r in near_surface if x > 0]
-    left_mean = sum(left) / len(left) if left else 0.0
-    right_mean = sum(right) / len(right) if right else 0.0
-
-    print(f"    [CX] {rho_name} left  (x<0, near surf) mean: {left_mean:.4e}")
-    print(f"    [CX] {rho_name} right (x>0, near surf) mean: {right_mean:.4e}")
-
-    if left_mean > 0 and right_mean > 0:
-        ratio = min(left_mean, right_mean) / max(left_mean, right_mean)
-        print(f"    [CX] Left/Right ratio: {ratio:.2f}")
-        if ratio < 0.3:
-            print(f"    [CX] FAIL: Source asymmetric (L/R ratio {ratio:.2f})")
-            return False, f"Source asymmetric (L/R ratio {ratio:.2f})"
-
-    print("    [CX] Charge exchange source profile: VERIFIED")
-    return True, "Passed"
+    v = _Validator()
+    v.validate_log = getattr(module, "validate_log", None)
+    # plot() expects a single positional arg (test_name).
+    v.plot = getattr(module, "validate_plot", None)
+    v.particle_tol = getattr(module, "PARTICLE_TOL", None)
+    return v
 
 
-def _check_lightwave_present():
-    """Verify the light wave is present in the final plot output.
+def _sync_shared_run_dir():
+    """Push the current RUN_DIR into the shared helpers used by plot checks."""
+    import tests._shared.hybrid as _hyb
+    _hyb.set_run_dir(RUN_DIR)
 
-    Reads the final .out file (produced by PostProc.pl) and checks that the
-    magnetic-field amplitude (BX/BY/BZ) is non-zero somewhere on the slice,
-    confirming the transverse EM wave was initialised and is still present at
-    the final time.
 
-    Returns (passed: bool, reason: str).
+# ---------------------------------------------------------------------------
+# Test discovery + main
+# ---------------------------------------------------------------------------
+def discover_tests(tests_dir="tests"):
+    """Return a sorted list of (test_dir, name) for directories with PARAM.in.
+
+    Excludes "performance" (a benchmark, not a pass/fail test) and "run_test"
+    (the shared run directory created by prepare_run_dir, which contains a
+    PARAM.in and would otherwise be discovered and re-run as a test).
     """
-    import glob
-
-    plots_dir = os.path.join("run_test", "PC", "plots")
-    out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
-    if not out_files:
-        print("    [LW] No .out files found (PostProc.pl not run?).")
-        return True, "No .out files (skipped)"
-
-    out_file = out_files[-1]
-    print(f"    [LW] Loading .out: {os.path.basename(out_file)}")
-
-    with open(out_file, "r") as f:
-        lines = f.readlines()
-    if len(lines) < 6:
-        return True, "Short .out file"
-
-    var_names = lines[4].split()
-    vidx = {v.upper(): i for i, v in enumerate(var_names)}
-    b_idx = []
-    for target in ("BX", "BY", "BZ"):
-        if target in vidx:
-            b_idx.append(vidx[target])
-    if not b_idx:
-        return True, "BX/BY/BZ not in .out"
-
-    bmax = 0.0
-    for line in lines[5:]:
-        cols = line.split()
-        if max(b_idx) >= len(cols):
-            continue
-        try:
-            for i in b_idx:
-                v = abs(float(cols[i]))
-                if v > bmax:
-                    bmax = v
-        except (ValueError, IndexError):
-            continue
-
-    print(f"    [LW] Max |B| amplitude on slice: {bmax:.4e}")
-    if bmax <= 0.0:
-        print("    [LW] FAIL: magnetic field is zero -- wave not present.")
-        return False, "Magnetic field is zero (wave not present)"
-    print("    [LW] Light wave present: VERIFIED")
-    return True, "Passed"
+    subdirs = sorted([d for d in os.listdir(tests_dir)
+                      if os.path.isdir(os.path.join(tests_dir, d))
+                      and d not in ["performance", "run_test"]])
+    tests = []
+    for d in subdirs:
+        test_dir = os.path.join(tests_dir, d)
+        param_file = os.path.join(test_dir, "PARAM.in")
+        if os.path.exists(param_file):
+            tests.append((test_dir, d))
+    return tests
 
 
-def validate_plot_output(test_name):
-    """Validate simulation plot output files for a given test.
+def run_one_test(test_dir, name, nprocs, results):
+    """Pre-flight check + run one test (or its PARAM variants) + record result."""
+    # Fail fast if the configured binary cannot run this test (wrong user
+    # source or AMR level), before spending time executing it.
+    ok, preflight_reason = preflight_check(name)
+    if not ok:
+        logger.warning("SKIP: %s cannot run with the configured build.", name.upper())
+        logger.warning(preflight_reason)
+        results.append((name.upper(), "FAILED",
+                        f"build misconfigured: {preflight_reason}"))
+        return
 
-    For the photoionization test, this checks the day/night asymmetry from
-    the .out files produced by PostProc.pl.  For the beam test, this
-    performs an FFT-based transverse-wave resonant-wavenumber check on the
-    final plot frame.  For the charge exchange test, this verifies that the
-    O+ source density appears only outside the planet and is approximately
-    symmetric.  Other tests have no plot-file-based validation.
-    """
-    # ---- Photoionization: check day/night asymmetry via IDL .out ----
-    if test_name == "photoionization":
-        print("  --- Validating Output Files (IDL .out) ---")
-        result, reason = _load_idl_plot_asymmetry()
-        if result:
-            print("    [IDL] Photoionization day/night asymmetry: VERIFIED")
-        return result, reason
+    validator = load_validator(name)
 
-    # ---- Beam: FFT-based transverse-wave resonant-wavenumber check ----
-    if test_name == "beam":
-        print("  --- Validating Output Files (FFT transverse wave) ---")
-        result, reason = _check_beam_transverse_wave()
-        if result:
-            print("    [FFT] Beam transverse-wave resonance check: VERIFIED")
-        return result, reason
+    # A test directory may hold two parameter files (PARAM.in and
+    # PARAM.in.hybrid) that exercise the same physics with the full-PIC and
+    # hybrid field solvers respectively.  When both exist the runner executes
+    # the test once per variant so each solver is validated independently.
+    # Each variant gets a distinct base_name (suffix "hybrid") so the per-test
+    # validator can apply solver-appropriate checks.  The free-stream test keeps
+    # its legacy display names.
+    hybrid_path = os.path.join(test_dir, "PARAM.in.hybrid")
+    variants = [
+        (os.path.join(test_dir, "PARAM.in"), name.upper(), name),
+    ]
+    if os.path.exists(hybrid_path):
+        variants.append((hybrid_path, f"{name.upper()} (HYBRID)",
+                         f"{name}_hybrid"))
+    if name == "freestream":
+        # Preserve the free-stream test's established display names.
+        variants = [
+            (os.path.join(test_dir, "PARAM.in"), "FREESTREAM (FULL PIC)",
+             "freestream"),
+            (hybrid_path, "FREESTREAM (HYBRID HALL-OFF)", "freestream"),
+        ]
 
-    # ---- Charge exchange: source profile (peaks near surface, symmetric) ----
-    if test_name == "chargeexchange":
-        print("  --- Validating Output Files (CX source profile) ---")
-        result, reason = _check_charge_exchange_source_profile()
-        return result, reason
+    for param_file, display_name, base_name in variants:
+        with open(param_file) as _f:
+            _param_text = _f.read()
+        run_and_validate(test_dir, display_name, validator, nprocs, results,
+                         param_text=_param_text, base_name=base_name)
 
-    # ---- Light wave: transverse EM wave must be present in the output ----
-    if test_name == "lightwave":
-        print("  --- Validating Output Files (light wave present) ---")
-        result, reason = _check_lightwave_present()
-        return result, reason
-
-    # ---- Other tests: no plot-file validation ----
-    print("  --- Validating Output Files: No plot-file check for this test ---")
-    return True, "Passed (no plot-file check)"
 
 def main():
     # Parse nprocs: -n N or --nprocs N
@@ -1465,14 +774,14 @@ def main():
             try:
                 nprocs = int(sys.argv[i + 1])
             except (IndexError, ValueError):
-                print(f"Error: {arg} requires an integer argument (number of MPI processes).")
+                logger.error("Error: %s requires an integer argument (number of MPI processes).", arg)
                 sys.exit(1)
-            break
-    
+            continue
+
     if nprocs < 1:
-        print("Error: Number of processes must be >= 1.")
+        logger.error("Error: Number of processes must be >= 1.")
         sys.exit(1)
-    
+
     # Parse --summary-file PATH (custom output path for CI serial/parallel split)
     summary_file = "tests/summary.md"
     for i, arg in enumerate(sys.argv):
@@ -1480,9 +789,9 @@ def main():
             try:
                 summary_file = sys.argv[i + 1]
             except IndexError:
-                print("Error: --summary-file requires a path argument.")
+                logger.error("Error: --summary-file requires a path argument.")
                 sys.exit(1)
-            break
+            continue
 
     # Parse --test NAME (select a specific test to run; default: run all)
     # Accepts both "--test=NAME" and "--test NAME" forms.
@@ -1490,50 +799,42 @@ def main():
     for i, arg in enumerate(sys.argv):
         if arg.startswith("--test="):
             selected_test = arg[len("--test="):]
-            break
+            continue
         if arg == "--test":
             try:
                 selected_test = sys.argv[i + 1]
             except IndexError:
-                print("Error: --test requires a test name argument.")
+                logger.error("Error: --test requires a test name argument.")
                 sys.exit(1)
-            break
+            continue
+        if arg == "--run-dir":
+            global RUN_DIR
+            try:
+                RUN_DIR = sys.argv[i + 1]
+            except IndexError:
+                logger.error("Error: --run-dir requires a path argument.")
+                sys.exit(1)
+            continue
 
+    # Parse --verbose / -v: show DEBUG diagnostics from each validator.
+    verbose = "-v" in sys.argv or "--verbose" in sys.argv
+    setup_logging(verbose=verbose)
+
+    # Work from the FLEKS root so `include/...`, `tests/...` and `run_test/`
+    # resolve relative to the repository, and so the `tests` package is
+    # importable.
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    os.chdir(os.path.dirname(script_dir))
-    print(f"Working directory set to: {os.getcwd()}")
-    
-    validators = {
-        "beam": validate_beam,
-        "photoionization": validate_ionization_source,
-        "electronimpact": validate_ionization_source,
-        "chargeexchange": validate_ionization_source,
-        "recombination": validate_recombination,
-        "chemistry": validate_chemistry,
-        "lightwave": validate_lightwave,
-    }
-    
-    # Discover test subdirectories under tests/
-    tests_dir = "tests"
-    
-    # Iterate through sorted subdirectories
-    # Exclude "performance" (benchmark, not a pass/fail test) and "run_test"
-    # (the shared run directory created by prepare_run_dir, which contains a
-    # PARAM.in and would otherwise be discovered and re-run as a test).
-    subdirs = sorted([d for d in os.listdir(tests_dir) 
-                      if os.path.isdir(os.path.join(tests_dir, d))
-                      and d not in ["performance", "run_test"]])
-    
-    tests = []
-    for d in subdirs:
-        test_dir = os.path.join(tests_dir, d)
-        param_file = os.path.join(test_dir, "PARAM.in")
-        if os.path.exists(param_file):
-            validator = validators.get(d, None)
-            tests.append((test_dir, d, validator))
-            
+    repo_root = os.path.dirname(script_dir)
+    os.chdir(repo_root)
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+    logger.debug("Working directory set to: %s", os.getcwd())
+
+    _sync_shared_run_dir()
+
+    tests = discover_tests()
     if not tests:
-        print("No tests found in tests/ subdirectories!")
+        logger.error("No tests found in tests/ subdirectories!")
         sys.exit(1)
 
     # Filter to a single test if --test was given.
@@ -1541,117 +842,39 @@ def main():
         matching = [t for t in tests if t[1] == selected_test]
         if not matching:
             available = ", ".join(t[1] for t in tests)
-            print(f"Error: test '{selected_test}' not found.")
-            print(f"Available tests: {available}")
+            logger.error("Error: test '%s' not found.", selected_test)
+            logger.error("Available tests: %s", available)
             sys.exit(1)
         tests = matching
-        print(f"Selected test: {selected_test}")
-        
-    results = [] # Collect results for summary table
-    
-    for test_dir, name, validator in tests:
-        print(f"\n==========================================")
-        print(f"Starting test: {name.upper()}")
-        print(f"==========================================")
+        logger.debug("Selected test: %s", selected_test)
 
-        # Fail fast if the configured binary cannot run this test (wrong user
-        # source or AMR level), before spending time executing it.
-        ok, preflight_reason = preflight_check(name)
-        if not ok:
-            print(f"SKIP: {name.upper()} cannot run with the configured build.")
-            print(preflight_reason)
-            results.append((name.upper(), "FAILED",
-                            f"build misconfigured: {preflight_reason}"))
-            continue
+    results = []  # Collect results for summary table
 
-        try:
-            stdout, code = run_test(test_dir, nprocs=nprocs)
-            if code != 0 or stdout is None:
-                print(f"FAIL: {name.upper()} execution failed with exit code {code}")
-                results.append((name.upper(), "FAILED", f"Execution failed (code {code})"))
-                continue
-
-            # Read the PIC energy log (the only diagnostic log produced by FLEKS).
-            pic_diags = read_pic_log("run_test")
-
-            val_res = False
-            reason = "Validation skipped"
-
-            if validator:
-                import inspect
-                sig = inspect.signature(validator)
-                kwargs = {}
-                if "pic_diags" in sig.parameters:
-                    kwargs["pic_diags"] = pic_diags
-                if "test_name" in sig.parameters:
-                    kwargs["test_name"] = name
-                val_res, reason = validator(**kwargs)
-                if not val_res:
-                    results.append((name.upper(), "FAILED", reason))
-                    continue
-            else:
-                print(f"Validating {name.upper()} (generic check)...")
-                print(f"{name.upper()} (generic check): PASSED")
-                val_res = True
-                reason = "Passed"
-
-            # Read the test-particle tracer log (log_pt_n*.log) and validate
-            # it for tests that enable #PARTICLETRACKER T.
-            pt_diags = read_pt_log("run_test")
-            pt_tests = {"beam", "photoionization"}
-            if name in pt_tests:
-                pt_tol = {
-                    "beam":   {"expected_active_species": [0],
-                               "launch_threshold": 0.5, "max_speed": 10.0},
-                    "photoionization": {"expected_active_species": [0, 1, 2],
-                                        "launch_threshold": 0.5, "max_speed": 10.0},
-                }.get(name, {})
-                pt_res, pt_reason = validate_test_particles(
-                    pt_diags, test_name=name, tol=pt_tol)
-                if not pt_res:
-                    results.append((name.upper(), "FAILED",
-                                    f"test-particle check failed: {pt_reason}"))
-                    continue
-
-            # Validate output plotfiles
-            plot_res, plot_reason = validate_plot_output(name)
-            if not plot_res:
-                results.append((name.upper(), "FAILED", f"plot check failed: {plot_reason}"))
-            else:
-                results.append((name.upper(), "PASSED", "Passed"))
-
-        finally:
-            # Always clean up run output after each test to keep disk usage low.
-            print(f"  Cleaning up run_test/ output for {name.upper()}...")
-            cleanup_run_dir()
-
+    for test_dir, name in tests:
+        run_one_test(test_dir, name, nprocs, results)
 
     # ----------------------------------------------------
     # Print Summary Table
     # ----------------------------------------------------
-    print("\n" + "=" * 80)
-    print(" " * 32 + "TEST SUMMARY")
-    print("=" * 80)
-    print(f" {'Test Name':<28} | {'Status':<8} | {'Failure Reason / Details':<38}")
-    print("-" * 80)
-    
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info(" " * 32 + "TEST SUMMARY")
+    logger.info("=" * 80)
+    logger.info(" %-28s | %-8s | %s", "Test Name", "Status", "Failure Reason / Details")
+    logger.info("-" * 80)
+
     all_passed = True
     for name_str, status, reason in results:
-        status_display = f"{status:<8}"
-        if sys.stdout.isatty():
-            if status == "PASSED":
-                status_display = f"\033[92;1m{status:<8}\033[0m" # Green Bold
-            else:
-                status_display = f"\033[91;1m{status:<8}\033[0m" # Red Bold
-                
-        if status != "PASSED":
+        if status == "PASSED":
+            status_display = "\033[92;1mPASSED\033[0m" if sys.stdout.isatty() else "PASSED"
+        else:
+            status_display = "\033[91;1mFAILED\033[0m" if sys.stdout.isatty() else "FAILED"
             all_passed = False
-            
         reason_display = reason if status != "PASSED" else ""
-        print(f" {name_str:<28} | {status_display} | {reason_display:<38}")
-        
-    print("=" * 80)
-    
+        logger.info(" %-28s | %-8s | %s", name_str, status_display, reason_display)
+
+    logger.info("=" * 80)
+
     # Write Markdown Summary to summary.md for CI / PR integration
     try:
         with open(summary_file, "w") as f:
@@ -1663,20 +886,21 @@ def main():
                 reason_md = reason if status != "PASSED" else ""
                 f.write(f"| {name_str} | {status_md} | {reason_md} |\n")
     except Exception as e:
-        print(f"Warning: Could not write summary.md: {e}")
-    
+        logger.warning("Warning: Could not write summary.md: %s", e)
+
     if all_passed:
         if sys.stdout.isatty():
-            print("\033[92;1m\nALL STANDALONE FLEKS TESTS PASSED SUCCESSFULLY!\033[0m\n")
+            logger.info("\033[92;1m\nALL STANDALONE FLEKS TESTS PASSED SUCCESSFULLY!\033[0m\n")
         else:
-            print("\nALL STANDALONE FLEKS TESTS PASSED SUCCESSFULLY!\n")
+            logger.info("\nALL STANDALONE FLEKS TESTS PASSED SUCCESSFULLY!\n")
         sys.exit(0)
     else:
         if sys.stdout.isatty():
-            print("\033[91;1m\nSOME TESTS FAILED.\033[0m\n")
+            logger.error("\033[91;1m\nSOME TESTS FAILED.\033[0m\n")
         else:
-            print("\nSOME TESTS FAILED.\n")
+            logger.error("\nSOME TESTS FAILED.\n")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

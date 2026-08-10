@@ -492,6 +492,53 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
   }
 }
 
+void curl_center_to_center(const MultiFab& centerInMF, MultiFab& centerOutMF,
+                           const Real* invDx) {
+  // Collocated 2*dx central difference on a cell-centred field. The box is
+  // grown by one cell on each side (the output cell (i,j,k) reads neighbours
+  // at +/-1). Requires the input to have >= 1 ghost cell (nGst >= 1).
+  const Real dyInv = 0.5 * invDx[iy_];
+  const Real dxInv = 0.5 * invDx[ix_];
+  // 2D safety: AMReX keeps a dummy z extent, so guard the z inverse and all
+  // z-derivatives with nDim > 2.
+  const Real dzInv = (nDim > 2) ? 0.5 * invDx[iz_] : 0.0;
+
+  for (MFIter mfi(centerOutMF, doTiling); mfi.isValid(); ++mfi) {
+    Box box = mfi.fabbox();
+    box.grow(-1);
+
+    const Array4<Real>& outArr = centerOutMF[mfi].array();
+    const Array4<Real const>& inArr = centerInMF[mfi].array();
+
+    ParallelFor(box, [&](int i, int j, int k) {
+      // curl X: (dBz/dy - dBy/dz)
+      const Real dBz_dy =
+          (inArr(i, j + 1, k, iz_) - inArr(i, j - 1, k, iz_)) * dyInv;
+      const Real dBy_dz =
+          (nDim > 2)
+              ? (inArr(i, j, k + 1, iy_) - inArr(i, j, k - 1, iy_)) * dzInv
+              : 0.0;
+      outArr(i, j, k, ix_) = dBz_dy - dBy_dz;
+
+      // curl Y: (dBx/dz - dBz/dx)
+      const Real dBx_dz =
+          (nDim > 2)
+              ? (inArr(i, j, k + 1, ix_) - inArr(i, j, k - 1, ix_)) * dzInv
+              : 0.0;
+      const Real dBz_dx =
+          (inArr(i + 1, j, k, iz_) - inArr(i - 1, j, k, iz_)) * dxInv;
+      outArr(i, j, k, iy_) = dBx_dz - dBz_dx;
+
+      // curl Z: (dBy/dx - dBx/dy)
+      const Real dBy_dx =
+          (inArr(i + 1, j, k, iy_) - inArr(i - 1, j, k, iy_)) * dxInv;
+      const Real dBx_dy =
+          (inArr(i, j + 1, k, ix_) - inArr(i, j - 1, k, ix_)) * dyInv;
+      outArr(i, j, k, iz_) = dBy_dx - dBx_dy;
+    });
+  }
+}
+
 void average_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF) {
   for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
     Box box = mfi.fabbox();
@@ -509,6 +556,65 @@ void average_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF) {
            centerArr(i - 1, j, k, iVar) + centerArr(i, j - 1, km1, iVar) +
            centerArr(i, j - 1, k, iVar) + centerArr(i, j, km1, iVar) +
            centerArr(i, j, k, iVar));
+    });
+  }
+}
+
+void average_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF) {
+  // Average the 2^nDim corner nodes into each cell centre. The node index at a
+  // cell (i,j,k) is: (i,j,k), (i+1,j,k), (i,j+1,k), ... For 2D (nDim == 2) the
+  // z extent is a dummy (k is constant), so the average reduces to the 4 corner
+  // nodes. The factor is 1/(2^nDim).
+  const Real inv2d = (nDim > 2) ? 0.125 : 0.25;
+  for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
+    Box box = mfi.fabbox();
+    box.grow(-1);
+
+    const Array4<Real>& centerArr = centerMF[mfi].array();
+    const Array4<Real const>& nodeArr = nodeMF[mfi].array();
+
+    ParallelFor(box, centerMF.nComp(), [&](int i, int j, int k, int iVar) {
+      if (nDim > 2) {
+        centerArr(i, j, k, iVar) =
+            inv2d *
+            (nodeArr(i, j, k, iVar) + nodeArr(i + 1, j, k, iVar) +
+             nodeArr(i, j + 1, k, iVar) + nodeArr(i + 1, j + 1, k, iVar) +
+             nodeArr(i, j, k + 1, iVar) + nodeArr(i + 1, j, k + 1, iVar) +
+             nodeArr(i, j + 1, k + 1, iVar) +
+             nodeArr(i + 1, j + 1, k + 1, iVar));
+      } else {
+        centerArr(i, j, k, iVar) =
+            inv2d *
+            (nodeArr(i, j, k, iVar) + nodeArr(i + 1, j, k, iVar) +
+             nodeArr(i, j + 1, k, iVar) + nodeArr(i + 1, j + 1, k, iVar));
+      }
+    });
+  }
+}
+
+void lap_center_to_center(const MultiFab& centerMF, MultiFab& centerMFout,
+                          const Real* invDx) {
+  for (MFIter mfi(centerMFout, doTiling); mfi.isValid(); ++mfi) {
+    Box box = mfi.fabbox();
+    box.grow(-1);
+
+    const Array4<Real>& outArr = centerMFout[mfi].array();
+    const Array4<Real const>& inArr = centerMF[mfi].array();
+
+    const Real ix2 = invDx[ix_] * invDx[ix_];
+    const Real iy2 = invDx[iy_] * invDx[iy_];
+
+    ParallelFor(box, centerMF.nComp(), [&](int i, int j, int k, int iVar) {
+      Real lap = ix2 * (inArr(i + 1, j, k, iVar) - 2.0 * inArr(i, j, k, iVar) +
+                        inArr(i - 1, j, k, iVar)) +
+                 iy2 * (inArr(i, j + 1, k, iVar) - 2.0 * inArr(i, j, k, iVar) +
+                        inArr(i, j - 1, k, iVar));
+      if (nDim > 2) {
+        const Real iz2 = invDx[iz_] * invDx[iz_];
+        lap += iz2 * (inArr(i, j, k + 1, iVar) - 2.0 * inArr(i, j, k, iVar) +
+                      inArr(i, j, k - 1, iVar));
+      }
+      outArr(i, j, k, iVar) = lap;
     });
   }
 }

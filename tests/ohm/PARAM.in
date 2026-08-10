@@ -1,0 +1,145 @@
+#DESCRIPTION
+Hybrid PIC (kinetic ions / fluid electrons) parallel whistler-Alfven wave test.
+Full generalized Ohm's law: convection + Hall + resistive (eta*J) + electron
+pressure gradient (grad Pe / (e n_e)) terms ALL active, in normalized CGS units.
+
+Parameters match the whistler test (same ion-scale normalization so d_i ~ v_A ~ 1
+in code units).  Here RESISTIVITY and ELECTRONTEMPERATURE are enabled so the
+complete Ohm's-law field solver is exercised.  A moderate resistivity damps the
+whistler, and the electron pressure gradient acts on the (weak) charge-density
+fluctuations produced by particle noise; the test is a STABILITY / no-blow-up
+regression check for the full solver, not a dispersion measurement.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-3.2                    xMin  [code units; Lx = 6.4 d_i]
+ 3.2                    xMax
+-0.05                   yMin
+ 0.05                   yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+64                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+64                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+Resistive term ON. Converted internally to code units
+(etaCode = 4*pi*etaSI*Si2NoV*Si2NoL ~ 2.5e-3 here); damps the whistler so the
+late-time transverse amplitude stays well below the seed.
+#RESISTIVITY
+1000000.0               etaResistivity  [m^2/s, SI magnetic diffusivity]
+
+Electron-pressure-gradient term ON (isothermal, gamma = 1). Converted
+internally to code units (TeCode = TeEV*e/(mp*uNormSI^2) ~ 0.19 here).
+#ELECTRONTEMPERATURE
+5.0                     electronTemperature  [eV]
+1.0                     electronGamma
+1.0                     electronDensity0
+
+Sub-cycle the B update. The explicit Hall advance is limited by the discrete
+grid-scale whistler mode, omega_max * dt_sub < S (S ~ 2.83 for RK4). Because the
+compact curl operators (curl_center_to_node / curl_node_to_center) annihilate
+the exact Nyquist mode and are far less stiff than the continuum estimate, the
+effective omega_max here is ~100/Omega_i, so even dt = 0.02 is within the RK4
+limit and nBSubcycle = 1 is stable (verified: the measured whistler frequency
+is identical for nBSubcycle in {1,4,8,16,32}). nBSubcycle = 4 is chosen here
+(verified stable, whistler frequency identical to {1,8,16,32}); it is sufficient
+and provides a meaningful sub-cycling test without over-subcycling (4x cheaper
+than the previous 32). The resistive and
+electron-pressure-gradient terms are diffusive/stabilizing and do not stiffen
+the Hall update, so this rationale is unchanged from the Hall-only whistler
+case.
+#BSUBCYCLE
+4                       nBSubcycle
+
+Single kinetic ion species (q = m = 1); the electron is an implicit
+neutralizing massless fluid, so no electron particle species is present.
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#UNIFORMSTATE
+5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.2195e-9               bx [T]       uniform guide field Bx0 (B_code ~ 1)
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+HybridWave
+
+#TIMESTEPPING
+T                       useFixedDt
+0.02                    dt
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
+5.0e4                   uNormSI   [m/s] ~ v_A so v_A ~ 1 in code units
+
+#MONITOR
+50                      dnReport
+
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+#PARTICLES
+2000                    nParticle per cell in X
+1                       nParticle per cell in Y
+1                       nParticle per cell in Z
+
+#COMOVING
+F                       solvePartInCoMov
+0                       nSmoothBackGroundU
+
+#UPWINDE
+F                       useUpwindE
+0.0                     limiterThetaE
+
+#UPWINDB
+F                       doSmoothB
+0.0                     theta
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+-1                      dn
+6.25                    dt
+1                       dx
+Bx By Bz Ex Ey Ez       varName
+
+#STOP
+-1                      MaxIter
+6.25                    TimeMax
+
+#RUN
+
+#AVGFIELDB
+T                       useAvgFieldB
+20                      nAvgFieldB

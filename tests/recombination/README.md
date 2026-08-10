@@ -44,15 +44,12 @@ to the source-term particle injection.
 - **Electromagnetic Fields**: Enabled (`solveEM = T`) with guiding field
   Bx = 5.0x10^-9 T.
 
-## Expected Results
+## Validation
 
-1. **O2+ Energy Decrease**: The O2+ kinetic energy (Epart2) decreases by
-   ~3-4% over 20 steps, confirming that recombination is removing O2+
-   particles by reducing their weights.
-
-2. **H+ Energy Stability**: The H+ kinetic energy (Epart1) remains stable
-   (within ~2% variation), confirming that recombination only affects O2+
-   and not H+.
+The validator checks that O2+ kinetic energy decreases (recombination removes
+O2+ by reducing particle weights) while H+ energy stays stable (recombination
+only affects O2+). See `tests/recombination/validate.py` for the exact
+tolerances.
 
 ## Running
 

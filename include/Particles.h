@@ -18,6 +18,8 @@
 #include "TimeCtr.h"
 #include "UMultiFab.h"
 
+class InitialCondition; // forward: Particles only stores a non-owning pointer
+
 enum class CrossSection { LS = 0, MT };
 
 enum class PartMode { PIC = 0, Neutral, SEP };
@@ -38,12 +40,6 @@ struct PID {
   }
 
   bool operator==(const PID& t) const { return cpu == t.cpu && id == t.id; }
-};
-
-struct BeamInfo {
-  int iSpecies = -1;
-  amrex::Real vel[nDim3] = { 0, 0, 0 };
-  amrex::Real ratio = 0;
 };
 
 struct Vel {
@@ -341,7 +337,6 @@ protected:
 
   int speciesID;
   RandNum randNum;
-  bool moveParticlesWithConstantVelocity = false;
   amrex::Real charge;
   amrex::Real mass;
 
@@ -408,9 +403,8 @@ public:
   // mu = cos(theta), theta is the pitch angle.
   static constexpr int imu_ = 4;
 
-  TestCase testCase;
-
-  BeamInfo beam;
+  // Non-owning pointer to the active initial condition (owned by Pic).
+  const InitialCondition* ic_ = nullptr;
 
   // Index of the integer data.
   static constexpr int iRecordCount_ = 1;
@@ -418,8 +412,7 @@ public:
   Particles(Grid* gridIn, FluidInterface* fluidIn, TimeCtr* tcIn,
             const int speciesIDIn, const amrex::Real chargeIn,
             const amrex::Real massIn, const ParticlesInfo& pInfo,
-            const PartMode pModeIn, TestCase tcase = RegularSimulation,
-            BeamInfo beamIn = BeamInfo());
+            const PartMode pModeIn, const InitialCondition* icIn = nullptr);
 
   int n_lev() const { return GetParGDB()->finestLevel() + 1; }
 
@@ -456,6 +449,11 @@ public:
   amrex::Real sum_moments(amrex::Vector<amrex::MultiFab>& momentsMF,
                           amrex::Vector<amrex::MultiFab>& nodeBMF,
                           amrex::Real dt);
+
+  // Cell-centred moment deposit: scatter rho/rhoU/Pi from particles to the
+  // momentsMF (centerPlasma[iSpecies]) with trilinear weights.
+  amrex::Real sum_moments_cell_centered(
+      amrex::Vector<amrex::MultiFab>& momentsMF);
 
   std::array<amrex::Real, 5> total_moments(bool localOnly = false);
 
@@ -528,11 +526,28 @@ public:
              const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
              amrex::Real dtNext);
 
+  // Cell-centred mover dispatch: gathers from the centerE/centerB
+  // (rather than the node fields) using a trilinear gather.
+  void mover_cell_centered(const amrex::Vector<amrex::MultiFab>& centerE,
+                           const amrex::Vector<amrex::MultiFab>& centerB,
+                           const amrex::Vector<amrex::MultiFab>& eBg,
+                           const amrex::Vector<amrex::MultiFab>& uBg,
+                           amrex::Real dt, amrex::Real dtNext);
+
   void charged_particle_mover(const amrex::Vector<amrex::MultiFab>& nodeE,
                               const amrex::Vector<amrex::MultiFab>& nodeB,
                               const amrex::Vector<amrex::MultiFab>& eBg,
                               const amrex::Vector<amrex::MultiFab>& uBg,
                               amrex::Real dt, amrex::Real dtNext);
+
+  // Cell-centred particle gather + Boris push, reading E and B from the
+  // fields (centerE / centerB) using a trilinear gather.
+  void charged_particle_mover_cell_centered(
+      const amrex::Vector<amrex::MultiFab>& centerE,
+      const amrex::Vector<amrex::MultiFab>& centerB,
+      const amrex::Vector<amrex::MultiFab>& eBg,
+      const amrex::Vector<amrex::MultiFab>& uBg, amrex::Real dt,
+      amrex::Real dtNext);
 
   // select particles based on input supid and id
   void select_particle(amrex::Vector<std::array<int, 3> >& selectParticleIn);
@@ -841,6 +856,15 @@ public:
                                   ParticleType& p3, ParticleType& p4);
   void merge(amrex::Real limit);
   void merge_new(amrex::Real limit);
+
+  // Generic tool: add a circularly-polarized velocity perturbation to every
+  // particle already in the container:
+  //   dv_y += ampY * cos(kx * x),   dv_z += ampZ * sin(kx * x).
+  // Names no test case; an InitialCondition plug-in that needs to perturb an
+  // existing particle population (rather than seed it at creation time via the
+  // per-particle hooks) can call this.
+  void add_velocity_perturbation(amrex::Real ampY, amrex::Real ampZ,
+                                 amrex::Real kx);
   bool merge_particles_fast(int iLev, AoS& particles,
                             amrex::Vector<int>& partIdx,
                             amrex::Vector<int>& idx_I, int nPartCombine,

@@ -65,7 +65,7 @@ T                       useFixedDt
 1.0e6                   uNormSI
 
 #MONITOR
-1                       dnReport
+10                      dnReport
 
 #PARTICLES
 200                     nParticle per cell in X

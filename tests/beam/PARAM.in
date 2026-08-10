@@ -116,10 +116,6 @@ rhoS1 Bx By Bz          varName
 -1                      MaxIter
 0.1                     TimeMax
 
-#STOP
--1                      MaxIter
-0.1                     TimeMax
-
 #PARTICLETRACKER
 T           usePT
 

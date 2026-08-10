@@ -104,6 +104,7 @@ foreach (@Arguments){
      if(/^-s$/)                 {$Show=1;       next};
      if(/^-h$/)                 {$Help=1;       next};     
      if(/^-tp=(.*)$/)           {$NewTPSave=$1; next};
+     if(/^-lev$/)               {$NewLevMax=1;  next};
      if(/^-lev=(.*)$/)          {$NewLevMax=$1; next};
      if(/^-u$/)                 {$ListUserSources=1; next};
      if(/^-u=(.*)$/)            {$NewUserSource=$1; next};

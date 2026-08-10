@@ -45,15 +45,13 @@ With `nLevMax = 1` the `#REFINEREGION` command aborts at startup
 (`iLev` must be smaller than the max level index), so the test cannot run
 without AMR support.
 
-## Expected Results
+## Validation
 
-- The transverse EM wave propagates across the periodic domain and is
-  refined inside `region1`.
-- The total electromagnetic energy $E_{\rm tot} = E_e + E_b$ (written to
-  `log_pic_n*.log`) is non-zero at $t=0$ and remains approximately conserved
-  over the run (a vacuum Maxwell wave should not decay to zero or blow up).
-- The plot output (`z=0` slice of `Ex Ey Ez Bx By Bz`) shows a non-zero field
-  amplitude, i.e. the wave is present at the final time.
+The validator checks from the `log_pic` energy log that the total
+electromagnetic energy `E_tot = Ee + Eb` stays approximately conserved (non-zero
+and finite, no decay or blow-up), and that the final plot frame still contains a
+non-zero field amplitude (the wave is present and refined inside `region1`). See
+`tests/lightwave/validate.py` for the exact energy ratio tolerance.
 
 ## Running
 
@@ -62,8 +60,3 @@ From the FLEKS root directory (requires `bin/FLEKS.exe` built with AMR):
 ```bash
 python3 tests/validate_tests.py --test=lightwave
 ```
-
-The validation checks (1) energy conservation from the `log_pic` energy log
-($0.3 \le E_{\rm tot}^{\rm final}/E_{\rm tot}^{\rm initial} \le 3.0$, both
-non-zero and finite) and (2) that the final plot frame contains a non-zero
-magnetic-field amplitude (the wave is present).

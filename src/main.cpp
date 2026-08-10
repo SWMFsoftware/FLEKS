@@ -48,8 +48,8 @@ std::string prepare_standalone_run() {
   }
 
   if (amrex::ParallelDescriptor::IOProcessor()) {
-    std::filesystem::create_directories("FLEKS1/plots");
-    std::filesystem::create_directories("FLEKS1/restartOUT");
+    std::filesystem::create_directories("PC/plots");
+    std::filesystem::create_directories("PC/restartOUT");
   }
 
   return paramString;
@@ -87,6 +87,7 @@ int main(int argc, char* argv[]) {
     fleksDomains.add_new_domain();
     fleksDomains.select(0);
     Domain& domain = fleksDomains(0);
+
     domain.init(0.0, 1, paramString);
 
     // Turn on all cells.
