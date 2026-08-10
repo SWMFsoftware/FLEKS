@@ -165,6 +165,7 @@ public:
   int get_ilev_save() const { return iLevSave; }
   double get_plotMin_D(int iDim) const { return plotMin_D[iDim]; }
   double get_plotMax_D(int iDim) const { return plotMax_D[iDim]; }
+  int get_nDim() const { return nDim; }
   /*----Get class member value end--------------------*/
 
   /*----Set class member value begin--------------------*/

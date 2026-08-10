@@ -392,6 +392,12 @@ public:
   // needMach. Used by output / load balancing, not the hybrid solver.
   void sync_node_plasma_output(bool needMach = false);
   void sync_node_E_output();
+  // Cell-centred analogue of PlotWriter::is_inside_plot_region for the hybrid
+  // structured output: 0.5*dx tolerance so a cut plane snaps to the nearest
+  // cell-centre row. Single-level only (multi-level structured output aborts).
+  bool is_inside_cell_plot_region(const PlotWriter& writerIn, int const ix,
+                                  int const iy, int const iz, double const x,
+                                  double const y, double const z) const;
 
   // Convert electronDensity0 (amu/cc) to code units and set the auto density
   // floor. Idempotent; run at the first hybrid field advance after

@@ -499,8 +499,16 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     distribute_FabArray(uBg[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst,
                         doMoveData);
 
-    distribute_FabArray(mMach[iLev], nGrids[iLev], DistributionMap(iLev), 1,
-                        nGst, doMoveData);
+    // mMach is a node-grid array for full-PIC (computed from nodePlasma).
+    // For hybrid it is placed on the cell grid so get_var (which iterates the
+    // cell grid) can read it, and is computed from centerPlasmaSum.
+    if (useHybridPIC) {
+      distribute_FabArray(mMach[iLev], cGrids[iLev], DistributionMap(iLev), 1,
+                          nGst, doMoveData);
+    } else {
+      distribute_FabArray(mMach[iLev], nGrids[iLev], DistributionMap(iLev), 1,
+                          nGst, doMoveData);
+    }
 
     distribute_FabArray(centerMM[iLev], cGrids[iLev], DistributionMap(iLev), 1,
                         nGst, doMoveData);
@@ -1291,9 +1299,15 @@ void Pic::convert_electron_density0() {
 void Pic::calc_mach_number() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
 
-    for (MFIter mfi(nodePlasma[nSpecies][iLev]); mfi.isValid(); ++mfi) {
+    // Hybrid: Mach number from the live cell-centred summed ion moments
+    // (centerPlasmaSum[nSpecies]). Full-PIC: from the node-centred
+    // nodePlasma[nSpecies]. mMach is allocated on the matching grid.
+    const auto& momentsMF =
+        useHybridPIC ? centerPlasmaSum[nSpecies][iLev]
+                     : nodePlasma[nSpecies][iLev];
+    for (MFIter mfi(momentsMF); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
-      const Array4<Real>& moments = nodePlasma[nSpecies][iLev][mfi].array();
+      const Array4<const Real>& moments = momentsMF[mfi].array();
       const Array4<Real>& mach = mMach[iLev][mfi].array();
 
       ParallelFor(box, [&](int i, int j, int k) {
@@ -1326,23 +1340,23 @@ void Pic::calc_cost_per_cell() {
   if (!isMomentsUpdated && balanceStrategy == BalanceStrategy::Particle) {
     sum_moments(false);
   }
-  // Load-balancing by particle/hybrid/timing reads nodePlasma[nSpecies]; the
-  // hybrid nodePlasma mirror is deferred, so materialize it on demand. The Mach
-  // number is not needed for load balancing.
-  if (useHybridPIC && (balanceStrategy == BalanceStrategy::Particle ||
-                       balanceStrategy == BalanceStrategy::Hybrid ||
-                       balanceStrategy == BalanceStrategy::Timing)) {
-    sync_node_plasma_output(false);
-  }
-
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (balanceStrategy == BalanceStrategy::Cell) {
       cellCost[iLev].setVal(1.0);
     } else {
-      // Balance by particles or hybrid
-      average_node_to_cellcenter(cellCost[iLev], 0, nodePlasma[nSpecies][iLev],
-                                 iNum_, cellCost[iLev].nComp(),
-                                 cellCost[iLev].nGrow());
+      // Balance by particles or hybrid. Hybrid: cellCost and the summed ion
+      // moments are both cell-centred, so copy iNum_ directly (no cell->node->
+      // cell roundtrip and no need to materialize the deferred nodePlasma
+      // mirror). Full-PIC: average the node-centred nodePlasma particle count
+      // to the cell grid.
+      if (useHybridPIC) {
+        MultiFab::Copy(cellCost[iLev], centerPlasmaSum[nSpecies][iLev], iNum_, 0,
+                       cellCost[iLev].nComp(), cellCost[iLev].nGrow());
+      } else {
+        average_node_to_cellcenter(cellCost[iLev], 0, nodePlasma[nSpecies][iLev],
+                                   iNum_, cellCost[iLev].nComp(),
+                                   cellCost[iLev].nGrow());
+      }
     }
 
     for (MFIter mfi(cellCost[iLev]); mfi.isValid(); ++mfi) {

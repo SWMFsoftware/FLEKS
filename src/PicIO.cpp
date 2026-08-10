@@ -1,6 +1,8 @@
 #include <AMReX_PlotFileUtil.H>
 #include <AMReX_RealVect.H>
 
+#include <fstream>
+
 #include "GridUtility.h"
 #include "Pic.h"
 #include "SimDomains.h"
@@ -117,36 +119,89 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 
   const int iLevSave = writerIn.get_ilev_save();
 
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    if (iLevSave >= 0 && iLevSave != iLev) {
-      continue;
-    }
-    int iBlock = 0;
-    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
-      const Box& box = mfi.validbox();
-
-      const auto& typeArr = nodeStatus[iLev][mfi].array();
-
-      auto lo = box.loVect3d();
-      auto hi = box.hiVect3d();
-
-      if (iLev == 0) {
-        // Do not output the rightmost nodes for periodic boundary.
-        for (int iDim = 0; iDim < nDim; iDim++)
-          if ((Geom(iLev).isPeriodic(iDim)) && gbx.bigEnd(iDim) == hi[iDim])
-            hi[iDim]--;
+  if (useHybridPIC) {
+    // ---- Hybrid solver: structured output reads the live cell-centred
+    // fields directly. The point list enumerates the cell grid (cGrids)
+    // with cellStatus ownership/refinement and cell-centre coordinates.
+    // Unlike the node grid there is no duplicated periodic point, so the
+    // "drop the rightmost node" special case is not needed. Cut planes
+    // (x=/y=/z=) are snapped to the nearest cell-centre row with a 0.5*dx
+    // tolerance (PlotWriter::is_inside_plot_region uses 0.01*dx, which only
+    // matches node planes).
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      if (iLevSave >= 0 && iLevSave != iLev) {
+        continue;
       }
+      int iBlock = 0;
+      for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
 
-      for (int k = lo[iz_]; k <= hi[iz_]; ++k) {
-        const double zp = nDim > 2 ? Geom(iLev).LoEdge(k, iz_) : 0.0;
-        for (int j = lo[iy_]; j <= hi[iy_]; ++j) {
-          const double yp = Geom(iLev).LoEdge(j, iy_);
-          for (int i = lo[ix_]; i <= hi[ix_]; ++i) {
-            const double xp = Geom(iLev).LoEdge(i, ix_);
-            if (bit::is_owner(typeArr(i, j, k)) &&
-                (!bit::is_refined(typeArr(i, j, k)) || iLevSave >= 0) &&
-                writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
+        const auto& typeArr = cellStatus[iLev][mfi].array();
 
+        auto lo = box.loVect3d();
+        auto hi = box.hiVect3d();
+
+        for (int k = lo[iz_]; k <= hi[iz_]; ++k) {
+          const double zp = nDim > 2 ? Geom(iLev).CellCenter(k, iz_) : 0.0;
+          for (int j = lo[iy_]; j <= hi[iy_]; ++j) {
+            const double yp = Geom(iLev).CellCenter(j, iy_);
+            for (int i = lo[ix_]; i <= hi[ix_]; ++i) {
+              const double xp = Geom(iLev).CellCenter(i, ix_);
+              // Unlike nodeStatus, cellStatus never has the owner bit set
+              // (ownership is only marked on nodes in update_node_status).
+              // That is fine here: cells in a non-overlapping BoxArray are
+              // uniquely owned by exactly one proc, so every validbox cell is
+              // locally owned and we only need the refinement check.
+              if ((!bit::is_refined(typeArr(i, j, k)) || iLevSave >= 0) &&
+                  is_inside_cell_plot_region(writerIn, i, j, k, xp, yp, zp)) {
+
+                pointList_II.push_back({ (double)i, (double)j, (double)k, xp,
+                                         yp, zp, (double)iBlock,
+                                         (double)iLev });
+                if (xp < xMinL_D[ix_])
+                  xMinL_D[ix_] = xp;
+                if (yp < xMinL_D[iy_])
+                  xMinL_D[iy_] = yp;
+                if (nDim > 2 && zp < xMinL_D[iz_])
+                  xMinL_D[iz_] = zp;
+
+                if (xp > xMaxL_D[ix_])
+                  xMaxL_D[ix_] = xp;
+                if (yp > xMaxL_D[iy_])
+                  xMaxL_D[iy_] = yp;
+                if (nDim > 2 && zp > xMaxL_D[iz_])
+                  xMaxL_D[iz_] = zp;
+              }
+            }
+          }
+        }
+        iBlock++;
+      }
+    }
+
+    // Processor-0 output the inactive PIC cells for structured output.
+    if (ParallelDescriptor::MyProc() == 0 && writerIn.get_plotDx() >= 0) {
+      int iLev = 0;
+      Box cgbx = cGrids[iLev].minimalBox();
+      if (writerIn.is_compact())
+        cgbx = cGrids[iLev].minimalBox();
+
+      const auto lo = lbound(cgbx);
+      const auto hi = ubound(cgbx);
+
+      int iMax = hi.x, jMax = hi.y, kMax = hi.z;
+      if (isFake2D)
+        kMax = lo.z;
+
+      for (int k = lo.z; k <= kMax; ++k) {
+        const double zp = nDim > 2 ? Geom(iLev).CellCenter(k, iz_) : 0.0;
+        for (int j = lo.y; j <= jMax; ++j) {
+          const double yp = Geom(iLev).CellCenter(j, iy_);
+          for (int i = lo.x; i <= iMax; ++i) {
+            const double xp = Geom(iLev).CellCenter(i, ix_);
+            if (is_inside_cell_plot_region(writerIn, i, j, k, xp, yp, zp) &&
+                !cGrids[iLev].contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
+              const int iBlock = -1;
               pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
                                        zp, (double)iBlock, (double)iLev });
               if (xp < xMinL_D[ix_])
@@ -166,57 +221,111 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
           }
         }
       }
-      iBlock++;
     }
-  }
 
-  // Only works for 1-level grid.
-  if (ParallelDescriptor::MyProc() == 0 && writerIn.get_plotDx() >= 0) {
-    int iLev = 0;
-    // Processor-0 output the inactive PIC nodes for structured output.
-    Box gbx = convert(Geom(iLev).Domain(), { AMREX_D_DECL(1, 1, 1) });
+  } else {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      if (iLevSave >= 0 && iLevSave != iLev) {
+        continue;
+      }
+      int iBlock = 0;
+      for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+        const Box& box = mfi.validbox();
 
-    if (writerIn.is_compact())
-      gbx = convert(nGrids[iLev].minimalBox(), { AMREX_D_DECL(1, 1, 1) });
+        const auto& typeArr = nodeStatus[iLev][mfi].array();
 
-    const auto lo = lbound(gbx);
-    const auto hi = ubound(gbx);
+        auto lo = box.loVect3d();
+        auto hi = box.hiVect3d();
 
-    int iMax = hi.x, jMax = hi.y, kMax = hi.z;
-    if (Geom(iLev).isPeriodic(ix_))
-      --iMax;
-    if (Geom(iLev).isPeriodic(iy_))
-      --jMax;
-    if (nDim > 2 && Geom(iLev).isPeriodic(iz_))
-      --kMax;
+        if (iLev == 0) {
+          // Do not output the rightmost nodes for periodic boundary.
+          for (int iDim = 0; iDim < nDim; iDim++)
+            if ((Geom(iLev).isPeriodic(iDim)) && gbx.bigEnd(iDim) == hi[iDim])
+              hi[iDim]--;
+        }
 
-    if (isFake2D)
-      kMax = lo.z;
+        for (int k = lo[iz_]; k <= hi[iz_]; ++k) {
+          const double zp = nDim > 2 ? Geom(iLev).LoEdge(k, iz_) : 0.0;
+          for (int j = lo[iy_]; j <= hi[iy_]; ++j) {
+            const double yp = Geom(iLev).LoEdge(j, iy_);
+            for (int i = lo[ix_]; i <= hi[ix_]; ++i) {
+              const double xp = Geom(iLev).LoEdge(i, ix_);
+              if (bit::is_owner(typeArr(i, j, k)) &&
+                  (!bit::is_refined(typeArr(i, j, k)) || iLevSave >= 0) &&
+                  writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
 
-    for (int k = lo.z; k <= kMax; ++k) {
-      const double zp = nDim > 2 ? Geom(iLev).LoEdge(k, iz_) : 0.0;
-      for (int j = lo.y; j <= jMax; ++j) {
-        const double yp = Geom(iLev).LoEdge(j, iy_);
-        for (int i = lo.x; i <= iMax; ++i) {
-          const double xp = Geom(iLev).LoEdge(i, ix_);
-          if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp) &&
-              !nGrids[iLev].contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
-            const int iBlock = -1;
-            pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
-                                     zp, (double)iBlock, (double)iLev });
-            if (xp < xMinL_D[ix_])
-              xMinL_D[ix_] = xp;
-            if (yp < xMinL_D[iy_])
-              xMinL_D[iy_] = yp;
-            if (nDim > 2 && zp < xMinL_D[iz_])
-              xMinL_D[iz_] = zp;
+                pointList_II.push_back({ (double)i, (double)j, (double)k, xp,
+                                         yp, zp, (double)iBlock,
+                                         (double)iLev });
+                if (xp < xMinL_D[ix_])
+                  xMinL_D[ix_] = xp;
+                if (yp < xMinL_D[iy_])
+                  xMinL_D[iy_] = yp;
+                if (nDim > 2 && zp < xMinL_D[iz_])
+                  xMinL_D[iz_] = zp;
 
-            if (xp > xMaxL_D[ix_])
-              xMaxL_D[ix_] = xp;
-            if (yp > xMaxL_D[iy_])
-              xMaxL_D[iy_] = yp;
-            if (nDim > 2 && zp > xMaxL_D[iz_])
-              xMaxL_D[iz_] = zp;
+                if (xp > xMaxL_D[ix_])
+                  xMaxL_D[ix_] = xp;
+                if (yp > xMaxL_D[iy_])
+                  xMaxL_D[iy_] = yp;
+                if (nDim > 2 && zp > xMaxL_D[iz_])
+                  xMaxL_D[iz_] = zp;
+              }
+            }
+          }
+        }
+        iBlock++;
+      }
+    }
+
+    // Only works for 1-level grid.
+    if (ParallelDescriptor::MyProc() == 0 && writerIn.get_plotDx() >= 0) {
+      int iLev = 0;
+      // Processor-0 output the inactive PIC nodes for structured output.
+      Box gbx = convert(Geom(iLev).Domain(), { AMREX_D_DECL(1, 1, 1) });
+
+      if (writerIn.is_compact())
+        gbx = convert(nGrids[iLev].minimalBox(), { AMREX_D_DECL(1, 1, 1) });
+
+      const auto lo = lbound(gbx);
+      const auto hi = ubound(gbx);
+
+      int iMax = hi.x, jMax = hi.y, kMax = hi.z;
+      if (Geom(iLev).isPeriodic(ix_))
+        --iMax;
+      if (Geom(iLev).isPeriodic(iy_))
+        --jMax;
+      if (nDim > 2 && Geom(iLev).isPeriodic(iz_))
+        --kMax;
+
+      if (isFake2D)
+        kMax = lo.z;
+
+      for (int k = lo.z; k <= kMax; ++k) {
+        const double zp = nDim > 2 ? Geom(iLev).LoEdge(k, iz_) : 0.0;
+        for (int j = lo.y; j <= jMax; ++j) {
+          const double yp = Geom(iLev).LoEdge(j, iy_);
+          for (int i = lo.x; i <= iMax; ++i) {
+            const double xp = Geom(iLev).LoEdge(i, ix_);
+            if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp) &&
+                !nGrids[iLev].contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
+              const int iBlock = -1;
+              pointList_II.push_back({ (double)i, (double)j, (double)k, xp, yp,
+                                       zp, (double)iBlock, (double)iLev });
+              if (xp < xMinL_D[ix_])
+                xMinL_D[ix_] = xp;
+              if (yp < xMinL_D[iy_])
+                xMinL_D[iy_] = yp;
+              if (nDim > 2 && zp < xMinL_D[iz_])
+                xMinL_D[iz_] = zp;
+
+              if (xp > xMaxL_D[ix_])
+                xMaxL_D[ix_] = xp;
+              if (yp > xMaxL_D[iy_])
+                xMaxL_D[iy_] = yp;
+              if (nDim > 2 && zp > xMaxL_D[iz_])
+                xMaxL_D[iz_] = zp;
+            }
           }
         }
       }
@@ -236,6 +345,38 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
 }
 
 //==========================================================
+// Cell-centred analogue of PlotWriter::is_inside_plot_region for the hybrid
+// structured output. plotDx striding and the plot box are replicated, but the
+// tolerance is widened to 0.5*dx so a cut plane (x=/y=/z=, a ~0-width slab)
+// selects the single nearest cell-centre row instead of matching nothing.
+bool Pic::is_inside_cell_plot_region(const PlotWriter& writerIn, int const ix,
+                                     int const iy, int const iz,
+                                     double const x, double const y,
+                                     double const z) const {
+  bool isInside = true;
+  int iPlotDx = writerIn.get_plotDx();
+  if ((iPlotDx - iPlotDx) == 0) {
+    isInside = (ix % iPlotDx == 0) && (iy % iPlotDx == 0) && (iz % iPlotDx == 0);
+  }
+
+  RealVect x_D = { AMREX_D_DECL(x, y, z) };
+  // Single-level structured output (multi-level aborts in find_output_list),
+  // so level-0 cell size applies to all points. Use the writer's effective
+  // dimension (which may be < Pic::nDim when a dimension has a single cell,
+  // e.g. a z=0 cut on an effectively 2D domain): PlotWriter::init only sets
+  // plot bounds for the writer's nDim, so checking Pic::nDim here would read
+  // sentinel bounds in the extra dimension and reject every point.
+  const auto dx = Geom(0).CellSize();
+  const int iDimOut = writerIn.get_nDim();
+  for (int iDim = 0; iDim < iDimOut; ++iDim) {
+    isInside = isInside &&
+               x_D[iDim] >= writerIn.get_plotMin_D(iDim) - 0.5 * dx[iDim] &&
+               x_D[iDim] < writerIn.get_plotMax_D(iDim) + 0.5 * dx[iDim];
+  }
+  return isInside;
+}
+
+//==========================================================
 void Pic::get_field_var(const VectorPointList& pointList_II,
                         const std::vector<std::string>& sVar_I,
                         MDArray<double>& var_II) {
@@ -250,9 +391,14 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
 
   long iPoint = 0;
 
+  // The point list is enumerated over the node grid (full-PIC) or the cell
+  // grid (hybrid) in find_output_list, so iterate the matching MultiFab grid
+  // to keep the iBlock / iLev matching consistent.
+  amrex::Vector<amrex::MultiFab>& gridMF = useHybridPIC ? centerB : nodeE;
+
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     int iBlockCount = 0;
-    for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(gridMF[iLev]); mfi.isValid(); ++mfi) {
       while (iPoint < nPoint) {
         IntVect ijk;
         for (int iDim = 0; iDim < nDim; iDim++) {
@@ -266,7 +412,8 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
           break;
 
         if (ParallelDescriptor::MyProc() == 0 && iBlock == -1) {
-          // Processor-0 output the inactive PIC nodes for structured output.
+          // Processor-0 output the inactive PIC nodes/cells for structured
+          // output.
           for (int iVar = 0; iVar < nVar; ++iVar) {
             var_II(iPoint, iVar) = get_var(sVar_I[iVar], iLev, ijk, mfi, false);
           }
@@ -295,30 +442,41 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
     // If not isValidMFI, then it is not possible to output variables other than
     // 'X', 'Y', 'Z'
     if (var.substr(0, 1) == "X") {
-      value = Geom(iLev).LoEdge(ijk, ix_);
+      value = useHybridPIC ? Geom(iLev).CellCenter(ijk[ix_], ix_)
+                           : Geom(iLev).LoEdge(ijk, ix_);
     } else if (var.substr(0, 1) == "Y") {
-      value = Geom(iLev).LoEdge(ijk, iy_);
+      value = useHybridPIC ? Geom(iLev).CellCenter(ijk[iy_], iy_)
+                           : Geom(iLev).LoEdge(ijk, iy_);
     } else if (var.substr(0, 1) == "Z") {
-      value = nDim > 2 ? Geom(iLev).LoEdge(ijk, iz_) : 0;
+      value = nDim > 2
+                  ? (useHybridPIC ? Geom(iLev).CellCenter(ijk[iz_], iz_)
+                                  : Geom(iLev).LoEdge(ijk, iz_))
+                  : 0;
     } else if (var.substr(0, 2) == "dx") {
       value = Geom(iLev).CellSize(ix_);
     } else if (var.substr(0, 2) == "Ex") {
-      const Array4<Real const>& arr = nodeE[iLev][mfi].array();
+      const Array4<Real const>& arr =
+          (useHybridPIC ? centerEhybrid[iLev] : nodeE[iLev])[mfi].array();
       value = arr(ijk, ix_);
     } else if (var.substr(0, 2) == "Ey") {
-      const Array4<Real const>& arr = nodeE[iLev][mfi].array();
+      const Array4<Real const>& arr =
+          (useHybridPIC ? centerEhybrid[iLev] : nodeE[iLev])[mfi].array();
       value = arr(ijk, iy_);
     } else if (var.substr(0, 2) == "Ez") {
-      const Array4<Real const>& arr = nodeE[iLev][mfi].array();
+      const Array4<Real const>& arr =
+          (useHybridPIC ? centerEhybrid[iLev] : nodeE[iLev])[mfi].array();
       value = arr(ijk, iz_);
     } else if (var.substr(0, 2) == "Bx") {
-      const Array4<Real const>& arr = nodeB[iLev][mfi].array();
+      const Array4<Real const>& arr =
+          (useHybridPIC ? centerB[iLev] : nodeB[iLev])[mfi].array();
       value = arr(ijk, ix_);
     } else if (var.substr(0, 2) == "By") {
-      const Array4<Real const>& arr = nodeB[iLev][mfi].array();
+      const Array4<Real const>& arr =
+          (useHybridPIC ? centerB[iLev] : nodeB[iLev])[mfi].array();
       value = arr(ijk, iy_);
     } else if (var.substr(0, 2) == "Bz") {
-      const Array4<Real const>& arr = nodeB[iLev][mfi].array();
+      const Array4<Real const>& arr =
+          (useHybridPIC ? centerB[iLev] : nodeB[iLev])[mfi].array();
       value = arr(ijk, iz_);
     } else if (var.substr(0, 5) == "jHatx") {
       const Array4<Real const>& arr = jHat[iLev][mfi].array();
@@ -349,8 +507,12 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
                var.substr(0, 4) == "pXZS" || var.substr(0, 4) == "pYZS" ||
                var.substr(0, 4) == "ppcS" || var.substr(0, 4) == "numS") {
 
-      // The last element of nodePlasma is the sum of all species.
-      if (extract_int(var) >= nodePlasma.size() - 1) {
+      // The last element of nodePlasma/centerPlasma is the sum of all species.
+      // Per-species vars map to index < size-1; the summed entry is not
+      // emitted as a species-named variable.
+      const auto& plasma =
+          useHybridPIC ? centerPlasma : nodePlasma;
+      if (extract_int(var) >= plasma.size() - 1) {
         value = 0;
       } else {
         int iVar;
@@ -379,7 +541,7 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
           iVar = iNum_;
 
         const Array4<Real const>& arr =
-            nodePlasma[extract_int(var)][iLev][mfi].array();
+            plasma[extract_int(var)][iLev][mfi].array();
         value = arr(ijk, iVar);
 
         if (var.substr(0, 1) == "u") {
@@ -399,8 +561,9 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 4) == "mach") {
       value = mMach[iLev][mfi].array()(ijk);
     } else if (var.substr(0, 2) == "pS") {
+      const auto& plasma = useHybridPIC ? centerPlasma : nodePlasma;
       const Array4<Real const>& arr =
-          nodePlasma[extract_int(var)][iLev][mfi].array();
+          plasma[extract_int(var)][iLev][mfi].array();
       value = (arr(ijk, iPxx_) + arr(ijk, iPyy_) + arr(ijk, iPzz_)) / 3.0;
 
     } else if (var.substr(0, 3) == "E0x") {
@@ -663,18 +826,25 @@ void Pic::write_plots(bool doForce) {
       if (plot.writer.is_amrex_format() || plot.writer.is_hdf5_format()) {
         write_amrex(plot.writer, tc->get_time_si(), tc->get_cycle());
       } else {
-        // Structured (ascii/IDL) plots read the nodePlasma / mMach output
-        // mirrors, which are now deferred for the hybrid solver. Materialize
-        // them before writing; the Mach number is computed only if this plot
-        // actually requests the "mach" variable.
+        // Structured (ascii/IDL) plots.
         const bool needMach =
             plot.writer.get_plotString().find("mach") != std::string::npos;
-        sync_node_plasma_output(needMach);
-        // The structured (ascii/IDL) plot reads Ex/Ey/Ez from nodeE (get_var),
-        // which is only an output mirror for the hybrid solver (the mover reads
-        // centerEhybrid). Materialize nodeE from the live centerEhybrid before
-        // writing so the ambipolar / electron-pressure field appears in output.
-        sync_node_E_output();
+        if (useHybridPIC) {
+          // Hybrid: get_var reads the live cell-centred fields
+          // (centerB/centerEhybrid/centerPlasma/centerJ) directly, so the
+          // nodePlasma / nodeE output mirrors are not needed. Only the Mach
+          // number is still computed on demand (calc_mach_number is
+          // hybrid-aware and reads centerPlasmaSum).
+          if (needMach) {
+            calc_mach_number();
+          }
+        } else {
+          // Full-PIC: structured plots read the nodePlasma / mMach fields, and
+          // the deferred node mirrors must be materialized before writing.
+          // The Mach number is computed only if this plot requests it.
+          sync_node_plasma_output(needMach);
+          sync_node_E_output();
+        }
         plot.writer.write(tc->get_time_si(), tc->get_cycle(),
                           find_output_list_caller, get_field_var_caller);
       }
