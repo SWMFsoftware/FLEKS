@@ -6,6 +6,7 @@ It natively serves as the **PC** (Particle-in-Cell) and **PT** (Particle Tracker
 
 ## Primary Capabilities
 - **Implicit PIC:** Semi-implicit $\theta$-scheme solvers leveraging AMReX GMRES and heavily optimized particle-push boundaries.
+- **Hybrid PIC:** Kinetic ions + massless fluid electrons via a generalized Ohm's law, with an explicit RK4/SSPRK3 Faraday advance (see `docs/Algorithm.tex`).
 - **Particle Tracking:** Massively parallel test particle tracking in turbulent MHD and PIC electromagnetic fields.
 - **MHD-AEPIC:** True bi-directional coupling between global space weather MHD states and sub-grid PIC regimes.
 - **Adaptive Tracing:** Utilizes AMReX regridding and dynamic load balancing.
@@ -17,13 +18,26 @@ FLEKS is designed to be built continuously alongside SWMF. See the [SWMF documen
 - Fortran 90 compiler (e.g., `gfortran`, `ifort` for `srcInterface/`)
 - MPI (MPICH or OpenMPI)
 
-## Quick Start (via SWMF)
-To compile the library and the SWMF integrated test scenario:
+## Quick Start
+
+### Via SWMF
 ```bash
 # Inside the SWMF root directory
 make test16_3d_compile
 make test16_3d
 ```
+
+### Standalone Tests
+FLEKS can also be built and run standalone (no SWMF) using the tests under `tests/`:
+
+```bash
+# From the FLEKS root directory
+./Config.pl -lev=2 -u=Exo   # 2 AMR levels + Exosphere source
+make -j4
+python3 tests/validate_tests.py --test=singlecell   # run a single test
+```
+
+See `tests/README.md` for the full test catalogue and runner options.
 
 ## Documentation
 * **Algorithms & Physics:** Please see `docs/Algorithm.tex` for the mathematical foundations of the simulation engine.
