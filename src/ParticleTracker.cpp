@@ -30,8 +30,13 @@ void ParticleTracker::set_ic(Pic& pic) {
     bool doSave = true;
     auto& tps = parts[i];
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      tps->move_and_save_particles(nodeE[iLev], nodeB[iLev], 0, 0,
-                                   tc->get_time_si(), doSave);
+      if (pic.useHybridPIC) {
+        tps->move_and_save_particles_cell_centered(
+            centerE[iLev], centerB[iLev], 0, 0, tc->get_time_si(), doSave);
+      } else {
+        tps->move_and_save_particles(nodeE[iLev], nodeB[iLev], 0, 0,
+                                     tc->get_time_si(), doSave);
+      }
     }
     tps->write_particles(tc->get_cycle());
   }
@@ -102,9 +107,15 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
     auto& tps = parts[i];
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      tps->move_and_save_particles(nodeE[iLev], nodeB[iLev], tc->get_dt(),
-                                   tc->get_next_dt(), tc->get_time_si(),
-                                   tc->get_cycle() % pInfo->dnSave[i] == 0);
+      if (pic.useHybridPIC) {
+        tps->move_and_save_particles_cell_centered(
+            centerE[iLev], centerB[iLev], tc->get_dt(), tc->get_next_dt(),
+            tc->get_time_si(), tc->get_cycle() % pInfo->dnSave[i] == 0);
+      } else {
+        tps->move_and_save_particles(nodeE[iLev], nodeB[iLev], tc->get_dt(),
+                                     tc->get_next_dt(), tc->get_time_si(),
+                                     tc->get_cycle() % pInfo->dnSave[i] == 0);
+      }
     }
 
     if (doSave) {
@@ -129,17 +140,20 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
 
 void ParticleTracker::update_field(Pic& pic) {
   if (pic.useHybridPIC) {
-    // Hybrid solver: nodeE / nodeB are deferred output mirrors of the live
-    // cell-centred centerEhybrid / centerB. Materialize them here so test
-    // particles track the current fields.
-    pic.sync_node_E_output();
-    pic.sync_node_B_output();
-  }
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    MultiFab::Copy(nodeE[iLev], pic.nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
-                   nodeE[iLev].nGrow());
-    MultiFab::Copy(nodeB[iLev], pic.nodeB[iLev], 0, 0, nodeB[iLev].nComp(),
-                   nodeB[iLev].nGrow());
+    // Hybrid: gather from the live cell-centred fields.
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      MultiFab::Copy(centerE[iLev], pic.centerEhybrid[iLev], 0, 0,
+                     centerE[iLev].nComp(), centerE[iLev].nGrow());
+      MultiFab::Copy(centerB[iLev], pic.centerB[iLev], 0, 0,
+                     centerB[iLev].nComp(), centerB[iLev].nGrow());
+    }
+  } else {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      MultiFab::Copy(nodeE[iLev], pic.nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
+                     nodeE[iLev].nGrow());
+      MultiFab::Copy(nodeB[iLev], pic.nodeB[iLev], 0, 0, nodeB[iLev].nComp(),
+                     nodeB[iLev].nGrow());
+    }
   }
 }
 
@@ -174,11 +188,21 @@ void ParticleTracker::post_regrid() {
   if (nodeE.empty()) {
     nodeE.resize(n_lev_max());
   }
+  if (centerB.empty()) {
+    centerB.resize(n_lev_max());
+  }
+  if (centerE.empty()) {
+    centerE.resize(n_lev_max());
+  }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     distribute_FabArray(nodeE[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst, false);
     distribute_FabArray(nodeB[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                        nGst, false);
+    distribute_FabArray(centerE[iLev], cGrids[iLev], DistributionMap(iLev), 3,
+                        nGst, false);
+    distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst, false);
   }
 

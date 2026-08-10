@@ -64,6 +64,10 @@ private:
 
   amrex::Vector<amrex::MultiFab> nodeB;
 
+  // Cell-centred EM mirrors for the hybrid test-particle gather.
+  amrex::Vector<amrex::MultiFab> centerE;
+  amrex::Vector<amrex::MultiFab> centerB;
+
   std::unique_ptr<PlotCtr> savectr;
 
   std::string logFile;

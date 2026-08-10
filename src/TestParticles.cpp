@@ -43,6 +43,18 @@ void TestParticles::move_and_save_particles(const MultiFab& nodeEMF,
 }
 
 //==========================================================
+void TestParticles::move_and_save_particles_cell_centered(
+    const MultiFab& centerEMF, const MultiFab& centerBMF, Real dt,
+    Real dtNext, Real tNowSI, bool doSave) {
+  if (is_neutral()) {
+    move_and_save_neutrals(dt, tNowSI, doSave);
+  } else {
+    move_and_save_charged_particles_cell_centered(
+        centerEMF, centerBMF, dt, dtNext, tNowSI, doSave);
+  }
+}
+
+//==========================================================
 void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
                                                     const MultiFab& nodeBMF,
                                                     Real dt, Real dtNext,
@@ -258,6 +270,186 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
           p.rdata(i0 + iTPdBzdx_) = gradB[2][0];
           p.rdata(i0 + iTPdBzdy_) = gradB[2][1];
           p.rdata(i0 + iTPdBzdz_) = gradB[2][2];
+        }
+
+        p.idata(iRecordCount_)++;
+      }
+      // Mark for deletion
+      if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
+        p.id() = -1;
+      }
+    } // for p
+  } // for pti
+
+  redistribute_particles();
+}
+
+//==========================================================
+// Cell-centred gather (hybrid); same Boris push as the node-centred version.
+void TestParticles::move_and_save_charged_particles_cell_centered(
+    const MultiFab& centerEMF, const MultiFab& centerBMF, Real dt, Real dtNext,
+    Real tNowSI, bool doSave) {
+  timing_func("TestParticles::move_charged_particles_cell_centered");
+
+  const Real dtLoc = 0.5 * (dt + dtNext);
+
+  const Real qdto2mc = charge / mass * 0.5 * dt;
+
+  const int iLev = 0;
+  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+    const Array4<Real const>& centerEArr = centerEMF[pti].array();
+    const Array4<Real const>& centerBArr = centerBMF[pti].array();
+
+    auto& particles = pti.GetArrayOfStructs();
+
+    const Box& bx = cell_status(iLev)[pti].box();
+    const Array4<int const>& status = cell_status(iLev)[pti].array();
+
+    const IntVect lowCorner = bx.smallEnd();
+    const IntVect highCorner = bx.bigEnd();
+
+    const Dim3 lo = init_dim3(0);
+    const Dim3 hi = init_dim3(1);
+
+    for (auto& p : particles) {
+      if (p.idata(iRecordCount_) >= nPTRecord) {
+        Abort("Error: there is not enough allocated memory to store the "
+              "particle record!!");
+      }
+
+      Real up = p.rdata(iup_);
+      Real vp = p.rdata(ivp_);
+      Real wp = p.rdata(iwp_);
+      const Real xp = p.pos(ix_);
+      const Real yp = p.pos(iy_);
+      const Real zp = nDim > 2 ? p.pos(iz_) : 0;
+
+      //-----calculate interpolation coef begin-----------
+      IntVect loIdx;
+      RealVect dShift;
+      find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
+                      loIdx, dShift);
+
+      // Linear cell-centred gather; offset-2 coef is unused (zeroed).
+      Real coef[3][3][3];
+      Real coefLin[2][2][2];
+      linear_interpolation_coef(dShift, coefLin);
+      for (int k = 0; k <= 2; ++k)
+        for (int j = 0; j <= 2; ++j)
+          for (int i = 0; i <= 2; ++i)
+            coef[i][j][k] =
+                (i <= 1 && j <= 1 && k <= 1) ? coefLin[i][j][k] : 0.0;
+      //-----calculate interpolation coef end-------------
+
+      Real bp[3] = { 0, 0, 0 };
+      Real ep[3] = { 0, 0, 0 };
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
+                                         loIdx[iz_] + k) };
+            const Real& c0 = coef[i - lo.x][j - lo.y][k - lo.z];
+            for (int iDim = 0; iDim < nDim3; iDim++) {
+              bp[iDim] += centerBArr(ijk, iDim) * c0;
+              ep[iDim] += centerEArr(ijk, iDim) * c0;
+            }
+          }
+
+      Real gamma = 1;
+      Real invGamma = 1. / gamma;
+
+      if (isRelativistic) {
+        // Convert: vel -> gamma*vel
+        const Real v2 = up * up + vp * vp + wp * wp;
+        if (v2 > 1) {
+          Abort("Error: particle speed is fast than light!");
+        }
+        invGamma = sqrt(1 - v2);
+        gamma = 1 / invGamma;
+        up *= gamma;
+        vp *= gamma;
+        wp *= gamma;
+      }
+
+      // Half step acceleration
+      const Real ut = up + qdto2mc * ep[ix_];
+      const Real vt = vp + qdto2mc * ep[iy_];
+      const Real wt = wp + qdto2mc * ep[iz_];
+
+      if (isRelativistic) {
+        const Real p2 = ut * ut + vt * vt + wt * wt;
+        gamma = sqrt(1 + p2);
+        invGamma = 1. / gamma;
+      }
+
+      const Real omx = qdto2mc * bp[ix_] * invGamma;
+      const Real omy = qdto2mc * bp[iy_] * invGamma;
+      const Real omz = qdto2mc * bp[iz_] * invGamma;
+
+      const Real denom = 1.0 / (1.0 + omx * omx + omy * omy + omz * omz);
+      const Real udotOm = ut * omx + vt * omy + wt * omz;
+      // Solve the velocity equation
+      const Real uavg = (ut + (vt * omz - wt * omy + udotOm * omx)) * denom;
+      const Real vavg = (vt + (wt * omx - ut * omz + udotOm * omy)) * denom;
+      const Real wavg = (wt + (ut * omy - vt * omx + udotOm * omz)) * denom;
+
+      Real unp1 = 2.0 * uavg - up;
+      Real vnp1 = 2.0 * vavg - vp;
+      Real wnp1 = 2.0 * wavg - wp;
+
+      if (isRelativistic) {
+        // Convert: gamma*vel -> vel
+        const Real p2 = unp1 * unp1 + vnp1 * vnp1 + wnp1 * wnp1;
+        gamma = sqrt(1 + p2);
+        invGamma = 1. / gamma;
+
+        unp1 *= invGamma;
+        vnp1 *= invGamma;
+        wnp1 *= invGamma;
+      }
+
+      p.rdata(iup_) = unp1;
+      p.rdata(ivp_) = vnp1;
+      p.rdata(iwp_) = wnp1;
+
+      p.pos(ix_) = xp + unp1 * dtLoc;
+      p.pos(iy_) = yp + vnp1 * dtLoc;
+      if (nDim > 2)
+        p.pos(iz_) = zp + wnp1 * dtLoc;
+
+      if (doSave) {
+        const int i0 = record_var_index(p.idata(iRecordCount_));
+        p.rdata(i0 + iTPt_) = tNowSI;
+        p.rdata(i0 + iTPu_) = unp1;
+        p.rdata(i0 + iTPv_) = vnp1;
+        p.rdata(i0 + iTPw_) = wnp1;
+        p.rdata(i0 + iTPx_) = xp + unp1 * 0.5 * dt;
+        p.rdata(i0 + iTPy_) = yp + vnp1 * 0.5 * dt;
+        p.rdata(i0 + iTPz_) = zp + wnp1 * 0.5 * dt;
+
+        if (ptRecordSize > iTPBx_) {
+          p.rdata(i0 + iTPBx_) = bp[ix_];
+          p.rdata(i0 + iTPBy_) = bp[iy_];
+          p.rdata(i0 + iTPBz_) = bp[iz_];
+        }
+
+        if (ptRecordSize > iTPEx_) {
+          p.rdata(i0 + iTPEx_) = ep[ix_];
+          p.rdata(i0 + iTPEy_) = ep[iy_];
+          p.rdata(i0 + iTPEz_) = ep[iz_];
+        }
+
+        if (ptRecordSize > iTPdBxdx_) {
+          // dB/dx gradient is unavailable for the cell-centred gather (zeroed).
+          p.rdata(i0 + iTPdBxdx_) = 0.0;
+          p.rdata(i0 + iTPdBxdy_) = 0.0;
+          p.rdata(i0 + iTPdBxdz_) = 0.0;
+          p.rdata(i0 + iTPdBydx_) = 0.0;
+          p.rdata(i0 + iTPdBydy_) = 0.0;
+          p.rdata(i0 + iTPdBydz_) = 0.0;
+          p.rdata(i0 + iTPdBzdx_) = 0.0;
+          p.rdata(i0 + iTPdBzdy_) = 0.0;
+          p.rdata(i0 + iTPdBzdz_) = 0.0;
         }
 
         p.idata(iRecordCount_)++;
