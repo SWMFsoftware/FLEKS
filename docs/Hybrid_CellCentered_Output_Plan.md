@@ -36,6 +36,17 @@ cell-centered fields (`centerB`, `centerEhybrid`, `centerPlasma`,
     `get_var` (which iterates `centerB`) can read it; `calc_mach_number`
     reads `centerPlasmaSum[nSpecies]` for hybrid.
 
+- **Phase 2**: DONE. The per-step `centerB → nodeB` projection + `dBdt`
+  difference in `update_B_hybrid` are deferred behind a `nodeBStale` flag
+  and a `sync_node_B_output()` helper. `centerBprev` (pre-update cell B,
+  saved at the top of `update_B_hybrid`) plus a recorded `lastHybridDt_`
+  allow `dBdt = (B^{n+1} - B^n)/dt` to be rebuilt lazily. The tracker
+  (`ParticleTracker::update_field`) and any `dB*dt` structured output
+  materialize `nodeB` on demand; node-centred amrex output also syncs for
+  hybrid. When no tracker / `dB*dt` output is active, the per-step
+  projection + MPI `FillBoundary` + boundary-condition pass is skipped
+  entirely. All 18 standalone tests still pass.
+
 ---
 
 ## 1. Current Status

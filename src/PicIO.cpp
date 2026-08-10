@@ -834,9 +834,14 @@ void Pic::write_plots(bool doForce) {
           // (centerB/centerEhybrid/centerPlasma/centerJ) directly, so the
           // nodePlasma / nodeE output mirrors are not needed. Only the Mach
           // number is still computed on demand (calc_mach_number is
-          // hybrid-aware and reads centerPlasmaSum).
+          // hybrid-aware and reads centerPlasmaSum). The node-centred dB*dt
+          // diagnostics are node-only, so materialize nodeB/dBdt only when a
+          // dB*dt variable is actually requested.
           if (needMach) {
             calc_mach_number();
+          }
+          if (plot.writer.get_plotString().find("dB") != std::string::npos) {
+            sync_node_B_output();
           }
         } else {
           // Full-PIC: structured plots read the nodePlasma / mMach fields, and
@@ -1003,6 +1008,13 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   // tools expect cell-centered data. So the node-centered output looks strange
   // in most visualization tools and it is only useful for debugging.
   const bool saveNode = pw.save_node();
+
+  // Node-centred amrex/hdf5 output for the hybrid solver needs the deferred
+  // node mirrors materialized (the solver no longer maintains them).
+  if (saveNode && useHybridPIC) {
+    sync_node_E_output();
+    sync_node_B_output();
+  }
 
   Vector<Geometry> geomOut(n_lev());
 

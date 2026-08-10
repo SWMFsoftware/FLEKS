@@ -189,6 +189,15 @@ private:
   // sync_node_E_output() at plot time. Hybrid path only.
   bool nodeEStale = false;
 
+  // nodeB (and the node-centred dBdt diagnostic) stale; the hybrid B update no
+  // longer projects centerB->nodeB every step. Materialized on demand by
+  // sync_node_B_output() for the test-particle tracker and dB*dt output.
+  // Hybrid path only.
+  bool nodeBStale = false;
+  // dt of the last hybrid B update, used by sync_node_B_output() to rebuild
+  // dBdt = (B^{n+1} - B^n)/dt from centerBprev.
+  amrex::Real lastHybridDt_ = 0.0;
+
   amrex::Vector<amrex::MultiFab> jHat;
 
   amrex::Vector<std::unique_ptr<PicParticles> > parts;
@@ -392,6 +401,10 @@ public:
   // needMach. Used by output / load balancing, not the hybrid solver.
   void sync_node_plasma_output(bool needMach = false);
   void sync_node_E_output();
+  // Rebuild the stale nodeB output mirror (and the node-centred dBdt
+  // diagnostic) from the live centerB / centerBprev. Used by the test-particle
+  // tracker and dB*dt output, not the hybrid solver.
+  void sync_node_B_output();
   // Cell-centred analogue of PlotWriter::is_inside_plot_region for the hybrid
   // structured output: 0.5*dx tolerance so a cut plane snaps to the nearest
   // cell-centre row. Single-level only (multi-level structured output aborts).

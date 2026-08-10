@@ -129,7 +129,11 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
 
 void ParticleTracker::update_field(Pic& pic) {
   if (pic.useHybridPIC) {
+    // Hybrid solver: nodeE / nodeB are deferred output mirrors of the live
+    // cell-centred centerEhybrid / centerB. Materialize them here so test
+    // particles track the current fields.
     pic.sync_node_E_output();
+    pic.sync_node_B_output();
   }
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab::Copy(nodeE[iLev], pic.nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
