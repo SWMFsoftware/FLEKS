@@ -939,6 +939,7 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#DISCRETIZATION" || command == "#RESAMPLING" ||
         command == "#SMOOTHE" || command == "#SMOOTHJ" ||
         command == "#UPWINDB" || command == "#UPWINDE" ||
+        command == "#FIXEDUMAX" ||
         command == "#LAGGEDLIMITER" || command == "#DIVB" ||
         command == "#CMAXE" || command == "#TESTCASE" || command == "#WAVEIC" ||
         command == "#FASTMERGE" || command == "#ADAPTIVESOURCEPPC" ||
@@ -953,7 +954,6 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#ELECTRONTEMPERATURE" || command == "#BSUBCYCLE" ||
         command == "#HALLTERM" || command == "#HYPERRESISTIVITY" ||
         command == "#MINIMUMDENSITY" || command == "#FIELDINTEGRATOR" ||
-
         command == "#AVGFIELDB" || command == "#SMOOTHMOMENTS" ||
         command == "#MEMORY") {
       if (pic)
