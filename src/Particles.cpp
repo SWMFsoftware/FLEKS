@@ -827,7 +827,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 
   Real energy = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    timing_func("Pts::sum_moments_1");
+    timing_func("Pts::sum_moments_node_deposit");
     momentsMF[iLev].setVal(0.0);
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       Array4<Real> const& momentsArr = momentsMF[iLev][pti].array();
@@ -903,7 +903,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
   }
 
   for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
-    timing_func("Pts::sum_moments_2");
+    timing_func("Pts::sum_moments_coarse_fine_interface");
     sum_two_lev_interface_node(
         momentsMF[iLev], momentsMF[iLev + 1], 0, momentsMF[iLev].nComp(),
         get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
@@ -911,7 +911,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
 
   // Correct domain edge nodes
   for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
-    timing_func("Pts::sum_moments_3");
+    timing_func("Pts::sum_moments_domain_edge_correction");
     interp_from_coarse_to_fine_for_domain_edge(
         momentsMF[iLev], momentsMF[iLev + 1], 0, momentsMF[iLev].nComp(),
         get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1), node_status(iLev + 1));
@@ -933,7 +933,6 @@ Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
 
   Real energy = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    timing_func("Pts::sum_moments_cell_centered_1");
     momentsMF[iLev].setVal(0.0);
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       Array4<Real> const& momentsArr = momentsMF[iLev][pti].array();
