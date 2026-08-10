@@ -437,6 +437,17 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
 double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
                     const MFIter& mfi, bool isValidMFI) {
   double value = 0;
+  // Full-PIC-only diagnostics: their arrays are not allocated for hybrid.
+  if (useHybridPIC &&
+      (var.substr(0, 5) == "jHatx" || var.substr(0, 5) == "jHaty" ||
+       var.substr(0, 5) == "jHatz" || var.substr(0, 3) == "nMM" ||
+       var.substr(0, 3) == "E0x" || var.substr(0, 3) == "E0y" ||
+       var.substr(0, 3) == "E0z" || var.substr(0, 3) == "u0x" ||
+       var.substr(0, 3) == "u0y" || var.substr(0, 3) == "u0z" ||
+       var.substr(0, 2) == "qc" || var.substr(0, 5) == "divEc" ||
+       var.substr(0, 4) == "divB" || var.substr(0, 3) == "phi")) {
+    return value;
+  }
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
       var.substr(0, 1) == "Z") {
     // If not isValidMFI, then it is not possible to output variables other than
@@ -715,7 +726,10 @@ void Pic::read_restart() {
   inject_particles_for_boundary_cells();
 
   sum_moments();
-  sum_to_center(false);
+  // div(E)-correction fields are full-PIC only.
+  if (!useHybridPIC) {
+    sum_to_center(false);
+  }
 
   // The default of doNeedFillNewCell is true. The PIC cells have been filled in
   // here, so turn it of

@@ -353,11 +353,14 @@ void Pic::fill_new_cells() {
     // through the InitialCondition plugin during fill_particles().
     fill_particles();
     sum_moments(true);
-    if (finest_level == 0) {
-      sum_to_center(false);
-    } else if (doCorrectDivE) {
-      for (int iLev = 0; iLev < n_lev(); iLev++) {
-        sum_to_center_amr(false, iLev);
+    // div(E)-correction fields are full-PIC only.
+    if (!useHybridPIC) {
+      if (finest_level == 0) {
+        sum_to_center(false);
+      } else if (doCorrectDivE) {
+        for (int iLev = 0; iLev < n_lev(); iLev++) {
+          sum_to_center_amr(false, iLev);
+        }
       }
     }
   }
@@ -398,28 +401,31 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                         nGst);
     distribute_FabArray(nodeEth[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst);
-    distribute_FabArray(centerNetChargeOld[iLev], cGrids[iLev],
-                        DistributionMap(iLev), 1, nGst);
-    distribute_FabArray(centerNetChargeN[iLev], cGrids[iLev],
-                        DistributionMap(iLev), 1, nGst);
-    distribute_FabArray(centerNetChargeNew[iLev], cGrids[iLev],
-                        DistributionMap(iLev), 1, nGst);
-    distribute_FabArray(centerDivE[iLev], cGrids[iLev], DistributionMap(iLev),
-                        1, nGst);
-    distribute_FabArray(centerPhi[iLev], cGrids[iLev], DistributionMap(iLev), 1,
-                        nGst);
 
     bool doMoveData = false;
-    if (!useExplicitPIC) {
-      distribute_FabArray(nodeMM[iLev], nGrids[iLev], DistributionMap(iLev), 1,
-                          1, doMoveData);
+    // div(E)/div(B) correction and implicit E-solver arrays (full-PIC only).
+    if (!useHybridPIC) {
+      distribute_FabArray(centerNetChargeOld[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 1, nGst);
+      distribute_FabArray(centerNetChargeN[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 1, nGst);
+      distribute_FabArray(centerNetChargeNew[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 1, nGst);
+      distribute_FabArray(centerDivE[iLev], cGrids[iLev], DistributionMap(iLev),
+                          1, nGst);
+      distribute_FabArray(centerPhi[iLev], cGrids[iLev], DistributionMap(iLev),
+                          1, nGst);
+
+      distribute_FabArray(divB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
+                          nGst, doMoveData);
+      distribute_FabArray(hypPhi[iLev], cGrids[iLev], DistributionMap(iLev), 3,
+                          nGst, doMoveData);
+
+      if (!useExplicitPIC) {
+        distribute_FabArray(nodeMM[iLev], nGrids[iLev], DistributionMap(iLev), 1,
+                            1, doMoveData);
+      }
     }
-
-    distribute_FabArray(divB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
-                        nGst, doMoveData);
-    distribute_FabArray(hypPhi[iLev], cGrids[iLev], DistributionMap(iLev), 3,
-                        nGst, doMoveData);
-
     if (useHybridPIC) {
       // Previous-step ion moments for the Ohm's-law interpolation.
       if (nodePlasmaPrev.empty()) {
@@ -493,15 +499,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
     distribute_FabArray(dBdt[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                         nGst, doMoveData);
 
-    distribute_FabArray(eBg[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst,
-                        doMoveData);
-
-    distribute_FabArray(uBg[iLev], nGrids[iLev], DistributionMap(iLev), 3, nGst,
-                        doMoveData);
-
-    // mMach is a node-grid array for full-PIC (computed from nodePlasma).
-    // For hybrid it is placed on the cell grid so get_var (which iterates the
-    // cell grid) can read it, and is computed from centerPlasmaSum.
+    // mMach: node grid for full-PIC, cell grid for hybrid.
     if (useHybridPIC) {
       distribute_FabArray(mMach[iLev], cGrids[iLev], DistributionMap(iLev), 1,
                           nGst, doMoveData);
@@ -510,17 +508,27 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           nGst, doMoveData);
     }
 
-    distribute_FabArray(centerMM[iLev], cGrids[iLev], DistributionMap(iLev), 1,
-                        nGst, doMoveData);
+    // Co-moving frame fields (eBg/uBg), div(E) mass matrix (centerMM), implicit
+    // E current (jHat), and node-centred moments (nodePlasma): full-PIC only.
+    if (!useHybridPIC) {
+      distribute_FabArray(eBg[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                          nGst, doMoveData);
 
-    distribute_FabArray(jHat[iLev], nGrids[iLev], DistributionMap(iLev), 3,
-                        nGst, doMoveData);
+      distribute_FabArray(uBg[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                          nGst, doMoveData);
 
-    for (auto& pl : nodePlasma) {
-      if (pl.empty())
-        pl.resize(n_lev_max());
-      distribute_FabArray(pl[iLev], nGrids[iLev], DistributionMap(iLev),
-                          nMoments, nGst, doMoveData);
+      distribute_FabArray(centerMM[iLev], cGrids[iLev], DistributionMap(iLev),
+                          1, nGst, doMoveData);
+
+      distribute_FabArray(jHat[iLev], nGrids[iLev], DistributionMap(iLev), 3,
+                          nGst, doMoveData);
+
+      for (auto& pl : nodePlasma) {
+        if (pl.empty())
+          pl.resize(n_lev_max());
+        distribute_FabArray(pl[iLev], nGrids[iLev], DistributionMap(iLev),
+                            nMoments, nGst, doMoveData);
+      }
     }
   }
 
@@ -586,8 +594,11 @@ void Pic::post_regrid() {
     int n = get_local_node_or_cell_number(nodeE[iLev]);
     eSolver.init(n, nDim3, nDim, matvec_E_solver);
 
-    n = get_local_node_or_cell_number(centerDivE[iLev]);
-    divESolver.init(n, 1, nDim, matvec_divE_accurate);
+    // divESolver uses the full-PIC-only centerDivE array.
+    if (!useHybridPIC) {
+      n = get_local_node_or_cell_number(centerDivE[iLev]);
+      divESolver.init(n, 1, nDim, matvec_divE_accurate);
+    }
   }
 }
 
@@ -1236,6 +1247,9 @@ void Pic::sum_moments(bool updateDt) {
 
 //==========================================================
 void Pic::sync_node_plasma_output(const bool needMach) {
+  // nodePlasma is full-PIC only.
+  if (useHybridPIC)
+    return;
   if (!nodePlasmaStale)
     return;
   // Output bridge: average_center_to_node(centerPlasma -> nodePlasma)
@@ -1671,7 +1685,9 @@ void Pic::update(bool doReportIn) {
     }
   }
 
-  if (solveFieldInCoMov || useUpwindB || (useUpwindE && cMaxE <= 0)) {
+  // Co-moving frame solver is full-PIC only.
+  if (!useHybridPIC &&
+      (solveFieldInCoMov || useUpwindB || (useUpwindE && cMaxE <= 0))) {
     update_U0_E0();
   }
 
@@ -1847,6 +1863,10 @@ void Pic::free_memory() {
 void Pic::update_U0_E0() {
   std::string nameFunc = "Pic::update_U0_E0";
   timing_func(nameFunc);
+
+  // Full-PIC only: eBg/uBg and nodePlasma are not allocated for hybrid.
+  if (useHybridPIC)
+    return;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     uBg[iLev].setVal(0.0);
