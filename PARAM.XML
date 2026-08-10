@@ -1351,16 +1351,18 @@ workflow.
   <parameter name="pert" type="real"/>
 
 #WAVEIC 
-T		seedE
-T		seedB
-F		oblique
-T		guideField
-T		velKick
-0.6 0.8 0	dir
-48.0		waveLength
-1		waveMode
-0.02		frac
-0.1		pert
+T       seedE
+T       seedB
+F       oblique
+T       guideField
+T       velKick
+0.6     dir
+0.8     dir
+0.0     dir
+48.0    waveLength
+1       waveMode
+0.02    frac
+0.1     pert
 
 Optional sub-parameters for a WaveIC wave initial condition (selected by a
 #TESTCASE name of waveic / lightwave / hybridwave / convectionwave /
