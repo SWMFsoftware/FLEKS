@@ -13,6 +13,12 @@
 *.fls
 *.synctex.gz
 *.log
+*.dvi
+*.idx
+*.ilg
+*.ind
+*.toc
+*.xmltex
 *.pdf
 run*/
 Makefile.def
@@ -34,6 +40,7 @@ tools/.ipynb*
 tools/*user.py
 compile_commands.json
 .cache/*
+.worktrees/
 PC/
 PostProc.pl
 summary.md
