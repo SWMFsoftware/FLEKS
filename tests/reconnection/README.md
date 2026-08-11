@@ -2,14 +2,12 @@
 
 This test demonstrates **magnetic reconnection** in FLEKS, reproducing the
 physics of the Hybrid-VPIC *"islands"* force-free Fadeev current-sheet example
-(`examples/islands/islands_hyb.cxx`).  It runs under **two field solvers**:
+(`examples/islands/`).  It runs under **two field solvers**:
 
 - **`PARAM.in.hybrid`** — the hybrid solver (kinetic ions + massless fluid
   electrons, generalized Ohm's law).
 - **`PARAM.in`** — the full-PIC solver (kinetic ions + kinetic electrons,
-  `m_i/m_e = 25`, standard Maxwell/GMRES EM solve).  The mass ratio is reduced
-  from the physical 1836 so the run fits the 1-minute serial budget while still
-  resolving the electron timescale.
+  `m_i/m_e = 25`, standard Maxwell/GMRES EM solve).
 
 Both share the same `FadeevIC` initial condition (`#TESTCASE fadeev`,
 `src/ic/FadeevIC.h/.cpp`), which seeds the Fadeev equilibrium fields and the
@@ -67,14 +65,10 @@ The automated check (`validate.py`) runs for both solver variants and reads the
 2. **Equilibrium init** (t=0): the in-plane field nulls (O-points, the island
    centres) sit at `x ~ +-pi*L ~ +-15.7 d_i`, the sheet density peaks near 1
    and the background is near 0.2.
-3. **Reconnection is active**: the seeded m=1 perturbation grows
-   (`max|delta By|` grows by several-fold) and the out-of-plane flux function
-   `Ay` (integrated from `Bx`,`By` via `B = curl A`) at the central X-point
-   changes significantly over the run -- i.e. a non-trivial reconnection rate
-   `dAy/dt`.
+3. **Active reconnection**: the seeded m=1 perturbation grows (`max|delta By|`
+   grows by several-fold) and the out-of-plane flux function `Ay` at the
+   central X-point gives a non-trivial reconnection rate `dAy/dt`.
 4. **O-point evolution**: the island-centre positions evolve, confirming the
    magnetic topology changes (reconnection) rather than remaining frozen.
 
-These are qualitative physics checks (not a quantitative match to a reference
-rate); they confirm both solvers reproduce the hallmarks of reconnection in the
-Fadeev equilibrium.
+These are qualitative physics checks; they confirm both solvers reproduce the hallmarks of reconnection in the Fadeev equilibrium.
