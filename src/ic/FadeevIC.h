@@ -16,6 +16,10 @@ public:
   bool modifies_weights() const override { return true; }
   void modify_particle_weight(ParticleICState& s) const override;
 
+  // Seed the diamagnetic (current) drift for force balance.
+  bool modifies_velocities() const override { return true; }
+  void modify_particle_velocity(ParticleICState& s) const override;
+
 private:
   amrex::Real L_ = 5.0;         // sheet half-thickness / d_i
   amrex::Real eps_ = 0.4;       // island size vs sheet thickness
