@@ -329,7 +329,6 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
             pics.wBulk = wBulk;
             pics.qScale = 1.0;
             pics.charge = charge;
-            pics.mass = mass;
             pics.temperature =
                 interface->get_uth_iso(mfi, xyz, speciesID, iLev);
             pics.temperature *= pics.temperature * mass;

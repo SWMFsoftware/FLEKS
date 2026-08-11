@@ -30,7 +30,6 @@ struct ParticleICState {
   amrex::Real qScale = 1.0; // out: extra weight multiplier (Beam)
   amrex::Real temperature = 0.0;
   amrex::Real charge = 0.0; // species charge (code units)
-  amrex::Real mass = 0.0;   // species mass (code units)
 
   // Anisotropic (bi-Maxwellian) seeding: isotropic thermal velocity and the
   // four uniform [0,1) draws may be overwritten for custom sampling.
