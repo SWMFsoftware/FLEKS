@@ -206,6 +206,12 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
                    "convectionwave / ionacousticwave).");
     }
     ic_->read_param(param);
+  } else if (command == "#FADEEVIC") {
+    if (!ic_ || std::string(ic_->name()) != "fadeev") {
+      amrex::Abort("The #FADEEVIC block must follow a #TESTCASE that selects "
+                   "the fadeev (magnetic reconnection) initial condition.");
+    }
+    ic_->read_param(param);
   } else if (command == "#HYBRIDPIC") {
     param.read_var("useHybridPIC", useHybridPIC);
   } else if (command == "#RESISTIVITY") {

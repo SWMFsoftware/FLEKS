@@ -941,7 +941,7 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#UPWINDB" || command == "#UPWINDE" ||
         command == "#FIXEDUMAX" || command == "#LAGGEDLIMITER" ||
         command == "#DIVB" || command == "#CMAXE" || command == "#TESTCASE" ||
-        command == "#WAVEIC" || command == "#FASTMERGE" ||
+        command == "#WAVEIC" || command == "#FADEEVIC" || command == "#FASTMERGE" ||
         command == "#ADAPTIVESOURCEPPC" || command == "#MERGELIGHT" ||
         command == "#VACUUM" || command == "#PARTICLELEVRATIO" ||
         command == "#OHION" || command == "#PIC" || command == "#EXPLICITPIC" ||
