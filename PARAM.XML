@@ -311,29 +311,31 @@ Mutually exclusive with SOLVEEM.
 
 The hybrid solver advances B from the electric field given by the generalized
 Ohm's law
-    E = -U_i x B                 (convection, always on)
-      + eta * J                  (resistivity,        controlled by #RESISTIVITY)
-      + (J x B)/rho_q            (Hall,               controlled by #HALLTERM)
-      - grad(Pe)/rho_q           (electron pressure / ambipolar,
-                                                       controlled by #ELECTRONTEMPERATURE)
-      - (eta_h/4pi) curl(nabla^2 B)  (hyper-resistivity,
-                                                       controlled by #HYPERRESISTIVITY)
+\begin{verbatim}
+    E = -U_i x B         (convection, always on)
+      + eta * J          (resistivity, #RESISTIVITY)
+      + (J x B)/rho_q    (Hall, #HALLTERM)
+      - grad(Pe)/rho_q   (electron pressure/ambipolar, #ELECTRONTEMPERATURE)
+      - (eta_h/4pi) curl(nabla^2 B)  (hyper-resistivity, #HYPERRESISTIVITY)
+\end{verbatim}
 Each term is enabled/disabled and parametrised independently of #HYBRIDPIC, so
 you can build arbitrary subsets (e.g. Hall-only, resistive-MHD-like, with/without
 electron pressure). Time accuracy: the hybrid scheme is second order in time via
 a staggered leapfrog with linear time-interpolation of the ion moments. Within
 each magnetic sub-step the ion velocity moment and density used in the Ohm's law
-are interpolated between the previous deposit (J^{n-1/2}) and the current one
-(J^{n+1/2}) as
-    X(hstep) = (0.5 - hstep) X^{n-1/2} + (0.5 + hstep) X^{n+1/2},
-where hstep is the sub-step fraction (hstep=0 gives J^n = 1/2(J^{n-1/2}+J^{n+1/2});
-hstep=1 gives J^{n+1} = 3/2 J^{n+1/2} - 1/2 J^{n-1/2}). The particle Boris push
-uses the integer-step E field from the previous field advance. Related numerical
-controls:
-    #BSUBCYCLE    sub-steps for the explicit Hall-whistler CFL,
-    #MINIMUMDENSITY  caps the 1/rho factors in the Hall and pressure terms,
-    #FIELDINTEGRATOR time integrator for the Faraday (B) update,
-    #AVGFIELDB, #SMOOTHMOMENTS  damp PIC shot noise in the Ohm's law.
+are interpolated between the previous deposit $(J^{n-1/2})$ and the current one
+$(J^{n+1/2})$ as
+$X(h) = (0.5 - h) X^{n-1/2} + (0.5 + h) X^{n+1/2}$,
+where h is the sub-step fraction (h=0 gives $J^n = 1/2(J^{n-1/2}+J^{n+1/2})$;
+h=1 gives $J^{n+1} = 3/2 J^{n+1/2} - 1/2 J^{n-1/2})$. The particle Boris push
+uses the integer-step E field from the previous field advance.
+Related numerical controls:
+\begin{verbatim}
+    #BSUBCYCLE - sub-steps for the explicit Hall-whistler CFL,
+    #MINIMUMDENSITY - caps the 1/rho factors in the Hall and pressure terms,
+    #FIELDINTEGRATOR - time integrator for the Faraday (B) update,
+    #AVGFIELDB, #SMOOTHMOMENTS - damp PIC shot noise in the Ohm's law.
+\end{verbatim}
 </command>
 
 <command name="RESISTIVITY"
@@ -345,7 +347,7 @@ controls:
 0.0               etaResistivity
 
 [Ohm's-law term: resistivity] Resistive term eta * J in the generalized Ohm's
-law. etaResistivity is the SI magnetic diffusivity [m^2/s]; it is converted to
+law. etaResistivity is the SI magnetic diffusivity [m\^2/s]; it is converted to
 code units internally (etaCode = 4*pi*etaSI*Si2NoV*Si2NoL).
 0 disables the resistive term.
 </command>
@@ -365,9 +367,9 @@ code units internally (etaCode = 4*pi*etaSI*Si2NoV*Si2NoL).
 [Ohm's-law term: electron pressure / ambipolar] Electron temperature [eV] for
 the electron pressure gradient term -grad(Pe)/rho in the Ohm's law. Converted to
 code units internally
-(TeCode = TeEV * e / (mp * uNormSI^2)).
+(TeCode = TeEV * e / (mp * uNormSI\^2)).
 0 disables the term (Hall-only mode). gamma=1 is isothermal (Pe = Te * rho),
-otherwise adiabatic Pe = P0 (rho/rho0)^gamma. electronDensity0 is in code
+otherwise adiabatic Pe = P0 (rho/rho0)\^gamma. electronDensity0 is in code
 units (default 1.0 = reference charge density).
 </command>
 
@@ -418,13 +420,13 @@ si                etaHyperMode
 0.01              etaHyperCh
 
 [Ohm's-law term: hyper-resistivity] Fourth-order hyper-resistivity eta_h *
-nabla^2 J in the generalized Ohm's law (equivalently -(eta_h/4*pi) * nabla x
-(nabla^2 B)). It damps grid-scale / PIC
+nabla\^2 J in the generalized Ohm's law (equivalently -(eta_h/4*pi) * nabla x
+(nabla\^2 B)). It damps grid-scale / PIC
 shot-noise that the second-order resistivity cannot reach. etaHyperSI is the SI
-value [m^4/s] (used when etaHyperMode = "si"; converted to code units as
-etaCode = 4*pi*etaSI*Si2NoV*Si2NoL^3). When etaHyperMode = "grid", eta_h is
+value [m\^4/s] (used when etaHyperMode = "si"; converted to code units as
+etaCode = 4*pi*etaSI*Si2NoV*Si2NoL\^3). When etaHyperMode = "grid", eta_h is
 instead scaled to the CFL stability bound on each sub-step:
-   eta_h = 4*pi * C_h * dx_min^4 / dt_sub,
+   eta_h = 4*pi * C_h * dx_min\^4 / dt_sub,
 where C_h is the dimensionless etaHyperCh (typical 1e-3 .. 1e-2). "grid" mode is
 robust to resolution and time-step changes and is the recommended setting for
 general production runs. 0 (either mode) disables the term. Only used when
@@ -478,7 +480,7 @@ F                    useAvgFieldB
 10                   nAvgFieldB
 
 Time-averaged (exponential moving average) magnetic field. B_avg =
-alpha*B_avg + (1-alpha)*B^{n+1} with alpha = 1 - 1/nAvgFieldB. B_avg replaces
+alpha*B_avg + (1-alpha)*B\^{n+1} with alpha = 1 - 1/nAvgFieldB. B_avg replaces
 the instantaneous B inside the generalized Ohm's law (convection / Hall terms)
 and in the particle Boris push, damping the high-frequency PIC shot noise that
 pollutes the Hall term and particle orbits. B_avg is NOT divergence-clean and is
@@ -1586,7 +1588,7 @@ $$
   \langle \sigma v \rangle = \frac{A \, t^K}{X + t} \, \exp(-E_i/T_e), \quad t = T_e/E_i
 $$
 eIon is the ionization energy [eV], Acoeff is the Voronov A coefficient
-[cm$^3$/s], Kcoeff is K, Xcoeff is X.
+[cm\^3/s], Kcoeff is K, Xcoeff is X.
 Each parameter is specified as a multi-component array (one set per
 #EXOSPHERE component, in the same order).
 </command>
@@ -1599,10 +1601,10 @@ Each parameter is specified as a multi-component array (one set per
 
 #CHARGEEXCHANGE
 2                       nIonSpecies
-2.0e-15                 sigmaCX       H neutral - H+ ion [cm^2]
-1.0e-15                 sigmaCX       H neutral - O+ ion [cm^2]
-1.5e-15                 sigmaCX       O neutral - H+ ion [cm^2]
-1.0e-15                 sigmaCX       O neutral - O+ ion [cm^2]
+2.0e-15                 sigmaCX       H neutral - H+ ion [cm\^2]
+1.0e-15                 sigmaCX       H neutral - O+ ion [cm\^2]
+1.5e-15                 sigmaCX       O neutral - H+ ion [cm\^2]
+1.0e-15                 sigmaCX       O neutral - O+ ion [cm\^2]
 
 This command enables charge exchange as an exosphere source process.
 The number of neutral components is taken from #EXOSPHERE (nComponent);
@@ -1668,7 +1670,7 @@ effect in standalone PIC runs.
 #RECOMBINATION
 1                       nReactions
 2                       ionSpecies    O2+ (species 2)
-7.38e-3                 rateCoef      [cm^3/s]
+7.38e-3                 rateCoef      [cm\^3/s]
 0.56                    tempExponent
 300.0                   refTemp       [K]
 
