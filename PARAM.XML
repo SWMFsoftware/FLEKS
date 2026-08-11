@@ -1346,7 +1346,9 @@ workflow.
   <parameter name="oblique" type="logical" default="F"/>
   <parameter name="guideField" type="logical" default="F"/>
   <parameter name="velKick" type="logical" default="F"/>
-  <parameter name="dir" type="real" nvalues="3"/>
+  <parameter name="dirX" type="real"/>
+  <parameter name="dirY" type="real"/>
+  <parameter name="dirZ" type="real"/>
   <parameter name="waveLength" type="real"/>
   <parameter name="waveMode" type="integer"/>
   <parameter name="frac" type="real"/>
@@ -1358,9 +1360,9 @@ T       seedB
 F       oblique
 T       guideField
 T       velKick
-0.6     dir
-0.8     dir
-0.0     dir
+0.6     dirX
+0.8     dirY
+0.0     dirZ
 48.0    waveLength
 1       waveMode
 0.02    frac
