@@ -17,13 +17,13 @@ public:
   void modify_particle_weight(ParticleICState& s) const override;
 
 private:
-  amrex::Real L_ = 5.0;        // sheet half-thickness / d_i
-  amrex::Real eps_ = 0.4;      // island size vs sheet thickness
-  int numIslands_ = 2;         // number of islands along x
-  amrex::Real b0_ = 1.0;       // reference field (code units)
-  amrex::Real bg_ = 0.0;       // guide-field ratio (B_guide/b0)
+  amrex::Real L_ = 5.0;         // sheet half-thickness / d_i
+  amrex::Real eps_ = 0.4;       // island size vs sheet thickness
+  int numIslands_ = 2;          // number of islands along x
+  amrex::Real b0_ = 1.0;        // reference field (code units)
+  amrex::Real bg_ = 0.0;        // guide-field ratio (B_guide/b0)
   amrex::Real perturb_ = -0.05; // m=1 perturbation amplitude
-  amrex::Real nb_ = 0.2;       // background-to-peak density ratio
+  amrex::Real nb_ = 0.2;        // background-to-peak density ratio
 
   // Cached derived quantities.
   mutable amrex::Real Lx_ = 0.0;         // domain length in x

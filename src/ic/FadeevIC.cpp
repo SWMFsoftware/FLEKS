@@ -3,9 +3,9 @@
 #include <AMReX.H>
 #include <AMReX_MultiFab.H>
 
+#include "FadeevIC.h"
 #include "Particles.h"
 #include "ReadParam.h"
-#include "FadeevIC.h"
 
 using namespace amrex;
 
@@ -63,12 +63,12 @@ void FadeevIC::set_fields(PicICFields& fields) const {
         const amrex::Real denom = std::cosh(y / L) + eps * std::cos(x / L);
         const amrex::Real denomInv = (denom > 0.0) ? 1.0 / denom : 0.0;
         // m=1 perturbation.
-        const amrex::Real dbx =
-            -perturb * b0 * Lx * invLy_ * std::cos(2.0 * dPI * x * invLx_) *
-            std::sin(dPI * y * invLy_);
-        const amrex::Real dbz =
-            perturb * b0 * 2.0 * std::sin(2.0 * dPI * x * invLx_) *
-            std::cos(dPI * y * invLy_);
+        const amrex::Real dbx = -perturb * b0 * Lx * invLy_ *
+                                std::cos(2.0 * dPI * x * invLx_) *
+                                std::sin(dPI * y * invLy_);
+        const amrex::Real dbz = perturb * b0 * 2.0 *
+                                std::sin(2.0 * dPI * x * invLx_) *
+                                std::cos(dPI * y * invLy_);
         arrB(i, j, k, ix_) = b0 * std::sinh(y / L) * denomInv + dbx;
         arrB(i, j, k, iy_) = b0 * eps * std::sin(x / L) * denomInv + dbz;
         arrB(i, j, k, iz_) = b0 * bg;
@@ -84,12 +84,12 @@ void FadeevIC::set_fields(PicICFields& fields) const {
         const amrex::Real y = prob_lo[1] + dx[1] * (j + 0.5);
         const amrex::Real denom = std::cosh(y / L) + eps * std::cos(x / L);
         const amrex::Real denomInv = (denom > 0.0) ? 1.0 / denom : 0.0;
-        const amrex::Real dbx =
-            -perturb * b0 * Lx * invLy_ * std::cos(2.0 * dPI * x * invLx_) *
-            std::sin(dPI * y * invLy_);
-        const amrex::Real dbz =
-            perturb * b0 * 2.0 * std::sin(2.0 * dPI * x * invLx_) *
-            std::cos(dPI * y * invLy_);
+        const amrex::Real dbx = -perturb * b0 * Lx * invLy_ *
+                                std::cos(2.0 * dPI * x * invLx_) *
+                                std::sin(dPI * y * invLy_);
+        const amrex::Real dbz = perturb * b0 * 2.0 *
+                                std::sin(2.0 * dPI * x * invLx_) *
+                                std::cos(dPI * y * invLy_);
         arrB(i, j, k, ix_) = b0 * std::sinh(y / L) * denomInv + dbx;
         arrB(i, j, k, iy_) = b0 * eps * std::sin(x / L) * denomInv + dbz;
         arrB(i, j, k, iz_) = b0 * bg;
@@ -104,12 +104,9 @@ void FadeevIC::set_fields(PicICFields& fields) const {
 void FadeevIC::modify_particle_weight(ParticleICState& s) const {
   if (profileMax_ <= 0.0 || nb_ <= 0.0 || Ly_ <= 0.0)
     return;
-  const amrex::Real denom =
-      std::cosh(s.y / L_) + eps_ * std::cos(s.x / L_);
-  const amrex::Real profile =
-      (1.0 - eps_ * eps_) / (denom * denom);
+  const amrex::Real denom = std::cosh(s.y / L_) + eps_ * std::cos(s.x / L_);
+  const amrex::Real profile = (1.0 - eps_ * eps_) / (denom * denom);
   const amrex::Real nRatio = profile / profileMax_;
-  const amrex::Real factor =
-      (nb_ + (1.0 - nb_) * nRatio) / nb_;
+  const amrex::Real factor = (nb_ + (1.0 - nb_) * nRatio) / nb_;
   s.q *= (factor > 0.0) ? factor : 0.0;
 }
