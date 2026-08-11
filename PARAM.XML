@@ -178,9 +178,7 @@ these issues, amrex format files can be converted to either Tecplot ascii (.dat)
 or vtk files with the scripts (amrex2tec.sh and amrex2vtk.sh) in FLEKS/tools.
 </command>
 
-<command name="MONITOR"
-	 alias="MONITOR_FLEKS0,MONITOR_FLEKS1,MONITOR_FLEKS2"
-	 multiple="T">
+<command name="MONITOR" alias="MONITOR_FLEKS0,MONITOR_FLEKS1,MONITOR_FLEKS2" multiple="T">
   <parameter name="dnReport" type="integer" default="10"/>
 #MONITOR 
 10                 dnReport
@@ -190,9 +188,7 @@ such as the GMRES convergence history, to STDOUT. The default frequency
 is every 10 steps. 
 </command>
 
-<command name="SAVELOG"
-	 alias="SAVELOG_FLEKS0,SAVELOG_FLEKS1,SAVELOG_FLEKS2"
-	 multiple="T">
+<command name="SAVELOG" alias="SAVELOG_FLEKS0,SAVELOG_FLEKS1,SAVELOG_FLEKS2" multiple="T">
   <parameter name="dnSavePic" type="integer" default="10"/>
   <parameter name="dnSavePT" type="integer" default="10"/>
 
@@ -205,9 +201,7 @@ particle tracker components, respectively.
 
 </command>
 
-<command name="TPSAVE"
-	 alias="TPSAVE_FLEKS0,TPSAVE_FLEKS1,TPSAVE_FLEKS2"
-	 multiple="T">
+<command name="TPSAVE" alias="TPSAVE_FLEKS0,TPSAVE_FLEKS1,TPSAVE_FLEKS2" multiple="T">
   <parameter name="iSpecies" type="integer" required="T"/>
   <parameter name="unit" type="string" input="select">
     <option value="si"     name="SI units"/>
@@ -227,9 +221,7 @@ The unit and frequence of saving test particles, and the threshold for relaunchi
 
 </command>
 
-<command name="NOUTFILE"
-	 alias="NOUTFILE_FLEKS0,NOUTFILE_FLEKS1,NOUTFILE_FLEKS2"
-	 multiple="T">
+<command name="NOUTFILE" alias="NOUTFILE_FLEKS0,NOUTFILE_FLEKS1,NOUTFILE_FLEKS2" multiple="T">
   <parameter name="nFileField" type="integer" default="64"/>
   <parameter name="nFileParticle" type="integer" default="256"/>
   
@@ -249,9 +241,7 @@ Number of files per AMREX format field or particle output.
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! SCHEME !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-<command name="PIC"
-	 alias="PIC_FLEKS0,PIC_FLEKS1,PIC_FLEKS2"
-	 multiple="T">
+<command name="PIC" alias="PIC_FLEKS0,PIC_FLEKS1,PIC_FLEKS2" multiple="T">
   <parameter name="usePIC" type="logical" default="T"/>
 
 #PIC
@@ -260,9 +250,7 @@ T                   usePIC
 Turning on/off the PIC module. 
 </command>
 
-<command name="EXPLICITPIC"
-   alias="EXPLICITPIC_FLEKS0,EXPLICITPIC_FLEKS1,EXPLICITPIC_FLEKS2"
-   multiple="T">
+<command name="EXPLICITPIC" alias="EXPLICITPIC_FLEKS0,EXPLICITPIC_FLEKS1,EXPLICITPIC_FLEKS2" multiple="T">
   <parameter name="useExplicitPIC" type="logical" default="F"/>
 
 #EXPLICITPIC
@@ -271,9 +259,7 @@ F                 useExplicitPIC
 When this flag is true, the simulation will use an explicit PIC solver.
 </command>
 
-<command name="COMOVING"
-   alias="COMOVING_FLEKS0,COMOVING_FLEKS1,COMOVING_FLEKS2"
-   multiple="T">
+<command name="COMOVING" alias="COMOVING_FLEKS0,COMOVING_FLEKS1,COMOVING_FLEKS2" multiple="T">
   <parameter name="solveFieldInCoMov" type="logical" default="F"/>
   <parameter name="nSmoothBackGroundU" type="integer" default="0"/>
 
@@ -284,9 +270,7 @@ F                 solveFieldInCoMov
 This command enables solving the electromagnetic fields in a co-moving frame of reference.
 </command>
 
-<command name="SOLVEEM"
-   alias="SOLVEEM_FLEKS0,SOLVEEM_FLEKS1,SOLVEEM_FLEKS2"
-   multiple="T">
+<command name="SOLVEEM" alias="SOLVEEM_FLEKS0,SOLVEEM_FLEKS1,SOLVEEM_FLEKS2" multiple="T">
   <parameter name="solveEM" type="logical" default="T"/>
 
 #SOLVEEM
@@ -295,9 +279,7 @@ T                 solveEM
 This command enables or disables the electromagnetic field solver.
 </command>
 
-<command name="HYBRIDPIC"
-   alias="HYBRIDPIC_FLEKS0,HYBRIDPIC_FLEKS1,HYBRIDPIC_FLEKS2"
-   multiple="T">
+<command name="HYBRIDPIC" alias="HYBRIDPIC_FLEKS0,HYBRIDPIC_FLEKS1,HYBRIDPIC_FLEKS2" multiple="T">
   <parameter name="useHybridPIC" type="logical" default="F"/>
 
 #HYBRIDPIC
@@ -338,9 +320,7 @@ Related numerical controls:
 \end{verbatim}
 </command>
 
-<command name="RESISTIVITY"
-   alias="RESISTIVITY_FLEKS0,RESISTIVITY_FLEKS1,RESISTIVITY_FLEKS2"
-   multiple="T">
+<command name="RESISTIVITY" alias="RESISTIVITY_FLEKS0,RESISTIVITY_FLEKS1,RESISTIVITY_FLEKS2" multiple="T">
   <parameter name="etaResistivity" type="real" default="0.0"/>
 
 #RESISTIVITY
@@ -352,9 +332,7 @@ code units internally (etaCode = 4*pi*etaSI*Si2NoV*Si2NoL).
 0 disables the resistive term.
 </command>
 
-<command name="ELECTRONTEMPERATURE"
-   alias="ELECTRONTEMPERATURE_FLEKS0,ELECTRONTEMPERATURE_FLEKS1,ELECTRONTEMPERATURE_FLEKS2"
-   multiple="T">
+<command name="ELECTRONTEMPERATURE" alias="ELECTRONTEMPERATURE_FLEKS0,ELECTRONTEMPERATURE_FLEKS1,ELECTRONTEMPERATURE_FLEKS2" multiple="T">
   <parameter name="electronTemperature" type="real" default="0.0"/>
   <parameter name="electronGamma" type="real" default="1.0"/>
   <parameter name="electronDensity0" type="real" default="1.0"/>
@@ -373,9 +351,7 @@ otherwise adiabatic Pe = P0 (rho/rho0)\^gamma. electronDensity0 is in code
 units (default 1.0 = reference charge density).
 </command>
 
-<command name="BSUBCYCLE"
-   alias="BSUBCYCLE_FLEKS0,BSUBCYCLE_FLEKS1,BSUBCYCLE_FLEKS2"
-   multiple="T">
+<command name="BSUBCYCLE" alias="BSUBCYCLE_FLEKS0,BSUBCYCLE_FLEKS1,BSUBCYCLE_FLEKS2" multiple="T">
   <parameter name="nBSubcycle" type="integer" min="1" default="1"/>
 
 #BSUBCYCLE
@@ -391,9 +367,7 @@ with rk4 a single sub-step (nBSubcycle 1) is usually sufficient for stability.
 Only used when #HYBRIDPIC is T.
 </command>
 
-<command name="HALLTERM"
-   alias="HALLTERM_FLEKS0,HALLTERM_FLEKS1,HALLTERM_FLEKS2"
-   multiple="T">
+<command name="HALLTERM" alias="HALLTERM_FLEKS0,HALLTERM_FLEKS1,HALLTERM_FLEKS2" multiple="T">
   <parameter name="useHallTerm" type="logical" default="T"/>
 
 #HALLTERM
@@ -407,9 +381,7 @@ Hall term off the explicit Hall-whistler CFL no longer applies, so BSUBCYCLE 1
 (no sub-cycling) is sufficient.
 </command>
 
-<command name="HYPERRESISTIVITY"
-   alias="HYPERRESISTIVITY_FLEKS0,HYPERRESISTIVITY_FLEKS1,HYPERRESISTIVITY_FLEKS2"
-   multiple="T">
+<command name="HYPERRESISTIVITY" alias="HYPERRESISTIVITY_FLEKS0,HYPERRESISTIVITY_FLEKS1,HYPERRESISTIVITY_FLEKS2" multiple="T">
   <parameter name="etaHyperSI" type="real" default="0.0"/>
   <parameter name="etaHyperMode" type="string" default="si"/>
   <parameter name="etaHyperCh" type="real" default="0.01"/>
@@ -433,9 +405,7 @@ general production runs. 0 (either mode) disables the term. Only used when
 HYBRIDPIC is T.
 </command>
 
-<command name="MINIMUMDENSITY"
-   alias="MINIMUMDENSITY_FLEKS0,MINIMUMDENSITY_FLEKS1,MINIMUMDENSITY_FLEKS2"
-   multiple="T">
+<command name="MINIMUMDENSITY" alias="MINIMUMDENSITY_FLEKS0,MINIMUMDENSITY_FLEKS1,MINIMUMDENSITY_FLEKS2" multiple="T">
   <parameter name="rhoMinOhm" type="real" default="0.0"/>
 
 #MINIMUMDENSITY
@@ -449,9 +419,7 @@ automatic: rhoFloor = 1e-6 * #ELECTRONTEMPERATURE electronDensity0. Only used wh
 #HYBRIDPIC is T.
 </command>
 
-<command name="FIELDINTEGRATOR"
-   alias="FIELDINTEGRATOR_FLEKS0,FIELDINTEGRATOR_FLEKS1,FIELDINTEGRATOR_FLEKS2"
-   multiple="T">
+<command name="FIELDINTEGRATOR" alias="FIELDINTEGRATOR_FLEKS0,FIELDINTEGRATOR_FLEKS1,FIELDINTEGRATOR_FLEKS2" multiple="T">
   <parameter name="fieldIntegrator" type="string" input="select" required="T">
     <option value="rk4"/>
     <option value="ssprk3"/>
@@ -469,9 +437,7 @@ large linear-stability region, so with rk4 you typically do not need a large
 a time-centred E. Only used when HYBRIDPIC is T.
     </command>
 
-<command name="AVGFIELDB"
-   alias="AVGFIELDB_FLEKS0,AVGFIELDB_FLEKS1,AVGFIELDB_FLEKS2,BAVERAGE"
-   multiple="T">
+<command name="AVGFIELDB" alias="AVGFIELDB_FLEKS0,AVGFIELDB_FLEKS1,AVGFIELDB_FLEKS2,BAVERAGE" multiple="T">
   <parameter name="useAvgFieldB" type="logical" default="F"/>
   <parameter name="nAvgFieldB" type="integer" default="10"/>
 
@@ -488,9 +454,7 @@ never used in the Faraday update, so no projection is required. Only used when
 HYBRIDPIC is T.
 </command>
 
-<command name="PARTMODE"
-   alias="PARTMODE_FLEKS0,PARTMODE_FLEKS1,PARTMODE_FLEKS2"
-   multiple="T">
+<command name="PARTMODE" alias="PARTMODE_FLEKS0,PARTMODE_FLEKS1,PARTMODE_FLEKS2" multiple="T">
   <parameter name="partMode" type="string" input="select" required="T">
     <option value="SEP"/>
     <option value="PIC"/>
@@ -502,9 +466,7 @@ SEP               partMode
 This command sets the particle mode to either SEP (Solar Energetic Particles) or PIC (Particle-In-Cell).
 </command>
 
-<command name="PARTICLETRACKER"
-	 alias="PARTICLETRACKER_FLEKS0,PARTICLETRACKER_FLEKS1,PARTICLETRACKER_FLEKS2"
-	 multiple="T">
+<command name="PARTICLETRACKER" alias="PARTICLETRACKER_FLEKS0,PARTICLETRACKER_FLEKS1,PARTICLETRACKER_FLEKS2" multiple="T">
   <parameter name="useParticleTracker" type="logical" default="F"/>
 
 #PARTICLETRACKER
@@ -513,9 +475,7 @@ T                   useParticleTracker
 Turning on/off the test particle module. 
 </command>
 
-<command name="SOURCE"
-	 alias="SOURCE_FLEKS0,SOURCE_FLEKS1,SOURCE_FLEKS2"
-	 multiple="T">
+<command name="SOURCE" alias="SOURCE_FLEKS0,SOURCE_FLEKS1,SOURCE_FLEKS2" multiple="T">
   <parameter name="useSource" type="logical" default="F"/>
 
 #SOURCE
@@ -525,9 +485,7 @@ Turning on/off the user source. PT builds use source by default unless
 this command sets useSource to false.
 </command>
 
-<command name="TIMESTEPPING"
-	 alias="TIMESTEPPING_FLEKS0,TIMESTEPPING_FLEKS1,TIMESTEP,TIMESTEP_FLEKS2,TIMESTEP_FLEKS0,TIMESTEP_FLEKS1,TIMESTEP_FLEKS2"
-	 multiple="T">
+<command name="TIMESTEPPING" alias="TIMESTEPPING_FLEKS0,TIMESTEPPING_FLEKS1,TIMESTEP,TIMESTEP_FLEKS2,TIMESTEP_FLEKS0,TIMESTEP_FLEKS1,TIMESTEP_FLEKS2" multiple="T">
   <parameter name="useFixedDt" type="logical" default="F"/>
   <parameter name="dt" type="real" if="$useFixedDt"/>
   <parameter name="cfl" type="real" default="0.2" if="not $useFixedDt"/>
@@ -543,9 +501,7 @@ T                  useFixedDt
 Setting the CFL or fixed time step. The typical CFL number is 0.1~0.4.
 </command>
 
-<command name="CONSTANTPPV"
-	 alias="CONSTANTPPV_FLEKS0,CONSTANTPPV_FLEKS1,CONSTANTPPV_FLEKS2"
-	 multiple="T">
+<command name="CONSTANTPPV" alias="CONSTANTPPV_FLEKS0,CONSTANTPPV_FLEKS1,CONSTANTPPV_FLEKS2" multiple="T">
   <parameter name="isPPVconstant" type="logical" default="F"/>
 
 #CONSTANTPPV
@@ -555,9 +511,7 @@ If isPPVconstant is true then particles per volume is constant across all refine
 otherwise particles per cell is constant.
 </command>
 
-<command name="PRESPLITTING"
-	 alias="PRESPLITTING_FLEKS0,PRESPLITTING_FLEKS1,PRESPLITTING_FLEKS2"
-	 multiple="T">
+<command name="PRESPLITTING" alias="PRESPLITTING_FLEKS0,PRESPLITTING_FLEKS1,PRESPLITTING_FLEKS2" multiple="T">
   <parameter name="doPreSplitting" type="logical" default="F"/>
 
 #PRESPLITTING
@@ -567,9 +521,7 @@ If doPreSplitting is true then target particles-per-cell number in the near vici
 regions is set such that the particles-per-volume number matches the refined level.
 </command>
 
-<command name="REFINEMENTRATIO"
-	 alias="REFINEMENTRATIO_FLEKS0,REFINEMENTRATIO_FLEKS1,REFINEMENTRATIO_FLEKS2"
-	 multiple="T">
+<command name="REFINEMENTRATIO" alias="REFINEMENTRATIO_FLEKS0,REFINEMENTRATIO_FLEKS1,REFINEMENTRATIO_FLEKS2" multiple="T">
   <parameter name="refinementratio" type="integer" default="2"/>
 
 #REFINEMENTRATIO
@@ -578,9 +530,7 @@ regions is set such that the particles-per-volume number matches the refined lev
 Setting the refinement ratio for AMR. The default is 2.
 </command>
 
-<command name="RANDOMPARTICLESLOCATION"
-	 alias="RANDOMPARTICLESLOCATION_FLEKS0,RANDOMPARTICLESLOCATION_FLEKS1,RANDOMPARTICLESLOCATION_FLEKS2"
-	 multiple="T">
+<command name="RANDOMPARTICLESLOCATION" alias="RANDOMPARTICLESLOCATION_FLEKS0,RANDOMPARTICLESLOCATION_FLEKS1,RANDOMPARTICLESLOCATION_FLEKS2" multiple="T">
   <parameter name="isParticleLocationRandom" type="logical" default="T"/>
 
 #RANDOMPARTICLESLOCATION
@@ -590,8 +540,7 @@ If isParticleLocationRandom is true then particles are initialized with
 randomaized position, otherwise particles are equally spaced.
 </command>
 
-<command name="RESAMPLING"
-	 alias="RESAMPLING_FLEKS0,RESAMPLING_FLEKS1,RESAMPLING_FLEKS2" multiple="T">
+<command name="RESAMPLING" alias="RESAMPLING_FLEKS0,RESAMPLING_FLEKS1,RESAMPLING_FLEKS2" multiple="T">
   <parameter name="doReSampling" type="logical" default="T"/>
   <if expr="$doReSampling">
     <parameter name="splittingLimit" type="real" default="0.8" max="1"/>
@@ -617,8 +566,7 @@ recommended to set maxWeightRatio to 4-8 for OH-PT simulations.
 
 </command>
 
-<command name="FASTMERGE"
-	 alias="FASTMERGE_FLEKS0,FASTMERGE_FLEKS1,FASTMERGE_FLEKS2" multiple="T">     
+<command name="FASTMERGE" alias="FASTMERGE_FLEKS0,FASTMERGE_FLEKS1,FASTMERGE_FLEKS2" multiple="T">
   <parameter name="fastMerge" type="logical" default="F"/>   
   <parameter name="nOld" type="integer" min="6"/>
   <parameter name="nNew" type="integer" min="5"/>
@@ -662,8 +610,7 @@ For simulations involving particle sources, it's recommended to use
 </command>
 
 
-<command name="MERGELIGHT"
-	 alias="MERGELIGHT_FLEKS0,MERGELIGHT_FLEKS1,MERGELIGHT_FLEKS2" multiple="T">     
+<command name="MERGELIGHT" alias="MERGELIGHT_FLEKS0,MERGELIGHT_FLEKS1,MERGELIGHT_FLEKS2" multiple="T">
   <parameter name="MERGELIGHT" type="logical" default="F"/>   
   <parameter name="mergePartRatioMax" type="real" min="1"/>
 
@@ -678,8 +625,7 @@ otherwise, the merging will not be performed.
 
 </command>
 
-<command name="VACUUM"
-  alias="VACUUM_FLEKS0,VACUUM_FLEKS1,VACUUM_FLEKS2" multiple="T">
+<command name="VACUUM" alias="VACUUM_FLEKS0,VACUUM_FLEKS1,VACUUM_FLEKS2" multiple="T">
   <parameter name="vacuum" type="real" default="0.0"/>
 
 #VACUUM
@@ -692,8 +638,7 @@ densities less than 'vacuum'. The unit of of 'vacuum' is 'amu/cc'.
 
 </command>
 
-<command name="PARTICLELEVRATIO"
-	 alias="PARTICLELEVRATIO_FLEKS0,PARTICLELEVRATIO_FLEKS1,PARTICLELEVRATIO_FLEKS2" multiple="T">
+<command name="PARTICLELEVRATIO" alias="PARTICLELEVRATIO_FLEKS0,PARTICLELEVRATIO_FLEKS1,PARTICLELEVRATIO_FLEKS2" multiple="T">
   <parameter name="pLevRatio" type="real" default="1.2"/>
   
 #PARTICLELEVRATIO
@@ -796,9 +741,7 @@ correction repeats nDivECorrection (default is 3) times. If the divE
 cleaning is time consuming, reducing nDivECorrection to 1 may also work.
 </command>
 
-<command name="DIVB"
-	 alias="DIVB_FLEKS0,DIVB_FLEKS1,DIVB_FLEKS2"
-	 multiple="T">
+<command name="DIVB" alias="DIVB_FLEKS0,DIVB_FLEKS1,DIVB_FLEKS2" multiple="T">
   <parameter name="useHyperbolicCleaning" type="logical" default="F"/>
   <parameter name="hypDecay" type="real" default="0.1" if="$useHyperbolicCleaning"/>
 
@@ -810,9 +753,7 @@ This command enables hyperbolic divergence cleaning for the magnetic field.
 
 </command>
 
-<command name="SMOOTHE"
-	 alias="SMOOTHE_FLEKS0,SMOOTHE_FLEKS1,SMOOTHE_FLEKS2"
-	 multiple="T">
+<command name="SMOOTHE" alias="SMOOTHE_FLEKS0,SMOOTHE_FLEKS1,SMOOTHE_FLEKS2" multiple="T">
   <parameter name="doSmoothE" type="logical" default="F"/>
   <if expr="$doSmoothE">
     <parameter name="nSmoothE" type="integer" default="1"/>
@@ -837,9 +778,7 @@ and the long-wavelength field aligned electric field would accelerate electrons.
 
 </command>
 
-<command name="SMOOTHJ"
-	 alias="SMOOTHJ_FLEKS0,SMOOTHJ_FLEKS1,SMOOTHJ_FLEKS2"
-	 multiple="T">
+<command name="SMOOTHJ" alias="SMOOTHJ_FLEKS0,SMOOTHJ_FLEKS1,SMOOTHJ_FLEKS2" multiple="T">
   <parameter name="doSmoothJ" type="logical" default="F"/>
   <if expr="$doSmoothJ">
     <parameter name="nSmoothJ" type="integer" default="0"/>
@@ -859,9 +798,7 @@ J_new = (1-coef) * J_old + (coef/2) * (J_left + J_right)
 It is recommended to apply the smoothing 1-3 times (nSmoothJ).
 </command>
 
-<command name="SMOOTHMOMENTS"
-	 alias="SMOOTHMOMENTS_FLEKS0,SMOOTHMOMENTS_FLEKS1,SMOOTHMOMENTS_FLEKS2"
-	 multiple="T">
+<command name="SMOOTHMOMENTS" alias="SMOOTHMOMENTS_FLEKS0,SMOOTHMOMENTS_FLEKS1,SMOOTHMOMENTS_FLEKS2" multiple="T">
   <parameter name="doSmoothMoments" type="logical" default="F"/>
   <if expr="$doSmoothMoments">
     <parameter name="nSmoothMoments" type="integer" default="0"/>
@@ -887,9 +824,7 @@ equilibrium is preserved. It is recommended to apply the smoothing a few times
 
 
 
-<command name="UPWINDE"
-	 alias="UPWINDE_FLEKS0,UPWINDE_FLEKS1,UPWINDE_FLEKS2"
-	 multiple="T">
+<command name="UPWINDE" alias="UPWINDE_FLEKS0,UPWINDE_FLEKS1,UPWINDE_FLEKS2" multiple="T">
   <parameter name="useUpwindE" type="logical" default="F"/>
   <parameter name="limiterThetaE" type="real" default="0.0"/>  
 
@@ -909,9 +844,7 @@ solver uses Newton-Krylov. Otherwise, it uses GMRES.
 
 </command>
 
-<command name="LAGGEDLIMITER"
-	 alias="LAGGEDLIMITER_FLEKS0,LAGGEDLIMITER_FLEKS1,LAGGEDLIMITER_FLEKS2"
-	 multiple="T">
+<command name="LAGGEDLIMITER" alias="LAGGEDLIMITER_FLEKS0,LAGGEDLIMITER_FLEKS1,LAGGEDLIMITER_FLEKS2" multiple="T">
   <parameter name="useLaggedLimiter" type="logical" default="F"/>
 
 #LAGGEDLIMITER
@@ -923,9 +856,7 @@ calculated from the current electric field solve vector.
 
 </command>
 
-<command name="UPWINDB"
-	 alias="UPWINDB_FLEKS0,UPWINDB_FLEKS1,UPWINDB_FLEKS2"
-	 multiple="T">
+<command name="UPWINDB" alias="UPWINDB_FLEKS0,UPWINDB_FLEKS1,UPWINDB_FLEKS2" multiple="T">
   <parameter name="useUpwindB" type="logical" default="F"/>
   <parameter name="limiterThetaB" type="real" default="0.0"/>
   <parameter name="fixedUpwindVel" type="real" default="0.0"/>
@@ -941,8 +872,7 @@ default 0.0 keeps the normal plasma-background-velocity reconstruction.
 
 </command>
 
-<command name="FIXEDUMAX" alias="FIXEDUMAX_FLEKS0,FIXEDUMAX_FLEKS1,FIXEDUMAX_FLEKS2"
-	 multiple="T">
+<command name="FIXEDUMAX" alias="FIXEDUMAX_FLEKS0,FIXEDUMAX_FLEKS1,FIXEDUMAX_FLEKS2" multiple="T">
   <parameter name="fixedUMax" type="real" default="-1.0"/>
 
 #FIXEDUMAX
@@ -954,9 +884,7 @@ non-negative value (e.g. the TopHat test uses 1.0).
 
 </command>
 
-<command name="CMAXE"
-	 alias="CMAXE_FLEKS0,CMAXE_FLEKS1,CMAXE_FLEKS2"
-	 multiple="T">
+<command name="CMAXE" alias="CMAXE_FLEKS0,CMAXE_FLEKS1,CMAXE_FLEKS2" multiple="T">
   <parameter name="cMaxE" type="real" default="-1.0"/>
 
 #CMAXE
@@ -967,9 +895,7 @@ If cMaxE is negative, the local plasma speed is used, otherwise cMaxE is used.
 </command>
 
 
-<command name="TPRELATIVISTIC"
-	 alias="TPRELATIVISTIC_FLEKS0,TPRELATIVISTIC_FLEKS1,TPRELATIVISTIC_FLEKS2"
-	 multiple="T">
+<command name="TPRELATIVISTIC" alias="TPRELATIVISTIC_FLEKS0,TPRELATIVISTIC_FLEKS1,TPRELATIVISTIC_FLEKS2" multiple="T">
   <parameter name="isRelativistic" type="logical" default="F"/>
   
 #TPRELATIVISTIC
@@ -987,8 +913,7 @@ If it is true, the test particle velocity update will be relativistic.
 
 
 
-<command name="GEOMETRY"
-	 alias="GEOMETRY_FLEKS0,GEOMETRY_FLEKS1,GEOMETRY_FLEKS2" multiple="T">
+<command name="GEOMETRY" alias="GEOMETRY_FLEKS0,GEOMETRY_FLEKS1,GEOMETRY_FLEKS2" multiple="T">
   <parameter name="xMin" type="real"/>
   <parameter name="xMax" type="real"/>
   <parameter name="yMin" type="real"/>
@@ -1009,8 +934,7 @@ For MHD-AEPIC simulations, the domain is set from BATSRUS and
 this command should only exist in the restart file.
 </command>
 
-<command name="NCELL" alias="NCELL_FLEKS0,NCELL_FLEKS1,NCELL_FLEKS2"
-	 multiple="T">
+<command name="NCELL" alias="NCELL_FLEKS0,NCELL_FLEKS1,NCELL_FLEKS2" multiple="T">
   <parameter name="nCellX" type="integer"/>
   <parameter name="nCellY" type="integer"/>
   <parameter name="nCellZ" type="integer"/>
@@ -1024,8 +948,7 @@ For MHD-AEPIC simulations, the cell number is set from BATSRUS and
 this command should only exist in the restart file.
 </command>
 
-<command name="REGION" alias="REGION_FLEKS0,REGION_FLEKS1,REGION_FLEKS2"  
-  multiple="T">
+<command name="REGION" alias="REGION_FLEKS0,REGION_FLEKS1,REGION_FLEKS2" multiple="T">
   <parameter name="regionName" type="string"/>
   <parameter name="shape" type="string" input="select" required="T">
     <option value="box"     />
@@ -1110,8 +1033,7 @@ and radius isin the z/x/y direction.
 
 </command>
 
-<command name="REFINEREGION" alias="REFINEREGION_FLEKS0,REFINEREGION_FLEKS1,
-REFINEREGION_FLEKS2" multiple="T">
+<command name="REFINEREGION" alias="REFINEREGION_FLEKS0,REFINEREGION_FLEKS1, REFINEREGION_FLEKS2" multiple="T">
   <parameter name="refineLev" type="integer" min="0"/>
   <parameter name="refineArea" type="string" />
 
@@ -1131,8 +1053,7 @@ Multiple #REFINEREGION commands can be used for different levels.
 
 </command>
 
-<command name="GRIDEFFICIENCY" alias="GRIDEFFICIENCY_FLEKS0,GRIDEFFICIENCY_FLEKS1,
-GRIDEFFICIENCY_FLEKS2" multiple="T">
+<command name="GRIDEFFICIENCY" alias="GRIDEFFICIENCY_FLEKS0,GRIDEFFICIENCY_FLEKS1, GRIDEFFICIENCY_FLEKS2" multiple="T">
   <parameter name="gridEfficiency" type="real" min="0" max="1" default="0.7"/>
   
 #GRIDEFFICIENCY
@@ -1149,9 +1070,7 @@ is not 1.
 
 </command>
 
-<command name="PARTICLES"
-	 alias="PARTICLES_FLEKS0,PARTICLES_FLEKS1,PARTICLES_FLEKS2"
-	 multiple="T">
+<command name="PARTICLES" alias="PARTICLES_FLEKS0,PARTICLES_FLEKS1,PARTICLES_FLEKS2" multiple="T">
   <parameter name="nParticleX" type="integer" min="1" default="6"/>
   <parameter name="nParticleY" type="integer" min="1" default="6"/>
   <parameter name="nParticleZ" type="integer" min="1" default="6"/>
@@ -1170,9 +1089,7 @@ The command sets particle numbers in each direction for initial
 condition and ghost cells for a FLEKS region.
 </command>
 
-<command name="SOURCEPARTICLES"
-	 alias="SOURCEPARTICLES_FLEKS0,SOURCEPARTICLES_FLEKS1,SOURCEPARTICLES_FLEKS2"
-	 multiple="T">
+<command name="SOURCEPARTICLES" alias="SOURCEPARTICLES_FLEKS0,SOURCEPARTICLES_FLEKS1,SOURCEPARTICLES_FLEKS2" multiple="T">
   <parameter name="nParticleX" type="integer" min="0" default="0"/>
   <parameter name="nParticleY" type="integer" min="0" default="0"/>
   <parameter name="nParticleZ" type="integer" min="0" default="0"/>
@@ -1190,9 +1107,7 @@ condition and ghost cells for a FLEKS region.
 The command sets particle number per cell for plasma sources.
 </command>
 
-<command name="ADAPTIVESOURCEPPC"
-	 alias="ADAPTIVESOURCEPPC_FLEKS0,ADAPTIVESOURCEPPC_FLEKS1,ADAPTIVESOURCEPPC_FLEKS2"
-	 multiple="T">
+<command name="ADAPTIVESOURCEPPC" alias="ADAPTIVESOURCEPPC_FLEKS0,ADAPTIVESOURCEPPC_FLEKS1,ADAPTIVESOURCEPPC_FLEKS2" multiple="T">
   <parameter name="useAdaptiveSourcePPC" type="logical" default="F"/>
 
 #ADAPTIVESOURCEPPC
@@ -1202,9 +1117,7 @@ If it is true, the particle number per cell per step for the sources will
 be reduced to as low as 1 if the source density is low.
 </command>
 
-<command name="SUPID"
-	 alias="SUPID_FLEKS0,SUPID_FLEKS1,SUPID_FLEKS2"
-	 multiple="T">
+<command name="SUPID" alias="SUPID_FLEKS0,SUPID_FLEKS1,SUPID_FLEKS2" multiple="T">
    <parameter name="nSpecies" type="integer" min="0" max="15" default="0" />
     <for from="1" to="$nSpecies">
       <parameter name="supID" type="integer"/>
@@ -1220,9 +1133,7 @@ The starting supID for each species. This command should only exist in
 a restart file.
 </command>
 
-<command name="TPREGION"
-	 alias="TPREGION_FLEKS0,TPREGION_FLEKS1,TPREGION_FLEKS2"
-	 multiple="F">
+<command name="TPREGION" alias="TPREGION_FLEKS0,TPREGION_FLEKS1,TPREGION_FLEKS2" multiple="F">
   <parameter name="region" type="string"/>     
 
 #TPREGION
@@ -1244,9 +1155,7 @@ Cells inside the '+' shapes and outside the '-' shapes will be selected.
 
 </command>
 
-<command name="TPSTATESI"
-	 alias="TPSTATE_FLEKS0,TPSTATE_FLEKS1,TPSTATE_FLEKS2"
-	 multiple="T">
+<command name="TPSTATESI" alias="TPSTATE_FLEKS0,TPSTATE_FLEKS1,TPSTATE_FLEKS2" multiple="T">
   <parameter name="nState" type="integer" min="0" default="0"/>
   <parameter name="iSpecies" type="integer"/>
   <parameter name="vth" type="real"/>
@@ -1268,9 +1177,7 @@ bulk velocities (vx, vy and vz) for iSpecies. The velocities are in SI unit.
 
 </command>
 
-<command name="TPPARTICLES"
-	 alias="TPPARTICLES_FLEKS0,TPPARTICLES_FLEKS1,TPPARTICLES_FLEKS2"
-	 multiple="T">
+<command name="TPPARTICLES" alias="TPPARTICLES_FLEKS0,TPPARTICLES_FLEKS1,TPPARTICLES_FLEKS2" multiple="T">
   <parameter name="nParticleX" type="integer" min="1" default="1"/>
   <parameter name="nParticleY" type="integer" min="1" default="1"/>
   <parameter name="nParticleZ" type="integer" min="1" default="1"/>
@@ -1284,9 +1191,7 @@ This command sets the number of test particles per cell.
 
 </command>
 
-<command name="TPCELLINTERVAL"
-	 alias="TPCELLINTERVAL_FLEKS0,TPCELLINTERVAL_FLEKS1,TPCELLINTERVAL_FLEKS2"
-	 multiple="T">
+<command name="TPCELLINTERVAL" alias="TPCELLINTERVAL_FLEKS0,TPCELLINTERVAL_FLEKS1,TPCELLINTERVAL_FLEKS2" multiple="T">
   <parameter name="nIntervalX" type="integer" min="1" default="1"/>
   <parameter name="nIntervalY" type="integer" min="1" default="1"/>
   <parameter name="nIntervalZ" type="integer" min="1" default="1"/>
@@ -1303,9 +1208,7 @@ defined in #MAXBLOCKSIZE, the interval is equivalent to the maximum block size.
 </command>
 
 
-<command name="ELECTRON"
-	 alias="ELECTRON_FLEKS0,ELECTRON_FLEKS1,ELECTRON_FLEKS2"
-	 multiple="T">
+<command name="ELECTRON" alias="ELECTRON_FLEKS0,ELECTRON_FLEKS1,ELECTRON_FLEKS2" multiple="T">
   <parameter name="electronChargePerMass" type="real" default="-100"/>
 
 #ELECTRON
@@ -1322,8 +1225,7 @@ five-moment or six-moment fluid closures that define the electron mass.
 Default value is shown.
 </command>
 
-<command name="TESTCASE"
-	 alias="TESTCASE_FLEKS0,TESTCASE_FLEKS1,TESTCASE_FLEKS2" multiple="T">
+<command name="TESTCASE" alias="TESTCASE_FLEKS0,TESTCASE_FLEKS1,TESTCASE_FLEKS2" multiple="T">
   <parameter name="testCase" type="string"/>
 
 #TESTCASE 
@@ -1338,8 +1240,7 @@ dedicated plug-ins (beam, tophat). See the AGENT.md "Adding a New Test Case"
 workflow.
 </command>
 
-<command name="WAVEIC"
-	 alias="WAVEIC_FLEKS0,WAVEIC_FLEKS1,WAVEIC_FLEKS2" multiple="T">
+<command name="WAVEIC" alias="WAVEIC_FLEKS0,WAVEIC_FLEKS1,WAVEIC_FLEKS2" multiple="T">
   <parameter name="seedE" type="logical" default="F"/>
   <parameter name="seedB" type="logical" default="F"/>
   <parameter name="seedWeight" type="logical" default="F"/>
@@ -1396,8 +1297,7 @@ in this direction and the parameter above will be ignored. Otherwise,
 the default value is false.
 </command>
 
-<command name="MAXBLOCKSIZE" alias="MAXBLOCKSIZE_FLEKS0,MAXBLOCKSIZE_FLEKS1,MAXBLOCKSIZE_FLEKS2"
-	 multiple="T">
+<command name="MAXBLOCKSIZE" alias="MAXBLOCKSIZE_FLEKS0,MAXBLOCKSIZE_FLEKS1,MAXBLOCKSIZE_FLEKS2" multiple="T">
   <parameter name="nCellX" type="integer" min="1" default="8"/>
   <parameter name="nCellY" type="integer" min="1" default="8"/>
   <parameter name="nCellZ" type="integer" min="1" default="8"/>
@@ -1417,9 +1317,7 @@ efficiency and flexibility. 8*8*8 or 16*8*8 are typical for a 3D simulation.
 </command>
 
 
-<command name="INITFROMSWMF"
-	 alias="INITFROMSWMF_FLEKS0,INITFROMSWMF_FLEKS1,INITFROMSWMF_FLEKS2"
-	 multiple="T">
+<command name="INITFROMSWMF" alias="INITFROMSWMF_FLEKS0,INITFROMSWMF_FLEKS1,INITFROMSWMF_FLEKS2" multiple="T">
   <parameter name="initFromSWMF" type="logical" default="T"/>
 
 #INITFROMSWMF
@@ -1430,9 +1328,7 @@ fields received from SWMF. If initFromSWMF is set to false, PIC will be
 initialized from the #UNIFORMSTATE command.
 </command>
 
-<command name="NORMALIZATION"
-	 alias="NORMALIZATION_FLEKS0,NORMALIZATION_FLEKS1,NORMALIZATION_FLEKS2"
-	 multiple="T">
+<command name="NORMALIZATION" alias="NORMALIZATION_FLEKS0,NORMALIZATION_FLEKS1,NORMALIZATION_FLEKS2" multiple="T">
   <parameter name="lNorm" type="real"/>
   <parameter name="uNorm" type="real"/>
 
@@ -1444,9 +1340,7 @@ If PIC is not initialized from SWMF (#INITFROMSWMF), length and speed
 normalization should be set here. Both lNorm and uNorm are in SI units.
 </command>
 
-<command name="SCALINGFACTOR"
-   alias="SCALINGFACTOR_FLEKS0,SCALINGFACTOR_FLEKS1,SCALINGFACTOR_FLEKS2"
-   multiple="T">
+<command name="SCALINGFACTOR" alias="SCALINGFACTOR_FLEKS0,SCALINGFACTOR_FLEKS1,SCALINGFACTOR_FLEKS2" multiple="T">
   <parameter name="scaling" type="real" default="1.0"/>
 
 #SCALINGFACTOR
@@ -1455,9 +1349,7 @@ normalization should be set here. Both lNorm and uNorm are in SI units.
 This command sets the scaling factor for the simulation.
 </command>
 
-<command name="BODYSIZE"
-   alias="BODYSIZE_FLEKS0,BODYSIZE_FLEKS1,BODYSIZE_FLEKS2"
-   multiple="T">
+<command name="BODYSIZE" alias="BODYSIZE_FLEKS0,BODYSIZE_FLEKS1,BODYSIZE_FLEKS2" multiple="T">
   <parameter name="radius" type="real" default="1.0"/>
 
 #BODYSIZE
@@ -1466,9 +1358,7 @@ This command sets the scaling factor for the simulation.
 This command sets the size of the planet or other body in the simulation.
 </command>
 
-<command name="EXOSPHERE"
-	 alias="EXOSPHERE_FLEKS0,EXOSPHERE_FLEKS1,EXOSPHERE_FLEKS2"
-	 multiple="T">
+<command name="EXOSPHERE" alias="EXOSPHERE_FLEKS0,EXOSPHERE_FLEKS1,EXOSPHERE_FLEKS2" multiple="T">
   <parameter name="typeProfile" type="string"/>
   <parameter name="nComponent" type="integer"/>
   <parameter name="n0" type="real"/>
@@ -1517,9 +1407,7 @@ enable ionization source processes, use the separate #PHOTOIONIZATION,
 commands are present, no ionization source is applied.
 </command>
 
-<command name="PHOTOIONIZATION"
-	 alias="PHOTOIONIZATION_FLEKS0,PHOTOIONIZATION_FLEKS1,PHOTOIONIZATION_FLEKS2"
-	 multiple="T">
+<command name="PHOTOIONIZATION" alias="PHOTOIONIZATION_FLEKS0,PHOTOIONIZATION_FLEKS1,PHOTOIONIZATION_FLEKS2" multiple="T">
   <parameter name="nuPhoto0" type="real"/>
 
 #PHOTOIONIZATION
@@ -1537,9 +1425,7 @@ $$
 $$
 </command>
 
-<command name="SHADOWCYLINDER"
-	 alias="SHADOWCYLINDER_FLEKS0,SHADOWCYLINDER_FLEKS1,SHADOWCYLINDER_FLEKS2"
-	 multiple="T">
+<command name="SHADOWCYLINDER" alias="SHADOWCYLINDER_FLEKS0,SHADOWCYLINDER_FLEKS1,SHADOWCYLINDER_FLEKS2" multiple="T">
   <parameter name="solarDirX" type="real"/>
   <parameter name="solarDirY" type="real"/>
   <parameter name="solarDirZ" type="real"/>
@@ -1564,9 +1450,7 @@ If this command is absent, photoionization is applied spherically
 symmetrically (no shadow).
 </command>
 
-<command name="ELECTRONIMPACT"
-	 alias="ELECTRONIMPACT_FLEKS0,ELECTRONIMPACT_FLEKS1,ELECTRONIMPACT_FLEKS2"
-	 multiple="T">
+<command name="ELECTRONIMPACT" alias="ELECTRONIMPACT_FLEKS0,ELECTRONIMPACT_FLEKS1,ELECTRONIMPACT_FLEKS2" multiple="T">
   <parameter name="eIon" type="real"/>
   <parameter name="Acoeff" type="real"/>
   <parameter name="Kcoeff" type="real"/>
@@ -1595,9 +1479,7 @@ Each parameter is specified as a multi-component array (one set per
 #EXOSPHERE component, in the same order).
 </command>
 
-<command name="CHARGEEXCHANGE"
-	 alias="CHARGEEXCHANGE_FLEKS0,CHARGEEXCHANGE_FLEKS1,CHARGEEXCHANGE_FLEKS2"
-	 multiple="T">
+<command name="CHARGEEXCHANGE" alias="CHARGEEXCHANGE_FLEKS0,CHARGEEXCHANGE_FLEKS1,CHARGEEXCHANGE_FLEKS2" multiple="T">
   <parameter name="nIonSpecies" type="integer"/>
   <parameter name="sigmaCX" type="real"/>
 
@@ -1629,9 +1511,7 @@ $$
 The resulting source is deposited into the mapped ion species (iC + 1).
 </command>
 
-<command name="KINETICSOURCE"
-	 alias="KINETICSOURCE_FLEKS0,KINETICSOURCE_FLEKS1,KINETICSOURCE_FLEKS2"
-	 multiple="T">
+<command name="KINETICSOURCE" alias="KINETICSOURCE_FLEKS0,KINETICSOURCE_FLEKS1,KINETICSOURCE_FLEKS2" multiple="T">
   <parameter name="kineticSource" type="logical" default="F"/>
 
 #KINETICSOURCE
@@ -1660,9 +1540,7 @@ relevant for OH-PT coupled runs that use charge exchange; it has no
 effect in standalone PIC runs.
 </command>
 
-<command name="RECOMBINATION"
-	 alias="RECOMBINATION_FLEKS0,RECOMBINATION_FLEKS1,RECOMBINATION_FLEKS2"
-	 multiple="T">
+<command name="RECOMBINATION" alias="RECOMBINATION_FLEKS0,RECOMBINATION_FLEKS1,RECOMBINATION_FLEKS2" multiple="T">
   <parameter name="nReactions" type="integer"/>
   <parameter name="ionSpecies" type="integer"/>
   <parameter name="rateCoef" type="real"/>
@@ -1707,9 +1585,7 @@ must appear before #RECOMBINATION so that the ion species indices and the
 electron fluid flag can be validated.
 </command>
 
-<command name="CHEMISTRY"
-	 alias="CHEMISTRY_FLEKS0,CHEMISTRY_FLEKS1,CHEMISTRY_FLEKS2"
-	 multiple="T">
+<command name="CHEMISTRY" alias="CHEMISTRY_FLEKS0,CHEMISTRY_FLEKS1,CHEMISTRY_FLEKS2" multiple="T">
   <parameter name="nReactions" type="integer"/>
   <parameter name="reactantIon" type="integer"/>
   <parameter name="productIon" type="integer"/>
@@ -1799,9 +1675,7 @@ supersedes the simpler #PHOTOIONIZATION, #CHARGEEXCHANGE, and
 individual commands, not both.
 </command>
 
-<command name="PLASMA"
-	 alias="PLASMA_FLEKS0,PLASMA_FLEKS1,PLASMA_FLEKS2"
-	 multiple="T">
+<command name="PLASMA" alias="PLASMA_FLEKS0,PLASMA_FLEKS1,PLASMA_FLEKS2" multiple="T">
   <parameter name="nS" type="integer"/>
   <parameter name="mass" type="real"/>
   <parameter name="charge" type="real"/>
@@ -1826,9 +1700,7 @@ neutral species.
 </command>
 
 
-<command name="UNIFORMSTATE"
-	 alias="UNIFORMSTATE_FLEKS0,UNIFORMSTATE_FLEKS1,UNIFORMSTATE_FLEKS2"
-	 multiple="T">
+<command name="UNIFORMSTATE" alias="UNIFORMSTATE_FLEKS0,UNIFORMSTATE_FLEKS1,UNIFORMSTATE_FLEKS2" multiple="T">
   <parameter name="rho" type="real"/>  
   <parameter name="ux" type="real"/>  
   <parameter name="uy" type="real"/>  
@@ -1905,9 +1777,7 @@ along the ratial direction. Inside r .le. rCutoff, the density is set
 to rho(rCutoff). 
 </command>
 
-<command name="MAXCHARGEEXCHANGERATE"
-   alias="MAXCHARGEEXCHANGERATE_FLEKS0,MAXCHARGEEXCHANGERATE_FLEKS1,MAXCHARGEEXCHANGERATE_FLEKS2"
-   multiple="T">
+<command name="MAXCHARGEEXCHANGERATE" alias="MAXCHARGEEXCHANGERATE_FLEKS0,MAXCHARGEEXCHANGERATE_FLEKS1,MAXCHARGEEXCHANGERATE_FLEKS2" multiple="T">
   <parameter name="maxChargeExchangeRate" type="real" default="1"/>
 
 #MAXCHARGEEXCHANGERATE
@@ -1920,9 +1790,7 @@ accordingly for the next step. This is only used for OH-PT coupling.
 </command>
 
 
-<command name="PARTICLEBOXBOUNDARY"
-   alias="PARTICLEBOXBOUNDARY_FLEKS0,PARTICLEBOXBOUNDARY_FLEKS1,PARTICLEBOXBOUNDARY_FLEKS2"
-   multiple="T">
+<command name="PARTICLEBOXBOUNDARY" alias="PARTICLEBOXBOUNDARY_FLEKS0,PARTICLEBOXBOUNDARY_FLEKS1,PARTICLEBOXBOUNDARY_FLEKS2" multiple="T">
   <parameter name="iSpecies" type="integer" required="T"/>
   <for from="1" to="$nDim">
     <parameter name="particleBoxBoundaryLo" type="string" input="select" required="T">
@@ -1947,9 +1815,7 @@ open              particleBoxBoundaryHi
 This command defines the boundary conditions for particles of a given species.
 </command>
 
-<command name="BFIELDBOXBOUNDARY"
-   alias="BFIELDBOXBOUNDARY_FLEKS0,BFIELDBOXBOUNDARY_FLEKS1,BFIELDBOXBOUNDARY_FLEKS2"
-   multiple="T">
+<command name="BFIELDBOXBOUNDARY" alias="BFIELDBOXBOUNDARY_FLEKS0,BFIELDBOXBOUNDARY_FLEKS1,BFIELDBOXBOUNDARY_FLEKS2" multiple="T">
   <for from="1" to="$nDim">
     <parameter name="BoxBoundaryLo" type="string" input="select" required="T">
       <option value="periodic"/>
@@ -2007,9 +1873,7 @@ If `dnMemory` is -1 or less, garbage collection tracking is disabled.
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! RESTART !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-<command name="RESTART"
-	 alias="RESTART_FLEKS0,RESTART_FLEKS1,RESTART_FLEKS2"
-	 multiple="T">
+<command name="RESTART" alias="RESTART_FLEKS0,RESTART_FLEKS1,RESTART_FLEKS2" multiple="T">
   <parameter name="doRestart" type="logical" default="F"/>
 
 #RESTART 
@@ -2022,17 +1886,13 @@ In PARAM.in, users should use the command #INCLUDE instead of #RESTART
 to control the restart.
 </command>
 
-<command name="RECEIVEICONLY"
-	 alias="RECEIVEICONLY_FLEKS0,RECEIVEICONLY_FLEKS1,RECEIVEICONLY_FLEKS2"
-	 multiple="T">
+<command name="RECEIVEICONLY" alias="RECEIVEICONLY_FLEKS0,RECEIVEICONLY_FLEKS1,RECEIVEICONLY_FLEKS2" multiple="T">
   <parameter name="receiveICOnly" type="logical" default="F"/>
 
 pass
 </command>
 
-<command name="RESTARTFIONLY"
-	 alias="RESTARTFIONLY_FLEKS0,RESTARTFIONLY_FLEKS1,RESTARTFIONLY_FLEKS2"
-	 multiple="T">
+<command name="RESTARTFIONLY" alias="RESTARTFIONLY_FLEKS0,RESTARTFIONLY_FLEKS1,RESTARTFIONLY_FLEKS2" multiple="T">
   <parameter name="doRestartFIOnly" type="logical" default="F"/>
 
 #RESTARTFIONLY 
@@ -2042,9 +1902,7 @@ This command should only exist in the restart file FLEKSX_restart.H. If
 it is true, only the fluid interface restarts.
 </command>
 
-<command name="TPRESTART"
-   alias="TPRESTART_FLEKS0,TPRESTART_FLEKS1,TPRESTART_FLEKS2"
-   multiple="T">
+<command name="TPRESTART" alias="TPRESTART_FLEKS0,TPRESTART_FLEKS1,TPRESTART_FLEKS2" multiple="T">
   <parameter name="doTPRestart" type="logical" default="F"/>
 
 #TPRESTART
@@ -2055,9 +1913,7 @@ to indicate that the test particle information of the FLEKS region is
 restarted from a file.
 </command>
 
-<command name="FLUIDVARNAMES"
-	 alias="FLUIDVARNAMES_FLEKS0,FLUIDVARNAMES_FLEKS1,FLUIDVARNAMES_FLEKS2"
-	 multiple="T">
+<command name="FLUIDVARNAMES" alias="FLUIDVARNAMES_FLEKS0,FLUIDVARNAMES_FLEKS1,FLUIDVARNAMES_FLEKS2" multiple="T">
   <parameter name="nVar" type="integer" min="0" max="100" default="0"/>
   <for from="1" to="$nVar">
     <parameter name="varName" type="string"/>
@@ -2067,9 +1923,7 @@ PASS
 
 </command>
 
-<command name="NSTEP"
-	 alias="NSTEP_FLEKS0,NSTEP_FLEKS1,NSTEP_FLEKS2"
-	 multiple="T">
+<command name="NSTEP" alias="NSTEP_FLEKS0,NSTEP_FLEKS1,NSTEP_FLEKS2" multiple="T">
   <parameter name="nStep" type="integer"/>
 
 #NSTEP
@@ -2080,9 +1934,7 @@ The cycle number of the restart file.
 This command should only exist in the restart file FLEKSX_restart.H
 </command>
 
-<command name="TIMESIMULATION"
-	 alias="TIMESIMULATION_FLEKS0,TIMESIMULATION_FLEKS1,TIMESIMULATION_FLEKS2"
-	 multiple="T">
+<command name="TIMESIMULATION" alias="TIMESIMULATION_FLEKS0,TIMESIMULATION_FLEKS1,TIMESIMULATION_FLEKS2" multiple="T">
   <parameter name="timeSimulation" type="real"/>
 
 #TIMESIMULATION
@@ -2093,8 +1945,7 @@ The simulation time of the restart file.
 This command should only exist in the restart file FLEKSX_restart.H
 </command>
 
-<command name="DT"
-	 alias="DT_FLEKS0,DT_FLEKS1,DT_FLEKS2" multiple="T">
+<command name="DT" alias="DT_FLEKS0,DT_FLEKS1,DT_FLEKS2" multiple="T">
   <parameter name="dtSI" type="real"/>
   <parameter name="dtNextSI" type="real"/>
 

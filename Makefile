@@ -1,6 +1,6 @@
 default: EXE
 
-.PHONY: default help GITINFO EXE FLEKS install LIB CONVERTER PIDL rundir clean \
+.PHONY: default help GITINFO EXE FLEKS install LIB CONVERTER PIDL PDF rundir clean \
 	distclean allclean compile_commands
 
 -include Makefile.conf
@@ -13,6 +13,7 @@ help:
 	@echo 'make FLEKS                  - same as make EXE'
 	@echo 'make LIB                    - compile libPC.a for SWMF'
 	@echo 'make PIDL                   - compile PostIDL.exe for post-processing'
+	@echo 'make PDF                    - build Doc/USERMANUAL.pdf from PARAM.XML'
 	@echo 'make clean                  - remove object files'
 	@echo 'make distclean              - remove all files not part of CVS'
 	@echo
@@ -88,6 +89,10 @@ PIDL:
 	@echo Program PostIDL has been brought up to date.
 	@echo ' '
 
+PDF:
+	$(MAKE) -C Doc/Tex cleanpdf
+	$(MAKE) -C Doc/Tex PDF
+
 rundir:
 	mkdir -p ${RUNDIR}/${COMPONENT}
 	(cd ${RUNDIR}/${COMPONENT}; \
@@ -110,6 +115,7 @@ distclean:
 allclean:
 	-@(cd src; $(MAKE) distclean)
 	-@(cd srcInterface; $(MAKE) distclean)
+	-@$(MAKE) -C Doc/Tex cleanpdf
 	-@rm -rf *~ ./bin lib ${TESTDIR} include/Constants.h
 	-@rm -f test*.diff
 

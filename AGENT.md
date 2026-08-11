@@ -35,7 +35,7 @@ FLEKS/
 ├── include/              ← All header files (.h)
 ├── src/                  ← All implementation files (.cpp) and src Makefile
 ├── srcInterface/         ← SWMF coupling layer (Fortran wrappers + C++ interface)
-├── docs/                 ← Algorithm docs (LaTeX) and coding standards
+├── Doc/                  ← User manual, algorithms, and coding standards
 ├── tools/                ← Post-processing and conversion scripts (Python/bash)
 ├── tests/                ← Standalone fixtures and future unit/regression tests
 ├── bin/                  ← Built executables (created by build)
@@ -65,7 +65,7 @@ Use this workflow for most code changes:
 | `include/`       | All `.h` header files — class declarations, inline methods  |
 | `src/`           | All `.cpp` files — implementations, `main.cpp`, src Makefile|
 | `srcInterface/`  | SWMF coupling: `PC_wrapper.f90`, `PT_wrapper.f90`, `FleksInterface.cpp` |
-| `docs/`          | Internal documentation: coding standards, algorithms, agent docs |
+| `Doc/`           | User manual, algorithms, coding standards, and agent docs |
 | `tools/`         | `amrex2tec.py`, `amrex2vtk.sh`, `converter.py`, `generate_compile_commands.py` |
 
 ---
@@ -128,7 +128,7 @@ The interface layer follows a pattern:
 - **PIC Method:** Semi-implicit θ-scheme with Boris particle mover
 - **Hybrid PIC Method:** Kinetic ions + massless fluid electrons, advanced via
   a generalized Ohm's law and an explicit cell-centered Faraday update (RK4 or
-  SSPRK3), gated by `#HYBRIDPIC` (`useHybridPIC`). See `docs/Algorithm.tex`.
+  SSPRK3), gated by `#HYBRIDPIC` (`useHybridPIC`). See `Doc/Algorithm.tex`.
 - **Field Solver:** GMRES iterative solver for the implicit electric field
   (full-PIC); the hybrid path instead assembles E from the generalized Ohm's law
   (`Pic::assemble_ohm_E`).
@@ -207,7 +207,7 @@ If these are missing, run the build targets in the **Build Targets** section abo
 
 ## Coding Conventions
 
-See `docs/Coding_standards.md` for the full list. Key points:
+See `Doc/Coding_standards.md` for the full list. Key points:
 
 ### Naming
 

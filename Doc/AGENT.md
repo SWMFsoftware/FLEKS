@@ -1,4 +1,4 @@
-# docs/ — Algorithm & Standards Documentation
+# Doc/ — User and Algorithm Documentation
 
 ## Files
 
@@ -14,4 +14,4 @@
 ## Validation
 
 - Rebuild docs with `cd docs && pdflatex Algorithm.tex`.
-- Keep `docs/Coding_standards.md` aligned with any style guidance added to root `AGENT.md`.
+- Keep `Doc/Coding_standards.md` aligned with any style guidance added to root `AGENT.md`.

@@ -6,7 +6,7 @@ It natively serves as the **PC** (Particle-in-Cell) and **PT** (Particle Tracker
 
 ## Primary Capabilities
 - **Implicit PIC:** Semi-implicit $\theta$-scheme solvers leveraging AMReX GMRES and heavily optimized particle-push boundaries.
-- **Hybrid PIC:** Kinetic ions + massless fluid electrons via a generalized Ohm's law, with an explicit RK4/SSPRK3 Faraday advance (see `docs/Algorithm.tex`).
+- **Hybrid PIC:** Kinetic ions + massless fluid electrons via a generalized Ohm's law, with an explicit RK4/SSPRK3 Faraday advance (see `Doc/Algorithm.tex`).
 - **Particle Tracking:** Massively parallel test particle tracking in turbulent MHD and PIC electromagnetic fields.
 - **MHD-AEPIC:** True bi-directional coupling between global space weather MHD states and sub-grid PIC regimes.
 - **Adaptive Tracing:** Utilizes AMReX regridding and dynamic load balancing.
@@ -40,7 +40,31 @@ python3 tests/validate_tests.py --test=singlecell   # run a single test
 See `tests/README.md` for the full test catalogue and runner options.
 
 ## Documentation
-* **Algorithms & Physics:** Please see `docs/Algorithm.tex` for the mathematical foundations of the simulation engine.
+### Parameter reference manual
+
+The input commands and parameters are documented in `PARAM.XML`. After
+configuring FLEKS, users with command-line LaTeX (`pdflatex` and `makeindex`)
+plus the `fvextra` package can build the PDF reference manual with:
+
+```bash
+make PDF
+```
+
+The generated manual is `Doc/USERMANUAL.pdf`.
+
+To remove intermediate documentation files while preserving the PDF, run:
+
+```bash
+make -C Doc/Tex clean
+```
+
+To remove the intermediates and the generated PDF, run:
+
+```bash
+make -C Doc/Tex cleanpdf
+```
+
+* **Algorithms & Physics:** Please see `Doc/Algorithm.tex` for the mathematical foundations of the simulation engine.
 * **Component Architecture:** Every core directory contains an extensive `AGENT.md` file describing layout, file purposing, and structure.
 * **Coding Standards & Contributing:** See `CONTRIBUTING.md` before making a pull request.
 
