@@ -77,3 +77,29 @@ jobs:
             issue_number: context.issue.number,
             body,
           });
+
+  # Keep master formatted even if an unformatted PR is merged: on every push to
+  # master, reformat the whole codebase and auto-commit the result.
+  autoformat-master:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v6
+
+    - name: Set up tools
+      run: |
+        python3 -m pip install --upgrade pip
+        python3 -m pip install clang-format==20.1.8 findent
+
+    - name: Run format script
+      run: python3 tools/format_all.py
+
+    - name: Auto-commit formatting changes
+      uses: stefanzweifel/git-auto-commit-action@v7
+      with:
+        commit_message: "style: Auto-formatting"
+        commit_user_name: "github-actions[bot]"
+        commit_user_email: "github-actions[bot]@users.noreply.github.com"
