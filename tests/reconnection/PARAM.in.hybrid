@@ -1,8 +1,7 @@
 #DESCRIPTION
 Magnetic reconnection (Fadeev current-sheet equilibrium) with the HYBRID
-solver (solveEM = F, generalized Ohm's law): kinetic ions / fluid electrons,
-companion to PARAM.in.  Reconnection plane x-y, thin invariant z; details in
-README.
+solver (solveEM = F, generalized Ohm's law): kinetic ions / fluid electrons.
+Reconnection plane x-y; details in README.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -31,9 +30,7 @@ F                       isPeriodicY
 T                       isPeriodicZ
 
 Field boundary conditions on the box faces (periodic in x, outflow/float in y,
-periodic in z).  The current sheet is far from the y-walls (Ly/2 = 15.7 d_i vs
-L = 5 d_i), so a float B boundary reproduces the Hybrid-VPIC PEC cross-sheet
-walls closely enough for the interior reconnection.
+periodic in z).
 #BFIELDBOXBOUNDARY
 periodic                BoxBoundaryLo  (x)
 periodic                BoxBoundaryHi
@@ -49,17 +46,17 @@ F                       solveEM
 T                       useHybridPIC
 
 Resistive term ON (SI magnetic diffusivity). etaSI = 4.0e5 m^2/s converts to
-etaCode ~ 0.001 (as in islands_hyb.cxx).
+etaCode ~ 0.001.
 #RESISTIVITY
 4.0e5                   etaResistivity  [m^2/s]
 
-Electron pressure-gradient term ON (isothermal, gamma = 1).
+Electron pressure-gradient term ON (isothermal).
 #ELECTRONTEMPERATURE
 5.0                     electronTemperature  [eV]
 1.0                     electronGamma
 1.0                     electronDensity0
 
-Fourth-order hyper-resistivity (mild damping of grid-scale noise).
+Fourth-order hyper-resistivity.
 #HYPERRESISTIVITY
 0.0                     etaHyperSI      [m^4/s; unused in grid mode]
 grid                    etaHyperMode
@@ -98,11 +95,11 @@ neutralizing massless fluid, so no electron particle species is present.
 0.0                     ey [V/m]
 0.0                     ez [V/m]
 
-Fadeev current-sheet equilibrium initial condition (see the header description).
+Fadeev current-sheet equilibrium initial condition.
 #TESTCASE
 fadeev
 
-FadeevIC sub-parameters (defaults match islands_hyb.cxx).
+FadeevIC sub-parameters.
 #FADEEVIC
 5.0                     L        (current-sheet half-thickness / d_i)
 0.4                     eps      (island size ratio)
@@ -132,25 +129,12 @@ T                       useFixedDt
 6                       nParticle per cell in Y
 1                       nParticle per cell in Z
 
-#COMOVING
-F                       solvePartInCoMov
-0                       nSmoothBackGroundU
-
-#UPWINDE
-F                       useUpwindE
-0.0                     limiterThetaE
-
-#UPWINDB
-F                       doSmoothB
-0.0                     theta
-
 #SAVEPLOT
 1                       nPlot
 z=0 fluid ascii pic     plotString
 -1                      dn
 1.0                     dt
 1                       dx
-Bx By Bz rhoS0 uxS0 uyS0 uzS0   varName
 
 #STOP
 -1                      MaxIter

@@ -1,7 +1,7 @@
 #DESCRIPTION
 Magnetic reconnection (Fadeev current-sheet equilibrium) with the FULL PIC
-solver (solveEM = T, Maxwell/GMRES): kinetic ions and electrons, companion to
-PARAM.in.hybrid.  Reconnection plane x-y, thin invariant z; details in README.
+solver (solveEM = T, Maxwell/GMRES): kinetic ions and electrons.
+Reconnection plane x-y; details in README.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -30,9 +30,7 @@ F                       isPeriodicY
 T                       isPeriodicZ
 
 Field boundary conditions on the box faces (periodic in x, outflow/float in y,
-periodic in z).  The current sheet is far from the y-walls, so a float B
-boundary reproduces the Hybrid-VPIC PEC cross-sheet walls closely enough for
-the interior reconnection.
+periodic in z).
 #BFIELDBOXBOUNDARY
 periodic                BoxBoundaryLo  (x)
 periodic                BoxBoundaryHi
@@ -48,8 +46,7 @@ T                       solveEM
 #HYBRIDPIC
 F                       useHybridPIC
 
-Two kinetic species: ions (q = 1, m = 1) and electrons (q = -1,
-m = 1/25) -- mass ratio m_i/m_e = 25.
+Two kinetic species: ions (q = 1, m = 1) and electrons (q = -1, m = 1/25)
 #PLASMA
 2                       nSpecies
 1.0                     mass           Species 0: ions
@@ -57,9 +54,9 @@ m = 1/25) -- mass ratio m_i/m_e = 25.
 1.0/25.0                mass           Species 1: electrons
 -1.0                    charge
 
-Both species share the same Fadeev density profile (charge neutral, n_e = n_i)
-via the FadeevIC weight boost; the ion temperature sets beta_i ~ 0.5 and the
-electrons are heated to the same code temperature.
+Both species share the same Fadeev density profile (charge neutral, n_e = n_i);
+the ion temperature sets beta_i ~ 0.5 and the electrons are heated to the same
+code temperature.
 #UNIFORMSTATE
 12.5                    rho [amu/cc]   Species 0: ions (n_code ~ nb = 0.2)
 0.0                     ux [km/s]
@@ -78,11 +75,11 @@ electrons are heated to the same code temperature.
 0.0                     ey [V/m]
 0.0                     ez [V/m]
 
-Fadeev current-sheet equilibrium initial condition (see the header description).
+Fadeev current-sheet equilibrium initial condition.
 #TESTCASE
 fadeev
 
-FadeevIC sub-parameters (defaults match islands_hyb.cxx).
+FadeevIC sub-parameters.
 #FADEEVIC
 5.0                     L        (current-sheet half-thickness / d_i)
 0.4                     eps      (island size ratio)
@@ -118,7 +115,6 @@ z=0 fluid ascii pic     plotString
 -1                      dn
 1.0                     dt
 1                       dx
-Bx By Bz rhoS0 uxS0 uyS0 uzS0   varName
 
 #STOP
 -1                      MaxIter

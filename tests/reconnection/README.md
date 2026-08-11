@@ -56,6 +56,19 @@ Box: `Lx = 2*pi*L*num_islands ~ 62.8 d_i`, `Ly = Lx/2 ~ 31.4 d_i`, thin `z`.
 Both are sized to finish within the 1-minute standalone serial budget and also
 run on a few MPI processes.
 
+## Running
+
+Run the automated check (builds, runs both solver variants, post-processes, and
+validates):
+
+```bash
+# serial (default)
+python3 tests/validate_tests.py --test=reconnection
+
+# or with MPI (e.g. 2 processes)
+python3 tests/validate_tests.py --test=reconnection -n 2
+```
+
 ## Validation
 
 The automated check (`validate.py`) runs for both solver variants and reads the

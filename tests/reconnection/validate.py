@@ -126,17 +126,28 @@ def validate_log(pic_diags=None, test_name=None):
 
 
 def _load_all_frames():
+    """Load all .out frames, keeping only those with a consistent grid shape.
+
+    Discards stale .out files from a previous run (e.g. a different solver
+    variant with another resolution) that may linger in the plots directory."""
     plots_dir = os.path.join("run_test", "PC", "plots")
     out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
     if not out_files:
         return None, "no .out plot files (PostProc.pl not run?)"
     frames = []
+    shape = None
     for f in out_files:
         fr = _load_frame(f)
-        if fr is not None:
-            frames.append((f, fr))
+        if fr is None:
+            continue
+        bx = fr[2]
+        if shape is None:
+            shape = bx.shape  # adopt the first frame's grid
+        elif bx.shape != shape:
+            continue  # stale / mismatched grid; skip
+        frames.append((f, fr))
     if len(frames) < 3:
-        return None, "need >=3 parseable .out frames"
+        return None, "need >=3 parseable .out frames with a consistent grid"
     return frames, None
 
 
