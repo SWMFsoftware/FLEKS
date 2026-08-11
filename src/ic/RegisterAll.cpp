@@ -1,4 +1,5 @@
 #include "BeamIC.h"
+#include "FadeevIC.h"
 #include "InitialCondition.h"
 #include "TopHatIC.h"
 #include "WaveIC.h"
@@ -27,5 +28,8 @@ void register_all_initial_conditions() {
       "beam", []() { return std::unique_ptr<InitialCondition>(new BeamIC()); });
   ICRegistry::instance().register_ic("tophat", []() {
     return std::unique_ptr<InitialCondition>(new TopHatIC());
+  });
+  ICRegistry::instance().register_ic("fadeev", []() {
+    return std::unique_ptr<InitialCondition>(new FadeevIC());
   });
 }

@@ -30,6 +30,7 @@ SRCS := \
 	ic/WaveIC.cpp \
 	ic/BeamIC.cpp \
 	ic/TopHatIC.cpp \
+	ic/FadeevIC.cpp \
 	ic/RegisterAll.cpp
 
 OBJECTS := $(patsubst %, %.o,$(basename $(SRCS)))
