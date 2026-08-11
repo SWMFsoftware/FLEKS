@@ -90,5 +90,8 @@ The automated check (`validate.py`) runs for both solver variants and reads the
    central X-point gives a non-trivial reconnection rate `dAy/dt`.
 4. **O-point evolution**: the island-centre positions evolve, confirming the
    magnetic topology changes (reconnection) rather than remaining frozen.
+5. **Charge neutrality (full-PIC only)**: the load must stay quasi-neutral,
+   i.e. `rhoS0 ~ rhoS1*(m_i/m_e)`, catching the "electron `rho` not scaled by
+   `m_e/m_i`" bug.  Skipped for the hybrid run (no electron species).
 
 These are qualitative physics checks; they confirm both solvers reproduce the hallmarks of reconnection in the Fadeev equilibrium.

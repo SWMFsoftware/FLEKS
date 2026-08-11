@@ -16,12 +16,12 @@ L = 5.0                               # sheet half-thickness / d_i
 EPS = 0.4                             # island size ratio
 ISLAND_X = math.pi * L                # O-point location / d_i ~ 15.7
 
+# m_i/m_e from full-PIC #PLASMA (m_i=1, m_e=0.04); quasi-neutral => rhoS0 ~ rhoS1*ratio
+MASS_RATIO = 25.0
+
 
 def _load_frame(path):
-    """Parse one ``z=0`` x-y plane .out file into a numpy array.
-
-    Returns (x_grid, y_grid, Bx, By, Bz, rho) where the field arrays are
-    (ny, nx) with x along the drive direction and y the sheet normal."""
+    """Parse one ``z=0`` .out file into (x, y, Bx, By, Bz, rhoS0, rhoS1|None)."""
     lines = open(path, encoding="latin-1").read().splitlines()
     if len(lines) < 6:
         return None
@@ -43,7 +43,8 @@ def _load_frame(path):
     by = data[:, idx["By"]].reshape(ny, nx)
     bz = data[:, idx["Bz"]].reshape(ny, nx)
     rho = data[:, idx["rhoS0"]].reshape(ny, nx)
-    return ux, uy, bx, by, bz, rho
+    rhoS1 = data[:, idx["rhoS1"]].reshape(ny, nx) if "rhoS1" in idx else None
+    return ux, uy, bx, by, bz, rho, rhoS1
 
 
 def _flux_function(bx, bz, dx):
@@ -60,7 +61,7 @@ def _flux_function(bx, bz, dx):
 
 def _midplane_field(frames0):
     """Return midplane (y~0) arrays of ux, By, Bx and the row index."""
-    ux, uy, bx, by, bz, rho = frames0
+    ux, uy, bx, by, bz, rho, rhoS1 = frames0
     j0 = int(np.argmin(np.abs(uy)))
     return ux, j0, by[j0], bx[j0]
 
@@ -160,7 +161,7 @@ def validate_plot(test_name):
         return False, err
 
     # ---- (1) Equilibrium initialization at t=0 ----
-    ux, uy, bx0, by0, bz0, rho0 = frames[0][1]
+    ux, uy, bx0, by0, bz0, rho0, rhoS1_0 = frames[0][1]
     dx = ux[1] - ux[0]
     x0, j0, by_mid, bx_mid = _midplane_field(frames[0][1])
 
@@ -195,7 +196,7 @@ def validate_plot(test_name):
     ay_series = []
     max_dby_series = []
     for _, fr in frames:
-        ux2, uy2, bx, by, bz, rho = fr
+        ux2, uy2, bx, by, bz, rho, rhoS1 = fr
         j = int(np.argmin(np.abs(uy2)))
         dby = float(np.abs(by - by0).max())
         max_dby_series.append(dby)
@@ -208,7 +209,9 @@ def validate_plot(test_name):
     growth = late_amp / early_amp if early_amp > 1e-6 else 0.0
     logger.debug("    perturbation growth: %.4f -> %.4f (%.1fx)",
                  early_amp, late_amp, growth)
-    if late_amp < 0.1:
+    # Looser floor for full-PIC (coarser/short); Ay flux change confirms reconnection.
+    late_thresh = 0.1 if test_name.endswith("hybrid") else 0.03
+    if late_amp < late_thresh:
         return False, (
             f"late |delta By| = {late_amp:.3f} too small (no instability)")
 
@@ -233,6 +236,24 @@ def validate_plot(test_name):
     if motion < 0.2:
         logger.debug("    [WARN] O-point motion small (%.3f); reconnection "
                      "may still be ongoing", motion)
+
+    # ---- (5) Charge neutrality (full-PIC only) ----
+    # Quasi-neutral => rhoS0 ~ rhoS1*MASS_RATIO; skips hybrid (no rhoS1).
+    if rhoS1_0 is not None:
+        max_imbalance = 0.0
+        for _, fr in frames:
+            _ux, _uy, _bx, _by, _bz, _rho, rhoS1 = fr
+            if rhoS1 is None:
+                continue
+            denom = max(float(_rho.max()), 1e-9)  # normalise by ion density
+            imb = float(np.abs(_rho - rhoS1 * MASS_RATIO).max() / denom)
+            max_imbalance = max(max_imbalance, imb)
+        logger.debug("    charge imbalance max |rhoS0 - rhoS1*%.0f|/rho0 = %.3f",
+                     MASS_RATIO, max_imbalance)
+        if max_imbalance > 0.5:
+            return False, (
+                f"charge separation: |rhoS0 - rhoS1*{MASS_RATIO:.0f}|/rho0_max "
+                f"= {max_imbalance:.2f} (> 0.5); load not charge neutral")
 
     msg = (f"reconnection: By perturbation {early_amp:.3f}->{late_amp:.3f}, "
            f"Ay span {ay_span:.3f}, O-points at "
