@@ -52,8 +52,26 @@ if (not -f $config and not -f "../../$config"){
 
 my $AmrexDir = "util/AMREX";
 if(-f $config){
-    # Local FLEKS dependency tree. Turn on AMReX automatically.
-    push @Arguments, "-amrex";
+    # Local FLEKS dependency tree. Turn on AMReX automatically, honoring
+    # -amrex2d/-amrex3d or defaulting to the currently-linked library's dimension.
+    my $AmrexDimArg = "3d";
+    foreach (@Arguments){
+        if (/^-amrex(2d|3d)?$/i){
+            $AmrexDimArg = lc($1 || "3d");
+            last;
+        }
+    }
+    unless (grep { /^-amrex(2d|3d)?$/i } @Arguments){
+        my $AmrexConfig = "${AmrexDir}/InstallDir/include/AMReX_Config.H";
+        if (-f $AmrexConfig) {
+            open(FILE, $AmrexConfig) or warn "Config.pl WARNING: could not open $AmrexConfig \n";
+            while(<FILE>){
+                $AmrexDimArg = "$1d" if /^#define\s+AMREX_SPACEDIM\s+(\d+)/i;
+            }
+            close FILE;
+        }
+    }
+    push @Arguments, "-amrex$AmrexDimArg";
     push @Arguments, "-show" unless @ARGV;
     push @Arguments, "-nodebug", "-install" unless -f $MakefileConf;
     require $config;
@@ -269,6 +287,11 @@ sub print_help{
 -s            Show the configuration for AMReX.
 
 -lev          Number of maximum grid levels. It is a uniform grid without AMR if lev=1.	
+
+-amrex2d      Link with the 2D AMReX library (AMReX_SPACEDIM = 2).
+-amrex3d      Link with the 3D AMReX library (AMReX_SPACEDIM = 3). This is the default.
+              AMReX is enabled automatically in the standalone FLEKS setup; by default the
+              dimension of the currently-linked library is kept unless -amrex2d/-amrex3d is given.
 
 -u            Show available user source options.
 

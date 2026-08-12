@@ -321,6 +321,60 @@ EXO_SOURCE_TESTS = {
 # Tests that require AMR (nLevMax >= 2).
 AMR_TESTS = {"lightwave"}
 
+# Tests needing a true-3D AMReX library (real z-grid, nCellZ > 1).
+AMREX3D_TESTS = {"lightwave"}
+
+# Tests needing a true-2D AMReX library (currently none; infrastructure kept).
+AMREX2D_TESTS = set()
+
+# Tests excluded from the 2D suite.
+AMREX2D_EXCLUDED_TESTS = {
+    "chargeexchange", "chemistry", "electronimpact",
+    "recombination", "hyper_resistivity",
+    "photoionization",
+}
+
+
+def _read_amrex_spacedim(path):
+    """Return AMREX_SPACEDIM from an AMReX_Config.H file, or None.
+
+    Robust to a broken "InstallDir" symlink (which GitHub Actions cache does not
+    reliably preserve): even if InstallDir/... is unreadable, we can still read
+    the dimension-specific InstallDir2D/ or InstallDir3D/ directory directly.
+    """
+    import re
+    try:
+        with open(path, "r") as f:
+            content = f.read()
+    except (OSError, IOError):
+        return None
+    m = re.search(r"#define\s+AMREX_SPACEDIM\s+(\d+)", content)
+    return int(m.group(1)) if m else None
+
+
+def configured_amrex_dim():
+    """AMReX dimension (2 or 3) the binary was built with, or None.
+
+    Reads AMREX_SPACEDIM from the linked library's AMReX_Config.H in either the
+    standalone (util/AMREX) or SWMF-component (../../util/AMREX) layout,
+    checking the InstallDir symlink and its 2D/3D targets so a broken symlink
+    does not prevent detection.
+    """
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # (path-to-AMReX-root, candidates-to-check) per layout.
+    layouts = [
+        os.path.join(root, "util", "AMREX"),
+        os.path.join(root, "..", "..", "util", "AMREX"),
+    ]
+    for base in layouts:
+        for sub in ("InstallDir", "InstallDir3D", "InstallDir2D"):
+            dim = _read_amrex_spacedim(
+                os.path.join(base, sub, "include", "AMReX_Config.H"))
+            if dim is not None:
+                return dim
+    return None
+
 
 def configured_user_source_is_exo():
     """Return True if include/UserSource.h is the Exo source.
@@ -360,15 +414,15 @@ def configured_nlevmax():
 def preflight_check(test_name):
     """Fail fast if the configured binary cannot run `test_name`.
 
-    Returns (ok: bool, reason: str|None).  When ok is False the caller should
-    skip the test and report the reason (an actionable build instruction).
+    Returns (ok, reason, skip).  ok=False means do not run: skip=True -> record
+    as SKIPPED (needs a different AMReX dimension); skip=False -> FAILED.
     """
     if test_name in EXO_SOURCE_TESTS and not configured_user_source_is_exo():
         return False, (
             f"Test '{test_name}' needs the Exosphere user source, but "
             "include/UserSource.h is the default empty source.\n"
             "  Rebuild with:  ./Config.pl -lev=2 -u=Exo && make"
-        )
+        ), False
 
     if test_name in AMR_TESTS:
         nlev = configured_nlevmax()
@@ -377,15 +431,36 @@ def preflight_check(test_name):
                 f"Test '{test_name}' needs AMR (nLevMax >= 2), but "
                 "include/Constants.h could not be read.\n"
                 "  Rebuild with:  ./Config.pl -lev=2 -u=Exo && make"
-            )
+            ), False
         if nlev < 2:
             return False, (
                 f"Test '{test_name}' needs AMR (nLevMax >= 2), but the "
                 f"binary is configured with nLevMax = {nlev}.\n"
                 "  Rebuild with:  ./Config.pl -lev=2 -u=Exo && make"
-            )
+            ), False
 
-    return True, None
+    dim = configured_amrex_dim()
+    required = None
+    if test_name in AMREX2D_TESTS:
+        required = 2
+    elif test_name in AMREX3D_TESTS:
+        required = 3
+    if required is not None:
+        if dim is None:
+            return False, (
+                f"Test '{test_name}' needs a {required}D AMReX library, but the "
+                "configured AMReX dimension could not be determined "
+                "(util/AMREX/InstallDir/include/AMReX_Config.H missing).\n"
+                f"  Rebuild with:  ./Config.pl -amrex{required}d -lev=2 -u=Exo && make"
+            ), False
+        if dim != required:
+            return False, f"needs a {required}D AMReX library (binary is {dim}D)", True
+
+    # Skip tests excluded from the 2D suite under a 2D build.
+    if dim == 2 and test_name in AMREX2D_EXCLUDED_TESTS:
+        return False, "not part of the 2D AMReX suite", True
+
+    return True, None, False
 
 
 # ---------------------------------------------------------------------------
@@ -707,9 +782,8 @@ def _sync_shared_run_dir():
 def discover_tests(tests_dir="tests"):
     """Return a sorted list of (test_dir, name) for directories with PARAM.in.
 
-    Excludes "performance" (a benchmark, not a pass/fail test) and "run_test"
-    (the shared run directory created by prepare_run_dir, which contains a
-    PARAM.in and would otherwise be discovered and re-run as a test).
+    Excludes "performance" and "run_test" (the shared run directory, which
+    would otherwise be re-run as a test); dev tests live outside tests/.
     """
     subdirs = sorted([d for d in os.listdir(tests_dir)
                       if os.path.isdir(os.path.join(tests_dir, d))
@@ -725,14 +799,16 @@ def discover_tests(tests_dir="tests"):
 
 def run_one_test(test_dir, name, nprocs, results):
     """Pre-flight check + run one test (or its PARAM variants) + record result."""
-    # Fail fast if the configured binary cannot run this test (wrong user
-    # source or AMR level), before spending time executing it.
-    ok, preflight_reason = preflight_check(name)
+    ok, preflight_reason, skip = preflight_check(name)
     if not ok:
-        logger.warning("SKIP: %s cannot run with the configured build.", name.upper())
-        logger.warning(preflight_reason)
-        results.append((name.upper(), "FAILED",
-                        f"build misconfigured: {preflight_reason}"))
+        if skip:
+            # Dimension-mismatched test: skip silently, no detail needed.
+            results.append((name.upper(), "SKIPPED", ""))
+        else:
+            logger.warning("SKIP: %s cannot run with the configured build.", name.upper())
+            logger.warning(preflight_reason)
+            results.append((name.upper(), "FAILED",
+                            f"build misconfigured: {preflight_reason}"))
         return
 
     validator = load_validator(name)
@@ -867,6 +943,8 @@ def main():
     for name_str, status, reason in results:
         if status == "PASSED":
             status_display = "\033[92;1mPASSED\033[0m" if sys.stdout.isatty() else "PASSED"
+        elif status == "SKIPPED":
+            status_display = "\033[93;1mSKIPPED\033[0m" if sys.stdout.isatty() else "SKIPPED"
         else:
             status_display = "\033[91;1mFAILED\033[0m" if sys.stdout.isatty() else "FAILED"
             all_passed = False
@@ -882,7 +960,12 @@ def main():
             f.write("| Test Name | Status | Failure Reason / Details |\n")
             f.write("| :--- | :--- | :--- |\n")
             for name_str, status, reason in results:
-                status_md = "🟢 **PASSED**" if status == "PASSED" else "🔴 **FAILED**"
+                if status == "PASSED":
+                    status_md = "🟢 **PASSED**"
+                elif status == "SKIPPED":
+                    status_md = "🟡 **SKIPPED**"
+                else:
+                    status_md = "🔴 **FAILED**"
                 reason_md = reason if status != "PASSED" else ""
                 f.write(f"| {name_str} | {status_md} | {reason_md} |\n")
     except Exception as e:
