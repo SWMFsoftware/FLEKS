@@ -727,11 +727,12 @@ void Pic::fill_new_center_B() {
     }
   }
   if (finest_level > 0) {
+    auto& cellInterp = *get_cell_interp();
     for (int iLev = 1; iLev < n_lev(); iLev++) {
       fill_fine_lev_new_from_coarse(
           centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          cell_bilinear_interp);
+          cellInterp);
     }
   }
 }
@@ -753,6 +754,7 @@ void Pic::fill_E_B_fields() {
            0, &bcBField);
 
   //-----Fine (iLev>0) grid boundary/internal ghost cells are filled----
+  auto& cellInterp = *get_cell_interp();
   for (int iLev = 1; iLev <= finest_level; iLev++) {
     nodeE[iLev].FillBoundary();
     nodeB[iLev].FillBoundary();
@@ -771,7 +773,7 @@ void Pic::fill_E_B_fields() {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
         ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-        cell_bilinear_interp);
+        cellInterp);
   }
 
   // Initial-condition / restart E is node-centred (nodeE). centerEhybrid is
@@ -2346,7 +2348,7 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
         ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-        cell_bilinear_interp);
+        *get_cell_interp());
 
     fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
                                   nodeB[iLev - 1].nComp(), ref_ratio[iLev - 1],
@@ -2405,7 +2407,7 @@ void Pic::update_B() {
       fill_fine_lev_bny_from_coarse(
           centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          cell_bilinear_interp);
+          *get_cell_interp());
     }
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
                    dBdt[iLev].nGrow());
@@ -2687,7 +2689,7 @@ void Pic::project_centerB_to_nodeB(int iLev) {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
         ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-        cell_bilinear_interp);
+        *get_cell_interp());
   }
   average_center_to_node(centerB[iLev], nodeB[iLev]);
   nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -2713,7 +2715,7 @@ void Pic::apply_centerB_BC(int iLev) {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
         ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-        cell_bilinear_interp);
+        *get_cell_interp());
   }
 }
 
@@ -2728,7 +2730,7 @@ void Pic::project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
   } else {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerIn, 0, centerIn.nComp(), ref_ratio[iLev - 1],
-        Geom(iLev - 1), Geom(iLev), cell_status(iLev), cell_bilinear_interp);
+        Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
   }
   average_center_to_node(centerIn, nodeOut);
   nodeOut.FillBoundary(Geom(iLev).periodicity());
@@ -2939,7 +2941,7 @@ void Pic::update_B_hybrid() {
       fill_fine_lev_bny_from_coarse(
           centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          cell_bilinear_interp);
+          *get_cell_interp());
     }
   }
 

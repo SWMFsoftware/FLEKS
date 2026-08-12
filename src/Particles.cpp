@@ -1021,7 +1021,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
     sum_two_lev_interface_cell(
         momentsMF[iLev], momentsMF[iLev + 1], 0, momentsMF[iLev].nComp(),
         get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1),
-        cell_status(iLev + 1), cell_bilinear_interp);
+        cell_status(iLev + 1), lincc_interp);
   }
 
   energy *= 0.5 * qomSign * get_mass();
