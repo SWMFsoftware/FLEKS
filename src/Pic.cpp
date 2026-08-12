@@ -2805,14 +2805,15 @@ void Pic::update_B_hybrid() {
     const Real hstepHalf = g + 0.5 / (Real)nBSubcycle;
 
     if (useRK4) {
-      // Classical RK4 on dB/dt = -curl(E), E = E_Ohm(B), on level 0:
+      // Classical RK4 on dB/dt = -curl(E), E = E_Ohm(B), on ALL levels:
       //   k1 = curl(E(B^n, hstep=g))
       //   k2 = curl(E(B^n - 0.5 dt k1, hstep=g+0.5/nsub))
       //   k3 = curl(E(B^n - 0.5 dt k2, hstep=g+0.5/nsub))
       //   k4 = curl(E(B^n - dt k3, hstep=g+1.0/nsub))
       //   B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4)
-      // Fine levels follow from projection of the advanced level-0 B.
-      const int iLev = 0;
+      // All levels use the same subDt (fixed-timestep strategy); coarse-fine
+      // interface ghosts are refreshed after each stage via apply_centerB_BC.
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
 
       // Stage 1: k1 = curl(E(B^n)). The time-centred B at stage 1 is B^n.
       assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev, g);
@@ -2866,7 +2867,8 @@ void Pic::update_B_hybrid() {
                       nGst);
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
-      apply_centerB_BC(0);
+      apply_centerB_BC(iLev);
+      } // iLev
       continue;
     }
 
@@ -2875,7 +2877,9 @@ void Pic::update_B_hybrid() {
       //   B1      = B_n - dt curl(E(B_n))
       //   B2      = (3/4) B_n + (1/4)(B1 - dt curl(E((B1+B_n)/2)))
       //   B^{n+1} = (1/3) B_n + (2/3)(B2 - dt curl(E((B2+B_n)/2)))
-      const int iLev = 0;
+      // All levels use the same subDt (fixed-timestep strategy); coarse-fine
+      // interface ghosts are refreshed after each stage via apply_centerB_BC.
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
       // Save B_n (sub-step start).
       MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, 3, nGst);
 
@@ -2914,7 +2918,8 @@ void Pic::update_B_hybrid() {
                       3, nGst);
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
-      apply_centerB_BC(0);
+      apply_centerB_BC(iLev);
+      } // iLev
       continue;
     }
   }
