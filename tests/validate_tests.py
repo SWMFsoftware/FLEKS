@@ -338,12 +338,14 @@ AMREX2D_EXCLUDED_TESTS = {
 def configured_amrex_dim():
     """AMReX dimension (2 or 3) the binary was built with, or None.
 
-    Reads AMREX_SPACEDIM from the linked library
-    (util/AMREX/InstallDir/include/AMReX_Config.H; InstallDir is a symlink).
+    Reads AMREX_SPACEDIM from the linked library's AMReX_Config.H; checks the
+    standalone (util/AMREX) and SWMF-component (../../util/AMREX) layouts.
     """
-    import re
+    import re, os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     candidates = [
-        "util/AMREX/InstallDir/include/AMReX_Config.H",
+        os.path.join(root, "util", "AMREX", "InstallDir", "include", "AMReX_Config.H"),
+        os.path.join(root, "..", "..", "util", "AMREX", "InstallDir", "include", "AMReX_Config.H"),
     ]
     for path in candidates:
         try:

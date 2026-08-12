@@ -89,10 +89,8 @@ jobs:
       - name: Configure Standalone FLEKS Source
         working-directory: SWMF/PC/FLEKS
         run: |
-          # Build with two grid levels (nLevMax>=2): the lightwave test uses
-          # #REFINEREGION, which requires max_level > 0 and aborts at startup
-          # (MPI_ABORT errorcode 6) when built with the default nLevMax=1.
-          ./Config.pl -u=Exo -lev=2
+          # Link the 3D AMReX library and enable AMR (nLevMax>=2).
+          ./Config.pl -amrex3d -lev=2 -u=Exo
 
       - name: Build Standalone FLEKS
         if: steps.cache-standalone.outputs.cache-hit != 'true'
@@ -240,9 +238,7 @@ jobs:
       - name: Configure 2D AMReX Standalone FLEKS
         working-directory: SWMF/PC/FLEKS
         run: |
-          # Build with a TRUE-2D AMReX library (-amrex2d) and two grid levels
-          # (-lev=2, required by the AMR tests).  Config.pl builds & links
-          # InstallDir2D (AMReX_SPACEDIM = 2).
+          # Link the 2D AMReX library and enable AMR (nLevMax>=2).
           ./Config.pl -amrex2d -lev=2 -u=Exo
 
       - name: Build 2D Standalone FLEKS
