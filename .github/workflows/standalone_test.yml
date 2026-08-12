@@ -14,6 +14,9 @@ jobs:
       issues: write
 
     steps:
+      - name: Checkout FLEKS (for local composite actions)
+        uses: actions/checkout@v6
+
       - name: Setup SWMF dependency tree
         uses: ./.github/actions/setup-swmf
         with:
@@ -40,6 +43,9 @@ jobs:
       contents: read
 
     steps:
+      - name: Checkout FLEKS (for local composite actions)
+        uses: actions/checkout@v6
+
       - name: Setup SWMF dependency tree
         uses: ./.github/actions/setup-swmf
         with:
