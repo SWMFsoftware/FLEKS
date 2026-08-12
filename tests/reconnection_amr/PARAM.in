@@ -1,7 +1,7 @@
 #DESCRIPTION
 Magnetic reconnection (Fadeev current-sheet equilibrium) with the FULL PIC
 solver (solveEM = T, Maxwell/GMRES): kinetic ions and electrons, on a TWO-LEVEL
-AMR grid backed by a TRUE-2D AMReX library (AMReX_SPACEDIM = 2, built with
+AMR grid backed by a 2D AMReX library (AMReX_SPACEDIM = 2, built with
 ./Config.pl -amrex2d -lev=2).  This is the uniform-grid reconnection test
 (tests/reconnection/PARAM.in) with static AMR added: a thin layer around the
 central reconnecting current sheet (|y| < 7.85 d_i) is refined with REFINEREGION
@@ -11,13 +11,13 @@ while the outer region stays coarse.  Reconnection plane x-y; details in README.
 #INITFROMSWMF
 F                       initFromSWMF
 
-#GEOMETRY  (true 2D: x-y only)
+#GEOMETRY
 -31.4                   xMin  [code units; Lx = 2*pi*L*num_islands ~ 62.8 d_i]
  31.4                   xMax
 -15.7                   yMin  [code units; Ly = Lx/2 ~ 31.4 d_i]
  15.7                   yMax
 
-#NCELL  (level-0 / base grid, same as the uniform-grid reconnection test)
+#NCELL  (level-0 / base grid)
 32                      nCellX
 16                      nCellY
 
@@ -118,13 +118,8 @@ z=0 fluid ascii planet  plotString   (z cut; degenerate z in true-2D build)
 
 #RUN
 
-AMR setup: a thin box layer around the central current sheet (full x, thin y)
-is tagged for refinement at level 0.  With gridEfficiency = 1.0 only base blocks
-lying ENTIRELY inside the layer are refined.  With maxBlockSizeY = 2 the base
-y-blocks are [0,1],[2,3],[4,5],[6,7],[8,9],[10,11],[12,13],[14,15]; blocks
-[4,5]..[10,11] lie in the layer (|y| < 7.85 d_i) and refine, giving a clean
-refined band.  The refinement ratio of 2 makes the fine grid 64 x 16
-(dx = dy = 0.98 d_i) inside the layer.
+AMR setup: a thin box layer around the central current sheet (|y| < 7.85 d_i)
+is refined (#REFINEREGION) to 2x resolution (#REFINEMENTRATIO 2); see README.
 #REGION
 layer                   name
 box                     shape
