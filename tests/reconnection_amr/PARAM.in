@@ -118,8 +118,8 @@ z=0 fluid ascii planet  plotString   (z cut; degenerate z in true-2D build)
 
 #RUN
 
-AMR setup: a thin box layer around the central current sheet (|y| < 7.85 d_i)
-is refined (#REFINEREGION) to 2x resolution (#REFINEMENTRATIO 2); see README.
+AMR setup: a thin box layer around the current sheet (|y| < 7.85 d_i)
+is refined (REFINEREGION) to 2x resolution (REFINEMENTRATIO 2); see README.
 #REGION
 layer                   name
 box                     shape
