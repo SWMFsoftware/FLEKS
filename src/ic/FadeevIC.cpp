@@ -140,12 +140,12 @@ void FadeevIC::modify_particle_velocity(ParticleICState& s) const {
   const amrex::Real dndy = (1.0 - nb) * nRatio * (-2.0 / D) * dDdy;
 
   // Base Fadeev field plus the m=1 perturbation, as in set_fields.
-  const amrex::Real dbx =
-      -perturb * b0 * Lx_ * invLy_ * std::cos(2.0 * dPI * x * invLx_) *
-      std::sin(dPI * y * invLy_);
-  const amrex::Real dbz =
-      perturb * b0 * 2.0 * std::sin(2.0 * dPI * x * invLx_) *
-      std::cos(dPI * y * invLy_);
+  const amrex::Real dbx = -perturb * b0 * Lx_ * invLy_ *
+                          std::cos(2.0 * dPI * x * invLx_) *
+                          std::sin(dPI * y * invLy_);
+  const amrex::Real dbz = perturb * b0 * 2.0 *
+                          std::sin(2.0 * dPI * x * invLx_) *
+                          std::cos(dPI * y * invLy_);
   const amrex::Real Bx = b0 * std::sinh(y / L) / D + dbx;
   const amrex::Real By = b0 * eps * std::sin(x / L) / D + dbz;
   const amrex::Real Bz = b0 * bg_;
