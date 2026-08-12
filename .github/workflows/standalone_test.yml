@@ -5,185 +5,33 @@ on:
     branches: [ "master" ]
 
 jobs:
+  # Standalone job building against the 3D AMReX library (-amrex3d).
   build-and-test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
       issues: write
-    
+
     steps:
-      - name: Force HTTPS for GitHub
-        run: |
-          git config --global url."https://github.com/".insteadOf git@github.com:
-
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libopenmpi-dev openmpi-bin
-
-      - name: Checkout SWMF Framework
-        uses: actions/checkout@v6
+      - name: Setup SWMF dependency tree
+        uses: ./.github/actions/setup-swmf
         with:
-          repository: SWMFsoftware/SWMF
-          path: SWMF
+          fleks-path: SWMF/PC/FLEKS
+          fleks-cache-exclude: PC/FLEKS
+          amrex-cache-suffix: 3d
+          config-components: PC/FLEKS,GM/BATSRUS
+          verify-amrex: 'true'
 
-      - name: Get AMReX Hash
-        id: amrex-hash
-        run: |
-          echo "hash=$(git ls-remote https://github.com/SWMFsoftware/AMREX.git master | awk '{print $1}')" >> $GITHUB_OUTPUT
-
-      - name: Cache AMReX
-        id: cache-amrex
-        uses: actions/cache@v5
+      - name: Build and test standalone FLEKS (3D)
+        uses: ./.github/actions/build-test-standalone
         with:
-          path: SWMF/util/AMREX
-          key: ${{ runner.os }}-amrex-${{ steps.amrex-hash.outputs.hash }}
-
-      - name: Cache SWMF
-        id: cache-swmf
-        uses: actions/cache@v5
-        with:
-          path: |
-            SWMF
-            !SWMF/PC/FLEKS
-            !SWMF/util/AMREX
-          key: ${{ runner.os }}-swmf-v5-${{ hashFiles('SWMF/Config.pl') }}
-
-      - name: Checkout FLEKS (Current Commit)
-        uses: actions/checkout@v6
-        with:
-          path: SWMF/PC/FLEKS
-
-      - name: Install or Update SWMF Components
-        working-directory: SWMF
-        run: |
-          if [ "${{ steps.cache-swmf.outputs.cache-hit }}" == "true" ]; then
-            echo "Cache hit. Updating components..."
-            ./share/Scripts/gitall pull
-          else
-            echo "Cache miss. Installing components..."
-          fi
-          # Ensure FLEKS is configured, use -o for component options
-          ./Config.pl -install=BATSRUS -v=Empty,PC/FLEKS,GM/BATSRUS -o=PC:tp=PBEG
-
-      - name: Cache Standalone Build
-        id: cache-standalone
-        uses: actions/cache@v5
-        with:
-          # In the CI, FLEKS is built inside the SWMF tree (not standalone).
-          # make PIDL installs PostIDL.exe to the SWMF-level bin directory
-          # (SWMF/bin/), not the component-level bin (SWMF/PC/FLEKS/bin/).
-          # The test script (validate_tests.py) searches candidate locations
-          # and finds PostIDL.exe at SWMF/bin/PostIDL.exe.
-          path: |
-            SWMF/PC/FLEKS/bin/FLEKS.exe
-            SWMF/bin/PostIDL.exe
-          # Bumped v2 -> v3 because the build now requires nLevMax=2 (-lev=2),
-          # and the source-hash-only key would otherwise restore a stale
-          # nLevMax=1 binary and skip the rebuild (cache-hit).
-          key: ${{ runner.os }}-fleks-standalone-v3-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PC/FLEKS/**/Makefile*') }}
-          restore-keys: |
-            ${{ runner.os }}-fleks-standalone-v3-
-
-      - name: Configure Standalone FLEKS Source
-        working-directory: SWMF/PC/FLEKS
-        run: |
-          # Link the 3D AMReX library and enable AMR (nLevMax>=2).
-          ./Config.pl -amrex3d -lev=2 -u=Exo
-
-      - name: Build Standalone FLEKS
-        if: steps.cache-standalone.outputs.cache-hit != 'true'
-        working-directory: SWMF/PC/FLEKS
-        run: |
-          make EXE -j$(nproc)
-          make PIDL
-
-      - name: Run Standalone FLEKS Tests (Serial)
-        id: test-serial
-        working-directory: SWMF/PC/FLEKS/tests
-        run: |
-          ldd ../bin/FLEKS.exe
-          python3 validate_tests.py --summary-file summary_serial.md
-
-      - name: Run Standalone FLEKS Tests (Parallel, 2 Procs)
-        id: test-parallel
-        if: always() && steps.test-serial.outcome != 'skipped'
-        working-directory: SWMF/PC/FLEKS/tests
-        run: |
-          python3 validate_tests.py -n 2 --summary-file summary_parallel.md
-
-      - name: Write Job Summary
-        if: always()
-        run: |
-          {
-            echo "### 🧪 Standalone FLEKS Test Results"
-            echo ""
-            if [ -f SWMF/PC/FLEKS/tests/summary_serial.md ]; then
-              echo "#### Serial (1 proc)"
-              cat SWMF/PC/FLEKS/tests/summary_serial.md
-              echo ""
-            fi
-            if [ -f SWMF/PC/FLEKS/tests/summary_parallel.md ]; then
-              echo "#### Parallel (2 procs)"
-              cat SWMF/PC/FLEKS/tests/summary_parallel.md
-              echo ""
-            fi
-          } >> $GITHUB_STEP_SUMMARY
-
-      - name: Post PR Comment
-        uses: actions/github-script@v7
-        if: always() && github.event.pull_request && (github.event_name == 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository)
-        with:
-          script: |
-            const fs = require('fs');
-            const serialPath = 'SWMF/PC/FLEKS/tests/summary_serial.md';
-            const parallelPath = 'SWMF/PC/FLEKS/tests/summary_parallel.md';
-            let body = '';
-            
-            if (fs.existsSync(serialPath) || fs.existsSync(parallelPath)) {
-              body += '### 🧪 Standalone FLEKS Test Results\n\n';
-              
-              if (fs.existsSync(serialPath)) {
-                body += fs.readFileSync(serialPath, 'utf8') + '\n';
-              }
-              if (fs.existsSync(parallelPath)) {
-                body += fs.readFileSync(parallelPath, 'utf8') + '\n';
-              }
-            }
-            
-            if (body) {
-              // 1. List existing comments to find one matching our summary prefix
-              const { data: comments } = await github.rest.issues.listComments({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-              });
-              
-              const prComment = comments.find(comment => 
-                comment.body.includes('### 🧪 Standalone FLEKS Test Results')
-              );
-              
-              if (prComment) {
-                // 2. Update existing comment in place
-                await github.rest.issues.updateComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  comment_id: prComment.id,
-                  body: body
-                });
-                console.log('Successfully updated existing PR comment with correctness results.');
-              } else {
-                // 3. Create a new comment if none exists
-                await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: context.issue.number,
-                  body: body
-                });
-                console.log('Successfully created new PR comment with correctness results.');
-              }
-            }
+          amrex-dim: 3d
+          cache-key: fleks-standalone-v3
+          serial-summary: summary_serial.md
+          parallel-summary: summary_parallel.md
+          summary-title: Standalone FLEKS Test Results
+          post-pr-comment: 'true'
 
   # Standalone job building against the true-2D AMReX library (-amrex2d).
   build-and-test-2d:
@@ -192,88 +40,21 @@ jobs:
       contents: read
 
     steps:
-      - name: Force HTTPS for GitHub
-        run: |
-          git config --global url."https://github.com/".insteadOf git@github.com:
-
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libopenmpi-dev openmpi-bin
-
-      - name: Checkout SWMF Framework
-        uses: actions/checkout@v6
+      - name: Setup SWMF dependency tree
+        uses: ./.github/actions/setup-swmf
         with:
-          repository: SWMFsoftware/SWMF
-          path: SWMF
+          fleks-path: SWMF/PC/FLEKS
+          fleks-cache-exclude: PC/FLEKS
+          amrex-cache-suffix: 2d
+          config-components: PC/FLEKS,GM/BATSRUS
+          verify-amrex: 'true'
 
-      - name: Get AMReX Hash
-        id: amrex-hash
-        run: |
-          echo "hash=$(git ls-remote https://github.com/SWMFsoftware/AMREX.git master | awk '{print $1}')" >> $GITHUB_OUTPUT
-
-      - name: Cache AMReX
-        id: cache-amrex
-        uses: actions/cache@v5
+      - name: Build and test standalone FLEKS (2D)
+        uses: ./.github/actions/build-test-standalone
         with:
-          path: SWMF/util/AMREX
-          key: ${{ runner.os }}-amrex-${{ steps.amrex-hash.outputs.hash }}
-
-      - name: Checkout FLEKS (Current Commit)
-        uses: actions/checkout@v6
-        with:
-          path: SWMF/PC/FLEKS
-
-      - name: Cache Standalone 2D Build
-        id: cache-standalone-2d
-        uses: actions/cache@v5
-        with:
-          path: |
-            SWMF/PC/FLEKS/bin/FLEKS.exe
-            SWMF/bin/PostIDL.exe
-          key: ${{ runner.os }}-fleks-standalone-2d-v1-${{ hashFiles('SWMF/PC/FLEKS/**/*.cpp', 'SWMF/PC/FLEKS/**/*.h', 'SWMF/PC/FLEKS/**/Makefile*') }}
-          restore-keys: |
-            ${{ runner.os }}-fleks-standalone-2d-v1-
-
-      - name: Configure 2D AMReX Standalone FLEKS
-        working-directory: SWMF/PC/FLEKS
-        run: |
-          # Link the 2D AMReX library and enable AMR (nLevMax>=2).
-          ./Config.pl -amrex2d -lev=2 -u=Exo
-
-      - name: Build 2D Standalone FLEKS
-        if: steps.cache-standalone-2d.outputs.cache-hit != 'true'
-        working-directory: SWMF/PC/FLEKS
-        run: |
-          make EXE -j$(nproc)
-          make PIDL
-
-      - name: Run 2D Standalone FLEKS Tests (Serial)
-        working-directory: SWMF/PC/FLEKS/tests
-        run: |
-          ldd ../bin/FLEKS.exe
-          python3 validate_tests.py --summary-file summary_2d_serial.md
-
-      - name: Run 2D Standalone FLEKS Tests (Parallel, 2 Procs)
-        if: always()
-        working-directory: SWMF/PC/FLEKS/tests
-        run: |
-          python3 validate_tests.py -n 2 --summary-file summary_2d_parallel.md
-
-      - name: Write 2D Job Summary
-        if: always()
-        run: |
-          {
-            echo "### 🧪 Standalone FLEKS 2D AMReX Test Results"
-            echo ""
-            if [ -f SWMF/PC/FLEKS/tests/summary_2d_serial.md ]; then
-              echo "#### Serial (1 proc)"
-              cat SWMF/PC/FLEKS/tests/summary_2d_serial.md
-              echo ""
-            fi
-            if [ -f SWMF/PC/FLEKS/tests/summary_2d_parallel.md ]; then
-              echo "#### Parallel (2 procs)"
-              cat SWMF/PC/FLEKS/tests/summary_2d_parallel.md
-              echo ""
-            fi
-          } >> $GITHUB_STEP_SUMMARY
+          amrex-dim: 2d
+          cache-key: fleks-standalone-2d-v1
+          serial-summary: summary_2d_serial.md
+          parallel-summary: summary_2d_parallel.md
+          summary-title: Standalone FLEKS 2D AMReX Test Results
+          post-pr-comment: 'false'

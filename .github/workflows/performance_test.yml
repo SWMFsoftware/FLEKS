@@ -12,61 +12,16 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
-    
+
     steps:
-      - name: Force HTTPS for GitHub
-        run: |
-          git config --global url."https://github.com/".insteadOf git@github.com:
-
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libopenmpi-dev openmpi-bin
-
-      - name: Checkout SWMF Framework
-        uses: actions/checkout@v6
+      - name: Setup SWMF dependency tree
+        uses: ./.github/actions/setup-swmf
         with:
-          repository: SWMFsoftware/SWMF
-          path: SWMF
-
-      - name: Get AMReX Hash
-        id: amrex-hash
-        run: |
-          echo "hash=$(git ls-remote https://github.com/SWMFsoftware/AMREX.git master | awk '{print $1}')" >> $GITHUB_OUTPUT
-
-      - name: Cache AMReX
-        id: cache-amrex
-        uses: actions/cache@v5
-        with:
-          path: SWMF/util/AMREX
-          key: ${{ runner.os }}-amrex-${{ steps.amrex-hash.outputs.hash }}
-
-      - name: Cache SWMF
-        id: cache-swmf
-        uses: actions/cache@v5
-        with:
-          path: |
-            SWMF
-            !SWMF/PC/FLEKS
-            !SWMF/util/AMREX
-          key: ${{ runner.os }}-swmf-v5-${{ hashFiles('SWMF/Config.pl') }}
-
-      - name: Checkout FLEKS (Current Commit)
-        uses: actions/checkout@v6
-        with:
-          path: SWMF/PC/FLEKS
-
-      - name: Install or Update SWMF Components
-        working-directory: SWMF
-        run: |
-          if [ "${{ steps.cache-swmf.outputs.cache-hit }}" == "true" ]; then
-            echo "Cache hit. Updating components..."
-            ./share/Scripts/gitall pull
-          else
-            echo "Cache miss. Installing components..."
-          fi
-          # Ensure FLEKS is configured, use -o for component options
-          ./Config.pl -install=BATSRUS -v=Empty,PC/FLEKS,GM/BATSRUS -o=PC:tp=PBEG
+          fleks-path: SWMF/PC/FLEKS
+          fleks-cache-exclude: PC/FLEKS
+          amrex-cache-suffix: 3d
+          config-components: PC/FLEKS,GM/BATSRUS
+          verify-amrex: 'true'
 
       - name: Cache Standalone Build
         id: cache-standalone
@@ -105,11 +60,11 @@ jobs:
             const fs = require('fs');
             const perfPath = 'SWMF/PC/FLEKS/tests/performance_summary.md';
             let body = '';
-            
+
             if (fs.existsSync(perfPath)) {
               body += fs.readFileSync(perfPath, 'utf8') + '\n';
             }
-            
+
             if (body) {
               // 1. List existing comments to find one matching our performance report
               const { data: comments } = await github.rest.issues.listComments({
@@ -117,11 +72,11 @@ jobs:
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
               });
-              
-              const prComment = comments.find(comment => 
+
+              const prComment = comments.find(comment =>
                 comment.body.includes('### ⚡ Standalone FLEKS Performance Report')
               );
-              
+
               if (prComment) {
                 // 2. Update existing comment in place
                 await github.rest.issues.updateComment({
