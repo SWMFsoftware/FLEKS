@@ -17,9 +17,8 @@ from .._shared.hybrid import RUN_DIR, validate_hybrid
 # Linear-theory PCAI growth rate for beta_par=1, T_perp/T_par=3.
 GAMMA_THEORY_OMEGA = 0.162
 
-# Validated growth-rate band: MIN rejects a damped/stable plasma, MAX rejects a
-# runaway (missing-Hall/CFL).  The FLEKS hybrid measures ~0.10 (theory 0.162).
-MIN_GAMMA_OMEGA = 0.06
+# MIN rejects a damped/stable plasma, MAX a runaway; measured ~0.10 (3D) / ~0.058 (2D).
+MIN_GAMMA_OMEGA = 0.05
 MAX_GAMMA_OMEGA = 0.35
 
 

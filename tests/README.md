@@ -46,15 +46,34 @@ Ionization parameters are stored in `SourceInterface` and read by `UserSource::r
 
 ## Building the Test Executable
 
-All standalone tests run with a **single FLEKS executable** built with the
+### 3D AMReX build (default)
+
+Most standalone tests run with a **single FLEKS executable** built with the
 Exosphere user source (`-u=Exo`, needed by the ionization tests) and two grid
-levels (`-lev=2`, needed by the `lightwave` AMR test):
+levels (`-lev=2`, needed by the AMR tests).  This is the default build and links
+the **3D** AMReX library:
 
 ```bash
 cd PC/FLEKS            # (or the FLEKS root)
 ./Config.pl -lev=2 -u=Exo
 make -j4
 ```
+
+### 2D AMReX build
+
+The suite can also be built against the **true-2D AMReX library**
+(`AMReX_SPACEDIM = 2`):
+
+```bash
+cd PC/FLEKS            # (or the FLEKS root)
+./Config.pl -amrex2d -lev=2 -u=Exo
+make -j4
+```
+
+The runner auto-detects the built AMReX dimension and skips any test that needs
+the other one (e.g. the true-3D `lightwave` and the source-term /
+hyper-resistivity tests under a 2D build).  Use `-amrex3d` to switch back to the
+default 3D build.
 
 ## Running the Tests
 
