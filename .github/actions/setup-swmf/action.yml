@@ -77,7 +77,10 @@ runs:
       uses: actions/cache@v5
       with:
         path: SWMF/util/AMREX
-        key: ${{ runner.os }}-amrex-${{ steps.amrex-hash.outputs.hash }}-${{ inputs.amrex-cache-suffix }}
+        # "-v2" invalidates earlier caches that were saved with an incomplete
+        # InstallDir* (missing include/AMReX_Config.H), which broke dimension
+        # detection in validate_tests.py.
+        key: ${{ runner.os }}-amrex-v2-${{ steps.amrex-hash.outputs.hash }}-${{ inputs.amrex-cache-suffix }}
 
     - name: Checkout FLEKS (Current Commit)
       uses: actions/checkout@v6
@@ -137,24 +140,55 @@ runs:
       working-directory: SWMF/util/AMREX
       shell: bash
       run: |
-        # actions/cache does not reliably preserve the "InstallDir" symlink that
-        # Config.pl creates (InstallDir -> InstallDir{Dim}D). Recreate it so the
-        # AMReX include/link paths (-I InstallDir/include, -L InstallDir/lib)
-        # resolve correctly. Then report which dimensions already have a compiled
-        # libamrex.a so Config.pl only rebuilds the missing ones.
-        if [ -L InstallDir ] || [ -d InstallDir ]; then
-          rm -rf InstallDir
-        fi
-        if [ -f InstallDir3D/lib/libamrex.a ]; then
-          ln -s InstallDir3D InstallDir
-        elif [ -f InstallDir2D/lib/libamrex.a ]; then
-          ln -s InstallDir2D InstallDir
+        # An install dir with libamrex.a but missing AMReX_Config.H is
+        # incomplete (the header records AMREX_SPACEDIM); remove it so Config.pl
+        # rebuilds it, then recreate the InstallDir symlink to a complete install.
+        for d in InstallDir2D InstallDir3D; do
+          if [ -f "$d/lib/libamrex.a" ] && [ ! -f "$d/include/AMReX_Config.H" ]; then
+            echo "WARNING: $d has libamrex.a but is missing include/AMReX_Config.H; removing to force a clean rebuild"
+            rm -rf "$d"
+          fi
+        done
+        # Prefer the dimension this job actually builds (from amrex-cache-suffix),
+        # so the InstallDir symlink points at the right install (e.g. the 2D job
+        # must point at InstallDir2D, not a leftover InstallDir3D).
+        case "${{ inputs.amrex-cache-suffix }}" in
+          *2d*|*2D*) PREFER=2 ;;
+          *) PREFER=3 ;;
+        esac
+        # Recreate InstallDir as a symlink to a complete install, preferring the
+        # dimension this job builds. Never delete a complete install directory;
+        # only replace the (possibly broken/corrupted) symlink itself.
+        rm -f InstallDir
+        for d in "InstallDir${PREFER}D" InstallDir3D InstallDir2D; do
+          if [ -f "$d/lib/libamrex.a" ] && [ -f "$d/include/AMReX_Config.H" ]; then
+            ln -s "$d" InstallDir
+            echo "InstallDir -> $d (recreated)"
+            break
+          fi
+        done
+        if [ ! -L InstallDir ] && [ -d InstallDir ]; then
+          # InstallDir is a real directory (cache restored the symlink target as a
+          # dir). Keep it only if it is a complete install; otherwise remove it.
+          if [ -f InstallDir/lib/libamrex.a ] && [ -f InstallDir/include/AMReX_Config.H ]; then
+            echo "InstallDir is a complete real directory; keeping"
+          else
+            rm -rf InstallDir
+            for d in "InstallDir${PREFER}D" InstallDir3D InstallDir2D; do
+              if [ -f "$d/lib/libamrex.a" ] && [ -f "$d/include/AMReX_Config.H" ]; then
+                ln -s "$d" InstallDir
+                break
+              fi
+            done
+          fi
         fi
         echo "AMReX build-cache status:"
         for d in InstallDir2D InstallDir3D; do
-          if [ -f "$d/lib/libamrex.a" ]; then
-            echo "  $d/lib/libamrex.a: PRESENT (cached, no rebuild needed)"
+          if [ -f "$d/lib/libamrex.a" ] && [ -f "$d/include/AMReX_Config.H" ]; then
+            echo "  $d: COMPLETE (libamrex.a + AMReX_Config.H present)"
+          elif [ -f "$d/lib/libamrex.a" ]; then
+            echo "  $d: PARTIAL (libamrex.a present, AMReX_Config.H missing)"
           else
-            echo "  $d/lib/libamrex.a: MISSING (will be rebuilt)"
+            echo "  $d: MISSING (will be built)"
           fi
         done
