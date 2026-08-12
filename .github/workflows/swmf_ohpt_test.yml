@@ -38,7 +38,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: SWMF/util/AMREX
-          key: ${{ runner.os }}-amrex-${{ steps.amrex-hash.outputs.hash }}
+          # OH-PT runs the 3D AMReX build only (-amrex3d via -default), so the
+          # key encodes the 3D dimension explicitly.
+          key: ${{ runner.os }}-amrex-${{ steps.amrex-hash.outputs.hash }}-3d
 
       - name: Cache SWMF
         id: cache-swmf
@@ -85,6 +87,26 @@ jobs:
           fi
           # Ensure FLEKS is configured for OH-PT
           ./Config.pl -install=BATSRUS -v=Empty,OH/BATSRUS,PT/FLEKS
+
+      - name: Verify & Fix AMReX Build Cache
+        working-directory: SWMF/util/AMREX
+        run: |
+          # actions/cache does not reliably preserve the "InstallDir" symlink that
+          # Config.pl creates (InstallDir -> InstallDir3D). Recreate it so the
+          # AMReX include/link paths (-I InstallDir/include, -L InstallDir/lib)
+          # resolve correctly. Then report whether a compiled libamrex.a is present
+          # so Config.pl only rebuilds it when the cache is genuinely missing.
+          if [ -L InstallDir ] || [ -d InstallDir ]; then
+            rm -rf InstallDir
+          fi
+          if [ -f InstallDir3D/lib/libamrex.a ]; then
+            ln -s InstallDir3D InstallDir
+            echo "AMReX build-cache status:"
+            echo "  InstallDir3D/lib/libamrex.a: PRESENT (cached, no rebuild needed)"
+          else
+            echo "AMReX build-cache status:"
+            echo "  InstallDir3D/lib/libamrex.a: MISSING (will be rebuilt)"
+          fi
 
       - name: Build and Run test20
         working-directory: SWMF

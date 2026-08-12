@@ -38,7 +38,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: SWMF/util/AMREX
-          key: ${{ runner.os }}-amrex-${{ steps.amrex-hash.outputs.hash }}
+          # GM-PC runs both 2D (test16_2d, test23_2d) and 3D (the rest) AMReX
+          # builds, so the key encodes both dimensions.
+          key: ${{ runner.os }}-amrex-${{ steps.amrex-hash.outputs.hash }}-2d3d
 
       - name: Cache SWMF
         id: cache-swmf
@@ -85,6 +87,31 @@ jobs:
           fi
           # Ensure FLEKS is configured, use -o for component options
           ./Config.pl -install=BATSRUS -v=Empty,PC/FLEKS,GM/BATSRUS -o=PC:tp=PBEG
+
+      - name: Verify & Fix AMReX Build Cache
+        working-directory: SWMF/util/AMREX
+        run: |
+          # actions/cache does not reliably preserve the "InstallDir" symlink that
+          # Config.pl creates (InstallDir -> InstallDir{Dim}D). Recreate it so the
+          # AMReX include/link paths (-I InstallDir/include, -L InstallDir/lib)
+          # resolve correctly. Then report which dimensions already have a compiled
+          # libamrex.a so Config.pl only rebuilds the missing ones.
+          if [ -L InstallDir ] || [ -d InstallDir ]; then
+            rm -rf InstallDir
+          fi
+          if [ -f InstallDir3D/lib/libamrex.a ]; then
+            ln -s InstallDir3D InstallDir
+          elif [ -f InstallDir2D/lib/libamrex.a ]; then
+            ln -s InstallDir2D InstallDir
+          fi
+          echo "AMReX build-cache status:"
+          for d in InstallDir2D InstallDir3D; do
+            if [ -f "$d/lib/libamrex.a" ]; then
+              echo "  $d/lib/libamrex.a: PRESENT (cached, no rebuild needed)"
+            else
+              echo "  $d/lib/libamrex.a: MISSING (will be rebuilt)"
+            fi
+          done
 
       - name: Build and Run test16_2d
         working-directory: SWMF
