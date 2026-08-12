@@ -335,27 +335,44 @@ AMREX2D_EXCLUDED_TESTS = {
 }
 
 
+def _read_amrex_spacedim(path):
+    """Return AMREX_SPACEDIM from an AMReX_Config.H file, or None.
+
+    Robust to a broken "InstallDir" symlink (which GitHub Actions cache does not
+    reliably preserve): even if InstallDir/... is unreadable, we can still read
+    the dimension-specific InstallDir2D/ or InstallDir3D/ directory directly.
+    """
+    import re
+    try:
+        with open(path, "r") as f:
+            content = f.read()
+    except (OSError, IOError):
+        return None
+    m = re.search(r"#define\s+AMREX_SPACEDIM\s+(\d+)", content)
+    return int(m.group(1)) if m else None
+
+
 def configured_amrex_dim():
     """AMReX dimension (2 or 3) the binary was built with, or None.
 
-    Reads AMREX_SPACEDIM from the linked library's AMReX_Config.H; checks the
-    standalone (util/AMREX) and SWMF-component (../../util/AMREX) layouts.
+    Reads AMREX_SPACEDIM from the linked library's AMReX_Config.H in either the
+    standalone (util/AMREX) or SWMF-component (../../util/AMREX) layout,
+    checking the InstallDir symlink and its 2D/3D targets so a broken symlink
+    does not prevent detection.
     """
-    import re, os
+    import os
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    candidates = [
-        os.path.join(root, "util", "AMREX", "InstallDir", "include", "AMReX_Config.H"),
-        os.path.join(root, "..", "..", "util", "AMREX", "InstallDir", "include", "AMReX_Config.H"),
+    # (path-to-AMReX-root, candidates-to-check) per layout.
+    layouts = [
+        os.path.join(root, "util", "AMREX"),
+        os.path.join(root, "..", "..", "util", "AMREX"),
     ]
-    for path in candidates:
-        try:
-            with open(path, "r") as f:
-                content = f.read()
-        except (OSError, IOError):
-            continue
-        m = re.search(r"#define\s+AMREX_SPACEDIM\s+(\d+)", content)
-        if m:
-            return int(m.group(1))
+    for base in layouts:
+        for sub in ("InstallDir", "InstallDir3D", "InstallDir2D"):
+            dim = _read_amrex_spacedim(
+                os.path.join(base, sub, "include", "AMReX_Config.H"))
+            if dim is not None:
+                return dim
     return None
 
 
