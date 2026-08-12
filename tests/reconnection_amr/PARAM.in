@@ -1,0 +1,144 @@
+#DESCRIPTION
+Magnetic reconnection (Fadeev current-sheet equilibrium) with the FULL PIC
+solver (solveEM = T, Maxwell/GMRES): kinetic ions and electrons, on a TWO-LEVEL
+AMR grid backed by a TRUE-2D AMReX library (AMReX_SPACEDIM = 2, built with
+./Config.pl -amrex2d -lev=2).  This is the uniform-grid reconnection test
+(tests/reconnection/PARAM.in) with static AMR added: a thin layer around the
+central reconnecting current sheet (|y| < 7.85 d_i) is refined with REFINEREGION
+to 2x resolution, so the reconnection zone is resolved at dx = dy = 0.98 d_i
+while the outer region stays coarse.  Reconnection plane x-y; details in README.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY  (true 2D: x-y only)
+-31.4                   xMin  [code units; Lx = 2*pi*L*num_islands ~ 62.8 d_i]
+ 31.4                   xMax
+-15.7                   yMin  [code units; Ly = Lx/2 ~ 31.4 d_i]
+ 15.7                   yMax
+
+#NCELL  (level-0 / base grid, same as the uniform-grid reconnection test)
+32                      nCellX
+16                      nCellY
+
+#MAXBLOCKSIZE
+16                      maxBlockSizeX
+2                       maxBlockSizeY
+
+#PERIODICITY
+T                       isPeriodicX
+F                       isPeriodicY
+
+Field boundary conditions on the box faces (periodic in x, outflow/float in y).
+#BFIELDBOXBOUNDARY
+periodic                BoxBoundaryLo  (x)
+periodic                BoxBoundaryHi
+outflow                 BoxBoundaryLo  (y)
+outflow                 BoxBoundaryHi
+
+Full PIC electromagnetic field solver ON (Maxwell/GMRES E solve).
+#SOLVEEM
+T                       solveEM
+
+#HYBRIDPIC
+F                       useHybridPIC
+
+Two kinetic species: ions (q = 1, m = 1) and electrons (q = -1, m = 1/25)
+#PLASMA
+2                       nSpecies
+1.0                     mass           Species 0: ions
+1.0                     charge
+1.0/25.0                mass           Species 1: electrons
+-1.0                    charge
+
+Both species share the same Fadeev density profile (charge neutral, n_e = n_i);
+the ion temperature sets beta_i ~ 0.5 and the electrons are heated to the same
+code temperature.
+#UNIFORMSTATE
+12.5                    rho [amu/cc]   Species 0: ions (n_code ~ nb = 0.2)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+76000.0                 T [K]          ions, beta_i ~ 0.5
+0.5                     rho [amu/cc]   Species 1: electrons (rho_e=rho_i*m_e/m_i => n_e=n_i, charge neutral)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+76000.0                 T [K]          electrons
+0.0                     bx [T]         guide field set by FadeevIC (bg = 0)
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+Fadeev current-sheet equilibrium initial condition.
+#TESTCASE
+fadeev
+
+FadeevIC sub-parameters.
+#FADEEVIC
+5.0                     L        (current-sheet half-thickness / d_i)
+0.4                     eps      (island size ratio)
+2                       numIslands
+1.0                     b0       (reference field, code units)
+0.0                     bg       (guide-field ratio; 0 = anti-parallel)
+-0.05                   perturb  (m=1 seed amplitude)
+0.2                     nb       (background/peak density ratio)
+
+#TIMESTEPPING
+T                       useFixedDt
+0.005                   dt   (resolves electron timescale for m_i/m_e = 25)
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
+5.0e4                   uNormSI   [m/s] ~ v_A so v_A ~ 1 in code units
+
+#MONITOR
+100                     dnReport
+
+#SAVELOG
+10                      dnSavePic
+10                      dnSavePT
+
+#PARTICLES
+5                       nParticle per cell in X
+5                       nParticle per cell in Y
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii planet  plotString   (z cut; degenerate z in true-2D build)
+-1                      dn
+1.0                     dt
+-1                      dx   (multi-level grid requires unstructured point output)
+
+#STOP
+-1                      MaxIter
+3.0                     TimeMax   (~3 wci; ion-scale reconnection onset)
+
+#RUN
+
+AMR setup: a thin box layer around the central current sheet (full x, thin y)
+is tagged for refinement at level 0.  With gridEfficiency = 1.0 only base blocks
+lying ENTIRELY inside the layer are refined.  With maxBlockSizeY = 2 the base
+y-blocks are [0,1],[2,3],[4,5],[6,7],[8,9],[10,11],[12,13],[14,15]; blocks
+[4,5]..[10,11] lie in the layer (|y| < 7.85 d_i) and refine, giving a clean
+refined band.  The refinement ratio of 2 makes the fine grid 64 x 16
+(dx = dy = 0.98 d_i) inside the layer.
+#REGION
+layer                   name
+box                     shape
+-31.4                   min
+ 31.4                   max
+-7.85                   min
+ 7.85                   max
+
+#REFINEREGION
+0                       iLev
++layer                  regions
+
+#GRIDEFFICIENCY
+1.0                     gridEfficiency
+
+#CONSTANTPPV
+F                       isPPVconstant   (per-cell particle count; PC static AMR)
