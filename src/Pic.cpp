@@ -1170,9 +1170,8 @@ void Pic::sum_moments(bool updateDt) {
           uMax[iLev] = fixedUMax;
         }
 
-        dtMax[iLev] = (uMax[iLev] > 0.0)
-                          ? dxMin[iLev] / uMax[iLev]
-                          : std::numeric_limits<Real>::max();
+        dtMax[iLev] = (uMax[iLev] > 0.0) ? dxMin[iLev] / uMax[iLev]
+                                         : std::numeric_limits<Real>::max();
       }
     }
 
