@@ -63,7 +63,7 @@ code temperature.
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 76000.0                 T [K]          ions, beta_i ~ 0.5
-12.5                    rho [amu/cc]   Species 1: electrons (n_e = n_i)
+0.5                     rho [amu/cc]   Species 1: electrons (rho_e=rho_i*m_e/m_i => n_e=n_i, charge neutral)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]

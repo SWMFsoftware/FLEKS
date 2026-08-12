@@ -38,6 +38,13 @@ The fields are set by `FadeevIC::set_fields`.  The plasma is loaded uniform
 `FadeevIC::modify_particle_weight` boosts each macroparticle's weight to the
 Fadeev sheet profile `n(x,y) = nb + (1-nb)*profile/profile_max`.
 
+For the full-PIC (two kinetic species) case the load must be charge neutral and
+force balanced.  The `#UNIFORMSTATE` density is a mass density converted to a
+number density by `n_s = rho_s / (m_s/m_i)`, so the electron mass density must
+be `rho_e = rho_i*m_e/m_i = 12.5*0.04 = 0.5` to give `n_e = n_i`.
+`FadeevIC::modify_particle_velocity` seeds the diamagnetic drift
+`u_s = -(T_s/q_s) (grad(n) x B)/(n B^2)` so that `J x B = grad(p)` at `t = 0`.
+
 `#PERIODICITY` is periodic in `x` and `z`; the cross-sheet `y` faces use
 `#BFIELDBOXBOUNDARY outflow` (float B).  The current sheet is far from the
 `y`-walls (`Ly/2 = 15.7 d_i` vs `L = 5 d_i`), so the walls do not affect the
@@ -83,5 +90,8 @@ The automated check (`validate.py`) runs for both solver variants and reads the
    central X-point gives a non-trivial reconnection rate `dAy/dt`.
 4. **O-point evolution**: the island-centre positions evolve, confirming the
    magnetic topology changes (reconnection) rather than remaining frozen.
+5. **Charge neutrality (full-PIC only)**: the load must stay quasi-neutral,
+   i.e. `rhoS0 ~ rhoS1*(m_i/m_e)`, catching the "electron `rho` not scaled by
+   `m_e/m_i`" bug.  Skipped for the hybrid run (no electron species).
 
 These are qualitative physics checks; they confirm both solvers reproduce the hallmarks of reconnection in the Fadeev equilibrium.

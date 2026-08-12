@@ -328,6 +328,10 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
             pics.vBulk = vBulk;
             pics.wBulk = wBulk;
             pics.qScale = 1.0;
+            pics.charge = charge;
+            pics.temperature =
+                interface->get_uth_iso(mfi, xyz, speciesID, iLev);
+            pics.temperature *= pics.temperature * mass;
             ic_->modify_particle_velocity(pics);
             uBulk = pics.uBulk;
             vBulk = pics.vBulk;
