@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cctype>
+#include <limits>
 #include <math.h>
 #include <vector>
 
@@ -1169,7 +1170,9 @@ void Pic::sum_moments(bool updateDt) {
           uMax[iLev] = fixedUMax;
         }
 
-        dtMax[iLev] = dxMin[iLev] / uMax[iLev];
+        dtMax[iLev] = (uMax[iLev] > 0.0)
+                          ? dxMin[iLev] / uMax[iLev]
+                          : std::numeric_limits<Real>::max();
       }
     }
 
