@@ -319,13 +319,13 @@ EXO_SOURCE_TESTS = {
 }
 
 # Tests that require AMR (nLevMax >= 2).
-AMR_TESTS = {"lightwave"}
+AMR_TESTS = {"lightwave", "reconnection_amr"}
 
 # Tests needing a true-3D AMReX library (real z-grid, nCellZ > 1).
 AMREX3D_TESTS = {"lightwave"}
 
-# Tests needing a true-2D AMReX library (currently none; infrastructure kept).
-AMREX2D_TESTS = set()
+# Tests needing a true-2D AMReX library (built with -amrex2d).
+AMREX2D_TESTS = {"reconnection_amr"}
 
 # Tests excluded from the 2D suite.
 AMREX2D_EXCLUDED_TESTS = {
