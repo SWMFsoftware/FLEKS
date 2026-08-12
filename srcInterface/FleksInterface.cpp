@@ -141,8 +141,10 @@ int fleks_run_(double *time) {
 
     for (int i = 0; i < fleksDomains.size(); ++i) {
       if (!fleksDomains(i).receive_ic_only()) {
-        double domainTime = (double)(fleksDomains(i).tc->get_time_si());
-        double domainDt = (double)(fleksDomains(i).tc->get_dt_si());
+        // For TP backward tracing, dt could be negative.
+        double domainTime =
+            std::fabs((double)(fleksDomains(i).tc->get_time_si()));
+        double domainDt = std::fabs((double)(fleksDomains(i).tc->get_dt_si()));
 
         if (iLoop == 0 || domainTime + domainDt <= tMax + 1e-10 * domainDt) {
           // Update at least once, and a domain should be updated to a time that
@@ -153,7 +155,7 @@ int fleks_run_(double *time) {
         }
 
         if (iLoop == 0) {
-          domainTime = (double)(fleksDomains(i).tc->get_time_si());
+          domainTime = std::fabs((double)(fleksDomains(i).tc->get_time_si()));
           // Find out tMax for the first while loop.
           if (i == 0) {
             tMax = domainTime;
@@ -262,7 +264,8 @@ int fleks_set_dt_(double *DtSi) {
 //==========================================================
 int fleks_cal_dt_(double *dtOut) {
   for (int i = 0; i < fleksDomains.size(); ++i)
-    *dtOut = fleksDomains(i).tc->get_dt_si();
+    // For TP backward tracing, dt could be negative.
+    *dtOut = std::fabs(fleksDomains(i).tc->get_dt_si());
   return 0;
 }
 
