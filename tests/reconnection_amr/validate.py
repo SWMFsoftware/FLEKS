@@ -207,7 +207,11 @@ def validate_plot(test_name):
         return False, "no midplane points in final frame"
     profile_change = float(np.abs(byf - by0).max())
 
-    if late_amp < 0.1:
+    # Hybrid reconnection has a slower ion-scale onset than full-PIC, but runs
+    # longer (TimeMax=20 vs 3); the threshold is solver-aware.
+    is_hybrid = test_name is not None and test_name.endswith("hybrid")
+    late_thresh = 0.05 if is_hybrid else 0.1
+    if late_amp < late_thresh:
         return False, (f"late |delta By| = {late_amp:.3f} too small "
                        f"(no instability)")
     if profile_change < 0.05:

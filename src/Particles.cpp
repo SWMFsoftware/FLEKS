@@ -1010,15 +1010,18 @@ Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
     momentsMF[iLev].SumBoundary(Geom(iLev).periodicity());
   }
 
-  // Cell-centred coarse-fine interface for AMR. The cell-centred coarse-fine
-  // routines (sum_two_lev_interface_cell / ..._for_domain_edge_cell) do not yet
-  // exist in FLEKS, so AMR hybrid moment summation is not supported; the hybrid
-  // target tests are single-level (n_lev() == 1). An assertion guards against
-  // an unsupported multilevel hybrid run.
-  if (n_lev() > 1) {
-    amrex::Abort(
-        "sum_moments_cell_centered: AMR (multi-level) hybrid moment summation "
-        "is not yet supported (needs cell-centred coarse-fine interface).");
+  // Cell-centred coarse-fine interface for AMR. Analogous to the node-centred
+  // path above: (1) sum fine-level particle contributions down to the coarse
+  // level (volume-weighted average_down), and (2) overwrite the fine
+  // level-edge cells with interpolated coarse values (particles near the
+  // coarse-fine boundary deposit across both levels, making the fine
+  // level-edge values unreliable).
+  for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
+    timing_func("Pts::sum_moments_coarse_fine_interface_cell");
+    sum_two_lev_interface_cell(
+        momentsMF[iLev], momentsMF[iLev + 1], 0, momentsMF[iLev].nComp(),
+        get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1),
+        cell_status(iLev + 1), cell_bilinear_interp);
   }
 
   energy *= 0.5 * qomSign * get_mass();

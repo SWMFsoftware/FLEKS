@@ -62,6 +62,79 @@ Build with the 2D AMReX library and AMR support, then run the check:
 python3 tests/validate_tests.py --test=reconnection_amr
 ```
 
+The runner auto-detects `PARAM.in.hybrid` and runs both the full-PIC and the
+hybrid variant, listing them as `RECONNECTION_AMR` and
+`RECONNECTION_AMR (HYBRID)` in `tests/summary.md`.
+
+## Hybrid variant (`PARAM.in.hybrid`)
+
+The hybrid variant runs the same Fadeev reconnection setup on the same two-level
+AMR grid, but with the **hybrid PIC field solver** (`#HYBRIDPIC T`,
+`#SOLVEEM F`): kinetic ions + massless fluid electrons removed through the
+generalized Ohm's law.
+
+### What changes vs the full-PIC test
+
+| Parameter | Full-PIC (`PARAM.in`) | Hybrid (`PARAM.in.hybrid`) |
+|-----------|----------------------|----------------------------|
+| `#SOLVEEM` | `T` (Maxwell/GMRES) | `F` |
+| `#HYBRIDPIC` | `F` | `T` |
+| `#PLASMA` | 2 species (ions + electrons, `m_i/m_e=25`) | 1 species (ions only; electrons are a fluid) |
+| `#RESISTIVITY` | — | `4.0e5 m^2/s` (etaCode ~ 0.001) |
+| `#ELECTRONTEMPERATURE` | — | `5 eV`, isothermal |
+| `#HYPERRESISTIVITY` | — | grid mode, `C_h = 0.001` |
+| `#BSUBCYCLE` | — (implicit) | `4` (explicit RK4 sub-steps) |
+| `#FIELDINTEGRATOR` | — | `rk4` |
+| `#AVGFIELDB` | — | `T`, `nAvgFieldB = 20` |
+| `#TIMESTEPPING dt` | `0.005` (electron CFL) | `0.02` (ion CFL; 4x larger) |
+| `#STOP TimeMax` | `3` | `20` (ion-scale onset is slower) |
+
+### Grid hierarchy (unchanged)
+
+The AMR grid is identical to the full-PIC test:
+
+| Level | Cells `(nx, ny)` | Resolution `(dx, dy)` |
+|-------|------------------|-----------------------|
+| 0 (base) | `32 x 16` | `1.9625 d_i` |
+| 1 (fine) | `64 x 16` | `0.9813 d_i` |
+
+The refined layer (`|y| < 7.85 d_i`) covers the current sheet (`L = 5 d_i`)
+with margin; the ion inertial length `d_i ~ 1` is resolved at `0.98 d_i` on the
+fine level.
+
+### Hybrid cell-centred layout
+
+The hybrid solver stores all live fields **cell-centred** (`centerB`,
+`centerEhybrid`, `centerJ`, `centerPlasma*`) rather than node-collocated.  The
+2-dx compact curl stencil (`curl_center_to_center`) annihilates the grid-scale
+Nyquist mode, so the Hall/whistler instability is controlled without heavy
+sub-cycling.  `nBSubcycle = 4` gives `dt_sub = 0.005`, the same as the full-PIC
+`dt`, safely inside the RK4 stability region.
+
+The node-centred `nodeB`/`nodeE` are retained only as output mirrors and are
+materialized lazily at plot time (`sync_node_B_output`).
+
+### Validation (hybrid)
+
+The automated check (`validate.py`) verifies the same criteria as the full-PIC
+test, with solver-aware thresholds:
+
+1. **Energy-log sanity**: finite, bounded `Eb` (no blow-up), finite `Epart`.
+2. **AMR refinement present**: coarse + fine cell spacings, fine band in the
+   central current-sheet layer.
+3. **Active reconnection**: midplane `By` X-point near `x ~ 0` at `t=0`, and
+   the midplane `By` profile changes by `> 0.05` over the run.
+4. **Perturbation growth**: `|delta By|` grows to `> 0.05` (hybrid threshold,
+   lower than full-PIC's `0.1` because the ion-scale onset is slower but the
+   run is longer).
+
+The hybrid test is **not** expected to reproduce the full-PIC reconnection rate
+quantitatively (different electron physics), but it must show a stable, bounded
+run with clear reconnection signatures.
+
+See `Doc/AMR_hybrid_implementation_plan.md` for the full analysis of the AMR +
+hybrid integration, including the cell-centred AMR method adaptation plan.
+
 ## Validation
 
 The automated check (`validate.py`) verifies:
