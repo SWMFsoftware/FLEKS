@@ -101,7 +101,7 @@ void FluidInterface::post_process_param(const DomainParameters& parameters) {
   if (initFromSWMF)
     return;
 
-  nDimFluid = (Geom(0).Domain().length(iz_) == 1) ? 2 : 3;
+  nDimFluid = (nDim == 3 && Geom(0).Domain().length(iz_) > 1) ? 3 : 2;
 
   const Real protonMassPerChargeSI = cProtonMassSI / cUnitChargeSI;
 
