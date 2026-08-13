@@ -18,6 +18,7 @@
 #include "SourceInterface.h"
 #include "TimeCtr.h"
 #include "UMultiFab.h"
+#include "WaveBC.h"
 
 class ParticleTracker;
 class Pic;
@@ -98,6 +99,9 @@ private:
   FluidInterface *stateOH = nullptr;
   FluidInterface *sourcePT2OH = nullptr;
   SourceInterface *source = nullptr;
+
+  // Wave-injection boundary-condition manager (#WAVEBC).
+  WaveBoundaryManager waveBC;
   TimeCtr *tc = nullptr;
 
   const DomainParameters &domainParameters;
@@ -577,6 +581,16 @@ public:
                              amrex::MultiFab &mf, const int iStart,
                              const int nComp, const int iLev, const BC &bc,
                              bool isB);
+
+  // Wave hard source into boundary ghost cells at BC::wave faces (iField: B/E).
+  void apply_wave_field(const amrex::iMultiFab &status, amrex::MultiFab &mf,
+                        const int iStart, const int nComp, const int iLev,
+                        const BC &bc, int iField, amrex::Real t);
+
+  // Wave bulk-velocity kick (sum of iField==2 components) for particle
+  // injection.
+  void wave_velocity_kick(const amrex::Real *pos, amrex::Real t,
+                          amrex::Real &dvx, amrex::Real &dvy, amrex::Real &dvz);
 
   bool use_float(const int i, const int j, const int k, int &ip, int &jp,
                  int &kp, const BC &bc, const amrex::Box &bxValid) {

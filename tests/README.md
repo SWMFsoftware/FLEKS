@@ -21,6 +21,8 @@ Each test case is contained within its own dedicated subdirectory containing a
 | PCAI                  | `pcai/`               | Proton-cyclotron anisotropy instability (`T_perp/T_par=3`, `gamma/Omega_ci=0.162`) | [README](pcai/README.md) |
 | Reconnection          | `reconnection/`       | Fadeev current-sheet reconnection on a uniform grid (x-y)     | [README](reconnection/README.md) |
 | AMR reconnection      | `reconnection_amr/`   | Fadeev current-sheet reconnection on a two-level AMR grid | [README](reconnection_amr/README.md) |
+| Reflecting wall       | `reflecting_wall/`    | Specular reflecting particle wall (pure particle push)        | [README](reflecting_wall/README.md) |
+| Wave injection        | `wave_inject/`        | Monochromatic Bz wave injected at a boundary via `#WAVEBC`    | [README](wave_inject/README.md) |
 | Performance           | `performance/`        | Beam-based scaling benchmark         | — (see `validate_performance.py`) |
 
 ### Ionization Parameter Commands

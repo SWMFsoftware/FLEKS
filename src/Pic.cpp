@@ -58,6 +58,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       bcBField.lo[i] = bcBField.num_type(lo);
       bcBField.hi[i] = bcBField.num_type(hi);
     }
+  } else if (command == "#WAVEBC") {
+    waveBC.read_param(param, fi);
   } else if (command == "#MEMORY") {
     param.read_var("dnMemory", dnMemory);
   } else if (command == "#RANDOMPARTICLESLOCATION") {
@@ -589,6 +591,16 @@ void Pic::post_regrid() {
 
       sourceParts.push_back(std::move(ptrSource));
     }
+
+    // Wave velocity kick for boundary-injected particles.
+    if (waveBC.active) {
+      for (auto& p : parts) {
+        p->waveVelocityKick = [this](const Real* pos, Real t, Real& dvx,
+                                     Real& dvy, Real& dvz) {
+          wave_velocity_kick(pos, t, dvx, dvy, dvz);
+        };
+      }
+    }
   } else {
     for (int i = 0; i < nSpecies; ++i) {
       // Label the particles outside the NEW PIC region.
@@ -753,6 +765,15 @@ void Pic::fill_E_B_fields() {
   apply_conducting_wall(nodeStatus[0], nodeE[0], 0, nDim3, 0, bcBField, false);
   apply_BC(cellStatus[0], centerB[0], 0, centerB[0].nComp(), &Pic::get_center_B,
            0, &bcBField);
+
+  // Wave hard source into the boundary ghost cells.
+  if (waveBC.active) {
+    const Real t = tc ? tc->get_time() : 0.0;
+    apply_wave_field(nodeStatus[0], nodeB[0], 0, nDim3, 0, bcBField, 0, t);
+    apply_wave_field(nodeStatus[0], nodeE[0], 0, nDim3, 0, bcBField, 1, t);
+    apply_wave_field(cellStatus[0], centerB[0], 0, centerB[0].nComp(), 0,
+                     bcBField, 0, t);
+  }
 
   //-----Fine (iLev>0) grid boundary/internal ghost cells are filled----
   auto& cellInterp = *get_cell_interp();
@@ -2071,6 +2092,13 @@ void Pic::update_E_impl() {
                             bcBField, false);
       apply_conducting_wall(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, iLev,
                             bcBField, false);
+      if (waveBC.active) {
+        const Real t = tc ? tc->get_time() : 0.0;
+        apply_wave_field(nodeStatus[iLev], nodeE[iLev], 0, nDim3, iLev,
+                         bcBField, 1, t);
+        apply_wave_field(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, iLev,
+                         bcBField, 1, t);
+      }
     }
 
     if (doSmoothE) {
@@ -3631,6 +3659,98 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
         }
       }
     });
+  }
+}
+
+//==========================================================
+void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
+                           const int iStart, const int nComp, const int iLev,
+                           const BC& bc, int iField, Real t) {
+  std::string nameFunc = "Pic::apply_wave_field";
+  timing_func(nameFunc);
+
+  if (!waveBC.active)
+    return;
+  if (Geom(iLev).isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
+  const IntVect& ngrow = mf.nGrowVect();
+  if (nDim > 2 &&
+      Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+    ba.grow(iz_, ngrow[iz_]);
+  }
+
+  const Real* plo = Geom(iLev).ProbLo();
+  const Real* phi = Geom(iLev).ProbHi();
+  const Real* dx = Geom(iLev).CellSize();
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bxFab = mfi.fabbox();
+    const Box bxValid = mfi.validbox();
+    if (ba.contains(bxFab))
+      continue;
+
+    Array4<Real> const& arr = mf[mfi].array();
+    const Array4<const int>& statusArr = status[mfi].array();
+
+    ParallelFor(bxFab, [&](int i, int j, int k) {
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+
+      Real pos[3] = { plo[0] + dx[0] * i, plo[1] + dx[1] * j,
+                      plo[2] + dx[2] * k };
+
+      // Sum over every wave face whose (direction, side) matches this ghost
+      // cell, i.e. the cell is outside the valid box on that side.
+      for (const auto& f : waveBC.faces) {
+        const int d = f.direction;
+        const int side = f.side;
+        const int idx = (d == 0) ? i : (d == 1) ? j : k;
+        bool onFace = false;
+        if (side == 0 && idx < bxValid.smallEnd(d))
+          onFace = true;
+        else if (side == 1 && idx > bxValid.bigEnd(d))
+          onFace = true;
+        if (!onFace)
+          continue;
+
+        for (const auto& c : f.comps) {
+          if (c.iField != iField)
+            continue;
+          const Real val = waveBC.value(c, t, pos);
+          for (int iVar = 0; iVar < nComp; ++iVar) {
+            const int comp = iStart + iVar;
+            if (iField == 0 || iField == 1) { // B or E vector
+              arr(i, j, k, comp) = val * c.pol[iVar % 3];
+            } else {
+              if (iVar == 0)
+                arr(i, j, k, comp) = val;
+            }
+          }
+        }
+      }
+    });
+  }
+}
+
+//==========================================================
+void Pic::wave_velocity_kick(const Real* pos, Real t, Real& dvx, Real& dvy,
+                             Real& dvz) {
+  dvx = dvy = dvz = 0.0;
+  if (!waveBC.active)
+    return;
+  for (const auto& f : waveBC.faces) {
+    for (const auto& c : f.comps) {
+      if (c.iField != 2) // velocity kick
+        continue;
+      const Real val = waveBC.value(c, t, pos);
+      dvx += val * c.pol[0];
+      dvy += val * c.pol[1];
+      dvz += val * c.pol[2];
+    }
   }
 }
 

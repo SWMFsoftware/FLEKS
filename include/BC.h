@@ -23,6 +23,7 @@ public:
   static const int vacume = 3;
   static const int reflect = 4;
   static const int conducting = 5;
+  static const int wave = 6;
 
   amrex::IntVect lo;
   amrex::IntVect hi;
@@ -42,6 +43,8 @@ public:
       return reflect;
     else if (str == "conducting")
       return conducting;
+    else if (str == "wave")
+      return wave;
     else
       return unset;
   }

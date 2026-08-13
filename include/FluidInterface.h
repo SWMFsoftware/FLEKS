@@ -339,6 +339,9 @@ public:
   double get_No2SiRho() const { return (1. / normParams->Si2NoRho); }
   double get_No2SiV() const { return (1. / normParams->Si2NoV); }
   double get_No2SiB() const { return (1. / normParams->Si2NoB); }
+  double get_No2SiE() const {
+    return (normParams->Si2NoE > 0.0 ? 1. / normParams->Si2NoE : 1.0);
+  }
   double get_No2SiP() const { return (1. / normParams->Si2NoP); }
   double get_No2SiJ() const { return (1. / normParams->Si2NoJ); }
   double get_No2SiM() const { return mNormSI; }

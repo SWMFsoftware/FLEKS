@@ -1,6 +1,7 @@
 #ifndef _PARTICLES_H_
 #define _PARTICLES_H_
 
+#include <functional>
 #include <memory>
 
 #include <AMReX_AmrCore.H>
@@ -406,6 +407,11 @@ public:
   // Non-owning pointer to the active initial condition (owned by Pic).
   const InitialCondition* ic_ = nullptr;
 
+  // Wave bulk-velocity kick (pos, t -> dvx,dvy,dvz), set by Pic; null = off.
+  std::function<void(const amrex::Real*, amrex::Real, amrex::Real&,
+                     amrex::Real&, amrex::Real&)>
+      waveVelocityKick = nullptr;
+
   // Index of the integer data.
   static constexpr int iRecordCount_ = 1;
 
@@ -567,8 +573,7 @@ public:
   inline bool reflect_or_delete_particle(ParticleType& p,
                                          amrex::Array4<int const> const& status,
                                          const amrex::IntVect& low,
-                                         const amrex::IntVect& high,
-                                         int iLev) {
+                                         const amrex::IntVect& high, int iLev) {
     if (iLev > 0)
       return is_outside_active_region(p, status, low, high, iLev);
 

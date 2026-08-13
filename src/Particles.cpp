@@ -338,6 +338,30 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
             wBulk = pics.wBulk;
             q *= pics.qScale;
           }
+          // Wave boundary: add the velocity kick to particles in a wave cell.
+          if (waveVelocityKick) {
+            const int loX = mfi.validbox().smallEnd(ix_);
+            const int hiX = mfi.validbox().bigEnd(ix_);
+            const int loY = mfi.validbox().smallEnd(iy_);
+            const int hiY = mfi.validbox().bigEnd(iy_);
+            const int loZ = mfi.validbox().smallEnd(iz_);
+            const int hiZ = mfi.validbox().bigEnd(iz_);
+            const bool onWaveX = (bc.lo[ix_] == BC::wave && ijk[ix_] < loX) ||
+                                 (bc.hi[ix_] == BC::wave && ijk[ix_] > hiX);
+            const bool onWaveY = (bc.lo[iy_] == BC::wave && ijk[iy_] < loY) ||
+                                 (bc.hi[iy_] == BC::wave && ijk[iy_] > hiY);
+            const bool onWaveZ = (bc.lo[iz_] == BC::wave && ijk[iz_] < loZ) ||
+                                 (bc.hi[iz_] == BC::wave && ijk[iz_] > hiZ);
+            if (onWaveX || onWaveY || onWaveZ) {
+              const Real ppos[3] = { xyz[0], xyz[1], xyz[2] };
+              const Real tNow = tc ? tc->get_time() : 0.0;
+              Real dvx = 0, dvy = 0, dvz = 0;
+              waveVelocityKick(ppos, tNow, dvx, dvy, dvz);
+              uBulk += dvx;
+              vBulk += dvy;
+              wBulk += dvz;
+            }
+          }
           u += uBulk;
           v += vBulk;
           w += wBulk;
