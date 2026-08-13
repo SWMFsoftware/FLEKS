@@ -729,10 +729,10 @@ void Pic::fill_new_center_B() {
   if (finest_level > 0) {
     auto& cellInterp = *get_cell_interp();
     for (int iLev = 1; iLev < n_lev(); iLev++) {
-      fill_fine_lev_new_from_coarse(
-          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          cellInterp);
+      fill_fine_lev_new_from_coarse(centerB[iLev - 1], centerB[iLev], 0,
+                                    centerB[iLev - 1].nComp(),
+                                    ref_ratio[iLev - 1], Geom(iLev - 1),
+                                    Geom(iLev), cell_status(iLev), cellInterp);
     }
   }
 }
@@ -770,10 +770,10 @@ void Pic::fill_E_B_fields() {
                                   Geom(iLev - 1), Geom(iLev), node_status(iLev),
                                   node_bilinear_interp);
 
-    fill_fine_lev_bny_from_coarse(
-        centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-        cellInterp);
+    fill_fine_lev_bny_from_coarse(centerB[iLev - 1], centerB[iLev], 0,
+                                  centerB[iLev - 1].nComp(),
+                                  ref_ratio[iLev - 1], Geom(iLev - 1),
+                                  Geom(iLev), cell_status(iLev), cellInterp);
   }
 
   // Initial-condition / restart E is node-centred (nodeE). centerEhybrid is
@@ -1237,13 +1237,15 @@ void Pic::sum_moments(bool updateDt) {
       auto& cellInterp = *get_cell_interp();
       for (int iLev = 1; iLev < n_lev(); iLev++) {
         fill_fine_lev_bny_from_coarse(
-            centerPlasmaSum[nSpecies][iLev - 1], centerPlasmaSum[nSpecies][iLev],
-            0, centerPlasmaSum[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
+            centerPlasmaSum[nSpecies][iLev - 1],
+            centerPlasmaSum[nSpecies][iLev], 0,
+            centerPlasmaSum[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
             Geom(iLev - 1), Geom(iLev), cell_status(iLev), cellInterp);
 
         fill_fine_lev_bny_from_coarse(
-            centerPlasmaPrev[nSpecies][iLev - 1], centerPlasmaPrev[nSpecies][iLev],
-            0, centerPlasmaPrev[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
+            centerPlasmaPrev[nSpecies][iLev - 1],
+            centerPlasmaPrev[nSpecies][iLev], 0,
+            centerPlasmaPrev[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
             Geom(iLev - 1), Geom(iLev), cell_status(iLev), cellInterp);
       }
     }
@@ -2794,16 +2796,16 @@ void Pic::update_B_hybrid() {
 
   // Grid-mode hyper-resistivity: eta_h = 4*pi * C_h * dx_fine^4 / dt.
   // The coefficient is set ONCE from the finest level's dx and applied to ALL
-  // levels, so the actual physical hyper-diffusivity eta_h is identical on every
-  // level. Scaling eta_h by each level's own dx^4 would make it 16x larger on
-  // the coarse level (dx_c = 2*dx_f => dx_c^4 = 16*dx_f^4), driving the explicit
-  // hyper-resistivity term unstable on the coarse grid and causing runaway
-  // particle heating (observed with C_h=0.001 on a 32x16 coarse grid while the
-  // 64x32 fine grid is stable). Using a single eta_h everywhere keeps the
-  // hyper-diffusion uniform and stable across levels.
-  // Uses the full dt (not subDt) so that the total diffusion per step is
-  // independent of nBSubcycle: each sub-step applies eta_h*subDt/dx^4 diffusion,
-  // and nBSubcycle sub-steps give nBSubcycle * eta_h*subDt/dx^4 = eta_h*dt/dx^4.
+  // levels, so the actual physical hyper-diffusivity eta_h is identical on
+  // every level. Scaling eta_h by each level's own dx^4 would make it 16x
+  // larger on the coarse level (dx_c = 2*dx_f => dx_c^4 = 16*dx_f^4), driving
+  // the explicit hyper-resistivity term unstable on the coarse grid and causing
+  // runaway particle heating (observed with C_h=0.001 on a 32x16 coarse grid
+  // while the 64x32 fine grid is stable). Using a single eta_h everywhere keeps
+  // the hyper-diffusion uniform and stable across levels. Uses the full dt (not
+  // subDt) so that the total diffusion per step is independent of nBSubcycle:
+  // each sub-step applies eta_h*subDt/dx^4 diffusion, and nBSubcycle sub-steps
+  // give nBSubcycle * eta_h*subDt/dx^4 = eta_h*dt/dx^4.
   if (etaHyperMode == "grid" && etaHyperCh > 0) {
     const int iFinest = n_lev() - 1;
     const auto dxFine = Geom(iFinest).CellSizeArray();
@@ -2866,59 +2868,61 @@ void Pic::update_B_hybrid() {
       // All levels use the same subDt (fixed-timestep strategy); coarse-fine
       // interface ghosts are refreshed after each stage via apply_centerB_BC.
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      // Stage 1: k1 = curl(E(B^n, hstep=g)). The time-centred B at stage 1 is B^n.
-      assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev, hstepStart);
-      curl_center_to_center(centerEstage[iLev], kStage[iLev][0],
-                            Geom(iLev).InvCellSize());
+        // Stage 1: k1 = curl(E(B^n, hstep=g)). The time-centred B at stage 1 is
+        // B^n.
+        assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev,
+                       hstepStart);
+        curl_center_to_center(centerEstage[iLev], kStage[iLev][0],
+                              Geom(iLev).InvCellSize());
 
-      // Stages 2-4 evaluate E at the time-centred B (B_stage + B^n)/2: the
-      // current J comes from curl(B_stage), while the Hall/convection B is the
-      // time-averaged (B_stage + B^n)/2.
-      // Stage 2: B2 = B^n - 0.5 dt k1; E at (B2 + B^n)/2.
-      MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerBstage[iLev], -0.5 * subDt, kStage[iLev][0], 0, 0,
-                      3, nGst);
-      MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                        centerB[iLev], 0, 0, 3, nGst);
-      assemble_ohm_E(centerBstage[iLev], centerBstar[iLev], centerEstage[iLev],
-                     iLev, hstepHalf);
-      curl_center_to_center(centerEstage[iLev], kStage[iLev][1],
-                            Geom(iLev).InvCellSize());
+        // Stages 2-4 evaluate E at the time-centred B (B_stage + B^n)/2: the
+        // current J comes from curl(B_stage), while the Hall/convection B is
+        // the time-averaged (B_stage + B^n)/2. Stage 2: B2 = B^n - 0.5 dt k1; E
+        // at (B2 + B^n)/2.
+        MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
+        MultiFab::Saxpy(centerBstage[iLev], -0.5 * subDt, kStage[iLev][0], 0, 0,
+                        3, nGst);
+        MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
+                          centerB[iLev], 0, 0, 3, nGst);
+        assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
+                       centerEstage[iLev], iLev, hstepHalf);
+        curl_center_to_center(centerEstage[iLev], kStage[iLev][1],
+                              Geom(iLev).InvCellSize());
 
-      // Stage 3: B3 = B^n - 0.5 dt k2; E at (B3 + B^n)/2.
-      MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerBstage[iLev], -0.5 * subDt, kStage[iLev][1], 0, 0,
-                      3, nGst);
-      MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                        centerB[iLev], 0, 0, 3, nGst);
-      assemble_ohm_E(centerBstage[iLev], centerBstar[iLev], centerEstage[iLev],
-                     iLev, hstepHalf);
-      curl_center_to_center(centerEstage[iLev], kStage[iLev][2],
-                            Geom(iLev).InvCellSize());
+        // Stage 3: B3 = B^n - 0.5 dt k2; E at (B3 + B^n)/2.
+        MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
+        MultiFab::Saxpy(centerBstage[iLev], -0.5 * subDt, kStage[iLev][1], 0, 0,
+                        3, nGst);
+        MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
+                          centerB[iLev], 0, 0, 3, nGst);
+        assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
+                       centerEstage[iLev], iLev, hstepHalf);
+        curl_center_to_center(centerEstage[iLev], kStage[iLev][2],
+                              Geom(iLev).InvCellSize());
 
-      // Stage 4: B4 = B^n - dt k3; E at (B4 + B^n)/2.
-      MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerBstage[iLev], -subDt, kStage[iLev][2], 0, 0, 3,
-                      nGst);
-      MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                        centerB[iLev], 0, 0, 3, nGst);
-      assemble_ohm_E(centerBstage[iLev], centerBstar[iLev], centerEstage[iLev],
-                     iLev, hstepEnd);
-      curl_center_to_center(centerEstage[iLev], kStage[iLev][3],
-                            Geom(iLev).InvCellSize());
+        // Stage 4: B4 = B^n - dt k3; E at (B4 + B^n)/2.
+        MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
+        MultiFab::Saxpy(centerBstage[iLev], -subDt, kStage[iLev][2], 0, 0, 3,
+                        nGst);
+        MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
+                          centerB[iLev], 0, 0, 3, nGst);
+        assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
+                       centerEstage[iLev], iLev, hstepEnd);
+        curl_center_to_center(centerEstage[iLev], kStage[iLev][3],
+                              Geom(iLev).InvCellSize());
 
-      // B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4).
-      MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kStage[iLev][0], 0, 0, 3,
-                      nGst);
-      MultiFab::Saxpy(centerB[iLev], -2.0 * subDt / 6.0, kStage[iLev][1], 0, 0,
-                      3, nGst);
-      MultiFab::Saxpy(centerB[iLev], -2.0 * subDt / 6.0, kStage[iLev][2], 0, 0,
-                      3, nGst);
-      MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kStage[iLev][3], 0, 0, 3,
-                      nGst);
-      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+        // B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4).
+        MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kStage[iLev][0], 0, 0, 3,
+                        nGst);
+        MultiFab::Saxpy(centerB[iLev], -2.0 * subDt / 6.0, kStage[iLev][1], 0,
+                        0, 3, nGst);
+        MultiFab::Saxpy(centerB[iLev], -2.0 * subDt / 6.0, kStage[iLev][2], 0,
+                        0, 3, nGst);
+        MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kStage[iLev][3], 0, 0, 3,
+                        nGst);
+        centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
-      apply_centerB_BC(iLev);
+        apply_centerB_BC(iLev);
       } // iLev
       continue;
     }
@@ -2931,45 +2935,46 @@ void Pic::update_B_hybrid() {
       // All levels use the same subDt (fixed-timestep strategy); coarse-fine
       // interface ghosts are refreshed after each stage via apply_centerB_BC.
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      // Save B_n (sub-step start).
-      MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, 3, nGst);
+        // Save B_n (sub-step start).
+        MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, 3, nGst);
 
-      // Stage 1: k1 = curl(E(B_n, hstep=g)); B1 = B_n - subDt k1.
-      assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev, hstepStart);
-      curl_center_to_center(centerEstage[iLev], kStage[iLev][0],
-                            Geom(iLev).InvCellSize());
-      MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerBstage[iLev], -subDt, kStage[iLev][0], 0, 0, 3,
-                      nGst);
+        // Stage 1: k1 = curl(E(B_n, hstep=g)); B1 = B_n - subDt k1.
+        assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev,
+                       hstepStart);
+        curl_center_to_center(centerEstage[iLev], kStage[iLev][0],
+                              Geom(iLev).InvCellSize());
+        MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
+        MultiFab::Saxpy(centerBstage[iLev], -subDt, kStage[iLev][0], 0, 0, 3,
+                        nGst);
 
-      // Stage 2: avgB2 = (B1+B_n)/2; k2 = curl(E(avgB2));
-      //   B2 = (3/4)B_n + (1/4)(B1 - subDt k2).
-      MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                        centerBstart[iLev], 0, 0, 3, nGst);
-      assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
-                     iLev, hstepEnd);
-      curl_center_to_center(centerEstage[iLev], kStage[iLev][1],
-                            Geom(iLev).InvCellSize());
-      MultiFab::LinComb(centerBstage[iLev], 0.25, centerBstage[iLev], 0, 0.75,
-                        centerBstart[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerBstage[iLev], -0.25 * subDt, kStage[iLev][1], 0, 0,
-                      3, nGst);
+        // Stage 2: avgB2 = (B1+B_n)/2; k2 = curl(E(avgB2));
+        //   B2 = (3/4)B_n + (1/4)(B1 - subDt k2).
+        MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
+                          centerBstart[iLev], 0, 0, 3, nGst);
+        assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
+                       iLev, hstepEnd);
+        curl_center_to_center(centerEstage[iLev], kStage[iLev][1],
+                              Geom(iLev).InvCellSize());
+        MultiFab::LinComb(centerBstage[iLev], 0.25, centerBstage[iLev], 0, 0.75,
+                          centerBstart[iLev], 0, 0, 3, nGst);
+        MultiFab::Saxpy(centerBstage[iLev], -0.25 * subDt, kStage[iLev][1], 0,
+                        0, 3, nGst);
 
-      // Stage 3: avgB3 = (B2+B_n)/2; k3 = curl(E(avgB3));
-      //   B^{n+1} = (1/3)B_n + (2/3)(B2 - subDt k3).
-      MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
-                        centerBstart[iLev], 0, 0, 3, nGst);
-      assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
-                     iLev, hstepHalf);
-      curl_center_to_center(centerEstage[iLev], kStage[iLev][2],
-                            Geom(iLev).InvCellSize());
-      MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
-                        1.0 / 3.0, centerBstart[iLev], 0, 0, 3, nGst);
-      MultiFab::Saxpy(centerB[iLev], -2.0 / 3.0 * subDt, kStage[iLev][2], 0, 0,
-                      3, nGst);
-      centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+        // Stage 3: avgB3 = (B2+B_n)/2; k3 = curl(E(avgB3));
+        //   B^{n+1} = (1/3)B_n + (2/3)(B2 - subDt k3).
+        MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
+                          centerBstart[iLev], 0, 0, 3, nGst);
+        assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
+                       iLev, hstepHalf);
+        curl_center_to_center(centerEstage[iLev], kStage[iLev][2],
+                              Geom(iLev).InvCellSize());
+        MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
+                          1.0 / 3.0, centerBstart[iLev], 0, 0, 3, nGst);
+        MultiFab::Saxpy(centerB[iLev], -2.0 / 3.0 * subDt, kStage[iLev][2], 0,
+                        0, 3, nGst);
+        centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
-      apply_centerB_BC(iLev);
+        apply_centerB_BC(iLev);
       } // iLev
       continue;
     }
@@ -3042,9 +3047,9 @@ void Pic::update_B_hybrid() {
   if (useAvgFieldB && isBavgInit && finest_level > 0) {
     auto& cellInterp = *get_cell_interp();
     for (int iLev = 1; iLev < n_lev(); iLev++) {
-      fill_fine_lev_bny_from_coarse(
-          centerBavg[iLev - 1], centerBavg[iLev], 0, 3, ref_ratio[iLev - 1],
-          Geom(iLev - 1), Geom(iLev), cell_status(iLev), cellInterp);
+      fill_fine_lev_bny_from_coarse(centerBavg[iLev - 1], centerBavg[iLev], 0,
+                                    3, ref_ratio[iLev - 1], Geom(iLev - 1),
+                                    Geom(iLev), cell_status(iLev), cellInterp);
     }
   }
 
@@ -3081,10 +3086,10 @@ void Pic::update_B_hybrid() {
   if (finest_level > 0) {
     auto& cellInterp = *get_cell_interp();
     for (int iLev = 1; iLev < n_lev(); iLev++) {
-      fill_fine_lev_bny_from_coarse(
-          centerEhybrid[iLev - 1], centerEhybrid[iLev], 0, 3,
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          cellInterp);
+      fill_fine_lev_bny_from_coarse(centerEhybrid[iLev - 1],
+                                    centerEhybrid[iLev], 0, 3,
+                                    ref_ratio[iLev - 1], Geom(iLev - 1),
+                                    Geom(iLev), cell_status(iLev), cellInterp);
     }
   }
 

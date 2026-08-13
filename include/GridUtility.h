@@ -784,11 +784,13 @@ void sum_coarse_to_fine_lev_bny_cell(
 
 // Combined cell-centred coarse-fine interface summation for moments.
 template <class FAB, class Interp>
-void sum_two_lev_interface_cell(
-    amrex::FabArray<FAB>& coarse, amrex::FabArray<FAB>& fine, int iStart,
-    const int nComp, const amrex::IntVect ratio, const amrex::Geometry& cgeom,
-    const amrex::Geometry& fgeom, const amrex::iMultiFab& fstatus,
-    Interp& mapper) {
+void sum_two_lev_interface_cell(amrex::FabArray<FAB>& coarse,
+                                amrex::FabArray<FAB>& fine, int iStart,
+                                const int nComp, const amrex::IntVect ratio,
+                                const amrex::Geometry& cgeom,
+                                const amrex::Geometry& fgeom,
+                                const amrex::iMultiFab& fstatus,
+                                Interp& mapper) {
   BL_PROFILE("sum_two_lev_interface_cell");
   sum_fine_to_coarse_lev_bny_cell(coarse, fine, iStart, nComp, ratio);
   sum_coarse_to_fine_lev_bny_cell(coarse, fine, iStart, nComp, ratio, cgeom,

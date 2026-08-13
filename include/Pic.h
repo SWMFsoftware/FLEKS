@@ -364,10 +364,11 @@ public:
   // coarse-fine interfaces.  For the full-PIC solver, keeps CellBilinear
   // (cell_bilinear_interp) since the cell-centred fields are output-only
   // mirrors.
-  amrex::Interpolater* get_cell_interp() const {
+  amrex::Interpolater *get_cell_interp() const {
     return useHybridPIC
-               ? static_cast<amrex::Interpolater*>(&amrex::lincc_interp)
-               : static_cast<amrex::Interpolater*>(&amrex::cell_bilinear_interp);
+               ? static_cast<amrex::Interpolater *>(&amrex::lincc_interp)
+               : static_cast<amrex::Interpolater *>(
+                     &amrex::cell_bilinear_interp);
   }
 
   void set_stateOH(OHInterface *in) { stateOH = in; }
