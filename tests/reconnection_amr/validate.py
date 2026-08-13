@@ -101,9 +101,31 @@ def _frame_stats(frame):
 
 
 def _midplane_by(frame):
-    """Return (x_array, By_array) along the midplane y ~ 0 (refined layer)."""
+    """Return (x_array, By_array) along the midplane y ~ 0 (refined layer).
+
+    The refined band is block-aligned (`maxBlockSizeY = 2`), so its cell-centred
+    y rows are offset by half a fine cell and need NOT straddle y = 0 exactly
+    (the nearest fine row is |y| = DX_FINE/2 ~ 0.49).  A fixed `|y| < 0.3*DX_FINE`
+    window would select nothing.  Instead pick the fine-level row (x cells
+    spaced by DX_FINE) whose |y| is smallest — the row closest to the current
+    sheet — and return its By profile.
+    """
     y = frame["y"]
-    m = np.abs(y - 0.0) < 0.3 * DX_FINE
+    ys = np.unique(y)
+    best = None  # (|yy|, yy)
+    for yy in ys:
+        m = np.abs(y - yy) < 0.01
+        xs = np.sort(frame["x"][m])
+        if xs.size < 2:
+            continue
+        xdx = np.round(np.diff(xs), 4)
+        if xdx.size and abs(float(xdx[0]) - DX_FINE) < 0.05:
+            if best is None or abs(float(yy)) < best[0]:
+                best = (abs(float(yy)), float(yy))
+    if best is None:
+        return None, None
+    _, yy = best
+    m = np.abs(y - yy) < 0.01
     if m.sum() < 8:
         return None, None
     x = frame["x"][m]

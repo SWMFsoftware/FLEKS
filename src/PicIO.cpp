@@ -58,8 +58,8 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
 
     const int iLev = get_finest_lev(xyz);
 
-    // Hybrid solver: read the cell-centred fields (the node mirrors are no
-    // longer maintained). Full-PIC reads the node fields.
+    // Hybrid solver reads the cell-centred fields.
+    // Full-PIC reads the node fields.
     for (int iSpecies = 0; iSpecies < nSpecies; iSpecies++) {
       for (int iVar = iRho_; iVar <= iPyz_; iVar++) {
         const int iStart = iSpecies * nVarPerSpecies;

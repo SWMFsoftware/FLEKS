@@ -1010,18 +1010,16 @@ Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
     momentsMF[iLev].SumBoundary(Geom(iLev).periodicity());
   }
 
-  // Cell-centred coarse-fine interface for AMR. Analogous to the node-centred
-  // path above: (1) sum fine-level particle contributions down to the coarse
-  // level (volume-weighted average_down), and (2) overwrite the fine
-  // level-edge cells with interpolated coarse values (particles near the
-  // coarse-fine boundary deposit across both levels, making the fine
-  // level-edge values unreliable).
+  // Cell-centred coarse-fine interface for AMR. Unlike the node-centred path,
+  // we only need the fine→coarse summation (average_down + Add) for cell-centred
+  // moments. The coarse→fine overwrite of level-edge cells is NOT used here
+  // because it discards valid fine-level particle deposits (the fine level-edge
+  // cells contain real particles), causing worse energy growth.
   for (int iLev = n_lev() - 2; iLev >= 0; iLev--) {
     timing_func("Pts::sum_moments_coarse_fine_interface_cell");
-    sum_two_lev_interface_cell(
+    sum_fine_to_coarse_lev_bny_cell(
         momentsMF[iLev], momentsMF[iLev + 1], 0, momentsMF[iLev].nComp(),
-        get_ref_ratio(iLev), Geom(iLev), Geom(iLev + 1),
-        cell_status(iLev + 1), lincc_interp);
+        get_ref_ratio(iLev));
   }
 
   energy *= 0.5 * qomSign * get_mass();

@@ -102,8 +102,8 @@ T                       useFixedDt
 10                      dnSavePT
 
 #PARTICLES
-5                       nParticle per cell in X
-5                       nParticle per cell in Y
+4                       nParticle per cell in X
+4                       nParticle per cell in Y
 
 #SAVEPLOT
 1                       nPlot
