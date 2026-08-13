@@ -562,6 +562,35 @@ public:
 
   void neutral_mover(amrex::Real dt);
 
+  // Specular-reflection vs. outflow/removal for a pushed particle.  Returns
+  // true if the particle should be deleted.  Only acts at iLev == 0.
+  inline bool reflect_or_delete_particle(ParticleType& p,
+                                         amrex::Array4<int const> const& status,
+                                         const amrex::IntVect& low,
+                                         const amrex::IntVect& high,
+                                         int iLev) {
+    if (iLev > 0)
+      return is_outside_active_region(p, status, low, high, iLev);
+
+    const amrex::Real* plo = Geom(iLev).ProbLo();
+    const amrex::Real* phi = Geom(iLev).ProbHi();
+    bool reflected = false;
+    for (int d = 0; d < nDim; ++d) {
+      if (bc.lo[d] == BC::reflect && p.pos(d) < plo[d]) {
+        p.pos(d) = 2.0 * plo[d] - p.pos(d);
+        p.rdata(iup_ + d) = -p.rdata(iup_ + d);
+        reflected = true;
+      } else if (bc.hi[d] == BC::reflect && p.pos(d) > phi[d]) {
+        p.pos(d) = 2.0 * phi[d] - p.pos(d);
+        p.rdata(iup_ + d) = -p.rdata(iup_ + d);
+        reflected = true;
+      }
+    }
+    if (reflected)
+      return false;
+    return is_outside_active_region(p, status, low, high, iLev);
+  }
+
   void update_position_to_half_stage(const amrex::MultiFab& nodeEMF,
                                      const amrex::MultiFab& nodeBMF,
                                      amrex::Real dt);

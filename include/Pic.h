@@ -571,6 +571,13 @@ public:
                 const int iStart, const int nComp, GETVALUE func,
                 const int iLev, const BC *bc = nullptr);
 
+  // Perfectly-conducting wall: zero the wall-normal B and wall-tangential E,
+  // mirror the remaining components.  `isB` selects the B/E convention.
+  void apply_conducting_wall(const amrex::iMultiFab &status,
+                             amrex::MultiFab &mf, const int iStart,
+                             const int nComp, const int iLev, const BC &bc,
+                             bool isB);
+
   bool use_float(const int i, const int j, const int k, int &ip, int &jp,
                  int &kp, const BC &bc, const amrex::Box &bxValid) {
     bool useFloat = false;

@@ -1635,7 +1635,7 @@ void Particles<NStructReal, NStructInt>::update_position_to_half_stage(
       }
 
       // Mark for deletion
-      if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
+      if (reflect_or_delete_particle(p, status, lowCorner, highCorner, iLev)) {
         p.id() = -1;
       }
     } // for p
