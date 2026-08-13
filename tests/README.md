@@ -8,28 +8,20 @@ Simulator) particle-in-cell (PIC) solver, independent of SWMF coupling.
 Each test case is contained within its own dedicated subdirectory containing a
 `PARAM.in` configuration file and a README file:
 
-| Test              | Dir                | Description                                              | Readme |
-|-------------------|--------------------|----------------------------------------------------------|--------|
-| Beam instability  | `beam/`            | 1D ion beam EM instability: cyclotron wave growth,       | [README](beam/README.md)            |
-|                   |                    | transverse B-field amplification, energy conservation.   |        |
-|                   |                    | Run with both solvers (full PIC and hybrid PIC)          |        |
-| Photoionization   | `photoionization/` | Chamberlain neutral profile with photoionization of      | [README](photoionization/README.md)  |
-|                   |                    | H+O atmosphere                                           |        |
-| Electron impact   | `electronimpact/`  | Voronov 1997 e-impact rate with hot electrons            | [README](electronimpact/README.md)   |
-|                   |                    | (T ~ 100,000 K), only electron impact enabled            |        |
-| Charge exchange   | `chargeexchange/`  | Constant CX cross-section with flowing solar wind ions,  | [README](chargeexchange/README.md)   |
-|                   |                    | only charge exchange enabled                             |        |
-| Whistler wave     | `whistler/`        | Whistler–Alfven wave; full PIC (ions+electrons) + hybrid  | [README](whistler/README.md)         |
-|                   |                    | Alfven wave; Hall term only (resistivity & e-pressure off)|       |
-| Hybrid Ohm's law  | `ohm/`             | Hybrid PIC full generalized Ohm's law: convection + Hall  | [README](ohm/README.md)              |
-|                   |                    | + resistive + electron-pressure-gradient, all active       |        |
-| Free-stream       | `freestream/`      | 1D uniform free-stream, run with both solvers (full PIC and hybrid Hall-off) | [README](freestream/README.md) |
-| Light wave        | `lightwave/`       | 3D vacuum transverse EM (light) wave on a periodic AMR  | [README](lightwave/README.md)        |
-|                   |                    | grid; energy-conservation check (needs `nLevMax >= 2`)   |        |
-| PCAI              | `pcai/`            | Hybrid PIC proton-cyclotron anisotropy instability:     | [README](pcai/README.md)             |
-|                   |                    | bi-Maxwellian `T_perp/T_par = 3`, `beta_par = 1`;       |        |
-|                   |                    | transverse-wave growth rate `gamma/Omega_ci = 0.162`    |        |
-| Performance       | `performance/`     | Beam-based scaling benchmark (excluded from CI suite)    | — (see `validate_performance.py`)    |
+| Test                  | Dir                   | Description                                                  | Readme |
+|-----------------------|-----------------------|--------------------------------------------------------------|--------|
+| Beam instability      | `beam/`               | 1D ion-beam cyclotron instability; energy conservation        | [README](beam/README.md) |
+| Photoionization       | `photoionization/`    | Chamberlain neutral atmosphere with photoionization           | [README](photoionization/README.md) |
+| Electron impact       | `electronimpact/`     | Voronov 1997 electron-impact ionization of hot electrons      | [README](electronimpact/README.md) |
+| Charge exchange       | `chargeexchange/`     | Constant-cross-section charge exchange with solar wind ions   | [README](chargeexchange/README.md) |
+| Whistler wave         | `whistler/`           | Whistler–Alfven wave (Hall term)                              | [README](whistler/README.md) |
+| Ohm's law             | `ohm/`                | Full generalized Ohm's law check | [README](ohm/README.md) |
+| Free-stream           | `freestream/`         | 1D uniform free-stream                                        | [README](freestream/README.md) |
+| Light wave            | `lightwave/`          | 3D vacuum light wave on a periodic AMR grid | [README](lightwave/README.md) |
+| PCAI                  | `pcai/`               | Proton-cyclotron anisotropy instability (`T_perp/T_par=3`, `gamma/Omega_ci=0.162`) | [README](pcai/README.md) |
+| Reconnection          | `reconnection/`       | Fadeev current-sheet reconnection on a uniform grid (x-y)     | [README](reconnection/README.md) |
+| AMR reconnection      | `reconnection_amr/`   | Fadeev current-sheet reconnection on a two-level AMR grid | [README](reconnection_amr/README.md) |
+| Performance           | `performance/`        | Beam-based scaling benchmark         | — (see `validate_performance.py`) |
 
 ### Ionization Parameter Commands
 
@@ -111,9 +103,9 @@ the available test subdirectories (`beam`, `photoionization`, `electronimpact`,
 exits with an error listing the available tests. When the flag is omitted, all
 tests are run (the default behavior). The flag may be combined with `-n`/`--nprocs`.
 
-When a test directory contains both `PARAM.in` and `PARAM.in.hybrid` (currently
-`beam/` and `freestream/`), the runner executes the test once per field solver,
-listing both variants in the summary table (e.g. `BEAM` and `BEAM (HYBRID)`).
+When a test directory contains both `PARAM.in` and `PARAM.in.hybrid`, the
+runner executes the test once per field solver, listing both variants in the
+summary table (e.g. `BEAM` and `BEAM (HYBRID)`).
 
 ### Performance Benchmark
 

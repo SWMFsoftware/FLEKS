@@ -1,10 +1,19 @@
 # AMR Magnetic Reconnection Test
 
-This test is the AMR counterpart of the uniform reconnection test
-(`tests/reconnection`): the same `FadeevIC` equilibrium and Maxwell/GMRES
-solver, but on a **two-level AMR grid** that refines the thin layer around the
-central reconnecting current sheet, so the reconnection zone is resolved more
-finely than the surrounding region at a fraction of the uniform-grid cost.
+This is the AMR counterpart of the uniform reconnection test
+(`tests/reconnection`): the same `FadeevIC` equilibrium, but on a **two-level
+AMR grid** that refines the thin layer around the central reconnecting current
+sheet, so the reconnection zone is resolved more finely than the surrounding
+region at a fraction of the uniform-grid cost.
+
+Two solver variants share this grid and setup — see `#SOLVEEM` / `#HYBRIDPIC`:
+
+- **Full PIC** (`PARAM.in`): Maxwell + implicit GMRES solve.
+- **Hybrid PIC** (`PARAM.in.hybrid`): kinetic ions + fluid electrons
+
+The runner auto-detects `PARAM.in.hybrid` and executes both variants, listing
+them as `RECONNECTION_AMR` and `RECONNECTION_AMR (HYBRID)` in
+`tests/summary.md`.
 
 ## Grid hierarchy
 
@@ -22,6 +31,9 @@ direction, `y` = current-sheet normal).  Two levels:
   current-sheet layer to **2x resolution** (`#REFINEMENTRATIO 2`).
 - `#MAXBLOCKSIZE 16 2` makes the refined layer align with whole base blocks so
   it refines cleanly.
+- The refined layer (`|y| < 7.85 d_i`) covers the current sheet (`L = 5 d_i`)
+  with margin; the ion inertial length `d_i ~ 1` is resolved at `0.98 d_i` on
+  the fine level.
 
 ## Refinement criteria
 
@@ -48,10 +60,42 @@ direction, `y` = current-sheet normal).  Two levels:
 the uniform reconnection test (`L = 5`, `eps = 0.4`, `num_islands = 2`,
 `bg = 0`, `perturb = -0.05`, `nb = 0.2`), on both levels.
 
-## Time stepping
+## Solver variants
 
-Full-PIC, `m_i/m_e = 25`, fixed `dt = 0.005`, `TimeMax = 3` (600 steps), and
-`#PARTICLES 5 5` (25 macroparticles/cell/species), matching the uniform test.
+| Parameter | Full-PIC | Hybrid |
+|-----------|------------------------|----------------------------|
+| `#SOLVEEM` | `T` | `F` |
+| `#HYBRIDPIC` | `F` | `T` |
+| `#PLASMA` | 2 species (ions + electrons, `m_i/m_e=25`) | 1 species (ions only; fluid electrons) |
+| `#RESISTIVITY` | — | `4.0e5 m^2/s` (etaCode ~ 0.001) |
+| `#ELECTRONTEMPERATURE` | — | `5 eV`, isothermal |
+| `#HYPERRESISTIVITY` | — | grid mode, `C_h = 0.001` |
+| `#BSUBCYCLE` | — | `4` |
+| `#FIELDINTEGRATOR` | — | `rk4` |
+| `#AVGFIELDB` | — | `T`, `nAvgFieldB = 20` |
+| `#PARTICLES` | `4 4` (16 macroparticles/cell/species) | `5 5` (25 macroparticles/cell) |
+| `#TIMESTEPPING dt` | `0.005` (semi-implicit; resolves electron timescale for `m_i/m_e=25`) | `0.02` (explicit; ion-scale step) |
+| `#STOP TimeMax` | `3` | `20` (ion-scale onset is slower) |
+
+## Validation
+
+The automated check (`validate.py`) verifies the same criteria for both
+variants, with solver-aware thresholds:
+
+1. **Energy-log sanity**: finite, bounded `Eb` (no blow-up), finite `Epart`
+   growing as magnetic energy is converted into kinetic energy.
+2. **AMR refinement present**: coarse + fine cell spacings in the `z=0` `.out`
+   plots, with the fine cells forming the central current-sheet layer.
+3. **Active reconnection**: on the refined midplane `y ~ 0`, the equilibrium
+   X-point (By null near `x ~ 0`) is present at `t=0`, and the seeded m=1
+   perturbation grows (midplane `By` profile changes by `> 0.05`).
+4. **Perturbation growth**: `|delta By|` grows past a solver-aware threshold —
+   `0.1` for full-PIC, `0.05` for hybrid (the ion-scale onset is slower but the
+   run is longer).
+
+The hybrid test is **not** expected to reproduce the full-PIC reconnection rate
+quantitatively (different electron physics), but it must show a stable, bounded
+run with clear reconnection signatures.
 
 ## Running
 
@@ -62,16 +106,5 @@ Build with the 2D AMReX library and AMR support, then run the check:
 python3 tests/validate_tests.py --test=reconnection_amr
 ```
 
-## Validation
-
-The automated check (`validate.py`) verifies:
-
-1. **Energy-log sanity**: finite, bounded `Eb` (no blow-up), with `Epart`
-   growing as magnetic energy is converted into kinetic energy — the signature
-   of reconnection.
-2. **AMR refinement present**: the `z=0` `.out` plots contain both the coarse
-   and the fine cell spacings, with the fine cells forming the central
-   current-sheet layer — confirming the layer is actually refined.
-3. **Active reconnection**: on the refined midplane `y ~ 0`, the equilibrium
-   X-point (By null near `x ~ 0`) is present and the seeded m=1 perturbation
-   grows (the midplane `By` profile changes).
+See `Doc/AMR_hybrid_implementation_plan.md` for the full analysis of the AMR +
+hybrid integration, including the cell-centred AMR method adaptation plan.

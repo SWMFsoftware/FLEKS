@@ -718,6 +718,82 @@ void sum_coarse_to_fine_lev_bny_node(
   }
 }
 
+// Sum from fine level to coarse level for cell-centred data.
+// Uses amrex::average_down (volume-weighted, cell-centred) to coarsen the fine
+// contribution and Add() it to the coarse level. This is the cell-centred
+// analogue of sum_fine_to_coarse_lev_bny_node (which uses average_down_nodal).
+template <class FAB>
+void sum_fine_to_coarse_lev_bny_cell(amrex::FabArray<FAB>& coarse,
+                                     amrex::FabArray<FAB>& fine,
+                                     const int iStart, const int nComp,
+                                     const amrex::IntVect ratio) {
+  BL_PROFILE("sum_fine_to_coarse_lev_bny_cell");
+  amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
+  amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
+
+  amrex::FabArray<FAB> ctmp(c.boxArray(), c.DistributionMap(), nComp, 0);
+  ctmp.setVal(0.0);
+
+  amrex::average_down(f, ctmp, 0, nComp, ratio);
+
+  amrex::Add(c, ctmp, 0, 0, nComp, 0);
+}
+
+// Sum from coarse level to fine level for cell-centred data at level edges.
+// Interpolates coarse values to the fine grid and overwrites the fine
+// level-edge cells (which are unreliable after particle deposit because
+// particles near the coarse-fine boundary deposit across both levels).
+// Uses cell_bilinear_interp (2nd-order conservative) as the mapper.
+template <class FAB, class Interp>
+void sum_coarse_to_fine_lev_bny_cell(
+    amrex::FabArray<FAB>& coarse, amrex::FabArray<FAB>& fine, const int iStart,
+    const int nComp, const amrex::IntVect ratio, const amrex::Geometry& cgeom,
+    const amrex::Geometry& fgeom, const amrex::iMultiFab& fstatus,
+    Interp& mapper) {
+  BL_PROFILE("sum_coarse_to_fine_lev_bny_cell");
+
+  amrex::FabArray<FAB> f(fine, amrex::make_alias, iStart, nComp);
+  amrex::FabArray<FAB> c(coarse, amrex::make_alias, iStart, nComp);
+
+  amrex::FabArray<FAB> ftmp(f.boxArray(), f.DistributionMap(), nComp, 0);
+  ftmp.setVal(0.0);
+
+  interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper);
+
+  for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
+    FAB& fab = f[mfi];
+    const auto& box = mfi.validbox();
+    const auto& data = fab.array();
+
+    const auto& statusArr = fstatus[mfi].array();
+    const auto& tmp = ftmp[mfi].array();
+
+    const auto lo = amrex::lbound(box);
+    const auto hi = amrex::ubound(box);
+
+    for (int iVar = 0; iVar < f.nComp(); iVar++)
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (bit::is_lev_edge(statusArr(i, j, k))) {
+              data(i, j, k, iVar) = tmp(i, j, k, iVar);
+            }
+          }
+  }
+}
+
+// Combined cell-centred coarse-fine interface summation for moments.
+template <class FAB, class Interp>
+void sum_two_lev_interface_cell(
+    amrex::FabArray<FAB>& coarse, amrex::FabArray<FAB>& fine, int iStart,
+    const int nComp, const amrex::IntVect ratio, const amrex::Geometry& cgeom,
+    const amrex::Geometry& fgeom, const amrex::iMultiFab& fstatus,
+    Interp& mapper) {
+  BL_PROFILE("sum_two_lev_interface_cell");
+  sum_fine_to_coarse_lev_bny_cell(coarse, fine, iStart, nComp, ratio);
+  sum_coarse_to_fine_lev_bny_cell(coarse, fine, iStart, nComp, ratio, cgeom,
+                                  fgeom, fstatus, mapper);
+}
 // Sum from coarse level to fine level for domain boundary edge nodes
 template <class FAB>
 void interp_from_coarse_to_fine_for_domain_edge(

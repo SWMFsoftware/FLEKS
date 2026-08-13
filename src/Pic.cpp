@@ -727,11 +727,12 @@ void Pic::fill_new_center_B() {
     }
   }
   if (finest_level > 0) {
+    auto& cellInterp = *get_cell_interp();
     for (int iLev = 1; iLev < n_lev(); iLev++) {
       fill_fine_lev_new_from_coarse(
           centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          cell_bilinear_interp);
+          cellInterp);
     }
   }
 }
@@ -753,6 +754,7 @@ void Pic::fill_E_B_fields() {
            0, &bcBField);
 
   //-----Fine (iLev>0) grid boundary/internal ghost cells are filled----
+  auto& cellInterp = *get_cell_interp();
   for (int iLev = 1; iLev <= finest_level; iLev++) {
     nodeE[iLev].FillBoundary();
     nodeB[iLev].FillBoundary();
@@ -771,7 +773,7 @@ void Pic::fill_E_B_fields() {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
         ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-        cell_bilinear_interp);
+        cellInterp);
   }
 
   // Initial-condition / restart E is node-centred (nodeE). centerEhybrid is
@@ -1217,6 +1219,32 @@ void Pic::sum_moments(bool updateDt) {
         // kineticSpecies_ excludes the (implicit fluid) electron.
         MultiFab::Add(centerPlasmaSum[nSpecies][iLev], centerPlasma[i][iLev], 0,
                       0, nMoments, nGst);
+      }
+    }
+
+    // Fill ghost cells for centerPlasmaSum so that assemble_ohm_E's 2-dx
+    // stencil reads valid data at MPI boundaries and coarse-fine interfaces.
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      centerPlasmaSum[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+
+    // Fill coarse-fine interface ghost cells for centerPlasmaSum and
+    // centerPlasmaPrev on fine levels from the coarse level. Without this,
+    // assemble_ohm_E's pressure-gradient stencil reads zero/stale ghost cells
+    // at the coarse-fine interface, causing incorrect E fields and runaway
+    // particle heating.
+    if (finest_level > 0 && useHybridPIC) {
+      auto& cellInterp = *get_cell_interp();
+      for (int iLev = 1; iLev < n_lev(); iLev++) {
+        fill_fine_lev_bny_from_coarse(
+            centerPlasmaSum[nSpecies][iLev - 1], centerPlasmaSum[nSpecies][iLev],
+            0, centerPlasmaSum[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
+            Geom(iLev - 1), Geom(iLev), cell_status(iLev), cellInterp);
+
+        fill_fine_lev_bny_from_coarse(
+            centerPlasmaPrev[nSpecies][iLev - 1], centerPlasmaPrev[nSpecies][iLev],
+            0, centerPlasmaPrev[nSpecies][iLev].nComp(), ref_ratio[iLev - 1],
+            Geom(iLev - 1), Geom(iLev), cell_status(iLev), cellInterp);
       }
     }
 
@@ -2346,7 +2374,7 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
         ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-        cell_bilinear_interp);
+        *get_cell_interp());
 
     fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
                                   nodeB[iLev - 1].nComp(), ref_ratio[iLev - 1],
@@ -2405,7 +2433,7 @@ void Pic::update_B() {
       fill_fine_lev_bny_from_coarse(
           centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          cell_bilinear_interp);
+          *get_cell_interp());
     }
     MultiFab::Copy(dBdt[iLev], nodeB[iLev], 0, 0, dBdt[iLev].nComp(),
                    dBdt[iLev].nGrow());
@@ -2638,6 +2666,7 @@ void Pic::smooth_moments() {
     for (int icount = 0; icount < nSmoothMoments; ++icount) {
       smooth_multifab(moments, iLev, 1, coefSmoothMoments);
     }
+    moments.FillBoundary(Geom(iLev).periodicity());
   }
 }
 
@@ -2687,7 +2716,7 @@ void Pic::project_centerB_to_nodeB(int iLev) {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
         ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-        cell_bilinear_interp);
+        *get_cell_interp());
   }
   average_center_to_node(centerB[iLev], nodeB[iLev]);
   nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -2713,7 +2742,7 @@ void Pic::apply_centerB_BC(int iLev) {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
         ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-        cell_bilinear_interp);
+        *get_cell_interp());
   }
 }
 
@@ -2728,7 +2757,7 @@ void Pic::project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
   } else {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerIn, 0, centerIn.nComp(), ref_ratio[iLev - 1],
-        Geom(iLev - 1), Geom(iLev), cell_status(iLev), cell_bilinear_interp);
+        Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
   }
   average_center_to_node(centerIn, nodeOut);
   nodeOut.FillBoundary(Geom(iLev).periodicity());
@@ -2763,14 +2792,27 @@ void Pic::update_B_hybrid() {
                    centerBprev[iLev].nGrow());
   }
 
-  // Grid-mode hyper-resistivity: eta_h = 4*pi * C_h * dx_min^4 / dt_sub.
+  // Grid-mode hyper-resistivity: eta_h = 4*pi * C_h * dx_fine^4 / dt.
+  // The coefficient is set ONCE from the finest level's dx and applied to ALL
+  // levels, so the actual physical hyper-diffusivity eta_h is identical on every
+  // level. Scaling eta_h by each level's own dx^4 would make it 16x larger on
+  // the coarse level (dx_c = 2*dx_f => dx_c^4 = 16*dx_f^4), driving the explicit
+  // hyper-resistivity term unstable on the coarse grid and causing runaway
+  // particle heating (observed with C_h=0.001 on a 32x16 coarse grid while the
+  // 64x32 fine grid is stable). Using a single eta_h everywhere keeps the
+  // hyper-diffusion uniform and stable across levels.
+  // Uses the full dt (not subDt) so that the total diffusion per step is
+  // independent of nBSubcycle: each sub-step applies eta_h*subDt/dx^4 diffusion,
+  // and nBSubcycle sub-steps give nBSubcycle * eta_h*subDt/dx^4 = eta_h*dt/dx^4.
   if (etaHyperMode == "grid" && etaHyperCh > 0) {
+    const int iFinest = n_lev() - 1;
+    const auto dxFine = Geom(iFinest).CellSizeArray();
+    Real dxMinFine = amrex::min(dxFine[0], dxFine[1]);
+    if (nDim > 2)
+      dxMinFine = amrex::min(dxMinFine, dxFine[2]);
+    const Real etaHyper = fourPI * etaHyperCh * std::pow(dxMinFine, 4) / dt;
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
-      const auto dx = Geom(iLev).CellSizeArray();
-      Real dxMin = amrex::min(dx[0], dx[1]);
-      if (nDim > 2)
-        dxMin = amrex::min(dxMin, dx[2]);
-      etaHyperLev[iLev] = fourPI * etaHyperCh * std::pow(dxMin, 4) / subDt;
+      etaHyperLev[iLev] = etaHyper;
     }
   }
 
@@ -2800,22 +2842,32 @@ void Pic::update_B_hybrid() {
 
   for (int subStep = 0; subStep < nBSubcycle; ++subStep) {
 
-    // Global sub-step fraction g in [0, 1); the moment interpolation hstep.
+    // Global sub-step fraction g in [0, 1).  Following Hybrid-VPIC, the
+    // moment time-interpolation weight hstep maps each RK stage to the time
+    // (as a fraction of the particle step) at which its E is evaluated:
+    //   stage 1 (E at B^n)        : hstep = g
+    //   stage 2/3 (sub-step mid)  : hstep = g + 0.5/nsub
+    //   stage 4 (sub-step end)    : hstep = g + 1.0/nsub
+    // A negative weight 0.5-hstep<0 on J^{n-1/2} for hstep>0.5 is the
+    // intended second-order time extrapolation (same as Hybrid-VPIC's
+    // hyb_advance_e with RHOHS), NOT a clamp to time-centred moments.
     const Real g = (Real)subStep / (Real)nBSubcycle;
+    const Real hstepStart = g;
     const Real hstepHalf = g + 0.5 / (Real)nBSubcycle;
+    const Real hstepEnd = g + 1.0 / (Real)nBSubcycle;
 
     if (useRK4) {
-      // Classical RK4 on dB/dt = -curl(E), E = E_Ohm(B), on level 0:
+      // Classical RK4 on dB/dt = -curl(E), E = E_Ohm(B), on ALL levels:
       //   k1 = curl(E(B^n, hstep=g))
       //   k2 = curl(E(B^n - 0.5 dt k1, hstep=g+0.5/nsub))
       //   k3 = curl(E(B^n - 0.5 dt k2, hstep=g+0.5/nsub))
       //   k4 = curl(E(B^n - dt k3, hstep=g+1.0/nsub))
       //   B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4)
-      // Fine levels follow from projection of the advanced level-0 B.
-      const int iLev = 0;
-
-      // Stage 1: k1 = curl(E(B^n)). The time-centred B at stage 1 is B^n.
-      assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev, g);
+      // All levels use the same subDt (fixed-timestep strategy); coarse-fine
+      // interface ghosts are refreshed after each stage via apply_centerB_BC.
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      // Stage 1: k1 = curl(E(B^n, hstep=g)). The time-centred B at stage 1 is B^n.
+      assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev, hstepStart);
       curl_center_to_center(centerEstage[iLev], kStage[iLev][0],
                             Geom(iLev).InvCellSize());
 
@@ -2851,7 +2903,7 @@ void Pic::update_B_hybrid() {
       MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                         centerB[iLev], 0, 0, 3, nGst);
       assemble_ohm_E(centerBstage[iLev], centerBstar[iLev], centerEstage[iLev],
-                     iLev, g + 1.0 / (Real)nBSubcycle);
+                     iLev, hstepEnd);
       curl_center_to_center(centerEstage[iLev], kStage[iLev][3],
                             Geom(iLev).InvCellSize());
 
@@ -2866,7 +2918,8 @@ void Pic::update_B_hybrid() {
                       nGst);
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
-      apply_centerB_BC(0);
+      apply_centerB_BC(iLev);
+      } // iLev
       continue;
     }
 
@@ -2875,12 +2928,14 @@ void Pic::update_B_hybrid() {
       //   B1      = B_n - dt curl(E(B_n))
       //   B2      = (3/4) B_n + (1/4)(B1 - dt curl(E((B1+B_n)/2)))
       //   B^{n+1} = (1/3) B_n + (2/3)(B2 - dt curl(E((B2+B_n)/2)))
-      const int iLev = 0;
+      // All levels use the same subDt (fixed-timestep strategy); coarse-fine
+      // interface ghosts are refreshed after each stage via apply_centerB_BC.
+      for (int iLev = 0; iLev < n_lev(); ++iLev) {
       // Save B_n (sub-step start).
       MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, 3, nGst);
 
-      // Stage 1: k1 = curl(E(B_n)); B1 = B_n - subDt k1.
-      assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev, g);
+      // Stage 1: k1 = curl(E(B_n, hstep=g)); B1 = B_n - subDt k1.
+      assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev, hstepStart);
       curl_center_to_center(centerEstage[iLev], kStage[iLev][0],
                             Geom(iLev).InvCellSize());
       MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
@@ -2892,7 +2947,7 @@ void Pic::update_B_hybrid() {
       MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                         centerBstart[iLev], 0, 0, 3, nGst);
       assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
-                     iLev, g + 1.0 / (Real)nBSubcycle);
+                     iLev, hstepEnd);
       curl_center_to_center(centerEstage[iLev], kStage[iLev][1],
                             Geom(iLev).InvCellSize());
       MultiFab::LinComb(centerBstage[iLev], 0.25, centerBstage[iLev], 0, 0.75,
@@ -2905,7 +2960,7 @@ void Pic::update_B_hybrid() {
       MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                         centerBstart[iLev], 0, 0, 3, nGst);
       assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
-                     iLev, g + 0.5 / (Real)nBSubcycle);
+                     iLev, hstepHalf);
       curl_center_to_center(centerEstage[iLev], kStage[iLev][2],
                             Geom(iLev).InvCellSize());
       MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
@@ -2914,7 +2969,8 @@ void Pic::update_B_hybrid() {
                       3, nGst);
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
-      apply_centerB_BC(0);
+      apply_centerB_BC(iLev);
+      } // iLev
       continue;
     }
   }
@@ -2934,7 +2990,7 @@ void Pic::update_B_hybrid() {
       fill_fine_lev_bny_from_coarse(
           centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          cell_bilinear_interp);
+          *get_cell_interp());
     }
   }
 
@@ -2980,6 +3036,18 @@ void Pic::update_B_hybrid() {
     }
   }
 
+  // Fill coarse-fine interface ghost cells for centerBavg so the Boris push
+  // reads valid B at the coarse-fine interface. centerBavg is the field
+  // actually gathered by the hybrid pusher (when useAvgFieldB is on).
+  if (useAvgFieldB && isBavgInit && finest_level > 0) {
+    auto& cellInterp = *get_cell_interp();
+    for (int iLev = 1; iLev < n_lev(); iLev++) {
+      fill_fine_lev_bny_from_coarse(
+          centerBavg[iLev - 1], centerBavg[iLev], 0, 3, ref_ratio[iLev - 1],
+          Geom(iLev - 1), Geom(iLev), cell_status(iLev), cellInterp);
+    }
+  }
+
   // Compute the integer-step E^{n+1} (hstep = 1) into centerEhybrid for the
   // next Boris push. Freshly evaluated on the final B^{n+1} for every
   // integrator (RK4 writes only the scratch centerEstage; ssprk3 writes
@@ -3006,6 +3074,18 @@ void Pic::update_B_hybrid() {
     centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0,
              centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev);
+  }
+
+  // Fill coarse-fine interface ghost cells for centerEhybrid so the Boris push
+  // reads valid E at the coarse-fine interface on fine levels.
+  if (finest_level > 0) {
+    auto& cellInterp = *get_cell_interp();
+    for (int iLev = 1; iLev < n_lev(); iLev++) {
+      fill_fine_lev_bny_from_coarse(
+          centerEhybrid[iLev - 1], centerEhybrid[iLev], 0, 3,
+          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
+          cellInterp);
+    }
   }
 
   // Suppress the grid-scale (odd-even) E component (central-difference

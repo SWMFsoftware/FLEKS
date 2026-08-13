@@ -358,6 +358,18 @@ public:
   // TODO: no longer needed if we fix the output variable ordering.
   bool get_useHybridPIC() const { return useHybridPIC; }
 
+  // Returns the cell-centred coarse-to-fine interpolater to use.  For the
+  // hybrid solver (useHybridPIC), uses CellConservativeLinear (lincc_interp,
+  // 2nd-order conservative with slope limiting) for higher accuracy at
+  // coarse-fine interfaces.  For the full-PIC solver, keeps CellBilinear
+  // (cell_bilinear_interp) since the cell-centred fields are output-only
+  // mirrors.
+  amrex::Interpolater* get_cell_interp() const {
+    return useHybridPIC
+               ? static_cast<amrex::Interpolater*>(&amrex::lincc_interp)
+               : static_cast<amrex::Interpolater*>(&amrex::cell_bilinear_interp);
+  }
+
   void set_stateOH(OHInterface *in) { stateOH = in; }
   void set_sourceOH(OHInterface *in) { sourcePT2OH = in; }
   void set_fluid_source(SourceInterface *in) { source = in; }
