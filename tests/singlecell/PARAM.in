@@ -66,7 +66,7 @@ Uniform guide field Bx0; zero bulk velocity so U_i x B = 0 too.
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-5.2195e-9               bx [T]       uniform guide field Bx0 (B_code ~ 1)
+1.0439e-8               bx [T]       uniform guide field Bx0 (B_code ~ 1)
 0.0                     by [T]
 0.0                     bz [T]
 0.0                     ex [V/m]
@@ -79,7 +79,7 @@ T                       useFixedDt
 
 #NORMALIZATION
 1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
-5.0e4                   uNormSI   [m/s] sets the speed of light: cLight_SI = uNormSI
+1.0e5                   uNormSI   [m/s] tNorm = 1 s; sets cLight_SI = uNormSI
 
 #MONITOR
 50                      dnReport
@@ -116,6 +116,6 @@ Bx By Bz Ex Ey Ez       varName
 
 #STOP
 -1                      MaxIter
-2.0                     TimeMax
+2.0                     TimeMax   frozen-field (curl B=0) run
 
 #RUN

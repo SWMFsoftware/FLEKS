@@ -54,11 +54,18 @@ interior reconnection.
 
 Box: `Lx = 2*pi*L*num_islands ~ 62.8 d_i`, `Ly = Lx/2 ~ 31.4 d_i`, thin `z`.
 
+Normalization: `lNormSI = uNormSI = 1.0e5`, so `tNorm = lNormSI/uNormSI = 1 s`;
+the guide/reconnection field is set directly in code units by `FadeevIC b0 = 1`
+(so `Ω_i = 1` code, `TimeMax` in s == code time in `Ω_i⁻¹`).  SI scales
+(physical input `n = 12.5 amu/cc` background, `beta_i ~ 0.5`): `Ω_i = qB/m_i`
+with `B = 1.0` code, `v_A ~ 1.0e5 m/s`, `d_i ~ 1.0e5 m`, ion gyroperiod
+`T_ci = 2π ≈ 6.3 s`, Alfvén transit across `Lx` ~ `6.3e5 m / 1e5 m/s ≈ 6.3 s`.
+
 - **Hybrid** (`PARAM.in.hybrid`): `64 x 32 x 1`, `nppc = 36` ions, `dt = 0.02`,
-  `TimeMax = 20` (1000 steps).
+  `TimeMax = 20 s = 20 Ω_i⁻¹ ≈ 3.2 gyroperiods` (1000 steps).
 - **Full-PIC** (`PARAM.in`): `32 x 16 x 1`, `nppc = 25` per species,
   `dt = 0.005` (resolves the electron timescale for `m_i/m_e = 25`),
-  `TimeMax = 3` (600 steps).
+  `TimeMax = 3 s = 3 Ω_i⁻¹ ≈ 0.5 gyroperiod` (600 steps).
 
 Both are sized to finish within the 1-minute standalone serial budget and also
 run on a few MPI processes.

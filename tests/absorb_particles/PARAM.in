@@ -111,6 +111,6 @@ rhoS0 uxS0 uyS0 uzS0 Bx By Bz Ex Ey Ez   plotVar
 
 #STOP
 -1                      MaxIter
-20.0                    TimeMax
+20.0                    TimeMax   transit + wall absorption (Epart decays)
 
 #RUN

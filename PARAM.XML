@@ -1338,6 +1338,9 @@ initialized from the #UNIFORMSTATE command.
 
 If PIC is not initialized from SWMF (#INITFROMSWMF), length and speed 
 normalization should be set here. Both lNorm and uNorm are in SI units.
+
+Code units map from SI as code_length = SI_length/lNorm and
+code_time = SI_time * uNorm/lNorm (so tNorm = lNorm/uNorm s per code-time unit).
 </command>
 
 <command name="SCALINGFACTOR" alias="SCALINGFACTOR_FLEKS0,SCALINGFACTOR_FLEKS1,SCALINGFACTOR_FLEKS2" multiple="T">

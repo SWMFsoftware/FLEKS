@@ -137,12 +137,32 @@ def _hyb_dft_dominant(by):
     return dominant_k, dominant_frac, nondc_power
 
 
-def _hyb_seeded_mode():
+def _hyb_param_path(test_name):
+    """Return the PARAM.in path for a hybrid-family test.
+
+    test_name is e.g. "whistler", "whistler_hybrid", "ohm", "ohm_hybrid".
+    The simulation always reads its own <base>/PARAM.in (the "_hybrid" suffix
+    selects PARAM.in.hybrid in the runner, but the normalization / geometry
+    blocks are identical), so we strip any "_hybrid" suffix and read that
+    test's own PARAM.in.  Falls back to the whistler PARAM only for unknown
+    names (the preset defaults).
+    """
+    base = test_name or "whistler"
+    if base.endswith("_hybrid"):
+        base = base[: -len("_hybrid")]
+    for candidate in (os.path.join("tests", base, "PARAM.in"),
+                      os.path.join("tests", "whistler", "PARAM.in")):
+        if os.path.exists(candidate):
+            return candidate
+    return os.path.join("tests", "whistler", "PARAM.in")
+
+
+def _hyb_seeded_mode(test_name):
     """Return the seeded spatial mode from the test PARAM's #WAVEIC waveMode.
 
     Defaults to 1 (the HybridWave/ConvectionWave/IAW preset). Reads the
     'waveMode <int>' line of the #WAVEIC block if present."""
-    p = os.path.join("tests", "whistler", "PARAM.in")
+    p = _hyb_param_path(test_name)
     try:
         with open(p) as f:
             for line in f:
@@ -155,7 +175,7 @@ def _hyb_seeded_mode():
     return 1
 
 
-def _hyb_whistler_dispersion(out_files):
+def _hyb_whistler_dispersion(out_files, test_name=None):
     """Measure the seeded-mode whistler frequency and compare with Hall-MHD.
 
     Reads ALL time-resolved .out plot files, auto-detects the dominant spatial
@@ -240,8 +260,8 @@ def _hyb_whistler_dispersion(out_files):
     var_p = sum((unwrapped[i] - mean_p) ** 2 for i in range(nt))
     r2 = (cov ** 2 / (var_t * var_p)) if var_p > 0 else 0.0
 
-    # Read Lx (code units) and tNorm from the whistler PARAM.in.
-    p = os.path.join("tests", "whistler", "PARAM.in")
+    # Read Lx (code units) and tNorm from the current test's PARAM.in.
+    p = _hyb_param_path(test_name)
     def numeric_after(command):
         toks = []
         capture = False
@@ -292,7 +312,7 @@ def _hyb_whistler_dispersion(out_files):
     return False, msg + " [DISPERSION MISMATCH]"
 
 
-def _check_hybrid_wave_dispersion():
+def _check_hybrid_wave_dispersion(test_name=None):
     """Check the transverse wave launched by the HybridWave initializer.
 
     Reads the FIRST and LAST .out plot files and verifies:
@@ -334,7 +354,7 @@ def _check_hybrid_wave_dispersion():
         return False, "No transverse wave power at early time (By is flat/zero)"
 
     # The seeded mode is the #WAVEIC waveMode (default 1 for the presets).
-    seeded_mode = _hyb_seeded_mode()
+    seeded_mode = _hyb_seeded_mode(test_name)
     if dom_k_e != seeded_mode:
         return False, (f"Early dominant mode n={dom_k_e} (expected n="
                        f"{seeded_mode} for the seeded wavelength)")
@@ -375,7 +395,7 @@ def _check_hybrid_wave_dispersion():
     #     the same factor. Requires >=3 time-resolved frames (the whistler
     #     PARAM saves every 10 steps). If fewer frames are present this part is
     #     skipped (no false negative for other profiles). ---
-    disp_ok, disp_reason = _hyb_whistler_dispersion(out_files)
+    disp_ok, disp_reason = _hyb_whistler_dispersion(out_files, test_name)
     if disp_ok is False:
         return False, disp_reason
     if disp_ok is True:
@@ -409,7 +429,7 @@ def validate_plot(test_name):
         logger.debug("  --- Validating Output Files: No plot-file check for this test ---")
         return True, "Passed (no plot-file check)"
     logger.debug("  --- Validating Output Files (Hybrid wave) ---")
-    result, reason = _check_hybrid_wave_dispersion()
+    result, reason = _check_hybrid_wave_dispersion(test_name)
     if result:
         logger.debug("    [HYB] Hybrid wave output check: VERIFIED")
     return result, reason

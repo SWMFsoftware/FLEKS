@@ -24,11 +24,14 @@ step.
 ## Physics scales
 
 - Normalization chosen so `d_i ~ v_A ~ 1`: `lNormSI = 1e5 m` (= `d_i`),
-  `uNormSI = 5e4 m/s` (= `v_A`).
+  `uNormSI = 1e5 m/s` (= `v_A`), so `tNorm = lNormSI/uNormSI = 1 s` and
+  `#STOP TimeMax` (in s) equals the code time in units of `Ω_i⁻¹`.
 - Single kinetic ion species (`q = m = 1`), `n = 5 /cc`, uniform guide field
-  `Bx0 = 5.2195e-9 T` (~52.2 nT), `T = 10000 K`.
+  `Bx0 = 1.044e-8 T` (~10.4 nT; `Ω_i = 1.0 rad/s`, gyroperiod `T_ci = 2π ≈ 6.3 s`),
+  `T = 10000 K`.
 - Grid spans `Lx = 6.4 d_i` with 32 cells (periodic, 1 cell in y/z).
-- Fixed `dt = 0.02` for 500 steps (`tmax = 10 s`).
+- Fixed `dt = 0.02` (`dt·Ω_i = 0.02`) for `tmax = 10 s` = 10 code units ≈ 1.6
+  gyroperiods.
 
 ## Relationship to other tests
 
