@@ -54,15 +54,20 @@ avoided.
    walls).  In the no-solver mode the node moment deposit is coupled to the
    E-solver and may be zero, in which case this check is skipped.
 
-## Results (observed)
+## Hybrid-PIC variant
 
-Running the test (`validate_tests.py --test=reflecting_wall`) gives:
+A second variant is auto-discovered (`REFLECTING_WALL (HYBRID)`).  It is the
+hybrid-PIC counterpart: the same single ion species streams toward the `+x`
+wall, but the field advance uses the Ohm's-law + Faraday hybrid solver
+(`useHybridPIC = T`).  The **`reflect`** particle BC is exercised in the hybrid
+cell-centred mover via the *same* shared hook
+(`Particles::reflect_or_delete_particle()`), so `Epart` must again be retained
+(specular reflection).  The Ohm's law is kept minimal (ideal frozen-in: no Hall,
+no resistivity, no electron-pressure-gradient) so the motional field is small
+and reflection is isolated from hybrid field-evolution artifacts.
 
-- `Etot`: `2.94e-2 → 2.95e-2` (conserved to ~99.6%).
-- `Epart`: `3.93e-3 → 4.05e-3` (conserved to ~103% — specular reflection keeps
-  kinetic energy; no particle loss.  The B-field does no work and no particle
-  escapes through a reflecting face, so this is the expected result.  An
-  outflow wall would drain Epart toward zero.)
+The validator is solver-agnostic: the energy-log `Epart` conservation check and
+the `rhoS0` confinement check apply unchanged to both variants.
 
 ## Running
 
@@ -74,18 +79,5 @@ make -j4
 python3 tests/validate_tests.py --test=reflecting_wall
 ```
 
-## Implementation Notes
-
-- **Particle reflection** is enforced at push time by the inline helper
-  `Particles::reflect_or_delete_particle()` (`include/Particles.h`).  After a
-  mover push, a particle that crossed a `reflect` face has its normal velocity
-  flipped and its position mirrored back inside (it is kept); a particle that
-  crossed any other non-periodic face is marked for deletion.  All four mover
-  sites use this helper.
-- The `BC` class (`include/BC.h`) gained the `reflect` (4) type.
-- The **`conducting`** (5) field BC (`Pic::apply_conducting_wall`) is
-  implemented and dispatched from `Pic::apply_BC`, but is not exercised by this
-  test (the field solver is off).  See
-  `Doc/Boundary_Conditions_Review_and_Plan.md` for its design and a discussion
-  of why a flowing-plasma conducting-wall full-PIC setup is physically
-  inconsistent (motional E vs. `E_t = 0`).
+The output table lists both `REFLECTING_WALL` (full PIC) and
+`REFLECTING_WALL (HYBRID)` (hybrid PIC) results.

@@ -591,6 +591,11 @@ public:
                             const int iStart, const int nComp, const int iLev,
                             const BC &bc, bool isB);
 
+  // Hybrid-only: mirror ion moments into the physical-wall ghost cells for
+  // smooth pressure-gradient / Hall stencils at a wall.
+  void apply_centerPlasma_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,
+                             const int iLev);
+
   // Wave hard source into boundary ghost cells at BC::wave faces (iField: B/E).
   void apply_wave_field(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                         const int iStart, const int nComp, const int iLev,

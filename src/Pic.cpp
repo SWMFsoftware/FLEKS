@@ -812,6 +812,16 @@ void Pic::fill_E_B_fields() {
       centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
       apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0,
                centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev);
+      // Match full-PIC nodeE: enforce the wall on the initial cell-centred E.
+      apply_conducting_wall(cellStatus[iLev], centerEhybrid[iLev], 0,
+                            centerEhybrid[iLev].nComp(), iLev, bcBField, false);
+      apply_absorbing_wall(cellStatus[iLev], centerEhybrid[iLev], 0,
+                           centerEhybrid[iLev].nComp(), iLev, bcBField, false);
+      if (waveBC.active) {
+        const Real t = tc ? tc->get_time() : 0.0;
+        apply_wave_field(cellStatus[iLev], centerEhybrid[iLev], 0,
+                         centerEhybrid[iLev].nComp(), iLev, bcBField, 1, t);
+      }
       MultiFab::Copy(centerEprev[iLev], centerEhybrid[iLev], 0, 0, 3,
                      centerEprev[iLev].nGrow());
       MultiFab::Copy(centerBprev[iLev], centerB[iLev], 0, 0, 3,
@@ -1251,6 +1261,15 @@ void Pic::sum_moments(bool updateDt) {
     // stencil reads valid data at MPI boundaries and coarse-fine interfaces.
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       centerPlasmaSum[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+
+    // Mirror ion moments into the physical-wall ghost cells for smooth
+    // pressure-gradient / Hall stencils at a wall.
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      apply_centerPlasma_BC(cell_status(iLev), centerPlasmaSum[nSpecies][iLev],
+                            iLev);
+      apply_centerPlasma_BC(cell_status(iLev), centerPlasmaPrev[nSpecies][iLev],
+                            iLev);
     }
 
     // Fill coarse-fine interface ghost cells for centerPlasmaSum and
@@ -3749,6 +3768,63 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
           arr(i, j, k, comp) =
               decay * arr(i, j, k, comp) + drive * arr(m, comp);
         }
+      }
+    });
+  }
+}
+
+// Hybrid-only: mirror ion moments into the physical-wall ghost cells so the
+// electron pressure-gradient / Hall stencils stay smooth at a wall.
+void Pic::apply_centerPlasma_BC(const iMultiFab& status, MultiFab& mf,
+                                const int iLev) {
+  if (Geom(iLev).isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  const IntVect& ngrow = mf.nGrowVect();
+  BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
+  if (nDim > 2 &&
+      Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+    ba.grow(iz_, ngrow[iz_]);
+  }
+
+  const IntVect domLo = Geom(iLev).Domain().smallEnd();
+  const IntVect domHi = Geom(iLev).Domain().bigEnd();
+  const int nComp = mf.nComp();
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bxFab = mfi.fabbox();
+    if (ba.contains(bxFab))
+      continue;
+
+    Array4<Real> const& arr = mf[mfi].array();
+    const Array4<const int>& statusArr = status[mfi].array();
+
+    ParallelFor(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+
+      IntVect ijk{ AMREX_D_DECL(i, j, k) };
+      IntVect m = ijk;
+      bool touched = false;
+
+      for (int d = 0; d < nDim; ++d) {
+        bool isLow = (ijk[d] < domLo[d]);
+        bool isHigh = (ijk[d] > domHi[d]);
+        if (isLow) {
+          m[d] = 2 * domLo[d] - 1 - ijk[d];
+          touched = true;
+        } else if (isHigh) {
+          m[d] = 2 * domHi[d] + 1 - ijk[d];
+          touched = true;
+        }
+      }
+
+      if (!touched)
+        return;
+      for (int comp = 0; comp < nComp; ++comp) {
+        arr(i, j, k, comp) = arr(m, comp);
       }
     });
   }

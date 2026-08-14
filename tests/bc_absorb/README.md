@@ -10,27 +10,23 @@ A single `validate.py` branches on the variant name.
 |---------|------|---------|------------|
 | `bc_absorb_fields` | `PARAM.in.fields` | Tophat EM pulse (Ey/Bz) absorbed at the x-faces (`#BFIELDBOXBOUNDARY absorb`, full-PIC) | EM energy decays; late interior field reduced |
 | `bc_absorb_particles` | `PARAM.in.particles` | Ions with bulk +x flow drain out through absorbing x-walls (`#PARTICLEBOXBOUNDARY absorb`, pure particle push) | Epart decays toward zero |
-
-## Purpose
-
-Verify the **absorbing** boundary condition for both fields and particles.
-
-- **`bc_absorb_fields`**: a `tophat` EM pulse seeded in the interior splits
-  into left/right-going pulses that leave through the absorbing (outgoing-
-  characteristic) x-faces.  The pulses carry their EM energy out, so the total
-  EM energy **decays** — the decisive absorber signature (conducting/periodic
-  walls would reflect the pulses and keep the energy).
-- **`bc_absorb_particles`**: a single ion species with a bulk `+x` flow and
-  zero magnetic field streams ballistically toward the absorbing x-walls; both
-  x faces are `absorb` (particles removed + tallied), so the ions drain out and
-  **Epart decays** — the opposite of the reflecting-wall test.
+| `bc_absorb_hybrid_particles` | `PARAM.in.hybrid.particles` | Same ion drain through absorbing x-walls, but in the hybrid cell-centred mover (`useHybridPIC = T`) | Epart decays toward zero |
 
 ## Validation
 
-`validate.py` branches on the variant name:
+Both variants verify the **absorbing** boundary condition for fields and
+particles. `validate.py` branches on the variant name:
 1. **Energy log**:
-   - `bc_absorb_fields`: `Etot` (Ee+Eb) decays below 25% of its initial value.
-   - `bc_absorb_particles`: `Epart` decays below 50% of its initial value.
+   - `bc_absorb_fields`: a `tophat` EM pulse seeded in the interior splits into
+     left/right-going pulses that leave through the absorbing (outgoing-
+     characteristic) x-faces; the pulses carry their EM energy out, so `Etot`
+     (Ee+Eb) decays below 25% of its initial value — the decisive absorber
+     signature (conducting/periodic walls would reflect the pulses and keep the
+     energy).
+   - `bc_absorb_particles`: a single ion species with a bulk `+x` flow and zero
+     magnetic field streams ballistically toward the absorbing x-walls; both
+     x faces are `absorb` (particles removed + tallied), so `Epart` decays below
+     50% of its initial value — the opposite of the reflecting-wall test.
 2. **Plot**:
    - `bc_absorb_fields`: late `|Bz|,|Ey|` are much reduced from the seeded 1.0
      (no reflected standing wave).

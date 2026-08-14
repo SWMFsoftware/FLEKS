@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """Validator for the reflecting-wall particle-boundary test.
 
-The field solver is OFF (solveEM=F, useHybridPIC=F), so this run exercises only
-the particle pusher and the REFLECTING particle boundary.  A single ion species
-streams toward the +x wall (ux > 0) with a small oblique uy; both x faces are
-reflecting.  This validator checks:
+Two variants are discovered from this directory:
+  - PARAM.in           -> base_name "reflecting_wall"  (full-PIC, solveEM=F,
+                          fields frozen, pure particle push)
+  - PARAM.in.hybrid    -> base_name "reflecting_wall_hybrid"  (hybrid-PIC,
+                          useHybridPIC=T, Ohm's-law + Faraday field advance)
+
+Both variants exercise the shared REFLECTING particle boundary in the same way:
+a single ion species streams toward the +x wall (ux > 0) with a small oblique
+uy; both x faces are reflecting.  The validator is solver-agnostic (no branch on
+test_name) because specular reflection conserves particle kinetic energy in both
+field modes.  This validator checks:
 
   validate_log (energy log):
     1. The run completes with finite, positive total energy.

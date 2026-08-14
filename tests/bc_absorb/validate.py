@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Validator for the grouped absorbing-boundary tests (tests/bc_absorb/).
 
-Two variants are discovered from this directory:
+Three variants are discovered from this directory:
   - PARAM.in.fields   -> base_name "bc_absorb_fields"   (tophat EM pulse
                           absorbed at x-faces; EM energy decays)
   - PARAM.in.particles-> base_name "bc_absorb_particles" (ions drain out
                           through absorbing x walls; Epart decays)
+  - PARAM.in.hybrid.particles -> base_name "bc_absorb_hybrid_particles"
+                          (same ion drain through absorbing x walls, but in the
+                          hybrid cell-centred mover; Epart decays)
 
 The single validate_log/validate_plot here branch on the variant's base_name.
 """
@@ -34,7 +37,7 @@ def validate_log(pic_diags=None, test_name=None):
     e0 = first.get("Etot", 0.0)
     e1 = last.get("Etot", 0.0)
 
-    if test_name == "bc_absorb_particles":
+    if test_name in ("bc_absorb_particles", "bc_absorb_hybrid_particles"):
         return _validate_log_particles(e0, e1, first, last)
 
     return _validate_log_fields(e0, e1, first, last)
@@ -120,7 +123,7 @@ def validate_plot(test_name):
     if vidx is None or not rows:
         return True, "No .out frames (skipped)"
 
-    if test_name == "bc_absorb_particles":
+    if test_name in ("bc_absorb_particles", "bc_absorb_hybrid_particles"):
         return _check_particles_plot(vidx, rows)
     return _check_fields_plot(vidx, rows)
 
