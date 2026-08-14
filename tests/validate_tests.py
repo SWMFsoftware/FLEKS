@@ -21,6 +21,7 @@ Output is controlled with the standard :mod:`logging` levels:
   * DEBUG   -- intermediate diagnostics (enable with --verbose / -v),
   * WARNING / ERROR -- warnings and failures.
 """
+import glob
 import importlib
 import logging
 import os
@@ -780,7 +781,8 @@ def _sync_shared_run_dir():
 # Test discovery + main
 # ---------------------------------------------------------------------------
 def discover_tests(tests_dir="tests"):
-    """Return a sorted list of (test_dir, name) for directories with PARAM.in.
+    """Return a sorted list of (test_dir, name) for directories with any
+    PARAM.in variant (PARAM.in and/or PARAM.in.<suffix>).
 
     Excludes "performance" and "run_test" (the shared run directory, which
     would otherwise be re-run as a test); dev tests live outside tests/.
@@ -791,8 +793,7 @@ def discover_tests(tests_dir="tests"):
     tests = []
     for d in subdirs:
         test_dir = os.path.join(tests_dir, d)
-        param_file = os.path.join(test_dir, "PARAM.in")
-        if os.path.exists(param_file):
+        if glob.glob(os.path.join(test_dir, "PARAM.in*")):
             tests.append((test_dir, d))
     return tests
 
@@ -813,26 +814,33 @@ def run_one_test(test_dir, name, nprocs, results):
 
     validator = load_validator(name)
 
-    # A test directory may hold two parameter files (PARAM.in and
-    # PARAM.in.hybrid) that exercise the same physics with the full-PIC and
-    # hybrid field solvers respectively.  When both exist the runner executes
-    # the test once per variant so each solver is validated independently.
-    # Each variant gets a distinct base_name (suffix "hybrid") so the per-test
-    # validator can apply solver-appropriate checks.  The free-stream test keeps
-    # its legacy display names.
-    hybrid_path = os.path.join(test_dir, "PARAM.in.hybrid")
-    variants = [
-        (os.path.join(test_dir, "PARAM.in"), name.upper(), name),
-    ]
-    if os.path.exists(hybrid_path):
-        variants.append((hybrid_path, f"{name.upper()} (HYBRID)",
-                         f"{name}_hybrid"))
+    # A test directory may hold several parameter files (PARAM.in plus any
+    # PARAM.in.<suffix>) that group related test configurations (e.g. the same
+    # physics under different field solvers, or several wave kinds).  The
+    # runner executes the test once per variant.  Each variant gets a distinct
+    # base_name built from the suffix (PARAM.in -> name, PARAM.in.hybrid ->
+    # name_hybrid, PARAM.in.foo -> name_foo) so the single per-directory
+    # validate.py can branch on base_name and apply variant-appropriate checks.
+    variants = []
+    param_files = sorted(glob.glob(os.path.join(test_dir, "PARAM.in*")))
+    for pf in param_files:
+        suffix = os.path.basename(pf)[len("PARAM.in"):]  # "" | ".hybrid" | ...
+        if not suffix:
+            display_name = name.upper()
+            base_name = name
+        else:
+            tag = suffix.lstrip(".").upper()
+            display_name = f"{name.upper()} ({tag})"
+            base_name = f"{name}{suffix.replace('.', '_')}"
+        variants.append((pf, display_name, base_name))
+
     if name == "freestream":
         # Preserve the free-stream test's established display names.
         variants = [
             (os.path.join(test_dir, "PARAM.in"), "FREESTREAM (FULL PIC)",
              "freestream"),
-            (hybrid_path, "FREESTREAM (HYBRID HALL-OFF)", "freestream"),
+            (os.path.join(test_dir, "PARAM.in.hybrid"),
+             "FREESTREAM (HYBRID HALL-OFF)", "freestream"),
         ]
 
     for param_file, display_name, base_name in variants:

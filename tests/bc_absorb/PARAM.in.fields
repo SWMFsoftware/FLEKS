@@ -1,16 +1,5 @@
 #DESCRIPTION
-Absorbing-field boundary-condition test: a tophat EM pulse (Ey/Bz step) seeded
-in the interior is absorbed at the x-faces.
-
-The `tophat` testcase seeds a discontinuous Ey=1, Bz=1 EM step in the central
-half of the domain with zero macroparticles (pure EM).  The step immediately
-splits into a right-going and a left-going pulse that travel toward the +x and
--x faces.  Both x-faces use the ABSORBING (outgoing-characteristic) field BC, so
-the pulses leave the domain with minimal reflection and the total EM energy
-decays.  With conducting/periodic walls the pulses would reflect and the energy
-would persist, so EM-energy decay is the decisive absorber signature.
-
-y and z are thin (fake-2D) and periodic.
+Absorbing-field boundary-condition test: a tophat EM pulse (Ey/Bz step) seeded in the interior is absorbed at the x-faces.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -43,21 +32,21 @@ T                       solveEM
 
 #PLASMA
 1                       nSpecies
-0.01                    mass        Species 0: electron (background, 0 ppc)
+0.01                    mass
 -1.0                    charge
 
 #UNIFORMSTATE
-1.0                     rho [amu/cc]   Species 0: electron background
-0.0                     ux [km/s]
-0.0                     uy [km/s]
-0.0                     uz [km/s]
-1.0e4                   T [K]
-0.0                     bx [T]
-0.0                     by [T]
-0.0                     bz [T]
-0.0                     ex [V/m]
-0.0                     ey [V/m]
-0.0                     ez [V/m]
+1.0                     rho
+0.0                     ux
+0.0                     uy
+0.0                     uz
+1.0e4                   T
+0.0                     bx
+0.0                     by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+0.0                     ez
 
 #NORMALIZATION
 1.0                     lNormSI
@@ -66,7 +55,6 @@ T                       solveEM
 #TESTCASE
 tophat                  testCase
 
-Absorbing (outgoing-characteristic) field BC on both x-faces.
 #BFIELDBOXBOUNDARY
 absorb                  BoxBoundaryLo
 absorb                  BoxBoundaryHi
@@ -75,7 +63,6 @@ periodic                BoxBoundaryHi
 periodic                BoxBoundaryLo
 periodic                BoxBoundaryHi
 
-Characteristic speed for the absorber (code units; 0 = auto -> light speed c=1).
 #ABSORB
 0.0                     charSpeed
 

@@ -22,7 +22,8 @@ Each test case is contained within its own dedicated subdirectory containing a
 | Reconnection          | `reconnection/`       | Fadeev current-sheet reconnection on a uniform grid (x-y)     | [README](reconnection/README.md) |
 | AMR reconnection      | `reconnection_amr/`   | Fadeev current-sheet reconnection on a two-level AMR grid | [README](reconnection_amr/README.md) |
 | Reflecting wall       | `reflecting_wall/`    | Specular reflecting particle wall (pure particle push)        | [README](reflecting_wall/README.md) |
-| Wave injection        | `wave_inject/`        | Monochromatic Bz wave injected at a boundary via `#WAVEBC`    | [README](wave_inject/README.md) |
+| Absorbing BC          | `bc_absorb/`          | Grouped absorbing-BC tests: EM-pulse field absorber + particle absorber (one `PARAM.in.<suffix>` per variant) | [README](bc_absorb/README.md) |
+| Wave injection        | `bc_inject/`          | Grouped wave-injection tests: mono Bz wave + shear Alfvén wave via `#WAVEBC` (one `PARAM.in.<suffix>` per variant) | [README](bc_inject/README.md) |
 | Performance           | `performance/`        | Beam-based scaling benchmark         | — (see `validate_performance.py`) |
 
 ### Ionization Parameter Commands

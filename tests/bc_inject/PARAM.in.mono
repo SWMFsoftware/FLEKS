@@ -1,5 +1,5 @@
 #DESCRIPTION
-Wave-injection boundary-condition test: monochromatic Bz wave injected at x-lo face via the WAVEBC boundary propagates into a pure-EM domain.
+Wave injection (monochromatic): a Bz wave is injected at the x-lo boundary face via the WAVEBC boundary and propagates into a pure-EM domain.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -32,21 +32,21 @@ T                       solveEM
 
 #PLASMA
 1                       nSpecies
-0.01                    mass        Species 0: electron (background)
+0.01                    mass
 -1.0                    charge
 
 #UNIFORMSTATE
-1.0                     rho [amu/cc]   Species 0: electron background
-0.0                     ux [km/s]
-0.0                     uy [km/s]
-0.0                     uz [km/s]
-1.0e4                   T [K]
-0.0                     bx [T]
-0.0                     by [T]
-0.0                     bz [T]
-0.0                     ex [V/m]
-0.0                     ey [V/m]
-0.0                     ez [V/m]
+1.0                     rho
+0.0                     ux
+0.0                     uy
+0.0                     uz
+1.0e4                   T
+0.0                     bx
+0.0                     by
+0.0                     bz
+0.0                     ex
+0.0                     ey
+0.0                     ez
 
 #NORMALIZATION
 1.0                     lNormSI
