@@ -272,6 +272,10 @@ private:
   // Boundary conditions for fields.
   BC bcBField;
 
+  // Characteristic speed for the absorbing BC (code units); 0 = auto (light
+  // speed).
+  amrex::Real absorbCharSpeed = 0.0;
+
   // select particle params
   bool doSelectParticle = false;
   std::string selectParticleInputFile;
@@ -581,6 +585,11 @@ public:
                              amrex::MultiFab &mf, const int iStart,
                              const int nComp, const int iLev, const BC &bc,
                              bool isB);
+
+  // Absorbing wall: matched-impedance ghost-cell blend; no image charges.
+  void apply_absorbing_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
+                            const int iStart, const int nComp, const int iLev,
+                            const BC &bc, bool isB);
 
   // Wave hard source into boundary ghost cells at BC::wave faces (iField: B/E).
   void apply_wave_field(const amrex::iMultiFab &status, amrex::MultiFab &mf,

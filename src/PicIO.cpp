@@ -46,9 +46,11 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
   const int iEx_ = iBz_ + 1;
 
   const RealBox& range = Geom(0).ProbDomain();
+  // Only write the valid RealVect components (nDim may exceed AMREX_SPACEDIM).
+  const int iDimMax = std::min(nDim, AMREX_SPACEDIM);
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     RealVect xyz(0.0);
-    for (int iDim = 0; iDim < nDim; iDim++) {
+    for (int iDim = 0; iDim < iDimMax; iDim++) {
       xyz[iDim] = xyz_I[iPoint * nDim + iDim] * fi->get_Si2NoL();
     }
 
@@ -335,10 +337,13 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
   nPointAllProc = pointList_II.size();
   ParallelDescriptor::ReduceLongSum(nPointAllProc);
 
-  ParallelDescriptor::ReduceRealMin(xMinL_D.begin(), nDim);
-  ParallelDescriptor::ReduceRealMax(xMaxL_D.begin(), nDim);
+  // Only reduce/copy the valid RealVect components (nDim may exceed
+  // AMREX_SPACEDIM).
+  const int iDimMax = std::min(nDim, AMREX_SPACEDIM);
+  ParallelDescriptor::ReduceRealMin(xMinL_D.begin(), iDimMax);
+  ParallelDescriptor::ReduceRealMax(xMaxL_D.begin(), iDimMax);
 
-  for (int iDim = 0; iDim < nDim; ++iDim) {
+  for (int iDim = 0; iDim < iDimMax; ++iDim) {
     xMin_D[iDim] = xMinL_D[iDim];
     xMax_D[iDim] = xMaxL_D[iDim];
   }

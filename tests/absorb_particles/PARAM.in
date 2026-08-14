@@ -1,21 +1,19 @@
 #DESCRIPTION
-Reflecting-wall particle-boundary-condition test (pure particle push).
+Absorbing-particle boundary-condition test (pure particle push).
 
 Electromagnetic field solver is turned OFF (solveEM=F, useHybridPIC=F), so the
 fields stay frozen at the uniform initial state and the run reduces to the
-particle pusher.  This isolates the REFLECTING particle boundary condition --
-the field solver is intentionally disabled because a flowing plasma crossing a
-conducting wall would build an inconsistent motional (u x B) electric field.
+particle pusher.  This isolates the ABSORBING particle boundary condition: a
+single kinetic ion species (q=+1, m=1) is initialised with a bulk flow toward
+the +x face (ux > 0), and BOTH x faces are ABSORBING particle boundaries (a
+particle crossing a face is removed and tallied).
 
-A single kinetic ion species (q=+1, m=1) streams toward the +x face (ux > 0).
-Both x faces are REFLECTING particle boundaries: a particle crossing the face
-has its normal velocity flipped and its position mirrored back inside, so
-particle number and kinetic energy are (ideally) conserved.
-
-The bulk flow has a small oblique component (uy != 0) so BOTH normal and oblique
-incidence are exercised in one run; edge cases (fast particles crossing the
-wall in a single step) are covered by the large bulk velocity.  y and z are
-thin (fake-2D/1D) and periodic.
+Using `absorb` on both x faces means NO face re-injects particles (a reflecting
+face would re-inject and hide the absorption), so as the run proceeds the ions
+drain out through the x faces and the particle kinetic energy (Epart) DECAYS
+toward zero -- the opposite of the reflecting-wall test, where specular
+reflection conserves Epart.  y and z are thin (fake-2D/1D) and periodic.  The
+magnetic field is zero so the ions move ballistically (no gyro-trap).
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -45,15 +43,19 @@ T                       isPeriodicZ
 
 #PARTICLEBOXBOUNDARY
 0                       iSpecies
-reflect                 particleBoxBoundaryLo  (x)
-reflect                 particleBoxBoundaryHi
+absorb                  particleBoxBoundaryLo  (x; absorb + tally on exit)
+absorb                  particleBoxBoundaryHi  (x; absorb + tally on exit)
 periodic                particleBoxBoundaryLo  (y)
 periodic                particleBoxBoundaryHi
 periodic                particleBoxBoundaryLo  (z)
 periodic                particleBoxBoundaryHi
 
+#RESAMPLING
+F                       doReSampling    (off: split/merge would regenerate particles
+                                        and mask the draining / keep rho non-zero)
+
 Electromagnetic field solver OFF: the fields are frozen at the uniform initial
-state and the run exercises only the particle pusher + boundary reflection.
+state and the run exercises only the particle pusher + boundary absorption.
 #SOLVEEM
 F                       solveEM
 
@@ -68,13 +70,13 @@ Single kinetic ion species (q = m = 1).
 
 #UNIFORMSTATE
 5.0                     rho [amu/cc]   Species 0: ions
-80.0                    ux [km/s]      bulk flow toward +x wall (U_code = 0.8)
-4.0                     uy [km/s]      small oblique component (~2.9 deg)
+40.0                    ux [km/s]      bulk flow toward +x absorbing wall
+0.5                     uy [km/s]      small oblique component
 0.0                     uz [km/s]
-10000.0                 T [K]
-0.0                     bx [T]
-0.0                     by [T]
-5.2195e-9               bz [T]         guide field, tangential to the x-wall
+0.0                     T [K]
+0.0                     bx [T]         zero B: particles stream ballistically
+0.0                     by [T]         (a guide field would gyrate the ions and
+0.0                     bz [T]         trap them, blocking wall crossing)
 0.0                     ex [V/m]
 0.0                     ey [V/m]
 0.0                     ez [V/m]
@@ -85,10 +87,10 @@ T                       useFixedDt
 
 #NORMALIZATION
 1.0e5                   lNormSI   [m]
-1.0e5                   uNormSI   [m/s]   speed of light cLight_SI = uNormSI
+1.0e5                   uNormSI   [m/s]
 
 #MONITOR
-50                      dnReport
+200                     dnReport
 
 #SAVELOG
 1                       dnSavePic
@@ -101,7 +103,7 @@ T                       useFixedDt
 
 #SAVEPLOT
 1                       nPlot
-z=0 var ascii pic       plotString
+z=0 var ascii planet    plotString
 -1                      dn
 10.0                    dt
 1                       dx
@@ -109,7 +111,6 @@ rhoS0 uxS0 uyS0 uzS0 Bx By Bz Ex Ey Ez   plotVar
 
 #STOP
 -1                      MaxIter
-12.0                    TimeMax   (transit = Lx/U_code = 6.4/0.8 = 8; 12 covers a
-                                  full transit + one reflection)
+20.0                    TimeMax
 
 #RUN

@@ -6,8 +6,9 @@ CGS units (resistivity and electron-pressure-gradient terms disabled).
 Parameters are chosen so that in CODE (normalized) units the ion scales are
 O(1) and the ion cyclotron motion is resolved by the timestep:
   The geometry is in code units; the box is Lx = 6.4 d_i.
-  Normalization: lNormSI = ion inertial length d_i, uNormSI = Alfven speed v_A,
-  so that d_i ~ 1, v_A ~ 1, and (with q/(m c)=1 for the proton) B = Omega_i ~ 1.
+  Normalization: lNormSI = ion inertial length d_i, uNormSI = speed of light
+  (here set equal to the Alfven speed v_A so c/v_A = 1), so d_i ~ 1, v_A ~ 1,
+  and (with q/(m c)=1 for the proton) B = Omega_i ~ 1.
   With dt = 0.02, dt*Omega_i = 0.02 << 1, so the Hall/whistler mode
   (bounded by Omega_i, since omega/Omega_i = (k d_i)^2 / (1+(k d_i)^2)) is
   numerically stable.  Physical inputs (n = 5 amu/cc, B = 5.22 nT,
@@ -98,7 +99,7 @@ T                       useFixedDt
 
 #NORMALIZATION
 1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
-5.0e4                   uNormSI   [m/s] ~ v_A so v_A ~ 1 in code units
+5.0e4                   uNormSI   [m/s] sets the speed of light: cLight_SI = uNormSI
 
 #MONITOR
 50                      dnReport

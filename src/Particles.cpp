@@ -516,7 +516,22 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
                    (nDim > 1 && (bc.lo[iy_] == bc.vacume) && j < lo.y) ||
                    (nDim > 1 && (bc.hi[iy_] == bc.vacume) && j > hi.y) ||
                    (nDim > 2 && (bc.lo[iz_] == bc.vacume) && k < lo.z) ||
-                   (nDim > 2 && (bc.hi[iz_] == bc.vacume) && k > hi.z)) {
+                   (nDim > 2 && (bc.hi[iz_] == bc.vacume) && k > hi.z) ||
+                   // Absorbing faces do not inject.
+                   ((bc.lo[ix_] == bc.absorb) && i < lo.x) ||
+                   ((bc.hi[ix_] == bc.absorb) && i > hi.x) ||
+                   (nDim > 1 && (bc.lo[iy_] == bc.absorb) && j < lo.y) ||
+                   (nDim > 1 && (bc.hi[iy_] == bc.absorb) && j > hi.y) ||
+                   (nDim > 2 && (bc.lo[iz_] == bc.absorb) && k < lo.z) ||
+                   (nDim > 2 && (bc.hi[iz_] == bc.absorb) && k > hi.z) ||
+                   // Reflecting faces do not inject (crossing is handled by
+                   // reflection in the particle mover).
+                   ((bc.lo[ix_] == bc.reflect) && i < lo.x) ||
+                   ((bc.hi[ix_] == bc.reflect) && i > hi.x) ||
+                   (nDim > 1 && (bc.lo[iy_] == bc.reflect) && j < lo.y) ||
+                   (nDim > 1 && (bc.hi[iy_] == bc.reflect) && j > hi.y) ||
+                   (nDim > 2 && (bc.lo[iz_] == bc.reflect) && k < lo.z) ||
+                   (nDim > 2 && (bc.hi[iz_] == bc.reflect) && k > hi.z)) {
           // pass
         } else {
           add_particles_cell(iLev, mfi, ijk, fi, true, IntVect(), Vel(), -1);
@@ -1802,8 +1817,9 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover(
         if (nDim > 2)
           p.pos(iz_) = zp + wnp1 * dtLoc;
 
-        // Mark for deletion
-        if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
+        // Apply boundary condition (absorb: delete; reflect: mirror).
+        if (reflect_or_delete_particle(p, status, lowCorner, highCorner,
+                                       iLev)) {
           p.id() = -1;
         }
       } // for p
@@ -1927,8 +1943,9 @@ void Particles<NStructReal, NStructInt>::charged_particle_mover_cell_centered(
         if (nDim > 2)
           p.pos(iz_) = zp + wnp1 * dtLoc;
 
-        // Mark for deletion
-        if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
+        // Apply boundary condition (absorb: delete; reflect: mirror).
+        if (reflect_or_delete_particle(p, status, lowCorner, highCorner,
+                                       iLev)) {
           p.id() = -1;
         }
       } // for p
@@ -2015,8 +2032,9 @@ void Particles<NStructReal, NStructInt>::neutral_mover(Real dt) {
         p.pos(iy_) = yp + vp * dt;
         p.pos(iz_) = zp + wp * dt;
 
-        // Mark for deletion
-        if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
+        // Apply boundary condition (absorb: delete; reflect: mirror).
+        if (reflect_or_delete_particle(p, status, lowCorner, highCorner,
+                                       iLev)) {
           p.id() = -1;
         }
       } // for p

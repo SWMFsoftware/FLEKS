@@ -58,6 +58,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       bcBField.lo[i] = bcBField.num_type(lo);
       bcBField.hi[i] = bcBField.num_type(hi);
     }
+  } else if (command == "#ABSORB") {
+    param.read_var("charSpeed", absorbCharSpeed);
   } else if (command == "#WAVEBC") {
     waveBC.read_param(param, fi);
   } else if (command == "#MEMORY") {
@@ -763,6 +765,7 @@ void Pic::fill_E_B_fields() {
   apply_BC(nodeStatus[0], nodeB[0], 0, nDim3, &Pic::get_node_B, 0, &bcBField);
   apply_BC(nodeStatus[0], nodeE[0], 0, nDim3, &Pic::get_node_E, 0);
   apply_conducting_wall(nodeStatus[0], nodeE[0], 0, nDim3, 0, bcBField, false);
+  apply_absorbing_wall(nodeStatus[0], nodeE[0], 0, nDim3, 0, bcBField, false);
   apply_BC(cellStatus[0], centerB[0], 0, centerB[0].nComp(), &Pic::get_center_B,
            0, &bcBField);
 
@@ -1347,6 +1350,8 @@ void Pic::sync_node_E_output() {
     apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
     apply_conducting_wall(nodeStatus[iLev], nodeE[iLev], 0, nDim3, iLev,
                           bcBField, false);
+    apply_absorbing_wall(nodeStatus[iLev], nodeE[iLev], 0, nDim3, iLev,
+                         bcBField, false);
   }
   nodeEStale = false;
 }
@@ -2092,6 +2097,10 @@ void Pic::update_E_impl() {
                             bcBField, false);
       apply_conducting_wall(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, iLev,
                             bcBField, false);
+      apply_absorbing_wall(nodeStatus[iLev], nodeE[iLev], 0, nDim3, iLev,
+                           bcBField, false);
+      apply_absorbing_wall(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, iLev,
+                           bcBField, false);
       if (waveBC.active) {
         const Real t = tc ? tc->get_time() : 0.0;
         apply_wave_field(nodeStatus[iLev], nodeE[iLev], 0, nDim3, iLev,
@@ -2224,6 +2233,8 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
       apply_BC(nodeStatus[iLev], vecMF, 0, nDim3, &Pic::get_node_E, iLev);
       apply_conducting_wall(nodeStatus[iLev], vecMF, 0, nDim3, iLev, bcBField,
                             false);
+      apply_absorbing_wall(nodeStatus[iLev], vecMF, 0, nDim3, iLev, bcBField,
+                           false);
     } else {
       fill_fine_lev_bny_from_coarse(
           nodeEth[iLev - 1], vecMF, 0, nodeEth[iLev - 1].nComp(),
@@ -2670,6 +2681,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   apply_BC(cellStatus[iLev], Eout, 0, nDim3, &Pic::get_center_E, iLev);
   apply_conducting_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField,
                         false);
+  apply_absorbing_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField, false);
 
   // Hyper-resistivity: E -= eta_h * nabla^2 J = -(eta_h/4*pi) * curl(nabla^2
   // B), built as centerLapB = nabla^2 B then centerHyperE = curl(centerLapB).
@@ -3469,14 +3481,22 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   if (mf.nGrow() == 0)
     return;
 
-  // B-field calls pass a non-null `bc`; a `conducting` face delegates here.
+  // A `conducting`/`absorb` face delegates to the dedicated wall fillers.
   if (bc != nullptr) {
     bool hasConducting = false;
-    for (int d = 0; d < nDim; ++d)
+    bool hasAbsorb = false;
+    for (int d = 0; d < nDim; ++d) {
       if (bc->lo[d] == BC::conducting || bc->hi[d] == BC::conducting)
         hasConducting = true;
+      if (bc->lo[d] == BC::absorb || bc->hi[d] == BC::absorb)
+        hasAbsorb = true;
+    }
     if (hasConducting) {
       apply_conducting_wall(status, mf, iStart, nComp, iLev, *bc, true);
+      return;
+    }
+    if (hasAbsorb) {
+      apply_absorbing_wall(status, mf, iStart, nComp, iLev, *bc, true);
       return;
     }
   }
@@ -3656,6 +3676,78 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
             else
               arr(i, j, k, comp) = arr(m, comp);
           }
+        }
+      }
+    });
+  }
+}
+
+//==========================================================
+void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
+                               const int iStart, const int nComp,
+                               const int iLev, const BC& bc, bool isB) {
+  std::string nameFunc = "Pic::apply_absorbing_wall";
+  timing_func(nameFunc);
+
+  if (Geom(iLev).isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  const Real dt = tc ? tc->get_dt() : 0.0;
+  if (dt <= 0.0)
+    return;
+  // Characteristic speed; default light speed (c=1), override via #ABSORB.
+  const Real cs = (absorbCharSpeed > 0.0) ? absorbCharSpeed : 1.0;
+
+  BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
+  const IntVect& ngrow = mf.nGrowVect();
+  if (nDim > 2 &&
+      Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+    ba.grow(iz_, ngrow[iz_]);
+  }
+
+  const IntVect domLo = Geom(iLev).Domain().smallEnd();
+  const IntVect domHi = Geom(iLev).Domain().bigEnd();
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bxFab = mfi.fabbox();
+    const Box bxValid = mfi.validbox();
+
+    if (ba.contains(bxFab))
+      continue;
+
+    Array4<Real> const& arr = mf[mfi].array();
+    const Array4<const int>& statusArr = status[mfi].array();
+
+    ParallelFor(bxFab, [&](int i, int j, int k) {
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+
+      IntVect ijk{ AMREX_D_DECL(i, j, k) };
+
+      for (int d = 0; d < nDim; ++d) {
+        bool isLow = (bc.lo[d] == BC::absorb) && (ijk[d] < domLo[d]);
+        bool isHigh = (bc.hi[d] == BC::absorb) && (ijk[d] > domHi[d]);
+        if (!isLow && !isHigh)
+          continue;
+
+        // Matched-impedance (one-way, outgoing) blend toward the interior.
+        const Real* dx = Geom(iLev).CellSize();
+        const Real drive0 = cs * dt / dx[d];
+        const Real decay = (1.0 - drive0) / (1.0 + drive0);
+        const Real drive = 2.0 * drive0 / (1.0 + drive0);
+
+        IntVect m = ijk;
+        if (isLow)
+          m[d] = 2 * domLo[d] - 1 - ijk[d];
+        else
+          m[d] = 2 * domHi[d] + 1 - ijk[d];
+
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          const int comp = iStart + iVar;
+          arr(i, j, k, comp) =
+              decay * arr(i, j, k, comp) + drive * arr(m, comp);
         }
       }
     });

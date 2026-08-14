@@ -115,7 +115,7 @@ T                       useFixedDt
 
 #NORMALIZATION
 1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
-5.0e4                   uNormSI   [m/s] ~ v_A so v_A ~ 1 in code units
+5.0e4                   uNormSI   [m/s] sets the speed of light: cLight_SI = uNormSI
 
 #MONITOR
 100                     dnReport

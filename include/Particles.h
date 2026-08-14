@@ -383,6 +383,11 @@ protected:
 
   BC bc; // boundary condition
 
+  // Absorbing-BC tallies per face (2*d + {0=lo,1=hi}).
+  amrex::Real absorbTallyCount[6] = { 0, 0, 0, 0, 0, 0 };
+  amrex::Real absorbTallyCharge[6] = { 0, 0, 0, 0, 0, 0 };
+  amrex::Real absorbTallyMass[6] = { 0, 0, 0, 0, 0, 0 };
+
   // AMREX uses 40 bits(it is 40! Not a typo. See AMReX_Particle.H) to store
   // p.id(), but it is converted to a 32-bit integer when saving to disk. To
   // avoid the mismatch, FLEKS set the maximum value of p.id() to 2^31-1, and
@@ -568,8 +573,8 @@ public:
 
   void neutral_mover(amrex::Real dt);
 
-  // Specular-reflection vs. outflow/removal for a pushed particle.  Returns
-  // true if the particle should be deleted.  Only acts at iLev == 0.
+  // Returns true if a pushed particle should be deleted.  `absorb` removes and
+  // tallies; `reflect` mirrors.  Only acts at iLev == 0.
   inline bool reflect_or_delete_particle(ParticleType& p,
                                          amrex::Array4<int const> const& status,
                                          const amrex::IntVect& low,
@@ -579,21 +584,32 @@ public:
 
     const amrex::Real* plo = Geom(iLev).ProbLo();
     const amrex::Real* phi = Geom(iLev).ProbHi();
-    bool reflected = false;
     for (int d = 0; d < nDim; ++d) {
+      if (bc.lo[d] == BC::absorb && p.pos(d) < plo[d]) {
+        absorb_tally(2 * d, p.rdata(iwp_));
+        return true;
+      }
+      if (bc.hi[d] == BC::absorb && p.pos(d) > phi[d]) {
+        absorb_tally(2 * d + 1, p.rdata(iwp_));
+        return true;
+      }
+      // Specular reflection: mirror position and normal velocity.
       if (bc.lo[d] == BC::reflect && p.pos(d) < plo[d]) {
         p.pos(d) = 2.0 * plo[d] - p.pos(d);
         p.rdata(iup_ + d) = -p.rdata(iup_ + d);
-        reflected = true;
       } else if (bc.hi[d] == BC::reflect && p.pos(d) > phi[d]) {
         p.pos(d) = 2.0 * phi[d] - p.pos(d);
         p.rdata(iup_ + d) = -p.rdata(iup_ + d);
-        reflected = true;
       }
     }
-    if (reflected)
-      return false;
     return is_outside_active_region(p, status, low, high, iLev);
+  }
+
+  // Tally an absorbed particle per face (2*d + {0=lo,1=hi}).
+  inline void absorb_tally(int face, amrex::Real weight) {
+    absorbTallyCount[face] += 1.0;
+    absorbTallyCharge[face] += weight * charge;
+    absorbTallyMass[face] += weight * mass;
   }
 
   void update_position_to_half_stage(const amrex::MultiFab& nodeEMF,
@@ -919,6 +935,15 @@ public:
   int get_speciesID() const { return speciesID; }
   amrex::Real get_charge() const { return charge; }
   amrex::Real get_mass() const { return mass; }
+
+  // Absorbing-BC diagnostics (per face, 2*d + {0=lo,1=hi}).
+  amrex::Real get_absorb_count(int face) const {
+    return absorbTallyCount[face];
+  }
+  amrex::Real get_absorb_charge(int face) const {
+    return absorbTallyCharge[face];
+  }
+  amrex::Real get_absorb_mass(int face) const { return absorbTallyMass[face]; }
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
 

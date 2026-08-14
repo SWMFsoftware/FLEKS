@@ -3,8 +3,9 @@ Hybrid PIC (kinetic ions / fluid electrons) parallel whistler-Alfven wave test.
 Full generalized Ohm's law: convection + Hall + resistive (eta*J) + electron
 pressure gradient (grad Pe / (e n_e)) terms ALL active, in normalized CGS units.
 
-Parameters match the whistler test (same ion-scale normalization so d_i ~ v_A ~ 1
-in code units).  Here RESISTIVITY and ELECTRONTEMPERATURE are enabled so the
+Parameters match the whistler test (same ion-scale normalization, uNormSI =
+speed of light = v_A, so d_i ~ v_A ~ 1 in code units).  Here RESISTIVITY and
+ELECTRONTEMPERATURE are enabled so the
 complete Ohm's-law field solver is exercised.  A moderate resistivity damps the
 whistler, and the electron pressure gradient acts on the (weak) charge-density
 fluctuations produced by particle noise; the test is a STABILITY / no-blow-up
@@ -100,7 +101,7 @@ T                       useFixedDt
 
 #NORMALIZATION
 1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
-5.0e4                   uNormSI   [m/s] ~ v_A so v_A ~ 1 in code units
+5.0e4                   uNormSI   [m/s] sets the speed of light: cLight_SI = uNormSI
 
 #MONITOR
 50                      dnReport

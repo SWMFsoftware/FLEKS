@@ -4,8 +4,9 @@ hyper-resistive term in the generalized Ohm's law, in addition to the full set o
 terms (convection + Hall + resistive eta*J + electron pressure gradient).
 
 This is the companion regression case to ../ohm/PARAM.in. The same
-geometry and ion-scale normalization are used (d_i ~ v_A ~ 1 in code units). The
-hyper-resistivity (eta_h * nabla^2 J) is added to demonstrate damping of the
+geometry and ion-scale normalization are used (lNormSI ~ d_i, uNormSI = speed of
+light = v_A, so d_i ~ v_A ~ 1 in code units). The hyper-resistivity
+(eta_h * nabla^2 J) is added to demonstrate damping of the
 grid-scale / PIC shot-noise that the second-order eta*J term cannot reach.
 
 Use HYPERRESISTIVITY etaHyperMode="grid" (default) so eta_h is set to the
@@ -101,7 +102,7 @@ T                       useFixedDt
 
 #NORMALIZATION
 1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
-5.0e4                   uNormSI   [m/s] ~ v_A so v_A ~ 1 in code units
+5.0e4                   uNormSI   [m/s] sets the speed of light: cLight_SI = uNormSI
 
 #MONITOR
 50                      dnReport
