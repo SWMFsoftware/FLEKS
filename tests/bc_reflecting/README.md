@@ -56,7 +56,7 @@ avoided.
 
 ## Hybrid-PIC variant
 
-A second variant is auto-discovered (`REFLECTING_WALL (HYBRID)`).  It is the
+A second variant is auto-discovered (`BC_REFLECTING (HYBRID)`).  It is the
 hybrid-PIC counterpart: the same single ion species streams toward the `+x`
 wall, but the field advance uses the Ohm's-law + Faraday hybrid solver
 (`useHybridPIC = T`).  The **`reflect`** particle BC is exercised in the hybrid
@@ -72,12 +72,8 @@ the `rhoS0` confinement check apply unchanged to both variants.
 ## Running
 
 ```bash
-# 3D build (fake-2D via a single y/z cell)
-./Config.pl -lev=2 -u=Exo
-make -j4
-
-python3 tests/validate_tests.py --test=reflecting_wall
+python3 tests/validate_tests.py --test=bc_reflecting
 ```
 
-The output table lists both `REFLECTING_WALL` (full PIC) and
-`REFLECTING_WALL (HYBRID)` (hybrid PIC) results.
+The output table lists both `BC_REFLECTING` (full PIC) and
+`BC_REFLECTING (HYBRID)` (hybrid PIC) results.

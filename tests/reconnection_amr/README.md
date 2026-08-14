@@ -99,10 +99,10 @@ run with clear reconnection signatures.
 
 ## Running
 
-Build with the 2D AMReX library and AMR support, then run the check:
+This test needs the **2D AMReX** build with AMR support (`-amrex2d -lev=2`; see
+`tests/README.md` for the build steps).  Then run:
 
 ```bash
-./Config.pl -amrex2d -lev=2 && make -j4
 python3 tests/validate_tests.py --test=reconnection_amr
 ```
 

@@ -2,9 +2,9 @@
 """Validator for the reflecting-wall particle-boundary test.
 
 Two variants are discovered from this directory:
-  - PARAM.in           -> base_name "reflecting_wall"  (full-PIC, solveEM=F,
+  - PARAM.in           -> base_name "bc_reflecting"  (full-PIC, solveEM=F,
                           fields frozen, pure particle push)
-  - PARAM.in.hybrid    -> base_name "reflecting_wall_hybrid"  (hybrid-PIC,
+  - PARAM.in.hybrid    -> base_name "bc_reflecting_hybrid"  (hybrid-PIC,
                           useHybridPIC=T, Ohm's-law + Faraday field advance)
 
 Both variants exercise the shared REFLECTING particle boundary in the same way:
