@@ -51,12 +51,20 @@ struct Vel {
   // tag is usually the species ID
   int tag;
 
+  // Optional user-supplied number density (code units).  When >= 0 and tag
+  // matches the species, add_particles_cell uses this instead of the
+  // fluid-interface density.  Used by the inflow boundary to inject a
+  // Maxwellian with the prescribed upstream density / velocity / thermal
+  // speed (set from #INFLOW).
+  amrex::Real nDens = -1.0;
+
   Vel() {
     vth = 0;
     vx = 0;
     vy = 0;
     vz = 0;
     tag = -1;
+    nDens = -1.0;
   }
 };
 
@@ -585,11 +593,17 @@ public:
     const amrex::Real* plo = Geom(iLev).ProbLo();
     const amrex::Real* phi = Geom(iLev).ProbHi();
     for (int d = 0; d < nDim; ++d) {
-      if (bc.lo[d] == BC::absorb && p.pos(d) < plo[d]) {
+      // Absorbing and inflow (open) faces remove particles that cross outward,
+      // tallying the lost charge/mass per face.  Inflow does not reflect: any
+      // particle leaving through the inflow face is simply deleted (the
+      // re-seeding of the ghost cells supplies the inflow flux instead).
+      if ((bc.lo[d] == BC::absorb || bc.lo[d] == BC::inflow) &&
+          p.pos(d) < plo[d]) {
         absorb_tally(2 * d, p.rdata(iwp_));
         return true;
       }
-      if (bc.hi[d] == BC::absorb && p.pos(d) > phi[d]) {
+      if ((bc.hi[d] == BC::absorb || bc.hi[d] == BC::inflow) &&
+          p.pos(d) > phi[d]) {
         absorb_tally(2 * d + 1, p.rdata(iwp_));
         return true;
       }

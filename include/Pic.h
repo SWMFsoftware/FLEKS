@@ -265,6 +265,23 @@ private:
   // speed).
   amrex::Real absorbCharSpeed = 0.0;
 
+  // Inflow (open) boundary upstream state, set by #INFLOW.  All values are in
+  // SI units on input and converted to code units by convert_inflow_state()
+  // (which runs after fi->post_process_param finalizes the normalization).
+  // inflowDefined_ is set when the user has supplied an #INFLOW block; until
+  // then apply_inflow_wall and the inflow particle injection fall back to the
+  // zero-gradient copy / live fluid-interface state (the original behaviour).
+  bool inflowDefined_ = false;
+  bool inflowConverted_ = false;
+  // Upstream B (code units after conversion).
+  amrex::Real inflowBx_ = 0.0, inflowBy_ = 0.0, inflowBz_ = 0.0;
+  // Upstream number density (code units), bulk velocity (code units), and
+  // temperature (code units -> 1-D thermal speed sqrt(kT/m) in code units is
+  // derived at use sites from n0, T, mass).
+  amrex::Real inflowRho_ = 0.0;     // number density, code units
+  amrex::Real inflowUx_ = 0.0, inflowUy_ = 0.0, inflowUz_ = 0.0;
+  amrex::Real inflowT_ = 0.0;       // temperature, code units (energy/mass)
+
   // select particle params
   bool doSelectParticle = false;
   std::string selectParticleInputFile;
@@ -422,6 +439,12 @@ public:
   // fi->post_process_param() finalizes Si2NoRho.
   void convert_electron_density0();
 
+  // Convert the #INFLOUpstream state (bx,by,bz,rho,ux,uy,uz,T) from SI to
+  // code units. Idempotent (guarded by inflowConverted_); no-op when no
+  // #INFLOW block was read. Run at the first hybrid field advance after the
+  // normalization is finalized, like convert_electron_density0().
+  void convert_inflow_state();
+
   void calc_mass_matrix();
   void calc_mass_matrix_amr();
 
@@ -573,6 +596,16 @@ public:
                             const int iStart, const int nComp, const int iLev,
                             const BC &bc, bool isB);
 
+  // Inflow (open) wall: pin the ghost B to the upstream #INFLOW B and the
+  // ghost tangential E to the upstream motional E = -u_in x B_in (the normal E
+  // is left free).  This is a TRUE inflow field BC: the user prescribes the
+  // boundary field rather than the ghost inheriting the interior cell value.
+  // No-op when no #INFLOW block was read (the zero-gradient copy in use_float
+  // then applies, matching the original open-boundary behaviour).
+  void apply_inflow_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
+                         const int iStart, const int nComp, const int iLev,
+                         const BC &bc, bool isB);
+
   // Hybrid-only: mirror ion moments into the physical-wall ghost cells for
   // smooth pressure-gradient / Hall stencils at a wall.
   void apply_centerPlasma_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,
@@ -594,32 +627,44 @@ public:
     ip = i;
     jp = j;
     kp = k;
-    if (i < bxValid.smallEnd(ix_) && bc.lo[ix_] == BC::outflow) {
+    // inflow is treated identically to outflow here: the ghost-cell EM field
+    // is copied from the adjacent physical cell (zero-gradient / open face).
+    // This gives a continuous B with no discontinuity at the inflow face, so
+    // curl(E) at the face does not spuriously erode the boundary field.  The
+    // injected inflow is carried entirely by the (Maxwellian) particles that
+    // are re-seeded in the ghost cells each step.
+    if (i < bxValid.smallEnd(ix_) &&
+        (bc.lo[ix_] == BC::outflow || bc.lo[ix_] == BC::inflow)) {
       useFloat = true;
       ip = bxValid.smallEnd(ix_);
     }
-    if (i > bxValid.bigEnd(ix_) && bc.hi[ix_] == BC::outflow) {
+    if (i > bxValid.bigEnd(ix_) &&
+        (bc.hi[ix_] == BC::outflow || bc.hi[ix_] == BC::inflow)) {
       useFloat = true;
       ip = bxValid.bigEnd(ix_);
     }
 
-    if (j < bxValid.smallEnd(iy_) && bc.lo[iy_] == BC::outflow) {
+    if (j < bxValid.smallEnd(iy_) &&
+        (bc.lo[iy_] == BC::outflow || bc.lo[iy_] == BC::inflow)) {
       useFloat = true;
       jp = bxValid.smallEnd(iy_);
     }
 
-    if (j > bxValid.bigEnd(iy_) && bc.hi[iy_] == BC::outflow) {
+    if (j > bxValid.bigEnd(iy_) &&
+        (bc.hi[iy_] == BC::outflow || bc.hi[iy_] == BC::inflow)) {
       useFloat = true;
       jp = bxValid.bigEnd(iy_);
     }
 
     if (nDim > 2) {
-      if (k < bxValid.smallEnd(iz_) && bc.lo[iz_] == BC::outflow) {
+      if (k < bxValid.smallEnd(iz_) &&
+          (bc.lo[iz_] == BC::outflow || bc.lo[iz_] == BC::inflow)) {
         useFloat = true;
         kp = bxValid.smallEnd(iz_);
       }
 
-      if (k > bxValid.bigEnd(iz_) && bc.hi[iz_] == BC::outflow) {
+      if (k > bxValid.bigEnd(iz_) &&
+          (bc.hi[iz_] == BC::outflow || bc.hi[iz_] == BC::inflow)) {
         useFloat = true;
         kp = bxValid.bigEnd(iz_);
       }

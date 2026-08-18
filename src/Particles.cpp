@@ -232,7 +232,9 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
         }
 
         const Real nDens =
-            interface->get_number_density(mfi, xyz0, speciesID, iLev);
+            (userState && tpVel.nDens >= 0.0)
+                ? tpVel.nDens
+                : interface->get_number_density(mfi, xyz0, speciesID, iLev);
 
         if (doVacuumLimit && nDens * dt < vacuum)
           continue;
@@ -534,7 +536,28 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
                    (nDim > 2 && (bc.hi[iz_] == bc.reflect) && k > hi.z)) {
           // pass
         } else {
-          add_particles_cell(iLev, mfi, ijk, fi, true, IntVect(), Vel(), -1);
+          // Default branch: re-seed the ghost cell with a (drifting)
+          // Maxwellian.  This covers BC::inflow (and any non-specialised face).
+          //
+          // When the user supplied an #INFLOW block, the inflow flux is
+          // sampled from the PRESCRIBED upstream state (density / bulk
+          // velocity / thermal speed) rather than the live fluid-interface
+          // state, so the inflow boundary can maintain an upstream state
+          // distinct from the interior.  Without #INFLOW, fall back to the
+          // fluid-interface state (the original open-boundary behaviour).
+          Vel inflowVel;
+          if (fi->get_inflow_defined()) {
+            const auto* iv = fi->get_inflow_vel(speciesID);
+            if (iv) {
+              inflowVel.tag = speciesID; // enable the userState override path
+              inflowVel.nDens = iv->nDens;
+              inflowVel.vth = iv->vth;
+              inflowVel.vx = iv->ux;
+              inflowVel.vy = iv->uy;
+              inflowVel.vz = iv->uz;
+            }
+          }
+          add_particles_cell(iLev, mfi, ijk, fi, true, IntVect(), inflowVel, -1);
         }
       }
     });

@@ -25,6 +25,7 @@ public:
   static const int conducting = 5;
   static const int wave = 6;
   static const int absorb = 7;
+  static const int inflow = 8;
 
   amrex::IntVect lo;
   amrex::IntVect hi;
@@ -48,6 +49,8 @@ public:
       return wave;
     else if (str == "absorb")
       return absorb;
+    else if (str == "inflow")
+      return inflow;
     else
       return unset;
   }

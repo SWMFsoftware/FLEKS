@@ -60,6 +60,26 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     }
   } else if (command == "#ABSORB") {
     param.read_var("charSpeed", absorbCharSpeed);
+  } else if (command == "#INFLOW") {
+    // Upstream inflow state (SI units), used by the inflow (BC::inflow)
+    // boundary: the ghost B is pinned to the upstream B and the ghost
+    // tangential E to the upstream motional E -u_in x B_in, while the
+    // injected particles are sampled from a drifting Maxwellian with the
+    // upstream density / velocity / temperature.  Mirrors #UNIFORMSTATE but
+    // is applied ONLY at inflow faces, so the upstream state can differ
+    // from the interior initial condition (e.g. a shock streaming into a
+    // stationary plasma).  Conversion to code units is deferred to
+    // convert_inflow_state(), which runs after the normalization is final.
+    double tmp;
+    param.read_var("bx", tmp);   inflowBx_ = tmp;   // [T]
+    param.read_var("by", tmp);   inflowBy_ = tmp;   // [T]
+    param.read_var("bz", tmp);   inflowBz_ = tmp;   // [T]
+    param.read_var("rho", tmp);  inflowRho_ = tmp;  // [amu/cc]
+    param.read_var("ux", tmp);   inflowUx_ = tmp;   // [km/s]
+    param.read_var("uy", tmp);   inflowUy_ = tmp;   // [km/s]
+    param.read_var("uz", tmp);   inflowUz_ = tmp;   // [km/s]
+    param.read_var("T", tmp);    inflowT_ = tmp;    // [K]
+    inflowDefined_ = true;
   } else if (command == "#WAVEBC") {
     waveBC.read_param(param, fi);
   } else if (command == "#MEMORY") {
@@ -811,6 +831,10 @@ void Pic::fill_E_B_fields() {
                             centerEhybrid[iLev].nComp(), iLev, bcBField, false);
       apply_absorbing_wall(cellStatus[iLev], centerEhybrid[iLev], 0,
                            centerEhybrid[iLev].nComp(), iLev, bcBField, false);
+      // Inflow wall (E): pin tangential E to upstream motional E, leave normal
+      // E free.  No-op when no #INFLOW block was supplied.
+      apply_inflow_wall(cellStatus[iLev], centerEhybrid[iLev], 0,
+                        centerEhybrid[iLev].nComp(), iLev, bcBField, false);
       if (waveBC.active) {
         const Real t = tc ? tc->get_time() : 0.0;
         apply_wave_field(cellStatus[iLev], centerEhybrid[iLev], 0,
@@ -1363,6 +1387,75 @@ void Pic::convert_electron_density0() {
                  << " [amu/cc] -> " << electronDensity0
                  << " [code units]  (Si2NoRho = " << fi->get_Si2NoRho()
                  << ")\n";
+}
+
+//==========================================================
+void Pic::convert_inflow_state() {
+  if (inflowConverted_)
+    return;
+  inflowConverted_ = true;
+  if (!inflowDefined_)
+    return;
+
+  // B [T] -> code units.  No get_Si2NoB() accessor exists; Si2NoB is the
+  // inverse of get_No2SiB().
+  const double Si2NoB = 1.0 / fi->get_No2SiB();
+  inflowBx_ *= Si2NoB;
+  inflowBy_ *= Si2NoB;
+  inflowBz_ *= Si2NoB;
+
+  // rho [amu/cc] -> number density [code units] (same conversion as
+  // electronDensity0: amu/cc * 1e6 * mp * Si2NoRho).
+  inflowRho_ = inflowRho_ * 1.0e6 * cProtonMassSI * fi->get_Si2NoRho();
+
+  // velocity [km/s] -> code units.
+  const double Si2NoV = fi->get_Si2NoV();
+  inflowUx_ *= 1.0e3 * Si2NoV;
+  inflowUy_ *= 1.0e3 * Si2NoV;
+  inflowUz_ *= 1.0e3 * Si2NoV;
+
+  // T [K] -> code units as v^2 (kT/m_p normalized by uNorm^2), matching the
+  // electronTemperature conversion: T_code = k*T / (m_p * uNorm_SI^2).  This
+  // gives the 1-D thermal speed vth = sqrt(T_code / mass_code) at use sites
+  // (mass_code = mass_i/m_p), so vth = sqrt(kT/m_i) in code velocity units.
+  const double unormSI = fi->get_unorm_si();
+  inflowT_ = cBoltzmannSI * inflowT_ /
+             (cProtonMassSI * unormSI * unormSI);
+
+  // Publish the converted state to the FluidInterface so the Particles layer
+  // (which holds an fi pointer, not a Pic pointer) can read it via
+  // get_inflow_vel(iS).  We use the SAME upstream density / velocity / thermal
+  // speed for every ion species (the #INFLOW block specifies a single upstream
+  // plasma state; a multi-ion extension would key by species).
+  amrex::Vector<FluidInterfaceParameters::InflowVel> stateVec(nSpecies);
+  for (int iS = 0; iS < nSpecies; ++iS) {
+    // Per-species 1-D thermal speed: vth = sqrt(kT/m_i).  In code units,
+    // inflowT_ is (k*T)*Si2NoT in code v^2 units (= kT/m_norm since Si2NoT
+    // encodes the v^2 normalization).  For a species with code-units mass
+    // mass_i = mass_SI / mNorm, vth^2 = inflowT_ / mass_i.
+    double mass_i =
+        (iS < (int)parts.size() && parts[iS]) ? parts[iS]->get_mass() : 1.0;
+    stateVec[iS].nDens = inflowRho_;
+    stateVec[iS].vth =
+        (inflowT_ > 0 && mass_i > 0) ? std::sqrt(inflowT_ / mass_i) : 0.0;
+    stateVec[iS].ux = inflowUx_;
+    stateVec[iS].uy = inflowUy_;
+    stateVec[iS].uz = inflowUz_;
+  }
+  fi->set_inflow_state(stateVec);
+  fi->set_inflow_defined(true);
+  fi->set_inflow_b(inflowBx_, inflowBy_, inflowBz_);
+
+  amrex::Print() << "  #INFLOW state (code units):"
+                 << " B=(" << inflowBx_ << "," << inflowBy_ << ","
+                 << inflowBz_ << ")"
+                 << " n=" << inflowRho_
+                 << " u=(" << inflowUx_ << "," << inflowUy_ << ","
+                 << inflowUz_ << ")"
+                 << " vth=" << (inflowT_ > 0 ? std::sqrt(inflowT_) : 0.0)
+                 << "  (Si2NoB=" << Si2NoB
+                 << ", Si2NoRho=" << fi->get_Si2NoRho()
+                 << ", Si2NoV=" << Si2NoV << ")\n";
 }
 
 //==========================================================
@@ -2633,6 +2726,10 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   apply_conducting_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField,
                         false);
   apply_absorbing_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField, false);
+  // Inflow wall (E): pin tangential E to the upstream motional E = -u_in x
+  // B_in; leave the normal E free (copied from the mirrored valid cell).  No-op
+  // when no #INFLOW block was supplied.
+  apply_inflow_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField, false);
 
   // Hyper-resistivity: E -= eta_h * nabla^2 J = -(eta_h/4*pi) * curl(nabla^2
   // B), built as centerLapB = nabla^2 B then centerHyperE = curl(centerLapB).
@@ -2783,6 +2880,8 @@ void Pic::update_B_hybrid() {
   // Convert electronDensity0 (amu/cc -> code) exactly once, where the
   // normalization is finalized.
   convert_electron_density0();
+  // Same for the #INFLOW upstream state (B, n, u, T in SI -> code units).
+  convert_inflow_state();
 
   Real dt = tc->get_dt();
   Real subDt = dt / nBSubcycle;
@@ -3406,15 +3505,21 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   if (mf.nGrow() == 0)
     return;
 
-  // A `conducting`/`absorb` face delegates to the dedicated wall fillers.
+  // A `conducting`/`absorb`/`inflow` face delegates to the dedicated wall
+  // fillers.  `inflow` only delegates when the user supplied an #INFLOW block
+  // (otherwise it falls through to the zero-gradient use_float copy, matching
+  // the original open-boundary behaviour).
   if (bc != nullptr) {
     bool hasConducting = false;
     bool hasAbsorb = false;
+    bool hasInflow = false;
     for (int d = 0; d < nDim; ++d) {
       if (bc->lo[d] == BC::conducting || bc->hi[d] == BC::conducting)
         hasConducting = true;
       if (bc->lo[d] == BC::absorb || bc->hi[d] == BC::absorb)
         hasAbsorb = true;
+      if (bc->lo[d] == BC::inflow || bc->hi[d] == BC::inflow)
+        hasInflow = true;
     }
     if (hasConducting) {
       apply_conducting_wall(status, mf, iStart, nComp, iLev, *bc, true);
@@ -3422,6 +3527,12 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
     }
     if (hasAbsorb) {
       apply_absorbing_wall(status, mf, iStart, nComp, iLev, *bc, true);
+      return;
+    }
+    if (hasInflow && fi->get_inflow_defined()) {
+      // This dispatch only fires for B-field apply_BC calls (E-field calls
+      // pass bc == nullptr), so the B-field convention is always correct here.
+      apply_inflow_wall(status, mf, iStart, nComp, iLev, *bc, true);
       return;
     }
   }
@@ -3673,6 +3784,107 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
           const int comp = iStart + iVar;
           arr(i, j, k, comp) =
               decay * arr(i, j, k, comp) + drive * arr(m, comp);
+        }
+      }
+    });
+  }
+}
+
+//==========================================================
+void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
+                            const int iStart, const int nComp,
+                            const int iLev, const BC& bc, bool isB) {
+  std::string nameFunc = "Pic::apply_inflow_wall";
+  timing_func(nameFunc);
+
+  // No #INFLOW block => nothing to do; the zero-gradient copy in use_float
+  // (applied later in apply_BC) handles the open face in that case.
+  if (!fi->get_inflow_defined())
+    return;
+  if (Geom(iLev).isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  // Upstream motional E = -u_in x B_in (code units); read the published
+  // (code-unit) inflow state from the FluidInterface.  The velocity here is
+  // the single-species upstream bulk velocity (stateVec is uniform across
+  // species for the single-plasma #INFLOW block).
+  const auto* iv = fi->get_inflow_vel(0);
+  const double uIn0 = (iv && iv->nDens >= 0) ? iv->ux : 0.0;
+  const double vIn0 = (iv && iv->nDens >= 0) ? iv->uy : 0.0;
+  const double wIn0 = (iv && iv->nDens >= 0) ? iv->uz : 0.0;
+  const double Bx_in = fi->get_inflow_bx();
+  const double By_in = fi->get_inflow_by();
+  const double Bz_in = fi->get_inflow_bz();
+  const Real Ex_in = -(vIn0 * Bz_in - wIn0 * By_in);
+  const Real Ey_in = -(wIn0 * Bx_in - uIn0 * Bz_in);
+  const Real Ez_in = -(uIn0 * By_in - vIn0 * Bx_in);
+
+  BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
+  const IntVect& ngrow = mf.nGrowVect();
+  if (nDim > 2 &&
+      Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+    ba.grow(iz_, ngrow[iz_]);
+  }
+
+  const IntVect domLo = Geom(iLev).Domain().smallEnd();
+  const IntVect domHi = Geom(iLev).Domain().bigEnd();
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bxFab = mfi.fabbox();
+    if (ba.contains(bxFab))
+      continue;
+
+    Array4<Real> const& arr = mf[mfi].array();
+    const Array4<const int>& statusArr = status[mfi].array();
+
+    ParallelFor(bxFab, [&](int i, int j, int k) {
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+
+      IntVect ijk{AMREX_D_DECL(i, j, k)};
+
+      for (int d = 0; d < nDim; ++d) {
+        bool isLow = (bc.lo[d] == BC::inflow) && (ijk[d] < domLo[d]);
+        bool isHigh = (bc.hi[d] == BC::inflow) && (ijk[d] > domHi[d]);
+        if (!isLow && !isHigh)
+          continue;
+
+        // Mirror index into the valid box (for the normal-E free component).
+        IntVect m = ijk;
+        if (isLow)
+          m[d] = 2 * domLo[d] - 1 - ijk[d];
+        else
+          m[d] = 2 * domHi[d] + 1 - ijk[d];
+
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          const int comp = iStart + iVar;
+          if (isB) {
+            // Dirichlet inflow: pin every B component to the upstream B.
+            if (iVar == ix_)
+              arr(i, j, k, comp) = fi->get_inflow_bx();
+            else if (iVar == iy_)
+              arr(i, j, k, comp) = fi->get_inflow_by();
+            else
+              arr(i, j, k, comp) = fi->get_inflow_bz();
+          } else {
+            // E: tangential components pinned to the upstream motional E
+            // = -u_in x B_in; the normal component (iVar == d) is left free
+            // (copied from the mirrored valid cell), matching the standard
+            // open-boundary convention so the divergence constraint on E is
+            // not violated by the inflow hard source.
+            if (iVar == d) {
+              arr(i, j, k, comp) = arr(m, comp);
+            } else {
+              if (iVar == ix_)
+                arr(i, j, k, comp) = Ex_in;
+              else if (iVar == iy_)
+                arr(i, j, k, comp) = Ey_in;
+              else
+                arr(i, j, k, comp) = Ez_in;
+            }
+          }
         }
       }
     });

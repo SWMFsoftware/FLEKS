@@ -955,7 +955,8 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#HALLTERM" || command == "#HYPERRESISTIVITY" ||
         command == "#MINIMUMDENSITY" || command == "#FIELDINTEGRATOR" ||
         command == "#AVGFIELDB" || command == "#SMOOTHMOMENTS" ||
-        command == "#MEMORY" || command == "#WAVEBC" || command == "#ABSORB") {
+        command == "#MEMORY" || command == "#WAVEBC" || command == "#ABSORB" ||
+        command == "#INFLOW") {
       if (pic)
         pic->read_param(command, readParam);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||

@@ -1877,6 +1877,43 @@ FLEKS code units).  See the absorbing-BC design doc
 `Doc/Absorbing_BC_Implementation_Plan.md`.
 </command>
 
+<command name="INFLOW" alias="INFLOW_FLEKS" multiple="F">
+  <parameter name="bx" type="real" default="0.0"/>
+  <parameter name="by" type="real" default="0.0"/>
+  <parameter name="bz" type="real" default="0.0"/>
+  <parameter name="rho" type="real" default="0.0"/>
+  <parameter name="ux" type="real" default="0.0"/>
+  <parameter name="uy" type="real" default="0.0"/>
+  <parameter name="uz" type="real" default="0.0"/>
+  <parameter name="T" type="real" default="0.0"/>
+
+#INFLOW
+1.0439e-8                bx [T]
+0.0                      by [T]
+0.0                      bz [T]
+5.0                      rho [amu/cc]
+20.0                     ux [km/s]
+0.0                      uy [km/s]
+0.0                      uz [km/s]
+10000.0                  T [K]
+
+Specifies the upstream state for the inflow (open) boundary condition
+(`#BFIELDBOXBOUNDARY ... inflow ...` / `#PARTICLEBOXBOUNDARY ... inflow ...`).
+All values are in SI units, mirroring `#UNIFORMSTATE`.  When an `inflow` face
+is present and this command is supplied:
+
+* the ghost-cell B is pinned to the upstream (bx, by, bz);
+* the ghost-cell tangential E is pinned to the upstream motional E = -u x B
+  (the normal E is left free, copied from the mirrored valid cell);
+* the inflow particles re-seeded in the ghost cells each step are sampled from
+  a drifting Maxwellian with the upstream density (rho), bulk velocity
+  (ux, uy, uz), and temperature (T).
+
+Without this command, an `inflow` face falls back to the zero-gradient ghost
+copy (the original open-boundary behaviour).  Pair `inflow` at one face with
+`outflow` at the opposite face for a wind-tunnel-style domain.
+</command>
+
 <command name="WAVEBC" alias="WAVEBC_FLEKS" multiple="F">
   <parameter name="nWaveFace" type="integer" default="0"/>
   <parameter name="direction" type="integer"/>
