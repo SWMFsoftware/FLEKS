@@ -1376,42 +1376,6 @@ void Pic::sync_node_E_output() {
 }
 
 //==========================================================
-void Pic::sync_node_B_output() {
-  if (!nodeBStale)
-    return;
-  // Output bridge: materialize nodeB from the live centerB, and rebuild the
-  // node-centred dBdt = (B^{n+1} - B^n)/dt diagnostic using centerBprev (B^n
-  // saved at the top of update_B_hybrid) and lastHybridDt_. Both are pure
-  // output mirrors, deferred from the hybrid B update to plot/tracker time.
-  const Real invDt = (lastHybridDt_ > 0) ? 1.0 / lastHybridDt_ : 0.0;
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-    average_center_to_node(centerB[iLev], nodeB[iLev]);
-    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
-
-    if (invDt > 0) {
-      // dBdt currently holds a stale value; overwrite with B^n (from
-      // centerBprev) then dBdt = (nodeB^{n+1} - nodeB^n)/dt.
-      average_center_to_node(centerBprev[iLev], dBdt[iLev]);
-      dBdt[iLev].FillBoundary(Geom(iLev).periodicity());
-      MultiFab::LinComb(dBdt[iLev], invDt, nodeB[iLev], 0, -invDt, dBdt[iLev],
-                        0, 0, dBdt[iLev].nComp(), dBdt[iLev].nGrow());
-    }
-
-    if (iLev == 0) {
-      apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
-               &Pic::get_node_B, iLev, &bcBField);
-    } else {
-      fill_fine_lev_bny_from_coarse(
-          nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
-          node_bilinear_interp);
-    }
-  }
-  nodeBStale = false;
-}
-
-//==========================================================
 void Pic::convert_electron_density0() {
   if (electronDensity0Converted_)
     return;
@@ -2855,15 +2819,6 @@ void Pic::update_B_hybrid() {
   Real dt = tc->get_dt();
   Real subDt = dt / nBSubcycle;
 
-  // Save the pre-update cell-centred B so sync_node_B_output() can rebuild the
-  // node-centred dBdt = (B^{n+1} - B^n)/dt lazily at output/tracker time,
-  // without projecting centerB->nodeB on every step. centerBprev is otherwise
-  // unused by the hybrid solver (time-centring uses centerBstart/centerBstar).
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    MultiFab::Copy(centerBprev[iLev], centerB[iLev], 0, 0, 3,
-                   centerBprev[iLev].nGrow());
-  }
-
   // Grid-mode hyper-resistivity: eta_h = 4*pi * C_h * dx_fine^4 / dt.
   // The coefficient is set ONCE from the finest level's dx and applied to ALL
   // levels, so the actual physical hyper-diffusivity eta_h is identical on
@@ -2907,10 +2862,6 @@ void Pic::update_B_hybrid() {
           << cflHyper
           << " (> 2.78, explicit 4th-order diffusion may be unstable)\n";
   }
-
-  // nodeB / dBdt are deferred output mirrors (nodeBStale); dBdt is rebuilt
-  // from centerBprev by sync_node_B_output() at plot/tracker time, so there is
-  // no pre-update nodeB save here.
 
   for (int subStep = 0; subStep < nBSubcycle; ++subStep) {
 
@@ -3068,16 +3019,6 @@ void Pic::update_B_hybrid() {
           *get_cell_interp());
     }
   }
-
-  // nodeB (and the node-centred dBdt diagnostic) are pure output mirrors for
-  // the hybrid solver. Defer the centerB->nodeB projection and the dBdt
-  // difference to sync_node_B_output() (called at plot / test-particle-tracker
-  // time) so we avoid the per-step projection + FillBoundary +
-  // boundary-condition cost when nothing consumes them. centerBprev holds B^n
-  // from the top of this function; lastHybridDt_ records this step's dt for the
-  // dBdt rebuild.
-  nodeBStale = true;
-  lastHybridDt_ = dt;
 
   // Running time-averaged B used in the Ohm's law and the Boris push.
   if (useAvgFieldB) {

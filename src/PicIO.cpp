@@ -453,6 +453,13 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
        var.substr(0, 4) == "divB" || var.substr(0, 3) == "phi")) {
     return value;
   }
+  if (useHybridPIC &&
+      (var.substr(0, 5) == "dBxdt" || var.substr(0, 5) == "dBydt" ||
+       var.substr(0, 5) == "dBzdt")) {
+    amrex::Abort(ToString(var) +
+                 " is not supported by the hybrid-PIC solver (dBdt is a "
+                 "full-PIC-only diagnostic).");
+  }
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
       var.substr(0, 1) == "Z") {
     // If not isValidMFI, then it is not possible to output variables other than
@@ -850,16 +857,12 @@ void Pic::write_plots(bool doForce) {
         if (useHybridPIC) {
           // Hybrid: get_var reads the live cell-centred fields
           // (centerB/centerEhybrid/centerPlasma/centerJ) directly, so the
-          // nodePlasma / nodeE output mirrors are not needed. Only the Mach
+          // nodeE / nodePlasma output mirrors are not needed. Only the Mach
           // number is still computed on demand (calc_mach_number is
           // hybrid-aware and reads centerPlasmaSum). The node-centred dB*dt
-          // diagnostics are node-only, so materialize nodeB/dBdt only when a
-          // dB*dt variable is actually requested.
+          // diagnostic is full-PIC-only; requesting it aborts in get_var.
           if (needMach) {
             calc_mach_number();
-          }
-          if (plot.writer.get_plotString().find("dB") != std::string::npos) {
-            sync_node_B_output();
           }
         } else {
           // Full-PIC: structured plots read the nodePlasma / mMach fields, and
@@ -1028,10 +1031,10 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   const bool saveNode = pw.save_node();
 
   // Node-centred amrex/hdf5 output for the hybrid solver needs the deferred
-  // node mirrors materialized (the solver no longer maintains them).
+  // nodeE mirror materialized (the solver no longer maintains nodeB/centerB
+  // on the node grid; hybrid writes cell-centred B directly).
   if (saveNode && useHybridPIC) {
     sync_node_E_output();
-    sync_node_B_output();
   }
 
   Vector<Geometry> geomOut(n_lev());
@@ -1112,7 +1115,9 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
     if (plotVars.find("B") != std::string::npos) {
       //------------------B---------------
-      if (saveNode) {
+      // Full-PIC can write either node- or cell-centred B.
+      // The hybrid solver keeps B only on the cell centers.
+      if (saveNode && !useHybridPIC) {
         MultiFab::Copy(out[iLev], nodeB[iLev], 0, iStart, nodeB[iLev].nComp(),
                        0);
       } else {
