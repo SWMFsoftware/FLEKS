@@ -1285,11 +1285,11 @@ void Pic::sum_moments(bool updateDt) {
     }
 
     // Output bridge: average_center_to_node(centerPlasma -> nodePlasma) for
-    // every species and the summed entry, plus calc_mach_number
-    // (which reads nodePlasma[nSpecies]). This is a pure output mirror. To
-    // avoid the per-step cost, the bridge + calc_mach_number are deferred and
-    // run lazily by sync_node_plasma_output() only when a
-    // plot/probe/load-balance actually reads nodePlasma / mMach.
+    // every species and the summed entry. This is a pure output mirror. To
+    // avoid the per-step cost, the bridge is deferred and runs lazily by
+    // sync_node_plasma_output() only when a plot/probe/load-balance actually
+    // reads nodePlasma. (The Mach number is computed separately, full-PIC only,
+    // inside sync_node_plasma_output() when a "mach" plot is requested.)
     nodePlasmaStale = true;
   } else {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -1311,9 +1311,6 @@ void Pic::sum_moments(bool updateDt) {
   }
 
   if (!useHybridPIC) {
-    // Full-PIC deposits nodePlasma directly in the else-branch above, so
-    // calc_mach_number can run immediately. For hybrid, calc_mach_number is
-    // deferred to sync_node_plasma_output().
     calc_mach_number();
   }
 
@@ -1338,7 +1335,8 @@ void Pic::sync_node_plasma_output(const bool needMach) {
     }
   }
   // The Mach number is a pure output diagnostic: it is read only by the "mach"
-  // plot variable (get_var). Avoid it unless a plot actually requests it.
+  // plot variable (get_var) for full-PIC. Avoid it unless a plot actually
+  // requests it.
   if (needMach) {
     calc_mach_number();
   }

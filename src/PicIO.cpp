@@ -460,6 +460,13 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
                  " is not supported by the hybrid-PIC solver (dBdt is a "
                  "full-PIC-only diagnostic).");
   }
+  // Mach number (mMach) is a full-PIC-only diagnostic; the hybrid solver does
+  // not compute it.
+  if (useHybridPIC && var.substr(0, 4) == "mach") {
+    amrex::Abort(ToString(var) +
+                 " is not supported by the hybrid-PIC solver (Mach number is a "
+                 "full-PIC-only diagnostic).");
+  }
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
       var.substr(0, 1) == "Z") {
     // If not isValidMFI, then it is not possible to output variables other than
@@ -847,23 +854,13 @@ void Pic::write_plots(bool doForce) {
       if (plot.writer.is_amrex_format() || plot.writer.is_hdf5_format()) {
         write_amrex(plot.writer, tc->get_time_si(), tc->get_cycle());
       } else {
-        // Structured (ascii/IDL) plots.
-        const bool needMach =
-            plot.writer.get_plotString().find("mach") != std::string::npos;
-        if (useHybridPIC) {
-          // Hybrid: get_var reads the live cell-centred fields
-          // (centerB/centerEhybrid/centerPlasma/centerJ) directly, so the
-          // nodeE / nodePlasma output mirrors are not needed. Only the Mach
-          // number is still computed on demand (calc_mach_number is
-          // hybrid-aware and reads centerPlasmaSum). The node-centred dB*dt
-          // diagnostic is full-PIC-only; requesting it aborts in get_var.
-          if (needMach) {
-            calc_mach_number();
-          }
-        } else {
-          // Full-PIC: structured plots read the nodePlasma / mMach fields, and
-          // the deferred node mirrors must be materialized before writing.
-          // The Mach number is computed only if this plot requests it.
+        // Structured (ascii/IDL) plots. Full-PIC reads the nodePlasma / mMach
+        // fields, whose deferred node mirrors / Mach number must be
+        // materialized before writing.
+        // Hybrid reads the live cell-centred fields directly.
+        if (!useHybridPIC) {
+          const bool needMach =
+              plot.writer.get_plotString().find("mach") != std::string::npos;
           sync_node_plasma_output(needMach);
         }
         plot.writer.write(tc->get_time_si(), tc->get_cycle(),
