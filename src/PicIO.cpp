@@ -716,10 +716,6 @@ void Pic::read_restart() {
       apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0,
                centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev);
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-      MultiFab::Copy(centerEprev[iLev], centerEhybrid[iLev], 0, 0, 3,
-                     centerEprev[iLev].nGrow());
-      MultiFab::Copy(centerBprev[iLev], centerB[iLev], 0, 0, 3,
-                     centerBprev[iLev].nGrow());
     } else {
       VisMF::Read(nodeE[iLev],
                   restartDir + gridName + "_nodeE" + lev_string(iLev));
@@ -869,7 +865,6 @@ void Pic::write_plots(bool doForce) {
           // the deferred node mirrors must be materialized before writing.
           // The Mach number is computed only if this plot requests it.
           sync_node_plasma_output(needMach);
-          sync_node_E_output();
         }
         plot.writer.write(tc->get_time_si(), tc->get_cycle(),
                           find_output_list_caller, get_field_var_caller);
@@ -1030,13 +1025,6 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   // in most visualization tools and it is only useful for debugging.
   const bool saveNode = pw.save_node();
 
-  // Node-centred amrex/hdf5 output for the hybrid solver needs the deferred
-  // nodeE mirror materialized (the solver no longer maintains nodeB/centerB
-  // on the node grid; hybrid writes cell-centred B directly).
-  if (saveNode && useHybridPIC) {
-    sync_node_E_output();
-  }
-
   Vector<Geometry> geomOut(n_lev());
 
   set_IO_geom(geomOut, pw);
@@ -1133,12 +1121,14 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
     if (plotVars.find("E") != std::string::npos) {
       //-----------------E-----------------------------
-      if (saveNode) {
+      // Full-PIC writes the node-centred nodeE when saveNode is set.
+      // The hybrid solver keeps E only on the cell centers.
+      if (saveNode && !useHybridPIC) {
         MultiFab::Copy(out[iLev], nodeE[iLev], 0, iStart, nodeE[iLev].nComp(),
                        0);
       } else if (useHybridPIC) {
-        // Hybrid solver: E is cell-centred in centerEhybrid (the nodeE mirror
-        // is no longer maintained). Copy directly -- no node-to-cell average.
+        // Hybrid solver: E is cell-centred in centerEhybrid
+        // Copy directly -- no node-to-cell average.
         MultiFab::Copy(out[iLev], centerEhybrid[iLev], 0, iStart,
                        centerEhybrid[iLev].nComp(), 0);
       } else {

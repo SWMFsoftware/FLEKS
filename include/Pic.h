@@ -174,8 +174,6 @@ private:
   // output mirrors refreshed once per step for plot/restart/tracker paths.
   amrex::Vector<amrex::MultiFab> centerEhybrid;
   amrex::Vector<amrex::MultiFab> centerJ;
-  amrex::Vector<amrex::MultiFab> centerEprev;  // E^n (time-centring)
-  amrex::Vector<amrex::MultiFab> centerBprev;  // B^n (time-centring)
   amrex::Vector<amrex::MultiFab> centerEstage; // E at a stage B
   amrex::Vector<amrex::MultiFab> centerHyperE; // hyper-resistivity E
   // Per-species moments
@@ -189,9 +187,9 @@ private:
   // sync_node_plasma_output(). Hybrid path only.
   bool nodePlasmaStale = false;
 
-  // nodeE is a stale output mirror of centerEhybrid; materialized by
-  // sync_node_E_output() at plot time. Hybrid path only.
-  bool nodeEStale = false;
+  // nodeE / the node-centred B mirror are NOT maintained by the cell-centred
+  // hybrid-PIC solver: E lives in centerEhybrid and B in centerB, both written
+  // directly. Requesting dB*dt in hybrid output aborts (see PicIO.cpp).
 
   amrex::Vector<amrex::MultiFab> jHat;
 
@@ -304,8 +302,6 @@ public:
     centerBstage.resize(n_lev_max());
     centerEhybrid.resize(n_lev_max());
     centerJ.resize(n_lev_max());
-    centerEprev.resize(n_lev_max());
-    centerBprev.resize(n_lev_max());
     centerEstage.resize(n_lev_max());
     centerHyperE.resize(n_lev_max());
     centerBavg.resize(n_lev_max());
@@ -414,7 +410,6 @@ public:
   // Rebuild the stale nodePlasma/nodeE output mirrors; calc_mach_number only if
   // needMach. Used by output / load balancing, not the hybrid solver.
   void sync_node_plasma_output(bool needMach = false);
-  void sync_node_E_output();
   // Cell-centred analogue of PlotWriter::is_inside_plot_region for the hybrid
   // structured output: 0.5*dx tolerance so a cut plane snaps to the nearest
   // cell-centre row. Single-level only (multi-level structured output aborts).

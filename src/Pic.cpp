@@ -474,10 +474,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerJ[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                           nGst, doMoveData);
-      distribute_FabArray(centerEprev[iLev], cGrids[iLev],
-                          DistributionMap(iLev), 3, nGst, doMoveData);
-      distribute_FabArray(centerBprev[iLev], cGrids[iLev],
-                          DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerEstage[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerHyperE[iLev], cGrids[iLev],
@@ -804,8 +800,6 @@ void Pic::fill_E_B_fields() {
   // Initial-condition / restart E is node-centred (nodeE). centerEhybrid is
   // seeded from it by averaging the node values to the cell centres, which
   // plays the role of E0 for the very first hybrid particle Boris push.
-  // centerEprev and centerBprev are initialised to the same state so the
-  // time interpolation are defined on the first step.
   if (useHybridPIC) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       average_node_to_center(nodeE[iLev], centerEhybrid[iLev]);
@@ -822,10 +816,6 @@ void Pic::fill_E_B_fields() {
         apply_wave_field(cellStatus[iLev], centerEhybrid[iLev], 0,
                          centerEhybrid[iLev].nComp(), iLev, bcBField, 1, t);
       }
-      MultiFab::Copy(centerEprev[iLev], centerEhybrid[iLev], 0, 0, 3,
-                     centerEprev[iLev].nGrow());
-      MultiFab::Copy(centerBprev[iLev], centerB[iLev], 0, 0, 3,
-                     centerBprev[iLev].nGrow());
     }
   }
 }
@@ -1353,26 +1343,6 @@ void Pic::sync_node_plasma_output(const bool needMach) {
     calc_mach_number();
   }
   nodePlasmaStale = false;
-}
-
-//==========================================================
-void Pic::sync_node_E_output() {
-  if (!nodeEStale)
-    return;
-  // Output bridge: materialize nodeE from the live centerEhybrid so the
-  // ascii/IDL plots see the hybrid E. nodeE is only an output mirror, so
-  // it is synced here at plot time.
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
-    average_center_to_node(centerEhybrid[iLev], nodeE[iLev]);
-    nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
-    apply_conducting_wall(nodeStatus[iLev], nodeE[iLev], 0, nDim3, iLev,
-                          bcBField, false);
-    apply_absorbing_wall(nodeStatus[iLev], nodeE[iLev], 0, nDim3, iLev,
-                         bcBField, false);
-  }
-  nodeEStale = false;
 }
 
 //==========================================================
@@ -3112,9 +3082,6 @@ void Pic::update_B_hybrid() {
       smooth_E(centerEhybrid[iLev], iLev);
     }
   }
-
-  // nodeE is only an output mirror; mark it stale for sync_node_E_output().
-  nodeEStale = true;
 }
 
 //==========================================================
