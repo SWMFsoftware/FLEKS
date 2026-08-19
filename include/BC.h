@@ -26,6 +26,7 @@ public:
   static const int wave = 6;
   static const int absorb = 7;
   static const int inflow = 8;
+  static const int fixed = 9;
 
   amrex::IntVect lo;
   amrex::IntVect hi;
@@ -51,6 +52,8 @@ public:
       return absorb;
     else if (str == "inflow")
       return inflow;
+    else if (str == "fixed")
+      return fixed;
     else
       return unset;
   }

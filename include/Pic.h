@@ -627,44 +627,45 @@ public:
     ip = i;
     jp = j;
     kp = k;
-    // inflow is treated identically to outflow here: the ghost-cell EM field
-    // is copied from the adjacent physical cell (zero-gradient / open face).
-    // This gives a continuous B with no discontinuity at the inflow face, so
-    // curl(E) at the face does not spuriously erode the boundary field.  The
-    // injected inflow is carried entirely by the (Maxwellian) particles that
-    // are re-seeded in the ghost cells each step.
+
     if (i < bxValid.smallEnd(ix_) &&
-        (bc.lo[ix_] == BC::outflow || bc.lo[ix_] == BC::inflow)) {
+        (bc.lo[ix_] == BC::outflow || bc.lo[ix_] == BC::inflow ||
+         bc.lo[ix_] == BC::fixed)) {
       useFloat = true;
       ip = bxValid.smallEnd(ix_);
     }
     if (i > bxValid.bigEnd(ix_) &&
-        (bc.hi[ix_] == BC::outflow || bc.hi[ix_] == BC::inflow)) {
+        (bc.hi[ix_] == BC::outflow || bc.hi[ix_] == BC::inflow ||
+         bc.hi[ix_] == BC::fixed)) {
       useFloat = true;
       ip = bxValid.bigEnd(ix_);
     }
 
     if (j < bxValid.smallEnd(iy_) &&
-        (bc.lo[iy_] == BC::outflow || bc.lo[iy_] == BC::inflow)) {
+        (bc.lo[iy_] == BC::outflow || bc.lo[iy_] == BC::inflow ||
+         bc.lo[iy_] == BC::fixed)) {
       useFloat = true;
       jp = bxValid.smallEnd(iy_);
     }
 
     if (j > bxValid.bigEnd(iy_) &&
-        (bc.hi[iy_] == BC::outflow || bc.hi[iy_] == BC::inflow)) {
+        (bc.hi[iy_] == BC::outflow || bc.hi[iy_] == BC::inflow ||
+         bc.hi[iy_] == BC::fixed)) {
       useFloat = true;
       jp = bxValid.bigEnd(iy_);
     }
 
     if (nDim > 2) {
       if (k < bxValid.smallEnd(iz_) &&
-          (bc.lo[iz_] == BC::outflow || bc.lo[iz_] == BC::inflow)) {
+          (bc.lo[iz_] == BC::outflow || bc.lo[iz_] == BC::inflow ||
+           bc.lo[iz_] == BC::fixed)) {
         useFloat = true;
         kp = bxValid.smallEnd(iz_);
       }
 
       if (k > bxValid.bigEnd(iz_) &&
-          (bc.hi[iz_] == BC::outflow || bc.hi[iz_] == BC::inflow)) {
+          (bc.hi[iz_] == BC::outflow || bc.hi[iz_] == BC::inflow ||
+           bc.hi[iz_] == BC::fixed)) {
         useFloat = true;
         kp = bxValid.bigEnd(iz_);
       }

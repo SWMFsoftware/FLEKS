@@ -3505,10 +3505,10 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   if (mf.nGrow() == 0)
     return;
 
-  // A `conducting`/`absorb`/`inflow` face delegates to the dedicated wall
-  // fillers.  `inflow` only delegates when the user supplied an #INFLOW block
-  // (otherwise it falls through to the zero-gradient use_float copy, matching
-  // the original open-boundary behaviour).
+  // A `conducting`/`absorb`/`inflow`/`fixed` face delegates to the dedicated
+  // wall fillers.  `inflow`/`fixed` only delegate when the user supplied an
+  // #INFLOW block (otherwise they fall through to the zero-gradient use_float
+  // copy, matching the original open-boundary behaviour).
   if (bc != nullptr) {
     bool hasConducting = false;
     bool hasAbsorb = false;
@@ -3518,7 +3518,8 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
         hasConducting = true;
       if (bc->lo[d] == BC::absorb || bc->hi[d] == BC::absorb)
         hasAbsorb = true;
-      if (bc->lo[d] == BC::inflow || bc->hi[d] == BC::inflow)
+      if (bc->lo[d] == BC::inflow || bc->hi[d] == BC::inflow ||
+          bc->lo[d] == BC::fixed || bc->hi[d] == BC::fixed)
         hasInflow = true;
     }
     if (hasConducting) {
@@ -3846,8 +3847,10 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
       IntVect ijk{AMREX_D_DECL(i, j, k)};
 
       for (int d = 0; d < nDim; ++d) {
-        bool isLow = (bc.lo[d] == BC::inflow) && (ijk[d] < domLo[d]);
-        bool isHigh = (bc.hi[d] == BC::inflow) && (ijk[d] > domHi[d]);
+        bool isLow = ((bc.lo[d] == BC::inflow || bc.lo[d] == BC::fixed)) &&
+                     (ijk[d] < domLo[d]);
+        bool isHigh = ((bc.hi[d] == BC::inflow || bc.hi[d] == BC::fixed)) &&
+                      (ijk[d] > domHi[d]);
         if (!isLow && !isHigh)
           continue;
 
@@ -3869,21 +3872,25 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
             else
               arr(i, j, k, comp) = fi->get_inflow_bz();
           } else {
-            // E: tangential components pinned to the upstream motional E
-            // = -u_in x B_in; the normal component (iVar == d) is left free
-            // (copied from the mirrored valid cell), matching the standard
-            // open-boundary convention so the divergence constraint on E is
-            // not violated by the inflow hard source.
-            if (iVar == d) {
-              arr(i, j, k, comp) = arr(m, comp);
-            } else {
-              if (iVar == ix_)
-                arr(i, j, k, comp) = Ex_in;
-              else if (iVar == iy_)
-                arr(i, j, k, comp) = Ey_in;
-              else
-                arr(i, j, k, comp) = Ez_in;
-            }
+            // E: pin ALL components to the upstream motional E = -u_in x B_in.
+            // This is a prescribed (hard-source) inflow, so the full Dirichlet
+            // condition on E is the physically consistent choice and avoids the
+            // discontinuity that arose when the normal component was left free
+            // (copied from the mirrored interior cell) while the tangential
+            // components were pinned to a large motional E.  With a large bulk
+            // drift the motional E is large; mixing a hard tangential motional-E
+            // source with a free-floating normal E produced a spurious E jump
+            // at the face (and a particle velocity blow-up) once a transient
+            // reached the open boundary.  Pinning all three components removes
+            // that discontinuity.  (The divergence constraint on E is still
+            // satisfied to the order at which the interior E is divergence-free
+            // and the ghost is a uniform copy of the upstream state.)
+            if (iVar == ix_)
+              arr(i, j, k, comp) = Ex_in;
+            else if (iVar == iy_)
+              arr(i, j, k, comp) = Ey_in;
+            else
+              arr(i, j, k, comp) = Ez_in;
           }
         }
       }

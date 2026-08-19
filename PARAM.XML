@@ -1836,6 +1836,8 @@ fully absorbing boundary.  See `#BFIELDBOXBOUNDARY`.
       <option value="conducting"/>
       <option value="wave"/>
       <option value="absorb"/>
+      <option value="inflow"/>
+      <option value="fixed"/>
     </parameter>
     <parameter name="BoxBoundaryHi" type="string" input="select" required="T">
       <option value="periodic"/>
@@ -1844,6 +1846,8 @@ fully absorbing boundary.  See `#BFIELDBOXBOUNDARY`.
       <option value="conducting"/>
       <option value="wave"/>
       <option value="absorb"/>
+      <option value="inflow"/>
+      <option value="fixed"/>
     </parameter>
   </for>
 

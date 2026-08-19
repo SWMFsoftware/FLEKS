@@ -55,13 +55,8 @@ Both variants are driven automatically by the test runner
 (`tests/validate_tests.py`): `PARAM.in` runs as the **FULL PIC** variant and
 `PARAM.in.hybrid` as the **HYBRID** variant in the same directory.
 
-Manually:
-
-```bash
-# Full PIC
-make -C <build> run PARAMPATH=tests/whistler/PARAM.in
-# Hybrid
-make -C <build> run PARAMPATH=tests/whistler/PARAM.in.hybrid
+```
+python3 tests/validate_tests.py --test=whistler
 ```
 
 ## Validation
