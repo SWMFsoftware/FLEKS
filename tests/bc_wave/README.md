@@ -28,5 +28,5 @@ Both variants exercise the **wave-injection boundary condition** (`BC::wave` +
 
 ```bash
 # run all variants in this directory
-python3 tests/validate_tests.py --test=bc_inject
+python3 tests/validate_tests.py --test=bc_wave
 ```

@@ -1,6 +1,6 @@
-# bc_field_wall
+# bc_field
 
-Grouped test for the hybrid-PIC **field** boundary conditions on a physical wall.
+Grouped test for the hybrid-PIC **field** boundary conditions.
 Unlike the full-PIC `bc_absorb_fields` (a pure-EM, zero-particle `tophat` pulse),
 these variants run **hybrid-PIC** (`useHybridPIC=T`) so the generalized Ohm's-law
 field advance is exercised — which requires kinetic ions to be present, so the
@@ -13,8 +13,8 @@ only in the `#BFIELDBOXBOUNDARY` at the two x faces:
 
 | Variant | Field BC (x-lo/x-hi) | Particle BC (x) |
 |---------|----------------------|-----------------|
-| `bc_field_wall (HYBRID.CONDUCTING)` | `conducting` (PEC: `E_t=0`, `B_n=0`) | `reflect` |
-| `bc_field_wall (HYBRID.ABSORB)`     | `absorb` (outgoing characteristic)    | `reflect` |
+| `bc_field (HYBRID.CONDUCTING)` | `conducting` (PEC: `E_t=0`, `B_n=0`) | `reflect` |
+| `bc_field (HYBRID.ABSORB)`     | `absorb` (outgoing characteristic)    | `reflect` |
 
 - A transverse shear-Alfvén wave is seeded with the `HybridWave` testcase (guide
   field `Bx`, `δBy`/`δBz` perturbation + velocity kick) in a finite-x cavity.
@@ -50,8 +50,8 @@ plus the PEC/absorbing-wall wiring check.
 ## Running
 
 ```bash
-python3 tests/validate_tests.py --test=bc_field_wall
+python3 tests/validate_tests.py --test=bc_field
 ```
 
-The output table lists both `BC_FIELD_WALL (HYBRID.ABSORB)` and
-`BC_FIELD_WALL (HYBRID.CONDUCTING)`.
+The output table lists both `BC_FIELD (HYBRID.ABSORB)` and
+`BC_FIELD (HYBRID.CONDUCTING)`.

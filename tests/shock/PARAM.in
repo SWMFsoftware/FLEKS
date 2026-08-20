@@ -1,19 +1,8 @@
 
 #DESCRIPTION
-1D oblique shock test: 64 cells in x, flow along x into a reflecting left wall,
-open inflow right boundary.  The upstream magnetic field is inclined at 45 deg to
-the shock normal (the x axis): Bx = B0*cos(45), Bz = B0*sin(45), B0 = 1.044e-8 T.
-Used to debug the reflect-field (fixed-to-upstream) boundary with a non-zero
-normal field component, which the 2D oblique shock showed is incompatible with a
-PEC/conducting wall (E_t=0 contradicts the bulk motional E = -u x B).
-
-NOTE: ported from the wip/hybrid-bc-regression shock test. That branch used the
-old inject BC and its injection block, which do not exist on feat/boundary-
-conditions.  The inject open face is reproduced here with the clean inflow BC
-(BC::inflow) on the right (+x) face; the left wall uses the reflect-field BC
-(BC::fixed, same EM machinery as inflow) so the ghost B/E stay pinned to the
-upstream state while particles reflect.  The upstream state is supplied via the
-INFLOW command in SI units.
+1D oblique shock test: flow along x into a reflecting left wall, open inflow
+right boundary.  The upstream magnetic field is inclined at 45 deg to the shock
+normal (the x axis).
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -32,7 +21,7 @@ F                       initFromSWMF
 1                       nCellZ
 
 #MAXBLOCKSIZE
-128                     maxBlockSizeX
+16                      maxBlockSizeX
 1                       maxBlockSizeY
 1                       maxBlockSizeZ
 
@@ -74,14 +63,6 @@ T                       useHallTerm
 #BSUBCYCLE
 1                       nBSubcycle
 
-#RESISTIVITY
-1.0e7                   etaResistivity
-
-#HYPERRESISTIVITY
-5.0e17                  etaHyperSI
-si                      etaHyperMode
-0.0                     etaHyperCh
-
 #ELECTRONTEMPERATURE
 141.0                   electronTemperature
 1.6667                  electronGamma
@@ -92,7 +73,7 @@ si                      etaHyperMode
 1.0                     mass
 1.0                     charge
 
-45 deg oblique: |B| = 1.044e-8 T, Bx = Bz = 1.044e-8 * cos(45) = 7.382e-9 T
+45 deg oblique: |B| = 1.044e-8 T
 #INFLOW
 7.382e-9                bx [T]
 0.0                     by [T]
@@ -127,7 +108,7 @@ T                       useFixedDt
 1.0e5                   uNormSI
 
 #MONITOR
-50                      dnReport
+200                     dnReport
 
 #SAVELOG
 10                      dnSavePic
@@ -141,10 +122,9 @@ T                       useFixedDt
 #SAVEPLOT
 1                       nPlot
 y=0 fluid ascii pic     plotString
-50                      dn
--1                      dt
+-50                     dn
+5.0                     dt
 1                       dx
-rhoS0 uxS0 uyS0 uzS0 Bx By Bz Ex Ey Ez   plotVar
 
 #STOP
 -1                      MaxIter

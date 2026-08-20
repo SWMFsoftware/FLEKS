@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validator for the grouped wave-injection tests (tests/bc_inject/).
+"""Validator for the grouped wave-injection tests (tests/bc_wave/).
 
 Two variants are discovered from this directory:
   - PARAM.in.mono  -> base_name "bc_inject_mono"   (Bz wave, pure-EM domain)

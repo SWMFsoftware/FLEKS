@@ -5,9 +5,6 @@ boundaries and REFLECTING particle boundaries.  Validates that the conducting
 field BC (E_t=0, B_n=0) is wired into the hybrid cell-centred advance and that
 the run stays finite/stable (no NaN).
 
-The same geometry / seed as PARAM.in.hybrid.absorb, differing only in the field
-boundary, so the two variants share the run-cost and can be diffed.
-
 #INITFROMSWMF
 F                       initFromSWMF
 
@@ -34,9 +31,7 @@ F                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-CONDUCTING (PEC) field walls at both x faces.
 #BFIELDBOXBOUNDARY
-0                       iField
 conducting              bfieldBoxBoundaryLo
 conducting              bfieldBoxBoundaryHi
 periodic                bfieldBoxBoundaryLo
@@ -71,7 +66,7 @@ field alone.
 F                       useHallTerm
 
 #BSUBCYCLE
-8                       nBSubcycle
+1                       nBSubcycle
 
 #RESISTIVITY
 0.0                     etaResistivity

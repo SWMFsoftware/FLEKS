@@ -5,9 +5,6 @@ characteristic) field boundaries and REFLECTING particle boundaries.  Validates
 that the absorbing field BC is wired into the hybrid cell-centred advance and
 that the run stays finite/stable (no NaN).
 
-The same geometry / seed as PARAM.in.hybrid.conducting, differing only in the
-field boundary, so the two variants share the run-cost and can be diffed.
-
 #INITFROMSWMF
 F                       initFromSWMF
 
@@ -34,9 +31,7 @@ F                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-ABSORBING (outgoing-characteristic) field walls at both x faces.
 #BFIELDBOXBOUNDARY
-0                       iField
 absorb                  bfieldBoxBoundaryLo
 absorb                  bfieldBoxBoundaryHi
 periodic                bfieldBoxBoundaryLo
@@ -71,7 +66,7 @@ field alone.
 F                       useHallTerm
 
 #BSUBCYCLE
-8                       nBSubcycle
+1                       nBSubcycle
 
 #RESISTIVITY
 0.0                     etaResistivity

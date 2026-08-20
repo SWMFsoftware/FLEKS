@@ -2,8 +2,8 @@
 """Validator for the hybrid-PIC field-wall boundary-condition test.
 
 Two variants are discovered from this directory:
-  - PARAM.in.hybrid.conducting -> base_name "bc_field_wall_hybrid_conducting"
-  - PARAM.in.hybrid.absorb     -> base_name "bc_field_wall_hybrid_absorb"
+  - PARAM.in.hybrid.conducting -> base_name "bc_field_hybrid_conducting"
+  - PARAM.in.hybrid.absorb     -> base_name "bc_field_hybrid_absorb"
 
 Both are hybrid-PIC (`useHybridPIC=T`) finite-x runs of a transverse shear-Alfven
 wave (HybridWave) in a cavity whose x faces are a physical FIELD boundary --
