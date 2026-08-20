@@ -66,8 +66,6 @@ private:
   // Reference charge density. Input [amu/cc], converted to code units.
   amrex::Real electronDensity0In = 1.0;
   amrex::Real electronDensity0 = 0.0;
-  // True once electronDensity0 (code units) has been converted.
-  bool electronDensity0Converted_ = false;
   // Number of sub-steps for the B-field update within one dt.
   int nBSubcycle = 1;
   // Hall term in the generalized Ohm's law.
@@ -272,7 +270,6 @@ private:
   // then apply_inflow_wall and the inflow particle injection fall back to the
   // zero-gradient copy / live fluid-interface state (the original behaviour).
   bool inflowDefined_ = false;
-  bool inflowConverted_ = false;
   // Upstream B (code units after conversion).
   amrex::Real inflowBx_ = 0.0, inflowBy_ = 0.0, inflowBz_ = 0.0;
   // Upstream number density (code units), bulk velocity (code units), and
@@ -434,15 +431,21 @@ public:
                                   int const iy, int const iz, double const x,
                                   double const y, double const z) const;
 
+  // Convert all SI-input parameters that depend on the finalized FluidInterface
+  // normalization (fi->post_process_param) to code units. Called exactly once
+  // from Domain::update_param(), after fi->post_process_param() has finalized
+  // the norm params. Currently converts electronDensity0 and the #INFLOW
+  // upstream state; the latter is a no-op when no #INFLOW block was read.
+  void finalize_units_conversion();
+
   // Convert electronDensity0 (amu/cc) to code units and set the auto density
-  // floor. Idempotent; run at the first hybrid field advance after
-  // fi->post_process_param() finalizes Si2NoRho.
+  // floor. Called once by finalize_units_conversion() after fi->post_process_param()
+  // finalizes Si2NoRho.
   void convert_electron_density0();
 
-  // Convert the #INFLOUpstream state (bx,by,bz,rho,ux,uy,uz,T) from SI to
-  // code units. Idempotent (guarded by inflowConverted_); no-op when no
-  // #INFLOW block was read. Run at the first hybrid field advance after the
-  // normalization is finalized, like convert_electron_density0().
+  // Convert the #INFLOW upstream state (bx,by,bz,rho,ux,uy,uz,T) from SI to
+  // code units. Called once by finalize_units_conversion(); no-op when no
+  // #INFLOW block was read.
   void convert_inflow_state();
 
   void calc_mass_matrix();

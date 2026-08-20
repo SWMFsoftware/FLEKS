@@ -1295,6 +1295,9 @@ void Domain::read_param(const bool readGridInfo) {
     if (fi)
       fi->post_process_param(domainParameters);
 
+    if (pic)
+      pic->finalize_units_conversion();
+
     // Final sync of source's FluidInterfaceParameters from fi, now that
     // fi->post_process_param() has finalized the derived arrays (MoMi_S,
     // QoQi_S, iRho_I, Si2NoRho, Si2NoP, ...), so source->post_process_param()

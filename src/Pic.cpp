@@ -1368,14 +1368,19 @@ void Pic::sync_node_plasma_output(const bool needMach) {
 }
 
 //==========================================================
-void Pic::convert_electron_density0() {
-  if (electronDensity0Converted_)
-    return;
-  electronDensity0Converted_ = true;
+void Pic::finalize_units_conversion() {
+  // All conversions depend on fi->post_process_param() having finalized the
+  // normalization constants (Si2NoRho, Si2NoV, ...). Called exactly once from
+  // Domain::update_param(), so no idempotency guards are needed here.
+  convert_electron_density0();
+  convert_inflow_state();
+}
 
+//==========================================================
+void Pic::convert_electron_density0() {
   // Input in amu/cc; convert to code units.
-  // get_Si2NoRho() is only valid here (first field advance) after
-  // fi->post_process_param() finalizes the normParams.
+  // get_Si2NoRho() is only valid here (once, after fi->post_process_param()
+  // finalizes the normParams).
   electronDensity0 =
       electronDensity0In * 1.0e6 * cProtonMassSI * fi->get_Si2NoRho();
 
@@ -1391,9 +1396,6 @@ void Pic::convert_electron_density0() {
 
 //==========================================================
 void Pic::convert_inflow_state() {
-  if (inflowConverted_)
-    return;
-  inflowConverted_ = true;
   if (!inflowDefined_)
     return;
 
@@ -1791,10 +1793,6 @@ void Pic::update(bool doReportIn) {
   doReport = doReportIn;
 
   Real tStart = second();
-
-  // Conversion once
-  convert_electron_density0();
-  convert_inflow_state();
 
   if (reportParticleQuality) {
     if (tc->get_cycle() % 20 == 0) {
@@ -2895,10 +2893,6 @@ void Pic::project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
 void Pic::update_B_hybrid() {
   std::string nameFunc = "Pic::update_B_hybrid";
   timing_func(nameFunc);
-
-  // Conversion once
-  convert_electron_density0();
-  convert_inflow_state();
 
   Real dt = tc->get_dt();
   Real subDt = dt / nBSubcycle;
