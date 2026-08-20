@@ -522,13 +522,22 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
             (nDim > 2 && (bc.hi[iz_] == bc.inflow) && k > hi.z);
         if (beyondInflow)
           return;
+        // Outflow faces are PURE OUTFLOW: particles crossing outward are
+        // deleted by reflect_or_delete_particle, and no ghost-cell
+        // population is maintained.  The old outflow_bc() cloned the edge
+        // cell's particles into the first ghost layer every cycle; with the
+        // charge-conserving domain-boundary fold in sum_moments_cell_centered
+        // that clone layer is swept back into the edge cell and
+        // double-counted (observed: edge rho = 4.375 + 5.0 = 9.375 = 15/8 x
+        // n).  The field-solver ghost moments are supplied by
+        // apply_centerPlasma_BC (mirror), so no ghost particles are needed.
         if (((bc.lo[ix_] == bc.outflow) && i < lo.x) ||
             ((bc.hi[ix_] == bc.outflow) && i > hi.x) ||
             (nDim > 1 && (bc.lo[iy_] == bc.outflow) && j < lo.y) ||
             (nDim > 1 && (bc.hi[iy_] == bc.outflow) && j > hi.y) ||
             (nDim > 2 && (bc.lo[iz_] == bc.outflow) && k < lo.z) ||
             (nDim > 2 && (bc.hi[iz_] == bc.outflow) && k > hi.z)) {
-          outflow_bc(mfi, ijk, ijksrc);
+          // pass
         } else if (((bc.lo[ix_] == bc.vacume) && i < lo.x) ||
                    ((bc.hi[ix_] == bc.vacume) && i > hi.x) ||
                    (nDim > 1 && (bc.lo[iy_] == bc.vacume) && j < lo.y) ||
@@ -542,6 +551,21 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
                    (nDim > 1 && (bc.hi[iy_] == bc.absorb) && j > hi.y) ||
                    (nDim > 2 && (bc.lo[iz_] == bc.absorb) && k < lo.z) ||
                    (nDim > 2 && (bc.hi[iz_] == bc.absorb) && k > hi.z) ||
+                   // Open faces do not inject either: they are pure
+                   // outflow (particles crossing outward are deleted via
+                   // is_outside_active_region, Hybrid-VPIC "open"
+                   // behaviour).  NOTE: the PARAM string "open" maps to
+                   // BC::unset in BC::num_type.  Seeding a full Maxwellian
+                   // in the first ghost layer would be swept into the edge
+                   // cell by the charge-conserving domain-boundary fold in
+                   // sum_moments_cell_centered, double-counting it
+                   // (observed: edge rho = 15/8 x n).
+                   ((bc.lo[ix_] == bc.unset) && i < lo.x) ||
+                   ((bc.hi[ix_] == bc.unset) && i > hi.x) ||
+                   (nDim > 1 && (bc.lo[iy_] == bc.unset) && j < lo.y) ||
+                   (nDim > 1 && (bc.hi[iy_] == bc.unset) && j > hi.y) ||
+                   (nDim > 2 && (bc.lo[iz_] == bc.unset) && k < lo.z) ||
+                   (nDim > 2 && (bc.hi[iz_] == bc.unset) && k > hi.z) ||
                    // Reflecting faces do not inject (crossing is handled by
                    // reflection in the particle mover).
                    ((bc.lo[ix_] == bc.reflect) && i < lo.x) ||
@@ -553,14 +577,15 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
           // pass
         } else {
           // Default branch: re-seed the ghost cell with a (drifting)
-          // Maxwellian.  This covers BC::inflow (and any non-specialised face).
+          // Maxwellian, for any face type without specialised handling
+          // above (the specialised inflow faces are skipped entirely --
+          // their flux is supplied by inject_flux_at_inflow_faces()).
           //
-          // When the user supplied an #INFLOW block, the inflow flux is
-          // sampled from the PRESCRIBED upstream state (density / bulk
-          // velocity / thermal speed) rather than the live fluid-interface
-          // state, so the inflow boundary can maintain an upstream state
-          // distinct from the interior.  Without #INFLOW, fall back to the
-          // fluid-interface state (the original open-boundary behaviour).
+          // When the user supplied an #INFLOW block, the seeding is taken
+          // from the PRESCRIBED upstream state (density / bulk velocity /
+          // thermal speed) rather than the live fluid-interface state.
+          // Without #INFLOW, fall back to the fluid-interface state (the
+          // original open-boundary behaviour).
           Vel inflowVel;
           if (fi->get_inflow_defined()) {
             const auto* iv = fi->get_inflow_vel(speciesID);
@@ -603,22 +628,32 @@ inline amrex::Real inj_mean_inward_flux(amrex::Real vd) {
 // Draw the inward normal speed (units of vtherm) from the flux-weighted
 // half-space Maxwellian  f(w) propto w * exp(-(w - vd)^2), w >= 0, by
 // inverting its CDF:
-//   F(w) = [ (e^{-vd^2} - e^{-w^2}) + vd*sqrt(pi)*(erf(w)+erf(vd)) ] / (2Z),
-//   2Z   = e^{-vd^2} + vd*sqrt(pi)*(1+erf(vd)).
-// Solved with bisection + Newton polish (port of the diagonal-pressure case
-// of Hybrid-VPIC's compute_injection(), injection.cxx).
+//   Z    = int_0^inf w exp(-(w-vd)^2) dw
+//        = [ e^{-vd^2} + vd*sqrt(pi)*(1+erf(vd)) ] / 2
+//   F(w) = int_0^w w' exp(-(w'-vd)^2) dw'
+//        = [ (e^{-vd^2} - e^{-(w-vd)^2}) + vd*sqrt(pi)*(erf(w-vd)+erf(vd)) ] / 2
+// and solve F(w) = r * Z.  Solved with bisection + Newton polish (port of
+// the diagonal-pressure case of Hybrid-VPIC's compute_injection(),
+// injection.cxx).  NOTE: the exponent and erf arguments are (w - vd), NOT
+// w -- an earlier revision of this routine used exp(-w^2)/erf(w), which
+// produces a distribution clustered near 0 with mean ~0.3*vtherm instead
+// of one clustered near vd*vtherm; for a supersonic drift that replaced
+// the inflow beam with near-stationary particles and decayed the edge-cell
+// bulk speed by ~u*dt/dx*(u-vmean) per step.
 inline amrex::Real inj_draw_inward_speed(amrex::Real vd, amrex::Real r) {
   constexpr amrex::Real sqpi = 1.77245385090551602729816748334;
   const amrex::Real e0 = std::exp(-vd * vd);
+  // 2Z = e^{-vd^2} + vd*sqrt(pi)*(1+erf(vd))  (twice the normalisation).
   const amrex::Real twoZ = e0 + vd * sqpi * (1.0 + std::erf(vd));
-  const amrex::Real target = r * twoZ;
+  const amrex::Real target = 0.5 * r * twoZ;
 
   auto F = [&](amrex::Real w) {
-    return (e0 - std::exp(-w * w)) + vd * sqpi * (std::erf(w) + std::erf(vd));
+    return 0.5 * ((e0 - std::exp(-(w - vd) * (w - vd))) +
+                  vd * sqpi * (std::erf(w - vd) + std::erf(vd)));
   };
 
-  // Bracket: F is monotone increasing for w >= max(0, -vd); the global
-  // minimum over w>=0 is at w = max(0,-vd) with F <= F(0) = 0 <= target.
+  // Bracket: F(0) = 0 and F is monotone increasing (F' = w e^{-(w-vd)^2}
+  // >= 0 for w >= 0); the upper bound comfortably exceeds the mean.
   amrex::Real wLo = 0.0;
   amrex::Real wHi = std::max(vd, 0.0) + 8.0;
   // Bisection.
@@ -632,9 +667,9 @@ inline amrex::Real inj_draw_inward_speed(amrex::Real vd, amrex::Real r) {
     if (wHi - wLo < 1e-12 * (1.0 + wHi))
       break;
   }
-  // Newton polish: F'(w) = 2 (w + vd) e^{-w^2}.
+  // Newton polish: F'(w) = w * exp(-(w-vd)^2).
   for (int it = 0; it < 8; ++it) {
-    const amrex::Real dF = 2.0 * (w + vd) * std::exp(-w * w);
+    const amrex::Real dF = w * std::exp(-(w - vd) * (w - vd));
     if (std::abs(dF) < 1e-300)
       break;
     amrex::Real wNew = w - (F(w) - target) / dF;

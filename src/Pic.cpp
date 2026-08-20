@@ -1792,17 +1792,7 @@ void Pic::update(bool doReportIn) {
 
   Real tStart = second();
 
-  // Publish the #INFLOW upstream state and the converted electronDensity0
-  // BEFORE the first particle push. The inflow flux injector runs mid-cycle
-  // (after the mover, before the deposit) and must be active ALREADY during
-  // cycle 1: deferring the conversion to update_B_hybrid (end of the cycle,
-  // as before) skipped the injector for the entire first step, missing
-  // exactly one boundary flux n*|u|*dt. That one-step density dip at the
-  // edge cell then drove a spurious electron-pressure-gradient Ex through
-  // the Ohm solve (adiabatic closure), decelerating the boundary plasma and
-  // seeding a persistent start-up perturbation. Both converters are
-  // idempotent, and the normalization (Si2NoRho, No2SiB, ...) is final by
-  // the time update() is first called (Domain::post_process_param).
+  // Conversion once
   convert_electron_density0();
   convert_inflow_state();
 
@@ -2906,10 +2896,8 @@ void Pic::update_B_hybrid() {
   std::string nameFunc = "Pic::update_B_hybrid";
   timing_func(nameFunc);
 
-  // Convert electronDensity0 (amu/cc -> code) exactly once, where the
-  // normalization is finalized.
+  // Conversion once
   convert_electron_density0();
-  // Same for the #INFLOW upstream state (B, n, u, T in SI -> code units).
   convert_inflow_state();
 
   Real dt = tc->get_dt();

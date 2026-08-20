@@ -54,8 +54,10 @@ public:
       return inflow;
     else if (str == "fixed")
       return fixed;
-    else
+    else {
+      amrex::Abort("Error: unrecognized boundary type '" + str + "'");
       return unset;
+    }
   }
 };
 
