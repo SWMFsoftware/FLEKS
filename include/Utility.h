@@ -223,7 +223,14 @@ bool linear_solver_Gauss_Elimination(
     }
     // Begin Gauss Elimination
     for (int k = i + 1; k < m; ++k) {
-      if (fabs(a(i, i)) < ref[i]) {
+      // Singular-matrix guard. NOTE the inversion of the comparison: a pivot
+      // that is zero with ref[i]==0 (e.g. a constraint row that is entirely
+      // zero when a velocity component vanishes identically, as in 1D runs)
+      // or a NaN pivot must REJECT the solve. The old `fabs(a) < ref[i]`
+      // form silently accepted both (0 < 0 is false, NaN < x is false),
+      // letting 0/0 NaN leak into x and then pass every downstream
+      // comparison-based validation (all NaN comparisons are false).
+      if (!(fabs(a(i, i)) > ref[i])) {
         return false;
       }
       double term = a(k, i) / a(i, i);
@@ -239,11 +246,20 @@ bool linear_solver_Gauss_Elimination(
       x[i] = x[i] - a(i, j) * x[j];
     }
 
-    if (fabs(a(i, i)) < ref[i]) {
+    // Same hardened singular-matrix guard as above (see comment there).
+    if (!(fabs(a(i, i)) > ref[i])) {
       return false;
     }
 
     x[i] = x[i] / a(i, i);
+  }
+
+  // Final guard: a numerically NaN/inf solution must never be reported as
+  // solved (comparison-based callers cannot detect NaN).
+  for (int i = 0; i < m; ++i) {
+    if (!std::isfinite(x[i])) {
+      return false;
+    }
   }
   return true;
 };

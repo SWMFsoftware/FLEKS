@@ -1792,6 +1792,20 @@ void Pic::update(bool doReportIn) {
 
   Real tStart = second();
 
+  // Publish the #INFLOW upstream state and the converted electronDensity0
+  // BEFORE the first particle push. The inflow flux injector runs mid-cycle
+  // (after the mover, before the deposit) and must be active ALREADY during
+  // cycle 1: deferring the conversion to update_B_hybrid (end of the cycle,
+  // as before) skipped the injector for the entire first step, missing
+  // exactly one boundary flux n*|u|*dt. That one-step density dip at the
+  // edge cell then drove a spurious electron-pressure-gradient Ex through
+  // the Ohm solve (adiabatic closure), decelerating the boundary plasma and
+  // seeding a persistent start-up perturbation. Both converters are
+  // idempotent, and the normalization (Si2NoRho, No2SiB, ...) is final by
+  // the time update() is first called (Domain::post_process_param).
+  convert_electron_density0();
+  convert_inflow_state();
+
   if (reportParticleQuality) {
     if (tc->get_cycle() % 20 == 0) {
       WriteParticleQualityToParaView();
@@ -1845,6 +1859,17 @@ void Pic::update(bool doReportIn) {
   }
 
   inject_particles_for_boundary_cells();
+
+  // Open-inflow faces: flux-weighted particle injection at the physical
+  // boundary face (Hybrid-VPIC style), after the push and before the moment
+  // deposit so the fresh particles contribute to the moments on this step.
+  // Called here (not inside inject_particles_for_boundary_cells) so that the
+  // t=0 fill_particles() call does not pre-load an extra dt of influx.
+  if (usePIC) {
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->inject_flux_at_inflow_faces(tc->get_dt());
+    }
+  }
 
   isMomentsUpdated = false;
 
@@ -2726,9 +2751,9 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   apply_conducting_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField,
                         false);
   apply_absorbing_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField, false);
-  // Inflow wall (E): pin tangential E to the upstream motional E = -u_in x
-  // B_in; leave the normal E free (copied from the mirrored valid cell).  No-op
-  // when no #INFLOW block was supplied.
+  // Inflow/fixed wall (E): zero-gradient copy of the edge cell into the
+  // ghosts (Hybrid-VPIC pec_fields behaviour).  No-op when no #INFLOW block
+  // was supplied.
   apply_inflow_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField, false);
 
   // Hyper-resistivity: E -= eta_h * nabla^2 J = -(eta_h/4*pi) * curl(nabla^2
@@ -2839,6 +2864,10 @@ void Pic::apply_centerB_BC(int iLev) {
   if (iLev == 0) {
     apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
              &Pic::get_center_B, iLev, &bcBField);
+    // Open-inflow faces: ghost B = copy of the edge cell (Hybrid-VPIC
+    // pec-style); applied AFTER apply_BC so the wall condition wins.
+    apply_inflow_wall(cellStatus[iLev], centerB[iLev], 0,
+                      centerB[iLev].nComp(), iLev, bcBField, true);
   } else {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
@@ -3079,6 +3108,11 @@ void Pic::update_B_hybrid() {
     if (iLev == 0) {
       apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
                &Pic::get_center_B, iLev, &bcBField);
+      // Open-inflow faces: ghost B = copy of the edge cell (Hybrid-VPIC
+      // pec-style), so the Bavg update and the Ohm-solve curls read a
+      // consistent ghost B. Applied after apply_BC so the wall wins.
+      apply_inflow_wall(cellStatus[iLev], centerB[iLev], 0,
+                        centerB[iLev].nComp(), iLev, bcBField, true);
     } else {
       fill_fine_lev_bny_from_coarse(
           centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
@@ -3115,6 +3149,17 @@ void Pic::update_B_hybrid() {
       centerBavg[iLev].FillBoundary(Geom(iLev).periodicity());
       if (syncNodeBavg) {
         nodeBavg[iLev].FillBoundary(Geom(iLev).periodicity());
+      }
+      // Hybrid-VPIC open-inflow field BC on the PUSH field: when the average
+      // is active, centerBavg (not centerB) is what the Ohm solve's curls and
+      // the Boris push gather, so its domain-boundary ghosts must carry the
+      // boundary condition too. The edge-cell copy applied here every step
+      // also bounds the recurrence's ghost accumulation at the open faces
+      // (mult defaults to valid cells only; the copy overwrites whatever
+      // the unscaled ghost would have accumulated).
+      if (iLev == 0) {
+        apply_inflow_wall(cellStatus[iLev], centerBavg[iLev], 0, 3, iLev,
+                          bcBField, true);
       }
     }
   }
@@ -3157,6 +3202,12 @@ void Pic::update_B_hybrid() {
     centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0,
              centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev);
+    // Hybrid-VPIC open-inflow E BC: the push gathers E across the boundary
+    // face, so the ghost E must be the zero-gradient copy of the edge cell
+    // (not the uniform-state E that apply_BC just wrote). No-op without an
+    // #INFLOW block.
+    apply_inflow_wall(cellStatus[iLev], centerEhybrid[iLev], 0,
+                      centerEhybrid[iLev].nComp(), iLev, bcBField, false);
   }
 
   // Fill coarse-fine interface ghost cells for centerEhybrid so the Boris push
@@ -3798,6 +3849,8 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
   std::string nameFunc = "Pic::apply_inflow_wall";
   timing_func(nameFunc);
 
+  (void)isB; // zero-gradient copy is component-agnostic
+
   // No #INFLOW block => nothing to do; the zero-gradient copy in use_float
   // (applied later in apply_BC) handles the open face in that case.
   if (!fi->get_inflow_defined())
@@ -3806,21 +3859,6 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
     return;
   if (mf.nGrow() == 0)
     return;
-
-  // Upstream motional E = -u_in x B_in (code units); read the published
-  // (code-unit) inflow state from the FluidInterface.  The velocity here is
-  // the single-species upstream bulk velocity (stateVec is uniform across
-  // species for the single-plasma #INFLOW block).
-  const auto* iv = fi->get_inflow_vel(0);
-  const double uIn0 = (iv && iv->nDens >= 0) ? iv->ux : 0.0;
-  const double vIn0 = (iv && iv->nDens >= 0) ? iv->uy : 0.0;
-  const double wIn0 = (iv && iv->nDens >= 0) ? iv->uz : 0.0;
-  const double Bx_in = fi->get_inflow_bx();
-  const double By_in = fi->get_inflow_by();
-  const double Bz_in = fi->get_inflow_bz();
-  const Real Ex_in = -(vIn0 * Bz_in - wIn0 * By_in);
-  const Real Ey_in = -(wIn0 * Bx_in - uIn0 * Bz_in);
-  const Real Ez_in = -(uIn0 * By_in - vIn0 * Bx_in);
 
   BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
   const IntVect& ngrow = mf.nGrowVect();
@@ -3854,44 +3892,29 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
         if (!isLow && !isHigh)
           continue;
 
-        // Mirror index into the valid box (for the normal-E free component).
+        // Hybrid-VPIC open-inflow boundary ("pec_fields" as actually
+        // implemented in their shock decks: hyb_local_ghost_b /
+        // hyb_local_ghost_e, anti_symmetric branch in
+        // src/field_advance/standard/local.c): the ghost cell COPIES the
+        // adjacent edge physical cell for every component.
+        //  - Ghost B = edge B (zero gradient): the Hall term (curl B) at
+        //    the edge cell sees no spurious jump, and the upstream B is
+        //    re-anchored to the interior state every step.
+        //  - Ghost E = edge E (zero gradient, tangential included):
+        //    Faraday's law at the edge cell advects B with the local
+        //    convection field. (VPIC's own decks accept the resulting
+        //    bounded single-edge-cell dB/dt offset; it is ~1000x smaller
+        //    than the shock variation and cannot grow, see their
+        //    BOUNDARY_BZ_ARTIFACT analysis.)
+        // The upstream state itself is supplied by the particle influx
+        // (inject_flux_at_inflow_faces), not by pinning the fields.
         IntVect m = ijk;
-        if (isLow)
-          m[d] = 2 * domLo[d] - 1 - ijk[d];
-        else
-          m[d] = 2 * domHi[d] + 1 - ijk[d];
+        m[d] = isLow ? domLo[d] : domHi[d];
 
         for (int iVar = 0; iVar < nComp; ++iVar) {
           const int comp = iStart + iVar;
-          if (isB) {
-            // Dirichlet inflow: pin every B component to the upstream B.
-            if (iVar == ix_)
-              arr(i, j, k, comp) = fi->get_inflow_bx();
-            else if (iVar == iy_)
-              arr(i, j, k, comp) = fi->get_inflow_by();
-            else
-              arr(i, j, k, comp) = fi->get_inflow_bz();
-          } else {
-            // E: pin ALL components to the upstream motional E = -u_in x B_in.
-            // This is a prescribed (hard-source) inflow, so the full Dirichlet
-            // condition on E is the physically consistent choice and avoids the
-            // discontinuity that arose when the normal component was left free
-            // (copied from the mirrored interior cell) while the tangential
-            // components were pinned to a large motional E.  With a large bulk
-            // drift the motional E is large; mixing a hard tangential motional-E
-            // source with a free-floating normal E produced a spurious E jump
-            // at the face (and a particle velocity blow-up) once a transient
-            // reached the open boundary.  Pinning all three components removes
-            // that discontinuity.  (The divergence constraint on E is still
-            // satisfied to the order at which the interior E is divergence-free
-            // and the ghost is a uniform copy of the upstream state.)
-            if (iVar == ix_)
-              arr(i, j, k, comp) = Ex_in;
-            else if (iVar == iy_)
-              arr(i, j, k, comp) = Ey_in;
-            else
-              arr(i, j, k, comp) = Ez_in;
-          }
+          arr(i, j, k, comp) =
+              arr(AMREX_D_DECL(m[ix_], m[iy_], m[iz_]), comp);
         }
       }
     });

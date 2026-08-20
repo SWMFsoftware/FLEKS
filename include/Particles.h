@@ -1,7 +1,9 @@
 #ifndef _PARTICLES_H_
 #define _PARTICLES_H_
 
+#include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 
 #include <AMReX_AmrCore.H>
@@ -354,6 +356,12 @@ protected:
 
   amrex::IntVect nPartPerCell;
 
+  // Fractional-particle accumulators for the inflow flux injector (see
+  // inject_flux_at_inflow_faces). Key packs (iLev, iDim, side, j, k) of the
+  // boundary-transverse cell; the value is the not-yet-injected fractional
+  // macroparticle count carried between steps.
+  std::map<int64_t, amrex::Real> injectFluxAcc;
+
   amrex::Vector<amrex::RealVect> plo, phi, dx, invDx;
   amrex::Vector<amrex::Real> invVol;
 
@@ -444,6 +452,15 @@ public:
                           amrex::IntVect ppc = amrex::IntVect(),
                           const Vel tpVel = Vel(), amrex::Real dt = -1);
   void inject_particles_at_boundary();
+
+  // Open-inflow (BC::inflow) particle boundary, Hybrid-VPIC style
+  // (shock-hyb.cxx + injection.cxx): new macroparticles are created AT the
+  // physical boundary face, their normal velocity is drawn from the
+  // flux-weighted (half-space) drifting Maxwellian, the transverse
+  // velocities from the corresponding Gaussians, and the number injected
+  // per step matches the analytic influx of the prescribed #INFLOW state
+  // (fractional remainders accumulate, so the mean rate is exact).
+  void inject_flux_at_inflow_faces(amrex::Real dt);
 
   void add_particles_source(const FluidInterface* interface,
                             const FluidInterface* const stateOH = nullptr,
