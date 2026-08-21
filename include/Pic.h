@@ -141,6 +141,10 @@ private:
   amrex::Vector<amrex::MultiFab> mMach;
 
   amrex::Vector<amrex::UMultiFab<RealMM> > nodeMM;
+  amrex::Vector<amrex::Vector<amrex::MultiFab> > jhc;
+  amrex::Vector<amrex::MultiFab> jhf;
+  amrex::Vector<amrex::Vector<amrex::UMultiFab<RealMM> > > nmmc;
+  amrex::Vector<amrex::UMultiFab<RealMM> > nmmf;
 
   // ------divE correction--------------
   // Old @ t=t_{n-1/2}; N @ t=t_n; New @ t=t_{n+1/2}

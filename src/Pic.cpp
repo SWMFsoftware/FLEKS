@@ -431,6 +431,37 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       if (!useExplicitPIC) {
         distribute_FabArray(nodeMM[iLev], nGrids[iLev], DistributionMap(iLev),
                             1, 1, doMoveData);
+
+        if (n_lev() > 1) {
+          jhc.resize(n_lev());
+          jhf.resize(n_lev());
+          nmmc.resize(n_lev());
+          nmmf.resize(n_lev());
+          for (int iLev = 1; iLev < n_lev(); iLev++) {
+            jhc[iLev].resize(iLev);
+            nmmc[iLev].resize(iLev);
+          }
+          for (int iLev = 1; iLev < n_lev(); iLev++) {
+            BoxArray bac = nodeB[iLev].boxArray();
+            for (int i = iLev - 1; i >= 0; i--) {
+              bac.coarsen(ref_ratio[iLev]);
+              jhc[iLev][i].define(bac, nodeB[iLev].DistributionMap(), 3, 0);
+              nmmc[iLev][i].define(bac, nodeB[iLev].DistributionMap(),
+                                   nodeMM[iLev].nComp(), 0);
+              jhc[iLev][i].setVal(0.0);
+              nmmc[iLev][i].setVal(0.0);
+            }
+          }
+          for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
+            BoxArray baf = nodeB[iLev].boxArray();
+            baf.refine(ref_ratio[iLev]);
+            jhf[iLev].define(baf, nodeB[iLev].DistributionMap(), 3, 0);
+            nmmf[iLev].define(baf, nodeB[iLev].DistributionMap(),
+                              nodeMM[iLev].nComp(), 0);
+            jhf[iLev].setVal(0.0);
+            nmmf[iLev].setVal(0.0);
+          }
+        }
       }
     }
     if (useHybridPIC) {
@@ -986,40 +1017,6 @@ void Pic::calc_mass_matrix_amr() {
     return;
 
   timing_func(nameFunc);
-  //////////////////////////////////////////////////////////////////////
-  amrex::Vector<amrex::Vector<amrex::MultiFab> > jhc;
-  amrex::Vector<amrex::MultiFab> jhf;
-  amrex::Vector<amrex::Vector<UMultiFab<RealMM> > > nmmc;
-  amrex::Vector<UMultiFab<RealMM> > nmmf;
-  jhc.resize(n_lev());
-  jhf.resize(n_lev());
-  nmmc.resize(n_lev());
-  nmmf.resize(n_lev());
-  for (int iLev = 1; iLev < n_lev(); iLev++) {
-    jhc[iLev].resize(iLev);
-    nmmc[iLev].resize(iLev);
-  }
-  for (int iLev = 1; iLev < n_lev(); iLev++) {
-    BoxArray bac = nodeB[iLev].boxArray();
-    for (int i = iLev - 1; i >= 0; i--) {
-      bac.coarsen(ref_ratio[iLev]);
-      jhc[iLev][i].define(bac, nodeB[iLev].DistributionMap(), 3, 0);
-      nmmc[iLev][i].define(bac, nodeB[iLev].DistributionMap(),
-                           nodeMM[iLev].nComp(), 0);
-      jhc[iLev][i].setVal(0.0);
-      nmmc[iLev][i].setVal(0.0);
-    }
-  }
-  for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
-    BoxArray baf = nodeB[iLev].boxArray();
-    baf.refine(ref_ratio[iLev]);
-    jhf[iLev].define(baf, nodeB[iLev].DistributionMap(), 3, 0);
-    nmmf[iLev].define(baf, nodeB[iLev].DistributionMap(), nodeMM[iLev].nComp(),
-                      0);
-    jhf[iLev].setVal(0.0);
-    nmmf[iLev].setVal(0.0);
-  }
-  //////////////////////////////////////////////////////////////////////
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (int i = 0; i < nSpecies; ++i) {
       parts[i]->calc_mass_matrix_amr(nodeMM[iLev], nmmc, nmmf, jHat[iLev], jhc,
