@@ -448,8 +448,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
               jhc[iLev][i].define(bac, nodeB[iLev].DistributionMap(), 3, 0);
               nmmc[iLev][i].define(bac, nodeB[iLev].DistributionMap(),
                                    nodeMM[iLev].nComp(), 0);
-              jhc[iLev][i].setVal(0.0);
-              nmmc[iLev][i].setVal(0.0);
             }
           }
           for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
@@ -458,8 +456,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
             jhf[iLev].define(baf, nodeB[iLev].DistributionMap(), 3, 0);
             nmmf[iLev].define(baf, nodeB[iLev].DistributionMap(),
                               nodeMM[iLev].nComp(), 0);
-            jhf[iLev].setVal(0.0);
-            nmmf[iLev].setVal(0.0);
           }
         }
       }
@@ -1013,6 +1009,19 @@ void Pic::calc_mass_matrix_amr() {
     nodeMM[iLev].setVal(0.0);
     jHat[iLev].setVal(0.0);
   }
+
+  for (int iLev = 1; iLev < n_lev(); iLev++) {
+    for (int i = iLev - 1; i >= 0; i--) {
+      jhc[iLev][i].setVal(0.0);
+      nmmc[iLev][i].setVal(0.0);
+    }
+  }
+
+  for (int iLev = 0; iLev < n_lev() - 1; iLev++) {
+    jhf[iLev].setVal(0.0);
+    nmmf[iLev].setVal(0.0);
+  }
+
   if (skipMassMatrix)
     return;
 
