@@ -3713,7 +3713,6 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
-    const Box bxValid = mfi.validbox();
 
     if (ba.contains(bxFab))
       continue;
@@ -3788,7 +3787,6 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
-    const Box bxValid = mfi.validbox();
 
     if (ba.contains(bxFab))
       continue;
@@ -3987,7 +3985,6 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
   }
 
   const Real* plo = Geom(iLev).ProbLo();
-  const Real* phi = Geom(iLev).ProbHi();
   const Real* dx = Geom(iLev).CellSize();
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
