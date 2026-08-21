@@ -19,6 +19,7 @@ SRCS := \
 	PlotWriter.cpp \
 	TimeCtr.cpp \
 	BC.cpp \
+	WaveBC.cpp \
 	FluidInterface.cpp \
 	Pic.cpp \
 	PicIO.cpp \

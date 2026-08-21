@@ -47,6 +47,8 @@ void PlotWriter::init() {
     if (subString.substr(0, 2) == "z=")
       idx = z_;
 
+    // A z= cut is skipped when nDim < 3 (fake-3D grid): all points share the
+    // single z row, so the cut is trivially satisfied.
     if (idx < nDim) {
       subString.erase(0, 2);
       ss << subString;

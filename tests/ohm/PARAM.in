@@ -3,8 +3,9 @@ Hybrid PIC (kinetic ions / fluid electrons) parallel whistler-Alfven wave test.
 Full generalized Ohm's law: convection + Hall + resistive (eta*J) + electron
 pressure gradient (grad Pe / (e n_e)) terms ALL active, in normalized CGS units.
 
-Parameters match the whistler test (same ion-scale normalization so d_i ~ v_A ~ 1
-in code units).  Here RESISTIVITY and ELECTRONTEMPERATURE are enabled so the
+Parameters match the whistler test (same ion-scale normalization, uNormSI =
+speed of light = v_A, so d_i ~ v_A ~ 1 in code units).  Here RESISTIVITY and
+ELECTRONTEMPERATURE are enabled so the
 complete Ohm's-law field solver is exercised.  A moderate resistivity damps the
 whistler, and the electron pressure gradient acts on the (weak) charge-density
 fluctuations produced by particle noise; the test is a STABILITY / no-blow-up
@@ -46,12 +47,12 @@ Resistive term ON. Converted internally to code units
 (etaCode = 4*pi*etaSI*Si2NoV*Si2NoL ~ 2.5e-3 here); damps the whistler so the
 late-time transverse amplitude stays well below the seed.
 #RESISTIVITY
-1000000.0               etaResistivity  [m^2/s, SI magnetic diffusivity]
+2000000.0               etaResistivity  [m^2/s, SI magnetic diffusivity]
 
 Electron-pressure-gradient term ON (isothermal, gamma = 1). Converted
 internally to code units (TeCode = TeEV*e/(mp*uNormSI^2) ~ 0.19 here).
 #ELECTRONTEMPERATURE
-5.0                     electronTemperature  [eV]
+20.0                    electronTemperature  [eV]
 1.0                     electronGamma
 1.0                     electronDensity0
 
@@ -84,7 +85,7 @@ neutralizing massless fluid, so no electron particle species is present.
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-5.2195e-9               bx [T]       uniform guide field Bx0 (B_code ~ 1)
+1.0439e-8               bx [T]       uniform guide field Bx0 (B_code ~ 1)
 0.0                     by [T]
 0.0                     bz [T]
 0.0                     ex [V/m]
@@ -100,7 +101,7 @@ T                       useFixedDt
 
 #NORMALIZATION
 1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
-5.0e4                   uNormSI   [m/s] ~ v_A so v_A ~ 1 in code units
+1.0e5                   uNormSI   [m/s] tNorm = 1 s; sets cLight_SI = uNormSI
 
 #MONITOR
 50                      dnReport
@@ -136,7 +137,7 @@ Bx By Bz Ex Ey Ez       varName
 
 #STOP
 -1                      MaxIter
-6.25                    TimeMax
+6.25                    TimeMax   ~0.5 whistler period (resistive damping)
 
 #RUN
 

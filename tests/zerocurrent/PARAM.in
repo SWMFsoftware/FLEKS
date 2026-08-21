@@ -72,7 +72,7 @@ Uniform guide field Bx0 along x.
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-5.2195e-9               bx [T]       uniform guide field Bx0 (B_code ~ 1)
+1.0439e-8               bx [T]       uniform guide field Bx0 (B_code ~ 1)
 0.0                     by [T]
 0.0                     bz [T]
 0.0                     ex [V/m]
@@ -101,7 +101,7 @@ T                       useFixedDt
 
 #NORMALIZATION
 1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
-5.0e4                   uNormSI   [m/s] ~ v_A so v_A ~ 1 in code units
+1.0e5                   uNormSI   [m/s] tNorm = 1 s; sets cLight_SI = uNormSI
 
 #MONITOR
 50                      dnReport
@@ -138,6 +138,6 @@ Bx By Bz Ex Ey Ez       varName
 
 #STOP
 -1                      MaxIter
-6.25                    TimeMax
+6.25                    TimeMax   frozen-field window (E = 0, B static)
 
 #RUN

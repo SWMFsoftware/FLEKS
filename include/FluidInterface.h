@@ -128,6 +128,27 @@ protected:
 
   amrex::Vector<double> uniformState;
 
+public:
+  // Inflow (open) boundary upstream state, set from #INFLOW (converted to
+  // code units by Pic::convert_inflow_state).  Mirrors uniformState but is
+  // applied only at inflow faces.  inflowDefined gates the override; when
+  // false, inject_particles_at_boundary uses the live fluid-interface state
+  // (the original behaviour).
+  //
+  // Layout: per species iS, Vel{nDens, vth, ux, uy, uz}.  vth is the 1-D
+  // thermal speed sqrt(kT/m) in code units; nDens is the number density in
+  // code units; u* are bulk velocities in code units.
+  struct InflowVel {
+    double nDens = -1.0;
+    double vth = 0.0;
+    double ux = 0.0, uy = 0.0, uz = 0.0;
+  };
+  amrex::Vector<InflowVel> inflowState;
+  bool inflowDefined = false;
+  // Upstream B (code units), used by Pic::apply_inflow_wall.
+  double inflowBx = 0.0, inflowBy = 0.0, inflowBz = 0.0;
+
+protected:
   bool useResist = false;
   double etaSI = 0, etaNO = 0;
   int OhmU = OhmUe_;
@@ -154,6 +175,26 @@ public:
     restartOut = dir.empty() ? component + "/restartOUT/" : dir;
   }
   std::string get_restart_out_dir() const { return restartOut; }
+
+  //--- Inflow (open) boundary upstream state (set from #INFLOW) ---
+  bool get_inflow_defined() const { return inflowDefined; }
+  // Per-species inflow Maxwellian state (code units).  Returns nullptr if
+  // the inflow state was not set for this species.
+  const InflowVel* get_inflow_vel(const int iS) const {
+    if (!inflowDefined || iS < 0 || iS >= inflowState.size())
+      return nullptr;
+    return &inflowState[iS];
+  }
+  void set_inflow_state(const amrex::Vector<InflowVel>& s) { inflowState = s; }
+  void set_inflow_defined(bool v) { inflowDefined = v; }
+  void set_inflow_b(double bx, double by, double bz) {
+    inflowBx = bx;
+    inflowBy = by;
+    inflowBz = bz;
+  }
+  double get_inflow_bx() const { return inflowBx; }
+  double get_inflow_by() const { return inflowBy; }
+  double get_inflow_bz() const { return inflowBz; }
 };
 
 class FluidInterface : public Grid, public FluidInterfaceParameters {
@@ -339,6 +380,9 @@ public:
   double get_No2SiRho() const { return (1. / normParams->Si2NoRho); }
   double get_No2SiV() const { return (1. / normParams->Si2NoV); }
   double get_No2SiB() const { return (1. / normParams->Si2NoB); }
+  double get_No2SiE() const {
+    return (normParams->Si2NoE > 0.0 ? 1. / normParams->Si2NoE : 1.0);
+  }
   double get_No2SiP() const { return (1. / normParams->Si2NoP); }
   double get_No2SiJ() const { return (1. / normParams->Si2NoJ); }
   double get_No2SiM() const { return mNormSI; }

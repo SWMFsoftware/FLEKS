@@ -21,6 +21,12 @@ public:
   static const int coupled = 1;
   static const int outflow = 2;
   static const int vacume = 3;
+  static const int reflect = 4;
+  static const int conducting = 5;
+  static const int wave = 6;
+  static const int absorb = 7;
+  static const int inflow = 8;
+  static const int fixed = 9;
 
   amrex::IntVect lo;
   amrex::IntVect hi;
@@ -36,8 +42,22 @@ public:
       return outflow;
     else if (str == "vacume")
       return vacume;
-    else
+    else if (str == "reflect")
+      return reflect;
+    else if (str == "conducting")
+      return conducting;
+    else if (str == "wave")
+      return wave;
+    else if (str == "absorb")
+      return absorb;
+    else if (str == "inflow")
+      return inflow;
+    else if (str == "fixed")
+      return fixed;
+    else {
+      amrex::Abort("Error: unrecognized boundary type '" + str + "'");
       return unset;
+    }
   }
 };
 

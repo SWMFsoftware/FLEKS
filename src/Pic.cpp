@@ -58,6 +58,38 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       bcBField.lo[i] = bcBField.num_type(lo);
       bcBField.hi[i] = bcBField.num_type(hi);
     }
+  } else if (command == "#ABSORB") {
+    param.read_var("charSpeed", absorbCharSpeed);
+  } else if (command == "#INFLOW") {
+    // Upstream inflow state (SI units), used by the inflow (BC::inflow)
+    // boundary: the ghost B is pinned to the upstream B and the ghost
+    // tangential E to the upstream motional E -u_in x B_in, while the
+    // injected particles are sampled from a drifting Maxwellian with the
+    // upstream density / velocity / temperature.  Mirrors #UNIFORMSTATE but
+    // is applied ONLY at inflow faces, so the upstream state can differ
+    // from the interior initial condition (e.g. a shock streaming into a
+    // stationary plasma).  Conversion to code units is deferred to
+    // convert_inflow_state(), which runs after the normalization is final.
+    double tmp;
+    param.read_var("bx", tmp);
+    inflowBx_ = tmp; // [T]
+    param.read_var("by", tmp);
+    inflowBy_ = tmp; // [T]
+    param.read_var("bz", tmp);
+    inflowBz_ = tmp; // [T]
+    param.read_var("rho", tmp);
+    inflowRho_ = tmp; // [amu/cc]
+    param.read_var("ux", tmp);
+    inflowUx_ = tmp; // [km/s]
+    param.read_var("uy", tmp);
+    inflowUy_ = tmp; // [km/s]
+    param.read_var("uz", tmp);
+    inflowUz_ = tmp; // [km/s]
+    param.read_var("T", tmp);
+    inflowT_ = tmp; // [K]
+    inflowDefined_ = true;
+  } else if (command == "#WAVEBC") {
+    waveBC.read_param(param, fi);
   } else if (command == "#MEMORY") {
     param.read_var("dnMemory", dnMemory);
   } else if (command == "#RANDOMPARTICLESLOCATION") {
@@ -470,10 +502,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerJ[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                           nGst, doMoveData);
-      distribute_FabArray(centerEprev[iLev], cGrids[iLev],
-                          DistributionMap(iLev), 3, nGst, doMoveData);
-      distribute_FabArray(centerBprev[iLev], cGrids[iLev],
-                          DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerEstage[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerHyperE[iLev], cGrids[iLev],
@@ -588,6 +616,16 @@ void Pic::post_regrid() {
           pInfo, pMode, ic_.get());
 
       sourceParts.push_back(std::move(ptrSource));
+    }
+
+    // Wave velocity kick for boundary-injected particles.
+    if (waveBC.active) {
+      for (auto& p : parts) {
+        p->waveVelocityKick = [this](const Real* pos, Real t, Real& dvx,
+                                     Real& dvy, Real& dvz) {
+          wave_velocity_kick(pos, t, dvx, dvy, dvz);
+        };
+      }
     }
   } else {
     for (int i = 0; i < nSpecies; ++i) {
@@ -750,8 +788,19 @@ void Pic::fill_E_B_fields() {
   centerB[0].FillBoundary(Geom(0).periodicity());
   apply_BC(nodeStatus[0], nodeB[0], 0, nDim3, &Pic::get_node_B, 0, &bcBField);
   apply_BC(nodeStatus[0], nodeE[0], 0, nDim3, &Pic::get_node_E, 0);
+  apply_conducting_wall(nodeStatus[0], nodeE[0], 0, nDim3, 0, bcBField, false);
+  apply_absorbing_wall(nodeStatus[0], nodeE[0], 0, nDim3, 0, bcBField, false);
   apply_BC(cellStatus[0], centerB[0], 0, centerB[0].nComp(), &Pic::get_center_B,
            0, &bcBField);
+
+  // Wave hard source into the boundary ghost cells.
+  if (waveBC.active) {
+    const Real t = tc ? tc->get_time() : 0.0;
+    apply_wave_field(nodeStatus[0], nodeB[0], 0, nDim3, 0, bcBField, 0, t);
+    apply_wave_field(nodeStatus[0], nodeE[0], 0, nDim3, 0, bcBField, 1, t);
+    apply_wave_field(cellStatus[0], centerB[0], 0, centerB[0].nComp(), 0,
+                     bcBField, 0, t);
+  }
 
   //-----Fine (iLev>0) grid boundary/internal ghost cells are filled----
   auto& cellInterp = *get_cell_interp();
@@ -779,18 +828,26 @@ void Pic::fill_E_B_fields() {
   // Initial-condition / restart E is node-centred (nodeE). centerEhybrid is
   // seeded from it by averaging the node values to the cell centres, which
   // plays the role of E0 for the very first hybrid particle Boris push.
-  // centerEprev and centerBprev are initialised to the same state so the
-  // time interpolation are defined on the first step.
   if (useHybridPIC) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       average_node_to_center(nodeE[iLev], centerEhybrid[iLev]);
       centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
       apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0,
                centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev);
-      MultiFab::Copy(centerEprev[iLev], centerEhybrid[iLev], 0, 0, 3,
-                     centerEprev[iLev].nGrow());
-      MultiFab::Copy(centerBprev[iLev], centerB[iLev], 0, 0, 3,
-                     centerBprev[iLev].nGrow());
+      // Match full-PIC nodeE: enforce the wall on the initial cell-centred E.
+      apply_conducting_wall(cellStatus[iLev], centerEhybrid[iLev], 0,
+                            centerEhybrid[iLev].nComp(), iLev, bcBField, false);
+      apply_absorbing_wall(cellStatus[iLev], centerEhybrid[iLev], 0,
+                           centerEhybrid[iLev].nComp(), iLev, bcBField, false);
+      // Inflow wall (E): pin tangential E to upstream motional E, leave normal
+      // E free.  No-op when no #INFLOW block was supplied.
+      apply_inflow_wall(cellStatus[iLev], centerEhybrid[iLev], 0,
+                        centerEhybrid[iLev].nComp(), iLev, bcBField, false);
+      if (waveBC.active) {
+        const Real t = tc ? tc->get_time() : 0.0;
+        apply_wave_field(cellStatus[iLev], centerEhybrid[iLev], 0,
+                         centerEhybrid[iLev].nComp(), iLev, bcBField, 1, t);
+      }
     }
   }
 }
@@ -1228,6 +1285,15 @@ void Pic::sum_moments(bool updateDt) {
       centerPlasmaSum[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
     }
 
+    // Mirror ion moments into the physical-wall ghost cells for smooth
+    // pressure-gradient / Hall stencils at a wall.
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      apply_centerPlasma_BC(cell_status(iLev), centerPlasmaSum[nSpecies][iLev],
+                            iLev);
+      apply_centerPlasma_BC(cell_status(iLev), centerPlasmaPrev[nSpecies][iLev],
+                            iLev);
+    }
+
     // Fill coarse-fine interface ghost cells for centerPlasmaSum and
     // centerPlasmaPrev on fine levels from the coarse level. Without this,
     // assemble_ohm_E's pressure-gradient stencil reads zero/stale ghost cells
@@ -1251,11 +1317,11 @@ void Pic::sum_moments(bool updateDt) {
     }
 
     // Output bridge: average_center_to_node(centerPlasma -> nodePlasma) for
-    // every species and the summed entry, plus calc_mach_number
-    // (which reads nodePlasma[nSpecies]). This is a pure output mirror. To
-    // avoid the per-step cost, the bridge + calc_mach_number are deferred and
-    // run lazily by sync_node_plasma_output() only when a
-    // plot/probe/load-balance actually reads nodePlasma / mMach.
+    // every species and the summed entry. This is a pure output mirror. To
+    // avoid the per-step cost, the bridge is deferred and runs lazily by
+    // sync_node_plasma_output() only when a plot/probe/load-balance actually
+    // reads nodePlasma. (The Mach number is computed separately, full-PIC only,
+    // inside sync_node_plasma_output() when a "mach" plot is requested.)
     nodePlasmaStale = true;
   } else {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -1277,9 +1343,6 @@ void Pic::sum_moments(bool updateDt) {
   }
 
   if (!useHybridPIC) {
-    // Full-PIC deposits nodePlasma directly in the else-branch above, so
-    // calc_mach_number can run immediately. For hybrid, calc_mach_number is
-    // deferred to sync_node_plasma_output().
     calc_mach_number();
   }
 
@@ -1304,7 +1367,8 @@ void Pic::sync_node_plasma_output(const bool needMach) {
     }
   }
   // The Mach number is a pure output diagnostic: it is read only by the "mach"
-  // plot variable (get_var). Avoid it unless a plot actually requests it.
+  // plot variable (get_var) for full-PIC. Avoid it unless a plot actually
+  // requests it.
   if (needMach) {
     calc_mach_number();
   }
@@ -1312,66 +1376,19 @@ void Pic::sync_node_plasma_output(const bool needMach) {
 }
 
 //==========================================================
-void Pic::sync_node_E_output() {
-  if (!nodeEStale)
-    return;
-  // Output bridge: materialize nodeE from the live centerEhybrid so the
-  // ascii/IDL plots see the hybrid E. nodeE is only an output mirror, so
-  // it is synced here at plot time.
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
-    average_center_to_node(centerEhybrid[iLev], nodeE[iLev]);
-    nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
-  }
-  nodeEStale = false;
-}
-
-//==========================================================
-void Pic::sync_node_B_output() {
-  if (!nodeBStale)
-    return;
-  // Output bridge: materialize nodeB from the live centerB, and rebuild the
-  // node-centred dBdt = (B^{n+1} - B^n)/dt diagnostic using centerBprev (B^n
-  // saved at the top of update_B_hybrid) and lastHybridDt_. Both are pure
-  // output mirrors, deferred from the hybrid B update to plot/tracker time.
-  const Real invDt = (lastHybridDt_ > 0) ? 1.0 / lastHybridDt_ : 0.0;
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-    average_center_to_node(centerB[iLev], nodeB[iLev]);
-    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
-
-    if (invDt > 0) {
-      // dBdt currently holds a stale value; overwrite with B^n (from
-      // centerBprev) then dBdt = (nodeB^{n+1} - nodeB^n)/dt.
-      average_center_to_node(centerBprev[iLev], dBdt[iLev]);
-      dBdt[iLev].FillBoundary(Geom(iLev).periodicity());
-      MultiFab::LinComb(dBdt[iLev], invDt, nodeB[iLev], 0, -invDt, dBdt[iLev],
-                        0, 0, dBdt[iLev].nComp(), dBdt[iLev].nGrow());
-    }
-
-    if (iLev == 0) {
-      apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
-               &Pic::get_node_B, iLev, &bcBField);
-    } else {
-      fill_fine_lev_bny_from_coarse(
-          nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
-          node_bilinear_interp);
-    }
-  }
-  nodeBStale = false;
+void Pic::finalize_units_conversion() {
+  // All conversions depend on fi->post_process_param() having finalized the
+  // normalization constants (Si2NoRho, Si2NoV, ...). Called exactly once from
+  // Domain::update_param(), so no idempotency guards are needed here.
+  convert_electron_density0();
+  convert_inflow_state();
 }
 
 //==========================================================
 void Pic::convert_electron_density0() {
-  if (electronDensity0Converted_)
-    return;
-  electronDensity0Converted_ = true;
-
   // Input in amu/cc; convert to code units.
-  // get_Si2NoRho() is only valid here (first field advance) after
-  // fi->post_process_param() finalizes the normParams.
+  // get_Si2NoRho() is only valid here (once, after fi->post_process_param()
+  // finalizes the normParams).
   electronDensity0 =
       electronDensity0In * 1.0e6 * cProtonMassSI * fi->get_Si2NoRho();
 
@@ -1382,6 +1399,70 @@ void Pic::convert_electron_density0() {
   amrex::Print() << "  electronDensity0: " << electronDensity0In
                  << " [amu/cc] -> " << electronDensity0
                  << " [code units]  (Si2NoRho = " << fi->get_Si2NoRho()
+                 << ")\n";
+}
+
+//==========================================================
+void Pic::convert_inflow_state() {
+  if (!inflowDefined_)
+    return;
+
+  // B [T] -> code units.  No get_Si2NoB() accessor exists; Si2NoB is the
+  // inverse of get_No2SiB().
+  const double Si2NoB = 1.0 / fi->get_No2SiB();
+  inflowBx_ *= Si2NoB;
+  inflowBy_ *= Si2NoB;
+  inflowBz_ *= Si2NoB;
+
+  // rho [amu/cc] -> number density [code units] (same conversion as
+  // electronDensity0: amu/cc * 1e6 * mp * Si2NoRho).
+  inflowRho_ = inflowRho_ * 1.0e6 * cProtonMassSI * fi->get_Si2NoRho();
+
+  // velocity [km/s] -> code units.
+  const double Si2NoV = fi->get_Si2NoV();
+  inflowUx_ *= 1.0e3 * Si2NoV;
+  inflowUy_ *= 1.0e3 * Si2NoV;
+  inflowUz_ *= 1.0e3 * Si2NoV;
+
+  // T [K] -> code units as v^2 (kT/m_p normalized by uNorm^2), matching the
+  // electronTemperature conversion: T_code = k*T / (m_p * uNorm_SI^2).  This
+  // gives the 1-D thermal speed vth = sqrt(T_code / mass_code) at use sites
+  // (mass_code = mass_i/m_p), so vth = sqrt(kT/m_i) in code velocity units.
+  const double unormSI = fi->get_unorm_si();
+  inflowT_ = cBoltzmannSI * inflowT_ / (cProtonMassSI * unormSI * unormSI);
+
+  // Publish the converted state to the FluidInterface so the Particles layer
+  // (which holds an fi pointer, not a Pic pointer) can read it via
+  // get_inflow_vel(iS).  We use the SAME upstream density / velocity / thermal
+  // speed for every ion species (the #INFLOW block specifies a single upstream
+  // plasma state; a multi-ion extension would key by species).
+  amrex::Vector<FluidInterfaceParameters::InflowVel> stateVec(nSpecies);
+  for (int iS = 0; iS < nSpecies; ++iS) {
+    // Per-species 1-D thermal speed: vth = sqrt(kT/m_i).  In code units,
+    // inflowT_ is (k*T)*Si2NoT in code v^2 units (= kT/m_norm since Si2NoT
+    // encodes the v^2 normalization).  For a species with code-units mass
+    // mass_i = mass_SI / mNorm, vth^2 = inflowT_ / mass_i.
+    double mass_i =
+        (iS < (int)parts.size() && parts[iS]) ? parts[iS]->get_mass() : 1.0;
+    stateVec[iS].nDens = inflowRho_;
+    stateVec[iS].vth =
+        (inflowT_ > 0 && mass_i > 0) ? std::sqrt(inflowT_ / mass_i) : 0.0;
+    stateVec[iS].ux = inflowUx_;
+    stateVec[iS].uy = inflowUy_;
+    stateVec[iS].uz = inflowUz_;
+  }
+  fi->set_inflow_state(stateVec);
+  fi->set_inflow_defined(true);
+  fi->set_inflow_b(inflowBx_, inflowBy_, inflowBz_);
+
+  amrex::Print() << "  #INFLOW state (code units):"
+                 << " B=(" << inflowBx_ << "," << inflowBy_ << "," << inflowBz_
+                 << ")"
+                 << " n=" << inflowRho_ << " u=(" << inflowUx_ << ","
+                 << inflowUy_ << "," << inflowUz_ << ")"
+                 << " vth=" << (inflowT_ > 0 ? std::sqrt(inflowT_) : 0.0)
+                 << "  (Si2NoB=" << Si2NoB
+                 << ", Si2NoRho=" << fi->get_Si2NoRho() << ", Si2NoV=" << Si2NoV
                  << ")\n";
 }
 
@@ -1773,6 +1854,17 @@ void Pic::update(bool doReportIn) {
 
   inject_particles_for_boundary_cells();
 
+  // Open-inflow faces: flux-weighted particle injection at the physical
+  // boundary face (Hybrid-VPIC style), after the push and before the moment
+  // deposit so the fresh particles contribute to the moments on this step.
+  // Called here (not inside inject_particles_for_boundary_cells) so that the
+  // t=0 fill_particles() call does not pre-load an extra dt of influx.
+  if (usePIC) {
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->inject_flux_at_inflow_faces(tc->get_dt());
+    }
+  }
+
   isMomentsUpdated = false;
 
   if (solveEM) {
@@ -2064,6 +2156,21 @@ void Pic::update_E_impl() {
       apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
       apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, &Pic::get_node_E,
                iLev);
+      apply_conducting_wall(nodeStatus[iLev], nodeE[iLev], 0, nDim3, iLev,
+                            bcBField, false);
+      apply_conducting_wall(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, iLev,
+                            bcBField, false);
+      apply_absorbing_wall(nodeStatus[iLev], nodeE[iLev], 0, nDim3, iLev,
+                           bcBField, false);
+      apply_absorbing_wall(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, iLev,
+                           bcBField, false);
+      if (waveBC.active) {
+        const Real t = tc ? tc->get_time() : 0.0;
+        apply_wave_field(nodeStatus[iLev], nodeE[iLev], 0, nDim3, iLev,
+                         bcBField, 1, t);
+        apply_wave_field(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, iLev,
+                         bcBField, 1, t);
+      }
     }
 
     if (doSmoothE) {
@@ -2187,6 +2294,10 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     // unknow. See FluidInterface::calc_current for detailed explaniation.
     if (iLev == 0) {
       apply_BC(nodeStatus[iLev], vecMF, 0, nDim3, &Pic::get_node_E, iLev);
+      apply_conducting_wall(nodeStatus[iLev], vecMF, 0, nDim3, iLev, bcBField,
+                            false);
+      apply_absorbing_wall(nodeStatus[iLev], vecMF, 0, nDim3, iLev, bcBField,
+                           false);
     } else {
       fill_fine_lev_bny_from_coarse(
           nodeEth[iLev - 1], vecMF, 0, nodeEth[iLev - 1].nComp(),
@@ -2631,6 +2742,13 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
 
   Eout.FillBoundary(Geom(iLev).periodicity());
   apply_BC(cellStatus[iLev], Eout, 0, nDim3, &Pic::get_center_E, iLev);
+  apply_conducting_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField,
+                        false);
+  apply_absorbing_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField, false);
+  // Inflow/fixed wall (E): zero-gradient copy of the edge cell into the
+  // ghosts (Hybrid-VPIC pec_fields behaviour).  No-op when no #INFLOW block
+  // was supplied.
+  apply_inflow_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField, false);
 
   // Hyper-resistivity: E -= eta_h * nabla^2 J = -(eta_h/4*pi) * curl(nabla^2
   // B), built as centerLapB = nabla^2 B then centerHyperE = curl(centerLapB).
@@ -2740,6 +2858,10 @@ void Pic::apply_centerB_BC(int iLev) {
   if (iLev == 0) {
     apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
              &Pic::get_center_B, iLev, &bcBField);
+    // Open-inflow faces: ghost B = copy of the edge cell (Hybrid-VPIC
+    // pec-style); applied AFTER apply_BC so the wall condition wins.
+    apply_inflow_wall(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+                      iLev, bcBField, true);
   } else {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
@@ -2778,21 +2900,8 @@ void Pic::update_B_hybrid() {
   std::string nameFunc = "Pic::update_B_hybrid";
   timing_func(nameFunc);
 
-  // Convert electronDensity0 (amu/cc -> code) exactly once, where the
-  // normalization is finalized.
-  convert_electron_density0();
-
   Real dt = tc->get_dt();
   Real subDt = dt / nBSubcycle;
-
-  // Save the pre-update cell-centred B so sync_node_B_output() can rebuild the
-  // node-centred dBdt = (B^{n+1} - B^n)/dt lazily at output/tracker time,
-  // without projecting centerB->nodeB on every step. centerBprev is otherwise
-  // unused by the hybrid solver (time-centring uses centerBstart/centerBstar).
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    MultiFab::Copy(centerBprev[iLev], centerB[iLev], 0, 0, 3,
-                   centerBprev[iLev].nGrow());
-  }
 
   // Grid-mode hyper-resistivity: eta_h = 4*pi * C_h * dx_fine^4 / dt.
   // The coefficient is set ONCE from the finest level's dx and applied to ALL
@@ -2837,10 +2946,6 @@ void Pic::update_B_hybrid() {
           << cflHyper
           << " (> 2.78, explicit 4th-order diffusion may be unstable)\n";
   }
-
-  // nodeB / dBdt are deferred output mirrors (nodeBStale); dBdt is rebuilt
-  // from centerBprev by sync_node_B_output() at plot/tracker time, so there is
-  // no pre-update nodeB save here.
 
   for (int subStep = 0; subStep < nBSubcycle; ++subStep) {
 
@@ -2991,6 +3096,11 @@ void Pic::update_B_hybrid() {
     if (iLev == 0) {
       apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
                &Pic::get_center_B, iLev, &bcBField);
+      // Open-inflow faces: ghost B = copy of the edge cell (Hybrid-VPIC
+      // pec-style), so the Bavg update and the Ohm-solve curls read a
+      // consistent ghost B. Applied after apply_BC so the wall wins.
+      apply_inflow_wall(cellStatus[iLev], centerB[iLev], 0,
+                        centerB[iLev].nComp(), iLev, bcBField, true);
     } else {
       fill_fine_lev_bny_from_coarse(
           centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
@@ -2998,16 +3108,6 @@ void Pic::update_B_hybrid() {
           *get_cell_interp());
     }
   }
-
-  // nodeB (and the node-centred dBdt diagnostic) are pure output mirrors for
-  // the hybrid solver. Defer the centerB->nodeB projection and the dBdt
-  // difference to sync_node_B_output() (called at plot / test-particle-tracker
-  // time) so we avoid the per-step projection + FillBoundary +
-  // boundary-condition cost when nothing consumes them. centerBprev holds B^n
-  // from the top of this function; lastHybridDt_ records this step's dt for the
-  // dBdt rebuild.
-  nodeBStale = true;
-  lastHybridDt_ = dt;
 
   // Running time-averaged B used in the Ohm's law and the Boris push.
   if (useAvgFieldB) {
@@ -3037,6 +3137,17 @@ void Pic::update_B_hybrid() {
       centerBavg[iLev].FillBoundary(Geom(iLev).periodicity());
       if (syncNodeBavg) {
         nodeBavg[iLev].FillBoundary(Geom(iLev).periodicity());
+      }
+      // Hybrid-VPIC open-inflow field BC on the PUSH field: when the average
+      // is active, centerBavg (not centerB) is what the Ohm solve's curls and
+      // the Boris push gather, so its domain-boundary ghosts must carry the
+      // boundary condition too. The edge-cell copy applied here every step
+      // also bounds the recurrence's ghost accumulation at the open faces
+      // (mult defaults to valid cells only; the copy overwrites whatever
+      // the unscaled ghost would have accumulated).
+      if (iLev == 0) {
+        apply_inflow_wall(cellStatus[iLev], centerBavg[iLev], 0, 3, iLev,
+                          bcBField, true);
       }
     }
   }
@@ -3079,6 +3190,12 @@ void Pic::update_B_hybrid() {
     centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0,
              centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev);
+    // Hybrid-VPIC open-inflow E BC: the push gathers E across the boundary
+    // face, so the ghost E must be the zero-gradient copy of the edge cell
+    // (not the uniform-state E that apply_BC just wrote). No-op without an
+    // #INFLOW block.
+    apply_inflow_wall(cellStatus[iLev], centerEhybrid[iLev], 0,
+                      centerEhybrid[iLev].nComp(), iLev, bcBField, false);
   }
 
   // Fill coarse-fine interface ghost cells for centerEhybrid so the Boris push
@@ -3101,9 +3218,6 @@ void Pic::update_B_hybrid() {
       smooth_E(centerEhybrid[iLev], iLev);
     }
   }
-
-  // nodeE is only an output mirror; mark it stale for sync_node_E_output().
-  nodeEStale = true;
 }
 
 //==========================================================
@@ -3430,6 +3544,39 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   if (mf.nGrow() == 0)
     return;
 
+  // A `conducting`/`absorb`/`inflow`/`fixed` face delegates to the dedicated
+  // wall fillers.  `inflow`/`fixed` only delegate when the user supplied an
+  // #INFLOW block (otherwise they fall through to the zero-gradient use_float
+  // copy, matching the original open-boundary behaviour).
+  if (bc != nullptr) {
+    bool hasConducting = false;
+    bool hasAbsorb = false;
+    bool hasInflow = false;
+    for (int d = 0; d < nDim; ++d) {
+      if (bc->lo[d] == BC::conducting || bc->hi[d] == BC::conducting)
+        hasConducting = true;
+      if (bc->lo[d] == BC::absorb || bc->hi[d] == BC::absorb)
+        hasAbsorb = true;
+      if (bc->lo[d] == BC::inflow || bc->hi[d] == BC::inflow ||
+          bc->lo[d] == BC::fixed || bc->hi[d] == BC::fixed)
+        hasInflow = true;
+    }
+    if (hasConducting) {
+      apply_conducting_wall(status, mf, iStart, nComp, iLev, *bc, true);
+      return;
+    }
+    if (hasAbsorb) {
+      apply_absorbing_wall(status, mf, iStart, nComp, iLev, *bc, true);
+      return;
+    }
+    if (hasInflow && fi->get_inflow_defined()) {
+      // This dispatch only fires for B-field apply_BC calls (E-field calls
+      // pass bc == nullptr), so the B-field convention is always correct here.
+      apply_inflow_wall(status, mf, iStart, nComp, iLev, *bc, true);
+      return;
+    }
+  }
+
   bool useFloatBC = (func == nullptr);
 
   // BoxArray ba = mf.boxArray();
@@ -3538,6 +3685,371 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
           }
         });
       }
+    }
+  }
+}
+
+//==========================================================
+void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
+                                const int iStart, const int nComp,
+                                const int iLev, const BC& bc, bool isB) {
+  std::string nameFunc = "Pic::apply_conducting_wall";
+  timing_func(nameFunc);
+
+  if (Geom(iLev).isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
+  const IntVect& ngrow = mf.nGrowVect();
+  if (nDim > 2 &&
+      Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+    ba.grow(iz_, ngrow[iz_]);
+  }
+
+  const IntVect domLo = Geom(iLev).Domain().smallEnd();
+  const IntVect domHi = Geom(iLev).Domain().bigEnd();
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bxFab = mfi.fabbox();
+
+    if (ba.contains(bxFab))
+      continue;
+
+    Array4<Real> const& arr = mf[mfi].array();
+    const Array4<const int>& statusArr = status[mfi].array();
+
+    ParallelFor(bxFab, [&](int i, int j, int k) {
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+
+      IntVect ijk{ AMREX_D_DECL(i, j, k) };
+
+      for (int d = 0; d < nDim; ++d) {
+        bool isLow = (bc.lo[d] == BC::conducting) && (ijk[d] < domLo[d]);
+        bool isHigh = (bc.hi[d] == BC::conducting) && (ijk[d] > domHi[d]);
+        if (!isLow && !isHigh)
+          continue;
+
+        IntVect m = ijk;
+        if (isLow)
+          m[d] = 2 * domLo[d] - 1 - ijk[d];
+        else
+          m[d] = 2 * domHi[d] + 1 - ijk[d];
+
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          const int comp = iStart + iVar;
+          if (isB) {
+            if (iVar == d)
+              arr(i, j, k, comp) = 0.0;
+            else
+              arr(i, j, k, comp) = arr(m, comp);
+          } else {
+            if (iVar != d)
+              arr(i, j, k, comp) = 0.0;
+            else
+              arr(i, j, k, comp) = arr(m, comp);
+          }
+        }
+      }
+    });
+  }
+}
+
+//==========================================================
+void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
+                               const int iStart, const int nComp,
+                               const int iLev, const BC& bc, bool isB) {
+  std::string nameFunc = "Pic::apply_absorbing_wall";
+  timing_func(nameFunc);
+
+  if (Geom(iLev).isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  const Real dt = tc ? tc->get_dt() : 0.0;
+  if (dt <= 0.0)
+    return;
+  // Characteristic speed; default light speed (c=1), override via #ABSORB.
+  const Real cs = (absorbCharSpeed > 0.0) ? absorbCharSpeed : 1.0;
+
+  BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
+  const IntVect& ngrow = mf.nGrowVect();
+  if (nDim > 2 &&
+      Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+    ba.grow(iz_, ngrow[iz_]);
+  }
+
+  const IntVect domLo = Geom(iLev).Domain().smallEnd();
+  const IntVect domHi = Geom(iLev).Domain().bigEnd();
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bxFab = mfi.fabbox();
+
+    if (ba.contains(bxFab))
+      continue;
+
+    Array4<Real> const& arr = mf[mfi].array();
+    const Array4<const int>& statusArr = status[mfi].array();
+
+    ParallelFor(bxFab, [&](int i, int j, int k) {
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+
+      IntVect ijk{ AMREX_D_DECL(i, j, k) };
+
+      for (int d = 0; d < nDim; ++d) {
+        bool isLow = (bc.lo[d] == BC::absorb) && (ijk[d] < domLo[d]);
+        bool isHigh = (bc.hi[d] == BC::absorb) && (ijk[d] > domHi[d]);
+        if (!isLow && !isHigh)
+          continue;
+
+        // Matched-impedance (one-way, outgoing) blend toward the interior.
+        const Real* dx = Geom(iLev).CellSize();
+        const Real drive0 = cs * dt / dx[d];
+        const Real decay = (1.0 - drive0) / (1.0 + drive0);
+        const Real drive = 2.0 * drive0 / (1.0 + drive0);
+
+        IntVect m = ijk;
+        if (isLow)
+          m[d] = 2 * domLo[d] - 1 - ijk[d];
+        else
+          m[d] = 2 * domHi[d] + 1 - ijk[d];
+
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          const int comp = iStart + iVar;
+          arr(i, j, k, comp) =
+              decay * arr(i, j, k, comp) + drive * arr(m, comp);
+        }
+      }
+    });
+  }
+}
+
+//==========================================================
+void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
+                            const int iStart, const int nComp, const int iLev,
+                            const BC& bc, bool isB) {
+  std::string nameFunc = "Pic::apply_inflow_wall";
+  timing_func(nameFunc);
+
+  (void)isB; // zero-gradient copy is component-agnostic
+
+  // No #INFLOW block => nothing to do; the zero-gradient copy in use_float
+  // (applied later in apply_BC) handles the open face in that case.
+  if (!fi->get_inflow_defined())
+    return;
+  if (Geom(iLev).isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
+  const IntVect& ngrow = mf.nGrowVect();
+  if (nDim > 2 &&
+      Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+    ba.grow(iz_, ngrow[iz_]);
+  }
+
+  const IntVect domLo = Geom(iLev).Domain().smallEnd();
+  const IntVect domHi = Geom(iLev).Domain().bigEnd();
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bxFab = mfi.fabbox();
+    if (ba.contains(bxFab))
+      continue;
+
+    Array4<Real> const& arr = mf[mfi].array();
+    const Array4<const int>& statusArr = status[mfi].array();
+
+    ParallelFor(bxFab, [&](int i, int j, int k) {
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+
+      IntVect ijk{ AMREX_D_DECL(i, j, k) };
+
+      for (int d = 0; d < nDim; ++d) {
+        bool isLow = ((bc.lo[d] == BC::inflow || bc.lo[d] == BC::fixed)) &&
+                     (ijk[d] < domLo[d]);
+        bool isHigh = ((bc.hi[d] == BC::inflow || bc.hi[d] == BC::fixed)) &&
+                      (ijk[d] > domHi[d]);
+        if (!isLow && !isHigh)
+          continue;
+
+        // Hybrid-VPIC open-inflow boundary ("pec_fields" as actually
+        // implemented in their shock decks: hyb_local_ghost_b /
+        // hyb_local_ghost_e, anti_symmetric branch in
+        // src/field_advance/standard/local.c): the ghost cell COPIES the
+        // adjacent edge physical cell for every component.
+        //  - Ghost B = edge B (zero gradient): the Hall term (curl B) at
+        //    the edge cell sees no spurious jump, and the upstream B is
+        //    re-anchored to the interior state every step.
+        //  - Ghost E = edge E (zero gradient, tangential included):
+        //    Faraday's law at the edge cell advects B with the local
+        //    convection field. (VPIC's own decks accept the resulting
+        //    bounded single-edge-cell dB/dt offset; it is ~1000x smaller
+        //    than the shock variation and cannot grow, see their
+        //    BOUNDARY_BZ_ARTIFACT analysis.)
+        // The upstream state itself is supplied by the particle influx
+        // (inject_flux_at_inflow_faces), not by pinning the fields.
+        IntVect m = ijk;
+        m[d] = isLow ? domLo[d] : domHi[d];
+
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          const int comp = iStart + iVar;
+          arr(i, j, k, comp) = arr(AMREX_D_DECL(m[ix_], m[iy_], m[iz_]), comp);
+        }
+      }
+    });
+  }
+}
+
+// Hybrid-only: mirror ion moments into the physical-wall ghost cells so the
+// electron pressure-gradient / Hall stencils stay smooth at a wall.
+void Pic::apply_centerPlasma_BC(const iMultiFab& status, MultiFab& mf,
+                                const int iLev) {
+  if (Geom(iLev).isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  const IntVect& ngrow = mf.nGrowVect();
+  BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
+  if (nDim > 2 &&
+      Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+    ba.grow(iz_, ngrow[iz_]);
+  }
+
+  const IntVect domLo = Geom(iLev).Domain().smallEnd();
+  const IntVect domHi = Geom(iLev).Domain().bigEnd();
+  const int nComp = mf.nComp();
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bxFab = mfi.fabbox();
+    if (ba.contains(bxFab))
+      continue;
+
+    Array4<Real> const& arr = mf[mfi].array();
+    const Array4<const int>& statusArr = status[mfi].array();
+
+    ParallelFor(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+
+      IntVect ijk{ AMREX_D_DECL(i, j, k) };
+      IntVect m = ijk;
+      bool touched = false;
+
+      for (int d = 0; d < nDim; ++d) {
+        bool isLow = (ijk[d] < domLo[d]);
+        bool isHigh = (ijk[d] > domHi[d]);
+        if (isLow) {
+          m[d] = 2 * domLo[d] - 1 - ijk[d];
+          touched = true;
+        } else if (isHigh) {
+          m[d] = 2 * domHi[d] + 1 - ijk[d];
+          touched = true;
+        }
+      }
+
+      if (!touched)
+        return;
+      for (int comp = 0; comp < nComp; ++comp) {
+        arr(i, j, k, comp) = arr(m, comp);
+      }
+    });
+  }
+}
+
+//==========================================================
+void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
+                           const int iStart, const int nComp, const int iLev,
+                           const BC& bc, int iField, Real t) {
+  std::string nameFunc = "Pic::apply_wave_field";
+  timing_func(nameFunc);
+
+  if (!waveBC.active)
+    return;
+  if (Geom(iLev).isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
+  const IntVect& ngrow = mf.nGrowVect();
+  if (nDim > 2 &&
+      Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+    ba.grow(iz_, ngrow[iz_]);
+  }
+
+  const Real* plo = Geom(iLev).ProbLo();
+  const Real* dx = Geom(iLev).CellSize();
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bxFab = mfi.fabbox();
+    const Box bxValid = mfi.validbox();
+    if (ba.contains(bxFab))
+      continue;
+
+    Array4<Real> const& arr = mf[mfi].array();
+    const Array4<const int>& statusArr = status[mfi].array();
+
+    ParallelFor(bxFab, [&](int i, int j, int k) {
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+
+      Real pos[3] = { plo[0] + dx[0] * i, plo[1] + dx[1] * j,
+                      plo[2] + dx[2] * k };
+
+      // Sum over every wave face whose (direction, side) matches this ghost
+      // cell, i.e. the cell is outside the valid box on that side.
+      for (const auto& f : waveBC.faces) {
+        const int d = f.direction;
+        const int side = f.side;
+        const int idx = (d == 0) ? i : (d == 1) ? j : k;
+        bool onFace = false;
+        if (side == 0 && idx < bxValid.smallEnd(d))
+          onFace = true;
+        else if (side == 1 && idx > bxValid.bigEnd(d))
+          onFace = true;
+        if (!onFace)
+          continue;
+
+        for (const auto& c : f.comps) {
+          if (c.iField != iField)
+            continue;
+          const Real val = waveBC.value(c, t, pos);
+          for (int iVar = 0; iVar < nComp; ++iVar) {
+            const int comp = iStart + iVar;
+            if (iField == 0 || iField == 1) { // B or E vector
+              arr(i, j, k, comp) = val * c.pol[iVar % 3];
+            } else {
+              if (iVar == 0)
+                arr(i, j, k, comp) = val;
+            }
+          }
+        }
+      }
+    });
+  }
+}
+
+//==========================================================
+void Pic::wave_velocity_kick(const Real* pos, Real t, Real& dvx, Real& dvy,
+                             Real& dvz) {
+  dvx = dvy = dvz = 0.0;
+  if (!waveBC.active)
+    return;
+  for (const auto& f : waveBC.faces) {
+    for (const auto& c : f.comps) {
+      if (c.iField != 2) // velocity kick
+        continue;
+      const Real val = waveBC.value(c, t, pos);
+      dvx += val * c.pol[0];
+      dvy += val * c.pol[1];
+      dvz += val * c.pol[2];
     }
   }
 }

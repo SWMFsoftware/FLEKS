@@ -955,7 +955,8 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#HALLTERM" || command == "#HYPERRESISTIVITY" ||
         command == "#MINIMUMDENSITY" || command == "#FIELDINTEGRATOR" ||
         command == "#AVGFIELDB" || command == "#SMOOTHMOMENTS" ||
-        command == "#MEMORY") {
+        command == "#MEMORY" || command == "#WAVEBC" || command == "#ABSORB" ||
+        command == "#INFLOW") {
       if (pic)
         pic->read_param(command, readParam);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
@@ -1293,6 +1294,9 @@ void Domain::read_param(const bool readGridInfo) {
 
     if (fi)
       fi->post_process_param(domainParameters);
+
+    if (pic)
+      pic->finalize_units_conversion();
 
     // Final sync of source's FluidInterfaceParameters from fi, now that
     // fi->post_process_param() has finalized the derived arrays (MoMi_S,

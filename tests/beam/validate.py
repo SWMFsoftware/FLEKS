@@ -92,20 +92,31 @@ def _check_beam_transverse_wave():
             return True, f"{need} not in .out"
 
     iby, ibz, ibx = vidx["BY"], vidx["BZ"], vidx["BX"]
+    # The H+ ion density column is requested in #SAVEPLOT varName.  In PLANETARY
+    # output it is converted back to amu/cc, so it must round-trip to the input
+    # #UNIFORMSTATE value (5.0 amu/cc).  The species index differs between the
+    # full-PIC (H+ = species 1, rhoS1) and hybrid (single H+ species, rhoS0)
+    # variants.
+    irho = vidx.get("RHOS1")
+    if irho is None:
+        irho = vidx.get("RHOS0")
 
     x = []
     by = []
     bz = []
     bx = []
+    rho1 = []
     for line in lines[5:]:
         cols = line.split()
-        if len(cols) <= max(iby, ibz, ibx):
+        if len(cols) <= max(iby, ibz, ibx, irho if irho is not None else 0):
             continue
         try:
             x.append(float(cols[0]))
             by.append(float(cols[iby]))
             bz.append(float(cols[ibz]))
             bx.append(float(cols[ibx]))
+            if irho is not None:
+                rho1.append(float(cols[irho]))
         except (ValueError, IndexError):
             continue
 
@@ -125,7 +136,13 @@ def _check_beam_transverse_wave():
     bperp = [math.hypot(by[i], bz[i]) for i in range(n)]
     bperp_max = max(bperp)
 
-    logger.debug("    [FFT] t=%.4f (normalized), N=%d cells", t_norm, n)
+    # The plot is saved in PLANETARY units (#SAVEPLOT ... planet): x
+    # coordinates are normalised by rPlanet.  Because this test sets no
+    # #BODYSIZE, rPlanet defaults to lNormSI (#NORMALIZATION), so physical
+    # length [m] = (output coordinate) * lNormSI.
+    l_norm_si = 1000.0  # lNormSI [m] from #NORMALIZATION (no #BODYSIZE -> rPlanet)
+
+    logger.debug("    [FFT] t=%.4f s (SI, .out header), N=%d cells", t_norm, n)
     logger.debug("    [FFT] |Bx|=%.4f nT, max|B_perp|=%.4e nT", bx_mean, bperp_max)
 
     # ---- Check 1: wave growth above the noise floor ----------------------
@@ -197,11 +214,38 @@ def _check_beam_transverse_wave():
     delta_v = 8e5                         # m/s (beam +400, bg -400 km/s)
     k_res = omega_i / delta_v             # 1/m
 
-    # Box geometry (x is in metres in the .out file).
-    dx = x[1] - x[0]
-    L = n * dx
-    k1 = 2 * math.pi / L                  # box-fundamental wavenumber
+    # Box geometry: x is in planetary units in the .out file (normalised by
+    # rPlanet = lNormSI here), so the physical box length in metres is
+    # L = (coordinate extent) * lNormSI.  This keeps every quantity in SI
+    # (L in m, k in 1/m) for the comparison against k_res.
+    dx_out = x[1] - x[0]
+    L = n * dx_out * l_norm_si              # physical box length [m]
+    k1 = 2 * math.pi / L                    # box-fundamental wavenumber [1/m]
     n_res = max(1, round(k_res / k1))
+
+    # ---- Check 0: output density round-trips to the input value -----------
+    # #UNIFORMSTATE sets the H+ background density rho = 5.0 amu/cc.  The code
+    # converts it to code units (x1e6*m_p*Si2NoRho) internally, and PLANETARY
+    # output converts it back to amu/cc (No2OutRho = 1/Si2NoRho /m_p *1e-6).
+    # The round trip is the identity, so the plotted density column must
+    # reproduce the input.  Guard against a unit mismatch (e.g. rho interpreted
+    # as PIC/code units in the validator) with a tight relative tolerance.
+    density_ok = True
+    if irho is not None and rho1:
+        rho_mean = sum(rho1) / len(rho1)
+        rho_input = 5.0  # amu/cc, #UNIFORMSTATE H+ background
+        logger.debug("    [FFT] H+ density output = %.4f amu/cc "
+                     "(input %.2f amu/cc)", rho_mean, rho_input)
+        if not math.isfinite(rho_mean):
+            density_ok = False
+        elif abs(rho_mean - rho_input) > 0.05 * rho_input:
+            density_ok = False
+            logger.debug("    [FFT] Density round-trip FAIL: output density "
+                         "= %.4f amu/cc vs input %.2f amu/cc",
+                         rho_mean, rho_input)
+    else:
+        logger.debug("    [FFT] H+ density column not in .out; "
+                     "density round-trip check skipped.")
 
     logger.debug("    [FFT] Omega_i = %.4f rad/s, Delta_v = %.1e m/s",
                  omega_i, delta_v)
@@ -237,6 +281,9 @@ def _check_beam_transverse_wave():
     if growth_reason is not None:
         logger.debug("    [FFT] Time-growth: %s", growth_reason)
 
+    if not density_ok:
+        logger.debug("    [FFT] Density round-trip check: FAIL")
+        return False, "output rhoS1 does not round-trip to the input amu/cc density"
     if growth_ok and mode_ok and growth_ok2:
         logger.debug("    [FFT] Transverse wave check: PASSED")
         return True, "Passed"

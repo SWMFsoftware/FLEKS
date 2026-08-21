@@ -1,6 +1,9 @@
 #ifndef _PARTICLES_H_
 #define _PARTICLES_H_
 
+#include <cstdint>
+#include <functional>
+#include <map>
 #include <memory>
 
 #include <AMReX_AmrCore.H>
@@ -50,12 +53,20 @@ struct Vel {
   // tag is usually the species ID
   int tag;
 
+  // Optional user-supplied number density (code units).  When >= 0 and tag
+  // matches the species, add_particles_cell uses this instead of the
+  // fluid-interface density.  Used by the inflow boundary to inject a
+  // Maxwellian with the prescribed upstream density / velocity / thermal
+  // speed (set from #INFLOW).
+  amrex::Real nDens = -1.0;
+
   Vel() {
     vth = 0;
     vx = 0;
     vy = 0;
     vz = 0;
     tag = -1;
+    nDens = -1.0;
   }
 };
 
@@ -345,6 +356,12 @@ protected:
 
   amrex::IntVect nPartPerCell;
 
+  // Fractional-particle accumulators for the inflow flux injector (see
+  // inject_flux_at_inflow_faces). Key packs (iLev, iDim, side, j, k) of the
+  // boundary-transverse cell; the value is the not-yet-injected fractional
+  // macroparticle count carried between steps.
+  std::map<int64_t, amrex::Real> injectFluxAcc;
+
   amrex::Vector<amrex::RealVect> plo, phi, dx, invDx;
   amrex::Vector<amrex::Real> invVol;
 
@@ -382,6 +399,11 @@ protected:
 
   BC bc; // boundary condition
 
+  // Absorbing-BC tallies per face (2*d + {0=lo,1=hi}).
+  amrex::Real absorbTallyCount[6] = { 0, 0, 0, 0, 0, 0 };
+  amrex::Real absorbTallyCharge[6] = { 0, 0, 0, 0, 0, 0 };
+  amrex::Real absorbTallyMass[6] = { 0, 0, 0, 0, 0, 0 };
+
   // AMREX uses 40 bits(it is 40! Not a typo. See AMReX_Particle.H) to store
   // p.id(), but it is converted to a 32-bit integer when saving to disk. To
   // avoid the mismatch, FLEKS set the maximum value of p.id() to 2^31-1, and
@@ -406,6 +428,11 @@ public:
   // Non-owning pointer to the active initial condition (owned by Pic).
   const InitialCondition* ic_ = nullptr;
 
+  // Wave bulk-velocity kick (pos, t -> dvx,dvy,dvz), set by Pic; null = off.
+  std::function<void(const amrex::Real*, amrex::Real, amrex::Real&,
+                     amrex::Real&, amrex::Real&)>
+      waveVelocityKick = nullptr;
+
   // Index of the integer data.
   static constexpr int iRecordCount_ = 1;
 
@@ -425,6 +452,15 @@ public:
                           amrex::IntVect ppc = amrex::IntVect(),
                           const Vel tpVel = Vel(), amrex::Real dt = -1);
   void inject_particles_at_boundary();
+
+  // Open-inflow (BC::inflow) particle boundary, Hybrid-VPIC style
+  // (shock-hyb.cxx + injection.cxx): new macroparticles are created AT the
+  // physical boundary face, their normal velocity is drawn from the
+  // flux-weighted (half-space) drifting Maxwellian, the transverse
+  // velocities from the corresponding Gaussians, and the number injected
+  // per step matches the analytic influx of the prescribed #INFLOW state
+  // (fractional remainders accumulate, so the mean rate is exact).
+  void inject_flux_at_inflow_faces(amrex::Real dt);
 
   void add_particles_source(const FluidInterface* interface,
                             const FluidInterface* const stateOH = nullptr,
@@ -561,6 +597,51 @@ public:
                               amrex::Real vth, CrossSection cs);
 
   void neutral_mover(amrex::Real dt);
+
+  // Returns true if a pushed particle should be deleted.  `absorb` removes and
+  // tallies; `reflect` mirrors.  Only acts at iLev == 0.
+  inline bool reflect_or_delete_particle(ParticleType& p,
+                                         amrex::Array4<int const> const& status,
+                                         const amrex::IntVect& low,
+                                         const amrex::IntVect& high, int iLev) {
+    if (iLev > 0)
+      return is_outside_active_region(p, status, low, high, iLev);
+
+    const amrex::Real* plo = Geom(iLev).ProbLo();
+    const amrex::Real* phi = Geom(iLev).ProbHi();
+    for (int d = 0; d < nDim; ++d) {
+      // Absorbing and inflow (open) faces remove particles that cross outward,
+      // tallying the lost charge/mass per face.  Inflow does not reflect: any
+      // particle leaving through the inflow face is simply deleted (the
+      // re-seeding of the ghost cells supplies the inflow flux instead).
+      if ((bc.lo[d] == BC::absorb || bc.lo[d] == BC::inflow) &&
+          p.pos(d) < plo[d]) {
+        absorb_tally(2 * d, p.rdata(iwp_));
+        return true;
+      }
+      if ((bc.hi[d] == BC::absorb || bc.hi[d] == BC::inflow) &&
+          p.pos(d) > phi[d]) {
+        absorb_tally(2 * d + 1, p.rdata(iwp_));
+        return true;
+      }
+      // Specular reflection: mirror position and normal velocity.
+      if (bc.lo[d] == BC::reflect && p.pos(d) < plo[d]) {
+        p.pos(d) = 2.0 * plo[d] - p.pos(d);
+        p.rdata(iup_ + d) = -p.rdata(iup_ + d);
+      } else if (bc.hi[d] == BC::reflect && p.pos(d) > phi[d]) {
+        p.pos(d) = 2.0 * phi[d] - p.pos(d);
+        p.rdata(iup_ + d) = -p.rdata(iup_ + d);
+      }
+    }
+    return is_outside_active_region(p, status, low, high, iLev);
+  }
+
+  // Tally an absorbed particle per face (2*d + {0=lo,1=hi}).
+  inline void absorb_tally(int face, amrex::Real weight) {
+    absorbTallyCount[face] += 1.0;
+    absorbTallyCharge[face] += weight * charge;
+    absorbTallyMass[face] += weight * mass;
+  }
 
   void update_position_to_half_stage(const amrex::MultiFab& nodeEMF,
                                      const amrex::MultiFab& nodeBMF,
@@ -885,6 +966,15 @@ public:
   int get_speciesID() const { return speciesID; }
   amrex::Real get_charge() const { return charge; }
   amrex::Real get_mass() const { return mass; }
+
+  // Absorbing-BC diagnostics (per face, 2*d + {0=lo,1=hi}).
+  amrex::Real get_absorb_count(int face) const {
+    return absorbTallyCount[face];
+  }
+  amrex::Real get_absorb_charge(int face) const {
+    return absorbTallyCharge[face];
+  }
+  amrex::Real get_absorb_mass(int face) const { return absorbTallyMass[face]; }
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
 

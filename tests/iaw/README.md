@@ -38,17 +38,22 @@ The parameters are matched to Hybrid-VPIC `examples/iaw`:
 |---|---|---|
 | Magnetic field | `B = 0` (b0 is only a scale) | `B = 0` |
 | Electron polytropic index | `gamma = 5/3` | `5/3` |
-| Sound speed `c_s` | 1.0 | `~1` (`electronTemperature` = 15.7 eV) |
-| Ion thermal speed `v_thi` | `sqrt(1/3) = 0.577` | `~0.58` (T = 1e5 K) |
+| Sound speed `c_s` | 1.0 | `~1` (`electronTemperature` = 62.8 eV at `uNormSI = 1e5`) |
+| Ion thermal speed `v_thi` | `sqrt(1/3) = 0.577` | `~0.58` (T = 4e5 K) |
 | `c_s / v_thi` | 1.73 | 1.73 (same Landau damping) |
 | `Lx [d_i]` | 16 | 16 |
 | `k d_i` | `2*pi/16 = 0.393` | `2*pi/16 = 0.393` |
 | Density perturbation | 0.02 | 0.02 |
-| Run time [`omega_ci^-1`] | 50 | 5 (fast regression) |
+| Run time [code units] | 50 | 5 (fast regression) |
 | `dt` | 0.02 | 0.02 |
 
-The time axis is in `omega_ci^-1` (the `#NORMALIZATION` reference scales set the
-reference `wci ~ 1`).
+The time axis is in code units: with `lNormSI = uNormSI = 1.0e5`, `tNorm =
+lNormSI/uNormSI = 1 s`, so `#STOP TimeMax` (in s) equals the code time directly.
+The test is unmagnetized (`B = 0`), so `Ω_ci = 0` and "`omega_ci^-1`" would be
+meaningless; the physical reference is the n=1 ion-acoustic period
+`T_iaw = 2π/(k c_s) = 2π/0.393 ≈ 16 s`, so `TimeMax = 5 s ≈ 0.3 T_iaw`.
+(SI: `c_s = 1.0e5 m/s`, `Ω_ci` undefined; ion acoustic frequency
+`ω = k c_s ≈ 0.393 rad/s`.)
 
 > **Fast regression:** the standalone test runs to `TimeMax = 5` with
 > `nParticle = 2000` per cell so it finishes in ~1 minute on a single core

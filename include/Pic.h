@@ -18,6 +18,7 @@
 #include "SourceInterface.h"
 #include "TimeCtr.h"
 #include "UMultiFab.h"
+#include "WaveBC.h"
 
 class ParticleTracker;
 class Pic;
@@ -65,8 +66,6 @@ private:
   // Reference charge density. Input [amu/cc], converted to code units.
   amrex::Real electronDensity0In = 1.0;
   amrex::Real electronDensity0 = 0.0;
-  // True once electronDensity0 (code units) has been converted.
-  bool electronDensity0Converted_ = false;
   // Number of sub-steps for the B-field update within one dt.
   int nBSubcycle = 1;
   // Hall term in the generalized Ohm's law.
@@ -98,6 +97,9 @@ private:
   FluidInterface *stateOH = nullptr;
   FluidInterface *sourcePT2OH = nullptr;
   SourceInterface *source = nullptr;
+
+  // Wave-injection boundary-condition manager (#WAVEBC).
+  WaveBoundaryManager waveBC;
   TimeCtr *tc = nullptr;
 
   const DomainParameters &domainParameters;
@@ -170,8 +172,6 @@ private:
   // output mirrors refreshed once per step for plot/restart/tracker paths.
   amrex::Vector<amrex::MultiFab> centerEhybrid;
   amrex::Vector<amrex::MultiFab> centerJ;
-  amrex::Vector<amrex::MultiFab> centerEprev;  // E^n (time-centring)
-  amrex::Vector<amrex::MultiFab> centerBprev;  // B^n (time-centring)
   amrex::Vector<amrex::MultiFab> centerEstage; // E at a stage B
   amrex::Vector<amrex::MultiFab> centerHyperE; // hyper-resistivity E
   // Per-species moments
@@ -185,18 +185,9 @@ private:
   // sync_node_plasma_output(). Hybrid path only.
   bool nodePlasmaStale = false;
 
-  // nodeE is a stale output mirror of centerEhybrid; materialized by
-  // sync_node_E_output() at plot time. Hybrid path only.
-  bool nodeEStale = false;
-
-  // nodeB (and the node-centred dBdt diagnostic) stale; the hybrid B update no
-  // longer projects centerB->nodeB every step. Materialized on demand by
-  // sync_node_B_output() for the test-particle tracker and dB*dt output.
-  // Hybrid path only.
-  bool nodeBStale = false;
-  // dt of the last hybrid B update, used by sync_node_B_output() to rebuild
-  // dBdt = (B^{n+1} - B^n)/dt from centerBprev.
-  amrex::Real lastHybridDt_ = 0.0;
+  // nodeE / the node-centred B mirror are NOT maintained by the cell-centred
+  // hybrid-PIC solver: E lives in centerEhybrid and B in centerB, both written
+  // directly. Requesting dB*dt in hybrid output aborts (see PicIO.cpp).
 
   amrex::Vector<amrex::MultiFab> jHat;
 
@@ -268,6 +259,26 @@ private:
   // Boundary conditions for fields.
   BC bcBField;
 
+  // Characteristic speed for the absorbing BC (code units); 0 = auto (light
+  // speed).
+  amrex::Real absorbCharSpeed = 0.0;
+
+  // Inflow (open) boundary upstream state, set by #INFLOW.  All values are in
+  // SI units on input and converted to code units by convert_inflow_state()
+  // (which runs after fi->post_process_param finalizes the normalization).
+  // inflowDefined_ is set when the user has supplied an #INFLOW block; until
+  // then apply_inflow_wall and the inflow particle injection fall back to the
+  // zero-gradient copy / live fluid-interface state (the original behaviour).
+  bool inflowDefined_ = false;
+  // Upstream B (code units after conversion).
+  amrex::Real inflowBx_ = 0.0, inflowBy_ = 0.0, inflowBz_ = 0.0;
+  // Upstream number density (code units), bulk velocity (code units), and
+  // temperature (code units -> 1-D thermal speed sqrt(kT/m) in code units is
+  // derived at use sites from n0, T, mass).
+  amrex::Real inflowRho_ = 0.0; // number density, code units
+  amrex::Real inflowUx_ = 0.0, inflowUy_ = 0.0, inflowUz_ = 0.0;
+  amrex::Real inflowT_ = 0.0; // temperature, code units (energy/mass)
+
   // select particle params
   bool doSelectParticle = false;
   std::string selectParticleInputFile;
@@ -305,8 +316,6 @@ public:
     centerBstage.resize(n_lev_max());
     centerEhybrid.resize(n_lev_max());
     centerJ.resize(n_lev_max());
-    centerEprev.resize(n_lev_max());
-    centerBprev.resize(n_lev_max());
     centerEstage.resize(n_lev_max());
     centerHyperE.resize(n_lev_max());
     centerBavg.resize(n_lev_max());
@@ -415,11 +424,6 @@ public:
   // Rebuild the stale nodePlasma/nodeE output mirrors; calc_mach_number only if
   // needMach. Used by output / load balancing, not the hybrid solver.
   void sync_node_plasma_output(bool needMach = false);
-  void sync_node_E_output();
-  // Rebuild the stale nodeB output mirror (and the node-centred dBdt
-  // diagnostic) from the live centerB / centerBprev. Used by the test-particle
-  // tracker and dB*dt output, not the hybrid solver.
-  void sync_node_B_output();
   // Cell-centred analogue of PlotWriter::is_inside_plot_region for the hybrid
   // structured output: 0.5*dx tolerance so a cut plane snaps to the nearest
   // cell-centre row. Single-level only (multi-level structured output aborts).
@@ -427,10 +431,22 @@ public:
                                   int const iy, int const iz, double const x,
                                   double const y, double const z) const;
 
+  // Convert all SI-input parameters that depend on the finalized FluidInterface
+  // normalization (fi->post_process_param) to code units. Called exactly once
+  // from Domain::update_param(), after fi->post_process_param() has finalized
+  // the norm params. Currently converts electronDensity0 and the #INFLOW
+  // upstream state; the latter is a no-op when no #INFLOW block was read.
+  void finalize_units_conversion();
+
   // Convert electronDensity0 (amu/cc) to code units and set the auto density
-  // floor. Idempotent; run at the first hybrid field advance after
+  // floor. Called once by finalize_units_conversion() after
   // fi->post_process_param() finalizes Si2NoRho.
   void convert_electron_density0();
+
+  // Convert the #INFLOW upstream state (bx,by,bz,rho,ux,uy,uz,T) from SI to
+  // code units. Called once by finalize_units_conversion(); no-op when no
+  // #INFLOW block was read.
+  void convert_inflow_state();
 
   void calc_mass_matrix();
   void calc_mass_matrix_amr();
@@ -571,38 +587,88 @@ public:
                 const int iStart, const int nComp, GETVALUE func,
                 const int iLev, const BC *bc = nullptr);
 
+  // Perfectly-conducting wall: zero the wall-normal B and wall-tangential E,
+  // mirror the remaining components.  `isB` selects the B/E convention.
+  void apply_conducting_wall(const amrex::iMultiFab &status,
+                             amrex::MultiFab &mf, const int iStart,
+                             const int nComp, const int iLev, const BC &bc,
+                             bool isB);
+
+  // Absorbing wall: matched-impedance ghost-cell blend; no image charges.
+  void apply_absorbing_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
+                            const int iStart, const int nComp, const int iLev,
+                            const BC &bc, bool isB);
+
+  // Inflow (open) wall: pin the ghost B to the upstream #INFLOW B and the
+  // ghost tangential E to the upstream motional E = -u_in x B_in (the normal E
+  // is left free).  This is a TRUE inflow field BC: the user prescribes the
+  // boundary field rather than the ghost inheriting the interior cell value.
+  // No-op when no #INFLOW block was read (the zero-gradient copy in use_float
+  // then applies, matching the original open-boundary behaviour).
+  void apply_inflow_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
+                         const int iStart, const int nComp, const int iLev,
+                         const BC &bc, bool isB);
+
+  // Hybrid-only: mirror ion moments into the physical-wall ghost cells for
+  // smooth pressure-gradient / Hall stencils at a wall.
+  void apply_centerPlasma_BC(const amrex::iMultiFab &status,
+                             amrex::MultiFab &mf, const int iLev);
+
+  // Wave hard source into boundary ghost cells at BC::wave faces (iField: B/E).
+  void apply_wave_field(const amrex::iMultiFab &status, amrex::MultiFab &mf,
+                        const int iStart, const int nComp, const int iLev,
+                        const BC &bc, int iField, amrex::Real t);
+
+  // Wave bulk-velocity kick (sum of iField==2 components) for particle
+  // injection.
+  void wave_velocity_kick(const amrex::Real *pos, amrex::Real t,
+                          amrex::Real &dvx, amrex::Real &dvy, amrex::Real &dvz);
+
   bool use_float(const int i, const int j, const int k, int &ip, int &jp,
                  int &kp, const BC &bc, const amrex::Box &bxValid) {
     bool useFloat = false;
     ip = i;
     jp = j;
     kp = k;
-    if (i < bxValid.smallEnd(ix_) && bc.lo[ix_] == BC::outflow) {
+
+    if (i < bxValid.smallEnd(ix_) &&
+        (bc.lo[ix_] == BC::outflow || bc.lo[ix_] == BC::inflow ||
+         bc.lo[ix_] == BC::fixed)) {
       useFloat = true;
       ip = bxValid.smallEnd(ix_);
     }
-    if (i > bxValid.bigEnd(ix_) && bc.hi[ix_] == BC::outflow) {
+    if (i > bxValid.bigEnd(ix_) &&
+        (bc.hi[ix_] == BC::outflow || bc.hi[ix_] == BC::inflow ||
+         bc.hi[ix_] == BC::fixed)) {
       useFloat = true;
       ip = bxValid.bigEnd(ix_);
     }
 
-    if (j < bxValid.smallEnd(iy_) && bc.lo[iy_] == BC::outflow) {
+    if (j < bxValid.smallEnd(iy_) &&
+        (bc.lo[iy_] == BC::outflow || bc.lo[iy_] == BC::inflow ||
+         bc.lo[iy_] == BC::fixed)) {
       useFloat = true;
       jp = bxValid.smallEnd(iy_);
     }
 
-    if (j > bxValid.bigEnd(iy_) && bc.hi[iy_] == BC::outflow) {
+    if (j > bxValid.bigEnd(iy_) &&
+        (bc.hi[iy_] == BC::outflow || bc.hi[iy_] == BC::inflow ||
+         bc.hi[iy_] == BC::fixed)) {
       useFloat = true;
       jp = bxValid.bigEnd(iy_);
     }
 
     if (nDim > 2) {
-      if (k < bxValid.smallEnd(iz_) && bc.lo[iz_] == BC::outflow) {
+      if (k < bxValid.smallEnd(iz_) &&
+          (bc.lo[iz_] == BC::outflow || bc.lo[iz_] == BC::inflow ||
+           bc.lo[iz_] == BC::fixed)) {
         useFloat = true;
         kp = bxValid.smallEnd(iz_);
       }
 
-      if (k > bxValid.bigEnd(iz_) && bc.hi[iz_] == BC::outflow) {
+      if (k > bxValid.bigEnd(iz_) &&
+          (bc.hi[iz_] == BC::outflow || bc.hi[iz_] == BC::inflow ||
+           bc.hi[iz_] == BC::fixed)) {
         useFloat = true;
         kp = bxValid.bigEnd(iz_);
       }

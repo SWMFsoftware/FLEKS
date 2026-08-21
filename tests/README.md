@@ -21,6 +21,11 @@ Each test case is contained within its own dedicated subdirectory containing a
 | PCAI                  | `pcai/`               | Proton-cyclotron anisotropy instability (`T_perp/T_par=3`, `gamma/Omega_ci=0.162`) | [README](pcai/README.md) |
 | Reconnection          | `reconnection/`       | Fadeev current-sheet reconnection on a uniform grid (x-y)     | [README](reconnection/README.md) |
 | AMR reconnection      | `reconnection_amr/`   | Fadeev current-sheet reconnection on a two-level AMR grid | [README](reconnection_amr/README.md) |
+| Reflecting BC         | `bc_reflecting/`      | Specular reflecting particle wall (pure particle push)        | [README](bc_reflecting/README.md) |
+| Absorbing BC          | `bc_absorb/`          | Grouped absorbing-BC tests: EM-pulse field absorber + particle absorber (one `PARAM.in.<suffix>` per variant) | [README](bc_absorb/README.md) |
+| Field-wall BC         | `bc_field/`      | Hybrid-PIC conducting/absorb field walls on a seeded shear-Alfvén wave (one `PARAM.in.<suffix>` per variant) | [README](bc_field/README.md) |
+| Wave injection        | `bc_wave/`            | Grouped wave-injection tests: mono Bz wave + shear Alfvén wave via `#WAVEBC` (one `PARAM.in.<suffix>` per variant) | [README](bc_wave/README.md) |
+| Oblique shock         | `shock/`              | 1D oblique magnetized shock | [README](shock/README.md) |
 | Performance           | `performance/`        | Beam-based scaling benchmark         | — (see `validate_performance.py`) |
 
 ### Ionization Parameter Commands

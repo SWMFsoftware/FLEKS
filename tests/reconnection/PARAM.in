@@ -62,12 +62,12 @@ code temperature.
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-76000.0                 T [K]          ions, beta_i ~ 0.5
+304000.0                T [K]          ions, beta_i ~ 0.5
 0.5                     rho [amu/cc]   Species 1: electrons (rho_e=rho_i*m_e/m_i => n_e=n_i, charge neutral)
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-76000.0                 T [K]          electrons
+304000.0                T [K]          electrons
 0.0                     bx [T]         guide field set by FadeevIC (bg = 0)
 0.0                     by [T]
 0.0                     bz [T]
@@ -95,7 +95,7 @@ T                       useFixedDt
 
 #NORMALIZATION
 1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
-5.0e4                   uNormSI   [m/s] ~ v_A so v_A ~ 1 in code units
+1.0e5                   uNormSI   [m/s] tNorm = 1 s; sets cLight_SI = uNormSI
 
 #MONITOR
 100                     dnReport
@@ -118,6 +118,6 @@ z=0 fluid ascii pic     plotString
 
 #STOP
 -1                      MaxIter
-3.0                     TimeMax   (~3 wci; ion-scale reconnection onset)
+3.0                     TimeMax   ~0.5 ion gyroperiod (reconnection onset)
 
 #RUN

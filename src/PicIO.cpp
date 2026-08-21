@@ -46,9 +46,11 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
   const int iEx_ = iBz_ + 1;
 
   const RealBox& range = Geom(0).ProbDomain();
+  // Only write the valid RealVect components (nDim may exceed AMREX_SPACEDIM).
+  const int iDimMax = std::min(nDim, AMREX_SPACEDIM);
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     RealVect xyz(0.0);
-    for (int iDim = 0; iDim < nDim; iDim++) {
+    for (int iDim = 0; iDim < iDimMax; iDim++) {
       xyz[iDim] = xyz_I[iPoint * nDim + iDim] * fi->get_Si2NoL();
     }
 
@@ -335,10 +337,13 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
   nPointAllProc = pointList_II.size();
   ParallelDescriptor::ReduceLongSum(nPointAllProc);
 
-  ParallelDescriptor::ReduceRealMin(xMinL_D.begin(), nDim);
-  ParallelDescriptor::ReduceRealMax(xMaxL_D.begin(), nDim);
+  // Only reduce/copy the valid RealVect components (nDim may exceed
+  // AMREX_SPACEDIM).
+  const int iDimMax = std::min(nDim, AMREX_SPACEDIM);
+  ParallelDescriptor::ReduceRealMin(xMinL_D.begin(), iDimMax);
+  ParallelDescriptor::ReduceRealMax(xMaxL_D.begin(), iDimMax);
 
-  for (int iDim = 0; iDim < nDim; ++iDim) {
+  for (int iDim = 0; iDim < iDimMax; ++iDim) {
     xMin_D[iDim] = xMinL_D[iDim];
     xMax_D[iDim] = xMaxL_D[iDim];
   }
@@ -447,6 +452,20 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
        var.substr(0, 2) == "qc" || var.substr(0, 5) == "divEc" ||
        var.substr(0, 4) == "divB" || var.substr(0, 3) == "phi")) {
     return value;
+  }
+  if (useHybridPIC &&
+      (var.substr(0, 5) == "dBxdt" || var.substr(0, 5) == "dBydt" ||
+       var.substr(0, 5) == "dBzdt")) {
+    amrex::Abort(ToString(var) +
+                 " is not supported by the hybrid-PIC solver (dBdt is a "
+                 "full-PIC-only diagnostic).");
+  }
+  // Mach number (mMach) is a full-PIC-only diagnostic; the hybrid solver does
+  // not compute it.
+  if (useHybridPIC && var.substr(0, 4) == "mach") {
+    amrex::Abort(ToString(var) +
+                 " is not supported by the hybrid-PIC solver (Mach number is a "
+                 "full-PIC-only diagnostic).");
   }
   if (isValidMFI || var.substr(0, 1) == "X" || var.substr(0, 1) == "Y" ||
       var.substr(0, 1) == "Z") {
@@ -704,10 +723,6 @@ void Pic::read_restart() {
       apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0,
                centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev);
       centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-      MultiFab::Copy(centerEprev[iLev], centerEhybrid[iLev], 0, 0, 3,
-                     centerEprev[iLev].nGrow());
-      MultiFab::Copy(centerBprev[iLev], centerB[iLev], 0, 0, 3,
-                     centerBprev[iLev].nGrow());
     } else {
       VisMF::Read(nodeE[iLev],
                   restartDir + gridName + "_nodeE" + lev_string(iLev));
@@ -839,29 +854,14 @@ void Pic::write_plots(bool doForce) {
       if (plot.writer.is_amrex_format() || plot.writer.is_hdf5_format()) {
         write_amrex(plot.writer, tc->get_time_si(), tc->get_cycle());
       } else {
-        // Structured (ascii/IDL) plots.
-        const bool needMach =
-            plot.writer.get_plotString().find("mach") != std::string::npos;
-        if (useHybridPIC) {
-          // Hybrid: get_var reads the live cell-centred fields
-          // (centerB/centerEhybrid/centerPlasma/centerJ) directly, so the
-          // nodePlasma / nodeE output mirrors are not needed. Only the Mach
-          // number is still computed on demand (calc_mach_number is
-          // hybrid-aware and reads centerPlasmaSum). The node-centred dB*dt
-          // diagnostics are node-only, so materialize nodeB/dBdt only when a
-          // dB*dt variable is actually requested.
-          if (needMach) {
-            calc_mach_number();
-          }
-          if (plot.writer.get_plotString().find("dB") != std::string::npos) {
-            sync_node_B_output();
-          }
-        } else {
-          // Full-PIC: structured plots read the nodePlasma / mMach fields, and
-          // the deferred node mirrors must be materialized before writing.
-          // The Mach number is computed only if this plot requests it.
+        // Structured (ascii/IDL) plots. Full-PIC reads the nodePlasma / mMach
+        // fields, whose deferred node mirrors / Mach number must be
+        // materialized before writing.
+        // Hybrid reads the live cell-centred fields directly.
+        if (!useHybridPIC) {
+          const bool needMach =
+              plot.writer.get_plotString().find("mach") != std::string::npos;
           sync_node_plasma_output(needMach);
-          sync_node_E_output();
         }
         plot.writer.write(tc->get_time_si(), tc->get_cycle(),
                           find_output_list_caller, get_field_var_caller);
@@ -1022,13 +1022,6 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
   // in most visualization tools and it is only useful for debugging.
   const bool saveNode = pw.save_node();
 
-  // Node-centred amrex/hdf5 output for the hybrid solver needs the deferred
-  // node mirrors materialized (the solver no longer maintains them).
-  if (saveNode && useHybridPIC) {
-    sync_node_E_output();
-    sync_node_B_output();
-  }
-
   Vector<Geometry> geomOut(n_lev());
 
   set_IO_geom(geomOut, pw);
@@ -1107,7 +1100,9 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
     if (plotVars.find("B") != std::string::npos) {
       //------------------B---------------
-      if (saveNode) {
+      // Full-PIC can write either node- or cell-centred B.
+      // The hybrid solver keeps B only on the cell centers.
+      if (saveNode && !useHybridPIC) {
         MultiFab::Copy(out[iLev], nodeB[iLev], 0, iStart, nodeB[iLev].nComp(),
                        0);
       } else {
@@ -1123,12 +1118,14 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
     if (plotVars.find("E") != std::string::npos) {
       //-----------------E-----------------------------
-      if (saveNode) {
+      // Full-PIC writes the node-centred nodeE when saveNode is set.
+      // The hybrid solver keeps E only on the cell centers.
+      if (saveNode && !useHybridPIC) {
         MultiFab::Copy(out[iLev], nodeE[iLev], 0, iStart, nodeE[iLev].nComp(),
                        0);
       } else if (useHybridPIC) {
-        // Hybrid solver: E is cell-centred in centerEhybrid (the nodeE mirror
-        // is no longer maintained). Copy directly -- no node-to-cell average.
+        // Hybrid solver: E is cell-centred in centerEhybrid
+        // Copy directly -- no node-to-cell average.
         MultiFab::Copy(out[iLev], centerEhybrid[iLev], 0, iStart,
                        centerEhybrid[iLev].nComp(), 0);
       } else {

@@ -7,8 +7,9 @@ the wall-clock.  This is the hybrid counterpart of performance/PARAM.in (the
 full-PIC beam benchmark) and is exercised by tests/validate_performance.py.
 
 Normalization matches the hybrid test family (whistler): lNormSI ~ d_i,
-uNormSI ~ v_A so d_i ~ v_A ~ 1 and (for the proton) B ~ Omega_i ~ 1 in code
-units.  The Hall/whistler mode is sub-cycled (nBSubcycle = 8) so the explicit
+uNormSI = speed of light (set to v_A so c/v_A = 1), so d_i ~ v_A ~ 1 and
+(for the proton) B ~ Omega_i ~ 1 in code units.  The Hall/whistler mode is
+sub-cycled (nBSubcycle = 8) so the explicit
 advance stays RK4-stable at dt = 0.02; this exercises the sub-cycling machinery
 that dominates the hybrid field-solver cost.
 
@@ -78,7 +79,7 @@ neutralizing massless fluid, so no electron particle species is present.
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-5.2195e-9               bx [T]       uniform guide field Bx0 (B_code ~ 1)
+1.0439e-8               bx [T]       uniform guide field Bx0 (B_code ~ 1)
 0.0                     by [T]
 0.0                     bz [T]
 0.0                     ex [V/m]
@@ -94,7 +95,7 @@ T                       useFixedDt
 
 #NORMALIZATION
 1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
-5.0e4                   uNormSI   [m/s] ~ v_A so v_A ~ 1 in code units
+1.0e5                   uNormSI   [m/s] tNorm = 1 s; sets cLight_SI = uNormSI
 
 #MONITOR
 50                      dnReport
