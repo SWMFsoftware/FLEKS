@@ -71,14 +71,22 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     // stationary plasma).  Conversion to code units is deferred to
     // convert_inflow_state(), which runs after the normalization is final.
     double tmp;
-    param.read_var("bx", tmp);   inflowBx_ = tmp;   // [T]
-    param.read_var("by", tmp);   inflowBy_ = tmp;   // [T]
-    param.read_var("bz", tmp);   inflowBz_ = tmp;   // [T]
-    param.read_var("rho", tmp);  inflowRho_ = tmp;  // [amu/cc]
-    param.read_var("ux", tmp);   inflowUx_ = tmp;   // [km/s]
-    param.read_var("uy", tmp);   inflowUy_ = tmp;   // [km/s]
-    param.read_var("uz", tmp);   inflowUz_ = tmp;   // [km/s]
-    param.read_var("T", tmp);    inflowT_ = tmp;    // [K]
+    param.read_var("bx", tmp);
+    inflowBx_ = tmp; // [T]
+    param.read_var("by", tmp);
+    inflowBy_ = tmp; // [T]
+    param.read_var("bz", tmp);
+    inflowBz_ = tmp; // [T]
+    param.read_var("rho", tmp);
+    inflowRho_ = tmp; // [amu/cc]
+    param.read_var("ux", tmp);
+    inflowUx_ = tmp; // [km/s]
+    param.read_var("uy", tmp);
+    inflowUy_ = tmp; // [km/s]
+    param.read_var("uz", tmp);
+    inflowUz_ = tmp; // [km/s]
+    param.read_var("T", tmp);
+    inflowT_ = tmp; // [K]
     inflowDefined_ = true;
   } else if (command == "#WAVEBC") {
     waveBC.read_param(param, fi);
@@ -1421,8 +1429,7 @@ void Pic::convert_inflow_state() {
   // gives the 1-D thermal speed vth = sqrt(T_code / mass_code) at use sites
   // (mass_code = mass_i/m_p), so vth = sqrt(kT/m_i) in code velocity units.
   const double unormSI = fi->get_unorm_si();
-  inflowT_ = cBoltzmannSI * inflowT_ /
-             (cProtonMassSI * unormSI * unormSI);
+  inflowT_ = cBoltzmannSI * inflowT_ / (cProtonMassSI * unormSI * unormSI);
 
   // Publish the converted state to the FluidInterface so the Particles layer
   // (which holds an fi pointer, not a Pic pointer) can read it via
@@ -1449,15 +1456,14 @@ void Pic::convert_inflow_state() {
   fi->set_inflow_b(inflowBx_, inflowBy_, inflowBz_);
 
   amrex::Print() << "  #INFLOW state (code units):"
-                 << " B=(" << inflowBx_ << "," << inflowBy_ << ","
-                 << inflowBz_ << ")"
-                 << " n=" << inflowRho_
-                 << " u=(" << inflowUx_ << "," << inflowUy_ << ","
-                 << inflowUz_ << ")"
+                 << " B=(" << inflowBx_ << "," << inflowBy_ << "," << inflowBz_
+                 << ")"
+                 << " n=" << inflowRho_ << " u=(" << inflowUx_ << ","
+                 << inflowUy_ << "," << inflowUz_ << ")"
                  << " vth=" << (inflowT_ > 0 ? std::sqrt(inflowT_) : 0.0)
                  << "  (Si2NoB=" << Si2NoB
-                 << ", Si2NoRho=" << fi->get_Si2NoRho()
-                 << ", Si2NoV=" << Si2NoV << ")\n";
+                 << ", Si2NoRho=" << fi->get_Si2NoRho() << ", Si2NoV=" << Si2NoV
+                 << ")\n";
 }
 
 //==========================================================
@@ -2854,8 +2860,8 @@ void Pic::apply_centerB_BC(int iLev) {
              &Pic::get_center_B, iLev, &bcBField);
     // Open-inflow faces: ghost B = copy of the edge cell (Hybrid-VPIC
     // pec-style); applied AFTER apply_BC so the wall condition wins.
-    apply_inflow_wall(cellStatus[iLev], centerB[iLev], 0,
-                      centerB[iLev].nComp(), iLev, bcBField, true);
+    apply_inflow_wall(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+                      iLev, bcBField, true);
   } else {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
@@ -3826,8 +3832,8 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
 
 //==========================================================
 void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
-                            const int iStart, const int nComp,
-                            const int iLev, const BC& bc, bool isB) {
+                            const int iStart, const int nComp, const int iLev,
+                            const BC& bc, bool isB) {
   std::string nameFunc = "Pic::apply_inflow_wall";
   timing_func(nameFunc);
 
@@ -3864,7 +3870,7 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
         return;
 
-      IntVect ijk{AMREX_D_DECL(i, j, k)};
+      IntVect ijk{ AMREX_D_DECL(i, j, k) };
 
       for (int d = 0; d < nDim; ++d) {
         bool isLow = ((bc.lo[d] == BC::inflow || bc.lo[d] == BC::fixed)) &&
@@ -3895,8 +3901,7 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
 
         for (int iVar = 0; iVar < nComp; ++iVar) {
           const int comp = iStart + iVar;
-          arr(i, j, k, comp) =
-              arr(AMREX_D_DECL(m[ix_], m[iy_], m[iz_]), comp);
+          arr(i, j, k, comp) = arr(AMREX_D_DECL(m[ix_], m[iy_], m[iz_]), comp);
         }
       }
     });

@@ -275,9 +275,9 @@ private:
   // Upstream number density (code units), bulk velocity (code units), and
   // temperature (code units -> 1-D thermal speed sqrt(kT/m) in code units is
   // derived at use sites from n0, T, mass).
-  amrex::Real inflowRho_ = 0.0;     // number density, code units
+  amrex::Real inflowRho_ = 0.0; // number density, code units
   amrex::Real inflowUx_ = 0.0, inflowUy_ = 0.0, inflowUz_ = 0.0;
-  amrex::Real inflowT_ = 0.0;       // temperature, code units (energy/mass)
+  amrex::Real inflowT_ = 0.0; // temperature, code units (energy/mass)
 
   // select particle params
   bool doSelectParticle = false;
@@ -439,8 +439,8 @@ public:
   void finalize_units_conversion();
 
   // Convert electronDensity0 (amu/cc) to code units and set the auto density
-  // floor. Called once by finalize_units_conversion() after fi->post_process_param()
-  // finalizes Si2NoRho.
+  // floor. Called once by finalize_units_conversion() after
+  // fi->post_process_param() finalizes Si2NoRho.
   void convert_electron_density0();
 
   // Convert the #INFLOW upstream state (bx,by,bz,rho,ux,uy,uz,T) from SI to
@@ -611,8 +611,8 @@ public:
 
   // Hybrid-only: mirror ion moments into the physical-wall ghost cells for
   // smooth pressure-gradient / Hall stencils at a wall.
-  void apply_centerPlasma_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,
-                             const int iLev);
+  void apply_centerPlasma_BC(const amrex::iMultiFab &status,
+                             amrex::MultiFab &mf, const int iLev);
 
   // Wave hard source into boundary ghost cells at BC::wave faces (iField: B/E).
   void apply_wave_field(const amrex::iMultiFab &status, amrex::MultiFab &mf,

@@ -598,7 +598,8 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
               inflowVel.vz = iv->uz;
             }
           }
-          add_particles_cell(iLev, mfi, ijk, fi, true, IntVect(), inflowVel, -1);
+          add_particles_cell(iLev, mfi, ijk, fi, true, IntVect(), inflowVel,
+                             -1);
         }
       }
     });
@@ -631,7 +632,8 @@ inline amrex::Real inj_mean_inward_flux(amrex::Real vd) {
 //   Z    = int_0^inf w exp(-(w-vd)^2) dw
 //        = [ e^{-vd^2} + vd*sqrt(pi)*(1+erf(vd)) ] / 2
 //   F(w) = int_0^w w' exp(-(w'-vd)^2) dw'
-//        = [ (e^{-vd^2} - e^{-(w-vd)^2}) + vd*sqrt(pi)*(erf(w-vd)+erf(vd)) ] / 2
+//        = [ (e^{-vd^2} - e^{-(w-vd)^2}) + vd*sqrt(pi)*(erf(w-vd)+erf(vd)) ] /
+//        2
 // and solve F(w) = r * Z.  Solved with bisection + Newton polish (port of
 // the diagonal-pressure case of Hybrid-VPIC's compute_injection(),
 // injection.cxx).  NOTE: the exponent and erf arguments are (w - vd), NOT
@@ -740,8 +742,7 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
           continue;
 
         // This tile must touch the global domain edge on this face.
-        const int domEdge =
-            isHi ? domain.bigEnd(iDim) : domain.smallEnd(iDim);
+        const int domEdge = isHi ? domain.bigEnd(iDim) : domain.smallEnd(iDim);
         const int tileEdge = isHi ? bx.bigEnd(iDim) : bx.smallEnd(iDim);
         if (tileEdge != domEdge)
           continue;
@@ -759,10 +760,9 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
         // Mean influx per boundary-transverse cell per step, in
         // macroparticles (Hybrid-VPIC shock deck, bright() accumulator):
         //   dn = nppc * vtherm * g(vd) * dt / dx
-        const Real meanFlux = (vtherm > 0)
-                                  ? nppc * vtherm * inj_mean_inward_flux(vd) *
-                                        dt / dxn
-                                  : nppc * (uOut * inward) * dt / dxn;
+        const Real meanFlux =
+            (vtherm > 0) ? nppc * vtherm * inj_mean_inward_flux(vd) * dt / dxn
+                         : nppc * (uOut * inward) * dt / dxn;
 
         // Loop over the transverse cells of this tile's face.
         const int lo1 = bx.smallEnd(t1), hi1 = bx.bigEnd(t1);
@@ -793,12 +793,11 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
               RealVect pos;
               const Real xFace = isHi ? probHi[iDim] : probLo[iDim];
               pos[iDim] = xFace + inward * (1.0e-3 * dxn);
-              pos[t1] = probLo[t1] + (c1 - domain.smallEnd(t1) + randNum()) *
-                                         cellSize[t1];
+              pos[t1] = probLo[t1] +
+                        (c1 - domain.smallEnd(t1) + randNum()) * cellSize[t1];
               if (nDim > 2) {
                 pos[t2] = probLo[t2] +
-                          (c2 - domain.smallEnd(t2) + randNum()) *
-                              cellSize[t2];
+                          (c2 - domain.smallEnd(t2) + randNum()) * cellSize[t2];
               }
 
               // Velocity: inward normal speed from the flux-weighted
@@ -1373,10 +1372,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
 
           for (int side = 0; side < 2; ++side) {
             const bool isLo = (side == 0);
-            const int domEdge =
-                isLo ? dom.smallEnd(iDim) : dom.bigEnd(iDim);
-            const int tileEdge =
-                isLo ? bx.smallEnd(iDim) : bx.bigEnd(iDim);
+            const int domEdge = isLo ? dom.smallEnd(iDim) : dom.bigEnd(iDim);
+            const int tileEdge = isLo ? bx.smallEnd(iDim) : bx.bigEnd(iDim);
             if (tileEdge != domEdge)
               continue;
 
@@ -1398,8 +1395,10 @@ Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
                         [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
 #if (AMREX_SPACEDIM == 2)
                           int tgt_i = i, tgt_j = j;
-                          if (iDim == 0) tgt_i = domEdge;
-                          if (iDim == 1) tgt_j = domEdge;
+                          if (iDim == 0)
+                            tgt_i = domEdge;
+                          if (iDim == 1)
+                            tgt_j = domEdge;
                           arr(tgt_i, tgt_j, 0, c) += arr(i, j, 0, c);
                           arr(i, j, 0, c) = 0.0;
 #elif (AMREX_SPACEDIM == 3)
