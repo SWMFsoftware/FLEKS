@@ -64,3 +64,5 @@ jobs:
           parallel-summary: summary_2d_parallel.md
           summary-title: Standalone FLEKS 2D AMReX Test Results
           post-pr-comment: 'false'
+          enable-debug-warning-check: 'true'
+          debug-warning-summary: debug_warning_check_2d.md

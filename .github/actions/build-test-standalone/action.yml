@@ -25,9 +25,72 @@ inputs:
     description: "Whether to post the results as a PR comment ('true'/'false')."
     required: true
     default: 'false'
+  enable-debug-warning-check:
+    description: >-
+      If 'true', additionally compile FLEKS in debug mode (-debug -O0) purely to
+      surface compiler warnings. This build is NOT used to run tests. The step
+      fails if any compiler warning is emitted during this compilation.
+    required: false
+    default: 'false'
+  debug-warning-summary:
+    description: 'Filename for the debug-build warning check summary (relative to the tests dir).'
+    required: false
+    default: debug_warning_check.md
 runs:
   using: 'composite'
   steps:
+    - name: Debug-build warning check (compile-only, -debug -O0)
+      if: inputs.enable-debug-warning-check == 'true'
+      working-directory: SWMF/PC/FLEKS
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # Configure a debug, unoptimized build. This rebuilds the whole tree
+        # with no optimization so the compiler emits every warning it can.
+        ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo -debug -O0
+
+        # Compile, capturing ALL output (both stdout and stderr) to a log file.
+        # We deliberately do NOT run any tests with this build.
+        LOG="debug_build_warnings.log"
+        make EXE -j$(nproc) > "$LOG" 2>&1 || {
+          echo "::error::Debug build (-debug -O0) failed to compile."
+          cat "$LOG"
+          exit 1
+        }
+
+        # Detect compiler warnings. Match common warning prefixes emitted by
+        # g++, clang++, and gfortran so this is compiler-agnostic.
+        WARN_PATTERN='(warning:|Warning:|[:][0-9]+[:][0-9]*: warning:|remark #|converting .* to .* changes value|Possible change of value in conversion)'
+        if grep -E -i "$WARN_PATTERN" "$LOG" > debug_warnings.txt; then
+          echo "::error::Compiler warnings detected during debug build (-debug -O0):"
+          cat debug_warnings.txt
+          {
+            echo "### ⚠️ Debug-build compiler warnings"
+            echo ""
+            echo "The \`-debug -O0\` warning check found the following warnings:"
+            echo ""
+            echo '```'
+            cat debug_warnings.txt
+            echo '```'
+          } > "tests/${{ inputs.debug-warning-summary }}"
+          # Restore the optimized configuration so the downstream test build
+          # (and its cache key) is unaffected by the debug configure.
+          ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo
+          exit 1
+        fi
+
+        echo "Debug-build warning check passed: no compiler warnings."
+        {
+          echo "### ✅ Debug-build warning check"
+          echo ""
+          echo "Compiled with \`-debug -O0\`; no compiler warnings were detected."
+        } > "tests/${{ inputs.debug-warning-summary }}"
+
+        # Restore the optimized configuration so the downstream test build
+        # (and its cache key) is unaffected by the debug configure.
+        ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo
+
     - name: Configure Standalone FLEKS Source
       working-directory: SWMF/PC/FLEKS
       shell: bash
@@ -92,6 +155,11 @@ runs:
             cat SWMF/PC/FLEKS/tests/${{ inputs.parallel-summary }}
             echo ""
           fi
+          if [ -f SWMF/PC/FLEKS/tests/${{ inputs.debug-warning-summary }} ]; then
+            echo "#### Debug-build warning check (-debug -O0)"
+            cat SWMF/PC/FLEKS/tests/${{ inputs.debug-warning-summary }}
+            echo ""
+          fi
         } >> $GITHUB_STEP_SUMMARY
 
     - name: Post PR Comment
@@ -102,9 +170,10 @@ runs:
           const fs = require('fs');
           const serialPath = 'SWMF/PC/FLEKS/tests/${{ inputs.serial-summary }}';
           const parallelPath = 'SWMF/PC/FLEKS/tests/${{ inputs.parallel-summary }}';
+          const debugWarnPath = 'SWMF/PC/FLEKS/tests/${{ inputs.debug-warning-summary }}';
           let body = '';
 
-          if (fs.existsSync(serialPath) || fs.existsSync(parallelPath)) {
+          if (fs.existsSync(serialPath) || fs.existsSync(parallelPath) || fs.existsSync(debugWarnPath)) {
             body += '### 🧪 ${{ inputs.summary-title }}\n\n';
 
             if (fs.existsSync(serialPath)) {
@@ -112,6 +181,9 @@ runs:
             }
             if (fs.existsSync(parallelPath)) {
               body += fs.readFileSync(parallelPath, 'utf8') + '\n';
+            }
+            if (fs.existsSync(debugWarnPath)) {
+              body += fs.readFileSync(debugWarnPath, 'utf8') + '\n';
             }
           }
 
