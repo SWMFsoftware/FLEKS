@@ -1396,12 +1396,20 @@ Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
 
             ParallelFor(strip, nCompMF,
                         [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
-                          IntVect ijk{ AMREX_D_DECL(i, j, k) };
-                          IntVect tgt = ijk;
-                          tgt[iDim] = domEdge;
-                          arr(tgt[0], tgt[1], tgt[2], c) +=
-                              arr(ijk[0], ijk[1], ijk[2], c);
-                          arr(ijk[0], ijk[1], ijk[2], c) = 0.0;
+#if (AMREX_SPACEDIM == 2)
+                          int tgt_i = i, tgt_j = j;
+                          if (iDim == 0) tgt_i = domEdge;
+                          if (iDim == 1) tgt_j = domEdge;
+                          arr(tgt_i, tgt_j, 0, c) += arr(i, j, 0, c);
+                          arr(i, j, 0, c) = 0.0;
+#elif (AMREX_SPACEDIM == 3)
+                          int tgt_i = i, tgt_j = j, tgt_k = k;
+                          if (iDim == 0) tgt_i = domEdge;
+                          if (iDim == 1) tgt_j = domEdge;
+                          if (iDim == 2) tgt_k = domEdge;
+                          arr(tgt_i, tgt_j, tgt_k, c) += arr(i, j, k, c);
+                          arr(i, j, k, c) = 0.0;
+#endif
                         });
           }
         }

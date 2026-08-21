@@ -2,7 +2,6 @@
 
 This directory groups the absorbing-boundary tests.  Each variant is a
 `PARAM.in.<suffix>` file; the runner discovers all of them and runs each once.
-A single `validate.py` branches on the variant name.
 
 ## Variants
 
@@ -35,7 +34,8 @@ particles. `validate.py` branches on the variant name:
 
 ## Running
 
+To run all variants in this directory,
+
 ```bash
-# run all variants in this directory
 python3 tests/validate_tests.py --test=bc_absorb
 ```
