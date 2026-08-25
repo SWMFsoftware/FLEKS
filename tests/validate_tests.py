@@ -804,8 +804,13 @@ def discover_tests(tests_dir="tests"):
     return tests
 
 
-def run_one_test(test_dir, name, nprocs, results):
-    """Pre-flight check + run one test (or its PARAM variants) + record result."""
+def run_one_test(test_dir, name, nprocs, results, variant_filter=None):
+    """Pre-flight check + run one test (or its PARAM variants) + record result.
+
+    *variant_filter* (optional) is a PARAM suffix (without the leading dot, e.g.
+    "hybrid") that restricts execution to that single variant of the test.  When
+    None every variant under *test_dir* runs.
+    """
     ok, preflight_reason, skip = preflight_check(name)
     if not ok:
         if skip:
@@ -848,6 +853,33 @@ def run_one_test(test_dir, name, nprocs, results):
             (os.path.join(test_dir, "PARAM.in.hybrid"),
              "FREESTREAM (HYBRID HALL-OFF)", "freestream"),
         ]
+
+    # Restrict to a single PARAM variant when requested.  The variant token is
+    # the filename suffix without the leading dot, with the base file (no
+    # suffix) mapped to "full": `PARAM.in` -> "full", `PARAM.in.hybrid` ->
+    # "hybrid".  This lets `--test=NAME.full` pick the base PARAM.in and
+    # `--test=NAME.hybrid` pick the hybrid variant.
+    def _variant_token(pf):
+        suffix = os.path.basename(pf)[len("PARAM.in"):].lstrip(".")
+        return suffix or "full"
+
+    if variant_filter is not None:
+        kept = []
+        for pf, display_name, base_name in variants:
+            if _variant_token(pf) == variant_filter:
+                kept.append((pf, display_name, base_name))
+        if not kept:
+            available = ", ".join(sorted({_variant_token(pf)
+                                          for pf, _, _ in variants}))
+            logger.error(
+                "Error: no variant '%s' in test '%s'. Available variants: %s",
+                variant_filter, name, available)
+            results.append((name.upper(), "FAILED",
+                            f"no variant '{variant_filter}'"))
+            return
+        variants = kept
+        logger.debug("Restricted test '%s' to variant '%s'.", name,
+                     variant_filter)
 
     for param_file, display_name, base_name in variants:
         with open(param_file) as _f:
@@ -928,8 +960,17 @@ def main():
         sys.exit(1)
 
     # Filter to a single test if --test was given.
+    # `--test=NAME` selects every PARAM variant under tests/NAME/.  An optional
+    # `.suffix` selects ONE variant: `--test=shock.hybrid` runs only the
+    # `PARAM.in.hybrid` file in tests/shock/.  This lets a user target a specific
+    # solver variant (e.g. hybrid) without running its sibling variants.
+    variant_filter = None
     if selected_test is not None:
-        matching = [t for t in tests if t[1] == selected_test]
+        if "." in selected_test:
+            name_part, variant_filter = selected_test.split(".", 1)
+        else:
+            name_part = selected_test
+        matching = [t for t in tests if t[1] == name_part]
         if not matching:
             available = ", ".join(t[1] for t in tests)
             logger.error("Error: test '%s' not found.", selected_test)
@@ -941,7 +982,7 @@ def main():
     results = []  # Collect results for summary table
 
     for test_dir, name in tests:
-        run_one_test(test_dir, name, nprocs, results)
+        run_one_test(test_dir, name, nprocs, results, variant_filter=variant_filter)
 
     # ----------------------------------------------------
     # Print Summary Table

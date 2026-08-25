@@ -100,10 +100,17 @@ run with clear reconnection signatures.
 ## Running
 
 This test needs the **2D AMReX** build with AMR support (`-amrex2d -lev=2`; see
-`tests/README.md` for the build steps).  Then run:
+`tests/README.md` for the build steps).  Then run (both variants together):
 
 ```bash
 python3 tests/validate_tests.py --test=reconnection_amr
+```
+
+To run a **single variant**, append its token to the test name:
+
+```bash
+python3 tests/validate_tests.py --test=reconnection_amr.full     # full PIC only
+python3 tests/validate_tests.py --test=reconnection_amr.hybrid   # hybrid only
 ```
 
 See `Doc/AMR_hybrid_implementation_plan.md` for the full analysis of the AMR +

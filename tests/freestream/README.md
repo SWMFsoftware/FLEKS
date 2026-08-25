@@ -40,6 +40,15 @@ step.
 
 ## Running
 
+Both variants run together under the test name:
+
 ```bash
-python3 tests/validate_tests.py --test=freestream
+python3 tests/validate_tests.py --test=freestream          # both variants
+```
+
+To run a **single variant**, append its token to the test name:
+
+```bash
+python3 tests/validate_tests.py --test=freestream.full      # full PIC only (PARAM.in)
+python3 tests/validate_tests.py --test=freestream.hybrid    # hybrid only (PARAM.in.hybrid)
 ```

@@ -49,9 +49,15 @@ plus the PEC/absorbing-wall wiring check.
 
 ## Running
 
+All variants run together under the test name:
+
 ```bash
-python3 tests/validate_tests.py --test=bc_field
+python3 tests/validate_tests.py --test=bc_field          # both variants
 ```
 
-The output table lists both `BC_FIELD (HYBRID.ABSORB)` and
-`BC_FIELD (HYBRID.CONDUCTING)`.
+To run a **single variant**, append its token to the test name:
+
+```bash
+python3 tests/validate_tests.py --test=bc_field.hybrid.absorb       # hybrid absorb only
+python3 tests/validate_tests.py --test=bc_field.hybrid.conducting   # hybrid conducting only
+```

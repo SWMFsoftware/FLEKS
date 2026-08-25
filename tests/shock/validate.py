@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
-"""Validator for the 1D oblique-shock hybrid boundary test.
+"""Validator for the 1D shock test.
 
-A magnetized hybrid plasma flows into a reflecting left wall with a clean INFLOW
-right boundary (45 deg oblique upstream field, Hall term on).  It guards against a
+A magnetized plasma flows into a reflecting left wall with a clean INFLOW right
+boundary (45 deg oblique upstream field, Hall term on).  It guards against a
 boundary-condition regression where the field energy Eb diverges.
+
+This test exists in two solver variants that share the same physics:
+
+* ``PARAM.in``        -> full PIC (solveEM) solver
+* ``PARAM.in.hybrid`` -> hybrid (Hall OHM's law) solver (original test)
+
+Run the harness as ``--test=shock`` (full PIC) or ``--test=shock_hybrid``
+(hybrid).  Both use the same ``apply_inflow_wall`` / ``fixed`` field BC, so the
+energy-divergence guard below applies to both.
 
 Validation is split into `validate_log` (energy-log) and `validate_plot`
 (final #SAVEPLOT snapshot).  See README.md "Validation" for the full physics
@@ -60,23 +69,48 @@ def _read_plot(path):
     on failure.
     """
     with open(path, "r") as fh:
-        lines = [ln.strip() for ln in fh if ln.strip()]
+        # PostProc.pl emits a few non-printable control bytes (e.g. a leading
+        # STX/null prefix read from the binary .idl) that corrupt the first token
+        # of the column-name header; drop anything that is not printable/space.
+        lines = [ln.strip() for ln in fh]
+    lines = [''.join(c for c in ln if c.isprintable() or c in "\t")
+             for ln in lines]
+    lines = [ln for ln in lines if ln]
     if not lines:
         return None, None
-    # Find the header: first line whose first token is exactly 'x'.
+
+    # Locate the column-name header.  FLEKS normally writes it as the first line
+    # whose leading token is exactly 'x'.  Some snapshots (e.g. full-PIC fluid
+    # output for multiple species) omit the coordinate column entirely and start
+    # with the first field name (e.g. 'rhoS0'); such rows still contain the known
+    # physics columns, so we accept them too.  A leading '#' (comment prefix) is
+    # stripped before testing.
+    _KNOWN = {"bx", "by", "bz", "ex", "ey", "ez", "rhos0", "uxs0"}
     hdr_i = None
     for i, ln in enumerate(lines):
-        if ln.split()[0] == "x":
+        toks = ln.replace("#", " ").split()
+        if not toks:
+            continue
+        low = {t.lower() for t in toks}
+        if toks[0].lower() == "x" or toks[0].lower() == "X" or (_KNOWN & low):
             hdr_i = i
             break
     if hdr_i is None:
         return None, None
-    header = lines[hdr_i].split()
-    if "x" not in header:
-        return None, None
-    x_col = header.index("x")
-    xs = []
+
+    header = lines[hdr_i].replace("#", " ").split()
+    # Coordinate column: 'x' (or 'X') if present; otherwise the snapshot has no
+    # explicit coordinate and we synthesize a uniform index below.
+    if "x" in header:
+        x_name = "x"
+    elif "X" in header:
+        x_name = "X"
+    else:
+        x_name = None
+    x_col = header.index(x_name) if x_name else None
+
     data = {name: [] for name in header}
+    rowvals = []
     for ln in lines[hdr_i + 1:]:
         parts = ln.split()
         if not parts:
@@ -89,13 +123,20 @@ def _read_plot(path):
         # are omitted in the compact output); the physics columns come first, so
         # map the row onto the first len(vals) header names.
         ncol = min(len(vals), len(header))
-        if vals[x_col if x_col < ncol else 0] is None:
-            pass
-        xs.append(vals[x_col] if x_col < ncol else vals[0])
+        rowvals.append((vals, ncol))
         for i in range(ncol):
             data[header[i]].append(vals[i])
-    if not xs:
+
+    if not rowvals:
         return None, None
+
+    # Use the explicit coordinate column when present; otherwise synthesize a
+    # uniform index so the upstream/downstream region fractioning still works.
+    if x_col is not None:
+        xs = [vals[x_col] if x_col < ncol else vals[0]
+              for vals, ncol in rowvals]
+    else:
+        xs = list(range(len(rowvals)))
     return xs, data
 
 

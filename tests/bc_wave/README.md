@@ -26,7 +26,15 @@ Both variants exercise the **wave-injection boundary condition** (`BC::wave` +
 
 ## Running
 
+All variants run together under the test name:
+
 ```bash
-# run all variants in this directory
-python3 tests/validate_tests.py --test=bc_wave
+python3 tests/validate_tests.py --test=bc_wave          # all variants
+```
+
+To run a **single variant**, append its token to the test name:
+
+```bash
+python3 tests/validate_tests.py --test=bc_wave.mono     # monochromatic EM wave only
+python3 tests/validate_tests.py --test=bc_wave.alfven   # shear Alfvén wave only
 ```

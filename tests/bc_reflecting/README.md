@@ -71,9 +71,15 @@ the `rhoS0` confinement check apply unchanged to both variants.
 
 ## Running
 
+Both variants run together under the test name:
+
 ```bash
-python3 tests/validate_tests.py --test=bc_reflecting
+python3 tests/validate_tests.py --test=bc_reflecting          # both variants
 ```
 
-The output table lists both `BC_REFLECTING` (full PIC) and
-`BC_REFLECTING (HYBRID)` (hybrid PIC) results.
+To run a **single variant**, append its token to the test name:
+
+```bash
+python3 tests/validate_tests.py --test=bc_reflecting.full      # full PIC only (PARAM.in)
+python3 tests/validate_tests.py --test=bc_reflecting.hybrid    # hybrid only (PARAM.in.hybrid)
+```

@@ -34,8 +34,8 @@ particles. `validate.py` branches on the variant name:
 
 ## Running
 
-To run all variants in this directory,
-
 ```bash
-python3 tests/validate_tests.py --test=bc_absorb
+python3 tests/validate_tests.py --test=bc_absorb.fields            # fields only
+python3 tests/validate_tests.py --test=bc_absorb.particles         # particles only
+python3 tests/validate_tests.py --test=bc_absorb.hybrid.particles  # hybrid+particles only
 ```

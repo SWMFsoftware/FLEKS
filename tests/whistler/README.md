@@ -51,12 +51,18 @@ ion-scale whistler frequency (`ω/Ω_i ≲ 1`, i.e. `dt·Ω_i ≪ 1`).
 
 ## Running
 
-Both variants are driven automatically by the test runner
-(`tests/validate_tests.py`): `PARAM.in` runs as the **FULL PIC** variant and
-`PARAM.in.hybrid` as the **HYBRID** variant in the same directory.
+Both variants run together under the test name: `PARAM.in` as **FULL PIC** and
+`PARAM.in.hybrid` as **HYBRID**.
 
 ```
-python3 tests/validate_tests.py --test=whistler
+python3 tests/validate_tests.py --test=whistler          # both variants
+```
+
+To run a **single variant**, append its token to the test name:
+
+```
+python3 tests/validate_tests.py --test=whistler.full      # full PIC only (PARAM.in)
+python3 tests/validate_tests.py --test=whistler.hybrid    # hybrid only (PARAM.in.hybrid)
 ```
 
 ## Validation

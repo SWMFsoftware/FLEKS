@@ -1,7 +1,8 @@
+
 #DESCRIPTION
 1D oblique shock test: flow along x into a reflecting left wall, open inflow
 right boundary.  The upstream magnetic field is inclined at 45 deg to the shock
-normal (the x axis).  Full PIC mode.
+normal (the x axis).
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -46,76 +47,56 @@ periodic                particleBoxBoundaryHi
 periodic                particleBoxBoundaryLo
 periodic                particleBoxBoundaryHi
 
-#PARTICLEBOXBOUNDARY
-1                       iSpecies
-reflect                 particleBoxBoundaryLo
-inflow                  particleBoxBoundaryHi
-periodic                particleBoxBoundaryLo
-periodic                particleBoxBoundaryHi
-periodic                particleBoxBoundaryLo
-periodic                particleBoxBoundaryHi
-
 #SOLVEEM
-T                       solveEM
+F                       solveEM
 
-#DISCRETIZATION
-0.5                     theta
-0.0                     coefDiff
+#HYBRIDPIC
+T                       useHybridPIC
 
-#COMOVING
-T                       solveFieldInCoMov
-5                       nSmoothBackGroundU
+#AVGFIELDB
+T                       useAvgFieldB
+20                      nAvgFieldB
 
-Lax-Friedrichs upwind viscosity on the E equation (minmod limiter theta=1).
-#UPWINDE
-T                       useUpwindE
-1                       limiterThetaE
+#HALLTERM
+T                       useHallTerm
 
-Lax-Friedrichs upwind viscosity on the B equation + hyperbolic div-B cleaning.
-#UPWINDB
-T                       useUpwindB
-1                       limiterThetaB
+#BSUBCYCLE
+1                       nBSubcycle
 
-Digital-filter smoothing of the current density J.
-#SMOOTHJ
-T                       doSmoothJ
-1                       nSmoothJ
-0.5                     coefSmoothJ
+#ELECTRONTEMPERATURE
+141.0                   electronTemperature
+1.6667                  electronGamma
+5.0                     electronDensity0
 
-Two kinetic species: ions (q = 1, m = 1) and electrons (q = -1, m = 1/25)
 #PLASMA
-2                       nSpecies
-1.0                     mass           Species 0: ions
+1                       nSpecies
+1.0                     mass
 1.0                     charge
-1.0/25.0                mass           Species 1: electrons
--1.0                    charge
 
+45 deg oblique: |B| = 1.044e-8 T
 #INFLOW
 7.382e-9                bx [T]
 0.0                     by [T]
 7.382e-9                bz [T]
-5.0                     rho [amu/cc]   Species 0: ions
+5.0                     rho [amu/cc]
 -713.0                  ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-0.0                     T [K]          ions, beta_i ~ 0.5
+6.28e5                  T [K]
 
+motional E = -u x B = (0, -ux*Bz, 0); ux=-713e3 m/s, Bz=7.382e-9 T
+   -> Ey = -ux*Bz = +5.263e-3 V/m
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions (n_code ~ nb = 0.2)
--713.0                  ux [km/s]
-0.0                     uy [km/s]
-0.0                     uz [km/s]
-0.0                     T [K]          ions, beta_i ~ 0.5
-0.2                     rho [amu/cc]   Species 1: electrons
--713.0                  ux [km/s]
-0.0                     uy [km/s]
-0.0                     uz [km/s]
-0.0                     T [K]          electrons
+5.0                     rho
+-713.0                  ux
+0.0                     uy
+0.0                     uz
+6.28e5                  T
 7.382e-9                bx
 0.0                     by
 7.382e-9                bz
 0.0                     ex
--5.263e-3               ey
+5.263e-3                ey
 0.0                     ez
 
 #TIMESTEPPING
@@ -124,10 +105,10 @@ T                       useFixedDt
 
 #NORMALIZATION
 1.0e5                   lNormSI
-2.0e6                   uNormSI
+1.0e5                   uNormSI
 
 #MONITOR
-100                     dnReport
+200                     dnReport
 
 #SAVELOG
 10                      dnSavePic
@@ -140,13 +121,13 @@ T                       useFixedDt
 
 #SAVEPLOT
 1                       nPlot
-z=0 fluid ascii planet     plotString
--1                      dn
+y=0 fluid ascii planet     plotString
+-50                     dn
 5.0                     dt
 1                       dx
 
 #STOP
--2                      MaxIter
+-1                      MaxIter
 5.0                     TimeMax
 
 #RUN

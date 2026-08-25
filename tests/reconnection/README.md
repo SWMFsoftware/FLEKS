@@ -76,11 +76,18 @@ Run the automated check (builds, runs both solver variants, post-processes, and
 validates):
 
 ```bash
-# serial (default)
+# serial (default) -- runs both full PIC and hybrid
 python3 tests/validate_tests.py --test=reconnection
 
 # or with MPI (e.g. 2 processes)
 python3 tests/validate_tests.py --test=reconnection -n 2
+```
+
+To run a **single variant**, append its token to the test name:
+
+```bash
+python3 tests/validate_tests.py --test=reconnection.full     # full PIC only (PARAM.in)
+python3 tests/validate_tests.py --test=reconnection.hybrid   # hybrid only (PARAM.in.hybrid)
 ```
 
 ## Validation
