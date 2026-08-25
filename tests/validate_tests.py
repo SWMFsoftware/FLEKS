@@ -100,7 +100,9 @@ def ensure_postidl():
     logger.warning("  [WARN] PostIDL.exe not found. Building it with 'make PIDL'...")
     try:
         build = subprocess.run(["make", "PIDL"], stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, text=True, timeout=900)
+                               stderr=subprocess.PIPE, timeout=900)
+        build.stdout = (build.stdout or b"").decode("utf-8", errors="replace")
+        build.stderr = (build.stderr or b"").decode("utf-8", errors="replace")
     except subprocess.TimeoutExpired:
         logger.warning("  [WARN] 'make PIDL' timed out; PostIDL.exe may be missing.")
         return False
@@ -207,7 +209,9 @@ def run_test(test_dir, nprocs=1, param_text=None):
         cmd = ["mpirun", "-n", str(nprocs), "./FLEKS.exe"]
         logger.debug("  Running with %d MPI processes...", nprocs)
 
-    result = subprocess.run(cmd, cwd=RUN_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    result = subprocess.run(cmd, cwd=RUN_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    result.stdout = (result.stdout or b"").decode("utf-8", errors="replace")
+    result.stderr = (result.stderr or b"").decode("utf-8", errors="replace")
     if result.returncode != 0:
         logger.error("Error running FLEKS.exe for %s:", test_dir)
         logger.error("--- FLEKS stdout ---")
@@ -217,7 +221,9 @@ def run_test(test_dir, nprocs=1, param_text=None):
         return None, result.returncode
 
     pp = subprocess.run(["./PostProc.pl", "-v"], cwd=RUN_DIR,
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    pp.stdout = (pp.stdout or b"").decode("utf-8", errors="replace")
+    pp.stderr = (pp.stderr or b"").decode("utf-8", errors="replace")
     if pp.returncode != 0:
         logger.warning("  [WARN] PostProc.pl exited with code %s:", pp.returncode)
         if pp.stdout:
