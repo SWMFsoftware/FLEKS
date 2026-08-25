@@ -48,10 +48,11 @@ runs:
 
         # Configure a debug, unoptimized build. This rebuilds the whole tree
         # with no optimization so the compiler emits every warning it can.
+        # This build is used ONLY to check for compiler warnings; it is never
+        # used to run the tests.
         ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo -debug -O0
 
         # Compile, capturing ALL output (both stdout and stderr) to a log file.
-        # We deliberately do NOT run any tests with this build.
         LOG="debug_build_warnings.log"
         make EXE -j$(nproc) > "$LOG" 2>&1 || {
           echo "::error::Debug build (-debug -O0) failed to compile."
@@ -76,7 +77,7 @@ runs:
           } > "tests/${{ inputs.debug-warning-summary }}"
           # Restore the optimized configuration so the downstream test build
           # (and its cache key) is unaffected by the debug configure.
-          ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo
+          ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo -O4 -nodebug
           exit 1
         fi
 
@@ -87,16 +88,17 @@ runs:
           echo "Compiled with \`-debug -O0\`; no compiler warnings were detected."
         } > "tests/${{ inputs.debug-warning-summary }}"
 
-        # Restore the optimized configuration so the downstream test build
-        # (and its cache key) is unaffected by the debug configure.
-        ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo
+        # Restore the optimized (-O4 -nodebug) configuration so the downstream
+        # test build (and its cache key) is unaffected by the debug configure.
+        ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo -O4 -nodebug
 
     - name: Configure Standalone FLEKS Source
       working-directory: SWMF/PC/FLEKS
       shell: bash
       run: |
-        # Link the AMReX library and enable AMR (nLevMax>=2).
-        ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo
+        # Link the AMReX library, enable AMR (nLevMax>=2), and build a fully
+        # optimized release executable (-O4 -nodebug) for running the tests.
+        ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo -O4 -nodebug
 
     - name: Cache Standalone Build
       id: cache-standalone
