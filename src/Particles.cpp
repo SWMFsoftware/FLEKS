@@ -1239,6 +1239,98 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     momentsMF[iLev].mult(invVol[iLev], 0, nMoments - 1,
                          momentsMF[iLev].nGrow());
 
+    //----- Mirror boundary condition for the node-centred deposit ------------
+    // A node-centred CIC deposit at a non-periodic wall leaves the boundary
+    // node with only ~half the charge of an interior node: with the node at the
+    // domain face, a particle in the edge cell deposits its weight between that
+    // edge node and the next interior node, and NO particle lies on the exterior
+    // side to contribute the complementary weight.  This is why, in full-PIC
+    // mode, the reflecting-wall node of the 1D shock test showed rhoS0 ~ 6.25
+    // instead of ~12.5, while the hybrid path (cell-centred deposit +
+    // sum_moments_cell_centered) did not.
+    //
+    // The physically correct boundary condition for a reflecting/conducting wall
+    // (and an open-inflow face, whose injected particles live just inside the
+    // edge cell) is MIRROR SYMMETRY across the boundary node: the ghost node
+    // must carry the same moment value as the edge node (Neumann mirror).  We
+    // therefore copy the edge node into the first ghost node and fold the ghost
+    // back into the edge node (equivalent to doubling the edge node), then zero
+    // the ghost layer so SumBoundary does not re-use it.  We apply this ONLY at
+    // reflect / conducting / inflow faces.  At coupled (MHD-AEPIC), outflow,
+    // vacuum, absorb, wave and periodic faces the ghost layer may hold real
+    // injected/leaving particles, so we leave it untouched to avoid double
+    // counting.  Periodic directions are skipped (SumBoundary wraps them).
+    // NOTE: the fold runs BEFORE SumBoundary on purpose so a transverse ghost
+    // target that lies in a tile-neighbour's valid region is combined exactly
+    // once.
+    if (!Geom(iLev).isAllPeriodic() && momentsMF[iLev].nGrow() > 0) {
+      const Box& dom = Geom(iLev).Domain();
+      const int nCompMF = momentsMF[iLev].nComp();
+      for (MFIter mfi(momentsMF[iLev]); mfi.isValid(); ++mfi) {
+        const Box& bx = mfi.validbox();
+        Array4<Real> const& arr = momentsMF[iLev][mfi].array();
+
+        for (int iDim = 0; iDim < nDim; ++iDim) {
+          if (Geom(iLev).isPeriodic(iDim))
+            continue;
+
+          for (int side = 0; side < 2; ++side) {
+            const bool isLo = (side == 0);
+            const int faceBc = isLo ? bc.lo[iDim] : bc.hi[iDim];
+            const bool doFold =
+                (faceBc == BC::reflect || faceBc == BC::conducting ||
+                 faceBc == BC::inflow);
+            if (!doFold)
+              continue;
+
+            // NOTE: momentsMF is NODE-centred (nGrids = convert(cGrids,
+            // nodeVector)), whose domain box extends one node beyond the
+            // cell-centred Geometry box on the hi side.  The edge NODE is
+            // dom.smallEnd (lo) or dom.bigEnd+1 (hi); using dom.bigEnd would
+            // hit the second-last node and skip the real edge tile.
+            const int domEdge =
+                isLo ? dom.smallEnd(iDim) : dom.bigEnd(iDim) + 1;
+            const int tileEdge = isLo ? bx.smallEnd(iDim) : bx.bigEnd(iDim);
+            if (tileEdge != domEdge)
+              continue;
+
+            // Strip of the first ghost-node layer just outside the domain,
+            // spanning the full transverse extent of this FAB (valid +
+            // transverse ghosts).  Mirror the edge node into it, fold it into
+            // the edge node (doubling), then clear the ghost.
+            const Box& fbx = mfi.fabbox();
+            IntVect gs = fbx.smallEnd();
+            IntVect ge = fbx.bigEnd();
+            gs[iDim] = domEdge + (isLo ? -1 : 1);
+            ge[iDim] = gs[iDim];
+            const Box strip(gs, ge);
+
+            ParallelFor(strip, nCompMF,
+                        [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
+#if (AMREX_SPACEDIM == 2)
+                          int ei = i, ej = j;
+                          if (iDim == 0)
+                            ei = domEdge;
+                          if (iDim == 1)
+                            ej = domEdge;
+                          const Real val = arr(ei, ej, 0, c);
+                          arr(ei, ej, 0, c) += val;  // fold mirror back -> 2x
+                          arr(i, j, 0, c) = 0.0;     // zero the ghost layer
+#elif (AMREX_SPACEDIM == 3)
+                          int ei = i, ej = j, ek = k;
+                          if (iDim == 0) ei = domEdge;
+                          if (iDim == 1) ej = domEdge;
+                          if (iDim == 2) ek = domEdge;
+                          const Real val = arr(ei, ej, ek, c);
+                          arr(ei, ej, ek, c) += val;  // fold mirror back -> 2x
+                          arr(i, j, k, c) = 0.0;      // zero the ghost layer
+#endif
+                        });
+          }
+        }
+      }
+    }
+
     momentsMF[iLev].SumBoundary(Geom(iLev).periodicity());
   }
 
@@ -1948,6 +2040,76 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
       }
 
     } // for p
+  }
+
+  //----- Mirror boundary condition for the node-centred current -------------
+  // Mirror the moment mirror in sum_moments(): the current jHat suffers the
+  // same ~half-weight at non-periodic edge nodes.  Keep density and current
+  // consistent at the wall (both must be restored together, otherwise the
+  // E-solver's 1/rho Ohm factor sees full rho with half J).  Apply the same
+  // mirror (copy edge node into the first ghost node, fold back -> double,
+  // zero the ghost) ONLY at reflect / conducting / inflow faces -- the same
+  // set as sum_moments().  Coupled, outflow, vacuum, absorb, wave and periodic
+  // faces are left untouched.
+  if (!Geom(iLev).isAllPeriodic() && jHat.nGrow() > 0) {
+    const Box& dom = Geom(iLev).Domain();
+    const int nCompJ = jHat.nComp();
+    for (MFIter mfi(jHat); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      Array4<Real> const& jArr = jHat[mfi].array();
+
+      for (int iDim = 0; iDim < nDim; ++iDim) {
+        if (Geom(iLev).isPeriodic(iDim))
+          continue;
+
+        for (int side = 0; side < 2; ++side) {
+          const bool isLo = (side == 0);
+          const int faceBc = isLo ? bc.lo[iDim] : bc.hi[iDim];
+          const bool doFold =
+              (faceBc == BC::reflect || faceBc == BC::conducting ||
+               faceBc == BC::inflow);
+          if (!doFold)
+            continue;
+
+          // jHat is NODE-centred; see the mirror block in sum_moments() for
+          // the dom.bigEnd+1 hi-side edge-node note.
+          const int domEdge =
+              isLo ? dom.smallEnd(iDim) : dom.bigEnd(iDim) + 1;
+          const int tileEdge = isLo ? bx.smallEnd(iDim) : bx.bigEnd(iDim);
+          if (tileEdge != domEdge)
+            continue;
+
+          const Box& fbx = mfi.fabbox();
+          IntVect gs = fbx.smallEnd();
+          IntVect ge = fbx.bigEnd();
+          gs[iDim] = domEdge + (isLo ? -1 : 1);
+          ge[iDim] = gs[iDim];
+          const Box strip(gs, ge);
+
+          ParallelFor(strip, nCompJ,
+                      [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
+#if (AMREX_SPACEDIM == 2)
+                        int ei = i, ej = j;
+                        if (iDim == 0)
+                          ei = domEdge;
+                        if (iDim == 1)
+                          ej = domEdge;
+                        const Real val = jArr(ei, ej, 0, c);
+                        jArr(ei, ej, 0, c) += val;  // fold mirror back -> 2x
+                        jArr(i, j, 0, c) = 0.0;     // zero the ghost layer
+#elif (AMREX_SPACEDIM == 3)
+                        int ei = i, ej = j, ek = k;
+                        if (iDim == 0) ei = domEdge;
+                        if (iDim == 1) ej = domEdge;
+                        if (iDim == 2) ek = domEdge;
+                        const Real val = jArr(ei, ej, ek, c);
+                        jArr(ei, ej, ek, c) += val;  // fold mirror back -> 2x
+                        jArr(i, j, k, c) = 0.0;      // zero the ghost layer
+#endif
+                      });
+        }
+      }
+    }
   }
 }
 
