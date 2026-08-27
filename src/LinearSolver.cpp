@@ -162,8 +162,15 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
   //   sign(info)=  +: residual decreased
   //                -: residual did not reduce
 
+#ifndef GMRES_VERBOSE
+  // Concise mode: only the caller's summary lines are printed.
+  (void)doTest; // Avoid the unused-parameter warning.
+#endif
+
+#ifdef GMRES_VERBOSE
   if (doTest)
     std::cout << "GMRES tol,nIter:" << tol << " " << nIter << std::endl;
+#endif
 
   int nKrylov1 = nKrylov + 1;
   std::vector<double> c(nKrylov);
@@ -226,8 +233,10 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
           info = 3;
           tol = ro;
           nIter = its;
+#ifdef GMRES_VERBOSE
           if (doTest)
             std::cout << "GMRES: nothing to do. info = " << info;
+#endif
           return info;
         }
       } else {
@@ -292,6 +301,7 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
       hh[i * nKrylov1 + i] =
           c[i] * hh[i * nKrylov1 + i] + s[i] * hh[i * nKrylov1 + i1];
       ro = std::abs(rs[i1]);
+#ifdef GMRES_VERBOSE
       if (doTest) {
         if (typeStop == REL) {
           std::cout << its << " matvecs, "
@@ -301,6 +311,7 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
                     << " ||rn|| = " << ro << std::endl;
         }
       }
+#endif
       i += 1;
     } while (i < nKrylov && (ro > Tol1));
 
