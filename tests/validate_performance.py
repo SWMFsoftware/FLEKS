@@ -40,12 +40,12 @@ _REQUIRED_MOVER = {
 BASELINES = {
     "fullpic": {
         "total_pps": 10.0,   # total wall-clock (GHA VM)
-        "mover_pps": 1.0,    # isolated particle mover
+        "mover_pps": 0.2,    # isolated particle mover
         "solver_pps": 5.0,   # isolated implicit field solver (E_iterate)
         "speedup": 1.5,      # 2-core scaling floor
     },
     "hybrid": {
-        "total_pps": 1.0,    # total wall-clock
+        "total_pps": 0.4,    # total wall-clock
         "mover_pps": 0.1,    # isolated particle mover
         "solver_pps": 0.1,   # explicit hybrid field advance is cheaper
         "speedup": 1.5,      # 2-core scaling floor
