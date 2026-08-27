@@ -180,7 +180,7 @@ or vtk files with the scripts (amrex2tec.sh and amrex2vtk.sh) in FLEKS/tools.
 
 <command name="MONITOR" alias="MONITOR_FLEKS0,MONITOR_FLEKS1,MONITOR_FLEKS2" multiple="T">
   <parameter name="dnReport" type="integer" default="10"/>
-#MONITOR 
+#MONITOR
 10                 dnReport
 
 This command controls the frequency of printing simulation information, 
@@ -414,9 +414,9 @@ HYBRIDPIC is T.
 Minimum charge density for the 1/rho factors in the Hall term and the electron
 pressure gradient term of the hybrid Ohm's law. It caps 1/rho so that cells with
 tiny or zero charge density do not produce unbounded contributions. The electron
-pressure closure itself always uses the true density. A value <= 0 (default) means
-automatic: rhoFloor = 1e-6 * #ELECTRONTEMPERATURE electronDensity0. Only used when
-#HYBRIDPIC is T.
+pressure closure itself always uses the true density. A value $\le 0$ (default)
+means automatic: rhoFloor = 1e-6 * #ELECTRONTEMPERATURE electronDensity0.
+Only used when #HYBRIDPIC is T.
 </command>
 
 <command name="FIELDINTEGRATOR" alias="FIELDINTEGRATOR_FLEKS0,FIELDINTEGRATOR_FLEKS1,FIELDINTEGRATOR_FLEKS2" multiple="T">

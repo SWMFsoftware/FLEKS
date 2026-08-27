@@ -1,5 +1,3 @@
-#include <AMReX_MultiFabUtil.H>
-
 #include "Bit.h"
 #include "FluidInterface.h"
 #include "GridUtility.h"
@@ -615,10 +613,14 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
               pos_DI[nCount++] = (ijk[iDim] * dx[iDim] + plo[iDim]) * no2siL;
             }
           } else if (doFill) {
-            for (int iVar = 0; iVar < nVarFluid; iVar++) {
-              int idx;
-              idx = iVar + nVarFluid * (index[nIdxCount] - 1);
-              arr(ijk, iVar) = data[idx];
+            // For the point not found by the source component (index < 1),
+            // keep the previous value.
+            if (index[nIdxCount] >= 1) {
+              for (int iVar = 0; iVar < nVarFluid; iVar++) {
+                int idx;
+                idx = iVar + nVarFluid * (index[nIdxCount] - 1);
+                arr(ijk, iVar) = data[idx];
+              }
             }
             nIdxCount++;
           }
@@ -804,9 +806,13 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
                 arr(i, j, k, iRho_I[iIon]) * (1 + MoMi_S[0] / MoMi_S[iIon + 1]);
           } // iIon
 
-          arr(i, j, k, iUx_I[0]) /= Rhot;
-          arr(i, j, k, iUy_I[0]) /= Rhot;
-          arr(i, j, k, iUz_I[0]) /= Rhot;
+          // Nodes that were not filled by the coupler keep a zero density.
+          // (e.g. nodes inside the body of the source component)
+          if (Rhot > 0) {
+            arr(i, j, k, iUx_I[0]) /= Rhot;
+            arr(i, j, k, iUy_I[0]) /= Rhot;
+            arr(i, j, k, iUz_I[0]) /= Rhot;
+          }
         } else {
           for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
             const double& rho = arr(i, j, k, iRho_I[iFluid]);
