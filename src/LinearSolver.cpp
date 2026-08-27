@@ -103,10 +103,12 @@ void linear_solver_wrapper_hy(
   param.nMatvec = param.maxMatvec;
   param.error = param.errorMax;
 
+  // Label the tolerance/error explicitly as relative or absolute
+  const char *typeError = param.typeStop == REL ? "relative" : "absolute";
+
   if (DoTest)
-    std::cout << "Before " << param.typeKrylov
-              << " nMatVec, Error: " << param.nMatvec << " " << param.error
-              << std::endl;
+    std::cout << "Before " << param.typeKrylov << " nMatVec, " << typeError
+              << " tol: " << param.nMatvec << " " << param.error << std::endl;
 
   // Solve linear problem
   switch (param.typeKrylov) {
@@ -130,8 +132,9 @@ void linear_solver_wrapper_hy(
   }
 
   if (DoTest)
-    std::cout << "After nMatVec, Error = " << param.nMatvec << " "
-              << param.error << std::endl;
+    std::cout << "After nMatVec, " << typeError
+              << " error = " << param.nMatvec << " " << param.error
+              << std::endl;
 }
 
 /*
@@ -226,7 +229,7 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
     if (its == 0) {
       ro0 = ro;
       if (doTest)
-        std::cout << "initial rnrm: " << ro0 << std::endl;
+        std::cout << "initial residual norm: " << ro0 << std::endl;
       if (typeStop == ABS) {
         Tol1 = tol;
         if (ro <= Tol1) { // Quit if accurate enough
