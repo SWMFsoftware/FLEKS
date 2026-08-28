@@ -226,6 +226,19 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
     }
 
   } else {
+    // Single-cell dimensions: the domain holds only one cell along that axis
+    // (e.g. the y-axis in an XZ-plane 2D run, or the z-axis in the isFake2D
+    // XY-plane case).  The full-PIC node grid has two node rows (LoEdge /
+    // HiEdge) straddling the single cell, so a cut plane (e.g. y=0) would
+    // otherwise match neither row (both are ~dx/2 away) and the plot would
+    // come out empty.  Collapse each single-cell dimension to its cell-centre
+    // coordinate so a cut at the centre (e.g. y=0) matches exactly and the
+    // output is a clean single-plane 2D slice.
+    const Box& domBox = Geom(0).Domain();
+    const bool singleCell[3] = { (domBox.length(ix_) == 1),
+                                 (domBox.length(iy_) == 1),
+                                 (nDim > 2 && domBox.length(iz_) == 1) };
+
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (iLevSave >= 0 && iLevSave != iLev) {
         continue;
@@ -246,12 +259,24 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
               hi[iDim]--;
         }
 
-        for (int k = lo[iz_]; k <= hi[iz_]; ++k) {
-          const double zp = nDim > 2 ? Geom(iLev).LoEdge(k, iz_) : 0.0;
-          for (int j = lo[iy_]; j <= hi[iy_]; ++j) {
-            const double yp = Geom(iLev).LoEdge(j, iy_);
-            for (int i = lo[ix_]; i <= hi[ix_]; ++i) {
-              const double xp = Geom(iLev).LoEdge(i, ix_);
+        // Collapse single-cell dimensions to the single node row so a cut at
+        // the cell centre is matched exactly.
+        const int kHi = singleCell[iz_] ? lo[iz_] : hi[iz_];
+        const int jHi = singleCell[iy_] ? lo[iy_] : hi[iy_];
+        const int iHi = singleCell[ix_] ? lo[ix_] : hi[ix_];
+
+        for (int k = lo[iz_]; k <= kHi; ++k) {
+          const double zp =
+              singleCell[iz_] ? Geom(iLev).CellCenter(lo[iz_], iz_)
+                              : Geom(iLev).LoEdge(k, iz_);
+          for (int j = lo[iy_]; j <= jHi; ++j) {
+            const double yp =
+                singleCell[iy_] ? Geom(iLev).CellCenter(lo[iy_], iy_)
+                                : Geom(iLev).LoEdge(j, iy_);
+            for (int i = lo[ix_]; i <= iHi; ++i) {
+              const double xp =
+                  singleCell[ix_] ? Geom(iLev).CellCenter(lo[ix_], ix_)
+                                  : Geom(iLev).LoEdge(i, ix_);
               if (bit::is_owner(typeArr(i, j, k)) &&
                   (!bit::is_refined(typeArr(i, j, k)) || iLevSave >= 0) &&
                   writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
@@ -300,15 +325,27 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
       if (nDim > 2 && Geom(iLev).isPeriodic(iz_))
         --kMax;
 
-      if (isFake2D)
+      // Collapse single-cell dimensions to the single node row at the cell
+      // centre (same convention as the main loop above).
+      if (singleCell[ix_])
+        iMax = lo.x;
+      if (singleCell[iy_])
+        jMax = lo.y;
+      if (singleCell[iz_])
         kMax = lo.z;
 
       for (int k = lo.z; k <= kMax; ++k) {
-        const double zp = nDim > 2 ? Geom(iLev).LoEdge(k, iz_) : 0.0;
+        const double zp =
+            singleCell[iz_] ? Geom(iLev).CellCenter(lo.z, iz_)
+                            : Geom(iLev).LoEdge(k, iz_);
         for (int j = lo.y; j <= jMax; ++j) {
-          const double yp = Geom(iLev).LoEdge(j, iy_);
+          const double yp =
+              singleCell[iy_] ? Geom(iLev).CellCenter(lo.y, iy_)
+                              : Geom(iLev).LoEdge(j, iy_);
           for (int i = lo.x; i <= iMax; ++i) {
-            const double xp = Geom(iLev).LoEdge(i, ix_);
+            const double xp =
+                singleCell[ix_] ? Geom(iLev).CellCenter(lo.x, ix_)
+                                : Geom(iLev).LoEdge(i, ix_);
             if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp) &&
                 !nGrids[iLev].contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
               const int iBlock = -1;
