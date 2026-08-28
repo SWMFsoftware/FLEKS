@@ -117,6 +117,7 @@ my $nLevMax=1;
 my $NewLevMax;
 my $NewUserSource;
 my $ListUserSources;
+my $VerboseGmres;
 
 foreach (@Arguments){
      if(/^-s$/)                 {$Show=1;       next};
@@ -126,6 +127,8 @@ foreach (@Arguments){
      if(/^-lev=(.*)$/)          {$NewLevMax=$1; next};
      if(/^-u$/)                 {$ListUserSources=1; next};
      if(/^-u=(.*)$/)            {$NewUserSource=$1; next};
+     if(/^-debug$/i)            {$VerboseGmres="yes"; next};
+     if(/^-nodebug$/i)          {$VerboseGmres="no";  next};
      warn "WARNING: Unknown flag $_\n" if $Remaining{$_};
 }
 
@@ -159,6 +162,8 @@ if (!defined $NewUserSource && !-f $UserSourceFile &&
 &set_test_particle if $NewTPSave and $NewTPSave ne $TPSave;
 
 &set_grid if $NewLevMax and $NewLevMax ne $nLevMax;
+
+&set_verbose_gmres if defined $VerboseGmres;
 
 &print_help if $Help;
 
@@ -199,14 +204,30 @@ sub get_settings{
     close FILE;
 }
 ################################################################################
-sub set_grid{    
+sub set_grid{
     $nLevMax = $NewLevMax if $NewLevMax;
 
     @ARGV = ($ConstantsFile);
     while(<>){
         s/\b(nLevMax\s*=[^0-9]*)(\d+)/$1$nLevMax/i;
         print;
-    } 
+    }
+}
+################################################################################
+sub set_verbose_gmres{
+    # Set the verbose GMRES residual logging flag in src/Makefile:
+    #   -debug   -> VERBOSE_GMRES = -DGMRES_VERBOSE (log residual of every matvec)
+    #   -nodebug -> VERBOSE_GMRES is empty (only iteration count + final residual)
+    my $VERBOSE_GMRES = "";
+    $VERBOSE_GMRES = '-DGMRES_VERBOSE' if $VerboseGmres eq "yes";
+
+    print "Setting verbose GMRES logging to '$VerboseGmres' in src/Makefile\n";
+
+    @ARGV = ("src/Makefile");
+    while(<>){
+        s/^(\s*VERBOSE_GMRES\s*=).*/$1 $VERBOSE_GMRES/;
+        print;
+    }
 }
 ################################################################################
 sub set_test_particle{
@@ -286,7 +307,13 @@ sub print_help{
     print "
 -s            Show the configuration for AMReX.
 
--lev          Number of maximum grid levels. It is a uniform grid without AMR if lev=1.	
+-debug        Compile with debug flags. Verbose GMRES residual logging is
+              switched on: VERBOSE_GMRES = -DGMRES_VERBOSE in src/Makefile.
+-nodebug      Do not use debug flags, and switch off the verbose GMRES
+              residual logging (only the iteration count and the final
+              residual are reported by the solver).
+
+-lev          Number of maximum grid levels. It is a uniform grid without AMR if lev=1.
 
 -amrex2d      Link with the 2D AMReX library (AMReX_SPACEDIM = 2).
 -amrex3d      Link with the 3D AMReX library (AMReX_SPACEDIM = 3). This is the default.
