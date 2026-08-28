@@ -2,7 +2,8 @@
 include ../Makefile.conf
 
 SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
-FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_
+VERBOSE_GMRES = 
+FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_ ${VERBOSE_GMRES}
 
 -include Makefile.DEPEND
 
