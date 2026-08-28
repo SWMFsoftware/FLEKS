@@ -132,9 +132,8 @@ void linear_solver_wrapper_hy(
   }
 
   if (DoTest)
-    std::cout << "After nMatVec, " << typeError
-              << " error = " << param.nMatvec << " " << param.error
-              << std::endl;
+    std::cout << "After nMatVec, " << typeError << " error = " << param.nMatvec
+              << " " << param.error << std::endl;
 }
 
 /*
