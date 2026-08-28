@@ -79,9 +79,6 @@ F                       useHallTerm
 1.0                     electronDensity0
 
 #INFLOW
-1.0439e-8                bx [T]
-0.0                      by [T]
-0.0                      bz [T]
 5.0                      rho [amu/cc]
 20.0                     ux [km/s]
 0.0                      uy [km/s]

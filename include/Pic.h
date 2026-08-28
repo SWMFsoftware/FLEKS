@@ -270,8 +270,6 @@ private:
   // then apply_inflow_wall and the inflow particle injection fall back to the
   // zero-gradient copy / live fluid-interface state (the original behaviour).
   bool inflowDefined_ = false;
-  // Upstream B (code units after conversion).
-  amrex::Real inflowBx_ = 0.0, inflowBy_ = 0.0, inflowBz_ = 0.0;
   // Upstream number density (code units), bulk velocity (code units), and
   // temperature (code units -> 1-D thermal speed sqrt(kT/m) in code units is
   // derived at use sites from n0, T, mass).
@@ -443,9 +441,9 @@ public:
   // fi->post_process_param() finalizes Si2NoRho.
   void convert_electron_density0();
 
-  // Convert the #INFLOW upstream state (bx,by,bz,rho,ux,uy,uz,T) from SI to
-  // code units. Called once by finalize_units_conversion(); no-op when no
-  // #INFLOW block was read.
+  // Convert the #INFLOW upstream state (rho,ux,uy,uz,T) from SI to code units.
+  // Called once by finalize_units_conversion(); no-op when no #INFLOW block was
+  // read.
   void convert_inflow_state();
 
   void calc_mass_matrix();
@@ -599,12 +597,8 @@ public:
                             const int iStart, const int nComp, const int iLev,
                             const BC &bc, bool isB);
 
-  // Inflow (open) wall: pin the ghost B to the upstream #INFLOW B and the
-  // ghost tangential E to the upstream motional E = -u_in x B_in (the normal E
-  // is left free).  This is a TRUE inflow field BC: the user prescribes the
-  // boundary field rather than the ghost inheriting the interior cell value.
-  // No-op when no #INFLOW block was read (the zero-gradient copy in use_float
-  // then applies, matching the original open-boundary behaviour).
+  // Inflow (open) wall: zero-gradient copy of the adjacent edge physical cell
+  // into the ghost cell for EVERY component (ghost B = edge B, ghost E = edge E).
   void apply_inflow_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                          const int iStart, const int nComp, const int iLev,
                          const BC &bc, bool isB);

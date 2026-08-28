@@ -73,11 +73,7 @@ T                       useHallTerm
 1.0                     mass
 1.0                     charge
 
-45 deg oblique: |B| = 1.044e-8 T
 #INFLOW
-7.382e-9                bx [T]
-0.0                     by [T]
-7.382e-9                bz [T]
 5.0                     rho [amu/cc]
 -713.0                  ux [km/s]
 0.0                     uy [km/s]

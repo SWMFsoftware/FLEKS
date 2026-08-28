@@ -1882,9 +1882,6 @@ FLEKS code units).  See the absorbing-BC design doc
 </command>
 
 <command name="INFLOW" alias="INFLOW_FLEKS" multiple="F">
-  <parameter name="bx" type="real" default="0.0"/>
-  <parameter name="by" type="real" default="0.0"/>
-  <parameter name="bz" type="real" default="0.0"/>
   <parameter name="rho" type="real" default="0.0"/>
   <parameter name="ux" type="real" default="0.0"/>
   <parameter name="uy" type="real" default="0.0"/>
@@ -1892,26 +1889,24 @@ FLEKS code units).  See the absorbing-BC design doc
   <parameter name="T" type="real" default="0.0"/>
 
 #INFLOW
-1.0439e-8                bx [T]
-0.0                      by [T]
-0.0                      bz [T]
 5.0                      rho [amu/cc]
 20.0                     ux [km/s]
 0.0                      uy [km/s]
 0.0                      uz [km/s]
 10000.0                  T [K]
 
-Specifies the upstream state for the inflow (open) boundary condition
+Specifies the upstream plasma state for the inflow (open) boundary condition
 (`#BFIELDBOXBOUNDARY ... inflow ...` / `#PARTICLEBOXBOUNDARY ... inflow ...`).
 All values are in SI units, mirroring `#UNIFORMSTATE`.  When an `inflow` face
 is present and this command is supplied:
 
-* the ghost-cell B is pinned to the upstream (bx, by, bz);
-* the ghost-cell tangential E is pinned to the upstream motional E = -u x B
-  (the normal E is left free, copied from the mirrored valid cell);
-* the inflow particles re-seeded in the ghost cells each step are sampled from
-  a drifting Maxwellian with the upstream density (rho), bulk velocity
-  (ux, uy, uz), and temperature (T).
+* the EM-field ghost cells at an `inflow` face are filled by a zero-gradient
+  copy of the adjacent edge cell (ghost B = edge B, ghost E = edge E, for every
+  component) -- the upstream B field is set by `#UNIFORMSTATE`, NOT here, and is
+  NOT pinned by this command;
+* the inflow flux is supplied by flux-weighted particle injection at the
+  boundary face, sampled from a drifting Maxwellian with the upstream density
+  (rho), bulk velocity (ux, uy, uz), and temperature (T).
 
 Without this command, an `inflow` face falls back to the zero-gradient ghost
 copy (the original open-boundary behaviour).  Pair `inflow` at one face with

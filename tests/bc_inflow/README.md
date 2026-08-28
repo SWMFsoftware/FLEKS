@@ -23,9 +23,6 @@ inflow face (in SI units, mirroring `#UNIFORMSTATE`):
 
 ```
 #INFLOW
-1.0439e-8    bx [T]
-0.0          by [T]
-0.0          bz [T]
 5.0          rho [amu/cc]
 20.0         ux [km/s]
 0.0          uy [km/s]
@@ -35,18 +32,17 @@ inflow face (in SI units, mirroring `#UNIFORMSTATE`):
 
 When an `inflow` face is present and this block is supplied:
 
-1. **Field BC** — `Pic::apply_inflow_wall` (in `src/Pic.cpp`) pins the ghost
-   B to the prescribed `(bx, by, bz)` and the ghost tangential E to the upstream
-   motional E = -u × B; the normal E is left free (copied from the mirrored
-   valid cell).  This is a TRUE inflow field BC: the user controls the boundary
-   field rather than the ghost inheriting the interior value.
+1. **Field BC** — `Pic::apply_inflow_wall` (in `src/Pic.cpp`) fills the ghost
+   cells with a zero-gradient copy of the adjacent edge cell for every
+   component (ghost B = edge B, ghost E = edge E).  The upstream B field is set
+   by `#UNIFORMSTATE`, not by `#INFLOW`, and is NOT pinned by this command; the
+   upstream state is supplied by the particle injection below.
 
-2. **Particle BC** — `Particles::inject_particles_at_boundary` (in
-   `src/Particles.cpp`) samples the re-seeded inflow particles from a drifting
-   Maxwellian with the prescribed upstream density, bulk velocity, and
-   temperature, routed through the existing `add_particles_cell` Maxwellian
-   injector via a per-species `Vel` override (the `InflowVel` struct on
-   `FluidInterface`).
+2. **Particle BC** — `Particles::inject_flux_at_inflow_faces` (in
+   `src/Particles.cpp`) injects flux-weighted particles at the boundary face,
+   sampled from a drifting Maxwellian with the prescribed upstream density,
+   bulk velocity, and temperature (the `InflowVel` struct on `FluidInterface`),
+   which supplies the upstream mass/current into the domain.
 
 Outgoing particles that cross the inflow face outward are removed and tallied
 (in `Particles::reflect_or_delete_particle`), matching the `absorb` behaviour.

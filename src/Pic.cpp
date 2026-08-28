@@ -61,22 +61,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
   } else if (command == "#ABSORB") {
     param.read_var("charSpeed", absorbCharSpeed);
   } else if (command == "#INFLOW") {
-    // Upstream inflow state (SI units), used by the inflow (BC::inflow)
-    // boundary: the ghost B is pinned to the upstream B and the ghost
-    // tangential E to the upstream motional E -u_in x B_in, while the
-    // injected particles are sampled from a drifting Maxwellian with the
-    // upstream density / velocity / temperature.  Mirrors #UNIFORMSTATE but
-    // is applied ONLY at inflow faces, so the upstream state can differ
-    // from the interior initial condition (e.g. a shock streaming into a
-    // stationary plasma).  Conversion to code units is deferred to
-    // convert_inflow_state(), which runs after the normalization is final.
     double tmp;
-    param.read_var("bx", tmp);
-    inflowBx_ = tmp; // [T]
-    param.read_var("by", tmp);
-    inflowBy_ = tmp; // [T]
-    param.read_var("bz", tmp);
-    inflowBz_ = tmp; // [T]
     param.read_var("rho", tmp);
     inflowRho_ = tmp; // [amu/cc]
     param.read_var("ux", tmp);
@@ -839,8 +824,9 @@ void Pic::fill_E_B_fields() {
                             centerEhybrid[iLev].nComp(), iLev, bcBField, false);
       apply_absorbing_wall(cellStatus[iLev], centerEhybrid[iLev], 0,
                            centerEhybrid[iLev].nComp(), iLev, bcBField, false);
-      // Inflow wall (E): pin tangential E to upstream motional E, leave normal
-      // E free.  No-op when no #INFLOW block was supplied.
+      // Inflow wall (E): zero-gradient copy of the edge cell into the ghosts
+      // for every component (see apply_inflow_wall).  No-op when no #INFLOW
+      // block was supplied.
       apply_inflow_wall(cellStatus[iLev], centerEhybrid[iLev], 0,
                         centerEhybrid[iLev].nComp(), iLev, bcBField, false);
       if (waveBC.active) {
@@ -1407,13 +1393,6 @@ void Pic::convert_inflow_state() {
   if (!inflowDefined_)
     return;
 
-  // B [T] -> code units.  No get_Si2NoB() accessor exists; Si2NoB is the
-  // inverse of get_No2SiB().
-  const double Si2NoB = 1.0 / fi->get_No2SiB();
-  inflowBx_ *= Si2NoB;
-  inflowBy_ *= Si2NoB;
-  inflowBz_ *= Si2NoB;
-
   // rho [amu/cc] -> number density [code units] (same conversion as
   // electronDensity0: amu/cc * 1e6 * mp * Si2NoRho).
   inflowRho_ = inflowRho_ * 1.0e6 * cProtonMassSI * fi->get_Si2NoRho();
@@ -1453,17 +1432,13 @@ void Pic::convert_inflow_state() {
   }
   fi->set_inflow_state(stateVec);
   fi->set_inflow_defined(true);
-  fi->set_inflow_b(inflowBx_, inflowBy_, inflowBz_);
 
   amrex::Print() << "  #INFLOW state (code units):"
-                 << " B=(" << inflowBx_ << "," << inflowBy_ << "," << inflowBz_
-                 << ")"
                  << " n=" << inflowRho_ << " u=(" << inflowUx_ << ","
                  << inflowUy_ << "," << inflowUz_ << ")"
                  << " vth=" << (inflowT_ > 0 ? std::sqrt(inflowT_) : 0.0)
-                 << "  (Si2NoB=" << Si2NoB
-                 << ", Si2NoRho=" << fi->get_Si2NoRho() << ", Si2NoV=" << Si2NoV
-                 << ")\n";
+                 << "  (Si2NoRho=" << fi->get_Si2NoRho()
+                 << ", Si2NoV=" << Si2NoV << ")\n";
 }
 
 //==========================================================

@@ -18,17 +18,21 @@ Both variants share the same physics; only the field solver (`solveEM` /
 * Upstream magnetic field inclined **45 deg** to the shock normal (x axis):
   `Bx = Bz = B0/sqrt(2) = 7.382e-9 T`, `B0 = 1.044e-8 T`.
 * Boundaries:
-  * **-x (left) wall = `fixed`**: ghost B and E are pinned to the upstream state,
-    so particles reflect off a wall holding the upstream field while the
-    tangential motional E `E = -u x B` is preserved.
-  * **+x (right) = `inflow`**: the upstream state is supplied via `#INFLOW` (SI
-    units) and re-seeded each step, feeding the flow so a steady shock forms at
-    the left wall.
+  * **-x (left) wall = `fixed`**: the ghost EM field is a zero-gradient copy of
+    the adjacent edge cell (same filler as `inflow`, see `apply_inflow_wall`), so
+    the tangential motional E `E = -u x B` is preserved and particles reflect off
+    a wall holding a continuous field.
+  * **+x (right) = `inflow`**: the upstream plasma state is supplied via
+    `#INFLOW` (SI units: density, velocity, temperature).  The ghost EM field
+    is again a zero-gradient copy of the edge cell; the upstream flow is fed in
+    by the flux-weighted particle injection each step, so a steady shock forms
+    at the left wall.
   * y/z = `periodic`.
 
-The upstream motional electric field `E = -u x B = (0, -ux*Bz, 0)` for
-`ux = -713e3 m/s`, `Bz = 7.382e-9 T` gives `Ey = -5.263e-3 V/m`, set in
-`#UNIFORMSTATE` and matching the `#INFLOW` state.
+The upstream magnetic field `B = (7.382, 0, 7.382)e-9 T` and the upstream
+motional electric field `E = -u x B = (0, -ux*Bz, 0)` for `ux = -713e3 m/s`,
+`Bz = 7.382e-9 T` give `Ey = -5.263e-3 V/m`, all set in `#UNIFORMSTATE`
+(`#INFLOW` does not carry a field state).
 
 ## Validation
 
@@ -47,8 +51,9 @@ This guards the regression the boundary fix removed: the original
 magnetized plasma (the motional E `E = -u x B` needs non-zero tangential E).
 With that wall the **field** energy `Eb` diverged first (18.5 -> 6.1e4 within
 ~960 steps) while `Epart` stayed matched to its initial value until the end —
-a field-driven, not particle-driven, blow-up.  The fix pins the left-wall EM
-field to the upstream state via the `fixed` BC instead of forcing `E_t = 0`.
+a field-driven, not particle-driven, blow-up.  The fix replaces the left-wall
+`CONDUCTING`/PEC BC (which forces `E_t = 0`) with the `fixed` BC, whose
+zero-gradient ghost copy keeps the tangential motional E `-u x B` intact.
 
 ### `validate_plot` — final `#SAVEPLOT` snapshot
 

@@ -145,8 +145,6 @@ public:
   };
   amrex::Vector<InflowVel> inflowState;
   bool inflowDefined = false;
-  // Upstream B (code units), used by Pic::apply_inflow_wall.
-  double inflowBx = 0.0, inflowBy = 0.0, inflowBz = 0.0;
 
 protected:
   bool useResist = false;
@@ -187,14 +185,6 @@ public:
   }
   void set_inflow_state(const amrex::Vector<InflowVel>& s) { inflowState = s; }
   void set_inflow_defined(bool v) { inflowDefined = v; }
-  void set_inflow_b(double bx, double by, double bz) {
-    inflowBx = bx;
-    inflowBy = by;
-    inflowBz = bz;
-  }
-  double get_inflow_bx() const { return inflowBx; }
-  double get_inflow_by() const { return inflowBy; }
-  double get_inflow_bz() const { return inflowBz; }
 };
 
 class FluidInterface : public Grid, public FluidInterfaceParameters {
