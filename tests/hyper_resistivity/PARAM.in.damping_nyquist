@@ -1,0 +1,177 @@
+#DESCRIPTION
+Hybrid-PIC hyper-resistivity: Nyquist-mode variant (frozen plasma).
+
+Same frozen-plasma setup as PARAM.in.damping, but the seeded mode is the
+Nyquist mode of the x grid (waveMode = nCellX/2, theta = k*dx = pi).  The
+hyper-resistive term is built as -(eta_h/4*pi)*curl(nabla^2 B) with the
+collocated 2*dx curl, whose symbol i*sin(theta)/dx vanishes at theta = pi, so
+the term is exactly zero for this field: the magnetic energy must not change
+at all.  This pins down the known null space of the stencil (see the README)
+-- the companion negative check to the damping variant.
+
+NO macroparticles are loaded (nParticle = 0 0 0), so the ion charge/mass
+density rho is identically zero and every other term of the generalized Ohm's
+law (convection, Hall, resistive eta*J, grad Pe) is short-circuited by the
+rho > 0 guard: the ONLY surviving contribution to E is the hyper-resistive
+term.  A single circularly polarized transverse mode
+
+    B = (Bx0, B1 cos kx, B1 sin kx),   k = 2*pi*waveMode/Lx
+
+is seeded on the uniform guide field Bx0, so Faraday's law integrates
+dB/dt = -curl(E_hyper) alone and the mode must decay exponentially at the
+discrete rate (derived and checked in validate.py)
+
+    gamma = (eta_h/4*pi) * 4 sin^2(theta) sin^2(theta/2) / dx^4,  theta = k*dx
+
+which follows from the two operators the term is built from: the collocated
+2*dx curl (symbol i*sin(theta)/dx) and the 3-point Laplacian (symbol
+-4 sin^2(theta/2)/dx^2).  With the guide field carrying a constant energy, the
+magnetic energy obeys Eb(t) - Eb_guide = A*exp(-2*gamma*t).
+
+The companion variant PARAM.in.damping_nyquist seeds the Nyquist mode, where
+the 2*dx curl vanishes identically, so that field must NOT decay.
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-3.2                    xMin  [code units; Lx = 6.4 d_i]
+ 3.2                    xMax
+-0.05                   yMin
+ 0.05                   yMax
+-0.05                   zMin
+ 0.05                   zMax
+
+#NCELL
+32                      nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+32                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+F                       solveEM
+
+#HYBRIDPIC
+T                       useHybridPIC
+
+Hyper-resistivity ON in "si" mode: Pic::convert_resistivity turns etaHyperSI
+[m^4/s] into code units with
+    eta_h_code = 4*pi * etaHyperSI * Si2NoV * Si2NoL^3,
+    Si2NoV = 1/uNormSI = 1e-5,  Si2NoL = 1/lNormSI = 1e-5
+    -> eta_h_code = 5.03e-2, i.e. eta_h/(4*pi) = 4.0e-3.
+For the seeded mode 8 (theta = pi/2, dx = 0.2, shape = 2.0) that gives
+gamma = 5.0 and gamma*dt = 0.01: the RK4 field integrator reproduces the
+analytic decay to ~1e-9 and is far inside its stability limit (2.785).
+#HYPERRESISTIVITY
+4.0e17                  etaHyperSI      [m^4/s]
+si                      etaHyperMode
+0.0                     etaHyperCh
+
+No ordinary resistivity and no electron pressure: this variant isolates the
+fourth-order term.
+#RESISTIVITY
+0.0                     etaResistivity  [m^2/s, SI magnetic diffusivity]
+
+#ELECTRONTEMPERATURE
+0.0                     electronTemperature  [eV]
+1.0                     electronGamma
+1.0                     electronDensity0
+
+Single sub-step: the 4th-order diffusion is the only stiff term and
+gamma*dt = 0.01 keeps one sub-step accurate.
+#BSUBCYCLE
+1                       nBSubcycle
+
+#FIELDINTEGRATOR
+rk4                     fieldIntegrator
+
+#AVGFIELDB
+F                       useAvgFieldB
+1                       nAvgFieldB
+
+Single kinetic ion species (q = m = 1); no particles are actually loaded.
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+Uniform guide field Bx0 along x.
+#UNIFORMSTATE
+5.0                     rho [amu/cc]   (ignored: no particles loaded)
+0.0                     ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+1.0439e-8               bx [T]       uniform guide field Bx0 (B_code ~ 1)
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#TESTCASE
+waveic
+
+#WAVEIC
+1                       seedB
+1                       guideField
+16                      waveMode
+0.5                     frac
+
+#TIMESTEPPING
+T                       useFixedDt
+0.002                   dt
+
+#NORMALIZATION
+1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
+1.0e5                   uNormSI   [m/s] tNorm = 1 s; sets cLight_SI = uNormSI
+
+#MONITOR
+100                     dnReport
+
+One energy-log line per step: validate.py fits the exponential decay to it.
+#SAVELOG
+1                       dnSavePic
+1                       dnSavePT
+
+NO macroparticles: rho = 0 everywhere, so every Ohm term except the
+hyper-resistive one is inert.
+#PARTICLES
+0                       nParticle per cell in X
+0                       nParticle per cell in Y
+0                       nParticle per cell in Z
+
+#COMOVING
+F                       solvePartInCoMov
+0                       nSmoothBackGroundU
+
+#UPWINDE
+F                       useUpwindE
+0.0                     limiterThetaE
+
+#UPWINDB
+F                       doSmoothB
+0.0                     theta
+
+#SAVEPLOT
+1                       nPlot
+z=0 fluid ascii pic     plotString
+-1                      dn
+0.2                     dt
+1                       dx
+Bx By Bz Ex Ey Ez       varName
+
+#STOP
+-1                      MaxIter
+0.2                     TimeMax   ~100 steps of a field that must not move
+
+#RUN

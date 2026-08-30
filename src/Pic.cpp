@@ -2748,6 +2748,10 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
 
   // Hyper-resistivity: E -= eta_h * nabla^2 J = -(eta_h/4*pi) * curl(nabla^2
   // B), built as centerLapB = nabla^2 B then centerHyperE = curl(centerLapB).
+  // A transverse Fourier mode (theta = k*dx) then decays at
+  //   gamma = (eta_h/4*pi) * 4 sin^2(theta) sin^2(theta/2) / dx^4
+  // (peaking at theta = 1.911, i.e. lambda = 3.3 cells, and vanishing at the
+  // Nyquist mode); see tests/hyper_resistivity/README.md.
   // Added BEFORE the ghost/BC pass below so that the hyper-resistive
   // contribution is part of the E the Faraday curl reads in the ghost cells
   // (the curl at an edge cell reads E at +/-1, i.e. the ghost ring).
