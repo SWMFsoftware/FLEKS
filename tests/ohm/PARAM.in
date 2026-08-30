@@ -51,7 +51,7 @@ discrete ohmic decay rate is (etaCode/4*pi)*sin^2(k*dx)/dx^2 ~ 0.19, i.e. ~70%
 over the run; the measured net effect is smaller (~25% reduction of the
 late-time transverse amplitude, see validate.py) because the kinetic-ion
 response keeps re-exciting the field. Resistive CFL number
-eta*kmax^2*dt_sub/(4*pi) = 1.2, below the 2.0 guard.
+eta*kmax^2*dt_sub/(4*pi) = 0.10, far below the RK4 stability limit 2.785.
 #RESISTIVITY
 2.0e9                   etaResistivity  [m^2/s, SI magnetic diffusivity]
 

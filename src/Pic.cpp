@@ -2939,23 +2939,53 @@ void Pic::update_B_hybrid() {
   }
 
   // CFL guard for the explicit diffusive terms (J = curl(B)/(4*pi) in CGS).
+  //
+  // With the collocated 2*dx curl (symbol i*sin(k_i*dx_i)/dx_i) and the
+  // 3-point Laplacian (symbol -4*sin^2(k_i*dx_i/2)/dx_i^2), the exact
+  // discrete damping rate of a Fourier mode is
+  //   resistive: gamma   = (eta/4pi)   * S(k)
+  //   hyper:     gamma_h = (eta_h/4pi) * S(k) * L(k)
+  // where S(k) = sum_i sin^2(k_i dx_i)/dx_i^2 and
+  //       L(k) = sum_i 4 sin^2(k_i dx_i/2)/dx_i^2.
+  // Bounding every sin^2 by 1 gives the estimates used below, at most 1.69x
+  // conservative (S and L peak at different k).  Directions that cannot carry
+  // a mode are dropped: a single-cell direction has k_i = 0 only, and a
+  // two-cell direction only adds the Nyquist mode, which contributes to L but
+  // not to S (sin(k_i dx_i) = 0 there).
+  //
+  // The previous estimate used k^2 = sum_i 4/dx_i^2 and k^4 = (k^2)^2, which
+  // over-stated the hyper-resistive rate by 1-4 orders of magnitude (it was
+  // reporting 3.7e3 for a run whose true number was 0.42) while remaining
+  // blind to the rate that actually matters.
+  //
+  // gamma*subDt must stay below the real-axis stability limit of the field
+  // integrator: 2.785 for classical RK4, 2.513 for SSPRK3.
+  const Real cflLimit = useRK4 ? 2.785 : 2.513;
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
     const auto dx = Geom(iLev).CellSizeArray();
-    Real k2 = 4.0 / (dx[0] * dx[0]) + 4.0 / (dx[1] * dx[1]);
-    if (nDim > 2)
-      k2 += 4.0 / (dx[2] * dx[2]);
-    const Real k4 = k2 * k2;
-    const Real cflEta = (etaResistivity / fourPI) * k2 * subDt;
-    const Real cflHyper = (etaHyperLev[iLev] / fourPI) * k4 * subDt;
-    if (cflEta > 2.0)
+    const Box& domBox = Geom(iLev).Domain();
+    Real sMax = 0.0, lMax = 0.0;
+    for (int iDim = 0; iDim < nDim; ++iDim) {
+      const int nCellDim = domBox.length(iDim);
+      if (nCellDim < 2)
+        continue; // single-cell direction: k_i = 0 contributes to neither
+      const Real invDx2 = 1.0 / (dx[iDim] * dx[iDim]);
+      lMax += 4.0 * invDx2; // attained at the Nyquist mode (nCell >= 2)
+      if (nCellDim >= 3)
+        sMax += invDx2; // sin(k_i dx_i) != 0 needs at least 3 cells
+    }
+    const Real cflEta = (etaResistivity / fourPI) * sMax * subDt;
+    const Real cflHyper = (etaHyperLev[iLev] / fourPI) * sMax * lMax * subDt;
+    if (cflEta > cflLimit)
       amrex::Print()
           << "  [CFL warning] resistivity: eta*kmax^2*dt_sub/(4pi) = " << cflEta
-          << " (> 2.0, explicit diffusion may be unstable)\n";
-    if (cflHyper > 2.78)
+          << " (> " << cflLimit << ", explicit diffusion may be unstable)\n";
+    if (cflHyper > cflLimit)
       amrex::Print()
           << "  [CFL warning] hyper-resistivity: eta_h*kmax^4*dt_sub/(4pi) = "
           << cflHyper
-          << " (> 2.78, explicit 4th-order diffusion may be unstable)\n";
+          << " (> " << cflLimit
+          << ", explicit 4th-order diffusion may be unstable)\n";
   }
 
   for (int subStep = 0; subStep < nBSubcycle; ++subStep) {
