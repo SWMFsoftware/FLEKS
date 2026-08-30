@@ -515,6 +515,16 @@ public:
   void update_B_hybrid();
   void project_centerB_to_nodeB(int iLev);
   void apply_centerB_BC(int iLev);
+  // Same boundary treatment for an arbitrary cell-centred B (the RK trial
+  // states).  The Ohm-solve curls and the hyper-resistive Laplacian read one
+  // ghost ring, so the trial states assembled by the RK stage algebra must
+  // carry BC-consistent ghosts: curl_center_to_center() only writes
+  // fabbox().grow(-1), leaving the outermost ring of the stage increments
+  // (kStage) stale, and feeding those stale values through the stage
+  // Copy/Saxpy/LinComb (which run over nGst) corrupts the trial ghosts.  The
+  // 1/dx^2 (hyper-resistivity: 1/dx^4) amplification turns that into an O(dt)
+  // damping-rate error that scales with the cell aspect ratio.
+  void apply_centerB_BC(int iLev, amrex::MultiFab& mfB);
   void project_centerB_to_nodeB_scratch(amrex::MultiFab &centerIn,
                                         amrex::MultiFab &nodeOut, int iLev);
   // Evaluate the Ohm's law E = -U_i x B + eta J + (J x B)/rho_q -

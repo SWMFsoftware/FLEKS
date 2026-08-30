@@ -2746,19 +2746,11 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     });
   }
 
-  Eout.FillBoundary(Geom(iLev).periodicity());
-  apply_BC(cellStatus[iLev], Eout, 0, nDim3, &Pic::get_center_E, iLev);
-  apply_conducting_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField,
-                        false);
-  apply_absorbing_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField, false);
-  // Inflow/fixed wall (E): zero-gradient copy of the edge cell into the
-  // ghosts (Hybrid-VPIC pec_fields behaviour).  No-op when no #INFLOW block
-  // was supplied.
-  apply_inflow_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField, false);
-
   // Hyper-resistivity: E -= eta_h * nabla^2 J = -(eta_h/4*pi) * curl(nabla^2
   // B), built as centerLapB = nabla^2 B then centerHyperE = curl(centerLapB).
-  // TODO: see tests/hyper_resistivity/README.md.
+  // Added BEFORE the ghost/BC pass below so that the hyper-resistive
+  // contribution is part of the E the Faraday curl reads in the ghost cells
+  // (the curl at an edge cell reads E at +/-1, i.e. the ghost ring).
   if (etaHyperLev[iLev] > 0) {
     lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
     centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -2774,6 +2766,16 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     const Real f = etaHyperLev[iLev] / fourPI;
     MultiFab::Saxpy(Eout, -f, centerHyperE[iLev], 0, 0, 3, 0);
   }
+
+  Eout.FillBoundary(Geom(iLev).periodicity());
+  apply_BC(cellStatus[iLev], Eout, 0, nDim3, &Pic::get_center_E, iLev);
+  apply_conducting_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField,
+                        false);
+  apply_absorbing_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField, false);
+  // Inflow/fixed wall (E): zero-gradient copy of the edge cell into the
+  // ghosts (Hybrid-VPIC pec_fields behaviour).  No-op when no #INFLOW block
+  // was supplied.
+  apply_inflow_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField, false);
 }
 
 //==========================================================
@@ -2860,19 +2862,22 @@ void Pic::project_centerB_to_nodeB(int iLev) {
 // BCs for the cell-centred B (the cell-centred part of
 // project_centerB_to_nodeB), called at the end of each sub-step.
 void Pic::apply_centerB_BC(int iLev) {
-  centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+  apply_centerB_BC(iLev, centerB[iLev]);
+}
+
+void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
+  mfB.FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
-    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-             &Pic::get_center_B, iLev, &bcBField);
+    apply_BC(cellStatus[iLev], mfB, 0, mfB.nComp(), &Pic::get_center_B, iLev,
+             &bcBField);
     // Open-inflow faces: ghost B = copy of the edge cell (Hybrid-VPIC
     // pec-style); applied AFTER apply_BC so the wall condition wins.
-    apply_inflow_wall(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-                      iLev, bcBField, true);
+    apply_inflow_wall(cellStatus[iLev], mfB, 0, mfB.nComp(), iLev, bcBField,
+                      true);
   } else {
     fill_fine_lev_bny_from_coarse(
-        centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-        *get_cell_interp());
+        centerB[iLev - 1], mfB, 0, mfB.nComp(), ref_ratio[iLev - 1],
+        Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
   }
 }
 
@@ -2995,6 +3000,11 @@ void Pic::update_B_hybrid() {
                         3, nGst);
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerB[iLev], 0, 0, 3, nGst);
+        // Refresh the trial ghosts: the stage algebra above inherits the stale
+        // outermost kStage ring (curl only writes fabbox().grow(-1)), and the
+        // Ohm-solve curls / hyper-resistive Laplacian read that ring.
+        apply_centerB_BC(iLev, centerBstage[iLev]);
+        apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
                        centerEstage[iLev], iLev, hstepHalf);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][1],
@@ -3006,6 +3016,8 @@ void Pic::update_B_hybrid() {
                         3, nGst);
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerB[iLev], 0, 0, 3, nGst);
+        apply_centerB_BC(iLev, centerBstage[iLev]);
+        apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
                        centerEstage[iLev], iLev, hstepHalf);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][2],
@@ -3017,6 +3029,8 @@ void Pic::update_B_hybrid() {
                         nGst);
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerB[iLev], 0, 0, 3, nGst);
+        apply_centerB_BC(iLev, centerBstage[iLev]);
+        apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
                        centerEstage[iLev], iLev, hstepEnd);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][3],
@@ -3062,6 +3076,9 @@ void Pic::update_B_hybrid() {
         //   B2 = (3/4)B_n + (1/4)(B1 - subDt k2).
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerBstart[iLev], 0, 0, 3, nGst);
+        // Refresh the trial ghosts (see the RK4 branch): the stage algebra
+        // inherits the stale outermost kStage ring.
+        apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
                        iLev, hstepEnd);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][1],
@@ -3070,11 +3087,13 @@ void Pic::update_B_hybrid() {
                           centerBstart[iLev], 0, 0, 3, nGst);
         MultiFab::Saxpy(centerBstage[iLev], -0.25 * subDt, kStage[iLev][1], 0,
                         0, 3, nGst);
+        apply_centerB_BC(iLev, centerBstage[iLev]);
 
         // Stage 3: avgB3 = (B2+B_n)/2; k3 = curl(E(avgB3));
         //   B^{n+1} = (1/3)B_n + (2/3)(B2 - subDt k3).
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerBstart[iLev], 0, 0, 3, nGst);
+        apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
                        iLev, hstepHalf);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][2],
