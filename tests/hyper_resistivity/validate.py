@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validator for the hybrid-PIC hyper-resistivity test (tests/hyper_resistivity).
+"""Validator for the hybrid-PIC hyper-resistivity test.
 
 The test is a frozen-plasma setup: no macroparticles are loaded, so rho = 0
 everywhere, every other term of the generalized Ohm's law (convection, Hall,
