@@ -538,12 +538,16 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
             (nDim > 2 && (bc.lo[iz_] == bc.outflow) && k < lo.z) ||
             (nDim > 2 && (bc.hi[iz_] == bc.outflow) && k > hi.z)) {
           // pass
-        } else if (((bc.lo[ix_] == bc.vacume) && i < lo.x) ||
-                   ((bc.hi[ix_] == bc.vacume) && i > hi.x) ||
-                   (nDim > 1 && (bc.lo[iy_] == bc.vacume) && j < lo.y) ||
-                   (nDim > 1 && (bc.hi[iy_] == bc.vacume) && j > hi.y) ||
-                   (nDim > 2 && (bc.lo[iz_] == bc.vacume) && k < lo.z) ||
-                   (nDim > 2 && (bc.hi[iz_] == bc.vacume) && k > hi.z) ||
+        } else if (
+                   // Vacuum faces: nothing exists beyond the face, so no
+                   // ghost-cell population is injected (unlike absorb, the
+                   // particles crossing outward are not tallied).
+                   ((bc.lo[ix_] == bc.vacuum) && i < lo.x) ||
+                   ((bc.hi[ix_] == bc.vacuum) && i > hi.x) ||
+                   (nDim > 1 && (bc.lo[iy_] == bc.vacuum) && j < lo.y) ||
+                   (nDim > 1 && (bc.hi[iy_] == bc.vacuum) && j > hi.y) ||
+                   (nDim > 2 && (bc.lo[iz_] == bc.vacuum) && k < lo.z) ||
+                   (nDim > 2 && (bc.hi[iz_] == bc.vacuum) && k > hi.z) ||
                    // Absorbing faces do not inject.
                    ((bc.lo[ix_] == bc.absorb) && i < lo.x) ||
                    ((bc.hi[ix_] == bc.absorb) && i > hi.x) ||

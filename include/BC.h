@@ -20,7 +20,7 @@ public:
   static const int periodic = 0;
   static const int coupled = 1;
   static const int outflow = 2;
-  static const int vacume = 3;
+  static const int vacuum = 3;
   static const int reflect = 4;
   static const int conducting = 5;
   static const int wave = 6;
@@ -40,8 +40,10 @@ public:
       return coupled;
     else if (str == "outflow")
       return outflow;
+    else if (str == "vacuum")
+      return vacuum;
     else if (str == "vacume")
-      return vacume;
+      return vacuum;
     else if (str == "reflect")
       return reflect;
     else if (str == "conducting")
