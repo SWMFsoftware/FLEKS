@@ -288,20 +288,9 @@ void Pic::post_process_param() {
 
   // Convert input units to normalized code units.
   if (useHybridPIC) {
-    if (etaResistivitySI > 0) {
-      etaResistivity =
-          fourPI * etaResistivitySI * fi->get_Si2NoV() * fi->get_Si2NoL();
-      amrex::Print() << "  etaResistivity: " << etaResistivitySI
-                     << " [m^2/s] -> " << etaResistivity << " [code units]\n";
-    }
-    // Hyper-resistivity: unit conversion with length factor Si2NoL^3.
-    if (etaHyperSI > 0 && etaHyperMode == "si") {
-      for (int iLev = 0; iLev < n_lev(); iLev++)
-        etaHyperLev[iLev] =
-            fourPI * etaHyperSI * fi->get_Si2NoV() * pow(fi->get_Si2NoL(), 3);
-      amrex::Print() << "  etaHyper: " << etaHyperSI << " [m^4/s, si] -> "
-                     << etaHyperLev[0] << " [code units]\n";
-    }
+    // NOTE: the SI->code conversions of etaResistivity and etaHyper need the
+    // normalization factors finalized by fi->post_process_param(), so they are
+    // done in convert_resistivity() (via finalize_units_conversion()).
 
     useRK4 = (fieldIntegrator == "rk4");
     if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3") {
@@ -1366,8 +1355,50 @@ void Pic::finalize_units_conversion() {
   // All conversions depend on fi->post_process_param() having finalized the
   // normalization constants (Si2NoRho, Si2NoV, ...). Called exactly once from
   // Domain::update_param(), so no idempotency guards are needed here.
+  convert_resistivity();
   convert_electron_density0();
   convert_inflow_state();
+}
+
+//==========================================================
+void Pic::convert_resistivity() {
+  if (!useHybridPIC)
+    return;
+
+  const Real Si2NoV = fi->get_Si2NoV();
+  const Real Si2NoL = fi->get_Si2NoL();
+
+  // Resistive term eta*J: [eta] = [U]*[L], so
+  // eta_code = 4*pi * eta_SI * Si2NoV * Si2NoL.
+  if (etaResistivitySI > 0) {
+    etaResistivity = fourPI * etaResistivitySI * Si2NoV * Si2NoL;
+    amrex::Print() << "  etaResistivity: " << etaResistivitySI
+                   << " [m^2/s] -> " << etaResistivity << " [code units]"
+                   << "  (Si2NoV = " << Si2NoV << ", Si2NoL = " << Si2NoL
+                   << ")\n";
+  }
+
+  // Hyper-resistive term eta_h*nabla^2 J: [eta_h] = [U]*[L]^3, so
+  // eta_h_code = 4*pi * eta_h_SI * Si2NoV * Si2NoL^3. A single physical value
+  // is used on every level (the same choice as grid mode in update_B_hybrid).
+  if (etaHyperSI > 0 && etaHyperMode == "si") {
+    const Real etaHyper = fourPI * etaHyperSI * Si2NoV * std::pow(Si2NoL, 3);
+    for (int iLev = 0; iLev < n_lev_max(); ++iLev)
+      etaHyperLev[iLev] = etaHyper;
+    amrex::Print() << "  etaHyper: " << etaHyperSI << " [m^4/s, si] -> "
+                   << etaHyper << " [code units]\n";
+  }
+
+  // Guard: a non-zero SI input that converts to a non-positive coefficient
+  // means the normalization was not finalized (both factors are 0 before
+  // fi->post_process_param()). The term would then be silently switched off.
+  if ((etaResistivitySI > 0 && !(etaResistivity > 0)) ||
+      (etaHyperSI > 0 && etaHyperMode == "si" &&
+       !(etaHyperLev.size() > 0 && etaHyperLev[0] > 0))) {
+    amrex::Abort("Pic::convert_resistivity: the SI->code conversion produced a "
+                 "non-positive resistivity. Check the normalization "
+                 "(#NORMALIZATION lNormSI / uNormSI).");
+  }
 }
 
 //==========================================================

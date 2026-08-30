@@ -6,10 +6,12 @@ pressure gradient (grad Pe / (e n_e)) terms ALL active, in normalized CGS units.
 Parameters match the whistler test (same ion-scale normalization, uNormSI =
 speed of light = v_A, so d_i ~ v_A ~ 1 in code units).  Here RESISTIVITY and
 ELECTRONTEMPERATURE are enabled so the
-complete Ohm's-law field solver is exercised.  A moderate resistivity damps the
-whistler, and the electron pressure gradient acts on the (weak) charge-density
-fluctuations produced by particle noise; the test is a STABILITY / no-blow-up
-regression check for the full solver, not a dispersion measurement.
+complete Ohm's-law field solver is exercised.  The resistivity is dynamically
+active (see the RESISTIVITY note below): it measurably reduces the late-time
+transverse amplitude.  The electron pressure gradient acts on the (weak)
+charge-density fluctuations produced by particle noise; the test is a
+STABILITY / no-blow-up regression check for the full solver, not a dispersion
+measurement.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -44,10 +46,14 @@ F                       solveEM
 T                       useHybridPIC
 
 Resistive term ON. Converted internally to code units
-(etaCode = 4*pi*etaSI*Si2NoV*Si2NoL ~ 2.5e-3 here); damps the whistler so the
-late-time transverse amplitude stays well below the seed.
+(etaCode = 4*pi*etaSI*Si2NoV*Si2NoL ~ 2.51 here). For the seeded n=1 mode the
+discrete ohmic decay rate is (etaCode/4*pi)*sin^2(k*dx)/dx^2 ~ 0.19, i.e. ~70%
+over the run; the measured net effect is smaller (~25% reduction of the
+late-time transverse amplitude, see validate.py) because the kinetic-ion
+response keeps re-exciting the field. Resistive CFL number
+eta*kmax^2*dt_sub/(4*pi) = 1.2, below the 2.0 guard.
 #RESISTIVITY
-2000000.0               etaResistivity  [m^2/s, SI magnetic diffusivity]
+2.0e9                   etaResistivity  [m^2/s, SI magnetic diffusivity]
 
 Electron-pressure-gradient term ON (isothermal, gamma = 1). Converted
 internally to code units (TeCode = TeEV*e/(mp*uNormSI^2) ~ 0.19 here).

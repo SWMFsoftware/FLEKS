@@ -29,3 +29,10 @@ resistive and electron-pressure-gradient terms must not destabilize the coupled
 field advance (the `whistler` test leaves both disabled). The automated check
 reuses `validate_hybrid` (`tests/_shared/hybrid.py`): stable exit, finite
 `Eb`/`Epart`, seeded mode `n=1` at early time, and bounded late-time amplitude.
+
+On top of that, `validate.py` adds a **resistive-damping bound**: the resistivity
+is large enough (`#RESISTIVITY` = 2.0e9 m²/s, `etaCode` ~ 2.51) to hold back the
+late-time transverse amplitude, so the late/early `max|B_perp|` growth factor
+must stay below 1.9 (measured 1.65 with the term active, 2.16 with a negligible
+`eta`). This is the check that catches a silently disabled resistive term — e.g.
+a broken SI→code unit conversion that multiplies `eta` by zero.

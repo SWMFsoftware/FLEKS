@@ -432,9 +432,15 @@ public:
   // Convert all SI-input parameters that depend on the finalized FluidInterface
   // normalization (fi->post_process_param) to code units. Called exactly once
   // from Domain::update_param(), after fi->post_process_param() has finalized
-  // the norm params. Currently converts electronDensity0 and the #INFLOW
-  // upstream state; the latter is a no-op when no #INFLOW block was read.
+  // the norm params. Converts the #RESISTIVITY / #HYPERRESISTIVITY
+  // coefficients, electronDensity0 and the #INFLOW upstream state; the latter
+  // is a no-op when no #INFLOW block was read.
   void finalize_units_conversion();
+
+  // Convert the #RESISTIVITY / #HYPERRESISTIVITY ("si" mode) coefficients from
+  // SI to code units. Called once by finalize_units_conversion() after
+  // fi->post_process_param() finalizes Si2NoV / Si2NoL; hybrid solver only.
+  void convert_resistivity();
 
   // Convert electronDensity0 (amu/cc) to code units and set the auto density
   // floor. Called once by finalize_units_conversion() after
