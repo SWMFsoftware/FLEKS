@@ -533,10 +533,10 @@ void FluidInterface::distribute_arrays() {
 void FluidInterface::find_mpi_rank_for_points(const int nPoint,
                                               const double* const xyz_I,
                                               int* const rank_I) {
-  // The caller initializes rank_I with the iNotSet_ = -777 sentinel.
   int nDimGM = get_fluid_dimension();
   Real si2nol = get_Si2NoL();
   const RealBox& range = Geom(0).ProbDomain();
+  const Real eps = 1e-6 * Geom(0).CellSize()[ix_];
   for (int i = 0; i < nPoint; ++i) {
     RealVect xyz;
     for (int iDim = 0; iDim < nDimGM; iDim++) {
@@ -544,13 +544,23 @@ void FluidInterface::find_mpi_rank_for_points(const int nPoint,
     }
 
     // Check if this point is inside this FLEKS domain.
-    if (range.contains(xyz, 1e-6 * Geom(0).CellSize()[ix_])) {
+    if (range.contains(xyz, eps)) {
       rank_I[i] = find_mpi_rank_from_coord(xyz);
+    } else {
+      // The coupled component does not know the extent of the FLEKS domain,
+      // so points outside of it are routinely asked for. Never leave the
+      // iNotSet_ = -777 sentinel: the point router
+      // (CON_couple_points/get_buffer_order) turns it into iPoint_I = -1, and
+      // a target that collects source terms, e.g. OH_put_from_pt, stops on
+      // that. Route the point to the IO processor instead; FLEKS skips it and
+      // returns a defined zero for it:
+      //   PT->OH: zero charge exchange source, which is the correct value
+      //           outside the kinetic domain.
+      //   PC->GM: the zero density triggers the positivity/NaN restore in
+      //           GM_get_regions, so GM keeps its own state, i.e. the same
+      //           outcome as "not found".
+      rank_I[i] = ParallelDescriptor::IOProcessorNumber();
     }
-    // Otherwise leave the rank at the iNotSet_ (-777) sentinel: the point
-    // router (CON_couple_points/get_buffer_order) marks such a point as not
-    // found (iPoint_I = -1) and the target component keeps its own state
-    // there. This is the same contract GM follows in GM_find_points.
   }
 }
 
@@ -1469,7 +1479,8 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
                                     const double coef, Vector<int> idxMap) {
   std::string nameFunc = "FI::get_for_points";
 
-  const RealBox& range = Geom(0).ProbDomain();
+  const RealBox& range = Geom(0).ProbDomain();.
+  const Real eps = 1e-6 * Geom(0).CellSize()[ix_];
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     RealVect xyz(0.0);
     for (int iDim = 0; iDim < nDim; iDim++) {
@@ -1477,8 +1488,13 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
     }
 
     // Check if this point is inside this FLEKS domain.
-    if (!range.contains(xyz, 1e-10))
+    if (!range.contains(xyz, eps)) {
+      // Outside the domain: return a defined zero instead of leaving the
+      // caller's (possibly uninitialized) buffer untouched.
+      for (int iVar = 0; iVar < nVar; iVar++)
+        data_I[iPoint * nVar + iVar] = 0.0;
       continue;
+    }
 
     if (idxMap.size() == 0) {
       for (int i = 0; i < nVar; ++i)

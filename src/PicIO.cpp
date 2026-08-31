@@ -46,6 +46,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
   const int iEx_ = iBz_ + 1;
 
   const RealBox& range = Geom(0).ProbDomain();
+  const Real eps = 1e-6 * Geom(0).CellSize()[ix_];
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     RealVect xyz(0.0);
     for (int iDim = 0; iDim < nDim; iDim++) {
@@ -53,8 +54,16 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     }
 
     // Check if this point is inside this FLEKS domain.
-    if (!range.contains(xyz, 1e-10))
+    if (!range.contains(xyz, eps)) {
+      // Outside the domain: return a defined zero instead of leaving the
+      // caller's (possibly uninitialized) buffer untouched. PC_get_for_gm
+      // does not zero Data_VI, so skipping would send garbage to GM; a zero
+      // density instead triggers the positivity/NaN restore in GM_get_regions
+      // and GM keeps its own state.
+      for (int iVar = 0; iVar < nVar; iVar++)
+        data_I[iPoint * nVar + iVar] = 0.0;
       continue;
+    }
 
     const int iLev = get_finest_lev(xyz);
 
