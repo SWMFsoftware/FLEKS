@@ -1,7 +1,7 @@
 default: EXE
 
-.PHONY: default help GITINFO EXE FLEKS install LIB CONVERTER PIDL PDF rundir clean \
-	distclean allclean compile_commands
+.PHONY: default help GITINFO EXE FLEKS install LIB CONVERTER PIDL PDF rundir \
+	clean distclean allclean compile_commands
 
 -include Makefile.conf
 -include Makefile.def
