@@ -128,8 +128,16 @@ public:
     return 1;
   }
 
+  // pBCs is sized from nSpecies in Pic::post_process_param(), but Particles
+  // objects can be constructed before that: TestParticles is built with a
+  // throwaway default ParticlesInfo (see src/TestParticles.cpp), so its pBCs
+  // is always empty.  Return the default (all-`coupled`) entry instead of
+  // reading out of bounds.
   const BoxBC<ParticleBC::Type> &
   particle_bc(const int speciesID) const {
+    static const BoxBC<ParticleBC::Type> bcDefault;
+    if (speciesID < 0 || speciesID >= static_cast<int>(pBCs.size()))
+      return bcDefault;
     return pBCs[speciesID];
   }
 };

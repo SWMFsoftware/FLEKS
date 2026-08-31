@@ -454,10 +454,10 @@ void Pic::validate_bc_pairing(const Geometry &gm) {
   if (useHybridPIC) {
     bool hasWall = false;
     for (int d = 0; d < nDim && !hasWall; ++d)
-      for (int side = 0; side < 2; ++side) {
+      for (int side = 0; side < 2 && !hasWall; ++side) {
         const auto t = static_cast<FieldBC::Type>(bcField.face(d, side));
-        hasWall = (t == FieldBC::conducting || t == FieldBC::symmetry ||
-                   t == FieldBC::wave);
+        hasWall = hasWall || (t == FieldBC::conducting ||
+                              t == FieldBC::symmetry || t == FieldBC::wave);
       }
     if (hasWall)
       add_bc_warning("hybrid solver: only centerB is evolved, so a "
