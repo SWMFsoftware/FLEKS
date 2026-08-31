@@ -348,13 +348,17 @@ public:
 template <class FAB>
 void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
                          const amrex::DistributionMapping& dm, int nComp,
-                         int nGst, bool doCopy = true) {
+                         int nGst, bool doCopy = true,
+                         amrex::Real initVal = -7777) {
   // Assume 'dm' is the new dm.
+  // 'initVal' is the value given to the cells/ghost cells that are NOT
+  // covered by the copy from the old grid. The -7777 default marks them as
+  // uninitialized, which is useful for scratch arrays.
   amrex::FabArray<FAB> tmp;
 
   if (!baNew.empty()) {
     tmp.define(baNew, dm, nComp, nGst);
-    tmp.setVal(-7777);
+    tmp.setVal(initVal);
     if (doCopy && !fa.empty()) {
       tmp.ParallelCopy(fa, 0, 0, fa.nComp(), nGst, nGst);
       // tmp.Redistribute(fa, 0, 0, tmp.nComp(), tmp.nGrowVect());

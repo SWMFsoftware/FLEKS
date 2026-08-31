@@ -515,10 +515,15 @@ void FluidInterface::distribute_arrays() {
   const int nVarNode = (useCurrent ? nVarFluid + 3 : nVarFluid);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    // Use 0 instead of the -7777 "uninitialized" marker: nodeFluid and
+    // centerB carry physics across a regrid, and the nodes that receive no
+    // data from the source component keep the previous value ("hold"). That
+    // previous value must be a well-defined 0 in the regions created by the
+    // regrid, never the marker.
     distribute_FabArray(nodeFluid[iLev], nGrids[iLev], DistributionMap(iLev),
-                        nVarNode, nGst, doCopy);
+                        nVarNode, nGst, doCopy, 0.0);
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
-                        nGst, doCopy);
+                        nGst, doCopy, 0.0);
   }
 
   distribute_grid_arrays();
@@ -528,7 +533,7 @@ void FluidInterface::distribute_arrays() {
 void FluidInterface::find_mpi_rank_for_points(const int nPoint,
                                               const double* const xyz_I,
                                               int* const rank_I) {
-  const int iNotSet_ = -777;
+  // The caller initializes rank_I with the iNotSet_ = -777 sentinel.
   int nDimGM = get_fluid_dimension();
   Real si2nol = get_Si2NoL();
   const RealBox& range = Geom(0).ProbDomain();
@@ -541,12 +546,11 @@ void FluidInterface::find_mpi_rank_for_points(const int nPoint,
     // Check if this point is inside this FLEKS domain.
     if (range.contains(xyz, 1e-6 * Geom(0).CellSize()[ix_])) {
       rank_I[i] = find_mpi_rank_from_coord(xyz);
-    } else if (rank_I[i] == iNotSet_) {
-      // For PT->OH coupling, MHD does not know the range of FLEKS.
-      // If the location is outside the domain, set the rank to be the IO
-      // processor. FLEKS will ignore this point and 0.0 will be sent to MHD.
-      rank_I[i] = ParallelDescriptor::IOProcessorNumber();
     }
+    // Otherwise leave the rank at the iNotSet_ (-777) sentinel: the point
+    // router (CON_couple_points/get_buffer_order) marks such a point as not
+    // found (iPoint_I = -1) and the target component keeps its own state
+    // there. This is the same contract GM follows in GM_find_points.
   }
 }
 
