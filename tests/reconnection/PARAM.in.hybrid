@@ -31,13 +31,13 @@ T                       isPeriodicZ
 
 Field boundary conditions on the box faces (periodic in x, outflow/float in y,
 periodic in z).
-#BFIELDBOXBOUNDARY
-periodic                BoxBoundaryLo  (x)
-periodic                BoxBoundaryHi
-outflow                 BoxBoundaryLo  (y)
-outflow                 BoxBoundaryHi
-periodic                BoxBoundaryLo  (z)
-periodic                BoxBoundaryHi
+#FIELDBOXBOUNDARY
+periodic                fieldBoxBoundaryLo  (x)
+periodic                fieldBoxBoundaryHi
+outflow                 fieldBoxBoundaryLo  (y)
+outflow                 fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo  (z)
+periodic                fieldBoxBoundaryHi
 
 #SOLVEEM
 F                       solveEM

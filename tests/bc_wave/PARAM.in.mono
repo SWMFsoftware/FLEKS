@@ -55,13 +55,13 @@ T                       solveEM
 #TESTCASE
 lightwave               testCase
 
-#BFIELDBOXBOUNDARY
-wave                    BoxBoundaryLo
-periodic                BoxBoundaryHi
-periodic                BoxBoundaryLo
-periodic                BoxBoundaryHi
-periodic                BoxBoundaryLo
-periodic                BoxBoundaryHi
+#FIELDBOXBOUNDARY
+wave                    fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
 
 #WAVEBC
 1                       nWaveFace

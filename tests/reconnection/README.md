@@ -46,7 +46,7 @@ be `rho_e = rho_i*m_e/m_i = 12.5*0.04 = 0.5` to give `n_e = n_i`.
 `u_s = -(T_s/q_s) (grad(n) x B)/(n B^2)` so that `J x B = grad(p)` at `t = 0`.
 
 `#PERIODICITY` is periodic in `x` and `z`; the cross-sheet `y` faces use
-`#BFIELDBOXBOUNDARY outflow` (float B).  The current sheet is far from the
+`#FIELDBOXBOUNDARY outflow` (float B).  The current sheet is far from the
 `y`-walls (`Ly/2 = 15.7 d_i` vs `L = 5 d_i`), so the walls do not affect the
 interior reconnection.
 

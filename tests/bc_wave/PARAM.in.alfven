@@ -27,13 +27,13 @@ F                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-#BFIELDBOXBOUNDARY
-wave                    BoxBoundaryLo
-outflow                 BoxBoundaryHi
-periodic                BoxBoundaryLo
-periodic                BoxBoundaryHi
-periodic                BoxBoundaryLo
-periodic                BoxBoundaryHi
+#FIELDBOXBOUNDARY
+wave                    fieldBoxBoundaryLo
+outflow                 fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
 
 #SOLVEEM
 F                       solveEM

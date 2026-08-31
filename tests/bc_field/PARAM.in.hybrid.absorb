@@ -31,13 +31,13 @@ F                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-#BFIELDBOXBOUNDARY
-absorb                  bfieldBoxBoundaryLo
-absorb                  bfieldBoxBoundaryHi
-periodic                bfieldBoxBoundaryLo
-periodic                bfieldBoxBoundaryHi
-periodic                bfieldBoxBoundaryLo
-periodic                bfieldBoxBoundaryHi
+#FIELDBOXBOUNDARY
+absorb                  fieldBoxBoundaryLo
+absorb                  fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
 
 Reflecting particle walls keep the ions (and hence the hybrid Ohm's-law moments)
 inside the cavity.

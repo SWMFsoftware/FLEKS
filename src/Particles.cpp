@@ -348,12 +348,14 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
             const int hiY = mfi.validbox().bigEnd(iy_);
             const int loZ = mfi.validbox().smallEnd(iz_);
             const int hiZ = mfi.validbox().bigEnd(iz_);
-            const bool onWaveX = (bc.lo[ix_] == BC::wave && ijk[ix_] < loX) ||
-                                 (bc.hi[ix_] == BC::wave && ijk[ix_] > hiX);
-            const bool onWaveY = (bc.lo[iy_] == BC::wave && ijk[iy_] < loY) ||
-                                 (bc.hi[iy_] == BC::wave && ijk[iy_] > hiY);
-            const bool onWaveZ = (bc.lo[iz_] == BC::wave && ijk[iz_] < loZ) ||
-                                 (bc.hi[iz_] == BC::wave && ijk[iz_] > hiZ);
+            // Driven by the field-side wave faces (set from Pic::bcField),
+            // not by a particle-side spelling.
+            const bool onWaveX = (isWaveFace[0] && ijk[ix_] < loX) ||
+                                 (isWaveFace[1] && ijk[ix_] > hiX);
+            const bool onWaveY = (isWaveFace[2] && ijk[iy_] < loY) ||
+                                 (isWaveFace[3] && ijk[iy_] > hiY);
+            const bool onWaveZ = (isWaveFace[4] && ijk[iz_] < loZ) ||
+                                 (isWaveFace[5] && ijk[iz_] > hiZ);
             if (onWaveX || onWaveY || onWaveZ) {
               const Real ppos[3] = { xyz[0], xyz[1], xyz[2] };
               const Real tNow = tc ? tc->get_time() : 0.0;
@@ -478,6 +480,42 @@ void Particles<NStructReal, NStructInt>::add_particles_domain() {
 }
 
 //==========================================================
+// True when a face of this type must NOT maintain a Maxwellian ghost-cell
+// population next to the boundary.
+//
+// The important case is `outflow`: seeding a ghost layer there is not a
+// no-op, because the charge-conserving domain-boundary fold in
+// sum_moments_cell_centered() sweeps the cloned layer back into the edge cell
+// and double-counts it (observed: edge rho = 4.375 + 5.0 = 9.375, i.e. 15/8 x
+// n).  The field-solver ghost moments come from Pic::apply_centerPlasma_BC
+// (mirror) instead, so no ghost particles are needed.
+//
+// `inflow` is excluded for the mirror-image reason: a full-space Maxwellian
+// next to a supersonically inflowing edge cell has the wrong flux
+// distribution and fights the field solver through the ghost moments.  Its
+// flux is supplied by inject_flux_at_inflow_faces(), which creates
+// flux-weighted particles at the physical face.
+//==========================================================
+static bool particle_bc_no_injection(const ParticleBC::Type type) {
+  switch (type) {
+  case ParticleBC::inflow:
+  case ParticleBC::outflow:
+  case ParticleBC::vacuum:
+  case ParticleBC::reflect: // crossing is handled by the particle mover
+  case ParticleBC::absorb:
+  case ParticleBC::thermal: // reserved; the re-emission is not implemented
+    return true;
+  case ParticleBC::coupled: // MHD-AEPIC: re-seed from the fluid/MHD state
+  case ParticleBC::periodic:
+    return false;
+  default:
+    // `unset` (and anything unknown) is never stored from input; keep the
+    // conservative behaviour of not seeding.
+    return true;
+  }
+}
+
+//==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
   timing_func("Pts::inject_particles_at_boundary");
@@ -494,8 +532,8 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
     const auto& status = cell_status(iLev)[mfi].array();
     const Box& bx = mfi.validbox();
-    const auto lo = lbound(bx);
-    const auto hi = ubound(bx);
+    const IntVect bxLo = bx.smallEnd();
+    const IntVect bxHi = bx.bigEnd();
 
     Box bxGst = bx;
     for (int iDim = 0; iDim < fi->get_fluid_dimension(); iDim++) {
@@ -506,105 +544,38 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
       IntVect ijk = { AMREX_D_DECL(i, j, k) };
       IntVect ijksrc;
       if (do_inject_particles_for_this_cell(bx, status, ijk, ijksrc)) {
-        // Open-inflow (BC::inflow) faces are NOT re-seeded with a stationary
-        // Maxwellian in the ghost cells: a full-space Maxwellian next to a
-        // supersonically inflowing edge cell has the wrong flux distribution
-        // and fights the field solver through the ghost moments. The inflow
-        // is driven by inject_flux_at_inflow_faces() instead, which creates
-        // flux-weighted particles at the physical boundary face
-        // (Hybrid-VPIC style).
-        const bool beyondInflow =
-            ((bc.lo[ix_] == bc.inflow) && i < lo.x) ||
-            ((bc.hi[ix_] == bc.inflow) && i > hi.x) ||
-            (nDim > 1 && (bc.lo[iy_] == bc.inflow) && j < lo.y) ||
-            (nDim > 1 && (bc.hi[iy_] == bc.inflow) && j > hi.y) ||
-            (nDim > 2 && (bc.lo[iz_] == bc.inflow) && k < lo.z) ||
-            (nDim > 2 && (bc.hi[iz_] == bc.inflow) && k > hi.z);
-        if (beyondInflow)
-          return;
-        // Outflow faces are PURE OUTFLOW: particles crossing outward are
-        // deleted by reflect_or_delete_particle, and no ghost-cell
-        // population is maintained.  The old outflow_bc() cloned the edge
-        // cell's particles into the first ghost layer every cycle; with the
-        // charge-conserving domain-boundary fold in sum_moments_cell_centered
-        // that clone layer is swept back into the edge cell and
-        // double-counted (observed: edge rho = 4.375 + 5.0 = 9.375 = 15/8 x
-        // n).  The field-solver ghost moments are supplied by
-        // apply_centerPlasma_BC (mirror), so no ghost particles are needed.
-        if (((bc.lo[ix_] == bc.outflow) && i < lo.x) ||
-            ((bc.hi[ix_] == bc.outflow) && i > hi.x) ||
-            (nDim > 1 && (bc.lo[iy_] == bc.outflow) && j < lo.y) ||
-            (nDim > 1 && (bc.hi[iy_] == bc.outflow) && j > hi.y) ||
-            (nDim > 2 && (bc.lo[iz_] == bc.outflow) && k < lo.z) ||
-            (nDim > 2 && (bc.hi[iz_] == bc.outflow) && k > hi.z)) {
-          // pass
-        } else if (
-                   // Vacuum faces: nothing exists beyond the face, so no
-                   // ghost-cell population is injected (unlike absorb, the
-                   // particles crossing outward are not tallied).
-                   ((bc.lo[ix_] == bc.vacuum) && i < lo.x) ||
-                   ((bc.hi[ix_] == bc.vacuum) && i > hi.x) ||
-                   (nDim > 1 && (bc.lo[iy_] == bc.vacuum) && j < lo.y) ||
-                   (nDim > 1 && (bc.hi[iy_] == bc.vacuum) && j > hi.y) ||
-                   (nDim > 2 && (bc.lo[iz_] == bc.vacuum) && k < lo.z) ||
-                   (nDim > 2 && (bc.hi[iz_] == bc.vacuum) && k > hi.z) ||
-                   // Absorbing faces do not inject.
-                   ((bc.lo[ix_] == bc.absorb) && i < lo.x) ||
-                   ((bc.hi[ix_] == bc.absorb) && i > hi.x) ||
-                   (nDim > 1 && (bc.lo[iy_] == bc.absorb) && j < lo.y) ||
-                   (nDim > 1 && (bc.hi[iy_] == bc.absorb) && j > hi.y) ||
-                   (nDim > 2 && (bc.lo[iz_] == bc.absorb) && k < lo.z) ||
-                   (nDim > 2 && (bc.hi[iz_] == bc.absorb) && k > hi.z) ||
-                   // Open faces do not inject either: they are pure
-                   // outflow (particles crossing outward are deleted via
-                   // is_outside_active_region, Hybrid-VPIC "open"
-                   // behaviour).  NOTE: the PARAM string "open" maps to
-                   // BC::unset in BC::num_type.  Seeding a full Maxwellian
-                   // in the first ghost layer would be swept into the edge
-                   // cell by the charge-conserving domain-boundary fold in
-                   // sum_moments_cell_centered, double-counting it
-                   // (observed: edge rho = 15/8 x n).
-                   ((bc.lo[ix_] == bc.unset) && i < lo.x) ||
-                   ((bc.hi[ix_] == bc.unset) && i > hi.x) ||
-                   (nDim > 1 && (bc.lo[iy_] == bc.unset) && j < lo.y) ||
-                   (nDim > 1 && (bc.hi[iy_] == bc.unset) && j > hi.y) ||
-                   (nDim > 2 && (bc.lo[iz_] == bc.unset) && k < lo.z) ||
-                   (nDim > 2 && (bc.hi[iz_] == bc.unset) && k > hi.z) ||
-                   // Reflecting faces do not inject (crossing is handled by
-                   // reflection in the particle mover).
-                   ((bc.lo[ix_] == bc.reflect) && i < lo.x) ||
-                   ((bc.hi[ix_] == bc.reflect) && i > hi.x) ||
-                   (nDim > 1 && (bc.lo[iy_] == bc.reflect) && j < lo.y) ||
-                   (nDim > 1 && (bc.hi[iy_] == bc.reflect) && j > hi.y) ||
-                   (nDim > 2 && (bc.lo[iz_] == bc.reflect) && k < lo.z) ||
-                   (nDim > 2 && (bc.hi[iz_] == bc.reflect) && k > hi.z)) {
-          // pass
-        } else {
-          // Default branch: re-seed the ghost cell with a (drifting)
-          // Maxwellian, for any face type without specialised handling
-          // above (the specialised inflow faces are skipped entirely --
-          // their flux is supplied by inject_flux_at_inflow_faces()).
-          //
-          // When the user supplied an #INFLOW block, the seeding is taken
-          // from the PRESCRIBED upstream state (density / bulk velocity /
-          // thermal speed) rather than the live fluid-interface state.
-          // Without #INFLOW, fall back to the fluid-interface state (the
-          // original open-boundary behaviour).
-          Vel inflowVel;
-          if (fi->get_inflow_defined()) {
-            const auto* iv = fi->get_inflow_vel(speciesID);
-            if (iv) {
-              inflowVel.tag = speciesID; // enable the userState override path
-              inflowVel.nDens = iv->nDens;
-              inflowVel.vth = iv->vth;
-              inflowVel.vx = iv->ux;
-              inflowVel.vy = iv->uy;
-              inflowVel.vz = iv->uz;
-            }
-          }
-          add_particles_cell(iLev, mfi, ijk, fi, true, IntVect(), inflowVel,
-                             -1);
+        // A ghost cell can lie beyond more than one face (a corner); it is
+        // skipped when ANY of those faces must not carry a ghost-cell
+        // population -- see particle_bc_no_injection() above.
+        bool skip = false;
+        for (int d = 0; d < nDim && !skip; ++d) {
+          if (ijk[d] < bxLo[d])
+            skip = particle_bc_no_injection(
+                static_cast<ParticleBC::Type>(bc.face(d, 0)));
+          else if (ijk[d] > bxHi[d])
+            skip = particle_bc_no_injection(
+                static_cast<ParticleBC::Type>(bc.face(d, 1)));
         }
+        if (skip)
+          return;
+
+        // Re-seed the ghost cell with a (drifting) Maxwellian.  With an
+        // #INFLOW block the seeding uses the PRESCRIBED upstream state
+        // (density / bulk velocity / thermal speed); without one it falls
+        // back to the live fluid-interface state.
+        Vel inflowVel;
+        if (fi->get_inflow_defined()) {
+          const auto* iv = fi->get_inflow_vel(speciesID);
+          if (iv) {
+            inflowVel.tag = speciesID; // enable the userState override path
+            inflowVel.nDens = iv->nDens;
+            inflowVel.vth = iv->vth;
+            inflowVel.vx = iv->ux;
+            inflowVel.vy = iv->uy;
+            inflowVel.vz = iv->uz;
+          }
+        }
+        add_particles_cell(iLev, mfi, ijk, fi, true, IntVect(), inflowVel, -1);
       }
     });
   }
@@ -700,7 +671,8 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
   // Any inflow face for this species?
   bool hasInflow = false;
   for (int iDim = 0; iDim < nDim && !hasInflow; ++iDim)
-    hasInflow = (bc.lo[iDim] == BC::inflow) || (bc.hi[iDim] == BC::inflow);
+    hasInflow = (bc.lo[iDim] == ParticleBC::inflow) ||
+                (bc.hi[iDim] == ParticleBC::inflow);
   if (!hasInflow)
     return;
 
@@ -742,7 +714,7 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
       for (int side = 0; side < 2; ++side) {
         const bool isHi = (side == 1);
         const int faceBc = isHi ? bc.hi[iDim] : bc.lo[iDim];
-        if (faceBc != BC::inflow)
+        if (faceBc != ParticleBC::inflow)
           continue;
 
         // This tile must touch the global domain edge on this face.
@@ -1253,17 +1225,19 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     // instead of ~12.5, while the hybrid path (cell-centred deposit +
     // sum_moments_cell_centered) did not.
     //
-    // The physically correct boundary condition for a reflecting/conducting wall
-    // (and an open-inflow face, whose injected particles live just inside the
-    // edge cell) is MIRROR SYMMETRY across the boundary node: the ghost node
+    // The physically correct boundary condition for a reflecting wall (and an
+    // open-inflow face, whose injected particles live just inside the edge
+    // cell) is MIRROR SYMMETRY across the boundary node: the ghost node
     // must carry the same moment value as the edge node (Neumann mirror).  We
     // therefore copy the edge node into the first ghost node and fold the ghost
     // back into the edge node (equivalent to doubling the edge node), then zero
     // the ghost layer so SumBoundary does not re-use it.  We apply this ONLY at
-    // reflect / conducting / inflow faces.  At coupled (MHD-AEPIC), outflow,
-    // vacuum, absorb, wave and periodic faces the ghost layer may hold real
-    // injected/leaving particles, so we leave it untouched to avoid double
-    // counting.  Periodic directions are skipped (SumBoundary wraps them).
+    // reflect / inflow faces (`conducting` is a field-only type; on the
+    // particle side it is mapped to `reflect` at parse time).  At coupled
+    // (MHD-AEPIC), outflow, vacuum, absorb, thermal and periodic faces the
+    // ghost layer may hold real injected/leaving particles, so we leave it
+    // untouched to avoid double counting.  Periodic directions are skipped
+    // (SumBoundary wraps them).
     // NOTE: the fold runs BEFORE SumBoundary on purpose so a transverse ghost
     // target that lies in a tile-neighbour's valid region is combined exactly
     // once.
@@ -1281,9 +1255,12 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
           for (int side = 0; side < 2; ++side) {
             const bool isLo = (side == 0);
             const int faceBc = isLo ? bc.lo[iDim] : bc.hi[iDim];
+            // A particle face can no longer be `conducting`: that is a
+            // field-only type, and on the particle side it is mapped to
+            // `reflect` at parse time.  The fold set is therefore
+            // reflect + inflow.
             const bool doFold =
-                (faceBc == BC::reflect || faceBc == BC::conducting ||
-                 faceBc == BC::inflow);
+                (faceBc == ParticleBC::reflect || faceBc == ParticleBC::inflow);
             if (!doFold)
               continue;
 
@@ -2052,8 +2029,8 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
   // consistent at the wall (both must be restored together, otherwise the
   // E-solver's 1/rho Ohm factor sees full rho with half J).  Apply the same
   // mirror (copy edge node into the first ghost node, fold back -> double,
-  // zero the ghost) ONLY at reflect / conducting / inflow faces -- the same
-  // set as sum_moments().  Coupled, outflow, vacuum, absorb, wave and periodic
+  // zero the ghost) ONLY at reflect / inflow faces -- the same set as
+  // sum_moments().  Coupled, outflow, vacuum, absorb, thermal and periodic
   // faces are left untouched.
   if (!Geom(iLev).isAllPeriodic() && jHat.nGrow() > 0) {
     const Box& dom = Geom(iLev).Domain();
@@ -2069,9 +2046,10 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
         for (int side = 0; side < 2; ++side) {
           const bool isLo = (side == 0);
           const int faceBc = isLo ? bc.lo[iDim] : bc.hi[iDim];
+          // See the mirror block in sum_moments(): a particle face is never
+          // `conducting` any more (it is mapped to `reflect` at parse time).
           const bool doFold =
-              (faceBc == BC::reflect || faceBc == BC::conducting ||
-               faceBc == BC::inflow);
+              (faceBc == ParticleBC::reflect || faceBc == ParticleBC::inflow);
           if (!doFold)
             continue;
 

@@ -2,6 +2,8 @@
 #define _PIC_H_
 
 #include <iostream>
+#include <set>
+#include <string>
 
 #include "Array1D.h"
 #include "Bit.h"
@@ -256,8 +258,20 @@ private:
 
   ParticlesInfo pInfo;
 
-  // Boundary conditions for fields.
-  BC bcBField;
+  BoxBC<FieldBC::Type> bcField;
+
+  bool strictBC_ = false;
+
+  // De-duplicated boundary-condition warnings
+  std::set<std::string> bcWarnings_;
+
+  // Record a boundary-condition warning; empty messages are ignored.
+  void add_bc_warning(const std::string &msg) {
+    if (!msg.empty())
+      bcWarnings_.insert(msg);
+  }
+
+  bool fieldBCSet_ = false;
 
   // Characteristic speed for the absorbing BC (code units); 0 = auto (light
   // speed).
@@ -488,6 +502,10 @@ public:
                                   double *const data_I, const int nVar);
   void read_param(const std::string &command, ReadParam &param);
   void post_process_param();
+
+  void report_bc_warnings(const std::string &context);
+  void apply_periodicity_autofill(const amrex::Geometry &gm);
+  void validate_bc_pairing(const amrex::Geometry &gm);
   //------------Coupler related end--------------
 
   //-------------Electric field solver begin-------------
@@ -597,88 +615,103 @@ public:
   //--------------- IO end--------------------------------
 
   //--------------- Boundary begin ------------------------
+  // Single dispatch entry point for the electromagnetic fields.  `isB`
+  // selects the B or the E operator; both read the same `bcField` face type.
+  // Every face is visited -- there is no early-return priority chain -- so a
+  // box mixing e.g. a conducting x-face with an absorbing y-face is handled
+  // in one pass.
+  void apply_field_bc(const amrex::iMultiFab &status, amrex::MultiFab &mf,
+                      const int iStart, const int nComp, GETVALUE func,
+                      const int iLev, const bool isB);
+
   void apply_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                 const int iStart, const int nComp, GETVALUE func,
-                const int iLev, const BC *bc = nullptr);
+                const int iLev,
+                const BoxBC<FieldBC::Type> *bc = nullptr);
 
   // Perfectly-conducting wall: zero the wall-normal B and wall-tangential E,
   // mirror the remaining components.  `isB` selects the B/E convention.
   void apply_conducting_wall(const amrex::iMultiFab &status,
                              amrex::MultiFab &mf, const int iStart,
-                             const int nComp, const int iLev, const BC &bc,
-                             bool isB);
+                             const int nComp, const int iLev,
+                             const BoxBC<FieldBC::Type> &bc, bool isB);
 
   // Absorbing wall: matched-impedance ghost-cell blend; no image charges.
   void apply_absorbing_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                             const int iStart, const int nComp, const int iLev,
-                            const BC &bc, bool isB);
+                            const BoxBC<FieldBC::Type> &bc, bool isB);
 
   // Inflow (open) wall: zero-gradient copy of the adjacent edge physical cell
   // into the ghost cell for EVERY component (ghost B = edge B, ghost E = edge E).
   void apply_inflow_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                          const int iStart, const int nComp, const int iLev,
-                         const BC &bc, bool isB);
+                         const BoxBC<FieldBC::Type> &bc, bool isB);
 
   // Hybrid-only: mirror ion moments into the physical-wall ghost cells for
   // smooth pressure-gradient / Hall stencils at a wall.
   void apply_centerPlasma_BC(const amrex::iMultiFab &status,
                              amrex::MultiFab &mf, const int iLev);
 
-  // Wave hard source into boundary ghost cells at BC::wave faces (iField: B/E).
+  // Wave hard source into boundary ghost cells at FieldBC::wave faces
+  // (iField: 0 = B, 1 = E).
   void apply_wave_field(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                         const int iStart, const int nComp, const int iLev,
-                        const BC &bc, int iField, amrex::Real t);
+                        const BoxBC<FieldBC::Type> &bc, int iField,
+                        amrex::Real t);
 
   // Wave bulk-velocity kick (sum of iField==2 components) for particle
   // injection.
   void wave_velocity_kick(const amrex::Real *pos, amrex::Real t,
                           amrex::Real &dvx, amrex::Real &dvy, amrex::Real &dvz);
 
+  // True when the ghost cell (i,j,k) at an open face must be filled by a
+  // zero-gradient copy from the adjacent edge cell.
   bool use_float(const int i, const int j, const int k, int &ip, int &jp,
-                 int &kp, const BC &bc, const amrex::Box &bxValid) {
+                 int &kp, const BoxBC<FieldBC::Type> &bc,
+                 const amrex::Box &bxValid) const {
     bool useFloat = false;
     ip = i;
     jp = j;
     kp = k;
 
     if (i < bxValid.smallEnd(ix_) &&
-        (bc.lo[ix_] == BC::outflow || bc.lo[ix_] == BC::inflow ||
-         bc.lo[ix_] == BC::fixed)) {
+        (bc.lo[ix_] == FieldBC::outflow || bc.lo[ix_] == FieldBC::inflow ||
+         bc.lo[ix_] == FieldBC::fixed)) {
       useFloat = true;
       ip = bxValid.smallEnd(ix_);
     }
     if (i > bxValid.bigEnd(ix_) &&
-        (bc.hi[ix_] == BC::outflow || bc.hi[ix_] == BC::inflow ||
-         bc.hi[ix_] == BC::fixed)) {
+        (bc.hi[ix_] == FieldBC::outflow || bc.hi[ix_] == FieldBC::inflow ||
+         bc.hi[ix_] == FieldBC::fixed)) {
       useFloat = true;
       ip = bxValid.bigEnd(ix_);
     }
 
     if (j < bxValid.smallEnd(iy_) &&
-        (bc.lo[iy_] == BC::outflow || bc.lo[iy_] == BC::inflow ||
-         bc.lo[iy_] == BC::fixed)) {
+        (bc.lo[iy_] == FieldBC::outflow || bc.lo[iy_] == FieldBC::inflow ||
+         bc.lo[iy_] == FieldBC::fixed)) {
       useFloat = true;
       jp = bxValid.smallEnd(iy_);
     }
 
     if (j > bxValid.bigEnd(iy_) &&
-        (bc.hi[iy_] == BC::outflow || bc.hi[iy_] == BC::inflow ||
-         bc.hi[iy_] == BC::fixed)) {
+        (bc.hi[iy_] == FieldBC::outflow || bc.hi[iy_] == FieldBC::inflow ||
+         bc.hi[iy_] == FieldBC::fixed)) {
       useFloat = true;
       jp = bxValid.bigEnd(iy_);
     }
 
     if (nDim > 2) {
       if (k < bxValid.smallEnd(iz_) &&
-          (bc.lo[iz_] == BC::outflow || bc.lo[iz_] == BC::inflow ||
-           bc.lo[iz_] == BC::fixed)) {
+          (bc.lo[iz_] == FieldBC::outflow || bc.lo[iz_] == FieldBC::inflow ||
+           bc.lo[iz_] == FieldBC::fixed)) {
         useFloat = true;
         kp = bxValid.smallEnd(iz_);
       }
 
       if (k > bxValid.bigEnd(iz_) &&
-          (bc.hi[iz_] == BC::outflow || bc.hi[iz_] == BC::inflow ||
-           bc.hi[iz_] == BC::fixed)) {
+          (bc.hi[iz_] == FieldBC::outflow || bc.hi[iz_] == FieldBC::inflow ||
+           bc.hi[iz_] == FieldBC::fixed)) {
         useFloat = true;
         kp = bxValid.bigEnd(iz_);
       }

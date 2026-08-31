@@ -31,11 +31,11 @@ T                       isPeriodicX
 F                       isPeriodicY
 
 Field boundary conditions on the box faces (periodic in x, outflow/float in y).
-#BFIELDBOXBOUNDARY
-periodic                BoxBoundaryLo  (x)
-periodic                BoxBoundaryHi
-outflow                 BoxBoundaryLo  (y)
-outflow                 BoxBoundaryHi
+#FIELDBOXBOUNDARY
+periodic                fieldBoxBoundaryLo  (x)
+periodic                fieldBoxBoundaryHi
+outflow                 fieldBoxBoundaryLo  (y)
+outflow                 fieldBoxBoundaryHi
 
 Hybrid PIC field solver ON (generalized Ohm's law + Faraday RK4).
 Full PIC implicit Maxwell/GMRES solve OFF.

@@ -29,13 +29,13 @@ F                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-#BFIELDBOXBOUNDARY
-fixed                   bfieldBoxBoundaryLo
-inflow                  bfieldBoxBoundaryHi
-periodic                bfieldBoxBoundaryLo
-periodic                bfieldBoxBoundaryHi
-periodic                bfieldBoxBoundaryLo
-periodic                bfieldBoxBoundaryHi
+#FIELDBOXBOUNDARY
+fixed                   fieldBoxBoundaryLo
+inflow                  fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
 
 #PARTICLEBOXBOUNDARY
 0                       iSpecies

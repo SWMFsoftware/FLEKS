@@ -44,13 +44,13 @@ F                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
-#BFIELDBOXBOUNDARY
-inflow                  BoxBoundaryLo
-outflow                 BoxBoundaryHi
-periodic                BoxBoundaryLo
-periodic                BoxBoundaryHi
-periodic                BoxBoundaryLo
-periodic                BoxBoundaryHi
+#FIELDBOXBOUNDARY
+inflow                  fieldBoxBoundaryLo
+outflow                 fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
 
 #PARTICLEBOXBOUNDARY
 0                       iSpecies

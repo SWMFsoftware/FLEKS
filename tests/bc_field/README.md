@@ -9,7 +9,7 @@ field advance is exercised — which requires kinetic ions to be present, so the
 ## Variants
 
 Both variants use the identical geometry, seed and solver settings; they differ
-only in the `#BFIELDBOXBOUNDARY` at the two x faces:
+only in the `#FIELDBOXBOUNDARY` at the two x faces:
 
 | Variant | Field BC (x-lo/x-hi) | Particle BC (x) |
 |---------|----------------------|-----------------|

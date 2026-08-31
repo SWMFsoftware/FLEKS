@@ -112,7 +112,14 @@ public:
 
   OHIon ionOH;
 
-  amrex::Vector<BC> pBCs = amrex::Vector<BC>(10);
+  // Particle boundary conditions, one entry per species.
+  amrex::Vector<BoxBC<ParticleBC::Type>> pBCs;
+
+  // Parallel to pBCs: 1 when the species had its own #PARTICLEBOXBOUNDARY
+  // block, 0 when the entry is just the default.  Lets the periodic auto-fill
+  // tell "the user asked for X" apart from "nothing was specified".
+  amrex::Vector<char> pBCsSet;
+
   amrex::Vector<int> supIDs;
 
   int initial_sup_id(const int speciesID) const {
@@ -121,7 +128,10 @@ public:
     return 1;
   }
 
-  const BC& particle_bc(const int speciesID) const { return pBCs[speciesID]; }
+  const BoxBC<ParticleBC::Type> &
+  particle_bc(const int speciesID) const {
+    return pBCs[speciesID];
+  }
 };
 
 //===========================================================================
@@ -397,7 +407,13 @@ protected:
 
   bool isTargetPPCDefined = false;
 
-  BC bc; // boundary condition
+  BoxBC<ParticleBC::Type> bc; // particle boundary condition
+
+  // Faces carrying a FieldBC::wave *field* boundary, indexed 2*d + {0=lo,1=hi}.
+  // Set by Pic so the wave velocity kick is driven by the field boundary
+  // instead of a particle-side spelling -- the particle domain has no `wave`
+  // type of its own.
+  bool isWaveFace[6] = {false, false, false, false, false, false};
 
   // Absorbing-BC tallies per face (2*d + {0=lo,1=hi}).
   amrex::Real absorbTallyCount[6] = { 0, 0, 0, 0, 0, 0 };
@@ -453,13 +469,12 @@ public:
                           const Vel tpVel = Vel(), amrex::Real dt = -1);
   void inject_particles_at_boundary();
 
-  // Open-inflow (BC::inflow) particle boundary, Hybrid-VPIC style
-  // (shock-hyb.cxx + injection.cxx): new macroparticles are created AT the
-  // physical boundary face, their normal velocity is drawn from the
-  // flux-weighted (half-space) drifting Maxwellian, the transverse
-  // velocities from the corresponding Gaussians, and the number injected
-  // per step matches the analytic influx of the prescribed #INFLOW state
-  // (fractional remainders accumulate, so the mean rate is exact).
+  // Open-inflow (ParticleBC::inflow) particle boundary
+  // New macroparticles are created AT the physical boundary face, their
+  // normal velocity is drawn from the flux-weighted (half-space) drifting
+  // Maxwellian, the transverse velocities from the corresponding Gaussians,
+  // and the number injected per step matches the analytic influx of the
+  // prescribed #INFLOW state.
   void inject_flux_at_inflow_faces(amrex::Real dt);
 
   void add_particles_source(const FluidInterface* interface,
@@ -610,25 +625,27 @@ public:
     const amrex::Real* plo = Geom(iLev).ProbLo();
     const amrex::Real* phi = Geom(iLev).ProbHi();
     for (int d = 0; d < nDim; ++d) {
+      const int bcLo = bc.lo[d];
+      const int bcHi = bc.hi[d];
       // Absorbing and inflow (open) faces remove particles that cross outward,
       // tallying the lost charge/mass per face.  Inflow does not reflect: any
       // particle leaving through the inflow face is simply deleted (the
       // re-seeding of the ghost cells supplies the inflow flux instead).
-      if ((bc.lo[d] == BC::absorb || bc.lo[d] == BC::inflow) &&
+      if ((bcLo == ParticleBC::absorb || bcLo == ParticleBC::inflow) &&
           p.pos(d) < plo[d]) {
         absorb_tally(2 * d, p.rdata(iwp_));
         return true;
       }
-      if ((bc.hi[d] == BC::absorb || bc.hi[d] == BC::inflow) &&
+      if ((bcHi == ParticleBC::absorb || bcHi == ParticleBC::inflow) &&
           p.pos(d) > phi[d]) {
         absorb_tally(2 * d + 1, p.rdata(iwp_));
         return true;
       }
       // Specular reflection: mirror position and normal velocity.
-      if (bc.lo[d] == BC::reflect && p.pos(d) < plo[d]) {
+      if (bcLo == ParticleBC::reflect && p.pos(d) < plo[d]) {
         p.pos(d) = 2.0 * plo[d] - p.pos(d);
         p.rdata(iup_ + d) = -p.rdata(iup_ + d);
-      } else if (bc.hi[d] == BC::reflect && p.pos(d) > phi[d]) {
+      } else if (bcHi == ParticleBC::reflect && p.pos(d) > phi[d]) {
         p.pos(d) = 2.0 * phi[d] - p.pos(d);
         p.rdata(iup_ + d) = -p.rdata(iup_ + d);
       }
@@ -810,7 +827,14 @@ public:
 
   void set_ppc(amrex::IntVect& in) { nPartPerCell = in; };
 
-  void set_bc(BC& bcIn) { bc = bcIn; }
+  void set_bc(const BoxBC<ParticleBC::Type> &bcIn) { bc = bcIn; }
+
+  // Mark face `side` (0 = lo, 1 = hi) of dimension `d` as carrying a
+  // FieldBC::wave field boundary; drives the wave velocity kick.
+  void set_wave_face(const int d, const int side, const bool on) {
+    if (d >= 0 && d < 3 && side >= 0 && side < 2)
+      isWaveFace[2 * d + side] = on;
+  }
 
   void set_is_target_ppc_defined(bool in) { isTargetPPCDefined = in; }
 

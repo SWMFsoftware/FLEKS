@@ -40,24 +40,44 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     int iSpecies;
     std::string lo, hi;
     param.read_var("iSpecies", iSpecies);
-    if (iSpecies < 0 || iSpecies >= static_cast<int>(pInfo.pBCs.size())) {
-      Abort("Error: wrong input or too may particle species.");
+    if (iSpecies < 0)
+      Abort("Error: negative species index in #PARTICLEBOXBOUNDARY.");
+    // nSpecies is only known in post_process_param(), so pBCs grows on
+    // demand here and is padded to nSpecies there.
+    if (iSpecies >= static_cast<int>(pInfo.pBCs.size())) {
+      pInfo.pBCs.resize(iSpecies + 1);
+      pInfo.pBCsSet.resize(iSpecies + 1, 0);
     }
+    pInfo.pBCsSet[iSpecies] = 1;
 
     for (int i = 0; i < nDim; ++i) {
       param.read_var("particleBoxBoundaryLo", lo);
       param.read_var("particleBoxBoundaryHi", hi);
-      pInfo.pBCs[iSpecies].lo[i] = pInfo.pBCs[iSpecies].num_type(lo);
-      pInfo.pBCs[iSpecies].hi[i] = pInfo.pBCs[iSpecies].num_type(hi);
+      std::string warn;
+      pInfo.pBCs[iSpecies].set(i, 0, ParticleBC::parse(lo, strictBC_, warn));
+      add_bc_warning(warn);
+      pInfo.pBCs[iSpecies].set(i, 1, ParticleBC::parse(hi, strictBC_, warn));
+      add_bc_warning(warn);
     }
-  } else if (command == "#BFIELDBOXBOUNDARY") {
+  } else if (command == "#FIELDBOXBOUNDARY" ||
+             command == "#BFIELDBOXBOUNDARY") {
+    if (command == "#BFIELDBOXBOUNDARY")
+      add_bc_warning("#BFIELDBOXBOUNDARY is deprecated; use "
+                     "#FIELDBOXBOUNDARY instead.");
+    fieldBCSet_ = true;
+
     std::string lo, hi;
     for (int i = 0; i < nDim; ++i) {
-      param.read_var("BoxBoundaryLo", lo);
-      param.read_var("BoxBoundaryHi", hi);
-      bcBField.lo[i] = bcBField.num_type(lo);
-      bcBField.hi[i] = bcBField.num_type(hi);
+      param.read_var("fieldBoxBoundaryLo", lo);
+      param.read_var("fieldBoxBoundaryHi", hi);
+      std::string warn;
+      bcField.set(i, 0, FieldBC::parse(lo, strictBC_, warn));
+      add_bc_warning(warn);
+      bcField.set(i, 1, FieldBC::parse(hi, strictBC_, warn));
+      add_bc_warning(warn);
     }
+  } else if (command == "#BCSTRICT") {
+    param.read_var("strictBC", strictBC_);
   } else if (command == "#ABSORB") {
     param.read_var("charSpeed", absorbCharSpeed);
   } else if (command == "#INFLOW") {
@@ -262,9 +282,201 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 }
 
 //==========================================================
+// Boundary-condition warnings are collected while the commands are parsed and
+// reported once here, de-duplicated.  #BCSTRICT turns them into a hard error.
+// Running at the end of post_process_param() lets every later check (periodic
+// auto-fill, cross-domain pairing) contribute to the same report.
+void Pic::report_bc_warnings(const std::string &context) {
+  if (bcWarnings_.empty())
+    return;
+
+  if (strictBC_) {
+    std::string msg;
+    for (const std::string &w : bcWarnings_)
+      msg += "\n  - " + w;
+    amrex::Abort("Error: " + context + " boundary conditions:" + msg +
+                 "\n(#BCSTRICT is T, so warnings are fatal.)");
+  }
+
+  amrex::Print() << "  WARNING[" << context << "] boundary conditions:\n";
+  for (const std::string &w : bcWarnings_)
+    amrex::Print() << "    - " << w << "\n";
+  bcWarnings_.clear();
+}
+
+//==========================================================
+// #PERIODICITY feeds amrex::Geometry, and that is the authoritative topology
+// setting: the geometry must exist before the boundary commands can even be
+// parsed (Domain::prepare_grid_info runs the grid pass and calls gm.define()
+// before the Pic object is constructed), so the boundary value is derived
+// from the geometry and never the other way round.  Filling it in here also
+// makes the stored `periodic` a reliable per-dimension early-out for the
+// field operators, instead of them having to rely on isAllPeriodic().
+//==========================================================
+void Pic::apply_periodicity_autofill(const Geometry &gm) {
+  static const char dimName[3] = {'x', 'y', 'z'};
+
+  for (int d = 0; d < nDim; ++d) {
+    if (!gm.isPeriodic(d))
+      continue;
+
+    for (int side = 0; side < 2; ++side) {
+      if (fieldBCSet_) {
+        const int type = bcField.face(d, side);
+        if (type != FieldBC::periodic)
+          add_bc_warning(
+              std::string("dimension ") + dimName[d] +
+              " is periodic (#PERIODICITY), but the field boundary was set "
+              "to '" +
+              FieldBC::to_string(static_cast<FieldBC::Type>(type)) +
+              "'; using 'periodic'.");
+      }
+      bcField.set(d, side, FieldBC::periodic);
+
+      for (int i = 0; i < static_cast<int>(pInfo.pBCs.size()); ++i) {
+        // A species with no #PARTICLEBOXBOUNDARY block only holds the
+        // default, so there is nothing to contradict.
+        if (i >= static_cast<int>(pInfo.pBCsSet.size()) ||
+            pInfo.pBCsSet[i] == 0)
+          continue;
+
+        const int type = pInfo.pBCs[i].face(d, side);
+        if (type != ParticleBC::periodic)
+          add_bc_warning(
+              std::string("dimension ") + dimName[d] +
+              " is periodic (#PERIODICITY), but the particle boundary of "
+              "species " +
+              std::to_string(i) + " was set to '" +
+              ParticleBC::to_string(static_cast<ParticleBC::Type>(type)) +
+              "'; using 'periodic'.");
+        pInfo.pBCs[i].set(d, side, ParticleBC::periodic);
+      }
+    }
+  }
+}
+
+//==========================================================
+// Cross-domain consistency checks.  Runs after apply_periodicity_autofill(),
+// so a `periodic` entry on a periodic dimension is already known to agree with
+// the geometry; what is left to catch is the opposite (a `periodic` entry on a
+// non-periodic dimension), half-specified pairs such as a particle `inflow`
+// face whose field counterpart is not `inflow`, and walls the particles can
+// stream straight through.
+//
+// Comparisons against the field boundary are skipped when no
+// #FIELDBOXBOUNDARY / #BFIELDBOXBOUNDARY block was read, because then the
+// field side is only the `coupled` default rather than a user request.
+//==========================================================
+void Pic::validate_bc_pairing(const Geometry &gm) {
+  static const char dimName[3] = {'x', 'y', 'z'};
+
+  for (int d = 0; d < nDim; ++d) {
+    const bool dimPeriodic = gm.isPeriodic(d);
+    const int fLo = bcField.face(d, 0);
+    const int fHi = bcField.face(d, 1);
+
+    if (!dimPeriodic) {
+      if (fLo == FieldBC::periodic)
+        add_bc_warning(std::string("field boundary ") + dimName[d] +
+                       "-lo is 'periodic' but #PERIODICITY is F for that "
+                       "dimension.");
+      if (fHi == FieldBC::periodic)
+        add_bc_warning(std::string("field boundary ") + dimName[d] +
+                       "-hi is 'periodic' but #PERIODICITY is F for that "
+                       "dimension.");
+    }
+    if ((fLo == FieldBC::periodic) != (fHi == FieldBC::periodic))
+      add_bc_warning(std::string("field boundary ") + dimName[d] +
+                     " is periodic on one side only; #PERIODICITY applies to "
+                     "a whole dimension.");
+
+    for (int side = 0; side < 2; ++side) {
+      const auto fType = static_cast<FieldBC::Type>(bcField.face(d, side));
+      const std::string face =
+          std::string(1, dimName[d]) + (side == 0 ? "-lo" : "-hi");
+
+      // #INFLOW is what gives an `inflow` face its upstream state.
+      if ((fType == FieldBC::inflow || fType == FieldBC::fixed) &&
+          !fi->get_inflow_defined())
+        add_bc_warning("field boundary " + face + " is '" +
+                       FieldBC::to_string(fType) +
+                       "' but no #INFLOW block was given; the face falls back "
+                       "to a zero-gradient copy.");
+
+      // #WAVEBC is what drives a `wave` face.
+      if (fType == FieldBC::wave && !waveBC.active)
+        add_bc_warning("field boundary " + face +
+                       " is 'wave' but no #WAVEBC block was given; the face "
+                       "carries no wave source.");
+
+      if (!fieldBCSet_)
+        continue; // field side is only the default: nothing to contradict
+
+      for (int i = 0; i < static_cast<int>(pInfo.pBCs.size()); ++i) {
+        if (i >= static_cast<int>(pInfo.pBCsSet.size()) ||
+            pInfo.pBCsSet[i] == 0)
+          continue; // species had no block: nothing to contradict
+
+        const auto pType =
+            static_cast<ParticleBC::Type>(pInfo.pBCs[i].face(d, side));
+        const std::string what =
+            "species " + std::to_string(i) + " particle boundary " + face;
+
+        if (pType == ParticleBC::periodic && !dimPeriodic)
+          add_bc_warning(what + " is 'periodic' but #PERIODICITY is F for "
+                                "that dimension.");
+
+        if (pType == ParticleBC::inflow && fType != FieldBC::inflow &&
+            fType != FieldBC::fixed)
+          add_bc_warning(what + " is 'inflow' but the field boundary is '" +
+                         FieldBC::to_string(fType) +
+                         "'; the injected flux has no upstream field to "
+                         "match.");
+
+        if ((fType == FieldBC::conducting || fType == FieldBC::symmetry) &&
+            (pType == ParticleBC::outflow || pType == ParticleBC::vacuum ||
+             pType == ParticleBC::absorb))
+          add_bc_warning(what + " is '" + ParticleBC::to_string(pType) +
+                         "' on a '" + FieldBC::to_string(fType) +
+                         "' wall: particles leave through the wall.");
+
+        if (pType == ParticleBC::absorb && fType != FieldBC::absorb)
+          add_bc_warning(what + " is 'absorb' but the field boundary is '" +
+                         FieldBC::to_string(fType) +
+                         "'; only the particles are absorbed.");
+      }
+    }
+  }
+
+  // In the hybrid solver only centerB is evolved; E is assembled from the
+  // generalized Ohm's law, so a wall face type constrains B and only closes
+  // the ghost ring for E.  Say so once, not per face.
+  if (useHybridPIC) {
+    bool hasWall = false;
+    for (int d = 0; d < nDim && !hasWall; ++d)
+      for (int side = 0; side < 2; ++side) {
+        const auto t = static_cast<FieldBC::Type>(bcField.face(d, side));
+        hasWall = (t == FieldBC::conducting || t == FieldBC::symmetry ||
+                   t == FieldBC::wave);
+      }
+    if (hasWall)
+      add_bc_warning("hybrid solver: only centerB is evolved, so a "
+                     "conducting / symmetry / wave field boundary constrains "
+                     "B; for the Ohm's-law E it only closes the ghost ring "
+                     "(it is not an independent constraint).");
+  }
+}
+
+//==========================================================
 void Pic::post_process_param() {
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
+  // Species without a #PARTICLEBOXBOUNDARY block keep the default (coupled).
+  if (static_cast<int>(pInfo.pBCs.size()) < nSpecies) {
+    pInfo.pBCs.resize(nSpecies);
+    pInfo.pBCsSet.resize(nSpecies, 0);
+  }
+
   fsolver.mode = (!fsolver.useLaggedLimiter && limiterThetaE != 0)
                      ? FieldSolverMode::NewtonKrylov
                      : FieldSolverMode::GMRES;
@@ -318,6 +530,8 @@ void Pic::post_process_param() {
     if (rhoMinOhm <= 0)
       rhoMinOhm = 0.0; // resolved to 1e-6*electronDensity0 on first advance
   }
+  // NOTE: report_bc_warnings() is not called here -- Domain calls it after
+  // apply_periodicity_autofill() so the auto-fill can contribute too.
 }
 
 //==========================================================
@@ -609,6 +823,16 @@ void Pic::post_regrid() {
       parts[i]->redistribute_particles();
     }
   }
+
+  // Propagate the field-side wave faces to every species.  `wave` is a
+  // field-only boundary type, so the velocity kick is keyed off bcField
+  // rather than off a particle-side spelling.
+  for (auto &p : parts) {
+    for (int d = 0; d < nDim; ++d) {
+      p->set_wave_face(d, 0, bcField.face(d, 0) == FieldBC::wave);
+      p->set_wave_face(d, 1, bcField.face(d, 1) == FieldBC::wave);
+    }
+  }
   //--------------particles-----------------------------------
 
   // This part does not really work for multi-level.
@@ -760,21 +984,13 @@ void Pic::fill_E_B_fields() {
   nodeE[0].FillBoundary(Geom(0).periodicity());
   nodeB[0].FillBoundary(Geom(0).periodicity());
   centerB[0].FillBoundary(Geom(0).periodicity());
-  apply_BC(nodeStatus[0], nodeB[0], 0, nDim3, &Pic::get_node_B, 0, &bcBField);
-  apply_BC(nodeStatus[0], nodeE[0], 0, nDim3, &Pic::get_node_E, 0);
-  apply_conducting_wall(nodeStatus[0], nodeE[0], 0, nDim3, 0, bcBField, false);
-  apply_absorbing_wall(nodeStatus[0], nodeE[0], 0, nDim3, 0, bcBField, false);
-  apply_BC(cellStatus[0], centerB[0], 0, centerB[0].nComp(), &Pic::get_center_B,
-           0, &bcBField);
-
-  // Wave hard source into the boundary ghost cells.
-  if (waveBC.active) {
-    const Real t = tc ? tc->get_time() : 0.0;
-    apply_wave_field(nodeStatus[0], nodeB[0], 0, nDim3, 0, bcBField, 0, t);
-    apply_wave_field(nodeStatus[0], nodeE[0], 0, nDim3, 0, bcBField, 1, t);
-    apply_wave_field(cellStatus[0], centerB[0], 0, centerB[0].nComp(), 0,
-                     bcBField, 0, t);
-  }
+  // NOTE: apply_field_bc() also applies the wave hard source.
+  apply_field_bc(nodeStatus[0], nodeB[0], 0, nDim3, &Pic::get_node_B, 0,
+                 true);
+  apply_field_bc(nodeStatus[0], nodeE[0], 0, nDim3, &Pic::get_node_E, 0,
+                 false);
+  apply_field_bc(cellStatus[0], centerB[0], 0, centerB[0].nComp(),
+                 &Pic::get_center_B, 0, true);
 
   //-----Fine (iLev>0) grid boundary/internal ghost cells are filled----
   auto& cellInterp = *get_cell_interp();
@@ -806,23 +1022,11 @@ void Pic::fill_E_B_fields() {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       average_node_to_center(nodeE[iLev], centerEhybrid[iLev]);
       centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
-      apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0,
-               centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev);
-      // Match full-PIC nodeE: enforce the wall on the initial cell-centred E.
-      apply_conducting_wall(cellStatus[iLev], centerEhybrid[iLev], 0,
-                            centerEhybrid[iLev].nComp(), iLev, bcBField, false);
-      apply_absorbing_wall(cellStatus[iLev], centerEhybrid[iLev], 0,
-                           centerEhybrid[iLev].nComp(), iLev, bcBField, false);
-      // Inflow wall (E): zero-gradient copy of the edge cell into the ghosts
-      // for every component (see apply_inflow_wall).  No-op when no #INFLOW
-      // block was supplied.
-      apply_inflow_wall(cellStatus[iLev], centerEhybrid[iLev], 0,
-                        centerEhybrid[iLev].nComp(), iLev, bcBField, false);
-      if (waveBC.active) {
-        const Real t = tc ? tc->get_time() : 0.0;
-        apply_wave_field(cellStatus[iLev], centerEhybrid[iLev], 0,
-                         centerEhybrid[iLev].nComp(), iLev, bcBField, 1, t);
-      }
+      // Match full-PIC nodeE: the same face type closes the ghost ring of
+      // the initial cell-centred E as well.
+      apply_field_bc(cellStatus[iLev], centerEhybrid[iLev], 0,
+                     centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev,
+                     false);
     }
   }
 }
@@ -2102,8 +2306,8 @@ void Pic::update_E_expl() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                    nodeE[iLev].nGrow());
-    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-             &Pic::get_center_B, iLev, &bcBField);
+    apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+                   &Pic::get_center_B, iLev, true);
   }
   const Real dt = tc->get_dt();
   RealVect dt2dx;
@@ -2119,7 +2323,8 @@ void Pic::update_E_expl() {
                   nodeE[iLev].nGrow());
 
     nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
+    apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3,
+                   &Pic::get_node_E, iLev, false);
   }
 }
 
@@ -2159,24 +2364,11 @@ void Pic::update_E_impl() {
 
     if (iLev == 0) {
 
-      apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
-      apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, &Pic::get_node_E,
-               iLev);
-      apply_conducting_wall(nodeStatus[iLev], nodeE[iLev], 0, nDim3, iLev,
-                            bcBField, false);
-      apply_conducting_wall(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, iLev,
-                            bcBField, false);
-      apply_absorbing_wall(nodeStatus[iLev], nodeE[iLev], 0, nDim3, iLev,
-                           bcBField, false);
-      apply_absorbing_wall(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, iLev,
-                           bcBField, false);
-      if (waveBC.active) {
-        const Real t = tc ? tc->get_time() : 0.0;
-        apply_wave_field(nodeStatus[iLev], nodeE[iLev], 0, nDim3, iLev,
-                         bcBField, 1, t);
-        apply_wave_field(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, iLev,
-                         bcBField, 1, t);
-      }
+      // NOTE: the wave hard source is applied inside apply_field_bc().
+      apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3,
+                     &Pic::get_node_E, iLev, false);
+      apply_field_bc(nodeStatus[iLev], nodeEth[iLev], 0, nDim3,
+                     &Pic::get_node_E, iLev, false);
     }
 
     if (doSmoothE) {
@@ -2296,14 +2488,11 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     // The boundary nodes would not be filled in by convert_1d_3d. So, there
     // is not need to apply zero boundary conditions again here.
   } else {
-    // Even after apply_BC(), the outmost layer node E is still
+    // Even after apply_field_bc(), the outmost layer node E is still
     // unknow. See FluidInterface::calc_current for detailed explaniation.
     if (iLev == 0) {
-      apply_BC(nodeStatus[iLev], vecMF, 0, nDim3, &Pic::get_node_E, iLev);
-      apply_conducting_wall(nodeStatus[iLev], vecMF, 0, nDim3, iLev, bcBField,
-                            false);
-      apply_absorbing_wall(nodeStatus[iLev], vecMF, 0, nDim3, iLev, bcBField,
-                           false);
+      apply_field_bc(nodeStatus[iLev], vecMF, 0, nDim3, &Pic::get_node_E,
+                     iLev, false);
     } else {
       fill_fine_lev_bny_from_coarse(
           nodeEth[iLev - 1], vecMF, 0, nodeEth[iLev - 1].nComp(),
@@ -2485,10 +2674,10 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   temp2Node.setVal(0.0);
 
   if (iLev == 0) {
-    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-             &Pic::get_center_B, iLev, &bcBField);
-    apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
-             &Pic::get_node_B, iLev, &bcBField);
+    apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+                   &Pic::get_center_B, iLev, true);
+    apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+                   &Pic::get_node_B, iLev, true);
   } else {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
@@ -2545,8 +2734,8 @@ void Pic::update_B() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
-      apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-               &Pic::get_center_B, iLev, &bcBField);
+      apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+                     &Pic::get_center_B, iLev, true);
 
     } else {
       fill_fine_lev_bny_from_coarse(
@@ -2574,12 +2763,9 @@ void Pic::update_B() {
                       0, dBdt[iLev].nComp(), dBdt[iLev].nGrow());
 
     if (iLev == 0) {
-
-      apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
-               &Pic::get_node_B, iLev, &bcBField);
-
+      apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+                     &Pic::get_node_B, iLev, true);
     } else {
-
       fill_fine_lev_bny_from_coarse(
           nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
@@ -2758,28 +2944,23 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   if (etaHyperLev[iLev] > 0) {
     lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
     centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(cellStatus[iLev], centerLapB[iLev], 0, centerLapB[iLev].nComp(),
-             &Pic::get_center_B, iLev, &bcBField);
+    apply_field_bc(cellStatus[iLev], centerLapB[iLev], 0,
+                   centerLapB[iLev].nComp(), &Pic::get_center_B, iLev, true);
 
     curl_center_to_center(centerLapB[iLev], centerHyperE[iLev],
                           Geom(iLev).InvCellSize());
     centerHyperE[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(cellStatus[iLev], centerHyperE[iLev], 0,
-             centerHyperE[iLev].nComp(), &Pic::get_center_E, iLev, &bcBField);
+    apply_field_bc(cellStatus[iLev], centerHyperE[iLev], 0,
+                   centerHyperE[iLev].nComp(), &Pic::get_center_E, iLev,
+                   false);
 
     const Real f = etaHyperLev[iLev] / fourPI;
     MultiFab::Saxpy(Eout, -f, centerHyperE[iLev], 0, 0, 3, 0);
   }
 
   Eout.FillBoundary(Geom(iLev).periodicity());
-  apply_BC(cellStatus[iLev], Eout, 0, nDim3, &Pic::get_center_E, iLev);
-  apply_conducting_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField,
-                        false);
-  apply_absorbing_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField, false);
-  // Inflow/fixed wall (E): zero-gradient copy of the edge cell into the
-  // ghosts (Hybrid-VPIC pec_fields behaviour).  No-op when no #INFLOW block
-  // was supplied.
-  apply_inflow_wall(cellStatus[iLev], Eout, 0, nDim3, iLev, bcBField, false);
+  apply_field_bc(cellStatus[iLev], Eout, 0, nDim3, &Pic::get_center_E, iLev,
+                 false);
 }
 
 //==========================================================
@@ -2842,8 +3023,8 @@ void Pic::seed_first_hybrid_step() {
 void Pic::project_centerB_to_nodeB(int iLev) {
   centerB[iLev].FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
-    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-             &Pic::get_center_B, iLev, &bcBField);
+    apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+                   &Pic::get_center_B, iLev, true);
   } else {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
@@ -2853,8 +3034,8 @@ void Pic::project_centerB_to_nodeB(int iLev) {
   average_center_to_node(centerB[iLev], nodeB[iLev]);
   nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
-    apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
-             &Pic::get_node_B, iLev, &bcBField);
+    apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+                   &Pic::get_node_B, iLev, true);
   } else {
     fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
                                   nodeB[iLev - 1].nComp(), ref_ratio[iLev - 1],
@@ -2872,12 +3053,8 @@ void Pic::apply_centerB_BC(int iLev) {
 void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
   mfB.FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
-    apply_BC(cellStatus[iLev], mfB, 0, mfB.nComp(), &Pic::get_center_B, iLev,
-             &bcBField);
-    // Open-inflow faces: ghost B = copy of the edge cell (Hybrid-VPIC
-    // pec-style); applied AFTER apply_BC so the wall condition wins.
-    apply_inflow_wall(cellStatus[iLev], mfB, 0, mfB.nComp(), iLev, bcBField,
-                      true);
+    apply_field_bc(cellStatus[iLev], mfB, 0, mfB.nComp(), &Pic::get_center_B,
+                   iLev, true);
   } else {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], mfB, 0, mfB.nComp(), ref_ratio[iLev - 1],
@@ -2891,8 +3068,8 @@ void Pic::project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
   // Same projection as project_centerB_to_nodeB on caller-owned scratch fields.
   centerIn.FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
-    apply_BC(cellStatus[iLev], centerIn, 0, centerIn.nComp(),
-             &Pic::get_center_B, iLev, &bcBField);
+    apply_field_bc(cellStatus[iLev], centerIn, 0, centerIn.nComp(),
+                   &Pic::get_center_B, iLev, true);
   } else {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerIn, 0, centerIn.nComp(), ref_ratio[iLev - 1],
@@ -2901,8 +3078,8 @@ void Pic::project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
   average_center_to_node(centerIn, nodeOut);
   nodeOut.FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
-    apply_BC(nodeStatus[iLev], nodeOut, 0, nodeOut.nComp(), &Pic::get_node_B,
-             iLev, &bcBField);
+    apply_field_bc(nodeStatus[iLev], nodeOut, 0, nodeOut.nComp(),
+                   &Pic::get_node_B, iLev, true);
   } else {
     fill_fine_lev_bny_from_coarse(
         nodeB[iLev - 1], nodeOut, 0, nodeOut.nComp(), ref_ratio[iLev - 1],
@@ -3153,13 +3330,8 @@ void Pic::update_B_hybrid() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
-      apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-               &Pic::get_center_B, iLev, &bcBField);
-      // Open-inflow faces: ghost B = copy of the edge cell (Hybrid-VPIC
-      // pec-style), so the Bavg update and the Ohm-solve curls read a
-      // consistent ghost B. Applied after apply_BC so the wall wins.
-      apply_inflow_wall(cellStatus[iLev], centerB[iLev], 0,
-                        centerB[iLev].nComp(), iLev, bcBField, true);
+      apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+                     &Pic::get_center_B, iLev, true);
     } else {
       fill_fine_lev_bny_from_coarse(
           centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
@@ -3205,8 +3377,8 @@ void Pic::update_B_hybrid() {
       // (mult defaults to valid cells only; the copy overwrites whatever
       // the unscaled ghost would have accumulated).
       if (iLev == 0) {
-        apply_inflow_wall(cellStatus[iLev], centerBavg[iLev], 0, 3, iLev,
-                          bcBField, true);
+        apply_field_bc(cellStatus[iLev], centerBavg[iLev], 0, 3,
+                       &Pic::get_center_B, iLev, true);
       }
     }
   }
@@ -3247,14 +3419,9 @@ void Pic::update_B_hybrid() {
   // BCs for the cell-centred E (read by the hybrid Boris push).
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0,
-             centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev);
-    // Hybrid-VPIC open-inflow E BC: the push gathers E across the boundary
-    // face, so the ghost E must be the zero-gradient copy of the edge cell
-    // (not the uniform-state E that apply_BC just wrote). No-op without an
-    // #INFLOW block.
-    apply_inflow_wall(cellStatus[iLev], centerEhybrid[iLev], 0,
-                      centerEhybrid[iLev].nComp(), iLev, bcBField, false);
+    apply_field_bc(cellStatus[iLev], centerEhybrid[iLev], 0,
+                   centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev,
+                   false);
   }
 
   // Fill coarse-fine interface ghost cells for centerEhybrid so the Boris push
@@ -3592,9 +3759,52 @@ void Pic::project_down_E() {
   }
 }
 //==========================================================
+// Single dispatch entry point for the electromagnetic fields.
+//
+// Full PIC evolves both E and B; hybrid PIC evolves only centerB and derives
+// E from the generalized Ohm's law.  One face type per physical face is
+// enough either way: the B operator and the E operator read the same
+// `bcField` and differ only through the `isB` convention of the individual
+// fillers.
+//
+// Every face is visited.  The old apply_BC() returned after the first
+// matching wall type, so a box mixing e.g. a conducting x-face with an
+// absorbing y-face silently dropped one of them; here each filler touches
+// only the faces carrying its own type, so all are treated in one pass.
+//==========================================================
+void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
+                         const int iStart, const int nComp, GETVALUE func,
+                         const int iLev, const bool isB) {
+  std::string nameFunc = "Pic::apply_field_bc";
+  timing_func(nameFunc);
+
+  if (Geom(iLev).isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  // Generic fill: zero-gradient copy on open faces (use_float), and the
+  // fluid-interface / uniform state from `func` everywhere else.
+  apply_BC(status, mf, iStart, nComp, func, iLev, &bcField);
+
+  // Dedicated wall operators, each visiting only the faces of its own type.
+  // Order matters: a later operator overwrites an earlier one on shared
+  // cells, and `inflow` is last because it encodes the open-boundary state.
+  apply_conducting_wall(status, mf, iStart, nComp, iLev, bcField, isB);
+  apply_absorbing_wall(status, mf, iStart, nComp, iLev, bcField, isB);
+  apply_inflow_wall(status, mf, iStart, nComp, iLev, bcField, isB);
+
+  // Driven wave source last, so it wins over everything above.
+  if (waveBC.active) {
+    const Real t = tc ? tc->get_time() : 0.0;
+    apply_wave_field(status, mf, iStart, nComp, iLev, bcField, isB ? 0 : 1, t);
+  }
+}
+
+//==========================================================
 void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
                    const int nComp, GETVALUE func, const int iLev,
-                   const BC* bc) {
+                   const BoxBC<FieldBC::Type>* bc) {
   std::string nameFunc = "Pic::apply_BC";
   timing_func(nameFunc);
 
@@ -3603,39 +3813,10 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   if (mf.nGrow() == 0)
     return;
 
-  // A `conducting`/`absorb`/`inflow`/`fixed` face delegates to the dedicated
-  // wall fillers.  `inflow`/`fixed` only delegate when the user supplied an
-  // #INFLOW block (otherwise they fall through to the zero-gradient use_float
-  // copy, matching the original open-boundary behaviour).
-  if (bc != nullptr) {
-    bool hasConducting = false;
-    bool hasAbsorb = false;
-    bool hasInflow = false;
-    for (int d = 0; d < nDim; ++d) {
-      if (bc->lo[d] == BC::conducting || bc->hi[d] == BC::conducting)
-        hasConducting = true;
-      if (bc->lo[d] == BC::absorb || bc->hi[d] == BC::absorb)
-        hasAbsorb = true;
-      if (bc->lo[d] == BC::inflow || bc->hi[d] == BC::inflow ||
-          bc->lo[d] == BC::fixed || bc->hi[d] == BC::fixed)
-        hasInflow = true;
-    }
-    if (hasConducting) {
-      apply_conducting_wall(status, mf, iStart, nComp, iLev, *bc, true);
-      return;
-    }
-    if (hasAbsorb) {
-      apply_absorbing_wall(status, mf, iStart, nComp, iLev, *bc, true);
-      return;
-    }
-    if (hasInflow && fi->get_inflow_defined()) {
-      // This dispatch only fires for B-field apply_BC calls (E-field calls
-      // pass bc == nullptr), so the B-field convention is always correct here.
-      apply_inflow_wall(status, mf, iStart, nComp, iLev, *bc, true);
-      return;
-    }
-  }
-
+  // NOTE: the wall fillers (conducting / absorbing / inflow) and the wave
+  // source are no longer dispatched from here -- Pic::apply_field_bc() runs
+  // them per face with the correct `isB` convention.  This function performs
+  // only the generic fill.
   bool useFloatBC = (func == nullptr);
 
   // BoxArray ba = mf.boxArray();
@@ -3751,7 +3932,8 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
 //==========================================================
 void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
                                 const int iStart, const int nComp,
-                                const int iLev, const BC& bc, bool isB) {
+                                const int iLev,
+                                const BoxBC<FieldBC::Type>& bc, bool isB) {
   std::string nameFunc = "Pic::apply_conducting_wall";
   timing_func(nameFunc);
 
@@ -3786,8 +3968,8 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
       IntVect ijk{ AMREX_D_DECL(i, j, k) };
 
       for (int d = 0; d < nDim; ++d) {
-        bool isLow = (bc.lo[d] == BC::conducting) && (ijk[d] < domLo[d]);
-        bool isHigh = (bc.hi[d] == BC::conducting) && (ijk[d] > domHi[d]);
+        bool isLow = (bc.lo[d] == FieldBC::conducting) && (ijk[d] < domLo[d]);
+        bool isHigh = (bc.hi[d] == FieldBC::conducting) && (ijk[d] > domHi[d]);
         if (!isLow && !isHigh)
           continue;
 
@@ -3819,7 +4001,8 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
 //==========================================================
 void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
                                const int iStart, const int nComp,
-                               const int iLev, const BC& bc, bool isB) {
+                               const int iLev,
+                               const BoxBC<FieldBC::Type>& bc, bool isB) {
   std::string nameFunc = "Pic::apply_absorbing_wall";
   timing_func(nameFunc);
 
@@ -3860,8 +4043,8 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
       IntVect ijk{ AMREX_D_DECL(i, j, k) };
 
       for (int d = 0; d < nDim; ++d) {
-        bool isLow = (bc.lo[d] == BC::absorb) && (ijk[d] < domLo[d]);
-        bool isHigh = (bc.hi[d] == BC::absorb) && (ijk[d] > domHi[d]);
+        bool isLow = (bc.lo[d] == FieldBC::absorb) && (ijk[d] < domLo[d]);
+        bool isHigh = (bc.hi[d] == FieldBC::absorb) && (ijk[d] > domHi[d]);
         if (!isLow && !isHigh)
           continue;
 
@@ -3890,7 +4073,7 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
 //==========================================================
 void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
                             const int iStart, const int nComp, const int iLev,
-                            const BC& bc, bool isB) {
+                            const BoxBC<FieldBC::Type>& bc, bool isB) {
   std::string nameFunc = "Pic::apply_inflow_wall";
   timing_func(nameFunc);
 
@@ -3930,9 +4113,11 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
       IntVect ijk{ AMREX_D_DECL(i, j, k) };
 
       for (int d = 0; d < nDim; ++d) {
-        bool isLow = ((bc.lo[d] == BC::inflow || bc.lo[d] == BC::fixed)) &&
+        bool isLow = ((bc.lo[d] == FieldBC::inflow ||
+                       bc.lo[d] == FieldBC::fixed)) &&
                      (ijk[d] < domLo[d]);
-        bool isHigh = ((bc.hi[d] == BC::inflow || bc.hi[d] == BC::fixed)) &&
+        bool isHigh = ((bc.hi[d] == FieldBC::inflow ||
+                        bc.hi[d] == FieldBC::fixed)) &&
                       (ijk[d] > domHi[d]);
         if (!isLow && !isHigh)
           continue;
@@ -4025,7 +4210,7 @@ void Pic::apply_centerPlasma_BC(const iMultiFab& status, MultiFab& mf,
 //==========================================================
 void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
                            const int iStart, const int nComp, const int iLev,
-                           const BC& bc, int iField, Real t) {
+                           const BoxBC<FieldBC::Type>& bc, int iField, Real t) {
   std::string nameFunc = "Pic::apply_wave_field";
   timing_func(nameFunc);
 

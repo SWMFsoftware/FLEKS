@@ -7,7 +7,7 @@ This directory groups the absorbing-boundary tests.  Each variant is a
 
 | Variant | File | Physics | Validation |
 |---------|------|---------|------------|
-| `bc_absorb_fields` | `PARAM.in.fields` | Tophat EM pulse (Ey/Bz) absorbed at the x-faces (`#BFIELDBOXBOUNDARY absorb`, full-PIC) | EM energy decays; late interior field reduced |
+| `bc_absorb_fields` | `PARAM.in.fields` | Tophat EM pulse (Ey/Bz) absorbed at the x-faces (`#FIELDBOXBOUNDARY absorb`, full-PIC) | EM energy decays; late interior field reduced |
 | `bc_absorb_particles` | `PARAM.in.particles` | Ions with bulk +x flow drain out through absorbing x-walls (`#PARTICLEBOXBOUNDARY absorb`, pure particle push) | Epart decays toward zero |
 | `bc_absorb_hybrid_particles` | `PARAM.in.hybrid.particles` | Same ion drain through absorbing x-walls, but in the hybrid cell-centred mover (`useHybridPIC = T`) | Epart decays toward zero |
 

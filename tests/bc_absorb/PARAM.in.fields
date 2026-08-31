@@ -55,13 +55,13 @@ T                       solveEM
 #TESTCASE
 tophat                  testCase
 
-#BFIELDBOXBOUNDARY
-absorb                  BoxBoundaryLo
-absorb                  BoxBoundaryHi
-periodic                BoxBoundaryLo
-periodic                BoxBoundaryHi
-periodic                BoxBoundaryLo
-periodic                BoxBoundaryHi
+#FIELDBOXBOUNDARY
+absorb                  fieldBoxBoundaryLo
+absorb                  fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
 
 #ABSORB
 0.0                     charSpeed

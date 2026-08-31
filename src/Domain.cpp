@@ -947,7 +947,8 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#PARTICLELEVRATIO" || command == "#OHION" ||
         command == "#PIC" || command == "#EXPLICITPIC" ||
         command == "#COMOVING" || command == "#PARTICLEBOXBOUNDARY" ||
-        command == "#BFIELDBOXBOUNDARY" || command == "#SUPID" ||
+        command == "#FIELDBOXBOUNDARY" || command == "#BFIELDBOXBOUNDARY" ||
+        command == "#SUPID" ||
         command == "#SOLVEEM" || command == "#PARTMODE" ||
         command == "#SELECTPARTICLE" || command == "#MAXCHARGEEXCHANGERATE" ||
         command == "#HYBRIDPIC" || command == "#RESISTIVITY" ||
@@ -956,7 +957,7 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#MINIMUMDENSITY" || command == "#FIELDINTEGRATOR" ||
         command == "#AVGFIELDB" || command == "#SMOOTHMOMENTS" ||
         command == "#MEMORY" || command == "#WAVEBC" || command == "#ABSORB" ||
-        command == "#INFLOW") {
+        command == "#INFLOW" || command == "#BCSTRICT") {
       if (pic)
         pic->read_param(command, readParam);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
@@ -1146,9 +1147,13 @@ void Domain::read_param(const bool readGridInfo) {
         tc->set_cfl(cfl);
       }
     } else if (command == "#PERIODICITY") {
+      // ReadParam::read_var() is positional -- the description is only echoed
+      // back -- so these names just have to match what PARAM.XML documents.
+      static const char *isPeriodicName[3] = {"isPeriodicX", "isPeriodicY",
+                                              "isPeriodicZ"};
       for (int i = 0; i < nDim; ++i) {
         bool isPeriodic;
-        readParam.read_var("isPeriodic", isPeriodic);
+        readParam.read_var(isPeriodicName[i], isPeriodic);
         set_periodicity(i, isPeriodic);
       }
     } else if (command == "#SAVELOG") {
@@ -1289,8 +1294,15 @@ void Domain::read_param(const bool readGridInfo) {
       }
     } //==========================================
 
-    if (pic)
+    if (pic) {
       pic->post_process_param();
+      // gm was defined by prepare_grid_info() (the grid pass) long before
+      // the boundary commands were read, so it can now drive their
+      // `periodic` entries and report any disagreement.
+      pic->apply_periodicity_autofill(gm);
+      pic->validate_bc_pairing(gm);
+      pic->report_bc_warnings("read_param");
+    }
 
     if (fi)
       fi->post_process_param(domainParameters);

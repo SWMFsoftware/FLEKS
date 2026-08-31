@@ -49,7 +49,7 @@ direction, `y` = current-sheet normal).  Two levels:
 ## Boundary conditions
 
 - **`#PERIODICITY`**: periodic in `x`, not in `y`.
-- **`#BFIELDBOXBOUNDARY`**: `periodic` on the `x` faces, **`outflow`** (float B)
+- **`#FIELDBOXBOUNDARY`**: `periodic` on the `x` faces, **`outflow`** (float B)
   on the `y` faces — the same BC as the uniform reconnection test.  The sheet
   (`L = 5 d_i`) is far from the `y`-walls (`Ly/2 = 15.7 d_i`), so the walls and
   the refined band (`|y| < 7.85 d_i`) do not interact.
