@@ -3,6 +3,15 @@ description: >-
   Configure, build, run, and summarize a standalone FLEKS test against a
   specific AMReX spatial dimension (2D or 3D). Expects the SWMF-nested layout
   from the setup-swmf composite action (FLEKS at SWMF/PC/FLEKS).
+
+  This action always configures the fully optimized release build (-O4
+  -nodebug); the executable produced here is the one the tests run with. The
+  compiler warning check, which needs an unoptimized (-debug -O0) build, lives
+  in the separate warning-check action and must be run as its own job: mixing
+  both configurations into one job leaves the object files from whichever
+  configuration was compiled last (Makefile.conf is not a prerequisite of the
+  objects, so reconfiguring does not trigger a rebuild) and the tests would
+  silently run an unoptimized executable.
 inputs:
   amrex-dim:
     description: 'AMReX spatial dimension: "2d" or "3d".'
@@ -25,73 +34,9 @@ inputs:
     description: "Whether to post the results as a PR comment ('true'/'false')."
     required: true
     default: 'false'
-  enable-debug-warning-check:
-    description: >-
-      If 'true', additionally compile FLEKS in debug mode (-debug -O0) purely to
-      surface compiler warnings. This build is NOT used to run tests. The step
-      fails if any compiler warning is emitted during this compilation.
-    required: false
-    default: 'false'
-  debug-warning-summary:
-    description: 'Filename for the debug-build warning check summary (relative to the tests dir).'
-    required: false
-    default: debug_warning_check.md
 runs:
   using: 'composite'
   steps:
-    - name: Debug-build warning check (compile-only, -debug -O0)
-      if: inputs.enable-debug-warning-check == 'true'
-      working-directory: SWMF/PC/FLEKS
-      shell: bash
-      run: |
-        set -euo pipefail
-
-        # Configure a debug, unoptimized build. This rebuilds the whole tree
-        # with no optimization so the compiler emits every warning it can.
-        # This build is used ONLY to check for compiler warnings; it is never
-        # used to run the tests.
-        ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo -debug -O0
-
-        # Compile, capturing ALL output (both stdout and stderr) to a log file.
-        LOG="debug_build_warnings.log"
-        make EXE -j$(nproc) > "$LOG" 2>&1 || {
-          echo "::error::Debug build (-debug -O0) failed to compile."
-          cat "$LOG"
-          exit 1
-        }
-
-        # Detect compiler warnings. Match common warning prefixes emitted by
-        # g++, clang++, and gfortran so this is compiler-agnostic.
-        WARN_PATTERN='(warning:|Warning:|[:][0-9]+[:][0-9]*: warning:|remark #|converting .* to .* changes value|Possible change of value in conversion)'
-        if grep -E -i "$WARN_PATTERN" "$LOG" > debug_warnings.txt; then
-          echo "::error::Compiler warnings detected during debug build (-debug -O0):"
-          cat debug_warnings.txt
-          {
-            echo "### ⚠️ Debug-build compiler warnings"
-            echo ""
-            echo "The \`-debug -O0\` warning check found the following warnings:"
-            echo ""
-            echo '```'
-            cat debug_warnings.txt
-            echo '```'
-          } > "tests/${{ inputs.debug-warning-summary }}"
-          # Restore the optimized configuration so the downstream test build
-          # (and its cache key) is unaffected by the debug configure.
-          ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo -O4 -nodebug
-          exit 1
-        fi
-
-        echo "Debug-build warning check passed: no compiler warnings."
-        {
-          echo "### ✅ Debug-build warning check"
-          echo ""
-          echo "Compiled with \`-debug -O0\`; no compiler warnings were detected."
-        } > "tests/${{ inputs.debug-warning-summary }}"
-
-        # Restore the optimized (-O4 -nodebug) configuration so the downstream
-        # test build (and its cache key) is unaffected by the debug configure.
-        ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo -O4 -nodebug
-
     - name: Configure Standalone FLEKS Source
       working-directory: SWMF/PC/FLEKS
       shell: bash
@@ -157,11 +102,6 @@ runs:
             cat SWMF/PC/FLEKS/tests/${{ inputs.parallel-summary }}
             echo ""
           fi
-          if [ -f SWMF/PC/FLEKS/tests/${{ inputs.debug-warning-summary }} ]; then
-            echo "#### Debug-build warning check (-debug -O0)"
-            cat SWMF/PC/FLEKS/tests/${{ inputs.debug-warning-summary }}
-            echo ""
-          fi
         } >> $GITHUB_STEP_SUMMARY
 
     - name: Post PR Comment
@@ -172,10 +112,9 @@ runs:
           const fs = require('fs');
           const serialPath = 'SWMF/PC/FLEKS/tests/${{ inputs.serial-summary }}';
           const parallelPath = 'SWMF/PC/FLEKS/tests/${{ inputs.parallel-summary }}';
-          const debugWarnPath = 'SWMF/PC/FLEKS/tests/${{ inputs.debug-warning-summary }}';
           let body = '';
 
-          if (fs.existsSync(serialPath) || fs.existsSync(parallelPath) || fs.existsSync(debugWarnPath)) {
+          if (fs.existsSync(serialPath) || fs.existsSync(parallelPath)) {
             body += '### 🧪 ${{ inputs.summary-title }}\n\n';
 
             if (fs.existsSync(serialPath)) {
@@ -183,9 +122,6 @@ runs:
             }
             if (fs.existsSync(parallelPath)) {
               body += fs.readFileSync(parallelPath, 'utf8') + '\n';
-            }
-            if (fs.existsSync(debugWarnPath)) {
-              body += fs.readFileSync(debugWarnPath, 'utf8') + '\n';
             }
           }
 
