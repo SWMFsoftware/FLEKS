@@ -351,7 +351,7 @@ template <class FAB>
 void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
                          const amrex::DistributionMapping& dm, int nComp,
                          int nGst, bool doCopy = true,
-                         amrex::Real initVal = UninitializedReal) {
+                         amrex::Real initVal = cUninitialized) {
   // Assume 'dm' is the new dm.
   // 'initVal' is the value given to the cells created by the regrid.
   // Arrays whose "no data" value must be physical pass 0 explicitly.

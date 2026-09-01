@@ -22,6 +22,10 @@ inline constexpr double invGamma = 1./gamma0;
 //===================================================
 
 //========= Numerical constants =====================
+// Sentinel stored in the cells that a regrid creates and the old grid does
+// not cover.
+inline constexpr double cUninitialized = -1e30;
+
 // FLEKS is always 3D. But it can be fake 2D with one cell in the z-direction.
 inline constexpr int nDim = amrex::SpaceDim;
 
