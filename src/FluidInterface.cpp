@@ -533,6 +533,7 @@ void FluidInterface::distribute_arrays() {
 void FluidInterface::find_mpi_rank_for_points(const int nPoint,
                                               const double* const xyz_I,
                                               int* const rank_I) {
+  const int iNotSet_ = -777;
   int nDimGM = get_fluid_dimension();
   Real si2nol = get_Si2NoL();
   const RealBox& range = Geom(0).ProbDomain();
@@ -546,16 +547,12 @@ void FluidInterface::find_mpi_rank_for_points(const int nPoint,
     // Check if this point is inside this FLEKS domain.
     if (range.contains(xyz, eps)) {
       rank_I[i] = find_mpi_rank_from_coord(xyz);
-    } else {
-      // The coupled component does not know the extent of the FLEKS domain,
-      // so points outside of it are routinely asked for. Never leave the
-      // iNotSet_ = -777 sentinel: the point router
-      // (CON_couple_points/get_buffer_order) turns it into iPoint_I = -1, and
-      // a target that collects source terms, e.g. OH_put_from_pt, stops on
-      // that. Route the point to the IO processor instead; FLEKS skips it and
-      // returns a defined zero for it:
-      //   PT->OH: zero charge exchange source, which is the correct value
-      //           outside the kinetic domain.
+    } else if (rank_I[i] == iNotSet_) {
+      // Coupled components do not know the extent of the FLEKS domain(s).
+      //
+      // The IO processor returns a defined zero for such a point:
+      //   PT->OH: zero charge exchange source, the correct value outside the
+      //           kinetic domain.
       //   PC->GM: the zero density triggers the positivity/NaN restore in
       //           GM_get_regions, so GM keeps its own state, i.e. the same
       //           outcome as "not found".
@@ -1488,13 +1485,8 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
     }
 
     // Check if this point is inside this FLEKS domain.
-    if (!range.contains(xyz, eps)) {
-      // Outside the domain: return a defined zero instead of leaving the
-      // caller's (possibly uninitialized) buffer untouched.
-      for (int iVar = 0; iVar < nVar; iVar++)
-        data_I[iPoint * nVar + iVar] = 0.0;
+    if (!range.contains(xyz, eps))
       continue;
-    }
 
     if (idxMap.size() == 0) {
       for (int i = 0; i < nVar; ++i)
