@@ -515,11 +515,8 @@ void FluidInterface::distribute_arrays() {
   const int nVarNode = (useCurrent ? nVarFluid + 3 : nVarFluid);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    // Use 0 instead of the -7777 "uninitialized" marker: nodeFluid and
-    // centerB carry physics across a regrid, and the nodes that receive no
-    // data from the source component keep the previous value ("hold"). That
-    // previous value must be a well-defined 0 in the regions created by the
-    // regrid, never the marker.
+    // Nodes that receive no data from the source component are set with value
+    // 0 in the regions created by the regrid.
     distribute_FabArray(nodeFluid[iLev], nGrids[iLev], DistributionMap(iLev),
                         nVarNode, nGst, doCopy, 0.0);
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
