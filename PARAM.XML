@@ -2043,6 +2043,45 @@ copy (the original open-boundary behaviour).  Pair `inflow` at one face with
 `outflow` at the opposite face for a wind-tunnel-style domain.
 </command>
 
+<command name="BOUNDARYINJECTION" alias="BOUNDARYINJECTION_FLEKS" multiple="F">
+  <parameter name="nSub" type="integer" default="1"/>
+  <parameter name="useStratified" type="logical" default="F"/>
+
+#BOUNDARYINJECTION
+1                       nSub
+T                       useStratified
+
+Controls how finely the open-inflow flux injector samples the upstream plasma.
+A transverse boundary cell receives only `npcel * |u| * dt / dx` macroparticles
+per step (about 6 for a 100 ppc shock deck), and the shot noise of that sample
+sets the seed -- and therefore the onset time -- of the transverse
+entrance-layer mode that 2D shock inflow decks grow at the +x face.
+
+Measured on the 2D hybrid oblique-shock bench (see
+`run_shock_2d/ANALYSIS_inflow_2d.md` sections 12 and 14): stratified sampling
+lowers the injected noise floor by 2.7x and `nSub = 4` by 3.0x, delaying the
+mode onset by up to about 4 s -- but neither changes the growth rate
+(gamma ~ 0.35-0.41 1/s once the mode is rising) nor the end state: the upstream
+mean state still degrades and the run still ends in a velocity runaway.  This
+command improves sampling quality; it is not a cure for that instability.
+
+* `nSub` -- draw `nSub` times more macroparticles per step, each carrying
+  `1/nSub` of the usual weight.  Same flux, same total charge and mass, but
+  `nSub` times more samples of the entering distribution.  The lighter
+  macroparticles coexist with the regular-weight population for as long as they
+  live in the domain, and the particle count grows by up to `nSub` times;
+  heterogeneous weights are supported (`merge` handles light/heavy pairs, and
+  the vacuum-limit path already produces non-uniform weights).  `nSub = 1`
+  (default) keeps the original behaviour.
+* `useStratified` -- draw the transverse positions and the inward normal speed
+  from a randomly shifted low-discrepancy (golden-ratio) sequence instead of
+  independent uniforms, so the handful of samples a cell gets in one step
+  spreads evenly instead of clumping.  Costs nothing and does not change the
+  number or weight of the injected macroparticles.
+
+Both default to the original behaviour, so existing input files are unaffected.
+</command>
+
 <command name="WAVEBC" alias="WAVEBC_FLEKS" multiple="F">
   <parameter name="nWaveFace" type="integer" default="0"/>
   <parameter name="direction" type="integer"/>

@@ -37,6 +37,8 @@ Particles<NStructReal, NStructInt>::Particles(
       charge(chargeIn),
       mass(massIn),
       nPartPerCell(pInfo.nPartPerCell),
+      influxNsub(pInfo.influxNsub),
+      influxStratified(pInfo.influxStratified),
       ic_(icIn) {
 
   isParticleLocationRandom = pInfo.isParticleLocationRandom;
@@ -498,20 +500,20 @@ void Particles<NStructReal, NStructInt>::add_particles_domain() {
 //==========================================================
 static bool particle_bc_no_injection(const ParticleBC::Type type) {
   switch (type) {
-  case ParticleBC::inflow:
-  case ParticleBC::outflow:
-  case ParticleBC::vacuum:
-  case ParticleBC::reflect: // crossing is handled by the particle mover
-  case ParticleBC::absorb:
-  case ParticleBC::thermal: // reserved; the re-emission is not implemented
-    return true;
-  case ParticleBC::coupled: // MHD-AEPIC: re-seed from the fluid/MHD state
-  case ParticleBC::periodic:
-    return false;
-  default:
-    // `unset` (and anything unknown) is never stored from input; keep the
-    // conservative behaviour of not seeding.
-    return true;
+    case ParticleBC::inflow:
+    case ParticleBC::outflow:
+    case ParticleBC::vacuum:
+    case ParticleBC::reflect: // crossing is handled by the particle mover
+    case ParticleBC::absorb:
+    case ParticleBC::thermal: // reserved; the re-emission is not implemented
+      return true;
+    case ParticleBC::coupled: // MHD-AEPIC: re-seed from the fluid/MHD state
+    case ParticleBC::periodic:
+      return false;
+    default:
+      // `unset` (and anything unknown) is never stored from input; keep the
+      // conservative behaviour of not seeding.
+      return true;
   }
 }
 
@@ -658,6 +660,19 @@ inline amrex::Real inj_draw_inward_speed(amrex::Real vd, amrex::Real r) {
   }
   return w;
 }
+
+// Randomly shifted Kronecker (golden-ratio) sequence: the np-th of a batch of
+// stratified samples.  Independent uniforms clump badly when a batch holds only
+// a handful of draws -- which is exactly the case for the inflow injector,
+// where a transverse cell receives ~6 macroparticles per step.  Spreading the
+// batch evenly over [0,1) removes that clumping at no cost; the random
+// per-batch offset keeps the estimator unbiased and the batches mutually
+// uncorrelated.
+inline amrex::Real inj_stratified_sample(amrex::Real offset, int np) {
+  constexpr amrex::Real golden = 0.6180339887498948482;
+  const amrex::Real u = offset + (np + 0.5) * golden;
+  return u - std::floor(u);
+}
 } // namespace
 
 //==========================================================
@@ -690,8 +705,11 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
   const Real uIn[3] = { inv->ux, inv->uy, inv->uz };
 
   // Macroparticle weight identical to the interior cell particles
-  // (add_particles_cell convention): qp = qomSign * n * V / nppc.
-  const Real q = qomSign * dx[0].product() * nDens / product(nPartPerCell);
+  // (add_particles_cell convention): qp = qomSign * n * V / nppc -- divided by
+  // influxNsub, because with nSub > 1 each step injects nSub times more
+  // macroparticles carrying the same total charge, mass and flux.
+  const Real q =
+      qomSign * dx[0].product() * nDens / product(nPartPerCell) / influxNsub;
   const int nppc = product(nPartPerCell);
 
   // Inject on the base level only (same policy as
@@ -739,6 +757,9 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
         const Real meanFlux =
             (vtherm > 0) ? nppc * vtherm * inj_mean_inward_flux(vd) * dt / dxn
                          : nppc * (uOut * inward) * dt / dxn;
+        // R5: with influxNsub > 1 the same flux is carried by nSub times more
+        // macroparticles of 1/nSub the weight.
+        const Real fluxRate = meanFlux * influxNsub;
 
         // Loop over the transverse cells of this tile's face.
         const int lo1 = bx.smallEnd(t1), hi1 = bx.bigEnd(t1);
@@ -753,7 +774,7 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
                 ((((int64_t)iLev * 3 + iDim) * 2 + side) << 42) |
                 ((int64_t)(c1 + 131071) << 21) | (int64_t)(c2 + 131071);
             Real& acc = injectFluxAcc[key];
-            acc += meanFlux;
+            acc += fluxRate;
             int nInject = static_cast<int>(acc);
             if (nInject <= 0) {
               if (acc < 0)
@@ -762,18 +783,40 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
             }
             acc -= nInject;
 
+            // R5 stratified sampling: one random offset per quantity and per
+            // batch, so the low-discrepancy sequences stay mutually
+            // uncorrelated (sharing one sequence between the position and the
+            // speed would imprint a position-speed pattern on the beam).
+            const Real offT1 = influxStratified ? randNum() : 0.0;
+            const Real offT2 = influxStratified ? randNum() : 0.0;
+            const Real offW = influxStratified ? randNum() : 0.0;
+
             for (int np = 0; np < nInject; ++np) {
+              // Transverse positions and the inward-speed quantile: stratified
+              // (evenly spread within the batch) or plain uniform.
+              Real uT1, uT2 = 0.0, uW;
+              if (influxStratified) {
+                uT1 = inj_stratified_sample(offT1, np);
+                uT2 = inj_stratified_sample(offT2, np);
+                uW = inj_stratified_sample(offW, np);
+              } else {
+                uT1 = randNum();
+                if (nDim > 2)
+                  uT2 = randNum();
+                uW = randNum();
+              }
+
               // Position: on the boundary face, nudged just INSIDE the
               // last physical cell so the particle is unambiguously in the
               // domain; uniform in the transverse directions.
               RealVect pos;
               const Real xFace = isHi ? probHi[iDim] : probLo[iDim];
               pos[iDim] = xFace + inward * (1.0e-3 * dxn);
-              pos[t1] = probLo[t1] +
-                        (c1 - domain.smallEnd(t1) + randNum()) * cellSize[t1];
+              pos[t1] =
+                  probLo[t1] + (c1 - domain.smallEnd(t1) + uT1) * cellSize[t1];
               if (nDim > 2) {
                 pos[t2] = probLo[t2] +
-                          (c2 - domain.smallEnd(t2) + randNum()) * cellSize[t2];
+                          (c2 - domain.smallEnd(t2) + uT2) * cellSize[t2];
               }
 
               // Velocity: inward normal speed from the flux-weighted
@@ -783,7 +826,7 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
               Real vel[3] = { 0.0, 0.0, 0.0 };
               Real wIn;
               if (vtherm > 0) {
-                wIn = vtherm * inj_draw_inward_speed(vd, randNum());
+                wIn = vtherm * inj_draw_inward_speed(vd, uW);
               } else {
                 wIn = uOut * inward; // cold beam
               }
@@ -1219,10 +1262,10 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     // A node-centred CIC deposit at a non-periodic wall leaves the boundary
     // node with only ~half the charge of an interior node: with the node at the
     // domain face, a particle in the edge cell deposits its weight between that
-    // edge node and the next interior node, and NO particle lies on the exterior
-    // side to contribute the complementary weight.  This is why, in full-PIC
-    // mode, the reflecting-wall node of the 1D shock test showed rhoS0 ~ 6.25
-    // instead of ~12.5, while the hybrid path (cell-centred deposit +
+    // edge node and the next interior node, and NO particle lies on the
+    // exterior side to contribute the complementary weight.  This is why, in
+    // full-PIC mode, the reflecting-wall node of the 1D shock test showed rhoS0
+    // ~ 6.25 instead of ~12.5, while the hybrid path (cell-centred deposit +
     // sum_moments_cell_centered) did not.
     //
     // The physically correct boundary condition for a reflecting wall (and an
@@ -1295,8 +1338,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
                           if (iDim == 1)
                             ej = domEdge;
                           const Real val = arr(ei, ej, 0, c);
-                          arr(ei, ej, 0, c) += val;  // fold mirror back -> 2x
-                          arr(i, j, 0, c) = 0.0;     // zero the ghost layer
+                          arr(ei, ej, 0, c) += val; // fold mirror back -> 2x
+                          arr(i, j, 0, c) = 0.0;    // zero the ghost layer
 #elif (AMREX_SPACEDIM == 3)
                           int ei = i, ej = j, ek = k;
                           if (iDim == 0) ei = domEdge;
@@ -2055,8 +2098,7 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
 
           // jHat is NODE-centred; see the mirror block in sum_moments() for
           // the dom.bigEnd+1 hi-side edge-node note.
-          const int domEdge =
-              isLo ? dom.smallEnd(iDim) : dom.bigEnd(iDim) + 1;
+          const int domEdge = isLo ? dom.smallEnd(iDim) : dom.bigEnd(iDim) + 1;
           const int tileEdge = isLo ? bx.smallEnd(iDim) : bx.bigEnd(iDim);
           if (tileEdge != domEdge)
             continue;
@@ -2077,8 +2119,8 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
                         if (iDim == 1)
                           ej = domEdge;
                         const Real val = jArr(ei, ej, 0, c);
-                        jArr(ei, ej, 0, c) += val;  // fold mirror back -> 2x
-                        jArr(i, j, 0, c) = 0.0;     // zero the ghost layer
+                        jArr(ei, ej, 0, c) += val; // fold mirror back -> 2x
+                        jArr(i, j, 0, c) = 0.0;    // zero the ghost layer
 #elif (AMREX_SPACEDIM == 3)
                         int ei = i, ej = j, ek = k;
                         if (iDim == 0) ei = domEdge;

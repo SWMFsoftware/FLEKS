@@ -93,6 +93,11 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("T", tmp);
     inflowT_ = tmp; // [K]
     inflowDefined_ = true;
+  } else if (command == "#BOUNDARYINJECTION") {
+    param.read_var("nSub", pInfo.influxNsub);
+    param.read_var("useStratified", pInfo.influxStratified);
+    if (pInfo.influxNsub < 1)
+      Abort("Error: nSub in #BOUNDARYINJECTION must be >= 1.");
   } else if (command == "#WAVEBC") {
     waveBC.read_param(param, fi);
   } else if (command == "#MEMORY") {
@@ -286,20 +291,20 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 // reported once here, de-duplicated.  #BCSTRICT turns them into a hard error.
 // Running at the end of post_process_param() lets every later check (periodic
 // auto-fill, cross-domain pairing) contribute to the same report.
-void Pic::report_bc_warnings(const std::string &context) {
+void Pic::report_bc_warnings(const std::string& context) {
   if (bcWarnings_.empty())
     return;
 
   if (strictBC_) {
     std::string msg;
-    for (const std::string &w : bcWarnings_)
+    for (const std::string& w : bcWarnings_)
       msg += "\n  - " + w;
     amrex::Abort("Error: " + context + " boundary conditions:" + msg +
                  "\n(#BCSTRICT is T, so warnings are fatal.)");
   }
 
   amrex::Print() << "  WARNING[" << context << "] boundary conditions:\n";
-  for (const std::string &w : bcWarnings_)
+  for (const std::string& w : bcWarnings_)
     amrex::Print() << "    - " << w << "\n";
   bcWarnings_.clear();
 }
@@ -313,8 +318,8 @@ void Pic::report_bc_warnings(const std::string &context) {
 // makes the stored `periodic` a reliable per-dimension early-out for the
 // field operators, instead of them having to rely on isAllPeriodic().
 //==========================================================
-void Pic::apply_periodicity_autofill(const Geometry &gm) {
-  static const char dimName[3] = {'x', 'y', 'z'};
+void Pic::apply_periodicity_autofill(const Geometry& gm) {
+  static const char dimName[3] = { 'x', 'y', 'z' };
 
   for (int d = 0; d < nDim; ++d) {
     if (!gm.isPeriodic(d))
@@ -367,8 +372,8 @@ void Pic::apply_periodicity_autofill(const Geometry &gm) {
 // #FIELDBOXBOUNDARY / #BFIELDBOXBOUNDARY block was read, because then the
 // field side is only the `coupled` default rather than a user request.
 //==========================================================
-void Pic::validate_bc_pairing(const Geometry &gm) {
-  static const char dimName[3] = {'x', 'y', 'z'};
+void Pic::validate_bc_pairing(const Geometry& gm) {
+  static const char dimName[3] = { 'x', 'y', 'z' };
 
   for (int d = 0; d < nDim; ++d) {
     const bool dimPeriodic = gm.isPeriodic(d);
@@ -827,7 +832,7 @@ void Pic::post_regrid() {
   // Propagate the field-side wave faces to every species.  `wave` is a
   // field-only boundary type, so the velocity kick is keyed off bcField
   // rather than off a particle-side spelling.
-  for (auto &p : parts) {
+  for (auto& p : parts) {
     for (int d = 0; d < nDim; ++d) {
       p->set_wave_face(d, 0, bcField.face(d, 0) == FieldBC::wave);
       p->set_wave_face(d, 1, bcField.face(d, 1) == FieldBC::wave);
@@ -985,10 +990,8 @@ void Pic::fill_E_B_fields() {
   nodeB[0].FillBoundary(Geom(0).periodicity());
   centerB[0].FillBoundary(Geom(0).periodicity());
   // NOTE: apply_field_bc() also applies the wave hard source.
-  apply_field_bc(nodeStatus[0], nodeB[0], 0, nDim3, &Pic::get_node_B, 0,
-                 true);
-  apply_field_bc(nodeStatus[0], nodeE[0], 0, nDim3, &Pic::get_node_E, 0,
-                 false);
+  apply_field_bc(nodeStatus[0], nodeB[0], 0, nDim3, &Pic::get_node_B, 0, true);
+  apply_field_bc(nodeStatus[0], nodeE[0], 0, nDim3, &Pic::get_node_E, 0, false);
   apply_field_bc(cellStatus[0], centerB[0], 0, centerB[0].nComp(),
                  &Pic::get_center_B, 0, true);
 
@@ -1576,8 +1579,8 @@ void Pic::convert_resistivity() {
   // eta_code = 4*pi * eta_SI * Si2NoV * Si2NoL.
   if (etaResistivitySI > 0) {
     etaResistivity = fourPI * etaResistivitySI * Si2NoV * Si2NoL;
-    amrex::Print() << "  etaResistivity: " << etaResistivitySI
-                   << " [m^2/s] -> " << etaResistivity << " [code units]"
+    amrex::Print() << "  etaResistivity: " << etaResistivitySI << " [m^2/s] -> "
+                   << etaResistivity << " [code units]"
                    << "  (Si2NoV = " << Si2NoV << ", Si2NoL = " << Si2NoL
                    << ")\n";
   }
@@ -2323,8 +2326,8 @@ void Pic::update_E_expl() {
                   nodeE[iLev].nGrow());
 
     nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3,
-                   &Pic::get_node_E, iLev, false);
+    apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E,
+                   iLev, false);
   }
 }
 
@@ -2365,8 +2368,8 @@ void Pic::update_E_impl() {
     if (iLev == 0) {
 
       // NOTE: the wave hard source is applied inside apply_field_bc().
-      apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3,
-                     &Pic::get_node_E, iLev, false);
+      apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E,
+                     iLev, false);
       apply_field_bc(nodeStatus[iLev], nodeEth[iLev], 0, nDim3,
                      &Pic::get_node_E, iLev, false);
     }
@@ -2491,8 +2494,8 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     // Even after apply_field_bc(), the outmost layer node E is still
     // unknow. See FluidInterface::calc_current for detailed explaniation.
     if (iLev == 0) {
-      apply_field_bc(nodeStatus[iLev], vecMF, 0, nDim3, &Pic::get_node_E,
-                     iLev, false);
+      apply_field_bc(nodeStatus[iLev], vecMF, 0, nDim3, &Pic::get_node_E, iLev,
+                     false);
     } else {
       fill_fine_lev_bny_from_coarse(
           nodeEth[iLev - 1], vecMF, 0, nodeEth[iLev - 1].nComp(),
@@ -2951,8 +2954,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
                           Geom(iLev).InvCellSize());
     centerHyperE[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_field_bc(cellStatus[iLev], centerHyperE[iLev], 0,
-                   centerHyperE[iLev].nComp(), &Pic::get_center_E, iLev,
-                   false);
+                   centerHyperE[iLev].nComp(), &Pic::get_center_E, iLev, false);
 
     const Real f = etaHyperLev[iLev] / fourPI;
     MultiFab::Saxpy(Eout, -f, centerHyperE[iLev], 0, 0, 3, 0);
@@ -3046,9 +3048,7 @@ void Pic::project_centerB_to_nodeB(int iLev) {
 
 // BCs for the cell-centred B (the cell-centred part of
 // project_centerB_to_nodeB), called at the end of each sub-step.
-void Pic::apply_centerB_BC(int iLev) {
-  apply_centerB_BC(iLev, centerB[iLev]);
-}
+void Pic::apply_centerB_BC(int iLev) { apply_centerB_BC(iLev, centerB[iLev]); }
 
 void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
   mfB.FillBoundary(Geom(iLev).periodicity());
@@ -3164,8 +3164,7 @@ void Pic::update_B_hybrid() {
     if (cflHyper > cflLimit)
       amrex::Print()
           << "  [CFL warning] hyper-resistivity: eta_h*kmax^4*dt_sub/(4pi) = "
-          << cflHyper
-          << " (> " << cflLimit
+          << cflHyper << " (> " << cflLimit
           << ", explicit 4th-order diffusion may be unstable)\n";
   }
 
@@ -3932,8 +3931,8 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
 //==========================================================
 void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
                                 const int iStart, const int nComp,
-                                const int iLev,
-                                const BoxBC<FieldBC::Type>& bc, bool isB) {
+                                const int iLev, const BoxBC<FieldBC::Type>& bc,
+                                bool isB) {
   std::string nameFunc = "Pic::apply_conducting_wall";
   timing_func(nameFunc);
 
@@ -4001,8 +4000,8 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
 //==========================================================
 void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
                                const int iStart, const int nComp,
-                               const int iLev,
-                               const BoxBC<FieldBC::Type>& bc, bool isB) {
+                               const int iLev, const BoxBC<FieldBC::Type>& bc,
+                               bool isB) {
   std::string nameFunc = "Pic::apply_absorbing_wall";
   timing_func(nameFunc);
 
@@ -4113,12 +4112,12 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
       IntVect ijk{ AMREX_D_DECL(i, j, k) };
 
       for (int d = 0; d < nDim; ++d) {
-        bool isLow = ((bc.lo[d] == FieldBC::inflow ||
-                       bc.lo[d] == FieldBC::fixed)) &&
-                     (ijk[d] < domLo[d]);
-        bool isHigh = ((bc.hi[d] == FieldBC::inflow ||
-                        bc.hi[d] == FieldBC::fixed)) &&
-                      (ijk[d] > domHi[d]);
+        bool isLow =
+            ((bc.lo[d] == FieldBC::inflow || bc.lo[d] == FieldBC::fixed)) &&
+            (ijk[d] < domLo[d]);
+        bool isHigh =
+            ((bc.hi[d] == FieldBC::inflow || bc.hi[d] == FieldBC::fixed)) &&
+            (ijk[d] > domHi[d]);
         if (!isLow && !isHigh)
           continue;
 

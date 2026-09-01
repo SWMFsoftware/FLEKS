@@ -76,3 +76,40 @@ python3 tests/validate_tests.py --test=shock          # both (PARAM.in + hybrid)
 python3 tests/validate_tests.py --test=shock.full     # full PIC only (PARAM.in)
 python3 tests/validate_tests.py --test=shock.hybrid   # hybrid only (PARAM.in.hybrid)
 ```
+
+## 2D variant: not stable yet (deliberately *not* in the suite)
+
+Extending the deck to a 2D plane (256×1×64, x–z, z periodic, same physics and the
+same `reflect` + `inflow` pair) was tried on 2026-08-31 to see whether the
+particle/field boundary-condition separation of `feat/boundary-conditions`
+stabilizes the upstream inflow. **It does not, in either solver**:
+
+| | full PIC (t = 8 s) | hybrid (t = 30 s requested, died at 29.6 s) |
+| --- | --- | --- |
+| γ(By k8 at the inflow face) | 1.46 s⁻¹ (baseline 1.41) | 0.108 s⁻¹ (baseline 0.109) |
+| when the upstream is lost | saturates t ≈ 4.75 s, destroyed by t = 8 s | usable to t ≈ 18 s, dead by t ≈ 29 s |
+| upstream mean drift | ux −9 %, Bz 1.81 → 28.8 | ux −10 %, Bz −13 %, ρ +5 % |
+| end state | run completes, fully turbulent upstream | hangs (CFL 24, max(uth) 4853); Eb → 3.3e8 |
+
+Both re-runs used the historical decks byte-for-byte (only the field-BC command
+rename), so the comparison against the pre-refactor baselines is exact: the
+refactor is numerically neutral for this instability (γ differs by 1–4 %).
+
+The 1D decks here are unaffected — the mode needs a transverse direction.
+
+One caveat before calling 1D "fine": a 1D control run (hybrid oblique, 256 cells,
+t = 30 s, `run_hyb_1d_t30s/`) stays **numerically healthy** to 30 s (CFL 0.063,
+clean exit) but drifts in the same way the 2D runs do (ρ +4.6 %, ux −7.4 %,
+versus ρ +5.3 %, ux −10.3 % in 2D at the same time).  So the slow upstream
+degradation is a k = 0 effect present in 1D as well — probably the
+quasi-parallel foreshock (the archived 1D *perpendicular* hybrid is clean to
+20 s) — and only the exponentially growing transverse mode plus the terminal
+blow-up are genuinely 2D.
+
+The evidence lives in `run_shock_2d/ANALYSIS_inflow_2d.md` §10 and the
+`run_shock_2d_bcsep/` run directory (both are development artifacts, outside
+version control).  The next thing to try is the higher-rate / lower-weight
+boundary injection (or transverse smoothing of the injected flux) in
+`inject_flux_at_inflow_faces`; `npcelz = 4` is the PARAM-only stop-gap that
+halves γ at 4× cost.  Until one of those lands, no 2D full-PIC shock variant is
+added to `tests/`.

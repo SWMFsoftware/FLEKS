@@ -948,16 +948,16 @@ void Domain::read_param(const bool readGridInfo) {
         command == "#PIC" || command == "#EXPLICITPIC" ||
         command == "#COMOVING" || command == "#PARTICLEBOXBOUNDARY" ||
         command == "#FIELDBOXBOUNDARY" || command == "#BFIELDBOXBOUNDARY" ||
-        command == "#SUPID" ||
-        command == "#SOLVEEM" || command == "#PARTMODE" ||
-        command == "#SELECTPARTICLE" || command == "#MAXCHARGEEXCHANGERATE" ||
-        command == "#HYBRIDPIC" || command == "#RESISTIVITY" ||
-        command == "#ELECTRONTEMPERATURE" || command == "#BSUBCYCLE" ||
-        command == "#HALLTERM" || command == "#HYPERRESISTIVITY" ||
-        command == "#MINIMUMDENSITY" || command == "#FIELDINTEGRATOR" ||
-        command == "#AVGFIELDB" || command == "#SMOOTHMOMENTS" ||
-        command == "#MEMORY" || command == "#WAVEBC" || command == "#ABSORB" ||
-        command == "#INFLOW" || command == "#BCSTRICT") {
+        command == "#SUPID" || command == "#SOLVEEM" ||
+        command == "#PARTMODE" || command == "#SELECTPARTICLE" ||
+        command == "#MAXCHARGEEXCHANGERATE" || command == "#HYBRIDPIC" ||
+        command == "#RESISTIVITY" || command == "#ELECTRONTEMPERATURE" ||
+        command == "#BSUBCYCLE" || command == "#HALLTERM" ||
+        command == "#HYPERRESISTIVITY" || command == "#MINIMUMDENSITY" ||
+        command == "#FIELDINTEGRATOR" || command == "#AVGFIELDB" ||
+        command == "#SMOOTHMOMENTS" || command == "#MEMORY" ||
+        command == "#WAVEBC" || command == "#ABSORB" || command == "#INFLOW" ||
+        command == "#BOUNDARYINJECTION" || command == "#BCSTRICT") {
       if (pic)
         pic->read_param(command, readParam);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
@@ -1149,8 +1149,8 @@ void Domain::read_param(const bool readGridInfo) {
     } else if (command == "#PERIODICITY") {
       // ReadParam::read_var() is positional -- the description is only echoed
       // back -- so these names just have to match what PARAM.XML documents.
-      static const char *isPeriodicName[3] = {"isPeriodicX", "isPeriodicY",
-                                              "isPeriodicZ"};
+      static const char *isPeriodicName[3] = { "isPeriodicX", "isPeriodicY",
+                                               "isPeriodicZ" };
       for (int i = 0; i < nDim; ++i) {
         bool isPeriodic;
         readParam.read_var(isPeriodicName[i], isPeriodic);

@@ -88,6 +88,25 @@ class ParticlesInfo {
 public:
   amrex::IntVect nPartPerCell = { AMREX_D_DECL(6, 6, 6) };
 
+  // Sampling quality of the open-inflow flux injector
+  // (Particles::inject_flux_at_inflow_faces).  The injected macroparticles are
+  // what seeds the transverse entrance-layer mode of 2D shock decks, so they
+  // may be sampled more finely than the interior population:
+  //   influxNsub > 1    -> draw nSub times more macroparticles per step, each
+  //                        carrying 1/nSub of the usual weight.  Same noise
+  //                        reduction as raising npcelz by nSub (iso_C) without
+  //                        changing the interior seeding, but at nSub times the
+  //                        particle cost while those particles live.
+  //   influxStratified  -> draw the transverse positions and the inward speed
+  //                        from a randomly shifted low-discrepancy sequence
+  //                        instead of independent uniforms, so the ~6 samples
+  //                        a cell gets per step spread evenly instead of
+  //                        clumping.  Costs nothing.
+  // The defaults reproduce the original behaviour.  See
+  // run_shock_2d/ANALYSIS_inflow_2d.md section 7 (R5).
+  int influxNsub = 1;
+  bool influxStratified = false;
+
   bool isParticleLocationRandom = true;
   bool isPPVconstant = false;
   bool doPreSplitting = false;
@@ -113,7 +132,7 @@ public:
   OHIon ionOH;
 
   // Particle boundary conditions, one entry per species.
-  amrex::Vector<BoxBC<ParticleBC::Type>> pBCs;
+  amrex::Vector<BoxBC<ParticleBC::Type> > pBCs;
 
   // Parallel to pBCs: 1 when the species had its own #PARTICLEBOXBOUNDARY
   // block, 0 when the entry is just the default.  Lets the periodic auto-fill
@@ -133,8 +152,7 @@ public:
   // throwaway default ParticlesInfo (see src/TestParticles.cpp), so its pBCs
   // is always empty.  Return the default (all-`coupled`) entry instead of
   // reading out of bounds.
-  const BoxBC<ParticleBC::Type> &
-  particle_bc(const int speciesID) const {
+  const BoxBC<ParticleBC::Type>& particle_bc(const int speciesID) const {
     static const BoxBC<ParticleBC::Type> bcDefault;
     if (speciesID < 0 || speciesID >= static_cast<int>(pBCs.size()))
       return bcDefault;
@@ -374,6 +392,11 @@ protected:
 
   amrex::IntVect nPartPerCell;
 
+  // Sampling quality of the open-inflow flux injector (mirrors
+  // ParticlesInfo::influxNsub / ::influxStratified).
+  int influxNsub = 1;
+  bool influxStratified = false;
+
   // Fractional-particle accumulators for the inflow flux injector (see
   // inject_flux_at_inflow_faces). Key packs (iLev, iDim, side, j, k) of the
   // boundary-transverse cell; the value is the not-yet-injected fractional
@@ -421,7 +444,7 @@ protected:
   // Set by Pic so the wave velocity kick is driven by the field boundary
   // instead of a particle-side spelling -- the particle domain has no `wave`
   // type of its own.
-  bool isWaveFace[6] = {false, false, false, false, false, false};
+  bool isWaveFace[6] = { false, false, false, false, false, false };
 
   // Absorbing-BC tallies per face (2*d + {0=lo,1=hi}).
   amrex::Real absorbTallyCount[6] = { 0, 0, 0, 0, 0, 0 };
@@ -835,7 +858,7 @@ public:
 
   void set_ppc(amrex::IntVect& in) { nPartPerCell = in; };
 
-  void set_bc(const BoxBC<ParticleBC::Type> &bcIn) { bc = bcIn; }
+  void set_bc(const BoxBC<ParticleBC::Type>& bcIn) { bc = bcIn; }
 
   // Mark face `side` (0 = lo, 1 = hi) of dimension `d` as carrying a
   // FieldBC::wave field boundary; drives the wave velocity kick.
