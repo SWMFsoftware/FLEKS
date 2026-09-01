@@ -46,6 +46,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
   const int iEx_ = iBz_ + 1;
 
   const RealBox& range = Geom(0).ProbDomain();
+  const Real eps = 1e-6 * Geom(0).CellSize()[ix_];
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     RealVect xyz(0.0);
     for (int iDim = 0; iDim < nDim; iDim++) {
@@ -53,7 +54,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     }
 
     // Check if this point is inside this FLEKS domain.
-    if (!range.contains(xyz, 1e-10))
+    if (!range.contains(xyz, eps))
       continue;
 
     const int iLev = get_finest_lev(xyz);

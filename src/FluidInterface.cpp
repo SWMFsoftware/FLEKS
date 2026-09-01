@@ -515,10 +515,12 @@ void FluidInterface::distribute_arrays() {
   const int nVarNode = (useCurrent ? nVarFluid + 3 : nVarFluid);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
+    // Nodes that receive no data from the source component are set with value
+    // 0 in the regions created by the regrid.
     distribute_FabArray(nodeFluid[iLev], nGrids[iLev], DistributionMap(iLev),
-                        nVarNode, nGst, doCopy);
+                        nVarNode, nGst, doCopy, 0.0);
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
-                        nGst, doCopy);
+                        nGst, doCopy, 0.0);
   }
 
   distribute_grid_arrays();
@@ -532,6 +534,7 @@ void FluidInterface::find_mpi_rank_for_points(const int nPoint,
   int nDimGM = get_fluid_dimension();
   Real si2nol = get_Si2NoL();
   const RealBox& range = Geom(0).ProbDomain();
+  const Real eps = 1e-6 * Geom(0).CellSize()[ix_];
   for (int i = 0; i < nPoint; ++i) {
     RealVect xyz;
     for (int iDim = 0; iDim < nDimGM; iDim++) {
@@ -539,12 +542,17 @@ void FluidInterface::find_mpi_rank_for_points(const int nPoint,
     }
 
     // Check if this point is inside this FLEKS domain.
-    if (range.contains(xyz, 1e-6 * Geom(0).CellSize()[ix_])) {
+    if (range.contains(xyz, eps)) {
       rank_I[i] = find_mpi_rank_from_coord(xyz);
     } else if (rank_I[i] == iNotSet_) {
-      // For PT->OH coupling, MHD does not know the range of FLEKS.
-      // If the location is outside the domain, set the rank to be the IO
-      // processor. FLEKS will ignore this point and 0.0 will be sent to MHD.
+      // Coupled components do not know the extent of the FLEKS domain(s).
+      //
+      // The IO processor returns a defined zero for such a point:
+      //   PT->OH: zero charge exchange source, the correct value outside the
+      //           kinetic domain.
+      //   PC->GM: the zero density triggers the positivity/NaN restore in
+      //           GM_get_regions, so GM keeps its own state, i.e. the same
+      //           outcome as "not found".
       rank_I[i] = ParallelDescriptor::IOProcessorNumber();
     }
   }
@@ -1466,6 +1474,7 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
   std::string nameFunc = "FI::get_for_points";
 
   const RealBox& range = Geom(0).ProbDomain();
+  const Real eps = 1e-6 * Geom(0).CellSize()[ix_];
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     RealVect xyz(0.0);
     for (int iDim = 0; iDim < nDim; iDim++) {
@@ -1473,7 +1482,7 @@ void FluidInterface::get_for_points(const int nDim, const int nPoint,
     }
 
     // Check if this point is inside this FLEKS domain.
-    if (!range.contains(xyz, 1e-10))
+    if (!range.contains(xyz, eps))
       continue;
 
     if (idxMap.size() == 0) {
