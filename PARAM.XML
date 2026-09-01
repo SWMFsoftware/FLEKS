@@ -1941,50 +1941,8 @@ The same value means slightly different things in the two field solvers:
 The particle-domain spelling `reflect` is accepted for backward compatibility,
 mapped to `conducting`, and reported as deprecated.  See
 `Doc/Boundary_Conditions.md`.
-</command>
 
-<command name="BFIELDBOXBOUNDARY" alias="BFIELDBOXBOUNDARY_FLEKS0,BFIELDBOXBOUNDARY_FLEKS1,BFIELDBOXBOUNDARY_FLEKS2" multiple="F">
-  <for from="1" to="$nDim">
-    <parameter name="fieldBoxBoundaryLo" type="string" input="select" required="T">
-      <option value="periodic"/>
-      <option value="coupled"/>
-      <option value="outflow"/>
-      <option value="open"/>
-      <option value="vacuum"/>
-      <option value="conducting"/>
-      <option value="symmetry"/>
-      <option value="absorb"/>
-      <option value="inflow"/>
-      <option value="fixed"/>
-      <option value="wave"/>
-    </parameter>
-    <parameter name="fieldBoxBoundaryHi" type="string" input="select" required="T">
-      <option value="periodic"/>
-      <option value="coupled"/>
-      <option value="outflow"/>
-      <option value="open"/>
-      <option value="vacuum"/>
-      <option value="conducting"/>
-      <option value="symmetry"/>
-      <option value="absorb"/>
-      <option value="inflow"/>
-      <option value="fixed"/>
-      <option value="wave"/>
-    </parameter>
-  </for>
-
-#BFIELDBOXBOUNDARY
-coupled           fieldBoxBoundaryLo
-coupled           fieldBoxBoundaryHi
-outflow           fieldBoxBoundaryLo
-outflow           fieldBoxBoundaryHi
-outflow           fieldBoxBoundaryLo
-outflow           fieldBoxBoundaryHi
-
-DEPRECATED -- use `#FIELDBOXBOUNDARY` instead.  This is the historical name of
-the electromagnetic boundary command.  It is still read, accepts exactly the
-same values and block layout, and only differs by emitting a deprecation
-warning (fatal under `#BCSTRICT`).
+`#BFIELDBOXBOUNDARY` is deprecated in favor of this command.
 </command>
 
 <command name="BCSTRICT" alias="BCSTRICT_FLEKS" multiple="F">
@@ -2126,7 +2084,7 @@ lo                      side          (lo or hi)
 0.0                     tWidth
 
 This command drives a hard wave source on a boundary face selected by
-`#BFIELDBOXBOUNDARY ... wave ...`.  `nWaveFace` gives the number of faces; for
+`#FIELDBOXBOUNDARY ... wave ...`.  `nWaveFace` gives the number of faces; for
 each face, `direction` + `side` select the face (0=x,1=y,2=z; lo/hi), and
 `nComp` gives the number of field components injected on that face.  For each
 component: `iField` selects the field component (Bx=0, By=1, Bz=2, Ex=3, ...),
