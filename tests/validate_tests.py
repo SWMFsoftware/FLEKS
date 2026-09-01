@@ -250,6 +250,9 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
     logger.info("Starting test: %s", display_name)
     logger.info("=" * 50)
     try:
+        # Plot validators locate their output relative to RUN_DIR; keep the
+        # per-test module in sync with it before anything is validated.
+        _sync_validator_run_dir(validator)
         stdout, code = run_test(test_dir, nprocs=nprocs, param_text=param_text)
         if code != 0 or stdout is None:
             logger.error("FAIL: %s execution failed with exit code %s",
@@ -774,6 +777,10 @@ def load_validator(test_name):
     # plot() expects a single positional arg (test_name).
     v.plot = getattr(module, "validate_plot", None)
     v.particle_tol = getattr(module, "PARTICLE_TOL", None)
+    # Kept so the run directory can be pushed into the module (see
+    # _sync_validator_run_dir): several per-test modules own a module-level
+    # RUN_DIR that they use to locate plot output.
+    v.module = module
     return v
 
 
@@ -781,6 +788,20 @@ def _sync_shared_run_dir():
     """Push the current RUN_DIR into the shared helpers used by plot checks."""
     import tests._shared.hybrid as _hyb
     _hyb.set_run_dir(RUN_DIR)
+
+
+def _sync_validator_run_dir(validator):
+    """Push the current RUN_DIR into a per-test validator module.
+
+    Modules that read plot output keep their own module-level ``RUN_DIR``
+    (e.g. ``tests/shock/validate.py``).  Without this, ``--run-dir DIR`` would
+    leave them pointing at the default ``run_test/`` and their plot check
+    would silently find no frames and report "skipped" instead of validating.
+    """
+    module = getattr(validator, "module", None) if validator else None
+    setter = getattr(module, "set_run_dir", None)
+    if callable(setter):
+        setter(RUN_DIR)
 
 
 # ---------------------------------------------------------------------------
