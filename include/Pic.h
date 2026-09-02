@@ -675,43 +675,37 @@ public:
     kp = k;
 
     if (i < bxValid.smallEnd(ix_) &&
-        (bc.lo[ix_] == FieldBC::outflow || bc.lo[ix_] == FieldBC::inflow ||
-         bc.lo[ix_] == FieldBC::fixed)) {
+        (bc.lo[ix_] == FieldBC::outflow || bc.lo[ix_] == FieldBC::inflow)) {
       useFloat = true;
       ip = bxValid.smallEnd(ix_);
     }
     if (i > bxValid.bigEnd(ix_) &&
-        (bc.hi[ix_] == FieldBC::outflow || bc.hi[ix_] == FieldBC::inflow ||
-         bc.hi[ix_] == FieldBC::fixed)) {
+        (bc.hi[ix_] == FieldBC::outflow || bc.hi[ix_] == FieldBC::inflow)) {
       useFloat = true;
       ip = bxValid.bigEnd(ix_);
     }
 
     if (j < bxValid.smallEnd(iy_) &&
-        (bc.lo[iy_] == FieldBC::outflow || bc.lo[iy_] == FieldBC::inflow ||
-         bc.lo[iy_] == FieldBC::fixed)) {
+        (bc.lo[iy_] == FieldBC::outflow || bc.lo[iy_] == FieldBC::inflow)) {
       useFloat = true;
       jp = bxValid.smallEnd(iy_);
     }
 
     if (j > bxValid.bigEnd(iy_) &&
-        (bc.hi[iy_] == FieldBC::outflow || bc.hi[iy_] == FieldBC::inflow ||
-         bc.hi[iy_] == FieldBC::fixed)) {
+        (bc.hi[iy_] == FieldBC::outflow || bc.hi[iy_] == FieldBC::inflow)) {
       useFloat = true;
       jp = bxValid.bigEnd(iy_);
     }
 
     if (nDim > 2) {
       if (k < bxValid.smallEnd(iz_) &&
-          (bc.lo[iz_] == FieldBC::outflow || bc.lo[iz_] == FieldBC::inflow ||
-           bc.lo[iz_] == FieldBC::fixed)) {
+          (bc.lo[iz_] == FieldBC::outflow || bc.lo[iz_] == FieldBC::inflow)) {
         useFloat = true;
         kp = bxValid.smallEnd(iz_);
       }
 
       if (k > bxValid.bigEnd(iz_) &&
-          (bc.hi[iz_] == FieldBC::outflow || bc.hi[iz_] == FieldBC::inflow ||
-           bc.hi[iz_] == FieldBC::fixed)) {
+          (bc.hi[iz_] == FieldBC::outflow || bc.hi[iz_] == FieldBC::inflow)) {
         useFloat = true;
         kp = bxValid.bigEnd(iz_);
       }

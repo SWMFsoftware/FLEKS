@@ -182,16 +182,16 @@ inline Type parse(const std::string &str, const bool strict,
 namespace FieldBC {
 
 enum Type {
-  unset = -1, ///< internal sentinel, never set from input
+  unset = -1, // internal sentinel, never set from input
   periodic = 0,
-  coupled = 1, ///< default: state supplied by the MHD/fluid interface
+  coupled = 1, // default: state supplied by the MHD/fluid interface
   outflow = 2,
   vacuum = 3,
   conducting = 4,
   symmetry = 5,
   absorb = 6,
   inflow = 7,
-  fixed = 8, ///< deprecated: currently equivalent to `inflow`
+  fixed = 8, // Dirichlet
   wave = 9
 };
 

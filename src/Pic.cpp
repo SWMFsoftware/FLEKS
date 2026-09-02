@@ -400,15 +400,12 @@ void Pic::validate_bc_pairing(const Geometry& gm) {
       const std::string face =
           std::string(1, dimName[d]) + (side == 0 ? "-lo" : "-hi");
 
-      // #INFLOW is what gives an `inflow` face its upstream state.
-      if ((fType == FieldBC::inflow || fType == FieldBC::fixed) &&
-          !fi->get_inflow_defined())
+      if (fType == FieldBC::inflow && !fi->get_inflow_defined())
         add_bc_warning("field boundary " + face + " is '" +
                        FieldBC::to_string(fType) +
                        "' but no #INFLOW block was given; the face falls back "
                        "to a zero-gradient copy.");
 
-      // #WAVEBC is what drives a `wave` face.
       if (fType == FieldBC::wave && !waveBC.active)
         add_bc_warning("field boundary " + face +
                        " is 'wave' but no #WAVEBC block was given; the face "
@@ -4079,7 +4076,7 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
   (void)isB; // zero-gradient copy is component-agnostic
 
   // No #INFLOW block => nothing to do; the zero-gradient copy in use_float
-  // (applied later in apply_BC) handles the open face in that case.
+  // (applied earlier in apply_BC) handles the open face in that case.
   if (!fi->get_inflow_defined())
     return;
   if (Geom(iLev).isAllPeriodic())
@@ -4112,31 +4109,11 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
       IntVect ijk{ AMREX_D_DECL(i, j, k) };
 
       for (int d = 0; d < nDim; ++d) {
-        bool isLow =
-            ((bc.lo[d] == FieldBC::inflow || bc.lo[d] == FieldBC::fixed)) &&
-            (ijk[d] < domLo[d]);
-        bool isHigh =
-            ((bc.hi[d] == FieldBC::inflow || bc.hi[d] == FieldBC::fixed)) &&
-            (ijk[d] > domHi[d]);
+        bool isLow = (bc.lo[d] == FieldBC::inflow) && (ijk[d] < domLo[d]);
+        bool isHigh = (bc.hi[d] == FieldBC::inflow) && (ijk[d] > domHi[d]);
         if (!isLow && !isHigh)
           continue;
 
-        // Hybrid-VPIC open-inflow boundary ("pec_fields" as actually
-        // implemented in their shock decks: hyb_local_ghost_b /
-        // hyb_local_ghost_e, anti_symmetric branch in
-        // src/field_advance/standard/local.c): the ghost cell COPIES the
-        // adjacent edge physical cell for every component.
-        //  - Ghost B = edge B (zero gradient): the Hall term (curl B) at
-        //    the edge cell sees no spurious jump, and the upstream B is
-        //    re-anchored to the interior state every step.
-        //  - Ghost E = edge E (zero gradient, tangential included):
-        //    Faraday's law at the edge cell advects B with the local
-        //    convection field. (VPIC's own decks accept the resulting
-        //    bounded single-edge-cell dB/dt offset; it is ~1000x smaller
-        //    than the shock variation and cannot grow, see their
-        //    BOUNDARY_BZ_ARTIFACT analysis.)
-        // The upstream state itself is supplied by the particle influx
-        // (inject_flux_at_inflow_faces), not by pinning the fields.
         IntVect m = ijk;
         m[d] = isLow ? domLo[d] : domHi[d];
 

@@ -3,6 +3,7 @@
 right boundary.  The upstream magnetic field is inclined at 45 deg to the shock
 normal (the x axis).  Full PIC mode.
 
+
 #INITFROMSWMF
 F                       initFromSWMF
 
@@ -30,8 +31,8 @@ T                       isPeriodicY
 T                       isPeriodicZ
 
 #FIELDBOXBOUNDARY
-fixed                   fieldBoxBoundaryLo
-inflow                  fieldBoxBoundaryHi
+outflow                 fieldBoxBoundaryLo
+fixed                   fieldBoxBoundaryHi
 periodic                fieldBoxBoundaryLo
 periodic                fieldBoxBoundaryHi
 periodic                fieldBoxBoundaryLo

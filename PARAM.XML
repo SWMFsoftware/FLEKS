@@ -1924,8 +1924,8 @@ internally by `isB`):
   characteristic speed is set by `#ABSORB`.
 * `inflow` -- upstream-driven open face; the upstream state comes from
   `#INFLOW`.
-* `fixed` -- Dirichlet pin to the initial / uniform state.  Currently
-  equivalent to `inflow`; reserved for a pin that does not need `#INFLOW`.
+* `fixed` -- Dirichlet: the ghost cells of E and B are pinned to the
+  initial / uniform state (`#UNIFORMSTATE`).
 * `wave` -- hard wave source (antenna); requires `#WAVEBC`.
 
 The same value means slightly different things in the two field solvers:
@@ -1991,7 +1991,8 @@ is present and this command is supplied:
 * the EM-field ghost cells at an `inflow` face are filled by a zero-gradient
   copy of the adjacent edge cell (ghost B = edge B, ghost E = edge E, for every
   component) -- the upstream B field is set by `#UNIFORMSTATE`, NOT here, and is
-  NOT pinned by this command;
+  NOT pinned by this command.  Use `#FIELDBOXBOUNDARY fixed` on the inflow
+  face instead if you want the ghost fields pinned to the upstream state;
 * the inflow flux is supplied by flux-weighted particle injection at the
   boundary face, sampled from a drifting Maxwellian with the upstream density
   (rho), bulk velocity (ux, uy, uz), and temperature (T).

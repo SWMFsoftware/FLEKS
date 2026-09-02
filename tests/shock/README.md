@@ -18,15 +18,21 @@ Both variants share the same physics; only the field solver (`solveEM` /
 * Upstream magnetic field inclined **45 deg** to the shock normal (x axis):
   `Bx = Bz = B0/sqrt(2) = 7.382e-9 T`, `B0 = 1.044e-8 T`.
 * Boundaries:
-  * **-x (left) wall = `fixed`**: the ghost EM field is a zero-gradient copy of
-    the adjacent edge cell (same filler as `inflow`, see `apply_inflow_wall`), so
-    the tangential motional E `E = -u x B` is preserved and particles reflect off
-    a wall holding a continuous field.
-  * **+x (right) = `inflow`**: the upstream plasma state is supplied via
-    `#INFLOW` (SI units: density, velocity, temperature).  The ghost EM field
-    is again a zero-gradient copy of the edge cell; the upstream flow is fed in
-    by the flux-weighted particle injection each step, so a steady shock forms
-    at the left wall.
+  * **-x (left) wall = `outflow` (field) + `reflect` (particles)**: the ghost
+    EM field is a zero-gradient copy of the edge cell, so the wall imposes no
+    constraint -- the tangential motional E `E = -u x B` stays continuous and B
+    is free to compress as the shock forms.  This is the physical pairing with a
+    reflecting wall: `conducting`/`symmetry` would force `E_t = 0` or `B_n = 0`
+    (wrong for an oblique flowing plasma, the deck-3 root cause), and `fixed`
+    would pin a compressed wall to the upstream state.
+  * **+x (right) = `fixed` field + `inflow` particles**: the upstream plasma
+    state is supplied via `#INFLOW` (SI units: density, velocity, temperature)
+    by the flux-weighted particle injection each step, while the ghost EM field
+    is Dirichlet-pinned to the uniform state.  This is the recommended inflow
+    pairing: the 2D shock-deck campaign (`run_shock_2d/ANALYSIS_inflow_2d.md`)
+    proved the zero-gradient field closure amplifies a transverse
+    entrance-layer mode at the inflow face and that the pin removes the
+    amplifier (`tests/bc_fixed` covers the pairing on a uniform deck).
   * y/z = `periodic`.
 
 The upstream magnetic field `B = (7.382, 0, 7.382)e-9 T` and the upstream
@@ -53,7 +59,7 @@ With that wall the **field** energy `Eb` diverged first (18.5 -> 6.1e4 within
 ~960 steps) while `Epart` stayed matched to its initial value until the end —
 a field-driven, not particle-driven, blow-up.  The fix replaces the left-wall
 `CONDUCTING`/PEC BC (which forces `E_t = 0`) with the `fixed` BC, whose
-zero-gradient ghost copy keeps the tangential motional E `-u x B` intact.
+pinned ghost keeps the tangential motional E `-u x B` intact.
 
 ### `validate_plot` — final `#SAVEPLOT` snapshot
 

@@ -2,7 +2,7 @@
 #DESCRIPTION
 1D oblique shock test: flow along x into a reflecting left wall, open inflow
 right boundary.  The upstream magnetic field is inclined at 45 deg to the shock
-normal (the x axis).
+normal (the x axis). Hybrid mode.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -31,8 +31,8 @@ T                       isPeriodicY
 T                       isPeriodicZ
 
 #FIELDBOXBOUNDARY
-fixed                   fieldBoxBoundaryLo
-inflow                  fieldBoxBoundaryHi
+outflow                 fieldBoxBoundaryLo
+fixed                   fieldBoxBoundaryHi
 periodic                fieldBoxBoundaryLo
 periodic                fieldBoxBoundaryHi
 periodic                fieldBoxBoundaryLo
@@ -62,6 +62,14 @@ T                       useHallTerm
 
 #BSUBCYCLE
 1                       nBSubcycle
+
+#RESISTIVITY
+1.0e7                   etaResistivity
+
+#HYPERRESISTIVITY
+5.0e17                  etaHyperSI
+si                      etaHyperMode
+0.0                     etaHyperCh
 
 #ELECTRONTEMPERATURE
 141.0                   electronTemperature

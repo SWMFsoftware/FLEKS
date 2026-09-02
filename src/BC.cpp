@@ -40,9 +40,6 @@ const std::vector<bc_detail::Entry> &ParticleBC::table() {
 //==========================================================================
 // Input spellings accepted by FieldBC::parse().
 //
-// `fixed` stays canonical because it is already used by tests/shock and is
-// currently equivalent to `inflow`; it is reserved for a future Dirichlet
-// pin that is not tied to #INFLOW.
 //==========================================================================
 const std::vector<bc_detail::Entry> &FieldBC::table() {
   using bc_detail::Legacy;
