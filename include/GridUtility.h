@@ -1,6 +1,8 @@
 #ifndef _GRIDUTILITY_H_
 #define _GRIDUTILITY_H_
 
+#include <limits>
+
 #include <AMReX_DistributionMapping.H>
 #include <AMReX_FabArray.H>
 #include <AMReX_FillPatchUtil.H>
@@ -348,13 +350,20 @@ public:
 template <class FAB>
 void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
                          const amrex::DistributionMapping& dm, int nComp,
-                         int nGst, bool doCopy = true) {
+                         int nGst, bool doCopy = true,
+                         amrex::Real initVal = cUninitialized) {
   // Assume 'dm' is the new dm.
+  // 'initVal' is the value given to the cells created by the regrid.
+  // Arrays whose "no data" value must be physical pass 0 explicitly.
+  using T = typename FAB::value_type;
+  const T initValT =
+      std::numeric_limits<T>::is_integer ? T(0) : static_cast<T>(initVal);
+
   amrex::FabArray<FAB> tmp;
 
   if (!baNew.empty()) {
     tmp.define(baNew, dm, nComp, nGst);
-    tmp.setVal(-7777);
+    tmp.setVal(initValT);
     if (doCopy && !fa.empty()) {
       tmp.ParallelCopy(fa, 0, 0, fa.nComp(), nGst, nGst);
       // tmp.Redistribute(fa, 0, 0, tmp.nComp(), tmp.nGrowVect());

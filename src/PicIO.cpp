@@ -48,6 +48,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
   const RealBox& range = Geom(0).ProbDomain();
   // Only write the valid RealVect components (nDim may exceed AMREX_SPACEDIM).
   const int iDimMax = std::min(nDim, AMREX_SPACEDIM);
+  const Real eps = 1e-6 * Geom(0).CellSize()[ix_];
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     RealVect xyz(0.0);
     for (int iDim = 0; iDim < iDimMax; iDim++) {
@@ -55,7 +56,7 @@ void Pic::get_fluid_state_for_points(const int nDim, const int nPoint,
     }
 
     // Check if this point is inside this FLEKS domain.
-    if (!range.contains(xyz, 1e-10))
+    if (!range.contains(xyz, eps))
       continue;
 
     const int iLev = get_finest_lev(xyz);
