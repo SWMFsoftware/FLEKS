@@ -1,10 +1,8 @@
 name: 'FLEKS compiler warning check'
 description: >-
   Compile FLEKS in debug mode (-debug -O0) purely to surface compiler warnings.
-  This action is meant to run in its own job, separate from the jobs that build
-  the optimized executable and run the tests, so the unoptimized build can never
-  become the executable under test. Expects the SWMF-nested layout from the
-  setup-swmf composite action (FLEKS at SWMF/PC/FLEKS).
+  Expects the SWMF-nested layout from the setup-swmf composite action
+  (FLEKS at SWMF/PC/FLEKS).
 inputs:
   amrex-dim:
     description: 'AMReX spatial dimension: "2d" or "3d".'

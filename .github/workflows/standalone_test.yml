@@ -59,9 +59,6 @@ jobs:
         uses: ./.github/actions/build-test-standalone
         with:
           amrex-dim: 2d
-          # "-v2" invalidates caches saved by the previous workflow revision,
-          # where the -O0 debug build used for the warning check was rebuilt
-          # into (and cached as) the executable that ran the tests.
           cache-key: fleks-standalone-2d-v2
           serial-summary: summary_2d_serial.md
           parallel-summary: summary_2d_parallel.md
