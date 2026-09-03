@@ -187,10 +187,6 @@ private:
   // sync_node_plasma_output(). Hybrid path only.
   bool nodePlasmaStale = false;
 
-  // nodeE / the node-centred B mirror are NOT maintained by the cell-centred
-  // hybrid-PIC solver: E lives in centerEhybrid and B in centerB, both written
-  // directly. Requesting dB*dt in hybrid output aborts (see PicIO.cpp).
-
   amrex::Vector<amrex::MultiFab> jHat;
 
   amrex::Vector<std::unique_ptr<PicParticles> > parts;
@@ -271,23 +267,14 @@ private:
 
   bool fieldBCSet_ = false;
 
-  // Characteristic speed for the absorbing BC (code units); 0 = auto (light
-  // speed).
+  // Characteristic speed for the absorbing BC; 0 = auto (light speed).
   amrex::Real absorbCharSpeed = 0.0;
 
-  // Inflow (open) boundary upstream state, set by #INFLOW.  All values are in
-  // SI units on input and converted to code units by convert_inflow_state()
-  // (which runs after fi->post_process_param finalizes the normalization).
-  // inflowDefined_ is set when the user has supplied an #INFLOW block; until
-  // then apply_inflow_wall and the inflow particle injection fall back to the
-  // zero-gradient copy / live fluid-interface state (the original behaviour).
+  // Inflow boundary upstream state set by #INFLOW (in code units).
   bool inflowDefined_ = false;
-  // Upstream number density (code units), bulk velocity (code units), and
-  // temperature (code units -> 1-D thermal speed sqrt(kT/m) in code units is
-  // derived at use sites from n0, T, mass).
-  amrex::Real inflowRho_ = 0.0; // number density, code units
+  amrex::Real inflowRho_ = 0.0;
   amrex::Real inflowUx_ = 0.0, inflowUy_ = 0.0, inflowUz_ = 0.0;
-  amrex::Real inflowT_ = 0.0; // temperature, code units (energy/mass)
+  amrex::Real inflowT_ = 0.0;
 
   // select particle params
   bool doSelectParticle = false;
@@ -431,37 +418,15 @@ public:
   void sum_moments(bool updateDt = false);
 
   void calc_mach_number();
-  // Rebuild the stale nodePlasma/nodeE output mirrors; calc_mach_number only if
-  // needMach. Used by output / load balancing, not the hybrid solver.
   void sync_node_plasma_output(bool needMach = false);
-  // Cell-centred analogue of PlotWriter::is_inside_plot_region for the hybrid
-  // structured output: 0.5*dx tolerance so a cut plane snaps to the nearest
-  // cell-centre row. Single-level only (multi-level structured output aborts).
   bool is_inside_cell_plot_region(const PlotWriter &writerIn, int const ix,
                                   int const iy, int const iz, double const x,
                                   double const y, double const z) const;
 
-  // Convert all SI-input parameters that depend on the finalized FluidInterface
-  // normalization (fi->post_process_param) to code units. Called exactly once
-  // from Domain::update_param(), after fi->post_process_param() has finalized
-  // the norm params. Converts the #RESISTIVITY / #HYPERRESISTIVITY
-  // coefficients, electronDensity0 and the #INFLOW upstream state; the latter
-  // is a no-op when no #INFLOW block was read.
+  // Convert SI input parameters to code units after normalization is finalized.
   void finalize_units_conversion();
-
-  // Convert the #RESISTIVITY / #HYPERRESISTIVITY ("si" mode) coefficients from
-  // SI to code units. Called once by finalize_units_conversion() after
-  // fi->post_process_param() finalizes Si2NoV / Si2NoL; hybrid solver only.
   void convert_resistivity();
-
-  // Convert electronDensity0 (amu/cc) to code units and set the auto density
-  // floor. Called once by finalize_units_conversion() after
-  // fi->post_process_param() finalizes Si2NoRho.
   void convert_electron_density0();
-
-  // Convert the #INFLOW upstream state (rho,ux,uy,uz,T) from SI to code units.
-  // Called once by finalize_units_conversion(); no-op when no #INFLOW block was
-  // read.
   void convert_inflow_state();
 
   void calc_mass_matrix();
@@ -530,17 +495,11 @@ public:
   void smooth_moments();
   void update_B_hybrid();
   void project_centerB_to_nodeB(int iLev);
+  // Apply periodic and physical boundary conditions to cell-centred B
+  // (e.g. intermediate RK trial states that need fresh ghosts for Ohm's law
+  // stencils).
   void apply_centerB_BC(int iLev);
-  // Same boundary treatment for an arbitrary cell-centred B (the RK trial
-  // states).  The Ohm-solve curls and the hyper-resistive Laplacian read one
-  // ghost ring, so the trial states assembled by the RK stage algebra must
-  // carry BC-consistent ghosts: curl_center_to_center() only writes
-  // fabbox().grow(-1), leaving the outermost ring of the stage increments
-  // (kStage) stale, and feeding those stale values through the stage
-  // Copy/Saxpy/LinComb (which run over nGst) corrupts the trial ghosts.  The
-  // 1/dx^2 (hyper-resistivity: 1/dx^4) amplification turns that into an O(dt)
-  // damping-rate error that scales with the cell aspect ratio.
-  void apply_centerB_BC(int iLev, amrex::MultiFab& mfB);
+  void apply_centerB_BC(int iLev, amrex::MultiFab &mfB);
   void project_centerB_to_nodeB_scratch(amrex::MultiFab &centerIn,
                                         amrex::MultiFab &nodeOut, int iLev);
   // Evaluate the Ohm's law E = -U_i x B + eta J + (J x B)/rho_q -
@@ -613,57 +572,49 @@ public:
   //--------------- IO end--------------------------------
 
   //--------------- Boundary begin ------------------------
-  // Single dispatch entry point for the electromagnetic fields.  `isB`
-  // selects the B or the E operator; both read the same `bcField` face type.
-  // Every face is visited -- there is no early-return priority chain -- so a
-  // box mixing e.g. a conducting x-face with an absorbing y-face is handled
-  // in one pass.
+  // Dispatch boundary conditions for electromagnetic fields (`isB` selects B vs
+  // E).
   void apply_field_bc(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                       const int iStart, const int nComp, GETVALUE func,
                       const int iLev, const bool isB);
 
+  // Generic fill: zero-gradient copy on open faces, or values from `func`.
   void apply_BC(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                 const int iStart, const int nComp, GETVALUE func,
-                const int iLev,
-                const BoxBC<FieldBC::Type> *bc = nullptr);
+                const int iLev, const BoxBC<FieldBC::Type> *bc = nullptr);
 
-  // Perfectly-conducting wall: zero the wall-normal B and wall-tangential E,
-  // mirror the remaining components.  `isB` selects the B/E convention.
+  // Conducting wall: zero normal B / tangential E, mirror remaining components.
   void apply_conducting_wall(const amrex::iMultiFab &status,
                              amrex::MultiFab &mf, const int iStart,
                              const int nComp, const int iLev,
                              const BoxBC<FieldBC::Type> &bc, bool isB);
 
-  // Absorbing wall: matched-impedance ghost-cell blend; no image charges.
+  // Absorbing wall: matched-impedance ghost-cell blending.
   void apply_absorbing_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                             const int iStart, const int nComp, const int iLev,
                             const BoxBC<FieldBC::Type> &bc, bool isB);
 
-  // Inflow (open) wall: zero-gradient copy of the adjacent edge physical cell
-  // into the ghost cell for EVERY component (ghost B = edge B, ghost E = edge E).
+  // Inflow wall: zero-gradient copy of adjacent edge cell into ghost cells.
   void apply_inflow_wall(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                          const int iStart, const int nComp, const int iLev,
                          const BoxBC<FieldBC::Type> &bc, bool isB);
 
-  // Hybrid-only: mirror ion moments into the physical-wall ghost cells for
-  // smooth pressure-gradient / Hall stencils at a wall.
+  // Mirror ion moments into physical-wall ghost cells (hybrid solver).
   void apply_centerPlasma_BC(const amrex::iMultiFab &status,
                              amrex::MultiFab &mf, const int iLev);
 
-  // Wave hard source into boundary ghost cells at FieldBC::wave faces
-  // (iField: 0 = B, 1 = E).
+  // Inject wave source into boundary ghost cells (iField: 0 = B, 1 = E).
   void apply_wave_field(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                         const int iStart, const int nComp, const int iLev,
                         const BoxBC<FieldBC::Type> &bc, int iField,
                         amrex::Real t);
 
-  // Wave bulk-velocity kick (sum of iField==2 components) for particle
-  // injection.
+  // Compute wave velocity perturbation for particle injection.
   void wave_velocity_kick(const amrex::Real *pos, amrex::Real t,
                           amrex::Real &dvx, amrex::Real &dvy, amrex::Real &dvz);
 
-  // True when the ghost cell (i,j,k) at an open face must be filled by a
-  // zero-gradient copy from the adjacent edge cell.
+  // Map ghost cell (i,j,k) at open faces to adjacent edge cell for
+  // zero-gradient copy.
   bool use_float(const int i, const int j, const int k, int &ip, int &jp,
                  int &kp, const BoxBC<FieldBC::Type> &bc,
                  const amrex::Box &bxValid) const {

@@ -462,7 +462,7 @@ public:
                           const Vel& tpVel = Vel(), amrex::Real dt = -1);
   void inject_particles_at_boundary();
 
-  // Open-inflow (ParticleBC::inflow) particle boundary
+  // Inflow (ParticleBC::inflow) particle boundary
   // New macroparticles are created AT the physical boundary face, their
   // normal velocity is drawn from the flux-weighted (half-space) drifting
   // Maxwellian, the transverse velocities from the corresponding Gaussians,
@@ -620,10 +620,8 @@ public:
     for (int d = 0; d < nDim; ++d) {
       const int bcLo = bc.lo[d];
       const int bcHi = bc.hi[d];
-      // Absorbing and inflow (open) faces remove particles that cross outward,
-      // tallying the lost charge/mass per face.  Inflow does not reflect: any
-      // particle leaving through the inflow face is simply deleted (the
-      // re-seeding of the ghost cells supplies the inflow flux instead).
+      // Absorbing and inflow faces remove particles that cross outward,
+      // tallying the lost charge/mass per face.
       if ((bcLo == ParticleBC::absorb || bcLo == ParticleBC::inflow) &&
           p.pos(d) < plo[d]) {
         absorb_tally(2 * d, p.rdata(iwp_));
