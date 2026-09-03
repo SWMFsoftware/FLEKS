@@ -1,7 +1,6 @@
 #ifndef _BC_H_
 #define _BC_H_
 
-#include <map>
 #include <string>
 #include <vector>
 
@@ -16,20 +15,7 @@ void apply_float_boundary(const amrex::iMultiFab &status, amrex::MultiFab &mf,
                           const amrex::Geometry &gm, const int iStart,
                           const int nComp, const int nshift = 0);
 
-//==========================================================================
-/// Storage shared by the two boundary-condition domains below.
-///
-/// FLEKS has two physically distinct boundary-condition domains:
-///
-///  * `ParticleBC` -- kinetic boundary conditions, defined **per species**.
-///  * `FieldBC`    -- electromagnetic boundary conditions, defined once for
-///                    the whole box.  A single face type is read by both the
-///                    B operator and the E operator; the difference between
-///                    B and E is carried by the operators themselves (their
-///                    `isB` / `iField` argument), not by the input.
-///
-/// See Doc/Boundary_Conditions.md for the full design.
-//==========================================================================
+//==========================================================
 template <typename EnumT> struct BoxBC {
   amrex::IntVect lo, hi;
 
@@ -37,7 +23,7 @@ template <typename EnumT> struct BoxBC {
       : lo(static_cast<int>(EnumT::coupled)),
         hi(static_cast<int>(EnumT::coupled)) {}
 
-  /// Boundary type on face `side` (0 = lo, 1 = hi) of dimension `d`.
+  // side: 0 = lo, 1 = hi
   int face(const int d, const int side) const {
     return side == 0 ? lo[d] : hi[d];
   }
@@ -50,27 +36,21 @@ template <typename EnumT> struct BoxBC {
   }
 };
 
-//==========================================================================
-/// Implementation details shared by the two parse tables.
-//==========================================================================
+//==========================================================
 namespace bc_detail {
 
-/// How an accepted-but-non-canonical input string is treated.
 enum class Legacy {
-  none,       ///< canonical spelling
-  silent,     ///< documented alias; accepted without complaint
-  deprecated  ///< accepted, but reported through parse()
+  none,
+  silent,
+  deprecated
 };
 
-/// One accepted input string.  `type` is an int so a single table layout can
-/// serve both enum domains.
 struct Entry {
   const char *name;
   int type;
   Legacy legacy;
 };
 
-/// Canonical (non-legacy) spelling of `type`.
 inline const char *canonical_name(const std::vector<Entry> &table,
                                   const int type) {
   for (const Entry &e : table) {
@@ -80,12 +60,6 @@ inline const char *canonical_name(const std::vector<Entry> &table,
   return "?";
 }
 
-/// Look up `str` in `table`.
-///
-/// Returns false when `str` is unknown, or when it is a deprecated spelling
-/// and `strict` is true; `valid` then holds the accepted spellings.  On a
-/// legacy hit, `mapped` receives the canonical type and `warn` a
-/// human-readable note (empty for `Legacy::silent`).
 inline bool lookup(const std::string &str, const std::vector<Entry> &table,
                    const bool strict, int &mapped, std::string &warn,
                    std::string &valid) {
@@ -108,8 +82,6 @@ inline bool lookup(const std::string &str, const std::vector<Entry> &table,
       mapped = e.type;
       return true;
     }
-    // Documented aliases stay accepted even in strict mode; only deprecated
-    // spellings are rejected.
     if (e.legacy == Legacy::deprecated && strict)
       return false;
 
@@ -126,27 +98,22 @@ inline bool lookup(const std::string &str, const std::vector<Entry> &table,
 
 } // namespace bc_detail
 
-//==========================================================================
-/// Kinetic (particle) boundary conditions, one instance per species.
-//==========================================================================
+//==========================================================
 namespace ParticleBC {
 
 enum Type {
-  unset = -1, ///< internal sentinel, never set from input
+  unset = -1,
   periodic = 0,
-  coupled = 1, ///< default: state supplied by the MHD/fluid interface
+  coupled = 1,
   outflow = 2,
   vacuum = 3,
   reflect = 4,
   absorb = 5,
-  inflow = 6,
-  thermal = 7 ///< reserved: delete + re-emit at the wall temperature
+  inflow = 6
 };
 
-/// Accepted input spellings (defined in src/BC.cpp).
 const std::vector<bc_detail::Entry> &table();
 
-/// True for a canonical type (i.e. one the user may end up with).
 inline bool is_valid(const Type t) {
   for (const bc_detail::Entry &e : table()) {
     if (e.type == t && e.legacy == bc_detail::Legacy::none)
@@ -155,14 +122,10 @@ inline bool is_valid(const Type t) {
   return false;
 }
 
-/// Canonical input spelling of `t`, for diagnostics.
 inline const char *to_string(const Type t) {
   return bc_detail::canonical_name(table(), t);
 }
 
-/// Parse an input string.  Aborts on an unknown string.  A non-empty `warn`
-/// means a deprecated spelling was mapped; the caller decides whether to
-/// print it (and should de-duplicate).
 inline Type parse(const std::string &str, const bool strict,
                   std::string &warn) {
   int mapped = unset;
@@ -176,28 +139,24 @@ inline Type parse(const std::string &str, const bool strict,
 
 } // namespace ParticleBC
 
-//==========================================================================
-/// Electromagnetic field boundary conditions, one instance for the box.
-//==========================================================================
+//==========================================================
 namespace FieldBC {
 
 enum Type {
-  unset = -1, // internal sentinel, never set from input
+  unset = -1,
   periodic = 0,
-  coupled = 1, // default: state supplied by the MHD/fluid interface
+  coupled = 1,
   outflow = 2,
   vacuum = 3,
   conducting = 4,
   absorb = 5,
   inflow = 6,
-  fixed = 7, // Dirichlet
+  fixed = 7,
   wave = 8
 };
 
-/// Accepted input spellings (defined in src/BC.cpp).
 const std::vector<bc_detail::Entry> &table();
 
-/// True for a canonical type (i.e. one the user may end up with).
 inline bool is_valid(const Type t) {
   for (const bc_detail::Entry &e : table()) {
     if (e.type == t && e.legacy == bc_detail::Legacy::none)
@@ -206,14 +165,10 @@ inline bool is_valid(const Type t) {
   return false;
 }
 
-/// Canonical input spelling of `t`, for diagnostics.
 inline const char *to_string(const Type t) {
   return bc_detail::canonical_name(table(), t);
 }
 
-/// Parse an input string.  Aborts on an unknown string.  A non-empty `warn`
-/// means a deprecated spelling was mapped; the caller decides whether to
-/// print it (and should de-duplicate).
 inline Type parse(const std::string &str, const bool strict,
                   std::string &warn) {
   int mapped = unset;

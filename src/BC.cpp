@@ -28,7 +28,6 @@ const std::vector<bc_detail::Entry> &ParticleBC::table() {
       {"reflect", ParticleBC::reflect, Legacy::none},
       {"absorb", ParticleBC::absorb, Legacy::none},
       {"inflow", ParticleBC::inflow, Legacy::none},
-      {"thermal", ParticleBC::thermal, Legacy::none},
       // Field-domain spellings the old shared enum silently accepted.
       {"conducting", ParticleBC::reflect, Legacy::deprecated},
       {"fixed", ParticleBC::inflow, Legacy::deprecated},

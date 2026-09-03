@@ -505,7 +505,6 @@ static bool particle_bc_no_injection(const ParticleBC::Type type) {
     case ParticleBC::vacuum:
     case ParticleBC::reflect: // crossing is handled by the particle mover
     case ParticleBC::absorb:
-    case ParticleBC::thermal: // reserved; the re-emission is not implemented
       return true;
     case ParticleBC::coupled: // MHD-AEPIC: re-seed from the fluid/MHD state
     case ParticleBC::periodic:
@@ -1282,7 +1281,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
     // the ghost layer so SumBoundary does not re-use it.  We apply this ONLY at
     // reflect / inflow faces (`conducting` is a field-only type; on the
     // particle side it is mapped to `reflect` at parse time).  At coupled
-    // (MHD-AEPIC), outflow, vacuum, absorb, thermal and periodic faces the
+    // (MHD-AEPIC), outflow, vacuum, absorb, and periodic faces the
     // ghost layer may hold real injected/leaving particles, so we leave it
     // untouched to avoid double counting.  Periodic directions are skipped
     // (SumBoundary wraps them).
@@ -2100,7 +2099,7 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
   // E-solver's 1/rho Ohm factor sees full rho with half J).  Apply the same
   // mirror (copy edge node into the first ghost node, fold back -> double,
   // zero the ghost) ONLY at reflect / inflow faces -- the same set as
-  // sum_moments().  Coupled, outflow, vacuum, absorb, thermal and periodic
+  // sum_moments().  Coupled, outflow, vacuum, absorb, and periodic
   // faces are left untouched.
   if (!Geom(iLev).isAllPeriodic() && jHat.nGrow() > 0) {
     const Box& dom = Geom(iLev).Domain();
