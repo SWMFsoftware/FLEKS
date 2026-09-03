@@ -23,9 +23,26 @@ F                       initFromSWMF
 2                       maxBlockSizeZ
 
 #PERIODICITY
-T                       isPeriodicX
+F                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
+
+#FIELDBOXBOUNDARY
+wave                    fieldBoxBoundaryLo
+outflow                 fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+0                       iSpecies
+outflow                 particleBoxBoundaryLo
+outflow                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
 
 #SOLVEEM
 T                       solveEM
@@ -54,14 +71,6 @@ T                       solveEM
 
 #TESTCASE
 lightwave               testCase
-
-#FIELDBOXBOUNDARY
-wave                    fieldBoxBoundaryLo
-periodic                fieldBoxBoundaryHi
-periodic                fieldBoxBoundaryLo
-periodic                fieldBoxBoundaryHi
-periodic                fieldBoxBoundaryLo
-periodic                fieldBoxBoundaryHi
 
 #WAVEBC
 1                       nWaveFace

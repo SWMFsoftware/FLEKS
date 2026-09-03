@@ -63,6 +63,15 @@ periodic                fieldBoxBoundaryHi
 periodic                fieldBoxBoundaryLo
 periodic                fieldBoxBoundaryHi
 
+#PARTICLEBOXBOUNDARY
+0                       iSpecies
+absorb                  particleBoxBoundaryLo
+absorb                  particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
 #ABSORB
 0.0                     charSpeed
 

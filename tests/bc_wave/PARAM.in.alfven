@@ -35,6 +35,15 @@ periodic                fieldBoxBoundaryHi
 periodic                fieldBoxBoundaryLo
 periodic                fieldBoxBoundaryHi
 
+#PARTICLEBOXBOUNDARY
+0                       iSpecies
+coupled                 particleBoxBoundaryLo
+coupled                 particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+
 #SOLVEEM
 F                       solveEM
 

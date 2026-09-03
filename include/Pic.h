@@ -260,8 +260,6 @@ private:
 
   BoxBC<FieldBC::Type> bcField;
 
-  bool strictBC_ = false;
-
   // De-duplicated boundary-condition warnings
   std::set<std::string> bcWarnings_;
 

@@ -53,11 +53,8 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     for (int i = 0; i < nDim; ++i) {
       param.read_var("particleBoxBoundaryLo", lo);
       param.read_var("particleBoxBoundaryHi", hi);
-      std::string warn;
-      pInfo.pBCs[iSpecies].set(i, 0, ParticleBC::parse(lo, strictBC_, warn));
-      add_bc_warning(warn);
-      pInfo.pBCs[iSpecies].set(i, 1, ParticleBC::parse(hi, strictBC_, warn));
-      add_bc_warning(warn);
+      pInfo.pBCs[iSpecies].set(i, 0, ParticleBC::parse(lo));
+      pInfo.pBCs[iSpecies].set(i, 1, ParticleBC::parse(hi));
     }
   } else if (command == "#FIELDBOXBOUNDARY" ||
              command == "#BFIELDBOXBOUNDARY") {
@@ -70,14 +67,9 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     for (int i = 0; i < nDim; ++i) {
       param.read_var("fieldBoxBoundaryLo", lo);
       param.read_var("fieldBoxBoundaryHi", hi);
-      std::string warn;
-      bcField.set(i, 0, FieldBC::parse(lo, strictBC_, warn));
-      add_bc_warning(warn);
-      bcField.set(i, 1, FieldBC::parse(hi, strictBC_, warn));
-      add_bc_warning(warn);
+      bcField.set(i, 0, FieldBC::parse(lo));
+      bcField.set(i, 1, FieldBC::parse(hi));
     }
-  } else if (command == "#BCSTRICT") {
-    param.read_var("strictBC", strictBC_);
   } else if (command == "#ABSORB") {
     param.read_var("charSpeed", absorbCharSpeed);
   } else if (command == "#INFLOW") {
@@ -290,18 +282,10 @@ void Pic::report_bc_warnings(const std::string& context) {
   if (bcWarnings_.empty())
     return;
 
-  if (strictBC_) {
-    std::string msg;
-    for (const std::string& w : bcWarnings_)
-      msg += "\n  - " + w;
-    amrex::Abort("Error: " + context + " boundary conditions:" + msg +
-                 "\n(#BCSTRICT is T, so warnings are fatal.)");
-  }
-
-  amrex::Print() << "  WARNING[" << context << "] boundary conditions:\n";
+  std::string msg;
   for (const std::string& w : bcWarnings_)
-    amrex::Print() << "    - " << w << "\n";
-  bcWarnings_.clear();
+    msg += "\n  - " + w;
+  amrex::Abort("Error: " + context + " boundary conditions:" + msg);
 }
 
 //==========================================================
@@ -369,6 +353,18 @@ void Pic::apply_periodicity_autofill(const Geometry& gm) {
 void Pic::validate_bc_pairing(const Geometry& gm) {
   static const char dimName[3] = { 'x', 'y', 'z' };
 
+  const bool isStandalone = !domainParameters.initFromSWMF;
+  const bool hasNonPeriodic = !gm.isAllPeriodic();
+
+  if (isStandalone && hasNonPeriodic) {
+    if (!fieldBCSet_)
+      amrex::Abort("Error: #FIELDBOXBOUNDARY command is required when there are "
+                   "non-periodic boundaries in standalone mode.");
+    if (pInfo.pBCsSet.empty() || pInfo.pBCsSet[0] == 0)
+      amrex::Abort("Error: #PARTICLEBOXBOUNDARY command is required when there are "
+                   "non-periodic boundaries in standalone mode.");
+  }
+
   for (int d = 0; d < nDim; ++d) {
     const bool dimPeriodic = gm.isPeriodic(d);
     const int fLo = bcField.face(d, 0);
@@ -394,7 +390,7 @@ void Pic::validate_bc_pairing(const Geometry& gm) {
       const std::string face =
           std::string(1, dimName[d]) + (side == 0 ? "-lo" : "-hi");
 
-      if (fType == FieldBC::inflow && !fi->get_inflow_defined())
+      if (fType == FieldBC::inflow && !inflowDefined_)
         add_bc_warning("field boundary " + face + " is '" +
                        FieldBC::to_string(fType) +
                        "' but no #INFLOW block was given; the face falls back "
@@ -455,10 +451,10 @@ void Pic::validate_bc_pairing(const Geometry& gm) {
         hasWall = hasWall || (t == FieldBC::conducting || t == FieldBC::wave);
       }
     if (hasWall)
-      add_bc_warning("hybrid solver: only centerB is evolved, so a "
-                     "conducting / wave field boundary constrains "
-                     "B; for the Ohm's-law E it only closes the ghost ring "
-                     "(it is not an independent constraint).");
+      amrex::Print() << "  Note: hybrid solver: only centerB is evolved, so a "
+                     << "conducting / wave field boundary constrains "
+                     << "B; for the Ohm's-law E it only closes the ghost ring "
+                     << "(it is not an independent constraint).\n";
   }
 }
 
@@ -466,10 +462,21 @@ void Pic::validate_bc_pairing(const Geometry& gm) {
 void Pic::post_process_param() {
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
-  // Species without a #PARTICLEBOXBOUNDARY block keep the default (coupled).
+  // Species without a #PARTICLEBOXBOUNDARY block keep the default (coupled),
+  // or inherit from species 0 if species 0 was specified.
   if (static_cast<int>(pInfo.pBCs.size()) < nSpecies) {
     pInfo.pBCs.resize(nSpecies);
     pInfo.pBCsSet.resize(nSpecies, 0);
+  }
+
+  const bool hasSpecies0 = (!pInfo.pBCsSet.empty() && pInfo.pBCsSet[0] != 0);
+  if (hasSpecies0) {
+    for (int i = 1; i < nSpecies; ++i) {
+      if (pInfo.pBCsSet[i] == 0) {
+        pInfo.pBCs[i] = pInfo.pBCs[0];
+        pInfo.pBCsSet[i] = 1;
+      }
+    }
   }
 
   fsolver.mode = (!fsolver.useLaggedLimiter && limiterThetaE != 0)

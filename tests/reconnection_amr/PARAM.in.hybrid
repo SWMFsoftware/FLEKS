@@ -37,6 +37,13 @@ periodic                fieldBoxBoundaryHi
 outflow                 fieldBoxBoundaryLo  (y)
 outflow                 fieldBoxBoundaryHi
 
+#PARTICLEBOXBOUNDARY
+0                       iSpecies
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+outflow                 particleBoxBoundaryLo
+outflow                 particleBoxBoundaryHi
+
 Hybrid PIC field solver ON (generalized Ohm's law + Faraday RK4).
 Full PIC implicit Maxwell/GMRES solve OFF.
 #SOLVEEM

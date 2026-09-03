@@ -36,6 +36,13 @@ periodic                fieldBoxBoundaryHi
 outflow                 fieldBoxBoundaryLo  (y)
 outflow                 fieldBoxBoundaryHi
 
+#PARTICLEBOXBOUNDARY
+0                       iSpecies
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+outflow                 particleBoxBoundaryLo
+outflow                 particleBoxBoundaryHi
+
 Full PIC electromagnetic field solver ON (Maxwell/GMRES E solve).
 #SOLVEEM
 T                       solveEM

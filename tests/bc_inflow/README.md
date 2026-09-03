@@ -55,7 +55,6 @@ fluid-interface state.
 ## Running
 
 ```bash
-# run just this test
 python3 tests/validate_tests.py --test=bc_inflow
 ```
 

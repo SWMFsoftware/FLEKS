@@ -38,6 +38,14 @@ F                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
+#FIELDBOXBOUNDARY
+conducting              fieldBoxBoundaryLo
+conducting              fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
 #PARTICLEBOXBOUNDARY
 0                       iSpecies
 reflect                 particleBoxBoundaryLo  (x)

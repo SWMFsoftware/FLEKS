@@ -29,6 +29,14 @@ F                       isPeriodicX
 T                       isPeriodicY
 T                       isPeriodicZ
 
+#FIELDBOXBOUNDARY
+absorb                  fieldBoxBoundaryLo
+absorb                  fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+periodic                fieldBoxBoundaryLo
+periodic                fieldBoxBoundaryHi
+
 #PARTICLEBOXBOUNDARY
 0                       iSpecies
 absorb                  particleBoxBoundaryLo

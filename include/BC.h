@@ -61,10 +61,8 @@ inline const char *canonical_name(const std::vector<Entry> &table,
 }
 
 inline bool lookup(const std::string &str, const std::vector<Entry> &table,
-                   const bool strict, int &mapped, std::string &warn,
-                   std::string &valid) {
+                   int &mapped, std::string &valid) {
   valid.clear();
-  warn.clear();
 
   for (const Entry &e : table) {
     if (e.legacy != Legacy::none)
@@ -78,19 +76,12 @@ inline bool lookup(const std::string &str, const std::vector<Entry> &table,
     if (str != e.name)
       continue;
 
-    if (e.legacy == Legacy::none) {
+    if (e.legacy == Legacy::none || e.legacy == Legacy::silent) {
       mapped = e.type;
       return true;
     }
-    if (e.legacy == Legacy::deprecated && strict)
+    if (e.legacy == Legacy::deprecated)
       return false;
-
-    mapped = e.type;
-    if (e.legacy == Legacy::deprecated) {
-      warn = "the boundary type '" + str + "' is deprecated; use '" +
-             canonical_name(table, e.type) + "' instead.";
-    }
-    return true;
   }
 
   return false;
@@ -126,11 +117,10 @@ inline const char *to_string(const Type t) {
   return bc_detail::canonical_name(table(), t);
 }
 
-inline Type parse(const std::string &str, const bool strict,
-                  std::string &warn) {
+inline Type parse(const std::string &str) {
   int mapped = unset;
   std::string valid;
-  if (!bc_detail::lookup(str, table(), strict, mapped, warn, valid)) {
+  if (!bc_detail::lookup(str, table(), mapped, valid)) {
     amrex::Abort("Error: unrecognized particle boundary type '" + str +
                  "'. Accepted values: " + valid);
   }
@@ -169,11 +159,10 @@ inline const char *to_string(const Type t) {
   return bc_detail::canonical_name(table(), t);
 }
 
-inline Type parse(const std::string &str, const bool strict,
-                  std::string &warn) {
+inline Type parse(const std::string &str) {
   int mapped = unset;
   std::string valid;
-  if (!bc_detail::lookup(str, table(), strict, mapped, warn, valid)) {
+  if (!bc_detail::lookup(str, table(), mapped, valid)) {
     amrex::Abort("Error: unrecognized field boundary type '" + str +
                  "'. Accepted values: " + valid);
   }
