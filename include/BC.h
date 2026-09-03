@@ -39,11 +39,7 @@ template <typename EnumT> struct BoxBC {
 //==========================================================
 namespace bc_detail {
 
-enum class Legacy {
-  none,
-  silent,
-  deprecated
-};
+enum class Legacy { none, silent, deprecated };
 
 struct Entry {
   const char *name;

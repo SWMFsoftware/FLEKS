@@ -267,17 +267,17 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         const int iHi = singleCell[ix_] ? lo[ix_] : hi[ix_];
 
         for (int k = lo[iz_]; k <= kHi; ++k) {
-          const double zp =
-              singleCell[iz_] ? Geom(iLev).CellCenter(lo[iz_], iz_)
-                              : Geom(iLev).LoEdge(k, iz_);
+          const double zp = singleCell[iz_]
+                                ? Geom(iLev).CellCenter(lo[iz_], iz_)
+                                : Geom(iLev).LoEdge(k, iz_);
           for (int j = lo[iy_]; j <= jHi; ++j) {
-            const double yp =
-                singleCell[iy_] ? Geom(iLev).CellCenter(lo[iy_], iy_)
-                                : Geom(iLev).LoEdge(j, iy_);
+            const double yp = singleCell[iy_]
+                                  ? Geom(iLev).CellCenter(lo[iy_], iy_)
+                                  : Geom(iLev).LoEdge(j, iy_);
             for (int i = lo[ix_]; i <= iHi; ++i) {
-              const double xp =
-                  singleCell[ix_] ? Geom(iLev).CellCenter(lo[ix_], ix_)
-                                  : Geom(iLev).LoEdge(i, ix_);
+              const double xp = singleCell[ix_]
+                                    ? Geom(iLev).CellCenter(lo[ix_], ix_)
+                                    : Geom(iLev).LoEdge(i, ix_);
               if (bit::is_owner(typeArr(i, j, k)) &&
                   (!bit::is_refined(typeArr(i, j, k)) || iLevSave >= 0) &&
                   writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
@@ -336,17 +336,14 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         kMax = lo.z;
 
       for (int k = lo.z; k <= kMax; ++k) {
-        const double zp =
-            singleCell[iz_] ? Geom(iLev).CellCenter(lo.z, iz_)
-                            : Geom(iLev).LoEdge(k, iz_);
+        const double zp = singleCell[iz_] ? Geom(iLev).CellCenter(lo.z, iz_)
+                                          : Geom(iLev).LoEdge(k, iz_);
         for (int j = lo.y; j <= jMax; ++j) {
-          const double yp =
-              singleCell[iy_] ? Geom(iLev).CellCenter(lo.y, iy_)
-                              : Geom(iLev).LoEdge(j, iy_);
+          const double yp = singleCell[iy_] ? Geom(iLev).CellCenter(lo.y, iy_)
+                                            : Geom(iLev).LoEdge(j, iy_);
           for (int i = lo.x; i <= iMax; ++i) {
-            const double xp =
-                singleCell[ix_] ? Geom(iLev).CellCenter(lo.x, ix_)
-                                : Geom(iLev).LoEdge(i, ix_);
+            const double xp = singleCell[ix_] ? Geom(iLev).CellCenter(lo.x, ix_)
+                                              : Geom(iLev).LoEdge(i, ix_);
             if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp) &&
                 !nGrids[iLev].contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
               const int iBlock = -1;

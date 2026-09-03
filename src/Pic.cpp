@@ -358,11 +358,13 @@ void Pic::validate_bc_pairing(const Geometry& gm) {
 
   if (isStandalone && hasNonPeriodic) {
     if (!fieldBCSet_)
-      amrex::Abort("Error: #FIELDBOXBOUNDARY command is required when there are "
-                   "non-periodic boundaries in standalone mode.");
+      amrex::Abort(
+          "Error: #FIELDBOXBOUNDARY command is required when there are "
+          "non-periodic boundaries in standalone mode.");
     if (pInfo.pBCsSet.empty() || pInfo.pBCsSet[0] == 0)
-      amrex::Abort("Error: #PARTICLEBOXBOUNDARY command is required when there are "
-                   "non-periodic boundaries in standalone mode.");
+      amrex::Abort(
+          "Error: #PARTICLEBOXBOUNDARY command is required when there are "
+          "non-periodic boundaries in standalone mode.");
   }
 
   for (int d = 0; d < nDim; ++d) {
