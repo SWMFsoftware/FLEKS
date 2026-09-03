@@ -63,14 +63,6 @@ T                       useHallTerm
 #BSUBCYCLE
 1                       nBSubcycle
 
-#RESISTIVITY
-1.0e7                   etaResistivity
-
-#HYPERRESISTIVITY
-5.0e17                  etaHyperSI
-si                      etaHyperMode
-0.0                     etaHyperCh
-
 #ELECTRONTEMPERATURE
 141.0                   electronTemperature
 1.6667                  electronGamma
