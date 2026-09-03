@@ -46,28 +46,14 @@ struct PID {
 };
 
 struct Vel {
-  amrex::Real vth;
-  amrex::Real vx;
-  amrex::Real vy;
-  amrex::Real vz;
-  // tag is usually the species ID
-  int tag;
+  amrex::Real vth = 0.0;
+  amrex::Real vx = 0.0;
+  amrex::Real vy = 0.0;
+  amrex::Real vz = 0.0;
+  amrex::Real nDens = -1.0; // >= 0 overrides fluid density
+  int tag = -1;             // species ID (-1 = unset)
 
-  // Optional user-supplied number density (code units).  When >= 0 and tag
-  // matches the species, add_particles_cell uses this instead of the
-  // fluid-interface density.  Used by the inflow boundary to inject a
-  // Maxwellian with the prescribed upstream density / velocity / thermal
-  // speed (set from #INFLOW).
-  amrex::Real nDens = -1.0;
-
-  Vel() {
-    vth = 0;
-    vx = 0;
-    vy = 0;
-    vz = 0;
-    tag = -1;
-    nDens = -1.0;
-  }
+  Vel() = default;
 };
 
 struct OHIon {
@@ -87,25 +73,6 @@ struct IDs {
 class ParticlesInfo {
 public:
   amrex::IntVect nPartPerCell = { AMREX_D_DECL(6, 6, 6) };
-
-  // Sampling quality of the open-inflow flux injector
-  // (Particles::inject_flux_at_inflow_faces).  The injected macroparticles are
-  // what seeds the transverse entrance-layer mode of 2D shock decks, so they
-  // may be sampled more finely than the interior population:
-  //   influxNsub > 1    -> draw nSub times more macroparticles per step, each
-  //                        carrying 1/nSub of the usual weight.  Same noise
-  //                        reduction as raising npcelz by nSub (iso_C) without
-  //                        changing the interior seeding, but at nSub times the
-  //                        particle cost while those particles live.
-  //   influxStratified  -> draw the transverse positions and the inward speed
-  //                        from a randomly shifted low-discrepancy sequence
-  //                        instead of independent uniforms, so the ~6 samples
-  //                        a cell gets per step spread evenly instead of
-  //                        clumping.  Costs nothing.
-  // The defaults reproduce the original behaviour.  See
-  // run_shock_2d/ANALYSIS_inflow_2d.md section 7 (R5).
-  int influxNsub = 1;
-  bool influxStratified = false;
 
   bool isParticleLocationRandom = true;
   bool isPPVconstant = false;
@@ -392,11 +359,6 @@ protected:
 
   amrex::IntVect nPartPerCell;
 
-  // Sampling quality of the open-inflow flux injector (mirrors
-  // ParticlesInfo::influxNsub / ::influxStratified).
-  int influxNsub = 1;
-  bool influxStratified = false;
-
   // Fractional-particle accumulators for the inflow flux injector (see
   // inject_flux_at_inflow_faces). Key packs (iLev, iDim, side, j, k) of the
   // boundary-transverse cell; the value is the not-yet-injected fractional
@@ -497,7 +459,7 @@ public:
                           const amrex::IntVect ijk,
                           const FluidInterface* interface, bool doVacuumLimit,
                           amrex::IntVect ppc = amrex::IntVect(),
-                          const Vel tpVel = Vel(), amrex::Real dt = -1);
+                          const Vel& tpVel = Vel(), amrex::Real dt = -1);
   void inject_particles_at_boundary();
 
   // Open-inflow (ParticleBC::inflow) particle boundary

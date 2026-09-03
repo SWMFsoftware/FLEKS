@@ -93,11 +93,6 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     param.read_var("T", tmp);
     inflowT_ = tmp; // [K]
     inflowDefined_ = true;
-  } else if (command == "#BOUNDARYINJECTION") {
-    param.read_var("nSub", pInfo.influxNsub);
-    param.read_var("useStratified", pInfo.influxStratified);
-    if (pInfo.influxNsub < 1)
-      Abort("Error: nSub in #BOUNDARYINJECTION must be >= 1.");
   } else if (command == "#WAVEBC") {
     waveBC.read_param(param, fi);
   } else if (command == "#MEMORY") {

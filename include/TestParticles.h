@@ -70,7 +70,7 @@ public:
   void read_test_particle_list(const amrex::Vector<std::string>& listFiles);
 
   void add_test_particles_from_fluid(
-      amrex::Vector<Vel> tpStates = amrex::Vector<Vel>());
+      const amrex::Vector<Vel>& tpStates = amrex::Vector<Vel>());
 
   void add_test_particles_from_pic(PicParticles* pts);
 

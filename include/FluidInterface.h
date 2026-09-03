@@ -129,18 +129,10 @@ protected:
   amrex::Vector<double> uniformState;
 
 public:
-  // Inflow (open) boundary upstream state, set from #INFLOW (converted to
-  // code units by Pic::convert_inflow_state).  Mirrors uniformState but is
-  // applied only at inflow faces.  inflowDefined gates the override; when
-  // false, inject_particles_at_boundary uses the live fluid-interface state
-  // (the original behaviour).
-  //
-  // Layout: per species iS, Vel{nDens, vth, ux, uy, uz}.  vth is the 1-D
-  // thermal speed sqrt(kT/m) in code units; nDens is the number density in
-  // code units; u* are bulk velocities in code units.
+  // Inflow boundary upstream state per species in code units.
   struct InflowVel {
     double nDens = -1.0;
-    double vth = 0.0;
+    double vth = 0.0; // sqrt(kT/m)
     double ux = 0.0, uy = 0.0, uz = 0.0;
   };
   amrex::Vector<InflowVel> inflowState;
@@ -174,10 +166,7 @@ public:
   }
   std::string get_restart_out_dir() const { return restartOut; }
 
-  //--- Inflow (open) boundary upstream state (set from #INFLOW) ---
   bool get_inflow_defined() const { return inflowDefined; }
-  // Per-species inflow Maxwellian state (code units).  Returns nullptr if
-  // the inflow state was not set for this species.
   const InflowVel* get_inflow_vel(const int iS) const {
     if (!inflowDefined || iS < 0 || iS >= inflowState.size())
       return nullptr;

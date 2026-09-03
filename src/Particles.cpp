@@ -37,8 +37,6 @@ Particles<NStructReal, NStructInt>::Particles(
       charge(chargeIn),
       mass(massIn),
       nPartPerCell(pInfo.nPartPerCell),
-      influxNsub(pInfo.influxNsub),
-      influxStratified(pInfo.influxStratified),
       ic_(icIn) {
 
   isParticleLocationRandom = pInfo.isParticleLocationRandom;
@@ -162,7 +160,7 @@ template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::add_particles_cell(
     const int iLev, const MFIter& mfi, IntVect ijk,
     const FluidInterface* interface, bool doVacuumLimit, IntVect ppc,
-    const Vel tpVel, Real dt) {
+    const Vel& tpVel, Real dt) {
 
   // If true, initialize the test particles with user defined velocities instead
   // of from fluid.
@@ -659,19 +657,6 @@ inline amrex::Real inj_draw_inward_speed(amrex::Real vd, amrex::Real r) {
   }
   return w;
 }
-
-// Randomly shifted Kronecker (golden-ratio) sequence: the np-th of a batch of
-// stratified samples.  Independent uniforms clump badly when a batch holds only
-// a handful of draws -- which is exactly the case for the inflow injector,
-// where a transverse cell receives ~6 macroparticles per step.  Spreading the
-// batch evenly over [0,1) removes that clumping at no cost; the random
-// per-batch offset keeps the estimator unbiased and the batches mutually
-// uncorrelated.
-inline amrex::Real inj_stratified_sample(amrex::Real offset, int np) {
-  constexpr amrex::Real golden = 0.6180339887498948482;
-  const amrex::Real u = offset + (np + 0.5) * golden;
-  return u - std::floor(u);
-}
 } // namespace
 
 //==========================================================
@@ -704,11 +689,8 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
   const Real uIn[3] = { inv->ux, inv->uy, inv->uz };
 
   // Macroparticle weight identical to the interior cell particles
-  // (add_particles_cell convention): qp = qomSign * n * V / nppc -- divided by
-  // influxNsub, because with nSub > 1 each step injects nSub times more
-  // macroparticles carrying the same total charge, mass and flux.
-  const Real q =
-      qomSign * dx[0].product() * nDens / product(nPartPerCell) / influxNsub;
+  // (add_particles_cell convention): qp = qomSign * n * V / nppc.
+  const Real q = qomSign * dx[0].product() * nDens / product(nPartPerCell);
   const int nppc = product(nPartPerCell);
 
   // Inject on the base level only (same policy as
@@ -756,9 +738,7 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
         const Real meanFlux =
             (vtherm > 0) ? nppc * vtherm * inj_mean_inward_flux(vd) * dt / dxn
                          : nppc * (uOut * inward) * dt / dxn;
-        // R5: with influxNsub > 1 the same flux is carried by nSub times more
-        // macroparticles of 1/nSub the weight.
-        const Real fluxRate = meanFlux * influxNsub;
+        const Real fluxRate = meanFlux;
 
         // Loop over the transverse cells of this tile's face.
         const int lo1 = bx.smallEnd(t1), hi1 = bx.bigEnd(t1);
@@ -782,28 +762,10 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
             }
             acc -= nInject;
 
-            // R5 stratified sampling: one random offset per quantity and per
-            // batch, so the low-discrepancy sequences stay mutually
-            // uncorrelated (sharing one sequence between the position and the
-            // speed would imprint a position-speed pattern on the beam).
-            const Real offT1 = influxStratified ? randNum() : 0.0;
-            const Real offT2 = influxStratified ? randNum() : 0.0;
-            const Real offW = influxStratified ? randNum() : 0.0;
-
             for (int np = 0; np < nInject; ++np) {
-              // Transverse positions and the inward-speed quantile: stratified
-              // (evenly spread within the batch) or plain uniform.
-              Real uT1, uT2 = 0.0, uW;
-              if (influxStratified) {
-                uT1 = inj_stratified_sample(offT1, np);
-                uT2 = inj_stratified_sample(offT2, np);
-                uW = inj_stratified_sample(offW, np);
-              } else {
-                uT1 = randNum();
-                if (nDim > 2)
-                  uT2 = randNum();
-                uW = randNum();
-              }
+              const Real uT1 = randNum();
+              const Real uT2 = (nDim > 2) ? randNum() : 0.0;
+              const Real uW = randNum();
 
               // Position: on the boundary face, nudged just INSIDE the
               // last physical cell so the particle is unambiguously in the
