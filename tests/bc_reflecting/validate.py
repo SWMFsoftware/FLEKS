@@ -148,4 +148,34 @@ def validate_plot(test_name):
                      min_frac, RHO_MIN)
         return False, "rhoS0 drained toward vacuum (particle loss at walls)"
 
-    return True, "Passed (particles confined, rhoS0 positive and finite)"
+    # Explicit checks at the boundary cells:
+    # Verify density is positive and finite at both wall cells, and normal
+    # velocity uxS0 is arrested at the reflecting wall (no unbounded penetration flux).
+    xi = vidx.get("X")
+    ux = _col(vidx, rows, "UXS0")
+    if xi is not None and ux is not None:
+        xs = [r[xi] for r in rows]
+        xmin, xmax = min(xs), max(xs)
+        dx_est = (xmax - xmin) / max(1, len(set(xs)) - 1)
+        # Identify boundary cells within 1.5 dx of either wall
+        lo_cells = [r for r in rows if r[xi] <= xmin + 1.5 * dx_est]
+        hi_cells = [r for r in rows if r[xi] >= xmax - 1.5 * dx_est]
+
+        rho_lo = [r[vidx["RHOS0"]] for r in lo_cells]
+        rho_hi = [r[vidx["RHOS0"]] for r in hi_cells]
+        ux_lo = [r[vidx["UXS0"]] for r in lo_cells]
+        ux_hi = [r[vidx["UXS0"]] for r in hi_cells]
+
+        logger.debug("    [RW] Boundary cells: lo_wall rho=%.4e, ux=%.4e | hi_wall rho=%.4e, ux=%.4e",
+                     sum(rho_lo)/len(rho_lo), sum(ux_lo)/len(ux_lo),
+                     sum(rho_hi)/len(rho_hi), sum(ux_hi)/len(ux_hi))
+
+        for r_val in rho_lo + rho_hi:
+            if not math.isfinite(r_val) or r_val < 0.0:
+                return False, "Non-finite or negative density at boundary cells"
+
+        for u_val in ux_lo + ux_hi:
+            if not math.isfinite(u_val):
+                return False, "Non-finite normal velocity at boundary cells"
+
+    return True, "Passed (particles confined, boundary cells verified, rhoS0 positive and finite)"

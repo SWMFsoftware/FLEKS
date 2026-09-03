@@ -821,8 +821,8 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
 
               // Velocity: inward normal speed from the flux-weighted
               // half-space Maxwellian; transverse components Gaussian.
-              // NOTE: t2 = (iDim+2)%nDim aliases iDim when nDim < 3, so the
-              // second transverse component only exists in 3D.
+              // All 3 velocity components are sampled so 2D3V (AMREX_SPACEDIM=2)
+              // has correct out-of-plane velocity vz and thermal pressure.
               Real vel[3] = { 0.0, 0.0, 0.0 };
               Real wIn;
               if (vtherm > 0) {
@@ -830,10 +830,15 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
               } else {
                 wIn = uOut * inward; // cold beam
               }
-              vel[iDim] = inward * wIn;
-              vel[t1] = uIn[t1] + sigma * inj_gaussian(randNum(), randNum());
-              if (nDim > 2) {
-                vel[t2] = uIn[t2] + sigma * inj_gaussian(randNum(), randNum());
+              for (int d = 0; d < 3; ++d) {
+                if (d == iDim) {
+                  vel[d] = inward * wIn;
+                } else {
+                  vel[d] = (sigma > 0)
+                               ? uIn[d] +
+                                     sigma * inj_gaussian(randNum(), randNum())
+                               : uIn[d];
+                }
               }
 
               auto p = make_particle();
@@ -1329,27 +1334,49 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
             ge[iDim] = gs[iDim];
             const Box strip(gs, ge);
 
-            ParallelFor(strip, nCompMF,
-                        [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
+            const bool isReflect = (faceBc == ParticleBC::reflect);
+
+            ParallelFor(
+                strip, nCompMF,
+                [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
+                  // Odd parity components relative to iDim under specular reflection:
+                  // normal momentum and off-diagonal normal-shear stresses.
+                  bool isOdd = false;
+                  if (iDim == 0) {
+                    isOdd = (c == iMx_ || c == iPxy_ || c == iPxz_);
+                  } else if (iDim == 1) {
+                    isOdd = (c == iMy_ || c == iPxy_ || c == iPyz_);
+                  } else if (iDim == 2) {
+                    isOdd = (c == iMz_ || c == iPxz_ || c == iPyz_);
+                  }
+
 #if (AMREX_SPACEDIM == 2)
-                          int ei = i, ej = j;
-                          if (iDim == 0)
-                            ei = domEdge;
-                          if (iDim == 1)
-                            ej = domEdge;
-                          const Real val = arr(ei, ej, 0, c);
-                          arr(ei, ej, 0, c) += val; // fold mirror back -> 2x
-                          arr(i, j, 0, c) = 0.0;    // zero the ghost layer
+                  int ei = i, ej = j;
+                  if (iDim == 0)
+                    ei = domEdge;
+                  if (iDim == 1)
+                    ej = domEdge;
+                  const Real val = arr(ei, ej, 0, c);
+                  if (isReflect && isOdd) {
+                    arr(ei, ej, 0, c) = 0.0;
+                  } else {
+                    arr(ei, ej, 0, c) += val; // fold mirror back -> 2x
+                  }
+                  arr(i, j, 0, c) = 0.0; // zero the ghost layer
 #elif (AMREX_SPACEDIM == 3)
-                          int ei = i, ej = j, ek = k;
-                          if (iDim == 0) ei = domEdge;
-                          if (iDim == 1) ej = domEdge;
-                          if (iDim == 2) ek = domEdge;
-                          const Real val = arr(ei, ej, ek, c);
-                          arr(ei, ej, ek, c) += val;  // fold mirror back -> 2x
-                          arr(i, j, k, c) = 0.0;      // zero the ghost layer
+                  int ei = i, ej = j, ek = k;
+                  if (iDim == 0) ei = domEdge;
+                  if (iDim == 1) ej = domEdge;
+                  if (iDim == 2) ek = domEdge;
+                  const Real val = arr(ei, ej, ek, c);
+                  if (isReflect && isOdd) {
+                    arr(ei, ej, ek, c) = 0.0;
+                  } else {
+                    arr(ei, ej, ek, c) += val; // fold mirror back -> 2x
+                  }
+                  arr(i, j, k, c) = 0.0; // zero the ghost layer
 #endif
-                        });
+                });
           }
         }
       }
@@ -2110,6 +2137,8 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
           ge[iDim] = gs[iDim];
           const Box strip(gs, ge);
 
+          const bool isReflect = (faceBc == ParticleBC::reflect);
+
           ParallelFor(strip, nCompJ,
                       [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
 #if (AMREX_SPACEDIM == 2)
@@ -2119,16 +2148,24 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
                         if (iDim == 1)
                           ej = domEdge;
                         const Real val = jArr(ei, ej, 0, c);
-                        jArr(ei, ej, 0, c) += val; // fold mirror back -> 2x
-                        jArr(i, j, 0, c) = 0.0;    // zero the ghost layer
+                        if (isReflect && c == iDim) {
+                          jArr(ei, ej, 0, c) = 0.0;
+                        } else {
+                          jArr(ei, ej, 0, c) += val; // fold mirror back -> 2x
+                        }
+                        jArr(i, j, 0, c) = 0.0; // zero the ghost layer
 #elif (AMREX_SPACEDIM == 3)
                         int ei = i, ej = j, ek = k;
                         if (iDim == 0) ei = domEdge;
                         if (iDim == 1) ej = domEdge;
                         if (iDim == 2) ek = domEdge;
                         const Real val = jArr(ei, ej, ek, c);
-                        jArr(ei, ej, ek, c) += val;  // fold mirror back -> 2x
-                        jArr(i, j, k, c) = 0.0;      // zero the ghost layer
+                        if (isReflect && c == iDim) {
+                          jArr(ei, ej, ek, c) = 0.0;
+                        } else {
+                          jArr(ei, ej, ek, c) += val; // fold mirror back -> 2x
+                        }
+                        jArr(i, j, k, c) = 0.0; // zero the ghost layer
 #endif
                       });
         }

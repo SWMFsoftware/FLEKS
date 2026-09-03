@@ -1858,7 +1858,7 @@ its own keeps the default `coupled`.
   the physical face (Hybrid-VPIC style) and outgoing particles are deleted.
   The upstream state comes from `#INFLOW`.
 
-Field-domain spellings (`conducting`, `symmetry`, `fixed`, `wave`) are not
+Field-domain spellings (`conducting`, `fixed`, `wave`) are not
 particle boundary conditions.  They are still accepted for backward
 compatibility, mapped to the nearest particle value, and reported as
 deprecated.  See `#FIELDBOXBOUNDARY` and `Doc/Boundary_Conditions.md`.
@@ -1873,7 +1873,6 @@ deprecated.  See `#FIELDBOXBOUNDARY` and `Doc/Boundary_Conditions.md`.
       <option value="open"/>
       <option value="vacuum"/>
       <option value="conducting"/>
-      <option value="symmetry"/>
       <option value="absorb"/>
       <option value="inflow"/>
       <option value="fixed"/>
@@ -1886,7 +1885,6 @@ deprecated.  See `#FIELDBOXBOUNDARY` and `Doc/Boundary_Conditions.md`.
       <option value="open"/>
       <option value="vacuum"/>
       <option value="conducting"/>
-      <option value="symmetry"/>
       <option value="absorb"/>
       <option value="inflow"/>
       <option value="fixed"/>
@@ -1916,8 +1914,6 @@ internally by `isB`):
 * `conducting` -- perfectly conducting wall (PEC): B_normal = 0 and
   B_tangential mirrored, E_tangential = 0 and E_normal mirrored.  Only
   correct for a stationary conductor; a flowing plasma needs E_t = -u x B.
-* `symmetry` -- mirror plane: like `conducting` for B, but with the opposite
-  E convention (E_normal = 0, E_tangential mirrored).
 * `absorb` -- outgoing-characteristic (matched-impedance) absorber, so an
   outgoing EM wave leaves the box without reflection.  Pair it with
   `#PARTICLEBOXBOUNDARY absorb` for a fully absorbing boundary.  The

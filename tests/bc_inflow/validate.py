@@ -211,6 +211,42 @@ def validate_plot(test_name):
                 passed = False
                 reasons.append("inflow-side density collapsed to zero")
 
+            # Verify pressure tensor components (Pxx, Pyy, Pzz) at inflow physical cells:
+            # confirm thermal isotropy and verify out-of-plane pressure (Pzz) is not zero.
+            pxx_l = _col(vidxl, rowsl, "PXXS0")
+            pyy_l = _col(vidxl, rowsl, "PYYS0")
+            pzz_l = _col(vidxl, rowsl, "PZZS0")
+            if pxx_l and pyy_l and pzz_l:
+                pxx_in = [r for r, x in zip(pxx_l, (row[xi_l] for row in rowsl))
+                          if x <= cuts[0]]
+                pyy_in = [r for r, x in zip(pyy_l, (row[xi_l] for row in rowsl))
+                          if x <= cuts[0]]
+                pzz_in = [r for r, x in zip(pzz_l, (row[xi_l] for row in rowsl))
+                          if x <= cuts[0]]
+                if pxx_in and pyy_in and pzz_in:
+                    m_pxx = _mean(pxx_in)
+                    m_pyy = _mean(pyy_in)
+                    m_pzz = _mean(pzz_in)
+                    logger.debug("    [INFLOW] inflow-side pressure: Pxx=%.5e, Pyy=%.5e, Pzz=%.5e",
+                                 m_pxx, m_pyy, m_pzz)
+                    if m_pzz <= 0.0 or not math.isfinite(m_pzz):
+                        passed = False
+                        reasons.append("inflow-side Pzz collapsed or non-finite (2D3V vz sampling failed)")
+                    elif m_pxx > 0.0:
+                        # Allow 25% tolerance for finite-particle statistical fluctuations
+                        p_anisotropy_z = abs(m_pzz / m_pxx - 1.0)
+                        p_anisotropy_y = abs(m_pyy / m_pxx - 1.0)
+                        if p_anisotropy_z > 0.25:
+                            passed = False
+                            reasons.append(
+                                f"inflow pressure anisotropic in Z (Pzz/Pxx = {m_pzz/m_pxx:.3f}; "
+                                f">{25}% deviation from isotropy)")
+                        if p_anisotropy_y > 0.25:
+                            passed = False
+                            reasons.append(
+                                f"inflow pressure anisotropic in Y (Pyy/Pxx = {m_pyy/m_pxx:.3f}; "
+                                f">{25}% deviation from isotropy)")
+
     # No spurious mean E field.
     for ecomp in ("EX", "EY", "EZ"):
         el = _col(vidxl, rowsl, ecomp)

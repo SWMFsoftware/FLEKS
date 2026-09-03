@@ -188,11 +188,10 @@ enum Type {
   outflow = 2,
   vacuum = 3,
   conducting = 4,
-  symmetry = 5,
-  absorb = 6,
-  inflow = 7,
-  fixed = 8, // Dirichlet
-  wave = 9
+  absorb = 5,
+  inflow = 6,
+  fixed = 7, // Dirichlet
+  wave = 8
 };
 
 /// Accepted input spellings (defined in src/BC.cpp).

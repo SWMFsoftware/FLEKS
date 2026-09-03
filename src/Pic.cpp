@@ -340,20 +340,19 @@ void Pic::apply_periodicity_autofill(const Geometry& gm) {
 
       for (int i = 0; i < static_cast<int>(pInfo.pBCs.size()); ++i) {
         // A species with no #PARTICLEBOXBOUNDARY block only holds the
-        // default, so there is nothing to contradict.
-        if (i >= static_cast<int>(pInfo.pBCsSet.size()) ||
-            pInfo.pBCsSet[i] == 0)
-          continue;
-
-        const int type = pInfo.pBCs[i].face(d, side);
-        if (type != ParticleBC::periodic)
-          add_bc_warning(
-              std::string("dimension ") + dimName[d] +
-              " is periodic (#PERIODICITY), but the particle boundary of "
-              "species " +
-              std::to_string(i) + " was set to '" +
-              ParticleBC::to_string(static_cast<ParticleBC::Type>(type)) +
-              "'; using 'periodic'.");
+        // default, so there is nothing to contradict and no warning to issue.
+        if (i < static_cast<int>(pInfo.pBCsSet.size()) &&
+            pInfo.pBCsSet[i] != 0) {
+          const int type = pInfo.pBCs[i].face(d, side);
+          if (type != ParticleBC::periodic)
+            add_bc_warning(
+                std::string("dimension ") + dimName[d] +
+                " is periodic (#PERIODICITY), but the particle boundary of "
+                "species " +
+                std::to_string(i) + " was set to '" +
+                ParticleBC::to_string(static_cast<ParticleBC::Type>(type)) +
+                "'; using 'periodic'.");
+        }
         pInfo.pBCs[i].set(d, side, ParticleBC::periodic);
       }
     }
@@ -435,7 +434,7 @@ void Pic::validate_bc_pairing(const Geometry& gm) {
                          "'; the injected flux has no upstream field to "
                          "match.");
 
-        if ((fType == FieldBC::conducting || fType == FieldBC::symmetry) &&
+        if (fType == FieldBC::conducting &&
             (pType == ParticleBC::outflow || pType == ParticleBC::vacuum ||
              pType == ParticleBC::absorb))
           add_bc_warning(what + " is '" + ParticleBC::to_string(pType) +
@@ -458,12 +457,11 @@ void Pic::validate_bc_pairing(const Geometry& gm) {
     for (int d = 0; d < nDim && !hasWall; ++d)
       for (int side = 0; side < 2 && !hasWall; ++side) {
         const auto t = static_cast<FieldBC::Type>(bcField.face(d, side));
-        hasWall = hasWall || (t == FieldBC::conducting ||
-                              t == FieldBC::symmetry || t == FieldBC::wave);
+        hasWall = hasWall || (t == FieldBC::conducting || t == FieldBC::wave);
       }
     if (hasWall)
       add_bc_warning("hybrid solver: only centerB is evolved, so a "
-                     "conducting / symmetry / wave field boundary constrains "
+                     "conducting / wave field boundary constrains "
                      "B; for the Ohm's-law E it only closes the ghost ring "
                      "(it is not an independent constraint).");
   }
@@ -3957,23 +3955,60 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
     Array4<Real> const& arr = mf[mfi].array();
     const Array4<const int>& statusArr = status[mfi].array();
 
-    ParallelFor(bxFab, [&](int i, int j, int k) {
-      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
-        return;
+    const Box& bxValid = mfi.validbox();
 
+    ParallelFor(bxFab, [&](int i, int j, int k) {
       IntVect ijk{ AMREX_D_DECL(i, j, k) };
 
       for (int d = 0; d < nDim; ++d) {
-        bool isLow = (bc.lo[d] == FieldBC::conducting) && (ijk[d] < domLo[d]);
-        bool isHigh = (bc.hi[d] == FieldBC::conducting) && (ijk[d] > domHi[d]);
+        const bool isNode = (mf.boxArray().ixType()[d] == IndexType::NODE);
+        const int loBnd = domLo[d];
+        const int hiBnd = isNode ? (domHi[d] + 1) : domHi[d];
+
+        // 1. Boundary nodes on the physical wall (node-centred only).
+        if (isNode) {
+          const bool onLoWall =
+              (bc.lo[d] == FieldBC::conducting) && (ijk[d] == loBnd);
+          const bool onHiWall =
+              (bc.hi[d] == FieldBC::conducting) && (ijk[d] == hiBnd);
+          if (onLoWall || onHiWall) {
+            bool inValid = true;
+            for (int od = 0; od < nDim; ++od) {
+              if (od != d && (ijk[od] < bxValid.smallEnd(od) ||
+                              ijk[od] > bxValid.bigEnd(od))) {
+                inValid = false;
+                break;
+              }
+            }
+            if (inValid) {
+              for (int iVar = 0; iVar < nComp; ++iVar) {
+                const int comp = iStart + iVar;
+                if (isB) {
+                  if (iVar == d)
+                    arr(i, j, k, comp) = 0.0;
+                } else {
+                  if (iVar != d)
+                    arr(i, j, k, comp) = 0.0;
+                }
+              }
+            }
+          }
+        }
+
+        // 2. Ghost cells/nodes outside the domain.
+        if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+          continue;
+
+        bool isLow = (bc.lo[d] == FieldBC::conducting) && (ijk[d] < loBnd);
+        bool isHigh = (bc.hi[d] == FieldBC::conducting) && (ijk[d] > hiBnd);
         if (!isLow && !isHigh)
           continue;
 
         IntVect m = ijk;
-        if (isLow)
-          m[d] = 2 * domLo[d] - 1 - ijk[d];
+        if (isNode)
+          m[d] = isLow ? (2 * loBnd - ijk[d]) : (2 * hiBnd - ijk[d]);
         else
-          m[d] = 2 * domHi[d] + 1 - ijk[d];
+          m[d] = isLow ? (2 * loBnd - 1 - ijk[d]) : (2 * hiBnd + 1 - ijk[d]);
 
         for (int iVar = 0; iVar < nComp; ++iVar) {
           const int comp = iStart + iVar;
@@ -4039,8 +4074,12 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
       IntVect ijk{ AMREX_D_DECL(i, j, k) };
 
       for (int d = 0; d < nDim; ++d) {
-        bool isLow = (bc.lo[d] == FieldBC::absorb) && (ijk[d] < domLo[d]);
-        bool isHigh = (bc.hi[d] == FieldBC::absorb) && (ijk[d] > domHi[d]);
+        const bool isNode = (mf.boxArray().ixType()[d] == IndexType::NODE);
+        const int loBnd = domLo[d];
+        const int hiBnd = isNode ? (domHi[d] + 1) : domHi[d];
+
+        bool isLow = (bc.lo[d] == FieldBC::absorb) && (ijk[d] < loBnd);
+        bool isHigh = (bc.hi[d] == FieldBC::absorb) && (ijk[d] > hiBnd);
         if (!isLow && !isHigh)
           continue;
 
@@ -4051,10 +4090,10 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
         const Real drive = 2.0 * drive0 / (1.0 + drive0);
 
         IntVect m = ijk;
-        if (isLow)
-          m[d] = 2 * domLo[d] - 1 - ijk[d];
+        if (isNode)
+          m[d] = isLow ? (2 * loBnd - ijk[d]) : (2 * hiBnd - ijk[d]);
         else
-          m[d] = 2 * domHi[d] + 1 - ijk[d];
+          m[d] = isLow ? (2 * loBnd - 1 - ijk[d]) : (2 * hiBnd + 1 - ijk[d]);
 
         for (int iVar = 0; iVar < nComp; ++iVar) {
           const int comp = iStart + iVar;
@@ -4109,13 +4148,17 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
       IntVect ijk{ AMREX_D_DECL(i, j, k) };
 
       for (int d = 0; d < nDim; ++d) {
-        bool isLow = (bc.lo[d] == FieldBC::inflow) && (ijk[d] < domLo[d]);
-        bool isHigh = (bc.hi[d] == FieldBC::inflow) && (ijk[d] > domHi[d]);
+        const bool isNode = (mf.boxArray().ixType()[d] == IndexType::NODE);
+        const int loBnd = domLo[d];
+        const int hiBnd = isNode ? (domHi[d] + 1) : domHi[d];
+
+        bool isLow = (bc.lo[d] == FieldBC::inflow) && (ijk[d] < loBnd);
+        bool isHigh = (bc.hi[d] == FieldBC::inflow) && (ijk[d] > hiBnd);
         if (!isLow && !isHigh)
           continue;
 
         IntVect m = ijk;
-        m[d] = isLow ? domLo[d] : domHi[d];
+        m[d] = isLow ? loBnd : hiBnd;
 
         for (int iVar = 0; iVar < nComp; ++iVar) {
           const int comp = iStart + iVar;

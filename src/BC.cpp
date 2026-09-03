@@ -51,7 +51,6 @@ const std::vector<bc_detail::Entry> &FieldBC::table() {
       {"vacuum", FieldBC::vacuum, Legacy::none},
       {"vacume", FieldBC::vacuum, Legacy::silent},
       {"conducting", FieldBC::conducting, Legacy::none},
-      {"symmetry", FieldBC::symmetry, Legacy::none},
       {"absorb", FieldBC::absorb, Legacy::none},
       {"inflow", FieldBC::inflow, Legacy::none},
       {"fixed", FieldBC::fixed, Legacy::none},
