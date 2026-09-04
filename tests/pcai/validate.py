@@ -12,7 +12,17 @@ import os
 
 logger = logging.getLogger(__name__)
 
-from .._shared.hybrid import RUN_DIR, validate_hybrid
+import tests._shared.hybrid as _hyb
+from .._shared.hybrid import validate_hybrid
+
+RUN_DIR = "run_test"
+
+
+def set_run_dir(run_dir):
+    """Point the plot helpers at the current run directory."""
+    global RUN_DIR
+    RUN_DIR = run_dir
+    _hyb.set_run_dir(run_dir)
 
 # Linear-theory PCAI growth rate for beta_par=1, T_perp/T_par=3.
 GAMMA_THEORY_OMEGA = 0.162

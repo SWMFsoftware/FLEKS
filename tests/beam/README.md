@@ -25,8 +25,17 @@ waves grow from noise (power concentrated in low-order box-compatible modes). Th
 
 ## Running
 
+Both variants run together under the test name:
+
 ```bash
-python3 tests/validate_tests.py --test=beam
+python3 tests/validate_tests.py --test=beam          # both variants
 ```
 
-The output table lists both `BEAM` (full PIC) and `BEAM (HYBRID)` (hybrid PIC) results.
+To run a **single variant**, append its token to the test name:
+
+```bash
+python3 tests/validate_tests.py --test=beam.full      # full PIC only (PARAM.in)
+python3 tests/validate_tests.py --test=beam.hybrid    # hybrid only (PARAM.in.hybrid)
+```
+
+The output table lists `BEAM` (full PIC) and `BEAM (HYBRID)` (hybrid PIC) results.

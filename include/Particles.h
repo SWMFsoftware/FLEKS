@@ -1,6 +1,9 @@
 #ifndef _PARTICLES_H_
 #define _PARTICLES_H_
 
+#include <cstdint>
+#include <functional>
+#include <map>
 #include <memory>
 
 #include <AMReX_AmrCore.H>
@@ -43,20 +46,14 @@ struct PID {
 };
 
 struct Vel {
-  amrex::Real vth;
-  amrex::Real vx;
-  amrex::Real vy;
-  amrex::Real vz;
-  // tag is usually the species ID
-  int tag;
+  amrex::Real vth = 0.0;
+  amrex::Real vx = 0.0;
+  amrex::Real vy = 0.0;
+  amrex::Real vz = 0.0;
+  amrex::Real nDens = -1.0; // >= 0 overrides fluid density
+  int tag = -1;             // species ID (-1 = unset)
 
-  Vel() {
-    vth = 0;
-    vx = 0;
-    vy = 0;
-    vz = 0;
-    tag = -1;
-  }
+  Vel() = default;
 };
 
 struct OHIon {
@@ -101,7 +98,14 @@ public:
 
   OHIon ionOH;
 
-  amrex::Vector<BC> pBCs = amrex::Vector<BC>(10);
+  // Particle boundary conditions, one entry per species.
+  amrex::Vector<BoxBC<ParticleBC::Type> > pBCs;
+
+  // Parallel to pBCs: 1 when the species had its own #PARTICLEBOXBOUNDARY
+  // block, 0 when the entry is just the default.  Lets the periodic auto-fill
+  // tell "the user asked for X" apart from "nothing was specified".
+  amrex::Vector<char> pBCsSet;
+
   amrex::Vector<int> supIDs;
 
   int initial_sup_id(const int speciesID) const {
@@ -110,7 +114,17 @@ public:
     return 1;
   }
 
-  const BC& particle_bc(const int speciesID) const { return pBCs[speciesID]; }
+  // pBCs is sized from nSpecies in Pic::post_process_param(), but Particles
+  // objects can be constructed before that: TestParticles is built with a
+  // throwaway default ParticlesInfo (see src/TestParticles.cpp), so its pBCs
+  // is always empty.  Return the default (all-`coupled`) entry instead of
+  // reading out of bounds.
+  const BoxBC<ParticleBC::Type>& particle_bc(const int speciesID) const {
+    static const BoxBC<ParticleBC::Type> bcDefault;
+    if (speciesID < 0 || speciesID >= static_cast<int>(pBCs.size()))
+      return bcDefault;
+    return pBCs[speciesID];
+  }
 };
 
 //===========================================================================
@@ -345,6 +359,12 @@ protected:
 
   amrex::IntVect nPartPerCell;
 
+  // Fractional-particle accumulators for the inflow flux injector (see
+  // inject_flux_at_inflow_faces). Key packs (iLev, iDim, side, j, k) of the
+  // boundary-transverse cell; the value is the not-yet-injected fractional
+  // macroparticle count carried between steps.
+  std::map<int64_t, amrex::Real> injectFluxAcc;
+
   amrex::Vector<amrex::RealVect> plo, phi, dx, invDx;
   amrex::Vector<amrex::Real> invVol;
 
@@ -380,7 +400,18 @@ protected:
 
   bool isTargetPPCDefined = false;
 
-  BC bc; // boundary condition
+  BoxBC<ParticleBC::Type> bc; // particle boundary condition
+
+  // Faces carrying a FieldBC::wave *field* boundary, indexed 2*d + {0=lo,1=hi}.
+  // Set by Pic so the wave velocity kick is driven by the field boundary
+  // instead of a particle-side spelling -- the particle domain has no `wave`
+  // type of its own.
+  bool isWaveFace[6] = { false, false, false, false, false, false };
+
+  // Absorbing-BC tallies per face (2*d + {0=lo,1=hi}).
+  amrex::Real absorbTallyCount[6] = { 0, 0, 0, 0, 0, 0 };
+  amrex::Real absorbTallyCharge[6] = { 0, 0, 0, 0, 0, 0 };
+  amrex::Real absorbTallyMass[6] = { 0, 0, 0, 0, 0, 0 };
 
   // AMREX uses 40 bits(it is 40! Not a typo. See AMReX_Particle.H) to store
   // p.id(), but it is converted to a 32-bit integer when saving to disk. To
@@ -406,6 +437,11 @@ public:
   // Non-owning pointer to the active initial condition (owned by Pic).
   const InitialCondition* ic_ = nullptr;
 
+  // Wave bulk-velocity kick (pos, t -> dvx,dvy,dvz), set by Pic; null = off.
+  std::function<void(const amrex::Real*, amrex::Real, amrex::Real&,
+                     amrex::Real&, amrex::Real&)>
+      waveVelocityKick = nullptr;
+
   // Index of the integer data.
   static constexpr int iRecordCount_ = 1;
 
@@ -423,8 +459,16 @@ public:
                           const amrex::IntVect ijk,
                           const FluidInterface* interface, bool doVacuumLimit,
                           amrex::IntVect ppc = amrex::IntVect(),
-                          const Vel tpVel = Vel(), amrex::Real dt = -1);
+                          const Vel& tpVel = Vel(), amrex::Real dt = -1);
   void inject_particles_at_boundary();
+
+  // Inflow (ParticleBC::inflow) particle boundary
+  // New macroparticles are created AT the physical boundary face, their
+  // normal velocity is drawn from the flux-weighted (half-space) drifting
+  // Maxwellian, the transverse velocities from the corresponding Gaussians,
+  // and the number injected per step matches the analytic influx of the
+  // prescribed #INFLOW state.
+  void inject_flux_at_inflow_faces(amrex::Real dt);
 
   void add_particles_source(const FluidInterface* interface,
                             const FluidInterface* const stateOH = nullptr,
@@ -472,6 +516,8 @@ public:
 
   void calc_jhat(amrex::MultiFab& jHat, amrex::MultiFab& nodeBMF,
                  amrex::Real dt);
+
+  void apply_jhat_mirror(amrex::MultiFab& jHat, int iLev = 0);
 
   // It is real 'thermal velocity'. It is sqrt(sum(q*v2)/sum(q)).
   amrex::Real calc_max_thermal_velocity(amrex::MultiFab& momentsMF);
@@ -561,6 +607,51 @@ public:
                               amrex::Real vth, CrossSection cs);
 
   void neutral_mover(amrex::Real dt);
+
+  // Returns true if a pushed particle should be deleted.  `absorb` removes and
+  // tallies; `reflect` mirrors.  Only acts at iLev == 0.
+  inline bool reflect_or_delete_particle(ParticleType& p,
+                                         amrex::Array4<int const> const& status,
+                                         const amrex::IntVect& low,
+                                         const amrex::IntVect& high, int iLev) {
+    if (iLev > 0)
+      return is_outside_active_region(p, status, low, high, iLev);
+
+    const amrex::Real* plo = Geom(iLev).ProbLo();
+    const amrex::Real* phi = Geom(iLev).ProbHi();
+    for (int d = 0; d < nDim; ++d) {
+      const int bcLo = bc.lo[d];
+      const int bcHi = bc.hi[d];
+      // Absorbing and inflow faces remove particles that cross outward,
+      // tallying the lost charge/mass per face.
+      if ((bcLo == ParticleBC::absorb || bcLo == ParticleBC::inflow) &&
+          p.pos(d) < plo[d]) {
+        absorb_tally(2 * d, p.rdata(iwp_));
+        return true;
+      }
+      if ((bcHi == ParticleBC::absorb || bcHi == ParticleBC::inflow) &&
+          p.pos(d) > phi[d]) {
+        absorb_tally(2 * d + 1, p.rdata(iwp_));
+        return true;
+      }
+      // Specular reflection: mirror position and normal velocity.
+      if (bcLo == ParticleBC::reflect && p.pos(d) < plo[d]) {
+        p.pos(d) = 2.0 * plo[d] - p.pos(d);
+        p.rdata(iup_ + d) = -p.rdata(iup_ + d);
+      } else if (bcHi == ParticleBC::reflect && p.pos(d) > phi[d]) {
+        p.pos(d) = 2.0 * phi[d] - p.pos(d);
+        p.rdata(iup_ + d) = -p.rdata(iup_ + d);
+      }
+    }
+    return is_outside_active_region(p, status, low, high, iLev);
+  }
+
+  // Tally an absorbed particle per face (2*d + {0=lo,1=hi}).
+  inline void absorb_tally(int face, amrex::Real weight) {
+    absorbTallyCount[face] += 1.0;
+    absorbTallyCharge[face] += weight * charge;
+    absorbTallyMass[face] += weight * mass;
+  }
 
   void update_position_to_half_stage(const amrex::MultiFab& nodeEMF,
                                      const amrex::MultiFab& nodeBMF,
@@ -729,7 +820,14 @@ public:
 
   void set_ppc(amrex::IntVect& in) { nPartPerCell = in; };
 
-  void set_bc(BC& bcIn) { bc = bcIn; }
+  void set_bc(const BoxBC<ParticleBC::Type>& bcIn) { bc = bcIn; }
+
+  // Mark face `side` (0 = lo, 1 = hi) of dimension `d` as carrying a
+  // FieldBC::wave field boundary; drives the wave velocity kick.
+  void set_wave_face(const int d, const int side, const bool on) {
+    if (d >= 0 && d < 3 && side >= 0 && side < 2)
+      isWaveFace[2 * d + side] = on;
+  }
 
   void set_is_target_ppc_defined(bool in) { isTargetPPCDefined = in; }
 
@@ -885,6 +983,15 @@ public:
   int get_speciesID() const { return speciesID; }
   amrex::Real get_charge() const { return charge; }
   amrex::Real get_mass() const { return mass; }
+
+  // Absorbing-BC diagnostics (per face, 2*d + {0=lo,1=hi}).
+  amrex::Real get_absorb_count(int face) const {
+    return absorbTallyCount[face];
+  }
+  amrex::Real get_absorb_charge(int face) const {
+    return absorbTallyCharge[face];
+  }
+  amrex::Real get_absorb_mass(int face) const { return absorbTallyMass[face]; }
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
 

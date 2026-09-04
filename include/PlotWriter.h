@@ -1,6 +1,7 @@
 #ifndef _PLOTWRITER_H_
 #define _PLOTWRITER_H_
 
+#include <algorithm>
 #include <array>
 
 #include <AMReX_RealVect.H>
@@ -174,7 +175,8 @@ public:
   void set_plotDx(const double in) { plotDx = in; }
   void set_nSpecies(const int in) { nSpecies = in; }
   void set_useHybridPIC(const bool in) { useHybridPIC = in; }
-  void set_nDim(const int in) { nDim = in; }
+  // nDim must not exceed AMREX_SPACEDIM (RealVect components).
+  void set_nDim(const int in) { nDim = std::min(in, AMREX_SPACEDIM); }
   void set_iRegion(const int in) { iRegion = in; }
   void set_No2NoL(const double& in) { No2NoL = in; }
   void set_plotMin_D(const amrex::RealVect& in) { plotMin_D = in; }

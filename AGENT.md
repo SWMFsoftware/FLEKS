@@ -215,7 +215,7 @@ See `Doc/Coding_standards.md` for the full list. Key points:
 |----------------|------------------|----------------------------|
 | Files          | PascalCase       | `GridUtility.cpp`          |
 | Classes        | PascalCase       | `FluidInterface`           |
-| Functions      | snake_case       | `apply_float_boundary()`   |
+| Functions      | snake_case       | `apply_field_bc()`         |
 | Variables      | camelCase        | `nCellPerPatch`            |
 | Constants      | camelCase/UPPER  | `cProtonMassSI`, `nDim3`   |
 | Private members| camelCase        | `doRestart`                |

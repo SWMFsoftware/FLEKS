@@ -223,7 +223,8 @@ bool linear_solver_Gauss_Elimination(
     }
     // Begin Gauss Elimination
     for (int k = i + 1; k < m; ++k) {
-      if (fabs(a(i, i)) < ref[i]) {
+      // Guard against singular, zero, or NaN pivots.
+      if (!(fabs(a(i, i)) > ref[i])) {
         return false;
       }
       double term = a(k, i) / a(i, i);
@@ -239,11 +240,17 @@ bool linear_solver_Gauss_Elimination(
       x[i] = x[i] - a(i, j) * x[j];
     }
 
-    if (fabs(a(i, i)) < ref[i]) {
+    if (!(fabs(a(i, i)) > ref[i])) {
       return false;
     }
 
     x[i] = x[i] / a(i, i);
+  }
+
+  for (int i = 0; i < m; ++i) {
+    if (!std::isfinite(x[i])) {
+      return false;
+    }
   }
   return true;
 };

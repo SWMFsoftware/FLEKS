@@ -47,6 +47,7 @@ void PlotWriter::init() {
     if (subString.substr(0, 2) == "z=")
       idx = z_;
 
+    // Ignore cuts for inactive dimensions (e.g. z= in 2D).
     if (idx < nDim) {
       subString.erase(0, 2);
       ss << subString;

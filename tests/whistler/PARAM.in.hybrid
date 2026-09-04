@@ -5,13 +5,11 @@ CGS units (resistivity and electron-pressure-gradient terms disabled).
 
 Parameters are chosen so that in CODE (normalized) units the ion scales are
 O(1) and the ion cyclotron motion is resolved by the timestep:
-  The geometry is in code units; the box is Lx = 6.4 d_i.
-  Normalization: lNormSI = ion inertial length d_i, uNormSI = Alfven speed v_A,
-  so that d_i ~ 1, v_A ~ 1, and (with q/(m c)=1 for the proton) B = Omega_i ~ 1.
-  With dt = 0.02, dt*Omega_i = 0.02 << 1, so the Hall/whistler mode
-  (bounded by Omega_i, since omega/Omega_i = (k d_i)^2 / (1+(k d_i)^2)) is
-  numerically stable.  Physical inputs (n = 5 amu/cc, B = 5.22 nT,
-  v_A ~ 51 km/s, d_i ~ 102 km) are solar-wind-like.
+  Geometry in code units; box Lx = 6.4 d_i. With lNormSI = uNormSI = 1.0e5,
+  tNorm = 1 s so TimeMax (s) equals code time; with q/(m c) = 1 for the proton,
+  B = Omega_i ~ 1.  With dt = 0.02, dt*Omega_i = 0.02 << 1 so the Hall/whistler
+  mode (omega/Omega_i = (k d_i)^2/(1+(k d_i)^2)) is numerically stable.  The
+  n=1 mode has omega ~ 0.49 rad/s, period T ~ 12.8 s.
 
 #INITFROMSWMF
 F                       initFromSWMF
@@ -82,7 +80,7 @@ neutralizing massless fluid, so no electron particle species is present.
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-5.2195e-9               bx [T]       uniform guide field Bx0 (B_code ~ 1)
+1.0439e-8               bx [T]       uniform guide field Bx0 (B_code ~ 1)
 0.0                     by [T]
 0.0                     bz [T]
 0.0                     ex [V/m]
@@ -98,7 +96,7 @@ T                       useFixedDt
 
 #NORMALIZATION
 1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
-5.0e4                   uNormSI   [m/s] ~ v_A so v_A ~ 1 in code units
+1.0e5                   uNormSI   [m/s] tNorm = 1 s; sets cLight_SI = uNormSI
 
 #MONITOR
 50                      dnReport
@@ -121,6 +119,6 @@ z=0 fluid ascii pic     plotString
 
 #STOP
 -1                      MaxIter
-13.0                    TimeMax     ~1 whistler period (T ~ 13 s for the n=1 mode)
+13.0                    TimeMax   ~1 whistler period (n=1 mode)
 
 #RUN

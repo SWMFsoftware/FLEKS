@@ -31,11 +31,18 @@ T                       isPeriodicX
 F                       isPeriodicY
 
 Field boundary conditions on the box faces (periodic in x, outflow/float in y).
-#BFIELDBOXBOUNDARY
-periodic                BoxBoundaryLo  (x)
-periodic                BoxBoundaryHi
-outflow                 BoxBoundaryLo  (y)
-outflow                 BoxBoundaryHi
+#FIELDBOXBOUNDARY
+periodic                fieldBoxBoundaryLo  (x)
+periodic                fieldBoxBoundaryHi
+outflow                 fieldBoxBoundaryLo  (y)
+outflow                 fieldBoxBoundaryHi
+
+#PARTICLEBOXBOUNDARY
+0                       iSpecies
+periodic                particleBoxBoundaryLo
+periodic                particleBoxBoundaryHi
+outflow                 particleBoxBoundaryLo
+outflow                 particleBoxBoundaryHi
 
 Hybrid PIC field solver ON (generalized Ohm's law + Faraday RK4).
 Full PIC implicit Maxwell/GMRES solve OFF.
@@ -45,14 +52,14 @@ F                       solveEM
 #HYBRIDPIC
 T                       useHybridPIC
 
-Resistive term ON (SI magnetic diffusivity). etaSI = 4.0e5 m^2/s converts to
-etaCode ~ 0.001.
+Resistive term ON (SI magnetic diffusivity). etaSI = 8.0e5 m^2/s converts to
+etaCode ~ 0.001 at uNormSI = 1.0e5.
 #RESISTIVITY
-4.0e5                   etaResistivity  [m^2/s]
+8.0e5                   etaResistivity  [m^2/s]
 
 Electron pressure-gradient term ON (isothermal).
 #ELECTRONTEMPERATURE
-5.0                     electronTemperature  [eV]
+20.0                    electronTemperature  [eV]
 1.0                     electronGamma
 1.0                     electronDensity0
 
@@ -93,7 +100,7 @@ neutralizing massless fluid, so no electron particle species is present.
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
-76000.0                 T [K]          ion temperature (beta_i ~ 0.5)
+304000.0                T [K]          ion temperature (beta_i ~ 0.5)
 0.0                     bx [T]         guide field set by FadeevIC (bg = 0)
 0.0                     by [T]
 0.0                     bz [T]
@@ -124,7 +131,7 @@ T                       useFixedDt
 
 #NORMALIZATION
 1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
-5.0e4                   uNormSI   [m/s] ~ v_A so v_A ~ 1 in code units
+1.0e5                   uNormSI   [m/s] tNorm = 1 s; sets cLight_SI = uNormSI
 
 #MONITOR
 100                     dnReport
@@ -146,7 +153,7 @@ z=0 fluid ascii planet  plotString   (z cut; degenerate z in true-2D build)
 
 #STOP
 -1                      MaxIter
-20.0                    TimeMax   (~3 wci; ion-scale reconnection onset)
+20.0                    TimeMax   ~3.2 ion gyroperiods (reconnection develops)
 
 #RUN
 

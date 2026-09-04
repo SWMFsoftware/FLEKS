@@ -3,6 +3,15 @@ description: >-
   Configure, build, run, and summarize a standalone FLEKS test against a
   specific AMReX spatial dimension (2D or 3D). Expects the SWMF-nested layout
   from the setup-swmf composite action (FLEKS at SWMF/PC/FLEKS).
+
+  This action always configures the fully optimized release build (-O4
+  -nodebug); the executable produced here is the one the tests run with. The
+  compiler warning check, which needs an unoptimized (-debug -O0) build, lives
+  in the separate warning-check action and must be run as its own job: mixing
+  both configurations into one job leaves the object files from whichever
+  configuration was compiled last (Makefile.conf is not a prerequisite of the
+  objects, so reconfiguring does not trigger a rebuild) and the tests would
+  silently run an unoptimized executable.
 inputs:
   amrex-dim:
     description: 'AMReX spatial dimension: "2d" or "3d".'
@@ -32,8 +41,9 @@ runs:
       working-directory: SWMF/PC/FLEKS
       shell: bash
       run: |
-        # Link the AMReX library and enable AMR (nLevMax>=2).
-        ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo
+        # Link the AMReX library, enable AMR (nLevMax>=2), and build a fully
+        # optimized release executable (-O4 -nodebug) for running the tests.
+        ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo -O4 -nodebug
 
     - name: Cache Standalone Build
       id: cache-standalone

@@ -40,24 +40,53 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
     int iSpecies;
     std::string lo, hi;
     param.read_var("iSpecies", iSpecies);
-    if (iSpecies < 0 || iSpecies >= static_cast<int>(pInfo.pBCs.size())) {
-      Abort("Error: wrong input or too may particle species.");
+    if (iSpecies < 0)
+      Abort("Error: negative species index in #PARTICLEBOXBOUNDARY.");
+    // nSpecies is only known in post_process_param(), so pBCs grows on
+    // demand here and is padded to nSpecies there.
+    if (iSpecies >= static_cast<int>(pInfo.pBCs.size())) {
+      pInfo.pBCs.resize(iSpecies + 1);
+      pInfo.pBCsSet.resize(iSpecies + 1, 0);
     }
+    pInfo.pBCsSet[iSpecies] = 1;
 
     for (int i = 0; i < nDim; ++i) {
       param.read_var("particleBoxBoundaryLo", lo);
       param.read_var("particleBoxBoundaryHi", hi);
-      pInfo.pBCs[iSpecies].lo[i] = pInfo.pBCs[iSpecies].num_type(lo);
-      pInfo.pBCs[iSpecies].hi[i] = pInfo.pBCs[iSpecies].num_type(hi);
+      pInfo.pBCs[iSpecies].set(i, 0, ParticleBC::parse(lo));
+      pInfo.pBCs[iSpecies].set(i, 1, ParticleBC::parse(hi));
     }
-  } else if (command == "#BFIELDBOXBOUNDARY") {
+  } else if (command == "#FIELDBOXBOUNDARY" ||
+             command == "#BFIELDBOXBOUNDARY") {
+    if (command == "#BFIELDBOXBOUNDARY")
+      add_bc_warning("#BFIELDBOXBOUNDARY is deprecated; use "
+                     "#FIELDBOXBOUNDARY instead.");
+    fieldBCSet_ = true;
+
     std::string lo, hi;
     for (int i = 0; i < nDim; ++i) {
-      param.read_var("BoxBoundaryLo", lo);
-      param.read_var("BoxBoundaryHi", hi);
-      bcBField.lo[i] = bcBField.num_type(lo);
-      bcBField.hi[i] = bcBField.num_type(hi);
+      param.read_var("fieldBoxBoundaryLo", lo);
+      param.read_var("fieldBoxBoundaryHi", hi);
+      bcField.set(i, 0, FieldBC::parse(lo));
+      bcField.set(i, 1, FieldBC::parse(hi));
     }
+  } else if (command == "#ABSORB") {
+    param.read_var("charSpeed", absorbCharSpeed);
+  } else if (command == "#INFLOW") {
+    double tmp;
+    param.read_var("rho", tmp);
+    inflowRho_ = tmp; // [amu/cc]
+    param.read_var("ux", tmp);
+    inflowUx_ = tmp; // [km/s]
+    param.read_var("uy", tmp);
+    inflowUy_ = tmp; // [km/s]
+    param.read_var("uz", tmp);
+    inflowUz_ = tmp; // [km/s]
+    param.read_var("T", tmp);
+    inflowT_ = tmp; // [K]
+    inflowDefined_ = true;
+  } else if (command == "#WAVEBC") {
+    waveBC.read_param(param, fi);
   } else if (command == "#MEMORY") {
     param.read_var("dnMemory", dnMemory);
   } else if (command == "#RANDOMPARTICLESLOCATION") {
@@ -245,9 +274,204 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 }
 
 //==========================================================
+// Report de-duplicated boundary-condition warnings and abort.
+void Pic::report_bc_warnings(const std::string& context) {
+  if (bcWarnings_.empty())
+    return;
+
+  std::string msg;
+  for (const std::string& w : bcWarnings_)
+    msg += "\n  - " + w;
+  amrex::Abort("Error: " + context + " boundary conditions:" + msg);
+}
+
+//==========================================================
+// Autofill periodic boundaries from Geometry for field and particle BCs,
+// warning on conflicting user configurations.
+void Pic::apply_periodicity_autofill(const Geometry& gm) {
+  static const char* const dimNames[3] = { "x", "y", "z" };
+  const int nSpeciesBC = static_cast<int>(pInfo.pBCs.size());
+  const int nBCsSet = static_cast<int>(pInfo.pBCsSet.size());
+
+  for (int d = 0; d < nDim; ++d) {
+    if (!gm.isPeriodic(d))
+      continue;
+
+    for (int side = 0; side < 2; ++side) {
+      if (fieldBCSet_) {
+        const int type = bcField.face(d, side);
+        if (type != FieldBC::periodic)
+          add_bc_warning(
+              std::string("dimension ") + dimNames[d] +
+              " is periodic (#PERIODICITY), but the field boundary was set "
+              "to '" +
+              FieldBC::to_string(static_cast<FieldBC::Type>(type)) +
+              "'; using 'periodic'.");
+      }
+      bcField.set(d, side, FieldBC::periodic);
+
+      for (int i = 0; i < nSpeciesBC; ++i) {
+        if (i < nBCsSet && pInfo.pBCsSet[i] != 0) {
+          const int type = pInfo.pBCs[i].face(d, side);
+          if (type != ParticleBC::periodic)
+            add_bc_warning(
+                std::string("dimension ") + dimNames[d] +
+                " is periodic (#PERIODICITY), but the particle boundary of "
+                "species " +
+                std::to_string(i) + " was set to '" +
+                ParticleBC::to_string(static_cast<ParticleBC::Type>(type)) +
+                "'; using 'periodic'.");
+        }
+        pInfo.pBCs[i].set(d, side, ParticleBC::periodic);
+      }
+    }
+  }
+}
+
+//==========================================================
+// Validate boundary condition consistency across field, particles, and
+// geometry. Field vs particle checks are skipped if field BC was not explicitly
+// set.
+void Pic::validate_bc_pairing(const Geometry& gm) {
+  static const char* const dimNames[3] = { "x", "y", "z" };
+  static const char* const faceNames[3][2] = { { "x-lo", "x-hi" },
+                                               { "y-lo", "y-hi" },
+                                               { "z-lo", "z-hi" } };
+
+  const bool isStandalone = domainParameters.isStandalone;
+  const bool hasNonPeriodic = !gm.isAllPeriodic();
+
+  if (isStandalone && hasNonPeriodic) {
+    if (!fieldBCSet_)
+      amrex::Abort(
+          "Error: #FIELDBOXBOUNDARY command is required when there are "
+          "non-periodic boundaries in standalone mode.");
+    if (usePIC && (pInfo.pBCsSet.empty() || pInfo.pBCsSet[0] == 0))
+      amrex::Abort(
+          "Error: #PARTICLEBOXBOUNDARY command is required when there are "
+          "non-periodic boundaries in standalone mode.");
+  }
+
+  const int nSpeciesBC = static_cast<int>(pInfo.pBCs.size());
+  const int nBCsSet = static_cast<int>(pInfo.pBCsSet.size());
+  const int nCheck = std::min(nSpeciesBC, nBCsSet);
+
+  for (int d = 0; d < nDim; ++d) {
+    const bool dimPeriodic = gm.isPeriodic(d);
+    const int fLo = bcField.face(d, 0);
+    const int fHi = bcField.face(d, 1);
+
+    if (!dimPeriodic) {
+      if (fLo == FieldBC::periodic)
+        add_bc_warning(std::string("field boundary ") + faceNames[d][0] +
+                       " is 'periodic' but #PERIODICITY is F for that "
+                       "dimension.");
+      if (fHi == FieldBC::periodic)
+        add_bc_warning(std::string("field boundary ") + faceNames[d][1] +
+                       " is 'periodic' but #PERIODICITY is F for that "
+                       "dimension.");
+    }
+    if ((fLo == FieldBC::periodic) != (fHi == FieldBC::periodic))
+      add_bc_warning(std::string("field boundary ") + dimNames[d] +
+                     " is periodic on one side only; #PERIODICITY applies to "
+                     "a whole dimension.");
+
+    for (int side = 0; side < 2; ++side) {
+      const auto fType = static_cast<FieldBC::Type>(bcField.face(d, side));
+      const char* face = faceNames[d][side];
+
+      if (fType == FieldBC::inflow && !inflowDefined_)
+        add_bc_warning(std::string("field boundary ") + face +
+                       " is 'inflow' but no #INFLOW block was given; the face "
+                       "falls back to a zero-gradient copy.");
+
+      if (fType == FieldBC::wave && !waveBC.active)
+        add_bc_warning(std::string("field boundary ") + face +
+                       " is 'wave' but no #WAVEBC block was given; the face "
+                       "carries no wave source.");
+
+      for (int i = 0; i < nCheck; ++i) {
+        if (pInfo.pBCsSet[i] == 0)
+          continue;
+
+        const auto pType =
+            static_cast<ParticleBC::Type>(pInfo.pBCs[i].face(d, side));
+
+        auto what = [&]() {
+          return "species " + std::to_string(i) + " particle boundary " + face;
+        };
+
+        if (pType == ParticleBC::periodic && !dimPeriodic)
+          add_bc_warning(what() + " is 'periodic' but #PERIODICITY is F for "
+                                  "that dimension.");
+
+        if (!fieldBCSet_)
+          continue; // Field is default coupled: skip field-pairing checks.
+
+        if (pType == ParticleBC::inflow && fType != FieldBC::inflow &&
+            fType != FieldBC::fixed)
+          add_bc_warning(what() + " is 'inflow' but the field boundary is '" +
+                         FieldBC::to_string(fType) +
+                         "'; the injected flux has no upstream field to "
+                         "match.");
+
+        if (fType == FieldBC::conducting &&
+            (pType == ParticleBC::outflow || pType == ParticleBC::vacuum ||
+             pType == ParticleBC::absorb))
+          add_bc_warning(what() + " is '" + ParticleBC::to_string(pType) +
+                         "' on a 'conducting' wall: particles leave through "
+                         "the wall.");
+
+        if (pType == ParticleBC::absorb && fType != FieldBC::absorb)
+          add_bc_warning(what() + " is 'absorb' but the field boundary is '" +
+                         FieldBC::to_string(fType) +
+                         "'; only the particles are absorbed.");
+      }
+    }
+  }
+
+  // In hybrid PIC, only centerB is evolved; wall BCs constrain B and close
+  // the ghost ring for E.
+  if (useHybridPIC) {
+    bool hasWall = false;
+    for (int d = 0; d < nDim && !hasWall; ++d) {
+      for (int side = 0; side < 2; ++side) {
+        const auto t = static_cast<FieldBC::Type>(bcField.face(d, side));
+        if (t == FieldBC::conducting || t == FieldBC::wave) {
+          hasWall = true;
+          break;
+        }
+      }
+    }
+    if (hasWall)
+      amrex::Print() << "  Note: hybrid solver: only centerB is evolved, so a "
+                     << "conducting / wave field boundary constrains "
+                     << "B; for the Ohm's-law E it only closes the ghost ring "
+                     << "(it is not an independent constraint).\n";
+  }
+}
+
+//==========================================================
 void Pic::post_process_param() {
   fi->set_plasma_charge_and_mass(qomEl);
   nSpecies = fi->get_nS();
+  // Species without a #PARTICLEBOXBOUNDARY block keep the default (coupled),
+  // or inherit from species 0 if species 0 was specified.
+  if (static_cast<int>(pInfo.pBCs.size()) < nSpecies) {
+    pInfo.pBCs.resize(nSpecies);
+    pInfo.pBCsSet.resize(nSpecies, 0);
+  }
+
+  const bool hasSpecies0 = (!pInfo.pBCsSet.empty() && pInfo.pBCsSet[0] != 0);
+  if (hasSpecies0) {
+    for (int i = 1; i < nSpecies; ++i) {
+      if (pInfo.pBCsSet[i] == 0) {
+        pInfo.pBCs[i] = pInfo.pBCs[0];
+        pInfo.pBCsSet[i] = 1;
+      }
+    }
+  }
+
   fsolver.mode = (!fsolver.useLaggedLimiter && limiterThetaE != 0)
                      ? FieldSolverMode::NewtonKrylov
                      : FieldSolverMode::GMRES;
@@ -271,20 +495,8 @@ void Pic::post_process_param() {
 
   // Convert input units to normalized code units.
   if (useHybridPIC) {
-    if (etaResistivitySI > 0) {
-      etaResistivity =
-          fourPI * etaResistivitySI * fi->get_Si2NoV() * fi->get_Si2NoL();
-      amrex::Print() << "  etaResistivity: " << etaResistivitySI
-                     << " [m^2/s] -> " << etaResistivity << " [code units]\n";
-    }
-    // Hyper-resistivity: unit conversion with length factor Si2NoL^3.
-    if (etaHyperSI > 0 && etaHyperMode == "si") {
-      for (int iLev = 0; iLev < n_lev(); iLev++)
-        etaHyperLev[iLev] =
-            fourPI * etaHyperSI * fi->get_Si2NoV() * pow(fi->get_Si2NoL(), 3);
-      amrex::Print() << "  etaHyper: " << etaHyperSI << " [m^4/s, si] -> "
-                     << etaHyperLev[0] << " [code units]\n";
-    }
+    // Resistivity SI->code conversions are deferred to
+    // finalize_units_conversion().
 
     useRK4 = (fieldIntegrator == "rk4");
     if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3") {
@@ -312,6 +524,7 @@ void Pic::post_process_param() {
     if (rhoMinOhm <= 0)
       rhoMinOhm = 0.0; // resolved to 1e-6*electronDensity0 on first advance
   }
+  // report_bc_warnings() is called by Domain after BC autofill and validation.
 }
 
 //==========================================================
@@ -470,10 +683,6 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerJ[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                           nGst, doMoveData);
-      distribute_FabArray(centerEprev[iLev], cGrids[iLev],
-                          DistributionMap(iLev), 3, nGst, doMoveData);
-      distribute_FabArray(centerBprev[iLev], cGrids[iLev],
-                          DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerEstage[iLev], cGrids[iLev],
                           DistributionMap(iLev), 3, nGst, doMoveData);
       distribute_FabArray(centerHyperE[iLev], cGrids[iLev],
@@ -589,12 +798,32 @@ void Pic::post_regrid() {
 
       sourceParts.push_back(std::move(ptrSource));
     }
+
+    if (waveBC.active) {
+      for (auto& p : parts) {
+        p->waveVelocityKick = [this](const Real* pos, Real t, Real& dvx,
+                                     Real& dvy, Real& dvz) {
+          wave_velocity_kick(pos, t, dvx, dvy, dvz);
+        };
+      }
+    }
   } else {
     for (int i = 0; i < nSpecies; ++i) {
       // Label the particles outside the NEW PIC region.
       parts[i]->label_particles_outside_active_region_general();
 
       parts[i]->redistribute_particles();
+    }
+  }
+
+  // Propagate field wave boundaries to each species to drive wave velocity
+  // kicks.
+  for (int d = 0; d < nDim; ++d) {
+    const bool isWaveLo = (bcField.face(d, 0) == FieldBC::wave);
+    const bool isWaveHi = (bcField.face(d, 1) == FieldBC::wave);
+    for (auto& p : parts) {
+      p->set_wave_face(d, 0, isWaveLo);
+      p->set_wave_face(d, 1, isWaveHi);
     }
   }
   //--------------particles-----------------------------------
@@ -748,10 +977,11 @@ void Pic::fill_E_B_fields() {
   nodeE[0].FillBoundary(Geom(0).periodicity());
   nodeB[0].FillBoundary(Geom(0).periodicity());
   centerB[0].FillBoundary(Geom(0).periodicity());
-  apply_BC(nodeStatus[0], nodeB[0], 0, nDim3, &Pic::get_node_B, 0, &bcBField);
-  apply_BC(nodeStatus[0], nodeE[0], 0, nDim3, &Pic::get_node_E, 0);
-  apply_BC(cellStatus[0], centerB[0], 0, centerB[0].nComp(), &Pic::get_center_B,
-           0, &bcBField);
+  // NOTE: apply_field_bc() also applies the wave hard source.
+  apply_field_bc(nodeStatus[0], nodeB[0], 0, nDim3, &Pic::get_node_B, 0, true);
+  apply_field_bc(nodeStatus[0], nodeE[0], 0, nDim3, &Pic::get_node_E, 0, false);
+  apply_field_bc(cellStatus[0], centerB[0], 0, centerB[0].nComp(),
+                 &Pic::get_center_B, 0, true);
 
   //-----Fine (iLev>0) grid boundary/internal ghost cells are filled----
   auto& cellInterp = *get_cell_interp();
@@ -779,18 +1009,15 @@ void Pic::fill_E_B_fields() {
   // Initial-condition / restart E is node-centred (nodeE). centerEhybrid is
   // seeded from it by averaging the node values to the cell centres, which
   // plays the role of E0 for the very first hybrid particle Boris push.
-  // centerEprev and centerBprev are initialised to the same state so the
-  // time interpolation are defined on the first step.
   if (useHybridPIC) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       average_node_to_center(nodeE[iLev], centerEhybrid[iLev]);
       centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
-      apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0,
-               centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev);
-      MultiFab::Copy(centerEprev[iLev], centerEhybrid[iLev], 0, 0, 3,
-                     centerEprev[iLev].nGrow());
-      MultiFab::Copy(centerBprev[iLev], centerB[iLev], 0, 0, 3,
-                     centerBprev[iLev].nGrow());
+      // Match full-PIC nodeE: the same face type closes the ghost ring of
+      // the initial cell-centred E as well.
+      apply_field_bc(cellStatus[iLev], centerEhybrid[iLev], 0,
+                     centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev,
+                     false);
     }
   }
 }
@@ -937,6 +1164,11 @@ void Pic::calc_mass_matrix() {
                                    solveFieldInCoMov);
       }
     }
+
+    if (useExplicitPIC && nSpecies > 0) {
+      parts[0]->apply_jhat_mirror(jHat[iLev], iLev);
+    }
+
     Real invVol = 1;
     for (int i = 0; i < nDim; ++i) {
       invVol *= Geom(iLev).InvCellSize(i);
@@ -1228,6 +1460,15 @@ void Pic::sum_moments(bool updateDt) {
       centerPlasmaSum[nSpecies][iLev].FillBoundary(Geom(iLev).periodicity());
     }
 
+    // Mirror ion moments into the physical-wall ghost cells for smooth
+    // pressure-gradient / Hall stencils at a wall.
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      apply_centerPlasma_BC(cell_status(iLev), centerPlasmaSum[nSpecies][iLev],
+                            iLev);
+      apply_centerPlasma_BC(cell_status(iLev), centerPlasmaPrev[nSpecies][iLev],
+                            iLev);
+    }
+
     // Fill coarse-fine interface ghost cells for centerPlasmaSum and
     // centerPlasmaPrev on fine levels from the coarse level. Without this,
     // assemble_ohm_E's pressure-gradient stencil reads zero/stale ghost cells
@@ -1249,14 +1490,6 @@ void Pic::sum_moments(bool updateDt) {
             Geom(iLev - 1), Geom(iLev), cell_status(iLev), cellInterp);
       }
     }
-
-    // Output bridge: average_center_to_node(centerPlasma -> nodePlasma) for
-    // every species and the summed entry, plus calc_mach_number
-    // (which reads nodePlasma[nSpecies]). This is a pure output mirror. To
-    // avoid the per-step cost, the bridge + calc_mach_number are deferred and
-    // run lazily by sync_node_plasma_output() only when a
-    // plot/probe/load-balance actually reads nodePlasma / mMach.
-    nodePlasmaStale = true;
   } else {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       nodePlasma[nSpecies][iLev].setVal(0.0);
@@ -1277,9 +1510,6 @@ void Pic::sum_moments(bool updateDt) {
   }
 
   if (!useHybridPIC) {
-    // Full-PIC deposits nodePlasma directly in the else-branch above, so
-    // calc_mach_number can run immediately. For hybrid, calc_mach_number is
-    // deferred to sync_node_plasma_output().
     calc_mach_number();
   }
 
@@ -1287,91 +1517,56 @@ void Pic::sum_moments(bool updateDt) {
 }
 
 //==========================================================
-void Pic::sync_node_plasma_output(const bool needMach) {
-  // nodePlasma is full-PIC only.
-  if (useHybridPIC)
-    return;
-  if (!nodePlasmaStale)
-    return;
-  // Output bridge: average_center_to_node(centerPlasma -> nodePlasma)
-  // for every species and the summed entry. Deferred from sum_moments
-  // so non-output steps do not pay this per-step cost.
-  for (int i = 0; i < nSpecies + 1; ++i) {
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      centerPlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
-      average_center_to_node(centerPlasma[i][iLev], nodePlasma[i][iLev]);
-      nodePlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
-    }
-  }
-  // The Mach number is a pure output diagnostic: it is read only by the "mach"
-  // plot variable (get_var). Avoid it unless a plot actually requests it.
-  if (needMach) {
-    calc_mach_number();
-  }
-  nodePlasmaStale = false;
+void Pic::finalize_units_conversion() {
+  // Convert input units to code units using normalization factors from fi.
+  convert_resistivity();
+  convert_electron_density0();
+  convert_inflow_state();
 }
 
 //==========================================================
-void Pic::sync_node_E_output() {
-  if (!nodeEStale)
+void Pic::convert_resistivity() {
+  if (!useHybridPIC)
     return;
-  // Output bridge: materialize nodeE from the live centerEhybrid so the
-  // ascii/IDL plots see the hybrid E. nodeE is only an output mirror, so
-  // it is synced here at plot time.
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
-    average_center_to_node(centerEhybrid[iLev], nodeE[iLev]);
-    nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
+
+  const Real Si2NoV = fi->get_Si2NoV();
+  const Real Si2NoL = fi->get_Si2NoL();
+
+  // Resistive term eta*J: [eta] = [U]*[L], so
+  // eta_code = 4*pi * eta_SI * Si2NoV * Si2NoL.
+  if (etaResistivitySI > 0) {
+    etaResistivity = fourPI * etaResistivitySI * Si2NoV * Si2NoL;
+    amrex::Print() << "  etaResistivity: " << etaResistivitySI << " [m^2/s] -> "
+                   << etaResistivity << " [code units]"
+                   << "  (Si2NoV = " << Si2NoV << ", Si2NoL = " << Si2NoL
+                   << ")\n";
   }
-  nodeEStale = false;
-}
 
-//==========================================================
-void Pic::sync_node_B_output() {
-  if (!nodeBStale)
-    return;
-  // Output bridge: materialize nodeB from the live centerB, and rebuild the
-  // node-centred dBdt = (B^{n+1} - B^n)/dt diagnostic using centerBprev (B^n
-  // saved at the top of update_B_hybrid) and lastHybridDt_. Both are pure
-  // output mirrors, deferred from the hybrid B update to plot/tracker time.
-  const Real invDt = (lastHybridDt_ > 0) ? 1.0 / lastHybridDt_ : 0.0;
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    centerB[iLev].FillBoundary(Geom(iLev).periodicity());
-    average_center_to_node(centerB[iLev], nodeB[iLev]);
-    nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
-
-    if (invDt > 0) {
-      // dBdt currently holds a stale value; overwrite with B^n (from
-      // centerBprev) then dBdt = (nodeB^{n+1} - nodeB^n)/dt.
-      average_center_to_node(centerBprev[iLev], dBdt[iLev]);
-      dBdt[iLev].FillBoundary(Geom(iLev).periodicity());
-      MultiFab::LinComb(dBdt[iLev], invDt, nodeB[iLev], 0, -invDt, dBdt[iLev],
-                        0, 0, dBdt[iLev].nComp(), dBdt[iLev].nGrow());
-    }
-
-    if (iLev == 0) {
-      apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
-               &Pic::get_node_B, iLev, &bcBField);
-    } else {
-      fill_fine_lev_bny_from_coarse(
-          nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
-          node_bilinear_interp);
-    }
+  // Hyper-resistive term eta_h*nabla^2 J: [eta_h] = [U]*[L]^3, so
+  // eta_h_code = 4*pi * eta_h_SI * Si2NoV * Si2NoL^3. A single physical value
+  // is used on every level (the same choice as grid mode in update_B_hybrid).
+  if (etaHyperSI > 0 && etaHyperMode == "si") {
+    const Real etaHyper = fourPI * etaHyperSI * Si2NoV * std::pow(Si2NoL, 3);
+    for (int iLev = 0; iLev < n_lev_max(); ++iLev)
+      etaHyperLev[iLev] = etaHyper;
+    amrex::Print() << "  etaHyper: " << etaHyperSI << " [m^4/s, si] -> "
+                   << etaHyper << " [code units]\n";
   }
-  nodeBStale = false;
+
+  // Guard against uninitialized normalization producing non-positive
+  // coefficients.
+  if ((etaResistivitySI > 0 && !(etaResistivity > 0)) ||
+      (etaHyperSI > 0 && etaHyperMode == "si" &&
+       (etaHyperLev.empty() || !(etaHyperLev[0] > 0)))) {
+    amrex::Abort("Pic::convert_resistivity: the SI->code conversion produced a "
+                 "non-positive resistivity. Check the normalization "
+                 "(#NORMALIZATION lNormSI / uNormSI).");
+  }
 }
 
 //==========================================================
 void Pic::convert_electron_density0() {
-  if (electronDensity0Converted_)
-    return;
-  electronDensity0Converted_ = true;
-
-  // Input in amu/cc; convert to code units.
-  // get_Si2NoRho() is only valid here (first field advance) after
-  // fi->post_process_param() finalizes the normParams.
+  // Convert electron density from amu/cc to code units.
   electronDensity0 =
       electronDensity0In * 1.0e6 * cProtonMassSI * fi->get_Si2NoRho();
 
@@ -1383,6 +1578,53 @@ void Pic::convert_electron_density0() {
                  << " [amu/cc] -> " << electronDensity0
                  << " [code units]  (Si2NoRho = " << fi->get_Si2NoRho()
                  << ")\n";
+}
+
+//==========================================================
+void Pic::convert_inflow_state() {
+  if (!inflowDefined_)
+    return;
+
+  // Convert density from amu/cc to code units.
+  const double Si2NoRho = fi->get_Si2NoRho();
+  inflowRho_ *= 1.0e6 * cProtonMassSI * Si2NoRho;
+
+  // Convert velocity from km/s to code units.
+  const double vFactor = 1.0e3 * fi->get_Si2NoV();
+  inflowUx_ *= vFactor;
+  inflowUy_ *= vFactor;
+  inflowUz_ *= vFactor;
+
+  // Convert temperature T [K] to code units (kT / (m_p * uNorm^2)).
+  const double unormSI = fi->get_unorm_si();
+  inflowT_ = cBoltzmannSI * inflowT_ / (cProtonMassSI * unormSI * unormSI);
+
+  // Publish converted state to FluidInterface for boundary particle injection.
+  FluidInterfaceParameters::InflowVel baseVel;
+  baseVel.nDens = inflowRho_;
+  baseVel.ux = inflowUx_;
+  baseVel.uy = inflowUy_;
+  baseVel.uz = inflowUz_;
+  baseVel.vth = 0.0;
+
+  amrex::Vector<FluidInterfaceParameters::InflowVel> stateVec(nSpecies,
+                                                              baseVel);
+  const int nParts = static_cast<int>(parts.size());
+  for (int iS = 0; iS < nSpecies; ++iS) {
+    const double mass_i =
+        (iS < nParts && parts[iS]) ? parts[iS]->get_mass() : 1.0;
+    if (inflowT_ > 0 && mass_i > 0)
+      stateVec[iS].vth = std::sqrt(inflowT_ / mass_i);
+  }
+  fi->set_inflow_state(stateVec);
+  fi->set_inflow_defined(true);
+
+  amrex::Print() << "  #INFLOW state (code units):"
+                 << " n=" << inflowRho_ << " u=(" << inflowUx_ << ","
+                 << inflowUy_ << "," << inflowUz_ << ")"
+                 << " vth=" << (inflowT_ > 0 ? std::sqrt(inflowT_) : 0.0)
+                 << "  (Si2NoRho=" << Si2NoRho
+                 << ", Si2NoV=" << fi->get_Si2NoV() << ")\n";
 }
 
 //==========================================================
@@ -1773,6 +2015,16 @@ void Pic::update(bool doReportIn) {
 
   inject_particles_for_boundary_cells();
 
+  // Inject incoming flux at physical inflow faces before the moment deposit.
+  // Kept outside inject_particles_for_boundary_cells to avoid t=0
+  // pre-injection.
+  if (usePIC) {
+    const Real dt = tc->get_dt();
+    for (int i = 0; i < nSpecies; ++i) {
+      parts[i]->inject_flux_at_inflow_faces(dt);
+    }
+  }
+
   isMomentsUpdated = false;
 
   if (solveEM) {
@@ -2004,8 +2256,8 @@ void Pic::update_E_expl() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     MultiFab::Copy(nodeEth[iLev], nodeE[iLev], 0, 0, nodeE[iLev].nComp(),
                    nodeE[iLev].nGrow());
-    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-             &Pic::get_center_B, iLev, &bcBField);
+    apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+                   &Pic::get_center_B, iLev, true);
   }
   const Real dt = tc->get_dt();
   RealVect dt2dx;
@@ -2021,7 +2273,8 @@ void Pic::update_E_expl() {
                   nodeE[iLev].nGrow());
 
     nodeE[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
+    apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E,
+                   iLev, false);
   }
 }
 
@@ -2061,9 +2314,11 @@ void Pic::update_E_impl() {
 
     if (iLev == 0) {
 
-      apply_BC(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E, iLev);
-      apply_BC(nodeStatus[iLev], nodeEth[iLev], 0, nDim3, &Pic::get_node_E,
-               iLev);
+      // NOTE: the wave hard source is applied inside apply_field_bc().
+      apply_field_bc(nodeStatus[iLev], nodeE[iLev], 0, nDim3, &Pic::get_node_E,
+                     iLev, false);
+      apply_field_bc(nodeStatus[iLev], nodeEth[iLev], 0, nDim3,
+                     &Pic::get_node_E, iLev, false);
     }
 
     if (doSmoothE) {
@@ -2183,10 +2438,11 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     // The boundary nodes would not be filled in by convert_1d_3d. So, there
     // is not need to apply zero boundary conditions again here.
   } else {
-    // Even after apply_BC(), the outmost layer node E is still
+    // Even after apply_field_bc(), the outmost layer node E is still
     // unknow. See FluidInterface::calc_current for detailed explaniation.
     if (iLev == 0) {
-      apply_BC(nodeStatus[iLev], vecMF, 0, nDim3, &Pic::get_node_E, iLev);
+      apply_field_bc(nodeStatus[iLev], vecMF, 0, nDim3, &Pic::get_node_E, iLev,
+                     false);
     } else {
       fill_fine_lev_bny_from_coarse(
           nodeEth[iLev - 1], vecMF, 0, nodeEth[iLev - 1].nComp(),
@@ -2368,10 +2624,10 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   temp2Node.setVal(0.0);
 
   if (iLev == 0) {
-    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-             &Pic::get_center_B, iLev, &bcBField);
-    apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
-             &Pic::get_node_B, iLev, &bcBField);
+    apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+                   &Pic::get_center_B, iLev, true);
+    apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+                   &Pic::get_node_B, iLev, true);
   } else {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
@@ -2428,8 +2684,8 @@ void Pic::update_B() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
-      apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-               &Pic::get_center_B, iLev, &bcBField);
+      apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+                     &Pic::get_center_B, iLev, true);
 
     } else {
       fill_fine_lev_bny_from_coarse(
@@ -2457,12 +2713,9 @@ void Pic::update_B() {
                       0, dBdt[iLev].nComp(), dBdt[iLev].nGrow());
 
     if (iLev == 0) {
-
-      apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
-               &Pic::get_node_B, iLev, &bcBField);
-
+      apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+                     &Pic::get_node_B, iLev, true);
     } else {
-
       fill_fine_lev_bny_from_coarse(
           nodeB[iLev - 1], nodeB[iLev], 0, nodeB[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), node_status(iLev),
@@ -2629,27 +2882,28 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     });
   }
 
-  Eout.FillBoundary(Geom(iLev).periodicity());
-  apply_BC(cellStatus[iLev], Eout, 0, nDim3, &Pic::get_center_E, iLev);
-
-  // Hyper-resistivity: E -= eta_h * nabla^2 J = -(eta_h/4*pi) * curl(nabla^2
-  // B), built as centerLapB = nabla^2 B then centerHyperE = curl(centerLapB).
-  // TODO: see tests/hyper_resistivity/README.md.
+  // Hyper-resistivity: E -= (eta_h / 4*pi) * curl(nabla^2 B) (see
+  // tests/hyper_resistivity). Applied before the final BC pass so ghost cells
+  // include the hyper-resistive term.
   if (etaHyperLev[iLev] > 0) {
     lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
     centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(cellStatus[iLev], centerLapB[iLev], 0, centerLapB[iLev].nComp(),
-             &Pic::get_center_B, iLev, &bcBField);
+    apply_field_bc(cellStatus[iLev], centerLapB[iLev], 0,
+                   centerLapB[iLev].nComp(), &Pic::get_center_B, iLev, true);
 
     curl_center_to_center(centerLapB[iLev], centerHyperE[iLev],
                           Geom(iLev).InvCellSize());
     centerHyperE[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(cellStatus[iLev], centerHyperE[iLev], 0,
-             centerHyperE[iLev].nComp(), &Pic::get_center_E, iLev, &bcBField);
+    apply_field_bc(cellStatus[iLev], centerHyperE[iLev], 0,
+                   centerHyperE[iLev].nComp(), &Pic::get_center_E, iLev, false);
 
     const Real f = etaHyperLev[iLev] / fourPI;
     MultiFab::Saxpy(Eout, -f, centerHyperE[iLev], 0, 0, 3, 0);
   }
+
+  Eout.FillBoundary(Geom(iLev).periodicity());
+  apply_field_bc(cellStatus[iLev], Eout, 0, nDim3, &Pic::get_center_E, iLev,
+                 false);
 }
 
 //==========================================================
@@ -2712,8 +2966,8 @@ void Pic::seed_first_hybrid_step() {
 void Pic::project_centerB_to_nodeB(int iLev) {
   centerB[iLev].FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
-    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-             &Pic::get_center_B, iLev, &bcBField);
+    apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+                   &Pic::get_center_B, iLev, true);
   } else {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
@@ -2723,8 +2977,8 @@ void Pic::project_centerB_to_nodeB(int iLev) {
   average_center_to_node(centerB[iLev], nodeB[iLev]);
   nodeB[iLev].FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
-    apply_BC(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
-             &Pic::get_node_B, iLev, &bcBField);
+    apply_field_bc(nodeStatus[iLev], nodeB[iLev], 0, nodeB[iLev].nComp(),
+                   &Pic::get_node_B, iLev, true);
   } else {
     fill_fine_lev_bny_from_coarse(nodeB[iLev - 1], nodeB[iLev], 0,
                                   nodeB[iLev - 1].nComp(), ref_ratio[iLev - 1],
@@ -2735,16 +2989,17 @@ void Pic::project_centerB_to_nodeB(int iLev) {
 
 // BCs for the cell-centred B (the cell-centred part of
 // project_centerB_to_nodeB), called at the end of each sub-step.
-void Pic::apply_centerB_BC(int iLev) {
-  centerB[iLev].FillBoundary(Geom(iLev).periodicity());
+void Pic::apply_centerB_BC(int iLev) { apply_centerB_BC(iLev, centerB[iLev]); }
+
+void Pic::apply_centerB_BC(int iLev, amrex::MultiFab& mfB) {
+  mfB.FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
-    apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-             &Pic::get_center_B, iLev, &bcBField);
+    apply_field_bc(cellStatus[iLev], mfB, 0, mfB.nComp(), &Pic::get_center_B,
+                   iLev, true);
   } else {
     fill_fine_lev_bny_from_coarse(
-        centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-        ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-        *get_cell_interp());
+        centerB[iLev - 1], mfB, 0, mfB.nComp(), ref_ratio[iLev - 1],
+        Geom(iLev - 1), Geom(iLev), cell_status(iLev), *get_cell_interp());
   }
 }
 
@@ -2754,8 +3009,8 @@ void Pic::project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
   // Same projection as project_centerB_to_nodeB on caller-owned scratch fields.
   centerIn.FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
-    apply_BC(cellStatus[iLev], centerIn, 0, centerIn.nComp(),
-             &Pic::get_center_B, iLev, &bcBField);
+    apply_field_bc(cellStatus[iLev], centerIn, 0, centerIn.nComp(),
+                   &Pic::get_center_B, iLev, true);
   } else {
     fill_fine_lev_bny_from_coarse(
         centerB[iLev - 1], centerIn, 0, centerIn.nComp(), ref_ratio[iLev - 1],
@@ -2764,8 +3019,8 @@ void Pic::project_centerB_to_nodeB_scratch(amrex::MultiFab& centerIn,
   average_center_to_node(centerIn, nodeOut);
   nodeOut.FillBoundary(Geom(iLev).periodicity());
   if (iLev == 0) {
-    apply_BC(nodeStatus[iLev], nodeOut, 0, nodeOut.nComp(), &Pic::get_node_B,
-             iLev, &bcBField);
+    apply_field_bc(nodeStatus[iLev], nodeOut, 0, nodeOut.nComp(),
+                   &Pic::get_node_B, iLev, true);
   } else {
     fill_fine_lev_bny_from_coarse(
         nodeB[iLev - 1], nodeOut, 0, nodeOut.nComp(), ref_ratio[iLev - 1],
@@ -2778,167 +3033,136 @@ void Pic::update_B_hybrid() {
   std::string nameFunc = "Pic::update_B_hybrid";
   timing_func(nameFunc);
 
-  // Convert electronDensity0 (amu/cc -> code) exactly once, where the
-  // normalization is finalized.
-  convert_electron_density0();
+  const Real dt = tc->get_dt();
+  const Real subDt = dt / nBSubcycle;
 
-  Real dt = tc->get_dt();
-  Real subDt = dt / nBSubcycle;
-
-  // Save the pre-update cell-centred B so sync_node_B_output() can rebuild the
-  // node-centred dBdt = (B^{n+1} - B^n)/dt lazily at output/tracker time,
-  // without projecting centerB->nodeB on every step. centerBprev is otherwise
-  // unused by the hybrid solver (time-centring uses centerBstart/centerBstar).
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    MultiFab::Copy(centerBprev[iLev], centerB[iLev], 0, 0, 3,
-                   centerBprev[iLev].nGrow());
-  }
-
-  // Grid-mode hyper-resistivity: eta_h = 4*pi * C_h * dx_fine^4 / dt.
-  // The coefficient is set ONCE from the finest level's dx and applied to ALL
-  // levels, so the actual physical hyper-diffusivity eta_h is identical on
-  // every level. Scaling eta_h by each level's own dx^4 would make it 16x
-  // larger on the coarse level (dx_c = 2*dx_f => dx_c^4 = 16*dx_f^4), driving
-  // the explicit hyper-resistivity term unstable on the coarse grid and causing
-  // runaway particle heating (observed with C_h=0.001 on a 32x16 coarse grid
-  // while the 64x32 fine grid is stable). Using a single eta_h everywhere keeps
-  // the hyper-diffusion uniform and stable across levels. Uses the full dt (not
-  // subDt) so that the total diffusion per step is independent of nBSubcycle:
-  // each sub-step applies eta_h*subDt/dx^4 diffusion, and nBSubcycle sub-steps
-  // give nBSubcycle * eta_h*subDt/dx^4 = eta_h*dt/dx^4.
+  // Grid-mode hyper-resistivity: uniform eta_h based on finest dx to keep diffusion stable across levels.
   if (etaHyperMode == "grid" && etaHyperCh > 0) {
     const int iFinest = n_lev() - 1;
     const auto dxFine = Geom(iFinest).CellSizeArray();
-    Real dxMinFine = amrex::min(dxFine[0], dxFine[1]);
-    if (nDim > 2)
-      dxMinFine = amrex::min(dxMinFine, dxFine[2]);
+    Real dxMinFine = dxFine[0];
+    for (int d = 1; d < nDim; ++d)
+      dxMinFine = amrex::min(dxMinFine, dxFine[d]);
+
     const Real etaHyper = fourPI * etaHyperCh * std::pow(dxMinFine, 4) / dt;
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
       etaHyperLev[iLev] = etaHyper;
     }
   }
 
-  // CFL guard for the explicit diffusive terms (J = curl(B)/(4*pi) in CGS).
+  // CFL stability check for explicit resistive and hyper-resistive diffusion.
+  const Real cflLimit = useRK4 ? 2.785 : 2.513;
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    if (etaResistivity <= 0 && etaHyperLev[iLev] <= 0)
+      continue;
+
     const auto dx = Geom(iLev).CellSizeArray();
-    Real k2 = 4.0 / (dx[0] * dx[0]) + 4.0 / (dx[1] * dx[1]);
-    if (nDim > 2)
-      k2 += 4.0 / (dx[2] * dx[2]);
-    const Real k4 = k2 * k2;
-    const Real cflEta = (etaResistivity / fourPI) * k2 * subDt;
-    const Real cflHyper = (etaHyperLev[iLev] / fourPI) * k4 * subDt;
-    if (cflEta > 2.0)
+    const Box& domBox = Geom(iLev).Domain();
+    Real sMax = 0.0, lMax = 0.0;
+    for (int iDim = 0; iDim < nDim; ++iDim) {
+      const int nCellDim = domBox.length(iDim);
+      if (nCellDim < 2)
+        continue;
+      const Real invDx2 = 1.0 / (dx[iDim] * dx[iDim]);
+      lMax += 4.0 * invDx2;
+      if (nCellDim >= 3)
+        sMax += invDx2;
+    }
+    const Real cflEta = (etaResistivity / fourPI) * sMax * subDt;
+    const Real cflHyper = (etaHyperLev[iLev] / fourPI) * sMax * lMax * subDt;
+    if (cflEta > cflLimit)
       amrex::Print()
           << "  [CFL warning] resistivity: eta*kmax^2*dt_sub/(4pi) = " << cflEta
-          << " (> 2.0, explicit diffusion may be unstable)\n";
-    if (cflHyper > 2.78)
+          << " (> " << cflLimit << ", explicit diffusion may be unstable)\n";
+    if (cflHyper > cflLimit)
       amrex::Print()
           << "  [CFL warning] hyper-resistivity: eta_h*kmax^4*dt_sub/(4pi) = "
-          << cflHyper
-          << " (> 2.78, explicit 4th-order diffusion may be unstable)\n";
+          << cflHyper << " (> " << cflLimit
+          << ", explicit 4th-order diffusion may be unstable)\n";
   }
 
-  // nodeB / dBdt are deferred output mirrors (nodeBStale); dBdt is rebuilt
-  // from centerBprev by sync_node_B_output() at plot/tracker time, so there is
-  // no pre-update nodeB save here.
+  const Real invSubcycle = 1.0 / static_cast<Real>(nBSubcycle);
 
   for (int subStep = 0; subStep < nBSubcycle; ++subStep) {
-
-    // Global sub-step fraction g in [0, 1).  Following Hybrid-VPIC, the
-    // moment time-interpolation weight hstep maps each RK stage to the time
-    // (as a fraction of the particle step) at which its E is evaluated:
-    //   stage 1 (E at B^n)        : hstep = g
-    //   stage 2/3 (sub-step mid)  : hstep = g + 0.5/nsub
-    //   stage 4 (sub-step end)    : hstep = g + 1.0/nsub
-    // A negative weight 0.5-hstep<0 on J^{n-1/2} for hstep>0.5 is the
-    // intended second-order time extrapolation (same as Hybrid-VPIC's
-    // hyb_advance_e with RHOHS), NOT a clamp to time-centred moments.
-    const Real g = (Real)subStep / (Real)nBSubcycle;
+    // Moment time-interpolation weights hstep for RK stages within the sub-step.
+    const Real g = static_cast<Real>(subStep) * invSubcycle;
     const Real hstepStart = g;
-    const Real hstepHalf = g + 0.5 / (Real)nBSubcycle;
-    const Real hstepEnd = g + 1.0 / (Real)nBSubcycle;
+    const Real hstepHalf = g + 0.5 * invSubcycle;
+    const Real hstepEnd = g + invSubcycle;
 
     if (useRK4) {
-      // Classical RK4 on dB/dt = -curl(E), E = E_Ohm(B), on ALL levels:
-      //   k1 = curl(E(B^n, hstep=g))
-      //   k2 = curl(E(B^n - 0.5 dt k1, hstep=g+0.5/nsub))
-      //   k3 = curl(E(B^n - 0.5 dt k2, hstep=g+0.5/nsub))
-      //   k4 = curl(E(B^n - dt k3, hstep=g+1.0/nsub))
-      //   B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4)
-      // All levels use the same subDt (fixed-timestep strategy); coarse-fine
-      // interface ghosts are refreshed after each stage via apply_centerB_BC.
+      // Classical RK4 on dB/dt = -curl(E_Ohm(B)) across all levels.
+      const Real dtSixth = -subDt / 6.0;
+      const Real dtThird = -subDt / 3.0;
+
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        // Stage 1: k1 = curl(E(B^n, hstep=g)). The time-centred B at stage 1 is
-        // B^n.
+        // Stage 1: k1 = curl(E(B^n))
         assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev,
                        hstepStart);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][0],
                               Geom(iLev).InvCellSize());
 
-        // Stages 2-4 evaluate E at the time-centred B (B_stage + B^n)/2: the
-        // current J comes from curl(B_stage), while the Hall/convection B is
-        // the time-averaged (B_stage + B^n)/2. Stage 2: B2 = B^n - 0.5 dt k1; E
-        // at (B2 + B^n)/2.
+        // Stage 2: B2 = B^n - 0.5 dt k1; evaluate E at (B2 + B^n)/2
         MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
         MultiFab::Saxpy(centerBstage[iLev], -0.5 * subDt, kStage[iLev][0], 0, 0,
                         3, nGst);
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerB[iLev], 0, 0, 3, nGst);
+        apply_centerB_BC(iLev, centerBstage[iLev]);
+        apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
                        centerEstage[iLev], iLev, hstepHalf);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][1],
                               Geom(iLev).InvCellSize());
 
-        // Stage 3: B3 = B^n - 0.5 dt k2; E at (B3 + B^n)/2.
+        // Stage 3: B3 = B^n - 0.5 dt k2; evaluate E at (B3 + B^n)/2
         MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
         MultiFab::Saxpy(centerBstage[iLev], -0.5 * subDt, kStage[iLev][1], 0, 0,
                         3, nGst);
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerB[iLev], 0, 0, 3, nGst);
+        apply_centerB_BC(iLev, centerBstage[iLev]);
+        apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
                        centerEstage[iLev], iLev, hstepHalf);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][2],
                               Geom(iLev).InvCellSize());
 
-        // Stage 4: B4 = B^n - dt k3; E at (B4 + B^n)/2.
+        // Stage 4: B4 = B^n - dt k3; evaluate E at (B4 + B^n)/2
         MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
         MultiFab::Saxpy(centerBstage[iLev], -subDt, kStage[iLev][2], 0, 0, 3,
                         nGst);
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerB[iLev], 0, 0, 3, nGst);
+        apply_centerB_BC(iLev, centerBstage[iLev]);
+        apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
                        centerEstage[iLev], iLev, hstepEnd);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][3],
                               Geom(iLev).InvCellSize());
 
-        // B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4).
-        MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kStage[iLev][0], 0, 0, 3,
+        // Accumulate RK4: B^{n+1} = B^n + (dt/6)*(k1 + 2*k2 + 2*k3 + k4)
+        MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][0], 0, 0, 3,
                         nGst);
-        MultiFab::Saxpy(centerB[iLev], -2.0 * subDt / 6.0, kStage[iLev][1], 0,
-                        0, 3, nGst);
-        MultiFab::Saxpy(centerB[iLev], -2.0 * subDt / 6.0, kStage[iLev][2], 0,
-                        0, 3, nGst);
-        MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kStage[iLev][3], 0, 0, 3,
+        MultiFab::Saxpy(centerB[iLev], dtThird, kStage[iLev][1], 0, 0, 3,
+                        nGst);
+        MultiFab::Saxpy(centerB[iLev], dtThird, kStage[iLev][2], 0, 0, 3,
+                        nGst);
+        MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][3], 0, 0, 3,
                         nGst);
         centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
         apply_centerB_BC(iLev);
-      } // iLev
+      }
       continue;
     }
 
     if (fieldIntegrator == "ssprk3") {
-      // Strong-stability-preserving RK3 with time-centred E:
-      //   B1      = B_n - dt curl(E(B_n))
-      //   B2      = (3/4) B_n + (1/4)(B1 - dt curl(E((B1+B_n)/2)))
-      //   B^{n+1} = (1/3) B_n + (2/3)(B2 - dt curl(E((B2+B_n)/2)))
-      // All levels use the same subDt (fixed-timestep strategy); coarse-fine
-      // interface ghosts are refreshed after each stage via apply_centerB_BC.
+      // Strong-stability-preserving RK3 with time-centred E evaluation.
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        // Save B_n (sub-step start).
         MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, 3, nGst);
 
-        // Stage 1: k1 = curl(E(B_n, hstep=g)); B1 = B_n - subDt k1.
+        // Stage 1: B1 = B_n - subDt * curl(E(B_n))
         assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev,
                        hstepStart);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][0],
@@ -2947,10 +3171,10 @@ void Pic::update_B_hybrid() {
         MultiFab::Saxpy(centerBstage[iLev], -subDt, kStage[iLev][0], 0, 0, 3,
                         nGst);
 
-        // Stage 2: avgB2 = (B1+B_n)/2; k2 = curl(E(avgB2));
-        //   B2 = (3/4)B_n + (1/4)(B1 - subDt k2).
+        // Stage 2: B2 = (3/4)*B_n + (1/4)*(B1 - subDt * curl(E(avgB2)))
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerBstart[iLev], 0, 0, 3, nGst);
+        apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
                        iLev, hstepEnd);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][1],
@@ -2959,23 +3183,24 @@ void Pic::update_B_hybrid() {
                           centerBstart[iLev], 0, 0, 3, nGst);
         MultiFab::Saxpy(centerBstage[iLev], -0.25 * subDt, kStage[iLev][1], 0,
                         0, 3, nGst);
+        apply_centerB_BC(iLev, centerBstage[iLev]);
 
-        // Stage 3: avgB3 = (B2+B_n)/2; k3 = curl(E(avgB3));
-        //   B^{n+1} = (1/3)B_n + (2/3)(B2 - subDt k3).
+        // Stage 3: B^{n+1} = (1/3)*B_n + (2/3)*(B2 - subDt * curl(E(avgB3)))
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerBstart[iLev], 0, 0, 3, nGst);
+        apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
                        iLev, hstepHalf);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][2],
                               Geom(iLev).InvCellSize());
         MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
                           1.0 / 3.0, centerBstart[iLev], 0, 0, 3, nGst);
-        MultiFab::Saxpy(centerB[iLev], -2.0 / 3.0 * subDt, kStage[iLev][2], 0,
-                        0, 3, nGst);
+        MultiFab::Saxpy(centerB[iLev], (-2.0 / 3.0) * subDt, kStage[iLev][2],
+                        0, 0, 3, nGst);
         centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
         apply_centerB_BC(iLev);
-      } // iLev
+      }
       continue;
     }
   }
@@ -2986,34 +3211,23 @@ void Pic::update_B_hybrid() {
     }
   }
 
+  auto& cellInterp = *get_cell_interp();
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
-      apply_BC(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
-               &Pic::get_center_B, iLev, &bcBField);
+      apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
+                     &Pic::get_center_B, iLev, true);
     } else {
       fill_fine_lev_bny_from_coarse(
           centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          *get_cell_interp());
+          cellInterp);
     }
   }
 
-  // nodeB (and the node-centred dBdt diagnostic) are pure output mirrors for
-  // the hybrid solver. Defer the centerB->nodeB projection and the dBdt
-  // difference to sync_node_B_output() (called at plot / test-particle-tracker
-  // time) so we avoid the per-step projection + FillBoundary +
-  // boundary-condition cost when nothing consumes them. centerBprev holds B^n
-  // from the top of this function; lastHybridDt_ records this step's dt for the
-  // dBdt rebuild.
-  nodeBStale = true;
-  lastHybridDt_ = dt;
-
-  // Running time-averaged B used in the Ohm's law and the Boris push.
+  // Running time-averaged B used in Ohm's law and the particle push.
   if (useAvgFieldB) {
     const Real alpha = (nAvgFieldB > 1) ? (1.0 - 1.0 / nAvgFieldB) : 0.0;
-    // The hybrid gather reads only centerBavg; maintain nodeBavg only in
-    // full-PIC mode.
     const bool syncNodeBavg = !useHybridPIC;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (!isBavgInit) {
@@ -3038,14 +3252,15 @@ void Pic::update_B_hybrid() {
       if (syncNodeBavg) {
         nodeBavg[iLev].FillBoundary(Geom(iLev).periodicity());
       }
+      if (iLev == 0) {
+        apply_field_bc(cellStatus[iLev], centerBavg[iLev], 0, 3,
+                       &Pic::get_center_B, iLev, true);
+      }
     }
   }
 
-  // Fill coarse-fine interface ghost cells for centerBavg so the Boris push
-  // reads valid B at the coarse-fine interface. centerBavg is the field
-  // actually gathered by the hybrid pusher (when useAvgFieldB is on).
+  // Fill coarse-fine interface ghost cells for centerBavg.
   if (useAvgFieldB && isBavgInit && finest_level > 0) {
-    auto& cellInterp = *get_cell_interp();
     for (int iLev = 1; iLev < n_lev(); iLev++) {
       fill_fine_lev_bny_from_coarse(centerBavg[iLev - 1], centerBavg[iLev], 0,
                                     3, ref_ratio[iLev - 1], Geom(iLev - 1),
@@ -3053,11 +3268,7 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // Compute the integer-step E^{n+1} (hstep = 1) into centerEhybrid for the
-  // next Boris push. Freshly evaluated on the final B^{n+1} for every
-  // integrator (RK4 writes only the scratch centerEstage; ssprk3 writes
-  // intermediate hstep). Only levels with kinetic particles need it (it is read
-  // solely by the push).
+  // Evaluate integer-step E^{n+1} into centerEhybrid for the next particle push.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     bool hasParticles = false;
     for (int i : kineticSpecies_) {
@@ -3074,17 +3285,16 @@ void Pic::update_B_hybrid() {
     assemble_ohm_E(cBin, cBin, centerEhybrid[iLev], iLev, 1.0);
   }
 
-  // BCs for the cell-centred E (read by the hybrid Boris push).
+  // BCs for cell-centred E (read by the hybrid Boris push).
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
-    apply_BC(cellStatus[iLev], centerEhybrid[iLev], 0,
-             centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev);
+    apply_field_bc(cellStatus[iLev], centerEhybrid[iLev], 0,
+                   centerEhybrid[iLev].nComp(), &Pic::get_center_E, iLev,
+                   false);
   }
 
-  // Fill coarse-fine interface ghost cells for centerEhybrid so the Boris push
-  // reads valid E at the coarse-fine interface on fine levels.
+  // Fill coarse-fine interface ghost cells for centerEhybrid.
   if (finest_level > 0) {
-    auto& cellInterp = *get_cell_interp();
     for (int iLev = 1; iLev < n_lev(); iLev++) {
       fill_fine_lev_bny_from_coarse(centerEhybrid[iLev - 1],
                                     centerEhybrid[iLev], 0, 3,
@@ -3093,17 +3303,13 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // Suppress the grid-scale (odd-even) E component (central-difference
-  // ambipolar term does not couple odd/even cells).
+  // Suppress grid-scale (odd-even) E component.
   if (doSmoothE) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
       smooth_E(centerEhybrid[iLev], iLev);
     }
   }
-
-  // nodeE is only an output mirror; mark it stale for sync_node_E_output().
-  nodeEStale = true;
 }
 
 //==========================================================
@@ -3419,9 +3625,39 @@ void Pic::project_down_E() {
   }
 }
 //==========================================================
+// Apply boundary conditions to electromagnetic fields (E or B).
+// Visits each boundary face and applies the corresponding BC configured in bcField.
+//==========================================================
+void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
+                         const int iStart, const int nComp, GETVALUE func,
+                         const int iLev, const bool isB) {
+  std::string nameFunc = "Pic::apply_field_bc";
+  timing_func(nameFunc);
+
+  if (Geom(iLev).isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  // Base fill: float on open faces, or evaluate state from func elsewhere.
+  apply_BC(status, mf, iStart, nComp, func, iLev, &bcField);
+
+  // Dedicated wall operators applied per configured face type.
+  apply_conducting_wall(status, mf, iStart, nComp, iLev, bcField, isB);
+  apply_absorbing_wall(status, mf, iStart, nComp, iLev, bcField, isB);
+  apply_inflow_wall(status, mf, iStart, nComp, iLev, bcField, isB);
+
+  // Wave boundary condition overwrites faces where active.
+  if (waveBC.active) {
+    const Real t = tc ? tc->get_time() : 0.0;
+    apply_wave_field(status, mf, iStart, nComp, iLev, bcField, isB ? 0 : 1, t);
+  }
+}
+
+//==========================================================
 void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
                    const int nComp, GETVALUE func, const int iLev,
-                   const BC* bc) {
+                   const BoxBC<FieldBC::Type>* bc) {
   std::string nameFunc = "Pic::apply_BC";
   timing_func(nameFunc);
 
@@ -3431,8 +3667,6 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
     return;
 
   bool useFloatBC = (func == nullptr);
-
-  // BoxArray ba = mf.boxArray();
   BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
 
   const IntVect& ngrow = mf.nGrowVect();
@@ -3444,18 +3678,14 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   if (bc != nullptr) {
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& bxFab = mfi.fabbox();
-      Box bxValid = mfi.validbox();
+      const Box& bxValid = mfi.validbox();
 
-      //! if there are cells not in the valid + periodic grown box
-      //! we need to fill them here
       if (!ba.contains(bxFab)) {
         Array4<Real> const& arr = mf[mfi].array();
-
         const Array4<const int>& statusArr = status[mfi].array();
 
         ParallelFor(bxFab, [&](int i, int j, int k) {
           if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
-
             int ip, jp, kp;
             bool useFloat = use_float(i, j, k, ip, jp, kp, *bc, bxValid);
 
@@ -3463,7 +3693,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
               for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
                 arr(i, j, k, iVar) = arr(ip, jp, kp, iVar);
               }
-            } else {
+            } else if (func) {
               for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
                 arr(i, j, k, iVar) = (this->*func)(
                     mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar - iStart, iLev);
@@ -3473,7 +3703,6 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
         });
       }
     }
-
     return;
   }
 
@@ -3482,11 +3711,8 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
       const Box& bxFab = mfi.fabbox();
       const Box& bxValid = mfi.validbox();
 
-      //! if there are cells not in the valid + periodic grown box
-      //! we need to fill them here
       if (!ba.contains(bxFab)) {
         Array4<Real> const& arr = mf[mfi].array();
-
         const Array4<const int>& statusArr = status[mfi].array();
 
         Box box = bxValid;
@@ -3495,18 +3721,20 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
         ParallelFor(box, [&](int i, int j, int k) {
           if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
             bool isNeiFound = false;
-
-            // Find the neighboring physical cell
-            Box subBox(IntVect(-1), IntVect(1));
-            ParallelFor(subBox, [&](int ii, int jj, int kk) {
-              if (!isNeiFound &&
-                  !bit::is_lev_boundary(statusArr(i + ii, j + jj, k + kk, 0))) {
-                isNeiFound = true;
-                for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
-                  arr(i, j, k, iVar) = arr(i + ii, j + jj, k + kk, iVar);
+            const int kmin = (nDim > 2) ? -1 : 0;
+            const int kmax = (nDim > 2) ? 1 : 0;
+            for (int kk = kmin; kk <= kmax && !isNeiFound; ++kk) {
+              for (int jj = -1; jj <= 1 && !isNeiFound; ++jj) {
+                for (int ii = -1; ii <= 1 && !isNeiFound; ++ii) {
+                  if (!bit::is_lev_boundary(statusArr(i + ii, j + jj, k + kk, 0))) {
+                    isNeiFound = true;
+                    for (int iVar = iStart; iVar < iStart + nComp; ++iVar) {
+                      arr(i, j, k, iVar) = arr(i + ii, j + jj, k + kk, iVar);
+                    }
+                  }
                 }
               }
-            });
+            }
           }
         });
       }
@@ -3515,16 +3743,14 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.fabbox();
 
-      //! if there are cells not in the valid + periodic grown box
-      //! we need to fill them here
       if (!ba.contains(bx)) {
         Array4<Real> const& arr = mf[mfi].array();
-
         const Array4<const int>& statusArr = status[mfi].array();
 
         auto lo = IntVect(bx.loVect());
         auto hi = IntVect(bx.hiVect());
-        if (nDim > 2) {
+        if (nDim > 2 &&
+            Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
           lo[iz_]++;
           hi[iz_]--;
         }
@@ -3538,6 +3764,472 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
           }
         });
       }
+    }
+  }
+}
+
+//==========================================================
+void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
+                                const int iStart, const int nComp,
+                                const int iLev, const BoxBC<FieldBC::Type>& bc,
+                                bool isB) {
+  std::string nameFunc = "Pic::apply_conducting_wall";
+  timing_func(nameFunc);
+
+  if (Geom(iLev).isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  bool hasConducting = false;
+  for (int d = 0; d < nDim; ++d) {
+    if (bc.lo[d] == FieldBC::conducting || bc.hi[d] == FieldBC::conducting) {
+      hasConducting = true;
+      break;
+    }
+  }
+  if (!hasConducting)
+    return;
+
+  BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
+  const IntVect& ngrow = mf.nGrowVect();
+  if (nDim > 2 &&
+      Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+    ba.grow(iz_, ngrow[iz_]);
+  }
+
+  const IntVect domLo = Geom(iLev).Domain().smallEnd();
+  const IntVect domHi = Geom(iLev).Domain().bigEnd();
+  const IndexType ixType = mf.boxArray().ixType();
+
+  bool isNode[3] = {false, false, false};
+  int loBnd[3] = {0, 0, 0};
+  int hiBnd[3] = {0, 0, 0};
+  for (int d = 0; d < nDim; ++d) {
+    isNode[d] = (ixType[d] == IndexType::NODE);
+    loBnd[d] = domLo[d];
+    hiBnd[d] = isNode[d] ? (domHi[d] + 1) : domHi[d];
+  }
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bxFab = mfi.fabbox();
+    if (ba.contains(bxFab))
+      continue;
+
+    Array4<Real> const& arr = mf[mfi].array();
+    const Array4<const int>& statusArr = status[mfi].array();
+    const Box& bxValid = mfi.validbox();
+
+    ParallelFor(bxFab, [&](int i, int j, int k) {
+      IntVect ijk{ AMREX_D_DECL(i, j, k) };
+
+      // 1. Boundary nodes on physical wall (node-centred only).
+      for (int d = 0; d < nDim; ++d) {
+        if (!isNode[d])
+          continue;
+
+        const bool onLoWall =
+            (bc.lo[d] == FieldBC::conducting) && (ijk[d] == loBnd[d]);
+        const bool onHiWall =
+            (bc.hi[d] == FieldBC::conducting) && (ijk[d] == hiBnd[d]);
+        if (onLoWall || onHiWall) {
+          bool inValid = true;
+          for (int od = 0; od < nDim; ++od) {
+            if (od != d && (ijk[od] < bxValid.smallEnd(od) ||
+                            ijk[od] > bxValid.bigEnd(od))) {
+              inValid = false;
+              break;
+            }
+          }
+          if (inValid) {
+            for (int iVar = 0; iVar < nComp; ++iVar) {
+              const int comp = iStart + iVar;
+              if (isB) {
+                if (iVar == d)
+                  arr(i, j, k, comp) = 0.0;
+              } else {
+                if (iVar != d)
+                  arr(i, j, k, comp) = 0.0;
+              }
+            }
+          }
+        }
+      }
+
+      // 2. Ghost cells/nodes outside domain.
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+
+      for (int d = 0; d < nDim; ++d) {
+        bool isLow = (bc.lo[d] == FieldBC::conducting) && (ijk[d] < loBnd[d]);
+        bool isHigh = (bc.hi[d] == FieldBC::conducting) && (ijk[d] > hiBnd[d]);
+        if (!isLow && !isHigh)
+          continue;
+
+        IntVect m = ijk;
+        if (isNode[d])
+          m[d] = isLow ? (2 * loBnd[d] - ijk[d]) : (2 * hiBnd[d] - ijk[d]);
+        else
+          m[d] = isLow ? (2 * loBnd[d] - 1 - ijk[d]) : (2 * hiBnd[d] + 1 - ijk[d]);
+
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          const int comp = iStart + iVar;
+          if (isB) {
+            if (iVar == d)
+              arr(i, j, k, comp) = 0.0;
+            else
+              arr(i, j, k, comp) = arr(m, comp);
+          } else {
+            if (iVar != d)
+              arr(i, j, k, comp) = 0.0;
+            else
+              arr(i, j, k, comp) = arr(m, comp);
+          }
+        }
+      }
+    });
+  }
+}
+
+//==========================================================
+void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
+                               const int iStart, const int nComp,
+                               const int iLev, const BoxBC<FieldBC::Type>& bc,
+                               bool isB) {
+  std::string nameFunc = "Pic::apply_absorbing_wall";
+  timing_func(nameFunc);
+
+  (void)isB;
+  if (Geom(iLev).isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  bool hasAbsorb = false;
+  for (int d = 0; d < nDim; ++d) {
+    if (bc.lo[d] == FieldBC::absorb || bc.hi[d] == FieldBC::absorb) {
+      hasAbsorb = true;
+      break;
+    }
+  }
+  if (!hasAbsorb)
+    return;
+
+  const Real dt = tc ? tc->get_dt() : 0.0;
+  if (dt <= 0.0)
+    return;
+
+  // Characteristic speed; default c=1, override via #ABSORB.
+  const Real cs = (absorbCharSpeed > 0.0) ? absorbCharSpeed : 1.0;
+
+  BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
+  const IntVect& ngrow = mf.nGrowVect();
+  if (nDim > 2 &&
+      Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+    ba.grow(iz_, ngrow[iz_]);
+  }
+
+  const IntVect domLo = Geom(iLev).Domain().smallEnd();
+  const IntVect domHi = Geom(iLev).Domain().bigEnd();
+  const IndexType ixType = mf.boxArray().ixType();
+  const Real* dx = Geom(iLev).CellSize();
+
+  bool isNode[3] = {false, false, false};
+  int loBnd[3] = {0, 0, 0};
+  int hiBnd[3] = {0, 0, 0};
+  Real decay[3] = {0.0, 0.0, 0.0};
+  Real drive[3] = {0.0, 0.0, 0.0};
+
+  for (int d = 0; d < nDim; ++d) {
+    isNode[d] = (ixType[d] == IndexType::NODE);
+    loBnd[d] = domLo[d];
+    hiBnd[d] = isNode[d] ? (domHi[d] + 1) : domHi[d];
+
+    const Real drive0 = cs * dt / dx[d];
+    decay[d] = (1.0 - drive0) / (1.0 + drive0);
+    drive[d] = 2.0 * drive0 / (1.0 + drive0);
+  }
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bxFab = mfi.fabbox();
+    if (ba.contains(bxFab))
+      continue;
+
+    Array4<Real> const& arr = mf[mfi].array();
+    const Array4<const int>& statusArr = status[mfi].array();
+
+    ParallelFor(bxFab, [&](int i, int j, int k) {
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+
+      IntVect ijk{ AMREX_D_DECL(i, j, k) };
+
+      for (int d = 0; d < nDim; ++d) {
+        bool isLow = (bc.lo[d] == FieldBC::absorb) && (ijk[d] < loBnd[d]);
+        bool isHigh = (bc.hi[d] == FieldBC::absorb) && (ijk[d] > hiBnd[d]);
+        if (!isLow && !isHigh)
+          continue;
+
+        IntVect m = ijk;
+        if (isNode[d])
+          m[d] = isLow ? (2 * loBnd[d] - ijk[d]) : (2 * hiBnd[d] - ijk[d]);
+        else
+          m[d] = isLow ? (2 * loBnd[d] - 1 - ijk[d]) : (2 * hiBnd[d] + 1 - ijk[d]);
+
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          const int comp = iStart + iVar;
+          arr(i, j, k, comp) =
+              decay[d] * arr(i, j, k, comp) + drive[d] * arr(m, comp);
+        }
+      }
+    });
+  }
+}
+
+//==========================================================
+void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
+                            const int iStart, const int nComp, const int iLev,
+                            const BoxBC<FieldBC::Type>& bc, bool isB) {
+  std::string nameFunc = "Pic::apply_inflow_wall";
+  timing_func(nameFunc);
+
+  (void)isB; // zero-gradient copy is component-agnostic
+
+  if (!fi->get_inflow_defined())
+    return;
+  if (Geom(iLev).isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  bool hasInflow = false;
+  for (int d = 0; d < nDim; ++d) {
+    if (bc.lo[d] == FieldBC::inflow || bc.hi[d] == FieldBC::inflow) {
+      hasInflow = true;
+      break;
+    }
+  }
+  if (!hasInflow)
+    return;
+
+  BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
+  const IntVect& ngrow = mf.nGrowVect();
+  if (nDim > 2 &&
+      Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+    ba.grow(iz_, ngrow[iz_]);
+  }
+
+  const IntVect domLo = Geom(iLev).Domain().smallEnd();
+  const IntVect domHi = Geom(iLev).Domain().bigEnd();
+  const IndexType ixType = mf.boxArray().ixType();
+
+  bool isNode[3] = {false, false, false};
+  int loBnd[3] = {0, 0, 0};
+  int hiBnd[3] = {0, 0, 0};
+  for (int d = 0; d < nDim; ++d) {
+    isNode[d] = (ixType[d] == IndexType::NODE);
+    loBnd[d] = domLo[d];
+    hiBnd[d] = isNode[d] ? (domHi[d] + 1) : domHi[d];
+  }
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bxFab = mfi.fabbox();
+    if (ba.contains(bxFab))
+      continue;
+
+    Array4<Real> const& arr = mf[mfi].array();
+    const Array4<const int>& statusArr = status[mfi].array();
+
+    ParallelFor(bxFab, [&](int i, int j, int k) {
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+
+      IntVect ijk{ AMREX_D_DECL(i, j, k) };
+
+      for (int d = 0; d < nDim; ++d) {
+        bool isLow = (bc.lo[d] == FieldBC::inflow) && (ijk[d] < loBnd[d]);
+        bool isHigh = (bc.hi[d] == FieldBC::inflow) && (ijk[d] > hiBnd[d]);
+        if (!isLow && !isHigh)
+          continue;
+
+        IntVect m = ijk;
+        m[d] = isLow ? loBnd[d] : hiBnd[d];
+
+        for (int iVar = 0; iVar < nComp; ++iVar) {
+          arr(i, j, k, iStart + iVar) = arr(m, iStart + iVar);
+        }
+      }
+    });
+  }
+}
+
+//==========================================================
+// Mirror ion moments into physical-wall ghost cells for smooth Ohm/Hall stencils.
+void Pic::apply_centerPlasma_BC(const iMultiFab& status, MultiFab& mf,
+                                const int iLev) {
+  std::string nameFunc = "Pic::apply_centerPlasma_BC";
+  timing_func(nameFunc);
+
+  if (Geom(iLev).isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  const IntVect& ngrow = mf.nGrowVect();
+  BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
+  if (nDim > 2 &&
+      Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+    ba.grow(iz_, ngrow[iz_]);
+  }
+
+  const IntVect domLo = Geom(iLev).Domain().smallEnd();
+  const IntVect domHi = Geom(iLev).Domain().bigEnd();
+  const int nComp = mf.nComp();
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bxFab = mfi.fabbox();
+    if (ba.contains(bxFab))
+      continue;
+
+    Array4<Real> const& arr = mf[mfi].array();
+    const Array4<const int>& statusArr = status[mfi].array();
+
+    ParallelFor(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+
+      IntVect ijk{ AMREX_D_DECL(i, j, k) };
+      IntVect m = ijk;
+      bool touched = false;
+
+      for (int d = 0; d < nDim; ++d) {
+        if (ijk[d] < domLo[d]) {
+          m[d] = 2 * domLo[d] - 1 - ijk[d];
+          touched = true;
+        } else if (ijk[d] > domHi[d]) {
+          m[d] = 2 * domHi[d] + 1 - ijk[d];
+          touched = true;
+        }
+      }
+
+      if (!touched)
+        return;
+      for (int comp = 0; comp < nComp; ++comp) {
+        arr(i, j, k, comp) = arr(m, comp);
+      }
+    });
+  }
+}
+
+//==========================================================
+void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
+                           const int iStart, const int nComp, const int iLev,
+                           const BoxBC<FieldBC::Type>& bc, int iField, Real t) {
+  std::string nameFunc = "Pic::apply_wave_field";
+  timing_func(nameFunc);
+
+  (void)bc;
+  if (!waveBC.active)
+    return;
+  if (Geom(iLev).isAllPeriodic())
+    return;
+  if (mf.nGrow() == 0)
+    return;
+
+  bool hasField = false;
+  for (const auto& f : waveBC.faces) {
+    for (const auto& c : f.comps) {
+      if (c.iField == iField) {
+        hasField = true;
+        break;
+      }
+    }
+    if (hasField)
+      break;
+  }
+  if (!hasField)
+    return;
+
+  BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
+  const IntVect& ngrow = mf.nGrowVect();
+  if (nDim > 2 &&
+      Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+    ba.grow(iz_, ngrow[iz_]);
+  }
+
+  const Real* plo = Geom(iLev).ProbLo();
+  const Real* dx = Geom(iLev).CellSize();
+
+  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+    const Box& bxFab = mfi.fabbox();
+    const Box& bxValid = mfi.validbox();
+    if (ba.contains(bxFab))
+      continue;
+
+    Array4<Real> const& arr = mf[mfi].array();
+    const Array4<const int>& statusArr = status[mfi].array();
+
+    ParallelFor(bxFab, [&](int i, int j, int k) {
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
+
+      Real pos[3] = { plo[0] + dx[0] * i, plo[1] + dx[1] * j,
+                      plo[2] + dx[2] * k };
+
+      Real waveVal[3] = {0.0, 0.0, 0.0};
+      bool hasWave = false;
+
+      for (const auto& f : waveBC.faces) {
+        const int d = f.direction;
+        const int side = f.side;
+        const int idx = (d == 0) ? i : (d == 1) ? j : k;
+        bool onFace = (side == 0 && idx < bxValid.smallEnd(d)) ||
+                      (side == 1 && idx > bxValid.bigEnd(d));
+        if (!onFace)
+          continue;
+
+        for (const auto& c : f.comps) {
+          if (c.iField != iField)
+            continue;
+          hasWave = true;
+          const Real val = waveBC.value(c, t, pos);
+          if (iField == 0 || iField == 1) {
+            for (int iVar = 0; iVar < std::min(nComp, 3); ++iVar) {
+              waveVal[iVar] += val * c.pol[iVar];
+            }
+          } else {
+            waveVal[0] += val;
+          }
+        }
+      }
+
+      if (hasWave) {
+        if (iField == 0 || iField == 1) {
+          for (int iVar = 0; iVar < nComp; ++iVar) {
+            arr(i, j, k, iStart + iVar) = waveVal[iVar % 3];
+          }
+        } else if (nComp > 0) {
+          arr(i, j, k, iStart) = waveVal[0];
+        }
+      }
+    });
+  }
+}
+
+//==========================================================
+void Pic::wave_velocity_kick(const Real* pos, Real t, Real& dvx, Real& dvy,
+                             Real& dvz) {
+  dvx = dvy = dvz = 0.0;
+  if (!waveBC.active)
+    return;
+  for (const auto& f : waveBC.faces) {
+    for (const auto& c : f.comps) {
+      if (c.iField != 2) // velocity kick
+        continue;
+      const Real val = waveBC.value(c, t, pos);
+      dvx += val * c.pol[0];
+      dvy += val * c.pol[1];
+      dvz += val * c.pol[2];
     }
   }
 }

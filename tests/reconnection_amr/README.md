@@ -49,7 +49,7 @@ direction, `y` = current-sheet normal).  Two levels:
 ## Boundary conditions
 
 - **`#PERIODICITY`**: periodic in `x`, not in `y`.
-- **`#BFIELDBOXBOUNDARY`**: `periodic` on the `x` faces, **`outflow`** (float B)
+- **`#FIELDBOXBOUNDARY`**: `periodic` on the `x` faces, **`outflow`** (float B)
   on the `y` faces — the same BC as the uniform reconnection test.  The sheet
   (`L = 5 d_i`) is far from the `y`-walls (`Ly/2 = 15.7 d_i`), so the walls and
   the refined band (`|y| < 7.85 d_i`) do not interact.
@@ -99,11 +99,18 @@ run with clear reconnection signatures.
 
 ## Running
 
-Build with the 2D AMReX library and AMR support, then run the check:
+This test needs the **2D AMReX** build with AMR support (`-amrex2d -lev=2`; see
+`tests/README.md` for the build steps).  Then run (both variants together):
 
 ```bash
-./Config.pl -amrex2d -lev=2 && make -j4
 python3 tests/validate_tests.py --test=reconnection_amr
+```
+
+To run a **single variant**, append its token to the test name:
+
+```bash
+python3 tests/validate_tests.py --test=reconnection_amr.full     # full PIC only
+python3 tests/validate_tests.py --test=reconnection_amr.hybrid   # hybrid only
 ```
 
 See `Doc/AMR_hybrid_implementation_plan.md` for the full analysis of the AMR +

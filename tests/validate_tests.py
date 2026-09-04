@@ -21,6 +21,7 @@ Output is controlled with the standard :mod:`logging` levels:
   * DEBUG   -- intermediate diagnostics (enable with --verbose / -v),
   * WARNING / ERROR -- warnings and failures.
 """
+import glob
 import importlib
 import logging
 import os
@@ -99,7 +100,9 @@ def ensure_postidl():
     logger.warning("  [WARN] PostIDL.exe not found. Building it with 'make PIDL'...")
     try:
         build = subprocess.run(["make", "PIDL"], stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, text=True, timeout=900)
+                               stderr=subprocess.PIPE, timeout=900)
+        build.stdout = (build.stdout or b"").decode("utf-8", errors="replace")
+        build.stderr = (build.stderr or b"").decode("utf-8", errors="replace")
     except subprocess.TimeoutExpired:
         logger.warning("  [WARN] 'make PIDL' timed out; PostIDL.exe may be missing.")
         return False
@@ -206,7 +209,9 @@ def run_test(test_dir, nprocs=1, param_text=None):
         cmd = ["mpirun", "-n", str(nprocs), "./FLEKS.exe"]
         logger.debug("  Running with %d MPI processes...", nprocs)
 
-    result = subprocess.run(cmd, cwd=RUN_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    result = subprocess.run(cmd, cwd=RUN_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    result.stdout = (result.stdout or b"").decode("utf-8", errors="replace")
+    result.stderr = (result.stderr or b"").decode("utf-8", errors="replace")
     if result.returncode != 0:
         logger.error("Error running FLEKS.exe for %s:", test_dir)
         logger.error("--- FLEKS stdout ---")
@@ -216,7 +221,9 @@ def run_test(test_dir, nprocs=1, param_text=None):
         return None, result.returncode
 
     pp = subprocess.run(["./PostProc.pl", "-v"], cwd=RUN_DIR,
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    pp.stdout = (pp.stdout or b"").decode("utf-8", errors="replace")
+    pp.stderr = (pp.stderr or b"").decode("utf-8", errors="replace")
     if pp.returncode != 0:
         logger.warning("  [WARN] PostProc.pl exited with code %s:", pp.returncode)
         if pp.stdout:
@@ -243,6 +250,9 @@ def run_and_validate(test_dir, display_name, validator, nprocs, results,
     logger.info("Starting test: %s", display_name)
     logger.info("=" * 50)
     try:
+        # Plot validators locate their output relative to RUN_DIR; keep the
+        # per-test module in sync with it before anything is validated.
+        _sync_validator_run_dir(validator)
         stdout, code = run_test(test_dir, nprocs=nprocs, param_text=param_text)
         if code != 0 or stdout is None:
             logger.error("FAIL: %s execution failed with exit code %s",
@@ -767,6 +777,10 @@ def load_validator(test_name):
     # plot() expects a single positional arg (test_name).
     v.plot = getattr(module, "validate_plot", None)
     v.particle_tol = getattr(module, "PARTICLE_TOL", None)
+    # Kept so the run directory can be pushed into the module (see
+    # _sync_validator_run_dir): several per-test modules own a module-level
+    # RUN_DIR that they use to locate plot output.
+    v.module = module
     return v
 
 
@@ -776,11 +790,26 @@ def _sync_shared_run_dir():
     _hyb.set_run_dir(RUN_DIR)
 
 
+def _sync_validator_run_dir(validator):
+    """Push the current RUN_DIR into a per-test validator module.
+
+    Modules that read plot output keep their own module-level ``RUN_DIR``
+    (e.g. ``tests/shock/validate.py``).  Without this, ``--run-dir DIR`` would
+    leave them pointing at the default ``run_test/`` and their plot check
+    would silently find no frames and report "skipped" instead of validating.
+    """
+    module = getattr(validator, "module", None) if validator else None
+    setter = getattr(module, "set_run_dir", None)
+    if callable(setter):
+        setter(RUN_DIR)
+
+
 # ---------------------------------------------------------------------------
 # Test discovery + main
 # ---------------------------------------------------------------------------
 def discover_tests(tests_dir="tests"):
-    """Return a sorted list of (test_dir, name) for directories with PARAM.in.
+    """Return a sorted list of (test_dir, name) for directories with any
+    PARAM.in variant (PARAM.in and/or PARAM.in.<suffix>).
 
     Excludes "performance" and "run_test" (the shared run directory, which
     would otherwise be re-run as a test); dev tests live outside tests/.
@@ -791,14 +820,18 @@ def discover_tests(tests_dir="tests"):
     tests = []
     for d in subdirs:
         test_dir = os.path.join(tests_dir, d)
-        param_file = os.path.join(test_dir, "PARAM.in")
-        if os.path.exists(param_file):
+        if glob.glob(os.path.join(test_dir, "PARAM.in*")):
             tests.append((test_dir, d))
     return tests
 
 
-def run_one_test(test_dir, name, nprocs, results):
-    """Pre-flight check + run one test (or its PARAM variants) + record result."""
+def run_one_test(test_dir, name, nprocs, results, variant_filter=None):
+    """Pre-flight check + run one test (or its PARAM variants) + record result.
+
+    *variant_filter* (optional) is a PARAM suffix (without the leading dot, e.g.
+    "hybrid") that restricts execution to that single variant of the test.  When
+    None every variant under *test_dir* runs.
+    """
     ok, preflight_reason, skip = preflight_check(name)
     if not ok:
         if skip:
@@ -813,27 +846,68 @@ def run_one_test(test_dir, name, nprocs, results):
 
     validator = load_validator(name)
 
-    # A test directory may hold two parameter files (PARAM.in and
-    # PARAM.in.hybrid) that exercise the same physics with the full-PIC and
-    # hybrid field solvers respectively.  When both exist the runner executes
-    # the test once per variant so each solver is validated independently.
-    # Each variant gets a distinct base_name (suffix "hybrid") so the per-test
-    # validator can apply solver-appropriate checks.  The free-stream test keeps
-    # its legacy display names.
-    hybrid_path = os.path.join(test_dir, "PARAM.in.hybrid")
-    variants = [
-        (os.path.join(test_dir, "PARAM.in"), name.upper(), name),
-    ]
-    if os.path.exists(hybrid_path):
-        variants.append((hybrid_path, f"{name.upper()} (HYBRID)",
-                         f"{name}_hybrid"))
+    # A test directory may hold several parameter files (PARAM.in plus any
+    # PARAM.in.<suffix>) that group related test configurations (e.g. the same
+    # physics under different field solvers, or several wave kinds).  The
+    # runner executes the test once per variant.  Each variant gets a distinct
+    # base_name built from the suffix (PARAM.in -> name, PARAM.in.hybrid ->
+    # name_hybrid, PARAM.in.foo -> name_foo) so the single per-directory
+    # validate.py can branch on base_name and apply variant-appropriate checks.
+    variants = []
+    param_files = sorted(glob.glob(os.path.join(test_dir, "PARAM.in*")))
+    for pf in param_files:
+        suffix = os.path.basename(pf)[len("PARAM.in"):]  # "" | ".hybrid" | ...
+        if not suffix:
+            display_name = name.upper()
+            base_name = name
+        else:
+            tag = suffix.lstrip(".").upper()
+            display_name = f"{name.upper()} ({tag})"
+            base_name = f"{name}{suffix.replace('.', '_')}"
+        variants.append((pf, display_name, base_name))
+
     if name == "freestream":
         # Preserve the free-stream test's established display names.
         variants = [
             (os.path.join(test_dir, "PARAM.in"), "FREESTREAM (FULL PIC)",
              "freestream"),
-            (hybrid_path, "FREESTREAM (HYBRID HALL-OFF)", "freestream"),
+            (os.path.join(test_dir, "PARAM.in.hybrid"),
+             "FREESTREAM (HYBRID HALL-OFF)", "freestream"),
         ]
+
+    # Restrict to a single PARAM variant when requested.  The variant token is
+    # the filename suffix without the leading dot, with the base file (no
+    # suffix) mapped to "full": `PARAM.in` -> "full", `PARAM.in.hybrid` ->
+    # "hybrid".  This lets `--test=NAME.full` pick the base PARAM.in and
+    # `--test=NAME.hybrid` pick the hybrid variant.
+    def _variant_token(pf):
+        suffix = os.path.basename(pf)[len("PARAM.in"):].lstrip(".")
+        return suffix or "full"
+
+    if name == "bc_reflecting" and variant_filter is not None:
+        # Backward compatibility for legacy --test=bc_reflecting.full and .hybrid
+        if variant_filter == "full":
+            variant_filter = "particles"
+        elif variant_filter == "hybrid":
+            variant_filter = "hybrid.particles"
+
+    if variant_filter is not None:
+        kept = []
+        for pf, display_name, base_name in variants:
+            if _variant_token(pf) == variant_filter:
+                kept.append((pf, display_name, base_name))
+        if not kept:
+            available = ", ".join(sorted({_variant_token(pf)
+                                          for pf, _, _ in variants}))
+            logger.error(
+                "Error: no variant '%s' in test '%s'. Available variants: %s",
+                variant_filter, name, available)
+            results.append((name.upper(), "FAILED",
+                            f"no variant '{variant_filter}'"))
+            return
+        variants = kept
+        logger.debug("Restricted test '%s' to variant '%s'.", name,
+                     variant_filter)
 
     for param_file, display_name, base_name in variants:
         with open(param_file) as _f:
@@ -914,8 +988,17 @@ def main():
         sys.exit(1)
 
     # Filter to a single test if --test was given.
+    # `--test=NAME` selects every PARAM variant under tests/NAME/.  An optional
+    # `.suffix` selects ONE variant: `--test=shock.hybrid` runs only the
+    # `PARAM.in.hybrid` file in tests/shock/.  This lets a user target a specific
+    # solver variant (e.g. hybrid) without running its sibling variants.
+    variant_filter = None
     if selected_test is not None:
-        matching = [t for t in tests if t[1] == selected_test]
+        if "." in selected_test:
+            name_part, variant_filter = selected_test.split(".", 1)
+        else:
+            name_part = selected_test
+        matching = [t for t in tests if t[1] == name_part]
         if not matching:
             available = ", ".join(t[1] for t in tests)
             logger.error("Error: test '%s' not found.", selected_test)
@@ -927,7 +1010,7 @@ def main():
     results = []  # Collect results for summary table
 
     for test_dir, name in tests:
-        run_one_test(test_dir, name, nprocs, results)
+        run_one_test(test_dir, name, nprocs, results, variant_filter=variant_filter)
 
     # ----------------------------------------------------
     # Print Summary Table

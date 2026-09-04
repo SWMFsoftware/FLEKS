@@ -128,6 +128,17 @@ protected:
 
   amrex::Vector<double> uniformState;
 
+public:
+  // Inflow boundary upstream state per species in code units.
+  struct InflowVel {
+    double nDens = -1.0;
+    double vth = 0.0; // sqrt(kT/m)
+    double ux = 0.0, uy = 0.0, uz = 0.0;
+  };
+  amrex::Vector<InflowVel> inflowState;
+  bool inflowDefined = false;
+
+protected:
   bool useResist = false;
   double etaSI = 0, etaNO = 0;
   int OhmU = OhmUe_;
@@ -154,6 +165,15 @@ public:
     restartOut = dir.empty() ? component + "/restartOUT/" : dir;
   }
   std::string get_restart_out_dir() const { return restartOut; }
+
+  bool get_inflow_defined() const { return inflowDefined; }
+  const InflowVel* get_inflow_vel(const int iS) const {
+    if (!inflowDefined || iS < 0 || iS >= inflowState.size())
+      return nullptr;
+    return &inflowState[iS];
+  }
+  void set_inflow_state(const amrex::Vector<InflowVel>& s) { inflowState = s; }
+  void set_inflow_defined(bool v) { inflowDefined = v; }
 };
 
 class FluidInterface : public Grid, public FluidInterfaceParameters {
@@ -339,6 +359,9 @@ public:
   double get_No2SiRho() const { return (1. / normParams->Si2NoRho); }
   double get_No2SiV() const { return (1. / normParams->Si2NoV); }
   double get_No2SiB() const { return (1. / normParams->Si2NoB); }
+  double get_No2SiE() const {
+    return (normParams->Si2NoE > 0.0 ? 1. / normParams->Si2NoE : 1.0);
+  }
   double get_No2SiP() const { return (1. / normParams->Si2NoP); }
   double get_No2SiJ() const { return (1. / normParams->Si2NoJ); }
   double get_No2SiM() const { return mNormSI; }

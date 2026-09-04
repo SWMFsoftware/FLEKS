@@ -34,6 +34,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from _shared import hybrid as hybrid_helpers
 
 
+def set_run_dir(run_dir):
+    """Mirror the runner's RUN_DIR into the shared hybrid helper."""
+    hybrid_helpers.set_run_dir(run_dir)
+
+
 def validate_log(pic_diags, test_name=None):
     """Energy / stability checks from the shared hybrid-family validator.
 

@@ -12,6 +12,7 @@ struct DomainParameters {
   bool doRestartFIOnly = false;
 
   // Coupling / initialization mode.
+  bool isStandalone = false;
   bool initFromSWMF = true;
   bool receiveICOnly = false;
 

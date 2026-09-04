@@ -114,7 +114,7 @@ rhoS1 Bx By Bz          varName
 
 #STOP
 -1                      MaxIter
-0.1                     TimeMax
+0.1                     TimeMax   ~0.008 ion gyroperiods (short growth window)
 
 #PARTICLETRACKER
 T           usePT

@@ -662,7 +662,7 @@ void TestParticles::add_test_particles_from_pic(PicParticles* pts) {
  * @param tpStates Vector of fluid states from which test particles are to be
  * added.
  */
-void TestParticles::add_test_particles_from_fluid(Vector<Vel> tpStates) {
+void TestParticles::add_test_particles_from_fluid(const Vector<Vel>& tpStates) {
   std::string funcName = "TP::add_test_particles_from_fluid";
   timing_func(funcName);
   Print() << funcName << " : nInitPart = " << nInitPart
@@ -672,7 +672,7 @@ void TestParticles::add_test_particles_from_fluid(Vector<Vel> tpStates) {
   const int iLev = 0;
 
   Vel tpVel;
-  for (auto& state : tpStates) {
+  for (const auto& state : tpStates) {
     if (state.tag == speciesID) {
       tpVel = state;
     }

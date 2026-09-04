@@ -35,15 +35,9 @@ version reproduces the same physics directly: a vacuum transverse EM wave
 ## Requirements
 
 AMR requires FLEKS to be built with `nLevMax >= 2` (the default is `nLevMax = 1`,
-which disables refinement).  Enable it and rebuild before running:
-
-```bash
-cd PC/FLEKS && ./Config.pl -lev=2 && make -j4
-```
-
-With `nLevMax = 1` the `#REFINEREGION` command aborts at startup
-(`iLev` must be smaller than the max level index), so the test cannot run
-without AMR support.
+which disables refinement); build with `-lev=2` (see `tests/README.md`).  With
+`nLevMax = 1` the `#REFINEREGION` command aborts at startup (`iLev` must be
+smaller than the max level index), so the test cannot run without AMR support.
 
 ## Validation
 
