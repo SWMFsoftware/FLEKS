@@ -884,6 +884,13 @@ def run_one_test(test_dir, name, nprocs, results, variant_filter=None):
         suffix = os.path.basename(pf)[len("PARAM.in"):].lstrip(".")
         return suffix or "full"
 
+    if name == "bc_reflecting" and variant_filter is not None:
+        # Backward compatibility for legacy --test=bc_reflecting.full and .hybrid
+        if variant_filter == "full":
+            variant_filter = "particles"
+        elif variant_filter == "hybrid":
+            variant_filter = "hybrid.particles"
+
     if variant_filter is not None:
         kept = []
         for pf, display_name, base_name in variants:

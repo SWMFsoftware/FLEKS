@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Validator for the grouped absorbing-boundary tests (tests/bc_absorb/).
 
-Three variants are discovered from this directory:
+Four variants are discovered from this directory:
   - PARAM.in.fields   -> base_name "bc_absorb_fields"   (tophat EM pulse
                           absorbed at x-faces; EM energy decays)
+  - PARAM.in.hybrid.fields -> base_name "bc_absorb_hybrid_fields" (hybrid-PIC
+                          shear-Alfvén wave in absorbing cavity; stable/bounded)
   - PARAM.in.particles-> base_name "bc_absorb_particles" (ions drain out
                           through absorbing x walls; Epart decays)
   - PARAM.in.hybrid.particles -> base_name "bc_absorb_hybrid_particles"
@@ -33,6 +35,7 @@ def set_run_dir(run_dir):
 
 EM_FINAL_FRAC = 0.25      # fields: Etot_final < 25% of initial (decay = absorb)
 EPART_MAX_FRAC = 0.01     # particles: Epart_final < 1% of initial (complete drain)
+ETOT_GROWTH_MAX = 1e3     # hybrid fields: Etot may not grow by more than 1e3x (no instability)
 
 
 def validate_log(pic_diags=None, test_name=None):
@@ -49,6 +52,8 @@ def validate_log(pic_diags=None, test_name=None):
 
     if test_name in ("bc_absorb_particles", "bc_absorb_hybrid_particles"):
         return _validate_log_particles(e0, e1, first, last)
+    if test_name == "bc_absorb_hybrid_fields":
+        return _validate_log_hybrid_fields(pic_diags)
 
     return _validate_log_fields(e0, e1, first, last)
 
@@ -95,6 +100,28 @@ def _validate_log_particles(e0, e1, first, last):
     return True, "Passed (particle energy decays => absorption active)"
 
 
+def _validate_log_hybrid_fields(pic_diags):
+    """Hybrid fields: run stays finite, positive, and energy remains bounded."""
+    e0 = pic_diags[0].get("Etot", 0.0)
+    finite = all(
+        math.isfinite(d.get("Etot", 0.0)) and
+        math.isfinite(d.get("Epart", 0.0)) for d in pic_diags
+    )
+    e1 = pic_diags[-1].get("Etot", 0.0)
+    logger.debug("    Etot: %.4e -> %.4e (%.1f growth)", e0, e1,
+                 1.0 if e0 == 0 else e1 / e0)
+
+    if not finite:
+        return False, "Non-finite energy (NaN/Inf) in energy log"
+    if e0 <= 0 or e1 <= 0:
+        return False, "Non-positive total energy (plasma not initialised / drained)"
+    if e0 > 0 and e1 > ETOT_GROWTH_MAX * e0:
+        return False, (f"Etot grew from {e0:.3e} to {e1:.3e} "
+                       f"(>{ETOT_GROWTH_MAX:.0f}x) -- field-wall instability")
+
+    return True, "Passed (finite, bounded energy => absorbing field wall is stable)"
+
+
 # ---------------------------------------------------------------------------
 # Plot helpers
 # ---------------------------------------------------------------------------
@@ -136,7 +163,23 @@ def validate_plot(test_name):
 
     if test_name in ("bc_absorb_particles", "bc_absorb_hybrid_particles"):
         return _check_particles_plot(vidx, rows)
+    if test_name == "bc_absorb_hybrid_fields":
+        return _check_hybrid_fields_plot(vidx, rows)
     return _check_fields_plot(vidx, rows)
+
+
+def _check_hybrid_fields_plot(vidx, rows):
+    """Hybrid fields: check By, Bz, Ey, Ez remain finite and bounded."""
+    for var in ("BY", "BZ", "EY", "EZ"):
+        col = _col(vidx, rows, var)
+        if col is None:
+            continue
+        if not all(math.isfinite(v) for v in col):
+            return False, f"{var} not finite (NaN)"
+        peak = max(abs(v) for v in col)
+        if peak > 1e6:
+            return False, f"{var} blew up (peak {peak:.2e})"
+    return True, "Passed (hybrid fields finite and bounded near walls)"
 
 
 def _check_fields_plot(vidx, rows):
