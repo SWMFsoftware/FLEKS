@@ -1298,9 +1298,7 @@ void Domain::read_param(const bool readGridInfo) {
 
     if (pic) {
       pic->post_process_param();
-      // gm was defined by prepare_grid_info() (the grid pass) long before
-      // the boundary commands were read, so it can now drive their
-      // `periodic` entries and report any disagreement.
+      // Autofill and validate periodic boundaries using gm.
       pic->apply_periodicity_autofill(gm);
       pic->validate_bc_pairing(gm);
       pic->report_bc_warnings("read_param");

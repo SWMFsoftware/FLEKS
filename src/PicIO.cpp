@@ -135,6 +135,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
       if (iLevSave >= 0 && iLevSave != iLev) {
         continue;
       }
+      const auto& geom = Geom(iLev);
       int iBlock = 0;
       for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
@@ -145,11 +146,11 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         auto hi = box.hiVect3d();
 
         for (int k = lo[iz_]; k <= hi[iz_]; ++k) {
-          const double zp = nDim > 2 ? Geom(iLev).CellCenter(k, iz_) : 0.0;
+          const double zp = nDim > 2 ? geom.CellCenter(k, iz_) : 0.0;
           for (int j = lo[iy_]; j <= hi[iy_]; ++j) {
-            const double yp = Geom(iLev).CellCenter(j, iy_);
+            const double yp = geom.CellCenter(j, iy_);
             for (int i = lo[ix_]; i <= hi[ix_]; ++i) {
-              const double xp = Geom(iLev).CellCenter(i, ix_);
+              const double xp = geom.CellCenter(i, ix_);
               // Unlike nodeStatus, cellStatus never has the owner bit set
               // (ownership is only marked on nodes in update_node_status).
               // That is fine here: cells in a non-overlapping BoxArray are
@@ -185,6 +186,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
     // Processor-0 output the inactive PIC cells for structured output.
     if (ParallelDescriptor::MyProc() == 0 && writerIn.get_plotDx() >= 0) {
       int iLev = 0;
+      const auto& geom = Geom(iLev);
       Box cgbx = cGrids[iLev].minimalBox();
       if (writerIn.is_compact())
         cgbx = cGrids[iLev].minimalBox();
@@ -197,11 +199,11 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         kMax = lo.z;
 
       for (int k = lo.z; k <= kMax; ++k) {
-        const double zp = nDim > 2 ? Geom(iLev).CellCenter(k, iz_) : 0.0;
+        const double zp = nDim > 2 ? geom.CellCenter(k, iz_) : 0.0;
         for (int j = lo.y; j <= jMax; ++j) {
-          const double yp = Geom(iLev).CellCenter(j, iy_);
+          const double yp = geom.CellCenter(j, iy_);
           for (int i = lo.x; i <= iMax; ++i) {
-            const double xp = Geom(iLev).CellCenter(i, ix_);
+            const double xp = geom.CellCenter(i, ix_);
             if (is_inside_cell_plot_region(writerIn, i, j, k, xp, yp, zp) &&
                 !cGrids[iLev].contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
               const int iBlock = -1;
@@ -227,14 +229,8 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
     }
 
   } else {
-    // Single-cell dimensions: the domain holds only one cell along that axis
-    // (e.g. the y-axis in an XZ-plane 2D run, or the z-axis in the isFake2D
-    // XY-plane case).  The full-PIC node grid has two node rows (LoEdge /
-    // HiEdge) straddling the single cell, so a cut plane (e.g. y=0) would
-    // otherwise match neither row (both are ~dx/2 away) and the plot would
-    // come out empty.  Collapse each single-cell dimension to its cell-centre
-    // coordinate so a cut at the centre (e.g. y=0) matches exactly and the
-    // output is a clean single-plane 2D slice.
+    // For single-cell dimensions (e.g. 2D runs), collapse nodes to the cell
+    // center so cut planes match.
     const Box& domBox = Geom(0).Domain();
     const bool singleCell[3] = { (domBox.length(ix_) == 1),
                                  (domBox.length(iy_) == 1),
@@ -244,6 +240,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
       if (iLevSave >= 0 && iLevSave != iLev) {
         continue;
       }
+      const auto& geom = Geom(iLev);
       int iBlock = 0;
       for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
@@ -256,28 +253,27 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         if (iLev == 0) {
           // Do not output the rightmost nodes for periodic boundary.
           for (int iDim = 0; iDim < nDim; iDim++)
-            if ((Geom(iLev).isPeriodic(iDim)) && gbx.bigEnd(iDim) == hi[iDim])
+            if ((geom.isPeriodic(iDim)) && gbx.bigEnd(iDim) == hi[iDim])
               hi[iDim]--;
         }
 
-        // Collapse single-cell dimensions to the single node row so a cut at
-        // the cell centre is matched exactly.
+        // Collapse single-cell dimensions to a single node row.
         const int kHi = singleCell[iz_] ? lo[iz_] : hi[iz_];
         const int jHi = singleCell[iy_] ? lo[iy_] : hi[iy_];
         const int iHi = singleCell[ix_] ? lo[ix_] : hi[ix_];
 
         for (int k = lo[iz_]; k <= kHi; ++k) {
           const double zp = singleCell[iz_]
-                                ? Geom(iLev).CellCenter(lo[iz_], iz_)
-                                : Geom(iLev).LoEdge(k, iz_);
+                                ? geom.CellCenter(lo[iz_], iz_)
+                                : geom.LoEdge(k, iz_);
           for (int j = lo[iy_]; j <= jHi; ++j) {
             const double yp = singleCell[iy_]
-                                  ? Geom(iLev).CellCenter(lo[iy_], iy_)
-                                  : Geom(iLev).LoEdge(j, iy_);
+                                  ? geom.CellCenter(lo[iy_], iy_)
+                                  : geom.LoEdge(j, iy_);
             for (int i = lo[ix_]; i <= iHi; ++i) {
               const double xp = singleCell[ix_]
-                                    ? Geom(iLev).CellCenter(lo[ix_], ix_)
-                                    : Geom(iLev).LoEdge(i, ix_);
+                                    ? geom.CellCenter(lo[ix_], ix_)
+                                    : geom.LoEdge(i, ix_);
               if (bit::is_owner(typeArr(i, j, k)) &&
                   (!bit::is_refined(typeArr(i, j, k)) || iLevSave >= 0) &&
                   writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
@@ -309,8 +305,9 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
     // Only works for 1-level grid.
     if (ParallelDescriptor::MyProc() == 0 && writerIn.get_plotDx() >= 0) {
       int iLev = 0;
+      const auto& geom = Geom(iLev);
       // Processor-0 output the inactive PIC nodes for structured output.
-      Box gbx = convert(Geom(iLev).Domain(), { AMREX_D_DECL(1, 1, 1) });
+      Box gbx = convert(geom.Domain(), { AMREX_D_DECL(1, 1, 1) });
 
       if (writerIn.is_compact())
         gbx = convert(nGrids[iLev].minimalBox(), { AMREX_D_DECL(1, 1, 1) });
@@ -319,15 +316,14 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
       const auto hi = ubound(gbx);
 
       int iMax = hi.x, jMax = hi.y, kMax = hi.z;
-      if (Geom(iLev).isPeriodic(ix_))
+      if (geom.isPeriodic(ix_))
         --iMax;
-      if (Geom(iLev).isPeriodic(iy_))
+      if (geom.isPeriodic(iy_))
         --jMax;
-      if (nDim > 2 && Geom(iLev).isPeriodic(iz_))
+      if (nDim > 2 && geom.isPeriodic(iz_))
         --kMax;
 
-      // Collapse single-cell dimensions to the single node row at the cell
-      // centre (same convention as the main loop above).
+      // Collapse single-cell dimensions to a single node row.
       if (singleCell[ix_])
         iMax = lo.x;
       if (singleCell[iy_])
@@ -336,14 +332,14 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         kMax = lo.z;
 
       for (int k = lo.z; k <= kMax; ++k) {
-        const double zp = singleCell[iz_] ? Geom(iLev).CellCenter(lo.z, iz_)
-                                          : Geom(iLev).LoEdge(k, iz_);
+        const double zp = singleCell[iz_] ? geom.CellCenter(lo.z, iz_)
+                                          : geom.LoEdge(k, iz_);
         for (int j = lo.y; j <= jMax; ++j) {
-          const double yp = singleCell[iy_] ? Geom(iLev).CellCenter(lo.y, iy_)
-                                            : Geom(iLev).LoEdge(j, iy_);
+          const double yp = singleCell[iy_] ? geom.CellCenter(lo.y, iy_)
+                                            : geom.LoEdge(j, iy_);
           for (int i = lo.x; i <= iMax; ++i) {
-            const double xp = singleCell[ix_] ? Geom(iLev).CellCenter(lo.x, ix_)
-                                              : Geom(iLev).LoEdge(i, ix_);
+            const double xp = singleCell[ix_] ? geom.CellCenter(lo.x, ix_)
+                                              : geom.LoEdge(i, ix_);
             if (writerIn.is_inside_plot_region(i, j, k, xp, yp, zp) &&
                 !nGrids[iLev].contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
               const int iBlock = -1;
@@ -495,8 +491,7 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
                  " is not supported by the hybrid-PIC solver (dBdt is a "
                  "full-PIC-only diagnostic).");
   }
-  // Mach number (mMach) is a full-PIC-only diagnostic; the hybrid solver does
-  // not compute it.
+  // Mach number (mMach) is a full-PIC-only diagnostic.
   if (useHybridPIC && var.substr(0, 4) == "mach") {
     amrex::Abort(ToString(var) +
                  " is not supported by the hybrid-PIC solver (Mach number is a "
@@ -889,10 +884,7 @@ void Pic::write_plots(bool doForce) {
       if (plot.writer.is_amrex_format() || plot.writer.is_hdf5_format()) {
         write_amrex(plot.writer, tc->get_time_si(), tc->get_cycle());
       } else {
-        // Structured (ascii/IDL) plots. Full-PIC reads the nodePlasma / mMach
-        // fields, whose deferred node mirrors / Mach number must be
-        // materialized before writing.
-        // Hybrid reads the live cell-centred fields directly.
+        // Full-PIC requires syncing node plasma fields before writing.
         if (!useHybridPIC) {
           const bool needMach =
               plot.writer.get_plotString().find("mach") != std::string::npos;
@@ -1135,8 +1127,6 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
     if (plotVars.find("B") != std::string::npos) {
       //------------------B---------------
-      // Full-PIC can write either node- or cell-centred B.
-      // The hybrid solver keeps B only on the cell centers.
       if (saveNode && !useHybridPIC) {
         MultiFab::Copy(out[iLev], nodeB[iLev], 0, iStart, nodeB[iLev].nComp(),
                        0);
@@ -1153,14 +1143,10 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
 
     if (plotVars.find("E") != std::string::npos) {
       //-----------------E-----------------------------
-      // Full-PIC writes the node-centred nodeE when saveNode is set.
-      // The hybrid solver keeps E only on the cell centers.
       if (saveNode && !useHybridPIC) {
         MultiFab::Copy(out[iLev], nodeE[iLev], 0, iStart, nodeE[iLev].nComp(),
                        0);
       } else if (useHybridPIC) {
-        // Hybrid solver: E is cell-centred in centerEhybrid
-        // Copy directly -- no node-to-cell average.
         MultiFab::Copy(out[iLev], centerEhybrid[iLev], 0, iStart,
                        centerEhybrid[iLev].nComp(), 0);
       } else {

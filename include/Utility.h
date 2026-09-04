@@ -247,7 +247,6 @@ bool linear_solver_Gauss_Elimination(
     x[i] = x[i] / a(i, i);
   }
 
-  // A numerically NaN/inf solution must never be reported as solved.
   for (int i = 0; i < m; ++i) {
     if (!std::isfinite(x[i])) {
       return false;
