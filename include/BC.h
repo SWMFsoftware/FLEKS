@@ -11,10 +11,6 @@
 #include <AMReX_PhysBCFunct.H>
 #include <AMReX_iMultiFab.H>
 
-void apply_float_boundary(const amrex::iMultiFab &status, amrex::MultiFab &mf,
-                          const amrex::Geometry &gm, const int iStart,
-                          const int nComp, const int nshift = 0);
-
 //==========================================================
 template <typename EnumT> struct BoxBC {
   amrex::IntVect lo, hi;
