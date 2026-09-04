@@ -517,6 +517,8 @@ public:
   void calc_jhat(amrex::MultiFab& jHat, amrex::MultiFab& nodeBMF,
                  amrex::Real dt);
 
+  void apply_jhat_mirror(amrex::MultiFab& jHat, int iLev = 0);
+
   // It is real 'thermal velocity'. It is sqrt(sum(q*v2)/sum(q)).
   amrex::Real calc_max_thermal_velocity(amrex::MultiFab& momentsMF);
 

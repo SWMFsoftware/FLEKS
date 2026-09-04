@@ -274,10 +274,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
 }
 
 //==========================================================
-// Boundary-condition warnings are collected while the commands are parsed and
-// reported once here, de-duplicated.  #BCSTRICT turns them into a hard error.
-// Running at the end of post_process_param() lets every later check (periodic
-// auto-fill, cross-domain pairing) contribute to the same report.
+// Report de-duplicated boundary-condition warnings and abort.
 void Pic::report_bc_warnings(const std::string& context) {
   if (bcWarnings_.empty())
     return;
@@ -289,16 +286,12 @@ void Pic::report_bc_warnings(const std::string& context) {
 }
 
 //==========================================================
-// #PERIODICITY feeds amrex::Geometry, and that is the authoritative topology
-// setting: the geometry must exist before the boundary commands can even be
-// parsed (Domain::prepare_grid_info runs the grid pass and calls gm.define()
-// before the Pic object is constructed), so the boundary value is derived
-// from the geometry and never the other way round.  Filling it in here also
-// makes the stored `periodic` a reliable per-dimension early-out for the
-// field operators, instead of them having to rely on isAllPeriodic().
-//==========================================================
+// Autofill periodic boundaries from Geometry for field and particle BCs,
+// warning on conflicting user configurations.
 void Pic::apply_periodicity_autofill(const Geometry& gm) {
-  static const char dimName[3] = { 'x', 'y', 'z' };
+  static const char* const dimNames[3] = { "x", "y", "z" };
+  const int nSpeciesBC = static_cast<int>(pInfo.pBCs.size());
+  const int nBCsSet = static_cast<int>(pInfo.pBCsSet.size());
 
   for (int d = 0; d < nDim; ++d) {
     if (!gm.isPeriodic(d))
@@ -309,7 +302,7 @@ void Pic::apply_periodicity_autofill(const Geometry& gm) {
         const int type = bcField.face(d, side);
         if (type != FieldBC::periodic)
           add_bc_warning(
-              std::string("dimension ") + dimName[d] +
+              std::string("dimension ") + dimNames[d] +
               " is periodic (#PERIODICITY), but the field boundary was set "
               "to '" +
               FieldBC::to_string(static_cast<FieldBC::Type>(type)) +
@@ -317,15 +310,12 @@ void Pic::apply_periodicity_autofill(const Geometry& gm) {
       }
       bcField.set(d, side, FieldBC::periodic);
 
-      for (int i = 0; i < static_cast<int>(pInfo.pBCs.size()); ++i) {
-        // A species with no #PARTICLEBOXBOUNDARY block only holds the
-        // default, so there is nothing to contradict and no warning to issue.
-        if (i < static_cast<int>(pInfo.pBCsSet.size()) &&
-            pInfo.pBCsSet[i] != 0) {
+      for (int i = 0; i < nSpeciesBC; ++i) {
+        if (i < nBCsSet && pInfo.pBCsSet[i] != 0) {
           const int type = pInfo.pBCs[i].face(d, side);
           if (type != ParticleBC::periodic)
             add_bc_warning(
-                std::string("dimension ") + dimName[d] +
+                std::string("dimension ") + dimNames[d] +
                 " is periodic (#PERIODICITY), but the particle boundary of "
                 "species " +
                 std::to_string(i) + " was set to '" +
@@ -339,19 +329,13 @@ void Pic::apply_periodicity_autofill(const Geometry& gm) {
 }
 
 //==========================================================
-// Cross-domain consistency checks.  Runs after apply_periodicity_autofill(),
-// so a `periodic` entry on a periodic dimension is already known to agree with
-// the geometry; what is left to catch is the opposite (a `periodic` entry on a
-// non-periodic dimension), half-specified pairs such as a particle `inflow`
-// face whose field counterpart is not `inflow`, and walls the particles can
-// stream straight through.
-//
-// Comparisons against the field boundary are skipped when no
-// #FIELDBOXBOUNDARY / #BFIELDBOXBOUNDARY block was read, because then the
-// field side is only the `coupled` default rather than a user request.
-//==========================================================
+// Validate boundary condition consistency across field, particles, and geometry.
+// Field vs particle checks are skipped if field BC was not explicitly set.
 void Pic::validate_bc_pairing(const Geometry& gm) {
-  static const char dimName[3] = { 'x', 'y', 'z' };
+  static const char* const dimNames[3] = { "x", "y", "z" };
+  static const char* const faceNames[3][2] = {
+    { "x-lo", "x-hi" }, { "y-lo", "y-hi" }, { "z-lo", "z-hi" }
+  };
 
   const bool isStandalone = domainParameters.isStandalone;
   const bool hasNonPeriodic = !gm.isAllPeriodic();
@@ -361,11 +345,15 @@ void Pic::validate_bc_pairing(const Geometry& gm) {
       amrex::Abort(
           "Error: #FIELDBOXBOUNDARY command is required when there are "
           "non-periodic boundaries in standalone mode.");
-    if (pInfo.pBCsSet.empty() || pInfo.pBCsSet[0] == 0)
+    if (usePIC && (pInfo.pBCsSet.empty() || pInfo.pBCsSet[0] == 0))
       amrex::Abort(
           "Error: #PARTICLEBOXBOUNDARY command is required when there are "
           "non-periodic boundaries in standalone mode.");
   }
+
+  const int nSpeciesBC = static_cast<int>(pInfo.pBCs.size());
+  const int nBCsSet = static_cast<int>(pInfo.pBCsSet.size());
+  const int nCheck = std::min(nSpeciesBC, nBCsSet);
 
   for (int d = 0; d < nDim; ++d) {
     const bool dimPeriodic = gm.isPeriodic(d);
@@ -374,55 +362,54 @@ void Pic::validate_bc_pairing(const Geometry& gm) {
 
     if (!dimPeriodic) {
       if (fLo == FieldBC::periodic)
-        add_bc_warning(std::string("field boundary ") + dimName[d] +
-                       "-lo is 'periodic' but #PERIODICITY is F for that "
+        add_bc_warning(std::string("field boundary ") + faceNames[d][0] +
+                       " is 'periodic' but #PERIODICITY is F for that "
                        "dimension.");
       if (fHi == FieldBC::periodic)
-        add_bc_warning(std::string("field boundary ") + dimName[d] +
-                       "-hi is 'periodic' but #PERIODICITY is F for that "
+        add_bc_warning(std::string("field boundary ") + faceNames[d][1] +
+                       " is 'periodic' but #PERIODICITY is F for that "
                        "dimension.");
     }
     if ((fLo == FieldBC::periodic) != (fHi == FieldBC::periodic))
-      add_bc_warning(std::string("field boundary ") + dimName[d] +
+      add_bc_warning(std::string("field boundary ") + dimNames[d] +
                      " is periodic on one side only; #PERIODICITY applies to "
                      "a whole dimension.");
 
     for (int side = 0; side < 2; ++side) {
       const auto fType = static_cast<FieldBC::Type>(bcField.face(d, side));
-      const std::string face =
-          std::string(1, dimName[d]) + (side == 0 ? "-lo" : "-hi");
+      const char* face = faceNames[d][side];
 
       if (fType == FieldBC::inflow && !inflowDefined_)
-        add_bc_warning("field boundary " + face + " is '" +
-                       FieldBC::to_string(fType) +
-                       "' but no #INFLOW block was given; the face falls back "
-                       "to a zero-gradient copy.");
+        add_bc_warning(std::string("field boundary ") + face +
+                       " is 'inflow' but no #INFLOW block was given; the face "
+                       "falls back to a zero-gradient copy.");
 
       if (fType == FieldBC::wave && !waveBC.active)
-        add_bc_warning("field boundary " + face +
+        add_bc_warning(std::string("field boundary ") + face +
                        " is 'wave' but no #WAVEBC block was given; the face "
                        "carries no wave source.");
 
-      if (!fieldBCSet_)
-        continue; // field side is only the default: nothing to contradict
-
-      for (int i = 0; i < static_cast<int>(pInfo.pBCs.size()); ++i) {
-        if (i >= static_cast<int>(pInfo.pBCsSet.size()) ||
-            pInfo.pBCsSet[i] == 0)
-          continue; // species had no block: nothing to contradict
+      for (int i = 0; i < nCheck; ++i) {
+        if (pInfo.pBCsSet[i] == 0)
+          continue;
 
         const auto pType =
             static_cast<ParticleBC::Type>(pInfo.pBCs[i].face(d, side));
-        const std::string what =
-            "species " + std::to_string(i) + " particle boundary " + face;
+
+        auto what = [&]() {
+          return "species " + std::to_string(i) + " particle boundary " + face;
+        };
 
         if (pType == ParticleBC::periodic && !dimPeriodic)
-          add_bc_warning(what + " is 'periodic' but #PERIODICITY is F for "
-                                "that dimension.");
+          add_bc_warning(what() + " is 'periodic' but #PERIODICITY is F for "
+                                  "that dimension.");
+
+        if (!fieldBCSet_)
+          continue; // Field is default coupled: skip field-pairing checks.
 
         if (pType == ParticleBC::inflow && fType != FieldBC::inflow &&
             fType != FieldBC::fixed)
-          add_bc_warning(what + " is 'inflow' but the field boundary is '" +
+          add_bc_warning(what() + " is 'inflow' but the field boundary is '" +
                          FieldBC::to_string(fType) +
                          "'; the injected flux has no upstream field to "
                          "match.");
@@ -430,28 +417,31 @@ void Pic::validate_bc_pairing(const Geometry& gm) {
         if (fType == FieldBC::conducting &&
             (pType == ParticleBC::outflow || pType == ParticleBC::vacuum ||
              pType == ParticleBC::absorb))
-          add_bc_warning(what + " is '" + ParticleBC::to_string(pType) +
-                         "' on a '" + FieldBC::to_string(fType) +
-                         "' wall: particles leave through the wall.");
+          add_bc_warning(what() + " is '" + ParticleBC::to_string(pType) +
+                         "' on a 'conducting' wall: particles leave through "
+                         "the wall.");
 
         if (pType == ParticleBC::absorb && fType != FieldBC::absorb)
-          add_bc_warning(what + " is 'absorb' but the field boundary is '" +
+          add_bc_warning(what() + " is 'absorb' but the field boundary is '" +
                          FieldBC::to_string(fType) +
                          "'; only the particles are absorbed.");
       }
     }
   }
 
-  // In the hybrid solver only centerB is evolved; E is assembled from the
-  // generalized Ohm's law, so a wall face type constrains B and only closes
-  // the ghost ring for E.  Say so once, not per face.
+  // In hybrid PIC, only centerB is evolved; wall BCs constrain B and close
+  // the ghost ring for E.
   if (useHybridPIC) {
     bool hasWall = false;
-    for (int d = 0; d < nDim && !hasWall; ++d)
-      for (int side = 0; side < 2 && !hasWall; ++side) {
+    for (int d = 0; d < nDim && !hasWall; ++d) {
+      for (int side = 0; side < 2; ++side) {
         const auto t = static_cast<FieldBC::Type>(bcField.face(d, side));
-        hasWall = hasWall || (t == FieldBC::conducting || t == FieldBC::wave);
+        if (t == FieldBC::conducting || t == FieldBC::wave) {
+          hasWall = true;
+          break;
+        }
       }
+    }
     if (hasWall)
       amrex::Print() << "  Note: hybrid solver: only centerB is evolved, so a "
                      << "conducting / wave field boundary constrains "
@@ -1175,6 +1165,11 @@ void Pic::calc_mass_matrix() {
                                    solveFieldInCoMov);
       }
     }
+
+    if (useExplicitPIC && nSpecies > 0) {
+      parts[0]->apply_jhat_mirror(jHat[iLev], iLev);
+    }
+
     Real invVol = 1;
     for (int i = 0; i < nDim; ++i) {
       invVol *= Geom(iLev).InvCellSize(i);

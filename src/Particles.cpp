@@ -480,36 +480,24 @@ void Particles<NStructReal, NStructInt>::add_particles_domain() {
 }
 
 //==========================================================
-// True when a face of this type must NOT maintain a Maxwellian ghost-cell
-// population next to the boundary.
-//
-// The important case is `outflow`: seeding a ghost layer there is not a
-// no-op, because the charge-conserving domain-boundary fold in
-// sum_moments_cell_centered() sweeps the cloned layer back into the edge cell
-// and double-counts it (observed: edge rho = 4.375 + 5.0 = 9.375, i.e. 15/8 x
-// n).  The field-solver ghost moments come from Pic::apply_centerPlasma_BC
-// (mirror) instead, so no ghost particles are needed.
-//
-// `inflow` is excluded for the mirror-image reason: a full-space Maxwellian
-// next to a supersonically inflowing edge cell has the wrong flux
-// distribution and fights the field solver through the ghost moments.  Its
-// flux is supplied by inject_flux_at_inflow_faces(), which creates
-// flux-weighted particles at the physical face.
+// Return true if ghost-cell particle injection should be skipped for this BC.
+// - outflow: Ghost particles would be folded into edge cells in
+//   sum_moments_cell_centered(), causing double counting.
+// - inflow: Flux is injected at the physical face by
+//   inject_flux_at_inflow_faces().
 //==========================================================
 static bool particle_bc_no_injection(const ParticleBC::Type type) {
   switch (type) {
     case ParticleBC::inflow:
     case ParticleBC::outflow:
     case ParticleBC::vacuum:
-    case ParticleBC::reflect: // crossing is handled by the particle mover
+    case ParticleBC::reflect:
     case ParticleBC::absorb:
       return true;
-    case ParticleBC::coupled: // MHD-AEPIC: re-seed from the fluid/MHD state
+    case ParticleBC::coupled:
     case ParticleBC::periodic:
       return false;
     default:
-      // `unset` (and anything unknown) is never stored from input; keep the
-      // conservative behaviour of not seeding.
       return true;
   }
 }
@@ -558,10 +546,8 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
         if (skip)
           return;
 
-        // Re-seed the ghost cell with a (drifting) Maxwellian.  With an
-        // #INFLOW block the seeding uses the PRESCRIBED upstream state
-        // (density / bulk velocity / thermal speed); without one it falls
-        // back to the live fluid-interface state.
+        // Seed ghost cell from prescribed #INFLOW state if defined, else fall
+        // back to the fluid interface.
         Vel inflowVel;
         if (fi->get_inflow_defined()) {
           const auto* iv = fi->get_inflow_vel(speciesID);
@@ -583,6 +569,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
 //==========================================================
 namespace {
 constexpr amrex::Real injPI = 3.14159265358979323846264338328;
+constexpr amrex::Real sqpi = 1.77245385090551602729816748334;
 
 // Draw a standard normal variate from two uniforms (Box-Muller).
 inline amrex::Real inj_gaussian(amrex::Real r1, amrex::Real r2) {
@@ -592,71 +579,82 @@ inline amrex::Real inj_gaussian(amrex::Real r1, amrex::Real r2) {
 
 // Mean inward flux of a drifting Maxwellian through a boundary face, in
 // units of n * vtherm (vtherm = sqrt(2) * sigma, sigma = 1-D thermal std):
-//   g(vd) = [ exp(-vd^2)/sqrt(pi) + vd * (1 + erf(vd)) ] / 2
-// with vd = (inward drift speed) / vtherm.  Port of the flux factor in
-// Hybrid-VPIC's shock deck (shock-hyb.cxx bright() accumulator).
+//   g(vd) = [ exp(-vd^2)/sqrt(pi) + vd * erfc(-vd) ] / 2
+// with vd = (inward drift speed) / vtherm. Using erfc(-vd) == 1 + erf(vd)
+// avoids catastrophic cancellation for negative outward drift (vd < 0).
 inline amrex::Real inj_mean_inward_flux(amrex::Real vd) {
-  constexpr amrex::Real sqpi = 1.77245385090551602729816748334;
-  return 0.5 * (std::exp(-vd * vd) / sqpi + vd * (1.0 + std::erf(vd)));
+  return 0.5 * (std::exp(-vd * vd) / sqpi + vd * std::erfc(-vd));
 }
 
-// Draw the inward normal speed (units of vtherm) from the flux-weighted
-// half-space Maxwellian  f(w) propto w * exp(-(w - vd)^2), w >= 0, by
-// inverting its CDF:
-//   Z    = int_0^inf w exp(-(w-vd)^2) dw
-//        = [ e^{-vd^2} + vd*sqrt(pi)*(1+erf(vd)) ] / 2
-//   F(w) = int_0^w w' exp(-(w'-vd)^2) dw'
-//        = [ (e^{-vd^2} - e^{-(w-vd)^2}) + vd*sqrt(pi)*(erf(w-vd)+erf(vd)) ] /
-//        2
-// and solve F(w) = r * Z.  Solved with bisection + Newton polish (port of
-// the diagonal-pressure case of Hybrid-VPIC's compute_injection(),
-// injection.cxx).  NOTE: the exponent and erf arguments are (w - vd), NOT
-// w -- an earlier revision of this routine used exp(-w^2)/erf(w), which
-// produces a distribution clustered near 0 with mean ~0.3*vtherm instead
-// of one clustered near vd*vtherm; for a supersonic drift that replaced
-// the inflow beam with near-stationary particles and decayed the edge-cell
-// bulk speed by ~u*dt/dx*(u-vmean) per step.
-inline amrex::Real inj_draw_inward_speed(amrex::Real vd, amrex::Real r) {
-  constexpr amrex::Real sqpi = 1.77245385090551602729816748334;
-  const amrex::Real e0 = std::exp(-vd * vd);
-  // 2Z = e^{-vd^2} + vd*sqrt(pi)*(1+erf(vd))  (twice the normalisation).
-  const amrex::Real twoZ = e0 + vd * sqpi * (1.0 + std::erf(vd));
-  const amrex::Real target = 0.5 * r * twoZ;
+// Fast speed sampler for the flux-weighted half-space Maxwellian
+//   f(w) \propto w * exp(-(w - vd)^2), w >= 0.
+// Precomputes face-level constants and a 64-point LUT once per face to eliminate
+// costly 60-step bisections per particle, converging in 2-3 Newton-Raphson steps.
+struct InflowSpeedSampler {
+  amrex::Real vd{0.0};
+  amrex::Real e0{1.0};
+  amrex::Real erfc_mvd{1.0};
+  amrex::Real twoZ{1.0};
+  amrex::Real wHi{8.0};
 
-  auto F = [&](amrex::Real w) {
-    return 0.5 * ((e0 - std::exp(-(w - vd) * (w - vd))) +
-                  vd * sqpi * (std::erf(w - vd) + std::erf(vd)));
-  };
+  static constexpr int LUT_SIZE = 64;
+  amrex::Real lut[LUT_SIZE + 1];
 
-  // Bracket: F(0) = 0 and F is monotone increasing (F' = w e^{-(w-vd)^2}
-  // >= 0 for w >= 0); the upper bound comfortably exceeds the mean.
-  amrex::Real wLo = 0.0;
-  amrex::Real wHi = std::max(vd, 0.0) + 8.0;
-  // Bisection.
-  amrex::Real w = 0.5 * (wLo + wHi);
-  for (int it = 0; it < 60; ++it) {
-    w = 0.5 * (wLo + wHi);
-    if (F(w) < target)
-      wLo = w;
-    else
-      wHi = w;
-    if (wHi - wLo < 1e-12 * (1.0 + wHi))
-      break;
+  void init(amrex::Real vd_in) {
+    vd = vd_in;
+    e0 = std::exp(-vd * vd);
+    erfc_mvd = std::erfc(-vd);
+    twoZ = e0 + vd * sqpi * erfc_mvd;
+    wHi = std::max(vd, 0.0) + 8.0;
+
+    lut[0] = 0.0;
+    amrex::Real wLo = 0.0;
+    for (int k = 1; k < LUT_SIZE; ++k) {
+      const amrex::Real rTarget = static_cast<amrex::Real>(k) / LUT_SIZE;
+      const amrex::Real target = 0.5 * rTarget * twoZ;
+      amrex::Real lo = wLo;
+      amrex::Real hi = wHi;
+      for (int it = 0; it < 30; ++it) {
+        amrex::Real mid = 0.5 * (lo + hi);
+        amrex::Real Fmid = 0.5 * ((e0 - std::exp(-(mid - vd) * (mid - vd))) +
+                                  vd * sqpi * (erfc_mvd - std::erfc(mid - vd)));
+        if (Fmid < target)
+          lo = mid;
+        else
+          hi = mid;
+      }
+      lut[k] = 0.5 * (lo + hi);
+      wLo = lut[k];
+    }
+    lut[LUT_SIZE] = wHi;
   }
-  // Newton polish: F'(w) = w * exp(-(w-vd)^2).
-  for (int it = 0; it < 8; ++it) {
-    const amrex::Real dF = w * std::exp(-(w - vd) * (w - vd));
-    if (std::abs(dF) < 1e-300)
-      break;
-    amrex::Real wNew = w - (F(w) - target) / dF;
-    if (wNew < wLo || wNew > wHi)
-      wNew = 0.5 * (wLo + wHi);
-    if (std::abs(wNew - w) < 1e-13 * (1.0 + w))
-      break;
-    w = wNew;
+
+  inline amrex::Real draw(amrex::Real r) const {
+    const amrex::Real target = 0.5 * r * twoZ;
+    const amrex::Real rIdx = r * LUT_SIZE;
+    const int idx = std::min(std::max(static_cast<int>(rIdx), 0), LUT_SIZE - 1);
+    const amrex::Real frac = rIdx - idx;
+    amrex::Real w = lut[idx] + frac * (lut[idx + 1] - lut[idx]);
+
+    // 2-3 Newton-Raphson polish iterations
+    for (int it = 0; it < 3; ++it) {
+      const amrex::Real diff = w - vd;
+      const amrex::Real exp_term = std::exp(-diff * diff);
+      const amrex::Real Fw = 0.5 * ((e0 - exp_term) +
+                                    vd * sqpi * (erfc_mvd - std::erfc(diff)));
+      const amrex::Real dF = w * exp_term;
+      if (std::abs(dF) < 1e-300)
+        break;
+      amrex::Real wNew = w - (Fw - target) / dF;
+      if (wNew < 0.0 || wNew > wHi)
+        wNew = 0.5 * (std::max(static_cast<amrex::Real>(0.0), w) + wHi);
+      if (std::abs(wNew - w) < 1e-13 * (1.0 + w))
+        break;
+      w = wNew;
+    }
+    return w;
   }
-  return w;
-}
+};
 } // namespace
 
 //==========================================================
@@ -702,13 +700,19 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
   const Real* probHi = geom.ProbHi();
   const Real* cellSize = geom.CellSize();
 
+  // Cache speed samplers for each inflow face (iDim, side)
+  InflowSpeedSampler speedSamplers[3][2];
+  bool samplerInit[3][2] = { { false, false }, { false, false }, { false, false } };
+
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
     const Box& bx = mfi.validbox();
     ParticleTileType& particles = get_particle_tile(iLev, mfi);
 
     for (int iDim = 0; iDim < nDim; ++iDim) {
-      const int t1 = (iDim + 1) % nDim; // first transverse direction
-      const int t2 = (iDim + 2) % nDim; // second transverse direction
+      const int t1 = (iDim + 1) % nDim; // first transverse grid direction
+      const int t2 = (nDim > 2) ? (iDim + 2) % nDim : 0; // second transverse grid direction
+      const int trans1 = (iDim + 1) % 3; // first transverse velocity direction
+      const int trans2 = (iDim + 2) % 3; // second transverse velocity direction
 
       for (int side = 0; side < 2; ++side) {
         const bool isHi = (side == 1);
@@ -732,93 +736,107 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
         const Real uOut = uIn[iDim];
         const Real vd = (sigma > 0) ? (uOut * inward / vtherm) : 1.0e30;
 
+        if (vtherm > 0 && !samplerInit[iDim][side]) {
+          speedSamplers[iDim][side].init(vd);
+          samplerInit[iDim][side] = true;
+        }
+
         // Mean influx per boundary-transverse cell per step, in
         // macroparticles (Hybrid-VPIC shock deck, bright() accumulator):
         //   dn = nppc * vtherm * g(vd) * dt / dx
-        const Real meanFlux =
+        const Real fluxRate =
             (vtherm > 0) ? nppc * vtherm * inj_mean_inward_flux(vd) * dt / dxn
                          : nppc * (uOut * inward) * dt / dxn;
-        const Real fluxRate = meanFlux;
+        if (fluxRate <= 0.0)
+          continue;
 
-        // Loop over the transverse cells of this tile's face.
+        // Transverse cell range for this tile's face
         const int lo1 = bx.smallEnd(t1), hi1 = bx.bigEnd(t1);
-        const int lo2 =
-            (nDim > 2) ? bx.smallEnd(t2) : bx.smallEnd(t1); // 2D: single k
-        const int hi2 = (nDim > 2) ? bx.bigEnd(t2) : bx.smallEnd(t1);
+        const int lo2 = (nDim > 2) ? bx.smallEnd(t2) : 0;
+        const int hi2 = (nDim > 2) ? bx.bigEnd(t2) : 0;
+        const int numCells = (hi1 - lo1 + 1) * (hi2 - lo2 + 1);
 
-        for (int c1 = lo1; c1 <= hi1; ++c1)
-          for (int c2 = lo2; c2 <= hi2; ++c2) {
-            // Fractional accumulator (exact mean rate).
-            const int64_t key =
-                ((((int64_t)iLev * 3 + iDim) * 2 + side) << 42) |
-                ((int64_t)(c1 + 131071) << 21) | (int64_t)(c2 + 131071);
-            Real& acc = injectFluxAcc[key];
-            acc += fluxRate;
-            int nInject = static_cast<int>(acc);
-            if (nInject <= 0) {
-              if (acc < 0)
-                acc = 0;
-              continue;
-            }
-            acc -= nInject;
+        // Tile-face accumulator: packs (iLev, iDim, side, tileLocalIndex).
+        // Accumulating over the tile face eliminates the artificial coherent
+        // "pulsing sheets" and replaces 10^4 map lookups per step with 1 scalar.
+        const int64_t tileKey =
+            ((((int64_t)iLev * 3 + iDim) * 2 + side) << 40) |
+            (((int64_t)mfi.index()) << 16) |
+            (int64_t)(mfi.LocalTileIndex() & 0xFFFF);
+        Real& acc = injectFluxAcc[tileKey];
+        acc += numCells * fluxRate;
+        int nInject = static_cast<int>(acc);
+        if (nInject <= 0) {
+          if (acc < 0)
+            acc = 0;
+          continue;
+        }
+        acc -= nInject;
 
-            for (int np = 0; np < nInject; ++np) {
-              const Real uT1 = randNum();
-              const Real uT2 = (nDim > 2) ? randNum() : 0.0;
-              const Real uW = randNum();
+        const Real span1 = (hi1 - lo1 + 1) * cellSize[t1];
+        const Real base1 = probLo[t1] + (lo1 - domain.smallEnd(t1)) * cellSize[t1];
+        const Real span2 = (nDim > 2) ? (hi2 - lo2 + 1) * cellSize[t2] : 0.0;
+        const Real base2 =
+            (nDim > 2) ? probLo[t2] + (lo2 - domain.smallEnd(t2)) * cellSize[t2] : 0.0;
+        const Real xFace = isHi ? probHi[iDim] : probLo[iDim];
 
-              // Position: on the boundary face, nudged just INSIDE the
-              // last physical cell so the particle is unambiguously in the
-              // domain; uniform in the transverse directions.
-              RealVect pos;
-              const Real xFace = isHi ? probHi[iDim] : probLo[iDim];
-              pos[iDim] = xFace + inward * (1.0e-3 * dxn);
-              pos[t1] =
-                  probLo[t1] + (c1 - domain.smallEnd(t1) + uT1) * cellSize[t1];
-              if (nDim > 2) {
-                pos[t2] = probLo[t2] +
-                          (c2 - domain.smallEnd(t2) + uT2) * cellSize[t2];
-              }
-
-              // Velocity: inward normal speed from the flux-weighted
-              // half-space Maxwellian; transverse components Gaussian.
-              // All 3 velocity components are sampled so 2D3V
-              // (AMREX_SPACEDIM=2) has correct out-of-plane velocity vz and
-              // thermal pressure.
-              Real vel[3] = { 0.0, 0.0, 0.0 };
-              Real wIn;
-              if (vtherm > 0) {
-                wIn = vtherm * inj_draw_inward_speed(vd, uW);
-              } else {
-                wIn = uOut * inward; // cold beam
-              }
-              for (int d = 0; d < 3; ++d) {
-                if (d == iDim) {
-                  vel[d] = inward * wIn;
-                } else {
-                  vel[d] =
-                      (sigma > 0)
-                          ? uIn[d] + sigma * inj_gaussian(randNum(), randNum())
-                          : uIn[d];
-                }
-              }
-
-              auto p = make_particle();
-              set_ids(p);
-              for (int d = 0; d < nDim; ++d)
-                p.pos(d) = pos[d];
-              p.rdata(iup_) = vel[ix_];
-              p.rdata(ivp_) = vel[iy_];
-              p.rdata(iwp_) = vel[iz_];
-              p.rdata(iqp_) = q;
-
-              if (NStructInt > iRecordCount_) {
-                p.idata(iRecordCount_) = 0;
-              }
-
-              particles.push_back(p);
-            }
+        for (int np = 0; np < nInject; ++np) {
+          // Velocity: inward normal speed from speed sampler; transverse
+          // components from paired Box-Muller. All 3 velocity components
+          // are sampled so 2D3V (AMREX_SPACEDIM=2) has correct out-of-plane
+          // velocity vz and thermal pressure.
+          Real wIn;
+          if (vtherm > 0) {
+            wIn = vtherm * speedSamplers[iDim][side].draw(randNum());
+          } else {
+            wIn = uOut * inward; // cold beam
           }
+
+          // Fractional ingress advancement: particles crossed the face at
+          // random times t' in [0, dt], so at dt they have penetrated
+          // distance wIn * dt * randNum(). Bound strictly inside the cell.
+          const Real pDist = (wIn > 0)
+              ? std::min(1.0e-3 * dxn + wIn * dt * randNum(), 0.999 * dxn)
+              : 1.0e-3 * dxn;
+
+          // Position: on the boundary face, nudged into the cell according to
+          // sub-step ingress distance; uniform in the transverse directions.
+          RealVect pos;
+          pos[iDim] = xFace + inward * pDist;
+          pos[t1] = base1 + randNum() * span1;
+          if (nDim > 2) {
+            pos[t2] = base2 + randNum() * span2;
+          }
+
+          Real vel[3] = { 0.0, 0.0, 0.0 };
+          vel[iDim] = inward * wIn;
+          if (sigma > 0) {
+            const Real r1 = randNum();
+            const Real r2 = randNum();
+            const Real R = std::sqrt(-2.0 * std::log(std::max(r1, 1e-300)));
+            const Real phi = 2.0 * injPI * r2;
+            vel[trans1] = uIn[trans1] + sigma * (R * std::cos(phi));
+            vel[trans2] = uIn[trans2] + sigma * (R * std::sin(phi));
+          } else {
+            vel[trans1] = uIn[trans1];
+            vel[trans2] = uIn[trans2];
+          }
+
+          auto p = make_particle();
+          set_ids(p);
+          for (int d = 0; d < nDim; ++d)
+            p.pos(d) = pos[d];
+          p.rdata(iup_) = vel[ix_];
+          p.rdata(ivp_) = vel[iy_];
+          p.rdata(iwp_) = vel[iz_];
+          p.rdata(iqp_) = q;
+
+          if (NStructInt > iRecordCount_) {
+            p.idata(iRecordCount_) = 0;
+          }
+
+          particles.push_back(p);
+        }
       }
     }
   }
@@ -1448,22 +1466,10 @@ Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
     momentsMF[iLev].mult(invVol[iLev], 0, nMoments - 1,
                          momentsMF[iLev].nGrow());
 
-    //----- Charge-conserving domain-boundary moments ---------------
-    // A CIC deposit from a particle inside the last half-cell of a
-    // non-periodic domain edge leaves part of its weight in the first
-    // ghost layer outside the domain. SumBoundary only combines
-    // tile-neighbour and periodic wrap contributions, so that ghost
-    // deposit would be silently dropped and the edge physical cell would
-    // keep only 7/8 of its charge (75% of its own particles + 12.5%
-    // received from the interior neighbour). Fold the first ghost layer
-    // into the adjacent edge cell and zero it, as Hybrid-VPIC does in
-    // hyb_local_adjust_rhof. Periodic directions are skipped because
-    // SumBoundary (below) already accounts for the wrap-around.
-    // NOTE: the fold runs BEFORE SumBoundary on purpose: the fold target
-    // can lie in this tile's transverse ghost region (tile-neighbour's
-    // valid cell) when the deposit's transverse CIC tail crossed a tile
-    // boundary; the SumBoundary then combines it into the proper valid
-    // cell exactly once.
+    // Fold first ghost layer back into edge cells at non-periodic domain
+    // boundaries to conserve charge from outer half-cell CIC deposits.
+    // Executed before SumBoundary so transverse ghost tails are correctly
+    // combined across tile boundaries.
     if (!Geom(iLev).isAllPeriodic() && momentsMF[iLev].nGrow() > 0) {
       const Box& dom = Geom(iLev).Domain();
       const int nCompMF = momentsMF[iLev].nComp();
@@ -1478,17 +1484,9 @@ Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
           for (int side = 0; side < 2; ++side) {
             const bool isLo = (side == 0);
             const int domEdge = isLo ? dom.smallEnd(iDim) : dom.bigEnd(iDim);
-            const int tileEdge = isLo ? bx.smallEnd(iDim) : bx.bigEnd(iDim);
-            if (tileEdge != domEdge)
+            if ((isLo ? bx.smallEnd(iDim) : bx.bigEnd(iDim)) != domEdge)
               continue;
 
-            // First ghost layer just outside the domain along iDim,
-            // spanning the full transverse extent of this FAB (valid +
-            // transverse ghosts): deposits whose transverse CIC tail
-            // crossed a tile boundary land in the transverse ghost part
-            // of the strip, and their fold targets then sit in the
-            // tile-neighbour's valid region -- the SumBoundary below
-            // combines them exactly once.
             const Box& fbx = mfi.fabbox();
             IntVect gs = fbx.smallEnd();
             IntVect ge = fbx.bigEnd();
@@ -1496,24 +1494,14 @@ Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
             ge[iDim] = gs[iDim];
             const Box strip(gs, ge);
 
+            const int di = (iDim == 0) ? (isLo ? 1 : -1) : 0;
+            const int dj = (iDim == 1) ? (isLo ? 1 : -1) : 0;
+            const int dk = (iDim == 2) ? (isLo ? 1 : -1) : 0;
+
             ParallelFor(strip, nCompMF,
                         [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
-#if (AMREX_SPACEDIM == 2)
-                          int tgt_i = i, tgt_j = j;
-                          if (iDim == 0)
-                            tgt_i = domEdge;
-                          if (iDim == 1)
-                            tgt_j = domEdge;
-                          arr(tgt_i, tgt_j, 0, c) += arr(i, j, 0, c);
-                          arr(i, j, 0, c) = 0.0;
-#elif (AMREX_SPACEDIM == 3)
-                          int tgt_i = i, tgt_j = j, tgt_k = k;
-                          if (iDim == 0) tgt_i = domEdge;
-                          if (iDim == 1) tgt_j = domEdge;
-                          if (iDim == 2) tgt_k = domEdge;
-                          arr(tgt_i, tgt_j, tgt_k, c) += arr(i, j, k, c);
+                          arr(i + di, j + dj, k + dk, c) += arr(i, j, k, c);
                           arr(i, j, k, c) = 0.0;
-#endif
                         });
           }
         }
@@ -2054,16 +2042,16 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
 
     } // for p
   }
+}
 
-  //----- Mirror boundary condition for the node-centred current -------------
-  // Mirror the moment mirror in sum_moments(): the current jHat suffers the
-  // same ~half-weight at non-periodic edge nodes.  Keep density and current
-  // consistent at the wall (both must be restored together, otherwise the
-  // E-solver's 1/rho Ohm factor sees full rho with half J).  Apply the same
-  // mirror (copy edge node into the first ghost node, fold back -> double,
-  // zero the ghost) ONLY at reflect / inflow faces -- the same set as
-  // sum_moments().  Coupled, outflow, vacuum, absorb, and periodic
-  // faces are left untouched.
+//==========================================================
+// Apply mirror BC for node-centred current at reflect and inflow domain faces.
+// For reflect faces, specular symmetry zeroes normal current and doubles
+// tangential current. For inflow faces, all components double to compensate
+// for half-space node weighting.
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::apply_jhat_mirror(MultiFab& jHat,
+                                                          int iLev) {
   if (!Geom(iLev).isAllPeriodic() && jHat.nGrow() > 0) {
     const Box& dom = Geom(iLev).Domain();
     const int nCompJ = jHat.nComp();
@@ -2078,18 +2066,12 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
         for (int side = 0; side < 2; ++side) {
           const bool isLo = (side == 0);
           const int faceBc = isLo ? bc.lo[iDim] : bc.hi[iDim];
-          // See the mirror block in sum_moments(): a particle face is never
-          // `conducting` any more (it is mapped to `reflect` at parse time).
-          const bool doFold =
-              (faceBc == ParticleBC::reflect || faceBc == ParticleBC::inflow);
-          if (!doFold)
+          if (faceBc != ParticleBC::reflect && faceBc != ParticleBC::inflow)
             continue;
 
-          // jHat is NODE-centred; see the mirror block in sum_moments() for
-          // the dom.bigEnd+1 hi-side edge-node note.
+          // Upper boundary node is dom.bigEnd + 1 due to node-centering.
           const int domEdge = isLo ? dom.smallEnd(iDim) : dom.bigEnd(iDim) + 1;
-          const int tileEdge = isLo ? bx.smallEnd(iDim) : bx.bigEnd(iDim);
-          if (tileEdge != domEdge)
+          if ((isLo ? bx.smallEnd(iDim) : bx.bigEnd(iDim)) != domEdge)
             continue;
 
           const Box& fbx = mfi.fabbox();
@@ -2100,35 +2082,19 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
           const Box strip(gs, ge);
 
           const bool isReflect = (faceBc == ParticleBC::reflect);
+          const int di = (iDim == 0) ? (isLo ? 1 : -1) : 0;
+          const int dj = (iDim == 1) ? (isLo ? 1 : -1) : 0;
+          const int dk = (iDim == 2) ? (isLo ? 1 : -1) : 0;
 
           ParallelFor(strip, nCompJ,
                       [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
-#if (AMREX_SPACEDIM == 2)
-                        int ei = i, ej = j;
-                        if (iDim == 0)
-                          ei = domEdge;
-                        if (iDim == 1)
-                          ej = domEdge;
-                        const Real val = jArr(ei, ej, 0, c);
-                        if (isReflect && c == iDim) {
-                          jArr(ei, ej, 0, c) = 0.0;
-                        } else {
-                          jArr(ei, ej, 0, c) += val; // fold mirror back -> 2x
-                        }
-                        jArr(i, j, 0, c) = 0.0; // zero the ghost layer
-#elif (AMREX_SPACEDIM == 3)
-                        int ei = i, ej = j, ek = k;
-                        if (iDim == 0) ei = domEdge;
-                        if (iDim == 1) ej = domEdge;
-                        if (iDim == 2) ek = domEdge;
-                        const Real val = jArr(ei, ej, ek, c);
+                        const int ei = i + di, ej = j + dj, ek = k + dk;
                         if (isReflect && c == iDim) {
                           jArr(ei, ej, ek, c) = 0.0;
                         } else {
-                          jArr(ei, ej, ek, c) += val; // fold mirror back -> 2x
+                          jArr(ei, ej, ek, c) *= 2.0;
                         }
-                        jArr(i, j, k, c) = 0.0; // zero the ghost layer
-#endif
+                        jArr(i, j, k, c) = 0.0;
                       });
         }
       }
@@ -3628,12 +3594,9 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
   const Real csmall = 1e-9;
   const Real tmp = csmall * fabs(1. / a(iq_, nVar));
   for (int i = iq_; i <= ie_; ++i) {
-    // Floor the singular threshold at a strictly positive value: a constraint
-    // row whose coefficients AND right-hand side are both zero (e.g. the
-    // w-momentum row when wz vanishes identically, as in 1D runs) would
-    // otherwise produce ref==0, and the zero-pivot guard `fabs(pivot) <
-    // ref` degenerates to `0 < 0` (false) -- the singular system is then
-    // "solved" and 0/0 NaN leaks into the weights.
+    // Ensure a strictly positive threshold so constraint rows with zero RHS and
+    // zero coefficients (e.g., vz = 0 in 1D/2D) are flagged as singular,
+    // preventing near-zero pivots or 0/0 NaNs in the weights.
     ref[i] = std::max(fabs(a(i, nVar) * tmp), csmall * tmp);
   }
 
@@ -3770,10 +3733,8 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
     if (i < nPartNew) {
       ref[i] = tmp;
     } else {
-      // I do not have a good idea to set the reference value here. --Yuxi
-      // Floor at strictly positive: a zero-RHS constraint row (velocity
-      // component identically zero, as in 1D runs) would give ref==0 and
-      // the zero-pivot guard degenerates to `0 < 0` (false).
+      // Floor at strictly positive: zero-RHS constraint rows (e.g. vz = 0 in 1D/2D)
+      // must be flagged as singular rather than accepting near-zero pivots.
       ref[i] = std::max(fabs(a(i, nVar) * tmp * csmall), csmall * tmp);
     }
   }
@@ -4002,21 +3963,9 @@ void Particles<NStructReal, NStructInt>::merge(Real limit) {
 
             //----------------------------------------------
 
-            Real plight = 1e99, pheavy = 0;
-            for (int ip = 0; ip < nOld; ip++) {
-              auto& p = particles[idx_I[ip]];
-              Real w = fabs(p.rdata(iqp_));
-              if (w < plight)
-                plight = w;
-              if (w > pheavy)
-                pheavy = w;
-            }
-
-            // Backstop: a solution containing non-finite weights must never
-            // be applied (NaN passes all comparison-based validation inside
-            // the solvers). Skip the merge of this bin.
+            // Reject merge if any solved weight is non-finite (NaN / Inf).
             bool xIsFinite = true;
-            for (int ip = 0; ip < nPartNew; ip++) {
+            for (int ip = 0; ip < nPartNew; ++ip) {
               if (!std::isfinite(x[ip])) {
                 xIsFinite = false;
                 break;
@@ -4236,21 +4185,9 @@ void Particles<NStructReal, NStructInt>::merge_new(Real limit) {
 
             //----------------------------------------------
 
-            Real plight = 1e99, pheavy = 0;
-            for (int ip = 0; ip < nOld; ip++) {
-              auto& p = particles[idx_I[ip]];
-              Real w = fabs(p.rdata(iqp_));
-              if (w < plight)
-                plight = w;
-              if (w > pheavy)
-                pheavy = w;
-            }
-
-            // Backstop: a solution containing non-finite weights must never
-            // be applied (NaN passes all comparison-based validation inside
-            // the solvers). Skip the merge of this bin.
+            // Reject merge if any solved weight is non-finite (NaN / Inf).
             bool xIsFinite = true;
-            for (int ip = 0; ip < nPartNew; ip++) {
+            for (int ip = 0; ip < nPartNew; ++ip) {
               if (!std::isfinite(x[ip])) {
                 xIsFinite = false;
                 break;
