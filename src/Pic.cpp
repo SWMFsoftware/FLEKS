@@ -3033,68 +3033,40 @@ void Pic::update_B_hybrid() {
   std::string nameFunc = "Pic::update_B_hybrid";
   timing_func(nameFunc);
 
-  Real dt = tc->get_dt();
-  Real subDt = dt / nBSubcycle;
+  const Real dt = tc->get_dt();
+  const Real subDt = dt / nBSubcycle;
 
-  // Grid-mode hyper-resistivity: eta_h = 4*pi * C_h * dx_fine^4 / dt.
-  // The coefficient is set ONCE from the finest level's dx and applied to ALL
-  // levels, so the actual physical hyper-diffusivity eta_h is identical on
-  // every level. Scaling eta_h by each level's own dx^4 would make it 16x
-  // larger on the coarse level (dx_c = 2*dx_f => dx_c^4 = 16*dx_f^4), driving
-  // the explicit hyper-resistivity term unstable on the coarse grid and causing
-  // runaway particle heating (observed with C_h=0.001 on a 32x16 coarse grid
-  // while the 64x32 fine grid is stable). Using a single eta_h everywhere keeps
-  // the hyper-diffusion uniform and stable across levels. Uses the full dt (not
-  // subDt) so that the total diffusion per step is independent of nBSubcycle:
-  // each sub-step applies eta_h*subDt/dx^4 diffusion, and nBSubcycle sub-steps
-  // give nBSubcycle * eta_h*subDt/dx^4 = eta_h*dt/dx^4.
+  // Grid-mode hyper-resistivity: uniform eta_h based on finest dx to keep diffusion stable across levels.
   if (etaHyperMode == "grid" && etaHyperCh > 0) {
     const int iFinest = n_lev() - 1;
     const auto dxFine = Geom(iFinest).CellSizeArray();
-    Real dxMinFine = amrex::min(dxFine[0], dxFine[1]);
-    if (nDim > 2)
-      dxMinFine = amrex::min(dxMinFine, dxFine[2]);
+    Real dxMinFine = dxFine[0];
+    for (int d = 1; d < nDim; ++d)
+      dxMinFine = amrex::min(dxMinFine, dxFine[d]);
+
     const Real etaHyper = fourPI * etaHyperCh * std::pow(dxMinFine, 4) / dt;
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
       etaHyperLev[iLev] = etaHyper;
     }
   }
 
-  // CFL guard for the explicit diffusive terms (J = curl(B)/(4*pi) in CGS).
-  //
-  // With the collocated 2*dx curl (symbol i*sin(k_i*dx_i)/dx_i) and the
-  // 3-point Laplacian (symbol -4*sin^2(k_i*dx_i/2)/dx_i^2), the exact
-  // discrete damping rate of a Fourier mode is
-  //   resistive: gamma   = (eta/4pi)   * S(k)
-  //   hyper:     gamma_h = (eta_h/4pi) * S(k) * L(k)
-  // where S(k) = sum_i sin^2(k_i dx_i)/dx_i^2 and
-  //       L(k) = sum_i 4 sin^2(k_i dx_i/2)/dx_i^2.
-  // Bounding every sin^2 by 1 gives the estimates used below, at most 1.69x
-  // conservative (S and L peak at different k).  Directions that cannot carry
-  // a mode are dropped: a single-cell direction has k_i = 0 only, and a
-  // two-cell direction only adds the Nyquist mode, which contributes to L but
-  // not to S (sin(k_i dx_i) = 0 there).
-  //
-  // The previous estimate used k^2 = sum_i 4/dx_i^2 and k^4 = (k^2)^2, which
-  // over-stated the hyper-resistive rate by 1-4 orders of magnitude (it was
-  // reporting 3.7e3 for a run whose true number was 0.42) while remaining
-  // blind to the rate that actually matters.
-  //
-  // gamma*subDt must stay below the real-axis stability limit of the field
-  // integrator: 2.785 for classical RK4, 2.513 for SSPRK3.
+  // CFL stability check for explicit resistive and hyper-resistive diffusion.
   const Real cflLimit = useRK4 ? 2.785 : 2.513;
   for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    if (etaResistivity <= 0 && etaHyperLev[iLev] <= 0)
+      continue;
+
     const auto dx = Geom(iLev).CellSizeArray();
     const Box& domBox = Geom(iLev).Domain();
     Real sMax = 0.0, lMax = 0.0;
     for (int iDim = 0; iDim < nDim; ++iDim) {
       const int nCellDim = domBox.length(iDim);
       if (nCellDim < 2)
-        continue; // single-cell direction: k_i = 0 contributes to neither
+        continue;
       const Real invDx2 = 1.0 / (dx[iDim] * dx[iDim]);
-      lMax += 4.0 * invDx2; // attained at the Nyquist mode (nCell >= 2)
+      lMax += 4.0 * invDx2;
       if (nCellDim >= 3)
-        sMax += invDx2; // sin(k_i dx_i) != 0 needs at least 3 cells
+        sMax += invDx2;
     }
     const Real cflEta = (etaResistivity / fourPI) * sMax * subDt;
     const Real cflHyper = (etaHyperLev[iLev] / fourPI) * sMax * lMax * subDt;
@@ -3109,51 +3081,33 @@ void Pic::update_B_hybrid() {
           << ", explicit 4th-order diffusion may be unstable)\n";
   }
 
-  for (int subStep = 0; subStep < nBSubcycle; ++subStep) {
+  const Real invSubcycle = 1.0 / static_cast<Real>(nBSubcycle);
 
-    // Global sub-step fraction g in [0, 1).  Following Hybrid-VPIC, the
-    // moment time-interpolation weight hstep maps each RK stage to the time
-    // (as a fraction of the particle step) at which its E is evaluated:
-    //   stage 1 (E at B^n)        : hstep = g
-    //   stage 2/3 (sub-step mid)  : hstep = g + 0.5/nsub
-    //   stage 4 (sub-step end)    : hstep = g + 1.0/nsub
-    // A negative weight 0.5-hstep<0 on J^{n-1/2} for hstep>0.5 is the
-    // intended second-order time extrapolation (same as Hybrid-VPIC's
-    // hyb_advance_e with RHOHS), NOT a clamp to time-centred moments.
-    const Real g = (Real)subStep / (Real)nBSubcycle;
+  for (int subStep = 0; subStep < nBSubcycle; ++subStep) {
+    // Moment time-interpolation weights hstep for RK stages within the sub-step.
+    const Real g = static_cast<Real>(subStep) * invSubcycle;
     const Real hstepStart = g;
-    const Real hstepHalf = g + 0.5 / (Real)nBSubcycle;
-    const Real hstepEnd = g + 1.0 / (Real)nBSubcycle;
+    const Real hstepHalf = g + 0.5 * invSubcycle;
+    const Real hstepEnd = g + invSubcycle;
 
     if (useRK4) {
-      // Classical RK4 on dB/dt = -curl(E), E = E_Ohm(B), on ALL levels:
-      //   k1 = curl(E(B^n, hstep=g))
-      //   k2 = curl(E(B^n - 0.5 dt k1, hstep=g+0.5/nsub))
-      //   k3 = curl(E(B^n - 0.5 dt k2, hstep=g+0.5/nsub))
-      //   k4 = curl(E(B^n - dt k3, hstep=g+1.0/nsub))
-      //   B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4)
-      // All levels use the same subDt (fixed-timestep strategy); coarse-fine
-      // interface ghosts are refreshed after each stage via apply_centerB_BC.
+      // Classical RK4 on dB/dt = -curl(E_Ohm(B)) across all levels.
+      const Real dtSixth = -subDt / 6.0;
+      const Real dtThird = -subDt / 3.0;
+
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        // Stage 1: k1 = curl(E(B^n, hstep=g)). The time-centred B at stage 1 is
-        // B^n.
+        // Stage 1: k1 = curl(E(B^n))
         assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev,
                        hstepStart);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][0],
                               Geom(iLev).InvCellSize());
 
-        // Stages 2-4 evaluate E at the time-centred B (B_stage + B^n)/2: the
-        // current J comes from curl(B_stage), while the Hall/convection B is
-        // the time-averaged (B_stage + B^n)/2. Stage 2: B2 = B^n - 0.5 dt k1; E
-        // at (B2 + B^n)/2.
+        // Stage 2: B2 = B^n - 0.5 dt k1; evaluate E at (B2 + B^n)/2
         MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
         MultiFab::Saxpy(centerBstage[iLev], -0.5 * subDt, kStage[iLev][0], 0, 0,
                         3, nGst);
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerB[iLev], 0, 0, 3, nGst);
-        // Refresh the trial ghosts: the stage algebra above inherits the stale
-        // outermost kStage ring (curl only writes fabbox().grow(-1)), and the
-        // Ohm-solve curls / hyper-resistive Laplacian read that ring.
         apply_centerB_BC(iLev, centerBstage[iLev]);
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstage[iLev], centerBstar[iLev],
@@ -3161,7 +3115,7 @@ void Pic::update_B_hybrid() {
         curl_center_to_center(centerEstage[iLev], kStage[iLev][1],
                               Geom(iLev).InvCellSize());
 
-        // Stage 3: B3 = B^n - 0.5 dt k2; E at (B3 + B^n)/2.
+        // Stage 3: B3 = B^n - 0.5 dt k2; evaluate E at (B3 + B^n)/2
         MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
         MultiFab::Saxpy(centerBstage[iLev], -0.5 * subDt, kStage[iLev][1], 0, 0,
                         3, nGst);
@@ -3174,7 +3128,7 @@ void Pic::update_B_hybrid() {
         curl_center_to_center(centerEstage[iLev], kStage[iLev][2],
                               Geom(iLev).InvCellSize());
 
-        // Stage 4: B4 = B^n - dt k3; E at (B4 + B^n)/2.
+        // Stage 4: B4 = B^n - dt k3; evaluate E at (B4 + B^n)/2
         MultiFab::Copy(centerBstage[iLev], centerB[iLev], 0, 0, 3, nGst);
         MultiFab::Saxpy(centerBstage[iLev], -subDt, kStage[iLev][2], 0, 0, 3,
                         nGst);
@@ -3187,34 +3141,28 @@ void Pic::update_B_hybrid() {
         curl_center_to_center(centerEstage[iLev], kStage[iLev][3],
                               Geom(iLev).InvCellSize());
 
-        // B^{n+1} = B^n - dt/6 (k1 + 2 k2 + 2 k3 + k4).
-        MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kStage[iLev][0], 0, 0, 3,
+        // Accumulate RK4: B^{n+1} = B^n + (dt/6)*(k1 + 2*k2 + 2*k3 + k4)
+        MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][0], 0, 0, 3,
                         nGst);
-        MultiFab::Saxpy(centerB[iLev], -2.0 * subDt / 6.0, kStage[iLev][1], 0,
-                        0, 3, nGst);
-        MultiFab::Saxpy(centerB[iLev], -2.0 * subDt / 6.0, kStage[iLev][2], 0,
-                        0, 3, nGst);
-        MultiFab::Saxpy(centerB[iLev], -subDt / 6.0, kStage[iLev][3], 0, 0, 3,
+        MultiFab::Saxpy(centerB[iLev], dtThird, kStage[iLev][1], 0, 0, 3,
+                        nGst);
+        MultiFab::Saxpy(centerB[iLev], dtThird, kStage[iLev][2], 0, 0, 3,
+                        nGst);
+        MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][3], 0, 0, 3,
                         nGst);
         centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
         apply_centerB_BC(iLev);
-      } // iLev
+      }
       continue;
     }
 
     if (fieldIntegrator == "ssprk3") {
-      // Strong-stability-preserving RK3 with time-centred E:
-      //   B1      = B_n - dt curl(E(B_n))
-      //   B2      = (3/4) B_n + (1/4)(B1 - dt curl(E((B1+B_n)/2)))
-      //   B^{n+1} = (1/3) B_n + (2/3)(B2 - dt curl(E((B2+B_n)/2)))
-      // All levels use the same subDt (fixed-timestep strategy); coarse-fine
-      // interface ghosts are refreshed after each stage via apply_centerB_BC.
+      // Strong-stability-preserving RK3 with time-centred E evaluation.
       for (int iLev = 0; iLev < n_lev(); ++iLev) {
-        // Save B_n (sub-step start).
         MultiFab::Copy(centerBstart[iLev], centerB[iLev], 0, 0, 3, nGst);
 
-        // Stage 1: k1 = curl(E(B_n, hstep=g)); B1 = B_n - subDt k1.
+        // Stage 1: B1 = B_n - subDt * curl(E(B_n))
         assemble_ohm_E(centerB[iLev], centerB[iLev], centerEstage[iLev], iLev,
                        hstepStart);
         curl_center_to_center(centerEstage[iLev], kStage[iLev][0],
@@ -3223,12 +3171,9 @@ void Pic::update_B_hybrid() {
         MultiFab::Saxpy(centerBstage[iLev], -subDt, kStage[iLev][0], 0, 0, 3,
                         nGst);
 
-        // Stage 2: avgB2 = (B1+B_n)/2; k2 = curl(E(avgB2));
-        //   B2 = (3/4)B_n + (1/4)(B1 - subDt k2).
+        // Stage 2: B2 = (3/4)*B_n + (1/4)*(B1 - subDt * curl(E(avgB2)))
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerBstart[iLev], 0, 0, 3, nGst);
-        // Refresh the trial ghosts (see the RK4 branch): the stage algebra
-        // inherits the stale outermost kStage ring.
         apply_centerB_BC(iLev, centerBstar[iLev]);
         assemble_ohm_E(centerBstar[iLev], centerBstar[iLev], centerEstage[iLev],
                        iLev, hstepEnd);
@@ -3240,8 +3185,7 @@ void Pic::update_B_hybrid() {
                         0, 3, nGst);
         apply_centerB_BC(iLev, centerBstage[iLev]);
 
-        // Stage 3: avgB3 = (B2+B_n)/2; k3 = curl(E(avgB3));
-        //   B^{n+1} = (1/3)B_n + (2/3)(B2 - subDt k3).
+        // Stage 3: B^{n+1} = (1/3)*B_n + (2/3)*(B2 - subDt * curl(E(avgB3)))
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerBstart[iLev], 0, 0, 3, nGst);
         apply_centerB_BC(iLev, centerBstar[iLev]);
@@ -3251,12 +3195,12 @@ void Pic::update_B_hybrid() {
                               Geom(iLev).InvCellSize());
         MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
                           1.0 / 3.0, centerBstart[iLev], 0, 0, 3, nGst);
-        MultiFab::Saxpy(centerB[iLev], -2.0 / 3.0 * subDt, kStage[iLev][2], 0,
-                        0, 3, nGst);
+        MultiFab::Saxpy(centerB[iLev], (-2.0 / 3.0) * subDt, kStage[iLev][2],
+                        0, 0, 3, nGst);
         centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
         apply_centerB_BC(iLev);
-      } // iLev
+      }
       continue;
     }
   }
@@ -3267,6 +3211,7 @@ void Pic::update_B_hybrid() {
     }
   }
 
+  auto& cellInterp = *get_cell_interp();
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     centerB[iLev].FillBoundary(Geom(iLev).periodicity());
     if (iLev == 0) {
@@ -3276,15 +3221,13 @@ void Pic::update_B_hybrid() {
       fill_fine_lev_bny_from_coarse(
           centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
           ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          *get_cell_interp());
+          cellInterp);
     }
   }
 
-  // Running time-averaged B used in the Ohm's law and the Boris push.
+  // Running time-averaged B used in Ohm's law and the particle push.
   if (useAvgFieldB) {
     const Real alpha = (nAvgFieldB > 1) ? (1.0 - 1.0 / nAvgFieldB) : 0.0;
-    // The hybrid gather reads only centerBavg; maintain nodeBavg only in
-    // full-PIC mode.
     const bool syncNodeBavg = !useHybridPIC;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (!isBavgInit) {
@@ -3309,13 +3252,6 @@ void Pic::update_B_hybrid() {
       if (syncNodeBavg) {
         nodeBavg[iLev].FillBoundary(Geom(iLev).periodicity());
       }
-      // Hybrid-VPIC open-inflow field BC on the PUSH field: when the average
-      // is active, centerBavg (not centerB) is what the Ohm solve's curls and
-      // the Boris push gather, so its domain-boundary ghosts must carry the
-      // boundary condition too. The edge-cell copy applied here every step
-      // also bounds the recurrence's ghost accumulation at the open faces
-      // (mult defaults to valid cells only; the copy overwrites whatever
-      // the unscaled ghost would have accumulated).
       if (iLev == 0) {
         apply_field_bc(cellStatus[iLev], centerBavg[iLev], 0, 3,
                        &Pic::get_center_B, iLev, true);
@@ -3323,11 +3259,8 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // Fill coarse-fine interface ghost cells for centerBavg so the Boris push
-  // reads valid B at the coarse-fine interface. centerBavg is the field
-  // actually gathered by the hybrid pusher (when useAvgFieldB is on).
+  // Fill coarse-fine interface ghost cells for centerBavg.
   if (useAvgFieldB && isBavgInit && finest_level > 0) {
-    auto& cellInterp = *get_cell_interp();
     for (int iLev = 1; iLev < n_lev(); iLev++) {
       fill_fine_lev_bny_from_coarse(centerBavg[iLev - 1], centerBavg[iLev], 0,
                                     3, ref_ratio[iLev - 1], Geom(iLev - 1),
@@ -3335,11 +3268,7 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // Compute the integer-step E^{n+1} (hstep = 1) into centerEhybrid for the
-  // next Boris push. Freshly evaluated on the final B^{n+1} for every
-  // integrator (RK4 writes only the scratch centerEstage; ssprk3 writes
-  // intermediate hstep). Only levels with kinetic particles need it (it is read
-  // solely by the push).
+  // Evaluate integer-step E^{n+1} into centerEhybrid for the next particle push.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     bool hasParticles = false;
     for (int i : kineticSpecies_) {
@@ -3356,7 +3285,7 @@ void Pic::update_B_hybrid() {
     assemble_ohm_E(cBin, cBin, centerEhybrid[iLev], iLev, 1.0);
   }
 
-  // BCs for the cell-centred E (read by the hybrid Boris push).
+  // BCs for cell-centred E (read by the hybrid Boris push).
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
     apply_field_bc(cellStatus[iLev], centerEhybrid[iLev], 0,
@@ -3364,10 +3293,8 @@ void Pic::update_B_hybrid() {
                    false);
   }
 
-  // Fill coarse-fine interface ghost cells for centerEhybrid so the Boris push
-  // reads valid E at the coarse-fine interface on fine levels.
+  // Fill coarse-fine interface ghost cells for centerEhybrid.
   if (finest_level > 0) {
-    auto& cellInterp = *get_cell_interp();
     for (int iLev = 1; iLev < n_lev(); iLev++) {
       fill_fine_lev_bny_from_coarse(centerEhybrid[iLev - 1],
                                     centerEhybrid[iLev], 0, 3,
@@ -3376,8 +3303,7 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // Suppress the grid-scale (odd-even) E component (central-difference
-  // ambipolar term does not couple odd/even cells).
+  // Suppress grid-scale (odd-even) E component.
   if (doSmoothE) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       centerEhybrid[iLev].FillBoundary(Geom(iLev).periodicity());
@@ -3699,18 +3625,8 @@ void Pic::project_down_E() {
   }
 }
 //==========================================================
-// Single dispatch entry point for the electromagnetic fields.
-//
-// Full PIC evolves both E and B; hybrid PIC evolves only centerB and derives
-// E from the generalized Ohm's law.  One face type per physical face is
-// enough either way: the B operator and the E operator read the same
-// `bcField` and differ only through the `isB` convention of the individual
-// fillers.
-//
-// Every face is visited.  The old apply_BC() returned after the first
-// matching wall type, so a box mixing e.g. a conducting x-face with an
-// absorbing y-face silently dropped one of them; here each filler touches
-// only the faces carrying its own type, so all are treated in one pass.
+// Apply boundary conditions to electromagnetic fields (E or B).
+// Visits each boundary face and applies the corresponding BC configured in bcField.
 //==========================================================
 void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
                          const int iStart, const int nComp, GETVALUE func,
@@ -3723,18 +3639,15 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
   if (mf.nGrow() == 0)
     return;
 
-  // Generic fill: zero-gradient copy on open faces (use_float), and the
-  // fluid-interface / uniform state from `func` everywhere else.
+  // Base fill: float on open faces, or evaluate state from func elsewhere.
   apply_BC(status, mf, iStart, nComp, func, iLev, &bcField);
 
-  // Dedicated wall operators, each visiting only the faces of its own type.
-  // Order matters: a later operator overwrites an earlier one on shared
-  // cells, and `inflow` is last because it encodes the open-boundary state.
+  // Dedicated wall operators applied per configured face type.
   apply_conducting_wall(status, mf, iStart, nComp, iLev, bcField, isB);
   apply_absorbing_wall(status, mf, iStart, nComp, iLev, bcField, isB);
   apply_inflow_wall(status, mf, iStart, nComp, iLev, bcField, isB);
 
-  // Driven wave source last, so it wins over everything above.
+  // Wave boundary condition overwrites faces where active.
   if (waveBC.active) {
     const Real t = tc ? tc->get_time() : 0.0;
     apply_wave_field(status, mf, iStart, nComp, iLev, bcField, isB ? 0 : 1, t);
