@@ -3036,7 +3036,8 @@ void Pic::update_B_hybrid() {
   const Real dt = tc->get_dt();
   const Real subDt = dt / nBSubcycle;
 
-  // Grid-mode hyper-resistivity: uniform eta_h based on finest dx to keep diffusion stable across levels.
+  // Grid-mode hyper-resistivity: uniform eta_h based on finest dx to keep
+  // diffusion stable across levels.
   if (etaHyperMode == "grid" && etaHyperCh > 0) {
     const int iFinest = n_lev() - 1;
     const auto dxFine = Geom(iFinest).CellSizeArray();
@@ -3084,7 +3085,8 @@ void Pic::update_B_hybrid() {
   const Real invSubcycle = 1.0 / static_cast<Real>(nBSubcycle);
 
   for (int subStep = 0; subStep < nBSubcycle; ++subStep) {
-    // Moment time-interpolation weights hstep for RK stages within the sub-step.
+    // Moment time-interpolation weights hstep for RK stages within the
+    // sub-step.
     const Real g = static_cast<Real>(subStep) * invSubcycle;
     const Real hstepStart = g;
     const Real hstepHalf = g + 0.5 * invSubcycle;
@@ -3142,14 +3144,10 @@ void Pic::update_B_hybrid() {
                               Geom(iLev).InvCellSize());
 
         // Accumulate RK4: B^{n+1} = B^n + (dt/6)*(k1 + 2*k2 + 2*k3 + k4)
-        MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][0], 0, 0, 3,
-                        nGst);
-        MultiFab::Saxpy(centerB[iLev], dtThird, kStage[iLev][1], 0, 0, 3,
-                        nGst);
-        MultiFab::Saxpy(centerB[iLev], dtThird, kStage[iLev][2], 0, 0, 3,
-                        nGst);
-        MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][3], 0, 0, 3,
-                        nGst);
+        MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][0], 0, 0, 3, nGst);
+        MultiFab::Saxpy(centerB[iLev], dtThird, kStage[iLev][1], 0, 0, 3, nGst);
+        MultiFab::Saxpy(centerB[iLev], dtThird, kStage[iLev][2], 0, 0, 3, nGst);
+        MultiFab::Saxpy(centerB[iLev], dtSixth, kStage[iLev][3], 0, 0, 3, nGst);
         centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
         apply_centerB_BC(iLev);
@@ -3195,8 +3193,8 @@ void Pic::update_B_hybrid() {
                               Geom(iLev).InvCellSize());
         MultiFab::LinComb(centerB[iLev], 2.0 / 3.0, centerBstage[iLev], 0,
                           1.0 / 3.0, centerBstart[iLev], 0, 0, 3, nGst);
-        MultiFab::Saxpy(centerB[iLev], (-2.0 / 3.0) * subDt, kStage[iLev][2],
-                        0, 0, 3, nGst);
+        MultiFab::Saxpy(centerB[iLev], (-2.0 / 3.0) * subDt, kStage[iLev][2], 0,
+                        0, 3, nGst);
         centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 
         apply_centerB_BC(iLev);
@@ -3218,10 +3216,10 @@ void Pic::update_B_hybrid() {
       apply_field_bc(cellStatus[iLev], centerB[iLev], 0, centerB[iLev].nComp(),
                      &Pic::get_center_B, iLev, true);
     } else {
-      fill_fine_lev_bny_from_coarse(
-          centerB[iLev - 1], centerB[iLev], 0, centerB[iLev - 1].nComp(),
-          ref_ratio[iLev - 1], Geom(iLev - 1), Geom(iLev), cell_status(iLev),
-          cellInterp);
+      fill_fine_lev_bny_from_coarse(centerB[iLev - 1], centerB[iLev], 0,
+                                    centerB[iLev - 1].nComp(),
+                                    ref_ratio[iLev - 1], Geom(iLev - 1),
+                                    Geom(iLev), cell_status(iLev), cellInterp);
     }
   }
 
@@ -3268,7 +3266,8 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // Evaluate integer-step E^{n+1} into centerEhybrid for the next particle push.
+  // Evaluate integer-step E^{n+1} into centerEhybrid for the next particle
+  // push.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     bool hasParticles = false;
     for (int i : kineticSpecies_) {
@@ -3626,7 +3625,8 @@ void Pic::project_down_E() {
 }
 //==========================================================
 // Apply boundary conditions to electromagnetic fields (E or B).
-// Visits each boundary face and applies the corresponding BC configured in bcField.
+// Visits each boundary face and applies the corresponding BC configured in
+// bcField.
 //==========================================================
 void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
                          const int iStart, const int nComp, GETVALUE func,
@@ -3726,7 +3726,8 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
             for (int kk = kmin; kk <= kmax && !isNeiFound; ++kk) {
               for (int jj = -1; jj <= 1 && !isNeiFound; ++jj) {
                 for (int ii = -1; ii <= 1 && !isNeiFound; ++ii) {
-                  if (!bit::is_lev_boundary(statusArr(i + ii, j + jj, k + kk, 0))) {
+                  if (!bit::is_lev_boundary(
+                          statusArr(i + ii, j + jj, k + kk, 0))) {
                     isNeiFound = true;
                     for (int iVar = iStart; iVar < iStart + nComp; ++iVar) {
                       arr(i, j, k, iVar) = arr(i + ii, j + jj, k + kk, iVar);
@@ -3749,8 +3750,8 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
 
         auto lo = IntVect(bx.loVect());
         auto hi = IntVect(bx.hiVect());
-        if (nDim > 2 &&
-            Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
+        if (nDim > 2 && Geom(iLev).Domain().bigEnd(iz_) ==
+                            Geom(iLev).Domain().smallEnd(iz_)) {
           lo[iz_]++;
           hi[iz_]--;
         }
@@ -3802,9 +3803,9 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
   const IntVect domHi = Geom(iLev).Domain().bigEnd();
   const IndexType ixType = mf.boxArray().ixType();
 
-  bool isNode[3] = {false, false, false};
-  int loBnd[3] = {0, 0, 0};
-  int hiBnd[3] = {0, 0, 0};
+  bool isNode[3] = { false, false, false };
+  int loBnd[3] = { 0, 0, 0 };
+  int hiBnd[3] = { 0, 0, 0 };
   for (int d = 0; d < nDim; ++d) {
     isNode[d] = (ixType[d] == IndexType::NODE);
     loBnd[d] = domLo[d];
@@ -3870,7 +3871,8 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
         if (isNode[d])
           m[d] = isLow ? (2 * loBnd[d] - ijk[d]) : (2 * hiBnd[d] - ijk[d]);
         else
-          m[d] = isLow ? (2 * loBnd[d] - 1 - ijk[d]) : (2 * hiBnd[d] + 1 - ijk[d]);
+          m[d] =
+              isLow ? (2 * loBnd[d] - 1 - ijk[d]) : (2 * hiBnd[d] + 1 - ijk[d]);
 
         for (int iVar = 0; iVar < nComp; ++iVar) {
           const int comp = iStart + iVar;
@@ -3934,11 +3936,11 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
   const IndexType ixType = mf.boxArray().ixType();
   const Real* dx = Geom(iLev).CellSize();
 
-  bool isNode[3] = {false, false, false};
-  int loBnd[3] = {0, 0, 0};
-  int hiBnd[3] = {0, 0, 0};
-  Real decay[3] = {0.0, 0.0, 0.0};
-  Real drive[3] = {0.0, 0.0, 0.0};
+  bool isNode[3] = { false, false, false };
+  int loBnd[3] = { 0, 0, 0 };
+  int hiBnd[3] = { 0, 0, 0 };
+  Real decay[3] = { 0.0, 0.0, 0.0 };
+  Real drive[3] = { 0.0, 0.0, 0.0 };
 
   for (int d = 0; d < nDim; ++d) {
     isNode[d] = (ixType[d] == IndexType::NODE);
@@ -3974,7 +3976,8 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
         if (isNode[d])
           m[d] = isLow ? (2 * loBnd[d] - ijk[d]) : (2 * hiBnd[d] - ijk[d]);
         else
-          m[d] = isLow ? (2 * loBnd[d] - 1 - ijk[d]) : (2 * hiBnd[d] + 1 - ijk[d]);
+          m[d] =
+              isLow ? (2 * loBnd[d] - 1 - ijk[d]) : (2 * hiBnd[d] + 1 - ijk[d]);
 
         for (int iVar = 0; iVar < nComp; ++iVar) {
           const int comp = iStart + iVar;
@@ -4023,9 +4026,9 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
   const IntVect domHi = Geom(iLev).Domain().bigEnd();
   const IndexType ixType = mf.boxArray().ixType();
 
-  bool isNode[3] = {false, false, false};
-  int loBnd[3] = {0, 0, 0};
-  int hiBnd[3] = {0, 0, 0};
+  bool isNode[3] = { false, false, false };
+  int loBnd[3] = { 0, 0, 0 };
+  int hiBnd[3] = { 0, 0, 0 };
   for (int d = 0; d < nDim; ++d) {
     isNode[d] = (ixType[d] == IndexType::NODE);
     loBnd[d] = domLo[d];
@@ -4064,7 +4067,8 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
 }
 
 //==========================================================
-// Mirror ion moments into physical-wall ghost cells for smooth Ohm/Hall stencils.
+// Mirror ion moments into physical-wall ghost cells for smooth Ohm/Hall
+// stencils.
 void Pic::apply_centerPlasma_BC(const iMultiFab& status, MultiFab& mf,
                                 const int iLev) {
   std::string nameFunc = "Pic::apply_centerPlasma_BC";
@@ -4176,7 +4180,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
       Real pos[3] = { plo[0] + dx[0] * i, plo[1] + dx[1] * j,
                       plo[2] + dx[2] * k };
 
-      Real waveVal[3] = {0.0, 0.0, 0.0};
+      Real waveVal[3] = { 0.0, 0.0, 0.0 };
       bool hasWave = false;
 
       for (const auto& f : waveBC.faces) {
