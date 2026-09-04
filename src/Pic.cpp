@@ -329,13 +329,14 @@ void Pic::apply_periodicity_autofill(const Geometry& gm) {
 }
 
 //==========================================================
-// Validate boundary condition consistency across field, particles, and geometry.
-// Field vs particle checks are skipped if field BC was not explicitly set.
+// Validate boundary condition consistency across field, particles, and
+// geometry. Field vs particle checks are skipped if field BC was not explicitly
+// set.
 void Pic::validate_bc_pairing(const Geometry& gm) {
   static const char* const dimNames[3] = { "x", "y", "z" };
-  static const char* const faceNames[3][2] = {
-    { "x-lo", "x-hi" }, { "y-lo", "y-hi" }, { "z-lo", "z-hi" }
-  };
+  static const char* const faceNames[3][2] = { { "x-lo", "x-hi" },
+                                               { "y-lo", "y-hi" },
+                                               { "z-lo", "z-hi" } };
 
   const bool isStandalone = domainParameters.isStandalone;
   const bool hasNonPeriodic = !gm.isAllPeriodic();
@@ -494,9 +495,8 @@ void Pic::post_process_param() {
 
   // Convert input units to normalized code units.
   if (useHybridPIC) {
-    // NOTE: the SI->code conversions of etaResistivity and etaHyper need the
-    // normalization factors finalized by fi->post_process_param(), so they are
-    // done in convert_resistivity() (via finalize_units_conversion()).
+    // Resistivity SI->code conversions are deferred to
+    // finalize_units_conversion().
 
     useRK4 = (fieldIntegrator == "rk4");
     if (fieldIntegrator != "rk4" && fieldIntegrator != "ssprk3") {
@@ -524,8 +524,7 @@ void Pic::post_process_param() {
     if (rhoMinOhm <= 0)
       rhoMinOhm = 0.0; // resolved to 1e-6*electronDensity0 on first advance
   }
-  // NOTE: report_bc_warnings() is not called here -- Domain calls it after
-  // apply_periodicity_autofill() so the auto-fill can contribute too.
+  // report_bc_warnings() is called by Domain after BC autofill and validation.
 }
 
 //==========================================================
@@ -800,7 +799,6 @@ void Pic::post_regrid() {
       sourceParts.push_back(std::move(ptrSource));
     }
 
-    // Wave velocity kick for boundary-injected particles.
     if (waveBC.active) {
       for (auto& p : parts) {
         p->waveVelocityKick = [this](const Real* pos, Real t, Real& dvx,
@@ -818,13 +816,14 @@ void Pic::post_regrid() {
     }
   }
 
-  // Propagate the field-side wave faces to every species.  `wave` is a
-  // field-only boundary type, so the velocity kick is keyed off bcField
-  // rather than off a particle-side spelling.
-  for (auto& p : parts) {
-    for (int d = 0; d < nDim; ++d) {
-      p->set_wave_face(d, 0, bcField.face(d, 0) == FieldBC::wave);
-      p->set_wave_face(d, 1, bcField.face(d, 1) == FieldBC::wave);
+  // Propagate field wave boundaries to each species to drive wave velocity
+  // kicks.
+  for (int d = 0; d < nDim; ++d) {
+    const bool isWaveLo = (bcField.face(d, 0) == FieldBC::wave);
+    const bool isWaveHi = (bcField.face(d, 1) == FieldBC::wave);
+    for (auto& p : parts) {
+      p->set_wave_face(d, 0, isWaveLo);
+      p->set_wave_face(d, 1, isWaveHi);
     }
   }
   //--------------particles-----------------------------------
@@ -1491,14 +1490,6 @@ void Pic::sum_moments(bool updateDt) {
             Geom(iLev - 1), Geom(iLev), cell_status(iLev), cellInterp);
       }
     }
-
-    // Output bridge: average_center_to_node(centerPlasma -> nodePlasma) for
-    // every species and the summed entry. This is a pure output mirror. To
-    // avoid the per-step cost, the bridge is deferred and runs lazily by
-    // sync_node_plasma_output() only when a plot/probe/load-balance actually
-    // reads nodePlasma. (The Mach number is computed separately, full-PIC only,
-    // inside sync_node_plasma_output() when a "mach" plot is requested.)
-    nodePlasmaStale = true;
   } else {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       nodePlasma[nSpecies][iLev].setVal(0.0);
@@ -1526,36 +1517,8 @@ void Pic::sum_moments(bool updateDt) {
 }
 
 //==========================================================
-void Pic::sync_node_plasma_output(const bool needMach) {
-  // nodePlasma is full-PIC only.
-  if (useHybridPIC)
-    return;
-  if (!nodePlasmaStale)
-    return;
-  // Output bridge: average_center_to_node(centerPlasma -> nodePlasma)
-  // for every species and the summed entry. Deferred from sum_moments
-  // so non-output steps do not pay this per-step cost.
-  for (int i = 0; i < nSpecies + 1; ++i) {
-    for (int iLev = 0; iLev < n_lev(); iLev++) {
-      centerPlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
-      average_center_to_node(centerPlasma[i][iLev], nodePlasma[i][iLev]);
-      nodePlasma[i][iLev].FillBoundary(Geom(iLev).periodicity());
-    }
-  }
-  // The Mach number is a pure output diagnostic: it is read only by the "mach"
-  // plot variable (get_var) for full-PIC. Avoid it unless a plot actually
-  // requests it.
-  if (needMach) {
-    calc_mach_number();
-  }
-  nodePlasmaStale = false;
-}
-
-//==========================================================
 void Pic::finalize_units_conversion() {
-  // All conversions depend on fi->post_process_param() having finalized the
-  // normalization constants (Si2NoRho, Si2NoV, ...). Called exactly once from
-  // Domain::update_param(), so no idempotency guards are needed here.
+  // Convert input units to code units using normalization factors from fi.
   convert_resistivity();
   convert_electron_density0();
   convert_inflow_state();
@@ -1590,12 +1553,11 @@ void Pic::convert_resistivity() {
                    << etaHyper << " [code units]\n";
   }
 
-  // Guard: a non-zero SI input that converts to a non-positive coefficient
-  // means the normalization was not finalized (both factors are 0 before
-  // fi->post_process_param()). The term would then be silently switched off.
+  // Guard against uninitialized normalization producing non-positive
+  // coefficients.
   if ((etaResistivitySI > 0 && !(etaResistivity > 0)) ||
       (etaHyperSI > 0 && etaHyperMode == "si" &&
-       !(etaHyperLev.size() > 0 && etaHyperLev[0] > 0))) {
+       (etaHyperLev.empty() || !(etaHyperLev[0] > 0)))) {
     amrex::Abort("Pic::convert_resistivity: the SI->code conversion produced a "
                  "non-positive resistivity. Check the normalization "
                  "(#NORMALIZATION lNormSI / uNormSI).");
@@ -1604,9 +1566,7 @@ void Pic::convert_resistivity() {
 
 //==========================================================
 void Pic::convert_electron_density0() {
-  // Input in amu/cc; convert to code units.
-  // get_Si2NoRho() is only valid here (once, after fi->post_process_param()
-  // finalizes the normParams).
+  // Convert electron density from amu/cc to code units.
   electronDensity0 =
       electronDensity0In * 1.0e6 * cProtonMassSI * fi->get_Si2NoRho();
 
@@ -1625,42 +1585,36 @@ void Pic::convert_inflow_state() {
   if (!inflowDefined_)
     return;
 
-  // rho [amu/cc] -> number density [code units] (same conversion as
-  // electronDensity0: amu/cc * 1e6 * mp * Si2NoRho).
-  inflowRho_ = inflowRho_ * 1.0e6 * cProtonMassSI * fi->get_Si2NoRho();
+  // Convert density from amu/cc to code units.
+  const double Si2NoRho = fi->get_Si2NoRho();
+  inflowRho_ *= 1.0e6 * cProtonMassSI * Si2NoRho;
 
-  // velocity [km/s] -> code units.
-  const double Si2NoV = fi->get_Si2NoV();
-  inflowUx_ *= 1.0e3 * Si2NoV;
-  inflowUy_ *= 1.0e3 * Si2NoV;
-  inflowUz_ *= 1.0e3 * Si2NoV;
+  // Convert velocity from km/s to code units.
+  const double vFactor = 1.0e3 * fi->get_Si2NoV();
+  inflowUx_ *= vFactor;
+  inflowUy_ *= vFactor;
+  inflowUz_ *= vFactor;
 
-  // T [K] -> code units as v^2 (kT/m_p normalized by uNorm^2), matching the
-  // electronTemperature conversion: T_code = k*T / (m_p * uNorm_SI^2).  This
-  // gives the 1-D thermal speed vth = sqrt(T_code / mass_code) at use sites
-  // (mass_code = mass_i/m_p), so vth = sqrt(kT/m_i) in code velocity units.
+  // Convert temperature T [K] to code units (kT / (m_p * uNorm^2)).
   const double unormSI = fi->get_unorm_si();
   inflowT_ = cBoltzmannSI * inflowT_ / (cProtonMassSI * unormSI * unormSI);
 
-  // Publish the converted state to the FluidInterface so the Particles layer
-  // (which holds an fi pointer, not a Pic pointer) can read it via
-  // get_inflow_vel(iS).  We use the SAME upstream density / velocity / thermal
-  // speed for every ion species (the #INFLOW block specifies a single upstream
-  // plasma state; a multi-ion extension would key by species).
-  amrex::Vector<FluidInterfaceParameters::InflowVel> stateVec(nSpecies);
+  // Publish converted state to FluidInterface for boundary particle injection.
+  FluidInterfaceParameters::InflowVel baseVel;
+  baseVel.nDens = inflowRho_;
+  baseVel.ux = inflowUx_;
+  baseVel.uy = inflowUy_;
+  baseVel.uz = inflowUz_;
+  baseVel.vth = 0.0;
+
+  amrex::Vector<FluidInterfaceParameters::InflowVel> stateVec(nSpecies,
+                                                              baseVel);
+  const int nParts = static_cast<int>(parts.size());
   for (int iS = 0; iS < nSpecies; ++iS) {
-    // Per-species 1-D thermal speed: vth = sqrt(kT/m_i).  In code units,
-    // inflowT_ is (k*T)*Si2NoT in code v^2 units (= kT/m_norm since Si2NoT
-    // encodes the v^2 normalization).  For a species with code-units mass
-    // mass_i = mass_SI / mNorm, vth^2 = inflowT_ / mass_i.
-    double mass_i =
-        (iS < (int)parts.size() && parts[iS]) ? parts[iS]->get_mass() : 1.0;
-    stateVec[iS].nDens = inflowRho_;
-    stateVec[iS].vth =
-        (inflowT_ > 0 && mass_i > 0) ? std::sqrt(inflowT_ / mass_i) : 0.0;
-    stateVec[iS].ux = inflowUx_;
-    stateVec[iS].uy = inflowUy_;
-    stateVec[iS].uz = inflowUz_;
+    const double mass_i =
+        (iS < nParts && parts[iS]) ? parts[iS]->get_mass() : 1.0;
+    if (inflowT_ > 0 && mass_i > 0)
+      stateVec[iS].vth = std::sqrt(inflowT_ / mass_i);
   }
   fi->set_inflow_state(stateVec);
   fi->set_inflow_defined(true);
@@ -1669,8 +1623,8 @@ void Pic::convert_inflow_state() {
                  << " n=" << inflowRho_ << " u=(" << inflowUx_ << ","
                  << inflowUy_ << "," << inflowUz_ << ")"
                  << " vth=" << (inflowT_ > 0 ? std::sqrt(inflowT_) : 0.0)
-                 << "  (Si2NoRho=" << fi->get_Si2NoRho()
-                 << ", Si2NoV=" << Si2NoV << ")\n";
+                 << "  (Si2NoRho=" << Si2NoRho
+                 << ", Si2NoV=" << fi->get_Si2NoV() << ")\n";
 }
 
 //==========================================================
@@ -2061,14 +2015,13 @@ void Pic::update(bool doReportIn) {
 
   inject_particles_for_boundary_cells();
 
-  // Open-inflow faces: flux-weighted particle injection at the physical
-  // boundary face (Hybrid-VPIC style), after the push and before the moment
-  // deposit so the fresh particles contribute to the moments on this step.
-  // Called here (not inside inject_particles_for_boundary_cells) so that the
-  // t=0 fill_particles() call does not pre-load an extra dt of influx.
+  // Inject incoming flux at physical inflow faces before the moment deposit.
+  // Kept outside inject_particles_for_boundary_cells to avoid t=0
+  // pre-injection.
   if (usePIC) {
+    const Real dt = tc->get_dt();
     for (int i = 0; i < nSpecies; ++i) {
-      parts[i]->inject_flux_at_inflow_faces(tc->get_dt());
+      parts[i]->inject_flux_at_inflow_faces(dt);
     }
   }
 
@@ -2929,15 +2882,9 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     });
   }
 
-  // Hyper-resistivity: E -= eta_h * nabla^2 J = -(eta_h/4*pi) * curl(nabla^2
-  // B), built as centerLapB = nabla^2 B then centerHyperE = curl(centerLapB).
-  // A transverse Fourier mode (theta = k*dx) then decays at
-  //   gamma = (eta_h/4*pi) * 4 sin^2(theta) sin^2(theta/2) / dx^4
-  // (peaking at theta = 1.911, i.e. lambda = 3.3 cells, and vanishing at the
-  // Nyquist mode); see tests/hyper_resistivity/README.md.
-  // Added BEFORE the ghost/BC pass below so that the hyper-resistive
-  // contribution is part of the E the Faraday curl reads in the ghost cells
-  // (the curl at an edge cell reads E at +/-1, i.e. the ghost ring).
+  // Hyper-resistivity: E -= (eta_h / 4*pi) * curl(nabla^2 B) (see
+  // tests/hyper_resistivity). Applied before the final BC pass so ghost cells
+  // include the hyper-resistive term.
   if (etaHyperLev[iLev] > 0) {
     lap_center_to_center(centerBin, centerLapB[iLev], Geom(iLev).InvCellSize());
     centerLapB[iLev].FillBoundary(Geom(iLev).periodicity());

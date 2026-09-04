@@ -183,9 +183,6 @@ private:
   amrex::Vector<amrex::Real> plasmaEnergy;
 
   bool isMomentsUpdated = false;
-  // nodePlasma (and mMach) stale; materialized on demand by
-  // sync_node_plasma_output(). Hybrid path only.
-  bool nodePlasmaStale = false;
 
   amrex::Vector<amrex::MultiFab> jHat;
 
@@ -418,7 +415,6 @@ public:
   void sum_moments(bool updateDt = false);
 
   void calc_mach_number();
-  void sync_node_plasma_output(bool needMach = false);
   bool is_inside_cell_plot_region(const PlotWriter &writerIn, int const ix,
                                   int const iy, int const iz, double const x,
                                   double const y, double const z) const;

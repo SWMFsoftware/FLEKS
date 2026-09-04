@@ -263,17 +263,14 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         const int iHi = singleCell[ix_] ? lo[ix_] : hi[ix_];
 
         for (int k = lo[iz_]; k <= kHi; ++k) {
-          const double zp = singleCell[iz_]
-                                ? geom.CellCenter(lo[iz_], iz_)
-                                : geom.LoEdge(k, iz_);
+          const double zp = singleCell[iz_] ? geom.CellCenter(lo[iz_], iz_)
+                                            : geom.LoEdge(k, iz_);
           for (int j = lo[iy_]; j <= jHi; ++j) {
-            const double yp = singleCell[iy_]
-                                  ? geom.CellCenter(lo[iy_], iy_)
-                                  : geom.LoEdge(j, iy_);
+            const double yp = singleCell[iy_] ? geom.CellCenter(lo[iy_], iy_)
+                                              : geom.LoEdge(j, iy_);
             for (int i = lo[ix_]; i <= iHi; ++i) {
-              const double xp = singleCell[ix_]
-                                    ? geom.CellCenter(lo[ix_], ix_)
-                                    : geom.LoEdge(i, ix_);
+              const double xp = singleCell[ix_] ? geom.CellCenter(lo[ix_], ix_)
+                                                : geom.LoEdge(i, ix_);
               if (bit::is_owner(typeArr(i, j, k)) &&
                   (!bit::is_refined(typeArr(i, j, k)) || iLevSave >= 0) &&
                   writerIn.is_inside_plot_region(i, j, k, xp, yp, zp)) {
@@ -332,8 +329,8 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         kMax = lo.z;
 
       for (int k = lo.z; k <= kMax; ++k) {
-        const double zp = singleCell[iz_] ? geom.CellCenter(lo.z, iz_)
-                                          : geom.LoEdge(k, iz_);
+        const double zp =
+            singleCell[iz_] ? geom.CellCenter(lo.z, iz_) : geom.LoEdge(k, iz_);
         for (int j = lo.y; j <= jMax; ++j) {
           const double yp = singleCell[iy_] ? geom.CellCenter(lo.y, iy_)
                                             : geom.LoEdge(j, iy_);
@@ -884,12 +881,6 @@ void Pic::write_plots(bool doForce) {
       if (plot.writer.is_amrex_format() || plot.writer.is_hdf5_format()) {
         write_amrex(plot.writer, tc->get_time_si(), tc->get_cycle());
       } else {
-        // Full-PIC requires syncing node plasma fields before writing.
-        if (!useHybridPIC) {
-          const bool needMach =
-              plot.writer.get_plotString().find("mach") != std::string::npos;
-          sync_node_plasma_output(needMach);
-        }
         plot.writer.write(tc->get_time_si(), tc->get_cycle(),
                           find_output_list_caller, get_field_var_caller);
       }

@@ -588,14 +588,15 @@ inline amrex::Real inj_mean_inward_flux(amrex::Real vd) {
 
 // Fast speed sampler for the flux-weighted half-space Maxwellian
 //   f(w) \propto w * exp(-(w - vd)^2), w >= 0.
-// Precomputes face-level constants and a 64-point LUT once per face to eliminate
-// costly 60-step bisections per particle, converging in 2-3 Newton-Raphson steps.
+// Precomputes face-level constants and a 64-point LUT once per face to
+// eliminate costly 60-step bisections per particle, converging in 2-3
+// Newton-Raphson steps.
 struct InflowSpeedSampler {
-  amrex::Real vd{0.0};
-  amrex::Real e0{1.0};
-  amrex::Real erfc_mvd{1.0};
-  amrex::Real twoZ{1.0};
-  amrex::Real wHi{8.0};
+  amrex::Real vd{ 0.0 };
+  amrex::Real e0{ 1.0 };
+  amrex::Real erfc_mvd{ 1.0 };
+  amrex::Real twoZ{ 1.0 };
+  amrex::Real wHi{ 8.0 };
 
   static constexpr int LUT_SIZE = 64;
   amrex::Real lut[LUT_SIZE + 1];
@@ -640,8 +641,8 @@ struct InflowSpeedSampler {
     for (int it = 0; it < 3; ++it) {
       const amrex::Real diff = w - vd;
       const amrex::Real exp_term = std::exp(-diff * diff);
-      const amrex::Real Fw = 0.5 * ((e0 - exp_term) +
-                                    vd * sqpi * (erfc_mvd - std::erfc(diff)));
+      const amrex::Real Fw =
+          0.5 * ((e0 - exp_term) + vd * sqpi * (erfc_mvd - std::erfc(diff)));
       const amrex::Real dF = w * exp_term;
       if (std::abs(dF) < 1e-300)
         break;
@@ -702,7 +703,9 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
 
   // Cache speed samplers for each inflow face (iDim, side)
   InflowSpeedSampler speedSamplers[3][2];
-  bool samplerInit[3][2] = { { false, false }, { false, false }, { false, false } };
+  bool samplerInit[3][2] = { { false, false },
+                             { false, false },
+                             { false, false } };
 
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
     const Box& bx = mfi.validbox();
@@ -710,7 +713,8 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
 
     for (int iDim = 0; iDim < nDim; ++iDim) {
       const int t1 = (iDim + 1) % nDim; // first transverse grid direction
-      const int t2 = (nDim > 2) ? (iDim + 2) % nDim : 0; // second transverse grid direction
+      const int t2 = (nDim > 2) ? (iDim + 2) % nDim
+                                : 0;     // second transverse grid direction
       const int trans1 = (iDim + 1) % 3; // first transverse velocity direction
       const int trans2 = (iDim + 2) % 3; // second transverse velocity direction
 
@@ -758,7 +762,8 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
 
         // Tile-face accumulator: packs (iLev, iDim, side, tileLocalIndex).
         // Accumulating over the tile face eliminates the artificial coherent
-        // "pulsing sheets" and replaces 10^4 map lookups per step with 1 scalar.
+        // "pulsing sheets" and replaces 10^4 map lookups per step with 1
+        // scalar.
         const int64_t tileKey =
             ((((int64_t)iLev * 3 + iDim) * 2 + side) << 40) |
             (((int64_t)mfi.index()) << 16) |
@@ -774,10 +779,12 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
         acc -= nInject;
 
         const Real span1 = (hi1 - lo1 + 1) * cellSize[t1];
-        const Real base1 = probLo[t1] + (lo1 - domain.smallEnd(t1)) * cellSize[t1];
+        const Real base1 =
+            probLo[t1] + (lo1 - domain.smallEnd(t1)) * cellSize[t1];
         const Real span2 = (nDim > 2) ? (hi2 - lo2 + 1) * cellSize[t2] : 0.0;
         const Real base2 =
-            (nDim > 2) ? probLo[t2] + (lo2 - domain.smallEnd(t2)) * cellSize[t2] : 0.0;
+            (nDim > 2) ? probLo[t2] + (lo2 - domain.smallEnd(t2)) * cellSize[t2]
+                       : 0.0;
         const Real xFace = isHi ? probHi[iDim] : probLo[iDim];
 
         for (int np = 0; np < nInject; ++np) {
@@ -795,9 +802,10 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
           // Fractional ingress advancement: particles crossed the face at
           // random times t' in [0, dt], so at dt they have penetrated
           // distance wIn * dt * randNum(). Bound strictly inside the cell.
-          const Real pDist = (wIn > 0)
-              ? std::min(1.0e-3 * dxn + wIn * dt * randNum(), 0.999 * dxn)
-              : 1.0e-3 * dxn;
+          const Real pDist =
+              (wIn > 0)
+                  ? std::min(1.0e-3 * dxn + wIn * dt * randNum(), 0.999 * dxn)
+                  : 1.0e-3 * dxn;
 
           // Position: on the boundary face, nudged into the cell according to
           // sub-step ingress distance; uniform in the transverse directions.
@@ -2051,7 +2059,7 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
 // for half-space node weighting.
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::apply_jhat_mirror(MultiFab& jHat,
-                                                          int iLev) {
+                                                           int iLev) {
   if (!Geom(iLev).isAllPeriodic() && jHat.nGrow() > 0) {
     const Box& dom = Geom(iLev).Domain();
     const int nCompJ = jHat.nComp();
@@ -3733,8 +3741,9 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
     if (i < nPartNew) {
       ref[i] = tmp;
     } else {
-      // Floor at strictly positive: zero-RHS constraint rows (e.g. vz = 0 in 1D/2D)
-      // must be flagged as singular rather than accepting near-zero pivots.
+      // Floor at strictly positive: zero-RHS constraint rows (e.g. vz = 0 in
+      // 1D/2D) must be flagged as singular rather than accepting near-zero
+      // pivots.
       ref[i] = std::max(fabs(a(i, nVar) * tmp * csmall), csmall * tmp);
     }
   }

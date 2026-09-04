@@ -9,8 +9,7 @@ using namespace amrex;
 void Domain::init(double time, const int iDomain,
                   const std::string &paramString, const Vector<int> &paramInt,
                   const Vector<double> &paramRegion,
-                  const Vector<double> &paramComm,
-                  const bool isStandalone) {
+                  const Vector<double> &paramComm, const bool isStandalone) {
 
   domainParameters.isStandalone = isStandalone;
 
