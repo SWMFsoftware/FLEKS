@@ -147,7 +147,7 @@ Setting the CFL or fixed time step. The typical CFL number is 0.1~0.4.
 When adding a new parameter command:
 1. Add the `<command>` block to `PARAM.XML`
 2. Implement parsing in the corresponding `read_param()` method
-   (typically `Domain.cpp` or `Pic.cpp`)
+   (typically `Domain.cpp` or `PicParam.cpp`)
 3. Add the member variable to the appropriate class header
 
 For user source behavior, keep `#SOURCE` in `PARAM.XML` aligned with
