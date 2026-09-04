@@ -13,24 +13,24 @@ This directory groups the absorbing-boundary tests.  Each variant is a
 
 ## Validation
 
-Both variants verify the **absorbing** boundary condition for fields and
+All three variants verify the **absorbing** boundary condition for fields and
 particles. `validate.py` branches on the variant name:
 1. **Energy log**:
-   - `bc_absorb_fields`: a `tophat` EM pulse seeded in the interior splits into
-     left/right-going pulses that leave through the absorbing (outgoing-
-     characteristic) x-faces; the pulses carry their EM energy out, so `Etot`
-     (Ee+Eb) decays below 25% of its initial value — the decisive absorber
-     signature (conducting/periodic walls would reflect the pulses and keep the
-     energy).
-   - `bc_absorb_particles`: a single ion species with a bulk `+x` flow and zero
-     magnetic field streams ballistically toward the absorbing x-walls; both
-     x faces are `absorb` (particles removed + tallied), so `Epart` decays below
-     50% of its initial value — the opposite of the reflecting-wall test.
+   - `bc_absorb_fields`: a `tophat` EM pulse seeded in the interior leaves through
+     the absorbing (outgoing-characteristic) x-faces; the pulse carries EM energy
+     out, so `Etot` (Ee+Eb) decays below 25% of its initial value — the decisive
+     absorber signature (conducting/periodic walls would reflect the pulses and
+     keep the energy).
+   - `bc_absorb_particles` / `bc_absorb_hybrid_particles`: a single ion species
+     with a bulk `+x` flow streams ballistically toward the absorbing x-walls;
+     particles are removed on exit, so `Epart` decays below 1% of its initial
+     value (full evacuation).
 2. **Plot**:
    - `bc_absorb_fields`: late `|Bz|,|Ey|` are much reduced from the seeded 1.0
-     (no reflected standing wave).
-   - `bc_absorb_particles`: `rhoS0` is finite/positive (skipped if not
-     deposited in no-solver mode).
+     (max fields < 0.7; no reflected standing wave).
+   - `bc_absorb_particles` / `bc_absorb_hybrid_particles`: late `rhoS0` peak is
+     evacuated to zero (peak < 0.1), verifying that particles were absorbed rather
+     than trapped or reflected.
 
 ## Running
 

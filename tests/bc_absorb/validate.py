@@ -19,10 +19,20 @@ import os
 
 logger = logging.getLogger(__name__)
 
-from .._shared.hybrid import RUN_DIR  # noqa: E402
+import tests._shared.hybrid as _hyb
+
+RUN_DIR = "run_test"
+
+
+def set_run_dir(run_dir):
+    """Point the plot helpers at the current run directory."""
+    global RUN_DIR
+    RUN_DIR = run_dir
+    _hyb.set_run_dir(run_dir)
+
 
 EM_FINAL_FRAC = 0.25      # fields: Etot_final < 25% of initial (decay = absorb)
-EPART_MAX_FRAC = 0.5      # particles: Epart_final < 50% of initial (decay)
+EPART_MAX_FRAC = 0.01     # particles: Epart_final < 1% of initial (complete drain)
 
 
 def validate_log(pic_diags=None, test_name=None):
@@ -78,8 +88,8 @@ def _validate_log_particles(e0, e1, first, last):
         return False, "Initial Etot is zero"
 
     if ep0 > 0 and ep1 > EPART_MAX_FRAC * ep0:
-        return False, (f"Epart stayed at {ep1/ep0*100:.0f}% of initial "
-                       f"(>{EPART_MAX_FRAC*100:.0f}%) -- particles appear to be "
+        return False, (f"Epart stayed at {ep1/ep0*100:.2f}% of initial "
+                       f"(>{EPART_MAX_FRAC*100:.2f}%) -- particles appear to be "
                        f"REFLECTING, not absorbed")
 
     return True, "Passed (particle energy decays => absorption active)"
@@ -89,7 +99,8 @@ def _validate_log_particles(e0, e1, first, last):
 # Plot helpers
 # ---------------------------------------------------------------------------
 def _load_last_out():
-    plots_dir = os.path.join(RUN_DIR, "PC", "plots")
+    run_dir = getattr(_hyb, "RUN_DIR", RUN_DIR)
+    plots_dir = os.path.join(run_dir, "PC", "plots")
     out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
     if not out_files:
         return None, None
@@ -147,16 +158,16 @@ def _check_fields_plot(vidx, rows):
 
 
 def _check_particles_plot(vidx, rows):
-    """Particles: rhoS0 finite/positive (skip if not deposited in no-solver mode)."""
+    """Particles: verify density drains to zero as particles exit the box."""
     rho = _col(vidx, rows, "RHOS0")
     if rho is None:
         return True, "No rhoS0 column (skipped)"
-    peak = max(abs(v) for v in rho)
-    logger.debug("    [AP] rhoS0 peak = %.4e", peak)
-    if peak <= 0:
-        return True, "rhoS0 not deposited in no-solver mode (skipped)"
     if not all(math.isfinite(v) for v in rho):
-        return False, "rhoS0 not finite (NaN)"
-    if all(v < 0 for v in rho):
-        return False, "rhoS0 entirely negative (unphysical)"
-    return True, "Passed (rhoS0 positive and finite)"
+        return False, "rhoS0 not finite (NaN/Inf)"
+    peak = max(abs(v) for v in rho)
+    logger.debug("    [AP] late rhoS0 peak = %.4e", peak)
+    # If particles reflected instead of absorbed, density would remain ~5.0.
+    if peak > 0.1:
+        return False, (f"Particles failed to absorb: late rhoS0 peak is {peak:.3e} "
+                       "(particles appear to be trapped or reflected)")
+    return True, "Passed (particle density evacuated => absorption confirmed)"
