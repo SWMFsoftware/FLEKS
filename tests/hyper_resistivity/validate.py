@@ -1,34 +1,8 @@
 #!/usr/bin/env python3
-"""Validator for the hybrid-PIC hyper-resistivity test.
+"""Validation for the hybrid-PIC hyper-resistivity test.
 
-The test is a frozen-plasma setup: no macroparticles are loaded, so rho = 0
-everywhere, every other term of the generalized Ohm's law (convection, Hall,
-resistive eta*J, grad Pe) is short-circuited by the rho > 0 guard, and the
-hyper-resistive term is the only thing driving B.  A single circularly
-polarized transverse mode is seeded on the uniform guide field, so the
-magnetic energy must decay as
-
-    Eb(t) - Eb_guide = A * exp(-2*gamma*t)
-
-with the discrete rate of the term (see README.md)
-
-    gamma = (eta_h/4*pi) * 4 sin^2(theta) sin^2(theta/2) / dx^4,  theta = k*dx
-
-which follows from the two operators the term is built from: the collocated
-2*dx curl (symbol i*sin(theta)/dx) and the 3-point Laplacian (symbol
--4 sin^2(theta/2)/dx^2).
-
-Three assertions, all derived from the PARAM.in values:
-
-1. dissipative: Eb decreases and stays finite;
-2. the decay is a clean single exponential -- a corrupted stencil or stale
-   ghost cells show up as a non-exponential decay long before they show up as
-   a wrong rate;
-3. the fitted rate matches the analytic symbol within TOL (the RK4
-   amplification -ln(R(-gamma*dt))/dt is folded into the expectation).
-
-This is what catches a silently disabled or mis-converted eta_h, a wrong sign,
-and any regression in the stencils or in the RK trial-state ghosts.
+Checks that the seeded transverse magnetic wave mode decays at the theoretical
+discrete damping rate under fourth-order hyper-resistivity.
 """
 import logging
 import math
@@ -36,16 +10,11 @@ import os
 
 logger = logging.getLogger(__name__)
 
-PARAM_PATH = os.path.join("tests", "hyper_resistivity", "PARAM.in")
+PARAM_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "PARAM.in")
 
-# Relative tolerance of the measured damping rate against the analytic value.
-# A correct run agrees to ~1e-10.
-TOL = 0.005
-# Bound on the non-exponential part of the decay, relative to its amplitude.
-# A correct run sits at ~1e-12; stale RK-stage ghosts gave 2e-2.
-MAX_RESIDUAL = 1e-6
-# Minimum number of energy-log samples for a fit.
-MIN_SAMPLES = 20
+TOL = 0.005           # Relative tolerance for damping rate
+MAX_RESIDUAL = 1e-6   # Upper bound on fit residual relative to amplitude
+MIN_SAMPLES = 20      # Minimum log samples required
 
 
 def _block_numbers(text, command, n):
@@ -91,15 +60,15 @@ def _named_number(text, command, name):
 def _analytic_gamma():
     """Return (gamma, gamma_as_measured) for the seeded mode.
 
-    gamma is the exact discrete rate of the term.  The field integrator is
-    classical RK4, whose amplification on a real eigenvalue -gamma is
-    R(-z) = 1 - z + z^2/2 - z^3/6 + z^4/24 with z = gamma*dt, so a fit of
-    exp(-2*gamma_fit*t) measures -ln(R)/dt rather than gamma itself.
-
-    eta_h_code = 4*pi * etaHyperSI * Si2NoV * Si2NoL^3, with
-    Si2NoV = 100/Unorm = 1/uNormSI and Si2NoL = 100/Lnorm = 1/lNormSI.
+    Accounts for the discrete spatial stencils and the classical RK4
+    amplification factor R(-z) = 1 - z + z^2/2 - z^3/6 + z^4/24 with z = gamma*dt.
     """
-    text = open(PARAM_PATH).read()
+    try:
+        with open(PARAM_PATH, "r") as f:
+            text = f.read()
+    except OSError:
+        return None, None
+
     l_norm, u_norm = _block_numbers(text, "#NORMALIZATION", 2)
     x_lo, x_hi = _block_numbers(text, "#GEOMETRY", 2)
     n_cell = _block_numbers(text, "#NCELL", 1)[0]
@@ -129,19 +98,9 @@ def _median(vals):
 def _fit_decay(t, eb):
     """Fit Eb(t) = C + A*exp(-2*gamma*t); return (gamma, A, residual).
 
-    The log is sampled every step and a single decaying mode is exactly
-    geometric, so the ratio rho = exp(-2*gamma*dt) follows from three
-    consecutive samples and the constant (guide-field) part C then follows
-    from two:
-
-        rho   = (eb[i+2] - eb[i+1]) / (eb[i+1] - eb[i])
-        C     = (eb[i+1] - rho*eb[i]) / (1 - rho)
-
-    Using the median over the samples that are well above the round-off floor
-    makes both robust.  This matters: estimating C by regression instead
-    biases gamma at the 1e-4 level and leaves a ~1e-5 residual, because the
-    run only covers about three and a half decades of decay.  Falls back to
-    that regression if the sample spacing is not uniform.
+    For uniformly sampled geometric decay, ratio rho = exp(-2*gamma*dt) is
+    obtained from consecutive samples and guide-field energy C is extracted.
+    Falls back to linear regression if sampling is non-uniform.
     """
     n = len(t)
     if n < 10:
@@ -151,8 +110,6 @@ def _fit_decay(t, eb):
     dt = dts[0]
     uniform = dt > 0.0 and all(abs(d - dt) <= 1e-6 * dt for d in dts)
     ref = abs(eb[1] - eb[0])
-    # Samples whose step-to-step change is still a sizeable fraction of the
-    # first one, i.e. safely above the round-off floor.
     strong = [i for i in range(n - 2)
               if ref > 0.0 and abs(eb[i + 1] - eb[i]) > 1e-3 * ref]
 
@@ -196,27 +153,26 @@ def _fit_decay(t, eb):
 
 
 def validate_log(pic_diags=None, test_name=None):
-    """Energy-log check: rate and purity of the hyper-resistive damping."""
+    """Verify dissipation, single-exponential decay, and damping rate."""
     if not pic_diags or len(pic_diags) < MIN_SAMPLES:
         return True, "Too few energy-log samples (skipped)"
 
     t = [row["time"] for row in pic_diags]
     eb = [row["Eb"] for row in pic_diags]
     if any(not math.isfinite(v) for v in eb):
-        return False, "Eb is not finite (hyper-resistive term unstable?)"
+        return False, "Eb is not finite"
     if eb[-1] > eb[0]:
-        return False, "Eb grew: the hyper-resistive term is not dissipative"
+        return False, "Eb grew: hyper-resistive term is not dissipative"
 
     g_exact, g_expect = _analytic_gamma()
     if g_exact is None:
-        return False, "Could not derive the analytic decay rate from PARAM.in"
+        return False, "Could not derive analytic decay rate from PARAM.in"
     if g_exact <= 0.0:
-        return False, ("PARAM.in gives a zero analytic decay rate (etaHyperSI"
-                       " = 0, or the seeded mode sits in the curl null space)")
+        return False, "Analytic decay rate is non-positive"
 
     gamma, amp, resid = _fit_decay(t, eb)
     if gamma is None or gamma <= 0.0:
-        return False, "The seeded mode did not decay (hyper-resistivity inert?)"
+        return False, "Seeded mode did not decay"
 
     ratio = gamma / g_expect
     logger.debug("    [HYPER] gamma_fit = %.6g, gamma_analytic = %.6g "
@@ -224,11 +180,10 @@ def validate_log(pic_diags=None, test_name=None):
                  gamma, g_exact, g_expect, ratio, resid)
 
     if abs(ratio - 1.0) > TOL:
-        return False, ("measured decay rate %.6g differs from the analytic "
+        return False, ("measured decay rate %.6g differs from analytic "
                        "%.6g by %.1f%% (tolerance %.1f%%)"
                        % (gamma, g_expect, 100.0 * (ratio - 1.0), 100.0 * TOL))
     if resid is not None and resid > MAX_RESIDUAL:
         return False, ("decay is not a single exponential: residual %.2e "
-                       "(tolerance %.1e) -- check the stencils and the RK "
-                       "trial-state ghosts" % (resid, MAX_RESIDUAL))
+                       "(tolerance %.1e)" % (resid, MAX_RESIDUAL))
     return True, "Passed"
