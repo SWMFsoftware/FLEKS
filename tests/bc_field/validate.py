@@ -38,7 +38,10 @@ import os
 
 logger = logging.getLogger(__name__)
 
-from .._shared.hybrid import RUN_DIR  # noqa: E402
+def set_run_dir(run_dir):
+    """Mirror the runner's RUN_DIR into the shared hybrid helper."""
+    import tests._shared.hybrid as _hyb
+    _hyb.set_run_dir(run_dir)
 
 # Tolerances.  A seeded standing Alfven wave evolves but must stay finite and
 # bounded; the exact bound is loose because it depends on the mode amplitude.

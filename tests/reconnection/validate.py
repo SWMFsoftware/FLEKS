@@ -7,7 +7,16 @@ import os
 
 import numpy as np
 
-from .._shared.hybrid import set_run_dir
+import tests._shared.hybrid as _hyb
+
+RUN_DIR = "run_test"
+
+
+def set_run_dir(run_dir):
+    """Point the plot helpers at the current run directory."""
+    global RUN_DIR
+    RUN_DIR = run_dir
+    _hyb.set_run_dir(run_dir)
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +140,7 @@ def _load_all_frames():
 
     Discards stale .out files from a previous run (e.g. a different solver
     variant with another resolution) that may linger in the plots directory."""
-    plots_dir = os.path.join("run_test", "PC", "plots")
+    plots_dir = os.path.join(RUN_DIR, "PC", "plots")
     out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
     if not out_files:
         return None, "no .out plot files (PostProc.pl not run?)"
@@ -155,7 +164,6 @@ def _load_all_frames():
 def validate_plot(test_name):
     """Reconnection plot check: equilibrium init, perturbation growth, flux
     (Ay) change at the X-point, and O-point motion."""
-    set_run_dir("run_test")
     frames, err = _load_all_frames()
     if err is not None:
         return False, err

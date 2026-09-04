@@ -15,7 +15,16 @@ import os
 
 logger = logging.getLogger(__name__)
 
-from .._shared.hybrid import RUN_DIR, set_run_dir  # noqa: E402
+import tests._shared.hybrid as _hyb
+
+RUN_DIR = "run_test"
+
+
+def set_run_dir(run_dir):
+    """Point the plot helpers at the current run directory."""
+    global RUN_DIR
+    RUN_DIR = run_dir
+    _hyb.set_run_dir(run_dir)
 
 
 def validate_log(pic_diags=None, test_name=None):

@@ -191,7 +191,6 @@ def validate_plot(test_name):
     2. Reconnection is active: the midplane By perturbation grows and the
        in-plane field shows the O/X null structure of the growing islands.
     """
-    set_run_dir("run_test")
     frames, err = _load_all_frames()
     if err is not None:
         return False, err

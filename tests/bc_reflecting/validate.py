@@ -32,7 +32,10 @@ import os
 
 logger = logging.getLogger(__name__)
 
-from .._shared.hybrid import RUN_DIR  # noqa: E402
+def set_run_dir(run_dir):
+    """Mirror the runner's RUN_DIR into the shared hybrid helper."""
+    import tests._shared.hybrid as _hyb
+    _hyb.set_run_dir(run_dir)
 
 # Tolerances.  The reflection is specular (energy-conserving) but particle
 # noise and the finite cell size mean Epart is conserved only approximately.

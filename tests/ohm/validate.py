@@ -16,6 +16,11 @@ from .._shared.hybrid import validate_hybrid, validate_plot as _hyb_plot
 
 logger = logging.getLogger(__name__)
 
+
+def set_run_dir(run_dir):
+    """Mirror the runner's RUN_DIR into the shared hybrid helper."""
+    _hyb.set_run_dir(run_dir)
+
 # Bound on the late/early transverse-amplitude growth factor.
 #
 # The seeded n=1 wave is NOT a free resistive eigenmode: the kinetic-ion
