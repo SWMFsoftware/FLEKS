@@ -3666,13 +3666,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   if (mf.nGrow() == 0)
     return;
 
-  // NOTE: the wall fillers (conducting / absorbing / inflow) and the wave
-  // source are no longer dispatched from here -- Pic::apply_field_bc() runs
-  // them per face with the correct `isB` convention.  This function performs
-  // only the generic fill.
   bool useFloatBC = (func == nullptr);
-
-  // BoxArray ba = mf.boxArray();
   BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
 
   const IntVect& ngrow = mf.nGrowVect();
@@ -3684,18 +3678,14 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   if (bc != nullptr) {
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& bxFab = mfi.fabbox();
-      Box bxValid = mfi.validbox();
+      const Box& bxValid = mfi.validbox();
 
-      //! if there are cells not in the valid + periodic grown box
-      //! we need to fill them here
       if (!ba.contains(bxFab)) {
         Array4<Real> const& arr = mf[mfi].array();
-
         const Array4<const int>& statusArr = status[mfi].array();
 
         ParallelFor(bxFab, [&](int i, int j, int k) {
           if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
-
             int ip, jp, kp;
             bool useFloat = use_float(i, j, k, ip, jp, kp, *bc, bxValid);
 
@@ -3703,7 +3693,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
               for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
                 arr(i, j, k, iVar) = arr(ip, jp, kp, iVar);
               }
-            } else {
+            } else if (func) {
               for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
                 arr(i, j, k, iVar) = (this->*func)(
                     mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar - iStart, iLev);
@@ -3713,7 +3703,6 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
         });
       }
     }
-
     return;
   }
 
@@ -3722,11 +3711,8 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
       const Box& bxFab = mfi.fabbox();
       const Box& bxValid = mfi.validbox();
 
-      //! if there are cells not in the valid + periodic grown box
-      //! we need to fill them here
       if (!ba.contains(bxFab)) {
         Array4<Real> const& arr = mf[mfi].array();
-
         const Array4<const int>& statusArr = status[mfi].array();
 
         Box box = bxValid;
@@ -3735,18 +3721,20 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
         ParallelFor(box, [&](int i, int j, int k) {
           if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
             bool isNeiFound = false;
-
-            // Find the neighboring physical cell
-            Box subBox(IntVect(-1), IntVect(1));
-            ParallelFor(subBox, [&](int ii, int jj, int kk) {
-              if (!isNeiFound &&
-                  !bit::is_lev_boundary(statusArr(i + ii, j + jj, k + kk, 0))) {
-                isNeiFound = true;
-                for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
-                  arr(i, j, k, iVar) = arr(i + ii, j + jj, k + kk, iVar);
+            const int kmin = (nDim > 2) ? -1 : 0;
+            const int kmax = (nDim > 2) ? 1 : 0;
+            for (int kk = kmin; kk <= kmax && !isNeiFound; ++kk) {
+              for (int jj = -1; jj <= 1 && !isNeiFound; ++jj) {
+                for (int ii = -1; ii <= 1 && !isNeiFound; ++ii) {
+                  if (!bit::is_lev_boundary(statusArr(i + ii, j + jj, k + kk, 0))) {
+                    isNeiFound = true;
+                    for (int iVar = iStart; iVar < iStart + nComp; ++iVar) {
+                      arr(i, j, k, iVar) = arr(i + ii, j + jj, k + kk, iVar);
+                    }
+                  }
                 }
               }
-            });
+            }
           }
         });
       }
@@ -3755,16 +3743,14 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& bx = mfi.fabbox();
 
-      //! if there are cells not in the valid + periodic grown box
-      //! we need to fill them here
       if (!ba.contains(bx)) {
         Array4<Real> const& arr = mf[mfi].array();
-
         const Array4<const int>& statusArr = status[mfi].array();
 
         auto lo = IntVect(bx.loVect());
         auto hi = IntVect(bx.hiVect());
-        if (nDim > 2) {
+        if (nDim > 2 &&
+            Geom(iLev).Domain().bigEnd(iz_) == Geom(iLev).Domain().smallEnd(iz_)) {
           lo[iz_]++;
           hi[iz_]--;
         }
@@ -3795,6 +3781,16 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
   if (mf.nGrow() == 0)
     return;
 
+  bool hasConducting = false;
+  for (int d = 0; d < nDim; ++d) {
+    if (bc.lo[d] == FieldBC::conducting || bc.hi[d] == FieldBC::conducting) {
+      hasConducting = true;
+      break;
+    }
+  }
+  if (!hasConducting)
+    return;
+
   BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
   const IntVect& ngrow = mf.nGrowVect();
   if (nDim > 2 &&
@@ -3804,70 +3800,77 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
 
   const IntVect domLo = Geom(iLev).Domain().smallEnd();
   const IntVect domHi = Geom(iLev).Domain().bigEnd();
+  const IndexType ixType = mf.boxArray().ixType();
+
+  bool isNode[3] = {false, false, false};
+  int loBnd[3] = {0, 0, 0};
+  int hiBnd[3] = {0, 0, 0};
+  for (int d = 0; d < nDim; ++d) {
+    isNode[d] = (ixType[d] == IndexType::NODE);
+    loBnd[d] = domLo[d];
+    hiBnd[d] = isNode[d] ? (domHi[d] + 1) : domHi[d];
+  }
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
-
     if (ba.contains(bxFab))
       continue;
 
     Array4<Real> const& arr = mf[mfi].array();
     const Array4<const int>& statusArr = status[mfi].array();
-
     const Box& bxValid = mfi.validbox();
 
     ParallelFor(bxFab, [&](int i, int j, int k) {
       IntVect ijk{ AMREX_D_DECL(i, j, k) };
 
+      // 1. Boundary nodes on physical wall (node-centred only).
       for (int d = 0; d < nDim; ++d) {
-        const bool isNode = (mf.boxArray().ixType()[d] == IndexType::NODE);
-        const int loBnd = domLo[d];
-        const int hiBnd = isNode ? (domHi[d] + 1) : domHi[d];
+        if (!isNode[d])
+          continue;
 
-        // 1. Boundary nodes on the physical wall (node-centred only).
-        if (isNode) {
-          const bool onLoWall =
-              (bc.lo[d] == FieldBC::conducting) && (ijk[d] == loBnd);
-          const bool onHiWall =
-              (bc.hi[d] == FieldBC::conducting) && (ijk[d] == hiBnd);
-          if (onLoWall || onHiWall) {
-            bool inValid = true;
-            for (int od = 0; od < nDim; ++od) {
-              if (od != d && (ijk[od] < bxValid.smallEnd(od) ||
-                              ijk[od] > bxValid.bigEnd(od))) {
-                inValid = false;
-                break;
-              }
+        const bool onLoWall =
+            (bc.lo[d] == FieldBC::conducting) && (ijk[d] == loBnd[d]);
+        const bool onHiWall =
+            (bc.hi[d] == FieldBC::conducting) && (ijk[d] == hiBnd[d]);
+        if (onLoWall || onHiWall) {
+          bool inValid = true;
+          for (int od = 0; od < nDim; ++od) {
+            if (od != d && (ijk[od] < bxValid.smallEnd(od) ||
+                            ijk[od] > bxValid.bigEnd(od))) {
+              inValid = false;
+              break;
             }
-            if (inValid) {
-              for (int iVar = 0; iVar < nComp; ++iVar) {
-                const int comp = iStart + iVar;
-                if (isB) {
-                  if (iVar == d)
-                    arr(i, j, k, comp) = 0.0;
-                } else {
-                  if (iVar != d)
-                    arr(i, j, k, comp) = 0.0;
-                }
+          }
+          if (inValid) {
+            for (int iVar = 0; iVar < nComp; ++iVar) {
+              const int comp = iStart + iVar;
+              if (isB) {
+                if (iVar == d)
+                  arr(i, j, k, comp) = 0.0;
+              } else {
+                if (iVar != d)
+                  arr(i, j, k, comp) = 0.0;
               }
             }
           }
         }
+      }
 
-        // 2. Ghost cells/nodes outside the domain.
-        if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
-          continue;
+      // 2. Ghost cells/nodes outside domain.
+      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
+        return;
 
-        bool isLow = (bc.lo[d] == FieldBC::conducting) && (ijk[d] < loBnd);
-        bool isHigh = (bc.hi[d] == FieldBC::conducting) && (ijk[d] > hiBnd);
+      for (int d = 0; d < nDim; ++d) {
+        bool isLow = (bc.lo[d] == FieldBC::conducting) && (ijk[d] < loBnd[d]);
+        bool isHigh = (bc.hi[d] == FieldBC::conducting) && (ijk[d] > hiBnd[d]);
         if (!isLow && !isHigh)
           continue;
 
         IntVect m = ijk;
-        if (isNode)
-          m[d] = isLow ? (2 * loBnd - ijk[d]) : (2 * hiBnd - ijk[d]);
+        if (isNode[d])
+          m[d] = isLow ? (2 * loBnd[d] - ijk[d]) : (2 * hiBnd[d] - ijk[d]);
         else
-          m[d] = isLow ? (2 * loBnd - 1 - ijk[d]) : (2 * hiBnd + 1 - ijk[d]);
+          m[d] = isLow ? (2 * loBnd[d] - 1 - ijk[d]) : (2 * hiBnd[d] + 1 - ijk[d]);
 
         for (int iVar = 0; iVar < nComp; ++iVar) {
           const int comp = iStart + iVar;
@@ -3896,15 +3899,27 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
   std::string nameFunc = "Pic::apply_absorbing_wall";
   timing_func(nameFunc);
 
+  (void)isB;
   if (Geom(iLev).isAllPeriodic())
     return;
   if (mf.nGrow() == 0)
     return;
 
+  bool hasAbsorb = false;
+  for (int d = 0; d < nDim; ++d) {
+    if (bc.lo[d] == FieldBC::absorb || bc.hi[d] == FieldBC::absorb) {
+      hasAbsorb = true;
+      break;
+    }
+  }
+  if (!hasAbsorb)
+    return;
+
   const Real dt = tc ? tc->get_dt() : 0.0;
   if (dt <= 0.0)
     return;
-  // Characteristic speed; default light speed (c=1), override via #ABSORB.
+
+  // Characteristic speed; default c=1, override via #ABSORB.
   const Real cs = (absorbCharSpeed > 0.0) ? absorbCharSpeed : 1.0;
 
   BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
@@ -3916,10 +3931,27 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
 
   const IntVect domLo = Geom(iLev).Domain().smallEnd();
   const IntVect domHi = Geom(iLev).Domain().bigEnd();
+  const IndexType ixType = mf.boxArray().ixType();
+  const Real* dx = Geom(iLev).CellSize();
+
+  bool isNode[3] = {false, false, false};
+  int loBnd[3] = {0, 0, 0};
+  int hiBnd[3] = {0, 0, 0};
+  Real decay[3] = {0.0, 0.0, 0.0};
+  Real drive[3] = {0.0, 0.0, 0.0};
+
+  for (int d = 0; d < nDim; ++d) {
+    isNode[d] = (ixType[d] == IndexType::NODE);
+    loBnd[d] = domLo[d];
+    hiBnd[d] = isNode[d] ? (domHi[d] + 1) : domHi[d];
+
+    const Real drive0 = cs * dt / dx[d];
+    decay[d] = (1.0 - drive0) / (1.0 + drive0);
+    drive[d] = 2.0 * drive0 / (1.0 + drive0);
+  }
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
-
     if (ba.contains(bxFab))
       continue;
 
@@ -3933,31 +3965,21 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
       IntVect ijk{ AMREX_D_DECL(i, j, k) };
 
       for (int d = 0; d < nDim; ++d) {
-        const bool isNode = (mf.boxArray().ixType()[d] == IndexType::NODE);
-        const int loBnd = domLo[d];
-        const int hiBnd = isNode ? (domHi[d] + 1) : domHi[d];
-
-        bool isLow = (bc.lo[d] == FieldBC::absorb) && (ijk[d] < loBnd);
-        bool isHigh = (bc.hi[d] == FieldBC::absorb) && (ijk[d] > hiBnd);
+        bool isLow = (bc.lo[d] == FieldBC::absorb) && (ijk[d] < loBnd[d]);
+        bool isHigh = (bc.hi[d] == FieldBC::absorb) && (ijk[d] > hiBnd[d]);
         if (!isLow && !isHigh)
           continue;
 
-        // Matched-impedance (one-way, outgoing) blend toward the interior.
-        const Real* dx = Geom(iLev).CellSize();
-        const Real drive0 = cs * dt / dx[d];
-        const Real decay = (1.0 - drive0) / (1.0 + drive0);
-        const Real drive = 2.0 * drive0 / (1.0 + drive0);
-
         IntVect m = ijk;
-        if (isNode)
-          m[d] = isLow ? (2 * loBnd - ijk[d]) : (2 * hiBnd - ijk[d]);
+        if (isNode[d])
+          m[d] = isLow ? (2 * loBnd[d] - ijk[d]) : (2 * hiBnd[d] - ijk[d]);
         else
-          m[d] = isLow ? (2 * loBnd - 1 - ijk[d]) : (2 * hiBnd + 1 - ijk[d]);
+          m[d] = isLow ? (2 * loBnd[d] - 1 - ijk[d]) : (2 * hiBnd[d] + 1 - ijk[d]);
 
         for (int iVar = 0; iVar < nComp; ++iVar) {
           const int comp = iStart + iVar;
           arr(i, j, k, comp) =
-              decay * arr(i, j, k, comp) + drive * arr(m, comp);
+              decay[d] * arr(i, j, k, comp) + drive[d] * arr(m, comp);
         }
       }
     });
@@ -3973,13 +3995,21 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
 
   (void)isB; // zero-gradient copy is component-agnostic
 
-  // No #INFLOW block => nothing to do; the zero-gradient copy in use_float
-  // (applied earlier in apply_BC) handles the open face in that case.
   if (!fi->get_inflow_defined())
     return;
   if (Geom(iLev).isAllPeriodic())
     return;
   if (mf.nGrow() == 0)
+    return;
+
+  bool hasInflow = false;
+  for (int d = 0; d < nDim; ++d) {
+    if (bc.lo[d] == FieldBC::inflow || bc.hi[d] == FieldBC::inflow) {
+      hasInflow = true;
+      break;
+    }
+  }
+  if (!hasInflow)
     return;
 
   BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
@@ -3991,6 +4021,16 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
 
   const IntVect domLo = Geom(iLev).Domain().smallEnd();
   const IntVect domHi = Geom(iLev).Domain().bigEnd();
+  const IndexType ixType = mf.boxArray().ixType();
+
+  bool isNode[3] = {false, false, false};
+  int loBnd[3] = {0, 0, 0};
+  int hiBnd[3] = {0, 0, 0};
+  for (int d = 0; d < nDim; ++d) {
+    isNode[d] = (ixType[d] == IndexType::NODE);
+    loBnd[d] = domLo[d];
+    hiBnd[d] = isNode[d] ? (domHi[d] + 1) : domHi[d];
+  }
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
@@ -4007,31 +4047,29 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
       IntVect ijk{ AMREX_D_DECL(i, j, k) };
 
       for (int d = 0; d < nDim; ++d) {
-        const bool isNode = (mf.boxArray().ixType()[d] == IndexType::NODE);
-        const int loBnd = domLo[d];
-        const int hiBnd = isNode ? (domHi[d] + 1) : domHi[d];
-
-        bool isLow = (bc.lo[d] == FieldBC::inflow) && (ijk[d] < loBnd);
-        bool isHigh = (bc.hi[d] == FieldBC::inflow) && (ijk[d] > hiBnd);
+        bool isLow = (bc.lo[d] == FieldBC::inflow) && (ijk[d] < loBnd[d]);
+        bool isHigh = (bc.hi[d] == FieldBC::inflow) && (ijk[d] > hiBnd[d]);
         if (!isLow && !isHigh)
           continue;
 
         IntVect m = ijk;
-        m[d] = isLow ? loBnd : hiBnd;
+        m[d] = isLow ? loBnd[d] : hiBnd[d];
 
         for (int iVar = 0; iVar < nComp; ++iVar) {
-          const int comp = iStart + iVar;
-          arr(i, j, k, comp) = arr(AMREX_D_DECL(m[ix_], m[iy_], m[iz_]), comp);
+          arr(i, j, k, iStart + iVar) = arr(m, iStart + iVar);
         }
       }
     });
   }
 }
 
-// Hybrid-only: mirror ion moments into the physical-wall ghost cells so the
-// electron pressure-gradient / Hall stencils stay smooth at a wall.
+//==========================================================
+// Mirror ion moments into physical-wall ghost cells for smooth Ohm/Hall stencils.
 void Pic::apply_centerPlasma_BC(const iMultiFab& status, MultiFab& mf,
                                 const int iLev) {
+  std::string nameFunc = "Pic::apply_centerPlasma_BC";
+  timing_func(nameFunc);
+
   if (Geom(iLev).isAllPeriodic())
     return;
   if (mf.nGrow() == 0)
@@ -4065,12 +4103,10 @@ void Pic::apply_centerPlasma_BC(const iMultiFab& status, MultiFab& mf,
       bool touched = false;
 
       for (int d = 0; d < nDim; ++d) {
-        bool isLow = (ijk[d] < domLo[d]);
-        bool isHigh = (ijk[d] > domHi[d]);
-        if (isLow) {
+        if (ijk[d] < domLo[d]) {
           m[d] = 2 * domLo[d] - 1 - ijk[d];
           touched = true;
-        } else if (isHigh) {
+        } else if (ijk[d] > domHi[d]) {
           m[d] = 2 * domHi[d] + 1 - ijk[d];
           touched = true;
         }
@@ -4092,11 +4128,26 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
   std::string nameFunc = "Pic::apply_wave_field";
   timing_func(nameFunc);
 
+  (void)bc;
   if (!waveBC.active)
     return;
   if (Geom(iLev).isAllPeriodic())
     return;
   if (mf.nGrow() == 0)
+    return;
+
+  bool hasField = false;
+  for (const auto& f : waveBC.faces) {
+    for (const auto& c : f.comps) {
+      if (c.iField == iField) {
+        hasField = true;
+        break;
+      }
+    }
+    if (hasField)
+      break;
+  }
+  if (!hasField)
     return;
 
   BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
@@ -4111,7 +4162,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
-    const Box bxValid = mfi.validbox();
+    const Box& bxValid = mfi.validbox();
     if (ba.contains(bxFab))
       continue;
 
@@ -4125,33 +4176,40 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
       Real pos[3] = { plo[0] + dx[0] * i, plo[1] + dx[1] * j,
                       plo[2] + dx[2] * k };
 
-      // Sum over every wave face whose (direction, side) matches this ghost
-      // cell, i.e. the cell is outside the valid box on that side.
+      Real waveVal[3] = {0.0, 0.0, 0.0};
+      bool hasWave = false;
+
       for (const auto& f : waveBC.faces) {
         const int d = f.direction;
         const int side = f.side;
         const int idx = (d == 0) ? i : (d == 1) ? j : k;
-        bool onFace = false;
-        if (side == 0 && idx < bxValid.smallEnd(d))
-          onFace = true;
-        else if (side == 1 && idx > bxValid.bigEnd(d))
-          onFace = true;
+        bool onFace = (side == 0 && idx < bxValid.smallEnd(d)) ||
+                      (side == 1 && idx > bxValid.bigEnd(d));
         if (!onFace)
           continue;
 
         for (const auto& c : f.comps) {
           if (c.iField != iField)
             continue;
+          hasWave = true;
           const Real val = waveBC.value(c, t, pos);
-          for (int iVar = 0; iVar < nComp; ++iVar) {
-            const int comp = iStart + iVar;
-            if (iField == 0 || iField == 1) { // B or E vector
-              arr(i, j, k, comp) = val * c.pol[iVar % 3];
-            } else {
-              if (iVar == 0)
-                arr(i, j, k, comp) = val;
+          if (iField == 0 || iField == 1) {
+            for (int iVar = 0; iVar < std::min(nComp, 3); ++iVar) {
+              waveVal[iVar] += val * c.pol[iVar];
             }
+          } else {
+            waveVal[0] += val;
           }
+        }
+      }
+
+      if (hasWave) {
+        if (iField == 0 || iField == 1) {
+          for (int iVar = 0; iVar < nComp; ++iVar) {
+            arr(i, j, k, iStart + iVar) = waveVal[iVar % 3];
+          }
+        } else if (nComp > 0) {
+          arr(i, j, k, iStart) = waveVal[0];
         }
       }
     });
