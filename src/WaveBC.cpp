@@ -1,58 +1,32 @@
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
+
+#include <AMReX_Print.H>
 
 #include "Constants.h"
 #include "FluidInterface.h"
 #include "WaveBC.h"
 
 namespace {
-inline amrex::Real dpi() { return 2.0 * dPI; }
-} // namespace
+inline constexpr amrex::Real cTwoPi = 2.0 * dPI;
 
-amrex::Real MonoWave::value(const WaveComponent& c, amrex::Real t,
-                            const amrex::Real* pos) const {
-  amrex::Real k = (c.waveLength > 0.0) ? dpi() / c.waveLength : 0.0;
-  amrex::Real kdotx = 0.0;
-  for (int d = 0; d < 3; ++d)
-    kdotx += k * c.dir[d] * pos[d];
-  amrex::Real arg = kdotx - c.frequency * t + c.phase;
-  return c.amplitude * std::sin(arg);
-}
+const MonoWave sMonoWave;
+const WavePacket sWavePacket;
+const SpectralWave sSpectralWave;
 
-amrex::Real WavePacket::value(const WaveComponent& c, amrex::Real t,
-                              const amrex::Real* pos) const {
-  amrex::Real carrier = MonoWave::value(c, t, pos);
-  amrex::Real tw = (c.tWidth > 0.0) ? c.tWidth : 1.0;
-  amrex::Real g = std::exp(-std::pow((t - c.tCenter) / tw, 2));
-  return carrier * g;
-}
-
-amrex::Real SpectralWave::value(const WaveComponent& c, amrex::Real t,
-                                const amrex::Real* pos) const {
-  if (c.comps.empty())
-    return 0.0;
-  amrex::Real sum = 0.0;
-  for (const auto& sub : c.comps)
-    sum += MonoWave().value(sub, t, pos);
-  return sum;
-}
-
-std::unique_ptr<WaveProfile> WaveRegistry::create(const WaveComponent& c) {
-  switch (c.profile) {
+const WaveProfile* get_profile_evaluator(int profile) {
+  switch (profile) {
     case WaveComponent::kPacket:
-      return std::make_unique<WavePacket>();
+      return &sWavePacket;
     case WaveComponent::kSpectral:
-      return std::make_unique<SpectralWave>();
-    case WaveComponent::kCustom:
-      break; // handled via c.custom; no dedicated evaluator
+      return &sSpectralWave;
     case WaveComponent::kMono:
     default:
-      break;
+      return &sMonoWave;
   }
-  return std::make_unique<MonoWave>();
 }
 
-namespace {
 inline amrex::Real si2no(const FluidInterface* fi, int iField) {
   if (!fi)
     return 1.0;
@@ -71,7 +45,59 @@ inline amrex::Real si2no(const FluidInterface* fi, int iField) {
 }
 } // namespace
 
-void WaveBoundaryManager::clear() { faces.clear(); }
+amrex::Real MonoWave::value(const WaveComponent& c, amrex::Real t,
+                            const amrex::Real* pos) const {
+  if (c.amplitude == 0.0)
+    return 0.0;
+  amrex::Real kdotx = 0.0;
+  if (c.waveLength > 0.0) {
+    const amrex::Real k = cTwoPi / c.waveLength;
+    kdotx = k * (c.dir[0] * pos[0] + c.dir[1] * pos[1] + c.dir[2] * pos[2]);
+  }
+  const amrex::Real arg = kdotx - c.frequency * t + c.phase;
+  return c.amplitude * std::sin(arg);
+}
+
+amrex::Real WavePacket::value(const WaveComponent& c, amrex::Real t,
+                              const amrex::Real* pos) const {
+  const amrex::Real carrier = MonoWave::value(c, t, pos);
+  if (carrier == 0.0)
+    return 0.0;
+  const amrex::Real tw = (c.tWidth > 0.0) ? c.tWidth : 1.0;
+  const amrex::Real tau = (t - c.tCenter) / tw;
+  const amrex::Real g = std::exp(-tau * tau);
+  return carrier * g;
+}
+
+amrex::Real SpectralWave::value(const WaveComponent& c, amrex::Real t,
+                                const amrex::Real* pos) const {
+  if (c.comps.empty())
+    return 0.0;
+  amrex::Real sum = 0.0;
+  for (const auto& sub : c.comps)
+    sum += sMonoWave.value(sub, t, pos);
+  return sum;
+}
+
+std::unique_ptr<WaveProfile> WaveRegistry::create(const WaveComponent& c) {
+  switch (c.profile) {
+    case WaveComponent::kPacket:
+      return std::make_unique<WavePacket>();
+    case WaveComponent::kSpectral:
+      return std::make_unique<SpectralWave>();
+    case WaveComponent::kCustom:
+      break; // handled via c.custom; no dedicated evaluator
+    case WaveComponent::kMono:
+    default:
+      break;
+  }
+  return std::make_unique<MonoWave>();
+}
+
+void WaveBoundaryManager::clear() {
+  faces.clear();
+  active = false;
+}
 
 WaveFace& WaveBoundaryManager::face(int direction, int side) {
   for (auto& f : faces)
@@ -108,10 +134,13 @@ amrex::Real WaveBoundaryManager::value(const WaveComponent& c, amrex::Real t,
                                        const amrex::Real* pos) const {
   if (!active || c.amplitude == 0.0)
     return 0.0;
+  const amrex::Real env = envelope(c, t);
+  if (env == 0.0)
+    return 0.0;
   if (c.profile == WaveComponent::kCustom && c.custom)
-    return c.custom(c, t, pos);
-  auto prof = WaveRegistry::create(c);
-  return prof->value(c, t, pos) * envelope(c, t);
+    return c.custom(c, t, pos) * env;
+  const WaveProfile* prof = get_profile_evaluator(c.profile);
+  return prof->value(c, t, pos) * env;
 }
 
 void WaveBoundaryManager::read_param(ReadParam& param,
@@ -124,8 +153,18 @@ void WaveBoundaryManager::read_param(ReadParam& param,
     int direction = 0;
     std::string sideStr;
     param.read_var("direction", direction);
+    if (direction < 0 || direction >= 3) {
+      amrex::Abort("WAVEBC: direction must be 0 (x), 1 (y), or 2 (z).");
+    }
     param.read_var("side", sideStr);
-    int side = (sideStr == "hi") ? 1 : 0;
+    int side = 0;
+    if (sideStr == "lo") {
+      side = 0;
+    } else if (sideStr == "hi") {
+      side = 1;
+    } else {
+      amrex::Abort("WAVEBC: side must be 'lo' or 'hi', got '" + sideStr + "'.");
+    }
 
     int nComp = 0;
     param.read_var("nComp", nComp);
@@ -152,6 +191,14 @@ void WaveBoundaryManager::read_param(ReadParam& param,
       param.read_var("tCenter", c.tCenter);
       param.read_var("tWidth", c.tWidth);
 
+      // Normalize propagation direction vector if non-zero.
+      const amrex::Real dirNorm = std::sqrt(
+          c.dir[0] * c.dir[0] + c.dir[1] * c.dir[1] + c.dir[2] * c.dir[2]);
+      if (dirNorm > 0.0) {
+        for (int d = 0; d < 3; ++d)
+          c.dir[d] /= dirNorm;
+      }
+
       // SI -> code conversion (unless the block was marked 'code').
       if (siInput && fi) {
         const amrex::Real f_si2no = si2no(fi, c.iField);
@@ -159,16 +206,23 @@ void WaveBoundaryManager::read_param(ReadParam& param,
         if (fi->get_Si2NoL() > 0.0)
           c.frequency *= fi->get_Si2NoV() / fi->get_Si2NoL();
         if (c.waveLength > 0.0)
-          c.waveLength /= fi->get_Si2NoL();
+          c.waveLength *= fi->get_Si2NoL();
+
+        const amrex::Real si2noT = fi->get_Si2NoT();
+        if (si2noT > 0.0) {
+          c.tStart *= si2noT;
+          if (c.tEnd > 0.0)
+            c.tEnd *= si2noT;
+          c.rampTime *= si2noT;
+          c.tCenter *= si2noT;
+          c.tWidth *= si2noT;
+        }
       }
 
       // Amplitude guard: reject nonlinear/unstable injection.
       if (maxAmplitude > 0.0 && std::abs(c.amplitude) > maxAmplitude) {
-        std::cerr << "WAVEBC: amplitude " << std::abs(c.amplitude)
-                  << " exceeds maxAmplitude " << maxAmplitude
-                  << " (code units); injection may be nonlinear/unstable. "
-                     "Aborting.\n";
-        std::abort();
+        amrex::Abort("WAVEBC: amplitude exceeds maxAmplitude (code units); "
+                     "injection may be nonlinear/unstable.");
       }
 
       f.comps.push_back(c);

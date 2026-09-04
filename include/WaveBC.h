@@ -1,5 +1,5 @@
-#ifndef _WAVEBC_H_
-#define _WAVEBC_H_
+#ifndef FLEKS_WAVEBC_H
+#define FLEKS_WAVEBC_H
 
 #include <cmath>
 #include <functional>
@@ -113,4 +113,4 @@ private:
   amrex::Real envelope(const WaveComponent& c, amrex::Real t) const;
 };
 
-#endif // _WAVEBC_H_
+#endif // FLEKS_WAVEBC_H
