@@ -88,7 +88,7 @@ int main(int argc, char* argv[]) {
     fleksDomains.select(0);
     Domain& domain = fleksDomains(0);
 
-    domain.init(0.0, 1, paramString);
+    domain.init(0.0, 1, paramString, {}, {}, {}, /*isStandalone=*/true);
 
     // Turn on all cells.
     domain.receive_grid_info();

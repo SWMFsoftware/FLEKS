@@ -60,7 +60,8 @@ public:
             const std::string &paramString = std::string(),
             const amrex::Vector<int> &paramInt = amrex::Vector<int>(),
             const amrex::Vector<double> &paramRegion = amrex::Vector<double>(),
-            const amrex::Vector<double> &paramComm = amrex::Vector<double>());
+            const amrex::Vector<double> &paramComm = amrex::Vector<double>(),
+            const bool isStandalone = false);
   void update_param(const std::string &paramString);
   void set_ic();
   //----------------Initialization end-------------------------------

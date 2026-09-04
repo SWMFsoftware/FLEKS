@@ -353,7 +353,7 @@ void Pic::apply_periodicity_autofill(const Geometry& gm) {
 void Pic::validate_bc_pairing(const Geometry& gm) {
   static const char dimName[3] = { 'x', 'y', 'z' };
 
-  const bool isStandalone = !domainParameters.initFromSWMF;
+  const bool isStandalone = domainParameters.isStandalone;
   const bool hasNonPeriodic = !gm.isAllPeriodic();
 
   if (isStandalone && hasNonPeriodic) {

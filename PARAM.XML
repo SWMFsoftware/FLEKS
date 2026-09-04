@@ -1942,7 +1942,7 @@ mapped to `conducting`, and reported as deprecated.  See
 </command>
 
 <command name="ABSORB" alias="ABSORB_FLEKS" multiple="F">
-  <parameter name="charSpeed" type="real" required="T" default="0.0" description="Characteristic speed for the absorbing field BC (code units).  0 = auto (light speed, c = 1 in FLEKS normalization)."/>
+  <parameter name="charSpeed" type="real" required="T" default="0.0"/>
 
 #ABSORB
 0.0                 charSpeed
@@ -1989,7 +1989,7 @@ copy (the original open-boundary behaviour).  Pair `inflow` at one face with
 <command name="WAVEBC" alias="WAVEBC_FLEKS" multiple="F">
   <parameter name="nWaveFace" type="integer" default="0"/>
   <parameter name="direction" type="integer"/>
-  <parameter name="side" type="string">
+  <parameter name="side" type="string" input="select">
     <option value="lo"/>
     <option value="hi"/>
   </parameter>
@@ -2001,8 +2001,12 @@ copy (the original open-boundary behaviour).  Pair `inflow` at one face with
   <parameter name="frequency" type="real"/>
   <parameter name="waveLength" type="real"/>
   <parameter name="phase" type="real"/>
-  <parameter name="dir" type="real" array="3"/>
-  <parameter name="pol" type="real" array="3"/>
+  <for from="1" to="3">
+    <parameter name="dir" type="real"/>
+  </for>
+  <for from="1" to="3">
+    <parameter name="pol" type="real"/>
+  </for>
   <parameter name="tStart" type="real"/>
   <parameter name="tEnd" type="real"/>
   <parameter name="rampTime" type="real"/>
@@ -2021,8 +2025,12 @@ lo                      side          (lo or hi)
 0.1                     frequency     (code units; SI if #SIFLEKS)
 0.0                     waveLength
 0.0                     phase
-1 0 0                   dir
-0 0 1                   pol
+1.0                     dir
+0.0                     dir
+0.0                     dir
+0.0                     pol
+0.0                     pol
+1.0                     pol
 0.0                     tStart
 -1.0                    tEnd          (inactive)
 0.0                     rampTime
