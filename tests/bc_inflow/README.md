@@ -32,7 +32,7 @@ inflow face (in SI units, mirroring `#UNIFORMSTATE`):
 
 When an `inflow` face is present and this block is supplied:
 
-1. **Field BC** — `Pic::apply_inflow_wall` (in `src/Pic.cpp`) fills the ghost
+1. **Field BC** — `Pic::apply_inflow_wall` (in `src/PicBC.cpp`) fills the ghost
    cells with a zero-gradient copy of the adjacent edge cell for every
    component (ghost B = edge B, ghost E = edge E).  The upstream B field is set
    by `#UNIFORMSTATE`, not by `#INFLOW`, and is NOT pinned by this command; the

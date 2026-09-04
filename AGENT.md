@@ -377,7 +377,7 @@ Composite step-by-step guides for multi-stage tasks are in `.agent/workflows/`:
 ### Adding a New Parameter Command
 
 1. Document in `PARAM.XML`
-2. Parse in the relevant `read_param()` method (usually in `Domain.cpp` or `Pic.cpp`)
+2. Parse in the relevant `read_param()` method (usually in `Domain.cpp` or `PicParam.cpp`)
 3. Add the corresponding member variable
 
 ### Adding a New Test Case (Initial Condition)
