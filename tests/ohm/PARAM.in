@@ -1,23 +1,12 @@
 #DESCRIPTION
-Hybrid PIC (kinetic ions / fluid electrons) parallel whistler-Alfven wave test.
-Full generalized Ohm's law: convection + Hall + resistive (eta*J) + electron
-pressure gradient (grad Pe / (e n_e)) terms ALL active, in normalized CGS units.
-
-Parameters match the whistler test (same ion-scale normalization, uNormSI =
-speed of light = v_A, so d_i ~ v_A ~ 1 in code units).  Here RESISTIVITY and
-ELECTRONTEMPERATURE are enabled so the
-complete Ohm's-law field solver is exercised.  The resistivity is dynamically
-active (see the RESISTIVITY note below): it measurably reduces the late-time
-transverse amplitude.  The electron pressure gradient acts on the (weak)
-charge-density fluctuations produced by particle noise; the test is a
-STABILITY / no-blow-up regression check for the full solver, not a dispersion
-measurement.
+Hybrid PIC whistler wave test exercising the full generalized Ohm's law
+(convection, Hall, resistive eta*J, and electron pressure gradient grad Pe).
 
 #INITFROMSWMF
 F                       initFromSWMF
 
 #GEOMETRY
--3.2                    xMin  [code units; Lx = 6.4 d_i]
+-3.2                    xMin
  3.2                    xMax
 -0.05                   yMin
  0.05                   yMax
@@ -45,53 +34,29 @@ F                       solveEM
 #HYBRIDPIC
 T                       useHybridPIC
 
-Resistive term ON. Converted internally to code units
-(etaCode = 4*pi*etaSI*Si2NoV*Si2NoL ~ 2.51 here). For the seeded n=1 mode the
-discrete ohmic decay rate is (etaCode/4*pi)*sin^2(k*dx)/dx^2 ~ 0.19, i.e. ~70%
-over the run; the measured net effect is smaller (~25% reduction of the
-late-time transverse amplitude, see validate.py) because the kinetic-ion
-response keeps re-exciting the field. Resistive CFL number
-eta*kmax^2*dt_sub/(4*pi) = 0.10, far below the RK4 stability limit 2.785.
 #RESISTIVITY
-2.0e9                   etaResistivity  [m^2/s, SI magnetic diffusivity]
+2.0e9                   etaResistivity  [m^2/s]
 
-Electron-pressure-gradient term ON (isothermal, gamma = 1). Converted
-internally to code units (TeCode = TeEV*e/(mp*uNormSI^2) ~ 0.19 here).
 #ELECTRONTEMPERATURE
 20.0                    electronTemperature  [eV]
 1.0                     electronGamma
 1.0                     electronDensity0
 
-Sub-cycle the B update. The explicit Hall advance is limited by the discrete
-grid-scale whistler mode, omega_max * dt_sub < S (S ~ 2.83 for RK4). Because the
-compact curl operators (curl_center_to_node / curl_node_to_center) annihilate
-the exact Nyquist mode and are far less stiff than the continuum estimate, the
-effective omega_max here is ~100/Omega_i, so even dt = 0.02 is within the RK4
-limit and nBSubcycle = 1 is stable (verified: the measured whistler frequency
-is identical for nBSubcycle in {1,4,8,16,32}). nBSubcycle = 4 is chosen here
-(verified stable, whistler frequency identical to {1,8,16,32}); it is sufficient
-and provides a meaningful sub-cycling test without over-subcycling (4x cheaper
-than the previous 32). The resistive and
-electron-pressure-gradient terms are diffusive/stabilizing and do not stiffen
-the Hall update, so this rationale is unchanged from the Hall-only whistler
-case.
 #BSUBCYCLE
 4                       nBSubcycle
 
-Single kinetic ion species (q = m = 1); the electron is an implicit
-neutralizing massless fluid, so no electron particle species is present.
 #PLASMA
 1                       nSpecies
 1.0                     mass
 1.0                     charge
 
 #UNIFORMSTATE
-5.0                     rho [amu/cc]   Species 0: ions (n = 5 /cc)
+5.0                     rho [amu/cc]
 0.0                     ux [km/s]
 0.0                     uy [km/s]
 0.0                     uz [km/s]
 10000.0                 T [K]
-1.0439e-8               bx [T]       uniform guide field Bx0 (B_code ~ 1)
+1.0439e-8               bx [T]          Guide field Bx0
 0.0                     by [T]
 0.0                     bz [T]
 0.0                     ex [V/m]
@@ -106,8 +71,8 @@ T                       useFixedDt
 0.02                    dt
 
 #NORMALIZATION
-1.0e5                   lNormSI   [m]  ~ d_i so d_i ~ 1 in code units
-1.0e5                   uNormSI   [m/s] tNorm = 1 s; sets cLight_SI = uNormSI
+1.0e5                   lNormSI   [m]
+1.0e5                   uNormSI   [m/s]
 
 #MONITOR
 50                      dnReport
@@ -143,7 +108,7 @@ Bx By Bz Ex Ey Ez       varName
 
 #STOP
 -1                      MaxIter
-6.25                    TimeMax   ~0.5 whistler period (resistive damping)
+6.25                    TimeMax
 
 #RUN
 
