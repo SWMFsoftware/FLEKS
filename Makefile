@@ -48,7 +48,7 @@ define prepare_exe
 endef
 
 EXE: include/show_git_info.h compile_commands
-	$(call prepare_exe)
+	+$(call prepare_exe)
 	$(MAKE) GITINFO
 	$(MAKE) -C src EXE
 	$(MAKE) CONVERTER
@@ -80,7 +80,7 @@ LIB: bin include/Constants.h compile_commands
 	$(MAKE) CONVERTER
 
 CONVERTER: bin
-	$(call prepare_exe)
+	+$(call prepare_exe)
 	$(MAKE) -C src CONVERTER
 
 PIDL:
