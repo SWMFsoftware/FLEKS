@@ -8,8 +8,13 @@ Headers are in `include/`.
 | File                        | Implements            | Description                                                  |
 |-----------------------------|-----------------------|--------------------------------------------------------------|
 | `main.cpp`                  | `main()`              | Standalone entry point. Initializes AMReX, prints git info. Currently the `Domain` init is commented out — FLEKS is primarily run via the SWMF coupler. |
-| `Pic.cpp`                   | `Pic`                 | Core PIC solver: field update loop, particle push, moment deposition, E-field solve (GMRES), div(E) cleaning, field smoothing. |
-| `PicIO.cpp`                 | `Pic` (I/O methods)   | Plot output, restart save/read, AMReX/IDL/HDF5 writing for `Pic`. |
+| `Pic.cpp`                   | `Pic`                 | Core PIC driver: master time-step loop (`update()`), AMR grid lifecycle/regridding, particle advance/moments orchestration, and load balancing. |
+| `PicParam.cpp`              | `Pic` (parameters)    | Parameter parsing (`read_param()`), boundary-condition pairing validation, and normalization unit conversions. |
+| `PicBC.cpp`                 | `Pic` (boundaries)    | Electromagnetic field boundary conditions (conducting, absorbing, inflow) and wave injection boundary manager. |
+| `PicHybrid.cpp`             | `Pic` (hybrid solver) | Hybrid-PIC magnetic field subcycling (`update_B_hybrid()`), generalized Ohm's law assembly, ion moment history, and B-field projections. |
+| `PicFieldSolver.cpp`        | `Pic` (field solver)  | Full-PIC Maxwell E-field updates (implicit/explicit), Krylov solvers (GMRES/Newton-Krylov), hyperbolic cleaning, and field smoothing. |
+| `PicDivE.cpp`               | `Pic` (div(E) cleaning)| Poisson $\nabla \cdot \mathbf{E}$ cleaning, electrostatic potential solve, particle position corrections, and charge projections. |
+| `PicIO.cpp`                 | `Pic` (I/O & coupling)| Plot output, restart save/read, AMReX/IDL/HDF5 writing, and fluid state extraction for GM coupling. |
 | `Particles.cpp`             | `Particles<N,M>`      | Particle operations: injection, movement (Boris pusher), splitting, merging, fast merge, charge exchange, boundary handling. |
 | `TestParticles.cpp`         | `TestParticles`       | Test particle movement, trajectory recording, I/O.           |
 | `ParticleTracker.cpp`       | `ParticleTracker`     | Test particle manager: initialization, stepping, output scheduling. |
