@@ -173,6 +173,7 @@ void Pic::solve_E_newton_krylov(int iLev) {
   eSolver.solve(jacobianFreeMatvec, iLev, doReport);
   BL_PROFILE_VAR_STOP(eSolver);
 }
+
 //==========================================================
 void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
                           const bool useZeroBC) {
@@ -537,6 +538,7 @@ void Pic::solve_hyp_phi(int iLev) {
   apply_BC(cellStatus[iLev], hypPhi[iLev], 0, hypPhi[iLev].nComp(), nullptr,
            iLev);
 }
+
 //==========================================================
 void Pic::correct_B(int iLev) {
   std::string nameFunc = "Pic::correct_B";
@@ -783,6 +785,7 @@ void Pic::smooth_E(MultiFab& mfE, int iLev) {
     smooth_multifab(mfE, iLev, icount % 2 + 1);
   }
 }
+
 //==========================================================
 void Pic::project_down_E() {
   if (finest_level > 0) {
@@ -897,5 +900,3 @@ Real Pic::calc_B_field_energy() {
 
   return sum;
 }
-
-//==========================================================

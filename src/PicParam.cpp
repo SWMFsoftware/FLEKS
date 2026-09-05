@@ -521,8 +521,6 @@ void Pic::post_process_param() {
 }
 
 //==========================================================
-
-//==========================================================
 void Pic::finalize_units_conversion() {
   // Convert input units to code units using normalization factors from fi.
   convert_resistivity();
@@ -632,5 +630,3 @@ void Pic::convert_inflow_state() {
                  << "  (Si2NoRho=" << Si2NoRho
                  << ", Si2NoV=" << fi->get_Si2NoV() << ")\n";
 }
-
-//==========================================================

@@ -237,8 +237,6 @@ void Pic::sum_to_center_amr(bool isBeforeCorrection, int iLev) {
 }
 
 //==========================================================
-
-//==========================================================
 void Pic::amr_divE_correction() {
   std::string nameFunc = "Pic::divE_correction";
 

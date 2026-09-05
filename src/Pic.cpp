@@ -697,6 +697,7 @@ void Pic::calc_mass_matrix() {
 
   // WARNING: interp_from_coarse_to_fine_for_domain_edge might be needed here
 }
+
 //==========================================================
 void Pic::calc_mass_matrix_amr() {
   std::string nameFunc = "Pic::calc_mass_matrix";
@@ -842,6 +843,7 @@ void Pic::calc_mass_matrix_amr() {
   // }
   ///////////////////////////////////////////////////////////////
 }
+
 //==========================================================
 void Pic::sum_moments(bool updateDt) {
   std::string nameFunc = "Pic::sum_moments";
