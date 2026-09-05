@@ -60,9 +60,12 @@ void read_stop_criteria(const std::string& paramString, int& maxIter,
   ReadParam reader;
   reader = paramString;
 
+  reader.set_verbose(false);
+
   std::string command;
   while (reader.get_next_command(command)) {
     if (command == "#STOP") {
+      reader.set_verbose(amrex::ParallelDescriptor::IOProcessor());
       reader.read_var("MaxIter", maxIter);
       reader.read_var("TimeMax", timeMax);
       break;
