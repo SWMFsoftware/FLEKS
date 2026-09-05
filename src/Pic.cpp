@@ -1397,54 +1397,6 @@ void Pic::update_U0_E0() {
 }
 
 //==========================================================
-void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF, int iLev) {
-  std::string nameFunc = "Pic::convert_1d_to_3d";
-  timing_func(nameFunc);
-
-  bool isCenter = MF.ixType().cellCentered();
-
-  MF.setVal(0.0);
-
-  int iCount = 0;
-  for (MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.tilebox();
-
-    const Array4<Real>& arr = MF[mfi].array();
-
-    const auto& nodeArr = nodeStatus[iLev][mfi].array();
-
-    ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
-      if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
-        arr(i, j, k, iVar) = p[iCount++];
-      }
-    });
-  }
-}
-
-//==========================================================
-void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
-  std::string nameFunc = "Pic::convert_3d_to_1d";
-  timing_func(nameFunc);
-
-  bool isCenter = MF.ixType().cellCentered();
-
-  int iCount = 0;
-  for (MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.tilebox();
-
-    const Array4<Real const>& arr = MF[mfi].array();
-
-    const auto& nodeArr = nodeStatus[iLev][mfi].array();
-
-    ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
-      if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
-        p[iCount++] = arr(i, j, k, iVar);
-      }
-    });
-  }
-}
-
-//==========================================================
 void Pic::report_load_balance(bool doReportSummary, bool doReportDetail) {
   // This function report the min, max, and average of the local memory usage,
   // blocks, cells and particles among all the MPIs.
