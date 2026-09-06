@@ -437,7 +437,7 @@ def main():
                       f">={base_val:<14.2f} {unit} | {st}")
             else:
                 print(f" {name:<30} | {val:<13.3f} {unit}/pt | "
-                      f"<={base_val:<14.1f} {unit} | {st}")
+                      f"<={base_val:<14.2f} {unit} | {st}")
         print("=" * 85)
 
         all_passed = all_passed and all(passed.values())
@@ -460,13 +460,13 @@ def main():
                         "Baseline | Status |\n")
                 f.write("| :--- | :--- | :--- | :--- |\n")
                 f.write(f"| Total Wall-Clock Rate | {stats['pps_total']:.3f} "
-                        f"μs/pt | <= {base['total_pps']:.1f} μs/pt | "
+                        f"μs/pt | <= {base['total_pps']:.2f} μs/pt | "
                         f"{_status_markdown(passed['total'])} |\n")
                 f.write(f"| Particle Mover Rate | {stats['pps_mover']:.3f} "
-                        f"μs/pt | <= {base['mover_pps']:.1f} μs/pt | "
+                        f"μs/pt | <= {base['mover_pps']:.2f} μs/pt | "
                         f"{_status_markdown(passed['mover'])} |\n")
                 f.write(f"| Field Solver Rate | {stats['pps_solver']:.3f} "
-                        f"μs/pt | <= {base['solver_pps']:.1f} μs/pt | "
+                        f"μs/pt | <= {base['solver_pps']:.2f} μs/pt | "
                         f"{_status_markdown(passed['solver'])} |\n")
                 f.write(f"| Parallel Speedup (2 Cores) | {stats['speedup']:.2f}"
                         f"x | >= {base['speedup']:.2f}x | "
