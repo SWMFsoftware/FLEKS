@@ -1,24 +1,9 @@
 #!/usr/bin/env python3
 """Validator for the inflow/outflow open-boundary hybrid test (tests/bc_inflow/).
 
-A uniform magnetized hybrid plasma streams along +x through a 1D domain with an
-INFLOW boundary at -x and an OUTFLOW boundary at +x.  A perfectly uniform
-streaming plasma is the exact steady solution, so the inflow/outflow pair must
-keep the state uniform:
-
-  * ion kinetic energy Epart and magnetic energy Eb stay bounded and finite
-    (no blow-up, no NaN).  Particle number is NOT conserved (inflow seeds,
-    outflow loses), so the energy ratio tolerance is loose.
-  * the upstream (inflow-side) density rhoS0 and bulk velocity uxS0 are
-    preserved (the inflow maintains the upstream state).
-  * the guide field Bx stays uniform and unchanged.
-  * no spurious electric field develops.
-
-This is the clean counterpart to the wip/hybrid-bc-regression shock attempt,
-which regressed the hybrid solver.  Here the inflow is built ONLY from the
-existing zero-gradient ghost-cell copy (Pic::use_float) and the existing
-Maxwellian particle re-seeding (Particles::add_particles_cell), so a pass
-confirms those pieces compose correctly into a working inflow boundary.
+Validates that a uniform streaming hybrid plasma remains uniform across the
+inflow/outflow domain, with preserved upstream density and bulk velocity,
+uniform magnetic field, and bounded energies.
 """
 import glob
 import logging
