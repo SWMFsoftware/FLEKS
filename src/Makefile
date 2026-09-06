@@ -23,6 +23,11 @@ SRCS := \
 	WaveBC.cpp \
 	FluidInterface.cpp \
 	Pic.cpp \
+	PicParam.cpp \
+	PicBC.cpp \
+	PicHybrid.cpp \
+	PicFieldSolver.cpp \
+	PicDivE.cpp \
 	PicIO.cpp \
 	Grid.cpp  \
 	DataContainer.cpp \

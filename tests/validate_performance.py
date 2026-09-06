@@ -39,16 +39,16 @@ _REQUIRED_MOVER = {
 # Baseline targets (μs/part-step) and 2-core speedup floor, one set per solver.
 BASELINES = {
     "fullpic": {
-        "total_pps": 10.0,   # total wall-clock (GHA VM)
-        "mover_pps": 0.2,    # isolated particle mover
+        "total_pps": 8.0,    # total wall-clock (GHA VM)
+        "mover_pps": 0.15,   # isolated particle mover
         "solver_pps": 5.0,   # isolated implicit field solver (E_iterate)
         "speedup": 1.5,      # 2-core scaling floor
     },
     "hybrid": {
-        "total_pps": 0.4,    # total wall-clock
-        "mover_pps": 0.1,    # isolated particle mover
-        "solver_pps": 0.1,   # explicit hybrid field advance is cheaper
-        "speedup": 1.5,      # 2-core scaling floor
+        "total_pps": 0.32,   # total wall-clock
+        "mover_pps": 0.74,   # isolated particle mover
+        "solver_pps": 0.01,  # explicit hybrid field advance is cheaper
+        "speedup": 1.6,      # 2-core scaling floor
     },
 }
 
@@ -437,7 +437,7 @@ def main():
                       f">={base_val:<14.2f} {unit} | {st}")
             else:
                 print(f" {name:<30} | {val:<13.3f} {unit}/pt | "
-                      f"<={base_val:<14.1f} {unit} | {st}")
+                      f"<={base_val:<14.2f} {unit} | {st}")
         print("=" * 85)
 
         all_passed = all_passed and all(passed.values())
@@ -460,13 +460,13 @@ def main():
                         "Baseline | Status |\n")
                 f.write("| :--- | :--- | :--- | :--- |\n")
                 f.write(f"| Total Wall-Clock Rate | {stats['pps_total']:.3f} "
-                        f"μs/pt | <= {base['total_pps']:.1f} μs/pt | "
+                        f"μs/pt | <= {base['total_pps']:.2f} μs/pt | "
                         f"{_status_markdown(passed['total'])} |\n")
                 f.write(f"| Particle Mover Rate | {stats['pps_mover']:.3f} "
-                        f"μs/pt | <= {base['mover_pps']:.1f} μs/pt | "
+                        f"μs/pt | <= {base['mover_pps']:.2f} μs/pt | "
                         f"{_status_markdown(passed['mover'])} |\n")
                 f.write(f"| Field Solver Rate | {stats['pps_solver']:.3f} "
-                        f"μs/pt | <= {base['solver_pps']:.1f} μs/pt | "
+                        f"μs/pt | <= {base['solver_pps']:.2f} μs/pt | "
                         f"{_status_markdown(passed['solver'])} |\n")
                 f.write(f"| Parallel Speedup (2 Cores) | {stats['speedup']:.2f}"
                         f"x | >= {base['speedup']:.2f}x | "

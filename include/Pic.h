@@ -478,6 +478,8 @@ public:
                        const bool useZeroBC = true);
   void update_E_M_dot_E(const amrex::MultiFab &inMF, amrex::MultiFab &outMF,
                         int iLev);
+  void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF, int iLev);
+  void convert_3d_to_1d(const amrex::MultiFab &MF, double *const p, int iLev);
 
   void smooth_E(amrex::MultiFab &mfE, int iLev);
   void project_down_E();
@@ -532,10 +534,6 @@ public:
                            bool doReportDetail = false);
 
   void calc_cost_per_cell();
-
-  void convert_1d_to_3d(const double *const p, amrex::MultiFab &MF, int iLev);
-
-  void convert_3d_to_1d(const amrex::MultiFab &MF, double *const p, int iLev);
 
   //--------------- IO begin--------------------------------
   void find_output_list(const PlotWriter &writerIn, long int &nPointAllProc,

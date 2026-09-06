@@ -1,22 +1,7 @@
 #DESCRIPTION
-Inflow / outflow open-boundary regression test for the HYBRID solver.
-
-A uniform magnetized hybrid plasma streams along +x (sub-Alfvenic, u = 0.2 v_A)
-through a 1D domain.  The -x face is an INFLOW boundary (BC::inflow): the ghost
-EM field is copied from the adjacent physical cell (zero-gradient) and a drifting
-Maxwellian flux is re-seeded in the ghost cells each step, maintaining the
-upstream state.  The +x face is an OUTFLOW boundary (BC::outflow): particles
-stream out freely and the ghost field is again a zero-gradient copy.
-
-A perfectly uniform streaming plasma is the exact steady solution, so this
-validates that the inflow/outflow pair keeps a uniform state uniform: ion
-kinetic energy and magnetic energy are conserved, the upstream density and
-velocity are preserved at the inflow face, and no spurious electric field
-develops.  This is the clean counterpart to the wip/hybrid-bc-regression shock
-attempt, which regressed the hybrid solver; here the inflow is built ONLY from
-the existing zero-gradient ghost-cell copy (Pic::use_float) and the existing
-Maxwellian particle re-seeding (Particles::add_particles_cell), with no extra
-flux accumulator or field-relaxation machinery.
+Inflow / outflow open-boundary regression test for the hybrid solver:
+a uniform magnetized plasma streams along +x through a 1D domain with
+inflow at -x and outflow at +x.
 
 #INITFROMSWMF
 F                       initFromSWMF

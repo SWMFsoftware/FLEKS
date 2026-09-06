@@ -33,12 +33,12 @@ PARAM.XML documentation to code implementation.
    - `include/TimeCtr.h` for time-related parameters
 
 3. **Parse the command in `read_param()`:**
-   - Open the corresponding `.cpp` file (e.g., `src/Domain.cpp`, `src/Pic.cpp`)
+   - Open the corresponding `.cpp` file (e.g., `src/Domain.cpp` for domain/coupler parameters, `src/PicParam.cpp` for PIC parameters)
    - Find the `read_param()` method
    - Add a new `else if` block matching your command name:
    ```cpp
    } else if (command == "#COMMANDNAME") {
-     read_var("paramName", paramName);
+     param.read_var("paramName", paramName);
    }
    ```
 
