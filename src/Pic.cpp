@@ -3266,10 +3266,7 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // Evaluate integer-step E^{n+1} into centerEhybrid for the next particle
-  // push. This loop must stay unconditional: assemble_ohm_E performs collective
-  // FillBoundary calls, so skipping a level on some ranks only (e.g. via the
-  // local-only NumberOfParticlesAtLevel) desynchronises MPI.
+  // Evaluate E^{n+1} into centerEhybrid for the next push.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const auto& cBin =
         (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
