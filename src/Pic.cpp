@@ -3266,19 +3266,8 @@ void Pic::update_B_hybrid() {
     }
   }
 
-  // Evaluate integer-step E^{n+1} into centerEhybrid for the next particle
-  // push.
+  // Evaluate E^{n+1} into centerEhybrid for the next push.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    bool hasParticles = false;
-    for (int i : kineticSpecies_) {
-      if (parts[i]->NumberOfParticlesAtLevel(iLev, true, true) > 0) {
-        hasParticles = true;
-        break;
-      }
-    }
-    if (!hasParticles) {
-      continue;
-    }
     const auto& cBin =
         (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
     assemble_ohm_E(cBin, cBin, centerEhybrid[iLev], iLev, 1.0);
