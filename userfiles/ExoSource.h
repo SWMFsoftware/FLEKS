@@ -126,6 +126,7 @@ public:
   amrex::Real impact_ionization_rate(amrex::Real ne, amrex::Real Te_eV,
                                      int iC) const {
     if (ne <= 0.0 || Te_eV <= 0.0) return 0.0;
+    double ne_SI = ne / (get_Si2NoRho() * cProtonMassSI);
     // Voronov 1997 fit: <sigma*v> in cm^3/s, converted to m^3/s.
     double Ei = impactEIon[iC];  // ionization energy [eV]
     double A = impactA[iC];      // Voronov A [cm^3/s]
@@ -133,7 +134,7 @@ public:
     double X = impactX[iC];      // Voronov X
     double t = Te_eV / Ei;
     double sigma_v = A * pow(t, K) / (X + t) * exp(-Ei / Te_eV) * 1e-6;
-    return ne * sigma_v;
+    return ne_SI * sigma_v;
   }
 
   //-------------------------------------------------------------------
@@ -157,9 +158,10 @@ public:
     double u_mag_SI =
         sqrt(ux_i * ux_i + uy_i * uy_i + uz_i * uz_i) * get_unorm_si();
     if (ni <= 0.0 || u_mag_SI <= 0.0) return 0.0;
+    double ni_SI = ni / (get_Si2NoRho() * cProtonMassSI);
     // Constant cross-section model: sigmaCX in [cm^2], convert to [m^2].
     double sigma = cxSigma[iC * nCXIonSpecies + iIon];
-    return ni * sigma * 1e-4 * u_mag_SI;
+    return ni_SI * sigma * 1e-4 * u_mag_SI;
   }
 
   //-------------------------------------------------------------------
@@ -549,9 +551,6 @@ public:
   //-------------------------------------------------------------------
   // Set nodeFluid from plasma-state-dependent ionization processes.
   void set_source(const FluidInterface& other) override {
-    std::string nameFunc = "FS:get_source_from_fluid";
-    amrex::Print() << nameFunc << " is called.";
-
     set_node_fluid(other);
     set_node_loss_fluid_to_zero();
 
@@ -663,6 +662,16 @@ public:
                   srcP[iSp] +=
                       S_n * mass_amu * cProtonMassSI * cBoltzmannSI *
                       exoT0[iC];
+
+                  // Co-create neutralizing electrons to preserve quasi-neutrality
+                  // and avoid unphysical charge accumulation in periodic domains.
+                  if (nS > 0 && get_species_charge(0) < 0) {
+                    double mass_e = get_species_mass(0);
+                    srcRho[0] += S_n * mass_e * cProtonMassSI;
+                    srcP[0] +=
+                        S_n * mass_e * cProtonMassSI * cBoltzmannSI *
+                        exoT0[iC];
+                  }
                 }
 
                 // General chemistry source terms (#CHEMISTRY).
@@ -692,6 +701,15 @@ public:
                 }
 
                 bool anySource = false;
+                if (nS > 0 && iRho_I[0] >= 0 && srcRho[0] > 0) {
+                  arr(i, j, k, iRho_I[0]) =
+                      srcRho[0] * get_Si2NoRho() / get_Si2NoT();
+                  arr(i, j, k, iP_I[0]) =
+                      srcP[0] * get_Si2NoP() / get_Si2NoT();
+                  arr(i, j, k, iUx_I[0]) = 0.0;
+                  arr(i, j, k, iUy_I[0]) = 0.0;
+                  arr(i, j, k, iUz_I[0]) = 0.0;
+                }
                 for (int iSp = 1; iSp <= nIonS; ++iSp) {
                   if (srcRho[iSp] > 0) {
                     anySource = true;

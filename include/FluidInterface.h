@@ -519,6 +519,11 @@ public:
                                  const int is, const int iLev = 0) const {
     amrex::Real Rho, NumDens;
 
+    if (!initFromSWMF && is < static_cast<int>(iRho_I.size())) {
+      Rho = get_value(mfi, xyz, iRho_I[is], iLev);
+      return Rho / MoMi_S[is];
+    }
+
     if (useElectronFluid) {
       Rho = get_value(mfi, xyz, iRho_I[is], iLev);
       NumDens = Rho / MoMi_S[is];
@@ -703,7 +708,11 @@ public:
   template <typename Type>
   amrex::Real get_p(const amrex::MFIter& mfi, const Type xyz, const int is,
                     const int iLev = 0) const {
-    amrex::Real P;
+    if (!initFromSWMF && is < static_cast<int>(iP_I.size())) {
+      return get_value(mfi, xyz, iP_I[is], iLev);
+    }
+
+    amrex::Real P = 0.0;
 
     if (useElectronFluid) {
       P = get_value(mfi, xyz, iP_I[is], iLev);

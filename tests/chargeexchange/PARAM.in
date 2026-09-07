@@ -7,19 +7,19 @@ F                       initFromSWMF
 #GEOMETRY
 -9.0e6                  xMin
  9.0e6                  xMax
--1.0                    yMin
- 1.0                    yMax
+-9.0e6                  yMin
+ 9.0e6                  yMax
 -1.0                    zMin
  1.0                    zMax
 
 #NCELL
 32                      nCellX
-1                       nCellY
+32                      nCellY
 1                       nCellZ
 
 #MAXBLOCKSIZE
-32                      maxBlockSizeX
-1                       maxBlockSizeY
+16                      maxBlockSizeX
+16                      maxBlockSizeY
 1                       maxBlockSizeZ
 
 #PERIODICITY
@@ -82,10 +82,10 @@ Chamberlain             typeProfile
 
 #CHARGEEXCHANGE
 2                       nIonSpecies
-2.0e-12                 sigmaCX       H neutral - H+ ion [cm^2]
-1.0e-12                 sigmaCX       H neutral - O+ ion [cm^2]
-1.5e-12                 sigmaCX       O neutral - H+ ion [cm^2]
-1.0e-12                 sigmaCX       O neutral - O+ ion [cm^2]
+2.0e-15                 sigmaCX       H neutral - H+ ion [cm^2]
+1.0e-15                 sigmaCX       H neutral - O+ ion [cm^2]
+2.0e-15                 sigmaCX       O neutral - H+ ion [cm^2]
+1.0e-15                 sigmaCX       O neutral - O+ ion [cm^2]
 
 #TIMESTEPPING
 T                       useFixedDt
@@ -100,7 +100,7 @@ T                       useFixedDt
 
 #PARTICLES
 4                       nParticle per cell in X
-1                       nParticle per cell in Y
+4                       nParticle per cell in Y
 1                       nParticle per cell in Z
 
 #COMOVING

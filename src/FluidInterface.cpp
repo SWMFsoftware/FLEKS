@@ -478,7 +478,10 @@ void FluidInterface::read_param(const std::string& command, ReadParam& param) {
       tmp *= 1e3;
       uniformState.push_back(tmp * rho);
       param.read_var("T", tmp);
-      double n = rho / cProtonMassSI;
+      double mass_i = (i < static_cast<int>(MoMi_S.size()) && MoMi_S[i] > 0.0)
+                          ? MoMi_S[i] * cProtonMassSI
+                          : cProtonMassSI;
+      double n = rho / mass_i;
       // p = nkT
       double p = n * cBoltzmannSI * tmp;
       uniformState.push_back(p);
