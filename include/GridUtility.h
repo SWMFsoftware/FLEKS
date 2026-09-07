@@ -304,7 +304,7 @@ inline void add_to_mf(const amrex::Real& val, amrex::MultiFab& mf,
 
   const auto invDx = gm.InvCellSize();
 
-  int loIdx[3];
+  int loIdx[3] = { 0, 0, 0 };
   amrex::Real dx[3] = { 0, 0, 0 };
   for (int i = 0; i < nDim; ++i) {
     dx[i] = (xyz[i] - plo[i]) * invDx[i];
@@ -314,7 +314,7 @@ inline void add_to_mf(const amrex::Real& val, amrex::MultiFab& mf,
 
   amrex::Real interpX[2] = { dx[0], 1 - dx[0] };
   amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
-  amrex::Real interpZ[2] = { dx[2], 1 - dx[2] };
+  amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 0, nDim > 2 ? 1 - dx[2] : 1 };
 
   const auto& arr = mf.array(mfi);
   // coef[k][j][i]
@@ -328,14 +328,17 @@ inline void add_to_mf(const amrex::Real& val, amrex::MultiFab& mf,
   coef[1][1][0] = interpX[1] * interpY[0] * interpZ[0] * val;
   coef[1][1][1] = interpX[0] * interpY[0] * interpZ[0] * val;
 
-  arr(loIdx[ix_], loIdx[iy_], loIdx[iz_], iVar) += coef[0][0][0];
-  arr(loIdx[ix_] + 1, loIdx[iy_], loIdx[iz_], iVar) += coef[0][0][1];
-  arr(loIdx[ix_], loIdx[iy_] + 1, loIdx[iz_], iVar) += coef[0][1][0];
-  arr(loIdx[ix_] + 1, loIdx[iy_] + 1, loIdx[iz_], iVar) += coef[0][1][1];
-  arr(loIdx[ix_], loIdx[iy_], loIdx[iz_] + 1, iVar) += coef[1][0][0];
-  arr(loIdx[ix_] + 1, loIdx[iy_], loIdx[iz_] + 1, iVar) += coef[1][0][1];
-  arr(loIdx[ix_], loIdx[iy_] + 1, loIdx[iz_] + 1, iVar) += coef[1][1][0];
-  arr(loIdx[ix_] + 1, loIdx[iy_] + 1, loIdx[iz_] + 1, iVar) += coef[1][1][1];
+  int kz = nDim > 2 ? loIdx[iz_] : 0;
+  arr(loIdx[ix_], loIdx[iy_], kz, iVar) += coef[0][0][0];
+  arr(loIdx[ix_] + 1, loIdx[iy_], kz, iVar) += coef[0][0][1];
+  arr(loIdx[ix_], loIdx[iy_] + 1, kz, iVar) += coef[0][1][0];
+  arr(loIdx[ix_] + 1, loIdx[iy_] + 1, kz, iVar) += coef[0][1][1];
+  if (nDim > 2) {
+    arr(loIdx[ix_], loIdx[iy_], kz + 1, iVar) += coef[1][0][0];
+    arr(loIdx[ix_] + 1, loIdx[iy_], kz + 1, iVar) += coef[1][0][1];
+    arr(loIdx[ix_], loIdx[iy_] + 1, kz + 1, iVar) += coef[1][1][0];
+    arr(loIdx[ix_] + 1, loIdx[iy_] + 1, kz + 1, iVar) += coef[1][1][1];
+  }
 
   return;
 }
