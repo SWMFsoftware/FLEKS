@@ -233,9 +233,9 @@ void Domain::update() {
   // - OH-PT: not applicable; charge_exchange() handles source terms.
   if (source && !domainParameters.initFromSWMF) {
     source->set_source(*fi);
-    source->sum_boundary();
-    source->sum_loss_boundary();
     source->convert_moment_to_velocity(true, false);
+    source->fill_boundary();
+    source->fill_loss_boundary();
   }
 
   pic->update(doReport);
@@ -513,9 +513,9 @@ void Domain::set_state_var(double *data, int *index,
     // set_source must not be called here.
     if (source && !stateOH) {
       source->set_source(*fi);
-      source->sum_boundary();
-      source->sum_loss_boundary();
       source->convert_moment_to_velocity(true, false);
+      source->fill_boundary();
+      source->fill_loss_boundary();
     }
   }
 }

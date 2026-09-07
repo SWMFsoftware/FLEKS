@@ -172,7 +172,7 @@ public:
     }
   }
 
-  void sum_loss_boundary() {
+  void fill_loss_boundary() {
     if (!(useRecombination || useChemistry))
       return;
     // Use FillBoundary (copy) instead of SumBoundary (sum) for loss rates.
@@ -184,6 +184,8 @@ public:
         nodeLossFluid[iLev].FillBoundary(Geom(iLev).periodicity());
     }
   }
+
+  void sum_loss_boundary() { fill_loss_boundary(); }
 
   /// Read loss rate for ion species iIon (0-based) at cell ijk.
   /// Returns the normalized mass-density loss rate (positive = loss).

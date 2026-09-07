@@ -45,6 +45,20 @@ runs:
         # optimized release executable (-O4 -nodebug) for running the tests.
         ./Config.pl -amrex${{ inputs.amrex-dim }} -lev=2 -u=Exo -O4 -nodebug
 
+        # Verify that the AMReX library linked against is indeed an optimized
+        # release build (AMREX_DEBUG must not be defined).
+        AMREX_CONFIG="../../util/AMREX/InstallDir/include/AMReX_Config.H"
+        if [ -f "$AMREX_CONFIG" ] && grep -q "#define AMREX_DEBUG" "$AMREX_CONFIG"; then
+          echo "::error::AMReX has AMREX_DEBUG defined! Standalone tests must run against an optimized AMReX library."
+          exit 1
+        fi
+
+        # Verify that FLEKS Makefile.conf was configured without debug flags.
+        if grep -E "^DEBUGC\s*=" Makefile.conf; then
+          echo "::error::FLEKS Makefile.conf has DEBUGC enabled! Standalone tests must run with an optimized executable."
+          exit 1
+        fi
+
     - name: Cache Standalone Build
       id: cache-standalone
       uses: actions/cache@v5

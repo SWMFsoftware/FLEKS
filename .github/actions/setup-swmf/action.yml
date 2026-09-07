@@ -77,10 +77,9 @@ runs:
       uses: actions/cache@v5
       with:
         path: SWMF/util/AMREX
-        # "-v2" invalidates earlier caches that were saved with an incomplete
-        # InstallDir* (missing include/AMReX_Config.H), which broke dimension
-        # detection in validate_tests.py.
-        key: ${{ runner.os }}-amrex-v2-${{ steps.amrex-hash.outputs.hash }}-${{ inputs.amrex-cache-suffix }}
+        # "-v3" invalidates earlier caches that were saved with an unoptimized
+        # / debug AMReX build (-debug yes).
+        key: ${{ runner.os }}-amrex-v3-${{ steps.amrex-hash.outputs.hash }}-${{ inputs.amrex-cache-suffix }}
 
     - name: Cache SWMF
       id: cache-swmf
@@ -129,12 +128,20 @@ runs:
         if [ ! -f util/AMREX/GNUmakefile ]; then
           rm -rf util/AMREX
         fi
+        # Configure the target AMReX dimension so it is built up-front in
+        # release mode (--debug no).
+        AMREX_DIM_FLAG=""
+        case "${{ inputs.amrex-cache-suffix }}" in
+          2d|2D|2d-*) AMREX_DIM_FLAG="-amrex2d" ;;
+          3d|3D)      AMREX_DIM_FLAG="-amrex3d" ;;
+        esac
+
         # Configure the SWMF component tree, which populates the share/ and
         # util/ (including AMReX) dependencies that the FLEKS build needs.
         if [ -n "${{ inputs.config-extra }}" ]; then
-          ./Config.pl -install=BATSRUS -v=Empty,${{ inputs.config-components }} -o=${{ inputs.config-extra }}
+          ./Config.pl -install=BATSRUS $AMREX_DIM_FLAG -v=Empty,${{ inputs.config-components }} -o=${{ inputs.config-extra }}
         else
-          ./Config.pl -install=BATSRUS -v=Empty,${{ inputs.config-components }}
+          ./Config.pl -install=BATSRUS $AMREX_DIM_FLAG -v=Empty,${{ inputs.config-components }}
         fi
 
     - name: Verify & Fix AMReX Build Cache
@@ -143,11 +150,15 @@ runs:
       shell: bash
       run: |
         # An install dir with libamrex.a but missing AMReX_Config.H is
-        # incomplete (the header records AMREX_SPACEDIM); remove it so Config.pl
-        # rebuilds it, then recreate the InstallDir symlink to a complete install.
+        # incomplete; an install dir with AMREX_DEBUG defined is an unoptimized
+        # debug build. Remove either so Config.pl rebuilds a clean optimized
+        # release install, then recreate the InstallDir symlink.
         for d in InstallDir2D InstallDir3D; do
           if [ -f "$d/lib/libamrex.a" ] && [ ! -f "$d/include/AMReX_Config.H" ]; then
             echo "WARNING: $d has libamrex.a but is missing include/AMReX_Config.H; removing to force a clean rebuild"
+            rm -rf "$d"
+          elif [ -f "$d/include/AMReX_Config.H" ] && grep -q "#define AMREX_DEBUG" "$d/include/AMReX_Config.H"; then
+            echo "WARNING: $d has AMREX_DEBUG defined (unoptimized debug build); removing to force clean optimized rebuild"
             rm -rf "$d"
           fi
         done
@@ -187,7 +198,11 @@ runs:
         echo "AMReX build-cache status:"
         for d in InstallDir2D InstallDir3D; do
           if [ -f "$d/lib/libamrex.a" ] && [ -f "$d/include/AMReX_Config.H" ]; then
-            echo "  $d: COMPLETE (libamrex.a + AMReX_Config.H present)"
+            if grep -q "#define AMREX_DEBUG" "$d/include/AMReX_Config.H"; then
+              echo "  $d: DEBUG (AMREX_DEBUG is defined)"
+            else
+              echo "  $d: COMPLETE (optimized release build)"
+            fi
           elif [ -f "$d/lib/libamrex.a" ]; then
             echo "  $d: PARTIAL (libamrex.a present, AMReX_Config.H missing)"
           else

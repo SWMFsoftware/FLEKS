@@ -105,7 +105,8 @@ public:
 
     const amrex::Real x = Geom(iLev).CellCenter(ijk[ix_], ix_);
     const amrex::Real y = Geom(iLev).CellCenter(ijk[iy_], iy_);
-    const amrex::Real z = Geom(iLev).CellCenter(ijk[iz_], iz_);
+    const amrex::Real z =
+        (nDim > 2) ? Geom(iLev).CellCenter(ijk[iz_], iz_) : 0.0;
 
     // cAU
     amrex::Real r = sqrt(x * x + y * y + z * z) * get_No2SiL() / cAUSI;

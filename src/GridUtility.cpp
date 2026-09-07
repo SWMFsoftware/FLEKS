@@ -256,7 +256,7 @@ void print_MultiFab(const MultiFab& data, std::string tag, Geometry& gm,
         iMax++;
       if ((!gm.isPeriodic(iy_)) && gbx.bigEnd(iy_) == hi.y)
         jMax++;
-      if ((!gm.isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z)
+      if (nDim > 2 && (!gm.isPeriodic(iz_)) && gbx.bigEnd(iz_) == hi.z)
         kMax++;
     }
 
@@ -268,7 +268,7 @@ void print_MultiFab(const MultiFab& data, std::string tag, Geometry& gm,
       jMax += nshift;
     }
 
-    if (!gm.isPeriodic(iz_) && gbx.bigEnd(iz_) == hi.z) {
+    if (nDim > 2 && !gm.isPeriodic(iz_) && gbx.bigEnd(iz_) == hi.z) {
       kMax += nshift;
     }
 
@@ -280,7 +280,7 @@ void print_MultiFab(const MultiFab& data, std::string tag, Geometry& gm,
       jMin -= nshift;
     }
 
-    if (!gm.isPeriodic(iz_) && gbx.smallEnd(iz_) == lo.z) {
+    if (nDim > 2 && !gm.isPeriodic(iz_) && gbx.smallEnd(iz_) == lo.z) {
       kMin -= nshift;
     }
 

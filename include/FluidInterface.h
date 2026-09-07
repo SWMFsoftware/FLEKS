@@ -393,6 +393,14 @@ public:
     }
   }
 
+  void fill_boundary() {
+    timing_func("FI::fill_boundary");
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      if (!nodeFluid[iLev].empty())
+        nodeFluid[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
+
   virtual int get_neu_source_region(const amrex::MFIter& mfi,
                                     const amrex::IntVect ijk,
                                     const int iLev) const {
@@ -510,6 +518,11 @@ public:
   amrex::Real get_number_density(const amrex::MFIter& mfi, const T xyz,
                                  const int is, const int iLev = 0) const {
     amrex::Real Rho, NumDens;
+
+    if (!initFromSWMF && is < static_cast<int>(iRho_I.size())) {
+      Rho = get_value(mfi, xyz, iRho_I[is], iLev);
+      return Rho / MoMi_S[is];
+    }
 
     if (useElectronFluid) {
       Rho = get_value(mfi, xyz, iRho_I[is], iLev);
@@ -695,7 +708,11 @@ public:
   template <typename Type>
   amrex::Real get_p(const amrex::MFIter& mfi, const Type xyz, const int is,
                     const int iLev = 0) const {
-    amrex::Real P;
+    if (!initFromSWMF && is < static_cast<int>(iP_I.size())) {
+      return get_value(mfi, xyz, iP_I[is], iLev);
+    }
+
+    amrex::Real P = 0.0;
 
     if (useElectronFluid) {
       P = get_value(mfi, xyz, iP_I[is], iLev);
@@ -1171,6 +1188,8 @@ public:
 
   amrex::Real get_grad_pe_z(const amrex::MFIter& mfi, amrex::IntVect ijk,
                             const int iLev) const {
+    if (nDim <= 2)
+      return 0.0;
 
     const amrex::Box& box = mfi.fabbox();
     const auto lo = amrex::lbound(box);

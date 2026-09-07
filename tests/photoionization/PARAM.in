@@ -18,8 +18,8 @@ F                       initFromSWMF
 1                       nCellZ
 
 #MAXBLOCKSIZE
-32                      maxBlockSizeX
-32                      maxBlockSizeY
+16                      maxBlockSizeX
+16                      maxBlockSizeY
 1                       maxBlockSizeZ
 
 #PERIODICITY

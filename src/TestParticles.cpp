@@ -224,7 +224,7 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
 
           Real sx = dShift[ix_];
           Real sy = dShift[iy_];
-          Real sz = dShift[iz_];
+          Real sz = nDim > 2 ? dShift[iz_] : 0.0;
 
           // dB/dx
           for (int iDim = 0; iDim < nDim3; iDim++) {
@@ -504,7 +504,7 @@ void TestParticles::move_and_save_neutrals(Real dt, Real tNowSI, bool doSave) {
         p.rdata(i0 + iTPw_) = p.rdata(iwp_);
         p.rdata(i0 + iTPx_) = p.pos(ix_);
         p.rdata(i0 + iTPy_) = p.pos(iy_);
-        p.rdata(i0 + iTPz_) = p.pos(iz_);
+        p.rdata(i0 + iTPz_) = zp;
 
         p.idata(iRecordCount_)++;
       }
@@ -606,7 +606,8 @@ void TestParticles::add_test_particles_from_pic(PicParticles* pts) {
         p.id() = pOther.id();
         p.pos(ix_) = pOther.pos(ix_);
         p.pos(iy_) = pOther.pos(iy_);
-        p.pos(iz_) = pOther.pos(iz_);
+        if (nDim > 2)
+          p.pos(iz_) = pOther.pos(iz_);
         p.rdata(iup_) = pOther.rdata(iup_);
         p.rdata(ivp_) = pOther.rdata(ivp_);
         p.rdata(iwp_) = pOther.rdata(iwp_);
@@ -709,7 +710,11 @@ void TestParticles::add_test_particles_from_fluid(const Vector<Vel>& tpStates) {
 
     if (iPartRegion == iRegionSideXp_) {
       for (int j = lo.y; j <= hi.y; j += nIntervalCell[iy_])
+#if (AMREX_SPACEDIM == 3)
         for (int k = lo.z; k <= hi.z; k += nIntervalCell[iz_]) {
+#else
+        for (int k = 0; k <= 0; ++k) {
+#endif
           const int i = hi.x;
           if (bit::is_lev_edge(status(i, j, k)))
             add_particles_cell(iLev, mfi, IntVect{ AMREX_D_DECL(i, j, k) }, fi,

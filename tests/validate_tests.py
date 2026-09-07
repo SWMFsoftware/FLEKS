@@ -142,7 +142,7 @@ def prepare_run_dir():
     for candidate in postidl_candidates:
         if os.path.isfile(candidate):
             postidl_target = os.path.relpath(candidate, os.path.join(run_dir, "PC"))
-            continue
+            break
     if postidl_target is None:
         postidl_target = "../../bin/PostIDL.exe"
 
@@ -339,9 +339,7 @@ AMREX2D_TESTS = {"reconnection_amr"}
 
 # Tests excluded from the 2D suite.
 AMREX2D_EXCLUDED_TESTS = {
-    "chargeexchange", "chemistry", "electronimpact",
-    "recombination", "hyper_resistivity",
-    "photoionization",
+    "chemistry", "hyper_resistivity",
 }
 
 
