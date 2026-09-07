@@ -263,8 +263,10 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         const int iHi = singleCell[ix_] ? lo[ix_] : hi[ix_];
 
         for (int k = lo[iz_]; k <= kHi; ++k) {
-          const double zp = singleCell[iz_] ? geom.CellCenter(lo[iz_], iz_)
-                                            : geom.LoEdge(k, iz_);
+          const double zp = (nDim > 2)
+                                ? (singleCell[iz_] ? geom.CellCenter(lo[iz_], iz_)
+                                                   : geom.LoEdge(k, iz_))
+                                : 0.0;
           for (int j = lo[iy_]; j <= jHi; ++j) {
             const double yp = singleCell[iy_] ? geom.CellCenter(lo[iy_], iy_)
                                               : geom.LoEdge(j, iy_);
@@ -329,8 +331,10 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         kMax = lo.z;
 
       for (int k = lo.z; k <= kMax; ++k) {
-        const double zp =
-            singleCell[iz_] ? geom.CellCenter(lo.z, iz_) : geom.LoEdge(k, iz_);
+        const double zp = (nDim > 2)
+                              ? (singleCell[iz_] ? geom.CellCenter(lo.z, iz_)
+                                                 : geom.LoEdge(k, iz_))
+                              : 0.0;
         for (int j = lo.y; j <= jMax; ++j) {
           const double yp = singleCell[iy_] ? geom.CellCenter(lo.y, iy_)
                                             : geom.LoEdge(j, iy_);
@@ -1092,8 +1096,10 @@ void Pic::write_amrex_field(const PlotWriter& pw, double const timeNow,
         for (int k = lo.z; k <= hi.z; ++k) {
           // Use the value returned from Geom instead of geomOut, and it will
           // be converted to output unit just as other variables.
-          const Real z0 = saveNode ? Geom(iLev).LoEdge(k, iz_)
-                                   : Geom(iLev).CellCenter(k, iz_);
+          const Real z0 = (nDim > 2)
+                              ? (saveNode ? Geom(iLev).LoEdge(k, iz_)
+                                          : Geom(iLev).CellCenter(k, iz_))
+                              : 0.0;
 
           for (int j = lo.y; j <= hi.y; ++j) {
             const Real y0 = saveNode ? Geom(iLev).LoEdge(j, iy_)

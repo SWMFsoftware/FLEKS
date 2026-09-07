@@ -658,7 +658,7 @@ void Pic::calc_mass_matrix() {
       }
     }
 
-    if (useExplicitPIC && nSpecies > 0) {
+    if (nSpecies > 0) {
       parts[0]->apply_jhat_mirror(jHat[iLev], iLev);
     }
 
