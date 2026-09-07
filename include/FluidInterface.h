@@ -1188,6 +1188,8 @@ public:
 
   amrex::Real get_grad_pe_z(const amrex::MFIter& mfi, amrex::IntVect ijk,
                             const int iLev) const {
+    if (nDim <= 2)
+      return 0.0;
 
     const amrex::Box& box = mfi.fabbox();
     const auto lo = amrex::lbound(box);

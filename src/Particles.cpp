@@ -231,6 +231,8 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           xyz = xyz0;
         }
 
+        const Real zp = (nDim > 2) ? xyz[2] : 0.0;
+
         const Real nDens =
             (userState && tpVel.nDens >= 0.0)
                 ? tpVel.nDens
@@ -252,7 +254,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
           pics.nPerCell = npcel;
           pics.x = xyz[0];
           pics.y = xyz[1];
-          pics.z = xyz[2];
+          pics.z = zp;
           pics.q = q;
           ic_->modify_particle_weight(pics);
           q = pics.q;
@@ -292,7 +294,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
             pics.nPerCell = npcel;
             pics.x = xyz[0];
             pics.y = xyz[1];
-            pics.z = xyz[2];
+            pics.z = zp;
             pics.uThermal = u;
             pics.vThermal = v;
             pics.wThermal = w;
@@ -325,7 +327,7 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
             pics.nPerCell = npcel;
             pics.x = xyz[0];
             pics.y = xyz[1];
-            pics.z = xyz[2];
+            pics.z = zp;
             pics.uBulk = uBulk;
             pics.vBulk = vBulk;
             pics.wBulk = wBulk;
@@ -346,18 +348,19 @@ void Particles<NStructReal, NStructInt>::add_particles_cell(
             const int hiX = mfi.validbox().bigEnd(ix_);
             const int loY = mfi.validbox().smallEnd(iy_);
             const int hiY = mfi.validbox().bigEnd(iy_);
-            const int loZ = mfi.validbox().smallEnd(iz_);
-            const int hiZ = mfi.validbox().bigEnd(iz_);
+            const int loZ = (nDim > 2) ? mfi.validbox().smallEnd(iz_) : 0;
+            const int hiZ = (nDim > 2) ? mfi.validbox().bigEnd(iz_) : 0;
             // Driven by the field-side wave faces (set from Pic::bcField),
             // not by a particle-side spelling.
             const bool onWaveX = (isWaveFace[0] && ijk[ix_] < loX) ||
                                  (isWaveFace[1] && ijk[ix_] > hiX);
             const bool onWaveY = (isWaveFace[2] && ijk[iy_] < loY) ||
                                  (isWaveFace[3] && ijk[iy_] > hiY);
-            const bool onWaveZ = (isWaveFace[4] && ijk[iz_] < loZ) ||
-                                 (isWaveFace[5] && ijk[iz_] > hiZ);
+            const bool onWaveZ =
+                (nDim > 2) && ((isWaveFace[4] && ijk[iz_] < loZ) ||
+                               (isWaveFace[5] && ijk[iz_] > hiZ));
             if (onWaveX || onWaveY || onWaveZ) {
-              const Real ppos[3] = { xyz[0], xyz[1], xyz[2] };
+              const Real ppos[3] = { xyz[0], xyz[1], zp };
               const Real tNow = tc ? tc->get_time() : 0.0;
               Real dvx = 0, dvy = 0, dvz = 0;
               waveVelocityKick(ppos, tNow, dvx, dvy, dvz);
@@ -4417,7 +4420,7 @@ void Particles<NStructReal, NStructInt>::get_analytic_ion_fluid(
   if (ionOH.doGetFromOH) {
     Real xSI = xyz[ix_] * fi->get_No2SiL();
     Real ySI = xyz[iy_] * fi->get_No2SiL();
-    Real zSI = xyz[iz_] * fi->get_No2SiL();
+    Real zSI = (nDim > 2 ? xyz[iz_] : 0.0) * fi->get_No2SiL();
 
     Real temp, ur, b[nDim3];
     OH_get_solar_wind(&xSI, &ySI, &zSI, &rhoIon, &ur, &temp, b);

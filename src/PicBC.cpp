@@ -561,7 +561,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
         return;
 
       Real pos[3] = { plo[0] + dx[0] * i, plo[1] + dx[1] * j,
-                      plo[2] + dx[2] * k };
+                      (nDim > 2) ? plo[2] + dx[2] * k : 0.0 };
 
       Real waveVal[3] = { 0.0, 0.0, 0.0 };
       bool hasWave = false;
@@ -569,6 +569,8 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
       for (const auto& f : waveBC.faces) {
         const int d = f.direction;
         const int side = f.side;
+        if (d >= nDim)
+          continue;
         const int idx = (d == 0) ? i : (d == 1) ? j : k;
         bool onFace = (side == 0 && idx < bxValid.smallEnd(d)) ||
                       (side == 1 && idx > bxValid.bigEnd(d));

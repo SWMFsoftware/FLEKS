@@ -174,7 +174,7 @@ void WaveIC::set_fields(PicICFields& fields) const {
           ParallelFor(box, [&](int i, int j, int k) {
             const amrex::Real x = prob_lo[0] + dx[0] * i;
             const amrex::Real y = prob_lo[1] + dx[1] * j;
-            const amrex::Real z = prob_lo[2] + dx[2] * k;
+            const amrex::Real z = (nDim > 2) ? prob_lo[2] + dx[2] * k : 0.0;
             const amrex::Real phase = Kx * x + Ky * y + Kz * z;
             const amrex::Real cphi = std::cos(phase);
             const amrex::Real sphi = std::sin(phase);
@@ -199,7 +199,8 @@ void WaveIC::set_fields(PicICFields& fields) const {
           ParallelFor(box, [&](int i, int j, int k) {
             const amrex::Real x = prob_lo[0] + dx[0] * (i + 0.5);
             const amrex::Real y = prob_lo[1] + dx[1] * (j + 0.5);
-            const amrex::Real z = prob_lo[2] + dx[2] * (k + 0.5);
+            const amrex::Real z =
+                (nDim > 2) ? prob_lo[2] + dx[2] * (k + 0.5) : 0.0;
             const amrex::Real phase = Kx * x + Ky * y + Kz * z;
             const amrex::Real cphi = std::cos(phase);
             const amrex::Real sphi = std::sin(phase);
