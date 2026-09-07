@@ -263,10 +263,10 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
         const int iHi = singleCell[ix_] ? lo[ix_] : hi[ix_];
 
         for (int k = lo[iz_]; k <= kHi; ++k) {
-          const double zp = (nDim > 2)
-                                ? (singleCell[iz_] ? geom.CellCenter(lo[iz_], iz_)
-                                                   : geom.LoEdge(k, iz_))
-                                : 0.0;
+          const double zp =
+              (nDim > 2) ? (singleCell[iz_] ? geom.CellCenter(lo[iz_], iz_)
+                                            : geom.LoEdge(k, iz_))
+                         : 0.0;
           for (int j = lo[iy_]; j <= jHi; ++j) {
             const double yp = singleCell[iy_] ? geom.CellCenter(lo[iy_], iy_)
                                               : geom.LoEdge(j, iy_);
