@@ -570,8 +570,7 @@ public:
           const amrex::Real* dx = Geom(iLev).CellSize();
           const auto plo = Geom(iLev).ProbLo();
 
-          // For each block, looping through all nodes, including ghost nodes.
-          const amrex::Box& box = mfi.fabbox();
+          const amrex::Box& box = mfi.validbox();
           const auto lo = lbound(box);
           const auto hi = ubound(box);
 

@@ -393,6 +393,14 @@ public:
     }
   }
 
+  void fill_boundary() {
+    timing_func("FI::fill_boundary");
+    for (int iLev = 0; iLev < n_lev(); ++iLev) {
+      if (!nodeFluid[iLev].empty())
+        nodeFluid[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
+
   virtual int get_neu_source_region(const amrex::MFIter& mfi,
                                     const amrex::IntVect ijk,
                                     const int iLev) const {

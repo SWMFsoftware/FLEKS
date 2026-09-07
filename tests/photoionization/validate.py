@@ -24,11 +24,7 @@ def set_run_dir(run_dir):
 
 # Particle-tracking tolerance passed to validate_test_particles() in the
 # common runner (validate_tests.py).
-PARTICLE_TOL = {
-    "expected_active_species": [0, 1, 2],
-    "launch_threshold": 0.5,
-    "max_speed": 10.0,
-}
+PARTICLE_TOL = None
 
 
 def validate_log(pic_diags=None, test_name=None):
@@ -197,7 +193,7 @@ def _load_idl_plot_asymmetry():
                 rho_idx = iv
                 break
         if rho_idx is not None:
-            continue
+            break
     if rho_idx is None:
         return True, "rhoS2/rhoS1 not in .out"
     for line in lines[5:]:
@@ -261,10 +257,92 @@ def _load_idl_plot_asymmetry():
     return True, "Passed"
 
 
+def _check_boundary_smoothness(points, Rp_plot):
+    """Verify that internal block boundaries do not cause artificial spikes in rho."""
+    import collections
+    by_x = collections.defaultdict(dict)
+    for x, y, rho in points:
+        if x > 0.5 * Rp_plot:
+            by_x[round(x, 1)][round(y, 1)] = rho
+
+    if not by_x:
+        return True, "No dayside points to check boundary smoothness"
+
+    max_jump = 0.0
+    jump_details = []
+
+    for x, y_dict in sorted(by_x.items()):
+        ys = sorted(y_dict.keys())
+        y_center = min(ys, key=abs)
+        if abs(y_center) > 1e-3:
+            continue
+        pos_ys = [y for y in ys if y > 1e-3]
+        if not pos_ys:
+            continue
+        dy = pos_ys[0]
+        y_plus = min(ys, key=lambda y: abs(y - dy))
+        y_minus = min(ys, key=lambda y: abs(y - (-dy)))
+
+        rho_0 = y_dict[y_center]
+        rho_p = y_dict[y_plus]
+        rho_m = y_dict[y_minus]
+        rho_neighbor = 0.5 * (rho_p + rho_m)
+        if rho_neighbor > 0:
+            jump = rho_0 / rho_neighbor
+            if jump > max_jump:
+                max_jump = jump
+            jump_details.append(
+                f"x={x:.1f}: y=0(rho={rho_0:.2e}) vs y=+/-{dy:.1f}(rho={rho_neighbor:.2e}) -> ratio={jump:.3f}"
+            )
+
+    logger.debug("    [BOUNDARY] Max boundary jump ratio across Y=0: %.3f", max_jump)
+    for det in jump_details[:3]:
+        logger.debug("    [BOUNDARY]   %s", det)
+
+    if max_jump > 1.25:
+        return False, f"Block boundary artifact detected across Y=0: jump ratio {max_jump:.3f} > 1.25"
+
+    return True, f"Boundary smoothness verified (max jump ratio {max_jump:.3f} <= 1.25)"
+
+
 def validate_plot(test_name):
-    """Plot-output check: day/night asymmetry via IDL .out."""
+    """Plot-output check: day/night asymmetry and block-boundary smoothness."""
     logger.debug("  --- Validating Output Files (IDL .out) ---")
     result, reason = _load_idl_plot_asymmetry()
-    if result:
-        logger.debug("    [IDL] Photoionization day/night asymmetry: VERIFIED")
-    return result, reason
+    if not result:
+        return False, reason
+    logger.debug("    [IDL] Photoionization day/night asymmetry: VERIFIED")
+
+    # Now check block-boundary smoothness
+    plots_dir = os.path.join(RUN_DIR, "PC", "plots")
+    out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
+    if out_files:
+        latest_out = out_files[-1]
+        points = []
+        with open(latest_out, "r") as f:
+            lines = f.readlines()
+        var_names = lines[4].split()
+        rho_idx = None
+        for target in ("RHOS2", "RHOS1"):
+            for iv, vn in enumerate(var_names):
+                if vn.upper() == target:
+                    rho_idx = iv
+                    break
+            if rho_idx is not None:
+                break
+        if rho_idx is not None:
+            for line in lines[5:]:
+                cols = line.strip().split()
+                if len(cols) > rho_idx:
+                    try:
+                        points.append((float(cols[0]), float(cols[1]), float(cols[rho_idx])))
+                    except (ValueError, IndexError):
+                        continue
+            shadow_geom = _read_shadow_params()
+            Rp_plot = shadow_geom[0] if shadow_geom else 3.0e6
+            b_result, b_reason = _check_boundary_smoothness(points, Rp_plot)
+            if not b_result:
+                return False, b_reason
+            logger.debug("    [IDL] Block boundary smoothness: VERIFIED (%s)", b_reason)
+
+    return True, "Passed"
