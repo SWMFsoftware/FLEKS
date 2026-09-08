@@ -154,16 +154,165 @@ where $\mathbf{t} = \frac{q\Delta t}{2m} \mathbf{B}/\gamma^{n+1/2}$. From the de
 \item  Convert $\mathbf{u}$ back to $\mathbf{v}$
 \end{enumerate}
 
+\subsection{Boris mover linearization}
+
+The Boris velocity update can be decomposed into an electric acceleration, a magnetic rotation, and a second electric acceleration. Denoting $\mathbf{t} = \frac{q\Delta t}{2m}\mathbf{B}^n$, the average velocity $\bar{\mathbf{v}} = \frac{\mathbf{v}^{n+1} + \mathbf{v}^n}{2}$ is related to the effective electric field $\mathbf{E}^{n+\theta}$ by:
+\begin{equation}
+\bar{\mathbf{v}} = \hat{\mathbf{v}} + \boldsymbol{\alpha}_p \cdot \mathbf{E}^{n+\theta},
+\label{eq:vbar_linearized}
+\end{equation}
+where $\hat{\mathbf{v}}$ is the tentative velocity depending exclusively on the known velocity $\mathbf{v}^n$ and magnetic field $\mathbf{B}^n$:
+\begin{equation}
+\hat{\mathbf{v}} = \frac{\mathbf{v}^n + \mathbf{v}^n \times \mathbf{t} + (\mathbf{v}^n \cdot \mathbf{t})\mathbf{t}}{1 + t^2},
+\end{equation}
+and $\boldsymbol{\alpha}_p$ is the single-particle susceptibility tensor:
+\begin{equation}
+\boldsymbol{\alpha}_p = \frac{q\Delta t}{2m(1 + t^2)} \left[ \mathbf{I} + \mathbf{t}\mathbf{t} + \mathbf{I} \times \mathbf{t} \right].
+\end{equation}
+Here, $(\mathbf{I} \times \mathbf{t}) \cdot \mathbf{E} = \mathbf{E} \times \mathbf{t}$. Equation~\eqref{eq:vbar_linearized} provides the exact linear closure that couples particle kinetics to the implicit electromagnetic field equations in the full PIC semi-implicit method.
+
+\section{Full PIC semi-implicit solver}
+
+In the full-PIC approach (\texttt{\#SOLVEEM}), both electrons and ions are treated as kinetic particle species. To bypass the explicit Courant--Friedrichs--Lewy (CFL) constraint associated with the speed of light and plasma frequency ($\omega_{pe}\Delta t \le 2$), FLEKS employs the semi-implicit particle-in-cell method.
+
+\subsection{Maxwell--Vlasov semi-implicit discretization}
+
+Maxwell's equations in normalized units ($c=1$) are discretized in time using a $\theta$-implicit parameter ($\theta \in [0.5, 1.0]$, typically $\theta = 0.5$ or $0.6$ for numerical stability):
+\begin{align}
+\frac{\mathbf{B}^{n+1} - \mathbf{B}^n}{\Delta t} &= -\nabla \times \mathbf{E}^{n+\theta}, \label{eq:maxwell_faraday} \\
+\frac{\mathbf{E}^{n+1} - \mathbf{E}^n}{\Delta t} &= \nabla \times \mathbf{B}^{n+\theta} - 4\pi \bar{\mathbf{J}}, \label{eq:maxwell_ampere}
+\end{align}
+where intermediate fields are evaluated as:
+\begin{align}
+\mathbf{E}^{n+\theta} &= \theta \mathbf{E}^{n+1} + (1-\theta)\mathbf{E}^n, \\
+\mathbf{B}^{n+\theta} &= \theta \mathbf{B}^{n+1} + (1-\theta)\mathbf{B}^n = \mathbf{B}^n - \theta \Delta t \nabla \times \mathbf{E}^{n+\theta}.
+\end{align}
+Substituting $\mathbf{B}^{n+\theta}$ into Amp\`ere's law~\eqref{eq:maxwell_ampere} yields:
+\begin{equation}
+\mathbf{E}^{n+\theta} - \mathbf{E}^n = \theta \Delta t \left[ \nabla \times \left(\mathbf{B}^n - \theta \Delta t \nabla \times \mathbf{E}^{n+\theta}\right) - 4\pi \bar{\mathbf{J}} \right].
+\label{eq:ampere_intermediate}
+\end{equation}
+
+\subsection{Susceptibility mass matrix and tentative current}
+
+Using the linearized Boris mover relation~\eqref{eq:vbar_linearized}, the average current density $\bar{\mathbf{J}}(\mathbf{x})$ is expressed as:
+\begin{equation}
+\bar{\mathbf{J}}(\mathbf{x}) = \hat{\mathbf{J}}(\mathbf{x}) + \mathbf{M} \cdot \mathbf{E}^{n+\theta},
+\end{equation}
+where $\hat{\mathbf{J}}(\mathbf{x})$ is the tentative current density deposited onto grid nodes using shape functions $S(\mathbf{x} - \mathbf{x}_p)$:
+\begin{equation}
+\hat{\mathbf{J}}(\mathbf{x}) = \sum_p q_p \hat{\mathbf{v}}_p S(\mathbf{x} - \mathbf{x}_p),
+\end{equation}
+and $\mathbf{M}$ is the nodal susceptibility mass matrix:
+\begin{equation}
+\mathbf{M}(\mathbf{x}, \mathbf{x}') = \sum_p q_p S(\mathbf{x} - \mathbf{x}_p) \boldsymbol{\alpha}_p S(\mathbf{x}' - \mathbf{x}_p).
+\end{equation}
+In FLEKS, the mass matrix $\mathbf{M}$ is accumulated at node locations with support across neighboring stencil points, supporting block-adaptive mesh refinement (AMR).
+
+\subsection{Implicit electric field linear system}
+
+Substituting $\bar{\mathbf{J}}$ into eq.~\eqref{eq:ampere_intermediate} and rearranging terms gives the implicit linear system for $\mathbf{E}^{n+\theta}$:
+\begin{equation}
+\left[ \mathbf{I} + \theta^2 \Delta t^2 \nabla \times (\nabla \times \cdot) + 4\pi \theta \Delta t \mathbf{M} \right] \mathbf{E}^{n+\theta} = \mathbf{R},
+\label{eq:esolve_operator}
+\end{equation}
+where the right-hand side vector $\mathbf{R}$ is evaluated from the known state at $t^n$:
+\begin{equation}
+\mathbf{R} = \mathbf{E}^n + \theta \Delta t \left( \nabla \times \mathbf{B}^n - 4\pi \hat{\mathbf{J}} \right).
+\end{equation}
+Using the vector identity $\nabla \times (\nabla \times \mathbf{E}) = \nabla (\nabla \cdot \mathbf{E}) - \nabla^2 \mathbf{E}$, the linear operator in eq.~\eqref{eq:esolve_operator} is implemented matrix-free on node-based multi-level MultiFabs. The system is solved iteratively using GMRES or Jacobian-Free Newton--Krylov.
+
+Once $\mathbf{E}^{n+\theta}$ is obtained, the electric field is advanced to the new time level:
+\begin{equation}
+\mathbf{E}^{n+1} = \frac{1}{\theta}\mathbf{E}^{n+\theta} - \frac{1-\theta}{\theta}\mathbf{E}^n,
+\end{equation}
+and the magnetic field is advanced by Faraday's law:
+\begin{equation}
+\mathbf{B}^{n+1} = \mathbf{B}^n - \Delta t \nabla \times \mathbf{E}^{n+\theta}.
+\end{equation}
+To maintain Gauss's law $\nabla \cdot \mathbf{E} = 4\pi \rho_c$, an optional div(E) cleaning step solves the Poisson equation $\nabla^2 \phi = \frac{1}{\theta}(\nabla \cdot \mathbf{E} - 4\pi \rho_c)$ and applies a localized particle position correction $\Delta \mathbf{x} \propto -\nabla \phi$ or electric field projection.
+
+\section{Upwind schemes and comoving frame solving}
+
+In simulations featuring high-speed plasma flows, shocks, and sharp boundary layers, standard central-difference discretizations can produce unphysical dispersion, numerical oscillations, and grid heating. FLEKS incorporates a comoving frame formulation and directional upwind artificial viscosity schemes for both the electric and magnetic fields.
+
+\subsection{Comoving frame field solving}
+
+When plasmas possess large bulk drift velocities (such as in the supersonic solar wind), solving fields in the stationary laboratory frame Doppler-shifts high-frequency wave modes and requires resolving fast advection. FLEKS provides the option to solve the electromagnetic fields in the frame comoving with the plasma bulk flow (\texttt{\#COMOVING}, \texttt{solveFieldInCoMov}):
+
+\begin{enumerate}
+  \item The background fluid velocity $\mathbf{U}_0$ is calculated by depositing ion momentum and mass density onto grid nodes:
+  \begin{equation}
+  \mathbf{U}_0(\mathbf{x}) = \frac{\sum_s (\rho \mathbf{u})_s}{\sum_s \rho_s}.
+  \end{equation}
+  Optionally, $\mathbf{U}_0$ is smoothed with digital filtering (\texttt{nSmoothBackGroundU}) to suppress PIC shot noise.
+  \item The motional convective electric field is defined as:
+  \begin{equation}
+  \mathbf{E}_0 = -\mathbf{U}_0 \times \mathbf{B}^n.
+  \end{equation}
+  \item The tentative particle velocities and tentative current $\hat{\mathbf{J}}$ are evaluated relative to the comoving frame: $\hat{\mathbf{v}}' = \hat{\mathbf{v}} - \mathbf{U}_0$.
+  \item The motional electric field generates an effective current term through the susceptibility matrix, $\mathbf{M} \cdot \mathbf{E}_0$, which is added directly to the right-hand side of the implicit electric field equation~\eqref{eq:esolve_operator}:
+  \begin{equation}
+  \mathbf{R}_{\text{comov}} = \mathbf{R} + 4\pi \theta \Delta t \mathbf{M} \cdot \mathbf{E}_0.
+  \end{equation}
+\end{enumerate}
+
+\subsection{Upwind scheme for electric field}
+
+The electric field upwind scheme (\texttt{\#UPWINDE}, \texttt{useUpwindE}) adds a directional Lax--Friedrichs artificial viscosity to the semi-implicit electric field equation.
+
+In explicit form, the artificial numerical diffusion flux at cell interface $i+1/2$ along spatial direction $d$ is:
+\begin{equation}
+F_{i+1/2}^{\text{art}} = \frac{1}{2} c_R u_R (E_{i+1} - E_i),
+\end{equation}
+where $u_R$ is the characteristic propagation velocity:
+\begin{itemize}
+  \item By default, $u_R = c_{\max} = 1.0$ (normalized speed of light).
+  \item When $c_{\max} \le 0$ (\texttt{cMaxE <= 0}), the scheme couples to the background fluid velocity $\mathbf{U}_0$ from the comoving solver, setting $u_R = |(\mathbf{U}_0)_d|$ at the face. This limits numerical dissipation to the actual plasma advection velocity, avoiding excessive isotropic damping.
+\end{itemize}
+The coefficient $c_R$ is governed by a flux limiter:
+\begin{equation}
+c_R = 1 - \phi(r_R),
+\end{equation}
+where $\phi(r)$ is the Generalized Minmod/Sweby slope limiter parameterized by $\theta_E$ (\texttt{limiterThetaE}):
+\begin{equation}
+\phi(r) = \max\left(0, \min\left(\theta_E r, \frac{1+r}{2}, \theta_E\right)\right), \quad r = \frac{E_i - E_{i-1}}{E_{i+1} - E_i}.
+\end{equation}
+The limiter parameter $\theta_E \in [0, 2]$ controls the scheme's dissipation:
+\begin{itemize}
+  \item $\theta_E = 0$: $\phi(r) = 0 \implies c_R = 1$, yielding a fully diffusive first-order Lax--Friedrichs upwind scheme.
+  \item $\theta_E = 1$: reproduces the minmod flux limiter.
+  \item $\theta_E = 2$: yields the least diffusive, sharpest TVD limiter.
+\end{itemize}
+
+In the implicit operator, this term enters the left-hand side with coefficient $-\frac{1}{2}\theta \Delta t / \Delta x$:
+\begin{equation}
+\Delta \mathcal{A}(\mathbf{E})_i = -\frac{\theta \Delta t}{2\Delta x} \left[ c_R u_R (E_{i+1} - E_i) - c_L u_L (E_i - E_{i-1}) \right].
+\end{equation}
+
+\paragraph{Lagged limiter treatment (\texttt{\#LAGGEDLIMITER}):}
+When \texttt{useLaggedLimiter} is true, the slope ratio $r$ and coefficient $c_{R/L}$ are computed from the known, lagged electric field $\mathbf{E}^n$. Consequently, the operator remains strictly linear and can be solved using GMRES. When \texttt{useLaggedLimiter} is false and $\theta_E > 0$, the limiter depends non-linearly on the solution vector $\mathbf{E}$, and FLEKS uses a matrix-free Newton--Krylov solver.
+
+\subsection{Upwind scheme for magnetic field}
+
+For the magnetic field, directional upwind diffusion (\texttt{\#UPWINDB}, \texttt{useUpwindB}) is applied to cell-centered $\mathbf{B}$ inside \texttt{Pic::correct\_B} following the Faraday update and AMR ghost-cell exchanges:
+\begin{equation}
+\Delta B_i += \frac{\Delta t}{2\Delta x} \left[ c_R u_R (B_{i+1} - B_i) - c_L u_L (B_i - B_{i-1}) \right].
+\end{equation}
+Key properties of the upwind $\mathbf{B}$ scheme include:
+\begin{itemize}
+  \item \textbf{Advection velocity:} $u_R$ and $u_L$ are face-reconstructed from the background plasma flow $\mathbf{U}_0$. Alternatively, a constant advection speed can be prescribed via \texttt{fixedUpwindVel}.
+  \item \textbf{Slope limiter:} $c_{R/L} = 1 - \phi(r)$ is modulated by \texttt{limiterThetaB} ($\theta_B \in [0, 2]$), with $\theta_B = 0$ giving first-order diffusion and $\theta_B = 1\text{--}2$ providing high-resolution TVD reconstruction.
+  \item \textbf{Boundary protection:} At physical domain boundaries, artificial diffusion is automatically suppressed if flow is directed out of the boundary, preventing unphysical ghost-cell boundary reflections.
+\end{itemize}
+
 \section{Hybrid PIC solver}
 
-FLEKS also provides a hybrid PIC field solver (\texttt{\#HYBRIDPIC},
-\texttt{useHybridPIC}) that treats ions as kinetic particles and electrons as a
-\emph{massless fluid} removed through a generalized Ohm's law. It is mutually
-exclusive with the full-PIC implicit solve (\texttt{\#SOLVEEM}).
+FLEKS provides a hybrid PIC field solver (\texttt{\#HYBRIDPIC}, \texttt{useHybridPIC}) that treats ions as kinetic particles and electrons as a \emph{massless neutralizing fluid} removed through a generalized Ohm's law. It is mutually exclusive with the full-PIC implicit solve (\texttt{\#SOLVEEM}).
 
 \subsection{The generalized Ohm's law}
 
-The electric field is assembled cell-centered from the ion moments and the magnetic field:
+The electric field is assembled cell-centered from the ion fluid moments and the magnetic field:
 \begin{equation}
 \mathbf{E} = -\mathbf{U}_i \times \mathbf{B}
            + \eta\,\mathbf{J}
@@ -172,66 +321,71 @@ The electric field is assembled cell-centered from the ion moments and the magne
            - \frac{\eta_h}{4\pi}\,\nabla \times (\nabla^2 \mathbf{B}),
 \label{eq:ohmslaw}
 \end{equation}
-where
+where each physical term is modularly controlled:
 \begin{itemize}
-  \item $-\mathbf{U}_i \times \mathbf{B}$ is the \emph{convection} term (always active),
-  \item $\eta\,\mathbf{J}$ is the \emph{resistive} term (controlled by \texttt{\#RESISTIVITY}),
-  \item $(\mathbf{J}\times\mathbf{B})/\rho_q$ is the \emph{Hall} term (\texttt{\#HALLTERM}),
-  \item $-\nabla P_e/\rho_q$ is the \emph{electron pressure / ambipolar} term
-        (\texttt{\#ELECTRONTEMPERATURE}),
-  \item $-(\eta_h/4\pi)\,\nabla\times(\nabla^2\mathbf{B})$ is the fourth-order
-        \emph{hyper-resistivity} term (\texttt{\#HYPERRESISTIVITY}).
+  \item $-\mathbf{U}_i \times \mathbf{B}$ is the \emph{convection} term (always active).
+  \item $\eta\,\mathbf{J}$ is the \emph{resistive} term (controlled by \texttt{\#RESISTIVITY}). The SI magnetic diffusivity $\eta_{\text{SI}}$ [m$^2$/s] is converted to code units internally.
+  \item $(\mathbf{J}\times\mathbf{B})/\rho_q$ is the \emph{Hall} term (\texttt{\#HALLTERM}). Setting \texttt{useHallTerm = F} disables whistler modes, removing the Hall-whistler time-step restriction.
+  \item $-\nabla P_e/\rho_q$ is the \emph{electron pressure / ambipolar} term (\texttt{\#ELECTRONTEMPERATURE}). The electron pressure $P_e$ supports two equation-of-state closures:
+  \begin{itemize}
+    \item Isothermal ($\gamma=1$): $P_e = T_e \rho$.
+    \item Adiabatic ($\gamma > 1$): $P_e = P_0 (\rho/\rho_0)^\gamma$, where $P_0 = \rho_0 T_e$.
+  \end{itemize}
+  A density floor (\texttt{\#MINIMUMDENSITY}, $\rho_{\min}$) caps the $1/\rho_q$ factors in the Hall and electron pressure terms, preventing unbounded values in near-vacuum cells.
+  \item $-(\eta_h/4\pi)\,\nabla\times(\nabla^2\mathbf{B})$ is the fourth-order \emph{hyper-resistivity} term (\texttt{\#HYPERRESISTIVITY}). Hyper-resistivity damps grid-scale PIC shot noise without introducing excessive dissipation at long wavelengths. In \texttt{grid} mode (\texttt{etaHyperMode = grid}), $\eta_h$ scales dynamically with the grid resolution:
+  \begin{equation}
+  \eta_h = 4\pi C_h \frac{\Delta x_{\min}^4}{\Delta t_{\text{sub}}},
+  \end{equation}
+  where $C_h$ is a dimensionless tuning parameter (\texttt{etaHyperCh}, typically $10^{-3}$--$10^{-2}$).
 \end{itemize}
-The current is obtained from Amp\`ere's law (CGS), $\mathbf{J} = \nabla\times\mathbf{B}/(4\pi)$.
-The ion density and velocity used in the Ohm's law are the charge/mass moments deposited by the
-kinetic ions; the electron pressure gradient uses either an isothermal closure
-$P_e = T_e \rho$ ($\gamma=1$) or an adiabatic closure
-$P_e = P_0(\rho/\rho_0)^\gamma$. A minimum-density floor caps the $1/\rho_q$ factors in the
-Hall and pressure-gradient terms (\texttt{\#MINIMUMDENSITY}) so that cells with vanishing charge
-density do not produce unbounded contributions.
+The current density is obtained from Amp\`ere's law (CGS), $\mathbf{J} = \nabla\times\mathbf{B}/(4\pi)$. Explicit diffusion stability requires satisfying parabolic CFL bounds:
+\begin{equation}
+\frac{\eta k_{\max}^2 \Delta t_{\text{sub}}}{4\pi} \le C_{\text{CFL}}, \quad \frac{\eta_h k_{\max}^4 \Delta t_{\text{sub}}}{4\pi} \le C_{\text{CFL}},
+\end{equation}
+where $C_{\text{CFL}} = 2.785$ for RK4 and $2.513$ for SSPRK3.
 
 \subsection{Cell-centered field layout}
 
-The hybrid path stores all fields \emph{cell-centered} ($\mathbf{B}$, $\mathbf{E}$, $\mathbf{J}$,
-and the ion moments) rather than node-collocated. The spatial curl and gradient operators use a
-$2\,dx$ central-difference stencil (\texttt{curl\_center\_to\_center}) whose discrete kernel
-annihilates the grid-scale Nyquist mode exactly, eliminating the grid-scale instability that
-otherwise forces heavy Hall sub-cycling. As a result the hybrid advance requires no
-center$\leftrightarrow$node round-trips.
+The hybrid path stores all fields cell-centered ($\mathbf{B}$, $\mathbf{E}$, $\mathbf{J}$, and ion moments $\rho, \rho\mathbf{u}$). Spatial curl and gradient operators utilize a $2\,\Delta x$ central-difference stencil (\texttt{curl\_center\_to\_center}):
+\begin{equation}
+(\nabla \times \mathbf{B})_{i,j,k} \propto \frac{\mathbf{B}_{i+1} - \mathbf{B}_{i-1}}{2\Delta x},
+\end{equation}
+whose discrete Fourier kernel vanishes identically at the grid Nyquist mode ($k\Delta x = \pi$). This annihilates the grid-scale odd-even decoupling instability that otherwise drives numerical Hall-whistler blowup, eliminating the need for center$\leftrightarrow$node interpolations during field advances.
 
-\subsection{Time integration of $\mathbf{B}$}
+\subsection{Time integration and subcycling of $\mathbf{B}$}
 
-The magnetic field is advanced by Faraday's law,
+The magnetic field is advanced via Faraday's law:
 \begin{equation}
 \frac{\partial \mathbf{B}}{\partial t} = -\nabla\times\mathbf{E},
 \end{equation}
-with $\mathbf{E}$ from eq.~\ref{eq:ohmslaw}. The Faraday update uses an explicit Runge--Kutta
-integrator on $\mathbf{B}$ --- classic fourth-order RK4 (default) or SSPRK3 --- selected with
-\texttt{\#FIELDINTEGRATOR}. Within one coarse step of size $\Delta t$, the total advance is always
-exactly one coarse step: \texttt{nBSubcycle} integrator steps of size
-$\Delta t/\texttt{nBSubcycle}$ are taken (\texttt{\#BSUBCYCLE}). Because RK4 has a large
-linear-stability region along the imaginary axis (where the oscillatory Hall--whistler modes live),
-a single sub-step is usually sufficient for stability.
+using an explicit Runge--Kutta integrator (\texttt{\#FIELDINTEGRATOR}):
+\begin{itemize}
+  \item \textbf{RK4} (default): Classical fourth-order Runge--Kutta. Because RK4 has a wide stability boundary along the imaginary axis where whistler oscillations reside, a single subcycle (\texttt{nBSubcycle = 1}) is often sufficient.
+  \item \textbf{SSPRK3}: Strong-stability-preserving third-order Runge--Kutta with time-centered intermediate stages.
+\end{itemize}
+Within one coarse particle time step $\Delta t$, $N_{\text{sub}}$ subcycles (\texttt{\#BSUBCYCLE}) of step size $\Delta t_{\text{sub}} = \Delta t / N_{\text{sub}}$ are taken.
 
-The scheme is second-order accurate in time via a staggered leapfrog with linear
-time-interpolation of the ion moments between the previous deposit $\mathbf{J}^{n-1/2}$ and the
-current one $\mathbf{J}^{n+1/2}$:
+To achieve second-order temporal accuracy, the ion moments deposited at half-integer steps are linearly interpolated across each magnetic sub-step fraction $h_{\text{step}} \in [0, 1]$ between the previous deposit $\mathbf{J}^{n-1/2}$ and current deposit $\mathbf{J}^{n+1/2}$:
 \begin{equation}
-X(\texttt{hstep}) = (\tfrac{1}{2}-\texttt{hstep})\,X^{n-1/2}
-                  + (\tfrac{1}{2}+\texttt{hstep})\,X^{n+1/2},
+X(h_{\text{step}}) = \left(\tfrac{1}{2}-h_{\text{step}}\right) X^{n-1/2} + \left(\tfrac{1}{2}+h_{\text{step}}\right) X^{n+1/2}.
 \end{equation}
-where \texttt{hstep} is the magnetic sub-step fraction. The particle Boris push (Section~2.1)
-uses the integer-step electric field from the previous field advance.
 
-\subsection{Noise control}
+\subsection{Algorithmic cycle and noise mitigation}
 
-The hybrid path offers two optional controls to damp PIC shot noise in the Ohm's law:
-an exponential moving average of $\mathbf{B}$ (\texttt{\#AVGFIELDB}) that replaces the
-instantaneous $\mathbf{B}$ inside the convection/Hall terms and in the Boris push, and
-digital-filter smoothing of the ion fluid moments before the Ohm's law (\texttt{\#SMOOTHMOMENTS}).
-The node-centred field mirrors are retained only as output bridges for the hybrid path: they are
-materialized lazily only when an explicit node-centered diagnostic (e.g.\ $dB/dt$) or plot output
-is requested.
+The complete hybrid PIC time step proceeds through the following stages:
+\begin{enumerate}
+  \item \textbf{Particle Boris push:} Ions are advanced from $\mathbf{v}^n \to \mathbf{v}^{n+1}$ using integer fields $\mathbf{E}^n, \mathbf{B}^n$; positions are updated as $\mathbf{x}^{n+1/2} = \mathbf{x}^{n-1/2} + \Delta t\,\mathbf{v}^n$.
+  \item \textbf{Kinetic source and boundary updates:} Particle boundary conditions, chemistry, charge exchange, and physical inflow flux injection are evaluated.
+  \item \textbf{Moment deposition:} Ion charge $\rho_q^{n+1/2}$ and mass momentum $(\rho\mathbf{u})_i^{n+1/2}$ are deposited cell-centered. Digital-filter smoothing (\texttt{\#SMOOTHMOMENTS}, \texttt{nSmoothMoments}) can be applied to reduce particle noise.
+  \item \textbf{Faraday advance:} Subcycled explicit RK4 or SSPRK3 advances $\mathbf{B}^n \to \mathbf{B}^{n+1}$ using interpolated moments.
+  \item \textbf{Electric field assembly:} Cell-centered $\mathbf{E}^{n+1}$ is computed via the generalized Ohm's law~\eqref{eq:ohmslaw} and stored in \texttt{centerEhybrid} for the subsequent Boris push.
+\end{enumerate}
+
+To suppress high-frequency PIC shot noise in the Hall term and particle trajectories, an exponential moving average of the magnetic field can be enabled (\texttt{\#AVGFIELDB}):
+\begin{equation}
+\mathbf{B}_{\text{avg}} = \alpha \mathbf{B}_{\text{avg}} + (1-\alpha)\mathbf{B}^{n+1}, \quad \alpha = 1 - \frac{1}{N_{\text{avg}}}.
+\end{equation}
+When active, $\mathbf{B}_{\text{avg}}$ replaces instantaneous $\mathbf{B}$ inside the convection and Hall terms of Ohm's law and in the Boris particle pusher.
 
 \section{Miscellaneous}
 \subsection{Calculate total pressure tensor from sub groups}
