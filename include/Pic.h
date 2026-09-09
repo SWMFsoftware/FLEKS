@@ -5,7 +5,6 @@
 #include <set>
 #include <string>
 
-#include "Array1D.h"
 #include "Bit.h"
 #include "Constants.h"
 #include "DomainParameters.h"
@@ -19,7 +18,6 @@
 #include "ReadParam.h"
 #include "SourceInterface.h"
 #include "TimeCtr.h"
-#include "UMultiFab.h"
 #include "WaveBC.h"
 
 class ParticleTracker;
@@ -144,14 +142,14 @@ private:
   // Mach number: u/v_th
   amrex::Vector<amrex::MultiFab> mMach;
 
-  amrex::Vector<amrex::UMultiFab<RealMM> > nodeMM;
+  amrex::Vector<amrex::MultiFab> nodeMM;
 
   // ------divE correction--------------
   // Old @ t=t_{n-1/2}; N @ t=t_n; New @ t=t_{n+1/2}
   amrex::Vector<amrex::MultiFab> centerNetChargeOld, centerNetChargeN,
       centerNetChargeNew;
   amrex::Vector<amrex::MultiFab> centerDivE, centerPhi;
-  amrex::Vector<amrex::UMultiFab<RealCMM> > centerMM;
+  amrex::Vector<amrex::MultiFab> centerMM;
   const amrex::Real rhoTheta = 0.51;
   //--------------------------------------
 

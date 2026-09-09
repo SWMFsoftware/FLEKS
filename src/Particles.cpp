@@ -857,7 +857,7 @@ void Particles<NStructReal, NStructInt>::inject_flux_at_inflow_faces(Real dt) {
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::accumulate_mass_matrix_contribution(
     int iLev, const IntVect& loIdx, const RealVect& dShift, Real qp,
-    Array4<RealCMM> const& mmArr) {
+    Array4<Real> const& mmArr) {
 
   Real weights_IIID[2][2][2][nDim3];
   //----- Mass matrix calculation begin--------------
@@ -925,7 +925,6 @@ void Particles<NStructReal, NStructInt>::accumulate_mass_matrix_contribution(
               coef * weights_IIID[i1 - iMin][j1 - jMin][k1 - kMin][iDim];
         }
 
-        auto& data = mmArr(i1, j1, k1);
         // Real weights[27] = { 0 };
         for (int i2 = iMin; i2 <= iMax; i2++) {
           int ip = i2 - i1 + 1;
@@ -940,7 +939,7 @@ void Particles<NStructReal, NStructInt>::accumulate_mass_matrix_contribution(
               // const int kp = k2 - k1 + 1;
               const int gp = gp1 + k2 - k1 + 1;
               for (int iDim = 0; iDim < nDim; iDim++) {
-                data[gp] += wg_D[iDim] * wg1_D[iDim];
+                mmArr(i1, j1, k1, gp) += wg_D[iDim] * wg1_D[iDim];
               }
             }
           }
@@ -951,13 +950,13 @@ void Particles<NStructReal, NStructInt>::accumulate_mass_matrix_contribution(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::sum_to_center(
-    MultiFab& netChargeMF, UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly,
+    MultiFab& netChargeMF, MultiFab& centerMM, bool doNetChargeOnly,
     int iLev) {
   timing_func("Pts::sum_to_center");
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real> const& chargeArr = netChargeMF[pti].array();
-    Array4<RealCMM> const& mmArr = centerMM[pti].array();
+    Array4<Real> const& mmArr = centerMM[pti].array();
     const AoS& particles = pti.GetArrayOfStructs();
 
     const Dim3 lo = init_dim3(0);
@@ -1005,7 +1004,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::sum_to_center_amr(
     MultiFab& netChargeMF, MultiFab& jc, MultiFab& jf,
-    UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly, int iLev) {
+    MultiFab& centerMM, bool doNetChargeOnly, int iLev) {
   timing_func("Pts::sum_to_center");
 
   int finer_level = iLev + 1;
@@ -1021,7 +1020,7 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
       for (PIter pti(*this, nLev); pti.isValid(); ++pti) {
         Array4<Real> const& chargeArr = netChargeMF[pti].array();
 
-        Array4<RealCMM> const& mmArr = centerMM[pti].array();
+        Array4<Real> const& mmArr = centerMM[pti].array();
         const Array4<int const>& status = cell_status(nLev)[pti].array();
         const AoS& particles = pti.GetArrayOfStructs();
         const Dim3 lo = init_dim3(0);
@@ -1542,7 +1541,7 @@ Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_mass_matrix(
-    UMultiFab<RealMM>& nodeMM, MultiFab& jHat, MultiFab& nodeBMF,
+    MultiFab& nodeMM, MultiFab& jHat, MultiFab& nodeBMF,
     MultiFab& u0MF, Real dt, int iLev, bool solveInCoMov) {
   timing_func("Pts::calc_mass_matrix");
 
@@ -1551,7 +1550,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
     Array4<Real> const& jArr = jHat[pti].array();
-    Array4<RealMM> const& mmArr = nodeMM[pti].array();
+    Array4<Real> const& mmArr = nodeMM[pti].array();
 
     Array4<Real const> const& u0Arr = u0MF[pti].array();
 
@@ -1665,7 +1664,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
         for (int j1 = jMin; j1 <= jMax; j1++)
           for (int i1 = iMin; i1 <= iMax; i1++) {
             const Real wg = coef[i1 - iMin][j1 - jMin][k1 - kMin];
-            auto& data0 = mmArr(i1, j1, k1);
             for (int k2 = kMin; k2 <= kMax; k2++) {
               const int kp = k2 - k1 + 1;
               if (kp > 0) {
@@ -1676,9 +1674,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
                         wg * coef[i2 - iMin][j2 - jMin][k2 - kMin];
                     const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
 
-                    Real* const data = &(data0[idx0]);
                     for (int idx = 0; idx < 9; idx++) {
-                      data[idx] += alpha[idx] * weight;
+                      mmArr(i1, j1, k1, idx0 + idx) += alpha[idx] * weight;
                     }
                   } // k2
 
@@ -1698,7 +1695,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
     const auto lo = lbound(box);
     const auto hi = ubound(box);
 
-    Array4<RealMM> const& mmArr = nodeMM[mfi].array();
+    Array4<Real> const& mmArr = nodeMM[mfi].array();
 
     // We only need the mass matrix on the physical nodes. But the first layer
     // of the ghost nodes may contributes to the physical nodes below (ghost
@@ -1714,7 +1711,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
           const int kr = nDim > 2 ? k1 + kp - 1 : 0;
           if (kr > kMax || kr < kMin)
             continue;
-          auto& datas0 = mmArr(i1, j1, k1);
           for (int jp = 0; jp < 3; jp++) {
             const int jr = j1 + jp - 1;
             if (jr > jMax || jr < jMin)
@@ -1728,10 +1724,11 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
               gpr = jpr * 3 + ipr;
               gps = 18 + jp * 3 + ip; // gps = kp*9+jp*3+kp
 
-              Real* const datar = &(mmArr(ir, jr, kr)[gpr * 9]);
-              const Real* const datas = &(datas0[gps * 9]);
+              const int idx0_r = gpr * 9;
+              const int idx0_s = gps * 9;
               for (int idx = 0; idx < 9; idx++) {
-                datar[idx] = datas[idx];
+                mmArr(ir, jr, kr, idx0_r + idx) =
+                    mmArr(i1, j1, k1, idx0_s + idx);
               } // idx
             } // kp
           } // jp
@@ -1741,9 +1738,9 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
-    UMultiFab<RealMM>& nodeMM,
-    amrex::Vector<amrex::Vector<UMultiFab<RealMM> > >& nmmc,
-    amrex::Vector<UMultiFab<RealMM> >& nmmf, MultiFab& jHat,
+    MultiFab& nodeMM,
+    amrex::Vector<amrex::Vector<amrex::MultiFab> >& nmmc,
+    amrex::Vector<amrex::MultiFab>& nmmf, MultiFab& jHat,
     amrex::Vector<amrex::Vector<amrex::MultiFab> >& jhc,
     amrex::Vector<amrex::MultiFab>& jhf, MultiFab& nodeBMF, MultiFab& u0MF,
     Real dt, int iLev, bool solveInCoMov,
@@ -1755,7 +1752,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real const> const& nodeBArr = nodeBMF[pti].array();
     Array4<Real> const& jArr = jHat[pti].array();
-    Array4<RealMM> const& mmArr = nodeMM[pti].array();
+    Array4<Real> const& mmArr = nodeMM[pti].array();
     Array4<Real const> const& u0Arr = u0MF[pti].array();
     const Array4<int const>& status = cellstatus[iLev][pti].array();
     Box bx = pti.tilebox();
@@ -1765,7 +1762,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       refinedneighbour = true;
     }
     amrex::Vector<Array4<Real> > jArrt;
-    amrex::Vector<Array4<RealMM> > mmArrt;
+    amrex::Vector<Array4<Real> > mmArrt;
     if (iLev > 0) {
       for (int i = 0; i < iLev; i++) {
         jArrt.push_back(jhc[iLev][i][pti].array());
@@ -1896,7 +1893,6 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
           for (int j1 = jMin; j1 <= jMax; j1++)
             for (int i1 = iMin; i1 <= iMax; i1++) {
               const Real wg = coef[i][i1 - iMin][j1 - jMin][k1 - kMin];
-              auto& data0 = mmArrt[i](i1, j1, k1);
               for (int k2 = kMin; k2 <= kMax; k2++) {
                 const int kp = k2 - k1 + 1;
                 // if (kp > 0)
@@ -1908,9 +1904,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
                           wg * coef[i][i2 - iMin][j2 - jMin][k2 - kMin];
                       const int idx0 = kp * 81 + jp * 27 + (i2 - i1 + 1) * 9;
 
-                      Real* const data = &(data0[idx0]);
                       for (int idx = 0; idx < 9; idx++) {
-                        data[idx] += alpha[idx] * weight;
+                        mmArrt[i](i1, j1, k1, idx0 + idx) += alpha[idx] * weight;
                       }
                     } // k2
 

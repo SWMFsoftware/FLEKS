@@ -107,7 +107,7 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut, int iLev) {
 
     const Array4<Real>& lArr = outMF[mfi].array();
     const Array4<Real const>& rArr = inMF[mfi].array();
-    const Array4<RealCMM>& mmArr = centerMM[iLev][mfi].array();
+    const Array4<Real const>& mmArr = centerMM[iLev][mfi].array();
 
     ParallelFor(box, [&](int i, int j, int k) {
       IntVect ijk = { AMREX_D_DECL(i, j, k) };
@@ -115,7 +115,7 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut, int iLev) {
 
       ParallelFor(subBox, [&](int i2, int j2, int k2) {
         const int gp = (i2 - i + 1) * 9 + (j2 - j + 1) * 3 + k2 - k + 1;
-        lArr(i, j, k) += rArr(i2, j2, k2) * mmArr(i, j, k)[gp];
+        lArr(i, j, k) += rArr(i2, j2, k2) * mmArr(i, j, k, gp);
       });
     });
   }
@@ -131,9 +131,7 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     centerNetChargeNew[iLev].setVal(0.0);
-
-    const RealCMM mm0(0.0);
-    centerMM[iLev].setVal(mm0);
+    centerMM[iLev].setVal(0.0);
 
     bool doNetChargeOnly = !isBeforeCorrection;
 
@@ -174,8 +172,7 @@ void Pic::sum_to_center_amr(bool isBeforeCorrection, int iLev) {
   bool doNetChargeOnly = !isBeforeCorrection;
 
   centerNetChargeNew[iLev].setVal(0.0);
-  const RealCMM mm0(0.0);
-  centerMM[iLev].setVal(mm0);
+  centerMM[iLev].setVal(0.0);
 
   MultiFab jf;
   MultiFab jc;
