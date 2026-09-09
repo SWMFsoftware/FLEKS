@@ -704,8 +704,13 @@ void sum_coarse_to_fine_lev_bny_node(
 
   amrex::FabArray<FAB> ftmp(f.boxArray(), f.DistributionMap(), nComp, 0);
   ftmp.setVal(0.0);
-  amrex::UNodeBilinear<typename FAB::value_type> mapper;
-  interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper);
+  if constexpr (std::is_same_v<FAB, amrex::FArrayBox>) {
+    interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom,
+                               &amrex::node_bilinear_interp);
+  } else {
+    amrex::UNodeBilinear<typename FAB::value_type> mapper;
+    interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper);
+  }
 
   for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
     FAB& fab = f[mfi];
