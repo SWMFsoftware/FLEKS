@@ -18,8 +18,8 @@
 #include "Particles.h"
 #include "ReadParam.h"
 #include "SourceInterface.h"
+#include "Array1D.h"
 #include "TimeCtr.h"
-#include "UMultiFab.h"
 #include "WaveBC.h"
 
 class ParticleTracker;
@@ -144,14 +144,14 @@ private:
   // Mach number: u/v_th
   amrex::Vector<amrex::MultiFab> mMach;
 
-  amrex::Vector<amrex::UMultiFab<RealMM> > nodeMM;
+  amrex::Vector<NodeMMFab> nodeMM;
 
   // ------divE correction--------------
   // Old @ t=t_{n-1/2}; N @ t=t_n; New @ t=t_{n+1/2}
   amrex::Vector<amrex::MultiFab> centerNetChargeOld, centerNetChargeN,
       centerNetChargeNew;
   amrex::Vector<amrex::MultiFab> centerDivE, centerPhi;
-  amrex::Vector<amrex::UMultiFab<RealCMM> > centerMM;
+  amrex::Vector<CenterMMFab> centerMM;
   const amrex::Real rhoTheta = 0.51;
   //--------------------------------------
 
@@ -832,7 +832,6 @@ public:
 private:
   amrex::Real calc_E_field_energy();
   amrex::Real calc_B_field_energy();
-  AMREX_EXPORT amrex::UNode_FourthOrder<amrex::Real> node_fourth_order_interp;
 };
 
 void find_output_list_caller(const PlotWriter &writerIn,

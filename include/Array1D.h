@@ -1,112 +1,74 @@
 #ifndef _Arr1D_H_
 #define _Arr1D_H_
 
-#include <iostream>
-
+#include <AMReX_BaseFab.H>
+#include <AMReX_FabArray.H>
 #include <AMReX_REAL.H>
+#include <type_traits>
 
-template <class T, const int n> class Arr1D {
-public:
+template <class T, const int n>
+struct Arr1D {
+  T data[n];
+
   Arr1D(const T& b = T(0)) {
     for (int i = 0; i < n; ++i)
       data[i] = b;
   }
 
-  Arr1D(const Arr1D<T, n>& b) {
-    for (int i = 0; i < n; ++i)
-      data[i] = b[i];
-  }
-
-  T& operator[](const int i) { return data[i]; }
-
-  const T& operator[](const int i) const { return data[i]; }
-
-  Arr1D<T, n>& operator=(const Arr1D<T, n>& b) {
-    for (int i = 0; i < n; ++i)
-      data[i] = b[i];
-    return *this;
-  }
-
-  Arr1D<T, n>& operator=(const T& b) {
+  Arr1D& operator=(const T& b) {
     for (int i = 0; i < n; ++i)
       data[i] = b;
     return *this;
   }
 
-  Arr1D<T, n>& operator+=(const Arr1D<T, n>& b) {
+  T& operator[](const int i) { return data[i]; }
+  const T& operator[](const int i) const { return data[i]; }
+
+  Arr1D& operator+=(const Arr1D& b) {
     for (int i = 0; i < n; ++i)
-      data[i] += b[i];
+      data[i] += b.data[i];
     return *this;
   }
 
-  Arr1D<T, n>& operator*=(const Arr1D<T, n>& b) {
+  Arr1D& operator*=(const Arr1D& b) {
     for (int i = 0; i < n; ++i)
-      data[i] *= b[i];
+      data[i] *= b.data[i];
     return *this;
   }
 
-  Arr1D<T, n>& operator<<(const Arr1D<T, n>& b) {
+  template <typename U, typename = std::enable_if_t<std::is_arithmetic_v<U>>>
+  Arr1D& operator*=(U b) {
     for (int i = 0; i < n; ++i)
-      data[i] += b[i];
+      data[i] *= static_cast<T>(b);
     return *this;
   }
-
-private:
-  T data[n];
 };
 
 template <class T, const int n>
 inline Arr1D<T, n> operator+(Arr1D<T, n> a, const Arr1D<T, n>& b) {
-  for (int i = 0; i < n; ++i)
-    a[i] += b[i];
+  a += b;
   return a;
 }
 
-// It looks not right. --Yuxi  $$ I think the new version is right. --Talha
-template <class T, const int n>
-inline Arr1D<T, n> operator-(Arr1D<T, n> a, const Arr1D<T, n>& b) {
-  for (int i = 0; i < n; ++i)
-    a[i] -= b[i];
+template <class T, const int n, typename U,
+          typename = std::enable_if_t<std::is_arithmetic_v<U>>>
+inline Arr1D<T, n> operator*(Arr1D<T, n> a, U b) {
+  a *= b;
   return a;
 }
 
-template <class T, const int n>
-inline Arr1D<T, n> operator/(Arr1D<T, n> a, const Arr1D<T, n>& b) {
-  for (int i = 0; i < n; ++i)
-    a[i] /= b[i];
+template <class T, const int n, typename U,
+          typename = std::enable_if_t<std::is_arithmetic_v<U>>>
+inline Arr1D<T, n> operator*(U b, Arr1D<T, n> a) {
+  a *= b;
   return a;
-}
-
-template <class T, const int n>
-inline Arr1D<T, n> operator*(Arr1D<T, n> a, const Arr1D<T, n>& b) {
-  for (int i = 0; i < n; ++i)
-    a[i] *= b[i];
-  return a;
-}
-
-template <class T, const int n>
-inline Arr1D<T, n> operator*(Arr1D<T, n> a, const double& b) {
-  for (int i = 0; i < n; ++i)
-    a[i] *= b;
-  return a;
-}
-
-template <class T, const int n>
-inline Arr1D<T, n> operator*(const double& b, Arr1D<T, n> a) {
-  for (int i = 0; i < n; ++i)
-    a[i] *= b;
-  return a;
-}
-
-template <class T, const int n>
-std::ostream& operator<<(std::ostream& out, const Arr1D<T, n>& b) {
-  for (int i = 0; i < n; ++i)
-    out << " i = " << i << " data[i] = " << b[i] << "\t";
-  out << std::endl;
-  return out;
 }
 
 using RealMM = Arr1D<amrex::Real, 243>;
 using RealCMM = Arr1D<amrex::Real, 27>;
 
+using NodeMMFab = amrex::FabArray<amrex::BaseFab<RealMM>>;
+using CenterMMFab = amrex::FabArray<amrex::BaseFab<RealCMM>>;
+
 #endif
+

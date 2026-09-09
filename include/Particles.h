@@ -18,8 +18,8 @@
 #include "GridUtility.h"
 #include "RandNum.h"
 #include "SourceInterface.h"
+#include "Array1D.h"
 #include "TimeCtr.h"
-#include "UMultiFab.h"
 
 class InitialCondition; // forward: Particles only stores a non-owning pointer
 
@@ -501,14 +501,14 @@ public:
 
   std::array<amrex::Real, 5> total_moments(bool localOnly = false);
 
-  void calc_mass_matrix(amrex::UMultiFab<RealMM>& nodeMM, amrex::MultiFab& jHat,
+  void calc_mass_matrix(NodeMMFab& nodeMM, amrex::MultiFab& jHat,
                         amrex::MultiFab& nodeBMF, amrex::MultiFab& u0MF,
                         amrex::Real dt, int iLev, bool solveInCoMov);
 
   void calc_mass_matrix_amr(
-      amrex::UMultiFab<RealMM>& nodeMM,
-      amrex::Vector<amrex::Vector<amrex::UMultiFab<RealMM> > >& nmmc,
-      amrex::Vector<amrex::UMultiFab<RealMM> >& nmmf, amrex::MultiFab& jHat,
+      NodeMMFab& nodeMM,
+      amrex::Vector<amrex::Vector<NodeMMFab> >& nmmc,
+      amrex::Vector<NodeMMFab>& nmmf, amrex::MultiFab& jHat,
       amrex::Vector<amrex::Vector<amrex::MultiFab> >& jhc,
       amrex::Vector<amrex::MultiFab>& jhf, amrex::MultiFab& nodeBMF,
       amrex::MultiFab& u0MF, amrex::Real dt, int iLev, bool solveInCoMov,
@@ -523,12 +523,12 @@ public:
   amrex::Real calc_max_thermal_velocity(amrex::MultiFab& momentsMF);
 
   void sum_to_center(amrex::MultiFab& netChargeMF,
-                     amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly,
+                     CenterMMFab& centerMM, bool doNetChargeOnly,
                      int iLev);
 
   void sum_to_center_amr(amrex::MultiFab& netChargeMF, amrex::MultiFab& jc,
                          amrex::MultiFab& jf,
-                         amrex::UMultiFab<RealCMM>& centerMM,
+                         CenterMMFab& centerMM,
                          bool doNetChargeOnly, int iLev);
 
   void charge_exchange(

@@ -39,15 +39,15 @@ _REQUIRED_MOVER = {
 # Baseline targets (μs/part-step) and 2-core speedup floor, one set per solver.
 BASELINES = {
     "fullpic": {
-        "total_pps": 8.0,    # total wall-clock (GHA VM)
-        "mover_pps": 0.15,   # isolated particle mover
-        "solver_pps": 5.0,   # isolated implicit field solver (E_iterate)
+        "total_pps": 6.5,    # total wall-clock
+        "mover_pps": 0.10,   # isolated particle mover
+        "solver_pps": 4.8,   # isolated implicit field solver
         "speedup": 1.5,      # 2-core scaling floor
     },
     "hybrid": {
-        "total_pps": 0.32,   # total wall-clock
-        "mover_pps": 0.74,   # isolated particle mover
-        "solver_pps": 0.01,  # explicit hybrid field advance is cheaper
+        "total_pps": 0.25,   # total wall-clock
+        "mover_pps": 0.06,   # isolated particle mover
+        "solver_pps": 0.008, # explicit hybrid field advance is cheaper
         "speedup": 1.6,      # 2-core scaling floor
     },
 }

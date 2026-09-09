@@ -435,6 +435,23 @@ void sum_fine_to_coarse_lev_bny_node(amrex::FabArray<FAB>& coarse,
   amrex::Add(c, ctmp, 0, 0, nComp, 0);
 }
 
+// Scale all elements in FabArray by scalar
+template <class FAB, typename U,
+          std::enable_if_t<std::is_arithmetic_v<U>, int> = 0>
+inline amrex::FabArray<FAB>& operator*=(amrex::FabArray<FAB>& fa, U m) {
+  for (amrex::MFIter mfi(fa); mfi.isValid(); ++mfi) {
+    const auto arr = fa[mfi].array();
+    const auto& bx = mfi.fabbox();
+    const int ncomp = fa.nComp();
+    amrex::ParallelFor(
+        bx, ncomp,
+        [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
+          arr(i, j, k, c) *= m;
+        });
+  }
+  return fa;
+}
+
 // Sum from coarse level to fine level for nodes at the boundary of two levels.
 
 template <class FAB>
@@ -705,8 +722,13 @@ void sum_coarse_to_fine_lev_bny_node(
 
   amrex::FabArray<FAB> ftmp(f.boxArray(), f.DistributionMap(), nComp, 0);
   ftmp.setVal(0.0);
-  amrex::UNodeBilinear<typename FAB::value_type> mapper;
-  interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper);
+  if constexpr (std::is_same_v<FAB, amrex::FArrayBox>) {
+    interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom,
+                               &amrex::node_bilinear_interp);
+  } else {
+    amrex::UNodeBilinear<typename FAB::value_type> mapper;
+    interp_from_coarse_to_fine(c, ftmp, 0, nComp, ratio, cgeom, fgeom, &mapper);
+  }
 
   for (amrex::MFIter mfi(f); mfi.isValid(); ++mfi) {
     FAB& fab = f[mfi];
