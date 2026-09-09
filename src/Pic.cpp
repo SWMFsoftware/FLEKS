@@ -715,8 +715,8 @@ void Pic::calc_mass_matrix_amr() {
   //////////////////////////////////////////////////////////////////////
   amrex::Vector<amrex::Vector<amrex::MultiFab> > jhc;
   amrex::Vector<amrex::MultiFab> jhf;
-  amrex::Vector<amrex::Vector<UMultiFab<RealMM> > > nmmc;
-  amrex::Vector<UMultiFab<RealMM> > nmmf;
+  amrex::Vector<amrex::Vector<NodeMMFab> > nmmc;
+  amrex::Vector<NodeMMFab> nmmf;
   jhc.resize(n_lev());
   jhf.resize(n_lev());
   nmmc.resize(n_lev());
@@ -769,13 +769,13 @@ void Pic::calc_mass_matrix_amr() {
   for (int iLev = finest_level - 1; iLev >= 0; iLev--) {
     for (int i = finest_level; i > iLev; i--) {
       jHat[iLev].ParallelAdd(jhc[i][iLev]);
-      nmmc[i][iLev].mult(invVol[iLev] / invVol[i]);
+      nmmc[i][iLev] *= (invVol[iLev] / invVol[i]);
       nodeMM[iLev].ParallelAdd(nmmc[i][iLev]);
     }
   }
   for (int iLev = finest_level; iLev > 0; iLev--) {
     jHat[iLev].ParallelAdd(jhf[iLev - 1]);
-    nmmf[iLev - 1].mult(invVol[iLev] / invVol[iLev - 1]);
+    nmmf[iLev - 1] *= (invVol[iLev] / invVol[iLev - 1]);
     nodeMM[iLev].ParallelAdd(nmmf[iLev - 1]);
   }
 

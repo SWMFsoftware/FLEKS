@@ -23,7 +23,6 @@
 #include "Constants.h"
 #include "Regions.h"
 #include "TimeCtr.h"
-#include "UMultiFab.h"
 
 // This class define the grid information, but NOT the data on the grid.
 class Grid : public amrex::AmrCore {
@@ -403,7 +402,7 @@ public:
     }
   };
 
-  void WriteMF(amrex::UMultiFab<RealMM>& MF, std::string st = "WriteMF",
+  void WriteMF(NodeMMFab& MF, std::string st = "WriteMF",
                amrex::Vector<std::string> var = {}) {
 
     amrex::Vector<amrex::MultiFab> tmf;
@@ -413,7 +412,7 @@ public:
     WriteMF(tmf, nlev, st, var);
   }
 
-  void WriteMF(amrex::UMultiFab<RealCMM>& MF, std::string st = "WriteMF",
+  void WriteMF(CenterMMFab& MF, std::string st = "WriteMF",
                amrex::Vector<std::string> var = {}) {
 
     amrex::Vector<amrex::MultiFab> tmf;
@@ -498,7 +497,7 @@ public:
                                    ref_ratio);
   };
 
-  amrex::MultiFab centerMMtoMF(amrex::UMultiFab<RealCMM>& MFin) {
+  amrex::MultiFab centerMMtoMF(CenterMMFab& MFin) {
     amrex::MultiFab MFout;
     MFout.define(MFin.boxArray(), MFin.DistributionMap(), 27, MFin.nGrow());
     for (amrex::MFIter mfi(MFout); mfi.isValid(); ++mfi) {
@@ -521,8 +520,8 @@ public:
     return MFout;
   };
 
-  amrex::UMultiFab<RealCMM> MFtocenterMM(amrex::MultiFab& MFin) {
-    amrex::UMultiFab<RealCMM> MFout;
+  CenterMMFab MFtocenterMM(amrex::MultiFab& MFin) {
+    CenterMMFab MFout;
     MFout.define(MFin.boxArray(), MFin.DistributionMap(), 1, MFin.nGrow());
     for (amrex::MFIter mfi(MFin); mfi.isValid(); ++mfi) {
       const amrex::Box& box = mfi.fabbox();
@@ -544,7 +543,7 @@ public:
     return MFout;
   };
 
-  amrex::MultiFab nodeMMtoMF(amrex::UMultiFab<RealMM>& MFin) {
+  amrex::MultiFab nodeMMtoMF(NodeMMFab& MFin) {
     amrex::MultiFab MFout;
     MFout.define(MFin.boxArray(), MFin.DistributionMap(), 243, MFin.nGrow());
     for (amrex::MFIter mfi(MFout); mfi.isValid(); ++mfi) {
@@ -567,8 +566,8 @@ public:
     return MFout;
   };
 
-  amrex::UMultiFab<RealMM> MFtonodeMM(amrex::MultiFab& MFin) {
-    amrex::UMultiFab<RealMM> MFout;
+  NodeMMFab MFtonodeMM(amrex::MultiFab& MFin) {
+    NodeMMFab MFout;
     MFout.define(MFin.boxArray(), MFin.DistributionMap(), 1, MFin.nGrow());
     for (amrex::MFIter mfi(MFin); mfi.isValid(); ++mfi) {
       const amrex::Box& box = mfi.fabbox();
