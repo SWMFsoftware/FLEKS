@@ -232,6 +232,12 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(centerMM[iLev], cGrids[iLev], DistributionMap(iLev),
                           1, nGst, doMoveData);
 
+      distribute_FabArray(divEInMF[iLev], cGrids[iLev], DistributionMap(iLev),
+                          1, 1, false);
+
+      distribute_FabArray(divEOutMF[iLev], cGrids[iLev], DistributionMap(iLev),
+                          1, 0, false);
+
       distribute_FabArray(jHat[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                           nGst, doMoveData);
 

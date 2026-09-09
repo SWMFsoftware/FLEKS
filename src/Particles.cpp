@@ -2685,14 +2685,22 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         // Do not shift along z direction for both 2D and fake 2D cases.
         int nD = isFake2D ? 2 : nDim;
 
-        Box subBox(IntVect(0), IntVect(1));
-        ParallelFor(subBox, [&](int i, int j, int k) noexcept {
-          IntVect ijk = { AMREX_D_DECL(i, j, k) };
-          const Real coef = phiArr(loIdx + ijk);
-          for (int iDim = 0; iDim < nD; iDim++) {
-            eps_D[iDim] += coef * weights_IIID[i][j][k][iDim];
+#if AMREX_SPACEDIM > 2
+        constexpr int kEnd = 1;
+#else
+        constexpr int kEnd = 0;
+#endif
+        for (int k = 0; k <= kEnd; ++k) {
+          for (int j = 0; j <= 1; ++j) {
+            for (int i = 0; i <= 1; ++i) {
+              IntVect ijk = { AMREX_D_DECL(i, j, k) };
+              const Real coef = phiArr(loIdx + ijk);
+              for (int iDim = 0; iDim < nD; iDim++) {
+                eps_D[iDim] += coef * weights_IIID[i][j][k][iDim];
+              }
+            }
           }
-        });
+        }
 
         for (int iDim = 0; iDim < nDim; iDim++)
           eps_D[iDim] *= sign * fourPI;

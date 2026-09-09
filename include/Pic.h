@@ -150,6 +150,7 @@ private:
   amrex::Vector<amrex::MultiFab> centerNetChargeOld, centerNetChargeN,
       centerNetChargeNew;
   amrex::Vector<amrex::MultiFab> centerDivE, centerPhi;
+  amrex::Vector<amrex::MultiFab> divEInMF, divEOutMF;
   amrex::Vector<CenterMMFab> centerMM;
   const amrex::Real rhoTheta = 0.51;
   //--------------------------------------
@@ -334,6 +335,8 @@ public:
 
     centerDivE.resize(n_lev_max());
     centerPhi.resize(n_lev_max());
+    divEInMF.resize(n_lev_max());
+    divEOutMF.resize(n_lev_max());
 
     nodeMM.resize(n_lev_max());
     centerMM.resize(n_lev_max());
