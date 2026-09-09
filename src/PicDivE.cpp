@@ -96,10 +96,16 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut, int iLev) {
   inMF.FillBoundary(0, 1, IntVect(1), Geom(iLev).periodicity());
 
   const Real factor = fourPI * fourPI;
-  const int jMin = (nDim > 1) ? -1 : 0;
-  const int jMax = (nDim > 1) ? 1 : 0;
-  const int kMin = (nDim > 2 && !isFake2D) ? -1 : 0;
-  const int kMax = (nDim > 2 && !isFake2D) ? 1 : 0;
+#if AMREX_SPACEDIM > 1
+  constexpr int jMin = -1, jMax = 1;
+#else
+  constexpr int jMin = 0, jMax = 0;
+#endif
+#if AMREX_SPACEDIM > 2
+  constexpr int kMin = -1, kMax = 1;
+#else
+  constexpr int kMin = 0, kMax = 0;
+#endif
 
   for (MFIter mfi(inMF); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();

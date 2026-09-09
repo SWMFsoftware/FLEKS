@@ -2685,7 +2685,11 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
         // Do not shift along z direction for both 2D and fake 2D cases.
         int nD = isFake2D ? 2 : nDim;
 
-        const int kEnd = (nDim > 2 && !isFake2D) ? 1 : 0;
+#if AMREX_SPACEDIM > 2
+        constexpr int kEnd = 1;
+#else
+        constexpr int kEnd = 0;
+#endif
         for (int k = 0; k <= kEnd; ++k) {
           for (int j = 0; j <= 1; ++j) {
             for (int i = 0; i <= 1; ++i) {
