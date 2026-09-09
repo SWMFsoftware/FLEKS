@@ -61,14 +61,12 @@ void Pic::calculate_phi(LinearSolver& solver, int iLev) {
   timing_func(nameFunc);
 
   {
-    MultiFab residual(cGrids[iLev], DistributionMap(iLev), 1, nGst);
+    MultiFab residual(cGrids[iLev], DistributionMap(iLev), 1, 0);
 
     solver.reset(get_local_node_or_cell_number(centerDivE[iLev]));
-    // div_node_to_center(nodeE[iLev], residual, Geom(iLev).InvCellSize());
-    MultiFab::Copy(residual, centerDivE[iLev], 0, 0, 1, nGst);
     Real coef = 1.0 / rhoTheta;
 
-    MultiFab::LinComb(residual, coef, residual, 0, -fourPI * coef,
+    MultiFab::LinComb(residual, coef, centerDivE[iLev], 0, -fourPI * coef,
                       centerNetChargeN[iLev], 0, 0, residual.nComp(),
                       residual.nGrow());
     if (finest_level > 0) {
@@ -91,35 +89,39 @@ void Pic::divE_accurate_matvec(const double* vecIn, double* vecOut, int iLev) {
   std::string nameFunc = "Pic::divE_matvec";
   timing_func(nameFunc);
 
-  // const int iLev = 0;
-  zero_array(vecOut, divESolver.get_nSolve());
-
-  MultiFab inMF(cGrids[iLev], DistributionMap(iLev), 1, nGst);
+  MultiFab& inMF = divEInMF[iLev];
+  MultiFab& outMF = divEOutMF[iLev];
 
   convert_1d_to_3d(vecIn, inMF, iLev);
   inMF.FillBoundary(0, 1, IntVect(1), Geom(iLev).periodicity());
 
-  MultiFab outMF(cGrids[iLev], DistributionMap(iLev), 1, nGst);
-  outMF.setVal(0.0);
+  const Real factor = fourPI * fourPI;
+  const int jMin = (nDim > 1) ? -1 : 0;
+  const int jMax = (nDim > 1) ? 1 : 0;
+  const int kMin = (nDim > 2 && !isFake2D) ? -1 : 0;
+  const int kMax = (nDim > 2 && !isFake2D) ? 1 : 0;
 
   for (MFIter mfi(inMF); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
     const Array4<Real>& lArr = outMF[mfi].array();
     const Array4<Real const>& rArr = inMF[mfi].array();
-    const Array4<RealCMM>& mmArr = centerMM[iLev][mfi].array();
+    const Array4<RealCMM const>& mmArr = centerMM[iLev][mfi].array();
 
-    ParallelFor(box, [&](int i, int j, int k) {
-      IntVect ijk = { AMREX_D_DECL(i, j, k) };
-      Box subBox(ijk - 1, ijk + 1);
-
-      ParallelFor(subBox, [&](int i2, int j2, int k2) {
-        const int gp = (i2 - i + 1) * 9 + (j2 - j + 1) * 3 + k2 - k + 1;
-        lArr(i, j, k) += rArr(i2, j2, k2) * mmArr(i, j, k)[gp];
-      });
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      Real sum = 0.0;
+      for (int di = -1; di <= 1; ++di) {
+        for (int dj = jMin; dj <= jMax; ++dj) {
+          for (int dk = kMin; dk <= kMax; ++dk) {
+            const int gp = (di + 1) * 9 + (dj + 1) * 3 + (dk + 1);
+            sum += rArr(i + di, j + dj, k + dk) * mmArr(i, j, k)[gp];
+          }
+        }
+      }
+      lArr(i, j, k) = sum * factor;
     });
   }
-  outMF.mult(fourPI * fourPI);
+
   convert_3d_to_1d(outMF, vecOut, iLev);
 }
 
@@ -132,10 +134,11 @@ void Pic::sum_to_center(bool isBeforeCorrection) {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     centerNetChargeNew[iLev].setVal(0.0);
 
-    const RealCMM mm0(0.0);
-    centerMM[iLev].setVal(mm0);
-
     bool doNetChargeOnly = !isBeforeCorrection;
+    if (!doNetChargeOnly) {
+      const RealCMM mm0(0.0);
+      centerMM[iLev].setVal(mm0);
+    }
 
     for (int i = 0; i < nSpecies; ++i) {
       parts[i]->sum_to_center(centerNetChargeNew[iLev], centerMM[iLev],
@@ -174,8 +177,10 @@ void Pic::sum_to_center_amr(bool isBeforeCorrection, int iLev) {
   bool doNetChargeOnly = !isBeforeCorrection;
 
   centerNetChargeNew[iLev].setVal(0.0);
-  const RealCMM mm0(0.0);
-  centerMM[iLev].setVal(mm0);
+  if (!doNetChargeOnly) {
+    const RealCMM mm0(0.0);
+    centerMM[iLev].setVal(mm0);
+  }
 
   MultiFab jf;
   MultiFab jc;
