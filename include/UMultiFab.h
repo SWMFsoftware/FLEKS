@@ -1,7 +1,6 @@
 #ifndef _UMULTIFAB_H_
 #define _UMULTIFAB_H_
 
-#include <AMReX_BLassert.H>
 #include <AMReX_FArrayBox.H>
 #include <AMReX_FabArray.H>
 #include <AMReX_FabArrayUtility.H>
@@ -17,16 +16,6 @@ public:
   using FabArray<BaseFab<T> >::Factory;
 
   UMultiFab() noexcept {}
-
-  void Copy(UMultiFab& dst, const UMultiFab& src, int srccomp, int dstcomp,
-            int numcomp, const IntVect& nghost) {
-    BL_ASSERT(dst.distributionMap == src.distributionMap);
-    BL_ASSERT(dst.nGrowVect().allGE(nghost));
-
-    BL_PROFILE("UMultiFab::Copy()");
-
-    amrex::Copy(dst, src, srccomp, dstcomp, numcomp, nghost);
-  }
 
   void SumBoundary(int scomp, int ncomp, IntVect const& nghost,
                    const Periodicity& period = Periodicity::NonPeriodic()) {
@@ -44,7 +33,7 @@ public:
       UMultiFab tmp;
       tmp.define(boxArray(), DistributionMap(), ncomp, n_grow, MFInfo(),
                  Factory());
-      UMultiFab::Copy(tmp, *this, scomp, 0, ncomp, n_grow);
+      amrex::Copy(tmp, *this, scomp, 0, ncomp, n_grow);
       this->setVal(0.0, scomp, ncomp, nghost);
       this->ParallelCopy(tmp, 0, scomp, ncomp, n_grow, nghost, period,
                          FabArrayBase::ADD);
@@ -57,9 +46,7 @@ public:
   }
   //---------------------------------------------------------
   void mult(double m) {
-    for (MFIter mfi(*this); mfi.isValid(); ++mfi) {
-      (*this)[mfi].mult(m);
-    }
+    FabArray<BaseFab<T>>::mult(m, 0, n_comp, n_grow);
   }
   //--------------------------------------------------------
 
