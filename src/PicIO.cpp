@@ -549,8 +549,8 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
       value = arr(ijk, iz_);
     } else if (var.substr(0, 3) == "nMM") {
       int ii = extract_int(var);
-      const Array4<Real const>& arr = nodeMM[iLev][mfi].array();
-      value = arr(ijk, ii);
+      const Array4<RealMM const>& arr = nodeMM[iLev][mfi].array();
+      value = arr(ijk)[ii];
     } else if (var.substr(0, 5) == "dBxdt") {
       const Array4<Real const>& arr = dBdt[iLev][mfi].array();
       value = arr(ijk, ix_);

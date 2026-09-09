@@ -136,7 +136,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
 
       if (!useExplicitPIC) {
         distribute_FabArray(nodeMM[iLev], nGrids[iLev], DistributionMap(iLev),
-                            243, 1, doMoveData);
+                            1, 1, doMoveData);
       }
     }
     if (useHybridPIC) {
@@ -230,7 +230,7 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
                           nGst, doMoveData);
 
       distribute_FabArray(centerMM[iLev], cGrids[iLev], DistributionMap(iLev),
-                          27, nGst, doMoveData);
+                          1, nGst, doMoveData);
 
       distribute_FabArray(jHat[iLev], nGrids[iLev], DistributionMap(iLev), 3,
                           nGst, doMoveData);
@@ -644,7 +644,8 @@ void Pic::calc_mass_matrix() {
     jHat[iLev].setVal(0.0);
 
     if (!useExplicitPIC) {
-      nodeMM[iLev].setVal(0.0);
+      const RealMM mm0(0.0);
+      nodeMM[iLev].setVal(mm0);
     }
 
     for (int i = 0; i < nSpecies; ++i) {
@@ -714,8 +715,8 @@ void Pic::calc_mass_matrix_amr() {
   //////////////////////////////////////////////////////////////////////
   amrex::Vector<amrex::Vector<amrex::MultiFab> > jhc;
   amrex::Vector<amrex::MultiFab> jhf;
-  amrex::Vector<amrex::Vector<amrex::MultiFab> > nmmc;
-  amrex::Vector<amrex::MultiFab> nmmf;
+  amrex::Vector<amrex::Vector<UMultiFab<RealMM> > > nmmc;
+  amrex::Vector<UMultiFab<RealMM> > nmmf;
   jhc.resize(n_lev());
   jhf.resize(n_lev());
   nmmc.resize(n_lev());

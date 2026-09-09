@@ -44,6 +44,7 @@ Implementation files are in `src/`. Headers should never contain
 |---------------------|----------------------------------|----------------------------------------------------------|
 | `LinearSolver.h`    | `LinearSolver`, `LinearSolverParam` | GMRES Krylov iterative solver for implicit E-field.     |
 | `GridUtility.h`     | Free functions                   | Discrete operators: curl, div, grad, averaging, interpolation. |
+| `UInterp.h`         | Interpolation utilities          | Node/cell interpolation routines.                        |
 | `BC.h`              | `BC`                             | Boundary condition types (periodic, coupled, outflow, vacuum). |
 
 ### Data & I/O
@@ -61,12 +62,14 @@ Implementation files are in `src/`. Headers should never contain
 | File                | Class/Contents                   | Description                                              |
 |---------------------|----------------------------------|----------------------------------------------------------|
 | `Utility.h`         | Free utility functions           | String parsing, math helpers, general utilities.         |
+| `Array1D.h`         | `Array1D`                        | Simple 1D array wrapper.                                 |
 | `Bit.h`             | Bit manipulation                 | Cell status bit flags (active, new, boundary, etc.).     |
 | `BitArray.h`        | `BitArray`                       | Compact boolean array.                                   |
 | `Morton.h`          | Morton curve                     | Space-filling curve for grid ordering.                   |
 | `Regions.h`         | `Regions`                        | Named geometric regions (box, sphere, shell, paraboloid).|
 | `Shape.h`           | `Shape`                          | Geometric shape definitions for region specification.    |
 | `Delauator.h`       | Delaunay triangulation           | Delaunay triangulation utility.                          |
+| `UMultiFab.h`       | `UMultiFab`                      | Extended MultiFab utilities.                             |
 | `Timer.h`           | `Timer`                          | Simple timing utility.                                   |
 | `FleksDistributionMap.h` | `FleksDistributionMap`      | Custom AMReX distribution mapping for load balancing.    |
 | `ReadBATL.h`        | BATL reading                     | Read BATS-R-US grid data.                                |

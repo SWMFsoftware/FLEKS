@@ -10,6 +10,7 @@
 #include <AMReX_AmrParticles.H>
 #include <AMReX_CoordSys.H>
 
+#include "Array1D.h"
 #include "BC.h"
 #include "Bit.h"
 #include "Constants.h"
@@ -18,6 +19,7 @@
 #include "RandNum.h"
 #include "SourceInterface.h"
 #include "TimeCtr.h"
+#include "UMultiFab.h"
 
 class InitialCondition; // forward: Particles only stores a non-owning pointer
 
@@ -499,14 +501,14 @@ public:
 
   std::array<amrex::Real, 5> total_moments(bool localOnly = false);
 
-  void calc_mass_matrix(amrex::MultiFab& nodeMM, amrex::MultiFab& jHat,
+  void calc_mass_matrix(amrex::UMultiFab<RealMM>& nodeMM, amrex::MultiFab& jHat,
                         amrex::MultiFab& nodeBMF, amrex::MultiFab& u0MF,
                         amrex::Real dt, int iLev, bool solveInCoMov);
 
   void calc_mass_matrix_amr(
-      amrex::MultiFab& nodeMM,
-      amrex::Vector<amrex::Vector<amrex::MultiFab> >& nmmc,
-      amrex::Vector<amrex::MultiFab>& nmmf, amrex::MultiFab& jHat,
+      amrex::UMultiFab<RealMM>& nodeMM,
+      amrex::Vector<amrex::Vector<amrex::UMultiFab<RealMM> > >& nmmc,
+      amrex::Vector<amrex::UMultiFab<RealMM> >& nmmf, amrex::MultiFab& jHat,
       amrex::Vector<amrex::Vector<amrex::MultiFab> >& jhc,
       amrex::Vector<amrex::MultiFab>& jhf, amrex::MultiFab& nodeBMF,
       amrex::MultiFab& u0MF, amrex::Real dt, int iLev, bool solveInCoMov,
@@ -521,12 +523,12 @@ public:
   amrex::Real calc_max_thermal_velocity(amrex::MultiFab& momentsMF);
 
   void sum_to_center(amrex::MultiFab& netChargeMF,
-                     amrex::MultiFab& centerMM, bool doNetChargeOnly,
+                     amrex::UMultiFab<RealCMM>& centerMM, bool doNetChargeOnly,
                      int iLev);
 
   void sum_to_center_amr(amrex::MultiFab& netChargeMF, amrex::MultiFab& jc,
                          amrex::MultiFab& jf,
-                         amrex::MultiFab& centerMM,
+                         amrex::UMultiFab<RealCMM>& centerMM,
                          bool doNetChargeOnly, int iLev);
 
   void charge_exchange(
@@ -545,7 +547,7 @@ public:
                                            const amrex::IntVect& loIdx,
                                            const amrex::RealVect& dShift,
                                            amrex::Real qp,
-                                           amrex::Array4<amrex::Real> const& mmArr);
+                                           amrex::Array4<RealCMM> const& mmArr);
 
   void get_ion_fluid(FluidInterface* stateOH, PIter& pti, const int iLev,
                      const int iFluid, const amrex::RealVect xyz,
