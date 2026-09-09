@@ -86,11 +86,12 @@ void print_fab(const amrex::FabArray<FAB>& mf, std::string tag,
         // for (int k = lo.z; k <= hi.z; ++k)
         for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
           int k = 0;
+          const amrex::Real value = data(i, j, k, iVar);
           amrex::AllPrint() << " i = " << i << " j = " << j << " k = " << k
                             << " iVar = " << iVar
-                            << " data = " << data(i, j, k, iVar) << std::endl;
-          sum += data(i, j, k, iVar);
-          sum2 += pow(data(i, j, k, iVar), 2);
+                            << " data = " << value << std::endl;
+          sum += value;
+          sum2 += value * value;
         }
   }
   amrex::AllPrint() << "sum = " << sum << " sum2 = " << sqrt(sum2)

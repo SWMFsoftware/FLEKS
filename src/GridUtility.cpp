@@ -288,11 +288,12 @@ void print_MultiFab(const MultiFab& data, std::string tag, Geometry& gm,
       for (int j = jMin; j <= jMax; ++j)
         for (int k = kMin; k <= kMax; ++k)
           for (int iVar = 0; iVar < data.nComp(); iVar++) {
+            const Real value = data(i, j, k, iVar);
             AllPrint() << " i = " << i << " j = " << j << " k = " << k
                        << " iVar = " << iVar
-                       << " data = " << data(i, j, k, iVar) << std::endl;
-            sum += data(i, j, k, iVar);
-            sum2 += pow(data(i, j, k, iVar), 2);
+                       << " data = " << value << std::endl;
+            sum += value;
+            sum2 += value * value;
           }
   }
   AllPrint() << "sum = " << sum << " sum2 = " << sqrt(sum2)
@@ -319,11 +320,12 @@ void print_MultiFab(const MultiFab& data, std::string tag, const int iVarStart,
       for (int j = lo.y - nshift; j <= hi.y + nshift; ++j)
         for (int k = lo.z; k <= hi.z; ++k)
           for (int iVar = iVarStart; iVar < iVarEnd; iVar++) {
+            const Real value = data(i, j, k, iVar);
             AllPrint() << " i = " << i << " j = " << j << " k = " << k
                        << " iVar = " << iVar
-                       << " data = " << data(i, j, k, iVar) << std::endl;
-            sum += data(i, j, k, iVar);
-            sum2 += pow(data(i, j, k, iVar), 2);
+                       << " data = " << value << std::endl;
+            sum += value;
+            sum2 += value * value;
           }
   }
   AllPrint() << "sum = " << sum << " sum2 = " << sqrt(sum2)
@@ -350,11 +352,12 @@ void print_MultiFab(const iMultiFab& data, std::string tag, int nshift) {
       for (int j = lo.y - nshift; j <= hi.y + nshift; ++j)
         for (int k = lo.z - nshift; k <= hi.z + nshift; ++k)
           for (int iVar = 0; iVar < data.nComp(); iVar++) {
+            const Real value = dataArr(i, j, k, iVar);
             AllPrint() << " i = " << i << " j = " << j << " k = " << k
                        << " iVar = " << iVar
-                       << " data = " << dataArr(i, j, k, iVar) << std::endl;
-            sum += dataArr(i, j, k, iVar);
-            sum2 += pow(dataArr(i, j, k, iVar), 2);
+                       << " data = " << value << std::endl;
+            sum += value;
+            sum2 += value * value;
           }
   }
   AllPrint() << "sum = " << sum << " sum2 = " << sqrt(sum2)

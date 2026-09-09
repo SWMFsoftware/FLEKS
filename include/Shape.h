@@ -59,10 +59,12 @@ public:
   bool is_inside(const amrex::Real* xyz) const override {
     amrex::Real l2 = 0;
 
-    for (int i = 0; i < nDim; ++i)
-      l2 += pow(xyz[i] - center[i], 2);
+    for (int i = 0; i < nDim; ++i) {
+      const amrex::Real delta = xyz[i] - center[i];
+      l2 += delta * delta;
+    }
 
-    return l2 < pow(radius, 2);
+    return l2 < radius * radius;
   }
 
 private:
@@ -84,9 +86,10 @@ public:
   }
 
   bool is_inside(const amrex::Real* xyz) const override {
-    amrex::Real l =
-        sqrt(pow(xyz[0] - center[0], 2) + pow(xyz[1] - center[1], 2) +
-             pow(xyz[2] - center[2], 2));
+    const amrex::Real dx = xyz[0] - center[0];
+    const amrex::Real dy = xyz[1] - center[1];
+    const amrex::Real dz = xyz[2] - center[2];
+    amrex::Real l = sqrt(dx * dx + dy * dy + dz * dz);
     return l < radiusOuter && l > radiusInner;
   }
 

@@ -2974,10 +2974,12 @@ bool Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
             p2.rdata(iqp_) * p2.rdata(iup_ + i)) /
            mt;
 
-    et += 0.5 * p1.rdata(iqp_) * pow(p1.rdata(iup_ + i), 2);
-    et += 0.5 * p2.rdata(iqp_) * pow(p2.rdata(iup_ + i), 2);
+    const Real u1 = p1.rdata(iup_ + i);
+    const Real u2 = p2.rdata(iup_ + i);
+    et += 0.5 * p1.rdata(iqp_) * u1 * u1;
+    et += 0.5 * p2.rdata(iqp_) * u2 * u2;
 
-    uavg2 += pow(u[i], 2);
+    uavg2 += u[i] * u[i];
 
     // Get the direction of du1.
     du1[i] = p1.rdata(iup_ + i) - p2.rdata(iup_ + i);
@@ -3478,11 +3480,13 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
 
       if (iDir < nDim) {
         Real pos = particles[pID].pos(iDir);
-        dl2 += pow((pos - middle[iDir]) * invDx[iLev][iDir], 2);
+        const Real distance = (pos - middle[iDir]) * invDx[iLev][iDir];
+        dl2 += distance * distance;
       }
 
       Real v = particles[pID].rdata(iDir);
-      dvel2 += pow((v - middle[nDim + iDir]) * velNorm, 2);
+      const Real velocity = (v - middle[nDim + iDir]) * velNorm;
+      dvel2 += velocity * velocity;
     }
     return coefPos * dl2 + coefVel * dvel2;
   };
@@ -3550,11 +3554,11 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
       for (int iDir = 0; iDir < nDim; iDir++) {
         Real dv = velNorm * (particles[idx_I[ip1]].rdata(iDir) -
                              particles[idx_I[ip2]].rdata(iDir));
-        dv2 += pow(dv, 2);
+        dv2 += dv * dv;
 
         Real dx = invDx[iLev][iDir] * (particles[idx_I[ip1]].pos(iDir) -
                                        particles[idx_I[ip2]].pos(iDir));
-        dv2 += pow(dx, 2);
+        dv2 += dx * dx;
       }
 
       const Real dis2 = dv2 * coefVel + dl2 * coefPos;
@@ -3585,7 +3589,7 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
     const Real up = particles[idx_I[ip]].rdata(iup_);
     const Real vp = particles[idx_I[ip]].rdata(ivp_);
     const Real wp = particles[idx_I[ip]].rdata(iwp_);
-    const Real v2 = (pow(up, 2) + pow(vp, 2) + pow(wp, 2));
+    const Real v2 = up * up + vp * vp + wp * wp;
 
     if (ip < nVar) {
       a(iq_, ip) = 1;
@@ -3706,7 +3710,7 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
     const Real up = particles[idx_I[ip]].rdata(iup_);
     const Real vp = particles[idx_I[ip]].rdata(ivp_);
     const Real wp = particles[idx_I[ip]].rdata(iwp_);
-    const Real v2 = 0.5 * (pow(up, 2) + pow(vp, 2) + pow(wp, 2));
+    const Real v2 = 0.5 * (up * up + vp * vp + wp * wp);
     a(nPartNew + iq_, nVar) += qp;
     a(nPartNew + iu_, nVar) += qp * up;
     a(nPartNew + iv_, nVar) += qp * vp;
@@ -3720,7 +3724,7 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
     const Real up = particles[idx_I[ip]].rdata(iup_);
     const Real vp = particles[idx_I[ip]].rdata(ivp_);
     const Real wp = particles[idx_I[ip]].rdata(iwp_);
-    const Real v2 = 0.5 * (pow(up, 2) + pow(vp, 2) + pow(wp, 2));
+    const Real v2 = 0.5 * (up * up + vp * vp + wp * wp);
 
     a(ip, nVar) = 2;
 

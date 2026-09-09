@@ -7,29 +7,27 @@
 void register_all_initial_conditions() {
   // The four wave tests share one parameterized WaveIC (names + generic config)
   ICRegistry::instance().register_ic("lightwave", []() {
-    return std::unique_ptr<InitialCondition>(new WaveIC(WaveIC::LightWave));
+    return std::make_unique<WaveIC>(WaveIC::LightWave);
   });
   ICRegistry::instance().register_ic("hybridwave", []() {
-    return std::unique_ptr<InitialCondition>(new WaveIC(WaveIC::HybridWave));
+    return std::make_unique<WaveIC>(WaveIC::HybridWave);
   });
   ICRegistry::instance().register_ic("convectionwave", []() {
-    return std::unique_ptr<InitialCondition>(
-        new WaveIC(WaveIC::ConvectionWave));
+    return std::make_unique<WaveIC>(WaveIC::ConvectionWave);
   });
   ICRegistry::instance().register_ic("ionacousticwave", []() {
-    return std::unique_ptr<InitialCondition>(
-        new WaveIC(WaveIC::IonAcousticWave));
+    return std::make_unique<WaveIC>(WaveIC::IonAcousticWave);
   });
   ICRegistry::instance().register_ic("waveic", []() {
-    return std::unique_ptr<InitialCondition>(new WaveIC(WaveIC::Generic));
+    return std::make_unique<WaveIC>(WaveIC::Generic);
   });
 
   ICRegistry::instance().register_ic(
-      "beam", []() { return std::unique_ptr<InitialCondition>(new BeamIC()); });
+      "beam", []() { return std::make_unique<BeamIC>(); });
   ICRegistry::instance().register_ic("tophat", []() {
-    return std::unique_ptr<InitialCondition>(new TopHatIC());
+    return std::make_unique<TopHatIC>();
   });
   ICRegistry::instance().register_ic("fadeev", []() {
-    return std::unique_ptr<InitialCondition>(new FadeevIC());
+    return std::make_unique<FadeevIC>();
   });
 }
