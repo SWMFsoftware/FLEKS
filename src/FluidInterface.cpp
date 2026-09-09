@@ -1045,13 +1045,15 @@ void FluidInterface::calc_mag_base_vector(const double Bx, const double By,
     norm_DD(Perp2_, X_) = norm_DD(Norm_, Z_) * norm_DD(Norm_, X_);
     norm_DD(Perp2_, Y_) = norm_DD(Norm_, Z_) * norm_DD(Norm_, Y_);
     norm_DD(Perp2_, Z_) =
-        -pow(norm_DD(Norm_, X_), 2) - pow(norm_DD(Norm_, Y_), 2);
+        -norm_DD(Norm_, X_) * norm_DD(Norm_, X_) -
+        norm_DD(Norm_, Y_) * norm_DD(Norm_, Y_);
   } else {
     norm_DD(Perp1_, X_) = 0.0;
     norm_DD(Perp1_, Y_) = norm_DD(Norm_, Z_);
     norm_DD(Perp1_, Z_) = -norm_DD(Norm_, Y_);
     norm_DD(Perp2_, X_) =
-        -pow(norm_DD(Norm_, Y_), 2) - pow(norm_DD(Norm_, Z_), 2);
+        -norm_DD(Norm_, Y_) * norm_DD(Norm_, Y_) -
+        norm_DD(Norm_, Z_) * norm_DD(Norm_, Z_);
     norm_DD(Perp2_, Y_) = norm_DD(Norm_, Y_) * norm_DD(Norm_, X_);
     norm_DD(Perp2_, Z_) = norm_DD(Norm_, Z_) * norm_DD(Norm_, X_);
   }

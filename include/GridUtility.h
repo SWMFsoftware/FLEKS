@@ -90,7 +90,8 @@ void print_fab(const amrex::FabArray<FAB>& mf, std::string tag,
                             << " iVar = " << iVar
                             << " data = " << data(i, j, k, iVar) << std::endl;
           sum += data(i, j, k, iVar);
-          sum2 += pow(data(i, j, k, iVar), 2);
+          const amrex::Real value = data(i, j, k, iVar);
+          sum2 += value * value;
         }
   }
   amrex::AllPrint() << "sum = " << sum << " sum2 = " << sqrt(sum2)

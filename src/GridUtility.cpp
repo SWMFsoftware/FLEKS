@@ -292,7 +292,8 @@ void print_MultiFab(const MultiFab& data, std::string tag, Geometry& gm,
                        << " iVar = " << iVar
                        << " data = " << data(i, j, k, iVar) << std::endl;
             sum += data(i, j, k, iVar);
-            sum2 += pow(data(i, j, k, iVar), 2);
+            const Real value = data(i, j, k, iVar);
+            sum2 += value * value;
           }
   }
   AllPrint() << "sum = " << sum << " sum2 = " << sqrt(sum2)
@@ -323,7 +324,8 @@ void print_MultiFab(const MultiFab& data, std::string tag, const int iVarStart,
                        << " iVar = " << iVar
                        << " data = " << data(i, j, k, iVar) << std::endl;
             sum += data(i, j, k, iVar);
-            sum2 += pow(data(i, j, k, iVar), 2);
+            const Real value = data(i, j, k, iVar);
+            sum2 += value * value;
           }
   }
   AllPrint() << "sum = " << sum << " sum2 = " << sqrt(sum2)
@@ -354,7 +356,8 @@ void print_MultiFab(const iMultiFab& data, std::string tag, int nshift) {
                        << " iVar = " << iVar
                        << " data = " << dataArr(i, j, k, iVar) << std::endl;
             sum += dataArr(i, j, k, iVar);
-            sum2 += pow(dataArr(i, j, k, iVar), 2);
+            const Real value = dataArr(i, j, k, iVar);
+            sum2 += value * value;
           }
   }
   AllPrint() << "sum = " << sum << " sum2 = " << sqrt(sum2)

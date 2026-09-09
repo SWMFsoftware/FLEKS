@@ -897,8 +897,9 @@ Real Pic::calc_E_field_energy() {
           Box subBox(ijk, ijk + 1);
           ParallelFor(subBox, [&](int ii, int jj, int kk) {
             IntVect ijk0 = { AMREX_D_DECL(ii, jj, kk) };
-            sumLoc += pow(arr(ijk0, ix_), 2) + pow(arr(ijk0, iy_), 2) +
-                      pow(arr(ijk0, iz_), 2);
+            sumLoc += arr(ijk0, ix_) * arr(ijk0, ix_) +
+                      arr(ijk0, iy_) * arr(ijk0, iy_) +
+                      arr(ijk0, iz_) * arr(ijk0, iz_);
           });
         }
       });
@@ -932,8 +933,9 @@ Real Pic::calc_B_field_energy() {
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (!bit::is_refined(status(ijk))) {
-          sumLoc += pow(arr(i, j, k, ix_), 2) + pow(arr(i, j, k, iy_), 2) +
-                    pow(arr(i, j, k, iz_), 2);
+          sumLoc += arr(i, j, k, ix_) * arr(i, j, k, ix_) +
+                    arr(i, j, k, iy_) * arr(i, j, k, iy_) +
+                    arr(i, j, k, iz_) * arr(i, j, k, iz_);
         }
       });
 
