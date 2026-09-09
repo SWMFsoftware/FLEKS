@@ -46,7 +46,9 @@ public:
   }
   //---------------------------------------------------------
   void mult(double m) {
-    FabArray<BaseFab<T>>::mult(m, 0, n_comp, n_grow);
+    for (MFIter mfi(*this); mfi.isValid(); ++mfi) {
+      (*this)[mfi].mult(m);
+    }
   }
   //--------------------------------------------------------
 
