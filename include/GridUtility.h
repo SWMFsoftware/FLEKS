@@ -87,9 +87,9 @@ void print_fab(const amrex::FabArray<FAB>& mf, std::string tag,
         for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
           int k = 0;
           const amrex::Real value = data(i, j, k, iVar);
-          amrex::AllPrint() << " i = " << i << " j = " << j << " k = " << k
-                            << " iVar = " << iVar
-                            << " data = " << value << std::endl;
+          amrex::AllPrint()
+              << " i = " << i << " j = " << j << " k = " << k
+              << " iVar = " << iVar << " data = " << value << std::endl;
           sum += value;
           sum2 += value * value;
         }

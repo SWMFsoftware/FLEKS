@@ -290,8 +290,8 @@ void print_MultiFab(const MultiFab& data, std::string tag, Geometry& gm,
           for (int iVar = 0; iVar < data.nComp(); iVar++) {
             const Real value = data(i, j, k, iVar);
             AllPrint() << " i = " << i << " j = " << j << " k = " << k
-                       << " iVar = " << iVar
-                       << " data = " << value << std::endl;
+                       << " iVar = " << iVar << " data = " << value
+                       << std::endl;
             sum += value;
             sum2 += value * value;
           }
@@ -322,8 +322,8 @@ void print_MultiFab(const MultiFab& data, std::string tag, const int iVarStart,
           for (int iVar = iVarStart; iVar < iVarEnd; iVar++) {
             const Real value = data(i, j, k, iVar);
             AllPrint() << " i = " << i << " j = " << j << " k = " << k
-                       << " iVar = " << iVar
-                       << " data = " << value << std::endl;
+                       << " iVar = " << iVar << " data = " << value
+                       << std::endl;
             sum += value;
             sum2 += value * value;
           }
@@ -354,8 +354,8 @@ void print_MultiFab(const iMultiFab& data, std::string tag, int nshift) {
           for (int iVar = 0; iVar < data.nComp(); iVar++) {
             const Real value = dataArr(i, j, k, iVar);
             AllPrint() << " i = " << i << " j = " << j << " k = " << k
-                       << " iVar = " << iVar
-                       << " data = " << value << std::endl;
+                       << " iVar = " << iVar << " data = " << value
+                       << std::endl;
             sum += value;
             sum2 += value * value;
           }
