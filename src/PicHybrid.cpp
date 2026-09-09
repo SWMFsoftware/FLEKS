@@ -23,7 +23,8 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
 
   // Cell-centred current J = curl(B)/(4*pi) from the trial B (2*dx central
   // difference, zero at the Nyquist wavenumber). Only needed for physical
-  // resistivity and the Hall term; hyper-resistivity computes lap(B) and curl(lap(B)).
+  // resistivity and the Hall term; hyper-resistivity computes lap(B) and
+  // curl(lap(B)).
   const bool needJ = (etaResistivity > 0 || useHallTerm);
   if (needJ) {
     curl_center_to_center(centerBin, centerJ[iLev], Geom(iLev).InvCellSize());
@@ -373,8 +374,8 @@ void Pic::update_B_hybrid() {
                               Geom(iLev).InvCellSize());
 
         // Stage 4: B4 = B^n - dt k3; evaluate E at (B4 + B^n)/2
-        MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0,
-                          -subDt, kStage[iLev][2], 0, 0, nDim3, nGst);
+        MultiFab::LinComb(centerBstage[iLev], 1.0, centerB[iLev], 0, -subDt,
+                          kStage[iLev][2], 0, 0, nDim3, nGst);
         MultiFab::LinComb(centerBstar[iLev], 0.5, centerBstage[iLev], 0, 0.5,
                           centerB[iLev], 0, 0, nDim3, nGst);
         apply_centerB_BC(iLev, centerBstage[iLev]);
@@ -465,8 +466,8 @@ void Pic::update_B_hybrid() {
         isBavgInit = true;
       } else {
         centerBavg[iLev].mult(alpha);
-        MultiFab::Saxpy(centerBavg[iLev], 1.0 - alpha, centerB[iLev], 0, 0, nDim3,
-                        centerBavg[iLev].nGrow());
+        MultiFab::Saxpy(centerBavg[iLev], 1.0 - alpha, centerB[iLev], 0, 0,
+                        nDim3, centerBavg[iLev].nGrow());
       }
       centerBavg[iLev].FillBoundary(Geom(iLev).periodicity());
       if (iLev == 0) {
@@ -487,7 +488,8 @@ void Pic::update_B_hybrid() {
   }
 
   // Evaluate E^{n+1} into centerEhybrid for the next push. Note that
-  // assemble_ohm_E already executes FillBoundary and apply_field_bc on each level.
+  // assemble_ohm_E already executes FillBoundary and apply_field_bc on each
+  // level.
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     const auto& cBin =
         (useAvgFieldB && isBavgInit) ? centerBavg[iLev] : centerB[iLev];
