@@ -124,10 +124,10 @@ inline int get_local_node_or_cell_number(const amrex::MultiFab& MF) {
  * @param loIdx The calculated node index.
  * @param dShift The calculated shift.
  */
-inline void find_node_index(const amrex::RealVect& xyz,
-                            const amrex::Real* const plo,
-                            const amrex::Real* const invDx,
-                            amrex::IntVect& loIdx, amrex::RealVect& dShift) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void
+find_node_index(const amrex::RealVect& xyz, const amrex::Real* const plo,
+                const amrex::Real* const invDx, amrex::IntVect& loIdx,
+                amrex::RealVect& dShift) {
   for (int i = 0; i < nDim; ++i) {
     dShift[i] = (xyz[i] - plo[i]) * invDx[i];
     loIdx[i] = fastfloor(dShift[i]);
@@ -135,10 +135,10 @@ inline void find_node_index(const amrex::RealVect& xyz,
   }
 }
 
-inline void find_cell_index(const amrex::RealVect& xyz,
-                            const amrex::Real* const plo,
-                            const amrex::Real* const invDx,
-                            amrex::IntVect& loIdx, amrex::RealVect& dShift) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void
+find_cell_index(const amrex::RealVect& xyz, const amrex::Real* const plo,
+                const amrex::Real* const invDx, amrex::IntVect& loIdx,
+                amrex::RealVect& dShift) {
   for (int i = 0; i < nDim; ++i) {
     // plo is the corner location => -0.5
     dShift[i] = (xyz[i] - plo[i]) * invDx[i] - 0.5;
@@ -147,11 +147,10 @@ inline void find_cell_index(const amrex::RealVect& xyz,
   }
 }
 
-inline void find_cell_index_exp(const amrex::RealVect& xyz,
-                                const amrex::Real* const plo,
-                                const amrex::Real* const invDx,
-                                amrex::IntVect& loIdx,
-                                amrex::RealVect& dShift) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void
+find_cell_index_exp(const amrex::RealVect& xyz, const amrex::Real* const plo,
+                    const amrex::Real* const invDx, amrex::IntVect& loIdx,
+                    amrex::RealVect& dShift) {
   for (int i = 0; i < nDim; ++i) {
     dShift[i] = (xyz[i] - plo[i]) * invDx[i];
     loIdx[i] = fastfloor(dShift[i]);
@@ -159,8 +158,9 @@ inline void find_cell_index_exp(const amrex::RealVect& xyz,
   }
 }
 
-inline void check_refinement_proximity(bool b[3][3][3], amrex::IntVect iv,
-                                       const amrex::Array4<int const> status) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void
+check_refinement_proximity(bool b[3][3][3], amrex::IntVect iv,
+                           const amrex::Array4<int const> status) {
 
   int i = iv[0];
   int j = iv[1];

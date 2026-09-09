@@ -16,7 +16,9 @@
 #include "Timer.h"
 
 // Only works for x>-8;
-inline int fastfloor(amrex::Real x) { return (int)(x + 8) - 8; }
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE int fastfloor(amrex::Real x) {
+  return (int)(x + 8) - 8;
+}
 
 inline amrex::Real median(amrex::Real a, amrex::Real b, amrex::Real c) {
   return std::clamp(a, std::min(b, c), std::max(b, c));
