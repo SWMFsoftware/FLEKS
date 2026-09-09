@@ -18,7 +18,6 @@
 #include "Particles.h"
 #include "ReadParam.h"
 #include "SourceInterface.h"
-#include "Array1D.h"
 #include "TimeCtr.h"
 #include "WaveBC.h"
 

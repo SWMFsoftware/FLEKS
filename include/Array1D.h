@@ -1,13 +1,13 @@
 #ifndef _Arr1D_H_
 #define _Arr1D_H_
 
+#include <type_traits>
+
 #include <AMReX_BaseFab.H>
 #include <AMReX_FabArray.H>
 #include <AMReX_REAL.H>
-#include <type_traits>
 
-template <class T, const int n>
-struct Arr1D {
+template <class T, const int n> struct Arr1D {
   T data[n];
 
   Arr1D(const T& b = T(0)) {
@@ -36,7 +36,7 @@ struct Arr1D {
     return *this;
   }
 
-  template <typename U, typename = std::enable_if_t<std::is_arithmetic_v<U>>>
+  template <typename U, typename = std::enable_if_t<std::is_arithmetic_v<U> > >
   Arr1D& operator*=(U b) {
     for (int i = 0; i < n; ++i)
       data[i] *= static_cast<T>(b);
@@ -51,14 +51,14 @@ inline Arr1D<T, n> operator+(Arr1D<T, n> a, const Arr1D<T, n>& b) {
 }
 
 template <class T, const int n, typename U,
-          typename = std::enable_if_t<std::is_arithmetic_v<U>>>
+          typename = std::enable_if_t<std::is_arithmetic_v<U> > >
 inline Arr1D<T, n> operator*(Arr1D<T, n> a, U b) {
   a *= b;
   return a;
 }
 
 template <class T, const int n, typename U,
-          typename = std::enable_if_t<std::is_arithmetic_v<U>>>
+          typename = std::enable_if_t<std::is_arithmetic_v<U> > >
 inline Arr1D<T, n> operator*(U b, Arr1D<T, n> a) {
   a *= b;
   return a;
@@ -67,8 +67,7 @@ inline Arr1D<T, n> operator*(U b, Arr1D<T, n> a) {
 using RealMM = Arr1D<amrex::Real, 243>;
 using RealCMM = Arr1D<amrex::Real, 27>;
 
-using NodeMMFab = amrex::FabArray<amrex::BaseFab<RealMM>>;
-using CenterMMFab = amrex::FabArray<amrex::BaseFab<RealCMM>>;
+using NodeMMFab = amrex::FabArray<amrex::BaseFab<RealMM> >;
+using CenterMMFab = amrex::FabArray<amrex::BaseFab<RealCMM> >;
 
 #endif
-

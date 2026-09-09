@@ -950,9 +950,10 @@ void Particles<NStructReal, NStructInt>::accumulate_mass_matrix_contribution(
 
 //==========================================================
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::sum_to_center(
-    MultiFab& netChargeMF, CenterMMFab& centerMM, bool doNetChargeOnly,
-    int iLev) {
+void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
+                                                       CenterMMFab& centerMM,
+                                                       bool doNetChargeOnly,
+                                                       int iLev) {
   timing_func("Pts::sum_to_center");
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
@@ -1004,8 +1005,8 @@ void Particles<NStructReal, NStructInt>::sum_to_center(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::sum_to_center_amr(
-    MultiFab& netChargeMF, MultiFab& jc, MultiFab& jf,
-    CenterMMFab& centerMM, bool doNetChargeOnly, int iLev) {
+    MultiFab& netChargeMF, MultiFab& jc, MultiFab& jf, CenterMMFab& centerMM,
+    bool doNetChargeOnly, int iLev) {
   timing_func("Pts::sum_to_center");
 
   int finer_level = iLev + 1;
@@ -1542,8 +1543,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_mass_matrix(
-    NodeMMFab& nodeMM, MultiFab& jHat, MultiFab& nodeBMF,
-    MultiFab& u0MF, Real dt, int iLev, bool solveInCoMov) {
+    NodeMMFab& nodeMM, MultiFab& jHat, MultiFab& nodeBMF, MultiFab& u0MF,
+    Real dt, int iLev, bool solveInCoMov) {
   timing_func("Pts::calc_mass_matrix");
 
   Real qdto2mc = charge / mass * 0.5 * dt;
@@ -1741,8 +1742,7 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 //==========================================================
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
-    NodeMMFab& nodeMM,
-    amrex::Vector<amrex::Vector<NodeMMFab> >& nmmc,
+    NodeMMFab& nodeMM, amrex::Vector<amrex::Vector<NodeMMFab> >& nmmc,
     amrex::Vector<NodeMMFab>& nmmf, MultiFab& jHat,
     amrex::Vector<amrex::Vector<amrex::MultiFab> >& jhc,
     amrex::Vector<amrex::MultiFab>& jhf, MultiFab& nodeBMF, MultiFab& u0MF,

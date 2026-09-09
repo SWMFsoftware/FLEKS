@@ -443,11 +443,10 @@ inline amrex::FabArray<FAB>& operator*=(amrex::FabArray<FAB>& fa, U m) {
     const auto arr = fa[mfi].array();
     const auto& bx = mfi.fabbox();
     const int ncomp = fa.nComp();
-    amrex::ParallelFor(
-        bx, ncomp,
-        [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
-          arr(i, j, k, c) *= m;
-        });
+    amrex::ParallelFor(bx, ncomp,
+                       [=] AMREX_GPU_DEVICE(int i, int j, int k, int c) {
+                         arr(i, j, k, c) *= m;
+                       });
   }
   return fa;
 }

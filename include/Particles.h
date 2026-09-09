@@ -18,7 +18,6 @@
 #include "GridUtility.h"
 #include "RandNum.h"
 #include "SourceInterface.h"
-#include "Array1D.h"
 #include "TimeCtr.h"
 
 class InitialCondition; // forward: Particles only stores a non-owning pointer
@@ -505,14 +504,15 @@ public:
                         amrex::MultiFab& nodeBMF, amrex::MultiFab& u0MF,
                         amrex::Real dt, int iLev, bool solveInCoMov);
 
-  void calc_mass_matrix_amr(
-      NodeMMFab& nodeMM,
-      amrex::Vector<amrex::Vector<NodeMMFab> >& nmmc,
-      amrex::Vector<NodeMMFab>& nmmf, amrex::MultiFab& jHat,
-      amrex::Vector<amrex::Vector<amrex::MultiFab> >& jhc,
-      amrex::Vector<amrex::MultiFab>& jhf, amrex::MultiFab& nodeBMF,
-      amrex::MultiFab& u0MF, amrex::Real dt, int iLev, bool solveInCoMov,
-      amrex::Vector<amrex::iMultiFab>& cellstatus);
+  void calc_mass_matrix_amr(NodeMMFab& nodeMM,
+                            amrex::Vector<amrex::Vector<NodeMMFab> >& nmmc,
+                            amrex::Vector<NodeMMFab>& nmmf,
+                            amrex::MultiFab& jHat,
+                            amrex::Vector<amrex::Vector<amrex::MultiFab> >& jhc,
+                            amrex::Vector<amrex::MultiFab>& jhf,
+                            amrex::MultiFab& nodeBMF, amrex::MultiFab& u0MF,
+                            amrex::Real dt, int iLev, bool solveInCoMov,
+                            amrex::Vector<amrex::iMultiFab>& cellstatus);
 
   void calc_jhat(amrex::MultiFab& jHat, amrex::MultiFab& nodeBMF,
                  amrex::Real dt);
@@ -522,13 +522,11 @@ public:
   // It is real 'thermal velocity'. It is sqrt(sum(q*v2)/sum(q)).
   amrex::Real calc_max_thermal_velocity(amrex::MultiFab& momentsMF);
 
-  void sum_to_center(amrex::MultiFab& netChargeMF,
-                     CenterMMFab& centerMM, bool doNetChargeOnly,
-                     int iLev);
+  void sum_to_center(amrex::MultiFab& netChargeMF, CenterMMFab& centerMM,
+                     bool doNetChargeOnly, int iLev);
 
   void sum_to_center_amr(amrex::MultiFab& netChargeMF, amrex::MultiFab& jc,
-                         amrex::MultiFab& jf,
-                         CenterMMFab& centerMM,
+                         amrex::MultiFab& jf, CenterMMFab& centerMM,
                          bool doNetChargeOnly, int iLev);
 
   void charge_exchange(
