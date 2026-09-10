@@ -15,11 +15,11 @@ namespace {
 struct BoundaryBounds {
   Dim3 domLo;
   Dim3 domHi;
-  bool isNode[3] = {false, false, false};
-  int loBnd[3] = {0, 0, 0};
-  int hiBnd[3] = {0, 0, 0};
-  int bcLo[3] = {0, 0, 0};
-  int bcHi[3] = {0, 0, 0};
+  bool isNode[3] = { false, false, false };
+  int loBnd[3] = { 0, 0, 0 };
+  int hiBnd[3] = { 0, 0, 0 };
+  int bcLo[3] = { 0, 0, 0 };
+  int bcHi[3] = { 0, 0, 0 };
 
   BoundaryBounds() = default;
   BoundaryBounds(const Geometry& geom, IndexType ixType,
@@ -43,13 +43,12 @@ struct BoundaryBounds {
 };
 
 struct AbsorbWeights {
-  Real decay[3] = {0.0, 0.0, 0.0};
-  Real drive[3] = {0.0, 0.0, 0.0};
+  Real decay[3] = { 0.0, 0.0, 0.0 };
+  Real drive[3] = { 0.0, 0.0, 0.0 };
 };
 
 inline BoxArray get_boundary_active_ba(const BoxArray& activeRegion,
-                                       const MultiFab& mf,
-                                       const Geometry& geom,
+                                       const MultiFab& mf, const Geometry& geom,
                                        int nDimVal, int iz) {
   BoxArray ba = convert(activeRegion, mf.boxArray().ixType());
   const IntVect& ngrow = mf.nGrowVect();
@@ -223,9 +222,9 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
     const Dim3 vHi = bxValid.bigEnd().dim3();
 
     ParallelFor(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      const int ijk[3] = {i, j, k};
-      const int vLoArr[3] = {vLo.x, vLo.y, vLo.z};
-      const int vHiArr[3] = {vHi.x, vHi.y, vHi.z};
+      const int ijk[3] = { i, j, k };
+      const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
+      const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
 
       // 1. Boundary nodes on physical wall (node-centred only).
       for (int d = 0; d < nDim; ++d) {
@@ -263,9 +262,9 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
         return;
 
-      int m[3] = {i, j, k};
-      bool isCondLow[3] = {false, false, false};
-      bool isCondHigh[3] = {false, false, false};
+      int m[3] = { i, j, k };
+      bool isCondLow[3] = { false, false, false };
+      bool isCondHigh[3] = { false, false, false };
       bool touched = false;
 
       for (int d = 0; d < nDim; ++d) {
@@ -274,7 +273,8 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
           m[d] = bnd.isNode[d] ? (2 * bnd.loBnd[d] - ijk[d])
                                : (2 * bnd.loBnd[d] - 1 - ijk[d]);
           touched = true;
-        } else if (bnd.bcHi[d] == FieldBC::conducting && ijk[d] > bnd.hiBnd[d]) {
+        } else if (bnd.bcHi[d] == FieldBC::conducting &&
+                   ijk[d] > bnd.hiBnd[d]) {
           isCondHigh[d] = true;
           m[d] = bnd.isNode[d] ? (2 * bnd.hiBnd[d] - ijk[d])
                                : (2 * bnd.hiBnd[d] + 1 - ijk[d]);
@@ -359,15 +359,17 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
         return;
 
-      const int ijk[3] = {i, j, k};
-      int m[3] = {i, j, k};
+      const int ijk[3] = { i, j, k };
+      int m[3] = { i, j, k };
       Real cellDecay = 1.0;
       Real cellDrive = 0.0;
       int nAbsorb = 0;
 
       for (int d = 0; d < nDim; ++d) {
-        bool isLow = (bnd.bcLo[d] == FieldBC::absorb) && (ijk[d] < bnd.loBnd[d]);
-        bool isHigh = (bnd.bcHi[d] == FieldBC::absorb) && (ijk[d] > bnd.hiBnd[d]);
+        bool isLow =
+            (bnd.bcLo[d] == FieldBC::absorb) && (ijk[d] < bnd.loBnd[d]);
+        bool isHigh =
+            (bnd.bcHi[d] == FieldBC::absorb) && (ijk[d] > bnd.hiBnd[d]);
         if (isLow) {
           m[d] = bnd.isNode[d] ? (2 * bnd.loBnd[d] - ijk[d])
                                : (2 * bnd.loBnd[d] - 1 - ijk[d]);
@@ -422,8 +424,8 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
         return;
 
-      const int ijk[3] = {i, j, k};
-      int m[3] = {i, j, k};
+      const int ijk[3] = { i, j, k };
+      int m[3] = { i, j, k };
       bool touched = false;
 
       for (int d = 0; d < nDim; ++d) {
@@ -475,10 +477,10 @@ void Pic::apply_centerPlasma_BC(const iMultiFab& status, MultiFab& mf,
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
         return;
 
-      const int ijk[3] = {i, j, k};
-      const int dLo[3] = {domLo.x, domLo.y, domLo.z};
-      const int dHi[3] = {domHi.x, domHi.y, domHi.z};
-      int m[3] = {i, j, k};
+      const int ijk[3] = { i, j, k };
+      const int dLo[3] = { domLo.x, domLo.y, domLo.z };
+      const int dHi[3] = { domHi.x, domHi.y, domHi.z };
+      int m[3] = { i, j, k };
       bool touched = false;
 
       for (int d = 0; d < nDim; ++d) {
@@ -528,9 +530,8 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
 
   const Real* plo = Geom(iLev).ProbLo();
   const Real* dx = Geom(iLev).CellSize();
-  const Real offset[3] = {bnd.isNode[0] ? 0.0 : 0.5,
-                          bnd.isNode[1] ? 0.0 : 0.5,
-                          bnd.isNode[2] ? 0.0 : 0.5};
+  const Real offset[3] = { bnd.isNode[0] ? 0.0 : 0.5, bnd.isNode[1] ? 0.0 : 0.5,
+                           bnd.isNode[2] ? 0.0 : 0.5 };
 
   for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
@@ -545,11 +546,11 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
         return;
 
-      Real pos[3] = {plo[0] + dx[0] * (i + offset[0]),
-                     plo[1] + dx[1] * (j + offset[1]),
-                     (nDim > 2) ? plo[2] + dx[2] * (k + offset[2]) : 0.0};
+      Real pos[3] = { plo[0] + dx[0] * (i + offset[0]),
+                      plo[1] + dx[1] * (j + offset[1]),
+                      (nDim > 2) ? plo[2] + dx[2] * (k + offset[2]) : 0.0 };
 
-      Real waveVal[3] = {0.0, 0.0, 0.0};
+      Real waveVal[3] = { 0.0, 0.0, 0.0 };
       bool hasWave = false;
 
       for (const auto& f : waveBC.faces) {
