@@ -439,17 +439,16 @@ void Pic::fill_new_center_B() {
       const auto& status = cellStatus[iLev][mfi].array();
 
       ParallelFor(
-          box, centerB[iLev].nComp(), [&](int i, int j, int k, int iVar) {
-            IntVect ijk = { AMREX_D_DECL(i, j, k) };
+          box, centerB[iLev].nComp(), [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+            if (bit::is_new(status(i, j, k))) {
+              centerArr(i, j, k, iVar) = 0;
 
-            if (bit::is_new(status(ijk))) {
-              centerArr(ijk, iVar) = 0;
-
-              Box subBox(ijk, ijk + 1);
-              ParallelFor(subBox, [&](int ii, int jj, int kk) {
-                const Real coef = (nDim == 2 ? 0.25 : 0.125);
-                centerArr(ijk, iVar) += coef * nodeArr(ii, jj, kk, iVar);
-              });
+              // Flatten subBox(ijk, ijk+1): 2^nDim corner nodes.
+              const Real coef = (nDim == 2 ? 0.25 : 0.125);
+              for (int kk = k; kk <= k + 1; ++kk)
+                for (int jj = j; jj <= j + 1; ++jj)
+                  for (int ii = i; ii <= i + 1; ++ii)
+                    centerArr(i, j, k, iVar) += coef * nodeArr(ii, jj, kk, iVar);
             }
           });
     }
@@ -1029,10 +1028,10 @@ void Pic::calc_mach_number() {
                                          : nodePlasma[nSpecies][iLev];
     for (MFIter mfi(momentsMF); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
-      const Array4<const Real>& moments = momentsMF[mfi].array();
-      const Array4<Real>& mach = mMach[iLev][mfi].array();
+      const Array4<const Real> moments = momentsMF[mfi].array();
+      const Array4<Real> mach = mMach[iLev][mfi].array();
 
-      ParallelFor(box, [&](int i, int j, int k) {
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         Real rho = moments(i, j, k, iRho_);
         if (rho <= 0) {
           mach(i, j, k) = 0;
@@ -1084,10 +1083,10 @@ void Pic::calc_cost_per_cell() {
     for (MFIter mfi(cellCost[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
 
-      const Array4<Real>& cost = cellCost[iLev][mfi].array();
+      const Array4<Real> cost = cellCost[iLev][mfi].array();
       const Array4<int const> status = cellStatus[iLev][mfi].array();
 
-      ParallelFor(box, [&](int i, int j, int k) {
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
         if (bit::is_refined(status(i, j, k))) {
           cost(i, j, k) = 0;
         } else if (bit::is_domain_edge(status(i, j, k))) {

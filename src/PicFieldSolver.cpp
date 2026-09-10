@@ -248,7 +248,7 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
       const Array4<Real>& res = matvecMF[mfi].array();
       const Array4<Real>& arrU = uBg[iLev][mfi].array();
 
-      ParallelFor(box, vecMF.nComp(), [&](int i, int j, int k, int iVar) {
+      ParallelFor(box, vecMF.nComp(), [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
         for (int iDir = 0; iDir < nDim; iDir++) {
           Real dii[nDim3] = { 0, 0, 0 };
           dii[iDir] = 1;
@@ -355,29 +355,28 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
     const Array4<Real>& outArr = outMF[mfi].array();
     const Array4<RealMM>& mmArr = nodeMM[iLev][mfi].array();
 
-    ParallelFor(box, [&](int i, int j, int k) {
-      IntVect ijk = { AMREX_D_DECL(i, j, k) };
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+      auto& data0 = mmArr(i, j, k);
 
-      auto& data0 = mmArr(ijk);
+      // Flattened 3x3x3 stencil (was: nested ParallelFor(subBox)).
+      for (int k2 = k - 1; k2 <= k + 1; ++k2)
+        for (int j2 = j - 1; j2 <= j + 1; ++j2)
+          for (int i2 = i - 1; i2 <= i + 1; ++i2) {
+            const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
+            const int idx0 = gp * 9;
 
-      Box subBox(ijk - 1, ijk + 1);
+            Real* const M_I = &(data0[idx0]);
 
-      ParallelFor(subBox, [&](int i2, int j2, int k2) {
-        const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
-        const int idx0 = gp * 9;
-
-        Real* const M_I = &(data0[idx0]);
-
-        const double& vctX = inArr(i2, j2, k2, ix_); // vectX[i2][j2][k2];
-        const double& vctY = inArr(i2, j2, k2, iy_);
-        const double& vctZ = inArr(i2, j2, k2, iz_);
-        outArr(i, j, k, ix_) +=
-            (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
-        outArr(i, j, k, iy_) +=
-            (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
-        outArr(i, j, k, iz_) +=
-            (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
-      });
+            const double vctX = inArr(i2, j2, k2, ix_);
+            const double vctY = inArr(i2, j2, k2, iy_);
+            const double vctZ = inArr(i2, j2, k2, iz_);
+            outArr(i, j, k, ix_) +=
+                (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
+            outArr(i, j, k, iy_) +=
+                (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
+            outArr(i, j, k, iz_) +=
+                (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
+          }
     });
   }
 
@@ -571,10 +570,10 @@ void Pic::solve_hyp_phi(int iLev) {
   for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
     Box box = mfi.validbox();
 
-    const Array4<Real>& divBArr = divB[iLev][mfi].array();
-    const Array4<Real>& phiArr = hypPhi[iLev][mfi].array();
+    const Array4<Real> divBArr = divB[iLev][mfi].array();
+    const Array4<Real> phiArr = hypPhi[iLev][mfi].array();
 
-    ParallelFor(box, [&](int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       IntVect ijk = { AMREX_D_DECL(i, j, k) };
       phiArr(ijk) += coef * divBArr(ijk);
       phiArr(ijk) *= (1 - hypDecay);
@@ -798,10 +797,10 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, int di, Real coef) {
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
 
-      Array4<Real> const& arrE = mf[mfi].array();
-      Array4<Real> const& arrTmp = mfOld[mfi].array();
+      Array4<Real> const arrE = mf[mfi].array();
+      Array4<Real> const arrTmp = mfOld[mfi].array();
 
-      ParallelFor(box, mf.nComp(), [&](int i, int j, int k, int iVar) {
+      ParallelFor(box, mf.nComp(), [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
         const Real weightSelf = 1 - coef;
         const Real WeightNei = coef / 2.0;
 
@@ -842,9 +841,9 @@ void Pic::project_down_E() {
       tmp.setVal(0.0);
       for (MFIter mfi(tmp); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
-        const Array4<Real>& arrE = nodeE[iLev][mfi].array();
-        const Array4<Real>& arrTmp = tmp[mfi].array();
-        ParallelFor(box, [&](int i, int j, int k) {
+        const Array4<Real> arrE = nodeE[iLev][mfi].array();
+        const Array4<Real> arrTmp = tmp[mfi].array();
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           for (int iVar = 0; iVar < 3; iVar++) {
             if (nDim == 3) {
               arrTmp(i, j, k, iVar) =
