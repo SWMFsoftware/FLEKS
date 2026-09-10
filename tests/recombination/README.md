@@ -46,10 +46,10 @@ to the source-term particle injection.
 
 ## Validation
 
-The validator checks that O2+ kinetic energy decreases (recombination removes
-O2+ by reducing particle weights) while H+ energy stays stable (recombination
-only affects O2+). See `tests/recombination/validate.py` for the exact
-tolerances.
+The validator checks that both O2+ and electron kinetic energies decrease
+(recombination removes O2+ and electrons by proportionally reducing particle
+weights) while H+ energy stays stable (recombination only affects O2+ and e-).
+See `tests/recombination/validate.py` for the exact tolerances.
 
 ## Running
 
