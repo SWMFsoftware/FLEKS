@@ -4823,25 +4823,20 @@ void Particles<NStructReal, NStructInt>::charge_exchange(
 // rate from source->nodeLossFluid and the existing ion mass density
 // from fi, then reduces every particle's weight by the fraction
 //   fraction = min(lossRate * dt / rhoExisting, 1.0).
-// Only ion species (charge > 0) are affected; electrons are handled
-// by quasi-neutrality.
+// In hybrid PIC mode, only ion species (charge > 0) have particles;
+// in full PIC mode, electron particle weights are also reduced proportionally.
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::apply_loss(
     const SourceInterface* source, Real dt) {
   std::string nameFunc = "Pts::apply_loss";
   timing_func(nameFunc);
 
-  // Only apply to positively charged ions.
-  if (charge <= 0.0)
-    return;
-
   if (!source || !source->use_loss_source())
     return;
 
-  // 0-based ion index in nodeLossFluid: speciesID - 1 (species 0 = electron).
-  const int iIon = speciesID - 1;
-  if (iIon < 0)
+  if (speciesID < 0 || speciesID >= fi->get_nS())
     return;
+  const int iLoss = speciesID;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (NumberOfParticlesAtLevel(iLev, true, true) == 0)
@@ -4871,14 +4866,14 @@ void Particles<NStructReal, NStructInt>::apply_loss(
               std::floor((p.pos(iDim) - plo[iDim]) * inv_dx[iDim]));
         }
 
-        // Existing ion mass density (normalized) from the plasma state.
+        // Existing mass density (normalized) from the plasma state.
         Real rhoExisting =
             fi->get_fluid_mass_density(pti, ijk, speciesID, iLev);
         if (rhoExisting <= 0.0)
           continue;
 
         // Loss rate (normalized mass-density rate) from nodeLossFluid.
-        Real lossRate = source->get_loss_value(pti, ijk, iIon, iLev);
+        Real lossRate = source->get_loss_value(pti, ijk, iLoss, iLev);
         if (lossRate <= 0.0)
           continue;
 
@@ -4892,6 +4887,9 @@ void Particles<NStructReal, NStructInt>::apply_loss(
         // Reduce particle weight proportionally.  The sign is preserved
         // (ions have positive weight, electrons negative).
         p.rdata(iqp_) *= (1.0 - fraction);
+        if (fraction >= 1.0) {
+          p.id() = -1;
+        }
       }
     }
   }

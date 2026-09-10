@@ -139,9 +139,9 @@ public:
   }
 
   // ---- Loss term management ----
-  // These methods manage nodeLossFluid, which stores per-ion mass-density
-  // loss rates for apply_loss() to consume.  The layout and distribution
-  // parallel nodeFluid but with only nS-1 components (ions only).
+  // These methods manage nodeLossFluid, which stores per-species mass-density
+  // loss rates for apply_loss() to consume. The layout and distribution
+  // parallel nodeFluid with nS components (component 0 = electron, 1..nS-1 = ions).
 
   void post_regrid() override {
     FluidInterface::post_regrid(); // distributes nodeFluid
@@ -153,13 +153,13 @@ public:
       return;
     if (nodeLossFluid.empty())
       nodeLossFluid.resize(n_lev_max());
-    const int nIon = nS > 1 ? nS - 1 : 0;
-    if (nIon == 0)
+    const int nLossComp = nS;
+    if (nLossComp == 0)
       return;
     const bool doCopy = true;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       distribute_FabArray(nodeLossFluid[iLev], nGrids[iLev],
-                          DistributionMap(iLev), nIon, nGst, doCopy);
+                          DistributionMap(iLev), nLossComp, nGst, doCopy);
     }
   }
 
@@ -187,12 +187,12 @@ public:
 
   void sum_loss_boundary() { fill_loss_boundary(); }
 
-  /// Read loss rate for ion species iIon (0-based) at cell ijk.
+  /// Read loss rate for species iSp (0-based) at cell ijk.
   /// Returns the normalized mass-density loss rate (positive = loss).
   amrex::Real get_loss_value(const amrex::MFIter& mfi, const amrex::IntVect ijk,
-                             const int iIon, const int iLev = 0) const {
+                             const int iSp, const int iLev = 0) const {
     const auto& arr = nodeLossFluid[iLev][mfi].const_array();
-    return arr(ijk, iIon);
+    return arr(ijk, iSp);
   }
 
   bool use_loss_source() const { return useRecombination || useChemistry; }

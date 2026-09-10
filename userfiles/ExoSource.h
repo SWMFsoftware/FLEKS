@@ -544,7 +544,6 @@ public:
     if (rxn.reactantIon <= 0 || rxn.reactantIon > nIonS) return;
 
     int iSpReac = rxn.reactantIon;
-    int iIonLoss = iSpReac - 1;
     double rho_reac_norm =
         other.get_value(mfi, idx, iRho_I[iSpReac], iLev);
     if (rho_reac_norm <= 0.0) return;
@@ -552,7 +551,15 @@ public:
     // Loss rate (normalized) = rate * rho_norm / Si2NoT
     double lossRho_norm = rate * rho_reac_norm / get_Si2NoT();
     if (lossRho_norm > 0.0) {
-      lossArr(i, j, k, iIonLoss) += lossRho_norm;
+      lossArr(i, j, k, iSpReac) += lossRho_norm;
+
+      // In full-PIC mode, if this reaction is recombination (productIon == 0)
+      // and species 0 is electron, also consume neutralizing electrons.
+      if (rxn.productIon == 0 && nS > 0 && get_species_charge(0) < 0) {
+        double mass_reac = get_species_mass(iSpReac);
+        double mass_e = get_species_mass(0);
+        lossArr(i, j, k, 0) += lossRho_norm * (mass_e / mass_reac);
+      }
     }
   }
 
@@ -568,7 +575,6 @@ public:
     for (int iR = 0; iR < static_cast<int>(recombIonIndex.size()); ++iR) {
       int iSp = recombIonIndex[iR];
       if (iSp < 1 || iSp > nIonS) continue;
-      int iIon = iSp - 1;  // 0-based index in nodeLossFluid
 
       // k(Te) [cm^3/s] -> [m^3/s]
       double k_si = recombRate0[iR] * 1e-6;
@@ -591,7 +597,14 @@ public:
       double lossRho_norm = k_si * ne * rho_ion_norm /
           (get_Si2NoRho() * cProtonMassSI * get_Si2NoT());
       if (lossRho_norm > 0.0) {
-        lossArr(i, j, k, iIon) += lossRho_norm;
+        lossArr(i, j, k, iSp) += lossRho_norm;
+
+        // In full-PIC mode, also consume neutralizing electrons.
+        if (nS > 0 && get_species_charge(0) < 0) {
+          double mass_ion = get_species_mass(iSp);
+          double mass_e = get_species_mass(0);
+          lossArr(i, j, k, 0) += lossRho_norm * (mass_e / mass_ion);
+        }
       }
     }
   }

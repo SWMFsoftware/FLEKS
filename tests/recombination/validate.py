@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Validator for the recombination loss test (tests/recombination).
 
-Checks that O2+ (species 2, Epart2) energy decreases over time due to
-recombination loss, while H+ (species 1, Epart1) energy remains stable since
-H+ does not participate in recombination.
+Checks that O2+ (species 2, Epart2) and electrons (species 0, Epart0) energy
+decreases over time due to recombination loss, while H+ (species 1, Epart1) energy
+remains stable since H+ does not participate in recombination.
 """
 import logging
 
@@ -13,9 +13,10 @@ logger = logging.getLogger(__name__)
 def validate_log(pic_diags=None, test_name=None):
     """Validate the recombination loss test (O2+ + e- -> O + O).
 
-    Checks that O2+ (species 2, Epart2) energy decreases over time due
-    to recombination loss, while H+ (species 1, Epart1) energy remains
-    stable since H+ does not participate in recombination.
+    Checks that O2+ (species 2, Epart2) and electron (species 0, Epart0)
+    energies decrease over time due to recombination loss, while H+
+    (species 1, Epart1) energy remains stable since H+ does not participate
+    in recombination.
     """
     logger.debug("Validating Recombination Loss Test...")
 
@@ -40,6 +41,26 @@ def validate_log(pic_diags=None, test_name=None):
 
     passed = True
     reasons = []
+
+    # Electron (species 0) should decrease due to recombination in full-PIC mode.
+    e_key = "Epart0" if "Epart0" in first else None
+    if e_key:
+        e_e_initial = first.get(e_key, 0.0)
+        e_e_final = last.get(e_key, 0.0)
+        logger.debug("    %s (e-): %s -> %s",
+                     e_key, f"{e_e_initial:.6e}", f"{e_e_final:.6e}")
+        if e_e_initial <= 0:
+            logger.debug("    FAIL: %s initial energy is zero.", e_key)
+            passed = False
+            reasons.append("e- initial energy is zero")
+        elif e_e_final >= e_e_initial:
+            logger.debug("    FAIL: %s energy did not decrease (electron loss not active).", e_key)
+            passed = False
+            reasons.append("e- energy did not decrease")
+        else:
+            e_ratio = e_e_final / e_e_initial
+            logger.debug("    SUCCESS: %s energy decreased to %.3f of initial.",
+                         e_key, e_ratio)
 
     # O2+ (species 2) should decrease due to recombination.
     o2_key = "Epart2" if "Epart2" in first else (epart_keys[-1] if len(epart_keys) >= 2 else None)
