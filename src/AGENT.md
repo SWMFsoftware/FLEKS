@@ -14,9 +14,14 @@ Headers are in `include/`.
 | `PicHybrid.cpp`             | `Pic` (hybrid solver) | Hybrid-PIC magnetic field subcycling (`update_B_hybrid()`), generalized Ohm's law assembly, ion moment history, and B-field projections. |
 | `PicFieldSolver.cpp`        | `Pic` (field solver)  | Full-PIC Maxwell E-field updates (implicit/explicit), Krylov solvers (GMRES/Newton-Krylov), hyperbolic cleaning, and field smoothing. |
 | `PicDivE.cpp`               | `Pic` (div(E) cleaning)| Poisson $\nabla \cdot \mathbf{E}$ cleaning, electrostatic potential solve, particle position corrections, and charge projections. |
-| `PicIO.cpp`                 | `Pic` (I/O & coupling)| Plot output, restart save/read, AMReX/IDL/HDF5 writing, and fluid state extraction for GM coupling. |
-| `Particles.cpp`             | `Particles<N,M>`      | Particle operations: injection, movement (Boris pusher), splitting, merging, fast merge, charge exchange, boundary handling. |
-| `TestParticles.cpp`         | `TestParticles`       | Test particle movement, trajectory recording, I/O.           |
+| `Particles.cpp`             | `Particles<N,M>`      | Core particle container lifecycle, constructor, `IOParticles`, particle selection, and diagnostic utilities. |
+| `ParticlesInit.cpp`         | `Particles<N,M>` (init) | Particle domain and fluid source initialization (`add_particles_cell`, `add_particles_domain`, `add_particles_source`). |
+| `ParticlesBC.cpp`           | `Particles<N,M>` (boundaries) | Particle boundary injection, outflow, ghost-cell handling, and inflow Maxwellian flux injection (`inject_flux_at_inflow_faces`). |
+| `ParticlesMoments.cpp`      | `Particles<N,M>` (moments) | Particle moment deposition (charge/current density), cell/node projections, and moment conversions. |
+| `ParticlesMassMatrix.cpp`   | `Particles<N,M>` (mass matrix) | Implicit/semi-implicit mass matrix assembly (`calc_mass_matrix`), $\hat{\mathbf{J}}$ current prediction, and mirror boundary handling. |
+| `ParticlesMover.cpp`        | `Particles<N,M>` (movers) | Boris particle pusher, relativistic/non-relativistic movers, cell-centered movers, and $\nabla \cdot \mathbf{E}$ position corrections. |
+| `ParticlesResample.cpp`     | `Particles<N,M>` (resampling) | Particle splitting, merging (fast Lagrange multiplier and accurate phase-space pair merge), and weight leveling. |
+| `ParticlesReactions.cpp`    | `Particles<N,M>` (reactions) | Collisional/reaction processes: charge exchange with neutrals, ion fluid sampling, and chemical loss/recombination. |
 | `ParticleTracker.cpp`       | `ParticleTracker`     | Test particle manager: initialization, stepping, output scheduling. |
 | `Domain.cpp`                | `Domain`              | Top-level simulation flow: `init()`, `update()`, parameter reading, restart, regridding, coupling data exchange. |
 | `FluidInterface.cpp`        | `FluidInterface`      | Fluid state management: set/get MHD variables, unit conversion, moment interpolation, grid operations. |

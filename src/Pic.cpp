@@ -872,9 +872,9 @@ void Pic::sum_moments(bool updateDt) {
   }
 
   if (updateDt) {
-    amrex::Vector<amrex::Real> uMax(n_lev());
-    amrex::Vector<amrex::Real> dxMin(n_lev());
-    amrex::Vector<amrex::Real> dtMax(n_lev());
+    Vector<Real> uMax(n_lev());
+    Vector<Real> dxMin(n_lev());
+    Vector<Real> dtMax(n_lev());
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       const auto& dx = Geom(iLev).CellSize();
       dxMin[iLev] = min(AMREX_D_DECL(dx[ix_], dx[iy_], dx[iz_]));

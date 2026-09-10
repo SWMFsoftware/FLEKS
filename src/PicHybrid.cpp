@@ -13,7 +13,7 @@ using namespace amrex;
 //==========================================================
 void Pic::assemble_ohm_E(const MultiFab& centerBin,
                          const MultiFab& centerBtimeAvg, MultiFab& Eout,
-                         int iLev, amrex::Real hstep) {
+                         int iLev, Real hstep) {
   BL_PROFILE("Pic::assemble_ohm_E");
 
   const auto dx = Geom(iLev).CellSizeArray();
