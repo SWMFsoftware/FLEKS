@@ -108,11 +108,16 @@ public:
   // Photoionization frequency [s^-1] at position xyz [m] (measured from
   // the planet center) for neutral component iC.  Returns zero inside
   // the planetary shadow cylinder (nightside).
-  amrex::Real photoionization_rate(const double xyz[3], int iC) const {
+  amrex::Real photoionization_rate(const double xyz[3], int iC,
+                                   double photoDilution = -1.0) const {
+    if (photoDilution >= 0.0) {
+      return photoNu0[iC] * photoDilution;
+    }
     // Zero inside the planetary shadow cylinder (nightside).
     if (is_in_shadow(xyz[0], xyz[1], xyz[2])) return 0.0;
     double r2 = xyz[0] * xyz[0] + xyz[1] * xyz[1] + xyz[2] * xyz[2];
     double r_m = sqrt(r2);
+    if (r_m <= 0.0) return 0.0;
     double ratio = get_rPlanet_SI() / r_m;
     // Geometric dilution: nu = nu0 * (r_planet / r)^2
     return photoNu0[iC] * ratio * ratio;
@@ -294,11 +299,18 @@ public:
 
     // ---- Chemistry validation ----
     if (useChemistry) {
+      if (usePhotoIonization || useChargeExchange || useRecombination) {
+        amrex::Abort(printPrefix + "Error: #CHEMISTRY cannot be combined with "
+                     + "#PHOTOIONIZATION, #CHARGEEXCHANGE, or #RECOMBINATION. "
+                     + "Use either the unified #CHEMISTRY table or individual commands.");
+      }
       if (nS < 2) {
         amrex::Abort(printPrefix + "Error: #CHEMISTRY requires at least "
                      + "2 plasma species (electron + 1 ion).");
       }
       const int nIonS = nS - 1;
+      bool needsNeutral = false;
+      bool needsElectron = false;
       for (int i = 0; i < static_cast<int>(chemReactions.size()); ++i) {
         const auto& rxn = chemReactions[i];
         if (rxn.reactantIon < 0 || rxn.reactantIon > nIonS) {
@@ -327,6 +339,28 @@ public:
                        + std::to_string(i) + " with no neutral and no "
                        + "reactant ion is invalid.");
         }
+        if (rxn.neutralComp >= 0) {
+          needsNeutral = true;
+          if (nExoComponent > 0 && rxn.neutralComp >= nExoComponent) {
+            amrex::Abort(printPrefix + "Error: #CHEMISTRY reaction "
+                         + std::to_string(i) + " neutralComp "
+                         + std::to_string(rxn.neutralComp)
+                         + " >= nExoComponent "
+                         + std::to_string(nExoComponent) + ".");
+          }
+        }
+        if (rxn.productIon == 0 || rxn.tempExp != 0.0) {
+          needsElectron = true;
+        }
+      }
+      if (needsNeutral && nExoComponent <= 0) {
+        amrex::Abort(printPrefix + "Error: #CHEMISTRY reactions with neutralComp >= 0 "
+                     + "require #EXOSPHERE with nComponent > 0 to be specified.");
+      }
+      if (needsElectron && !useElectronFluid) {
+        amrex::Abort(printPrefix + "Error: #CHEMISTRY reactions with recombination "
+                     + "or temperature dependence require useElectronFluid = true. "
+                     + "Set #PLASMA with an electron species.");
       }
     }
 
@@ -389,10 +423,15 @@ public:
   // temperature [eV], used for thermal rate coefficients.
   double chem_reaction_rate(const ChemistryReaction& rxn,
                             const double xyz[3], double r_val,
-                            double ne, double Te_eV) const {
+                            double ne, double Te_eV,
+                            double photoDilution = -1.0) const {
     if (rxn.rateType == 1) {
+      if (photoDilution >= 0.0) {
+        return rxn.rateCoef * photoDilution;
+      }
       // Photoionization: rate = nu0 * (Rp/r)^2 [s^-1]
       if (is_in_shadow(xyz[0], xyz[1], xyz[2])) return 0.0;
+      if (r_val <= 0.0) return 0.0;
       double ratio = get_rPlanet_SI() / r_val;
       return rxn.rateCoef * ratio * ratio;
     }
@@ -476,10 +515,19 @@ public:
           get_exosphere_component_density(r_val, rxn.neutralComp);
       double S_n = n_neutral * rate;  // [m^-3 s^-1]
       srcRho[iSpProd] += S_n * mass_prod * cProtonMassSI;
-      // Pressure from neutral temperature
+      // Pressure from neutral temperature: S_P = S_n * k_B * T0 [Pa s^-1]
       if (rxn.neutralComp < nExoComponent) {
-        srcP[iSpProd] += S_n * mass_prod * cProtonMassSI *
-            cBoltzmannSI * exoT0[rxn.neutralComp];
+        srcP[iSpProd] += S_n * cBoltzmannSI * exoT0[rxn.neutralComp];
+      }
+
+      // Co-create neutralizing electrons to preserve quasi-neutrality
+      // in full-PIC mode, matching #PHOTOIONIZATION.
+      if (nS > 0 && get_species_charge(0) < 0) {
+        double mass_e = get_species_mass(0);
+        srcRho[0] += S_n * mass_e * cProtonMassSI;
+        if (rxn.neutralComp < nExoComponent) {
+          srcP[0] += S_n * cBoltzmannSI * exoT0[rxn.neutralComp];
+        }
       }
     }
   }
@@ -543,7 +591,7 @@ public:
       double lossRho_norm = k_si * ne * rho_ion_norm /
           (get_Si2NoRho() * cProtonMassSI * get_Si2NoT());
       if (lossRho_norm > 0.0) {
-        lossArr(i, j, k, iIon) = lossRho_norm;
+        lossArr(i, j, k, iIon) += lossRho_norm;
       }
     }
   }
@@ -563,6 +611,11 @@ public:
     const bool doRecomb = useRecombination;
     const bool doChem = useChemistry;
 
+    const double rhoNormPerT = get_Si2NoRho() / get_Si2NoT();
+    const double pNormPerT = get_Si2NoP() / get_Si2NoT();
+    const double rPlanet = get_rPlanet_SI();
+    const int nIonS = nS - 1;  // number of ion species
+
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       if (!nodeFluid[iLev].empty()) {
         for (amrex::MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
@@ -581,6 +634,18 @@ public:
           if (doRecomb || doChem) {
             lossArr = nodeLossFluid[iLev][mfi].array();
           }
+
+          // Per-ion-species source accumulators hoisted outside the cell loop
+          // to eliminate dynamic allocations on every cell.
+          // Species 0 = electron (skipped), 1 = H+, 2 = O+, ...
+          // Exosphere component iC maps to ion species (iC + 1).
+          // srcRho[iS], srcP[iS] in SI [kg m^-3 s^-1, Pa s^-1].
+          // srcRhoU[iS] in SI [kg m^-2 s^-2] (momentum rate).
+          std::vector<double> srcRho(nIonS + 1, 0.0);
+          std::vector<double> srcP(nIonS + 1, 0.0);
+          std::vector<double> srcRhoUx(nIonS + 1, 0.0);
+          std::vector<double> srcRhoUy(nIonS + 1, 0.0);
+          std::vector<double> srcRhoUz(nIonS + 1, 0.0);
 
           for (int k = lo.z; k <= hi.z; ++k)
             for (int j = lo.y; j <= hi.y; ++j)
@@ -603,6 +668,11 @@ public:
                 }
                 r_val = sqrt(r_val);
 
+                // Compute shadow check and geometric dilution once per cell
+                const bool inShadow = is_in_shadow(xyz[0], xyz[1], xyz[2]);
+                const double photoDilution =
+                    (inShadow || r_val <= 0.0) ? 0.0 : (rPlanet / r_val) * (rPlanet / r_val);
+
                 // Pre-fetch plasma state once per cell (lazy evaluation)
                 double ne = 0, pe = 0, Te_eV = 0;
                 bool plasmaFetched = false;
@@ -614,19 +684,11 @@ public:
                   plasmaFetched = true;
                 };
 
-                // Per-ion-species source accumulators.
-                // Species 0 = electron (skipped), 1 = H+, 2 = O+, ...
-                // Exosphere component iC maps to ion species (iC + 1).
-                // srcRho[iS], srcP[iS] in SI [kg m^-3 s^-1, Pa s^-1].
-                // srcRhoU[iS] in SI [kg m^-2 s^-2] (momentum rate).
-                // For cross-species CX, product ion inherits reactant
-                // velocity; srcRhoU stores the accumulated momentum rate.
-                const int nIonS = nS - 1;  // number of ion species
-                std::vector<double> srcRho(nIonS + 1, 0.0);
-                std::vector<double> srcP(nIonS + 1, 0.0);
-                std::vector<double> srcRhoUx(nIonS + 1, 0.0);
-                std::vector<double> srcRhoUy(nIonS + 1, 0.0);
-                std::vector<double> srcRhoUz(nIonS + 1, 0.0);
+                std::fill(srcRho.begin(), srcRho.end(), 0.0);
+                std::fill(srcP.begin(), srcP.end(), 0.0);
+                std::fill(srcRhoUx.begin(), srcRhoUx.end(), 0.0);
+                std::fill(srcRhoUy.begin(), srcRhoUy.end(), 0.0);
+                std::fill(srcRhoUz.begin(), srcRhoUz.end(), 0.0);
 
                 // ---- Accumulate ALL source terms into srcRho/srcP/srcRhoU ----
                 // All source processes (exosphere ionization + chemistry)
@@ -644,7 +706,7 @@ public:
 
                   double nu_tot = 0.0;
                   if (doPhoto)
-                    nu_tot += photoionization_rate(xyz, iC);
+                    nu_tot += photoNu0[iC] * photoDilution;
                   if (doImpact) {
                     fetch_electron_plasma();
                     nu_tot += impact_ionization_rate(ne, Te_eV, iC);
@@ -659,18 +721,14 @@ public:
                   double S_n = dens_i * nu_tot;
                   double mass_amu = get_species_mass(iSp);
                   srcRho[iSp] += S_n * mass_amu * cProtonMassSI;
-                  srcP[iSp] +=
-                      S_n * mass_amu * cProtonMassSI * cBoltzmannSI *
-                      exoT0[iC];
+                  srcP[iSp] += S_n * cBoltzmannSI * exoT0[iC];
 
                   // Co-create neutralizing electrons to preserve quasi-neutrality
                   // and avoid unphysical charge accumulation in periodic domains.
                   if (nS > 0 && get_species_charge(0) < 0) {
                     double mass_e = get_species_mass(0);
                     srcRho[0] += S_n * mass_e * cProtonMassSI;
-                    srcP[0] +=
-                        S_n * mass_e * cProtonMassSI * cBoltzmannSI *
-                        exoT0[iC];
+                    srcP[0] += S_n * cBoltzmannSI * exoT0[iC];
                   }
                 }
 
@@ -683,7 +741,7 @@ public:
                        iR < static_cast<int>(chemReactions.size()); ++iR) {
                     const auto& rxn = chemReactions[iR];
                     double rate = chem_reaction_rate(rxn, xyz, r_val,
-                                                     ne, Te_eV);
+                                                     ne, Te_eV, photoDilution);
                     if (rate <= 0.0) continue;
                     chem_apply_source(rxn, rate, other, mfi, idx, iLev,
                                       nIonS, r_val, srcRho, srcP,
@@ -702,10 +760,8 @@ public:
 
                 bool anySource = false;
                 if (nS > 0 && iRho_I[0] >= 0 && srcRho[0] > 0) {
-                  arr(i, j, k, iRho_I[0]) =
-                      srcRho[0] * get_Si2NoRho() / get_Si2NoT();
-                  arr(i, j, k, iP_I[0]) =
-                      srcP[0] * get_Si2NoP() / get_Si2NoT();
+                  arr(i, j, k, iRho_I[0]) = srcRho[0] * rhoNormPerT;
+                  arr(i, j, k, iP_I[0]) = srcP[0] * pNormPerT;
                   arr(i, j, k, iUx_I[0]) = 0.0;
                   arr(i, j, k, iUy_I[0]) = 0.0;
                   arr(i, j, k, iUz_I[0]) = 0.0;
@@ -713,23 +769,19 @@ public:
                 for (int iSp = 1; iSp <= nIonS; ++iSp) {
                   if (srcRho[iSp] > 0) {
                     anySource = true;
-                    double rho_norm = srcRho[iSp] * get_Si2NoRho() / get_Si2NoT();
+                    double rho_norm = srcRho[iSp] * rhoNormPerT;
                     arr(i, j, k, iRho_I[iSp]) = rho_norm;
-                    arr(i, j, k, iUx_I[iSp]) =
-                        srcRhoUx[iSp] * get_Si2NoRho() / get_Si2NoT();
-                    arr(i, j, k, iUy_I[iSp]) =
-                        srcRhoUy[iSp] * get_Si2NoRho() / get_Si2NoT();
-                    arr(i, j, k, iUz_I[iSp]) =
-                        srcRhoUz[iSp] * get_Si2NoRho() / get_Si2NoT();
-                    arr(i, j, k, iP_I[iSp]) =
-                        srcP[iSp] * get_Si2NoP() / get_Si2NoT();
+                    arr(i, j, k, iUx_I[iSp]) = srcRhoUx[iSp] * rhoNormPerT;
+                    arr(i, j, k, iUy_I[iSp]) = srcRhoUy[iSp] * rhoNormPerT;
+                    arr(i, j, k, iUz_I[iSp]) = srcRhoUz[iSp] * rhoNormPerT;
+                    arr(i, j, k, iP_I[iSp]) = srcP[iSp] * pNormPerT;
                   }
                 }
                 if (anySource && iPe >= 0) {
                   double srcPe = 0.0;
                   for (int iSp = 1; iSp <= nIonS; ++iSp)
                     srcPe += srcP[iSp];
-                  arr(i, j, k, iPe) = srcPe * get_Si2NoP() / get_Si2NoT();
+                  arr(i, j, k, iPe) = srcPe * pNormPerT;
                 }
 
                 // ---- Compute ALL loss terms (after nodeFluid write) ----
@@ -750,7 +802,7 @@ public:
                        iR < static_cast<int>(chemReactions.size()); ++iR) {
                     const auto& rxn = chemReactions[iR];
                     double rate = chem_reaction_rate(rxn, xyz, r_val,
-                                                     ne, Te_eV);
+                                                     ne, Te_eV, photoDilution);
                     if (rate <= 0.0) continue;
                     chem_apply_loss(rxn, rate, other, mfi, idx, iLev,
                                     nIonS, i, j, k, lossArr);

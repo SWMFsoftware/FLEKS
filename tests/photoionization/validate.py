@@ -305,20 +305,54 @@ def _check_boundary_smoothness(points, Rp_plot):
     return True, f"Boundary smoothness verified (max jump ratio {max_jump:.3f} <= 1.25)"
 
 
+def _check_photoion_temperature(points_with_p, Rp_plot):
+    """Verify that newly created photoions on the dayside have physical temperature (~300 K).
+
+    If the pressure source bug was present (multiplying S_P by particle mass in kg),
+    the thermal pressure was suppressed by ~10^-26, giving T ~ 10^-23 K.
+    """
+    dayside_temps = []
+    # Species 2 is O+ (mass = 16 amu)
+    mass_si = 16.0 * 1.66053906660e-27  # kg
+    u_norm = 1.0e6  # m/s (from #NORMALIZATION)
+    k_B = 1.380649e-23  # J/K
+    temp_scale = mass_si * (u_norm ** 2) / k_B
+
+    for x, y, rho, p in points_with_p:
+        if x > 0.2 * Rp_plot and abs(y) < 0.5 * Rp_plot:
+            if rho > 1e-10 and p > 0:
+                T_K = (p / rho) * temp_scale
+                dayside_temps.append(T_K)
+
+    if not dayside_temps:
+        return False, "No valid dayside temperature points found"
+
+    mean_T = sum(dayside_temps) / len(dayside_temps)
+    logger.debug("    [TEMP] Dayside mean photoion temperature: %.1f K (expected ~300 K)", mean_T)
+
+    if mean_T < 50.0:
+        return False, f"Photoion temperature too low: {mean_T:.1e} K (expected ~300 K, pressure bug)"
+    if mean_T > 2000.0:
+        return False, f"Photoion temperature too high: {mean_T:.1e} K (expected ~300 K)"
+
+    return True, f"Photoion temperature verified: {mean_T:.1f} K"
+
+
 def validate_plot(test_name):
-    """Plot-output check: day/night asymmetry and block-boundary smoothness."""
+    """Plot-output check: day/night asymmetry, temperature, and block-boundary smoothness."""
     logger.debug("  --- Validating Output Files (IDL .out) ---")
     result, reason = _load_idl_plot_asymmetry()
     if not result:
         return False, reason
     logger.debug("    [IDL] Photoionization day/night asymmetry: VERIFIED")
 
-    # Now check block-boundary smoothness
+    # Check block-boundary smoothness and photoion temperature
     plots_dir = os.path.join(RUN_DIR, "PC", "plots")
     out_files = sorted(glob.glob(os.path.join(plots_dir, "*.out")))
     if out_files:
         latest_out = out_files[-1]
         points = []
+        points_with_p = []
         with open(latest_out, "r") as f:
             lines = f.readlines()
         var_names = lines[4].split()
@@ -330,12 +364,27 @@ def validate_plot(test_name):
                     break
             if rho_idx is not None:
                 break
+        p_idx = None
+        for target in ("PS2", "PS1"):
+            for iv, vn in enumerate(var_names):
+                if vn.upper() == target:
+                    p_idx = iv
+                    break
+            if p_idx is not None:
+                break
+
         if rho_idx is not None:
             for line in lines[5:]:
                 cols = line.strip().split()
                 if len(cols) > rho_idx:
                     try:
-                        points.append((float(cols[0]), float(cols[1]), float(cols[rho_idx])))
+                        x = float(cols[0])
+                        y = float(cols[1])
+                        rho = float(cols[rho_idx])
+                        points.append((x, y, rho))
+                        if p_idx is not None and len(cols) > p_idx:
+                            p = float(cols[p_idx])
+                            points_with_p.append((x, y, rho, p))
                     except (ValueError, IndexError):
                         continue
             shadow_geom = _read_shadow_params()
@@ -344,5 +393,11 @@ def validate_plot(test_name):
             if not b_result:
                 return False, b_reason
             logger.debug("    [IDL] Block boundary smoothness: VERIFIED (%s)", b_reason)
+
+            if points_with_p:
+                t_result, t_reason = _check_photoion_temperature(points_with_p, Rp_plot)
+                if not t_result:
+                    return False, t_reason
+                logger.debug("    [IDL] Photoion temperature: VERIFIED (%s)", t_reason)
 
     return True, "Passed"

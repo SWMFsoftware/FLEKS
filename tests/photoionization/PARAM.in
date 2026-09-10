@@ -138,7 +138,7 @@ z=0 var ascii planet    plotString
 -1                      dn
 1.0                     dt
 1                       dx
-rhoS2                   NameVars
+rhoS2 pS2               NameVars
 
 #STOP
 10                      MaxIter
