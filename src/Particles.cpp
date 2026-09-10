@@ -4836,7 +4836,6 @@ void Particles<NStructReal, NStructInt>::apply_loss(
 
   if (speciesID < 0 || speciesID >= fi->get_nS())
     return;
-  const int iLoss = speciesID;
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     if (NumberOfParticlesAtLevel(iLev, true, true) == 0)
@@ -4873,7 +4872,7 @@ void Particles<NStructReal, NStructInt>::apply_loss(
           continue;
 
         // Loss rate (normalized mass-density rate) from nodeLossFluid.
-        Real lossRate = source->get_loss_value(pti, ijk, iLoss, iLev);
+        Real lossRate = source->get_loss_value(pti, ijk, speciesID, iLev);
         if (lossRate <= 0.0)
           continue;
 
