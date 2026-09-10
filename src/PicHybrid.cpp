@@ -70,7 +70,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
 
       // Interpolated density at an arbitrary cell (same hstep weights), used
       // for the electron-pressure gradient closure.
-      auto rho_at = [=](int ii, int jj, int kk) AMREX_GPU_DEVICE {
+      auto rho_at = [=](int ii, int jj, int kk) {
         return wPrev * momentsPrev(ii, jj, kk, iRho_) +
                wCur * moments(ii, jj, kk, iRho_);
       };

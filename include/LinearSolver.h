@@ -40,11 +40,11 @@ inline double finite_difference_epsilon(double normBase, double normDirection) {
          normDirection;
 }
 
-template <typename NonlinearMatvec>
-void jacobian_free_matvec(NonlinearMatvec nonlinearMatvec, const double *base,
-                          const double *baseMatvec, const double *direction,
-                          double *out, double *work, const int n,
-                          const int iLev, const double epsilon) {
+inline void jacobian_free_matvec(
+    const std::function<void(const double *, double *, const int)> &nonlinearMatvec,
+    const double *base, const double *baseMatvec, const double *direction,
+    double *out, double *work, const int n, const int iLev,
+    const double epsilon) {
   if (epsilon == 0.0) {
     amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) { out[i] = 0.0; });
     return;

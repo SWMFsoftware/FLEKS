@@ -56,6 +56,7 @@ protected:
   // Each bit of the integer represents a status of a cell/node. See Bit.h for
   // potential status.
   amrex::Vector<amrex::iMultiFab> cellStatus;
+  amrex::Vector<amrex::iMultiFab> h_cellStatus;
   amrex::Vector<amrex::iMultiFab> nodeStatus;
   amrex::Vector<amrex::iMultiFab> nodeOffsetMap;
   amrex::Vector<amrex::Vector<int>> nOwnedNodes;
@@ -238,6 +239,10 @@ public:
 
   const amrex::iMultiFab& cell_status(int iLev) const {
     return cellStatus[iLev];
+  }
+
+  const amrex::iMultiFab& host_cell_status(int iLev) const {
+    return h_cellStatus[iLev];
   }
 
   const amrex::iMultiFab& node_status(int iLev) const {

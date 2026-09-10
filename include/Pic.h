@@ -845,8 +845,6 @@ public:
     parts[1]->calculate_particle_quality(particleQuality);
     WriteMF(particleQuality, finest_level, "particleQuality1");
   }
-  // private methods
-private:
   amrex::Real calc_E_field_energy();
   amrex::Real calc_B_field_energy();
 };

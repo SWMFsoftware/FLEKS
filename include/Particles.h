@@ -978,6 +978,10 @@ public:
     return grid->cell_status(iLev);
   }
 
+  const amrex::iMultiFab& host_cell_status(int iLev) const {
+    return grid->host_cell_status(iLev);
+  }
+
   const amrex::iMultiFab& node_status(int iLev) const {
     return grid->node_status(iLev);
   }

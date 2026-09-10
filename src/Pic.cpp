@@ -345,32 +345,38 @@ void Pic::post_regrid() {
 void Pic::fill_new_node_E() {
   {
     Real xL = 0, xR = 0;
-    if (ic_ && ic_->is_tophat()) {
+    const bool is_tophat = (ic_ && ic_->is_tophat());
+    if (is_tophat) {
       xL = 0.75 * Geom(0).ProbLo()[ix_] + 0.25 * Geom(0).ProbHi()[ix_];
       xR = 0.75 * Geom(0).ProbHi()[ix_] + 0.25 * Geom(0).ProbLo()[ix_];
     }
 
     int iLev = 0;
+    const int iEx_val = fi->get_iEx();
+    const int iEy_val = fi->get_iEy();
+    const int iEz_val = fi->get_iEz();
+    const auto geomdata = Geom(iLev).data();
+
     for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
       FArrayBox& fab = nodeE[iLev][mfi];
       const Box& box = mfi.validbox();
       const Array4<Real>& arrE = fab.array();
       const auto& status = nodeStatus[iLev][mfi].array();
+      const auto& arrFluid = fi->get_node_fluid(iLev)[mfi].array();
 
-      // Host-only kernel: host fluid interface interpolators fi->get_ex/ey/ez
-      amrex::LoopOnCpu(box, [&](int i, int j, int k) {
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_new(status(ijk))) {
-          if (ic_ && ic_->is_tophat()) {
+          if (is_tophat) {
             const Real x =
-                Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
+                geomdata.ProbLo(0) + i * geomdata.CellSize(0);
             if (x > xL && x < xR) {
-              arrE(ijk, iy_) = 1;
+              arrE(ijk, 1) = 1.0;
             }
           } else {
-            arrE(ijk, ix_) = fi->get_ex(mfi, ijk, iLev);
-            arrE(ijk, iy_) = fi->get_ey(mfi, ijk, iLev);
-            arrE(ijk, iz_) = fi->get_ez(mfi, ijk, iLev);
+            arrE(ijk, 0) = arrFluid(ijk, iEx_val);
+            arrE(ijk, 1) = arrFluid(ijk, iEy_val);
+            arrE(ijk, 2) = arrFluid(ijk, iEz_val);
           }
         }
       });
@@ -390,31 +396,37 @@ void Pic::fill_new_node_E() {
 void Pic::fill_new_node_B() {
   {
     Real xL = 0, xR = 0;
-    if (ic_ && ic_->is_tophat()) {
+    const bool is_tophat = (ic_ && ic_->is_tophat());
+    if (is_tophat) {
       xL = 0.75 * Geom(0).ProbLo()[ix_] + 0.25 * Geom(0).ProbHi()[ix_];
       xR = 0.75 * Geom(0).ProbHi()[ix_] + 0.25 * Geom(0).ProbLo()[ix_];
     }
 
     int iLev = 0;
+    const int iBx_val = fi->get_iBx();
+    const int iBy_val = fi->get_iBy();
+    const int iBz_val = fi->get_iBz();
+    const auto geomdata = Geom(iLev).data();
+
     for (MFIter mfi(nodeB[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<Real>& arrB = nodeB[iLev][mfi].array();
       const auto& status = nodeStatus[iLev][mfi].array();
+      const auto& arrFluid = fi->get_node_fluid(iLev)[mfi].array();
 
-      // Host-only kernel: host fluid interface interpolators fi->get_bx/by/bz
-      amrex::LoopOnCpu(box, [&](int i, int j, int k) {
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_new(status(ijk))) {
-          if (ic_ && ic_->is_tophat()) {
+          if (is_tophat) {
             const Real x =
-                Geom(iLev).CellCenter(i, ix_) - 0.5 * Geom(iLev).CellSize(ix_);
+                geomdata.ProbLo(0) + i * geomdata.CellSize(0);
             if (x > xL && x < xR) {
-              arrB(ijk, iz_) = 1;
+              arrB(ijk, 2) = 1.0;
             }
           } else {
-            arrB(ijk, ix_) = fi->get_bx(mfi, ijk, iLev);
-            arrB(ijk, iy_) = fi->get_by(mfi, ijk, iLev);
-            arrB(ijk, iz_) = fi->get_bz(mfi, ijk, iLev);
+            arrB(ijk, 0) = arrFluid(ijk, iBx_val);
+            arrB(ijk, 1) = arrFluid(ijk, iBy_val);
+            arrB(ijk, 2) = arrFluid(ijk, iBz_val);
           }
         }
       });

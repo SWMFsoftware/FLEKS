@@ -220,9 +220,15 @@ void Grid::print_grid_info(bool printBoxes) {
 
 //============================================================================//
 void Grid::distribute_grid_arrays(const Vector<BoxArray>& cGridsOld) {
+  if (h_cellStatus.size() < static_cast<size_t>(n_lev())) {
+    h_cellStatus.resize(n_lev());
+  }
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     distribute_FabArray(cellStatus[iLev], cGrids[iLev], DistributionMap(iLev),
                         1, nGst, false);
+
+    h_cellStatus[iLev].define(cGrids[iLev], DistributionMap(iLev), 1, nGst,
+                              amrex::MFInfo().SetArena(amrex::The_Pinned_Arena()));
 
     distribute_FabArray(nodeStatus[iLev], nGrids[iLev], DistributionMap(iLev),
                         1, nGst, false);
@@ -256,6 +262,22 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
       });
     }
     // Set 'boundary', 'new' status.
+    const bool hasOldGrids = !cGridsOld.empty();
+    amrex::Gpu::DeviceVector<Box> d_oldBoxes;
+    const Box* pOldBoxes = nullptr;
+    int nOldBoxes = 0;
+    if (hasOldGrids && iLev < static_cast<int>(cGridsOld.size()) && !cGridsOld[iLev].empty()) {
+      const auto& ba = cGridsOld[iLev];
+      nOldBoxes = static_cast<int>(ba.size());
+      std::vector<Box> h_boxes(nOldBoxes);
+      for (int b = 0; b < nOldBoxes; ++b) {
+        h_boxes[b] = ba[b];
+      }
+      d_oldBoxes.resize(nOldBoxes);
+      amrex::Gpu::copy(amrex::Gpu::hostToDevice, h_boxes.data(), h_boxes.data() + nOldBoxes, d_oldBoxes.data());
+      pOldBoxes = d_oldBoxes.data();
+    }
+
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
       const Array4<int> cellArr = cellStatus[iLev][mfi].array();
@@ -266,9 +288,13 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
         // New active cell
         bit::set_new(cellArr(i, j, k));
 
-        if (!cGridsOld.empty()) {
-          if (cGridsOld[iLev].contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
-            bit::set_not_new(cellArr(i, j, k));
+        if (pOldBoxes) {
+          const IntVect iv{ AMREX_D_DECL(i, j, k) };
+          for (int b = 0; b < nOldBoxes; ++b) {
+            if (pOldBoxes[b].contains(iv)) {
+              bit::set_not_new(cellArr(i, j, k));
+              break;
+            }
           }
         }
       });
@@ -294,15 +320,29 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
 
     cellStatus[iLev].FillBoundary(Geom(iLev).periodicity());
 
+    const auto geomdata = Geom(iLev).data();
+    const RealBox* d_ranges = device_domain_range();
+    const int nRanges = domain_range_size();
+
     // Find domain boundary cells
     for (MFIter mfi(cellStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.fabbox();
       const Array4<int> cellArr = cellStatus[iLev][mfi].array();
       ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         if (bit::is_lev_boundary(cellArr(i, j, k))) {
-          Real xyz[nDim];
-          Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
-          if (!is_inside_domain(xyz)) {
+          Real xyz[3] = {
+            geomdata.ProbLo(0) + (i + 0.5) * geomdata.CellSize(0),
+            (AMREX_SPACEDIM > 1) ? (geomdata.ProbLo(1) + (j + 0.5) * geomdata.CellSize(1)) : 0.0,
+            (AMREX_SPACEDIM > 2) ? (geomdata.ProbLo(2) + (k + 0.5) * geomdata.CellSize(2)) : 0.0
+          };
+          bool inside = false;
+          for (int r = 0; r < nRanges; ++r) {
+            if (d_ranges[r].contains(xyz)) {
+              inside = true;
+              break;
+            }
+          }
+          if (!inside) {
             bit::set_domain_boundary(cellArr(i, j, k));
           }
         }
@@ -365,6 +405,8 @@ void Grid::update_cell_status(const Vector<BoxArray>& cGridsOld) {
           });
         }
     }
+
+    h_cellStatus[iLev].ParallelCopy(cellStatus[iLev]);
   }
 }
 
@@ -388,10 +430,20 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
       });
     }
 
-    BoxArray nodeBAOld;
-
-    if (!cGridsOld.empty()) {
-      nodeBAOld = convert(cGridsOld[iLev], IntVect(1));
+    const bool hasOldGrids = !cGridsOld.empty();
+    amrex::Gpu::DeviceVector<Box> d_oldNodeBoxes;
+    const Box* pOldNodeBoxes = nullptr;
+    int nOldNodeBoxes = 0;
+    if (hasOldGrids && iLev < static_cast<int>(cGridsOld.size()) && !cGridsOld[iLev].empty()) {
+      BoxArray nodeBAOld = convert(cGridsOld[iLev], IntVect(1));
+      nOldNodeBoxes = static_cast<int>(nodeBAOld.size());
+      std::vector<Box> h_nodeBoxes(nOldNodeBoxes);
+      for (int b = 0; b < nOldNodeBoxes; ++b) {
+        h_nodeBoxes[b] = nodeBAOld[b];
+      }
+      d_oldNodeBoxes.resize(nOldNodeBoxes);
+      amrex::Gpu::copy(amrex::Gpu::hostToDevice, h_nodeBoxes.data(), h_nodeBoxes.data() + nOldNodeBoxes, d_oldNodeBoxes.data());
+      pOldNodeBoxes = d_oldNodeBoxes.data();
     }
 
     // Set 'boundary', 'new' status.
@@ -405,15 +457,23 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
         // New active cell
         bit::set_new(nodeArr(i, j, k));
 
-        if (!nodeBAOld.empty()) {
-          if (nodeBAOld.contains(IntVect{ AMREX_D_DECL(i, j, k) })) {
-            bit::set_not_new(nodeArr(i, j, k));
+        if (pOldNodeBoxes) {
+          const IntVect iv{ AMREX_D_DECL(i, j, k) };
+          for (int b = 0; b < nOldNodeBoxes; ++b) {
+            if (pOldNodeBoxes[b].contains(iv)) {
+              bit::set_not_new(nodeArr(i, j, k));
+              break;
+            }
           }
         }
       });
     }
 
     nodeStatus[iLev].FillBoundary(Geom(iLev).periodicity());
+
+    const auto geomdataNode = Geom(iLev).data();
+    const RealBox* d_ranges = device_domain_range();
+    const int nRanges = domain_range_size();
 
     // Find domain boundary cells
     for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
@@ -422,9 +482,19 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
 
       ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         if (bit::is_lev_boundary(nodeArr(i, j, k))) {
-          Real xyz[nDim];
-          Geom(iLev).LoNode({ AMREX_D_DECL(i, j, k) }, xyz);
-          if (!is_inside_domain(xyz)) {
+          Real xyz[3] = {
+            geomdataNode.ProbLo(0) + i * geomdataNode.CellSize(0),
+            (AMREX_SPACEDIM > 1) ? (geomdataNode.ProbLo(1) + j * geomdataNode.CellSize(1)) : 0.0,
+            (AMREX_SPACEDIM > 2) ? (geomdataNode.ProbLo(2) + k * geomdataNode.CellSize(2)) : 0.0
+          };
+          bool inside = false;
+          for (int r = 0; r < nRanges; ++r) {
+            if (d_ranges[r].contains(xyz)) {
+              inside = true;
+              break;
+            }
+          }
+          if (!inside) {
             bit::set_domain_boundary(nodeArr(i, j, k));
           }
         }
@@ -440,39 +510,40 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
       { // Set 'owner' status
         const Box cellBox = convert(box, { AMREX_D_DECL(0, 0, 0) });
         const Array4<int const> cell = cellStatus[iLev][mfi].const_array();
+        const bool isFake2D_val = isFake2D;
+        const int nDim_val = nDim;
         int diMax = 0, diMin = -1;
         int djMax = 0, djMin = -1;
         int dkMax = 0, dkMin = -1;
-        if (isFake2D || nDim == 2) {
+        if (isFake2D_val || nDim_val == 2) {
           dkMin = 0;
         }
-        // Is the box the owner of this node?
-        auto is_the_box_owner = [=] AMREX_GPU_DEVICE(int i, int j,
-                                                     int k) noexcept -> bool {
-          for (int dk = dkMax; dk >= dkMin; dk--)
-            for (int dj = djMax; dj >= djMin; dj--)
-              for (int di = diMax; di >= diMin; di--) {
-                if (!bit::is_lev_boundary(cell(i + di, j + dj, k + dk))) {
-                  // Find the first CELL that shares this node.
-                  return cellBox.contains(
-                      IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) });
-                }
-              }
-          return false;
-        };
 
         ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-          if (!isFake2D || k == lo.z) {
+          if (!isFake2D_val || k == lo.z) {
             if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
-                (nDim == 3 && !isFake2D && (k == lo.z || k == hi.z))) {
-              // Block boundary nodes.
-              if (is_the_box_owner(i, j, k)) {
+                (nDim_val == 3 && !isFake2D_val && (k == lo.z || k == hi.z))) {
+              // Block boundary nodes: check if this box is the owner of this node.
+              bool isOwner = false;
+              for (int dk = dkMax; dk >= dkMin; dk--) {
+                for (int dj = djMax; dj >= djMin; dj--) {
+                  for (int di = diMax; di >= diMin; di--) {
+                    if (!bit::is_lev_boundary(cell(i + di, j + dj, k + dk))) {
+                      isOwner = cellBox.contains(
+                          IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) });
+                      goto done_owner;
+                    }
+                  }
+                }
+              }
+            done_owner:
+              if (isOwner) {
                 bit::set_owner(nodeArr(i, j, k));
               } else {
                 bit::set_not_owner(nodeArr(i, j, k));
               }
             } else {
-              // Nodes indside the box.
+              // Nodes inside the box.
               bit::set_owner(nodeArr(i, j, k));
             }
           }
@@ -514,10 +585,20 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
     nodeOffsetMap[iLev].setVal(-1);
     nOwnedNodes[iLev].assign(nodeStatus[iLev].local_size(), 0);
 
-    for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+    amrex::iMultiFab h_nodeStatus(nodeStatus[iLev].boxArray(), nodeStatus[iLev].DistributionMap(),
+                                  1, 0, amrex::MFInfo().SetArena(amrex::The_Pinned_Arena()));
+    h_nodeStatus.ParallelCopy(nodeStatus[iLev]);
+    amrex::Gpu::streamSynchronize();
+    amrex::Print() << "DEBUG update_node_status: finished ParallelCopy h_nodeStatus" << std::endl;
+
+    amrex::iMultiFab h_offsetMap(nodeOffsetMap[iLev].boxArray(), nodeOffsetMap[iLev].DistributionMap(),
+                                 1, 0, amrex::MFInfo().SetArena(amrex::The_Pinned_Arena()));
+    h_offsetMap.setVal(-1);
+
+    for (MFIter mfi(h_nodeStatus); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
-      const auto& nodeArr = nodeStatus[iLev][mfi].array();
-      const auto& offsetArr = nodeOffsetMap[iLev][mfi].array();
+      const auto& nodeArr = h_nodeStatus[mfi].array();
+      const auto& offsetArr = h_offsetMap[mfi].array();
       const auto lo = lbound(box);
       const auto hi = ubound(box);
 
@@ -533,5 +614,7 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
       }
       nOwnedNodes[iLev][mfi.LocalIndex()] = m;
     }
+
+    nodeOffsetMap[iLev].ParallelCopy(h_offsetMap);
   }
 }

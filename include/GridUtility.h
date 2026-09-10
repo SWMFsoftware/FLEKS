@@ -566,9 +566,9 @@ void sum_fine_to_coarse_lev_bny_node(amrex::FabArray<FAB>& coarse,
 }
 
 // Scale all elements in FabArray by scalar
-template <class FAB, typename U,
-          std::enable_if_t<std::is_arithmetic_v<U>, int> = 0>
-inline amrex::FabArray<FAB>& operator*=(amrex::FabArray<FAB>& fa, U m) {
+template <class FAB, typename U>
+inline std::enable_if_t<std::is_arithmetic_v<U>, amrex::FabArray<FAB>&>
+operator*=(amrex::FabArray<FAB>& fa, U m) {
   for (amrex::MFIter mfi(fa); mfi.isValid(); ++mfi) {
     const auto arr = fa[mfi].array();
     const auto& bx = mfi.fabbox();

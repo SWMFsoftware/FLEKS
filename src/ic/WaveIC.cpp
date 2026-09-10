@@ -124,15 +124,15 @@ void WaveIC::set_fields(PicICFields& fields) const {
       if (mfi.isValid()) {
         const Array4<Real const>& a = fields.node_B(iLev).array(mfi);
         const Box& b = mfi.validbox();
-        Bx0 = a(b.smallEnd(), ix_);
+        const auto p = a.ptr(b.smallEnd(), ix_);
+        amrex::Gpu::copy(amrex::Gpu::deviceToHost, p, p + 1, &Bx0);
       }
     }
     const amrex::Real B1 = frac_ * Bx0;
     B1_ = B1;
 
-    const auto& prob_lo = fields.geom(iLev).ProbLo();
-    const auto& dx = fields.geom(iLev).CellSize();
-    const amrex::Real Lx = (fields.geom(iLev).ProbHi())[0] - prob_lo[0];
+    const auto geomdata = fields.geom(iLev).data();
+    const amrex::Real Lx = fields.geom(iLev).ProbHi(0) - fields.geom(iLev).ProbLo(0);
     Lx_ = Lx;
 
     // Phase wavenumber K.
@@ -174,9 +174,9 @@ void WaveIC::set_fields(PicICFields& fields) const {
           const Array4<Real> arrE = fabE.array();
           const Array4<Real> arrB = fabB.array();
           ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            const amrex::Real x = prob_lo[0] + dx[0] * i;
-            const amrex::Real y = prob_lo[1] + dx[1] * j;
-            const amrex::Real z = (nDim > 2) ? prob_lo[2] + dx[2] * k : 0.0;
+            const amrex::Real x = geomdata.ProbLo(0) + geomdata.CellSize(0) * i;
+            const amrex::Real y = geomdata.ProbLo(1) + geomdata.CellSize(1) * j;
+            const amrex::Real z = (AMREX_SPACEDIM > 2) ? geomdata.ProbLo(2) + geomdata.CellSize(2) * k : 0.0;
             const amrex::Real phase = Kx * x + Ky * y + Kz * z;
             const amrex::Real cphi = std::cos(phase);
             const amrex::Real sphi = std::sin(phase);
@@ -199,10 +199,10 @@ void WaveIC::set_fields(PicICFields& fields) const {
           const Box& box = mfi.fabbox();
           const Array4<Real> arrcB = fabcB.array();
           ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            const amrex::Real x = prob_lo[0] + dx[0] * (i + 0.5);
-            const amrex::Real y = prob_lo[1] + dx[1] * (j + 0.5);
+            const amrex::Real x = geomdata.ProbLo(0) + geomdata.CellSize(0) * (i + 0.5);
+            const amrex::Real y = geomdata.ProbLo(1) + geomdata.CellSize(1) * (j + 0.5);
             const amrex::Real z =
-                (nDim > 2) ? prob_lo[2] + dx[2] * (k + 0.5) : 0.0;
+                (AMREX_SPACEDIM > 2) ? geomdata.ProbLo(2) + geomdata.CellSize(2) * (k + 0.5) : 0.0;
             const amrex::Real phase = Kx * x + Ky * y + Kz * z;
             const amrex::Real cphi = std::cos(phase);
             const amrex::Real sphi = std::sin(phase);
@@ -224,7 +224,7 @@ void WaveIC::set_fields(PicICFields& fields) const {
           const Box& box = mfi.fabbox();
           const Array4<Real> arrB = fab.array();
           ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            const amrex::Real x = prob_lo[0] + dx[0] * i;
+            const amrex::Real x = geomdata.ProbLo(0) + geomdata.CellSize(0) * i;
             const amrex::Real cphi = std::cos(kx * x);
             const amrex::Real sphi = std::sin(kx * x);
             arrB(i, j, k, ix_) = Bx0;
@@ -237,7 +237,7 @@ void WaveIC::set_fields(PicICFields& fields) const {
           const Box& box = mfi.fabbox();
           const Array4<Real> arrB = fab.array();
           ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            const amrex::Real x = prob_lo[0] + dx[0] * (i + 0.5);
+            const amrex::Real x = geomdata.ProbLo(0) + geomdata.CellSize(0) * (i + 0.5);
             const amrex::Real cphi = std::cos(kx * x);
             const amrex::Real sphi = std::sin(kx * x);
             arrB(i, j, k, ix_) = Bx0;

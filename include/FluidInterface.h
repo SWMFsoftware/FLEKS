@@ -272,6 +272,16 @@ public:
       nodeFluid[iLev].setVal(0.0);
   };
 
+  const amrex::MultiFab& get_node_fluid(int iLev) const { return nodeFluid[iLev]; }
+  amrex::MultiFab& get_node_fluid(int iLev) { return nodeFluid[iLev]; }
+
+  int get_iEx() const { return iEx; }
+  int get_iEy() const { return iEy; }
+  int get_iEz() const { return iEz; }
+  int get_iBx() const { return iBx; }
+  int get_iBy() const { return iBy; }
+  int get_iBz() const { return iBz; }
+
   void calc_current();
 
   void normalize_fluid_variables();

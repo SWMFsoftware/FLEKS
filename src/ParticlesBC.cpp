@@ -92,7 +92,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
   int iLev = 0;
 
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
-    const auto& status = cell_status(iLev)[mfi].array();
+    const auto& status = host_cell_status(iLev)[mfi].array();
     const Box& bx = mfi.validbox();
     const IntVect bxLo = bx.smallEnd();
     const IntVect bxHi = bx.bigEnd();
