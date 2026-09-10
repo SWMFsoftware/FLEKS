@@ -14,6 +14,13 @@ SRCS := \
 	Domain.cpp \
 	ParticleTracker.cpp \
 	Particles.cpp \
+	ParticlesInit.cpp \
+	ParticlesBC.cpp \
+	ParticlesMoments.cpp \
+	ParticlesMassMatrix.cpp \
+	ParticlesMover.cpp \
+	ParticlesResample.cpp \
+	ParticlesReactions.cpp \
 	TestParticles.cpp \
 	LinearSolver.cpp \
 	GridUtility.cpp \
