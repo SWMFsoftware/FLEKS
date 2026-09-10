@@ -6,6 +6,7 @@
 #include <AMReX_DistributionMapping.H>
 #include <AMReX_FabArray.H>
 #include <AMReX_FillPatchUtil.H>
+#include <AMReX_Array.H>
 #include <AMReX_MultiFab.H>
 #include <AMReX_MultiFabUtil.H>
 #include <AMReX_PhysBCFunct.H>
@@ -17,38 +18,125 @@
 #include "Utility.h"
 
 void curl_center_to_node(const amrex::MultiFab& centerMF,
-                         amrex::MultiFab& nodeMF, const amrex::Real* invDx);
+                         amrex::MultiFab& nodeMF,
+                         amrex::GpuArray<amrex::Real, 3> invDx);
+inline void curl_center_to_node(const amrex::MultiFab& centerMF,
+                                amrex::MultiFab& nodeMF,
+                                const amrex::Real* invDx) {
+  curl_center_to_node(
+      centerMF, nodeMF,
+      (nDim > 2)
+          ? amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], invDx[2] }
+          : amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], 0.0 });
+}
 
 void curl_node_to_center(const amrex::MultiFab& nodeMF,
-                         amrex::MultiFab& centerMF, const amrex::Real* invDx);
+                         amrex::MultiFab& centerMF,
+                         amrex::GpuArray<amrex::Real, 3> invDx);
+inline void curl_node_to_center(const amrex::MultiFab& nodeMF,
+                                amrex::MultiFab& centerMF,
+                                const amrex::Real* invDx) {
+  curl_node_to_center(
+      nodeMF, centerMF,
+      (nDim > 2)
+          ? amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], invDx[2] }
+          : amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], 0.0 });
+}
 
 void curl_center_to_center(const amrex::MultiFab& centerInMF,
                            amrex::MultiFab& centerOutMF,
-                           const amrex::Real* invDx);
+                           amrex::GpuArray<amrex::Real, 3> invDx);
+inline void curl_center_to_center(const amrex::MultiFab& centerInMF,
+                                  amrex::MultiFab& centerOutMF,
+                                  const amrex::Real* invDx) {
+  curl_center_to_center(
+      centerInMF, centerOutMF,
+      (nDim > 2)
+          ? amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], invDx[2] }
+          : amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], 0.0 });
+}
 
 void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
                       const amrex::DistributionMapping dm,
                       const amrex::Geometry& gm);
 
 void grad_node_to_center(const amrex::MultiFab& nodeMF,
-                         amrex::MultiFab& centerMF, const amrex::Real* invDx);
+                         amrex::MultiFab& centerMF,
+                         amrex::GpuArray<amrex::Real, 3> invDx);
+inline void grad_node_to_center(const amrex::MultiFab& nodeMF,
+                                amrex::MultiFab& centerMF,
+                                const amrex::Real* invDx) {
+  grad_node_to_center(
+      nodeMF, centerMF,
+      (nDim > 2)
+          ? amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], invDx[2] }
+          : amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], 0.0 });
+}
 
 void grad_center_to_node(const amrex::MultiFab& centerMF,
-                         amrex::MultiFab& nodeMF, const amrex::Real* invDx);
+                         amrex::MultiFab& nodeMF,
+                         amrex::GpuArray<amrex::Real, 3> invDx);
+inline void grad_center_to_node(const amrex::MultiFab& centerMF,
+                                amrex::MultiFab& nodeMF,
+                                const amrex::Real* invDx) {
+  grad_center_to_node(
+      centerMF, nodeMF,
+      (nDim > 2)
+          ? amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], invDx[2] }
+          : amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], 0.0 });
+}
 
 void div_center_to_node(const amrex::MultiFab& centerMF,
-                        amrex::MultiFab& nodeMF, const amrex::Real* invDx);
+                        amrex::MultiFab& nodeMF,
+                        amrex::GpuArray<amrex::Real, 3> invDx);
+inline void div_center_to_node(const amrex::MultiFab& centerMF,
+                               amrex::MultiFab& nodeMF,
+                               const amrex::Real* invDx) {
+  div_center_to_node(
+      centerMF, nodeMF,
+      (nDim > 2)
+          ? amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], invDx[2] }
+          : amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], 0.0 });
+}
 
 void div_node_to_center(const amrex::MultiFab& nodeMF,
-                        amrex::MultiFab& centerMF, const amrex::Real* invDx);
+                        amrex::MultiFab& centerMF,
+                        amrex::GpuArray<amrex::Real, 3> invDx);
+inline void div_node_to_center(const amrex::MultiFab& nodeMF,
+                               amrex::MultiFab& centerMF,
+                               const amrex::Real* invDx) {
+  div_node_to_center(
+      nodeMF, centerMF,
+      (nDim > 2)
+          ? amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], invDx[2] }
+          : amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], 0.0 });
+}
 
 void div_center_to_center(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
-                          const amrex::Real* invDx);
+                          amrex::GpuArray<amrex::Real, 3> invDx);
+inline void div_center_to_center(const amrex::MultiFab& srcMF,
+                                 amrex::MultiFab& dstMF,
+                                 const amrex::Real* invDx) {
+  div_center_to_center(
+      srcMF, dstMF,
+      (nDim > 2)
+          ? amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], invDx[2] }
+          : amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], 0.0 });
+}
 
 // Cell-centered 7-point (5-point in 2D) Laplacian on a cell-centered field.
 void lap_center_to_center(const amrex::MultiFab& centerMF,
                           amrex::MultiFab& centerMFout,
-                          const amrex::Real* invDx);
+                          amrex::GpuArray<amrex::Real, 3> invDx);
+inline void lap_center_to_center(const amrex::MultiFab& centerMF,
+                                 amrex::MultiFab& centerMFout,
+                                 const amrex::Real* invDx) {
+  lap_center_to_center(
+      centerMF, centerMFout,
+      (nDim > 2)
+          ? amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], invDx[2] }
+          : amrex::GpuArray<amrex::Real, 3>{ invDx[0], invDx[1], 0.0 });
+}
 
 void average_center_to_node(const amrex::MultiFab& centerMF,
                             amrex::MultiFab& nodeMF);

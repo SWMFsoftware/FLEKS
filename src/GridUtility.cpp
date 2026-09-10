@@ -8,7 +8,7 @@ using namespace amrex;
 
 void lap_node_to_node(const MultiFab& srcMF, MultiFab& dstMF,
                       const DistributionMapping dm, const Geometry& gm) {
-  const Real* invDx = gm.InvCellSize();
+  const GpuArray<Real, 3> invDx = gm.InvCellSizeArray();
 
   BoxArray centerBA =
       convert(srcMF.boxArray(), IntVect{ AMREX_D_DECL(0, 0, 0) });
@@ -28,7 +28,7 @@ void lap_node_to_node(const MultiFab& srcMF, MultiFab& dstMF,
 }
 
 void grad_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
-                         const Real* invDx) {
+                         const GpuArray<Real, 3> invDx) {
   timing_func("grad_node_to_center");
 
   for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
@@ -36,9 +36,9 @@ void grad_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
     box.grow(1);
 
     const Array4<Real> center = centerMF[mfi].array();
-    const Array4<Real const> node = nodeMF[mfi].array();
+    const Array4<Real const> node = nodeMF[mfi].const_array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int kp1 = nDim > 2 ? k + 1 : k;
       center(i, j, k, ix_) =
           0.25 * invDx[ix_] *
@@ -65,15 +65,15 @@ void grad_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
 }
 
 void grad_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
-                         const Real* invDx) {
+                         const GpuArray<Real, 3> invDx) {
 
   for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
     const Array4<Real> node = nodeMF[mfi].array();
-    const Array4<Real const> center = centerMF[mfi].array();
+    const Array4<Real const> center = centerMF[mfi].const_array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
 
       node(i, j, k, ix_) = 0.25 * invDx[ix_] *
@@ -101,15 +101,15 @@ void grad_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
 }
 
 void div_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
-                        const Real* invDx) {
+                        const GpuArray<Real, 3> invDx) {
 
   for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
-    const Array4<Real const> center = centerMF[mfi].array();
+    const Array4<Real const> center = centerMF[mfi].const_array();
     const Array4<Real> node = nodeMF[mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
       const Real compX =
           0.25 * invDx[ix_] *
@@ -139,15 +139,15 @@ void div_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
 }
 
 void div_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
-                        const Real* invDx) {
+                        const GpuArray<Real, 3> invDx) {
 
   for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
     const Box& box = mfi.fabbox();
 
-    const Array4<Real const> node = nodeMF[mfi].array();
+    const Array4<Real const> node = nodeMF[mfi].const_array();
     const Array4<Real> center = centerMF[mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int kp1 = nDim > 2 ? k + 1 : k;
 
       const Real compX =
@@ -178,16 +178,16 @@ void div_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
 }
 
 void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
-                          const Real* invDx) {
+                          const GpuArray<Real, 3> invDx) {
 
   for (MFIter mfi(dstMF, doTiling); mfi.isValid(); ++mfi) {
     Box box = mfi.validbox();
     box.grow(1);
 
-    const Array4<Real const> srcArr = srcMF[mfi].array();
+    const Array4<Real const> srcArr = srcMF[mfi].const_array();
     const Array4<Real> dstArr = dstMF[mfi].array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
       int kp1 = nDim > 2 ? k + 1 : k;
       Real compX = 0;
@@ -366,15 +366,15 @@ void print_MultiFab(const iMultiFab& data, std::string tag, int nshift) {
 }
 
 void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
-                         const Real* invDx) {
+                         const GpuArray<Real, 3> invDx) {
   for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
     Box box = mfi.fabbox();
     box.grow(-1);
 
     const Array4<Real> nodeArr = nodeMF[mfi].array();
-    const Array4<Real const> centerArr = centerMF[mfi].array();
+    const Array4<Real const> centerArr = centerMF[mfi].const_array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
       const Real cZDY =
           0.25 * invDx[iy_] *
@@ -432,13 +432,13 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
 }
 
 void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
-                         const Real* invDx) {
+                         const GpuArray<Real, 3> invDx) {
   for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
     const Box& box = mfi.fabbox();
     const Array4<Real> centerArr = centerMF[mfi].array();
-    const Array4<Real const> nodeArr = nodeMF[mfi].array();
+    const Array4<Real const> nodeArr = nodeMF[mfi].const_array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       int kp1 = nDim > 2 ? k + 1 : k;
       const Real cZDY =
           0.25 * invDx[iy_] *
@@ -479,7 +479,7 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
           (nodeArr(i + 1, j, k, iy_) - nodeArr(i, j, k, iy_) +
            nodeArr(i + 1, j, kp1, iy_) - nodeArr(i, j, kp1, iy_) +
            nodeArr(i + 1, j + 1, k, iy_) - nodeArr(i, j + 1, k, iy_) +
-           nodeArr(i + 1, j + 1, kp1, iy_) - nodeArr(i, j + 1, kp1, iy_));
+           nodeArr(i + 1, j + 1, kp1, iy_) - nodeArr(i + 1, j + 1, k, iy_));
 
       const Real cXDY =
           0.25 * invDx[iy_] *
@@ -496,7 +496,7 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
 }
 
 void curl_center_to_center(const MultiFab& centerInMF, MultiFab& centerOutMF,
-                           const Real* invDx) {
+                           const GpuArray<Real, 3> invDx) {
   // Collocated 2*dx central difference on a cell-centred field. The box is
   // grown by one cell on each side (the output cell (i,j,k) reads neighbours
   // at +/-1). Requires the input to have >= 1 ghost cell (nGst >= 1).
@@ -511,9 +511,9 @@ void curl_center_to_center(const MultiFab& centerInMF, MultiFab& centerOutMF,
     box.grow(-1);
 
     const Array4<Real> outArr = centerOutMF[mfi].array();
-    const Array4<Real const> inArr = centerInMF[mfi].array();
+    const Array4<Real const> inArr = centerInMF[mfi].const_array();
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       // curl X: (dBz/dy - dBy/dz)
       const Real dBz_dy =
           (inArr(i, j + 1, k, iz_) - inArr(i, j - 1, k, iz_)) * dyInv;
@@ -548,9 +548,9 @@ void average_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF) {
     box.grow(-1);
 
     const Array4<Real> nodeArr = nodeMF[mfi].array();
-    const Array4<Real const> centerArr = centerMF[mfi].array();
+    const Array4<Real const> centerArr = centerMF[mfi].const_array();
 
-    ParallelFor(box, centerMF.nComp(), [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+    ParallelFor(box, centerMF.nComp(), [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
       nodeArr(i, j, k, iVar) =
           0.125 *
@@ -574,9 +574,9 @@ void average_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF) {
     box.grow(-1);
 
     const Array4<Real> centerArr = centerMF[mfi].array();
-    const Array4<Real const> nodeArr = nodeMF[mfi].array();
+    const Array4<Real const> nodeArr = nodeMF[mfi].const_array();
 
-    ParallelFor(box, centerMF.nComp(), [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+    ParallelFor(box, centerMF.nComp(), [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) noexcept {
       if (nDim > 2) {
         centerArr(i, j, k, iVar) =
             inv2d *
@@ -596,24 +596,24 @@ void average_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF) {
 }
 
 void lap_center_to_center(const MultiFab& centerMF, MultiFab& centerMFout,
-                          const Real* invDx) {
+                          const GpuArray<Real, 3> invDx) {
   for (MFIter mfi(centerMFout, doTiling); mfi.isValid(); ++mfi) {
     Box box = mfi.fabbox();
     box.grow(-1);
 
     const Array4<Real> outArr = centerMFout[mfi].array();
-    const Array4<Real const> inArr = centerMF[mfi].array();
+    const Array4<Real const> inArr = centerMF[mfi].const_array();
 
     const Real ix2 = invDx[ix_] * invDx[ix_];
     const Real iy2 = invDx[iy_] * invDx[iy_];
+    const Real iz2 = (nDim > 2) ? invDx[iz_] * invDx[iz_] : 0.0;
 
-    ParallelFor(box, centerMF.nComp(), [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
+    ParallelFor(box, centerMF.nComp(), [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) noexcept {
       Real lap = ix2 * (inArr(i + 1, j, k, iVar) - 2.0 * inArr(i, j, k, iVar) +
                         inArr(i - 1, j, k, iVar)) +
                  iy2 * (inArr(i, j + 1, k, iVar) - 2.0 * inArr(i, j, k, iVar) +
                         inArr(i, j - 1, k, iVar));
       if (nDim > 2) {
-        const Real iz2 = invDx[iz_] * invDx[iz_];
         lap += iz2 * (inArr(i, j, k + 1, iVar) - 2.0 * inArr(i, j, k, iVar) +
                       inArr(i, j, k - 1, iVar));
       }
