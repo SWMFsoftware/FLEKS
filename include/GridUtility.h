@@ -224,6 +224,17 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_node_index(
   }
 }
 
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_node_index(
+    const amrex::RealVect& xyz, const amrex::GpuArray<amrex::Real, 3>& plo,
+    const amrex::GpuArray<amrex::Real, 3>& invDx, amrex::IntVect& loIdx,
+    amrex::RealVect& dShift) {
+  for (int i = 0; i < nDim; ++i) {
+    dShift[i] = (xyz[i] - plo[i]) * invDx[i];
+    loIdx[i] = fastfloor(dShift[i]);
+    dShift[i] = dShift[i] - loIdx[i];
+  }
+}
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_cell_index(
     const amrex::RealVect& xyz, const amrex::Real* const plo,
     const amrex::Real* const invDx, amrex::IntVect& loIdx,
@@ -236,9 +247,32 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_cell_index(
   }
 }
 
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_cell_index(
+    const amrex::RealVect& xyz, const amrex::GpuArray<amrex::Real, 3>& plo,
+    const amrex::GpuArray<amrex::Real, 3>& invDx, amrex::IntVect& loIdx,
+    amrex::RealVect& dShift) {
+  for (int i = 0; i < nDim; ++i) {
+    // plo is the corner location => -0.5
+    dShift[i] = (xyz[i] - plo[i]) * invDx[i] - 0.5;
+    loIdx[i] = fastfloor(dShift[i]);
+    dShift[i] = dShift[i] - loIdx[i];
+  }
+}
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_cell_index_exp(
     const amrex::RealVect& xyz, const amrex::Real* const plo,
     const amrex::Real* const invDx, amrex::IntVect& loIdx,
+    amrex::RealVect& dShift) {
+  for (int i = 0; i < nDim; ++i) {
+    dShift[i] = (xyz[i] - plo[i]) * invDx[i];
+    loIdx[i] = fastfloor(dShift[i]);
+    dShift[i] = dShift[i] - loIdx[i];
+  }
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_cell_index_exp(
+    const amrex::RealVect& xyz, const amrex::GpuArray<amrex::Real, 3>& plo,
+    const amrex::GpuArray<amrex::Real, 3>& invDx, amrex::IntVect& loIdx,
     amrex::RealVect& dShift) {
   for (int i = 0; i < nDim; ++i) {
     dShift[i] = (xyz[i] - plo[i]) * invDx[i];
@@ -284,14 +318,15 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void check_refinement_proximity(
   }
 }
 
-inline bool skip_particle_for_dive_cleaning(
-    amrex::RealVect xyz, amrex::Geometry Geom, int iLev,
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool skip_particle_for_dive_cleaning(
+    const amrex::RealVect& xyz, const amrex::GpuArray<amrex::Real, 3>& plo,
+    const amrex::GpuArray<amrex::Real, 3>& invDx, int iLev,
     const amrex::Array4<int const>& status) {
 
   bool skip = false;
   amrex::IntVect iv;
   amrex::RealVect rv;
-  find_cell_index_exp(xyz, Geom.ProbLo(), Geom.InvCellSize(), iv, rv);
+  find_cell_index_exp(xyz, plo, invDx, iv, rv);
 
   if (bit::is_refined(status(iv)) || bit::is_lev_boundary(status(iv))) {
     skip = true;
@@ -319,6 +354,13 @@ inline bool skip_particle_for_dive_cleaning(
   }
 
   return skip;
+}
+
+inline bool skip_particle_for_dive_cleaning(
+    amrex::RealVect xyz, amrex::Geometry Geom, int iLev,
+    const amrex::Array4<int const>& status) {
+  return skip_particle_for_dive_cleaning(xyz, Geom.ProbLoArray(),
+                                         Geom.InvCellSizeArray(), iLev, status);
 }
 
 inline amrex::Real get_value_at_loc(const amrex::MultiFab& mf,

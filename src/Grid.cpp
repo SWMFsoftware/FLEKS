@@ -180,9 +180,11 @@ void Grid::regrid(const BoxArray& region, const Grid* const grid,
   activeRegion = activeRegion.simplified();
 
   domainRange.clear();
+  d_domainRange.clear();
   for (int iBox = 0; iBox < activeRegion.size(); iBox++) {
     RealBox rb(activeRegion[iBox], Geom(0).CellSize(), Geom(0).Offset());
     domainRange.push_back(rb);
+    d_domainRange.push_back(rb);
   }
 
   isNewGrid = false;

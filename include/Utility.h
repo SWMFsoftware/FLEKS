@@ -139,15 +139,17 @@ inline void random_vector(const amrex::Real rand1, const amrex::Real rand2,
   vec[iz_] = costheta;
 }
 
-inline amrex::Real l2_norm(amrex::Real* vec, int n) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real
+l2_norm(const amrex::Real* vec, int n) {
   amrex::Real sum = 0;
   for (int i = 0; i < n; ++i)
     sum += vec[i] * vec[i];
   return sqrt(sum);
 }
 
-inline void linear_interpolation_coef(const amrex::RealVect& dx,
-                                      amrex::Real (&coef)[2][2][2]) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void
+linear_interpolation_coef(const amrex::RealVect& dx,
+                          amrex::Real (&coef)[2][2][2]) {
   amrex::Real interpX[2] = { dx[0], 1 - dx[0] };
   amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
   amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 0, nDim > 2 ? 1 - dx[2] : 1 };
@@ -166,8 +168,9 @@ inline void linear_interpolation_coef(const amrex::RealVect& dx,
   coef[1][1][1] = xy[0][0] * interpZ[0];
 }
 
-inline void linear_interpolation_coef_finer(const amrex::RealVect& dx,
-                                            amrex::Real (&coef)[2][2][2]) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void
+linear_interpolation_coef_finer(const amrex::RealVect& dx,
+                                amrex::Real (&coef)[2][2][2]) {
   amrex::Real interpX[2] = { dx[0], 1 - dx[0] };
   amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
   amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 0, nDim > 2 ? 1 - dx[2] : 1 };

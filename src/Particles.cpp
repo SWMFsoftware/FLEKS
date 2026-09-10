@@ -64,6 +64,8 @@ Particles<NStructReal, NStructInt>::Particles(
   qom = charge / mass;
   qomSign = qom >= 0 ? 1 : -1;
 
+  absorbTallies.assign(18, 0.0);
+
   plo.resize(n_lev_max());
   phi.resize(n_lev_max());
   dx.resize(n_lev_max());

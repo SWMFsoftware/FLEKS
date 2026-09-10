@@ -7,6 +7,7 @@
 #include <AMReX_BoxArray.H>
 #include <AMReX_FillPatchUtil.H>
 #include <AMReX_Geometry.H>
+#include <AMReX_GpuContainers.H>
 #include <AMReX_IndexType.H>
 #include <AMReX_IntVect.H>
 #include <AMReX_MultiFab.H>
@@ -42,6 +43,7 @@ protected:
 
   // The range of activeRegion.
   amrex::Vector<amrex::RealBox> domainRange;
+  amrex::Gpu::ManagedVector<amrex::RealBox> d_domainRange;
 
   // Cell center
   amrex::Vector<amrex::BoxArray>& cGrids = grids;
@@ -148,6 +150,13 @@ public:
 
   const amrex::Vector<amrex::RealBox>& domain_range() const {
     return domainRange;
+  }
+
+  const amrex::RealBox* device_domain_range() const {
+    return d_domainRange.data();
+  }
+  int domain_range_size() const {
+    return static_cast<int>(d_domainRange.size());
   }
 
   const amrex::Vector<amrex::MultiFab>& get_cost() const { return cellCost; }
