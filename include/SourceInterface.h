@@ -18,13 +18,14 @@ protected:
   bool useChargeExchange = false;
 
   // ---- Photoionization (#PHOTOIONIZATION command) ----
-  amrex::Vector<amrex::Real> photoNu0; // ionization rate at planet surface [s^-1]
+  amrex::Vector<amrex::Real> photoNu0; // ionization rate at planet surface
+                                       // [s^-1]
 
   // ---- Shadow cylinder (#SHADOWCYLINDER command) ----
   bool useShadowCylinder = false;
   amrex::Real solarDir[3] = { 0.0, 0.0, 0.0 }; // unit vector toward the Sun
-  amrex::Real shadowCylinderRadius = 0.0;     // shadow cylinder radius [m]
-  amrex::Real shadowCylinderHalfHeight = 0.0; // half-height anti-solar [m]
+  amrex::Real shadowCylinderRadius = 0.0;      // shadow cylinder radius [m]
+  amrex::Real shadowCylinderHalfHeight = 0.0;  // half-height anti-solar [m]
 
   // ---- Electron impact ionization (#ELECTRONIMPACT command) ----
   amrex::Vector<amrex::Real> impactEIon; // ionization energy [eV]
@@ -39,7 +40,7 @@ protected:
 
   // ---- Recombination (#RECOMBINATION command) ----
   bool useRecombination = false;
-  amrex::Vector<int> recombIonIndex;      // ion species index (iSp)
+  amrex::Vector<int> recombIonIndex;        // ion species index (iSp)
   amrex::Vector<amrex::Real> recombRate0;   // base rate coefficient k0 [cm^3/s]
   amrex::Vector<amrex::Real> recombTempExp; // temperature exponent alpha
   amrex::Vector<amrex::Real> recombRefTemp; // reference temperature T_ref [K]
@@ -47,10 +48,10 @@ protected:
   // ---- General chemistry (#CHEMISTRY command) ----
   bool useChemistry = false;
   struct ChemistryReaction {
-    int reactantIon;     // 0 = none, 1+ = ion species index
-    int productIon;      // 0 = none, 1+ = ion species index
-    int neutralComp;     // -1 = none, 0+ = exosphere component
-    int rateType;        // 0 = thermal k(T), 1 = photoionization (1/r^2)
+    int reactantIon;      // 0 = none, 1+ = ion species index
+    int productIon;       // 0 = none, 1+ = ion species index
+    int neutralComp;      // -1 = none, 0+ = exosphere component
+    int rateType;         // 0 = thermal k(T), 1 = photoionization (1/r^2)
     amrex::Real rateCoef; // k0 [cm^3/s] for thermal, nu0 [s^-1] for photo
     amrex::Real tempExp;  // alpha: k = k0 * (Tref/Te)^alpha
     amrex::Real refTemp;  // T_ref [K]
@@ -102,7 +103,8 @@ public:
   virtual amrex::Real get_exosphere_density(amrex::Real r) const { return 0.0; }
 
   /// Get single-component neutral exosphere density at radial distance r.
-  virtual amrex::Real get_exosphere_component_density(amrex::Real r, int iC) const {
+  virtual amrex::Real get_exosphere_component_density(amrex::Real r,
+                                                      int iC) const {
     return 0.0;
   }
 
