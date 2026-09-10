@@ -252,6 +252,15 @@ private:
   ParticlesInfo pInfo;
 
   BoxBC<FieldBC::Type> bcField;
+  bool hasConductingBC_ = false;
+  bool hasAbsorbBC_ = false;
+  bool hasInflowBC_ = false;
+
+  void update_bc_flags() {
+    hasConductingBC_ = bcField.has(FieldBC::conducting);
+    hasAbsorbBC_ = bcField.has(FieldBC::absorb);
+    hasInflowBC_ = bcField.has(FieldBC::inflow);
+  }
 
   // De-duplicated boundary-condition warnings
   std::set<std::string> bcWarnings_;

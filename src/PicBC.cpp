@@ -65,36 +65,23 @@ inline BoxArray get_boundary_active_ba(const BoxArray& activeRegion,
 void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
                          const int iStart, const int nComp, GETVALUE func,
                          const int iLev, const bool isB) {
+  if (Geom(iLev).isAllPeriodic() || mf.nGrow() == 0)
+    return;
+
   std::string nameFunc = "Pic::apply_field_bc";
   timing_func(nameFunc);
-
-  if (Geom(iLev).isAllPeriodic())
-    return;
-  if (mf.nGrow() == 0)
-    return;
 
   // Base fill: float on open faces, or evaluate state from func elsewhere.
   apply_BC(status, mf, iStart, nComp, func, iLev, &bcField);
 
   // Dedicated wall operators applied per configured face type.
-  bool hasConducting = false;
-  bool hasAbsorb = false;
-  bool hasInflow = false;
-  for (int d = 0; d < nDim; ++d) {
-    if (bcField.lo[d] == FieldBC::conducting ||
-        bcField.hi[d] == FieldBC::conducting)
-      hasConducting = true;
-    if (bcField.lo[d] == FieldBC::absorb || bcField.hi[d] == FieldBC::absorb)
-      hasAbsorb = true;
-    if (bcField.lo[d] == FieldBC::inflow || bcField.hi[d] == FieldBC::inflow)
-      hasInflow = true;
-  }
-
-  if (hasConducting)
+  if (hasConductingBC_)
     apply_conducting_wall(status, mf, iStart, nComp, iLev, bcField, isB);
-  if (hasAbsorb)
+
+  if (hasAbsorbBC_)
     apply_absorbing_wall(status, mf, iStart, nComp, iLev, bcField, isB);
-  if (hasInflow && fi->get_inflow_defined())
+
+  if (hasInflowBC_ && fi->get_inflow_defined())
     apply_inflow_wall(status, mf, iStart, nComp, iLev, bcField, isB);
 
   // Wave boundary condition overwrites faces where active.
@@ -108,13 +95,11 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
 void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
                    const int nComp, GETVALUE func, const int iLev,
                    const BoxBC<FieldBC::Type>* bc) {
+  if (Geom(iLev).isAllPeriodic() || mf.nGrow() == 0)
+    return;
+
   std::string nameFunc = "Pic::apply_BC";
   timing_func(nameFunc);
-
-  if (Geom(iLev).isAllPeriodic())
-    return;
-  if (mf.nGrow() == 0)
-    return;
 
   bool useFloatBC = (func == nullptr);
   const BoxArray ba =
@@ -221,21 +206,6 @@ void Pic::apply_conducting_wall(const iMultiFab& status, MultiFab& mf,
                                 bool isB) {
   std::string nameFunc = "Pic::apply_conducting_wall";
   timing_func(nameFunc);
-
-  if (Geom(iLev).isAllPeriodic())
-    return;
-  if (mf.nGrow() == 0)
-    return;
-
-  bool hasConducting = false;
-  for (int d = 0; d < nDim; ++d) {
-    if (bc.lo[d] == FieldBC::conducting || bc.hi[d] == FieldBC::conducting) {
-      hasConducting = true;
-      break;
-    }
-  }
-  if (!hasConducting)
-    return;
 
   const BoxArray ba =
       get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
@@ -354,28 +324,13 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
                                const int iStart, const int nComp,
                                const int iLev, const BoxBC<FieldBC::Type>& bc,
                                bool isB) {
-  std::string nameFunc = "Pic::apply_absorbing_wall";
-  timing_func(nameFunc);
-
   (void)isB;
-  if (Geom(iLev).isAllPeriodic())
-    return;
-  if (mf.nGrow() == 0)
-    return;
-
-  bool hasAbsorb = false;
-  for (int d = 0; d < nDim; ++d) {
-    if (bc.lo[d] == FieldBC::absorb || bc.hi[d] == FieldBC::absorb) {
-      hasAbsorb = true;
-      break;
-    }
-  }
-  if (!hasAbsorb)
-    return;
-
   const Real dt = tc ? tc->get_dt() : 0.0;
   if (dt <= 0.0)
     return;
+
+  std::string nameFunc = "Pic::apply_absorbing_wall";
+  timing_func(nameFunc);
 
   // Characteristic speed; default c=1, override via #ABSORB.
   const Real cs = (absorbCharSpeed > 0.0) ? absorbCharSpeed : 1.0;
@@ -446,27 +401,10 @@ void Pic::apply_absorbing_wall(const iMultiFab& status, MultiFab& mf,
 void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
                             const int iStart, const int nComp, const int iLev,
                             const BoxBC<FieldBC::Type>& bc, bool isB) {
-  std::string nameFunc = "Pic::apply_inflow_wall";
-  timing_func(nameFunc);
-
   (void)isB; // zero-gradient copy is component-agnostic
 
-  if (!fi->get_inflow_defined())
-    return;
-  if (Geom(iLev).isAllPeriodic())
-    return;
-  if (mf.nGrow() == 0)
-    return;
-
-  bool hasInflow = false;
-  for (int d = 0; d < nDim; ++d) {
-    if (bc.lo[d] == FieldBC::inflow || bc.hi[d] == FieldBC::inflow) {
-      hasInflow = true;
-      break;
-    }
-  }
-  if (!hasInflow)
-    return;
+  std::string nameFunc = "Pic::apply_inflow_wall";
+  timing_func(nameFunc);
 
   const BoxArray ba =
       get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
@@ -513,13 +451,11 @@ void Pic::apply_inflow_wall(const iMultiFab& status, MultiFab& mf,
 // stencils.
 void Pic::apply_centerPlasma_BC(const iMultiFab& status, MultiFab& mf,
                                 const int iLev) {
+  if (Geom(iLev).isAllPeriodic() || mf.nGrow() == 0)
+    return;
+
   std::string nameFunc = "Pic::apply_centerPlasma_BC";
   timing_func(nameFunc);
-
-  if (Geom(iLev).isAllPeriodic())
-    return;
-  if (mf.nGrow() == 0)
-    return;
 
   const BoxArray ba =
       get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
@@ -568,17 +504,7 @@ void Pic::apply_centerPlasma_BC(const iMultiFab& status, MultiFab& mf,
 void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
                            const int iStart, const int nComp, const int iLev,
                            const BoxBC<FieldBC::Type>& bc, int iField, Real t) {
-  std::string nameFunc = "Pic::apply_wave_field";
-  timing_func(nameFunc);
-
   (void)bc;
-  if (!waveBC.active)
-    return;
-  if (Geom(iLev).isAllPeriodic())
-    return;
-  if (mf.nGrow() == 0)
-    return;
-
   bool hasField = false;
   for (const auto& f : waveBC.faces) {
     for (const auto& c : f.comps) {
@@ -592,6 +518,9 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
   }
   if (!hasField)
     return;
+
+  std::string nameFunc = "Pic::apply_wave_field";
+  timing_func(nameFunc);
 
   const BoxArray ba =
       get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);

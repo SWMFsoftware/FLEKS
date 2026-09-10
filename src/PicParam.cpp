@@ -63,6 +63,7 @@ void Pic::read_param(const std::string& command, ReadParam& param) {
       bcField.set(i, 0, FieldBC::parse(lo));
       bcField.set(i, 1, FieldBC::parse(hi));
     }
+    update_bc_flags();
   } else if (command == "#ABSORB") {
     param.read_var("charSpeed", absorbCharSpeed);
   } else if (command == "#INFLOW") {
@@ -442,6 +443,8 @@ void Pic::validate_bc_pairing(const Geometry& gm) {
                      << "B; for the Ohm's-law E it only closes the ghost ring "
                      << "(it is not an independent constraint).\n";
   }
+
+  update_bc_flags();
 }
 
 //==========================================================
