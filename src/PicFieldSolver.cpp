@@ -4,6 +4,7 @@
 
 #include <AMReX_Algorithm.H>
 #include <AMReX_MultiFabUtil.H>
+#include <AMReX_Reduce.H>
 
 #include "GridUtility.h"
 #include "LinearSolver.h"
@@ -441,24 +442,51 @@ void Pic::convert_1d_to_3d(const double* const p, MultiFab& MF, int iLev) {
   std::string nameFunc = "Pic::convert_1d_to_3d";
   timing_func(nameFunc);
 
-  bool isCenter = MF.ixType().cellCentered();
-
   MF.setVal(0.0);
+  const int ncomp = MF.nComp();
 
-  int iCount = 0;
-  for (MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.tilebox();
+  if (MF.ixType().cellCentered()) {
+    std::size_t b_offset = 0;
+    for (MFIter mfi(MF); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      Array4<Real> const arr = MF[mfi].array();
+      const Dim3 lo = amrex::lbound(bx);
+      const Dim3 len = amrex::length(bx);
 
-    const Array4<Real>& arr = MF[mfi].array();
+      amrex::ParallelFor(bx, ncomp,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int n) noexcept {
+          std::size_t local_idx = (i - lo.x)
+                                + (j - lo.y) * len.x
+                                + (k - lo.z) * len.x * len.y
+                                + n * len.x * len.y * len.z;
+          arr(i, j, k, n) = p[b_offset + local_idx];
+        });
 
-    const auto& nodeArr = nodeStatus[iLev][mfi].array();
+      b_offset += bx.numPts() * ncomp;
+    }
+  } else {
+    std::size_t b_offset = 0;
+    for (MFIter mfi(MF); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      Array4<Real> const arr = MF[mfi].array();
+      Array4<int const> const offsetArr = nodeOffsetMap[iLev][mfi].const_array();
+      const int nOwned = nOwnedNodes[iLev][mfi.LocalIndex()];
 
-    ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
-      if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
-        arr(i, j, k, iVar) = p[iCount++];
-      }
-    });
+      amrex::ParallelFor(bx, ncomp,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int n) noexcept {
+          int m = offsetArr(i, j, k);
+          if (m >= 0) {
+            arr(i, j, k, n) = p[b_offset + n * nOwned + m];
+          }
+        });
+
+      b_offset += nOwned * ncomp;
+    }
   }
+
+#if defined(AMREX_USE_GPU)
+  amrex::Gpu::streamSynchronize();
+#endif
 }
 
 //==========================================================
@@ -466,22 +494,50 @@ void Pic::convert_3d_to_1d(const MultiFab& MF, double* const p, int iLev) {
   std::string nameFunc = "Pic::convert_3d_to_1d";
   timing_func(nameFunc);
 
-  bool isCenter = MF.ixType().cellCentered();
+  const int ncomp = MF.nComp();
 
-  int iCount = 0;
-  for (MFIter mfi(MF, doTiling); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.tilebox();
+  if (MF.ixType().cellCentered()) {
+    std::size_t b_offset = 0;
+    for (MFIter mfi(MF); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      Array4<Real const> const arr = MF[mfi].array();
+      const Dim3 lo = amrex::lbound(bx);
+      const Dim3 len = amrex::length(bx);
 
-    const Array4<Real const>& arr = MF[mfi].array();
+      amrex::ParallelFor(bx, ncomp,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int n) noexcept {
+          std::size_t local_idx = (i - lo.x)
+                                + (j - lo.y) * len.x
+                                + (k - lo.z) * len.x * len.y
+                                + n * len.x * len.y * len.z;
+          p[b_offset + local_idx] = arr(i, j, k, n);
+        });
 
-    const auto& nodeArr = nodeStatus[iLev][mfi].array();
+      b_offset += bx.numPts() * ncomp;
+    }
+  } else {
+    std::size_t b_offset = 0;
+    for (MFIter mfi(MF); mfi.isValid(); ++mfi) {
+      const Box& bx = mfi.validbox();
+      Array4<Real const> const arr = MF[mfi].array();
+      Array4<int const> const offsetArr = nodeOffsetMap[iLev][mfi].const_array();
+      const int nOwned = nOwnedNodes[iLev][mfi.LocalIndex()];
 
-    ParallelFor(box, MF.nComp(), [&](int i, int j, int k, int iVar) {
-      if (isCenter || bit::is_owner(nodeArr(i, j, k))) {
-        p[iCount++] = arr(i, j, k, iVar);
-      }
-    });
+      amrex::ParallelFor(bx, ncomp,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int n) noexcept {
+          int m = offsetArr(i, j, k);
+          if (m >= 0) {
+            p[b_offset + n * nOwned + m] = arr(i, j, k, n);
+          }
+        });
+
+      b_offset += nOwned * ncomp;
+    }
   }
+
+#if defined(AMREX_USE_GPU)
+  amrex::Gpu::streamSynchronize();
+#endif
 }
 
 //==========================================================
@@ -884,24 +940,45 @@ Real Pic::calc_E_field_energy() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       FArrayBox& fab = nodeE[iLev][mfi];
-      const auto& status = cell_status(iLev)[mfi].array();
-      Box box = mfi.validbox();
-      const Array4<Real>& arr = fab.array();
+      const Array4<int const> status = cell_status(iLev)[mfi].const_array();
+      const Box& box = mfi.validbox();
+      const Array4<Real const> arr = fab.const_array();
 
-      Real sumLoc = 0;
-      ParallelFor(box, [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+#if AMREX_SPACEDIM > 2
+      const int k_hi_offset = 1;
+#else
+      const int k_hi_offset = 0;
+#endif
+#if AMREX_SPACEDIM > 1
+      const int j_hi_offset = 1;
+#else
+      const int j_hi_offset = 0;
+#endif
 
-        if (!bit::is_refined(status(ijk))) {
-          Box subBox(ijk, ijk + 1);
-          ParallelFor(subBox, [&](int ii, int jj, int kk) {
-            IntVect ijk0 = { AMREX_D_DECL(ii, jj, kk) };
-            sumLoc += arr(ijk0, ix_) * arr(ijk0, ix_) +
-                      arr(ijk0, iy_) * arr(ijk0, iy_) +
-                      arr(ijk0, iz_) * arr(ijk0, iz_);
-          });
-        }
-      });
+      ReduceOps<ReduceOpSum> reduce_op;
+      ReduceData<Real> reduce_data(reduce_op);
+      using ReduceTuple = typename decltype(reduce_data)::Type;
+      reduce_op.eval(box, reduce_data,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k) -> ReduceTuple {
+          if (!bit::is_refined(status(i, j, k))) {
+            Real cellSum = 0.0;
+            for (int kk = k; kk <= k + k_hi_offset; ++kk) {
+              for (int jj = j; jj <= j + j_hi_offset; ++jj) {
+                for (int ii = i; ii <= i + 1; ++ii) {
+                  cellSum += arr(ii, jj, kk, ix_) * arr(ii, jj, kk, ix_) +
+                             arr(ii, jj, kk, iy_) * arr(ii, jj, kk, iy_) +
+                             arr(ii, jj, kk, iz_) * arr(ii, jj, kk, iz_);
+                }
+              }
+            }
+            return {cellSum};
+          } else {
+            return {0.0};
+          }
+        });
+
+      ReduceTuple hv = reduce_data.value(reduce_op);
+      Real sumLoc = amrex::get<0>(hv);
 
       Real avg = (nDim == 3) ? 0.125 : 0.25;
 
@@ -923,20 +1000,27 @@ Real Pic::calc_B_field_energy() {
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       FArrayBox& fab = centerB[iLev][mfi];
-      const auto& status = cell_status(iLev)[mfi].array();
+      const Array4<int const> status = cell_status(iLev)[mfi].const_array();
 
       const Box& box = mfi.validbox();
-      const Array4<Real>& arr = fab.array();
+      const Array4<Real const> arr = fab.const_array();
 
-      Real sumLoc = 0;
-      ParallelFor(box, [&](int i, int j, int k) {
-        IntVect ijk = { AMREX_D_DECL(i, j, k) };
-        if (!bit::is_refined(status(ijk))) {
-          sumLoc += arr(i, j, k, ix_) * arr(i, j, k, ix_) +
+      ReduceOps<ReduceOpSum> reduce_op;
+      ReduceData<Real> reduce_data(reduce_op);
+      using ReduceTuple = typename decltype(reduce_data)::Type;
+      reduce_op.eval(box, reduce_data,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k) -> ReduceTuple {
+          if (!bit::is_refined(status(i, j, k))) {
+            return {arr(i, j, k, ix_) * arr(i, j, k, ix_) +
                     arr(i, j, k, iy_) * arr(i, j, k, iy_) +
-                    arr(i, j, k, iz_) * arr(i, j, k, iz_);
-        }
-      });
+                    arr(i, j, k, iz_) * arr(i, j, k, iz_)};
+          } else {
+            return {0.0};
+          }
+        });
+
+      ReduceTuple hv = reduce_data.value(reduce_op);
+      Real sumLoc = amrex::get<0>(hv);
 
       sum += sumLoc * get_cell_volume(iLev) * 0.5 / fourPI;
     }

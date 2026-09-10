@@ -55,6 +55,8 @@ protected:
   // potential status.
   amrex::Vector<amrex::iMultiFab> cellStatus;
   amrex::Vector<amrex::iMultiFab> nodeStatus;
+  amrex::Vector<amrex::iMultiFab> nodeOffsetMap;
+  amrex::Vector<amrex::Vector<int>> nOwnedNodes;
   amrex::Vector<amrex::iMultiFab> targetPPC;
 
   amrex::Vector<amrex::MultiFab> cellCost;
@@ -99,6 +101,8 @@ public:
 
     cellStatus.resize(n_lev_max());
     nodeStatus.resize(n_lev_max());
+    nodeOffsetMap.resize(n_lev_max());
+    nOwnedNodes.resize(n_lev_max());
     cellCost.resize(n_lev_max());
   };
 

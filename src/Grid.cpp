@@ -225,6 +225,9 @@ void Grid::distribute_grid_arrays(const Vector<BoxArray>& cGridsOld) {
     distribute_FabArray(nodeStatus[iLev], nGrids[iLev], DistributionMap(iLev),
                         1, nGst, false);
 
+    distribute_FabArray(nodeOffsetMap[iLev], nGrids[iLev],
+                        DistributionMap(iLev), 1, 0, false);
+
     distribute_FabArray(cellCost[iLev], cGrids[iLev], DistributionMap(iLev), 1,
                         0, false);
   }
@@ -508,6 +511,29 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
               }
             }
       });
+    }
+
+    nodeOffsetMap[iLev].setVal(-1);
+    nOwnedNodes[iLev].assign(nodeStatus[iLev].local_size(), 0);
+
+    for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
+      const Box& box = mfi.validbox();
+      const auto& nodeArr = nodeStatus[iLev][mfi].array();
+      const auto& offsetArr = nodeOffsetMap[iLev][mfi].array();
+      const auto lo = lbound(box);
+      const auto hi = ubound(box);
+
+      int m = 0;
+      for (int k = lo.z; k <= hi.z; ++k) {
+        for (int j = lo.y; j <= hi.y; ++j) {
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (bit::is_owner(nodeArr(i, j, k))) {
+              offsetArr(i, j, k) = m++;
+            }
+          }
+        }
+      }
+      nOwnedNodes[iLev][mfi.LocalIndex()] = m;
     }
   }
 }
