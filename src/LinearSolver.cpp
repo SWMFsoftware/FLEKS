@@ -201,14 +201,14 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
     // Krylov_II[1]:=A*sol
     if (isInit || its > 0) {
       matvec(sol, Krylov_II, iLev);
-      for (int i = 0; i < n; ++i) {
+      amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) {
         Krylov_II[i] = rhs[i] - Krylov_II[i];
-      }
+      });
     } else {
       // Save a matvec when starting from zero initial condition
-      for (int i = 0; i < n; ++i) {
+      amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) {
         Krylov_II[i] = rhs[i];
-      }
+      });
     }
     //-------------------------------------------------------------
     ro = sqrt(dot_product_mpi(Krylov_II, Krylov_II, n, iComm));
@@ -247,9 +247,9 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
     }
 
     auto coef = 1.0 / ro;
-    for (int i = 0; i < n; ++i) {
+    amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) {
       Krylov_II[i] *= coef;
-    }
+    });
 
     // Initialize 1st term of RHS of Hessenberg system
     rs[0] = ro;
@@ -268,18 +268,21 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
         double t =
             dot_product_mpi(&Krylov_II[j * n], &Krylov_II[i1 * n], n, iComm);
         hh[i * nKrylov1 + j] = t;
-        for (int k = 0; k < n; ++k) {
-          Krylov_II[i1 * n + k] -= t * Krylov_II[j * n + k];
-        }
+        auto* const v_i1 = &Krylov_II[i1 * n];
+        const auto* const v_j = &Krylov_II[j * n];
+        amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int k) {
+          v_i1[k] -= t * v_j[k];
+        });
       }
       double cDot = sqrt(
           dot_product_mpi(&Krylov_II[i1 * n], &Krylov_II[i1 * n], n, iComm));
       hh[i * nKrylov1 + i1] = cDot;
       if (cDot != 0.0) {
         cDot = 1.0 / cDot;
-        for (int k = 0; k < n; ++k) {
-          Krylov_II[i1 * n + k] *= cDot;
-        }
+        auto* const v_i1 = &Krylov_II[i1 * n];
+        amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int k) {
+          v_i1[k] *= cDot;
+        });
       }
       // Done with modified Gram-Schmidt and Arnoldi step.
       // Update factorization of hh.
@@ -331,10 +334,11 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
     // Done with back substitution.
     // Form linear combination to get solution.
     for (int j = 0; j < i; ++j) {
-      for (int k = 0; k < n; ++k) {
-        // sol[i] += rs[j] * Krylov_II[i][j];
-        sol[k] += rs[j] * Krylov_II[j * n + k];
-      }
+      const double rs_j = rs[j];
+      const auto* const v_j = &Krylov_II[j * n];
+      amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int k) {
+        sol[k] += rs_j * v_j[k];
+      });
     }
   } while (ro > Tol1 && its < nIter);
 

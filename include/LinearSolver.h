@@ -46,21 +46,21 @@ void jacobian_free_matvec(NonlinearMatvec nonlinearMatvec, const double *base,
                           double *out, double *work, const int n,
                           const int iLev, const double epsilon) {
   if (epsilon == 0.0) {
-    std::fill(out, out + n, 0.0);
+    amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) { out[i] = 0.0; });
     return;
   }
 
   // Evaluate (F(base + epsilon * direction) - F(base)) / epsilon.
-  for (int i = 0; i < n; ++i) {
+  amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) {
     work[i] = base[i] + epsilon * direction[i];
-  }
+  });
 
   nonlinearMatvec(work, out, iLev);
 
   const double invEpsilon = 1.0 / epsilon;
-  for (int i = 0; i < n; ++i) {
+  amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) {
     out[i] = (out[i] - baseMatvec[i]) * invEpsilon;
-  }
+  });
 }
 
 } // namespace fleks_jfnk
@@ -159,11 +159,14 @@ public:
       }
     }
 
-    for (int i = 0; i < nSolve; ++i) {
-      rhs[i] = 0;
-      xLeft[i] = 0;
-      matvec[i] = 0;
-    }
+    double* const r = rhs;
+    double* const x = xLeft;
+    double* const m = matvec;
+    amrex::ParallelFor(nSolve, [=] AMREX_GPU_DEVICE(int i) {
+      r[i] = 0.0;
+      x[i] = 0.0;
+      m[i] = 0.0;
+    });
   }
 
   void set_tol(amrex::Real in) { tol = in; }

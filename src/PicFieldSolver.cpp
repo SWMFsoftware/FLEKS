@@ -111,10 +111,13 @@ void Pic::solve_E_gmres(int iLev) {
   update_E_matvec(eSolver.xLeft, eSolver.matvec, iLev, false);
 
   // Original linear solve: A * delta = rhs - A(E_old).
-  for (int i = 0; i < eSolver.get_nSolve(); ++i) {
-    eSolver.rhs[i] -= eSolver.matvec[i];
-    eSolver.xLeft[i] = 0;
-  }
+  double* const r = eSolver.rhs;
+  const double* const m = eSolver.matvec;
+  double* const x = eSolver.xLeft;
+  amrex::ParallelFor(eSolver.get_nSolve(), [=] AMREX_GPU_DEVICE(int i) {
+    r[i] -= m[i];
+    x[i] = 0.0;
+  });
 
   if (doReport)
     Print() << "\n-------" << printPrefix
@@ -138,10 +141,13 @@ void Pic::solve_E_newton_krylov(int iLev) {
   update_E_matvec(base.data(), baseMatvec.data(), iLev, false);
 
   // One Newton step: J(E_old) * delta = rhs - F(E_old).
-  for (int i = 0; i < nSolve; ++i) {
-    eSolver.rhs[i] -= baseMatvec[i];
-    eSolver.xLeft[i] = 0;
-  }
+  double* const r = eSolver.rhs;
+  const double* const bm = baseMatvec.data();
+  double* const x = eSolver.xLeft;
+  amrex::ParallelFor(nSolve, [=] AMREX_GPU_DEVICE(int i) {
+    r[i] -= bm[i];
+    x[i] = 0.0;
+  });
 
   if (doReport)
     Print() << "\n-------" << printPrefix

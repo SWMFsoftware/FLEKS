@@ -9,6 +9,7 @@
 
 #include <AMReX_MultiFab.H>
 #include <AMReX_REAL.H>
+#include <AMReX_Reduce.H>
 #include <AMReX_iMultiFab.H>
 #include <mpi.h>
 
@@ -89,9 +90,19 @@ inline std::string normalize_string_token(std::string name,
 inline double dot_product_mpi(const double* a, const double* b, const int n,
                               const MPI_Comm iComm) {
   double c = 0.0;
+#if defined(AMREX_USE_GPU)
+  amrex::ReduceOps<amrex::ReduceOpSum> reduce_op;
+  amrex::ReduceData<double> reduce_data(reduce_op);
+  using ReduceTuple = typename amrex::ReduceData<double>::Type;
+  reduce_op.eval(n, reduce_data, [=] AMREX_GPU_DEVICE(int i) -> ReduceTuple {
+    return { a[i] * b[i] };
+  });
+  c = amrex::get<0>(reduce_data.value());
+#else
   for (int i = 0; i < n; ++i) {
     c += a[i] * b[i];
   }
+#endif
 
   if (iComm == MPI_COMM_SELF) {
     return c;
