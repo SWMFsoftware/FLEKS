@@ -193,7 +193,7 @@ struct InflowSpeedSampler {
       for (int it = 0; it < 30; ++it) {
         Real mid = 0.5 * (lo + hi);
         Real Fmid = 0.5 * ((e0 - std::exp(-(mid - vd) * (mid - vd))) +
-                                  vd * sqpi * (erfc_mvd - std::erfc(mid - vd)));
+                           vd * sqpi * (erfc_mvd - std::erfc(mid - vd)));
         if (Fmid < target)
           lo = mid;
         else

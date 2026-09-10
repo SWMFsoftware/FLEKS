@@ -89,8 +89,7 @@ Real Particles<NStructReal, NStructInt>::charge_exchange_dis(Real* vp, Real* vh,
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::get_analytic_ion_fluid(
-    const RealVect xyz, Real& rhoIon, Real& cs2Ion,
-    Real (&uIon)[nDim3]) {
+    const RealVect xyz, Real& rhoIon, Real& cs2Ion, Real (&uIon)[nDim3]) {
 
   // The units of ionOH are assumed to be:
   // r: AU
