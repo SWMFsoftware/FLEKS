@@ -7,6 +7,7 @@
 #include <limits>
 #include <vector>
 
+#include <AMReX_GpuContainers.H>
 #include <AMReX_ParallelDescriptor.H>
 
 typedef void (*MATVEC)(const double *vecIn, double *vecOut, int n);
@@ -109,9 +110,9 @@ class LinearSolver {
   double tol;
   int nIter;
   MATVEC fMatvec;
-  std::vector<double> rhsBuffer;
-  std::vector<double> xLeftBuffer;
-  std::vector<double> matvecBuffer;
+  amrex::Gpu::ManagedVector<double> rhsBuffer;
+  amrex::Gpu::ManagedVector<double> xLeftBuffer;
+  amrex::Gpu::ManagedVector<double> matvecBuffer;
 
 public:
   double *rhs;

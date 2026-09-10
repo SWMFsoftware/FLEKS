@@ -178,7 +178,7 @@ int gmres(std::function<void(const double *, double *, const int)> matvec,
   std::vector<double> c(nKrylov);
   std::vector<double> s(nKrylov);
   std::vector<double> rs(nKrylov1);
-  std::vector<double> krylovBuffer(n * (nKrylov + 2));
+  amrex::Gpu::ManagedVector<double> krylovBuffer(n * (nKrylov + 2), 0.0);
   std::vector<double> hhBuffer(nKrylov1 * nKrylov);
   auto *Krylov_II = krylovBuffer.data();
   auto *hh = hhBuffer.data();

@@ -129,9 +129,9 @@ void Pic::solve_E_gmres(int iLev) {
 void Pic::solve_E_newton_krylov(int iLev) {
   const int nSolve = eSolver.get_nSolve();
 
-  std::vector<double> base(nSolve);
-  std::vector<double> baseMatvec(nSolve);
-  std::vector<double> work(nSolve);
+  amrex::Gpu::ManagedVector<double> base(nSolve, 0.0);
+  amrex::Gpu::ManagedVector<double> baseMatvec(nSolve, 0.0);
+  amrex::Gpu::ManagedVector<double> work(nSolve, 0.0);
 
   convert_3d_to_1d(nodeE[iLev], base.data(), iLev);
 
