@@ -7,6 +7,7 @@
 #include <AMReX_Algorithm.H>
 #include <AMReX_CArena.H>
 #include <AMReX_FabArrayBase.H>
+#include <AMReX_Loop.H>
 #include <AMReX_MultiFabUtil.H>
 
 #if defined(__linux__)
@@ -357,7 +358,7 @@ void Pic::fill_new_node_E() {
       const auto& status = nodeStatus[iLev][mfi].array();
 
       // Host-only kernel: host fluid interface interpolators fi->get_ex/ey/ez
-      ParallelFor(box, [&](int i, int j, int k) {
+      amrex::LoopOnCpu(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_new(status(ijk))) {
           if (ic_ && ic_->is_tophat()) {
@@ -401,7 +402,7 @@ void Pic::fill_new_node_B() {
       const auto& status = nodeStatus[iLev][mfi].array();
 
       // Host-only kernel: host fluid interface interpolators fi->get_bx/by/bz
-      ParallelFor(box, [&](int i, int j, int k) {
+      amrex::LoopOnCpu(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_new(status(ijk))) {
           if (ic_ && ic_->is_tophat()) {
@@ -1351,7 +1352,7 @@ void Pic::update_U0_E0() {
 
       // Host-only kernel: host boundary lookup via get_node_fluid_u
       // Fill in ghost nodes
-      ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {
+      amrex::LoopOnCpu(mfi.fabbox(), [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_domain_boundary(status(ijk))) {
           const int iFluid = 0;
@@ -1396,7 +1397,7 @@ void Pic::update_U0_E0() {
 
       // Host-only kernel: host boundary lookup via get_node_E
       // Fill in boundary nodes
-      ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {
+      amrex::LoopOnCpu(mfi.fabbox(), [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_domain_boundary(status(ijk))) {
           arrE(i, j, k, ixLocal) = get_node_E(mfi, ijk, ixLocal, iLev);

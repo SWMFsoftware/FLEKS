@@ -1,5 +1,6 @@
 #include <cstdlib>
 
+#include <AMReX_Loop.H>
 #include <AMReX_ParReduce.H>
 
 #include "InitialCondition.h"
@@ -350,7 +351,7 @@ void Particles<NStructReal, NStructInt>::add_particles_domain() {
       const auto& status = cell_status(iLev)[mfi].array();
 
       // Host-only kernel: CPU particle allocation into ParticleContainer
-      ParallelFor(mfi.validbox(), [&](int i, int j, int k) noexcept {
+      amrex::LoopOnCpu(mfi.validbox(), [&](int i, int j, int k) noexcept {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_new(status(ijk)) && !bit::is_refined(status(ijk))) {
           add_particles_cell(iLev, mfi, ijk, fi, true);

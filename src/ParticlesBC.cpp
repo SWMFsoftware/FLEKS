@@ -1,5 +1,6 @@
 #include <cstdlib>
 
+#include <AMReX_Loop.H>
 #include <AMReX_ParReduce.H>
 
 #include "InitialCondition.h"
@@ -102,7 +103,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
     }
 
     // Host-only kernel: CPU particle allocation into ParticleContainer
-    ParallelFor(bxGst, [&](int i, int j, int k) noexcept {
+    amrex::LoopOnCpu(bxGst, [&](int i, int j, int k) noexcept {
       IntVect ijk = { AMREX_D_DECL(i, j, k) };
       IntVect ijksrc;
       if (do_inject_particles_for_this_cell(bx, status, ijk, ijksrc)) {

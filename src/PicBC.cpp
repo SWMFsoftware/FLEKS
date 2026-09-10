@@ -2,6 +2,7 @@
 #include <cmath>
 #include <vector>
 
+#include <AMReX_Loop.H>
 #include <AMReX_MultiFabUtil.H>
 
 #include "GridUtility.h"
@@ -114,7 +115,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
         const Array4<const int>& statusArr = status[mfi].array();
 
         // Host-only kernel: dispatches C++ member function pointer (this->*func)
-        ParallelFor(bxFab, [&](int i, int j, int k) {
+        amrex::LoopOnCpu(bxFab, [&](int i, int j, int k) {
           if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
             int ip, jp, kp;
             bool useFloat = use_float(i, j, k, ip, jp, kp, *bc, bxValid);
@@ -190,7 +191,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
         Box box0(lo, hi);
 
         // Host-only kernel: dispatches C++ member function pointer (this->*func)
-        ParallelFor(box0, nComp, [&](int i, int j, int k, int iVar) {
+        amrex::LoopOnCpu(box0, nComp, [&](int i, int j, int k, int iVar) {
           if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
             arr(i, j, k, iStart + iVar) = (this->*func)(
                 mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
@@ -546,7 +547,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
     const Array4<const int>& statusArr = status[mfi].array();
 
     // Host-only kernel: evaluates waveBC host structures and std::vector faces
-    ParallelFor(bxFab, [&](int i, int j, int k) {
+    amrex::LoopOnCpu(bxFab, [&](int i, int j, int k) {
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
         return;
 
