@@ -699,7 +699,7 @@ void TestParticles::add_test_particles_from_fluid(const Vector<Vel>& tpStates) {
             add_particles_cell(iLev, mfi, IntVect{ AMREX_D_DECL(i, j, k) }, fi,
                                false, IntVect(0), tpVel);
           } else if (iPartRegion == iRegionUser_) {
-            amrex::Real xyz[nDim];
+            Real xyz[nDim];
             Geom(iLev).CellCenter({ AMREX_D_DECL(i, j, k) }, xyz);
             if (tpRegions.is_inside(xyz)) {
               add_particles_cell(iLev, mfi, IntVect{ AMREX_D_DECL(i, j, k) },

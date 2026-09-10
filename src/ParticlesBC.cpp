@@ -143,12 +143,12 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
 //==========================================================
 
 namespace {
-constexpr amrex::Real injPI = 3.14159265358979323846264338328;
-constexpr amrex::Real sqpi = 1.77245385090551602729816748334;
+constexpr Real injPI = 3.14159265358979323846264338328;
+constexpr Real sqpi = 1.77245385090551602729816748334;
 
 // Draw a standard normal variate from two uniforms (Box-Muller).
-inline amrex::Real inj_gaussian(amrex::Real r1, amrex::Real r2) {
-  const amrex::Real rr = std::sqrt(-2.0 * std::log(std::max(r1, 1e-300)));
+inline Real inj_gaussian(Real r1, Real r2) {
+  const Real rr = std::sqrt(-2.0 * std::log(std::max(r1, 1e-300)));
   return rr * std::cos(2.0 * injPI * r2);
 }
 
@@ -157,7 +157,7 @@ inline amrex::Real inj_gaussian(amrex::Real r1, amrex::Real r2) {
 //   g(vd) = [ exp(-vd^2)/sqrt(pi) + vd * erfc(-vd) ] / 2
 // with vd = (inward drift speed) / vtherm. Using erfc(-vd) == 1 + erf(vd)
 // avoids catastrophic cancellation for negative outward drift (vd < 0).
-inline amrex::Real inj_mean_inward_flux(amrex::Real vd) {
+inline Real inj_mean_inward_flux(Real vd) {
   return 0.5 * (std::exp(-vd * vd) / sqpi + vd * std::erfc(-vd));
 }
 
@@ -167,16 +167,16 @@ inline amrex::Real inj_mean_inward_flux(amrex::Real vd) {
 // eliminate costly 60-step bisections per particle, converging in 2-3
 // Newton-Raphson steps.
 struct InflowSpeedSampler {
-  amrex::Real vd{ 0.0 };
-  amrex::Real e0{ 1.0 };
-  amrex::Real erfc_mvd{ 1.0 };
-  amrex::Real twoZ{ 1.0 };
-  amrex::Real wHi{ 8.0 };
+  Real vd{ 0.0 };
+  Real e0{ 1.0 };
+  Real erfc_mvd{ 1.0 };
+  Real twoZ{ 1.0 };
+  Real wHi{ 8.0 };
 
   static constexpr int LUT_SIZE = 64;
-  amrex::Real lut[LUT_SIZE + 1];
+  Real lut[LUT_SIZE + 1];
 
-  void init(amrex::Real vd_in) {
+  void init(Real vd_in) {
     vd = vd_in;
     e0 = std::exp(-vd * vd);
     erfc_mvd = std::erfc(-vd);
@@ -184,15 +184,15 @@ struct InflowSpeedSampler {
     wHi = std::max(vd, 0.0) + 8.0;
 
     lut[0] = 0.0;
-    amrex::Real wLo = 0.0;
+    Real wLo = 0.0;
     for (int k = 1; k < LUT_SIZE; ++k) {
-      const amrex::Real rTarget = static_cast<amrex::Real>(k) / LUT_SIZE;
-      const amrex::Real target = 0.5 * rTarget * twoZ;
-      amrex::Real lo = wLo;
-      amrex::Real hi = wHi;
+      const Real rTarget = static_cast<Real>(k) / LUT_SIZE;
+      const Real target = 0.5 * rTarget * twoZ;
+      Real lo = wLo;
+      Real hi = wHi;
       for (int it = 0; it < 30; ++it) {
-        amrex::Real mid = 0.5 * (lo + hi);
-        amrex::Real Fmid = 0.5 * ((e0 - std::exp(-(mid - vd) * (mid - vd))) +
+        Real mid = 0.5 * (lo + hi);
+        Real Fmid = 0.5 * ((e0 - std::exp(-(mid - vd) * (mid - vd))) +
                                   vd * sqpi * (erfc_mvd - std::erfc(mid - vd)));
         if (Fmid < target)
           lo = mid;
@@ -205,25 +205,25 @@ struct InflowSpeedSampler {
     lut[LUT_SIZE] = wHi;
   }
 
-  inline amrex::Real draw(amrex::Real r) const {
-    const amrex::Real target = 0.5 * r * twoZ;
-    const amrex::Real rIdx = r * LUT_SIZE;
+  inline Real draw(Real r) const {
+    const Real target = 0.5 * r * twoZ;
+    const Real rIdx = r * LUT_SIZE;
     const int idx = std::min(std::max(static_cast<int>(rIdx), 0), LUT_SIZE - 1);
-    const amrex::Real frac = rIdx - idx;
-    amrex::Real w = lut[idx] + frac * (lut[idx + 1] - lut[idx]);
+    const Real frac = rIdx - idx;
+    Real w = lut[idx] + frac * (lut[idx + 1] - lut[idx]);
 
     // 2-3 Newton-Raphson polish iterations
     for (int it = 0; it < 3; ++it) {
-      const amrex::Real diff = w - vd;
-      const amrex::Real exp_term = std::exp(-diff * diff);
-      const amrex::Real Fw =
+      const Real diff = w - vd;
+      const Real exp_term = std::exp(-diff * diff);
+      const Real Fw =
           0.5 * ((e0 - exp_term) + vd * sqpi * (erfc_mvd - std::erfc(diff)));
-      const amrex::Real dF = w * exp_term;
+      const Real dF = w * exp_term;
       if (std::abs(dF) < 1e-300)
         break;
-      amrex::Real wNew = w - (Fw - target) / dF;
+      Real wNew = w - (Fw - target) / dF;
       if (wNew < 0.0 || wNew > wHi)
-        wNew = 0.5 * (std::max(static_cast<amrex::Real>(0.0), w) + wHi);
+        wNew = 0.5 * (std::max(static_cast<Real>(0.0), w) + wHi);
       if (std::abs(wNew - w) < 1e-13 * (1.0 + w))
         break;
       w = wNew;
