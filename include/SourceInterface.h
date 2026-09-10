@@ -18,74 +18,46 @@ protected:
   bool useChargeExchange = false;
 
   // ---- Photoionization (#PHOTOIONIZATION command) ----
-  // The neutral component count is nExoComponent (from #EXOSPHERE);
-  // #EXOSPHERE must appear before #PHOTOIONIZATION in PARAM.in.
-  amrex::Vector<double> photoNu0; // ionization rate at planet surface [s^-1]
+  amrex::Vector<amrex::Real> photoNu0; // ionization rate at planet surface [s^-1]
 
   // ---- Shadow cylinder (#SHADOWCYLINDER command) ----
   bool useShadowCylinder = false;
-  double solarDir[3] = { 0.0, 0.0,
-                         0.0 }; // unit vector from planet center toward the Sun
-  double shadowCylinderRadius = 0.0; // radius of planetary shadow cylinder [m]
-  double shadowCylinderHalfHeight =
-      0.0; // half-height along anti-solar direction [m]
+  amrex::Real solarDir[3] = { 0.0, 0.0, 0.0 }; // unit vector toward the Sun
+  amrex::Real shadowCylinderRadius = 0.0;     // shadow cylinder radius [m]
+  amrex::Real shadowCylinderHalfHeight = 0.0; // half-height anti-solar [m]
 
   // ---- Electron impact ionization (#ELECTRONIMPACT command) ----
-  // The neutral component count is nExoComponent (from #EXOSPHERE);
-  // #EXOSPHERE must appear before #ELECTRONIMPACT in PARAM.in.
-  amrex::Vector<double> impactEIon; // ionization energy [eV]
-  amrex::Vector<double> impactA;    // Voronov A coefficient [cm^3/s]
-  amrex::Vector<double> impactK;    // Voronov K coefficient
-  amrex::Vector<double> impactX;    // Voronov X coefficient
+  amrex::Vector<amrex::Real> impactEIon; // ionization energy [eV]
+  amrex::Vector<amrex::Real> impactA;    // Voronov A coefficient [cm^3/s]
+  amrex::Vector<amrex::Real> impactK;    // Voronov K coefficient
+  amrex::Vector<amrex::Real> impactX;    // Voronov X coefficient
 
   // ---- Charge exchange (#CHARGEEXCHANGE command) ----
-  // The number of neutral components is nExoComponent (from #EXOSPHERE);
-  // #EXOSPHERE must appear before #CHARGEEXCHANGE in PARAM.in so that
-  // nExoComponent is available.
   int nCXIonSpecies = 0; // number of ion species that exchange charge
   // Cross-section matrix [cm^2], flattened as [iC * nCXIonSpecies + iIon].
-  // Row iC is the neutral component (0..nExoComponent-1); column iIon is
-  // the ion species (0-based among ions, i.e. iIon = iSp - 1 where iSp is
-  // the fluid index).
-  amrex::Vector<double> cxSigma;
+  amrex::Vector<amrex::Real> cxSigma;
 
   // ---- Recombination (#RECOMBINATION command) ----
-  // Dissociative recombination: ion+ + e- -> neutrals.
-  // Requires useElectronFluid = true (species 0 = electron).
   bool useRecombination = false;
-  // Per-reaction parameters (parallel arrays, size = nRecombReactions):
-  amrex::Vector<int> recombIonIndex;   // 1-based ion species index (iSp)
-  amrex::Vector<double> recombRate0;   // base rate coefficient k0 [cm^3/s]
-  amrex::Vector<double> recombTempExp; // temperature exponent alpha
-  amrex::Vector<double> recombRefTemp; // reference temperature T_ref [K]
-  // k(Te) = k0 * (T_ref / Te_K)^alpha
+  amrex::Vector<int> recombIonIndex;      // ion species index (iSp)
+  amrex::Vector<amrex::Real> recombRate0;   // base rate coefficient k0 [cm^3/s]
+  amrex::Vector<amrex::Real> recombTempExp; // temperature exponent alpha
+  amrex::Vector<amrex::Real> recombRefTemp; // reference temperature T_ref [K]
 
   // ---- General chemistry (#CHEMISTRY command) ----
-  // Supports cross-species ion conversion, photoionization, and
-  // recombination through a unified reaction format.
-  //   reactantIon + neutral -> productIon + neutral'
-  // reactantIon=0 means no reactant ion (photoionization).
-  // productIon=0 means no product ion (recombination).
-  // neutralComp=-1 means no neutral needed (recombination).
   bool useChemistry = false;
   struct ChemistryReaction {
-    int reactantIon; // 0 = none, 1+ = ion species index
-    int productIon;  // 0 = none, 1+ = ion species index
-    int neutralComp; // -1 = none, 0+ = exosphere component
-    int rateType;    // 0 = thermal k(T), 1 = photoionization (1/r^2)
-    double rateCoef; // k0 [cm^3/s] for thermal, nu0 [s^-1] for photo
-    double tempExp;  // alpha: k = k0 * (Tref/Te)^alpha
-    double refTemp;  // T_ref [K]
+    int reactantIon;     // 0 = none, 1+ = ion species index
+    int productIon;      // 0 = none, 1+ = ion species index
+    int neutralComp;     // -1 = none, 0+ = exosphere component
+    int rateType;        // 0 = thermal k(T), 1 = photoionization (1/r^2)
+    amrex::Real rateCoef; // k0 [cm^3/s] for thermal, nu0 [s^-1] for photo
+    amrex::Real tempExp;  // alpha: k = k0 * (Tref/Te)^alpha
+    amrex::Real refTemp;  // T_ref [K]
   };
   amrex::Vector<ChemistryReaction> chemReactions;
 
   // ---- Loss term storage ----
-  // nodeLossFluid stores the mass-density LOSS RATE (positive = loss)
-  // for each ion species, in PIC-normalized units.  It is parallel to
-  // nodeFluid but only has nS-1 components (one per ion species, 0-based:
-  // component i = ion species i+1).  Particles::apply_loss() reads this
-  // to reduce existing particle weights proportionally.
-  // Allocated whenever useRecombination or useChemistry is true.
   amrex::Vector<amrex::MultiFab> nodeLossFluid;
 
   const DomainParameters& domainParameters;
@@ -118,8 +90,6 @@ public:
   };
 
   /// Read ionization-related parameter commands.
-  /// Override in UserSource to handle #PHOTOIONIZATION, #ELECTRONIMPACT,
-  /// #CHARGEEXCHANGE.
   virtual void read_param(const std::string& command, ReadParam& param) {
     amrex::ignore_unused(command, param);
   }
@@ -129,12 +99,10 @@ public:
   virtual void post_process_param() {}
 
   /// Get total neutral exosphere density at radial distance r (SI units).
-  /// Default returns 0.0 — override in UserSource for exosphere profiles.
-  virtual double get_exosphere_density(double r) const { return 0.0; }
+  virtual amrex::Real get_exosphere_density(amrex::Real r) const { return 0.0; }
 
   /// Get single-component neutral exosphere density at radial distance r.
-  /// Default returns 0.0 — override in UserSource for exosphere profiles.
-  virtual double get_exosphere_component_density(double r, int iC) const {
+  virtual amrex::Real get_exosphere_component_density(amrex::Real r, int iC) const {
     return 0.0;
   }
 
