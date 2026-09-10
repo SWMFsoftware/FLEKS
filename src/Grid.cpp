@@ -431,13 +431,13 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
 
     for (MFIter mfi(nodeStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
-      const Array4<int>& nodeArr = nodeStatus[iLev][mfi].array();
+      const Array4<int> nodeArr = nodeStatus[iLev][mfi].array();
       const auto lo = lbound(box);
       const auto hi = ubound(box);
 
       { // Set 'owner' status
-        const auto& cellBox = convert(box, { AMREX_D_DECL(0, 0, 0) });
-        const auto& cell = cellStatus[iLev][mfi].array();
+        const Box cellBox = convert(box, { AMREX_D_DECL(0, 0, 0) });
+        const Array4<int const> cell = cellStatus[iLev][mfi].const_array();
         int diMax = 0, diMin = -1;
         int djMax = 0, djMin = -1;
         int dkMax = 0, dkMin = -1;
@@ -445,25 +445,21 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
           dkMin = 0;
         }
         // Is the box the owner of this node?
-        auto is_the_box_owner = [&](int i, int j, int k) {
+        auto is_the_box_owner = [=] AMREX_GPU_DEVICE(int i, int j,
+                                                     int k) noexcept -> bool {
           for (int dk = dkMax; dk >= dkMin; dk--)
             for (int dj = djMax; dj >= djMin; dj--)
               for (int di = diMax; di >= diMin; di--) {
                 if (!bit::is_lev_boundary(cell(i + di, j + dj, k + dk))) {
                   // Find the first CELL that shares this node.
-                  if (cellBox.contains(
-                          IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) })) {
-                    return true;
-                  } else {
-                    return false;
-                  }
+                  return cellBox.contains(
+                      IntVect{ AMREX_D_DECL(i + di, j + dj, k + dk) });
                 }
               }
-          Abort("Error: something is wrong here!");
           return false;
         };
 
-        ParallelFor(box, [&](int i, int j, int k) noexcept {
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
           if (!isFake2D || k == lo.z) {
             if (i == lo.x || i == hi.x || j == lo.y || j == hi.y ||
                 (nDim == 3 && !isFake2D && (k == lo.z || k == hi.z))) {

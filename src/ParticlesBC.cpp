@@ -101,6 +101,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
       bxGst.grow(iDim, nGstInject);
     }
 
+    // Host-only kernel: CPU particle allocation into ParticleContainer
     ParallelFor(bxGst, [&](int i, int j, int k) noexcept {
       IntVect ijk = { AMREX_D_DECL(i, j, k) };
       IntVect ijksrc;

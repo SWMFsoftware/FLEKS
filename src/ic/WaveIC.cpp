@@ -157,33 +157,35 @@ void WaveIC::set_fields(PicICFields& fields) const {
     if (oblique_) {
       if (seedE_)
         nodeE.setVal(0.0);
-      if (seedB_) {
+      const bool seedE = seedE_;
+      const bool seedB = seedB_;
+      if (seedB) {
         nodeB.setVal(0.0);
         centerB.setVal(0.0);
       }
 
       const amrex::Real n0 = dir_[0], n1 = dir_[1];
 
-      if (seedE_ || seedB_) {
+      if (seedE || seedB) {
         for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
           FArrayBox& fabE = nodeE[mfi];
           FArrayBox& fabB = nodeB[mfi];
           const Box& box = mfi.fabbox();
-          const Array4<Real>& arrE = fabE.array();
-          const Array4<Real>& arrB = fabB.array();
-          ParallelFor(box, [&](int i, int j, int k) {
+          const Array4<Real> arrE = fabE.array();
+          const Array4<Real> arrB = fabB.array();
+          ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const amrex::Real x = prob_lo[0] + dx[0] * i;
             const amrex::Real y = prob_lo[1] + dx[1] * j;
             const amrex::Real z = (nDim > 2) ? prob_lo[2] + dx[2] * k : 0.0;
             const amrex::Real phase = Kx * x + Ky * y + Kz * z;
             const amrex::Real cphi = std::cos(phase);
             const amrex::Real sphi = std::sin(phase);
-            if (seedE_) {
+            if (seedE) {
               arrE(i, j, k, ix_) = -n1 * sphi;
               arrE(i, j, k, iy_) = n0 * sphi;
               arrE(i, j, k, iz_) = -cphi;
             }
-            if (seedB_) {
+            if (seedB) {
               arrB(i, j, k, ix_) = -n1 * cphi;
               arrB(i, j, k, iy_) = n0 * cphi;
               arrB(i, j, k, iz_) = sphi;
@@ -191,12 +193,12 @@ void WaveIC::set_fields(PicICFields& fields) const {
           });
         }
       }
-      if (seedB_) {
+      if (seedB) {
         for (MFIter mfi(centerB); mfi.isValid(); ++mfi) {
           FArrayBox& fabcB = centerB[mfi];
           const Box& box = mfi.fabbox();
-          const Array4<Real>& arrcB = fabcB.array();
-          ParallelFor(box, [&](int i, int j, int k) {
+          const Array4<Real> arrcB = fabcB.array();
+          ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const amrex::Real x = prob_lo[0] + dx[0] * (i + 0.5);
             const amrex::Real y = prob_lo[1] + dx[1] * (j + 0.5);
             const amrex::Real z =
@@ -212,17 +214,19 @@ void WaveIC::set_fields(PicICFields& fields) const {
       }
     } else {
       // Transverse circularly-polarized wave: B = (Bx0, B1 cos kx, B1 sin kx)
-      if (seedB_) {
+      const bool seedB = seedB_;
+      const Real kx = kx_;
+      if (seedB) {
         nodeB.setVal(0.0);
         centerB.setVal(0.0);
         for (MFIter mfi(nodeB); mfi.isValid(); ++mfi) {
           FArrayBox& fab = nodeB[mfi];
           const Box& box = mfi.fabbox();
-          const Array4<Real>& arrB = fab.array();
-          ParallelFor(box, [&](int i, int j, int k) {
+          const Array4<Real> arrB = fab.array();
+          ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const amrex::Real x = prob_lo[0] + dx[0] * i;
-            const amrex::Real cphi = std::cos(kx_ * x);
-            const amrex::Real sphi = std::sin(kx_ * x);
+            const amrex::Real cphi = std::cos(kx * x);
+            const amrex::Real sphi = std::sin(kx * x);
             arrB(i, j, k, ix_) = Bx0;
             arrB(i, j, k, iy_) = B1 * cphi;
             arrB(i, j, k, iz_) = B1 * sphi;
@@ -231,11 +235,11 @@ void WaveIC::set_fields(PicICFields& fields) const {
         for (MFIter mfi(centerB); mfi.isValid(); ++mfi) {
           FArrayBox& fab = centerB[mfi];
           const Box& box = mfi.fabbox();
-          const Array4<Real>& arrB = fab.array();
-          ParallelFor(box, [&](int i, int j, int k) {
+          const Array4<Real> arrB = fab.array();
+          ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const amrex::Real x = prob_lo[0] + dx[0] * (i + 0.5);
-            const amrex::Real cphi = std::cos(kx_ * x);
-            const amrex::Real sphi = std::sin(kx_ * x);
+            const amrex::Real cphi = std::cos(kx * x);
+            const amrex::Real sphi = std::sin(kx * x);
             arrB(i, j, k, ix_) = Bx0;
             arrB(i, j, k, iy_) = B1 * cphi;
             arrB(i, j, k, iz_) = B1 * sphi;

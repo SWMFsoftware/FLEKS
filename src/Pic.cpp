@@ -356,6 +356,7 @@ void Pic::fill_new_node_E() {
       const Array4<Real>& arrE = fab.array();
       const auto& status = nodeStatus[iLev][mfi].array();
 
+      // Host-only kernel: host fluid interface interpolators fi->get_ex/ey/ez
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_new(status(ijk))) {
@@ -399,6 +400,7 @@ void Pic::fill_new_node_B() {
       const Array4<Real>& arrB = nodeB[iLev][mfi].array();
       const auto& status = nodeStatus[iLev][mfi].array();
 
+      // Host-only kernel: host fluid interface interpolators fi->get_bx/by/bz
       ParallelFor(box, [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_new(status(ijk))) {
@@ -1327,22 +1329,27 @@ void Pic::update_U0_E0() {
     uBg[iLev].setVal(0.0);
     eBg[iLev].setVal(0.0);
     for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
-      const Array4<Real>& arrU = uBg[iLev][mfi].array();
-      const Array4<const Real>& arrMoments =
+      const Array4<Real> arrU = uBg[iLev][mfi].array();
+      const Array4<const Real> arrMoments =
           nodePlasma[nSpecies][iLev][mfi].array();
 
-      const Array4<const int>& status = nodeStatus[iLev][mfi].array();
+      const Array4<const int> status = nodeStatus[iLev][mfi].array();
+
+      const int iRhoLocal = iRho_;
+      const int iUxLocal = iUx_;
+      const int iUzLocal = iUz_;
 
       // Fill in the physical nodes
-      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
-        const Real rho = arrMoments(i, j, k, iRho_);
+      ParallelFor(mfi.validbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        const Real rho = arrMoments(i, j, k, iRhoLocal);
         if (rho > 0) {
           const Real invRho = 1. / rho;
-          for (int iu = iUx_; iu <= iUz_; iu++)
-            arrU(i, j, k, iu - iUx_) = arrMoments(i, j, k, iu) * invRho;
+          for (int iu = iUxLocal; iu <= iUzLocal; iu++)
+            arrU(i, j, k, iu - iUxLocal) = arrMoments(i, j, k, iu) * invRho;
         }
       });
 
+      // Host-only kernel: host boundary lookup via get_node_fluid_u
       // Fill in ghost nodes
       ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
@@ -1362,34 +1369,39 @@ void Pic::update_U0_E0() {
       smooth_multifab(uBg[iLev], iLev, i % 2 + 1);
 
     for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
-      const Array4<Real>& arrU = uBg[iLev][mfi].array();
-      const Array4<Real>& arrE = eBg[iLev][mfi].array();
-      const Array4<Real>& arrB = nodeB[iLev][mfi].array();
+      const Array4<Real> arrU = uBg[iLev][mfi].array();
+      const Array4<Real> arrE = eBg[iLev][mfi].array();
+      const Array4<const Real> arrB = nodeB[iLev][mfi].array();
 
-      const Array4<const int>& status = nodeStatus[iLev][mfi].array();
+      const Array4<const int> status = nodeStatus[iLev][mfi].array();
+
+      const int ixLocal = ix_;
+      const int iyLocal = iy_;
+      const int izLocal = iz_;
 
       // Fill in the physical nodes
-      ParallelFor(mfi.validbox(), [&](int i, int j, int k) {
-        const Real& bx = arrB(i, j, k, ix_);
-        const Real& by = arrB(i, j, k, iy_);
-        const Real& bz = arrB(i, j, k, iz_);
+      ParallelFor(mfi.validbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+        const Real bx = arrB(i, j, k, ixLocal);
+        const Real by = arrB(i, j, k, iyLocal);
+        const Real bz = arrB(i, j, k, izLocal);
 
-        const Real& ux = arrU(i, j, k, ix_);
-        const Real& uy = arrU(i, j, k, iy_);
-        const Real& uz = arrU(i, j, k, iz_);
+        const Real ux = arrU(i, j, k, ixLocal);
+        const Real uy = arrU(i, j, k, iyLocal);
+        const Real uz = arrU(i, j, k, izLocal);
 
-        arrE(i, j, k, ix_) = -uy * bz + uz * by;
-        arrE(i, j, k, iy_) = -uz * bx + ux * bz;
-        arrE(i, j, k, iz_) = -ux * by + uy * bx;
+        arrE(i, j, k, ixLocal) = -uy * bz + uz * by;
+        arrE(i, j, k, iyLocal) = -uz * bx + ux * bz;
+        arrE(i, j, k, izLocal) = -ux * by + uy * bx;
       });
 
+      // Host-only kernel: host boundary lookup via get_node_E
       // Fill in boundary nodes
       ParallelFor(mfi.fabbox(), [&](int i, int j, int k) {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_domain_boundary(status(ijk))) {
-          arrE(i, j, k, ix_) = get_node_E(mfi, ijk, ix_, iLev);
-          arrE(i, j, k, iy_) = get_node_E(mfi, ijk, iy_, iLev);
-          arrE(i, j, k, iz_) = get_node_E(mfi, ijk, iz_, iLev);
+          arrE(i, j, k, ixLocal) = get_node_E(mfi, ijk, ixLocal, iLev);
+          arrE(i, j, k, iyLocal) = get_node_E(mfi, ijk, iyLocal, iLev);
+          arrE(i, j, k, izLocal) = get_node_E(mfi, ijk, izLocal, iLev);
         }
       });
     }

@@ -605,6 +605,7 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
       const Array4<Real>& arr = fluid[mfi].array();
       const auto& status = nodeStatus[iLev][mfi].array();
 
+      // Host-only kernel: SWMF MPI coupling buffer serialization with serial counters
       ParallelFor(box, [&](int i, int j, int k) noexcept {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_lev_boundary(status(ijk)) || validBox.contains(ijk)) {
@@ -808,6 +809,7 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
 
       const Array4<Real>& arr = nodeFluid[iLev][mfi].array();
 
+      // Host-only kernel: CPU fluid moment conversion for SWMF coupling / initialization
       ParallelFor(box, [&](int i, int j, int k) noexcept {
         if (useMultiSpecies) {
           double Rhot = 0;

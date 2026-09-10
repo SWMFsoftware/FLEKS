@@ -20,12 +20,14 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE int fastfloor(amrex::Real x) {
   return (int)(x + 8) - 8;
 }
 
-inline amrex::Real median(amrex::Real a, amrex::Real b, amrex::Real c) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real median(amrex::Real a,
+                                                             amrex::Real b,
+                                                             amrex::Real c) {
   return std::clamp(a, std::min(b, c), std::max(b, c));
 }
 
-inline amrex::Real limiter_theta(amrex::Real theta, amrex::Real u0,
-                                 amrex::Real u1, amrex::Real u2) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real limiter_theta(
+    amrex::Real theta, amrex::Real u0, amrex::Real u1, amrex::Real u2) {
   amrex::Real du21 = u2 - u1;
   if (du21 == 0)
     du21 = 1e-99;
@@ -38,11 +40,12 @@ inline amrex::Real limiter_theta(amrex::Real theta, amrex::Real u0,
   return 1 - phi;
 }
 
-inline int product(const amrex::IntVect& vect) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE int product(
+    const amrex::IntVect& vect) {
   return AMREX_D_TERM(vect[0], *vect[1], *vect[2]);
 }
 
-inline amrex::Dim3 init_dim3(const int i) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Dim3 init_dim3(const int i) {
   amrex::Dim3 dim;
   dim.x = i;
   dim.y = i;

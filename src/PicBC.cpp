@@ -113,6 +113,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
         Array4<Real> const& arr = mf[mfi].array();
         const Array4<const int>& statusArr = status[mfi].array();
 
+        // Host-only kernel: dispatches C++ member function pointer (this->*func)
         ParallelFor(bxFab, [&](int i, int j, int k) {
           if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
             int ip, jp, kp;
@@ -136,22 +137,23 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   }
 
   if (useFloatBC) {
+    const int nDimLocal = nDim;
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& bxFab = mfi.fabbox();
       const Box& bxValid = mfi.validbox();
 
       if (!ba.contains(bxFab)) {
-        Array4<Real> const& arr = mf[mfi].array();
-        const Array4<const int>& statusArr = status[mfi].array();
+        const Array4<Real> arr = mf[mfi].array();
+        const Array4<const int> statusArr = status[mfi].array();
 
         Box box = bxValid;
         box.grow(1);
 
-        ParallelFor(box, [&](int i, int j, int k) {
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
             bool isNeiFound = false;
-            const int kmin = (nDim > 2) ? -1 : 0;
-            const int kmax = (nDim > 2) ? 1 : 0;
+            const int kmin = (nDimLocal > 2) ? -1 : 0;
+            const int kmax = (nDimLocal > 2) ? 1 : 0;
             for (int kk = kmin; kk <= kmax && !isNeiFound; ++kk) {
               for (int jj = -1; jj <= 1 && !isNeiFound; ++jj) {
                 for (int ii = -1; ii <= 1 && !isNeiFound; ++ii) {
@@ -187,6 +189,7 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
 
         Box box0(lo, hi);
 
+        // Host-only kernel: dispatches C++ member function pointer (this->*func)
         ParallelFor(box0, nComp, [&](int i, int j, int k, int iVar) {
           if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
             arr(i, j, k, iStart + iVar) = (this->*func)(
@@ -542,6 +545,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
     Array4<Real> const& arr = mf[mfi].array();
     const Array4<const int>& statusArr = status[mfi].array();
 
+    // Host-only kernel: evaluates waveBC host structures and std::vector faces
     ParallelFor(bxFab, [&](int i, int j, int k) {
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
         return;

@@ -655,23 +655,26 @@ void Pic::correct_B(int iLev) {
   centerDB.setVal(0.0);
 
   if (useUpwindB) {
-    Real coef[nDim3];
+    GpuArray<Real, 3> coef;
     for (int i = 0; i < nDim3; ++i) {
       coef[i] = 0.5 * tc->get_dt() * Geom(iLev).InvCellSize()[i];
     }
+    const Real limiterThetaB = this->limiterThetaB;
+    const Real fixedUpwindVel = this->fixedUpwindVel;
 
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       Box box = mfi.validbox();
 
-      const Array4<Real>& cB = centerB[iLev][mfi].array();
-      const Array4<Real const>& nU = uBg[iLev][mfi].array();
-      const Array4<Real>& dB = centerDB[mfi].array();
-      const auto& status = cellStatus[iLev][mfi].array();
+      const Array4<Real const> cB = centerB[iLev][mfi].const_array();
+      const Array4<Real const> nU = uBg[iLev][mfi].const_array();
+      const Array4<Real> dB = centerDB[mfi].array();
+      const Array4<int const> status = cellStatus[iLev][mfi].const_array();
 
       // Get the face along the direction iDir for the cell (i,j,k) for the iVar
       // component
-      auto get_face = [&](int iDir, int i, int j, int k, int iVar,
-                          Array4<Real const> const& arr, Real& l, Real& r) {
+      auto get_face = [=] AMREX_GPU_DEVICE(int iDir, int i, int j, int k, int iVar,
+                                           Array4<Real const> const& arr,
+                                           Real& l, Real& r) noexcept {
         // Generic fixed-upwind-velocity override (e.g. the old TopHat
         // "bypass_limiter" used a constant speed of 1.0). Zero keeps the
         // normal plasma-background-velocity reconstruction below.
@@ -703,7 +706,7 @@ void Pic::correct_B(int iLev) {
         }
       };
 
-      ParallelFor(box, [&](int i, int j, int k) {
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         bool doDiffusion;
         Real lu[nDim3] = { 0, 0, 0 }, ru[nDim3] = { 0, 0, 0 };
         Real ul, ur;
@@ -817,16 +820,17 @@ void Pic::correct_B(int iLev) {
     average_node_to_cellcenter(gradPhi, 0, gradPhiNode, 0, nDim3,
                                gradPhi.nGrow());
 
+    const Real dt = tc->get_dt();
+
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       Box box = mfi.validbox();
 
-      const Array4<Real>& dB = centerDB[mfi].array();
-      const Array4<Real>& gradPhiArr = gradPhi[mfi].array();
+      const Array4<Real> dB = centerDB[mfi].array();
+      const Array4<Real const> gradPhiArr = gradPhi[mfi].const_array();
 
-      ParallelFor(box, [&](int i, int j, int k) {
-        IntVect ijk{ AMREX_D_DECL(i, j, k) };
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         for (int iVar = 0; iVar < nDim3; iVar++) {
-          dB(ijk, iVar) += -tc->get_dt() * gradPhiArr(ijk, iVar);
+          dB(i, j, k, iVar) -= dt * gradPhiArr(i, j, k, iVar);
         }
       });
     } // end MFIter
