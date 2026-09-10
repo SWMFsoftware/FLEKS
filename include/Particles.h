@@ -549,6 +549,100 @@ public:
                                            amrex::Real qp,
                                            amrex::Array4<RealCMM> const& mmArr);
 
+  static AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void
+  accumulate_mass_matrix_contribution_device(
+      const amrex::GpuArray<amrex::Real, 3>& dx_lev, amrex::Real invVol_lev,
+      const amrex::IntVect& loIdx, const amrex::RealVect& dShift,
+      amrex::Real qp, amrex::Array4<RealCMM> const& mmArr) {
+
+    amrex::Real weights_IIID[2][2][2][nDim3];
+    //----- Mass matrix calculation begin--------------
+    const amrex::Real xi0 = dShift[ix_] * dx_lev[ix_];
+    const amrex::Real eta0 = dShift[iy_] * dx_lev[iy_];
+    const amrex::Real zeta0 = nDim > 2 ? dShift[iz_] * dx_lev[iz_] : 0;
+    const amrex::Real xi1 = dx_lev[ix_] - xi0;
+    const amrex::Real eta1 = dx_lev[iy_] - eta0;
+    const amrex::Real zeta1 = nDim > 2 ? dx_lev[iz_] - zeta0 : 1;
+
+    weights_IIID[1][1][1][ix_] = eta0 * zeta0 * invVol_lev;
+    weights_IIID[1][1][1][iy_] = xi0 * zeta0 * invVol_lev;
+    weights_IIID[1][1][1][iz_] = xi0 * eta0 * invVol_lev;
+
+    // xi0*eta0*zeta1*invVol_lev;
+    weights_IIID[1][1][0][ix_] = eta0 * zeta1 * invVol_lev;
+    weights_IIID[1][1][0][iy_] = xi0 * zeta1 * invVol_lev;
+    weights_IIID[1][1][0][iz_] = -xi0 * eta0 * invVol_lev;
+
+    // xi0*eta1*zeta0*invVol_lev;
+    weights_IIID[1][0][1][ix_] = eta1 * zeta0 * invVol_lev;
+    weights_IIID[1][0][1][iy_] = -xi0 * zeta0 * invVol_lev;
+    weights_IIID[1][0][1][iz_] = xi0 * eta1 * invVol_lev;
+
+    // xi0*eta1*zeta1*invVol_lev;
+    weights_IIID[1][0][0][ix_] = eta1 * zeta1 * invVol_lev;
+    weights_IIID[1][0][0][iy_] = -xi0 * zeta1 * invVol_lev;
+    weights_IIID[1][0][0][iz_] = -xi0 * eta1 * invVol_lev;
+
+    // xi1*eta0*zeta0*invVol_lev;
+    weights_IIID[0][1][1][ix_] = -eta0 * zeta0 * invVol_lev;
+    weights_IIID[0][1][1][iy_] = xi1 * zeta0 * invVol_lev;
+    weights_IIID[0][1][1][iz_] = xi1 * eta0 * invVol_lev;
+
+    // xi1*eta0*zeta1*invVol_lev;
+    weights_IIID[0][1][0][ix_] = -eta0 * zeta1 * invVol_lev;
+    weights_IIID[0][1][0][iy_] = xi1 * zeta1 * invVol_lev;
+    weights_IIID[0][1][0][iz_] = -xi1 * eta0 * invVol_lev;
+
+    // xi1*eta1*zeta0*invVol_lev;
+    weights_IIID[0][0][1][ix_] = -eta1 * zeta0 * invVol_lev;
+    weights_IIID[0][0][1][iy_] = -xi1 * zeta0 * invVol_lev;
+    weights_IIID[0][0][1][iz_] = xi1 * eta1 * invVol_lev;
+
+    // xi1*eta1*zeta1*invVol_lev;
+    weights_IIID[0][0][0][ix_] = -eta1 * zeta1 * invVol_lev;
+    weights_IIID[0][0][0][iy_] = -xi1 * zeta1 * invVol_lev;
+    weights_IIID[0][0][0][iz_] = -xi1 * eta1 * invVol_lev;
+
+    const int iMin = loIdx[ix_];
+    const int jMin = loIdx[iy_];
+    const int kMin = nDim > 2 ? loIdx[iz_] : 0;
+    const int iMax = iMin + 1;
+    const int jMax = jMin + 1;
+    const int kMax = nDim > 2 ? kMin + 1 : 0;
+
+    const amrex::Real coef = amrex::Math::abs(qp) * invVol_lev;
+    amrex::Real wg_D[nDim3];
+    for (int k1 = kMin; k1 <= kMax; k1++)
+      for (int j1 = jMin; j1 <= jMax; j1++)
+        for (int i1 = iMin; i1 <= iMax; i1++) {
+
+          for (int iDim = 0; iDim < nDim; iDim++) {
+            wg_D[iDim] =
+                coef * weights_IIID[i1 - iMin][j1 - jMin][k1 - kMin][iDim];
+          }
+
+          auto& data = mmArr(i1, j1, k1);
+          for (int i2 = iMin; i2 <= iMax; i2++) {
+            int ip = i2 - i1 + 1;
+            const int gp0 = ip * 9;
+            for (int j2 = jMin; j2 <= jMax; j2++) {
+              int jp = j2 - j1 + 1;
+              const int gp1 = gp0 + jp * nDim3;
+              for (int k2 = kMin; k2 <= kMax; k2++) {
+                const amrex::Real(&wg1_D)[nDim3] =
+                    weights_IIID[i2 - iMin][j2 - jMin][k2 - kMin];
+
+                const int gp = gp1 + k2 - k1 + 1;
+                for (int iDim = 0; iDim < nDim; iDim++) {
+                  amrex::HostDevice::Atomic::Add(&(data[gp]),
+                                                 wg_D[iDim] * wg1_D[iDim]);
+                }
+              }
+            }
+          }
+        }
+  }
+
   void get_ion_fluid(FluidInterface* stateOH, PIter& pti, const int iLev,
                      const int iFluid, const amrex::RealVect xyz,
                      amrex::Real& rhoIon, amrex::Real& cs2Ion,
