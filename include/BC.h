@@ -30,6 +30,14 @@ template <typename EnumT> struct BoxBC {
     else
       hi[d] = static_cast<int>(type);
   }
+
+  bool has(const EnumT type) const {
+    for (int d = 0; d < amrex::SpaceDim; ++d) {
+      if (lo[d] == static_cast<int>(type) || hi[d] == static_cast<int>(type))
+        return true;
+    }
+    return false;
+  }
 };
 
 //==========================================================
