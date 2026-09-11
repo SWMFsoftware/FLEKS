@@ -55,10 +55,10 @@ BASELINES = {
         "speedup": 1.6,      # 2-core scaling floor
     },
     "pt": {
-        "total_pps": 2.0,    # total wall-clock rate (dominated by AMReX Redistribute of 440 particle attributes)
+        "total_pps": 2.0,    # total wall-clock rate (includes AMReX Redistribute of 440 attributes)
         "mover_pps": 0.08,   # isolated test particle mover rate
         "solver_pps": 0.01,  # EM solver disabled
-        "speedup": 1.05,     # 2-core scaling floor (redistribute bandwidth limited in 1D)
+        "speedup": 1.4,      # 2-core mover speedup floor
     },
 }
 
@@ -346,7 +346,13 @@ def _evaluate_solver(solver_kind, param_file, serial_dir, parallel_dir, count=3)
     pps_total = (t_serial_median * 1e6) / total_steps
     pps_mover = (serial_stats["mover_median"] * 1e6) / total_steps
     pps_solver = (serial_stats["solver_median"] * 1e6) / total_steps
-    speedup = t_serial_median / t_parallel_median
+
+    # For test particles, computation is isolated to the particle mover (no EM solver),
+    # while total wall-clock is dominated by AMReX Redistribute of 440 attributes.
+    if solver_kind == "pt" and parallel_stats["mover_median"] > 0:
+        speedup = serial_stats["mover_median"] / parallel_stats["mover_median"]
+    else:
+        speedup = t_serial_median / t_parallel_median
 
     base = BASELINES[solver_kind]
     passed = {
@@ -459,6 +465,8 @@ def main():
         print(f" {'Metric / Component':<30} | {'Measured':<18} | "
               f"{'Baseline':<18} | {'Status':<8}")
         print("-" * 85)
+        speedup_label = ("Parallel Speedup (Mover, 2 Cores)" if solver_kind == "pt"
+                         else "Parallel Speedup (2 Cores)")
         rows = [
             ("Total Runtime Rate (PPS)", stats["pps_total"], base["total_pps"],
              "μs", passed["total"]),
@@ -466,7 +474,7 @@ def main():
              "μs", passed["mover"]),
             ("Field Solver Rate (PPS)", stats["pps_solver"], base["solver_pps"],
              "μs", passed["solver"]),
-            ("Parallel Speedup (2 Cores)", stats["speedup"], base["speedup"],
+            (speedup_label, stats["speedup"], base["speedup"],
              "x", passed["speedup"]),
         ]
         for name, val, base_val, unit, flag in rows:
