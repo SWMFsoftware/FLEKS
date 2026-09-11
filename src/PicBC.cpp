@@ -2,6 +2,7 @@
 #include <cmath>
 #include <vector>
 
+#include <AMReX_Loop.H>
 #include <AMReX_MultiFabUtil.H>
 
 #include "GridUtility.h"
@@ -58,6 +59,53 @@ inline BoxArray get_boundary_active_ba(const BoxArray& activeRegion,
   return ba;
 }
 
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool eval_use_float(const int i, const int j, const int k,
+                    int &ip, int &jp, int &kp,
+                    const BoxBC<FieldBC::Type> &bc,
+                    const Box &bxValid, const int nDimLocal) {
+  bool useFloat = false;
+  ip = i;
+  jp = j;
+  kp = k;
+
+  if (i < bxValid.smallEnd(0) &&
+      (bc.lo[0] == FieldBC::outflow || bc.lo[0] == FieldBC::inflow)) {
+    useFloat = true;
+    ip = bxValid.smallEnd(0);
+  }
+  if (i > bxValid.bigEnd(0) &&
+      (bc.hi[0] == FieldBC::outflow || bc.hi[0] == FieldBC::inflow)) {
+    useFloat = true;
+    ip = bxValid.bigEnd(0);
+  }
+
+  if (j < bxValid.smallEnd(1) &&
+      (bc.lo[1] == FieldBC::outflow || bc.lo[1] == FieldBC::inflow)) {
+    useFloat = true;
+    jp = bxValid.smallEnd(1);
+  }
+  if (j > bxValid.bigEnd(1) &&
+      (bc.hi[1] == FieldBC::outflow || bc.hi[1] == FieldBC::inflow)) {
+    useFloat = true;
+    jp = bxValid.bigEnd(1);
+  }
+
+  if (nDimLocal > 2) {
+    if (k < bxValid.smallEnd(2) &&
+        (bc.lo[2] == FieldBC::outflow || bc.lo[2] == FieldBC::inflow)) {
+      useFloat = true;
+      kp = bxValid.smallEnd(2);
+    }
+    if (k > bxValid.bigEnd(2) &&
+        (bc.hi[2] == FieldBC::outflow || bc.hi[2] == FieldBC::inflow)) {
+      useFloat = true;
+      kp = bxValid.bigEnd(2);
+    }
+  }
+  return useFloat;
+}
+
 } // namespace
 
 //==========================================================
@@ -100,11 +148,43 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
   std::string nameFunc = "Pic::apply_BC";
   timing_func(nameFunc);
 
-  bool useFloatBC = (func == nullptr);
   const BoxArray ba =
       get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
+  const int nDimLocal = nDim;
+
+  constexpr int fModeNone = 0;
+  constexpr int fModeZero = 1;
+  constexpr int fModeCenterB = 2;
+  constexpr int fModeNodeB = 3;
+  constexpr int fModeFluidE = 4;
+
+  int fMode = fModeNone;
+  GETVALUE fnZero = &Pic::get_zero;
+  GETVALUE fnCenterB = static_cast<amrex::Real (Pic::*)(amrex::MFIter&, amrex::IntVect, int, const int)>(&Pic::get_center_B);
+  GETVALUE fnNodeB = static_cast<amrex::Real (Pic::*)(amrex::MFIter&, amrex::IntVect, int, const int)>(&Pic::get_node_B);
+  GETVALUE fnNodeE = static_cast<amrex::Real (Pic::*)(amrex::MFIter&, amrex::IntVect, int, const int)>(&Pic::get_node_E);
+  GETVALUE fnCenterE = static_cast<amrex::Real (Pic::*)(amrex::MFIter&, amrex::IntVect, int, const int)>(&Pic::get_center_E);
+
+  if (func == fnZero) {
+    fMode = fModeZero;
+  } else if (func == fnCenterB) {
+    fMode = fModeCenterB;
+  } else if (func == fnNodeB) {
+    fMode = fModeNodeB;
+  } else if (func == fnNodeE || func == fnCenterE) {
+    fMode = fModeFluidE;
+  }
+
+  const bool hasCenterB = (fMode == fModeCenterB) && (fi != nullptr) &&
+                          (!fi->get_center_b(iLev).empty());
+  const bool hasNodeFluid = (fMode == fModeNodeB || fMode == fModeFluidE) &&
+                            (fi != nullptr) && (!fi->get_node_fluid(iLev).empty());
+  const int cOffset = (fMode == fModeCenterB) ? 0 :
+                      (fMode == fModeNodeB) ? fi->get_iBx() :
+                      (fMode == fModeFluidE) ? fi->get_iEx() : 0;
 
   if (bc != nullptr) {
+    const BoxBC<FieldBC::Type> bcVal = *bc;
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& bxFab = mfi.fabbox();
       const Box& bxValid = mfi.validbox();
@@ -112,20 +192,26 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
       if (!ba.contains(bxFab)) {
         Array4<Real> const& arr = mf[mfi].array();
         const Array4<const int>& statusArr = status[mfi].array();
+        Array4<const Real> srcArr = hasCenterB ? fi->get_center_b(iLev)[mfi].array()
+                                  : hasNodeFluid ? fi->get_node_fluid(iLev)[mfi].array()
+                                  : Array4<const Real>{};
 
-        ParallelFor(bxFab, [&](int i, int j, int k) {
+        ParallelFor(bxFab, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
-            int ip, jp, kp;
-            bool useFloat = use_float(i, j, k, ip, jp, kp, *bc, bxValid);
+            int ip = i, jp = j, kp = k;
+            bool useFloat = eval_use_float(i, j, k, ip, jp, kp, bcVal, bxValid, nDimLocal);
 
             if (useFloat) {
-              for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
+              for (int iVar = iStart; iVar < iStart + nComp; ++iVar) {
                 arr(i, j, k, iVar) = arr(ip, jp, kp, iVar);
               }
-            } else if (func) {
-              for (int iVar = iStart; iVar < iStart + nComp; iVar++) {
-                arr(i, j, k, iVar) = (this->*func)(
-                    mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar - iStart, iLev);
+            } else if (fMode == fModeZero) {
+              for (int iVar = iStart; iVar < iStart + nComp; ++iVar) {
+                arr(i, j, k, iVar) = 0.0;
+              }
+            } else if (hasCenterB || hasNodeFluid) {
+              for (int iVar = iStart; iVar < iStart + nComp; ++iVar) {
+                arr(i, j, k, iVar) = srcArr(i, j, k, cOffset + (iVar - iStart));
               }
             }
           }
@@ -135,23 +221,23 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
     return;
   }
 
-  if (useFloatBC) {
+  if (func == nullptr) {
     for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
       const Box& bxFab = mfi.fabbox();
       const Box& bxValid = mfi.validbox();
 
       if (!ba.contains(bxFab)) {
-        Array4<Real> const& arr = mf[mfi].array();
-        const Array4<const int>& statusArr = status[mfi].array();
+        const Array4<Real> arr = mf[mfi].array();
+        const Array4<const int> statusArr = status[mfi].array();
 
         Box box = bxValid;
         box.grow(1);
 
-        ParallelFor(box, [&](int i, int j, int k) {
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
             bool isNeiFound = false;
-            const int kmin = (nDim > 2) ? -1 : 0;
-            const int kmax = (nDim > 2) ? 1 : 0;
+            const int kmin = (nDimLocal > 2) ? -1 : 0;
+            const int kmax = (nDimLocal > 2) ? 1 : 0;
             for (int kk = kmin; kk <= kmax && !isNeiFound; ++kk) {
               for (int jj = -1; jj <= 1 && !isNeiFound; ++jj) {
                 for (int ii = -1; ii <= 1 && !isNeiFound; ++ii) {
@@ -176,6 +262,9 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
       if (!ba.contains(bx)) {
         Array4<Real> const& arr = mf[mfi].array();
         const Array4<const int>& statusArr = status[mfi].array();
+        Array4<const Real> srcArr = hasCenterB ? fi->get_center_b(iLev)[mfi].array()
+                                  : hasNodeFluid ? fi->get_node_fluid(iLev)[mfi].array()
+                                  : Array4<const Real>{};
 
         auto lo = IntVect(bx.loVect());
         auto hi = IntVect(bx.hiVect());
@@ -187,10 +276,17 @@ void Pic::apply_BC(const iMultiFab& status, MultiFab& mf, const int iStart,
 
         Box box0(lo, hi);
 
-        ParallelFor(box0, nComp, [&](int i, int j, int k, int iVar) {
+        ParallelFor(box0, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           if (bit::is_lev_boundary(statusArr(i, j, k, 0))) {
-            arr(i, j, k, iStart + iVar) = (this->*func)(
-                mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
+            if (fMode == fModeZero) {
+              for (int iVar = 0; iVar < nComp; ++iVar) {
+                arr(i, j, k, iStart + iVar) = 0.0;
+              }
+            } else if (hasCenterB || hasNodeFluid) {
+              for (int iVar = 0; iVar < nComp; ++iVar) {
+                arr(i, j, k, iStart + iVar) = srcArr(i, j, k, cOffset + iVar);
+              }
+            }
           }
         });
       }
@@ -533,16 +629,29 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
   const Real offset[3] = { bnd.isNode[0] ? 0.0 : 0.5, bnd.isNode[1] ? 0.0 : 0.5,
                            bnd.isNode[2] ? 0.0 : 0.5 };
 
-  for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+#if defined(AMREX_USE_GPU)
+  MultiFab h_mf(mf.boxArray(), mf.DistributionMap(), mf.nComp(), mf.nGrowVect(),
+                MFInfo().SetArena(The_Pinned_Arena()));
+  h_mf.ParallelCopy(mf);
+  const iMultiFab& h_status = mf.ixType().cellCentered() ? host_cell_status(iLev)
+                                                         : host_node_status(iLev);
+  Gpu::streamSynchronize();
+#else
+  MultiFab& h_mf = mf;
+  const iMultiFab& h_status = status;
+#endif
+
+  for (MFIter mfi(h_mf); mfi.isValid(); ++mfi) {
     const Box& bxFab = mfi.fabbox();
     const Box& bxValid = mfi.validbox();
     if (ba.contains(bxFab))
       continue;
 
-    Array4<Real> const& arr = mf[mfi].array();
-    const Array4<const int>& statusArr = status[mfi].array();
+    Array4<Real> const& arr = h_mf[mfi].array();
+    const Array4<const int>& statusArr = h_status[mfi].array();
 
-    ParallelFor(bxFab, [&](int i, int j, int k) {
+    // Host-only kernel: evaluates waveBC host structures and std::vector faces
+    amrex::LoopOnCpu(bxFab, [&](int i, int j, int k) {
       if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
         return;
 
@@ -590,6 +699,11 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
       }
     });
   }
+
+#if defined(AMREX_USE_GPU)
+  mf.ParallelCopy(h_mf);
+  Gpu::streamSynchronize();
+#endif
 }
 
 //==========================================================

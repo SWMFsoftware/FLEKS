@@ -9,6 +9,7 @@
 
 #include <AMReX_MultiFab.H>
 #include <AMReX_REAL.H>
+#include <AMReX_Reduce.H>
 #include <AMReX_iMultiFab.H>
 #include <mpi.h>
 
@@ -20,12 +21,14 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE int fastfloor(amrex::Real x) {
   return (int)(x + 8) - 8;
 }
 
-inline amrex::Real median(amrex::Real a, amrex::Real b, amrex::Real c) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real median(amrex::Real a,
+                                                             amrex::Real b,
+                                                             amrex::Real c) {
   return std::clamp(a, std::min(b, c), std::max(b, c));
 }
 
-inline amrex::Real limiter_theta(amrex::Real theta, amrex::Real u0,
-                                 amrex::Real u1, amrex::Real u2) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real limiter_theta(
+    amrex::Real theta, amrex::Real u0, amrex::Real u1, amrex::Real u2) {
   amrex::Real du21 = u2 - u1;
   if (du21 == 0)
     du21 = 1e-99;
@@ -38,11 +41,12 @@ inline amrex::Real limiter_theta(amrex::Real theta, amrex::Real u0,
   return 1 - phi;
 }
 
-inline int product(const amrex::IntVect& vect) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE int product(
+    const amrex::IntVect& vect) {
   return AMREX_D_TERM(vect[0], *vect[1], *vect[2]);
 }
 
-inline amrex::Dim3 init_dim3(const int i) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Dim3 init_dim3(const int i) {
   amrex::Dim3 dim;
   dim.x = i;
   dim.y = i;
@@ -86,9 +90,19 @@ inline std::string normalize_string_token(std::string name,
 inline double dot_product_mpi(const double* a, const double* b, const int n,
                               const MPI_Comm iComm) {
   double c = 0.0;
+#if defined(AMREX_USE_GPU)
+  amrex::ReduceOps<amrex::ReduceOpSum> reduce_op;
+  amrex::ReduceData<double> reduce_data(reduce_op);
+  using ReduceTuple = typename amrex::ReduceData<double>::Type;
+  reduce_op.eval(n, reduce_data, [=] AMREX_GPU_DEVICE(int i) -> ReduceTuple {
+    return { a[i] * b[i] };
+  });
+  c = amrex::get<0>(reduce_data.value());
+#else
   for (int i = 0; i < n; ++i) {
     c += a[i] * b[i];
   }
+#endif
 
   if (iComm == MPI_COMM_SELF) {
     return c;
@@ -120,8 +134,15 @@ template <class T> inline void a_cross_b(T (&a)[3], T (&b)[3], T (&c)[3]) {
 }
 
 template <class T> inline void zero_array(T* arr, int nSize) {
+#if defined(AMREX_USE_GPU)
+  amrex::ParallelFor(nSize, [=] AMREX_GPU_DEVICE(int i) {
+    arr[i] = 0;
+  });
+  amrex::Gpu::streamSynchronize();
+#else
   for (int i = 0; i < nSize; ++i)
     arr[i] = 0;
+#endif
 }
 
 // rand1, rand2 are random numbers in [0,1].
@@ -136,15 +157,17 @@ inline void random_vector(const amrex::Real rand1, const amrex::Real rand2,
   vec[iz_] = costheta;
 }
 
-inline amrex::Real l2_norm(amrex::Real* vec, int n) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real
+l2_norm(const amrex::Real* vec, int n) {
   amrex::Real sum = 0;
   for (int i = 0; i < n; ++i)
     sum += vec[i] * vec[i];
   return sqrt(sum);
 }
 
-inline void linear_interpolation_coef(const amrex::RealVect& dx,
-                                      amrex::Real (&coef)[2][2][2]) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void
+linear_interpolation_coef(const amrex::RealVect& dx,
+                          amrex::Real (&coef)[2][2][2]) {
   amrex::Real interpX[2] = { dx[0], 1 - dx[0] };
   amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
   amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 0, nDim > 2 ? 1 - dx[2] : 1 };
@@ -163,8 +186,9 @@ inline void linear_interpolation_coef(const amrex::RealVect& dx,
   coef[1][1][1] = xy[0][0] * interpZ[0];
 }
 
-inline void linear_interpolation_coef_finer(const amrex::RealVect& dx,
-                                            amrex::Real (&coef)[2][2][2]) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void
+linear_interpolation_coef_finer(const amrex::RealVect& dx,
+                                amrex::Real (&coef)[2][2][2]) {
   amrex::Real interpX[2] = { dx[0], 1 - dx[0] };
   amrex::Real interpY[2] = { dx[1], 1 - dx[1] };
   amrex::Real interpZ[2] = { nDim > 2 ? dx[2] : 0, nDim > 2 ? 1 - dx[2] : 1 };

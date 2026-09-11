@@ -1,6 +1,9 @@
 #ifndef _BIT_H_
 #define _BIT_H_
 
+#include <AMReX_Extension.H>
+#include <AMReX_GpuQualifiers.H>
+
 namespace bit {
 //=== The bit that represents the status of a cell/node. ===
 
@@ -38,15 +41,25 @@ constexpr static int iRefined_ = 6;
 constexpr static int iRefinedNeighbour_ = 7;
 //=========================================================
 
-inline bool test_bit(const int& i, int pos) { return i & (1 << pos); }
-inline void turn_on_bit(int& i, int pos) { i |= (1 << pos); }
-inline void turn_off_bit(int& i, int pos) { i &= ~(1 << pos); }
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool test_bit(const int& i, int pos) {
+  return i & (1 << pos);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void turn_on_bit(int& i, int pos) {
+  i |= (1 << pos);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void turn_off_bit(int& i, int pos) {
+  i &= ~(1 << pos);
+}
 
 // inline void flip_bit(int& i, int pos) { i ^= (1 << pos); }
 
 //======= Lev boundary =======
-inline void set_lev_boundary(int& i) { turn_on_bit(i, iLevBny_); }
-inline void set_not_lev_boundary(int& i) { turn_off_bit(i, iLevBny_); }
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_lev_boundary(int& i) {
+  turn_on_bit(i, iLevBny_);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_not_lev_boundary(int& i) {
+  turn_off_bit(i, iLevBny_);
+}
 /**
  * @brief Check if the input cell is a ghost cell on the current level.
  *
@@ -54,11 +67,17 @@ inline void set_not_lev_boundary(int& i) { turn_off_bit(i, iLevBny_); }
  * @return True if the cell is a ghost cell on the current level, false
  * otherwise.
  */
-inline bool is_lev_boundary(const int& i) { return test_bit(i, iLevBny_); }
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_lev_boundary(const int& i) {
+  return test_bit(i, iLevBny_);
+}
 
 //======= Lev edge cell/node =======
-inline void set_lev_edge(int& i) { turn_on_bit(i, iLevEdge_); }
-inline void set_not_lev_edge(int& i) { turn_off_bit(i, iLevEdge_); }
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_lev_edge(int& i) {
+  turn_on_bit(i, iLevEdge_);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_not_lev_edge(int& i) {
+  turn_off_bit(i, iLevEdge_);
+}
 /**
  * @brief Check if the input cell is an edge physical cell on the current level.
  *
@@ -66,43 +85,75 @@ inline void set_not_lev_edge(int& i) { turn_off_bit(i, iLevEdge_); }
  * @return True if the cell is an edge cell on the current level, false
  * otherwise.
  */
-inline bool is_lev_edge(const int& i) { return test_bit(i, iLevEdge_); }
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_lev_edge(const int& i) {
+  return test_bit(i, iLevEdge_);
+}
 
 //======= Domain boundary =======
-inline void set_domain_boundary(int& i) { turn_on_bit(i, iDomainBny_); }
-inline void set_not_domain_boundary(int& i) { turn_off_bit(i, iDomainBny_); }
-inline bool is_domain_boundary(const int& i) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_domain_boundary(int& i) {
+  turn_on_bit(i, iDomainBny_);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_not_domain_boundary(int& i) {
+  turn_off_bit(i, iDomainBny_);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_domain_boundary(const int& i) {
   return test_bit(i, iDomainBny_);
 }
 
 //======= Domain edge cell/node =======
-inline void set_domain_edge(int& i) { turn_on_bit(i, iDomainEdge_); }
-inline void set_not_domain_edge(int& i) { turn_off_bit(i, iDomainEdge_); }
-inline bool is_domain_edge(const int& i) { return test_bit(i, iDomainEdge_); }
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_domain_edge(int& i) {
+  turn_on_bit(i, iDomainEdge_);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_not_domain_edge(int& i) {
+  turn_off_bit(i, iDomainEdge_);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_domain_edge(const int& i) {
+  return test_bit(i, iDomainEdge_);
+}
 
 //======= New active cell/node =======
-inline void set_new(int& i) { turn_on_bit(i, iNew_); }
-inline void set_not_new(int& i) { turn_off_bit(i, iNew_); }
-inline bool is_new(const int& i) { return test_bit(i, iNew_); }
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_new(int& i) {
+  turn_on_bit(i, iNew_);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_not_new(int& i) {
+  turn_off_bit(i, iNew_);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_new(const int& i) {
+  return test_bit(i, iNew_);
+}
 
 //======= Owner node (node only) =======
-inline void set_owner(int& i) { turn_on_bit(i, iOwner_); }
-inline void set_not_owner(int& i) { turn_off_bit(i, iOwner_); }
-inline bool is_owner(const int& i) { return test_bit(i, iOwner_); }
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_owner(int& i) {
+  turn_on_bit(i, iOwner_);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_not_owner(int& i) {
+  turn_off_bit(i, iOwner_);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_owner(const int& i) {
+  return test_bit(i, iOwner_);
+}
 
 //======= Refined cell =======
-inline void set_refined(int& i) { turn_on_bit(i, iRefined_); }
-inline void set_not_refined(int& i) { turn_off_bit(i, iRefined_); }
-inline bool is_refined(const int& i) { return test_bit(i, iRefined_); }
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_refined(int& i) {
+  turn_on_bit(i, iRefined_);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_not_refined(int& i) {
+  turn_off_bit(i, iRefined_);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_refined(const int& i) {
+  return test_bit(i, iRefined_);
+}
 
 //======= Neighbour to refined cell =======
-inline void set_refined_neighbour(int& i) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_refined_neighbour(int& i) {
   turn_on_bit(i, iRefinedNeighbour_);
 }
-inline void set_not_refined_neighbour(int& i) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void set_not_refined_neighbour(
+    int& i) {
   turn_off_bit(i, iRefinedNeighbour_);
 }
-inline bool is_refined_neighbour(const int& i) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool is_refined_neighbour(
+    const int& i) {
   return test_bit(i, iRefinedNeighbour_);
 }
 

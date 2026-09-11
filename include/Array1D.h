@@ -10,26 +10,32 @@
 template <class T, const int n> struct Arr1D {
   T data[n];
 
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
   Arr1D(const T& b = T(0)) {
     for (int i = 0; i < n; ++i)
       data[i] = b;
   }
 
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
   Arr1D& operator=(const T& b) {
     for (int i = 0; i < n; ++i)
       data[i] = b;
     return *this;
   }
 
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
   T& operator[](const int i) { return data[i]; }
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
   const T& operator[](const int i) const { return data[i]; }
 
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
   Arr1D& operator+=(const Arr1D& b) {
     for (int i = 0; i < n; ++i)
       data[i] += b.data[i];
     return *this;
   }
 
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
   Arr1D& operator*=(const Arr1D& b) {
     for (int i = 0; i < n; ++i)
       data[i] *= b.data[i];
@@ -37,6 +43,7 @@ template <class T, const int n> struct Arr1D {
   }
 
   template <typename U, typename = std::enable_if_t<std::is_arithmetic_v<U> > >
+  AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
   Arr1D& operator*=(U b) {
     for (int i = 0; i < n; ++i)
       data[i] *= static_cast<T>(b);
@@ -45,21 +52,24 @@ template <class T, const int n> struct Arr1D {
 };
 
 template <class T, const int n>
-inline Arr1D<T, n> operator+(Arr1D<T, n> a, const Arr1D<T, n>& b) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Arr1D<T, n> operator+(
+    Arr1D<T, n> a, const Arr1D<T, n>& b) {
   a += b;
   return a;
 }
 
 template <class T, const int n, typename U,
           typename = std::enable_if_t<std::is_arithmetic_v<U> > >
-inline Arr1D<T, n> operator*(Arr1D<T, n> a, U b) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Arr1D<T, n> operator*(Arr1D<T, n> a,
+                                                               U b) {
   a *= b;
   return a;
 }
 
 template <class T, const int n, typename U,
           typename = std::enable_if_t<std::is_arithmetic_v<U> > >
-inline Arr1D<T, n> operator*(U b, Arr1D<T, n> a) {
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE Arr1D<T, n> operator*(U b,
+                                                               Arr1D<T, n> a) {
   a *= b;
   return a;
 }

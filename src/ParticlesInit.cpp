@@ -1,5 +1,6 @@
 #include <cstdlib>
 
+#include <AMReX_Loop.H>
 #include <AMReX_ParReduce.H>
 
 #include "InitialCondition.h"
@@ -287,7 +288,7 @@ void Particles<NStructReal, NStructInt>::add_particles_source(
       for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
           for (int i = lo.x; i <= hi.x; ++i) {
-            const auto& status = cell_status(iLev)[mfi].array();
+            const auto& status = host_cell_status(iLev)[mfi].array();
             if (bit::is_refined(status(i, j, k)))
               continue;
 
@@ -347,8 +348,10 @@ void Particles<NStructReal, NStructInt>::add_particles_domain() {
   for (int iLev = 0; iLev <= iLevMax; iLev++) {
     for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
 
-      const auto& status = cell_status(iLev)[mfi].array();
-      ParallelFor(mfi.validbox(), [&](int i, int j, int k) noexcept {
+      const auto& status = host_cell_status(iLev)[mfi].array();
+
+      // Host-only kernel: CPU particle allocation into ParticleContainer
+      amrex::LoopOnCpu(mfi.validbox(), [&](int i, int j, int k) noexcept {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_new(status(ijk)) && !bit::is_refined(status(ijk))) {
           add_particles_cell(iLev, mfi, ijk, fi, true);

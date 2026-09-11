@@ -9,6 +9,8 @@
 #include <AMReX_AmrCore.H>
 #include <AMReX_AmrParticles.H>
 #include <AMReX_CoordSys.H>
+#include <AMReX_GpuAtomic.H>
+#include <AMReX_GpuContainers.H>
 
 #include "Array1D.h"
 #include "BC.h"
@@ -408,9 +410,9 @@ protected:
   bool isWaveFace[6] = { false, false, false, false, false, false };
 
   // Absorbing-BC tallies per face (2*d + {0=lo,1=hi}).
-  amrex::Real absorbTallyCount[6] = { 0, 0, 0, 0, 0, 0 };
-  amrex::Real absorbTallyCharge[6] = { 0, 0, 0, 0, 0, 0 };
-  amrex::Real absorbTallyMass[6] = { 0, 0, 0, 0, 0, 0 };
+  // Layout in absorbTallies (size 18):
+  // [0..5]: count, [6..11]: charge, [12..17]: mass
+  amrex::Gpu::ManagedVector<amrex::Real> absorbTallies;
 
   // AMREX uses 40 bits(it is 40! Not a typo. See AMReX_Particle.H) to store
   // p.id(), but it is converted to a 32-bit integer when saving to disk. To
@@ -547,6 +549,103 @@ public:
                                            amrex::Real qp,
                                            amrex::Array4<RealCMM> const& mmArr);
 
+  template <unsigned int Dim = AMREX_SPACEDIM>
+  static AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void
+  accumulate_mass_matrix_contribution_device(
+      const amrex::GpuArray<amrex::Real, Dim>& dx_lev, amrex::Real invVol_lev,
+      const amrex::IntVect& loIdx, const amrex::RealVect& dShift,
+      amrex::Real qp, amrex::Array4<RealCMM> const& mmArr) {
+
+    amrex::Real weights_IIID[2][2][2][nDim3];
+    //----- Mass matrix calculation begin--------------
+    const amrex::Real xi0 = dShift[ix_] * dx_lev[ix_];
+    const amrex::Real eta0 = dShift[iy_] * dx_lev[iy_];
+    const amrex::Real zeta0 =
+        (nDim > 2 && Dim > 2) ? dShift[iz_] * dx_lev[Dim > 2 ? 2 : 0] : 0;
+    const amrex::Real xi1 = dx_lev[ix_] - xi0;
+    const amrex::Real eta1 = dx_lev[iy_] - eta0;
+    const amrex::Real zeta1 =
+        (nDim > 2 && Dim > 2) ? dx_lev[Dim > 2 ? 2 : 0] - zeta0 : 1;
+
+    weights_IIID[1][1][1][ix_] = eta0 * zeta0 * invVol_lev;
+    weights_IIID[1][1][1][iy_] = xi0 * zeta0 * invVol_lev;
+    weights_IIID[1][1][1][iz_] = xi0 * eta0 * invVol_lev;
+
+    // xi0*eta0*zeta1*invVol_lev;
+    weights_IIID[1][1][0][ix_] = eta0 * zeta1 * invVol_lev;
+    weights_IIID[1][1][0][iy_] = xi0 * zeta1 * invVol_lev;
+    weights_IIID[1][1][0][iz_] = -xi0 * eta0 * invVol_lev;
+
+    // xi0*eta1*zeta0*invVol_lev;
+    weights_IIID[1][0][1][ix_] = eta1 * zeta0 * invVol_lev;
+    weights_IIID[1][0][1][iy_] = -xi0 * zeta0 * invVol_lev;
+    weights_IIID[1][0][1][iz_] = xi0 * eta1 * invVol_lev;
+
+    // xi0*eta1*zeta1*invVol_lev;
+    weights_IIID[1][0][0][ix_] = eta1 * zeta1 * invVol_lev;
+    weights_IIID[1][0][0][iy_] = -xi0 * zeta1 * invVol_lev;
+    weights_IIID[1][0][0][iz_] = -xi0 * eta1 * invVol_lev;
+
+    // xi1*eta0*zeta0*invVol_lev;
+    weights_IIID[0][1][1][ix_] = -eta0 * zeta0 * invVol_lev;
+    weights_IIID[0][1][1][iy_] = xi1 * zeta0 * invVol_lev;
+    weights_IIID[0][1][1][iz_] = xi1 * eta0 * invVol_lev;
+
+    // xi1*eta0*zeta1*invVol_lev;
+    weights_IIID[0][1][0][ix_] = -eta0 * zeta1 * invVol_lev;
+    weights_IIID[0][1][0][iy_] = xi1 * zeta1 * invVol_lev;
+    weights_IIID[0][1][0][iz_] = -xi1 * eta0 * invVol_lev;
+
+    // xi1*eta1*zeta0*invVol_lev;
+    weights_IIID[0][0][1][ix_] = -eta1 * zeta0 * invVol_lev;
+    weights_IIID[0][0][1][iy_] = -xi1 * zeta0 * invVol_lev;
+    weights_IIID[0][0][1][iz_] = xi1 * eta1 * invVol_lev;
+
+    // xi1*eta1*zeta1*invVol_lev;
+    weights_IIID[0][0][0][ix_] = -eta1 * zeta1 * invVol_lev;
+    weights_IIID[0][0][0][iy_] = -xi1 * zeta1 * invVol_lev;
+    weights_IIID[0][0][0][iz_] = -xi1 * eta1 * invVol_lev;
+
+    const int iMin = loIdx[ix_];
+    const int jMin = loIdx[iy_];
+    const int kMin = nDim > 2 ? loIdx[iz_] : 0;
+    const int iMax = iMin + 1;
+    const int jMax = jMin + 1;
+    const int kMax = nDim > 2 ? kMin + 1 : 0;
+
+    const amrex::Real coef = amrex::Math::abs(qp) * invVol_lev;
+    amrex::Real wg_D[nDim3];
+    for (int k1 = kMin; k1 <= kMax; k1++)
+      for (int j1 = jMin; j1 <= jMax; j1++)
+        for (int i1 = iMin; i1 <= iMax; i1++) {
+
+          for (int iDim = 0; iDim < nDim; iDim++) {
+            wg_D[iDim] =
+                coef * weights_IIID[i1 - iMin][j1 - jMin][k1 - kMin][iDim];
+          }
+
+          auto& data = mmArr(i1, j1, k1);
+          for (int i2 = iMin; i2 <= iMax; i2++) {
+            int ip = i2 - i1 + 1;
+            const int gp0 = ip * 9;
+            for (int j2 = jMin; j2 <= jMax; j2++) {
+              int jp = j2 - j1 + 1;
+              const int gp1 = gp0 + jp * nDim3;
+              for (int k2 = kMin; k2 <= kMax; k2++) {
+                const amrex::Real(&wg1_D)[nDim3] =
+                    weights_IIID[i2 - iMin][j2 - jMin][k2 - kMin];
+
+                const int gp = gp1 + k2 - k1 + 1;
+                for (int iDim = 0; iDim < nDim; iDim++) {
+                  amrex::HostDevice::Atomic::Add(&(data[gp]),
+                                                 wg_D[iDim] * wg1_D[iDim]);
+                }
+              }
+            }
+          }
+        }
+  }
+
   void get_ion_fluid(FluidInterface* stateOH, PIter& pti, const int iLev,
                      const int iFluid, const amrex::RealVect xyz,
                      amrex::Real& rhoIon, amrex::Real& cs2Ion,
@@ -606,49 +705,137 @@ public:
 
   void neutral_mover(amrex::Real dt);
 
+  template <unsigned int Dim = AMREX_SPACEDIM>
+  static AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool
+  is_outside_active_region_device(
+      const ParticleType& p,
+      const amrex::Array4<int const>& status,
+      const amrex::IntVect& low,
+      const amrex::IntVect& high,
+      const amrex::GpuArray<amrex::Real, Dim>& plo,
+      const amrex::GpuArray<amrex::Real, Dim>& phi,
+      const amrex::GpuArray<amrex::Real, Dim>& invDx,
+      const amrex::GpuArray<int, 3>& bcLo,
+      const amrex::GpuArray<int, 3>& bcHi,
+      const amrex::RealBox* domainRange,
+      int nDomainRange,
+      int iLev) {
+    if (iLev > 0) {
+      return false;
+    }
+    bool isInsideBox = true;
+    amrex::IntVect cellIdx;
+    for (int i = 0; i < nDim; ++i) {
+      amrex::Real dShift = (p.pos(i) - plo[i]) * invDx[i];
+      cellIdx[i] = fastfloor(dShift);
+      if (cellIdx[i] > high[i] || cellIdx[i] < low[i]) {
+        isInsideBox = false;
+        break;
+      }
+    }
+
+    if (isInsideBox) {
+      return bit::is_domain_boundary(status(cellIdx));
+    } else if (domainRange && nDomainRange > 0) {
+      amrex::Real loc[3];
+      for (int iDim = 0; iDim < nDim; iDim++) {
+        loc[iDim] = p.pos(iDim);
+        if (bcLo[iDim] == ParticleBC::periodic || bcHi[iDim] == ParticleBC::periodic) {
+          while (loc[iDim] > phi[iDim])
+            loc[iDim] -= phi[iDim] - plo[iDim];
+          while (loc[iDim] < plo[iDim])
+            loc[iDim] += phi[iDim] - plo[iDim];
+        }
+      }
+      for (int iBox = 0; iBox < nDomainRange; ++iBox) {
+        if (domainRange[iBox].contains(loc))
+          return false;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  template <unsigned int Dim = AMREX_SPACEDIM>
+  static AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool
+  reflect_or_delete_particle_device(
+      ParticleType& p,
+      const amrex::Array4<int const>& status,
+      const amrex::IntVect& low,
+      const amrex::IntVect& high,
+      const amrex::GpuArray<amrex::Real, Dim>& plo,
+      const amrex::GpuArray<amrex::Real, Dim>& phi,
+      const amrex::GpuArray<amrex::Real, Dim>& invDx,
+      const amrex::GpuArray<int, 3>& bcLo,
+      const amrex::GpuArray<int, 3>& bcHi,
+      const amrex::RealBox* domainRange,
+      int nDomainRange,
+      int iLev,
+      amrex::Real* tallies,
+      amrex::Real charge,
+      amrex::Real mass) {
+
+    if (iLev == 0) {
+      for (int d = 0; d < nDim; ++d) {
+        // Absorbing and inflow faces remove particles that cross outward,
+        // tallying the lost charge/mass per face.
+        if ((bcLo[d] == ParticleBC::absorb || bcLo[d] == ParticleBC::inflow) &&
+            p.pos(d) < plo[d]) {
+          if (tallies) {
+            amrex::HostDevice::Atomic::Add(&tallies[2 * d], 1.0);
+            amrex::HostDevice::Atomic::Add(&tallies[6 + 2 * d], p.rdata(iwp_) * charge);
+            amrex::HostDevice::Atomic::Add(&tallies[12 + 2 * d], p.rdata(iwp_) * mass);
+          }
+          return true;
+        }
+        if ((bcHi[d] == ParticleBC::absorb || bcHi[d] == ParticleBC::inflow) &&
+            p.pos(d) > phi[d]) {
+          if (tallies) {
+            amrex::HostDevice::Atomic::Add(&tallies[2 * d + 1], 1.0);
+            amrex::HostDevice::Atomic::Add(&tallies[6 + 2 * d + 1], p.rdata(iwp_) * charge);
+            amrex::HostDevice::Atomic::Add(&tallies[12 + 2 * d + 1], p.rdata(iwp_) * mass);
+          }
+          return true;
+        }
+        // Specular reflection: mirror position and normal velocity.
+        if (bcLo[d] == ParticleBC::reflect && p.pos(d) < plo[d]) {
+          p.pos(d) = 2.0 * plo[d] - p.pos(d);
+          p.rdata(iup_ + d) = -p.rdata(iup_ + d);
+        } else if (bcHi[d] == ParticleBC::reflect && p.pos(d) > phi[d]) {
+          p.pos(d) = 2.0 * phi[d] - p.pos(d);
+          p.rdata(iup_ + d) = -p.rdata(iup_ + d);
+        }
+      }
+    }
+    return is_outside_active_region_device(
+        p, status, low, high, plo, phi, invDx, bcLo, bcHi, domainRange,
+        nDomainRange, iLev);
+  }
+
   // Returns true if a pushed particle should be deleted.  `absorb` removes and
   // tallies; `reflect` mirrors.  Only acts at iLev == 0.
   inline bool reflect_or_delete_particle(ParticleType& p,
                                          amrex::Array4<int const> const& status,
                                          const amrex::IntVect& low,
                                          const amrex::IntVect& high, int iLev) {
-    if (iLev > 0)
-      return is_outside_active_region(p, status, low, high, iLev);
-
-    const amrex::Real* plo = Geom(iLev).ProbLo();
-    const amrex::Real* phi = Geom(iLev).ProbHi();
-    for (int d = 0; d < nDim; ++d) {
-      const int bcLo = bc.lo[d];
-      const int bcHi = bc.hi[d];
-      // Absorbing and inflow faces remove particles that cross outward,
-      // tallying the lost charge/mass per face.
-      if ((bcLo == ParticleBC::absorb || bcLo == ParticleBC::inflow) &&
-          p.pos(d) < plo[d]) {
-        absorb_tally(2 * d, p.rdata(iwp_));
-        return true;
-      }
-      if ((bcHi == ParticleBC::absorb || bcHi == ParticleBC::inflow) &&
-          p.pos(d) > phi[d]) {
-        absorb_tally(2 * d + 1, p.rdata(iwp_));
-        return true;
-      }
-      // Specular reflection: mirror position and normal velocity.
-      if (bcLo == ParticleBC::reflect && p.pos(d) < plo[d]) {
-        p.pos(d) = 2.0 * plo[d] - p.pos(d);
-        p.rdata(iup_ + d) = -p.rdata(iup_ + d);
-      } else if (bcHi == ParticleBC::reflect && p.pos(d) > phi[d]) {
-        p.pos(d) = 2.0 * phi[d] - p.pos(d);
-        p.rdata(iup_ + d) = -p.rdata(iup_ + d);
-      }
-    }
-    return is_outside_active_region(p, status, low, high, iLev);
+    const auto probLo = Geom(iLev).ProbLoArray();
+    const auto probHi = Geom(iLev).ProbHiArray();
+    const auto invDxArray = Geom(iLev).InvCellSizeArray();
+    amrex::GpuArray<int, 3> bcLo = { bc.lo[0], bc.lo[1], bc.lo[2] };
+    amrex::GpuArray<int, 3> bcHi = { bc.hi[0], bc.hi[1], bc.hi[2] };
+    return reflect_or_delete_particle_device(
+        p, status, low, high, probLo, probHi, invDxArray, bcLo, bcHi,
+        grid->device_domain_range(), grid->domain_range_size(), iLev,
+        absorbTallies.data(), charge, mass);
   }
 
   // Tally an absorbed particle per face (2*d + {0=lo,1=hi}).
   inline void absorb_tally(int face, amrex::Real weight) {
-    absorbTallyCount[face] += 1.0;
-    absorbTallyCharge[face] += weight * charge;
-    absorbTallyMass[face] += weight * mass;
+    if (absorbTallies.size() == 18 && face >= 0 && face < 6) {
+      absorbTallies[face] += 1.0;
+      absorbTallies[6 + face] += weight * charge;
+      absorbTallies[12 + face] += weight * mass;
+    }
   }
 
   void update_position_to_half_stage(const amrex::MultiFab& nodeEMF,
@@ -680,7 +867,8 @@ public:
     return false;
   }
 
-  amrex::Real cosine(ParticleType& p, amrex::Real (&bIn)[nDim3]) {
+  static AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real
+  cosine(const ParticleType& p, const amrex::Real (&bIn)[nDim3]) {
     amrex::Real u[nDim3];
     amrex::Real b[nDim3];
     for (int i = 0; i < nDim3; ++i) {
@@ -795,6 +983,10 @@ public:
     return grid->cell_status(iLev);
   }
 
+  const amrex::iMultiFab& host_cell_status(int iLev) const {
+    return grid->host_cell_status(iLev);
+  }
+
   const amrex::iMultiFab& node_status(int iLev) const {
     return grid->node_status(iLev);
   }
@@ -875,29 +1067,14 @@ public:
                                        amrex::Array4<int const> const& status,
                                        const amrex::IntVect& low,
                                        const amrex::IntVect& high, int iLev) {
-
-    // TODO: It does not work with AMR.
-    // Contains ghost cells.
-    if (iLev > 0) {
-      return false;
-    }
-    bool isInsideBox = true;
-    amrex::IntVect cellIdx;
-    amrex::RealVect dShift;
-    for (int i = 0; i < nDim; ++i) {
-      dShift[i] = (p.pos(i) - plo[iLev][i]) * invDx[iLev][i];
-      cellIdx[i] = fastfloor(dShift[i]);
-      if (cellIdx[i] > high[i] || cellIdx[i] < low[i]) {
-        isInsideBox = false;
-        break;
-      }
-    }
-
-    if (isInsideBox) {
-      return bit::is_domain_boundary(status(cellIdx));
-    } else {
-      return is_outside_active_region(p, iLev);
-    }
+    const auto probLo = Geom(iLev).ProbLoArray();
+    const auto probHi = Geom(iLev).ProbHiArray();
+    const auto invDxArray = Geom(iLev).InvCellSizeArray();
+    amrex::GpuArray<int, 3> bcLo = { bc.lo[0], bc.lo[1], bc.lo[2] };
+    amrex::GpuArray<int, 3> bcHi = { bc.hi[0], bc.hi[1], bc.hi[2] };
+    return is_outside_active_region_device(
+        p, status, low, high, probLo, probHi, invDxArray, bcLo, bcHi,
+        grid->device_domain_range(), grid->domain_range_size(), iLev);
   }
 
   inline void label_particles_outside_active_region() {
@@ -984,12 +1161,20 @@ public:
 
   // Absorbing-BC diagnostics (per face, 2*d + {0=lo,1=hi}).
   amrex::Real get_absorb_count(int face) const {
-    return absorbTallyCount[face];
+    return (face >= 0 && face < 6 && absorbTallies.size() == 18)
+               ? absorbTallies[face]
+               : 0.0;
   }
   amrex::Real get_absorb_charge(int face) const {
-    return absorbTallyCharge[face];
+    return (face >= 0 && face < 6 && absorbTallies.size() == 18)
+               ? absorbTallies[6 + face]
+               : 0.0;
   }
-  amrex::Real get_absorb_mass(int face) const { return absorbTallyMass[face]; }
+  amrex::Real get_absorb_mass(int face) const {
+    return (face >= 0 && face < 6 && absorbTallies.size() == 18)
+               ? absorbTallies[12 + face]
+               : 0.0;
+  }
 
   void set_relativistic(const bool& in) { isRelativistic = in; }
 

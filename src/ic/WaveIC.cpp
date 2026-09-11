@@ -124,15 +124,15 @@ void WaveIC::set_fields(PicICFields& fields) const {
       if (mfi.isValid()) {
         const Array4<Real const>& a = fields.node_B(iLev).array(mfi);
         const Box& b = mfi.validbox();
-        Bx0 = a(b.smallEnd(), ix_);
+        const auto p = a.ptr(b.smallEnd(), ix_);
+        amrex::Gpu::copy(amrex::Gpu::deviceToHost, p, p + 1, &Bx0);
       }
     }
     const amrex::Real B1 = frac_ * Bx0;
     B1_ = B1;
 
-    const auto& prob_lo = fields.geom(iLev).ProbLo();
-    const auto& dx = fields.geom(iLev).CellSize();
-    const amrex::Real Lx = (fields.geom(iLev).ProbHi())[0] - prob_lo[0];
+    const auto geomdata = fields.geom(iLev).data();
+    const amrex::Real Lx = fields.geom(iLev).ProbHi(0) - fields.geom(iLev).ProbLo(0);
     Lx_ = Lx;
 
     // Phase wavenumber K.
@@ -157,33 +157,35 @@ void WaveIC::set_fields(PicICFields& fields) const {
     if (oblique_) {
       if (seedE_)
         nodeE.setVal(0.0);
-      if (seedB_) {
+      const bool seedE = seedE_;
+      const bool seedB = seedB_;
+      if (seedB) {
         nodeB.setVal(0.0);
         centerB.setVal(0.0);
       }
 
       const amrex::Real n0 = dir_[0], n1 = dir_[1];
 
-      if (seedE_ || seedB_) {
+      if (seedE || seedB) {
         for (MFIter mfi(nodeE); mfi.isValid(); ++mfi) {
           FArrayBox& fabE = nodeE[mfi];
           FArrayBox& fabB = nodeB[mfi];
           const Box& box = mfi.fabbox();
-          const Array4<Real>& arrE = fabE.array();
-          const Array4<Real>& arrB = fabB.array();
-          ParallelFor(box, [&](int i, int j, int k) {
-            const amrex::Real x = prob_lo[0] + dx[0] * i;
-            const amrex::Real y = prob_lo[1] + dx[1] * j;
-            const amrex::Real z = (nDim > 2) ? prob_lo[2] + dx[2] * k : 0.0;
+          const Array4<Real> arrE = fabE.array();
+          const Array4<Real> arrB = fabB.array();
+          ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            const amrex::Real x = geomdata.ProbLo(0) + geomdata.CellSize(0) * i;
+            const amrex::Real y = geomdata.ProbLo(1) + geomdata.CellSize(1) * j;
+            const amrex::Real z = (AMREX_SPACEDIM > 2) ? geomdata.ProbLo(2) + geomdata.CellSize(2) * k : 0.0;
             const amrex::Real phase = Kx * x + Ky * y + Kz * z;
             const amrex::Real cphi = std::cos(phase);
             const amrex::Real sphi = std::sin(phase);
-            if (seedE_) {
+            if (seedE) {
               arrE(i, j, k, ix_) = -n1 * sphi;
               arrE(i, j, k, iy_) = n0 * sphi;
               arrE(i, j, k, iz_) = -cphi;
             }
-            if (seedB_) {
+            if (seedB) {
               arrB(i, j, k, ix_) = -n1 * cphi;
               arrB(i, j, k, iy_) = n0 * cphi;
               arrB(i, j, k, iz_) = sphi;
@@ -191,16 +193,16 @@ void WaveIC::set_fields(PicICFields& fields) const {
           });
         }
       }
-      if (seedB_) {
+      if (seedB) {
         for (MFIter mfi(centerB); mfi.isValid(); ++mfi) {
           FArrayBox& fabcB = centerB[mfi];
           const Box& box = mfi.fabbox();
-          const Array4<Real>& arrcB = fabcB.array();
-          ParallelFor(box, [&](int i, int j, int k) {
-            const amrex::Real x = prob_lo[0] + dx[0] * (i + 0.5);
-            const amrex::Real y = prob_lo[1] + dx[1] * (j + 0.5);
+          const Array4<Real> arrcB = fabcB.array();
+          ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            const amrex::Real x = geomdata.ProbLo(0) + geomdata.CellSize(0) * (i + 0.5);
+            const amrex::Real y = geomdata.ProbLo(1) + geomdata.CellSize(1) * (j + 0.5);
             const amrex::Real z =
-                (nDim > 2) ? prob_lo[2] + dx[2] * (k + 0.5) : 0.0;
+                (AMREX_SPACEDIM > 2) ? geomdata.ProbLo(2) + geomdata.CellSize(2) * (k + 0.5) : 0.0;
             const amrex::Real phase = Kx * x + Ky * y + Kz * z;
             const amrex::Real cphi = std::cos(phase);
             const amrex::Real sphi = std::sin(phase);
@@ -212,17 +214,19 @@ void WaveIC::set_fields(PicICFields& fields) const {
       }
     } else {
       // Transverse circularly-polarized wave: B = (Bx0, B1 cos kx, B1 sin kx)
-      if (seedB_) {
+      const bool seedB = seedB_;
+      const Real kx = kx_;
+      if (seedB) {
         nodeB.setVal(0.0);
         centerB.setVal(0.0);
         for (MFIter mfi(nodeB); mfi.isValid(); ++mfi) {
           FArrayBox& fab = nodeB[mfi];
           const Box& box = mfi.fabbox();
-          const Array4<Real>& arrB = fab.array();
-          ParallelFor(box, [&](int i, int j, int k) {
-            const amrex::Real x = prob_lo[0] + dx[0] * i;
-            const amrex::Real cphi = std::cos(kx_ * x);
-            const amrex::Real sphi = std::sin(kx_ * x);
+          const Array4<Real> arrB = fab.array();
+          ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            const amrex::Real x = geomdata.ProbLo(0) + geomdata.CellSize(0) * i;
+            const amrex::Real cphi = std::cos(kx * x);
+            const amrex::Real sphi = std::sin(kx * x);
             arrB(i, j, k, ix_) = Bx0;
             arrB(i, j, k, iy_) = B1 * cphi;
             arrB(i, j, k, iz_) = B1 * sphi;
@@ -231,11 +235,11 @@ void WaveIC::set_fields(PicICFields& fields) const {
         for (MFIter mfi(centerB); mfi.isValid(); ++mfi) {
           FArrayBox& fab = centerB[mfi];
           const Box& box = mfi.fabbox();
-          const Array4<Real>& arrB = fab.array();
-          ParallelFor(box, [&](int i, int j, int k) {
-            const amrex::Real x = prob_lo[0] + dx[0] * (i + 0.5);
-            const amrex::Real cphi = std::cos(kx_ * x);
-            const amrex::Real sphi = std::sin(kx_ * x);
+          const Array4<Real> arrB = fab.array();
+          ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            const amrex::Real x = geomdata.ProbLo(0) + geomdata.CellSize(0) * (i + 0.5);
+            const amrex::Real cphi = std::cos(kx * x);
+            const amrex::Real sphi = std::sin(kx * x);
             arrB(i, j, k, ix_) = Bx0;
             arrB(i, j, k, iy_) = B1 * cphi;
             arrB(i, j, k, iz_) = B1 * sphi;

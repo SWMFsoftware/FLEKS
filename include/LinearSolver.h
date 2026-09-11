@@ -7,6 +7,7 @@
 #include <limits>
 #include <vector>
 
+#include <AMReX_GpuContainers.H>
 #include <AMReX_ParallelDescriptor.H>
 
 typedef void (*MATVEC)(const double *vecIn, double *vecOut, int n);
@@ -39,27 +40,27 @@ inline double finite_difference_epsilon(double normBase, double normDirection) {
          normDirection;
 }
 
-template <typename NonlinearMatvec>
-void jacobian_free_matvec(NonlinearMatvec nonlinearMatvec, const double *base,
-                          const double *baseMatvec, const double *direction,
-                          double *out, double *work, const int n,
-                          const int iLev, const double epsilon) {
+inline void jacobian_free_matvec(
+    const std::function<void(const double *, double *, const int)> &nonlinearMatvec,
+    const double *base, const double *baseMatvec, const double *direction,
+    double *out, double *work, const int n, const int iLev,
+    const double epsilon) {
   if (epsilon == 0.0) {
-    std::fill(out, out + n, 0.0);
+    amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) { out[i] = 0.0; });
     return;
   }
 
   // Evaluate (F(base + epsilon * direction) - F(base)) / epsilon.
-  for (int i = 0; i < n; ++i) {
+  amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) {
     work[i] = base[i] + epsilon * direction[i];
-  }
+  });
 
   nonlinearMatvec(work, out, iLev);
 
   const double invEpsilon = 1.0 / epsilon;
-  for (int i = 0; i < n; ++i) {
+  amrex::ParallelFor(n, [=] AMREX_GPU_DEVICE(int i) {
     out[i] = (out[i] - baseMatvec[i]) * invEpsilon;
-  }
+  });
 }
 
 } // namespace fleks_jfnk
@@ -109,9 +110,9 @@ class LinearSolver {
   double tol;
   int nIter;
   MATVEC fMatvec;
-  std::vector<double> rhsBuffer;
-  std::vector<double> xLeftBuffer;
-  std::vector<double> matvecBuffer;
+  amrex::Gpu::ManagedVector<double> rhsBuffer;
+  amrex::Gpu::ManagedVector<double> xLeftBuffer;
+  amrex::Gpu::ManagedVector<double> matvecBuffer;
 
 public:
   double *rhs;
@@ -158,11 +159,14 @@ public:
       }
     }
 
-    for (int i = 0; i < nSolve; ++i) {
-      rhs[i] = 0;
-      xLeft[i] = 0;
-      matvec[i] = 0;
-    }
+    double* const r = rhs;
+    double* const x = xLeft;
+    double* const m = matvec;
+    amrex::ParallelFor(nSolve, [=] AMREX_GPU_DEVICE(int i) {
+      r[i] = 0.0;
+      x[i] = 0.0;
+      m[i] = 0.0;
+    });
   }
 
   void set_tol(amrex::Real in) { tol = in; }

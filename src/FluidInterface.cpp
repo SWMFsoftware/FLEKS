@@ -511,8 +511,14 @@ void FluidInterface::distribute_arrays() {
   if (nodeFluid.empty())
     nodeFluid.resize(n_lev_max());
 
+  if (h_nodeFluid.empty())
+    h_nodeFluid.resize(n_lev_max());
+
   if (centerB.empty())
     centerB.resize(n_lev_max());
+
+  if (h_centerB.empty())
+    h_centerB.resize(n_lev_max());
 
   const bool doCopy = true;
   const int nVarNode = (useCurrent ? nVarFluid + 3 : nVarFluid);
@@ -522,8 +528,13 @@ void FluidInterface::distribute_arrays() {
     // 0 in the regions created by the regrid.
     distribute_FabArray(nodeFluid[iLev], nGrids[iLev], DistributionMap(iLev),
                         nVarNode, nGst, doCopy, 0.0);
+    h_nodeFluid[iLev].define(nGrids[iLev], DistributionMap(iLev), nVarNode, nGst,
+                             amrex::MFInfo().SetArena(amrex::The_Pinned_Arena()));
+
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst, doCopy, 0.0);
+    h_centerB[iLev].define(cGrids[iLev], DistributionMap(iLev), 3, nGst,
+                           amrex::MFInfo().SetArena(amrex::The_Pinned_Arena()));
   }
 
   distribute_grid_arrays();
@@ -605,7 +616,8 @@ int FluidInterface::loop_through_node(std::string action, double* const pos_DI,
       const Array4<Real>& arr = fluid[mfi].array();
       const auto& status = nodeStatus[iLev][mfi].array();
 
-      ParallelFor(box, [&](int i, int j, int k) noexcept {
+      // Host-only kernel: SWMF MPI coupling buffer serialization with serial counters
+      amrex::LoopOnCpu(box, [&](int i, int j, int k) noexcept {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
         if (bit::is_lev_boundary(status(ijk)) || validBox.contains(ijk)) {
           // If this node is the boundary or inside the valid box.
@@ -693,6 +705,7 @@ void FluidInterface::set_node_fluid(const double* const data,
   calc_current();
   normalize_fluid_variables();
   convert_moment_to_velocity();
+  sync_host_fluid();
 
   // save_amrex_file();
 }
@@ -717,6 +730,7 @@ void FluidInterface::set_node_fluid() {
   calc_current();
   normalize_fluid_variables();
   convert_moment_to_velocity();
+  sync_host_fluid();
 
   // save_amrex_file();
 }
@@ -734,6 +748,19 @@ void FluidInterface::set_node_fluid(const FluidInterface& other) {
   }
 
   isnodeFluidReady = true;
+  sync_host_fluid();
+}
+
+void FluidInterface::sync_host_fluid() {
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    if (!nodeFluid[iLev].empty()) {
+      h_nodeFluid[iLev].ParallelCopy(nodeFluid[iLev]);
+    }
+    if (!centerB[iLev].empty()) {
+      h_centerB[iLev].ParallelCopy(centerB[iLev]);
+    }
+  }
+  amrex::Gpu::streamSynchronize();
 }
 
 void FluidInterface::calc_current() {
@@ -800,7 +827,29 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
   std::string funcName = "FI::convert_moment_to_velocity";
   timing_func(funcName);
 
-  for (int iLev = 0; iLev < n_lev(); iLev++)
+  const bool useMultiSpecies_val = useMultiSpecies;
+  const int nIon_val = nIon;
+  const int nFluid_val = nFluid;
+  const bool doWarn_val = doWarn;
+  const int nDimFluid_val = nDimFluid;
+  const Real no2siL = normParams ? normParams->No2SiL : 1.0;
+  const Real rPlanet = rPlanetSi;
+
+  amrex::GpuArray<int, 32> d_iRho, d_iUx, d_iUy, d_iUz;
+  for (int f = 0; f < nFluid && f < 32; ++f) {
+    d_iRho[f] = iRho_I[f];
+    d_iUx[f] = iUx_I[f];
+    d_iUy[f] = iUy_I[f];
+    d_iUz[f] = iUz_I[f];
+  }
+
+  amrex::GpuArray<Real, 32> d_MoMi;
+  for (int s = 0; s < static_cast<int>(MoMi_S.size()) && s < 32; ++s) {
+    d_MoMi[s] = MoMi_S[s];
+  }
+
+  for (int iLev = 0; iLev < n_lev(); iLev++) {
+    const auto geomdata = Geom(iLev).data();
     for (MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
       Box box = mfi.fabbox();
       if (phyNodeOnly)
@@ -808,49 +857,50 @@ void FluidInterface::convert_moment_to_velocity(bool phyNodeOnly, bool doWarn) {
 
       const Array4<Real>& arr = nodeFluid[iLev][mfi].array();
 
-      ParallelFor(box, [&](int i, int j, int k) noexcept {
-        if (useMultiSpecies) {
+      ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        if (useMultiSpecies_val) {
           double Rhot = 0;
-          for (int iIon = 0; iIon < nIon; ++iIon) {
+          for (int iIon = 0; iIon < nIon_val; ++iIon) {
             // Rho = sum(Rhoi) + Rhoe;
             Rhot +=
-                arr(i, j, k, iRho_I[iIon]) * (1 + MoMi_S[0] / MoMi_S[iIon + 1]);
+                arr(i, j, k, d_iRho[iIon]) * (1.0 + d_MoMi[0] / d_MoMi[iIon + 1]);
           } // iIon
 
           // Nodes that were not filled by the coupler keep a zero density.
           // (e.g. nodes inside the body of the source component)
           if (Rhot > 0) {
-            arr(i, j, k, iUx_I[0]) /= Rhot;
-            arr(i, j, k, iUy_I[0]) /= Rhot;
-            arr(i, j, k, iUz_I[0]) /= Rhot;
+            arr(i, j, k, d_iUx[0]) /= Rhot;
+            arr(i, j, k, d_iUy[0]) /= Rhot;
+            arr(i, j, k, d_iUz[0]) /= Rhot;
           }
         } else {
-          for (int iFluid = 0; iFluid < nFluid; ++iFluid) {
-            const double& rho = arr(i, j, k, iRho_I[iFluid]);
+          for (int iFluid = 0; iFluid < nFluid_val; ++iFluid) {
+            const double rho = arr(i, j, k, d_iRho[iFluid]);
             if (rho > 0) {
-              arr(i, j, k, iUx_I[iFluid]) /= rho;
-              arr(i, j, k, iUy_I[iFluid]) /= rho;
-              arr(i, j, k, iUz_I[iFluid]) /= rho;
+              arr(i, j, k, d_iUx[iFluid]) /= rho;
+              arr(i, j, k, d_iUy[iFluid]) /= rho;
+              arr(i, j, k, d_iUz[iFluid]) /= rho;
             } else {
-              const Real* dx = Geom(iLev).CellSize();
-              const auto plo = Geom(iLev).ProbLo();
               const Real x =
-                  (i * dx[ix_] + plo[ix_]) * normParams->No2SiL / rPlanetSi;
+                  (i * geomdata.CellSize(0) + geomdata.ProbLo(0)) * no2siL / rPlanet;
               const Real y =
-                  (j * dx[iy_] + plo[iy_]) * normParams->No2SiL / rPlanetSi;
-              const Real z = nDimFluid > 2 ? (k * dx[iz_] + plo[iz_]) *
-                                                 normParams->No2SiL / rPlanetSi
-                                           : 0.0;
-              if (doWarn) {
+                  (j * geomdata.CellSize(1) + geomdata.ProbLo(1)) * no2siL / rPlanet;
+              const Real z = nDimFluid_val > 2 ? (k * geomdata.CellSize(2) + geomdata.ProbLo(2)) *
+                                                 no2siL / rPlanet
+                                            : 0.0;
+              if (doWarn_val) {
+#if AMREX_DEVICE_COMPILE
                 printf("Warning: ZERO density at x = %e, y = %e, z = %e\n", x,
                        y, z);
-                Abort("Error: ZERO density!");
+                amrex::Abort();
+#endif
               }
             }
           } // iFluid
         } // else
       });
     }
+  }
 }
 
 void FluidInterface::set_plasma_charge_and_mass(Real qomEl) {

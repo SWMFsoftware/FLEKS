@@ -59,10 +59,16 @@ Particles<NStructReal, NStructInt>::Particles(
   ionOH = pInfo.ionOH;
   bc = pInfo.particle_bc(speciesID);
   supID = pInfo.initial_sup_id(speciesID);
+#ifdef AMREX_USE_GPU
+  do_tiling = false;
+#else
   do_tiling = true;
+#endif
 
   qom = charge / mass;
   qomSign = qom >= 0 ? 1 : -1;
+
+  absorbTallies.assign(18, 0.0);
 
   plo.resize(n_lev_max());
   phi.resize(n_lev_max());

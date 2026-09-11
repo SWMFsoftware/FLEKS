@@ -1,5 +1,6 @@
 #include <cstdlib>
 
+#include <AMReX_Loop.H>
 #include <AMReX_ParReduce.H>
 
 #include "InitialCondition.h"
@@ -91,7 +92,7 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
   int iLev = 0;
 
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
-    const auto& status = cell_status(iLev)[mfi].array();
+    const auto& status = host_cell_status(iLev)[mfi].array();
     const Box& bx = mfi.validbox();
     const IntVect bxLo = bx.smallEnd();
     const IntVect bxHi = bx.bigEnd();
@@ -101,7 +102,8 @@ void Particles<NStructReal, NStructInt>::inject_particles_at_boundary() {
       bxGst.grow(iDim, nGstInject);
     }
 
-    ParallelFor(bxGst, [&](int i, int j, int k) noexcept {
+    // Host-only kernel: CPU particle allocation into ParticleContainer
+    amrex::LoopOnCpu(bxGst, [&](int i, int j, int k) noexcept {
       IntVect ijk = { AMREX_D_DECL(i, j, k) };
       IntVect ijksrc;
       if (do_inject_particles_for_this_cell(bx, status, ijk, ijksrc)) {

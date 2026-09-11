@@ -5,6 +5,19 @@ SEARCH_C = -I../include -I${SHAREDIR} ${AMREXSEARCH}
 VERBOSE_GMRES = 
 FLAGC_EXTRA = -D_${COMPONENT}_COMPONENT_ ${VERBOSE_GMRES}
 
+# Detect if AMReX is built with CUDA support
+AMREX_CONFIG_H = ${UTILDIR}/AMREX/InstallDir/include/AMReX_Config.H
+AMREX_HAS_CUDA := $(shell grep -E '^\#define\s+AMREX_USE_CUDA\s+1' $(AMREX_CONFIG_H) 2>/dev/null)
+
+ifneq ($(AMREX_HAS_CUDA),)
+  CUDA_ARCH ?= 89
+  COMPILE.mpicxx := OMPI_CXX=nvcc mpicxx
+  FLAGCC := $(FLAGCC) --forward-unknown-to-host-compiler -ccbin=g++ --expt-relaxed-constexpr --expt-extended-lambda --relocatable-device-code=true -gencode arch=compute_$(CUDA_ARCH),code=[sm_$(CUDA_ARCH),compute_$(CUDA_ARCH)] -x cu
+  CUDALIB = -lcudart -lcuda -lcurand -lcusparse
+  DLINK_OBJ = dlink.o
+  DLINK_CONVERTER_OBJ = dlink_converter.o
+endif
+
 -include Makefile.DEPEND
 
 LIBFLEKS = libFLEKS.a
@@ -65,13 +78,27 @@ default: EXE
 EXE:
 	$(MAKE) LIB
 	$(MAKE) main.o
+ifneq ($(AMREX_HAS_CUDA),)
+	$(MAKE) dlink.o
+endif
 	mkdir -p ../bin
-	${LINK.f90} -o ../bin/FLEKS.exe main.o \
-		-L. -lFLEKS -L${LIBDIR} -lSHARE ${LflagMpi} ${NOMAINFLAG}
+	${LINK.f90} -o ../bin/FLEKS.exe main.o ${DLINK_OBJ} \
+		-L. -lFLEKS -L${LIBDIR} -lSHARE ${LflagMpi} ${CUDALIB} ${NOMAINFLAG}
+
+ifneq ($(AMREX_HAS_CUDA),)
+dlink.o: ${OBJECTS} main.o
+	nvcc -dlink -arch=compute_$(CUDA_ARCH) -code=sm_$(CUDA_ARCH) main.o ${OBJECTS} -L${UTILDIR}/AMREX/InstallDir/lib -lamrex -o dlink.o
+
+dlink_converter.o: ${CONVERTER_OBJECTS}
+	nvcc -dlink -arch=compute_$(CUDA_ARCH) -code=sm_$(CUDA_ARCH) ${CONVERTER_OBJECTS} -L${UTILDIR}/AMREX/InstallDir/lib -lamrex -o dlink_converter.o
+endif
 
 CONVERTER:	${CONVERTER_OBJECTS}
-	${LINK.f90} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} \
-		-L${LIBDIR} -lSHARE ${LflagMpi} ${NOMAINFLAG}
+ifneq ($(AMREX_HAS_CUDA),)
+	$(MAKE) dlink_converter.o
+endif
+	${LINK.f90} -o ${CONVERTEREXE} ${CONVERTER_OBJECTS} ${DLINK_CONVERTER_OBJ} \
+		-L${LIBDIR} -lSHARE ${LflagMpi} ${CUDALIB} ${NOMAINFLAG}
 
 	@echo
 	@echo ${CONVERTEREXE} has been brought up to date.
@@ -90,7 +117,7 @@ ${LIBFLEKS}:${OBJECTS}
 	${AR} ${LIBFLEKS} ${OBJECTS}
 
 clean:
-	-@(rm -f ${OBJECTS} main.o ${LIBFLEKS})
+	-@(rm -f ${OBJECTS} main.o ${LIBFLEKS} dlink.o dlink_converter.o)
 	-@(rm -rf ${CONVERTEREXE} ${CONVERTER_OBJECTS})
 	-@(rm -rf .d)
 

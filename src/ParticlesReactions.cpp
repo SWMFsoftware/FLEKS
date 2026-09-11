@@ -522,6 +522,69 @@ void Particles<NStructReal, NStructInt>::apply_loss(
     if (!source->has_loss_array(iLev))
       continue;
 
+#ifdef AMREX_USE_GPU
+    const auto plo_geom = Geom(iLev).ProbLoArray();
+    const auto inv_dx_geom = Geom(iLev).InvCellSizeArray();
+    const amrex::GpuArray<amrex::Real, 3> plo_arr = {
+      plo_geom[0],
+      (AMREX_SPACEDIM > 1 ? plo_geom[1] : 0.0),
+      (AMREX_SPACEDIM > 2 ? plo_geom[2] : 0.0)
+    };
+    const amrex::GpuArray<amrex::Real, 3> inv_dx_arr = {
+      inv_dx_geom[0],
+      (AMREX_SPACEDIM > 1 ? inv_dx_geom[1] : 0.0),
+      (AMREX_SPACEDIM > 2 ? inv_dx_geom[2] : 0.0)
+    };
+    const int spID = speciesID;
+    const int iqp = iqp_;
+    const int iRho = fi->get_iRho(speciesID);
+    const int ndim = nDim;
+
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      AoS& particles = pti.GetArrayOfStructs();
+      const int np = particles.numParticles();
+      if (np == 0)
+        continue;
+
+      auto p_ptr = particles.data();
+      const auto rhoArr = fi->get_node_fluid(iLev)[pti].array();
+      const auto lossArr = source->get_node_loss_fluid(iLev)[pti].array();
+
+      amrex::ParallelFor(np, [=] AMREX_GPU_DEVICE(int ip) noexcept {
+        auto& p = p_ptr[ip];
+        if (p.id() < 0)
+          return;
+
+        int i = static_cast<int>(
+            std::floor((p.pos(0) - plo_arr[0]) * inv_dx_arr[0]));
+        int j = (ndim > 1) ? static_cast<int>(std::floor(
+                                 (p.pos(1) - plo_arr[1]) * inv_dx_arr[1]))
+                           : 0;
+        int k = (ndim > 2) ? static_cast<int>(std::floor(
+                                 (p.pos(2) - plo_arr[2]) * inv_dx_arr[2]))
+                           : 0;
+
+        Real rhoExisting = rhoArr(i, j, k, iRho);
+        if (rhoExisting <= 0.0)
+          return;
+
+        Real lossRate = lossArr(i, j, k, spID);
+        if (lossRate <= 0.0)
+          return;
+
+        Real fraction = lossRate * dt / rhoExisting;
+        if (fraction > 1.0)
+          fraction = 1.0;
+        if (fraction <= 0.0)
+          return;
+
+        p.rdata(iqp) *= (1.0 - fraction);
+        if (fraction >= 1.0) {
+          p.id() = -1;
+        }
+      });
+    }
+#else
     const Real* plo = Geom(iLev).ProbLo();
     const Real* inv_dx = Geom(iLev).InvCellSize();
 
@@ -569,6 +632,7 @@ void Particles<NStructReal, NStructInt>::apply_loss(
         }
       }
     }
+#endif
   }
 
   // Remove particles whose weight has been driven to (near) zero.

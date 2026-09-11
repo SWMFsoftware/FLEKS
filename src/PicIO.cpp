@@ -140,7 +140,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
       for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
 
-        const auto& typeArr = cellStatus[iLev][mfi].array();
+        const auto& typeArr = host_cell_status(iLev)[mfi].array();
 
         auto lo = box.loVect3d();
         auto hi = box.hiVect3d();
@@ -245,7 +245,7 @@ void Pic::find_output_list(const PlotWriter& writerIn, long int& nPointAllProc,
       for (MFIter mfi(nodeE[iLev]); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
 
-        const auto& typeArr = nodeStatus[iLev][mfi].array();
+        const auto& typeArr = host_node_status(iLev)[mfi].array();
 
         auto lo = box.loVect3d();
         auto hi = box.hiVect3d();
@@ -414,6 +414,31 @@ bool Pic::is_inside_cell_plot_region(const PlotWriter& writerIn, int const ix,
 }
 
 //==========================================================
+#ifdef AMREX_USE_GPU
+static const amrex::MultiFab& get_host_mf(const amrex::MultiFab& mf,
+                                          Pic::HostMFPool* mfPool) {
+  if (!mfPool)
+    return mf;
+  auto it = mfPool->find(&mf);
+  if (it == mfPool->end()) {
+    auto res = mfPool->emplace(
+        std::piecewise_construct, std::forward_as_tuple(&mf),
+        std::forward_as_tuple(mf.boxArray(), mf.DistributionMap(), mf.nComp(),
+                              0, amrex::MFInfo().SetArena(amrex::The_Pinned_Arena())));
+    res.first->second.ParallelCopy(mf);
+    amrex::Gpu::streamSynchronize();
+    return res.first->second;
+  }
+  return it->second;
+}
+#else
+static const amrex::MultiFab& get_host_mf(const amrex::MultiFab& mf,
+                                          Pic::HostMFPool* /*mfPool*/) {
+  return mf;
+}
+#endif
+
+//==========================================================
 void Pic::get_field_var(const VectorPointList& pointList_II,
                         const std::vector<std::string>& sVar_I,
                         MDArray<double>& var_II) {
@@ -427,6 +452,8 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
   int nVar = sVar_I.size();
 
   long iPoint = 0;
+
+  HostMFPool mfPool;
 
   // The point list is enumerated over the node grid (full-PIC) or the cell
   // grid (hybrid) in find_output_list, so iterate the matching MultiFab grid
@@ -452,12 +479,12 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
           // Processor-0 output the inactive PIC nodes/cells for structured
           // output.
           for (int iVar = 0; iVar < nVar; ++iVar) {
-            var_II(iPoint, iVar) = get_var(sVar_I[iVar], iLev, ijk, mfi, false);
+            var_II(iPoint, iVar) = get_var(sVar_I[iVar], iLev, ijk, mfi, &mfPool, false);
           }
           iPoint++;
         } else if (iBlock == iBlockCount) {
           for (int iVar = 0; iVar < nVar; ++iVar) {
-            var_II(iPoint, iVar) = get_var(sVar_I[iVar], iLev, ijk, mfi);
+            var_II(iPoint, iVar) = get_var(sVar_I[iVar], iLev, ijk, mfi, &mfPool);
           }
           iPoint++;
         } else {
@@ -472,7 +499,7 @@ void Pic::get_field_var(const VectorPointList& pointList_II,
 
 //==========================================================
 double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
-                    const MFIter& mfi, bool isValidMFI) {
+                    const MFIter& mfi, HostMFPool* mfPool, bool isValidMFI) {
   double value = 0;
   // Full-PIC-only diagnostics: their arrays are not allocated for hybrid.
   if (useHybridPIC &&
@@ -515,50 +542,50 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
     } else if (var.substr(0, 2) == "dx") {
       value = Geom(iLev).CellSize(ix_);
     } else if (var.substr(0, 2) == "Ex") {
-      const Array4<Real const>& arr =
-          (useHybridPIC ? centerEhybrid[iLev] : nodeE[iLev])[mfi].array();
+      const MultiFab& mf = (useHybridPIC ? centerEhybrid[iLev] : nodeE[iLev]);
+      const Array4<Real const>& arr = get_host_mf(mf, mfPool)[mfi].array();
       value = arr(ijk, ix_);
     } else if (var.substr(0, 2) == "Ey") {
-      const Array4<Real const>& arr =
-          (useHybridPIC ? centerEhybrid[iLev] : nodeE[iLev])[mfi].array();
+      const MultiFab& mf = (useHybridPIC ? centerEhybrid[iLev] : nodeE[iLev]);
+      const Array4<Real const>& arr = get_host_mf(mf, mfPool)[mfi].array();
       value = arr(ijk, iy_);
     } else if (var.substr(0, 2) == "Ez") {
-      const Array4<Real const>& arr =
-          (useHybridPIC ? centerEhybrid[iLev] : nodeE[iLev])[mfi].array();
+      const MultiFab& mf = (useHybridPIC ? centerEhybrid[iLev] : nodeE[iLev]);
+      const Array4<Real const>& arr = get_host_mf(mf, mfPool)[mfi].array();
       value = arr(ijk, iz_);
     } else if (var.substr(0, 2) == "Bx") {
-      const Array4<Real const>& arr =
-          (useHybridPIC ? centerB[iLev] : nodeB[iLev])[mfi].array();
+      const MultiFab& mf = (useHybridPIC ? centerB[iLev] : nodeB[iLev]);
+      const Array4<Real const>& arr = get_host_mf(mf, mfPool)[mfi].array();
       value = arr(ijk, ix_);
     } else if (var.substr(0, 2) == "By") {
-      const Array4<Real const>& arr =
-          (useHybridPIC ? centerB[iLev] : nodeB[iLev])[mfi].array();
+      const MultiFab& mf = (useHybridPIC ? centerB[iLev] : nodeB[iLev]);
+      const Array4<Real const>& arr = get_host_mf(mf, mfPool)[mfi].array();
       value = arr(ijk, iy_);
     } else if (var.substr(0, 2) == "Bz") {
-      const Array4<Real const>& arr =
-          (useHybridPIC ? centerB[iLev] : nodeB[iLev])[mfi].array();
+      const MultiFab& mf = (useHybridPIC ? centerB[iLev] : nodeB[iLev]);
+      const Array4<Real const>& arr = get_host_mf(mf, mfPool)[mfi].array();
       value = arr(ijk, iz_);
     } else if (var.substr(0, 5) == "jHatx") {
-      const Array4<Real const>& arr = jHat[iLev][mfi].array();
+      const Array4<Real const>& arr = get_host_mf(jHat[iLev], mfPool)[mfi].array();
       value = arr(ijk, ix_);
     } else if (var.substr(0, 5) == "jHaty") {
-      const Array4<Real const>& arr = jHat[iLev][mfi].array();
+      const Array4<Real const>& arr = get_host_mf(jHat[iLev], mfPool)[mfi].array();
       value = arr(ijk, iy_);
     } else if (var.substr(0, 5) == "jHatz") {
-      const Array4<Real const>& arr = jHat[iLev][mfi].array();
+      const Array4<Real const>& arr = get_host_mf(jHat[iLev], mfPool)[mfi].array();
       value = arr(ijk, iz_);
     } else if (var.substr(0, 3) == "nMM") {
       int ii = extract_int(var);
       const Array4<RealMM const>& arr = nodeMM[iLev][mfi].array();
       value = arr(ijk)[ii];
     } else if (var.substr(0, 5) == "dBxdt") {
-      const Array4<Real const>& arr = dBdt[iLev][mfi].array();
+      const Array4<Real const>& arr = get_host_mf(dBdt[iLev], mfPool)[mfi].array();
       value = arr(ijk, ix_);
     } else if (var.substr(0, 5) == "dBydt") {
-      const Array4<Real const>& arr = dBdt[iLev][mfi].array();
+      const Array4<Real const>& arr = get_host_mf(dBdt[iLev], mfPool)[mfi].array();
       value = arr(ijk, iy_);
     } else if (var.substr(0, 5) == "dBzdt") {
-      const Array4<Real const>& arr = dBdt[iLev][mfi].array();
+      const Array4<Real const>& arr = get_host_mf(dBdt[iLev], mfPool)[mfi].array();
       value = arr(ijk, iz_);
     } else if (var.substr(0, 4) == "rhoS" || var.substr(0, 3) == "uxS" ||
                var.substr(0, 3) == "uyS" || var.substr(0, 3) == "uzS" ||
@@ -600,7 +627,7 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
           iVar = iNum_;
 
         const Array4<Real const>& arr =
-            plasma[extract_int(var)][iLev][mfi].array();
+            get_host_mf(plasma[extract_int(var)][iLev], mfPool)[mfi].array();
         value = arr(ijk, iVar);
 
         if (var.substr(0, 1) == "u") {
@@ -615,46 +642,50 @@ double Pic::get_var(std::string_view var, const int iLev, const IntVect ijk,
         const int iDir = (var.substr(0, 2) == "jx")   ? ix_
                          : (var.substr(0, 2) == "jy") ? iy_
                                                       : iz_;
-        const Array4<Real const>& arr = centerJ[iLev][mfi].array();
+        const Array4<Real const>& arr =
+            get_host_mf(centerJ[iLev], mfPool)[mfi].array();
         value = arr(ijk, iDir);
       }
     } else if (var.substr(0, 4) == "mach") {
-      value = mMach[iLev][mfi].array()(ijk);
+      value = get_host_mf(mMach[iLev], mfPool)[mfi].array()(ijk);
     } else if (var.substr(0, 2) == "pS") {
       const auto& plasma = useHybridPIC ? centerPlasma : nodePlasma;
       const Array4<Real const>& arr =
-          plasma[extract_int(var)][iLev][mfi].array();
+          get_host_mf(plasma[extract_int(var)][iLev], mfPool)[mfi].array();
       value = (arr(ijk, iPxx_) + arr(ijk, iPyy_) + arr(ijk, iPzz_)) / 3.0;
 
     } else if (var.substr(0, 3) == "E0x") {
-      const Array4<Real const>& arr = eBg[iLev][mfi].array();
+      const Array4<Real const>& arr = get_host_mf(eBg[iLev], mfPool)[mfi].array();
       value = arr(ijk, ix_);
     } else if (var.substr(0, 3) == "E0y") {
-      const Array4<Real const>& arr = eBg[iLev][mfi].array();
+      const Array4<Real const>& arr = get_host_mf(eBg[iLev], mfPool)[mfi].array();
       value = arr(ijk, iy_);
     } else if (var.substr(0, 3) == "E0z") {
-      const Array4<Real const>& arr = eBg[iLev][mfi].array();
+      const Array4<Real const>& arr = get_host_mf(eBg[iLev], mfPool)[mfi].array();
       value = arr(ijk, iz_);
     } else if (var.substr(0, 3) == "u0x") {
-      const Array4<Real const>& arr = uBg[iLev][mfi].array();
+      const Array4<Real const>& arr = get_host_mf(uBg[iLev], mfPool)[mfi].array();
       value = arr(ijk, ix_);
     } else if (var.substr(0, 3) == "u0y") {
-      const Array4<Real const>& arr = uBg[iLev][mfi].array();
+      const Array4<Real const>& arr = get_host_mf(uBg[iLev], mfPool)[mfi].array();
       value = arr(ijk, iy_);
     } else if (var.substr(0, 3) == "u0z") {
-      const Array4<Real const>& arr = uBg[iLev][mfi].array();
+      const Array4<Real const>& arr = get_host_mf(uBg[iLev], mfPool)[mfi].array();
       value = arr(ijk, iz_);
     } else if (var.substr(0, 2) == "qc") {
-      const Array4<Real const>& arr = centerNetChargeN[iLev][mfi].array();
+      const Array4<Real const>& arr =
+          get_host_mf(centerNetChargeN[iLev], mfPool)[mfi].array();
       value = arr(ijk);
     } else if (var.substr(0, 5) == "divEc") {
-      const Array4<Real const>& arr = centerDivE[iLev][mfi].array();
+      const Array4<Real const>& arr =
+          get_host_mf(centerDivE[iLev], mfPool)[mfi].array();
       value = arr(ijk);
     } else if (var.substr(0, 4) == "divB") {
-      const Array4<Real const>& arr = divB[iLev][mfi].array();
+      const Array4<Real const>& arr = get_host_mf(divB[iLev], mfPool)[mfi].array();
       value = arr(ijk);
     } else if (var.substr(0, 3) == "phi") {
-      const Array4<Real const>& arr = centerPhi[iLev][mfi].array();
+      const Array4<Real const>& arr =
+          get_host_mf(centerPhi[iLev], mfPool)[mfi].array();
       value = arr(ijk);
     } else if (var.substr(0, 4) == "rank") {
       value = ParallelDescriptor::MyProc();

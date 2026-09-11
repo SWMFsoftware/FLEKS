@@ -7,6 +7,8 @@
 #include <AMReX_BoxArray.H>
 #include <AMReX_FillPatchUtil.H>
 #include <AMReX_Geometry.H>
+#include <AMReX_GpuContainers.H>
+#include <AMReX_Gpu.H>
 #include <AMReX_IndexType.H>
 #include <AMReX_IntVect.H>
 #include <AMReX_MultiFab.H>
@@ -42,6 +44,7 @@ protected:
 
   // The range of activeRegion.
   amrex::Vector<amrex::RealBox> domainRange;
+  amrex::Gpu::ManagedVector<amrex::RealBox> d_domainRange;
 
   // Cell center
   amrex::Vector<amrex::BoxArray>& cGrids = grids;
@@ -54,7 +57,11 @@ protected:
   // Each bit of the integer represents a status of a cell/node. See Bit.h for
   // potential status.
   amrex::Vector<amrex::iMultiFab> cellStatus;
+  amrex::Vector<amrex::iMultiFab> h_cellStatus;
   amrex::Vector<amrex::iMultiFab> nodeStatus;
+  amrex::Vector<amrex::iMultiFab> h_nodeStatus;
+  amrex::Vector<amrex::iMultiFab> nodeOffsetMap;
+  amrex::Vector<amrex::Vector<int>> nOwnedNodes;
   amrex::Vector<amrex::iMultiFab> targetPPC;
 
   amrex::Vector<amrex::MultiFab> cellCost;
@@ -99,6 +106,8 @@ public:
 
     cellStatus.resize(n_lev_max());
     nodeStatus.resize(n_lev_max());
+    nodeOffsetMap.resize(n_lev_max());
+    nOwnedNodes.resize(n_lev_max());
     cellCost.resize(n_lev_max());
   };
 
@@ -144,6 +153,13 @@ public:
 
   const amrex::Vector<amrex::RealBox>& domain_range() const {
     return domainRange;
+  }
+
+  const amrex::RealBox* device_domain_range() const {
+    return d_domainRange.data();
+  }
+  int domain_range_size() const {
+    return static_cast<int>(d_domainRange.size());
   }
 
   const amrex::Vector<amrex::MultiFab>& get_cost() const { return cellCost; }
@@ -227,8 +243,16 @@ public:
     return cellStatus[iLev];
   }
 
+  const amrex::iMultiFab& host_cell_status(int iLev) const {
+    return h_cellStatus[iLev];
+  }
+
   const amrex::iMultiFab& node_status(int iLev) const {
     return nodeStatus[iLev];
+  }
+
+  const amrex::iMultiFab& host_node_status(int iLev) const {
+    return h_nodeStatus[iLev];
   }
 
   const amrex::iMultiFab& target_PPC(int iLev) const { return targetPPC[iLev]; }
@@ -358,7 +382,17 @@ public:
                    << std::endl;
     for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.validbox();
+#ifdef AMREX_USE_GPU
+      const auto& tagbox = tags[mfi];
+      const amrex::Box& tbox = tagbox.box();
+      const std::size_t npts = tbox.numPts();
+      amrex::BaseFab<char> host_fab(tbox, 1, amrex::The_Pinned_Arena());
+      amrex::Gpu::copy(amrex::Gpu::deviceToHost, tagbox.dataPtr(),
+                       tagbox.dataPtr() + npts, host_fab.dataPtr());
+      const auto tagArr = host_fab.array();
+#else
       const auto tagArr = tags.array(mfi);
+#endif
       const auto lo = lbound(bx);
       const auto hi = ubound(bx);
       for (int k = lo.z; k <= hi.z; ++k)
@@ -370,12 +404,18 @@ public:
             // Loop through all levels from the finest to the current level.
             // If a cell is required to be refined at lev=n (n>=iLev), this
             // cell should be also refined at lev=iLev.
-            for (int il = n_lev_max() - 2; il >= iLev; il--)
-              if (refineRegions[il].is_inside(xyz)) {
+            for (int il = n_lev_max() - 2; il >= iLev; il--) {
+              if (il < static_cast<int>(refineRegions.size()) &&
+                  refineRegions[il].is_inside(xyz)) {
                 tagArr(i, j, k) = amrex::TagBox::SET;
-                continue;
+                break;
               }
+            }
           }
+#ifdef AMREX_USE_GPU
+      amrex::Gpu::copy(amrex::Gpu::hostToDevice, host_fab.dataPtr(),
+                       host_fab.dataPtr() + npts, tags[mfi].dataPtr());
+#endif
     }
   };
 
@@ -637,10 +677,11 @@ public:
           for (int j = lo.y - ngst; j <= hi.y + ngst; ++j)
             for (int i = lo.x - ngst; i <= hi.x + ngst; ++i) {
 
+              const auto dx_arr = Geom(n).CellSizeArray();
               myfile << i << " " << j << " " << k << " "
-                     << i * Geom(n).CellSizeArray()[0] << " "
-                     << j * Geom(n).CellSizeArray()[1] << " "
-                     << k * Geom(n).CellSizeArray()[2] << " " << 2455.0 << " ";
+                     << i * dx_arr[0] << " "
+                     << j * (AMREX_SPACEDIM > 1 ? dx_arr[1] : 0.0) << " "
+                     << k * (AMREX_SPACEDIM > 2 ? dx_arr[AMREX_SPACEDIM > 2 ? 2 : 0] : 0.0) << " " << 2455.0 << " ";
 
               for (int l = 0; l < ncomp; ++l) {
                 myfile << fab(i, j, k, l) << " ";

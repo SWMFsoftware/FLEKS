@@ -19,7 +19,9 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   const auto dx = Geom(iLev).CellSizeArray();
   const Real dxInv = 1.0 / (2.0 * dx[0]);
   const Real dyInv = 1.0 / (2.0 * dx[1]);
-  const Real dzInv = (nDim > 2) ? 1.0 / (2.0 * dx[2]) : 0.0;
+  const Real dzInv = (AMREX_SPACEDIM > 2 && nDim > 2)
+                         ? 1.0 / (2.0 * dx[AMREX_SPACEDIM > 2 ? 2 : 0])
+                         : 0.0;
 
   // Cell-centred current J = curl(B)/(4*pi) from the trial B (2*dx central
   // difference, zero at the Nyquist wavenumber). Only needed for physical
@@ -49,17 +51,30 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
     const Real p0 = electronDensity0 * electronTemperature;
     const Real invRho0 =
         (electronDensity0 > 0.0) ? (1.0 / electronDensity0) : 0.0;
+    const int iRho_val = iRho_;
+    const int iUx_val = iUx_;
+    const int iUy_val = iUy_;
+    const int iUz_val = iUz_;
+    const int ix_val = ix_;
+    const int iy_val = iy_;
+    const int iz_val = iz_;
+    const Real etaResistivity_val = etaResistivity;
+    const Real rhoMinOhm_val = rhoMinOhm;
+    const Real electronTemperature_val = electronTemperature;
+    const Real electronGamma_val = electronGamma;
+    const int nDim_val = nDim;
+    const bool useHallTerm_val = useHallTerm;
 
-    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-      const Real rhoPrev = momentsPrev(i, j, k, iRho_);
-      const Real rhoCur = moments(i, j, k, iRho_);
+    ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      const Real rhoPrev = momentsPrev(i, j, k, iRho_val);
+      const Real rhoCur = moments(i, j, k, iRho_val);
       const Real rho = wPrev * rhoPrev + wCur * rhoCur;
       const Real mx =
-          wPrev * momentsPrev(i, j, k, iUx_) + wCur * moments(i, j, k, iUx_);
+          wPrev * momentsPrev(i, j, k, iUx_val) + wCur * moments(i, j, k, iUx_val);
       const Real my =
-          wPrev * momentsPrev(i, j, k, iUy_) + wCur * moments(i, j, k, iUy_);
+          wPrev * momentsPrev(i, j, k, iUy_val) + wCur * moments(i, j, k, iUy_val);
       const Real mz =
-          wPrev * momentsPrev(i, j, k, iUz_) + wCur * moments(i, j, k, iUz_);
+          wPrev * momentsPrev(i, j, k, iUz_val) + wCur * moments(i, j, k, iUz_val);
       Real ui = 0, vi = 0, wi = 0;
 
       if (rho > 0) {
@@ -70,14 +85,14 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
 
       // Interpolated density at an arbitrary cell (same hstep weights), used
       // for the electron-pressure gradient closure.
-      auto rho_at = [=](int ii, int jj, int kk) AMREX_GPU_DEVICE {
-        return wPrev * momentsPrev(ii, jj, kk, iRho_) +
-               wCur * moments(ii, jj, kk, iRho_);
+      auto rho_at = [=] AMREX_GPU_DEVICE(int ii, int jj, int kk) noexcept {
+        return wPrev * momentsPrev(ii, jj, kk, iRho_val) +
+               wCur * moments(ii, jj, kk, iRho_val);
       };
 
-      Real bx = arrB(i, j, k, ix_);
-      Real by = arrB(i, j, k, iy_);
-      Real bz = arrB(i, j, k, iz_);
+      Real bx = arrB(i, j, k, ix_val);
+      Real by = arrB(i, j, k, iy_val);
+      Real bz = arrB(i, j, k, iz_val);
 
       // Convection term: E = -U_i x B
       Real ex = -(vi * bz - wi * by);
@@ -87,42 +102,42 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
       // J = curl(B)/(4*pi) (CGS)
       Real jx = 0.0, jy = 0.0, jz = 0.0;
       if (needJ) {
-        jx = arrJ(i, j, k, ix_) * invFourPI;
-        jy = arrJ(i, j, k, iy_) * invFourPI;
-        jz = arrJ(i, j, k, iz_) * invFourPI;
+        jx = arrJ(i, j, k, ix_val) * invFourPI;
+        jy = arrJ(i, j, k, iy_val) * invFourPI;
+        jz = arrJ(i, j, k, iz_val) * invFourPI;
       }
 
       // eta * J
-      if (etaResistivity > 0) {
-        ex += etaResistivity * jx;
-        ey += etaResistivity * jy;
-        ez += etaResistivity * jz;
+      if (etaResistivity_val > 0) {
+        ex += etaResistivity_val * jx;
+        ey += etaResistivity_val * jy;
+        ez += etaResistivity_val * jz;
       }
 
       // Electron-pressure-gradient and Hall terms. The floor caps 1/rho; the
       // pressure closure itself uses the true rho. Cells with rho == 0 are
       // left inert.
       if (rho > 0) {
-        const Real invRhoEff = 1.0 / amrex::max(rho, rhoMinOhm);
+        const Real invRhoEff = 1.0 / amrex::max(rho, rhoMinOhm_val);
 
         // Electron pressure gradient
         Real dPe_dx = 0.0, dPe_dy = 0.0, dPe_dz = 0.0;
-        if (electronTemperature > 0) {
-          if (electronGamma == 1.0) {
+        if (electronTemperature_val > 0) {
+          if (electronGamma_val == 1.0) {
             // Isothermal: grad(Pe) = Te * grad(rho)
-            dPe_dx = electronTemperature *
+            dPe_dx = electronTemperature_val *
                      (rho_at(i + 1, j, k) - rho_at(i - 1, j, k)) * dxInv;
-            dPe_dy = electronTemperature *
+            dPe_dy = electronTemperature_val *
                      (rho_at(i, j + 1, k) - rho_at(i, j - 1, k)) * dyInv;
-            dPe_dz = (nDim > 2)
-                         ? electronTemperature *
+            dPe_dz = (nDim_val > 2)
+                         ? electronTemperature_val *
                                (rho_at(i, j, k + 1) - rho_at(i, j, k - 1)) *
                                dzInv
                          : 0.0;
           } else {
             // Adiabatic: Pe = P0 * (rho / rho0)^gamma
-            auto calc_Pe = [=] AMREX_GPU_DEVICE(Real r) {
-              return (r > 0) ? p0 * std::pow(r * invRho0, electronGamma) : 0.0;
+            auto calc_Pe = [=] AMREX_GPU_DEVICE(Real r) noexcept {
+              return (r > 0) ? p0 * std::pow(r * invRho0, electronGamma_val) : 0.0;
             };
 
             dPe_dx =
@@ -131,10 +146,10 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
             dPe_dy =
                 (calc_Pe(rho_at(i, j + 1, k)) - calc_Pe(rho_at(i, j - 1, k))) *
                 dyInv;
-            dPe_dz = (nDim > 2) ? (calc_Pe(rho_at(i, j, k + 1)) -
-                                   calc_Pe(rho_at(i, j, k - 1))) *
-                                      dzInv
-                                : 0.0;
+            dPe_dz = (nDim_val > 2) ? (calc_Pe(rho_at(i, j, k + 1)) -
+                                       calc_Pe(rho_at(i, j, k - 1))) *
+                                          dzInv
+                                    : 0.0;
           }
 
           ex -= dPe_dx * invRhoEff;
@@ -143,7 +158,7 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         }
 
         // Hall term: (J x B) / rho_q
-        if (useHallTerm) {
+        if (useHallTerm_val) {
           Real hall_x = (jy * bz - jz * by) * invRhoEff;
           Real hall_y = (jz * bx - jx * bz) * invRhoEff;
           Real hall_z = (jx * by - jy * bx) * invRhoEff;
@@ -154,9 +169,9 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
         }
       }
 
-      arrE(i, j, k, ix_) = ex;
-      arrE(i, j, k, iy_) = ey;
-      arrE(i, j, k, iz_) = ez;
+      arrE(i, j, k, ix_val) = ex;
+      arrE(i, j, k, iy_val) = ey;
+      arrE(i, j, k, iz_val) = ez;
     });
   }
 

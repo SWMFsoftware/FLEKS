@@ -60,6 +60,9 @@ protected:
 
   // ---- Loss term storage ----
   amrex::Vector<amrex::MultiFab> nodeLossFluid;
+#ifdef AMREX_USE_GPU
+  amrex::Vector<amrex::MultiFab> h_nodeLossFluid;
+#endif
 
   const DomainParameters& domainParameters;
 
@@ -121,12 +124,21 @@ public:
       return;
     if (nodeLossFluid.empty())
       nodeLossFluid.resize(n_lev_max());
+#ifdef AMREX_USE_GPU
+    if (h_nodeLossFluid.empty())
+      h_nodeLossFluid.resize(n_lev_max());
+#endif
     if (nS == 0)
       return;
     const bool doCopy = true;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       distribute_FabArray(nodeLossFluid[iLev], nGrids[iLev],
                           DistributionMap(iLev), nS, nGst, doCopy);
+#ifdef AMREX_USE_GPU
+      h_nodeLossFluid[iLev].define(
+          nGrids[iLev], DistributionMap(iLev), nS, nGst,
+          amrex::MFInfo().SetArena(amrex::The_Pinned_Arena()));
+#endif
     }
   }
 
@@ -136,6 +148,11 @@ public:
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
       if (!nodeLossFluid[iLev].empty())
         nodeLossFluid[iLev].setVal(0.0);
+#ifdef AMREX_USE_GPU
+      if (iLev < static_cast<int>(h_nodeLossFluid.size()) &&
+          !h_nodeLossFluid[iLev].empty())
+        h_nodeLossFluid[iLev].setVal(0.0);
+#endif
     }
   }
 
@@ -154,11 +171,22 @@ public:
 
   void sum_loss_boundary() { fill_loss_boundary(); }
 
+  const amrex::MultiFab& get_node_loss_fluid(int iLev) const {
+    return nodeLossFluid[iLev];
+  }
+  amrex::MultiFab& get_node_loss_fluid(int iLev) {
+    return nodeLossFluid[iLev];
+  }
+
   /// Read loss rate for species iSp at cell ijk.
   /// Returns the normalized mass-density loss rate (positive = loss).
   amrex::Real get_loss_value(const amrex::MFIter& mfi, const amrex::IntVect ijk,
                              const int iSp, const int iLev = 0) const {
+#ifdef AMREX_USE_GPU
+    const auto& arr = h_nodeLossFluid[iLev][mfi].const_array();
+#else
     const auto& arr = nodeLossFluid[iLev][mfi].const_array();
+#endif
     return arr(ijk, iSp);
   }
 

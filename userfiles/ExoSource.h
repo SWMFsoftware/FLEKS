@@ -519,6 +519,9 @@ public:
 
   // Set nodeFluid from plasma-state-dependent ionization processes.
   void set_source(const FluidInterface& other) override {
+#ifdef AMREX_USE_GPU
+    const_cast<FluidInterface&>(other).sync_host_fluid();
+#endif
     set_node_fluid(other);
     set_node_loss_fluid_to_zero();
 
@@ -536,8 +539,15 @@ public:
     const int nIonS = nS - 1;
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      if (!nodeFluid[iLev].empty()) {
-        for (amrex::MFIter mfi(nodeFluid[iLev]); mfi.isValid(); ++mfi) {
+#ifdef AMREX_USE_GPU
+      auto& targetFluid = h_nodeFluid;
+      auto& targetLossFluid = h_nodeLossFluid;
+#else
+      auto& targetFluid = nodeFluid;
+      auto& targetLossFluid = nodeLossFluid;
+#endif
+      if (!targetFluid[iLev].empty()) {
+        for (amrex::MFIter mfi(targetFluid[iLev]); mfi.isValid(); ++mfi) {
           const amrex::Real* dx = Geom(iLev).CellSize();
           const auto plo = Geom(iLev).ProbLo();
 
@@ -545,11 +555,11 @@ public:
           const auto lo = lbound(box);
           const auto hi = ubound(box);
 
-          const amrex::Array4<amrex::Real>& arr = nodeFluid[iLev][mfi].array();
+          const amrex::Array4<amrex::Real>& arr = targetFluid[iLev][mfi].array();
 
           amrex::Array4<amrex::Real> lossArr;
           if (doRecomb || doChem) {
-            lossArr = nodeLossFluid[iLev][mfi].array();
+            lossArr = targetLossFluid[iLev][mfi].array();
           }
 
           // Source accumulators in SI units.
@@ -708,6 +718,18 @@ public:
         }
       }
     }
+
+#ifdef AMREX_USE_GPU
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      if (!nodeFluid[iLev].empty()) {
+        nodeFluid[iLev].ParallelCopy(h_nodeFluid[iLev]);
+      }
+      if ((doRecomb || doChem) && !nodeLossFluid[iLev].empty()) {
+        nodeLossFluid[iLev].ParallelCopy(h_nodeLossFluid[iLev]);
+      }
+    }
+    amrex::Gpu::streamSynchronize();
+#endif
 
     if (!isGridEmpty && useCurrent) {
       for (int iLev = 0; iLev < n_lev(); iLev++) {

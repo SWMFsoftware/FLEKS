@@ -2,6 +2,7 @@
 #define _PIC_H_
 
 #include <iostream>
+#include <map>
 #include <set>
 #include <string>
 
@@ -551,11 +552,14 @@ public:
                         VectorPointList &pointList_II, amrex::RealVect &xMin_D,
                         amrex::RealVect &xMax_D);
 
+  using HostMFPool = std::map<const amrex::MultiFab*, amrex::MultiFab>;
+
   void get_field_var(const VectorPointList &pointList_II,
                      const std::vector<std::string> &sVar_I,
                      MDArray<double> &var_II);
   double get_var(std::string_view var, const int iLev, const amrex::IntVect ijk,
-                 const amrex::MFIter &mfi, bool isValidMFI = true);
+                 const amrex::MFIter &mfi, HostMFPool *mfPool = nullptr,
+                 bool isValidMFI = true);
   void save_restart_header(std::ofstream &headerFile);
   void save_restart_data();
   amrex::Vector<std::array<int, 3> > read_select_particle_input();
@@ -762,16 +766,18 @@ public:
 
       for (amrex::MFIter mfi(errorDivE[iLev]); mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.validbox();
-        const amrex::Array4<amrex::Real> &error = errorDivE[iLev][mfi].array();
+        const amrex::Array4<amrex::Real> error =
+            errorDivE[iLev][mfi].array();
         const amrex::Array4<amrex::Real const> divEcc =
-            centerDivE[iLev][mfi].array();
+            centerDivE[iLev][mfi].const_array();
         const amrex::Array4<amrex::Real const> qcc =
-            centerNetChargeN[iLev][mfi].array();
-        const auto &status = cell_status(iLev)[mfi].array();
+            centerNetChargeN[iLev][mfi].const_array();
+        const amrex::Array4<int const> status =
+            cell_status(iLev)[mfi].const_array();
 
-        amrex::ParallelFor(box, [&](int i, int j, int k) {
+        amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
           error(i, j, k) =
-              sqrt(pow((4.0 * dPI * qcc(i, j, k) - 1.0 * divEcc(i, j, k)), 2));
+              std::abs(4.0 * dPI * qcc(i, j, k) - 1.0 * divEcc(i, j, k));
           if (bit::is_refined(status(i, j, k))) {
             error(i, j, k) = 0;
           }
@@ -786,43 +792,47 @@ public:
       amrex::Abort(
           "ConstantPPV and PreSplitting cannot be true at the same time");
     }
+    const int targetPPCDefault = product(pInfo.nPartPerCell);
+    const bool isPPVconstant = pInfo.isPPVconstant;
+    const bool doPreSplitting = pInfo.doPreSplitting;
+
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       for (amrex::MFIter mfi(targetPPC[iLev]); mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.fabbox();
-        const auto &ppcArr = targetPPC[iLev][mfi].array();
-        amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
-          amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
-          ppcArr(ijk, 0) = product(pInfo.nPartPerCell);
+        const amrex::Array4<int> ppcArr = targetPPC[iLev][mfi].array();
+        amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          ppcArr(i, j, k, 0) = targetPPCDefault;
         });
       }
     }
     for (int iLev = 0; iLev < n_lev(); iLev++) {
+      int baseTarget = targetPPCDefault;
+      if (isPPVconstant) {
+        int tmp = 1;
+        for (int d = 0; d < nDim; d++) {
+          tmp *= (pInfo.nPartPerCell[d] /
+                  static_cast<int>(std::pow(ref_ratio[iLev].max(), iLev)));
+        }
+        baseTarget = tmp;
+      }
+      const int splitTarget =
+          targetPPCDefault *
+          static_cast<int>(std::pow(ref_ratio[iLev].max(), nDim));
+
       for (amrex::MFIter mfi(targetPPC[iLev]); mfi.isValid(); ++mfi) {
         const amrex::Box &box = mfi.validbox();
-        const auto &ppcArr = targetPPC[iLev][mfi].array();
-        const auto &status = cell_status(iLev)[mfi].array();
-        amrex::ParallelFor(box, [&](int i, int j, int k) noexcept {
-          amrex::IntVect ijk = { AMREX_D_DECL(i, j, k) };
-          if (pInfo.isPPVconstant) {
-            int tmp = 1;
-            for (int i = 0; i < nDim; i++) {
-              tmp *=
-                  (pInfo.nPartPerCell[i] / pow((ref_ratio[iLev].max()), iLev));
-            }
-            ppcArr(ijk, 0) = tmp;
-          } else {
-            ppcArr(ijk, 0) = product(pInfo.nPartPerCell);
-          }
-          if (pInfo.doPreSplitting) {
+        const amrex::Array4<int> ppcArr = targetPPC[iLev][mfi].array();
+        const amrex::Array4<int const> status =
+            cell_status(iLev)[mfi].const_array();
+        amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          ppcArr(i, j, k, 0) = baseTarget;
+          if (doPreSplitting) {
             for (int ii = -npresplitcells; ii <= npresplitcells; ii++) {
               for (int jj = -npresplitcells; jj <= npresplitcells; jj++) {
                 for (int kk = -npresplitcells; kk <= npresplitcells; kk++) {
-                  amrex::IntVect ijk2 =
-                      ijk + amrex::IntVect{ AMREX_D_DECL(ii, jj, kk) };
-                  if (bit::is_refined(status(ijk2)) &&
-                      !bit::is_refined(status(ijk))) {
-                    ppcArr(ijk, 0) = product(pInfo.nPartPerCell) *
-                                     pow(ref_ratio[iLev].max(), nDim);
+                  if (bit::is_refined(status(i + ii, j + jj, k + kk)) &&
+                      !bit::is_refined(status(i, j, k))) {
+                    ppcArr(i, j, k, 0) = splitTarget;
                   }
                 }
               }
@@ -839,8 +849,6 @@ public:
     parts[1]->calculate_particle_quality(particleQuality);
     WriteMF(particleQuality, finest_level, "particleQuality1");
   }
-  // private methods
-private:
   amrex::Real calc_E_field_energy();
   amrex::Real calc_B_field_energy();
 };

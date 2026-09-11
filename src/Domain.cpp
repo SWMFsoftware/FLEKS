@@ -236,6 +236,9 @@ void Domain::update() {
     source->convert_moment_to_velocity(true, false);
     source->fill_boundary();
     source->fill_loss_boundary();
+#ifdef AMREX_USE_GPU
+    source->sync_host_fluid();
+#endif
   }
 
   pic->update(doReport);
@@ -516,6 +519,9 @@ void Domain::set_state_var(double *data, int *index,
       source->convert_moment_to_velocity(true, false);
       source->fill_boundary();
       source->fill_loss_boundary();
+#ifdef AMREX_USE_GPU
+      source->sync_host_fluid();
+#endif
     }
   }
 }
