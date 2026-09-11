@@ -1,3 +1,4 @@
+
 #include "Bit.h"
 #include "FleksDistributionMap.h"
 #include "Grid.h"
@@ -223,6 +224,9 @@ void Grid::distribute_grid_arrays(const Vector<BoxArray>& cGridsOld) {
   if (h_cellStatus.size() < static_cast<size_t>(n_lev())) {
     h_cellStatus.resize(n_lev());
   }
+  if (h_nodeStatus.size() < static_cast<size_t>(n_lev())) {
+    h_nodeStatus.resize(n_lev());
+  }
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     distribute_FabArray(cellStatus[iLev], cGrids[iLev], DistributionMap(iLev),
                         1, nGst, false);
@@ -232,6 +236,9 @@ void Grid::distribute_grid_arrays(const Vector<BoxArray>& cGridsOld) {
 
     distribute_FabArray(nodeStatus[iLev], nGrids[iLev], DistributionMap(iLev),
                         1, nGst, false);
+
+    h_nodeStatus[iLev].define(nGrids[iLev], DistributionMap(iLev), 1, nGst,
+                              amrex::MFInfo().SetArena(amrex::The_Pinned_Arena()));
 
     distribute_FabArray(nodeOffsetMap[iLev], nGrids[iLev],
                         DistributionMap(iLev), 1, 0, false);
@@ -585,19 +592,16 @@ void Grid::update_node_status(const Vector<BoxArray>& cGridsOld) {
     nodeOffsetMap[iLev].setVal(-1);
     nOwnedNodes[iLev].assign(nodeStatus[iLev].local_size(), 0);
 
-    amrex::iMultiFab h_nodeStatus(nodeStatus[iLev].boxArray(), nodeStatus[iLev].DistributionMap(),
-                                  1, 0, amrex::MFInfo().SetArena(amrex::The_Pinned_Arena()));
-    h_nodeStatus.ParallelCopy(nodeStatus[iLev]);
+    h_nodeStatus[iLev].ParallelCopy(nodeStatus[iLev]);
     amrex::Gpu::streamSynchronize();
-    amrex::Print() << "DEBUG update_node_status: finished ParallelCopy h_nodeStatus" << std::endl;
 
     amrex::iMultiFab h_offsetMap(nodeOffsetMap[iLev].boxArray(), nodeOffsetMap[iLev].DistributionMap(),
                                  1, 0, amrex::MFInfo().SetArena(amrex::The_Pinned_Arena()));
     h_offsetMap.setVal(-1);
 
-    for (MFIter mfi(h_nodeStatus); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(h_nodeStatus[iLev]); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
-      const auto& nodeArr = h_nodeStatus[mfi].array();
+      const auto& nodeArr = h_nodeStatus[iLev][mfi].array();
       const auto& offsetArr = h_offsetMap[mfi].array();
       const auto lo = lbound(box);
       const auto hi = ubound(box);

@@ -511,8 +511,14 @@ void FluidInterface::distribute_arrays() {
   if (nodeFluid.empty())
     nodeFluid.resize(n_lev_max());
 
+  if (h_nodeFluid.empty())
+    h_nodeFluid.resize(n_lev_max());
+
   if (centerB.empty())
     centerB.resize(n_lev_max());
+
+  if (h_centerB.empty())
+    h_centerB.resize(n_lev_max());
 
   const bool doCopy = true;
   const int nVarNode = (useCurrent ? nVarFluid + 3 : nVarFluid);
@@ -522,8 +528,13 @@ void FluidInterface::distribute_arrays() {
     // 0 in the regions created by the regrid.
     distribute_FabArray(nodeFluid[iLev], nGrids[iLev], DistributionMap(iLev),
                         nVarNode, nGst, doCopy, 0.0);
+    h_nodeFluid[iLev].define(nGrids[iLev], DistributionMap(iLev), nVarNode, nGst,
+                             amrex::MFInfo().SetArena(amrex::The_Pinned_Arena()));
+
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst, doCopy, 0.0);
+    h_centerB[iLev].define(cGrids[iLev], DistributionMap(iLev), 3, nGst,
+                           amrex::MFInfo().SetArena(amrex::The_Pinned_Arena()));
   }
 
   distribute_grid_arrays();
@@ -694,6 +705,7 @@ void FluidInterface::set_node_fluid(const double* const data,
   calc_current();
   normalize_fluid_variables();
   convert_moment_to_velocity();
+  sync_host_fluid();
 
   // save_amrex_file();
 }
@@ -718,6 +730,7 @@ void FluidInterface::set_node_fluid() {
   calc_current();
   normalize_fluid_variables();
   convert_moment_to_velocity();
+  sync_host_fluid();
 
   // save_amrex_file();
 }
@@ -735,6 +748,19 @@ void FluidInterface::set_node_fluid(const FluidInterface& other) {
   }
 
   isnodeFluidReady = true;
+  sync_host_fluid();
+}
+
+void FluidInterface::sync_host_fluid() {
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    if (!nodeFluid[iLev].empty()) {
+      h_nodeFluid[iLev].ParallelCopy(nodeFluid[iLev]);
+    }
+    if (!centerB[iLev].empty()) {
+      h_centerB[iLev].ParallelCopy(centerB[iLev]);
+    }
+  }
+  amrex::Gpu::streamSynchronize();
 }
 
 void FluidInterface::calc_current() {

@@ -190,9 +190,13 @@ protected:
   FluidType myType = PICFluid;
 
   amrex::Vector<amrex::MultiFab> nodeFluid;
+  amrex::Vector<amrex::MultiFab> h_nodeFluid;
   amrex::Vector<amrex::MultiFab> centerB;
+  amrex::Vector<amrex::MultiFab> h_centerB;
 
   bool isnodeFluidReady = false;
+
+  void sync_host_fluid();
 
 public:
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
@@ -509,19 +513,31 @@ public:
 
   amrex::Real get_center_b(const amrex::MFIter& mfi, const amrex::IntVect ijk,
                            const int iDir, const int iLev = 0) const {
+#ifdef AMREX_USE_GPU
+    const auto& arr = h_centerB[iLev][mfi].array();
+#else
     const auto& arr = centerB[iLev][mfi].array();
+#endif
     return arr(ijk, iDir);
   }
 
   amrex::Real get_value(const amrex::MFIter& mfi, const amrex::IntVect ijk,
                         const int iVar, const int iLev = 0) const {
+#ifdef AMREX_USE_GPU
+    const auto& arr = h_nodeFluid[iLev][mfi].array();
+#else
     const auto& arr = nodeFluid[iLev][mfi].array();
+#endif
     return arr(ijk, iVar);
   }
 
   amrex::Real get_value(const amrex::MFIter& mfi, const amrex::RealVect xyz,
                         const int iVar, const int iLev = 0) const {
+#ifdef AMREX_USE_GPU
+    return get_value_at_loc(h_nodeFluid[iLev], mfi, Geom(iLev), xyz, iVar);
+#else
     return get_value_at_loc(nodeFluid[iLev], mfi, Geom(iLev), xyz, iVar);
+#endif
   }
 
   template <typename T>

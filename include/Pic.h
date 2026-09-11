@@ -2,6 +2,7 @@
 #define _PIC_H_
 
 #include <iostream>
+#include <map>
 #include <set>
 #include <string>
 
@@ -551,11 +552,14 @@ public:
                         VectorPointList &pointList_II, amrex::RealVect &xMin_D,
                         amrex::RealVect &xMax_D);
 
+  using HostMFPool = std::map<const amrex::MultiFab*, amrex::MultiFab>;
+
   void get_field_var(const VectorPointList &pointList_II,
                      const std::vector<std::string> &sVar_I,
                      MDArray<double> &var_II);
   double get_var(std::string_view var, const int iLev, const amrex::IntVect ijk,
-                 const amrex::MFIter &mfi, bool isValidMFI = true);
+                 const amrex::MFIter &mfi, HostMFPool *mfPool = nullptr,
+                 bool isValidMFI = true);
   void save_restart_header(std::ofstream &headerFile);
   void save_restart_data();
   amrex::Vector<std::array<int, 3> > read_select_particle_input();

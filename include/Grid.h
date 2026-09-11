@@ -58,6 +58,7 @@ protected:
   amrex::Vector<amrex::iMultiFab> cellStatus;
   amrex::Vector<amrex::iMultiFab> h_cellStatus;
   amrex::Vector<amrex::iMultiFab> nodeStatus;
+  amrex::Vector<amrex::iMultiFab> h_nodeStatus;
   amrex::Vector<amrex::iMultiFab> nodeOffsetMap;
   amrex::Vector<amrex::Vector<int>> nOwnedNodes;
   amrex::Vector<amrex::iMultiFab> targetPPC;
@@ -247,6 +248,10 @@ public:
 
   const amrex::iMultiFab& node_status(int iLev) const {
     return nodeStatus[iLev];
+  }
+
+  const amrex::iMultiFab& host_node_status(int iLev) const {
+    return h_nodeStatus[iLev];
   }
 
   const amrex::iMultiFab& target_PPC(int iLev) const { return targetPPC[iLev]; }
