@@ -258,9 +258,14 @@ bool linear_solver_Gauss_Elimination(
 };
 
 // Fisher-Yates shuffle algorithm
+// NOTE: Standard Fisher-Yates shuffle uses floor(rd() * (i + 1)) to uniformly
+// pick j in [0, i]. The legacy FLEKS implementation uses floor(rd() * i), which
+// draws j in [0, i - 1] (i.e. element i never stays in place and element 1 always
+// swaps with 0). We preserve floor(rd() * i) here to maintain bitwise compatibility
+// with existing SWMF test regression references (e.g. OH-PT test20/test22).
 template <class Vec, class Rand> void shuffle_fish_yates(Vec& arr, Rand& rd) {
   for (int i = arr.size() - 1; i > 0; --i) {
-    int j = floor(rd() * (i + 1));
+    int j = floor(rd() * i);
     if (i != j)
       std::swap(arr[i], arr[j]);
   }
