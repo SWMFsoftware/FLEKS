@@ -1628,6 +1628,39 @@ void Particles<NStructReal, NStructInt>::limit_weight_new(
 // Since Particles is a template, it is necessary to explicitly instantiate
 // with template arguments.
 
-// Explicit template instantiations.
-template class Particles<nPicPartReal, nPicPartInt>;
-template class Particles<nPTPartReal, nPTPartInt>;
+template void PicParticles::limit_weight(Real, bool);
+template void PTParticles::limit_weight(Real, bool);
+template void PicParticles::limit_weight_new(Real, bool);
+template void PTParticles::limit_weight_new(Real, bool);
+template void PicParticles::split(Real, bool);
+template void PTParticles::split(Real, bool);
+template void PicParticles::split_new(Real, bool);
+template void PTParticles::split_new(Real, bool);
+template void PicParticles::merge(Real);
+template void PTParticles::merge(Real);
+template void PicParticles::merge_new(Real);
+template void PTParticles::merge_new(Real);
+template void PicParticles::split_particles_by_velocity(
+    Vector<PicParticles::ParticleType*>&, Vector<PicParticles::ParticleType>&);
+template void PTParticles::split_particles_by_velocity(
+    Vector<PTParticles::ParticleType*>&, Vector<PTParticles::ParticleType>&);
+template bool PicParticles::split_by_seperate_velocity(
+    PicParticles::ParticleType&, PicParticles::ParticleType&,
+    PicParticles::ParticleType&, PicParticles::ParticleType&);
+template bool PTParticles::split_by_seperate_velocity(
+    PTParticles::ParticleType&, PTParticles::ParticleType&,
+    PTParticles::ParticleType&, PTParticles::ParticleType&);
+template bool PicParticles::merge_particles_accurate(int, PicParticles::AoS&,
+                                                     Vector<int>&, Vector<int>&,
+                                                     int, int, Vector<Real>&,
+                                                     Real);
+template bool PTParticles::merge_particles_accurate(int, PTParticles::AoS&,
+                                                    Vector<int>&, Vector<int>&,
+                                                    int, int, Vector<Real>&,
+                                                    Real);
+template bool PicParticles::merge_particles_fast(int, PicParticles::AoS&,
+                                                 Vector<int>&, Vector<int>&,
+                                                 int, int, Vector<Real>&, long);
+template bool PTParticles::merge_particles_fast(int, PTParticles::AoS&,
+                                                Vector<int>&, Vector<int>&, int,
+                                                int, Vector<Real>&, long);

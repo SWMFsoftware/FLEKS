@@ -433,6 +433,17 @@ to `SRCS` in `src/Makefile`.
 
 ## Important Notes
 
+- `Particles<NStructReal, NStructInt>` is implemented in independently
+  compiled split files (`src/ParticlesInit.cpp`, `src/ParticlesBC.cpp`,
+  `src/ParticlesMoments.cpp`, `src/ParticlesMassMatrix.cpp`,
+  `src/ParticlesMover.cpp`, `src/ParticlesResample.cpp`, and
+  `src/ParticlesReactions.cpp`). Every new out-of-line `Particles` method must
+  have explicit member-function instantiations for both `PicParticles` and
+  `PTParticles` in the file where it is defined. Do not repeat whole-class
+  instantiations in split files; only `src/Particles.cpp` owns those. New
+  instantiation declarations should use the existing `using namespace amrex;`
+  convention without redundant `amrex::` qualifiers.
+
 - FLEKS is always 3D internally. 2D is achieved with a single cell in the
   z-direction ("fake 2D").
 - The `Constants.h` file is generated from `Constants.h.orig` and should not be

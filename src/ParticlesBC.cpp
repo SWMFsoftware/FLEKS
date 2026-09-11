@@ -461,6 +461,15 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
   return false; // to suppress compilation warning.
 }
 
-// Explicit template instantiations.
-template class Particles<nPicPartReal, nPicPartInt>;
-template class Particles<nPTPartReal, nPTPartInt>;
+template void PicParticles::inject_particles_at_boundary();
+template void PTParticles::inject_particles_at_boundary();
+template void PicParticles::inject_flux_at_inflow_faces(Real);
+template void PTParticles::inject_flux_at_inflow_faces(Real);
+template void PicParticles::outflow_bc(const MFIter&, const IntVect,
+                                       const IntVect);
+template void PTParticles::outflow_bc(const MFIter&, const IntVect,
+                                      const IntVect);
+template bool PicParticles::do_inject_particles_for_this_cell(
+    const Box&, const Array4<const int>&, const IntVect, IntVect&);
+template bool PTParticles::do_inject_particles_for_this_cell(
+    const Box&, const Array4<const int>&, const IntVect, IntVect&);

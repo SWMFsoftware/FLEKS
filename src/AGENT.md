@@ -47,6 +47,28 @@ The `src/Makefile` compiles all `.cpp` files listed in `SRCS` into
 2. Add `NewFile.cpp` to the `SRCS` variable in `src/Makefile`
 3. Run `make LIB -j8` from the project root
 
+### Adding or modifying `Particles<NStructReal, NStructInt>` methods
+
+`Particles` is instantiated for exactly two supported layouts: `PicParticles`
+and `PTParticles`. The implementation is intentionally split across the
+`Particles*.cpp` files, which are compiled independently. When adding a new
+out-of-line `Particles` method, add explicit member-function instantiations for
+both aliases in the file that defines the method:
+
+```cpp
+template void PicParticles::new_method(/* exact parameter types */);
+template void PTParticles::new_method(/* exact parameter types */);
+```
+
+Do not add `template class Particles<...>;` to the split implementation files.
+Whole-class instantiation is kept only in `Particles.cpp`, which owns the
+class-level RTTI/typeinfo symbols; repeating it in every split file causes
+duplicate symbols with the macOS Mach-O linker. Since these files already use
+`using namespace amrex;`, do not add redundant `amrex::` qualifiers to the new
+instantiation declarations. Keep the two aliases synchronized whenever a
+method signature changes, and run `make LIB -j8` followed by the full SWMF
+link when applicable.
+
 ### Key Makefile variables
 
 | Variable       | Value                     | Purpose                    |
