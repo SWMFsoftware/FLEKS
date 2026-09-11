@@ -260,7 +260,7 @@ bool linear_solver_Gauss_Elimination(
 // Fisher-Yates shuffle algorithm
 template <class Vec, class Rand> void shuffle_fish_yates(Vec& arr, Rand& rd) {
   for (int i = arr.size() - 1; i > 0; --i) {
-    int j = floor(rd() * i);
+    int j = floor(rd() * (i + 1));
     if (i != j)
       std::swap(arr[i], arr[j]);
   }

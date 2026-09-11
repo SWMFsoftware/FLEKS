@@ -964,14 +964,21 @@ public:
 
   void limit_weight(amrex::Real maxRatio, bool seperateVelocity = false);
   void limit_weight_new(amrex::Real maxRatio, bool seperateVelocity = false);
+  void limit_weight_impl(amrex::Real maxRatio, bool seperateVelocity,
+                         bool useTargetPPC);
+
   void split(amrex::Real limit, bool seperateVelocity = false);
   void split_new(amrex::Real limit, bool seperateVelocity = false);
+  void split_impl(amrex::Real limit, bool seperateVelocity,
+                  bool usePreSplitting);
+
   void split_particles_by_velocity(amrex::Vector<ParticleType*>& plist,
                                    amrex::Vector<ParticleType>& newparticles);
   bool split_by_seperate_velocity(ParticleType& p1, ParticleType& p2,
                                   ParticleType& p3, ParticleType& p4);
   void merge(amrex::Real limit);
   void merge_new(amrex::Real limit);
+  void merge_impl(amrex::Real limit, bool useTargetPPC);
 
   // Generic tool: add a circularly-polarized velocity perturbation to every
   // particle already in the container:
