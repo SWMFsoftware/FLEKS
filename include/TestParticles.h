@@ -213,6 +213,22 @@ private:
 
   amrex::Real dtSave = -1.0;
   amrex::Real tNextSave = 0.0;
+
+  void interpolate_record_trajectory(
+      amrex::Real xp, amrex::Real yp, amrex::Real zp,
+      amrex::Real up, amrex::Real vp, amrex::Real wp,
+      amrex::Real unp1, amrex::Real vnp1, amrex::Real wnp1,
+      amrex::Real dtStep, amrex::Real dtElse, amrex::Real tNowSI,
+      amrex::Real& tRec, amrex::Real& xRec, amrex::Real& yRec, amrex::Real& zRec,
+      amrex::Real& uRec, amrex::Real& vRec, amrex::Real& wRec) const;
+
+  void save_particle_record(
+      ParticleType& p,
+      amrex::Real tRec, amrex::Real xRec, amrex::Real yRec, amrex::Real zRec,
+      amrex::Real uRec, amrex::Real vRec, amrex::Real wRec,
+      const amrex::Real* bp = nullptr,
+      const amrex::Real* ep = nullptr,
+      const amrex::Real (*gradB)[3] = nullptr);
 };
 
 #endif

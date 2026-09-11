@@ -71,6 +71,24 @@ void compute_magnetic_drifts(
   vCurv[2] = coefCurv * b_cross_w_z;
 }
 
+inline void interpolate_jacobian_matrix(
+    const Array4<const Real>& jacArr, const IntVect& loIdx,
+    const Real coef[2][2][2], const Dim3& lo, const Dim3& hi,
+    Real gradB[3][3]) {
+  for (int k = lo.z; k <= hi.z; ++k)
+    for (int j = lo.y; j <= hi.y; ++j)
+      for (int i = lo.x; i <= hi.x; ++i) {
+        IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
+                                     loIdx[iz_] + k) };
+        const Real c = coef[i][j][k];
+        for (int iRow = 0; iRow < 3; ++iRow) {
+          for (int jCol = 0; jCol < 3; ++jCol) {
+            gradB[iRow][jCol] += jacArr(ijk, iRow * 3 + jCol) * c;
+          }
+        }
+      }
+}
+
 } // namespace
 
 TestParticles::TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
@@ -86,6 +104,94 @@ TestParticles::TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
   outputDir = component + "/plots/test_particles";
 
   nInitPart = 0;
+}
+
+//==========================================================
+void TestParticles::interpolate_record_trajectory(
+    Real xp, Real yp, Real zp,
+    Real up, Real vp, Real wp,
+    Real unp1, Real vnp1, Real wnp1,
+    Real dtStep, Real dtElse, Real tNowSI,
+    Real& tRec, Real& xRec, Real& yRec, Real& zRec,
+    Real& uRec, Real& vRec, Real& wRec) const {
+  if (dtSave > 0.0) {
+    tRec = tNextSave;
+    const Real dtSI = tc->get_dt_si();
+    Real theta = 1.0;
+    if (dtSI > 0.0) {
+      theta = (tNextSave - (tNowSI - dtSI)) / dtSI;
+      theta = std::max((Real)0.0, std::min((Real)1.0, theta));
+    }
+    xRec = xp + theta * unp1 * dtStep;
+    yRec = yp + theta * vnp1 * dtStep;
+    zRec = zp + theta * wnp1 * dtStep;
+    uRec = (1.0 - theta) * up + theta * unp1;
+    vRec = (1.0 - theta) * vp + theta * vnp1;
+    wRec = (1.0 - theta) * wp + theta * wnp1;
+  } else {
+    xRec = xp + unp1 * dtElse;
+    yRec = yp + vnp1 * dtElse;
+    zRec = zp + wnp1 * dtElse;
+    uRec = unp1;
+    vRec = vnp1;
+    wRec = wnp1;
+  }
+}
+
+//==========================================================
+void TestParticles::save_particle_record(
+    ParticleType& p,
+    Real tRec, Real xRec, Real yRec, Real zRec,
+    Real uRec, Real vRec, Real wRec,
+    const Real* bp, const Real* ep,
+    const Real (*gradB)[3]) {
+  const int i0 = record_var_index(p.idata(iRecordCount_));
+  p.rdata(i0 + iTPt_) = tRec;
+  p.rdata(i0 + iTPu_) = uRec;
+  p.rdata(i0 + iTPv_) = vRec;
+  p.rdata(i0 + iTPw_) = wRec;
+  p.rdata(i0 + iTPx_) = xRec;
+  p.rdata(i0 + iTPy_) = yRec;
+  p.rdata(i0 + iTPz_) = zRec;
+
+  if (bp && ptRecordSize > iTPBx_) {
+    p.rdata(i0 + iTPBx_) = bp[ix_];
+    p.rdata(i0 + iTPBy_) = bp[iy_];
+    p.rdata(i0 + iTPBz_) = bp[iz_];
+  }
+
+  if (ep && ptRecordSize > iTPEx_) {
+    p.rdata(i0 + iTPEx_) = ep[ix_];
+    p.rdata(i0 + iTPEy_) = ep[iy_];
+    p.rdata(i0 + iTPEz_) = ep[iz_];
+  }
+
+  if (gradB && ptRecordSize > 13) {
+    if (ptRecordSize == 19) {
+      Real vRecArr[3] = { uRec, vRec, wRec };
+      Real vGradB[3], vCurv[3];
+      compute_magnetic_drifts(mass, charge, isRelativistic, bp, vRecArr,
+                             gradB, vGradB, vCurv);
+      p.rdata(i0 + iTPvGradBx_) = vGradB[0];
+      p.rdata(i0 + iTPvGradBy_) = vGradB[1];
+      p.rdata(i0 + iTPvGradBz_) = vGradB[2];
+      p.rdata(i0 + iTPvCurvx_)  = vCurv[0];
+      p.rdata(i0 + iTPvCurvy_)  = vCurv[1];
+      p.rdata(i0 + iTPvCurvz_)  = vCurv[2];
+    } else if (ptRecordSize == 22) {
+      p.rdata(i0 + iTPdBxdx_) = gradB[0][0];
+      p.rdata(i0 + iTPdBxdy_) = gradB[0][1];
+      p.rdata(i0 + iTPdBxdz_) = gradB[0][2];
+      p.rdata(i0 + iTPdBydx_) = gradB[1][0];
+      p.rdata(i0 + iTPdBydy_) = gradB[1][1];
+      p.rdata(i0 + iTPdBydz_) = gradB[1][2];
+      p.rdata(i0 + iTPdBzdx_) = gradB[2][0];
+      p.rdata(i0 + iTPdBzdy_) = gradB[2][1];
+      p.rdata(i0 + iTPdBzdz_) = gradB[2][2];
+    }
+  }
+
+  p.idata(iRecordCount_)++;
 }
 
 //==========================================================
@@ -239,69 +345,16 @@ void TestParticles::move_and_save_charged_particles(
         p.pos(iz_) = zp + wnp1 * dtLoc;
 
       if (doSave) {
-        Real theta = 1.0;
-        Real tRec = tNowSI;
-        Real xRec, yRec, zRec, uRec, vRec, wRec;
+        Real tRec, xRec, yRec, zRec, uRec, vRec, wRec;
+        interpolate_record_trajectory(xp, yp, zp, up, vp, wp, unp1, vnp1, wnp1,
+                                     dtLoc, 0.5 * dt, tNowSI, tRec, xRec, yRec,
+                                     zRec, uRec, vRec, wRec);
 
-        if (dtSave > 0.0) {
-          tRec = tNextSave;
-          const Real dtSI = tc->get_dt_si();
-          if (dtSI > 0.0) {
-            theta = (tNextSave - (tNowSI - dtSI)) / dtSI;
-            theta = std::max((Real)0.0, std::min((Real)1.0, theta));
-          }
-          xRec = xp + theta * unp1 * dtLoc;
-          yRec = yp + theta * vnp1 * dtLoc;
-          zRec = zp + theta * wnp1 * dtLoc;
-          uRec = (1.0 - theta) * up + theta * unp1;
-          vRec = (1.0 - theta) * vp + theta * vnp1;
-          wRec = (1.0 - theta) * wp + theta * wnp1;
-        } else {
-          xRec = xp + unp1 * 0.5 * dt;
-          yRec = yp + vnp1 * 0.5 * dt;
-          zRec = zp + wnp1 * 0.5 * dt;
-          uRec = unp1;
-          vRec = vnp1;
-          wRec = wnp1;
-        }
-
-        const int i0 = record_var_index(p.idata(iRecordCount_));
-        p.rdata(i0 + iTPt_) = tRec;
-        p.rdata(i0 + iTPu_) = uRec;
-        p.rdata(i0 + iTPv_) = vRec;
-        p.rdata(i0 + iTPw_) = wRec;
-        p.rdata(i0 + iTPx_) = xRec;
-        p.rdata(i0 + iTPy_) = yRec;
-        p.rdata(i0 + iTPz_) = zRec;
-
-        if (ptRecordSize > iTPBx_) {
-          p.rdata(i0 + iTPBx_) = bp[ix_];
-          p.rdata(i0 + iTPBy_) = bp[iy_];
-          p.rdata(i0 + iTPBz_) = bp[iz_];
-        }
-
-        if (ptRecordSize > iTPEx_) {
-          p.rdata(i0 + iTPEx_) = ep[ix_];
-          p.rdata(i0 + iTPEy_) = ep[iy_];
-          p.rdata(i0 + iTPEz_) = ep[iz_];
-        }
-
+        Real gradB[3][3] = { { 0.0 } };
         if (ptRecordSize > 13) {
-          Real gradB[3][3] = { { 0.0 } };
           if (hasJacB) {
-            for (int k = lo.z; k <= hi.z; ++k)
-              for (int j = lo.y; j <= hi.y; ++j)
-                for (int i = lo.x; i <= hi.x; ++i) {
-                  IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
-                                               loIdx[iz_] + k) };
-                  const Real c = coef[i][j][k];
-                  for (int iRow = 0; iRow < 3; ++iRow) {
-                    for (int jCol = 0; jCol < 3; ++jCol) {
-                      gradB[iRow][jCol] +=
-                          nodeJacBArr(ijk, iRow * 3 + jCol) * c;
-                    }
-                  }
-                }
+            interpolate_jacobian_matrix(nodeJacBArr, loIdx, coef, lo, hi,
+                                        gradB);
           } else {
             // The gradient calculation is based on the derivative of the
             // trilinear interpolation shape functions. B(x,y,z) = sum_{i,j,k}
@@ -362,32 +415,10 @@ void TestParticles::move_and_save_charged_particles(
             }
 #endif
           }
-
-          if (ptRecordSize == 19) {
-            Real vRecArr[3] = { uRec, vRec, wRec };
-            Real vGradB[3], vCurv[3];
-            compute_magnetic_drifts(mass, charge, isRelativistic, bp, vRecArr,
-                                   gradB, vGradB, vCurv);
-            p.rdata(i0 + iTPvGradBx_) = vGradB[0];
-            p.rdata(i0 + iTPvGradBy_) = vGradB[1];
-            p.rdata(i0 + iTPvGradBz_) = vGradB[2];
-            p.rdata(i0 + iTPvCurvx_)  = vCurv[0];
-            p.rdata(i0 + iTPvCurvy_)  = vCurv[1];
-            p.rdata(i0 + iTPvCurvz_)  = vCurv[2];
-          } else if (ptRecordSize == 22) {
-            p.rdata(i0 + iTPdBxdx_) = gradB[0][0];
-            p.rdata(i0 + iTPdBxdy_) = gradB[0][1];
-            p.rdata(i0 + iTPdBxdz_) = gradB[0][2];
-            p.rdata(i0 + iTPdBydx_) = gradB[1][0];
-            p.rdata(i0 + iTPdBydy_) = gradB[1][1];
-            p.rdata(i0 + iTPdBydz_) = gradB[1][2];
-            p.rdata(i0 + iTPdBzdx_) = gradB[2][0];
-            p.rdata(i0 + iTPdBzdy_) = gradB[2][1];
-            p.rdata(i0 + iTPdBzdz_) = gradB[2][2];
-          }
         }
 
-        p.idata(iRecordCount_)++;
+        save_particle_record(p, tRec, xRec, yRec, zRec, uRec, vRec, wRec,
+                             bp, ep, (ptRecordSize > 13) ? gradB : nullptr);
       }
       // Mark for deletion
       if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
@@ -528,104 +559,25 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
         p.pos(iz_) = zp + wnp1 * dtLoc;
 
       if (doSave) {
-        Real theta = 1.0;
-        Real tRec = tNowSI;
-        Real xRec, yRec, zRec, uRec, vRec, wRec;
+        Real tRec, xRec, yRec, zRec, uRec, vRec, wRec;
+        interpolate_record_trajectory(xp, yp, zp, up, vp, wp, unp1, vnp1, wnp1,
+                                     dtLoc, 0.5 * dt, tNowSI, tRec, xRec, yRec,
+                                     zRec, uRec, vRec, wRec);
 
-        if (dtSave > 0.0) {
-          tRec = tNextSave;
-          const Real dtSI = tc->get_dt_si();
-          if (dtSI > 0.0) {
-            theta = (tNextSave - (tNowSI - dtSI)) / dtSI;
-            theta = std::max((Real)0.0, std::min((Real)1.0, theta));
-          }
-          xRec = xp + theta * unp1 * dtLoc;
-          yRec = yp + theta * vnp1 * dtLoc;
-          zRec = zp + theta * wnp1 * dtLoc;
-          uRec = (1.0 - theta) * up + theta * unp1;
-          vRec = (1.0 - theta) * vp + theta * vnp1;
-          wRec = (1.0 - theta) * wp + theta * wnp1;
-        } else {
-          xRec = xp + unp1 * 0.5 * dt;
-          yRec = yp + vnp1 * 0.5 * dt;
-          zRec = zp + wnp1 * 0.5 * dt;
-          uRec = unp1;
-          vRec = vnp1;
-          wRec = wnp1;
+        Real gradB[3][3] = { { 0.0 } };
+        if (ptRecordSize > 13 && hasJacB) {
+          IntVect nodeLoIdx;
+          RealVect nodeDShift;
+          find_node_index(p.pos(), Geom(iLev).ProbLo(),
+                          Geom(iLev).InvCellSize(), nodeLoIdx, nodeDShift);
+          Real nodeCoef[2][2][2];
+          linear_interpolation_coef(nodeDShift, nodeCoef);
+          interpolate_jacobian_matrix(nodeJacBArr, nodeLoIdx, nodeCoef, lo, hi,
+                                      gradB);
         }
 
-        const int i0 = record_var_index(p.idata(iRecordCount_));
-        p.rdata(i0 + iTPt_) = tRec;
-        p.rdata(i0 + iTPu_) = uRec;
-        p.rdata(i0 + iTPv_) = vRec;
-        p.rdata(i0 + iTPw_) = wRec;
-        p.rdata(i0 + iTPx_) = xRec;
-        p.rdata(i0 + iTPy_) = yRec;
-        p.rdata(i0 + iTPz_) = zRec;
-
-        if (ptRecordSize > iTPBx_) {
-          p.rdata(i0 + iTPBx_) = bp[ix_];
-          p.rdata(i0 + iTPBy_) = bp[iy_];
-          p.rdata(i0 + iTPBz_) = bp[iz_];
-        }
-
-        if (ptRecordSize > iTPEx_) {
-          p.rdata(i0 + iTPEx_) = ep[ix_];
-          p.rdata(i0 + iTPEy_) = ep[iy_];
-          p.rdata(i0 + iTPEz_) = ep[iz_];
-        }
-
-        if (ptRecordSize > 13) {
-          Real gradB[3][3] = { { 0.0 } };
-          if (hasJacB) {
-            IntVect nodeLoIdx;
-            RealVect nodeDShift;
-            find_node_index(p.pos(), Geom(iLev).ProbLo(),
-                            Geom(iLev).InvCellSize(), nodeLoIdx, nodeDShift);
-            Real nodeCoef[2][2][2];
-            linear_interpolation_coef(nodeDShift, nodeCoef);
-
-            for (int k = lo.z; k <= hi.z; ++k)
-              for (int j = lo.y; j <= hi.y; ++j)
-                for (int i = lo.x; i <= hi.x; ++i) {
-                  IntVect ijk = { AMREX_D_DECL(nodeLoIdx[ix_] + i,
-                                               nodeLoIdx[iy_] + j,
-                                               nodeLoIdx[iz_] + k) };
-                  const Real c = nodeCoef[i][j][k];
-                  for (int iRow = 0; iRow < 3; ++iRow) {
-                    for (int jCol = 0; jCol < 3; ++jCol) {
-                      gradB[iRow][jCol] +=
-                          nodeJacBArr(ijk, iRow * 3 + jCol) * c;
-                    }
-                  }
-                }
-          }
-
-          if (ptRecordSize == 19) {
-            Real vRecArr[3] = { uRec, vRec, wRec };
-            Real vGradB[3], vCurv[3];
-            compute_magnetic_drifts(mass, charge, isRelativistic, bp, vRecArr,
-                                   gradB, vGradB, vCurv);
-            p.rdata(i0 + iTPvGradBx_) = vGradB[0];
-            p.rdata(i0 + iTPvGradBy_) = vGradB[1];
-            p.rdata(i0 + iTPvGradBz_) = vGradB[2];
-            p.rdata(i0 + iTPvCurvx_)  = vCurv[0];
-            p.rdata(i0 + iTPvCurvy_)  = vCurv[1];
-            p.rdata(i0 + iTPvCurvz_)  = vCurv[2];
-          } else if (ptRecordSize == 22) {
-            p.rdata(i0 + iTPdBxdx_) = gradB[0][0];
-            p.rdata(i0 + iTPdBxdy_) = gradB[0][1];
-            p.rdata(i0 + iTPdBxdz_) = gradB[0][2];
-            p.rdata(i0 + iTPdBydx_) = gradB[1][0];
-            p.rdata(i0 + iTPdBydy_) = gradB[1][1];
-            p.rdata(i0 + iTPdBydz_) = gradB[1][2];
-            p.rdata(i0 + iTPdBzdx_) = gradB[2][0];
-            p.rdata(i0 + iTPdBzdy_) = gradB[2][1];
-            p.rdata(i0 + iTPdBzdz_) = gradB[2][2];
-          }
-        }
-
-        p.idata(iRecordCount_)++;
+        save_particle_record(p, tRec, xRec, yRec, zRec, uRec, vRec, wRec,
+                             bp, ep, (ptRecordSize > 13) ? gradB : nullptr);
       }
       // Mark for deletion
       if (is_outside_active_region(p, status, lowCorner, highCorner, iLev)) {
@@ -670,35 +622,11 @@ void TestParticles::move_and_save_neutrals(int iLev, Real dt, Real tNowSI,
         p.pos(iz_) = zp + wp * dt;
 
       if (doSave) {
-        Real theta = 1.0;
-        Real tRec = tNowSI;
-        Real xRec, yRec, zRec;
-        if (dtSave > 0.0) {
-          tRec = tNextSave;
-          const Real dtSI = tc->get_dt_si();
-          if (dtSI > 0.0) {
-            theta = (tNextSave - (tNowSI - dtSI)) / dtSI;
-            theta = std::max((Real)0.0, std::min((Real)1.0, theta));
-          }
-          xRec = xp + theta * up * dt;
-          yRec = yp + theta * vp * dt;
-          zRec = zp + theta * wp * dt;
-        } else {
-          xRec = p.pos(ix_);
-          yRec = p.pos(iy_);
-          zRec = zp;
-        }
-
-        const int i0 = record_var_index(p.idata(iRecordCount_));
-        p.rdata(i0 + iTPt_) = tRec;
-        p.rdata(i0 + iTPu_) = p.rdata(iup_);
-        p.rdata(i0 + iTPv_) = p.rdata(ivp_);
-        p.rdata(i0 + iTPw_) = p.rdata(iwp_);
-        p.rdata(i0 + iTPx_) = xRec;
-        p.rdata(i0 + iTPy_) = yRec;
-        p.rdata(i0 + iTPz_) = zRec;
-
-        p.idata(iRecordCount_)++;
+        Real tRec, xRec, yRec, zRec, uRec, vRec, wRec;
+        interpolate_record_trajectory(xp, yp, zp, up, vp, wp, up, vp, wp,
+                                     dt, dt, tNowSI, tRec, xRec, yRec,
+                                     zRec, uRec, vRec, wRec);
+        save_particle_record(p, tRec, xRec, yRec, zRec, uRec, vRec, wRec);
       }
 
       // Mark for deletion
