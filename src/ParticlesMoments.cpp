@@ -18,9 +18,9 @@ void Particles<NStructReal, NStructInt>::sum_to_center(MultiFab& netChargeMF,
                                                        int iLev) {
   timing_func("Pts::sum_to_center");
 
-  const GpuArray<Real, 3> probLo = Geom(iLev).ProbLoArray();
-  const GpuArray<Real, 3> invDx = Geom(iLev).InvCellSizeArray();
-  const GpuArray<Real, 3> dx_lev = Geom(iLev).CellSizeArray();
+  const auto probLo = Geom(iLev).ProbLoArray();
+  const auto invDx = Geom(iLev).InvCellSizeArray();
+  const auto dx_lev = Geom(iLev).CellSizeArray();
   const Real invVol_lev = invVol[iLev];
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
@@ -86,11 +86,11 @@ void Particles<NStructReal, NStructInt>::sum_to_center_amr(
     finer_level = iLev;
   }
   for (int nLev = finer_level; nLev >= coarser_level; nLev--) {
-    const GpuArray<Real, 3> probLo_nLev = Geom(nLev).ProbLoArray();
-    const GpuArray<Real, 3> invDx_nLev = Geom(nLev).InvCellSizeArray();
-    const GpuArray<Real, 3> probLo_iLev = Geom(iLev).ProbLoArray();
-    const GpuArray<Real, 3> invDx_iLev = Geom(iLev).InvCellSizeArray();
-    const GpuArray<Real, 3> dx_iLev = Geom(iLev).CellSizeArray();
+    const auto probLo_nLev = Geom(nLev).ProbLoArray();
+    const auto invDx_nLev = Geom(nLev).InvCellSizeArray();
+    const auto probLo_iLev = Geom(iLev).ProbLoArray();
+    const auto invDx_iLev = Geom(iLev).InvCellSizeArray();
+    const auto dx_iLev = Geom(iLev).CellSizeArray();
     const Real invVol_iLev = invVol[iLev];
     const int n_levels = n_lev();
 
@@ -288,8 +288,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments(
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     timing_func("Pts::sum_moments_node_deposit");
     momentsMF[iLev].setVal(0.0);
-    const GpuArray<Real, 3> probLo = Geom(iLev).ProbLoArray();
-    const GpuArray<Real, 3> invDx = Geom(iLev).InvCellSizeArray();
+    const auto probLo = Geom(iLev).ProbLoArray();
+    const auto invDx = Geom(iLev).InvCellSizeArray();
 
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       Array4<Real> const& momentsArr = momentsMF[iLev][pti].array();
@@ -527,8 +527,8 @@ Real Particles<NStructReal, NStructInt>::sum_moments_cell_centered(
   Real energy = 0;
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     momentsMF[iLev].setVal(0.0);
-    const GpuArray<Real, 3> probLo = Geom(iLev).ProbLoArray();
-    const GpuArray<Real, 3> invDx = Geom(iLev).InvCellSizeArray();
+    const auto probLo = Geom(iLev).ProbLoArray();
+    const auto invDx = Geom(iLev).InvCellSizeArray();
 
     for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
       Array4<Real> const& momentsArr = momentsMF[iLev][pti].array();

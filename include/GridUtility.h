@@ -224,9 +224,10 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_node_index(
   }
 }
 
+template <unsigned int Dim = AMREX_SPACEDIM>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_node_index(
-    const amrex::RealVect& xyz, const amrex::GpuArray<amrex::Real, 3>& plo,
-    const amrex::GpuArray<amrex::Real, 3>& invDx, amrex::IntVect& loIdx,
+    const amrex::RealVect& xyz, const amrex::GpuArray<amrex::Real, Dim>& plo,
+    const amrex::GpuArray<amrex::Real, Dim>& invDx, amrex::IntVect& loIdx,
     amrex::RealVect& dShift) {
   for (int i = 0; i < nDim; ++i) {
     dShift[i] = (xyz[i] - plo[i]) * invDx[i];
@@ -247,9 +248,10 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_cell_index(
   }
 }
 
+template <unsigned int Dim = AMREX_SPACEDIM>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_cell_index(
-    const amrex::RealVect& xyz, const amrex::GpuArray<amrex::Real, 3>& plo,
-    const amrex::GpuArray<amrex::Real, 3>& invDx, amrex::IntVect& loIdx,
+    const amrex::RealVect& xyz, const amrex::GpuArray<amrex::Real, Dim>& plo,
+    const amrex::GpuArray<amrex::Real, Dim>& invDx, amrex::IntVect& loIdx,
     amrex::RealVect& dShift) {
   for (int i = 0; i < nDim; ++i) {
     // plo is the corner location => -0.5
@@ -270,9 +272,10 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_cell_index_exp(
   }
 }
 
+template <unsigned int Dim = AMREX_SPACEDIM>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_cell_index_exp(
-    const amrex::RealVect& xyz, const amrex::GpuArray<amrex::Real, 3>& plo,
-    const amrex::GpuArray<amrex::Real, 3>& invDx, amrex::IntVect& loIdx,
+    const amrex::RealVect& xyz, const amrex::GpuArray<amrex::Real, Dim>& plo,
+    const amrex::GpuArray<amrex::Real, Dim>& invDx, amrex::IntVect& loIdx,
     amrex::RealVect& dShift) {
   for (int i = 0; i < nDim; ++i) {
     dShift[i] = (xyz[i] - plo[i]) * invDx[i];
@@ -318,9 +321,10 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void check_refinement_proximity(
   }
 }
 
+template <unsigned int Dim = AMREX_SPACEDIM>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool skip_particle_for_dive_cleaning(
-    const amrex::RealVect& xyz, const amrex::GpuArray<amrex::Real, 3>& plo,
-    const amrex::GpuArray<amrex::Real, 3>& invDx, int iLev,
+    const amrex::RealVect& xyz, const amrex::GpuArray<amrex::Real, Dim>& plo,
+    const amrex::GpuArray<amrex::Real, Dim>& invDx, int iLev,
     const amrex::Array4<int const>& status) {
 
   bool skip = false;

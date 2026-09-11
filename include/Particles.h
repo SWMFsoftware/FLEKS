@@ -549,9 +549,10 @@ public:
                                            amrex::Real qp,
                                            amrex::Array4<RealCMM> const& mmArr);
 
+  template <unsigned int Dim = AMREX_SPACEDIM>
   static AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void
   accumulate_mass_matrix_contribution_device(
-      const amrex::GpuArray<amrex::Real, 3>& dx_lev, amrex::Real invVol_lev,
+      const amrex::GpuArray<amrex::Real, Dim>& dx_lev, amrex::Real invVol_lev,
       const amrex::IntVect& loIdx, const amrex::RealVect& dShift,
       amrex::Real qp, amrex::Array4<RealCMM> const& mmArr) {
 
@@ -559,10 +560,12 @@ public:
     //----- Mass matrix calculation begin--------------
     const amrex::Real xi0 = dShift[ix_] * dx_lev[ix_];
     const amrex::Real eta0 = dShift[iy_] * dx_lev[iy_];
-    const amrex::Real zeta0 = nDim > 2 ? dShift[iz_] * dx_lev[iz_] : 0;
+    const amrex::Real zeta0 =
+        (nDim > 2 && Dim > 2) ? dShift[iz_] * dx_lev[Dim > 2 ? 2 : 0] : 0;
     const amrex::Real xi1 = dx_lev[ix_] - xi0;
     const amrex::Real eta1 = dx_lev[iy_] - eta0;
-    const amrex::Real zeta1 = nDim > 2 ? dx_lev[iz_] - zeta0 : 1;
+    const amrex::Real zeta1 =
+        (nDim > 2 && Dim > 2) ? dx_lev[Dim > 2 ? 2 : 0] - zeta0 : 1;
 
     weights_IIID[1][1][1][ix_] = eta0 * zeta0 * invVol_lev;
     weights_IIID[1][1][1][iy_] = xi0 * zeta0 * invVol_lev;
@@ -702,15 +705,16 @@ public:
 
   void neutral_mover(amrex::Real dt);
 
+  template <unsigned int Dim = AMREX_SPACEDIM>
   static AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool
   is_outside_active_region_device(
       const ParticleType& p,
       const amrex::Array4<int const>& status,
       const amrex::IntVect& low,
       const amrex::IntVect& high,
-      const amrex::GpuArray<amrex::Real, 3>& plo,
-      const amrex::GpuArray<amrex::Real, 3>& phi,
-      const amrex::GpuArray<amrex::Real, 3>& invDx,
+      const amrex::GpuArray<amrex::Real, Dim>& plo,
+      const amrex::GpuArray<amrex::Real, Dim>& phi,
+      const amrex::GpuArray<amrex::Real, Dim>& invDx,
       const amrex::GpuArray<int, 3>& bcLo,
       const amrex::GpuArray<int, 3>& bcHi,
       const amrex::RealBox* domainRange,
@@ -752,15 +756,16 @@ public:
     return false;
   }
 
+  template <unsigned int Dim = AMREX_SPACEDIM>
   static AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE bool
   reflect_or_delete_particle_device(
       ParticleType& p,
       const amrex::Array4<int const>& status,
       const amrex::IntVect& low,
       const amrex::IntVect& high,
-      const amrex::GpuArray<amrex::Real, 3>& plo,
-      const amrex::GpuArray<amrex::Real, 3>& phi,
-      const amrex::GpuArray<amrex::Real, 3>& invDx,
+      const amrex::GpuArray<amrex::Real, Dim>& plo,
+      const amrex::GpuArray<amrex::Real, Dim>& phi,
+      const amrex::GpuArray<amrex::Real, Dim>& invDx,
       const amrex::GpuArray<int, 3>& bcLo,
       const amrex::GpuArray<int, 3>& bcHi,
       const amrex::RealBox* domainRange,

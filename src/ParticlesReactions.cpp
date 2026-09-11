@@ -525,6 +525,16 @@ void Particles<NStructReal, NStructInt>::apply_loss(
 #ifdef AMREX_USE_GPU
     const auto plo_geom = Geom(iLev).ProbLoArray();
     const auto inv_dx_geom = Geom(iLev).InvCellSizeArray();
+    const amrex::GpuArray<amrex::Real, 3> plo_arr = {
+      plo_geom[0],
+      (AMREX_SPACEDIM > 1 ? plo_geom[1] : 0.0),
+      (AMREX_SPACEDIM > 2 ? plo_geom[2] : 0.0)
+    };
+    const amrex::GpuArray<amrex::Real, 3> inv_dx_arr = {
+      inv_dx_geom[0],
+      (AMREX_SPACEDIM > 1 ? inv_dx_geom[1] : 0.0),
+      (AMREX_SPACEDIM > 2 ? inv_dx_geom[2] : 0.0)
+    };
     const int spID = speciesID;
     const int iqp = iqp_;
     const int iRho = fi->get_iRho(speciesID);
@@ -546,12 +556,12 @@ void Particles<NStructReal, NStructInt>::apply_loss(
           return;
 
         int i = static_cast<int>(
-            std::floor((p.pos(0) - plo_geom[0]) * inv_dx_geom[0]));
+            std::floor((p.pos(0) - plo_arr[0]) * inv_dx_arr[0]));
         int j = (ndim > 1) ? static_cast<int>(std::floor(
-                                 (p.pos(1) - plo_geom[1]) * inv_dx_geom[1]))
+                                 (p.pos(1) - plo_arr[1]) * inv_dx_arr[1]))
                            : 0;
         int k = (ndim > 2) ? static_cast<int>(std::floor(
-                                 (p.pos(2) - plo_geom[2]) * inv_dx_geom[2]))
+                                 (p.pos(2) - plo_arr[2]) * inv_dx_arr[2]))
                            : 0;
 
         Real rhoExisting = rhoArr(i, j, k, iRho);

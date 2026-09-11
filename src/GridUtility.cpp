@@ -8,7 +8,10 @@ using namespace amrex;
 
 void lap_node_to_node(const MultiFab& srcMF, MultiFab& dstMF,
                       const DistributionMapping dm, const Geometry& gm) {
-  const GpuArray<Real, 3> invDx = gm.InvCellSizeArray();
+  const auto invDx_geom = gm.InvCellSizeArray();
+  const GpuArray<Real, 3> invDx = { invDx_geom[0],
+                                    (AMREX_SPACEDIM > 1 ? invDx_geom[1] : 0.0),
+                                    (AMREX_SPACEDIM > 2 ? invDx_geom[2] : 0.0) };
 
   BoxArray centerBA =
       convert(srcMF.boxArray(), IntVect{ AMREX_D_DECL(0, 0, 0) });

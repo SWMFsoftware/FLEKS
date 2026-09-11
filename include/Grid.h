@@ -677,10 +677,11 @@ public:
           for (int j = lo.y - ngst; j <= hi.y + ngst; ++j)
             for (int i = lo.x - ngst; i <= hi.x + ngst; ++i) {
 
+              const auto dx_arr = Geom(n).CellSizeArray();
               myfile << i << " " << j << " " << k << " "
-                     << i * Geom(n).CellSizeArray()[0] << " "
-                     << j * Geom(n).CellSizeArray()[1] << " "
-                     << k * Geom(n).CellSizeArray()[2] << " " << 2455.0 << " ";
+                     << i * dx_arr[0] << " "
+                     << j * (AMREX_SPACEDIM > 1 ? dx_arr[1] : 0.0) << " "
+                     << k * (AMREX_SPACEDIM > 2 ? dx_arr[AMREX_SPACEDIM > 2 ? 2 : 0] : 0.0) << " " << 2455.0 << " ";
 
               for (int l = 0; l < ncomp; ++l) {
                 myfile << fab(i, j, k, l) << " ";

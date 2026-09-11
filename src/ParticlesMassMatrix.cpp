@@ -32,8 +32,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix(
 
   Real qdto2mc = charge / mass * 0.5 * dt;
 
-  const GpuArray<Real, 3> probLo = Geom(iLev).ProbLoArray();
-  const GpuArray<Real, 3> invDx = Geom(iLev).InvCellSizeArray();
+  const auto probLo = Geom(iLev).ProbLoArray();
+  const auto invDx = Geom(iLev).InvCellSizeArray();
   const Real invVol_lev = invVol[iLev];
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
@@ -254,8 +254,8 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
       idx_fill++;
     }
 
-    GpuArray<GpuArray<Real, 3>, 16> probLo_all;
-    GpuArray<GpuArray<Real, 3>, 16> invDx_all;
+    GpuArray<GpuArray<Real, AMREX_SPACEDIM>, 16> probLo_all;
+    GpuArray<GpuArray<Real, AMREX_SPACEDIM>, 16> invDx_all;
     for (int i = 0; i < nCoef; i++) {
       probLo_all[i] = Geom(i).ProbLoArray();
       invDx_all[i] = Geom(i).InvCellSizeArray();
@@ -402,8 +402,8 @@ void Particles<NStructReal, NStructInt>::calc_jhat(MultiFab& jHat,
   Real qdto2mc = charge / mass * 0.5 * dt;
 
   const int iLev = 0;
-  const GpuArray<Real, 3> probLo = Geom(iLev).ProbLoArray();
-  const GpuArray<Real, 3> invDx = Geom(iLev).InvCellSizeArray();
+  const auto probLo = Geom(iLev).ProbLoArray();
+  const auto invDx = Geom(iLev).InvCellSizeArray();
 
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     Array4<Real const> const& nodeBArr = nodeBMF[pti].const_array();

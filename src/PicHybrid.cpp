@@ -19,7 +19,9 @@ void Pic::assemble_ohm_E(const MultiFab& centerBin,
   const auto dx = Geom(iLev).CellSizeArray();
   const Real dxInv = 1.0 / (2.0 * dx[0]);
   const Real dyInv = 1.0 / (2.0 * dx[1]);
-  const Real dzInv = (nDim > 2) ? 1.0 / (2.0 * dx[2]) : 0.0;
+  const Real dzInv = (AMREX_SPACEDIM > 2 && nDim > 2)
+                         ? 1.0 / (2.0 * dx[AMREX_SPACEDIM > 2 ? 2 : 0])
+                         : 0.0;
 
   // Cell-centred current J = curl(B)/(4*pi) from the trial B (2*dx central
   // difference, zero at the Nyquist wavenumber). Only needed for physical
