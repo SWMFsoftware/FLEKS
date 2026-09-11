@@ -445,6 +445,25 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
   }
 }
 
-// Explicit template instantiations.
-template class Particles<nPicPartReal, nPicPartInt>;
-template class Particles<nPTPartReal, nPTPartInt>;
+template void PicParticles::add_particles_domain();
+template void PTParticles::add_particles_domain();
+template void PicParticles::add_particles_cell(const int, const MFIter&,
+                                               const IntVect,
+                                               const FluidInterface*, bool,
+                                               IntVect, const Vel&, Real);
+template void PTParticles::add_particles_cell(const int, const MFIter&,
+                                              const IntVect,
+                                              const FluidInterface*, bool,
+                                              IntVect, const Vel&, Real);
+template void PicParticles::add_particles_source(const FluidInterface*,
+                                                 const FluidInterface* const,
+                                                 Real, IntVect, const bool,
+                                                 const bool);
+template void PTParticles::add_particles_source(const FluidInterface*,
+                                                const FluidInterface* const,
+                                                Real, IntVect, const bool,
+                                                const bool);
+template void PicParticles::add_source_particles(std::unique_ptr<PicParticles>&,
+                                                 IntVect, const bool);
+template void PTParticles::add_source_particles(std::unique_ptr<PicParticles>&,
+                                                IntVect, const bool);

@@ -675,6 +675,21 @@ void Particles<NStructReal, NStructInt>::convert_to_fluid_moments(
 
 //==========================================================
 
-// Explicit template instantiations.
-template class Particles<nPicPartReal, nPicPartInt>;
-template class Particles<nPTPartReal, nPTPartInt>;
+template void PicParticles::sum_to_center(MultiFab&, CenterMMFab&, bool, int);
+template void PTParticles::sum_to_center(MultiFab&, CenterMMFab&, bool, int);
+template void PicParticles::sum_to_center_amr(MultiFab&, MultiFab&, MultiFab&,
+                                              CenterMMFab&, bool, int);
+template void PTParticles::sum_to_center_amr(MultiFab&, MultiFab&, MultiFab&,
+                                             CenterMMFab&, bool, int);
+template std::array<Real, 5> PicParticles::total_moments(bool);
+template std::array<Real, 5> PTParticles::total_moments(bool);
+template Real PicParticles::sum_moments(Vector<MultiFab>&, Vector<MultiFab>&,
+                                        Real);
+template Real PTParticles::sum_moments(Vector<MultiFab>&, Vector<MultiFab>&,
+                                       Real);
+template Real PicParticles::sum_moments_cell_centered(Vector<MultiFab>&);
+template Real PTParticles::sum_moments_cell_centered(Vector<MultiFab>&);
+template Real PicParticles::calc_max_thermal_velocity(MultiFab&);
+template Real PTParticles::calc_max_thermal_velocity(MultiFab&);
+template void PicParticles::convert_to_fluid_moments(Vector<MultiFab>&);
+template void PTParticles::convert_to_fluid_moments(Vector<MultiFab>&);

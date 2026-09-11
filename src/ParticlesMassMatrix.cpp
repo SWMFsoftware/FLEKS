@@ -685,6 +685,23 @@ void Particles<NStructReal, NStructInt>::apply_jhat_mirror(MultiFab& jHat,
 
 //==========================================================
 
-// Explicit template instantiations.
-template class Particles<nPicPartReal, nPicPartInt>;
-template class Particles<nPTPartReal, nPTPartInt>;
+template void PicParticles::accumulate_mass_matrix_contribution(
+    int, const IntVect&, const RealVect&, Real, Array4<RealCMM> const&);
+template void PTParticles::accumulate_mass_matrix_contribution(
+    int, const IntVect&, const RealVect&, Real, Array4<RealCMM> const&);
+template void PicParticles::calc_mass_matrix(NodeMMFab&, MultiFab&, MultiFab&,
+                                             MultiFab&, Real, int, bool);
+template void PTParticles::calc_mass_matrix(NodeMMFab&, MultiFab&, MultiFab&,
+                                            MultiFab&, Real, int, bool);
+template void PicParticles::calc_mass_matrix_amr(
+    NodeMMFab&, Vector<Vector<NodeMMFab> >&, Vector<NodeMMFab>&, MultiFab&,
+    Vector<Vector<MultiFab> >&, Vector<MultiFab>&, MultiFab&, MultiFab&, Real,
+    int, bool, Vector<iMultiFab>&);
+template void PTParticles::calc_mass_matrix_amr(
+    NodeMMFab&, Vector<Vector<NodeMMFab> >&, Vector<NodeMMFab>&, MultiFab&,
+    Vector<Vector<MultiFab> >&, Vector<MultiFab>&, MultiFab&, MultiFab&, Real,
+    int, bool, Vector<iMultiFab>&);
+template void PicParticles::calc_jhat(MultiFab&, MultiFab&, Real);
+template void PTParticles::calc_jhat(MultiFab&, MultiFab&, Real);
+template void PicParticles::apply_jhat_mirror(MultiFab&, int);
+template void PTParticles::apply_jhat_mirror(MultiFab&, int);
