@@ -165,6 +165,11 @@ private:
   std::vector<PID> vIDs;
 
   Regions tpRegions;
+
+#ifdef AMREX_USE_GPU
+  amrex::MultiFab h_EMF;
+  amrex::MultiFab h_BMF;
+#endif
 };
 
 #endif

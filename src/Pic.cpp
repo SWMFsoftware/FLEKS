@@ -1346,8 +1346,6 @@ void Pic::update_U0_E0() {
       const Array4<const Real> arrMoments =
           nodePlasma[nSpecies][iLev][mfi].array();
 
-      const Array4<const int> status = nodeStatus[iLev][mfi].array();
-
       const int iRhoLocal = iRho_;
       const int iUxLocal = iUx_;
       const int iUzLocal = iUz_;
@@ -1361,6 +1359,19 @@ void Pic::update_U0_E0() {
             arrU(i, j, k, iu - iUxLocal) = arrMoments(i, j, k, iu) * invRho;
         }
       });
+    }
+
+#if defined(AMREX_USE_GPU)
+    MultiFab h_uBg(uBg[iLev].boxArray(), uBg[iLev].DistributionMap(),
+                   uBg[iLev].nComp(), uBg[iLev].nGrowVect(),
+                   MFInfo().SetArena(The_Pinned_Arena()));
+    h_uBg.ParallelCopy(uBg[iLev]);
+    const iMultiFab& h_statusU = host_node_status(iLev);
+    Gpu::streamSynchronize();
+
+    for (MFIter mfi(h_uBg); mfi.isValid(); ++mfi) {
+      const Array4<Real> arrU = h_uBg[mfi].array();
+      const Array4<const int> status = h_statusU[mfi].array();
 
       // Host-only kernel: host boundary lookup via get_node_fluid_u
       // Fill in ghost nodes
@@ -1375,6 +1386,26 @@ void Pic::update_U0_E0() {
         }
       });
     }
+    uBg[iLev].ParallelCopy(h_uBg);
+    Gpu::streamSynchronize();
+#else
+    for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
+      const Array4<Real> arrU = uBg[iLev][mfi].array();
+      const Array4<const int> status = nodeStatus[iLev][mfi].array();
+
+      // Fill in ghost nodes
+      amrex::LoopOnCpu(mfi.fabbox(), [&](int i, int j, int k) {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (bit::is_domain_boundary(status(ijk))) {
+          const int iFluid = 0;
+          for (int iDir = 0; iDir < nDim3; iDir++) {
+            arrU(i, j, k, iDir) =
+                get_node_fluid_u(mfi, ijk, iDir, iLev, iFluid);
+          }
+        }
+      });
+    }
+#endif
 
     uBg[iLev].FillBoundary(Geom(iLev).periodicity());
 
@@ -1385,8 +1416,6 @@ void Pic::update_U0_E0() {
       const Array4<Real> arrU = uBg[iLev][mfi].array();
       const Array4<Real> arrE = eBg[iLev][mfi].array();
       const Array4<const Real> arrB = nodeB[iLev][mfi].array();
-
-      const Array4<const int> status = nodeStatus[iLev][mfi].array();
 
       const int ixLocal = ix_;
       const int iyLocal = iy_;
@@ -1406,6 +1435,22 @@ void Pic::update_U0_E0() {
         arrE(i, j, k, iyLocal) = -uz * bx + ux * bz;
         arrE(i, j, k, izLocal) = -ux * by + uy * bx;
       });
+    }
+
+#if defined(AMREX_USE_GPU)
+    MultiFab h_eBg(eBg[iLev].boxArray(), eBg[iLev].DistributionMap(),
+                   eBg[iLev].nComp(), eBg[iLev].nGrowVect(),
+                   MFInfo().SetArena(The_Pinned_Arena()));
+    h_eBg.ParallelCopy(eBg[iLev]);
+    const iMultiFab& h_statusE = host_node_status(iLev);
+    Gpu::streamSynchronize();
+
+    for (MFIter mfi(h_eBg); mfi.isValid(); ++mfi) {
+      const Array4<Real> arrE = h_eBg[mfi].array();
+      const Array4<const int> status = h_statusE[mfi].array();
+      const int ixLocal = ix_;
+      const int iyLocal = iy_;
+      const int izLocal = iz_;
 
       // Host-only kernel: host boundary lookup via get_node_E
       // Fill in boundary nodes
@@ -1418,6 +1463,28 @@ void Pic::update_U0_E0() {
         }
       });
     }
+    eBg[iLev].ParallelCopy(h_eBg);
+    Gpu::streamSynchronize();
+#else
+    for (MFIter mfi(uBg[iLev]); mfi.isValid(); ++mfi) {
+      const Array4<Real> arrE = eBg[iLev][mfi].array();
+      const Array4<const int> status = nodeStatus[iLev][mfi].array();
+      const int ixLocal = ix_;
+      const int iyLocal = iy_;
+      const int izLocal = iz_;
+
+      // Host-only kernel: host boundary lookup via get_node_E
+      // Fill in boundary nodes
+      amrex::LoopOnCpu(mfi.fabbox(), [&](int i, int j, int k) {
+        IntVect ijk = { AMREX_D_DECL(i, j, k) };
+        if (bit::is_domain_boundary(status(ijk))) {
+          arrE(i, j, k, ixLocal) = get_node_E(mfi, ijk, ixLocal, iLev);
+          arrE(i, j, k, iyLocal) = get_node_E(mfi, ijk, iyLocal, iLev);
+          arrE(i, j, k, izLocal) = get_node_E(mfi, ijk, izLocal, iLev);
+        }
+      });
+    }
+#endif
 
     eBg[iLev].FillBoundary(Geom(iLev).periodicity());
 

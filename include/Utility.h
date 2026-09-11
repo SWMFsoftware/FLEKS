@@ -134,8 +134,15 @@ template <class T> inline void a_cross_b(T (&a)[3], T (&b)[3], T (&c)[3]) {
 }
 
 template <class T> inline void zero_array(T* arr, int nSize) {
+#if defined(AMREX_USE_GPU)
+  amrex::ParallelFor(nSize, [=] AMREX_GPU_DEVICE(int i) {
+    arr[i] = 0;
+  });
+  amrex::Gpu::streamSynchronize();
+#else
   for (int i = 0; i < nSize; ++i)
     arr[i] = 0;
+#endif
 }
 
 // rand1, rand2 are random numbers in [0,1].

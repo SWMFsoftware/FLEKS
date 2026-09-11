@@ -12,6 +12,31 @@ ParticlesInfo make_test_particles_info() {
   return info;
 }
 
+#if defined(AMREX_USE_GPU)
+template <typename AoSType>
+inline amrex::Gpu::HostVector<typename AoSType::ParticleType>
+copy_to_host(const AoSType& aos) {
+  amrex::Gpu::HostVector<typename AoSType::ParticleType> h_vec(aos.size());
+  if (!aos.empty()) {
+    amrex::Gpu::copy(amrex::Gpu::deviceToHost, aos.data(),
+                     aos.data() + aos.size(), h_vec.data());
+    amrex::Gpu::streamSynchronize();
+  }
+  return h_vec;
+}
+
+template <typename AoSType>
+inline void copy_to_device(
+    const amrex::Gpu::HostVector<typename AoSType::ParticleType>& h_vec,
+    AoSType& aos) {
+  if (!aos.empty()) {
+    amrex::Gpu::copy(amrex::Gpu::hostToDevice, h_vec.data(),
+                     h_vec.data() + h_vec.size(), aos.data());
+    amrex::Gpu::streamSynchronize();
+  }
+}
+#endif
+
 } // namespace
 
 TestParticles::TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
@@ -66,14 +91,46 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
   const Real qdto2mc = charge / mass * 0.5 * dt;
 
   const int iLev = 0;
+
+#ifdef AMREX_USE_GPU
+  if (h_EMF.boxArray() != nodeEMF.boxArray() ||
+      h_EMF.DistributionMap() != nodeEMF.DistributionMap() ||
+      h_EMF.nComp() != nodeEMF.nComp() ||
+      h_EMF.nGrowVect() != nodeEMF.nGrowVect()) {
+    h_EMF.define(nodeEMF.boxArray(), nodeEMF.DistributionMap(),
+                 nodeEMF.nComp(), nodeEMF.nGrowVect(),
+                 amrex::MFInfo().SetArena(amrex::The_Pinned_Arena()));
+  }
+  h_EMF.ParallelCopy(nodeEMF);
+
+  if (h_BMF.boxArray() != nodeBMF.boxArray() ||
+      h_BMF.DistributionMap() != nodeBMF.DistributionMap() ||
+      h_BMF.nComp() != nodeBMF.nComp() ||
+      h_BMF.nGrowVect() != nodeBMF.nGrowVect()) {
+    h_BMF.define(nodeBMF.boxArray(), nodeBMF.DistributionMap(),
+                 nodeBMF.nComp(), nodeBMF.nGrowVect(),
+                 amrex::MFInfo().SetArena(amrex::The_Pinned_Arena()));
+  }
+  h_BMF.ParallelCopy(nodeBMF);
+  amrex::Gpu::streamSynchronize();
+
+  const auto& eMF = h_EMF;
+  const auto& bMF = h_BMF;
+  const auto& statusMF = host_cell_status(iLev);
+#else
+  const auto& eMF = nodeEMF;
+  const auto& bMF = nodeBMF;
+  const auto& statusMF = cell_status(iLev);
+#endif
+
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
-    const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
+    const Array4<Real const>& nodeEArr = eMF[pti].array();
+    const Array4<Real const>& nodeBArr = bMF[pti].array();
 
     auto& particles = pti.GetArrayOfStructs();
 
-    const Box& bx = cell_status(iLev)[pti].box();
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
+    const Box& bx = statusMF[pti].box();
+    const Array4<int const>& status = statusMF[pti].array();
 
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
@@ -81,7 +138,14 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
     const Dim3 lo = init_dim3(0);
     const Dim3 hi = init_dim3(1);
 
-    for (auto& p : particles) {
+#ifdef AMREX_USE_GPU
+    auto h_particles = copy_to_host(particles);
+    auto& part_list = h_particles;
+#else
+    auto& part_list = particles;
+#endif
+
+    for (auto& p : part_list) {
       if (p.idata(iRecordCount_) >= nPTRecord) {
         Abort("Error: there is not enough allocated memory to store the "
               "particle record!!");
@@ -279,6 +343,9 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
         p.id() = -1;
       }
     } // for p
+#ifdef AMREX_USE_GPU
+    copy_to_device(h_particles, particles);
+#endif
   } // for pti
 
   redistribute_particles();
@@ -296,14 +363,46 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
   const Real qdto2mc = charge / mass * 0.5 * dt;
 
   const int iLev = 0;
+
+#ifdef AMREX_USE_GPU
+  if (h_EMF.boxArray() != centerEMF.boxArray() ||
+      h_EMF.DistributionMap() != centerEMF.DistributionMap() ||
+      h_EMF.nComp() != centerEMF.nComp() ||
+      h_EMF.nGrowVect() != centerEMF.nGrowVect()) {
+    h_EMF.define(centerEMF.boxArray(), centerEMF.DistributionMap(),
+                 centerEMF.nComp(), centerEMF.nGrowVect(),
+                 amrex::MFInfo().SetArena(amrex::The_Pinned_Arena()));
+  }
+  h_EMF.ParallelCopy(centerEMF);
+
+  if (h_BMF.boxArray() != centerBMF.boxArray() ||
+      h_BMF.DistributionMap() != centerBMF.DistributionMap() ||
+      h_BMF.nComp() != centerBMF.nComp() ||
+      h_BMF.nGrowVect() != centerBMF.nGrowVect()) {
+    h_BMF.define(centerBMF.boxArray(), centerBMF.DistributionMap(),
+                 centerBMF.nComp(), centerBMF.nGrowVect(),
+                 amrex::MFInfo().SetArena(amrex::The_Pinned_Arena()));
+  }
+  h_BMF.ParallelCopy(centerBMF);
+  amrex::Gpu::streamSynchronize();
+
+  const auto& eMF = h_EMF;
+  const auto& bMF = h_BMF;
+  const auto& statusMF = host_cell_status(iLev);
+#else
+  const auto& eMF = centerEMF;
+  const auto& bMF = centerBMF;
+  const auto& statusMF = cell_status(iLev);
+#endif
+
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    const Array4<Real const>& centerEArr = centerEMF[pti].array();
-    const Array4<Real const>& centerBArr = centerBMF[pti].array();
+    const Array4<Real const>& centerEArr = eMF[pti].array();
+    const Array4<Real const>& centerBArr = bMF[pti].array();
 
     auto& particles = pti.GetArrayOfStructs();
 
-    const Box& bx = cell_status(iLev)[pti].box();
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
+    const Box& bx = statusMF[pti].box();
+    const Array4<int const>& status = statusMF[pti].array();
 
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
@@ -311,7 +410,14 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
     const Dim3 lo = init_dim3(0);
     const Dim3 hi = init_dim3(1);
 
-    for (auto& p : particles) {
+#ifdef AMREX_USE_GPU
+    auto h_particles = copy_to_host(particles);
+    auto& part_list = h_particles;
+#else
+    auto& part_list = particles;
+#endif
+
+    for (auto& p : part_list) {
       if (p.idata(iRecordCount_) >= nPTRecord) {
         Abort("Error: there is not enough allocated memory to store the "
               "particle record!!");
@@ -459,6 +565,9 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
         p.id() = -1;
       }
     } // for p
+#ifdef AMREX_USE_GPU
+    copy_to_device(h_particles, particles);
+#endif
   } // for pti
 
   redistribute_particles();
@@ -469,16 +578,29 @@ void TestParticles::move_and_save_neutrals(Real dt, Real tNowSI, bool doSave) {
   timing_func("TestParticles::move_neutrals");
 
   const int iLev = 0;
+#ifdef AMREX_USE_GPU
+  const auto& statusMF = host_cell_status(iLev);
+#else
+  const auto& statusMF = cell_status(iLev);
+#endif
+
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     auto& particles = pti.GetArrayOfStructs();
 
-    const Box& bx = cell_status(iLev)[pti].box();
-    const Array4<int const>& status = cell_status(iLev)[pti].array();
+    const Box& bx = statusMF[pti].box();
+    const Array4<int const>& status = statusMF[pti].array();
 
     const IntVect lowCorner = bx.smallEnd();
     const IntVect highCorner = bx.bigEnd();
 
-    for (auto& p : particles) {
+#ifdef AMREX_USE_GPU
+    auto h_particles = copy_to_host(particles);
+    auto& part_list = h_particles;
+#else
+    auto& part_list = particles;
+#endif
+
+    for (auto& p : part_list) {
       if (p.idata(iRecordCount_) >= nPTRecord) {
         Abort("Error: there is not enough allocated memory to store the "
               "particle record!!");
@@ -514,6 +636,9 @@ void TestParticles::move_and_save_neutrals(Real dt, Real tNowSI, bool doSave) {
         p.id() = -1;
       }
     }
+#ifdef AMREX_USE_GPU
+    copy_to_device(h_particles, particles);
+#endif
   }
 
   redistribute_particles();
@@ -590,8 +715,14 @@ void TestParticles::add_test_particles_from_pic(PicParticles* pts) {
     auto& particles = GetParticles(iLev)[index];
 
     const auto& aosOther = tileOther.GetArrayOfStructs();
+#ifdef AMREX_USE_GPU
+    auto h_aosOther = copy_to_host(aosOther);
+    const auto& partOtherList = h_aosOther;
+#else
+    const auto& partOtherList = aosOther;
+#endif
 
-    for (auto pOther : aosOther) {
+    for (auto pOther : partOtherList) {
       PID id;
       id.cpu = pOther.cpu();
       id.id = pOther.id();
@@ -680,7 +811,11 @@ void TestParticles::add_test_particles_from_fluid(const Vector<Vel>& tpStates) {
   }
 
   for (MFIter mfi = MakeMFIter(iLev, false); mfi.isValid(); ++mfi) {
+#ifdef AMREX_USE_GPU
+    const auto& status = host_cell_status(iLev)[mfi].array();
+#else
     const auto& status = cell_status(iLev)[mfi].array();
+#endif
     const Box& bx = mfi.validbox();
     const auto lo = lbound(bx);
     const auto hi = ubound(bx);
@@ -815,7 +950,13 @@ unsigned long long int TestParticles::loop_particles(
   const int iLev = 0;
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     auto& particles = pti.GetArrayOfStructs();
-    for (auto& p : particles) {
+#ifdef AMREX_USE_GPU
+    auto h_particles = copy_to_host(particles);
+    auto& part_list = h_particles;
+#else
+    auto& part_list = particles;
+#endif
+    for (auto& p : part_list) {
       int nRecord = p.idata(iRecordCount_);
 
       // int: cpu + id + nRecord
@@ -912,6 +1053,11 @@ unsigned long long int TestParticles::loop_particles(
       iPartCount++;
       nByteCount += nBytePerPart;
     }
+#ifdef AMREX_USE_GPU
+    if (doResetRecordCounter) {
+      copy_to_device(h_particles, particles);
+    }
+#endif
   }
   return nByteCount;
 }
@@ -949,8 +1095,16 @@ void TestParticles::reset_record_counter() {
   const int iLev = 0;
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     auto& particles = pti.GetArrayOfStructs();
+#ifdef AMREX_USE_GPU
+    auto h_particles = copy_to_host(particles);
+    for (auto& p : h_particles) {
+      p.idata(iRecordCount_) = 0;
+    }
+    copy_to_device(h_particles, particles);
+#else
     for (auto& p : particles) {
       p.idata(iRecordCount_) = 0;
     }
+#endif
   }
 }

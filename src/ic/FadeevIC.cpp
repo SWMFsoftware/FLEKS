@@ -26,16 +26,21 @@ void FadeevIC::set_fields(PicICFields& fields) const {
 
   for (int iLev = 0; iLev < nLev; ++iLev) {
     const auto& geom = fields.geom(iLev);
-    const auto& prob_lo = geom.ProbLo();
-    const auto& prob_hi = geom.ProbHi();
-    const auto& dx = geom.CellSize();
-    const amrex::Real Lx = prob_hi[0] - prob_lo[0];
-    const amrex::Real Ly = prob_hi[1] - prob_lo[1];
+    const amrex::Real prob_lo_x = geom.ProbLo(0);
+    const amrex::Real prob_lo_y = geom.ProbLo(1);
+    const amrex::Real prob_hi_x = geom.ProbHi(0);
+    const amrex::Real prob_hi_y = geom.ProbHi(1);
+    const amrex::Real dx_x = geom.CellSize(0);
+    const amrex::Real dx_y = geom.CellSize(1);
+    const amrex::Real Lx = prob_hi_x - prob_lo_x;
+    const amrex::Real Ly = prob_hi_y - prob_lo_y;
     Lx_ = Lx;
     Ly_ = Ly;
 
-    invLx_ = (Lx > 0.0) ? 1.0 / Lx : 0.0;
-    invLy_ = (Ly > 0.0) ? 1.0 / Ly : 0.0;
+    const amrex::Real invLx = (Lx > 0.0) ? 1.0 / Lx : 0.0;
+    const amrex::Real invLy = (Ly > 0.0) ? 1.0 / Ly : 0.0;
+    invLx_ = invLx;
+    invLy_ = invLy;
     // profile_max at the O-points (x = +-pi*L, y = 0).
     profileMax_ = (1.0 + eps_) / (1.0 - eps_);
 
@@ -58,20 +63,20 @@ void FadeevIC::set_fields(PicICFields& fields) const {
       const Box& box = mfi.fabbox();
       const Array4<Real>& arrB = fab.array();
       ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-        const amrex::Real x = prob_lo[0] + dx[0] * i;
-        const amrex::Real y = prob_lo[1] + dx[1] * j;
+        const amrex::Real x = prob_lo_x + dx_x * i;
+        const amrex::Real y = prob_lo_y + dx_y * j;
         const amrex::Real denom = std::cosh(y / L) + eps * std::cos(x / L);
         const amrex::Real denomInv = (denom > 0.0) ? 1.0 / denom : 0.0;
         // m=1 perturbation.
-        const amrex::Real dbx = -perturb * b0 * Lx * invLy_ *
-                                std::cos(2.0 * dPI * x * invLx_) *
-                                std::sin(dPI * y * invLy_);
+        const amrex::Real dbx = -perturb * b0 * Lx * invLy *
+                                std::cos(2.0 * dPI * x * invLx) *
+                                std::sin(dPI * y * invLy);
         const amrex::Real dbz = perturb * b0 * 2.0 *
-                                std::sin(2.0 * dPI * x * invLx_) *
-                                std::cos(dPI * y * invLy_);
-        arrB(i, j, k, ix_) = b0 * std::sinh(y / L) * denomInv + dbx;
-        arrB(i, j, k, iy_) = b0 * eps * std::sin(x / L) * denomInv + dbz;
-        arrB(i, j, k, iz_) = b0 * bg;
+                                std::sin(2.0 * dPI * x * invLx) *
+                                std::cos(dPI * y * invLy);
+        arrB(i, j, k, 0) = b0 * std::sinh(y / L) * denomInv + dbx;
+        arrB(i, j, k, 1) = b0 * eps * std::sin(x / L) * denomInv + dbz;
+        arrB(i, j, k, 2) = b0 * bg;
       });
     }
     // Center-centered B (i+0.5, j+0.5).
@@ -80,19 +85,19 @@ void FadeevIC::set_fields(PicICFields& fields) const {
       const Box& box = mfi.fabbox();
       const Array4<Real>& arrB = fab.array();
       ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
-        const amrex::Real x = prob_lo[0] + dx[0] * (i + 0.5);
-        const amrex::Real y = prob_lo[1] + dx[1] * (j + 0.5);
+        const amrex::Real x = prob_lo_x + dx_x * (i + 0.5);
+        const amrex::Real y = prob_lo_y + dx_y * (j + 0.5);
         const amrex::Real denom = std::cosh(y / L) + eps * std::cos(x / L);
         const amrex::Real denomInv = (denom > 0.0) ? 1.0 / denom : 0.0;
-        const amrex::Real dbx = -perturb * b0 * Lx * invLy_ *
-                                std::cos(2.0 * dPI * x * invLx_) *
-                                std::sin(dPI * y * invLy_);
+        const amrex::Real dbx = -perturb * b0 * Lx * invLy *
+                                std::cos(2.0 * dPI * x * invLx) *
+                                std::sin(dPI * y * invLy);
         const amrex::Real dbz = perturb * b0 * 2.0 *
-                                std::sin(2.0 * dPI * x * invLx_) *
-                                std::cos(dPI * y * invLy_);
-        arrB(i, j, k, ix_) = b0 * std::sinh(y / L) * denomInv + dbx;
-        arrB(i, j, k, iy_) = b0 * eps * std::sin(x / L) * denomInv + dbz;
-        arrB(i, j, k, iz_) = b0 * bg;
+                                std::sin(2.0 * dPI * x * invLx) *
+                                std::cos(dPI * y * invLy);
+        arrB(i, j, k, 0) = b0 * std::sinh(y / L) * denomInv + dbx;
+        arrB(i, j, k, 1) = b0 * eps * std::sin(x / L) * denomInv + dbz;
+        arrB(i, j, k, 2) = b0 * bg;
       });
     }
   }

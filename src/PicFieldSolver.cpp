@@ -246,6 +246,12 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
 
     const Real dx = Geom(iLev).CellSize()[0];
     const Real coe1 = -0.5 * fsolver.theta * tc->get_dt() / dx;
+    const Real limThetaE = limiterThetaE;
+    const Real cMaxELoc = cMaxE;
+    const int nDimLoc = nDim;
+    const int ixLoc = ix_;
+    const int iyLoc = iy_;
+    const int izLoc = iz_;
 
     for (MFIter mfi(vecMF); mfi.isValid(); ++mfi) {
       const Box& box = mfi.validbox();
@@ -256,40 +262,40 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
       const Array4<Real>& arrU = uBg[iLev][mfi].array();
 
       ParallelFor(box, vecMF.nComp(), [=] AMREX_GPU_DEVICE(int i, int j, int k, int iVar) {
-        for (int iDir = 0; iDir < nDim; iDir++) {
+        for (int iDir = 0; iDir < nDimLoc; iDir++) {
           Real dii[nDim3] = { 0, 0, 0 };
           dii[iDir] = 1;
 
           Real cR = limiter_theta(
-              limiterThetaE,
-              limitE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
+              limThetaE,
+              limitE(i - dii[ixLoc], j - dii[iyLoc], k - dii[izLoc], iVar),
               limitE(i, j, k, iVar),
-              limitE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar));
+              limitE(i + dii[ixLoc], j + dii[iyLoc], k + dii[izLoc], iVar));
 
           Real cL = limiter_theta(
-              limiterThetaE,
-              limitE(i - 2 * dii[ix_], j - 2 * dii[iy_], k - 2 * dii[iz_],
+              limThetaE,
+              limitE(i - 2 * dii[ixLoc], j - 2 * dii[iyLoc], k - 2 * dii[izLoc],
                      iVar),
-              limitE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar),
+              limitE(i - dii[ixLoc], j - dii[iyLoc], k - dii[izLoc], iVar),
               limitE(i, j, k, iVar));
 
-          Real ur = cMaxE, ul = cMaxE;
+          Real ur = cMaxELoc, ul = cMaxELoc;
 
-          if (cMaxE <= 0) {
+          if (cMaxELoc <= 0) {
             ul = fabs(0.5 *
-                      (arrU(i - dii[ix_], j - dii[iy_], k - dii[iz_], iDir) +
+                      (arrU(i - dii[ixLoc], j - dii[iyLoc], k - dii[izLoc], iDir) +
                        arrU(i, j, k, iDir)));
             ur = fabs(0.5 *
                       (arrU(i, j, k, iDir) +
-                       arrU(i + dii[ix_], j + dii[iy_], k + dii[iz_], iDir)));
+                       arrU(i + dii[ixLoc], j + dii[iyLoc], k + dii[izLoc], iDir)));
           }
 
           Real dE = cR * ur *
-                        (arrE(i + dii[ix_], j + dii[iy_], k + dii[iz_], iVar) -
+                        (arrE(i + dii[ixLoc], j + dii[iyLoc], k + dii[izLoc], iVar) -
                          arrE(i, j, k, iVar)) -
                     cL * ul *
                         (arrE(i, j, k, iVar) -
-                         arrE(i - dii[ix_], j - dii[iy_], k - dii[iz_], iVar));
+                         arrE(i - dii[ixLoc], j - dii[iyLoc], k - dii[izLoc], iVar));
 
           res(i, j, k, iVar) += coe1 * dE;
         }
@@ -355,6 +361,9 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
 
   outMF.setVal(0.0);
   Real c0 = fourPI * fsolver.theta * tc->get_dt();
+  const int ixLoc = ix_;
+  const int iyLoc = iy_;
+  const int izLoc = iz_;
   for (MFIter mfi(outMF); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
 
@@ -374,14 +383,14 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
 
             Real* const M_I = &(data0[idx0]);
 
-            const double vctX = inArr(i2, j2, k2, ix_);
-            const double vctY = inArr(i2, j2, k2, iy_);
-            const double vctZ = inArr(i2, j2, k2, iz_);
-            outArr(i, j, k, ix_) +=
+            const double vctX = inArr(i2, j2, k2, ixLoc);
+            const double vctY = inArr(i2, j2, k2, iyLoc);
+            const double vctZ = inArr(i2, j2, k2, izLoc);
+            outArr(i, j, k, ixLoc) +=
                 (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
-            outArr(i, j, k, iy_) +=
+            outArr(i, j, k, iyLoc) +=
                 (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
-            outArr(i, j, k, iz_) +=
+            outArr(i, j, k, izLoc) +=
                 (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
           }
     });
@@ -629,6 +638,7 @@ void Pic::solve_hyp_phi(int iLev) {
   Real ch = 0.8 * Geom(iLev).CellSize()[ix_] / tc->get_dt();
 
   Real coef = -tc->get_dt() * pow(ch, 2);
+  const Real hypDecayLoc = hypDecay;
   for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
     Box box = mfi.validbox();
 
@@ -638,7 +648,7 @@ void Pic::solve_hyp_phi(int iLev) {
     ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
       IntVect ijk = { AMREX_D_DECL(i, j, k) };
       phiArr(ijk) += coef * divBArr(ijk);
-      phiArr(ijk) *= (1 - hypDecay);
+      phiArr(ijk) *= (1 - hypDecayLoc);
     });
   }
 
@@ -667,6 +677,11 @@ void Pic::correct_B(int iLev) {
     }
     const Real limiterThetaB = this->limiterThetaB;
     const Real fixedUpwindVel = this->fixedUpwindVel;
+    const int nDimLoc = nDim;
+    const int ixLoc = ix_;
+    const int iyLoc = iy_;
+    const int izLoc = iz_;
+    const bool isFake2DLoc = isFake2D;
 
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       Box box = mfi.validbox();
@@ -690,20 +705,20 @@ void Pic::correct_B(int iLev) {
           return;
         }
 
-        int kp1 = nDim > 2 ? k + 1 : k;
-        if (iDir == ix_) {
+        int kp1 = nDimLoc > 2 ? k + 1 : k;
+        if (iDir == ixLoc) {
           l = 0.25 * (arr(i, j, k, iVar) + arr(i, j + 1, k, iVar) +
                       arr(i, j, kp1, iVar) + arr(i, j + 1, kp1, iVar));
           r = 0.25 * (arr(i + 1, j, k, iVar) + arr(i + 1, j + 1, k, iVar) +
                       arr(i + 1, j, kp1, iVar) + arr(i + 1, j + 1, kp1, iVar));
-        } else if (iDir == iy_) {
+        } else if (iDir == iyLoc) {
           l = 0.25 * (arr(i, j, k, iVar) + arr(i + 1, j, k, iVar) +
                       arr(i, j, kp1, iVar) + arr(i + 1, j, kp1, iVar));
 
           r = 0.25 * (arr(i, j + 1, k, iVar) + arr(i + 1, j + 1, k, iVar) +
                       arr(i, j + 1, kp1, iVar) + arr(i + 1, j + 1, kp1, iVar));
 
-        } else if (iDir == iz_) {
+        } else if (iDir == izLoc) {
           l = 0.25 * (arr(i, j, k, iVar) + arr(i, j + 1, k, iVar) +
                       arr(i + 1, j, k, iVar) + arr(i + 1, j + 1, k, iVar));
 
@@ -720,12 +735,12 @@ void Pic::correct_B(int iLev) {
         IntVect ijk{ AMREX_D_DECL(i, j, k) };
 
         // Flux along  x
-        for (int iDir = 0; iDir < nDim; iDir++) {
+        for (int iDir = 0; iDir < nDimLoc; iDir++) {
           get_face(iDir, i, j, k, iDir, nU, lu[iDir], ru[iDir]);
         }
 
-        ul = lu[ix_];
-        ur = ru[ix_];
+        ul = lu[ixLoc];
+        ur = ru[ixLoc];
         doDiffusion = true;
         if ((ul > 0 && bit::is_domain_boundary(status(i - 1, j, k))) ||
             (ur < 0 && bit::is_domain_boundary(status(i + 1, j, k)))) {
@@ -740,18 +755,18 @@ void Pic::correct_B(int iLev) {
                                     cB(i, j, k, iVar), cB(i + 1, j, k, iVar));
             Real cL = limiter_theta(limiterThetaB, cB(i - 2, j, k, iVar),
                                     cB(i - 1, j, k, iVar), cB(i, j, k, iVar));
-            ul = min(ul, 0.5 / coef[ix_]);
-            ur = min(ur, 0.5 / coef[ix_]);
+            ul = min(ul, 0.5 / coef[ixLoc]);
+            ur = min(ur, 0.5 / coef[ixLoc]);
             dB(i, j, k, iVar) +=
                 (cR * ur * (cB(i + 1, j, k, iVar) - cB(i, j, k, iVar)) -
                  cL * ul * (cB(i, j, k, iVar) - cB(i - 1, j, k, iVar))) *
-                coef[ix_];
+                coef[ixLoc];
           }
         }
 
         // Flux along y
-        ul = lu[iy_];
-        ur = ru[iy_];
+        ul = lu[iyLoc];
+        ur = ru[iyLoc];
         doDiffusion = true;
         if ((ul > 0 && bit::is_domain_boundary(status(i, j - 1, k))) ||
             (ur < 0 && bit::is_domain_boundary(status(i, j + 1, k)))) {
@@ -767,21 +782,21 @@ void Pic::correct_B(int iLev) {
                                     cB(i, j, k, iVar), cB(i, j + 1, k, iVar));
             Real cL = limiter_theta(limiterThetaB, cB(i, j - 2, k, iVar),
                                     cB(i, j - 1, k, iVar), cB(i, j, k, iVar));
-            ul = min(ul, 0.5 / coef[iy_]);
-            ur = min(ur, 0.5 / coef[iy_]);
+            ul = min(ul, 0.5 / coef[iyLoc]);
+            ur = min(ur, 0.5 / coef[iyLoc]);
 
             dB(i, j, k, iVar) +=
                 (cR * ur * (cB(i, j + 1, k, iVar) - cB(i, j, k, iVar)) -
                  cL * ul * (cB(i, j, k, iVar) - cB(i, j - 1, k, iVar))) *
-                coef[iy_];
+                coef[iyLoc];
           }
         }
 
-        if (nDim > 2 && !isFake2D) {
+        if (nDimLoc > 2 && !isFake2DLoc) {
 
           // Flux along z
-          ul = lu[iz_];
-          ur = ru[iz_];
+          ul = lu[izLoc];
+          ur = ru[izLoc];
 
           doDiffusion = true;
           if ((ul > 0 && bit::is_domain_boundary(status(i, j, k - 1))) ||
@@ -798,13 +813,13 @@ void Pic::correct_B(int iLev) {
                                       cB(i, j, k, iVar), cB(i, j, k + 1, iVar));
               Real cL = limiter_theta(limiterThetaB, cB(i, j, k - 2, iVar),
                                       cB(i, j, k - 1, iVar), cB(i, j, k, iVar));
-              ul = min(ul, 0.5 / coef[iz_]);
-              ur = min(ur, 0.5 / coef[iz_]);
+              ul = min(ul, 0.5 / coef[izLoc]);
+              ur = min(ur, 0.5 / coef[izLoc]);
 
               dB(i, j, k, iVar) +=
                   (cR * ur * (cB(i, j, k + 1, iVar) - cB(i, j, k, iVar)) -
                    cL * ul * (cB(i, j, k, iVar) - cB(i, j, k - 1, iVar))) *
-                  coef[iz_];
+                  coef[izLoc];
             }
           }
         }
@@ -853,9 +868,12 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, int di, Real coef) {
   timing_func(nameFunc);
 
   MultiFab mfOld(mf.boxArray(), mf.DistributionMap(), mf.nComp(), mf.nGrow());
+  const int ixLoc = ix_;
+  const int iyLoc = iy_;
+  const int izLoc = iz_;
 
   auto smooth_dir = [&](int iDir) {
-    int dIdx[3] = { 0, 0, 0 };
+    GpuArray<int, 3> dIdx = { 0, 0, 0 };
     dIdx[iDir] = di;
 
     MultiFab::Copy(mfOld, mf, 0, 0, mf.nComp(), mf.nGrow());
@@ -871,8 +889,8 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, int di, Real coef) {
         const Real WeightNei = coef / 2.0;
 
         const Real neiSum =
-            arrTmp(i - dIdx[ix_], j - dIdx[iy_], k - dIdx[iz_], iVar) +
-            arrTmp(i + dIdx[ix_], j + dIdx[iy_], k + dIdx[iz_], iVar);
+            arrTmp(i - dIdx[ixLoc], j - dIdx[iyLoc], k - dIdx[izLoc], iVar) +
+            arrTmp(i + dIdx[ixLoc], j + dIdx[iyLoc], k + dIdx[izLoc], iVar);
 
         arrE(i, j, k, iVar) =
             weightSelf * arrTmp(i, j, k, iVar) + WeightNei * neiSum;
@@ -909,9 +927,10 @@ void Pic::project_down_E() {
         const Box& box = mfi.validbox();
         const Array4<Real> arrE = nodeE[iLev][mfi].array();
         const Array4<Real> arrTmp = tmp[mfi].array();
+        const int nDimLoc = nDim;
         ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
           for (int iVar = 0; iVar < 3; iVar++) {
-            if (nDim == 3) {
+            if (nDimLoc == 3) {
               arrTmp(i, j, k, iVar) =
                   0.5 * arrE(i, j, k, iVar) +
                   (1 / 12.0) *

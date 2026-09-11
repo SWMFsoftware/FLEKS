@@ -279,6 +279,9 @@ public:
   const amrex::MultiFab& get_node_fluid(int iLev) const { return nodeFluid[iLev]; }
   amrex::MultiFab& get_node_fluid(int iLev) { return nodeFluid[iLev]; }
 
+  const amrex::MultiFab& get_center_b(int iLev) const { return centerB[iLev]; }
+  amrex::MultiFab& get_center_b(int iLev) { return centerB[iLev]; }
+
   int get_iEx() const { return iEx; }
   int get_iEy() const { return iEy; }
   int get_iEz() const { return iEz; }

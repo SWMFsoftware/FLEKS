@@ -92,8 +92,15 @@ void linear_solver_wrapper_hy(
   // Make sure that left preconditioning is used when necessary
   param.typePrecondSide = LEFT;
 
+#if defined(AMREX_USE_GPU)
+  amrex::ParallelFor(nImpl, [=] AMREX_GPU_DEVICE(int i) {
+    x_I[i] = 0.0;
+  });
+  amrex::Gpu::streamSynchronize();
+#else
   // Initialize solution std::vector to zero
   std::fill(x_I, x_I + nImpl, 0.0);
+#endif
 
   // Get preconditioning matrix if required.
   // Precondition RHS and initial guess (for symmetric prec only)
