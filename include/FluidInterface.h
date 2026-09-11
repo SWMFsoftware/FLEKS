@@ -196,9 +196,9 @@ protected:
 
   bool isnodeFluidReady = false;
 
+public:
   void sync_host_fluid();
 
-public:
   FluidInterface(amrex::Geometry const& gm, amrex::AmrInfo const& amrInfo,
                  int nGst, int id, std::string tag,
                  const amrex::Vector<int>& iParam,
@@ -337,6 +337,8 @@ public:
   }
 
   int get_nCellPerPatch() const { return nCellPerPatch; }
+
+  int get_iRho(int is) const { return iRho_I[is]; }
 
   bool get_UseAnisoP() const { return (useAnisoP); }
 
