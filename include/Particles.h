@@ -152,6 +152,7 @@ public:
 
   // Sized to the number of species in post_process_param(); filled by #TPSAVE.
   amrex::Vector<int> dnSave;
+  amrex::Vector<amrex::Real> dtSave;
   amrex::Vector<amrex::Real> launchThreshold;
 
   // Per-species particle counts used by restart (#TESTPARTICLENUMBER).
@@ -187,6 +188,15 @@ public:
       param.read_var("IOUnit", sIOUnit);
       param.read_var("dnSave", dnSave[iSpecies]);
       param.read_var("launchThreshold", launchThreshold[iSpecies]);
+    } else if (command == "#TPSAVEAT") {
+      int iSpecies;
+      param.read_var("iSpecies", iSpecies);
+      if (iSpecies < 0)
+        amrex::Abort(
+            "Error [ParticleTrackerInfo]: iSpecies must be >= 0 in #TPSAVEAT.");
+      if (iSpecies >= (int)dtSave.size())
+        dtSave.resize(iSpecies + 1, -1.0);
+      param.read_var("dtSave", dtSave[iSpecies]);
     } else if (command == "#TPRELATIVISTIC") {
       param.read_var("isRelativistic", isRelativistic);
     } else if (command == "#TPSTATESI") {
@@ -249,6 +259,15 @@ public:
       dnSave.resize(nS, 10);
     } else if ((int)dnSave.size() > nS) {
       amrex::Abort("Error [ParticleTrackerInfo]: #TPSAVE iSpecies exceeds the "
+                   "number of species.");
+    }
+
+    if (dtSave.empty()) {
+      dtSave.assign(nS, -1.0);
+    } else if ((int)dtSave.size() < nS) {
+      dtSave.resize(nS, -1.0);
+    } else if ((int)dtSave.size() > nS) {
+      amrex::Abort("Error [ParticleTrackerInfo]: #TPSAVEAT iSpecies exceeds the "
                    "number of species.");
     }
 

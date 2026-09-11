@@ -19,6 +19,15 @@ public:
   static constexpr int iTPEx_ = 10;
   static constexpr int iTPEy_ = 11;
   static constexpr int iTPEz_ = 12;
+  // Drift velocities for PBED mode (ptRecordSize == 19)
+  static constexpr int iTPvGradBx_ = 13;
+  static constexpr int iTPvGradBy_ = 14;
+  static constexpr int iTPvGradBz_ = 15;
+  static constexpr int iTPvCurvx_  = 16;
+  static constexpr int iTPvCurvy_  = 17;
+  static constexpr int iTPvCurvz_  = 18;
+
+  // Raw gradient tensor for legacy PBEG mode (ptRecordSize == 22)
   static constexpr int iTPdBxdx_ = 13;
   static constexpr int iTPdBxdy_ = 14;
   static constexpr int iTPdBxdz_ = 15;
@@ -155,6 +164,34 @@ public:
   unsigned long int init_particle_number() const { return nInitPart; }
   void init_particle_number(unsigned long int in) { nInitPart = in; }
 
+  void set_dt_save(amrex::Real dt, amrex::Real tNow = 0.0) {
+    dtSave = dt;
+    if (dtSave > 0.0) {
+      if (tNow > 0.0) {
+        long int nPass = std::floor(tNow / dtSave);
+        tNextSave = (nPass + 1) * dtSave;
+      } else {
+        tNextSave = 0.0;
+      }
+    }
+  }
+
+  amrex::Real get_dt_save() const { return dtSave; }
+  void set_t_next_save(amrex::Real t) { tNextSave = t; }
+  amrex::Real get_t_next_save() const { return tNextSave; }
+  void advance_next_save() {
+    if (dtSave > 0.0) {
+      tNextSave += dtSave;
+    }
+  }
+
+  bool is_time_to_record(amrex::Real tNow, long int cycle, int dnSave) const {
+    if (dtSave > 0.0) {
+      return (tNow >= tNextSave - 1.0e-9 * dtSave);
+    }
+    return (dnSave > 0 && cycle % dnSave == 0);
+  }
+
 private:
   std::string outputDir;
 
@@ -173,6 +210,9 @@ private:
   std::vector<PID> vIDs;
 
   Regions tpRegions;
+
+  amrex::Real dtSave = -1.0;
+  amrex::Real tNextSave = 0.0;
 };
 
 #endif

@@ -55,7 +55,7 @@ inline constexpr int nPicPartReal = 4;
 inline constexpr int nPicPartInt = 1;
 
 inline constexpr int nPTRecord = 20;
-inline constexpr int ptRecordSize = 7;
+inline constexpr int ptRecordSize = 19;
 inline constexpr int nPTPartReal = nPicPartReal + ptRecordSize * nPTRecord,
                      nPTPartInt = 2;
 #ifdef _PT_COMPONENT_

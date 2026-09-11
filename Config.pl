@@ -105,11 +105,11 @@ our $Help;
 our $ERROR;
 our $WARNING;
 
-my $TPSave = "P";
+my $TPSave = "PBED";
 my $NewTPSave;
-my %nTPString=(7=>'P', 10=>'PB', 13=>'PBE', 22=>'PBEG');
-my %nTPSave=('P' => 7, 'PB' => 10, 'PBE' => 13, 'PBEG' => 22);
-my %TPInfo=('P' => "Particle", 'PB' => "Particle+B", 'PBE' => "Particle+B+E", 'PBEG' => "Particle+B+E+GradB");
+my %nTPString=(7=>'P', 10=>'PB', 13=>'PBE', 19=>'PBED', 22=>'PBEG');
+my %nTPSave=('P' => 7, 'PB' => 10, 'PBE' => 13, 'PBED' => 19, 'PBEG' => 22);
+my %TPInfo=('P' => "Particle", 'PB' => "Particle+B", 'PBE' => "Particle+B+E", 'PBED' => "Particle+B+E+Drifts", 'PBEG' => "Particle+B+E+GradB");
 
 my $AmrexDim;
 
@@ -324,11 +324,12 @@ sub print_help{
 
 -u=NAME       Select user source file userfiles/NAMESource.h.
 
--tp=P,PB,PBE,PBEG  Test particle output information.
+-tp=P,PB,PBE,PBED,PBEG  Test particle output information.
               P: only save particle velocity + location
               PB: particle + magnetic field. 
               PBE: particle + magnetic field + electric field
-              PBEG: particle + B-field + E-field + gradient of B-field
+              PBED: particle + B-field + E-field + gradient/curvature drift velocities (default)
+              PBEG: particle + B-field + E-field + raw gradient of B-field
 
 \n";
     exit -0;

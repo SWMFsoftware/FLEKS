@@ -12,6 +12,65 @@ ParticlesInfo make_test_particles_info() {
   return info;
 }
 
+void compute_magnetic_drifts(
+    Real mass, Real charge, bool isRelativistic,
+    const Real bp[3], const Real vRec[3], const Real gradB[3][3],
+    Real vGradB[3], Real vCurv[3]) {
+  vGradB[0] = 0.0; vGradB[1] = 0.0; vGradB[2] = 0.0;
+  vCurv[0]  = 0.0; vCurv[1]  = 0.0; vCurv[2]  = 0.0;
+
+  const Real B2 = bp[0] * bp[0] + bp[1] * bp[1] + bp[2] * bp[2];
+  if (B2 <= 1e-30 || std::abs(charge) <= 1e-30)
+    return;
+
+  const Real invB = 1.0 / std::sqrt(B2);
+  const Real bx = bp[0] * invB;
+  const Real by = bp[1] * invB;
+  const Real bz = bp[2] * invB;
+
+  const Real vpar = vRec[0] * bx + vRec[1] * by + vRec[2] * bz;
+  const Real v2 = vRec[0] * vRec[0] + vRec[1] * vRec[1] + vRec[2] * vRec[2];
+  const Real vperp2 = std::max((Real)0.0, v2 - vpar * vpar);
+
+  Real mEff = mass;
+  if (isRelativistic) {
+    const Real invGam = (v2 < 1.0) ? std::sqrt(1.0 - v2) : 1e-10;
+    mEff = mass / invGam;
+  }
+
+  // Grad |B| vector: grad(|B|)_j = sum_i b_i * d(B_i)/d(x_j)
+  const Real gradBx = bx * gradB[0][0] + by * gradB[1][0] + bz * gradB[2][0];
+  const Real gradBy = bx * gradB[0][1] + by * gradB[1][1] + bz * gradB[2][1];
+  const Real gradBz = bx * gradB[0][2] + by * gradB[1][2] + bz * gradB[2][2];
+
+  // b x grad(|B|)
+  const Real b_cross_gradB_x = by * gradBz - bz * gradBy;
+  const Real b_cross_gradB_y = bz * gradBx - bx * gradBz;
+  const Real b_cross_gradB_z = bx * gradBy - by * gradBx;
+
+  // v_gradB = (mEff * vperp2) / (2 * q * B^2) * (b x grad|B|)
+  const Real coefGradB = (mEff * vperp2) / (2.0 * charge * B2);
+  vGradB[0] = coefGradB * b_cross_gradB_x;
+  vGradB[1] = coefGradB * b_cross_gradB_y;
+  vGradB[2] = coefGradB * b_cross_gradB_z;
+
+  // w = (b . grad) B -> w_i = sum_j J_{ij} * b_j
+  const Real wx = gradB[0][0] * bx + gradB[0][1] * by + gradB[0][2] * bz;
+  const Real wy = gradB[1][0] * bx + gradB[1][1] * by + gradB[1][2] * bz;
+  const Real wz = gradB[2][0] * bx + gradB[2][1] * by + gradB[2][2] * bz;
+
+  // b x w
+  const Real b_cross_w_x = by * wz - bz * wy;
+  const Real b_cross_w_y = bz * wx - bx * wz;
+  const Real b_cross_w_z = bx * wy - by * wx;
+
+  // v_curv = (mEff * vpar^2) / (q * B^2) * (b x w)
+  const Real coefCurv = (mEff * vpar * vpar) / (charge * B2);
+  vCurv[0] = coefCurv * b_cross_w_x;
+  vCurv[1] = coefCurv * b_cross_w_y;
+  vCurv[2] = coefCurv * b_cross_w_z;
+}
+
 } // namespace
 
 TestParticles::TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
@@ -180,14 +239,40 @@ void TestParticles::move_and_save_charged_particles(
         p.pos(iz_) = zp + wnp1 * dtLoc;
 
       if (doSave) {
+        Real theta = 1.0;
+        Real tRec = tNowSI;
+        Real xRec, yRec, zRec, uRec, vRec, wRec;
+
+        if (dtSave > 0.0) {
+          tRec = tNextSave;
+          const Real dtSI = tc->get_dt_si();
+          if (dtSI > 0.0) {
+            theta = (tNextSave - (tNowSI - dtSI)) / dtSI;
+            theta = std::max((Real)0.0, std::min((Real)1.0, theta));
+          }
+          xRec = xp + theta * unp1 * dtLoc;
+          yRec = yp + theta * vnp1 * dtLoc;
+          zRec = zp + theta * wnp1 * dtLoc;
+          uRec = (1.0 - theta) * up + theta * unp1;
+          vRec = (1.0 - theta) * vp + theta * vnp1;
+          wRec = (1.0 - theta) * wp + theta * wnp1;
+        } else {
+          xRec = xp + unp1 * 0.5 * dt;
+          yRec = yp + vnp1 * 0.5 * dt;
+          zRec = zp + wnp1 * 0.5 * dt;
+          uRec = unp1;
+          vRec = vnp1;
+          wRec = wnp1;
+        }
+
         const int i0 = record_var_index(p.idata(iRecordCount_));
-        p.rdata(i0 + iTPt_) = tNowSI;
-        p.rdata(i0 + iTPu_) = unp1;
-        p.rdata(i0 + iTPv_) = vnp1;
-        p.rdata(i0 + iTPw_) = wnp1;
-        p.rdata(i0 + iTPx_) = xp + unp1 * 0.5 * dt;
-        p.rdata(i0 + iTPy_) = yp + vnp1 * 0.5 * dt;
-        p.rdata(i0 + iTPz_) = zp + wnp1 * 0.5 * dt;
+        p.rdata(i0 + iTPt_) = tRec;
+        p.rdata(i0 + iTPu_) = uRec;
+        p.rdata(i0 + iTPv_) = vRec;
+        p.rdata(i0 + iTPw_) = wRec;
+        p.rdata(i0 + iTPx_) = xRec;
+        p.rdata(i0 + iTPy_) = yRec;
+        p.rdata(i0 + iTPz_) = zRec;
 
         if (ptRecordSize > iTPBx_) {
           p.rdata(i0 + iTPBx_) = bp[ix_];
@@ -201,7 +286,7 @@ void TestParticles::move_and_save_charged_particles(
           p.rdata(i0 + iTPEz_) = ep[iz_];
         }
 
-        if (ptRecordSize > iTPdBxdx_) {
+        if (ptRecordSize > 13) {
           Real gradB[3][3] = { { 0.0 } };
           if (hasJacB) {
             for (int k = lo.z; k <= hi.z; ++k)
@@ -277,15 +362,29 @@ void TestParticles::move_and_save_charged_particles(
             }
 #endif
           }
-          p.rdata(i0 + iTPdBxdx_) = gradB[0][0];
-          p.rdata(i0 + iTPdBxdy_) = gradB[0][1];
-          p.rdata(i0 + iTPdBxdz_) = gradB[0][2];
-          p.rdata(i0 + iTPdBydx_) = gradB[1][0];
-          p.rdata(i0 + iTPdBydy_) = gradB[1][1];
-          p.rdata(i0 + iTPdBydz_) = gradB[1][2];
-          p.rdata(i0 + iTPdBzdx_) = gradB[2][0];
-          p.rdata(i0 + iTPdBzdy_) = gradB[2][1];
-          p.rdata(i0 + iTPdBzdz_) = gradB[2][2];
+
+          if (ptRecordSize == 19) {
+            Real vRecArr[3] = { uRec, vRec, wRec };
+            Real vGradB[3], vCurv[3];
+            compute_magnetic_drifts(mass, charge, isRelativistic, bp, vRecArr,
+                                   gradB, vGradB, vCurv);
+            p.rdata(i0 + iTPvGradBx_) = vGradB[0];
+            p.rdata(i0 + iTPvGradBy_) = vGradB[1];
+            p.rdata(i0 + iTPvGradBz_) = vGradB[2];
+            p.rdata(i0 + iTPvCurvx_)  = vCurv[0];
+            p.rdata(i0 + iTPvCurvy_)  = vCurv[1];
+            p.rdata(i0 + iTPvCurvz_)  = vCurv[2];
+          } else if (ptRecordSize == 22) {
+            p.rdata(i0 + iTPdBxdx_) = gradB[0][0];
+            p.rdata(i0 + iTPdBxdy_) = gradB[0][1];
+            p.rdata(i0 + iTPdBxdz_) = gradB[0][2];
+            p.rdata(i0 + iTPdBydx_) = gradB[1][0];
+            p.rdata(i0 + iTPdBydy_) = gradB[1][1];
+            p.rdata(i0 + iTPdBydz_) = gradB[1][2];
+            p.rdata(i0 + iTPdBzdx_) = gradB[2][0];
+            p.rdata(i0 + iTPdBzdy_) = gradB[2][1];
+            p.rdata(i0 + iTPdBzdz_) = gradB[2][2];
+          }
         }
 
         p.idata(iRecordCount_)++;
@@ -429,14 +528,40 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
         p.pos(iz_) = zp + wnp1 * dtLoc;
 
       if (doSave) {
+        Real theta = 1.0;
+        Real tRec = tNowSI;
+        Real xRec, yRec, zRec, uRec, vRec, wRec;
+
+        if (dtSave > 0.0) {
+          tRec = tNextSave;
+          const Real dtSI = tc->get_dt_si();
+          if (dtSI > 0.0) {
+            theta = (tNextSave - (tNowSI - dtSI)) / dtSI;
+            theta = std::max((Real)0.0, std::min((Real)1.0, theta));
+          }
+          xRec = xp + theta * unp1 * dtLoc;
+          yRec = yp + theta * vnp1 * dtLoc;
+          zRec = zp + theta * wnp1 * dtLoc;
+          uRec = (1.0 - theta) * up + theta * unp1;
+          vRec = (1.0 - theta) * vp + theta * vnp1;
+          wRec = (1.0 - theta) * wp + theta * wnp1;
+        } else {
+          xRec = xp + unp1 * 0.5 * dt;
+          yRec = yp + vnp1 * 0.5 * dt;
+          zRec = zp + wnp1 * 0.5 * dt;
+          uRec = unp1;
+          vRec = vnp1;
+          wRec = wnp1;
+        }
+
         const int i0 = record_var_index(p.idata(iRecordCount_));
-        p.rdata(i0 + iTPt_) = tNowSI;
-        p.rdata(i0 + iTPu_) = unp1;
-        p.rdata(i0 + iTPv_) = vnp1;
-        p.rdata(i0 + iTPw_) = wnp1;
-        p.rdata(i0 + iTPx_) = xp + unp1 * 0.5 * dt;
-        p.rdata(i0 + iTPy_) = yp + vnp1 * 0.5 * dt;
-        p.rdata(i0 + iTPz_) = zp + wnp1 * 0.5 * dt;
+        p.rdata(i0 + iTPt_) = tRec;
+        p.rdata(i0 + iTPu_) = uRec;
+        p.rdata(i0 + iTPv_) = vRec;
+        p.rdata(i0 + iTPw_) = wRec;
+        p.rdata(i0 + iTPx_) = xRec;
+        p.rdata(i0 + iTPy_) = yRec;
+        p.rdata(i0 + iTPz_) = zRec;
 
         if (ptRecordSize > iTPBx_) {
           p.rdata(i0 + iTPBx_) = bp[ix_];
@@ -450,7 +575,7 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
           p.rdata(i0 + iTPEz_) = ep[iz_];
         }
 
-        if (ptRecordSize > iTPdBxdx_) {
+        if (ptRecordSize > 13) {
           Real gradB[3][3] = { { 0.0 } };
           if (hasJacB) {
             IntVect nodeLoIdx;
@@ -475,15 +600,29 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
                   }
                 }
           }
-          p.rdata(i0 + iTPdBxdx_) = gradB[0][0];
-          p.rdata(i0 + iTPdBxdy_) = gradB[0][1];
-          p.rdata(i0 + iTPdBxdz_) = gradB[0][2];
-          p.rdata(i0 + iTPdBydx_) = gradB[1][0];
-          p.rdata(i0 + iTPdBydy_) = gradB[1][1];
-          p.rdata(i0 + iTPdBydz_) = gradB[1][2];
-          p.rdata(i0 + iTPdBzdx_) = gradB[2][0];
-          p.rdata(i0 + iTPdBzdy_) = gradB[2][1];
-          p.rdata(i0 + iTPdBzdz_) = gradB[2][2];
+
+          if (ptRecordSize == 19) {
+            Real vRecArr[3] = { uRec, vRec, wRec };
+            Real vGradB[3], vCurv[3];
+            compute_magnetic_drifts(mass, charge, isRelativistic, bp, vRecArr,
+                                   gradB, vGradB, vCurv);
+            p.rdata(i0 + iTPvGradBx_) = vGradB[0];
+            p.rdata(i0 + iTPvGradBy_) = vGradB[1];
+            p.rdata(i0 + iTPvGradBz_) = vGradB[2];
+            p.rdata(i0 + iTPvCurvx_)  = vCurv[0];
+            p.rdata(i0 + iTPvCurvy_)  = vCurv[1];
+            p.rdata(i0 + iTPvCurvz_)  = vCurv[2];
+          } else if (ptRecordSize == 22) {
+            p.rdata(i0 + iTPdBxdx_) = gradB[0][0];
+            p.rdata(i0 + iTPdBxdy_) = gradB[0][1];
+            p.rdata(i0 + iTPdBxdz_) = gradB[0][2];
+            p.rdata(i0 + iTPdBydx_) = gradB[1][0];
+            p.rdata(i0 + iTPdBydy_) = gradB[1][1];
+            p.rdata(i0 + iTPdBydz_) = gradB[1][2];
+            p.rdata(i0 + iTPdBzdx_) = gradB[2][0];
+            p.rdata(i0 + iTPdBzdy_) = gradB[2][1];
+            p.rdata(i0 + iTPdBzdz_) = gradB[2][2];
+          }
         }
 
         p.idata(iRecordCount_)++;
@@ -531,14 +670,33 @@ void TestParticles::move_and_save_neutrals(int iLev, Real dt, Real tNowSI,
         p.pos(iz_) = zp + wp * dt;
 
       if (doSave) {
+        Real theta = 1.0;
+        Real tRec = tNowSI;
+        Real xRec, yRec, zRec;
+        if (dtSave > 0.0) {
+          tRec = tNextSave;
+          const Real dtSI = tc->get_dt_si();
+          if (dtSI > 0.0) {
+            theta = (tNextSave - (tNowSI - dtSI)) / dtSI;
+            theta = std::max((Real)0.0, std::min((Real)1.0, theta));
+          }
+          xRec = xp + theta * up * dt;
+          yRec = yp + theta * vp * dt;
+          zRec = zp + theta * wp * dt;
+        } else {
+          xRec = p.pos(ix_);
+          yRec = p.pos(iy_);
+          zRec = zp;
+        }
+
         const int i0 = record_var_index(p.idata(iRecordCount_));
-        p.rdata(i0 + iTPt_) = tNowSI;
+        p.rdata(i0 + iTPt_) = tRec;
         p.rdata(i0 + iTPu_) = p.rdata(iup_);
         p.rdata(i0 + iTPv_) = p.rdata(ivp_);
         p.rdata(i0 + iTPw_) = p.rdata(iwp_);
-        p.rdata(i0 + iTPx_) = p.pos(ix_);
-        p.rdata(i0 + iTPy_) = p.pos(iy_);
-        p.rdata(i0 + iTPz_) = zp;
+        p.rdata(i0 + iTPx_) = xRec;
+        p.rdata(i0 + iTPy_) = yRec;
+        p.rdata(i0 + iTPz_) = zRec;
 
         p.idata(iRecordCount_)++;
       }
@@ -885,7 +1043,14 @@ void TestParticles::pack_particles_and_records(char* recordBuff, char* listBuff,
               recordData[iTPEz_] = (float)(p.rdata(i0 + iTPEz_) * no2outE);
             }
 
-            if (ptRecordSize > iTPdBxdx_) {
+            if (ptRecordSize == 19) {
+              recordData[iTPvGradBx_] = (float)(p.rdata(i0 + iTPvGradBx_) * no2outV);
+              recordData[iTPvGradBy_] = (float)(p.rdata(i0 + iTPvGradBy_) * no2outV);
+              recordData[iTPvGradBz_] = (float)(p.rdata(i0 + iTPvGradBz_) * no2outV);
+              recordData[iTPvCurvx_]  = (float)(p.rdata(i0 + iTPvCurvx_) * no2outV);
+              recordData[iTPvCurvy_]  = (float)(p.rdata(i0 + iTPvCurvy_) * no2outV);
+              recordData[iTPvCurvz_]  = (float)(p.rdata(i0 + iTPvCurvz_) * no2outV);
+            } else if (ptRecordSize == 22) {
               const Real no2outG = no2outB / no2outL;
               recordData[iTPdBxdx_] = (float)(p.rdata(i0 + iTPdBxdx_) * no2outG);
               recordData[iTPdBxdy_] = (float)(p.rdata(i0 + iTPdBxdy_) * no2outG);
@@ -997,8 +1162,14 @@ unsigned long long int TestParticles::loop_particles(
             recordData[iTPEz_] = (float)(p.rdata(i0 + iTPEz_) * no2outE);
           }
 
-          if (ptRecordSize > iTPdBxdx_) {
-            // no2out for gradient is no2outB/no2outL
+          if (ptRecordSize == 19) {
+            recordData[iTPvGradBx_] = (float)(p.rdata(i0 + iTPvGradBx_) * no2outV);
+            recordData[iTPvGradBy_] = (float)(p.rdata(i0 + iTPvGradBy_) * no2outV);
+            recordData[iTPvGradBz_] = (float)(p.rdata(i0 + iTPvGradBz_) * no2outV);
+            recordData[iTPvCurvx_]  = (float)(p.rdata(i0 + iTPvCurvx_) * no2outV);
+            recordData[iTPvCurvy_]  = (float)(p.rdata(i0 + iTPvCurvy_) * no2outV);
+            recordData[iTPvCurvz_]  = (float)(p.rdata(i0 + iTPvCurvz_) * no2outV);
+          } else if (ptRecordSize == 22) {
             Real no2outG = no2outB / no2outL;
             recordData[iTPdBxdx_] = (float)(p.rdata(i0 + iTPdBxdx_) * no2outG);
             recordData[iTPdBxdy_] = (float)(p.rdata(i0 + iTPdBxdy_) * no2outG);

@@ -25,7 +25,7 @@ public:
   void pre_regrid() override;
   void post_regrid() override;
 
-  void update_field(Pic &pic);
+  void update_field(Pic &pic, bool needJacobian = false);
   void set_ic(Pic &pic);
   void update(Pic &pic, bool doReport = false);
 
