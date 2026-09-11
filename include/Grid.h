@@ -8,6 +8,7 @@
 #include <AMReX_FillPatchUtil.H>
 #include <AMReX_Geometry.H>
 #include <AMReX_GpuContainers.H>
+#include <AMReX_Gpu.H>
 #include <AMReX_IndexType.H>
 #include <AMReX_IntVect.H>
 #include <AMReX_MultiFab.H>
@@ -381,7 +382,17 @@ public:
                    << std::endl;
     for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.validbox();
+#ifdef AMREX_USE_GPU
+      const auto& tagbox = tags[mfi];
+      const amrex::Box& tbox = tagbox.box();
+      const std::size_t npts = tbox.numPts();
+      amrex::BaseFab<char> host_fab(tbox, 1, amrex::The_Pinned_Arena());
+      amrex::Gpu::copy(amrex::Gpu::deviceToHost, tagbox.dataPtr(),
+                       tagbox.dataPtr() + npts, host_fab.dataPtr());
+      const auto tagArr = host_fab.array();
+#else
       const auto tagArr = tags.array(mfi);
+#endif
       const auto lo = lbound(bx);
       const auto hi = ubound(bx);
       for (int k = lo.z; k <= hi.z; ++k)
@@ -393,12 +404,18 @@ public:
             // Loop through all levels from the finest to the current level.
             // If a cell is required to be refined at lev=n (n>=iLev), this
             // cell should be also refined at lev=iLev.
-            for (int il = n_lev_max() - 2; il >= iLev; il--)
-              if (refineRegions[il].is_inside(xyz)) {
+            for (int il = n_lev_max() - 2; il >= iLev; il--) {
+              if (il < static_cast<int>(refineRegions.size()) &&
+                  refineRegions[il].is_inside(xyz)) {
                 tagArr(i, j, k) = amrex::TagBox::SET;
-                continue;
+                break;
               }
+            }
           }
+#ifdef AMREX_USE_GPU
+      amrex::Gpu::copy(amrex::Gpu::hostToDevice, host_fab.dataPtr(),
+                       host_fab.dataPtr() + npts, tags[mfi].dataPtr());
+#endif
     }
   };
 
