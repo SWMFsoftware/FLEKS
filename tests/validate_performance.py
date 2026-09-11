@@ -18,6 +18,7 @@ import glob
 MOVERS = [
     "Pts::charged_particle_mover",
     "Pts::charged_particle_mover_cell_centered",
+    "TestParticles::move_charged_particles",
 ]
 
 FULLPIC_SOLVERS = [
@@ -31,9 +32,12 @@ HYBRID_SOLVERS = [
     "Pic::assemble_ohm_E",
 ]
 
+PT_SOLVERS = []
+
 _REQUIRED_MOVER = {
     "fullpic": "Pts::charged_particle_mover",
     "hybrid":  "Pts::charged_particle_mover_cell_centered",
+    "pt":      "TestParticles::move_charged_particles",
 }
 
 # Baseline targets (μs/part-step) and 2-core speedup floor, one set per solver.
@@ -49,6 +53,12 @@ BASELINES = {
         "mover_pps": 0.06,   # isolated particle mover
         "solver_pps": 0.008, # explicit hybrid field advance is cheaper
         "speedup": 1.6,      # 2-core scaling floor
+    },
+    "pt": {
+        "total_pps": 2.0,    # total wall-clock rate (dominated by AMReX Redistribute of 440 particle attributes)
+        "mover_pps": 0.08,   # isolated test particle mover rate
+        "solver_pps": 0.01,  # EM solver disabled
+        "speedup": 1.05,     # 2-core scaling floor (redistribute bandwidth limited in 1D)
     },
 }
 
@@ -97,11 +107,13 @@ def _read_param_block(param_file, command):
 
 def count_particles_from_param(param_file):
     """Total seeded macroparticles = prod(nCell_d * nPartPerCell_d) from the
-    #NCELL and #PARTICLES blocks.  FLEKS seeds exactly nPartPerCell particles
-    per cell, so this is exact for both benchmarks.  Returns None if the blocks
-    are missing/malformed."""
+    #NCELL and #PARTICLES (or #TPPARTICLES) blocks.  FLEKS seeds exactly
+    nPartPerCell particles per cell, so this is exact for benchmarks.
+    Returns None if the blocks are missing/malformed."""
     ncell = _read_param_block(param_file, "#NCELL")
     ppc = _read_param_block(param_file, "#PARTICLES")
+    if not ppc:
+        ppc = _read_param_block(param_file, "#TPPARTICLES")
     if len(ncell) < 3 or len(ppc) < 3:
         return None
     total = 1
@@ -197,7 +209,12 @@ def run_benchmark_suite(n_proc, run_dir, param_file, solver_kind="fullpic",
     stats.  `solver_kind` selects the field-solver and mover TinyProfiler
     region lists (FULLPIC_SOLVERS / HYBRID_SOLVERS; _REQUIRED_MOVER).
     Returns (stats, 0) or (None, code) on failure."""
-    solver_names = HYBRID_SOLVERS if solver_kind == "hybrid" else FULLPIC_SOLVERS
+    if solver_kind == "hybrid":
+        solver_names = HYBRID_SOLVERS
+    elif solver_kind == "pt":
+        solver_names = PT_SOLVERS
+    else:
+        solver_names = FULLPIC_SOLVERS
 
     print(f"Running benchmark in {run_dir} with {n_proc} MPI process(es) "
           f"({count} runs, solver={solver_kind})...")
@@ -249,7 +266,7 @@ def run_benchmark_suite(n_proc, run_dir, param_file, solver_kind="fullpic",
 
         # Solver time (inclusive); warn if no solver region was found.
         solver_incl_time = 0.0
-        solver_missing = True
+        solver_missing = bool(solver_names)
         for name in solver_names:
             if "inclusive" in prof and name in prof["inclusive"]:
                 solver_incl_time = prof["inclusive"][name]["avg"]
@@ -300,7 +317,12 @@ def run_benchmark_suite(n_proc, run_dir, param_file, solver_kind="fullpic",
 def _evaluate_solver(solver_kind, param_file, serial_dir, parallel_dir, count=3):
     """Run the 1- and 2-process benchmark suites for one solver kind and return
     (stats, pass_flags, label)."""
-    label = "FULL PIC" if solver_kind == "fullpic" else "HYBRID PIC"
+    if solver_kind == "fullpic":
+        label = "FULL PIC"
+    elif solver_kind == "hybrid":
+        label = "HYBRID PIC"
+    else:
+        label = "PARTICLE TRACKER"
 
     serial_stats, code = run_benchmark_suite(
         1, serial_dir, param_file, solver_kind=solver_kind, count=count)
@@ -356,6 +378,13 @@ def _status_console(flag):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Performance regression runner for standalone FLEKS.")
+    parser.add_argument("--suite", choices=["fullpic", "hybrid", "pt", "all"], default="default",
+                        help="Benchmark suite to run (default: fullpic + hybrid)")
+    parser.add_argument("--pt", action="store_true", help="Run the particle tracker benchmark suite")
+    args = parser.parse_args()
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(script_dir)
 
@@ -365,26 +394,39 @@ def main():
 
     print("================================================================================")
     print("                 FLEKS ROBUST PERFORMANCE REGRESSION TEST")
-    print("   (full-PIC beam benchmark + hybrid-PIC whistler benchmark)")
     print("================================================================================")
 
     fullpic_param = os.path.join("performance", "PARAM.in")
     hybrid_param = os.path.join("performance", "PARAM.in.hybrid")
+    pt_param = os.path.join("performance", "PARAM.in.pt")
     if not os.path.exists(hybrid_param):
         print(f"Error: Hybrid benchmark config {hybrid_param} not found.")
         sys.exit(1)
 
     # Benchmark suites: (solver_kind, param_file)
-    suites = [
-        ("fullpic", fullpic_param),
-        ("hybrid", hybrid_param),
-    ]
+    if args.pt or args.suite == "pt":
+        suites = [("pt", pt_param)]
+    elif args.suite == "all":
+        suites = [
+            ("fullpic", fullpic_param),
+            ("hybrid", hybrid_param),
+            ("pt", pt_param),
+        ]
+    elif args.suite == "fullpic":
+        suites = [("fullpic", fullpic_param)]
+    elif args.suite == "hybrid":
+        suites = [("hybrid", hybrid_param)]
+    else:
+        suites = [
+            ("fullpic", fullpic_param),
+            ("hybrid", hybrid_param),
+        ]
 
     results = {}
     all_passed = True
     for solver_kind, param_file in suites:
         print("\n" + "#" * 85)
-        print(f"#  SOLVER: {'FULL PIC' if solver_kind == 'fullpic' else 'HYBRID PIC'}")
+        print(f"#  SOLVER: {'FULL PIC' if solver_kind == 'fullpic' else ('HYBRID PIC' if solver_kind == 'hybrid' else 'PARTICLE TRACKER')}")
         print("#" * 85)
         stats, passed, label = _evaluate_solver(
             solver_kind, param_file, "run_perf_serial", "run_perf_parallel")

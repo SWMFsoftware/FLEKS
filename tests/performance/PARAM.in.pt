@@ -63,7 +63,7 @@ T                       useFixedDt
 T                       usePT
 
 #TPPARTICLES
-200                     nTPPerCellX
+2000                    nTPPerCellX
 1                       nTPPerCellY
 1                       nTPPerCellZ
 
