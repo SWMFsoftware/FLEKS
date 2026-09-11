@@ -1,7 +1,7 @@
-#include "ParticleTracker.h"
-#include "GridUtility.h"
-
 #include <algorithm>
+
+#include "GridUtility.h"
+#include "ParticleTracker.h"
 
 using namespace amrex;
 
@@ -10,7 +10,7 @@ ParticleTracker::~ParticleTracker() {
     return;
 
   bool doSave = savectr->is_time_to(true);
-  for (auto &tps : parts) {
+  for (auto& tps : parts) {
     if (doSave) {
       tps->write_particles(tc->get_cycle());
     }
@@ -43,13 +43,11 @@ void ParticleTracker::set_ic(Pic& pic) {
     bool doSave = true;
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       const MultiFab* jacPtr =
-          (ptRecordSize > 13 && !nodeJacB.empty())
-              ? &nodeJacB[iLev]
-              : nullptr;
+          (ptRecordSize > 13 && !nodeJacB.empty()) ? &nodeJacB[iLev] : nullptr;
       if (pic.useHybridPIC) {
         tps->move_and_save_particles_cell_centered(
-            iLev, centerE[iLev], centerB[iLev], 0, 0, tc->get_time_si(),
-            doSave, jacPtr);
+            iLev, centerE[iLev], centerB[iLev], 0, 0, tc->get_time_si(), doSave,
+            jacPtr);
       } else {
         tps->move_and_save_particles(iLev, nodeE[iLev], nodeB[iLev], 0, 0,
                                      tc->get_time_si(), doSave, jacPtr);
@@ -142,9 +140,8 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       const MultiFab* jacPtr =
-          (ptRecordSize > 13 && !nodeJacB.empty() && doRecord)
-              ? &nodeJacB[iLev]
-              : nullptr;
+          (ptRecordSize > 13 && !nodeJacB.empty() && doRecord) ? &nodeJacB[iLev]
+                                                               : nullptr;
       if (pic.useHybridPIC) {
         tps->move_and_save_particles_cell_centered(
             iLev, centerE[iLev], centerB[iLev], tc->get_dt(), tc->get_next_dt(),
@@ -197,7 +194,8 @@ void ParticleTracker::update_field(Pic& pic, bool needJacobian) {
     }
   }
 
-  // If magnetic field gradient is requested AND needed this step, compute Jacobian from centerB
+  // If magnetic field gradient is requested AND needed this step, compute
+  // Jacobian from centerB
   if (needJacobian && ptRecordSize > 13) {
     for (int iLev = 0; iLev < n_lev(); iLev++) {
       jacobian_center_to_node(pic.centerB[iLev], nodeJacB[iLev],
@@ -263,8 +261,8 @@ void ParticleTracker::post_regrid() {
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst, false);
     if (ptRecordSize > 13) {
-      distribute_FabArray(nodeJacB[iLev], nGrids[iLev], DistributionMap(iLev), 9,
-                          nGst, false);
+      distribute_FabArray(nodeJacB[iLev], nGrids[iLev], DistributionMap(iLev),
+                          9, nGst, false);
     }
   }
 

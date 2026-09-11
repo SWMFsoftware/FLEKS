@@ -267,8 +267,9 @@ public:
     } else if ((int)dtSave.size() < nS) {
       dtSave.resize(nS, -1.0);
     } else if ((int)dtSave.size() > nS) {
-      amrex::Abort("Error [ParticleTrackerInfo]: #TPSAVEAT iSpecies exceeds the "
-                   "number of species.");
+      amrex::Abort(
+          "Error [ParticleTrackerInfo]: #TPSAVEAT iSpecies exceeds the "
+          "number of species.");
     }
 
     if (launchThreshold.empty()) {

@@ -23,9 +23,9 @@ public:
   static constexpr int iTPvGradBx_ = 13;
   static constexpr int iTPvGradBy_ = 14;
   static constexpr int iTPvGradBz_ = 15;
-  static constexpr int iTPvCurvx_  = 16;
-  static constexpr int iTPvCurvy_  = 17;
-  static constexpr int iTPvCurvz_  = 18;
+  static constexpr int iTPvCurvx_ = 16;
+  static constexpr int iTPvCurvy_ = 17;
+  static constexpr int iTPvCurvz_ = 18;
 
   // Raw gradient tensor for legacy PBEG mode (ptRecordSize == 22)
   static constexpr int iTPdBxdx_ = 13;
@@ -215,20 +215,19 @@ private:
   amrex::Real tNextSave = 0.0;
 
   void interpolate_record_trajectory(
-      amrex::Real xp, amrex::Real yp, amrex::Real zp,
-      amrex::Real up, amrex::Real vp, amrex::Real wp,
-      amrex::Real unp1, amrex::Real vnp1, amrex::Real wnp1,
-      amrex::Real dtStep, amrex::Real dtElse, amrex::Real tNowSI,
-      amrex::Real& tRec, amrex::Real& xRec, amrex::Real& yRec, amrex::Real& zRec,
-      amrex::Real& uRec, amrex::Real& vRec, amrex::Real& wRec) const;
+      amrex::Real xp, amrex::Real yp, amrex::Real zp, amrex::Real up,
+      amrex::Real vp, amrex::Real wp, amrex::Real unp1, amrex::Real vnp1,
+      amrex::Real wnp1, amrex::Real dtStep, amrex::Real dtElse,
+      amrex::Real tNowSI, amrex::Real& tRec, amrex::Real& xRec,
+      amrex::Real& yRec, amrex::Real& zRec, amrex::Real& uRec,
+      amrex::Real& vRec, amrex::Real& wRec) const;
 
-  void save_particle_record(
-      ParticleType& p,
-      amrex::Real tRec, amrex::Real xRec, amrex::Real yRec, amrex::Real zRec,
-      amrex::Real uRec, amrex::Real vRec, amrex::Real wRec,
-      const amrex::Real* bp = nullptr,
-      const amrex::Real* ep = nullptr,
-      const amrex::Real (*gradB)[3] = nullptr);
+  void save_particle_record(ParticleType& p, amrex::Real tRec, amrex::Real xRec,
+                            amrex::Real yRec, amrex::Real zRec,
+                            amrex::Real uRec, amrex::Real vRec,
+                            amrex::Real wRec, const amrex::Real* bp = nullptr,
+                            const amrex::Real* ep = nullptr,
+                            const amrex::Real (*gradB)[3] = nullptr);
 };
 
 #endif
