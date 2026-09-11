@@ -100,6 +100,15 @@ void grad_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
   }
 }
 
+void jacobian_center_to_node(const MultiFab& centerVecMF, MultiFab& nodeJacMF,
+                             const Real* invDx) {
+  for (int iDim = 0; iDim < 3; ++iDim) {
+    const MultiFab centerComp(centerVecMF, amrex::make_alias, iDim, 1);
+    MultiFab nodeGradComp(nodeJacMF, amrex::make_alias, iDim * 3, 3);
+    grad_center_to_node(centerComp, nodeGradComp, invDx);
+  }
+}
+
 void div_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
                         const Real* invDx) {
 

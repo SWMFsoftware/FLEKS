@@ -1,0 +1,91 @@
+#DESCRIPTION
+Particle Tracker Performance Benchmark Test
+
+#INITFROMSWMF
+F                       initFromSWMF
+
+#GEOMETRY
+-1.0                    xMin
+ 1.0                    xMax
+-1.0                    yMin
+ 1.0                    yMax
+-1.0                    zMin
+ 1.0                    zMax
+
+#NCELL
+128                     nCellX
+1                       nCellY
+1                       nCellZ
+
+#MAXBLOCKSIZE
+64                      maxBlockSizeX
+1                       maxBlockSizeY
+1                       maxBlockSizeZ
+
+#PERIODICITY
+T                       isPeriodicX
+T                       isPeriodicY
+T                       isPeriodicZ
+
+#SOLVEEM
+F                       solveEM
+
+#PLASMA
+1                       nSpecies
+1.0                     mass
+1.0                     charge
+
+#UNIFORMSTATE
+5.0                     rho [amu/cc]
+-400.0                  ux [km/s]
+0.0                     uy [km/s]
+0.0                     uz [km/s]
+10000.0                 T [K]
+5.0e-9                  bx [T]
+0.0                     by [T]
+0.0                     bz [T]
+0.0                     ex [V/m]
+0.0                     ey [V/m]
+0.0                     ez [V/m]
+
+#NORMALIZATION
+1000.0                  lNormSI
+1.0e6                   uNormSI
+
+#TIMESTEPPING
+T                       useFixedDt
+0.1                     dt
+
+#MONITOR
+10                      dnReport
+
+#PARTICLETRACKER
+T                       usePT
+
+#TPPARTICLES
+2000                    nTPPerCellX
+1                       nTPPerCellY
+1                       nTPPerCellZ
+
+#TPREGION
+uniform                 region
+
+#TPCELLINTERVAL
+1                       nIntervalX
+1                       nIntervalY
+1                       nIntervalZ
+
+#TPSAVE
+0                       iSpecies
+planet                  IOUnit
+10                      dnSave
+0.5                     launchThreshold
+
+#SAVEPLOT
+0                       nPlot
+
+#STOP
+-1                      MaxIter
+3.0                     TimeMax
+
+#RUN

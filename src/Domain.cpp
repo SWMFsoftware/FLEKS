@@ -963,8 +963,9 @@ void Domain::read_param(const bool readGridInfo) {
         pic->read_param(command, readParam);
     } else if (command == "#TESTPARTICLENUMBER" || command == "#TPPARTICLES" ||
                command == "#TPCELLINTERVAL" || command == "#TPREGION" ||
-               command == "#TPSAVE" || command == "#TPRELATIVISTIC" ||
-               command == "#TPINITFROMPIC" || command == "#TPSTATESI") {
+               command == "#TPSAVE" || command == "#TPSAVEAT" ||
+               command == "#TPRELATIVISTIC" || command == "#TPINITFROMPIC" ||
+               command == "#TPSTATESI") {
       ptInfo.read_param(command, readParam);
     } else if (command == "#PHOTOIONIZATION" || command == "#ELECTRONIMPACT" ||
                command == "#CHARGEEXCHANGE" || command == "#SHADOWCYLINDER" ||

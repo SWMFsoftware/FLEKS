@@ -221,6 +221,19 @@ The unit and frequence of saving test particles, and the threshold for relaunchi
 
 </command>
 
+<command name="TPSAVEAT" alias="TPSAVEAT_FLEKS0,TPSAVEAT_FLEKS1,TPSAVEAT_FLEKS2" multiple="T">
+  <parameter name="iSpecies" type="integer" required="T"/>
+  <parameter name="dtSave" type="real" default="-1.0"/>
+
+#TPSAVEAT
+0                          iSpecies
+0.1                        dtSave
+
+Save test particles at fixed time intervals (in SI seconds) using sub-step trajectory linear interpolation.
+If dtSave <= 0 (default), saving falls back to the step-based dnSave set by #TPSAVE.
+
+</command>
+
 <command name="NOUTFILE" alias="NOUTFILE_FLEKS0,NOUTFILE_FLEKS1,NOUTFILE_FLEKS2" multiple="T">
   <parameter name="nFileField" type="integer" default="64"/>
   <parameter name="nFileParticle" type="integer" default="256"/>

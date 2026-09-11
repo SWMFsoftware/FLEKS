@@ -1,6 +1,21 @@
 #include "ParticleTracker.h"
+#include "GridUtility.h"
+
+#include <algorithm>
 
 using namespace amrex;
+
+ParticleTracker::~ParticleTracker() {
+  if (isGridEmpty || isNewGrid || !savectr)
+    return;
+
+  bool doSave = savectr->is_time_to(true);
+  for (auto &tps : parts) {
+    if (doSave) {
+      tps->write_particles(tc->get_cycle());
+    }
+  }
+}
 
 void ParticleTracker::set_ic(Pic& pic) {
   if (isGridEmpty)
@@ -8,7 +23,7 @@ void ParticleTracker::set_ic(Pic& pic) {
 
   complete_parameters();
 
-  update_field(pic);
+  update_field(pic, ptRecordSize > 13);
 
   for (int i = 0; i < parts.size(); ++i) {
     auto& tps = parts[i];
@@ -22,21 +37,26 @@ void ParticleTracker::set_ic(Pic& pic) {
 
     Print() << printPrefix << " initial particle # is "
             << tps->init_particle_number() << " for species " << i << std::endl;
-  }
 
-  for (int i = 0; i < parts.size(); ++i) {
     // The initial state is special. Here, we do a fake update with dt=0, and
     // write the initial state to disk.
     bool doSave = true;
-    auto& tps = parts[i];
     for (int iLev = 0; iLev < n_lev(); iLev++) {
+      const MultiFab* jacPtr =
+          (ptRecordSize > 13 && !nodeJacB.empty())
+              ? &nodeJacB[iLev]
+              : nullptr;
       if (pic.useHybridPIC) {
         tps->move_and_save_particles_cell_centered(
-            centerE[iLev], centerB[iLev], 0, 0, tc->get_time_si(), doSave);
+            iLev, centerE[iLev], centerB[iLev], 0, 0, tc->get_time_si(),
+            doSave, jacPtr);
       } else {
-        tps->move_and_save_particles(nodeE[iLev], nodeB[iLev], 0, 0,
-                                     tc->get_time_si(), doSave);
+        tps->move_and_save_particles(iLev, nodeE[iLev], nodeB[iLev], 0, 0,
+                                     tc->get_time_si(), doSave, jacPtr);
       }
+    }
+    if (tps->get_dt_save() > 0.0) {
+      tps->advance_next_save();
     }
     tps->write_particles(tc->get_cycle());
   }
@@ -47,24 +67,27 @@ void ParticleTracker::write_log(bool doForce, bool doCreateFile) {
   if (isGridEmpty)
     return;
 
-  if (doCreateFile && ParallelDescriptor::IOProcessor()) {
+  if (doCreateFile) {
     std::stringstream ss;
     ss << component << "/plots/log_pt_n" << std::setfill('0') << std::setw(8)
        << tc->get_cycle() << ".log";
     logFile = ss.str();
-    std::ofstream of(logFile.c_str());
-    of << "time nStep";
-    for (int i = 0; i < parts.size(); ++i)
-      of << " mass_" << i << " moment_x_" << i << " moment_y_" << i
-         << " moment_z_" << i << " energy_" << i;
+    if (ParallelDescriptor::IOProcessor()) {
+      std::ofstream of(logFile.c_str());
+      of << "time nStep";
+      for (int i = 0; i < parts.size(); ++i)
+        of << " mass_" << i << " moment_x_" << i << " moment_y_" << i
+           << " moment_z_" << i << " energy_" << i;
 
-    of << std::endl;
-    of.close();
+      of << std::endl;
+      of.close();
+    }
   }
 
   if (tc->ptLog.is_time_to(doForce)) {
 
     Vector<std::array<Real, 5> > moments;
+    moments.reserve(parts.size());
     for (int i = 0; i < parts.size(); ++i) {
       moments.push_back(parts[i]->total_moments());
     }
@@ -100,22 +123,41 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
             << std::endl;
   }
 
-  update_field(pic);
+  bool needJacobian = false;
+  for (int i = 0; i < parts.size(); ++i) {
+    if (parts[i]->is_time_to_record(tc->get_time_si(), tc->get_cycle(),
+                                    pInfo->dnSave[i])) {
+      needJacobian = true;
+      break;
+    }
+  }
+
+  update_field(pic, needJacobian);
 
   bool doSave = savectr->is_time_to();
   for (int i = 0; i < parts.size(); ++i) {
     auto& tps = parts[i];
+    bool doRecord = tps->is_time_to_record(tc->get_time_si(), tc->get_cycle(),
+                                           pInfo->dnSave[i]);
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
+      const MultiFab* jacPtr =
+          (ptRecordSize > 13 && !nodeJacB.empty() && doRecord)
+              ? &nodeJacB[iLev]
+              : nullptr;
       if (pic.useHybridPIC) {
         tps->move_and_save_particles_cell_centered(
-            centerE[iLev], centerB[iLev], tc->get_dt(), tc->get_next_dt(),
-            tc->get_time_si(), tc->get_cycle() % pInfo->dnSave[i] == 0);
+            iLev, centerE[iLev], centerB[iLev], tc->get_dt(), tc->get_next_dt(),
+            tc->get_time_si(), doRecord, jacPtr);
       } else {
-        tps->move_and_save_particles(nodeE[iLev], nodeB[iLev], tc->get_dt(),
-                                     tc->get_next_dt(), tc->get_time_si(),
-                                     tc->get_cycle() % pInfo->dnSave[i] == 0);
+        tps->move_and_save_particles(iLev, nodeE[iLev], nodeB[iLev],
+                                     tc->get_dt(), tc->get_next_dt(),
+                                     tc->get_time_si(), doRecord, jacPtr);
       }
+    }
+
+    if (doRecord && tps->get_dt_save() > 0.0) {
+      tps->advance_next_save();
     }
 
     if (doSave) {
@@ -130,15 +172,14 @@ void ParticleTracker::update(Pic& pic, bool doReport) {
       // Refill test particles if necessary.
       if (pInfo->doInitFromPIC) {
         tps->add_test_particles_from_pic(pic.get_particle_pointer(i));
-      } else if (tps->TotalNumberOfParticles() <
-                 pInfo->launchThreshold[i] * tps->init_particle_number()) {
+      } else if (nt < pInfo->launchThreshold[i] * n0) {
         tps->add_test_particles_from_fluid(pInfo->tpStates);
       }
     }
   }
 }
 
-void ParticleTracker::update_field(Pic& pic) {
+void ParticleTracker::update_field(Pic& pic, bool needJacobian) {
   if (pic.useHybridPIC) {
     // Hybrid: gather from the live cell-centred fields.
     for (int iLev = 0; iLev < n_lev(); iLev++) {
@@ -155,33 +196,47 @@ void ParticleTracker::update_field(Pic& pic) {
                      nodeB[iLev].nGrow());
     }
   }
+
+  // If magnetic field gradient is requested AND needed this step, compute Jacobian from centerB
+  if (needJacobian && ptRecordSize > 13) {
+    for (int iLev = 0; iLev < n_lev(); iLev++) {
+      jacobian_center_to_node(pic.centerB[iLev], nodeJacB[iLev],
+                              Geom(iLev).InvCellSize());
+      nodeJacB[iLev].FillBoundary(Geom(iLev).periodicity());
+    }
+  }
 }
 
 void ParticleTracker::post_process_param() {
   const int nSpecies = fi->get_nS();
-  int min_dnSave = pInfo->dnSave[0];
-  for (int i = 1; i < nSpecies; ++i) {
-    if (pInfo->dnSave[i] < min_dnSave) {
-      min_dnSave = pInfo->dnSave[i];
+  Real min_dtSave = -1.0;
+  for (int i = 0; i < nSpecies; ++i) {
+    if (pInfo->dtSave[i] > 0.0) {
+      if (min_dtSave < 0.0 || pInfo->dtSave[i] < min_dtSave) {
+        min_dtSave = pInfo->dtSave[i];
+      }
     }
   }
-  savectr = std::make_unique<PlotCtr>(ParallelDescriptor::Communicator(), tc,
-                                      gridID, -1, nPTRecord * min_dnSave);
-  savectr->set_multiple(min_dnSave);
+
+  if (min_dtSave > 0.0) {
+    savectr = std::make_unique<PlotCtr>(ParallelDescriptor::Communicator(), tc,
+                                        gridID, nPTRecord * min_dtSave, -1);
+  } else {
+    int min_dnSave = *std::min_element(pInfo->dnSave.begin(),
+                                       pInfo->dnSave.begin() + nSpecies);
+    savectr = std::make_unique<PlotCtr>(ParallelDescriptor::Communicator(), tc,
+                                        gridID, -1, nPTRecord * min_dnSave);
+    savectr->set_multiple(min_dnSave);
+  }
 }
 
 void ParticleTracker::pre_regrid() {
-  if (!parts.empty()) {
-    for (int i = 0; i < parts.size(); ++i) {
-      // Label the particles outside the OLD PIC region. It should be called
-      // before active region is updated.
-      parts[i]->label_particles_outside_active_region();
-    }
+  for (auto& tp : parts) {
+    tp->label_particles_outside_active_region();
   }
 }
 
 void ParticleTracker::post_regrid() {
-
   if (nodeB.empty()) {
     nodeB.resize(n_lev_max());
   }
@@ -194,6 +249,9 @@ void ParticleTracker::post_regrid() {
   if (centerE.empty()) {
     centerE.resize(n_lev_max());
   }
+  if (ptRecordSize > 13 && nodeJacB.empty()) {
+    nodeJacB.resize(n_lev_max());
+  }
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     distribute_FabArray(nodeE[iLev], nGrids[iLev], DistributionMap(iLev), 3,
@@ -204,6 +262,10 @@ void ParticleTracker::post_regrid() {
                         nGst, false);
     distribute_FabArray(centerB[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                         nGst, false);
+    if (ptRecordSize > 13) {
+      distribute_FabArray(nodeJacB[iLev], nGrids[iLev], DistributionMap(iLev), 9,
+                          nGst, false);
+    }
   }
 
   distribute_grid_arrays();
@@ -220,6 +282,7 @@ void ParticleTracker::post_regrid() {
       ptr->set_interval(pInfo->nTPIntervalCell);
       ptr->set_particle_region(pInfo->sRegion, tpShapes);
       ptr->set_relativistic(pInfo->isRelativistic);
+      ptr->set_dt_save(pInfo->dtSave[i], tc->get_time_si());
       parts.push_back(std::move(ptr));
     }
     Print() << gridName << " pt: Number of test particle species: " << nSpecies
