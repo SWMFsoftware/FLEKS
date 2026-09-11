@@ -53,6 +53,16 @@ void Particles<NStructReal, NStructInt>::limit_weight_impl(
 
       Real maxWeight = avg * maxRatio;
 
+      bool hasExcessiveWeight = false;
+      for (const auto& p : particles) {
+        if (fabs(p.rdata(iqp_)) >= maxWeight) {
+          hasExcessiveWeight = true;
+          break;
+        }
+      }
+      if (!hasExcessiveWeight)
+        continue;
+
       Vector<ParticleType> newparticles;
       auto& pTile = get_particle_tile(iLev, pti);
 
@@ -190,8 +200,6 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
     return;
 
   const int nCell = 8;
-  // Assign the particle IDs to the corresponding velocity space cells.
-  Vector<int> phasePartIdx_III[nCell][nCell][nCell];
 
   // Velocity domain range.
   Real velMin_D[nDim3] = { 1e30, 1e30, 1e30 },
@@ -224,53 +232,46 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
   Real dvCell = dvMax == 0 ? 1e-9 : dvMax / nCell;
   Real invDv = 1 / dvCell;
 
-  int iCell_D[nDim3];
+  struct ParticleMorton {
+    uint_fast32_t key;
+    ParticleType* ptr;
+  };
+
+  Vector<ParticleMorton> p_morton;
+  p_morton.reserve(plist.size());
+
   for (int pid = 0; pid < plist.size(); pid++) {
     auto& pcl = *plist[pid];
-    for (int iDim = 0; iDim < nDim3; iDim++) {
-      iCell_D[iDim] = std::clamp(
-          fastfloor((pcl.rdata(iup_ + iDim) - velMin_D[iDim]) * invDv), 0,
-          nCell - 1);
-    }
-
-    phasePartIdx_III[iCell_D[ix_]][iCell_D[iy_]][iCell_D[iz_]].push_back(pid);
+    int iu = std::clamp(
+        fastfloor((pcl.rdata(iup_ + ix_) - velMin_D[ix_]) * invDv), 0, nCell - 1);
+    int iv = std::clamp(
+        fastfloor((pcl.rdata(iup_ + iy_) - velMin_D[iy_]) * invDv), 0, nCell - 1);
+    int iw = std::clamp(
+        fastfloor((pcl.rdata(iup_ + iz_) - velMin_D[iz_]) * invDv), 0, nCell - 1);
+    p_morton.push_back({ encode_morton_3d(iu, iv, iw), plist[pid] });
   }
 
-  Vector<std::array<int, 3> > morton_idx(pow(nCell, 3));
+  std::sort(p_morton.begin(), p_morton.end(),
+            [](const ParticleMorton& a, const ParticleMorton& b) {
+              return a.key < b.key;
+            });
 
-  for (int iu = 0; iu < nCell; iu++)
-    for (int iv = 0; iv < nCell; iv++)
-      for (int iw = 0; iw < nCell; iw++) {
-        morton_idx[encode_morton_3d(iu, iv, iw)] = { iu, iv, iw };
-      }
-
-  Vector<ParticleType*> p_morton;
-
-  for (int i = 0; i < morton_idx.size(); ++i) {
-    int iu = morton_idx[i][0];
-    int iv = morton_idx[i][1];
-    int iw = morton_idx[i][2];
-
-    for (int ip = 0; ip < phasePartIdx_III[iu][iv][iw].size(); ip++) {
-      p_morton.push_back(plist[phasePartIdx_III[iu][iv][iw][ip]]);
-    }
-  }
-
+  const Real maxDist2 = 4.0 * dvCell * dvCell;
   int nPair = p_morton.size() / 2;
   for (int ip = 0; ip < nPair * 2; ip += 2) {
-    ParticleType& p1 = *p_morton[ip];
-    ParticleType& p2 = *p_morton[ip + 1];
-    auto p3 = make_particle();
-    auto p4 = make_particle();
+    ParticleType& p1 = *p_morton[ip].ptr;
+    ParticleType& p2 = *p_morton[ip + 1].ptr;
 
     Real du = p1.rdata(iup_) - p2.rdata(iup_);
     Real dv = p1.rdata(ivp_) - p2.rdata(ivp_);
     Real dw = p1.rdata(iwp_) - p2.rdata(iwp_);
-    Real dspeed = sqrt(du * du + dv * dv + dw * dw);
+    Real dspeed2 = du * du + dv * dv + dw * dw;
 
-    if (dspeed / dvCell > 2)
+    if (dspeed2 > maxDist2)
       continue;
 
+    auto p3 = make_particle();
+    auto p4 = make_particle();
     bool doSucceed = split_by_seperate_velocity(p1, p2, p3, p4);
     if (doSucceed) {
       newparticles.push_back(p3);
@@ -452,20 +453,22 @@ void Particles<NStructReal, NStructInt>::split_impl(Real limit,
       std::sort(particles.begin(), particles.end(), compare_two_parts);
 
       // Sort the particles by the weight in descending order.
-      std::sort(particles.begin(), particles.end(),
-                [](const ParticleType& pl, const ParticleType& pr) {
-                  const Real ql = fabs(pl.rdata(iqp_));
-                  const Real qr = fabs(pr.rdata(iqp_));
-                  if (fabs(ql - qr) > 1e-9 * (ql + qr)) {
-                    return ql > qr;
-                  }
+      // Use partial_sort since only the top nSplit particles are needed.
+      std::partial_sort(
+          particles.begin(), particles.begin() + nSplit, particles.end(),
+          [](const ParticleType& pl, const ParticleType& pr) {
+            const Real ql = fabs(pl.rdata(iqp_));
+            const Real qr = fabs(pr.rdata(iqp_));
+            if (fabs(ql - qr) > 1e-9 * (ql + qr)) {
+              return ql > qr;
+            }
 
-                  if (fabs(pl.pos(ix_) - pr.pos(ix_)) >
-                      1e-9 * (fabs(pl.pos(ix_)) + fabs(pr.pos(ix_)))) {
-                    return pl.pos(ix_) > pr.pos(ix_);
-                  }
-                  return false;
-                });
+            if (fabs(pl.pos(ix_) - pr.pos(ix_)) >
+                1e-9 * (fabs(pl.pos(ix_)) + fabs(pr.pos(ix_)))) {
+              return pl.pos(ix_) > pr.pos(ix_);
+            }
+            return false;
+          });
 
       const auto lo = lbound(pti.tilebox());
       const auto hi = ubound(pti.tilebox());
@@ -632,16 +635,27 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
     return coefPos * dl2 + coefVel * dvel2;
   };
 
-  std::sort(partIdx.begin(), partIdx.end(),
-            [calc_distance2_to_center](const int& idl, const int& idr) {
-              Real dll = calc_distance2_to_center(idl);
-              Real dlr = calc_distance2_to_center(idr);
+  struct PartDist {
+    Real dist2;
+    int id;
+  };
+  Vector<PartDist> dist_list;
+  dist_list.reserve(partIdx.size());
+  for (int pID : partIdx) {
+    dist_list.push_back({ calc_distance2_to_center(pID), pID });
+  }
 
-              if (fabs(dll - dlr) > 1e-9 * (dll + dlr)) {
-                return dll < dlr;
+  std::sort(dist_list.begin(), dist_list.end(),
+            [](const PartDist& l, const PartDist& r) {
+              if (fabs(l.dist2 - r.dist2) > 1e-9 * (l.dist2 + r.dist2)) {
+                return l.dist2 < r.dist2;
               }
-              return false;
+              return l.id < r.id;
             });
+
+  for (size_t i = 0; i < dist_list.size(); ++i) {
+    partIdx[i] = dist_list[i].id;
+  }
 
   /*
       Delete 1 particle out of 6 particles:
@@ -670,11 +684,13 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
     middle[i] /= nPartCombine;
   }
 
+  const Real mergeThresholdDistance2 =
+      mergeThresholdDistance * mergeThresholdDistance;
   bool doCombine = true;
   for (int pID : idx_I) {
-    Real distance = sqrt(calc_distance2_to_center(pID));
-    if (distance > mergeThresholdDistance) {
+    if (calc_distance2_to_center(pID) > mergeThresholdDistance2) {
       doCombine = false;
+      break;
     }
   }
 
@@ -818,17 +834,10 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
       idx_I[ip] = partIdx[ip];
     }
 
-    Real plight = 1e99, pheavy = 0;
-    for (int ip = 0; ip < nPartCombine; ip++) {
-      auto& p = particles[idx_I[ip]];
-      Real w = fabs(p.rdata(iqp_));
-      if (w < plight)
-        plight = w;
-      if (w > pheavy)
-        pheavy = w;
-    }
+    Real plight = fabs(particles[idx_I[0]].rdata(iqp_));
+    Real pheavy = fabs(particles[idx_I[nPartCombine - 1]].rdata(iqp_));
 
-    if (pheavy / plight > mergePartRatioMax)
+    if (plight <= 0 || pheavy / plight > mergePartRatioMax)
       return false;
 
     randNum.set_seed(seed);
@@ -1009,8 +1018,6 @@ void Particles<NStructReal, NStructInt>::merge_impl(Real limit,
 
       const Real velNorm = (thVel < 1e-13) ? 0.0 : 1.0 / (0.5 * thVel);
 
-      // Assign the particle IDs to the corresponding velocity space cells.
-      Vector<Vector<int>> phasePartIdx_I(nCell * nCell * nCell);
       const auto bin_index = [nCell](int i, int j, int k) {
         return (i * nCell + j) * nCell + k;
       };
@@ -1026,7 +1033,17 @@ void Particles<NStructReal, NStructInt>::merge_impl(Real limit,
         velMax_D[iDir] = r0 * thVel + uBulk[iDir] + dvshift;
       }
 
-      int iCell_D[nDim3];
+      const int totalBins = nCell * nCell * nCell;
+      Vector<int> binCounts(totalBins, 0);
+
+      // Structure to hold precomputed neighbor ranges per particle
+      struct NeighborBox {
+        int minC[nDim3];
+        int maxC[nDim3];
+      };
+      Vector<NeighborBox> partBoxes(nPartOrig);
+      std::vector<uint8_t> partValid(nPartOrig, 0);
+
       for (int pid = 0; pid < nPartOrig; pid++) {
         auto& pcl = particles[pid];
 
@@ -1039,66 +1056,64 @@ void Particles<NStructReal, NStructInt>::merge_impl(Real limit,
         if (isOutside)
           continue;
 
+        partValid[pid] = true;
         for (int iDim = 0; iDim < nDim3; iDim++) {
-          iCell_D[iDim] = std::clamp(
-              fastfloor((pcl.rdata(iup_ + iDim) - velMin_D[iDim]) * invDv), 0,
-              nCell - 1);
+          Real xi = (pcl.rdata(iup_ + iDim) - velMin_D[iDim]) * invDv;
+          int ic = fastfloor(xi);
+          Real frac = xi - ic;
+          partBoxes[pid].minC[iDim] =
+              std::max(0, (frac <= velBinBufferSize) ? ic - 1 : ic);
+          partBoxes[pid].maxC[iDim] =
+              std::min(nCell - 1, (frac >= 1.0 - velBinBufferSize) ? ic + 1 : ic);
         }
 
-        // One particle may belong to multiple bins when each bin has a buffer
-        // region.
-        for (int xCell = iCell_D[ix_] - 1; xCell <= iCell_D[ix_] + 1; xCell++)
-          for (int yCell = iCell_D[iy_] - 1; yCell <= iCell_D[iy_] + 1; yCell++)
-            for (int zCell = iCell_D[iz_] - 1; zCell <= iCell_D[iz_] + 1;
-                 zCell++) {
-
-              if (xCell < 0 || xCell >= nCell || yCell < 0 || yCell >= nCell ||
-                  zCell < 0 || zCell >= nCell)
-                continue;
-
-              Vector<int> cellIdx = { xCell, yCell, zCell };
-
-              Real binMin_D[nDim3], binMax_D[nDim3];
-
-              for (int iDim = 0; iDim < nDim3; iDim++) {
-                binMin_D[iDim] =
-                    velMin_D[iDim] + (cellIdx[iDim] - velBinBufferSize) * dv;
-                binMax_D[iDim] = velMin_D[iDim] +
-                                 (cellIdx[iDim] + 1 + velBinBufferSize) * dv;
-              }
-
-              bool isInside = true;
-              for (int iDim = 0; iDim < nDim3; iDim++) {
-                Real v = pcl.rdata(iup_ + iDim);
-                if (v < binMin_D[iDim] || v > binMax_D[iDim])
-                  isInside = false;
-              }
-
-              if (isInside) {
-                phasePartIdx_I[bin_index(cellIdx[ix_], cellIdx[iy_],
-                                         cellIdx[iz_])]
-                    .push_back(pid);
-              }
+        for (int xc = partBoxes[pid].minC[ix_]; xc <= partBoxes[pid].maxC[ix_]; xc++)
+          for (int yc = partBoxes[pid].minC[iy_]; yc <= partBoxes[pid].maxC[iy_]; yc++)
+            for (int zc = partBoxes[pid].minC[iz_]; zc <= partBoxes[pid].maxC[iz_]; zc++) {
+              binCounts[bin_index(xc, yc, zc)]++;
             }
       }
+
+      Vector<int> binHead(totalBins + 1, 0);
+      for (int i = 0; i < totalBins; ++i) {
+        binHead[i + 1] = binHead[i] + binCounts[i];
+      }
+
+      Vector<int> binCursor = binHead;
+      Vector<int> flatPartIdx(binHead[totalBins]);
+
+      for (int pid = 0; pid < nPartOrig; pid++) {
+        if (!partValid[pid])
+          continue;
+
+        for (int xc = partBoxes[pid].minC[ix_]; xc <= partBoxes[pid].maxC[ix_]; xc++)
+          for (int yc = partBoxes[pid].minC[iy_]; yc <= partBoxes[pid].maxC[iy_]; yc++)
+            for (int zc = partBoxes[pid].minC[iz_]; zc <= partBoxes[pid].maxC[iz_]; zc++) {
+              flatPartIdx[binCursor[bin_index(xc, yc, zc)]++] = pid;
+            }
+      }
+
+      Vector<int> partIdx;
+      Vector<Real> x;
+      Vector<int> idx_I;
 
       for (int iu = 0; iu < nCell; iu++)
         for (int iv = 0; iv < nCell; iv++)
           for (int iw = 0; iw < nCell; iw++) {
-            Vector<int> partIdx;
-            auto& pIdx = phasePartIdx_I[bin_index(iu, iv, iw)];
-            for (int i = 0; i < pIdx.size(); ++i) {
-              int pid = pIdx[i];
+            partIdx.clear();
+            const int b = bin_index(iu, iv, iw);
+            const int start = binHead[b];
+            const int end = binHead[b + 1];
+
+            for (int i = start; i < end; ++i) {
+              int pid = flatPartIdx[i];
               if (!merged[pid]) {
                 partIdx.push_back(pid);
               }
             }
 
-            if (partIdx.size() < nPartNew + 1)
+            if (partIdx.size() < static_cast<size_t>(nPartNew + 1))
               continue;
-
-            Vector<Real> x;
-            Vector<int> idx_I;
 
             int nOld = nPartCombine;
             bool isSolved = false;
