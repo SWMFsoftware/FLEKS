@@ -46,26 +46,34 @@ public:
     return nPicPartReal + ptRecordSize * iPart + iVar;
   }
 
-  void move_and_save_particles(const amrex::MultiFab& nodeEMF,
+  void move_and_save_particles(int iLev, const amrex::MultiFab& nodeEMF,
                                const amrex::MultiFab& nodeBMF, amrex::Real dt,
                                amrex::Real dtNext, amrex::Real tNow,
-                               bool doSave);
+                               bool doSave,
+                               const amrex::MultiFab* nodeJacBMF = nullptr);
 
-  void move_and_save_particles_cell_centered(const amrex::MultiFab& centerEMF,
-                                             const amrex::MultiFab& centerBMF,
-                                             amrex::Real dt, amrex::Real dtNext,
-                                             amrex::Real tNow, bool doSave);
+  void move_and_save_particles_cell_centered(
+      int iLev, const amrex::MultiFab& centerEMF,
+      const amrex::MultiFab& centerBMF, amrex::Real dt, amrex::Real dtNext,
+      amrex::Real tNow, bool doSave,
+      const amrex::MultiFab* nodeJacBMF = nullptr);
 
-  void move_and_save_charged_particles(const amrex::MultiFab& nodeEMF,
-                                       const amrex::MultiFab& nodeBMF,
-                                       amrex::Real dt, amrex::Real dtNext,
-                                       amrex::Real tNow, bool doSave);
+  void move_and_save_charged_particles(
+      int iLev, const amrex::MultiFab& nodeEMF, const amrex::MultiFab& nodeBMF,
+      amrex::Real dt, amrex::Real dtNext, amrex::Real tNow, bool doSave,
+      const amrex::MultiFab* nodeJacBMF = nullptr);
 
   void move_and_save_charged_particles_cell_centered(
-      const amrex::MultiFab& centerEMF, const amrex::MultiFab& centerBMF,
-      amrex::Real dt, amrex::Real dtNext, amrex::Real tNow, bool doSave);
+      int iLev, const amrex::MultiFab& centerEMF,
+      const amrex::MultiFab& centerBMF, amrex::Real dt, amrex::Real dtNext,
+      amrex::Real tNow, bool doSave,
+      const amrex::MultiFab* nodeJacBMF = nullptr);
 
-  void move_and_save_neutrals(amrex::Real dt, amrex::Real tNow, bool doSave);
+  void move_and_save_neutrals(int iLev, amrex::Real dt, amrex::Real tNow,
+                              bool doSave);
+
+  void pack_particles_and_records(char* recordBuff, char* listBuff,
+                                  unsigned long long int shift);
 
   void read_test_particle_list(const amrex::Vector<std::string>& listFiles);
 

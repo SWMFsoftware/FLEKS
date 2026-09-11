@@ -36,6 +36,10 @@ void grad_node_to_center(const amrex::MultiFab& nodeMF,
 void grad_center_to_node(const amrex::MultiFab& centerMF,
                          amrex::MultiFab& nodeMF, const amrex::Real* invDx);
 
+void jacobian_center_to_node(const amrex::MultiFab& centerVecMF,
+                             amrex::MultiFab& nodeJacMF,
+                             const amrex::Real* invDx);
+
 void div_center_to_node(const amrex::MultiFab& centerMF,
                         amrex::MultiFab& nodeMF, const amrex::Real* invDx);
 

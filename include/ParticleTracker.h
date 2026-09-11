@@ -12,24 +12,13 @@ class ParticleTracker : public Grid {
 public:
   ParticleTracker(amrex::Geometry const &gm, amrex::AmrInfo const &amrInfo,
                   int nGst, FluidInterface *fluidIn, TimeCtr *tcIn, int id,
-                  ParticleTrackerInfo &info, const DomainParameters &dp)
+                  ParticleTrackerInfo &info, const DomainParameters & /*dp*/)
       : Grid(gm, amrInfo, nGst, id, "pt"),
         tc(tcIn),
         fi(fluidIn),
-        domainParameters(dp),
         pInfo(&info) {}
 
-  ~ParticleTracker() {
-    if (isNewGrid)
-      return;
-
-    bool doSave = savectr->is_time_to(true);
-    for (auto &tps : parts) {
-      if (doSave) {
-        tps->write_particles(tc->get_cycle());
-      }
-    }
-  };
+  ~ParticleTracker() override;
 
   void post_process_param();
 
@@ -53,20 +42,20 @@ private:
   TimeCtr *tc = nullptr;
   FluidInterface *fi = nullptr;
 
-  const DomainParameters &domainParameters;
-
   // Parameter container populated by Domain during read_param and resolved in
   // ParticleTrackerInfo::post_process_param (after fi is fully processed).
   ParticleTrackerInfo *pInfo = nullptr;
 
   amrex::Vector<std::unique_ptr<TestParticles> > parts;
   amrex::Vector<amrex::MultiFab> nodeE;
-
   amrex::Vector<amrex::MultiFab> nodeB;
 
   // Cell-centred EM mirrors for the hybrid test-particle gather.
   amrex::Vector<amrex::MultiFab> centerE;
   amrex::Vector<amrex::MultiFab> centerB;
+
+  // Nodal magnetic field Jacobian (9 components) computed via jacobian_center_to_node.
+  amrex::Vector<amrex::MultiFab> nodeJacB;
 
   std::unique_ptr<PlotCtr> savectr;
 

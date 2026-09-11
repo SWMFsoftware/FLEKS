@@ -30,45 +30,45 @@ TestParticles::TestParticles(Grid* gridIn, FluidInterface* const fluidIn,
 }
 
 //==========================================================
-void TestParticles::move_and_save_particles(const MultiFab& nodeEMF,
-                                            const MultiFab& nodeBMF, Real dt,
-                                            Real dtNext, Real tNowSI,
-                                            bool doSave) {
+void TestParticles::move_and_save_particles(
+    int iLev, const MultiFab& nodeEMF, const MultiFab& nodeBMF, Real dt,
+    Real dtNext, Real tNowSI, bool doSave, const MultiFab* nodeJacBMF) {
   if (is_neutral()) {
-    move_and_save_neutrals(dt, tNowSI, doSave);
+    move_and_save_neutrals(iLev, dt, tNowSI, doSave);
   } else {
-    move_and_save_charged_particles(nodeEMF, nodeBMF, dt, dtNext, tNowSI,
-                                    doSave);
+    move_and_save_charged_particles(iLev, nodeEMF, nodeBMF, dt, dtNext, tNowSI,
+                                    doSave, nodeJacBMF);
   }
 }
 
 //==========================================================
 void TestParticles::move_and_save_particles_cell_centered(
-    const MultiFab& centerEMF, const MultiFab& centerBMF, Real dt, Real dtNext,
-    Real tNowSI, bool doSave) {
+    int iLev, const MultiFab& centerEMF, const MultiFab& centerBMF, Real dt,
+    Real dtNext, Real tNowSI, bool doSave, const MultiFab* nodeJacBMF) {
   if (is_neutral()) {
-    move_and_save_neutrals(dt, tNowSI, doSave);
+    move_and_save_neutrals(iLev, dt, tNowSI, doSave);
   } else {
-    move_and_save_charged_particles_cell_centered(centerEMF, centerBMF, dt,
-                                                  dtNext, tNowSI, doSave);
+    move_and_save_charged_particles_cell_centered(
+        iLev, centerEMF, centerBMF, dt, dtNext, tNowSI, doSave, nodeJacBMF);
   }
 }
 
 //==========================================================
-void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
-                                                    const MultiFab& nodeBMF,
-                                                    Real dt, Real dtNext,
-                                                    Real tNowSI, bool doSave) {
+void TestParticles::move_and_save_charged_particles(
+    int iLev, const MultiFab& nodeEMF, const MultiFab& nodeBMF, Real dt,
+    Real dtNext, Real tNowSI, bool doSave, const MultiFab* nodeJacBMF) {
   timing_func("TestParticles::move_charged_particles");
 
   const Real dtLoc = 0.5 * (dt + dtNext);
 
   const Real qdto2mc = charge / mass * 0.5 * dt;
 
-  const int iLev = 0;
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     const Array4<Real const>& nodeEArr = nodeEMF[pti].array();
     const Array4<Real const>& nodeBArr = nodeBMF[pti].array();
+    const bool hasJacB = (nodeJacBMF != nullptr);
+    const Array4<Real const> nodeJacBArr =
+        hasJacB ? (*nodeJacBMF)[pti].array() : Array4<Real const>{};
 
     auto& particles = pti.GetArrayOfStructs();
 
@@ -203,64 +203,80 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
 
         if (ptRecordSize > iTPdBxdx_) {
           Real gradB[3][3] = { { 0.0 } };
-          // The gradient calculation is based on the derivative of the
-          // trilinear interpolation shape functions. B(x,y,z) = sum_{i,j,k}
-          // B_{i,j,k} * W_i(x) * W_j(y) * W_k(z) dB/dx = sum_{i,j,k} B_{i,j,k}
-          // * (dW_i(x)/dx) * W_j(y) * W_k(z) dW_0/dx = -1/dx, dW_1/dx = 1/dx
-          // W_0(x) = 1-dShift.x, W_1(x) = dShift.x
-          const Real* invDx = Geom(iLev).InvCellSize();
-
-          // B at 8 nodes
-          Real b[3][2][2][2];
-          for (int k = 0; k < 2; ++k)
-            for (int j = 0; j < 2; ++j)
-              for (int i = 0; i < 2; ++i) {
-                IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
-                                             loIdx[iz_] + k) };
-                for (int iDim = 0; iDim < nDim3; iDim++) {
-                  b[iDim][i][j][k] = nodeBArr(ijk, iDim);
+          if (hasJacB) {
+            for (int k = lo.z; k <= hi.z; ++k)
+              for (int j = lo.y; j <= hi.y; ++j)
+                for (int i = lo.x; i <= hi.x; ++i) {
+                  IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
+                                               loIdx[iz_] + k) };
+                  const Real c = coef[i][j][k];
+                  for (int iRow = 0; iRow < 3; ++iRow) {
+                    for (int jCol = 0; jCol < 3; ++jCol) {
+                      gradB[iRow][jCol] +=
+                          nodeJacBArr(ijk, iRow * 3 + jCol) * c;
+                    }
+                  }
                 }
-              }
+          } else {
+            // The gradient calculation is based on the derivative of the
+            // trilinear interpolation shape functions. B(x,y,z) = sum_{i,j,k}
+            // B_{i,j,k} * W_i(x) * W_j(y) * W_k(z) dB/dx = sum_{i,j,k} B_{i,j,k}
+            // * (dW_i(x)/dx) * W_j(y) * W_k(z) dW_0/dx = -1/dx, dW_1/dx = 1/dx
+            // W_0(x) = 1-dShift.x, W_1(x) = dShift.x
+            const Real* invDx = Geom(iLev).InvCellSize();
 
-          Real sx = dShift[ix_];
-          Real sy = dShift[iy_];
-          Real sz = nDim > 2 ? dShift[iz_] : 0.0;
+            // B at 8 nodes
+            Real b[3][2][2][2];
+            for (int k = 0; k < 2; ++k)
+              for (int j = 0; j < 2; ++j)
+                for (int i = 0; i < 2; ++i) {
+                  IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
+                                               loIdx[iz_] + k) };
+                  for (int iDim = 0; iDim < nDim3; iDim++) {
+                    b[iDim][i][j][k] = nodeBArr(ijk, iDim);
+                  }
+                }
 
-          // dB/dx
-          for (int iDim = 0; iDim < nDim3; iDim++) {
-            gradB[iDim][ix_] =
-                (((b[iDim][1][0][0] - b[iDim][0][0][0]) * (1 - sy) +
-                  (b[iDim][1][1][0] - b[iDim][0][1][0]) * sy) *
-                     (1 - sz) +
-                 ((b[iDim][1][0][1] - b[iDim][0][0][1]) * (1 - sy) +
-                  (b[iDim][1][1][1] - b[iDim][0][1][1]) * sy) *
-                     sz) *
-                invDx[ix_];
-          }
-          // dB/dy
-          for (int iDim = 0; iDim < nDim3; iDim++) {
-            gradB[iDim][iy_] =
-                (((b[iDim][0][1][0] - b[iDim][0][0][0]) * (1 - sx) +
-                  (b[iDim][1][1][0] - b[iDim][1][0][0]) * sx) *
-                     (1 - sz) +
-                 ((b[iDim][0][1][1] - b[iDim][0][0][1]) * (1 - sx) +
-                  (b[iDim][1][1][1] - b[iDim][1][0][1]) * sx) *
-                     sz) *
-                invDx[iy_];
-          }
+            Real sx = dShift[ix_];
+            Real sy = dShift[iy_];
+            Real sz = nDim > 2 ? dShift[iz_] : 0.0;
+
+            // dB/dx
+            for (int iDim = 0; iDim < nDim3; iDim++) {
+              gradB[iDim][ix_] =
+                  (((b[iDim][1][0][0] - b[iDim][0][0][0]) * (1 - sy) +
+                    (b[iDim][1][1][0] - b[iDim][0][1][0]) * sy) *
+                       (1 - sz) +
+                   ((b[iDim][1][0][1] - b[iDim][0][0][1]) * (1 - sy) +
+                    (b[iDim][1][1][1] - b[iDim][0][1][1]) * sy) *
+                       sz) *
+                  invDx[ix_];
+            }
+            // dB/dy
+            for (int iDim = 0; iDim < nDim3; iDim++) {
+              gradB[iDim][iy_] =
+                  (((b[iDim][0][1][0] - b[iDim][0][0][0]) * (1 - sx) +
+                    (b[iDim][1][1][0] - b[iDim][1][0][0]) * sx) *
+                       (1 - sz) +
+                   ((b[iDim][0][1][1] - b[iDim][0][0][1]) * (1 - sx) +
+                    (b[iDim][1][1][1] - b[iDim][1][0][1]) * sx) *
+                       sz) *
+                  invDx[iy_];
+            }
 #if (AMREX_SPACEDIM == 3)
-          // dB/dz
-          for (int iDim = 0; iDim < nDim3; iDim++) {
-            gradB[iDim][iz_] =
-                (((b[iDim][0][0][1] - b[iDim][0][0][0]) * (1 - sx) +
-                  (b[iDim][1][0][1] - b[iDim][1][0][0]) * sx) *
-                     (1 - sy) +
-                 ((b[iDim][0][1][1] - b[iDim][0][1][0]) * (1 - sx) +
-                  (b[iDim][1][1][1] - b[iDim][1][1][0]) * sx) *
-                     sy) *
-                invDx[iz_];
-          }
+            // dB/dz
+            for (int iDim = 0; iDim < nDim3; iDim++) {
+              gradB[iDim][iz_] =
+                  (((b[iDim][0][0][1] - b[iDim][0][0][0]) * (1 - sx) +
+                    (b[iDim][1][0][1] - b[iDim][1][0][0]) * sx) *
+                       (1 - sy) +
+                   ((b[iDim][0][1][1] - b[iDim][0][1][0]) * (1 - sx) +
+                    (b[iDim][1][1][1] - b[iDim][1][1][0]) * sx) *
+                       sy) *
+                  invDx[iz_];
+            }
 #endif
+          }
           p.rdata(i0 + iTPdBxdx_) = gradB[0][0];
           p.rdata(i0 + iTPdBxdy_) = gradB[0][1];
           p.rdata(i0 + iTPdBxdz_) = gradB[0][2];
@@ -287,18 +303,20 @@ void TestParticles::move_and_save_charged_particles(const MultiFab& nodeEMF,
 //==========================================================
 // Cell-centred gather (hybrid); same Boris push as the node-centred version.
 void TestParticles::move_and_save_charged_particles_cell_centered(
-    const MultiFab& centerEMF, const MultiFab& centerBMF, Real dt, Real dtNext,
-    Real tNowSI, bool doSave) {
+    int iLev, const MultiFab& centerEMF, const MultiFab& centerBMF, Real dt,
+    Real dtNext, Real tNowSI, bool doSave, const MultiFab* nodeJacBMF) {
   timing_func("TestParticles::move_charged_particles_cell_centered");
 
   const Real dtLoc = 0.5 * (dt + dtNext);
 
   const Real qdto2mc = charge / mass * 0.5 * dt;
 
-  const int iLev = 0;
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     const Array4<Real const>& centerEArr = centerEMF[pti].array();
     const Array4<Real const>& centerBArr = centerBMF[pti].array();
+    const bool hasJacB = (nodeJacBMF != nullptr);
+    const Array4<Real const> nodeJacBArr =
+        hasJacB ? (*nodeJacBMF)[pti].array() : Array4<Real const>{};
 
     auto& particles = pti.GetArrayOfStructs();
 
@@ -330,15 +348,8 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
       find_cell_index(p.pos(), Geom(iLev).ProbLo(), Geom(iLev).InvCellSize(),
                       loIdx, dShift);
 
-      // Linear cell-centred gather; offset-2 coef is unused (zeroed).
-      Real coef[3][3][3];
       Real coefLin[2][2][2];
       linear_interpolation_coef(dShift, coefLin);
-      for (int k = 0; k <= 2; ++k)
-        for (int j = 0; j <= 2; ++j)
-          for (int i = 0; i <= 2; ++i)
-            coef[i][j][k] =
-                (i <= 1 && j <= 1 && k <= 1) ? coefLin[i][j][k] : 0.0;
       //-----calculate interpolation coef end-------------
 
       Real bp[3] = { 0, 0, 0 };
@@ -348,7 +359,7 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
           for (int i = lo.x; i <= hi.x; ++i) {
             IntVect ijk = { AMREX_D_DECL(loIdx[ix_] + i, loIdx[iy_] + j,
                                          loIdx[iz_] + k) };
-            const Real& c0 = coef[i - lo.x][j - lo.y][k - lo.z];
+            const Real c0 = coefLin[i][j][k];
             for (int iDim = 0; iDim < nDim3; iDim++) {
               bp[iDim] += centerBArr(ijk, iDim) * c0;
               ep[iDim] += centerEArr(ijk, iDim) * c0;
@@ -440,16 +451,39 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
         }
 
         if (ptRecordSize > iTPdBxdx_) {
-          // dB/dx gradient is unavailable for the cell-centred gather (zeroed).
-          p.rdata(i0 + iTPdBxdx_) = 0.0;
-          p.rdata(i0 + iTPdBxdy_) = 0.0;
-          p.rdata(i0 + iTPdBxdz_) = 0.0;
-          p.rdata(i0 + iTPdBydx_) = 0.0;
-          p.rdata(i0 + iTPdBydy_) = 0.0;
-          p.rdata(i0 + iTPdBydz_) = 0.0;
-          p.rdata(i0 + iTPdBzdx_) = 0.0;
-          p.rdata(i0 + iTPdBzdy_) = 0.0;
-          p.rdata(i0 + iTPdBzdz_) = 0.0;
+          Real gradB[3][3] = { { 0.0 } };
+          if (hasJacB) {
+            IntVect nodeLoIdx;
+            RealVect nodeDShift;
+            find_node_index(p.pos(), Geom(iLev).ProbLo(),
+                            Geom(iLev).InvCellSize(), nodeLoIdx, nodeDShift);
+            Real nodeCoef[2][2][2];
+            linear_interpolation_coef(nodeDShift, nodeCoef);
+
+            for (int k = lo.z; k <= hi.z; ++k)
+              for (int j = lo.y; j <= hi.y; ++j)
+                for (int i = lo.x; i <= hi.x; ++i) {
+                  IntVect ijk = { AMREX_D_DECL(nodeLoIdx[ix_] + i,
+                                               nodeLoIdx[iy_] + j,
+                                               nodeLoIdx[iz_] + k) };
+                  const Real c = nodeCoef[i][j][k];
+                  for (int iRow = 0; iRow < 3; ++iRow) {
+                    for (int jCol = 0; jCol < 3; ++jCol) {
+                      gradB[iRow][jCol] +=
+                          nodeJacBArr(ijk, iRow * 3 + jCol) * c;
+                    }
+                  }
+                }
+          }
+          p.rdata(i0 + iTPdBxdx_) = gradB[0][0];
+          p.rdata(i0 + iTPdBxdy_) = gradB[0][1];
+          p.rdata(i0 + iTPdBxdz_) = gradB[0][2];
+          p.rdata(i0 + iTPdBydx_) = gradB[1][0];
+          p.rdata(i0 + iTPdBydy_) = gradB[1][1];
+          p.rdata(i0 + iTPdBydz_) = gradB[1][2];
+          p.rdata(i0 + iTPdBzdx_) = gradB[2][0];
+          p.rdata(i0 + iTPdBzdy_) = gradB[2][1];
+          p.rdata(i0 + iTPdBzdz_) = gradB[2][2];
         }
 
         p.idata(iRecordCount_)++;
@@ -465,10 +499,10 @@ void TestParticles::move_and_save_charged_particles_cell_centered(
 }
 
 //==========================================================
-void TestParticles::move_and_save_neutrals(Real dt, Real tNowSI, bool doSave) {
+void TestParticles::move_and_save_neutrals(int iLev, Real dt, Real tNowSI,
+                                           bool doSave) {
   timing_func("TestParticles::move_neutrals");
 
-  const int iLev = 0;
   for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
     auto& particles = pti.GetArrayOfStructs();
 
@@ -738,16 +772,12 @@ bool TestParticles::write_particles(int cycle) {
   unsigned long long int nByteAhead = 0;
   gather_accumulate_and_scatter(nByteLoc, nByteAhead);
 
-  Vector<char> dataBuffer;
-  dataBuffer.resize(nByteLoc);
-  loop_particles("copy_record", dataBuffer.data(), dataBuffer.size());
-
-  // cpu + id + loc;
   constexpr int listUnitSize = 2 * sizeof(int) + sizeof(unsigned long long);
-  Vector<char> partList;
-  partList.resize(nPartLoc * listUnitSize);
-  loop_particles("get_record_loc", partList.data(), partList.size(),
-                 nByteAhead);
+  Vector<char> dataBuffer(nByteLoc);
+  Vector<char> partList(nPartLoc * listUnitSize);
+
+  // Single-pass packing: fills both dataBuffer and partList, and resets counters
+  pack_particles_and_records(dataBuffer.data(), partList.data(), nByteAhead);
 
   std::stringstream ss;
   ss << "n" << std::setfill('0') << std::setw(8) << cycle;
@@ -779,9 +809,6 @@ bool TestParticles::write_particles(int cycle) {
                         dataBuffer.size(), MPI_CHAR, &status);
   MPI_File_close(&recordFile);
 
-  loop_particles("reset_record_counter", partList.data(), partList.size(),
-                 nByteAhead);
-
   {
     if (ParallelDescriptor::IOProcessor()) {
       std::string headerName = outputDir + "/Header";
@@ -799,6 +826,93 @@ bool TestParticles::write_particles(int cycle) {
   return true;
 }
 
+void TestParticles::pack_particles_and_records(char* recordBuff, char* listBuff,
+                                              unsigned long long int shift) {
+  constexpr int listUnitSize = 2 * sizeof(int) + sizeof(unsigned long long);
+  int iPartCount = 0;
+  unsigned long long int nByteCount = 0;
+
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      auto& particles = pti.GetArrayOfStructs();
+      for (auto& p : particles) {
+        int nRecord = p.idata(iRecordCount_);
+        int nBytePerPart =
+            3 * sizeof(int) + (1 + ptRecordSize * nRecord) * sizeof(float);
+
+        if (listBuff) {
+          int i2[2] = { p.cpu(), (int)p.id() };
+          memcpy(listBuff + iPartCount * listUnitSize, i2, 2 * sizeof(int));
+          unsigned long long tmp = nByteCount + shift;
+          memcpy(listBuff + iPartCount * listUnitSize + 2 * sizeof(int), &tmp,
+                 sizeof(unsigned long long));
+        }
+
+        if (recordBuff) {
+          int iCountLoc = 0;
+          int i3[3] = { p.cpu(), (int)p.id(), nRecord };
+          int sizeLoc = 3 * sizeof(int);
+          memcpy(recordBuff + nByteCount + iCountLoc, i3, sizeLoc);
+          iCountLoc += sizeLoc;
+
+          sizeLoc = sizeof(float);
+          float weight = (float)(p.rdata(iqp_) / charge * mass * no2outM);
+          memcpy(recordBuff + nByteCount + iCountLoc, &weight, sizeLoc);
+          iCountLoc += sizeLoc;
+
+          sizeLoc = sizeof(float) * ptRecordSize;
+          for (int i = 0; i < nRecord; ++i) {
+            float recordData[ptRecordSize];
+            const int i0 = record_var_index(i);
+
+            recordData[iTPt_] = (float)p.rdata(i0 + iTPt_);
+            recordData[iTPx_] = (float)(p.rdata(i0 + iTPx_) * no2outL);
+            recordData[iTPy_] = (float)(p.rdata(i0 + iTPy_) * no2outL);
+            recordData[iTPz_] = (float)(p.rdata(i0 + iTPz_) * no2outL);
+            recordData[iTPu_] = (float)(p.rdata(i0 + iTPu_) * no2outV);
+            recordData[iTPv_] = (float)(p.rdata(i0 + iTPv_) * no2outV);
+            recordData[iTPw_] = (float)(p.rdata(i0 + iTPw_) * no2outV);
+
+            if (ptRecordSize > iTPBx_) {
+              recordData[iTPBx_] = (float)(p.rdata(i0 + iTPBx_) * no2outB);
+              recordData[iTPBy_] = (float)(p.rdata(i0 + iTPBy_) * no2outB);
+              recordData[iTPBz_] = (float)(p.rdata(i0 + iTPBz_) * no2outB);
+            }
+
+            if (ptRecordSize > iTPEx_) {
+              recordData[iTPEx_] = (float)(p.rdata(i0 + iTPEx_) * no2outE);
+              recordData[iTPEy_] = (float)(p.rdata(i0 + iTPEy_) * no2outE);
+              recordData[iTPEz_] = (float)(p.rdata(i0 + iTPEz_) * no2outE);
+            }
+
+            if (ptRecordSize > iTPdBxdx_) {
+              const Real no2outG = no2outB / no2outL;
+              recordData[iTPdBxdx_] = (float)(p.rdata(i0 + iTPdBxdx_) * no2outG);
+              recordData[iTPdBxdy_] = (float)(p.rdata(i0 + iTPdBxdy_) * no2outG);
+              recordData[iTPdBxdz_] = (float)(p.rdata(i0 + iTPdBxdz_) * no2outG);
+              recordData[iTPdBydx_] = (float)(p.rdata(i0 + iTPdBydx_) * no2outG);
+              recordData[iTPdBydy_] = (float)(p.rdata(i0 + iTPdBydy_) * no2outG);
+              recordData[iTPdBydz_] = (float)(p.rdata(i0 + iTPdBydz_) * no2outG);
+              recordData[iTPdBzdx_] = (float)(p.rdata(i0 + iTPdBzdx_) * no2outG);
+              recordData[iTPdBzdy_] = (float)(p.rdata(i0 + iTPdBzdy_) * no2outG);
+              recordData[iTPdBzdz_] = (float)(p.rdata(i0 + iTPdBzdz_) * no2outG);
+            }
+
+            memcpy(recordBuff + nByteCount + iCountLoc, recordData, sizeLoc);
+            iCountLoc += sizeLoc;
+          }
+        }
+
+        // Reset record counter
+        p.idata(iRecordCount_) = 0;
+
+        iPartCount++;
+        nByteCount += nBytePerPart;
+      }
+    }
+  }
+}
+
 unsigned long long int TestParticles::loop_particles(
     std::string action, char* buff, unsigned long long int sizeLimit,
     unsigned long long int shift) {
@@ -812,10 +926,10 @@ unsigned long long int TestParticles::loop_particles(
   int iPartCount = 0;
   constexpr int listUnitSize = 2 * sizeof(int) + sizeof(unsigned long long);
 
-  const int iLev = 0;
-  for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
-    auto& particles = pti.GetArrayOfStructs();
-    for (auto& p : particles) {
+  for (int iLev = 0; iLev < n_lev(); ++iLev) {
+    for (PIter pti(*this, iLev); pti.isValid(); ++pti) {
+      auto& particles = pti.GetArrayOfStructs();
+      for (auto& p : particles) {
       int nRecord = p.idata(iRecordCount_);
 
       // int: cpu + id + nRecord
@@ -909,8 +1023,9 @@ unsigned long long int TestParticles::loop_particles(
         }
       }
 
-      iPartCount++;
-      nByteCount += nBytePerPart;
+        iPartCount++;
+        nByteCount += nBytePerPart;
+      }
     }
   }
   return nByteCount;
