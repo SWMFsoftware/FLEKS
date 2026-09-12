@@ -188,12 +188,8 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
   MultiFab matvecMF(nGrids[iLev], DistributionMap(iLev), 3, 1);
   matvecMF.setVal(0.0);
 
-  MultiFab tempCenter3(cGrids[iLev], DistributionMap(iLev), 3, nGst);
-
   MultiFab tempNode3(nGrids[iLev], DistributionMap(iLev), 3, nGst);
   tempNode3.setVal(0.0);
-
-  MultiFab tempCenter1(cGrids[iLev], DistributionMap(iLev), 1, nGst);
 
   convert_1d_to_3d(vecIn, vecMF, iLev);
 
@@ -294,6 +290,9 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     div_node_to_center(vecMF, centerDivE[iLev], Geom(iLev).InvCellSize());
 
     if (fsolver.coefDiff > 0) {
+      MultiFab tempCenter3(cGrids[iLev], DistributionMap(iLev), 3, nGst);
+      MultiFab tempCenter1(cGrids[iLev], DistributionMap(iLev), 1, nGst);
+
       // Calculate cell center E for center-to-center divE.
       // The outmost boundary layer of tempCenter3 is not accurate.
       average_node_to_cellcenter(tempCenter3, 0, vecMF, 0, 3,
@@ -360,24 +359,26 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
 
       auto& data0 = mmArr(ijk);
 
-      Box subBox(ijk - 1, ijk + 1);
+      for (int k2 = k - 1; k2 <= k + 1; ++k2) {
+        for (int j2 = j - 1; j2 <= j + 1; ++j2) {
+          for (int i2 = i - 1; i2 <= i + 1; ++i2) {
+            const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
+            const int idx0 = gp * 9;
 
-      ParallelFor(subBox, [&](int i2, int j2, int k2) {
-        const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
-        const int idx0 = gp * 9;
+            const Real* const M_I = &(data0[idx0]);
 
-        Real* const M_I = &(data0[idx0]);
-
-        const double& vctX = inArr(i2, j2, k2, ix_); // vectX[i2][j2][k2];
-        const double& vctY = inArr(i2, j2, k2, iy_);
-        const double& vctZ = inArr(i2, j2, k2, iz_);
-        outArr(i, j, k, ix_) +=
-            (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
-        outArr(i, j, k, iy_) +=
-            (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
-        outArr(i, j, k, iz_) +=
-            (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
-      });
+            const double vctX = inArr(i2, j2, k2, ix_);
+            const double vctY = inArr(i2, j2, k2, iy_);
+            const double vctZ = inArr(i2, j2, k2, iz_);
+            outArr(i, j, k, ix_) +=
+                (vctX * M_I[0] + vctY * M_I[1] + vctZ * M_I[2]) * c0;
+            outArr(i, j, k, iy_) +=
+                (vctX * M_I[3] + vctY * M_I[4] + vctZ * M_I[5]) * c0;
+            outArr(i, j, k, iz_) +=
+                (vctX * M_I[6] + vctY * M_I[7] + vctZ * M_I[8]) * c0;
+          }
+        }
+      }
     });
   }
 

@@ -332,29 +332,33 @@ void Particles<NStructReal, NStructInt>::calc_mass_matrix_amr(
     if (bit::is_refined_neighbour(status(ibx))) {
       refinedneighbour = true;
     }
-    amrex::Vector<Array4<Real> > jArrt;
-    amrex::Vector<Array4<RealMM> > mmArrt;
+    const int nCoef = iLev + 1 + refinedneighbour;
+    constexpr int maxCoef = 8;
+    AMREX_ALWAYS_ASSERT(nCoef <= maxCoef);
+
+    Array4<Real> jArrt[maxCoef];
+    Array4<RealMM> mmArrt[maxCoef];
+    int count = 0;
     if (iLev > 0) {
       for (int i = 0; i < iLev; i++) {
-        jArrt.push_back(jhc[iLev][i][pti].array());
-        mmArrt.push_back(nmmc[iLev][i][pti].array());
+        jArrt[count] = jhc[iLev][i][pti].array();
+        mmArrt[count] = nmmc[iLev][i][pti].array();
+        count++;
       }
     }
-    jArrt.push_back(jArr);
-    mmArrt.push_back(mmArr);
+    jArrt[count] = jArr;
+    mmArrt[count] = mmArr;
+    count++;
 
     if (refinedneighbour) {
-      jArrt.push_back(jhf[iLev][pti].array());
-      mmArrt.push_back(nmmf[iLev][pti].array());
+      jArrt[count] = jhf[iLev][pti].array();
+      mmArrt[count] = nmmf[iLev][pti].array();
+      count++;
     }
 
-    amrex::Vector<IntVect> loIdx;
-    amrex::Vector<RealVect> dShift;
-    const int nCoef = iLev + 1 + refinedneighbour;
-    loIdx.resize(nCoef);
-    dShift.resize(nCoef);
-    using InterpolationCoef = Real[2][2][2];
-    auto coef = std::make_unique<InterpolationCoef[]>(nCoef);
+    IntVect loIdx[maxCoef];
+    RealVect dShift[maxCoef];
+    Real coef[maxCoef][2][2][2];
 
     const AoS& particles = pti.GetArrayOfStructs();
 
