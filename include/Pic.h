@@ -168,6 +168,8 @@ private:
   amrex::Vector<amrex::MultiFab> solverRhsNode1;
   amrex::Vector<amrex::MultiFab> solverRhsNode2;
   amrex::Vector<amrex::MultiFab> centerDB;
+  amrex::Vector<amrex::MultiFab> smoothScratchMF;
+  amrex::Vector<amrex::MultiFab> projectScratchMF;
 
   int nSpecies;
   int iTot;
@@ -372,6 +374,8 @@ public:
     solverRhsNode1.resize(n_lev_max());
     solverRhsNode2.resize(n_lev_max());
     centerDB.resize(n_lev_max());
+    smoothScratchMF.resize(n_lev_max());
+    projectScratchMF.resize(n_lev_max());
 
 #ifdef _PT_COMPONENT_
     kineticSource = true;

@@ -519,7 +519,11 @@ void Pic::update_B() {
   timing_func(nameFunc);
 
   for (int iLev = 0; iLev < n_lev(); iLev++) {
-    MultiFab dB(cGrids[iLev], DistributionMap(iLev), 3, nGst);
+    if (centerDB[iLev].empty()) {
+      distribute_FabArray(centerDB[iLev], cGrids[iLev], DistributionMap(iLev),
+                          nDim3, nGst);
+    }
+    MultiFab& dB = centerDB[iLev];
     curl_node_to_center(nodeEth[iLev], dB, Geom(iLev).InvCellSize());
 
     MultiFab::Saxpy(centerB[iLev], -tc->get_dt(), dB, 0, 0,
@@ -781,12 +785,18 @@ void Pic::correct_B(int iLev) {
   } // end useUpwindB
 
   if (useHyperbolicCleaning) {
-    MultiFab gradPhi(cGrids[iLev], DistributionMap(iLev), nDim3, 0);
+    if (solverCenterLapMF[iLev].empty()) {
+      distribute_FabArray(solverCenterLapMF[iLev], cGrids[iLev],
+                          DistributionMap(iLev), 3, 1);
+      distribute_FabArray(solverTempNode3[iLev], nGrids[iLev],
+                          DistributionMap(iLev), 3, nGst);
+    }
+    MultiFab& gradPhi = solverCenterLapMF[iLev];
     gradPhi.setVal(0.0);
 
     solve_hyp_phi(iLev);
 
-    MultiFab gradPhiNode(nGrids[iLev], DistributionMap(iLev), nDim3, 0);
+    MultiFab& gradPhiNode = solverTempNode3[iLev];
     gradPhiNode.setVal(0.0);
 
     grad_center_to_node(hypPhi[iLev], gradPhiNode, Geom(iLev).InvCellSize());
@@ -819,7 +829,16 @@ void Pic::smooth_multifab(MultiFab& mf, int iLev, int di, Real coef) {
   std::string nameFunc = "Pic::smooth_multifab";
   timing_func(nameFunc);
 
-  MultiFab mfOld(mf.boxArray(), mf.DistributionMap(), mf.nComp(), mf.nGrow());
+  if (smoothScratchMF[iLev].empty() ||
+      smoothScratchMF[iLev].boxArray() != mf.boxArray() ||
+      smoothScratchMF[iLev].DistributionMap() != mf.DistributionMap() ||
+      smoothScratchMF[iLev].nComp() != mf.nComp() ||
+      smoothScratchMF[iLev].nGrow() != mf.nGrow()) {
+    smoothScratchMF[iLev].define(mf.boxArray(), mf.DistributionMap(),
+                                 mf.nComp(), mf.nGrow());
+  }
+
+  MultiFab& mfOld = smoothScratchMF[iLev];
 
   auto smooth_dir = [&](int iDir) {
     int dIdx[3] = { 0, 0, 0 };
@@ -870,7 +889,13 @@ void Pic::smooth_E(MultiFab& mfE, int iLev) {
 void Pic::project_down_E() {
   if (finest_level > 0) {
     for (int iLev = finest_level; iLev > 0; iLev--) {
-      amrex::MultiFab tmp(nGrids[iLev], DistributionMap(iLev), 3, 0);
+      if (projectScratchMF[iLev].empty() ||
+          projectScratchMF[iLev].boxArray() != nGrids[iLev] ||
+          projectScratchMF[iLev].DistributionMap() != DistributionMap(iLev)) {
+        distribute_FabArray(projectScratchMF[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 3, 0);
+      }
+      amrex::MultiFab& tmp = projectScratchMF[iLev];
       tmp.setVal(0.0);
       for (MFIter mfi(tmp); mfi.isValid(); ++mfi) {
         const Box& box = mfi.validbox();
@@ -926,13 +951,16 @@ Real Pic::calc_E_field_energy() {
         IntVect ijk = { AMREX_D_DECL(i, j, k) };
 
         if (!bit::is_refined(status(ijk))) {
-          Box subBox(ijk, ijk + 1);
-          ParallelFor(subBox, [&](int ii, int jj, int kk) {
-            IntVect ijk0 = { AMREX_D_DECL(ii, jj, kk) };
-            sumLoc += arr(ijk0, ix_) * arr(ijk0, ix_) +
-                      arr(ijk0, iy_) * arr(ijk0, iy_) +
-                      arr(ijk0, iz_) * arr(ijk0, iz_);
-          });
+          const int kMax = nDim > 2 ? k + 1 : k;
+          for (int kk = k; kk <= kMax; ++kk) {
+            for (int jj = j; jj <= j + 1; ++jj) {
+              for (int ii = i; ii <= i + 1; ++ii) {
+                sumLoc += arr(ii, jj, kk, ix_) * arr(ii, jj, kk, ix_) +
+                          arr(ii, jj, kk, iy_) * arr(ii, jj, kk, iy_) +
+                          arr(ii, jj, kk, iz_) * arr(ii, jj, kk, iz_);
+              }
+            }
+          }
         }
       });
 

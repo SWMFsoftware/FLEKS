@@ -134,9 +134,12 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(hypPhi[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                           nGst, doMoveData);
 
-      if (useUpwindB || useHyperbolicCleaning) {
-        distribute_FabArray(centerDB[iLev], cGrids[iLev], DistributionMap(iLev),
-                            nDim3, nGst, doMoveData);
+      distribute_FabArray(centerDB[iLev], cGrids[iLev], DistributionMap(iLev),
+                          nDim3, nGst, doMoveData);
+
+      if (projectDownEmFields) {
+        distribute_FabArray(projectScratchMF[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 3, 0, doMoveData);
       }
 
       if (!useExplicitPIC) {
