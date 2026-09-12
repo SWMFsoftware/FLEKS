@@ -533,46 +533,24 @@ void Particles<NStructReal, NStructInt>::divE_correct_position(
 
 //==========================================================
 
-template void PicParticles::update_position_to_half_stage(const MultiFab&,
-                                                          const MultiFab&,
-                                                          Real);
-template void PTParticles::update_position_to_half_stage(const MultiFab&,
-                                                         const MultiFab&, Real);
-template void PicParticles::mover(const Vector<MultiFab>&,
-                                  const Vector<MultiFab>&,
-                                  const Vector<MultiFab>&,
-                                  const Vector<MultiFab>&, Real, Real);
-template void PTParticles::mover(const Vector<MultiFab>&,
-                                 const Vector<MultiFab>&,
-                                 const Vector<MultiFab>&,
-                                 const Vector<MultiFab>&, Real, Real);
-template void PicParticles::mover_cell_centered(const Vector<MultiFab>&,
-                                                const Vector<MultiFab>&,
-                                                const Vector<MultiFab>&,
-                                                const Vector<MultiFab>&, Real,
-                                                Real);
-template void PTParticles::mover_cell_centered(const Vector<MultiFab>&,
-                                               const Vector<MultiFab>&,
-                                               const Vector<MultiFab>&,
-                                               const Vector<MultiFab>&, Real,
-                                               Real);
-template void PicParticles::charged_particle_mover(const Vector<MultiFab>&,
-                                                   const Vector<MultiFab>&,
-                                                   const Vector<MultiFab>&,
-                                                   const Vector<MultiFab>&,
-                                                   Real, Real);
-template void PTParticles::charged_particle_mover(const Vector<MultiFab>&,
-                                                  const Vector<MultiFab>&,
-                                                  const Vector<MultiFab>&,
-                                                  const Vector<MultiFab>&, Real,
-                                                  Real);
-template void PicParticles::charged_particle_mover_cell_centered(
-    const Vector<MultiFab>&, const Vector<MultiFab>&, const Vector<MultiFab>&,
-    const Vector<MultiFab>&, Real, Real);
-template void PTParticles::charged_particle_mover_cell_centered(
-    const Vector<MultiFab>&, const Vector<MultiFab>&, const Vector<MultiFab>&,
-    const Vector<MultiFab>&, Real, Real);
-template void PicParticles::neutral_mover(Real);
-template void PTParticles::neutral_mover(Real);
-template void PicParticles::divE_correct_position(const Vector<MultiFab>&, int);
-template void PTParticles::divE_correct_position(const Vector<MultiFab>&, int);
+#define INSTANTIATE_PARTICLES_MOVER(T)                                         \
+  template void T::update_position_to_half_stage(const MultiFab&,              \
+                                                 const MultiFab&, Real);       \
+  template void T::mover(const Vector<MultiFab>&, const Vector<MultiFab>&,     \
+                         const Vector<MultiFab>&, const Vector<MultiFab>&,     \
+                         Real, Real);                                          \
+  template void T::mover_cell_centered(                                        \
+      const Vector<MultiFab>&, const Vector<MultiFab>&,                        \
+      const Vector<MultiFab>&, const Vector<MultiFab>&, Real, Real);           \
+  template void T::charged_particle_mover(                                     \
+      const Vector<MultiFab>&, const Vector<MultiFab>&,                        \
+      const Vector<MultiFab>&, const Vector<MultiFab>&, Real, Real);           \
+  template void T::charged_particle_mover_cell_centered(                       \
+      const Vector<MultiFab>&, const Vector<MultiFab>&,                        \
+      const Vector<MultiFab>&, const Vector<MultiFab>&, Real, Real);           \
+  template void T::neutral_mover(Real);                                        \
+  template void T::divE_correct_position(const Vector<MultiFab>&, int);
+
+INSTANTIATE_PARTICLES_MOVER(PicParticles)
+INSTANTIATE_PARTICLES_MOVER(PTParticles)
+#undef INSTANTIATE_PARTICLES_MOVER

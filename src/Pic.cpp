@@ -575,19 +575,13 @@ void Pic::re_sampling() {
 
   if (doReSampling) {
     for (int i = 0; i < nSpecies; ++i) {
-      if (!pInfo.doPreSplitting) {
-        if (maxWeightRatio > 1) {
-          parts[i]->limit_weight(maxWeightRatio, parts[i]->is_neutral());
-        }
-        parts[i]->split(reSamplingLowLimit, parts[i]->is_neutral());
-        parts[i]->merge(reSamplingHighLimit);
-      } else {
-        if (maxWeightRatio > 1) {
-          parts[i]->limit_weight_new(maxWeightRatio, parts[i]->is_neutral());
-        }
-        parts[i]->split_new(reSamplingLowLimit, parts[i]->is_neutral());
-        parts[i]->merge_new(reSamplingHighLimit);
+      if (maxWeightRatio > 1) {
+        parts[i]->limit_weight(maxWeightRatio, parts[i]->is_neutral(),
+                               pInfo.doPreSplitting);
       }
+      parts[i]->split(reSamplingLowLimit, parts[i]->is_neutral(),
+                      pInfo.doPreSplitting);
+      parts[i]->merge(reSamplingHighLimit, pInfo.doPreSplitting);
     }
   }
 }

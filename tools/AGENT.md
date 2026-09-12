@@ -25,7 +25,12 @@ bash tools/amrex2vtk.sh <amrex_plot_dir>
 # Regenerate compile_commands.json
 make compile_commands
 
-# Optional developer utility
+# Install formatting tools matching CI (clang-format==20.1.8, findent)
+pip install clang-format==20.1.8 findent
+# Or with uv:
+# uv tool install clang-format==20.1.8 && uv tool install findent
+
+# Format all files (or pass specific files/dirs: python3 tools/format_all.py <path>)
 python3 tools/format_all.py
 ```
 

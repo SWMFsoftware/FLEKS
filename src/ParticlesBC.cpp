@@ -461,15 +461,13 @@ bool Particles<NStructReal, NStructInt>::do_inject_particles_for_this_cell(
   return false; // to suppress compilation warning.
 }
 
-template void PicParticles::inject_particles_at_boundary();
-template void PTParticles::inject_particles_at_boundary();
-template void PicParticles::inject_flux_at_inflow_faces(Real);
-template void PTParticles::inject_flux_at_inflow_faces(Real);
-template void PicParticles::outflow_bc(const MFIter&, const IntVect,
-                                       const IntVect);
-template void PTParticles::outflow_bc(const MFIter&, const IntVect,
-                                      const IntVect);
-template bool PicParticles::do_inject_particles_for_this_cell(
-    const Box&, const Array4<const int>&, const IntVect, IntVect&);
-template bool PTParticles::do_inject_particles_for_this_cell(
-    const Box&, const Array4<const int>&, const IntVect, IntVect&);
+#define INSTANTIATE_PARTICLES_BC(T)                                            \
+  template void T::inject_particles_at_boundary();                             \
+  template void T::inject_flux_at_inflow_faces(Real);                          \
+  template void T::outflow_bc(const MFIter&, const IntVect, const IntVect);    \
+  template bool T::do_inject_particles_for_this_cell(                          \
+      const Box&, const Array4<const int>&, const IntVect, IntVect&);
+
+INSTANTIATE_PARTICLES_BC(PicParticles)
+INSTANTIATE_PARTICLES_BC(PTParticles)
+#undef INSTANTIATE_PARTICLES_BC
