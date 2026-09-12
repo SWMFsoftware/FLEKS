@@ -379,7 +379,10 @@ void Pic::update_E_M_dot_E(const MultiFab& inMF, MultiFab& outMF, int iLev) {
 
       auto& data0 = mmArr(ijk);
 
-      for (int k2 = k - 1; k2 <= k + 1; ++k2) {
+      const int kMin2 = nDim > 2 ? k - 1 : k;
+      const int kMax2 = nDim > 2 ? k + 1 : k;
+
+      for (int k2 = kMin2; k2 <= kMax2; ++k2) {
         for (int j2 = j - 1; j2 <= j + 1; ++j2) {
           for (int i2 = i - 1; i2 <= i + 1; ++i2) {
             const int gp = (k2 - k + 1) * 9 + (j2 - j + 1) * 3 + i2 - i + 1;
