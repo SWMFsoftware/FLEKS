@@ -20,6 +20,11 @@ This repository uses a strict hybrid formatter to accommodate both its C++ and F
 
 ```bash
 # Inside the PC/FLEKS directory
+# Install formatting tools matching CI (clang-format==20.1.8, findent):
+pip install clang-format==20.1.8 findent
+# (or with uv: uv tool install clang-format==20.1.8 && uv tool install findent)
+
+# Run the formatter:
 python3 tools/format_all.py
 ```
 
