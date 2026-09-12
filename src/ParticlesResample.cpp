@@ -242,12 +242,15 @@ void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
 
   for (int pid = 0; pid < plist.size(); pid++) {
     auto& pcl = *plist[pid];
-    int iu = std::clamp(
-        fastfloor((pcl.rdata(iup_ + ix_) - velMin_D[ix_]) * invDv), 0, nCell - 1);
-    int iv = std::clamp(
-        fastfloor((pcl.rdata(iup_ + iy_) - velMin_D[iy_]) * invDv), 0, nCell - 1);
-    int iw = std::clamp(
-        fastfloor((pcl.rdata(iup_ + iz_) - velMin_D[iz_]) * invDv), 0, nCell - 1);
+    int iu =
+        std::clamp(fastfloor((pcl.rdata(iup_ + ix_) - velMin_D[ix_]) * invDv),
+                   0, nCell - 1);
+    int iv =
+        std::clamp(fastfloor((pcl.rdata(iup_ + iy_) - velMin_D[iy_]) * invDv),
+                   0, nCell - 1);
+    int iw =
+        std::clamp(fastfloor((pcl.rdata(iup_ + iz_) - velMin_D[iz_]) * invDv),
+                   0, nCell - 1);
     p_morton.push_back({ encode_morton_3d(iu, iv, iw), plist[pid] });
   }
 
@@ -454,21 +457,21 @@ void Particles<NStructReal, NStructInt>::split_impl(Real limit,
 
       // Sort the particles by the weight in descending order.
       // Use partial_sort since only the top nSplit particles are needed.
-      std::partial_sort(
-          particles.begin(), particles.begin() + nSplit, particles.end(),
-          [](const ParticleType& pl, const ParticleType& pr) {
-            const Real ql = fabs(pl.rdata(iqp_));
-            const Real qr = fabs(pr.rdata(iqp_));
-            if (fabs(ql - qr) > 1e-9 * (ql + qr)) {
-              return ql > qr;
-            }
+      std::partial_sort(particles.begin(), particles.begin() + nSplit,
+                        particles.end(),
+                        [](const ParticleType& pl, const ParticleType& pr) {
+                          const Real ql = fabs(pl.rdata(iqp_));
+                          const Real qr = fabs(pr.rdata(iqp_));
+                          if (fabs(ql - qr) > 1e-9 * (ql + qr)) {
+                            return ql > qr;
+                          }
 
-            if (fabs(pl.pos(ix_) - pr.pos(ix_)) >
-                1e-9 * (fabs(pl.pos(ix_)) + fabs(pr.pos(ix_)))) {
-              return pl.pos(ix_) > pr.pos(ix_);
-            }
-            return false;
-          });
+                          if (fabs(pl.pos(ix_) - pr.pos(ix_)) >
+                              1e-9 * (fabs(pl.pos(ix_)) + fabs(pr.pos(ix_)))) {
+                            return pl.pos(ix_) > pr.pos(ix_);
+                          }
+                          return false;
+                        });
 
       const auto lo = lbound(pti.tilebox());
       const auto hi = ubound(pti.tilebox());
@@ -1063,13 +1066,16 @@ void Particles<NStructReal, NStructInt>::merge_impl(Real limit,
           Real frac = xi - ic;
           partBoxes[pid].minC[iDim] =
               std::max(0, (frac <= velBinBufferSize) ? ic - 1 : ic);
-          partBoxes[pid].maxC[iDim] =
-              std::min(nCell - 1, (frac >= 1.0 - velBinBufferSize) ? ic + 1 : ic);
+          partBoxes[pid].maxC[iDim] = std::min(
+              nCell - 1, (frac >= 1.0 - velBinBufferSize) ? ic + 1 : ic);
         }
 
-        for (int xc = partBoxes[pid].minC[ix_]; xc <= partBoxes[pid].maxC[ix_]; xc++)
-          for (int yc = partBoxes[pid].minC[iy_]; yc <= partBoxes[pid].maxC[iy_]; yc++)
-            for (int zc = partBoxes[pid].minC[iz_]; zc <= partBoxes[pid].maxC[iz_]; zc++) {
+        for (int xc = partBoxes[pid].minC[ix_]; xc <= partBoxes[pid].maxC[ix_];
+             xc++)
+          for (int yc = partBoxes[pid].minC[iy_];
+               yc <= partBoxes[pid].maxC[iy_]; yc++)
+            for (int zc = partBoxes[pid].minC[iz_];
+                 zc <= partBoxes[pid].maxC[iz_]; zc++) {
               binCounts[bin_index(xc, yc, zc)]++;
             }
       }
@@ -1086,9 +1092,12 @@ void Particles<NStructReal, NStructInt>::merge_impl(Real limit,
         if (!partValid[pid])
           continue;
 
-        for (int xc = partBoxes[pid].minC[ix_]; xc <= partBoxes[pid].maxC[ix_]; xc++)
-          for (int yc = partBoxes[pid].minC[iy_]; yc <= partBoxes[pid].maxC[iy_]; yc++)
-            for (int zc = partBoxes[pid].minC[iz_]; zc <= partBoxes[pid].maxC[iz_]; zc++) {
+        for (int xc = partBoxes[pid].minC[ix_]; xc <= partBoxes[pid].maxC[ix_];
+             xc++)
+          for (int yc = partBoxes[pid].minC[iy_];
+               yc <= partBoxes[pid].maxC[iy_]; yc++)
+            for (int zc = partBoxes[pid].minC[iz_];
+                 zc <= partBoxes[pid].maxC[iz_]; zc++) {
               flatPartIdx[binCursor[bin_index(xc, yc, zc)]++] = pid;
             }
       }
