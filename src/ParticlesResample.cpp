@@ -186,24 +186,6 @@ void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
 }
 
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
-                                                      bool seperateVelocity) {
-  limit_weight(maxRatio, seperateVelocity, false);
-}
-
-template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::limit_weight_amr(
-    Real maxRatio, bool seperateVelocity) {
-  limit_weight(maxRatio, seperateVelocity, true);
-}
-
-template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::limit_weight_new(
-    Real maxRatio, bool seperateVelocity) {
-  limit_weight_amr(maxRatio, seperateVelocity);
-}
-
-template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::split_particles_by_velocity(
     Vector<ParticleType*>& plist, Vector<ParticleType>& newparticles) {
 
@@ -594,24 +576,6 @@ void Particles<NStructReal, NStructInt>::split(Real limit,
       }
     }
   }
-}
-
-template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::split(Real limit,
-                                               bool seperateVelocity) {
-  split(limit, seperateVelocity, false);
-}
-
-template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::split_amr(Real limit,
-                                                   bool seperateVelocity) {
-  split(limit, seperateVelocity, true);
-}
-
-template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::split_new(Real limit,
-                                                   bool seperateVelocity) {
-  split_amr(limit, seperateVelocity);
 }
 
 //==========================================================
@@ -1178,69 +1142,24 @@ void Particles<NStructReal, NStructInt>::merge(Real limit, bool useTargetPPC) {
   }
 }
 
-template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::merge(Real limit) {
-  merge(limit, false);
-}
-
-template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::merge_amr(Real limit) {
-  merge(limit, true);
-}
-
-template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::merge_new(Real limit) {
-  merge_amr(limit);
-}
-
 // Since Particles is a template, it is necessary to explicitly instantiate
-// with template arguments.
+// with template arguments for the supported particle container layouts.
 
-template void PicParticles::limit_weight(Real, bool);
-template void PTParticles::limit_weight(Real, bool);
-template void PicParticles::limit_weight_amr(Real, bool);
-template void PTParticles::limit_weight_amr(Real, bool);
-template void PicParticles::limit_weight_new(Real, bool);
-template void PTParticles::limit_weight_new(Real, bool);
-template void PicParticles::limit_weight(Real, bool, bool);
-template void PTParticles::limit_weight(Real, bool, bool);
-template void PicParticles::split(Real, bool);
-template void PTParticles::split(Real, bool);
-template void PicParticles::split_amr(Real, bool);
-template void PTParticles::split_amr(Real, bool);
-template void PicParticles::split_new(Real, bool);
-template void PTParticles::split_new(Real, bool);
-template void PicParticles::split(Real, bool, bool);
-template void PTParticles::split(Real, bool, bool);
-template void PicParticles::merge(Real);
-template void PTParticles::merge(Real);
-template void PicParticles::merge_amr(Real);
-template void PTParticles::merge_amr(Real);
-template void PicParticles::merge_new(Real);
-template void PTParticles::merge_new(Real);
-template void PicParticles::merge(Real, bool);
-template void PTParticles::merge(Real, bool);
-template void PicParticles::split_particles_by_velocity(
-    Vector<PicParticles::ParticleType*>&, Vector<PicParticles::ParticleType>&);
-template void PTParticles::split_particles_by_velocity(
-    Vector<PTParticles::ParticleType*>&, Vector<PTParticles::ParticleType>&);
-template bool PicParticles::split_by_seperate_velocity(
-    PicParticles::ParticleType&, PicParticles::ParticleType&,
-    PicParticles::ParticleType&, PicParticles::ParticleType&);
-template bool PTParticles::split_by_seperate_velocity(
-    PTParticles::ParticleType&, PTParticles::ParticleType&,
-    PTParticles::ParticleType&, PTParticles::ParticleType&);
-template bool PicParticles::merge_particles_accurate(int, PicParticles::AoS&,
-                                                     Vector<int>&, Vector<int>&,
-                                                     int, int, Vector<Real>&,
-                                                     Real);
-template bool PTParticles::merge_particles_accurate(int, PTParticles::AoS&,
-                                                    Vector<int>&, Vector<int>&,
-                                                    int, int, Vector<Real>&,
-                                                    Real);
-template bool PicParticles::merge_particles_fast(int, PicParticles::AoS&,
-                                                 Vector<int>&, Vector<int>&,
-                                                 int, int, Vector<Real>&, long);
-template bool PTParticles::merge_particles_fast(int, PTParticles::AoS&,
-                                                Vector<int>&, Vector<int>&, int,
-                                                int, Vector<Real>&, long);
+#define INSTANTIATE_PARTICLES_RESAMPLE(T)                                      \
+  template void T::limit_weight(Real, bool, bool);                             \
+  template void T::split(Real, bool, bool);                                    \
+  template void T::merge(Real, bool);                                          \
+  template void T::split_particles_by_velocity(Vector<T::ParticleType*>&,      \
+                                               Vector<T::ParticleType>&);      \
+  template bool T::split_by_seperate_velocity(                                 \
+      T::ParticleType&, T::ParticleType&, T::ParticleType&, T::ParticleType&); \
+  template bool T::merge_particles_accurate(int, T::AoS&, Vector<int>&,        \
+                                            Vector<int>&, int, int,            \
+                                            Vector<Real>&, Real);              \
+  template bool T::merge_particles_fast(int, T::AoS&, Vector<int>&,            \
+                                        Vector<int>&, int, int, Vector<Real>&, \
+                                        long);
+
+INSTANTIATE_PARTICLES_RESAMPLE(PicParticles)
+INSTANTIATE_PARTICLES_RESAMPLE(PTParticles)
+#undef INSTANTIATE_PARTICLES_RESAMPLE
