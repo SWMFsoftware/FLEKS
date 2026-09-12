@@ -182,13 +182,24 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
 
   zero_array(vecOut, eSolver.get_nSolve());
 
-  MultiFab vecMF(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+  if (solverVecMF[iLev].empty()) {
+    distribute_FabArray(solverVecMF[iLev], nGrids[iLev], DistributionMap(iLev),
+                        3, nGst);
+    distribute_FabArray(solverMatvecMF[iLev], nGrids[iLev],
+                        DistributionMap(iLev), 3, 1);
+    distribute_FabArray(solverTempNode3[iLev], nGrids[iLev],
+                        DistributionMap(iLev), 3, nGst);
+    distribute_FabArray(solverCenterLapMF[iLev], cGrids[iLev],
+                        DistributionMap(iLev), 3, 1);
+  }
+
+  MultiFab& vecMF = solverVecMF[iLev];
   vecMF.setVal(0.0);
 
-  MultiFab matvecMF(nGrids[iLev], DistributionMap(iLev), 3, 1);
+  MultiFab& matvecMF = solverMatvecMF[iLev];
   matvecMF.setVal(0.0);
 
-  MultiFab tempNode3(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+  MultiFab& tempNode3 = solverTempNode3[iLev];
   tempNode3.setVal(0.0);
 
   convert_1d_to_3d(vecIn, vecMF, iLev);
@@ -222,7 +233,8 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     }
   }
 
-  lap_node_to_node(vecMF, matvecMF, DistributionMap(iLev), Geom(iLev));
+  lap_node_to_node(vecMF, matvecMF, DistributionMap(iLev), Geom(iLev),
+                   &solverCenterLapMF[iLev]);
 
   Real delt2 = pow(fsolver.theta * tc->get_dt(), 2);
   matvecMF.mult(-delt2);
@@ -290,8 +302,16 @@ void Pic::update_E_matvec(const double* vecIn, double* vecOut, int iLev,
     div_node_to_center(vecMF, centerDivE[iLev], Geom(iLev).InvCellSize());
 
     if (fsolver.coefDiff > 0) {
-      MultiFab tempCenter3(cGrids[iLev], DistributionMap(iLev), 3, nGst);
-      MultiFab tempCenter1(cGrids[iLev], DistributionMap(iLev), 1, nGst);
+      if (solverTempCenter3[iLev].empty()) {
+        distribute_FabArray(solverTempCenter3[iLev], cGrids[iLev],
+                            DistributionMap(iLev), 3, nGst);
+        distribute_FabArray(solverTempCenter1[iLev], cGrids[iLev],
+                            DistributionMap(iLev), 1, nGst);
+      }
+      MultiFab& tempCenter3 = solverTempCenter3[iLev];
+      MultiFab& tempCenter1 = solverTempCenter1[iLev];
+      tempCenter3.setVal(0.0);
+      tempCenter1.setVal(0.0);
 
       // Calculate cell center E for center-to-center divE.
       // The outmost boundary layer of tempCenter3 is not accurate.
@@ -394,9 +414,16 @@ void Pic::update_E_rhs(double* rhs, int iLev) {
   std::string nameFunc = "Pic::update_E_rhs";
   timing_func(nameFunc);
 
-  MultiFab tempNode(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+  if (solverRhsNode1[iLev].empty()) {
+    distribute_FabArray(solverRhsNode1[iLev], nGrids[iLev],
+                        DistributionMap(iLev), 3, nGst);
+    distribute_FabArray(solverRhsNode2[iLev], nGrids[iLev],
+                        DistributionMap(iLev), 3, nGst);
+  }
+
+  MultiFab& tempNode = solverRhsNode1[iLev];
   tempNode.setVal(0.0);
-  MultiFab temp2Node(nGrids[iLev], DistributionMap(iLev), 3, nGst);
+  MultiFab& temp2Node = solverRhsNode2[iLev];
   temp2Node.setVal(0.0);
 
   if (iLev == 0) {
@@ -597,8 +624,12 @@ void Pic::correct_B(int iLev) {
     return;
   }
 
-  MultiFab centerDB(cGrids[iLev], DistributionMap(iLev), nDim3, nGst);
-  centerDB.setVal(0.0);
+  if (centerDB[iLev].empty()) {
+    distribute_FabArray(centerDB[iLev], cGrids[iLev], DistributionMap(iLev),
+                        nDim3, nGst);
+  }
+  MultiFab& cDB = centerDB[iLev];
+  cDB.setVal(0.0);
 
   if (useUpwindB) {
     Real coef[nDim3];
@@ -611,7 +642,7 @@ void Pic::correct_B(int iLev) {
 
       const Array4<Real>& cB = centerB[iLev][mfi].array();
       const Array4<Real const>& nU = uBg[iLev][mfi].array();
-      const Array4<Real>& dB = centerDB[mfi].array();
+      const Array4<Real>& dB = cDB[mfi].array();
       const auto& status = cellStatus[iLev][mfi].array();
 
       // Get the face along the direction iDir for the cell (i,j,k) for the iVar
@@ -766,7 +797,7 @@ void Pic::correct_B(int iLev) {
     for (MFIter mfi(centerB[iLev]); mfi.isValid(); ++mfi) {
       Box box = mfi.validbox();
 
-      const Array4<Real>& dB = centerDB[mfi].array();
+      const Array4<Real>& dB = cDB[mfi].array();
       const Array4<Real>& gradPhiArr = gradPhi[mfi].array();
 
       ParallelFor(box, [&](int i, int j, int k) {
@@ -778,7 +809,7 @@ void Pic::correct_B(int iLev) {
     } // end MFIter
   } // end useHyperbolicCleaning
 
-  MultiFab::Add(centerB[iLev], centerDB, 0, 0, nDim3, 0);
+  MultiFab::Add(centerB[iLev], cDB, 0, 0, nDim3, 0);
 
   centerB[iLev].FillBoundary(Geom(iLev).periodicity());
 }
