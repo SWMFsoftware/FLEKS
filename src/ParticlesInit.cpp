@@ -445,25 +445,17 @@ void Particles<NStructReal, NStructInt>::add_source_particles(
   }
 }
 
-template void PicParticles::add_particles_domain();
-template void PTParticles::add_particles_domain();
-template void PicParticles::add_particles_cell(const int, const MFIter&,
-                                               const IntVect,
-                                               const FluidInterface*, bool,
-                                               IntVect, const Vel&, Real);
-template void PTParticles::add_particles_cell(const int, const MFIter&,
-                                              const IntVect,
-                                              const FluidInterface*, bool,
-                                              IntVect, const Vel&, Real);
-template void PicParticles::add_particles_source(const FluidInterface*,
-                                                 const FluidInterface* const,
-                                                 Real, IntVect, const bool,
-                                                 const bool);
-template void PTParticles::add_particles_source(const FluidInterface*,
-                                                const FluidInterface* const,
-                                                Real, IntVect, const bool,
-                                                const bool);
-template void PicParticles::add_source_particles(std::unique_ptr<PicParticles>&,
-                                                 IntVect, const bool);
-template void PTParticles::add_source_particles(std::unique_ptr<PicParticles>&,
-                                                IntVect, const bool);
+#define INSTANTIATE_PARTICLES_INIT(T)                                          \
+  template void T::add_particles_domain();                                     \
+  template void T::add_particles_cell(const int, const MFIter&, const IntVect, \
+                                      const FluidInterface*, bool, IntVect,    \
+                                      const Vel&, Real);                       \
+  template void T::add_particles_source(const FluidInterface*,                 \
+                                        const FluidInterface* const, Real,     \
+                                        IntVect, const bool, const bool);      \
+  template void T::add_source_particles(std::unique_ptr<PicParticles>&,        \
+                                        IntVect, const bool);
+
+INSTANTIATE_PARTICLES_INIT(PicParticles)
+INSTANTIATE_PARTICLES_INIT(PTParticles)
+#undef INSTANTIATE_PARTICLES_INIT

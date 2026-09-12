@@ -575,29 +575,21 @@ void Particles<NStructReal, NStructInt>::apply_loss(
   redistribute_particles();
 }
 
-template void PicParticles::sample_charge_exchange(Real*, Real*, Real*, Real,
-                                                   CrossSection);
-template void PTParticles::sample_charge_exchange(Real*, Real*, Real*, Real,
-                                                  CrossSection);
-template Real PicParticles::charge_exchange_dis(Real*, Real*, Real*, Real,
-                                                CrossSection);
-template Real PTParticles::charge_exchange_dis(Real*, Real*, Real*, Real,
-                                               CrossSection);
-template void PicParticles::get_analytic_ion_fluid(const RealVect, Real&, Real&,
-                                                   Real (&)[nDim3]);
-template void PTParticles::get_analytic_ion_fluid(const RealVect, Real&, Real&,
-                                                  Real (&)[nDim3]);
-template void PicParticles::get_ion_fluid(FluidInterface*, PIter&, const int,
-                                          const int, const RealVect, Real&,
-                                          Real&, Real (&)[nDim3]);
-template void PTParticles::get_ion_fluid(FluidInterface*, PIter&, const int,
-                                         const int, const RealVect, Real&,
-                                         Real&, Real (&)[nDim3]);
-template void PicParticles::charge_exchange(
-    Real, FluidInterface*, FluidInterface*, SourceInterface*, bool,
-    Vector<std::unique_ptr<PicParticles> >&, bool, int, Real&);
-template void PTParticles::charge_exchange(
-    Real, FluidInterface*, FluidInterface*, SourceInterface*, bool,
-    Vector<std::unique_ptr<PicParticles> >&, bool, int, Real&);
-template void PicParticles::apply_loss(const SourceInterface*, Real);
-template void PTParticles::apply_loss(const SourceInterface*, Real);
+#define INSTANTIATE_PARTICLES_REACTIONS(T)                                     \
+  template void T::sample_charge_exchange(Real*, Real*, Real*, Real,           \
+                                          CrossSection);                       \
+  template Real T::charge_exchange_dis(Real*, Real*, Real*, Real,              \
+                                       CrossSection);                          \
+  template void T::get_analytic_ion_fluid(const RealVect, Real&, Real&,        \
+                                          Real(&)[nDim3]);                     \
+  template void T::get_ion_fluid(FluidInterface*, PIter&, const int,           \
+                                 const int, const RealVect, Real&, Real&,      \
+                                 Real(&)[nDim3]);                              \
+  template void T::charge_exchange(                                            \
+      Real, FluidInterface*, FluidInterface*, SourceInterface*, bool,          \
+      Vector<std::unique_ptr<PicParticles> >&, bool, int, Real&);              \
+  template void T::apply_loss(const SourceInterface*, Real);
+
+INSTANTIATE_PARTICLES_REACTIONS(PicParticles)
+INSTANTIATE_PARTICLES_REACTIONS(PTParticles)
+#undef INSTANTIATE_PARTICLES_REACTIONS
