@@ -653,7 +653,7 @@ bool Particles<NStructReal, NStructInt>::merge_particles_accurate(
               return l.id < r.id;
             });
 
-  for (size_t i = 0; i < dist_list.size(); ++i) {
+  for (amrex::Long i = 0; i < dist_list.size(); ++i) {
     partIdx[i] = dist_list[i].id;
   }
 
@@ -1112,7 +1112,7 @@ void Particles<NStructReal, NStructInt>::merge_impl(Real limit,
               }
             }
 
-            if (partIdx.size() < static_cast<size_t>(nPartNew + 1))
+            if (partIdx.size() < nPartNew + 1)
               continue;
 
             int nOld = nPartCombine;
