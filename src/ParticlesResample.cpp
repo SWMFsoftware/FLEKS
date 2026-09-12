@@ -12,8 +12,9 @@
 using namespace amrex;
 
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::limit_weight_impl(
-    Real maxRatio, bool seperateVelocity, bool useTargetPPC) {
+void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
+                                                      bool seperateVelocity,
+                                                      bool useTargetPPC) {
   timing_func("Pts::limit_weight");
 
   if (maxRatio <= 1)
@@ -187,13 +188,19 @@ void Particles<NStructReal, NStructInt>::limit_weight_impl(
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::limit_weight(Real maxRatio,
                                                       bool seperateVelocity) {
-  limit_weight_impl(maxRatio, seperateVelocity, false);
+  limit_weight(maxRatio, seperateVelocity, false);
+}
+
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::limit_weight_amr(
+    Real maxRatio, bool seperateVelocity) {
+  limit_weight(maxRatio, seperateVelocity, true);
 }
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::limit_weight_new(
     Real maxRatio, bool seperateVelocity) {
-  limit_weight_impl(maxRatio, seperateVelocity, true);
+  limit_weight_amr(maxRatio, seperateVelocity);
 }
 
 template <int NStructReal, int NStructInt>
@@ -398,9 +405,9 @@ bool Particles<NStructReal, NStructInt>::split_by_seperate_velocity(
 //==========================================================
 
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::split_impl(Real limit,
-                                                    bool seperateVelocity,
-                                                    bool usePreSplitting) {
+void Particles<NStructReal, NStructInt>::split(Real limit,
+                                               bool seperateVelocity,
+                                               bool usePreSplitting) {
   timing_func("Pts::split");
 
   const int nInitial = product(nPartPerCell);
@@ -592,13 +599,19 @@ void Particles<NStructReal, NStructInt>::split_impl(Real limit,
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::split(Real limit,
                                                bool seperateVelocity) {
-  split_impl(limit, seperateVelocity, false);
+  split(limit, seperateVelocity, false);
+}
+
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::split_amr(Real limit,
+                                                   bool seperateVelocity) {
+  split(limit, seperateVelocity, true);
 }
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::split_new(Real limit,
                                                    bool seperateVelocity) {
-  split_impl(limit, seperateVelocity, true);
+  split_amr(limit, seperateVelocity);
 }
 
 //==========================================================
@@ -947,8 +960,7 @@ bool Particles<NStructReal, NStructInt>::merge_particles_fast(
 //==========================================================
 
 template <int NStructReal, int NStructInt>
-void Particles<NStructReal, NStructInt>::merge_impl(Real limit,
-                                                    bool useTargetPPC) {
+void Particles<NStructReal, NStructInt>::merge(Real limit, bool useTargetPPC) {
   timing_func("Pts::merge");
   IntVect iv = { AMREX_D_DECL(1, 1, 1) };
   if (!(do_tiling && tile_size == iv))
@@ -1168,12 +1180,17 @@ void Particles<NStructReal, NStructInt>::merge_impl(Real limit,
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::merge(Real limit) {
-  merge_impl(limit, false);
+  merge(limit, false);
+}
+
+template <int NStructReal, int NStructInt>
+void Particles<NStructReal, NStructInt>::merge_amr(Real limit) {
+  merge(limit, true);
 }
 
 template <int NStructReal, int NStructInt>
 void Particles<NStructReal, NStructInt>::merge_new(Real limit) {
-  merge_impl(limit, true);
+  merge_amr(limit);
 }
 
 // Since Particles is a template, it is necessary to explicitly instantiate
@@ -1181,22 +1198,28 @@ void Particles<NStructReal, NStructInt>::merge_new(Real limit) {
 
 template void PicParticles::limit_weight(Real, bool);
 template void PTParticles::limit_weight(Real, bool);
+template void PicParticles::limit_weight_amr(Real, bool);
+template void PTParticles::limit_weight_amr(Real, bool);
 template void PicParticles::limit_weight_new(Real, bool);
 template void PTParticles::limit_weight_new(Real, bool);
-template void PicParticles::limit_weight_impl(Real, bool, bool);
-template void PTParticles::limit_weight_impl(Real, bool, bool);
+template void PicParticles::limit_weight(Real, bool, bool);
+template void PTParticles::limit_weight(Real, bool, bool);
 template void PicParticles::split(Real, bool);
 template void PTParticles::split(Real, bool);
+template void PicParticles::split_amr(Real, bool);
+template void PTParticles::split_amr(Real, bool);
 template void PicParticles::split_new(Real, bool);
 template void PTParticles::split_new(Real, bool);
-template void PicParticles::split_impl(Real, bool, bool);
-template void PTParticles::split_impl(Real, bool, bool);
+template void PicParticles::split(Real, bool, bool);
+template void PTParticles::split(Real, bool, bool);
 template void PicParticles::merge(Real);
 template void PTParticles::merge(Real);
+template void PicParticles::merge_amr(Real);
+template void PTParticles::merge_amr(Real);
 template void PicParticles::merge_new(Real);
 template void PTParticles::merge_new(Real);
-template void PicParticles::merge_impl(Real, bool);
-template void PTParticles::merge_impl(Real, bool);
+template void PicParticles::merge(Real, bool);
+template void PTParticles::merge(Real, bool);
 template void PicParticles::split_particles_by_velocity(
     Vector<PicParticles::ParticleType*>&, Vector<PicParticles::ParticleType>&);
 template void PTParticles::split_particles_by_velocity(

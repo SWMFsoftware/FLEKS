@@ -962,23 +962,31 @@ public:
       }
   }
 
+  // Weight limiting: overloaded core implementation + public wrappers
+  void limit_weight(amrex::Real maxRatio, bool seperateVelocity,
+                    bool useTargetPPC);
   void limit_weight(amrex::Real maxRatio, bool seperateVelocity = false);
-  void limit_weight_new(amrex::Real maxRatio, bool seperateVelocity = false);
-  void limit_weight_impl(amrex::Real maxRatio, bool seperateVelocity,
-                         bool useTargetPPC);
+  void limit_weight_amr(amrex::Real maxRatio, bool seperateVelocity = false);
+  [[deprecated("Use limit_weight_amr")]] void limit_weight_new(
+      amrex::Real maxRatio, bool seperateVelocity = false);
 
+  // Particle splitting: overloaded core implementation + public wrappers
+  void split(amrex::Real limit, bool seperateVelocity, bool useTargetPPC);
   void split(amrex::Real limit, bool seperateVelocity = false);
-  void split_new(amrex::Real limit, bool seperateVelocity = false);
-  void split_impl(amrex::Real limit, bool seperateVelocity,
-                  bool usePreSplitting);
+  void split_amr(amrex::Real limit, bool seperateVelocity = false);
+  [[deprecated("Use split_amr")]] void split_new(amrex::Real limit,
+                                                 bool seperateVelocity = false);
 
   void split_particles_by_velocity(amrex::Vector<ParticleType*>& plist,
                                    amrex::Vector<ParticleType>& newparticles);
   bool split_by_seperate_velocity(ParticleType& p1, ParticleType& p2,
                                   ParticleType& p3, ParticleType& p4);
+
+  // Particle merging: overloaded core implementation + public wrappers
+  void merge(amrex::Real limit, bool useTargetPPC);
   void merge(amrex::Real limit);
-  void merge_new(amrex::Real limit);
-  void merge_impl(amrex::Real limit, bool useTargetPPC);
+  void merge_amr(amrex::Real limit);
+  [[deprecated("Use merge_amr")]] void merge_new(amrex::Real limit);
 
   // Generic tool: add a circularly-polarized velocity perturbation to every
   // particle already in the container:
