@@ -134,9 +134,35 @@ void Pic::distribute_arrays(const Vector<BoxArray>& cGridsOld) {
       distribute_FabArray(hypPhi[iLev], cGrids[iLev], DistributionMap(iLev), 3,
                           nGst, doMoveData);
 
+      distribute_FabArray(centerDB[iLev], cGrids[iLev], DistributionMap(iLev),
+                          nDim3, nGst, doMoveData);
+
+      if (projectDownEmFields) {
+        distribute_FabArray(projectScratchMF[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 3, 0, doMoveData);
+      }
+
       if (!useExplicitPIC) {
         distribute_FabArray(nodeMM[iLev], nGrids[iLev], DistributionMap(iLev),
                             1, 1, doMoveData);
+        distribute_FabArray(solverVecMF[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 3, nGst, doMoveData);
+        distribute_FabArray(solverMatvecMF[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 3, 1, doMoveData);
+        distribute_FabArray(solverTempNode3[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 3, nGst, doMoveData);
+        distribute_FabArray(solverCenterLapMF[iLev], cGrids[iLev],
+                            DistributionMap(iLev), 3, 1, doMoveData);
+        if (fsolver.coefDiff > 0) {
+          distribute_FabArray(solverTempCenter3[iLev], cGrids[iLev],
+                              DistributionMap(iLev), 3, nGst, doMoveData);
+          distribute_FabArray(solverTempCenter1[iLev], cGrids[iLev],
+                              DistributionMap(iLev), 1, nGst, doMoveData);
+        }
+        distribute_FabArray(solverRhsNode1[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 3, nGst, doMoveData);
+        distribute_FabArray(solverRhsNode2[iLev], nGrids[iLev],
+                            DistributionMap(iLev), 3, nGst, doMoveData);
       }
     }
     if (useHybridPIC) {

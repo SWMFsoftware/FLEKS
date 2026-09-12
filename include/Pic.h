@@ -158,6 +158,19 @@ private:
   LinearSolver eSolver;
   LinearSolver divESolver;
 
+  // Persistent scratch MultiFabs for implicit field solver (full-PIC)
+  amrex::Vector<amrex::MultiFab> solverVecMF;
+  amrex::Vector<amrex::MultiFab> solverMatvecMF;
+  amrex::Vector<amrex::MultiFab> solverTempNode3;
+  amrex::Vector<amrex::MultiFab> solverCenterLapMF;
+  amrex::Vector<amrex::MultiFab> solverTempCenter3;
+  amrex::Vector<amrex::MultiFab> solverTempCenter1;
+  amrex::Vector<amrex::MultiFab> solverRhsNode1;
+  amrex::Vector<amrex::MultiFab> solverRhsNode2;
+  amrex::Vector<amrex::MultiFab> centerDB;
+  amrex::Vector<amrex::MultiFab> smoothScratchMF;
+  amrex::Vector<amrex::MultiFab> projectScratchMF;
+
   int nSpecies;
   int iTot;
 
@@ -351,6 +364,18 @@ public:
     centerMM.resize(n_lev_max());
 
     jHat.resize(n_lev_max());
+
+    solverVecMF.resize(n_lev_max());
+    solverMatvecMF.resize(n_lev_max());
+    solverTempNode3.resize(n_lev_max());
+    solverCenterLapMF.resize(n_lev_max());
+    solverTempCenter3.resize(n_lev_max());
+    solverTempCenter1.resize(n_lev_max());
+    solverRhsNode1.resize(n_lev_max());
+    solverRhsNode2.resize(n_lev_max());
+    centerDB.resize(n_lev_max());
+    smoothScratchMF.resize(n_lev_max());
+    projectScratchMF.resize(n_lev_max());
 
 #ifdef _PT_COMPONENT_
     kineticSource = true;
