@@ -651,11 +651,8 @@ void PlotWriter::write_ascii_idl(double const timeNow, int const iCycle,
                                  MDArray<double>& value_II, double const dx) {
   std::string const filename = get_idl_filename(timeNow, iCycle);
 
-  std::ofstream outFile;
-  // 64 KB user buffer for higher stream I/O throughput
-  std::vector<char> fileBuffer(65536);
-  outFile.rdbuf()->pubsetbuf(fileBuffer.data(), fileBuffer.size());
-  outFile.open(filename.c_str(), std::fstream::out | std::fstream::trunc);
+  std::ofstream outFile(filename.c_str(),
+                        std::fstream::out | std::fstream::trunc);
   outFile << std::scientific;
   outFile.precision(7);
 
@@ -670,6 +667,8 @@ void PlotWriter::write_ascii_idl(double const timeNow, int const iCycle,
     }
     outFile << "\n";
   }
+
+  outFile.close();
 }
 
 void PlotWriter::write_binary_idl(double const timeNow, int const iCycle,
@@ -760,7 +759,6 @@ void PlotWriter::write_binary_idl(double const timeNow, int const iCycle,
 
   MPI_File_open(iCommWrite, filename.c_str(), MPI_MODE_CREATE | MPI_MODE_WRONLY,
                 MPI_INFO_NULL, &fh);
-  MPI_File_set_size(fh, 0);
 
   // The 'count' parameter in MPI_File_write_at is an 'int' with maximum
   // value of INT_MAX (2^31-1 ≈ 2GB)
