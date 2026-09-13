@@ -7,7 +7,7 @@
 using namespace amrex;
 
 void lap_node_to_node(const MultiFab& srcMF, MultiFab& dstMF,
-                      const DistributionMapping dm, const Geometry& gm,
+                      const DistributionMapping& dm, const Geometry& gm,
                       MultiFab* scratchCenterMF) {
   const Real* invDx = gm.InvCellSize();
 
@@ -235,8 +235,8 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
   }
 }
 
-void print_MultiFab(const MultiFab& data, std::string tag, Geometry& gm,
-                    int nshift) {
+void print_MultiFab(const MultiFab& data, const std::string& tag,
+                    Geometry& gm, int nshift) {
   AllPrint() << "-----" << tag << " begin-----" << std::endl;
   Real sum = 0;
   Real sum2 = 0;
@@ -313,8 +313,8 @@ void print_MultiFab(const MultiFab& data, std::string tag, Geometry& gm,
   AllPrint() << "-----" << tag << " end-----" << std::endl;
 }
 
-void print_MultiFab(const MultiFab& data, std::string tag, const int iVarStart,
-                    const int iVarEnd, int nshift) {
+void print_MultiFab(const MultiFab& data, const std::string& tag,
+                    const int iVarStart, const int iVarEnd, int nshift) {
   AllPrint() << "-----" << tag << " begin-----" << std::endl;
   Real sum = 0;
   Real sum2 = 0;
@@ -345,7 +345,7 @@ void print_MultiFab(const MultiFab& data, std::string tag, const int iVarStart,
   AllPrint() << "-----" << tag << " end-----" << std::endl;
 }
 
-void print_MultiFab(const iMultiFab& data, std::string tag, int nshift) {
+void print_MultiFab(const iMultiFab& data, const std::string& tag, int nshift) {
   AllPrint() << "-----" << tag << " begin-----" << std::endl;
   Real sum = 0;
   Real sum2 = 0;

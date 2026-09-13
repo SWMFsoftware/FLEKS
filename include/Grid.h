@@ -136,7 +136,9 @@ public:
     return vol;
   }
 
-  amrex::Vector<Regions> get_refine_regions() const { return refineRegions; }
+  const amrex::Vector<Regions>& get_refine_regions() const {
+    return refineRegions;
+  }
 
   void set_refine_regions(const amrex::Vector<Regions>& in) {
     refineRegions = in;
@@ -193,7 +195,7 @@ public:
     refineRegions = in;
   }
 
-  bool is_inside_domain(amrex::Real* loc) const {
+  bool is_inside_domain(const amrex::Real* loc) const {
     for (const auto& rb : domainRange) {
       if (rb.contains(loc))
         return true;
@@ -373,7 +375,7 @@ public:
             for (int il = n_lev_max() - 2; il >= iLev; il--)
               if (refineRegions[il].is_inside(xyz)) {
                 tagArr(i, j, k) = amrex::TagBox::SET;
-                continue;
+                break;
               }
           }
     }

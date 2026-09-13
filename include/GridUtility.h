@@ -27,7 +27,7 @@ void curl_center_to_center(const amrex::MultiFab& centerInMF,
                            const amrex::Real* invDx);
 
 void lap_node_to_node(const amrex::MultiFab& srcMF, amrex::MultiFab& dstMF,
-                      const amrex::DistributionMapping dm,
+                      const amrex::DistributionMapping& dm,
                       const amrex::Geometry& gm,
                       amrex::MultiFab* scratchCenterMF = nullptr);
 
@@ -61,17 +61,17 @@ void average_center_to_node(const amrex::MultiFab& centerMF,
 void average_node_to_center(const amrex::MultiFab& nodeMF,
                             amrex::MultiFab& centerMF);
 
-void print_MultiFab(const amrex::iMultiFab& data, std::string tag,
+void print_MultiFab(const amrex::iMultiFab& data, const std::string& tag,
                     int nshift = 0);
 
-void print_MultiFab(const amrex::MultiFab& data, std::string tag,
+void print_MultiFab(const amrex::MultiFab& data, const std::string& tag,
                     const int iVarStart, const int iVarEnd, int nshift = 0);
 
-void print_MultiFab(const amrex::MultiFab& data, std::string tag,
+void print_MultiFab(const amrex::MultiFab& data, const std::string& tag,
                     amrex::Geometry& gm, int nshift = 0);
 
 template <class FAB>
-void print_fab(const amrex::FabArray<FAB>& mf, std::string tag,
+void print_fab(const amrex::FabArray<FAB>& mf, const std::string& tag,
                const int iStart, const int nComp, int nshift = 0) {
   amrex::AllPrint() << "-----" << tag << " begin-----" << std::endl;
   amrex::Real sum = 0;
@@ -109,10 +109,7 @@ inline int get_local_node_or_cell_number(const amrex::MultiFab& MF) {
   int nTotal = 0;
   if (!MF.empty())
     for (amrex::MFIter mfi(MF); mfi.isValid(); ++mfi) {
-      const amrex::Box& box = mfi.validbox();
-      const auto lo = lbound(box);
-      const auto hi = ubound(box);
-      nTotal += (hi.x - lo.x + 1) * (hi.y - lo.y + 1) * (hi.z - lo.z + 1);
+      nTotal += mfi.validbox().numPts();
     }
   return nTotal;
 }
@@ -157,11 +154,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void find_cell_index_exp(
     const amrex::RealVect& xyz, const amrex::Real* const plo,
     const amrex::Real* const invDx, amrex::IntVect& loIdx,
     amrex::RealVect& dShift) {
-  for (int i = 0; i < nDim; ++i) {
-    dShift[i] = (xyz[i] - plo[i]) * invDx[i];
-    loIdx[i] = fastfloor(dShift[i]);
-    dShift[i] = dShift[i] - loIdx[i];
-  }
+  find_node_index(xyz, plo, invDx, loIdx, dShift);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void check_refinement_proximity(
@@ -202,7 +195,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE void check_refinement_proximity(
 }
 
 inline bool skip_particle_for_dive_cleaning(
-    amrex::RealVect xyz, amrex::Geometry Geom, int iLev,
+    const amrex::RealVect& xyz, const amrex::Geometry& Geom, int iLev,
     const amrex::Array4<int const>& status) {
 
   bool skip = false;
@@ -356,7 +349,8 @@ public:
 };
 
 template <class FAB>
-void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
+void distribute_FabArray(amrex::FabArray<FAB>& fa,
+                         const amrex::BoxArray& baNew,
                          const amrex::DistributionMapping& dm, int nComp,
                          int nGst, bool doCopy = true,
                          amrex::Real initVal = cUninitialized) {
@@ -384,7 +378,8 @@ void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
 }
 
 template <class FAB>
-void distribute_FabArray(amrex::FabArray<FAB>& fa, amrex::BoxArray baNew,
+void distribute_FabArray(amrex::FabArray<FAB>& fa,
+                         const amrex::BoxArray& baNew,
                          const amrex::DistributionMapping& dm,
                          bool doCopy = true) {
 

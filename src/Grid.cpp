@@ -10,14 +10,6 @@ Vector<DistributionMapping> Grid::calc_balanced_maps(bool doSplitLevs) {
 
   Vector<DistributionMapping> dmap(n_lev_max());
 
-  Vector<MultiFab> cost(n_lev_max());
-
-  for (int iLev = 0; iLev < n_lev(); iLev++) {
-    distribute_FabArray(cost[iLev], cGrids[iLev], DistributionMap(iLev), 1, 0,
-                        false);
-    MultiFab::Copy(cost[iLev], cellCost[iLev], 0, 0, 1, 0);
-  }
-
   Vector<int> rankStart(n_lev(), 0);
   Vector<int> nProcEachLev(n_lev(), ParallelDescriptor::NProcs());
 
@@ -26,7 +18,7 @@ Vector<DistributionMapping> Grid::calc_balanced_maps(bool doSplitLevs) {
     Vector<Real> levCost(n_lev());
 
     for (int iLev = 0; iLev < n_lev(); iLev++) {
-      levCost[iLev] = cost[iLev].sum();
+      levCost[iLev] = cellCost[iLev].sum();
       totalCost += levCost[iLev];
     }
 
@@ -49,9 +41,6 @@ Vector<DistributionMapping> Grid::calc_balanced_maps(bool doSplitLevs) {
     }
   }
 
-  // Real localProcCost = 0;
-  // Vector<Real> pcost(ParallelDescriptor::NProcs(), 0);
-
   for (int iLev = 0; iLev < n_lev(); iLev++) {
     Vector<int> ord(ParallelDescriptor::NProcs());
     for (int i = 0; i < nProcEachLev[iLev]; ++i) {
@@ -60,41 +49,7 @@ Vector<DistributionMapping> Grid::calc_balanced_maps(bool doSplitLevs) {
 
     Real eff;
     dmap[iLev] = FleksDistributionMap::make_balanced_map(
-        BalanceMethod::SFC, cost[iLev], nProcEachLev[iLev], ord, eff);
-    // Print() << printPrefix << " iLev = " << iLev
-    //         << " load balance efficiency = " << std::setw(10) << eff
-    //         << std::endl;
-
-    distribute_FabArray(cost[iLev], cGrids[iLev], dmap[iLev], 1, 0, true);
-
-    //   for (MFIter mfi(cost[iLev]); mfi.isValid(); ++mfi) {
-    //     localProcCost += cost[iLev][mfi].sum<RunOn::Device>(mfi.validbox(),
-    //     0);
-    //   }
-
-    //   ParallelDescriptor::Gather(&localProcCost, 1, pcost.data(), 1,
-    //                              ParallelDescriptor::IOProcessorNumber());
-
-    //   ParallelDescriptor::Bcast(pcost.data(), pcost.size(),
-    //                             ParallelDescriptor::IOProcessorNumber());
-
-    //   using LIpair = std::pair<Long, int>;
-
-    //   Vector<LIpair> pair;
-    //   pair.reserve(ParallelDescriptor::NProcs());
-
-    //   for (int i = 0; i < ParallelDescriptor::NProcs(); ++i) {
-    //     pair.push_back(LIpair(pcost[i], i));
-    //   }
-
-    //   std::sort(pair.begin(), pair.end(),
-    //             [](const LIpair& lhs, const LIpair& rhs) {
-    //               return lhs.first > rhs.first;
-    //             });
-
-    //   for (int i = 0; i < pcost.size(); ++i) {
-    //     ord[i] = pair[i].second;
-    //   }
+        BalanceMethod::SFC, cellCost[iLev], nProcEachLev[iLev], ord, eff);
   }
 
   return dmap;
