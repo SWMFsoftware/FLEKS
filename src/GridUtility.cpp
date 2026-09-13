@@ -33,6 +33,9 @@ void lap_node_to_node(const MultiFab& srcMF, MultiFab& dstMF,
 void grad_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
                          const Real* invDx) {
   timing_func("grad_node_to_center");
+  const Real invDx_x = invDx[ix_];
+  const Real invDx_y = invDx[iy_];
+  const Real invDx_z = (nDim > 2) ? invDx[iz_] : 0.0;
 
   for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
     Box box = mfi.validbox();
@@ -41,22 +44,22 @@ void grad_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
     const Array4<Real>& center = centerMF[mfi].array();
     const Array4<Real const>& node = nodeMF[mfi].array();
 
-    ParallelFor(box, [&](int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
       int kp1 = nDim > 2 ? k + 1 : k;
       center(i, j, k, ix_) =
-          0.25 * invDx[ix_] *
+          0.25 * invDx_x *
           (node(i + 1, j, k) - node(i, j, k) + node(i + 1, j, kp1) -
            node(i, j, kp1) + node(i + 1, j + 1, k) - node(i, j + 1, k) +
            node(i + 1, j + 1, kp1) - node(i, j + 1, kp1));
       center(i, j, k, iy_) =
-          0.25 * invDx[iy_] *
+          0.25 * invDx_y *
           (node(i, j + 1, k) - node(i, j, k) + node(i, j + 1, kp1) -
            node(i, j, kp1) + node(i + 1, j + 1, k) - node(i + 1, j, k) +
            node(i + 1, j + 1, kp1) - node(i + 1, j, kp1));
 
       if (nDim > 2) {
         center(i, j, k, iz_) =
-            0.25 * invDx[iz_] *
+            0.25 * invDx_z *
             (node(i, j, kp1) - node(i, j, k) + node(i + 1, j, kp1) -
              node(i + 1, j, k) + node(i, j + 1, kp1) - node(i, j + 1, k) +
              node(i + 1, j + 1, kp1) - node(i + 1, j + 1, k));
@@ -69,6 +72,9 @@ void grad_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
 
 void grad_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
                          const Real* invDx) {
+  const Real invDx_x = invDx[ix_];
+  const Real invDx_y = invDx[iy_];
+  const Real invDx_z = (nDim > 2) ? invDx[iz_] : 0.0;
 
   for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
@@ -76,22 +82,22 @@ void grad_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
     const Array4<Real>& node = nodeMF[mfi].array();
     const Array4<Real const>& center = centerMF[mfi].array();
 
-    ParallelFor(box, [&](int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
 
-      node(i, j, k, ix_) = 0.25 * invDx[ix_] *
+      node(i, j, k, ix_) = 0.25 * invDx_x *
                            (center(i, j, k) - center(i - 1, j, k) +
                             center(i, j, km1) - center(i - 1, j, km1) +
                             center(i, j - 1, k) - center(i - 1, j - 1, k) +
                             center(i, j - 1, km1) - center(i - 1, j - 1, km1));
-      node(i, j, k, iy_) = 0.25 * invDx[iy_] *
+      node(i, j, k, iy_) = 0.25 * invDx_y *
                            (center(i, j, k) - center(i, j - 1, k) +
                             center(i, j, km1) - center(i, j - 1, km1) +
                             center(i - 1, j, k) - center(i - 1, j - 1, k) +
                             center(i - 1, j, km1) - center(i - 1, j - 1, km1));
       if (nDim > 2) {
         node(i, j, k, iz_) =
-            0.25 * invDx[iz_] *
+            0.25 * invDx_z *
             (center(i, j, k) - center(i, j, km1) + center(i - 1, j, k) -
              center(i - 1, j, km1) + center(i, j - 1, k) -
              center(i, j - 1, km1) + center(i - 1, j - 1, k) -
@@ -114,6 +120,9 @@ void jacobian_center_to_node(const MultiFab& centerVecMF, MultiFab& nodeJacMF,
 
 void div_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
                         const Real* invDx) {
+  const Real invDx_x = invDx[ix_];
+  const Real invDx_y = invDx[iy_];
+  const Real invDx_z = (nDim > 2) ? invDx[iz_] : 0.0;
 
   for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
     const Box& box = mfi.validbox();
@@ -121,17 +130,17 @@ void div_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
     const Array4<Real const>& center = centerMF[mfi].array();
     const Array4<Real>& node = nodeMF[mfi].array();
 
-    ParallelFor(box, [&](int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
       const Real compX =
-          0.25 * invDx[ix_] *
+          0.25 * invDx_x *
           (center(i, j, k, ix_) - center(i - 1, j, k, ix_) +
            center(i, j, km1, ix_) - center(i - 1, j, km1, ix_) +
            center(i, j - 1, k, ix_) - center(i - 1, j - 1, k, ix_) +
            center(i, j - 1, km1, ix_) - center(i - 1, j - 1, km1, ix_));
 
       const Real compY =
-          0.25 * invDx[iy_] *
+          0.25 * invDx_y *
           (center(i, j, k, iy_) - center(i, j - 1, k, iy_) +
            center(i, j, km1, iy_) - center(i, j - 1, km1, iy_) +
            center(i - 1, j, k, iy_) - center(i - 1, j - 1, k, iy_) +
@@ -139,7 +148,7 @@ void div_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
 
       Real compZ = 0.0;
       if (nDim > 2) {
-        compZ = 0.25 * invDx[iz_] *
+        compZ = 0.25 * invDx_z *
                 (center(i, j, k, iz_) - center(i, j, km1, iz_) +
                  center(i - 1, j, k, iz_) - center(i - 1, j, km1, iz_) +
                  center(i, j - 1, k, iz_) - center(i, j - 1, km1, iz_) +
@@ -152,6 +161,9 @@ void div_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
 
 void div_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
                         const Real* invDx) {
+  const Real invDx_x = invDx[ix_];
+  const Real invDx_y = invDx[iy_];
+  const Real invDx_z = (nDim > 2) ? invDx[iz_] : 0.0;
 
   for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
     const Box& box = mfi.fabbox();
@@ -159,18 +171,18 @@ void div_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
     const Array4<Real const>& node = nodeMF[mfi].array();
     const Array4<Real>& center = centerMF[mfi].array();
 
-    ParallelFor(box, [&](int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
       int kp1 = nDim > 2 ? k + 1 : k;
 
       const Real compX =
-          0.25 * invDx[ix_] *
+          0.25 * invDx_x *
           (node(i + 1, j, k, ix_) - node(i, j, k, ix_) +
            node(i + 1, j, kp1, ix_) - node(i, j, kp1, ix_) +
            node(i + 1, j + 1, k, ix_) - node(i, j + 1, k, ix_) +
            node(i + 1, j + 1, kp1, ix_) - node(i, j + 1, kp1, ix_));
 
       const Real compY =
-          0.25 * invDx[iy_] *
+          0.25 * invDx_y *
           (node(i, j + 1, k, iy_) - node(i, j, k, iy_) +
            node(i, j + 1, kp1, iy_) - node(i, j, kp1, iy_) +
            node(i + 1, j + 1, k, iy_) - node(i + 1, j, k, iy_) +
@@ -178,7 +190,7 @@ void div_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
 
       Real compZ = 0.0;
       if (nDim > 2) {
-        compZ = 0.25 * invDx[iz_] *
+        compZ = 0.25 * invDx_z *
                 (node(i, j, kp1, iz_) - node(i, j, k, iz_) +
                  node(i + 1, j, kp1, iz_) - node(i + 1, j, k, iz_) +
                  node(i, j + 1, kp1, iz_) - node(i, j + 1, k, iz_) +
@@ -191,6 +203,9 @@ void div_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
 
 void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
                           const Real* invDx) {
+  const Real invDx_x = invDx[ix_];
+  const Real invDx_y = invDx[iy_];
+  const Real invDx_z = (nDim > 2) ? invDx[iz_] : 0.0;
 
   for (MFIter mfi(dstMF, doTiling); mfi.isValid(); ++mfi) {
     Box box = mfi.validbox();
@@ -199,7 +214,7 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
     const Array4<Real const>& srcArr = srcMF[mfi].array();
     const Array4<Real>& dstArr = dstMF[mfi].array();
 
-    ParallelFor(box, [&](int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
       int kp1 = nDim > 2 ? k + 1 : k;
       Real compX = 0;
@@ -209,7 +224,7 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
           compX +=
               srcArr(i + 1, j + jj, k0, ix_) - srcArr(i - 1, j + jj, k0, ix_);
         }
-      compX *= 0.5 * invDx[ix_];
+      compX *= 0.5 * invDx_x;
 
       Real compY = 0;
       for (int ii = -1; ii < 2; ++ii)
@@ -218,7 +233,7 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
           compY +=
               srcArr(i + ii, j + 1, k0, iy_) - srcArr(i + ii, j - 1, k0, iy_);
         }
-      compY *= 0.5 * invDx[iy_];
+      compY *= 0.5 * invDx_y;
 
       Real compZ = 0.0;
       if (nDim > 2) {
@@ -227,7 +242,7 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
             compZ += srcArr(i + ii, j + jj, kp1, iz_) -
                      srcArr(i + ii, j + jj, km1, iz_);
           }
-        compZ *= 0.5 * invDx[iz_];
+        compZ *= 0.5 * invDx_z;
       }
 
       dstArr(i, j, k) = (compX + compY + compZ) / 9;
@@ -379,6 +394,10 @@ void print_MultiFab(const iMultiFab& data, const std::string& tag, int nshift) {
 
 void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
                          const Real* invDx) {
+  const Real invDx_x = invDx[ix_];
+  const Real invDx_y = invDx[iy_];
+  const Real invDx_z = (nDim > 2) ? invDx[iz_] : 0.0;
+
   for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
     const int ng = std::min(nodeMF.nGrow(), std::max(0, centerMF.nGrow() - 1));
     Box box = mfi.validbox();
@@ -387,17 +406,17 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
     const Array4<Real>& nodeArr = nodeMF[mfi].array();
     const Array4<Real const>& centerArr = centerMF[mfi].array();
 
-    ParallelFor(box, [&](int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
       const Real cZDY =
-          0.25 * invDx[iy_] *
+          0.25 * invDx_y *
           (centerArr(i, j, k, iz_) - centerArr(i, j - 1, k, iz_) +
            centerArr(i, j, km1, iz_) - centerArr(i, j - 1, km1, iz_) +
            centerArr(i - 1, j, k, iz_) - centerArr(i - 1, j - 1, k, iz_) +
            centerArr(i - 1, j, km1, iz_) - centerArr(i - 1, j - 1, km1, iz_));
       Real cYDZ = 0.0;
       if (nDim > 2) {
-        cYDZ = 0.25 * invDx[iz_] *
+        cYDZ = 0.25 * invDx_z *
                (centerArr(i, j, k, iy_) - centerArr(i, j, km1, iy_) +
                 centerArr(i - 1, j, k, iy_) - centerArr(i - 1, j, km1, iy_) +
                 centerArr(i, j - 1, k, iy_) - centerArr(i, j - 1, km1, iy_) +
@@ -407,7 +426,7 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
       // curl - Y
       Real cXDZ = 0.0;
       if (nDim > 2) {
-        cXDZ = 0.25 * invDx[iz_] *
+        cXDZ = 0.25 * invDx_z *
                (centerArr(i, j, k, ix_) - centerArr(i, j, km1, ix_) +
                 centerArr(i - 1, j, k, ix_) - centerArr(i - 1, j, km1, ix_) +
                 centerArr(i, j - 1, k, ix_) - centerArr(i, j - 1, km1, ix_) +
@@ -416,7 +435,7 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
       }
 
       const Real cZDX =
-          0.25 * invDx[ix_] *
+          0.25 * invDx_x *
           (centerArr(i, j, k, iz_) - centerArr(i - 1, j, k, iz_) +
            centerArr(i, j, km1, iz_) - centerArr(i - 1, j, km1, iz_) +
            centerArr(i, j - 1, k, iz_) - centerArr(i - 1, j - 1, k, iz_) +
@@ -424,14 +443,14 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
 
       // curl - Z
       const Real cYDX =
-          0.25 * invDx[ix_] *
+          0.25 * invDx_x *
           (centerArr(i, j, k, iy_) - centerArr(i - 1, j, k, iy_) +
            centerArr(i, j, km1, iy_) - centerArr(i - 1, j, km1, iy_) +
            centerArr(i, j - 1, k, iy_) - centerArr(i - 1, j - 1, k, iy_) +
            centerArr(i, j - 1, km1, iy_) - centerArr(i - 1, j - 1, km1, iy_));
 
       const Real cXDY =
-          0.25 * invDx[iy_] *
+          0.25 * invDx_y *
           (centerArr(i, j, k, ix_) - centerArr(i, j - 1, k, ix_) +
            centerArr(i, j, km1, ix_) - centerArr(i, j - 1, km1, ix_) +
            centerArr(i - 1, j, k, ix_) - centerArr(i - 1, j - 1, k, ix_) +
@@ -446,6 +465,10 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
 
 void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
                          const Real* invDx) {
+  const Real invDx_x = invDx[ix_];
+  const Real invDx_y = invDx[iy_];
+  const Real invDx_z = (nDim > 2) ? invDx[iz_] : 0.0;
+
   for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
     const int ng = std::min(centerMF.nGrow(), std::max(0, nodeMF.nGrow() - 1));
     Box box = mfi.validbox();
@@ -453,10 +476,10 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
     const Array4<Real>& centerArr = centerMF[mfi].array();
     const Array4<Real const>& nodeArr = nodeMF[mfi].array();
 
-    ParallelFor(box, [&](int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
       int kp1 = nDim > 2 ? k + 1 : k;
       const Real cZDY =
-          0.25 * invDx[iy_] *
+          0.25 * invDx_y *
           (nodeArr(i, j + 1, k, iz_) - nodeArr(i, j, k, iz_) +
            nodeArr(i, j + 1, kp1, iz_) - nodeArr(i, j, kp1, iz_) +
            nodeArr(i + 1, j + 1, k, iz_) - nodeArr(i + 1, j, k, iz_) +
@@ -464,7 +487,7 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
       Real cYDZ = 0.0;
       if (nDim > 2) {
         cYDZ =
-            0.25 * invDx[iz_] *
+            0.25 * invDx_z *
             (nodeArr(i, j, kp1, iy_) - nodeArr(i, j, k, iy_) +
              nodeArr(i + 1, j, kp1, iy_) - nodeArr(i + 1, j, k, iy_) +
              nodeArr(i, j + 1, kp1, iy_) - nodeArr(i, j + 1, k, iy_) +
@@ -474,7 +497,7 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
       Real cXDZ = 0.0;
       if (nDim > 2) {
         cXDZ =
-            0.25 * invDx[iz_] *
+            0.25 * invDx_z *
             (nodeArr(i, j, kp1, ix_) - nodeArr(i, j, k, ix_) +
              nodeArr(i + 1, j, kp1, ix_) - nodeArr(i + 1, j, k, ix_) +
              nodeArr(i, j + 1, kp1, ix_) - nodeArr(i, j + 1, k, ix_) +
@@ -482,7 +505,7 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
       }
 
       const Real cZDX =
-          0.25 * invDx[ix_] *
+          0.25 * invDx_x *
           (nodeArr(i + 1, j, k, iz_) - nodeArr(i, j, k, iz_) +
            nodeArr(i + 1, j, kp1, iz_) - nodeArr(i, j, kp1, iz_) +
            nodeArr(i + 1, j + 1, k, iz_) - nodeArr(i, j + 1, k, iz_) +
@@ -490,14 +513,14 @@ void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
 
       // curl - Z
       const Real cYDX =
-          0.25 * invDx[ix_] *
+          0.25 * invDx_x *
           (nodeArr(i + 1, j, k, iy_) - nodeArr(i, j, k, iy_) +
-           nodeArr(i + 1, j, kp1, iy_) - nodeArr(i, j, kp1, iy_) +
+           nodeArr(i + 1, j, kp1, iy_) - nodeArr(i + 1, j, kp1, iy_) +
            nodeArr(i + 1, j + 1, k, iy_) - nodeArr(i, j + 1, k, iy_) +
            nodeArr(i + 1, j + 1, kp1, iy_) - nodeArr(i, j + 1, kp1, iy_));
 
       const Real cXDY =
-          0.25 * invDx[iy_] *
+          0.25 * invDx_y *
           (nodeArr(i, j + 1, k, ix_) - nodeArr(i, j, k, ix_) +
            nodeArr(i, j + 1, kp1, ix_) - nodeArr(i, j, kp1, ix_) +
            nodeArr(i + 1, j + 1, k, ix_) - nodeArr(i + 1, j, k, ix_) +
@@ -530,7 +553,7 @@ void curl_center_to_center(const MultiFab& centerInMF, MultiFab& centerOutMF,
     const Array4<Real>& outArr = centerOutMF[mfi].array();
     const Array4<Real const>& inArr = centerInMF[mfi].array();
 
-    ParallelFor(box, [&](int i, int j, int k) {
+    ParallelFor(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
       // curl X: (dBz/dy - dBy/dz)
       const Real dBz_dy =
           (inArr(i, j + 1, k, iz_) - inArr(i, j - 1, k, iz_)) * dyInv;
@@ -568,7 +591,8 @@ void average_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF) {
     const Array4<Real>& nodeArr = nodeMF[mfi].array();
     const Array4<Real const>& centerArr = centerMF[mfi].array();
 
-    ParallelFor(box, centerMF.nComp(), [&](int i, int j, int k, int iVar) {
+    ParallelFor(box, centerMF.nComp(),
+                [=] AMREX_GPU_DEVICE (int i, int j, int k, int iVar) noexcept {
       int km1 = nDim > 2 ? k - 1 : k;
       nodeArr(i, j, k, iVar) =
           0.125 *
@@ -595,7 +619,8 @@ void average_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF) {
     const Array4<Real>& centerArr = centerMF[mfi].array();
     const Array4<Real const>& nodeArr = nodeMF[mfi].array();
 
-    ParallelFor(box, centerMF.nComp(), [&](int i, int j, int k, int iVar) {
+    ParallelFor(box, centerMF.nComp(),
+                [=] AMREX_GPU_DEVICE (int i, int j, int k, int iVar) noexcept {
       if (nDim > 2) {
         centerArr(i, j, k, iVar) =
             inv2d *
@@ -616,6 +641,10 @@ void average_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF) {
 
 void lap_center_to_center(const MultiFab& centerMF, MultiFab& centerMFout,
                           const Real* invDx) {
+  const Real ix2 = invDx[ix_] * invDx[ix_];
+  const Real iy2 = invDx[iy_] * invDx[iy_];
+  const Real iz2 = (nDim > 2) ? invDx[iz_] * invDx[iz_] : 0.0;
+
   for (MFIter mfi(centerMFout, doTiling); mfi.isValid(); ++mfi) {
     const int ng = std::min(centerMFout.nGrow(), std::max(0, centerMF.nGrow() - 1));
     Box box = mfi.validbox();
@@ -624,16 +653,13 @@ void lap_center_to_center(const MultiFab& centerMF, MultiFab& centerMFout,
     const Array4<Real>& outArr = centerMFout[mfi].array();
     const Array4<Real const>& inArr = centerMF[mfi].array();
 
-    const Real ix2 = invDx[ix_] * invDx[ix_];
-    const Real iy2 = invDx[iy_] * invDx[iy_];
-
-    ParallelFor(box, centerMF.nComp(), [&](int i, int j, int k, int iVar) {
+    ParallelFor(box, centerMF.nComp(),
+                [=] AMREX_GPU_DEVICE (int i, int j, int k, int iVar) noexcept {
       Real lap = ix2 * (inArr(i + 1, j, k, iVar) - 2.0 * inArr(i, j, k, iVar) +
                         inArr(i - 1, j, k, iVar)) +
                  iy2 * (inArr(i, j + 1, k, iVar) - 2.0 * inArr(i, j, k, iVar) +
                         inArr(i, j - 1, k, iVar));
       if (nDim > 2) {
-        const Real iz2 = invDx[iz_] * invDx[iz_];
         lap += iz2 * (inArr(i, j, k + 1, iVar) - 2.0 * inArr(i, j, k, iVar) +
                       inArr(i, j, k - 1, iVar));
       }

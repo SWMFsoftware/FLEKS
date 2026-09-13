@@ -1,3 +1,5 @@
+#include <AMReX_PlotFileUtil.H>
+
 #include "Bit.h"
 #include "FluidInterface.h"
 #include "GridUtility.h"
