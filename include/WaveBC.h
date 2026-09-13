@@ -106,11 +106,10 @@ public:
   void clear();
   void add_component(int direction, int side, const WaveComponent& c);
 
+  amrex::Real envelope(const WaveComponent& c, amrex::Real t) const;
+
   bool siInput = true;
   amrex::Real maxAmplitude = 0.0; // 0 => amplitude guard disabled
-
-private:
-  amrex::Real envelope(const WaveComponent& c, amrex::Real t) const;
 };
 
 #endif // FLEKS_WAVEBC_H

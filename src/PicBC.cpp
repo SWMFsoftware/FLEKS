@@ -86,7 +86,8 @@ void Pic::apply_field_bc(const iMultiFab& status, MultiFab& mf,
   // Wave boundary condition overwrites faces where active.
   if (waveBC.active) {
     const Real t = tc ? tc->get_time() : 0.0;
-    apply_wave_field(status, mf, iStart, nComp, iLev, bcField, isB ? 0 : 1, t);
+    apply_wave_field(status, mf, iStart, nComp, iLev, bcField, isB ? 0 : 1, t,
+                     func);
   }
 }
 
@@ -505,12 +506,13 @@ void Pic::apply_centerPlasma_BC(const iMultiFab& status, MultiFab& mf,
 //==========================================================
 void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
                            const int iStart, const int nComp, const int iLev,
-                           const BoxBC<FieldBC::Type>& bc, int iField, Real t) {
-  (void)bc;
+                           const BoxBC<FieldBC::Type>& bc, int iField, Real t,
+                           GETVALUE func) {
   bool hasField = false;
   for (const auto& f : waveBC.faces) {
     for (const auto& c : f.comps) {
-      if (c.iField == iField) {
+      if (c.iField == iField && waveBC.envelope(c, t) > 0.0 &&
+          c.amplitude != 0.0) {
         hasField = true;
         break;
       }
@@ -526,7 +528,7 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
 
   const BoxArray ba =
       get_boundary_active_ba(activeRegion, mf, Geom(iLev), nDim, iz_);
-  const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType());
+  const BoundaryBounds bnd(Geom(iLev), mf.boxArray().ixType(), &bc);
 
   const Real* plo = Geom(iLev).ProbLo();
   const Real* dx = Geom(iLev).CellSize();
@@ -541,10 +543,14 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
 
     Array4<Real> const& arr = mf[mfi].array();
     const Array4<const int>& statusArr = status[mfi].array();
+    const Dim3 vLo = bxValid.smallEnd().dim3();
+    const Dim3 vHi = bxValid.bigEnd().dim3();
+    const int vLoArr[3] = { vLo.x, vLo.y, vLo.z };
+    const int vHiArr[3] = { vHi.x, vHi.y, vHi.z };
 
     ParallelFor(bxFab, [&](int i, int j, int k) {
-      if (!bit::is_lev_boundary(statusArr(i, j, k, 0)))
-        return;
+      const int ijk[3] = { i, j, k };
+      const bool isGhost = bit::is_lev_boundary(statusArr(i, j, k, 0));
 
       Real pos[3] = { plo[0] + dx[0] * (i + offset[0]),
                       plo[1] + dx[1] * (j + offset[1]),
@@ -552,23 +558,50 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
 
       Real waveVal[3] = { 0.0, 0.0, 0.0 };
       bool hasWave = false;
+      bool isBndNode = false;
 
       for (const auto& f : waveBC.faces) {
         const int d = f.direction;
         const int side = f.side;
         if (d >= nDim)
           continue;
-        const int idx = (d == 0) ? i : (d == 1) ? j : k;
-        bool onFace = (side == 0 && idx < bxValid.smallEnd(d)) ||
-                      (side == 1 && idx > bxValid.bigEnd(d));
-        if (!onFace)
+
+        const int idx = ijk[d];
+        const bool onGhostFace =
+            isGhost && ((side == 0 && idx < bxValid.smallEnd(d)) ||
+                        (side == 1 && idx > bxValid.bigEnd(d)));
+
+        // Boundary node on physical wall (node-centred only).
+        bool onNodeWall = false;
+        if (bnd.isNode[d]) {
+          const bool onLoNode = (side == 0 && idx == bnd.loBnd[d]);
+          const bool onHiNode = (side == 1 && idx == bnd.hiBnd[d]);
+          if (onLoNode || onHiNode) {
+            bool inTangential = true;
+            for (int od = 0; od < nDim; ++od) {
+              if (od != d && (ijk[od] < vLoArr[od] || ijk[od] > vHiArr[od])) {
+                inTangential = false;
+                break;
+              }
+            }
+            if (inTangential)
+              onNodeWall = true;
+          }
+        }
+
+        if (!onGhostFace && !onNodeWall)
           continue;
+
+        if (onNodeWall)
+          isBndNode = true;
 
         for (const auto& c : f.comps) {
           if (c.iField != iField)
             continue;
-          hasWave = true;
           const Real val = waveBC.value(c, t, pos);
+          if (val == 0.0)
+            continue;
+          hasWave = true;
           if (iField == 0 || iField == 1) {
             for (int iVar = 0; iVar < std::min(nComp, 3); ++iVar) {
               waveVal[iVar] += val * c.pol[iVar];
@@ -580,12 +613,24 @@ void Pic::apply_wave_field(const iMultiFab& status, MultiFab& mf,
       }
 
       if (hasWave) {
-        if (iField == 0 || iField == 1) {
+        if (isBndNode && func) {
+          // Reset nodal physical boundary from base state before superimposing
+          // wave.
           for (int iVar = 0; iVar < nComp; ++iVar) {
-            arr(i, j, k, iStart + iVar) = waveVal[iVar % 3];
+            const Real baseVal = (this->*func)(
+                mfi, IntVect{ AMREX_D_DECL(i, j, k) }, iVar, iLev);
+            arr(i, j, k, iStart + iVar) = baseVal + waveVal[iVar % 3];
           }
-        } else if (nComp > 0) {
-          arr(i, j, k, iStart) = waveVal[0];
+        } else {
+          // Ghost cells already contain base state from apply_BC(); add wave
+          // perturbation.
+          if (iField == 0 || iField == 1) {
+            for (int iVar = 0; iVar < nComp; ++iVar) {
+              arr(i, j, k, iStart + iVar) += waveVal[iVar % 3];
+            }
+          } else if (nComp > 0) {
+            arr(i, j, k, iStart) += waveVal[0];
+          }
         }
       }
     });

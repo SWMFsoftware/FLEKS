@@ -2031,11 +2031,11 @@ copy (the original open-boundary behaviour).  Pair `inflow` at one face with
 0                       direction     (0=x,1=y,2=z)
 lo                      side          (lo or hi)
 1                       nComp
-0                       iField        (0=Bx,1=By,2=Bz,3=Ex,...)
+0                       iField        (0=B, 1=E, 2=velocity kick, 3=density)
 0                       iSpecies
-0                       profile       (0=continuous,1=pulse)
-1.0e-2                  amplitude     (code units; SI if #SIFLEKS)
-0.1                     frequency     (code units; SI if #SIFLEKS)
+0                       profile       (0=continuous, 1=packet)
+1.0e-2                  amplitude     (code units; SI if normalization is active)
+0.1                     frequency     (code units; SI if normalization is active)
 0.0                     waveLength
 0.0                     phase
 1.0                     dir
@@ -2045,7 +2045,7 @@ lo                      side          (lo or hi)
 0.0                     pol
 1.0                     pol
 0.0                     tStart
--1.0                    tEnd          (inactive)
+-1.0                    tEnd          (-1 = forever)
 0.0                     rampTime
 0.0                     tCenter
 0.0                     tWidth
@@ -2054,14 +2054,14 @@ This command drives a hard wave source on a boundary face selected by
 `#FIELDBOXBOUNDARY ... wave ...`.  `nWaveFace` gives the number of faces; for
 each face, `direction` + `side` select the face (0=x,1=y,2=z; lo/hi), and
 `nComp` gives the number of field components injected on that face.  For each
-component: `iField` selects the field component (Bx=0, By=1, Bz=2, Ex=3, ...),
-`iSpecies` the species for kinetic driving, `profile` the temporal envelope
-(0 = continuous sinusoid, 1 = finite pulse), `amplitude`/`frequency`/`waveLength`/
-`phase` the wave, `dir`/`pol` the propagation and polarization vectors, and
-`tStart`/`tEnd`/`rampTime`/`tCenter`/`tWidth` gate and shape the injection.
-Values are in code units (an SI-to-code conversion is applied internally when
-the fluid interface provides the normalization).  See
-`Doc/Wave_Injection_BC_Design.md`.
+component: `iField` selects the target variable (0=B, 1=E, 2=velocity kick,
+3=density weight), `iSpecies` the species for kinetic driving (-1 for EM
+fields), `profile` the temporal envelope (0 = continuous sinusoid, 1 = Gaussian
+packet), `amplitude`/`frequency`/`waveLength`/`phase` the wave, `dir`/`pol` the
+propagation and polarization unit vectors, and `tStart`/`tEnd`/`rampTime`/
+`tCenter`/`tWidth` gate and shape the injection with smooth Hann ramp-in and
+ramp-out.  Values are in code units (an SI-to-code conversion is applied
+internally when the fluid interface provides the normalization).
 </command>
 </commandgroup>
 

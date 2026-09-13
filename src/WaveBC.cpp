@@ -114,7 +114,7 @@ void WaveBoundaryManager::add_component(int direction, int side,
   face(direction, side).comps.push_back(c);
 }
 
-// cos^2 ramp-in, then cut off at tEnd.
+// cos^2 ramp-in, and smooth ramp-out before tEnd if rampTime > 0.
 amrex::Real WaveBoundaryManager::envelope(const WaveComponent& c,
                                           amrex::Real t) const {
   if (t < c.tStart)
@@ -123,9 +123,13 @@ amrex::Real WaveBoundaryManager::envelope(const WaveComponent& c,
     return 0.0;
   amrex::Real ramp = 1.0;
   if (c.rampTime > 0.0) {
-    amrex::Real f = (t - c.tStart) / c.rampTime;
-    if (f < 1.0)
+    if (t < c.tStart + c.rampTime) {
+      amrex::Real f = (t - c.tStart) / c.rampTime;
       ramp = 0.5 * (1.0 - std::cos(dPI * f));
+    } else if (c.tEnd > 0.0 && t > c.tEnd - c.rampTime) {
+      amrex::Real f = (c.tEnd - t) / c.rampTime;
+      ramp = 0.5 * (1.0 - std::cos(dPI * f));
+    }
   }
   return ramp;
 }
@@ -197,6 +201,14 @@ void WaveBoundaryManager::read_param(ReadParam& param,
       if (dirNorm > 0.0) {
         for (int d = 0; d < 3; ++d)
           c.dir[d] /= dirNorm;
+      }
+
+      // Normalize polarization vector if non-zero.
+      const amrex::Real polNorm = std::sqrt(
+          c.pol[0] * c.pol[0] + c.pol[1] * c.pol[1] + c.pol[2] * c.pol[2]);
+      if (polNorm > 0.0) {
+        for (int d = 0; d < 3; ++d)
+          c.pol[d] /= polNorm;
       }
 
       // SI -> code conversion (unless the block was marked 'code').
