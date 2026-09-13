@@ -56,7 +56,7 @@ BASELINES = {
     },
     "pt": {
         "total_pps": 4.5,    # total wall-clock rate (includes AMReX Redistribute of 384-440 attributes)
-        "mover_pps": 0.09,   # isolated test particle mover rate
+        "mover_pps": 0.15,   # isolated test particle mover rate
         "solver_pps": 0.01,  # EM solver disabled
         "speedup": 1.4,      # 2-core mover speedup floor
     },
