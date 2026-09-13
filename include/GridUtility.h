@@ -467,21 +467,24 @@ void fill_lev_bny_from_value(amrex::FabArray<FAB>& dst,
 
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
+    const int nComp = dst.nComp();
 
-    for (int iVar = 0; iVar < dst.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_lev_boundary(statusArr(i, j, k))) {
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          if (bit::is_lev_boundary(statusArr(i, j, k))) {
+            for (int iVar = 0; iVar < nComp; ++iVar) {
               data(i, j, k, iVar) = value;
             }
           }
+        }
   }
 }
 
 template <class FAB>
 void skip_cells_divE_correction(amrex::FabArray<FAB>& dst,
                                 const amrex::iMultiFab& fstatus, int iLev) {
+  const int nComp = dst.nComp();
   if (iLev > 0) {
     for (amrex::MFIter mfi(dst); mfi.isValid(); ++mfi) {
       FAB& fab = dst[mfi];
@@ -490,15 +493,16 @@ void skip_cells_divE_correction(amrex::FabArray<FAB>& dst,
       const auto& statusArr = fstatus[mfi].array();
       const auto lo = amrex::lbound(box);
       const auto hi = amrex::ubound(box);
-      for (int iVar = 0; iVar < dst.nComp(); iVar++)
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              if (bit::is_lev_boundary(statusArr(i, j, k)) ||
-                  bit::is_refined(statusArr(i, j, k))) {
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (bit::is_lev_boundary(statusArr(i, j, k)) ||
+                bit::is_refined(statusArr(i, j, k))) {
+              for (int iVar = 0; iVar < nComp; ++iVar) {
                 data(i, j, k, iVar) = 0.0;
               }
             }
+          }
     }
   }
   if (iLev == 0) {
@@ -509,15 +513,16 @@ void skip_cells_divE_correction(amrex::FabArray<FAB>& dst,
       const auto& statusArr = fstatus[mfi].array();
       const auto lo = amrex::lbound(box);
       const auto hi = amrex::ubound(box);
-      for (int iVar = 0; iVar < dst.nComp(); iVar++)
-        for (int k = lo.z; k <= hi.z; ++k)
-          for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i) {
-              if (bit::is_lev_edge(statusArr(i, j, k)) ||
-                  bit::is_refined(statusArr(i, j, k))) {
+      for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+          for (int i = lo.x; i <= hi.x; ++i) {
+            if (bit::is_lev_edge(statusArr(i, j, k)) ||
+                bit::is_refined(statusArr(i, j, k))) {
+              for (int iVar = 0; iVar < nComp; ++iVar) {
                 data(i, j, k, iVar) = 0.0;
               }
             }
+          }
     }
   }
 }
@@ -535,10 +540,10 @@ void fill_lev_from_value(amrex::FabArray<FAB>& dst, amrex::Real value,
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
 
-    for (int iVar = startvar; iVar <= stopvar; iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i)
+          for (int iVar = startvar; iVar <= stopvar; ++iVar) {
             data(i, j, k, iVar) = value;
           }
   }
@@ -574,15 +579,17 @@ void fill_fine_lev_bny_from_coarse(amrex::FabArray<FAB>& coarse,
 
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
+    const int numComp = f.nComp();
 
-    for (int iVar = 0; iVar < f.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_lev_boundary(statusArr(i, j, k))) {
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          if (bit::is_lev_boundary(statusArr(i, j, k))) {
+            for (int iVar = 0; iVar < numComp; ++iVar) {
               data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
             }
           }
+        }
   }
 }
 
@@ -616,15 +623,17 @@ void fill_fine_lev_new_from_coarse(amrex::FabArray<FAB>& coarse,
 
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
+    const int numComp = f.nComp();
 
-    for (int iVar = 0; iVar < f.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_new(statusArr(i, j, k))) {
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          if (bit::is_new(statusArr(i, j, k))) {
+            for (int iVar = 0; iVar < numComp; ++iVar) {
               data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
             }
           }
+        }
   }
 }
 
@@ -656,15 +665,17 @@ void fill_fine_lev_edge_from_coarse(
 
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
+    const int numComp = f.nComp();
 
-    for (int iVar = 0; iVar < f.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_lev_edge(statusArr(i, j, k))) {
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          if (bit::is_lev_edge(statusArr(i, j, k))) {
+            for (int iVar = 0; iVar < numComp; ++iVar) {
               data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
             }
           }
+        }
   }
 }
 
@@ -696,12 +707,12 @@ void fill_fine_lev_from_coarse(amrex::FabArray<FAB>& coarse,
 
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
+    const int numComp = f.nComp();
 
-    for (int iVar = 0; iVar < f.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i)
+          for (int iVar = 0; iVar < numComp; ++iVar) {
             data(i, j, k, iVar) = mult * tmp(i, j, k, iVar);
           }
   }
@@ -739,15 +750,17 @@ void sum_coarse_to_fine_lev_bny_node(
 
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
+    const int numComp = f.nComp();
 
-    for (int iVar = 0; iVar < f.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_lev_edge(statusArr(i, j, k))) {
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          if (bit::is_lev_edge(statusArr(i, j, k))) {
+            for (int iVar = 0; iVar < numComp; ++iVar) {
               data(i, j, k, iVar) = tmp(i, j, k, iVar);
             }
           }
+        }
   }
 }
 
@@ -803,15 +816,17 @@ void sum_coarse_to_fine_lev_bny_cell(
 
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
+    const int numComp = f.nComp();
 
-    for (int iVar = 0; iVar < f.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_lev_edge(statusArr(i, j, k))) {
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          if (bit::is_lev_edge(statusArr(i, j, k))) {
+            for (int iVar = 0; iVar < numComp; ++iVar) {
               data(i, j, k, iVar) = tmp(i, j, k, iVar);
             }
           }
+        }
   }
 }
 
@@ -856,15 +871,17 @@ void interp_from_coarse_to_fine_for_domain_edge(
 
     const auto lo = amrex::lbound(box);
     const auto hi = amrex::ubound(box);
+    const int numComp = f.nComp();
 
-    for (int iVar = 0; iVar < f.nComp(); iVar++)
-      for (int k = lo.z; k <= hi.z; ++k)
-        for (int j = lo.y; j <= hi.y; ++j)
-          for (int i = lo.x; i <= hi.x; ++i) {
-            if (bit::is_domain_edge(statusArr(i, j, k))) {
+    for (int k = lo.z; k <= hi.z; ++k)
+      for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i) {
+          if (bit::is_domain_edge(statusArr(i, j, k))) {
+            for (int iVar = 0; iVar < numComp; ++iVar) {
               data(i, j, k, iVar) = tmp(i, j, k, iVar);
             }
           }
+        }
   }
 }
 

@@ -617,46 +617,48 @@ public:
       MF[n].FillBoundary();
       tmf[n].FillBoundary();
     }
-    std::ofstream myfile;
-    myfile.open("MF_Header.txt");
-    myfile << nLev << " "
-           << "nLev"
-           << "\n";
-    myfile << ncomp << " "
-           << "ncomp"
-           << "\n";
-    myfile << ngst << " "
-           << "ngst"
-           << "\n";
-    myfile.close();
-
-    for (int n = 0; n <= nLev; n++) {
+    if (amrex::ParallelDescriptor::IOProcessor()) {
       std::ofstream myfile;
-      myfile.open("MF_" + std::to_string(n) + ".txt");
-      for (amrex::MFIter mfi(tmf[n]); mfi.isValid(); ++mfi) {
-
-        const amrex::Box& box = mfi.validbox();
-        const amrex::Array4<amrex::Real>& fab = tmf[n][mfi].array();
-        const auto lo = lbound(box);
-        const auto hi = ubound(box);
-
-        for (int k = lo.z - ngst; k <= hi.z + ngst; ++k)
-          for (int j = lo.y - ngst; j <= hi.y + ngst; ++j)
-            for (int i = lo.x - ngst; i <= hi.x + ngst; ++i) {
-
-              myfile << i << " " << j << " " << k << " "
-                     << i * Geom(n).CellSizeArray()[0] << " "
-                     << j * Geom(n).CellSizeArray()[1] << " "
-                     << k * Geom(n).CellSizeArray()[2] << " " << 2455.0 << " ";
-
-              for (int l = 0; l < ncomp; ++l) {
-                myfile << fab(i, j, k, l) << " ";
-              }
-
-              myfile << "\n";
-            }
-      }
+      myfile.open("MF_Header.txt");
+      myfile << nLev << " "
+             << "nLev"
+             << "\n";
+      myfile << ncomp << " "
+             << "ncomp"
+             << "\n";
+      myfile << ngst << " "
+             << "ngst"
+             << "\n";
       myfile.close();
+
+      for (int n = 0; n <= nLev; n++) {
+        std::ofstream myfile;
+        myfile.open("MF_" + std::to_string(n) + ".txt");
+        for (amrex::MFIter mfi(tmf[n]); mfi.isValid(); ++mfi) {
+
+          const amrex::Box& box = mfi.validbox();
+          const amrex::Array4<amrex::Real>& fab = tmf[n][mfi].array();
+          const auto lo = lbound(box);
+          const auto hi = ubound(box);
+
+          for (int k = lo.z - ngst; k <= hi.z + ngst; ++k)
+            for (int j = lo.y - ngst; j <= hi.y + ngst; ++j)
+              for (int i = lo.x - ngst; i <= hi.x + ngst; ++i) {
+
+                myfile << i << " " << j << " " << k << " "
+                       << i * Geom(n).CellSizeArray()[0] << " "
+                       << j * Geom(n).CellSizeArray()[1] << " "
+                       << k * Geom(n).CellSizeArray()[2] << " " << 2455.0 << " ";
+
+                for (int l = 0; l < ncomp; ++l) {
+                  myfile << fab(i, j, k, l) << " ";
+                }
+
+                myfile << "\n";
+              }
+        }
+        myfile.close();
+      }
     }
   };
   void WriteMFtoTXT(amrex::MultiFab& MF, int WriteGhost = 0) {

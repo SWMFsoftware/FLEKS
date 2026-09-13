@@ -36,7 +36,7 @@ void grad_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
 
   for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
     Box box = mfi.validbox();
-    box.grow(1);
+    box.grow(std::min(1, centerMF.nGrow()));
 
     const Array4<Real>& center = centerMF[mfi].array();
     const Array4<Real const>& node = nodeMF[mfi].array();
@@ -194,7 +194,7 @@ void div_center_to_center(const MultiFab& srcMF, MultiFab& dstMF,
 
   for (MFIter mfi(dstMF, doTiling); mfi.isValid(); ++mfi) {
     Box box = mfi.validbox();
-    box.grow(1);
+    box.grow(std::min(1, dstMF.nGrow()));
 
     const Array4<Real const>& srcArr = srcMF[mfi].array();
     const Array4<Real>& dstArr = dstMF[mfi].array();
@@ -380,8 +380,9 @@ void print_MultiFab(const iMultiFab& data, const std::string& tag, int nshift) {
 void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
                          const Real* invDx) {
   for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
-    Box box = mfi.fabbox();
-    box.grow(-1);
+    const int ng = std::min(nodeMF.nGrow(), std::max(0, centerMF.nGrow() - 1));
+    Box box = mfi.validbox();
+    box.grow(ng);
 
     const Array4<Real>& nodeArr = nodeMF[mfi].array();
     const Array4<Real const>& centerArr = centerMF[mfi].array();
@@ -446,7 +447,9 @@ void curl_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF,
 void curl_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF,
                          const Real* invDx) {
   for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
-    const Box& box = mfi.fabbox();
+    const int ng = std::min(centerMF.nGrow(), std::max(0, nodeMF.nGrow() - 1));
+    Box box = mfi.validbox();
+    box.grow(ng);
     const Array4<Real>& centerArr = centerMF[mfi].array();
     const Array4<Real const>& nodeArr = nodeMF[mfi].array();
 
@@ -519,8 +522,10 @@ void curl_center_to_center(const MultiFab& centerInMF, MultiFab& centerOutMF,
   const Real dzInv = (nDim > 2) ? 0.5 * invDx[iz_] : 0.0;
 
   for (MFIter mfi(centerOutMF, doTiling); mfi.isValid(); ++mfi) {
-    Box box = mfi.fabbox();
-    box.grow(-1);
+    const int ng =
+        std::min(centerOutMF.nGrow(), std::max(0, centerInMF.nGrow() - 1));
+    Box box = mfi.validbox();
+    box.grow(ng);
 
     const Array4<Real>& outArr = centerOutMF[mfi].array();
     const Array4<Real const>& inArr = centerInMF[mfi].array();
@@ -556,8 +561,9 @@ void curl_center_to_center(const MultiFab& centerInMF, MultiFab& centerOutMF,
 
 void average_center_to_node(const MultiFab& centerMF, MultiFab& nodeMF) {
   for (MFIter mfi(nodeMF, doTiling); mfi.isValid(); ++mfi) {
-    Box box = mfi.fabbox();
-    box.grow(-1);
+    const int ng = std::min(nodeMF.nGrow(), std::max(0, centerMF.nGrow() - 1));
+    Box box = mfi.validbox();
+    box.grow(ng);
 
     const Array4<Real>& nodeArr = nodeMF[mfi].array();
     const Array4<Real const>& centerArr = centerMF[mfi].array();
@@ -582,8 +588,9 @@ void average_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF) {
   // nodes. The factor is 1/(2^nDim).
   const Real inv2d = (nDim > 2) ? 0.125 : 0.25;
   for (MFIter mfi(centerMF, doTiling); mfi.isValid(); ++mfi) {
-    Box box = mfi.fabbox();
-    box.grow(-1);
+    const int ng = std::min(centerMF.nGrow(), std::max(0, nodeMF.nGrow() - 1));
+    Box box = mfi.validbox();
+    box.grow(ng);
 
     const Array4<Real>& centerArr = centerMF[mfi].array();
     const Array4<Real const>& nodeArr = nodeMF[mfi].array();
@@ -610,8 +617,9 @@ void average_node_to_center(const MultiFab& nodeMF, MultiFab& centerMF) {
 void lap_center_to_center(const MultiFab& centerMF, MultiFab& centerMFout,
                           const Real* invDx) {
   for (MFIter mfi(centerMFout, doTiling); mfi.isValid(); ++mfi) {
-    Box box = mfi.fabbox();
-    box.grow(-1);
+    const int ng = std::min(centerMFout.nGrow(), std::max(0, centerMF.nGrow() - 1));
+    Box box = mfi.validbox();
+    box.grow(ng);
 
     const Array4<Real>& outArr = centerMFout[mfi].array();
     const Array4<Real const>& inArr = centerMF[mfi].array();
