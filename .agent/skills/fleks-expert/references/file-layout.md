@@ -1,54 +1,36 @@
 # FLEKS File Layout
 
-## Directories
+> Canonical: `Doc/DEVELOPING.md` §1 (Repository Layout) and §3 (Code Layout and
+> Entry Points). Open the doc for the full tables — this reference only holds
+> the shortcuts and the rules that are easy to get wrong.
 
-| Directory | Contents |
+## Where to look
+
+| Need | Open |
 |---|---|
-| `include/` | All public headers (`.h`). |
-| `src/` | All C++ sources (`.cpp`) and `src/Makefile` (`SRCS` list). |
-| `src/ic/` | Initial-condition plug-ins; **private** IC headers live here. |
-| `srcInterface/` | SWMF coupling layer: `PC_wrapper.f90`, `PT_wrapper.f90`, `FleksInterface.cpp`. |
-| `Doc/` | `Algorithm.tex`, `Coding_standards.md`, user manual build. |
-| `tools/` | Post-processing / conversion / formatting scripts. |
-| `tests/` | Standalone test suite (one directory per scenario). |
-| `userfiles/` | Selectable user-source templates (`*Source.h`). |
-| `.agent/` | Agent skills, workflows and this knowledge base. |
-| `Config.pl` | Perl configuration (AMReX, AMR levels, user source, test particles). |
-| `PARAM.XML` | Parameter command reference (source of `Doc/USERMANUAL.pdf`). |
+| Time loop / regridding / orchestration | `src/Pic.cpp` (`Pic::update`), `src/Domain.cpp` |
+| Parameter parsing | `src/PicParam.cpp`, `src/Domain.cpp` (`read_param`) |
+| Field boundary conditions | `src/PicBC.cpp`, `include/BC.h` |
+| Full-PIC field solve / div(E) | `src/PicFieldSolver.cpp`, `src/PicDivE.cpp` |
+| Hybrid solver | `src/PicHybrid.cpp` |
+| Particles | `src/Particles.cpp` + `src/Particles{Init,BC,Moments,MassMatrix,Mover,Resample,Reactions}.cpp` |
+| Fluid / coupling state | `src/FluidInterface.cpp` |
+| Output | `src/PlotWriter.cpp`, `src/PicIO.cpp` |
+| AMR grid / load balancing | `src/Grid.cpp`, `src/FleksDistributionMap.cpp` |
+| Standalone driver | `src/main.cpp` |
+| SWMF entry points | `srcInterface/FleksInterface.cpp` |
 
-## Where to look for what
+## Rules agents most often get wrong
 
-Do not rely on exhaustive file catalogues — they go stale. Use `ls` plus
-semantic lookup (`documentSymbol` / `workspaceSymbol`); the entries below are
-the stable entry points.
-
-| Area | Entry point | Neighbours |
-|---|---|---|
-| Time loop, regridding, orchestration | `src/Pic.cpp` (`Pic::update`) | `src/Domain.cpp` |
-| Parameter parsing | `src/PicParam.cpp` (`Pic::read_param`) | `src/Domain.cpp` (`Domain::read_param`) |
-| Field boundary conditions | `src/PicBC.cpp` | `include/BC.h`, `src/BC.cpp` |
-| Hybrid solver | `src/PicHybrid.cpp` | `src/PicFieldSolver.cpp` (full PIC) |
-| div(E) cleaning | `src/PicDivE.cpp` | — |
-| Particles | `src/Particles.cpp` (lifecycle + whole-class instantiation) | `src/ParticlesInit.cpp`, `ParticlesBC.cpp`, `ParticlesMoments.cpp`, `ParticlesMassMatrix.cpp`, `ParticlesMover.cpp`, `ParticlesResample.cpp`, `ParticlesReactions.cpp` |
-| Fluid / coupling state | `src/FluidInterface.cpp` | `include/FluidInterface.h` |
-| Output | `src/PlotWriter.cpp` | `src/DataContainer.cpp`, `src/PicIO.cpp` |
-| Linear algebra | `src/LinearSolver.cpp` | `include/LinearSolver.h` |
-| Grid / AMR | `src/Grid.cpp` | `src/FleksDistributionMap.cpp` |
-| Standalone driver | `src/main.cpp` | — |
-| SWMF entry points | `srcInterface/FleksInterface.cpp` | `PC_wrapper.f90`, `PT_wrapper.f90` |
-
-## Non-obvious layout rules
-
-1. **`src/ic/` keeps its own headers.** `WaveIC.h`, `BeamIC.h`, `TopHatIC.h`
-   are private plug-in headers, intentionally outside `include/`. The public
-   surface is `include/InitialCondition.h` (base class + `ICRegistry`). If an
-   IC header is ever needed outside `src/ic/`, promote it to `include/`.
-2. **Generated headers.** `include/Constants.h` ← `Constants.h.orig`;
-   `include/UserSource.h` ← `userfiles/<Name>Source.h` via `Config.pl -u=<Name>`;
-   `include/show_git_info.h` is created at build time. Never edit the outputs.
-3. **Split `Particles` translation units** each need their own explicit
-   two-alias member instantiations — see the hard constraints in `SKILL.md`.
-4. **Fake 2D** = a single cell in z; `nDim` stays 3 unless AMReX itself is
-   built 2D (`./Config.pl -amrex2d`).
-5. **Component macros:** `_PC_COMPONENT_` for PIC builds, `_PT_COMPONENT_` for
-   the particle tracker.
+1. **`src/ic/` headers are private.** IC plug-in headers stay next to their
+   `.cpp`; the public surface is `include/InitialCondition.h`. Promote a header
+   to `include/` only if something outside `src/ic/` needs it.
+2. **Generated files are not editable.** `include/Constants.h` ←
+   `Constants.h.orig`; `include/UserSource.h` ← `userfiles/*Source.h`;
+   `include/show_git_info.h` is created at build time.
+3. **New `.cpp` files must be added to `SRCS`** in `src/Makefile` — nothing is
+   auto-discovered, and the omission only surfaces at link time.
+4. **Fake 2D** is one cell in z; a true-2D AMReX build needs
+   `./Config.pl -amrex2d`.
+5. **Component macros** `_PC_COMPONENT_` / `_PT_COMPONENT_` — guarded code must
+   compile both ways.

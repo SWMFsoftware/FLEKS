@@ -1,5 +1,9 @@
 # FLEKS Architecture Reference
 
+> Canonical: `Doc/DEVELOPING.md` §3 (class hierarchy, entry points) and
+> `Doc/Algorithm.tex` (mathematics). This page adds the solver comparison that
+> decides which path a run takes.
+
 ## Class hierarchy
 
 ```

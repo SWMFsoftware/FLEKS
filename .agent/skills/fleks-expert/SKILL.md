@@ -89,7 +89,10 @@ Violating any of these gives silently wrong results or link errors:
 
 ## References
 
-Load only what the current task needs:
+Load only what the current task needs. Each page is a condensed, agent-oriented
+view whose header names the canonical document (`Doc/DEVELOPING.md`,
+`Doc/Coding_standards.md`, `tests/README.md`) — open the canonical one when the
+task needs the full detail:
 
 - `references/architecture.md` — class hierarchy, full vs hybrid solver, time
   stepping, divergence cleaning.
