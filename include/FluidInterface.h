@@ -1,6 +1,7 @@
 #ifndef _FLUIDINTERFACE_H_
 #define _FLUIDINTERFACE_H_
 
+#include <array>
 #include <memory>
 
 #include <AMReX_Box.H>
@@ -20,12 +21,13 @@
 #include "DomainParameters.h"
 #include "Grid.h"
 #include "GridUtility.h"
-#include "MDArray.h"
 #include "ReadParam.h"
 
 // Immutable SI<->normalized conversion factors, computed once from a
 // FluidInterface and shared read-only (shared_ptr<const>) by all interfaces.
 class FluidInterface; // forward declaration; defined later in this header
+
+using Basis3x3 = std::array<std::array<amrex::Real, 3>, 3>;
 
 class NormalizationParams {
 public:
@@ -216,11 +218,11 @@ public:
                  FluidType typeIn = PICFluid)
       : Grid(other.Geom(0), other.get_amr_info(), other.get_n_ghost(), id, tag),
         FluidInterfaceParameters(other),
-        myType(typeIn) {};
+        myType(typeIn) {}
 
   ~FluidInterface() = default;
 
-  FluidType my_type() { return myType; };
+  FluidType my_type() { return myType; }
 
   // Copy the FluidInterfaceParameters slice from another FluidInterface.
   // Used by Domain to keep the source / test-particle grids' parameters in
@@ -270,7 +272,7 @@ public:
   void set_node_fluid_to_zero() {
     for (int iLev = 0; iLev < n_lev(); ++iLev)
       nodeFluid[iLev].setVal(0.0);
-  };
+  }
 
   void calc_current();
 
@@ -285,9 +287,9 @@ public:
 
   void analyze_var_names(bool useNeutral = false);
 
-  /** Get nomal and pendicular vector to magnetic field */
-  void calc_mag_base_vector(const double Bx, const double By, const double Bz,
-                            MDArray<double>& norm_DD) const;
+  /** Get normal and perpendicular unit vectors relative to magnetic field */
+  void calc_mag_base_vector(const amrex::Real Bx, const amrex::Real By,
+                            const amrex::Real Bz, Basis3x3& norm_DD) const;
 
   void calc_fluid_state(const double* dataPIC_I, double* dataFluid_I) const;
 
@@ -296,12 +298,13 @@ public:
   void get_for_points(const int nDim, const int nPoint,
                       const double* const xyz_I, double* const data_I,
                       const int nVar, const double coef = 1,
-                      amrex::Vector<int> idxMap = amrex::Vector<int>());
+                      const amrex::Vector<int>& idxMap = {});
 
   void get_moments_for_points(const int nDim, const int nPoint,
                               const double* const xyz_I, double* const data_I,
                               const int nVar, const double coef) {
     amrex::Vector<int> idxMap;
+    idxMap.reserve(5 * nFluid);
     for (int i = 0; i < nFluid; i++) {
       idxMap.push_back(iRho_I[i]);
       idxMap.push_back(iRhoUx_I[i]);
@@ -342,7 +345,7 @@ public:
 
   double get_lnorm_si() const { return lNormSI; }
   double get_unorm_si() const { return uNormSI; }
-  double get_mnorm_si() const { return mNormSI; };
+  double get_mnorm_si() const { return mNormSI; }
 
   double get_cLight_SI() const { return uNormSI; }
 
@@ -366,8 +369,8 @@ public:
   double get_No2SiJ() const { return (1. / normParams->Si2NoJ); }
   double get_No2SiM() const { return mNormSI; }
 
-  double get_species_mass(int i) const { return MoMi_S[i]; };
-  double get_species_charge(int i) const { return QoQi_S[i]; };
+  double get_species_mass(int i) const { return MoMi_S[i]; }
+  double get_species_charge(int i) const { return QoQi_S[i]; }
 
   // Derived temperature + MHD-length conversions.
   double get_Si2NoT() const { return normParams->si2noT(); }
@@ -447,9 +450,12 @@ public:
                                              "_Interface_centerB" +
                                              lev_string(iLev));
     }
-  };
+  }
 
   void read_restart() {
+    if (isGridEmpty)
+      return;
+
     std::string restartDir = component + "/restartIN/";
 
     for (int iLev = 0; iLev < n_lev(); ++iLev) {
@@ -460,6 +466,7 @@ public:
                                             "_Interface_centerB" +
                                             lev_string(iLev));
     }
+    isnodeFluidReady = true;
   }
 
   void add_rho_to_loc(const amrex::Real& val, const amrex::MFIter& mfi,
@@ -615,19 +622,19 @@ public:
 
   template <typename T>
   amrex::Real get_fluid_mass_density(const amrex::MFIter& mfi, const T xyz,
-                                     const int is, const int iLev) const {
+                                     const int is, const int iLev = 0) const {
     return get_value(mfi, xyz, iRho_I[is], iLev);
   }
 
   template <typename Type>
   amrex::Real get_fluid_p(const amrex::MFIter& mfi, const Type xyz,
-                          const int is, const int iLev) const {
+                          const int is, const int iLev = 0) const {
     return get_value(mfi, xyz, iP_I[is], iLev);
   }
 
   template <typename Type>
   amrex::Real get_fluid_uth(const amrex::MFIter& mfi, const Type xyz,
-                            const int is, const int iLev) const {
+                            const int is, const int iLev = 0) const {
     // 'uth' returned by this method is defined as: uth = sqrt(kT/m)
     // PV = nkT
     // kT/m = PV/(nm) = P/rho
@@ -642,19 +649,19 @@ public:
 
   template <typename Type>
   amrex::Real get_fluid_ux(const amrex::MFIter& mfi, const Type xyz,
-                           const int is, const int iLev) const {
+                           const int is, const int iLev = 0) const {
     return get_value(mfi, xyz, iUx_I[is], iLev);
   }
 
   template <typename Type>
   amrex::Real get_fluid_uy(const amrex::MFIter& mfi, const Type xyz,
-                           const int is, const int iLev) const {
+                           const int is, const int iLev = 0) const {
     return get_value(mfi, xyz, iUy_I[is], iLev);
   }
 
   template <typename Type>
   amrex::Real get_fluid_uz(const amrex::MFIter& mfi, const Type xyz,
-                           const int is, const int iLev) const {
+                           const int is, const int iLev = 0) const {
     return get_value(mfi, xyz, iUz_I[is], iLev);
   }
 
@@ -678,13 +685,11 @@ public:
 
   template <typename Type>
   amrex::Real get_ppar(const amrex::MFIter& mfi, const Type xyz, const int is,
-                       const int iLev) const {
+                       const int iLev = 0) const {
     amrex::Real P;
     if (useMultiSpecies || useMultiFluid) {
-      std::cout << " getFluidPpar has not implemented for "
-                   "multifluid/multispecies!!"
-                << std::endl;
-      abort();
+      amrex::Abort("get_ppar has not been implemented for "
+                   "multifluid/multispecies!");
     }
 
     if (useElectronFluid) {
@@ -752,7 +757,7 @@ public:
 
   template <typename Type>
   amrex::Real get_pxx(const amrex::MFIter& mfi, const Type xyz, const int is,
-                      const int iLev) const {
+                      const int iLev = 0) const {
     amrex::Real Pxx;
     if (useAnisoP) {
       amrex::Real Bx = get_value(mfi, xyz, iBx, iLev);
@@ -769,9 +774,9 @@ public:
     } else {
       Pxx = get_p(mfi, xyz, is, iLev);
     }
-    return (QoQi_S[is] *
-            (Pxx / MoMi_S[is] + get_number_density(mfi, xyz, is, iLev) *
-                                    pow(get_ux(mfi, xyz, is, iLev), 2)));
+    const amrex::Real ux = get_ux(mfi, xyz, is, iLev);
+    return (QoQi_S[is] * (Pxx / MoMi_S[is] +
+                          get_number_density(mfi, xyz, is, iLev) * ux * ux));
   }
 
   template <typename Type>
@@ -793,9 +798,9 @@ public:
     } else {
       Pyy = get_p(mfi, xyz, is, iLev);
     }
-    return (QoQi_S[is] *
-            (Pyy / MoMi_S[is] + get_number_density(mfi, xyz, is, iLev) *
-                                    pow(get_uy(mfi, xyz, is, iLev), 2)));
+    const amrex::Real uy = get_uy(mfi, xyz, is, iLev);
+    return (QoQi_S[is] * (Pyy / MoMi_S[is] +
+                          get_number_density(mfi, xyz, is, iLev) * uy * uy));
   }
 
   template <typename Type>
@@ -817,9 +822,9 @@ public:
     } else {
       Pzz = get_p(mfi, xyz, is, iLev);
     }
-    return (QoQi_S[is] *
-            (Pzz / MoMi_S[is] + get_number_density(mfi, xyz, is, iLev) *
-                                    pow(get_uz(mfi, xyz, is, iLev), 2)));
+    const amrex::Real uz = get_uz(mfi, xyz, is, iLev);
+    return (QoQi_S[is] * (Pzz / MoMi_S[is] +
+                          get_number_density(mfi, xyz, is, iLev) * uz * uz));
   }
 
   template <typename Type>
@@ -937,27 +942,14 @@ public:
                               const double uthPerpIn = -1) const {
     amrex::Real Bx, By, Bz, P, Ppar, Pperp, Uthperp, Uthpar, Uthperp1, Uthperp2,
         prob, theta;
-    MDArray<double> norm_DD;
-    // indexes for the norm_DD matix
-    int Norm_, Perp1_, Perp2_, X_, Y_, Z_;
+    Basis3x3 norm_DD;
+    // indices for the norm_DD matrix
+    enum { Norm_ = 0, Perp1_ = 1, Perp2_ = 2, X_ = 0, Y_ = 1, Z_ = 2 };
 
     if (useMultiFluid || useMultiSpecies) {
-      std::cout << " setFluidanisoUth has not implemented for "
-                   "multifluid/multispecies!!!"
-                << std::endl;
-      abort();
+      amrex::Abort("setFluidanisoUth has not been implemented for "
+                   "multifluid/multispecies!");
     }
-
-    // if (n_lev() > 1) {
-    //   amrex::Abort("setFluidanisoUth has not implemented for multilevel");
-    // }
-
-    Norm_ = 0;
-    Perp1_ = 1;
-    Perp2_ = 2;
-    X_ = 0;
-    Y_ = 1;
-    Z_ = 2;
 
     // Get number density and B at the particle position
     double ni = get_number_density(mfi, xyz, is, iLev);
@@ -965,16 +957,15 @@ public:
     By = get_value(mfi, xyz, iBy, iLev);
     Bz = get_value(mfi, xyz, iBz, iLev);
 
-    // Get Parallel and perpendicular presure
+    // Get Parallel and perpendicular pressure
     Ppar = get_ppar(mfi, xyz, is, iLev);
     P = get_p(mfi, xyz, is, iLev);
     Pperp = 0.5 * (3.0 * P - Ppar);
 
-    // Get 3 vertors spaning the vector space
-    norm_DD.init(3, 3);
+    // Get 3 unit vectors spanning the vector space (stack-allocated, zero heap)
     calc_mag_base_vector(Bx, By, Bz, norm_DD);
 
-    // Get the thermal verlocities
+    // Get the thermal velocities
     prob = sqrt(-2.0 * log(1.0 - .999999999 * rand1));
     theta = 2.0 * M_PI * rand2;
     Uthpar = uthParIn >= 0 ? uthParIn
@@ -988,12 +979,12 @@ public:
     Uthperp2 = Uthperp * sin(theta);
 
     // Set particle thermal velocity
-    (*u) = Uthpar * norm_DD(Norm_, X_) + Uthperp1 * norm_DD(Perp1_, X_) +
-           Uthperp2 * norm_DD(Perp2_, X_);
-    (*v) = Uthpar * norm_DD(Norm_, Y_) + Uthperp1 * norm_DD(Perp1_, Y_) +
-           Uthperp2 * norm_DD(Perp2_, Y_);
-    (*w) = Uthpar * norm_DD(Norm_, Z_) + Uthperp1 * norm_DD(Perp1_, Z_) +
-           Uthperp2 * norm_DD(Perp2_, Z_);
+    (*u) = Uthpar * norm_DD[Norm_][X_] + Uthperp1 * norm_DD[Perp1_][X_] +
+           Uthperp2 * norm_DD[Perp2_][X_];
+    (*v) = Uthpar * norm_DD[Norm_][Y_] + Uthperp1 * norm_DD[Perp1_][Y_] +
+           Uthperp2 * norm_DD[Perp2_][Y_];
+    (*w) = Uthpar * norm_DD[Norm_][Z_] + Uthperp1 * norm_DD[Perp1_][Z_] +
+           Uthperp2 * norm_DD[Perp2_][Z_];
   }
 
   template <typename Type>
@@ -1016,7 +1007,7 @@ public:
 
   template <typename Type>
   amrex::Real get_ex(const amrex::MFIter& mfi, const Type xyz,
-                     const int iLev) const {
+                     const int iLev = 0) const {
     amrex::Real Ex;
     if (useElectronFluid) {
       Ex = get_value(mfi, xyz, iEx, iLev);
