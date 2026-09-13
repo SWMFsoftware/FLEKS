@@ -4,14 +4,20 @@ name: Format Check and Build
 on:
   push:
     branches: [ "master" ]
+    paths:
+      - '**.cpp'
+      - '**.h'
+      - '**.H'
+      - '**.f90'
+      - '**.F90'
   pull_request:
     branches: [ "master" ]
-    paths-ignore:
-      - 'tests/performance/**'
-      - 'tests/validate_performance.py'
-      - '.github/workflows/performance_test.yml'
-      - '**.md'
-      - 'Doc/**'
+    paths:
+      - '**.cpp'
+      - '**.h'
+      - '**.H'
+      - '**.f90'
+      - '**.F90'
 
 jobs:
   style:

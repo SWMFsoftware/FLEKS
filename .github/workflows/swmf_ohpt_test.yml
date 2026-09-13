@@ -3,12 +3,12 @@ name: SWMF OH-PT Integration Test
 on:
   pull_request:
     branches: [ "master" ]
-    paths-ignore:
-      - 'tests/performance/**'
-      - 'tests/validate_performance.py'
-      - '.github/workflows/performance_test.yml'
-      - '**.md'
-      - 'Doc/**'
+    paths:
+      - '**.cpp'
+      - '**.h'
+      - '**.H'
+      - '**.f90'
+      - '**.F90'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
